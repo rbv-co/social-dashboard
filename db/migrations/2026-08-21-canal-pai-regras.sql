@@ -18,8 +18,9 @@
 -- NÃO MUDA NADA PARA NINGUÉM ao ser aplicada: `meus_vinculos()` (seção 6) soma
 -- `equipes_membros` com uma consulta em `canais_grupos_membros` que hoje não
 -- devolve linha nenhuma, então toda função que passa a ler a soma responde
--- exatamente o que respondia antes. É o Passo 4 do brief desta tarefa que mede
--- essa propriedade antes de aplicar.
+-- exatamente o que respondia antes. `meus_vinculos()` só passa a existir
+-- DEPOIS desta migration ser aplicada (Passo 3) — é o Passo 4 do brief desta
+-- tarefa, rodado logo em seguida, que mede essa propriedade.
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- 6. A SOMA, NUM LUGAR SÓ
@@ -105,7 +106,17 @@ $$;
 -- O ESTOQUE MANTÉM A REGRA PRÓPRIA E MAIS APERTADA, escrita de propósito:
 -- "estar no time não basta" — ou você supervisiona, ou é gestora, ou alguém
 -- liberou. O que muda é só que "supervisiona" passa a incluir quem supervisiona
--- pelo grupo.
+-- pelo grupo; o ramo da liberação (`equipes_permissoes`) CONTINUA exigindo
+-- estar no time, exatamente como a regra de 04/08.
+--
+-- É fácil errar aqui: a regra de hoje (2026-08-04-escopo-em-vendas-e-estoque.sql)
+-- tem UM join com equipes_membros que governa os dois ramos — o do papel e o
+-- da liberação. Se o ramo da liberação virasse só "existe uma linha em
+-- equipes_permissoes com chave='estoque'", sem checar equipes_membros, alguém
+-- que teve estoque liberado e depois foi tirada do time (a tela apaga
+-- equipes_membros, não equipes_permissoes) continuaria vendo aquele depósito
+-- PARA SEMPRE, sem estar no time, sem ninguém perceber. Por isso o `exists`
+-- de baixo é aninhado dentro de outro `exists` que confere o vínculo.
 create or replace function public.pode_ver_estoque(p_deposito bigint)
 returns boolean language sql stable security definer set search_path to 'public' as $$
   select
@@ -116,7 +127,9 @@ returns boolean language sql stable security definer set search_path to 'public'
        where e.deposito_id = p_deposito
          and (public.tenho_papel_na_equipe(e.id, array['supervisora','gestor'])
               or exists (select 1 from public.equipes_permissoes p
-                          where p.equipe_id = e.id and p.profile_id = auth.uid() and p.chave = 'estoque'))
+                          where p.equipe_id = e.id and p.profile_id = auth.uid() and p.chave = 'estoque'
+                            and exists (select 1 from public.equipes_membros m
+                                         where m.equipe_id = e.id and m.profile_id = auth.uid())))
     );
 $$;
 
