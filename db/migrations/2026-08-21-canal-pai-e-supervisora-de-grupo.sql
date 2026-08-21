@@ -137,10 +137,14 @@ create policy canais_grupos_leitura on public.canais_grupos
   for select to authenticated using (true);
 
 -- Escrita só de super-admin, igual à política que já protege bling_lojas.grupo.
+-- É `superadmin_pela_ficha()`, não `is_superadmin()`: a segunda confere e-mail
+-- contra uma lista cravada no corpo dela, que só muda por migration; a coluna
+-- é o que a tela administra. Pendurar tabela nova na lista cravada recria a
+-- armadilha que este projeto já pagou uma vez.
 drop policy if exists canais_grupos_escrever on public.canais_grupos;
 create policy canais_grupos_escrever on public.canais_grupos
   for all to authenticated
-  using (public.is_superadmin()) with check (public.is_superadmin());
+  using (public.superadmin_pela_ficha()) with check (public.superadmin_pela_ficha());
 
 -- Ninguém deixa de enxergar o PRÓPRIO vínculo — mesma forma de membros_leitura.
 drop policy if exists cgm_leitura on public.canais_grupos_membros;
@@ -153,4 +157,4 @@ create policy cgm_leitura on public.canais_grupos_membros
 drop policy if exists cgm_escrever on public.canais_grupos_membros;
 create policy cgm_escrever on public.canais_grupos_membros
   for all to authenticated
-  using (public.is_superadmin()) with check (public.is_superadmin());
+  using (public.superadmin_pela_ficha()) with check (public.superadmin_pela_ficha());
