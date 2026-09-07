@@ -1,12 +1,17 @@
 /* O NÚMERO DE SÉRIE — a regra pura, e o porquê de cada guarda.
  *
  * A DECISÃO DO DONO, 02/09/2026: os campos REFERÊNCIA e PEÇA viram um número
- * só. O formato é COLADO — só os DÍGITOS da referência, seguidos da sequência
- * da peça, sem separador e sem zeros de enchimento:
+ * só, colado — a referência seguida da sequência da peça:
  *
- *     referência H0015S, peça 1   →  00151
- *     referência H0015S, peça 12  →  001512
- *     referência C0011S, peça 3   →  00113
+ *     referência H0015S, peça 1   →  H0015S001
+ *     referência SS0001HB.M1, peça 1  →  SS0001HBM1001
+ *
+ * ⚠️ AS LETRAS ENTRAM, e isso mudou em 07/09/2026. Antes só os dígitos contavam,
+ * e as letras que dizem a CATEGORIA sumiam: `SS0001HB.M1`, `SS0001CB.M1`,
+ * `SS0001SB.S1` e `SS0001L.1` viravam todos `00011`, e a peça 1 de cada um dava
+ * `00011001`. Medido no banco no dia da correção: 14 números já estavam em uso
+ * por mais de um produto ENTRE PEÇAS GRAVADAS — `00011001` sozinho em oito
+ * peças de cinco produtos.
  *
  * ⚠️ A TRAVA. Colado só não é ambíguo ENQUANTO TODA REFERÊNCIA TIVER A MESMA
  * QUANTIDADE DE DÍGITOS. Hoje são quatro (0011, 0012, 0015), então "001512" só
@@ -32,10 +37,25 @@ import {
 
 /* ── 1. O FORMATO QUE O DONO ESCOLHEU ─────────────────────────────────────── */
 
-test('o número de série é os DÍGITOS da referência colados na sequência da peça', () => {
-  assert.equal(numeroDeSerie('H0015S', 1), '0015001')
-  assert.equal(numeroDeSerie('H0015S', 12), '0015012')
-  assert.equal(numeroDeSerie('C0011S', 3), '0011003')
+test('o número de série é A REFERÊNCIA INTEIRA colada na sequência da peça', () => {
+  assert.equal(numeroDeSerie('H0015S', 1), 'H0015S001')
+  assert.equal(numeroDeSerie('H0015S', 12), 'H0015S012')
+  assert.equal(numeroDeSerie('C0011S', 3), 'C0011S003')
+  // O ponto do SKU novo não entra: ele separa, não identifica.
+  assert.equal(numeroDeSerie('SS0001HB.M1', 1), 'SS0001HBM1001')
+})
+
+test('⚠️ PRODUTOS DE CATEGORIAS DIFERENTES NÃO COLIDEM MAIS', () => {
+  /* O defeito que esta mudança conserta, com os quatro SKUs reais que colidiam.
+   * Todos davam `00011001` quando só os dígitos contavam. */
+  const quatro = ['SS0001HB.M1', 'SS0001CB.M1', 'SS0001SB.S1', 'SS0001L.1']
+    .map((sku) => numeroDeSerie(sku, 1))
+  assert.equal(new Set(quatro).size, 4, 'produtos diferentes com o mesmo número: ' + quatro)
+})
+
+test('⚠️ nem TAMANHOS diferentes do mesmo modelo colidem', () => {
+  // Small e Medium do mesmo modelo: as letras S e M é que os separam.
+  assert.notEqual(numeroDeSerie('SS0001HB.S1', 1), numeroDeSerie('SS0001HB.M1', 1))
 })
 
 test('⚠️ a sequência tem LARGURA FIXA de 3 casas', () => {
@@ -45,10 +65,10 @@ test('⚠️ a sequência tem LARGURA FIXA de 3 casas', () => {
    *
    * TRÊS CASAS BASTAM E ISSO É DEMONSTRÁVEL, não estimado: o banco recusa lote
    * acima de 500 peças, então peça 1000 não existe. */
-  assert.equal(numeroDeSerie('H0015S', 1), '0015001')
-  assert.equal(numeroDeSerie('H0015S', 9), '0015009')
-  assert.equal(numeroDeSerie('H0015S', 10), '0015010')
-  assert.equal(numeroDeSerie('H0015S', 500), '0015500')
+  assert.equal(numeroDeSerie('H0015S', 1), 'H0015S001')
+  assert.equal(numeroDeSerie('H0015S', 9), 'H0015S009')
+  assert.equal(numeroDeSerie('H0015S', 10), 'H0015S010')
+  assert.equal(numeroDeSerie('H0015S', 500), 'H0015S500')
 })
 
 test('⚠️ REFERENCIAS DE TAMANHOS DIFERENTES NAO COLIDEM MAIS', () => {
@@ -58,30 +78,54 @@ test('⚠️ REFERENCIAS DE TAMANHOS DIFERENTES NAO COLIDEM MAIS', () => {
   const quatro = numeroDeSerie('H0015S', 12)   // referência 0015, peça 12
   const cinco = numeroDeSerie('H00151S', 2)    // referência 00151, peça 2
   assert.notEqual(quatro, cinco, 'duas bolsas com o mesmo número de série')
-  assert.equal(quatro, '0015012')
-  assert.equal(cinco, '00151002')
+  assert.equal(quatro, 'H0015S012')
+  assert.equal(cinco, 'H00151S002')
 
-  // E a leitura de volta é única: tira as 3 últimas, sobra a referência.
-  assert.equal(quatro.slice(0, -3), '0015')
-  assert.equal(cinco.slice(0, -3), '00151')
+  // E a leitura de volta é única: tira as 3 últimas, sobra a REFERÊNCIA INTEIRA —
+  // não os dígitos dela. Dá para voltar do número de série ao SKU do Bling.
+  assert.equal(quatro.slice(0, -3), 'H0015S')
+  assert.equal(cinco.slice(0, -3), 'H00151S')
 })
 
-test('as letras da referência não entram — só os dígitos', () => {
-  assert.equal(numeroDeSerie('LV1021', 7), '1021007')
-  assert.equal(numeroDeSerie('h0015s', 7), '0015007')
-  assert.equal(numeroDeSerie(' H0015S ', 7), '0015007')
-  assert.equal(numeroDeSerie('H-0015/S', 7), '0015007')
+test('⚠️ AS LETRAS DA REFERÊNCIA ENTRAM — mudou em 07/09/2026', () => {
+  /* ATÉ 07/09/2026 ERA O CONTRÁRIO: só os dígitos entravam, e as letras eram
+   * jogadas fora. Foi assim que `SS0001HB.M1`, `SS0001CB.M1`, `SS0001SB.S1` e
+   * `SS0001L.1` — quatro produtos diferentes no Bling — viraram todos `00011001`.
+   *
+   * MEDIDO NO BANCO ANTES DE MUDAR, não estimado: 14 números repetidos entre
+   * peças JÁ GRAVADAS, e o `00011001` sozinho em 8 peças de 5 produtos.
+   *
+   * O que sobra da referência agora são as letras e os dígitos, em maiúscula:
+   * some só a pontuação, que é enfeite de escrita e não identifica nada. */
+  assert.equal(numeroDeSerie('LV1021', 7), 'LV1021007')
+  assert.equal(numeroDeSerie('h0015s', 7), 'H0015S007')     // minúscula sobe
+  assert.equal(numeroDeSerie(' H0015S ', 7), 'H0015S007')   // espaço sai
+  assert.equal(numeroDeSerie('H-0015/S', 7), 'H0015S007')   // pontuação sai
 })
 
 /* ── 2. SEM REFERÊNCIA NÃO HÁ NÚMERO DE SÉRIE ─────────────────────────────── */
 
-test('referência vazia, nula ou só de letras não produz número de série', () => {
+test('referência vazia, nula ou só de pontuação não produz número de série', () => {
   // a tela mostra então o que já mostrava (`nº 3`), que é a verdade que se tem —
   // e nunca um traço, que não diz nada
   assert.equal(numeroDeSerie('', 3), '')
   assert.equal(numeroDeSerie(null, 3), '')
   assert.equal(numeroDeSerie(undefined, 3), '')
-  assert.equal(numeroDeSerie('SEMNUMERO', 3), '')
+  assert.equal(numeroDeSerie('- / .', 3), '')
+})
+
+test('⚠️ REFERÊNCIA SÓ DE LETRAS AGORA PRODUZ NÚMERO — e isso é decisão', () => {
+  /* ATÉ 07/09/2026 `SEMNUMERO` devolvia vazio. Não porque uma referência de
+   * letras fosse inválida: é que, jogando as letras fora, não sobrava NADA para
+   * montar o número. A guarda era consequência da regra velha, não uma decisão.
+   *
+   * Agora as letras entram, então sobra referência e o número existe. Um SKU
+   * assim IDENTIFICA a bolsa tão bem quanto um com dígitos.
+   *
+   * MEDIDO: nenhum dos 66 lotes do banco tem referência sem dígito, então isto
+   * não muda número de peça nenhuma que exista hoje. Está aqui para que o dia em
+   * que aparecer uma, ela ganhe número em vez de cair no `nº 3`. */
+  assert.equal(numeroDeSerie('SEMNUMERO', 3), 'SEMNUMERO003')
 })
 
 /* ── 3. A GUARDA QUE `Number.isFinite` DEIXAVA PASSAR ─────────────────────── */
@@ -99,13 +143,13 @@ test('`Number(null)` é ZERO e é finito — a guarda exige inteiro MAIOR QUE ZE
 })
 
 test('sequência escrita como texto de um inteiro vale — é o que vem do banco', () => {
-  assert.equal(numeroDeSerie('H0015S', '12'), '0015012')
+  assert.equal(numeroDeSerie('H0015S', '12'), 'H0015S012')
 })
 
 /* ── 4. A TRAVA DA AMBIGUIDADE ────────────────────────────────────────────── */
 
 test('com referência, o rótulo é o número de série', () => {
-  assert.equal(rotuloDaSerie({ numero_na_serie: 12 }, { sku: 'H0015S' }), 'nº de série 0015012')
+  assert.equal(rotuloDaSerie({ numero_na_serie: 12 }, { sku: 'H0015S' }), 'nº de série H0015S012')
 })
 
 test('SEM referência o rótulo volta a ser o `nº 3` de sempre', () => {
@@ -116,7 +160,7 @@ test('SEM referência o rótulo volta a ser o `nº 3` de sempre', () => {
 })
 
 test('`curto` é só o número, para onde o cabeçalho da coluna já diz o que ele é', () => {
-  assert.equal(rotuloDaSerie({ numero_na_serie: 12 }, { sku: 'H0015S' }, { curto: true }), '0015012')
+  assert.equal(rotuloDaSerie({ numero_na_serie: 12 }, { sku: 'H0015S' }, { curto: true }), 'H0015S012')
 })
 
 test('o `curto` NÃO encurta o fallback: sem referência a célula continua dizendo `nº 3`', () => {
@@ -137,7 +181,7 @@ test('descricaoDaPeca nomeia a bolsa pelo número de série quando há referênc
   const f = descricaoDaPeca(
     { numero_na_serie: 7, codigo: 'k7m4x9qp2r' },
     { modelo: 'Mônaco', cor: 'Quartz', sku: 'H0015S' })
-  assert.equal(f, 'Mônaco · Quartz · nº de série 0015007 — K7M4X9QP2R')
+  assert.equal(f, 'Mônaco · Quartz · nº de série H0015S007 — K7M4X9QP2R')
 })
 
 test('descricaoDaPeca sem referência continua dizendo `nº 7`, como sempre disse', () => {
@@ -155,13 +199,13 @@ test('a lista do lote ganha a coluna do número de série, e ELA VEM PRIMEIRO', 
     [{ numero_na_serie: 12, codigo: 'AAA111' }], { sku: 'H0015S' })
   const [cab, linha] = csv.split('\n')
   assert.equal(cab, 'numero de serie;numero;codigo;endereco;estado;gravada em;motivo da baixa')
-  assert.match(linha, /^0015012;12;AAA111;/)
+  assert.match(linha, /^H0015S012;12;AAA111;/)
 })
 
 test('a coluna do NÚMERO DA PEÇA continua na planilha — nada se perde', () => {
-  // PADRÃO item 8. O número de série carrega só os DÍGITOS da referência: as
-  // letras ("H", "S") não entram nele em lugar nenhum, e o número da peça é o
-  // que casa com a ordem de produção antiga.
+  // PADRÃO item 8. O número de série carrega a referência INTEIRA, mas o número
+  // da peça é o que casa com a ordem de produção antiga — e é por isso que a
+  // coluna dele continua na planilha.'
   const csv = linhasDaListaDoLote([{ numero_na_serie: 12, codigo: 'AAA111' }], { sku: 'H0015S' })
   assert.match(csv.split('\n')[0], /numero de serie;numero;/)
 })
@@ -285,9 +329,9 @@ const script = tela.slice(tela.indexOf('<script setup>'))
 const estilo = tela.slice(tela.indexOf('<style'))
 
 test('o cartão do lote mantém a referência CRUA', () => {
-  // PADRÃO item 8: o número de série leva só os DÍGITOS da referência. As letras
-  // ("H", "S") não entram nele em lugar nenhum — sem esta linha elas sumiriam da
-  // tela inteira, e este é o lugar delas.
+  // PADRÃO item 8: o número de série leva a referência inteira, mas COLADA na
+  // sequência. Esta linha é o único lugar que mostra o SKU como ele é escrito no
+  // Bling, com a pontuação — que é como quem procura o produto lá o digita.
   assert.match(template, /<span v-if="l\.sku" class="au-ref">ref\. \{\{ l\.sku \}\}<\/span>/,
     'a referência crua sumiu do cartão: as letras dela não moram em mais lugar nenhum')
   // O selo "Nº de série ambíguo" saiu em 04/09/2026 junto com a ambiguidade —
@@ -348,17 +392,17 @@ test('⚠️ O SUFIXO DE VARIACAO ENTRA no numero de serie, e isso e DECISAO', (
    * digitos, os dois virariam referencia `0008` e a peca 1 de cada um daria
    * `0008001` — duas bolsas distintas com o MESMO numero de serie. Este teste
    * existe para que a "limpeza" obvia reprove antes de chegar numa bolsa. */
-  assert.equal(numeroDeSerie('SS0008HB.M5', 1), '00085001')
-  assert.equal(numeroDeSerie('SS0008HB.M6', 1), '00086001')
+  assert.equal(numeroDeSerie('SS0008HB.M5', 1), 'SS0008HBM5001')
+  assert.equal(numeroDeSerie('SS0008HB.M6', 1), 'SS0008HBM6001')
   assert.notEqual(numeroDeSerie('SS0008HB.M5', 1), numeroDeSerie('SS0008HB.M6', 1),
     'duas variacoes do mesmo molde com o MESMO numero de serie')
 })
 
-test('os SKU sem sufixo nao mudam nada — a regra so aparece onde ha variacao', () => {
-  // Dos dez SKU que ja passaram pelo sistema, so UM tem sufixo com digito.
-  for (const [sku, esperado] of [['H0015S','0015001'], ['C0011S','0011001'],
-                                 ['LV1021','1021001'], ['SS1025-Fly Rum','1025001'],
-                                 ['SS-1162-Memphis Preto-Fly Olivia','1162001']]) {
+test('referencia sem sufixo tambem entra inteira', () => {
+  // MEDIDO em 07/09/2026: dos 66 lotes do banco, 65 tem SKU no formato
+  // `SS0001HB.M1` e um so tem `H0009S`. Os dois formatos passam por aqui.
+  for (const [sku, esperado] of [['H0015S','H0015S001'], ['C0011S','C0011S001'],
+                                 ['LV1021','LV1021001']]) {
     assert.equal(numeroDeSerie(sku, 1), esperado, sku)
   }
 })

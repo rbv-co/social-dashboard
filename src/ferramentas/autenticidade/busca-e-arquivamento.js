@@ -35,14 +35,24 @@ export function semAcentoNemCaixa(texto) {
     .trim()
 }
 
-// O NÚMERO DE SÉRIE DE UMA PEÇA CASA EXATO, e só quando o que se digitou é só
-// dígito. É a mesma regra do número da peça, pelo mesmo motivo: número jogado
+// O NÚMERO DE SÉRIE DE UMA PEÇA CASA EXATO. Nunca por pedaço: número jogado
 // dentro do palheiro de texto devolve meia lista, porque um pedaço de número
 // aparece em quase todo código. Desde 02/09/2026 é ESTE o número que está
 // impresso na bolsa, então é por ele que se procura primeiro.
+//
+// ⚠️ A TRAVA "SÓ DÍGITO" SAIU EM 07/09/2026, junto com a mudança que pôs as
+// letras dentro do número de série. Ela não era decisão própria: era o jeito de
+// dizer "isto parece um número de série" quando número de série só tinha
+// dígito. Mantê-la teria desligado esta busca inteira em silêncio — `SS0002HBB2001`
+// não passa por `^\d+$`, e quem digitasse o número da bolsa não acharia nada.
+//
+// O que separa agora é a IGUALDADE EXATA, que já era a regra: "1" digitado
+// sozinho continua não casando com nada, porque não é igual a número nenhum.
+// A pontuação sai dos dois lados, então quem digita o SKU do jeito do Bling
+// (`SS0002HB.B2` + `001`) acha a mesma peça que quem copia o que está gravado.
 export function ehONumeroDeSerie(texto, sku, numeroNaSerie) {
-  const t = semAcentoNemCaixa(texto)
-  if (!/^\d+$/.test(t)) return false
+  const t = String(texto ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '')
+  if (!t) return false
   const serie = numeroDeSerie(sku, numeroNaSerie)
   return Boolean(serie) && serie === t
 }

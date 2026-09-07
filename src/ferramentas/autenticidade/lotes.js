@@ -54,7 +54,25 @@ export function enderecoDaTag(codigo) {
 // peças — a parte mais delicada do selo, cujo número vai gravado dentro de uma
 // bolsa — e mataria a frase "nº 3 de 12", porque a série deixaria de terminar no
 // lote. O dono escolheu o caminho que não encosta em nada.
-const digitosDaReferencia = (sku) => String(sku ?? '').replace(/\D/g, '')
+// ⚠️ TODO O SKU, LETRAS INCLUÍDAS — e não só os dígitos.
+//
+// Até 07/09/2026 esta conta jogava fora as letras. `SS0001HB.M1`, `SS0001CB.M1`,
+// `SS0001SB.S1` e `SS0001L.1` viravam todos `00011`, porque HB/CB/SB/L são o que
+// diz a CATEGORIA — e ela sumia. A peça 1 de cada um dava `00011001`: quatro
+// bolsas diferentes com o mesmo número de série.
+//
+// Não era teoria. Medido no banco em 07/09/2026: 14 números já estavam em uso
+// por mais de um produto, entre peças GRAVADAS. `00011001` sozinho estava em
+// oito peças de cinco produtos — Maelle, Ravelle, Linear.
+//
+// Número de série é IDENTIDADE: é o que casa a etiqueta NFC com o certificado
+// da cliente. Dois produtos com o mesmo número significa cliente abrindo o
+// certificado e vendo outra bolsa.
+//
+// Fica mais comprido, e é justamente o que faz alguém querer "encurtar".
+// NÃO ENCURTE: qualquer pedaço que se tire volta a colar produtos diferentes.
+const digitosDaReferencia = (sku) =>
+  String(sku ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '')
 
 // ⚠️ A SEQUÊNCIA TEM LARGURA FIXA, E É ISSO QUE DESFAZ A AMBIGUIDADE.
 //

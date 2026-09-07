@@ -255,8 +255,8 @@ test('linhasDaListaDoLote: cabecalho + uma linha por peca, na ordem da serie', (
   ], { formatarData: () => '05/08/2026', sku: 'H0015S' })
   const linhas = csv.split('\n')
   assert.equal(linhas[0], 'numero de serie;numero;codigo;endereco;estado;gravada em;motivo da baixa')
-  assert.equal(linhas[1], '0015001;1;AAA111;https://vesselbrasil.com.br/verify/AAA111;Gravada;05/08/2026;')
-  assert.equal(linhas[2], '0015002;2;BBB222;https://vesselbrasil.com.br/verify/BBB222;Pendente;;')
+  assert.equal(linhas[1], 'H0015S001;1;AAA111;https://vesselbrasil.com.br/verify/AAA111;Gravada;05/08/2026;')
+  assert.equal(linhas[2], 'H0015S002;2;BBB222;https://vesselbrasil.com.br/verify/BBB222;Pendente;;')
 })
 
 test('linhasDaListaDoLote: a baixada ENTRA na lista, com o motivo', () => {
