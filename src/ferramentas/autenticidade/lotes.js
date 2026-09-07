@@ -422,10 +422,9 @@ export function estadoDaPeca(peca) {
 }
 
 // O NÚMERO DE SÉRIE VEM PRIMEIRO, e o número da peça CONTINUA na segunda coluna.
-// Ele não é redundância (PADRÃO item 8): o número de série carrega só os DÍGITOS
-// da referência — as letras dela ("H", "S") não entram nele em lugar nenhum —, e
-// o número da peça é o que casa com a ordem de produção antiga, que foi arquivada
-// antes desta entrega.
+// Ele não é redundância (PADRÃO item 8): o número de série carrega a referência
+// INTEIRA colada na sequência, e o número da peça é o que casa com a ordem de
+// produção antiga, que foi arquivada antes desta entrega.
 const COLUNAS_DO_LOTE = ['numero de serie', 'numero', 'codigo', 'endereco', 'estado',
   'gravada em', 'motivo da baixa']
 
@@ -460,6 +459,52 @@ export function linhasDaListaDoLote(pecas, {
     ].map(celula).join(';')
   })
   return [COLUNAS_DO_LOTE.join(';'), ...linhas].join('\n')
+}
+
+// ── TODOS OS NÚMEROS DE SÉRIE JÁ ATIVOS ────────────────────────────────────
+//
+// Pedido do dono em 07/09/2026, para a aba Etiquetas: uma planilha com os
+// números de série que estão NO MUNDO, e não os de um lote só.
+//
+// ⚠️ "ATIVO" AQUI É O MESMO "ativa" DA ABA, e não uma definição nova: peça
+// GRAVADA (a aba só mostra gravadas) e NÃO BAIXADA. Uma peça baixada teve a
+// etiqueta desfeita ou a bolsa descartada — o número dela existe no histórico,
+// mas não está numa bolsa na rua, e misturar as duas coisas numa lista chamada
+// "ativos" faria a contagem mentir. As baixadas continuam saindo na lista do
+// LOTE, que conta a história inteira.
+//
+// ⚠️ A REFERÊNCIA VEM DO LOTE, não da peça: é dela que sai o número de série, e
+// sem lote não há número. Peça órfã (lote apagado) entra com número VAZIO em vez
+// de sumir da lista — sumir calada esconderia um defeito de dado.
+export const COLUNAS_DOS_ATIVOS = ['numero de serie', 'modelo', 'cor', 'referencia',
+  'numero da peca', 'codigo', 'endereco', 'gravada em', 'tem garantia']
+
+export function linhasDosNumerosAtivos(pecas, {
+  loteDaPeca = () => null,
+  comGarantia = new Set(),
+  formatarData = (v) => (v == null ? '' : String(v)),
+} = {}) {
+  const ativas = (Array.isArray(pecas) ? pecas : [])
+    .filter((p) => p && p.gravada_em && !p.baixada)
+  const linhas = ativas.map((p) => {
+    const lote = loteDaPeca(p.lote_id) || {}
+    const codigo = String(p.codigo ?? '').trim().toUpperCase()
+    return [
+      numeroDeSerie(lote.sku, p.numero_na_serie),
+      lote.modelo ?? '',
+      lote.cor ?? '',
+      lote.sku ?? '',
+      p.numero_na_serie ?? '',
+      p.codigo ?? '',
+      enderecoDaTag(p.codigo),
+      p.gravada_em ? formatarData(p.gravada_em) : '',
+      comGarantia.has(codigo) ? 'sim' : 'nao',
+    ]
+  })
+  // ORDENADO PELO NÚMERO DE SÉRIE, que é por onde se procura: assim as peças do
+  // mesmo produto ficam juntas e em sequência, como na ordem de produção.
+  linhas.sort((a, b) => String(a[0]).localeCompare(String(b[0]), 'pt-BR'))
+  return [COLUNAS_DOS_ATIVOS, ...linhas]
 }
 
 // ── EDITAR ETIQUETA JÁ GRAVADA ─────────────────────────────────────────────

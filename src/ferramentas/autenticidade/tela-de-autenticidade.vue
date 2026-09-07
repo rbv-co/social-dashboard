@@ -1021,6 +1021,17 @@
                      dica="Número de série, código, modelo, cor, data — ou qualquer campo"
                      :contagem="contagemDeEtiquetas" />
 
+      <!-- ⚠️ A PLANILHA SAI DO QUE ESTÁ NA TELA, e não da tabela inteira: quem
+           acabou de filtrar por lote, período ou estado está olhando exatamente
+           a lista que quer levar. Botão que ignora o filtro logo acima dele faz
+           a pessoa baixar 400 linhas quando pediu 12, e ela não descobre — só
+           percebe depois de abrir. A contagem no rótulo diz quantas vão. -->
+      <div v-if="numerosAtivos.length" class="au-acoes-etiquetas">
+        <button class="au-botao secundario" type="button" @click="baixarNumerosAtivos">
+          Baixar planilha ({{ numerosAtivos.length }} ativos)
+        </button>
+      </div>
+
       <p v-if="!etiquetasDaAba.length" class="au-vazio">
         Nenhuma etiqueta gravada {{ loteDaEtiqueta ? 'neste lote' : 'ainda' }}. Esta aba só mostra
         peça que está marcada como gravada — é o que dá para desfazer.
@@ -1859,8 +1870,10 @@ import BarraDeTopo from '../../compartilhado/barra-de-topo.vue'
 import { sbClient } from '../../compartilhado/conectar-no-banco-de-dados.js'
 import { hasPermission } from '../../compartilhado/controle-de-login-e-usuario.js'
 import { adminToast } from '../../compartilhado/avisos.js'
+import { planilhaXlsx } from '../../compartilhado/planilha-xlsx.js'
 import {
   enderecoDaTag, progressoDoLote, proximaPorGravar, linhasDoCsv, resumoDeAlertas,
+  linhasDosNumerosAtivos,
   MOTIVOS_DE_BAIXA, fraseDaRecusa, fraseDaSenha, naFila,
   rotuloDoMotivo, pecasEmOrdem, estadoDaPeca, linhasDaListaDoLote,
   codigosComGarantia, etiquetasGravadas, motivoObrigatorio, descricaoDaPeca,
@@ -3990,6 +4003,37 @@ function baixarListaDoLote(l) {
   // substituía o primeiro. O arquivo é o registro de qual link foi para qual
   // bolsa: nome repetido aqui é registro de produção perdido.
   a.download = `lote-${l.modelo || 'sem-modelo'}-${l.fabricado_em || 'sem-data'}-completo.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+// A PLANILHA DOS NÚMEROS DE SÉRIE ATIVOS (aba Etiquetas).
+//
+// ⚠️ SAI EM .XLSX, NÃO EM CSV, e isso é decisão de 07/09/2026: o dono disse que
+// "o CSV está dando muito problema". Num CSV o Excel come o zero da frente de
+// `00011001`, transforma o WhatsApp em notação científica e, em máquina em
+// português, nem separa as colunas direito. No .xlsx cada célula vai declarada
+// como TEXTO e chega inteira. Ver `compartilhado/planilha-xlsx.js`.
+const numerosAtivos = computed(() => linhasDosNumerosAtivos(etiquetasFiltradas.value, {
+  loteDaPeca, comGarantia: comGarantia.value, formatarData: dataCurta,
+}).slice(1))
+
+function baixarNumerosAtivos() {
+  const linhas = linhasDosNumerosAtivos(etiquetasFiltradas.value, {
+    loteDaPeca, comGarantia: comGarantia.value, formatarData: dataCurta,
+  })
+  if (linhas.length <= 1) { adminToast('Não há número de série ativo neste recorte', false); return }
+  const bytes = planilhaXlsx(linhas, { nomeDaAba: 'Numeros de serie' })
+  const blob = new Blob([bytes], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  // A DATA VAI NO NOME: esta lista muda todo dia, e dois arquivos com o mesmo
+  // nome na pasta de Downloads viram "(1)" — ou pior, um substitui o outro, e
+  // ninguém sabe qual foto do estoque está olhando.
+  a.download = `numeros-de-serie-ativos-${new Date().toISOString().slice(0, 10)}.xlsx`
   a.click()
   URL.revokeObjectURL(url)
 }
