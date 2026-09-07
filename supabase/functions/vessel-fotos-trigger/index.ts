@@ -25,10 +25,23 @@ Deno.serve(async (req) => {
   const barrado = await exigirSegredoDeCron(req, 'vessel-fotos-trigger');
   if (barrado) return barrado;
 
-  const pat = Deno.env.get('GITHUB_PAT_FABRICA');
+  // ⚠️ TOKEN PRÓPRIO PRIMEIRO, o da Fábrica como queda.
+  //
+  // A ideia era reusar o `GITHUB_PAT_FABRICA` — ele já existia e já disparava
+  // ação neste repositório. Só que ele RESPONDE 403 hoje: "Resource not
+  // accessible by personal access token". Medido em 07/09/2026, e o último
+  // disparo da Fábrica que funcionou foi em 29/07 — ou seja, ele venceu (ou
+  // perdeu a permissão de Actions) em algum momento e NINGUÉM PERCEBEU, porque
+  // a Fábrica é acordada sob demanda e ninguém a acordou desde então.
+  //
+  // Por isso `GITHUB_PAT_FOTOS` vem primeiro: trocar o da Fábrica consertaria os
+  // dois de uma vez, mas também mexeria num robô que não é meu, sem eu saber o
+  // que mais depende dele.
+  const pat = Deno.env.get('GITHUB_PAT_FOTOS') || Deno.env.get('GITHUB_PAT_FABRICA');
   const repo = Deno.env.get('GITHUB_REPO');
   if (!pat || !repo) {
-    return json({ erro: 'sem credencial do GitHub', detalhe: 'falta GITHUB_PAT_FABRICA ou GITHUB_REPO' }, 500);
+    return json({ erro: 'sem credencial do GitHub',
+      detalhe: 'falta GITHUB_PAT_FOTOS (ou GITHUB_PAT_FABRICA) e GITHUB_REPO' }, 500);
   }
 
   // O corpo é opcional e serve só para o registro: quem chama é um gatilho do
@@ -56,7 +69,15 @@ Deno.serve(async (req) => {
   // texto da resposta: "dispatch falhou" sozinho não diz se é token vencido,
   // arquivo renomeado ou ramo errado.
   if (r.status !== 204) {
-    return json({ erro: 'dispatch_falhou', status: r.status, detalhe: (await r.text()).slice(0, 300) }, 502);
+    const texto = (await r.text()).slice(0, 300);
+    // 403 aqui é quase sempre token vencido ou sem `Actions: Read and write`.
+    // Dizer isso poupa a próxima pessoa de procurar no lugar errado.
+    const dica = r.status === 403
+      ? 'O token não pode disparar ação. Ele venceu, ou falta a permissão '
+        + '"Actions: Read and write" no repositório. Crie um token novo e guarde '
+        + 'como GITHUB_PAT_FOTOS nos segredos do Supabase.'
+      : null;
+    return json({ erro: 'dispatch_falhou', status: r.status, detalhe: texto, dica }, 502);
   }
   return json({ ok: true, lote: corpo?.lote ?? null, acordou: 'fotos-do-selo.yml' });
 });
