@@ -15,6 +15,12 @@ const API = 'https://www.zohoapis.com/workdrive/api/v1'
 const PASTA_RAIZ = process.env.ZOHO_PASTA_FOTOS || '6kuqn469a1e0841ee49e0bd0d18cab60c9cd5'
 
 let tokenGuardado = null
+// ⚠️ A LISTA DE PASTAS E GUARDADA POR EXECUCAO. Sem isto, cada lote refazia
+// TRES chamadas (raiz, marca, pasta do SKU) — com 66 lotes, ~200 chamadas ao
+// Zoho numa rodada so. O Zoho ja barrou esta casa por excesso em 28/08/2026
+// ("You have made too many requests continuously"), e o robo vai passar a rodar
+// DE HORA EM HORA na nuvem. As pastas nao mudam no meio de uma rodada.
+let pastasGuardadas = null
 
 export async function tokenDoZoho(env = process.env, buscar = fetch) {
   if (tokenGuardado && tokenGuardado.ate > Date.now()) return tokenGuardado.valor
@@ -61,11 +67,14 @@ async function listar(token, id, buscar = fetch) {
  */
 export async function fotosDoZohoParaSku(sku, { env = process.env, buscar = fetch, marca = /vessel brasil/i } = {}) {
   const token = await tokenDoZoho(env, buscar)
-  const raiz = await listar(token, PASTA_RAIZ, buscar)
-  const daMarca = raiz.find((f) => f.ehPasta && marca.test(f.nome))
-  if (!daMarca) return { fotos: [], porque: 'não achei a pasta da marca no Zoho' }
 
-  const pastas = (await listar(token, daMarca.id, buscar)).filter((f) => f.ehPasta)
+  if (!pastasGuardadas) {
+    const raiz = await listar(token, PASTA_RAIZ, buscar)
+    const daMarca = raiz.find((f) => f.ehPasta && marca.test(f.nome))
+    if (!daMarca) return { fotos: [], porque: 'não achei a pasta da marca no Zoho' }
+    pastasGuardadas = (await listar(token, daMarca.id, buscar)).filter((f) => f.ehPasta)
+  }
+  const pastas = pastasGuardadas
   const alvo = pastaDoSku(pastas, sku)
   if (!alvo) {
     return { fotos: [], porque: `nenhuma pasta do Zoho tem "${sku}" no nome. `
@@ -80,3 +89,7 @@ export async function fotosDoZohoParaSku(sku, { env = process.env, buscar = fetc
     cabecalho: { Authorization: `Zoho-oauthtoken ${token}` },
   }
 }
+
+/** Esquece a lista guardada. Existe para o teste, e para quem rodar o robo por
+ *  muito tempo: pasta criada no meio da rodada nao apareceria sozinha. */
+export function esquecerAsPastas() { pastasGuardadas = null }
