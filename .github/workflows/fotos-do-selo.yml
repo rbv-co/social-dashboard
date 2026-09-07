@@ -43,6 +43,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # ⚠️ ESTE PASSO EXISTE PARA A FALHA SER LEGÍVEL. Sem o token, o passo
+      # seguinte morre com "repository not found" — que parece repositório
+      # errado, e manda quem for olhar procurar no lugar errado.
+      - name: Conferir se há como alcançar o repositório do site
+        run: |
+          if [ -z "${{ secrets.PAT_DO_SITE }}" ]; then
+            echo "::error::Falta o segredo PAT_DO_SITE."
+            echo ""
+            echo "O site (rbv-co/vessel-brasil) é OUTRO repositório, e o token"
+            echo "automático do GitHub só vale para o repositório onde a ação roda."
+            echo ""
+            echo "Como resolver, uma vez só:"
+            echo "  1. github.com/settings/personal-access-tokens → Generate new token"
+            echo "  2. Resource owner: rbv-co"
+            echo "  3. Repositories: rbv-co/vessel-brasil"
+            echo "  4. Permissions → Contents: Read and write"
+            echo "  5. gh secret set PAT_DO_SITE --repo rbv-co/social-dashboard"
+            exit 1
+          fi
+
       # ⚠️ O SITE É OUTRO REPOSITÓRIO, dentro deste mas não versionado por ele.
       # Sem este passo o robô baixaria as fotos para uma pasta que não existe em
       # lugar nenhum — e diria que publicou.
@@ -51,7 +71,9 @@ jobs:
         with:
           repository: rbv-co/vessel-brasil
           path: vessel-brasil
-          token: ${{ secrets.GITHUB_TOKEN }}
+          # O push das fotos volta por este token. Sem escrita aqui, o robô
+          # baixa, publica, e a próxima publicação feita do Mac apaga tudo.
+          token: ${{ secrets.PAT_DO_SITE }}
 
       - uses: actions/setup-node@v4
         with:
