@@ -86,6 +86,13 @@ jobs:
         working-directory: coletor
         run: npm ci
 
+      # ⚠️ SEM ISTO O ROBÔ FALHA COM `status: 127` — "comando não encontrado" —
+      # já com as fotos baixadas e o push feito. O `publicar.sh` chama o
+      # `vercel`, e ele não vem na máquina do GitHub. Medido em 07/09/2026: a
+      # ação passou por checkout, imagem e coletor, e morreu na última linha.
+      - name: Instalar o publicador da Vercel
+        run: npm install -g vercel@latest
+
       - name: Buscar as fotos
         working-directory: .
         env:
