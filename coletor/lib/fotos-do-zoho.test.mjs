@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { skuDaPasta, pastaDoSku, ehDesenhoAMao, fotosDaPasta } from './fotos-do-zoho.mjs';
+import { skuDaPasta, pastaDoSku, ehDesenhoAMao, fotosDaPasta, corBate, palavrasDaCor, pastaServeParaACor } from './fotos-do-zoho.mjs';
 
 /* A SEGUNDA FONTE DE FOTOS (07/09/2026).
  *
@@ -92,4 +92,55 @@ test('pasta vazia ou so com desenho nao devolve foto nenhuma', () => {
   assert.deepEqual(fotosDaPasta([]), []);
   assert.deepEqual(fotosDaPasta([{ nome: 'LINEAR.jpeg' }]), []);
   assert.deepEqual(fotosDaPasta(null), []);
+});
+
+/* ⚠️ A TRAVA DE COR — TODOS OS NOMES ABAIXO SAO REAIS, lidos da API do Zoho em
+ * 08/09/2026. Inventar nome aqui seria testar a minha imaginacao: a forma de
+ * verdade e que o nome do arquivo costuma trazer APELIDO DE ATELIÊ, e nao a cor
+ * do catalogo. */
+
+test('⚠️ a LUNEA PINHAO reprova — foi ela que originou esta trava', () => {
+  // Pasta com o SKU EXATO e a cor certa no nome... e arquivos `Lunea_Marrom_*`
+  // dentro. So o nome da pasta nao pega isto.
+  const fotos = ['Lunea_Marrom_Frente.png', 'Lunea_Marrom_Lateralizado.png',
+    'Lunea_Marrom_Costas.png'];
+  assert.equal(pastaServeParaACor('Lunea_Pinhão - SS0008HB.M4', fotos, 'Pinhão'), false);
+  assert.equal(corBate('Lunea_Pinhão - SS0008HB.M4', 'Pinhão'), true,
+    'a pasta sozinha passa — e por isso a conferencia nao pode parar nela');
+});
+
+test('pasta e arquivos com a cor certa passam', () => {
+  const fotos = ['Cerne_Jeans_Frente.png', 'Cerne_Jeans_Alca.png'];
+  assert.equal(pastaServeParaACor('Cerne_Jeans - SS0002HB.B1', fotos, 'Jeans'), true);
+});
+
+test('cor de duas palavras: os conectores nao contam', () => {
+  // `Preto c/ Bordô` vira PRETO + BORDO, e o arquivo e `Lunea_PretoBordo_*`.
+  // Sem tirar o "c" nenhuma bolsa com duas cores passaria.
+  const fotos = ['Lunea_PretoBordo_Frente.png', 'Lunea_PretoBordo_Alca.png'];
+  assert.equal(pastaServeParaACor('Lunea_PretoBordo - SS0008HB.M1', fotos,
+    'Preto c/ Bordô'), true);
+  assert.deepEqual(palavrasDaCor('Preto c/ Bordô'), ['PRETO', 'BORDO']);
+});
+
+test('acento e caixa nao atrapalham', () => {
+  assert.equal(corBate('Ravelle_Big_Cafe_Frente.png', 'Café'), true);
+  assert.equal(corBate('Elara_Grande_Café_Frente.png', 'Café'), true);
+});
+
+test('apelido de ateliê reprova, e isso e o certo', () => {
+  // Reprovar aqui NAO e ficar sem foto: significa "vai buscar no Bling".
+  assert.equal(corBate('Alba_Gray_Frente.png', 'Areia'), false);
+  assert.equal(corBate('Maelle_3_Frente.png', 'Bege'), false);
+  assert.equal(corBate('Elara_Grande_Jeans_Frente.png', 'Tweed'), false);
+});
+
+test('lote SEM cor nao passa — nada de aceitar por falta de criterio', () => {
+  assert.equal(corBate('Lunea_Fendi_Frente.png', null), false);
+  assert.equal(corBate('Lunea_Fendi_Frente.png', '  '), false);
+  assert.equal(pastaServeParaACor('Lunea_Fendi - SS0008HB.M5', ['Lunea_Fendi_Frente.png'], ''), false);
+});
+
+test('pasta sem foto nenhuma nao serve', () => {
+  assert.equal(pastaServeParaACor('Cerne_Jeans - SS0002HB.B1', [], 'Jeans'), false);
 });

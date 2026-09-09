@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   pastaDoLote, enderecoDaFoto, loteEstaFaltando, lotesParaOlhar,
-  imagensGrandesDoProduto, corDoProduto, produtoQueBate, achatar,
+  imagensGrandesDoProduto, corDoProduto, produtoQueBate, achatar, pastasDisputadas,
 } from './fotos-do-selo.mjs'
 
 test('a pasta do lote bate com as que JA existem no site', () => {
@@ -120,4 +120,27 @@ test('achatar aguenta acento, caixa e pontuacao', () => {
   assert.equal(achatar('SS-1162-Memphis Preto'), 'SS1162MEMPHISPRETO')
   assert.equal(achatar('ss 1162 memphis preto'), 'SS1162MEMPHISPRETO')
   assert.equal(achatar(null), '')
+})
+
+test('⚠️ duas bolsas na mesma pasta: nenhuma leva foto', () => {
+  /* Regra do dono, 08/09/2026: "se ficar na duvida, deixe sem foto — melhor do
+   * que com foto errada". A pasta e MODELO + COR, e nao o SKU: dois cadastros
+   * com o mesmo modelo e a mesma cor se sobrescrevem, e um dos dois certificados
+   * passa a mostrar a bolsa do outro sem erro nenhum aparecer. */
+  const disputadas = pastasDisputadas([
+    { sku: 'SS0008HB.M4', modelo: 'HandBag Lunea Medium', cor: 'Pinhão' },
+    { sku: 'SS0009HB.M4', modelo: 'HandBag Lunea Medium', cor: 'Pinhão' },
+    { sku: 'SS0008HB.M5', modelo: 'HandBag Lunea Medium', cor: 'Fendi' },
+  ])
+  assert.ok(disputadas.has('handbag-lunea-medium-pinhao'))
+  assert.ok(!disputadas.has('handbag-lunea-medium-fendi'), 'pasta de um SKU so continua valendo')
+})
+
+test('o MESMO SKU em dois lotes nao e disputa — e a mesma bolsa', () => {
+  // Acontece de verdade: o catalogo tem lotes repetidos do mesmo SKU.
+  const disputadas = pastasDisputadas([
+    { sku: 'SS0008HB.M1', modelo: 'HandBag Lunea Medium', cor: 'Preto c/ Bordô' },
+    { sku: 'ss0008hb.m1', modelo: 'HandBag Lunea Medium', cor: 'Preto c/ Bordô' },
+  ])
+  assert.equal(disputadas.size, 0)
 })

@@ -1,8 +1,9 @@
-// AS FOTOS QUE MORAM NO ZOHO WORKDRIVE — a segunda fonte, nunca a primeira.
+// AS FOTOS QUE MORAM NO ZOHO WORKDRIVE — a pasta TRATADA de cada bolsa.
 //
-// ⚠️ O BLING E O PADRAO, e isto e regra do dono (07/09/2026). O Zoho so entra
-// quando o produto NAO TEM FOTO NO CADASTRO do Bling. Quem inverte a ordem faz
-// a foto do certificado divergir da foto da loja — e a cliente compara.
+// ⚠️ A REGRA DO DONO (08/09/2026): "Zoho quando houver pasta tratada e a cor e o
+// SKU bater". O Zoho vem primeiro porque a pasta de la ja esta tratada, mas so
+// vale quando as DUAS coisas conferem — o SKU e a COR. Nao conferindo, o Bling
+// assume, que e o cadastro que a cliente ve na loja.
 //
 // ⚠️ E O CASAMENTO E POR SKU EXATO, nunca por nome parecido. As pastas la tem
 // nomes como `Ravelle_Pequena_Jeans - SS0001SB.S1`: umas trazem o SKU, outras
@@ -74,4 +75,49 @@ export function fotosDaPasta(arquivos) {
   // Ordem estavel: pelo peso, e empate resolvido pelo nome — assim duas
   // execucoes seguidas produzem a MESMA ordem, e a foto 1 nao troca sozinha.
   return vale.sort((a, b) => peso(a.nome) - peso(b.nome) || String(a.nome).localeCompare(b.nome));
+}
+
+// ── A COR TEM DE BATER ─────────────────────────────────────────────────────
+//
+// ⚠️ ISTO NASCEU DE UM DEFEITO DE VERDADE. A LUNEA PINHAO (SS0008HB.M4) tem
+// pasta certa no Zoho — `Lunea_Pinhão - SS0008HB.M4`, SKU exato — mas os
+// ARQUIVOS dentro dela se chamam `Lunea_Marrom_*`. O certificado da cliente
+// passou a mostrar aquele conjunto em vez do cadastro do Bling, e o dono viu.
+//
+// ⚠️ E POR ISSO A CONFERENCIA E NOS DOIS: pasta E arquivos. So a pasta nao
+// pega a Pinhao (o nome da pasta esta certo); so os arquivos nao pega pasta
+// batizada errado. Medido em 08/09/2026 contra os 54 SKUs com pasta no Zoho:
+// 32 passam, 22 caem no Bling.
+//
+// ⚠️ REPROVAR AQUI NAO E PERDER FOTO. Reprovado significa "vai buscar no
+// Bling", que e o cadastro oficial. O nome de arquivo no Zoho e apelido de
+// ateliê — `Alba_Gray` para a cor Areia, `Maelle_3` para a Bege — e apelido
+// nao serve de prova de que a foto e daquela bolsa.
+
+/** As palavras da cor, sem conectores. "Preto c/ Bordô" → ['PRETO','BORDO'] */
+export function palavrasDaCor(cor) {
+  const CONECTORES = new Set(['C', 'COM', 'E', 'DE', 'DA', 'DO']);
+  return String(cor ?? '').normalize('NFD').replace(/\p{M}/gu, '')
+    .toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean)
+    .filter((p) => !CONECTORES.has(p));
+}
+
+/** A cor aparece INTEIRA neste nome? Sem cor no lote, nada bate — de proposito. */
+export function corBate(nome, cor) {
+  const palavras = palavrasDaCor(cor);
+  if (!palavras.length) return false;
+  const alvo = String(nome ?? '').normalize('NFD').replace(/\p{M}/gu, '')
+    .toUpperCase().replace(/[^A-Z0-9]/g, '');
+  return palavras.every((p) => alvo.includes(p));
+}
+
+/**
+ * A pasta do Zoho serve para esta cor? Exige a cor no nome da PASTA e no nome
+ * de TODAS as fotos. Pasta misturada e ambiguidade, e ambiguidade aqui vira
+ * foto errada num certificado de autenticidade.
+ */
+export function pastaServeParaACor(nomeDaPasta, nomesDasFotos, cor) {
+  const fotos = Array.isArray(nomesDasFotos) ? nomesDasFotos : [];
+  if (!fotos.length) return false;
+  return corBate(nomeDaPasta, cor) && fotos.every((n) => corBate(n, cor));
 }

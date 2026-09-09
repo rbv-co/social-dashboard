@@ -1,12 +1,13 @@
 // FALAR COM O ZOHO WORKDRIVE para buscar as fotos que faltam.
 //
-// ⚠️ SEGUNDA FONTE, NUNCA A PRIMEIRA (regra do dono, 07/09/2026). Quem chama
-// isto e o robo das fotos, e SO depois de o Bling nao ter nenhuma.
+// ⚠️ SO VALE COM SKU E COR BATENDO (regra do dono, 08/09/2026). A pasta de la
+// ja vem tratada, entao ela tem preferencia — mas nao conferindo a cor, quem
+// responde e o Bling. Ver `pastaServeParaACor` em `fotos-do-zoho.mjs`.
 //
 // ⚠️ O TOKEN DO ZOHO E GUARDADO. Em 28/08/2026 pedir token novo a cada chamada
 // (sete em poucos minutos) fez o Zoho barrar: "You have made too many requests
 // continuously". Ele vale ~1h; aqui se pede UM por execucao e se reaproveita.
-import { pastaDoSku, fotosDaPasta } from './fotos-do-zoho.mjs'
+import { pastaDoSku, fotosDaPasta, pastaServeParaACor } from './fotos-do-zoho.mjs'
 
 const API = 'https://www.zohoapis.com/workdrive/api/v1'
 // A pasta "Fotos por SKU (coletor)", em 04. Vessel Brasil › 17. Marketing.
@@ -65,7 +66,7 @@ async function listar(token, id, buscar = fetch) {
  * As fotos daquele SKU, ja sem o desenho a mao e na ordem certa.
  * Devolve `[]` quando NAO HA pasta com aquele SKU — e nunca a pasta parecida.
  */
-export async function fotosDoZohoParaSku(sku, { env = process.env, buscar = fetch, marca = /vessel brasil/i } = {}) {
+export async function fotosDoZohoParaSku(sku, { cor = null, env = process.env, buscar = fetch, marca = /vessel brasil/i } = {}) {
   const token = await tokenDoZoho(env, buscar)
 
   if (!pastasGuardadas) {
@@ -82,6 +83,19 @@ export async function fotosDoZohoParaSku(sku, { env = process.env, buscar = fetc
   }
 
   const fotos = fotosDaPasta(await listar(token, alvo.id, buscar))
+
+  // ⚠️ A COR TEM DE BATER — na pasta E em todas as fotos. A LUNEA PINHAO tem
+  // pasta com o SKU exato e arquivos `Lunea_Marrom_*` dentro; sem esta trava o
+  // certificado dela mostrava outro conjunto que o cadastro do Bling.
+  if (!pastaServeParaACor(alvo.nome, fotos.map((f) => f.nome), cor)) {
+    return {
+      fotos: [],
+      pasta: alvo.nome,
+      porque: `a pasta "${alvo.nome}" nao confere com a cor "${cor ?? '(vazia)'}" `
+        + '— o Bling assume.',
+    };
+  }
+
   return {
     fotos: fotos.map((f) => ({ nome: f.nome, url: `${API}/download/${f.id}` })),
     pasta: alvo.nome,

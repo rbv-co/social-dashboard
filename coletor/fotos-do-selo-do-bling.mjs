@@ -37,6 +37,7 @@
 import './lib/carregar-env.mjs'
 import pg from 'pg'
 import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { mkdirSync, writeFileSync, existsSync, rmSync, statSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -45,7 +46,7 @@ import { pastaDoSku, fotosDaPasta } from './lib/fotos-do-zoho.mjs'
 import { fotosDoZohoParaSku } from './lib/buscar-no-zoho.mjs'
 import {
   lotesParaOlhar, pastaDoLote, enderecoDaFoto, imagensGrandesDoProduto,
-  corDoProduto, produtoQueBate, loteEstaFaltando,
+  corDoProduto, produtoQueBate, loteEstaFaltando, pastasDisputadas, achatar,
 } from './lib/fotos-do-selo.mjs'
 
 const aqui = dirname(fileURLToPath(import.meta.url))
@@ -77,6 +78,17 @@ const SEM_PUSH = process.argv.includes('--sem-push')
 // FONTES muda: sem ele, quem ja tem foto fica com a da fonte antiga para
 // sempre, porque "ja tem foto" e a condicao de ser ignorado.
 const REFAZER = process.argv.includes('--refazer')
+// ⚠️ `--sku=SS0008HB.M4` MEXE EM UMA BOLSA SO. Regra do dono, 08/09/2026: "as
+// vezes a maior parte ja ta ok, uma ou outra que aconteceu isso de mostrar uma
+// foto errada ou duplicada". Refazer as 104 para consertar duas troca o defeito
+// conhecido por 102 riscos novos — e foi assim que 20 enderecos do banco
+// passaram a apontar para foto que nao estava publicada.
+const SO_ESTE_SKU = (process.argv.find((a) => a.startsWith('--sku=')) || '').slice(6).trim()
+// ⚠️ UM CRITERIO SO, PORQUE SAO DOIS FILTROS. Um escolhe os lotes, o outro
+// decide baixar a foto. Com `--sku` em apenas um deles, o robo dizia o nome da
+// bolsa e nao fazia nada — sem erro. Foi exatamente o que aconteceu em
+// 08/09/2026, no primeiro uso, e o teste nao pegou porque olhava so o primeiro.
+const REBAIXAR = REFAZER || Boolean(SO_ESTE_SKU)
 // ⚠️ 900 PIXELS PORQUE E O QUE JA ESTA NO SITE, nao porque eu escolhi um numero
 // bonito. Medido: as seis pastas que ja existem tem fotos de 900x900 com 36-52
 // KB. A minha primeira versao usava 1400, e as fotos sairam com 196 KB — quatro
@@ -113,6 +125,25 @@ async function pedirAoBling(caminho, token) {
     return r.json().catch(() => null)
   }
   return null
+}
+
+// ⚠️ UMA CONEXAO CAIDA NAO PODE MATAR A RODADA INTEIRA. Em 08/09/2026 o `fetch`
+// cru estourou `ECONNRESET` baixando uma foto e DERRUBOU O PROCESSO no lote 76
+// de 104. O estrago nao foi perder 28 lotes: foi que a publicacao do site vem
+// DEPOIS do laco, entao os 71 lotes ja gravados no banco passaram a apontar para
+// fotos que nao estavam no ar — quadrado quebrado no certificado da cliente.
+// Devolve o Buffer da foto, ou `{ erro }` para o robo contar e seguir.
+async function baixarFoto(url, cabecalho) {
+  for (let tentativa = 0; tentativa < 3; tentativa++) {
+    try {
+      const r = await fetch(url, cabecalho ? { headers: cabecalho } : undefined)
+      if (r.ok) return Buffer.from(await r.arrayBuffer())
+      return { erro: `recusou (${r.status})` }
+    } catch (e) {
+      if (tentativa === 2) return { erro: `a conexão caiu (${e.message})` }
+      await espera(1000 * (tentativa + 1))
+    }
+  }
 }
 
 /** Baixa e reduz. Devolve o tamanho final em bytes, ou 0 se nao deu. */
@@ -156,118 +187,172 @@ async function main() {
 
     const { rows: lotes } = await cliente.query(
       'select id, modelo, cor, sku, fotos from public.vessel_lotes order by criado_em desc')
-    const alvos = lotesParaOlhar(lotes, { refazer: REFAZER })
+    let alvos = lotesParaOlhar(lotes, { refazer: REBAIXAR })
+    if (SO_ESTE_SKU) {
+      alvos = alvos.filter((l) => achatar(l.sku) === achatar(SO_ESTE_SKU))
+      console.log(`só a bolsa ${SO_ESTE_SKU} — ${alvos.length} lote(s)\n`)
+    }
+    // ⚠️ "Em duvida, sem foto" — regra do dono. Pasta reivindicada por dois SKUs
+    // e foto errada garantida para um dos dois, e em silencio.
+    const disputadas = pastasDisputadas(lotes)
     console.log(`${lotes.length} lotes no total · ${alvos.length} com SKU e faltando foto ou cor\n`)
     if (!alvos.length) return
 
     for (const lote of alvos) {
-      const falta = loteEstaFaltando(lote)
-      const oQueFalta = [falta.faltaFoto && 'foto', falta.faltaCor && 'cor'].filter(Boolean).join(' e ')
-      console.log(`── ${lote.modelo} (${lote.sku}) — falta ${oQueFalta}`)
+      // ⚠️ UM LOTE COM PROBLEMA NAO LEVA A RODADA JUNTO. A publicacao do site
+      // vem DEPOIS deste laco: qualquer excecao aqui deixava dezenas de lotes
+      // com o endereco da foto gravado no banco e a foto fora do ar. Errar num
+      // lote tem de custar aquele lote, e nao os outros 103.
+      try {
+        const falta = loteEstaFaltando(lote)
+        const oQueFalta = [falta.faltaFoto && 'foto', falta.faltaCor && 'cor'].filter(Boolean).join(' e ')
+        console.log(`── ${lote.modelo} (${lote.sku}) — falta ${oQueFalta}`)
 
-      const busca = await pedirAoBling(`produtos?codigo=${encodeURIComponent(lote.sku)}&limite=5`, token)
-      const achado = produtoQueBate(busca?.data, lote.sku)
-      if (!achado) { console.log('   não achei este SKU no Bling. Fica como está.'); continue }
+        const busca = await pedirAoBling(`produtos?codigo=${encodeURIComponent(lote.sku)}&limite=5`, token)
+        const achado = produtoQueBate(busca?.data, lote.sku)
+        if (!achado) { console.log('   não achei este SKU no Bling. Fica como está.'); continue }
 
-      const detalhe = await pedirAoBling(`produtos/${achado.id}`, token)
-      const produto = detalhe?.data
-      if (!produto) { console.log('   o Bling não devolveu o detalhe. Tento na próxima rodada.'); continue }
+        const detalhe = await pedirAoBling(`produtos/${achado.id}`, token)
+        const produto = detalhe?.data
+        if (!produto) { console.log('   o Bling não devolveu o detalhe. Tento na próxima rodada.'); continue }
 
-      const mudou = {}
+        const mudou = {}
 
-      // ── A COR ──
-      if (falta.faltaCor) {
-        const cor = corDoProduto(produto)
-        if (cor) { mudou.cor = cor; console.log(`   cor: "${cor}"`) }
-        else console.log('   o Bling também não diz a cor. Fica vazia — palpite errado é pior que vazio.')
-      }
+        // ── A COR ──
+        if (falta.faltaCor) {
+          const cor = corDoProduto(produto)
+          if (cor) { mudou.cor = cor; console.log(`   cor: "${cor}"`) }
+          else console.log('   o Bling também não diz a cor. Fica vazia — palpite errado é pior que vazio.')
+        }
 
-      // ── AS FOTOS ──
-      if (falta.faltaFoto || REFAZER) {
-        // ⚠️⚠️ ORDEM INVERTIDA EM 07/09/2026, E ISTO E PALIATIVO — NAO E O DESENHO
-        // CERTO. Leia antes de mexer.
-        //
-        // O padrao era o Bling primeiro. O dono percebeu que varios cadastros do
-        // Bling ainda tem foto de enquadramento ruim, enquanto a pasta do Zoho ja
-        // tem a versao tratada. Conferido na mesma bolsa (Cerne Croco Preto,
-        // SS0002HB.B2): as duas com fundo bege, mas na do Bling a alca esticada
-        // ocupa dois tercos da imagem e a bolsa fica pequena no rodape.
-        //
-        // O CONSERTO DE VERDADE E SUBIR AS FOTOS TRATADAS NO BLING — e a foto do
-        // Bling que aparece na loja, no Mercado Livre e na Shopify, onde a
-        // cliente DECIDE COMPRAR. Trocar so a fonte do certificado conserta a
-        // vitrine menor e deixa a maior torta.
-        //
-        // ENTAO ISTO AQUI TEM DATA PARA MORRER: quando o Bling estiver em dia,
-        // volte a ordem (Bling primeiro, Zoho como segunda fonte) — e o
-        // comportamento passa a ser o mesmo sem ninguem notar, porque as duas
-        // fontes terao a mesma foto.
-        let urls = []
-        let cabecalhoExtra = null
-        let deOnde = ''
+        // ── AS FOTOS ──
+        if (falta.faltaFoto || REBAIXAR) {
+          // ⚠️⚠️ AS DUAS FONTES, E A TRAVA QUE DECIDE ENTRE ELAS.
+          //
+          // Regra do dono, 08/09/2026: "Zoho quando houver pasta tratada e a cor e
+          // o SKU bater". A pasta do Zoho ja vem tratada, entao ela tem
+          // preferencia — mas SO com o SKU exato E a cor conferindo. Nao
+          // conferindo, quem responde e o Bling, que e o cadastro que a cliente ve
+          // na loja, no Mercado Livre e na Shopify, onde ela DECIDE COMPRAR.
+          //
+          // ⚠️ A TRAVA DE COR NASCEU DE UM DEFEITO DE VERDADE. Em 07/09 o Zoho
+          // passou a vir primeiro sem conferir cor nenhuma. A LUNEA PINHAO
+          // (SS0008HB.M4) tem pasta com o SKU exato — `Lunea_Pinhão -
+          // SS0008HB.M4` — e arquivos `Lunea_Marrom_*` dentro dela. O
+          // certificado da cliente ficou com aquele conjunto, e nao com o
+          // cadastro do Bling. Conferido em 08/09 pelos md5 do que estava
+          // publicado. Hoje ela reprova na cor e cai no Bling, como deve.
+          //
+          // Medido no mesmo dia contra os 54 SKUs com pasta no Zoho: 32 passam na
+          // cor, 22 caem no Bling. Reprovar aqui NAO e ficar sem foto.
+          const corDoLote = mudou.cor ?? lote.cor
+          let urls = []
+          let cabecalhoExtra = null
+          let deOnde = ''
 
-        if (lote.sku) {
-          // Casamento por SKU EXATO. Pasta sem o SKU no nome fica de fora, e o
-          // robo diz qual — adivinhar pelo modelo poria a foto de OUTRA bolsa
-          // num certificado de autenticidade.
-          try {
-            const doZoho = await fotosDoZohoParaSku(lote.sku)
-            if (doZoho.fotos.length) {
-              urls = doZoho.fotos.slice(0, MAXIMO_DE_FOTOS).map((f) => f.url)
-              cabecalhoExtra = doZoho.cabecalho
-              deOnde = `Zoho (${doZoho.pasta})`
+          if (lote.sku) {
+            // Casamento por SKU EXATO. Pasta sem o SKU no nome fica de fora, e o
+            // robo diz qual — adivinhar pelo modelo poria a foto de OUTRA bolsa
+            // num certificado de autenticidade.
+            try {
+              const doZoho = await fotosDoZohoParaSku(lote.sku, { cor: corDoLote })
+              if (doZoho.fotos.length) {
+                urls = doZoho.fotos.slice(0, MAXIMO_DE_FOTOS).map((f) => f.url)
+                cabecalhoExtra = doZoho.cabecalho
+                deOnde = `Zoho (${doZoho.pasta})`
+              } else if (doZoho.porque) {
+                console.log(`   ${doZoho.porque}`)
+              }
+            } catch (e) {
+              // Falha do Zoho NAO derruba a rodada: cai no Bling, que e o caminho
+              // de sempre.
+              console.log(`   o Zoho falhou (${e.message}); tentando o Bling`)
             }
-          } catch (e) {
-            // Falha do Zoho NAO derruba a rodada: cai no Bling, que e o caminho
-            // de sempre.
-            console.log(`   o Zoho falhou (${e.message}); tentando o Bling`)
+          }
+
+          if (!urls.length) {
+            urls = imagensGrandesDoProduto(produto).slice(0, MAXIMO_DE_FOTOS)
+            if (urls.length) deOnde = 'Bling'
+          }
+
+          const pasta = pastaDoLote({ ...lote, cor: mudou.cor ?? lote.cor })
+          if (pasta && disputadas.has(pasta)) {
+            // Sem foto e melhor do que a foto da bolsa vizinha.
+            console.log(`   outra bolsa também cai na pasta "${pasta}". Fica sem foto,`
+              + ' que é melhor do que a foto errada. Separe os cadastros.')
+          } else if (!urls.length) {
+            console.log('   o produto não tem foto no Bling. Assim que subir lá, a próxima rodada pega.')
+          } else if (!pasta) {
+            console.log('   sem modelo nem cor não dá para nomear a pasta. Fica como está.')
+          } else if (DRY) {
+            console.log(`   [dry] baixaria ${urls.length} foto(s) do ${deOnde} para fotos/selo/${pasta}/`)
+          } else {
+            // ⚠️ A FONTE TEM DE FICAR ESCRITA NA RODADA DE VERDADE, e nao so no
+            // `--dry`. Sem esta linha, saber de onde veio a foto de cada bolsa
+            // depois vira deducao minha em cima da regra — e nao o registro do
+            // que o robo fez. O dono pediu esse relatorio em 08/09/2026.
+            console.log(`   fonte: ${deOnde} · ${urls.length} foto(s)`)
+            const destino = join(PASTA_DAS_FOTOS, pasta)
+            mkdirSync(destino, { recursive: true })
+            const guardadas = []
+            // ⚠️ A MESMA FOTO DUAS VEZES NA GALERIA. Nao e o robo que duplica: a
+            // FONTE repete. Medido em 08/09/2026 na LUNEA PINHAO (SS0008HB.M4) —
+            // na pasta do Zoho, `Lunea_Marrom_Lado.png` e `Lunea_Marrom_Costas.png`
+            // sao o mesmo arquivo, e no cadastro do Bling a 2a e a 3a imagem sao
+            // identicas. O dono viu a repeticao no certificado 5YUNAVAAG8.
+            //
+            // A comparacao e pelos BYTES BAIXADOS, antes de reduzir: duas reducoes
+            // da mesma origem dariam o mesmo arquivo, e comparar depois gastaria o
+            // redutor a toa.
+            const jaVistas = new Set()
+            for (let i = 0; i < urls.length; i++) {
+              // O Zoho exige o cabecalho de autorizacao; o Bling manda URL
+              // assinada e nao quer nenhum. Por isso ele vem junto da fonte.
+              const baixada = await baixarFoto(urls[i], cabecalhoExtra)
+              if (!Buffer.isBuffer(baixada)) { console.log(`   foto ${i + 1}: ${deOnde} ${baixada.erro}.`); continue }
+              const impressao = createHash('md5').update(baixada).digest('hex')
+              if (jaVistas.has(impressao)) {
+                console.log(`   foto ${i + 1}: repetida na fonte, não entra de novo.`)
+                continue
+              }
+              jaVistas.add(impressao)
+              const arquivo = join(destino, `${guardadas.length + 1}.jpg`)
+              const tamanho = baixarEReduzir(baixada, arquivo)
+              if (!tamanho) { console.log(`   foto ${i + 1}: não é uma imagem que eu consiga reduzir.`); continue }
+              guardadas.push(enderecoDaFoto(pasta, guardadas.length + 1))
+              console.log(`   foto ${guardadas.length}: ${(tamanho / 1024).toFixed(0)} KB`)
+            }
+            // ⚠️ AS SOBRAS DA RODADA ANTERIOR TEM DE SAIR. Se antes gravamos 8
+            // fotos e agora saem 7 (uma repetida foi descartada), a `8.jpg` velha
+            // continua publicada no endereco antigo. O certificado nao a mostra
+            // — o banco lista so as 7 — mas ela fica no ar, e e justamente a foto
+            // que acabamos de decidir que nao devia estar la.
+            if (guardadas.length) {
+              for (let sobra = guardadas.length + 1; sobra <= 20; sobra++) {
+                const velha = join(destino, `${sobra}.jpg`)
+                if (existsSync(velha)) { rmSync(velha, { force: true }); console.log(`   tirei a sobra ${sobra}.jpg`) }
+              }
+              mudou.fotos = guardadas
+            }
           }
         }
 
-        if (!urls.length) {
-          urls = imagensGrandesDoProduto(produto).slice(0, MAXIMO_DE_FOTOS)
-          if (urls.length) deOnde = 'Bling'
-        }
+        if (!Object.keys(mudou).length) continue
+        if (DRY) { console.log('   [dry] gravaria', JSON.stringify(mudou).slice(0, 120)); continue }
 
-        const pasta = pastaDoLote({ ...lote, cor: mudou.cor ?? lote.cor })
-        if (!urls.length) {
-          console.log('   o produto não tem foto no Bling. Assim que subir lá, a próxima rodada pega.')
-        } else if (!pasta) {
-          console.log('   sem modelo nem cor não dá para nomear a pasta. Fica como está.')
-        } else if (DRY) {
-          console.log(`   [dry] baixaria ${urls.length} foto(s) do ${deOnde} para fotos/selo/${pasta}/`)
-        } else {
-          const destino = join(PASTA_DAS_FOTOS, pasta)
-          mkdirSync(destino, { recursive: true })
-          const guardadas = []
-          for (let i = 0; i < urls.length; i++) {
-            // O Zoho exige o cabecalho de autorizacao; o Bling manda URL
-            // assinada e nao quer nenhum. Por isso ele vem junto da fonte.
-            const r = await fetch(urls[i], cabecalhoExtra ? { headers: cabecalhoExtra } : undefined)
-            if (!r.ok) { console.log(`   foto ${i + 1}: ${deOnde} recusou (${r.status}).`); continue }
-            const arquivo = join(destino, `${guardadas.length + 1}.jpg`)
-            const tamanho = baixarEReduzir(Buffer.from(await r.arrayBuffer()), arquivo)
-            if (!tamanho) { console.log(`   foto ${i + 1}: não é uma imagem que eu consiga reduzir.`); continue }
-            guardadas.push(enderecoDaFoto(pasta, guardadas.length + 1))
-            console.log(`   foto ${guardadas.length}: ${(tamanho / 1024).toFixed(0)} KB`)
-          }
-          if (guardadas.length) mudou.fotos = guardadas
-        }
+        // ⚠️ O BANCO SO E ATUALIZADO DEPOIS DE O ARQUIVO EXISTIR. Ao contrario, o
+        // lote apontaria para uma foto que ainda nao esta publicada, e a cliente
+        // que encostasse o celular no meio do caminho veria quadrado quebrado.
+        await cliente.query(
+          `update public.vessel_lotes
+              set cor = coalesce($2, cor), fotos = coalesce($3, fotos)
+            where id = $1`,
+          [lote.id, mudou.cor ?? null, mudou.fotos ?? null])
+        publicou = publicou || Boolean(mudou.fotos)
+        console.log('   gravado no lote.')
+      } catch (e) {
+        console.log(`   deu erro neste lote (${e.message}); sigo para o próximo.`)
       }
-
-      if (!Object.keys(mudou).length) continue
-      if (DRY) { console.log('   [dry] gravaria', JSON.stringify(mudou).slice(0, 120)); continue }
-
-      // ⚠️ O BANCO SO E ATUALIZADO DEPOIS DE O ARQUIVO EXISTIR. Ao contrario, o
-      // lote apontaria para uma foto que ainda nao esta publicada, e a cliente
-      // que encostasse o celular no meio do caminho veria quadrado quebrado.
-      await cliente.query(
-        `update public.vessel_lotes
-            set cor = coalesce($2, cor), fotos = coalesce($3, fotos)
-          where id = $1`,
-        [lote.id, mudou.cor ?? null, mudou.fotos ?? null])
-      publicou = publicou || Boolean(mudou.fotos)
-      console.log('   gravado no lote.')
     }
 
     // ── PUBLICAR O SITE ──

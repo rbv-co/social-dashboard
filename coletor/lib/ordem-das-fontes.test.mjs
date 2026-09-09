@@ -2,62 +2,66 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-/* ⚠️⚠️ A ORDEM DAS FONTES DE FOTO — E POR QUE ELA ESTA INVERTIDA HOJE.
+/* ⚠️⚠️ QUEM MANDA NA FOTO DO CERTIFICADO — E A TRAVA QUE DECIDE.
  *
- * O padrao era o Bling primeiro. Em 07/09/2026 o dono percebeu que varios
- * cadastros do Bling ainda tem foto de enquadramento ruim, enquanto a pasta do
- * Zoho ja tem a tratada. Conferido na mesma bolsa (Cerne Croco Preto): na do
- * Bling a alca esticada ocupa dois tercos da imagem.
+ * Regra do dono, 08/09/2026: "Zoho quando houver pasta tratada e a cor e o SKU
+ * bater". A pasta do Zoho ja vem tratada, entao ela tem preferencia — mas so
+ * com o SKU exato E a cor conferindo. Nao conferindo, o Bling assume.
  *
- * ISTO E PALIATIVO. O conserto de verdade e subir as fotos tratadas no Bling —
- * e a foto do Bling que aparece na loja, onde a cliente decide comprar. Este
- * teste existe para que a inversao nao vire permanente por esquecimento: ele
- * COBRA que o comentario explicando o porque e o "quando desfazer" continuem
- * la, junto do codigo. */
+ * ⚠️ POR QUE A COR ENTROU NA CONTA: em 07/09 o Zoho passou a vir primeiro sem
+ * conferencia nenhuma alem do SKU. A LUNEA PINHAO (SS0008HB.M4) tem pasta com o
+ * SKU exato — `Lunea_Pinhão - SS0008HB.M4` — e arquivos `Lunea_Marrom_*` dentro.
+ * O certificado da cliente ficou com aquele conjunto em vez do cadastro do
+ * Bling, e o dono viu. Conferido em 08/09 pelos md5 do que estava publicado.
+ *
+ * O Bling e a queda de todo caso duvidoso porque e o cadastro que aparece na
+ * loja, no Mercado Livre e na Shopify — onde a cliente decide comprar. */
 
 const ROBO = readFileSync(new URL('../fotos-do-selo-do-bling.mjs', import.meta.url), 'utf8');
 
-test('o Zoho e consultado ANTES do Bling', () => {
-  const zoho = ROBO.indexOf('fotosDoZohoParaSku(lote.sku)');
+test('o Zoho e consultado antes, e o Bling e a queda', () => {
+  const zoho = ROBO.indexOf('fotosDoZohoParaSku(lote.sku');
   const bling = ROBO.indexOf('imagensGrandesDoProduto(produto)');
   assert.ok(zoho > -1 && bling > -1, 'nao achei as duas fontes');
-  assert.ok(zoho < bling, 'a ordem voltou a ser Bling primeiro');
-});
-
-test('o Bling continua sendo a queda — nunca se fica sem fonte', () => {
+  assert.ok(zoho < bling, 'a ordem mudou sem passar por aqui');
   assert.match(ROBO, /if \(!urls\.length\) \{\s*\n\s*urls = imagensGrandesDoProduto/,
-    'sem a queda, produto sem pasta no Zoho ficaria sem foto mesmo tendo no Bling');
+    'sem a queda, lote reprovado na cor ficaria sem foto tendo foto no Bling');
 });
 
-test('⚠️ o PORQUE da inversao esta escrito junto do codigo', () => {
-  /* Sem isto, daqui a tres meses alguem le "Zoho primeiro" e conclui que o Zoho
-   * e a fonte oficial — e o paliativo vira desenho. */
-  assert.match(ROBO, /ORDEM INVERTIDA EM 07\/09\/2026, E ISTO E PALIATIVO/);
-  assert.match(ROBO, /TEM DATA PARA MORRER/,
-    'sumiu a instrucao de quando desfazer');
-  assert.match(ROBO, /onde a\s*\n?\s*\/\/ cliente DECIDE COMPRAR|cliente DECIDE COMPRAR/,
-    'sumiu o motivo de o Bling ser o certo no fim');
+test('⚠️ a COR vai junto na pergunta ao Zoho — e nao pode ser esquecida', () => {
+  /* Sem passar a cor, `pastaServeParaACor` reprova tudo e o Zoho nunca e usado;
+   * pior, se um dia o parametro virar opcional com padrao permissivo, a Pinhao
+   * volta calada. */
+  assert.match(ROBO, /fotosDoZohoParaSku\(lote\.sku, \{ cor: corDoLote \}\)/);
+  assert.match(ROBO, /const corDoLote = mudou\.cor \?\? lote\.cor/,
+    'a cor lida do Bling nesta mesma rodada tem de contar');
+});
+
+test('⚠️ o PORQUE da trava esta escrito junto do codigo', () => {
+  assert.match(ROBO, /A TRAVA DE COR NASCEU DE UM DEFEITO DE VERDADE/);
+  assert.match(ROBO, /LUNEA PINHAO/, 'sumiu o caso que originou a trava');
+  assert.match(ROBO, /DECIDE COMPRAR/, 'sumiu o motivo de o Bling ser a queda');
+});
+
+test('o robo DIZ quando reprovou a pasta do Zoho', () => {
+  // Reprovacao silenciosa vira "por que essa bolsa mudou de foto?" tres meses
+  // depois, sem nenhum rastro.
+  assert.match(ROBO, /else if \(doZoho\.porque\) \{/);
 });
 
 test('falha do Zoho NAO derruba a rodada — cai no Bling', () => {
-  // O Zoho fora do ar nao pode significar nenhuma foto para ninguem.
-  // Ancorado na CHAMADA, e nao no `import` — que aparece primeiro no arquivo e
-  // fez este teste olhar para o lugar errado na primeira versao.
-  const trecho = ROBO.slice(ROBO.indexOf('fotosDoZohoParaSku(lote.sku)'));
+  const trecho = ROBO.slice(ROBO.indexOf('fotosDoZohoParaSku(lote.sku'));
   assert.match(trecho.slice(0, 900), /catch \(e\)/);
   assert.match(trecho.slice(0, 900), /tentando o Bling/);
 });
 
 test('⚠️ `--refazer` existe, e o robo o usa nos DOIS lugares', () => {
-  /* Quando a ordem das fontes muda, quem ja tem foto continua com a da fonte
+  /* Quando a regra das fontes muda, quem ja tem foto continua com a da regra
    * antiga PARA SEMPRE — porque "ja tem foto" e a condicao de ser ignorado.
-   * Sao dois filtros: o que escolhe os lotes e o que decide baixar a foto. Um
-   * so nao basta, e foi assim que quase ficou. */
+   * Sao dois filtros: o que escolhe os lotes e o que decide baixar a foto. */
   assert.match(ROBO, /const REFAZER = process\.argv\.includes\('--refazer'\)/);
-  assert.match(ROBO, /lotesParaOlhar\(lotes, \{ refazer: REFAZER \}\)/,
-    'sem isto o lote com foto nem entra na lista');
-  assert.match(ROBO, /if \(falta\.faltaFoto \|\| REFAZER\)/,
-    'sem isto o lote entra na lista mas a foto nao e rebaixada');
+  assert.match(ROBO, /lotesParaOlhar\(lotes, \{ refazer: REBAIXAR \}\)/);
+  assert.match(ROBO, /if \(falta\.faltaFoto \|\| REBAIXAR\)/);
 });
 
 test('refazer NAO e o padrao — rebaixar tudo todo dia gasta cota a toa', () => {

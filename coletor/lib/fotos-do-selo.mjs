@@ -152,3 +152,28 @@ export function produtoQueBate(produtos, sku) {
   return (Array.isArray(produtos) ? produtos : [])
     .find((p) => achatar(p?.codigo) === alvo) || null
 }
+
+// ── DUAS BOLSAS NA MESMA PASTA: NINGUEM LEVA FOTO ──────────────────────────
+//
+// ⚠️ REGRA DO DONO, 08/09/2026: "se ficar na duvida, deixe sem foto — melhor do
+// que com foto errada".
+//
+// A pasta e feita de MODELO + COR, e nao do SKU. Se dois SKUs diferentes caem no
+// mesmo nome, o segundo sobrescreve as fotos do primeiro e os DOIS certificados
+// passam a mostrar a mesma bolsa — um deles, a errada. Sem erro nenhum: os
+// arquivos existem, o banco aponta para eles, a pagina abre.
+//
+// Medido em 08/09/2026: 106 lotes, 61 pastas, ZERO colisoes. Ou seja, esta trava
+// nao tira nada de ninguem hoje — ela existe para o dia em que um cadastro novo
+// repetir modelo e cor, que e justamente o dia em que ninguem estaria olhando.
+export function pastasDisputadas(lotes) {
+  const donos = new Map()
+  for (const lote of Array.isArray(lotes) ? lotes : []) {
+    const pasta = pastaDoLote(lote)
+    const sku = String(lote?.sku ?? '').trim().toUpperCase()
+    if (!pasta || !sku) continue
+    if (!donos.has(pasta)) donos.set(pasta, new Set())
+    donos.get(pasta).add(sku)
+  }
+  return new Set([...donos].filter(([, skus]) => skus.size > 1).map(([pasta]) => pasta))
+}
