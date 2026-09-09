@@ -211,6 +211,7 @@ import { agruparCanaisPorCadastro, podeApagarGrupo, nomeDeGrupoAceito } from '..
 // quem recebe o quê — a tela LÊ dela em vez de repetir os nomes.
 import { TIPOS_DE_NOTIFICACAO, querReceber } from '../../../supabase/functions/_shared/notificacoes.js'
 import { adminToast } from '../../compartilhado/avisos.js'
+import { dataDigitadaParaISO, dataISOparaBR } from '../../compartilhado/canal-fechado.js'
 import { gerarSenhaForte } from './senha.js'
 import { sb } from '../../compartilhado/buscar-e-salvar-dados.js'
 // As REGRAS dos times (quem administra, quem concede o quê, o que falta em cada
@@ -831,7 +832,7 @@ async function loadAdminCanais() {
   const body = document.getElementById('admin-canais-body'); if (!body) return
   try {
     const [rc, rt, rg] = await Promise.all([
-      sbClient.from('bling_lojas').select('loja_id,nome,grupo,grupo_id').order('nome'),
+      sbClient.from('bling_lojas').select('loja_id,nome,grupo,grupo_id,fechado_em').order('nome'),
       sbClient.from('equipes').select('id,nome,canal_loja_id'),
       sbClient.from('canais_grupos').select('id,nome').order('nome'),
     ])
@@ -842,6 +843,29 @@ async function loadAdminCanais() {
     _canaisComGrupo = rc.data || []
     _gruposDeCanal = rg.data || []
     const mapaTimes = timePorCanal(rt.data || [])
+    // A LINHA DE UM CANAL, num lugar só: ela aparece dentro do grupo e também
+    // na lista dos que estão fora de grupo. Duas cópias divergiriam no dia em
+    // que uma delas ganhasse campo novo — foi o que quase aconteceu com o
+    // fechamento da loja.
+    const linhaDeCanal = (c, t) => {
+      let l = '<div class="adm-canal-linha">'
+      l += '<span class="adm-canal-nome">' + escHtml(c.nome)
+      l += t
+        ? '<span class="adm-canal-time">time: ' + escHtml(t.nome) + '</span>'
+        : '<span class="adm-canal-time adm-canal-sem">sem time</span>'
+      // ⚠️ O QUE FECHAR SIGNIFICA, ESCRITO NA TELA. "Fechou em" sozinho deixaria
+      // a dúvida de se o histórico some junto — e ele NÃO some.
+      if (c.fechado_em) {
+        l += '<span class="adm-canal-time adm-canal-sem">fechou em '
+          + escHtml(dataISOparaBR(c.fechado_em)) + ' — fora dos menus de venda, histórico mantido</span>'
+      }
+      l += '</span>'
+      l += '<button type="button" class="btn" data-canal-fechou="' + escHtml(String(c.loja_id)) + '">'
+        + (c.fechado_em ? 'Reabrir' : 'Marcar fechamento') + '</button>'
+      l += '</div>'
+      return l
+    }
+
     const baldes = agruparCanaisPorCadastro(_canaisComGrupo, _gruposDeCanal)
     const soltos = baldes.find((b) => b.grupo === null)
     const faltam = soltos ? soltos.canais.length : 0
@@ -888,13 +912,7 @@ async function loadAdminCanais() {
       }
       for (const c of (aberto ? [] : balde.canais)) {
         const t = mapaTimes.get(String(c.loja_id))
-        h += '<div class="adm-canal-linha">'
-        h += '<span class="adm-canal-nome">' + escHtml(c.nome)
-        h += t
-          ? '<span class="adm-canal-time">time: ' + escHtml(t.nome) + '</span>'
-          : '<span class="adm-canal-time adm-canal-sem">sem time</span>'
-        h += '</span>'
-        h += '</div>'
+        h += linhaDeCanal(c, t)
       }
 
       // O PAINEL: os 14 canais, marcados os deste grupo. É aqui que a escolha
@@ -933,13 +951,7 @@ async function loadAdminCanais() {
         + 'Para pôr um deles num grupo, abra o grupo acima e use <b>Escolher canais</b>.</div>'
       for (const c of soltos.canais) {
         const t = mapaTimes.get(String(c.loja_id))
-        h += '<div class="adm-canal-linha">'
-        h += '<span class="adm-canal-nome">' + escHtml(c.nome)
-        h += t
-          ? '<span class="adm-canal-time">time: ' + escHtml(t.nome) + '</span>'
-          : '<span class="adm-canal-time adm-canal-sem">sem time</span>'
-        h += '</span>'
-        h += '</div>'
+        h += linhaDeCanal(c, t)
       }
     }
 
@@ -986,6 +998,45 @@ function _ligarCadastroDeGrupos() {
     }
     return linhas
   }
+
+  // ── Fechar / reabrir um canal ──────────────────────────────────────────────
+  // Loja que fechou some dos menus das telas de venda DAQUI PRA FRENTE e volta
+  // sozinha quando o período escolhido alcança os dias em que ela operava. Nada
+  // é apagado: venda, meta e equipe ficam. Ver `src/compartilhado/canal-fechado.js`.
+  document.querySelectorAll('[data-canal-fechou]').forEach((b) => {
+    b.onclick = async () => {
+      const loja = b.getAttribute('data-canal-fechou')
+      const c = _canaisComGrupo.find((x) => String(x.loja_id) === String(loja))
+      if (!c) return
+      // `window.prompt` porque é o que ESTA tela já usa para pedir texto.
+      const digitado = window.prompt(
+        'Quando o canal "' + c.nome + '" fechou?\n\n'
+        + 'Escreva a data como 31/08/2026. Deixe vazio para reabrir.\n'
+        + 'Ele sai dos menus de venda a partir do dia seguinte, e continua aparecendo '
+        + 'quando o período escolhido alcançar os dias em que a loja operava.',
+        dataISOparaBR(c.fechado_em))
+      if (digitado === null) return
+      // ⚠️ DATA QUE A TELA NÃO ENTENDEU NÃO VIRA NULO. Nulo aqui é "reabrir", e
+      // reabrir uma loja por erro de digitação seria um "salvo" mentiroso.
+      const veredito = dataDigitadaParaISO(digitado)
+      if (!veredito.ok) { adminToast(veredito.mensagem, false); return }
+      if ((veredito.iso || null) === (c.fechado_em || null)) return
+      b.disabled = true
+      try {
+        await gravar('bling_lojas?loja_id=eq.' + encodeURIComponent(loja), {
+          method: 'PATCH', body: JSON.stringify({ fechado_em: veredito.iso }),
+        }, 'fechar ou reabrir um canal')
+        await loadAdminCanais()
+        adminToast(veredito.iso
+          ? '"' + c.nome + '" fechou em ' + dataISOparaBR(veredito.iso)
+            + '. Sai dos menus de venda daqui pra frente; o histórico continua.'
+          : '"' + c.nome + '" voltou a aparecer nos menus de venda.', true)
+      } catch (e) {
+        b.disabled = false
+        adminToast(String(e && e.message || e), false)
+      }
+    }
+  })
 
   // ── Criar ──────────────────────────────────────────────────────────────────
   const bCriar = document.querySelector('[data-grupo-criar]')

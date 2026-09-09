@@ -98,6 +98,7 @@ import { chamarBling, paginasDoBling, ErroDoBling, textoDoAviso } from '../../co
 // tela para poder ser provado sem navegador — ver o comentario do arquivo.
 import { corpoEstaVazio, deveMostrarCarregando, deveEscreverRecado } from './carregamento-da-tela.js'
 import { agruparCanais, estadoDoGrupo, alternarGrupo } from '../../compartilhado/grupo-do-canal.js'
+import { ocultosNoPeriodo } from '../../compartilhado/canal-fechado.js'
 
 // O grupo de cada canal, lido de bling_lojas junto com o nome (Peça 2).
 let _saGrupoDoCanal={}
@@ -387,7 +388,7 @@ async function loadSalesAnalysisData(period,opcoes){
       blingPages('pedidos/vendas',{dataInicial:diPrev,dataFinal:dfPrev,'idsSituacoes[]':9}).catch(()=>[]),
       // O GRUPO vem junto do nome (Peça 2, 20/08/2026): é ele que separa o
       // menu de canais em Atacado / Varejo / Outros.
-      sbClient.from('bling_lojas').select('loja_id,nome,grupo,grupo_id').order('loja_id').then(r=>{const mp={};_saGrupoDoCanal={};_saCanaisBrutos=r.data||[];_saCanaisBrutos.forEach(l=>{mp[l.loja_id]=l.nome;_saGrupoDoCanal[l.loja_id]=l.grupo||null;});return mp;}),
+      sbClient.from('bling_lojas').select('loja_id,nome,grupo,grupo_id,fechado_em').order('loja_id').then(r=>{const mp={};_saGrupoDoCanal={};_saCanaisBrutos=r.data||[];_saCanaisBrutos.forEach(l=>{mp[l.loja_id]=l.nome;_saGrupoDoCanal[l.loja_id]=l.grupo||null;});return mp;}),
       sbClient.from('bling_metas').select('loja_id,meta_valor,daily_goals').eq('year',effY).eq('month',effM).then(r=>r.data||[]),
       sbClient.from('bling_vendedores').select('vendor_id,nome').then(r=>r.data||[]),
       blingPages('pedidos/vendas',{dataInicial:di15,dataFinal:df15,'idsSituacoes[]':9}).catch(()=>[]),
@@ -460,7 +461,14 @@ async function loadSalesAnalysisData(period,opcoes){
       pvArr.forEach(r=>{pvMap[r.pedido_id]=r.vendor_id;pvQtdMap[r.pedido_id]=r.qtd_itens||1;});
     }
 
-    const lojas=Object.entries(lojaMap).map(([id,nome])=>({id:parseInt(id),nome,grupo:_saGrupoDoCanal[id]||null})).sort((a,b)=>a.id-b.id);
+    // ⚠️ LOJA QUE FECHOU SAI DO MENU quando o período começa depois do
+    // fechamento, e VOLTA quando o período alcança os dias em que ela operava.
+    // `lojaMap` continua cheio de propósito: é dele que sai o NOME, e nome que
+    // some deixa o histórico com "Canal #7609". Ver
+    // `src/compartilhado/canal-fechado.js`.
+    const _saOcultos=ocultosNoPeriodo(_saCanaisBrutos,di);
+    const lojas=Object.entries(lojaMap).map(([id,nome])=>({id:parseInt(id),nome,grupo:_saGrupoDoCanal[id]||null}))
+      .filter(l=>!_saOcultos.has(l.id)).sort((a,b)=>a.id-b.id);
     const lojasComVenda=new Set(pedidos.map(p=>String(p.loja?.id)).filter(Boolean));
     const initialIds=lojas.filter(l=>lojasComVenda.has(String(l.id))).map(l=>String(l.id));
     const canalDrop=document.getElementById('sa-canal-drop');

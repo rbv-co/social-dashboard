@@ -99,3 +99,24 @@ Vista — duas cópias da mesma regra acabam discordando.
 ⚠️ O menu ganhou `max-height:min(60vh,360px)` + rolagem, que ele não tinha. Com
 os cabeçalhos novos ele ia a 547px de altura e a lista passava do fim da tela; a
 Gestão à Vista já tinha esse teto desde sempre.
+
+LOJA QUE FECHOU (09/09/2026)
+---------------------------
+Canal com data em `bling_lojas.fechado_em` SOME do menu quando o periodo
+escolhido comeca DEPOIS dessa data, e VOLTA quando o periodo alcanca os dias em
+que a loja operava. Pedido do dono: "oculte os canais de vendas, dom pedro pq
+fecharam, deixe somente o historico pra tras". A Loja Dom Pedro fechou em
+31/08/2026.
+
+A regra e pura e mora em `src/compartilhado/canal-fechado.js` (14 testes). A data
+se edita na Config de Admin > Canais de venda — nao e lista escrita a mao, entao
+a proxima loja que fechar nao precisa de codigo novo.
+
+⚠️ TIRAR A LINHA DO CADASTRO NAO ESCONDE O CANAL. O menu e a UNIAO do cadastro
+com quem teve pedido no periodo: sem o nome, a loja fechada voltaria a tela como
+"Canal #7609". Por isso o mapa de nomes continua CHEIO e o que se remove e o id
+da exibicao.
+
+⚠️ O TOTAL DO PERIODO NAO MUDA. Ele vem dos pedidos, nao da lista de canais —
+entao a soma dos canais visiveis pode ficar menor que o total. E de proposito:
+venda que aconteceu e faturamento real, e o dono pediu para manter o historico.

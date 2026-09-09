@@ -129,6 +129,7 @@ import {
   canaisDoEscopo, estaLimitada, filtrarPedidos, filtrarMapaDeCanais, fraseDoRecorte,
 } from '../../compartilhado/canais-de-venda-permitidos.js'
 import { adminToast } from '../../compartilhado/avisos.js'
+import { ocultosNoPeriodo } from '../../compartilhado/canal-fechado.js'
 import { filtrarPedidosPorCanal, depositosVisiveis, prepararEstoque, statusSaldo, categoriasDisponiveis, normalizarDepositos, DEPOSITOS_SEMENTE } from './estoque-gv.js'
 import { montarLinhas, posicionarLinhas, alturaComum } from './velocimetro-gv.js'
 import { agruparCanais, estadoDoGrupo, alternarGrupo } from '../../compartilhado/grupo-do-canal.js'
@@ -659,7 +660,7 @@ async function loadGestaoVistaData(period){
     const[canaisCheio,metasRows,eqTimes,eqMembros,eqMembrosDeGrupo,depsRows,vincRows]=await Promise.all([
       // O GRUPO vem na mesma leitura do nome (Peça 2, 20/08/2026): é ele que
       // separa o menu de canais em Atacado / Varejo / Outros.
-      sbClient.from('bling_lojas').select('loja_id,nome,grupo,grupo_id').then(r=>{const mp={};_gvGrupoDoCanal={};_gvCanaisBrutos=r.data||[];_gvCanaisBrutos.forEach(l=>{mp[l.loja_id]=l.nome;_gvGrupoDoCanal[l.loja_id]=l.grupo||null;});return mp;}).catch(()=>({})),
+      sbClient.from('bling_lojas').select('loja_id,nome,grupo,grupo_id,fechado_em').then(r=>{const mp={};_gvGrupoDoCanal={};_gvCanaisBrutos=r.data||[];_gvCanaisBrutos.forEach(l=>{mp[l.loja_id]=l.nome;_gvGrupoDoCanal[l.loja_id]=l.grupo||null;});return mp;}).catch(()=>({})),
       sbClient.from('bling_metas').select('loja_id,meta_valor,daily_goals').eq('year',metaY).eq('month',metaM).then(r=>r.data||[]).catch(()=>[]),
       // Os times e quem está neles. Falhar devolve lista vazia — e com ela quem
       // é de time fica com `[]` (tela vazia com o motivo escrito), não com a
@@ -839,7 +840,12 @@ let _gvCanaisBrutos=[];
 
 function _gvMontaChips(){
   const ctx=window._gvRenderCtx; if(!ctx)return;
+  // Loja fechada não entra no menu quando o período começa depois do
+  // fechamento — e volta sozinha quando o período alcança os dias em que ela
+  // operava. Ver `src/compartilhado/canal-fechado.js`.
+  const ocultos=ocultosNoPeriodo(_gvCanaisBrutos,ctx.di);
   const ids=Object.keys(ctx.canais||{}).map(id=>parseInt(id,10)).filter(id=>!isNaN(id))
+    .filter(id=>!ocultos.has(id))
     .sort((a,b)=>String(ctx.canais[a]||'').localeCompare(String(ctx.canais[b]||''),'pt-BR'));
   const chips=document.getElementById('gv-cf-chips'); if(!chips)return;
   const mk=(id,nome)=>`<button class="gv-cf-chip${(id===null?_gvCanaisSel.size===0:_gvCanaisSel.has(id))?' active':''}" data-id="${id===null?'':id}"><svg class="gv-cf-check" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span>${escHtml(nome)}</span></button>`;
@@ -1128,8 +1134,13 @@ function renderGestaoVista(pedidos,canais,metasMap,hoje,diasMes,diaAtual,di,peri
   // ("Todos"), a união de TODOS os canais cadastrados (`canais`, bling_lojas)
   // com os que aparecem em `porCanal` (cobre id fora do cadastro, ex.: 0/"Outros").
   // Canal sem venda no período entra com v=0/cnt=0 — R$ 0,00, não some da tela.
+  // ⚠️ LOJA QUE FECHOU SAI DAQUI — mas o NOME dela continua em `canais`.
+  // O universo é a união do cadastro com quem teve pedido no período; tirar a
+  // linha do cadastro esconderia só o nome, e a loja fechada voltaria à tela
+  // como "Canal #7609". Ver `src/compartilhado/canal-fechado.js`.
+  const _ocultos=ocultosNoPeriodo(_gvCanaisBrutos,di);
   const universo=[...new Set([...Object.keys(canais),...Object.keys(porCanal)])]
-    .map(id=>parseInt(id,10)).filter(id=>!isNaN(id));
+    .map(id=>parseInt(id,10)).filter(id=>!isNaN(id)).filter(id=>!_ocultos.has(id));
   const displayIds=(_gvCanaisSel&&_gvCanaisSel.size)?[..._gvCanaisSel]:universo;
   const canaisArr=displayIds.map(id=>({id,nm:canais[id]||(id?'Canal #'+String(id).slice(-4):'Outros'),v:porCanal[id]||0,cnt:cntCanal[id]||0})).sort((a,b)=>b.v-a.v);
   const maxC=canaisArr[0]?.v||1;

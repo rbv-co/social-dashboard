@@ -310,3 +310,19 @@ Tirar supervisora PERGUNTA antes: a ação encolhe o que a pessoa enxerga.
 Vínculo apontando para login que não existe mais NÃO some calado — a seção diz
 "tire e ponha de novo". Some sem explicação é como se descobre tarde que alguém
 ficou com acesso.
+
+FECHAR E REABRIR UM CANAL (09/09/2026)
+--------------------------------------
+Cada canal tem o botao "Marcar fechamento" / "Reabrir", que grava
+`bling_lojas.fechado_em`. Loja fechada sai dos menus da Gestao a Vista e da
+Analise de Vendas daqui pra frente e continua aparecendo no passado — nada e
+apagado: venda, meta, equipe e patrimonio ficam.
+
+Passa pela MESMA politica de escrita do grupo (`bling_lojas_grupo_superadmin`):
+so o super-admin muda. A coluna nasceu em `db/migrations/2026-09-09-canal-fechado.sql`
+e a tabela tem UPDATE de TABELA para `authenticated` (nao por coluna), entao ela
+entrou coberta — conferido no banco depois de aplicar, nao suposto.
+
+⚠️ DATA QUE A TELA NAO ENTENDEU NAO VIRA NULO. Nulo aqui significa "reabrir": se
+"31/02/2026" caisse no nulo, a loja reabriria por erro de digitacao e a tela
+diria "salvo". A conversao recusa, e mora em `src/compartilhado/canal-fechado.js`.
