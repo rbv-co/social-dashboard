@@ -4315,8 +4315,7 @@ onUnmounted(() => {
 .tela-redes-sociais :deep(.eng-tab.active){background:var(--accent);color:var(--sobre-cor);box-shadow:0 2px 8px rgba(0,0,0,.14);}
 .tela-redes-sociais :deep(.eng-tab.active):hover{background:var(--accent);color:var(--sobre-cor);}
 .tela-redes-sociais :deep(.custom-date-input):focus{border-color:var(--accent);}
-.tela-redes-sociais :deep(.custom-apply-btn){font-family:var(--fonte-principal);font-weight:600;font-size:max(9px, calc(11px * var(--escala-texto, 1)));padding:5px 14px;border-radius:3px;background:var(--accent);color:var(--sobre-cor);border:none;cursor:pointer;letter-spacing:.5px;text-transform:uppercase;}
-.tela-redes-sociais :deep(.custom-apply-btn){font-family:var(--fonte-principal);font-size:max(9px, calc(11px * var(--escala-texto, 1)));font-weight:700;padding:5px 12px;border-radius:3px;background:var(--accent, #7a0025);border:1px solid var(--accent, #7a0025);color:#fff;cursor:pointer;min-height:28px;}
+.tela-redes-sociais :deep(.custom-apply-btn){font-family:var(--fonte-principal);font-weight:600;font-size:max(9px, calc(11px * var(--escala-texto, 1)));padding:5px 12px;border-radius:3px;background:var(--accent);color:var(--sobre-cor);border:1px solid var(--accent);cursor:pointer;letter-spacing:.5px;text-transform:uppercase;}
 /* Desabilitado tem de PARECER desabilitado: botão que some do alcance sem mudar de
    cara faz a pessoa clicar e achar que a tela travou. O motivo vai no `title`. */
 .tela-redes-sociais :deep(.custom-apply-btn:disabled){opacity:.4;cursor:not-allowed;}
