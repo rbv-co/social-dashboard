@@ -35,9 +35,10 @@
           <div class="period-tabs" id="period-tabs"></div>
           <div class="custom-range-inline" id="custom-range-panel">
             <span class="custom-range-lbl">de</span>
-            <input type="date" id="custom-start" class="custom-date-input" onchange="onCustomDateChange()" title="Data inicial — clique para abrir o calendário">
+            <input type="date" id="custom-start" class="custom-date-input" onchange="onCustomDateChange()" onkeydown="if(event.key==='Enter')aplicarIntervalo()" title="Data inicial — escolha e clique em Aplicar">
             <span class="custom-range-lbl">até</span>
-            <input type="date" id="custom-end" class="custom-date-input" onchange="onCustomDateChange()" title="Data final — clique para abrir o calendário">
+            <input type="date" id="custom-end" class="custom-date-input" onchange="onCustomDateChange()" onkeydown="if(event.key==='Enter')aplicarIntervalo()" title="Data final — escolha e clique em Aplicar">
+            <button class="custom-apply-btn" id="custom-apply-btn" onclick="aplicarIntervalo()" disabled title="Escolha as duas datas">Aplicar</button>
             <button class="custom-clear-btn" id="custom-clear-btn" onclick="clearCustomRange()" style="display:none" title="Limpar intervalo personalizado">✕</button>
           </div>
           <div class="ac-toggle on" id="ac-toggle-btn" onclick="toggleAutoCycle()" title="Rotação automática de perfis">
@@ -3575,10 +3576,28 @@ async function refresh() {
 }
 // Campos de data sempre visíveis: ao escolher AS DUAS datas, aplica sozinho (sem botão). O ✕ aparece pra limpar.
 function onCustomDateChange() {
+  // ⚠️ MUDAR A DATA NÃO CARREGA MAIS NADA. Antes qualquer mudança num dos campos
+  // aplicava na hora: ajustar só o início disparava a tela inteira com o fim
+  // ANTIGO — medido em 10/09/2026, quatro consultas para um período que ninguém
+  // pediu (01→09) —, e ajustar o fim em seguida recarregava tudo de novo. Quem
+  // escolhe intervalo mexe nos dois campos; aplicar no meio do caminho é sempre
+  // uma volta perdida. Agora quem aplica é o botão (ou Enter).
   const s = document.getElementById('custom-start').value, e = document.getElementById('custom-end').value
+  const bt = document.getElementById('custom-apply-btn')
   document.getElementById('custom-clear-btn').style.display = (s || e) ? 'inline-flex' : 'none'
-  if (!s || !e) return
-  if (s > e) { alert('A data inicial deve ser anterior à data final.'); return }
+  if (bt) {
+    const pronto = !!(s && e && s <= e)
+    bt.disabled = !pronto
+    // ⚠️ O MOTIVO FICA NO BOTÃO, não num alerta. Alerta obriga a fechar antes de
+    // corrigir, e some sem deixar rastro do que estava errado.
+    bt.title = pronto ? 'Aplicar o intervalo escolhido'
+      : (s && e ? 'A data inicial tem de vir antes da final' : 'Escolha as duas datas')
+  }
+}
+
+function aplicarIntervalo() {
+  const s = document.getElementById('custom-start').value, e = document.getElementById('custom-end').value
+  if (!s || !e || s > e) return
   currentStartDate = s; currentEndDate = e
   try { localStorage.setItem(CHAVE_INTERVALO, JSON.stringify({ s, e })) } catch (err) {}
   document.querySelectorAll('.ptab').forEach(b => b.classList.remove('active'))
@@ -3861,6 +3880,10 @@ function fecharDashboard() {
 Object.assign(window, {
   onCustomDateChange,
   clearCustomRange,
+  // ⚠️ SEM ISTO O BOTÃO "APLICAR" NÃO FAZ NADA. O `onclick` do HTML procura a
+  // função no `window`; esquecer aqui não quebra o build nem os testes — o botão
+  // simplesmente não responde, e ninguém sabe por quê.
+  aplicarIntervalo,
   setEngTab,
   toggleAutoCycle,
   toggleHeader,
@@ -4293,6 +4316,10 @@ onUnmounted(() => {
 .tela-redes-sociais :deep(.eng-tab.active):hover{background:var(--accent);color:var(--sobre-cor);}
 .tela-redes-sociais :deep(.custom-date-input):focus{border-color:var(--accent);}
 .tela-redes-sociais :deep(.custom-apply-btn){font-family:var(--fonte-principal);font-weight:600;font-size:max(9px, calc(11px * var(--escala-texto, 1)));padding:5px 14px;border-radius:3px;background:var(--accent);color:var(--sobre-cor);border:none;cursor:pointer;letter-spacing:.5px;text-transform:uppercase;}
+.tela-redes-sociais :deep(.custom-apply-btn){font-family:var(--fonte-principal);font-size:max(9px, calc(11px * var(--escala-texto, 1)));font-weight:700;padding:5px 12px;border-radius:3px;background:var(--accent, #7a0025);border:1px solid var(--accent, #7a0025);color:#fff;cursor:pointer;min-height:28px;}
+/* Desabilitado tem de PARECER desabilitado: botão que some do alcance sem mudar de
+   cara faz a pessoa clicar e achar que a tela travou. O motivo vai no `title`. */
+.tela-redes-sociais :deep(.custom-apply-btn:disabled){opacity:.4;cursor:not-allowed;}
 .tela-redes-sociais :deep(.custom-clear-btn){font-family:var(--fonte-principal);font-size:max(9px, calc(11px * var(--escala-texto, 1)));padding:5px 10px;border-radius:3px;background:transparent;border:1px solid var(--border);color:var(--muted);cursor:pointer;}
 
 /* Insight card + barra de meta geral */

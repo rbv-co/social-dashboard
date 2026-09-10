@@ -145,3 +145,43 @@ test('⚠️ vazio por falta de gasto diz outra coisa que vazio por desmarcar', 
   assert.match(TELA, /semGastoNoPeriodo: _semGastoNoPeriodo/)
   assert.match(TELA, /\{ semGastoNoPeriodo: !!semGastoNoPeriodo \}/)
 })
+
+/* ⚠️ ESCOLHER A DATA NÃO É APLICAR O PERÍODO.
+ *
+ * Até 10/09/2026 qualquer mudança num dos campos aplicava na hora. Medido no
+ * navegador: mudar SÓ a data inicial (05 → 01, com o fim ainda em 09) disparou a
+ * tela inteira — quatro consultas — para um período que ninguém pediu (01→09). E
+ * ajustar o fim em seguida recarregava tudo de novo.
+ *
+ * Quem escolhe intervalo mexe nos DOIS campos; aplicar no meio do caminho é sempre
+ * uma volta perdida, e ainda mostra números de um período que a pessoa não pediu.
+ * O dono: "acho que falta um botãozinho de pesquisar ok confirmar o período".
+ */
+
+test('⚠️ mudar a data não dispara carga — quem aplica é o botão', () => {
+  assert.match(TELA, /function aplicarIntervalo\(\) \{/)
+  assert.match(TELA, /id="custom-apply-btn"[^>]*onclick="aplicarIntervalo\(\)"/)
+  // `onCustomDateChange` só prepara o botão: se ela voltar a mexer no estado ou
+  // chamar `refresh`, o defeito volta.
+  const corpo = TELA.slice(TELA.indexOf('function onCustomDateChange()'))
+  const ateOFim = corpo.slice(0, corpo.indexOf('\n}\n') + 3)
+  assert.ok(!/refresh\(\)/.test(ateOFim), 'a troca de data voltou a carregar a tela')
+  assert.ok(!/currentStartDate =/.test(ateOFim), 'a troca de data voltou a mexer no estado')
+})
+
+test('⚠️ o botão é exposto no window, senão o onclick do HTML não acha', () => {
+  // Esquecer isto não quebra build nem teste: o botão só não responde.
+  assert.match(TELA, /Object\.assign\(window, \{[\s\S]*?\n  aplicarIntervalo,/)
+})
+
+test('⚠️ intervalo invertido não aplica, e o motivo fica no botão', () => {
+  // Alerta obriga a fechar antes de corrigir e some sem deixar rastro.
+  assert.match(TELA, /if \(!s \|\| !e \|\| s > e\) return/)
+  assert.match(TELA, /A data inicial tem de vir antes da final/)
+  assert.ok(!/alert\('A data inicial deve ser anterior/.test(TELA), 'voltou o alerta')
+})
+
+test('Enter nos campos aplica — quem digita a data não precisa mirar o botão', () => {
+  const comEnter = TELA.match(/onkeydown="if\(event\.key==='Enter'\)aplicarIntervalo\(\)"/g) || []
+  assert.equal(comEnter.length, 2, 'os dois campos precisam do Enter')
+})
