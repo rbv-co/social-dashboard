@@ -505,7 +505,7 @@ import { sb } from '../../compartilhado/buscar-e-salvar-dados.js'
 import { hojeLocal } from '../../compartilhado/datas.js'
 import { montarSerieDeInvestimento, montarSerieDeCustoPorSeguidor, montarSerieDeCustoPorResultado, diasComInvestimentoEResultado, valeDesenharOGrafico } from './series-diarias-de-meta-ads.js'
 import { graficoDoCartao, opcoesDoGrafico } from './graficos-de-custo-diario.js'
-import { ehRecorteRolante } from './janela-de-seguidores.js'
+import { ehRecorteRolante, ehGraficoDeContexto } from './janela-de-seguidores.js'
 // Quanta largura um gráfico de um ponto por dia precisa ter, e se ele passa a
 // rolar para o lado. Puro e com teste ao lado (largura-do-grafico.test.mjs).
 // Nasceu da medida a 375px: 30 dias em 319px davam ~10px por dia e os valores em
@@ -2729,7 +2729,11 @@ function update(d, period) {
   //
   // ⚠️ NENHUM CARD VAI BATER COM O PAINEL, e isso é esperado, não defeito. Quem
   // for conferir faz a conta pela janela que o painel mostrar.
-  const _somaBarras = totalPelasBarras(d.chart)
+  // ⚠️ "O CARD É A SOMA DO GRÁFICO" VALE ONDE O GRÁFICO É O PERÍODO. Em HOJE e
+  // ONTEM o gráfico desenha os últimos 7 dias de CONTEXTO — uma barra só seria um
+  // retângulo sem leitura — e somá-lo faria o card do dia mostrar a semana. Foi o
+  // que aconteceu: "ontem" saiu 1,7 mil quando o dia tinha sido 443 (09/09/2026).
+  const _somaBarras = ehGraficoDeContexto(period) ? null : totalPelasBarras(d.chart)
   const _temBuraco = !!(_somaBarras && _somaBarras.estimado)
   const headlineVal = _somaBarras
     ? _somaBarras.total

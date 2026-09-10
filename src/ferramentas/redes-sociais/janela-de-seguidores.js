@@ -27,3 +27,20 @@ export function ehRecorteRolante(period, inicio, fim) {
   if (inicio && fim) return false
   return [0, 1, 3, 7, 14, 30].includes(period)
 }
+
+/**
+ * Neste período o gráfico mostra CONTEXTO em vez do próprio período?
+ *
+ * ⚠️ "HOJE" E "ONTEM" DESENHAM OS ÚLTIMOS 7 DIAS DE PROPÓSITO — uma barra só
+ * seria um retângulo sem leitura nenhuma. O card, porém, é do DIA.
+ *
+ * Defeito real (09/09/2026), logo depois de o card virar "a soma do gráfico":
+ * "ontem" mostrava 1,7 mil — a semana inteira somada — quando o dia tinha sido
+ * 443, e "hoje" mostrava o mesmo 1,7 mil no lugar de 336.
+ *
+ * Ou seja: "o card é a soma do gráfico" vale onde o gráfico É o período. Nestes
+ * dois, o card é a ÚLTIMA barra.
+ */
+export function ehGraficoDeContexto(period) {
+  return period === 0 || period === 1
+}

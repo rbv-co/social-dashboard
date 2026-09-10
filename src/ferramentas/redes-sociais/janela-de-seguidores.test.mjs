@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { ehRecorteRolante } from './janela-de-seguidores.js'
+import { ehRecorteRolante, ehGraficoDeContexto } from './janela-de-seguidores.js'
 
 /* ── QUEM É "ROLANTE" NÃO PODE IGNORAR O RECORTE PERSONALIZADO ──────────────
  *
@@ -39,4 +39,25 @@ test('só uma das duas datas não conta como personalizado', () => {
   assert.equal(ehRecorteRolante(7, '2026-09-05', null), true)
   assert.equal(ehRecorteRolante(7, null, '2026-09-08'), true)
   assert.equal(ehRecorteRolante(7, '', ''), true)
+})
+
+/* ── HOJE E ONTEM: O GRÁFICO MOSTRA CONTEXTO, NÃO O PERÍODO ─────────────────
+ *
+ * Nesses dois períodos o gráfico desenha os ÚLTIMOS 7 DIAS de propósito — uma
+ * barra só seria um retângulo sem leitura. O card, porém, é do DIA.
+ *
+ * Defeito visto pelo dono em 09/09/2026, logo depois de o card virar "a soma do
+ * gráfico": "ontem" mostrava 1,7 mil (a semana somada) quando o dia foi 443, e
+ * "hoje" mostrava 1,7 mil quando até então eram 336.
+ */
+
+test('hoje e ontem desenham contexto, e o card não pode somar tudo', () => {
+  assert.equal(ehGraficoDeContexto(0), true, 'hoje')
+  assert.equal(ehGraficoDeContexto(1), true, 'ontem')
+})
+
+test('nos demais períodos o gráfico É o período, e a soma vale', () => {
+  for (const p of [3, 7, 14, 30, 'monthfull', 'sofar', 'month', 'lastmonth']) {
+    assert.equal(ehGraficoDeContexto(p), false, String(p))
+  }
 })

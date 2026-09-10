@@ -267,3 +267,10 @@ Congelado em `_TRAVA_JANELAS`, que agora tambem cobre o personalizado.
 dia e a foto dele fica velha em horas. Sem isso, a barra de hoje mostrava 183 (foto
 da madrugada) e o filtro "hoje" mostrava 326 (ao vivo) — o MESMO DIA com dois
 numeros, a confusao que o dono ja tinha apontado.
+
+⚠️ "O CARD E A SOMA DO GRAFICO" VALE ONDE O GRAFICO E O PERIODO (09/09/2026)
+Em HOJE e ONTEM o grafico desenha os ULTIMOS 7 DIAS de contexto — uma barra so
+seria um retangulo sem leitura. Somar esse grafico fez o card do DIA mostrar a
+SEMANA: "ontem" saiu 1,7 mil quando o dia tinha sido 443, e "hoje" o mesmo 1,7 mil
+no lugar de 336. Nesses dois o card e a ULTIMA barra (`netRecente`), nao a soma.
+Quem decide e `ehGraficoDeContexto(period)`, com teste.
