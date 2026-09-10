@@ -114,3 +114,34 @@ test('entrada vazia não quebra: cai no coletado e devolve null', () => {
   assert.equal(s.previa, false);
   assert.equal(s.fonte, FONTES.coletado);
 });
+
+test('⚠️ dia sem bruto na janela → o custo sai marcado como prévia', () => {
+  /* Medido em 09/09/2026: a janela [05/09, 09/09) tem quatro dias, o dia 08 não
+   * foi publicado, e a Meta devolve o agregado dos TRÊS publicados. O bruto vem
+   * subestimado, então o custo por seguidor sai ALTO DEMAIS — e saía sem aviso.
+   *
+   * O denominador continua sendo o BRUTO (quem seguiu): custo de aquisição não
+   * divide por líquido, senão quem saiu entra na conta de quem foi conquistado.
+   * O que muda é só a honestidade do selo. */
+  const r = seguidoresDoCusto({
+    live: { seguiu: 907, anteriorSeguiu: 800 },
+    ehRecenteLive: false,
+    numeroImpresso: 1326,
+    estimado: true,
+    coletado: { bruto: 907, brutoAnterior: 800, previa: false },
+  })
+  assert.equal(r.valor, 907, 'continua dividindo o BRUTO')
+  assert.equal(r.previa, true, 'mas avisa que o número ainda se mexe')
+})
+
+test('janela completa segue sem selo de prévia', () => {
+  const r = seguidoresDoCusto({
+    live: { seguiu: 951, anteriorSeguiu: 800 },
+    ehRecenteLive: false,
+    numeroImpresso: 920,
+    estimado: false,
+    coletado: { bruto: 951, brutoAnterior: 800, previa: false },
+  })
+  assert.equal(r.valor, 951)
+  assert.equal(r.previa, false)
+})

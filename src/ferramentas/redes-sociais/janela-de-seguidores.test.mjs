@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { janelaDoPersonalizado, ehRecorteRolante } from './janela-de-seguidores.js'
+import { janelaDoPersonalizado, ehRecorteRolante, rotuloDoPainel } from './janela-de-seguidores.js'
 
 /* ⚠️ O PAINEL PROFISSIONAL DO INSTAGRAM ROTULA CADA DIA UM DIA À FRENTE DA API.
  *
@@ -110,4 +110,41 @@ test('só uma das duas datas não conta como personalizado', () => {
   assert.equal(ehRecorteRolante(7, '2026-09-05', null), true)
   assert.equal(ehRecorteRolante(7, null, '2026-09-08'), true)
   assert.equal(ehRecorteRolante(7, '', ''), true)
+})
+
+/* ── O RÓTULO DA BARRA VAI UM DIA À FRENTE DO DADO ──────────────────────────
+ *
+ * Decisão do dono (09/09/2026), depois de ver a soma das barras divergir do card:
+ * "rotular pela régua do painel". As barras passam a carregar os dias da MESMA
+ * janela do card (a do painel) e a mostrar o rótulo um dia à frente — que é
+ * exatamente o que faz o "5 de setembro" do Instagram ser o dia 4 da API.
+ *
+ * Filtrando 5 a 9 de setembro na Vessel:
+ *   antes:  05:179 · 06:331 · 07:373 · 08:≈443 · 09:≈183  = 1509, card 1363
+ *   agora:  o mesmo eixo 05..09, carregando os dias 04..08 = 1363, card 1363
+ */
+
+test('o rótulo é o dia seguinte ao do dado', () => {
+  assert.equal(rotuloDoPainel('2026-09-04'), '2026-09-05')
+  assert.equal(rotuloDoPainel('2026-09-08'), '2026-09-09')
+})
+
+test('o rótulo atravessa mês, ano e fevereiro', () => {
+  assert.equal(rotuloDoPainel('2026-08-31'), '2026-09-01')
+  assert.equal(rotuloDoPainel('2025-12-31'), '2026-01-01')
+  assert.equal(rotuloDoPainel('2024-02-29'), '2024-03-01')
+  assert.equal(rotuloDoPainel('2026-02-28'), '2026-03-01')
+})
+
+test('⚠️ data ruim volta como veio — rótulo inventado é pior que rótulo cru', () => {
+  for (const ruim of [null, '', 'ontem', '2026-13-01']) {
+    assert.equal(rotuloDoPainel(ruim), ruim)
+  }
+})
+
+test('rotuloDoPainel é o inverso exato de janelaDoPersonalizado', () => {
+  // Se não fosse, o eixo e o card voltariam a falar de dias diferentes.
+  const j = janelaDoPersonalizado('2026-09-05', '2026-09-09')
+  assert.equal(rotuloDoPainel(j.inicio), '2026-09-05')
+  assert.equal(rotuloDoPainel(j.fim), '2026-09-09')
 })

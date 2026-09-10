@@ -64,3 +64,23 @@ export function ehRecorteRolante(period, inicio, fim) {
   if (inicio && fim) return false
   return [0, 1, 3, 7, 14, 30].includes(period)
 }
+
+/**
+ * O RÓTULO com que o painel profissional mostraria este dia: o dia seguinte.
+ *
+ * Decisão do dono (09/09/2026): "rotular pela régua do painel". As barras
+ * carregam os dias da mesma janela do card — a deslocada — e o eixo mostra o
+ * rótulo um dia à frente, que é a régua do Instagram. Assim a soma das barras
+ * fecha com o número do card e o eixo bate com o período filtrado.
+ *
+ * ⚠️ É O INVERSO EXATO de `janelaDoPersonalizado`, e há teste amarrando os dois.
+ * Se um dia discordarem, o eixo e o card voltam a falar de dias diferentes.
+ *
+ * ⚠️ Data que não entendo volta como veio: rótulo inventado é pior que rótulo cru.
+ */
+export function rotuloDoPainel(iso) {
+  if (!ehDataISO(iso)) return iso
+  const d = new Date(iso + 'T12:00:00')
+  d.setDate(d.getDate() + 1)
+  return paraISO(d)
+}

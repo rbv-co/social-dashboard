@@ -64,7 +64,7 @@ const numeroOuNulo = (v) => {
  *        anterior. `previa` é o `cpsPrevia` que a tela já calculava.
  * @returns {{valor:number|null, anterior:number|null, previa:boolean, fonte:string}}
  */
-export function seguidoresDoCusto({ live, ehRecenteLive, numeroImpresso, coletado } = {}) {
+export function seguidoresDoCusto({ live, ehRecenteLive, numeroImpresso, estimado, coletado } = {}) {
   const col = coletado || {};
   // Sem ao vivo não há escolha a fazer: é o caminho de sempre, inteiro —
   // inclusive o selo de prévia que a tela já sabia calcular.
@@ -93,7 +93,17 @@ export function seguidoresDoCusto({ live, ehRecenteLive, numeroImpresso, coletad
   return {
     valor: numeroOuNulo(live.seguiu),
     anterior: numeroOuNulo(live.anteriorSeguiu),
-    previa: false,
+    // ⚠️ O DENOMINADOR CONTINUA SENDO O BRUTO (quem seguiu) — custo de aquisição
+    // não divide por líquido, senão quem saiu entra na conta de quem foi
+    // conquistado. Decisão do dono, 09/09/2026.
+    //
+    // ⚠️ MAS O BRUTO VEM SUBESTIMADO QUANDO FALTA DIA. O dia que a Meta não
+    // publicou soma ZERO no agregado (medido: janela [05/09, 09/09), quatro dias,
+    // o dia 08 ausente, agregado dos três publicados). Dividir por um bruto menor
+    // faz o custo por seguidor sair ALTO DEMAIS — e saía sem aviso nenhum. Não dá
+    // para consertar o número (a quebra seguiu/saiu do dia é justamente o que não
+    // existe), mas dá para não afirmar que ele está fechado.
+    previa: !!estimado,
     fonte: FONTES.brutoAoVivo,
   };
 }

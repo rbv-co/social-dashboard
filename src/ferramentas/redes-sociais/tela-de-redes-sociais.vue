@@ -505,7 +505,7 @@ import { sb } from '../../compartilhado/buscar-e-salvar-dados.js'
 import { hojeLocal } from '../../compartilhado/datas.js'
 import { montarSerieDeInvestimento, montarSerieDeCustoPorSeguidor, montarSerieDeCustoPorResultado, diasComInvestimentoEResultado, valeDesenharOGrafico } from './series-diarias-de-meta-ads.js'
 import { graficoDoCartao, opcoesDoGrafico } from './graficos-de-custo-diario.js'
-import { janelaDoPersonalizado, ehRecorteRolante } from './janela-de-seguidores.js'
+import { janelaDoPersonalizado, ehRecorteRolante, rotuloDoPainel } from './janela-de-seguidores.js'
 // Quanta largura um gráfico de um ponto por dia precisa ter, e se ele passa a
 // rolar para o lado. Puro e com teste ao lado (largura-do-grafico.test.mjs).
 // Nasceu da medida a 375px: 30 dias em 319px davam ~10px por dia e os valores em
@@ -1280,8 +1280,15 @@ async function buscarSerieNovos(accountId, period, customStart, customEnd, shift
     // Obs.: no mês passado a SOMA das barras pode diferir levemente do card, pois o card usa o agregado
     // da Meta (bucketizado -1 dia), enquanto as barras mostram o valor real de cada dia — mesmo comportamento do painel profissional.
     const DIA = 86400, dias = []
-    const upTo = jan.folShift ? Number(jan.engUntil) : Number(jan.folUntil)
-    for (let d = Number(jan.engSince); d < upTo; d += DIA) {
+    // ⚠️ NO PERSONALIZADO AS BARRAS PUXAM A JANELA DO CARD (a deslocada), para a
+    // SOMA DELAS FECHAR COM O NÚMERO DO CARD — pedido do dono em 09/09/2026:
+    // filtrando 5 a 9, as barras somavam 1509 e o card dizia 1363. O eixo mostra
+    // o rótulo um dia à frente (`rotuloDoPainel`), que é a régua do Instagram.
+    // Mês passado NÃO muda: ele já mostra o dia real de propósito, e está validado.
+    const ehCustomSerie = !!(customStart && customEnd)
+    const desde = ehCustomSerie ? Number(jan.folSince) : Number(jan.engSince)
+    const upTo = ehCustomSerie ? Number(jan.folUntil) : (jan.folShift ? Number(jan.engUntil) : Number(jan.folUntil))
+    for (let d = desde; d < upTo; d += DIA) {
       let iso, ds = d // shiftMonths: mesmo dia N meses atrás (comparativo do mês anterior)
       if (shiftMonths) {
         const dt = new Date(d * 1000); dt.setMonth(dt.getMonth() - shiftMonths)
@@ -2865,6 +2872,10 @@ function update(d, period) {
     live: d.live ? { seguiu: d.live.novos.seguiu, anteriorSeguiu: d.live.anterior ? d.live.anterior.novos.seguiu : null } : null,
     ehRecenteLive,
     numeroImpresso: headlineVal,
+    // Falta dia na janela → o bruto que serve de denominador está subestimado, e
+    // o custo por seguidor sai alto demais. Não dá para corrigir o número; dá
+    // para não fingir que ele está fechado.
+    estimado: _temBuraco,
     coletado: { bruto: d.divSeguidores, brutoAnterior: d.divSeguidoresAnterior, previa: !!d.cpsPrevia },
   })
   const _numerosDoBalde = {
@@ -3316,8 +3327,11 @@ async function refresh() {
       data.chart = {
         gained: barras.map(b => b.g), lost: barras.map(b => b.l),
         netOnly: barras.map(b => b.net), estimado: barras.map(b => !!b.est),
-        labels: serie.map(s => { const dt = new Date(s.label + 'T12:00:00'); return curto ? _d3[dt.getDay()] : _lbl(s.label) }),
-        dates: serie.map(s => _dfull(s.label)),
+        // ⚠️ O RÓTULO É A RÉGUA DO PAINEL no personalizado: a barra carrega o dia
+        // 04 e aparece como "05", igual ao Instagram. O DADO continua sendo o do
+        // dia certo — quem muda é só o eixo. Mês passado segue no dia real.
+        labels: serie.map(s => { const _r = _ehCustom ? rotuloDoPainel(s.label) : s.label; const dt = new Date(_r + 'T12:00:00'); return curto ? _d3[dt.getDay()] : _lbl(_r) }),
+        dates: serie.map(s => _dfull(_ehCustom ? rotuloDoPainel(s.label) : s.label)),
         // comparativo: mesmos dias do MÊS ANTERIOR (por dia).
         prevSeguiu: seriePrev ? seriePrev.map(s => s.seguiu) : null,
         prevDeixou: seriePrev ? seriePrev.map(s => s.deixou) : null,
