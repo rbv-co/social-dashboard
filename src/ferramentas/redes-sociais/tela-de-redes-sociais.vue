@@ -505,6 +505,7 @@ import { sb } from '../../compartilhado/buscar-e-salvar-dados.js'
 import { hojeLocal } from '../../compartilhado/datas.js'
 import { montarSerieDeInvestimento, montarSerieDeCustoPorSeguidor, montarSerieDeCustoPorResultado, diasComInvestimentoEResultado, valeDesenharOGrafico } from './series-diarias-de-meta-ads.js'
 import { graficoDoCartao, opcoesDoGrafico } from './graficos-de-custo-diario.js'
+import { janelaDoPersonalizado } from './janela-de-seguidores.js'
 // Quanta largura um gráfico de um ponto por dia precisa ter, e se ele passa a
 // rolar para o lado. Puro e com teste ao lado (largura-do-grafico.test.mjs).
 // Nasceu da medida a 375px: 30 dias em 319px davam ~10px por dia e os valores em
@@ -1976,6 +1977,19 @@ async function fetchData(accountId, period, customStart, customEnd) {
     const _n = new Date()
     followStart = localDate(new Date(_n.getFullYear(), _n.getMonth() - 1, 1))
     followEnd = localDate(new Date(_n.getFullYear(), _n.getMonth(), 0))
+  }
+  else if (customStart) {
+    // ⚠️ PERSONALIZADO: -1 DIA NOS DOIS LADOS, para bater com o painel profissional.
+    // O painel rotula cada dia um dia à frente da API — medido em 09/09/2026 na
+    // Vessel: "5 a 8 de setembro" no painel = 951/31, que é EXATAMENTE a soma dos
+    // dias 04+05+06+07 da API. Sem isto, a tela somava 05..08 e dava 883, com o
+    // dia 08 ainda 0/0. Ver `janela-de-seguidores.js`, que traz a medição inteira.
+    //
+    // Só o personalizado desloca: os rolantes e o mês corrente estão congelados em
+    // `_TRAVA_JANELAS` porque JÁ batem com o painel sem deslocamento.
+    const _j = janelaDoPersonalizado(periodStartStr, refDateStr)
+    followStart = _j ? _j.inicio : periodStartStr
+    followEnd = _j ? _j.fim : refDateStr
   }
   else { followStart = periodStartStr; followEnd = refDateStr }
   const _fsMs = new Date(followStart + 'T00:00:00').getTime()

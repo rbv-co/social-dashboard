@@ -152,3 +152,29 @@ trecho de dias ficaria à vista, porque não há quem arraste. Se um dia este pa
 for para uma TV, é isto que precisa ser revisto.
 
 Detalhes e medidas em docs/superpowers/relatorio-graficos-celular.md.
+
+PERIODO PERSONALIZADO x PAINEL PROFISSIONAL (09/09/2026)
+--------------------------------------------------------
+⚠️ O PAINEL DO INSTAGRAM ROTULA CADA DIA UM DIA A FRENTE DA API. Medido na
+Vessel: o painel mostrava 951 seguiram / 31 sairam para "5 a 8 de setembro", e a
+soma dos dias 04+05+06+07 da API da exatamente 951 e 31 — os DOIS numeros. O
+"5 de setembro" do painel e o dia 4 da API.
+
+⚠️ NAO ERA O DIA 8 FALTANDO, que foi a primeira hipotese. A contagem total foi de
+15.877 (dia 7) para 16.320 (dia 8): o dia 8 rendeu ~443 liquidos. Se ele fosse os
+44/7 que faltam para 951, a contagem teria subido 37.
+
+Por isso o PERSONALIZADO recorta com -1 dia nos dois lados (`janela-de-seguidores.js`,
+7 testes). ⚠️ SO ELE: os rolantes (7D/14D/30D) e o mes corrente ja batem com o
+painel SEM deslocamento e estao congelados em `_TRAVA_JANELAS`; o mes passado ja
+deslocava. Mexer nos que funcionam para consertar um que nao funciona troca um
+defeito conhecido por tres.
+
+⚠️ O RECORTE DO CARD NAO SAI DE `janelasDoPeriodo`. Ele e calculado em
+`followStart`/`followEnd`, num segundo lugar do mesmo arquivo — foi por isso que
+a primeira leitura ("desloca em janelasDoPeriodo") teria sido no lugar errado.
+`janelasDoPeriodo` alimenta a serie AO VIVO (as barras) e o engajamento.
+
+As BARRAS continuam mostrando o dia real, sem deslocamento — mesmo comportamento
+do painel, e mesma escolha que ja valia para o mes passado. Entao a soma das
+barras pode diferir do numero do card, de proposito.
