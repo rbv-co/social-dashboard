@@ -1524,16 +1524,28 @@ function montarNotaDeEstimativa(semPublicacao, diag) {
     _querDiag = localStorage.getItem('rbv_diag') === '1'
       || new URLSearchParams(window.location.search).get('diag') === '1'
   } catch (e) {}
-  const _diagHtml = (diag && (estado.is_superadmin || _querDiag))
-    ? `<div class="nota-est-tec">🔧 recorte: ${escHtml(diag.ehCustom ? 'PERSONALIZADO' : 'período ' + diag.periodo)}`
-      + ` · janela ${escHtml(diag.follow)} (${diag.effectivePeriod} dia(s))`
-      + ` · seguidores: ${escHtml(diag.fonteSeguidores || '?')}`
+  // ⚠️ SEM HTML AQUI. A primeira versao usava `escHtml`, que NAO EXISTE nesta tela
+  // — `ReferenceError` dentro desta funcao, que roda ANTES dos cartoes de anuncio:
+  // a faixa de diagnostico aparecia (ela vem antes) e da secao Meta Ads para baixo
+  // zerava TUDO. O dono levou horas nisso. Texto puro nao tem como quebrar.
+  const _diagTxt = (diag && (estado.is_superadmin || _querDiag))
+    ? `🔧 recorte: ${diag.ehCustom ? 'PERSONALIZADO' : 'período ' + diag.periodo}`
+      + ` · janela ${diag.follow} (${diag.effectivePeriod} dia(s))`
+      + ` · seguidores: ${diag.fonteSeguidores || '?'}`
       + ` · ads: period_days=${diag.adsPd}, ${diag.adsDias} dia(s), ${diag.adsLinhas} linha(s)`
-      + ` · snapshot de engajamento: ${diag.storedPeriod}d · ao vivo: ${diag.aoVivo ? 'sim' : 'NÃO'}</div>`
+      + ` · snapshot de engajamento: ${diag.storedPeriod}d · ao vivo: ${diag.aoVivo ? 'sim' : 'NÃO'}`
     : ''
+  const _porDiag = () => {
+    if (!_diagTxt) return
+    const t = document.createElement('div')
+    t.className = 'nota-est-tec'
+    t.textContent = _diagTxt
+    el.appendChild(t)
+  }
   if (!dias.length) {
-    el.innerHTML = _diagHtml
-    el.hidden = !_diagHtml
+    el.innerHTML = ''
+    _porDiag()
+    el.hidden = !_diagTxt
     return
   }
   // Só datas YYYY-MM-DD entram. Este texto vai por innerHTML e o rótulo do dia dá
@@ -1549,7 +1561,8 @@ function montarNotaDeEstimativa(semPublicacao, diag) {
   if (estado.is_superadmin) {
     html += `<div class="nota-est-tec">🔧 O Instagram não publica <code>follows_and_unfollows</code> desde ${desde}. A coleta está rodando normalmente e a contagem total continua chegando — a falta é do lado da Meta. Se ela voltar a publicar em até 14 dias, o coletor preenche esses dias sozinho; passando disso, o número se perde.</div>`
   }
-  el.innerHTML = html + _diagHtml
+  el.innerHTML = html
+  _porDiag()
   el.hidden = false
 }
 
