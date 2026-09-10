@@ -2886,6 +2886,36 @@ function update(d, period) {
     }
   }
   buildChart(d.chart)
+  // ⚠️ FAIXA FIXA NO TOPO, CRIADA AQUI. A nota sob o gráfico foi tentada duas vezes
+  // e o dono não a viu nenhuma: primeiro por estar atrás de `is_superadmin`, depois
+  // porque o roteador apagava o `?diag=1`. Instrumentação que a pessoa não acha não
+  // serve. Esta não depende de elemento no template, não rola com a página, e sai
+  // no console junto — se a faixa falhar, o console tem.
+  try {
+    const _ligado = localStorage.getItem('rbv_diag') === '1'
+      || new URLSearchParams(window.location.search).get('diag') === '1'
+    if (_ligado && d.diag) {
+      const _txt = `recorte: ${d.diag.ehCustom ? 'PERSONALIZADO' : 'periodo ' + d.diag.periodo}`
+        + ` · janela ${d.diag.follow} (${d.diag.effectivePeriod} dia(s))`
+        + ` · seguidores: ${_somaBarras ? 'soma de ' + ((d.chart && d.chart.gained || []).length) + ' barra(s)' : 'caminho antigo'}`
+        + ` · ads: period_days=${d.diag.adsPd}, ${d.diag.adsDias} dia(s), ${d.diag.adsLinhas} linha(s)`
+        + ` · snapshot engajamento: ${d.diag.storedPeriod}d · ao vivo: ${d.live ? 'sim' : 'NAO'}`
+      console.log('%c🔧 DIAGNÓSTICO ' + _txt, 'background:#7a0025;color:#fff;padding:2px 6px')
+      let _f = document.getElementById('rbv-diag-faixa')
+      if (!_f) {
+        _f = document.createElement('div')
+        _f.id = 'rbv-diag-faixa'
+        _f.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#7a0025;color:#fff;'
+          + 'font:600 12px/1.4 monospace;padding:6px 10px;white-space:pre-wrap;word-break:break-word;'
+          + 'box-shadow:0 2px 8px rgba(0,0,0,.35);cursor:pointer'
+        _f.title = 'Clique para esconder. Para desligar de vez, abra o endereço com ?diag=0'
+        _f.onclick = () => { _f.style.display = 'none' }
+        document.body.appendChild(_f)
+      }
+      _f.style.display = ''
+      _f.textContent = '🔧 ' + _txt
+    }
+  } catch (e) {}
   montarNotaDeEstimativa(d.semPublicacao, d.diag && {
     ...d.diag,
     aoVivo: !!d.live,
