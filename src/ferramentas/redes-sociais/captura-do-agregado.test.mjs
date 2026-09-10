@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { capturaDoAgregado, capturaEstaNaJanela } from './captura-do-agregado.js';
+import { capturaDoAgregado, capturaEstaNaJanela, capturasDaJanela } from './captura-do-agregado.js';
 
 // O CASO REAL QUE ORIGINOU ESTE MÓDULO (medido em produção, 17/08/2026):
 // Breno Vale, período 7D (janela 10/08..17/08), tipo "Site e alcance". As
@@ -62,3 +62,70 @@ test('data ausente nunca vale por si: sem data não há como provar que está na
   assert.equal(capturaEstaNaJanela(null, janela7D), false);
   assert.equal(capturaEstaNaJanela('', janela7D), false);
 });
+
+/* ── INTERVALO ESCOLHIDO: SOMA OS DIAS, NÃO ESCOLHE UM ──────────────────────
+ *
+ * ⚠️ OS CARTÕES DE META ADS NUNCA TIVERAM JANELA PERSONALIZADA. Eles liam
+ * `period_days = closestStoredPeriod(dias)` — ou seja, arredondavam o intervalo
+ * escolhido para a captura agregada de 1, 7, 14 ou 30 dias mais próxima, e
+ * pegavam UMA captura. Escolher 5 a 9 (4 dias) caía na de 1 dia; vindo de "7
+ * dias", caía na mesma de antes e os números não mudavam.
+ *
+ * O dono, em 09/09/2026: "periodo personalizado ta bugado, ele n tras o periodo
+ * em questão, fica bugado mantendo o atual... aconteceu principalmente nos cards
+ * do meta ads".
+ *
+ * Medido no mesmo dia: existe captura DIÁRIA (`period_days = 0`) cobrindo o
+ * período, e somá-la dá R$ 14.948,60 de investimento entre 5 e 9 de setembro.
+ */
+
+test('soma todos os dias do intervalo, não só o mais recente', () => {
+  const linhas = [
+    { captured_at: '2026-09-09', campaign_id: 'a', spend: 10 },
+    { captured_at: '2026-09-08', campaign_id: 'a', spend: 20 },
+    { captured_at: '2026-09-08', campaign_id: 'b', spend: 5 },
+    { captured_at: '2026-09-07', campaign_id: 'a', spend: 30 },
+  ]
+  const r = capturasDaJanela(linhas, { inicio: '2026-09-07', fim: '2026-09-09' })
+  assert.equal(r.linhas.length, 4)
+  assert.deepEqual(r.dias, ['2026-09-07', '2026-09-08', '2026-09-09'])
+  assert.equal(r.foraDaJanela, false)
+})
+
+test('dia fora do intervalo fica de fora', () => {
+  const linhas = [
+    { captured_at: '2026-09-10', campaign_id: 'a', spend: 99 },
+    { captured_at: '2026-09-08', campaign_id: 'a', spend: 20 },
+    { captured_at: '2026-09-04', campaign_id: 'a', spend: 77 },
+  ]
+  const r = capturasDaJanela(linhas, { inicio: '2026-09-05', fim: '2026-09-09' })
+  assert.deepEqual(r.linhas.map((l) => l.spend), [20])
+  assert.deepEqual(r.dias, ['2026-09-08'])
+})
+
+test('⚠️ nenhum dia dentro do intervalo NÃO é "captura velha" — é vazio', () => {
+  /* `capturaDoAgregado` marca `foraDaJanela` para avisar que a captura mais nova
+   * é antiga demais. Aqui isso não existe: ou o dia está no intervalo, ou não é
+   * desta janela. Marcar "fora" faria a tela escrever um aviso que não cabe. */
+  const r = capturasDaJanela([{ captured_at: '2026-01-01', campaign_id: 'a', spend: 1 }],
+    { inicio: '2026-09-05', fim: '2026-09-09' })
+  assert.deepEqual(r.linhas, [])
+  assert.deepEqual(r.dias, [])
+  assert.equal(r.foraDaJanela, false)
+})
+
+test('aguenta lista vazia, nula e linha sem data', () => {
+  for (const ruim of [null, undefined, [], [{ campaign_id: 'a' }]]) {
+    const r = capturasDaJanela(ruim, { inicio: '2026-09-05', fim: '2026-09-09' })
+    assert.deepEqual(r.linhas, [])
+    assert.deepEqual(r.dias, [])
+  }
+})
+
+test('janela incompleta não deixa passar tudo', () => {
+  // Sem início ou sem fim não há intervalo — devolver tudo somaria meses.
+  const linhas = [{ captured_at: '2026-09-08', campaign_id: 'a', spend: 20 }]
+  assert.deepEqual(capturasDaJanela(linhas, { inicio: '2026-09-05' }).linhas, [])
+  assert.deepEqual(capturasDaJanela(linhas, {}).linhas, [])
+  assert.deepEqual(capturasDaJanela(linhas, null).linhas, [])
+})

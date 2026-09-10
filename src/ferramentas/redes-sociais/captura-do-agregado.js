@@ -51,3 +51,35 @@ export function capturaDoAgregado(linhas, janela) {
   if (!capturaEstaNaJanela(data, janela)) return { data, foraDaJanela: true, linhas: [] };
   return { data, foraDaJanela: false, linhas: lista.filter(r => String(r.captured_at) === data) };
 }
+
+/**
+ * TODAS as capturas DIÁRIAS dentro de um intervalo escolhido.
+ *
+ * ⚠️ OS CARTÕES DE META ADS NUNCA TIVERAM JANELA PERSONALIZADA. Eles liam
+ * `period_days = closestStoredPeriod(dias)` — arredondavam o intervalo para a
+ * captura agregada de 1, 7, 14 ou 30 dias mais próxima e pegavam UMA captura.
+ * Escolher 5 a 9 (4 dias) caía na de 1 dia; vindo de "7 dias", caía na mesma de
+ * antes, e por isso os números não mudavam ao trocar o período. Achado pelo dono
+ * em 09/09/2026.
+ *
+ * Aqui é diferente de `capturaDoAgregado`, e de propósito: lá se escolhe UMA
+ * captura (a mais nova) e se recusa quando ela é velha demais. Aqui se SOMAM os
+ * dias do intervalo — e não existe "captura velha": ou o dia está dentro, ou não
+ * é desta janela. Por isso `foraDaJanela` é sempre falso.
+ *
+ * ⚠️ QUEM SOMA ALCANCE POR AQUI ESTÁ SOMANDO PESSOA REPETIDA: a mesma pessoa
+ * alcançada em três dias conta três vezes. O nível-conta (`account_insights`) não
+ * ajuda num intervalo, porque lá também há uma linha por captura. O cartão TEM de
+ * dizer que o alcance está somado — é o que o `alcanceSomado` já faz.
+ */
+export function capturasDaJanela(linhas, janela) {
+  const j = janela || {};
+  const vazio = { dias: [], linhas: [], foraDaJanela: false, data: null };
+  if (!j.inicio || !j.fim) return vazio;
+  const dentro = (Array.isArray(linhas) ? linhas : []).filter((r) => {
+    const d = r && r.captured_at ? String(r.captured_at) : null;
+    return d && d >= j.inicio && d <= j.fim;
+  });
+  const dias = [...new Set(dentro.map((r) => String(r.captured_at)))].sort();
+  return { dias, linhas: dentro, foraDaJanela: false, data: dias[dias.length - 1] || null };
+}

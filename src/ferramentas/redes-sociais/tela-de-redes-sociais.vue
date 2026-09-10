@@ -520,7 +520,7 @@ import { barraDoDia, diasSemPublicacao, totalPelasBarras } from './estimativa-de
 // sinal que a Meta afirma no conjunto — nunca pelo nome da campanha.
 import { BALDES, idsDoBalde, idsParaConsulta, conjuntosMaisRecentes, baldesSemGasto, baldeEfetivo, classificacaoEhProvisoria, campanhasSemTipoConfirmado, fraseDoRecorte } from './baldes-do-painel.js'
 import { cartoesDoBalde, podeDarVeredito, chaveDeMeta, ehMetaDeTaxa } from './cartoes-do-balde.js'
-import { capturaDoAgregado } from './captura-do-agregado.js'
+import { capturaDoAgregado, capturasDaJanela } from './captura-do-agregado.js'
 // Por quantos seguidores o custo por seguidor divide. Puro e com teste ao lado:
 // o denominador tem de sair da MESMA fonte do número impresso no cartão de
 // seguidores — era daí que vinha o R$ 16,76 no lugar de R$ 8,22.
@@ -2256,8 +2256,23 @@ async function fetchData(accountId, period, customStart, customEnd) {
   const _tolDias = Math.max(1, Math.round((new Date(refDateStr + 'T00:00:00').getTime() - new Date(followStart + 'T00:00:00').getTime()) / 86400000))
   let _janCur = { inicio: followStart, fim: refDateStr }
   let _janPrev = { inicio: localDate(new Date(new Date(prevRefDateStr + 'T00:00:00').getTime() - _tolDias * 86400000)), fim: prevRefDateStr }
-  if (isHoje) { _adsPd = 0; _adsCur = `captured_at=eq.${_hojeBRT}`; _adsPrev = `captured_at=eq.${_ontemBRT}`; _janCur = { inicio: _hojeBRT, fim: _hojeBRT }; _janPrev = { inicio: _ontemBRT, fim: _ontemBRT } }
-  else if (period === 1) { const _anteBRT = localDate(new Date(new Date(_ontemBRT + 'T00:00:00').getTime() - 86400000)); _adsPd = 0; _adsCur = `captured_at=eq.${_ontemBRT}`; _adsPrev = `captured_at=eq.${_anteBRT}`; _janCur = { inicio: _ontemBRT, fim: _ontemBRT }; _janPrev = { inicio: _anteBRT, fim: _anteBRT } }
+  // ⚠️ INTERVALO ESCOLHIDO SOMA OS DIAS. Até 09/09/2026 os cartões de Meta Ads
+  // liam `period_days = closestStoredPeriod(dias)` — arredondavam o intervalo para
+  // a captura agregada de 1, 7, 14 ou 30 dias e pegavam UMA. Escolher 5 a 9 caía
+  // na de 1 dia; vindo de "7 dias", caía na mesma de antes e os números NÃO
+  // MUDAVAM ao trocar de período. Foi o que o dono viu.
+  //
+  // Existe captura DIÁRIA (`period_days = 0`) cobrindo o intervalo — medido no
+  // mesmo dia: 5 a 9 de setembro somam R$ 14.948,60 de investimento.
+  if (ehCustom) {
+    _adsPd = 0
+    _adsCur = `captured_at=gte.${followStart}&captured_at=lte.${followEnd}&order=captured_at.desc`
+    _adsPrev = `captured_at=gte.${prevStartStr}&captured_at=lte.${prevEndStr}&order=captured_at.desc`
+    _janCur = { inicio: followStart, fim: followEnd }
+    _janPrev = { inicio: prevStartStr, fim: prevEndStr }
+  }
+  else if (isHoje) { _adsPd = 0; _adsCur = `captured_at=eq.${_hojeBRT}`; _adsPrev = `captured_at=eq.${_ontemBRT}`; _janCur = { inicio: _hojeBRT, fim: _hojeBRT }; _janPrev = { inicio: _ontemBRT, fim: _ontemBRT } }
+  else if (isOntem) { const _anteBRT = localDate(new Date(new Date(_ontemBRT + 'T00:00:00').getTime() - 86400000)); _adsPd = 0; _adsCur = `captured_at=eq.${_ontemBRT}`; _adsPrev = `captured_at=eq.${_anteBRT}`; _janCur = { inicio: _ontemBRT, fim: _ontemBRT }; _janPrev = { inicio: _anteBRT, fim: _anteBRT } }
   // De quando é a captura que foi RECUSADA por ser de fora da janela. null = não
   // houve recusa. A tela escreve isso junto dos "—", senão o dono vê traço sem
   // saber se é falta de coleta, falta de gasto, ou defeito.
@@ -2269,10 +2284,21 @@ async function fetchData(accountId, period, customStart, customEnd) {
   // para sempre (medido: 37 das 38 campanhas sem conjunto não gastam nada).
   let _idsComGastoNaJanela = []
   if (!_recorteSemCampanha) {
+    // ⚠️ O TETO DE 200 LINHAS SERVIA PARA UMA CAPTURA SÓ. Somando um intervalo,
+    // são ~30 campanhas POR DIA: cinco dias já dão 150, e um mês estoura — o
+    // PostgREST corta em silêncio e o investimento sai MENOR sem aviso nenhum,
+    // que é o defeito mais caro desta casa (número no lugar de falha).
+    const _tetoAds = ehCustom ? 5000 : 200
     const [ciCurr, ciPrev] = await Promise.all([
-      sb(`campaign_insights?account_id=eq.${accountId}&period_days=eq.${_adsPd}&${_adsCur}&limit=200&select=campaign_id,spend,impressions,clicks,reach,post_engagement,likes,comments,shares,saves,conversas,cadastros,compras,visitas,captured_at${idFilter}`),
-      sb(`campaign_insights?account_id=eq.${accountId}&period_days=eq.${_adsPd}&${_adsPrev}&limit=200&select=campaign_id,spend,impressions,clicks,reach,post_engagement,likes,comments,shares,saves,conversas,cadastros,compras,visitas,captured_at${idFilter}`),
+      sb(`campaign_insights?account_id=eq.${accountId}&period_days=eq.${_adsPd}&${_adsCur}&limit=${_tetoAds}&select=campaign_id,spend,impressions,clicks,reach,post_engagement,likes,comments,shares,saves,conversas,cadastros,compras,visitas,captured_at${idFilter}`),
+      sb(`campaign_insights?account_id=eq.${accountId}&period_days=eq.${_adsPd}&${_adsPrev}&limit=${_tetoAds}&select=campaign_id,spend,impressions,clicks,reach,post_engagement,likes,comments,shares,saves,conversas,cadastros,compras,visitas,captured_at${idFilter}`),
     ])
+    // ⚠️ BATEU NO TETO = LEITURA PELA METADE, e não "foi isso que teve". Sem este
+    // aviso o dono veria um investimento menor e acreditaria.
+    if ((ciCurr && ciCurr.length >= _tetoAds) || (ciPrev && ciPrev.length >= _tetoAds)) {
+      erroAds.value = erroAds.value
+        || 'A leitura de anúncios bateu no teto de linhas e pode estar incompleta — escolha um intervalo menor.'
+    }
     // Captura o .erro AQUI, colado no await: o .erro é uma propriedade do array
     // que o sb() devolveu — .filter()/.map() (o aggCi abaixo) criam array novo e
     // deixam o .erro para trás.
@@ -2281,8 +2307,10 @@ async function fetchData(accountId, period, customStart, customEnd) {
     erroAds.value = erroAds.value || ciCurr.erro || ciPrev.erro || null
     // A captura mais recente de CADA consulta, recusada quando é de fora da
     // janela que a tela está afirmando (ver captura-do-agregado.js).
-    const _capCur = capturaDoAgregado(ciCurr, _janCur)
-    const _capPrev = capturaDoAgregado(ciPrev, _janPrev)
+    // Intervalo escolhido soma TODOS os dias; os demais períodos continuam
+    // pegando a captura agregada mais nova e recusando a que for velha demais.
+    const _capCur = ehCustom ? capturasDaJanela(ciCurr, _janCur) : capturaDoAgregado(ciCurr, _janCur)
+    const _capPrev = ehCustom ? capturasDaJanela(ciPrev, _janPrev) : capturaDoAgregado(ciPrev, _janPrev)
     capturaAdsFora = _capCur.foraDaJanela ? _capCur.data : null
     // A captura já vem recortada pelo balde e pelo filtro manual (o idFilter da
     // consulta), e já vem recusada quando é velha demais — então isto é, com
@@ -2310,7 +2338,11 @@ async function fetchData(accountId, period, customStart, customEnd) {
     // linha que já estava sendo lida. As impressões do nível-conta batem EXATO com
     // a soma por campanha nas 5 contas (conferido em 17/08/2026) — impressão não
     // duplica pessoa, então aqui é só coerência de fonte, não correção de número.
-    if (_todasAsCampanhas) {
+    // ⚠️ NO INTERVALO ESCOLHIDO NÃO HÁ ALCANCE DEDUPLICADO. `account_insights`
+    // também tem uma linha por captura: com `limit=1` num intervalo, o número
+    // seria o de UM DIA — menor que a verdade, impresso como se fosse do período.
+    // Melhor o alcance somado, que o cartão já declara ("repete pessoa").
+    if (_todasAsCampanhas && !ehCustom) {
       const aiCurr = await sb(`account_insights?account_id=eq.${accountId}&period_days=eq.${_adsPd}&${_adsCur}&limit=1&select=reach,impressions,frequency`).catch(() => [])
       // `> 0`, NÃO `!= null`. Estas três colunas são anuláveis MAS têm default 0:
       // a linha em que a Meta não publicou nada chega com zero, passa por um

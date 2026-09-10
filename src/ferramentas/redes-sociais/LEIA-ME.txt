@@ -290,3 +290,22 @@ Hoje TODAS as decisoes olham as datas: `ehCustom`, `isHoje`, `isOntem`,
 `isCalMonth`, `ehRecorteRolante(period, ini, fim)` e
 `ehGraficoDeContexto(period, ini, fim)`. Congelado em periodo-olha-as-datas.test.mjs
 — se alguem voltar a decidir so pelo numero, o teste quebra.
+
+⚠️⚠️ OS CARTOES DE META ADS NUNCA TIVERAM JANELA PERSONALIZADA (ate 09/09/2026)
+Eles liam `period_days = closestStoredPeriod(dias)` — arredondavam o intervalo
+escolhido para a captura AGREGADA de 1, 7, 14 ou 30 dias mais proxima, e pegavam
+UMA captura. Escolher 5 a 9 (4 dias) caia na de 1 dia; vindo de "7 dias", caia na
+MESMA de antes e os numeros nao mudavam ao trocar de periodo. O dono achou.
+
+Agora, no intervalo escolhido: `period_days = 0` (captura DIARIA) somando todos os
+dias da janela, por `capturasDaJanela` (em captura-do-agregado.js, com teste).
+Medido: 5 a 9 de setembro somam R$ 14.948,60 de investimento.
+
+⚠️ NAO HA ALCANCE DEDUPLICADO NO INTERVALO. `account_insights` tambem tem uma linha
+por captura: com `limit=1` num intervalo o numero seria o de UM DIA, menor que a
+verdade e impresso como se fosse do periodo. Fica o alcance SOMADO, que o cartao ja
+declara ("repete pessoa").
+
+⚠️ E O TETO DE LINHAS VIROU AVISO. O `limit=200` servia para uma captura so; somando
+dias sao ~30 campanhas POR DIA. Bater no teto agora acende recado — antes o
+PostgREST cortava em silencio e o investimento saia MENOR sem ninguem saber.
