@@ -53,3 +53,48 @@ test('⚠️ o mês corrente também olha as datas', () => {
   assert.match(TELA, /const isCalMonth = !ehCustom &&/)
   assert.match(TELA, /const _mesAtual = !_ehCustom &&/)
 })
+
+/* ⚠️⚠️ O DEFEITO QUE CUSTOU A NOITE: OS CAMPOS DE DATA MENTIAM.
+ *
+ * O navegador RESTAURA sozinho o valor de um `<input type="date">` ao recarregar,
+ * mas o estado da tela voltava para o período guardado (7 dias). Os campos
+ * mostravam "05/09 a 09/09" e a tela calculava SETE DIAS por dentro.
+ *
+ * A faixa de diagnóstico entregou em uma linha o que horas de dedução não
+ * entregaram: `recorte: periodo 7 · janela 2026-09-02→2026-09-08` — com os campos
+ * de data preenchidos com 05 e 09 na cara do dono.
+ *
+ * Tudo o que ele apontou naquela noite vinha daqui: gráfico com 8 barras num
+ * intervalo de 5, Meta Ads com uma captura só, cards zerados, números que não
+ * mudavam ao trocar de período. Cada número que eu conferia batia — com o período
+ * ERRADO. E eu conferia o banco e a API em vez de perguntar o que a TELA estava
+ * usando.
+ */
+
+test('⚠️ o intervalo é guardado, como o período já era', () => {
+  assert.match(TELA, /const CHAVE_INTERVALO = 'dash_custom'/)
+  assert.match(TELA, /localStorage\.setItem\(CHAVE_INTERVALO, JSON\.stringify\(\{ s, e \}\)\)/)
+  assert.match(TELA, /let currentStartDate = _intervaloGuardado \? _intervaloGuardado\.s : null/)
+})
+
+test('⚠️ trocar de período e limpar apagam o intervalo guardado', () => {
+  // Sem isto, clicar em "7 dias" deixaria o intervalo guardado para trás e a
+  // próxima recarga voltaria a ele sem ninguém pedir.
+  const usos = TELA.match(/localStorage\.removeItem\(CHAVE_INTERVALO\)/g) || []
+  assert.equal(usos.length, 2, 'um ao trocar de período, outro ao limpar')
+})
+
+test('⚠️ no carregamento, os campos são ESPELHO do estado', () => {
+  assert.match(TELA, /OS CAMPOS DE DATA SÃO ESPELHO DO ESTADO, NUNCA O CONTRÁRIO/)
+  // Sem intervalo guardado, os campos são LIMPOS — é o que derruba a restauração
+  // automática do navegador, que foi a origem do defeito.
+  assert.match(TELA, /_ci\.value = ''; _cf\.value = ''/)
+  assert.match(TELA, /_ci\.value = currentStartDate; _cf\.value = currentEndDate/)
+})
+
+test('⚠️ o guardado é conferido antes de virar estado', () => {
+  // Texto qualquer no localStorage não pode virar janela: data estragada
+  // recortaria o período em silêncio.
+  assert.match(TELA, /\/\^\\d\{4\}-\\d\{2\}-\\d\{2\}\$\//)
+  assert.match(TELA, /v\.s <= v\.e/, 'início depois do fim não é intervalo')
+})

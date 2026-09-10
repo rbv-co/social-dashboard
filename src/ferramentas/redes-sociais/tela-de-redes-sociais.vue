@@ -648,8 +648,23 @@ const GOALS = {
    que virou estado.currentSession — importado) ── */
 let currentPeriod = (function () { try { const raw = localStorage.getItem('dash_period'); if (raw == null) return 7; const m = PERIODS.find(p => String(p.value) === raw); return m ? m.value : 7 } catch (e) { return 7 } })()
 let currentAccountId = null
-let currentStartDate = null
-let currentEndDate = null
+// ⚠️ O INTERVALO É GUARDADO, COMO O PERÍODO JÁ ERA — e restaurado JUNTO com os
+// campos de data. Sem isto, o navegador restaurava os CAMPOS ao recarregar e o
+// estado voltava para o período padrão: a tela mostrava "05/09 a 09/09" escrito
+// nos campos e calculava "7 dias" por dentro. O dono passou horas apontando
+// números que não batiam, e todos batiam — com o período errado (09/09/2026).
+const CHAVE_INTERVALO = 'dash_custom'
+const _intervaloGuardado = (function () {
+  try {
+    const raw = localStorage.getItem(CHAVE_INTERVALO)
+    if (!raw) return null
+    const v = JSON.parse(raw)
+    const ehData = (x) => typeof x === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(x)
+    return (ehData(v && v.s) && ehData(v && v.e) && v.s <= v.e) ? v : null
+  } catch (e) { return null }
+})()
+let currentStartDate = _intervaloGuardado ? _intervaloGuardado.s : null
+let currentEndDate = _intervaloGuardado ? _intervaloGuardado.e : null
 let activeChartData = null
 
 /* ── BALDE DE CAMPANHA (seção 02 · Meta Ads) ──
@@ -3285,7 +3300,7 @@ function buildPeriodTabs() {
     btn.appendChild(document.createTextNode(p.label))
     btn.addEventListener('click', () => {
       document.querySelectorAll('.ptab').forEach(b => b.classList.remove('active')); btn.classList.add('active')
-      currentPeriod = p.value; try { localStorage.setItem('dash_period', String(p.value)) } catch (e) {} currentStartDate = null; currentEndDate = null
+      currentPeriod = p.value; try { localStorage.setItem('dash_period', String(p.value)); localStorage.removeItem(CHAVE_INTERVALO) } catch (e) {} currentStartDate = null; currentEndDate = null
       document.getElementById('custom-start').value = ''; document.getElementById('custom-end').value = ''; document.getElementById('custom-clear-btn').style.display = 'none'
       updateGoalDisplays(p.value); refresh()
       if (_hojeTimer) { clearInterval(_hojeTimer); _hojeTimer = null }
@@ -3475,11 +3490,13 @@ function onCustomDateChange() {
   if (!s || !e) return
   if (s > e) { alert('A data inicial deve ser anterior à data final.'); return }
   currentStartDate = s; currentEndDate = e
+  try { localStorage.setItem(CHAVE_INTERVALO, JSON.stringify({ s, e })) } catch (err) {}
   document.querySelectorAll('.ptab').forEach(b => b.classList.remove('active'))
   refresh()
 }
 function clearCustomRange() {
   currentStartDate = null; currentEndDate = null
+  try { localStorage.removeItem(CHAVE_INTERVALO) } catch (e) {}
   document.getElementById('custom-start').value = ''; document.getElementById('custom-end').value = ''
   document.getElementById('custom-clear-btn').style.display = 'none'
   document.querySelectorAll('.ptab').forEach((b, i) => { if (i === 1) b.classList.add('active') })
@@ -3762,6 +3779,34 @@ onMounted(async () => {
     return
   }
   verificarTravaJanelas() // 🔒 auto-teste: avisa no console se a lógica de intervalo foi quebrada.
+  // ⚠️⚠️ OS CAMPOS DE DATA SÃO ESPELHO DO ESTADO, NUNCA O CONTRÁRIO.
+  //
+  // Este foi O defeito de 09/09/2026, e custou uma noite inteira ao dono. O
+  // navegador RESTAURA sozinho o valor de um `<input type="date">` ao recarregar,
+  // mas o estado da tela voltava para o período guardado (7 dias). Resultado: os
+  // campos mostravam "05/09 a 09/09" e a tela calculava SETE DIAS por dentro.
+  //
+  // Tudo o que ele apontou vinha daqui — gráfico com 8 barras num intervalo de 5,
+  // Meta Ads com uma captura só, cards zerados, números que não mudavam ao trocar
+  // de período. Cada número que eu conferia batia; batia com o período ERRADO.
+  //
+  // Agora, no carregamento: ou o intervalo guardado entra nos campos, ou os campos
+  // são LIMPOS. Os dois nunca discordam.
+  {
+    const _ci = document.getElementById('custom-start')
+    const _cf = document.getElementById('custom-end')
+    const _cx = document.getElementById('custom-clear-btn')
+    if (_ci && _cf) {
+      if (currentStartDate && currentEndDate) {
+        _ci.value = currentStartDate; _cf.value = currentEndDate
+        if (_cx) _cx.style.display = 'inline-flex'
+        document.querySelectorAll('.ptab').forEach((b) => b.classList.remove('active'))
+      } else {
+        _ci.value = ''; _cf.value = ''
+        if (_cx) _cx.style.display = 'none'
+      }
+    }
+  }
   // Wiring que no legado rodava solto no escopo global do <script> (ver nota
   // no topo do bloco): tooltip do gráfico + detector de inatividade do auto-cycle.
   svgEl = document.getElementById('followers-chart')
