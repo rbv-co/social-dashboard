@@ -505,7 +505,7 @@ import { sb } from '../../compartilhado/buscar-e-salvar-dados.js'
 import { hojeLocal } from '../../compartilhado/datas.js'
 import { montarSerieDeInvestimento, montarSerieDeCustoPorSeguidor, montarSerieDeCustoPorResultado, diasComInvestimentoEResultado, valeDesenharOGrafico } from './series-diarias-de-meta-ads.js'
 import { graficoDoCartao, opcoesDoGrafico } from './graficos-de-custo-diario.js'
-import { janelaDoPersonalizado, ehRecorteRolante, notaDaDiferenca } from './janela-de-seguidores.js'
+import { ehRecorteRolante } from './janela-de-seguidores.js'
 // Quanta largura um gráfico de um ponto por dia precisa ter, e se ele passa a
 // rolar para o lado. Puro e com teste ao lado (largura-do-grafico.test.mjs).
 // Nasceu da medida a 375px: 30 dias em 319px davam ~10px por dia e os valores em
@@ -514,7 +514,7 @@ import { larguraDoGrafico, rotulosQueCabem, ancoraDoRotulo, ESPACO_ANTES_DO_GRAF
 // Decide se a barra do dia é número do Instagram ou estimativa nossa. Puro e com
 // teste ao lado (estimativa-de-seguidores.test.mjs), usando a contagem REAL do
 // Breno nos dias em que a Meta parou de publicar.
-import { barraDoDia, diasSemPublicacao, faltaNaJanela } from './estimativa-de-seguidores.js'
+import { barraDoDia, diasSemPublicacao, totalPelasBarras } from './estimativa-de-seguidores.js'
 // Em que balde cada campanha entra (Seguidores / Contatos / Site e alcance /
 // Vendas). Puro e com teste ao lado (baldes-do-painel.test.mjs), decidido pelo
 // sinal que a Meta afirma no conjunto — nunca pelo nome da campanha.
@@ -1160,30 +1160,16 @@ function janelasDoPeriodo(period, hoje = new Date(), customStart = null, customE
   const capFol = (u) => new Date(Math.min(u.getTime(), folCap.getTime()))
   const ehLastmonth = period === 'lastmonth'
   const ehRecente = period === 0 || period === 1
-  // ⚠️ O PERSONALIZADO TAMBÉM DESLOCA (09/09/2026). O painel profissional rotula
-  // cada dia UM DIA À FRENTE da API: medido na Vessel, "5 a 8 de setembro" no
-  // painel = 951/31, que é a soma dos dias 04+05+06+07 da API — os dois números.
-  // Sem o deslocamento a janela era [05, 08) = 883, e era isso que o dono via.
-  //
-  // ⚠️ É AQUI QUE O NÚMERO DO CARD NASCE, e não em `followStart`/`followEnd`.
-  // Estes alimentam a edge `insights-ao-vivo`, e o card usa `d.live.novos.total`
-  // sempre que o ao vivo responde — o caminho coletado é só a reserva. Consertar
-  // lá e não aqui não muda nada na tela, e foi o erro que eu cometi primeiro.
-  //
-  // Rolantes e mês corrente NÃO deslocam: já batem com o painel e estão
-  // congelados em `_TRAVA_JANELAS`.
-  const ehCustom = !!(customStart && customEnd)
-  const desloca = ehLastmonth || ehCustom
-  const folS = desloca ? menos1(engS) : engS
-  const folU = desloca ? menos1(engU) : (ehRecente ? engU : capFol(engU))
-  const folSp = desloca ? menos1(engSp) : engSp
-  const folUp = desloca ? menos1(engUp) : engUp
+  const folS = ehLastmonth ? menos1(engS) : engS
+  const folU = ehLastmonth ? menos1(engU) : (ehRecente ? engU : capFol(engU))
+  const folSp = ehLastmonth ? menos1(engSp) : engSp
+  const folUp = ehLastmonth ? menos1(engUp) : engUp
   return {
     engSince: TS(engS), engUntil: TS(engU),
     folSince: TS(folS), folUntil: TS(folU),
     prevEngSince: TS(engSp), prevEngUntil: TS(engUp),
     prevFolSince: TS(folSp), prevFolUntil: TS(folUp),
-    folShift: desloca,
+    folShift: ehLastmonth,
   }
 }
 
@@ -1495,22 +1481,11 @@ function _animateChartLine(el, pts) {
 //   • SÓ O SUPER-ADMIN vê a explicação técnica (desde quando, quantos dias, que a
 //     falta é da Meta). Para quem só usa o painel isso é ruído; para quem cuida
 //     do sistema é o aviso de que tem coisa parada.
-function montarNotaDeEstimativa(semPublicacao, notaDiferenca) {
+function montarNotaDeEstimativa(semPublicacao) {
   const el = document.getElementById('nota-estimativa')
   if (!el) return
   const dias = semPublicacao || []
-  // ⚠️ A DIFERENÇA ENTRE AS BARRAS E O CARD É EXPLICADA, NÃO ESCONDIDA. Ela é
-  // real: as barras estão no dia do calendário e o card na régua do Instagram,
-  // que começa e termina um dia antes. O próprio painel do Instagram mostra essa
-  // diferença — filtrando 5 a 8 ele dá total 951 e o gráfico dele para no dia 7.
-  const _difHtml = notaDiferenca
-    ? `<div class="nota-est-tec" style="color:var(--muted);">${escHtml(notaDiferenca)}</div>`
-    : ''
-  if (!dias.length) {
-    el.innerHTML = _difHtml
-    el.hidden = !_difHtml
-    return
-  }
+  if (!dias.length) { el.hidden = true; el.innerHTML = ''; return }
   // Só datas YYYY-MM-DD entram. Este texto vai por innerHTML e o rótulo do dia dá
   // uma volta pela Edge Function antes de chegar aqui — nada que não seja data
   // passa, e o resto do texto é fixo, escrito neste arquivo.
@@ -1524,7 +1499,7 @@ function montarNotaDeEstimativa(semPublicacao, notaDiferenca) {
   if (estado.is_superadmin) {
     html += `<div class="nota-est-tec">🔧 O Instagram não publica <code>follows_and_unfollows</code> desde ${desde}. A coleta está rodando normalmente e a contagem total continua chegando — a falta é do lado da Meta. Se ela voltar a publicar em até 14 dias, o coletor preenche esses dias sozinho; passando disso, o número se perde.</div>`
   }
-  el.innerHTML = html + _difHtml
+  el.innerHTML = html
   el.hidden = false
 }
 
@@ -2014,19 +1989,6 @@ async function fetchData(accountId, period, customStart, customEnd) {
     followStart = localDate(new Date(_n.getFullYear(), _n.getMonth() - 1, 1))
     followEnd = localDate(new Date(_n.getFullYear(), _n.getMonth(), 0))
   }
-  else if (customStart) {
-    // ⚠️ PERSONALIZADO: -1 DIA NOS DOIS LADOS, para bater com o painel profissional.
-    // O painel rotula cada dia um dia à frente da API — medido em 09/09/2026 na
-    // Vessel: "5 a 8 de setembro" no painel = 951/31, que é EXATAMENTE a soma dos
-    // dias 04+05+06+07 da API. Sem isto, a tela somava 05..08 e dava 883, com o
-    // dia 08 ainda 0/0. Ver `janela-de-seguidores.js`, que traz a medição inteira.
-    //
-    // Só o personalizado desloca: os rolantes e o mês corrente estão congelados em
-    // `_TRAVA_JANELAS` porque JÁ batem com o painel sem deslocamento.
-    const _j = janelaDoPersonalizado(periodStartStr, refDateStr)
-    followStart = _j ? _j.inicio : periodStartStr
-    followEnd = _j ? _j.fim : refDateStr
-  }
   else { followStart = periodStartStr; followEnd = refDateStr }
   const _fsMs = new Date(followStart + 'T00:00:00').getTime()
   const _spanDays = Math.round((new Date(followEnd + 'T00:00:00').getTime() - _fsMs) / 86400000) + 1
@@ -2114,21 +2076,6 @@ async function fetchData(accountId, period, customStart, customEnd) {
   // mostramos o oficial (IGUAL ao IG); senão, mostramos a variação da contagem (fresca) "em consolidação".
   const lastGrossDay = snaps.reduce((mx, s) => (((Number(s.gained) || 0) > 0 || (Number(s.lost) || 0) > 0) && s.captured_at > mx) ? s.captured_at : mx, '')
   const confirmadoIG = !!lastGrossDay && followEnd <= lastGrossDay
-  // ⚠️ O DIA QUE A META NÃO PUBLICOU SOME DO AGREGADO, E SOME CALADO. Medido em
-  // 09/09/2026 na Vessel: a janela [05/09, 09/09) tem QUATRO dias, o dia 08 valeu
-  // ~443 líquidos, e a Meta devolveu 907/24 — o mesmo dos três dias publicados.
-  // Nenhum campo diz "faltou um dia"; o total só sai menor. O dono viu.
-  //
-  // ⚠️ SÓ NO PERSONALIZADO. É o único período em que a janela do card
-  // (`followStart`/`followEnd`) e a janela do AO VIVO (`folSince`/`folUntil`) são
-  // comprovadamente a mesma — as duas deslocadas -1 dia. Nos rolantes elas
-  // diferem por um dia (o `capFol`), e somar aqui contaria dia que o ao vivo já
-  // contou. Preferir não mexer no que está validado.
-  const _contagemPorDia = {}
-  snaps.forEach((s) => { _contagemPorDia[s.captured_at] = Number(s.followers_count) || 0 })
-  const faltando = (customStart && customEnd)
-    ? faltaNaJanela(snaps, _contagemPorDia, followStart, followEnd)
-    : { dias: [], estimativa: 0 }
   const chartLabels = chartSrc.length ? chartSrc.map(s => fmtLabel(s.captured_at)) : ['—']
   const chartDates = chartSrc.length ? chartSrc.map(s => fmtFull(s.captured_at)) : ['—']
   // Período anterior (mesma duração) imediatamente antes da janela — MESMA régua (bruto novos−saíram).
@@ -2466,7 +2413,7 @@ async function fetchData(accountId, period, customStart, customEnd) {
     pl, plAnterior,
     // Última coleta REAL do perfil (não o fim da janela) → frescor honesto em todo período.
     trueLastSnap: trueLastRows.length ? trueLastRows[0].captured_at : null,
-    grossGained, grossLost, grossPartial, previaReal, partialSince: _partialSince, confirmadoIG, lastGrossDay, faltando,
+    grossGained, grossLost, grossPartial, previaReal, partialSince: _partialSince, confirmadoIG, lastGrossDay,
   }
 }
 
@@ -2760,12 +2707,27 @@ function update(d, period) {
   // ⚠️ O DIA QUE A META NÃO PUBLICOU ENTRA PELA ESTIMATIVA — regra do dono
   // (09/09/2026): "Dia 8 n pode ficar zerado". Sem isto o card mostrava 883 num
   // período em que o dia que faltava valia ~443, e ainda carimbava "confirmado".
-  const _falta = d.faltando || { dias: [], estimativa: 0 }
-  const _temBuraco = _falta.dias.length > 0
-  let headlineVal = ehRecenteLive
-    ? (_netRec != null ? _netRec : (d.previaReal != null ? d.previaReal : d.live.novos.total))
-    : (d.live ? d.live.novos.total : (confirmado ? d.newFollowers : (d.previaReal != null ? d.previaReal : d.newFollowers)))
-  if (!ehRecenteLive && _temBuraco) headlineVal += _falta.estimativa
+  // ⚠️⚠️ O CARD É A SOMA DO GRÁFICO. Ordem do dono (09/09/2026): "o importante é o
+  // card de novos seguidores bater sempre com o gráfico diário".
+  //
+  // O erro de origem era perseguir o painel profissional. Ele filtra OUTRO
+  // período — medido pelo dono no painel dele: "últimos 7 dias" vai de 2 a 7, e
+  // "5 a 8" mostra 4 a 7. Enquanto se tentava casar os dois, o card e o gráfico
+  // DESTA tela divergiam entre si, que é o que a pessoa realmente vê: em
+  // "últimos 7 dias" as barras somavam 1593 e o card mostrava 967, porque a janela
+  // do card parava no dia 08 e deixava de fora os dois maiores dias.
+  //
+  // ⚠️ NENHUM CARD VAI BATER COM O PAINEL, e isso é esperado, não defeito. Quem
+  // for conferir faz a conta pela janela que o painel mostrar.
+  const _somaBarras = totalPelasBarras(d.chart)
+  const _temBuraco = !!(_somaBarras && _somaBarras.estimado)
+  const headlineVal = _somaBarras
+    ? _somaBarras.total
+    // Sem gráfico não há de onde somar: mantém o caminho de sempre em vez de
+    // imprimir zero, que seria afirmar "não seguiu ninguém".
+    : (ehRecenteLive
+      ? (_netRec != null ? _netRec : (d.previaReal != null ? d.previaReal : d.live.novos.total))
+      : (d.live ? d.live.novos.total : (confirmado ? d.newFollowers : (d.previaReal != null ? d.previaReal : d.newFollowers))))
   const newEl = document.getElementById('new-followers-val'); if (newEl) animCount(newEl, headlineVal) // Total (líquido)
   // O NÚMERO precisa PARECER provisório quando é provisório.
   //
@@ -2802,7 +2764,17 @@ function update(d, period) {
   const gRow = gEl && gEl.closest('.nf-linha'), lRow = lEl && lEl.closest('.nf-linha')
   if (gRow) gRow.style.display = ehRecenteLive ? 'none' : ''
   if (lRow) lRow.style.display = ehRecenteLive ? 'none' : ''
-  if (d.live) {
+  if (_somaBarras) {
+    // ⚠️ AS TRÊS LINHAS SAEM DA MESMA SOMA. Se "Seguidores" viesse do ao vivo e o
+    // "Total" das barras, as três linhas do cartão não fechariam entre si — que é
+    // o defeito que este trabalho inteiro veio consertar.
+    //
+    // ⚠️ COM DIA ESTIMADO, `seguiu`/`deixou` são APROXIMADOS: a barra estimada
+    // guarda só o líquido, e a quebra "quem seguiu / quem saiu" daquele dia é
+    // justamente o que a Meta não publicou. O total é que continua certo.
+    if (gEl) animCount(gEl, _somaBarras.seguiu)
+    if (lEl) animCount(lEl, _somaBarras.deixou)
+  } else if (d.live) {
     if (gEl) animCount(gEl, d.live.novos.seguiu)
     if (lEl) animCount(lEl, d.live.novos.deixou)
   } else if (confirmado) {
@@ -2824,14 +2796,7 @@ function update(d, period) {
     }
   }
   buildChart(d.chart)
-  // A soma das barras vem do que ESTÁ DESENHADO, não de recalcular por fora:
-  // conta derivada tem de usar o número impresso, senão a nota explica uma
-  // diferença que não é a que a pessoa está vendo.
-  const _ch = d.chart || {}
-  const _somaBarras = Array.isArray(_ch.gained)
-    ? _ch.gained.reduce((t, g, i) => t + (Number(g) || 0) - (Number((_ch.lost || [])[i]) || 0), 0)
-    : null
-  montarNotaDeEstimativa(d.semPublicacao, notaDaDiferenca({ somaBarras: _somaBarras, totalCard: headlineVal }))
+  montarNotaDeEstimativa(d.semPublicacao)
   // Comparação só quando confirmado (no período em consolidação o "anterior" do bruto distorceria).
   const cmpEl = document.getElementById('cmp-followers')
   // AO VIVO: compara total atual vs total do período ANTERIOR (exato, mesma janela). Senão, coletado.
@@ -2891,7 +2856,14 @@ function update(d, period) {
   // R$ 16,76 onde a conta na mão dá R$ 8,22, e sem selo nenhum avisando.
   // Quem decide de onde sai o denominador é seguidores-do-custo.js, puro e testado.
   const _segCusto = seguidoresDoCusto({
-    live: d.live ? { seguiu: d.live.novos.seguiu, anteriorSeguiu: d.live.anterior ? d.live.anterior.novos.seguiu : null } : null,
+    // ⚠️ O DENOMINADOR É O BRUTO DAS MESMAS BARRAS que o cartão soma — custo que
+    // divide um número que não está na tela ninguém confere. Continua sendo o
+    // BRUTO (quem seguiu), e não o líquido: custo de aquisição não desconta quem
+    // saiu. Decisão do dono, 09/09/2026.
+    live: d.live || _somaBarras
+      ? { seguiu: _somaBarras ? _somaBarras.seguiu : d.live.novos.seguiu,
+          anteriorSeguiu: d.live && d.live.anterior ? d.live.anterior.novos.seguiu : null }
+      : null,
     ehRecenteLive,
     numeroImpresso: headlineVal,
     // Falta dia na janela → o bruto que serve de denominador está subestimado, e

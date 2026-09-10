@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { barraDoDia, netPelaContagem, diaAnterior, diasSemPublicacao , faltaNaJanela } from './estimativa-de-seguidores.js';
+import { barraDoDia, netPelaContagem, diaAnterior, diasSemPublicacao , totalPelasBarras } from './estimativa-de-seguidores.js';
 
 // TODOS os números abaixo são REAIS: contagem de seguidores do perfil Breno Vale
 // gravada em daily_snapshots, e a resposta que a Graph API deu em 2026-08-06 para
@@ -111,62 +111,53 @@ test('o dia anterior atravessa a virada do mês sem escorregar', () => {
   assert.equal(diaAnterior('2026-01-01'), '2025-12-31');
 });
 
-/* ── O DIA QUE A META NÃO PUBLICOU SOME DO AGREGADO ─────────────────────────
+/* ── O CARD É A SOMA DO GRÁFICO ─────────────────────────────────────────────
  *
- * Medido em 09/09/2026, na Vessel, contra a API ao vivo:
- *   janela [04/09, 08/09) → 951 seguiu, 31 saiu   (dias 04,05,06,07)
- *   janela [05/09, 09/09) → 907 seguiu, 24 saiu   (dias 05,06,07 — o 08 SOME)
+ * Decisão do dono (09/09/2026), depois de uma tarde inteira de tentativas:
+ * "o importante é o card de novos seguidores bater sempre com o gráfico diário".
  *
- * A segunda janela tem QUATRO dias e o dia 08 valeu ~443 líquidos, mas a Meta
- * simplesmente o omite do agregado: o total sai menor sem sinal nenhum. Pior, a
- * tela estampava "✓ confirmado pelo Instagram" nesse número.
+ * ⚠️ O QUE ESTAVA ERRADO NA ORIGEM: perseguir igualdade com o painel profissional.
+ * Ele filtra OUTRO período — "últimos 7 dias" nele vai de 2 a 7, e "5 a 8" mostra
+ * 4 a 7. Medido pelo dono no painel dele. Enquanto se tentava casar os dois, o
+ * card e o gráfico da nossa tela divergiam entre si, que é o que a pessoa vê.
  *
- * O dono (09/09/2026): "Dia 8 n pode ficar zerado".
+ * Medido em 09/09/2026, "últimos 7 dias" na Vessel: as barras somavam 1593 e o
+ * card mostrava 967 — a janela do card parava no dia 08 e deixava de fora os dois
+ * maiores dias. Agora o card É a soma.
  */
 
-test('soma a estimativa dos dias sem bruto dentro da janela', () => {
-  const contagem = { '2026-09-07': 15877, '2026-09-08': 16320 }
-  const snaps = [
-    { captured_at: '2026-09-05', gained: 183, lost: 4 },
-    { captured_at: '2026-09-06', gained: 339, lost: 8 },
-    { captured_at: '2026-09-07', gained: 385, lost: 12 },
-    { captured_at: '2026-09-08', gained: 0, lost: 0 },   // a Meta não publicou
-  ]
-  const r = faltaNaJanela(snaps, contagem, '2026-09-05', '2026-09-08')
-  assert.deepEqual(r.dias, ['2026-09-08'])
-  assert.equal(r.estimativa, 443, '16320 − 15877')
+test('o total do card sai da soma das barras', () => {
+  const r = totalPelasBarras({ gained: [27, 20, 37, 183], lost: [0, 0, 0, 4], estimado: [false, false, false, false] })
+  assert.equal(r.seguiu, 267)
+  assert.equal(r.deixou, 4)
+  assert.equal(r.total, 263)
+  assert.equal(r.estimado, false)
 })
 
-test('janela inteira publicada não estima nada', () => {
-  const snaps = [
-    { captured_at: '2026-09-04', gained: 44, lost: 7 },
-    { captured_at: '2026-09-05', gained: 183, lost: 4 },
-  ]
-  const r = faltaNaJanela(snaps, { '2026-09-04': 1, '2026-09-05': 2 }, '2026-09-04', '2026-09-05')
-  assert.deepEqual(r.dias, [])
-  assert.equal(r.estimativa, 0)
+test('⚠️ barra estimada guarda o LÍQUIDO, e o total continua certo', () => {
+  /* Dia sem publicação vira uma barra só, com o saldo: positivo entra em `gained`,
+   * negativo em `lost`. Somar os dois lados e subtrair dá o líquido certo — o que
+   * NÃO dá para saber é quantos seguiram e quantos saíram nesse dia. */
+  const r = totalPelasBarras({ gained: [385, 443], lost: [12, 0], estimado: [false, true] })
+  assert.equal(r.total, 816, '385−12 + 443')
+  assert.equal(r.estimado, true, 'e o total sai marcado')
 })
 
-test('⚠️ dia sem bruto E sem base de contagem entra na lista, mas não inventa número', () => {
-  /* Sem o dia anterior não há de onde estimar. O dia PRECISA continuar aparecendo
-   * na lista — é o que faz o selo dizer "falta o dia X" em vez de "confirmado". */
-  const snaps = [{ captured_at: '2026-09-08', gained: 0, lost: 0 }]
-  const r = faltaNaJanela(snaps, {}, '2026-09-08', '2026-09-08')
-  assert.deepEqual(r.dias, ['2026-09-08'])
-  assert.equal(r.estimativa, 0)
+test('dia negativo estimado desce o total', () => {
+  const r = totalPelasBarras({ gained: [100, 0], lost: [0, 30], estimado: [false, true] })
+  assert.equal(r.total, 70)
 })
 
-test('dias fora da janela não contam', () => {
-  const snaps = [
-    { captured_at: '2026-09-03', gained: 0, lost: 0 },
-    { captured_at: '2026-09-05', gained: 183, lost: 4 },
-  ]
-  const r = faltaNaJanela(snaps, { '2026-09-02': 10, '2026-09-03': 99 }, '2026-09-05', '2026-09-08')
-  assert.deepEqual(r.dias, [])
-  assert.equal(r.estimativa, 0)
+test('⚠️ gráfico vazio ou estragado devolve nulo, não zero', () => {
+  /* Zero seria "não seguiu ninguém" — uma afirmação. A verdade é "não há gráfico",
+   * e quem chama tem de manter o número que já estava. */
+  for (const ruim of [null, undefined, {}, { gained: null }, { gained: [] }]) {
+    assert.equal(totalPelasBarras(ruim), null)
+  }
 })
 
-test('aguenta lista vazia e nula', () => {
-  assert.deepEqual(faltaNaJanela(null, null, '2026-09-05', '2026-09-08'), { dias: [], estimativa: 0 })
-  assert.deepEqual(faltaNaJanela([], {}, '2026-09-05', '2026-09-08'), { dias: [], estimativa: 0 })
+test('lost ausente não quebra a conta', () => {
+  const r = totalPelasBarras({ gained: [10, 20] })
+  assert.equal(r.total, 30)
+  assert.equal(r.deixou, 0)
 })

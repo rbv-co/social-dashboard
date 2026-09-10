@@ -84,35 +84,32 @@ export function diasSemPublicacao(serie, pular = []) {
 }
 
 /**
- * O QUE FALTA NA JANELA: os dias sem bruto e quanto eles valem pela contagem.
+ * O NÚMERO DO CARD: a soma do que o gráfico está desenhando.
  *
- * ⚠️ O DIA NÃO PUBLICADO SOME DO AGREGADO DA META, e some CALADO. Medido em
- * 09/09/2026 na Vessel: a janela [05/09, 09/09) tem quatro dias, o dia 08 valeu
- * ~443 líquidos, e a Meta devolveu 907/24 — o mesmo que os três dias publicados.
- * Nenhum campo diz "faltou um dia": o total simplesmente sai menor. E a tela
- * ainda carimbava "✓ confirmado pelo Instagram" em cima disso.
+ * Decisão do dono (09/09/2026): "o importante é o card de novos seguidores bater
+ * sempre com o gráfico diário".
  *
- * `snaps` = linhas de `daily_snapshots` ({ captured_at, gained, lost }).
- * `contagemPorDia` = { 'YYYY-MM-DD': seguidores no fim do dia }.
- * `inicio`/`fim` = a janela do card, INCLUSIVE nos dois lados.
+ * ⚠️ O ERRO DE ORIGEM ERA PERSEGUIR O PAINEL PROFISSIONAL. Ele filtra OUTRO
+ * período — medido pelo dono no painel dele: "últimos 7 dias" vai de 2 a 7, e
+ * "5 a 8" mostra 4 a 7. Enquanto se tentava casar os dois, o card e o gráfico da
+ * NOSSA tela divergiam entre si — e é isso que a pessoa vê. Medido no mesmo dia,
+ * em "últimos 7 dias" na Vessel: barras somando 1593, card mostrando 967, porque a
+ * janela do card parava no dia 08 e deixava de fora os dois maiores dias.
  *
- * Devolve `{ dias, estimativa }`.
+ * ⚠️ A BARRA ESTIMADA GUARDA O LÍQUIDO, não a quebra: o saldo positivo entra em
+ * `gained`, o negativo em `lost`. Por isso `seguiu`/`deixou` são aproximados
+ * quando há dia estimado — o total é que continua certo. Quem usa `seguiu` como
+ * denominador de custo precisa olhar `estimado` e marcar prévia.
  *
- * ⚠️ `dias` E `estimativa` SÃO INDEPENDENTES DE PROPÓSITO: um dia sem bruto e sem
- * contagem do dia anterior entra em `dias` com estimativa zero. É o que faz o selo
- * dizer "falta o dia 8" em vez de "confirmado" — perder o aviso porque não deu
- * para estimar seria trocar um número errado por um número errado e silencioso.
+ * Devolve `null` quando não há gráfico: zero seria "não seguiu ninguém", uma
+ * afirmação, onde a verdade é "não há de onde somar".
  */
-export function faltaNaJanela(snaps, contagemPorDia, inicio, fim) {
-  const dias = [];
-  let estimativa = 0;
-  for (const s of Array.isArray(snaps) ? snaps : []) {
-    const dia = s && s.captured_at;
-    if (!dia || dia < inicio || dia > fim) continue;
-    if ((Number(s.gained) || 0) > 0 || (Number(s.lost) || 0) > 0) continue;
-    dias.push(dia);
-    const net = netPelaContagem(contagemPorDia, dia);
-    if (net != null) estimativa += net;
-  }
-  return { dias, estimativa };
+export function totalPelasBarras(chart) {
+  const g = chart && Array.isArray(chart.gained) ? chart.gained : null;
+  if (!g || !g.length) return null;
+  const l = chart && Array.isArray(chart.lost) ? chart.lost : [];
+  const est = chart && Array.isArray(chart.estimado) ? chart.estimado : [];
+  const soma = (arr) => arr.reduce((t, v) => t + (Number(v) || 0), 0);
+  const seguiu = soma(g), deixou = soma(l);
+  return { seguiu, deixou, total: seguiu - deixou, estimado: est.some(Boolean) };
 }

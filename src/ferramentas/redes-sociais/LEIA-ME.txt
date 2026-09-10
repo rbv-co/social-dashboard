@@ -153,13 +153,6 @@ for para uma TV, é isto que precisa ser revisto.
 
 Detalhes e medidas em docs/superpowers/relatorio-graficos-celular.md.
 
-PERIODO PERSONALIZADO x PAINEL PROFISSIONAL (09/09/2026)
---------------------------------------------------------
-⚠️ O PAINEL DO INSTAGRAM ROTULA CADA DIA UM DIA A FRENTE DA API. Medido na
-Vessel: o painel mostrava 951 seguiram / 31 sairam para "5 a 8 de setembro", e a
-soma dos dias 04+05+06+07 da API da exatamente 951 e 31 — os DOIS numeros. O
-"5 de setembro" do painel e o dia 4 da API.
-
 ⚠️ NAO ERA O DIA 8 FALTANDO, que foi a primeira hipotese. A contagem total foi de
 15.877 (dia 7) para 16.320 (dia 8): o dia 8 rendeu ~443 liquidos. Se ele fosse os
 44/7 que faltam para 951, a contagem teria subido 37.
@@ -213,18 +206,6 @@ um dia (o `capFol`), e somar ali contaria dia que o ao vivo ja contou.
 O coletor re-pergunta qualquer dia 0/0 dos ultimos 14 dias, 4x por dia: quando a
 Meta publicar o dia 08, o bruto real entra sozinho e a estimativa sai de cena.
 
-⚠️ O PERSONALIZADO NAO E ROLANTE (09/09/2026)
-Ao escolher datas, `currentPeriod` CONTINUA com o valor antigo (7, 30…). O grafico
-decidia o ramo so por ele e punha o recorte personalizado no ramo dos ROLANTES,
-que cola "ontem" e "hoje" no fim da serie.
-
-O dono viu filtrando 5 a 8 de setembro: a barra do dia 8 apareceu DUAS VEZES — uma
-como dia da serie, outra como "ontem". O mesmo defeito ja aparecia antes, mais
-discreto: um dia 9 no grafico de um periodo que ia ate o dia 8. Passou batido.
-
-`ehRecorteRolante(period, inicio, fim)` em janela-de-seguidores.js decide isso, com
-teste. Regra: DUAS datas preenchidas = nunca rolante, nunca mes corrente.
-
 ⚠️ A SOMA DAS BARRAS NAO FECHA COM O CARD, E ISSO E DA FONTE (09/09/2026)
 O PROPRIO PAINEL DO INSTAGRAM NAO FECHA COM ELE MESMO. Medido pelo dono: filtrando
 5 a 8 de setembro o painel da total 951 e o GRAFICO dele vai so ate o dia 7. O
@@ -246,3 +227,31 @@ aquisicao nao divide por liquido, senao quem saiu entra na conta de quem foi
 conquistado. O que mudou e so o selo: falta dia na janela -> o bruto vem
 subestimado (o dia ausente soma ZERO no agregado) e o custo sai ALTO demais, entao
 agora vai marcado como previa.
+
+⚠️⚠️ O CARD E A SOMA DO GRAFICO — E NAO TENTA BATER COM O PAINEL (09/09/2026)
+O DONO ACHOU A RAIZ depois de uma tarde inteira de tentativas minhas: o painel
+profissional FILTRA OUTRO PERIODO. Medido por ele no painel dele — "ultimos 7 dias"
+vai de 2 a 7, e "5 a 8" mostra de 4 a 7. Nao existe arranjo que faca a nossa janela
+e a dele darem o mesmo numero, porque nao sao a mesma janela.
+
+Ordem dele: "o importante e o card de novos seguidores bater sempre com o grafico
+diario". Entao:
+
+  CARD = soma das barras (`totalPelasBarras`, em estimativa-de-seguidores.js).
+  As TRES linhas — Seguidores, Deixaram, Total — saem da MESMA soma.
+  O custo por seguidor divide o BRUTO dessas mesmas barras.
+
+⚠️ ISSO MUDOU TODO PERIODO, nao so o personalizado. Medido em 09/09: "ultimos 7
+dias" saiu de 967 para 1593, porque a janela do card parava no dia 08 e deixava de
+fora os dois maiores dias.
+
+⚠️ NENHUM CARD BATE COM O PAINEL, e isso e ESPERADO. Para validar, faz-se a conta
+pela janela que o painel mostrar.
+
+⚠️ COM DIA ESTIMADO, "Seguidores"/"Deixaram" sao APROXIMADOS: a barra estimada
+guarda so o liquido, e a quebra daquele dia e justamente o que a Meta nao publicou.
+O TOTAL continua certo, e o cartao sai marcado como previa.
+
+O QUE FOI APAGADO (e por que nao volta): deslocamento da janela do personalizado,
+rotulo de barra um dia a frente, e a nota explicando a diferenca. Tudo isso existia
+para casar com o painel — objetivo que se provou impossivel e errado.
