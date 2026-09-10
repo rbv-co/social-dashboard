@@ -223,3 +223,28 @@ test('⚠️ com o balde escolhendo sozinho, "nenhuma selecionada" não apaga a 
   assert.ok(TELA.indexOf('const _baldeTrazSozinho') < TELA.indexOf('const noneSelected'),
     '_baldeTrazSozinho voltou a ser lido depois do noneSelected')
 })
+
+/* ⚠️ A FAIXA DE DIAGNÓSTICO TINHA DUAS PORTAS.
+ *
+ * Ela foi escrita para a investigação dos seguidores (09/09/2026) e ficou acesa
+ * depois que a investigação acabou. Em 10/09 o dono: "no navegador ainda aparece
+ * aquela barrinha vermelha em cima".
+ *
+ * Fechar UMA porta não apagou nada: limpei o `rbv_diag` preso no localStorage e a
+ * faixa continuou lá, porque a outra porta era `is_superadmin` — e ela acendia
+ * sozinha, em todo carregamento, sem ninguém pedir.
+ *
+ * Agora a única porta é `?diag=1`, e o sinal vive na ABA (morre ao fechar).
+ */
+
+test('⚠️ o diagnóstico só acende com ?diag=1 — nem super-admin o liga sozinho', () => {
+  assert.match(TELA, /const _diagTxt = \(diag && _querDiag\)/)
+  assert.ok(!/estado\.is_superadmin \|\| _querDiag/.test(TELA), 'voltou a porta do super-admin')
+})
+
+test('⚠️ o sinal do diagnóstico vive na aba, não no navegador para sempre', () => {
+  // localStorage sobrevive a tudo: ligado uma vez, ninguém mais desliga.
+  assert.ok(!/localStorage\.getItem\('rbv_diag'\)/.test(TELA), 'o sinal voltou para o localStorage')
+  const naSessao = TELA.match(/sessionStorage\.getItem\('rbv_diag'\)/g) || []
+  assert.equal(naSessao.length, 2, 'as duas leituras do sinal têm de ser da sessão')
+})

@@ -1543,7 +1543,15 @@ function montarNotaDeEstimativa(semPublicacao, diag) {
   // — `ReferenceError` dentro desta funcao, que roda ANTES dos cartoes de anuncio:
   // a faixa de diagnostico aparecia (ela vem antes) e da secao Meta Ads para baixo
   // zerava TUDO. O dono levou horas nisso. Texto puro nao tem como quebrar.
-  const _diagTxt = (diag && (estado.is_superadmin || _querDiag))
+  // ⚠️ SÓ COM `?diag=1`, NUNCA POR SER SUPER-ADMIN.
+  //
+  // O diagnóstico tinha DUAS portas, e fechar uma só não apagou nada: em
+  // 10/09/2026 limpei o `rbv_diag` preso no navegador e a faixa continuou lá,
+  // porque o dono é super-admin e essa porta acendia sozinha em todo
+  // carregamento. Ele: "no navegador ainda aparece aquela barrinha vermelha em
+  // cima". Instrumento que a pessoa não pediu e não sabe desligar é defeito,
+  // por mais útil que ele tenha sido no dia em que foi escrito.
+  const _diagTxt = (diag && _querDiag)
     ? `🔧 recorte: ${diag.ehCustom ? 'PERSONALIZADO' : 'período ' + diag.periodo}`
       + ` · janela ${diag.follow} (${diag.effectivePeriod} dia(s))`
       + ` · seguidores: ${diag.fonteSeguidores || '?'}`
@@ -3017,6 +3025,8 @@ function update(d, period) {
   // serve. Esta não depende de elemento no template, não rola com a página, e sai
   // no console junto — se a faixa falhar, o console tem.
   try {
+    // Mesma regra da nota acima: só quem pediu com `?diag=1` vê. Ser super-admin
+    // não acende faixa nenhuma.
     const _ligado = sessionStorage.getItem('rbv_diag') === '1'
       || new URLSearchParams(window.location.search).get('diag') === '1'
     if (_ligado && d.diag) {
