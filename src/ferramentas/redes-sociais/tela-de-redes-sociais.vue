@@ -1491,11 +1491,24 @@ function _animateChartLine(el, pts) {
 //   • SÓ O SUPER-ADMIN vê a explicação técnica (desde quando, quantos dias, que a
 //     falta é da Meta). Para quem só usa o painel isso é ruído; para quem cuida
 //     do sistema é o aviso de que tem coisa parada.
-function montarNotaDeEstimativa(semPublicacao) {
+function montarNotaDeEstimativa(semPublicacao, diag) {
   const el = document.getElementById('nota-estimativa')
   if (!el) return
   const dias = semPublicacao || []
-  if (!dias.length) { el.hidden = true; el.innerHTML = ''; return }
+  // ⚠️ O DIAGNÓSTICO APARECE MESMO SEM DIA FALTANDO — é ele que diz de onde os
+  // números saíram, e é justamente quando "está tudo certo" que ele é preciso.
+  const _diagHtml = (diag && estado.is_superadmin)
+    ? `<div class="nota-est-tec">🔧 recorte: ${escHtml(diag.ehCustom ? 'PERSONALIZADO' : 'período ' + diag.periodo)}`
+      + ` · janela ${escHtml(diag.follow)} (${diag.effectivePeriod} dia(s))`
+      + ` · seguidores: ${escHtml(diag.fonteSeguidores || '?')}`
+      + ` · ads: period_days=${diag.adsPd}, ${diag.adsDias} dia(s), ${diag.adsLinhas} linha(s)`
+      + ` · snapshot de engajamento: ${diag.storedPeriod}d · ao vivo: ${diag.aoVivo ? 'sim' : 'NÃO'}</div>`
+    : ''
+  if (!dias.length) {
+    el.innerHTML = _diagHtml
+    el.hidden = !_diagHtml
+    return
+  }
   // Só datas YYYY-MM-DD entram. Este texto vai por innerHTML e o rótulo do dia dá
   // uma volta pela Edge Function antes de chegar aqui — nada que não seja data
   // passa, e o resto do texto é fixo, escrito neste arquivo.
@@ -1509,7 +1522,7 @@ function montarNotaDeEstimativa(semPublicacao) {
   if (estado.is_superadmin) {
     html += `<div class="nota-est-tec">🔧 O Instagram não publica <code>follows_and_unfollows</code> desde ${desde}. A coleta está rodando normalmente e a contagem total continua chegando — a falta é do lado da Meta. Se ela voltar a publicar em até 14 dias, o coletor preenche esses dias sozinho; passando disso, o número se perde.</div>`
   }
-  el.innerHTML = html
+  el.innerHTML = html + _diagHtml
   el.hidden = false
 }
 
@@ -2235,6 +2248,7 @@ async function fetchData(accountId, period, customStart, customEnd) {
   // total deduplicado da conta? Começa em "somado" e só vira false quando o número
   // nível-conta realmente entra no lugar.
   let alcanceSomado = true
+  let _capDias = [], _capLinhas = 0
   // Ads dia-preciso p/ HOJE/1D: gasto do DIA exato (period_days=0 de hoje/ontem),
   // em vez do agregado "última captura" (que defasava o HOJE e somava 2 dias no 1D).
   let _adsPd = storedPeriod, _adsCur = `captured_at=lte.${refDateStr}&order=captured_at.desc`, _adsPrev = `captured_at=lte.${prevRefDateStr}&order=captured_at.desc`
@@ -2310,6 +2324,8 @@ async function fetchData(accountId, period, customStart, customEnd) {
     // Intervalo escolhido soma TODOS os dias; os demais períodos continuam
     // pegando a captura agregada mais nova e recusando a que for velha demais.
     const _capCur = ehCustom ? capturasDaJanela(ciCurr, _janCur) : capturaDoAgregado(ciCurr, _janCur)
+    _capDias = _capCur.dias || (_capCur.data ? [_capCur.data] : [])
+    _capLinhas = (_capCur.linhas || []).length
     const _capPrev = ehCustom ? capturasDaJanela(ciPrev, _janPrev) : capturaDoAgregado(ciPrev, _janPrev)
     capturaAdsFora = _capCur.foraDaJanela ? _capCur.data : null
     // A captura já vem recortada pelo balde e pelo filtro manual (o idFilter da
@@ -2462,6 +2478,15 @@ async function fetchData(accountId, period, customStart, customEnd) {
     // Última coleta REAL do perfil (não o fim da janela) → frescor honesto em todo período.
     trueLastSnap: trueLastRows.length ? trueLastRows[0].captured_at : null,
     grossGained, grossLost, grossPartial, previaReal, partialSince: _partialSince, confirmadoIG, lastGrossDay,
+    // ⚠️ DIAGNÓSTICO DO RECORTE (super-admin). Não é enfeite: em 09/09/2026 passei
+    // horas deduzindo de onde cada número vinha, e o dono teve de repetir a mesma
+    // queixa quatro vezes. Ver a janela e a fonte na tela responde em um olhar o
+    // que a dedução não respondeu.
+    diag: {
+      ehCustom, periodo: String(period), effectivePeriod, storedPeriod,
+      follow: `${followStart}→${followEnd}`,
+      adsPd: _adsPd, adsDias: (_capDias || []).length, adsLinhas: _capLinhas,
+    },
   }
 }
 
@@ -2849,7 +2874,11 @@ function update(d, period) {
     }
   }
   buildChart(d.chart)
-  montarNotaDeEstimativa(d.semPublicacao)
+  montarNotaDeEstimativa(d.semPublicacao, d.diag && {
+    ...d.diag,
+    aoVivo: !!d.live,
+    fonteSeguidores: _somaBarras ? `soma de ${(d.chart && d.chart.gained || []).length} barra(s)` : 'caminho antigo',
+  })
   // Comparação só quando confirmado (no período em consolidação o "anterior" do bruto distorceria).
   const cmpEl = document.getElementById('cmp-followers')
   // AO VIVO: compara total atual vs total do período ANTERIOR (exato, mesma janela). Senão, coletado.
