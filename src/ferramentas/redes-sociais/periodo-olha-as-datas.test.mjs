@@ -185,3 +185,41 @@ test('Enter nos campos aplica — quem digita a data não precisa mirar o botão
   const comEnter = TELA.match(/onkeydown="if\(event\.key==='Enter'\)aplicarIntervalo\(\)"/g) || []
   assert.equal(comEnter.length, 2, 'os dois campos precisam do Enter')
 })
+
+/* ⚠️ O ⚙ TEM DE MOSTRAR O QUE A TELA ESTÁ SOMANDO.
+ *
+ * Dois recortes convivem: o filtro salvo em `campaign_filters` (por CONTA, à mão) e
+ * o que o balde escolhe sozinho (por pessoa, no localStorage). Quando o segundo
+ * está ligado, a tela ignora o primeiro — e o modal lia justamente o primeiro.
+ *
+ * O dono, em 10/09/2026: "abri a dash, estava selecionado só as campanhas de lead,
+ * coloquei no balde seguidores, carregou os dados tudo ok, porém quando abro o modal
+ * do filtro mostra as campanhas de leads marcadas".
+ *
+ * É o mesmo defeito de "mesma verdade em dois campos": duas telas lendo fontes
+ * diferentes para responder a MESMA pergunta.
+ */
+
+test('⚠️ o modal do filtro espelha o recorte da tela, não a tabela', () => {
+  // A tela GUARDA o recorte que usou de verdade...
+  assert.match(TELA, /_recorteNaTela = \{ auto: _baldeTrazSozinho, todas: _todasAsCampanhas, ids: idsDoRecorte\.map\(String\) \}/)
+  // ...e o modal lê ESSE recorte quando o balde escolheu sozinho.
+  assert.match(TELA, /const rawIds = \(_recorteNaTela && _recorteNaTela\.auto\)/)
+  assert.match(TELA, /\? \(_recorteNaTela\.todas \? null : _recorteNaTela\.ids\)/)
+  assert.match(TELA, /: salvo/)
+})
+
+test('⚠️ comparar id de campanha é sempre por texto', () => {
+  // 123 !== '123' deixaria TUDO desmarcado, e pareceria "perdi meu filtro".
+  assert.match(TELA, /new Set\(rawIds\.map\(String\)\)/)
+  assert.match(TELA, /selIds\.has\(String\(c\.campaign_id\)\)/)
+})
+
+test('⚠️ com o balde escolhendo sozinho, "nenhuma selecionada" não apaga a tela', () => {
+  // `noneSelected` zera os cartões inteiros. Com um "desmarcar todas" salvo, clicar
+  // num balde trazia R$ — em vez das campanhas do balde.
+  assert.match(TELA, /const noneSelected = !_baldeTrazSozinho && Array\.isArray\(selectedIds\)/)
+  // E a flag precisa ser lida ANTES de quem depende dela.
+  assert.ok(TELA.indexOf('const _baldeTrazSozinho') < TELA.indexOf('const noneSelected'),
+    '_baldeTrazSozinho voltou a ser lido depois do noneSelected')
+})

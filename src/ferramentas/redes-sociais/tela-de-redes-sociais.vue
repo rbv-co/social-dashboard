@@ -674,6 +674,10 @@ let activeChartData = null
    nova abre em Seguidores — este é o painel de redes sociais, e o que ele
    responde primeiro é quanto custa crescer. */
 let _baldeAtual = 'seguidores'
+// O recorte de campanhas que a última carga usou de verdade. Quem lê é o modal do
+// "⚙ Filtrar campanhas", para mostrar marcado o mesmo que está somado na tela.
+// `null` = ainda não carregou nada; aí o modal cai no filtro salvo, como sempre.
+let _recorteNaTela = null
 const _baldeKey = id => 'ig_balde_' + (id || 'default')
 function carregarBalde(accountId) {
   let salvo = null
@@ -2179,7 +2183,15 @@ async function fetchData(accountId, period, customStart, customEnd) {
   // Contatos, Site e alcance, Vendas) e o "⚙ Filtrar campanhas" recorta DENTRO
   // dele. Quem faz a interseção é idsParaConsulta(), testada à parte.
   const selectedIds = filterRow[0]?.selected_ids // null=todas, []=nenhuma, [ids]=filtradas
-  const noneSelected = Array.isArray(selectedIds) && selectedIds.length === 0
+  // ⚠️ COM O BALDE ESCOLHENDO SOZINHO, O FILTRO SALVO NÃO VALE — NEM O "NENHUMA".
+  // Ele fica aqui em cima, antes de tudo que lê `selectedIds`, porque `noneSelected`
+  // apaga a tela inteira: com um "desmarcar todas" salvo, clicar num balde trazia
+  // R$ — em vez das campanhas do balde, e não havia como sair disso a não ser
+  // reabrindo o ⚙. Quem clica num botão de tipo está pedindo o tipo.
+  const _baldeTrazSozinho = (() => {
+    try { return localStorage.getItem(_baldeAutoKey(accountId)) === '1' } catch (e) { return false }
+  })()
+  const noneSelected = !_baldeTrazSozinho && Array.isArray(selectedIds) && selectedIds.length === 0
   const safeIds = Array.isArray(selectedIds) ? selectedIds.filter(id => /^\d+$/.test(String(id))) : []
   // .erro lido AQUI, colado no await do Promise.all lá de cima: ele mora no array
   // que o sb() devolveu, e o forEach/Object.values abaixo criam coleções novas que
@@ -2209,9 +2221,6 @@ async function fetchData(accountId, period, customStart, customEnd) {
   //
   // A escolha automática IGNORA o filtro salvo (o dono pediu que substitua) e vale
   // até a pessoa abrir o ⚙ e escolher à mão, que desliga o automático.
-  const _baldeTrazSozinho = (() => {
-    try { return localStorage.getItem(_baldeAutoKey(accountId)) === '1' } catch (e) { return false }
-  })()
   const _selecionadas = _baldeTrazSozinho ? null : (Array.isArray(selectedIds) ? safeIds : null)
   // A lista de ids de CADA balde, já com o filtro manual aplicado por dentro.
   // Sai da mesma função que monta o recorte final: assim a conta de "balde vazio"
@@ -2315,6 +2324,16 @@ async function fetchData(accountId, period, customStart, customEnd) {
   // investimento mostra um balde e o de custo por seguidor mostra outro. Lista
   // vazia = a edge volta ao caminho level=account, o número exato e mais barato.
   const idsParaAoVivo = _todasAsCampanhas ? [] : idsDoRecorte
+  // ⚠️ O QUE O ⚙ MOSTRA É O QUE A TELA ESTÁ SOMANDO.
+  //
+  // Até 10/09/2026 o modal lia só a tabela `campaign_filters` — o filtro salvo à
+  // mão. Com o balde escolhendo sozinho a tela ignora essa tabela, então abrir o ⚙
+  // depois de clicar em "Seguidores" mostrava as campanhas de Contatos marcadas: a
+  // tela somava um recorte e o modal exibia outro. O dono descreveu exatamente isso.
+  //
+  // Guardado aqui, e não recalculado no modal, de propósito: recalcular é a receita
+  // de dois recortes que divergem quando um dos lados mudar.
+  _recorteNaTela = { auto: _baldeTrazSozinho, todas: _todasAsCampanhas, ids: idsDoRecorte.map(String) }
   // As barras do gráfico seguem o mesmo recorte dos cartões.
   const _noRecorte = new Set(idsDoRecorte)
   // ⚠️ O RECORTE DOS GRÁFICOS É FEITO AQUI, na memória: a consulta veio SEM filtro
@@ -3740,13 +3759,21 @@ async function openCampaignModal() {
     sb('campaigns?account_id=eq.' + currentAccountId + '&order=status.asc,name.asc&select=campaign_id,name,objective,status'),
     sb('campaign_filters?account_id=eq.' + currentAccountId + '&select=selected_ids'),
   ])
-  const rawIds = filterRows[0]?.selected_ids // null=todas, []=nenhuma, [ids]=filtradas
+  const salvo = filterRows[0]?.selected_ids // null=todas, []=nenhuma, [ids]=filtradas
+  // ⚠️ ESPELHA A TELA, NÃO A TABELA. Com o balde escolhendo sozinho o recorte da
+  // tela vem do tipo de campanha, não de `campaign_filters` — e era a tabela que o
+  // modal mostrava, marcando as campanhas do balde ANTERIOR.
+  const rawIds = (_recorteNaTela && _recorteNaTela.auto)
+    ? (_recorteNaTela.todas ? null : _recorteNaTela.ids)
+    : salvo
   renderCampaignModal(campaigns, rawIds)
   document.getElementById('campaign-modal-overlay').style.display = 'flex'
 }
 function renderCampaignModal(campaigns, rawIds) {
   // rawIds: null/undefined=todas marcadas, []=nenhuma marcada, [ids]=só essas marcadas
-  const selIds = rawIds === null || rawIds === undefined ? null : new Set(rawIds)
+  // Os dois lados viram texto: o recorte da tela guarda id como texto e a tabela
+  // guarda como veio do banco. Comparar 123 com '123' deixaria TUDO desmarcado.
+  const selIds = rawIds === null || rawIds === undefined ? null : new Set(rawIds.map(String))
   const list = document.getElementById('campaign-list'); list.innerHTML = ''
   const active = campaigns.filter(c => c.status === 'ACTIVE')
   const other = campaigns.filter(c => c.status !== 'ACTIVE')
@@ -3756,7 +3783,7 @@ function renderCampaignModal(campaigns, rawIds) {
     items.forEach(c => {
       const row = document.createElement('label'); row.className = 'camp-row'
       const cb = document.createElement('input'); cb.type = 'checkbox'; cb.value = c.campaign_id
-      cb.checked = selIds === null || selIds.has(c.campaign_id)
+      cb.checked = selIds === null || selIds.has(String(c.campaign_id))
       const info = document.createElement('div'); info.className = 'camp-info'
       const nm = document.createElement('span'); nm.className = 'camp-name'; nm.textContent = c.name
       const obj = document.createElement('span'); obj.className = 'camp-obj'; obj.textContent = (c.objective || '').replace(/_/g, ' ')
