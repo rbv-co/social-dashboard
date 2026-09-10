@@ -184,3 +184,82 @@ export function guardarImports(url, opcoes = {}) {
     assert.ok(mapa.size > 0, `nenhum export visível a partir de ${pasta}/`)
   })
 }
+
+// ── SEGUNDO GUARDA: NOME CHAMADO QUE NÃO EXISTE EM LUGAR NENHUM ─────────────
+//
+// ⚠️ O DE CIMA NÃO PEGA ISTO, e a diferença custou uma noite em 09/09/2026.
+// Ele parte dos nomes EXPORTADOS por um vizinho e cobra o import — então só vê
+// nome que existe em algum módulo. Nesse dia a tela de redes sociais chamou
+// `escHtml(...)`, que não é exportado por ninguém: mora dentro do
+// `tela-de-admin.vue`. `ReferenceError` no meio do desenho, a tela parava ali, e
+// da seção Meta Ads para baixo TUDO ficava zerado. Build passou, 4592 testes
+// passaram, e quem descobriu foi o dono abrindo a tela — pela terceira vez no dia.
+//
+// Este parte do lado oposto: todo nome CHAMADO como função tem de existir.
+//
+// ⚠️ ELE TRABALHA COM BASE CONGELADA, E ISSO É DELIBERADO. A leitura é por
+// expressão regular, não por analisador de verdade: texto em português dentro de
+// crase e aspas desbalanceadas fazem o recorte engolir código, e alguns nomes
+// legítimos aparecem como "sem dono" (`_acProvisionar` ESTÁ declarado, na linha
+// 1885 do seu arquivo). Acusar esses seria ensinar todo mundo a ignorar o guarda.
+// Então a base de hoje é aceita, e o guarda falha em QUALQUER NOME NOVO — que é
+// exatamente o caso do `escHtml`, provado antes de ligar.
+//
+// Quando alguém trocar isto por um analisador de verdade, a base sai junto.
+
+const GLOBAIS_DO_NAVEGADOR = new Set((
+  'defineProps defineEmits defineExpose defineOptions defineModel withDefaults '
+  + 'window document localStorage sessionStorage console Math JSON Number String Boolean '
+  + 'Array Object Date Set Map WeakMap WeakSet Promise parseInt parseFloat isNaN isFinite '
+  + 'setTimeout clearTimeout setInterval clearInterval requestAnimationFrame cancelAnimationFrame '
+  + 'URLSearchParams URL fetch Intl RegExp Error TypeError RangeError alert confirm prompt '
+  + 'navigator location history atob btoa encodeURIComponent decodeURIComponent structuredClone '
+  + 'AbortController FormData Blob File FileReader Image CustomEvent Event MouseEvent KeyboardEvent '
+  + 'IntersectionObserver ResizeObserver MutationObserver getComputedStyle matchMedia scrollTo print '
+  + 'queueMicrotask crypto performance Symbol BigInt Proxy Reflect async '
+  + 'Uint8Array Uint16Array Uint32Array Int8Array Int16Array Int32Array Float32Array Float64Array '
+  + 'ArrayBuffer DataView TextEncoder TextDecoder'
+).split(' '))
+
+const PALAVRAS_DA_LINGUAGEM = /^(if|for|while|switch|catch|return|typeof|function|new|await|of|in|do|else|case|delete|void|instanceof|yield|import|super|this|throw|try|finally|class|extends)$/
+
+/** ⚠️ O TEXTO DENTRO DE CRASE SAI; `${...}` FICA, porque ali é código de verdade.
+ *  Sem isto, palavra do português virava "função que não existe". */
+export function semTextoDeCrase(script) {
+  return script.replace(/`(?:[^`\\]|\\.)*`/g, (bloco) => {
+    const miolos = [...bloco.matchAll(/\$\{([^{}]*)\}/g)].map((m) => m[1]).join(' ; ')
+    return '`' + miolos + '`'
+  })
+}
+
+/** Nomes que a própria função cria: parâmetros, `catch (e)`, `for (const x`. */
+export function nomesDeParametro(script) {
+  const s = new Set()
+  const juntar = (bruto) => {
+    const n = String(bruto).trim().split(':').pop().split('=')[0].trim().replace(/^\.\.\./, '')
+    if (/^\w+$/.test(n)) s.add(n)
+  }
+  for (const m of script.matchAll(/function\s*\w*\s*\(([^)]*)\)/g)) m[1].split(',').forEach(juntar)
+  for (const m of script.matchAll(/\(([^()]*)\)\s*=>/g)) m[1].split(',').forEach(juntar)
+  for (const m of script.matchAll(/(?:^|[^\w.$])(\w+)\s*=>/g)) s.add(m[1])
+  for (const m of script.matchAll(/catch\s*\(\s*(\w+)/g)) s.add(m[1])
+  for (const m of script.matchAll(/for\s*\(\s*(?:const|let|var)\s+(\w+)/g)) s.add(m[1])
+  for (const m of script.matchAll(/(?:const|let|var)\s*\{([^}]*)\}/g)) m[1].split(',').forEach(juntar)
+  return s
+}
+
+/** Os nomes chamados como função que não existem no arquivo nem vêm de fora. */
+export function chamadasSemDono(bruto) {
+  const script = semTextoDeCrase(bruto)
+  const conhecidos = new Set([
+    ...nomesImportados(script), ...nomesDeclarados(script),
+    ...nomesDeParametro(script), ...GLOBAIS_DO_NAVEGADOR,
+  ])
+  const fora = new Set()
+  for (const m of script.matchAll(/(^|[^\w.$'"`])([a-zA-Z_$][\w$]*)\s*\(/gm)) {
+    const nome = m[2]
+    if (conhecidos.has(nome) || PALAVRAS_DA_LINGUAGEM.test(nome)) continue
+    fora.add(nome)
+  }
+  return [...fora].sort()
+}
