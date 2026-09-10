@@ -1,3 +1,14 @@
+// ⚠️ O SINAL DE DIAGNÓSTICO É CAPTURADO AQUI, NO BOOT, e guardado.
+// O roteador usa `createWebHistory`: ao navegar para a tela, o endereço é
+// reescrito e a query `?diag=1` SOME. Foi o que aconteceu em 09/09/2026 — o dono
+// abriu com `?diag=1`, chegou na tela e a linha técnica não estava lá. Lido no
+// boot e guardado, ele sobrevive à navegação. `?diag=0` desliga.
+try {
+  const _q = new URLSearchParams(window.location.search)
+  if (_q.get('diag') === '1') localStorage.setItem('rbv_diag', '1')
+  if (_q.get('diag') === '0') localStorage.removeItem('rbv_diag')
+} catch (e) {}
+
 import './estilos/estilos-globais.css'
 import { createApp } from 'vue'
 import Moldura from './moldura-do-aplicativo.vue'

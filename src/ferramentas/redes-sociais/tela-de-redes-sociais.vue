@@ -1501,8 +1501,14 @@ function montarNotaDeEstimativa(semPublicacao, diag) {
   // quem precisava dela: o dono abriu a tela, tirou o print, e o diagnóstico não
   // estava lá porque a conta dele não é super-admin. Agora `?diag=1` no endereço
   // liga para qualquer um que já tenha acesso à tela.
+  // O sinal é capturado no boot (ponto-de-partida.js) porque o roteador apaga a
+  // query ao navegar. Aqui só se lê o que ficou guardado — ou a query, se a
+  // pessoa abriu direto nesta tela.
   let _querDiag = false
-  try { _querDiag = new URLSearchParams(window.location.search).get('diag') === '1' } catch (e) {}
+  try {
+    _querDiag = localStorage.getItem('rbv_diag') === '1'
+      || new URLSearchParams(window.location.search).get('diag') === '1'
+  } catch (e) {}
   const _diagHtml = (diag && (estado.is_superadmin || _querDiag))
     ? `<div class="nota-est-tec">🔧 recorte: ${escHtml(diag.ehCustom ? 'PERSONALIZADO' : 'período ' + diag.periodo)}`
       + ` · janela ${escHtml(diag.follow)} (${diag.effectivePeriod} dia(s))`
