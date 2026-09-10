@@ -1160,8 +1160,15 @@ function janelasDoPeriodo(period, hoje = new Date(), customStart = null, customE
   const capFol = (u) => new Date(Math.min(u.getTime(), folCap.getTime()))
   const ehLastmonth = period === 'lastmonth'
   const ehRecente = period === 0 || period === 1
+  // ⚠️ O PERSONALIZADO NÃO SOFRE O CORTE DE `capFol`. O corte existe para os
+  // ROLANTES, onde o último dia é sempre "ontem, ainda assentando" — mas num
+  // intervalo FECHADO o dono escolheu as datas e tem de receber aquelas datas.
+  // Sem esta exceção, filtrar 5 a 9 mostrava três dias e parava no 7 (09/09/2026).
+  // Dia sem número da Meta aparece como estimativa marcada, que é o certo — some
+  // do gráfico é que não pode.
+  const ehCustom = !!(customStart && customEnd)
   const folS = ehLastmonth ? menos1(engS) : engS
-  const folU = ehLastmonth ? menos1(engU) : (ehRecente ? engU : capFol(engU))
+  const folU = ehLastmonth ? menos1(engU) : ((ehRecente || ehCustom) ? engU : capFol(engU))
   const folSp = ehLastmonth ? menos1(engSp) : engSp
   const folUp = ehLastmonth ? menos1(engUp) : engUp
   return {
@@ -1195,13 +1202,16 @@ const _TRAVA_JANELAS = [
   { period: 30,          eS: '2026-06-07', eU: '2026-07-07', fS: '2026-06-07', fU: '2026-07-06' }, // 30D → novos 1295/580
   { period: 'monthfull', eS: '2026-07-01', eU: '2026-07-07', fS: '2026-07-01', fU: '2026-07-06' }, // MÊS (corrente até ontem)
   { period: 'lastmonth', eS: '2026-06-01', eU: '2026-07-01', fS: '2026-05-31', fU: '2026-06-30' }, // MÊS PASS → novos 1281/571
+  // ⚠️ PERSONALIZADO: recebe EXATAMENTE os dias escolhidos, sem o corte de ontem.
+  // Filtrar 5 a 9 e ver três dias até o 7 foi defeito real (09/09/2026).
+  { period: 7, cS: '2026-07-01', cE: '2026-07-04', eS: '2026-07-01', eU: '2026-07-05', fS: '2026-07-01', fU: '2026-07-05' },
 ]
 function verificarTravaJanelas() {
   const ref = new Date('2026-07-07T12:00:00-03:00')
   const dstr = (ts) => new Date(Number(ts) * 1000).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' })
   const falhas = []
   for (const t of _TRAVA_JANELAS) {
-    const j = janelasDoPeriodo(t.period, ref)
+    const j = janelasDoPeriodo(t.period, ref, t.cS || null, t.cE || null)
     if (dstr(j.engSince) !== t.eS || dstr(j.engUntil) !== t.eU) {
       falhas.push(`  • ${t.period} · ENGAJAMENTO: esperado [${t.eS} → ${t.eU}], veio [${dstr(j.engSince)} → ${dstr(j.engUntil)}]`)
     }
@@ -3282,6 +3292,15 @@ async function refresh() {
     const { data: tots } = await sbClient.from('daily_snapshots').select('captured_at,followers_count').eq('account_id', currentAccountId).order('captured_at', { ascending: false }).limit(100)
     if (myId !== _refreshId) return // trocou de período/perfil no meio → aborta este refresh
     const totMap = {}; (tots || []).forEach(t => { totMap[t.captured_at] = Number(t.followers_count) || 0 })
+    // ⚠️ A CONTAGEM DE HOJE VEM DO AO VIVO, NÃO DA FOTO DO COLETOR. O coletor
+    // roda 4x por dia; a foto dele fica velha em horas. Sem isto, a barra de hoje
+    // no período personalizado mostrava 183 (foto da madrugada) enquanto o filtro
+    // "hoje" mostrava 326 (ao vivo) — o MESMO DIA com dois números, que é
+    // exatamente a confusão que o dono já tinha apontado em 09/09/2026.
+    {
+      const _hojeIso = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' })
+      if (live && live.followers_count != null) totMap[_hojeIso] = Number(live.followers_count) || 0
+    }
     const _brt = ms => new Date(ms).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' })
     let semPublicacao = []
     if (_rolante || _mesAtual) {

@@ -255,3 +255,15 @@ O TOTAL continua certo, e o cartao sai marcado como previa.
 O QUE FOI APAGADO (e por que nao volta): deslocamento da janela do personalizado,
 rotulo de barra um dia a frente, e a nota explicando a diferenca. Tudo isso existia
 para casar com o painel — objetivo que se provou impossivel e errado.
+
+⚠️ O PERSONALIZADO RECEBE OS DIAS QUE FORAM ESCOLHIDOS (09/09/2026)
+`capFol` corta o ultimo dia ("ontem, ainda assentando") e existe para os ROLANTES.
+Num intervalo FECHADO isso e defeito: filtrar 5 a 9 mostrava TRES dias e parava no
+dia 7. O dono escolheu as datas e tem de receber aquelas datas — dia sem numero da
+Meta aparece como estimativa marcada; sumir do grafico e que nao pode.
+Congelado em `_TRAVA_JANELAS`, que agora tambem cobre o personalizado.
+
+⚠️ A CONTAGEM DE HOJE VEM DO AO VIVO, NAO DA FOTO DO COLETOR. O coletor roda 4x por
+dia e a foto dele fica velha em horas. Sem isso, a barra de hoje mostrava 183 (foto
+da madrugada) e o filtro "hoje" mostrava 326 (ao vivo) — o MESMO DIA com dois
+numeros, a confusao que o dono ja tinha apontado.
