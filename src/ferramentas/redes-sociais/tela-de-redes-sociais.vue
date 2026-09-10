@@ -505,7 +505,7 @@ import { sb } from '../../compartilhado/buscar-e-salvar-dados.js'
 import { hojeLocal } from '../../compartilhado/datas.js'
 import { montarSerieDeInvestimento, montarSerieDeCustoPorSeguidor, montarSerieDeCustoPorResultado, diasComInvestimentoEResultado, valeDesenharOGrafico } from './series-diarias-de-meta-ads.js'
 import { graficoDoCartao, opcoesDoGrafico } from './graficos-de-custo-diario.js'
-import { janelaDoPersonalizado, ehRecorteRolante, rotuloDoPainel } from './janela-de-seguidores.js'
+import { janelaDoPersonalizado, ehRecorteRolante, notaDaDiferenca } from './janela-de-seguidores.js'
 // Quanta largura um gráfico de um ponto por dia precisa ter, e se ele passa a
 // rolar para o lado. Puro e com teste ao lado (largura-do-grafico.test.mjs).
 // Nasceu da medida a 375px: 30 dias em 319px davam ~10px por dia e os valores em
@@ -1280,15 +1280,19 @@ async function buscarSerieNovos(accountId, period, customStart, customEnd, shift
     // Obs.: no mês passado a SOMA das barras pode diferir levemente do card, pois o card usa o agregado
     // da Meta (bucketizado -1 dia), enquanto as barras mostram o valor real de cada dia — mesmo comportamento do painel profissional.
     const DIA = 86400, dias = []
-    // ⚠️ NO PERSONALIZADO AS BARRAS PUXAM A JANELA DO CARD (a deslocada), para a
-    // SOMA DELAS FECHAR COM O NÚMERO DO CARD — pedido do dono em 09/09/2026:
-    // filtrando 5 a 9, as barras somavam 1509 e o card dizia 1363. O eixo mostra
-    // o rótulo um dia à frente (`rotuloDoPainel`), que é a régua do Instagram.
-    // Mês passado NÃO muda: ele já mostra o dia real de propósito, e está validado.
-    const ehCustomSerie = !!(customStart && customEnd)
-    const desde = ehCustomSerie ? Number(jan.folSince) : Number(jan.engSince)
-    const upTo = ehCustomSerie ? Number(jan.folUntil) : (jan.folShift ? Number(jan.engUntil) : Number(jan.folUntil))
-    for (let d = desde; d < upTo; d += DIA) {
+    // ⚠️ AS BARRAS FICAM NO DIA REAL, E A SOMA DELAS NÃO FECHA COM O CARD.
+    //
+    // Isto foi tentado ao contrário em 09/09/2026 e o dono derrubou: com as barras
+    // na régua deslocada, a barra "9" carregava o dia 8 (443) enquanto o filtro
+    // "hoje" mostrava 326 para o mesmo dia 9. O MESMO DIA com dois números.
+    //
+    // ⚠️ E O PRÓPRIO PAINEL DO INSTAGRAM NÃO FECHA COM ELE MESMO. Medido pelo dono:
+    // filtrando 5 a 8 ele dá total 951 e o gráfico dele vai só até o dia 7. O total
+    // é deslocado, as barras são do dia real — as duas coisas ao mesmo tempo.
+    // Copiar o painel fielmente É ter essa diferença; escondê-la seria inventar
+    // uma coerência que a fonte não tem. Quem explica é a nota sob o gráfico.
+    const upTo = jan.folShift ? Number(jan.engUntil) : Number(jan.folUntil)
+    for (let d = Number(jan.engSince); d < upTo; d += DIA) {
       let iso, ds = d // shiftMonths: mesmo dia N meses atrás (comparativo do mês anterior)
       if (shiftMonths) {
         const dt = new Date(d * 1000); dt.setMonth(dt.getMonth() - shiftMonths)
@@ -1491,11 +1495,22 @@ function _animateChartLine(el, pts) {
 //   • SÓ O SUPER-ADMIN vê a explicação técnica (desde quando, quantos dias, que a
 //     falta é da Meta). Para quem só usa o painel isso é ruído; para quem cuida
 //     do sistema é o aviso de que tem coisa parada.
-function montarNotaDeEstimativa(semPublicacao) {
+function montarNotaDeEstimativa(semPublicacao, notaDiferenca) {
   const el = document.getElementById('nota-estimativa')
   if (!el) return
   const dias = semPublicacao || []
-  if (!dias.length) { el.hidden = true; el.innerHTML = ''; return }
+  // ⚠️ A DIFERENÇA ENTRE AS BARRAS E O CARD É EXPLICADA, NÃO ESCONDIDA. Ela é
+  // real: as barras estão no dia do calendário e o card na régua do Instagram,
+  // que começa e termina um dia antes. O próprio painel do Instagram mostra essa
+  // diferença — filtrando 5 a 8 ele dá total 951 e o gráfico dele para no dia 7.
+  const _difHtml = notaDiferenca
+    ? `<div class="nota-est-tec" style="color:var(--muted);">${escHtml(notaDiferenca)}</div>`
+    : ''
+  if (!dias.length) {
+    el.innerHTML = _difHtml
+    el.hidden = !_difHtml
+    return
+  }
   // Só datas YYYY-MM-DD entram. Este texto vai por innerHTML e o rótulo do dia dá
   // uma volta pela Edge Function antes de chegar aqui — nada que não seja data
   // passa, e o resto do texto é fixo, escrito neste arquivo.
@@ -1509,7 +1524,7 @@ function montarNotaDeEstimativa(semPublicacao) {
   if (estado.is_superadmin) {
     html += `<div class="nota-est-tec">🔧 O Instagram não publica <code>follows_and_unfollows</code> desde ${desde}. A coleta está rodando normalmente e a contagem total continua chegando — a falta é do lado da Meta. Se ela voltar a publicar em até 14 dias, o coletor preenche esses dias sozinho; passando disso, o número se perde.</div>`
   }
-  el.innerHTML = html
+  el.innerHTML = html + _difHtml
   el.hidden = false
 }
 
@@ -2809,7 +2824,14 @@ function update(d, period) {
     }
   }
   buildChart(d.chart)
-  montarNotaDeEstimativa(d.semPublicacao)
+  // A soma das barras vem do que ESTÁ DESENHADO, não de recalcular por fora:
+  // conta derivada tem de usar o número impresso, senão a nota explica uma
+  // diferença que não é a que a pessoa está vendo.
+  const _ch = d.chart || {}
+  const _somaBarras = Array.isArray(_ch.gained)
+    ? _ch.gained.reduce((t, g, i) => t + (Number(g) || 0) - (Number((_ch.lost || [])[i]) || 0), 0)
+    : null
+  montarNotaDeEstimativa(d.semPublicacao, notaDaDiferenca({ somaBarras: _somaBarras, totalCard: headlineVal }))
   // Comparação só quando confirmado (no período em consolidação o "anterior" do bruto distorceria).
   const cmpEl = document.getElementById('cmp-followers')
   // AO VIVO: compara total atual vs total do período ANTERIOR (exato, mesma janela). Senão, coletado.
@@ -3327,11 +3349,10 @@ async function refresh() {
       data.chart = {
         gained: barras.map(b => b.g), lost: barras.map(b => b.l),
         netOnly: barras.map(b => b.net), estimado: barras.map(b => !!b.est),
-        // ⚠️ O RÓTULO É A RÉGUA DO PAINEL no personalizado: a barra carrega o dia
-        // 04 e aparece como "05", igual ao Instagram. O DADO continua sendo o do
-        // dia certo — quem muda é só o eixo. Mês passado segue no dia real.
-        labels: serie.map(s => { const _r = _ehCustom ? rotuloDoPainel(s.label) : s.label; const dt = new Date(_r + 'T12:00:00'); return curto ? _d3[dt.getDay()] : _lbl(_r) }),
-        dates: serie.map(s => _dfull(_ehCustom ? rotuloDoPainel(s.label) : s.label)),
+        // O rótulo é o dia do PRÓPRIO dado. Rotular um dia à frente fez o mesmo
+        // dia mostrar dois números em filtros diferentes (09/09/2026).
+        labels: serie.map(s => { const dt = new Date(s.label + 'T12:00:00'); return curto ? _d3[dt.getDay()] : _lbl(s.label) }),
+        dates: serie.map(s => _dfull(s.label)),
         // comparativo: mesmos dias do MÊS ANTERIOR (por dia).
         prevSeguiu: seriePrev ? seriePrev.map(s => s.seguiu) : null,
         prevDeixou: seriePrev ? seriePrev.map(s => s.deixou) : null,

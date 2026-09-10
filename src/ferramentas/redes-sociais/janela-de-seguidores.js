@@ -66,21 +66,29 @@ export function ehRecorteRolante(period, inicio, fim) {
 }
 
 /**
- * O RÓTULO com que o painel profissional mostraria este dia: o dia seguinte.
+ * A NOTA que explica por que a soma das barras difere do total do card.
  *
- * Decisão do dono (09/09/2026): "rotular pela régua do painel". As barras
- * carregam os dias da mesma janela do card — a deslocada — e o eixo mostra o
- * rótulo um dia à frente, que é a régua do Instagram. Assim a soma das barras
- * fecha com o número do card e o eixo bate com o período filtrado.
+ * ⚠️ A DIFERENÇA É REAL E FICA À MOSTRA, em vez de escondida. As barras estão no
+ * dia REAL; o card está na régua do Instagram, que começa e termina um dia antes.
  *
- * ⚠️ É O INVERSO EXATO de `janelaDoPersonalizado`, e há teste amarrando os dois.
- * Se um dia discordarem, o eixo e o card voltam a falar de dias diferentes.
+ * ⚠️ E O PRÓPRIO PAINEL DO INSTAGRAM FAZ ISSO. Medido pelo dono em 09/09/2026:
+ * filtrando 5 a 8 de setembro ele dá total 951 e o gráfico dele vai só até o dia
+ * 7. Tentar fazer a soma fechar aqui foi o que pôs o mesmo dia com dois números na
+ * tela ("9" valendo 443 no gráfico e 326 no filtro de hoje) — e o dono derrubou.
  *
- * ⚠️ Data que não entendo volta como veio: rótulo inventado é pior que rótulo cru.
+ * Devolve `null` quando não há diferença, ou quando algum dos dois não é número:
+ * nota com "NaN" no meio é pior que nota nenhuma.
  */
-export function rotuloDoPainel(iso) {
-  if (!ehDataISO(iso)) return iso
-  const d = new Date(iso + 'T12:00:00')
-  d.setDate(d.getDate() + 1)
-  return paraISO(d)
+export function notaDaDiferenca({ somaBarras, totalCard } = {}) {
+  // ⚠️ `null` E `''` SAEM ANTES DO Number(): `Number(null)` é 0, e zero aqui
+  // passaria por "as barras somaram zero" — uma afirmação — onde a verdade é
+  // "não veio número". Mesma armadilha que `numeroOuNulo` em
+  // seguidores-do-custo.js já documenta, e que um teste pegou aqui de novo.
+  const num = (v) => (v == null || v === '' ? NaN : Number(v))
+  const a = num(somaBarras), b = num(totalCard)
+  if (!Number.isFinite(a) || !Number.isFinite(b) || a === b) return null
+  const n = (v) => Math.round(v).toLocaleString('pt-BR')
+  return `As barras somam ${n(a)} e o card mostra ${n(b)}. Não é erro: as barras `
+    + 'são o dia do calendário, e o card usa a mesma janela do painel do Instagram, '
+    + 'que começa e termina um dia antes. O painel também mostra essa diferença.'
 }

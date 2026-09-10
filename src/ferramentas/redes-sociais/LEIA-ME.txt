@@ -225,20 +225,24 @@ discreto: um dia 9 no grafico de um periodo que ia ate o dia 8. Passou batido.
 `ehRecorteRolante(period, inicio, fim)` em janela-de-seguidores.js decide isso, com
 teste. Regra: DUAS datas preenchidas = nunca rolante, nunca mes corrente.
 
-A SOMA DAS BARRAS FECHA COM O CARD (09/09/2026)
-Pedido do dono: "a metrica de total do card novos no periodo precisa bater com a
-soma dos valores diarios que aparecem no grafico diario". Filtrando 5 a 9 na
-Vessel, as barras somavam 1509 e o card dizia 1363 — regua diferente: o card na do
-painel (04..08), as barras no calendario (05..09).
+⚠️ A SOMA DAS BARRAS NAO FECHA COM O CARD, E ISSO E DA FONTE (09/09/2026)
+O PROPRIO PAINEL DO INSTAGRAM NAO FECHA COM ELE MESMO. Medido pelo dono: filtrando
+5 a 8 de setembro o painel da total 951 e o GRAFICO dele vai so ate o dia 7. O
+total e deslocado (janela um dia antes) e as barras sao do dia real — as duas
+coisas ao mesmo tempo.
 
-Agora, NO PERSONALIZADO, as barras puxam a MESMA janela do card e o eixo mostra o
-rotulo um dia a frente (`rotuloDoPainel`, inverso exato de `janelaDoPersonalizado`,
-com teste amarrando os dois). A barra rotulada "05" carrega o dia 04 — que e
-exatamente o que o painel do Instagram faz. Mes passado NAO muda: ele mostra o dia
-real de proposito e esta validado.
+Tentamos fazer a soma fechar rotulando as barras um dia a frente. NAO FUNCIONA, e o
+dono derrubou na hora: a barra "9" mostrava 443 (que e o dia 8) enquanto o filtro
+"hoje" mostrava 326 para o mesmo dia 9 — O MESMO DIA COM DOIS NUMEROS. Decisao
+dele: "data real manda".
 
-⚠️ O CUSTO POR SEGUIDOR CONTINUA DIVIDINDO O BRUTO (quem seguiu). Decisao do dono:
-custo de aquisicao nao divide por liquido, senao quem saiu entra na conta de quem
-foi conquistado. O que mudou e so o selo: quando falta dia na janela, o bruto vem
-subestimado (o dia ausente soma ZERO no agregado) e o custo sai ALTO demais —
-agora vai marcado como previa em vez de sair como numero fechado.
+Entao: BARRAS no dia real, CARD na regua do painel, e a diferenca EXPLICADA por
+`notaDaDiferenca` (em janela-de-seguidores.js, com teste) numa nota sob o grafico,
+com os dois numeros. Esconder a diferenca seria inventar uma coerencia que a fonte
+nao tem.
+
+⚠️ O CUSTO POR SEGUIDOR CONTINUA DIVIDINDO O BRUTO (quem seguiu). Custo de
+aquisicao nao divide por liquido, senao quem saiu entra na conta de quem foi
+conquistado. O que mudou e so o selo: falta dia na janela -> o bruto vem
+subestimado (o dia ausente soma ZERO no agregado) e o custo sai ALTO demais, entao
+agora vai marcado como previa.
