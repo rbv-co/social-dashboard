@@ -1160,16 +1160,30 @@ function janelasDoPeriodo(period, hoje = new Date(), customStart = null, customE
   const capFol = (u) => new Date(Math.min(u.getTime(), folCap.getTime()))
   const ehLastmonth = period === 'lastmonth'
   const ehRecente = period === 0 || period === 1
-  const folS = ehLastmonth ? menos1(engS) : engS
-  const folU = ehLastmonth ? menos1(engU) : (ehRecente ? engU : capFol(engU))
-  const folSp = ehLastmonth ? menos1(engSp) : engSp
-  const folUp = ehLastmonth ? menos1(engUp) : engUp
+  // ⚠️ O PERSONALIZADO TAMBÉM DESLOCA (09/09/2026). O painel profissional rotula
+  // cada dia UM DIA À FRENTE da API: medido na Vessel, "5 a 8 de setembro" no
+  // painel = 951/31, que é a soma dos dias 04+05+06+07 da API — os dois números.
+  // Sem o deslocamento a janela era [05, 08) = 883, e era isso que o dono via.
+  //
+  // ⚠️ É AQUI QUE O NÚMERO DO CARD NASCE, e não em `followStart`/`followEnd`.
+  // Estes alimentam a edge `insights-ao-vivo`, e o card usa `d.live.novos.total`
+  // sempre que o ao vivo responde — o caminho coletado é só a reserva. Consertar
+  // lá e não aqui não muda nada na tela, e foi o erro que eu cometi primeiro.
+  //
+  // Rolantes e mês corrente NÃO deslocam: já batem com o painel e estão
+  // congelados em `_TRAVA_JANELAS`.
+  const ehCustom = !!(customStart && customEnd)
+  const desloca = ehLastmonth || ehCustom
+  const folS = desloca ? menos1(engS) : engS
+  const folU = desloca ? menos1(engU) : (ehRecente ? engU : capFol(engU))
+  const folSp = desloca ? menos1(engSp) : engSp
+  const folUp = desloca ? menos1(engUp) : engUp
   return {
     engSince: TS(engS), engUntil: TS(engU),
     folSince: TS(folS), folUntil: TS(folU),
     prevEngSince: TS(engSp), prevEngUntil: TS(engUp),
     prevFolSince: TS(folSp), prevFolUntil: TS(folUp),
-    folShift: ehLastmonth,
+    folShift: desloca,
   }
 }
 
