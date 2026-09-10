@@ -514,7 +514,7 @@ import { larguraDoGrafico, rotulosQueCabem, ancoraDoRotulo, ESPACO_ANTES_DO_GRAF
 // Decide se a barra do dia é número do Instagram ou estimativa nossa. Puro e com
 // teste ao lado (estimativa-de-seguidores.test.mjs), usando a contagem REAL do
 // Breno nos dias em que a Meta parou de publicar.
-import { barraDoDia, diasSemPublicacao } from './estimativa-de-seguidores.js'
+import { barraDoDia, diasSemPublicacao, faltaNaJanela } from './estimativa-de-seguidores.js'
 // Em que balde cada campanha entra (Seguidores / Contatos / Site e alcance /
 // Vendas). Puro e com teste ao lado (baldes-do-painel.test.mjs), decidido pelo
 // sinal que a Meta afirma no conjunto — nunca pelo nome da campanha.
@@ -2092,6 +2092,21 @@ async function fetchData(accountId, period, customStart, customEnd) {
   // mostramos o oficial (IGUAL ao IG); senão, mostramos a variação da contagem (fresca) "em consolidação".
   const lastGrossDay = snaps.reduce((mx, s) => (((Number(s.gained) || 0) > 0 || (Number(s.lost) || 0) > 0) && s.captured_at > mx) ? s.captured_at : mx, '')
   const confirmadoIG = !!lastGrossDay && followEnd <= lastGrossDay
+  // ⚠️ O DIA QUE A META NÃO PUBLICOU SOME DO AGREGADO, E SOME CALADO. Medido em
+  // 09/09/2026 na Vessel: a janela [05/09, 09/09) tem QUATRO dias, o dia 08 valeu
+  // ~443 líquidos, e a Meta devolveu 907/24 — o mesmo dos três dias publicados.
+  // Nenhum campo diz "faltou um dia"; o total só sai menor. O dono viu.
+  //
+  // ⚠️ SÓ NO PERSONALIZADO. É o único período em que a janela do card
+  // (`followStart`/`followEnd`) e a janela do AO VIVO (`folSince`/`folUntil`) são
+  // comprovadamente a mesma — as duas deslocadas -1 dia. Nos rolantes elas
+  // diferem por um dia (o `capFol`), e somar aqui contaria dia que o ao vivo já
+  // contou. Preferir não mexer no que está validado.
+  const _contagemPorDia = {}
+  snaps.forEach((s) => { _contagemPorDia[s.captured_at] = Number(s.followers_count) || 0 })
+  const faltando = (customStart && customEnd)
+    ? faltaNaJanela(snaps, _contagemPorDia, followStart, followEnd)
+    : { dias: [], estimativa: 0 }
   const chartLabels = chartSrc.length ? chartSrc.map(s => fmtLabel(s.captured_at)) : ['—']
   const chartDates = chartSrc.length ? chartSrc.map(s => fmtFull(s.captured_at)) : ['—']
   // Período anterior (mesma duração) imediatamente antes da janela — MESMA régua (bruto novos−saíram).
@@ -2429,7 +2444,7 @@ async function fetchData(accountId, period, customStart, customEnd) {
     pl, plAnterior,
     // Última coleta REAL do perfil (não o fim da janela) → frescor honesto em todo período.
     trueLastSnap: trueLastRows.length ? trueLastRows[0].captured_at : null,
-    grossGained, grossLost, grossPartial, previaReal, partialSince: _partialSince, confirmadoIG, lastGrossDay,
+    grossGained, grossLost, grossPartial, previaReal, partialSince: _partialSince, confirmadoIG, lastGrossDay, faltando,
   }
 }
 
@@ -2720,9 +2735,15 @@ function update(d, period) {
   const confirmado = ehRecenteLive ? false : (d.live ? true : d.confirmadoIG)
   // Hoje/1D: usa o líquido AO VIVO (mesma fonte do gráfico → card e gráfico batem); fallback previaReal.
   const _netRec = d.netRecente ? (period === 0 ? d.netRecente.hoje : d.netRecente.ontem) : null
-  const headlineVal = ehRecenteLive
+  // ⚠️ O DIA QUE A META NÃO PUBLICOU ENTRA PELA ESTIMATIVA — regra do dono
+  // (09/09/2026): "Dia 8 n pode ficar zerado". Sem isto o card mostrava 883 num
+  // período em que o dia que faltava valia ~443, e ainda carimbava "confirmado".
+  const _falta = d.faltando || { dias: [], estimativa: 0 }
+  const _temBuraco = _falta.dias.length > 0
+  let headlineVal = ehRecenteLive
     ? (_netRec != null ? _netRec : (d.previaReal != null ? d.previaReal : d.live.novos.total))
     : (d.live ? d.live.novos.total : (confirmado ? d.newFollowers : (d.previaReal != null ? d.previaReal : d.newFollowers)))
+  if (!ehRecenteLive && _temBuraco) headlineVal += _falta.estimativa
   const newEl = document.getElementById('new-followers-val'); if (newEl) animCount(newEl, headlineVal) // Total (líquido)
   // O NÚMERO precisa PARECER provisório quando é provisório.
   //
@@ -2731,8 +2752,28 @@ function update(d, period) {
   // os dois como fatos da mesma natureza. Quando o Instagram ainda não fechou o dia,
   // o número muda de cor e ganha o rótulo "parcial" colado nele — a ressalva chega
   // junto com o número, não seis linhas abaixo.
-  if (newEl) newEl.classList.toggle('nf-em-consolidacao', ehRecenteLive)
-  const provEl = document.getElementById('nf-provisorio'); if (provEl) provEl.hidden = !ehRecenteLive
+  // ⚠️ O SELO NÃO PODE AFIRMAR O QUE A TELA NÃO SABE. Até 09/09/2026 o card
+  // carimbava "✓ confirmado pelo Instagram" sempre que o ao vivo respondia —
+  // inclusive quando faltava um dia inteiro dentro da janela.
+  const _provisorio = ehRecenteLive || _temBuraco
+  if (newEl) newEl.classList.toggle('nf-em-consolidacao', _provisorio)
+  const provEl = document.getElementById('nf-provisorio')
+  if (provEl) {
+    provEl.hidden = !_provisorio
+    // ⚠️ CURTO: o selo é `white-space:nowrap` e a tela se mede a 375px. A frase
+    // inteira ("o Instagram ainda não publicou o dia X") vai no title, que é onde
+    // cabe — o selo precisa caber ao lado do número sem empurrar a linha.
+    if (_temBuraco && !ehRecenteLive) {
+      const _dd = _falta.dias.map((x) => { const t = x.split('-'); return t[2] + '/' + t[1] })
+      provEl.textContent = _dd.length === 1 ? `≈ falta ${_dd[0]}` : `≈ faltam ${_dd.length} dias`
+      provEl.title = `O Instagram ainda não publicou ${_dd.length === 1 ? 'o dia' : 'os dias'} `
+        + `${_dd.join(', ')}. O saldo desse${_dd.length === 1 ? '' : 's'} dia${_dd.length === 1 ? '' : 's'} `
+        + 'entrou pela variação da contagem total, que é estimativa — não separa quem seguiu de quem saiu.'
+    } else {
+      provEl.textContent = 'parcial'
+      provEl.removeAttribute('title')
+    }
+  }
   // 3 linhas de fonte igual: Seguidores · Deixaram de seguir · Total.
   const gEl = document.getElementById('nf-gained'), lEl = document.getElementById('nf-lost')
   // Hoje/1D: a Meta ainda não fechou a quebra seguiu/deixou → esconde essas 2 linhas e mostra só o Total (líquido).

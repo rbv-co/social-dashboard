@@ -82,3 +82,37 @@ export function diasSemPublicacao(serie, pular = []) {
     .filter((d) => d && d.publicado === false && !pular.includes(d.label))
     .map((d) => d.label);
 }
+
+/**
+ * O QUE FALTA NA JANELA: os dias sem bruto e quanto eles valem pela contagem.
+ *
+ * ⚠️ O DIA NÃO PUBLICADO SOME DO AGREGADO DA META, e some CALADO. Medido em
+ * 09/09/2026 na Vessel: a janela [05/09, 09/09) tem quatro dias, o dia 08 valeu
+ * ~443 líquidos, e a Meta devolveu 907/24 — o mesmo que os três dias publicados.
+ * Nenhum campo diz "faltou um dia": o total simplesmente sai menor. E a tela
+ * ainda carimbava "✓ confirmado pelo Instagram" em cima disso.
+ *
+ * `snaps` = linhas de `daily_snapshots` ({ captured_at, gained, lost }).
+ * `contagemPorDia` = { 'YYYY-MM-DD': seguidores no fim do dia }.
+ * `inicio`/`fim` = a janela do card, INCLUSIVE nos dois lados.
+ *
+ * Devolve `{ dias, estimativa }`.
+ *
+ * ⚠️ `dias` E `estimativa` SÃO INDEPENDENTES DE PROPÓSITO: um dia sem bruto e sem
+ * contagem do dia anterior entra em `dias` com estimativa zero. É o que faz o selo
+ * dizer "falta o dia 8" em vez de "confirmado" — perder o aviso porque não deu
+ * para estimar seria trocar um número errado por um número errado e silencioso.
+ */
+export function faltaNaJanela(snaps, contagemPorDia, inicio, fim) {
+  const dias = [];
+  let estimativa = 0;
+  for (const s of Array.isArray(snaps) ? snaps : []) {
+    const dia = s && s.captured_at;
+    if (!dia || dia < inicio || dia > fim) continue;
+    if ((Number(s.gained) || 0) > 0 || (Number(s.lost) || 0) > 0) continue;
+    dias.push(dia);
+    const net = netPelaContagem(contagemPorDia, dia);
+    if (net != null) estimativa += net;
+  }
+  return { dias, estimativa };
+}

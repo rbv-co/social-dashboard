@@ -192,3 +192,23 @@ a regua do painel (04..07). Escolhendo 5 a 8 de setembro na Vessel:
   soma das barras 1326 · card 920 · diferenca 406 = + o dia 08 − o dia 04 (37)
 O dia 08 sozinho vale +443 e entra so nas barras; o dia 04 vale +37 e entra so no
 card. A barra estimada vem VAZADA e com `≈` — nao e um numero fechado da Meta.
+
+⚠️ O DIA NAO PUBLICADO SOME DO AGREGADO, E SOME CALADO (09/09/2026)
+Medido ao vivo na Vessel: a janela [05/09, 09/09) tem QUATRO dias, o dia 08 valeu
+~443 liquidos, e a Meta devolveu 907/24 — o mesmo dos tres dias publicados. Nenhum
+campo diz "faltou um dia": o total so sai menor. E o card carimbava
+"✓ confirmado pelo Instagram" em cima disso, porque a linha do selo forcava
+`confirmado = true` sempre que o ao vivo respondia.
+
+Agora, no PERSONALIZADO: o saldo do dia que falta entra pela variacao da contagem
+(`faltaNaJanela`, em estimativa-de-seguidores.js) e o selo vira "≈ falta 08/09",
+com a frase inteira no `title` — o selo e `white-space:nowrap` e a tela se mede a
+375px. Regra do dono: "Dia 8 n pode ficar zerado".
+
+⚠️ SO NO PERSONALIZADO. E o unico periodo em que a janela do card
+(`followStart`/`followEnd`) e a do AO VIVO (`folSince`/`folUntil`) sao
+comprovadamente a MESMA — as duas deslocadas -1 dia. Nos rolantes elas diferem por
+um dia (o `capFol`), e somar ali contaria dia que o ao vivo ja contou.
+
+O coletor re-pergunta qualquer dia 0/0 dos ultimos 14 dias, 4x por dia: quando a
+Meta publicar o dia 08, o bruto real entra sozinho e a estimativa sai de cena.

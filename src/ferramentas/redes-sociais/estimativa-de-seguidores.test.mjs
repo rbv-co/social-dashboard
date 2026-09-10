@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { barraDoDia, netPelaContagem, diaAnterior, diasSemPublicacao } from './estimativa-de-seguidores.js';
+import { barraDoDia, netPelaContagem, diaAnterior, diasSemPublicacao , faltaNaJanela } from './estimativa-de-seguidores.js';
 
 // TODOS os números abaixo são REAIS: contagem de seguidores do perfil Breno Vale
 // gravada em daily_snapshots, e a resposta que a Graph API deu em 2026-08-06 para
@@ -110,3 +110,63 @@ test('o dia anterior atravessa a virada do mês sem escorregar', () => {
   assert.equal(diaAnterior('2026-03-01'), '2026-02-28');
   assert.equal(diaAnterior('2026-01-01'), '2025-12-31');
 });
+
+/* ── O DIA QUE A META NÃO PUBLICOU SOME DO AGREGADO ─────────────────────────
+ *
+ * Medido em 09/09/2026, na Vessel, contra a API ao vivo:
+ *   janela [04/09, 08/09) → 951 seguiu, 31 saiu   (dias 04,05,06,07)
+ *   janela [05/09, 09/09) → 907 seguiu, 24 saiu   (dias 05,06,07 — o 08 SOME)
+ *
+ * A segunda janela tem QUATRO dias e o dia 08 valeu ~443 líquidos, mas a Meta
+ * simplesmente o omite do agregado: o total sai menor sem sinal nenhum. Pior, a
+ * tela estampava "✓ confirmado pelo Instagram" nesse número.
+ *
+ * O dono (09/09/2026): "Dia 8 n pode ficar zerado".
+ */
+
+test('soma a estimativa dos dias sem bruto dentro da janela', () => {
+  const contagem = { '2026-09-07': 15877, '2026-09-08': 16320 }
+  const snaps = [
+    { captured_at: '2026-09-05', gained: 183, lost: 4 },
+    { captured_at: '2026-09-06', gained: 339, lost: 8 },
+    { captured_at: '2026-09-07', gained: 385, lost: 12 },
+    { captured_at: '2026-09-08', gained: 0, lost: 0 },   // a Meta não publicou
+  ]
+  const r = faltaNaJanela(snaps, contagem, '2026-09-05', '2026-09-08')
+  assert.deepEqual(r.dias, ['2026-09-08'])
+  assert.equal(r.estimativa, 443, '16320 − 15877')
+})
+
+test('janela inteira publicada não estima nada', () => {
+  const snaps = [
+    { captured_at: '2026-09-04', gained: 44, lost: 7 },
+    { captured_at: '2026-09-05', gained: 183, lost: 4 },
+  ]
+  const r = faltaNaJanela(snaps, { '2026-09-04': 1, '2026-09-05': 2 }, '2026-09-04', '2026-09-05')
+  assert.deepEqual(r.dias, [])
+  assert.equal(r.estimativa, 0)
+})
+
+test('⚠️ dia sem bruto E sem base de contagem entra na lista, mas não inventa número', () => {
+  /* Sem o dia anterior não há de onde estimar. O dia PRECISA continuar aparecendo
+   * na lista — é o que faz o selo dizer "falta o dia X" em vez de "confirmado". */
+  const snaps = [{ captured_at: '2026-09-08', gained: 0, lost: 0 }]
+  const r = faltaNaJanela(snaps, {}, '2026-09-08', '2026-09-08')
+  assert.deepEqual(r.dias, ['2026-09-08'])
+  assert.equal(r.estimativa, 0)
+})
+
+test('dias fora da janela não contam', () => {
+  const snaps = [
+    { captured_at: '2026-09-03', gained: 0, lost: 0 },
+    { captured_at: '2026-09-05', gained: 183, lost: 4 },
+  ]
+  const r = faltaNaJanela(snaps, { '2026-09-02': 10, '2026-09-03': 99 }, '2026-09-05', '2026-09-08')
+  assert.deepEqual(r.dias, [])
+  assert.equal(r.estimativa, 0)
+})
+
+test('aguenta lista vazia e nula', () => {
+  assert.deepEqual(faltaNaJanela(null, null, '2026-09-05', '2026-09-08'), { dias: [], estimativa: 0 })
+  assert.deepEqual(faltaNaJanela([], {}, '2026-09-05', '2026-09-08'), { dias: [], estimativa: 0 })
+})
