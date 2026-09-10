@@ -47,3 +47,20 @@ export function janelaDoPersonalizado(inicio, fim) {
   if (!ehDataISO(inicio) || !ehDataISO(fim)) return null
   return { inicio: menosUmDia(inicio), fim: menosUmDia(fim) }
 }
+
+/**
+ * O gráfico deve tratar este recorte como ROLANTE (Hoje/1D/3D/7D/14D/30D)?
+ *
+ * ⚠️ O RECORTE PERSONALIZADO NUNCA É ROLANTE, mesmo com `period` numérico. Ao
+ * escolher datas na tela, `period` CONTINUA com o valor antigo (7, 30…) — e o
+ * gráfico decidia o ramo só por ele. O ramo rolante cola "ontem" e "hoje" no fim
+ * da série, então um período de 5 a 8 de setembro ganhava barras dos dias 8 e 9.
+ *
+ * Defeito visto pelo dono em 09/09/2026: filtrando 5 a 8, a barra do dia 8
+ * apareceu DUAS VEZES — uma como dia da série, outra como "ontem". Antes disso o
+ * mesmo defeito já mostrava um dia 9 que ninguém tinha pedido, e passou batido.
+ */
+export function ehRecorteRolante(period, inicio, fim) {
+  if (inicio && fim) return false
+  return [0, 1, 3, 7, 14, 30].includes(period)
+}

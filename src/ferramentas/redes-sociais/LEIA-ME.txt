@@ -212,3 +212,15 @@ um dia (o `capFol`), e somar ali contaria dia que o ao vivo ja contou.
 
 O coletor re-pergunta qualquer dia 0/0 dos ultimos 14 dias, 4x por dia: quando a
 Meta publicar o dia 08, o bruto real entra sozinho e a estimativa sai de cena.
+
+⚠️ O PERSONALIZADO NAO E ROLANTE (09/09/2026)
+Ao escolher datas, `currentPeriod` CONTINUA com o valor antigo (7, 30…). O grafico
+decidia o ramo so por ele e punha o recorte personalizado no ramo dos ROLANTES,
+que cola "ontem" e "hoje" no fim da serie.
+
+O dono viu filtrando 5 a 8 de setembro: a barra do dia 8 apareceu DUAS VEZES — uma
+como dia da serie, outra como "ontem". O mesmo defeito ja aparecia antes, mais
+discreto: um dia 9 no grafico de um periodo que ia ate o dia 8. Passou batido.
+
+`ehRecorteRolante(period, inicio, fim)` em janela-de-seguidores.js decide isso, com
+teste. Regra: DUAS datas preenchidas = nunca rolante, nunca mes corrente.

@@ -505,7 +505,7 @@ import { sb } from '../../compartilhado/buscar-e-salvar-dados.js'
 import { hojeLocal } from '../../compartilhado/datas.js'
 import { montarSerieDeInvestimento, montarSerieDeCustoPorSeguidor, montarSerieDeCustoPorResultado, diasComInvestimentoEResultado, valeDesenharOGrafico } from './series-diarias-de-meta-ads.js'
 import { graficoDoCartao, opcoesDoGrafico } from './graficos-de-custo-diario.js'
-import { janelaDoPersonalizado } from './janela-de-seguidores.js'
+import { janelaDoPersonalizado, ehRecorteRolante } from './janela-de-seguidores.js'
 // Quanta largura um gráfico de um ponto por dia precisa ter, e se ele passa a
 // rolar para o lado. Puro e com teste ao lado (largura-do-grafico.test.mjs).
 // Nasceu da medida a 375px: 30 dias em 319px davam ~10px por dia e os valores em
@@ -3248,8 +3248,14 @@ async function refresh() {
     const _d3 = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'], _m3 = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
     const _dfull = iso => { const dt = new Date(iso + 'T12:00:00'); return dt.getDate() + ' ' + _m3[dt.getMonth()] }
     const _lbl = iso => { const dt = new Date(iso + 'T12:00:00'); return dt.getDate() + '/' + (dt.getMonth() + 1) }
-    const _mesAtual = currentPeriod === 'monthfull' || currentPeriod === 'sofar' || currentPeriod === 'month'
-    const _rolante = [0, 1, 3, 7, 14, 30].includes(currentPeriod)
+    // ⚠️ O PERSONALIZADO NUNCA CAI NESTES DOIS RAMOS. Ao escolher datas,
+    // `currentPeriod` continua com o valor antigo (7, 30…) — decidir só por ele
+    // punha o recorte personalizado no ramo dos rolantes, que cola "ontem" e
+    // "hoje" no fim da série. Filtrando 5 a 8 de setembro, o dia 8 aparecia DUAS
+    // vezes (dia da série + "ontem") e um dia 9 que ninguém pediu.
+    const _ehCustom = !!(currentStartDate && currentEndDate)
+    const _mesAtual = !_ehCustom && (currentPeriod === 'monthfull' || currentPeriod === 'sofar' || currentPeriod === 'month')
+    const _rolante = ehRecorteRolante(currentPeriod, currentStartDate, currentEndDate)
     // ── DIA QUE O INSTAGRAM NÃO PUBLICOU → ESTIMATIVA, não zero ──
     //
     // A Edge Function serie-novos-dia agora devolve `publicado: false` quando a
