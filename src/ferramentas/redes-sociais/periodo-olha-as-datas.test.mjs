@@ -114,9 +114,15 @@ test('⚠️ o guardado é conferido antes de virar estado', () => {
  */
 
 test('⚠️ o balde é aceso pelo período inteiro, não pelo filtro manual', () => {
-  assert.match(TELA, /const baldesVazios = baldesSemGasto\(_idsPorBalde, _rowsDoBalde\)/)
-  assert.ok(!/const baldesVazios = baldesSemGasto\(_idsPorBalde, _diaRows\)/.test(TELA),
-    'voltou a acender o balde com as linhas já filtradas — o defeito circular volta junto')
+  /* Os DOIS lados vinham filtrados: as LINHAS de gasto (`_diaRows`, recortadas na
+   * URL) e a LISTA DE IDS de cada balde (`_idsPorBalde`, recortada por dentro do
+   * `idsParaConsulta`). Consertar só as linhas não bastava — com a lista de ids
+   * vazia o balde apagava do mesmo jeito. */
+  assert.match(TELA, /const baldesVazios = baldesSemGasto\(_idsPorBaldeSemFiltro, _rowsDoBalde\)/)
+  assert.ok(!/baldesSemGasto\(_idsPorBalde,/.test(TELA),
+    'voltou a acender o balde com a lista já filtrada — o defeito circular volta junto')
+  assert.match(TELA, /_idsPorBaldeSemFiltro\[b\.id\] = idsParaConsulta\(_campanhas, b\.id, null\)/,
+    'a lista que acende precisa ser montada SEM a seleção manual')
 })
 
 test('a segunda leitura só acontece com filtro manual ativo', () => {

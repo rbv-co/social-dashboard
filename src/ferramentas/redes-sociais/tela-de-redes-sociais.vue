@@ -2193,6 +2193,19 @@ async function fetchData(accountId, period, customStart, customEnd) {
   // e a consulta do dinheiro nunca podem discordar.
   const _idsPorBalde = {}
   BALDES.forEach(b => { if (b.id !== 'todos') _idsPorBalde[b.id] = idsParaConsulta(_campanhas, b.id, _selecionadas) })
+  // ⚠️⚠️ E A LISTA SEM FILTRO NENHUM, QUE É A QUE ACENDE O BOTÃO.
+  //
+  // O botão do balde responde "existe campanha DESTE TIPO gastando no período?" —
+  // pergunta sobre a conta inteira. A lista de cima já vem recortada pela escolha
+  // manual, e usá-la aqui criava um círculo: com campanhas de Seguidores marcadas,
+  // o balde Contatos ficava com lista VAZIA e apagava — e para acendê-lo era
+  // preciso marcar as campanhas dele à mão, ou seja, desfazer o filtro que o tinha
+  // apagado. O dono descreveu esse círculo em 10/09/2026.
+  //
+  // As duas listas respondem perguntas DIFERENTES, e é por isso que elas divergem
+  // de propósito: esta diz o que EXISTE, a de cima diz o que está sendo SOMADO.
+  const _idsPorBaldeSemFiltro = {}
+  BALDES.forEach(b => { if (b.id !== 'todos') _idsPorBaldeSemFiltro[b.id] = idsParaConsulta(_campanhas, b.id, null) })
   const _filtroManual = safeIds.length > 0 ? `&campaign_id=in.(${safeIds.join(',')})` : ''
 
   // ── GRÁFICOS DIÁRIOS DA SEÇÃO 02 (barras por dia + linha de meta) ──
@@ -2237,11 +2250,11 @@ async function fetchData(accountId, period, customStart, customEnd) {
   // conta inteira. Com filtro manual ativo isso custa uma segunda leitura, e só
   // então; sem filtro, reaproveita a que já veio.
   let _rowsDoBalde = _diaRows
-  if (_filtroManual && !noneSelected) {
+  if (_filtroManual && !noneSelected) {  // recorte ativo: o que acende precisa de leitura própria
     const ciTodas = await sb(`campaign_insights?account_id=eq.${accountId}&period_days=eq.0&captured_at=gte.${followStart}&captured_at=lte.${followEnd}&limit=5000&select=campaign_id,spend`)
     if (!ciTodas.erro) _rowsDoBalde = ciTodas.map(r => ({ campaign_id: String(r.campaign_id), spend: r.spend }))
   }
-  const baldesVazios = baldesSemGasto(_idsPorBalde, _rowsDoBalde)
+  const baldesVazios = baldesSemGasto(_idsPorBaldeSemFiltro, _rowsDoBalde)
   const _efetivo = baldeEfetivo(_baldeAtual, baldesVazios)
   const idsDoRecorte = idsParaConsulta(_campanhas, _efetivo, _selecionadas)
   // EM TODOS SEM FILTRO MANUAL, nada de lista de ids: fica exatamente no caminho de
