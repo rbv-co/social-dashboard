@@ -98,3 +98,29 @@ test('⚠️ o guardado é conferido antes de virar estado', () => {
   assert.match(TELA, /\/\^\\d\{4\}-\\d\{2\}-\\d\{2\}\$\//)
   assert.match(TELA, /v\.s <= v\.e/, 'início depois do fim não é intervalo')
 })
+
+/* ⚠️ O QUE ACENDE O BALDE NÃO PODE VIR RECORTADO PELO FILTRO MANUAL.
+ *
+ * Defeito circular achado pelo dono em 10/09/2026: "tem campanha de lead rodando
+ * porém na dash não está aparecendo o botão aceso, eu preciso filtrar manualmente
+ * as campanhas, pq?".
+ *
+ * `_diaRows` já vinha com `&campaign_id=in.(...)` das campanhas escolhidas à mão.
+ * Com uma seleção ativa, todos os OUTROS baldes ficavam sem gasto e apagavam — e
+ * para acendê-los era preciso filtrar à mão, que é o que os tinha apagado.
+ *
+ * O balde responde "tem dinheiro NESTE TIPO no período?" — pergunta sobre a conta
+ * inteira, nunca sobre o recorte que já está aplicado.
+ */
+
+test('⚠️ o balde é aceso pelo período inteiro, não pelo filtro manual', () => {
+  assert.match(TELA, /const baldesVazios = baldesSemGasto\(_idsPorBalde, _rowsDoBalde\)/)
+  assert.ok(!/const baldesVazios = baldesSemGasto\(_idsPorBalde, _diaRows\)/.test(TELA),
+    'voltou a acender o balde com as linhas já filtradas — o defeito circular volta junto')
+})
+
+test('a segunda leitura só acontece com filtro manual ativo', () => {
+  // Sem filtro, `_diaRows` já é a conta inteira: pagar outra viagem seria desperdício.
+  assert.match(TELA, /if \(_filtroManual && !noneSelected\) \{/)
+  assert.match(TELA, /let _rowsDoBalde = _diaRows/)
+})

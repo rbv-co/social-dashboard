@@ -2224,7 +2224,24 @@ async function fetchData(accountId, period, customStart, customEnd) {
   // Balde sem gasto no período fica APAGADO na barra, com o motivo — nunca some:
   // sumir faz a pessoa procurar o que não está lá. 'todos' nunca entra na lista.
   // Sem série diária nenhuma, NADA é dado como vazio (ver baldesSemGasto).
-  const baldesVazios = baldesSemGasto(_idsPorBalde, _diaRows)
+  //
+  // ⚠️⚠️ O QUE ACENDE O BALDE IGNORA O FILTRO MANUAL, e isto era um defeito
+  // circular: `_diaRows` já vem recortado pelas campanhas escolhidas à mão, então
+  // com uma seleção ativa TODOS os outros baldes ficavam sem gasto e apagavam. O
+  // dono (10/09/2026): "tem campanha de lead rodando porém na dash não está
+  // aparecendo o botão aceso, eu preciso filtrar manualmente as campanhas, pq?".
+  // Ele precisava filtrar à mão justamente para acender o balde que o filtro à mão
+  // tinha apagado.
+  //
+  // O balde responde "tem dinheiro NESTE TIPO no período?" — pergunta sobre a
+  // conta inteira. Com filtro manual ativo isso custa uma segunda leitura, e só
+  // então; sem filtro, reaproveita a que já veio.
+  let _rowsDoBalde = _diaRows
+  if (_filtroManual && !noneSelected) {
+    const ciTodas = await sb(`campaign_insights?account_id=eq.${accountId}&period_days=eq.0&captured_at=gte.${followStart}&captured_at=lte.${followEnd}&limit=5000&select=campaign_id,spend`)
+    if (!ciTodas.erro) _rowsDoBalde = ciTodas.map(r => ({ campaign_id: String(r.campaign_id), spend: r.spend }))
+  }
+  const baldesVazios = baldesSemGasto(_idsPorBalde, _rowsDoBalde)
   const _efetivo = baldeEfetivo(_baldeAtual, baldesVazios)
   const idsDoRecorte = idsParaConsulta(_campanhas, _efetivo, _selecionadas)
   // EM TODOS SEM FILTRO MANUAL, nada de lista de ids: fica exatamente no caminho de
