@@ -173,3 +173,64 @@ function seTocam(a, b, folga) {
   const cruzaNaVertical = a.y0 < b.y1 && b.y0 < a.y1;
   return cruzaNaHorizontal && cruzaNaVertical;
 }
+
+/* ── O SELO DA META, no canto de cima do gráfico ──────────────────────────── */
+
+/** Largura média de um caractere do selo, MEDIDA no navegador (10/09/2026):
+ *  "Meta máxima R$ 2,00" = 19 caracteres em 90,8px → 4,78px cada.
+ *
+ *  ⚠️ A conta antiga usava 4,4 "no corpo 8" — e o corpo NÃO é 8. O CSS é
+ *  `max(9px, calc(8px * --escala-texto))`, e o piso de 9px é quem manda em escala
+ *  1. A caixinha nascia curta e a palavra sangrava para fora dela: medido, o
+ *  texto terminava 3,2px DEPOIS da borda direita, e ainda comia o respiro que
+ *  deveria sobrar daquele lado. O dono viu na tela antes de qualquer teste pegar.
+ *
+ *  Este número é só o PLANO B: quem manda é a medida real do texto desenhado
+ *  (`caixaDoSelo` recebe a caixa medida). Ele entra quando o SVG ainda não
+ *  renderizou — cartão escondido, aba em segundo plano — e aí é melhor sobrar
+ *  caixa do que faltar. Por isso 4,9 e não 4,78: erra para o lado que não corta. */
+export const LARGURA_POR_LETRA_DO_SELO = 4.9;
+
+/** Respiro entre a palavra e a borda da caixinha. Era 4 à esquerda e ZERO à
+ *  direita (a conta não reservava o outro lado). Agora são os dois, e menores:
+ *  o dono pediu a caixinha menor no mesmo pedido em que apontou o sangramento. */
+export const RESPIRO_DO_SELO = 3;
+
+/** O rótulo do selo, ABREVIADO — e só o do selo.
+ *
+ *  O dono pediu a caixinha menor, e a fonte não pode encolher: 9px é o piso de
+ *  leitura desta tela (ver o comentário no topo deste arquivo, onde diminuir a
+ *  letra já foi tentado e não resolveu). O que sobra é a palavra.
+ *
+ *  "Meta máx." é o MESMO vocabulário que o cartão logo acima já usa no canto
+ *  ("META MÁX"), então não é corte, é a abreviação da casa. E nada se perde: a
+ *  linha tracejada continua dizendo "Meta máxima: R$ 2,00" por extenso no toque
+ *  longo — quem quiser a palavra inteira a tem.
+ */
+export function rotuloCurtoDoSelo(rotulo) {
+  return String(rotulo || '')
+    .replace(/\bmáxima\b/gi, 'máx.')
+    .replace(/\bmínima\b/gi, 'mín.');
+}
+
+/** A caixinha do selo da meta, a partir da caixa REAL do texto já desenhado.
+ *
+ *  `caixaDoTexto` é o que `getBBox()` devolveu ({x0,x1,y0,y1}), ou `null` quando
+ *  não deu para medir — aí vale o plano B, pelo número de letras.
+ *
+ *  Devolve sempre {x, y, largura, altura}, pronto para o <rect>. */
+export function caixaDoSelo(caixaDoTexto, { texto = '', x = 0, y = 0, respiro = RESPIRO_DO_SELO } = {}) {
+  if (caixaDoTexto && caixaDoTexto.x1 > caixaDoTexto.x0) {
+    return {
+      x: caixaDoTexto.x0 - respiro,
+      y: caixaDoTexto.y0 - respiro / 2,
+      largura: (caixaDoTexto.x1 - caixaDoTexto.x0) + respiro * 2,
+      altura: (caixaDoTexto.y1 - caixaDoTexto.y0) + respiro,
+    };
+  }
+  return {
+    x, y,
+    largura: String(texto).length * LARGURA_POR_LETRA_DO_SELO + respiro * 2,
+    altura: 11,
+  };
+}

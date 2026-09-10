@@ -511,7 +511,7 @@ import { ehRecorteRolante, ehGraficoDeContexto } from './janela-de-seguidores.js
 // rolar para o lado. Puro e com teste ao lado (largura-do-grafico.test.mjs).
 // Nasceu da medida a 375px: 30 dias em 319px davam ~10px por dia e os valores em
 // reais se sobrepunham em −5px.
-import { larguraDoGrafico, rotulosQueCabem, ancoraDoRotulo, ESPACO_ANTES_DO_GRAFICO, ESPACO_DEPOIS_DO_GRAFICO } from './largura-do-grafico.js'
+import { larguraDoGrafico, rotulosQueCabem, ancoraDoRotulo, ESPACO_ANTES_DO_GRAFICO, ESPACO_DEPOIS_DO_GRAFICO, caixaDoSelo, RESPIRO_DO_SELO, rotuloCurtoDoSelo } from './largura-do-grafico.js'
 // Decide se a barra do dia é número do Instagram ou estimativa nossa. Puro e com
 // teste ao lado (estimativa-de-seguidores.test.mjs), usando a contagem REAL do
 // Breno nos dias em que a Meta parou de publicar.
@@ -1925,23 +1925,39 @@ function desenharGraficoDiario(hostId, serie, opcoes) {
     // se misturava e virava sujeira. A linha continua tracejada e laranja como o
     // rótulo: os dois se leem juntos sem precisar estar encostados, e a linha
     // ainda diz o valor no toque longo.
-    const txt = opcoes.rotuloMeta + ' ' + fmtR(meta)
-    const larguraTxt = txt.length * 4.4 + 8 // ~4.4px por caractere no corpo 8
-    const alturaTarja = 11
+    // ⚠️ A CAIXINHA SAI DA MEDIDA DO TEXTO, NUNCA DE UMA ESTIMATIVA.
+    //
+    // Ela era `txt.length * 4.4 + 8`, com a observação "~4,4px por caractere no
+    // corpo 8". O corpo não é 8: o CSS é `max(9px, calc(8px * --escala-texto))` e
+    // o piso de 9px é quem manda em escala 1. Medido no navegador em 10/09/2026,
+    // "Meta máxima R$ 2,00" ocupa 90,8px (4,78px por letra) e a caixinha nascia
+    // com 91,6px começando 4px ANTES — o texto terminava 3,2px depois da borda
+    // direita e não sobrava respiro nenhum daquele lado. O dono: "a palavra sangra
+    // fora do badge".
+    //
+    // O texto é desenhado PRIMEIRO para poder ser medido, e a caixinha entra
+    // ATRÁS dele (insertBefore) — appendChild depois a deixaria por cima, tapando
+    // a palavra que ela deveria emoldurar.
+    // Abreviado só AQUI: a linha tracejada acima leva o rótulo por extenso.
+    const txt = rotuloCurtoDoSelo(opcoes.rotuloMeta) + ' ' + fmtR(meta)
     const tarjaY = 2
-    svg.appendChild(el('rect', {
-      class: 'gmad-meta-tarja',
-      x: padX.toFixed(2), y: tarjaY.toFixed(2),
-      width: larguraTxt.toFixed(2), height: alturaTarja, rx: 2.5,
-    }))
     const tag = el('text', {
       class: 'gmad-meta-txt',
-      x: (padX + 4).toFixed(2),
+      x: (padX + RESPIRO_DO_SELO).toFixed(2),
       y: (tarjaY + 8).toFixed(2),
       'text-anchor': 'start',
     })
     tag.textContent = txt
     svg.appendChild(tag)
+    // `caixaDeTexto` devolve null quando o SVG ainda não renderizou (cartão
+    // escondido, aba em segundo plano). Aí vale o plano B por número de letras,
+    // que erra para o lado de sobrar caixa — ver caixaDoSelo.
+    const selo = caixaDoSelo(caixaDeTexto(tag), { texto: txt, x: padX, y: tarjaY })
+    svg.insertBefore(el('rect', {
+      class: 'gmad-meta-tarja',
+      x: selo.x.toFixed(2), y: selo.y.toFixed(2),
+      width: selo.largura.toFixed(2), height: selo.altura.toFixed(2), rx: 2.5,
+    }), tag)
   }
   // Datas embaixo (afina automático quando o período é longo)
   const step = Math.max(1, Math.ceil(n / 8))

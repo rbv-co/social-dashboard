@@ -9,6 +9,8 @@ import {
   ESPACO_ANTES_DO_GRAFICO,
   ESPACO_DEPOIS_DO_GRAFICO,
   LARGURA_QUANDO_NAO_DA_PRA_MEDIR,
+  caixaDoSelo,
+  rotuloCurtoDoSelo,
 } from './largura-do-grafico.js';
 
 // A MEDIDA QUE ORIGINOU ESTE MÓDULO (375px, período de 30 dias, /redes-sociais):
@@ -231,4 +233,52 @@ test('a folga entre rótulos é respeitada: encostar não vale', () => {
 test('lista vazia não quebra', () => {
   assert.deepEqual(rotulosQueCabem([]), []);
   assert.deepEqual(rotulosQueCabem(), []);
+});
+
+/* ── O SELO DA META ──────────────────────────────────────────────────────── */
+
+test('⚠️ a caixinha do selo sai da MEDIDA do texto, e sobra dos dois lados', () => {
+  // A caixa real de "Meta máxima R$ 2,00", medida no navegador em 10/09/2026.
+  const medida = { x0: 14, x1: 104.8, y0: 0.9, y1: 12.5 };
+  const c = caixaDoSelo(medida, { texto: 'Meta máxima R$ 2,00' });
+  // O texto tem de caber INTEIRO, com respiro dos dois lados.
+  assert.ok(c.x < medida.x0, 'a caixinha começa antes do texto');
+  assert.ok(c.x + c.largura > medida.x1, 'a caixinha termina depois do texto');
+  assert.equal(medida.x0 - c.x, c.x + c.largura - medida.x1, 'o respiro é igual dos dois lados');
+  // E não sobra caixa à toa: o pedido do dono foi "pode deixar ele menor também".
+  assert.ok(c.largura < (medida.x1 - medida.x0) + 10);
+});
+
+test('⚠️ o que a conta antiga fazia: caixa CURTA e texto para fora', () => {
+  // `texto.length * 4.4 + 8`, com o texto começando 4px depois da caixa.
+  const antiga = { x: 10, largura: 19 * 4.4 + 8 };            // 91,6
+  const textoReal = { x0: 14, x1: 104.8 };                     // 90,8px de largura
+  assert.ok(textoReal.x1 > antiga.x + antiga.largura, 'era isto que sangrava');
+  // A conta nova, pelo plano B (sem medir), já cobre o texto real.
+  const planoB = caixaDoSelo(null, { texto: 'Meta máxima R$ 2,00', x: 10 });
+  assert.ok(planoB.largura >= (textoReal.x1 - textoReal.x0), 'o plano B não pode nascer curto');
+});
+
+test('sem medida e sem texto, o selo ainda devolve uma caixa desenhável', () => {
+  const c = caixaDoSelo(null, {});
+  assert.ok(c.largura > 0 && c.altura > 0);
+  assert.equal(typeof c.x, 'number');
+});
+
+test('⚠️ o selo abrevia, mas o rótulo inteiro continua existindo na linha', () => {
+  assert.equal(rotuloCurtoDoSelo('Meta máxima'), 'Meta máx.');
+  assert.equal(rotuloCurtoDoSelo('Meta mínima'), 'Meta mín.');
+  // O que não tem o que abreviar passa intacto — nunca corta pelo tamanho.
+  assert.equal(rotuloCurtoDoSelo('Meta'), 'Meta');
+  assert.equal(rotuloCurtoDoSelo('Meta 25/dia'), 'Meta 25/dia');
+  assert.equal(rotuloCurtoDoSelo(''), '');
+  assert.equal(rotuloCurtoDoSelo(null), '');
+});
+
+test('⚠️ abreviar deixa o selo MENOR que a caixinha errada de antes', () => {
+  const antiga = 19 * 4.4 + 8;                                  // 91,6px
+  const agora = rotuloCurtoDoSelo('Meta máxima').length + ' R$ 2,00'.length;
+  const planoB = caixaDoSelo(null, { texto: rotuloCurtoDoSelo('Meta máxima') + ' R$ 2,00' });
+  assert.equal(agora, 17);
+  assert.ok(planoB.largura < antiga, 'o selo tem de caber em menos espaço que o de antes');
 });
