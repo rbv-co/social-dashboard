@@ -274,3 +274,19 @@ seria um retangulo sem leitura. Somar esse grafico fez o card do DIA mostrar a
 SEMANA: "ontem" saiu 1,7 mil quando o dia tinha sido 443, e "hoje" o mesmo 1,7 mil
 no lugar de 336. Nesses dois o card e a ULTIMA barra (`netRecente`), nao a soma.
 Quem decide e `ehGraficoDeContexto(period)`, com teste.
+
+⚠️⚠️ DECIDIR O PERIODO SO PELO NUMERO QUEBRA O INTERVALO ESCOLHIDO
+Ao escolher datas, `period` CONTINUA com o valor antigo (0, 1, 7, 30…). Toda
+decisao tomada so por ele trata o intervalo escolhido como o periodo anterior.
+
+QUEBROU TRES VEZES EM 09/09/2026, sempre com o dono achando:
+  1. `_rolante` — o personalizado ganhava barras de ontem/hoje coladas no fim, e a
+     barra do dia 8 aparecia DUAS VEZES;
+  2. `ehGraficoDeContexto` — a funcao foi criada para o caso 1 e a seguinte foi
+     escrita sem as datas: o card do personalizado mostrava o DIA, nao o intervalo;
+  3. `isHoje` — "Hoje" selecionado + datas escolhidas recortava a janela em um dia.
+
+Hoje TODAS as decisoes olham as datas: `ehCustom`, `isHoje`, `isOntem`,
+`isCalMonth`, `ehRecorteRolante(period, ini, fim)` e
+`ehGraficoDeContexto(period, ini, fim)`. Congelado em periodo-olha-as-datas.test.mjs
+— se alguem voltar a decidir so pelo numero, o teste quebra.

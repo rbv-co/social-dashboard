@@ -41,6 +41,11 @@ export function ehRecorteRolante(period, inicio, fim) {
  * Ou seja: "o card é a soma do gráfico" vale onde o gráfico É o período. Nestes
  * dois, o card é a ÚLTIMA barra.
  */
-export function ehGraficoDeContexto(period) {
+export function ehGraficoDeContexto(period, inicio, fim) {
+  // ⚠️ AS DATAS ENTRAM NA CONTA, e isto já foi esquecido uma vez no mesmo dia:
+  // ao escolher um intervalo, `period` CONTINUA com o valor antigo. Sem olhar as
+  // datas, um personalizado escolhido com "Hoje" selecionado era tratado como
+  // Hoje — e o card mostrava o dia em vez do intervalo inteiro.
+  if (inicio && fim) return false
   return period === 0 || period === 1
 }

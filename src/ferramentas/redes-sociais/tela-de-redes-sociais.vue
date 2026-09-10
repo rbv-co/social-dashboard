@@ -1939,9 +1939,15 @@ function localDate(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).
 async function fetchData(accountId, period, customStart, customEnd) {
   const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
   const days = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
-  const isHoje = period === 0
-  const isCalMonth = period === 'monthfull' || period === 'sofar' || period === 'month'
-  const isLastMonth = period === 'lastmonth'
+  // ⚠️ INTERVALO ESCOLHIDO MANDA MAIS QUE O NÚMERO DO PERÍODO. Ao escolher datas,
+  // `period` CONTINUA com o valor antigo — então "Hoje" + datas caía em `isHoje` e
+  // a tela mostrava só o dia. Este arquivo já pagou por isso três vezes em
+  // 09/09/2026 (gráfico rolante, gráfico de contexto, e aqui).
+  const ehCustom = !!(customStart && customEnd)
+  const isHoje = !ehCustom && period === 0
+  const isOntem = !ehCustom && period === 1
+  const isCalMonth = !ehCustom && (period === 'monthfull' || period === 'sofar' || period === 'month')
+  const isLastMonth = !ehCustom && period === 'lastmonth'
   let refDate, histStartDate, storedPeriod, effectivePeriod
   if (customStart && customEnd) {
     refDate = new Date(customEnd + 'T12:00:00')
@@ -1985,7 +1991,7 @@ async function fetchData(accountId, period, customStart, customEnd) {
   const _ontemBRT = localDate(new Date(new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' })).getTime() - 86400000))
   let followStart, followEnd
   if (isHoje) { followStart = followEnd = _hojeBRT }
-  else if (period === 1) { followStart = followEnd = _ontemBRT }
+  else if (isOntem) { followStart = followEnd = _ontemBRT }
   else if (typeof period === 'number' && !customStart) {
     // Dias corridos (7/14/30): N dias terminando ONTEM (régua do app — não conta o dia corrente
     // incompleto). Ex.: 7D = [ontem−6 .. ontem]. 1D acima = só ontem.
@@ -2072,7 +2078,7 @@ async function fetchData(accountId, period, customStart, customEnd) {
   // todos os períodos → entre si nunca inverte (hoje ≤ 7d ≤ 14d ≤ 30d).
   const _countAtOrBefore = ds => { let v = null; for (let i = 0; i < snaps.length; i++) { if (snaps[i].captured_at <= ds) v = Number(snaps[i].followers_count) || 0; else break } return v }
   let _prevNumD = _hojeBRT, _prevBaseD
-  if (period === 1) { _prevNumD = _ontemBRT; _prevBaseD = localDate(new Date(new Date(_ontemBRT + 'T00:00:00').getTime() - 86400000)) }
+  if (isOntem) { _prevNumD = _ontemBRT; _prevBaseD = localDate(new Date(new Date(_ontemBRT + 'T00:00:00').getTime() - 86400000)) }
   else if (customStart && customEnd) { _prevNumD = customEnd; _prevBaseD = localDate(new Date(new Date(customStart + 'T00:00:00').getTime() - 86400000)) }
   else if (isLastMonth) { _prevNumD = followEnd; _prevBaseD = localDate(new Date(new Date(followStart + 'T00:00:00').getTime() - 86400000)) }
   else if (isCalMonth) { const _n = new Date(); _prevBaseD = localDate(new Date(_n.getFullYear(), _n.getMonth(), 0)) }
@@ -2710,10 +2716,11 @@ function update(d, period) {
   // AO VIVO (exato da Meta) quando disponível; senão cai na lógica de consolidação do coletado.
   // EXCEÇÃO Hoje/1D: a quebra seguiu/deixou da Meta ainda assenta → total = LÍQUIDO real por delta da
   // contagem (previaReal) + selo "consolidando". SÓ vale pra Hoje/1D; demais períodos seguem validados.
-  const ehRecenteLive = !!d.live && (period === 0 || period === 1)
+  const _ehContexto = ehGraficoDeContexto(period, currentStartDate, currentEndDate)
+  const ehRecenteLive = !!d.live && _ehContexto
   const confirmado = ehRecenteLive ? false : (d.live ? true : d.confirmadoIG)
   // Hoje/1D: usa o líquido AO VIVO (mesma fonte do gráfico → card e gráfico batem); fallback previaReal.
-  const _netRec = d.netRecente ? (period === 0 ? d.netRecente.hoje : d.netRecente.ontem) : null
+  const _netRec = (d.netRecente && _ehContexto) ? (period === 0 ? d.netRecente.hoje : d.netRecente.ontem) : null
   // ⚠️ O DIA QUE A META NÃO PUBLICOU ENTRA PELA ESTIMATIVA — regra do dono
   // (09/09/2026): "Dia 8 n pode ficar zerado". Sem isto o card mostrava 883 num
   // período em que o dia que faltava valia ~443, e ainda carimbava "confirmado".
@@ -2733,7 +2740,7 @@ function update(d, period) {
   // ONTEM o gráfico desenha os últimos 7 dias de CONTEXTO — uma barra só seria um
   // retângulo sem leitura — e somá-lo faria o card do dia mostrar a semana. Foi o
   // que aconteceu: "ontem" saiu 1,7 mil quando o dia tinha sido 443 (09/09/2026).
-  const _somaBarras = ehGraficoDeContexto(period) ? null : totalPelasBarras(d.chart)
+  const _somaBarras = _ehContexto ? null : totalPelasBarras(d.chart)
   const _temBuraco = !!(_somaBarras && _somaBarras.estimado)
   const headlineVal = _somaBarras
     ? _somaBarras.total

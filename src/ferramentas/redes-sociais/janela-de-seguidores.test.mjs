@@ -61,3 +61,18 @@ test('nos demais períodos o gráfico É o período, e a soma vale', () => {
     assert.equal(ehGraficoDeContexto(p), false, String(p))
   }
 })
+
+test('⚠️ intervalo escolhido NUNCA é gráfico de contexto, mesmo com period 0 ou 1', () => {
+  /* Ao escolher datas, `period` continua com o valor antigo. Sem olhar as datas,
+   * um personalizado escolhido com "Hoje" selecionado era tratado como Hoje: o
+   * card mostrava o dia e não o intervalo. Mesmo erro de `ehRecorteRolante`,
+   * cometido de novo no mesmo dia — por isso as duas funções pedem as datas. */
+  assert.equal(ehGraficoDeContexto(0, '2026-09-05', '2026-09-09'), false)
+  assert.equal(ehGraficoDeContexto(1, '2026-09-05', '2026-09-09'), false)
+  assert.equal(ehGraficoDeContexto(7, '2026-09-05', '2026-09-09'), false)
+})
+
+test('meia escolha mantém o comportamento do período', () => {
+  assert.equal(ehGraficoDeContexto(0, '2026-09-05', null), true)
+  assert.equal(ehGraficoDeContexto(0, null, '2026-09-09'), true)
+})
