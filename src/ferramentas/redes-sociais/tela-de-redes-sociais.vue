@@ -1536,7 +1536,7 @@ function montarNotaDeEstimativa(semPublicacao, diag) {
   // pessoa abriu direto nesta tela.
   let _querDiag = false
   try {
-    _querDiag = localStorage.getItem('rbv_diag') === '1'
+    _querDiag = sessionStorage.getItem('rbv_diag') === '1'
       || new URLSearchParams(window.location.search).get('diag') === '1'
   } catch (e) {}
   // ⚠️ SEM HTML AQUI. A primeira versao usava `escHtml`, que NAO EXISTE nesta tela
@@ -3017,7 +3017,7 @@ function update(d, period) {
   // serve. Esta não depende de elemento no template, não rola com a página, e sai
   // no console junto — se a faixa falhar, o console tem.
   try {
-    const _ligado = localStorage.getItem('rbv_diag') === '1'
+    const _ligado = sessionStorage.getItem('rbv_diag') === '1'
       || new URLSearchParams(window.location.search).get('diag') === '1'
     if (_ligado && d.diag) {
       const _txt = `recorte: ${d.diag.ehCustom ? 'PERSONALIZADO' : 'periodo ' + d.diag.periodo}`

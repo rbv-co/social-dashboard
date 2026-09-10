@@ -68,14 +68,33 @@ const RECEITAS = {
     { id: 'frequencia', rotulo: 'FREQUÊNCIA', valor: qtd(n.frequencia), formato: 'decimal', metaKey: null, semaforo: semaforoFrequencia,
       explicacao: 'Quantas vezes cada pessoa viu o anúncio. Acima de 4, a mesma gente está vendo demais.' },
   ],
+  // DOIS cartões, por decisão do dono (10/09/2026): "no balde seguidores você deixa
+  // somente o card de investimento (padrão) e custo por seguidores". Custo por
+  // interação e custo por curtida mudaram para o balde de Engajamento, que é onde
+  // esse dinheiro passou a morar — mantê-los aqui seria dividir o investimento de
+  // seguidor por um resultado que a campanha de seguidor não compra.
   seguidores: n => [
     investimento(n),
     { id: 'cps', rotulo: 'CUSTO POR SEGUIDOR', valor: div(n.investimento, n.seguidores), formato: 'dinheiro', metaKey: 'cps', semaforo: null,
       explicacao: 'Investimento ÷ novos seguidores do período.' },
+  ],
+  // ⚠️ BALDE NOVO (10/09/2026). Estas campanhas moravam em Seguidores e eram 21%
+  // do dinheiro de lá — R$ 9.405,86 na janela de 30 dias medida antes da mudança.
+  // O dono: "as campanhas de engajamento são outro objetivo, diferente de
+  // seguidores". Curtir um post não é seguir o perfil.
+  //
+  // As metas deste balde NASCEM VAZIAS, e é o certo: `chaveDeMeta` põe o balde na
+  // frente ('engajamento.cpi'), e não havia nenhuma meta de cpi/cpl gravada no
+  // banco para herdar — conferido, as 45 linhas de social_metas são cps, spend,
+  // followers e interactions.
+  engajamento: n => [
+    investimento(n),
     { id: 'cpi', rotulo: 'CUSTO POR INTERAÇÃO', valor: div(n.investimento, n.interacoes), formato: 'dinheiro', metaKey: 'cpi', semaforo: null,
-      explicacao: 'Investimento ÷ interações do anúncio.' },
+      explicacao: 'Investimento ÷ interações do anúncio (curtidas, comentários, salvamentos, compartilhamentos).' },
     { id: 'cpl', rotulo: 'CUSTO POR CURTIDA', valor: div(n.investimento, n.curtidas), formato: 'dinheiro', metaKey: 'cpl', semaforo: null,
       explicacao: 'Investimento ÷ curtidas do anúncio.' },
+    { id: 'interacoes', rotulo: 'INTERAÇÕES', valor: qtd(n.interacoes), formato: 'inteiro', metaKey: null, semaforo: null,
+      explicacao: 'Quantas interações o anúncio teve no período.' },
   ],
   contatos: n => [
     investimento(n),
@@ -120,7 +139,10 @@ const RECEITAS = {
 // O BUDGET dos outros baldes é próprio (`seguidores.spend`, `contatos.spend`…) e
 // nasce sem valor: comparar a meta da conta inteira com o dinheiro de um recorte
 // diria "8% do budget" no dia em que o dono gastou exatamente o que queria ali.
-const HERDADAS = { seguidores: ['cps', 'cpi', 'cpl'], todos: ['spend'] };
+// ⚠️ `cpi`/`cpl` SAÍRAM DAQUI em 10/09/2026, junto com os cartões: eles moram no
+// balde de Engajamento agora, e a chave deles é 'engajamento.cpi'/'engajamento.cpl'.
+// Nada foi abandonado — não existia nenhuma meta de cpi/cpl gravada no banco.
+const HERDADAS = { seguidores: ['cps'], todos: ['spend'] };
 
 export function chaveDeMeta(cartaoId, balde) {
   if ((HERDADAS[balde] || []).includes(cartaoId)) return cartaoId;

@@ -2,6 +2,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { cartoesDoBalde, podeDarVeredito, chaveDeMeta, ehMetaDeTaxa } from './cartoes-do-balde.js';
 import { CRITERIOS } from '../gestao-trafego/saude.js';
+// ⚠️ A LISTA VEM DE ONDE ELA MORA, nunca copiada para cá. Copiada, um balde novo
+// nasce fora de toda varredura deste arquivo e passa verde sem nunca ter sido
+// olhado — foi o que quase aconteceu com Engajamento em 10/09/2026, quando cinco
+// testes traziam a lista escrita à mão.
+import { BALDES } from './baldes-do-painel.js';
+const IDS = BALDES.map(b => b.id);
 
 // Números REAIS de 30 dias, última captura de 17/08/2026.
 const motoeasy = { investimento: 6211.97, alcance: 85367, impressoes: 428132, frequencia: 5.02, conversas: 580, cadastros: 2, seguidores: 0, interacoes: 0, curtidas: 0, compras: 0, visitas: 0 };
@@ -21,10 +27,32 @@ test('frequência tem semáforo no limiar 4 e NÃO tem meta editável', () => {
   assert.equal(c.semaforo(2.21), 'bom');
 });
 
-test('SEGUIDORES mantém os cartões de hoje', () => {
+test('⚠️ SEGUIDORES mostra DOIS cartões: investimento e custo por seguidor', () => {
+  // Decisão do dono em 10/09/2026, no mesmo pedido que criou o balde de
+  // Engajamento: "no balde seguidores você deixa somente o card de investimento
+  // (padrão) e custo por seguidores". Custo por interação e por curtida mudaram de
+  // balde junto com o dinheiro que os alimentava.
   const c = cartoesDoBalde('seguidores', { investimento: 2584.19, seguidores: 1268, interacoes: 9000, curtidas: 7000 });
-  assert.deepEqual(c.map(x => x.id), ['investimento', 'cps', 'cpi', 'cpl']);
+  assert.deepEqual(c.map(x => x.id), ['investimento', 'cps']);
   assert.equal(c[1].valor.toFixed(2), '2.04');
+});
+
+test('⚠️ ENGAJAMENTO mede interação e curtida, e mostra o volume', () => {
+  const c = cartoesDoBalde('engajamento', { investimento: 4091.92, interacoes: 22700, curtidas: 4350 });
+  assert.deepEqual(c.map(x => x.id), ['investimento', 'cpi', 'cpl', 'interacoes']);
+  assert.equal(c[1].valor.toFixed(2), '0.18');
+  assert.equal(c[2].valor.toFixed(2), '0.94');
+  assert.equal(c[3].valor, 22700);
+});
+
+test('⚠️ as metas do balde novo NASCEM VAZIAS, com chave própria', () => {
+  // Nada a herdar: não existia meta de cpi/cpl gravada (conferido no banco em
+  // 10/09/2026 — as 45 linhas de social_metas são cps, spend, followers e
+  // interactions). Herdar a chave pelada aqui faria a meta de um balde virar
+  // veredito sobre outro.
+  assert.equal(chaveDeMeta('cpi', 'engajamento'), 'engajamento.cpi');
+  assert.equal(chaveDeMeta('cpl', 'engajamento'), 'engajamento.cpl');
+  assert.equal(chaveDeMeta('spend', 'engajamento'), 'engajamento.spend');
 });
 
 test('VENDAS mostra TRÊS cartões — inventar um quarto seria fingir informação', () => {
@@ -66,9 +94,10 @@ test('balde desconhecido cai em Todos, e não numa tela vazia', () => {
 test('sem números nenhum, cada balde ainda devolve seus cartões — todos em "—"', () => {
   // A tela desenha os cartões ANTES de a consulta voltar, e no recorte vazio ela
   // nunca tem número. Devolver lista vazia aqui apagaria a seção 02 inteira.
-  ['todos', 'seguidores', 'contatos', 'site', 'vendas'].forEach((b) => {
+  IDS.forEach((b) => {
     const c = cartoesDoBalde(b, undefined);
-    assert.ok(c.length >= 3, b + ' devolveu cartão de menos');
+    // DOIS é o piso desde que Seguidores enxugou (investimento + custo por seguidor).
+    assert.ok(c.length >= 2, b + ' devolveu cartão de menos');
     c.forEach(x => assert.equal(x.valor, null, b + '/' + x.id + ' inventou valor sem dado'));
   });
 });
@@ -77,7 +106,7 @@ test('todo cartão de todo balde tem rótulo, explicação e formato conhecido',
   // O rótulo é o que o dono lê; a explicação é o texto do selo de cálculo. Cartão
   // sem um dos dois chega na tela como caixa muda.
   const FORMATOS = ['dinheiro', 'inteiro', 'decimal'];
-  ['todos', 'seguidores', 'contatos', 'site', 'vendas'].forEach((b) => {
+  IDS.forEach((b) => {
     cartoesDoBalde(b, motoeasy).forEach((x) => {
       assert.ok(x.id && x.rotulo, b + ': cartão sem id/rótulo');
       assert.ok(x.explicacao && x.explicacao.length > 10, b + '/' + x.id + ': sem explicação');
@@ -100,7 +129,7 @@ test('quantidade e frequência ZERO são fato e aparecem como zero — só o nul
 });
 
 test('investimento nulo (recorte sem campanha) não vira R$ 0 em balde nenhum', () => {
-  ['todos', 'seguidores', 'contatos', 'site', 'vendas'].forEach((b) => {
+  IDS.forEach((b) => {
     const inv = cartoesDoBalde(b, { investimento: null, conversas: 10, compras: 10, visitas: 10, impressoes: 1000, seguidores: 10, interacoes: 10, curtidas: 10 })[0];
     assert.equal(inv.id, 'investimento');
     assert.equal(inv.valor, null, b + ': investimento nulo virou número');
@@ -129,7 +158,7 @@ test('TODO custo de um balde divide O MESMO investimento — o que está no cart
   // ninguém consegue conferir. Foi por isso que a Vessel mostrava R$ 7.802 de
   // investimento enquanto os custos dividiam R$ 461,52.
   const n = { investimento: 2584.19, seguidores: 1268, interacoes: 9000, curtidas: 7000, conversas: 100, cadastros: 10, compras: 4, visitas: 500, impressoes: 300000 };
-  const denominadores = { seguidores: { cps: 1268, cpi: 9000, cpl: 7000 }, contatos: { custo_conversa: 100, custo_cadastro: 10 }, vendas: { custo_venda: 4 }, site: { custo_visita: 500, cpm: 300 }, todos: { cpm: 300 } };
+  const denominadores = { seguidores: { cps: 1268 }, engajamento: { cpi: 9000, cpl: 7000 }, contatos: { custo_conversa: 100, custo_cadastro: 10 }, vendas: { custo_venda: 4 }, site: { custo_visita: 500, cpm: 300 }, todos: { cpm: 300 } };
   Object.keys(denominadores).forEach((balde) => {
     const c = cartoesDoBalde(balde, n);
     assert.equal(c[0].valor, 2584.19, balde);
@@ -167,11 +196,14 @@ test('a meta carrega o balde no nome', () => {
   assert.equal(chaveDeMeta('cpm', 'site'), 'site.cpm');
 });
 
-test('as metas de hoje continuam valendo, sem prefixo, no balde Seguidores', () => {
-  // As linhas cps/cpi/cpl já gravadas foram definidas contra ESTES cartões.
+test('a meta de hoje continua valendo, sem prefixo, no balde Seguidores', () => {
+  // A linha `cps` já gravada foi definida contra ESTE cartão — 14 delas no banco.
   assert.equal(chaveDeMeta('cps', 'seguidores'), 'cps');
-  assert.equal(chaveDeMeta('cpi', 'seguidores'), 'cpi');
-  assert.equal(chaveDeMeta('cpl', 'seguidores'), 'cpl');
+  // ⚠️ cpi/cpl SAÍRAM da herança em 10/09/2026: os cartões mudaram para o balde de
+  // Engajamento e a chave foi junto. Nada se perdeu — não havia nenhuma meta de
+  // cpi/cpl gravada (conferido: as 45 linhas são cps, spend, followers, interactions).
+  assert.equal(chaveDeMeta('cpi', 'engajamento'), 'engajamento.cpi');
+  assert.equal(chaveDeMeta('cpl', 'engajamento'), 'engajamento.cpl');
 });
 
 test('o BUDGET de hoje vale para Todos, que é o número contra o qual foi definido', () => {
@@ -200,21 +232,21 @@ test('nenhuma chave de meta se repete entre dois baldes', () => {
   // Duas telas gravando na MESMA linha de social_metas é como uma meta digitada
   // em Contatos reapareceria em Vendas. A varredura cobre todo cartão com meta.
   const dono = {};
-  ['todos', 'seguidores', 'contatos', 'site', 'vendas'].forEach((b) => {
+  IDS.forEach((b) => {
     cartoesDoBalde(b, {}).filter(c => c.metaKey).forEach((c) => {
       const chave = chaveDeMeta(c.metaKey, b);
       assert.equal(dono[chave], undefined, chave + ' é usada por ' + dono[chave] + ' E por ' + b);
       dono[chave] = b;
     });
   });
-  // E as quatro chaves sem prefixo são exatamente as que já existem no banco.
-  assert.deepEqual(Object.keys(dono).filter(k => !k.includes('.')).sort(), ['cpi', 'cpl', 'cps', 'spend']);
+  // E as chaves sem prefixo são exatamente as que já existem no banco.
+  assert.deepEqual(Object.keys(dono).filter(k => !k.includes('.')).sort(), ['cps', 'spend']);
 });
 
 test('o cartão de investimento é sempre o primeiro, e é o único com meta de BUDGET', () => {
   // A tela usa applySpend() (budget, maior gasto = pior) só nele; os outros usam a
   // régua invertida de custo. Trocar a ordem trocaria as duas contas de lugar.
-  ['todos', 'seguidores', 'contatos', 'site', 'vendas'].forEach((b) => {
+  IDS.forEach((b) => {
     const c = cartoesDoBalde(b, motoeasy);
     assert.equal(c[0].id, 'investimento', b);
     assert.equal(c[0].metaKey, 'spend', b);
@@ -244,7 +276,7 @@ test('TODO cartão de custo de TODO balde é reconhecido como taxa pela chave qu
   // Derivado das receitas, não repetido à mão: cartão de custo novo que nasça
   // fora da lista quebra AQUI, e não na conta do dono.
   const numeros = { investimento: 100, seguidores: 10, interacoes: 10, curtidas: 10, conversas: 10, cadastros: 10, compras: 10, visitas: 10, impressoes: 10000, alcance: 10, frequencia: 2 };
-  for (const balde of ['todos', 'seguidores', 'contatos', 'site', 'vendas']) {
+  for (const balde of IDS) {
     for (const cartao of cartoesDoBalde(balde, numeros)) {
       if (!cartao.metaKey || cartao.formato !== 'dinheiro' || cartao.id === 'investimento') continue;
       assert.equal(ehMetaDeTaxa(chaveDeMeta(cartao.metaKey, balde)), true, `${balde}.${cartao.id} tinha de ser taxa`);

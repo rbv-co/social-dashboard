@@ -1,12 +1,23 @@
-// ⚠️ O SINAL DE DIAGNÓSTICO É CAPTURADO AQUI, NO BOOT, e guardado.
+// ⚠️ O SINAL DE DIAGNÓSTICO VIVE NA ABA, NÃO NO NAVEGADOR PARA SEMPRE.
 // O roteador usa `createWebHistory`: ao navegar para a tela, o endereço é
 // reescrito e a query `?diag=1` SOME. Foi o que aconteceu em 09/09/2026 — o dono
-// abriu com `?diag=1`, chegou na tela e a linha técnica não estava lá. Lido no
-// boot e guardado, ele sobrevive à navegação. `?diag=0` desliga.
+// abriu com `?diag=1`, chegou na tela e a linha técnica não estava lá. Por isso
+// ele é lido no boot e guardado; o que muda é ONDE.
+//
+// ⚠️ ERA `localStorage` E FICOU PRESO. Ligado uma vez, a faixa vermelha voltava em
+// todo carregamento, para sempre, e não havia como a pessoa desligar sem saber do
+// `?diag=0` — o dono, em 10/09/2026: "no navegador ainda aparece aquela barrinha
+// vermelha em cima". Instrumento que não sabe ir embora vira defeito.
+//
+// `sessionStorage` é a resposta certa: sobrevive à navegação DENTRO da aba, que é
+// tudo o que o `?diag=1` precisava, e morre quando a aba fecha.
 try {
   const _q = new URLSearchParams(window.location.search)
-  if (_q.get('diag') === '1') localStorage.setItem('rbv_diag', '1')
-  if (_q.get('diag') === '0') localStorage.removeItem('rbv_diag')
+  if (_q.get('diag') === '1') sessionStorage.setItem('rbv_diag', '1')
+  if (_q.get('diag') === '0') sessionStorage.removeItem('rbv_diag')
+  // Faxina do que ficou preso na versão antiga. Uma linha, e some do navegador de
+  // quem ligou o diagnóstico algum dia — sem precisar pedir nada a ninguém.
+  localStorage.removeItem('rbv_diag')
 } catch (e) {}
 
 import './estilos/estilos-globais.css'

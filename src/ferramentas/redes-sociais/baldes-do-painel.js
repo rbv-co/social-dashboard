@@ -22,6 +22,7 @@ import { ehDeWhatsapp, baldeDoObjetivo } from '../gestao-trafego/baldes.js';
 export const BALDES = [
   { id: 'todos', rotulo: 'Todos' },
   { id: 'seguidores', rotulo: 'Seguidores' },
+  { id: 'engajamento', rotulo: 'Engajamento' },
   { id: 'contatos', rotulo: 'Contatos' },
   { id: 'site', rotulo: 'Site e alcance' },
   { id: 'vendas', rotulo: 'Vendas' },
@@ -67,8 +68,21 @@ export function baldeDaCampanha(campanha) {
   // objetivo e terminava em 'site' — o erro exato que este módulo elimina.
   // Vem DEPOIS da regra 1 de propósito: INSTAGRAM_DIRECT não é perfil, é conversa.
   if (algumConjunto(conjuntos, (d, o) => d.startsWith('INSTAGRAM_PROFILE') || o === 'PROFILE_VISIT')) return 'seguidores';
-  // 4 — engajamento na peça. ON_AD é o terceiro lugar onde a Meta põe isso.
-  if (algumConjunto(conjuntos, (d, o) => d === 'ON_POST' || d === 'ON_VIDEO' || d === 'ON_AD' || o === 'POST_ENGAGEMENT' || o === 'THRUPLAY')) return 'seguidores';
+  // 4 — ENGAJAMENTO NA PEÇA, que é BALDE PRÓPRIO desde 10/09/2026. ON_AD é o
+  // terceiro lugar onde a Meta põe isso.
+  //
+  // ⚠️ ANTES CAÍA EM SEGUIDORES, e o dono mandou separar: "as campanhas de
+  // engajamento são outro objetivo, diferente de seguidores". Ele tem razão e o
+  // número prova: medido na janela de 30 dias (11/08→09/09), 21% do dinheiro do
+  // balde Seguidores era disto — R$ 4.091,92 dos R$ 16.818,95 do Vessel e
+  // R$ 5.313,94 dos R$ 23.386,36 da Raissa. Curtir um post não é seguir o perfil,
+  // então esse dinheiro no denominador deixava o custo por seguidor ~24% mais caro
+  // do que ele é.
+  //
+  // ⚠️ VEM DEPOIS DA REGRA 3 DE PROPÓSITO: campanha que tem UM conjunto apontando
+  // para o perfil é de seguidor mesmo que outro conjunto dela seja da peça.
+  // Inverter a ordem esvaziaria o balde de Seguidores.
+  if (algumConjunto(conjuntos, (d, o) => d === 'ON_POST' || d === 'ON_VIDEO' || d === 'ON_AD' || o === 'POST_ENGAGEMENT' || o === 'THRUPLAY')) return 'engajamento';
   if (objetivo === 'vendas') return 'vendas';              // 5
   if (objetivo === 'mensagens') return 'contatos';         // objetivo antigo MESSAGES
   // 6 — SITE declarado no conjunto. Mandar gente para FORA do Instagram não é
@@ -77,7 +91,10 @@ export function baldeDaCampanha(campanha) {
   // Entra aqui, e não antes da regra 5, porque quase toda campanha de VENDA
   // aponta para o site: subir esta regra esvaziaria o balde de Vendas.
   if (algumConjunto(conjuntos, (d) => d === 'WEBSITE' || d === 'WEBSITE_AND_PHONE_CALL')) return 'site';
-  if (objetivo === 'engajamento') return 'seguidores';     // sem conjunto: engajamento é do perfil
+  // Sem conjunto nenhum coletado, o objetivo é tudo que se tem — e "Engajamento"
+  // dito pela Meta é o balde de engajamento. Até 10/09/2026 isto caía em
+  // Seguidores, um chute que a separação dos baldes tornou desnecessário.
+  if (objetivo === 'engajamento') return 'engajamento';
   // 7 — tráfego, cliques, reconhecimento, desconhecido. UNDEFINED cai aqui de
   // propósito: é a Meta dizendo que não sabe, e inventar um balde a partir disso
   // seria responder errado com confiança.

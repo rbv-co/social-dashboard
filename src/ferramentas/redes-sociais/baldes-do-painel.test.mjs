@@ -23,14 +23,29 @@ test('tráfego com destino PERFIL é SEGUIDORES', () => {
   assert.equal(baldeDaCampanha(c), 'seguidores');
 });
 
-test('engajamento na publicação é SEGUIDORES', () => {
+test('⚠️ engajamento na publicação é ENGAJAMENTO, não SEGUIDORES', () => {
   // Raíssa: "[ENGAJAMENTO] FEED | [P3]", R$ 3.710,64.
+  //
+  // ⚠️ ESTE TESTE JÁ ESPEROU 'seguidores'. Mudou em 10/09/2026 por decisão do dono
+  // ("as campanhas de engajamento são outro objetivo, diferente de seguidores") e
+  // porque o número dava razão a ele: 21% do dinheiro do balde Seguidores era
+  // disto, e ia parar no denominador do custo por seguidor.
   const c = { objective: 'OUTCOME_ENGAGEMENT', conjuntos: [{ destination_type: 'ON_POST', optimization_goal: 'POST_ENGAGEMENT' }] };
-  assert.equal(baldeDaCampanha(c), 'seguidores');
+  assert.equal(baldeDaCampanha(c), 'engajamento');
 });
 
-test('visualização de vídeo é SEGUIDORES', () => {
+test('⚠️ visualização de vídeo é ENGAJAMENTO', () => {
   const c = { objective: 'OUTCOME_ENGAGEMENT', conjuntos: [{ destination_type: 'ON_VIDEO', optimization_goal: 'THRUPLAY' }] };
+  assert.equal(baldeDaCampanha(c), 'engajamento');
+});
+
+test('⚠️ UM conjunto de PERFIL segura a campanha em SEGUIDORES, mesmo com outro na peça', () => {
+  // É a ordem das regras que decide (3 antes de 4), e é ela que impede o balde de
+  // Seguidores de esvaziar: campanha mista é de seguidor.
+  const c = { objective: 'OUTCOME_ENGAGEMENT', conjuntos: [
+    { destination_type: 'ON_POST', optimization_goal: 'POST_ENGAGEMENT' },
+    { destination_type: 'INSTAGRAM_PROFILE', optimization_goal: 'PROFILE_VISIT' },
+  ] };
   assert.equal(baldeDaCampanha(c), 'seguidores');
 });
 
@@ -57,7 +72,7 @@ test('conversa VENCE o objetivo declarado: um conjunto de WhatsApp basta', () =>
 
 test('campanha sem conjunto coletado cai pelo objetivo, e NUNCA some', () => {
   assert.equal(baldeDaCampanha({ objective: 'OUTCOME_TRAFFIC', conjuntos: [] }), 'site');
-  assert.equal(baldeDaCampanha({ objective: 'OUTCOME_ENGAGEMENT', conjuntos: [] }), 'seguidores');
+  assert.equal(baldeDaCampanha({ objective: 'OUTCOME_ENGAGEMENT', conjuntos: [] }), 'engajamento');
   assert.equal(baldeDaCampanha({ objective: 'OUTCOME_LEADS', conjuntos: null }), 'contatos');
   assert.equal(baldeDaCampanha({ objective: '', conjuntos: [] }), 'site');
   assert.equal(baldeDaCampanha({}), 'site');
@@ -72,8 +87,11 @@ test('reconhecimento cai em SITE E ALCANCE (não tem balde próprio)', () => {
   assert.equal(baldeDaCampanha({ objective: 'OUTCOME_AWARENESS', conjuntos: [] }), 'site');
 });
 
-test('a barra tem cinco baldes, nesta ordem', () => {
-  assert.deepEqual(BALDES.map(b => b.id), ['todos', 'seguidores', 'contatos', 'site', 'vendas']);
+test('a barra tem seis baldes, nesta ordem', () => {
+  // Engajamento entra COLADO em Seguidores: são os dois recortes de perfil, e a
+  // pergunta que a pessoa faz é justamente "quanto foi para um e para o outro".
+  assert.deepEqual(BALDES.map(b => b.id), ['todos', 'seguidores', 'engajamento', 'contatos', 'site', 'vendas']);
+  assert.equal(rotuloDoBalde('engajamento'), 'Engajamento');
   assert.equal(rotuloDoBalde('site'), 'Site e alcance');
   assert.equal(rotuloDoBalde('todos'), 'Todos');
 });
@@ -86,7 +104,7 @@ test('NENHUMA campanha desaparece: a soma dos baldes é o total', () => {
     { campaign_id: '4', objective: 'OUTCOME_SALES', conjuntos: [] },
     { campaign_id: '5', objective: 'BUGIGANGA_NOVA_DA_META', conjuntos: [] },
   ];
-  const soma = ['seguidores', 'contatos', 'site', 'vendas']
+  const soma = ['seguidores', 'engajamento', 'contatos', 'site', 'vendas']
     .reduce((n, b) => n + idsDoBalde(campanhas, b).length, 0);
   assert.equal(soma, campanhas.length);
   assert.equal(idsDoBalde(campanhas, 'todos').length, campanhas.length);
@@ -202,8 +220,8 @@ test('o destino comprido de mensagem da Meta é CONTATOS', () => {
   assert.equal(baldeDaCampanha(c), 'contatos');
 });
 
-test('engajamento NO ANÚNCIO (ON_AD) é SEGUIDORES, como ON_POST e ON_VIDEO', () => {
-  assert.equal(baldeDaCampanha({ objective: 'OUTCOME_ENGAGEMENT', conjuntos: [{ destination_type: 'ON_AD' }] }), 'seguidores');
+test('engajamento NO ANÚNCIO (ON_AD) é ENGAJAMENTO, como ON_POST e ON_VIDEO', () => {
+  assert.equal(baldeDaCampanha({ objective: 'OUTCOME_ENGAGEMENT', conjuntos: [{ destination_type: 'ON_AD' }] }), 'engajamento');
 });
 
 test('destino SITE é SITE E ALCANCE por regra própria, não por sorte do objetivo', () => {
@@ -226,7 +244,7 @@ test('UNDEFINED não decide nada: quem manda é o objetivo, de propósito', () =
   // "UNDEFINED" é a Meta dizendo que não sabe. Inventar um balde a partir disso
   // seria responder errado com confiança.
   assert.equal(baldeDaCampanha({ objective: 'OUTCOME_TRAFFIC', conjuntos: [{ destination_type: 'UNDEFINED' }] }), 'site');
-  assert.equal(baldeDaCampanha({ objective: 'OUTCOME_ENGAGEMENT', conjuntos: [{ destination_type: 'UNDEFINED' }] }), 'seguidores');
+  assert.equal(baldeDaCampanha({ objective: 'OUTCOME_ENGAGEMENT', conjuntos: [{ destination_type: 'UNDEFINED' }] }), 'engajamento');
   assert.equal(baldeDaCampanha({ objective: 'OUTCOME_SALES', conjuntos: [{ destination_type: 'UNDEFINED' }] }), 'vendas');
 });
 
@@ -316,7 +334,7 @@ const testeChatSemConjunto = { campaign_id: '1', objective: 'OUTCOME_ENGAGEMENT'
 const testeChatComConjunto = { campaign_id: '2', objective: 'OUTCOME_ENGAGEMENT', conjuntos: [{ destination_type: 'WHATSAPP' }] };
 
 test('as gêmeas da Vessel caem em baldes diferentes — e é isso que a contagem denuncia', () => {
-  assert.equal(baldeDaCampanha(testeChatSemConjunto), 'seguidores', 'sem conjunto, o objetivo manda');
+  assert.equal(baldeDaCampanha(testeChatSemConjunto), 'engajamento', 'sem conjunto, o objetivo manda');
   assert.equal(baldeDaCampanha(testeChatComConjunto), 'contatos', 'com conjunto, o destino manda');
   // As duas gastaram na janela; só a sem conjunto conta.
   assert.equal(campanhasSemTipoConfirmado([testeChatSemConjunto, testeChatComConjunto], ['1', '2']), 1);
