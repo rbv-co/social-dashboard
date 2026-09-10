@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { BALDES, baldeDaCampanha, rotuloDoBalde, idsDoBalde, idsParaConsulta, conjuntosMaisRecentes, baldesSemGasto, baldeEfetivo, classificacaoEhProvisoria, campanhasSemTipoConfirmado, fraseDoRecorte } from './baldes-do-painel.js';
+import { BALDES, baldeDaCampanha, rotuloDoBalde, idsDoBalde, idsParaConsulta, conjuntosMaisRecentes, baldesSemGasto, baldeEfetivo, classificacaoEhProvisoria, campanhasSemTipoConfirmado, fraseDoRecorte, idsComGastoNoPeriodo } from './baldes-do-painel.js';
 
 // TODAS as campanhas abaixo são REAIS: nome, objetivo e gasto conferidos no banco
 // de produção em 17/08/2026. Os conjuntos são o sinal que a Meta afirma.
@@ -396,3 +396,65 @@ test('sem a contagem do tipo, a frase diz o tipo e CALA o número — não inven
 test('conta sem campanha nenhuma não vira frase de tipo', () => {
   assert.equal(fraseDoRecorte('seguidores', { noRecorte: null, doBalde: null, total: 0 }), 'Todas as campanhas (0)');
 });
+
+/* ── CLICAR NO BALDE JÁ TRAZ AS CAMPANHAS DELE ──────────────────────────────
+ *
+ * Pedido do dono (10/09/2026): "quando clico nos botões é para trazer o filtro de
+ * campanhas automático já, inclusive campanhas pausadas mas que tiveram gasto no
+ * intervalo selecionado, caso n tenha dado, mostre uma mensagem".
+ *
+ * ⚠️ PAUSADA COM GASTO ENTRA. O que decide é ter gastado no período, não o estado
+ * de hoje: campanha pausada ontem gastou dinheiro de verdade nos dias anteriores, e
+ * tirá-la faria o investimento do período sair menor do que foi.
+ *
+ * ⚠️ E CAMPANHA ATIVA SEM GASTO FICA DE FORA. Ela só encheria a lista de nomes que
+ * não movem número nenhum naquele intervalo.
+ */
+
+test('o balde traz quem gastou no período, pausada inclusive', () => {
+  const linhas = [
+    { campaign_id: 'a', spend: 10 },   // ativa, gastou
+    { campaign_id: 'b', spend: 0 },    // ativa, não gastou
+    { campaign_id: 'c', spend: 5 },    // PAUSADA, gastou → entra
+  ]
+  assert.deepEqual(idsComGastoNoPeriodo(['a', 'b', 'c'], linhas), ['a', 'c'])
+})
+
+test('soma os dias antes de decidir', () => {
+  // Gasto de centavos espalhado em vários dias é gasto.
+  const linhas = [
+    { campaign_id: 'a', spend: 0 }, { campaign_id: 'a', spend: 0.4 },
+    { campaign_id: 'b', spend: 0 }, { campaign_id: 'b', spend: 0 },
+  ]
+  assert.deepEqual(idsComGastoNoPeriodo(['a', 'b'], linhas), ['a'])
+})
+
+test('⚠️ nenhuma gastou devolve lista VAZIA — e é ela que vira a mensagem', () => {
+  assert.deepEqual(idsComGastoNoPeriodo(['a', 'b'], [{ campaign_id: 'a', spend: 0 }]), [])
+  assert.deepEqual(idsComGastoNoPeriodo(['a'], []), [])
+})
+
+test('a ordem do balde é preservada', () => {
+  // A lista vira o recorte e aparece na tela; ordem que muda a cada carga faz a
+  // pessoa achar que o conteúdo mudou.
+  const linhas = [{ campaign_id: 'c', spend: 1 }, { campaign_id: 'a', spend: 1 }]
+  assert.deepEqual(idsComGastoNoPeriodo(['a', 'b', 'c'], linhas), ['a', 'c'])
+})
+
+test('aguenta lista nula e gasto estragado', () => {
+  assert.deepEqual(idsComGastoNoPeriodo(null, null), [])
+  assert.deepEqual(idsComGastoNoPeriodo(['a'], [{ campaign_id: 'a', spend: 'muito' }]), [])
+})
+
+test('a frase avisa quando o período não teve campanha do tipo', () => {
+  assert.equal(
+    fraseDoRecorte('contatos', { total: 68, noRecorte: 0, doBalde: 4 }, { semGastoNoPeriodo: true }),
+    'Sem campanhas para esse período',
+  )
+  // Sem a marca, a frase de sempre continua valendo — desmarcar tudo à mão não é
+  // a mesma coisa que o período não ter gasto.
+  assert.equal(
+    fraseDoRecorte('contatos', { total: 68, noRecorte: 0, doBalde: 4 }),
+    'Nenhuma campanha selecionada',
+  )
+})

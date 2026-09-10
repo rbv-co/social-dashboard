@@ -113,20 +113,35 @@ test('⚠️ o guardado é conferido antes de virar estado', () => {
  * inteira, nunca sobre o recorte que já está aplicado.
  */
 
-test('⚠️ o balde é aceso pelo período inteiro, não pelo filtro manual', () => {
-  /* Os DOIS lados vinham filtrados: as LINHAS de gasto (`_diaRows`, recortadas na
-   * URL) e a LISTA DE IDS de cada balde (`_idsPorBalde`, recortada por dentro do
-   * `idsParaConsulta`). Consertar só as linhas não bastava — com a lista de ids
-   * vazia o balde apagava do mesmo jeito. */
-  assert.match(TELA, /const baldesVazios = baldesSemGasto\(_idsPorBaldeSemFiltro, _rowsDoBalde\)/)
+test('⚠️ o balde é aceso pelo período inteiro, não pelo filtro', () => {
+  /* O círculo tinha DOIS lados filtrados: as LINHAS de gasto (recortadas na URL) e
+   * a LISTA DE IDS de cada balde (recortada por dentro do `idsParaConsulta`).
+   * Consertar um só não bastava — com a lista de ids vazia o balde apagava igual. */
+  assert.match(TELA, /const baldesVazios = baldesSemGasto\(_idsPorBaldeSemFiltro, _diaRows\)/)
   assert.ok(!/baldesSemGasto\(_idsPorBalde,/.test(TELA),
-    'voltou a acender o balde com a lista já filtrada — o defeito circular volta junto')
+    'voltou a acender o balde com a lista já filtrada — o círculo volta junto')
   assert.match(TELA, /_idsPorBaldeSemFiltro\[b\.id\] = idsParaConsulta\(_campanhas, b\.id, null\)/,
-    'a lista que acende precisa ser montada SEM a seleção manual')
+    'a lista que acende precisa ser montada SEM a seleção')
 })
 
-test('a segunda leitura só acontece com filtro manual ativo', () => {
-  // Sem filtro, `_diaRows` já é a conta inteira: pagar outra viagem seria desperdício.
-  assert.match(TELA, /if \(_filtroManual && !noneSelected\) \{/)
-  assert.match(TELA, /let _rowsDoBalde = _diaRows/)
+test('⚠️ a leitura dos dias vem SEM filtro, e o recorte é feito na memória', () => {
+  /* A mesma leitura acende os baldes e desenha os gráficos. Recortá-la na URL
+   * apagaria os outros baldes de novo; não recortar na memória mostraria a conta
+   * inteira sob o rótulo de um tipo só. */
+  assert.ok(!/impressions\$\{_filtroManual\}/.test(TELA), 'a consulta voltou a ser recortada na URL')
+  assert.match(TELA, /_diaRows\.filter\(r => _idsDoRecorteSet\.has\(String\(r\.campaign_id\)\)\)/)
+})
+
+test('⚠️ clicar no balde traz as campanhas dele, e SÓ para quem clicou', () => {
+  /* `campaign_filters` é POR CONTA, sem coluna de usuário: gravar ali faria um
+   * clique trocar o recorte de todo mundo. A escolha automática mora no navegador. */
+  assert.match(TELA, /localStorage\.setItem\(_baldeAutoKey\(currentAccountId\), '1'\)/)
+  assert.match(TELA, /idsComGastoNoPeriodo\(_idsDoTipo, _diaRows\)/)
+  assert.match(TELA, /localStorage\.removeItem\(_baldeAutoKey\(currentAccountId\)\)/,
+    'escolher à mão tem de desligar o automático, senão o filtro "volta sozinho"')
+})
+
+test('⚠️ vazio por falta de gasto diz outra coisa que vazio por desmarcar', () => {
+  assert.match(TELA, /semGastoNoPeriodo: _semGastoNoPeriodo/)
+  assert.match(TELA, /\{ semGastoNoPeriodo: !!semGastoNoPeriodo \}/)
 })

@@ -234,8 +234,14 @@ export function campanhasSemTipoConfirmado(campanhas, idsComGastoNaJanela) {
 // Pode chegar null: a pintura que acontece na troca de perfil, antes dos dados,
 // não sabe esse número. Nesse caso a frase diz o tipo e CALA a contagem — em vez
 // de inventar uma.
-export function fraseDoRecorte(balde, contagens) {
+export function fraseDoRecorte(balde, contagens, opcoes) {
   const c = contagens || {};
+  // ⚠️ "SEM CAMPANHA NO PERÍODO" NÃO É "NINGUÉM SELECIONADO". A primeira é do
+  // período (não houve gasto desse tipo nesses dias); a segunda é escolha de
+  // quem desmarcou tudo à mão. Dizer a errada manda a pessoa procurar defeito no
+  // filtro quando o problema é o intervalo, e vice-versa. Pedido do dono em
+  // 10/09/2026, ao clicar num balde que o período não tinha.
+  if (opcoes && opcoes.semGastoNoPeriodo) return 'Sem campanhas para esse período';
   const total = Number(c.total) || 0;
   const noRecorte = Number(c.noRecorte) || 0;
   const doBalde = (c.doBalde == null) ? null : (Number(c.doBalde) || 0);
@@ -258,4 +264,34 @@ export function fraseDoRecorte(balde, contagens) {
   }
   if (noRecorte === doBalde) return 'Todas as campanhas de ' + rotulo + ' (' + doBalde + ' de ' + total + ')';
   return noRecorte + ' de ' + doBalde + ' campanhas de ' + rotulo + ' selecionadas';
+}
+
+/**
+ * As campanhas do balde que GASTARAM no período — é o que o clique no botão traz.
+ *
+ * Pedido do dono (10/09/2026): "quando clico nos botões é para trazer o filtro de
+ * campanhas automático já, inclusive campanhas pausadas mas que tiveram gasto no
+ * intervalo selecionado".
+ *
+ * ⚠️ PAUSADA COM GASTO ENTRA, e é o ponto do pedido. O que decide é ter gastado
+ * NAQUELES DIAS, não o estado de hoje: campanha pausada ontem moveu dinheiro de
+ * verdade nos dias anteriores, e deixá-la fora faria o investimento do período sair
+ * menor do que foi. Por isso esta função NÃO olha `status`.
+ *
+ * ⚠️ E ATIVA SEM GASTO FICA DE FORA: ela só encheria a lista com nome que não move
+ * número nenhum naquele intervalo.
+ *
+ * `linhasDeGasto` = uma linha por campanha por dia ({ campaign_id, spend }).
+ * A ordem do balde é preservada — lista que se reordena a cada carga faz a pessoa
+ * achar que o conteúdo mudou.
+ */
+export function idsComGastoNoPeriodo(idsDoBalde, linhasDeGasto) {
+  const ids = Array.isArray(idsDoBalde) ? idsDoBalde.map(String) : [];
+  const soma = {};
+  for (const l of (Array.isArray(linhasDeGasto) ? linhasDeGasto : [])) {
+    const id = String(l && l.campaign_id);
+    const v = parseFloat(l && l.spend);
+    if (Number.isFinite(v)) soma[id] = (soma[id] || 0) + v;
+  }
+  return ids.filter((id) => (soma[id] || 0) > 0);
 }

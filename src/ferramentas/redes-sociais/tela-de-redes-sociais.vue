@@ -518,7 +518,7 @@ import { barraDoDia, diasSemPublicacao, totalPelasBarras } from './estimativa-de
 // Em que balde cada campanha entra (Seguidores / Contatos / Site e alcance /
 // Vendas). Puro e com teste ao lado (baldes-do-painel.test.mjs), decidido pelo
 // sinal que a Meta afirma no conjunto — nunca pelo nome da campanha.
-import { BALDES, idsDoBalde, idsParaConsulta, conjuntosMaisRecentes, baldesSemGasto, baldeEfetivo, classificacaoEhProvisoria, campanhasSemTipoConfirmado, fraseDoRecorte } from './baldes-do-painel.js'
+import { BALDES, idsDoBalde, idsParaConsulta, idsComGastoNoPeriodo, conjuntosMaisRecentes, baldesSemGasto, baldeEfetivo, classificacaoEhProvisoria, campanhasSemTipoConfirmado, fraseDoRecorte } from './baldes-do-painel.js'
 import { cartoesDoBalde, podeDarVeredito, chaveDeMeta, ehMetaDeTaxa } from './cartoes-do-balde.js'
 import { capturaDoAgregado, capturasDaJanela } from './captura-do-agregado.js'
 // Por quantos seguidores o custo por seguidor divide. Puro e com teste ao lado:
@@ -682,9 +682,19 @@ function carregarBalde(accountId) {
   // ficaria vazia sem explicação.
   _baldeAtual = BALDES.some(b => b.id === salvo) ? salvo : 'seguidores'
 }
+// A chave do "o balde escolhe sozinho", por conta e por navegador. Fica ao lado da
+// chave do balde de propósito: quem mexer numa lembra da outra.
+function _baldeAutoKey(contaId) { return 'dash_balde_auto_' + String(contaId || '') }
+
 function setBalde(id) {
   _baldeAtual = id
-  try { localStorage.setItem(_baldeKey(currentAccountId), id) } catch (e) {}
+  try {
+    localStorage.setItem(_baldeKey(currentAccountId), id)
+    // ⚠️ CLICAR NO BALDE LIGA A ESCOLHA AUTOMÁTICA. Daqui pra frente o recorte é
+    // "as campanhas deste tipo que gastaram no período", e o filtro salvo da conta
+    // fica de lado até alguém escolher à mão no ⚙.
+    localStorage.setItem(_baldeAutoKey(currentAccountId), '1')
+  } catch (e) {}
   refresh()
 }
 // `vazios` = ids de balde sem gasto no período. Ficam APAGADOS com o motivo —
@@ -2187,7 +2197,21 @@ async function fetchData(accountId, period, customStart, customEnd) {
   campanhasRows.forEach(c => { _porCampanha[String(c.campaign_id)] = { campaign_id: String(c.campaign_id), objective: c.objective, conjuntos: [] } })
   conjuntosMaisRecentes(conjuntosRows).forEach(s => { const c = _porCampanha[String(s.campaign_id)]; if (c) c.conjuntos.push(s) })
   const _campanhas = Object.values(_porCampanha)
-  const _selecionadas = Array.isArray(selectedIds) ? safeIds : null
+  // ⚠️ CLICAR NO BALDE TRAZ AS CAMPANHAS DELE, e isso é POR PESSOA. Pedido do dono
+  // (10/09/2026): "quando clico nos botões é para trazer o filtro de campanhas
+  // automático já, inclusive campanhas pausadas mas que tiveram gasto no intervalo".
+  //
+  // ⚠️ NÃO GRAVA EM `campaign_filters`, de propósito: aquela tabela é POR CONTA, sem
+  // coluna de usuário — um clique seu num balde trocaria o recorte de todo mundo que
+  // abrisse a mesma conta depois. Clicar num botão é navegar, não decidir pela
+  // equipe. Quem decide para todos continua sendo o "⚙ Filtrar campanhas".
+  //
+  // A escolha automática IGNORA o filtro salvo (o dono pediu que substitua) e vale
+  // até a pessoa abrir o ⚙ e escolher à mão, que desliga o automático.
+  const _baldeTrazSozinho = (() => {
+    try { return localStorage.getItem(_baldeAutoKey(accountId)) === '1' } catch (e) { return false }
+  })()
+  const _selecionadas = _baldeTrazSozinho ? null : (Array.isArray(selectedIds) ? safeIds : null)
   // A lista de ids de CADA balde, já com o filtro manual aplicado por dentro.
   // Sai da mesma função que monta o recorte final: assim a conta de "balde vazio"
   // e a consulta do dinheiro nunca podem discordar.
@@ -2206,7 +2230,6 @@ async function fetchData(accountId, period, customStart, customEnd) {
   // de propósito: esta diz o que EXISTE, a de cima diz o que está sendo SOMADO.
   const _idsPorBaldeSemFiltro = {}
   BALDES.forEach(b => { if (b.id !== 'todos') _idsPorBaldeSemFiltro[b.id] = idsParaConsulta(_campanhas, b.id, null) })
-  const _filtroManual = safeIds.length > 0 ? `&campaign_id=in.(${safeIds.join(',')})` : ''
 
   // ── GRÁFICOS DIÁRIOS DA SEÇÃO 02 (barras por dia + linha de meta) ──
   // period_days = 0 guarda o gasto do DIA isolado (uma linha por campanha por dia). O agregado dos
@@ -2220,7 +2243,7 @@ async function fetchData(accountId, period, customStart, customEnd) {
   // balde é feito aqui na memória, não na URL, para não pagar duas viagens.
   let _diaRows = []
   if (!noneSelected) {
-    const ciDia = await sb(`campaign_insights?account_id=eq.${accountId}&period_days=eq.0&captured_at=gte.${followStart}&captured_at=lte.${followEnd}&order=captured_at.asc&limit=5000&select=captured_at,campaign_id,spend,post_engagement,likes,conversas,cadastros,visitas,compras,impressions${_filtroManual}`)
+    const ciDia = await sb(`campaign_insights?account_id=eq.${accountId}&period_days=eq.0&captured_at=gte.${followStart}&captured_at=lte.${followEnd}&order=captured_at.asc&limit=5000&select=captured_at,campaign_id,spend,post_engagement,likes,conversas,cadastros,visitas,compras,impressions`)
     // .erro lido AQUI, colado no await: ele mora no array que o sb() devolveu e o .map() abaixo
     // cria um array novo, deixando o .erro pra trás.
     if (ciDia.erro && !erroAds.value) erroAds.value = ciDia.erro
@@ -2249,14 +2272,22 @@ async function fetchData(accountId, period, customStart, customEnd) {
   // O balde responde "tem dinheiro NESTE TIPO no período?" — pergunta sobre a
   // conta inteira. Com filtro manual ativo isso custa uma segunda leitura, e só
   // então; sem filtro, reaproveita a que já veio.
-  let _rowsDoBalde = _diaRows
-  if (_filtroManual && !noneSelected) {  // recorte ativo: o que acende precisa de leitura própria
-    const ciTodas = await sb(`campaign_insights?account_id=eq.${accountId}&period_days=eq.0&captured_at=gte.${followStart}&captured_at=lte.${followEnd}&limit=5000&select=campaign_id,spend`)
-    if (!ciTodas.erro) _rowsDoBalde = ciTodas.map(r => ({ campaign_id: String(r.campaign_id), spend: r.spend }))
-  }
-  const baldesVazios = baldesSemGasto(_idsPorBaldeSemFiltro, _rowsDoBalde)
+  // ⚠️ `_diaRows` VEM SEM FILTRO NENHUM, e o recorte é feito na memória logo
+  // abaixo. Antes a consulta já vinha recortada pela seleção manual — e era isso
+  // que apagava os outros baldes, num círculo: para acender o balde era preciso
+  // filtrar à mão, que é o que o tinha apagado.
+  const baldesVazios = baldesSemGasto(_idsPorBaldeSemFiltro, _diaRows)
   const _efetivo = baldeEfetivo(_baldeAtual, baldesVazios)
-  const idsDoRecorte = idsParaConsulta(_campanhas, _efetivo, _selecionadas)
+  // ⚠️ COM O BALDE ESCOLHENDO SOZINHO, o recorte é o tipo ∩ QUEM GASTOU no período
+  // — pausada inclusive, porque o que decide é ter movido dinheiro naqueles dias.
+  // Ver `idsComGastoNoPeriodo`, com teste.
+  const _idsDoTipo = idsParaConsulta(_campanhas, _efetivo, _selecionadas)
+  const idsDoRecorte = _baldeTrazSozinho && _efetivo !== 'todos'
+    ? idsComGastoNoPeriodo(_idsDoTipo, _diaRows)
+    : _idsDoTipo
+  // Vazio COM o balde escolhendo sozinho quer dizer "este tipo não gastou nestes
+  // dias" — recado diferente de "alguém desmarcou tudo".
+  const _semGastoNoPeriodo = _baldeTrazSozinho && _efetivo !== 'todos' && idsDoRecorte.length === 0
   // EM TODOS SEM FILTRO MANUAL, nada de lista de ids: fica exatamente no caminho de
   // hoje. Dois motivos, os dois já custaram caro aqui:
   //  • a Vessel tem 126 campanhas, e um in.(...) com 126 ids de 18 dígitos é uma URL
@@ -2285,7 +2316,13 @@ async function fetchData(accountId, period, customStart, customEnd) {
   const idsParaAoVivo = _todasAsCampanhas ? [] : idsDoRecorte
   // As barras do gráfico seguem o mesmo recorte dos cartões.
   const _noRecorte = new Set(idsDoRecorte)
-  const gastoDiarioRows = _recorteSemCampanha ? [] : _diaRows
+  // ⚠️ O RECORTE DOS GRÁFICOS É FEITO AQUI, na memória: a consulta veio SEM filtro
+  // porque a mesma leitura acende os baldes. Sem este recorte os gráficos por dia
+  // mostrariam a conta inteira sob o rótulo de um tipo só.
+  const _idsDoRecorteSet = new Set(idsDoRecorte.map(String))
+  const gastoDiarioRows = _recorteSemCampanha
+    ? []
+    : (_todasAsCampanhas ? _diaRows : _diaRows.filter(r => _idsDoRecorteSet.has(String(r.campaign_id))))
     .filter(r => _todasAsCampanhas || _noRecorte.has(r.campaign_id))
     .map(r => ({
       captured_at: r.captured_at, spend: r.spend,
@@ -2542,7 +2579,7 @@ async function fetchData(accountId, period, customStart, customEnd) {
     classificacaoProvisoria: _semConjuntoDeVerdade,
     // Nenhuma campanha no recorte → o cartão de dinheiro mostra "—", nunca o
     // total da conta. E o alcance avisa quando repete pessoa.
-    recorteSemCampanha: _recorteSemCampanha, alcanceSomado,
+    recorteSemCampanha: _recorteSemCampanha, semGastoNoPeriodo: _semGastoNoPeriodo, alcanceSomado,
     // Os números que os cartões de CADA balde dividem (ver cartoes-do-balde.js).
     // null = não coletado, e null vira "—" na tela — nunca zero.
     frequencia, conversas, cadastros, compras, visitas,
@@ -2830,7 +2867,7 @@ function update(d, period) {
   // A frase embaixo da barra segue o tipo de campanha que REALMENTE valeu, e é
   // reescrita a cada update — sem isso ela ficava congelada no que foi pintado na
   // troca de perfil e contradizia os cartões.
-  updateCampaignFilterBadge(d.campanhasNoRecorte, d.campanhasNoTotal, d.baldeEfetivo, d.campanhasDoBalde)
+  updateCampaignFilterBadge(d.campanhasNoRecorte, d.campanhasNoTotal, d.baldeEfetivo, d.campanhasDoBalde, d.semGastoNoPeriodo)
   applyFreshness(d.trueLastSnap) // frescor = última coleta REAL do coletor, igual em qualquer período
   const totalEl = document.getElementById('total-followers'); if (totalEl) animCountFull(totalEl, (d.live ? d.live.followers_count : d.followerTotal))
   // Status ao vivo × fallback honesto (nunca esconde que é dado coletado quando a Meta falha).
@@ -3757,6 +3794,9 @@ async function saveCampaignFilter() {
   document.getElementById('campaign-modal-overlay').style.display = 'none'
   // Contagem por tipo desconhecida neste ponto (o recorte só é montado no
   // fetchData); o refresh() logo abaixo completa a frase.
+  // ⚠️ ESCOLHER À MÃO DESLIGA O AUTOMÁTICO. Sem isto, a escolha da pessoa seria
+  // desfeita na carga seguinte pelo balde, e ela veria o filtro "voltar sozinho".
+  try { localStorage.removeItem(_baldeAutoKey(currentAccountId)) } catch (e) {}
   updateCampaignFilterBadge(toSave === null ? allCbs.length : toSave.length, allCbs.length, _baldeAtual, null)
   refresh()
 }
@@ -3767,10 +3807,17 @@ async function saveCampaignFilter() {
 // `doBalde` chega null nas pinturas que acontecem ANTES dos dados (troca de
 // perfil, gravação do filtro): ali não existe a contagem por tipo, e a frase
 // omite o número em vez de chutar um. O update() logo em seguida a completa.
-function updateCampaignFilterBadge(selCount, total, balde, doBalde) {
+function updateCampaignFilterBadge(selCount, total, balde, doBalde, semGastoNoPeriodo) {
   const info = document.getElementById('camp-filter-info')
   if (!info) return
-  info.textContent = fraseDoRecorte(balde, { noRecorte: selCount, total, doBalde: doBalde === undefined ? null : doBalde })
+  // ⚠️ VAZIO POR FALTA DE GASTO NO PERÍODO ≠ VAZIO POR ALGUÉM TER DESMARCADO TUDO.
+  // Dizer o recado errado manda a pessoa procurar defeito no filtro quando o
+  // problema é o intervalo. Pedido do dono em 10/09/2026.
+  info.textContent = fraseDoRecorte(
+    balde,
+    { noRecorte: selCount, total, doBalde: doBalde === undefined ? null : doBalde },
+    { semGastoNoPeriodo: !!semGastoNoPeriodo },
+  )
 }
 async function loadCampaignFilterBadge() {
   if (!currentAccountId) return
