@@ -221,11 +221,18 @@ export function rotuloCurtoDoSelo(rotulo) {
  *  Devolve sempre {x, y, largura, altura}, pronto para o <rect>. */
 export function caixaDoSelo(caixaDoTexto, { texto = '', x = 0, y = 0, respiro = RESPIRO_DO_SELO } = {}) {
   if (caixaDoTexto && caixaDoTexto.x1 > caixaDoTexto.x0) {
+    // ⚠️ NUNCA ACIMA DE ZERO. A caixa medida do texto começa em y ≈ 0,9, e tirar o
+    // respiro dela punha a tarja em −0,56: meio pixel FORA do desenho. Hoje o SVG
+    // não corta e ninguém vê, mas basta um `overflow:hidden` em qualquer pai para
+    // a linha de cima sumir — e aí o defeito aparece longe daqui, sem pista.
+    const topo = Math.max(0, caixaDoTexto.y0 - respiro / 2);
     return {
       x: caixaDoTexto.x0 - respiro,
-      y: caixaDoTexto.y0 - respiro / 2,
+      y: topo,
       largura: (caixaDoTexto.x1 - caixaDoTexto.x0) + respiro * 2,
-      altura: (caixaDoTexto.y1 - caixaDoTexto.y0) + respiro,
+      // A altura acompanha o topo que foi represado, senão a base subiria junto e
+      // a caixinha ficaria apertada embaixo.
+      altura: (caixaDoTexto.y1 + respiro / 2) - topo,
     };
   }
   return {

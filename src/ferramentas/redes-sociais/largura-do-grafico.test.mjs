@@ -282,3 +282,11 @@ test('⚠️ abreviar deixa o selo MENOR que a caixinha errada de antes', () => 
   assert.equal(agora, 17);
   assert.ok(planoB.largura < antiga, 'o selo tem de caber em menos espaço que o de antes');
 });
+
+test('⚠️ a caixinha do selo nunca começa acima do desenho', () => {
+  // Medido no ar em 10/09/2026: o texto começa em y=0,9 e a caixa ia para −0,56.
+  const c = caixaDoSelo({ x0: 13, x1: 91, y0: 0.9, y1: 12.5 }, { texto: 'Meta máx. R$ 2,00' });
+  assert.ok(c.y >= 0, 'a tarja saiu do desenho por cima');
+  // E o que foi represado no topo não pode encolher a caixa por baixo.
+  assert.ok(c.y + c.altura >= 12.5 + 1, 'a base tem de sobrar depois do texto');
+});
