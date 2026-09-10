@@ -2857,8 +2857,13 @@ function update(d, period) {
     // ⚠️ CURTO: o selo é `white-space:nowrap` e a tela se mede a 375px. A frase
     // inteira ("o Instagram ainda não publicou o dia X") vai no title, que é onde
     // cabe — o selo precisa caber ao lado do número sem empurrar a linha.
-    if (_temBuraco && !ehRecenteLive) {
-      const _dd = _falta.dias.map((x) => { const t = x.split('-'); return t[2] + '/' + t[1] })
+    if (_temBuraco && !ehRecenteLive && (d.semPublicacao || []).length) {
+      // ⚠️ OS DIAS VÊM DE `semPublicacao`, a MESMA lista que a nota do gráfico usa.
+      // Antes vinha de `_falta`, que deixou de existir quando o card passou a ser a
+      // soma do gráfico — e a referência órfã derrubava a tela inteira em tempo de
+      // execução: tudo zerado e nem a faixa de diagnóstico aparecia. Nem o build
+      // nem os testes pegam variável apagada dentro de um .vue (09/09/2026).
+      const _dd = (d.semPublicacao || []).map((x) => { const t = String(x).split('-'); return t[2] + '/' + t[1] })
       provEl.textContent = _dd.length === 1 ? `≈ falta ${_dd[0]}` : `≈ faltam ${_dd.length} dias`
       provEl.title = `O Instagram ainda não publicou ${_dd.length === 1 ? 'o dia' : 'os dias'} `
         + `${_dd.join(', ')}. O saldo desse${_dd.length === 1 ? '' : 's'} dia${_dd.length === 1 ? '' : 's'} `
