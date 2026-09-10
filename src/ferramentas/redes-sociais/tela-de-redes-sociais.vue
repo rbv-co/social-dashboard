@@ -2336,7 +2336,12 @@ async function fetchData(accountId, period, customStart, customEnd) {
     ])
     // ⚠️ BATEU NO TETO = LEITURA PELA METADE, e não "foi isso que teve". Sem este
     // aviso o dono veria um investimento menor e acreditaria.
-    if ((ciCurr && ciCurr.length >= _tetoAds) || (ciPrev && ciPrev.length >= _tetoAds)) {
+    // ⚠️ SÓ NO INTERVALO. Fora dele a consulta NÃO tem limite de data por baixo:
+    // ela devolve as 200 linhas mais recentes de propósito, e `capturaDoAgregado`
+    // escolhe a captura mais nova entre elas. Bater em 200 ali é o normal, não
+    // truncamento — e eu fiz o aviso disparar em toda carga, que é o jeito mais
+    // rápido de ensinar alguém a ignorar aviso.
+    if (ehCustom && ((ciCurr && ciCurr.length >= _tetoAds) || (ciPrev && ciPrev.length >= _tetoAds))) {
       erroAds.value = erroAds.value
         || 'A leitura de anúncios bateu no teto de linhas e pode estar incompleta — escolha um intervalo menor.'
     }
