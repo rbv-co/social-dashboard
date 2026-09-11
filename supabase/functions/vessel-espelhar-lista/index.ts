@@ -69,6 +69,7 @@
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { exigirSegredoDeCron } from '../_shared/segredo-de-cron.ts';
 import { montarCsvDeGarantias } from '../_shared/csv-de-garantias.js';
+import { celularParaOBling } from '../_shared/celular-do-bling.js';
 import { completarContato } from '../_shared/completar-contato-do-bling.js';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
@@ -296,7 +297,12 @@ async function mandarPraBling(t: string, linha: any): Promise<{ id: string } | {
       // WhatsApp vai em CELULAR, não em telefone: nos contatos de verdade da
       // conta o `telefone` está vazio e o número vive aqui. No campo errado ele
       // ficaria invisível justamente onde a equipe procura.
-      celular: linha.whatsapp,
+      // ⚠️ NORMALIZADO, NÃO CRU. Quatro cadastros ficaram presos para sempre
+      // porque a pessoa digitou o telefone com `+55`: o Bling responde 400
+      // ("É necessário preencher corretamente o campo Celular") e a linha tenta
+      // de novo, com o mesmo número, a cada 15 minutos. Medido em 11/09/2026:
+      // eram exatamente os 4 com `+`, e 0 de 4 tinham entrado.
+      celular: celularParaOBling(linha.whatsapp),
       // A MARCA DE ORIGEM que o dono pediu. NÃO vai em `observacoes`: esse
       // campo não existe no contato do Bling (li um de verdade, são 24 campos e
       // ele não está lá) — o Bling aceita no envio e descarta calado.
@@ -525,7 +531,16 @@ Deno.serve(async (req) => {
     try {
       const tb = await tokenBling(sb);
       let ok = 0;
+      // ⚠️ O BLING PERMITE 3 CHAMADAS POR SEGUNDO, e ele mesmo diz isso no erro:
+      // {"type":"TOO_MANY_REQUESTS","limit":3,"period":"second"}. Sem respiro, um
+      // dia com vários cadastros novos derruba os do fim da fila — e eles ficam
+      // com o 429 gravado, parecendo defeito do Bling, quando é pressa nossa.
+      // 400ms entre uma e outra dá 2,5 por segundo, com folga.
+      const respiro = (ms: number) => new Promise((r) => setTimeout(r, ms));
+      let primeira = true;
       for (const l of pendentesBling) {
+        if (!primeira) await respiro(400);
+        primeira = false;
         const r = await mandarPraBling(tb, l);
         if ('id' in r) {
           await sb.from('vessel_lista_espera')
