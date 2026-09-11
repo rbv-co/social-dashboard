@@ -84,13 +84,44 @@ test('⚠️ a senha só chega ao banco passada por digest', () => {
     'a senha crua nunca é atribuída à coluna de impressão digital')
 })
 
-test('⚠️ toda saída com LINHA DE VERDADE grava a senha, e não devolve disfarce', () => {
-  // Senha falsa para quem tem linha no banco faz a pessoa clicar num cartão,
-  // nada ser gravado, e ninguém ficar sabendo. As saídas sem linha (armadilha,
-  // teto mudo, os erros) devolvem senha descartável DE PROPÓSITO.
+test('⚠️ cada saída grava (ou não) a senha no lugar certo — não só no total', () => {
+  // ⚠️ Um teste que só contasse "são 4 gravações no total" passaria mesmo se
+  // alguém movesse uma gravação de lugar — por exemplo, gravasse na armadilha
+  // e esquecesse no insert final. Por isso cada saída é conferida pelo NOME,
+  // numa janela de texto que começa e termina em marcos únicos dela.
+  //
+  // ⚠️ NÃO ANCORAR em `situacao`: duas saídas diferentes respondem
+  // `situacao: 'reservado'` — a promoção lista→pré-venda (que GRAVA) e o teto
+  // por IP mudo (que NÃO PODE gravar). Um teste que procurasse `'reservado'`
+  // arriscaria confirmar a gravação errada.
   const corpo = corpoDaFuncao('vessel_entrar_na_lista')
-  const gravacoes = corpo.match(/senha_hash\s*=\s*encode|senha_hash, senha_em/g) || []
-  assert.equal(gravacoes.length, 4,
-    'são quatro as saídas com linha de verdade: ja_na_lista, ja_reservado, '
-    + 'a promoção lista→pré-venda e o insert final')
+  const grava = /senha_hash\s*=\s*encode\(extensions\.digest|senha_hash, senha_em\)/
+
+  function janela(nome, inicio, fim) {
+    const i = corpo.indexOf(inicio)
+    assert.notEqual(i, -1, 'marco de início do caminho "' + nome + '" não achado: ' + inicio)
+    const j = corpo.indexOf(fim, i)
+    assert.notEqual(j, -1, 'marco de fim do caminho "' + nome + '" não achado: ' + fim)
+    return corpo.slice(i, j + fim.length)
+  }
+
+  assert.match(
+    janela('ja_na_lista', 'if not v_prevenda then', "'ja_na_lista'"),
+    grava, 'o caminho ja_na_lista deveria gravar a senha antes de responder')
+
+  assert.match(
+    janela('ja_reservado', "if v_atual.origem = 'pre-venda' then", "'ja_reservado'"),
+    grava, 'o caminho ja_reservado deveria gravar a senha antes de responder')
+
+  assert.match(
+    janela('promoção lista→pré-venda', "set origem = 'pre-venda'", 'where id = v_atual.id;'),
+    grava, 'a promoção lista→pré-venda deveria gravar a senha no mesmo update que muda a origem')
+
+  assert.match(
+    janela('insert final (cadastro novo)', 'insert into public.vessel_lista_espera', 'returning id into v_id;'),
+    grava, 'o insert final (cadastro novo) deveria gravar a senha')
+
+  assert.doesNotMatch(
+    janela('armadilha anti-robô', 'if coalesce(trim(p_armadilha)', 'end if;'),
+    grava, 'a armadilha anti-robô NÃO pode gravar: senha real ali dá a um robô uma senha que funciona')
 })
