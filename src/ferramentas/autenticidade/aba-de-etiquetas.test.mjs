@@ -42,8 +42,9 @@ const aba = template.slice(
 test('a aba existe, e na ordem do caminho', () => {
   const lista = script.slice(script.indexOf('const ABAS = ['), script.indexOf(']', script.indexOf('const ABAS = [')));
   const chaves = [...lista.matchAll(/chave: '([\w-]+)'/g)].map((m) => m[1]);
-  assert.deepEqual(chaves, ['lotes', 'gravar', 'etiquetas', 'registros', 'alertas'],
-    'Etiquetas é o desfazer de Gravar: ela vem logo depois');
+  assert.deepEqual(chaves, ['lotes', 'gravar', 'etiquetas', 'cartoes', 'registros', 'alertas'],
+    'Etiquetas é o desfazer de Gravar: ela vem logo depois. Cartões EAN vem em '
+    + 'seguida porque o número de série tem de estar resolvido antes de virar papel');
 });
 
 /* `v-else-if` GRUDA NO `v-if` ANTERIOR. Um `v-if` solto no meio parte a corrente
@@ -58,6 +59,7 @@ test('a corrente das abas continua inteira, do carregando ao v-else final', () =
     "else-if=\"aba === 'lotes'\"",
     "else-if=\"aba === 'gravar'\"",
     "else-if=\"aba === 'etiquetas'\"",
+    "else-if=\"aba === 'cartoes'\"",
     "else-if=\"aba === 'registros'\"",
   ], 'a aba nova tem de ser um `v-else-if` entre Gravar e Registros, na mesma corrente');
   // e a aba Alertas continua sendo o `v-else` que fecha a corrente
@@ -296,11 +298,11 @@ test('a barra é a global, com botões simples e a classe `on` na ativa', () => 
   assert.match(template, /:aria-selected="String\(aba === ab\.chave\)"/);
 });
 
-test('a barra mostra a SEQUÊNCIA: três passos numerados e duas consultas', () => {
+test('a barra mostra a SEQUÊNCIA: quatro passos numerados e duas consultas', () => {
   const lista = script.slice(script.indexOf('const ABAS = ['), script.indexOf('\n]', script.indexOf('const ABAS = [')));
   const numerados = [...lista.matchAll(/chave: '(\w+)', n: (\d)/g)].map((m) => [m[1], Number(m[2])]);
-  assert.deepEqual(numerados, [['lotes', 1], ['gravar', 2], ['etiquetas', 3]],
-    'os três primeiros são passos, na ordem em que se faz');
+  assert.deepEqual(numerados, [['lotes', 1], ['gravar', 2], ['etiquetas', 3], ['cartoes', 4]],
+    'os quatro primeiros são passos, na ordem em que se faz');
   assert.doesNotMatch(lista.slice(lista.indexOf("chave: 'registros'")), / n: /,
     'Garantias e Alertas não são passos: numerá-los mentiria sobre o fluxo');
   assert.match(lista, /chave: 'registros', rotulo: 'Garantias'/,

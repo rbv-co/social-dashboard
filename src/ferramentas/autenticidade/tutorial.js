@@ -72,6 +72,10 @@ export const AJUDA_DA_ABA = {
     + 'lote que ainda tem peça por gravar, e a tela lê a etiqueta antes e depois de gravar.',
   etiquetas: 'O desfazer da aba anterior: apagar uma gravação feita errado. A peça volta para a fila, '
     + 'e nem o código nem a garantia de ninguém são apagados. Abre nos últimos 30 dias.',
+  cartoes: 'O cartão EAN é o papel que vai dentro da bolsa: nome do modelo, foto da peça, '
+    + 'número de série e o código de barras do produto. Marque as peças, confira a prévia — '
+    + 'ela é o cartão de verdade, não um desenho parecido — e mande gerar. O robô entrega em PNG e '
+    + 'PDF no Zoho. Depois de impresso o número de série daquela peça não muda mais.',
   registros: 'As garantias que as clientes registraram sozinhas, encostando o celular na etiqueta. '
     + 'Só leitura: dá para buscar pelo nome ou pelo código e baixar a planilha.',
   alertas: 'O que anda estranho nos últimos 30 dias: o mesmo código lido de muitos aparelhos, '
