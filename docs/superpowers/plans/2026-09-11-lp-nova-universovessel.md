@@ -350,8 +350,23 @@ E no insert final:
     'restam', case when v_prevenda then greatest(0, v_total - (v_feitos + 1)) else null end);
 ```
 
-⚠️ O caminho `invalido` também devolve senha falsa — a regra vale para os
-**seis** `json_build_object` da função.
+⚠️ **A função tem DEZ saídas, não seis** (contagem conferida no corpo real em
+11/09/2026). A regra que decide qual senha cada uma leva é esta, e só esta:
+
+| a saída tem linha de verdade no banco E responde `ok:true`? | a senha |
+|---|---|
+| sim — `ja_na_lista`, `ja_reservado`, a promoção lista→pré-venda, e o `insert` final | **é gravada** (hash + `senha_em`) |
+| não — armadilha, teto por IP mudo, `invalido`, `muitas_tentativas`, os dois `esgotou` | **é falsa**: gerada e não gravada |
+
+O primeiro grupo é gente real com linha real: senha falsa ali faz a pessoa
+clicar num cartão, nada ser gravado, e **ninguém ficar sabendo** — é a falha que
+vira silêncio. O segundo grupo ou não tem linha, ou é o disfarce anti-robô, que
+só funciona se for indistinguível de sucesso.
+
+⚠️ As saídas da pré-venda estão fora do alcance da LP nova (ela nunca manda
+`p_origem='pre-venda'`). Ainda assim elas se consertam: a função continua viva em
+produção, e armadilha desarmada hoje é armadilha que morde a próxima pessoa que
+passar por aqui.
 
 - [ ] **Passo 4: rodar e ver passar**
 
