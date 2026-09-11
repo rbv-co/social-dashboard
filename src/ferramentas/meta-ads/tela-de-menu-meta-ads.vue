@@ -54,6 +54,14 @@
           <div class="smenu-card-desc">Fluxo guiado em 4 passos: gerar, curar, subir e conferir os criativos de uma campanha.</div>
           <span class="smenu-card-enter">→</span>
         </div>
+        <div class="smenu-card" v-if="hasPermission('meta.hora')" @click="ir('meta-relatorio-hora')">
+          <div class="smenu-card-icon" style="background:linear-gradient(135deg,#f59e0b,#d97706)">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          </div>
+          <div class="smenu-card-title">Relatório por Hora</div>
+          <div class="smenu-card-desc">Gasto, conversas iniciadas e custo por lead de cada campanha, hora a hora.</div>
+          <span class="smenu-card-enter">→</span>
+        </div>
       </div>
     </div>
   </div>
