@@ -57,23 +57,23 @@ sao a mesma mancha; e "001518 de 20" nao e frase nenhuma. Quem identifica a
 bolsa ali e o endereco ao lado e a fila logo abaixo, que diz o numero de serie
 de cada peca. Ha teste segurando essa decisao.
 
-AS CINCO ABAS, E POR QUE TRES DELAS TEM NUMERO
+AS SEIS ABAS, E POR QUE QUATRO DELAS TEM NUMERO
 ==============================================
 
 A barra de abas mostra uma SEQUENCIA, porque a ferramenta e um caminho e nao um
 armario:
 
-    1 LOTES   2 GRAVAR   3 ETIQUETAS   .   GARANTIAS   ALERTAS
+    1 LOTES   2 GRAVAR   3 ETIQUETAS   4 CARTOES EAN   .   GARANTIAS   ALERTAS
 
-Os tres primeiros sao os passos, na ordem em que se faz. Garantias e Alertas
+Os quatro primeiros sao os passos, na ordem em que se faz. Garantias e Alertas
 ficam do outro lado do separador porque nao sao passos: sao consulta. Numerar os
-cinco mentiria sobre o fluxo.
+seis mentiria sobre o fluxo.
 
 A BARRA E A `.abas` GLOBAL, a mesma da Frota, do Patrimonio e dos Acessos. Uma
 entrega anterior escreveu uma barra propria aqui (com fundo, moldura e rolagem
 por dentro) e o dono viu na hora que a tela tinha ficado diferente das irmas.
 Nao ha regra de `.abas` no CSS desta tela, e ha teste que reprova se voltar. Com
-cinco itens ela quebra em duas linhas no celular — igual as irmas fariam.
+seis itens ela quebra em duas linhas no celular — igual as irmas fariam.
 
 1 LOTES    Cada lote e uma fornada de bolsas do mesmo modelo. Ao criar um lote
            de 20, nascem 20 codigos DIFERENTES, um por bolsa.
@@ -169,6 +169,50 @@ GARANTIAS  Quem registrou a garantia: nome, WhatsApp, onde comprou. Da pra
 ALERTAS    Os sinais de falsificacao. A etiqueta guarda um endereco, e endereco
            se copia — entao a etiqueta sozinha nao impede nada. O que denuncia a
            copia e a MESMA peca sendo lida de muitos aparelhos diferentes.
+
+4 CARTOES  O cartao EAN e o PAPEL que vai dentro da bolsa: nome do modelo, foto
+  EAN      da peca, numero de serie e o codigo de barras EAN-13 do produto.
+           Marque as pecas, confira a previa, mande gerar. O robo desenha e
+           entrega em PNG e PDF no Zoho, em "Cartoes com EAN/<AAAA-MM-DD>".
+
+           ⚠️ DEPOIS DE O CARTAO SAIR, O NUMERO DAQUELA PECA NAO MUDA MAIS.
+           Papel dentro de bolsa nao se regrava — diferente da etiqueta NFC. A
+           peca com cartao passa a contar como PRESA, junto com a gravada e a
+           que tem garantia: nem `vessel_editar_lote` nem `vessel_renumerar_lote`
+           mexem nela, e o lote dela nao pode ser apagado.
+           Ja aconteceu o contrario: no Zoho ha a pasta "Cartoes com EAN - BKP
+           07-09-2026 (numero de serie antigo)", com 620 cartoes que deixaram de
+           valer porque os numeros mudaram depois de eles saírem.
+
+           ⚠️ A PREVIA E O CARTAO, e nao um desenho parecido. Ela e a pagina
+           `fotos/cartao/previa.html`, do repositorio do SITE, embutida num
+           iframe — montada pelo MESMO `montar-puro.mjs` que o robo usa, com a
+           mesma foto tratada, o mesmo enquadramento e a mesma tipografia.
+           O desenho NAO pode ser copiado para ca: duas contas do mesmo cartao
+           acertam no comeco e divergem depois, caladas, e o dono aprovaria na
+           tela uma composicao que a grafica nao imprime.
+           O aplicativo nao EXECUTA nada de la: ele so embute uma pagina de
+           outro endereco. `cartoes-ean.js` guarda a conta que e desta tela —
+           quais pecas podem, quais ja tem, e o que vai para a fila.
+
+           SO VEM MARCADO O QUE AINDA NAO TEM CARTAO. Refazer e permitido —
+           cartao rasga, mancha, some — mas nunca por padrao: vindo marcado, um
+           clique reimprimiria a leva inteira e a pasta do Zoho voltaria com o
+           dobro dos arquivos, sem ninguem saber qual e o bom.
+
+           A FILA e `vessel_cartao_pedidos`: a tela pede, o robo executa. A marca
+           `cartao_gerado_em` e do ROBO, e so nas pecas que ele CONFIRMA —
+           marcar o pedido inteiro deixaria a marca mentindo nas que falharam no
+           meio, e e ela que prende o numero. Pedido em aberto ja prende: entre
+           o "gerar" e o arquivo no Zoho ha uma janela de minutos.
+
+           A REGRA DE "PECA PRESA" MORA EM UM LUGAR SO: `vessel_peca_presa`, no
+           banco, que devolve o MOTIVO ('garantia', 'gravada', 'cartao') e nao
+           sim/nao — quem recusa apagar um lote precisa dizer por que. Ela estava
+           escrita QUATRO vezes em tres funcoes ate 11/09/2026, e somar uma
+           condicao em quatro lugares e somar em tres e esquecer um.
+           Guarda: `db/cartao-trava-a-serie.test.mjs`.
+
 
 DE ONDE VEM O CODIGO
 ====================

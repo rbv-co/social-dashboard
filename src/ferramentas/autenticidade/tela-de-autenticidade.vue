@@ -1232,7 +1232,12 @@
             </label>
           </div>
           <div class="au-card-linha">
-            <span class="au-serie-cartao">{{ ln.numeroDeSerie || '—' }}</span>
+            <!-- O RÓTULO VEM JUNTO NO CELULAR, e some no computador: lá a coluna
+                 "Nº DE SÉRIE" já diz o que o número é; aqui a tabela virou
+                 cartão e o cabeçalho não existe. Sem ele, "SS0001CBM1001" e
+                 "Sem cartão" viram dois amontoados sem nada dizendo qual é qual.
+                 É a mesma regra da lista de peças do lote. -->
+            <span class="au-serie-cartao"><span class="au-rot-serie">nº de série </span>{{ ln.numeroDeSerie || '—' }}</span>
           </div>
           <div class="au-card-linha">
             <span v-if="ln.jaTemCartao" class="selo selo-ok">Já impresso</span>
@@ -1263,11 +1268,15 @@
 
            ⚠️ O `sandbox` LEVA `allow-same-origin`, e isso NÃO afrouxa a trava
            aqui: `allow-same-origin` só é perigoso quando o iframe é do MESMO
-           endereço do pai — aí ele conseguiria tirar o próprio sandbox. Este é
-           de vesselbrasil.com.br, outro endereço: ele continua sem alcançar
+           endereço do pai — aí ele conseguiria tirar o próprio sandbox. Este
+           vem do site da marca, que é OUTRO endereço: ele continua sem alcançar
            nada desta tela nem a sessão de quem está logado, e o sandbox segue
            barrando o que importa — navegar a janela de cima para fora do
            aplicativo, abrir pop-up e baixar arquivo.
+
+           (O endereço em si não se escreve aqui: ele sai de BASE_DOS_RECURSOS,
+           em cartoes-ean.js. Domínio em dois lugares é domínio errado esperando
+           acontecer — a mesma regra do endereço da etiqueta.)
 
            Sem ele a prévia não consegue nem conferir o próprio desenho: com
            origem opaca ela perde o acesso ao quadro interno onde o cartão é
@@ -1280,9 +1289,11 @@
           <button class="au-link" type="button" @click="fecharAPrevia">Fechar</button>
         </div>
         <p v-if="erroDaPrevia" class="au-erro">{{ erroDaPrevia }}</p>
-        <iframe class="au-previa-folha" :src="enderecoDaPrevia"
-                sandbox="allow-scripts allow-same-origin"
-                title="Prévia do cartão desta peça" loading="lazy"></iframe>
+        <div class="au-previa-quadro">
+          <iframe class="au-previa-folha" :src="enderecoDaPrevia"
+                  sandbox="allow-scripts allow-same-origin"
+                  title="Prévia do cartão desta peça" loading="lazy"></iframe>
+        </div>
       </div>
 
       <!-- ── O PEDIDO ────────────────────────────────────────────────────── -->
@@ -5564,6 +5575,15 @@ onUnmounted(() => window.removeEventListener('message', ouvirAPrevia))
     grid-template-columns:minmax(0,2.4fr) minmax(0,1.4fr) minmax(0,1fr) minmax(0,1.6fr);
   }
   .au-tabela-cartoes .au-card-linha{display:contents;}
+  /* ⚠️ O "VER O CARTÃO" FICA NA COLUNA "PRÉVIA", e não numa linha própria. A
+     regra-base de `.au-tabela` manda todo `.au-acoes` ocupar a linha inteira —
+     ela existe para os cartões com DOIS botões, que ficariam espremidos. Aqui é
+     um link só, e obedecendo àquela regra a coluna PRÉVIA ficava vazia com o
+     link solto embaixo do nome: um cabeçalho apontando para nada. */
+  .au-tabela-cartoes .au-card > .au-acoes{
+    grid-column:auto; margin-top:0; align-self:center; justify-content:flex-start;
+  }
+  .au-tabela-cartoes .au-rot-serie{display:none}
 
   /* ── 4. AS PEÇAS DO LOTE, TAMBÉM EM TABELA ─────────────────────────────
      Um lote tem até 500 peças, e é a lista mais varrida da ferramenta.
@@ -5867,8 +5887,21 @@ onUnmounted(() => window.removeEventListener('message', ouvirAPrevia))
   border-radius:var(--raio);
   background:var(--cor-superficie);
 }
+/* ⚠️ O QUADRO TEM O TAMANHO DO CARTÃO, EM MILÍMETROS — 86,6 × 54,98 mm, as duas
+   faces empilhadas. Ele não se estica.
+
+   A primeira versão usava `width:100%` com `aspect-ratio`, e ficava MAIOR que o
+   cartão: o desenho é em mm absolutos e não acompanha o quadro, então sobrava
+   branco à direita e embaixo. Na tela isso não lê como moldura folgada — lê
+   como cartão cortado, com a bolsa desaparecendo numa borda que não existe.
+   Medido no computador: quadro de 420 px para um cartão de 327. */
+.au-previa-quadro{
+  /* Num aparelho estreito demais para os 86,6 mm, o cartão ROLA — encolher
+     cortaria o desenho, porque ele é em medida absoluta. */
+  overflow-x:auto;
+}
 .au-previa-folha{
-  width:100%; max-width:420px; aspect-ratio:86.6 / 109.96;
+  width:86.6mm; height:109.96mm; flex:0 0 auto;
   border:0; display:block; margin:var(--sp-2) auto 0;
   /* O cartão tem fundo próprio (verde na frente, branco no verso). O quadro fica
      claro para a borda do cartão se ver — sem isto, o verso branco some dentro
