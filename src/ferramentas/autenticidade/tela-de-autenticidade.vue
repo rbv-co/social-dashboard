@@ -1259,16 +1259,29 @@
            POR QUE UM `iframe` DE OUTRO ENDEREÇO: o desenho mora no repositório
            do SITE, que não chega à máquina que faz o build deste aplicativo.
            Copiar o desenho para cá seria criar a segunda conta. Aqui a tela
-           EMBUTE a página — e com `sandbox` sem `allow-same-origin` ela não
-           roda código nenhum desta tela, nem alcança a sessão de quem está
-           logado. -->
+           EMBUTE a página, e não executa o código dela.
+
+           ⚠️ O `sandbox` LEVA `allow-same-origin`, e isso NÃO afrouxa a trava
+           aqui: `allow-same-origin` só é perigoso quando o iframe é do MESMO
+           endereço do pai — aí ele conseguiria tirar o próprio sandbox. Este é
+           de vesselbrasil.com.br, outro endereço: ele continua sem alcançar
+           nada desta tela nem a sessão de quem está logado, e o sandbox segue
+           barrando o que importa — navegar a janela de cima para fora do
+           aplicativo, abrir pop-up e baixar arquivo.
+
+           Sem ele a prévia não consegue nem conferir o próprio desenho: com
+           origem opaca ela perde o acesso ao quadro interno onde o cartão é
+           montado, e a checagem de imagem que não carregou morre — que é
+           justamente a que impede o cartão sair com um vazio no lugar da
+           bolsa. Medido: `Cannot read properties of null (reading 'images')`. -->
       <div v-if="pecaNaPrevia" class="au-previa-cartao">
         <div class="au-card-topo">
           <span class="au-modelo">Cartão de {{ pecaNaPrevia.numeroDeSerie }}</span>
           <button class="au-link" type="button" @click="fecharAPrevia">Fechar</button>
         </div>
         <p v-if="erroDaPrevia" class="au-erro">{{ erroDaPrevia }}</p>
-        <iframe class="au-previa-folha" :src="enderecoDaPrevia" sandbox="allow-scripts"
+        <iframe class="au-previa-folha" :src="enderecoDaPrevia"
+                sandbox="allow-scripts allow-same-origin"
                 title="Prévia do cartão desta peça" loading="lazy"></iframe>
       </div>
 
