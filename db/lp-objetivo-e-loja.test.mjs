@@ -125,3 +125,30 @@ test('⚠️ cada saída grava (ou não) a senha no lugar certo — não só no 
     janela('armadilha anti-robô', 'if coalesce(trim(p_armadilha)', 'end if;'),
     grava, 'a armadilha anti-robô NÃO pode gravar: senha real ali dá a um robô uma senha que funciona')
 })
+
+/* ⚠️ A SEGUNDA ESCRITA: `vessel_marcar_objetivo` só passa quem tem a senha
+ * devolvida pelo cadastro. Reaproveita `corpoDaFuncao`, definida acima — ela
+ * é o que impede uma função de arrastar a outra para dentro da conta. */
+
+test('a função da segunda escrita existe e é security definer', () => {
+  const corpo = corpoDaFuncao('vessel_marcar_objetivo')
+  assert.match(corpo, /security definer/i)
+  assert.match(corpo, /set search_path to 'public'/i)
+})
+
+test('⚠️ a senha é de USO ÚNICO: some depois de usada', () => {
+  const corpo = corpoDaFuncao('vessel_marcar_objetivo')
+  assert.match(corpo, /senha_hash\s*=\s*null/i,
+    'sem zerar, a mesma senha reescreveria o objetivo para sempre')
+})
+
+test('⚠️ a função NUNCA recebe id de linha', () => {
+  const corpo = corpoDaFuncao('vessel_marcar_objetivo')
+  assert.ok(!/p_id\b/.test(corpo),
+    'receber id deixaria qualquer visitante escrever na linha de qualquer cliente')
+})
+
+test('⚠️ valor de objetivo desconhecido é RECUSADO, não gravado', () => {
+  const corpo = corpoDaFuncao('vessel_marcar_objetivo')
+  assert.match(corpo, /not in \('visita', 'ecommerce'\)|<> 'visita' and .* <> 'ecommerce'/i)
+})

@@ -180,3 +180,63 @@ begin
     'senha', v_senha::text);
 end;
 $function$;
+
+-- A SEGUNDA ESCRITA. Só passa quem tem a senha devolvida pelo cadastro.
+create or replace function public.vessel_marcar_objetivo(
+  p_senha    text,
+  p_objetivo text,
+  p_loja     text default null
+) returns json
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_hash text := encode(extensions.digest(coalesce(p_senha, ''), 'sha256'), 'hex');
+  v_id   bigint;
+begin
+  -- ⚠️ A TRAVA MORA AQUI, e não num CHECK da coluna. CHECK derruba a transação
+  -- inteira quando chega um valor novo; aqui o valor novo é uma linha a mais.
+  if p_objetivo not in ('visita', 'ecommerce') then
+    return json_build_object('ok', false, 'situacao', 'objetivo_invalido');
+  end if;
+
+  -- A senha vale por 2 horas. Sem prazo, uma senha vazada abriria a linha para
+  -- sempre; com prazo, a janela é a da própria visita à página.
+  update public.vessel_lista_espera
+     set objetivo   = p_objetivo,
+         loja       = case when p_objetivo = 'visita'
+                           then coalesce(nullif(trim(p_loja), ''), 'iguatemi')
+                           else null end,
+         -- USO ÚNICO: some assim que usada.
+         senha_hash = null,
+         -- O espelho precisa rodar de novo para levar o objetivo adiante.
+         planilha_em = null
+   where senha_hash = v_hash
+     and senha_em > now() - interval '2 hours'
+  returning id into v_id;
+
+  -- ⚠️ UPDATE QUE NÃO ACHA LINHA NÃO DÁ ERRO: devolve zero linhas, calado. Sem
+  -- esta checagem, senha errada ou vencida responderia "deu certo".
+  if v_id is null then
+    return json_build_object('ok', false, 'situacao', 'senha_invalida');
+  end if;
+
+  return json_build_object('ok', true, 'situacao', 'registrado');
+end;
+$function$;
+
+-- ⚠️ REVOKE/GRANT segue o padrão da migration irmã (2026-08-28), que faz
+-- `revoke all ... from public` em vez de `revoke execute`, e é quem definiu o
+-- padrão desta família (conferido na Task 1). Mas esta função é a mais
+-- sensível do plano — o único portão entre "qualquer visitante" e "escrever
+-- na linha de outra pessoa" — então ela NÃO segue a irmã até o fim: a irmã
+-- também concede a `authenticated`, e aqui isso fica de fora, com um revoke
+-- explícito e separado. `revoke ... from public` NÃO fecha `authenticated`
+-- (são revogações distintas — o Supabase concede execute a `authenticated`
+-- em toda função nova do schema `public` por padrão); sem o revoke próprio,
+-- qualquer sessão autenticada teria a mesma porta que o site público usa,
+-- sem necessidade nenhuma para isso.
+revoke all on function public.vessel_marcar_objetivo(text, text, text) from public;
+revoke all on function public.vessel_marcar_objetivo(text, text, text) from authenticated;
+grant  execute on function public.vessel_marcar_objetivo(text, text, text) to anon;
