@@ -243,8 +243,24 @@ nenhum — e essas são justamente as pessoas mais engajadas.
 Acrescentar a `db/lp-objetivo-e-loja.test.mjs`:
 
 ```js
+/**
+ * O corpo de UMA função, e não daí até o fim do arquivo.
+ * ⚠️ A migration guarda duas funções. Uma fatia que vai até o fim arrastaria a
+ * `vessel_marcar_objetivo` para dentro da conta — e ela tem `json_build_object`
+ * SEM senha, de propósito. O teste ficaria verde hoje e vermelho quando a Task 3
+ * entrasse, apontando para a tarefa errada. Mesmo cuidado de `ultimaDefinicaoDe`
+ * em `db/cartao-trava-a-serie.test.mjs`.
+ */
+function corpoDaFuncao(nome) {
+  const i = SQL.indexOf('create or replace function public.' + nome)
+  assert.notEqual(i, -1, 'a função ' + nome + ' não está na migration')
+  const resto = SQL.slice(i)
+  const fim = resto.indexOf('$function$;')
+  return fim === -1 ? resto : resto.slice(0, fim + 11)
+}
+
 test('⚠️ TODO caminho de saída devolve senha — inclusive os falsos', () => {
-  const corpo = SQL.slice(SQL.indexOf('create or replace function public.vessel_entrar_na_lista'))
+  const corpo = corpoDaFuncao('vessel_entrar_na_lista')
   const saidas = corpo.match(/json_build_object\(/g) || []
   const comSenha = corpo.match(/'senha'/g) || []
   assert.equal(comSenha.length, saidas.length,
@@ -351,27 +367,30 @@ git commit -m "O cadastro devolve uma senha de uso unico — inclusive quando fi
 Acrescentar a `db/lp-objetivo-e-loja.test.mjs`:
 
 ```js
+Reaproveite `corpoDaFuncao`, criada na Task 2 — ela é o que impede uma função
+de arrastar a outra para dentro da conta.
+
+```js
 test('a função da segunda escrita existe e é security definer', () => {
-  assert.match(SQL, /create or replace function public\.vessel_marcar_objetivo/i)
-  const corpo = SQL.slice(SQL.indexOf('create or replace function public.vessel_marcar_objetivo'))
+  const corpo = corpoDaFuncao('vessel_marcar_objetivo')
   assert.match(corpo, /security definer/i)
   assert.match(corpo, /set search_path to 'public'/i)
 })
 
 test('⚠️ a senha é de USO ÚNICO: some depois de usada', () => {
-  const corpo = SQL.slice(SQL.indexOf('create or replace function public.vessel_marcar_objetivo'))
+  const corpo = corpoDaFuncao('vessel_marcar_objetivo')
   assert.match(corpo, /senha_hash\s*=\s*null/i,
     'sem zerar, a mesma senha reescreveria o objetivo para sempre')
 })
 
 test('⚠️ a função NUNCA recebe id de linha', () => {
-  const corpo = SQL.slice(SQL.indexOf('create or replace function public.vessel_marcar_objetivo'))
+  const corpo = corpoDaFuncao('vessel_marcar_objetivo')
   assert.ok(!/p_id\b/.test(corpo),
     'receber id deixaria qualquer visitante escrever na linha de qualquer cliente')
 })
 
 test('⚠️ valor de objetivo desconhecido é RECUSADO, não gravado', () => {
-  const corpo = SQL.slice(SQL.indexOf('create or replace function public.vessel_marcar_objetivo'))
+  const corpo = corpoDaFuncao('vessel_marcar_objetivo')
   assert.match(corpo, /not in \('visita', 'ecommerce'\)|<> 'visita' and .* <> 'ecommerce'/i)
 })
 ```
@@ -592,6 +611,11 @@ publicamente acessível durante o teste, por isso o passo 3.
 
 - [ ] **Passo 3: o esqueleto, com a marca de não indexar**
 
+⚠️ Criar **vazios** `universovessel-novo/estilo.css` e
+`universovessel-novo/pagina.mjs` junto com o `index.html`. Eles só ganham
+conteúdo nas Tasks 9 e 7; sem os arquivos, a página dá 404 em dois recursos
+durante quatro tarefas, e 404 que a gente já espera é 404 que esconde o próximo.
+
 ```html
 <!doctype html>
 <html lang="pt-BR">
@@ -807,10 +831,17 @@ git commit -m "Os textos da pagina passam a morar num lugar so, nos dois idiomas
 
 **Arquivos:**
 - Criar: `universovessel-novo/pagina.mjs`
-- Modificar: `universovessel-novo/textos.test.mjs`
+- Criar: `universovessel-novo/idioma.test.mjs`
 
 **Interfaces:**
 - Consome: `texto(idioma, chave)` da Task 6.
+
+⚠️ **`pagina.mjs` importa `textos.mjs` por caminho RELATIVO (`./textos.mjs`).**
+A restrição global "import sempre absoluto" vale para o que a **página** carrega
+(`index.html` → `pagina.mjs`), não para um módulo chamando o vizinho: caminho
+absoluto dentro do módulo resolve para a raiz do DISCO no `node --test`, e o
+teste desta tarefa nunca roda. É o padrão da casa — `regras-da-lista.mjs` é
+carregado por caminho absoluto e importa `./verify/regras.js` relativo.
 - Produz: `export function idiomaInicial(location, armazem)` e
   `export function aplicarIdioma(raiz, idioma)`. Task 10 chama `aplicarIdioma`.
 
@@ -858,7 +889,7 @@ Esperado: FALHA — `idiomaInicial` não existe.
 Em `universovessel-novo/pagina.mjs`:
 
 ```js
-import { texto, TEXTOS } from '/universovessel-novo/textos.mjs'
+import { texto, TEXTOS } from './textos.mjs'
 
 const IDIOMAS = ['pt', 'en']
 const CHAVE_IDIOMA = 'vessel-idioma'
