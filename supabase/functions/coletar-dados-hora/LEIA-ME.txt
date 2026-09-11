@@ -1,0 +1,13 @@
+Edge Function que roda de hora em hora e grava, por campanha, quanto foi
+gasto e quantas conversas do WhatsApp começaram NESSA hora — não o
+acumulado do dia, o delta contra a última leitura.
+
+Alimenta o módulo "Relatório por Hora" do Meta Ads
+(src/ferramentas/meta-ads/tela-de-relatorio-por-hora.vue).
+
+Por quê é uma função separada do coletar-dados: aquele já teve que virar
+"uma conta por vez" porque fazia dezenas de chamadas à Meta por conta. Esta
+faz 1 chamada por conta, então roda todas de uma vez sem risco de estourar
+o teto de 150s da plataforma.
+
+Ver docs/superpowers/specs/2026-09-11-meta-ads-relatorio-por-hora-design.md.
