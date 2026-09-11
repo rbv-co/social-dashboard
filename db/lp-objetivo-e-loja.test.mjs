@@ -83,3 +83,14 @@ test('⚠️ a senha só chega ao banco passada por digest', () => {
   assert.ok(!/senha_hash\s*=\s*v_senha/i.test(corpo),
     'a senha crua nunca é atribuída à coluna de impressão digital')
 })
+
+test('⚠️ toda saída com LINHA DE VERDADE grava a senha, e não devolve disfarce', () => {
+  // Senha falsa para quem tem linha no banco faz a pessoa clicar num cartão,
+  // nada ser gravado, e ninguém ficar sabendo. As saídas sem linha (armadilha,
+  // teto mudo, os erros) devolvem senha descartável DE PROPÓSITO.
+  const corpo = corpoDaFuncao('vessel_entrar_na_lista')
+  const gravacoes = corpo.match(/senha_hash\s*=\s*encode|senha_hash, senha_em/g) || []
+  assert.equal(gravacoes.length, 4,
+    'são quatro as saídas com linha de verdade: ja_na_lista, ja_reservado, '
+    + 'a promoção lista→pré-venda e o insert final')
+})

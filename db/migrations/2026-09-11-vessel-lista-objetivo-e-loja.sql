@@ -42,12 +42,15 @@ create index if not exists vessel_lista_espera_senha_hash_idx
 -- `vessel_entrar_na_lista` passa a devolver a senha de uso único.
 --
 -- ⚠️ TODO caminho de saída devolve 'senha' no json — inclusive os falsos.
--- A armadilha anti-robô, o teto por IP (mudo) e o caminho `invalido` devolvem
--- uma senha GERADA NA HORA e NUNCA GRAVADA: se a ausência da senha virasse o
--- sinal de que a tentativa falhou, a armadilha deixaria de enganar o robô, e
--- o teto por IP pararia de ser mudo. Só dois caminhos GRAVAM a senha (como
--- impressão digital, via `digest`): `ja_na_lista` (gente real voltando, que
--- precisa poder escolher visita/loja de novo) e o cadastro novo.
+-- O que decide se a senha é gravada não é a posição do `return`, é se AQUELA
+-- saída tem LINHA DE VERDADE no banco e responde `ok:true`. Quatro têm:
+-- `ja_na_lista`, `ja_reservado`, a promoção lista→pré-venda e o cadastro
+-- novo — nessas quatro a senha é gravada como impressão digital (via
+-- `digest`). As outras seis (armadilha, teto por IP mudo, `invalido`,
+-- `muitas_tentativas` e os dois `esgotou`) não têm linha, ou são disfarce
+-- anti-robô: devolvem uma senha GERADA NA HORA e NUNCA GRAVADA, porque se a
+-- ausência da senha virasse o sinal de que a tentativa falhou, a armadilha
+-- deixaria de enganar o robô, e o teto por IP pararia de ser mudo.
 --
 -- O resto do corpo é o de produção, intocado: a trava de fila, o teto por IP
 -- que fala diferente na lista de espera e na pré-venda, e o
@@ -133,6 +136,10 @@ begin
                                'senha', v_senha::text);
     end if;
     if v_atual.origem = 'pre-venda' then
+      update public.vessel_lista_espera
+         set senha_hash = encode(extensions.digest(v_senha::text, 'sha256'), 'hex'),
+             senha_em   = now()
+       where id = v_atual.id;
       return json_build_object('ok', true, 'situacao', 'ja_reservado',
                                'restam', greatest(0, v_total - v_feitos),
                                'senha', v_senha::text);
@@ -145,7 +152,9 @@ begin
     update public.vessel_lista_espera
        set origem = 'pre-venda', nome = trim(p_nome), whatsapp = trim(p_whatsapp),
            aceite_versao = p_aceite_versao, aceite_em = now(),
-           bling_em = null, planilha_em = null
+           bling_em = null, planilha_em = null,
+           senha_hash = encode(extensions.digest(v_senha::text, 'sha256'), 'hex'),
+           senha_em   = now()
      where id = v_atual.id;
     return json_build_object('ok', true, 'situacao', 'reservado',
                              'restam', greatest(0, v_total - (v_feitos + 1)),
