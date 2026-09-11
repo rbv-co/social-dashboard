@@ -716,12 +716,25 @@ test('nenhuma frase está vazia', () => {
       assert.ok(String(valor).trim() !== '', `${idioma}.${chave} está vazia`)
 })
 
-test('⚠️ os títulos em inglês são IGUAIS nos dois idiomas', () => {
+test('⚠️ os títulos de bloco são IGUAIS nos dois idiomas', () => {
   // O padrão da marca é título em inglês + apoio em português. No modo
-  // português, o título NÃO se traduz — traduzir "Made in Brazil" mataria o
-  // bloco 6 inteiro, que nasceu dessa expressão.
+  // português o título de BLOCO não se traduz — traduzir "Made in Brazil"
+  // mataria o bloco 6 inteiro, que nasceu dessa expressão.
   for (const chave of Object.keys(TEXTOS.pt).filter((k) => k.endsWith('.titulo')))
     assert.equal(TEXTOS.pt[chave], TEXTOS.en[chave], chave + ' deveria ser igual')
+})
+
+test('⚠️ RÓTULO DE INTERFACE fala a língua de quem lê — nunca inglês no modo pt', () => {
+  // A voz da marca é uma coisa; o texto de um botão é outra. Os cartões são o
+  // MOMENTO DA DECISÃO, e o dono decidiu que ali é português, para não criar
+  // atrito na hora de clicar. Em 11/09/2026 a regra do `.titulo` estava larga
+  // demais e alguém traduziu "Visitar uma loja" para "Visit a store" no modo
+  // português — obedecendo ao teste. Por isso rótulo NÃO se chama `.titulo`.
+  const rotulos = Object.keys(TEXTOS.pt).filter((k) => /\.(rotulo|pergunta)$/.test(k))
+  assert.ok(rotulos.length > 0, 'a página tem rótulos de interface')
+  for (const chave of rotulos)
+    assert.notEqual(TEXTOS.pt[chave], TEXTOS.en[chave],
+      chave + ': rótulo de interface tem de estar traduzido, não repetido')
 })
 ```
 
@@ -772,7 +785,7 @@ export const TEXTOS = {
     'fim.visitar': 'Agendar uma visita',
     'fim.comprar': 'Comprar a coleção',
 
-    'convite.titulo': 'Acesso privado',
+    'convite.rotulo': 'Acesso privado',
     'convite.apoio': 'Deixe seu contato para saber em primeira mão.',
     'convite.nome': 'Nome',
     'convite.email': 'E-mail',
@@ -781,11 +794,11 @@ export const TEXTOS = {
     'convite.depois': 'Ver a página primeiro',
     'convite.erro': 'Não conseguimos enviar agora. Tente de novo em instantes.',
 
-    'escolha.titulo': 'Obrigado. Como você prefere continuar?',
-    'escolha.visita.titulo': 'Visitar uma loja',
+    'escolha.pergunta': 'Obrigado. Como você prefere continuar?',
+    'escolha.visita.rotulo': 'Visitar uma loja',
     'escolha.visita.apoio': 'Agende sua visita para uma experiência exclusiva '
       + 'com nossa personal shopper.',
-    'escolha.loja.titulo': 'Comprar pelo site',
+    'escolha.loja.rotulo': 'Comprar pelo site',
     'escolha.loja.apoio': 'Garanta sua peça Vessel na comodidade de sua casa.',
     'escolha.visita.feito': 'Recebemos seu pedido. Entraremos em contato pelo '
       + 'WhatsApp para combinar o melhor horário.',
@@ -818,7 +831,7 @@ export const TEXTOS = {
     'fim.visitar': 'Visit a store',
     'fim.comprar': 'Shop the collection',
 
-    'convite.titulo': 'Private access',
+    'convite.rotulo': 'Private access',
     'convite.apoio': 'Leave your contact to be the first to know.',
     'convite.nome': 'Name',
     'convite.email': 'Email',
@@ -827,11 +840,11 @@ export const TEXTOS = {
     'convite.depois': 'See the page first',
     'convite.erro': 'We could not send it right now. Please try again shortly.',
 
-    'escolha.titulo': 'Thank you. How would you like to continue?',
-    'escolha.visita.titulo': 'Visit a store',
+    'escolha.pergunta': 'Thank you. How would you like to continue?',
+    'escolha.visita.rotulo': 'Visit a store',
     'escolha.visita.apoio': 'Book your visit for an exclusive experience with '
       + 'our personal shopper.',
-    'escolha.loja.titulo': 'Shop online',
+    'escolha.loja.rotulo': 'Shop online',
     'escolha.loja.apoio': 'Secure your Vessel piece from the comfort of home.',
     'escolha.visita.feito': 'We received your request. We will reach out on '
       + 'WhatsApp to arrange the best time.',
