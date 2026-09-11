@@ -65,7 +65,10 @@ Deno), `node --test` para os módulos puros, `pg_cron` para o agendamento.
 -- `campaign_insights` não tem.
 create table public.campaign_insights_hora (
   campaign_id          text        not null,
-  account_id           uuid        not null references public.accounts(id) on delete cascade,
+  -- Sem FK para accounts/campaigns de propósito — mesmo desenho solto que
+  -- `campaign_insights` já usa (spec §3). Ambas são sincronizadas por
+  -- convenção, não por integridade referencial.
+  account_id           uuid        not null,
   dia                  date        not null,
   hora                 smallint    not null check (hora between 0 and 23),
   -- Cru: o que a Meta respondeu para "o dia até agora", no momento da rodada.
