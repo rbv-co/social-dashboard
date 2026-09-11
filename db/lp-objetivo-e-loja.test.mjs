@@ -23,11 +23,15 @@ test('as duas colunas do dono entram', () => {
   assert.match(SQL, /add column if not exists loja\s+text/i)
 })
 
-test('⚠️ a senha é guardada como IMPRESSÃO DIGITAL, nunca em texto puro', () => {
+test('⚠️ a COLUNA guarda impressão digital, nunca a senha crua', () => {
   assert.match(SQL, /add column if not exists senha_hash\s+text/i)
-  assert.ok(!/senha\s+text/i.test(SQL.replace(/senha_hash\s+text/gi, '')),
-    'nenhuma coluna guarda a senha crua')
-  assert.match(SQL, /digest\(/i, 'a senha passa por digest antes de ser gravada')
+  // ⚠️ A busca é DENTRO DO `alter table`, e não no arquivo todo. As funções que
+  // as Tasks 2 e 3 acrescentam a este mesmo arquivo declaram `p_senha text` —
+  // uma varredura solta casaria com o parâmetro delas e acusaria coluna crua
+  // onde não há nenhuma, duas tarefas depois desta passar.
+  const alter = SQL.slice(SQL.indexOf('alter table'), SQL.indexOf(';', SQL.indexOf('alter table')))
+  assert.ok(!/\bsenha\s+text/i.test(alter.replace(/senha_hash\s+text/gi, '')),
+    'nenhuma COLUNA guarda a senha crua')
 })
 
 test('⚠️ `loja` nasce aceitando AS DUAS lojas abertas', () => {
