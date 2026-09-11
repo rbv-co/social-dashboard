@@ -50,6 +50,48 @@ trabalhando nos dois ao mesmo tempo:
 
 ---
 
+## O domínio — decisão de 11/09/2026, e o que ela quase custou
+
+**O dono decidiu: a loja assume `vesselbrasil.com.br`.** Quem digita o domínio
+cai na Shopify; a LP passa a ser destino de campanha em `/universovessel`.
+
+⚠️ **A leitura literal desse pedido quebraria 157 bolsas que já estão com
+clientes.** Medido na produção em 11/09/2026:
+
+| o que | quanto |
+|---|---|
+| peças cadastradas | 161 |
+| **etiquetas NFC já gravadas** | **157** |
+| cartões EAN já produzidos | 159 |
+
+Dentro de cada etiqueta está gravado, fisicamente,
+`https://vesselbrasil.com.br/verify/<código>` — é o que a cliente lê ao encostar
+o celular na bolsa (`src/ferramentas/autenticidade/lotes.js`, constante
+`DOMINIO`). **Etiqueta dentro de bolsa vendida não se regrava.**
+
+E o problema é de DNS, não de site: **um domínio raiz aponta para uma plataforma
+só.** Apontar o apex para a Shopify tira a Vercel do ar naquele endereço, e
+caem junto `/verify`, `/universovessel`, `/termos` e `/privacidade`. As duas
+últimas são as que o formulário promete — sumir com elas é problema de LGPD.
+
+**A saída adotada:** o domínio **fica na Vercel** e a **raiz desvia para a loja**.
+
+| endereço | destino |
+|---|---|
+| `vesselbrasil.com.br` | a loja Shopify |
+| `/universovessel` | a LP |
+| `/verify/<código>` | intacto — as 157 etiquetas seguem válidas |
+| `/termos` · `/privacidade` | intactos |
+
+Consequências no desenho, já incorporadas: **SHOP NOW aponta para a raiz** (fica
+limpo na barra do navegador e dispensa endereço novo para a loja), e a LP deixa
+de ser a porta da marca para ser destino de campanha.
+
+⚠️ **Nunca trocar os servidores de DNS do Registro.br pelos da Vercel** — isso
+mata o e-mail Zoho. O que se mexe são registros, nunca os nameservers.
+
+---
+
 ## Como vai ao ar
 
 A página nova nasce em **`/universovessel-novo`**, publicada de verdade, com a
@@ -61,8 +103,13 @@ isso o Google acha a página inacabada e passa a mostrá-la nos resultados, e
 tirar de lá depois é lento.
 
 **A virada, quando aprovada:** o conteúdo passa a ocupar `/universovessel` e o
-endereço de teste sai. Quem tiver o link antigo continua chegando; quem entra
-pela raiz cai no lugar certo, pelo desvio que já existe.
+endereço de teste sai. Quem tiver o link antigo continua chegando.
+
+⚠️ **A raiz deixa de vir para cá** — ela passa a desviar para a loja (ver "O
+domínio", acima). Logo `/prevenda`, que hoje aponta para `/universovessel`,
+precisa de decisão própria: continua trazendo para a LP, ou segue a raiz para a
+loja? Fica registrado como ponto a confirmar antes da virada, não antes de
+começar.
 
 ⚠️ **Os desvios são temporários (307), nunca permanentes.** Este domínio já
 mudou de capa três vezes (save the date → `/prevenda` → `/universovessel`).
@@ -119,30 +166,47 @@ Foto do ensaio de 07/09 sangrando na tela inteira. `VESSEL` e
 atrás de máscara. Os dois caminhos embaixo. O convite abre sobre ele quando a
 cortina de carregamento sai.
 
-**Em aberto:** a foto. São 424 candidatas; entram como proposta com a imagem ao
-lado, e o dono escolhe.
+**Em aberto:** a foto. São 424 candidatas do ensaio de 07/09, mais as imagens de
+campanha das pastas de produto aprovado (ex.: `VESSEL HERO/HERO.png` — cena de
+aeroporto com duas peças). Entram como proposta com a imagem ao lado; **o dono
+escolhe** (confirmado em 11/09).
 
 ### 2 · Autoralidade
 *Designed by hand. Created with intention.*
 
-⚠️ **Diverge do que o dono descreveu, e o motivo está medido.** Ele pediu
-"desenho/esboço da Raíssa + produto final". Os 9 desenhos que existem no
-repositório (`fotos/cartao/desenhos/`: ALBA, CERNE, ELARA, LINEAR, LUNEA,
-MAELLE, MAREA, ORIANE, SOLENNE) são **desenho técnico** — o mesmo que vai
-impresso no cartão EAN. Ao lado do produto pronto, isso lê como catálogo, não
-como autoria.
+**A imagem: a prancha de vista explodida.** Achada em 11/09 no WorkDrive, em
+`Shared with Me/01. Desenvolvimento de Produtos/02. Aprovados/VESSEL CELINE/Vista Explodida.png`.
 
-**O vídeo tem material melhor:** aos ~4 segundos aparecem os moldes de papel
-sobre o couro, com o cartão **ELARA MINI** ao fundo. É trabalho real,
-fotografado. Proposta: esse quadro ao lado da ELARA pronta.
+O modelo desmontado em 16 componentes numerados, cada um com código, dimensão em
+milímetros e material (couro legítimo, forro microfibra, ferragem zamac
+dourada), as observações técnicas ("bordas pintadas e polidas à mão", "costuras
+reforçadas") e o carimbo **DESENVOLVIDO POR VESSEL BRASIL**, maio de 2024.
 
-Se houver esboço em papel, ele ganha dos dois.
+Ela **prova** a frase do bloco em vez de ilustrá-la: é desenvolvimento interno
+documentado, não catálogo.
+
+Descartado, e o motivo fica escrito: os 9 desenhos de linha do repositório
+(`fotos/cartao/desenhos/`) são o mesmo traço que vai impresso no cartão EAN —
+ao lado do produto pronto, leem como catálogo.
+
+**Segunda imagem, ao lado:** aos ~4 segundos do vídeo aparecem os moldes de
+papel sobre o couro, com o cartão **ELARA MINI** ao fundo — trabalho real,
+fotografado.
+
+⚠️ **As demais pastas de modelo aprovado têm imagem com cara de render**
+(`HERO.png`, `lookbook.png`, `Imagem inteira.png`). Serve em bloco de produto;
+**não serve no bloco do ateliê**, onde a imagem tem de ser do ateliê de verdade.
 
 ### 3 · Ateliê
 *Handmade. Technology perfected.*
 
 O vídeo, em repetição, mudo, 10 a 12 segundos: molde → marcação → máquina →
 acabamento. Detalhes em "O vídeo", abaixo.
+
+**A frase tem duas metades, e cada uma ganha a sua imagem:** o vídeo (a mão
+trabalhando) de um lado, a prancha técnica (o desenho de engenharia) do outro.
+Handmade e technology na mesma composição, as duas provadas com material da
+casa.
 
 ### 4 · Os objetos de desejo
 Três ou quatro modelos, foto grande, nome, uma linha. Sem descrição técnica.
@@ -315,10 +379,11 @@ quadros por segundo, 3,9 MB, **sem faixa de áudio**.
 e acabamento. Saem o rosto do começo e a mesa com cola. Volta sem começo nem fim
 perceptíveis. Alvo de peso: ~2 MB.
 
-⚠️ **576×1024 é resolução de WhatsApp.** Em pé, no celular, ocupando a tela,
-funciona. Esticado na largura de um monitor, fica mole. **No computador entra
-como painel em pé ao lado do texto**, no tamanho que a imagem aguenta. Se
-aparecer o arquivo original, ele pode ocupar mais.
+⚠️ **576×1024 é resolução de WhatsApp, e não há original melhor.** O dono
+confirmou em 11/09 que o arquivo da mesa é o vídeo do ateliê. Em pé, no celular,
+ocupando a tela, funciona. Esticado na largura de um monitor, fica mole. **No
+computador entra como painel em pé ao lado do texto**, no tamanho que a imagem
+aguenta — e é ao lado dele que entra a prancha técnica do bloco 3.
 
 ⚠️ **Quadro de capa obrigatório**, e ele é o que fica para quem pediu menos
 animação no sistema. Nunca apostar conteúdo em vídeo que talvez não toque.
@@ -392,13 +457,23 @@ Antes de chamar o dono para olhar:
 
 ## O que depende do dono (bloqueios)
 
-| # | o que é | por que trava |
+**Resolvidos em 11/09/2026, na mesma conversa:**
+
+| # | era | virou |
 |---|---|---|
-| 1 | **O endereço da loja online.** Ela responde em `y3m93e2yvszg.vesselbrasil.com.br`; `loja.vesselbrasil.com.br` não resolve. | Numa LP de luxo esse endereço aparece na barra do navegador. O conserto é um CNAME no Registro.br — clique do dono, não código. ⚠️ **Nunca trocar os servidores de DNS pelos da Vercel: isso mata o e-mail Zoho.** |
-| 2 | **A foto do hero.** | Proposta entre as 424 do ensaio; a escolha é dele. |
-| 3 | **Os 3–4 modelos do bloco 4.** | Proposta a partir do ensaio; a escolha é dele. |
-| 4 | **O vídeo original**, se existir antes do WhatsApp. | Define o quanto o vídeo pode ocupar no computador. |
-| 5 | **Esboço em papel da Raíssa**, se existir. | Melhoraria o bloco 2 mais que qualquer outra imagem. |
+| 1 | o endereço da loja online (subdomínio de hash) | **Some.** A raiz passa a desviar para a loja, então SHOP NOW aponta para `vesselbrasil.com.br`. Nenhum endereço novo a criar. |
+| 4 | o vídeo original, antes do WhatsApp | **Não existe.** O arquivo da mesa é o vídeo do ateliê. O tratamento assume 576×1024. |
+| 5 | esboço em papel da Raíssa | **Melhor que isso:** a prancha de vista explodida, no WorkDrive. Ver bloco 2. |
+
+**Ainda abertos — e os dois são escolha de gosto, não bloqueio técnico:**
+
+| # | o que é | como se resolve |
+|---|---|---|
+| 2 | **A foto do hero.** | Proposta com a imagem ao lado, entre as 424 do ensaio e as de campanha. O dono escolhe. |
+| 3 | **Os 3–4 modelos do bloco 4.** | Identificar quais aparecem no ensaio de 07/09 e propor. O dono escolhe. |
+
+Nenhum dos dois impede começar: a página se monta com a moldura certa e as
+imagens entram no lugar quando escolhidas.
 
 ---
 
