@@ -650,18 +650,19 @@ async function loadGestaoVistaData(period){
     // e os que foram faturados nela entram. Ver src/compartilhado/data-da-venda.js.
     // O período anterior recebe o MESMO tratamento — senão o "vs. anterior"
     // compararia uma régua com outra.
-    const ajuste=await aplicarDataDaVenda(sbClient,pedidosBrutos,di,df);
-    const ajustePrev=await aplicarDataDaVenda(sbClient,pedidosPrevBrutos,diPrev,dfPrev);
-    if(myLoad!==_gvLoadId)return;
-
     // E O VALOR QUE O BLING CONGELOU ERRADO. Nota fiscal autorizada tranca o
     // pedido: nem a tela do Bling nem a API conseguem corrigir o total depois.
     // As linhas de `bling_pedido_ajuste_valor` dizem o valor que de fato
-    // entrou. Ver src/compartilhado/valor-corrigido.js.
-    // UMA consulta só, aplicada nas DUAS janelas — e depois do data-da-venda,
-    // que é o ponto por onde passam também os pedidos trazidos de outro dia
-    // (o valor deles não vem do Bling, vem de `bling_pedido_nota.total`).
-    const ajustesDeValor=await buscarAjustesDeValor(sbClient);
+    // entrou. Ver src/compartilhado/valor-corrigido.js. Não depende do que o
+    // Bling devolveu (é aplicado DEPOIS, embaixo) — por isso entra no MESMO
+    // Promise.all das duas janelas de data-da-venda, em vez de esperar as
+    // duas terminarem primeiro (code review, 12/09/2026; mesma correção já
+    // feita em tela-de-analise-vendas.vue).
+    const [ajuste,ajustePrev,ajustesDeValor]=await Promise.all([
+      aplicarDataDaVenda(sbClient,pedidosBrutos,di,df),
+      aplicarDataDaVenda(sbClient,pedidosPrevBrutos,diPrev,dfPrev),
+      buscarAjustesDeValor(sbClient),
+    ]);
     if(myLoad!==_gvLoadId)return;
     // `let`, e não `const`: o recorte por time (mais abaixo) reatribui os dois.
     let pedidos=aplicarValorCorrigido(ajuste.pedidos,ajustesDeValor).pedidos;

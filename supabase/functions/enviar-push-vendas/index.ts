@@ -175,11 +175,22 @@ Deno.serve(async (req) => {
   //     Mesma regra dura da Edge: se não der para ler, NÃO ENVIA. Mandar 1.900
   //     quando o telão mostra 1.615 é pior que não mandar nada.
   try {
-    const { data, error } = await sb.from('bling_pedido_ajuste_valor')
-      .select('pedido_id,total_corrigido');
-    if (error) throw new Error(`bling_pedido_ajuste_valor: ${error.message}`);
-    pedRef = aplicarValorCorrigido(pedRef, data || []).pedidos;
-    pedCmp = aplicarValorCorrigido(pedCmp, data || []).pedidos;
+    // Paginado (code review, 12/09/2026): a PostgREST corta em 1000 linhas por
+    // resposta não importa o que se peça — sem paginar, uma correção além da
+    // linha 1000 sumiria calada, e o push diria um número que a tela (que já
+    // pagina, ver src/compartilhado/valor-corrigido.js) não diria.
+    const PAGINA = 1000;
+    const data: { pedido_id: unknown; total_corrigido: unknown }[] = [];
+    for (let inicio = 0; ; inicio += PAGINA) {
+      const { data: pagina, error } = await sb.from('bling_pedido_ajuste_valor')
+        .select('pedido_id,total_corrigido')
+        .range(inicio, inicio + PAGINA - 1);
+      if (error) throw new Error(`bling_pedido_ajuste_valor: ${error.message}`);
+      data.push(...(pagina || []));
+      if (!pagina || pagina.length < PAGINA) break;
+    }
+    pedRef = aplicarValorCorrigido(pedRef, data).pedidos;
+    pedCmp = aplicarValorCorrigido(pedCmp, data).pedidos;
   } catch (e) {
     return json({ ok: true, enviado: false, motivo: 'valor_corrigido_indisponivel', erro: String(e) });
   }

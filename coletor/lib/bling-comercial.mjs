@@ -110,7 +110,13 @@ export async function blingPedidos(token, dataInicial, dataFinal) {
   // um dia alguém ligasse o escopo por equipe nessa conta, e o robô ficaria
   // errado em silêncio. Com a chave, isso não depende de configuração de conta.
   const chave = process.env.SUPABASE_SERVICE_KEY || token;
-  const linhas = await linhasDaJanela(SUPABASE_URL, chave, dataInicial, dataFinal);
+  // As duas leituras são independentes uma da outra (tabelas diferentes, nenhuma
+  // usa o resultado da outra) — em paralelo, não em série (code review, 12/09/2026).
+  // A ORDEM DE APLICAÇÃO continua a mesma de antes: data primeiro, valor depois.
+  const [linhas, ajustes] = await Promise.all([
+    linhasDaJanela(SUPABASE_URL, chave, dataInicial, dataFinal),
+    ajustesDeValor(SUPABASE_URL, chave),
+  ]);
   const pedidos = ajustarPelaDataDaNota(all, linhas, dataInicial, dataFinal).pedidos;
 
   // E O VALOR QUE O BLING CONGELOU ERRADO. Nota autorizada tranca o pedido: o
@@ -124,7 +130,7 @@ export async function blingPedidos(token, dataInicial, dataFinal) {
   //
   // Se a tabela não der para ler, `ajustesDeValor` LANÇA — mesma postura de
   // `linhasDaJanela`, e o robô para em vez de publicar o número velho.
-  return aplicarValorCorrigido(pedidos, await ajustesDeValor(SUPABASE_URL, chave)).pedidos;
+  return aplicarValorCorrigido(pedidos, ajustes).pedidos;
 }
 
 // Lista o catálogo de produtos (id → nome/código/preço). Bounded por segurança.

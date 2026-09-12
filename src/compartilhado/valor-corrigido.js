@@ -21,7 +21,11 @@ export async function buscarAjustesDeValor(sbClient) {
   const linhas = [];
   const PAGINA = 1000;   // o PostgREST corta em 1000 sem avisar — paginar sempre
   try {
-    for (let inicio = 0; inicio < 20000; inicio += PAGINA) {
+    // Sem teto de páginas emprestado (code review, 12/09/2026): quem termina o
+    // laço é `data.length < PAGINA` — um número de páginas escrito à mão só
+    // seria a coisa que trunca esta tabela, que é documentada como exceção
+    // (pequena), diferente da tabela grande de onde esse teto foi copiado.
+    for (let inicio = 0; ; inicio += PAGINA) {
       const { data, error } = await sbClient
         .from('bling_pedido_ajuste_valor')
         .select('pedido_id,total_corrigido')

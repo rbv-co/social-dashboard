@@ -16,20 +16,45 @@
 //
 // A tabela é lida INTEIRA (é de exceção: uma linha por venda congelada errada),
 // sem filtrar pelos pedidos da janela.
+//
+// ⚠️ PAGINADO por `Range` (code review, 12/09/2026): o `limit=10000` sozinho
+// não bastava — a PostgREST corta em 1000 linhas por resposta (`db-max-rows`)
+// não importa o que `limit` peça, sem avisar. A tabela é pequena hoje, mas o
+// corte seria silencioso: robô aplicaria a correção só nas 1000 primeiras
+// linhas. Mesmo `Range` que a ponte do navegador já usa
+// (`src/compartilhado/valor-corrigido.js`).
+const PAGINA = 1000;
+
 export async function ajustesDeValor(supabaseUrl, chave, fetchImpl = fetch) {
-  const alvo = `${supabaseUrl}/rest/v1/bling_pedido_ajuste_valor` +
-    `?select=pedido_id,total_corrigido` +
-    `&limit=10000`;
-  let ultimoErro;
-  for (let tentativa = 0; tentativa < 3; tentativa++) {
-    try {
-      const r = await fetchImpl(alvo, { headers: { apikey: chave, Authorization: 'Bearer ' + chave } });
-      if (!r.ok) throw new Error(`bling_pedido_ajuste_valor -> ${r.status} ${(await r.text()).slice(0, 120)}`);
-      return await r.json();
-    } catch (e) {
-      ultimoErro = e;
-      await new Promise((r) => setTimeout(r, 800 * (tentativa + 1)));
+  const alvo = `${supabaseUrl}/rest/v1/bling_pedido_ajuste_valor?select=pedido_id,total_corrigido`;
+  const linhas = [];
+  for (let inicio = 0; ; inicio += PAGINA) {
+    let pagina;
+    let ultimoErro;
+    for (let tentativa = 0; tentativa < 3; tentativa++) {
+      try {
+        const r = await fetchImpl(alvo, {
+          headers: {
+            apikey: chave, Authorization: 'Bearer ' + chave,
+            Range: `${inicio}-${inicio + PAGINA - 1}`,
+          },
+        });
+        if (!r.ok) throw new Error(`bling_pedido_ajuste_valor -> ${r.status} ${(await r.text()).slice(0, 120)}`);
+        pagina = await r.json();
+        ultimoErro = null;
+        break;
+      } catch (e) {
+        ultimoErro = e;
+        // Sem dormir depois da ÚLTIMA tentativa — dormir ali só atrasa o
+        // throw, ninguém tenta de novo depois dele (achado de code review).
+        if (tentativa < 2) await new Promise((r) => setTimeout(r, 800 * (tentativa + 1)));
+      }
     }
+    if (ultimoErro) {
+      throw new Error('não deu para ler bling_pedido_ajuste_valor: ' + (ultimoErro?.message || ultimoErro));
+    }
+    linhas.push(...pagina);
+    if (pagina.length < PAGINA) break;
   }
-  throw new Error('não deu para ler bling_pedido_ajuste_valor: ' + (ultimoErro?.message || ultimoErro));
+  return linhas;
 }

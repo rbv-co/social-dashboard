@@ -2,22 +2,13 @@
 // PROVA DA MIGRATION CONTRA A PRODUÇÃO, SEM DEIXAR RASTRO.
 // Tudo acontece dentro de uma transação que termina em ROLLBACK — inclusive
 // se algo explodir no meio, por isso o rollback mora no `finally`.
+import './lib/carregar-env.mjs';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-
-// Mesmo carregador de .env dos outros scripts de coletor/ (ex.: consultar.mjs):
-// lê coletor/.env relativo a este arquivo, sem sobrescrever variável já setada.
-for (const raw of readFileSync(join(__dirname, '.env'), 'utf8').split('\n')) {
-  const l = raw.trim(); if (!l || l.startsWith('#')) continue;
-  const i = l.indexOf('='); if (i === -1) continue;
-  const k = l.slice(0, i).trim(); let v = l.slice(i + 1).trim();
-  if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) v = v.slice(1, -1);
-  if (!(k in process.env)) process.env[k] = v;
-}
 
 const sql = readFileSync(join(__dirname, '../db/migrations/2026-09-11-vessel-lista-objetivo-e-loja.sql'), 'utf8');
 const caPath = process.env.PGSSLROOTCERT || join(__dirname, 'supabase-ca.crt');

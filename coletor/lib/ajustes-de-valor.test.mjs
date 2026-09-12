@@ -52,6 +52,20 @@ test('tabela vazia é resposta válida, não erro', async () => {
   assert.deepEqual(await ajustesDeValor('https://x.supabase.co', 'chave', respostaOk([])), []);
 });
 
+test('⚠️ pagina por Range — uma página cheia não é o fim, busca a próxima', async () => {
+  // PostgREST corta em 1000 linhas por resposta mesmo com limit maior — sem
+  // paginar, uma tabela com mais de 1000 correções perderia o resto calado.
+  const pagina1 = Array.from({ length: 1000 }, (_, i) => ({ pedido_id: i, total_corrigido: 1 }));
+  const pagina2 = [{ pedido_id: 1000, total_corrigido: 2 }];
+  const ranges = [];
+  const linhas = await ajustesDeValor('https://x.supabase.co', 'chave', async (u, o) => {
+    ranges.push(o.headers.Range);
+    return { ok: true, json: async () => (ranges.length === 1 ? pagina1 : pagina2) };
+  });
+  assert.equal(linhas.length, 1001, 'as duas páginas juntas, nenhuma linha perdida');
+  assert.deepEqual(ranges, ['0-999', '1000-1999'], 'pediu a segunda página depois de uma primeira cheia');
+});
+
 // ── A COMPOSIÇÃO QUE O ROBÔ FAZ, na ordem que ele faz ─────────────────────
 // `blingPedidos` fala com a rede por variável global e por isso nunca teve
 // teste. O que dá para travar aqui é o que de fato pode quebrar: a ORDEM das

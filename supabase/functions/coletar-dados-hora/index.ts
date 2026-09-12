@@ -95,9 +95,13 @@ async function coletarConta(sb: any, acc: any, dia: string, hora: number, degrad
         campaign_id: campaignId, account_id: accountId, dia, hora,
         gasto_acumulado: gastoAcumulado, conversas_acumuladas: conversasAcumuladas,
         // Coluna se chama "cliques_*" por herança do schema (db/migrations/
-        // 2026-09-12-meta-ads-hora-cliques.sql) — o CONTEÚDO virou visita ao
-        // perfil (profile_visits/profile_views), nunca mais link_click. Ver
-        // visitasNoPerfil() em _shared/delta-de-hora.js.
+        // 2026-09-12-meta-ads-hora-cliques.sql) — o CONTEÚDO é visita ao perfil
+        // (profile_visits/profile_views) QUANDO existir; hoje nenhuma campanha
+        // [+ SEGUIDORES] tem destino "Instagram Profile" configurado, então na
+        // prática isto SEMPRE cai no fallback pra link_click (conferido ao
+        // vivo, 12/09/2026 — ver db/migrations/2026-09-12-meta-ads-hora-
+        // visitas-fallback-clique.sql). Ver visitasNoPerfil() em
+        // _shared/delta-de-hora.js.
         cliques_acumulados: visitasAcumuladas,
         gasto_hora, conversas_hora, cliques_hora,
       };
@@ -210,8 +214,12 @@ Deno.serve(async (req: Request) => {
   let campanhas = 0;
   for (const acc of contas ?? []) {
     campanhas += await coletarConta(sb, acc, dia, hora, degraded);
-    await coletarSeguidoresDaConta(sb, acc, degraded);
-    await coletarVisitasPerfilDaConta(sb, acc, dia, hora, degraded);
+    // Seguidores e visitas ao perfil batem em endpoints e tabelas diferentes
+    // um do outro — não precisam esperar um pelo outro (code review, 12/09/2026).
+    await Promise.all([
+      coletarSeguidoresDaConta(sb, acc, degraded),
+      coletarVisitasPerfilDaConta(sb, acc, dia, hora, degraded),
+    ]);
   }
 
   // 500 quando havia conta pra processar e NADA foi coletado — sinal pro
