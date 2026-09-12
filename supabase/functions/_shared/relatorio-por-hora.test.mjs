@@ -53,15 +53,16 @@ test('montarMensagemSeguidores: null quando nem o total de seguidores nem a visi
   assert.equal(montarMensagemSeguidores('2026-09-12', 13, null, null, null, null), null);
 });
 
-test('montarMensagemSeguidores: período, dia, total de seguidores e visita ao perfil, tudo junto', () => {
+test('⚠️ montarMensagemSeguidores: DUAS PARTES separadas — resultado do período primeiro, totais depois', () => {
   const msg = montarMensagemSeguidores('2026-09-12', 13, 17, 129, 1017, 45);
   assert.equal(
     msg,
     '📊 Seguidores e visitas ao perfil — 13h, 12/09\n\n'
     + 'Novos seguidores no período: +17\n'
+    + 'Visitas ao perfil da conta: 129\n'
+    + '\n'
     + 'Total do dia: +45\n'
-    + 'Total da conta: 1.017\n'
-    + 'Visitas ao perfil da conta: 129',
+    + 'Total da conta: 1.017',
   );
 });
 

@@ -99,15 +99,16 @@ export function montarMensagemWpp(dia, hora, campanhas) {
 // dia, e total) e visita ao perfil. Não existe por campanha pra nenhum dos
 // dois (Meta não atribui nem seguidor nem visita a uma campanha específica).
 //
-// `seguidoresTotal` decide se o bloco de seguidor aparece — é o mais
-// permissivo dos três: a primeira leitura da série tem total mas não tem
-// delta de período (pedido do dono, 12/09/2026: "coloca o total de
-// seguidores também" e depois "novos seguidores no período / total do dia /
-// total da conta"). `null` em cada valor = sem leitura pra essa hora (ou pro
-// dia), não entra na mensagem. `null` geral = nem seguidor (total) nem
-// visita ao perfil tinham o que dizer.
+// DUAS PARTES, separadas por linha em branco (pedido do dono, 12/09/2026:
+// "separa entre total e resultado do horário, tipo novos seguidores, visitas
+// ao perfil ---- total do dia, total da conta"): o RESULTADO DO PERÍODO
+// (novos seguidores + visita ao perfil) primeiro, os TOTAIS (do dia e da
+// conta) depois. Cada linha só entra se o próprio valor não for `null`; cada
+// PARTE só entra se tiver ao menos uma linha; a linha em branco entre as
+// partes só aparece se as duas tiverem conteúdo. `null` geral = nada em
+// nenhuma das duas partes.
 export function montarMensagemSeguidores(dia, hora, seguidoresDelta, visitasPerfilDelta, seguidoresTotal, seguidoresHoje) {
-  if (seguidoresTotal === null && visitasPerfilDelta === null) return null;
+  if (seguidoresTotal === null && seguidoresHoje === null && visitasPerfilDelta === null) return null;
 
   const [ano, mes, d] = dia.split('-');
   const horaStr = String(hora).padStart(2, '0');
@@ -117,20 +118,27 @@ export function montarMensagemSeguidores(dia, hora, seguidoresDelta, visitasPerf
   const linhaNoPeriodo = seguidoresDelta !== null
     ? `Novos seguidores no período: ${comSinal(seguidoresDelta)}`
     : null;
+  // Visita é atividade (nunca negativa), não estoque como seguidor — sem
+  // sinal de "+" na frente.
+  const linhaVisitasPerfil = visitasPerfilDelta !== null
+    ? `Visitas ao perfil da conta: ${visitasPerfilDelta}`
+    : null;
   const linhaDoDia = seguidoresHoje !== null
     ? `Total do dia: ${comSinal(seguidoresHoje)}`
     : null;
   const linhaTotalConta = seguidoresTotal !== null
     ? `Total da conta: ${seguidoresTotal.toLocaleString('pt-BR')}`
     : null;
-  // Visita é atividade (nunca negativa), não estoque como seguidor — sem
-  // sinal de "+" na frente.
-  const linhaVisitasPerfil = visitasPerfilDelta !== null
-    ? `Visitas ao perfil da conta: ${visitasPerfilDelta}`
-    : null;
 
-  return [cabecalho, '', linhaNoPeriodo, linhaDoDia, linhaTotalConta, linhaVisitasPerfil]
-    .filter((l) => l !== null).join('\n');
+  const doPeriodo = [linhaNoPeriodo, linhaVisitasPerfil].filter((l) => l !== null);
+  const totais = [linhaDoDia, linhaTotalConta].filter((l) => l !== null);
+
+  const corpo = [cabecalho, ''];
+  corpo.push(...doPeriodo);
+  if (doPeriodo.length && totais.length) corpo.push('');
+  corpo.push(...totais);
+
+  return corpo.join('\n');
 }
 
 function diaEHoraSP(isoTimestamp) {
