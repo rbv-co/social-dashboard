@@ -73,6 +73,13 @@ create policy so_contas_permitidas on public.campaign_insights_hora
   using (public.pode_ver_conta(account_id::text));
 ```
 
+> **ERRATO (revisão final, 11/09/2026):** este desenho só tem a policy
+> RESTRICTIVE acima — sem NENHUMA policy PERMISSIVE, o Postgres nega toda
+> leitura (RESTRICTIVE só reduz o que uma permissiva já libera). A tabela
+> nasceu lendo 200 + `[]` sempre. Corrigido em
+> `db/migrations/2026-09-11-meta-ads-hora-permissiva.sql` (policy
+> `campaign_insights_hora_leitura`, permissiva, por `p.permissions ? 'meta.hora'`).
+
 - `gasto_acumulado`/`conversas_acumuladas`: o número **cru** que a Meta
   devolveu para "o dia até agora" — fica gravado para auditoria (se o delta
   algum dia parecer errado, dá para conferir contra a fonte).
@@ -117,6 +124,12 @@ por campanha. Passos por conta:
    `campaign_id`+`account_id` (`order by hora desc limit 1`, não
    necessariamente `hora - 1` — uma rodada perdida não pode fazer o delta
    seguinte ficar negativo ou duplicado).
+
+   > **ERRATO (revisão final, 11/09/2026):** faltava excluir a própria hora
+   > da busca. Sem `hora < hora atual`, uma SEGUNDA rodada na mesma hora
+   > encontra a própria escrita anterior como "linha anterior" e o delta se
+   > autocorrompe. Corrigido em `supabase/functions/coletar-dados-hora/index.ts`
+   > (`.lt('hora', hora)`).
 4. `gasto_hora = gasto_acumulado - (linha anterior?.gasto_acumulado ?? 0)`,
    mesma conta para `conversas_hora`. Primeira leitura do dia = o próprio
    acumulado.
@@ -156,6 +169,17 @@ select cron.schedule(
 
 (minuto 5, não em cima da hora — dá folga para a Meta consolidar o minuto
 anterior antes de perguntar "quanto gastou hoje até agora".)
+
+> **ERRATO (revisão final, 11/09/2026):** o primeiro argumento de
+> `disparar_robo` (`p_robo`) acima é `'coletar-dados-hora'`, que começa com
+> `coletar-dados` — e `robos_saude` junta por PREFIXO
+> (`u.robo like x.robo || '%'`). Isso esconde este robô atrás do sucesso do
+> `coletar-dados` crítico (o que renova o token da Meta) e nunca aparece
+> sozinho em `robos_esperados`. Corrigido em
+> `db/migrations/2026-09-11-meta-ads-hora-cron.sql`: o rótulo de robô passou a
+> ser `'meta-hora'` (a Edge Function e o segredo continuam
+> `coletar-dados-hora`, só o 1º argumento muda), com registro próprio em
+> `robos_esperados`.
 
 ---
 
