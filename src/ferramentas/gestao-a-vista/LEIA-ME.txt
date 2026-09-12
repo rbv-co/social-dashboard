@@ -224,5 +224,10 @@ mesma venda apareceria 1.615 num dia e 1.900 noutro.
 pelos ids da janela: filtrar por `in(<ids>)` traria de volta o corte de 500 ids
 que ja morde o cache de vendedores.
 
-O que NAO muda: o Bling, a nota fiscal, o push das 22h e os relatorios do
-coletor. Esta escrito no B31 de docs/pendencias.md.
+O que NAO muda: o Bling e a nota fiscal — o valor errado fica la para sempre, e
+a divergencia fiscal e assunto da contabilidade.
+
+DESDE 12/09/2026 O AJUSTE VALE TAMBEM FORA DAS TELAS: a mensagem das 22h
+(Edge enviar-push-vendas) e os robos do coletor (gestor comercial, relatorios
+comerciais, atualizar-cards) leem a MESMA regra. O que ainda falta e tela para
+cadastrar ajuste — B31 de docs/pendencias.md.

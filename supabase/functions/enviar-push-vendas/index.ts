@@ -19,6 +19,8 @@ import { createClient } from 'jsr:@supabase/supabase-js@2';
 import webpush from 'npm:web-push@3';
 import { agregarVendasPorCanal, montarCorpo } from '../_shared/vendas-do-dia.js';
 import { ajustarPelaDataDaNota } from '../_shared/data-da-venda.js';
+// O valor real de venda que o Bling congelou errada. Mesma regra das telas.
+import { aplicarValorCorrigido } from '../_shared/valor-corrigido.js';
 import { exigirSegredoDeCron } from '../_shared/segredo-de-cron.ts';
 // Quem quer receber ESTE tipo (ver _shared/notificacoes.js). 'vendas' vem
 // ligado por padrão — quem não quiser, o admin desliga na tela de Usuários.
@@ -156,6 +158,30 @@ Deno.serve(async (req) => {
     pedCmp = ajustarPelaDataDaNota(pedCmp, lCmp, diaCmp, diaCmp).pedidos;
   } catch (e) {
     return json({ ok: true, enviado: false, motivo: 'data_da_venda_indisponivel', erro: String(e) });
+  }
+
+  // 2c) E O VALOR QUE O BLING CONGELOU ERRADO. Nota fiscal autorizada tranca o
+  //     pedido: nem a tela do Bling nem a API corrigem o total depois. O valor
+  //     que de fato entrou mora em `bling_pedido_ajuste_valor`, e é o que as
+  //     duas telas de venda já mostram.
+  //
+  //     DEPOIS do ajuste de data, não antes: é aqui que já estão os pedidos
+  //     TRAZIDOS de outro dia, cujo valor vem de `bling_pedido_nota.total` e não
+  //     do Bling. Antes, o ajuste pegaria só metade dos caminhos.
+  //
+  //     OS DOIS DIAS recebem o mesmo tratamento — senão o "vs. ontem" da
+  //     mensagem compararia uma régua com outra.
+  //
+  //     Mesma regra dura da Edge: se não der para ler, NÃO ENVIA. Mandar 1.900
+  //     quando o telão mostra 1.615 é pior que não mandar nada.
+  try {
+    const { data, error } = await sb.from('bling_pedido_ajuste_valor')
+      .select('pedido_id,total_corrigido');
+    if (error) throw new Error(`bling_pedido_ajuste_valor: ${error.message}`);
+    pedRef = aplicarValorCorrigido(pedRef, data || []).pedidos;
+    pedCmp = aplicarValorCorrigido(pedCmp, data || []).pedidos;
+  } catch (e) {
+    return json({ ok: true, enviado: false, motivo: 'valor_corrigido_indisponivel', erro: String(e) });
   }
 
   // 3) Itens por pedido: cache + detalhe do que falta. Se não der pra contar TODOS

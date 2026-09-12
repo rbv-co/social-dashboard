@@ -13,6 +13,9 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 // A regra de qual dia a venda conta + o leitor das linhas. Ver notas-bling.mjs.
 import { ajustarPelaDataDaNota, linhasDaJanela } from './notas-bling.mjs';
+// O valor real de venda que o Bling congelou errada. A regra é a MESMA das telas.
+import { aplicarValorCorrigido } from '../../supabase/functions/_shared/valor-corrigido.js';
+import { ajustesDeValor } from './ajustes-de-valor.mjs';
 
 // Depósito de cada canal foco (mapeado no Bling):
 // ⚠️ ESTA LISTA DEIXOU DE SER A VERDADE em 05/09/2026. Ela ficou só como
@@ -108,7 +111,20 @@ export async function blingPedidos(token, dataInicial, dataFinal) {
   // errado em silêncio. Com a chave, isso não depende de configuração de conta.
   const chave = process.env.SUPABASE_SERVICE_KEY || token;
   const linhas = await linhasDaJanela(SUPABASE_URL, chave, dataInicial, dataFinal);
-  return ajustarPelaDataDaNota(all, linhas, dataInicial, dataFinal).pedidos;
+  const pedidos = ajustarPelaDataDaNota(all, linhas, dataInicial, dataFinal).pedidos;
+
+  // E O VALOR QUE O BLING CONGELOU ERRADO. Nota autorizada tranca o pedido: o
+  // total certo passa a morar em `bling_pedido_ajuste_valor`, e as duas telas de
+  // venda já leem de lá. Sem isto, o telão diria 1.615 e a mensagem das 22h
+  // diria 1.900 para o mesmo dia.
+  //
+  // DEPOIS do ajuste de data, não antes: é aqui que já estão os pedidos
+  // TRAZIDOS de outro dia, cujo valor vem de `bling_pedido_nota.total` e não do
+  // Bling. Antes, o ajuste pegaria só metade dos caminhos.
+  //
+  // Se a tabela não der para ler, `ajustesDeValor` LANÇA — mesma postura de
+  // `linhasDaJanela`, e o robô para em vez de publicar o número velho.
+  return aplicarValorCorrigido(pedidos, await ajustesDeValor(SUPABASE_URL, chave)).pedidos;
 }
 
 // Lista o catálogo de produtos (id → nome/código/preço). Bounded por segurança.

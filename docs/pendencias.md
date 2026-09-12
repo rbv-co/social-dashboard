@@ -685,11 +685,15 @@ código de barras — "tem pasta de cartão" não é "tem cartão bom", e foi as
 os 5 sem código passaram batido por três semanas.
 
 
-### B31 · Valor corrigido › falta tela de cadastro, e os robôs ainda somam o valor do Bling 🟡 *aberto em 12/09/2026*
+### B31 · Valor corrigido › falta a tela de cadastro 🟡 *aberto em 12/09/2026*
 
 **O que já está de pé:** `bling_pedido_ajuste_valor` guarda o valor real de uma
-venda que o Bling congelou errada, e as **duas telas de venda** (Gestão à Vista e
-Análise de Vendas) leem por `supabase/functions/_shared/valor-corrigido.js`.
+venda que o Bling congelou errada, e **todo mundo que fala número de venda já
+lê de lá**, pela mesma regra em `supabase/functions/_shared/valor-corrigido.js`:
+as duas telas (Gestão à Vista e Análise de Vendas), a **mensagem das 22h** (Edge
+`enviar-push-vendas` **v11**, publicada em 12/09/2026 com `verify_jwt: false`
+preservado) e os **robôs do coletor** (gestor comercial, relatórios comerciais e
+`atualizar-cards-comercial`, os três pelo `blingPedidos`).
 
 **Por que existe:** nota fiscal autorizada **tranca o pedido no Bling**. Medido em
 12/09/2026 no pedido nº 2656: o `PUT` devolve **200** com o aviso "Esta venda está
@@ -701,12 +705,18 @@ abre**; e a tela do Bling fica cinza igual. O valor errado é imutável na orige
 1. **Não existe tela para cadastrar o ajuste.** Hoje a linha entra por SQL, de
    super-admin. Enquanto for caso raro, tudo bem; na terceira vez vira
    [[lista à mão]] e alguém vai editar banco no escuro.
-2. **Só as telas leem.** O **push de vendas das 22h**, o **gestor comercial** e os
-   **relatórios do coletor** continuam somando o valor do Bling — então o telão e a
-   mensagem da noite podem discordar em um dia. A regra já mora em `_shared/`, que é
-   onde a Edge e o coletor alcançam: é ligar, não reescrever.
-3. **A tela não mostra que o número foi ajustado.** Os pedidos saem do módulo
+2. **A tela não mostra que o número foi ajustado.** Os pedidos saem do módulo
    marcados com `valorAjustado` e `totalDoBling`, e ninguém desenha isso ainda.
+
+**Cuidado que já está pago e não pode ser desfeito:** o ajuste entra **DEPOIS** do
+`data-da-venda`, nos quatro lugares. É ali que passam também os pedidos *trazidos
+de outro dia*, cujo valor vem de `bling_pedido_nota.total` e não do Bling — antes,
+o ajuste pegaria só metade dos caminhos. Há teste travando as duas ordens em
+`coletor/lib/ajustes-de-valor.test.mjs`.
+
+**E a postura no erro é diferente por lugar, de propósito:** tela que não consegue
+ler o ajuste mostra o valor do Bling (tela de venda vazia é pior); **robô e Edge
+PARAM** — publicar 1.900 quando o telão diz 1.615 é pior que ficar calado.
 
 **O que isto NÃO conserta, e nunca vai:** o Bling e a nota fiscal. A NFC-e 000107
 continua em R$ 1.900,00 — a divergência fiscal é assunto da contabilidade.
