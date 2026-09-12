@@ -96,6 +96,21 @@
                 </div>
               </template>
             </div>
+
+            <div v-if="mensagemSeguidores(d, h)" class="rph-secao">
+              <button class="rph-secao-cabecalho" @click="secoesAbertas.mensagemSeguidores = !secoesAbertas.mensagemSeguidores">
+                <span class="section-label">Mensagem Seguidores</span>
+                <span class="rph-secao-seta" :class="{ aberto: secoesAbertas.mensagemSeguidores }">▸</span>
+              </button>
+              <template v-if="secoesAbertas.mensagemSeguidores">
+                <div class="rph-msg-bloco">
+                  <pre class="rph-msg-wpp">{{ mensagemSeguidores(d, h) }}</pre>
+                  <button class="btn" @click="copiar(mensagemSeguidores(d, h))">
+                    {{ textoCopiado === mensagemSeguidores(d, h) ? 'Copiado!' : 'Copiar' }}
+                  </button>
+                </div>
+              </template>
+            </div>
           </div>
         </div>
       </div>
@@ -110,7 +125,7 @@ import BarraDeTopo from '../../compartilhado/barra-de-topo.vue'
 import FaixaDeErro from '../../compartilhado/faixa-de-erro.vue'
 import { sb } from '../../compartilhado/buscar-e-salvar-dados.js'
 import {
-  agruparPorDiaEHora, comResultado, deSeguidores, comCliques, montarMensagemWpp, formatarReais,
+  agruparPorDiaEHora, comResultado, deSeguidores, comCliques, montarMensagemWpp, montarMensagemSeguidores, formatarReais,
   deltaDeSeguidoresPorHora, seguidoresNaHora,
 } from './relatorio-por-hora.js'
 
@@ -137,7 +152,7 @@ const expandidos = ref(new Set())
 // Expandir/recolher e o toggle "só resultado/todas" são POR TIPO de seção,
 // não por hora isolada — pedido do dono (12/09/2026): um clique afeta a
 // seção inteira, em todas as horas de uma vez, não uma hora só.
-const secoesAbertas = ref({ campanhas: true, seguidores: true, wpp: true })
+const secoesAbertas = ref({ campanhas: true, seguidores: true, wpp: true, mensagemSeguidores: true })
 const modoCampanhas = ref('resultado')
 const modoSeguidores = ref('resultado')
 
@@ -148,6 +163,9 @@ function campanhasParaExibir(h) {
 }
 function seguidoresParaExibir(h) {
   return modoSeguidores.value === 'resultado' ? comCliques(h.campanhas) : deSeguidores(h.campanhas)
+}
+function mensagemSeguidores(d, h) {
+  return montarMensagemSeguidores(d.dia, h.hora, h.campanhas, seguidoresNaHora(deltasSeguidores.value, d.dia, h.hora))
 }
 
 function expandido(dia) {
