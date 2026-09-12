@@ -95,19 +95,24 @@ export function montarMensagemWpp(dia, hora, campanhas) {
 }
 
 // Texto pronto pra mandar no grupo de WhatsApp via Z-API, mesmo espírito de
-// montarMensagemWpp — só com os dois números DA CONTA: seguidores e visita
-// ao perfil. Não existe por campanha pra nenhum dos dois (Meta não atribui
-// nem seguidor nem visita a uma campanha específica). `null` em cada delta =
-// sem leitura pra essa hora, não entra na mensagem. `null` geral = nem um
-// nem outro tinham o que dizer.
-export function montarMensagemSeguidores(dia, hora, seguidoresDelta, visitasPerfilDelta) {
-  if (seguidoresDelta === null && visitasPerfilDelta === null) return null;
+// montarMensagemWpp — com os números DA CONTA: total de seguidores, delta de
+// seguidores, e visita ao perfil. Não existe por campanha pra nenhum dos
+// dois (Meta não atribui nem seguidor nem visita a uma campanha específica).
+//
+// `seguidoresTotal` decide se a linha de seguidor aparece — é mais
+// permissivo que o delta: a primeira leitura da série tem total mas não tem
+// delta (pedido do dono, 12/09/2026: "coloca o total de seguidores também").
+// `null` em cada valor = sem leitura pra essa hora, não entra na mensagem.
+// `null` geral = nem seguidor (total) nem visita ao perfil tinham o que dizer.
+export function montarMensagemSeguidores(dia, hora, seguidoresDelta, visitasPerfilDelta, seguidoresTotal) {
+  if (seguidoresTotal === null && visitasPerfilDelta === null) return null;
 
   const [ano, mes, d] = dia.split('-');
   const horaStr = String(hora).padStart(2, '0');
   const cabecalho = `📊 Seguidores e visitas ao perfil — ${horaStr}h, ${d}/${mes}`;
-  const linhaSeguidores = seguidoresDelta !== null
-    ? `Seguidores da conta: ${seguidoresDelta > 0 ? '+' : ''}${seguidoresDelta}`
+  const linhaSeguidores = seguidoresTotal !== null
+    ? `Seguidores da conta: ${seguidoresTotal.toLocaleString('pt-BR')}`
+      + (seguidoresDelta !== null ? ` (${seguidoresDelta > 0 ? '+' : ''}${seguidoresDelta} nessa hora)` : '')
     : null;
   // Visita é atividade (nunca negativa), não estoque como seguidor — sem
   // sinal de "+" na frente.
@@ -154,7 +159,10 @@ export function deltaDeSeguidoresPorHora(leituras) {
   return ordenado.map((b) => {
     const seguidoresDelta = anterior === null ? null : b.followersCount - anterior.followersCount;
     anterior = b;
-    return { dia: b.dia, hora: b.hora, seguidoresDelta };
+    // O TOTAL vem sempre que existe leitura nesse bucket — inclusive na
+    // primeira da série, que não tem delta mas tem o número absoluto (pedido
+    // do dono, 12/09/2026: "coloca o total de seguidores também").
+    return { dia: b.dia, hora: b.hora, seguidoresDelta, seguidoresTotal: b.followersCount };
   });
 }
 
@@ -164,4 +172,12 @@ export function deltaDeSeguidoresPorHora(leituras) {
 export function seguidoresNaHora(deltas, dia, hora) {
   const achado = deltas.find((d) => d.dia === dia && d.hora === hora);
   return achado ? achado.seguidoresDelta : null;
+}
+
+// O TOTAL absoluto (não o delta) de uma hora específica. `null` só quando não
+// há leitura pra essa hora — ao contrário do delta, a primeira leitura da
+// série TEM total (é o próprio número lido), só não tem "quanto mudou".
+export function seguidoresTotalNaHora(deltas, dia, hora) {
+  const achado = deltas.find((d) => d.dia === dia && d.hora === hora);
+  return achado ? achado.seguidoresTotal : null;
 }

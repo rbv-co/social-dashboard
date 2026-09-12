@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   custoPorLead, agruparPorDiaEHora, tipoDaCampanha, comResultado, semResultado,
-  montarMensagemWpp, montarMensagemSeguidores, deltaDeSeguidoresPorHora, seguidoresNaHora, visitasPerfilNaHora,
+  montarMensagemWpp, montarMensagemSeguidores, deltaDeSeguidoresPorHora, seguidoresNaHora, seguidoresTotalNaHora,
+  visitasPerfilNaHora,
 } from './relatorio-por-hora.js';
 
 test('custoPorLead divide gasto por conversas', () => {
@@ -116,10 +117,10 @@ test('montarMensagemWpp: total zero não inventa custo por lead na mensagem', ()
   assert.doesNotMatch(msg, /\/lead/);
 });
 
-test('deltaDeSeguidoresPorHora: primeira leitura da série vem com delta null, nunca 0', () => {
+test('deltaDeSeguidoresPorHora: primeira leitura da série vem com delta null, nunca 0 — mas COM total', () => {
   const leituras = [{ followers_count: 1000, lido_em: '2026-09-11T13:05:00Z' }];
   const out = deltaDeSeguidoresPorHora(leituras);
-  assert.deepEqual(out, [{ dia: '2026-09-11', hora: 10, seguidoresDelta: null }]);
+  assert.deepEqual(out, [{ dia: '2026-09-11', hora: 10, seguidoresDelta: null, seguidoresTotal: 1000 }]);
 });
 
 test('deltaDeSeguidoresPorHora: calcula o delta contra a leitura anterior, ganho e perda', () => {
@@ -167,29 +168,44 @@ test('seguidoresNaHora: acha a hora certa, e null quando não tem leitura', () =
   assert.equal(seguidoresNaHora(deltas, '2026-09-11', 15), null, 'hora sem leitura nenhuma');
 });
 
-test('montarMensagemSeguidores: null quando nem seguidor nem visita ao perfil têm delta', () => {
-  assert.equal(montarMensagemSeguidores('2026-09-12', 0, null, null), null);
+test('⚠️ seguidoresTotalNaHora: TEM total mesmo na primeira leitura, que não tem delta', () => {
+  const deltas = deltaDeSeguidoresPorHora([
+    { followers_count: 1000, lido_em: '2026-09-11T13:05:00Z' },
+    { followers_count: 1005, lido_em: '2026-09-11T14:05:00Z' },
+  ]);
+  assert.equal(seguidoresTotalNaHora(deltas, '2026-09-11', 10), 1000, 'primeira leitura: sem delta, mas com total');
+  assert.equal(seguidoresTotalNaHora(deltas, '2026-09-11', 11), 1005);
+  assert.equal(seguidoresTotalNaHora(deltas, '2026-09-11', 15), null, 'hora sem leitura nenhuma');
 });
 
-test('montarMensagemSeguidores: seguidor e visita ao perfil, os dois juntos', () => {
-  const msg = montarMensagemSeguidores('2026-09-12', 0, 144, 553);
-  assert.equal(msg, '📊 Seguidores e visitas ao perfil — 00h, 12/09\n\nSeguidores da conta: +144\nVisitas ao perfil da conta: 553');
+test('montarMensagemSeguidores: null quando nem o total de seguidores nem a visita ao perfil têm dado', () => {
+  assert.equal(montarMensagemSeguidores('2026-09-12', 0, null, null, null), null);
+});
+
+test('montarMensagemSeguidores: total, delta de seguidor e visita ao perfil, todos juntos', () => {
+  const msg = montarMensagemSeguidores('2026-09-12', 0, 144, 553, 5234);
+  assert.equal(msg, '📊 Seguidores e visitas ao perfil — 00h, 12/09\n\nSeguidores da conta: 5.234 (+144 nessa hora)\nVisitas ao perfil da conta: 553');
 });
 
 test('montarMensagemSeguidores: delta de seguidor negativo aparece sem sinal de mais', () => {
-  const msg = montarMensagemSeguidores('2026-09-12', 0, -3, null);
-  assert.match(msg, /Seguidores da conta: -3/);
+  const msg = montarMensagemSeguidores('2026-09-12', 0, -3, null, 5000);
+  assert.match(msg, /Seguidores da conta: 5\.000 \(-3 nessa hora\)/);
 });
 
 test('montarMensagemSeguidores: visita ao perfil nunca leva sinal de mais (é atividade, não estoque)', () => {
-  const msg = montarMensagemSeguidores('2026-09-12', 0, null, 8);
+  const msg = montarMensagemSeguidores('2026-09-12', 0, null, 8, null);
   assert.match(msg, /Visitas ao perfil da conta: 8/);
   assert.doesNotMatch(msg, /Seguidores da conta/);
 });
 
-test('montarMensagemSeguidores: só um dos dois com leitura — não menciona o outro', () => {
-  const msg = montarMensagemSeguidores('2026-09-12', 0, 12, null);
-  assert.equal(msg, '📊 Seguidores e visitas ao perfil — 00h, 12/09\n\nSeguidores da conta: +12');
+test('⚠️ montarMensagemSeguidores: primeira leitura da série — total aparece SEM parêntese de delta', () => {
+  const msg = montarMensagemSeguidores('2026-09-12', 0, null, null, 5000);
+  assert.equal(msg, '📊 Seguidores e visitas ao perfil — 00h, 12/09\n\nSeguidores da conta: 5.000');
+});
+
+test('montarMensagemSeguidores: só o total, sem visita ao perfil — não menciona a outra', () => {
+  const msg = montarMensagemSeguidores('2026-09-12', 0, 12, null, 5012);
+  assert.equal(msg, '📊 Seguidores e visitas ao perfil — 00h, 12/09\n\nSeguidores da conta: 5.012 (+12 nessa hora)');
 });
 
 test('visitasPerfilNaHora: acha a hora certa, e null quando não tem leitura', () => {

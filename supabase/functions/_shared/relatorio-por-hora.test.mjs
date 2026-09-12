@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   custoPorLead, agruparPorDiaEHora, tipoDaCampanha,
-  montarMensagemWpp, montarMensagemSeguidores, deltaDeSeguidoresPorHora, seguidoresNaHora,
+  montarMensagemWpp, montarMensagemSeguidores, deltaDeSeguidoresPorHora, seguidoresNaHora, seguidoresTotalNaHora,
 } from './relatorio-por-hora.js';
 
 // Cópia de src/ferramentas/meta-ads/relatorio-por-hora.test.mjs, só a parte
@@ -48,20 +48,22 @@ test('montarMensagemWpp: lista as campanhas WPP e termina com o consolidado', ()
   assert.match(msg, /Total: 4 leads · R\$\s?100,00 investidos · R\$\s?25,00\/lead$/);
 });
 
-test('montarMensagemSeguidores: null quando nem seguidor nem visita ao perfil têm delta', () => {
-  assert.equal(montarMensagemSeguidores('2026-09-12', 13, null, null), null);
+test('montarMensagemSeguidores: null quando nem o total de seguidores nem a visita ao perfil têm dado', () => {
+  assert.equal(montarMensagemSeguidores('2026-09-12', 13, null, null, null), null);
 });
 
-test('montarMensagemSeguidores: seguidor e visita ao perfil, os dois juntos', () => {
-  const msg = montarMensagemSeguidores('2026-09-12', 13, 17, 129);
-  assert.equal(msg, '📊 Seguidores e visitas ao perfil — 13h, 12/09\n\nSeguidores da conta: +17\nVisitas ao perfil da conta: 129');
+test('montarMensagemSeguidores: total, delta de seguidor e visita ao perfil, todos juntos', () => {
+  const msg = montarMensagemSeguidores('2026-09-12', 13, 17, 129, 1017);
+  assert.equal(msg, '📊 Seguidores e visitas ao perfil — 13h, 12/09\n\nSeguidores da conta: 1.017 (+17 nessa hora)\nVisitas ao perfil da conta: 129');
 });
 
-test('deltaDeSeguidoresPorHora + seguidoresNaHora: acha o delta da hora certa', () => {
+test('deltaDeSeguidoresPorHora + seguidoresNaHora/seguidoresTotalNaHora: acham a hora certa', () => {
   const deltas = deltaDeSeguidoresPorHora([
     { followers_count: 1000, lido_em: '2026-09-12T15:05:00Z' }, // 12h SP
     { followers_count: 1017, lido_em: '2026-09-12T16:05:00Z' }, // 13h SP: +17
   ]);
   assert.equal(seguidoresNaHora(deltas, '2026-09-12', 13), 17);
   assert.equal(seguidoresNaHora(deltas, '2026-09-12', 20), null, 'hora sem leitura nenhuma');
+  assert.equal(seguidoresTotalNaHora(deltas, '2026-09-12', 12), 1000, 'primeira leitura: sem delta, mas com total');
+  assert.equal(seguidoresTotalNaHora(deltas, '2026-09-12', 13), 1017);
 });

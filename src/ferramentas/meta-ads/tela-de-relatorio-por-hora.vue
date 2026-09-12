@@ -123,7 +123,7 @@ import FaixaDeErro from '../../compartilhado/faixa-de-erro.vue'
 import { sb } from '../../compartilhado/buscar-e-salvar-dados.js'
 import {
   agruparPorDiaEHora, comResultado, montarMensagemWpp, montarMensagemSeguidores, formatarReais,
-  deltaDeSeguidoresPorHora, seguidoresNaHora, visitasPerfilNaHora,
+  deltaDeSeguidoresPorHora, seguidoresNaHora, seguidoresTotalNaHora, visitasPerfilNaHora,
 } from './relatorio-por-hora.js'
 
 const router = useRouter()
@@ -164,6 +164,7 @@ function mensagemSeguidores(d, h) {
     d.dia, h.hora,
     seguidoresNaHora(deltasSeguidores.value, d.dia, h.hora),
     visitasPerfilNaHora(visitasPerfil.value, d.dia, h.hora),
+    seguidoresTotalNaHora(deltasSeguidores.value, d.dia, h.hora),
   )
 }
 
