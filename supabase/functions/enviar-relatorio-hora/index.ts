@@ -79,7 +79,7 @@ Deno.serve(async (req: Request) => {
   // horas anteriores pra somar "Total de leads no dia" (pedido de um colega
   // no grupo, repassado pelo dono, 12/09/2026).
   const [linhasRes, campanhasRes, leiturasRes, visitasRes] = await Promise.all([
-    sb.from('campaign_insights_hora').select('dia,hora,campaign_id,gasto_hora,conversas_hora')
+    sb.from('campaign_insights_hora').select('dia,hora,campaign_id,gasto_hora,gasto_acumulado,conversas_hora')
       .eq('account_id', CONTA_VESSEL).eq('dia', dia),
     sb.from('campaigns').select('campaign_id,name'),
     // 25h de folga: cobre a virada do dia (seguidor é estoque, delta

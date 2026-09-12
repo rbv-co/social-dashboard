@@ -38,12 +38,17 @@ export function agruparPorDiaEHora(linhas, nomesPorCampanha = {}) {
     if (!porHora.has(l.hora)) porHora.set(l.hora, []);
     const gastoHora = Number(l.gasto_hora) || 0;
     const conversasHora = Number(l.conversas_hora) || 0;
+    // Acumulado do DIA até essa hora, já vem pronto do robô (mesma coluna que
+    // ele usa pra calcular o próprio gastoHora) — pedido do dono (12/09/2026):
+    // "gasto total da campanha junto ao gasto do período" na Mensagem WPP.
+    const gastoAcumulado = Number(l.gasto_acumulado) || 0;
     const nome = nomesPorCampanha[l.campaign_id] || l.campaign_id;
     porHora.get(l.hora).push({
       campaignId: l.campaign_id,
       nome,
       tipo: tipoDaCampanha(nome),
       gastoHora,
+      gastoAcumulado,
       conversasHora,
       custoPorLead: custoPorLead(gastoHora, conversasHora),
     });
@@ -91,7 +96,8 @@ export function montarMensagemWpp(dia, hora, campanhas, leadsHoje, gastoHoje) {
 
   const [ano, mes, d] = dia.split('-');
   const horaStr = String(hora).padStart(2, '0');
-  const linhas = wpp.map((c) => `${c.nome} — ${c.conversasHora} lead${c.conversasHora === 1 ? '' : 's'} · Gasto: ${formatarReais(c.gastoHora)}`);
+  const linhas = wpp.map((c) => `${c.nome} — ${c.conversasHora} lead${c.conversasHora === 1 ? '' : 's'}`
+    + ` · Gasto no período: ${formatarReais(c.gastoHora)} · Gasto total: ${formatarReais(c.gastoAcumulado)}`);
 
   const totalLeads = wpp.reduce((s, c) => s + c.conversasHora, 0);
   const totalGasto = wpp.reduce((s, c) => s + c.gastoHora, 0);

@@ -99,22 +99,22 @@ test('⚠️ montarMensagemWpp: lista as campanhas, depois Leads no período / G
   // Pedido de um colega no grupo, repassado pelo dono (12/09/2026): "mesmo
   // esquema" da Mensagem Seguidores — número nunca solto, sempre com rótulo.
   const campanhas = [
-    { campaignId: 'c1', nome: '[CAMPANHA WPP] Criativo 1', tipo: 'wpp', gastoHora: 100, conversasHora: 4 },
-    { campaignId: 'c2', nome: '[CAMPANHA WPP] Criativo 2', tipo: 'wpp', gastoHora: 50, conversasHora: 1 },
-    { campaignId: 'c3', nome: 'Post do Instagram', tipo: 'outro', gastoHora: 999, conversasHora: 999 },
+    { campaignId: 'c1', nome: '[CAMPANHA WPP] Criativo 1', tipo: 'wpp', gastoHora: 100, gastoAcumulado: 400, conversasHora: 4 },
+    { campaignId: 'c2', nome: '[CAMPANHA WPP] Criativo 2', tipo: 'wpp', gastoHora: 50, gastoAcumulado: 120, conversasHora: 1 },
+    { campaignId: 'c3', nome: 'Post do Instagram', tipo: 'outro', gastoHora: 999, gastoAcumulado: 999, conversasHora: 999 },
   ];
   const msg = montarMensagemWpp('2026-09-11', 23, campanhas);
   assert.match(msg, /^📊 Leads recebidos — 23h, 11\/09/);
-  assert.match(msg, /\[CAMPANHA WPP\] Criativo 1 — 4 leads · Gasto: R\$\s?100,00/);
-  assert.match(msg, /\[CAMPANHA WPP\] Criativo 2 — 1 lead · Gasto: R\$\s?50,00/);
+  assert.match(msg, /\[CAMPANHA WPP\] Criativo 1 — 4 leads · Gasto no período: R\$\s?100,00 · Gasto total: R\$\s?400,00/);
+  assert.match(msg, /\[CAMPANHA WPP\] Criativo 2 — 1 lead · Gasto no período: R\$\s?50,00 · Gasto total: R\$\s?120,00/);
   assert.doesNotMatch(msg, /Post do Instagram/, 'campanha fora do WPP vazou pra mensagem');
   assert.match(msg, /Leads no período: 5\nGasto: R\$\s?150,00\nCusto por lead: R\$\s?30,00$/);
 });
 
 test('montarMensagemWpp: total zero não inventa custo por lead na mensagem', () => {
-  const campanhas = [{ campaignId: 'c1', nome: '[CAMPANHA WPP] X', tipo: 'wpp', gastoHora: 40, conversasHora: 0 }];
+  const campanhas = [{ campaignId: 'c1', nome: '[CAMPANHA WPP] X', tipo: 'wpp', gastoHora: 40, gastoAcumulado: 90, conversasHora: 0 }];
   const msg = montarMensagemWpp('2026-09-11', 23, campanhas);
-  assert.match(msg, /X — 0 leads/);
+  assert.match(msg, /X — 0 leads · Gasto no período: R\$\s?40,00 · Gasto total: R\$\s?90,00/);
   assert.match(msg, /Leads no período: 0\nGasto: R\$\s?40,00$/);
   assert.doesNotMatch(msg, /Custo por lead/);
 });
