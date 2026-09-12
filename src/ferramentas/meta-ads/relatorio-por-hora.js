@@ -106,6 +106,12 @@ export function montarMensagemWpp(dia, hora, campanhas, leadsHoje, gastoHoje) {
   const horaStr = String(hora).padStart(2, '0');
   const linhas = wpp.map((c) => `${c.nome} — ${c.conversasHora} lead${c.conversasHora === 1 ? '' : 's'}`
     + ` · Gasto no período: ${formatarReais(c.gastoHora)} · Gasto total: ${formatarReais(c.gastoAcumulado)}`);
+  // Soma o "Gasto total" (acumulado do dia) das campanhas LISTADAS acima —
+  // pedido do dono (12/09/2026: "coloca um gasto total das 3 campanhas lá na
+  // linha de baixo"). Fica logo abaixo da lista, separado do "Total de gasto
+  // no dia" (que soma o dia inteiro, não só estas campanhas desta lista).
+  const totalGastoAcumulado = wpp.reduce((s, c) => s + c.gastoAcumulado, 0);
+  const linhaGastoTotalCampanhas = `Gasto total das campanhas: ${formatarReais(totalGastoAcumulado)}`;
 
   const totalLeads = wpp.reduce((s, c) => s + c.conversasHora, 0);
   const totalGasto = wpp.reduce((s, c) => s + c.gastoHora, 0);
@@ -121,7 +127,7 @@ export function montarMensagemWpp(dia, hora, campanhas, leadsHoje, gastoHoje) {
   const doPeriodo = [linhaNoPeriodo, linhaGasto, linhaCustoPorLead].filter((l) => l !== null);
   const doDia = [linhaLeadsDoDia, linhaGastoDoDia].filter((l) => l !== null);
 
-  const corpo = [cabecalho, '', ...linhas, '', ...doPeriodo];
+  const corpo = [cabecalho, '', ...linhas, linhaGastoTotalCampanhas, '', ...doPeriodo];
   if (doDia.length) corpo.push('', ...doDia);
   return corpo.join('\n');
 }

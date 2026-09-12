@@ -46,7 +46,7 @@ test('montarMensagemWpp: lista as campanhas, depois Leads no período / Gasto / 
   assert.match(msg, /^📊 Leads recebidos — 13h, 12\/09/);
   assert.match(msg, /\[CAMPANHA WPP\] Criativo 1 — 4 leads · Gasto no período: R\$\s?100,00 · Gasto total: R\$\s?400,00/);
   assert.doesNotMatch(msg, /Post do Instagram/, 'campanha fora do WPP vazou pra mensagem');
-  assert.match(msg, /Leads no período: 4\nGasto: R\$\s?100,00\nCusto por lead: R\$\s?25,00\n\nTotal de leads no dia: 9\nTotal de gasto no dia: R\$\s?145,90$/);
+  assert.match(msg, /Gasto total das campanhas: R\$\s?400,00\n\nLeads no período: 4\nGasto: R\$\s?100,00\nCusto por lead: R\$\s?25,00\n\nTotal de leads no dia: 9\nTotal de gasto no dia: R\$\s?145,90$/);
 });
 
 test('leadsWppNoDia/gastoWppNoDia: somam só WPP, em todas as horas do dia', () => {

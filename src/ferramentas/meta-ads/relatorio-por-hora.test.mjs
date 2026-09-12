@@ -108,13 +108,16 @@ test('⚠️ montarMensagemWpp: lista as campanhas, depois Leads no período / G
   assert.match(msg, /\[CAMPANHA WPP\] Criativo 1 — 4 leads · Gasto no período: R\$\s?100,00 · Gasto total: R\$\s?400,00/);
   assert.match(msg, /\[CAMPANHA WPP\] Criativo 2 — 1 lead · Gasto no período: R\$\s?50,00 · Gasto total: R\$\s?120,00/);
   assert.doesNotMatch(msg, /Post do Instagram/, 'campanha fora do WPP vazou pra mensagem');
-  assert.match(msg, /Leads no período: 5\nGasto: R\$\s?150,00\nCusto por lead: R\$\s?30,00$/);
+  // "Gasto total das campanhas" logo abaixo da lista (400+120, NÃO soma a
+  // c3 que é 'outro') — antes do bloco "Leads no período".
+  assert.match(msg, /Gasto total: R\$\s?120,00\nGasto total das campanhas: R\$\s?520,00\n\nLeads no período: 5\nGasto: R\$\s?150,00\nCusto por lead: R\$\s?30,00$/);
 });
 
 test('montarMensagemWpp: total zero não inventa custo por lead na mensagem', () => {
   const campanhas = [{ campaignId: 'c1', nome: '[CAMPANHA WPP] X', tipo: 'wpp', gastoHora: 40, gastoAcumulado: 90, conversasHora: 0 }];
   const msg = montarMensagemWpp('2026-09-11', 23, campanhas);
   assert.match(msg, /X — 0 leads · Gasto no período: R\$\s?40,00 · Gasto total: R\$\s?90,00/);
+  assert.match(msg, /Gasto total das campanhas: R\$\s?90,00/, 'com uma campanha só, o total das campanhas é o dela mesma');
   assert.match(msg, /Leads no período: 0\nGasto: R\$\s?40,00$/);
   assert.doesNotMatch(msg, /Custo por lead/);
 });
