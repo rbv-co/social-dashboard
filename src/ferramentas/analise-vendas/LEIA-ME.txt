@@ -120,3 +120,24 @@ da exibicao.
 ⚠️ O TOTAL DO PERIODO NAO MUDA. Ele vem dos pedidos, nao da lista de canais —
 entao a soma dos canais visiveis pode ficar menor que o total. E de proposito:
 venda que aconteceu e faturamento real, e o dono pediu para manter o historico.
+
+VALOR QUE O BLING CONGELOU ERRADO (12/09/2026)
+----------------------------------------------
+Mesma regra e MESMO modulo da Gestao a Vista
+(`supabase/functions/_shared/valor-corrigido.js`, pela ponte
+`src/compartilhado/valor-corrigido.js`) — duas telas de venda corrigindo valor
+por conta propria divergiriam no primeiro ajuste.
+
+Nota fiscal autorizada tranca o pedido no Bling: o PUT responde 200 e nao grava,
+estornar contas/estoque nao destrava, e a tela do Bling fica cinza. O valor real
+passa a morar em `bling_pedido_ajuste_valor`.
+
+⚠️ AS TRES JANELAS RECEBEM O AJUSTE (atual, anterior e a de 15 dias do grafico),
+pelo mesmo motivo do recorte por time: corrigir so a atual faria o comparativo
+medir uma regua contra a outra.
+
+⚠️ O ajuste entra DEPOIS do data-da-venda — e ali que passam tambem os pedidos
+trazidos de outro dia, cujo valor vem de `bling_pedido_nota.total`.
+
+O que NAO muda: o Bling, a nota fiscal, o push das 22h e os relatorios do
+coletor. Esta escrito no B31 de docs/pendencias.md.

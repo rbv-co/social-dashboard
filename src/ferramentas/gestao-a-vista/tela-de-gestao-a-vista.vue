@@ -134,6 +134,7 @@ import { filtrarPedidosPorCanal, depositosVisiveis, prepararEstoque, statusSaldo
 import { montarLinhas, posicionarLinhas, alturaComum } from './velocimetro-gv.js'
 import { agruparCanais, estadoDoGrupo, alternarGrupo } from '../../compartilhado/grupo-do-canal.js'
 import { aplicarDataDaVenda } from '../../compartilhado/data-da-venda.js'
+import { buscarAjustesDeValor, aplicarValorCorrigido } from '../../compartilhado/valor-corrigido.js'
 // Quando a recarga de 5 minutos deve acontecer — e quando é só desperdício.
 import { decidirNoTique, decidirAoVoltar } from '../../compartilhado/recarga-automatica.js'
 // A PORTA DO BLING E O QUE FAZER QUANDO ELE NÃO RESPONDE. Mesmo módulo da
@@ -652,9 +653,19 @@ async function loadGestaoVistaData(period){
     const ajuste=await aplicarDataDaVenda(sbClient,pedidosBrutos,di,df);
     const ajustePrev=await aplicarDataDaVenda(sbClient,pedidosPrevBrutos,diPrev,dfPrev);
     if(myLoad!==_gvLoadId)return;
+
+    // E O VALOR QUE O BLING CONGELOU ERRADO. Nota fiscal autorizada tranca o
+    // pedido: nem a tela do Bling nem a API conseguem corrigir o total depois.
+    // As linhas de `bling_pedido_ajuste_valor` dizem o valor que de fato
+    // entrou. Ver src/compartilhado/valor-corrigido.js.
+    // UMA consulta só, aplicada nas DUAS janelas — e depois do data-da-venda,
+    // que é o ponto por onde passam também os pedidos trazidos de outro dia
+    // (o valor deles não vem do Bling, vem de `bling_pedido_nota.total`).
+    const ajustesDeValor=await buscarAjustesDeValor(sbClient);
+    if(myLoad!==_gvLoadId)return;
     // `let`, e não `const`: o recorte por time (mais abaixo) reatribui os dois.
-    let pedidos=ajuste.pedidos;
-    let pedidosPrev=ajustePrev.pedidos;
+    let pedidos=aplicarValorCorrigido(ajuste.pedidos,ajustesDeValor).pedidos;
+    let pedidosPrev=aplicarValorCorrigido(ajustePrev.pedidos,ajustesDeValor).pedidos;
 
     // Supabase: pode rodar em paralelo (API diferente)
     const[canaisCheio,metasRows,eqTimes,eqMembros,eqMembrosDeGrupo,depsRows,vincRows]=await Promise.all([

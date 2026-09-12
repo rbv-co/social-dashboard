@@ -685,6 +685,33 @@ código de barras — "tem pasta de cartão" não é "tem cartão bom", e foi as
 os 5 sem código passaram batido por três semanas.
 
 
+### B31 · Valor corrigido › falta tela de cadastro, e os robôs ainda somam o valor do Bling 🟡 *aberto em 12/09/2026*
+
+**O que já está de pé:** `bling_pedido_ajuste_valor` guarda o valor real de uma
+venda que o Bling congelou errada, e as **duas telas de venda** (Gestão à Vista e
+Análise de Vendas) leem por `supabase/functions/_shared/valor-corrigido.js`.
+
+**Por que existe:** nota fiscal autorizada **tranca o pedido no Bling**. Medido em
+12/09/2026 no pedido nº 2656: o `PUT` devolve **200** com o aviso "Esta venda está
+bloqueada para edição e foi salva parcialmente" e **não grava nada** (conferido por
+GET + diff); estornar contas e estornar estoque — o destrave documentado — **não
+abre**; e a tela do Bling fica cinza igual. O valor errado é imutável na origem.
+
+**O que falta, e é o que importa:**
+1. **Não existe tela para cadastrar o ajuste.** Hoje a linha entra por SQL, de
+   super-admin. Enquanto for caso raro, tudo bem; na terceira vez vira
+   [[lista à mão]] e alguém vai editar banco no escuro.
+2. **Só as telas leem.** O **push de vendas das 22h**, o **gestor comercial** e os
+   **relatórios do coletor** continuam somando o valor do Bling — então o telão e a
+   mensagem da noite podem discordar em um dia. A regra já mora em `_shared/`, que é
+   onde a Edge e o coletor alcançam: é ligar, não reescrever.
+3. **A tela não mostra que o número foi ajustado.** Os pedidos saem do módulo
+   marcados com `valorAjustado` e `totalDoBling`, e ninguém desenha isso ainda.
+
+**O que isto NÃO conserta, e nunca vai:** o Bling e a nota fiscal. A NFC-e 000107
+continua em R$ 1.900,00 — a divergência fiscal é assunto da contabilidade.
+
+
 ## Parte C — Ideias guardadas (ninguém pediu ainda)
 
 ### C2 · Gestor de Tráfego › subir campanha por upload 🟡 *metade já está de pé — conferido em 18/08*

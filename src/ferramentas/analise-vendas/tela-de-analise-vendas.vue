@@ -91,6 +91,7 @@ import {
 import { adminToast } from '../../compartilhado/avisos.js'
 import { hojeLocal, diasAtras } from '../../compartilhado/datas.js'
 import { aplicarDataDaVenda } from '../../compartilhado/data-da-venda.js'
+import { buscarAjustesDeValor, aplicarValorCorrigido } from '../../compartilhado/valor-corrigido.js'
 // A PORTA DO BLING E O QUE FAZER QUANDO ELE NÃO RESPONDE — mesmo módulo da
 // Gestão à Vista, para as duas telas de venda nunca discordarem sobre isso.
 import { chamarBling, paginasDoBling, ErroDoBling, textoDoAviso } from '../../compartilhado/chamada-do-bling.js'
@@ -439,11 +440,20 @@ async function loadSalesAnalysisData(period,opcoes){
     // recebem o mesmo tratamento — a atual, a anterior (senão o comparativo
     // mistura duas réguas) e a de 15 dias do gráfico.
     // Ver src/compartilhado/data-da-venda.js.
-    const[aj,ajPrev,aj15]=await Promise.all([
+    // E O VALOR QUE O BLING CONGELOU ERRADO: nota autorizada tranca o pedido, e
+    // o total certo passa a morar em `bling_pedido_ajuste_valor`. Uma consulta
+    // só, aplicada nas TRÊS janelas pelo mesmo motivo do recorte abaixo — e
+    // depois do data-da-venda, que é por onde passam também os pedidos trazidos
+    // de outro dia. Ver src/compartilhado/valor-corrigido.js.
+    const[aj,ajPrev,aj15,ajustesDeValor]=await Promise.all([
       aplicarDataDaVenda(sbClient,pedidosBrutos,di,df),
       aplicarDataDaVenda(sbClient,pedidosPrevBrutos,diPrev,dfPrev),
       aplicarDataDaVenda(sbClient,pedidos15Brutos,di15,df15),
+      buscarAjustesDeValor(sbClient),
     ]);
+    aj.pedidos=aplicarValorCorrigido(aj.pedidos,ajustesDeValor).pedidos;
+    ajPrev.pedidos=aplicarValorCorrigido(ajPrev.pedidos,ajustesDeValor).pedidos;
+    aj15.pedidos=aplicarValorCorrigido(aj15.pedidos,ajustesDeValor).pedidos;
     // AS TRÊS JANELAS RECEBEM O MESMO RECORTE. Recortar só a atual faria o
     // comparativo ("vs período anterior") medir a loja dela contra a empresa
     // inteira — um número errado com cara de verdade.
