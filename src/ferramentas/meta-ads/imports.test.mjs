@@ -17,5 +17,5 @@ guardarImports(import.meta.url, {
   // Quantas telas a pasta tem hoje. Se cair, é `.vue` sumindo — e o guarda
   // passaria por estar vazio, que é o mesmo que não existir. Mexer aqui é de
   // propósito, nunca de passagem.
-  minimoDeTelas: 10,
+  minimoDeTelas: 11,
 })

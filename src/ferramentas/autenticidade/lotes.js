@@ -276,11 +276,27 @@ export function fraseDaRecusa(motivo, dados = {}) {
       return `Não dá para excluir: ${n} peça(s)${onde} já têm garantia registrada `
         + 'por uma cliente. Apagar tiraria a garantia dela.'
     }
+    // ⚠️ O CARTÃO IMPRESSO É A TERCEIRA FORMA DE A PEÇA JÁ EXISTIR NO MUNDO, e
+    // a mais difícil de desfazer: a etiqueta NFC se regrava, o papel dentro da
+    // bolsa não. Aqui também não há conselho a dar — só explicar, porque a
+    // pessoa vai olhar a aba Gravar e não achar nada gravado.
+    case 'tem_cartao': {
+      const n = d.cartoes ?? 1
+      const onde = d.total == null ? '' : ' deste lote'
+      return `Não dá para excluir: ${n} peça(s)${onde} já têm cartão EAN impresso, `
+        + 'com o número de série no papel. Apagar liberaria esse número para outra peça, '
+        + 'e passariam a existir duas bolsas com a mesma identidade.'
+    }
     case 'esta_gravada':
       return 'Esta etiqueta já foi gravada e pode estar dentro de uma bolsa. '
         + 'Em vez de excluir, dê baixa nela com o motivo.'
     case 'abaixo_do_gravado':
-      return `Não dá para diminuir tanto: ${d.gravadas} peça(s) já foram gravadas. `
+      // ⚠️ "PRESAS", E NÃO "GRAVADAS". Desde 11/09/2026 o banco conta aqui três
+      // coisas — gravada, com garantia e COM CARTÃO IMPRESSO —, e dizer
+      // "gravadas" mandaria a pessoa procurar na aba Gravar uma peça que talvez
+      // nunca tenha sido gravada. A frase tem de descrever o que o número é.
+      return `Não dá para diminuir tanto: ${d.gravadas} peça(s) já saíram daqui — `
+        + 'gravadas, com garantia registrada ou com cartão impresso. '
         + `O mínimo é ${d.gravadas}.`
     case 'ja_baixada':
       return 'Esta peça já está baixada. Desfaça a baixa antes de baixar de novo.'

@@ -1,6 +1,6 @@
 # Pendências do iamundi
 
-Última revisão: **20/08/2026**
+Última revisão: **12/09/2026**
 
 O que é este arquivo: a lista viva do que está **em aberto** no projeto. Cada item
 diz o que falta, **por que importa** e **onde** se resolve. É a memória escrita —
@@ -150,6 +150,109 @@ cor e número de série. Só falta a foto.
 
 ⚠️ E o Bling está quase sem foto no catálogo em geral: **28 de 100 produtos**, e do
 catálogo novo (SS) **3 de 9**. Vale saber antes de esperar que o robô encha todos.
+
+### A18 · Vessel › a descrição da loja nasce escondida numa sanfona 🟡 *aberto em 12/09/2026*
+
+**O que acontece.** Todos os 81 produtos da Shopify TÊM descrição — conferido em
+11/09, e os textos batem com o Bling. Mas na página do produto o tema (Prestige
+11.4.0, cópia "VESSEL BRASIL V1.0 ERICK") põe o texto dentro de uma sanfona que
+nasce FECHADA. A cliente vê só a palavra "Descrição" e precisa clicar.
+
+Para o Google e para quem compartilha o link o texto aparece normal — está no
+`<title>`, na meta description, no Open Graph e no JSON-LD. Quem perde é quem
+está olhando a página.
+
+**Por que só o dono resolve.** O token da API não alcança o tema:
+`403 — This action requires merchant approval for read_themes scope`. Os escopos
+que ele tem são `read/write_products`, `read/write_inventory` e `read_locations`.
+
+**Como resolver, o caminho curto (sem código):**
+Loja online → Temas → **Personalizar** → abrir uma página de produto → clicar no
+bloco **Descrição** na coluna da esquerda → procurar a opção de recolher
+(*"Collapse content"* / *"Recolher conteúdo"*) e **desmarcar**.
+
+⚠️ Se essa opção não existir, aí é código — mas **cuidado**: o `<details>` NÃO
+está no bloco da descrição, está num trecho compartilhado (`snippets/accordion.liquid`
+no Prestige). Pôr `open` lá abriria TODAS as sanfonas da loja. O certo é abrir
+só quando vier do bloco de descrição.
+
+Alternativa: liberar `read_themes` e `write_themes` no app, que aí dá para fazer
+pela API e provar a 375px.
+
+---
+
+### A19 · Iguatemi › a Astrea Big Caramelo está como RASCUNHO na Shopify, com 4 peças na prateleira 🟡 *aberto em 12/09/2026*
+
+`SS0001EW.B2` — East West Astrea Big Caramelo. **4 peças na loja do Iguatemi** e
+o produto está como **rascunho** na Shopify: ninguém consegue comprar online.
+
+É um clique (publicar o produto). Está aqui porque foi o ÚNICO furo em 55
+produtos conferidos — o resto do estoque do Iguatemi está correto na Shopify.
+
+⚠️ A conferência só vale porque foi medido que **a Shopify espelha o depósito do
+Iguatemi, e não o total**: a Marea Big Caramelo tem 7 no Iguatemi e 15 somando o
+Pulmão, e a Shopify mostra 7. Quem comparar com o total vai achar 3 erros que não
+existem. Ferramenta: `vessel-brasil/ferramentas/bling-x-shopify.mjs`.
+
+### A20 · Solenne Mostarda e Blanc: zero em todo depósito, e nenhuma venda 🟡 *aberto em 12/09/2026*
+
+O dono disse ter visto uma Solenne mostarda na loja do Iguatemi. Medido:
+
+- `SS0009SB.M3` Solenne Medium Mostarda — **0 nos 7 depósitos**, rascunho na Shopify
+- `SS0009SB.M4` Solenne Medium Blanc — igual
+
+E **nenhuma venda**: abertos 1.000 dos 1.052 pedidos de todos os canais dos
+últimos 180 dias, nenhum levou esses códigos. Não é caso de ter vendido e não
+ter baixado — **essas peças nunca entraram no estoque**.
+
+Se elas estão fisicamente na loja, estão lá **fora do sistema**, e isso é
+diferente de estoque errado. Quem for conferir: `ferramentas/procurar-produto-nos-pedidos.mjs`
+(ele retoma de onde parou; faltam 52 pedidos).
+
+⚠️ E não existe "Solenne jeans com mostarda" no catálogo — a confusão de nome é
+provável: `SS0001SB.B2` é a **Ravelle** Big Jeans e `SS0001SB.B3` a **Ravelle**
+Big Mostarda, as duas COM estoque no Iguatemi.
+
+### A21 · 23 produtos sem foto tratada travam o cartão EAN 🟡 *aberto em 12/09/2026*
+
+Dos 86 do catálogo novo, **23 não têm foto tratada publicada** — e sem ela o
+cartão sairia com um vazio no lugar da bolsa, então não dá para gerar nem
+refazer. É a fila que trava todo o resto do trabalho de cartão.
+
+⚠️ **Quatro deles já têm 10 cartões cada em bolsas, SEM código de barras** —
+40 peças que a loja não consegue ler, e que não dá para consertar antes da foto:
+`SS0001EW.B2`, `SS0001EW.B3`, `SS0001HB.B2`, `SS0001HB.B3`. Eles não tinham GTIN
+no dia em que o cartão foi feito; hoje têm.
+
+Paliativo já entregue em 11/09: o código de barras solto, em PNG sem fundo, no
+padrão do cartão — `cartao/codigo-de-barras-solto.mjs`. A lista completa está em
+`entregas/cartoes-ean_o-que-falta_*.xlsx`.
+
+### A22 · cinco produtos do catálogo não existem na Shopify 🟡 *aberto em 12/09/2026*
+
+`SS0001BB.M1` (BucketBag Baldinho), `SS0002EW.B1` (East West Coloridas) e as três
+`SS00015HB.B1/B2/B3` (HandBag Paris). Têm GTIN no Bling e estão fora da loja
+online. Todos com zero no Iguatemi, então não é urgente — mas são cinco anúncios
+que nunca foram criados.
+
+### A23 · decidir o que vai para o GS1: só o catálogo novo, ou também o antigo e a LA VESSEL 🟡 *aberto em 12/09/2026*
+
+Varrido o catálogo inteiro do Bling, 1.283 itens com código, um a um:
+
+| Linha | Produtos | Sem GTIN | Ativos sem GTIN |
+|---|---|---|---|
+| Vessel Brasil (catálogo novo) | 86 | 0 | 0 |
+| Catálogo antigo (SS10xx) | 12 | 12 | **12** |
+| LA VESSEL | 1.022 | 261 | **84** |
+| Insumo, matriz, avulso | 163 | 64 | — (não é produto) |
+
+São **96 bolsas ativas, com preço, sem código de barras nenhum**. O dono pediu a
+planilha só do catálogo novo (entregue: `entregas/produtos-vessel_para-o-gs1_*_v2.xlsx`,
+com a aba "Sem GTIN" listando as 96).
+
+⚠️ **Prefixo do GS1 é POR EMPRESA.** Se a LA VESSEL tem CNPJ próprio, aqueles 84
+não entram na mesma planilha que os 86 da Vessel Brasil. Decisão do dono.
+
 
 ## Parte B — Precisa programar
 
@@ -442,6 +545,145 @@ hoje, que é silêncio.
 aparelho registrado** para push. WhatsApp alcançaria 6, e 2 dessas nem ficha de
 colaborador têm — o push é o melhor canal único. As 6 restantes continuam
 dependendo de alguém avisar, e é por isso que a tela diz isso a quem decide.
+
+### B26 · Vessel › a vitrine da Shopify não se atualiza sozinha 🟡 *aberto em 11/09/2026*
+
+**O que está acontecendo.** Duas coisas, ligadas, e as duas paradas no tempo:
+
+1. **O estoque na Shopify está congelado em 11/09.** A sincronização
+   `Estoque Loja Iguatemi` (Bling, depósito `14888726277`) → local
+   `Vessel Shopping Iguatemi` (Shopify) foi feita **uma vez, na mão**. Não
+   existe nada de Shopify no `coletor/` — nenhum robô repete isso.
+2. **13 produtos estão em rascunho só por falta de estoque**, e têm foto certa.
+   Quando entrar estoque eles **não voltam a ativo sozinhos** — alguém tem que
+   virar a chave, e hoje ninguém vira.
+
+**Por que importa.** Peça que chega na loja não aparece na vitrine, e peça que
+acaba continua à venda. Os dois erros custam dinheiro, em direções opostas.
+
+**Onde se resolve.** Um robô de hora em hora, no padrão do
+`fotos-do-selo.yml`: espelha o saldo por SKU exato e depois aplica a regra
+*tem foto E tem saldo → ativo; sem foto OU sem saldo → rascunho*.
+
+⚠️ **As travas que já custaram caro, para quem for fazer:**
+- `catálogo novo = começa com SS e NÃO tem hífen`. A regra mais estreita
+  (`SS0004HB.B2`) **descartou os 4 lenços em silêncio** — `SS0003L.1` não tem o
+  par letra+dígito no fim. Foram 43 peças fora da sincronia, sem um aviso.
+- SKU que não casa dos dois lados é **relatado, nunca adivinhado**.
+- `--seco` (mostra sem escrever) é o padrão quando falta o local ou o token.
+
+**⏸️ PARADO A PEDIDO DO DONO em 11/09/2026** — "vamos deixar por enquanto".
+A decisão que ficou em aberto, e que trava o desenho: se alguém puser um produto
+em rascunho **de propósito** (saindo de linha, segurando um lançamento), o robô
+reativaria sozinho quando entrasse estoque. As três saídas discutidas foram:
+etiqueta `nao-mexer` que o robô respeita; esconder sozinho mas só *avisar* o que
+poderia voltar; ou automático puro.
+
+---
+
+### B27 · Vessel › a família Cyrène/Evening está sem medida no Bling 🟡 *aberto em 12/09/2026*
+
+**O que falta.** Largura e altura, em centímetros, da **Shoulder Cyrène Medium**.
+Só o dono tem esse número — não existe de onde ler.
+
+**Por que importa.** Duas coisas travam nisso:
+
+1. **A capa das duas Evening** (`SS0002SB.M1` Café e `SS0002SB.M2` Marfim) ficou
+   de fora da escada de tamanho, publicada em 12/09. As outras 49 capas do
+   catálogo passaram a ocupar o quadro em proporção ao tamanho real da bolsa;
+   essas duas seguem em 82%, o valor antigo.
+2. **A descrição das três não traz medida nenhuma** — `.M1`, `.M2` e `.P1`. O
+   cliente que abre a página não sabe o tamanho da bolsa.
+
+⚠️ **Não dá para deduzir.** Nas outras cinco peças sem medida eu resolvi lendo as
+IRMÃS da mesma família e mesmo tamanho (Oriane Big 26x20, Lunea Medium 21x15).
+Na Cyrène **a família inteira está vazia**, então não há irmã para ler.
+
+⚠️ **E "Medium" não resolve.** O dono respondeu "a Evening é medium", mas a
+escada é por CENTÍMETRO, não por classe — justamente porque as classes se
+sobrepõem (ver B28). Medium sozinho não dá número.
+
+**Onde se resolve.** Com o número na mão, são duas escritas na mesma rodada:
+a capa (reenquadrar na ocupação da medida) e a `descricaoCurta` das três,
+acrescentando o bloco de dimensões no padrão das outras famílias.
+
+---
+
+### B28 · Vessel › peças sem foto que dariam para montar de outro tamanho 🟡 *aberto em 12/09/2026*
+
+**A técnica já está provada.** Em 12/09 três peças que não tinham foto nenhuma
+ganharam catálogo a partir da MESMA COR NOUTRO TAMANHO:
+
+    Linear Big Blanc       <- fotos da Linear Medium Branca
+    Linear Big Chocolate   <- fotos da Linear Medium Chocolate
+    Linear Big Caramelo    <- fotos da Linear Medium Caramelo
+    Ravelle Small Mostarda <- fotos da Ravelle Big Mostarda
+
+Funciona porque a bolsa é a mesma peça em escala, e a ocupação do quadro passou
+a ser calculada pela medida real — então a foto montada já entra no tamanho
+certo da grade.
+
+**O que falta.** Varrer as peças sem foto e listar quais têm irmã da mesma cor
+noutro tamanho. Essas são candidatas a montar sem ensaio novo. As que não têm
+irmã continuam dependendo de estúdio.
+
+⚠️ **Cada peça montada merece o olho do dono antes de publicar.** Duas coisas
+podem sair erradas, e as duas já apareceram:
+- **proporção**: Big e Medium costumam ter proporção parecida, mas a Small pode
+  ser outra forma (a Linear Small é 19x15 contra 24x17 da Medium — mais
+  quadrada). Montar Small de Medium distorce.
+- **diferença de peça**: a Linear Small não tem o bolso das costas que a Medium
+  tem. Foi preciso removê-lo com IA, foto a foto.
+
+⚠️ **A ESCADA DE TAMANHO, para quem for mexer nas fotos depois.** A capa de cada
+produto ocupa o quadro em proporção ao MAIOR LADO em cm, de 70% (21cm) a 86%
+(60cm), pela raiz — o olho compara área, não comprimento. As fotos 2 em diante
+ficaram todas em 82%.
+
+⚠️ **NÃO usar Small/Medium/Big para isso.** Medido em 12/09: as classes se
+sobrepõem (Small vai a 50cm, Big começa em 23cm). Escalar pelo nome faria a
+grade MENTIR — mostraria uma Small de 50cm menor que uma Big de 23cm.
+
+---
+
+### B29 · Cartões EAN › o robô da fila 🟡 *aberto em 12/09/2026*
+
+A aba "Cartões EAN" está no ar e manda pedido; a fila `vessel_cartao_pedidos`
+existe no banco. **Falta quem atende.** Hoje o pedido entra e ninguém pega.
+
+O que já está pronto e é para REAPROVEITAR, não reconstruir:
+
+- **desenhar e exportar** — `cartao/exportar.mjs`, que roda fora do Mac. Provado
+  em 8 produtos contra o `exportar.sh` (o do Quartz): mesmo tamanho 2042×1300,
+  desenho no mesmo lugar (1 px = 0,04 mm), código de barras lido da imagem;
+- **subir no Zoho** — `coletor/lib/zoho-workdrive.mjs` (`acharOuCriarPasta` +
+  `uploadArquivo`), que a Fábrica de Anúncios já usa do GitHub Actions com os
+  segredos configurados;
+- **pegar e devolver** — `vessel_cartao_pegar_da_fila()` e
+  `vessel_cartao_pedido_terminou()`, já no banco, só para `service_role`.
+
+Falta amarrar os três num workflow e criar o gatilho que acorda o robô quando o
+pedido entra (o molde é `vessel_lote_novo_pede_foto`, que já faz isso para as
+fotos, com o segredo em `segredos_de_cron`).
+
+⚠️ `cartao_gerado_em` é marcado **só nas peças que o robô confirma**. Marcar o
+pedido inteiro deixaria a marca mentindo nas que falharam no meio — e é ela que
+PRENDE o número de série.
+
+### B30 · Cartões EAN › 280 cartões a refazer 🟡 *aberto em 12/09/2026 — espera o B29*
+
+Dos 86 produtos: **35 prontos, 27 para refazer (saíram em 300 dpi em vez de 600),
+1 sem código de barras, 23 travados sem foto** (ver A21).
+
+Os 27 de meia resolução leem, mas a barra fica com 3,1 px — e a 300 dpi o código
+de barras não perdoa arredondamento. Alguma rodada saiu com o `DPI=` trocado; a
+pasta do Zoho tem as duas resoluções misturadas.
+
+Assim que o robô do B29 estiver de pé, isto é marcar as peças na aba e mandar.
+Medido por `ferramentas/o-que-falta-de-cartao.mjs`, que abre cada cartão e LÊ o
+código de barras — "tem pasta de cartão" não é "tem cartão bom", e foi assim que
+os 5 sem código passaram batido por três semanas.
+
 
 ## Parte C — Ideias guardadas (ninguém pediu ainda)
 

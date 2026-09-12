@@ -68,11 +68,11 @@ test('ESTAGIOS: o de gravar avisa que sem o sinal a peca NAO foi marcada', () =>
 
 // ── a ajuda dentro de cada aba ─────────────────────────────────────────────
 
-test('AJUDA_DA_ABA: as cinco abas tem ajuda propria, e nenhuma e rotulo', () => {
+test('AJUDA_DA_ABA: as SEIS abas tem ajuda propria, e nenhuma e rotulo', () => {
   // guia unico ninguem reabre: quem chega na aba Alertas seis meses depois
   // precisa da explicacao ALI
   assert.deepEqual(Object.keys(AJUDA_DA_ABA).sort(),
-    ['alertas', 'etiquetas', 'gravar', 'lotes', 'registros'])
+    ['alertas', 'cartoes', 'etiquetas', 'gravar', 'lotes', 'registros'])
   for (const [aba, texto] of Object.entries(AJUDA_DA_ABA)) {
     assert.ok(texto.length > 80, `a ajuda da aba ${aba} e curta demais para explicar`)
   }
@@ -82,6 +82,15 @@ test('AJUDA_DA_ABA: a de Lotes explica o arquivamento automatico', () => {
   // e o unico lugar onde a pessoa descobre para onde foram os lotes encerrados
   assert.match(AJUDA_DA_ABA.lotes, /encerrado/i)
   assert.match(AJUDA_DA_ABA.etiquetas, /30 dias/i)
+})
+
+test('⚠️ AJUDA_DA_ABA: a de Cartoes avisa que o numero congela', () => {
+  // E a consequencia que a pessoa NAO adivinha: depois de o cartao sair, aquela
+  // peca nao pode mais ser renumerada nem apagada. Descobrir isso na recusa de
+  // um botao, tres semanas depois, e descobrir tarde.
+  assert.match(AJUDA_DA_ABA.cartoes, /n[aã]o muda mais|congel/i)
+  // E que a previa e o cartao, e nao um desenho parecido.
+  assert.match(AJUDA_DA_ABA.cartoes, /pr[eé]via/i)
 })
 
 // ── quem grava por onde ────────────────────────────────────────────────────

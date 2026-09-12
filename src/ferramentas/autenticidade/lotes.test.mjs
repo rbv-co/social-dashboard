@@ -143,6 +143,32 @@ test('fraseDaRecusa: abaixo do gravado diz qual e o minimo', () => {
   assert.match(fraseDaRecusa('abaixo_do_gravado', { gravadas: 7 }), /7/)
 })
 
+test('⚠️ fraseDaRecusa: "abaixo do gravado" nao diz mais GRAVADAS', () => {
+  // Desde 11/09/2026 o banco conta tres coisas nesse numero: gravada, com
+  // garantia e com CARTAO IMPRESSO. Dizer "gravadas" manda a pessoa procurar na
+  // aba Gravar uma peca que talvez nunca tenha sido gravada — e ela conclui que
+  // a ferramenta esta errada.
+  const f = fraseDaRecusa('abaixo_do_gravado', { gravadas: 7 })
+  assert.doesNotMatch(f, /pe\u00e7a\(s\) j\u00e1 foram gravadas/i,
+    'a frase voltou a atribuir o numero inteiro a gravacao')
+  assert.match(f, /cart[a\u00e3]o/i, 'tem de citar o cartao, que e um dos tres motivos')
+  assert.match(f, /garantia/i, 'e a garantia, que e o terceiro')
+})
+
+test('⚠️ fraseDaRecusa: o cartao impresso tem frase propria, e NAO manda dar baixa', () => {
+  // O papel dentro da bolsa nao se regrava. Nao ha conselho a dar aqui —
+  // diferente de `tem_gravada`, nao existe "de baixa em vez disso". O que a
+  // frase precisa fazer e explicar, porque a pessoa vai olhar a aba Gravar e
+  // nao achar nada gravado, e concluir que a recusa esta errada.
+  const f = fraseDaRecusa('tem_cartao', { cartoes: 4, total: 10 })
+  assert.match(f, /4/)
+  assert.match(f, /deste lote/, 'com o lote inteiro, a frase diz de onde')
+  assert.match(f, /cart[a\u00e3]o/i)
+  assert.doesNotMatch(f, /baixa/i, 'nao existe "de baixa" para cartao impresso')
+  // E sem `total` (uma peca sozinha) a frase nao pode dizer "deste lote".
+  assert.doesNotMatch(fraseDaRecusa('tem_cartao', { cartoes: 1 }), /deste lote/)
+})
+
 test('fraseDaRecusa: a garantia da cliente tem frase propria, e nao manda dar baixa', () => {
   // `gravada_em` nao era a unica prova de que a peca esta no mundo: a cliente
   // registra a garantia pelo CODIGO, sem a peca precisar estar gravada, e

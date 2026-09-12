@@ -1181,6 +1181,141 @@
       </div>
     </template>
 
+    <!-- ── CARTÕES EAN ──────────────────────────────────────────────────── -->
+    <template v-else-if="aba === 'cartoes'">
+      <!-- ⚠️ ESTE PARÁGRAFO É O ÚNICO AVISO DE UMA COISA IRREVERSÍVEL, e por isso
+           fica na tela e não só na ajuda da aba. A etiqueta NFC se regrava; o
+           papel dentro da bolsa, não. Depois de o cartão sair, aquela peça não
+           pode mais ser renumerada nem apagada — e quem descobre isso na recusa
+           de um botão, três semanas depois, descobre tarde. -->
+      <p class="au-instrucao">
+        Depois de o cartão sair, <strong>o número de série daquela peça não muda mais</strong>.
+      </p>
+
+      <label class="au-campo"><span class="au-rot">Lote</span>
+        <select v-model="loteDosCartoes">
+          <option value="">Todos os lotes</option>
+          <option v-for="l in lotes" :key="l.id" :value="l.id">
+            {{ l.modelo }}<span v-if="l.cor"> · {{ l.cor }}</span>
+          </option>
+        </select>
+      </label>
+
+      <p v-if="erroDosCartoes" class="au-erro">{{ erroDosCartoes }}</p>
+
+      <!-- A FILA, QUANDO HÁ ALGO NELA. Some quando está vazia: aviso que
+           aparece sempre vira paisagem. -->
+      <div v-if="pedidosEmAndamento.length" class="au-confirma" role="status">
+        <p class="au-confirma-texto" v-for="q in pedidosEmAndamento" :key="q.id">
+          <strong>{{ situacaoDoPedido(q).rotulo }}</strong> — {{ situacaoDoPedido(q).detalhe }}
+        </p>
+      </div>
+
+      <p v-if="carregandoOsCartoes" class="au-vazio">Carregando os produtos publicados…</p>
+      <p v-else-if="!linhasDosCartoes.length" class="au-vazio">
+        Nenhuma peça neste recorte. Escolha outro lote, ou crie o lote no passo 1.
+      </p>
+
+      <div v-else class="au-lista au-tabela au-tabela-cartoes">
+        <div class="au-tabela-cab" aria-hidden="true">
+          <span>Peça</span><span>Nº de série</span><span>Cartão</span><span>Prévia</span>
+        </div>
+        <div v-for="ln in linhasDosCartoes" :key="ln.codigo" class="au-card">
+          <div class="au-card-topo">
+            <!-- ⚠️ A MARCA É UM `checkbox` DE VERDADE, e não uma div clicável: é
+                 o que o leitor de tela anuncia e o que o teclado alcança. -->
+            <label class="au-marca-cartao">
+              <input type="checkbox" :value="ln.codigo" v-model="marcadasParaCartao"
+                     :disabled="!ln.podeGerar || !podeEditar"
+                     :aria-label="'Gerar cartão de ' + (ln.numeroDeSerie || ln.codigo)">
+              <span class="au-modelo">{{ ln.nome || ln.modelo || ln.codigo }}</span>
+            </label>
+          </div>
+          <div class="au-card-linha">
+            <!-- O RÓTULO VEM JUNTO NO CELULAR, e some no computador: lá a coluna
+                 "Nº DE SÉRIE" já diz o que o número é; aqui a tabela virou
+                 cartão e o cabeçalho não existe. Sem ele, "SS0001CBM1001" e
+                 "Sem cartão" viram dois amontoados sem nada dizendo qual é qual.
+                 É a mesma regra da lista de peças do lote. -->
+            <span class="au-serie-cartao"><span class="au-rot-serie">nº de série </span>{{ ln.numeroDeSerie || '—' }}</span>
+          </div>
+          <div class="au-card-linha">
+            <span v-if="ln.jaTemCartao" class="selo selo-ok">Já impresso</span>
+            <span v-else-if="!ln.podeGerar" class="selo selo-atencao">Não dá</span>
+            <span v-else class="selo">Sem cartão</span>
+          </div>
+          <div class="au-acoes">
+            <button v-if="ln.podeGerar" class="au-link" type="button"
+                    @click="verOCartao(ln)">Ver o cartão</button>
+            <!-- Botão desabilitado calado faz a pessoa achar que a ferramenta
+                 quebrou. Cada impedimento tem a frase que diz o que fazer. -->
+            <span v-else class="au-aviso-menor">{{ MOTIVO_DO_IMPEDIMENTO[ln.impedimento] }}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── A PRÉVIA ──────────────────────────────────────────────────────
+           ⚠️ ELA É O CARTÃO, E NÃO UM DESENHO PARECIDO. O que está dentro deste
+           quadro é montado pelo MESMO arquivo que o robô usa para gerar o que
+           vai para a gráfica, com a mesma foto tratada, o mesmo enquadramento e
+           a mesma fonte. Uma segunda conta do mesmo cartão acertaria no começo
+           e divergiria depois, calada.
+
+           POR QUE UM `iframe` DE OUTRO ENDEREÇO: o desenho mora no repositório
+           do SITE, que não chega à máquina que faz o build deste aplicativo.
+           Copiar o desenho para cá seria criar a segunda conta. Aqui a tela
+           EMBUTE a página, e não executa o código dela.
+
+           ⚠️ O `sandbox` LEVA `allow-same-origin`, e isso NÃO afrouxa a trava
+           aqui: `allow-same-origin` só é perigoso quando o iframe é do MESMO
+           endereço do pai — aí ele conseguiria tirar o próprio sandbox. Este
+           vem do site da marca, que é OUTRO endereço: ele continua sem alcançar
+           nada desta tela nem a sessão de quem está logado, e o sandbox segue
+           barrando o que importa — navegar a janela de cima para fora do
+           aplicativo, abrir pop-up e baixar arquivo.
+
+           (O endereço em si não se escreve aqui: ele sai de BASE_DOS_RECURSOS,
+           em cartoes-ean.js. Domínio em dois lugares é domínio errado esperando
+           acontecer — a mesma regra do endereço da etiqueta.)
+
+           Sem ele a prévia não consegue nem conferir o próprio desenho: com
+           origem opaca ela perde o acesso ao quadro interno onde o cartão é
+           montado, e a checagem de imagem que não carregou morre — que é
+           justamente a que impede o cartão sair com um vazio no lugar da
+           bolsa. Medido: `Cannot read properties of null (reading 'images')`. -->
+      <div v-if="pecaNaPrevia" class="au-previa-cartao">
+        <div class="au-card-topo">
+          <span class="au-modelo">Cartão de {{ pecaNaPrevia.numeroDeSerie }}</span>
+          <button class="au-link" type="button" @click="fecharAPrevia">Fechar</button>
+        </div>
+        <p v-if="erroDaPrevia" class="au-erro">{{ erroDaPrevia }}</p>
+        <div class="au-previa-quadro">
+          <iframe class="au-previa-folha" :src="enderecoDaPrevia"
+                  sandbox="allow-scripts allow-same-origin"
+                  title="Prévia do cartão desta peça" loading="lazy"></iframe>
+        </div>
+      </div>
+
+      <!-- ── O PEDIDO ────────────────────────────────────────────────────── -->
+      <div v-if="podeEditar" class="au-acoes au-pedir-cartoes">
+        <p class="au-aviso-menor">
+          {{ resumoDosCartoes.total }} peça(s) marcada(s) — {{ resumoDosCartoes.arquivos }} arquivos
+          (frente e verso, PNG e PDF).
+          <!-- REFAZER É PERMITIDO (cartão rasga, mancha, some), mas a tela tem de
+               DIZER: senão a pasta do Zoho volta com o dobro dos arquivos e
+               ninguém sabe qual é o bom. -->
+          <strong v-if="resumoDosCartoes.refazendo">
+            {{ resumoDosCartoes.refazendo }} já tinha(m) cartão e será(ão) refeito(s).
+          </strong>
+        </p>
+        <button class="au-botao" type="button"
+                :disabled="!resumoDosCartoes.total || pedindoCartoes"
+                @click="pedirOsCartoes">
+          {{ pedindoCartoes ? 'Mandando…' : 'Gerar ' + resumoDosCartoes.total + ' cartão(ões)' }}
+        </button>
+      </div>
+    </template>
+
     <!-- ── REGISTROS ────────────────────────────────────────────────────── -->
     <template v-else-if="aba === 'registros'">
       <!-- ── A FILA, ANTES DE TUDO ────────────────────────────────────────
@@ -1864,7 +1999,7 @@
  * porque a garantia de "nenhum código repetido" é da chave primária. Ver
  * db/migrations/2026-08-05-vessel-painel.sql.
  */
-import { ref, reactive, computed, watch, onMounted, nextTick } from 'vue'
+import { ref, reactive, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import BarraDeTopo from '../../compartilhado/barra-de-topo.vue'
 import { sbClient } from '../../compartilhado/conectar-no-banco-de-dados.js'
@@ -1947,6 +2082,15 @@ import { gravarPeloLeitorDeMesa, escreverEConferir, apagarEConferir } from './gr
 // de passagem.
 import { estadoDaBancada, acaoDaBancada, nomeDoModo } from './modo-bancada.js'
 
+// A ABA DOS CARTÕES. Só conta pura: qual peça pode ter cartão, qual já tem, e o
+// que vai para a fila. Fica fora do `.vue` pelo mesmo motivo dos outros — e
+// porque é aqui que mora a regra de que nada do DESENHO do cartão se recalcula
+// nesta tela. O desenho é o do site, e um só.
+import {
+  BASE_DOS_RECURSOS, MOTIVO_DO_IMPEDIMENTO, linhasDeCartao, marcadasPorPadrao,
+  resumoDoPedido, pecaParaODesenho, fraseDoPedidoRecusado, situacaoDoPedido,
+} from './cartoes-ean.js'
+
 // A BARRA DE ABAS É UMA SEQUÊNCIA, e não um armário: os três primeiros são
 // PASSOS numerados, na ordem em que se faz — cria o lote, grava as etiquetas,
 // conserta o que saiu errado. Garantias e Alertas vêm depois do separador
@@ -1962,6 +2106,10 @@ const ABAS = [
   { chave: 'lotes', n: 1, rotulo: 'Lotes', leitura: 'Passo 1: Lotes' },
   { chave: 'gravar', n: 2, rotulo: 'Gravar', leitura: 'Passo 2: Gravar' },
   { chave: 'etiquetas', n: 3, rotulo: 'Etiquetas', leitura: 'Passo 3: Etiquetas' },
+  // O CARTÃO É O QUARTO PASSO, e não uma consulta: é uma ação que produz coisa
+  // física. Vem depois de Etiquetas porque o número de série tem de estar
+  // resolvido antes de virar papel — depois de impresso, ele não muda mais.
+  { chave: 'cartoes', n: 4, rotulo: 'Cartões EAN', leitura: 'Passo 4: Cartões EAN' },
   { chave: 'registros', rotulo: 'Garantias', leitura: 'Garantias', separaAntes: true },
   { chave: 'alertas', rotulo: 'Alertas', leitura: 'Alertas' },
 ]
@@ -1980,6 +2128,20 @@ const alertas = ref(null)
 
 const loteEscolhido = ref('')
 const busca = ref('')
+
+// ── A ABA DOS CARTÕES EAN ──────────────────────────────────────────────────
+// O índice dos produtos publicados (foto tratada, desenho, GTIN, medidas) é
+// baixado do site, e só quando a aba abre: são 37 KB que não têm por que pesar
+// em quem entrou para gravar uma etiqueta.
+const indiceDosCartoes = ref(null)
+const carregandoOsCartoes = ref(false)
+const erroDosCartoes = ref('')
+const loteDosCartoes = ref('')
+const marcadasParaCartao = ref([])
+const pedidosDeCartao = ref([])
+const pedindoCartoes = ref(false)
+const pecaNaPrevia = ref(null)
+const erroDaPrevia = ref('')
 const formulario = ref(false)
 const salvando = ref(false)
 const erroForm = ref('')
@@ -3266,13 +3428,150 @@ async function confirmarTroca(registro) {
   }
 }
 
+// ── A ABA DOS CARTÕES EAN ──────────────────────────────────────────────────
+
+/** Os lotes por id, que é como as linhas acham o SKU da peça. */
+const lotesPorId = computed(() =>
+  Object.fromEntries(lotes.value.map((l) => [l.id, l])))
+
+const linhasDosCartoes = computed(() => {
+  const daVez = loteDosCartoes.value
+    ? pecas.value.filter((p) => p.lote_id === loteDosCartoes.value)
+    : pecas.value
+  return linhasDeCartao(daVez, lotesPorId.value, indiceDosCartoes.value || {})
+})
+
+const resumoDosCartoes = computed(() =>
+  resumoDoPedido(linhasDosCartoes.value, marcadasParaCartao.value))
+
+/** Só os pedidos que ainda dizem alguma coisa: fila vazia não ocupa tela. */
+const pedidosEmAndamento = computed(() => pedidosDeCartao.value
+  .filter((q) => q.situacao !== 'pronto' || Date.now() - Date.parse(q.terminou_em || 0) < 36e5)
+  .slice(0, 5))
+
+/**
+ * O endereço da prévia.
+ *
+ * ⚠️ A PEÇA VAI NO HASH, e não na query. O hash não é mandado ao servidor —
+ * nem para o do site, nem para nenhum intermediário — e o que viaja aqui é o
+ * número de série de uma peça. Ele é impresso no cartão, mas não há motivo
+ * nenhum para ele aparecer num log de acesso.
+ */
+const enderecoDaPrevia = computed(() => {
+  if (!pecaNaPrevia.value) return ''
+  return BASE_DOS_RECURSOS + 'previa.html#' + encodeURIComponent(JSON.stringify(pecaNaPrevia.value))
+})
+
+/**
+ * ⚠️ O ÍNDICE É BAIXADO UMA VEZ, E A FALHA APARECE. Sem ele, TODA peça cairia
+ * em "sem foto" e a aba diria que nenhum produto pode ter cartão — uma falha de
+ * rede virando um fato sobre o catálogo. É a mesma família do `erro virando
+ * zero` que já custou caro nesta casa: falha que vira resposta.
+ */
+async function carregarOsCartoes() {
+  if (indiceDosCartoes.value) return
+  carregandoOsCartoes.value = true
+  erroDosCartoes.value = ''
+  try {
+    const r = await fetch(BASE_DOS_RECURSOS + 'indice.json', { cache: 'no-store' })
+    if (!r.ok) throw new Error('o site respondeu ' + r.status)
+    indiceDosCartoes.value = await r.json()
+    marcadasParaCartao.value = marcadasPorPadrao(linhasDosCartoes.value)
+  } catch (e) {
+    erroDosCartoes.value = 'Não consegui ler a lista de produtos publicados no site ('
+      + (e?.message || e) + '). Sem ela não dá para saber quais produtos têm foto, '
+      + 'e a aba mostraria todos como "sem foto". Recarregue a tela.'
+  } finally {
+    carregandoOsCartoes.value = false
+  }
+}
+
+async function carregarAFilaDeCartoes() {
+  const { data, error } = await sbClient.from('vessel_cartao_pedidos')
+    .select('*').order('criado_em', { ascending: false }).limit(20)
+  // Falhar aqui não pode apagar a aba: a lista de peças continua servindo. Mas
+  // também não pode sumir calada — a pessoa mandaria gerar de novo achando que
+  // o primeiro pedido se perdeu.
+  if (error) { erroDosCartoes.value = 'Não consegui ler a fila de cartões: ' + error.message; return }
+  pedidosDeCartao.value = data || []
+}
+
+function verOCartao(linha) {
+  erroDaPrevia.value = ''
+  pecaNaPrevia.value = pecaParaODesenho(linha, indiceDosCartoes.value || {})
+  if (!pecaNaPrevia.value) {
+    erroDaPrevia.value = MOTIVO_DO_IMPEDIMENTO.sem_foto
+  }
+}
+
+function fecharAPrevia() {
+  pecaNaPrevia.value = null
+  erroDaPrevia.value = ''
+}
+
+async function pedirOsCartoes() {
+  if (!resumoDosCartoes.value.total || pedindoCartoes.value) return
+  // ⚠️ PEÇA MARCADA QUE NÃO PODE GERAR DERRUBARIA A LEVA INTEIRA no banco, e a
+  // pessoa perderia a seleção toda. Parar aqui custa um aviso.
+  if (resumoDosCartoes.value.impedidas) {
+    erroDosCartoes.value = `${resumoDosCartoes.value.impedidas} peça(s) marcada(s) não podem `
+      + 'ter cartão. Desmarque-as antes de gerar — o banco recusaria a leva inteira.'
+    return
+  }
+  pedindoCartoes.value = true
+  erroDosCartoes.value = ''
+  try {
+    const { data, error } = await sbClient.rpc('vessel_pedir_cartoes',
+      { p_pecas: marcadasParaCartao.value })
+    if (error) throw error
+    if (!data?.ok) { erroDosCartoes.value = fraseDoPedidoRecusado(data?.motivo, data); return }
+    adminToast(`${data.pecas} cartão(ões) na fila. O robô avisa aqui quando entregar no Zoho.`)
+    marcadasParaCartao.value = []
+    await carregarAFilaDeCartoes()
+  } catch (e) {
+    erroDosCartoes.value = 'Não consegui mandar o pedido: ' + (e?.message || e)
+  } finally {
+    pedindoCartoes.value = false
+  }
+}
+
+// A PRÉVIA AVISA QUANDO NÃO CONSEGUE DESENHAR. Prévia que falha em silêncio é
+// pior que prévia nenhuma: o quadro fica branco, a pessoa acha que é o cartão
+// carregando e manda gerar uma leva de uma coisa que não viu.
+function ouvirAPrevia(evento) {
+  // ⚠️ CONFERE A ORIGEM. `postMessage` chega de qualquer iframe e de qualquer
+  // aba aberta; sem esta linha, qualquer página poderia escrever um recado na
+  // tela da bancada.
+  if (!BASE_DOS_RECURSOS.startsWith(evento.origin + '/')) return
+  const recado = evento.data
+  if (recado?.previaDoCartao === 'falhou') erroDaPrevia.value = recado.motivo
+  if (recado?.previaDoCartao === 'pronto') erroDaPrevia.value = ''
+}
+
+// Ao abrir a aba, e não antes: são 37 KB de índice que não têm por que pesar em
+// quem entrou para gravar uma etiqueta.
+watch(aba, (agora) => {
+  if (agora !== 'cartoes') return
+  carregarOsCartoes()
+  carregarAFilaDeCartoes()
+})
+// Trocar de lote refaz a marcação — senão fica marcada peça que não está mais
+// na lista, e o pedido leva peça que a pessoa não está vendo.
+watch(loteDosCartoes, () => {
+  marcadasParaCartao.value = marcadasPorPadrao(linhasDosCartoes.value)
+  fecharAPrevia()
+})
+
 async function carregar() {
   carregando.value = true
   falha.value = ''
   try {
     const [l, p, r, a, fila, baixas] = await Promise.all([
       sbClient.from('vessel_lotes').select('*').order('criado_em', { ascending: false }),
-      sbClient.from('vessel_pecas').select('codigo,lote_id,numero_na_serie,gravada_em'),
+      // `cartao_gerado_em` entrou em 11/09/2026: é o que separa a peça que já
+      // tem cartão impresso da que ainda espera. Sem ele a aba Cartões EAN
+      // marcaria TODAS por padrão e reimprimiria a leva inteira a cada clique.
+      sbClient.from('vessel_pecas').select('codigo,lote_id,numero_na_serie,gravada_em,cartao_gerado_em'),
       sbClient.from('vessel_registros').select('*').order('registrado_em', { ascending: false }),
       sbClient.rpc('vessel_alertas'),
       // A FILA VEM POR FUNÇÃO, e não por `select` na tabela, porque ela MASCARA
@@ -4110,7 +4409,14 @@ onMounted(() => {
   // bloqueado, porque aí `guiaJaVisto` devolve falso para sempre e o guia
   // voltaria a cada abertura, virando estorvo.
   if (podeEditar.value && !guiaJaVisto()) guiaAberto.value = true
+  // A prévia do cartão fala por `postMessage` quando não consegue desenhar.
+  window.addEventListener('message', ouvirAPrevia)
 })
+
+// ⚠️ E O OUVINTE SAI JUNTO COM A TELA. Sem isto ele fica pendurado em `window`
+// depois de a pessoa voltar para a Gestão Interna, e cada visita à ferramenta
+// pendura mais um — todos escrevendo num `erroDaPrevia` que não existe mais.
+onUnmounted(() => window.removeEventListener('message', ouvirAPrevia))
 </script>
 
 <style scoped>
@@ -5265,6 +5571,19 @@ onMounted(() => {
   .au-tabela-baixadas .au-tabela-cab, .au-tabela-baixadas .au-card{
     grid-template-columns:minmax(0,1.6fr) minmax(0,1fr) minmax(0,1.4fr) minmax(0,1.4fr);
   }
+  .au-tabela-cartoes .au-tabela-cab, .au-tabela-cartoes .au-card{
+    grid-template-columns:minmax(0,2.4fr) minmax(0,1.4fr) minmax(0,1fr) minmax(0,1.6fr);
+  }
+  .au-tabela-cartoes .au-card-linha{display:contents;}
+  /* ⚠️ O "VER O CARTÃO" FICA NA COLUNA "PRÉVIA", e não numa linha própria. A
+     regra-base de `.au-tabela` manda todo `.au-acoes` ocupar a linha inteira —
+     ela existe para os cartões com DOIS botões, que ficariam espremidos. Aqui é
+     um link só, e obedecendo àquela regra a coluna PRÉVIA ficava vazia com o
+     link solto embaixo do nome: um cabeçalho apontando para nada. */
+  .au-tabela-cartoes .au-card > .au-acoes{
+    grid-column:auto; margin-top:0; align-self:center; justify-content:flex-start;
+  }
+  .au-tabela-cartoes .au-rot-serie{display:none}
 
   /* ── 4. AS PEÇAS DO LOTE, TAMBÉM EM TABELA ─────────────────────────────
      Um lote tem até 500 peças, e é a lista mais varrida da ferramenta.
@@ -5534,7 +5853,72 @@ onMounted(() => {
   .au-mais{margin-top:var(--sp-4);}
 }
 
-/* O `@media` do celular é a ÚLTIMA coisa deste arquivo, e tem de continuar
+/* O `/* ══════════════════════════════════════════════════════════════════════════
+   A ABA DOS CARTÕES EAN
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* A MARCA E O NOME ANDAM JUNTOS, e o rótulo inteiro é o alvo de toque: marcar
+   uma peça mirando um quadradinho de 13px no celular é a diferença entre a
+   pessoa marcar a peça certa e a de baixo. 40px é o mínimo da casa. */
+.au-marca-cartao{
+  display:flex; align-items:center; gap:var(--sp-2);
+  min-height:40px; cursor:pointer; min-width:0;
+}
+.au-marca-cartao input{width:18px; height:18px; flex:0 0 auto; accent-color:var(--cor-acento);}
+.au-marca-cartao input:disabled{cursor:not-allowed;}
+.au-marca-cartao .au-modelo{min-width:0; overflow-wrap:anywhere;}
+
+/* ⚠️ O NÚMERO DE SÉRIE EM FONTE DE LARGURA FIXA. Ele é o que se confere contra
+   o papel, caractere a caractere — e em fonte proporcional o 0 e o O, o 1 e o
+   l, ficam do mesmo tamanho e a conferência falha justamente onde importa. */
+.au-serie-cartao{
+  font-family:ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size:var(--texto-corpo); overflow-wrap:anywhere;
+}
+
+/* A PRÉVIA. A proporção é a do cartão de verdade — 86,6 × 54,98 mm, as duas
+   faces empilhadas —, então o quadro nunca corta nem sobra: 86,6 / (54,98 × 2).
+   Escrito como `aspect-ratio`, ele acompanha a largura em qualquer tela sem
+   ninguém precisar recalcular altura. */
+.au-previa-cartao{
+  margin-top:var(--sp-4);
+  padding:var(--sp-3);
+  border:1px solid var(--cor-borda);
+  border-radius:var(--raio);
+  background:var(--cor-superficie);
+}
+/* ⚠️ O QUADRO TEM O TAMANHO DO CARTÃO, EM MILÍMETROS — 86,6 × 54,98 mm, as duas
+   faces empilhadas. Ele não se estica.
+
+   A primeira versão usava `width:100%` com `aspect-ratio`, e ficava MAIOR que o
+   cartão: o desenho é em mm absolutos e não acompanha o quadro, então sobrava
+   branco à direita e embaixo. Na tela isso não lê como moldura folgada — lê
+   como cartão cortado, com a bolsa desaparecendo numa borda que não existe.
+   Medido no computador: quadro de 420 px para um cartão de 327. */
+.au-previa-quadro{
+  /* Num aparelho estreito demais para os 86,6 mm, o cartão ROLA — encolher
+     cortaria o desenho, porque ele é em medida absoluta. */
+  overflow-x:auto;
+}
+.au-previa-folha{
+  width:86.6mm; height:109.96mm; flex:0 0 auto;
+  border:0; display:block; margin:var(--sp-2) auto 0;
+  /* O cartão tem fundo próprio (verde na frente, branco no verso). O quadro fica
+     claro para a borda do cartão se ver — sem isto, o verso branco some dentro
+     de um painel branco e parece que a prévia não carregou. */
+  background:var(--cor-fundo);
+  border-radius:var(--raio-pequeno, 6px);
+}
+
+/* O PEDIDO FICA GRUDADO NO FIM DA LISTA, e não flutuando: numa lista de 160
+   peças, botão fixo na base cobre a última linha — que é justamente a que a
+   pessoa acabou de marcar. */
+.au-pedir-cartoes{
+  flex-wrap:wrap; align-items:center; gap:var(--sp-3);
+  margin-top:var(--sp-4);
+}
+.au-pedir-cartoes .au-aviso-menor{flex:1 1 16em; min-width:0;}
+@media` do celular é a ÚLTIMA coisa deste arquivo, e tem de continuar
    sendo: duas regras de mesma especificidade, ganha a última — uma regra-base
    escrita depois daqui apagaria o ajuste de celular em silêncio.
    Medido no CSS do build antes de escrever esta linha. */
@@ -5580,4 +5964,5 @@ onMounted(() => {
   .au-aneis-caixa{width:72px; height:72px;}
   .au-bancada-estado{gap:var(--sp-3); padding:var(--sp-3);}
 }
+
 </style>
