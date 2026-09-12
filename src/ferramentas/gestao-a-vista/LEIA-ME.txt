@@ -201,3 +201,33 @@ da exibicao.
 ⚠️ O TOTAL DO PERIODO NAO MUDA. Ele vem dos pedidos, nao da lista de canais —
 entao a soma dos canais visiveis pode ficar menor que o total. E de proposito:
 venda que aconteceu e faturamento real, e o dono pediu para manter o historico.
+
+VALOR QUE O BLING CONGELOU ERRADO (12/09/2026)
+----------------------------------------------
+Nota fiscal autorizada TRANCA o pedido no Bling. Medido no pedido no 2656: o PUT
+da API responde 200 com "Esta venda esta bloqueada para edicao e foi salva
+parcialmente" e NAO grava nada; estornar contas e estornar estoque (o destrave
+documentado) nao abre; e a tela do Bling fica cinza do mesmo jeito.
+
+Como esta tela le `total` do pedido ao vivo, um valor errado ficaria para sempre.
+Por isso existe a tabela `bling_pedido_ajuste_valor`: uma linha por venda
+congelada errada, com o valor real e o MOTIVO (obrigatorio). A regra e pura e
+mora em `supabase/functions/_shared/valor-corrigido.js`; a ponte do navegador em
+`src/compartilhado/valor-corrigido.js`.
+
+⚠️ O AJUSTE ENTRA DEPOIS DO data-da-venda, NAO ANTES. E ali que passam tambem os
+pedidos TRAZIDOS de outro dia, cujo valor nao vem do Bling e sim de
+`bling_pedido_nota.total`. Aplicar antes corrigiria so metade dos caminhos, e a
+mesma venda apareceria 1.615 num dia e 1.900 noutro.
+
+⚠️ UMA CONSULTA SO, para as duas janelas. E a tabela e lida INTEIRA, sem filtrar
+pelos ids da janela: filtrar por `in(<ids>)` traria de volta o corte de 500 ids
+que ja morde o cache de vendedores.
+
+O que NAO muda: o Bling e a nota fiscal — o valor errado fica la para sempre, e
+a divergencia fiscal e assunto da contabilidade.
+
+DESDE 12/09/2026 O AJUSTE VALE TAMBEM FORA DAS TELAS: a mensagem das 22h
+(Edge enviar-push-vendas) e os robos do coletor (gestor comercial, relatorios
+comerciais, atualizar-cards) leem a MESMA regra. O que ainda falta e tela para
+cadastrar ajuste — B31 de docs/pendencias.md.

@@ -214,14 +214,29 @@ function celula(v: unknown): string {
   return /[",;\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
+// O TEXTO É PARA GENTE LER, não o valor cru do banco: quem abre a planilha no
+// Bling e no Zoho não sabe o que "visita" ou "ecommerce" significam sem olhar
+// o código. `null` é "ainda não chegou na segunda pergunta" — a LP cadastra
+// primeiro e pergunta depois (Task 1), então toda linha nasce assim.
+function objetivoLegivel(v: string | null | undefined): string {
+  if (v === 'visita') return 'quer visitar a loja';
+  if (v === 'ecommerce') return 'quer comprar pelo site';
+  return 'ainda nao escolheu';
+}
+
 function montarCsv(linhas: any[]): string {
-  const cab = ['nome', 'email', 'whatsapp', 'origem', 'entrou_em', 'aceite_em', 'aceite_versao', 'no_bling'];
+  // ⚠️ COLUNA NOVA SEMPRE NO FIM. Quem já baixou este CSV montou planilha em
+  // cima desta ordem; inserir no meio deslocaria todas as colunas seguintes e
+  // quebraria o trabalho dessa pessoa, sem erro nenhum aparecendo em lugar algum.
+  const cab = ['nome', 'email', 'whatsapp', 'origem', 'entrou_em', 'aceite_em', 'aceite_versao', 'no_bling',
+    'objetivo'];
   const corpo = linhas.map((l) => [
     l.nome, l.email, l.whatsapp, l.origem,
     new Date(l.criado_em).toISOString().slice(0, 19).replace('T', ' '),
     l.aceite_em ? new Date(l.aceite_em).toISOString().slice(0, 19).replace('T', ' ') : '',
     l.aceite_versao,
     l.bling_id ? 'sim' : 'ainda não',
+    objetivoLegivel(l.objetivo),
   ].map(celula).join(','));
   return [cab.join(','), ...corpo].join('\n') + '\n';
 }

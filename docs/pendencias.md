@@ -685,6 +685,43 @@ código de barras — "tem pasta de cartão" não é "tem cartão bom", e foi as
 os 5 sem código passaram batido por três semanas.
 
 
+### B31 · Valor corrigido › falta a tela de cadastro 🟡 *aberto em 12/09/2026*
+
+**O que já está de pé:** `bling_pedido_ajuste_valor` guarda o valor real de uma
+venda que o Bling congelou errada, e **todo mundo que fala número de venda já
+lê de lá**, pela mesma regra em `supabase/functions/_shared/valor-corrigido.js`:
+as duas telas (Gestão à Vista e Análise de Vendas), a **mensagem das 22h** (Edge
+`enviar-push-vendas` **v11**, publicada em 12/09/2026 com `verify_jwt: false`
+preservado) e os **robôs do coletor** (gestor comercial, relatórios comerciais e
+`atualizar-cards-comercial`, os três pelo `blingPedidos`).
+
+**Por que existe:** nota fiscal autorizada **tranca o pedido no Bling**. Medido em
+12/09/2026 no pedido nº 2656: o `PUT` devolve **200** com o aviso "Esta venda está
+bloqueada para edição e foi salva parcialmente" e **não grava nada** (conferido por
+GET + diff); estornar contas e estornar estoque — o destrave documentado — **não
+abre**; e a tela do Bling fica cinza igual. O valor errado é imutável na origem.
+
+**O que falta, e é o que importa:**
+1. **Não existe tela para cadastrar o ajuste.** Hoje a linha entra por SQL, de
+   super-admin. Enquanto for caso raro, tudo bem; na terceira vez vira
+   [[lista à mão]] e alguém vai editar banco no escuro.
+2. **A tela não mostra que o número foi ajustado.** Os pedidos saem do módulo
+   marcados com `valorAjustado` e `totalDoBling`, e ninguém desenha isso ainda.
+
+**Cuidado que já está pago e não pode ser desfeito:** o ajuste entra **DEPOIS** do
+`data-da-venda`, nos quatro lugares. É ali que passam também os pedidos *trazidos
+de outro dia*, cujo valor vem de `bling_pedido_nota.total` e não do Bling — antes,
+o ajuste pegaria só metade dos caminhos. Há teste travando as duas ordens em
+`coletor/lib/ajustes-de-valor.test.mjs`.
+
+**E a postura no erro é diferente por lugar, de propósito:** tela que não consegue
+ler o ajuste mostra o valor do Bling (tela de venda vazia é pior); **robô e Edge
+PARAM** — publicar 1.900 quando o telão diz 1.615 é pior que ficar calado.
+
+**O que isto NÃO conserta, e nunca vai:** o Bling e a nota fiscal. A NFC-e 000107
+continua em R$ 1.900,00 — a divergência fiscal é assunto da contabilidade.
+
+
 ## Parte C — Ideias guardadas (ninguém pediu ainda)
 
 ### C2 · Gestor de Tráfego › subir campanha por upload 🟡 *metade já está de pé — conferido em 18/08*
