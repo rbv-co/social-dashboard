@@ -58,6 +58,11 @@ function voltar() {
 // semana" — sem filtro de período nesta primeira entrega (spec §8, YAGNI).
 const JANELA_DIAS = 14
 
+// Pedido do dono (12/09/2026): só a conta "Vessel" (id em public.accounts).
+// Cravado porque é a única conta pedida hoje — não "La Vessel Dom Pedro",
+// que é loja à parte. Virar seletor de conta é trabalho de outra entrega.
+const CONTA_VESSEL = 'b6883e82-07cb-4f21-9fd7-ea7626786174'
+
 const carregando = ref(true)
 const erro = ref(null)
 const dias = ref([])
@@ -90,7 +95,7 @@ async function carregar() {
   const desdeISO = desde.toISOString().slice(0, 10)
 
   const [linhas, campanhas] = await Promise.all([
-    sb(`campaign_insights_hora?select=dia,hora,campaign_id,gasto_hora,conversas_hora&dia=gte.${desdeISO}&order=dia.desc,hora.asc`),
+    sb(`campaign_insights_hora?select=dia,hora,campaign_id,gasto_hora,conversas_hora&dia=gte.${desdeISO}&account_id=eq.${CONTA_VESSEL}&order=dia.desc,hora.asc`),
     sb('campaigns?select=campaign_id,name'),
   ])
 
