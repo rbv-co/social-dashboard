@@ -56,7 +56,7 @@
         </div>
         <div class="smenu-card" v-if="hasPermission('meta.hora')" @click="ir('meta-relatorio-hora')">
           <div class="smenu-card-icon" style="background:var(--orange)">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--sobre-cor)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
           </div>
           <div class="smenu-card-title">Relatório por Hora</div>
           <div class="smenu-card-desc">Gasto, conversas iniciadas e custo por lead de cada campanha, hora a hora.</div>

@@ -114,23 +114,23 @@ onMounted(carregar)
 <style scoped>
 .tela-relatorio-hora { min-height: 100vh; display: flex; flex-direction: column; background: var(--bg); }
 .rph-body { flex: 1; padding: var(--sp-6) var(--sp-6); display: flex; flex-direction: column; gap: var(--sp-4); }
-.rph-vazio { color: var(--muted); font-size: 13px; }
+.rph-vazio { color: var(--muted); font-size: var(--texto-corpo); }
 
 .rph-dia { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
 .rph-dia-cabecalho { width: 100%; min-height: 48px; display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4); background: none; border: none; cursor: pointer; text-align: left; font-family: var(--fonte-principal); color: var(--text); }
 .rph-dia-seta { color: var(--muted); transition: transform .15s; flex-shrink: 0; }
 .rph-dia-seta.aberto { transform: rotate(90deg); }
-.rph-dia-data { font-weight: 600; font-size: 14px; overflow-wrap: anywhere; }
-.rph-dia-totais { margin-left: auto; color: var(--muted); font-size: 12px; white-space: nowrap; }
+.rph-dia-data { font-weight: 600; font-size: var(--texto-campo); overflow-wrap: anywhere; }
+.rph-dia-totais { margin-left: auto; color: var(--muted); font-size: var(--texto-etiqueta); white-space: nowrap; }
 
 .rph-horas { border-top: 1px solid var(--border); display: flex; flex-direction: column; }
 .rph-hora { padding: var(--sp-3) var(--sp-4); border-bottom: 1px solid var(--border); }
 .rph-hora:last-child { border-bottom: none; }
 .rph-hora-cabecalho { display: flex; align-items: baseline; gap: var(--sp-3); margin-bottom: var(--sp-2); }
-.rph-hora-rotulo { font-weight: 600; font-size: 13px; }
-.rph-hora-totais { color: var(--muted); font-size: 12px; }
+.rph-hora-rotulo { font-weight: 600; font-size: var(--texto-corpo); }
+.rph-hora-totais { color: var(--muted); font-size: var(--texto-etiqueta); }
 
-.rph-tabela { width: 100%; border-collapse: collapse; font-size: 12px; }
+.rph-tabela { width: 100%; border-collapse: collapse; font-size: var(--texto-corpo); }
 .rph-tabela th { text-align: left; color: var(--muted); font-weight: 600; padding: var(--sp-1) var(--sp-2); border-bottom: 1px solid var(--border); }
 .rph-tabela td { padding: var(--sp-1) var(--sp-2); border-bottom: 1px solid var(--border); }
 .rph-tabela tr:last-child td { border-bottom: none; }
@@ -139,6 +139,6 @@ onMounted(carregar)
 @media (max-width: 640px) {
   .rph-body { padding: var(--sp-4) var(--sp-3); }
   .rph-tabela { display: block; overflow-x: auto; }
-  .rph-dia-totais { font-size: 11px; }
+  .rph-dia-totais { font-size: var(--texto-etiqueta); }
 }
 </style>

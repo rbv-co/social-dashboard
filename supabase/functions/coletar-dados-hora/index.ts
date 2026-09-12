@@ -30,10 +30,12 @@ async function apiGetAll(path: string, params: Record<string, string>): Promise<
 }
 
 // Uma conta: busca o insight do dia (acumulado até agora), calcula o delta
-// contra a última linha já gravada hoje, e grava. Erro nesta conta (sem
-// token, Meta fora do ar) não derruba as outras — mesmo espírito do
-// `try/catch` por conta em coletar-dados/index.ts.
-async function coletarConta(sb: any, acc: any, dia: string, hora: number): Promise<number> {
+// contra a última linha já gravada hoje ANTES desta hora, e grava tudo de uma
+// vez. Erro nesta conta (sem token, Meta fora do ar, erro do banco) não
+// derruba as outras contas — mas fica registrado em `degraded`, porque
+// `console.error` não aparece em lugar nenhum que alguém olhe (mesmo motivo
+// documentado em coletar-dados/index.ts).
+async function coletarConta(sb: any, acc: any, dia: string, hora: number, degraded: string[]): Promise<number> {
   const { id: accountId, ad_account_id: adAccountId, access_token: token, name } = acc;
   if (!adAccountId || !token) return 0;
   try {
@@ -43,34 +45,51 @@ async function coletarConta(sb: any, acc: any, dia: string, hora: number): Promi
       level: 'campaign',
       access_token: token,
     });
+    if (!items.length) return 0;
 
-    for (const r of items) {
+    // Uma consulta só para a conta inteira: todas as linhas já gravadas HOJE
+    // ANTES desta hora (não incluindo a própria hora — uma segunda rodada na
+    // mesma hora não pode se comparar consigo mesma). Ordenado por hora
+    // decrescente, a PRIMEIRA ocorrência de cada campaign_id é a mais recente.
+    const { data: anterioresRows, error: erroAnteriores } = await sb
+      .from('campaign_insights_hora')
+      .select('campaign_id,gasto_acumulado,conversas_acumuladas,hora')
+      .eq('account_id', accountId).eq('dia', dia).lt('hora', hora)
+      .order('hora', { ascending: false });
+    if (erroAnteriores) {
+      degraded.push(`${name}: falha ao ler leitura anterior (${erroAnteriores.message})`);
+      return 0;
+    }
+    const anteriorPorCampanha = new Map<string, any>();
+    for (const row of anterioresRows ?? []) {
+      if (!anteriorPorCampanha.has(row.campaign_id)) anteriorPorCampanha.set(row.campaign_id, row);
+    }
+
+    const linhas = items.map((r: any) => {
       const campaignId = r.campaign_id;
       const gastoAcumulado = parseFloat(r.spend ?? '0');
       const conversasAcumuladas = conversasIniciadas(r.actions);
-
-      const { data: anteriorRows } = await sb
-        .from('campaign_insights_hora')
-        .select('gasto_acumulado,conversas_acumuladas')
-        .eq('campaign_id', campaignId).eq('account_id', accountId).eq('dia', dia)
-        .order('hora', { ascending: false }).limit(1);
-      const anterior = anteriorRows?.[0] ?? null;
-
+      const anterior = anteriorPorCampanha.get(campaignId) ?? null;
       const { gasto_hora, conversas_hora } = calcularDeltaHora(gastoAcumulado, conversasAcumuladas, anterior);
+      return {
+        campaign_id: campaignId, account_id: accountId, dia, hora,
+        gasto_acumulado: gastoAcumulado, conversas_acumuladas: conversasAcumuladas,
+        gasto_hora, conversas_hora,
+      };
+    });
 
-      await sb.from('campaign_insights_hora').upsert(
-        {
-          campaign_id: campaignId, account_id: accountId, dia, hora,
-          gasto_acumulado: gastoAcumulado, conversas_acumuladas: conversasAcumuladas,
-          gasto_hora, conversas_hora,
-        },
-        { onConflict: 'campaign_id,account_id,dia,hora' },
-      );
+    const { error: erroUpsert } = await sb
+      .from('campaign_insights_hora')
+      .upsert(linhas, { onConflict: 'campaign_id,account_id,dia,hora' });
+    if (erroUpsert) {
+      degraded.push(`${name}: falha ao gravar (${erroUpsert.message})`);
+      return 0;
     }
-    console.log(`✓ ${name}: ${items.length} campanhas`);
-    return items.length;
+
+    console.log(`✓ ${name}: ${linhas.length} campanhas`);
+    return linhas.length;
   } catch (e) {
-    console.error(`✗ ${name}:`, e);
+    degraded.push(`${name}: ${e instanceof Error ? e.message : String(e)}`);
     return 0;
   }
 }
@@ -83,15 +102,30 @@ Deno.serve(async (req: Request) => {
   const dia = todayBR();
   const hora = horaBR();
 
-  const { data: contas } = await sb
+  const { data: contas, error: erroContas } = await sb
     .from('accounts')
     .select('id,name,ad_account_id,access_token')
     .not('ad_account_id', 'is', null);
 
-  let campanhas = 0;
-  for (const acc of contas ?? []) campanhas += await coletarConta(sb, acc, dia, hora);
+  if (erroContas) {
+    return new Response(JSON.stringify({ ok: false, erro: erroContas.message }), {
+      status: 500, headers: { 'Content-Type': 'application/json' },
+    });
+  }
 
-  return new Response(JSON.stringify({ ok: true, dia, hora, contas: (contas ?? []).length, campanhas }), {
+  const degraded: string[] = [];
+  let campanhas = 0;
+  for (const acc of contas ?? []) campanhas += await coletarConta(sb, acc, dia, hora, degraded);
+
+  // 500 quando havia conta pra processar e NADA foi coletado — sinal pro
+  // robos_saude enxergar, em vez de sempre devolver 200 mesmo tudo falhando.
+  const semNadaColetado = campanhas === 0 && (contas ?? []).length > 0;
+
+  return new Response(JSON.stringify({
+    ok: !semNadaColetado, dia, hora, contas: (contas ?? []).length, campanhas,
+    degraded: degraded.length ? degraded : undefined,
+  }), {
+    status: semNadaColetado ? 500 : 200,
     headers: { 'Content-Type': 'application/json' },
   });
 });
