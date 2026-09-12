@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   custoPorLead, agruparPorDiaEHora, tipoDaCampanha, comResultado, semResultado, deSeguidores, montarMensagemWpp,
+  deltaDeSeguidoresPorHora, seguidoresNaHora,
 } from './relatorio-por-hora.js';
 
 test('custoPorLead divide gasto por conversas', () => {
@@ -124,4 +125,55 @@ test('montarMensagemWpp: total zero não inventa custo por lead na mensagem', ()
   assert.match(msg, /X — 0 leads/);
   assert.match(msg, /Total: 0 leads · R\$\s?40,00 investidos$/);
   assert.doesNotMatch(msg, /\/lead/);
+});
+
+test('deltaDeSeguidoresPorHora: primeira leitura da série vem com delta null, nunca 0', () => {
+  const leituras = [{ followers_count: 1000, lido_em: '2026-09-11T13:05:00Z' }];
+  const out = deltaDeSeguidoresPorHora(leituras);
+  assert.deepEqual(out, [{ dia: '2026-09-11', hora: 10, seguidoresDelta: null }]);
+});
+
+test('deltaDeSeguidoresPorHora: calcula o delta contra a leitura anterior, ganho e perda', () => {
+  const leituras = [
+    { followers_count: 1000, lido_em: '2026-09-11T13:05:00Z' }, // 10h SP
+    { followers_count: 1005, lido_em: '2026-09-11T14:05:00Z' }, // 11h SP: +5
+    { followers_count: 1002, lido_em: '2026-09-11T15:05:00Z' }, // 12h SP: -3
+  ];
+  const out = deltaDeSeguidoresPorHora(leituras);
+  assert.deepEqual(out.map((o) => o.seguidoresDelta), [null, 5, -3]);
+  assert.deepEqual(out.map((o) => o.hora), [10, 11, 12]);
+});
+
+test('deltaDeSeguidoresPorHora: duas leituras no mesmo bucket de hora — fica só a mais recente', () => {
+  const leituras = [
+    { followers_count: 1000, lido_em: '2026-09-11T13:05:00Z' }, // 10h SP
+    { followers_count: 1003, lido_em: '2026-09-11T13:50:00Z' }, // mesma 10h SP, mais recente
+    { followers_count: 1010, lido_em: '2026-09-11T14:05:00Z' }, // 11h SP
+  ];
+  const out = deltaDeSeguidoresPorHora(leituras);
+  assert.equal(out.length, 2, 'as duas leituras da mesma hora viraram um bucket só');
+  assert.equal(out[1].seguidoresDelta, 7, 'delta contra 1003 (a mais recente), não contra 1000');
+});
+
+test('deltaDeSeguidoresPorHora: atravessa a virada do dia sem resetar (seguidor não é gasto)', () => {
+  const leituras = [
+    { followers_count: 5000, lido_em: '2026-09-12T02:05:00Z' }, // 23h SP, 11/09
+    { followers_count: 5008, lido_em: '2026-09-12T03:05:00Z' }, // 00h SP, 12/09
+  ];
+  const out = deltaDeSeguidoresPorHora(leituras);
+  assert.deepEqual(out.map((o) => ({ dia: o.dia, hora: o.hora })), [
+    { dia: '2026-09-11', hora: 23 },
+    { dia: '2026-09-12', hora: 0 },
+  ]);
+  assert.equal(out[1].seguidoresDelta, 8);
+});
+
+test('seguidoresNaHora: acha a hora certa, e null quando não tem leitura', () => {
+  const deltas = deltaDeSeguidoresPorHora([
+    { followers_count: 1000, lido_em: '2026-09-11T13:05:00Z' },
+    { followers_count: 1005, lido_em: '2026-09-11T14:05:00Z' },
+  ]);
+  assert.equal(seguidoresNaHora(deltas, '2026-09-11', 11), 5);
+  assert.equal(seguidoresNaHora(deltas, '2026-09-11', 10), null, 'primeira leitura da série: null, não 0');
+  assert.equal(seguidoresNaHora(deltas, '2026-09-11', 15), null, 'hora sem leitura nenhuma');
 });

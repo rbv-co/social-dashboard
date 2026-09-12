@@ -43,6 +43,13 @@
 
             <div v-if="deSeguidores(h.campanhas).length" class="rph-secao">
               <div class="section-label">Seguidores</div>
+              <!-- Da CONTA inteira, não da campanha — a Meta não diz qual
+                   anúncio trouxe qual seguidor. Some quando não há leitura
+                   pra essa hora (nunca mostra 0 como se fosse "não mudou"). -->
+              <p v-if="seguidoresNaHora(deltasSeguidores, d.dia, h.hora) !== null" class="rph-seguidores-conta">
+                Seguidores da conta nessa hora:
+                <strong>{{ seguidoresNaHora(deltasSeguidores, d.dia, h.hora) > 0 ? '+' : '' }}{{ seguidoresNaHora(deltasSeguidores, d.dia, h.hora) }}</strong>
+              </p>
               <table class="rph-tabela">
                 <thead><tr><th>Campanha</th><th>Investido</th><th>Conversas</th><th>Custo/lead</th></tr></thead>
                 <tbody>
@@ -95,6 +102,7 @@ import FaixaDeErro from '../../compartilhado/faixa-de-erro.vue'
 import { sb } from '../../compartilhado/buscar-e-salvar-dados.js'
 import {
   agruparPorDiaEHora, comResultado, semResultado, deSeguidores, montarMensagemWpp, formatarReais,
+  deltaDeSeguidoresPorHora, seguidoresNaHora,
 } from './relatorio-por-hora.js'
 
 const router = useRouter()
@@ -114,6 +122,7 @@ const CONTA_VESSEL = 'b6883e82-07cb-4f21-9fd7-ea7626786174'
 const carregando = ref(true)
 const erro = ref(null)
 const dias = ref([])
+const deltasSeguidores = ref([])
 const expandidos = ref(new Set())
 
 function expandido(dia) {
@@ -161,16 +170,19 @@ async function carregar() {
   desde.setDate(desde.getDate() - JANELA_DIAS)
   const desdeISO = desde.toISOString().slice(0, 10)
 
-  const [linhas, campanhas] = await Promise.all([
+  const [linhas, campanhas, leiturasSeguidores] = await Promise.all([
     sb(`campaign_insights_hora?select=dia,hora,campaign_id,gasto_hora,conversas_hora&dia=gte.${desdeISO}&account_id=eq.${CONTA_VESSEL}&order=dia.desc,hora.asc`),
     sb('campaigns?select=campaign_id,name'),
+    sb(`followers_leituras?select=followers_count,lido_em&account_id=eq.${CONTA_VESSEL}&lido_em=gte.${desde.toISOString()}&order=lido_em.asc`),
   ])
 
   if (linhas.erro) { erro.value = linhas.erro; carregando.value = false; return }
   if (campanhas.erro) { erro.value = campanhas.erro; carregando.value = false; return }
+  if (leiturasSeguidores.erro) { erro.value = leiturasSeguidores.erro; carregando.value = false; return }
 
   const nomesPorCampanha = Object.fromEntries(campanhas.map((c) => [c.campaign_id, c.name]))
   dias.value = agruparPorDiaEHora(linhas, nomesPorCampanha)
+  deltasSeguidores.value = deltaDeSeguidoresPorHora(leiturasSeguidores)
 
   // Hoje nasce expandido; dias passados nascem fechados — "visão simples"
   // pedida: quem abre a tela já vê o dia de hoje sem precisar clicar.
@@ -203,6 +215,7 @@ onMounted(carregar)
 .rph-hora-totais { color: var(--muted); font-size: var(--texto-etiqueta); }
 
 .rph-secao { display: flex; flex-direction: column; gap: var(--sp-2); }
+.rph-seguidores-conta { margin: 0; font-size: var(--texto-corpo); color: var(--text); }
 
 .rph-tabela { width: 100%; border-collapse: collapse; font-size: var(--texto-corpo); }
 .rph-tabela th { text-align: left; color: var(--muted); font-weight: 600; padding: var(--sp-1) var(--sp-2); border-bottom: 1px solid var(--border); }

@@ -102,3 +102,51 @@ export function montarMensagemWpp(dia, hora, campanhas) {
 
   return [cabecalho, '', ...linhas, '', consolidado].join('\n');
 }
+
+function diaEHoraSP(isoTimestamp) {
+  const d = new Date(isoTimestamp);
+  const dia = d.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+  const hora = Number(d.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo', hour: '2-digit', hour12: false }));
+  return { dia, hora };
+}
+
+// Seguidores são da CONTA, nunca da campanha — a Meta não atribui "novo
+// seguidor" a uma campanha específica pra esse tipo de anúncio (conferido
+// direto na Graph API em 12/09/2026: nenhuma campanha [+ SEGUIDORES] tinha
+// ação de "follow"). Por isso este número vem de `followers_leituras`
+// (leitura da conta inteira, já existia, agora alimentada de hora em hora),
+// não de `campaign_insights_hora`.
+//
+// Delta sempre contra a ÚLTIMA leitura anterior, atravessando a virada do
+// dia — seguidor não reseta à meia-noite como o gasto reseta. A primeira
+// leitura da série INTEIRA não tem "anterior": vem com delta `null` (não
+// `0` — `0` diria "não mudou", e a verdade é "ainda não sei").
+//
+// Duas leituras no mesmo bucket dia+hora (o coletor de 4x/dia e o de hora
+// em hora podem cair na mesma hora) — fica só a MAIS RECENTE das duas.
+export function deltaDeSeguidoresPorHora(leituras) {
+  const porBucket = new Map();
+  for (const l of leituras) {
+    const { dia, hora } = diaEHoraSP(l.lido_em);
+    const chave = `${dia}|${hora}`;
+    const atual = porBucket.get(chave);
+    if (!atual || new Date(l.lido_em) > new Date(atual.lidoEm)) {
+      porBucket.set(chave, { dia, hora, followersCount: l.followers_count, lidoEm: l.lido_em });
+    }
+  }
+  const ordenado = [...porBucket.values()].sort((a, b) => new Date(a.lidoEm) - new Date(b.lidoEm));
+  let anterior = null;
+  return ordenado.map((b) => {
+    const seguidoresDelta = anterior === null ? null : b.followersCount - anterior.followersCount;
+    anterior = b;
+    return { dia: b.dia, hora: b.hora, seguidoresDelta };
+  });
+}
+
+// Acha o delta de uma hora específica dentro do que `deltaDeSeguidoresPorHora`
+// devolveu. `null` tanto quando não há leitura pra essa hora quanto quando é
+// a primeira leitura da série — a tela mostra os dois casos como "sem dado".
+export function seguidoresNaHora(deltas, dia, hora) {
+  const achado = deltas.find((d) => d.dia === dia && d.hora === hora);
+  return achado ? achado.seguidoresDelta : null;
+}

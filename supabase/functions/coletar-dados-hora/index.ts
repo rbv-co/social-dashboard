@@ -14,6 +14,14 @@ function horaBR(): number {
   return Number(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo', hour: '2-digit', hour12: false }));
 }
 
+async function apiGet(path: string, params: Record<string, string>): Promise<any> {
+  const url = new URL(`${GRAPH}/${path}`);
+  Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
+  const r = await fetch(url.toString());
+  if (!r.ok) throw new Error(`Meta API ${path}: ${r.status} ${await r.text()}`);
+  return r.json();
+}
+
 async function apiGetAll(path: string, params: Record<string, string>): Promise<any[]> {
   const url = new URL(`${GRAPH}/${path}`);
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
@@ -94,6 +102,26 @@ async function coletarConta(sb: any, acc: any, dia: string, hora: number, degrad
   }
 }
 
+// Seguidores da conta (não por campanha — a Meta não atribui "novo
+// seguidor" a uma campanha específica pra esse tipo de anúncio, conferido
+// na hora com a Graph API real: nenhuma das campanhas [+ SEGUIDORES] de
+// 11/09 tinha ação de "follow"). Uma leitura por conta por rodada, em
+// `followers_leituras` — tabela que já existia pra isso (usada 4x/dia pelo
+// coletar-dados; aqui vira ~24x/dia). Quem calcula o delta hora a hora é a
+// tela, comparando leituras consecutivas — aqui só grava o bruto.
+async function coletarSeguidoresDaConta(sb: any, acc: any, degraded: string[]): Promise<void> {
+  const { id: accountId, instagram_id: igId, access_token: token, name } = acc;
+  if (!igId || !token) return;
+  try {
+    const d = await apiGet(igId, { fields: 'followers_count', access_token: token });
+    const seguidores = d.followers_count ?? 0;
+    const { error } = await sb.from('followers_leituras').insert({ account_id: accountId, followers_count: seguidores });
+    if (error) degraded.push(`${name}: falha ao gravar seguidores (${error.message})`);
+  } catch (e) {
+    degraded.push(`${name}: seguidores (${e instanceof Error ? e.message : String(e)})`);
+  }
+}
+
 Deno.serve(async (req: Request) => {
   const negado = await exigirSegredoDeCron(req, 'coletar-dados-hora');
   if (negado) return negado;
@@ -104,7 +132,7 @@ Deno.serve(async (req: Request) => {
 
   const { data: contas, error: erroContas } = await sb
     .from('accounts')
-    .select('id,name,ad_account_id,access_token')
+    .select('id,name,ad_account_id,access_token,instagram_id')
     .not('ad_account_id', 'is', null);
 
   if (erroContas) {
@@ -115,7 +143,10 @@ Deno.serve(async (req: Request) => {
 
   const degraded: string[] = [];
   let campanhas = 0;
-  for (const acc of contas ?? []) campanhas += await coletarConta(sb, acc, dia, hora, degraded);
+  for (const acc of contas ?? []) {
+    campanhas += await coletarConta(sb, acc, dia, hora, degraded);
+    await coletarSeguidoresDaConta(sb, acc, degraded);
+  }
 
   // 500 quando havia conta pra processar e NADA foi coletado — sinal pro
   // robos_saude enxergar, em vez de sempre devolver 200 mesmo tudo falhando.
