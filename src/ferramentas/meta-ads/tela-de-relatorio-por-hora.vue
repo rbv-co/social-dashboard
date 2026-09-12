@@ -13,7 +13,10 @@
         <button class="rph-dia-cabecalho" @click="alternar(d.dia)">
           <span class="rph-dia-seta" :class="{ aberto: expandido(d.dia) }">▸</span>
           <span class="rph-dia-data">{{ formatarDia(d.dia) }}</span>
-          <span class="rph-dia-totais">{{ formatarReais(d.gastoTotal) }} · {{ d.conversasTotal }} conversas</span>
+          <span class="rph-resumo rph-resumo-dia">
+            <span class="rph-valor rph-valor-dia">{{ formatarReais(d.gastoTotal) }}</span>
+            <span class="selo" :class="d.conversasTotal > 0 ? 'selo-ok' : 'selo-neutro'">{{ textoConversas(d.conversasTotal) }}</span>
+          </span>
         </button>
 
         <div v-if="expandido(d.dia)" class="rph-horas">
@@ -21,93 +24,82 @@
             <button class="rph-hora-cabecalho" @click="alternarHora(d.dia, h.hora)">
               <span class="rph-hora-seta" :class="{ aberto: horaExpandida(d.dia, h.hora) }">▸</span>
               <span class="rph-hora-rotulo">{{ String(h.hora).padStart(2, '0') }}h</span>
-              <span class="rph-hora-totais">{{ formatarReais(h.gastoTotal) }} · {{ h.conversasTotal }} conversas</span>
+              <span class="rph-resumo">
+                <span class="rph-valor">{{ formatarReais(h.gastoTotal) }}</span>
+                <span class="selo" :class="h.conversasTotal > 0 ? 'selo-ok' : 'selo-neutro'">{{ textoConversas(h.conversasTotal) }}</span>
+              </span>
             </button>
 
-            <template v-if="horaExpandida(d.dia, h.hora)">
-            <!-- Três seções, cada uma expande/recolhe por tipo de campanha
-                 (o clique vale pras horas todas de uma vez — é o TIPO que
-                 abre/fecha, não uma hora isolada). -->
-
-            <div class="rph-secao">
-              <button class="rph-secao-cabecalho" @click="secoesAbertas.campanhas = !secoesAbertas.campanhas">
-                <span class="section-label">Campanhas</span>
-                <span class="rph-secao-seta" :class="{ aberto: secoesAbertas.campanhas }">▸</span>
-              </button>
-              <template v-if="secoesAbertas.campanhas">
-                <button class="btn rph-toggle" @click="modoCampanhas = modoCampanhas === 'resultado' ? 'todas' : 'resultado'">
-                  {{ modoCampanhas === 'resultado' ? 'Mostrar todas' : 'Só com resultado' }}
-                </button>
+            <!-- Hora aberta mostra Campanhas e Seguidores direto, sem clique
+                 a mais — são o conteúdo principal do relatório. Só "Mensagens
+                 do grupo" (texto pronto pra copiar, uso secundário agora que
+                 o robô manda sozinho) continua atrás de um toggle, e esse
+                 toggle é POR HORA, não global — cada hora abre e fecha a sua,
+                 sem mexer nas outras. -->
+            <div v-if="horaExpandida(d.dia, h.hora)" class="rph-hora-conteudo">
+              <div class="rph-bloco">
+                <div class="rph-bloco-topo">
+                  <span class="section-label">Campanhas</span>
+                  <button class="btn rph-toggle" @click="modoCampanhas = modoCampanhas === 'resultado' ? 'todas' : 'resultado'">
+                    {{ modoCampanhas === 'resultado' ? 'Mostrar todas' : 'Só com resultado' }}
+                  </button>
+                </div>
                 <table v-if="campanhasParaExibir(h).length" class="rph-tabela">
                   <thead><tr><th>Campanha</th><th>Investido</th><th>Conversas</th><th>Custo/lead</th></tr></thead>
                   <tbody>
                     <tr v-for="c in campanhasParaExibir(h)" :key="c.campaignId">
                       <td class="rph-campanha">{{ c.nome }}</td>
-                      <td>{{ formatarReais(c.gastoHora) }}</td>
-                      <td>{{ c.conversasHora }}</td>
-                      <td>{{ c.custoPorLead === null ? '—' : formatarReais(c.custoPorLead) }}</td>
+                      <td class="rph-num">{{ formatarReais(c.gastoHora) }}</td>
+                      <td class="rph-num">{{ c.conversasHora }}</td>
+                      <td class="rph-num">{{ c.custoPorLead === null ? '—' : formatarReais(c.custoPorLead) }}</td>
                     </tr>
                   </tbody>
                 </table>
                 <p v-else class="rph-vazio">Nenhuma campanha nessa hora, com esse filtro.</p>
-              </template>
-            </div>
+              </div>
 
-            <div
-              v-if="seguidoresNaHora(deltasSeguidores, d.dia, h.hora) !== null || visitasPerfilNaHora(visitasPerfil, d.dia, h.hora) !== null"
-              class="rph-secao"
-            >
-              <button class="rph-secao-cabecalho" @click="secoesAbertas.seguidores = !secoesAbertas.seguidores">
+              <div
+                v-if="seguidoresNaHora(deltasSeguidores, d.dia, h.hora) !== null || visitasPerfilNaHora(visitasPerfil, d.dia, h.hora) !== null"
+                class="rph-bloco"
+              >
                 <span class="section-label">Seguidores</span>
-                <span class="rph-secao-seta" :class="{ aberto: secoesAbertas.seguidores }">▸</span>
-              </button>
-              <template v-if="secoesAbertas.seguidores">
-                <!-- Da CONTA inteira, nunca por campanha — a Meta não atribui
-                     nem seguidor nem visita ao perfil a uma campanha
-                     específica (conferido ao vivo, 12/09/2026). Some quando
-                     não há leitura pra essa hora (nunca mostra 0 como se
-                     fosse "não mudou"/"não teve"). -->
+                <!-- Da CONTA inteira, nunca por campanha — a Meta não diz qual
+                     anúncio trouxe qual seguidor (nem visita ao perfil). Some
+                     quando não há leitura pra essa hora (nunca mostra 0 como
+                     se fosse "não mudou"/"não teve"). -->
                 <p v-if="seguidoresNaHora(deltasSeguidores, d.dia, h.hora) !== null" class="rph-seguidores-conta">
                   Seguidores da conta nessa hora:
-                  <strong>{{ seguidoresNaHora(deltasSeguidores, d.dia, h.hora) > 0 ? '+' : '' }}{{ seguidoresNaHora(deltasSeguidores, d.dia, h.hora) }}</strong>
+                  <strong class="rph-num">{{ seguidoresNaHora(deltasSeguidores, d.dia, h.hora) > 0 ? '+' : '' }}{{ seguidoresNaHora(deltasSeguidores, d.dia, h.hora) }}</strong>
                 </p>
                 <p v-if="visitasPerfilNaHora(visitasPerfil, d.dia, h.hora) !== null" class="rph-seguidores-conta">
                   Visitas ao perfil da conta nessa hora:
-                  <strong>{{ visitasPerfilNaHora(visitasPerfil, d.dia, h.hora) }}</strong>
+                  <strong class="rph-num">{{ visitasPerfilNaHora(visitasPerfil, d.dia, h.hora) }}</strong>
                 </p>
-              </template>
-            </div>
+              </div>
 
-            <div v-if="montarMensagemWpp(d.dia, h.hora, h.campanhas)" class="rph-secao">
-              <button class="rph-secao-cabecalho" @click="secoesAbertas.wpp = !secoesAbertas.wpp">
-                <span class="section-label">Mensagem WPP</span>
-                <span class="rph-secao-seta" :class="{ aberto: secoesAbertas.wpp }">▸</span>
-              </button>
-              <template v-if="secoesAbertas.wpp">
-                <div class="rph-msg-bloco">
-                  <pre class="rph-msg-wpp">{{ montarMensagemWpp(d.dia, h.hora, h.campanhas) }}</pre>
-                  <button class="btn" @click="copiar(montarMensagemWpp(d.dia, h.hora, h.campanhas))">
-                    {{ textoCopiado === montarMensagemWpp(d.dia, h.hora, h.campanhas) ? 'Copiado!' : 'Copiar' }}
-                  </button>
-                </div>
-              </template>
+              <div v-if="montarMensagemWpp(d.dia, h.hora, h.campanhas) || mensagemSeguidores(d, h)" class="rph-bloco rph-bloco-mensagens">
+                <button class="rph-bloco-topo rph-mensagens-cabecalho" @click="alternarMensagens(d.dia, h.hora)">
+                  <span class="section-label">Mensagens do grupo</span>
+                  <span class="rph-secao-seta" :class="{ aberto: mensagensAbertas(d.dia, h.hora) }">▸</span>
+                </button>
+                <template v-if="mensagensAbertas(d.dia, h.hora)">
+                  <div v-if="montarMensagemWpp(d.dia, h.hora, h.campanhas)" class="rph-msg-bloco">
+                    <span class="rph-msg-rotulo">WPP</span>
+                    <pre class="rph-msg-wpp">{{ montarMensagemWpp(d.dia, h.hora, h.campanhas) }}</pre>
+                    <button class="btn" @click="copiar(montarMensagemWpp(d.dia, h.hora, h.campanhas))">
+                      {{ textoCopiado === montarMensagemWpp(d.dia, h.hora, h.campanhas) ? 'Copiado!' : 'Copiar' }}
+                    </button>
+                  </div>
+                  <div v-if="mensagemSeguidores(d, h)" class="rph-msg-bloco">
+                    <span class="rph-msg-rotulo">Seguidores</span>
+                    <pre class="rph-msg-wpp">{{ mensagemSeguidores(d, h) }}</pre>
+                    <button class="btn" @click="copiar(mensagemSeguidores(d, h))">
+                      {{ textoCopiado === mensagemSeguidores(d, h) ? 'Copiado!' : 'Copiar' }}
+                    </button>
+                  </div>
+                </template>
+              </div>
             </div>
-
-            <div v-if="mensagemSeguidores(d, h)" class="rph-secao">
-              <button class="rph-secao-cabecalho" @click="secoesAbertas.mensagemSeguidores = !secoesAbertas.mensagemSeguidores">
-                <span class="section-label">Mensagem Seguidores</span>
-                <span class="rph-secao-seta" :class="{ aberto: secoesAbertas.mensagemSeguidores }">▸</span>
-              </button>
-              <template v-if="secoesAbertas.mensagemSeguidores">
-                <div class="rph-msg-bloco">
-                  <pre class="rph-msg-wpp">{{ mensagemSeguidores(d, h) }}</pre>
-                  <button class="btn" @click="copiar(mensagemSeguidores(d, h))">
-                    {{ textoCopiado === mensagemSeguidores(d, h) ? 'Copiado!' : 'Copiar' }}
-                  </button>
-                </div>
-              </template>
-            </div>
-            </template>
           </div>
         </div>
       </div>
@@ -147,11 +139,12 @@ const deltasSeguidores = ref([])
 const visitasPerfil = ref([])
 const expandidos = ref(new Set())
 const horasExpandidas = ref(new Set())
+const mensagensExpandidas = ref(new Set())
 
-// Expandir/recolher e o toggle "só resultado/todas" são POR TIPO de seção,
-// não por hora isolada — pedido do dono (12/09/2026): um clique afeta a
-// seção inteira, em todas as horas de uma vez, não uma hora só.
-const secoesAbertas = ref({ campanhas: true, seguidores: true, wpp: true, mensagemSeguidores: true })
+// "Só com resultado / Mostrar todas" é POR TIPO, não por hora isolada —
+// pedido do dono (12/09/2026): um clique afeta o filtro em todas as horas de
+// uma vez. Diferente do que abre/fecha (hora e mensagens), que é sempre por
+// hora — ver alternarHora/alternarMensagens.
 const modoCampanhas = ref('resultado')
 
 // "Campanhas" junta Resultados+Outras num recorte só, controlado pelo
@@ -169,6 +162,13 @@ function mensagemSeguidores(d, h) {
   )
 }
 
+// "sem conversa" em vez de "0 conversas" — lê melhor no selo, e o selo
+// neutro (cinza) já diz "não converteu" sem precisar do número.
+function textoConversas(n) {
+  if (n === 0) return 'sem conversa'
+  return `${n} conversa${n === 1 ? '' : 's'}`
+}
+
 function expandido(dia) {
   return expandidos.value.has(dia)
 }
@@ -180,7 +180,7 @@ function alternar(dia) {
 }
 
 // Cada HORA expande/recolhe por si só, dentro do dia — diferente do toggle
-// de seção (que é por tipo, valendo pras horas todas de uma vez).
+// de filtro (que é global, valendo pras horas todas de uma vez).
 function chaveHora(dia, hora) {
   return `${dia}|${hora}`
 }
@@ -193,6 +193,19 @@ function alternarHora(dia, hora) {
   if (s.has(chave)) s.delete(chave)
   else s.add(chave)
   horasExpandidas.value = s
+}
+
+// "Mensagens do grupo" também abre/fecha por hora — mesmo motivo de
+// horaExpandida: um clique não pode mudar a hora vizinha sem avisar.
+function mensagensAbertas(dia, hora) {
+  return mensagensExpandidas.value.has(chaveHora(dia, hora))
+}
+function alternarMensagens(dia, hora) {
+  const chave = chaveHora(dia, hora)
+  const s = new Set(mensagensExpandidas.value)
+  if (s.has(chave)) s.delete(chave)
+  else s.add(chave)
+  mensagensExpandidas.value = s
 }
 
 function formatarDia(iso) {
@@ -259,25 +272,31 @@ onMounted(carregar)
 .rph-vazio { color: var(--muted); font-size: var(--texto-corpo); }
 
 .rph-dia { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
-.rph-dia-cabecalho { width: 100%; min-height: 48px; display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4); background: none; border: none; cursor: pointer; text-align: left; font-family: var(--fonte-principal); color: var(--text); }
+.rph-dia-cabecalho { width: 100%; min-height: 48px; display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-1) var(--sp-3); padding: var(--sp-3) var(--sp-4); background: none; border: none; cursor: pointer; text-align: left; font-family: var(--fonte-principal); color: var(--text); }
 .rph-dia-seta { color: var(--muted); transition: transform .15s; flex-shrink: 0; }
 .rph-dia-seta.aberto { transform: rotate(90deg); }
 .rph-dia-data { font-weight: 600; font-size: var(--texto-campo); overflow-wrap: anywhere; }
-.rph-dia-totais { margin-left: auto; color: var(--muted); font-size: var(--texto-etiqueta); white-space: nowrap; }
+
+/* O RESUMO (valor + selo) fica à direita no desktop e quebra pra baixo da
+   data no celular — nunca aperta o texto nem estoura a largura da tela. */
+.rph-resumo { margin-left: auto; display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.rph-valor { font-family: var(--fonte-dados); font-variant-numeric: tabular-nums; font-weight: 600; font-size: var(--texto-corpo); color: var(--text); white-space: nowrap; }
+.rph-valor-dia { font-size: var(--texto-campo); font-weight: 700; }
 
 .rph-horas { border-top: 1px solid var(--border); display: flex; flex-direction: column; }
 .rph-hora { padding: var(--sp-3) var(--sp-4); border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: var(--sp-3); }
 .rph-hora:last-child { border-bottom: none; }
-.rph-hora-cabecalho { width: 100%; min-height: 40px; display: flex; align-items: baseline; gap: var(--sp-3); background: none; border: none; cursor: pointer; padding: 0; text-align: left; font-family: var(--fonte-principal); color: var(--text); }
+.rph-hora-cabecalho { width: 100%; min-height: 44px; display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-1) var(--sp-3); background: none; border: none; cursor: pointer; padding: 0; text-align: left; font-family: var(--fonte-principal); color: var(--text); }
 .rph-hora-seta { color: var(--muted); transition: transform .15s; flex-shrink: 0; }
 .rph-hora-seta.aberto { transform: rotate(90deg); }
-.rph-hora-rotulo { font-weight: 600; font-size: var(--texto-corpo); }
-.rph-hora-totais { color: var(--muted); font-size: var(--texto-etiqueta); }
+.rph-hora-rotulo { font-weight: 700; font-size: var(--texto-corpo); min-width: 34px; }
 
-.rph-secao { display: flex; flex-direction: column; gap: var(--sp-2); }
-.rph-secao-cabecalho { display: flex; align-items: center; gap: var(--sp-2); background: none; border: none; cursor: pointer; padding: var(--sp-1) 0; min-height: 40px; text-align: left; }
-.rph-secao-seta { color: var(--muted); transition: transform .15s; }
-.rph-secao-seta.aberto { transform: rotate(90deg); }
+/* Conteúdo da hora: Campanhas e Seguidores sempre visíveis assim que a hora
+   abre (são o principal do relatório); só "Mensagens do grupo" continua
+   atrás de um clique, por ser uso secundário (o robô já manda sozinho). */
+.rph-hora-conteudo { display: flex; flex-direction: column; gap: var(--sp-4); }
+.rph-bloco { display: flex; flex-direction: column; gap: var(--sp-2); }
+.rph-bloco-topo { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); flex-wrap: wrap; min-height: 40px; }
 .rph-toggle { align-self: flex-start; }
 .rph-seguidores-conta { margin: 0; font-size: var(--texto-corpo); color: var(--text); }
 
@@ -286,13 +305,21 @@ onMounted(carregar)
 .rph-tabela td { padding: var(--sp-1) var(--sp-2); border-bottom: 1px solid var(--border); }
 .rph-tabela tr:last-child td { border-bottom: none; }
 .rph-campanha { overflow-wrap: anywhere; }
+.rph-num { font-family: var(--fonte-dados); font-variant-numeric: tabular-nums; }
 
-.rph-msg-bloco { display: flex; flex-direction: column; gap: var(--sp-2); align-items: flex-start; }
+/* Mensagens: bloco secundário — fundo sutil próprio pra ler como utilitário,
+   não como o conteúdo principal da hora. */
+.rph-bloco-mensagens { background: var(--surface2); border-radius: var(--radius-md); padding: var(--sp-3); }
+.rph-mensagens-cabecalho { width: 100%; background: none; border: none; cursor: pointer; padding: 0; text-align: left; font-family: var(--fonte-principal); }
+.rph-secao-seta { color: var(--muted); transition: transform .15s; flex-shrink: 0; }
+.rph-secao-seta.aberto { transform: rotate(90deg); }
+.rph-msg-bloco { display: flex; flex-direction: column; gap: var(--sp-2); align-items: flex-start; margin-top: var(--sp-3); }
+.rph-msg-rotulo { font-family: var(--fonte-principal); font-weight: 600; font-size: var(--texto-etiqueta); letter-spacing: 1px; text-transform: uppercase; color: var(--muted); }
 .rph-msg-wpp { width: 100%; margin: 0; padding: var(--sp-3); background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-md); font-family: var(--fonte-principal); font-size: var(--texto-corpo); color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; }
 
 @media (max-width: 640px) {
   .rph-body { padding: var(--sp-4) var(--sp-3); }
   .rph-tabela { display: block; overflow-x: auto; }
-  .rph-dia-totais { font-size: var(--texto-etiqueta); }
+  .rph-resumo { width: 100%; justify-content: space-between; margin-left: 0; }
 }
 </style>
