@@ -9,6 +9,20 @@ export function custoPorLead(gastoHora, conversasHora) {
   return gastoHora / conversasHora;
 }
 
+export function formatarReais(v) {
+  return (v ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+// Classifica a campanha pelo NOME (prefixo combinado na Meta) — é o único
+// sinal que temos hoje pra saber o que ela é. `[CAMPANHA WPP]` vira mensagem
+// de leads; `[+ SEGUIDORES]` reserva a aba própria (indicadores dela ainda
+// não existem, pedido do dono em 12/09/2026); o resto cai em "outro".
+export function tipoDaCampanha(nome) {
+  if (nome.startsWith('[CAMPANHA WPP]')) return 'wpp';
+  if (nome.startsWith('[+ SEGUIDORES]')) return 'seguidores';
+  return 'outro';
+}
+
 export function agruparPorDiaEHora(linhas, nomesPorCampanha = {}) {
   const porDia = new Map();
   for (const l of linhas) {
@@ -17,9 +31,11 @@ export function agruparPorDiaEHora(linhas, nomesPorCampanha = {}) {
     if (!porHora.has(l.hora)) porHora.set(l.hora, []);
     const gastoHora = Number(l.gasto_hora) || 0;
     const conversasHora = Number(l.conversas_hora) || 0;
+    const nome = nomesPorCampanha[l.campaign_id] || l.campaign_id;
     porHora.get(l.hora).push({
       campaignId: l.campaign_id,
-      nome: nomesPorCampanha[l.campaign_id] || l.campaign_id,
+      nome,
+      tipo: tipoDaCampanha(nome),
       gastoHora,
       conversasHora,
       custoPorLead: custoPorLead(gastoHora, conversasHora),
@@ -29,17 +45,14 @@ export function agruparPorDiaEHora(linhas, nomesPorCampanha = {}) {
   return [...porDia.keys()].sort().reverse().map((dia) => {
     const porHora = porDia.get(dia);
     const horas = [...porHora.keys()].sort((a, b) => a - b).map((hora) => {
-      const todasCampanhas = [...porHora.get(hora)].sort((a, b) => b.gastoHora - a.gastoHora);
-      // Só entra na lista quem converteu nessa hora — a maioria não converte
-      // e só faria poluição visual (pedido do dono, 12/09/2026). O total da
-      // hora continua somando TODAS as campanhas, inclusive as escondidas:
-      // "quanto se gastou nessa hora" é o gasto real, não só o de quem
-      // apareceu na lista.
-      const campanhas = todasCampanhas.filter((c) => c.conversasHora > 0);
+      // Todas as campanhas ficam aqui, com ou sem conversão — quem decide o
+      // que mostrar (aba Resultados/Outras/Mensagem WPP) é a tela, não esta
+      // função. O total da hora sempre soma todas, nunca só as exibidas.
+      const campanhas = [...porHora.get(hora)].sort((a, b) => b.gastoHora - a.gastoHora);
       return {
         hora,
-        gastoTotal: todasCampanhas.reduce((s, c) => s + c.gastoHora, 0),
-        conversasTotal: todasCampanhas.reduce((s, c) => s + c.conversasHora, 0),
+        gastoTotal: campanhas.reduce((s, c) => s + c.gastoHora, 0),
+        conversasTotal: campanhas.reduce((s, c) => s + c.conversasHora, 0),
         campanhas,
       };
     });
@@ -50,4 +63,36 @@ export function agruparPorDiaEHora(linhas, nomesPorCampanha = {}) {
       horas,
     };
   });
+}
+
+// As duas telas (aba Resultados / aba Outras) recortam a mesma lista de
+// campanhas de `agruparPorDiaEHora` — nunca duas listas discordando.
+export function comResultado(campanhas) {
+  return campanhas.filter((c) => c.conversasHora > 0);
+}
+export function semResultado(campanhas) {
+  return campanhas.filter((c) => c.conversasHora === 0);
+}
+
+// Texto pronto pra copiar e mandar no grupo de WhatsApp (manual por
+// enquanto — quando o Z-API entrar, este mesmo texto vira o corpo da
+// mensagem enviada de hora em hora). Só entram campanhas [CAMPANHA WPP];
+// `null` quando não há nenhuma nessa hora (não força mensagem vazia).
+export function montarMensagemWpp(dia, hora, campanhas) {
+  const wpp = campanhas.filter((c) => c.tipo === 'wpp');
+  if (!wpp.length) return null;
+
+  const [ano, mes, d] = dia.split('-');
+  const horaStr = String(hora).padStart(2, '0');
+  const linhas = wpp.map((c) => `${c.nome} — ${c.conversasHora} lead${c.conversasHora === 1 ? '' : 's'} · ${formatarReais(c.gastoHora)}`);
+
+  const totalLeads = wpp.reduce((s, c) => s + c.conversasHora, 0);
+  const totalGasto = wpp.reduce((s, c) => s + c.gastoHora, 0);
+  const custoMedio = custoPorLead(totalGasto, totalLeads);
+
+  const cabecalho = `📊 Leads recebidos — ${horaStr}h, ${d}/${mes}`;
+  const consolidado = `Total: ${totalLeads} lead${totalLeads === 1 ? '' : 's'} · ${formatarReais(totalGasto)} investidos`
+    + (custoMedio !== null ? ` · ${formatarReais(custoMedio)}/lead` : '');
+
+  return [cabecalho, '', ...linhas, '', consolidado].join('\n');
 }
