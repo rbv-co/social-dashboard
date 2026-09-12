@@ -145,3 +145,21 @@ test('quem está com dois carros vê a contagem, não uma lista atropelada', () 
   ], EU)
   assert.equal(resumoDoMotorista(p), 'Você está com 2 veículos.')
 })
+
+test('o carro que EU reservei fica na minha lista de pegar, e some da dos outros', () => {
+  // A cena real: reservei pras 8h, chego às 8h05 no estacionamento e abro o
+  // app pra tocar em "Peguei o carro". Antes de 20/08/2026 o carro tinha
+  // sumido da tela — a própria reserva o escondia de mim.
+  const meuPedido = carro('reservado', 'Saveiro Robust', { reservada: true, reservada_para_mim: true })
+  const doOutro = carro('reservado-dele', 'Strada', { reservada: true })
+
+  const eu = painelDoMotorista([estadoDoVeiculo(meuPedido, []), estadoDoVeiculo(doOutro, [])], EU)
+  assert.deepEqual(eu.livres.map((e) => e.veiculo.nome), ['Saveiro Robust'])
+
+  // Pra quem não reservou, os dois continuam travados: é o conflito de viagens
+  // que a reserva existe pra impedir.
+  const outraPessoa = painelDoMotorista(
+    [estadoDoVeiculo(carro('reservado', 'Saveiro Robust', { reservada: true }), []),
+     estadoDoVeiculo(doOutro, [])], OUTRO)
+  assert.deepEqual(outraPessoa.livres, [])
+})

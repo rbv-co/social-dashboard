@@ -122,3 +122,44 @@ export function resumoDaFicha(acessosOneDrive, equipamentos, termos) {
     termos: conta(termos),
   }
 }
+
+// ── OS CAMPOS DA FICHA ───────────────────────────────────────────────────────
+//
+// Coluna do banco -> rótulo e tipo do input. É a fonte única: o desenho da
+// ficha, o editor de um campo só e a ORDEM em que eles aparecem saem todos
+// daqui.
+//
+// POR QUE ISTO SAIU DA TELA (11/08/2026): lá havia duas listas que precisavam
+// concordar — a das colunas que aparecem e a da configuração de cada uma. Elas
+// divergiram (`email_outlook` estava numa e não na outra) e NENHUMA ficha
+// abria: o desenho lia `cfg.label` de um `undefined`, dava TypeError e a função
+// morria antes de escrever a tela.
+//
+// Aqui isso não tem como acontecer: a lista É derivada da configuração, então
+// coluna listada sem configuração deixou de ser um estado possível.
+export const CAMPOS_DA_FICHA = {
+  email_corporativo: { label: 'E-mail corporativo', tipo: 'email' },
+  email_outlook: { label: 'E-mail Outlook', tipo: 'email' },
+  conta_apple: { label: 'Conta Apple (iCloud)', tipo: 'email' },
+  numero_corporativo: { label: 'Telefone corporativo', tipo: 'tel' },
+  numero_pessoal: { label: 'Telefone pessoal', tipo: 'tel' },
+  data_inicio_contrato: { label: 'Início de contrato', tipo: 'date' },
+  data_fim_contrato: { label: 'Fim de contrato', tipo: 'date' },
+  motivo_saida: { label: 'Motivo da saída', tipo: 'text' },
+};
+
+// Os campos do contato, na ordem da tela. Os dois de saída só aparecem para
+// quem foi desligado, e no fim: perguntar "motivo da saída" de quem está
+// trabalhando é ruído na ficha de todo mundo.
+const CONTATO = ['email_corporativo', 'email_outlook', 'conta_apple',
+  'numero_corporativo', 'numero_pessoal', 'data_inicio_contrato'];
+const SAIDA = ['data_fim_contrato', 'motivo_saida'];
+
+/**
+ * Os campos que a ficha mostra, já com rótulo e tipo juntos.
+ * @param ativo  a pessoa ainda trabalha aqui?
+ */
+export function camposDaFicha(ativo) {
+  return [...CONTATO, ...(ativo ? [] : SAIDA)]
+    .map((col) => ({ col, ...CAMPOS_DA_FICHA[col] }));
+}

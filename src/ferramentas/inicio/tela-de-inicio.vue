@@ -143,8 +143,8 @@
             <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
           </div>
           <div class="home-card-text">
-            <h3>Painel de Status<br>do Claude</h3>
-            <p>Robôs de IA, custo por ação e status dos projetos em desenvolvimento</p>
+            <h3>Status<br>da IA</h3>
+            <p>Robôs de IA, quanto cada tarefa custou e o gasto real das contas</p>
           </div>
           <span class="home-card-enter">→</span>
         </div>
@@ -173,6 +173,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { estado, hasPermission, carregarPerfil } from '../../compartilhado/controle-de-login-e-usuario.js'
+import { podeVerGestaoInterna } from '../gestao-interna/chaves-da-gestao-interna.js'
 
 const router = useRouter()
 
@@ -189,10 +190,25 @@ const podeNoticias = computed(() => hasPermission('noticias', 'ver'))
 const podeGestor = computed(() => hasPermission('gestor', 'ver'))
 const podeAcessos = computed(() => hasPermission('acessos', 'ver'))
 const podePatrimonio = computed(() => hasPermission('patrimonio', 'ver'))
+const podeFrota = computed(() => hasPermission('frota', 'ver'))
 // Gestão Interna é uma PORTA (menu), não uma ferramenta: não tem permissão
 // própria. Aparece pra quem tem qualquer um dos submódulos, e o menu lá dentro
 // mostra só os que a pessoa pode ver.
-const podeGestaoInterna = computed(() => podeAcessos.value || podePatrimonio.value)
+//
+// A FROTA FALTAVA AQUI, e a conta é esta (medida no banco em 19/08/2026): das 8
+// pessoas com a chave `frota`, CINCO não têm nem Colaboradores nem Patrimônio —
+// Gabriel Alves, Guilherme Cardoso, Humberto Mendonça, Jeremias Vieira e Raissa
+// Herculano. Elas abriam o aplicativo e liam "Você ainda não tem acesso a
+// nenhuma ferramenta", com a permissão da Frota concedida e funcionando: o menu
+// da Gestão Interna já mostrava o cartão da Frota (tela-de-menu-gestao-interna
+// .vue:33) e a tela abria normalmente. O que faltava era só a porta daqui, e
+// sem ela não existe caminho de clique nenhum até o checklist do dia — o ícone
+// instalado abre em `/`, que é esta tela.
+// A LISTA NÃO MORA MAIS AQUI. Ela envelheceu duas vezes — a Frota em 19/08 e a
+// Autenticidade em 01/09 — e as duas vezes o sintoma foi o mesmo: pessoa com a
+// permissão concedida lendo "você não tem acesso a nenhuma ferramenta".
+// Ver `gestao-interna/chaves-da-gestao-interna.js`.
+const podeGestaoInterna = computed(() => podeVerGestaoInterna(hasPermission))
 const podeClaudeStatus = computed(() => hasPermission('claude.status', 'ver'))
 // O 3D era o único cartão sem porteiro. Agora segue a mesma chave dos outros.
 const podeEscritorio3D = computed(() => hasPermission('escritorio3d', 'ver'))
@@ -311,16 +327,16 @@ onMounted(() => {
    estilos-globais.css tem classes genéricas e este projeto já teve bug de
    colisão entre global e tela scoped (o caso home-card → fab-card). */
 .inicio-vazio{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:64px 24px;text-align:center;}
-.inicio-vazio-icone{font-size:34px;line-height:1;opacity:.55;margin-bottom:4px;}
-.inicio-vazio-t{font-family:'Sora',sans-serif;font-size:15px;font-weight:600;color:var(--text);margin:0;}
-.inicio-vazio-d{font-family:var(--fonte-principal);font-size:13px;color:var(--muted);margin:0;max-width:38ch;}
-.inicio-vazio-btn{margin-top:14px;padding:8px 18px;border:1px solid var(--border);border-radius:6px;background:transparent;color:var(--text);font-family:var(--fonte-principal);font-size:13px;font-weight:500;cursor:pointer;transition:background .15s;}
+.inicio-vazio-icone{font-size:max(16px, calc(34px * var(--escala-texto, 1)));line-height:1;opacity:.55;margin-bottom:4px;}
+.inicio-vazio-t{font-family:'Sora',sans-serif;font-size:max(9px, calc(15px * var(--escala-texto, 1)));font-weight:600;color:var(--text);margin:0;}
+.inicio-vazio-d{font-family:var(--fonte-principal);font-size:max(9px, calc(13px * var(--escala-texto, 1)));color:var(--muted);margin:0;max-width:38ch;}
+.inicio-vazio-btn{margin-top:14px;padding:8px 18px;border:1px solid var(--border);border-radius:6px;background:transparent;color:var(--text);font-family:var(--fonte-principal);font-size:max(9px, calc(13px * var(--escala-texto, 1)));font-weight:500;cursor:pointer;transition:background .15s;}
 .inicio-vazio-btn:hover{background:var(--surface2);}
 @media (max-width:640px){
   .inicio-vazio{padding:40px 18px;}
-  .inicio-vazio-t{font-size:14px;}
-  .inicio-vazio-d{font-size:12px;}
+  .inicio-vazio-t{font-size:max(9px, calc(14px * var(--escala-texto, 1)));}
+  .inicio-vazio-d{font-size:max(9px, calc(12px * var(--escala-texto, 1)));}
 }
 
-.tela-inicio-aviso{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--text);color:var(--bg);font-family:var(--fonte-principal);font-size:12.5px;padding:10px 18px;border-radius:8px;box-shadow:var(--shadow-lg);z-index:9999;}
+.tela-inicio-aviso{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--text);color:var(--bg);font-family:var(--fonte-principal);font-size:max(9px, calc(12.5px * var(--escala-texto, 1)));padding:10px 18px;border-radius:8px;box-shadow:var(--shadow-lg);z-index:9999;}
 </style>

@@ -266,6 +266,89 @@ function linha(item, agoraMs, editavel) {
 //           editavel, aoAprovar(item, botao, opcao), aoRecusar(item, botao),
 //           aoVerCriativo(item, adId, nome), aoVerGastos(item, botao),
 //           aoFiltrar(contaId), ajudaBtn }
+// O QUE A META ESTA RECLAMANDO. Fora da lista de decisoes pelo mesmo motivo do
+// farol: nao ha o que aprovar, e o numero da aba conta DECISOES pendentes.
+//
+// MEDIDO em 12/08/2026: 13 problemas reais nas 7 contas, e NENHUM aparecia na
+// tela — inclusive 5 conjuntos que a Meta pausou sozinha. Dinheiro parado que
+// ninguem via.
+function problemasDaMeta(o) {
+  const grupos = o.problemas || [];
+  if (!grupos.length) return '';
+  const linhas = grupos.map((g) => `
+    <li class="gtf-pb-item ${g.grave ? 'gtf-pb--grave' : 'gtf-pb--leve'}">
+      <div class="gtf-pb-cab">
+        <span class="gtf-pb-tit">${esc(g.titulo)}</span>
+        <span class="gtf-pb-selo">${g.grave ? 'impede de rodar' : 'roda com limitação'}</span>
+        <span class="gtf-pb-quantos">${g.quantos} ${g.nivel === 'conjunto' ? (g.quantos > 1 ? 'conjuntos' : 'conjunto') : (g.quantos > 1 ? 'anúncios' : 'anúncio')}</span>
+      </div>
+      ${g.detalhe ? `<p class="gtf-pb-det">${esc(g.detalhe)}</p>` : ''}
+      ${g.oQueFazer ? `<p class="gtf-pb-fazer"><b>O que fazer:</b> ${esc(g.oQueFazer)}</p>` : ''}
+      ${g.onde.length ? `<p class="gtf-pb-onde">${esc(g.onde.slice(0, 6).join(' · '))}${g.onde.length > 6 ? ` … e mais ${g.onde.length - 6}` : ''}</p>` : ''}
+    </li>`).join('');
+  return `
+    <section class="gtf-pb">
+      <h3 class="gtf-pb-h">A Meta está reclamando de alguns anúncios</h3>
+      <p class="gtf-pb-frase">${esc(o.fraseProblemas || '')}</p>
+      <ul class="gtf-pb-lista">${linhas}</ul>
+      <p class="gtf-pb-nota">Isto vem direto da Meta, e não muda nada sozinho — o conserto é no Gerenciador de Anúncios. Recusa por política, quando houver, aparece aqui também.</p>
+    </section>`;
+}
+
+// O FAROL DE PÚBLICO — leitura da conta, fora da lista de decisões.
+//
+// FICA FORA DA LISTA de propósito: ele aparece mesmo quando o veredito é
+// "manter" (pedido do dono), e o número da aba conta DECISÕES pendentes. Somar
+// aqui faria a aba dizer que há trabalho esperando quando não há.
+//
+// NÃO TEM BOTÃO DE APROVAR: a leitura é da conta inteira, e aplicar idade em
+// todos os conjuntos de uma vez reiniciaria o aprendizado de todas as campanhas
+// juntas. Mesma política do alerta de saúde. O que ele oferece é levar a receita
+// pronta pro editor de público.
+function leituraDePublico(o) {
+  // ⚠️ `reais()` deste arquivo recebe CENTAVOS (a fila inteira fala em centavos).
+  // Aqui os números vêm do Graph em REAIS — passar por ele mostraria R$ 4,30 onde
+  // são R$ 430,14. Formatador próprio, e o nome diz a unidade.
+  const emReais = (v) => v == null ? '—' : 'R$ ' + Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const L = o.leituraPublico;
+  if (!L) return '';
+  const conta = o.contaNome ? ` — ${esc(o.contaNome)}` : '';
+  const selo = { ajustar: 'gtf-lp--ajustar', manter: 'gtf-lp--manter', 'sem-dados': 'gtf-lp--neutro' }[L.veredito] || 'gtf-lp--neutro';
+
+  const linhas = (L.faixas || []).map((f) => `
+    <tr class="${f.confiavel ? '' : 'gtf-lp-fraca'}">
+      <td>${esc(f.faixa)}</td>
+      <td class="gtf-lp-num">${emReais(f.gasto)}</td>
+      <td class="gtf-lp-num">${Number(f.resultados || 0).toLocaleString('pt-BR')}</td>
+      <td class="gtf-lp-num">${emReais(f.custo)}</td>
+      <td>${f.confiavel ? '' : 'poucos dados'}</td>
+    </tr>`).join('');
+
+  const receita = L.receita ? `
+    <div class="gtf-lp-receita">
+      <b>Se virar público novo:</b> idade de ${L.receita.idadeMin} a ${L.receita.idadeMax} anos${
+        L.receita.cidades.length ? `, ${L.receita.cidades.length} cidade${L.receita.cidades.length > 1 ? 's' : ''}` : ''}${
+        L.receita.interesses.length ? ` e ${L.receita.interesses.length} interesse${L.receita.interesses.length > 1 ? 's' : ''}` : ''}.
+      ${L.receita.porqueDosConjuntos ? `<span class="gtf-lp-porque">${esc(L.receita.porqueDosConjuntos)}</span>` : ''}
+      <button class="gtf-btn gtf-lp-usar" type="button">Usar este público numa campanha nova</button>
+    </div>` : '';
+
+  return `
+    <section class="gtf-lp ${selo}">
+      <div class="gtf-lp-cab">
+        <h3 class="gtf-lp-tit">Leitura de público${conta}</h3>
+        <span class="gtf-lp-janela">últimos 90 dias${L.contando ? ` · contando ${esc(L.contando)}` : ''}</span>
+      </div>
+      <p class="gtf-lp-titulo2">${esc(L.titulo)}</p>
+      <p class="gtf-lp-frase">${esc(L.frase)}</p>
+      ${L.fraseDoDinheiro ? `<p class="gtf-lp-dinheiro">${esc(L.fraseDoDinheiro)}</p>` : ''}
+      ${L.alerta ? `<p class="gtf-lp-alerta">${esc(L.alerta)}</p>` : ''}
+      ${linhas ? `<table class="gtf-lp-tabela"><thead><tr><th>Idade</th><th class="gtf-lp-num">Gasto</th><th class="gtf-lp-num">Resultados</th><th class="gtf-lp-num">Custo</th><th></th></tr></thead><tbody>${linhas}</tbody></table>` : ''}
+      ${receita}
+      <p class="gtf-lp-nota">Esta leitura não muda nada sozinha: mexer na idade de todos os conjuntos de uma vez reiniciaria o aprendizado de todas as campanhas juntas.</p>
+    </section>`;
+}
+
 export function montarPainelFila(alvo, opcoes) {
   const o = opcoes || {};
   const agoraMs = Date.parse(o.agora || '') || Date.now();
@@ -300,6 +383,8 @@ export function montarPainelFila(alvo, opcoes) {
     ? `<div class="gtf-outras">Mais ${totalFora} em ${[...noutrasContas.entries()].map(([id, n]) => `<b>${esc(nomeDaConta(id))}</b> (${n})`).join(', ')} — troque a conta lá em cima para ver.</div>`
     : '';
 
+  const blocoPublico = leituraDePublico(o);
+
   // "Não carregou" e "está vazio" NÃO são a mesma coisa. Dizer "nada esperando
   // decisão" quando a leitura ainda não terminou é afirmar que não há o que
   // decidir — e foi exatamente o que a tela fez quando a fila rodou antes de as
@@ -312,8 +397,13 @@ export function montarPainelFila(alvo, opcoes) {
          <b>Carregando suas campanhas…</b>
          <span>Assim que elas chegarem, mostro aqui o que está esperando decisão.</span>
        </div>`
+    // A fila vazia DIZ o que o robô fez. Sem isso, "nada esperando decisão" é
+    // indistinguível de "o robô não rodou nesta conta" — foi o que aconteceu com
+    // a Mantova (item 1 da lista do dono): ele analisou e disse 'manter' nas
+    // duas campanhas ativas, e 'manter' não entra na fila.
     : `<div class="gtf-vazio">
          <b>Nada esperando decisão${filtroAtual ? ` em ${esc(o.contaNome || 'nesta conta')}` : ''}.</b>
+         ${o.explicacaoVazia ? `<span>${esc(o.explicacaoVazia)}</span>` : ''}
          <span>O robô analisa as campanhas toda madrugada. Quando ele propuser mexer em orçamento, aparece aqui.</span>
        </div>`;
 
@@ -334,6 +424,22 @@ export function montarPainelFila(alvo, opcoes) {
       </details>` : ''}
     ${silenciadas.length ? `
       <div class="gtf-silenciadas">${silenciadas.length} sugest${silenciadas.length > 1 ? 'ões recusadas voltam' : 'ão recusada volta'} a aparecer se a situação continuar.</div>` : ''}
+    ${/* OCULTO A PEDIDO DO DONO (18/08/2026, à noite).
+
+           Ele não pediu este card. O pedido dele, em 12/08, era outro: DESCOBRIR
+           por que os criativos estavam sendo rejeitados. A medição daquele dia
+           não achou recusa por política nenhuma, e o que se construiu no lugar
+           foi um painel de monitoramento do `issues_info` — útil, mas não é o
+           que ele perguntou. Ele deixou isso claro ao ver o card.
+
+           SÓ O DESENHO SAIU. A leitura e a gravação em `gt_problemas_meta`
+           continuam: é a única memória de recusa que existe, porque a Meta APAGA
+           o `issues_info` quando o anúncio some ou o problema é resolvido. Jogar
+           fora a coleta seria apagar justamente o material que responde à
+           pergunta original dele.
+
+           Para trazer de volta, é só descomentar. */''}
+    ${blocoPublico}
   `;
 
   if (!editavel) return;
@@ -374,5 +480,16 @@ export function montarPainelFila(alvo, opcoes) {
         o.aoVerCriativo(item, lp.dataset.gtfLupa, lp.dataset.gtfLupaNome || '');
       });
     }
+  }
+
+  // O FAROL. Fora do laço das linhas: ele não pertence a item nenhum — é a
+  // leitura da conta. Fica ligado mesmo sem permissão de editar, porque abrir o
+  // formulário de campanha nova não muda nada sozinho.
+  // `querySelectorAll` e não `querySelector`: o contrato deste painel com quem o
+  // chama é innerHTML + querySelectorAll (está escrito no topo do teste). Alargar
+  // o contrato por um botão faria o teste precisar de um DOM de verdade.
+  for (const usar of alvo.querySelectorAll('.gtf-lp-usar')) {
+    if (!o.aoUsarPublico) break;
+    usar.addEventListener('click', () => o.aoUsarPublico());
   }
 }

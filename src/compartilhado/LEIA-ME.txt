@@ -6,6 +6,11 @@ Aqui ficam as peças que TODAS as ferramentas usam:
 - controle-de-login-e-usuario.js → quem está logado, usuário e permissões
 - avisos.js                      → aviso rápido (toast) no canto da tela
 - datas.js                       → régua única de datas em BRT (fix: das 21h à meia-noite o painel pedia data errada)
+- data-da-venda.js                → a venda conta no dia em que a NOTA saiu, não no dia do pedido.
+                                    O Bling entrega por data do pedido; a loja emite NFC-e na hora e o
+                                    Atacado emite NF-e no dia seguinte, então a venda de sexta aparecia
+                                    na quinta. Medido em 12 meses: 197 dos 325 dias com venda mostravam
+                                    valor errado. Usado pela Gestão à Vista e pela Análise de Vendas.
 - escolha-de-local-e-ambiente.vue → o campo de LOCAL de qualquer ferramenta: mostra
                                    a árvore Marca > Local > Ambiente que já existe no
                                    banco, em vez de deixar a pessoa digitar às cegas
@@ -13,6 +18,36 @@ Aqui ficam as peças que TODAS as ferramentas usam:
                                    anda sempre grudada no local porque existem DUAS
                                    "Fábrica Conchal" e DUAS "Sede Limeira", de
                                    empresas diferentes
+- escolha-de-pessoa.vue          → o campo de PESSOA do Patrimônio e da Frota: mostra
+                                   quem trabalha aqui e traz o "+" para cadastrar na
+                                   hora o colaborador que ainda não existe, sem sair
+                                   do formulário do bem ou do carro
+- pessoas-para-escolher.js       → as contas dessa lista (juntar as duas leituras,
+                                   deixar de fora quem saiu, sugerir os cargos que já
+                                   existem). Só nome, cargo e situação: e-mail e
+                                   celular do colaborador NÃO passam por aqui
+- nova-opcao.js                  → a regra do "+" de toda a Central: decide se o nome
+                                   digitado vira cadastro novo ou se já existe e é só
+                                   selecionar (veio da pasta do Patrimônio, que era
+                                   onde ela nasceu)
+
+ESCOLHER ONDE O ANÚNCIO APARECE (13/08/2026)
+============================================
+- lugares-do-anuncio.js          → o modelo de "um lugar" (Brasil, Estado,
+                                   Cidade, Local) e a tradução para as QUATRO
+                                   chaves que a Meta entende: countries,
+                                   regions, cities e custom_locations. Puro.
+- busca-de-lugar.js              → monta a pergunta certa pra cada tipo e traduz
+                                   as respostas. São DOIS fornecedores porque a
+                                   Meta não devolve coordenada nenhuma e não tem
+                                   busca de estabelecimento (medido em
+                                   13/08/2026): o catálogo dela dá a CHAVE, e o
+                                   OpenStreetMap dá a coordenada e o endereço
+- painel-de-lugares.js           → a linha de acrescentar + a lista. Imperativo
+                                   e montado num elemento, para servir tanto o
+                                   modal da Gestão de Tráfego (que vive fora da
+                                   raiz do componente, onde :deep() não alcança)
+                                   quanto a Fábrica, que é Vue
 
 REGRA IMPORTANTE
 ================

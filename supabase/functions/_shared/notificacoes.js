@@ -59,6 +59,22 @@ export const TIPOS_DE_NOTIFICACAO = [
     // torna a falha visível quando o aviso está desligado.
     padrao: false,
   },
+  {
+    chave: 'frota_reserva',
+    rotulo: 'Resposta do pedido de carro',
+    descricao: 'Quando alguém aprova, recusa ou cancela uma reserva de veículo que você pediu.',
+    // DESLIGADO por padrão, como toda chave nova nesta central.
+    //
+    // POR QUE ELE NÃO ENTROU EM 'frota': aquele tipo é o "Checklist do carro",
+    // de manhã, para quem tem carro fixo. São públicos diferentes — quem pede
+    // carro emprestado pode não ter carro fixo nenhum — e juntar os dois
+    // obrigaria quem quer saber da resposta do pedido a aceitar também a
+    // cobrança diária do checklist.
+    //
+    // O CHECK do banco aceita esta chave desde a migration
+    // db/migrations/acessos/052_push_tipo_reserva.sql, aplicada em 21/08/2026.
+    padrao: false,
+  },
 ];
 
 export function ehTipoValido(tipo) {

@@ -26,16 +26,19 @@ export function normalizar(texto) {
     .trim()
 }
 
-// A busca livre varre o que está NO bem: nome, número da etiqueta, marca/modelo,
-// o nome solto do dono e a observação. O número entra porque é assim que se
-// procura um bem com ele na mão: lendo a etiqueta colada nele.
+// A busca livre varre o que está NO bem: nome, número da etiqueta, IMEI/número
+// de série, marca/modelo, o nome solto do dono e a observação. O número entra
+// porque é assim que se procura um bem com ele na mão: lendo a etiqueta colada
+// nele.
 //
 // `textoExtra` é o que o bem NÃO carrega: o nome do colaborador, do local, do
 // ambiente, da categoria. No banco o bem guarda só o identificador dessas
 // coisas, então procurar por "erick" não achava nada — o nome dele não está no
 // bem, está na tabela de pessoas. Quem chama resolve os nomes e passa aqui.
 function casaBusca(bem, termo, textoExtra) {
-  const partes = [bem.nome, bem.numero, bem.marca, bem.dono_texto, bem.observacao]
+  // `numero_serie` entra porque é o segundo jeito de identificar um aparelho com
+  // ele na mão: quando a etiqueta caiu, sobra o IMEI atrás do celular.
+  const partes = [bem.nome, bem.numero, bem.numero_serie, bem.marca, bem.dono_texto, bem.observacao]
   if (typeof textoExtra === 'function') partes.push(textoExtra(bem))
   const alvo = normalizar(partes.filter((v) => v !== null && v !== undefined && v !== '').join(' '))
   return alvo.includes(termo)

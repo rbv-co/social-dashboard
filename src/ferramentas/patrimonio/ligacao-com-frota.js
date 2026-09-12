@@ -82,3 +82,40 @@ export function patchVeiculoDoBem(vForm, bem) {
   if (!vForm.marca && bem.marca) patch.marca = bem.marca;
   return patch;
 }
+
+/**
+ * Este item precisa de placa? Só se for da categoria Veículos.
+ *
+ * Decisão do dono (20/08/2026): item de veículo não salva sem placa. É ela que
+ * faz o carro NASCER na Frota — sem ela o item fica órfão, como o nº 291
+ * "KWID" ficou naquele mesmo dia, criado às 09:53 e sem carro nenhum.
+ *
+ * A PLACA NÃO VIRA COLUNA DE `patrimonio_bens`, e isso é decisão de desenho:
+ * ela mora em `frota_veiculos.placa`, que é quem manda nesse dado. A ficha do
+ * item a MOSTRA lendo o carro ligado. Guardar cópia nas duas tabelas é o que
+ * envelhece e diverge depois.
+ *
+ * Sem a categoria identificada devolve `false`, mesma cautela de
+ * `bemEhCategoriaVeiculo`: se a busca da categoria falhar, exigir placa
+ * travaria o cadastro de QUALQUER item da empresa.
+ */
+export function exigePlacaNoBem(form, categoriaVeiculoId) {
+  return bemEhCategoriaVeiculo(form, categoriaVeiculoId);
+}
+
+/**
+ * A placa é OBRIGATÓRIA agora, ou só desejável?
+ *
+ * Obrigatória no CADASTRO NOVO: é o que impede um item de veículo de nascer
+ * órfão, sem carro do outro lado.
+ *
+ * Num item que JÁ EXISTE, avisa mas não trava — e isso é decisão do dono de
+ * 20/08/2026, na mesma conversa em que ele pediu a obrigatoriedade: o item nº
+ * 291 ("KWID") vai ficar sem placa por enquanto, porque o carro dele ainda não
+ * foi levantado. Travar a edição obrigaria a inventar uma placa pra corrigir um
+ * nome — e placa inventada é pior que placa faltando: ela é UNIQUE, entra no
+ * lugar de uma real e some sem ninguém notar.
+ */
+export function placaObrigatoria(form, categoriaVeiculoId, ehNovo) {
+  return !!ehNovo && exigePlacaNoBem(form, categoriaVeiculoId);
+}

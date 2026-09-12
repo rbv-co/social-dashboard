@@ -69,11 +69,31 @@ const logoEscuroUrl = '/midia/LOGOTIPOBRENOBRANCO.png'
 /* Sem `white-space:nowrap`, sem `text-overflow:ellipsis`. Foi essa dupla que
    apagou o caminho do Patrimônio na primeira versão. `word-break` cuida do
    nome comprido sem espaço, que senão vazaria a barra. */
-.bt-titulo{font-family:var(--fonte-principal);font-size:13px;font-weight:600;letter-spacing:1.6px;text-transform:uppercase;color:var(--text);line-height:1.25;overflow-wrap:anywhere;}
-.bt-sub{font-family:var(--fonte-principal);font-size:11px;color:var(--muted);line-height:1.3;overflow-wrap:anywhere;}
+.bt-titulo{font-family:var(--fonte-principal);font-size:max(9px, calc(13px * var(--escala-texto, 1)));font-weight:600;letter-spacing:1.6px;text-transform:uppercase;color:var(--text);line-height:1.25;overflow-wrap:anywhere;}
+.bt-sub{font-family:var(--fonte-principal);font-size:max(9px, calc(11px * var(--escala-texto, 1)));color:var(--muted);line-height:1.3;overflow-wrap:anywhere;}
 
-.bt-dir{display:flex;align-items:center;gap:8px;flex:0 0 auto;}
-.bt-voltar{display:inline-flex;align-items:center;gap:6px;background:none;border:none;color:var(--muted);font-family:var(--fonte-principal);font-size:11px;font-weight:600;cursor:pointer;text-transform:uppercase;letter-spacing:1.2px;white-space:nowrap;padding:6px 2px;touch-action:manipulation;}
+/* O LADO DAS AÇÕES ENCOLHE (20/08/2026). Era `flex:0 0 auto`: reservava sempre
+   o CONTEÚDO MÁXIMO, e o `.bt-meio` ficava com as sobras. Nas telas de faixa
+   larga isso destruía o título — medido a 768px, antes desta mudança:
+
+     Análise de Campanhas .... barra de 685px de altura, título em 0px / 18 linhas
+     Gestão à Vista .......... barra de 732px, título em 0px / 19 linhas
+     Análise de Vendas ....... barra de 513px, título em 0px / 15 linhas
+     Gestão de Tráfego ....... barra de 632px, título em 0px / 15 linhas
+
+   Com `0 1 auto` + `min-width:0` as mesmas telas ficam com barra de 93 a 107px
+   e título em 2 linhas legíveis. A conta foi conferida nas 25 telas que usam a
+   barra, em 7 larguras: 4 melhoraram muito, 19 ficaram idênticas, e o único
+   custo são 26-27px a mais de barra a 1024px na Análise de Campanhas e na
+   Gestão de Tráfego, onde a faixa de controles passa a quebrar em duas fileiras
+   em vez de esmagar o título — que é o comportamento que esta barra promete.
+
+   ⚠️ Quem puser uma faixa larga aqui dentro precisa deixá-la encolher também
+   (`min-width:0` e, se for uma régua de botões, `overflow-x:auto`). Sem isso o
+   conteúdo não encolhe: ele VAZA para fora da barra. Foi o que aconteceu com a
+   régua da Análise de Campanhas, corrigida junto. */
+.bt-dir{display:flex;align-items:center;gap:8px;flex:0 1 auto;min-width:0;}
+.bt-voltar{display:inline-flex;align-items:center;gap:6px;background:none;border:none;color:var(--muted);font-family:var(--fonte-principal);font-size:max(9px, calc(11px * var(--escala-texto, 1)));font-weight:600;cursor:pointer;text-transform:uppercase;letter-spacing:1.2px;white-space:nowrap;padding:6px 2px;touch-action:manipulation;}
 .bt-voltar:hover{color:var(--text);}
 /* A regra global manda .rbv-logo com 52px, que é o tamanho da HOME. */
 .bt-barra .bt-logo{height:22px;width:auto;flex:0 0 auto;}
@@ -81,8 +101,8 @@ const logoEscuroUrl = '/midia/LOGOTIPOBRENOBRANCO.png'
 @media(min-width:768px){
   .bt-barra{padding:12px 24px;}
   .bt-barra .bt-logo{height:26px;}
-  .bt-titulo{font-size:14px;}
-  .bt-sub{font-size:11.5px;}
+  .bt-titulo{font-size:max(9px, calc(14px * var(--escala-texto, 1)));}
+  .bt-sub{font-size:max(9px, calc(11.5px * var(--escala-texto, 1)));}
 }
 
 @media(max-width:640px){
@@ -94,8 +114,8 @@ const logoEscuroUrl = '/midia/LOGOTIPOBRENOBRANCO.png'
      "Vessel Conchal > Fábrica > Escritório Administrativo" isso era uma linha
      inteira a mais. É economia de espaço que NÃO custa informação, que é
      exatamente o tipo que vale fazer. */
-  .bt-titulo{font-size:12.5px;letter-spacing:.2px;text-transform:none;font-weight:700;}
-  .bt-sub{font-size:10.5px;}
+  .bt-titulo{font-size:max(9px, calc(12.5px * var(--escala-texto, 1)));letter-spacing:.2px;text-transform:none;font-weight:700;}
+  .bt-sub{font-size:max(9px, calc(10.5px * var(--escala-texto, 1)));}
   /* A própria linha de ações também quebra: com três botões numa tela de
      320px eles não cabem lado a lado, e como cada rótulo é `nowrap` (pra não
      partir "Nova peça" no meio) o que sobrava vazava a tela. Quebrar é a

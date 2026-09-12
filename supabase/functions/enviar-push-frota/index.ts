@@ -27,6 +27,7 @@ import webpush from 'npm:web-push@3';
 import { inscricoesDoTipo } from '../_shared/notificacoes.js';
 import { cadenciasDoDia, itensDaFicha, quemFaltaHoje } from '../_shared/checklist.js';
 import { montarAviso } from '../_shared/aviso-de-checklist.js';
+import { loginDaPessoa, pessoasSemLogin } from '../_shared/quem-loga.js';
 import { exigirSegredoDeCron } from '../_shared/segredo-de-cron.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
@@ -50,7 +51,7 @@ Deno.serve(async (req) => {
   const sb = createClient(SUPABASE_URL, SERVICE_KEY);
   const hoje = hojeBrt();
 
-  const [veiculos, itens, config, fichas, usos, pessoas, subs, prefs] = await Promise.all([
+  const [veiculos, itens, config, fichas, usos, pessoas, subs, prefs, usuarios] = await Promise.all([
     sb.from('frota_veiculos').select('id,nome,pessoa_id,situacao'),
     sb.from('frota_checklist_itens').select('*').order('ordem'),
     sb.from('frota_checklist_config').select('*').limit(1),
@@ -62,9 +63,14 @@ Deno.serve(async (req) => {
     // viagem ou posse com volta_em preenchida já fechou e não decide nada
     // hoje. Filtrar aqui evita puxar o histórico inteiro de frota_uso.
     sb.from('frota_uso').select('*').is('volta_em', null),
-    sb.from('acessos_pessoas').select('id,nome,profile_id'),
+    // `email_corporativo` entra na consulta porque é o resgate de quem tem
+    // login mas está sem o elo `profile_id` na ficha — ver _shared/quem-loga.js.
+    sb.from('acessos_pessoas').select('id,nome,profile_id,email_corporativo'),
     sb.from('push_subs').select('*'),
     sb.from('push_preferencias').select('*'),
+    // Quem existe como usuário do app. Sem esta lista não dá pra resgatar
+    // ninguém pelo e-mail, e a função voltaria a avisar só quem tem o elo.
+    sb.from('profiles').select('id,email'),
   ]);
 
   // AS CONSULTAS DE QUE A DECISÃO DEPENDE, TODAS CONFERIDAS. O cabeçalho diz
@@ -92,6 +98,10 @@ Deno.serve(async (req) => {
     'pessoas': pessoas,
     'aparelhos inscritos': subs,
     'preferências de aviso': prefs,
+    // Entra aqui pelo mesmo motivo que `veículos`: sem a lista de usuários,
+    // loginDaPessoa() não acha ninguém, a função responde "0 enviados" com 200
+    // e a Saúde dos Robôs fica verde num dia em que aviso nenhum saiu.
+    'usuários do app': usuarios,
   };
   const faltando = Object.entries(obrigatorias)
     .filter(([, r]) => r.error).map(([nome]) => nome);
@@ -166,10 +176,13 @@ Deno.serve(async (req) => {
     // linha.donoId já veio de quemFaltaHoje() com D9b aplicado: é quem está
     // com o carro agora (posse aberta), e só na falta dela o dono fixo.
     const pessoa = (pessoas.data || []).find((p: { id: string }) => p.id === linha.donoId);
-    // O elo com push_subs/push_preferencias é profile_id, não o id da pessoa:
-    // acessos_pessoas.id é a linha de RH, profile_id é quem loga no app.
-    if (!pessoa?.profile_id) continue;   // pessoa sem login: não há pra quem mandar
-    const dela = inscritos.filter((s: { user_id: string }) => String(s.user_id) === String(pessoa.profile_id));
+    // Quem loga por esta pessoa: o elo `profile_id` na frente, o e-mail
+    // corporativo como resgate. A REGRA MORA EM _shared/quem-loga.js, a mesma
+    // que a tela usa — antes eram duas, e elas discordavam: a tela reconhecia a
+    // Raissa pelo e-mail e este laço a pulava por falta do elo, calado.
+    const userId = loginDaPessoa(pessoa, usuarios.data);
+    if (!userId) continue;   // sem login mesmo: contado abaixo, nunca em silêncio
+    const dela = inscritos.filter((s: { user_id: string }) => String(s.user_id) === String(userId));
     if (!dela.length) continue;
 
     const aviso = montarAviso({ veiculo: v, itens: itensDaFicha(itens.data, cadencias), cadencias });
@@ -189,5 +202,23 @@ Deno.serve(async (req) => {
       }
     }
   }
-  return json({ enviados, podados, hoje });
+  // QUEM DEVIA O CHECKLIST HOJE E NÃO TEM COMO SER AVISADO. O defeito que este
+  // arquivo acabou de corrigir não era pular a pessoa — era pular CALADO: a
+  // função respondia "0 enviados" com cara de sucesso e ninguém descobria que
+  // faltava alguém. Sai nomeado na resposta, que é o que a Saúde dos Robôs
+  // guarda e o que quem investiga vai ler.
+  const semAviso = pessoasSemLogin(
+    linhas.map((l: { donoId: string }) =>
+      (pessoas.data || []).find((p: { id: string }) => p.id === l.donoId)).filter(Boolean),
+    usuarios.data,
+  ).map((p: { nome: string }) => p.nome);
+
+  return json({
+    enviados, podados, hoje,
+    ...(semAviso.length ? {
+      sem_aviso: semAviso,
+      motivo_sem_aviso: 'devem o checklist de hoje e não têm login no app — '
+        + 'push nenhum alcança essas pessoas; cobrar pelo quadro da aba Gestão',
+    } : {}),
+  });
 });

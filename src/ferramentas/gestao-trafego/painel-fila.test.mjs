@@ -329,3 +329,65 @@ test('nome de criativo e motivo sao escapados', () => {
   assert.ok(!html.includes('<script>x'));
   assert.ok(!html.includes('<img src=y'));
 });
+
+// ── o FAROL de público (item 4 da lista do dono, 12/08/2026) ────────────────
+// Fica FORA da lista de decisões: aparece mesmo com veredito 'manter' (pedido
+// dele), e o contador da aba conta DECISÕES pendentes.
+
+const leitura = (extra) => ({
+  veredito: 'ajustar', titulo: 'Vale olhar a idade: 18 a 24 anos custa mais barato',
+  frase: 'Nesta conta, a faixa 18-24 custa a partir de R$ 3,95 por resultado',
+  contando: 'conversas iniciadas',
+  faixas: [
+    { faixa: '18-24', gasto: 430.14, resultados: 109, custo: 3.95, confiavel: true },
+    { faixa: '65+', gasto: 1832.03, resultados: 137, custo: 13.37, confiavel: true },
+  ],
+  dinheiroEmFaixasCaras: 9683.8,
+  fraseDoDinheiro: 'Nos últimos 90 dias, R$ 9.683,80 foram para faixas que custam mais caro.',
+  receita: { idadeMin: 18, idadeMax: 24, cidades: [{ key: '1' }], interesses: [], porqueDosConjuntos: '' },
+  alerta: 'Atenção: isto deixaria de fora 5 das 6 faixas de idade.',
+  ...extra,
+});
+
+test('o farol mostra a tabela em REAIS, nao dividida por 100', () => {
+  // A `reais()` da fila recebe CENTAVOS; estes numeros vem do Graph em reais.
+  // Passar por ela mostraria R$ 4,30 onde sao R$ 430,14.
+  const html = monta({ pendentes: [], carregou: true, leituraPublico: leitura() });
+  assert.ok(html.includes('R$ 430,14'), 'o gasto da faixa sai em reais');
+  assert.ok(!html.includes('R$ 4,30'), 'nao pode dividir por 100');
+});
+
+test('o farol DIZ a janela de 90 dias (o resto da fila fala de 30)', () => {
+  const html = monta({ pendentes: [], carregou: true, leituraPublico: leitura() });
+  assert.match(html, /últimos 90 dias/);
+});
+
+test('veredito "manter" APARECE — e sem receita nao oferece botao de usar', () => {
+  const html = monta({ pendentes: [], carregou: true, leituraPublico: leitura({
+    veredito: 'manter', titulo: 'O público desta conta está equilibrado',
+    receita: null, alerta: '', dinheiroEmFaixasCaras: 0, fraseDoDinheiro: '',
+  }) });
+  assert.match(html, /equilibrado/);
+  assert.ok(!html.includes('gtf-lp-usar'), 'sem receita nao ha o que levar pro editor');
+});
+
+test('o farol NAO vira item da lista (nao infla o que espera decisao)', () => {
+  const html = monta({ pendentes: [], carregou: true, leituraPublico: leitura() });
+  assert.match(html, /Nada esperando decisão/, 'a lista continua dizendo que esta vazia');
+  assert.match(html, /Leitura de público/, 'e o farol aparece assim mesmo');
+});
+
+test('o farol diz que nao muda nada sozinho', () => {
+  const html = monta({ pendentes: [], carregou: true, leituraPublico: leitura() });
+  assert.match(html, /não muda nada sozinha/);
+});
+
+test('sem leitura o painel segue igual ao que era', () => {
+  const html = monta({ pendentes: [], carregou: true });
+  assert.ok(!html.includes('gtf-lp'), 'nada de bloco vazio');
+});
+
+test('texto da leitura tambem passa por escape', () => {
+  const html = monta({ pendentes: [], carregou: true, leituraPublico: leitura({ titulo: '<script>alert(1)</script>' }) });
+  assert.ok(!html.includes('<script>alert(1)</script>'));
+});

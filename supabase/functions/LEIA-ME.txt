@@ -9,7 +9,18 @@ Só deixa continuar se quem chamou for admin. É chamada pela tela de Admin
 bling-proxy: repassa pedidos pra API do Bling (o sistema de gestão/ERP da
 empresa), renovando sozinho o token de acesso guardado no banco quando ele
 vence. É chamada pelas telas de Gestão à Vista, Análise de Vendas e Gestão
-Comercial.
+Comercial, e também pelos robôs do coletor (gestor-comercial,
+relatorios-comerciais, notas-dos-pedidos), que entram com login de conta de
+serviço — não com chave de serviço.
+  DESDE 13/08/2026 ELA TAMBÉM RECORTA POR LOJA: quem está limitada a uma loja
+  (profiles.escopo_por_equipe) só recebe os pedidos dos canais dos times dela.
+  Quem recorta a lista é o próprio Bling, pelo parâmetro idLoja — recortar
+  depois quebraria a paginação da tela e mostraria venda a menos. A regra de
+  quais canais é a MESMA das telas, em _shared/canais-de-venda-permitidos.js.
+  ⚠️ CUIDADO QUE VALE PARA SEMPRE: os robôs só continuam enxergando porque a
+  conta de serviço deles (claudecode@rbvcompany.com) NÃO está limitada a loja.
+  Marcar "só os canais dos times dela" no perfil dessa conta PARA os três robôs
+  em silêncio — eles não têm tela pra reclamar.
 
 meta-proxy: repassa pedidos pra API do Facebook/Instagram (Meta Graph API),
 usando o token de acesso de cada conta de anúncio guardado no banco. Só

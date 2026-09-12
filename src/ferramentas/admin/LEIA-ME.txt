@@ -15,9 +15,23 @@ PERMISSÕES REAIS QUE CONTROLAM O QUE CADA PESSOA PODE ACESSAR.
   cancele.
 - O botão "Permissões" muda o que aquele usuário consegue ver e fazer no
   sistema — errar aqui pode dar acesso a algo sensível, ou tirar acesso de
-  quem precisa.
+  quem precisa. Ele aparece em cada cartão de pessoa — tanto nos cards das
+  lojas quanto na lista "Sem time de venda" — mas é sempre a MESMA janela
+  mexendo no MESMO dado.
+- A caixinha "só os canais dos times dela", no editor de Permissões,
+  DESMARCADA faz a pessoa enxergar o faturamento de TODAS as lojas e canais. É a mudança de maior alcance desta tela depois de
+  excluir usuário. A janela de confirmação diz por escrito quem é afetado e o
+  que muda; cancelar não muda nada.
+- Trocar a senha pela ficha (toque no nome, em qualquer lugar que a pessoa
+  apareça) troca a senha de VERDADE: a antiga para de funcionar na hora.
 - Aprovar/Negar uma solicitação de acesso (aba Solicitações) também é uma
   decisão real sobre quem entra na plataforma.
+- Dentro de "Permissões" existe o botão "Salvar como perfil". Se você digitar
+  o nome de um perfil QUE JÁ EXISTE, ele REGRAVA aquele perfil e muda o acesso
+  de TODO MUNDO que está nele de uma vez — não é só o acesso da pessoa cuja
+  ficha está aberta. Antes de gravar qualquer coisa, a tela mostra uma janela
+  com o nome de cada pessoa afetada e o que ela PERDE, ganha ou tem trocado de
+  nível. Leia essa lista até o fim; cancelar não muda nada.
 Erros aqui têm consequência real para pessoas reais. Tenha cuidado extra
 antes de clicar em qualquer botão desta tela.
 
@@ -27,6 +41,41 @@ Como funciona (resumido):
 - Usuários & Acessos: lista todo mundo cadastrado (com foto, nome editável,
   papel viewer/admin, permissões e desativar/excluir) e um formulário para
   convidar ou criar acesso novo.
+- Times de venda (dentro de Usuários): lojas, canais e setores, e quem
+  trabalha em cada um.
+  AS PESSOAS DO TIME APARECEM DENTRO DO CARD DA LOJA delas, e é o MESMO cartão
+  da lista de baixo (`_criarLinhaPessoa`) — não um parecido. Por isso foto,
+  papel, Permissões, desativar e excluir são iguais nos dois lugares, e tocar
+  no nome abre a mesma ficha (é lá que fica a troca de senha, só super-admin).
+  Quem está num time NÃO aparece na lista de baixo: ela se chama "Sem time de
+  venda" e mostra só o resto. A pessoa mora num lugar só — repetir a mesma
+  pessoa em duas listas é como duas telas começam a divergir.
+  Colada embaixo do cartão vem uma faixa curta com o que é DO TIME e não existe
+  no cartão, e só isso:
+  * o papel dela no time (Vendedora / Supervisora / Gestor);
+  * "estoque" — grava/apaga em `equipes_permissoes`. Estar no time mostra as
+    VENDAS; o estoque é liberado à parte. Quando o direito vem do papel
+    (supervisora/gestora) a caixinha aparece marcada e TRAVADA, porque
+    desmarcá-la não faria nada, e caixinha que não obedece ensina a não
+    confiar na tela.
+  * "Tirar do time".
+  O QUE NÃO FICA AQUI, e por quê:
+  * A chave "só os canais dos times dela" (`profiles.escopo_por_equipe`) mora
+    no editor de Permissões, bloco CANAIS DE VENDA. Ela é da PESSOA e vale no
+    SISTEMA INTEIRO dela; numa caixinha dentro do card de uma loja, mentia por
+    omissão. É ela que faz a Gestão à Vista e a Análise de Vendas mostrarem só
+    a loja dela ou tudo. Só super-admin muda: desligar abre TODOS os canais,
+    inclusive os de times que quem clica não administra. Ao salvar, a tela
+    pergunta e diz o tamanho do estrago — e só pergunta quando o valor MUDA.
+  * A troca de senha mora na ficha (toque no nome), que é onde já estava.
+  O canal de venda NÃO tem lista própria por pessoa, de propósito: canal é o
+  time (`equipes.canal_loja_id`), e quem decide é a trava do banco
+  `pode_ver_canal` (db/migrations/2026-08-04-escopo-em-vendas-e-estoque.sql).
+  Uma segunda lista seria uma segunda verdade sobre a mesma pergunta.
+- Puxar as vendedoras das vendas (dentro de Times de venda): lê quem vendeu no
+  Bling, junta cadastros repetidos, sugere loja e e-mail, e cria as contas
+  marcadas. "Todas começam com o acesso de" aplica um perfil salvo às contas
+  criadas; o padrão é "sem nada", porque permissão nasce desmarcada.
 - Contas: perfis do Instagram conectados à plataforma (nome, username, cor
   de destaque).
 - Solicitações: pedidos de acesso de gente de fora, para aprovar ou negar.
@@ -70,3 +119,210 @@ Tráfego e da Redes Sociais):
   componente — mesma técnica já usada nos modais da Gestão de Tráfego.
 
 Para mexer só nesta tela, edite apenas esta pasta.
+
+O GRUPO DO CANAL — ATACADO / VAREJO (20/08/2026)
+-------------------------------------------------
+Cada canal do Bling tem um grupo (`bling_lojas.grupo`): Atacado, Varejo, ou
+outro que o dono criar na tela. É TEXTO, não lista travada no código — grupo
+novo tem de ser digitação, não migration.
+
+O GRUPO É DO CANAL, NÃO DO TIME, e isso foi medido: dos 14 canais do Bling só 3
+têm time, e os 11 sem time aparecem no seletor das dashboards do mesmo jeito.
+O time é atacado ou varejo pelo canal a que está amarrado; a ficha dele mostra
+o grupo em LEITURA e manda configurar na lista "Canais de venda".
+
+⚠️ TRÊS ARMADILHAS QUE ESTA PEÇA ENCONTROU. Quem copiar esta tela copia as três:
+
+1. `bling_lojas` só tinha política de LEITURA. A de escrita nasceu com esta peça
+   (`bling_lojas_grupo_superadmin`). Sem ela a tela salvaria sem salvar: o
+   PostgREST responde 200 com lista VAZIA quando o RLS barra, sem erro. Por isso
+   a gravação aqui CONFERE a contagem de linhas devolvidas antes de dizer
+   "salvo".
+
+2. A política NÃO pode ler `profiles` direto. A expressão de uma policy roda como
+   o próprio usuário, e `profiles` tem RLS: a pessoa não enxerga a própria linha.
+   A primeira versão reprovou com o SUPERADMIN afetando zero linhas. Por isso
+   existe `public.superadmin_pela_ficha()`, security definer.
+
+3. EXISTEM DOIS "SUPERADMIN" NESTE BANCO e eles não são a mesma coisa: a coluna
+   `profiles.is_superadmin` (que é o que a tela usa, via `estado.is_superadmin`)
+   e a função `public.is_superadmin()`, que NÃO lê a coluna — confere o e-mail
+   contra uma lista de três cravada no corpo dela. Hoje concordam (as mesmas 3
+   pessoas, de 22 perfis). Se alguém marcar a coluna para uma quarta, divergem.
+   Como quem abre a tela é a coluna, é a coluna que manda na política.
+
+⚠️ Canal novo no Bling NÃO entra sozinho em `bling_lojas`: a tabela foi semeada
+uma vez em 21/05/2026 e nada no repositório escreve nela. Canal criado no Bling
+hoje não aparece nem aqui nem no seletor das dashboards até alguém inserir a
+linha. É anterior a esta peça e continua depois dela.
+
+Quem lê o grupo: por enquanto, ninguém além desta tela. As Peças 2 (seletor
+agrupado), 3 (alcance da supervisora) e 4 (usuários agrupados) leem daqui — B24
+em docs/pendencias.md.
+
+Prova da trava: docs/provar-grupo-do-canal.sql (roda com a trava armada, dentro
+de um bloco que se desfaz sozinho).
+Spec: docs/superpowers/specs/2026-08-20-grupo-do-canal-design.md
+
+OS TIMES SOB CABEÇALHO DE GRUPO (Peça 4, 20/08/2026)
+-----------------------------------------------------
+Os cards de time da seção de Usuários ficam sob um cabeçalho por grupo, com a
+contagem ao lado. O time NÃO tem grupo próprio: ele herda do canal a que está
+amarrado (`equipes.canal_loja_id` -> `bling_lojas.grupo`).
+
+Time sem canal (loja que ainda vai abrir, como o Iguatemi) e time cujo canal
+está sem grupo caem juntos em "Sem grupo", no fim. Nenhum some — sumir da gestão
+de usuários seria perder o time inteiro de vista.
+
+Cabeçalho SÓ aparece quando existe ao menos um time com grupo. Enquanto ninguém
+marcar canal na lista "Canais de venda", esta parte da tela fica idêntica ao que
+sempre foi. E grupo que só existe em canal SEM time não vira cabeçalho vazio.
+
+A regra é `agruparTimesPorGrupo` em `src/compartilhado/grupo-do-canal.js`, com
+testes. Ela precisa de `_canaisComGrupo` carregado — por isso `loadAdminCanais()`
+roda ANTES de `loadAdminEquipes()` em `loadAdminUsers`.
+
+O GRUPO SE MONTA PELO LADO DO GRUPO (27/08/2026)
+-------------------------------------------------
+A seção "Canais de venda" NÃO tem mais um seletor por canal. Ela lista os
+GRUPOS; para dizer quais canais são de um grupo, abre-se "Escolher canais" e
+marcam-se os 14 de uma vez. Pedido do dono: "tirar a questão de selecionar o
+canal pai para cada canal".
+
+Um canal mora num grupo só (é a coluna `bling_lojas.grupo_id`, não uma lista).
+Por isso marcar um canal que já é de outro grupo o MOVE — e a caixinha dele diz
+"hoje em Varejo — marcar aqui move" ANTES do clique. Tirar em silêncio seria a
+mesma classe de defeito que a permissão que some sem aviso.
+
+"Renomear" NÃO EXISTIA e agora existe. Antes, corrigir o nome de um grupo era
+reescrever o texto em cada canal, e errar um partia o grupo em dois, calado.
+Hoje é uma linha em `canais_grupos`, e o gatilho `espelhar_rename_do_grupo` leva
+o texto dos canais junto.
+
+"Apagar" fica DENTRO do painel aberto, não solto na lista (o padrão da Central
+manda botão de perigo ficar atrás de um passo a mais), e recusa grupo com canal
+dentro: a chave estrangeira é `on delete set null`, então apagar desligaria os
+canais em silêncio.
+
+⚠️ A TELA GRAVA `grupo_id`, NUNCA O TEXTO. Quem mantém `bling_lojas.grupo` de
+acordo é o gatilho `espelhar_grupo_do_canal`, que desde 27/08 vale nos DOIS
+sentidos (migration 2026-08-27-espelho-do-grupo-nos-dois-sentidos.sql). Antes
+dela o gatilho só copiava id -> texto, e a tela velha escrevia o texto: dava
+para as duas colunas discordarem sem erro nenhum.
+
+⚠️ TODA GRAVAÇÃO CONFERE AS LINHAS AFETADAS. RLS barrando devolve 200 com lista
+VAZIA, sem erro; sem contar, a tela diria "salvo" para o que não gravou.
+
+A regra pura é `src/compartilhado/cadastro-de-grupos.js` (19 testes). Ela é
+SEPARADA de `grupo-do-canal.js` de propósito: aquele está no caminho do alcance
+da supervisora, que a edge bling-proxy lê.
+
+O CARD PAI (27/08/2026)
+------------------------
+Na seção de Usuários, o grupo deixou de ser um TÍTULO solto acima dos cards de
+loja e virou uma MOLDURA com as lojas dentro, com "N lojas · N pessoas" no topo.
+Com título, as lojas do Varejo e as do Atacado ficavam na mesma coluna e nada
+mostrava onde um grupo acabava — a separação existia no texto, não no desenho.
+
+"Sem grupo" tem moldura TRACEJADA e sem fundo: não é um grupo, é a ausência de
+um, e não pode competir de igual para igual com os de verdade. Ele também diz o
+que fazer, em vez de só existir.
+
+`agruparTimesPorGrupo` agora chaveia pelo APONTAMENTO (`grupo_id`) e devolve a
+LINHA do grupo, não o nome — o card pai precisa do id para pendurar as
+supervisoras (fatia ainda por fazer) e os botões dele. Assinatura:
+`agruparTimesPorGrupo(times, canais, grupos)`.
+
+⚠️ CONTINUA VALENDO: `loadAdminCanais()` roda ANTES de `loadAdminEquipes()`,
+porque `_canaisComGrupo` E `_gruposDeCanal` precisam estar carregados.
+
+⚠️ ARMADILHA DE QUEM FOR MEDIR ESTA TELA NUM HARNESS (custou duas medições
+erradas aqui): o `data-v-*` do CSS scoped MUDA A CADA BUILD — fixe o do build
+atual, senão o CSS não casa e tudo aparece sem estilo. E ligar `data-theme=dark`
+por script DEPOIS da página carregada não repinta o fundo do botão principal:
+monte a página já nascendo no tema que você quer medir.
+
+FILTROS DE SITUAÇÃO NA LISTA "SEM TIME DE VENDA" (27/08/2026)
+--------------------------------------------------------------
+A lista já sabia responder "onde está fulano": a busca por nome/e-mail e a
+gaveta por Marca/Local/Setor existiam. O que faltava era a pergunta do outro
+lado — "quem está em tal situação?". Os avisos existiam, mas um por cartão:
+descobrir que 4 pessoas estão sem cadastro de colaborador exigia varrer os 19
+com o olho.
+
+Agora há uma fileira de filtros acima da lista. Medido em 27/08 nas 19 pessoas
+da lista: 4 sem cadastro · 9 admin (3 deles super) · 1 precisa trocar senha ·
+0 desativado.
+
+DECISÕES QUE VALEM A LEITURA:
+* FILTRO ZERADO NÃO APARECE. Ninguém está desativado hoje, e um botão
+  "Desativado (0)" que só sabe esvaziar a lista é controle morto — e controle
+  morto ensina a não confiar nos outros. Ele volta sozinho quando houver.
+  Se NENHUM estado tiver gente, a fileira inteira não nasce.
+* DOIS FILTROS SOMAM (ou), não interceptam (e). "Sem cadastro" E "admin" ao
+  mesmo tempo daria zero quase sempre nesta base, e filtro que zera a lista
+  ensina a pessoa a não usar filtro.
+* SUPER-ADMIN CONTA COMO ADMIN. Ele é admin com mais poder, não uma categoria à
+  parte: filtrar "admin" e não achar os três super-admins seria a lista mentindo
+  sobre quem manda no sistema.
+* A CONTAGEM DOS FILTROS OLHA A LISTA INTEIRA, não a filtrada. Um número que
+  mudasse conforme os outros filtros faria a pessoa perseguir o próprio clique.
+* "MOSTRANDO 4 DE 19" só aparece quando algo está filtrando, e NÃO é enfeite:
+  esta lista já esconde gente por outro motivo (quem está num time virou cartão
+  dentro da loja), e lista que encolhe sem dizer por quê é lida como "sumiu do
+  sistema".
+* A ORDEM É: filtra por estado, depois por texto, e só então agrupa. Agrupar
+  antes faria o cabeçalho contar gente que a lista não está mostrando.
+* A frase de lista vazia deixou de ser "Ninguém encontrado com esse nome" —
+  agora a lista também pode esvaziar sem ninguém ter digitado nada.
+
+A regra é `src/compartilhado/estados-da-pessoa.js` (16 testes). O CARTÃO DA
+PESSOA NÃO FOI TOCADO: ele foi redesenhado em 13/08 a pedido do dono e conferido
+item a item; mexer sem pedido novo desfaria aquela decisão.
+
+A SUPERVISORA MORA NO CARD PAI (27/08/2026)
+--------------------------------------------
+Decisão do dono: "a supervisora fica a nível pai, gestora e vendedora fica a
+nível loja". Ela vê o faturamento de TODAS as lojas do grupo, então mora no
+cartão do grupo e não dentro do cartão de uma loja.
+
+Ela NÃO está em `equipes_membros` — mora em `canais_grupos_membros`, que é outra
+tabela justamente porque o alcance é outro.
+
+⚠️ SÓ SUPERADMIN PÕE E TIRA. Este vínculo abre o faturamento do grupo inteiro; é
+a mesma classe de decisão da chave "só os canais dos times dela". A gestora de
+uma loja não cria a própria chefe.
+
+⚠️ O CARTÃO DA PESSOA É O MESMO da lista de baixo (`_criarLinhaPessoa`), não um
+parecido — foto, Permissões e a troca de senha pela ficha vêm de graça e iguais.
+
+⚠️ "SUPERVISORA" SAIU DO SELETOR DE PAPEL DO TIME (`papeisQuePossoConceder`), mas
+CONTINUA em `PAPEIS`: o nível dela ainda decide `veOEstoque` e
+`podeLiberarEstoque`, e tirá-la da lista faria uma supervisora antiga virar nível
+zero, perdendo acesso em silêncio. Medido em 27/08: zero pessoas com esse papel
+em time, então nada foi tirado de ninguém.
+
+⚠️ TODA GRAVAÇÃO CONFERE AS LINHAS AFETADAS: RLS barrando devolve 200 com lista
+vazia, e a tela diria "pronto" para um vínculo de permissão que não existe.
+
+Tirar supervisora PERGUNTA antes: a ação encolhe o que a pessoa enxerga.
+
+Vínculo apontando para login que não existe mais NÃO some calado — a seção diz
+"tire e ponha de novo". Some sem explicação é como se descobre tarde que alguém
+ficou com acesso.
+
+FECHAR E REABRIR UM CANAL (09/09/2026)
+--------------------------------------
+Cada canal tem o botao "Marcar fechamento" / "Reabrir", que grava
+`bling_lojas.fechado_em`. Loja fechada sai dos menus da Gestao a Vista e da
+Analise de Vendas daqui pra frente e continua aparecendo no passado — nada e
+apagado: venda, meta, equipe e patrimonio ficam.
+
+Passa pela MESMA politica de escrita do grupo (`bling_lojas_grupo_superadmin`):
+so o super-admin muda. A coluna nasceu em `db/migrations/2026-09-09-canal-fechado.sql`
+e a tabela tem UPDATE de TABELA para `authenticated` (nao por coluna), entao ela
+entrou coberta — conferido no banco depois de aplicar, nao suposto.
+
+⚠️ DATA QUE A TELA NAO ENTENDEU NAO VIRA NULO. Nulo aqui significa "reabrir": se
+"31/02/2026" caisse no nulo, a loja reabriria por erro de digitacao e a tela
+diria "salvo". A conversao recusa, e mora em `src/compartilhado/canal-fechado.js`.

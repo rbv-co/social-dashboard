@@ -166,6 +166,9 @@ import { sbClient, SUPABASE_URL, SUPABASE_ANON_KEY } from '../../compartilhado/c
 import { estado, hasPermission } from '../../compartilhado/controle-de-login-e-usuario.js'
 import { adminToast } from '../../compartilhado/avisos.js'
 import { sb } from '../../compartilhado/buscar-e-salvar-dados.js'
+// Traduz 401/42501 para uma frase que o dono entende. Ver seção 9 do
+// PADRAO-DA-CENTRAL: "a tela nunca mente" — e não fala em código de erro.
+import { classificarErro } from '../../compartilhado/classificar-erro.js'
 import { hojeLocal, diasAtras, primeiroDiaDoMes, ultimoDiaDoMes } from '../../compartilhado/datas.js'
 // Decisão "o orçamento é da campanha (CBO) ou dos conjuntos (ABO)?" e o
 // agrupamento campanha → conjuntos → anúncios moram num módulo puro, testado
@@ -180,7 +183,7 @@ import { lerSalvos } from './publicos-salvos.js'
 // Sugerir público a partir do que JÁ ACONTECEU nesta conta. A evidência (idade
 // por custo, cidades e interesses dos conjuntos que performam) mora em
 // sugerir-publico.js, puro e testado com os números reais da conta.
-import { lerFaixasDeIdade, lerConjuntos, montarSugestao, escolherAcao, contadorDe } from './sugerir-publico.js'
+import { lerFaixasDeIdade, lerConjuntos, montarSugestao, escolherAcao, contadorDe, recomendarIdade } from './sugerir-publico.js'
 // A leitura das publicações do perfil (tipo, engajamento, miniatura) — puro.
 import { lerPublicacoes } from './conteudo-existente.js'
 // Os textos que já rodaram, agrupados e com a armadilha das vagas separada —
@@ -199,6 +202,19 @@ import { montarPainelRegua } from './painel-regua.js'
 // silêncio de 7 dias, a repartição por conjunto) moram em fila.js, puro e
 // testado; painel-fila.js só monta a tela.
 import { montarPainelFila } from './painel-fila.js'
+import { resumoDoRobo, fraseDaFilaVazia } from './fila.js'
+import { limparPersona, resumoPersona, fraseDaPersona, MAXIMO as PERSONA_MAXIMO } from './persona-da-marca.js'
+import { tipoDoArquivo, textoDoDocx, pareceTexto } from './ler-arquivo-de-texto.js'
+import { montarMapa } from './painel-do-mapa.js'
+// ESCOLHER LUGAR (13/08/2026): o painel é compartilhado com o "Subir para a
+// Meta" da Fábrica — uma peça só, para o dono escolher lugar do mesmo jeito nos
+// dois lugares.
+import { montarPainelDeLugares } from '../../compartilhado/painel-de-lugares.js'
+import { deListas, paraListas } from '../../compartilhado/lugares-do-anuncio.js'
+import { enderecoDeOndeCaiu } from '../../compartilhado/busca-de-lugar.js'
+import { agruparProblemas, anunciosComProblema, fraseDosProblemas, linhasParaGuardar } from './problemas-do-anuncio.js'
+import { montarLeituraDePublico, publicoDaReceita } from './leitura-de-publico.js'
+import { PUBLICO_VAZIO } from './publico-alvo.js'
 // A LISTA do histórico de campanhas começadas por aqui. As regras de leitura
 // moram em rascunhos.js; este só desenha (e escapa tudo que vem de fora).
 import { montarPainelHistorico, marcarQuemPodeApagar } from './painel-historico.js'
@@ -509,8 +525,34 @@ async function _initGestaoTrafego(){
   const setLbl=t=>{if(col)col.innerHTML=`<div class="gv-loading-screen"><div class="gv-spinner"></div><span class="gv-loading-lbl">${t}</span></div>`;};
   setLbl('Carregando contas…');
   try{
-    const res=await adFetch('accounts?select=id,name,ad_account_id,profile_picture_url,picture_url&order=name.asc');
-    const socialAccs=await res.json();
+    // Antes aqui era `adFetch(...)` seguido de `await res.json()` SEM olhar o
+    // status. Quando o banco recusava a leitura, o corpo da resposta era um
+    // OBJETO de erro (`{code:'42501',...}`), não uma lista — e o `for...of`
+    // logo abaixo estourava com "g is not iterable" (o "g" é o nome desta
+    // variável depois de minificada). O dono via jargão de programador no lugar
+    // do motivo. Aconteceu de verdade em 13/08: a coluna `persona` tinha sido
+    // criada sem GRANT de leitura, e UMA coluna sem permissão derruba a linha
+    // inteira no PostgREST.
+    //
+    // Duas trocas, e cada uma conserta uma metade:
+    //  - `sbClient` no lugar do adFetch: o adFetch monta o token na mão a partir
+    //    de `estado.currentSession`, que é uma FOTO tirada no login; o sbClient
+    //    renova o token sozinho. Também é o que manda a seção 9 do
+    //    PADRAO-DA-CENTRAL — e de propósito não é o `sb()` desta base, que cai
+    //    na chave anônima e devolve lista vazia calada.
+    //  - o erro passa por `classificarErro`: a tela diz "sua sessão expirou" ou
+    //    "você não tem permissão", nunca "42501". O detalhe técnico vai pro
+    //    console, que é de quem conserta.
+    const {data:socialAccs,error:erroContas,status:statusContas}=await sbClient
+      .from('accounts')
+      .select('id,name,ad_account_id,profile_picture_url,picture_url,persona')
+      .order('name');
+    if(erroContas){
+      console.error('[GT] o banco recusou a lista de contas:',erroContas);
+      throw new Error(classificarErro(statusContas,erroContas).mensagem);
+    }
+    // Cinto de segurança: o que não for lista não entra no `for...of` abaixo.
+    if(!Array.isArray(socialAccs))throw new Error('O banco não devolveu a lista de contas.');
     const seen=new Set();
     const accs=[];
     // Step 1 — accounts with ad_account_id explicitly in Supabase
@@ -834,6 +876,38 @@ let _gtFilaCarregando = false;
 // Só vira true quando a leitura terminou de verdade. Enquanto for false, a aba
 // diz "carregando", nunca "não há nada" — ver a guarda em _gtCarregarFila.
 let _gtFilaCarregou = false;
+// As analises COMO O ROBO GRAVOU, sem o filtro de `pedeAcao`. A fila vazia
+// precisa delas pra dizer "analisei 2 e nas duas o conselho foi manter" —
+// 'manter' e exatamente o que montarFila descarta.
+let _gtAnalisesCruas = [];
+// A leitura de publico da conta ABERTA (90 dias). Fora da lista de decisoes:
+// aparece mesmo quando o veredito e 'manter', e o contador da aba conta DECISOES.
+let _gtLeituraPublico = null;
+// O que a Meta reclama, agrupado por PROBLEMA (nao por anuncio).
+let _gtProblemasDaMeta = [];
+
+// GUARDA NO BANCO O QUE A META RECLAMA, uma chamada por conta.
+//
+// POR QUE EXISTE (17/08/2026): o `issues_info` do Graph SOME quando o anúncio é
+// excluído ou o problema é resolvido. Não há histórico em lugar nenhum — foi por
+// isso que não deu para achar a campanha barrada da semana de 11/08. A tabela
+// `gt_problemas_meta` é a memória que a Meta não tem.
+//
+// NÃO ESPERA e NÃO DERRUBA: guardar histórico é bom, ver a fila é o que a pessoa
+// veio fazer. Se o banco recusar (sem permissão, rede caindo), a fila aparece do
+// mesmo jeito e o erro fica no console — em vez de uma tela em branco por causa
+// de uma gravação de bastidor.
+async function _gtGuardarProblemas(porConta) {
+  for (const [conta, linhas] of porConta) {
+    try {
+      // A lista vai inteira, inclusive vazia: é ela que fecha o que sumiu.
+      const { error } = await sbClient.rpc('gt_registrar_problemas', { p_conta: conta, p_itens: linhas });
+      if (error) console.warn('[problemas] não consegui guardar em', conta, error.message);
+    } catch (e) {
+      console.warn('[problemas] não consegui guardar em', conta, (e && e.message) || e);
+    }
+  }
+}
 
 // Busca as campanhas e os conjuntos SÓ das contas que têm pendência. Sem este
 // recorte seriam duas chamadas por conta em toda abertura da aba, quatro delas
@@ -859,18 +933,33 @@ async function _gtFilaBuscarNomes() {
       metaFetchAll(`/act_${acc}/insights`, { level: 'campaign', fields: 'campaign_id,spend,impressions,ctr,frequency,clicks,cpc,reach,actions,video_play_actions', date_preset: 'last_30d' }, conta.id).catch(() => []),
       // Anúncios: o robô diz quais criativos não engatam (gt_ad_analises) e a
       // fila mostra a lista dentro da campanha. Só os ATIVOS interessam.
-      metaFetchAll(`/act_${acc}/ads`, { fields: 'id,name,campaign_id,effective_status' }, conta.id).catch(() => []),
+      // `issues_info` e o que a Meta reclama do anuncio -- e o MESMO campo onde
+      // uma recusa por politica apareceria (item 3 da lista do dono).
+      metaFetchAll(`/act_${acc}/ads`, { fields: 'id,name,campaign_id,effective_status,issues_info' }, conta.id).catch(() => []),
     ]);
     const insPorCamp = {};
     for (const i of ins || []) insPorCamp[String(i.campaign_id)] = i;
     const adsPorCamp = {};
+    // TODOS os anúncios, sem filtro de status — ver `anunciosTodos` abaixo.
+    const adsTodosPorCamp = {};
     for (const a of anuncios || []) {
+      (adsTodosPorCamp[String(a.campaign_id)] = adsTodosPorCamp[String(a.campaign_id)] || []).push(a);
       if (String(a.effective_status || '').toUpperCase() !== 'ACTIVE') continue;
       (adsPorCamp[String(a.campaign_id)] = adsPorCamp[String(a.campaign_id)] || []).push(a);
     }
     for (const c of camps || []) {
       const meus = (sets || []).filter((x) => String(x.campaign_id) === String(c.id));
-      mapa.set(String(c.id), { campanha: c, conjuntos: meus, conta, insight: insPorCamp[String(c.id)] || null, anuncios: adsPorCamp[String(c.id)] || [] });
+      mapa.set(String(c.id), {
+        campanha: c, conjuntos: meus, conta, insight: insPorCamp[String(c.id)] || null,
+        // SÓ OS ATIVOS: é o que o robô usa para falar de criativo sem tração —
+        // criativo parado não tem tração para julgar.
+        anuncios: adsPorCamp[String(c.id)] || [],
+        // TODOS: é o que o painel de problemas usa. Um anúncio com problema
+        // GRAVE está fora do ar por definição, então exigir que ele esteja
+        // ativo para aparecer é pedir a contradição — e foi assim que 13 de 13
+        // problemas ficaram invisíveis por cinco dias (17/08/2026).
+        anunciosTodos: adsTodosPorCamp[String(c.id)] || [],
+      });
     }
   }));
   return mapa;
@@ -899,6 +988,9 @@ async function _gtCarregarFila() {
       sb(`campaign_insights?select=campaign_id,captured_at,period_days,spend&captured_at=gte.${_gtDiasAtras(3)}`),
     ]);
     if (analises.erro) { console.error('[GT] falha ao ler as análises da fila:', analises.erro); }
+    // Guarda as análises CRUAS: a fila vazia precisa contar quantas o robô olhou
+    // e quantas vieram 'manter', e 'manter' é justamente o que montarFila filtra.
+    _gtAnalisesCruas = analises || [];
     _gtFila = montarFila(analises || [], decisoes || [], new Date().toISOString());
     // O gasto entra DEPOIS de montar a fila, por campanha. Agrupar aqui em vez
     // de dentro de montarFila mantém aquele módulo puro sem saber de insights.
@@ -990,7 +1082,11 @@ async function _gtCarregarFila() {
           : [],
       });
     }
-    _gtFila = mesclarSaude(_gtFila, saudes);
+    // As decisões de saúde vão junto: sem elas o alerta dispensado ressuscitava a
+    // cada carregamento (`mesclarSaude` roda depois de `montarFila` e só pulava
+    // campanha que já estivesse na fila de orçamento).
+    const decisoesSaude = await sb('gt_fila_decisoes?select=campaign_id,decisao,decidido_em,silenciar_ate,escopo&escopo=eq.saude&order=decidido_em.desc');
+    _gtFila = mesclarSaude(_gtFila, saudes, decisoesSaude || [], agoraMs);
 
     // CRIATIVOS SEM TRAÇÃO: o robô analisa anúncio a anúncio e marca 'pausar'
     // nos que não engatam. Eles aparecem AGRUPADOS na linha da campanha —
@@ -1002,6 +1098,41 @@ async function _gtCarregarFila() {
     ]);
     const porAd = {};
     for (const a of adAnalises || []) if (a && a.ad_id) porAd[String(a.ad_id)] = a;
+
+    // O QUE A META RECLAMA. Varre TODAS as campanhas, nao so as que estao na
+    // fila: um conjunto que a Meta pausou sozinha nao aparece em lugar nenhum
+    // -- foi o caso dos 5 da Raissa, medidos em 12/08/2026.
+    const comProblema = [];
+    // As mesmas reclamações, agora agrupadas POR CONTA, para guardar no banco.
+    const paraGuardar = new Map();
+    for (const [, info] of mapa) {
+      const contexto = {
+        conta_nome: info.conta.display_name || info.conta.name || '',
+        campanha_nome: info.campanha.name || '',
+        campaign_id: info.campanha.id || null,
+      };
+      // `anunciosTodos`, e NÃO `anuncios`: a segunda lista só tem os ativos, e
+      // anúncio com problema quase nunca está ativo. Medido em 17/08/2026: dos
+      // 13 com `issues_info` nas 5 contas, ZERO estavam ACTIVE.
+      comProblema.push(...anunciosComProblema(info.anunciosTodos, contexto));
+      const conta = String(info.conta.id || '');
+      if (!conta) continue;
+      if (!paraGuardar.has(conta)) paraGuardar.set(conta, []);
+      paraGuardar.get(conta).push(...linhasParaGuardar(info.anunciosTodos, contexto));
+    }
+    // GUARDAR O MOTIVO. A Meta APAGA o `issues_info` quando o anúncio é excluído
+    // ou o problema é resolvido — foi por isso que a campanha barrada da semana
+    // de 11/08 não deixou rastro nenhum. Aqui a Central passa a ter a memória
+    // que a Meta não tem.
+    //
+    // Roda para TODA conta do mapa, inclusive as sem problema nenhum: é a lista
+    // vazia que fecha o que sumiu. Mandar só as contas com problema deixaria um
+    // problema resolvido parecendo aberto para sempre.
+    //
+    // Falha aqui NÃO pode derrubar a fila: guardar histórico é bom, mas ver a
+    // fila é o que a pessoa veio fazer.
+    _gtGuardarProblemas(paraGuardar);
+    _gtProblemasDaMeta = agruparProblemas(comProblema);
     const criativos = [];
     for (const [id, info] of mapa) {
       if (!emVeiculacao(info.campanha, agoraMs)) continue;
@@ -1024,6 +1155,8 @@ async function _gtCarregarFila() {
     // Marca o conflito: robô manda escalar numa campanha que está queimando a
     // audiência. É o motivo de as duas leituras andarem juntas.
     for (const item of _gtFila.pendentes) item.conflito = contradiz(item.saude, item.veredito);
+    // A leitura de publico vem depois da fila e NAO a bloqueia: e acessorio.
+    await _gtCarregarLeituraPublico();
     _gtFilaCarregou = true;
   } finally {
     _gtFilaCarregando = false;
@@ -1041,6 +1174,146 @@ function _gtPintarContadorFila() {
   el.textContent = String(n);
   // Enquanto não carregou, esconde: um "0" ali afirmaria que não há pendência.
   el.hidden = n === 0 || !_gtFilaCarregou;
+}
+
+// A LEITURA DE PUBLICO DA CONTA ABERTA (90 dias, por faixa de idade).
+//
+// UMA chamada por conta, e so da conta que esta na tela -- a fila ja faz quatro
+// por conta, e varrer as cinco aqui triplicaria isso pra mostrar uma leitura so.
+//
+// A JANELA E DIFERENTE do resto da fila (90 dias contra 30) porque faixa de idade
+// e dado ralo: medido em 12/08/2026, com 30 dias a maioria das faixas nao chega
+// aos 10 resultados que a recomendacao exige. A tela DIZ a janela, senao os
+// numeros pareceriam brigar com os do cartao da campanha.
+async function _gtCarregarLeituraPublico() {
+  _gtLeituraPublico = null;
+  const conta = _gtCurAcc;
+  if (!conta || !conta.ad_account_id) return;
+  try {
+    const acc = _maCleanAccId(conta.ad_account_id);
+    const ate = new Date();
+    const de = new Date(Date.now() - 90 * 86400000);
+    const iso = (d) => d.toISOString().slice(0, 10);
+    const linhas = await metaFetchAll(`/act_${acc}/insights`, {
+      level: 'account', fields: 'spend,actions', breakdowns: 'age',
+      time_range: JSON.stringify({ since: iso(de), until: iso(ate) }),
+    }, conta.id);
+    const rotulo = escolherAcao(linhas || []);
+    const faixas = lerFaixasDeIdade(linhas || [], contadorDe(rotulo));
+    _gtLeituraPublico = montarLeituraDePublico({
+      faixas, recomendacao: recomendarIdade(faixas), contando: rotulo,
+    });
+  } catch (e) {
+    // Leitura e acessorio: se a Meta recusar, a fila continua funcionando. Mas o
+    // erro vai pro console -- sumir com ele faria a leitura "nunca aparecer" sem
+    // ninguem saber por que.
+    console.warn('[GT] não consegui ler o público da conta:', e);
+    _gtLeituraPublico = null;
+  }
+}
+
+// O FAROL: leva a receita pro editor de publico de uma campanha NOVA.
+// Nao escreve na Meta -- abre o passo "Para quem" ja preenchido, e quem publica
+// continua sendo o dono, pelo caminho normal.
+async function _gtUsarPublicoDaLeitura() {
+  const L = _gtLeituraPublico;
+  if (!L || !L.receita) return;
+  // Abre o fluxo normal de campanha nova e SEMEIA o passo "Para quem". Deixar
+  // `_gtNovoAbrir` fazer o trabalho evita uma segunda porta de entrada pro mesmo
+  // formulario -- duas portas divergem, e uma delas some do teste.
+  await _gtNovoAbrir();
+  if (!_gtNovo) return;   // sem conta selecionada, _gtNovoAbrir ja avisou
+  _gtNovo.publico = publicoDaReceita(L.receita, PUBLICO_VAZIO);
+  // Vai direto pro passo do publico pra pessoa VER o que foi preenchido, em vez
+  // de descobrir tres telas adiante.
+  const iPublico = PASSOS.findIndex((x) => x.chave === 'publico');
+  if (iPublico >= 0) _gtNovoPasso = iPublico;
+  _gtNovoRedesenhar();
+}
+
+// LE UM ARQUIVO SOLTO NO CAMPO DA PERSONA e devolve o texto.
+//
+// DOIS CAMINHOS, e a diferenca importa: .docx/.txt/.md sao lidos AQUI, no
+// navegador, sem dependencia e sem custo. O .pdf vai pra IA no servidor, porque
+// extrair texto de PDF exige lidar com a codificacao de fonte de cada arquivo --
+// a extracao ingenua devolveu tabela de fonte no PDF real da curadoria da Vessel,
+// e um extrator que acerta as vezes enche o campo de lixo em silencio.
+//
+// Devolve TEXTO. Nao grava nada: quem grava e o botao Salvar, depois de a pessoa
+// conferir o que entrou no campo.
+async function _gtLerArquivoDePersona(arquivo) {
+  const tipo = tipoDoArquivo(arquivo.name);
+  if (tipo === 'nao-suportado') throw new Error(`Nao sei ler "${arquivo.name}". Use .docx, .pdf, .txt ou .md.`);
+  if (tipo === 'doc-antigo') throw new Error('O .doc antigo nao abre aqui. Abra no Word e salve como .docx (ou como PDF).');
+
+  if (tipo === 'texto') {
+    const t = await arquivo.text();
+    if (!pareceTexto(t)) throw new Error('Este arquivo nao parece ter texto legivel.');
+    return t;
+  }
+
+  if (tipo === 'docx') {
+    const t = await textoDoDocx(await arquivo.arrayBuffer());
+    if (!pareceTexto(t)) throw new Error('Nao consegui achar texto neste .docx.');
+    return t;
+  }
+
+  // PDF: vai pra IA. Custa alguns centavos por arquivo -- e acao rara, mas a tela
+  // avisa que demora, senao parece travada.
+  const bytes = new Uint8Array(await arquivo.arrayBuffer());
+  let bin = '';
+  // Em pedacos: `String.fromCharCode(...arr)` com um arquivo inteiro estoura a
+  // pilha de argumentos e quebra num PDF grande.
+  for (let i = 0; i < bytes.length; i += 8192) bin += String.fromCharCode(...bytes.subarray(i, i + 8192));
+  const base64 = btoa(bin);
+
+  const { data: { session } } = await sbClient.auth.getSession();
+  if (!session) throw new Error('Sessao expirada. Recarregue a pagina.');
+  const r = await fetch(SUPABASE_URL + '/functions/v1/ler-documento', {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + session.access_token, apikey: SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ base64, limite: PERSONA_MAXIMO }),
+  });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok || !d.ok) throw new Error(d.detalhe || d.error || `Nao consegui ler o PDF (HTTP ${r.status}).`);
+  if (!pareceTexto(d.texto)) throw new Error('A leitura do PDF nao devolveu texto legivel.');
+  return d.texto;
+}
+
+// Grava a PERSONA da conta aberta.
+//
+// EXIGE A LINHA DE VOLTA antes de dizer que gravou. Um PATCH barrado pela RLS
+// volta 204 com ZERO linhas e `.ok` true — a tela anunciaria sucesso sem ter
+// gravado nada, que e exatamente o defeito que ja apareceu no PATCH de
+// permissoes. `return=representation` faz o banco devolver o que ficou gravado.
+async function _gtSalvarPersona(texto, botao) {
+  const conta = _gtCurAcc && _gtCurAcc.id;
+  if (!conta) return;
+  const orig = botao ? botao.textContent : '';
+  if (botao) { botao.disabled = true; botao.textContent = 'Salvando…'; }
+  try {
+    const r = await adFetch(`accounts?id=eq.${encodeURIComponent(conta)}&select=id,persona`, {
+      method: 'PATCH',
+      headers: { Prefer: 'return=representation' },
+      body: JSON.stringify({ persona: texto || null }),
+    });
+    const corpo = await r.json().catch(() => null);
+    if (!r.ok) throw new Error((corpo && (corpo.message || corpo.hint)) || ('HTTP ' + r.status));
+    if (!Array.isArray(corpo) || !corpo.length) {
+      throw new Error('o banco não devolveu a linha — a gravação foi barrada por permissão');
+    }
+    // O que ficou NO BANCO vira o que a tela mostra e o que a IA recebe: se o
+    // banco normalizou algo, a tela nao pode seguir exibindo o texto antigo.
+    _gtCurAcc.persona = corpo[0].persona || '';
+    const naLista = (_gtAccounts || []).find((c) => String(c.id) === String(conta));
+    if (naLista) naLista.persona = _gtCurAcc.persona;
+    adminToast('Persona salva. A IA vai usar isto na próxima sugestão de público.');
+    if (botao) botao.textContent = '✓ Salva';
+  } catch (e) {
+    console.error('[GT] falha ao salvar a persona:', e);
+    adminToast('Não consegui salvar a persona: ' + String((e && e.message) || e), false);
+    if (botao) { botao.disabled = false; botao.textContent = orig; }
+  }
 }
 
 // Grava a decisão. Append-only: cada decisão é uma linha nova (ver a migration
@@ -1076,7 +1349,12 @@ async function _gtFilaRecusar(item, botao) {
   if (!ok) return;
   const orig = botao.textContent;
   botao.disabled = true; botao.textContent = '…';
-  const erro = await _gtFilaGravarDecisao(item, 'recusada', [], null);
+  // O ESCOPO É O DA PERGUNTA QUE ESTÁ SENDO RECUSADA. Item vindo da saúde não é
+  // pergunta de verba: gravá-lo como 'orcamento' (o default) calava por 7 dias a
+  // sugestão de orçamento da MESMA campanha — e ainda por cima não calava o
+  // alerta de saúde, que voltava no carregamento seguinte. Medido em 12/08/2026.
+  const erro = await _gtFilaGravarDecisao(item, 'recusada', [], null,
+    item.origem === 'saude' ? 'saude' : item.origem === 'criativos' ? 'criativos' : 'orcamento');
   if (erro) {
     console.error('[GT] falha ao gravar a recusa:', erro);
     adminToast(_gtEhErroDePermissao(erro) ? 'Você não tem permissão para decidir na fila.' : 'Não consegui registrar a recusa. Tente de novo.', false);
@@ -2343,6 +2621,12 @@ function _gtTrocarAba(nome) {
       contaNome: (_gtCurAcc && (_gtCurAcc.display_name || _gtCurAcc.name)) || '',
       agora: new Date().toISOString(),
       carregou: _gtFilaCarregou,
+      leituraPublico: _gtLeituraPublico,
+      problemas: _gtProblemasDaMeta,
+      fraseProblemas: fraseDosProblemas(_gtProblemasDaMeta),
+      aoUsarPublico: _gtUsarPublicoDaLeitura,
+      // A fila vazia se explica: o que o robo fez NESTA conta.
+      explicacaoVazia: fraseDaFilaVazia(resumoDoRobo(_gtAnalisesCruas, (_gtCurAcc && _gtCurAcc.id) || null)),
       // Mesmo critério da régua e do RLS da tabela: decidir na fila é ação de
       // quem pode EDITAR nesta ferramenta.
       editavel: hasPermission('meta.gestor', 'editar'),
@@ -2378,6 +2662,17 @@ function _gtTrocarAba(nome) {
       // deixa gravar um valor que pode não ser o real (ver C3 do review final).
       carregouOk: _gtReguaCarregada,
       exemplos: _gtExemplosParaRegua(),
+      // PERSONA DA MARCA: quem esta conta atende. A IA de sugestao de publico le
+      // isto antes dos numeros -- sem ela, a idade sugerida saia de quem CLICOU.
+      contaId: (_gtCurAcc && _gtCurAcc.id) || '',
+      persona: (_gtCurAcc && _gtCurAcc.persona) || '',
+      // A RLS de `accounts` so deixa profiles.role='admin' gravar. Usar aqui o
+      // criterio do Gestor ('meta.gestor','editar') faria o campo aparecer
+      // editavel pra quem o banco recusa -- o mesmo erro que o comentario da
+      // regua logo acima ja avisa pra nao cometer.
+      personaEditavel: estado.role === 'admin',
+      aoSalvarPersona: _gtSalvarPersona,
+      aoLerArquivo: _gtLerArquivoDePersona,
       // O card de abertura é longo e explica a aba inteira. Quem já leu não quer
       // rolar por ele toda vez — mas o painel remonta a cada troca de conta e a
       // cada save, então a escolha precisa morar fora dele. Mesmo lugar onde o
@@ -3060,6 +3355,9 @@ async function _gtPubLeituraDaIA(sugestao,rotulo){
       body:JSON.stringify({
         evidencia:{contando:rotulo,idade:sugestao.idade,cidades:sugestao.cidades,interesses:sugestao.interesses,porque:sugestao.porqueDosConjuntos},
         marca:(_gtCurAcc&&(_gtCurAcc.display_name||_gtCurAcc.name))||'',
+        // QUEM a marca atende. Sem isto a IA tira a idade dos numeros da conta,
+        // que dizem quem CLICOU -- nao para quem a marca quer vender.
+        persona:limparPersona((_gtCurAcc&&_gtCurAcc.persona)||''),
         objetivo:(sub&&sub.rotulo)||'',
       }),
     });
@@ -3402,36 +3700,83 @@ function _gtPubSecaoPublicosSalvos(){
   return bloco;
 }
 
+// ONDE O ANUNCIO APARECE — Brasil, Estado, Cidade ou Local.
+//
+// PEDIDO DO DONO (13/08/2026): "eu preciso selecionar entre Brasil, Estado,
+// Cidade e Local (estabelecimento, comercio, negocio) e aparece o pin automatico
+// no mapa e vice versa, colocar o pin aleatorio mostra onde caiu de fato".
+//
+// O painel e o mapa sao os MESMOS do "Subir para a Meta" da Fabrica.
 function _gtPubSecaoLugar(){
   const cx=document.createElement('div');
   cx.appendChild(_gtPubTitulo('Onde mostrar'));
-  cx.appendChild(_gtPubAjuda('Raio 0 significa a cidade inteira. A Meta não aceita raio menor que 17 km — se você puser menos, eu aviso e ajusto.'));
-  const chips=_gtPubLinha();
-  for(const c of _gtPub.cidades){
-    const raio=_gtPubInput(c.raio,'raio','70px');
-    raio.type='number';raio.min='0';raio.title='Raio em km (0 = cidade inteira)';
-    // De propósito NÃO redesenha: redesenhar aqui tiraria o cursor do campo no
-    // meio da digitação. Raio não gera aviso bloqueante — só o de ajuste, que
-    // é recalculado na confirmação.
-    raio.onchange=()=>{c.raio=Number(raio.value)||0;};
-    chips.appendChild(_gtPubChip(c.nome||c.key,()=>{_gtPub.cidades=_gtPub.cidades.filter(x=>x.key!==c.key);_gtPubRedesenha();},raio));
-  }
-  // "Sem cidade" só é problema de verdade quando NÃO sobra localização
-  // nenhuma. Um conjunto mirado por estado/país/CEP (outrasLocalizacoes,
-  // Task 4) não tem cidade nenhuma e está perfeitamente válido — o vermelho
-  // aqui só quando os dois lados estão vazios.
-  if(!_gtPub.cidades.length&&!(_gtPub.outrasLocalizacoes||[]).length){
-    const vazio=document.createElement('span');
-    vazio.style.cssText='font-size:calc(11px*var(--gt-fs,1.3));color:var(--red,#dc2626);';
-    vazio.textContent='Sem nenhuma cidade — a Meta não aceita assim.';
-    chips.appendChild(vazio);
-  }
-  cx.appendChild(chips);
-  // Aviso calmo (não bloqueante): há localidades que este editor não gerencia
-  // (região, país, CEP…) e que serão preservadas intactas ao salvar. O dono
-  // precisa saber disso AQUI, no corpo, antes de chegar na confirmação — não
-  // só no resumo final. Reusa o texto que avisosDe já traduz para o mesmo
-  // caso, em vez de inventar uma frase nova.
+  cx.appendChild(_gtPubAjuda('Escolha Brasil, Estado, Cidade ou Local. Cada um pode valer como a área inteira ou como um ponto com raio — e o mapa mostra onde cada escolha caiu. Clique no mapa para pôr um ponto: ele descobre sozinho em que rua caiu.'));
+
+  // A LISTA DE LUGARES É UMA SÓ, e o painel e o mapa mexem NELA. As quatro
+  // listas que a Meta entende (`paises`, `estados`, `cidades`, `pins`) são
+  // refeitas a cada mudança — assim `montarTargeting` continua sendo a única
+  // dona da tradução, e a tela nunca escreve na Meta por conta própria.
+  const lugares = deListas(_gtPub);
+  const gravar = () => Object.assign(_gtPub, paraListas(lugares));
+
+  const caixaPainel = document.createElement('div');
+  cx.appendChild(caixaPainel);
+
+  const caixaMapa = document.createElement('div');
+  cx.appendChild(caixaMapa);
+
+  let mapa = null;
+  const painel = montarPainelDeLugares(caixaPainel, {
+    lugares,
+    buscarNaMeta: (params) => metaFetch('/search', params, _gtCurAcc?.id),
+    buscarNoMapa: async (termo) => {
+      const { data, error } = await sbClient.functions.invoke('buscar-lugar', { body: { acao: 'buscar', termo } });
+      // O MOTIVO VAI PRA TELA. Engolir o erro aqui devolveria lista vazia, e
+      // "nada encontrado" quando na verdade a busca falhou é a mentira que o
+      // padrão da casa proíbe.
+      if (error || data?.error) throw new Error(data?.error || error?.message || 'a recepção do mapa não respondeu');
+      return data;
+    },
+    aoMudar: () => { gravar(); if (mapa) mapa.desenhar(); },
+  });
+
+  // Desenha DEPOIS de estar na tela: o mapa mede a propria largura pra decidir
+  // quantos quadradinhos busca, e fora do documento ela e zero.
+  setTimeout(() => {
+    try {
+      mapa = montarMapa(caixaMapa, {
+        lugares,
+        editavel: true,
+        // Nao redesenha o painel inteiro do publico: isso remontaria o mapa e
+        // jogaria a vista de volta pro enquadre, tirando o dono do lugar onde
+        // ele estava.
+        aoMudar: () => { gravar(); painel.redesenhar(); },
+        // O PONTO SE APRESENTA. Ele ja nasceu no mapa; o nome chega depois, e
+        // quando chega o rotulo deixa de ser um par de numeros.
+        aoPorPonto: async (ponto) => {
+          try {
+            const { data, error } = await sbClient.functions.invoke('buscar-lugar', { body: { acao: 'ondeCaiu', lat: ponto.lat, lng: ponto.lng } });
+            if (error || data?.error) throw new Error(data?.error || error?.message || 'sem resposta');
+            const achado = enderecoDeOndeCaiu(data);
+            ponto.nome = achado.nome; ponto.endereco = achado.endereco;
+          } catch (e) {
+            // Sem nome, fica a coordenada — que e feia e verdadeira. E a tela
+            // DIZ que nao conseguiu, em vez de deixar o dono achando que o
+            // endereco em branco e o endereco.
+            painel.dizer('Pus o ponto, mas não consegui o endereço dele: ' + String((e && e.message) || e).slice(0, 120), true);
+          } finally {
+            ponto.procurandoNome = false;
+            gravar(); painel.redesenhar(); if (mapa) mapa.desenhar();
+          }
+        },
+      });
+    } catch (e) { console.warn('[GT] mapa nao abriu:', e); caixaMapa.textContent = 'Nao consegui abrir o mapa.'; }
+  }, 0);
+
+  // Aviso calmo (nao bloqueante): ha localidades que este editor nao gerencia
+  // (CEP, bairro, regiao metropolitana...) e que serao preservadas intactas ao
+  // salvar. O dono precisa saber disso AQUI, no corpo, antes de chegar na
+  // confirmacao. Reusa o texto que avisosDe ja traduz para o mesmo caso.
   if((_gtPub.outrasLocalizacoes||[]).length){
     const notaLocal=avisosDe(_gtPub,_gtPub,{}).find(x=>x.tipo==='outras-localizacoes');
     if(notaLocal){
@@ -3441,9 +3786,6 @@ function _gtPubSecaoLugar(){
       cx.appendChild(nota);
     }
   }
-  cx.appendChild(_gtPubBusca('Buscar cidade…',_gtPubBuscarCidades,
-    c=>{if(!_gtPub.cidades.some(x=>x.key===String(c.key)))_gtPub.cidades.push({key:String(c.key),nome:c.name+(c.region?' · '+c.region:''),raio:0,unidade:'kilometer'});},
-    c=>c.name+(c.region?' · '+c.region:'')));
 
   cx.appendChild(_gtPubTitulo('Onde NÃO mostrar'));
   const fora=_gtPubLinha();
@@ -4194,6 +4536,9 @@ async function _gtNovoLeituraDeTexto(evidencia,rotulo){
       body:JSON.stringify({
         modo:'texto',
         marca:(_gtCurAcc&&(_gtCurAcc.display_name||_gtCurAcc.name))||'',
+        // QUEM a marca atende. Sem isto a IA tira a idade dos numeros da conta,
+        // que dizem quem CLICOU -- nao para quem a marca quer vender.
+        persona:limparPersona((_gtCurAcc&&_gtCurAcc.persona)||''),
         objetivo:(sub&&sub.rotulo)||'',
         evidencia:{
           contando:rotulo,
@@ -4951,16 +5296,16 @@ Object.assign(window, {
 
 /* ── Topbar (compartilhado com Gestão à Vista/Análise de Campanhas — cada tela traz sua cópia) ── */
 .tela-gestao-trafego :deep(.gv-topbar){display:flex;align-items:center;justify-content:space-between;padding:7px 28px;border-bottom:1px solid var(--border);background:var(--surface);position:sticky;top:0;z-index:10;}
-.tela-gestao-trafego :deep(.gv-back){display:flex;align-items:center;gap:4px;font-family:var(--fonte-principal);font-size:10px;font-weight:600;color:var(--accent);cursor:pointer;background:none;border:none;padding:0;transition:opacity .15s;letter-spacing:.3px;text-transform:uppercase;}
+.tela-gestao-trafego :deep(.gv-back){display:flex;align-items:center;gap:4px;font-family:var(--fonte-principal);font-size:max(9px, calc(10px * var(--escala-texto, 1)));font-weight:600;color:var(--accent);cursor:pointer;background:none;border:none;padding:0;transition:opacity .15s;letter-spacing:.3px;text-transform:uppercase;}
 .tela-gestao-trafego :deep(.gv-back:hover){opacity:.75;}
-.tela-gestao-trafego :deep(.gv-brand-tag){font-family:var(--fonte-principal);font-size:10px;font-weight:600;letter-spacing:3px;text-transform:uppercase;color:var(--text);opacity:.6;line-height:1;}
-.tela-gestao-trafego :deep(.gv-perf-tag){font-family:var(--fonte-principal);font-size:13.5px;font-weight:700;letter-spacing:6px;text-transform:uppercase;color:var(--text);opacity:1;line-height:1.2;}
+.tela-gestao-trafego :deep(.gv-brand-tag){font-family:var(--fonte-principal);font-size:max(9px, calc(10px * var(--escala-texto, 1)));font-weight:600;letter-spacing:3px;text-transform:uppercase;color:var(--text);opacity:.6;line-height:1;}
+.tela-gestao-trafego :deep(.gv-perf-tag){font-family:var(--fonte-principal);font-size:max(9px, calc(13.5px * var(--escala-texto, 1)));font-weight:700;letter-spacing:6px;text-transform:uppercase;color:var(--text);opacity:1;line-height:1.2;}
 .tela-gestao-trafego :deep(.gv-clock-wrap){text-align:right;}
-.tela-gestao-trafego :deep(.gv-clock-time){font-family:var(--fonte-dados);font-size:28px;font-weight:400;letter-spacing:3px;color:var(--text);line-height:1;}
-.tela-gestao-trafego :deep(.gv-clock-date){font-family:var(--fonte-principal);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-top:3px;}
-.tela-gestao-trafego :deep(.gv-update-status){font-family:var(--fonte-principal);font-size:8px;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);opacity:.45;margin-top:4px;text-align:right;}
+.tela-gestao-trafego :deep(.gv-clock-time){font-family:var(--fonte-dados);font-size:max(16px, calc(28px * var(--escala-texto, 1)));font-weight:400;letter-spacing:3px;color:var(--text);line-height:1;}
+.tela-gestao-trafego :deep(.gv-clock-date){font-family:var(--fonte-principal);font-size:max(9px, calc(8px * var(--escala-texto, 1)));letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-top:3px;}
+.tela-gestao-trafego :deep(.gv-update-status){font-family:var(--fonte-principal);font-size:max(9px, calc(8px * var(--escala-texto, 1)));letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);opacity:.45;margin-top:4px;text-align:right;}
 .tela-gestao-trafego :deep(.gv-period-btns){display:flex;align-items:center;gap:4px;}
-.tela-gestao-trafego :deep(.gv-pbtn){font-family:var(--fonte-principal);font-size:10px;padding:4px 9px;border-radius:5px;border:1px solid var(--border);background:none;color:var(--muted);cursor:pointer;transition:all .15s;}
+.tela-gestao-trafego :deep(.gv-pbtn){font-family:var(--fonte-principal);font-size:max(9px, calc(10px * var(--escala-texto, 1)));padding:4px 9px;border-radius:5px;border:1px solid var(--border);background:none;color:var(--muted);cursor:pointer;transition:all .15s;}
 .tela-gestao-trafego :deep(.gv-pbtn.active){background:var(--accent);color:var(--sobre-cor);border-color:var(--accent);}
 
 /* Abas da ferramenta. Prefixo .pnd- próprio: nomes globais vazam pra dentro de
@@ -5219,6 +5564,50 @@ Object.assign(window, {
 .tela-gestao-trafego :deep(.gtf-extra summary:hover){color:var(--text);}
 .tela-gestao-trafego :deep(.gtf-extra-nota){font-family:var(--fonte-principal);font-size:calc(10px*var(--gt-fs,1.3));color:var(--muted);line-height:1.55;margin:0 0 11px;}
 .tela-gestao-trafego :deep(.gtf-silenciadas){margin-top:14px;font-family:var(--fonte-principal);font-size:calc(10px*var(--gt-fs,1.3));color:var(--muted);}
+/* O QUE A META RECLAMA. Vermelho na borda quando IMPEDE de rodar, âmbar quando
+   só limita — a cor é a diferença entre "consertar hoje" e "consertar depois". */
+.tela-gestao-trafego :deep(.gtf-pb){margin-top:22px;padding:16px 18px;border:1px solid var(--border);border-radius:10px;background:var(--surface);font-family:var(--fonte-principal);}
+.tela-gestao-trafego :deep(.gtf-pb-h){margin:0;font-size:calc(12px*var(--gt-fs,1.3));color:var(--text);font-weight:700;}
+.tela-gestao-trafego :deep(.gtf-pb-frase){margin:6px 0 0;font-size:calc(10px*var(--gt-fs,1.3));color:var(--muted);line-height:1.55;}
+.tela-gestao-trafego :deep(.gtf-pb-lista){list-style:none;margin:12px 0 0;padding:0;display:flex;flex-direction:column;gap:10px;}
+.tela-gestao-trafego :deep(.gtf-pb-item){padding:10px 12px;border:1px solid var(--border);border-left:3px solid var(--muted);border-radius:8px;background:var(--surface2);}
+.tela-gestao-trafego :deep(.gtf-pb--grave){border-left-color:var(--red);}
+.tela-gestao-trafego :deep(.gtf-pb--leve){border-left-color:var(--yellow);}
+.tela-gestao-trafego :deep(.gtf-pb-cab){display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 10px;}
+.tela-gestao-trafego :deep(.gtf-pb-tit){font-size:calc(10.5px*var(--gt-fs,1.3));color:var(--text);font-weight:600;}
+.tela-gestao-trafego :deep(.gtf-pb-selo){font-size:calc(9px*var(--gt-fs,1.3));color:var(--muted);}
+.tela-gestao-trafego :deep(.gtf-pb-quantos){margin-left:auto;font-size:calc(9px*var(--gt-fs,1.3));color:var(--muted);white-space:nowrap;}
+.tela-gestao-trafego :deep(.gtf-pb-det){margin:6px 0 0;font-size:calc(9.5px*var(--gt-fs,1.3));color:var(--muted);line-height:1.55;}
+.tela-gestao-trafego :deep(.gtf-pb-fazer){margin:6px 0 0;font-size:calc(10px*var(--gt-fs,1.3));color:var(--text);line-height:1.55;}
+.tela-gestao-trafego :deep(.gtf-pb-onde){margin:6px 0 0;font-size:calc(9px*var(--gt-fs,1.3));color:var(--muted);line-height:1.5;overflow-wrap:anywhere;}
+.tela-gestao-trafego :deep(.gtf-pb-nota){margin:12px 0 0;font-size:calc(9px*var(--gt-fs,1.3));color:var(--muted);line-height:1.5;}
+/* LEITURA DE PÚBLICO — o farol. Fica DEPOIS da lista e com moldura própria: não
+   é uma decisão esperando, é uma leitura da conta. A borda esquerda diz o
+   veredito (verde = manter, âmbar = vale ajustar, neutro = sem dados). */
+.tela-gestao-trafego :deep(.gtf-lp){margin-top:22px;padding:16px 18px;border:1px solid var(--border);border-left:3px solid var(--muted);border-radius:10px;background:var(--surface);font-family:var(--fonte-principal);}
+.tela-gestao-trafego :deep(.gtf-lp--ajustar){border-left-color:var(--yellow);}
+.tela-gestao-trafego :deep(.gtf-lp--manter){border-left-color:var(--green);}
+.tela-gestao-trafego :deep(.gtf-lp-cab){display:flex;flex-wrap:wrap;align-items:baseline;gap:8px;justify-content:space-between;}
+.tela-gestao-trafego :deep(.gtf-lp-tit){margin:0;font-size:calc(12px*var(--gt-fs,1.3));color:var(--text);font-weight:700;}
+.tela-gestao-trafego :deep(.gtf-lp-janela){font-size:calc(9px*var(--gt-fs,1.3));color:var(--muted);}
+.tela-gestao-trafego :deep(.gtf-lp-titulo2){margin:10px 0 4px;font-size:calc(11px*var(--gt-fs,1.3));color:var(--text);font-weight:600;}
+.tela-gestao-trafego :deep(.gtf-lp-frase){margin:0;font-size:calc(10px*var(--gt-fs,1.3));color:var(--muted);line-height:1.55;}
+.tela-gestao-trafego :deep(.gtf-lp-dinheiro){margin:8px 0 0;font-size:calc(10.5px*var(--gt-fs,1.3));color:var(--text);font-weight:600;}
+.tela-gestao-trafego :deep(.gtf-lp-alerta){margin:10px 0 0;padding:9px 11px;border-radius:6px;background:var(--surface2);border:1px solid var(--border);font-size:calc(10px*var(--gt-fs,1.3));color:var(--text);line-height:1.55;}
+.tela-gestao-trafego :deep(.gtf-lp-tabela){width:100%;margin-top:12px;border-collapse:collapse;font-size:calc(9.5px*var(--gt-fs,1.3));}
+.tela-gestao-trafego :deep(.gtf-lp-tabela th){text-align:left;padding:5px 8px;color:var(--muted);font-weight:600;border-bottom:1px solid var(--border);}
+.tela-gestao-trafego :deep(.gtf-lp-tabela td){padding:5px 8px;color:var(--text);border-bottom:1px solid var(--border);}
+/* nowrap: a 375px o "R$" quebrava do número ("R$" numa linha, "1.409,37" na outra). */
+.tela-gestao-trafego :deep(.gtf-lp-num){text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;}
+.tela-gestao-trafego :deep(.gtf-lp-fraca td){color:var(--muted);}
+.tela-gestao-trafego :deep(.gtf-lp-receita){margin-top:14px;padding-top:12px;border-top:1px dashed var(--border);font-size:calc(10px*var(--gt-fs,1.3));color:var(--text);line-height:1.55;}
+.tela-gestao-trafego :deep(.gtf-lp-porque){display:block;margin-top:4px;color:var(--muted);}
+.tela-gestao-trafego :deep(.gtf-lp-usar){margin-top:10px;min-height:40px;}
+.tela-gestao-trafego :deep(.gtf-lp-nota){margin:12px 0 0;font-size:calc(9px*var(--gt-fs,1.3));color:var(--muted);line-height:1.5;}
+@media(max-width:640px){
+  .tela-gestao-trafego :deep(.gtf-lp){padding:12px 13px;}
+  .tela-gestao-trafego :deep(.gtf-lp-tabela){display:block;overflow-x:auto;}
+}
 /* No celular a linha vira duas: identificacao em cima, valores e botoes embaixo. */
 @media (max-width:720px){
   .tela-gestao-trafego :deep(.gtf-linha){flex-wrap:wrap;gap:9px;}
@@ -5245,7 +5634,7 @@ Object.assign(window, {
    campanhas): círculo pequeno e discreto, cor de destaque só no hover. Fica ao
    lado do rótulo que já existe (título de cartão, rótulo de KPI, selo…), nunca
    sozinho anunciando algo (ver _gtAjudaBtn). */
-.tela-gestao-trafego :deep(.pnd-ajuda-btn){margin-left:5px;width:14px;height:14px;border-radius:50%;border:1px solid var(--border);background:none;color:var(--muted);font-size:9px;font-weight:700;cursor:pointer;line-height:1;padding:0;vertical-align:middle;flex:0 0 auto;}
+.tela-gestao-trafego :deep(.pnd-ajuda-btn){margin-left:5px;width:14px;height:14px;border-radius:50%;border:1px solid var(--border);background:none;color:var(--muted);font-size:max(9px, calc(9px * var(--escala-texto, 1)));font-weight:700;cursor:pointer;line-height:1;padding:0;vertical-align:middle;flex:0 0 auto;}
 .tela-gestao-trafego :deep(.pnd-ajuda-btn:hover){border-color:var(--accent);color:var(--accent);}
 .tela-gestao-trafego :deep(.pnd-ajuda){font-family:var(--fonte-principal);font-size:calc(10px*var(--gt-fs,1.3));color:var(--muted);margin:0 0 12px;line-height:1.55;}
 .tela-gestao-trafego :deep(.pnd-tabela){width:100%;border-collapse:collapse;}
@@ -5295,7 +5684,30 @@ Object.assign(window, {
 /* "Sem meta de propósito" virou UMA nota no rodapé do cartão (ver M do review final,
    2026-07-28). Como linha de tabela, o texto quebrava em quatro e inchava a linha. */
 .tela-gestao-trafego :deep(.pnd-nota){margin:12px 0 0;padding-top:11px;border-top:1px dashed var(--border);font-family:var(--fonte-principal);font-size:calc(9.5px*var(--gt-fs,1.3));color:var(--muted);line-height:1.5;}
-.tela-gestao-trafego :deep(.pnd-salvar){margin-top:16px;padding:10px 22px;border-radius:22px;border:none;background:var(--accent);color:var(--sobre-cor);font-family:var(--fonte-principal);font-size:calc(11px*var(--gt-fs,1.3));font-weight:700;cursor:pointer;transition:filter .15s,transform .1s;}
+/* PERSONA DA MARCA — campo de texto longo, na mesma família visual da régua.
+   16px no campo não é estética: abaixo disso o iOS dá zoom ao focar e a tela
+   salta na cara de quem está digitando (PADRÃO item 6). */
+.tela-gestao-trafego :deep(.pnd-persona){margin-top:22px;}
+.tela-gestao-trafego :deep(.pnd-persona-campo){width:100%;box-sizing:border-box;min-height:150px;resize:vertical;padding:12px 13px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);font-family:var(--fonte-principal);font-size:max(16px, calc(16px * var(--escala-texto, 1)));line-height:1.6;}
+.tela-gestao-trafego :deep(.pnd-persona-campo:focus-visible){outline:2px solid var(--accent);outline-offset:2px;}
+.tela-gestao-trafego :deep(.pnd-persona-campo:disabled){opacity:.65;cursor:not-allowed;}
+.tela-gestao-trafego :deep(.pnd-persona-conta){margin:6px 0 0;font-family:var(--fonte-principal);font-size:calc(9.5px*var(--gt-fs,1.3));color:var(--muted);}
+.tela-gestao-trafego :deep(.pnd-persona-conta--estourou){color:var(--red);font-weight:600;}
+/* TRAZER DE UM ARQUIVO. O <label> é o botão de verdade — o <input type=file> fica
+   escondido porque o botão nativo não aceita estilo e escreve em inglês. 40px de
+   altura é alvo de toque (PADRÃO item 6). */
+/* flex-wrap: a 375px o status não cabe ao lado do botão e quebrava no meio da
+   frase ("Trouxe 3681 / caracteres."). Assim ele desce inteiro pra própria linha. */
+.tela-gestao-trafego :deep(.pnd-persona-arquivo){margin-top:14px;padding-top:12px;border-top:1px dashed var(--border);display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;}
+.tela-gestao-trafego :deep(.pnd-persona-arquivo>p){flex:1 1 100%;}
+.tela-gestao-trafego :deep(.pnd-persona-botao){display:inline-flex;align-items:center;min-height:40px;padding:0 18px;border:1px solid var(--border);border-radius:22px;background:var(--surface2);color:var(--text);font-family:var(--fonte-principal);font-size:calc(10.5px*var(--gt-fs,1.3));font-weight:600;cursor:pointer;}
+.tela-gestao-trafego :deep(.pnd-persona-botao:hover){border-color:var(--accent);color:var(--accent);}
+.tela-gestao-trafego :deep(.pnd-persona-status){font-family:var(--fonte-principal);font-size:calc(9.5px*var(--gt-fs,1.3));color:var(--muted);}
+/* min-height 40px: MEDIDO em 12/08/2026, o botão saía com 37px — abaixo do alvo
+   de toque do PADRÃO (item 6). Era assim antes deste bloco existir, no "Salvar a
+   régua"; como a persona soma um segundo botão da mesma classe, o conserto vai na
+   classe e pega os dois. Não mexe em largura nem em fonte. */
+.tela-gestao-trafego :deep(.pnd-salvar){margin-top:16px;padding:10px 22px;min-height:40px;border-radius:22px;border:none;background:var(--accent);color:var(--sobre-cor);font-family:var(--fonte-principal);font-size:calc(11px*var(--gt-fs,1.3));font-weight:700;cursor:pointer;transition:filter .15s,transform .1s;}
 .tela-gestao-trafego :deep(.pnd-salvar:hover:not(:disabled)){filter:brightness(1.08);}
 .tela-gestao-trafego :deep(.pnd-salvar:active:not(:disabled)){transform:translateY(1px);}
 .tela-gestao-trafego :deep(.pnd-salvar:disabled){opacity:.65;cursor:default;}
@@ -5348,10 +5760,10 @@ Object.assign(window, {
 .tela-gestao-trafego :deep(.gv-loading-screen){grid-column:1/-1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;min-height:60vh;}
 @keyframes gtSpin{to{transform:rotate(360deg)}}
 .tela-gestao-trafego :deep(.gv-spinner){width:48px;height:48px;border-radius:50%;border:3px solid var(--border);border-top-color:var(--accent);animation:gtSpin .9s linear infinite;}
-.tela-gestao-trafego :deep(.gv-loading-lbl){font-family:var(--fonte-principal);font-size:10px;letter-spacing:4px;text-transform:uppercase;color:var(--muted);}
+.tela-gestao-trafego :deep(.gv-loading-lbl){font-family:var(--fonte-principal);font-size:max(9px, calc(10px * var(--escala-texto, 1)));letter-spacing:4px;text-transform:uppercase;color:var(--muted);}
 
 /* ── Chip de objetivo (compartilhado com Análise de Campanhas — cada tela traz sua cópia) ── */
-.tela-gestao-trafego :deep(.ma-obj-chip){font-family:var(--fonte-principal);font-size:9px;font-weight:600;letter-spacing:.5px;padding:2px 6px;border-radius:3px;background:var(--surface2);color:var(--muted);text-transform:uppercase;}
+.tela-gestao-trafego :deep(.ma-obj-chip){font-family:var(--fonte-principal);font-size:max(9px, calc(9px * var(--escala-texto, 1)));font-weight:600;letter-spacing:.5px;padding:2px 6px;border-radius:3px;background:var(--surface2);color:var(--muted);text-transform:uppercase;}
 
 /* ── GESTÃO DE TRÁFEGO — CSS próprio (legacy/index.html L2350-2477, íntegro) ── */
 /* #gt-painel-campanhas é só o alvo do toggle de aba — "display:contents" tira ele
@@ -5686,9 +6098,9 @@ Object.assign(window, {
    L1703-1707 + variante dark L1378-1381; cada tela que usa zoom traz sua
    própria cópia, mesmo padrão de tela-de-noticias.vue) ── */
 .tela-gestao-trafego :deep(.zoomctl){position:fixed;right:20px;bottom:calc(env(safe-area-inset-bottom,0px) + 72px);z-index:9997;display:inline-flex;align-items:center;gap:2px;background:#ffffff;border:1px solid rgba(13,13,13,.14);border-radius:999px;box-shadow:0 8px 24px rgba(0,0,0,.18);padding:4px;}
-.tela-gestao-trafego :deep(.zoomctl button){width:34px;height:34px;border:none;background:none;border-radius:50%;font-family:var(--fonte-principal);font-size:14px;font-weight:700;color:#1a1a1a;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .15s;}
+.tela-gestao-trafego :deep(.zoomctl button){width:34px;height:34px;border:none;background:none;border-radius:50%;font-family:var(--fonte-principal);font-size:max(9px, calc(14px * var(--escala-texto, 1)));font-weight:700;color:#1a1a1a;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .15s;}
 .tela-gestao-trafego :deep(.zoomctl button:hover){background:#f0ece4;}
-.tela-gestao-trafego :deep(.zoomctl-val){font-family:var(--fonte-principal);font-size:11px;font-weight:600;color:#6b6258;min-width:40px;text-align:center;cursor:pointer;user-select:none;font-variant-numeric:tabular-nums;}
+.tela-gestao-trafego :deep(.zoomctl-val){font-family:var(--fonte-principal);font-size:max(9px, calc(11px * var(--escala-texto, 1)));font-weight:600;color:#6b6258;min-width:40px;text-align:center;cursor:pointer;user-select:none;font-variant-numeric:tabular-nums;}
 /* O tema fica em `safe-area + 20px` com 42px de altura (termina em +62); o zoom
    precisa começar ACIMA disso. Sem a safe-area aqui os dois se encavalavam em
    aparelho com barra de gestos (achado do dono, 2026-07-29). */
@@ -5714,7 +6126,7 @@ Object.assign(window, {
   .tela-gestao-trafego :deep(#gt-account-picker){order:2;flex-shrink:0;}
   /* filtros de período: faixa própria (linha 2) que ROLA na horizontal — nunca quebram em 3 linhas */
   .tela-gestao-trafego :deep(.gv-period-btns){order:3;width:100%;flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;gap:6px;padding-bottom:2px;}
-  .tela-gestao-trafego :deep(.gv-pbtn){font-size:10px;padding:5px 10px;border-radius:6px;flex-shrink:0;white-space:nowrap;}
+  .tela-gestao-trafego :deep(.gv-pbtn){font-size:max(9px, calc(10px * var(--escala-texto, 1)));padding:5px 10px;border-radius:6px;flex-shrink:0;white-space:nowrap;}
   .tela-gestao-trafego :deep(.gv-clock-wrap),.tela-gestao-trafego :deep(.gv-update-status){display:none;}
   /* CORPO DOS CARDS no celular: botões QUEBRAM o texto (não estouram) + busca ocupa a largura */
   .tela-gestao-trafego :deep(.gt-act-btn){white-space:normal;max-width:100%;height:auto;text-align:center;}

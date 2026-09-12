@@ -1,101 +1,46 @@
-import { test } from 'node:test';
-import assert from 'node:assert/strict';
-import { readFileSync, readdirSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { dirname, join } from 'node:path'
+import { guardarImports, scriptDoVue, semComentarios } from '../../compartilhado/guarda-de-imports.mjs'
 
-// TODO NOME DE MÓDULO USADO NA TELA PRECISA ESTAR IMPORTADO.
+// TODO NOME DE MÓDULO USADO NUMA TELA DESTA PASTA PRECISA ESTAR IMPORTADO.
 //
-// Duas vezes no mesmo dia (2026-07-29) a aba Campanhas quebrou inteira porque eu
-// usei uma função de módulo sem importá-la: primeiro `card` (variável apagada
-// junto com o selo), depois `baldeEfetivo`. As duas vezes `npm run build` passou
-// — o Vite não resolve identificadores livres, o erro só existe em runtime — e o
-// dono descobriu abrindo a tela.
+// Chamar uma função de um vizinho e esquecer de importá-la NÃO quebra o
+// `npm run build`: o Vite supõe que é global do navegador. O erro só nasce
+// quando alguém clica — o Vue aborta o desenho no meio e o painel fica EM
+// BRANCO, muitas vezes sem nada no console.
 //
-// Este teste varre o que os módulos da pasta EXPORTAM e confere que, se a tela
-// chama algum deles, existe o import correspondente. É análise de texto, não de
-// escopo: pega o caso comum (chamar função de módulo esquecendo o import) e não
-// pega variável local apagada — para essa existe render-anuncios.test.mjs, que
-// executa a função de verdade.
+// Já derrubou tela quatro vezes: Gestão de Tráfego (29/07, duas no mesmo dia),
+// Admin (05/08) e Patrimônio (10/08, as abas Planilha e Resumo em branco).
+//
+// A dor desta pasta (29/07/2026): a aba Campanhas quebrou inteira duas vezes no
+// mesmo dia — primeiro `card`, depois `baldeEfetivo` — e das duas o build
+// passou. Na terceira foi `ALVOS[o]`: constante usada como objeto, que a
+// primeira versão do guarda não pegava.
+//
+// O motor mora em `src/compartilhado/guarda-de-imports.mjs` e se testa em
+// `guarda-de-imports.test.mjs`. Pasta nova nasce com este arquivo.
+
+guardarImports(import.meta.url, {
+  // Quantas telas a pasta tem hoje. Se cair, é `.vue` sumindo — e o guarda
+  // passaria por estar vazio, que é o mesmo que não existir. Mexer aqui é de
+  // propósito, nunca de passagem.
+  minimoDeTelas: 1,
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Daqui para baixo, três guardas que só existem nesta pasta. Eles não são sobre
+// import: são sobre outras três maneiras de a tela quebrar sem o build perceber.
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 
-function nomesExportados() {
-  const mapa = new Map();
-  for (const arq of readdirSync(AQUI).filter((f) => f.endsWith('.js') && !f.includes('.test.'))) {
-    const src = readFileSync(join(AQUI, arq), 'utf8');
-    for (const m of src.matchAll(/export (?:function|const|let) (\w+)/g)) mapa.set(m[1], arq);
-  }
-  return mapa;
-}
-
-// Comentário que MENCIONA um símbolo não é uso dele. Sem tirar, "ver
-// GT_OBJETIVO_BALDE" e "(ALVOS.trafego)" viravam import faltando — e um teste
-// que acusa o que não existe é pior que teste nenhum: ensina a ignorá-lo.
-//
-// TEXTO DE TELA TAMBÉM NÃO É CÓDIGO, e essa parte custou uma caça: a tela tem
-// a frase `'<b>Nada mudou.</b>'`, e o módulo de rascunhos exporta uma função
-// chamada `mudou`. O teste acusou um import faltando que não faltava. Todo nome
-// exportado que também é palavra do português comum cairia na mesma armadilha
-// ("linha", "quando", "passo").
-//
-// As aspas simples e duplas têm o conteúdo apagado; a CRASE fica, porque
-// `${...}` dentro dela é código de verdade.
-function semComentarios(codigo) {
-  return codigo
-    .replace(/\/\*[\s\S]*?\*\//g, ' ')   // bloco
-    .replace(/(^|[^:])\/\/[^\n]*/g, '$1')   // linha (o [^:] evita cortar "https://")
-    .replace(/'(?:\\.|[^'\\\n])*'/g, "''")    // texto entre aspas simples
-    .replace(/"(?:\\.|[^"\\\n])*"/g, '""');   // e entre aspas duplas
-}
-
+// O script da tela, sem comentários nem texto entre aspas. Os dois guardas
+// abaixo leem daqui.
 function scriptDaTela() {
-  const vue = readFileSync(join(AQUI, 'tela-de-gestao-trafego.vue'), 'utf8');
-  return semComentarios(vue.slice(vue.indexOf('<script'), vue.indexOf('</script>')));
+  return scriptDoVue(readFileSync(join(AQUI, 'tela-de-gestao-trafego.vue'), 'utf8'));
 }
-
-function nomesImportados(script) {
-  const s = new Set();
-  for (const m of script.matchAll(/import \{([^}]+)\} from/g)) {
-    for (const n of m[1].split(',')) s.add(n.trim().split(/\s+as\s+/).pop());
-  }
-  return s;
-}
-
-test('a tela não chama função de módulo sem importar', () => {
-  const script = scriptDaTela();
-  const importados = nomesImportados(script);
-  const faltando = [];
-  for (const [nome, arq] of nomesExportados()) {
-    if (importados.has(nome)) continue;
-    // Chamada de função `nome(`, acesso a objeto `NOME[` ou `NOME.`, ou uso
-    // solto do identificador. Só `nome(` não bastava: `ALVOS[o]` passou batido e
-    // quebrou a aba pela terceira vez (2026-07-29).
-    const usado = new RegExp(`(^|[^\\w.$'"\`])${nome}\\s*[([.,);\\]}]`, 'm');
-    if (usado.test(script)) faltando.push(`${nome} (exportado por ${arq})`);
-  }
-  assert.deepEqual(faltando, [], 'a tela usa estes nomes mas não os importa — vai quebrar em runtime, e o build NÃO pega');
-});
-
-test('o proprio teste enxerga um import faltando', () => {
-  // Sem isto o teste poderia estar sempre passando por engano.
-  const script = 'import { alfa } from "./x.js"\n beta(1)';
-  const importados = nomesImportados(script);
-  assert.ok(importados.has('alfa'));
-  assert.ok(!importados.has('beta'));
-});
-
-test('pega CONSTANTE usada como objeto, nao so chamada de funcao', () => {
-  // `ALVOS[o]` passou batido na primeira versao do teste e quebrou a aba pela
-  // TERCEIRA vez no mesmo dia. Chamada, indexacao e acesso a campo contam.
-  const usado = (nome, script) => new RegExp(`(^|[^\\w.$'"\`])${nome}\\s*[([.,);\\]}]`, 'm').test(script);
-  assert.ok(usado('ALVOS', 'const x = ALVOS[o]'), 'indexacao');
-  assert.ok(usado('ALVOS', 'const x = ALVOS.trafego'), 'acesso a campo');
-  assert.ok(usado('lerSaldo', 'lerSaldo(conta, 10)'), 'chamada');
-  // e NAO confunde com propriedade de outro objeto nem com texto solto
-  assert.ok(!usado('ALVOS', 'const x = config.ALVOS.trafego'), 'propriedade de outro objeto');
-  // Comentario e tratado antes, por semComentarios — aqui so o codigo importa.
-});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MODAL NÃO PODE MORAR DENTRO DE UMA ABA.

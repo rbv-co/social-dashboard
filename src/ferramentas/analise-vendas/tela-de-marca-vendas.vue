@@ -119,11 +119,11 @@ onMounted(() => {
    terminava. */
 .tela-marca-vendas{min-height:100vh;display:flex;flex-direction:column;background:transparent;position:relative;z-index:1;}
 .tela-marca-vendas .smenu-topbar{display:flex;align-items:center;justify-content:space-between;padding:13px 24px;border-bottom:1px solid var(--border);background:var(--surface);gap:16px;position:sticky;top:0;z-index:10;}
-.tela-marca-vendas .smenu-back{font-family:var(--fonte-principal);font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--accent);cursor:pointer;background:none;border:1px solid var(--accent-mid);border-radius:5px;padding:5px 10px;display:flex;align-items:center;gap:5px;transition:background .15s,opacity .15s;white-space:nowrap;}
+.tela-marca-vendas .smenu-back{font-family:var(--fonte-principal);font-size:max(9px, calc(10px * var(--escala-texto, 1)));font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--accent);cursor:pointer;background:none;border:1px solid var(--accent-mid);border-radius:5px;padding:5px 10px;display:flex;align-items:center;gap:5px;transition:background .15s,opacity .15s;white-space:nowrap;}
 .tela-marca-vendas .smenu-back:hover{background:var(--accent-light);}
-.tela-marca-vendas .smenu-title{font-family:var(--fonte-principal);font-size:15px;font-weight:500;letter-spacing:2.5px;text-transform:uppercase;color:var(--text);}
+.tela-marca-vendas .smenu-title{font-family:var(--fonte-principal);font-size:max(9px, calc(15px * var(--escala-texto, 1)));font-weight:500;letter-spacing:2.5px;text-transform:uppercase;color:var(--text);}
 .tela-marca-vendas .sbrand-body{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:48px 24px;gap:28px;}
-.tela-marca-vendas .sbrand-title{font-family:var(--fonte-principal);font-size:20px;font-weight:500;letter-spacing:2.5px;text-transform:uppercase;color:var(--text);text-align:center;}
+.tela-marca-vendas .sbrand-title{font-family:var(--fonte-principal);font-size:max(16px, calc(20px * var(--escala-texto, 1)));font-weight:500;letter-spacing:2.5px;text-transform:uppercase;color:var(--text);text-align:center;}
 .tela-marca-vendas .sbrand-grid{display:flex;gap:18px;flex-wrap:wrap;justify-content:center;}
 .tela-marca-vendas .sbrand-card{position:relative;width:190px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:26px 18px;cursor:pointer;transition:all .25s;display:flex;flex-direction:column;align-items:center;gap:12px;overflow:hidden;}
 .tela-marca-vendas .sbrand-card::before{content:'';position:absolute;inset:0;background:var(--accent);opacity:0;transition:opacity .2s;}
@@ -131,9 +131,9 @@ onMounted(() => {
 .tela-marca-vendas .sbrand-card:hover{border-color:var(--accent);transform:translateY(-3px);box-shadow:0 6px 24px rgba(0,0,0,.09);}
 .tela-marca-vendas .sbrand-card.soon{opacity:.5;cursor:default;pointer-events:none;}
 .tela-marca-vendas .sbrand-avatar{width:72px;height:72px;border-radius:50%;object-fit:cover;border:2px solid var(--border);background:var(--surface2);}
-.tela-marca-vendas .sbrand-avatar-ph{width:72px;height:72px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;font-family:var(--fonte-principal);font-size:24px;color:var(--sobre-cor);font-weight:600;flex-shrink:0;}
-.tela-marca-vendas .sbrand-name{font-family:var(--fonte-principal);font-size:12px;font-weight:500;letter-spacing:1px;text-transform:uppercase;color:var(--text);text-align:center;line-height:1.3;}
-.tela-marca-vendas .sbrand-badge{font-family:var(--fonte-principal);font-size:8px;letter-spacing:1.5px;text-transform:uppercase;padding:3px 9px;border-radius:20px;background:var(--accent-light);color:var(--accent-forte);font-weight:600;}
+.tela-marca-vendas .sbrand-avatar-ph{width:72px;height:72px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;font-family:var(--fonte-principal);font-size:max(16px, calc(24px * var(--escala-texto, 1)));color:var(--sobre-cor);font-weight:600;flex-shrink:0;}
+.tela-marca-vendas .sbrand-name{font-family:var(--fonte-principal);font-size:max(9px, calc(12px * var(--escala-texto, 1)));font-weight:500;letter-spacing:1px;text-transform:uppercase;color:var(--text);text-align:center;line-height:1.3;}
+.tela-marca-vendas .sbrand-badge{font-family:var(--fonte-principal);font-size:max(9px, calc(8px * var(--escala-texto, 1)));letter-spacing:1.5px;text-transform:uppercase;padding:3px 9px;border-radius:20px;background:var(--accent-light);color:var(--accent-forte);font-weight:600;}
 .tela-marca-vendas .sbrand-badge.soon{background:var(--surface2);color:var(--muted);}
 @media(max-width:640px){
   .tela-marca-vendas .smenu-topbar{padding:8px 14px;flex-wrap:wrap;}

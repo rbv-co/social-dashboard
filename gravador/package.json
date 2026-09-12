@@ -1,0 +1,22 @@
+{
+  "name": "gravador-de-etiquetas",
+  "private": true,
+  "type": "module",
+  "description": "O gravador de etiquetas de mesa da Vessel: o MOTOR que fala com o leitor ACR122U pela porta PC/SC do Windows, e a JANELA (janela/) que empresta esse leitor para a tela do painel. Mora FORA do painel de proposito — ver LEIA-ME.txt.",
+  "scripts": {
+    "test": "node --test *.test.mjs janela/*.test.mjs",
+    "janela": "electron janela/principal.cjs",
+    "empacotar": "electron-builder --win --config electron-builder.config.cjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.0",
+    "electron-updater": "^6.8.9"
+  },
+  "main": "janela/principal.cjs",
+  "devDependencies": {
+    "electron": "^32.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "version": "1.0.2",
+  "author": "RBV Company"
+}

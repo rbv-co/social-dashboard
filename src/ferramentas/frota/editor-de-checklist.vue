@@ -17,7 +17,7 @@ const props = defineProps({
   erroConfig: { type: String, default: '' },
   erroItem: { type: String, default: '' },
 })
-const emit = defineEmits(['salvar-item', 'alternar-item', 'salvar-config'])
+const emit = defineEmits(['salvar-item', 'alternar-item', 'salvar-config', 'alternar-impede'])
 
 const ROTULO = { diario: 'Todo dia', semanal: 'Toda semana', mensal: 'Todo mês' }
 const DIAS = [
@@ -107,7 +107,18 @@ function adicionar() {
       <h3 class="ec-grupo-titulo">{{ g.rotulo }} <span class="ec-conta">{{ g.itens.length }}</span></h3>
       <ul class="ec-lista">
         <li v-for="i in g.itens" :key="i.id" class="ec-item" :class="{ desligado: !i.ativo }">
-          <span>{{ i.item }}</span>
+          <span class="ec-item-nome">{{ i.item }}</span>
+          <!-- QUAL ITEM IMPEDE O USO é decisão do dono, não do código: é ela que
+               separa "com ressalvas" de "não liberado" na ficha do motorista, e
+               o resultado deixou de ser digitável em 12/08/2026. Fica aqui, no
+               mesmo lugar onde ele já mantém a lista. -->
+          <label class="ec-impede" :title="i.impede_uso
+            ? 'Com problema neste item, o carro fica NÃO LIBERADO'
+            : 'Com problema neste item, o carro fica com ressalvas — mas anda'">
+            <input type="checkbox" :checked="!!i.impede_uso" :disabled="gravando"
+                   @change="emit('alternar-impede', i)">
+            <span>impede o uso</span>
+          </label>
           <button class="ec-btn pequeno" :disabled="gravando" @click="emit('alternar-item', i)">
             {{ i.ativo ? 'Desligar' : 'Religar' }}
           </button>
@@ -184,4 +195,9 @@ function adicionar() {
   .ec-item { flex-direction: column; align-items: stretch; gap: var(--sp-2); }
   .ec-item .ec-btn { width: 100%; }
 }
+.ec-item-nome{flex:1 1 auto;min-width:0;overflow-wrap:anywhere;}
+/* Alvo de 40px: o padrão manda, e esta caixinha decide se um carro sai ou não. */
+.ec-impede{display:inline-flex;align-items:center;gap:6px;min-height:40px;padding:0 6px;cursor:pointer;
+  font-family:var(--fonte-principal);font-size:max(9px, calc(11px * var(--escala-texto, 1)));color:var(--muted);white-space:nowrap;touch-action:manipulation;}
+.ec-impede input{width:18px;height:18px;accent-color:var(--red);}
 </style>

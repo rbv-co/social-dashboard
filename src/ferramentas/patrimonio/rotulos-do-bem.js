@@ -28,12 +28,20 @@ export function classeDaSituacao(valor) {
 //  2. só um nome solto        -> o nome, marcado como não cadastrado (vem da
 //     importação da planilha, onde 10 nomes não existem no cadastro)
 //  3. ninguém                 -> "Sem dono" (o caso mais comum: 88% dos bens)
-export function textoDoDono(bem, pessoasById) {
+//
+// `listaFalhou` é o quarto caso, e existe porque a tela não pode mentir: a
+// leitura de colaboradores é uma RPC que ESTOURA quando falta acesso, e aí o
+// mapa chega vazio. Sem esta trava, todo bem que TEM dono passava a dizer
+// "Pessoa removida" — afirmando que alguém saiu do cadastro quando a verdade é
+// "não consegui ler a lista". É a mesma família do R$ 0,00 que ficou 17 horas
+// na tela: falha de leitura virando fato.
+export function textoDoDono(bem, pessoasById, listaFalhou = false) {
   const b = bem || {}
   const mapa = pessoasById || {}
   if (b.pessoa_id) {
     const p = mapa[b.pessoa_id]
-    return (p && p.nome) || 'Pessoa removida'
+    if (p && p.nome) return p.nome
+    return listaFalhou ? 'Não consegui ler a lista de colaboradores' : 'Pessoa removida'
   }
   const solto = (b.dono_texto || '').trim()
   if (solto) return `${solto} (não cadastrada)`

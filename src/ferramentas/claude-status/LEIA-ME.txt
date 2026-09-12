@@ -3,35 +3,92 @@ PASTA: src/ferramentas/claude-status
 
 O QUE É
 -------
-A tela "Painel de Status do Claude" — um mission control que mostra, num só lugar:
+A tela "Status da IA" — um mission control que mostra, num só lugar:
   1) os ROBÔS de IA em produção (Coletor de Notícias, Gestor Comercial, Budget IA,
      Fábrica de Anúncios): quando rodaram, se deu certo, quanto custaram e quanto
      produziram (ex.: "200 anúncios em 15 min", "100 criativos — custo zero");
-  2) o STATUS DOS PROJETOS em desenvolvimento (em que etapa está cada um), derivado
-     automaticamente dos planos em docs/superpowers/plans.
+  2) o GASTO REAL das duas contas de IA (Anthropic e OpenAI), que é a fatura de
+     verdade — inclui muito mais do que os robôs desta tela;
+  3) um AVISO VERMELHO no topo quando algum robô agendado para de rodar.
+
+A tela é SÓ DE LEITURA. Não há nada para alterar aqui dentro.
+
+O NOME MUDOU EM 19/08/2026
+--------------------------
+Era "Painel de Status do Claude". Virou "Status da IA", a pedido do dono — a tela
+fala de duas contas de IA (Anthropic e OpenAI) e de robôs de vários tipos, então
+o nome de um fornecedor só apertava o assunto. A rota (/claude-status), a chave da
+permissão (claude.status) e o nome da pasta continuam os mesmos de propósito:
+renomear isso mexeria em endereço salvo, permissão já concedida e histórico, sem
+ninguém ganhar nada. O que o dono lê mudou; o encanamento, não.
+
+O QUADRO DE PROJETOS SAIU EM 19/08/2026
+---------------------------------------
+A seção "Projetos em construção" (o quadro de arrastar cards entre colunas) foi
+retirada da tela a pedido do dono. NADA foi apagado:
+  · os 65 projetos continuam na tabela projetos_status (4 escritos à mão, 61 lidos
+    dos planos);
+  · o robô coletor/status-projetos.mjs continua rodando e anotando o andamento.
+Se um dia o quadro voltar, o dado está lá, atualizado. O que saiu junto: o botão
+"+ Novo projeto", o modal de criar/editar e o arrastar entre colunas — e, com
+eles, o único lugar em que a permissão claude.status dava direito de ESCREVER.
 
 ARQUIVOS
 --------
-- tela-de-status-claude.vue  → a tela em si. Lê duas tabelas do Supabase:
-    * ia_execucoes    (diário de bordo de custo/tempo/volume de cada execução de IA)
-    * projetos_status (status dos projetos, alimentado pelo robô status-projetos)
-  Atualiza sozinha a cada 60s. Só quem tem a permissão "claude.status" (ver) enxerga
-  o card na home; admin vê sempre.
+- tela-de-status-claude.vue  → a tela em si. Lê do Supabase:
+    * ia_execucoes  (diário de bordo de custo/tempo/volume de cada execução de IA)
+    * robos_saude   (view: a situação de cada robô agendado)
+  E chama duas Edge Functions para a fatura real: custo-anthropic e custo-openai.
+  Só quem tem a permissão "claude.status" (ver) enxerga o card na home.
+- custo-do-extrato.js   → as frases de custo (o que é zero de verdade, o que é
+  "ainda não se sabe") e a soma dos dois fornecedores. Com testes ao lado.
+- cache-de-custo.js     → quando vale reaproveitar a fatura já buscada, em vez de
+  perguntar de novo. Com testes ao lado. Ver "A FATURA" abaixo.
+
+O QUE ATUALIZA SOZINHO, E O QUE NÃO
+-----------------------------------
+A cada 60 segundos a tela repuxa SÓ o que muda de minuto a minuto: o que os robôs
+acabaram de fazer (ia_execucoes) e a saúde deles (robos_saude).
+
+A FATURA das duas contas fica FORA desse ciclo, desde 19/08/2026. Antes ela era
+pedida quatro vezes por minuto (duas contas × duas janelas: o total do topo, que é
+sempre 30 dias, e o extrato, no período escolhido). Com a tela aberta o dia todo
+davam 5.760 chamadas por dia — para um número que os fornecedores fecham UMA vez
+por dia. Era isso que deixava o total do topo em "…" e fazia a frase de erro
+piscar. Hoje:
+  · a fatura é buscada ao abrir a tela e quando o período do extrato muda;
+  · perguntas iguais são reaproveitadas por 10 minutos (cache-de-custo.js) — com o
+    período no padrão de 30 dias, o topo e o extrato viram UMA chamada;
+  · resposta com erro NUNCA é guardada, senão a frase "não consegui puxar a conta"
+    ficaria grudada dez minutos depois de o problema já ter passado.
+Para ver o valor mais novo agora: recarregue a página.
 
 DE ONDE VÊM OS DADOS
 --------------------
 - ia_execucoes: os robôs em coletor/*.mjs gravam 1 linha ao terminar, usando o
-  helper coletor/registrar-execucao.mjs (custo calculado com o preço oficial:
-  Opus 4.8 = US$5/US$25 por 1M tokens; Sonnet 4.6 = US$3/US$15).
-- projetos_status: o robô coletor/status-projetos.mjs lê os planos markdown e deriva
-  projeto/etapa/progresso. Roda no workflow .github/workflows/status-projetos.yml
-  (a cada push nos planos) ou à mão: SUPABASE_SERVICE_KEY=... node coletor/status-projetos.mjs
+  helper coletor/registrar-execucao.mjs. O custo sai de coletor/lib/custo-da-execucao.mjs:
+  motor da Anthropic é calculado; motor pago de fora (gpt-image-2) e motor que
+  ninguém precificou devolvem NULO — "não sei" nunca vira "R$ 0".
+- robos_saude: view sobre robos_execucoes + robos_esperados. Ver a migration
+  2026-08-19-vigia-dos-robos-para-de-mentir.sql: ela raciocina por RODADA (cada
+  perfil × horário do coletar-dados, por exemplo), e é por isso que o aviso
+  consegue dizer QUAL rodada parou em vez de acusar o robô inteiro. Rodada que
+  não dá sinal há mais de 72h se aposenta sozinha — foi um nome de formato antigo,
+  parado desde 31/07, que fez a tela acusar o coletar-dados de "nunca funcionou"
+  enquanto ele rodava 32 vezes por dia.
+- fatura real: Edge Functions custo-anthropic e custo-openai (só admin). ⚠️ Na
+  Anthropic o valor vem em CENTAVOS; na OpenAI, em DÓLARES.
+- projetos_status: o robô coletor/status-projetos.mjs continua alimentando, mesmo
+  com o quadro fora da tela.
 
 MIGRATIONS
 ----------
 - db/migrations/025_ia_execucoes.sql
 - db/migrations/026_projetos_status.sql
 - db/migrations/027_grant_claude_status.sql (pré-concede a permissão ao superadmin)
+- db/migrations/028_projetos_status_manual.sql
+- db/migrations/2026-07-31-saude-dos-robos.sql       (a vigia nasceu aqui)
+- db/migrations/2026-08-19-vigia-dos-robos-para-de-mentir.sql
 
 OBSERVAÇÃO
 ----------

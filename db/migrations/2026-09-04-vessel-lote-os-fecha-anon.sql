@@ -1,0 +1,22 @@
+-- APLICADA EM 04/09/2026, minutos depois da anterior, para consertar uma
+-- REGRESSÃO QUE ELA MESMA CRIOU.
+--
+-- Ao recriar `vessel_gerar_lote` e `vessel_editar_lote`, as duas nasceram com
+-- EXECUTE para `anon` — que NÃO tinham antes (medido: anon = false). A causa: o
+-- Supabase mantém CONCESSÃO PADRÃO no schema `public` que dá execute a `anon` e
+-- `authenticated` em toda função nova.
+--
+-- ⚠️ O `revoke all ... from public` DA MIGRATION ANTERIOR NÃO ALCANÇA ISSO.
+-- PUBLIC é o pseudo-papel; `anon` é um papel NOMEADO, com concessão própria.
+-- São coisas diferentes, e a confusão entre as duas já custou caro nesta casa.
+--
+-- Não era o único portão — `is_vessel_admin()` dentro das funções barra qualquer
+-- visitante de qualquer jeito. Mas são DUAS travas de propósito, e deixar uma
+-- aberta porque a outra segura é deixar a porta destrancada porque o alarme
+-- está ligado.
+--
+-- A LIÇÃO PARA A PRÓXIMA VEZ: depois de todo DROP + CREATE de função, CONFERIR
+-- as permissões com `has_function_privilege` para CADA papel — e não presumir
+-- que o revoke de PUBLIC resolveu.
+revoke execute on function public.vessel_gerar_lote(text, text, text, integer, date, text[], text) from anon;
+revoke execute on function public.vessel_editar_lote(uuid, text, text, text, date, integer, text) from anon;

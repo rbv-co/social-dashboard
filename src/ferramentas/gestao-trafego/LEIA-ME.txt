@@ -337,15 +337,36 @@ O RAIO MÍNIMO É 17 KM (10 MILHAS). A Meta não aceita um raio menor que esse
 por cidade. Se você puser um valor menor, a tela ajusta sozinha pro mínimo
 aceito E avisa que ajustou — nunca troca o número calada.
 
+ESCOLHER O LUGAR: BRASIL, ESTADO, CIDADE OU LOCAL (13/08/2026). Você escolhe o
+tipo, procura pelo nome e o lugar entra na lista. Cada um vale de duas formas,
+e o botão da linha alterna entre elas:
+  • A ÁREA INTEIRA — o estado ou a cidade do jeito da Meta, sem raio.
+  • PONTO COM RAIO — um ponto na coordenada, com um círculo em volta. É o único
+    jeito de mirar menos de 17 km, porque o mínimo de 17 km vale pra cidade,
+    não pra ponto. O Brasil só existe como área inteira.
+"LOCAL" (shopping, loja, esquina, endereço) NÃO existe no catálogo da Meta —
+isso foi medido. Ele vem do mapa e é sempre ponto com raio.
+
+O MAPA MOSTRA OS DOIS LADOS. O que você escolhe aparece nele sozinho (marca
+quadrada para área, alfinete com círculo para ponto). E o contrário: clique no
+mapa e o ponto cai na hora, descobrindo em seguida em que rua caiu — "Av. Afonso
+Pena · Centro · Uberlândia · MG". Se o endereço não vier, fica a coordenada e a
+tela DIZ que não conseguiu; ela nunca inventa um endereço.
+
+UM DETALHE QUE ESTÁ NA TELA DE PROPÓSITO: procurando cidade, a Meta devolve
+BAIRRO junto (procure "Uberlandia" e vêm Centro e Martins). Por isso cada linha
+do resultado diz o tipo dela — sem isso é fácil acrescentar um bairro achando
+que acrescentou a cidade.
+
 LUGARES QUE ESTE EDITOR NÃO GERENCIA FICAM DO JEITO QUE ESTAVAM. Um conjunto
-pode ser mirado por região, país, grupo de países ("América do Sul"), região
-metropolitana, bairro, CEP ou ponto no mapa, além de (ou em vez de) cidade —
-este editor só mexe em cidade (incluída e excluída). Tudo o mais fica
-como estava ao salvar, tanto na lista de ONDE MOSTRAR quanto na de ONDE NÃO
-MOSTRAR, e a tela avisa antes de você confirmar quando existe algum desses.
-Na prática: um conjunto mirado por estado, por exemplo, pode ser editado
+pode ser mirado por grupo de países ("América do Sul"), região metropolitana,
+bairro, CEP ou área do mapa, além de (ou em vez de) cidade, estado e país —
+este editor mexe em país, estado, cidade e ponto. Tudo o mais fica como estava
+ao salvar, tanto na lista de ONDE MOSTRAR quanto na de ONDE NÃO MOSTRAR, e a
+tela avisa antes de você confirmar quando existe algum desses.
+Na prática: um conjunto mirado por CEP, por exemplo, pode ser editado
 normalmente por aqui (trocar idade, interesse etc.) sem perder o direcionamento
-por estado que ele já tinha.
+por CEP que ele já tinha.
 
 O RAIO DA CIDADE EXCLUÍDA TAMBÉM É PRESERVADO. Excluir "25 km em volta de
 Americana" não é a mesma coisa que excluir só a mancha urbana de Americana; o

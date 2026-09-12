@@ -26,7 +26,7 @@ export function ferramentaDaChave(key) {
 //
 // O rótulo do grupo sai da PERMISSION_TREE quando ela conhece a ferramenta; se
 // não conhece e o grupo tem um recurso só, usa o rótulo do próprio recurso
-// (caso 'claude.status' → "Painel de Status do Claude"). Último recurso: a
+// (caso 'claude.status' → "Painel de Status da IA"). Último recurso: a
 // própria chave. Nenhum rótulo novo é inventado aqui.
 // Filho declarado na árvore → grupo do pai. Existe porque 'acessos' e
 // 'patrimonio' são submódulos de Gestão Interna mas NÃO têm o prefixo na chave:

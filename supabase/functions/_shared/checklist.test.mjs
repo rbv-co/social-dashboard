@@ -7,7 +7,84 @@ import {
   quemFaltaHoje, resumoDaCobranca, precisaDeChecklist,
   problemasDoItemDeChecklist,
   telefoneDaCobranca, problemasAbertosHoje, veiculosParaConferir,
+  resultadoDoChecklist, porQueDoResultado,
+  oQuePedirNaRetirada, porQuePedirOAceite, oQueFaltaNaRetirada, checklistDeHoje,
 } from './checklist.js'
+
+/* ── O que pedir a quem está pegando o carro ────────────────────────────────
+   O caso que gerou isto é real e está no banco: 07/08/2026, BMW X1 — Erick
+   Martins assinou o checklist às 7h30, Breno pegou o carro às 17h49, e como o
+   carro "já tinha checklist hoje" a tela não pediu nada a ele. Das 5 retiradas
+   reais da Frota, NENHUMA tinha a assinatura de quem pegou o carro. */
+
+const FICHA_ASSINADA = {
+  id: 'f1', veiculo_id: 'v1', feita_em: '2026-08-07',
+  pessoa_id: 'erick', pessoa_nome: 'Erick Martins', assinada_em: '2026-08-07T10:30:00Z',
+}
+const pedido = (extra) => oQuePedirNaRetirada({
+  veiculoId: 'v1', fichas: [FICHA_ASSINADA], hoje: '2026-08-07', ...extra,
+})
+
+test('ninguém conferiu hoje: pede o checklist inteiro, como sempre foi', () => {
+  const r = oQuePedirNaRetirada({ veiculoId: 'v1', fichas: [], hoje: '2026-08-07', pessoaId: 'breno' })
+  assert.equal(r.pedir, 'checklist')
+  assert.equal(r.porque, 'sem-ficha')
+})
+
+test('O CASO DE 07/08: conferiu Erick, pega Breno — pede o aceite dele', () => {
+  const r = pedido({ pessoaId: 'breno', pessoaNome: 'Breno' })
+  assert.equal(r.pedir, 'aceite')
+  assert.equal(r.porque, 'assinou-outra')
+  assert.equal(r.quemConferiu, 'Erick Martins')
+})
+
+test('quem já conferiu e assinou hoje não é perguntado de novo', () => {
+  // Ninguém confere o mesmo carro duas vezes no mesmo dia — era esta a parte
+  // certa da regra antiga, e ela continua valendo.
+  assert.equal(pedido({ pessoaId: 'erick' }).pedir, 'nada')
+  assert.equal(pedido({ pessoaId: null, pessoaNome: 'erick martins' }).pedir, 'nada')
+})
+
+test('ficha conferida e NÃO assinada: o aceite é o que produz a prova que falta', () => {
+  const r = oQuePedirNaRetirada({
+    veiculoId: 'v1', fichas: [{ ...FICHA_ASSINADA, assinada_em: null }],
+    hoje: '2026-08-07', pessoaId: 'breno',
+  })
+  assert.equal(r.pedir, 'aceite')
+  assert.equal(r.porque, 'ficha-sem-assinatura')
+})
+
+test('dois nomes vazios NÃO são a mesma pessoa', () => {
+  // Se fossem, quem não tem cadastro sairia sem assinar nada — que é
+  // justamente o caso que esta função existe pra cobrir.
+  const r = oQuePedirNaRetirada({
+    veiculoId: 'v1', fichas: [{ ...FICHA_ASSINADA, pessoa_id: null, pessoa_nome: '' }],
+    hoje: '2026-08-07', pessoaId: null, pessoaNome: '   ',
+  })
+  assert.equal(r.pedir, 'aceite')
+})
+
+test('a ficha de OUTRO carro, ou de OUTRO dia, não dispensa ninguém', () => {
+  assert.equal(oQuePedirNaRetirada({
+    veiculoId: 'v2', fichas: [FICHA_ASSINADA], hoje: '2026-08-07', pessoaId: 'erick',
+  }).pedir, 'checklist')
+  assert.equal(oQuePedirNaRetirada({
+    veiculoId: 'v1', fichas: [FICHA_ASSINADA], hoje: '2026-08-08', pessoaId: 'erick',
+  }).pedir, 'checklist')
+})
+
+test('o aceite sempre chega com a frase que explica por que ele está sendo pedido', () => {
+  assert.match(porQuePedirOAceite('assinou-outra', 'Erick Martins'), /Erick Martins/)
+  assert.match(porQuePedirOAceite('assinou-outra', 'Erick Martins'), /não precisa conferir de novo/i)
+  assert.match(porQuePedirOAceite('ficha-sem-assinatura', null), /sem assinatura/i)
+})
+
+test('a regra velha continua intacta para quem só quer saber do carro', () => {
+  // `precisaDeChecklist` segue existindo e segue olhando carro+dia: ela responde
+  // "este carro foi conferido hoje?", que é outra pergunta e continua certa.
+  assert.equal(precisaDeChecklist({ veiculoId: 'v1', fichas: [FICHA_ASSINADA], hoje: '2026-08-07' }), false)
+  assert.equal(precisaDeChecklist({ veiculoId: 'v1', fichas: [], hoje: '2026-08-07' }), true)
+})
 
 // Padrão do banco: semanal na sexta, mensal na 1ª quarta-feira.
 const CONFIG = { dia_semanal: 5, semana_mensal: 1, dia_mensal: 3 }
@@ -585,4 +662,200 @@ test('quem não foi achado no cadastro (euId nulo) não vira dono de carro sem d
 test('lista vazia e entrada suja não derrubam nada', () => {
   assert.deepEqual(veiculosParaConferir({}), [])
   assert.deepEqual(veiculosParaConferir({ veiculos: [null, undefined], euId: 'p1', ehGestor: true }), [])
+})
+
+/* ── O resultado sai dos itens, e não do dedo de quem confere ───────────────
+ *
+ * Pedido do dono em 12/08/2026, derrubando a D14. A regra antiga permitia o
+ * pior desfecho: marcar LIBERADO com vazamento embaixo do carro, e a ficha
+ * assinada registrar isso como verdade. */
+
+const ITENS_GRAVIDADE = [
+  { item: 'Vazamentos sob o veículo', impede_uso: true },
+  { item: 'Estado geral dos pneus', impede_uso: true },
+  { item: 'Faróis', impede_uso: false },
+  { item: 'Buzina', impede_uso: false },
+];
+
+test('tudo certo libera', () => {
+  const r = [{ item_texto: 'Faróis', estado: 'ok' }, { item_texto: 'Buzina', estado: 'ok' }];
+  assert.equal(resultadoDoChecklist(r, ITENS_GRAVIDADE), 'liberado');
+});
+
+test('problema que NÃO impede rodar vira ressalva', () => {
+  const r = [{ item_texto: 'Buzina', estado: 'nao_ok' }];
+  assert.equal(resultadoDoChecklist(r, ITENS_GRAVIDADE), 'com_ressalvas');
+});
+
+test('vazamento NÃO LIBERA o carro — o caso que o dono citou', () => {
+  const r = [{ item_texto: 'Vazamentos sob o veículo', estado: 'nao_ok' }];
+  assert.equal(resultadoDoChecklist(r, ITENS_GRAVIDADE), 'nao_liberado');
+});
+
+test('pneu com problema NÃO LIBERA — o outro caso citado', () => {
+  assert.equal(resultadoDoChecklist([{ item_texto: 'Estado geral dos pneus', estado: 'nao_ok' }], ITENS_GRAVIDADE), 'nao_liberado');
+});
+
+test('um grave no meio de vários leves manda no resultado', () => {
+  // O grave não pode ser diluído: basta um pra o carro não sair.
+  const r = [
+    { item_texto: 'Buzina', estado: 'nao_ok' },
+    { item_texto: 'Faróis', estado: 'nao_ok' },
+    { item_texto: 'Vazamentos sob o veículo', estado: 'nao_ok' },
+  ];
+  assert.equal(resultadoDoChecklist(r, ITENS_GRAVIDADE), 'nao_liberado');
+});
+
+test('item que ninguém classificou conta como NÃO impeditivo', () => {
+  // Inventar gravidade sobre item que o dono nunca marcou seria pior que a
+  // ressalva — e a lista dele muda sem passar por aqui.
+  const r = [{ item_texto: 'Item que não está na lista', estado: 'nao_ok' }];
+  assert.equal(resultadoDoChecklist(r, ITENS_GRAVIDADE), 'com_ressalvas');
+});
+
+test('sem resposta nenhuma, libera — ficha vazia não acusa', () => {
+  assert.equal(resultadoDoChecklist([], ITENS_GRAVIDADE), 'liberado');
+  assert.equal(resultadoDoChecklist(null, null), 'liberado');
+});
+
+test('a tela consegue DIZER por que, separando grave de leve', () => {
+  // "Não liberado" sozinho não ajuda; com o nome do item, a pessoa sabe o que
+  // resolver.
+  const r = [
+    { item_texto: 'Vazamentos sob o veículo', estado: 'nao_ok' },
+    { item_texto: 'Buzina', estado: 'nao_ok' },
+    { item_texto: 'Faróis', estado: 'ok' },
+  ];
+  const p = porQueDoResultado(r, ITENS_GRAVIDADE);
+  assert.deepEqual(p.graves, ['Vazamentos sob o veículo']);
+  assert.deepEqual(p.leves, ['Buzina']);
+});
+
+test('a frase da reserva não promete checklist quando ele já foi feito', () => {
+  // A ficha de retirada mostrava, fixo, "Aqui só falta o checklist e o
+  // combustível" — inclusive na tela em que outra pessoa JÁ tinha conferido o
+  // carro e o que se pede é só a assinatura de recebimento. A frase dizia à
+  // pessoa para procurar um checklist que não estava lá.
+  assert.match(oQueFaltaNaRetirada('checklist'), /checklist e o combustível/)
+  assert.match(oQueFaltaNaRetirada('aceite'), /assinar/)
+  assert.doesNotMatch(oQueFaltaNaRetirada('aceite'), /checklist/)
+  assert.match(oQueFaltaNaRetirada('nada'), /combustível/)
+  assert.doesNotMatch(oQueFaltaNaRetirada('nada'), /checklist|assinar/)
+  // Chave desconhecida não pode devolver vazio: a frase some da tela e a
+  // pessoa fica sem saber o que a ficha ainda quer dela.
+  assert.ok(oQueFaltaNaRetirada('coisa-nova').length > 0)
+})
+
+/* ── O quadro de checklist de hoje, com fixos e retiradas ─────────────────── */
+
+const carro = (id, nome, extra = {}) => ({ id, nome, situacao: 'ativo', pessoa_id: null, ...extra })
+const SEXTA = '2026-08-21'
+const SABADO = '2026-08-22'
+
+test('o carro retirado hoje entra no quadro, mesmo sem dono fixo', () => {
+  // O BURACO MEDIDO EM 21/08/2026: o dono retirou a Bravo Blackmotion, um carro
+  // de rodízio, e o quadro não mostrava esse carro pra ninguém — nem pendente,
+  // nem feito. Retirada sem checklist não era cobrada de pessoa nenhuma.
+  const linhas = checklistDeHoje({
+    veiculos: [carro('bravo', 'FIAT BRAVO BLACKMOTION')],
+    fichasDeHoje: [],
+    usos: [{ veiculo_id: 'bravo', tipo: 'viagem', pessoa_id: 'p-erick', pessoa_nome: 'Erick Martins',
+      saida_em: '2026-08-21T12:03:58Z', volta_em: null }],
+    pessoas: [{ id: 'p-erick', nome: 'Erick Martins' }],
+    hoje: SEXTA,
+  })
+  assert.equal(linhas.length, 1)
+  assert.equal(linhas[0].tag, 'reserva')
+  assert.equal(linhas[0].fez, false)
+  assert.equal(linhas[0].quem, 'Erick Martins')
+})
+
+test('carro de retirada entra no SÁBADO; o carro fixo não', () => {
+  // Quem pega carro confere antes de sair, e o papel não conhece fim de semana.
+  // Já o checklist do carro fixo é de segunda a sexta.
+  const veiculos = [carro('bravo', 'BRAVO'), carro('volvo', 'VOLVO XC60', { pessoa_id: 'p-hum' })]
+  const usos = [{ veiculo_id: 'bravo', tipo: 'viagem', pessoa_nome: 'Erick', saida_em: '2026-08-22T13:00:00Z' }]
+  const linhas = checklistDeHoje({ veiculos, fichasDeHoje: [], usos, pessoas: [], hoje: SABADO })
+  assert.deepEqual(linhas.map((l) => l.veiculo.id), ['bravo'])
+  assert.equal(linhas[0].tag, 'reserva')
+})
+
+test('o que já foi feito aparece junto, marcado, e vai pro fim da lista', () => {
+  const veiculos = [carro('a', 'AAA', { pessoa_id: 'p1' }), carro('b', 'BBB', { pessoa_id: 'p2' })]
+  const linhas = checklistDeHoje({
+    veiculos,
+    fichasDeHoje: [{ veiculo_id: 'a', feita_em: SEXTA, assinada_em: '2026-08-21T10:00:00Z' }],
+    usos: [], pessoas: [{ id: 'p1', nome: 'Ana' }, { id: 'p2', nome: 'Bruno' }], hoje: SEXTA,
+  })
+  assert.deepEqual(linhas.map((l) => l.veiculo.id), ['b', 'a'], 'pendente primeiro')
+  assert.equal(linhas[1].fez, true)
+  assert.equal(linhas[1].assinada, true)
+  assert.equal(linhas[0].tag, 'fixo')
+})
+
+test('ficha sem assinatura conta como feita, mas o quadro sabe a diferença', () => {
+  const linhas = checklistDeHoje({
+    veiculos: [carro('a', 'AAA', { pessoa_id: 'p1' })],
+    fichasDeHoje: [{ veiculo_id: 'a', feita_em: SEXTA, assinada_em: null }],
+    usos: [], pessoas: [], hoje: SEXTA,
+  })
+  assert.equal(linhas[0].fez, true)
+  assert.equal(linhas[0].assinada, false)
+})
+
+test('viagem que começou ONTEM não pede checklist hoje', () => {
+  // O checklist de hoje é de quem pega o carro hoje. Uma viagem de três dias
+  // não faz o carro aparecer pendente todo dia.
+  const linhas = checklistDeHoje({
+    veiculos: [carro('bravo', 'BRAVO')],
+    fichasDeHoje: [], usos: [{ veiculo_id: 'bravo', tipo: 'viagem', saida_em: '2026-08-20T12:00:00Z', volta_em: null }],
+    pessoas: [], hoje: SEXTA,
+  })
+  assert.deepEqual(linhas, [])
+})
+
+test('posse não é retirada: carro emprestado continua sendo fixo', () => {
+  const linhas = checklistDeHoje({
+    veiculos: [carro('doblo', 'FIAT DOBLO')],
+    fichasDeHoje: [],
+    usos: [{ veiculo_id: 'doblo', tipo: 'posse', pessoa_id: 'p-jer', saida_em: '2026-08-21T11:00:00Z', volta_em: null }],
+    pessoas: [{ id: 'p-jer', nome: 'Jeremias' }], hoje: SEXTA,
+  })
+  assert.equal(linhas.length, 1)
+  assert.equal(linhas[0].tag, 'fixo')
+  assert.equal(linhas[0].quem, 'Jeremias', 'quem está com o carro vence o dono no papel (D9b)')
+})
+
+test('carro na oficina não entra no quadro', () => {
+  assert.deepEqual(checklistDeHoje({
+    veiculos: [carro('x', 'XXX', { pessoa_id: 'p1', situacao: 'em_manutencao' })],
+    fichasDeHoje: [], usos: [], pessoas: [], hoje: SEXTA,
+  }), [])
+})
+
+test('o carro que está na sua mão AGORA abre antes do seu carro fixo', () => {
+  // 21/08/2026: quem tem carro fixo e pegou um de rodízio via os dois como
+  // "meus", e o desempate era alfabético — o cartão abria no FIAT TORO
+  // enquanto a pessoa estava de pé ao lado da SAVEIRO que acabou de retirar.
+  const veiculos = [
+    { id: 'toro', nome: 'FIAT TORO FREEDOM', situacao: 'ativo', pessoa_id: 'p-eu' },
+    { id: 'saveiro', nome: 'VW SAVEIRO ROBUST', situacao: 'ativo', pessoa_id: null },
+  ]
+  const lista = veiculosParaConferir({
+    veiculos, euId: 'p-eu', ehGestor: false, fichas: [], hoje: '2026-08-21',
+    quemEstaCom: (v) => (v.id === 'saveiro' ? 'p-eu' : v.pessoa_id),
+    emViagem: (v) => (v.id === 'saveiro' ? 'p-eu' : null),
+  })
+  assert.deepEqual(lista.map((x) => x.veiculo.id), ['saveiro', 'toro'])
+  assert.equal(lista[0].naMinhaMao, true)
+  assert.equal(lista[1].naMinhaMao, false)
+})
+
+test('sem `emViagem`, a ordem é a de antes — nada muda para quem não passa isso', () => {
+  const veiculos = [
+    { id: 'b', nome: 'BBB', situacao: 'ativo', pessoa_id: 'p-eu' },
+    { id: 'a', nome: 'AAA', situacao: 'ativo', pessoa_id: 'p-eu' },
+  ]
+  const lista = veiculosParaConferir({ veiculos, euId: 'p-eu', ehGestor: false, fichas: [], hoje: '2026-08-21' })
+  assert.deepEqual(lista.map((x) => x.veiculo.id), ['a', 'b'])
 })

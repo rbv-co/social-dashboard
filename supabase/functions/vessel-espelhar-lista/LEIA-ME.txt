@@ -1,0 +1,51 @@
+ROBÔ DO ESPELHO DA LISTA DE ESPERA (VESSEL BRASIL)
+==================================================
+
+O QUE ELE FAZ
+Pega quem entrou na lista de espera pela LP (vesselbrasil.com.br) e leva o
+cadastro para onde você trabalha:
+
+  1. PLANILHA  → um arquivo CSV no Zoho WorkDrive, em
+                 04. Vessel Brasil / 17. Marketing / Lista de espera (LP)
+                 FUNCIONANDO.
+  2. BLING     → cadastra o contato com a marca de origem.
+                 BLOQUEADO: falta permissão (leia abaixo).
+
+Roda sozinho a cada 15 minutos.
+
+
+POR QUE A PÁGINA NÃO ESCREVE DIRETO
+A LP nunca fala com o Bling nem com o Zoho. Quem fala é este robô. Três
+motivos, e nenhum é preciosismo:
+  - a portaria pública do Bling continua SÓ LEITURA, como está hoje;
+  - se o Bling ou o Zoho caírem, o cadastro NÃO SE PERDE — já está gravado, e
+    o robô tenta de novo;
+  - a moça que preencheu recebe resposta na hora, sem esperar dois sistemas
+    de terceiro.
+
+
+O QUE ESTÁ BLOQUEADO, E O QUE CUSTA DESTRAVAR
+O aplicativo do Bling nunca foi autorizado para contatos. Medido: o mesmo
+token lê produtos (200) e é barrado em contatos (403).
+
+Para destravar, você precisa reautorizar o app do Bling incluindo contatos.
+
+  ⚠️ ISSO MATA O TOKEN ATUAL. Enquanto o novo não for gravado, TUDO que
+     depende do Bling para de funcionar — Gestão Comercial, notificação de
+     vendas, o proxy inteiro. Faça com alguém acompanhando, de preferência
+     fora do horário comercial.
+
+Enquanto não for feito, o robô escreve na própria linha, em português, que
+está esperando essa permissão. Nada se perde. No dia em que a permissão
+existir, ele começa a cadastrar sozinho, sem ninguém mexer no código.
+
+
+SE ALGUÉM PEDIR PARA SAIR DA LISTA
+Apague a linha em vessel_lista_espera. Na próxima rodada (até 15 minutos), o
+robô percebe e reescreve a planilha sem ela. Não precisa mexer no arquivo do
+Zoho à mão.
+
+
+ONDE VER SE ESTÁ TUDO BEM
+A coluna `ultimo_erro` de vessel_lista_espera. Se tiver texto, é uma frase em
+português dizendo o que houve e o que fazer.

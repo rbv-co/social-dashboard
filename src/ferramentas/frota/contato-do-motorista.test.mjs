@@ -1,6 +1,9 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { nomesBatem, contatoParaCobranca, podeCopiarTelefoneDoCarro } from './contato-do-motorista.js'
+import {
+  nomesBatem, contatoParaCobranca, podeCopiarTelefoneDoCarro,
+  podeDigitarTelefone, conferirTelefoneDigitado, porQueOTelefoneNaoServe,
+} from './contato-do-motorista.js'
 
 // A base real (acessos_pessoas) tem sobrenome repetido: 3 "Vieira" (Ana,
 // Jeremias, Theo) e 2 "Clara" (Beduschi, Marques) — e só UM "Siqueira", UM
@@ -238,4 +241,100 @@ test('podeCopiarTelefoneDoCarro: não quando não há pessoa (dono saiu do cadas
 test('podeCopiarTelefoneDoCarro: não quando o carro não tem telefone', () => {
   const pessoa = { nome: 'Marcus Vinicius', numero_corporativo: null, numero_pessoal: null }
   assert.equal(podeCopiarTelefoneDoCarro({ pessoa, veiculo: { contato_nome: 'Marcus', contato_telefone: null } }), false)
+})
+
+// ── D5: DIGITAR O TELEFONE ALI MESMO ───────────────────────────────────────
+//
+// Pedido do dono (19/08/2026): "caso não tenha telefone cadastrado, permitir
+// que eu coloque ali no campo e já salve no cadastro da pessoa da central
+// toda".
+//
+// O QUE JÁ EXISTIA só sabia COPIAR um telefone que estivesse na ficha do carro.
+// Medido no banco em 19/08, isso não cobre quem precisa: Breno (BMW X1 e VOLVO
+// XC90), Humberto Mendonça (XC60) e Raissa Herculano (CAYENNE) não têm telefone
+// em lugar NENHUM — não há o que copiar, e o botão nunca aparecia. Para esses
+// quatro carros não existe hoje jeito nenhum de cobrar o checklist.
+
+const semTelefone = { id: 'p-humberto', nome: 'Humberto Mendonça' }
+const comTelefone = { id: 'p-erick', nome: 'Erick Martins', numero_corporativo: '19971613011' }
+
+test('D5 · cadastro sem telefone e carro sem telefone: dá pra digitar', () => {
+  assert.equal(podeDigitarTelefone({ pessoa: semTelefone, veiculo: {}, pessoas: BASE_REAL }), true)
+})
+
+test('D5 · cadastro que JÁ tem telefone não oferece o campo', () => {
+  assert.equal(podeDigitarTelefone({ pessoa: comTelefone, veiculo: {}, pessoas: BASE_REAL }), false)
+})
+
+test('D5 · quando dá pra COPIAR do carro, não oferece digitar — uma ação por vez', () => {
+  // O contato do carro é seguramente a própria pessoa: copiar é um toque só, e
+  // dois controles pra mesma coisa fazem a pessoa parar pra escolher.
+  const veiculo = { contato_nome: 'Marcus', contato_telefone: '19992575880' }
+  const marcus = BASE_REAL.find((p) => p.nome === 'Marcus Vinicius')
+  assert.equal(podeCopiarTelefoneDoCarro({ pessoa: marcus, veiculo, pessoas: BASE_REAL }), true)
+  assert.equal(podeDigitarTelefone({ pessoa: marcus, veiculo, pessoas: BASE_REAL }), false)
+})
+
+test('D5 · O CASO DO FIAT DOBLO: contato do carro é de OUTRA pessoa, então digitar é o caminho', () => {
+  // Medido: o DOBLO é do Jeremias Vieira, mas o contato da ficha é "Siqueira",
+  // com o telefone do Thiago. Copiar está (com razão) proibido. Sem o campo de
+  // digitar, o Jeremias ficaria sem telefone pra sempre.
+  const veiculo = { contato_nome: 'Siqueira', contato_telefone: '19982180386' }
+  const jeremias = BASE_REAL.find((p) => p.nome === 'Jeremias Vieira')
+  assert.equal(podeCopiarTelefoneDoCarro({ pessoa: jeremias, veiculo, pessoas: BASE_REAL }), false)
+  assert.equal(podeDigitarTelefone({ pessoa: jeremias, veiculo, pessoas: BASE_REAL }), true)
+})
+
+test('D5 · gente de fora não tem cadastro para receber telefone', () => {
+  assert.equal(podeDigitarTelefone({ pessoa: null, veiculo: {}, pessoas: BASE_REAL }), false)
+  assert.equal(podeDigitarTelefone({ pessoa: { nome: 'Felipe modelista' }, veiculo: {}, pessoas: BASE_REAL }), false)
+})
+
+// ── O que se aceita digitar ────────────────────────────────────────────────
+
+test('D5 · celular com DDD entra, escrito do jeito que a pessoa escreve', () => {
+  for (const escrito of ['19999071702', '(19) 99907-1702', '19 99907 1702', '19-99907-1702']) {
+    const r = conferirTelefoneDigitado(escrito)
+    assert.equal(r.ok, true, `recusou "${escrito}"`)
+    assert.equal(r.numero, '19999071702', `guardou errado "${escrito}"`)
+  }
+})
+
+test('D5 · fixo de 10 dígitos também serve', () => {
+  assert.deepEqual(conferirTelefoneDigitado('1935220000'), { ok: true, numero: '1935220000' })
+})
+
+test('D5 · o +55 da frente é tirado, não contado como número', () => {
+  assert.equal(conferirTelefoneDigitado('+55 19 99907-1702').numero, '19999071702')
+})
+
+test('D5 · campo vazio não vira telefone vazio no cadastro', () => {
+  for (const nada of ['', '   ', null, undefined]) {
+    assert.equal(conferirTelefoneDigitado(nada).ok, false)
+    assert.equal(conferirTelefoneDigitado(nada).motivo, 'vazio')
+  }
+})
+
+test('D5 · número curto demais é recusado ANTES de gravar', () => {
+  const r = conferirTelefoneDigitado('999071702')
+  assert.equal(r.ok, false)
+  assert.equal(r.motivo, 'curto')
+})
+
+test('D5 · número comprido demais é recusado', () => {
+  assert.equal(conferirTelefoneDigitado('199990717021').ok, false)
+})
+
+test('D5 · DDD que não existe é recusado — 01 não é DDD de lugar nenhum', () => {
+  const r = conferirTelefoneDigitado('0199071702')
+  assert.equal(r.ok, false)
+  assert.equal(r.motivo, 'ddd')
+})
+
+test('D5 · cada recusa tem frase de gente, nunca o código', () => {
+  for (const m of ['vazio', 'curto', 'longo', 'ddd']) {
+    const frase = porQueOTelefoneNaoServe(m)
+    assert.ok(frase.length > 15, `o motivo ${m} ficou sem frase`)
+    assert.doesNotMatch(frase, /^[a-z]+$/, `a frase de ${m} está devolvendo o código`)
+  }
 })

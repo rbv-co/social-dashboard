@@ -1,0 +1,157 @@
+A JANELA DO GRAVADOR DE ETIQUETAS
+=================================
+
+E o programa que roda no computador da bancada, no Windows, e empresta o leitor
+de mesa ACR122U para a tela de etiquetas da Central.
+
+
+ELA NAO TEM TELA PROPRIA
+========================
+
+O que abre dentro desta janela e a tela que ja existe:
+
+    https://central.rbvcompany.com/autenticidade
+
+E a MESMA tela do painel, com o mesmo desenho de computador e o mesmo login.
+Fazer uma segunda tela seria manter duas — e a que ficasse para tras contaria
+outra historia sobre as mesmas bolsas.
+
+Entao este programa e uma CASCA FINA. Ele so faz tres coisas:
+
+  1. abre a janela no nosso endereco, e em nenhum outro;
+  2. pendura no navegador uma superficie ESTREITA — window.gravadorDeMesa —
+     com listar leitores, conectar, ler paginas, escrever uma pagina e
+     desconectar, e mais nada;
+  3. do lado de ca, chama o motor (a pasta de cima), que monta os comandos.
+
+
+O LOGIN E O DO PAINEL
+=====================
+
+Quem grava entra na Central DENTRO da janela, como sempre entra. Este programa
+NAO guarda senha, NAO guarda chave e NAO tem conta propria. Quem gravou cada
+peca fica registrado pela conta da pessoa, como ja acontece no celular.
+
+
+AS TRAVAS, E POR QUE CADA UMA
+=============================
+
+A tela vem da internet. Dentro desta janela ela tem o leitor emprestado — entao
+ela nao pode receber nada alem disso.
+
+  contextIsolation    A pagina nao alcanca o preload por dentro.
+  nodeIntegration     DESLIGADO. Com Node, a pagina leria e escreveria o
+                      computador inteiro.
+  sandbox             LIGADO. E por isso que o preload.cjs e CommonJS e nao
+                      importa arquivo nenhum: preload em caixa de areia so
+                      consegue pedir o proprio Electron.
+  webviewTag          DESLIGADO. Seria uma janela dentro da janela, sem estas
+                      travas e com o mesmo preload.
+
+  navegacao presa     A janela so vai para central.rbvcompany.com, em https.
+                      SAO DOIS EVENTOS, nao um: `will-navigate` e o clique num
+                      link, e `will-redirect` e o desvio que o servidor manda
+                      no meio do caminho. So o primeiro deixaria aberta a porta
+                      por onde ninguem olha.
+  window.open         SEMPRE negado, inclusive para a nossa propria casa: uma
+                      segunda janela nasceria com o mesmo preload e sem passar
+                      por nada disto.
+  link de fora        Continua funcionando, mas ABRE NO NAVEGADOR do computador,
+                      longe do leitor. So endereco http/https sai daqui: um
+                      `file:` entregue ao Windows abre (ou executa) um arquivo
+                      da maquina.
+
+  NADA DE APDU CRU    A superficie NAO tem "execute estes bytes". Quem monta o
+                      comando e o motor, do lado de ca, que ja recusa pagina
+                      fora da faixa 4-39 e escrita que nao tenha exatamente 4
+                      bytes. Um canal de bytes livres daria a pagina o poder de
+                      escrever na pagina 40 (as travas) ou na 43 (a senha) — que
+                      e estragar a etiqueta de vez.
+
+
+OS ARQUIVOS
+===========
+
+principal.cjs          A entrada. So liga o Electron de verdade nas pecas que
+                       ja se provam com `node --test`. E o unico arquivo daqui
+                       sem teste, e por isso nao tem regra nenhuma dentro.
+
+preload.cjs            A superficie estreita. CommonJS e sem importar nada,
+                       porque roda em caixa de areia. Os nomes dos canais estao
+                       escritos nele a mao, e ha teste que compara essa copia
+                       com a do atendente byte a byte.
+
+abrir-a-janela.js      A janela e as travas de navegacao. O Electron entra por
+                       injecao, para o teste provar tudo isso sem abrir janela.
+
+enderecos-permitidos.js  Onde a janela pode ir. Lista curta, escrita a mao.
+
+atendente-do-leitor.js   Quem responde aos pedidos da tela. E a FRONTEIRA: tudo
+                       que vem da pagina e conferido antes de chegar ao cabo.
+
+*.test.mjs             Os testes. Rodam com `npm test` na pasta de cima.
+
+
+COMO RODAR AQUI, PARA OLHAR
+===========================
+
+    cd gravador
+    npm install
+    npm run janela
+
+(No Mac o programa abre, mas nao acha leitor nenhum: o caminho do ACR122U e o
+`winscard.dll`, que so existe no Windows.)
+
+
+COMO GERAR O INSTALADOR DO WINDOWS
+==================================
+
+Numa maquina Windows, com Node instalado:
+
+    cd gravador
+    npm install
+    npm run empacotar
+
+O instalador sai em `entregas/gravador-de-etiquetas/`.
+
+NAO E PRECISO NENHUMA FERRAMENTA DE COMPILACAO. O Electron vem pronto e as
+nossas dependencias sao JavaScript puro — ha teste que reprova dependencia que
+compile no `npm install`.
+
+⚠️ ESTE COMANDO AINDA NAO FOI RODADO. Ele foi escrito e conferido por teste (a
+lista de arquivos do instalador se confere contra os `import` de verdade), mas
+gerar um instalador de Windows exige uma maquina Windows. A PRIMEIRA VEZ TEM DE
+SER OLHADA: o programa tem de abrir e mostrar a tela da Central.
+
+
+O QUE A PESSOA VE NA PRIMEIRA EXECUCAO
+======================================
+
+⚠️ O WINDOWS VAI DIZER "O Windows protegeu o seu PC".
+
+Isso NAO e virus e nao e defeito: e o Windows avisando que o programa nao tem
+assinatura digital (uma assinatura custa por ano e e comprada de uma empresa de
+certificado — nao temos uma).
+
+O QUE FAZER, uma vez so:
+
+    1. Clicar em "Mais informacoes"
+    2. Clicar em "Executar assim mesmo"
+
+Depois de instalado, ele abre normal, sem perguntar mais nada.
+
+O antivirus tambem pode reclamar na primeira vez, pelo mesmo motivo. Se ele
+apagar o instalador, e preciso liberar o arquivo na lista de excecoes dele.
+
+
+A PRIMEIRA ETIQUETA DE TODO TURNO
+=================================
+
+A primeira conexao depois de abrir o programa costuma falhar por dentro: o
+servico de cartao do Windows sobe SOB DEMANDA e a primeira chamada pega ele
+levantando (codigo 0x8010001D). O motor JA TENTA DE NOVO SOZINHO, ate tres
+vezes, e a pessoa nao ve nada disso.
+
+Se alguem "consertar" isso tirando a segunda tentativa, a bancada volta a
+aprender que "tem de tentar duas vezes" — e superstição esconde falha de
+verdade no dia em que o leitor estiver mesmo ruim.

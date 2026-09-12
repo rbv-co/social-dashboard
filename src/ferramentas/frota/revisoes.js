@@ -76,6 +76,14 @@ export function revisoesDoVeiculo({ veiculo, kmAtual, plano, revisoes }) {
 /** O que a lista de carros mostra: quantos itens gritando neste veículo. */
 export function resumoDeRevisoes(itens) {
   const l = itens || [];
+  // Lista vazia é o que uma consulta ao plano que FALHOU devolve — não um
+  // carro sem nada a revisar. Ver tela-de-frota.vue:
+  // `plano.value = pl && !pl.error ? (pl.data || []) : []`: permissão negada
+  // ou rede fora dá `[]` em silêncio, e sem este corte os 10 carros da frota
+  // mostrariam o selo verde "Revisões em dia" sobre uma sanfona vazia — a
+  // mesma mentira que o resto desta função existe pra evitar (ver `semKm` e
+  // `semRegistro` abaixo).
+  if (!l.length) return { nivel: 'sem-registro', texto: 'Sem plano de revisão' };
   const vencidas = l.filter((i) => i.situacao === 'vencida').length;
   const perto = l.filter((i) => i.situacao === 'perto').length;
   if (vencidas) return { nivel: 'vencida', texto: vencidas === 1 ? '1 revisão vencida' : `${vencidas} revisões vencidas` };
@@ -93,6 +101,27 @@ export function resumoDeRevisoes(itens) {
     return { nivel: 'sem-registro', texto: 'Sem histórico de revisão' };
   }
   return { nivel: 'em-dia', texto: 'Revisões em dia' };
+}
+
+/**
+ * A ordem da aba Revisões quando ela mostra TUDO (D30): o que dói primeiro em
+ * cima, e nenhum carro descartado.
+ *
+ * A versão antiga jogava fora o carro que não tivesse item vencendo — e como
+ * 8 dos 10 carros não têm quilometragem conhecida, a aba ficava praticamente
+ * vazia e parecia que estava tudo em dia. "Sem quilometragem" não é estar em
+ * dia: é não se saber nada, e some do alerta justamente quem mais precisa dele.
+ *
+ * O peso reaproveita SITUACOES_REVISAO, que já ordena os itens dentro do carro
+ * — dois critérios diferentes pra mesma urgência dariam duas respostas.
+ */
+export function ordenarCarrosPorUrgencia(cartoes) {
+  const peso = (c) => SITUACOES_REVISAO[c && c.resumo && c.resumo.nivel]?.peso ?? 9;
+  return (cartoes || []).slice().sort((a, b) =>
+    peso(a) - peso(b)
+    // Desempate pelo nome: sem ele a lista dança de posição a cada carregada,
+    // e quem procura um carro pelo lugar onde ele estava não acha.
+    || String(a?.linha?.veiculo?.nome || '').localeCompare(String(b?.linha?.veiculo?.nome || '')));
 }
 
 /* ── O editor de limiares ─────────────────────────────────────────────────── */

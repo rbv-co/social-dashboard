@@ -10,6 +10,7 @@ import { matrizParaExcel } from '../../compartilhado/relatorios/exportar.js'
 // listas que discordam.
 export const COLUNAS_PLANILHA = [
   { chave: 'numero', titulo: 'Nº', tipo: 'numero' },
+  { chave: 'numero_serie', titulo: 'IMEI / Nº de série', tipo: 'texto' },
   { chave: 'nome', titulo: 'Item', tipo: 'texto' },
   { chave: 'categoria', titulo: 'Categoria', tipo: 'texto' },
   { chave: 'tipo', titulo: 'Tipo', tipo: 'texto' },

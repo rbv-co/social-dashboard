@@ -113,13 +113,29 @@
         <div class="np-modal-emoji">🔔</div>
         <h3>Ativar notificações</h3>
         <p>Receba avisos importantes da Central direto no seu celular.</p>
-        <button class="np-modal-ativar" type="button" @click="ativarPush">Ativar agora</button>
+        <button class="np-modal-ativar" type="button" @click="ativarPush" :disabled="ativandoPush">
+          {{ ativandoPush ? 'Ativando…' : 'Ativar agora' }}
+        </button>
+        <!-- O RECADO DO QUE DEU ERRADO fica AQUI, no convite, e não num aviso
+             que some sozinho: é uma instrução para seguir, não um alerta. -->
+        <p v-if="recadoPush" class="np-modal-recado">{{ recadoPush }}</p>
+        <!-- Sem esta saída, o convite voltava em TODA abertura: quem fechava o
+             prompt do navegador passava da parede, mas a permissão continuava
+             'default' e no dia seguinte a parede estava lá. Quem dispensa não
+             perde nada — o botão de ativar fica no menu do avatar. -->
+        <button class="np-modal-depois" type="button" @click="dispensarPush">Agora não</button>
       </div>
     </div>
 
-    <!-- O zoom envolve o conteúdo da rota, não o <html>: aplicado na raiz, ele
-         desloca tudo que é position:fixed (avatar, painéis, barra de seleção). -->
-    <div class="conteudo-da-rota" :style="zoom === 1 ? null : { zoom }">
+    <!-- O zoom NÃO mora mais aqui. Ele era aplicado neste `div`, e por isso
+         alcançava só o conteúdo da rota: modal e barra de topo são
+         `position:fixed`, saem deste elemento e o navegador os desenhava em
+         tamanho cheio. O dono relatou em 12/08/2026: "no meu celular estou
+         usando zoom 60% e ainda continua tudo muito grande" — e estava mesmo,
+         porque MODAL é onde ele passa a maior parte do tempo e o modal ficava
+         em 100%. Agora o zoom vai na raiz do documento (ver `aplicarZoom`),
+         onde alcança a Central inteira, como o nome sempre prometeu. -->
+    <div class="conteudo-da-rota">
       <router-view />
     </div>
 
@@ -163,12 +179,21 @@ import AvisoDeAtualizacao from './compartilhado/aviso-de-atualizacao.vue'
 import { useRouter, useRoute } from 'vue-router'
 import { estado } from './compartilhado/controle-de-login-e-usuario.js'
 import { sbClient } from './compartilhado/conectar-no-banco-de-dados.js'
-import { inscrever, jaInscrito, permissaoAtual, pushSuportado, registrarSW } from './compartilhado/notificacoes-push.js'
+import { inscrever, jaInscrito, permissaoAtual, pushSuportado, registrarSW, devePedirPush, deveInscreverEmSilencio, observarPermissao } from './compartilhado/notificacoes-push.js'
+import { recadoDoPush, deuCerto } from './compartilhado/recado-do-push.js'
+// O recado do push tambem sai por aqui quando o convite nao esta aberto (o
+// caminho do menu do avatar). Sem este import era ReferenceError no clique.
+import { adminToast } from './compartilhado/avisos.js'
 // Trava a rolagem do fundo enquanto um modal legado (JavaScript puro, sem
 // v-if) estiver aberto — Acessos, Admin, Redes Sociais, Gestão Comercial e
 // Gestão de Tráfego. Fica na MOLDURA, e não em cada tela, pelo mesmo motivo
 // do aviso de versão nova: um observador só, ligado uma vez, vale pra todas.
 import { observarModaisLegados, fecharTodosOsModaisLegadosAoTrocarDeRota } from './compartilhado/observar-modais-legados.js'
+// Mantém a aba ATIVA dentro da vista na barra global `.abas`, que desde
+// 02/09/2026 rola por dentro no celular em vez de quebrar em duas linhas. Fica
+// aqui pelo mesmo motivo do observador acima: um só, ligado uma vez, vale para
+// as quatro telas que usam a classe — e para a quinta que vier.
+import { observarAbaAtiva } from './compartilhado/aba-ativa-a-vista.js'
 
 const router = useRouter()
 
@@ -190,9 +215,17 @@ async function trocarSenhaAgora() {
     if (error) throw new Error(error.message)
     // A MARCA SÓ CAI DEPOIS que a senha trocou de verdade. Na ordem inversa,
     // uma falha na troca deixaria a conta com a senha provisória e sem cobrança.
-    const { error: e2 } = await sbClient.from('profiles')
-      .update({ precisa_trocar_senha: false }).eq('id', estado.user?.id)
+    //
+    // POR RPC, E NÃO POR UPDATE DIRETO: `profiles` só aceita UPDATE de quem é
+    // admin (política admin_update_profiles). Para todo mundo mais, o update
+    // casava com ZERO linhas — e o PostgREST devolve SUCESSO SEM ERRO nesse
+    // caso. A marca ficava no banco e a pessoa era cobrada de novo no login
+    // seguinte, todos os dias. Duas pessoas do time de vendas viveram isso.
+    const { data: marcou, error: e2 } = await sbClient.rpc('marcar_senha_trocada')
     if (e2) throw new Error(e2.message)
+    // E conferir o RETORNO, não só a ausência de erro: é a diferença entre
+    // "gravou" e "não deu erro", que aqui custou dias de incômodo.
+    if (marcou !== true) throw new Error('a senha foi trocada, mas não consegui registrar isso. Recarregue e tente de novo.')
     estado.precisa_trocar_senha = false
     senha1.value = ''; senha2.value = ''
   } catch (e) {
@@ -213,8 +246,22 @@ const menuAberto = ref(false)
 const naTelaLogin = computed(() => route.name === 'login')
 const naTelaInicio = computed(() => route.name === 'inicio')
 // Fundo animado some em telas densas onde vira ruído visual (admin).
-const SEM_FUNDO = ['admin', 'claude-status']
-const mostrarFundo = computed(() => !SEM_FUNDO.includes(route.name))
+/* O fundo animado (7 ícones, 3 orbes, 3 anéis) só existe onde alguém OLHA a
+ * tela: a Gestão à Vista, que fica na TV, e a página de entrada. Nas telas de
+ * trabalho ele sai.
+ *
+ * A LISTA VIROU DO AVESSO em 12/08/2026, a pedido do dono: "os elementos de
+ * fundo podem sair né? deixar somente no gestão à vista, porque tá atrapalhando
+ * a visualização principalmente no celular". Antes era uma lista de EXCEÇÕES —
+ * o fundo aparecia em 27 das 29 telas e saía só em duas —, e cada tela nova
+ * nascia com ele por acidente. Agora é o contrário: quem quiser fundo entra
+ * nesta lista de propósito.
+ *
+ * O raciocínio já existia e só não tinha sido levado a sério: o Admin já tinha
+ * sido tirado justamente por ser "tela densa onde atrapalha a leitura". Toda
+ * tela de trabalho é densa. */
+const COM_FUNDO = ['inicio', 'gestao-vista']
+const mostrarFundo = computed(() => COM_FUNDO.includes(route.name))
 const iniciais = computed(() => {
   const email = estado.user?.email || ''
   return (email.trim()[0] || '?').toUpperCase()
@@ -268,23 +315,92 @@ async function salvarSenha() {
 
 /* ── Notificações de vendas (Web Push) ── */
 const mostrarModalPush = ref(false)
+// A tela precisa dizer que está trabalhando e o que deu errado. Sem estes
+// dois, o botão ficava mudo enquanto a inscrição rodava — o "fica travado"
+// que o dono relatou — e sumia sem explicação quando falhava.
+const ativandoPush = ref(false)
+const recadoPush = ref('')
 const pushAtivo = ref(false)
+
+// Lembrado POR APARELHO: "não quero ser perguntado neste navegador". Fica no
+// localStorage e não no perfil de propósito — a pessoa pode querer o aviso no
+// celular e não no computador da loja, e são navegadores diferentes.
+const DISPENSOU_PUSH = 'push-dispensado-v1'
+const dispensouPush = () => { try { return localStorage.getItem(DISPENSOU_PUSH) === '1' } catch { return false } }
 
 async function avaliarPush() {
   if (!estado.user || !pushSuportado()) return
   pushAtivo.value = await jaInscrito()
-  // Insistente: reaparece toda vez que abre logado e ainda não ativou,
-  // desde que o navegador não tenha NEGADO explicitamente.
-  mostrarModalPush.value = !pushAtivo.value && permissaoAtual() !== 'denied'
+  const situacao = {
+    suportado: pushSuportado(),
+    permissao: permissaoAtual(),
+    inscrito: pushAtivo.value,
+    dispensou: dispensouPush(),
+  }
+  // Aparelho já autorizou mas perdeu a inscrição (limpou dados, trocou de
+  // navegador, assinatura expirada): reinscreve CALADO. Com a permissão já
+  // concedida o navegador não abre prompt nenhum — pedir de novo seria pedir
+  // o que já foi dado, que é justamente a reclamação do dono.
+  if (deveInscreverEmSilencio(situacao)) {
+    // `inscrever` passou a devolver { ok, motivo } — ler como booleano daria
+    // sempre verdadeiro, porque objeto é verdadeiro. Aqui o silêncio é de
+    // propósito: com a permissão já dada, não há nada a perguntar nem a avisar.
+    const ok = deuCerto(await inscrever(estado.user?.id))
+    pushAtivo.value = ok
+    situacao.inscrito = ok
+  }
+  mostrarModalPush.value = devePedirPush(situacao)
+  observarPermissaoDoNavegador()
 }
 
 async function ativarPush() {
+  if (ativandoPush.value) return // clique duplo não dispara duas inscrições
   menuAberto.value = false // fecha o menu do avatar se veio de lá
-  const ok = await inscrever(estado.user?.id)
-  pushAtivo.value = ok
-  // Some ao ativar OU quando o navegador nega (nesta sessão). Se a pessoa só
-  // fechar o prompt sem decidir (permissão segue 'default'), o modal reaparece
-  // na próxima abertura — o "insistente" pedido pelo dono.
+  ativandoPush.value = true
+  recadoPush.value = ''
+  try {
+    const r = await inscrever(estado.user?.id)
+    const ok = deuCerto(r)
+    pushAtivo.value = ok
+    if (ok) {
+      // Ativou de verdade: a dispensa de antes não faz mais sentido.
+      try { localStorage.removeItem(DISPENSOU_PUSH) } catch {}
+      mostrarModalPush.value = false
+      return
+    }
+    // NÃO fecha o convite quando falha. Fechar calado foi o defeito: a pessoa
+    // ficava sem saber se ativou, e o único caminho que sobrava era adivinhar.
+    recadoPush.value = recadoDoPush(r && r.motivo)
+    if (!mostrarModalPush.value) adminToast(recadoPush.value, false)
+  } finally {
+    ativandoPush.value = false
+  }
+}
+
+// AUTORIZAR PELO NAVEGADOR passa a valer NA HORA.
+//
+// É o caminho que o dono achou sozinho: clicar no ícone ao lado do endereço e
+// escolher Permitir. Até aqui a Central só percebia isso na próxima abertura —
+// a pessoa autorizava e continuava sem aviso nenhum, sem entender por quê.
+// Agora, quando a permissão vira 'granted' por fora, a inscrição acontece
+// sozinha e o convite se fecha.
+let _pararDeObservarPermissao = null
+async function observarPermissaoDoNavegador() {
+  if (_pararDeObservarPermissao) return
+  _pararDeObservarPermissao = await observarPermissao(async (estadoDaPermissao) => {
+    if (estadoDaPermissao !== 'granted' || !estado.user) return
+    const ok = deuCerto(await inscrever(estado.user?.id))
+    pushAtivo.value = ok
+    if (ok) {
+      recadoPush.value = ''
+      mostrarModalPush.value = false
+      try { localStorage.removeItem(DISPENSOU_PUSH) } catch {}
+    }
+  })
+}
+
+function dispensarPush() {
+  try { localStorage.setItem(DISPENSOU_PUSH, '1') } catch {}
   mostrarModalPush.value = false
 }
 
@@ -304,6 +420,29 @@ const ajustesAbertos = ref(false)
 const zoom = ref(1)
 function aplicarZoom(z) {
   zoom.value = Math.min(2, Math.max(0.6, Math.round(z * 10) / 10))
+  // NA RAIZ, e é isto que faz o zoom valer "na Central toda": modal, barra de
+  // topo e qualquer coisa `position:fixed` vivem fora do `div` do conteúdo, e
+  // antes ficavam sempre em 100%. `zoom` no elemento raiz cria um sistema de
+  // coordenadas novo, então o que é fixo escala junto — o que `transform:scale`
+  // não faria (ele deslocaria os fixos em vez de redimensioná-los, que é a
+  // armadilha registrada no comentário antigo do template).
+  // O CONTROLE MEXE SÓ NA LETRA (pedido do dono, 12/08/2026: "o zoom vale pra
+  // texto somente; o quadrado, os blocos, ficam do mesmo jeito"). Antes ele era
+  // `zoom` de CSS, que encolhe a caixa junto — o modal virava um quadradinho.
+  // Agora é uma escala que multiplica cada `font-size` do aplicativo, via
+  // `--escala-texto`: a caixa fica onde está, a margem fica, e só o texto muda.
+  //
+  // As 1.571 declarações de tamanho viraram `calc(Npx * var(--escala-texto))`.
+  // As de 16px pra cima ganharam piso de 16px — é o tamanho dos campos de
+  // digitar, e abaixo disso o iPhone dá zoom sozinho ao tocar e a tela inteira
+  // pula, que é pior que letra grande.
+  //
+  // A barra de topo não precisa de compensação: o texto dela também é `font-size`
+  // e escalaria junto, então ela entra na lista de exceção em estilos-globais.css
+  // ("a barra de topo você pode deixar de fora, ficou perfeita").
+  try {
+    document.documentElement.style.setProperty('--escala-texto', String(zoom.value))
+  } catch (e) { /* sem DOM: nada a fazer */ }
   try { localStorage.setItem('zoom-central', String(zoom.value)) } catch (e) { /* modo privado */ }
 }
 function mudarZoom(passo) { aplicarZoom(zoom.value + passo) }
@@ -316,6 +455,7 @@ onMounted(() => {
   if (pushSuportado()) registrarSW().catch(() => {})
   avaliarPush()
   observarModaisLegados()
+  observarAbaAtiva()
 })
 // estado.user pode chegar depois do boot (sessão assíncrona) -> reavaliar.
 watch(() => estado.user?.id, avaliarPush)
@@ -436,7 +576,25 @@ router.afterEach(() => fecharTodosOsModaisLegadosAoTrocarDeRota())
 .np-modal-ativar {
   margin-top: 18px; width: 100%; padding: 12px; border: 0; border-radius: 10px;
   background: var(--accent); color: var(--sobre-cor); font-weight: 700; font-size: 14px;
-  cursor: pointer; font-family: inherit;
+  cursor: pointer; font-family: inherit; min-height: 40px;
+}
+.np-modal-ativar[disabled] { opacity: .65; cursor: progress; }
+/* O RECADO DE QUANDO NÃO DEU CERTO. Laranja de aviso, e não vermelho de erro:
+   na maioria dos casos não quebrou nada — falta um passo, e o texto diz qual.
+   Alinhado à esquerda de propósito: é instrução para seguir, não anúncio. */
+.np-modal-recado {
+  margin-top: 12px; text-align: left; font-size: 12.5px; line-height: 1.5;
+  color: color-mix(in srgb, var(--orange) 78%, var(--text));
+  background: color-mix(in srgb, var(--orange) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--orange) 35%, transparent);
+  border-radius: 8px; padding: 10px 12px;
+}
+/* Saída do convite. Botão comum: borda + fundo transparente, nunca cinza
+   (padrão da Central, item 3). 40px de alvo porque dedo não acerta menos. */
+.np-modal-depois {
+  margin-top: 8px; width: 100%; padding: 12px; min-height: 40px;
+  border: 1px solid var(--border); border-radius: 10px; background: transparent;
+  color: var(--muted); font-size: 13px; cursor: pointer; font-family: inherit;
 }
 </style>
 

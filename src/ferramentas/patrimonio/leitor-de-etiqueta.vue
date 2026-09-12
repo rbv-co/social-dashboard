@@ -341,21 +341,21 @@ onUnmounted(desligar)
    desta central, pedido do dono. */
 .let-caixa{width:100%;max-width:520px;max-height:calc(100dvh - 28px);display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--border);border-radius:16px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.4);}
 .let-topo{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 14px;border-bottom:1px solid var(--border);}
-.let-titulo{font-family:var(--fonte-principal);font-size:13px;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;color:var(--text);}
-.let-fechar{appearance:none;border:1px solid var(--border);background:var(--surface);color:var(--text);border-radius:9px;width:34px;height:34px;font-size:15px;cursor:pointer;flex:0 0 auto;}
+.let-titulo{font-family:var(--fonte-principal);font-size:max(9px, calc(13px * var(--escala-texto, 1)));font-weight:700;letter-spacing:1.4px;text-transform:uppercase;color:var(--text);}
+.let-fechar{appearance:none;border:1px solid var(--border);background:var(--surface);color:var(--text);border-radius:9px;width:34px;height:34px;font-size:max(9px, calc(15px * var(--escala-texto, 1)));cursor:pointer;flex:0 0 auto;}
 .let-palco{position:relative;background:#000;aspect-ratio:4/3;overflow:hidden;}
 .let-video{width:100%;height:100%;object-fit:cover;display:block;}
 .let-mira{position:absolute;left:8%;right:8%;top:20%;bottom:20%;border:2px solid rgba(255,255,255,.85);border-radius:10px;box-shadow:0 0 0 9999px rgba(0,0,0,.28);}
-.let-aviso{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;margin:0;color:#fff;font-family:var(--fonte-principal);font-size:13px;}
+.let-aviso{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;margin:0;color:#fff;font-family:var(--fonte-principal);font-size:max(9px, calc(13px * var(--escala-texto, 1)));}
 .let-recado{padding:16px 16px 18px;}
-.let-recado-txt{margin:0;font-family:var(--fonte-principal);font-size:13.5px;line-height:1.6;color:var(--text);}
-.let-passos{margin:12px 0 0;padding-left:20px;font-family:var(--fonte-principal);font-size:13px;line-height:1.75;color:var(--muted);}
+.let-recado-txt{margin:0;font-family:var(--fonte-principal);font-size:max(9px, calc(13.5px * var(--escala-texto, 1)));line-height:1.6;color:var(--text);}
+.let-passos{margin:12px 0 0;padding-left:20px;font-family:var(--fonte-principal);font-size:max(9px, calc(13px * var(--escala-texto, 1)));line-height:1.75;color:var(--muted);}
 .let-passos li{margin-bottom:3px;}
 .let-botoes{display:flex;flex-wrap:wrap;gap:9px;margin-top:16px;}
 /* 44px de altura: alvo que o dedo acerta. Largura cheia no celular, porque a
    pessoa está de pé segurando o aparelho com uma mão só. */
-.let-btn{flex:1 1 auto;min-width:130px;min-height:44px;font-family:var(--fonte-principal);font-size:14px;font-weight:600;padding:11px 16px;border:1px solid var(--border);border-radius:10px;background:var(--surface);color:var(--text);cursor:pointer;touch-action:manipulation;}
+.let-btn{flex:1 1 auto;min-width:130px;min-height:44px;font-family:var(--fonte-principal);font-size:max(9px, calc(14px * var(--escala-texto, 1)));font-weight:600;padding:11px 16px;border:1px solid var(--border);border-radius:10px;background:var(--surface);color:var(--text);cursor:pointer;touch-action:manipulation;}
 .let-btn.primario{background:var(--accent);border-color:var(--accent);color:var(--sobre-cor);}
-.let-dica,.let-erro{margin:0;padding:12px 14px;font-family:var(--fonte-principal);font-size:12.5px;line-height:1.55;color:var(--muted);}
+.let-dica,.let-erro{margin:0;padding:12px 14px;font-family:var(--fonte-principal);font-size:max(9px, calc(12.5px * var(--escala-texto, 1)));line-height:1.55;color:var(--muted);}
 .let-erro{color:var(--red,#c0392b);}
 </style>

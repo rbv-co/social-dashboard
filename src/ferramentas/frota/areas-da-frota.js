@@ -59,7 +59,10 @@ export function painelDoMotorista(estados, pessoaId) {
   const meu = (e) => !!(pessoaId && e.usoAbertoPessoaId && e.usoAbertoPessoaId === pessoaId);
   return {
     comigo: lista.filter((e) => e.naRua && meu(e)),
-    livres: lista.filter((e) => e.disponivel),
+    // `disponivelParaMim`, e não `disponivel`: o carro que ESTA pessoa reservou
+    // continua na lista dela, senão a reserva aprovada esconde o carro de quem
+    // tem direito a ele justamente na hora de pegar (20/08/2026).
+    livres: lista.filter((e) => e.disponivelParaMim),
     comOutros: lista.filter((e) => e.naRua && !meu(e)),
     // Carro na oficina ou fora da frota não aparece pro motorista: não há nada
     // que ele possa fazer, e ocupa a tela.

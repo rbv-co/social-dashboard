@@ -481,6 +481,21 @@ export function publicoParaFabrica(pub) {
         key: String(c.key),
         ...(Number(c.raio) > 0 ? { radius: Number(c.raio), distance_unit: c.unidade === 'mile' ? 'mile' : 'kilometer' } : {}),
       })),
+      /* PIN, ESTADO E PAÍS PASSAVAM DIRETO PARA O LIXO ATÉ 18/08/2026.
+       *
+       * O passo do público EXIGE um lugar e aceita os quatro — cidade, pin no
+       * mapa, estado e país. Só a cidade chegava aqui. Quem marcasse um pin
+       * criava a campanha SEM ele, calado: o conjunto ia para a Meta com o que
+       * sobrou, ou com as cidades da loja como último recurso. Aconteceu com o
+       * dono, na Moto Easy.
+       *
+       * `montarTargeting` (coletor/lib/publico.mjs) sempre soube ler os três, e
+       * na MESMA forma que o editor guarda — por isso aqui é passagem direta, e
+       * não tradução. Filtrar pin sem coordenada é o único cuidado: um ponto
+       * vazio faz a Meta recusar o pedido inteiro. */
+      pins: (p.pins || []).filter((x) => x && Number.isFinite(Number(x.lat)) && Number.isFinite(Number(x.lng))),
+      countries: (p.paises || []).filter((x) => x && x.key != null),
+      regions: (p.estados || []).filter((x) => x && x.key != null),
       excluded: (p.excluidas || []).filter((x) => x && x.key != null).map((x) => ({ key: String(x.key), type: x.tipo === 'regiao' ? 'region' : 'city' })),
     },
     idade_min: p.idadeMin,

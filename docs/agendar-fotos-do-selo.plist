@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.iamundi.fotos-do-selo</string>
+
+    <!-- O ROBO QUE ENCHE O CERTIFICADO: procura no Bling a foto e a cor dos
+         lotes do selo que estao sem, copia as fotos para o site e publica.
+
+         UMA VEZ POR DIA, as 8h05, e nao de hora em hora. O que ele espera e uma
+         PESSOA subir foto no Bling, e isso nao acontece cinco vezes ao dia.
+         Rodar mais gasta a cota da API do Bling — que ja devolve 429 com
+         facilidade — sem chegar mais cedo em lugar nenhum.
+
+         ⚠️ ELE DA `git push` NO REPOSITORIO DO SITE. Se o Mac estiver com
+         alteracao pendente em `vessel-brasil/fotos/selo`, ela vai junto. O robo
+         so adiciona ESSA pasta, nunca `git add .`. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/node</string>
+        <string>/Users/erickmartins/iamundi/coletor/fotos-do-selo-do-bling.mjs</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/erickmartins/iamundi</string>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key><integer>8</integer>
+        <key>Minute</key><integer>5</integer>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/erickmartins/iamundi/coletor/fotos-do-selo.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/erickmartins/iamundi/coletor/fotos-do-selo.log</string>
+</dict>
+</plist>

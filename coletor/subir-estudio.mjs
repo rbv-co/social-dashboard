@@ -184,6 +184,56 @@ export function lojasDoDestino(destino) {
     : { slug: l.slug, publico: (l.publico !== undefined ? l.publico : (destino?.publico ?? null)), orcamento: (l.orcamento ?? null) });
 }
 
+// Idempotência do destino 'nova': acha a campanha que ESTA rodada já criou pra ESTA loja.
+//
+// POR QUE: quando o subir para por rate limit, o job vira 'erro' com "re-disparar pra continuar" —
+// e não existe botão de re-disparar: o dono clica em Publicar de novo. Sem esta busca, o segundo
+// clique chamava criarCampanhaNova outra vez e criava uma SEGUNDA campanha por loja na Meta. O
+// cabeçalho deste arquivo promete "re-disparar sem duplicar", e isso só valia pro destino
+// 'existente'; a idempotência por nome de anúncio só evita ad repetido DENTRO de uma campanha.
+//
+// A chave é (rodada, loja), NUNCA o nome da campanha: `CFG_ADSET.DATA_CAMPANHA` é uma constante
+// congelada ('11-07-2026'), então TODA campanha da mesma loja+objetivo nasce com nome idêntico, em
+// qualquer rodada. Casar por nome faria uma rodada nova despejar anúncios na campanha de uma rodada
+// velha. Dentro de uma rodada, porém, é uma campanha por loja por definição. Pura p/ teste.
+export function campanhaDoRastro(rastros, lojaNome) {
+  const r = (rastros || []).find((x) => x?.meta_campaign_id && x.loja === lojaNome);
+  return r ? r.meta_campaign_id : null;
+}
+
+// O LAÇO MULTI-LOJA. Recebe `criar` e `subir` injetados (mesma costura do ativar-estudio.mjs) para
+// ser testável sem tocar no Graph. Devolve { resultados, falhas }.
+export async function subirPorLoja({ alvosLoja, lojas, objetivoRow, criar, subir, log = console.log }) {
+  const resultados = [];
+  const falhas = [];
+  for (const { slug, publico, orcamento } of alvosLoja) {
+    const loja = resolverLoja(lojas, slug);
+    if (!loja || !loja.marca) {
+      falhas.push({ loja: slug, erro: `loja inválida p/ destino 'nova': ${slug} (não está em fabrica_lojas, ativa e com marca)` });
+      log(`  loja ${slug}: FALHOU — não está cadastrada como loja ativa com marca`);
+      continue;
+    }
+    try {
+      const { campaignId: metaCampaignId, adsets } = await criar(loja, objetivoRow, publico, orcamento);
+      const r = await subir({ metaCampaignId, adsets, lojaNome: loja.nome });
+      resultados.push(r);
+      log(`  loja ${loja.nome}: campanha ${metaCampaignId} (${r.adIds?.length ?? 0} anúncio(s))`);
+    } catch (e) {
+      // NÃO propaga: a(s) loja(s) anterior(es) já criaram campanha DE VERDADE na Meta. Se o erro
+      // subir, o runner grava só `erro` e o `resultado` some — o Conferir e o Ativar deixam de
+      // enxergar o que subiu. Mesma política do ativar-estudio.mjs.
+      falhas.push({ loja: loja.nome, erro: String(e.message) });
+      log(`  loja ${loja.nome}: FALHOU — ${String(e.message).slice(0, 200)}`);
+    }
+  }
+  // Nenhuma subiu = não houve subida nenhuma: aí sim é erro do job inteiro (senão ele diria
+  // "concluído" sem ter criado nada).
+  if (!resultados.length) {
+    throw new Error(`nenhuma loja subiu — ${falhas.map((f) => `${f.loja}: ${f.erro}`).join(' | ')}`);
+  }
+  return { resultados, falhas };
+}
+
 // Sobe os criativos escolhidos NUMA campanha do Meta (idempotência + itens + subir + rastro).
 // MARCA já deve estar setada pro contexto da campanha (loja). Retorna { adIds, pendentes,
 // metaCampaignId, adsetIds }.
@@ -235,7 +285,7 @@ async function subirNumaCampanha({ metaCampaignId, adsets, escolhidos, destino, 
 // --- run(): API pública do módulo -------------------------------------------------------------
 export async function run({ campanhaId, destino, dry = false }) {
   const criouCampanha = destino?.tipo === 'nova';
-  if (dry) return { adIds: [], pendentes: 0, metaCampaignId: null, adsetIds: [], criouCampanha };
+  if (dry) return { adIds: [], pendentes: 0, metaCampaignId: null, adsetIds: [], falhas: [], criouCampanha };
 
   TOKEN = await loginServico();
 
@@ -249,12 +299,17 @@ export async function run({ campanhaId, destino, dry = false }) {
   //    Google Ads (YouTube), a conectar depois. Ele segue sendo gerado e curável, só não é veiculado
   //    aqui. Quando entrar o Google Ads, criar o subir-google.mjs que sobe justamente o 1920x1080.
   const escolhidos = await sbGet(`/fabrica_criativos?select=id,url,storage_path,legenda,sku,variante,formato&campanha_id=eq.${campanhaId}&escolhido=eq.true&purgado_em=is.null&formato=neq.1920x1080`);
-  if (escolhidos.length === 0) return { adIds: [], pendentes: 0, metaCampaignId: null, adsetIds: [], criouCampanha };
+  // Zero criativos escolhidos NÃO é sucesso. Sem a marca `semCriativos`, este retorno virava
+  // {status:'concluido', fecha:true} no runner: a tela dizia "Publicado (pausado)! 0 anúncios" e a
+  // rodada era FECHADA sem nada ter subido. Foi exatamente isso que aconteceu no job
+  // 66a8e030 (13/07/2026 22:49) — a "primeira vez que bugou e não subiu campanha" do relato do dono.
+  if (escolhidos.length === 0) return { adIds: [], pendentes: 0, metaCampaignId: null, adsetIds: [], falhas: [], criouCampanha, semCriativos: true };
 
   // 2) resolve destino -> sobe em 1 (existente / 1 loja) ou N campanhas (uma por loja). Cada
   //    campanha usa os MESMOS criativos escolhidos; o público é o mesmo (montarTargeting cai nas
   //    cidades da própria loja como fallback de geo). Sequencial (money-path).
   const resultados = [];
+  let falhas = [];
   if (destino?.tipo === 'existente') {
     MARCA = marcaAtiva;
     const adsets = await adsetsDaCampanha(destino.campaignId);
@@ -266,13 +321,31 @@ export async function run({ campanhaId, destino, dry = false }) {
     const campanha = (await sbGet(`/fabrica_campanhas?select=objetivo&id=eq.${campanhaId}`))[0];
     const { porChave } = await carregarObjetivos(sbGet);
     const objetivoRow = mapaObjetivo(porChave, campanha?.objetivo || 'engajamento');
-    for (const { slug, publico, orcamento } of alvosLoja) {
-      const loja = resolverLoja(lojas, slug);
-      if (!loja || !loja.marca) throw new Error(`loja inválida p/ destino 'nova': ${slug} (use tivoli|dp)`);
-      MARCA = loja.marca; // a loja pode pertencer a uma marca diferente da marcaAtiva global
-      const { campaignId: metaCampaignId, adsets } = await criarCampanhaNova(loja, objetivoRow, publico, orcamento);
-      resultados.push(await subirNumaCampanha({ metaCampaignId, adsets, escolhidos, destino, campanhaId, lojaNome: loja.nome }));
+    // rastro do que ESTA rodada já criou (uma linha por loja que subiu) — base da idempotência do
+    // 'nova'. Best-effort: se a leitura falhar, seguimos criando, que é o comportamento de antes.
+    let rastros = [];
+    try {
+      rastros = await sbGet(`/fabrica_meta_jobs?select=meta_campaign_id,loja,created_at&tipo=eq.estudio&payload->>campanhaId=eq.${campanhaId}&order=created_at.desc&limit=50`);
+    } catch (e) {
+      console.warn(`aviso: não li fabrica_meta_jobs (${e.message}) — re-disparo pode duplicar campanha`);
     }
+    const r = await subirPorLoja({
+      alvosLoja, lojas, objetivoRow,
+      criar: async (loja, obj, publico, orcamento) => {
+        MARCA = loja.marca; // a loja pode pertencer a uma marca diferente da marcaAtiva global
+        const ja = campanhaDoRastro(rastros, loja.nome);
+        if (ja) {
+          // re-disparo: reaproveita a campanha desta rodada em vez de criar outra igual.
+          console.log(`  loja ${loja.nome}: reaproveitando a campanha ${ja} que esta rodada já criou`);
+          return { campaignId: ja, adsets: await adsetsDaCampanha(ja) };
+        }
+        return criarCampanhaNova(loja, obj, publico, orcamento);
+      },
+      subir: ({ metaCampaignId, adsets, lojaNome }) =>
+        subirNumaCampanha({ metaCampaignId, adsets, escolhidos, destino, campanhaId, lojaNome }),
+    });
+    resultados.push(...r.resultados);
+    falhas = r.falhas;
   } else {
     throw new Error(`destino inválido: ${JSON.stringify(destino)} (use {tipo:'existente',campaignId} ou {tipo:'nova',loja|lojas})`);
   }
@@ -281,6 +354,7 @@ export async function run({ campanhaId, destino, dry = false }) {
   const pendentes = resultados.reduce((a, r) => a + r.pendentes, 0);
   return {
     adIds, pendentes, criouCampanha,
+    falhas,                                                      // lojas que NÃO subiram (as outras subiram)
     adsetIds: resultados.flatMap((r) => r.adsetIds),             // TODOS os adsets (agregado) — p/ ativar
     metaCampaignId: resultados[0]?.metaCampaignId || null,       // compat (1ª campanha)
     metaCampaignIds: resultados.map((r) => r.metaCampaignId),    // TODAS as campanhas — p/ ativar todas

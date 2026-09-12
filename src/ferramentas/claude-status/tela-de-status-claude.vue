@@ -1,10 +1,10 @@
 <template>
-  <!-- Painel de Status do Claude: mission control em linguagem simples (pra quem não é
+  <!-- Painel de Status da IA: mission control em linguagem simples (pra quem não é
        técnico). Robôs de IA em produção (custo/tempo/volume reais de ia_execucoes) +
        status dos projetos (projetos_status, derivado dos planos). Classes .csc- para não
        colidir com o CSS global. Full-bleed e responsivo. -->
   <div class="csc-tela">
-    <barra-de-topo voltar="Central" titulo="Status do Claude" @voltar="voltar">
+    <barra-de-topo voltar="Central" titulo="Status da IA" @voltar="voltar">
       <template #acoes>
         <span class="csc-live"><i></i>Ao vivo</span>
         <span class="csc-upd">{{ statusCarga }}</span>
@@ -31,20 +31,26 @@
           </p>
         </div>
         <div class="csc-hero-gasto">
-          <span class="csc-hero-gasto-lbl">Gasto real da Anthropic · últimos 30 dias</span>
-          <span v-if="gastoRealMesCarregando" class="csc-hero-gasto-val csc-carregando">…</span>
-          <span v-else-if="gastoRealMes" class="csc-hero-gasto-val">{{ fmtBRL(gastoRealMes.totalBrl) }}</span>
+          <span class="csc-hero-gasto-lbl">Gasto real de IA · últimos 30 dias</span>
+          <span v-if="carregandoAlgumRealMes" class="csc-hero-gasto-val csc-carregando">…</span>
+          <span v-else-if="totalRealMes.total !== null" class="csc-hero-gasto-val">{{ fmtBRL(totalRealMes.total) }}</span>
           <span v-else class="csc-hero-gasto-val csc-hero-gasto-indisp">indisponível</span>
-          <span v-if="gastoRealMes && !gastoRealMesCarregando" class="csc-hero-gasto-sub">valor de verdade cobrado — inclui <b>tudo</b>: os robôs, as buscas na web e as sessões de desenvolvimento com IA.</span>
-          <span v-else-if="gastoRealMesErro && !gastoRealMesCarregando" class="csc-hero-gasto-erro">Não consegui puxar o gasto real da Anthropic agora. Tente recarregar a página em instantes.</span>
-          <span class="csc-hero-gasto-est">Estimativa só dos robôs deste painel: <b>{{ fmtBRL(kpis.usdMes * CAMBIO) }}</b>. O número real acima costuma ser maior porque inclui muito mais que os robôs.</span>
+          <span v-if="!carregandoAlgumRealMes && totalRealMes.total !== null && !totalRealMes.completo" class="csc-hero-gasto-parcial">total <b>parcial</b>: falta a conta {{ totalRealMes.faltando.length === 1 ? 'da' : 'de' }} <b>{{ totalRealMes.faltando.join(' e ') }}</b>, então o de verdade é maior que este.</span>
+          <span v-if="!carregandoAlgumRealMes" class="csc-hero-gasto-quebra">
+            <span class="csc-hero-forn"><i>Anthropic</i>{{ gastoRealMes ? fmtBRL(gastoRealMes.totalBrl) : 'indisponível' }}</span>
+            <span class="csc-hero-forn"><i>OpenAI</i>{{ gastoOaMes ? fmtBRL(gastoOaMes.totalBrl) : 'indisponível' }}</span>
+          </span>
+          <span v-if="!carregandoAlgumRealMes && totalRealMes.total !== null" class="csc-hero-gasto-sub">valor de verdade cobrado pelas duas — inclui <b>tudo</b>: os robôs, as imagens da Fábrica, as buscas na web e as sessões de desenvolvimento com IA.</span>
+          <span v-if="(gastoRealMesErro || gastoOaMesErro) && !carregandoAlgumRealMes" class="csc-hero-gasto-erro">Não consegui puxar {{ gastoRealMesErro && gastoOaMesErro ? 'nenhuma das duas contas' : (gastoRealMesErro ? 'a conta da Anthropic' : 'a conta da OpenAI') }} agora. Tente recarregar a página em instantes.</span>
+          <span class="csc-hero-gasto-est">Estimativa só dos robôs deste painel: <b>{{ fmtBRL(kpis.usdMes * CAMBIO) }}</b>. O número real acima costuma ser maior porque inclui muito mais que os robôs.<template v-if="kpis.semCustoMes"> E <b>{{ kpis.semCustoMes }}</b> {{ kpis.semCustoMes === 1 ? 'execução ficou' : 'execuções ficaram' }} de fora desta estimativa: {{ kpis.semCustoMes === 1 ? 'ela usou' : 'elas usaram' }} a API paga da OpenAI: o custo <b>de cada uma</b> segue desconhecido, mas o <b>total</b> cobrado pela OpenAI já está contado no número acima.</template></span>
         </div>
       </section>
 
       <!-- LEGENDA: o que é "custo zero" -->
       <div class="csc-legenda">
         <span class="csc-tag csc-tag-zero">Custo zero</span>
-        <p>Tarefas que <b>criam imagens</b> ou <b>sobem anúncios</b> não usam a API paga (que cobra por uso) — só a assinatura. Então custam <b>R$ 0</b>. Já os <b>textos</b> (relatórios, análises, resumos) usam a API paga e têm custo em reais.</p>
+        <p><b>Sobem anúncios</b> não usa API paga nenhuma: custa <b>R$ 0</b> de verdade. Os <b>textos</b> (relatórios, análises, resumos) usam a API paga da Anthropic e têm custo em reais.</p>
+          <p><b>Criar imagens usa a API paga da OpenAI</b> (gpt-image-2) e <b>tem custo</b> — até 18/08/2026 esta tela dizia que era R$ 0, e estava errada. Desde então o <b>total cobrado pela OpenAI</b> aparece aqui, ao lado do da Anthropic. O que ainda não dá para saber é <b>quanto custou cada tarefa</b> separadamente: por isso elas continuam marcadas como <b>“custo ainda não conhecido”</b> no extrato detalhado, e <b>nunca</b> voltam a aparecer como R$ 0.</p>
       </div>
 
       <!-- SAÚDE DOS ROBÔS: só aparece quando há problema.
@@ -66,6 +72,15 @@
             </template>
             <template v-else>Nunca funcionou desde que passamos a medir.</template>
             <template v-if="r.falhas_24h"> Falhou {{ r.falhas_24h }}× nas últimas 24 horas.</template>
+          </p>
+          <!-- Um robô como o coletar-dados roda para 8 perfis, 4 vezes por dia.
+               Dizer só "coletar-dados parou" manda procurar agulha em 32 rodadas
+               — quando o banco já sabe exatamente qual delas travou. -->
+          <p v-if="r.quem_falhou && r.quem_falhou.length" class="csc-alerta-txt">
+            Parou {{ r.quem_falhou.length === 1 ? 'em' : 'em' }}
+            <b>{{ r.quem_falhou.join(', ') }}</b>{{ r.variantes_vivas > r.quem_falhou.length
+              ? ' — as outras ' + (r.variantes_vivas - r.quem_falhou.length) + ' rodadas deste robô estão em dia.'
+              : '.' }}
           </p>
           <p class="csc-alerta-porque">{{ r.porque }}</p>
         </div>
@@ -90,7 +105,7 @@
             <ul class="csc-robo-detalhes">
               <li><span class="csc-di-lbl">Última vez</span><span class="csc-di-val">{{ tempoRel(r.ult.run_at) }}</span></li>
               <li v-if="r.ult.duracao_ms"><span class="csc-di-lbl">Tempo que levou</span><span class="csc-di-val">{{ fmtDur(r.ult.duracao_ms) }}</span></li>
-              <li><span class="csc-di-lbl">Custo</span><span class="csc-di-val" :class="{ 'csc-zero': Number(r.ult.usd)===0 }">{{ custoFrase(r.ult.usd) }}</span></li>
+              <li><span class="csc-di-lbl">Custo</span><span class="csc-di-val" :class="{ 'csc-zero': ehZeroDeVerdade(r.ult.usd) }">{{ custoFrase(r.ult.usd) }}</span></li>
             </ul>
           </div>
           <div v-else class="csc-robo-corpo csc-robo-vazio">Ainda não rodou nenhuma vez.</div>
@@ -99,69 +114,6 @@
       </div>
 
       <faixa-de-erro :erro="erroCarregar" @tentar-de-novo="carregar" />
-
-      <!-- PROJETOS -->
-      <div class="csc-sec csc-sec-proj">
-        <div>
-          <h2 class="csc-sec-t">Projetos em construção</h2>
-          <p class="csc-sec-d">Em que pé está cada coisa. Da esquerda pra direita é o caminho: <b>ainda não começou → sendo construído → pronto e no ar</b>. Você pode <b>arrastar os cards</b> entre as colunas, ou usar o lápis pra editar.</p>
-        </div>
-        <button class="csc-add-btn" @click="abrirNovo('em-andamento')">+ Novo projeto</button>
-      </div>
-
-      <!-- Alterna entre o quadro curado e o quadro completo -->
-      <div class="csc-quadro-abas">
-        <button class="csc-quadro-aba" :class="{ ativa: quadro === 'simples' }" @click="quadro = 'simples'">
-          Acompanhamento
-          <span class="csc-quadro-cont">{{ projetosSimples.length }}</span>
-        </button>
-        <button class="csc-quadro-aba" :class="{ ativa: quadro === 'tecnico' }" @click="quadro = 'tecnico'">
-          Detalhado (automático)
-          <span class="csc-quadro-cont">{{ projetosTecnicos.length }}</span>
-        </button>
-      </div>
-      <p class="csc-quadro-desc">
-        <template v-if="quadro === 'simples'">
-          Só o que foi adicionado à mão — a lista curta do que vale acompanhar.
-        </template>
-        <template v-else>
-          Lido sozinho dos planos, sem ninguém tocar. Mostra tudo, inclusive o que só interessa a quem constrói.
-        </template>
-      </p>
-
-      <div class="csc-kanban">
-        <div v-for="col in colunas" :key="col.key" class="csc-col" :class="{ 'is-over': arrastando }" @dragover.prevent @dragenter.prevent @drop="onDropCol(col.key)">
-          <div class="csc-col-head" :class="'sit-' + col.key">
-            <span class="csc-col-nome">{{ col.label }}</span>
-            <span class="csc-col-acoes">
-              <span class="csc-col-cont">{{ (porSitAtivo[col.key] || []).length }}</span>
-              <button class="csc-col-add" title="Adicionar aqui" @click="abrirNovo(col.key)">+</button>
-            </span>
-          </div>
-          <p class="csc-col-desc">{{ col.desc }}</p>
-          <div class="csc-col-body">
-            <div v-for="p in (porSitAtivo[col.key] || [])" :key="p.projeto" class="csc-proj" draggable="true" @dragstart="onDrag(p)" @dragend="arrastando = null">
-              <div class="csc-proj-top">
-                <span class="csc-proj-titulo">{{ p.titulo }}</span>
-                <span class="csc-proj-tags">
-                  <span v-if="p.etapa" class="csc-proj-etapa" title="Etapa/fase atual">{{ p.etapa }}</span>
-                  <span v-if="p.manual" class="csc-proj-manual" title="Editado à mão (a leitura automática não mexe nele)">à mão</span>
-                </span>
-              </div>
-              <div v-if="p.descricao" class="csc-proj-desc">{{ p.descricao }}</div>
-              <template v-if="p.checkboxes_total">
-                <div class="csc-bar"><i :style="{ width: p.progresso + '%' }"></i></div>
-                <div class="csc-proj-prog">{{ p.progresso }}% pronto ({{ p.checkboxes_feitos }} de {{ p.checkboxes_total }} passos)</div>
-              </template>
-              <div class="csc-proj-ferramentas">
-                <button title="Editar" @click="abrirEditar(p)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
-                <button title="Remover" @click="excluir(p)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
-              </div>
-            </div>
-            <div v-if="!(porSitAtivo[col.key] || []).length" class="csc-col-vazio">{{ quadro === 'simples' ? 'Nada por aqui. Arraste um card ou clique no +.' : 'Nenhum plano nesta etapa.' }}</div>
-          </div>
-        </div>
-      </div>
 
       <!-- LINHA DO TEMPO -->
       <div class="csc-sec">
@@ -175,7 +127,7 @@
             <p class="csc-fi-frase"><b>{{ nomeRobo(e.robo) }}</b> {{ fraseAcao(e) }}</p>
             <p class="csc-fi-det">
               <span v-if="e.duracao_ms">Levou {{ fmtDur(e.duracao_ms) }}.</span>
-              <span :class="{ 'csc-zero': Number(e.usd)===0 }">{{ custoFrase(e.usd) }}</span>
+              <span :class="{ 'csc-zero': ehZeroDeVerdade(e.usd) }">{{ custoFrase(e.usd) }}</span>
             </p>
           </div>
           <span class="csc-fi-quando">{{ tempoRel(e.run_at) }}</span>
@@ -196,17 +148,40 @@
           </div>
         </div>
 
-        <!-- GASTO REAL: o número que realmente importa (a fatura da Anthropic). -->
+        <!-- GASTO REAL: o número que realmente importa — as DUAS faturas, e o total.
+             Cada fornecedor tem a sua própria chamada de rede: uma pode falhar sem a
+             outra. Por isso cada card diz o seu próprio estado, e o total lá em cima
+             se declara PARCIAL quando falta alguém, em vez de encolher calado. -->
         <div class="csc-real">
           <div class="csc-real-main">
-            <span class="csc-real-lbl">Gasto real cobrado pela Anthropic · {{ periodoLabel }}</span>
-            <span v-if="gastoRealCarregando" class="csc-real-val csc-carregando">…</span>
-            <span v-else-if="gastoReal" class="csc-real-val">{{ fmtBRL(gastoReal.totalBrl) }}</span>
+            <span class="csc-real-lbl">Gasto real de IA · {{ periodoLabel }}</span>
+            <span v-if="carregandoAlgumReal" class="csc-real-val csc-carregando">…</span>
+            <span v-else-if="totalRealPeriodo.total !== null" class="csc-real-val">{{ fmtBRL(totalRealPeriodo.total) }}</span>
             <span v-else class="csc-real-val csc-real-indisp">indisponível</span>
-            <span v-if="gastoReal && !gastoRealCarregando" class="csc-real-sub">equivale a {{ fmtUsd(gastoReal.totalUsd) }} · de {{ fmtDataCurta(gastoReal.desde) }} a {{ fmtDataCurta(gastoReal.ate) }}</span>
+            <span v-if="!carregandoAlgumReal && totalRealPeriodo.total !== null && !totalRealPeriodo.completo" class="csc-real-parcial">Total <b>parcial</b>: falta a conta {{ totalRealPeriodo.faltando.length === 1 ? 'da' : 'de' }} <b>{{ totalRealPeriodo.faltando.join(' e ') }}</b> — o valor de verdade é maior que este.</span>
           </div>
-          <p class="csc-real-exp">Este é o <b>valor de verdade</b> que a Anthropic cobrou no período. Inclui <b>tudo</b>: os robôs deste painel, as buscas na web, o cache e, principalmente, as <b>sessões de desenvolvimento com IA</b> (quando alguém programa junto com o Claude). Por isso costuma ser bem maior que a estimativa dos robôs logo abaixo.</p>
-          <p v-if="gastoRealErro && !gastoRealCarregando" class="csc-real-erro-box">Não consegui puxar o gasto real da Anthropic agora — tente recarregar em instantes. Os números abaixo são só a <b>estimativa dos robôs</b>, não o total cobrado.</p>
+
+          <div class="csc-real-cards">
+            <div class="csc-real-card">
+              <span class="csc-real-card-lbl">Anthropic</span>
+              <span v-if="gastoRealCarregando" class="csc-real-card-val csc-carregando">…</span>
+              <span v-else-if="gastoReal" class="csc-real-card-val">{{ fmtBRL(gastoReal.totalBrl) }}</span>
+              <span v-else class="csc-real-card-val csc-real-indisp">indisponível</span>
+              <span v-if="gastoReal && !gastoRealCarregando" class="csc-real-sub">{{ fmtUsd(gastoReal.totalUsd) }} · de {{ fmtDataCurta(gastoReal.desde) }} a {{ fmtDataCurta(gastoReal.ate) }}</span>
+              <span class="csc-real-card-oq">textos, análises e as sessões de desenvolvimento com IA</span>
+            </div>
+            <div class="csc-real-card">
+              <span class="csc-real-card-lbl">OpenAI</span>
+              <span v-if="gastoOaCarregando" class="csc-real-card-val csc-carregando">…</span>
+              <span v-else-if="gastoOa" class="csc-real-card-val">{{ fmtBRL(gastoOa.totalBrl) }}</span>
+              <span v-else class="csc-real-card-val csc-real-indisp">indisponível</span>
+              <span v-if="gastoOa && !gastoOaCarregando" class="csc-real-sub">{{ fmtUsd(gastoOa.totalUsd) }} · de {{ fmtDataCurta(gastoOa.desde) }} a {{ fmtDataCurta(gastoOa.ate) }}</span>
+              <span class="csc-real-card-oq">as imagens da Fábrica de Anúncios (gpt-image-2)</span>
+            </div>
+          </div>
+
+          <p class="csc-real-exp">Este é o <b>valor de verdade</b> que os dois fornecedores cobraram no período. Inclui <b>tudo</b>: os robôs deste painel, os criativos que a Fábrica gerou, as buscas na web, o cache e, principalmente, as <b>sessões de desenvolvimento com IA</b> (quando alguém programa junto com o Claude). Por isso costuma ser bem maior que a estimativa dos robôs logo abaixo.</p>
+          <p v-if="(gastoRealErro || gastoOaErro) && !carregandoAlgumReal" class="csc-real-erro-box">Não consegui puxar {{ gastoRealErro && gastoOaErro ? 'nenhuma das duas contas' : (gastoRealErro ? 'a conta da Anthropic' : 'a conta da OpenAI') }} agora — tente recarregar em instantes. O total acima está <b>incompleto</b>, e os números abaixo são só a <b>estimativa dos robôs</b>.</p>
         </div>
 
         <!-- DETALHAMENTO 1 — "Para onde o dinheiro foi" (por categoria): é o valor REAL
@@ -215,7 +190,7 @@
              — nunca inventamos um valor. -->
         <div class="csc-det">
           <div class="csc-det-head">
-            <h2 class="csc-sec-t">Para onde o dinheiro foi</h2>
+            <h2 class="csc-sec-t">Para onde o dinheiro foi · Anthropic</h2>
             <span class="csc-det-selo csc-det-selo-real">valor real</span>
           </div>
           <p class="csc-sec-d">É o valor <b>real</b> cobrado pela Anthropic, quebrado por modelo e tipo de uso (texto que entra, resposta que sai, cache…). A Anthropic não detalha chamada por chamada — <b>isto é o mais fino que existe</b>.</p>
@@ -234,7 +209,7 @@
              atribuição, não fatura por robô. Deixamos isso explícito, sem esconder. -->
         <div class="csc-det">
           <div class="csc-det-head">
-            <h2 class="csc-sec-t">Quem gastou</h2>
+            <h2 class="csc-sec-t">Quem gastou · Anthropic</h2>
             <span class="csc-det-selo csc-det-selo-rateado">rateado por uso</span>
           </div>
           <p class="csc-sec-d">A Anthropic <b>não</b> cobra separado por robô. Este valor é o custo real <b>rateado</b> pelo uso de cada chave (quanto cada uma consumiu) — é uma <b>estimativa de atribuição, não uma fatura por robô</b>.</p>
@@ -249,6 +224,43 @@
             </div>
           </div>
           <div v-else class="csc-det-vazio">Detalhamento por robô indisponível agora.</div>
+        </div>
+
+        <!-- DETALHAMENTO 3 — a OpenAI por modelo. Mesma ideia do da Anthropic, e
+             também valor REAL cobrado. -->
+        <div class="csc-det">
+          <div class="csc-det-head">
+            <h2 class="csc-sec-t">Para onde o dinheiro foi · OpenAI</h2>
+            <span class="csc-det-selo csc-det-selo-real">valor real</span>
+          </div>
+          <p class="csc-sec-d">É o valor <b>real</b> cobrado pela OpenAI, quebrado por modelo e tipo de uso. <b>Imagem</b> é o que a Fábrica gera; <b>texto</b> é o que o modelo lê e escreve em volta.</p>
+          <div v-if="gastoOaCarregando" class="csc-det-vazio">Carregando…</div>
+          <div v-else-if="detCategoriaOa.length" class="csc-det-lista">
+            <div v-for="(c, i) in detCategoriaOa" :key="'oacat' + i" class="csc-det-linha">
+              <span class="csc-det-nome">{{ traduzCategoriaOa(c.item) }}</span>
+              <span class="csc-det-val">{{ fmtBRL(Number(c.usd) * CAMBIO) }}</span>
+            </div>
+          </div>
+          <div v-else class="csc-det-vazio">Detalhamento por modelo indisponível agora.</div>
+        </div>
+
+        <!-- DETALHAMENTO 4 — quem gastou, na OpenAI. Aqui, ao contrário da
+             Anthropic, NÃO é rateio: a OpenAI cobra separado por chave de API,
+             então cada linha é a conta de verdade daquela chave. -->
+        <div class="csc-det">
+          <div class="csc-det-head">
+            <h2 class="csc-sec-t">Quem gastou · OpenAI</h2>
+            <span class="csc-det-selo csc-det-selo-real">valor real</span>
+          </div>
+          <p class="csc-sec-d">A OpenAI <b>cobra separado por chave</b> — então, diferente da Anthropic logo acima, isto <b>não é rateio</b>: cada linha é a conta de verdade daquela chave.</p>
+          <div v-if="gastoOaCarregando" class="csc-det-vazio">Carregando…</div>
+          <div v-else-if="detChaveOa.length" class="csc-det-lista">
+            <div v-for="(k, i) in detChaveOa" :key="'oachave' + i" class="csc-det-linha">
+              <span class="csc-det-nome">{{ traduzChaveOa(k.nome) }}</span>
+              <span class="csc-det-val">{{ fmtBRL(Number(k.usd) * CAMBIO) }}</span>
+            </div>
+          </div>
+          <div v-else class="csc-det-vazio">Detalhamento por chave indisponível agora.</div>
         </div>
 
         <div class="csc-kpis">
@@ -278,46 +290,25 @@
             <span class="csc-ex-data">{{ fmtData(e.run_at) }}</span>
             <span class="csc-ex-area">{{ areaDe(e.robo) }}</span>
             <span class="csc-ex-oque">{{ fraseAcaoMaiuscula(e) }}</span>
-            <span class="csc-ex-v" :class="{ 'csc-zero': Number(e.usd) === 0 }">{{ Number(e.usd) === 0 ? 'R$ 0' : fmtBRL(e.usd * CAMBIO) }}</span>
+            <span class="csc-ex-v" :class="{ 'csc-zero': ehZeroDeVerdade(e.usd) }">{{ custoCurto(e.usd) }}</span>
           </div>
           <div v-if="execucoesPeriodo.length" class="csc-ex-row csc-ex-tot"><span></span><span></span><span>Total estimado (só robôs)</span><span class="csc-ex-v">{{ fmtBRL(exResumo.usd * CAMBIO) }}</span></div>
           <div v-if="!execucoesPeriodo.length" class="csc-fi-vazio">Nenhuma tarefa nesse período.</div>
         </div>
       </div><!-- fim aba extrato -->
     </div>
-
-    <!-- Modal criar/editar projeto -->
-    <div v-if="modal.aberto" v-trava-rolagem class="csc-modal-bg" @click.self="fecharModal">
-      <div class="csc-modal">
-        <h3 class="csc-modal-t">{{ modal.editando ? 'Editar projeto' : 'Novo projeto' }}</h3>
-        <label class="csc-campo"><span>Nome do projeto</span><input v-model="modal.titulo" type="text" placeholder="Ex.: Portal de Notícias" @keyup.enter="salvarModal"></label>
-        <label class="csc-campo"><span>Etapa (opcional)</span><input v-model="modal.etapa" type="text" placeholder="Ex.: Fase 2, SP6…"></label>
-        <label class="csc-campo"><span>Descrição (opcional)</span><textarea v-model="modal.descricao" rows="3" placeholder="Em que pé está, em uma ou duas frases."></textarea></label>
-        <label class="csc-campo"><span>Situação</span>
-          <select v-model="modal.situacao">
-            <option v-for="c in colunas" :key="c.key" :value="c.key">{{ c.label }}</option>
-          </select>
-        </label>
-        <div class="csc-modal-foot">
-          <button class="csc-btn-sec" @click="fecharModal">Cancelar</button>
-          <button class="csc-btn-pri" @click="salvarModal">{{ modal.editando ? 'Salvar' : 'Criar' }}</button>
-        </div>
-      </div>
-    </div>
   </div>
 </template>
 
 <script setup>
-import { onMounted, onUnmounted, ref, reactive, computed, watch } from 'vue'
+import { fraseDoCusto, ehZeroDeVerdade, somarFornecedores } from './custo-do-extrato.js'
+import { criarCacheDeCusto } from './cache-de-custo.js'
+import { onMounted, onUnmounted, ref, computed, watch } from 'vue'
 import BarraDeTopo from '../../compartilhado/barra-de-topo.vue'
 import { useRouter } from 'vue-router'
 import { sb } from '../../compartilhado/buscar-e-salvar-dados.js'
 import { sbClient } from '../../compartilhado/conectar-no-banco-de-dados.js'
-import { adminToast } from '../../compartilhado/avisos.js'
 import FaixaDeErro from '../../compartilhado/faixa-de-erro.vue'
-// Trava a rolagem do fundo enquanto o modal de projeto estiver aberto (bronca
-// do dono: "abro um modal e a tela atrás continua rolando").
-import { vTravaRolagem } from '../../compartilhado/travar-rolagem-de-fundo.js'
 
 const router = useRouter()
 const voltar = () => router.push({ name: 'inicio' })
@@ -335,29 +326,13 @@ const ROBOS = [
   { slug: 'fabrica-gerar',    label: 'Fábrica · Criar Criativos', faz: 'Cria as imagens (criativos) dos anúncios.', quando: 'quando você manda', verbo: 'Criou' },
   { slug: 'fabrica-subir',    label: 'Fábrica · Subir Campanha', faz: 'Monta a campanha e sobe os anúncios para o Meta.', quando: 'quando você manda', verbo: 'Subiu' },
   { slug: 'fabrica-ativar',   label: 'Fábrica · Ligar Anúncios', faz: 'Liga os anúncios no Gerenciador do Meta.', quando: 'quando você manda', verbo: 'Ligou' },
-  { slug: 'status-projetos',  label: 'Atualizador do Painel', faz: 'Atualiza este painel com o andamento dos projetos.', quando: 'a cada mudança nos planos', verbo: 'Atualizou' },
+  { slug: 'status-projetos',  label: 'Andamento dos Projetos', faz: 'Lê os planos e anota em que pé está cada projeto. O quadro saiu desta tela em 19/08/2026; ele segue guardando o andamento, que fica no banco.', quando: 'a cada mudança nos planos', verbo: 'Anotou' },
   { slug: 'sugerir-interesses', label: 'Sugestões de Interesse', faz: 'Descobre os interesses de público de cada objetivo buscando no catálogo do Meta, e mostra na Fábrica.', quando: 'todo domingo de manhã', verbo: 'Sugeriu' },
 ]
 const META = Object.fromEntries(ROBOS.map(r => [r.slug, r]))
 const nomeRobo = (slug) => (META[slug]?.label) || slug
 
-// Colunas do kanban, em linguagem bem literal.
-// A ORDEM aqui é o caminho que um projeto percorre: começa, é construído, e fica
-// pronto. Antes "Fazendo agora" vinha ANTES de "Ainda não começou" — o meio antes
-// do início — e por isso o quadro não se lia como algo caminhando.
-//
-// "Parado" fica por último de propósito: não é uma etapa do caminho, é o desvio.
-// Projeto parado saiu da esteira; deixá-lo no meio dava a impressão de que todo
-// mundo passa por ali.
-const colunas = [
-  { key: 'planejado',    label: '1 · Ainda não começou', desc: 'Está na fila. O trabalho ainda não foi iniciado.' },
-  { key: 'em-andamento', label: '2 · Sendo construído',  desc: 'Alguém está trabalhando nisso agora.' },
-  { key: 'no-ar',        label: '3 · Pronto e no ar',    desc: 'Terminado e funcionando de verdade, em produção.' },
-  { key: 'pausado',      label: '⏸ Parado',              desc: 'Começou e travou. Está esperando alguma coisa pra destravar.' },
-]
-
 const execucoes = ref([])
-const projetos = ref([])
 const relogio = ref('')
 const statusCarga = ref('carregando…')
 
@@ -387,8 +362,13 @@ function tempoRel(iso) {
 // Frase do custo, em reais e explicando o "custo zero".
 // Compacto (cabe numa linha nos cards). A explicação completa do "custo zero"
 // (não usou API paga, só a assinatura) fica na legenda do topo.
-function custoFrase(usd) {
-  return Number(usd) === 0 ? 'R$ 0 · sem API paga' : `${fmtBRL(Number(usd) * CAMBIO)} · ${fmtUsd(usd)}`
+// A regra das TRÊS situações (valor / zero de verdade / não sei) mora em
+// custo-do-extrato.js, com teste. Aqui ela virava `Number(usd) === 0`, e
+// `Number(null) === 0` é TRUE — foi assim que "não sei" virou "R$ 0".
+function custoFrase(usd) { return fraseDoCusto(usd, CAMBIO) }
+function custoCurto(usd) {
+  if (!Number.isFinite(Number(usd)) || usd === null || usd === undefined) return 'não conhecido'
+  return Number(usd) === 0 ? 'R$ 0' : fmtBRL(Number(usd) * CAMBIO)
 }
 // Coloca a unidade no singular quando a quantidade é 1 ("1 relatório", não "1 relatórios").
 function unid(n, u) {
@@ -408,14 +388,18 @@ const kpis = computed(() => {
   const now = Date.now()
   const DIA = 86400000
   const inicioHoje = new Date(); inicioHoje.setHours(0, 0, 0, 0)
-  let usdHoje = 0, usdMes = 0, acoes = 0, itens = 0, tempoMs = 0
+  // `execucoesSemCusto` existe para a estimativa não mentir por omissão: sem
+  // ela, uma geração de imagem sem preço conhecido simplesmente não entrava na
+  // conta e o total parecia completo.
+  let usdHoje = 0, usdMes = 0, acoes = 0, itens = 0, tempoMs = 0, semCustoMes = 0
   for (const e of execucoes.value) {
     const t = new Date(e.run_at).getTime()
-    const usd = Number(e.usd) || 0
+    const desconhecido = e.usd === null || e.usd === undefined
+    const usd = desconhecido ? 0 : (Number(e.usd) || 0)
     if (t >= inicioHoje.getTime()) usdHoje += usd
-    if (now - t <= 30 * DIA) { usdMes += usd; acoes++; itens += Number(e.itens) || 0; tempoMs += Number(e.duracao_ms) || 0 }
+    if (now - t <= 30 * DIA) { usdMes += usd; acoes++; itens += Number(e.itens) || 0; tempoMs += Number(e.duracao_ms) || 0; if (desconhecido) semCustoMes++ }
   }
-  return { usdHoje, usdMes, acoes, itens, tempoMs }
+  return { usdHoje, usdMes, acoes, itens, tempoMs, semCustoMes }
 })
 
 // Robôs: mostra os que já rodaram primeiro (por última execução), depois os conhecidos que faltam.
@@ -429,32 +413,6 @@ const robosView = computed(() => {
     return tb - ta
   })
 })
-
-// Dois quadros, duas origens.
-//
-// O TÉCNICO é lido sozinho dos planos em docs/superpowers/plans/ (robô
-// status-projetos). É detalhado e mostra tudo — inclusive coisa que só interessa
-// a quem constrói. É o quadro que "atualiza sozinho".
-//
-// O SIMPLIFICADO tem só o que foi posto à mão. É a lista curta e curada: o que
-// alguém decidiu que merece ser acompanhado, sem o ruído dos 31 planos.
-//
-// A separação é por origem (`manual`), não por conteúdo — é o mesmo card, no
-// quadro certo.
-function _agruparPorSituacao(lista) {
-  const g = {}
-  for (const p of lista) (g[p.situacao] = g[p.situacao] || []).push(p)
-  return g
-}
-const projetosTecnicos = computed(() => projetos.value.filter(p => !p.manual))
-const projetosSimples  = computed(() => projetos.value.filter(p => !!p.manual))
-const porSitTecnico = computed(() => _agruparPorSituacao(projetosTecnicos.value))
-const porSitSimples = computed(() => _agruparPorSituacao(projetosSimples.value))
-
-// Qual quadro está na tela. Começa no curado: é a lista curta, a que responde
-// "em que pé estamos" sem os 31 planos no meio.
-const quadro = ref('simples')
-const porSitAtivo = computed(() => quadro.value === 'simples' ? porSitSimples.value : porSitTecnico.value)
 
 // ── extrato de gastos ──
 const aba = ref('visao')
@@ -473,12 +431,23 @@ const periodoLabel = computed(() => {
 // desenvolvimento com IA (Claude Code), as buscas na web e o cache. A edge
 // function `custo-anthropic` devolve esse número real (só admin tem acesso).
 // Nunca inventamos um número: se a busca falhar, mostramos o erro, nunca R$ 0.
-async function _buscarCustoReal(dias) {
+// A fatura é a MESMA pergunta para o total do topo e para o extrato quando os
+// dois olham 30 dias — que é como a tela abre. Sem isto, cada abertura fazia as
+// quatro chamadas (duas contas × duas janelas), e a mais lenta delas segurava o
+// número do topo. Ver `cache-de-custo.js` para os números medidos.
+const _cacheCusto = criarCacheDeCusto()
+
+async function _buscarCustoReal(funcao, dias) {
+  const guardado = _cacheCusto.ler(funcao, dias, Date.now())
+  if (guardado) return { dados: guardado }
   try {
-    const { data, error } = await sbClient.functions.invoke('custo-anthropic', { body: { dias } })
+    const { data, error } = await sbClient.functions.invoke(funcao, { body: { dias } })
     if (error) return { erro: error.message || 'não consegui falar com o servidor' }
     if (data && data.error) return { erro: data.detalhe || data.error }
     if (!data || typeof data.totalBrl !== 'number') return { erro: 'resposta sem valor' }
+    // Só o que deu certo é guardado: cachear erro grudaria a frase "não consegui
+    // puxar a conta" na tela por dez minutos depois de o problema já ter passado.
+    _cacheCusto.guardar(funcao, dias, data, Date.now())
     return { dados: data }
   } catch (e) {
     return { erro: (e && e.message) || 'falha inesperada' }
@@ -492,7 +461,7 @@ const gastoRealMesErro = ref(null)
 async function carregarGastoRealMes() {
   gastoRealMesCarregando.value = true
   gastoRealMesErro.value = null
-  const r = await _buscarCustoReal(30)
+  const r = await _buscarCustoReal('custo-anthropic', 30)
   gastoRealMesCarregando.value = false
   if (r.erro) { gastoRealMesErro.value = r.erro; gastoRealMes.value = null }
   else gastoRealMes.value = r.dados
@@ -508,14 +477,63 @@ async function carregarGastoReal() {
   const seq = ++_gastoRealSeq
   gastoRealCarregando.value = true
   gastoRealErro.value = null
-  const r = await _buscarCustoReal(dias)
+  const r = await _buscarCustoReal('custo-anthropic', dias)
   if (seq !== _gastoRealSeq) return // chegou uma resposta mais nova; descarta esta
   gastoRealCarregando.value = false
   if (r.erro) { gastoRealErro.value = r.erro; gastoReal.value = null }
   else gastoReal.value = r.dados
 }
-// Ao trocar o período, rebusca o gasto real daquela janela.
-watch(periodo, () => { carregarGastoReal() })
+// ── GASTO REAL da OpenAI (a outra fatura) ─────────────────────────────────
+// A Fábrica cria os criativos com gpt-image-2, que é API PAGA da OpenAI. O custo
+// POR EXECUÇÃO continua desconhecido (ninguém precificou o motor), mas o TOTAL
+// cobrado é conhecido desde 18/08/2026 — é o que a função `custo-openai` traz.
+// Ela é irmã da `custo-anthropic`: mesma segurança, mesmo formato de resposta.
+const gastoOaMes = ref(null)
+const gastoOaMesCarregando = ref(false)
+const gastoOaMesErro = ref(null)
+async function carregarGastoOaMes() {
+  gastoOaMesCarregando.value = true
+  gastoOaMesErro.value = null
+  const r = await _buscarCustoReal('custo-openai', 30)
+  gastoOaMesCarregando.value = false
+  if (r.erro) { gastoOaMesErro.value = r.erro; gastoOaMes.value = null }
+  else gastoOaMes.value = r.dados
+}
+
+const gastoOa = ref(null)
+const gastoOaCarregando = ref(false)
+const gastoOaErro = ref(null)
+let _gastoOaSeq = 0 // ignora respostas antigas se o período mudar durante a busca
+async function carregarGastoOa() {
+  const dias = periodo.value >= 3650 ? 90 : periodo.value
+  const seq = ++_gastoOaSeq
+  gastoOaCarregando.value = true
+  gastoOaErro.value = null
+  const r = await _buscarCustoReal('custo-openai', dias)
+  if (seq !== _gastoOaSeq) return // chegou uma resposta mais nova; descarta esta
+  gastoOaCarregando.value = false
+  if (r.erro) { gastoOaErro.value = r.erro; gastoOa.value = null }
+  else gastoOa.value = r.dados
+}
+
+// ── O TOTAL DOS DOIS ──────────────────────────────────────────────────────────
+// Somar aqui na mão seria o jeito de repetir o defeito: fornecedor que falhou
+// entraria como zero e o total apareceria menor que o verdadeiro, com cara de
+// número exato. Quem decide isso é `somarFornecedores`, que tem teste e devolve
+// também se a conta está COMPLETA — a tela avisa quando não está.
+const totalRealMes = computed(() => somarFornecedores({
+  Anthropic: gastoRealMes.value ? gastoRealMes.value.totalBrl : null,
+  OpenAI: gastoOaMes.value ? gastoOaMes.value.totalBrl : null,
+}))
+const totalRealPeriodo = computed(() => somarFornecedores({
+  Anthropic: gastoReal.value ? gastoReal.value.totalBrl : null,
+  OpenAI: gastoOa.value ? gastoOa.value.totalBrl : null,
+}))
+const carregandoAlgumReal = computed(() => gastoRealCarregando.value || gastoOaCarregando.value)
+const carregandoAlgumRealMes = computed(() => gastoRealMesCarregando.value || gastoOaMesCarregando.value)
+
+// Ao trocar o período, rebusca o gasto real daquela janela — os dois fornecedores.
+watch(periodo, () => { carregarGastoReal(); carregarGastoOa() })
 
 function fmtDataCurta(iso) {
   if (!iso) return ''
@@ -532,6 +550,10 @@ function fmtDataCurta(iso) {
 // "indisponível", nunca inventa número.
 const detCategoria = computed(() => Array.isArray(gastoReal.value?.porCategoria) ? gastoReal.value.porCategoria : [])
 const detChave = computed(() => Array.isArray(gastoReal.value?.porChave) ? gastoReal.value.porChave : [])
+// Na OpenAI os dois detalhamentos são REAIS: ela cobra separado por chave de API,
+// então "quem gastou" aqui é a conta de verdade, não um rateio como na Anthropic.
+const detCategoriaOa = computed(() => Array.isArray(gastoOa.value?.porCategoria) ? gastoOa.value.porCategoria : [])
+const detChaveOa = computed(() => Array.isArray(gastoOa.value?.porChave) ? gastoOa.value.porChave : [])
 
 // Traduz o nome técnico da categoria da Anthropic pra algo que o dono entende.
 // Nomes não reconhecidos voltam como vieram (nunca inventamos rótulo).
@@ -567,6 +589,38 @@ const ROBO_CHAVE = {
   sugeririnteresses: 'Sugestões de Interesse (Fábrica de Anúncios)',
 }
 const traduzChave = (nome) => ROBO_CHAVE[String(nome || '').toLowerCase()] || nome || '—'
+
+// ── OpenAI: os mesmos dois tradutores, para o vocabulário DELA ───────────────
+// A OpenAI nomeia a linha assim: "gpt-image-2-2026-04-21 image, output". Traduzir
+// importa mais aqui do que na Anthropic: numa tela sobre dinheiro, "image,
+// output" não diz a ninguém que aquilo é o criativo que a Fábrica gerou.
+function traduzCategoriaOa(item) {
+  const raw = String(item || '').trim()
+  const low = raw.toLowerCase()
+  // "gpt-image-2-2026-04-21" → "gpt-image-2" (a data da versão só polui a leitura)
+  const modelo = raw.split(',')[0].split(' ')[0].replace(/-\d{4}-\d{2}-\d{2}$/, '')
+  let tipo = ''
+  if (low.includes('cache write')) tipo = 'gravação de cache'
+  else if (low.includes('cached input')) tipo = 'cache reaproveitado (mais barato)'
+  else if (low.includes('image, output')) tipo = 'imagens geradas (saída)'
+  else if (low.includes('image, input')) tipo = 'imagem enviada (entrada)'
+  else if (low.includes('audio, input')) tipo = 'áudio enviado (entrada)'
+  else if (low.includes('text, output')) tipo = 'texto gerado (saída)'
+  else if (low.includes('text, input')) tipo = 'texto enviado (entrada)'
+  else if (low.includes('output')) tipo = 'respostas geradas (saída)'
+  else if (low.includes('input')) tipo = 'texto enviado (entrada)'
+  return tipo ? `${modelo} · ${tipo}` : (modelo || raw)
+}
+
+// Nome da chave na OpenAI (elas foram criadas sem espaço, como "FabricadeAnuncios").
+// Chave que ninguém mapeou aparece como veio — some do painel seria pior.
+const CHAVE_OA = {
+  fabricadeanuncios: 'Fábrica de Anúncios (criativos)',
+  engenhariadebolsas: 'Engenharia de Bolsas',
+  transiçãoaudioagentemotoeasy: 'Transição de áudio (agente Moto Easy)',
+  transicaoaudioagentemotoeasy: 'Transição de áudio (agente Moto Easy)',
+}
+const traduzChaveOa = (nome) => CHAVE_OA[String(nome || '').toLowerCase()] || nome || '—'
 
 // Cada robô pertence a uma "área" (o que o usuário chama de projeto) — pra consolidar o gasto.
 const AREA = {
@@ -636,9 +690,12 @@ const robosComProblema = computed(() =>
 )
 
 async function carregar() {
-  const [ex, pr, sa] = await Promise.all([
+  // `projetos_status` NÃO é lido aqui: o quadro de projetos saiu da tela em
+  // 19/08/2026. A tabela e o robô que a alimenta continuam intactos — se o
+  // quadro voltar um dia, o dado está lá. Buscar o que ninguém mostra só faz
+  // a tela demorar mais para abrir.
+  const [ex, sa] = await Promise.all([
     sb('ia_execucoes?select=*&order=run_at.desc&limit=200'),
-    sb('projetos_status?select=*&arquivado=is.false&order=ordem.desc'),
     // Saúde dos robôs agendados. NÃO entra no erroCarregar abaixo: se esta
     // consulta falhar, o painel inteiro não pode sumir por causa dela — o pior
     // que acontece é o aviso não aparecer.
@@ -648,69 +705,12 @@ async function carregar() {
   // Antes: falha virava [] e a tela dizia "0 execuções, R$ 0" como se fosse
   // verdade. Só sobrescreve os dados bons quando a busca deu certo — assim um
   // blip de rede no refresh de 60s não apaga o que já estava na tela.
-  erroCarregar.value = ex.erro || pr.erro || null
+  erroCarregar.value = ex.erro || null
   if (!ex.erro) execucoes.value = ex
-  if (!pr.erro) projetos.value = pr
   if (erroCarregar.value) return
   const hh = new Date()
   statusCarga.value = 'atualizado às ' + hh.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
 }
-
-// ── kanban interativo: arrastar + criar/editar/excluir ──
-const arrastando = ref(null)
-function onDrag(p) { arrastando.value = p }
-async function onDropCol(situacao) {
-  const p = arrastando.value
-  arrastando.value = null
-  if (!p || p.situacao === situacao) return
-  await moverPara(p, situacao)
-}
-async function moverPara(p, situacao) {
-  p.situacao = situacao // otimista
-  const { error } = await sbClient.from('projetos_status')
-    .update({ situacao, manual: true, atualizado_em: new Date().toISOString() })
-    .eq('projeto', p.projeto)
-  if (error) { adminToast('Não consegui mover: ' + error.message, false); carregar() }
-  else adminToast('Movido para "' + (colunas.find(c => c.key === situacao)?.label || situacao) + '"', true)
-}
-
-// Modal de criar/editar
-const modal = reactive({ aberto: false, editando: null, titulo: '', etapa: '', descricao: '', situacao: 'em-andamento' })
-function abrirNovo(situacao) {
-  Object.assign(modal, { aberto: true, editando: null, titulo: '', etapa: '', descricao: '', situacao: situacao || 'em-andamento' })
-}
-function abrirEditar(p) {
-  Object.assign(modal, { aberto: true, editando: p, titulo: p.titulo || '', etapa: p.etapa || '', descricao: p.descricao || '', situacao: p.situacao })
-}
-function fecharModal() { modal.aberto = false }
-function slugDe(txt) {
-  const base = (txt || 'projeto').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'projeto'
-  return 'm-' + base + '-' + Math.random().toString(36).slice(2, 6)
-}
-async function salvarModal() {
-  const t = modal.titulo.trim()
-  if (!t) { adminToast('Dá um nome pro projeto.', false); return }
-  const campos = { titulo: t, etapa: modal.etapa.trim() || null, descricao: modal.descricao.trim() || null, situacao: modal.situacao, manual: true, atualizado_em: new Date().toISOString() }
-  if (modal.editando) {
-    const { error } = await sbClient.from('projetos_status').update(campos).eq('projeto', modal.editando.projeto)
-    if (error) { adminToast('Erro ao salvar: ' + error.message, false); return }
-    adminToast('Projeto atualizado.', true)
-  } else {
-    const { error } = await sbClient.from('projetos_status').insert({ ...campos, projeto: slugDe(t), progresso: 0, arquivado: false, ordem: Math.floor(Date.now() / 86400000) })
-    if (error) { adminToast('Erro ao criar: ' + error.message, false); return }
-    adminToast('Projeto criado.', true)
-  }
-  modal.aberto = false
-  await carregar()
-}
-async function excluir(p) {
-  if (!window.confirm(`Tirar "${p.titulo}" do painel?`)) return
-  const { error } = await sbClient.from('projetos_status').update({ arquivado: true, manual: true }).eq('projeto', p.projeto)
-  if (error) { adminToast('Erro ao excluir: ' + error.message, false); return }
-  adminToast('Removido do painel.', true)
-  await carregar()
-}
-
 let _clockTimer = null, _refreshTimer = null
 function tickRelogio() {
   relogio.value = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
@@ -721,7 +721,15 @@ onMounted(() => {
   carregar()
   carregarGastoRealMes()
   carregarGastoReal()
-  _refreshTimer = setInterval(() => { carregar(); carregarGastoRealMes(); carregarGastoReal() }, 60000)
+  carregarGastoOaMes()
+  carregarGastoOa()
+  // O ciclo de 60s cuida só do que MUDA de minuto a minuto: o que os robôs
+  // acabaram de fazer. A fatura das duas contas de IA fica de fora de propósito
+  // — ela é fechada por DIA pelos fornecedores, e repuxá-la a cada minuto era o
+  // que fazia o número do topo ficar em "…" e a frase de erro piscar. Quem quiser
+  // o valor mais novo recarrega a página; passados 10 minutos, o cache vence
+  // sozinho e a próxima abertura já busca de novo.
+  _refreshTimer = setInterval(() => { carregar() }, 60000)
 })
 onUnmounted(() => {
   if (_clockTimer) clearInterval(_clockTimer)
@@ -776,6 +784,12 @@ onUnmounted(() => {
 .csc-hero-gasto-sub b { color: var(--text); font-weight: 600; }
 .csc-hero-gasto-indisp { font-size: clamp(20px, 3vw, 28px); color: var(--red); }
 .csc-hero-gasto-erro { font-size: 12.5px; color: var(--red); line-height: 1.5; max-width: 300px; font-weight: 500; }
+.csc-hero-gasto-parcial { font-size: 12px; line-height: 1.45; color: var(--orange); font-weight: 500; max-width: 300px; }
+.csc-hero-gasto-parcial b { font-weight: 700; }
+/* As duas contas por baixo do total: rótulo pequeno em cima, valor embaixo. */
+.csc-hero-gasto-quebra { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 2px; }
+.csc-hero-forn { display: flex; flex-direction: column; font-family: var(--fm); font-size: 14.5px; font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
+.csc-hero-forn i { font-family: inherit; font-style: normal; font-size: 10.5px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); }
 .csc-hero-gasto-est { margin-top: 8px; font-size: 11.5px; color: var(--muted); line-height: 1.5; max-width: 300px; padding-top: 8px; border-top: 1px dashed var(--border); }
 .csc-hero-gasto-est b { color: var(--text); font-weight: 600; }
 .csc-carregando { color: var(--muted); }
@@ -819,6 +833,17 @@ onUnmounted(() => {
 .csc-real-exp b { color: var(--text); font-weight: 600; }
 .csc-real-erro-box { font-size: 12.5px; line-height: 1.55; color: var(--red); background: color-mix(in srgb, var(--red) 8%, transparent); border: 1px solid color-mix(in srgb, var(--red) 28%, transparent); border-radius: var(--radius-md); padding: 10px 13px; }
 .csc-real-erro-box b { font-weight: 700; }
+/* Total parcial: precisa ser visível sem parecer erro — é um número certo,
+   só que incompleto. Por isso âmbar, e não vermelho. */
+.csc-real-parcial { font-size: 12.5px; line-height: 1.5; color: var(--orange); font-weight: 500; }
+.csc-real-parcial b { font-weight: 700; }
+/* As duas contas lado a lado; no celular viram uma embaixo da outra sozinhas,
+   sem media query — o minmax cuida disso. */
+.csc-real-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); gap: 12px; }
+.csc-real-card { display: flex; flex-direction: column; gap: 3px; padding: 13px 15px; border: 1px solid var(--border); border-radius: var(--radius-md); background: color-mix(in srgb, var(--accent) 4%, transparent); min-width: 0; }
+.csc-real-card-lbl { font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--accent); }
+.csc-real-card-val { font-family: var(--fm); font-size: clamp(22px, 3.2vw, 30px); font-weight: 600; color: var(--text); line-height: 1.1; letter-spacing: -.8px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.csc-real-card-oq { font-size: 11.5px; color: var(--muted); line-height: 1.45; margin-top: 2px; }
 
 /* DETALHAMENTO do gasto real: por categoria (real) e por robô (rateado) */
 .csc-det { display: flex; flex-direction: column; gap: 10px; }
@@ -883,80 +908,12 @@ onUnmounted(() => {
 .csc-robo-vazio { font-size: 13px; color: var(--muted); font-style: italic; }
 .csc-robo-foot { margin-top: auto; font-size: 11px; color: var(--muted); border-top: 1px solid var(--border); padding-top: 9px; }
 
-/* Kanban */
-.csc-kanban { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; align-items: start; }
-.csc-col { background: var(--surface2); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; animation: cscUp .5s cubic-bezier(.22,1,.36,1) both; transition: border-color .2s; }
-.csc-col-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 15px 4px; }
-.csc-col-nome { font-family: var(--fs); font-size: 12.5px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; }
-.csc-col-head.sit-em-andamento .csc-col-nome { color: var(--accent); }
-.csc-col-head.sit-no-ar .csc-col-nome { color: var(--green); }
-.csc-col-head.sit-pausado .csc-col-nome { color: var(--yellow); }
-.csc-col-head.sit-planejado .csc-col-nome { color: var(--muted); }
-.csc-col-cont { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1px 9px; font-size: 12px; font-weight: 600; color: var(--text); }
-.csc-col-desc { font-size: 11.5px; color: var(--muted); padding: 0 15px 10px; border-bottom: 1px solid var(--border); }
-.csc-col-body { padding: 11px; display: flex; flex-direction: column; gap: 10px; }
-.csc-proj { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 11px 13px; display: flex; flex-direction: column; gap: 7px; }
-.csc-proj-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.csc-proj-titulo { font-weight: 600; font-size: 13.5px; color: var(--text); }
-.csc-proj-etapa { font-size: 10px; font-weight: 700; letter-spacing: .5px; color: var(--accent-forte); background: var(--accent-light); border: 1px solid var(--accent-mid); border-radius: 5px; padding: 2px 7px; flex-shrink: 0; }
-.csc-proj-desc { font-size: 12px; line-height: 1.45; color: var(--muted); }
-.csc-bar { height: 6px; background: var(--surface2); border-radius: 4px; overflow: hidden; }
-.csc-bar i { display: block; height: 100%; background: var(--accent); border-radius: 4px; transition: width .4s ease; }
-.csc-proj-prog { font-size: 11px; color: var(--muted); }
 .csc-col-vazio { text-align: center; color: var(--muted); font-size: 12.5px; padding: 8px 6px; line-height: 1.4; }
 
-/* Kanban interativo */
-.csc-sec-proj { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
 .csc-sec-d b { color: var(--text); font-weight: 600; }
-.csc-add-btn { flex-shrink: 0; background: var(--accent); color: var(--sobre-cor); border: none; border-radius: var(--radius-sm); padding: 9px 16px; font-size: 13px; font-weight: 600; cursor: pointer; transition: filter .15s, transform .12s; }
-.csc-add-btn:hover { filter: brightness(1.08); transform: translateY(-1px); }
-.csc-col.is-over { outline: 2px dashed var(--accent-mid); outline-offset: -2px; }
-.csc-col-acoes { display: flex; align-items: center; gap: 7px; }
-.csc-col-add { width: 22px; height: 22px; border-radius: 5px; border: 1px solid var(--border); background: var(--surface); color: var(--muted); font-size: 16px; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: border-color .15s, color .15s; }
-.csc-col-add:hover { border-color: var(--accent); color: var(--accent); }
-.csc-proj { cursor: grab; position: relative; }
-.csc-proj:active { cursor: grabbing; }
-.csc-proj-tags { display: flex; align-items: center; gap: 5px; flex-shrink: 0; }
-.csc-proj-manual { font-size: 9px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; color: var(--muted); background: var(--surface2); border: 1px solid var(--border); border-radius: 4px; padding: 2px 5px; }
-.csc-proj-ferramentas { position: absolute; top: 8px; right: 8px; display: flex; gap: 4px; opacity: 0; transition: opacity .15s; }
-.csc-proj:hover .csc-proj-ferramentas, .csc-proj:focus-within .csc-proj-ferramentas { opacity: 1; }
-.csc-proj-ferramentas button { width: 24px; height: 24px; border-radius: 5px; border: 1px solid var(--border); background: var(--surface); color: var(--muted); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: border-color .15s, color .15s; }
-.csc-proj-ferramentas button:hover { border-color: var(--accent); color: var(--accent); }
-.csc-proj-ferramentas button:last-child:hover { border-color: var(--red); color: var(--red); }
-
-/* Modal */
-.csc-modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: flex; align-items: center; justify-content: center; z-index: 100; padding: 16px; backdrop-filter: blur(2px);padding-top:max(16px,env(safe-area-inset-top));padding-bottom:max(16px,env(safe-area-inset-bottom));padding-left:max(12px,env(safe-area-inset-left));padding-right:max(12px,env(safe-area-inset-right));touch-action:none;overscroll-behavior:contain;}
-/* Modal */
-.csc-modal-bg > *{overscroll-behavior:contain;touch-action:pan-y;}
-.csc-modal { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 22px; width: min(440px, 100%); box-shadow: var(--shadow-lg); display: flex; flex-direction: column; gap: 13px; }
-.csc-modal-t { font-family: var(--fd); font-size: 23px; font-weight: 600; color: var(--text); letter-spacing: -.3px; }
-.csc-campo { display: flex; flex-direction: column; gap: 5px; }
-.csc-campo span { font-size: 12px; font-weight: 600; color: var(--muted); }
-.csc-campo input, .csc-campo textarea, .csc-campo select { font-family: inherit; font-size: 14px; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 9px 11px; outline: none; transition: border-color .15s; }
-.csc-campo input:focus, .csc-campo textarea:focus, .csc-campo select:focus { border-color: var(--accent); }
-.csc-campo textarea { resize: vertical; }
-.csc-modal-foot { display: flex; justify-content: flex-end; gap: 10px; margin-top: 4px; }
-.csc-btn-sec { background: none; border: 1px solid var(--border); color: var(--muted); border-radius: var(--radius-sm); padding: 9px 16px; font-size: 13px; font-weight: 500; cursor: pointer; }
-.csc-btn-sec:hover { border-color: var(--muted); color: var(--text); }
-.csc-btn-pri { background: var(--accent); color: var(--sobre-cor); border: none; border-radius: var(--radius-sm); padding: 9px 18px; font-size: 13px; font-weight: 600; cursor: pointer; }
-.csc-btn-pri:hover { filter: brightness(1.08); }
 
 /* Abas + extrato */
 .csc-wrap { display: contents; }
-/* Abas dos dois quadros de projeto (curado × automático). Prefixo csc- como o
-   resto do arquivo — o estilos-globais.css tem classes genéricas e este projeto
-   já teve bug de colisão entre global e tela scoped. */
-.csc-quadro-abas { display: flex; gap: 4px; background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 4px; width: fit-content; margin: 4px 0 0; }
-.csc-quadro-aba { display: flex; align-items: center; gap: 7px; border: none; background: none; color: var(--muted); font-family: inherit; font-size: 12.5px; font-weight: 600; padding: 7px 14px; border-radius: var(--radius-sm); cursor: pointer; transition: background .15s, color .15s; }
-.csc-quadro-aba.ativa { background: var(--surface); color: var(--text); box-shadow: var(--shadow-sm); }
-.csc-quadro-cont { font-size: 11px; font-weight: 700; min-width: 18px; padding: 1px 5px; border-radius: 9px; background: var(--border); color: var(--muted); }
-.csc-quadro-aba.ativa .csc-quadro-cont { background: var(--text); color: var(--surface); }
-.csc-quadro-desc { font-family: 'IBM Plex Sans', sans-serif; font-size: 12.5px; color: var(--muted); margin: 8px 0 14px; max-width: 70ch; }
-@media (max-width: 640px) {
-  .csc-quadro-abas { width: 100%; }
-  .csc-quadro-aba { flex: 1; justify-content: center; padding: 8px 8px; font-size: 11.5px; }
-  .csc-quadro-desc { font-size: 11.5px; }
-}
 
 .csc-tabs { display: flex; gap: 4px; background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 4px; width: fit-content; }
 .csc-tabs button { border: none; background: none; color: var(--muted); font-family: inherit; font-size: 13.5px; font-weight: 600; padding: 8px 18px; border-radius: var(--radius-sm); cursor: pointer; transition: background .15s, color .15s; }
@@ -1019,6 +976,9 @@ onUnmounted(() => {
   .csc-hero { flex-direction: column; align-items: flex-start; }
   .csc-hero-gasto { text-align: left; padding-left: 16px; border-left-width: 3px; }
   .csc-robos { grid-template-columns: 1fr; }
+  /* A legenda é um flex de dois textos lado a lado. No celular isso virava duas
+     colunas de ~150px, com palavra quebrada no meio — ninguém lê assim. */
+  .csc-legenda { flex-direction: column; align-items: flex-start; gap: 10px; }
   .csc-tabs, .csc-periodo { width: 100%; }
   .csc-tabs button, .csc-periodo button { flex: 1; text-align: center; }
   /* Extrato empilhado no celular */

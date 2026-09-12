@@ -31,11 +31,16 @@ test('bensLivresParaFrota: listas vazias ou nulas não quebram', () => {
   assert.deepEqual(bensLivresParaFrota(null, null, CAT_VEICULO), [])
 })
 
-test('patchDoBem: preenche nome, marca, fipe e código a partir do bem', () => {
+test('patchDoBem: preenche nome, marca e fipe — e NÃO inventa código patrimonial', () => {
+  // Até 20/08/2026 esta função escrevia `String(bem.numero).padStart(6,'0')`, e
+  // escolher o bem 42 enchia o campo de código com "000042". Formato que não
+  // batia com NADA em uso: os carros antigos usam "RBB-00X", os novos usam o
+  // número puro ("298"), e nenhuma tela mostra seis dígitos. Era sugestão que
+  // ninguém pediu, num campo que a pessoa depois teria que limpar à mão.
   const vForm = { nome: '', marca: '', fipe: '', codigo_patrimonial: '' }
   const bem = { nome: 'BMW X1', marca: 'BMW', valor_centavos: 18500000, numero: 42 }
   assert.deepEqual(patchDoBem(vForm, bem), {
-    nome: 'BMW X1', marca: 'BMW', fipe: '185000', codigo_patrimonial: '000042',
+    nome: 'BMW X1', marca: 'BMW', fipe: '185000',
   })
 })
 

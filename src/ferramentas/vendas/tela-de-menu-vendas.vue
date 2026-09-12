@@ -94,30 +94,30 @@ onMounted(() => {
    era a faixa escura que se via no fim da tela. */
 .tela-menu-vendas{min-height:100vh;display:flex;flex-direction:column;background:transparent;position:relative;z-index:1;}
 .tela-menu-vendas .smenu-topbar{display:flex;align-items:center;justify-content:space-between;padding:13px 24px;border-bottom:1px solid var(--border);background:var(--surface);gap:16px;position:sticky;top:0;z-index:10;}
-.tela-menu-vendas .smenu-back{font-family:var(--fonte-principal);font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--accent);cursor:pointer;background:none;border:1px solid var(--accent-mid);border-radius:5px;padding:5px 10px;display:flex;align-items:center;gap:5px;transition:background .15s,opacity .15s;white-space:nowrap;}
+.tela-menu-vendas .smenu-back{font-family:var(--fonte-principal);font-size:max(9px, calc(10px * var(--escala-texto, 1)));font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--accent);cursor:pointer;background:none;border:1px solid var(--accent-mid);border-radius:5px;padding:5px 10px;display:flex;align-items:center;gap:5px;transition:background .15s,opacity .15s;white-space:nowrap;}
 .tela-menu-vendas .smenu-back:hover{background:var(--accent-light);}
-.tela-menu-vendas .smenu-title{font-family:var(--fonte-principal);font-size:15px;font-weight:500;letter-spacing:2.5px;text-transform:uppercase;color:var(--text);}
+.tela-menu-vendas .smenu-title{font-family:var(--fonte-principal);font-size:max(9px, calc(15px * var(--escala-texto, 1)));font-weight:500;letter-spacing:2.5px;text-transform:uppercase;color:var(--text);}
 .tela-menu-vendas .smenu-body{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:48px 24px;gap:40px;}
 .tela-menu-vendas .smenu-headline{text-align:center;}
-.tela-menu-vendas .smenu-headline h2{font-family:var(--fonte-principal);font-size:26px;font-weight:500;letter-spacing:3px;text-transform:uppercase;color:var(--text);margin-bottom:6px;}
-.tela-menu-vendas .smenu-headline p{font-family:var(--fonte-principal);font-size:12px;color:var(--muted);}
+.tela-menu-vendas .smenu-headline h2{font-family:var(--fonte-principal);font-size:max(16px, calc(26px * var(--escala-texto, 1)));font-weight:500;letter-spacing:3px;text-transform:uppercase;color:var(--text);margin-bottom:6px;}
+.tela-menu-vendas .smenu-headline p{font-family:var(--fonte-principal);font-size:max(9px, calc(12px * var(--escala-texto, 1)));color:var(--muted);}
 .tela-menu-vendas .smenu-cards{display:flex;gap:22px;flex-wrap:wrap;justify-content:center;}
 .tela-menu-vendas .smenu-card{position:relative;width:270px;min-height:210px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-xl);padding:30px 24px 48px;cursor:pointer;transition:all .25s;display:flex;flex-direction:column;gap:14px;overflow:hidden;}
 .tela-menu-vendas .smenu-card::before{content:'';position:absolute;inset:0;background:var(--accent);opacity:0;transition:opacity .2s;border-radius:18px;}
 .tela-menu-vendas .smenu-card:hover::before{opacity:.05;}
 .tela-menu-vendas .smenu-card:hover{border-color:var(--accent);transform:translateY(-3px);box-shadow:0 8px 32px rgba(0,0,0,.1);}
-.tela-menu-vendas .smenu-card-num{font-family:var(--fonte-principal);font-size:10px;letter-spacing:3px;color:var(--muted);text-transform:uppercase;font-weight:600;}
+.tela-menu-vendas .smenu-card-num{font-family:var(--fonte-principal);font-size:max(9px, calc(10px * var(--escala-texto, 1)));letter-spacing:3px;color:var(--muted);text-transform:uppercase;font-weight:600;}
 .tela-menu-vendas .smenu-card-icon{width:48px;height:48px;background:var(--accent);border-radius:12px;display:flex;align-items:center;justify-content:center;}
-.tela-menu-vendas .smenu-card-title{font-family:var(--fonte-principal);font-size:18px;font-weight:500;letter-spacing:1.5px;text-transform:uppercase;color:var(--text);line-height:1.2;}
-.tela-menu-vendas .smenu-card-desc{font-family:var(--fonte-principal);font-size:11px;color:var(--muted);line-height:1.7;}
-.tela-menu-vendas .smenu-card-enter{position:absolute;bottom:16px;right:18px;font-size:18px;color:var(--muted);transition:all .2s;}
+.tela-menu-vendas .smenu-card-title{font-family:var(--fonte-principal);font-size:max(16px, calc(18px * var(--escala-texto, 1)));font-weight:500;letter-spacing:1.5px;text-transform:uppercase;color:var(--text);line-height:1.2;}
+.tela-menu-vendas .smenu-card-desc{font-family:var(--fonte-principal);font-size:max(9px, calc(11px * var(--escala-texto, 1)));color:var(--muted);line-height:1.7;}
+.tela-menu-vendas .smenu-card-enter{position:absolute;bottom:16px;right:18px;font-size:max(16px, calc(18px * var(--escala-texto, 1)));color:var(--muted);transition:all .2s;}
 .tela-menu-vendas .smenu-card:hover .smenu-card-enter{transform:translateX(4px);color:var(--accent);}
 .tela-menu-vendas .smenu-cards.view-list{flex-direction:column;align-items:stretch;gap:8px;width:100%;max-width:640px;}
 .tela-menu-vendas .smenu-cards.view-list .smenu-card{width:100%;min-height:unset;flex-direction:row;padding:14px 18px 14px 20px;gap:16px;align-items:center;}
 .tela-menu-vendas .smenu-cards.view-list .smenu-card-num{display:none;}
 .tela-menu-vendas .smenu-cards.view-list .smenu-card-icon{width:42px;height:42px;border-radius:9px;flex-shrink:0;}
-.tela-menu-vendas .smenu-cards.view-list .smenu-card-title{font-size:14px;letter-spacing:1px;}
-.tela-menu-vendas .smenu-cards.view-list .smenu-card-desc{font-size:11px;margin:0;}
+.tela-menu-vendas .smenu-cards.view-list .smenu-card-title{font-size:max(9px, calc(14px * var(--escala-texto, 1)));letter-spacing:1px;}
+.tela-menu-vendas .smenu-cards.view-list .smenu-card-desc{font-size:max(9px, calc(11px * var(--escala-texto, 1)));margin:0;}
 .tela-menu-vendas .smenu-cards.view-list .smenu-card-enter{position:static;margin-left:auto;}
 @media(max-width:640px){
   .tela-menu-vendas .smenu-topbar{padding:8px 14px;flex-wrap:wrap;}
@@ -136,7 +136,7 @@ onMounted(() => {
 .tela-menu-vendas .smenu-card-embreve{cursor:default;opacity:.55;}
 .tela-menu-vendas .smenu-card-embreve:hover{border-color:var(--border);transform:none;box-shadow:none;}
 .tela-menu-vendas .smenu-card-embreve:hover::before{opacity:0;}
-.tela-menu-vendas .smenu-card-embreve-selo{position:absolute;bottom:16px;right:18px;font-family:var(--fonte-principal);font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);border:1px solid var(--border);border-radius:4px;padding:3px 7px;}
+.tela-menu-vendas .smenu-card-embreve-selo{position:absolute;bottom:16px;right:18px;font-family:var(--fonte-principal);font-size:max(9px, calc(9px * var(--escala-texto, 1)));font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);border:1px solid var(--border);border-radius:4px;padding:3px 7px;}
 .tela-menu-vendas .smenu-cards.view-list .smenu-card-embreve-selo{position:static;margin-left:auto;}
 
 

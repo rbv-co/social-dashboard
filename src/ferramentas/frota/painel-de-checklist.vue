@@ -36,7 +36,10 @@
  * Toda a decisão de O QUE perguntar mora em checklist.js, testado. Aqui só tem
  * tela. */
 import { ref, reactive, computed } from 'vue'
-import { cadenciasDoDia, itensDaFicha, problemasDaFicha, hodometroAceito } from '../../../supabase/functions/_shared/checklist.js'
+import {
+  cadenciasDoDia, itensDaFicha, problemasDaFicha, hodometroAceito,
+  resultadoDoChecklist, porQueDoResultado,
+} from '../../../supabase/functions/_shared/checklist.js'
 import CampoDeRabisco from './campo-de-rabisco.vue'
 
 const props = defineProps({
@@ -59,6 +62,14 @@ const props = defineProps({
   // parecendo assinada seria a mentira mais cara desta fase.
   podeAssinar: { type: Boolean, default: true },
   erroDaAssinatura: { type: String, default: '' },
+  /* O painel tem botão PRÓPRIO quando é o cartão do dia, na aba Motorista.
+   * Dentro da ficha de retirada ele NÃO tem: lá quem grava é o botão do pé da
+   * ficha, um só, que assina o checklist e tira o carro na mesma ação.
+   *
+   * Por que isso não é enfeite: com os dois botões, quem preenchia os itens e
+   * apertava o do pé (o grande, azul, no fim) tirava o carro e perdia tudo que
+   * tinha respondido, sem uma palavra. Aconteceu com o dono em 21/08/2026. */
+  botaoProprio: { type: Boolean, default: true },
 })
 const emit = defineEmits(['gravar'])
 
@@ -137,6 +148,10 @@ const ultimoKmBonito = computed(() =>
 const respondidos = computed(() => daFicha.value.filter((i) => respostas[i.id]).length)
 const faltam = computed(() => daFicha.value.length - respondidos.value)
 const problemas = computed(() => daFicha.value.filter((i) => respostas[i.id] === 'nao_ok'))
+/* As respostas no formato que `resultadoDoChecklist` lê — o mesmo que vai pro
+ * banco, pra a regra do resultado ser UMA só entre a tela e a conferência. */
+const respostasParaResultado = computed(() =>
+  daFicha.value.map((i) => ({ item_texto: i.item, estado: respostas[i.id] || null })))
 
 const titulo = computed(() => {
   if (cadencias.value.includes('mensal')) return 'Checklist de hoje, com a conferência do mês'
@@ -149,10 +164,14 @@ const titulo = computed(() => {
 // Deduzido, e trocável. No dia comum — tudo certo — a pessoa não decide nada.
 // Mas a palavra final continua sendo dela: `resultadoEscolhido` vence assim que
 // ela toca, e a D14 exige exatamente isso.
-const resultadoEscolhido = ref(null)
-const resultadoSugerido = computed(() => (problemas.value.length ? 'com_ressalvas' : 'liberado'))
-const resultado = computed(() => resultadoEscolhido.value || resultadoSugerido.value)
-const trocandoResultado = ref(false)
+/* DEDUZIDO, e só. `resultadoEscolhido` e `trocandoResultado` foram APAGADOS
+ * junto com o botão "mudar" — a D14 dizia que a palavra final era de quem
+ * confere, e o dono derrubou em 12/08/2026 pelo motivo certo: o pior desfecho
+ * que a regra permitia era marcar LIBERADO com vazamento embaixo do carro.
+ * A gravidade de cada item é do DONO (`impede_uso`, editável na aba Plano),
+ * não deste arquivo. */
+const resultado = computed(() => resultadoDoChecklist(respostasParaResultado.value, props.itens))
+const porQue = computed(() => porQueDoResultado(respostasParaResultado.value, props.itens))
 const RESULTADOS = [
   { chave: 'liberado', rotulo: 'Liberado' },
   { chave: 'com_ressalvas', rotulo: 'Com ressalvas' },
@@ -172,7 +191,16 @@ const textoDoBotao = computed(() => {
   return props.podeAssinar ? 'Assinar e gravar checklist' : 'Gravar checklist'
 })
 
-function gravar() {
+/**
+ * Confere o que está preenchido e monta a carga da gravação — ou devolve
+ * `null` e deixa na tela, escrito, o que falta.
+ *
+ * Separado do `gravar()` para poder ser chamado DE FORA (a ficha de retirada
+ * chama por `defineExpose`), sem duplicar a validação num segundo lugar. Duas
+ * regras de validação sobre a mesma ficha divergem com o tempo, e a mais
+ * frouxa é sempre a que grava.
+ */
+function validarEMontar() {
   erros.value = problemasDaFicha({
     hodometro: hodometroNumero.value, ultimoKm: props.ultimoKm,
     justificativa: justificativa.value, respostas, itens: daFicha.value,
@@ -184,8 +212,8 @@ function gravar() {
     erros.value = [...erros.value,
       'Digite sua senha para assinar. É a mesma senha com que você entra no aplicativo.']
   }
-  if (erros.value.length) return
-  emit('gravar', {
+  if (erros.value.length) return null
+  return {
     ficha: {
       veiculo_id: props.veiculo.id,
       feita_em: props.hoje,
@@ -212,8 +240,17 @@ function gravar() {
     assinatura: props.podeAssinar
       ? { senha: senha.value, aberta_em: abertaEm, rabisco: rabisco.value }
       : null,
-  })
+  }
 }
+
+function gravar() {
+  const carga = validarEMontar()
+  if (carga) emit('gravar', carga)
+}
+
+// A ficha de retirada usa isto para validar e gravar o checklist no MESMO
+// toque em que tira o carro.
+defineExpose({ validarEMontar })
 </script>
 
 <template>
@@ -233,6 +270,16 @@ function gravar() {
     <div class="ck-barra" aria-hidden="true">
       <div class="ck-barra-cheia" :style="{ width: (daFicha.length ? (respondidos / daFicha.length) * 100 : 0) + '%' }"></div>
     </div>
+
+    <!-- DUAS METADES, e no celular elas não existem: `.ck-corpo`, `.ck-trabalho`
+         e `.ck-fecho` são `display:contents` até o cartão passar de 900px de
+         largura, então abaixo disso o desenho é exatamente o de antes — nenhuma
+         caixa a mais, nenhum espaço a mais. Só no computador (e só na aba, nunca
+         no modal de retirada, que é estreito) elas viram duas colunas: à
+         esquerda o TRABALHO, à direita o FECHO, que fica grudado enquanto a
+         pessoa responde os itens. -->
+    <div class="ck-corpo">
+    <div class="ck-trabalho">
 
     <!-- O HODÔMETRO É O HERÓI. É o número do qual dependem o alerta de revisão e
          o custo por quilômetro, e o unico campo sem "não se aplica". -->
@@ -281,22 +328,34 @@ function gravar() {
                 placeholder="Conte o que você viu, pra quem for resolver saber o que procurar"></textarea>
     </label>
 
+    </div><!-- /.ck-trabalho -->
+    <div class="ck-fecho">
+
+    <!-- O RESULTADO NÃO SE ESCOLHE (pedido do dono, 12/08/2026, derrubando a
+         D14): ele sai do que foi conferido. A regra antiga deixava marcar
+         LIBERADO com vazamento embaixo do carro, e a ficha assinada registrava
+         isso como verdade. -->
     <div class="ck-resultado">
       <div class="ck-resultado-linha">
         <span class="ck-lab">Resultado</span>
         <strong class="ck-resultado-val" :class="resultado">{{ rotuloDoResultado }}</strong>
-        <button type="button" class="ck-trocar" @click="trocandoResultado = !trocandoResultado">
-          {{ trocandoResultado ? 'fechar' : 'mudar' }}
-        </button>
       </div>
-      <div class="ck-escolha larga" v-if="trocandoResultado">
-        <button v-for="r in RESULTADOS" :key="r.chave" type="button"
-                class="ck-op" :class="[r.chave, { marcado: resultado === r.chave }]"
-                @click="resultadoEscolhido = r.chave; trocandoResultado = false">{{ r.rotulo }}</button>
-      </div>
-      <!-- O carro NUNCA trava (D14). Dizer isso na tela evita a pessoa não marcar
-           "não liberado" com medo de deixar a empresa a pé. -->
-      <p class="ck-nota">Marcar "não liberado" não tira o carro de ninguém — só avisa quem administra.</p>
+      <!-- DIZ O PORQUÊ. "Não liberado" sozinho não ajuda ninguém a resolver;
+           com o nome do item, a pessoa sabe o que levar pra oficina. -->
+      <p class="ck-nota" v-if="porQue.graves.length">
+        O carro não sai por {{ porQue.graves.length === 1 ? 'isto' : 'estes' }}:
+        <strong>{{ porQue.graves.join(', ') }}</strong>. Avise quem administra a Frota.
+      </p>
+      <p class="ck-nota" v-else-if="porQue.leves.length">
+        Dá pra rodar, mas precisa resolver: <strong>{{ porQue.leves.join(', ') }}</strong>.
+      </p>
+      <p class="ck-nota" v-else>Nada marcado como problema.</p>
+      <!-- O carro nunca trava por si: o app avisa, não impede. Dizer isso evita
+           a pessoa esconder um problema com medo de deixar a empresa a pé. -->
+      <p class="ck-nota">
+        O resultado sai do que você marcou acima — ninguém digita ele. E "não liberado"
+        não tira o carro de ninguém: só avisa quem administra.
+      </p>
     </div>
 
     <!-- ASSINAR É O ÚLTIMO PASSO, e o cartão avisa ANTES o que ele faz. O banco
@@ -333,8 +392,13 @@ function gravar() {
       <li v-for="e in erros" :key="e">{{ e }}</li>
     </ul>
 
-    <button class="ck-gravar" :class="{ incompleto: faltam > 0 }"
+    <!-- Dentro da ficha de retirada este botão NÃO existe: lá o botão do pé da
+         ficha faz as duas coisas. Ver a prop `botaoProprio`. -->
+    <button v-if="botaoProprio" class="ck-gravar" :class="{ incompleto: faltam > 0 }"
             :disabled="gravando" @click="gravar">{{ textoDoBotao }}</button>
+
+    </div><!-- /.ck-fecho -->
+    </div><!-- /.ck-corpo -->
   </section>
 </template>
 
@@ -350,10 +414,22 @@ function gravar() {
   box-shadow: var(--shadow-sm);
   padding: var(--sp-4);
   margin: 0 14px var(--sp-4);
-  max-width: 640px;
+  /* ERA 640px FIXO, e no computador isso era o defeito inteiro: numa tela de
+     1440 o cartão ficava com 640px colados à esquerda e ~800px de fundo vazio
+     ao lado, com a pessoa rolando 730px de página. O teto agora é o que uma
+     linha de texto aguenta em duas colunas; a prosa tem trava própria mais
+     abaixo, pra faixa entre 640 e 900 (uma coluna larga) não virar linha
+     comprida demais de ler. */
+  max-width: 1100px;
   /* O cartão se mede a si mesmo, não à janela: ele vive na aba Motorista E
      dentro do modal de retirada, que é estreito mesmo num monitor grande. */
   container: ck / inline-size;
+}
+/* Navegador sem container query nunca chega nas duas colunas (a regra delas
+   vive num @container). Deixar o teto largo ali daria UMA coluna de 1100px,
+   que é pior que o de antes — então nesse caso o cartão volta aos 640. */
+@supports not (container-type: inline-size) {
+  .ck { max-width: 640px; }
 }
 
 /* ── Topo ─────────────────────────────────────────────────────────────────── */
@@ -534,6 +610,62 @@ function gravar() {
    de deixar a pessoa olhando um botão morto sem saber por quê. */
 .ck-gravar.incompleto { background: var(--surface2); color: var(--muted); }
 .ck-gravar:disabled { opacity: .6; cursor: default; }
+
+/* ── As duas metades ──────────────────────────────────────────────────────────
+   `display:contents` faz as três caixas SUMIREM da montagem: os filhos delas
+   sobem e se comportam como se estivessem soltos dentro do `.ck`, que é o que
+   o cartão sempre foi. É por isso que o celular e o modal de retirada não
+   mudam um pixel — não há caixa nova pra empurrar nada. */
+.ck-corpo, .ck-trabalho, .ck-fecho { display: contents; }
+
+/* A prosa não acompanha a largura do cartão. Numa coluna só de 900px, uma nota
+   de 12px vira uma linha de ~140 caracteres, que o olho perde ao voltar. */
+.ck-nota, .ck-aviso, .ck-hodo-ref, .ck-erro-assinatura { max-width: 72ch; }
+
+/* ── Computador: o trabalho de um lado, o fecho do outro ──────────────────────
+   900px é do CARTÃO, não da janela — o modal de retirada tem 420px num monitor
+   de 27", e medir a janela mandaria ele pra duas colunas dentro de 420px. */
+@container ck (min-width: 900px) {
+  .ck-corpo {
+    display: grid;
+    /* A esquerda é maior porque é onde se trabalha: o nome do item mais os três
+       botões precisam de linha. A direita tem um piso de 320px — abaixo disso o
+       quadro da assinatura fica pequeno demais pra assinar com o dedo. */
+    grid-template-columns: minmax(0, 1.4fr) minmax(320px, 0.9fr);
+    gap: var(--sp-5);
+    /* `start` é o que permite o grudado: com o padrão `stretch` a coluna da
+       direita teria a altura da esquerda inteira, e `sticky` não teria pra onde
+       deslizar. */
+    align-items: start;
+  }
+  .ck-trabalho, .ck-fecho { display: block; }
+  /* O FECHO ACOMPANHA A ROLAGEM. É o que faz a mudança valer a pena: o
+     resultado muda na frente da pessoa enquanto ela marca os itens, e o botão
+     de gravar não some tela abaixo. */
+  .ck-fecho { position: sticky; top: var(--sp-4); }
+  /* Em uma coluna, a linha horizontal separava o resultado da lista de itens.
+     Em duas, quem separa é a coluna — a linha viraria um risco solto no alto
+     da direita. */
+  .ck-fecho .ck-resultado { margin-top: 0; padding-top: 0; border-top: 0; }
+}
+
+/* ── O campo da quilometragem ─────────────────────────────────────────────────
+   Ele tinha a largura do cartão: 606px de campo pra caber seis dígitos. Aqui
+   ele ganha tamanho de número, e o "último registro" sobe pro lado, que é onde
+   se compara um número com o outro. No celular ele continua ocupando a linha
+   inteira — ali a largura é alvo de dedo, não enfeite. */
+@container ck (min-width: 560px) {
+  .ck-hodo {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    grid-template-areas: "lab lab" "campo ref";
+    align-items: center;
+    column-gap: var(--sp-3);
+  }
+  .ck-hodo-lab { grid-area: lab; }
+  .ck-hodo-caixa { grid-area: campo; width: 260px; }
+  .ck-hodo-ref { grid-area: ref; margin: 0; }
+}
 
 /* ── Tela estreita ────────────────────────────────────────────────────────────
    O ponto de quebra é por CONTAINER, não por viewport: este cartão aparece na

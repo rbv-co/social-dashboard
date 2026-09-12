@@ -12,8 +12,11 @@ self.addEventListener('push', (event) => {
     body: d.body || '',
     tag: d.tag || 'vendas-do-dia',
     renotify: true,
-    icon: '/midia/app-icon-192.png',
-    badge: '/midia/app-icon-192.png',
+    // O ícone e o EMBLEMA do aviso. O emblema é desenhado bem pequeno (na barra
+    // de status do Android é um risco de ~24px), e ali o logotipo inteiro não
+    // aparecia — mesmo motivo do favicon, corrigido em 13/08/2026.
+    icon: '/midia/icone-192.png',
+    badge: '/midia/icone-48.png',
     data: { url: d.url || '/gestao-vista' },
   };
   event.waitUntil(self.registration.showNotification(title, options));

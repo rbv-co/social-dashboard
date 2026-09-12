@@ -288,12 +288,45 @@ ele existe. Só no celular: no computador o mouse acerta o alvo real.
 - Raio: `--radius-sm/md/lg/xl`. Sombra: `--shadow-sm/md/lg`.
 - Cartão: `--card-radius` e `--card-pad`.
 - **Um assunto por bloco**, com um título de seção em cima
-  (10px, maiúsculas, `letter-spacing:1.5px`, `var(--muted)`).
+  (`--texto-etiqueta`, maiúsculas, `letter-spacing:1.5px`, `var(--muted)`).
 - **Uma ação principal por bloco.** Duas competindo é o mesmo que nenhuma.
 - Ordem dentro de uma tela: **o que decide vem antes do que depende.**
   (Na ficha: o vínculo vem antes da lotação, porque sem vínculo não há onde
   gravar a lotação.)
 - Tela é **full-bleed**: nada de coluna estreita centralizada.
+
+### Texto: só da escala, nunca um número escolhido no olho
+
+Tamanho de letra é igual a cor: **sai de token**. Quem escreve `font-size:13.5px`
+está escolhendo no olho, como quem escreve `background:#f2f2f2`.
+
+São **cinco degraus**, e cinco só (`src/estilos/estilos-globais.css`):
+
+| Degrau | Para | Base |
+|---|---|---|
+| `--texto-etiqueta` | rótulo em maiúsculas, cabeçalho de coluna, texto de botão | 11px |
+| `--texto-corpo` | o texto comum: parágrafo, linha de lista, célula | 13px |
+| `--texto-campo` | **campo de formulário** e o que se lê de pé: o nome da coisa, o recado da máquina, o aviso antes de uma ação | 16px |
+| `--texto-titulo` | título de caixa, e o dado que se confere letra por letra | 20px |
+| `--texto-numero` | o número que se lê de longe, de pé, na bancada | 32px |
+
+**PROIBIDO:** `font-size:13.5px`, `font-size:12px`, `font-size:max(9px, calc(14px * …))`
+— qualquer número escrito à mão.
+
+Cada degrau já vem com o `max(piso, calc(Npx * var(--escala-texto, 1)))` dentro:
+respeita o zoom de letra do usuário e tem piso para não sumir quando ele reduz.
+**`--texto-campo` nunca desce de 16px** — abaixo disso o iOS dá zoom ao focar
+(item 6 aqui em cima), e é por isso que ele é um degrau e não uma exceção.
+
+> **O estrago:** a tela de Autenticidade e Garantia tinha **15 tamanhos
+> distintos** — doze deles entre 10 e 26px, vários separados por meio pixel. O
+> dono reclamou dela três vezes, com estas palavras: *"vários tamanhos de fonte,
+> uma bosta, confuso"*. Meio pixel de diferença o olho não lê como hierarquia:
+> lê como bagunça. As irmãs estão no mesmo caminho — Frota 12, Patrimônio 16,
+> Gestão à Vista 26, Acessos 28.
+
+**As outras telas ainda não foram convertidas.** Elas vão uma a uma; o que não
+pode é tela NOVA, ou bloco novo em tela velha, nascer com número solto.
 
 ---
 
@@ -326,7 +359,7 @@ confira item a item.** Informação exibida, ação, texto explicativo — tudo.
 
 ## 9½. O padrão se verifica sozinho
 
-Cinco destas regras não dependem mais de você lembrar delas — `npm test` reprova:
+Seis destas regras não dependem mais de você lembrar delas — `npm test` reprova:
 
 | Verificado | Onde |
 |---|---|
@@ -335,6 +368,7 @@ Cinco destas regras não dependem mais de você lembrar delas — `npm test` rep
 | Fundo de modal trava o arrasto | idem |
 | Botão usa as três classes | idem |
 | Botão comum não tem fundo cinza | idem |
+| Tamanho de texto sai da escala (tela de Autenticidade) | `escala-de-texto.test.mjs` |
 | Diretiva usada está registrada | `diretiva-usada-esta-registrada.test.mjs` |
 | Todo `.vue` compila | `todo-vue-compila.test.mjs` |
 

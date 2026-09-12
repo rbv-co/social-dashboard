@@ -61,18 +61,23 @@ export const PASSOS = [
       + 'de retirar, não aqui. Já feito hoje? A tela avisa e não pede de novo.',
   },
   {
+    // Era `.fr-novo`, o botão solto de "+ Acrescentar veículo". Ele virou um dos
+    // botões rápidos do topo da aba (D33), e o passo passou a apontar pra bloco
+    // que não existia mais — o passeio quebrava calado. Agora aponta pro bloco
+    // dos botões, e o texto fala dos quatro, que é o que a pessoa vê na tela.
+    selector: '[data-tour="fr-botoes-gestao"]',
+    titulo: '3. Os quatro botões da Gestão',
+    texto: 'Cada um abre o que o nome diz, e a linha de baixo já responde antes de você '
+      + 'clicar: quantos carros faltam conferir hoje, quantos pedidos esperam decisão. '
+      + '"Acrescentar um veículo" abre uma ficha em branco — só nome e placa são '
+      + 'obrigatórios, e o carro nasce ativo e sem responsável fixo, de rodízio.',
+  },
+  {
     selector: '[data-tour="fr-cobranca-quadro"]',
-    titulo: '3. Quem já conferiu, e quem falta',
+    titulo: '4. Quem já conferiu, e quem falta',
     texto: 'Na aba Gestão, este quadro mostra carro por carro se o checklist de hoje foi '
       + 'feito. Quem falta e tem telefone cadastrado ganha um botão de WhatsApp pronto, já '
       + 'com a cobrança escrita — só falta enviar.',
-  },
-  {
-    selector: '.fr-novo',
-    titulo: '4. Cadastrar um carro novo',
-    texto: 'Abre uma ficha em branco. Só nome e placa são obrigatórios, e o carro nasce '
-      + 'ativo, sem responsável fixo — de rodízio, que qualquer um pode pegar. Pra dar um '
-      + 'responsável fixo a ele, abra a ficha de novo depois de gravar.',
   },
   {
     selector: '[data-tour="fr-secao-plano"]',
@@ -85,6 +90,14 @@ export const PASSOS = [
 
 /* ── Os 6 modais: passeio pelos campos, disparado pelo "?" ao lado do X ──── */
 
+// A ordem aqui segue a ordem em que os campos aparecem na tela (o passeio usa
+// scrollIntoView em cada passo — ver passeio-guiado.vue — e um passo fora de
+// ordem rola pra baixo e depois pra cima, o que lê como "perder o lugar").
+// Reordenado nesta fase: o reshuffle das seções (D32) moveu Histórico pra
+// antes de Contrato no HTML, e o passeio tinha ficado com a ordem antiga —
+// visitava Bem (o penúltimo campo) e só depois voltava pra Histórico (o
+// sétimo). tutorial.test.mjs agora prova que a ordem daqui bate com a ordem
+// do HTML, pra um reshuffle futuro não repetir isso sem ser pego pelo teste.
 export const PASSOS_VEICULO = [
   {
     selector: '[data-tour="veic-nome"]',
@@ -92,12 +105,6 @@ export const PASSOS_VEICULO = [
     texto: 'São por eles que o carro é reconhecido no sistema inteiro, e são os únicos '
       + 'dois obrigatórios. A placa pode ser digitada como você quiser: o sistema arruma '
       + 'sozinho.',
-  },
-  {
-    selector: '[data-tour="veic-contrato"]',
-    titulo: 'Contrato e aluguel',
-    texto: 'Estes carros são alugados, não são da empresa. É por isso que eles não entram '
-      + 'no valor do patrimônio, mesmo aparecendo lá na lista de bens.',
   },
   {
     selector: '[data-tour="veic-responsavel"]',
@@ -124,7 +131,7 @@ export const PASSOS_VEICULO = [
     selector: '[data-tour="veic-contato"]',
     titulo: 'Contato',
     texto: 'Um telefone de quem resolve as coisas deste carro. Pode ser o próprio '
-      + 'responsável ou outra pessoa — se for outra, diga o nome dela aqui, porque o '
+      + 'responsável ou outra pessoa — se for outra, diga o NOME dela aqui, porque o '
       + 'sistema usa esse número para cobrar o checklist e precisa saber de quem é.',
   },
   {
@@ -134,16 +141,22 @@ export const PASSOS_VEICULO = [
       + 'vencer, já com a quilometragem escrita na mensagem.',
   },
   {
-    selector: '[data-tour="veic-bem"]',
-    titulo: 'Bem no Patrimônio',
-    texto: 'Se este carro também está cadastrado no Patrimônio, ligue os dois aqui. Serve '
-      + 'para não ter dois cadastros do mesmo carro sem ninguém perceber.',
-  },
-  {
     selector: '[data-tour="veic-historico"]',
     titulo: 'Histórico de manutenção',
     texto: 'Cada troca feita, com a quilometragem. É daqui que sai o aviso de revisão '
       + 'vencendo — sem registro, o sistema não tem como avisar nada.',
+  },
+  {
+    selector: '[data-tour="veic-contrato"]',
+    titulo: 'Contrato e aluguel',
+    texto: 'Estes carros são alugados, não são da empresa. É por isso que eles não entram '
+      + 'no valor do patrimônio, mesmo aparecendo lá na lista de bens.',
+  },
+  {
+    selector: '[data-tour="veic-bem"]',
+    titulo: 'Bem no Patrimônio',
+    texto: 'Se este carro também está cadastrado no Patrimônio, ligue os dois aqui. Serve '
+      + 'para não ter dois cadastros do mesmo carro sem ninguém perceber.',
   },
 ]
 
@@ -180,17 +193,20 @@ export const PASSOS_FICHA_DETALHE = [
     texto: 'A conclusão de quem conferiu. Mesmo "não liberado" não tira o carro de '
       + 'ninguém: serve para avisar quem administra.',
   },
-  {
-    selector: '[data-tour="fdet-itens"]',
-    titulo: 'Cada item',
-    texto: 'OK é o que estava certo, Problema é o que precisa de atenção, Não se aplica é '
-      + 'o que aquele carro não tem.',
-  },
+  /* Anomalias antes de Cada item: é essa a ordem NA TELA. O passeio estava ao
+     contrário e descia até os itens pra depois voltar pra cima — quem está
+     seguindo o balão perde o fio quando ele anda pra trás. */
   {
     selector: '[data-tour="fdet-anomalias"]',
     titulo: 'Anomalias',
     texto: 'O que a pessoa escreveu com as próprias palavras. Só aparece quando ela '
       + 'marcou algum problema.',
+  },
+  {
+    selector: '[data-tour="fdet-itens"]',
+    titulo: 'Cada item',
+    texto: 'OK é o que estava certo, Problema é o que precisa de atenção, Não se aplica é '
+      + 'o que aquele carro não tem.',
   },
 ]
 

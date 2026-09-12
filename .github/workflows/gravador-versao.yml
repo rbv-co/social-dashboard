@@ -1,0 +1,70 @@
+# GERA E PUBLICA UMA VERSÃO DO GRAVADOR DE ETIQUETAS.
+#
+# POR QUE ISTO EXISTE: o instalador é do Windows, e ninguém na equipe monta
+# instalador de Windows a partir do Mac sem sofrer — precisa de `wine`, e numa
+# máquina ARM isso é uma tarde perdida. Aqui o próprio GitHub empresta uma
+# máquina Windows de verdade, monta o instalador e o publica.
+#
+# ONDE O INSTALADOR VAI PARAR: `rbv-co/gravador-de-etiquetas-versoes`, o
+# repositório público que só guarda instaladores. É de lá que o programa
+# instalado nas bancadas baixa a versão nova sozinho.
+#
+# POR QUE ELE MONTA MAS NÃO PUBLICA: publicar num OUTRO repositório é a única
+# coisa que o crachá automático do GitHub não faz — ele só vale para o
+# repositório onde a ação roda, e um token próprio teria de ser criado e
+# guardado à mão. Enquanto esse token não existir, a ação MONTA e GUARDA o
+# instalador aqui, e quem tem acesso publica a partir da própria máquina. Nada
+# fica pela metade e ninguém precisa de senha nova.
+#
+# PARA DEIXAR 100% AUTOMÁTICO no futuro: criar um token de acesso restrito ao
+# repositório das versões (permissão Contents: read and write), guardá-lo como
+# segredo `TOKEN_DAS_VERSOES`, e trocar `--publish never` por `--publish always`
+# com `GH_TOKEN` no ambiente do passo.
+#
+# ⚠️ A VERSÃO SAI DO `gravador/package.json`. O GitHub recusa criar duas vezes a
+# mesma versão: subir de novo sem trocar o número não sobrescreve, dá erro. E o
+# programa só se atualiza se o número for MAIOR que o instalado.
+name: Gravador — gerar e publicar versão
+
+on:
+  workflow_dispatch:
+
+jobs:
+  instalador-do-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node 22 porque o `npm test` daqui passa `*.test.mjs` para o `node
+      # --test`, e quem abre esse curinga é o próprio Node — o terminal do
+      # Windows não abre. Em Node 20 o teste rodaria com o nome literal e não
+      # acharia arquivo nenhum: passaria sem testar nada, que é pior que falhar.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Instalar as dependências do programa
+        working-directory: gravador
+        run: npm ci
+
+      - name: Rodar os testes NA MÁQUINA QUE VAI GERAR o instalador
+        working-directory: gravador
+        run: npm test
+
+      - name: Montar o instalador
+        working-directory: gravador
+        run: npx electron-builder --win --config electron-builder.config.cjs --publish never
+
+      # ⚠️ O `latest.yml` VAI JUNTO, e não é detalhe: é o arquivo que o programa
+      # instalado lê para saber que existe versão nova. Publicar só o `.exe`
+      # deixaria a atualização automática MUDA — o programa procuraria, não
+      # acharia o aviso, e ninguém descobriria que nunca atualiza.
+      - name: Guardar o instalador e o aviso de versão
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: instalador-windows
+          path: |
+            entregas/gravador-de-etiquetas/*.exe
+            entregas/gravador-de-etiquetas/latest.yml
+          if-no-files-found: error

@@ -12,7 +12,31 @@ const G = 'https://graph.facebook.com/v22.0';
 const RODADA = process.env.RODADA || new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
 const BUCKET = 'ig-cache';
 const N = 10;               // itens por galeria
-const VID_MAX_MB = 25;      // teto p/ re-hospedar vídeo (acima disso: fica poster + link p/ o IG)
+// Teto p/ re-hospedar vídeo. Acima dele o vídeo NÃO é copiado: o cartão fica com
+// o pôster e o clique abre o Reels no Instagram (ver o `mediaBlock` em
+// tela-de-noticias.vue, que já embrulha o pôster no link quando não há vídeo).
+//
+// ERA 25 E CAIU PRA 8 EM 19/08/2026, POR CAUSA DO ESPAÇO. O plano grátis do
+// Supabase dá 1 GB de arquivos e o projeto estava em 876 MB (86%). Medindo os 60
+// vídeos que o balde guardava (319 MB no total, quase 40% de TUDO):
+//
+//     teto   vídeos que ficam   viram pôster   peso do vídeo   economia
+//      25         60 de 60            0           319 MB          --
+//      12         54                  6           201 MB        118 MB
+//      10         52                  8           180 MB        139 MB
+//   ►   8         49                 11           154 MB        165 MB
+//       6         46                 14           132 MB        187 MB
+//       5         43                 17           115 MB        204 MB
+//       4         36                 24            82 MB        237 MB
+//
+// 8 é o joelho da curva: economiza 165 MB perdendo 11 vídeos dos 60 (18%).
+// Descer mais paga cada vez menos e custa cada vez mais Reels. Só QUATRO vídeos
+// pesavam 92 MB sozinhos — são eles que este teto corta.
+//
+// Este número é pra ser mexido: se o balde voltar a apertar, a tabela acima diz
+// exatamente o que cada degrau custa. Refazer a conta é uma consulta em
+// storage.objects filtrando mimetype video/mp4.
+const VID_MAX_MB = 8;
 
 const HANDLES = {
   'Santa Lolla': ['santa_lolla', 'santalolla', 'santalollaoficial'],

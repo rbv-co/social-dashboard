@@ -70,8 +70,22 @@ Deno.serve(async (req) => {
     }
 
     tentativas.delete(user.id);
-    // Encerra a sessão isolada explicitamente, pra não deixar token vivo à toa.
-    await isolado.auth.signOut();
+    // ⚠️ `scope: 'local'` NÃO É DETALHE — SEM ELE ESTA LINHA DERRUBA QUEM ACABOU
+    // DE CONFERIR A SENHA. O `signOut()` do supabase-js é GLOBAL por padrão:
+    // ele não encerra só este cliente isolado, ele REVOGA TODOS OS TOKENS
+    // daquele usuário — inclusive o do navegador que está com a tela aberta e o
+    // do programa da bancada, que loga com a mesma conta.
+    //
+    // O sintoma, relatado pelo dono em 04/09/2026: a primeira ação que pede
+    // senha funciona, e a SEGUINTE diz "sessão expirou". A conferência de senha
+    // estava derrubando a sessão de quem conferia — e a tela, que evita o
+    // `signInWithPassword` justamente para não trocar a sessão, era traída aqui
+    // dentro.
+    //
+    // Com `persistSession: false` a sessão isolada só existe na memória desta
+    // função e morre com ela de qualquer jeito; `local` limpa essa memória sem
+    // encostar nos tokens de ninguém.
+    await isolado.auth.signOut({ scope: 'local' });
     return json({ ok: true });
   } catch (err: unknown) {
     // Erro de infraestrutura, não de senha errada: recusa a assinatura e conta

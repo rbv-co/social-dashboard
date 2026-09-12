@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="RBV">
+  <!-- A VARIANTE "MASKABLE": mesmo desenho, com folga.
+       O Android recorta o ícone num círculo (ou numa gota, ou num quadrado
+       arredondado — cada fabricante escolhe) e só garante a área central, 80%
+       do lado. O monograma do `favicon.svg` ocupa quase toda a largura, então
+       num recorte redondo o R e o V perderiam a perna. Aqui ele entra a 62%,
+       centralizado, e sobra margem preta para o recorte comer. -->
+  <rect width="512" height="512" fill="#000000"/>
+  <g transform="translate(256 256) scale(0.62) translate(-256 -256)">
+    <text x="256" y="266" text-anchor="middle" dominant-baseline="middle"
+          font-family="Georgia, 'Times New Roman', 'Liberation Serif', serif"
+          font-size="176" font-weight="400" letter-spacing="2" fill="#ffffff">RBV</text>
+    <rect x="126" y="330" width="260" height="14" fill="#ffffff"/>
+  </g>
+</svg>

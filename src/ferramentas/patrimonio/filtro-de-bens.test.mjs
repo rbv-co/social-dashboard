@@ -91,6 +91,15 @@ test('a busca continua achando pela observação do bem', () => {
   assert.deepEqual(filtrarBens(com, { busca: 'trincada' }).map(b => b.id), ['z'])
 })
 
+test('busca acha o bem pelo IMEI / número de série', () => {
+  const bens = [
+    { id: '1', nome: 'Macbook Air', numero: 47, numero_serie: 'C02XK1ABJGH5' },
+    { id: '2', nome: 'Cadeira', numero: 48, numero_serie: null },
+  ]
+  const achados = filtrarBens(bens, { ...FILTRO_VAZIO, busca: 'c02xk1' })
+  assert.deepEqual(achados.map((b) => b.id), ['1'], 'digitar parte do serial tem que achar o aparelho')
+})
+
 test('texto de fora vazio ou quebrado não derruba a busca', () => {
   assert.equal(filtrarBens(BENS, { busca: 'macbook' }, () => null).length, 1)
   assert.equal(filtrarBens(BENS, { busca: 'macbook' }, null).length, 1)

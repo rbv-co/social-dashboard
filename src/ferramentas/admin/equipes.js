@@ -55,14 +55,29 @@ export function podeAdministrarTime(eu, papelNoTime) {
   return nivelDo(papelNoTime) >= nivelDo('gestor');
 }
 
+// ⚠️ A SUPERVISORA NÃO SE CONCEDE DENTRO DO TIME (27/08/2026).
+//
+// Decisão do dono no desenho do canal pai: "a supervisora fica a nível pai,
+// gestora e vendedora fica a nível loja". Ela agora mora em
+// `canais_grupos_membros`, e o alcance dela é o GRUPO inteiro — oferecê-la
+// também aqui daria dois lugares para conceder a mesma coisa, com alcances
+// diferentes, e ninguém saberia qual vale.
+//
+// ELA CONTINUA EM `PAPEIS`, de propósito: o nível dela ainda decide quem vê e
+// quem libera o estoque (`veOEstoque`, `podeLiberarEstoque`), e tirá-la da lista
+// faria uma supervisora antiga virar nível 0 — perdendo acesso em silêncio.
+// Medido em 27/08: ZERO pessoas com papel 'supervisora' em time, então isto não
+// tira nada de ninguém hoje. O que muda é só o que a tela OFERECE daqui pra frente.
+export const PAPEIS_DO_TIME = PAPEIS.filter((p) => p.id !== 'supervisora');
+
 // Que papéis ESTA pessoa pode conceder neste time.
 export function papeisQuePossoConceder(eu, papelNoTime) {
   if (!eu) return [];
-  if (eu.is_superadmin) return PAPEIS.slice();
+  if (eu.is_superadmin) return PAPEIS_DO_TIME.slice();
   if (!podeAdministrarTime(eu, papelNoTime)) return [];
   // Gestor concede até gestor — é o topo da escada do time, e quem administra o
   // time precisa poder passar o bastão sem depender do dono.
-  return PAPEIS.filter((p) => p.nivel <= nivelDo(papelNoTime));
+  return PAPEIS_DO_TIME.filter((p) => p.nivel <= nivelDo(papelNoTime));
 }
 
 // TIRAR-SE DO PRÓPRIO TIME É PERMITIDO, menos para o último gestor: um time sem

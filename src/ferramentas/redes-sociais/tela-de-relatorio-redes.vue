@@ -247,39 +247,39 @@ const logoEscuroUrl = '/midia/LOGOTIPOBRENOBRANCO.png'
 .tela-relatorio{min-height:100vh;display:flex;flex-direction:column;background:transparent;position:relative;z-index:1;}
 .rel-topbar .rbv-logo{height:24px;width:auto;}
 .rel-topbar{display:flex;align-items:center;justify-content:space-between;padding:13px 24px;border-bottom:1px solid var(--border);background:var(--surface);gap:16px;position:sticky;top:0;z-index:20;}
-.rel-back{font-family:'IBM Plex Sans',sans-serif;font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--accent);cursor:pointer;background:none;border:1px solid var(--accent-mid);border-radius:5px;padding:5px 10px;display:flex;align-items:center;gap:5px;transition:background .15s;}
+.rel-back{font-family:'IBM Plex Sans',sans-serif;font-size:max(9px, calc(10px * var(--escala-texto, 1)));font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--accent);cursor:pointer;background:none;border:1px solid var(--accent-mid);border-radius:5px;padding:5px 10px;display:flex;align-items:center;gap:5px;transition:background .15s;}
 .rel-back:hover{background:var(--accent-light);}
-.rel-title{font-family:'Oswald',sans-serif;font-size:15px;font-weight:500;letter-spacing:2.5px;text-transform:uppercase;color:var(--text);}
+.rel-title{font-family:'Oswald',sans-serif;font-size:max(9px, calc(15px * var(--escala-texto, 1)));font-weight:500;letter-spacing:2.5px;text-transform:uppercase;color:var(--text);}
 
 .rel-controles{display:flex;flex-wrap:wrap;align-items:flex-end;gap:22px;padding:18px 28px;border-bottom:1px solid var(--border);background:var(--surface);}
 .rel-grupo-controle{display:flex;flex-direction:column;gap:6px;}
-.rel-lbl{font-family:'IBM Plex Sans',sans-serif;font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);}
-.rel-select{font-family:'IBM Plex Sans',sans-serif;font-size:12px;padding:7px 12px;border-radius:6px;border:1.5px solid var(--border);background:var(--bg);color:var(--text);cursor:pointer;outline:none;min-width:190px;}
+.rel-lbl{font-family:'IBM Plex Sans',sans-serif;font-size:max(9px, calc(9px * var(--escala-texto, 1)));font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);}
+.rel-select{font-family:'IBM Plex Sans',sans-serif;font-size:max(9px, calc(12px * var(--escala-texto, 1)));padding:7px 12px;border-radius:6px;border:1.5px solid var(--border);background:var(--bg);color:var(--text);cursor:pointer;outline:none;min-width:190px;}
 .rel-select:focus{border-color:var(--accent);}
 .rel-seg{display:flex;gap:4px;}
-.rel-seg-btn{font-family:'IBM Plex Sans',sans-serif;font-size:11px;font-weight:600;padding:7px 13px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--muted);cursor:pointer;transition:all .15s;}
+.rel-seg-btn{font-family:'IBM Plex Sans',sans-serif;font-size:max(9px, calc(11px * var(--escala-texto, 1)));font-weight:600;padding:7px 13px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--muted);cursor:pointer;transition:all .15s;}
 .rel-seg-btn.ativo{background:var(--accent);color:var(--sobre-cor);border-color:var(--accent);}
 .rel-chips{display:flex;gap:6px;flex-wrap:wrap;}
-.rel-chip{font-family:'IBM Plex Sans',sans-serif;font-size:11px;font-weight:600;padding:6px 12px;border-radius:20px;border:1px solid var(--border);background:var(--bg);color:var(--muted);cursor:pointer;transition:all .15s;}
+.rel-chip{font-family:'IBM Plex Sans',sans-serif;font-size:max(9px, calc(11px * var(--escala-texto, 1)));font-weight:600;padding:6px 12px;border-radius:20px;border:1px solid var(--border);background:var(--bg);color:var(--muted);cursor:pointer;transition:all .15s;}
 .rel-chip.ativo{background:var(--accent-light);color:var(--accent-forte);border-color:var(--accent-mid);}
 .rel-export-btns{display:flex;gap:6px;}
-.rel-export{font-family:'IBM Plex Sans',sans-serif;font-size:11px;font-weight:700;letter-spacing:.5px;padding:7px 14px;border-radius:6px;border:1px solid var(--accent-mid);background:var(--bg);color:var(--accent);cursor:pointer;transition:all .15s;}
+.rel-export{font-family:'IBM Plex Sans',sans-serif;font-size:max(9px, calc(11px * var(--escala-texto, 1)));font-weight:700;letter-spacing:.5px;padding:7px 14px;border-radius:6px;border:1px solid var(--accent-mid);background:var(--bg);color:var(--accent);cursor:pointer;transition:all .15s;}
 .rel-export:hover{background:var(--accent);color:var(--sobre-cor);}
 
-.rel-info{font-family:'IBM Plex Sans',sans-serif;font-size:11px;color:var(--muted);padding:10px 28px 0;}
-.rel-nota{display:flex;align-items:center;gap:8px;margin:8px 28px 0;padding:8px 12px;border-radius:8px;background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.22);color:var(--muted);font-family:'IBM Plex Sans',sans-serif;font-size:11.5px;line-height:1.35;}
+.rel-info{font-family:'IBM Plex Sans',sans-serif;font-size:max(9px, calc(11px * var(--escala-texto, 1)));color:var(--muted);padding:10px 28px 0;}
+.rel-nota{display:flex;align-items:center;gap:8px;margin:8px 28px 0;padding:8px 12px;border-radius:8px;background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.22);color:var(--muted);font-family:'IBM Plex Sans',sans-serif;font-size:max(9px, calc(11.5px * var(--escala-texto, 1)));line-height:1.35;}
 .rel-nota svg{flex-shrink:0;color:var(--accent);}
 .rel-nota b{color:var(--fg,#e5e7eb);font-weight:600;}
 
 .rel-tabela-scroll{flex:1;overflow:auto;padding:14px 28px 40px;}
 .rel-tabela{border-collapse:separate;border-spacing:0;width:100%;font-family:'IBM Plex Sans',sans-serif;font-variant-numeric:tabular-nums;}
-.rel-tabela th{position:sticky;top:0;background:var(--surface);z-index:2;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--muted);padding:9px 12px;text-align:right;white-space:nowrap;cursor:pointer;border-bottom:2px solid var(--border);user-select:none;transition:color .15s;}
+.rel-tabela th{position:sticky;top:0;background:var(--surface);z-index:2;font-size:max(9px, calc(10px * var(--escala-texto, 1)));font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--muted);padding:9px 12px;text-align:right;white-space:nowrap;cursor:pointer;border-bottom:2px solid var(--border);user-select:none;transition:color .15s;}
 .rel-tabela th:first-child{text-align:left;}
 .rel-tabela th:hover{color:var(--accent);}
 .rel-tabela th.ativo{color:var(--accent);}
 .rel-tabela th.col-forte{color:var(--text);}
-.rel-ord{margin-left:3px;font-size:8px;}
-.rel-tabela td{font-size:12px;color:var(--text);padding:8px 12px;text-align:right;white-space:nowrap;border-bottom:1px solid var(--border);}
+.rel-ord{margin-left:3px;font-size:max(9px, calc(8px * var(--escala-texto, 1)));}
+.rel-tabela td{font-size:max(9px, calc(12px * var(--escala-texto, 1)));color:var(--text);padding:8px 12px;text-align:right;white-space:nowrap;border-bottom:1px solid var(--border);}
 .rel-tabela td.data{text-align:left;font-weight:600;color:var(--muted);}
 .rel-tabela td.col-forte{font-weight:700;color:var(--accent);}
 .rel-tabela td.net-up{color:var(--green);font-weight:600;}
@@ -292,7 +292,7 @@ const logoEscuroUrl = '/midia/LOGOTIPOBRENOBRANCO.png'
 @media(max-width:640px){
   /* Topbar mais baixa no celular: menos padding e título menor */
   .rel-topbar{padding:8px 14px;}
-  .rel-title{font-size:12px;letter-spacing:1.5px;}
+  .rel-title{font-size:max(9px, calc(12px * var(--escala-texto, 1)));letter-spacing:1.5px;}
   .rel-controles{padding:14px 16px;gap:14px;}
   .rel-tabela-scroll{padding:10px 12px 30px;}
   .rel-select{min-width:150px;}

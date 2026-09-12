@@ -19,8 +19,10 @@
 // apontando, calado, pro lugar errado. Mandar ~150 PDFs por mês pra pasta
 // errada é pior do que não mandar nenhum, porque ninguém percebe.
 //
-// ⚠️ O QUE AINDA NÃO FOI PROVADO CONTRA A API DE VERDADE, dito com todas as
-// letras pra ninguém confiar no que não foi medido:
+// ✅ PROVADO CONTRA A API DE VERDADE (conferido em 18/08/2026): três PDFs do
+// checklist chegaram ao WorkDrive, na PRIMEIRA tentativa, sem erro — as três
+// chamadas de escrita abaixo funcionam. O aviso que estava aqui dizia o
+// contrário e envelheceu; ficou como registro de quando ainda não se sabia:
 //   - listar o conteúdo de uma pasta comum: GET /files/<id>/files
 //   - criar pasta:                          POST /files
 //   - subir arquivo:                        POST /upload
@@ -36,7 +38,8 @@
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { exigirSegredoDeCron } from '../_shared/segredo-de-cron.ts';
 import { acharPasta } from '../_shared/pasta-do-zoho.js';
-import { nomeDoArquivo, pastasDoArquivo, pdfDoChecklist } from '../_shared/pdf-do-checklist.js';
+import { montarPdf, nomeDoArquivo, pastasDoArquivo, pdfDoChecklist } from '../_shared/pdf-do-checklist.js';
+import { linhasDoAceite, nomeDoAceite, pastasDoAceite } from '../_shared/pdf-do-aceite.js';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -232,9 +235,9 @@ Deno.serve(async (req) => {
 
   // Marca a linha de volta pra fila (ou como desistida) com a frase que quem
   // administra vai ler. Nunca deixa a linha presa em 'enviando'.
-  const devolverPraFila = async (linha: any, frase: string) => {
+  const devolverPraFila = async (linha: any, frase: string, tabela = 'frota_checklist_pdf') => {
     const desistiu = linha.tentativas_ate_agora >= TENTATIVAS_ATE_DESISTIR;
-    await sb.from('frota_checklist_pdf')
+    await sb.from(tabela)
       .update({
         situacao: desistiu ? 'falhou' : 'na_fila',
         ultimo_erro: desistiu
@@ -250,7 +253,19 @@ Deno.serve(async (req) => {
     return json({ erro: 'nao_consegui_ler_a_fila', detalhe: erroFila.message }, 500);
   }
   const linhas: any[] = fila ?? [];
-  if (linhas.length === 0) return json({ pegos: 0, enviados: 0, falhas: 0 });
+
+  // A SEGUNDA FILA: os aceites de retirada (B14, 18/08/2026). Mesma pasta, mesmo
+  // token, mesma regra de tentar e desistir — por isso vive nesta função, e não
+  // numa nova. Uma segunda função duplicaria a conexão do Zoho, a busca da pasta
+  // e a contagem de tentativas, e dobraria o que pode envelhecer sem ninguém ver.
+  //
+  // Falha ao LER esta fila não derruba a rodada: as fichas de checklist são o que
+  // já funciona hoje, e elas não podem parar por causa da fila nova.
+  const { data: filaAceite, error: erroAceite } = await sb.rpc('frota_pdf_aceite_pegar_da_fila', { p_limite: POR_RODADA });
+  if (erroAceite) console.error('[enviar-pdf-checklist] não consegui ler a fila dos aceites:', erroAceite.message);
+  const linhasAceite: any[] = filaAceite ?? [];
+
+  if (linhas.length === 0 && linhasAceite.length === 0) return json({ pegos: 0, enviados: 0, falhas: 0 });
 
   // ── A conexão e a pasta: uma vez por rodada, não uma vez por ficha ────────
   const { data: conexao } = await sb
@@ -287,7 +302,8 @@ Deno.serve(async (req) => {
     const frase = 'Não consegui ler a lista de pastas do Zoho que a central conhece. '
       + 'A próxima rodada tenta de novo sozinha.';
     for (const l of linhas) await devolverPraFila(l, frase);
-    return json({ pegos: linhas.length, enviados: 0, falhas: linhas.length, motivo: 'nao_li_as_pastas' });
+    for (const l of linhasAceite) await devolverPraFila(l, frase, 'frota_uso_pdf');
+    return json({ pegos: linhas.length + linhasAceite.length, enviados: 0, falhas: linhas.length + linhasAceite.length, motivo: 'nao_li_as_pastas' });
   }
 
   const { pasta: destino, erro: erroDestino } = acharPasta(pastas ?? [], PASTA_DESTINO);
@@ -296,7 +312,8 @@ Deno.serve(async (req) => {
     // procurado e o que fazer — é a diferença entre um papel atrasado e 150
     // papéis por mês arquivados no lugar errado sem ninguém notar.
     for (const l of linhas) await devolverPraFila(l, erroDestino!);
-    return json({ pegos: linhas.length, enviados: 0, falhas: linhas.length, motivo: 'pasta_nao_encontrada' });
+    for (const l of linhasAceite) await devolverPraFila(l, erroDestino!, 'frota_uso_pdf');
+    return json({ pegos: linhas.length + linhasAceite.length, enviados: 0, falhas: linhas.length + linhasAceite.length, motivo: 'pasta_nao_encontrada' });
   }
 
   // ── Uma ficha de cada vez ─────────────────────────────────────────────────
@@ -386,5 +403,80 @@ Deno.serve(async (req) => {
     }
   }
 
-  return json({ pegos: linhas.length, enviados, falhas, pasta: destino.nome });
+  // ── Um aceite de cada vez ────────────────────────────────────────────────
+  //
+  // ⚠️ MEDIDO EM 18/08/2026: não existe nenhum aceite assinado (0 de 12 linhas
+  //    de `frota_uso`). Este laço nasce sem nada para fazer, e o primeiro aceite
+  //    de verdade é também o primeiro teste dele contra o Zoho. Se algo falhar,
+  //    a frase estará em `frota_uso_pdf.ultimo_erro`.
+  for (const linha of linhasAceite) {
+    try {
+      const { data: uso, error: erroUso } = await sb
+        .from('frota_uso')
+        // `aceite_rabisco` PRECISA estar aqui, pela mesma razão do checklist: é o
+        // desenho que a pessoa fez com o dedo, e sem ele o papel diria que não
+        // houve rabisco sobre um aceite que tem.
+        .select('id, veiculo_id, pessoa_nome, saida_em, destino, finalidade, tanque_quartos, '
+          + 'aceite_em, aceite_por, aceite_nome, aceite_rabisco, aceite_checklist_id, aceite_checklist_hash')
+        .eq('id', linha.id_do_uso)
+        .single();
+      if (erroUso || !uso) throw new Error('Não consegui ler o aceite no banco.');
+
+      const { data: veiculo } = await sb.from('frota_veiculos')
+        .select('nome, placa').eq('id', uso.veiculo_id).single();
+
+      // A VISTORIA CONGELADA. Se ela não vier, o papel DIZ isso e sai assim
+      // mesmo — o aceite existe e é a prova; o resumo é contexto. Segurar o
+      // papel por causa do contexto seria trocar uma prova por um enfeite.
+      let ficha: any = null;
+      let respostas: any[] = [];
+      if (uso.aceite_checklist_id) {
+        const { data: f } = await sb.from('frota_checklist')
+          .select('id, feita_em, pessoa_nome, hodometro, resultado')
+          .eq('id', uso.aceite_checklist_id).maybeSingle();
+        ficha = f ?? null;
+        if (ficha) {
+          const { data: r } = await sb.from('frota_checklist_respostas')
+            .select('item_texto, estado, observacao, ordem')
+            .eq('checklist_id', ficha.id).order('ordem').order('id');
+          respostas = r ?? [];
+        }
+      }
+
+      const bytes = montarPdf(linhasDoAceite({ uso, veiculo: veiculo ?? {}, ficha, respostas }));
+
+      let paiId = String(destino.external_id);
+      let caminho = destino.nome;
+      for (const nome of pastasDoAceite({ uso, veiculo: veiculo ?? {} })) {
+        caminho += ` / ${nome}`;
+        const guardada = jaGarantidas.get(caminho);
+        paiId = guardada ?? await garantirPasta(access, paiId, nome);
+        jaGarantidas.set(caminho, paiId);
+      }
+
+      const nome = nomeDoAceite({ uso, veiculo: veiculo ?? {} });
+      const arquivoId = await subirArquivo(access, paiId, nome, bytes);
+
+      await sb.from('frota_uso_pdf').update({
+        situacao: 'enviado',
+        enviado_em: new Date().toISOString(),
+        zoho_file_id: arquivoId,
+        ultimo_erro: arquivoId ? null
+          : 'O arquivo subiu, mas o Zoho não informou o identificador dele. '
+            + 'O papel está na pasta; só não há link direto guardado aqui.',
+      }).eq('id', linha.id_da_fila);
+      enviados++;
+    } catch (e) {
+      falhas++;
+      const frase = e instanceof Error ? e.message : String(e);
+      console.error('[enviar-pdf-checklist] aceite', linha.id_do_uso, frase);
+      await devolverPraFila(linha, frase, 'frota_uso_pdf');
+    }
+  }
+
+  return json({
+    pegos: linhas.length + linhasAceite.length,
+    enviados, falhas, pasta: destino.nome,
+    fichas: linhas.length, aceites: linhasAceite.length,
+  });
 });

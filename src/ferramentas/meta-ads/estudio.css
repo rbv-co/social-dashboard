@@ -20,7 +20,7 @@
   background:var(--void);
   color:var(--ink);
   font-family:var(--sans);
-  font-size:14.5px;
+  font-size:max(9px, calc(14.5px * var(--escala-texto, 1)));
   line-height:1.55;
   -webkit-font-smoothing:antialiased;
   background-image:
@@ -64,33 +64,33 @@
 .fest .shell{position:relative; z-index:1; width:100%; padding:16px clamp(16px,2.4vw,44px) 40px}
 .fest h1,.fest h2,.fest h3{margin:0; font-weight:600; text-wrap:balance; color:var(--ink)}
 .fest p{margin:0}
-.fest .eyebrow{font-size:10.5px; letter-spacing:.24em; text-transform:uppercase; color:var(--ink-dim)}
+.fest .eyebrow{font-size:max(9px, calc(10.5px * var(--escala-texto, 1))); letter-spacing:.24em; text-transform:uppercase; color:var(--ink-dim)}
 .fest .eyebrow.muted{color:var(--ink-faint)}
 
 /* ===== barra de status ===== */
 .fest .topbar{display:flex; align-items:center; gap:18px; flex-wrap:wrap; border:1px solid var(--edge);
   background:linear-gradient(180deg,var(--panel-2),var(--panel)); border-radius:var(--r); padding:12px 18px}
 .fest .topbar .rbv-logo{height:30px; width:auto}
-.fest .pub-badge{display:inline-block; margin-left:10px; padding:2px 9px; border-radius:999px; font-size:11px; letter-spacing:.06em; border:1px solid var(--edge); color:var(--ink-dim); vertical-align:middle}
+.fest .pub-badge{display:inline-block; margin-left:10px; padding:2px 9px; border-radius:999px; font-size:max(9px, calc(11px * var(--escala-texto, 1))); letter-spacing:.06em; border:1px solid var(--edge); color:var(--ink-dim); vertical-align:middle}
 .fest .pub-badge.ok{color:#3ad07f; border-color:rgba(58,208,127,.4)}
 .fest .pub-badge.warn{color:var(--amber); border-color:rgba(255,178,58,.4)}
 .fest .pub-badge.bad{color:#ff6b6b; border-color:rgba(255,107,107,.45)}
 .fest .pub-badge.mute{opacity:.78}   /* .55 deixava o selo em 2,70 */
 .fest .brand{margin-right:auto}
-.fest .brand .t{font-size:15px; letter-spacing:.16em; text-transform:uppercase; color:var(--amber)}
-.fest .brand .s{font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--ink-dim); margin-top:2px}
+.fest .brand .t{font-size:max(9px, calc(15px * var(--escala-texto, 1))); letter-spacing:.16em; text-transform:uppercase; color:var(--amber)}
+.fest .brand .s{font-size:max(9px, calc(11px * var(--escala-texto, 1))); letter-spacing:.14em; text-transform:uppercase; color:var(--ink-dim); margin-top:2px}
 .fest .voltar-central{
   appearance:none; cursor:pointer; font:inherit; align-self:center;
   display:inline-flex; align-items:center; gap:6px;
   padding:6px 12px; margin-right:4px;
   background:var(--panel-2); color:var(--ink-dim);
   border:1px solid var(--edge); border-radius:6px;
-  font-size:12px; letter-spacing:.04em; white-space:nowrap;
+  font-size:max(9px, calc(12px * var(--escala-texto, 1))); letter-spacing:.04em; white-space:nowrap;
   transition:border-color .15s, color .15s;
 }
 .fest .voltar-central:hover{ border-color:var(--cyan); color:var(--ink); }
 .fest .sys{display:flex; gap:16px; flex-wrap:wrap}
-.fest .sig{display:flex; align-items:center; gap:8px; font-size:12px; color:var(--ink-dim)}
+.fest .sig{display:flex; align-items:center; gap:8px; font-size:max(9px, calc(12px * var(--escala-texto, 1))); color:var(--ink-dim)}
 .fest .led{width:9px; height:9px; border-radius:50%; background:var(--idle); flex:none; display:inline-block}
 .fest .led.go{background:var(--go); box-shadow:0 0 8px 1px rgba(51,209,122,.7)}
 .fest .led.hold{background:var(--hold); box-shadow:0 0 8px 1px rgba(255,194,74,.7)}
@@ -100,8 +100,8 @@
 @keyframes fest-pulse{50%{opacity:.35}}
 .fest .divider{width:1px; height:32px; background:var(--edge)}
 .fest .clock{text-align:right}
-.fest .clock .v{font-family:var(--mono); font-size:18px; letter-spacing:.08em; color:var(--ink)}
-.fest .clock small{display:block; font-size:9.5px; letter-spacing:.2em; color:var(--ink-faint); text-transform:uppercase}
+.fest .clock .v{font-family:var(--mono); font-size:max(16px, calc(18px * var(--escala-texto, 1))); letter-spacing:.08em; color:var(--ink)}
+.fest .clock small{display:block; font-size:max(9px, calc(9.5px * var(--escala-texto, 1))); letter-spacing:.2em; color:var(--ink-faint); text-transform:uppercase}
 
 /* ===== grade geral (largura total) ===== */
 .fest .grid{display:grid; grid-template-columns:250px 1fr; gap:14px; margin-top:14px}
@@ -115,7 +115,7 @@
 .fest .marcar-todos{
   appearance:none; cursor:pointer; font:inherit;
   padding:4px 10px; background:var(--panel-2); color:var(--ink-dim);
-  border:1px solid var(--edge); border-radius:5px; font-size:11.5px;
+  border:1px solid var(--edge); border-radius:5px; font-size:max(9px, calc(11.5px * var(--escala-texto, 1)));
   transition:border-color .15s, color .15s;
 }
 .fest .marcar-todos:hover{ border-color:var(--amber); color:var(--ink); }
@@ -128,10 +128,10 @@
   transition:border-color .16s, background .16s}
 .fest .step:disabled{opacity:.5; cursor:not-allowed}
 .fest .step:not(:disabled):hover{border-color:var(--edge-hot)}
-.fest .step .idx{font-family:var(--mono); font-size:15px; color:var(--ink-faint); text-align:center}
+.fest .step .idx{font-family:var(--mono); font-size:max(9px, calc(15px * var(--escala-texto, 1))); color:var(--ink-faint); text-align:center}
 .fest .step .stbody{display:block; min-width:0}
-.fest .step .nm{display:block; font-size:13.5px; font-weight:600; color:var(--ink)}
-.fest .step .st{display:block; font-size:11.5px; color:var(--ink-faint); margin-top:1px}
+.fest .step .nm{display:block; font-size:max(9px, calc(13.5px * var(--escala-texto, 1))); font-weight:600; color:var(--ink)}
+.fest .step .st{display:block; font-size:max(9px, calc(11.5px * var(--escala-texto, 1))); color:var(--ink-faint); margin-top:1px}
 .fest .step .rl{position:absolute; right:11px; top:50%; transform:translateY(-50%)}
 .fest .step.feito{border-color:#1f3a2c}
 .fest .step.feito .idx{color:var(--go)}
@@ -142,44 +142,44 @@
 
 /* ===== medidores ===== */
 .fest .gauges{display:flex; flex-direction:column; gap:12px}
-.fest .gauge .gt{display:flex; justify-content:space-between; gap:10px; font-size:12px; color:var(--ink-dim)}
+.fest .gauge .gt{display:flex; justify-content:space-between; gap:10px; font-size:max(9px, calc(12px * var(--escala-texto, 1))); color:var(--ink-dim)}
 .fest .gauge .gt b{color:var(--ink); font-weight:600}
 .fest .bar{height:7px; border-radius:3px; background:#0a1017; border:1px solid var(--edge); overflow:hidden; margin-top:6px}
 .fest .bar>span{display:block; height:100%}
 .fest .bar.amber>span{background:linear-gradient(90deg,var(--amber),var(--amber-soft))}
 .fest .bar.cyan>span{background:linear-gradient(90deg,#2b9d95,var(--cyan))}
 .fest .bar.abort>span{background:linear-gradient(90deg,#a83a2f,var(--abort))}
-.fest .gnote{font-size:11.5px; color:var(--ink-faint); margin-top:5px}
+.fest .gnote{font-size:max(9px, calc(11.5px * var(--escala-texto, 1))); color:var(--ink-faint); margin-top:5px}
 
 /* ===== palco principal ===== */
 .fest .stage-wrap{min-width:0}
 .fest .stage{display:flex; flex-direction:column; gap:14px; min-width:0}
 .fest .stagehead{display:flex; flex-direction:column; gap:0}
-.fest .badge{display:inline-flex; align-self:flex-start; align-items:center; gap:7px; font-size:11px; letter-spacing:.14em;
+.fest .badge{display:inline-flex; align-self:flex-start; align-items:center; gap:7px; font-size:max(9px, calc(11px * var(--escala-texto, 1))); letter-spacing:.14em;
   text-transform:uppercase; padding:4px 11px; border-radius:2px; border:1px solid var(--amber); color:var(--amber)}
-.fest .stage h2{font-size:21px; margin-top:8px}
-.fest .lead{color:var(--ink-dim); font-size:15px; margin-top:6px}
+.fest .stage h2{font-size:max(16px, calc(21px * var(--escala-texto, 1))); margin-top:8px}
+.fest .lead{color:var(--ink-dim); font-size:max(9px, calc(15px * var(--escala-texto, 1))); margin-top:6px}
 .fest .lead b{color:var(--ink)}
 
 /* ===== leituras (readout) ===== */
 .fest .readout{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:1px;
   background:var(--edge); border:1px solid var(--edge); border-radius:var(--r); overflow:hidden}
 .fest .readout .c{background:var(--panel-2); padding:13px 15px}
-.fest .readout .k{font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-faint)}
-.fest .readout .v{font-size:24px; margin-top:3px; color:var(--ink)}
+.fest .readout .k{font-size:max(9px, calc(11px * var(--escala-texto, 1))); letter-spacing:.06em; text-transform:uppercase; color:var(--ink-faint)}
+.fest .readout .v{font-size:max(16px, calc(24px * var(--escala-texto, 1))); margin-top:3px; color:var(--ink)}
 .fest .readout .v.mono{font-family:var(--mono); font-variant-numeric:tabular-nums}
 .fest .readout .v.amber{color:var(--amber)}
-.fest .readout .v.cyan{color:var(--cyan); font-size:15px; font-weight:600}
-.fest .readout .v.hold{color:var(--hold); font-size:17px}
-.fest .readout .v small{display:block; font-size:11.5px; color:var(--ink-dim); font-weight:400}
+.fest .readout .v.cyan{color:var(--cyan); font-size:max(9px, calc(15px * var(--escala-texto, 1))); font-weight:600}
+.fest .readout .v.hold{color:var(--hold); font-size:max(16px, calc(17px * var(--escala-texto, 1)))}
+.fest .readout .v small{display:block; font-size:max(9px, calc(11.5px * var(--escala-texto, 1))); color:var(--ink-dim); font-weight:400}
 
 /* ===== campos de formulário ===== */
 .fest .fields{display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:12px}
 .fest .field{display:flex; flex-direction:column; gap:6px}
 .fest .field.wide{grid-column:1/-1}
-.fest .fl{font-size:11.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-faint)}
+.fest .fl{font-size:max(9px, calc(11.5px * var(--escala-texto, 1))); letter-spacing:.06em; text-transform:uppercase; color:var(--ink-faint)}
 .fest .fi{width:100%; background:#0a1017; border:1px solid var(--edge); border-radius:var(--r); color:var(--ink);
-  font-family:var(--sans); font-size:14px; padding:9px 11px; transition:border-color .16s}
+  font-family:var(--sans); font-size:max(9px, calc(14px * var(--escala-texto, 1))); padding:9px 11px; transition:border-color .16s}
 .fest .fi.num{font-family:var(--mono); font-variant-numeric:tabular-nums}
 .fest .fi:hover{border-color:var(--edge-hot)}
 .fest .fi::placeholder{color:var(--ink-faint)}
@@ -191,17 +191,20 @@
 .fest .choice:hover{border-color:var(--edge-hot)}
 .fest .choice.sel{border-color:var(--amber); background:linear-gradient(180deg,rgba(255,178,58,.08),transparent)}
 .fest .choice input[type=radio]{accent-color:var(--amber); width:16px; height:16px}
-.fest .choice .ch-nm{font-size:14px; font-weight:600; color:var(--ink)}
-.fest .choice select{flex:1 1 100%; background:#0a1017; border:1px solid var(--edge); border-radius:var(--r);
-  color:var(--ink); font-family:var(--sans); font-size:14px; padding:8px 10px}
+.fest .choice .ch-nm{font-size:max(9px, calc(14px * var(--escala-texto, 1))); font-weight:600; color:var(--ink)}
+/* O fundo era o hex cravado #0a1017, que NÃO vira com o tema — e o `color` vira. No tema claro isso
+   dava texto #17232f sobre #0a1017: 1,20 de contraste, o nome da campanha simplesmente sumia
+   (medido em 12/08/2026). `--void` é o mesmo tom no escuro e acompanha o claro. */
+.fest .choice select{flex:1 1 100%; background:var(--void); border:1px solid var(--edge); border-radius:var(--r);
+  color:var(--ink); font-family:var(--sans); font-size:max(9px, calc(14px * var(--escala-texto, 1))); padding:8px 10px}
 
 /* ===== linha de comando (botões grandes) ===== */
 .fest .cmdrow{display:flex; align-items:center; flex-wrap:wrap; gap:14px; margin-top:16px}
 .fest .cmd{appearance:none; cursor:pointer; display:inline-flex; align-items:center; gap:10px;
-  font-family:var(--sans); font-size:15px; font-weight:600; color:#241606;
+  font-family:var(--sans); font-size:max(9px, calc(15px * var(--escala-texto, 1))); font-weight:600; color:#241606;
   border:1px solid var(--amber); border-radius:var(--r); background:linear-gradient(180deg,var(--amber-soft),var(--amber));
   padding:12px 22px; transition:transform .12s, box-shadow .16s, opacity .16s}
-.fest .cmd .ci{font-size:14px}
+.fest .cmd .ci{font-size:max(9px, calc(14px * var(--escala-texto, 1)))}
 .fest .cmd:not(:disabled):hover{transform:translateY(-1px); box-shadow:0 10px 26px -14px rgba(255,178,58,.7)}
 .fest .cmd:disabled{opacity:.5; cursor:not-allowed}
 .fest .cmd.cyan{color:#062521; border-color:var(--cyan); background:linear-gradient(180deg,#7cf0e4,var(--cyan))}
@@ -209,7 +212,7 @@
 
 /* ===== seletor de lojas / quadrantes (chips de checkbox) ===== */
 .fest .lojas{display:flex; flex-wrap:wrap; gap:10px}
-.fest .loja-chip{display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13.5px; color:var(--ink);
+.fest .loja-chip{display:flex; align-items:center; gap:8px; cursor:pointer; font-size:max(9px, calc(13.5px * var(--escala-texto, 1))); color:var(--ink);
   border:1px solid var(--edge); border-radius:var(--r); background:var(--panel-2); padding:9px 13px;
   transition:border-color .16s, background .16s}
 .fest .loja-chip:hover{border-color:var(--edge-hot)}
@@ -218,15 +221,15 @@
 
 /* ===== tabela de candidatos (lista viva) ===== */
 .fest .tbl-wrap{overflow-x:auto; border:1px solid var(--edge); border-radius:var(--r); margin-top:14px}
-.fest .tbl{width:100%; border-collapse:collapse; font-size:13px}
-.fest .tbl th{text-align:left; font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-faint);
+.fest .tbl{width:100%; border-collapse:collapse; font-size:max(9px, calc(13px * var(--escala-texto, 1)))}
+.fest .tbl th{text-align:left; font-size:max(9px, calc(10.5px * var(--escala-texto, 1))); letter-spacing:.08em; text-transform:uppercase; color:var(--ink-faint);
   background:var(--panel-2); padding:9px 12px; border-bottom:1px solid var(--edge); white-space:nowrap}
 .fest .tbl td{padding:9px 12px; border-bottom:1px solid var(--grid-l); color:var(--ink); vertical-align:top; white-space:nowrap}
 .fest .tbl tr:last-child td{border-bottom:0}
 .fest .tbl tr.marcado{background:rgba(255,178,58,.05)}
 .fest .tbl input[type=checkbox]{accent-color:var(--amber); width:15px; height:15px}
 .fest .tbl .nm{font-weight:600; display:block; white-space:normal}
-.fest .tbl .cat{color:var(--ink-faint); font-size:11.5px; display:block; margin-top:1px}
+.fest .tbl .cat{color:var(--ink-faint); font-size:max(9px, calc(11.5px * var(--escala-texto, 1))); display:block; margin-top:1px}
 .fest .tbl .semloja{color:var(--ink-faint)}
 .fest .tbl .pct{color:var(--amber); font-family:var(--mono)}
 
@@ -236,25 +239,25 @@
 .fest .resultlist{list-style:none; margin:8px 0 0; padding:0; display:flex; flex-direction:column; gap:0;
   border:1px solid var(--edge); border-radius:var(--r); overflow:hidden}
 .fest .resultlist li{display:flex; align-items:center; justify-content:space-between; gap:10px;
-  padding:8px 12px; background:var(--panel-2); font-size:13px; color:var(--ink)}
+  padding:8px 12px; background:var(--panel-2); font-size:max(9px, calc(13px * var(--escala-texto, 1))); color:var(--ink)}
 .fest .resultlist li:not(:last-child){border-bottom:1px solid var(--grid-l)}
 .fest .resultacoes{display:flex; gap:6px; flex:none}
 .fest .chips{display:flex; flex-wrap:wrap; gap:8px; margin-top:10px}
-.fest .chip{display:inline-flex; align-items:center; gap:7px; font-size:12.5px; color:var(--ink);
+.fest .chip{display:inline-flex; align-items:center; gap:7px; font-size:max(9px, calc(12.5px * var(--escala-texto, 1))); color:var(--ink);
   border:1px solid var(--edge); border-radius:20px; background:var(--panel-2); padding:6px 8px 6px 12px}
 .fest .chip.excluido{border-color:var(--abort); color:#f0b7ae}
-.fest .chip-radius{width:56px; padding:3px 6px; font-size:12px}
+.fest .chip-radius{width:56px; padding:3px 6px; font-size:max(9px, calc(12px * var(--escala-texto, 1)))}
 .fest .chip-unit{background:#0a1017; border:1px solid var(--edge); border-radius:4px; color:var(--ink);
-  font-family:var(--sans); font-size:11.5px; padding:3px 4px}
+  font-family:var(--sans); font-size:max(9px, calc(11.5px * var(--escala-texto, 1))); padding:3px 4px}
 .fest .chip-x{appearance:none; cursor:pointer; border:none; background:transparent; color:var(--ink-faint);
-  font-size:15px; line-height:1; padding:0 2px; transition:color .15s}
+  font-size:max(9px, calc(15px * var(--escala-texto, 1))); line-height:1; padding:0 2px; transition:color .15s}
 .fest .chip-x:hover{color:var(--abort)}
 
-.fest .jobstat{display:inline-flex; align-items:center; gap:9px; font-size:13.5px; color:var(--ink-dim)}
+.fest .jobstat{display:inline-flex; align-items:center; gap:9px; font-size:max(9px, calc(13.5px * var(--escala-texto, 1))); color:var(--ink-dim)}
 .fest .jobstat .js-err{color:var(--abort)}
-.fest .js-run{display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--cyan); margin:2px 0 8px}
-.fest .okline{margin-top:12px; font-size:13.5px; color:var(--go)}
-.fest .empty{color:var(--ink-faint); font-size:13.5px; padding:10px 0}
+.fest .js-run{display:flex; align-items:center; gap:8px; font-size:max(9px, calc(12.5px * var(--escala-texto, 1))); color:var(--cyan); margin:2px 0 8px}
+.fest .okline{margin-top:12px; font-size:max(9px, calc(13.5px * var(--escala-texto, 1))); color:var(--go)}
+.fest .empty{color:var(--ink-faint); font-size:max(9px, calc(13.5px * var(--escala-texto, 1))); padding:10px 0}
 
 /* ===== Home da Fábrica ===== */
 .fest .home-list{display:flex; flex-direction:column; gap:8px}
@@ -262,17 +265,17 @@
   border:1px solid var(--edge); border-radius:var(--r); background:var(--panel-2); padding:12px 14px}
 .fest .fab-card.erro{border-color:#5a231c}
 .fest .hc-nome{font-weight:600}
-.fest .hc-status{display:flex; align-items:center; gap:7px; font-size:12.5px; color:var(--ink-dim); margin-top:3px}
+.fest .hc-status{display:flex; align-items:center; gap:7px; font-size:max(9px, calc(12.5px * var(--escala-texto, 1))); color:var(--ink-dim); margin-top:3px}
 .fest .hc-acoes{display:flex; align-items:center; gap:8px}
 .fest .hc-apagar{appearance:none; cursor:pointer; background:var(--panel); border:1px solid var(--edge); border-radius:6px;
-  color:var(--ink-dim); font-size:14px; padding:6px 9px}
+  color:var(--ink-dim); font-size:max(9px, calc(14px * var(--escala-texto, 1))); padding:6px 9px}
 .fest .hc-apagar:hover{border-color:var(--abort); color:var(--abort)}
 .fest .home-soon{opacity:.7}
 /* seleção múltipla (apagar em massa) */
 .fest .fab-card > .hc-main{flex:1 1 auto; min-width:120px}
 .fest .fab-check{display:inline-flex; align-items:center; flex:none}
 .fest .fab-check input, .fest .fab-selall input{width:16px; height:16px; accent-color:var(--cyan); cursor:pointer; margin:0}
-.fest .fab-selall{display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--ink-dim); cursor:pointer; white-space:nowrap}
+.fest .fab-selall{display:inline-flex; align-items:center; gap:6px; font-size:max(9px, calc(12px * var(--escala-texto, 1))); color:var(--ink-dim); cursor:pointer; white-space:nowrap}
 .fest .fab-card.sel{border-color:var(--cyan); background:linear-gradient(180deg,rgba(72,230,214,.06),transparent)}
 .fest .ph-right{flex-wrap:wrap}
 .fest .cmd.danger{border-color:var(--abort); color:color-mix(in srgb,var(--abort) 72%,var(--ink)); background:rgba(255,90,69,.12)}
@@ -292,18 +295,29 @@
 .fest .subir-banner.concluido{border-color:#37d67a; background:linear-gradient(180deg,rgba(55,214,122,.14),transparent);}
 .fest .subir-banner.erro{border-color:var(--abort); background:rgba(255,90,69,.10);}
 .fest .subir-banner .sb-body{display:flex; align-items:center; gap:14px;}
-.fest .subir-banner b{font-size:15.5px; color:var(--ink);}
-.fest .subir-banner .sb-sub{font-size:13px; color:var(--ink-dim); margin-top:3px; line-height:1.4; max-width:640px;}
-.fest .sb-ic{font-size:24px; flex:none;}
+.fest .subir-banner b{font-size:max(9px, calc(15.5px * var(--escala-texto, 1))); color:var(--ink);}
+.fest .subir-banner .sb-sub{font-size:max(9px, calc(13px * var(--escala-texto, 1))); color:var(--ink-dim); margin-top:3px; line-height:1.4; max-width:640px;}
+/* Resumo do destino: o que vai acontecer, escrito, logo acima do botão Publicar (pendência B4). */
+/* Tarja verde = tudo que você marcou vai subir. Âmbar SÓ quando há loja de fora ou nenhuma loja
+   (a classe vem do `atencao` de resumo-do-destino.js, que tem teste). */
+.fest .resumo-destino{margin-top:16px; padding:10px 12px; border:1px solid var(--edge); border-left:3px solid var(--go); border-radius:6px; background:var(--panel-2);}
+.fest .resumo-destino.atencao{border-left-color:var(--amber);}
+.fest .resumo-destino .rd-texto{margin:0; font-size:max(9px, calc(14px * var(--escala-texto, 1))); color:var(--ink); overflow-wrap:anywhere;}
+/* O aviso é NEGRITO, não âmbar. Medido em 12/08/2026: `--amber` sobre `--panel-2` dá 9,73 no tema
+   escuro mas só 3,03 no claro — reprovado, e visivelmente lavado na tela. O `--amber` do tema claro
+   está marcado "não mexer" logo acima, então quem carrega o âmbar é a TARJA (elemento gráfico, onde
+   3:1 basta) e o texto fica em `--ink`: 14,67 no claro e 13,83 no escuro. */
+.fest .resumo-destino .rd-fora{margin:4px 0 0; font-size:max(9px, calc(13px * var(--escala-texto, 1))); color:var(--ink); font-weight:600; overflow-wrap:anywhere;}
+.fest .sb-ic{font-size:max(16px, calc(24px * var(--escala-texto, 1))); flex:none;}
 .fest .sb-spin{width:24px; height:24px; border-radius:50%; border:3px solid rgba(255,178,58,.28); border-top-color:var(--amber); animation:sbspin .8s linear infinite; flex:none;}
 @keyframes sbspin{to{transform:rotate(360deg)}}
 @media(prefers-reduced-motion:reduce){.fest .sb-spin{animation:none;}}
 .fest .look-prev{width:100%; aspect-ratio:4/5; object-fit:cover; border-radius:8px; background:var(--panel); border:1px solid var(--edge)}
-.fest .look-prev.ph-vazio{display:flex; align-items:center; justify-content:center; color:var(--ink-faint); font-size:12px}
-.fest .look-nome{font-weight:600; font-size:13px} .fest .look-nome .cat{color:var(--ink-dim); font-weight:400; font-size:11px}
+.fest .look-prev.ph-vazio{display:flex; align-items:center; justify-content:center; color:var(--ink-faint); font-size:max(9px, calc(12px * var(--escala-texto, 1)))}
+.fest .look-nome{font-weight:600; font-size:max(9px, calc(13px * var(--escala-texto, 1)))} .fest .look-nome .cat{color:var(--ink-dim); font-weight:400; font-size:max(9px, calc(11px * var(--escala-texto, 1)))}
 .fest .look-objs{display:flex; flex-wrap:wrap; gap:4px}
 .fest .look-acoes{display:flex; gap:6px; flex-wrap:wrap; margin-top:auto}
-.fest .mini{appearance:none; cursor:pointer; background:var(--panel); border:1px solid var(--edge); border-radius:6px; color:var(--ink-dim); font-size:12px; padding:5px 8px}
+.fest .mini{appearance:none; cursor:pointer; background:var(--panel); border:1px solid var(--edge); border-radius:6px; color:var(--ink-dim); font-size:max(9px, calc(12px * var(--escala-texto, 1))); padding:5px 8px}
 .fest .mini:hover:not(:disabled){border-color:var(--edge-hot)} .fest .mini:disabled{opacity:.4; cursor:default}
 
 /* ===== tour guiado (coach-marks) ===== */
@@ -313,10 +327,10 @@
 .fest .tour-realce{position:absolute; border:2px solid var(--cyan); border-radius:10px; box-shadow:0 0 0 9999px rgba(3,6,10,.55); pointer-events:none; transition:top .15s ease, left .15s ease, width .15s ease, height .15s ease}
 @media (prefers-reduced-motion: reduce){ .fest .tour-realce{ transition:none } }
 .fest .tour-balao{position:absolute; z-index:51; pointer-events:auto; width:min(320px,86vw); background:var(--panel); border:1px solid var(--edge-hot); border-radius:var(--r); padding:14px 16px; box-shadow:0 12px 34px rgba(0,0,0,.4)}
-.fest .tour-tit{font-weight:700; font-size:14px}
-.fest .tour-txt{font-size:13px; color:var(--ink-dim); margin:6px 0 12px}
+.fest .tour-tit{font-weight:700; font-size:max(9px, calc(14px * var(--escala-texto, 1)))}
+.fest .tour-txt{font-size:max(9px, calc(13px * var(--escala-texto, 1))); color:var(--ink-dim); margin:6px 0 12px}
 .fest .tour-acoes{display:flex; align-items:center; gap:8px; flex-wrap:wrap}
-.fest .tour-passo{font-size:11.5px; color:var(--ink-faint); margin-right:auto}
+.fest .tour-passo{font-size:max(9px, calc(11.5px * var(--escala-texto, 1))); color:var(--ink-faint); margin-right:auto}
 
 /* ===== checklist "Primeiros passos" ===== */
 .fest .chk-list{display:flex; flex-direction:column; gap:8px}
@@ -324,14 +338,14 @@
 .fest .chk-item.ok{opacity:.7}
 .fest .chk-mark{width:22px; height:22px; flex:none; display:flex; align-items:center; justify-content:center; border-radius:50%; border:1px solid var(--edge); color:var(--go); font-weight:700}
 .fest .chk-item.ok .chk-mark{border-color:var(--go)}
-.fest .chk-tit{font-weight:600; font-size:13px} .fest .chk-txt{font-size:12px; color:var(--ink-dim); margin-top:2px}
+.fest .chk-tit{font-weight:600; font-size:max(9px, calc(13px * var(--escala-texto, 1)))} .fest .chk-txt{font-size:max(9px, calc(12px * var(--escala-texto, 1))); color:var(--ink-dim); margin-top:2px}
 .fest .chk-body{flex:1}
 
 /* ===== console de lançamento (Conferir) ===== */
 .fest .launch{position:relative; border:1px solid var(--edge); border-radius:var(--r); padding:18px;
   background:repeating-linear-gradient(45deg,rgba(255,90,69,.05) 0 12px,transparent 12px 24px),var(--panel-2)}
-.fest .launch h3{font-size:16px; margin-bottom:2px}
-.fest .launch .sh{color:var(--ink-dim); font-size:13.5px; margin-bottom:16px}
+.fest .launch h3{font-size:max(16px, calc(16px * var(--escala-texto, 1))); margin-bottom:2px}
+.fest .launch .sh{color:var(--ink-dim); font-size:max(9px, calc(13.5px * var(--escala-texto, 1))); margin-bottom:16px}
 .fest .opts{display:grid; grid-template-columns:1fr 1fr; gap:12px}
 @media(max-width:560px){.fest .opts{grid-template-columns:1fr}}
 .fest .opt{appearance:none; cursor:pointer; text-align:left; text-decoration:none; display:flex; flex-direction:column;
@@ -339,32 +353,32 @@
   background:var(--panel); padding:16px; transition:transform .12s, border-color .16s, box-shadow .16s, opacity .16s}
 .fest .opt:not(:disabled):hover{transform:translateY(-2px)}
 .fest .opt:disabled{opacity:.5; cursor:not-allowed}
-.fest .opt .oh{display:flex; align-items:center; gap:10px; font-size:16px; font-weight:600}
-.fest .opt .oi{width:32px; height:32px; border-radius:7px; display:grid; place-items:center; font-size:17px; flex:none}
-.fest .opt .od{color:var(--ink-dim); font-size:13.5px; margin-top:8px}
-.fest .opt .rec{margin-left:auto; font-size:10.5px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--go)}
+.fest .opt .oh{display:flex; align-items:center; gap:10px; font-size:max(16px, calc(16px * var(--escala-texto, 1))); font-weight:600}
+.fest .opt .oi{width:32px; height:32px; border-radius:7px; display:grid; place-items:center; font-size:max(16px, calc(17px * var(--escala-texto, 1))); flex:none}
+.fest .opt .od{color:var(--ink-dim); font-size:max(9px, calc(13.5px * var(--escala-texto, 1))); margin-top:8px}
+.fest .opt .rec{margin-left:auto; font-size:max(9px, calc(10.5px * var(--escala-texto, 1))); font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--go)}
 .fest .opt.manter .oi{background:#12331f; color:var(--go)}
 .fest .opt.manter:not(:disabled):hover{border-color:var(--go); box-shadow:0 0 0 1px var(--go),0 10px 30px -14px rgba(51,209,122,.5)}
 .fest .opt.ativar .oi{background:#3a1612; color:var(--abort)}
 .fest .opt.ativar:not(:disabled):hover{border-color:var(--abort); box-shadow:0 0 0 1px var(--abort),0 10px 30px -12px rgba(255,90,69,.5)}
 .fest .aviso{display:flex; gap:11px; align-items:flex-start; border-left:2px solid var(--abort); padding:2px 0 2px 12px; margin-top:16px}
 .fest .perigo{display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap; margin-top:18px; padding:13px 15px; border:1px dashed rgba(255,90,69,.4); border-radius:12px}
-.fest .perigo-txt{font-size:13px; color:var(--ink-dim); line-height:1.5; max-width:62ch}
+.fest .perigo-txt{font-size:max(9px, calc(13px * var(--escala-texto, 1))); color:var(--ink-dim); line-height:1.5; max-width:62ch}
 .fest .aviso b{color:#ffd9d2}
-.fest .aviso span:last-child{color:#f0b7ae; font-size:13.5px}
+.fest .aviso span:last-child{color:#f0b7ae; font-size:max(9px, calc(13.5px * var(--escala-texto, 1)))}
 .fest .launchstat{margin-top:16px}
 
 /* ===== grade de criativos (prévia / escolha) ===== */
 .fest .cg{display:grid; grid-template-columns:repeat(auto-fill,minmax(130px,1fr)); gap:9px; margin-top:4px}
 .fest .tile{position:relative; aspect-ratio:4/5; border:1px solid var(--edge); border-radius:2px; overflow:hidden; cursor:pointer}
 .fest .tile .art{position:absolute; inset:0; width:100%; height:100%; object-fit:contain; background:var(--panel-2)}
-.fest .tile .art.placeholder{display:grid; place-items:center; text-align:center; padding:8px; font-size:11px;
+.fest .tile .art.placeholder{display:grid; place-items:center; text-align:center; padding:8px; font-size:max(9px, calc(11px * var(--escala-texto, 1)));
   color:var(--ink-faint); background:var(--panel-2)}
-.fest .tile .cap{position:absolute; left:0; right:0; bottom:0; padding:6px 7px; font-size:10.5px; color:#dfe7ef;
+.fest .tile .cap{position:absolute; left:0; right:0; bottom:0; padding:6px 7px; font-size:max(9px, calc(10.5px * var(--escala-texto, 1))); color:#dfe7ef;
   background:linear-gradient(transparent,rgba(0,0,0,.82))}
 .fest .tile.subido{cursor:default; border-style:dashed}
 .fest .tile.ok{border-color:var(--amber)}
-.fest .tile.ok::after{content:"escolhido"; position:absolute; top:6px; left:6px; font-size:9.5px; font-weight:700;
+.fest .tile.ok::after{content:"escolhido"; position:absolute; top:6px; left:6px; font-size:max(9px, calc(9.5px * var(--escala-texto, 1))); font-weight:700;
   text-transform:uppercase; color:#241606; background:var(--amber); padding:2px 7px; border-radius:2px; z-index:1}
 
 .fest .tile .art{cursor:zoom-in}
@@ -374,35 +388,35 @@
 /* ===== curar: seções por loja com pares feed/story ===== */
 .fest .loja-sec{margin-bottom:18px}
 .fest .loja-head{display:flex; align-items:center; gap:10px; width:100%; background:transparent; border:0;
-  color:inherit; font-weight:700; font-size:15px; padding:8px 4px; cursor:pointer; text-align:left}
+  color:inherit; font-weight:700; font-size:max(9px, calc(15px * var(--escala-texto, 1))); padding:8px 4px; cursor:pointer; text-align:left}
 .fest .loja-head .chev{opacity:.7}
-.fest .loja-head .loja-n{opacity:.55; font-weight:500; font-size:13px; margin-left:auto}
+.fest .loja-head .loja-n{opacity:.55; font-weight:500; font-size:max(9px, calc(13px * var(--escala-texto, 1))); margin-left:auto}
 
 .fest .lightbox{position:fixed; inset:0; z-index:50; display:grid; place-items:center; padding:20px;
   background:rgba(2,6,10,.86); backdrop-filter:blur(2px)}
 .fest .lb-inner{position:relative; max-width:min(92vw,720px); max-height:92vh; display:flex; flex-direction:column; gap:10px}
 .fest .lb-img{max-width:100%; max-height:78vh; object-fit:contain; border:1px solid var(--edge); border-radius:4px; background:var(--panel-2)}
 .fest .lb-bar{display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;
-  font-size:12.5px; color:var(--ink-dim)}
+  font-size:max(9px, calc(12.5px * var(--escala-texto, 1))); color:var(--ink-dim)}
 .fest .lb-close{position:absolute; top:-12px; right:-12px; width:32px; height:32px; border-radius:50%;
-  background:var(--panel); color:var(--ink); border:1px solid var(--edge); cursor:pointer; font-size:14px}
+  background:var(--panel); color:var(--ink); border:1px solid var(--edge); cursor:pointer; font-size:max(9px, calc(14px * var(--escala-texto, 1)))}
 .fest .lb-close:hover{border-color:var(--abort); color:var(--abort)}
 @media(max-width:560px){ .fest .lb-close{top:0; right:0} }
 
 /* ===== ajuda (tooltip "?") ===== */
 .fest .ajuda{position:relative; display:inline-flex}
-.fest .ajuda-btn{appearance:none; cursor:pointer; width:20px; height:20px; border-radius:50%; border:1px solid var(--edge); background:var(--panel-2); color:var(--ink-dim); font-size:12px; font-weight:700; line-height:1}
+.fest .ajuda-btn{appearance:none; cursor:pointer; width:20px; height:20px; border-radius:50%; border:1px solid var(--edge); background:var(--panel-2); color:var(--ink-dim); font-size:max(9px, calc(12px * var(--escala-texto, 1))); font-weight:700; line-height:1}
 .fest .ajuda-btn:hover{border-color:var(--edge-hot); color:var(--ink)}
 .fest .ajuda-back{position:fixed; inset:0; z-index:40}
 .fest .ajuda-balao{position:absolute; z-index:41; top:26px; left:0; width:min(320px,84vw); background:var(--panel); border:1px solid var(--edge-hot); border-radius:var(--r); padding:12px 14px; box-shadow:0 10px 30px rgba(0,0,0,.35)}
-.fest .ajuda-tit{font-weight:700; font-size:13px; margin-bottom:8px}
-.fest .ajuda-item{display:flex; flex-direction:column; gap:2px; font-size:12.5px; color:var(--ink-dim); margin-bottom:8px}
+.fest .ajuda-tit{font-weight:700; font-size:max(9px, calc(13px * var(--escala-texto, 1))); margin-bottom:8px}
+.fest .ajuda-item{display:flex; flex-direction:column; gap:2px; font-size:max(9px, calc(12.5px * var(--escala-texto, 1))); color:var(--ink-dim); margin-bottom:8px}
 .fest .ajuda-item b{color:var(--ink)}
-.fest .ajuda-fechar{appearance:none; cursor:pointer; background:var(--panel-2); border:1px solid var(--edge); border-radius:6px; color:var(--ink-dim); font-size:12px; padding:5px 10px}
+.fest .ajuda-fechar{appearance:none; cursor:pointer; background:var(--panel-2); border:1px solid var(--edge); border-radius:6px; color:var(--ink-dim); font-size:max(9px, calc(12px * var(--escala-texto, 1))); padding:5px 10px}
 
 /* ===== rodapé ===== */
 .fest .foot{margin-top:16px; display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px;
-  font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--ink-faint)}
+  font-size:max(9px, calc(11px * var(--escala-texto, 1))); letter-spacing:.12em; text-transform:uppercase; color:var(--ink-faint)}
 
 /* ===== acessibilidade ===== */
 .fest button:focus-visible,
@@ -419,10 +433,10 @@
 @media(max-width:560px){
   .fest .shell{padding:12px clamp(12px,4vw,16px) 28px}
   .fest .topbar{gap:12px; padding:11px 13px}
-  .fest .brand .t{font-size:13.5px}
-  .fest .clock .v{font-size:16px}
-  .fest .stage h2{font-size:18px}
-  .fest .lead{font-size:14px}
-  .fest .readout .v{font-size:20px}
+  .fest .brand .t{font-size:max(9px, calc(13.5px * var(--escala-texto, 1)))}
+  .fest .clock .v{font-size:max(16px, calc(16px * var(--escala-texto, 1)))}
+  .fest .stage h2{font-size:max(16px, calc(18px * var(--escala-texto, 1)))}
+  .fest .lead{font-size:max(9px, calc(14px * var(--escala-texto, 1)))}
+  .fest .readout .v{font-size:max(16px, calc(20px * var(--escala-texto, 1)))}
   .fest .cmd{width:100%; justify-content:center}
 }

@@ -125,3 +125,47 @@ const a = (((
 </script>`
   assert.equal(queixasDoCompilador(scriptQuebrado).length > 0, true)
 })
+
+/* ── COMENTÁRIO QUE FECHA CEDO ─────────────────────────────────────────────
+ *
+ * O compilador NÃO pega este: `-->` no meio de um comentário é HTML válido —
+ * ele só fecha o comentário ali, e o resto da explicação vira TEXTO NA TELA,
+ * terminando com um `-->` solto que a pessoa lê.
+ *
+ * Aconteceu em 03/09/2026, na tela de Autenticidade: uma explicação nova foi
+ * escrita DENTRO de um comentário existente e terminou com ` -->`. Do `-->`
+ * novo em diante, quatro linhas de explicação sobre "6 de 20" e "Lote pronto"
+ * apareceram em letra de parágrafo no meio da bancada, em produção-de-mentira,
+ * e só o navegador mostrou. Os testes estavam todos verdes e o build passou.
+ *
+ * Esta casa escreve o porquê JUNTO da regra, em comentários longos — então esta
+ * é uma armadilha que se repete, e não um acidente de uma vez só. */
+
+export function comentariosQueFecharamCedo(fonte) {
+  const i = fonte.indexOf('<template>')
+  if (i === -1) return []
+  const template = fonte.slice(i, fonte.lastIndexOf('</template>'))
+  // tira os comentários BEM formados; o que sobrar de `-->` fechou cedo
+  const semComentarios = template.replace(/<!--[^]*?-->/g, '')
+  return [...semComentarios.matchAll(/.{0,60}-->/g)].map((m) => m[0].trim())
+}
+
+test('nenhum comentário de template fecha cedo e derrama explicação na tela', () => {
+  const problemas = []
+  for (const arq of vues(RAIZ)) {
+    const sobras = comentariosQueFecharamCedo(readFileSync(arq, 'utf8'))
+    if (sobras.length) problemas.push(`${arq.replace(RAIZ, '')}: ${sobras.join(' | ')}`)
+  }
+  assert.deepEqual(problemas, [],
+    'sobrou um `-->` fora de comentário: de lá para a frente a explicação vira '
+    + 'texto na tela, e o compilador não reclama porque isso é HTML válido')
+})
+
+test('a checagem PEGA o comentário que fecha cedo', () => {
+  // sem esta prova, o teste acima poderia estar sempre verde por estar quebrado
+  const bom = '<template>\n  <!-- uma explicação inteira -->\n  <div/>\n</template>'
+  assert.deepEqual(comentariosQueFecharamCedo(bom), [])
+
+  const cedo = '<template>\n  <!-- primeira parte -->\n     segunda parte, agora na tela -->\n  <div/>\n</template>'
+  assert.equal(comentariosQueFecharamCedo(cedo).length, 1)
+})

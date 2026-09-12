@@ -1,0 +1,112 @@
+# AS FOTOS DO CERTIFICADO, SEM DEPENDER DE COMPUTADOR NENHUM.
+#
+# ⚠️ POR QUE ISTO EXISTE: este robô rodava por `launchd` no Mac do dono, às
+# 8h05. Com o Mac dormindo, ninguém tirava foto naquele dia — das três execuções
+# registradas no log, DUAS morreram com falha de DNS. E uma vez por dia significa
+# que um lote criado às 9h espera 23 horas: se a bolsa sair da fábrica antes, a
+# cliente encosta o celular e vê o certificado sem foto.
+#
+# ⚠️ E O `sips` NÃO EXISTE AQUI. Ele é do macOS. O robô escolhe entre `sips` e
+# ImageMagick pelo que EXISTE na máquina — por isso o passo de instalação abaixo
+# não é opcional: sem ele o robô estoura, de propósito, em vez de mandar foto de
+# 326 KB para o site.
+name: Fotos do selo — buscar e publicar
+
+on:
+  # De hora em hora. Não é caro (a maioria das rodadas não acha nada para fazer)
+  # e encurta a janela em que uma bolsa sai com o certificado vazio.
+  schedule:
+    - cron: '5 * * * *'
+  # Para rodar na mão quando quiser.
+  workflow_dispatch:
+    inputs:
+      refazer:
+        description: 'Rebaixar TAMBÉM as fotos de quem já tem (use ao mudar a ordem das fontes)'
+        type: boolean
+        default: false
+  # ⚠️ É POR AQUI QUE O LOTE NOVO ACORDA O ROBÔ. O banco dispara este evento
+  # assim que um lote é criado, e a foto entra em minutos em vez da manhã
+  # seguinte.
+  repository_dispatch:
+    types: [lote-novo]
+
+# Duas rodadas ao mesmo tempo publicariam o site duas vezes e poderiam brigar
+# pelo mesmo commit. A de fora espera; a de dentro não é cancelada no meio de um
+# download.
+concurrency:
+  group: fotos-do-selo
+  cancel-in-progress: false
+
+jobs:
+  fotos:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # ⚠️ ESTE PASSO EXISTE PARA A FALHA SER LEGÍVEL. Sem o token, o passo
+      # seguinte morre com "repository not found" — que parece repositório
+      # errado, e manda quem for olhar procurar no lugar errado.
+      - name: Conferir se há como alcançar o repositório do site
+        run: |
+          if [ -z "${{ secrets.PAT_DO_SITE }}" ]; then
+            echo "::error::Falta o segredo PAT_DO_SITE."
+            echo ""
+            echo "O site (rbv-co/vessel-brasil) é OUTRO repositório, e o token"
+            echo "automático do GitHub só vale para o repositório onde a ação roda."
+            echo ""
+            echo "Como resolver, uma vez só:"
+            echo "  1. github.com/settings/personal-access-tokens → Generate new token"
+            echo "  2. Resource owner: rbv-co"
+            echo "  3. Repositories: rbv-co/vessel-brasil"
+            echo "  4. Permissions → Contents: Read and write"
+            echo "  5. gh secret set PAT_DO_SITE --repo rbv-co/social-dashboard"
+            exit 1
+          fi
+
+      # ⚠️ O SITE É OUTRO REPOSITÓRIO, dentro deste mas não versionado por ele.
+      # Sem este passo o robô baixaria as fotos para uma pasta que não existe em
+      # lugar nenhum — e diria que publicou.
+      - name: Trazer o repositório do site
+        uses: actions/checkout@v4
+        with:
+          repository: rbv-co/vessel-brasil
+          path: vessel-brasil
+          # O push das fotos volta por este token. Sem escrita aqui, o robô
+          # baixa, publica, e a próxima publicação feita do Mac apaga tudo.
+          token: ${{ secrets.PAT_DO_SITE }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Instalar o redutor de imagem
+        run: sudo apt-get update && sudo apt-get install -y imagemagick
+
+      - name: Instalar as dependências do coletor
+        working-directory: coletor
+        run: npm ci
+
+      # ⚠️ SEM ISTO O ROBÔ FALHA COM `status: 127` — "comando não encontrado" —
+      # já com as fotos baixadas e o push feito. O `publicar.sh` chama o
+      # `vercel`, e ele não vem na máquina do GitHub. Medido em 07/09/2026: a
+      # ação passou por checkout, imagem e coletor, e morreu na última linha.
+      - name: Instalar o publicador da Vercel
+        run: npm install -g vercel@latest
+
+      - name: Buscar as fotos
+        working-directory: .
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          ZOHO_CLIENT_ID: ${{ secrets.ZOHO_CLIENT_ID }}
+          ZOHO_CLIENT_SECRET: ${{ secrets.ZOHO_CLIENT_SECRET }}
+          ZOHO_REFRESH_TOKEN: ${{ secrets.ZOHO_REFRESH_TOKEN }}
+          ZOHO_DC: ${{ secrets.ZOHO_DC }}
+          # A publicação usa este token: `git push` NÃO publica este site (o
+          # plano Hobby da Vercel bloqueia deploy de repositório privado de
+          # organização), então quem publica é o `publicar.sh`, com o token.
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          GIT_AUTOR: 'robo-das-fotos'
+        run: |
+          git -C vessel-brasil config user.name  "Robô das fotos"
+          git -C vessel-brasil config user.email "robo@rbvcompany.com"
+          node coletor/fotos-do-selo-do-bling.mjs ${{ inputs.refazer && '--refazer' || '' }}

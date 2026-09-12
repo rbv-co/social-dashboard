@@ -101,6 +101,40 @@ test('cidade inteira (raio 0) vai SEM radius — nao inventa um raio', () => {
   assert.deepEqual(f.geo.cities, [{ key: '1' }])
 })
 
+/* O DEFEITO QUE ESTES TRÊS CONSERTAM (medido em 18/08/2026, com o dono na tela).
+ *
+ * O assistente EXIGE um lugar antes de deixar avançar, e aceita três formas:
+ * cidade, PIN no mapa e "outras localizações" (estado, país). A tradução para a
+ * Fábrica levava só as CIDADES — então quem marcasse um pin criava a campanha
+ * SEM ele, e nada na tela dizia.
+ *
+ * Foi o que aconteceu: o dono marcou um pin na Moto Easy. O pin teria ido para o
+ * lixo e a campanha rodaria só na cidade que veio de um público salvo — mais
+ * larga do que ele escolheu, em silêncio.
+ *
+ * O montador da Fábrica (`coletor/lib/publico.mjs`) SEMPRE soube ler `pins`,
+ * `countries` e `regions`. O que faltava era a ponte — o pedaço do meio, que é
+ * onde este projeto já perdeu dado três vezes. */
+test('o PIN do mapa atravessa a tradução — era ele que morria', () => {
+  const f = publicoParaFabrica({ pins: [{ lat: -22.7253, lng: -47.6492, raio: 3, unidade: 'kilometer', nome: 'Loja Piracicaba' }] })
+  assert.equal(f.geo.pins.length, 1)
+  assert.equal(f.geo.pins[0].lat, -22.7253)
+  assert.equal(f.geo.pins[0].nome, 'Loja Piracicaba')
+})
+
+test('estado e país também atravessam', () => {
+  const f = publicoParaFabrica({ estados: [{ key: 'BR:saopaulo' }], paises: [{ key: 'BR' }] })
+  assert.deepEqual(f.geo.regions, [{ key: 'BR:saopaulo' }])
+  assert.deepEqual(f.geo.countries, [{ key: 'BR' }])
+})
+
+// Pin sem coordenada não é lugar. Deixar passar faria a Meta recusar o pedido
+// inteiro por causa de um ponto vazio — pior que ignorá-lo aqui.
+test('pin sem coordenada não vai', () => {
+  const f = publicoParaFabrica({ pins: [{ nome: 'sem coordenada' }] })
+  assert.equal(f.geo.pins.length, 0)
+})
+
 // ── O payload final ────────────────────────────────────────────────────────
 
 const ROW = { chave: 'engajamento', rotulo: 'Conversas', meta_objective: 'OUTCOME_ENGAGEMENT', optimization_goal: 'CONVERSATIONS', billing_event: 'IMPRESSIONS', destination_type: 'WHATSAPP', promoted_object_tipo: 'page' }
@@ -117,6 +151,17 @@ test('o payload sai do montador COMPARTILHADO, com os campos que a Meta exige', 
   assert.equal(adset.status, 'PAUSED')
   assert.equal(adset.destination_type, 'WHATSAPP')
   assert.ok(adset.targeting)
+})
+
+// A PROVA QUE MAIS IMPORTA: o caminho inteiro, do assistente ao pedido. Os
+// testes de tradução acima provam a ponte; este prova que ela está LIGADA.
+test('com pin escolhido, o conjunto sai com custom_locations', () => {
+  const e = { ...cheio(), publico: { cidades: [], pins: [{ lat: -22.7253, lng: -47.6492, raio: 3, unidade: 'kilometer' }] } }
+  const { adset } = payloadsDoAssistente({ estado: e, objetivoRow: ROW, nomeDaConta: 'Vessel' })
+  const geo = adset.targeting.geo_locations
+  assert.ok(geo.custom_locations, 'o pin tem de chegar na Meta')
+  assert.equal(geo.custom_locations[0].latitude, -22.7253)
+  assert.equal(geo.custom_locations[0].radius, 3)
 })
 
 test('o nome DIGITADO manda sobre o nome automatico', () => {

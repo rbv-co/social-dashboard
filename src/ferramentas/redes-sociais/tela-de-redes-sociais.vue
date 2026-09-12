@@ -35,9 +35,10 @@
           <div class="period-tabs" id="period-tabs"></div>
           <div class="custom-range-inline" id="custom-range-panel">
             <span class="custom-range-lbl">de</span>
-            <input type="date" id="custom-start" class="custom-date-input" onchange="onCustomDateChange()" title="Data inicial — clique para abrir o calendário">
+            <input type="date" id="custom-start" class="custom-date-input" onchange="onCustomDateChange()" onkeydown="if(event.key==='Enter')aplicarIntervalo()" title="Data inicial — escolha e clique em Aplicar">
             <span class="custom-range-lbl">até</span>
-            <input type="date" id="custom-end" class="custom-date-input" onchange="onCustomDateChange()" title="Data final — clique para abrir o calendário">
+            <input type="date" id="custom-end" class="custom-date-input" onchange="onCustomDateChange()" onkeydown="if(event.key==='Enter')aplicarIntervalo()" title="Data final — escolha e clique em Aplicar">
+            <button class="custom-apply-btn" id="custom-apply-btn" onclick="aplicarIntervalo()" disabled title="Escolha as duas datas">Aplicar</button>
             <button class="custom-clear-btn" id="custom-clear-btn" onclick="clearCustomRange()" style="display:none" title="Limpar intervalo personalizado">✕</button>
           </div>
           <div class="ac-toggle on" id="ac-toggle-btn" onclick="toggleAutoCycle()" title="Rotação automática de perfis">
@@ -62,7 +63,7 @@
     </barra-de-topo>
 
       <!-- GUARDA DE FRESCOR: avisa quando os dados não são de hoje (coletor parado) -->
-      <div id="freshness-banner" style="display:none;align-items:center;gap:8px;padding:9px 16px;background:var(--red);color:var(--sobre-cor);font-family:var(--fonte-principal);font-size:12px;font-weight:600;letter-spacing:.3px;"></div>
+      <div id="freshness-banner" style="display:none;align-items:center;gap:8px;padding:9px 16px;background:var(--red);color:var(--sobre-cor);font-family:var(--fonte-principal);font-size:max(9px, calc(12px * var(--escala-texto, 1)));font-weight:600;letter-spacing:.3px;"></div>
 
       <!-- HEADER — seleção de perfil (abaixo da topbar) -->
       <header>
@@ -89,7 +90,7 @@
           </div>
           <div>
             <div class="admin-section-title">Usuários cadastrados</div>
-            <div class="user-list" id="user-list"><div style="font-family:var(--fonte-principal);font-size:11px;color:var(--muted)">Carregando...</div></div>
+            <div class="user-list" id="user-list"><div style="font-family:var(--fonte-principal);font-size:max(9px, calc(11px * var(--escala-texto, 1)));color:var(--muted)">Carregando...</div></div>
           </div>
         </div>
       </div>
@@ -126,14 +127,14 @@
           <!-- Hero: total de seguidores -->
           <div id="followers-hero" style="padding:22px 24px 18px;background:var(--accent-light);position:relative;">
             <div class="mc-lbl" style="letter-spacing:2.5px;margin-bottom:10px;">TOTAL DE SEGUIDORES</div>
-            <div style="font-family:'Oswald',sans-serif;font-size:54px;font-weight:500;line-height:1;color:var(--accent);letter-spacing:-1px;" id="total-followers">0</div>
+            <div style="font-family:'Oswald',sans-serif;font-size:max(16px, calc(54px * var(--escala-texto, 1)));font-weight:500;line-height:1;color:var(--accent);letter-spacing:-1px;" id="total-followers">0</div>
           </div>
           <!-- Separador gradiente -->
           <div style="height:2px;background:linear-gradient(to right,var(--accent-mid),var(--border));"></div>
           <!-- Novos no período -->
           <div style="padding:16px 24px 20px;">
             <div class="mc-header" style="margin-bottom:6px;">
-              <div class="mc-lbl">NOVOS NO PERÍODO <button onclick="openFollowersInfo()" title="Como esse número é contado?" style="display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:50%;border:1px solid currentColor;background:transparent;color:inherit;font-size:10px;font-weight:700;cursor:pointer;line-height:1;padding:0;vertical-align:middle;">?</button></div>
+              <div class="mc-lbl">NOVOS NO PERÍODO <button onclick="openFollowersInfo()" title="Como esse número é contado?" style="display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:50%;border:1px solid currentColor;background:transparent;color:inherit;font-size:max(9px, calc(10px * var(--escala-texto, 1)));font-weight:700;cursor:pointer;line-height:1;padding:0;vertical-align:middle;">?</button></div>
               <div class="mc-goal-area">
                 <span class="mc-goal-lbl">META</span>
                 <span class="mc-goal-val" id="goal-followers" contenteditable="true" spellcheck="false">200</span>
@@ -157,13 +158,34 @@
         </div>
         <div class="card" style="display:flex;flex-direction:column;">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-            <div style="font-family:'Oswald',sans-serif;font-weight:400;font-size:11px;letter-spacing:1.5px;color:var(--muted)">NOVOS SEGUIDORES / DIA</div>
+            <div style="font-family:'Oswald',sans-serif;font-weight:400;font-size:max(9px, calc(11px * var(--escala-texto, 1)));letter-spacing:1.5px;color:var(--muted)">NOVOS SEGUIDORES / DIA</div>
             <div class="chart-legend">
               <div class="legend-item"><div class="legend-dot" style="background:var(--green)"></div><span>Seguiram</span></div>
               <div class="legend-item"><div class="legend-dot" style="background:var(--red)"></div><span>Deixaram</span></div>
               <div class="legend-item"><span style="font-weight:700;color:var(--text)">n</span><span>= líquido</span></div>
             </div>
           </div>
+          <!-- O GRÁFICO ROLA PARA O LADO QUANDO O PERÍODO NÃO CABE NA TELA.
+               A 375px o gráfico tem 319px: com 30 dias sobram ~10px por dia, e
+               "R$ 17,34" não cabe em 10px em fonte nenhuma. A régua está em
+               largura-do-grafico.js — mínimo de 30px por dia. Enquanto os dias
+               cabem nesse mínimo, nada disto entra em ação e o gráfico continua
+               do tamanho do cartão, como sempre foi.
+
+               São três camadas, e cada uma tem um motivo:
+                 .grafico-que-rola  → NÃO rola; é ela que segura a faixa apagada
+                                       da direita colada na borda visível (dentro
+                                       do que rola, a faixa iria embora junto).
+                 .rolagem-de-grafico → é o que rola, e só ela: a página não pode
+                                       ganhar rolagem para o lado por causa disto.
+                 .trilho-de-grafico  → é o que fica LARGO. O SVG e os rótulos são
+                                       filhos dele, então a camada de números
+                                       nasce da largura do desenho e não da
+                                       largura visível — sem isso os números
+                                       ficariam espremidos sobre um desenho largo. -->
+          <div class="grafico-que-rola" id="grafico-de-seguidores">
+          <div class="rolagem-de-grafico" id="rolagem-de-seguidores">
+          <div class="trilho-de-grafico" id="trilho-de-seguidores">
           <div class="chart-svg-wrap">
             <svg id="followers-chart" viewBox="0 0 400 110" preserveAspectRatio="none">
               <defs>
@@ -186,6 +208,9 @@
             <div id="chart-data-labels"></div>
           </div>
           <div class="x-labels" id="chart-xlabels"></div>
+          </div><!-- /.trilho-de-grafico -->
+          </div><!-- /.rolagem-de-grafico -->
+          </div><!-- /.grafico-que-rola -->
           <!-- Aviso dos dias ESTIMADOS. Só aparece quando existe dia estimado; fica
                vazio (e sem ocupar espaço) no dia a dia normal. O texto técnico de
                dentro é só para super-admin — ver montarNotaDeEstimativa(). -->
@@ -198,6 +223,16 @@
       <div class="sec-header">
         <div class="section-label">02 · Meta Ads</div>        <div class="sec-line"></div>
       </div>
+      <!-- AVISO DE CLASSIFICAÇÃO PROVISÓRIA: enquanto campaign_adsets está vazia
+           pra este perfil, toda campanha cai pela regra do objetivo — e o
+           objetivo mente (ex.: WhatsApp da Vessel contando como Seguidores).
+           Mesmo estilo do #freshness-banner, de propósito: é o mesmo tipo de
+           aviso ("o número que você está vendo pode não estar fechado"). -->
+      <div id="balde-provisorio-banner" style="display:none;align-items:center;gap:8px;padding:9px 16px;background:var(--red);color:var(--sobre-cor);font-family:var(--fonte-principal);font-size:max(9px, calc(12px * var(--escala-texto, 1)));font-weight:600;letter-spacing:.3px;"></div>
+
+      <!-- Recorte por TIPO de campanha. O balde recorta o tipo; o "⚙ Filtrar
+           campanhas" logo abaixo recorta DENTRO dele — os dois se somam. -->
+      <div class="balde-bar" id="balde-bar" role="tablist" aria-label="Tipo de campanha"></div>
       <div class="camp-filter-bar">
         <span class="camp-filter-lbl">Campanhas consideradas no cálculo:</span>
         <span class="camp-filter-info" id="camp-filter-info">Todas as campanhas</span>
@@ -223,7 +258,13 @@
             <span class="mc-diff" id="diff-spend"></span>
           </div>
           <div class="calc-badge">⚡ Menor gasto com mais resultado = ideal</div>
-          <div class="gmad-bloco" id="gmad-spend"></div>
+          <!-- Um bloco de gráfico por LUGAR da grade (ver SLOTS_DOS_CARTOES).
+               NASCE FORA DA TELA: `.gmad-bloco` tem borda em cima e respiro
+               próprio, então vazio e visível ele é um risco solto no pé do
+               cartão — o que a pessoa veria entre o primeiro pintar e o fim da
+               primeira leitura, e para sempre se a leitura falhar. Quem o traz
+               de volta é desenharGraficosDosCartoes, ao ter o que desenhar. -->
+          <div class="gmad-bloco" id="gmad-spend" style="display:none"></div>
         </div>
         <div class="card">
           <div class="mc-header">
@@ -245,7 +286,7 @@
             <span class="mc-diff" id="diff-cps"></span>
           </div>
           <div class="calc-badge">⚡ Menor é melhor · investimento ÷ novos seguidores</div>
-          <div class="gmad-bloco" id="gmad-cps"></div>
+          <div class="gmad-bloco" id="gmad-cps" style="display:none"></div>
         </div>
         <div class="card">
           <div class="mc-header">
@@ -266,6 +307,10 @@
             <span class="mc-diff" id="diff-cpi"></span>
           </div>
           <div class="calc-badge">⚡ Menor é melhor · investimento ÷ interações do anúncio</div>
+          <!-- O bloco do gráfico é do LUGAR, não do indicador: em Contatos aqui
+               mora o custo por cadastro, em Site o custo por mil impressões. Ver
+               SLOTS_DOS_CARTOES e desenharGraficosDosCartoes. -->
+          <div class="gmad-bloco" id="gmad-cpi" style="display:none"></div>
         </div>
         <div class="card">
           <div class="mc-header">
@@ -286,6 +331,7 @@
             <span class="mc-diff" id="diff-cpl"></span>
           </div>
           <div class="calc-badge">⚡ Menor é melhor · investimento ÷ curtidas do anúncio</div>
+          <div class="gmad-bloco" id="gmad-cpl" style="display:none"></div>
         </div>
       </div>
 
@@ -458,11 +504,28 @@ import { estado, hasPermission, contasPermitidas } from '../../compartilhado/con
 import { adminToast } from '../../compartilhado/avisos.js'
 import { sb } from '../../compartilhado/buscar-e-salvar-dados.js'
 import { hojeLocal } from '../../compartilhado/datas.js'
-import { montarSerieDeInvestimento, montarSerieDeCustoPorSeguidor } from './series-diarias-de-meta-ads.js'
+import { montarSerieDeInvestimento, montarSerieDeCustoPorSeguidor, montarSerieDeCustoPorResultado, diasComInvestimentoEResultado, valeDesenharOGrafico } from './series-diarias-de-meta-ads.js'
+import { graficoDoCartao, opcoesDoGrafico } from './graficos-de-custo-diario.js'
+import { ehRecorteRolante, ehGraficoDeContexto } from './janela-de-seguidores.js'
+// Quanta largura um gráfico de um ponto por dia precisa ter, e se ele passa a
+// rolar para o lado. Puro e com teste ao lado (largura-do-grafico.test.mjs).
+// Nasceu da medida a 375px: 30 dias em 319px davam ~10px por dia e os valores em
+// reais se sobrepunham em −5px.
+import { larguraDoGrafico, rotulosQueCabem, ancoraDoRotulo, ESPACO_ANTES_DO_GRAFICO, ESPACO_DEPOIS_DO_GRAFICO, caixaDoSelo, RESPIRO_DO_SELO, rotuloCurtoDoSelo } from './largura-do-grafico.js'
 // Decide se a barra do dia é número do Instagram ou estimativa nossa. Puro e com
 // teste ao lado (estimativa-de-seguidores.test.mjs), usando a contagem REAL do
 // Breno nos dias em que a Meta parou de publicar.
-import { barraDoDia, diasSemPublicacao } from './estimativa-de-seguidores.js'
+import { barraDoDia, diasSemPublicacao, totalPelasBarras } from './estimativa-de-seguidores.js'
+// Em que balde cada campanha entra (Seguidores / Contatos / Site e alcance /
+// Vendas). Puro e com teste ao lado (baldes-do-painel.test.mjs), decidido pelo
+// sinal que a Meta afirma no conjunto — nunca pelo nome da campanha.
+import { BALDES, idsDoBalde, idsParaConsulta, idsComGastoNoPeriodo, conjuntosMaisRecentes, baldesSemGasto, baldeEfetivo, classificacaoEhProvisoria, campanhasSemTipoConfirmado, fraseDoRecorte } from './baldes-do-painel.js'
+import { cartoesDoBalde, podeDarVeredito, chaveDeMeta, ehMetaDeTaxa } from './cartoes-do-balde.js'
+import { capturaDoAgregado, capturasDaJanela } from './captura-do-agregado.js'
+// Por quantos seguidores o custo por seguidor divide. Puro e com teste ao lado:
+// o denominador tem de sair da MESMA fonte do número impresso no cartão de
+// seguidores — era daí que vinha o R$ 16,76 no lugar de R$ 8,22.
+import { seguidoresDoCusto, FONTES } from './seguidores-do-custo.js'
 
 const router = useRouter()
 
@@ -556,6 +619,11 @@ const GOALS = {
   cps: { 1: 2.0, 7: 2.0, 14: 2.0, 30: 2.0 },
   cpi: { 1: 0.15, 7: 0.15, 14: 0.15, 30: 0.15 },
   cpl: { 1: 0.20, 7: 0.20, 14: 0.20, 30: 0.20 },
+  // NÃO existe padrão para custo por conversa, por cadastro, por venda, por visita
+  // nem para o custo por mil impressões — de propósito. Indicador de balde novo
+  // nasce SEM META (ver metaDefinida): mostra o número, não mostra barra e não dá
+  // nota, até o dono digitar o alvo dele. Um número chutado aqui viraria veredito
+  // sobre a campanha de todo mundo sem ninguém ter medido nada.
   likes: { 1: 400, 7: 1000, 14: 2000, 30: 12000 },
   saves: { 1: 80, 7: 250, 14: 500, 30: 2500 },
   shares: { 1: 60, 7: 200, 14: 400, 30: 2000 },
@@ -581,9 +649,430 @@ const GOALS = {
    que virou estado.currentSession — importado) ── */
 let currentPeriod = (function () { try { const raw = localStorage.getItem('dash_period'); if (raw == null) return 7; const m = PERIODS.find(p => String(p.value) === raw); return m ? m.value : 7 } catch (e) { return 7 } })()
 let currentAccountId = null
-let currentStartDate = null
-let currentEndDate = null
+// ⚠️ O INTERVALO É GUARDADO, COMO O PERÍODO JÁ ERA — e restaurado JUNTO com os
+// campos de data. Sem isto, o navegador restaurava os CAMPOS ao recarregar e o
+// estado voltava para o período padrão: a tela mostrava "05/09 a 09/09" escrito
+// nos campos e calculava "7 dias" por dentro. O dono passou horas apontando
+// números que não batiam, e todos batiam — com o período errado (09/09/2026).
+const CHAVE_INTERVALO = 'dash_custom'
+const _intervaloGuardado = (function () {
+  try {
+    const raw = localStorage.getItem(CHAVE_INTERVALO)
+    if (!raw) return null
+    const v = JSON.parse(raw)
+    const ehData = (x) => typeof x === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(x)
+    return (ehData(v && v.s) && ehData(v && v.e) && v.s <= v.e) ? v : null
+  } catch (e) { return null }
+})()
+let currentStartDate = _intervaloGuardado ? _intervaloGuardado.s : null
+let currentEndDate = _intervaloGuardado ? _intervaloGuardado.e : null
 let activeChartData = null
+
+/* ── BALDE DE CAMPANHA (seção 02 · Meta Ads) ──
+   O balde escolhido é recorte de LEITURA, não configuração de conta: fica no
+   navegador de quem olha, por perfil, e não vira ajuste compartilhado. Sessão
+   nova abre em Seguidores — este é o painel de redes sociais, e o que ele
+   responde primeiro é quanto custa crescer. */
+let _baldeAtual = 'seguidores'
+// O recorte de campanhas que a última carga usou de verdade. Quem lê é o modal do
+// "⚙ Filtrar campanhas", para mostrar marcado o mesmo que está somado na tela.
+// `null` = ainda não carregou nada; aí o modal cai no filtro salvo, como sempre.
+let _recorteNaTela = null
+const _baldeKey = id => 'ig_balde_' + (id || 'default')
+function carregarBalde(accountId) {
+  let salvo = null
+  try { salvo = localStorage.getItem(_baldeKey(accountId)) } catch (e) {}
+  // Só aceita id de balde que existe: um valor velho no localStorage (ou editado
+  // à mão) recortaria as consultas por um tipo que ninguém conhece e a seção 02
+  // ficaria vazia sem explicação.
+  _baldeAtual = BALDES.some(b => b.id === salvo) ? salvo : 'seguidores'
+}
+// A chave do "o balde escolhe sozinho", por conta e por navegador. Fica ao lado da
+// chave do balde de propósito: quem mexer numa lembra da outra.
+function _baldeAutoKey(contaId) { return 'dash_balde_auto_' + String(contaId || '') }
+
+function setBalde(id) {
+  _baldeAtual = id
+  try {
+    localStorage.setItem(_baldeKey(currentAccountId), id)
+    // ⚠️ CLICAR NO BALDE LIGA A ESCOLHA AUTOMÁTICA. Daqui pra frente o recorte é
+    // "as campanhas deste tipo que gastaram no período", e o filtro salvo da conta
+    // fica de lado até alguém escolher à mão no ⚙.
+    localStorage.setItem(_baldeAutoKey(currentAccountId), '1')
+  } catch (e) {}
+  refresh()
+}
+// `vazios` = ids de balde sem gasto no período. Ficam APAGADOS com o motivo —
+// nunca somem: sumir faz a pessoa procurar o que não está lá.
+// `efetivo` é o balde que as consultas REALMENTE usaram: quando o escolhido está
+// vazio neste perfil/período, a tela cai em Todos e a barra precisa dizer isso,
+// senão ela marcaria um balde que não é o dos números na tela.
+function desenharBaldeBar(vazios, efetivo) {
+  const bar = document.getElementById('balde-bar'); if (!bar) return
+  const semGasto = vazios || []
+  bar.textContent = ''
+  BALDES.forEach(b => {
+    const bt = document.createElement('button')
+    bt.className = 'balde-btn'; bt.type = 'button'; bt.dataset.balde = b.id
+    bt.textContent = b.rotulo
+    bt.setAttribute('role', 'tab')
+    bt.setAttribute('aria-selected', String(b.id === (efetivo || _baldeAtual)))
+    if (semGasto.includes(b.id)) {
+      bt.disabled = true
+      // O texto afirma uma MEDIÇÃO, então só pode aparecer onde ela existe: um
+      // balde só entra em `vazios` quando há série diária na janela para medir
+      // (ver baldesSemGasto). Sem série, nada é apagado e nada é afirmado.
+      bt.title = 'Nenhuma campanha desse tipo gastou nos dias deste período'
+      bt.setAttribute('aria-disabled', 'true')
+    } else {
+      bt.addEventListener('click', () => setBalde(b.id))
+    }
+    bar.appendChild(bt)
+  })
+}
+// Enquanto campaign_adsets estiver vazia pra este perfil, TODA campanha dele
+// cai pela regra do objetivo (ver baldes-do-painel.js) — e o objetivo mente:
+// campanha de WhatsApp chega da Meta rotulada "engagement", que é a mesma
+// caixa dos Seguidores. Isso já mede 87% do dinheiro "de engajamento" da
+// Vessel. A tela não pode mostrar o recorte por balde com cara de número
+// fechado enquanto isso for verdade — precisa avisar.
+//
+// E ELE QUASE NUNCA É O CASO. Os cinco perfis ativos já têm conjunto coletado,
+// então o aviso do perfil inteiro não fala mais — enquanto o risco de verdade
+// virou POR CAMPANHA: campanha criada agora fica sem conjunto até a próxima
+// rodada e é classificada pelo objetivo, que engana (na Vessel, duas campanhas
+// gêmeas de WhatsApp caem em baldes DIFERENTES por causa disso). Por isso o
+// segundo aviso, com a contagem — ver campanhasSemTipoConfirmado.
+//
+// Um de cada vez, de propósito: quando a tabela está vazia para o perfil, TODAS
+// as campanhas estão sem conjunto, e as duas frases diriam a mesma coisa duas
+// vezes. A do perfil é a mais precisa, então ela vence.
+function desenharAvisoBalde(provisorio, semTipo) {
+  const banner = document.getElementById('balde-provisorio-banner'); if (!banner) return
+  let texto = ''
+  if (provisorio) texto = '⚠️ Classificação provisória: os tipos de campanha ainda não foram coletados neste perfil. Os valores por tipo de campanha podem mudar depois da próxima coleta.'
+  else if (semTipo > 0) texto = semTipo === 1
+    ? '⚠️ 1 campanha ainda sem tipo confirmado — classificada pelo objetivo. O tipo dela pode mudar depois da próxima coleta.'
+    : '⚠️ ' + semTipo + ' campanhas ainda sem tipo confirmado — classificadas pelo objetivo. O tipo delas pode mudar depois da próxima coleta.'
+  banner.style.display = texto ? 'flex' : 'none'
+  banner.textContent = texto
+}
+
+/* ── OS QUATRO CARTÕES DA SEÇÃO 02 (o conteúdo troca com o balde) ── */
+// Os quatro lugares FÍSICOS da grade. Os ids de dentro (goal-, cmp-, prog-, pct-,
+// diff-, ads-…-val) continuam sendo os de sempre: o que troca com o balde é o
+// CONTEÚDO, não o esqueleto. Assim applyMetric/applySpend/_mcValColor, que
+// procuram elemento por esses ids, seguem valendo sem precisar saber que existe
+// balde. A ordem é a que cartoesDoBalde() devolve.
+const SLOTS_DOS_CARTOES = ['spend', 'cps', 'cpi', 'cpl']
+// Um ícone por indicador. Emoji aqui é o mesmo padrão dos outros cartões da tela
+// (não é ícone de interface — é o desenho decorativo do topo do cartão).
+const ICONE_DO_CARTAO = {
+  investimento: '💰', cps: '🎯', cpi: '🤝', cpl: '❤️', cpm: '📣', alcance: '👁',
+  frequencia: '🔁', custo_conversa: '💬', conversas: '💬', custo_cadastro: '📝',
+  custo_venda: '🛒', compras: '🛒', custo_visita: '🔗', visitas: '🔗',
+}
+// O semáforo do módulo puro fala em bom/atenção/ruim; a tela pinta com as cores
+// que já existem em estilos-globais.css (var(--green)/(--yellow)/(--red)).
+const COR_DO_SEMAFORO = { bom: 'green', atencao: 'yellow', ruim: 'red' }
+
+// "—" nunca pode sair como zero. Em dinheiro fica "R$ —" (é o texto que a seção
+// 02 já usava e que diz de que unidade estamos falando).
+function textoDoCartao(cartao) {
+  if (cartao.valor == null) return cartao.formato === 'dinheiro' ? 'R$ —' : '—'
+  if (cartao.formato === 'dinheiro') return fmtR(cartao.valor)
+  if (cartao.formato === 'decimal') return cartao.valor.toFixed(2).replace('.', ',') + '×'
+  return fmtN(cartao.valor)
+}
+
+// De ONDE veio o alcance muda o que dá para afirmar dele — e só a tela sabe. Em
+// Todos sem filtro nenhum ele é o total DEDUPLICADO da conta; em qualquer recorte
+// é a soma campanha a campanha, e aí quem viu dois anúncios entrou duas vezes. A
+// frequência sai desse mesmo denominador, então herda o aviso: com alcance
+// inflado, ela sai BAIXA demais. Afirmar isso como fato seria mentir com número.
+function explicacaoDoCartao(cartao, ctx) {
+  if (cartao.id === 'alcance') {
+    return cartao.explicacao + (ctx.alcanceRepete
+      ? ' Atenção: aqui ele soma campanha a campanha, então quem viu dois anúncios está contado duas vezes.'
+      : ' Vem do total da conta, já sem repetir gente.')
+  }
+  if (cartao.id === 'frequencia' && ctx.alcanceRepete) {
+    return cartao.explicacao + ' Atenção: calculada sobre um alcance que repete pessoa — a de verdade é maior que esta.'
+  }
+  return cartao.explicacao
+}
+
+function desenharCartoesDoBalde(cartoes, ctx) {
+  SLOTS_DOS_CARTOES.forEach((slot, i) => {
+    const pctEl = document.getElementById('pct-' + slot)
+    const card = pctEl && pctEl.closest('.card')
+    if (!card) return
+    const cartao = cartoes[i] || null
+    // Balde de TRÊS cartões (Vendas): o quarto lugar sai da grade. Deixar um
+    // retângulo vazio ali faria a pessoa procurar o indicador que não existe.
+    card.style.display = cartao ? '' : 'none'
+    // Limpa o que o balde anterior deixou. Sem isto, o "↑ R$ 3,00 acima da meta"
+    // do indicador de ontem ficaria embaixo do número de hoje.
+    _mcValColor(slot, ''); _mcBorderColor(slot, '')
+    const cmpEl = document.getElementById('cmp-' + slot); if (cmpEl) cmpEl.textContent = ''
+    const progEl = document.getElementById('prog-' + slot); if (progEl) { progEl.style.width = '0%'; progEl.className = 'mc-progress-fill' }
+    pctEl.textContent = ''; pctEl.className = 'mc-pct'
+    const diffEl = document.getElementById('diff-' + slot); if (diffEl) { diffEl.textContent = ''; diffEl.className = 'mc-diff' }
+    // O selo de prévia/consolidando mora no segundo cartão e só vale quando ele é
+    // o custo por seguidor (ver desenharCustoPorSeguidor).
+    if (slot === 'cps') { const p = document.getElementById('previa-cps'); if (p) { p.style.display = 'none'; p.innerHTML = '' } }
+    // A CHAVE da meta carrega o balde (ver chaveDeMeta): a meta que o dono digita
+    // em Contatos é `contatos.custo_conversa` e não encosta na de Seguidores. As
+    // que já existiam no banco (cps/cpi/cpl em Seguidores, spend em Todos) seguem
+    // sem prefixo, no balde contra o qual foram definidas.
+    const chaveMeta = (cartao && cartao.metaKey) ? chaveDeMeta(cartao.metaKey, ctx.balde) : null
+    // O campo de meta larga a chave do balde anterior mesmo quando o cartão SOME
+    // (Vendas esconde o quarto). Guardar o id de um indicador que não está na tela
+    // deixaria dois elementos com o mesmo id quando ele voltasse em outro lugar da
+    // grade — e quem lê meta por id leria o escondido.
+    const metaEl = card.querySelector('.mc-goal-val')
+    if (metaEl && !chaveMeta) metaEl.id = 'goal-livre-' + slot
+    if (!cartao) return
+    const icone = card.querySelector('.mc-icon'); if (icone) icone.textContent = ICONE_DO_CARTAO[cartao.id] || '📊'
+    const rotulo = card.querySelector('.mc-lbl'); if (rotulo) rotulo.textContent = cartao.rotulo
+    const selo = card.querySelector('.calc-badge'); if (selo) selo.textContent = '⚡ ' + explicacaoDoCartao(cartao, ctx)
+    // ÁREA DE META: só existe onde há meta. Cartão de QUANTIDADE (alcance,
+    // conversas, vendas) e a frequência não têm — desenhar um campo editável vazio
+    // ali convidaria o dono a preencher uma meta que ninguém lê.
+    const temMeta = !!chaveMeta
+    const areaMeta = card.querySelector('.mc-goal-area'); if (areaMeta) areaMeta.style.display = temMeta ? '' : 'none'
+    // O ALVO que o dono realmente definiu, ou null. Indicador de balde novo NASCE
+    // SEM META: o campo fica em "—", esperando o número dele. Herdar a meta de
+    // outro indicador ou inventar um padrão é pior do que não ter — um alvo
+    // chutado faz o semáforo responder "de quem é essa conta?" em vez de "essa
+    // campanha vai bem?".
+    const meta = temMeta ? metaDefinida(chaveMeta, currentPeriod, currentAccountId) : null
+    if (metaEl && temMeta) {
+      // O id DO ELEMENTO é a chave de gravação: watchGoals lê el.id no blur e
+      // grava com ela. Trocar o id junto com o cartão é o que impede a meta de
+      // custo por conversa de gravar por cima da de custo por seguidor.
+      // (O caso sem meta já foi estacionado lá em cima, antes do `return`.)
+      metaEl.id = 'goal-' + chaveMeta
+      metaEl.textContent = meta == null ? '—' : String(meta)
+      const lblMeta = card.querySelector('.mc-goal-lbl')
+      if (lblMeta) lblMeta.textContent = cartao.id === 'investimento' ? 'BUDGET' : 'META MÁX'
+    }
+    // Barra, porcentagem e veredito só existem com alvo. Sem meta o cartão mostra
+    // o número e a comparação, e cala a nota — é um estado normal, não quebrado.
+    const temBarra = temMeta && meta != null
+    ;['.mc-divider', '.mc-progress-track', '.mc-bottom'].forEach((sel) => { const el = card.querySelector(sel); if (el) el.style.display = temBarra ? '' : 'none' })
+    // O CUSTO POR SEGUIDOR segue com o caminho dele, inteiro: é o único indicador
+    // desta tela cujo denominador a Meta publica com ~1 dia de atraso, e os selos
+    // "⏳ consolidando" e "⏳ prévia" existem por causa disso. O NÚMERO, porém, é o
+    // mesmo dos outros custos: investimento do cartão ÷ novos seguidores.
+    if (cartao.id === 'cps') { desenharCustoPorSeguidor(ctx.d, ctx.pl, ctx.inv, ctx.invAnt, cartao, meta, ctx.segCusto); return }
+    const valEl = document.getElementById('ads-' + slot + '-val')
+    if (valEl) {
+      if (cartao.valor != null && cartao.formato === 'inteiro') animCount(valEl, cartao.valor)
+      else { valEl.textContent = textoDoCartao(cartao); valEl.removeAttribute('title'); valEl.classList.remove('tem-tooltip') }
+    }
+    // SEM NÚMERO NÃO SE DÁ NOTA. Barra em 0% com veredito seria uma conclusão
+    // tirada de "não sei" — pior do que não dizer nada.
+    if (cartao.valor == null) return
+    if (cartao.id === 'investimento') {
+      setCompare('cmp-' + slot, cartao.valor, ctx.invAnt, 'R$ ', ctx.pl, true)
+      if (podeDarVeredito(cartao, meta)) applySpend(cartao.valor, meta)
+      return
+    }
+    if (cartao.semaforo) {
+      // Limiar de negócio (frequência ≥ 4), não preferência de conta: pinta o
+      // número e a borda, sem barra de progresso nem meta editável.
+      const cor = COR_DO_SEMAFORO[cartao.semaforo(cartao.valor)] || ''
+      _mcValColor(slot, cor); _mcBorderColor(slot, cor)
+      return
+    }
+    if (!podeDarVeredito(cartao, meta)) return
+    applyMetricInverse(slot, cartao.valor, meta)
+    _mcBorderColor(slot, perfColor((meta / cartao.valor) * 100))
+  })
+  // Caixa de comparação VAZIA sai da tela. Ela tem fundo próprio, então vazia vira
+  // um retângulo bege no meio do cartão — e retângulo que não diz nada só faz a
+  // pessoa procurar o que deveria estar ali. Só o investimento e o custo por
+  // seguidor têm período anterior guardado; os outros indicadores ainda não.
+  SLOTS_DOS_CARTOES.forEach((slot) => {
+    const el = document.getElementById('cmp-' + slot)
+    if (el) el.style.display = el.textContent.trim() ? '' : 'none'
+  })
+}
+
+/* ── UM GRÁFICO DIÁRIO POR LUGAR DA GRADE — nunca por indicador ── */
+// O bloco do gráfico é do LUGAR (`gmad-spend`, `gmad-cps`, `gmad-cpi`,
+// `gmad-cpl` — os mesmos nomes de SLOTS_DOS_CARTOES), e o que se desenha dentro
+// dele sai do cartão que CAIU ali neste balde.
+//
+// Amarrar o gráfico ao indicador seria repetir o defeito que já apareceu na
+// tarefa 6: o bloco ficava com o título do cartão anterior depois que o balde
+// trocava. Em Contatos, o segundo lugar é o custo por conversa — um gráfico
+// "quanto custou cada seguidor novo" embaixo dele estaria falando de um número
+// que não está na tela.
+//
+// LUGAR SEM CARTÃO (Vendas esconde o quarto) e CARTÃO SEM GRÁFICO (alcance,
+// frequência, contagens) esvaziam o bloco. Sem isso, o desenho do balde anterior
+// ficaria embaixo de um cartão que não é dele.
+function desenharGraficosDosCartoes(cartoes, balde, diario) {
+  SLOTS_DOS_CARTOES.forEach((slot, i) => {
+    const host = document.getElementById('gmad-' + slot)
+    if (!host) return
+    // BLOCO VAZIO SAI DA TELA, não fica só sem conteúdo. `.gmad-bloco` tem
+    // borda em cima e respiro próprio: esvaziado e ainda exibido, ele vira um
+    // risco solto de 13px no pé do cartão — medido a 375px, embaixo do cartão de
+    // contagem em Contatos e dos dois lugares vazios em Vendas. Traço sem nada
+    // depois faz a pessoa procurar o que deveria estar ali.
+    const semGrafico = () => { host.textContent = ''; host.style.display = 'none' }
+    host.style.display = ''
+    const cartao = cartoes[i] || null
+    if (!cartao) { semGrafico(); return }
+    // A META vem pela MESMA porta e com a MESMA chave do cartão logo acima (ver
+    // chaveDeMeta). Lida aqui, na hora de desenhar, porque o dono edita o campo
+    // direto na tela: ler pelo texto do elemento faria o gráfico e o cartão
+    // afirmarem metas diferentes sobre o mesmo dinheiro, dependendo da ordem em
+    // que foram desenhados.
+    const meta = cartao.metaKey ? metaDefinida(chaveDeMeta(cartao.metaKey, balde), currentPeriod, currentAccountId) : null
+    if (cartao.id === 'investimento') {
+      desenharGraficoDiario(host.id, montarSerieDeInvestimento({
+        inicio: diario.inicio, fim: diario.fim, linhasDeGasto: diario.linhasDeGasto, budgetDoPeriodo: meta,
+      }), {
+        titulo: 'Quanto foi investido em cada dia',
+        rotuloValor: 'Investido no dia',
+        rotuloMeta: 'Meta do dia',
+        // Sem budget não há linha nem barra vermelha — e a legenda não pode prometer o
+        // que não está desenhado. Balde novo nasce sem budget: mostra o gasto do dia e
+        // cala a nota, até o dono digitar o dele.
+        legendaBase: meta > 0
+          ? 'Cada barra é um dia · a linha é o budget dividido pelos dias do período · barra vermelha = passou do budget do dia'
+          : 'Cada barra é um dia · sem budget definido para este tipo de campanha, então não há linha de meta',
+        textoVazio: 'Nenhum investimento registrado nos dias deste período.',
+        textoSemDado: { 'sem-coleta': 'sem informação coletada neste dia' },
+      })
+      return
+    }
+    if (cartao.id === 'cps') {
+      desenharGraficoDiario(host.id, montarSerieDeCustoPorSeguidor({
+        inicio: diario.inicio, fim: diario.fim, linhasDeGasto: diario.linhasDeGasto, linhasDeSeguidores: diario.linhasDeSeguidores,
+        metaDeCustoPorSeguidor: meta,
+      }), {
+        titulo: 'Quanto custou cada seguidor novo, dia a dia',
+        rotuloValor: 'Custo por seguidor no dia',
+        rotuloMeta: 'Meta máxima',
+        legendaBase: 'Cada barra é um dia (investido no dia ÷ seguidores novos do dia) · a linha é a meta máxima · barra vermelha = custou mais caro que a meta',
+        textoVazio: 'Nenhum dia deste período teve investimento e seguidor novo ao mesmo tempo — sem custo por seguidor pra mostrar.',
+        textoSemDado: { 'sem-coleta': 'sem informação coletada neste dia', 'sem-seguidor': 'nenhum seguidor novo neste dia — sem como calcular o custo' },
+      })
+      return
+    }
+    // OS SETE CUSTOS POR RESULTADO: a mesma série, com o denominador que o
+    // catálogo aponta. O denominador sai das MESMAS linhas do gasto (uma linha
+    // por campanha por dia, period_days = 0) — nenhuma viagem a mais ao banco.
+    const receita = graficoDoCartao(cartao.id)
+    if (!receita) { semGrafico(); return }
+    const serie = montarSerieDeCustoPorResultado({
+      inicio: diario.inicio, fim: diario.fim, linhasDeGasto: diario.linhasDeGasto,
+      linhasDeResultado: (diario.linhasDeGasto || []).map(r => ({ captured_at: r.captured_at, quantidade: r[receita.campo] })),
+      meta, divisorDoResultado: receita.divisor,
+    })
+    // DOIS DIAS PAGOS É O MÍNIMO. Abaixo disso entra a frase, não um gráfico de
+    // um pontinho — e o dia que teve resultado sem gastar nada NÃO conta para
+    // liberar, senão o gráfico inteiro poderia ser de barras de R$ 0,00, que não
+    // dizem nada sobre custo. Ele continua sendo desenhado como ponto quando o
+    // gráfico existe: é medida, não buraco.
+    //
+    // Medido em 30 dias (17/08/2026): custo por venda não desenha em perfil
+    // NENHUM, e custo por cadastro não desenha em Breno Vale (1 cadastro),
+    // Motoeasy, Raíssa nem Mantova (nenhum). Isso é a regra funcionando, não
+    // gráfico faltando: não se baixa o mínimo para preencher o vão.
+    desenharGraficoDiario(host.id, serie, {
+      ...opcoesDoGrafico(cartao.id, { temMeta: serie.meta > 0, diasComCusto: diasComInvestimentoEResultado(serie) }),
+      minimoDeDias: 2,
+      exigirInvestimento: true,
+    })
+  })
+}
+
+// ── CUSTO POR SEGUIDOR: investimento ÷ os NOVOS SEGUIDORES QUE ESTÃO NA TELA. ──
+// Em 7D/14D/30D isso é o BRUTO (quem seguiu), nunca o líquido — a régua de
+// sempre. Em HOJE e 1D a Meta ainda não publicou a quebra "seguiu/saiu", o
+// cartão de cima esconde essas duas linhas e mostra só o líquido pela contagem:
+// ali o denominador é esse líquido, com selo de prévia, porque é o único número
+// de seguidor que a pessoa tem na frente para refazer a conta.
+//
+// De ONDE sai esse número quem decide é seguidores-do-custo.js (puro, testado).
+// Aqui só se desenha — e os dois selos, que são sobre o DENOMINADOR e não sobre
+// qual gasto está em cima: a Meta publica "quem seguiu" com ~1 dia de atraso.
+//
+// `seg` pode faltar numa pintura antiga que não passe pelo update() novo; nesse
+// caso vale o caminho coletado de sempre, que é o que existia antes.
+function desenharCustoPorSeguidor(d, pl, inv, invAnt, cartao, meta, seg) {
+  const _cpsVal = document.getElementById('ads-cps-val')
+  const _cpsPrev = document.getElementById('previa-cps')
+  const cps = cartao.valor
+  const _seg = seg || { valor: d.divSeguidores, anterior: d.divSeguidoresAnterior, previa: !!d.cpsPrevia, fonte: FONTES.coletado }
+  // O CUSTO ANTERIOR SÓ EXISTE QUANDO OS DOIS LADOS SÃO DA MESMA JANELA.
+  //
+  // Isso só acontece com o ao vivo respondendo em 7D/14D/30D: ali o investimento
+  // anterior e os seguidores anteriores vêm os dois do período imediatamente
+  // anterior, da mesma leitura. Nos outros casos a divisão juntava janelas
+  // diferentes — sem ao vivo, `d.prevSpend` é de UM MÊS atrás e o bruto de
+  // seguidores é da semana passada, e o quociente não é custo de período nenhum.
+  // Em HOJE/1D `_seg.anterior` já vem null (líquido de hoje contra bruto de
+  // ontem seriam medidas diferentes).
+  // Sem base, o cartão diz "Acumulando histórico…" — que é a verdade — em vez de
+  // imprimir uma seta verde sobre um número que ninguém mediu.
+  const mesmaJanelaNosDoisLados = _seg.fonte === FONTES.brutoAoVivo
+  const cpsAnterior = (mesmaJanelaNosDoisLados && invAnt > 0 && _seg.anterior > 0) ? invAnt / _seg.anterior : null
+  const _temInv = (d.spend > 0) || (inv > 0) // só faz sentido falar de custo se houve investimento
+  // "Consolidando" = houve dinheiro e mesmo assim não há denominador para dividir.
+  //
+  // SÓ HOJE/1D ganham regra nova, e de propósito: ali o denominador é o líquido
+  // impresso no cartão, e se ele não for positivo não há custo a afirmar — a
+  // quebra "quem seguiu" desses dias é justamente a que o Instagram ainda não
+  // publicou, que é o que o aviso diz. Em todos os outros caminhos continua
+  // mandando o `cpsConsolidando` que o fetchData calcula: ele já distingue "a
+  // Meta não fechou" de "ninguém seguiu mesmo", e trocar isso por "não é
+  // positivo" faria a tela dizer "aguardando o Instagram" num dia em que a
+  // resposta é zero de verdade.
+  const _cpsConsolidando = _temInv && (_seg.fonte === FONTES.impressoAoVivo ? !(_seg.valor > 0) : !!d.cpsConsolidando)
+  if (_cpsConsolidando) {
+    // Sem novos seguidores brutos ainda (dias recentes não fecharam) → não inventa custo, avisa.
+    if (_cpsVal) _cpsVal.textContent = '—'
+    _mcValColor('cps', 'orange')
+    if (_cpsPrev) {
+      _cpsPrev.style.display = 'block'
+      _cpsPrev.innerHTML = '<span class="previa-selo">⏳ consolidando</span>' +
+        '<div class="previa-nota">O custo por seguidor aparece assim que o Instagram publicar quantas pessoas novas seguiram nos dias mais recentes — costuma sair em cerca de 1 dia. Até lá, esses dias ainda não fecharam o número de novos seguidores.</div>'
+    }
+    const _c = document.getElementById('cmp-cps'); if (_c) _c.innerHTML = '' // "anterior" não ajuda enquanto não fecha
+    const _pg = document.getElementById('prog-cps'); if (_pg) { _pg.style.width = '0%'; _pg.className = 'mc-progress-fill' }
+    const _pc = document.getElementById('pct-cps'); if (_pc) { _pc.textContent = 'consolidando'; _pc.className = 'mc-pct c-orange' }
+    const _df = document.getElementById('diff-cps'); if (_df) { _df.textContent = 'aguardando o Instagram publicar os novos seguidores'; _df.className = 'mc-diff c-orange' }
+    _mcBorderColor('cps', 'orange')
+  } else if (_seg.previa && cps > 0) {
+    // PRÉVIA: o custo foi calculado pelo crescimento da CONTAGEM de hoje (a Meta ainda não
+    // publicou o bruto oficial de "quem seguiu"). Mostra o número (não zera!) mas avisa que é
+    // prévia e pode ajustar quando fechar. Ex.: R$40 investidos ÷ +5 seguidores hoje = R$8.
+    if (_cpsVal) _cpsVal.textContent = fmtR(cps)
+    _mcValColor('cps', 'orange')
+    if (_cpsPrev) {
+      _cpsPrev.style.display = 'block'
+      _cpsPrev.innerHTML = '<span class="previa-selo">⏳ prévia</span>' +
+        '<div class="previa-nota">Prévia: calculado pelo crescimento da contagem de seguidores (o Instagram ainda não publicou o número oficial de quem seguiu nos dias recentes — costuma sair em ~1 dia). O valor pode ajustar quando fechar.</div>'
+    }
+    const _c = document.getElementById('cmp-cps'); if (_c) _c.innerHTML = '' // "anterior" não compara com prévia
+    _mcBorderColor('cps', 'orange')
+    const _pc = document.getElementById('pct-cps'); if (_pc) { _pc.textContent = 'prévia'; _pc.className = 'mc-pct c-orange' }
+  } else {
+    if (_cpsVal) _cpsVal.textContent = cps > 0 ? fmtR(cps) : 'R$ —'
+    if (_cpsPrev) { _cpsPrev.style.display = 'none'; _cpsPrev.innerHTML = '' }
+    setCompare('cmp-cps', cps || 0, cpsAnterior, 'R$ ', pl, true)
+    if (podeDarVeredito(cartao, meta)) {
+      applyMetricInverse('cps', cps, meta); _mcBorderColor('cps', perfColor((meta / cps) * 100))
+    } else { _mcValColor('cps', ''); _mcBorderColor('cps', '') }
+  }
+}
 
 /* ── HELPERS (legacy L3367-3411, verbatim) ── */
 function popEl(el) {
@@ -631,7 +1120,11 @@ const _PERF_VAR = { green: 'var(--green)', yellow: 'var(--yellow)', orange: 'var
 function _mcValColor(key, clr) { const pe = document.getElementById('pct-' + key); const card = pe && pe.closest('.card'); const v = card && card.querySelector('.mc-val'); if (!v) return; const col = _PERF_VAR[clr] || ''; if (col) { v.style.setProperty('color', col, 'important'); v.style.setProperty('-webkit-text-fill-color', col, 'important') } else { v.style.removeProperty('color'); v.style.removeProperty('-webkit-text-fill-color') } }
 function _mcBorderColor(key, clr) { const pe = document.getElementById('pct-' + key); const card = pe && pe.closest('.card'); if (!card) return; card.style.borderLeftColor = clr ? (_PERF_VAR[clr] || '') : '' }
 function goalStorageKey(key, period, accountId) { return 'ig_goal_' + (accountId || 'default') + '_' + period + '_' + key }
-const RATE_GOALS = ['cps', 'cpi', 'cpl']
+// `ehMetaDeTaxa` mora em cartoes-do-balde.js, ao lado do `chaveDeMeta` que monta
+// a chave que ela lê — e com teste. Ela é a única coisa que impede uma meta de
+// custo de ser MULTIPLICADA de um período para outro (R$ 12 por conversa em 7D
+// virando R$ 51 na linha de 30D): o que ela estraga é um número GRAVADO, não um
+// pixel, e por isso não podia continuar sem prova.
 // comprimento em dias de cada período (pro recálculo proporcional). null = comprimento variável (não escala).
 function periodDays(period) {
   if (period === 0 || period === 1) return 1
@@ -697,8 +1190,15 @@ function janelasDoPeriodo(period, hoje = new Date(), customStart = null, customE
   const capFol = (u) => new Date(Math.min(u.getTime(), folCap.getTime()))
   const ehLastmonth = period === 'lastmonth'
   const ehRecente = period === 0 || period === 1
+  // ⚠️ O PERSONALIZADO NÃO SOFRE O CORTE DE `capFol`. O corte existe para os
+  // ROLANTES, onde o último dia é sempre "ontem, ainda assentando" — mas num
+  // intervalo FECHADO o dono escolheu as datas e tem de receber aquelas datas.
+  // Sem esta exceção, filtrar 5 a 9 mostrava três dias e parava no 7 (09/09/2026).
+  // Dia sem número da Meta aparece como estimativa marcada, que é o certo — some
+  // do gráfico é que não pode.
+  const ehCustom = !!(customStart && customEnd)
   const folS = ehLastmonth ? menos1(engS) : engS
-  const folU = ehLastmonth ? menos1(engU) : (ehRecente ? engU : capFol(engU))
+  const folU = ehLastmonth ? menos1(engU) : ((ehRecente || ehCustom) ? engU : capFol(engU))
   const folSp = ehLastmonth ? menos1(engSp) : engSp
   const folUp = ehLastmonth ? menos1(engUp) : engUp
   return {
@@ -732,13 +1232,16 @@ const _TRAVA_JANELAS = [
   { period: 30,          eS: '2026-06-07', eU: '2026-07-07', fS: '2026-06-07', fU: '2026-07-06' }, // 30D → novos 1295/580
   { period: 'monthfull', eS: '2026-07-01', eU: '2026-07-07', fS: '2026-07-01', fU: '2026-07-06' }, // MÊS (corrente até ontem)
   { period: 'lastmonth', eS: '2026-06-01', eU: '2026-07-01', fS: '2026-05-31', fU: '2026-06-30' }, // MÊS PASS → novos 1281/571
+  // ⚠️ PERSONALIZADO: recebe EXATAMENTE os dias escolhidos, sem o corte de ontem.
+  // Filtrar 5 a 9 e ver três dias até o 7 foi defeito real (09/09/2026).
+  { period: 7, cS: '2026-07-01', cE: '2026-07-04', eS: '2026-07-01', eU: '2026-07-05', fS: '2026-07-01', fU: '2026-07-05' },
 ]
 function verificarTravaJanelas() {
   const ref = new Date('2026-07-07T12:00:00-03:00')
   const dstr = (ts) => new Date(Number(ts) * 1000).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' })
   const falhas = []
   for (const t of _TRAVA_JANELAS) {
-    const j = janelasDoPeriodo(t.period, ref)
+    const j = janelasDoPeriodo(t.period, ref, t.cS || null, t.cE || null)
     if (dstr(j.engSince) !== t.eS || dstr(j.engUntil) !== t.eU) {
       falhas.push(`  • ${t.period} · ENGAJAMENTO: esperado [${t.eS} → ${t.eU}], veio [${dstr(j.engSince)} → ${dstr(j.engUntil)}]`)
     }
@@ -747,7 +1250,7 @@ function verificarTravaJanelas() {
     }
   }
   if (falhas.length) {
-    console.error('%c🔒⚠️ TRAVA DAS JANELAS DISPAROU — a lógica de intervalo (engajamento e/ou novos seguidores) mudou e NÃO bate mais com o painel profissional:\n' + falhas.join('\n') + '\n→ Reverta janelasDoPeriodo OU revalide com os números exatos do Breno E atualize a referência da trava antes de subir.', 'color:var(--red);font-weight:bold;font-size:13px')
+    console.error('%c🔒⚠️ TRAVA DAS JANELAS DISPAROU — a lógica de intervalo (engajamento e/ou novos seguidores) mudou e NÃO bate mais com o painel profissional:\n' + falhas.join('\n') + '\n→ Reverta janelasDoPeriodo OU revalide com os números exatos do Breno E atualize a referência da trava antes de subir.', 'color:var(--red);font-weight:bold;font-size:max(9px, calc(13px * var(--escala-texto, 1)))')
     return false
   }
   return true
@@ -755,13 +1258,19 @@ function verificarTravaJanelas() {
 // KPIs AO VIVO (exatos da Meta) via edge function insights-ao-vivo. Token fica no servidor.
 // Cache leve por (conta+período) por 3min; null se a Meta falhar (a tela cai no coletado).
 const _kpiCache = {}
-async function buscarKpisAoVivo(accountId, period, customStart, customEnd) {
-  const chave = accountId + '|' + String(period) + '|' + (customStart || '') + '|' + (customEnd || '')
+async function buscarKpisAoVivo(accountId, period, customStart, customEnd, campanhas) {
+  // `campanhas` = o recorte de balde+filtro. Lista VAZIA é o caminho de sempre:
+  // a edge soma level=account, que é o número exato e mais barato da conta.
+  const ids = (campanhas || []).map(String)
+  // Os ids entram na CHAVE DO CACHE, não só no corpo: sem isso, trocar de balde
+  // devolveria o número do balde anterior por até 3 minutos. A lista inteira e
+  // ordenada (não o tamanho dela) — dois baldes de mesmo tamanho colidiriam.
+  const chave = accountId + '|' + String(period) + '|' + (customStart || '') + '|' + (customEnd || '') + '|' + ids.slice().sort().join(',')
   const agora = Date.now()
   if (_kpiCache[chave] && (agora - _kpiCache[chave].t) < 180000) return _kpiCache[chave].v
   try {
     const jan = janelasDoPeriodo(period, new Date(), customStart, customEnd)
-    const { data, error } = await sbClient.functions.invoke('insights-ao-vivo', { body: { account_id: accountId, ...jan } })
+    const { data, error } = await sbClient.functions.invoke('insights-ao-vivo', { body: { account_id: accountId, ...jan, campanhas: ids } })
     if (error || !data || data.meta_erro || data.followers_count == null) return null
     _kpiCache[chave] = { t: agora, v: data }
     return data
@@ -797,6 +1306,17 @@ async function buscarSerieNovos(accountId, period, customStart, customEnd, shift
     // Obs.: no mês passado a SOMA das barras pode diferir levemente do card, pois o card usa o agregado
     // da Meta (bucketizado -1 dia), enquanto as barras mostram o valor real de cada dia — mesmo comportamento do painel profissional.
     const DIA = 86400, dias = []
+    // ⚠️ AS BARRAS FICAM NO DIA REAL, E A SOMA DELAS NÃO FECHA COM O CARD.
+    //
+    // Isto foi tentado ao contrário em 09/09/2026 e o dono derrubou: com as barras
+    // na régua deslocada, a barra "9" carregava o dia 8 (443) enquanto o filtro
+    // "hoje" mostrava 326 para o mesmo dia 9. O MESMO DIA com dois números.
+    //
+    // ⚠️ E O PRÓPRIO PAINEL DO INSTAGRAM NÃO FECHA COM ELE MESMO. Medido pelo dono:
+    // filtrando 5 a 8 ele dá total 951 e o gráfico dele vai só até o dia 7. O total
+    // é deslocado, as barras são do dia real — as duas coisas ao mesmo tempo.
+    // Copiar o painel fielmente É ter essa diferença; escondê-la seria inventar
+    // uma coerência que a fonte não tem. Quem explica é a nota sob o gráfico.
     const upTo = jan.folShift ? Number(jan.engUntil) : Number(jan.folUntil)
     for (let d = Number(jan.engSince); d < upTo; d += DIA) {
       let iso, ds = d // shiftMonths: mesmo dia N meses atrás (comparativo do mês anterior)
@@ -823,7 +1343,7 @@ function saveGoal(key, val) {
   const num = parseFloat(String(val).replace(',', '.')); if (isNaN(num)) return
   const anchor = currentPeriod === 0 ? 1 : currentPeriod
   const rows = [[anchor, num]]
-  if (RATE_GOALS.includes(key)) { // taxa (ex.: custo por seguidor) — mesmo valor em todo período
+  if (ehMetaDeTaxa(key)) { // taxa (ex.: custo por seguidor) — mesmo valor em todo período
     PERIODS.forEach(P => { const p = P.value === 0 ? 1 : P.value; if (p !== anchor) rows.push([p, num]) })
   } else {
     const aDays = periodDays(anchor)
@@ -853,20 +1373,39 @@ function loadGoal(key, period, accountId) {
   if (s !== null && s !== '' && s !== 'NaN') return s                       // valor salvo (ignora corrupção antiga)
   const base = GOALS[key]; if (!base) return '0'
   if (base[pk] != null) return String(base[pk])                     // default exato do período
-  if (RATE_GOALS.includes(key)) return String(base[7] ?? base[30] ?? 0)
+  if (ehMetaDeTaxa(key)) return String(base[7] ?? base[30] ?? 0)
   const refP = base[30] != null ? 30 : (base[7] != null ? 7 : 1)              // default escalado a partir do 30/7
   const d = periodDays(pk), rd = periodDays(refP)
   if (!d || !rd) return String(base[refP] ?? base[7] ?? 0)
   return String(Math.max(1, Math.round((base[refP] || 0) * d / rd)))
 }
 function getGoal(key) { const el = document.getElementById('goal-' + key); const v = el ? parseFloat(String(el.textContent).replace(',', '.')) : NaN; return isFinite(v) ? v : (parseFloat(loadGoal(key, currentPeriod, currentAccountId)) || 0) }
-function getPrevLabel(period) {
-  const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
-  const end = new Date(); end.setDate(end.getDate() - 30)
-  if (period === 1) return end.getDate() + ' ' + months[end.getMonth()]
-  const start = new Date(end); start.setDate(start.getDate() - period + 1)
-  return start.getDate() + ' ' + months[start.getMonth()] + ' – ' + end.getDate() + ' ' + months[end.getMonth()]
+// A meta que o dono REALMENTE definiu para este indicador, como número — ou null.
+//
+// `loadGoal` devolve '0' quando não existe valor salvo NEM padrão em GOALS, e um 0
+// na tela seria um alvo que ninguém pôs. Os indicadores que só aparecem nos baldes
+// novos (custo por conversa, por cadastro, por venda, por visita, custo por mil
+// impressões) NASCEM SEM META de propósito: o campo mostra "—", o cartão não tem
+// barra nem nota, e é assim até o dono digitar o número dele.
+//
+// Herdar a meta de outro indicador, ou inventar um padrão, é pior do que não ter:
+// um alvo chutado igual para cinco contas já fez o semáforo desta casa responder
+// "de quem é essa conta?" em vez de "essa campanha vai bem?".
+function metaDefinida(key, period, accountId) {
+  const pk = period === 0 ? 1 : period
+  const salva = localStorage.getItem(goalStorageKey(key, pk, accountId))
+  if (salva !== null && salva !== '' && salva !== 'NaN') {
+    const v = parseFloat(String(salva).replace(',', '.'))
+    return isFinite(v) ? v : null
+  }
+  if (!GOALS[key]) return null
+  const v = parseFloat(loadGoal(key, period, accountId))
+  return isFinite(v) ? v : null
 }
+// (Havia aqui um `getPrevLabel(period)` que ninguém chamava e que fazia a MESMA
+// conta errada de "30 dias atrás" para qualquer período. Removido em 21/08/2026
+// junto com o conserto do rótulo: função morta é armadilha esperando quem
+// precisar de um rótulo e achar que ela serve.)
 
 /* ── COMPARE ROW (legacy L3465-3482, verbatim) ── */
 function setCompare(id, curr, prev, prefix, periodLabel, lowerIsBetter) {
@@ -944,9 +1483,19 @@ function applySpend(curr, budget) {
 }
 
 /* ── SECTION CHIPS (legacy L3517-3520, verbatim) ── */
+// Aceita texto solto (o caso de sempre) OU { texto, classe } para o chip que
+// precisa de um tratamento próprio — hoje, o aviso que pode passar de uma linha.
+// O .sec-chip normal é `nowrap` porque carrega número curto; um aviso em nowrap
+// sairia cortado no celular, e texto cortado é justamente o que não pode.
 function setChips(id, chips) {
   const wrap = document.getElementById(id); if (!wrap) return; wrap.textContent = ''
-  chips.forEach(txt => { const c = document.createElement('div'); c.className = 'sec-chip'; c.textContent = txt; wrap.appendChild(c) })
+  chips.forEach(item => {
+    const ehObj = item && typeof item === 'object'
+    const c = document.createElement('div')
+    c.className = 'sec-chip' + (ehObj && item.classe ? ' ' + item.classe : '')
+    c.textContent = ehObj ? item.texto : item
+    wrap.appendChild(c)
+  })
 }
 
 /* ── CHART (legacy L3523-3596, verbatim) ── */
@@ -972,11 +1521,56 @@ function _animateChartLine(el, pts) {
 //   • SÓ O SUPER-ADMIN vê a explicação técnica (desde quando, quantos dias, que a
 //     falta é da Meta). Para quem só usa o painel isso é ruído; para quem cuida
 //     do sistema é o aviso de que tem coisa parada.
-function montarNotaDeEstimativa(semPublicacao) {
+function montarNotaDeEstimativa(semPublicacao, diag) {
   const el = document.getElementById('nota-estimativa')
   if (!el) return
   const dias = semPublicacao || []
-  if (!dias.length) { el.hidden = true; el.innerHTML = ''; return }
+  // ⚠️ O DIAGNÓSTICO APARECE MESMO SEM DIA FALTANDO — é ele que diz de onde os
+  // números saíram, e é justamente quando "está tudo certo" que ele é preciso.
+  // ⚠️ NÃO SÓ SUPER-ADMIN. A primeira versão disto ficou invisível justamente para
+  // quem precisava dela: o dono abriu a tela, tirou o print, e o diagnóstico não
+  // estava lá porque a conta dele não é super-admin. Agora `?diag=1` no endereço
+  // liga para qualquer um que já tenha acesso à tela.
+  // O sinal é capturado no boot (ponto-de-partida.js) porque o roteador apaga a
+  // query ao navegar. Aqui só se lê o que ficou guardado — ou a query, se a
+  // pessoa abriu direto nesta tela.
+  let _querDiag = false
+  try {
+    _querDiag = sessionStorage.getItem('rbv_diag') === '1'
+      || new URLSearchParams(window.location.search).get('diag') === '1'
+  } catch (e) {}
+  // ⚠️ SEM HTML AQUI. A primeira versao usava `escHtml`, que NAO EXISTE nesta tela
+  // — `ReferenceError` dentro desta funcao, que roda ANTES dos cartoes de anuncio:
+  // a faixa de diagnostico aparecia (ela vem antes) e da secao Meta Ads para baixo
+  // zerava TUDO. O dono levou horas nisso. Texto puro nao tem como quebrar.
+  // ⚠️ SÓ COM `?diag=1`, NUNCA POR SER SUPER-ADMIN.
+  //
+  // O diagnóstico tinha DUAS portas, e fechar uma só não apagou nada: em
+  // 10/09/2026 limpei o `rbv_diag` preso no navegador e a faixa continuou lá,
+  // porque o dono é super-admin e essa porta acendia sozinha em todo
+  // carregamento. Ele: "no navegador ainda aparece aquela barrinha vermelha em
+  // cima". Instrumento que a pessoa não pediu e não sabe desligar é defeito,
+  // por mais útil que ele tenha sido no dia em que foi escrito.
+  const _diagTxt = (diag && _querDiag)
+    ? `🔧 recorte: ${diag.ehCustom ? 'PERSONALIZADO' : 'período ' + diag.periodo}`
+      + ` · janela ${diag.follow} (${diag.effectivePeriod} dia(s))`
+      + ` · seguidores: ${diag.fonteSeguidores || '?'}`
+      + ` · ads: period_days=${diag.adsPd}, ${diag.adsDias} dia(s), ${diag.adsLinhas} linha(s)`
+      + ` · snapshot de engajamento: ${diag.storedPeriod}d · ao vivo: ${diag.aoVivo ? 'sim' : 'NÃO'}`
+    : ''
+  const _porDiag = () => {
+    if (!_diagTxt) return
+    const t = document.createElement('div')
+    t.className = 'nota-est-tec'
+    t.textContent = _diagTxt
+    el.appendChild(t)
+  }
+  if (!dias.length) {
+    el.innerHTML = ''
+    _porDiag()
+    el.hidden = !_diagTxt
+    return
+  }
   // Só datas YYYY-MM-DD entram. Este texto vai por innerHTML e o rótulo do dia dá
   // uma volta pela Edge Function antes de chegar aqui — nada que não seja data
   // passa, e o resto do texto é fixo, escrito neste arquivo.
@@ -991,7 +1585,49 @@ function montarNotaDeEstimativa(semPublicacao) {
     html += `<div class="nota-est-tec">🔧 O Instagram não publica <code>follows_and_unfollows</code> desde ${desde}. A coleta está rodando normalmente e a contagem total continua chegando — a falta é do lado da Meta. Se ela voltar a publicar em até 14 dias, o coletor preenche esses dias sozinho; passando disso, o número se perde.</div>`
   }
   el.innerHTML = html
+  _porDiag()
   el.hidden = false
+}
+
+/* Põe no trilho a largura do desenho e as duas tiras vazias das beiradas.
+   As tiras ficam aqui, e não no CSS, para não haver dois lugares dizendo o mesmo
+   número: quem manda são as constantes de largura-do-grafico.js, que é onde está
+   escrito POR QUE elas existem. */
+function vestirOTrilho(trilho, medida) {
+  if (!trilho) return
+  if (medida.rola) {
+    trilho.style.setProperty('--largura-do-grafico', medida.largura + 'px')
+    trilho.style.paddingLeft = ESPACO_ANTES_DO_GRAFICO + 'px'
+    trilho.style.paddingRight = ESPACO_DEPOIS_DO_GRAFICO + 'px'
+  } else {
+    // Cabendo, o trilho volta a ser fluido (100%) e sem tira nenhuma: o gráfico
+    // acompanha o cartão sozinho, inclusive quando o aparelho gira, sem depender
+    // de um novo desenho.
+    trilho.style.removeProperty('--largura-do-grafico')
+    trilho.style.paddingLeft = ''
+    trilho.style.paddingRight = ''
+  }
+}
+
+/* Mede o espaço que o cartão dá e aplica a régua dos 30px por dia nas três
+   camadas do gráfico (ver o comentário do template, na seção 01).
+
+   `caixaExterna` = a `.grafico-que-rola`; dentro dela vêm a `.rolagem-de-grafico`
+   (a que rola) e o `.trilho-de-grafico` (o que fica largo).
+
+   Devolve a medida, porque o desenho depende dela: com 30px por dia cabe número
+   dentro da barra onde antes não cabia. */
+function medirLarguraDoGrafico(caixaExterna, pontos) {
+  const rolagem = caixaExterna ? caixaExterna.querySelector('.rolagem-de-grafico') : null
+  const trilho = rolagem ? rolagem.querySelector('.trilho-de-grafico') : null
+  // Medimos a CAIXA QUE ROLA, não o trilho: ela recorta o que passa, então a
+  // largura dela é a largura VISÍVEL mesmo quando um desenho largo de uma
+  // passada anterior ainda está lá dentro. Medir o trilho devolveria a largura
+  // do desenho antigo, e o gráfico nunca mais voltaria a encolher.
+  const medida = larguraDoGrafico({ pontos, larguraDisponivel: rolagem ? rolagem.clientWidth : 0 })
+  if (caixaExterna) caixaExterna.classList.toggle('rolando', medida.rola)
+  vestirOTrilho(trilho, medida)
+  return medida
 }
 
 function buildChart(chartData) {
@@ -1007,9 +1643,19 @@ function buildChart(chartData) {
   gained = (gained || []).slice(); lost = (lost || []).slice(); labels = (labels || []).slice(); dates = (dates || []).slice()
   if (gained.length === 0) { gained = [0]; lost = [0]; labels = labels.length ? labels : ['']; dates = dates.length ? dates : [''] }
   const n = gained.length
+  // A régua dos 30px por dia. Ela mexe na LARGURA do desenho, não no viewBox:
+  // este SVG tem preserveAspectRatio="none", então esticar a largura estica só na
+  // horizontal (a altura continua presa em 150px pelo CSS) e os rótulos, que são
+  // posicionados em PORCENTAGEM sobre a camada de números, acompanham de graça.
+  const medidaDoGrafico = medirLarguraDoGrafico(document.getElementById('grafico-de-seguidores'), n)
   const net = gained.map((g, i) => g - (lost[i] || 0))
   const totals = gained.map((g, i) => g + (lost[i] || 0))
-  const W = 400, H = 110, padX = 8, padTop = 18, padBot = 4
+  // A meta é lida ANTES de fechar a moldura porque ela muda a moldura: quando
+  // existe rótulo de meta, o topo do quadro vira faixa dele e de mais ninguém
+  // (mesmo motivo do gráfico da seção 02 — ver o comentário do padTop de lá).
+  const metaPeriodoDoGrafico = getGoal('followers')
+  const metaDia = (metaPeriodoDoGrafico > 0 && n > 0) ? metaPeriodoDoGrafico / n : 0
+  const W = 400, H = 110, padX = 8, padTop = metaDia > 0 ? 32 : 18, padBot = 4
   const maxTot = Math.max(...totals, 1)
   const chartH = H - padTop - padBot, baseY = H - padBot
   const hOf = v => (v / maxTot) * chartH
@@ -1045,7 +1691,13 @@ function buildChart(chartData) {
   // Rótulos HTML SOBREPOSTOS (não distorcem como o <text> do SVG esticado): números dentro + líquido no topo.
   const labelsG = document.getElementById('chart-data-labels'); labelsG.textContent = ''
   const _lab = (xPx, yPx, text, cls) => { const s = document.createElement('span'); s.className = cls; s.textContent = text; s.style.left = ((xPx / W) * 100) + '%'; s.style.top = ((yPx / H) * 100) + '%'; labelsG.appendChild(s); return s }
-  const showInside = n <= 14
+  // Número DENTRO da barra (quantos seguiram / quantos saíram). A regra sempre foi
+  // de espaço, escrita em contagem de dias: até 14 dias cabia, daí em diante não.
+  // Rolando, cada dia tem 30px garantidos — mais do que os ~22px que os 14 dias
+  // tinham no celular — então o número volta a caber e não há por que escondê-lo.
+  // A conta por dias fica de pé para quem NÃO rola (o computador), que continua
+  // exatamente como está hoje.
+  const showInside = n <= 14 || medidaDoGrafico.rola
   for (let i = 0; i < n; i++) {
     const x = px(i), g = gained[i] || 0, l = lost[i] || 0
     const gh = hOf(g), lh = hOf(l)
@@ -1077,14 +1729,20 @@ function buildChart(chartData) {
   // a linha encosta no topo (clamp) pra nunca sumir do quadro.
   const metaEl = document.getElementById('chart-meta')
   if (metaEl) {
-    const metaPeriodo = getGoal('followers')
-    const metaDia = (metaPeriodo > 0 && n > 0) ? metaPeriodo / n : 0
     if (metaDia > 0) {
       const my = py(Math.min(metaDia, maxTot))
       metaEl.setAttribute('y1', my.toFixed(2)); metaEl.setAttribute('y2', my.toFixed(2))
       metaEl.removeAttribute('display')
-      const lab = _lab(W, my, 'Meta ' + fmtN(Math.round(metaDia)) + '/dia', 'cdl-meta')
-      lab.style.transform = 'translate(-100%, -118%)'
+      // O RÓTULO DA META MORA NO CANTO DE CIMA, À ESQUERDA — e essa faixa é dele
+      // sozinho (o padTop lá em cima foi aberto para isso).
+      //
+      // Antes ele ficava na direita, na altura da linha: em cima do ÚLTIMO dia,
+      // que é sempre rotulado ("+22" por cima de "Meta 69/dia" foi um dos pares
+      // medidos). Só trocar de lado NÃO resolve — medido a 375px, ele passou a
+      // bater no PRIMEIRO dia ("+28" × "Meta 69/dia"). O que resolve é tirá-lo
+      // da faixa onde moram os números dos dias.
+      const lab = _lab(0, 0, 'Meta ' + fmtN(Math.round(metaDia)) + '/dia', 'cdl-meta')
+      lab.style.transform = 'translate(0, 0)'
     } else metaEl.setAttribute('display', 'none')
   }
 }
@@ -1095,6 +1753,24 @@ function buildChart(chartData) {
    Aqui o SVG escala uniforme (sem preserveAspectRatio="none"), então o texto pode ficar
    dentro do próprio SVG: não estica nem distorce como no gráfico de seguidores.
    Genérico: os dois gráficos usam ESTA função, sem nenhuma regra por perfil. */
+/* Quanto um <text> de SVG mede DE VERDADE, em unidades do desenho.
+   Estimar por número de caracteres não serve: "R$ 92,86" é mais largo que
+   "R$ 17,34" com os mesmos 8 caracteres, porque o "1" é estreito. Foi por uma
+   estimativa assim que um rótulo escapou do quadro sem ninguém ver.
+   Devolve 0 quando não dá para medir (elemento fora da tela, sem renderização) —
+   e aí quem chamou mantém o desenho de sempre em vez de arriscar. */
+function medidaDeTexto(no) {
+  try { return no.getComputedTextLength() } catch (e) { return 0 }
+}
+/* A caixa que o texto ocupa, nos dois eixos, em unidades do desenho. Null quando
+   não dá para medir. */
+function caixaDeTexto(no) {
+  try {
+    const b = no.getBBox()
+    if (!b || !(b.width > 0)) return null
+    return { x0: b.x, x1: b.x + b.width, y0: b.y, y1: b.y + b.height }
+  } catch (e) { return null }
+}
 function _gmadDiaCurto(iso) { const p = String(iso).split('-'); return p.length === 3 ? Number(p[2]) + '/' + Number(p[1]) : String(iso) }
 const _GMAD_MESES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
 function _gmadDiaLongo(iso) { const d = new Date(iso + 'T12:00:00'); return isNaN(d.getTime()) ? String(iso) : d.getDate() + ' ' + _GMAD_MESES[d.getMonth()] }
@@ -1104,15 +1780,46 @@ function desenharGraficoDiario(hostId, serie, opcoes) {
   const titulo = document.createElement('div'); titulo.className = 'gmad-titulo'; titulo.textContent = opcoes.titulo
   host.appendChild(titulo)
   const pontos = (serie && serie.pontos) || []
-  if (!serie || !serie.temDado) {
+  // QUANTOS DIAS COM NÚMERO JÁ VALEM UM GRÁFICO. O padrão é 1 (um dia medido é um
+  // dado, e o período "Hoje" tem um só) — é o que os gráficos de investimento e de
+  // custo por seguidor sempre fizeram. Os custos por resultado pedem 2: um ponto
+  // solto não mostra tendência nenhuma e ainda ocupa a altura inteira de um
+  // gráfico fingindo que mostra. Quem manda é `valeDesenharOGrafico`, que é puro e
+  // testado — a tela não tem regra própria sobre isso.
+  if (!valeDesenharOGrafico(serie, opcoes.minimoDeDias || 1, { exigirInvestimento: !!opcoes.exigirInvestimento })) {
     const v = document.createElement('div'); v.className = 'gmad-vazio'; v.textContent = opcoes.textoVazio
     host.appendChild(v); return
   }
   const NS = 'http://www.w3.org/2000/svg'
   const el = (tag, attrs) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, String(attrs[k])); return e }
   const comTitulo = (node, texto) => { const t = document.createElementNS(NS, 'title'); t.textContent = texto; node.appendChild(t); return node }
-  const W = 400, H = 136, padX = 10, padTop = 14, padBot = 24
+  // ── A régua dos 30px por dia (largura-do-grafico.js) ──
+  // AQUI A LARGURA NÃO PODE SER SÓ ESTICADA. Este SVG escala UNIFORME (não tem
+  // preserveAspectRatio="none"): alargar o desenho mantendo o viewBox em 400
+  // esticaria a ALTURA junto e o gráfico viraria um paredão. Então a largura
+  // entra no próprio viewBox — o desenho passa a ser feito em `W` unidades, que
+  // é exatamente o número de pixels na tela, na escala 1:1.
+  //
+  // Não cabendo rolagem (computador, período curto), `W` continua 400 e o SVG
+  // continua em width:100% — pixel a pixel o que está no ar hoje.
+  const medida = larguraDoGrafico({ pontos: pontos.length, larguraDisponivel: host.clientWidth })
+  const caixaQueRola = document.createElement('div')
+  caixaQueRola.className = 'grafico-que-rola' + (medida.rola ? ' rolando' : '')
+  const rolagem = document.createElement('div'); rolagem.className = 'rolagem-de-grafico'
+  const trilho = document.createElement('div'); trilho.className = 'trilho-de-grafico'
+  vestirOTrilho(trilho, medida)
+  rolagem.appendChild(trilho); caixaQueRola.appendChild(rolagem)
+  const W = medida.rola ? medida.largura : 400
   const meta = serie.meta > 0 ? serie.meta : 0
+  // A FAIXA DE CIMA É DO RÓTULO DA META, E DE MAIS NINGUÉM.
+  // Só mudar o rótulo de lado (direita → esquerda) NÃO resolveu: medido a 375px,
+  // "Meta do dia R$ 20,00" continuou por cima de "R$ 17,34", agora do primeiro
+  // dia em vez do último. A tarja é opaca e desenhada por último, então ela
+  // ESCONDIA o valor — e esconder número é pior que amontoar. Reservando 28 em
+  // vez de 14 no topo, o valor mais alto possível fica embaixo da faixa e a
+  // sobreposição deixa de existir por construção, não por sorte de dado.
+  // Sem meta não há rótulo, e aí não há por que encurtar as barras.
+  const H = 136, padX = 10, padTop = meta > 0 ? 28 : 14, padBot = 24
   const valores = pontos.filter(p => !p.semDado).map(p => p.valor)
   // A meta entra na escala pra linha NUNCA sair do gráfico (uma linha invisível mentiria).
   const maxVal = Math.max(...valores, meta, 0.01)
@@ -1120,7 +1827,17 @@ function desenharGraficoDiario(hostId, serie, opcoes) {
   const chartH = H - padTop - padBot, baseY = H - padBot
   const hOf = v => (Math.max(0, v) / maxVal) * chartH
   const px = i => n > 1 ? padX + (i / (n - 1)) * (W - padX * 2) : W / 2
-  const svg = el('svg', { class: 'gmad-svg', viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': opcoes.titulo })
+  // `gmad-rola` só existe quando o gráfico rola, e serve para uma coisa: os
+  // valores em reais ficarem em 11px. Eles estão em 9px hoje porque não havia
+  // espaço; com a rolagem há, e 9px era o menor tamanho que ainda se lê. Sem a
+  // classe, o computador ganharia letra maior sem precisar — e letra maior no
+  // mesmo espaço é sobreposição de volta.
+  const svg = el('svg', { class: 'gmad-svg' + (medida.rola ? ' gmad-rola' : ''), viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': opcoes.titulo })
+  // O SVG ENTRA NA TELA ANTES DE SER DESENHADO, de propósito: texto de SVG só
+  // pode ser MEDIDO depois de renderizado, e os rótulos precisam ser medidos para
+  // não saírem do quadro nem se sobreporem (ver o bloco dos rótulos, abaixo).
+  trilho.appendChild(svg)
+  host.appendChild(caixaQueRola)
   // linha de base
   svg.appendChild(el('line', { class: 'gmad-base', x1: padX, x2: W - padX, y1: baseY, y2: baseY }))
   const slot = (W - padX * 2) / Math.max(n, 1)
@@ -1142,48 +1859,105 @@ function desenharGraficoDiario(hostId, serie, opcoes) {
   // Quando o período é longo, muitos rótulos de moeda viram sujeira; então mostramos
   // SALTEADO (no máx. ~10 no gráfico) e garantimos SEMPRE o dia mais alto e o último dia.
   // Sem regra por perfil: vale pros dois gráficos que usam esta função.
+  //
+  // O SALTEADO SOZINHO NÃO BASTA, e isto foi medido na tela logada: um dia SEM
+  // DADO encurta a lista de dias com número, o passo passa a cair no vizinho do
+  // último, e o último é rotulado de qualquer jeito — dois rótulos a um dia de
+  // distância, medindo mais de um dia de largura cada. Foi assim que nasceram
+  // "R$ 20,41" × "R$ 26,40". Por isso, depois de desenhados, os rótulos são
+  // MEDIDOS no navegador e quem ainda assim se tocaria sai.
   const idxComDado = pontos.map((p, i) => (p.semDado ? -1 : i)).filter(i => i >= 0)
   if (idxComDado.length) {
     const passoRot = Math.max(1, Math.ceil(idxComDado.length / 10))
     let idxTopo = idxComDado[0]
     idxComDado.forEach(i => { if (pontos[i].valor > pontos[idxTopo].valor) idxTopo = i })
     const ultimoComDado = idxComDado[idxComDado.length - 1]
+    const candidatos = []
     idxComDado.forEach((i, ordem) => {
-      if (ordem % passoRot !== 0 && i !== idxTopo && i !== ultimoComDado) return
+      const obrigatorio = i === ultimoComDado || i === idxTopo
+      if (ordem % passoRot !== 0 && !obrigatorio) return
       const h = hOf(pontos[i].valor)
       const t = el('text', { class: 'gmad-valor', x: px(i).toFixed(2), y: Math.max(7, baseY - h - 3).toFixed(2), 'text-anchor': 'middle' })
       t.textContent = fmtR(pontos[i].valor)
       svg.appendChild(t)
+      // O ÚLTIMO dia disputa na frente do MAIS ALTO: se os dois estiverem colados,
+      // quem sobra é o dia de hoje, que é o que o dono está olhando.
+      candidatos.push({ chave: i, no: t, centro: px(i), obrigatorio, naDisputa: i === ultimoComDado ? 0 : i === idxTopo ? 1 : 2 })
     })
+    // Medir de verdade, não estimar por número de caracteres: "R$ 92,86" é mais
+    // largo que "R$ 17,34" com os mesmos 8 caracteres, porque o "1" é estreito.
+    // Foi essa diferença que fez o rótulo do primeiro dia escapar do quadro.
+    let deuParaMedir = candidatos.length > 0
+    for (const c of candidatos) {
+      const larguraDoTexto = medidaDeTexto(c.no)
+      if (!(larguraDoTexto > 0)) { deuParaMedir = false; break }
+      // Encosta na borda quem sairia do quadro. Fora do quadro, dentro de uma
+      // caixa que rola, é lugar que pode não ter como alcançar.
+      const ancorado = ancoraDoRotulo({ centro: c.centro, largura: larguraDoTexto, quadro: W })
+      c.no.setAttribute('x', ancorado.x.toFixed(2))
+      c.no.setAttribute('text-anchor', ancorado.ancora)
+    }
+    if (deuParaMedir) for (const c of candidatos) { c.caixa = caixaDeTexto(c.no); if (!c.caixa) deuParaMedir = false }
+    // Não deu para medir (SVG ainda não renderizado, cartão escondido): fica tudo
+    // como sempre foi. Rótulo a mais é melhor que rótulo que sumiu por engano.
+    if (deuParaMedir) {
+      const naOrdemDaDisputa = candidatos.slice().sort((a, b) => a.naDisputa - b.naDisputa)
+      const ficam = new Set(rotulosQueCabem(naOrdemDaDisputa.map(c => ({ chave: c.chave, caixa: c.caixa, obrigatorio: c.obrigatorio }))))
+      for (const c of candidatos) if (!ficam.has(c.chave)) c.no.remove()
+    }
   }
   // Linha da meta por cima das barras
   if (meta > 0) {
     const y = baseY - hOf(meta)
     svg.appendChild(comTitulo(el('line', { class: 'gmad-meta', x1: padX, x2: W - padX, y1: y.toFixed(2), y2: y.toFixed(2) }), opcoes.rotuloMeta + ': ' + fmtR(meta)))
 
-    // O rótulo ganha uma tarja atrás de propósito. Ele fica sobre a área das barras
-    // (não há canto vazio garantido — barra alta pode existir em qualquer dia), e
-    // sem fundo o texto se misturava com a barra e virava sujeira.
-    const txt = opcoes.rotuloMeta + ' ' + fmtR(meta)
-    const larguraTxt = txt.length * 4.4 + 8 // ~4.4px por caractere no corpo 8
-    const alturaTarja = 11
-    // Acima da linha; se a linha estiver colada no topo, desce a tarja pra ela não
-    // sair do quadro.
-    const acimaCabe = y - alturaTarja - 2 >= 0
-    const tarjaY = acimaCabe ? y - alturaTarja - 2 : y + 2
-    svg.appendChild(el('rect', {
-      class: 'gmad-meta-tarja',
-      x: (W - padX - larguraTxt).toFixed(2), y: tarjaY.toFixed(2),
-      width: larguraTxt.toFixed(2), height: alturaTarja, rx: 2.5,
-    }))
+    // O RÓTULO DA META MORA NO CANTO DE CIMA, À ESQUERDA — na faixa que o padTop
+    // abriu lá em cima só para ele.
+    //
+    // Antes ele ficava colado na linha, na borda direita. Dois problemas, os dois
+    // medidos: o último dia com dado é SEMPRE rotulado, então a tarja caía em
+    // cima do valor dele; e, colado na linha, ele passeava pela altura do gráfico
+    // e esbarrava no valor de qualquer dia na mesma altura. Foi assim que este
+    // rótulo entrou em 5 dos 8 pares sobrepostos ("R$ 2,88" × "Meta máxima
+    // R$ 3,00"). Só trocar de lado NÃO resolve: passa a bater no primeiro dia.
+    //
+    // A tarja continua opaca porque continua sobre o desenho, e sem fundo o texto
+    // se misturava e virava sujeira. A linha continua tracejada e laranja como o
+    // rótulo: os dois se leem juntos sem precisar estar encostados, e a linha
+    // ainda diz o valor no toque longo.
+    // ⚠️ A CAIXINHA SAI DA MEDIDA DO TEXTO, NUNCA DE UMA ESTIMATIVA.
+    //
+    // Ela era `txt.length * 4.4 + 8`, com a observação "~4,4px por caractere no
+    // corpo 8". O corpo não é 8: o CSS é `max(9px, calc(8px * --escala-texto))` e
+    // o piso de 9px é quem manda em escala 1. Medido no navegador em 10/09/2026,
+    // "Meta máxima R$ 2,00" ocupa 90,8px (4,78px por letra) e a caixinha nascia
+    // com 91,6px começando 4px ANTES — o texto terminava 3,2px depois da borda
+    // direita e não sobrava respiro nenhum daquele lado. O dono: "a palavra sangra
+    // fora do badge".
+    //
+    // O texto é desenhado PRIMEIRO para poder ser medido, e a caixinha entra
+    // ATRÁS dele (insertBefore) — appendChild depois a deixaria por cima, tapando
+    // a palavra que ela deveria emoldurar.
+    // Abreviado só AQUI: a linha tracejada acima leva o rótulo por extenso.
+    const txt = rotuloCurtoDoSelo(opcoes.rotuloMeta) + ' ' + fmtR(meta)
+    const tarjaY = 2
     const tag = el('text', {
       class: 'gmad-meta-txt',
-      x: (W - padX - 4).toFixed(2),
+      x: (padX + RESPIRO_DO_SELO).toFixed(2),
       y: (tarjaY + 8).toFixed(2),
-      'text-anchor': 'end',
+      'text-anchor': 'start',
     })
     tag.textContent = txt
     svg.appendChild(tag)
+    // `caixaDeTexto` devolve null quando o SVG ainda não renderizou (cartão
+    // escondido, aba em segundo plano). Aí vale o plano B por número de letras,
+    // que erra para o lado de sobrar caixa — ver caixaDoSelo.
+    const selo = caixaDoSelo(caixaDeTexto(tag), { texto: txt, x: padX, y: tarjaY })
+    svg.insertBefore(el('rect', {
+      class: 'gmad-meta-tarja',
+      x: selo.x.toFixed(2), y: selo.y.toFixed(2),
+      width: selo.largura.toFixed(2), height: selo.altura.toFixed(2), rx: 2.5,
+    }), tag)
   }
   // Datas embaixo (afina automático quando o período é longo)
   const step = Math.max(1, Math.ceil(n / 8))
@@ -1193,13 +1967,17 @@ function desenharGraficoDiario(hostId, serie, opcoes) {
     t.textContent = _gmadDiaCurto(pontos[i].data)
     svg.appendChild(t)
   }
-  host.appendChild(svg)
   const legenda = document.createElement('div'); legenda.className = 'gmad-legenda'
   const semColeta = pontos.filter(p => p.semDado && p.motivo === 'sem-coleta').length
   const semSeguidor = pontos.filter(p => p.semDado && p.motivo === 'sem-seguidor').length
   const partes = [opcoes.legendaBase]
   if (semColeta > 0) partes.push(semColeta === 1 ? '1 dia sem informação coletada' : semColeta + ' dias sem informação coletada')
   if (semSeguidor > 0) partes.push(semSeguidor === 1 ? '1 dia sem seguidor novo (não dá pra calcular o custo)' : semSeguidor + ' dias sem seguidor novo (não dá pra calcular o custo)')
+  // Os custos por resultado trazem a frase pronta de graficos-de-custo-diario.js,
+  // porque o nome do que faltou muda com o indicador ("sem conversa", "sem
+  // cadastro") e é ele que sabe o gênero da palavra.
+  const semResultado = pontos.filter(p => p.semDado && p.motivo === 'sem-resultado').length
+  if (semResultado > 0 && opcoes.rotuloDiasSemResultado) partes.push(opcoes.rotuloDiasSemResultado(semResultado))
   legenda.textContent = partes.join(' · ')
   host.appendChild(legenda)
 }
@@ -1253,9 +2031,15 @@ function localDate(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).
 async function fetchData(accountId, period, customStart, customEnd) {
   const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
   const days = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
-  const isHoje = period === 0
-  const isCalMonth = period === 'monthfull' || period === 'sofar' || period === 'month'
-  const isLastMonth = period === 'lastmonth'
+  // ⚠️ INTERVALO ESCOLHIDO MANDA MAIS QUE O NÚMERO DO PERÍODO. Ao escolher datas,
+  // `period` CONTINUA com o valor antigo — então "Hoje" + datas caía em `isHoje` e
+  // a tela mostrava só o dia. Este arquivo já pagou por isso três vezes em
+  // 09/09/2026 (gráfico rolante, gráfico de contexto, e aqui).
+  const ehCustom = !!(customStart && customEnd)
+  const isHoje = !ehCustom && period === 0
+  const isOntem = !ehCustom && period === 1
+  const isCalMonth = !ehCustom && (period === 'monthfull' || period === 'sofar' || period === 'month')
+  const isLastMonth = !ehCustom && period === 'lastmonth'
   let refDate, histStartDate, storedPeriod, effectivePeriod
   if (customStart && customEnd) {
     refDate = new Date(customEnd + 'T12:00:00')
@@ -1299,7 +2083,7 @@ async function fetchData(accountId, period, customStart, customEnd) {
   const _ontemBRT = localDate(new Date(new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' })).getTime() - 86400000))
   let followStart, followEnd
   if (isHoje) { followStart = followEnd = _hojeBRT }
-  else if (period === 1) { followStart = followEnd = _ontemBRT }
+  else if (isOntem) { followStart = followEnd = _ontemBRT }
   else if (typeof period === 'number' && !customStart) {
     // Dias corridos (7/14/30): N dias terminando ONTEM (régua do app — não conta o dia corrente
     // incompleto). Ex.: 7D = [ontem−6 .. ontem]. 1D acima = só ontem.
@@ -1318,7 +2102,7 @@ async function fetchData(accountId, period, customStart, customEnd) {
   const _spanDays = Math.round((new Date(followEnd + 'T00:00:00').getTime() - _fsMs) / 86400000) + 1
   const prevEndStr = localDate(new Date(_fsMs - 86400000))
   const prevStartStr = localDate(new Date(_fsMs - _spanDays * 86400000))
-  const [snaps, engCurr, engPrev, cntCurr, cntPrev, filterRow, storyDailyCurr, storyDailyPrev, trueLastRows] = await Promise.all([
+  const [snaps, engCurr, engPrev, cntCurr, cntPrev, filterRow, storyDailyCurr, storyDailyPrev, trueLastRows, campanhasRows, conjuntosRows] = await Promise.all([
     sb(`daily_snapshots?account_id=eq.${accountId}&captured_at=gte.${histStartStr}&captured_at=lte.${refDateStr}&order=captured_at.asc&select=followers_count,captured_at,gained,lost`),
     sb(`engagement_snapshots?account_id=eq.${accountId}&period_days=eq.${storedPeriod}&captured_at=lte.${refDateStr}&order=captured_at.desc&limit=1&select=likes,saves,shares,comments,reach,views,total_interactions,accounts_engaged,profile_views,captured_at`),
     sb(`engagement_snapshots?account_id=eq.${accountId}&period_days=eq.${storedPeriod}&captured_at=lte.${prevRefDateStr}&order=captured_at.desc&limit=1&select=likes,saves,shares,comments,reach,views,total_interactions,accounts_engaged,profile_views,captured_at`),
@@ -1330,6 +2114,12 @@ async function fetchData(accountId, period, customStart, customEnd) {
     // FRESCOR = saúde do coletor (global por perfil), NÃO o fim da janela escolhida.
     // Sem limite superior: pega a última coleta REAL, independente do período exibido.
     sb(`daily_snapshots?account_id=eq.${accountId}&order=captured_at.desc&limit=1&select=captured_at,followers_count`),
+    // Campanha + os conjuntos dela = o que decide o BALDE. Limite folgado de
+    // propósito: a maior conta (Vessel) tem 126 campanhas e 5 contas somam 299
+    // conjuntos — nenhuma chega perto de 5000, e um corte silencioso aqui faria
+    // campanha sumir do recorte sem ninguém perceber.
+    sb(`campaigns?account_id=eq.${accountId}&limit=5000&select=campaign_id,objective`),
+    sb(`campaign_adsets?account_id=eq.${accountId}&limit=5000&select=campaign_id,destination_type,optimization_goal,synced_at`),
   ])
   const eng = engCurr[0] || { likes: 0, saves: 0, shares: 0, comments: 0 }
   const prevEng = engPrev[0] || null
@@ -1380,7 +2170,7 @@ async function fetchData(accountId, period, customStart, customEnd) {
   // todos os períodos → entre si nunca inverte (hoje ≤ 7d ≤ 14d ≤ 30d).
   const _countAtOrBefore = ds => { let v = null; for (let i = 0; i < snaps.length; i++) { if (snaps[i].captured_at <= ds) v = Number(snaps[i].followers_count) || 0; else break } return v }
   let _prevNumD = _hojeBRT, _prevBaseD
-  if (period === 1) { _prevNumD = _ontemBRT; _prevBaseD = localDate(new Date(new Date(_ontemBRT + 'T00:00:00').getTime() - 86400000)) }
+  if (isOntem) { _prevNumD = _ontemBRT; _prevBaseD = localDate(new Date(new Date(_ontemBRT + 'T00:00:00').getTime() - 86400000)) }
   else if (customStart && customEnd) { _prevNumD = customEnd; _prevBaseD = localDate(new Date(new Date(customStart + 'T00:00:00').getTime() - 86400000)) }
   else if (isLastMonth) { _prevNumD = followEnd; _prevBaseD = localDate(new Date(new Date(followStart + 'T00:00:00').getTime() - 86400000)) }
   else if (isCalMonth) { const _n = new Date(); _prevBaseD = localDate(new Date(_n.getFullYear(), _n.getMonth(), 0)) }
@@ -1412,55 +2202,336 @@ async function fetchData(accountId, period, customStart, customEnd) {
   const pLabel = customStart && customEnd ? effectivePeriod + 'D' : _perShort(period, effectivePeriod)
   const followerDeltas = [{ p: pLabel, v: (newFollowers >= 0 ? '+' : '') + fmtN(newFollowers), dir: newFollowers >= 0 ? 'up' : 'down' }]
   if (prevNewFollowers > 0) { followerDeltas.push({ p: 'vs per. ant.', v: pctDiff(newFollowers, prevNewFollowers), dir: newFollowers >= prevNewFollowers ? 'up' : 'down' }) }
-  // Ads: lê de campaign_insights aplicando o filtro de campanhas em tempo real
+  // ── SEÇÃO 02 · META ADS: quem entra na conta ──
+  // Dois recortes que se SOMAM: o BALDE recorta o tipo de campanha (Seguidores,
+  // Contatos, Site e alcance, Vendas) e o "⚙ Filtrar campanhas" recorta DENTRO
+  // dele. Quem faz a interseção é idsParaConsulta(), testada à parte.
   const selectedIds = filterRow[0]?.selected_ids // null=todas, []=nenhuma, [ids]=filtradas
-  const noneSelected = Array.isArray(selectedIds) && selectedIds.length === 0
+  // ⚠️ COM O BALDE ESCOLHENDO SOZINHO, O FILTRO SALVO NÃO VALE — NEM O "NENHUMA".
+  // Ele fica aqui em cima, antes de tudo que lê `selectedIds`, porque `noneSelected`
+  // apaga a tela inteira: com um "desmarcar todas" salvo, clicar num balde trazia
+  // R$ — em vez das campanhas do balde, e não havia como sair disso a não ser
+  // reabrindo o ⚙. Quem clica num botão de tipo está pedindo o tipo.
+  const _baldeTrazSozinho = (() => {
+    try { return localStorage.getItem(_baldeAutoKey(accountId)) === '1' } catch (e) { return false }
+  })()
+  const noneSelected = !_baldeTrazSozinho && Array.isArray(selectedIds) && selectedIds.length === 0
   const safeIds = Array.isArray(selectedIds) ? selectedIds.filter(id => /^\d+$/.test(String(id))) : []
-  const idFilter = safeIds.length > 0 ? `&campaign_id=in.(${safeIds.join(',')})` : ''
-  function aggCi(rows) {
-    if (!rows.length) return null
-    const maxDate = rows[0].captured_at
-    const d = rows.filter(r => r.captured_at === maxDate)
-    return { spend: d.reduce((s, r) => s + parseFloat(r.spend || 0), 0), impressions: d.reduce((s, r) => s + parseInt(r.impressions || 0), 0), clicks: d.reduce((s, r) => s + parseInt(r.clicks || 0), 0), reach: d.reduce((s, r) => s + parseInt(r.reach || 0), 0), adEngagement: d.reduce((s, r) => s + parseInt(r.post_engagement || 0), 0), adLikes: d.reduce((s, r) => s + parseInt(r.likes || 0), 0), adComments: d.reduce((s, r) => s + parseInt(r.comments || 0), 0), adShares: d.reduce((s, r) => s + parseInt(r.shares || 0), 0), adSaves: d.reduce((s, r) => s + parseInt(r.saves || 0), 0) }
-  }
-  let spend = 0, impressions = 0, clicks = 0, reach = 0, prevSpend = null, adEngagement = 0, adLikes = 0, adComments = 0, adShares = 0, adSaves = 0
-  // Ads dia-preciso p/ HOJE/1D: gasto do DIA exato (period_days=0 de hoje/ontem),
-  // em vez do agregado "última captura" (que defasava o HOJE e somava 2 dias no 1D).
-  let _adsPd = storedPeriod, _adsCur = `captured_at=lte.${refDateStr}&order=captured_at.desc`, _adsPrev = `captured_at=lte.${prevRefDateStr}&order=captured_at.desc`
-  if (isHoje) { _adsPd = 0; _adsCur = `captured_at=eq.${_hojeBRT}`; _adsPrev = `captured_at=eq.${_ontemBRT}` }
-  else if (period === 1) { const _anteBRT = localDate(new Date(new Date(_ontemBRT + 'T00:00:00').getTime() - 86400000)); _adsPd = 0; _adsCur = `captured_at=eq.${_ontemBRT}`; _adsPrev = `captured_at=eq.${_anteBRT}` }
-  erroAds.value = null
-  if (!noneSelected) {
-    const [ciCurr, ciPrev] = await Promise.all([
-      sb(`campaign_insights?account_id=eq.${accountId}&period_days=eq.${_adsPd}&${_adsCur}&limit=200&select=campaign_id,spend,impressions,clicks,reach,post_engagement,likes,comments,shares,saves,captured_at${idFilter}`),
-      sb(`campaign_insights?account_id=eq.${accountId}&period_days=eq.${_adsPd}&${_adsPrev}&limit=200&select=campaign_id,spend,impressions,clicks,reach,post_engagement,likes,comments,shares,saves,captured_at${idFilter}`),
-    ])
-    // Captura o .erro AQUI, colado no await: o .erro é uma propriedade do array
-    // que o sb() devolveu — .filter()/.map() (o aggCi abaixo) criam array novo e
-    // deixam o .erro para trás.
-    erroAds.value = ciCurr.erro || ciPrev.erro || null
-    const adsAgg = aggCi(ciCurr); const prevAdsAgg = aggCi(ciPrev)
-    spend = adsAgg?.spend || 0; impressions = adsAgg?.impressions || 0; clicks = adsAgg?.clicks || 0; reach = adsAgg?.reach || 0
-    adEngagement = adsAgg?.adEngagement || 0; adLikes = adsAgg?.adLikes || 0; adComments = adsAgg?.adComments || 0; adShares = adsAgg?.adShares || 0; adSaves = adsAgg?.adSaves || 0
-    prevSpend = prevAdsAgg ? prevAdsAgg.spend : null
-    // Reach DEDUPLICADO: sem filtro de campanhas, usa o total nível-conta (account_insights).
-    // Somar reach por campanha infla (mesma pessoa em várias) — chegava a ~35% no real.
-    if (safeIds.length === 0) {
-      const aiCurr = await sb(`account_insights?account_id=eq.${accountId}&period_days=eq.${_adsPd}&${_adsCur}&limit=1&select=reach`).catch(() => [])
-      if (aiCurr && aiCurr.length && aiCurr[0].reach != null) reach = parseInt(aiCurr[0].reach)
-    }
-  }
+  // .erro lido AQUI, colado no await do Promise.all lá de cima: ele mora no array
+  // que o sb() devolveu, e o forEach/Object.values abaixo criam coleções novas que
+  // o deixariam para trás. Falha ao buscar as campanhas NÃO pode virar "este perfil
+  // não tem campanha nenhuma" em silêncio — isso apagaria dinheiro real da tela.
+  erroAds.value = campanhasRows.erro || conjuntosRows.erro || null
+  // Chamada AQUI pelo mesmo motivo do erroAds acima: classificacaoEhProvisoria
+  // olha o .erro do array, que mora nele só até o primeiro .map()/.filter().
+  // Pura e testada em baldes-do-painel.test.mjs (é lá que fica documentado o
+  // limite: RLS negando leitura também chega como [] sem erro nenhum).
+  const _semConjuntoDeVerdade = classificacaoEhProvisoria(conjuntosRows)
+  // Campanha + os conjuntos dela = o que decide o balde. Conjunto ainda não
+  // coletado não some: cai pela regra do objetivo (ver baldes-do-painel.js), que é
+  // exatamente o que acontece enquanto campaign_adsets ainda está vazia.
+  const _porCampanha = {}
+  campanhasRows.forEach(c => { _porCampanha[String(c.campaign_id)] = { campaign_id: String(c.campaign_id), objective: c.objective, conjuntos: [] } })
+  conjuntosMaisRecentes(conjuntosRows).forEach(s => { const c = _porCampanha[String(s.campaign_id)]; if (c) c.conjuntos.push(s) })
+  const _campanhas = Object.values(_porCampanha)
+  // ⚠️ CLICAR NO BALDE TRAZ AS CAMPANHAS DELE, e isso é POR PESSOA. Pedido do dono
+  // (10/09/2026): "quando clico nos botões é para trazer o filtro de campanhas
+  // automático já, inclusive campanhas pausadas mas que tiveram gasto no intervalo".
+  //
+  // ⚠️ NÃO GRAVA EM `campaign_filters`, de propósito: aquela tabela é POR CONTA, sem
+  // coluna de usuário — um clique seu num balde trocaria o recorte de todo mundo que
+  // abrisse a mesma conta depois. Clicar num botão é navegar, não decidir pela
+  // equipe. Quem decide para todos continua sendo o "⚙ Filtrar campanhas".
+  //
+  // A escolha automática IGNORA o filtro salvo (o dono pediu que substitua) e vale
+  // até a pessoa abrir o ⚙ e escolher à mão, que desliga o automático.
+  const _selecionadas = _baldeTrazSozinho ? null : (Array.isArray(selectedIds) ? safeIds : null)
+  // A lista de ids de CADA balde, já com o filtro manual aplicado por dentro.
+  // Sai da mesma função que monta o recorte final: assim a conta de "balde vazio"
+  // e a consulta do dinheiro nunca podem discordar.
+  const _idsPorBalde = {}
+  BALDES.forEach(b => { if (b.id !== 'todos') _idsPorBalde[b.id] = idsParaConsulta(_campanhas, b.id, _selecionadas) })
+  // ⚠️⚠️ E A LISTA SEM FILTRO NENHUM, QUE É A QUE ACENDE O BOTÃO.
+  //
+  // O botão do balde responde "existe campanha DESTE TIPO gastando no período?" —
+  // pergunta sobre a conta inteira. A lista de cima já vem recortada pela escolha
+  // manual, e usá-la aqui criava um círculo: com campanhas de Seguidores marcadas,
+  // o balde Contatos ficava com lista VAZIA e apagava — e para acendê-lo era
+  // preciso marcar as campanhas dele à mão, ou seja, desfazer o filtro que o tinha
+  // apagado. O dono descreveu esse círculo em 10/09/2026.
+  //
+  // As duas listas respondem perguntas DIFERENTES, e é por isso que elas divergem
+  // de propósito: esta diz o que EXISTE, a de cima diz o que está sendo SOMADO.
+  const _idsPorBaldeSemFiltro = {}
+  BALDES.forEach(b => { if (b.id !== 'todos') _idsPorBaldeSemFiltro[b.id] = idsParaConsulta(_campanhas, b.id, null) })
+
   // ── GRÁFICOS DIÁRIOS DA SEÇÃO 02 (barras por dia + linha de meta) ──
   // period_days = 0 guarda o gasto do DIA isolado (uma linha por campanha por dia). O agregado dos
-  // cards acima NÃO é tocado — isto aqui é leitura à parte, só pro gráfico. O recorte é sempre a
+  // cards abaixo NÃO é tocado — isto aqui é leitura à parte. O recorte é sempre a
   // janela exibida (followStart..followEnd), igual pra todo perfil e todo período.
-  let gastoDiarioRows = []
+  //
+  // Esta busca virou a base de DUAS coisas, e por isso subiu para antes dos
+  // agregados: as barras por dia e a conta de qual balde ficou sem dinheiro no
+  // período. Ela traz o campaign_id porque é o gasto POR CAMPANHA que diz em que
+  // balde o dinheiro caiu — o agregado da Meta não separa por tipo. O recorte por
+  // balde é feito aqui na memória, não na URL, para não pagar duas viagens.
+  let _diaRows = []
   if (!noneSelected) {
-    const ciDia = await sb(`campaign_insights?account_id=eq.${accountId}&period_days=eq.0&captured_at=gte.${followStart}&captured_at=lte.${followEnd}&order=captured_at.asc&limit=5000&select=captured_at,spend${idFilter}`)
+    const ciDia = await sb(`campaign_insights?account_id=eq.${accountId}&period_days=eq.0&captured_at=gte.${followStart}&captured_at=lte.${followEnd}&order=captured_at.asc&limit=5000&select=captured_at,campaign_id,spend,post_engagement,likes,conversas,cadastros,visitas,compras,impressions`)
     // .erro lido AQUI, colado no await: ele mora no array que o sb() devolveu e o .map() abaixo
     // cria um array novo, deixando o .erro pra trás.
     if (ciDia.erro && !erroAds.value) erroAds.value = ciDia.erro
-    if (!ciDia.erro) gastoDiarioRows = ciDia.map(r => ({ captured_at: r.captured_at, spend: r.spend }))
+    if (!ciDia.erro) _diaRows = ciDia.map(r => ({
+      captured_at: r.captured_at, campaign_id: String(r.campaign_id), spend: r.spend,
+      // AS CONTAGENS DO DIA, CRUAS: null continua null. Elas alimentam o gráfico
+      // de custo por resultado de cada cartão (ver graficos-de-custo-diario.js),
+      // e nulo virando 0 aqui faria "R$ 0,00 por conversa" num dia que ninguém
+      // mediu. Quem separa "não coletado" de "aconteceu zero" é a série pura.
+      post_engagement: r.post_engagement, likes: r.likes, conversas: r.conversas,
+      cadastros: r.cadastros, visitas: r.visitas, compras: r.compras, impressions: r.impressions,
+    }))
+  }
+  // Balde sem gasto no período fica APAGADO na barra, com o motivo — nunca some:
+  // sumir faz a pessoa procurar o que não está lá. 'todos' nunca entra na lista.
+  // Sem série diária nenhuma, NADA é dado como vazio (ver baldesSemGasto).
+  //
+  // ⚠️⚠️ O QUE ACENDE O BALDE IGNORA O FILTRO MANUAL, e isto era um defeito
+  // circular: `_diaRows` já vem recortado pelas campanhas escolhidas à mão, então
+  // com uma seleção ativa TODOS os outros baldes ficavam sem gasto e apagavam. O
+  // dono (10/09/2026): "tem campanha de lead rodando porém na dash não está
+  // aparecendo o botão aceso, eu preciso filtrar manualmente as campanhas, pq?".
+  // Ele precisava filtrar à mão justamente para acender o balde que o filtro à mão
+  // tinha apagado.
+  //
+  // O balde responde "tem dinheiro NESTE TIPO no período?" — pergunta sobre a
+  // conta inteira. Com filtro manual ativo isso custa uma segunda leitura, e só
+  // então; sem filtro, reaproveita a que já veio.
+  // ⚠️ `_diaRows` VEM SEM FILTRO NENHUM, e o recorte é feito na memória logo
+  // abaixo. Antes a consulta já vinha recortada pela seleção manual — e era isso
+  // que apagava os outros baldes, num círculo: para acender o balde era preciso
+  // filtrar à mão, que é o que o tinha apagado.
+  const baldesVazios = baldesSemGasto(_idsPorBaldeSemFiltro, _diaRows)
+  const _efetivo = baldeEfetivo(_baldeAtual, baldesVazios)
+  // ⚠️ COM O BALDE ESCOLHENDO SOZINHO, o recorte é o tipo ∩ QUEM GASTOU no período
+  // — pausada inclusive, porque o que decide é ter movido dinheiro naqueles dias.
+  // Ver `idsComGastoNoPeriodo`, com teste.
+  const _idsDoTipo = idsParaConsulta(_campanhas, _efetivo, _selecionadas)
+  const idsDoRecorte = _baldeTrazSozinho && _efetivo !== 'todos'
+    ? idsComGastoNoPeriodo(_idsDoTipo, _diaRows)
+    : _idsDoTipo
+  // Vazio COM o balde escolhendo sozinho quer dizer "este tipo não gastou nestes
+  // dias" — recado diferente de "alguém desmarcou tudo".
+  const _semGastoNoPeriodo = _baldeTrazSozinho && _efetivo !== 'todos' && idsDoRecorte.length === 0
+  // EM TODOS SEM FILTRO MANUAL, nada de lista de ids: fica exatamente no caminho de
+  // hoje. Dois motivos, os dois já custaram caro aqui:
+  //  • a Vessel tem 126 campanhas, e um in.(...) com 126 ids de 18 dígitos é uma URL
+  //    de mais de 2 mil caracteres por nada;
+  //  • é o `_todasAsCampanhas` logo abaixo que troca o alcance somado por campanha
+  //    pelo alcance DEDUPLICADO da conta — somar por campanha inflava até ~35%.
+  //    Mandar a lista mataria essa guarda.
+  const _todasAsCampanhas = _efetivo === 'todos' && _selecionadas == null
+  // RECORTE VAZIO NUNCA PODE VIRAR "TODAS". `idFilter` vazio quer dizer "a conta
+  // inteira" nestas consultas, então um recorte sem nenhuma campanha cairia
+  // justamente no oposto do que ele pede — e no cartão de dinheiro.
+  //
+  // Isso é alcançável pela armadilha que os comentários deste arquivo já avisam:
+  // o sb() devolve 200 + [] sem .erro quando a RLS esconde tudo. Com `campaigns`
+  // escondida e um filtro manual salvo, o recorte fica vazio e a tela mostraria o
+  // gasto INTEIRO da conta com o rótulo "1 campanha selecionada".
+  //
+  // Sem campanha no recorte, não se mostra nada: é o mesmo tratamento de quando o
+  // dono desmarca todas (noneSelected). Melhor "R$ —" do que dinheiro que não é
+  // daquele recorte.
+  const _recorteSemCampanha = noneSelected || (!_todasAsCampanhas && idsDoRecorte.length === 0)
+  const idFilter = _todasAsCampanhas ? '' : `&campaign_id=in.(${idsDoRecorte.join(',')})`
+  // O ao vivo tem de somar o MESMO conjunto que o coletado, senão o cartão de
+  // investimento mostra um balde e o de custo por seguidor mostra outro. Lista
+  // vazia = a edge volta ao caminho level=account, o número exato e mais barato.
+  const idsParaAoVivo = _todasAsCampanhas ? [] : idsDoRecorte
+  // ⚠️ O QUE O ⚙ MOSTRA É O QUE A TELA ESTÁ SOMANDO.
+  //
+  // Até 10/09/2026 o modal lia só a tabela `campaign_filters` — o filtro salvo à
+  // mão. Com o balde escolhendo sozinho a tela ignora essa tabela, então abrir o ⚙
+  // depois de clicar em "Seguidores" mostrava as campanhas de Contatos marcadas: a
+  // tela somava um recorte e o modal exibia outro. O dono descreveu exatamente isso.
+  //
+  // Guardado aqui, e não recalculado no modal, de propósito: recalcular é a receita
+  // de dois recortes que divergem quando um dos lados mudar.
+  _recorteNaTela = { auto: _baldeTrazSozinho, todas: _todasAsCampanhas, ids: idsDoRecorte.map(String) }
+  // As barras do gráfico seguem o mesmo recorte dos cartões.
+  const _noRecorte = new Set(idsDoRecorte)
+  // ⚠️ O RECORTE DOS GRÁFICOS É FEITO AQUI, na memória: a consulta veio SEM filtro
+  // porque a mesma leitura acende os baldes. Sem este recorte os gráficos por dia
+  // mostrariam a conta inteira sob o rótulo de um tipo só.
+  const _idsDoRecorteSet = new Set(idsDoRecorte.map(String))
+  const gastoDiarioRows = _recorteSemCampanha
+    ? []
+    : (_todasAsCampanhas ? _diaRows : _diaRows.filter(r => _idsDoRecorteSet.has(String(r.campaign_id))))
+    .filter(r => _todasAsCampanhas || _noRecorte.has(r.campaign_id))
+    .map(r => ({
+      captured_at: r.captured_at, spend: r.spend,
+      post_engagement: r.post_engagement, likes: r.likes, conversas: r.conversas,
+      cadastros: r.cadastros, visitas: r.visitas, compras: r.compras, impressions: r.impressions,
+    }))
+  // AS QUATRO CONTAGENS NOVAS: NULO NÃO É ZERO.
+  //
+  // conversas/cadastros/compras/visitas só passaram a ser gravadas em 17/08/2026 e
+  // nasceram SEM default (ver a migration). Somar nulo como 0 faria o cartão dizer
+  // "nenhuma conversa" — que é uma afirmação — onde a verdade é "ainda não foi
+  // coletado". Só entra na soma a linha que tem o número; se NENHUMA tiver,
+  // devolve null e o cartão mostra "—".
+  function somaOuNulo(rows, campo) {
+    const com = rows.filter(r => r[campo] != null)
+    return com.length ? com.reduce((s, r) => s + (parseInt(r[campo]) || 0), 0) : null
+  }
+  // `linhas` já vem de capturaDoAgregado(): ou é a captura inteira que CABE na
+  // janela exibida, ou está vazia. Quem escolhe a captura e quem recusa a velha
+  // demais é o módulo puro — aqui só se soma.
+  function aggCi(d) {
+    if (!d.length) return null
+    return { spend: d.reduce((s, r) => s + parseFloat(r.spend || 0), 0), impressions: d.reduce((s, r) => s + parseInt(r.impressions || 0), 0), clicks: d.reduce((s, r) => s + parseInt(r.clicks || 0), 0), reach: d.reduce((s, r) => s + parseInt(r.reach || 0), 0), adEngagement: d.reduce((s, r) => s + parseInt(r.post_engagement || 0), 0), adLikes: d.reduce((s, r) => s + parseInt(r.likes || 0), 0), adComments: d.reduce((s, r) => s + parseInt(r.comments || 0), 0), adShares: d.reduce((s, r) => s + parseInt(r.shares || 0), 0), adSaves: d.reduce((s, r) => s + parseInt(r.saves || 0), 0), conversas: somaOuNulo(d, 'conversas'), cadastros: somaOuNulo(d, 'cadastros'), compras: somaOuNulo(d, 'compras'), visitas: somaOuNulo(d, 'visitas') }
+  }
+  let spend = 0, impressions = 0, clicks = 0, reach = 0, prevSpend = null, adEngagement = 0, adLikes = 0, adComments = 0, adShares = 0, adSaves = 0
+  // Começam em null (não em 0) porque "—" é o estado honesto antes de qualquer
+  // leitura: recorte sem campanha nenhuma nunca sai daqui, e não pode virar zero.
+  let conversas = null, cadastros = null, compras = null, visitas = null, frequencia = null
+  // O alcance saiu da SOMA por campanha (repete quem viu mais de um anúncio) ou do
+  // total deduplicado da conta? Começa em "somado" e só vira false quando o número
+  // nível-conta realmente entra no lugar.
+  let alcanceSomado = true
+  let _capDias = [], _capLinhas = 0
+  // Ads dia-preciso p/ HOJE/1D: gasto do DIA exato (period_days=0 de hoje/ontem),
+  // em vez do agregado "última captura" (que defasava o HOJE e somava 2 dias no 1D).
+  let _adsPd = storedPeriod, _adsCur = `captured_at=lte.${refDateStr}&order=captured_at.desc`, _adsPrev = `captured_at=lte.${prevRefDateStr}&order=captured_at.desc`
+  // ATÉ QUE PONTO PARA TRÁS UMA CAPTURA AINDA É "ESTE PERÍODO".
+  //
+  // A consulta acima limita a data só POR CIMA. Isso bastava enquanto ela trazia
+  // TODAS as campanhas da conta: a mais recente era sempre a última rodada do
+  // coletor. Com o recorte por tipo de campanha, a mais recente passou a ser a
+  // mais recente DAQUELE tipo — e um tipo parado devolve uma foto de meses atrás
+  // com o rótulo "últimos 7 dias" (Breno Vale, 08/06 sob 7D: 488 impressões e
+  // R$ 6,32 impressos como a semana). Quem recusa é capturaDoAgregado(), testado
+  // ao lado; aqui só se diz qual é a janela de cada uma das duas consultas.
+  //
+  // A tolerância é o tamanho da própria janela exibida: uma captura de 7 dias
+  // tirada dentro dos últimos 7 dias ainda fala do período; uma de 70 dias atrás
+  // não fala. A do período ANTERIOR usa a MESMA tolerância contada a partir da
+  // data de referência DELA (que é outra: um mês atrás), senão a comparação
+  // "vs período anterior" sumiria de todo mundo.
+  const _tolDias = Math.max(1, Math.round((new Date(refDateStr + 'T00:00:00').getTime() - new Date(followStart + 'T00:00:00').getTime()) / 86400000))
+  let _janCur = { inicio: followStart, fim: refDateStr }
+  let _janPrev = { inicio: localDate(new Date(new Date(prevRefDateStr + 'T00:00:00').getTime() - _tolDias * 86400000)), fim: prevRefDateStr }
+  // ⚠️ INTERVALO ESCOLHIDO SOMA OS DIAS. Até 09/09/2026 os cartões de Meta Ads
+  // liam `period_days = closestStoredPeriod(dias)` — arredondavam o intervalo para
+  // a captura agregada de 1, 7, 14 ou 30 dias e pegavam UMA. Escolher 5 a 9 caía
+  // na de 1 dia; vindo de "7 dias", caía na mesma de antes e os números NÃO
+  // MUDAVAM ao trocar de período. Foi o que o dono viu.
+  //
+  // Existe captura DIÁRIA (`period_days = 0`) cobrindo o intervalo — medido no
+  // mesmo dia: 5 a 9 de setembro somam R$ 14.948,60 de investimento.
+  if (ehCustom) {
+    _adsPd = 0
+    _adsCur = `captured_at=gte.${followStart}&captured_at=lte.${followEnd}&order=captured_at.desc`
+    _adsPrev = `captured_at=gte.${prevStartStr}&captured_at=lte.${prevEndStr}&order=captured_at.desc`
+    _janCur = { inicio: followStart, fim: followEnd }
+    _janPrev = { inicio: prevStartStr, fim: prevEndStr }
+  }
+  else if (isHoje) { _adsPd = 0; _adsCur = `captured_at=eq.${_hojeBRT}`; _adsPrev = `captured_at=eq.${_ontemBRT}`; _janCur = { inicio: _hojeBRT, fim: _hojeBRT }; _janPrev = { inicio: _ontemBRT, fim: _ontemBRT } }
+  else if (isOntem) { const _anteBRT = localDate(new Date(new Date(_ontemBRT + 'T00:00:00').getTime() - 86400000)); _adsPd = 0; _adsCur = `captured_at=eq.${_ontemBRT}`; _adsPrev = `captured_at=eq.${_anteBRT}`; _janCur = { inicio: _ontemBRT, fim: _ontemBRT }; _janPrev = { inicio: _anteBRT, fim: _anteBRT } }
+  // De quando é a captura que foi RECUSADA por ser de fora da janela. null = não
+  // houve recusa. A tela escreve isso junto dos "—", senão o dono vê traço sem
+  // saber se é falta de coleta, falta de gasto, ou defeito.
+  let capturaAdsFora = null
+  // QUEM REALMENTE PÔS DINHEIRO NOS CARTÕES desta janela. Sai da MESMA captura
+  // que os cartões somaram — não é uma segunda medição que possa discordar. É a
+  // porta do aviso de "sem tipo confirmado": campanha que não gastou não
+  // distorce número nenhum aqui, e avisar sobre ela acenderia a faixa vermelha
+  // para sempre (medido: 37 das 38 campanhas sem conjunto não gastam nada).
+  let _idsComGastoNaJanela = []
+  if (!_recorteSemCampanha) {
+    // ⚠️ O TETO DE 200 LINHAS SERVIA PARA UMA CAPTURA SÓ. Somando um intervalo,
+    // são ~30 campanhas POR DIA: cinco dias já dão 150, e um mês estoura — o
+    // PostgREST corta em silêncio e o investimento sai MENOR sem aviso nenhum,
+    // que é o defeito mais caro desta casa (número no lugar de falha).
+    const _tetoAds = ehCustom ? 5000 : 200
+    const [ciCurr, ciPrev] = await Promise.all([
+      sb(`campaign_insights?account_id=eq.${accountId}&period_days=eq.${_adsPd}&${_adsCur}&limit=${_tetoAds}&select=campaign_id,spend,impressions,clicks,reach,post_engagement,likes,comments,shares,saves,conversas,cadastros,compras,visitas,captured_at${idFilter}`),
+      sb(`campaign_insights?account_id=eq.${accountId}&period_days=eq.${_adsPd}&${_adsPrev}&limit=${_tetoAds}&select=campaign_id,spend,impressions,clicks,reach,post_engagement,likes,comments,shares,saves,conversas,cadastros,compras,visitas,captured_at${idFilter}`),
+    ])
+    // ⚠️ BATEU NO TETO = LEITURA PELA METADE, e não "foi isso que teve". Sem este
+    // aviso o dono veria um investimento menor e acreditaria.
+    // ⚠️ SÓ NO INTERVALO. Fora dele a consulta NÃO tem limite de data por baixo:
+    // ela devolve as 200 linhas mais recentes de propósito, e `capturaDoAgregado`
+    // escolhe a captura mais nova entre elas. Bater em 200 ali é o normal, não
+    // truncamento — e eu fiz o aviso disparar em toda carga, que é o jeito mais
+    // rápido de ensinar alguém a ignorar aviso.
+    if (ehCustom && ((ciCurr && ciCurr.length >= _tetoAds) || (ciPrev && ciPrev.length >= _tetoAds))) {
+      erroAds.value = erroAds.value
+        || 'A leitura de anúncios bateu no teto de linhas e pode estar incompleta — escolha um intervalo menor.'
+    }
+    // Captura o .erro AQUI, colado no await: o .erro é uma propriedade do array
+    // que o sb() devolveu — .filter()/.map() (o aggCi abaixo) criam array novo e
+    // deixam o .erro para trás.
+    // Só ACRESCENTA: uma falha anterior (campanhas, conjuntos ou gasto do dia) não
+    // pode ser apagada por um `|| null` daqui — o dono ficaria sem o aviso.
+    erroAds.value = erroAds.value || ciCurr.erro || ciPrev.erro || null
+    // A captura mais recente de CADA consulta, recusada quando é de fora da
+    // janela que a tela está afirmando (ver captura-do-agregado.js).
+    // Intervalo escolhido soma TODOS os dias; os demais períodos continuam
+    // pegando a captura agregada mais nova e recusando a que for velha demais.
+    const _capCur = ehCustom ? capturasDaJanela(ciCurr, _janCur) : capturaDoAgregado(ciCurr, _janCur)
+    _capDias = _capCur.dias || (_capCur.data ? [_capCur.data] : [])
+    _capLinhas = (_capCur.linhas || []).length
+    const _capPrev = ehCustom ? capturasDaJanela(ciPrev, _janPrev) : capturaDoAgregado(ciPrev, _janPrev)
+    capturaAdsFora = _capCur.foraDaJanela ? _capCur.data : null
+    // A captura já vem recortada pelo balde e pelo filtro manual (o idFilter da
+    // consulta), e já vem recusada quando é velha demais — então isto é, com
+    // todas as letras, "as campanhas cujo dinheiro está impresso nesta tela".
+    _idsComGastoNaJanela = _capCur.linhas.filter(r => parseFloat(r.spend || 0) > 0).map(r => String(r.campaign_id))
+    const adsAgg = aggCi(_capCur.linhas); const prevAdsAgg = aggCi(_capPrev.linhas)
+    spend = adsAgg?.spend || 0; impressions = adsAgg?.impressions || 0; clicks = adsAgg?.clicks || 0; reach = adsAgg?.reach || 0
+    adEngagement = adsAgg?.adEngagement || 0; adLikes = adsAgg?.adLikes || 0; adComments = adsAgg?.adComments || 0; adShares = adsAgg?.adShares || 0; adSaves = adsAgg?.adSaves || 0
+    // Sem `|| 0` de propósito: aqui zero é resposta ("ninguém abriu conversa") e
+    // null é ausência de leitura. As duas coisas têm de chegar diferentes na tela.
+    conversas = adsAgg ? adsAgg.conversas : null; cadastros = adsAgg ? adsAgg.cadastros : null; compras = adsAgg ? adsAgg.compras : null; visitas = adsAgg ? adsAgg.visitas : null
+    prevSpend = prevAdsAgg ? prevAdsAgg.spend : null
+    // Reach DEDUPLICADO: sem filtro de campanhas, usa o total nível-conta (account_insights).
+    // Somar reach por campanha infla (mesma pessoa em várias) — chegava a ~35% no real.
+    // "Sem filtro" agora quer dizer as DUAS coisas: balde Todos E nenhum filtro
+    // manual. Com um recorte qualquer não existe alcance deduplicado guardado, e
+    // aí a soma por campanha é o melhor que temos — o mesmo que já acontecia
+    // quando o dono marcava campanhas na mão. Quando isso acontece, o cartão TEM
+    // de dizer em uma linha que o número repete pessoa — desde que a tela abre em
+    // Seguidores, esse virou o caso PADRÃO, e imprimir um alcance inflado como
+    // fato é pior do que não mostrá-lo.
+    //
+    // Na MESMA viagem vêm impressões e frequência, que os cartões do balde Todos
+    // pedem. Nada de tabela nova nem de segunda ida: as três colunas moram na
+    // linha que já estava sendo lida. As impressões do nível-conta batem EXATO com
+    // a soma por campanha nas 5 contas (conferido em 17/08/2026) — impressão não
+    // duplica pessoa, então aqui é só coerência de fonte, não correção de número.
+    // ⚠️ NO INTERVALO ESCOLHIDO NÃO HÁ ALCANCE DEDUPLICADO. `account_insights`
+    // também tem uma linha por captura: com `limit=1` num intervalo, o número
+    // seria o de UM DIA — menor que a verdade, impresso como se fosse do período.
+    // Melhor o alcance somado, que o cartão já declara ("repete pessoa").
+    if (_todasAsCampanhas && !ehCustom) {
+      const aiCurr = await sb(`account_insights?account_id=eq.${accountId}&period_days=eq.${_adsPd}&${_adsCur}&limit=1&select=reach,impressions,frequency`).catch(() => [])
+      // `> 0`, NÃO `!= null`. Estas três colunas são anuláveis MAS têm default 0:
+      // a linha em que a Meta não publicou nada chega com zero, passa por um
+      // teste de "veio número?" e a tela imprime "0,00×" com borda VERDE — um
+      // veredito fabricado a partir de leitura ausente. Zero aqui nunca é
+      // resposta útil (conta com investimento tem impressão e tem alcance), e
+      // trocar um alcance somado por um zero seria apagar número bom.
+      if (aiCurr && aiCurr.length && aiCurr[0].reach > 0) { reach = parseInt(aiCurr[0].reach); alcanceSomado = false }
+      if (aiCurr && aiCurr.length && aiCurr[0].impressions > 0) impressions = parseInt(aiCurr[0].impressions)
+      if (aiCurr && aiCurr.length && aiCurr[0].frequency > 0) frequencia = parseFloat(aiCurr[0].frequency)
+    }
+    // FREQUÊNCIA em qualquer recorte que não seja a conta inteira: não existe
+    // guardada, e a única conta possível é impressões ÷ alcance SOMADO. Como esse
+    // alcance conta a mesma pessoa mais de uma vez, a frequência sai BAIXA demais —
+    // por isso ela herda, na tela, o mesmo aviso do alcance (ver _alcanceRepete).
+    // Sem alcance não se divide: fica null, e o cartão mostra "—".
+    if (frequencia == null && impressions > 0 && reach > 0) frequencia = impressions / reach
   }
   // Novos seguidores por dia: MESMA série resiliente que o gráfico da seção 01 desenha
   // (bruto quando a Meta consolidou; senão a variação da contagem) — os dois nunca divergem.
@@ -1474,16 +2545,20 @@ async function fetchData(accountId, period, customStart, customEnd) {
   // NÃO saiu (dia recente) mas a contagem SUBIU, usa esse ganho de contagem (chartGained já traz
   // o +N dos dias sem bruto) como PRÉVIA — senão um custo que existe (ex.: R$40 investidos hoje,
   // +5 seguidores) apareceria zerado. É o número que já dá pra ver hoje.
+  //
+  // O CUSTO em si não sai daqui: quem divide é o cartão, e ele divide o
+  // investimento que está IMPRESSO nele (ver cartoes-do-balde.js). Daqui vai só o
+  // DENOMINADOR — os novos seguidores do período, e os do período anterior para a
+  // linha de comparação. Assim os três custos do balde Seguidores dividem o mesmo
+  // numerador que o cartão de cima mostra, e o dono consegue refazer a conta.
   const chartGainedSum = chartGained.reduce((a, b) => a + (b || 0), 0)
   const _divSeguidores = grossGained > 0 ? grossGained : chartGainedSum
-  const cps = spend > 0 && _divSeguidores > 0 ? spend / _divSeguidores : 0
   // prévia = está usando o ganho de contagem (não o bruto oficial) porque a Meta ainda não fechou.
   const cpsPrevia = grossGained === 0 && chartGainedSum > 0
   // "consolidando" (custo NÃO calculável): bruto não fechou E a contagem não subiu (net ≤ 0) —
   // aí não dá pra dividir. Só então mostra "consolidando" em vez de um número.
   const _countMoved = chartSrc.some(s => _netCountOf(s) !== 0)
   const cpsConsolidando = grossGained === 0 && grossPartial && _countMoved && chartGainedSum <= 0
-  const prevCps = prevSpend && _prevGained > 0 ? prevSpend / _prevGained : null
   const storyShares = storyDailyCurr.reduce((s, r) => s + (r.story_shares || 0), 0)
   const storyRep = storyDailyCurr.reduce((s, r) => s + (r.story_replies || 0), 0)
   const prevStoryShares = storyDailyPrev.length ? storyDailyPrev.reduce((s, r) => s + (r.story_shares || 0), 0) : null
@@ -1495,22 +2570,79 @@ async function fetchData(accountId, period, customStart, customEnd) {
   // Stories postados: soma diária dentro da janela (corrige HOJE = 1D). Posts/Reels NÃO mudam (são por-período).
   const storiesCount = storyDailyCurr.reduce((s, r) => s + (r.stories_count || 0), 0)
   const prevStoriesCount = storyDailyPrev.length ? storyDailyPrev.reduce((s, r) => s + (r.stories_count || 0), 0) : null
-  // Etiqueta de comparação baseada no período anterior real
+  // ── DOIS RÓTULOS, PORQUE HÁ DUAS JANELAS ANTERIORES NESTA TELA ──
+  //
+  // O rótulo não é enfeite: ele afirma DE QUANDO é o número que está do lado
+  // dele. Havia um só, e ele descrevia a janela de um mês atrás — enquanto o ao
+  // vivo (o caminho normal) compara com o período IMEDIATAMENTE anterior. Em 7D
+  // o cartão de investimento dizia "vs 13 Jul – 20 Jul" mostrando o gasto de
+  // 06–12/08: o número certo, com a data um mês fora. Quem lê acredita na data.
+  //
+  //   `pl`         → a MESMA janela de N dias, tirada UM MÊS atrás. É o que as
+  //                  consultas do agregado coletado comparam: engajamento,
+  //                  posts/reels, e o gasto quando o ao vivo não responde.
+  //   `plAnterior` → os N dias IMEDIATAMENTE anteriores (prevStartStr..prevEndStr,
+  //                  as mesmas datas que já recortam o bruto de seguidores). É o
+  //                  que o ao vivo compara, e também os stories.
+  //
+  // Cada `setCompare` escolhe o seu conforme a fonte do número anterior — não há
+  // um rótulo "geral", porque não há uma janela só.
   const _mm = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
   const _fd = d => d.getDate() + ' ' + _mm[d.getMonth()]
   const pl = effectivePeriod <= 1 ? _fd(prevRefDate) : (() => { const s = new Date(prevRefDate.getTime() - effectivePeriod * 86400000); return _fd(s) + ' – ' + _fd(prevRefDate) })()
+  const _fdIso = iso => _fd(new Date(iso + 'T12:00:00'))
+  const plAnterior = prevStartStr === prevEndStr ? _fdIso(prevEndStr) : _fdIso(prevStartStr) + ' – ' + _fdIso(prevEndStr)
   return {
     followerTotal: (trueLastRows[0]?.followers_count ?? latest), newFollowers, prevNewFollowers, avgPerDay, bestDay: '—', engRate, followerDeltas, effectivePeriod, impressions, clicks, reach,
     chart: { gained: chartGained, lost: chartLost, labels: chartLabels, dates: chartDates },
-    spend, prevSpend, cps, prevCps, cpsConsolidando, cpsPrevia, adEngagement, adLikes, adComments, adShares, adSaves,
+    spend, prevSpend, cpsConsolidando, cpsPrevia, adEngagement, adLikes, adComments, adShares, adSaves,
+    // Só o DENOMINADOR do custo por seguidor (o numerador é o investimento do
+    // cartão). `divSeguidoresAnterior` é o do período anterior, para a comparação.
+    divSeguidores: _divSeguidores, divSeguidoresAnterior: _prevGained,
     adsDiario: { inicio: followStart, fim: followEnd, linhasDeGasto: gastoDiarioRows, linhasDeSeguidores: seguidoresDiarioRows },
+    // Recorte por balde: o que a barra desenha e o que o ao vivo tem de somar.
+    baldesVazios, baldeEfetivo: _efetivo, idsParaAoVivo,
+    // A frase embaixo da barra tem de dizer o que está REALMENTE valendo. Sem
+    // estes três números ela dizia "Todas as campanhas (126)" logo acima de
+    // cartões que falavam de 9 delas.
+    campanhasNoRecorte: idsDoRecorte.length,
+    campanhasDoBalde: idsDoBalde(_campanhas, _efetivo).length,
+    campanhasNoTotal: _campanhas.length,
+    // Quantas campanhas COM DINHEIRO NESTA JANELA ainda não têm conjunto
+    // coletado — elas caem pelo objetivo, que às vezes engana (ver
+    // desenharAvisoBalde). Só as que gastaram: campanha parada não move número
+    // nenhum da tela, e avisar sobre ela deixaria a faixa acesa para sempre.
+    campanhasSemTipo: campanhasSemTipoConfirmado(_campanhas, _idsComGastoNaJanela),
+    // De quando é a captura recusada por ser de fora da janela exibida. A tela
+    // escreve isso junto dos "—": traço sem motivo faz o dono procurar defeito.
+    capturaAdsFora,
+    // Sem nenhum conjunto coletado pra este perfil, toda campanha cai pela
+    // regra do objetivo — provisório, não fechado (ver desenharAvisoBalde e
+    // classificacaoEhProvisoria em baldes-do-painel.js, com o limite do RLS
+    // documentado lá e testado ao lado).
+    classificacaoProvisoria: _semConjuntoDeVerdade,
+    // Nenhuma campanha no recorte → o cartão de dinheiro mostra "—", nunca o
+    // total da conta. E o alcance avisa quando repete pessoa.
+    recorteSemCampanha: _recorteSemCampanha, semGastoNoPeriodo: _semGastoNoPeriodo, alcanceSomado,
+    // Os números que os cartões de CADA balde dividem (ver cartoes-do-balde.js).
+    // null = não coletado, e null vira "—" na tela — nunca zero.
+    frequencia, conversas, cadastros, compras, visitas,
     eng: { likes: eng.likes, saves: eng.saves, shares: eng.shares, comments: eng.comments ?? 0, reach: eng.reach ?? 0, views: eng.views ?? 0, interactions: eng.total_interactions ?? 0, engaged: eng.accounts_engaged ?? 0, profileViews: eng.profile_views ?? 0, prevLikes: prevEng?.likes ?? null, prevSaves: prevEng?.saves ?? null, prevShares: prevEng?.shares ?? null, prevComments: prevEng?.comments ?? null, prevReach: prevEng?.reach ?? null, prevViews: prevEng?.views ?? null, prevInteractions: prevEng?.total_interactions ?? null, prevEngaged: prevEng?.accounts_engaged ?? null, prevProfileViews: prevEng?.profile_views ?? null },
     cnt: { posts: cnt.posts_count, stories: storiesCount, reels: cnt.reels_count, postsReels: cnt.posts_count + cnt.reels_count, prevPosts: prevCnt != null ? prevCnt.posts_count : null, prevReels: prevCnt != null ? prevCnt.reels_count : null, prevPostsReels: prevCnt != null ? prevCnt.posts_count + prevCnt.reels_count : null, prevStories: prevStoriesCount },
     storyEng: { shares: storyShares, replies: storyRep, prevShares: prevStoryShares, prevReplies: prevStoryRep, reach: storyReach, interactions: storyInter, navigation: storyNav, profileVisits: storyPV, follows: storyFol, navForward: storyNavF, navBack: storyNavB, navExit: storyNavE, navNext: storyNavN, prevReach: prevStoryReach, prevInteractions: prevStoryInter, prevNavigation: prevStoryNav, prevProfileVisits: prevStoryPV, prevFollows: prevStoryFol },
-    pl,
+    pl, plAnterior,
     // Última coleta REAL do perfil (não o fim da janela) → frescor honesto em todo período.
     trueLastSnap: trueLastRows.length ? trueLastRows[0].captured_at : null,
     grossGained, grossLost, grossPartial, previaReal, partialSince: _partialSince, confirmadoIG, lastGrossDay,
+    // ⚠️ DIAGNÓSTICO DO RECORTE (super-admin). Não é enfeite: em 09/09/2026 passei
+    // horas deduzindo de onde cada número vinha, e o dono teve de repetir a mesma
+    // queixa quatro vezes. Ver a janela e a fonte na tela responde em um olhar o
+    // que a dedução não respondeu.
+    diag: {
+      ehCustom, periodo: String(period), effectivePeriod, storedPeriod,
+      follow: `${followStart}→${followEnd}`,
+      adsPd: _adsPd, adsDias: (_capDias || []).length, adsLinhas: _capLinhas,
+    },
   }
 }
 
@@ -1681,10 +2813,10 @@ function openFollowersInfo() {
   m.style.cssText = "background:var(--surface);max-width:470px;width:100%;max-height:calc(100dvh - 24px);overflow:auto;overscroll-behavior:contain;border-radius:16px;box-shadow:var(--shadow-lg);font-family:var(--fonte-principal);color:var(--text);"
   m.innerHTML =
     `<div style="padding:18px 20px;border-bottom:1px solid #eef2f7;display:flex;align-items:center;justify-content:space-between;gap:12px;">
-      <div style="font-family:'Oswald',sans-serif;font-size:16px;font-weight:600;letter-spacing:.5px;">COMO CONTAMOS OS NOVOS SEGUIDORES</div>
+      <div style="font-family:'Oswald',sans-serif;font-size:max(16px, calc(16px * var(--escala-texto, 1)));font-weight:600;letter-spacing:.5px;">COMO CONTAMOS OS NOVOS SEGUIDORES</div>
       <button class="btn" id="_fi_x" style="min-width:40px">✕</button>
     </div>
-    <div style="padding:18px 20px;font-size:13px;line-height:1.6;">
+    <div style="padding:18px 20px;font-size:max(9px, calc(13px * var(--escala-texto, 1)));line-height:1.6;">
       <div style="background:color-mix(in srgb,var(--green) 12%,var(--surface));border:1px solid #86efac;border-radius:10px;padding:12px 14px;margin:0 0 14px;">
         <p style="margin:0 0 6px;"><b style="color:color-mix(in srgb,var(--green) 75%,var(--text));">✓ Confirmado pelo Instagram</b></p>
         <p style="margin:0;">O período já tem o número oficial do Instagram (<b>seguiram − deixaram de seguir</b>). É exatamente o que aparece no painel profissional — se conferir no app, vai bater.</p>
@@ -1759,14 +2891,27 @@ function renderInteracoes() {
   if (ehStory) {
     const val = naoNeg(ctx.respostas != null ? ctx.respostas : 0)
     animCount(document.getElementById('eng-replies'), val)
-    setCompare('cmp-replies', val, ctx.respostasAnt != null ? naoNeg(ctx.respostasAnt) : null, '', ctx.pl, false)
+    setCompare('cmp-replies', val, ctx.respostasAnt != null ? naoNeg(ctx.respostasAnt) : null, '', ctx.plRespostas || ctx.pl, false)
     applyMetric('replies', val, getGoal('replies'))
   }
 }
 
 /* ── MAIN UPDATE (legacy L4045-4157, verbatim) ── */
 function update(d, period) {
-  const pl = d.pl
+  const pl = d.pl                     // janela de um mês atrás (agregado coletado)
+  const plAnt = d.plAnterior || d.pl  // janela imediatamente anterior (ao vivo, bruto, stories)
+  // Balde sem gasto no período fica apagado, com o motivo. A conta usa o gasto
+  // COLETADO por campanha (o ao vivo não sabe separar por tipo). `baldeEfetivo`
+  // é o que as consultas REALMENTE usaram — pode ser Todos, quando o escolhido
+  // não tem dinheiro neste perfil.
+  desenharBaldeBar(d.baldesVazios || [], d.baldeEfetivo)
+  // Dois avisos possíveis, o do perfil inteiro e o das campanhas soltas — ver
+  // desenharAvisoBalde.
+  desenharAvisoBalde(d.classificacaoProvisoria, d.campanhasSemTipo || 0)
+  // A frase embaixo da barra segue o tipo de campanha que REALMENTE valeu, e é
+  // reescrita a cada update — sem isso ela ficava congelada no que foi pintado na
+  // troca de perfil e contradizia os cartões.
+  updateCampaignFilterBadge(d.campanhasNoRecorte, d.campanhasNoTotal, d.baldeEfetivo, d.campanhasDoBalde, d.semGastoNoPeriodo)
   applyFreshness(d.trueLastSnap) // frescor = última coleta REAL do coletor, igual em qualquer período
   const totalEl = document.getElementById('total-followers'); if (totalEl) animCountFull(totalEl, (d.live ? d.live.followers_count : d.followerTotal))
   // Status ao vivo × fallback honesto (nunca esconde que é dado coletado quando a Meta falha).
@@ -1784,13 +2929,39 @@ function update(d, period) {
   // AO VIVO (exato da Meta) quando disponível; senão cai na lógica de consolidação do coletado.
   // EXCEÇÃO Hoje/1D: a quebra seguiu/deixou da Meta ainda assenta → total = LÍQUIDO real por delta da
   // contagem (previaReal) + selo "consolidando". SÓ vale pra Hoje/1D; demais períodos seguem validados.
-  const ehRecenteLive = !!d.live && (period === 0 || period === 1)
+  const _ehContexto = ehGraficoDeContexto(period, currentStartDate, currentEndDate)
+  const ehRecenteLive = !!d.live && _ehContexto
   const confirmado = ehRecenteLive ? false : (d.live ? true : d.confirmadoIG)
   // Hoje/1D: usa o líquido AO VIVO (mesma fonte do gráfico → card e gráfico batem); fallback previaReal.
-  const _netRec = d.netRecente ? (period === 0 ? d.netRecente.hoje : d.netRecente.ontem) : null
-  const headlineVal = ehRecenteLive
-    ? (_netRec != null ? _netRec : (d.previaReal != null ? d.previaReal : d.live.novos.total))
-    : (d.live ? d.live.novos.total : (confirmado ? d.newFollowers : (d.previaReal != null ? d.previaReal : d.newFollowers)))
+  const _netRec = (d.netRecente && _ehContexto) ? (period === 0 ? d.netRecente.hoje : d.netRecente.ontem) : null
+  // ⚠️ O DIA QUE A META NÃO PUBLICOU ENTRA PELA ESTIMATIVA — regra do dono
+  // (09/09/2026): "Dia 8 n pode ficar zerado". Sem isto o card mostrava 883 num
+  // período em que o dia que faltava valia ~443, e ainda carimbava "confirmado".
+  // ⚠️⚠️ O CARD É A SOMA DO GRÁFICO. Ordem do dono (09/09/2026): "o importante é o
+  // card de novos seguidores bater sempre com o gráfico diário".
+  //
+  // O erro de origem era perseguir o painel profissional. Ele filtra OUTRO
+  // período — medido pelo dono no painel dele: "últimos 7 dias" vai de 2 a 7, e
+  // "5 a 8" mostra 4 a 7. Enquanto se tentava casar os dois, o card e o gráfico
+  // DESTA tela divergiam entre si, que é o que a pessoa realmente vê: em
+  // "últimos 7 dias" as barras somavam 1593 e o card mostrava 967, porque a janela
+  // do card parava no dia 08 e deixava de fora os dois maiores dias.
+  //
+  // ⚠️ NENHUM CARD VAI BATER COM O PAINEL, e isso é esperado, não defeito. Quem
+  // for conferir faz a conta pela janela que o painel mostrar.
+  // ⚠️ "O CARD É A SOMA DO GRÁFICO" VALE ONDE O GRÁFICO É O PERÍODO. Em HOJE e
+  // ONTEM o gráfico desenha os últimos 7 dias de CONTEXTO — uma barra só seria um
+  // retângulo sem leitura — e somá-lo faria o card do dia mostrar a semana. Foi o
+  // que aconteceu: "ontem" saiu 1,7 mil quando o dia tinha sido 443 (09/09/2026).
+  const _somaBarras = _ehContexto ? null : totalPelasBarras(d.chart)
+  const _temBuraco = !!(_somaBarras && _somaBarras.estimado)
+  const headlineVal = _somaBarras
+    ? _somaBarras.total
+    // Sem gráfico não há de onde somar: mantém o caminho de sempre em vez de
+    // imprimir zero, que seria afirmar "não seguiu ninguém".
+    : (ehRecenteLive
+      ? (_netRec != null ? _netRec : (d.previaReal != null ? d.previaReal : d.live.novos.total))
+      : (d.live ? d.live.novos.total : (confirmado ? d.newFollowers : (d.previaReal != null ? d.previaReal : d.newFollowers))))
   const newEl = document.getElementById('new-followers-val'); if (newEl) animCount(newEl, headlineVal) // Total (líquido)
   // O NÚMERO precisa PARECER provisório quando é provisório.
   //
@@ -1799,15 +2970,50 @@ function update(d, period) {
   // os dois como fatos da mesma natureza. Quando o Instagram ainda não fechou o dia,
   // o número muda de cor e ganha o rótulo "parcial" colado nele — a ressalva chega
   // junto com o número, não seis linhas abaixo.
-  if (newEl) newEl.classList.toggle('nf-em-consolidacao', ehRecenteLive)
-  const provEl = document.getElementById('nf-provisorio'); if (provEl) provEl.hidden = !ehRecenteLive
+  // ⚠️ O SELO NÃO PODE AFIRMAR O QUE A TELA NÃO SABE. Até 09/09/2026 o card
+  // carimbava "✓ confirmado pelo Instagram" sempre que o ao vivo respondia —
+  // inclusive quando faltava um dia inteiro dentro da janela.
+  const _provisorio = ehRecenteLive || _temBuraco
+  if (newEl) newEl.classList.toggle('nf-em-consolidacao', _provisorio)
+  const provEl = document.getElementById('nf-provisorio')
+  if (provEl) {
+    provEl.hidden = !_provisorio
+    // ⚠️ CURTO: o selo é `white-space:nowrap` e a tela se mede a 375px. A frase
+    // inteira ("o Instagram ainda não publicou o dia X") vai no title, que é onde
+    // cabe — o selo precisa caber ao lado do número sem empurrar a linha.
+    if (_temBuraco && !ehRecenteLive && (d.semPublicacao || []).length) {
+      // ⚠️ OS DIAS VÊM DE `semPublicacao`, a MESMA lista que a nota do gráfico usa.
+      // Antes vinha de `_falta`, que deixou de existir quando o card passou a ser a
+      // soma do gráfico — e a referência órfã derrubava a tela inteira em tempo de
+      // execução: tudo zerado e nem a faixa de diagnóstico aparecia. Nem o build
+      // nem os testes pegam variável apagada dentro de um .vue (09/09/2026).
+      const _dd = (d.semPublicacao || []).map((x) => { const t = String(x).split('-'); return t[2] + '/' + t[1] })
+      provEl.textContent = _dd.length === 1 ? `≈ falta ${_dd[0]}` : `≈ faltam ${_dd.length} dias`
+      provEl.title = `O Instagram ainda não publicou ${_dd.length === 1 ? 'o dia' : 'os dias'} `
+        + `${_dd.join(', ')}. O saldo desse${_dd.length === 1 ? '' : 's'} dia${_dd.length === 1 ? '' : 's'} `
+        + 'entrou pela variação da contagem total, que é estimativa — não separa quem seguiu de quem saiu.'
+    } else {
+      provEl.textContent = 'parcial'
+      provEl.removeAttribute('title')
+    }
+  }
   // 3 linhas de fonte igual: Seguidores · Deixaram de seguir · Total.
   const gEl = document.getElementById('nf-gained'), lEl = document.getElementById('nf-lost')
   // Hoje/1D: a Meta ainda não fechou a quebra seguiu/deixou → esconde essas 2 linhas e mostra só o Total (líquido).
   const gRow = gEl && gEl.closest('.nf-linha'), lRow = lEl && lEl.closest('.nf-linha')
   if (gRow) gRow.style.display = ehRecenteLive ? 'none' : ''
   if (lRow) lRow.style.display = ehRecenteLive ? 'none' : ''
-  if (d.live) {
+  if (_somaBarras) {
+    // ⚠️ AS TRÊS LINHAS SAEM DA MESMA SOMA. Se "Seguidores" viesse do ao vivo e o
+    // "Total" das barras, as três linhas do cartão não fechariam entre si — que é
+    // o defeito que este trabalho inteiro veio consertar.
+    //
+    // ⚠️ COM DIA ESTIMADO, `seguiu`/`deixou` são APROXIMADOS: a barra estimada
+    // guarda só o líquido, e a quebra "quem seguiu / quem saiu" daquele dia é
+    // justamente o que a Meta não publicou. O total é que continua certo.
+    if (gEl) animCount(gEl, _somaBarras.seguiu)
+    if (lEl) animCount(lEl, _somaBarras.deixou)
+  } else if (d.live) {
     if (gEl) animCount(gEl, d.live.novos.seguiu)
     if (lEl) animCount(lEl, d.live.novos.deixou)
   } else if (confirmado) {
@@ -1822,19 +3028,58 @@ function update(d, period) {
   if (prevEl) {
     prevEl.style.display = 'block'
     if (confirmado) {
-      prevEl.innerHTML = `<span style="display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:800;color:color-mix(in srgb,var(--green) 75%,var(--text));background:color-mix(in srgb,var(--green) 12%,var(--surface));border:1px solid #86efac;border-radius:6px;padding:2px 8px;">✓ confirmado pelo Instagram</span>`
+      prevEl.innerHTML = `<span style="display:inline-flex;align-items:center;gap:5px;font-size:max(9px, calc(10.5px * var(--escala-texto, 1)));font-weight:800;color:color-mix(in srgb,var(--green) 75%,var(--text));background:color-mix(in srgb,var(--green) 12%,var(--surface));border:1px solid #86efac;border-radius:6px;padding:2px 8px;">✓ confirmado pelo Instagram</span>`
     } else {
-      prevEl.innerHTML = `<span style="display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:800;color:color-mix(in srgb,var(--orange) 75%,var(--text));background:color-mix(in srgb,var(--orange) 12%,var(--surface));border:1px solid #fcd34d;border-radius:6px;padding:2px 8px;">⏳ em consolidação</span>` +
-        `<div style="font-size:9.5px;line-height:1.35;color:var(--muted);font-weight:500;margin-top:3px;">Número pela variação real de seguidores. O Instagram ainda não fechou os números oficiais (seguiram/saíram) deste período — quando fechar, aparece o ✓ confirmado.</div>`
+      prevEl.innerHTML = `<span style="display:inline-flex;align-items:center;gap:5px;font-size:max(9px, calc(10.5px * var(--escala-texto, 1)));font-weight:800;color:color-mix(in srgb,var(--orange) 75%,var(--text));background:color-mix(in srgb,var(--orange) 12%,var(--surface));border:1px solid #fcd34d;border-radius:6px;padding:2px 8px;">⏳ em consolidação</span>` +
+        `<div style="font-size:max(9px, calc(9.5px * var(--escala-texto, 1)));line-height:1.35;color:var(--muted);font-weight:500;margin-top:3px;">Número pela variação real de seguidores. O Instagram ainda não fechou os números oficiais (seguiram/saíram) deste período — quando fechar, aparece o ✓ confirmado.</div>`
     }
   }
   buildChart(d.chart)
-  montarNotaDeEstimativa(d.semPublicacao)
+  // ⚠️ FAIXA FIXA NO TOPO, CRIADA AQUI. A nota sob o gráfico foi tentada duas vezes
+  // e o dono não a viu nenhuma: primeiro por estar atrás de `is_superadmin`, depois
+  // porque o roteador apagava o `?diag=1`. Instrumentação que a pessoa não acha não
+  // serve. Esta não depende de elemento no template, não rola com a página, e sai
+  // no console junto — se a faixa falhar, o console tem.
+  try {
+    // Mesma regra da nota acima: só quem pediu com `?diag=1` vê. Ser super-admin
+    // não acende faixa nenhuma.
+    const _ligado = sessionStorage.getItem('rbv_diag') === '1'
+      || new URLSearchParams(window.location.search).get('diag') === '1'
+    if (_ligado && d.diag) {
+      const _txt = `recorte: ${d.diag.ehCustom ? 'PERSONALIZADO' : 'periodo ' + d.diag.periodo}`
+        + ` · janela ${d.diag.follow} (${d.diag.effectivePeriod} dia(s))`
+        + ` · seguidores: ${_somaBarras ? 'soma de ' + ((d.chart && d.chart.gained || []).length) + ' barra(s)' : 'caminho antigo'}`
+        + ` · ads: period_days=${d.diag.adsPd}, ${d.diag.adsDias} dia(s), ${d.diag.adsLinhas} linha(s)`
+        + ` · snapshot engajamento: ${d.diag.storedPeriod}d · ao vivo: ${d.live ? 'sim' : 'NAO'}`
+      console.log('%c🔧 DIAGNÓSTICO ' + _txt, 'background:#7a0025;color:#fff;padding:2px 6px')
+      let _f = document.getElementById('rbv-diag-faixa')
+      if (!_f) {
+        _f = document.createElement('div')
+        _f.id = 'rbv-diag-faixa'
+        _f.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#7a0025;color:#fff;'
+          + 'font:600 12px/1.4 monospace;padding:6px 10px;white-space:pre-wrap;word-break:break-word;'
+          + 'box-shadow:0 2px 8px rgba(0,0,0,.35);cursor:pointer'
+        _f.title = 'Clique para esconder. Para desligar de vez, abra o endereço com ?diag=0'
+        _f.onclick = () => { _f.style.display = 'none' }
+        document.body.appendChild(_f)
+      }
+      _f.style.display = ''
+      _f.textContent = '🔧 ' + _txt
+    }
+  } catch (e) {}
+  montarNotaDeEstimativa(d.semPublicacao, d.diag && {
+    ...d.diag,
+    aoVivo: !!d.live,
+    fonteSeguidores: _somaBarras ? `soma de ${(d.chart && d.chart.gained || []).length} barra(s)` : 'caminho antigo',
+  })
   // Comparação só quando confirmado (no período em consolidação o "anterior" do bruto distorceria).
   const cmpEl = document.getElementById('cmp-followers')
   // AO VIVO: compara total atual vs total do período ANTERIOR (exato, mesma janela). Senão, coletado.
-  if (d.live) setCompare('cmp-followers', d.live.novos.total, d.live.anterior ? d.live.anterior.novos.total : null, '', pl, false)
-  else if (confirmado) setCompare('cmp-followers', d.newFollowers, d.prevNewFollowers, '', pl, false)
+  // Os DOIS caminhos comparam com o período imediatamente anterior: o ao vivo
+  // porque a edge recebe essa janela, e o coletado porque `prevNewFollowers` sai
+  // de prevStartStr..prevEndStr. Por isso os dois levam `plAnt`.
+  if (d.live) setCompare('cmp-followers', d.live.novos.total, d.live.anterior ? d.live.anterior.novos.total : null, '', plAnt, false)
+  else if (confirmado) setCompare('cmp-followers', d.newFollowers, d.prevNewFollowers, '', plAnt, false)
   else if (cmpEl) cmpEl.innerHTML = ''
   // Nota de desempenho SÓ com número fechado.
   //
@@ -1849,99 +3094,135 @@ function update(d, period) {
   const prevEngTotal = d.eng.prevLikes + d.eng.prevSaves + d.eng.prevShares + (d.eng.prevComments || 0)
   const _avgShown = (d.effectivePeriod > 0 ? (headlineVal / d.effectivePeriod) : headlineVal).toFixed(1)
   setChips('chips-followers', ['Média: +' + _avgShown + '/dia', 'Taxa de eng.: ' + d.engRate + '%', 'Engajamento total: ' + fmtN(engTotal)])
-  // Investimento AO VIVO = gasto de TODAS as campanhas da conta de anúncio do perfil (exato). null = perfil sem ads.
-  const _inv = (d.live && d.live.investimento != null) ? d.live.investimento : d.spend
-  const _invAnt = (d.live && d.live.anterior) ? d.live.anterior.investimento : d.prevSpend
-  document.getElementById('ads-spend-val').textContent = _inv > 0 ? fmtR(_inv) : 'R$ —'
-  setCompare('cmp-spend', _inv, _invAnt, 'R$ ', pl, true)
-  applySpend(_inv, getGoal('spend'))
-  // ── CUSTO POR SEGUIDOR: investimento ÷ NOVOS seguidores BRUTOS (soma de gained) do período. ──
-  // Nunca usa o líquido. Quando dá pra calcular (soma de gained > 0, caso normal em 7d/30d) → custo
-  // real, sem selo. Quando a soma de gained é 0 SÓ porque os dias recentes ainda não consolidaram na
-  // Meta (contagem mexeu, mas "quem seguiu" não publicou) → "consolidando" em vez de R$0. Nunca
-  // R$0, número negativo, nem valor por líquido.
-  const _cpsVal = document.getElementById('ads-cps-val')
-  const _cpsPrev = document.getElementById('previa-cps')
-  const _temInv = (d.spend > 0) || (_inv > 0) // só faz sentido falar de custo se houve investimento
-  const _cpsConsolidando = !!d.cpsConsolidando && _temInv
-  if (_cpsConsolidando) {
-    // Sem novos seguidores brutos ainda (dias recentes não fecharam) → não inventa custo, avisa.
-    if (_cpsVal) _cpsVal.textContent = '—'
-    _mcValColor('cps', 'orange')
-    if (_cpsPrev) {
-      _cpsPrev.style.display = 'block'
-      _cpsPrev.innerHTML = '<span class="previa-selo">⏳ consolidando</span>' +
-        '<div class="previa-nota">O custo por seguidor aparece assim que o Instagram publicar quantas pessoas novas seguiram nos dias mais recentes — costuma sair em cerca de 1 dia. Até lá, esses dias ainda não fecharam o número de novos seguidores.</div>'
-    }
-    const _c = document.getElementById('cmp-cps'); if (_c) _c.innerHTML = '' // "anterior" não ajuda enquanto não fecha
-    const _pg = document.getElementById('prog-cps'); if (_pg) { _pg.style.width = '0%'; _pg.className = 'mc-progress-fill' }
-    const _pc = document.getElementById('pct-cps'); if (_pc) { _pc.textContent = 'consolidando'; _pc.className = 'mc-pct c-orange' }
-    const _df = document.getElementById('diff-cps'); if (_df) { _df.textContent = 'aguardando o Instagram publicar os novos seguidores'; _df.className = 'mc-diff c-orange' }
-    _mcBorderColor('cps', 'orange')
-  } else if (d.cpsPrevia && d.cps > 0) {
-    // PRÉVIA: o custo foi calculado pelo crescimento da CONTAGEM de hoje (a Meta ainda não
-    // publicou o bruto oficial de "quem seguiu"). Mostra o número (não zera!) mas avisa que é
-    // prévia e pode ajustar quando fechar. Ex.: R$40 investidos ÷ +5 seguidores hoje = R$8.
-    if (_cpsVal) _cpsVal.textContent = fmtR(d.cps)
-    _mcValColor('cps', 'orange')
-    if (_cpsPrev) {
-      _cpsPrev.style.display = 'block'
-      _cpsPrev.innerHTML = '<span class="previa-selo">⏳ prévia</span>' +
-        '<div class="previa-nota">Prévia: calculado pelo crescimento da contagem de seguidores (o Instagram ainda não publicou o número oficial de quem seguiu nos dias recentes — costuma sair em ~1 dia). O valor pode ajustar quando fechar.</div>'
-    }
-    const _c = document.getElementById('cmp-cps'); if (_c) _c.innerHTML = '' // "anterior" não compara com prévia
-    _mcBorderColor('cps', 'orange')
-    const _pc = document.getElementById('pct-cps'); if (_pc) { _pc.textContent = 'prévia'; _pc.className = 'mc-pct c-orange' }
-  } else {
-    if (_cpsVal) _cpsVal.textContent = d.cps > 0 ? fmtR(d.cps) : 'R$ —'
-    if (_cpsPrev) { _cpsPrev.style.display = 'none'; _cpsPrev.innerHTML = '' }
-    setCompare('cmp-cps', d.cps, d.prevCps, 'R$ ', pl, true)
-    if (d.cps > 0) {
-      applyMetricInverse('cps', d.cps, getGoal('cps')); const gcps = getGoal('cps'); _mcBorderColor('cps', perfColor((gcps / d.cps) * 100))
-    } else { _mcValColor('cps', ''); _mcBorderColor('cps', '') }
+  // Investimento AO VIVO = gasto das campanhas do recorte (exato). null = perfil sem ads.
+  //
+  // Quando NÃO há campanha nenhuma no recorte, o ao vivo não pode falar: a edge lê
+  // lista vazia como "a conta inteira", então aceitar o número dela aqui mostraria
+  // o gasto total sob o rótulo de um recorte que não tem ninguém dentro. Nesse
+  // estado o cartão fica em "R$ —", que é a verdade.
+  const _inv = d.recorteSemCampanha ? 0 : ((d.live && d.live.investimento != null) ? d.live.investimento : d.spend)
+  const _invAnt = d.recorteSemCampanha ? null : ((d.live && d.live.anterior) ? d.live.anterior.investimento : d.prevSpend)
+  // O alcance DEDUPLICADO só existe no total da conta. Com um balde escolhido (ou
+  // filtro manual) a tela soma o alcance de cada campanha, e aí quem viu dois
+  // anúncios é contado duas vezes — chegava a ~35% a mais no real. Como a tela
+  // abre em Seguidores, esse é o caso PADRÃO: o cartão diz isso com todas as
+  // letras em vez de imprimir o número inflado como se fosse fato. Fica AQUI, e não
+  // lá embaixo com os chips, porque o selo de cálculo dos cartões de alcance e de
+  // frequência depende dele.
+  const _alcanceRepete = !!d.alcanceSomado && d.reach > 0
+  // ── OS CARTÕES DA SEÇÃO 02 TROCAM COM O BALDE ──
+  // Quais indicadores aparecem sai de cartoes-do-balde.js: em Contatos não faz
+  // sentido custo por seguidor, e em Vendas não existe um quarto indicador honesto.
+  // A grade continua com os mesmos quatro lugares e os mesmos ids por dentro — o
+  // que troca é o CONTEÚDO de cada um.
+  //
+  // Zero vira null de propósito nos números que o coletor grava com default 0
+  // (alcance, impressões, interações): ali o 0 quase sempre quer dizer "não veio
+  // dado", e "custou R$ 0,00" é justamente a mentira que este painel já publicou
+  // por 17 horas. Onde o banco sabe diferenciar (conversas, cadastros, compras,
+  // visitas — colunas sem default), o null vem do banco e o 0 é resposta de
+  // verdade: passa direto.
+  // ── E UM DENOMINADOR SÓ, PELA MESMA RAZÃO ──
+  // O numerador já vinha do cartão; o denominador do custo por seguidor continuava
+  // vindo do coletor, e os dois passaram a falar de momentos diferentes. Medido na
+  // tela em 20/08/2026 (Raíssa, HOJE): o cartão mostrava 53 seguidores — a contagem
+  // AO VIVO de agora menos a de ontem — e o custo dividia R$ 435,88 (ao vivo, do
+  // minuto) por 26, que era a foto que o coletor tinha tirado de manhã. Saiu
+  // R$ 16,76 onde a conta na mão dá R$ 8,22, e sem selo nenhum avisando.
+  // Quem decide de onde sai o denominador é seguidores-do-custo.js, puro e testado.
+  const _segCusto = seguidoresDoCusto({
+    // ⚠️ O DENOMINADOR É O BRUTO DAS MESMAS BARRAS que o cartão soma — custo que
+    // divide um número que não está na tela ninguém confere. Continua sendo o
+    // BRUTO (quem seguiu), e não o líquido: custo de aquisição não desconta quem
+    // saiu. Decisão do dono, 09/09/2026.
+    live: d.live || _somaBarras
+      ? { seguiu: _somaBarras ? _somaBarras.seguiu : d.live.novos.seguiu,
+          anteriorSeguiu: d.live && d.live.anterior ? d.live.anterior.novos.seguiu : null }
+      : null,
+    ehRecenteLive,
+    numeroImpresso: headlineVal,
+    // Falta dia na janela → o bruto que serve de denominador está subestimado, e
+    // o custo por seguidor sai alto demais. Não dá para corrigir o número; dá
+    // para não fingir que ele está fechado.
+    estimado: _temBuraco,
+    coletado: { bruto: d.divSeguidores, brutoAnterior: d.divSeguidoresAnterior, previa: !!d.cpsPrevia },
+  })
+  const _numerosDoBalde = {
+    // UM NUMERADOR SÓ, e é o que está na tela: o investimento do CARTÃO (ao vivo
+    // quando existe), não o do banco. Os três custos do balde dividem exatamente
+    // este número — inclusive o custo por seguidor, que antes dividia o gasto
+    // coletado. Custo que não divide o número impresso acima dele é custo que
+    // ninguém consegue conferir: a Vessel mostrava R$ 7.802 de investimento
+    // enquanto os custos dividiam R$ 461,52.
+    investimento: _inv > 0 ? _inv : null,
+    seguidores: _segCusto.valor,
+    interacoes: d.adEngagement > 0 ? d.adEngagement : null,
+    curtidas: d.adLikes > 0 ? d.adLikes : null,
+    conversas: d.conversas, cadastros: d.cadastros, compras: d.compras, visitas: d.visitas,
+    alcance: d.reach > 0 ? d.reach : null,
+    impressoes: d.impressions > 0 ? d.impressions : null,
+    frequencia: d.frequencia,
   }
-  // ── Gráficos diários (abaixo de cada card). As metas são lidas AQUI, na hora de desenhar,
-  // porque o dono edita o BUDGET/META MÁX direto na tela (contenteditable). ──
+  // UM balde só manda em tudo o que vem abaixo: os cartões, as CHAVES das metas e
+  // os gráficos de cada lugar da grade. Se `baldeEfetivo` faltasse, `chaveDeMeta` gravaria numa chave
+  // fantasma ('undefined.spend') enquanto os cartões cairiam em Todos — a meta do
+  // dono iria para uma linha que nenhuma tela lê de volta.
+  const _balde = d.baldeEfetivo || _baldeAtual
+  const _cartoes = cartoesDoBalde(_balde, _numerosDoBalde)
+  // O rótulo do "vs" segue a FONTE do investimento anterior: ao vivo é o período
+  // imediatamente anterior; sem ao vivo, `d.prevSpend` vem de um mês atrás.
+  const _plInv = (d.live && d.live.anterior) ? plAnt : pl
+  desenharCartoesDoBalde(_cartoes, { d, pl: _plInv, inv: _inv, invAnt: _invAnt, alcanceRepete: _alcanceRepete, balde: _balde, segCusto: _segCusto })
+  // ── Gráficos diários (abaixo de cada cartão) ──
+  // Um por LUGAR da grade, com o gráfico do cartão que caiu ali neste balde.
+  // As metas são lidas lá dentro, na hora de desenhar, porque o dono edita o
+  // BUDGET/META MÁX direto na tela (contenteditable).
   const _diario = d.adsDiario || { inicio: null, fim: null, linhasDeGasto: [], linhasDeSeguidores: [] }
-  desenharGraficoDiario('gmad-spend', montarSerieDeInvestimento({
-    inicio: _diario.inicio, fim: _diario.fim, linhasDeGasto: _diario.linhasDeGasto, budgetDoPeriodo: getGoal('spend'),
-  }), {
-    titulo: 'Quanto foi investido em cada dia',
-    rotuloValor: 'Investido no dia',
-    rotuloMeta: 'Meta do dia',
-    legendaBase: 'Cada barra é um dia · a linha é o budget dividido pelos dias do período · barra vermelha = passou do budget do dia',
-    textoVazio: 'Nenhum investimento registrado nos dias deste período.',
-    textoSemDado: { 'sem-coleta': 'sem informação coletada neste dia' },
-  })
-  desenharGraficoDiario('gmad-cps', montarSerieDeCustoPorSeguidor({
-    inicio: _diario.inicio, fim: _diario.fim, linhasDeGasto: _diario.linhasDeGasto, linhasDeSeguidores: _diario.linhasDeSeguidores, metaDeCustoPorSeguidor: getGoal('cps'),
-  }), {
-    titulo: 'Quanto custou cada seguidor novo, dia a dia',
-    rotuloValor: 'Custo por seguidor no dia',
-    rotuloMeta: 'Meta máxima',
-    legendaBase: 'Cada barra é um dia (investido no dia ÷ seguidores novos do dia) · a linha é a meta máxima · barra vermelha = custou mais caro que a meta',
-    textoVazio: 'Nenhum dia deste período teve investimento e seguidor novo ao mesmo tempo — sem custo por seguidor pra mostrar.',
-    textoSemDado: { 'sem-coleta': 'sem informação coletada neste dia', 'sem-seguidor': 'nenhum seguidor novo neste dia — sem como calcular o custo' },
-  })
+  desenharGraficosDosCartoes(_cartoes, _balde, _diario)
   const adsChips = []
   if (d.impressions > 0) adsChips.push(fmtN(d.impressions) + ' impressões')
   if (d.clicks > 0) adsChips.push(fmtN(d.clicks) + ' cliques')
   if (d.reach > 0) adsChips.push(fmtN(d.reach) + ' alcance')
+  if (_alcanceRepete) adsChips.push({ texto: 'esse alcance conta a mesma pessoa mais de uma vez', classe: 'sec-chip-nota' })
+  // "—" SEM MOTIVO FAZ O DONO PROCURAR DEFEITO. Quando os cartões estão em traço
+  // porque a última coleta deste tipo de campanha é de FORA do período exibido, é
+  // isso que a linha diz — com a data. Antes desta obra a tela fazia o contrário:
+  // imprimia aquela coleta velha como se fosse a semana (Breno Vale, 7D, "Site e
+  // alcance": números de 08/06 rotulados como os últimos 7 dias).
+  if (d.capturaAdsFora) {
+    let _q = d.capturaAdsFora
+    try { _q = new Date(d.capturaAdsFora + 'T00:00:00').toLocaleDateString('pt-BR') } catch (e) {}
+    adsChips.push({ texto: 'a coleta mais recente deste tipo de campanha é de ' + _q + ', fora do período mostrado — por isso os cartões estão em "—"', classe: 'sec-chip-nota' })
+  }
   if (!adsChips.length) adsChips.push('Sem dados de Ads no período')
   setChips('chips-ads', adsChips)
-  const cpi = (d.adEngagement > 0 && d.spend > 0) ? d.spend / d.adEngagement : 0
-  const cpl = (d.adLikes > 0 && d.spend > 0) ? d.spend / d.adLikes : 0
-  document.getElementById('ads-cpi-val').textContent = cpi > 0 ? fmtR(cpi) : 'R$ —'
-  document.getElementById('ads-cpl-val').textContent = cpl > 0 ? fmtR(cpl) : 'R$ —'
-  if (cpi > 0) { const g = getGoal('cpi'); applyMetricInverse('cpi', cpi, g); _mcBorderColor('cpi', perfColor((g / cpi) * 100)) } else { _mcBorderColor('cpi', '') }
-  if (cpl > 0) { const g = getGoal('cpl'); applyMetricInverse('cpl', cpl, g); _mcBorderColor('cpl', perfColor((g / cpl) * 100)) } else { _mcBorderColor('cpl', '') }
   const custoChips = []
-  if (d.clicks > 0 && d.spend > 0) custoChips.push('CPC ' + fmtR(d.spend / d.clicks))
-  if (d.impressions > 0 && d.spend > 0) custoChips.push('CPM ' + fmtR(d.spend / d.impressions * 1000))
-  if (d.reach > 0 && d.spend > 0) custoChips.push('Custo/alcance ' + fmtR(d.spend / d.reach))
-  if (d.adComments > 0 && d.spend > 0) custoChips.push('Custo/comentário ' + fmtR(d.spend / d.adComments))
-  if (d.adSaves > 0 && d.spend > 0) custoChips.push('Custo/salvamento ' + fmtR(d.spend / d.adSaves))
-  if (d.adShares > 0 && d.spend > 0) custoChips.push('Custo/compart. ' + fmtR(d.spend / d.adShares))
+  // UM NUMERADOR SÓ NA SEÇÃO INTEIRA — a mesma régua dos cartões, agora também
+  // aqui embaixo. Estas linhas dividiam `d.spend` (o gasto COLETADO) enquanto os
+  // cartões dividiam `_inv` (o ao vivo, quando existe). Em "Todos" os dois
+  // apareciam juntos na tela: o cartão "CUSTO POR MIL IMPRESSÕES R$ X" e a
+  // linha "CPM R$ Y", mesmo nome, mesmo denominador, números diferentes — e não
+  // tinham como bater, porque a janela do ao vivo é de N dias e a do agregado
+  // coletado era de N+1 — com o dia de HOJE, incompleto, dentro. Dois números com
+  // o mesmo nome na mesma tela é o dono perguntando qual dos dois está errado.
+  //
+  // A CAUSA foi consertada no coletor em 20/08/2026 (ver janela-de-ads.js): as
+  // capturas NOVAS já vêm com N dias completos. As antigas continuam de N+1, e
+  // por isso os denominadores desta seção ainda encolhem um pouco a cada dia que
+  // passa, até a janela exibida só conter captura nova.
+  const _invChips = _inv > 0 ? _inv : 0
+  if (d.clicks > 0 && _invChips > 0) custoChips.push('CPC ' + fmtR(_invChips / d.clicks))
+  if (d.impressions > 0 && _invChips > 0) custoChips.push('CPM ' + fmtR(_invChips / d.impressions * 1000))
+  // Este custo divide dinheiro por um alcance que pode repetir pessoa — então ele
+  // sai barato demais. O rótulo avisa junto com o número, não seis linhas abaixo.
+  if (d.reach > 0 && _invChips > 0) {
+    custoChips.push(_alcanceRepete
+      ? { texto: 'Custo/alcance ' + fmtR(_invChips / d.reach) + ' (com pessoa repetida)', classe: 'sec-chip-nota' }
+      : 'Custo/alcance ' + fmtR(_invChips / d.reach))
+  }
+  if (d.adComments > 0 && _invChips > 0) custoChips.push('Custo/comentário ' + fmtR(_invChips / d.adComments))
+  if (d.adSaves > 0 && _invChips > 0) custoChips.push('Custo/salvamento ' + fmtR(_invChips / d.adSaves))
+  if (d.adShares > 0 && _invChips > 0) custoChips.push('Custo/compart. ' + fmtR(_invChips / d.adShares))
   if (!custoChips.length) custoChips.push('Sem custos no período')
   setChips('chips-ads-custo', custoChips)
   // Curtidas/Comentários/Salvamentos/Compart. por ABA (Geral/Reels/Posts/Stories/Anúncios). Guarda o contexto
@@ -1951,7 +3232,11 @@ function update(d, period) {
     ant: (d.live && d.live.anterior && d.live.anterior.interacoes) ? d.live.anterior.interacoes : null,
     respostas: (d.live && d.live.respostas != null) ? d.live.respostas : null,
     respostasAnt: (d.live && d.live.anterior && d.live.anterior.respostas != null) ? d.live.anterior.respostas : null,
-    eng: d.eng, pl,
+    eng: d.eng,
+    // Com o ao vivo, `ant` é o período imediatamente anterior; sem ele, os
+    // `prev*` do coletado são de um mês atrás. O rótulo acompanha.
+    pl: (d.live && d.live.anterior) ? plAnt : pl,
+    plRespostas: plAnt, // respostas só existem ao vivo
   }
   renderInteracoes()
   // Cards novos (alcance/visualizações/interações/contas engajadas/visitas) — sem meta/progresso.
@@ -1962,14 +3247,16 @@ function update(d, period) {
     const val = naoNeg(engLive ? (engLive[k] || 0) : (d.eng[k] || 0))
     const prevAcc = engAnt ? engAnt[k] : d.eng[pk]
     animCount(document.getElementById('eng-' + id), val)
-    setCompare('cmp-' + id, val, prevAcc != null ? naoNeg(prevAcc) : null, '', pl, false)
+    setCompare('cmp-' + id, val, prevAcc != null ? naoNeg(prevAcc) : null, '', engAnt ? plAnt : pl, false)
     applyMetric(id, val, getGoal(id))
   })
   const avgPerPost = d.cnt.posts > 0 ? Math.round(d.eng.likes / d.cnt.posts) : 0
   setChips('chips-eng', ['Taxa de eng.: ' + d.engRate + '%', 'Comentários: ' + fmtN(d.eng.comments || 0), 'Média curtidas/post: ' + fmtN(avgPerPost), prevEngTotal > 0 ? 'Total: ' + fmtN(engTotal) + ' vs ' + fmtN(prevEngTotal) + ' (' + pctDiff(engTotal, prevEngTotal) + ')' : 'Total engajamento: ' + fmtN(engTotal)])
   // Engajamento de Stories agora é a aba "Stories" da seção 03 (Engajamento) — seção separada removida.
   animCount(document.getElementById('cnt-stories'), d.cnt.stories)
-  setCompare('cmp-stories', d.cnt.stories, d.cnt.prevStories, '', pl, false); applyMetric('stories', d.cnt.stories, getGoal('stories'))
+  // Stories saem da soma diária de prevStartStr..prevEndStr — janela imediatamente
+  // anterior. Posts e Reels, logo abaixo, vêm do agregado de um mês atrás.
+  setCompare('cmp-stories', d.cnt.stories, d.cnt.prevStories, '', plAnt, false); applyMetric('stories', d.cnt.stories, getGoal('stories'))
   animCount(document.getElementById('cnt-posts'), d.cnt.posts)
   setCompare('cmp-posts', d.cnt.posts, d.cnt.prevPosts, '', pl, false); applyMetric('posts', d.cnt.posts, getGoal('posts'))
   animCount(document.getElementById('cnt-reels'), d.cnt.reels)
@@ -2010,7 +3297,7 @@ async function buildProfiles() {
       btn.classList.add('active')
       _acIdx = idx
       try { localStorage.setItem('dash_account', String(acc.id)) } catch (e) {}
-      currentAccountId = acc.id; applyProfileTheme(acc.name); updateGoalDisplays(currentPeriod); metasFetchAll(acc.id); loadCampaignFilterBadge()
+      currentAccountId = acc.id; applyProfileTheme(acc.name); updateGoalDisplays(currentPeriod); metasFetchAll(acc.id); carregarBalde(acc.id); loadCampaignFilterBadge()
       const wrapper = document.querySelector('.wrapper')
       _fadeSwap(wrapper, () => refresh())
     })
@@ -2021,7 +3308,7 @@ async function buildProfiles() {
     let selIdx = 0
     try { const savedId = localStorage.getItem('dash_account'); if (savedId != null) { const i = accounts.findIndex(a => String(a.id) === savedId); if (i >= 0) selIdx = i } } catch (e) {}
     _acIdx = selIdx
-    currentAccountId = accounts[selIdx].id; applyProfileTheme(accounts[selIdx].name)
+    currentAccountId = accounts[selIdx].id; applyProfileTheme(accounts[selIdx].name); carregarBalde(accounts[selIdx].id)
     document.querySelectorAll('.profile-btn').forEach((b, i) => b.classList.toggle('active', i === selIdx))
     setTimeout(loadCampaignFilterBadge, 100)
   }
@@ -2061,7 +3348,10 @@ function _acSwitchTo(idx) {
     _acIdx = idx
     const acc = _allAccounts[idx]
     document.querySelectorAll('.profile-btn').forEach((b, i) => b.classList.toggle('active', i === idx))
-    currentAccountId = acc.id; applyProfileTheme(acc.name); updateGoalDisplays(currentPeriod); metasFetchAll(acc.id); refresh(); loadCampaignFilterBadge()
+    // carregarBalde ANTES do refresh: o balde é POR PERFIL, e o refresh já
+    // consulta com ele. Depois, o vitrine mostraria o perfil novo com o balde do
+    // perfil anterior por uma rodada inteira.
+    currentAccountId = acc.id; applyProfileTheme(acc.name); updateGoalDisplays(currentPeriod); metasFetchAll(acc.id); carregarBalde(acc.id); refresh(); loadCampaignFilterBadge()
     _acSecsLeft = AC_DURATION
   })
 }
@@ -2146,7 +3436,7 @@ function buildPeriodTabs() {
     btn.appendChild(document.createTextNode(p.label))
     btn.addEventListener('click', () => {
       document.querySelectorAll('.ptab').forEach(b => b.classList.remove('active')); btn.classList.add('active')
-      currentPeriod = p.value; try { localStorage.setItem('dash_period', String(p.value)) } catch (e) {} currentStartDate = null; currentEndDate = null
+      currentPeriod = p.value; try { localStorage.setItem('dash_period', String(p.value)); localStorage.removeItem(CHAVE_INTERVALO) } catch (e) {} currentStartDate = null; currentEndDate = null
       document.getElementById('custom-start').value = ''; document.getElementById('custom-end').value = ''; document.getElementById('custom-clear-btn').style.display = 'none'
       updateGoalDisplays(p.value); refresh()
       if (_hojeTimer) { clearInterval(_hojeTimer); _hojeTimer = null }
@@ -2170,17 +3460,57 @@ function restoreHeaderState() {
     if (btn) btn.querySelector('.ht-arrow').style.transform = 'rotate(180deg)'
   }
 }
-function updateGoalDisplays(period) { Object.keys(GOALS).forEach(k => { const el = document.getElementById('goal-' + k); if (el) el.textContent = loadGoal(k, period, currentAccountId) }) }
-function watchGoals() { document.querySelectorAll('.mc-goal-val').forEach(el => { el.addEventListener('blur', () => { const key = el.id.replace('goal-', ''); saveGoal(key, el.textContent.trim()); updateGoalDisplays(currentPeriod); refresh() }); el.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); el.blur() } }) }) }
+// Reescreve o texto de TODA meta editável da tela quando o período muda ou quando
+// as metas chegam do banco (metasFetchAll). São DUAS famílias, e as duas precisam
+// ser percorridas:
+//
+// 1) as metas de sempre (seção 01 e as de GOALS): o id do elemento é fixo no HTML;
+// 2) as DOS QUATRO CARTÕES da seção 02, cuja chave carrega o balde
+//    ('contatos.custo_conversa'). Essas não estão em GOALS e nunca seriam
+//    alcançadas percorrendo só ele — por isso os cartões são percorridos pelos
+//    lugares da grade, com a chave que o desenho acabou de carimbar no id.
+//    Aqui o texto sai de metaDefinida: sem meta o campo mostra "—", nunca 0 — um
+//    0 na tela seria um alvo que ninguém pôs.
+function updateGoalDisplays(period) {
+  Object.keys(GOALS).forEach(k => { const el = document.getElementById('goal-' + k); if (el) el.textContent = loadGoal(k, period, currentAccountId) })
+  SLOTS_DOS_CARTOES.forEach((slot) => {
+    const pctEl = document.getElementById('pct-' + slot)
+    const card = pctEl && pctEl.closest('.card'); if (!card) return
+    const metaEl = card.querySelector('.mc-goal-val')
+    if (!metaEl || !metaEl.id.startsWith('goal-') || metaEl.id.startsWith('goal-livre-')) return
+    const chave = metaEl.id.slice('goal-'.length)
+    const v = metaDefinida(chave, period, currentAccountId)
+    metaEl.textContent = v == null ? '—' : String(v)
+  })
+}
+function watchGoals() {
+  document.querySelectorAll('.mc-goal-val').forEach(el => {
+    el.addEventListener('blur', () => {
+      const key = el.id.replace('goal-', '')
+      // Cartão sem meta fica com id 'goal-livre-<lugar>' (ver desenharCartoesDoBalde).
+      // Ele está escondido e não deveria receber foco, mas gravar 'livre-cps' seria
+      // uma linha de lixo no social_metas do dono — e o banco aceitaria caladinho.
+      if (!key || key.startsWith('livre-')) return
+      saveGoal(key, el.textContent.trim()); updateGoalDisplays(currentPeriod); refresh()
+    })
+    el.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); el.blur() } })
+  })
+}
 let _refreshId = 0
 async function refresh() {
   if (!currentAccountId) return
   const myId = ++_refreshId
   const _ls = document.getElementById('live-status'); if (_ls) _ls.innerHTML = '<span style="opacity:.7">⟳ atualizando ao vivo…</span>'
   // PARALELO: coletado (gráficos/histórico) + KPIs ao vivo + série do gráfico — juntos, não em fila.
+  //
+  // ÚNICA exceção: o ao vivo espera o coletado. Quem classifica as campanhas em
+  // baldes é o fetchData, e o ao vivo PRECISA somar exatamente o mesmo conjunto —
+  // senão o cartão de investimento mostraria um balde e o de custo por seguidor,
+  // outro. Os outros três continuam saindo junto, como sempre.
+  const _pDados = fetchData(currentAccountId, currentPeriod, currentStartDate, currentEndDate)
   const [data, live, serie, seriePrev, collabs] = await Promise.all([
-    fetchData(currentAccountId, currentPeriod, currentStartDate, currentEndDate),
-    buscarKpisAoVivo(currentAccountId, currentPeriod, currentStartDate, currentEndDate),
+    _pDados,
+    _pDados.then(d => buscarKpisAoVivo(currentAccountId, currentPeriod, currentStartDate, currentEndDate, d.idsParaAoVivo)),
     buscarSerieNovos(currentAccountId, currentPeriod, currentStartDate, currentEndDate),
     buscarSerieNovos(currentAccountId, currentPeriod, currentStartDate, currentEndDate, 1), // mesmos dias, mês anterior
     buscarCollabs(currentAccountId, currentPeriod, currentStartDate, currentEndDate), // posts/reels em collab (não vêm no /media)
@@ -2198,8 +3528,14 @@ async function refresh() {
     const _d3 = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'], _m3 = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
     const _dfull = iso => { const dt = new Date(iso + 'T12:00:00'); return dt.getDate() + ' ' + _m3[dt.getMonth()] }
     const _lbl = iso => { const dt = new Date(iso + 'T12:00:00'); return dt.getDate() + '/' + (dt.getMonth() + 1) }
-    const _mesAtual = currentPeriod === 'monthfull' || currentPeriod === 'sofar' || currentPeriod === 'month'
-    const _rolante = [0, 1, 3, 7, 14, 30].includes(currentPeriod)
+    // ⚠️ O PERSONALIZADO NUNCA CAI NESTES DOIS RAMOS. Ao escolher datas,
+    // `currentPeriod` continua com o valor antigo (7, 30…) — decidir só por ele
+    // punha o recorte personalizado no ramo dos rolantes, que cola "ontem" e
+    // "hoje" no fim da série. Filtrando 5 a 8 de setembro, o dia 8 aparecia DUAS
+    // vezes (dia da série + "ontem") e um dia 9 que ninguém pediu.
+    const _ehCustom = !!(currentStartDate && currentEndDate)
+    const _mesAtual = !_ehCustom && (currentPeriod === 'monthfull' || currentPeriod === 'sofar' || currentPeriod === 'month')
+    const _rolante = ehRecorteRolante(currentPeriod, currentStartDate, currentEndDate)
     // ── DIA QUE O INSTAGRAM NÃO PUBLICOU → ESTIMATIVA, não zero ──
     //
     // A Edge Function serie-novos-dia agora devolve `publicado: false` quando a
@@ -2221,6 +3557,15 @@ async function refresh() {
     const { data: tots } = await sbClient.from('daily_snapshots').select('captured_at,followers_count').eq('account_id', currentAccountId).order('captured_at', { ascending: false }).limit(100)
     if (myId !== _refreshId) return // trocou de período/perfil no meio → aborta este refresh
     const totMap = {}; (tots || []).forEach(t => { totMap[t.captured_at] = Number(t.followers_count) || 0 })
+    // ⚠️ A CONTAGEM DE HOJE VEM DO AO VIVO, NÃO DA FOTO DO COLETOR. O coletor
+    // roda 4x por dia; a foto dele fica velha em horas. Sem isto, a barra de hoje
+    // no período personalizado mostrava 183 (foto da madrugada) enquanto o filtro
+    // "hoje" mostrava 326 (ao vivo) — o MESMO DIA com dois números, que é
+    // exatamente a confusão que o dono já tinha apontado em 09/09/2026.
+    {
+      const _hojeIso = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' })
+      if (live && live.followers_count != null) totMap[_hojeIso] = Number(live.followers_count) || 0
+    }
     const _brt = ms => new Date(ms).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' })
     let semPublicacao = []
     if (_rolante || _mesAtual) {
@@ -2260,6 +3605,8 @@ async function refresh() {
       data.chart = {
         gained: barras.map(b => b.g), lost: barras.map(b => b.l),
         netOnly: barras.map(b => b.net), estimado: barras.map(b => !!b.est),
+        // O rótulo é o dia do PRÓPRIO dado. Rotular um dia à frente fez o mesmo
+        // dia mostrar dois números em filtros diferentes (09/09/2026).
         labels: serie.map(s => { const dt = new Date(s.label + 'T12:00:00'); return curto ? _d3[dt.getDay()] : _lbl(s.label) }),
         dates: serie.map(s => _dfull(s.label)),
         // comparativo: mesmos dias do MÊS ANTERIOR (por dia).
@@ -2274,16 +3621,36 @@ async function refresh() {
 }
 // Campos de data sempre visíveis: ao escolher AS DUAS datas, aplica sozinho (sem botão). O ✕ aparece pra limpar.
 function onCustomDateChange() {
+  // ⚠️ MUDAR A DATA NÃO CARREGA MAIS NADA. Antes qualquer mudança num dos campos
+  // aplicava na hora: ajustar só o início disparava a tela inteira com o fim
+  // ANTIGO — medido em 10/09/2026, quatro consultas para um período que ninguém
+  // pediu (01→09) —, e ajustar o fim em seguida recarregava tudo de novo. Quem
+  // escolhe intervalo mexe nos dois campos; aplicar no meio do caminho é sempre
+  // uma volta perdida. Agora quem aplica é o botão (ou Enter).
   const s = document.getElementById('custom-start').value, e = document.getElementById('custom-end').value
+  const bt = document.getElementById('custom-apply-btn')
   document.getElementById('custom-clear-btn').style.display = (s || e) ? 'inline-flex' : 'none'
-  if (!s || !e) return
-  if (s > e) { alert('A data inicial deve ser anterior à data final.'); return }
+  if (bt) {
+    const pronto = !!(s && e && s <= e)
+    bt.disabled = !pronto
+    // ⚠️ O MOTIVO FICA NO BOTÃO, não num alerta. Alerta obriga a fechar antes de
+    // corrigir, e some sem deixar rastro do que estava errado.
+    bt.title = pronto ? 'Aplicar o intervalo escolhido'
+      : (s && e ? 'A data inicial tem de vir antes da final' : 'Escolha as duas datas')
+  }
+}
+
+function aplicarIntervalo() {
+  const s = document.getElementById('custom-start').value, e = document.getElementById('custom-end').value
+  if (!s || !e || s > e) return
   currentStartDate = s; currentEndDate = e
+  try { localStorage.setItem(CHAVE_INTERVALO, JSON.stringify({ s, e })) } catch (err) {}
   document.querySelectorAll('.ptab').forEach(b => b.classList.remove('active'))
   refresh()
 }
 function clearCustomRange() {
   currentStartDate = null; currentEndDate = null
+  try { localStorage.removeItem(CHAVE_INTERVALO) } catch (e) {}
   document.getElementById('custom-start').value = ''; document.getElementById('custom-end').value = ''
   document.getElementById('custom-clear-btn').style.display = 'none'
   document.querySelectorAll('.ptab').forEach((b, i) => { if (i === 1) b.classList.add('active') })
@@ -2369,7 +3736,7 @@ async function loadUsers() {
     headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` }
   })
   const users = await r.json()
-  if (!Array.isArray(users) || users.length === 0) { listEl.innerHTML = '<div style="font-family:var(--fonte-principal);font-size:11px;color:var(--muted)">Nenhum usuário.</div>'; return }
+  if (!Array.isArray(users) || users.length === 0) { listEl.innerHTML = '<div style="font-family:var(--fonte-principal);font-size:max(9px, calc(11px * var(--escala-texto, 1)));color:var(--muted)">Nenhum usuário.</div>'; return }
   users.forEach(u => {
     const row = document.createElement('div'); row.className = 'user-row'
     const info = document.createElement('div'); info.className = 'user-info'
@@ -2418,13 +3785,21 @@ async function openCampaignModal() {
     sb('campaigns?account_id=eq.' + currentAccountId + '&order=status.asc,name.asc&select=campaign_id,name,objective,status'),
     sb('campaign_filters?account_id=eq.' + currentAccountId + '&select=selected_ids'),
   ])
-  const rawIds = filterRows[0]?.selected_ids // null=todas, []=nenhuma, [ids]=filtradas
+  const salvo = filterRows[0]?.selected_ids // null=todas, []=nenhuma, [ids]=filtradas
+  // ⚠️ ESPELHA A TELA, NÃO A TABELA. Com o balde escolhendo sozinho o recorte da
+  // tela vem do tipo de campanha, não de `campaign_filters` — e era a tabela que o
+  // modal mostrava, marcando as campanhas do balde ANTERIOR.
+  const rawIds = (_recorteNaTela && _recorteNaTela.auto)
+    ? (_recorteNaTela.todas ? null : _recorteNaTela.ids)
+    : salvo
   renderCampaignModal(campaigns, rawIds)
   document.getElementById('campaign-modal-overlay').style.display = 'flex'
 }
 function renderCampaignModal(campaigns, rawIds) {
   // rawIds: null/undefined=todas marcadas, []=nenhuma marcada, [ids]=só essas marcadas
-  const selIds = rawIds === null || rawIds === undefined ? null : new Set(rawIds)
+  // Os dois lados viram texto: o recorte da tela guarda id como texto e a tabela
+  // guarda como veio do banco. Comparar 123 com '123' deixaria TUDO desmarcado.
+  const selIds = rawIds === null || rawIds === undefined ? null : new Set(rawIds.map(String))
   const list = document.getElementById('campaign-list'); list.innerHTML = ''
   const active = campaigns.filter(c => c.status === 'ACTIVE')
   const other = campaigns.filter(c => c.status !== 'ACTIVE')
@@ -2434,7 +3809,7 @@ function renderCampaignModal(campaigns, rawIds) {
     items.forEach(c => {
       const row = document.createElement('label'); row.className = 'camp-row'
       const cb = document.createElement('input'); cb.type = 'checkbox'; cb.value = c.campaign_id
-      cb.checked = selIds === null || selIds.has(c.campaign_id)
+      cb.checked = selIds === null || selIds.has(String(c.campaign_id))
       const info = document.createElement('div'); info.className = 'camp-info'
       const nm = document.createElement('span'); nm.className = 'camp-name'; nm.textContent = c.name
       const obj = document.createElement('span'); obj.className = 'camp-obj'; obj.textContent = (c.objective || '').replace(/_/g, ' ')
@@ -2467,21 +3842,54 @@ async function saveCampaignFilter() {
   const checked = allCbs.filter(cb => cb.checked).map(cb => cb.value)
   const toSave = checked.length === allCbs.length ? null : checked
   const token = estado.currentSession?.access_token || SUPABASE_ANON_KEY
-  await fetch(SUPABASE_URL + '/rest/v1/campaign_filters', {
-    method: 'POST',
-    headers: { apikey: SUPABASE_ANON_KEY, Authorization: 'Bearer ' + token, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates' },
-    body: JSON.stringify({ account_id: currentAccountId, selected_ids: toSave, updated_at: new Date().toISOString() }),
-  })
+  // A RESPOSTA É CONFERIDA. Até 20/08/2026 este `fetch` era disparado e
+  // esquecido: o modal fechava e o contador mudava mesmo quando o banco tinha
+  // recusado a gravação. A tela dizia que o filtro estava salvo, e no próximo
+  // carregamento ele voltava ao que era, sem uma palavra de explicação — o
+  // defeito que o padrão da casa chama de "campo que parece salvo e não
+  // salvou", o mais caro de perceber.
+  let r = null
+  try {
+    r = await fetch(SUPABASE_URL + '/rest/v1/campaign_filters', {
+      method: 'POST',
+      headers: { apikey: SUPABASE_ANON_KEY, Authorization: 'Bearer ' + token, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates' },
+      body: JSON.stringify({ account_id: currentAccountId, selected_ids: toSave, updated_at: new Date().toISOString() }),
+    })
+  } catch (e) { r = null }
+  if (!r || !r.ok) {
+    // O modal FICA ABERTO: fechar aqui jogaria fora a escolha que a pessoa
+    // acabou de fazer, e ela teria que remarcar tudo de novo.
+    adminToast('Não consegui salvar o filtro. Confira a conexão e clique em Salvar de novo.', false)
+    return
+  }
+  adminToast('Filtro salvo.')
   document.getElementById('campaign-modal-overlay').style.display = 'none'
-  updateCampaignFilterBadge(toSave === null ? allCbs.length : toSave.length, allCbs.length)
+  // Contagem por tipo desconhecida neste ponto (o recorte só é montado no
+  // fetchData); o refresh() logo abaixo completa a frase.
+  // ⚠️ ESCOLHER À MÃO DESLIGA O AUTOMÁTICO. Sem isto, a escolha da pessoa seria
+  // desfeita na carga seguinte pelo balde, e ela veria o filtro "voltar sozinho".
+  try { localStorage.removeItem(_baldeAutoKey(currentAccountId)) } catch (e) {}
+  updateCampaignFilterBadge(toSave === null ? allCbs.length : toSave.length, allCbs.length, _baldeAtual, null)
   refresh()
 }
-function updateCampaignFilterBadge(selCount, total) {
+// A FRASE TEM DE FALAR DO TIPO DE CAMPANHA, senão ela contradiz os cartões que
+// estão logo abaixo dela: "Todas as campanhas (126)" em cima de quatro números
+// que falam de 9. Quem monta o texto é `fraseDoRecorte`, pura e testada ao lado.
+//
+// `doBalde` chega null nas pinturas que acontecem ANTES dos dados (troca de
+// perfil, gravação do filtro): ali não existe a contagem por tipo, e a frase
+// omite o número em vez de chutar um. O update() logo em seguida a completa.
+function updateCampaignFilterBadge(selCount, total, balde, doBalde, semGastoNoPeriodo) {
   const info = document.getElementById('camp-filter-info')
   if (!info) return
-  if (selCount === 0 && total >= 0) info.textContent = 'Nenhuma campanha selecionada'
-  else if (selCount === total || total === 0) info.textContent = 'Todas as campanhas (' + total + ')'
-  else info.textContent = selCount + ' de ' + total + ' campanhas selecionadas'
+  // ⚠️ VAZIO POR FALTA DE GASTO NO PERÍODO ≠ VAZIO POR ALGUÉM TER DESMARCADO TUDO.
+  // Dizer o recado errado manda a pessoa procurar defeito no filtro quando o
+  // problema é o intervalo. Pedido do dono em 10/09/2026.
+  info.textContent = fraseDoRecorte(
+    balde,
+    { noRecorte: selCount, total, doBalde: doBalde === undefined ? null : doBalde },
+    { semGastoNoPeriodo: !!semGastoNoPeriodo },
+  )
 }
 async function loadCampaignFilterBadge() {
   if (!currentAccountId) return
@@ -2491,7 +3899,9 @@ async function loadCampaignFilterBadge() {
   ])
   const rawIds = filterRows[0]?.selected_ids
   const selCount = rawIds === null || rawIds === undefined ? campaigns.length : rawIds.length
-  updateCampaignFilterBadge(selCount, campaigns.length)
+  // Só o tipo ESCOLHIDO é conhecido aqui; se ele estiver vazio neste perfil, o
+  // update() troca para Todos e reescreve a frase com o tipo que realmente valeu.
+  updateCampaignFilterBadge(selCount, campaigns.length, _baldeAtual, null)
 }
 
 // Equivalente ao showHome() do legado quando chamado a partir do dashboard
@@ -2523,6 +3933,10 @@ function fecharDashboard() {
 Object.assign(window, {
   onCustomDateChange,
   clearCustomRange,
+  // ⚠️ SEM ISTO O BOTÃO "APLICAR" NÃO FAZ NADA. O `onclick` do HTML procura a
+  // função no `window`; esquecer aqui não quebra o build nem os testes — o botão
+  // simplesmente não responde, e ninguém sabe por quê.
+  aplicarIntervalo,
   setEngTab,
   toggleAutoCycle,
   toggleHeader,
@@ -2541,6 +3955,34 @@ onMounted(async () => {
     return
   }
   verificarTravaJanelas() // 🔒 auto-teste: avisa no console se a lógica de intervalo foi quebrada.
+  // ⚠️⚠️ OS CAMPOS DE DATA SÃO ESPELHO DO ESTADO, NUNCA O CONTRÁRIO.
+  //
+  // Este foi O defeito de 09/09/2026, e custou uma noite inteira ao dono. O
+  // navegador RESTAURA sozinho o valor de um `<input type="date">` ao recarregar,
+  // mas o estado da tela voltava para o período guardado (7 dias). Resultado: os
+  // campos mostravam "05/09 a 09/09" e a tela calculava SETE DIAS por dentro.
+  //
+  // Tudo o que ele apontou vinha daqui — gráfico com 8 barras num intervalo de 5,
+  // Meta Ads com uma captura só, cards zerados, números que não mudavam ao trocar
+  // de período. Cada número que eu conferia batia; batia com o período ERRADO.
+  //
+  // Agora, no carregamento: ou o intervalo guardado entra nos campos, ou os campos
+  // são LIMPOS. Os dois nunca discordam.
+  {
+    const _ci = document.getElementById('custom-start')
+    const _cf = document.getElementById('custom-end')
+    const _cx = document.getElementById('custom-clear-btn')
+    if (_ci && _cf) {
+      if (currentStartDate && currentEndDate) {
+        _ci.value = currentStartDate; _cf.value = currentEndDate
+        if (_cx) _cx.style.display = 'inline-flex'
+        document.querySelectorAll('.ptab').forEach((b) => b.classList.remove('active'))
+      } else {
+        _ci.value = ''; _cf.value = ''
+        if (_cx) _cx.style.display = 'none'
+      }
+    }
+  }
   // Wiring que no legado rodava solto no escopo global do <script> (ver nota
   // no topo do bloco): tooltip do gráfico + detector de inatividade do auto-cycle.
   svgEl = document.getElementById('followers-chart')
@@ -2593,9 +4035,9 @@ onUnmounted(() => {
 /* ── Novos seguidores em 3 linhas de FONTE IGUAL (Seguidores / Deixaram de seguir / Total) ── */
 .tela-redes-sociais :deep(.nf-linhas){ display:flex; flex-direction:column; gap:6px; margin:4px 0 2px; }
 .tela-redes-sociais :deep(.nf-linha){ display:flex; align-items:baseline; justify-content:space-between; gap:12px; }
-.tela-redes-sociais :deep(.nf-lbl){ font-family:var(--fonte-principal); font-size:12px; font-weight:500; color:var(--muted); letter-spacing:.2px; }
-.tela-redes-sociais :deep(.nf-val){ font-family:'Oswald',sans-serif; font-size:22px; font-weight:600; color:var(--text); font-variant-numeric:tabular-nums; line-height:1.1; }
-.tela-redes-sociais :deep(.nf-total){ font-size:32px; font-weight:700; }
+.tela-redes-sociais :deep(.nf-lbl){ font-family:var(--fonte-principal); font-size:max(9px, calc(12px * var(--escala-texto, 1))); font-weight:500; color:var(--muted); letter-spacing:.2px; }
+.tela-redes-sociais :deep(.nf-val){ font-family:'Oswald',sans-serif; font-size:max(16px, calc(22px * var(--escala-texto, 1))); font-weight:600; color:var(--text); font-variant-numeric:tabular-nums; line-height:1.1; }
+.tela-redes-sociais :deep(.nf-total){ font-size:max(16px, calc(32px * var(--escala-texto, 1))); font-weight:700; }
 .tela-redes-sociais :deep(.nf-val.a-green){ color:var(--green); }
 .tela-redes-sociais :deep(.nf-val.a-red){ color:var(--red); }
 .tela-redes-sociais :deep(.nf-val.a-blue){ color:var(--accent); }
@@ -2609,15 +4051,15 @@ onUnmounted(() => {
    text-fill que pinta o texto de verdade. Só com `color` o getComputedStyle().color
    já diz laranja e o pixel continua azul — foi o que aconteceu na 1ª tentativa. */
 .tela-redes-sociais :deep(.nf-val.nf-em-consolidacao){ color:var(--orange)!important; -webkit-text-fill-color:var(--orange)!important; }
-.tela-redes-sociais :deep(.nf-provisorio){ font-family:var(--fonte-principal); font-size:9.5px; font-weight:800; text-transform:uppercase; letter-spacing:.5px; color:var(--orange); border:1px solid var(--orange); border-radius:4px; padding:1px 5px; margin-left:7px; opacity:.95; white-space:nowrap; }
+.tela-redes-sociais :deep(.nf-provisorio){ font-family:var(--fonte-principal); font-size:max(9px, calc(9.5px * var(--escala-texto, 1))); font-weight:800; text-transform:uppercase; letter-spacing:.5px; color:var(--orange); border:1px solid var(--orange); border-radius:4px; padding:1px 5px; margin-left:7px; opacity:.95; white-space:nowrap; }
 .tela-redes-sociais :deep(.nf-linha:has(.nf-provisorio:not([hidden]))){ align-items:center; }
 /* PRÉVIA do CUSTO POR SEGUIDOR — quando o Instagram ainda não publicou o bruto (seguiu/deixou)
    dos dias recentes e o custo sai pelo saldo líquido. Mesma cor âmbar da consolidação dos seguidores,
    via tokens de tema (claro E escuro). Não usa cores fixas pra não quebrar no modo escuro. */
-.tela-redes-sociais :deep(.previa-selo){ display:inline-flex; align-items:center; gap:5px; font-family:var(--fonte-principal); font-size:10.5px; font-weight:800; letter-spacing:.3px; color:var(--orange); border:1px solid var(--orange); border-radius:6px; padding:2px 8px; white-space:nowrap; }
-.tela-redes-sociais :deep(.previa-nota){ font-family:var(--fonte-principal); font-size:9.5px; line-height:1.35; font-weight:500; color:var(--muted); margin-top:3px; }
-.tela-redes-sociais :deep(.mc-ad-sub){ font-family:var(--fonte-principal); font-size:10.5px; font-weight:600; color:var(--muted); margin-top:2px; letter-spacing:.2px; }
-.tela-redes-sociais :deep(.mc-obs){ font-family:var(--fonte-principal); font-size:10px; font-weight:500; line-height:1.35; color:var(--muted); opacity:.85; margin-top:4px; }
+.tela-redes-sociais :deep(.previa-selo){ display:inline-flex; align-items:center; gap:5px; font-family:var(--fonte-principal); font-size:max(9px, calc(10.5px * var(--escala-texto, 1))); font-weight:800; letter-spacing:.3px; color:var(--orange); border:1px solid var(--orange); border-radius:6px; padding:2px 8px; white-space:nowrap; }
+.tela-redes-sociais :deep(.previa-nota){ font-family:var(--fonte-principal); font-size:max(9px, calc(9.5px * var(--escala-texto, 1))); line-height:1.35; font-weight:500; color:var(--muted); margin-top:3px; }
+.tela-redes-sociais :deep(.mc-ad-sub){ font-family:var(--fonte-principal); font-size:max(9px, calc(10.5px * var(--escala-texto, 1))); font-weight:600; color:var(--muted); margin-top:2px; letter-spacing:.2px; }
+.tela-redes-sociais :deep(.mc-obs){ font-family:var(--fonte-principal); font-size:max(9px, calc(10px * var(--escala-texto, 1))); font-weight:500; line-height:1.35; color:var(--muted); opacity:.85; margin-top:4px; }
 /* Porte das regras do dashboard central de Redes Sociais (legacy/index.html,
    principalmente L34-386/389-470/683-709/815-870 — hoje ainda em
    src/estilos/estilos-globais.css, de onde NÃO foram removidas: ao contrário
@@ -2655,14 +4097,14 @@ onUnmounted(() => {
 .tela-redes-sociais :deep(header){display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:16px;padding-bottom:0;}
 .tela-redes-sociais :deep(#header-collapsible){display:flex;align-items:center;gap:16px;flex-wrap:wrap;overflow:hidden;max-height:120px;opacity:1;transition:max-height .35s ease,opacity .25s ease;}
 .tela-redes-sociais :deep(#header-collapsible.collapsed){max-height:0;opacity:0;pointer-events:none;}
-.tela-redes-sociais :deep(#header-toggle){background:none;border:1px solid var(--border);cursor:pointer;color:var(--muted);font-size:11px;padding:5px 10px;border-radius:3px;font-family:var(--fonte-principal);display:flex;align-items:center;gap:5px;transition:border-color .18s,color .18s;white-space:nowrap;align-self:flex-start;}
+.tela-redes-sociais :deep(#header-toggle){background:none;border:1px solid var(--border);cursor:pointer;color:var(--muted);font-size:max(9px, calc(11px * var(--escala-texto, 1)));padding:5px 10px;border-radius:3px;font-family:var(--fonte-principal);display:flex;align-items:center;gap:5px;transition:border-color .18s,color .18s;white-space:nowrap;align-self:flex-start;}
 .tela-redes-sociais :deep(#header-toggle:hover){border-color:var(--accent);color:var(--accent);}
-.tela-redes-sociais :deep(#header-toggle .ht-arrow){display:inline-block;transition:transform .35s ease;font-size:9px;line-height:1;}
+.tela-redes-sociais :deep(#header-toggle .ht-arrow){display:inline-block;transition:transform .35s ease;font-size:max(9px, calc(9px * var(--escala-texto, 1)));line-height:1;}
 .tela-redes-sociais :deep(.profile-select){display:flex;gap:6px;flex-wrap:wrap;}
-.tela-redes-sociais :deep(.profile-btn){background:var(--surface);border:1px solid var(--border);color:var(--muted);padding:7px 14px;border-radius:var(--radius-sm);font-family:var(--fonte-principal);font-size:12px;font-weight:500;cursor:pointer;display:flex;align-items:center;gap:8px;transition:background .2s cubic-bezier(.4,0,.2,1),border-color .2s ease,color .15s ease,transform .12s ease;}
+.tela-redes-sociais :deep(.profile-btn){background:var(--surface);border:1px solid var(--border);color:var(--muted);padding:7px 14px;border-radius:var(--radius-sm);font-family:var(--fonte-principal);font-size:max(9px, calc(12px * var(--escala-texto, 1)));font-weight:500;cursor:pointer;display:flex;align-items:center;gap:8px;transition:background .2s cubic-bezier(.4,0,.2,1),border-color .2s ease,color .15s ease,transform .12s ease;}
 .tela-redes-sociais :deep(.profile-btn:active){transform:scale(.95);}
 .tela-redes-sociais :deep(.profile-btn:focus-visible){outline:2px solid var(--accent);outline-offset:2px;}
-.tela-redes-sociais :deep(.profile-btn .av){width:20px;height:20px;border-radius:50%;font-size:9px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;overflow:hidden;flex-shrink:0;position:relative;z-index:1;}
+.tela-redes-sociais :deep(.profile-btn .av){width:20px;height:20px;border-radius:50%;font-size:max(9px, calc(9px * var(--escala-texto, 1)));display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;overflow:hidden;flex-shrink:0;position:relative;z-index:1;}
 .tela-redes-sociais :deep(.profile-btn .av img){width:100%;height:100%;object-fit:cover;border-radius:50%;}
 .tela-redes-sociais :deep(.av-ring-wrap){position:relative;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
 .tela-redes-sociais :deep(.av-ring-wrap)::before{content:'';position:absolute;inset:-2.5px;border-radius:50%;background:conic-gradient(#f09433,#e6683c,#dc2743,#cc2366,#bc1888,#833ab4,#405de6,#f09433);animation:storiesRotate 3s linear infinite;opacity:0;transition:opacity .3s;}
@@ -2683,32 +4125,32 @@ onUnmounted(() => {
 .tela-redes-sociais :deep(.topbar-center)::-webkit-scrollbar{display:none;}
 .tela-redes-sociais :deep(.topbar-right){display:flex;align-items:center;gap:12px;text-align:right;flex-shrink:0;}
 .tela-redes-sociais :deep(.period-tabs){display:flex;gap:3px;flex-wrap:nowrap;flex-shrink:0;}
-.tela-redes-sociais :deep(.ptab){padding:4px 7px;border-radius:var(--radius-sm);font-family:var(--fonte-principal);font-size:9px;font-weight:600;cursor:pointer;color:var(--muted);border:1px solid var(--border);background:none;letter-spacing:.3px;text-transform:uppercase;white-space:nowrap;flex-shrink:0;transition:background .2s cubic-bezier(.4,0,.2,1),color .15s ease,border-color .15s ease,transform .12s ease,box-shadow .2s ease;}
+.tela-redes-sociais :deep(.ptab){padding:4px 7px;border-radius:var(--radius-sm);font-family:var(--fonte-principal);font-size:max(9px, calc(9px * var(--escala-texto, 1)));font-weight:600;cursor:pointer;color:var(--muted);border:1px solid var(--border);background:none;letter-spacing:.3px;text-transform:uppercase;white-space:nowrap;flex-shrink:0;transition:background .2s cubic-bezier(.4,0,.2,1),color .15s ease,border-color .15s ease,transform .12s ease,box-shadow .2s ease;}
 .tela-redes-sociais :deep(.ptab):active{transform:scale(.94);}
 .tela-redes-sociais :deep(.ptab.active){background:var(--accent);color:var(--sobre-cor);border-color:var(--accent);box-shadow:0 2px 8px rgba(29,78,216,.25);}
 [data-theme="dark"] .tela-redes-sociais :deep(.ptab.active){box-shadow:0 2px 10px rgba(79,124,255,.35);}
 .tela-redes-sociais :deep(.ptab):focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
 
 /* Relógio / live-dot / logo — compartilhados com outras telas (cópia própria, ver nota acima) */
-.tela-redes-sociais :deep(.live-dot){display:inline-flex;align-items:center;gap:6px;font-family:var(--fonte-principal);font-size:9px;color:var(--green);letter-spacing:1.5px;font-weight:500;text-transform:uppercase;}
+.tela-redes-sociais :deep(.live-dot){display:inline-flex;align-items:center;gap:6px;font-family:var(--fonte-principal);font-size:max(9px, calc(9px * var(--escala-texto, 1)));color:var(--green);letter-spacing:1.5px;font-weight:500;text-transform:uppercase;}
 .tela-redes-sociais :deep(.live-dot)::before{content:'';width:5px;height:5px;border-radius:50%;background:var(--green);animation:pulse 2s infinite;}
 .tela-redes-sociais :deep(.rbv-logo){height:52px;width:auto;object-fit:contain;display:block;}
 .tela-redes-sociais :deep(.rbv-logo-dark){display:none;}
 [data-theme="dark"] .tela-redes-sociais :deep(.rbv-logo-light){display:none;}
 [data-theme="dark"] .tela-redes-sociais :deep(.rbv-logo-dark){display:block;}
-.tela-redes-sociais :deep(.gv-back){display:flex;align-items:center;gap:4px;font-family:var(--fonte-principal);font-size:10px;font-weight:600;color:var(--accent);cursor:pointer;background:none;border:none;padding:0;transition:opacity .15s;letter-spacing:.3px;text-transform:uppercase;}
+.tela-redes-sociais :deep(.gv-back){display:flex;align-items:center;gap:4px;font-family:var(--fonte-principal);font-size:max(9px, calc(10px * var(--escala-texto, 1)));font-weight:600;color:var(--accent);cursor:pointer;background:none;border:none;padding:0;transition:opacity .15s;letter-spacing:.3px;text-transform:uppercase;}
 .tela-redes-sociais :deep(.gv-back):hover{opacity:.75;}
-.tela-redes-sociais :deep(.gv-perf-tag){font-family:var(--fonte-principal);font-size:13.5px;font-weight:700;letter-spacing:6px;text-transform:uppercase;color:var(--text);opacity:1;line-height:1.2;}
-.tela-redes-sociais :deep(.gv-brand-tag){font-family:var(--fonte-principal);font-size:10px;font-weight:600;letter-spacing:3px;text-transform:uppercase;color:var(--text);opacity:.6;line-height:1;}
-.tela-redes-sociais :deep(.gv-clock-date){font-family:var(--fonte-principal);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-top:3px;}
-.tela-redes-sociais :deep(.gv-update-status){font-family:var(--fonte-principal);font-size:8px;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);opacity:.45;margin-top:4px;text-align:right;}
-.tela-redes-sociais :deep(#dash-clock){font-family:'Oswald',sans-serif;font-size:15px;font-weight:400;letter-spacing:2px;color:var(--muted);white-space:nowrap;line-height:1;}
+.tela-redes-sociais :deep(.gv-perf-tag){font-family:var(--fonte-principal);font-size:max(9px, calc(13.5px * var(--escala-texto, 1)));font-weight:700;letter-spacing:6px;text-transform:uppercase;color:var(--text);opacity:1;line-height:1.2;}
+.tela-redes-sociais :deep(.gv-brand-tag){font-family:var(--fonte-principal);font-size:max(9px, calc(10px * var(--escala-texto, 1)));font-weight:600;letter-spacing:3px;text-transform:uppercase;color:var(--text);opacity:.6;line-height:1;}
+.tela-redes-sociais :deep(.gv-clock-date){font-family:var(--fonte-principal);font-size:max(9px, calc(8px * var(--escala-texto, 1)));letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-top:3px;}
+.tela-redes-sociais :deep(.gv-update-status){font-family:var(--fonte-principal);font-size:max(9px, calc(8px * var(--escala-texto, 1)));letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);opacity:.45;margin-top:4px;text-align:right;}
+.tela-redes-sociais :deep(#dash-clock){font-family:'Oswald',sans-serif;font-size:max(9px, calc(15px * var(--escala-texto, 1)));font-weight:400;letter-spacing:2px;color:var(--muted);white-space:nowrap;line-height:1;}
 .tela-redes-sociais :deep(#dash-clock span){color:var(--accent);font-weight:500;}
 
 /* Active profile bar */
 .tela-redes-sociais :deep(#active-profile-bar){display:flex;align-items:center;gap:9px;margin-bottom:14px;}
 .tela-redes-sociais :deep(#apb-dot){width:8px;height:8px;border-radius:50%;background:var(--accent);flex-shrink:0;transition:background .4s ease;}
-.tela-redes-sociais :deep(#apb-name){font-family:'Oswald',sans-serif;font-size:22px;font-weight:500;letter-spacing:2px;text-transform:uppercase;color:var(--text);}
+.tela-redes-sociais :deep(#apb-name){font-family:'Oswald',sans-serif;font-size:max(16px, calc(22px * var(--escala-texto, 1)));font-weight:500;letter-spacing:2px;text-transform:uppercase;color:var(--text);}
 
 /* Auto-cycle toggle (dashboard-específico) */
 .tela-redes-sociais :deep(.ac-toggle){display:inline-flex;align-items:center;gap:7px;cursor:pointer;user-select:none;}
@@ -2716,17 +4158,21 @@ onUnmounted(() => {
 .tela-redes-sociais :deep(.ac-toggle-track.on){background:var(--accent);}
 .tela-redes-sociais :deep(.ac-toggle-thumb){position:absolute;top:2px;left:2px;width:13px;height:13px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:transform .25s cubic-bezier(.34,1.56,.64,1);}
 .tela-redes-sociais :deep(.ac-toggle-track.on .ac-toggle-thumb){transform:translateX(15px);}
-.tela-redes-sociais :deep(.ac-toggle-lbl){font-family:var(--fonte-principal);font-size:10px;font-weight:600;letter-spacing:1.5px;color:var(--muted);text-transform:uppercase;transition:color .2s;}
+.tela-redes-sociais :deep(.ac-toggle-lbl){font-family:var(--fonte-principal);font-size:max(9px, calc(10px * var(--escala-texto, 1)));font-weight:600;letter-spacing:1.5px;color:var(--muted);text-transform:uppercase;transition:color .2s;}
 .tela-redes-sociais :deep(.ac-toggle.on .ac-toggle-lbl){color:var(--accent);}
-.tela-redes-sociais :deep(#autocycle-badge){position:fixed;bottom:18px;right:18px;display:none;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:7px 14px;font-family:var(--fonte-principal);font-size:11px;color:var(--text);letter-spacing:.8px;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,.15);}
+.tela-redes-sociais :deep(#autocycle-badge){position:fixed;bottom:18px;right:18px;display:none;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:7px 14px;font-family:var(--fonte-principal);font-size:max(9px, calc(11px * var(--escala-texto, 1)));color:var(--text);letter-spacing:.8px;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,.15);}
 .tela-redes-sociais :deep(#autocycle-badge .ac-dot){width:6px;height:6px;border-radius:50%;background:var(--green);animation:pulse 2s infinite;flex-shrink:0;}
 
 /* Section headers / grids / cards */
 .tela-redes-sociais :deep(.sec-header){display:flex;align-items:center;gap:12px;margin-bottom:8px;}
-.tela-redes-sociais :deep(.section-label){font-family:var(--fonte-principal);font-weight:600;font-size:11px;letter-spacing:2px;color:var(--muted);text-transform:uppercase;white-space:nowrap;}
+.tela-redes-sociais :deep(.section-label){font-family:var(--fonte-principal);font-weight:600;font-size:max(9px, calc(11px * var(--escala-texto, 1)));letter-spacing:2px;color:var(--muted);text-transform:uppercase;white-space:nowrap;}
 .tela-redes-sociais :deep(.sec-line){flex:1;height:1px;background:var(--border);}
 .tela-redes-sociais :deep(.sec-chips){display:flex;gap:6px;flex-wrap:wrap;}
-.tela-redes-sociais :deep(.sec-chip){font-family:var(--fonte-principal);font-weight:500;font-size:10px;padding:3px 8px;border-radius:var(--radius-sm);background:var(--surface2);color:var(--muted);border:1px solid var(--border);white-space:nowrap;letter-spacing:.3px;}
+.tela-redes-sociais :deep(.sec-chip){font-family:var(--fonte-principal);font-weight:500;font-size:max(9px, calc(10px * var(--escala-texto, 1)));padding:3px 8px;border-radius:var(--radius-sm);background:var(--surface2);color:var(--muted);border:1px solid var(--border);white-space:nowrap;letter-spacing:.3px;}
+/* Chip de AVISO (ex.: "esse alcance conta a mesma pessoa mais de uma vez"): pode
+   passar de uma linha. O chip comum é nowrap porque carrega número curto; uma
+   frase em nowrap sairia cortada a 375px, e texto cortado é o que não pode. */
+.tela-redes-sociais :deep(.sec-chip.sec-chip-nota){white-space:normal;max-width:100%;line-height:1.35;}
 .tela-redes-sociais :deep(.mb40){margin-bottom:22px;}
 .tela-redes-sociais :deep(.card){background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);padding:22px 24px;border-left:3px solid transparent;animation:fadeUp .55s cubic-bezier(.22,1,.36,1) both;transition:border-color .22s,box-shadow .22s;will-change:transform,opacity;cursor:default;}
 .tela-redes-sociais :deep(.card):hover{border-left-color:var(--accent);border-color:var(--accent-mid);box-shadow:var(--shadow-md);}
@@ -2737,7 +4183,7 @@ onUnmounted(() => {
    nenhuma classe genérica do estilos-globais.css. Como o SVG é criado por JS (não pelo template),
    ele não recebe o atributo de escopo do Vue — por isso :deep(), igual ao resto do arquivo. */
 .tela-redes-sociais :deep(.gmad-bloco){margin-top:14px;padding-top:12px;border-top:1px solid var(--border);}
-.tela-redes-sociais :deep(.gmad-titulo){font-family:var(--fonte-principal);font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:6px;}
+.tela-redes-sociais :deep(.gmad-titulo){font-family:var(--fonte-principal);font-size:max(9px, calc(10px * var(--escala-texto, 1)));font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:6px;}
 .tela-redes-sociais :deep(.gmad-svg){display:block;width:100%;height:auto;max-width:100%;overflow:visible;}
 .tela-redes-sociais :deep(.gmad-barra){fill:var(--accent);}
 .tela-redes-sociais :deep(.gmad-barra-acima){fill:var(--red);}
@@ -2745,32 +4191,39 @@ onUnmounted(() => {
 .tela-redes-sociais :deep(.gmad-base){stroke:var(--border);stroke-width:1;}
 /* Meta = referência discreta: linha propositalmente translúcida pra não competir com as barras. */
 .tela-redes-sociais :deep(.gmad-meta){stroke:var(--orange);stroke-width:1.5;stroke-dasharray:4 3;opacity:.5;}
-.tela-redes-sociais :deep(.gmad-meta-txt){font-family:var(--fonte-principal);font-size:8px;font-weight:600;fill:var(--orange);}
+.tela-redes-sociais :deep(.gmad-meta-txt){font-family:var(--fonte-principal);font-size:max(9px, calc(8px * var(--escala-texto, 1)));font-weight:600;fill:var(--orange);}
 /* Rótulo de dados (valor R$) em cima de cada barra dos gráficos diários. */
-.tela-redes-sociais :deep(.gmad-valor){font-family:var(--fonte-principal);font-size:7.5px;font-weight:700;fill:var(--text);}
+.tela-redes-sociais :deep(.gmad-valor){font-family:var(--fonte-principal);font-size:max(9px, calc(7.5px * var(--escala-texto, 1)));font-weight:700;fill:var(--text);}
+/* 11px quando o gráfico rola. Os 9px acima não foram escolha de estilo: era o
+   menor corpo legível, e mesmo assim "R$ 17,34" e "R$ 11,35" se sobrepunham em
+   −5px a 375px, porque cada dia tinha ~10px. Rolando, cada dia tem 30px — e aí
+   não há motivo para continuar espremendo a letra. Só rolando: no computador o
+   espaço é o mesmo de sempre, e letra maior no mesmo espaço traria a
+   sobreposição de volta. */
+.tela-redes-sociais :deep(.gmad-rola .gmad-valor){font-size:max(11px, calc(11px * var(--escala-texto, 1)));}
 /* Tarja atrás do rótulo da meta: ele fica sobre as barras e sem fundo virava sujeira. */
 .tela-redes-sociais :deep(.gmad-meta-tarja){fill:var(--surface);stroke:var(--orange);stroke-width:.5;opacity:.94;}
-.tela-redes-sociais :deep(.gmad-xlabel){font-family:var(--fonte-principal);font-size:8px;fill:var(--muted);}
-.tela-redes-sociais :deep(.gmad-legenda){font-family:var(--fonte-principal);font-size:10px;line-height:1.4;color:var(--muted);margin-top:6px;}
-.tela-redes-sociais :deep(.gmad-vazio){font-family:var(--fonte-principal);font-size:11px;line-height:1.4;color:var(--muted);padding:10px 0;}
+.tela-redes-sociais :deep(.gmad-xlabel){font-family:var(--fonte-principal);font-size:max(9px, calc(8px * var(--escala-texto, 1)));fill:var(--muted);}
+.tela-redes-sociais :deep(.gmad-legenda){font-family:var(--fonte-principal);font-size:max(9px, calc(10px * var(--escala-texto, 1)));line-height:1.4;color:var(--muted);margin-top:6px;}
+.tela-redes-sociais :deep(.gmad-vazio){font-family:var(--fonte-principal);font-size:max(9px, calc(11px * var(--escala-texto, 1)));line-height:1.4;color:var(--muted);padding:10px 0;}
 
 /* Metric card */
 .tela-redes-sociais :deep(.mc-header){display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:8px;}
-.tela-redes-sociais :deep(.mc-icon){font-size:16px;opacity:.35;}
+.tela-redes-sociais :deep(.mc-icon){font-size:max(16px, calc(16px * var(--escala-texto, 1)));opacity:.35;}
 .tela-redes-sociais :deep(.mc-goal-area){display:flex;align-items:center;gap:5px;}
-.tela-redes-sociais :deep(.mc-goal-lbl){font-family:var(--fonte-principal);font-weight:600;font-size:10px;letter-spacing:1px;color:var(--muted);text-transform:uppercase;}
-.tela-redes-sociais :deep(.mc-goal-val){font-family:var(--fonte-principal);font-weight:500;font-size:12px;color:var(--text);border-bottom:1px dashed rgba(0,0,0,.15);cursor:text;outline:none;background:transparent;min-width:20px;text-align:right;}
+.tela-redes-sociais :deep(.mc-goal-lbl){font-family:var(--fonte-principal);font-weight:600;font-size:max(9px, calc(10px * var(--escala-texto, 1)));letter-spacing:1px;color:var(--muted);text-transform:uppercase;}
+.tela-redes-sociais :deep(.mc-goal-val){font-family:var(--fonte-principal);font-weight:500;font-size:max(9px, calc(12px * var(--escala-texto, 1)));color:var(--text);border-bottom:1px dashed rgba(0,0,0,.15);cursor:text;outline:none;background:transparent;min-width:20px;text-align:right;}
 .tela-redes-sociais :deep(.mc-goal-val):focus{border-color:var(--accent);color:var(--accent);}
-.tela-redes-sociais :deep(.mc-edit-hint){font-size:9px;color:var(--muted);opacity:.35;transition:opacity .2s;}
+.tela-redes-sociais :deep(.mc-edit-hint){font-size:max(9px, calc(9px * var(--escala-texto, 1)));color:var(--muted);opacity:.35;transition:opacity .2s;}
 .tela-redes-sociais :deep(.mc-goal-val:focus+.mc-edit-hint),.tela-redes-sociais :deep(.mc-edit-hint):hover{opacity:1;}
 @media (hover:none){.tela-redes-sociais :deep(.mc-edit-hint){opacity:1;}}
-.tela-redes-sociais :deep(.mc-lbl){font-family:var(--fonte-principal);font-weight:600;font-size:11px;letter-spacing:1.5px;color:var(--muted);text-transform:uppercase;margin-bottom:5px;}
-.tela-redes-sociais :deep(.mc-val){font-family:'Oswald',sans-serif;font-size:44px;font-weight:500;line-height:1;margin-bottom:8px;color:var(--text);font-variant-numeric:tabular-nums;}
+.tela-redes-sociais :deep(.mc-lbl){font-family:var(--fonte-principal);font-weight:600;font-size:max(9px, calc(11px * var(--escala-texto, 1)));letter-spacing:1.5px;color:var(--muted);text-transform:uppercase;margin-bottom:5px;}
+.tela-redes-sociais :deep(.mc-val){font-family:'Oswald',sans-serif;font-size:max(16px, calc(44px * var(--escala-texto, 1)));font-weight:500;line-height:1;margin-bottom:8px;color:var(--text);font-variant-numeric:tabular-nums;}
 .tela-redes-sociais :deep(.mc-compare){display:flex;flex-direction:column;gap:4px;margin-bottom:12px;padding:7px 10px;background:var(--surface2);border-radius:var(--radius-sm);border:1px solid var(--border);}
-.tela-redes-sociais :deep(.mc-compare-label){font-family:var(--fonte-principal);font-weight:500;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;overflow-wrap:break-word;word-break:break-word;line-height:1.3;}
+.tela-redes-sociais :deep(.mc-compare-label){font-family:var(--fonte-principal);font-weight:500;font-size:max(9px, calc(10px * var(--escala-texto, 1)));color:var(--muted);text-transform:uppercase;letter-spacing:.6px;overflow-wrap:break-word;word-break:break-word;line-height:1.3;}
 .tela-redes-sociais :deep(.mc-compare-vals){display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap;}
-.tela-redes-sociais :deep(.mc-compare-prev){font-family:var(--fonte-principal);font-weight:400;font-size:12px;color:var(--muted);}
-.tela-redes-sociais :deep(.mc-compare-delta){font-family:var(--fonte-principal);font-size:12px;font-weight:600;white-space:nowrap;}
+.tela-redes-sociais :deep(.mc-compare-prev){font-family:var(--fonte-principal);font-weight:400;font-size:max(9px, calc(12px * var(--escala-texto, 1)));color:var(--muted);}
+.tela-redes-sociais :deep(.mc-compare-delta){font-family:var(--fonte-principal);font-size:max(9px, calc(12px * var(--escala-texto, 1)));font-weight:600;white-space:nowrap;}
 .tela-redes-sociais :deep(.mc-divider){height:1px;background:var(--border);margin-bottom:10px;}
 .tela-redes-sociais :deep(.mc-progress-track){height:2px;border-radius:0;background:var(--surface2);overflow:hidden;margin-bottom:7px;}
 .tela-redes-sociais :deep(.mc-progress-fill){height:100%;border-radius:0;transition:width .8s cubic-bezier(.34,1.56,.64,1),background .4s,box-shadow .5s;position:relative;overflow:hidden;}
@@ -2778,8 +4231,8 @@ onUnmounted(() => {
 .tela-redes-sociais :deep(.mc-progress-fill.bg-green){box-shadow:0 0 7px #22c55e99,0 0 18px #22c55e33;}
 [data-theme="light"] .tela-redes-sociais :deep(.mc-progress-fill.bg-green){box-shadow:0 0 5px #1a6e4566;}
 .tela-redes-sociais :deep(.mc-bottom){display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:4px;}
-.tela-redes-sociais :deep(.mc-pct){font-family:'Oswald',sans-serif;font-size:15px;font-weight:400;color:var(--muted);}
-.tela-redes-sociais :deep(.mc-diff){font-family:var(--fonte-principal);font-size:10px;font-weight:500;}
+.tela-redes-sociais :deep(.mc-pct){font-family:'Oswald',sans-serif;font-size:max(9px, calc(15px * var(--escala-texto, 1)));font-weight:400;color:var(--muted);}
+.tela-redes-sociais :deep(.mc-diff){font-family:var(--fonte-principal);font-size:max(9px, calc(10px * var(--escala-texto, 1)));font-weight:500;}
 
 /* Colors */
 .tela-redes-sociais :deep(.c-green){color:var(--green)!important;}
@@ -2798,26 +4251,71 @@ onUnmounted(() => {
 .tela-redes-sociais :deep(.sec3-grid){display:grid;grid-template-columns:repeat(3,1fr);gap:16px;}
 .tela-redes-sociais :deep(.sec4-grid){display:grid;grid-template-columns:repeat(2,1fr);gap:16px;}
 
+/* ── GRÁFICO QUE ROLA PARA O LADO — vale para a seção 01 e para a seção 02 ──
+   A régua está em largura-do-grafico.js: cada dia recebe no MÍNIMO 30px. Cabendo
+   os dias nesse mínimo (o computador em qualquer período; o celular em períodos
+   curtos), NADA aqui entra em ação: sem `overflow`, sem faixa, sem largura
+   cravada — o gráfico continua exatamente como está no ar hoje.
+
+   REPARE QUE O `overflow` SÓ EXISTE COM A CLASSE `.rolando`. É de propósito:
+   caixa que rola RECORTA também de cima e de baixo (não existe rolar num eixo e
+   deixar o outro transbordar), e os números do gráfico de seguidores ficam por
+   cima das barras, na beirada. Sem rolagem não há o que recortar, então não se
+   recorta nada. */
+/* SEM ESTE `min-width:0` A PÁGINA INTEIRA GANHA ROLAGEM PARA O LADO. Cartão é
+   item de grade, e item de grade nasce com `min-width:auto` — que quer dizer
+   "nunca menor que o conteúdo". O conteúdo aqui é DE PROPÓSITO maior que a tela
+   (é o gráfico largo), e a coluna ia atrás dele: medido a 375px, o cartão da
+   seção 02 esticou para 980px e o `body` foi para 992px. Recortar dentro da
+   caixa que rola não basta; a coluna precisa ter permissão de ser menor que o
+   que está dentro dela. */
+.tela-redes-sociais :deep(.sec1-grid)>.card,
+.tela-redes-sociais :deep(.sec2-grid)>.card{min-width:0;}
+.tela-redes-sociais :deep(.grafico-que-rola){position:relative;width:100%;margin-top:auto;}
+.tela-redes-sociais :deep(.grafico-que-rola.rolando .rolagem-de-grafico){
+  overflow-x:auto;overflow-y:hidden;
+  /* A rolagem para o lado morre AQUI: sem isto, o dedo que chega no fim do
+     gráfico empurra a PÁGINA para o lado (ou dispara o "voltar" do navegador). */
+  overscroll-behavior-x:contain;touch-action:pan-x pan-y;
+}
+/* O trilho é o que fica largo. `content-box` de propósito: as tiras vazias das
+   beiradas entram como padding e NÃO entram na largura do desenho — os rótulos
+   são posicionados em porcentagem sobre essa largura, e um trilho maior que o
+   desenho deslocaria todos eles. A largura e as tiras são postas pelo JavaScript
+   (ver vestirOTrilho), a partir das constantes de largura-do-grafico.js.
+   `min-width:100%` é a rede: se o cartão crescer depois do desenho (girar o
+   aparelho), o gráfico acompanha em vez de virar um toco no meio do cartão. */
+.tela-redes-sociais :deep(.trilho-de-grafico){box-sizing:content-box;width:var(--largura-do-grafico, 100%);min-width:100%;}
+/* A faixa apagada da direita é o único aviso de que existe mais gráfico para o
+   lado — sem ela ninguém descobre. Mora na camada que NÃO rola, senão iria
+   embora junto com o conteúdo; e cai sobre a tira vazia da saída, nunca sobre o
+   último dia (ver FAIXA_QUE_AVISA em largura-do-grafico.js — os 28 daqui são os
+   mesmos de lá). */
+.tela-redes-sociais :deep(.grafico-que-rola.rolando)::after{
+  content:'';position:absolute;top:0;right:0;bottom:0;width:28px;
+  pointer-events:none;background:linear-gradient(to right,transparent,var(--surface));
+}
+
 /* Chart */
-.tela-redes-sociais :deep(.chart-svg-wrap){position:relative;width:100%;margin-top:auto;}
+.tela-redes-sociais :deep(.chart-svg-wrap){position:relative;width:100%;}
 .tela-redes-sociais :deep(.chart-svg-wrap) svg{width:100%;height:150px;overflow:visible;cursor:crosshair;display:block;}
 .tela-redes-sociais :deep(#chart-data-labels){position:absolute;top:0;left:0;right:0;bottom:0;pointer-events:none;overflow:visible;}
 /* Linha de meta de seguidores/dia: laranja tracejado e translúcido, igual às outras metas. */
 .tela-redes-sociais :deep(#chart-meta){stroke:var(--orange);stroke-width:1.2;stroke-dasharray:4 3;opacity:.5;vector-effect:non-scaling-stroke;}
-.tela-redes-sociais :deep(.cdl-meta){position:absolute;font-family:var(--fonte-principal);font-size:9px;font-weight:700;color:var(--orange);opacity:.75;white-space:nowrap;pointer-events:none;}
-.tela-redes-sociais :deep(.cdl){position:absolute;transform:translate(-50%,calc(-100% - 3px));font-family:'Oswald',sans-serif;font-size:14px;font-weight:500;color:rgba(22,22,42,0.65);white-space:nowrap;letter-spacing:.3px;}
+.tela-redes-sociais :deep(.cdl-meta){position:absolute;font-family:var(--fonte-principal);font-size:max(9px, calc(9px * var(--escala-texto, 1)));font-weight:700;color:var(--orange);opacity:.75;white-space:nowrap;pointer-events:none;}
+.tela-redes-sociais :deep(.cdl){position:absolute;transform:translate(-50%,calc(-100% - 3px));font-family:'Oswald',sans-serif;font-size:max(9px, calc(14px * var(--escala-texto, 1)));font-weight:500;color:rgba(22,22,42,0.65);white-space:nowrap;letter-spacing:.3px;}
 [data-theme="dark"] .tela-redes-sociais :deep(.cdl){color:rgba(226,228,240,0.78);}
-.tela-redes-sociais :deep(.cdl-in){position:absolute;font-family:var(--fonte-principal);font-size:10px;font-weight:700;line-height:1;color:var(--sobre-cor);white-space:nowrap;pointer-events:none;text-shadow:0 1px 2px rgba(0,0,0,.28);}
-.tela-redes-sociais :deep(.cdl-sm){font-size:10px;letter-spacing:0;}
+.tela-redes-sociais :deep(.cdl-in){position:absolute;font-family:var(--fonte-principal);font-size:max(9px, calc(10px * var(--escala-texto, 1)));font-weight:700;line-height:1;color:var(--sobre-cor);white-space:nowrap;pointer-events:none;text-shadow:0 1px 2px rgba(0,0,0,.28);}
+.tela-redes-sociais :deep(.cdl-sm){font-size:max(9px, calc(10px * var(--escala-texto, 1)));letter-spacing:0;}
 /* Rótulo de dia ESTIMADO: mais apagado que o número real, para a diferença entre
    "o Instagram disse" e "nós calculamos" ser visível sem precisar ler nada. */
 .tela-redes-sociais :deep(.cdl-est){font-style:italic;}
 /* Nota dos dias estimados, embaixo do gráfico. */
-.tela-redes-sociais :deep(.nota-estimativa){margin-top:8px;font-family:var(--fonte-principal);font-size:10.5px;line-height:1.45;color:var(--muted);border-top:1px dashed var(--border);padding-top:7px;}
-.tela-redes-sociais :deep(.nota-est-marca){font-weight:800;color:var(--orange);font-size:12px;}
+.tela-redes-sociais :deep(.nota-estimativa){margin-top:8px;font-family:var(--fonte-principal);font-size:max(9px, calc(10.5px * var(--escala-texto, 1)));line-height:1.45;color:var(--muted);border-top:1px dashed var(--border);padding-top:7px;}
+.tela-redes-sociais :deep(.nota-est-marca){font-weight:800;color:var(--orange);font-size:max(9px, calc(12px * var(--escala-texto, 1)));}
 /* Bloco técnico: só o super-admin recebe este pedaço no HTML (montarNotaDeEstimativa). */
-.tela-redes-sociais :deep(.nota-est-tec){margin-top:5px;padding:5px 8px;border-left:2px solid var(--orange);background:rgba(180,83,9,.06);border-radius:0 4px 4px 0;font-size:10px;color:var(--muted);}
-.tela-redes-sociais :deep(.nota-est-tec code){font-family:'IBM Plex Mono','SF Mono',monospace;font-size:9.5px;background:rgba(0,0,0,.06);padding:0 3px;border-radius:3px;}
+.tela-redes-sociais :deep(.nota-est-tec){margin-top:5px;padding:5px 8px;border-left:2px solid var(--orange);background:rgba(180,83,9,.06);border-radius:0 4px 4px 0;font-size:max(9px, calc(10px * var(--escala-texto, 1)));color:var(--muted);}
+.tela-redes-sociais :deep(.nota-est-tec code){font-family:'IBM Plex Mono','SF Mono',monospace;font-size:max(9px, calc(9.5px * var(--escala-texto, 1)));background:rgba(0,0,0,.06);padding:0 3px;border-radius:3px;}
 [data-theme="dark"] .tela-redes-sociais :deep(.nota-est-tec){background:rgba(251,146,60,.08);}
 [data-theme="dark"] .tela-redes-sociais :deep(.nota-est-tec code){background:rgba(255,255,255,.08);}
 .tela-redes-sociais :deep(.cdl-hi){transform:translate(-50%,calc(-100% - 22px));}
@@ -2827,56 +4325,63 @@ onUnmounted(() => {
 [data-theme="dark"] .tela-redes-sociais :deep(.cdl-up){color:var(--green);}
 [data-theme="dark"] .tela-redes-sociais :deep(.cdl-down){color:var(--red);}
 .tela-redes-sociais :deep(.chart-legend){display:flex;gap:16px;margin-top:8px;margin-bottom:4px;}
-.tela-redes-sociais :deep(.legend-item){display:flex;align-items:center;gap:5px;font-family:'Oswald',sans-serif;font-size:10px;font-weight:400;color:var(--muted);letter-spacing:.5px;}
+.tela-redes-sociais :deep(.legend-item){display:flex;align-items:center;gap:5px;font-family:'Oswald',sans-serif;font-size:max(9px, calc(10px * var(--escala-texto, 1)));font-weight:400;color:var(--muted);letter-spacing:.5px;}
 .tela-redes-sociais :deep(.legend-line){width:20px;height:2px;border-radius:0;}
 .tela-redes-sociais :deep(.legend-dot){width:9px;height:9px;border-radius:2px;}
 .tela-redes-sociais :deep(.legend-dash){width:20px;height:2px;background:repeating-linear-gradient(90deg,rgba(0,0,0,.2)0,rgba(0,0,0,.2)4px,transparent 4px,transparent 7px);}
 .tela-redes-sociais :deep(.x-labels){position:relative;height:16px;overflow:visible;}
-.tela-redes-sociais :deep(.x-label){position:absolute;transform:translateX(-50%);font-family:'Oswald',sans-serif;font-weight:400;font-size:9px;color:var(--muted);white-space:nowrap;letter-spacing:.3px;}
+.tela-redes-sociais :deep(.x-label){position:absolute;transform:translateX(-50%);font-family:'Oswald',sans-serif;font-weight:400;font-size:max(9px, calc(9px * var(--escala-texto, 1)));color:var(--muted);white-space:nowrap;letter-spacing:.3px;}
 
 /* Tooltip flutuante do gráfico */
 .tela-redes-sociais :deep(#chart-tooltip){position:fixed;pointer-events:none;z-index:999;display:none;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);padding:12px 14px;min-width:180px;box-shadow:var(--shadow-tooltip);}
-.tela-redes-sociais :deep(.tt-date){font-family:'Oswald',sans-serif;font-size:9px;font-weight:400;color:var(--muted);margin-bottom:8px;letter-spacing:1.5px;text-transform:uppercase;}
+.tela-redes-sociais :deep(.tt-date){font-family:'Oswald',sans-serif;font-size:max(9px, calc(9px * var(--escala-texto, 1)));font-weight:400;color:var(--muted);margin-bottom:8px;letter-spacing:1.5px;text-transform:uppercase;}
 .tela-redes-sociais :deep(.tt-row){display:flex;align-items:center;gap:8px;margin-bottom:4px;}
 .tela-redes-sociais :deep(.tt-dot){width:7px;height:7px;border-radius:50%;flex-shrink:0;}
 .tela-redes-sociais :deep(.tt-dot.curr){background:var(--accent);}
 .tela-redes-sociais :deep(.tt-dot.prev){background:rgba(0,0,0,.2);}
-.tela-redes-sociais :deep(.tt-label){font-family:'Oswald',sans-serif;font-size:11px;font-weight:400;color:var(--muted);flex:1;letter-spacing:.5px;}
-.tela-redes-sociais :deep(.tt-val){font-family:'Oswald',sans-serif;font-weight:500;font-size:17px;color:var(--text);font-variant-numeric:tabular-nums;}
+.tela-redes-sociais :deep(.tt-label){font-family:'Oswald',sans-serif;font-size:max(9px, calc(11px * var(--escala-texto, 1)));font-weight:400;color:var(--muted);flex:1;letter-spacing:.5px;}
+.tela-redes-sociais :deep(.tt-val){font-family:'Oswald',sans-serif;font-weight:500;font-size:max(16px, calc(17px * var(--escala-texto, 1)));color:var(--text);font-variant-numeric:tabular-nums;}
 .tela-redes-sociais :deep(.tt-sep){height:1px;background:var(--border);margin:6px 0;}
-.tela-redes-sociais :deep(.tt-delta){font-family:'Oswald',sans-serif;font-size:11px;font-weight:400;margin-top:4px;}
+.tela-redes-sociais :deep(.tt-delta){font-family:'Oswald',sans-serif;font-size:max(9px, calc(11px * var(--escala-texto, 1)));font-weight:400;margin-top:4px;}
 .tela-redes-sociais :deep(.tt-cmp){margin-top:9px;padding-top:8px;border-top:1px dashed var(--border);}
-.tela-redes-sociais :deep(.tt-cmp-lbl){font-family:'Oswald',sans-serif;font-size:8.5px;font-weight:400;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:3px;}
-.tela-redes-sociais :deep(.tt-cmp-row){display:flex;align-items:center;justify-content:space-between;gap:14px;font-family:'Oswald',sans-serif;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;}
+.tela-redes-sociais :deep(.tt-cmp-lbl){font-family:'Oswald',sans-serif;font-size:max(9px, calc(8.5px * var(--escala-texto, 1)));font-weight:400;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:3px;}
+.tela-redes-sociais :deep(.tt-cmp-row){display:flex;align-items:center;justify-content:space-between;gap:14px;font-family:'Oswald',sans-serif;font-size:max(9px, calc(12px * var(--escala-texto, 1)));color:var(--muted);font-variant-numeric:tabular-nums;}
 
 /* Calc badge / seletor de período personalizado (compartilhado com Análise de Campanhas) */
-.tela-redes-sociais :deep(.calc-badge){display:inline-flex;align-items:center;gap:5px;font-family:var(--fonte-principal);font-size:10px;background:var(--accent-light);color:var(--accent-forte);padding:3px 10px;border-radius:2px;margin-top:8px;font-weight:500;letter-spacing:.3px;}
-.tela-redes-sociais :deep(.custom-range-btn){font-family:var(--fonte-principal);font-weight:500;font-size:11px;padding:5px 14px;border-radius:3px;background:transparent;border:1px solid var(--border);color:var(--muted);cursor:pointer;transition:all .18s;white-space:nowrap;}
+/* O selo de cálculo passou a carregar a EXPLICAÇÃO do indicador (uma frase, não
+   três palavras), e frase quebra linha. `line-height` para as linhas não colarem
+   e `align-items:flex-start` para o texto não centralizar em bloco. Continua sem
+   `nowrap`: texto cortado é o que não pode. */
+.tela-redes-sociais :deep(.calc-badge){display:inline-flex;align-items:flex-start;gap:5px;font-family:var(--fonte-principal);font-size:max(9px, calc(10px * var(--escala-texto, 1)));line-height:1.45;background:var(--accent-light);color:var(--accent-forte);padding:5px 10px;border-radius:2px;margin-top:8px;font-weight:500;letter-spacing:.3px;}
+.tela-redes-sociais :deep(.custom-range-btn){font-family:var(--fonte-principal);font-weight:500;font-size:max(9px, calc(11px * var(--escala-texto, 1)));padding:5px 14px;border-radius:3px;background:transparent;border:1px solid var(--border);color:var(--muted);cursor:pointer;transition:all .18s;white-space:nowrap;}
 .tela-redes-sociais :deep(.custom-range-btn):hover,.tela-redes-sociais :deep(.custom-range-btn.active){border-color:var(--accent);color:var(--accent);}
-.tela-redes-sociais :deep(.custom-date-input){font-family:var(--fonte-principal);font-weight:400;font-size:10px;padding:4px 7px;border-radius:3px;border:1.5px solid var(--border);background:var(--surface);color:var(--text);outline:none;cursor:pointer;flex-shrink:0;}
+.tela-redes-sociais :deep(.custom-date-input){font-family:var(--fonte-principal);font-weight:400;font-size:max(9px, calc(10px * var(--escala-texto, 1)));padding:4px 7px;border-radius:3px;border:1.5px solid var(--border);background:var(--surface);color:var(--text);outline:none;cursor:pointer;flex-shrink:0;}
 .tela-redes-sociais :deep(.custom-date-input):hover,.tela-redes-sociais :deep(.custom-date-input):focus{border-color:var(--accent);}
 /* 16px no celular: abaixo disso o iOS da zoom sozinho ao focar. No
    computador o tamanho miudo continua, que la nao ha esse efeito. */
-@media(max-width:640px){.tela-redes-sociais :deep(.custom-date-input){font-size:16px;}}
+@media(max-width:640px){.tela-redes-sociais :deep(.custom-date-input){font-size:max(16px, calc(16px * var(--escala-texto, 1)));}}
 .tela-redes-sociais :deep(.custom-range-inline){display:flex;align-items:center;gap:5px;flex-wrap:nowrap;flex-shrink:0;}
-.tela-redes-sociais :deep(.custom-range-lbl){font-family:var(--fonte-principal);font-size:11px;color:var(--muted);}
+.tela-redes-sociais :deep(.custom-range-lbl){font-family:var(--fonte-principal);font-size:max(9px, calc(11px * var(--escala-texto, 1)));color:var(--muted);}
 .tela-redes-sociais :deep(.eng-tabs){display:inline-flex;gap:4px;flex-wrap:wrap;margin-bottom:22px;padding:4px;background:var(--surface2);border:1px solid var(--border);border-radius:12px;}
-.tela-redes-sociais :deep(.eng-tab){font-family:var(--fonte-principal);font-weight:600;font-size:11.5px;letter-spacing:.2px;padding:7px 18px;border-radius:9px;background:transparent;border:none;color:var(--muted);cursor:pointer;transition:all .16s;white-space:nowrap;}
+.tela-redes-sociais :deep(.eng-tab){font-family:var(--fonte-principal);font-weight:600;font-size:max(9px, calc(11.5px * var(--escala-texto, 1)));letter-spacing:.2px;padding:7px 18px;border-radius:9px;background:transparent;border:none;color:var(--muted);cursor:pointer;transition:all .16s;white-space:nowrap;}
 .tela-redes-sociais :deep(.eng-tab):hover{color:var(--text);background:rgba(128,128,128,.10);}
 .tela-redes-sociais :deep(.eng-tab.active){background:var(--accent);color:var(--sobre-cor);box-shadow:0 2px 8px rgba(0,0,0,.14);}
 .tela-redes-sociais :deep(.eng-tab.active):hover{background:var(--accent);color:var(--sobre-cor);}
 .tela-redes-sociais :deep(.custom-date-input):focus{border-color:var(--accent);}
-.tela-redes-sociais :deep(.custom-apply-btn){font-family:var(--fonte-principal);font-weight:600;font-size:11px;padding:5px 14px;border-radius:3px;background:var(--accent);color:var(--sobre-cor);border:none;cursor:pointer;letter-spacing:.5px;text-transform:uppercase;}
-.tela-redes-sociais :deep(.custom-clear-btn){font-family:var(--fonte-principal);font-size:11px;padding:5px 10px;border-radius:3px;background:transparent;border:1px solid var(--border);color:var(--muted);cursor:pointer;}
+.tela-redes-sociais :deep(.custom-apply-btn){font-family:var(--fonte-principal);font-weight:600;font-size:max(9px, calc(11px * var(--escala-texto, 1)));padding:5px 12px;border-radius:3px;background:var(--accent);color:var(--sobre-cor);border:1px solid var(--accent);cursor:pointer;letter-spacing:.5px;text-transform:uppercase;}
+/* Desabilitado tem de PARECER desabilitado: botão que some do alcance sem mudar de
+   cara faz a pessoa clicar e achar que a tela travou. O motivo vai no `title`. */
+.tela-redes-sociais :deep(.custom-apply-btn:disabled){opacity:.4;cursor:not-allowed;}
+.tela-redes-sociais :deep(.custom-clear-btn){font-family:var(--fonte-principal);font-size:max(9px, calc(11px * var(--escala-texto, 1)));padding:5px 10px;border-radius:3px;background:transparent;border:1px solid var(--border);color:var(--muted);cursor:pointer;}
 
 /* Insight card + barra de meta geral */
 .tela-redes-sociais :deep(.insight-card){background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:10px 16px 12px;margin-bottom:22px;border-left:3px solid var(--accent);}
 .tela-redes-sociais :deep(.insight-header){display:flex;align-items:center;gap:8px;margin-bottom:7px;}
-.tela-redes-sociais :deep(.insight-icon){font-size:11px;color:var(--muted);}
-.tela-redes-sociais :deep(.insight-title){font-family:var(--fonte-principal);font-weight:600;font-size:9px;letter-spacing:2px;color:var(--muted);text-transform:uppercase;}
-.tela-redes-sociais :deep(.insight-period){font-family:var(--fonte-principal);font-size:9px;font-weight:600;letter-spacing:1.5px;color:var(--accent-forte);text-transform:uppercase;margin-left:auto;background:var(--accent-light);padding:2px 7px;border-radius:2px;}
+.tela-redes-sociais :deep(.insight-icon){font-size:max(9px, calc(11px * var(--escala-texto, 1)));color:var(--muted);}
+.tela-redes-sociais :deep(.insight-title){font-family:var(--fonte-principal);font-weight:600;font-size:max(9px, calc(9px * var(--escala-texto, 1)));letter-spacing:2px;color:var(--muted);text-transform:uppercase;}
+.tela-redes-sociais :deep(.insight-period){font-family:var(--fonte-principal);font-size:max(9px, calc(9px * var(--escala-texto, 1)));font-weight:600;letter-spacing:1.5px;color:var(--accent-forte);text-transform:uppercase;margin-left:auto;background:var(--accent-light);padding:2px 7px;border-radius:2px;}
 .tela-redes-sociais :deep(.insight-list){display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;}
-.tela-redes-sociais :deep(.insight-item){display:inline-flex;align-items:center;gap:6px;font-family:var(--fonte-principal);font-size:11px;line-height:1.4;color:var(--text);background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:3px 10px;}
+.tela-redes-sociais :deep(.insight-item){display:inline-flex;align-items:center;gap:6px;font-family:var(--fonte-principal);font-size:max(9px, calc(11px * var(--escala-texto, 1)));line-height:1.4;color:var(--text);background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:3px 10px;}
 .tela-redes-sociais :deep(.insight-dot){width:5px;height:5px;border-radius:50%;flex-shrink:0;}
 .tela-redes-sociais :deep(.insight-dot.green){background:var(--green);}
 .tela-redes-sociais :deep(.insight-dot.blue){background:var(--accent);}
@@ -2885,64 +4390,75 @@ onUnmounted(() => {
 .tela-redes-sociais :deep(.insight-dot.muted){background:var(--border);}
 .tela-redes-sociais :deep(.insight-item.muted){color:var(--muted);}
 .tela-redes-sociais :deep(.overall-bar-row){display:flex;align-items:center;gap:10px;}
-.tela-redes-sociais :deep(.overall-bar-lbl){font-family:var(--fonte-principal);font-size:9px;font-weight:600;letter-spacing:1.5px;color:var(--muted);text-transform:uppercase;white-space:nowrap;}
+.tela-redes-sociais :deep(.overall-bar-lbl){font-family:var(--fonte-principal);font-size:max(9px, calc(9px * var(--escala-texto, 1)));font-weight:600;letter-spacing:1.5px;color:var(--muted);text-transform:uppercase;white-space:nowrap;}
 .tela-redes-sociais :deep(.overall-bar-track){flex:1;height:4px;background:var(--surface2);border-radius:2px;overflow:hidden;border:1px solid var(--border);}
 .tela-redes-sociais :deep(.overall-bar-fill){height:100%;border-radius:2px;transition:width .9s cubic-bezier(.4,0,.2,1),box-shadow .5s;position:relative;overflow:hidden;}
 .tela-redes-sociais :deep(.overall-bar-fill)::after{content:'';position:absolute;top:0;left:-60%;width:55%;height:100%;background:linear-gradient(90deg,transparent,rgba(255,255,255,.45),transparent);animation:barLiq 2.2s ease-in-out infinite;pointer-events:none;}
-.tela-redes-sociais :deep(.overall-bar-pct){font-family:'Oswald',sans-serif;font-size:13px;font-weight:500;white-space:nowrap;}
+.tela-redes-sociais :deep(.overall-bar-pct){font-family:'Oswald',sans-serif;font-size:max(9px, calc(13px * var(--escala-texto, 1)));font-weight:500;white-space:nowrap;}
 .tela-redes-sociais :deep(#insight-card.loading .insight-list){opacity:.4;}
+
+/* Balde de campanha — recorta a seção 02 por TIPO (exclusivo desta tela).
+   ROLA na horizontal em vez de quebrar linha ou encolher a fonte: a 375px os
+   cinco rótulos não cabem lado a lado, e quebrar linha empurraria os cartões
+   de dinheiro para fora da primeira tela. Aparência copiada da .profile-btn
+   desta mesma tela (surface + border + muted), que já é a pílula do app. */
+.tela-redes-sociais :deep(.balde-bar){display:flex;gap:6px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding:4px 0 10px;margin-bottom:4px;}
+.tela-redes-sociais :deep(.balde-btn){flex:0 0 auto;min-height:40px;padding:9px 16px;border:1px solid var(--border);border-radius:999px;background:var(--surface);color:var(--muted);font-family:var(--fonte-principal);font-size:max(11px, calc(11.5px * var(--escala-texto, 1)));font-weight:600;letter-spacing:.4px;cursor:pointer;white-space:nowrap;transition:background .16s,color .16s,border-color .16s;}
+.tela-redes-sociais :deep(.balde-btn:hover:not(:disabled):not([aria-selected="true"])){color:var(--text);border-color:var(--accent-mid);background:var(--accent-light);}
+.tela-redes-sociais :deep(.balde-btn[aria-selected="true"]){background:var(--accent);color:var(--sobre-cor);border-color:var(--accent);}
+.tela-redes-sociais :deep(.balde-btn:disabled){opacity:.45;cursor:not-allowed;}
 
 /* Filtro de campanhas — barra + modal (exclusivo desta tela) */
 .tela-redes-sociais :deep(.camp-filter-bar){display:flex;align-items:center;gap:10px;background:var(--accent-light);border:1px solid var(--accent-mid);border-radius:4px;padding:9px 14px;margin-bottom:14px;flex-wrap:wrap;}
-.tela-redes-sociais :deep(.camp-filter-lbl){font-family:var(--fonte-principal);font-size:10px;font-weight:500;color:var(--muted);white-space:nowrap;text-transform:uppercase;letter-spacing:.8px;}
-.tela-redes-sociais :deep(.camp-filter-info){font-family:var(--fonte-principal);font-size:12px;font-weight:600;color:var(--accent);flex:1;}
-.tela-redes-sociais :deep(.btn-campaign-filter){font-family:var(--fonte-principal);font-size:10px;font-weight:600;padding:5px 14px;border-radius:3px;border:1px solid var(--accent);background:var(--accent);color:var(--sobre-cor);cursor:pointer;letter-spacing:.8px;transition:opacity .15s;white-space:nowrap;text-transform:uppercase;}
+.tela-redes-sociais :deep(.camp-filter-lbl){font-family:var(--fonte-principal);font-size:max(9px, calc(10px * var(--escala-texto, 1)));font-weight:500;color:var(--muted);white-space:nowrap;text-transform:uppercase;letter-spacing:.8px;}
+.tela-redes-sociais :deep(.camp-filter-info){font-family:var(--fonte-principal);font-size:max(9px, calc(12px * var(--escala-texto, 1)));font-weight:600;color:var(--accent);flex:1;}
+.tela-redes-sociais :deep(.btn-campaign-filter){font-family:var(--fonte-principal);font-size:max(9px, calc(10px * var(--escala-texto, 1)));font-weight:600;padding:5px 14px;border-radius:3px;border:1px solid var(--accent);background:var(--accent);color:var(--sobre-cor);cursor:pointer;letter-spacing:.8px;transition:opacity .15s;white-space:nowrap;text-transform:uppercase;}
 .tela-redes-sociais :deep(.btn-campaign-filter):hover{opacity:.85;}
-.tela-redes-sociais :deep(.camp-filter-count){font-size:10px;opacity:.8;}
+.tela-redes-sociais :deep(.camp-filter-count){font-size:max(9px, calc(10px * var(--escala-texto, 1)));opacity:.8;}
 .tela-redes-sociais :deep(.campaign-modal){background:#fff;border-radius:4px;width:500px;max-width:95vw;max-height:82vh;display:flex;flex-direction:column;box-shadow:0 16px 48px rgba(0,0,0,.18);}
-.tela-redes-sociais :deep(.camp-modal-hdr){display:flex;align-items:center;justify-content:space-between;padding:18px 20px 10px;font-family:var(--fonte-principal);font-weight:700;font-size:14px;color:var(--text);}
-.tela-redes-sociais :deep(.camp-modal-close){background:none;border:none;font-size:18px;cursor:pointer;color:var(--muted);line-height:1;padding:2px 6px;border-radius:3px;transition:background .1s;}
+.tela-redes-sociais :deep(.camp-modal-hdr){display:flex;align-items:center;justify-content:space-between;padding:18px 20px 10px;font-family:var(--fonte-principal);font-weight:700;font-size:max(9px, calc(14px * var(--escala-texto, 1)));color:var(--text);}
+.tela-redes-sociais :deep(.camp-modal-close){background:none;border:none;font-size:max(16px, calc(18px * var(--escala-texto, 1)));cursor:pointer;color:var(--muted);line-height:1;padding:2px 6px;border-radius:3px;transition:background .1s;}
 .tela-redes-sociais :deep(.camp-modal-close):hover{background:var(--surface2);}
-.tela-redes-sociais :deep(.camp-modal-sub){padding:0 20px 12px;font-family:var(--fonte-principal);font-size:12px;color:var(--muted);line-height:1.5;}
+.tela-redes-sociais :deep(.camp-modal-sub){padding:0 20px 12px;font-family:var(--fonte-principal);font-size:max(9px, calc(12px * var(--escala-texto, 1)));color:var(--muted);line-height:1.5;}
 .tela-redes-sociais :deep(.camp-list){flex:1;overflow-y:auto;padding:0 12px 8px;display:flex;flex-direction:column;gap:2px;}
-.tela-redes-sociais :deep(.camp-group-hdr){font-family:var(--fonte-principal);font-size:9px;font-weight:700;letter-spacing:2px;color:var(--muted);text-transform:uppercase;padding:10px 8px 4px;margin-top:4px;}
+.tela-redes-sociais :deep(.camp-group-hdr){font-family:var(--fonte-principal);font-size:max(9px, calc(9px * var(--escala-texto, 1)));font-weight:700;letter-spacing:2px;color:var(--muted);text-transform:uppercase;padding:10px 8px 4px;margin-top:4px;}
 .tela-redes-sociais :deep(.camp-row){display:flex;align-items:flex-start;gap:10px;padding:8px 10px;border-radius:3px;cursor:pointer;transition:background .1s;}
 .tela-redes-sociais :deep(.camp-row):hover{background:var(--surface2);}
 .tela-redes-sociais :deep(.camp-row) input[type=checkbox]{margin-top:2px;accent-color:var(--accent);width:15px;height:15px;flex-shrink:0;cursor:pointer;}
 .tela-redes-sociais :deep(.camp-info){display:flex;flex-direction:column;gap:1px;}
-.tela-redes-sociais :deep(.camp-name){font-family:var(--fonte-principal);font-size:13px;font-weight:400;color:var(--text);line-height:1.4;}
-.tela-redes-sociais :deep(.camp-obj){font-family:var(--fonte-principal);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;}
+.tela-redes-sociais :deep(.camp-name){font-family:var(--fonte-principal);font-size:max(9px, calc(13px * var(--escala-texto, 1)));font-weight:400;color:var(--text);line-height:1.4;}
+.tela-redes-sociais :deep(.camp-obj){font-family:var(--fonte-principal);font-size:max(9px, calc(10px * var(--escala-texto, 1)));color:var(--muted);text-transform:uppercase;letter-spacing:.8px;}
 .tela-redes-sociais :deep(.camp-modal-footer){display:flex;gap:10px;padding:14px 20px;border-top:1px solid var(--border);}
-.tela-redes-sociais :deep(.btn-camp-all){flex:1;font-family:var(--fonte-principal);font-size:11px;font-weight:500;padding:9px 14px;border-radius:3px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;transition:background .1s;letter-spacing:.5px;}
+.tela-redes-sociais :deep(.btn-camp-all){flex:1;font-family:var(--fonte-principal);font-size:max(9px, calc(11px * var(--escala-texto, 1)));font-weight:500;padding:9px 14px;border-radius:3px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;transition:background .1s;letter-spacing:.5px;}
 .tela-redes-sociais :deep(.btn-camp-all):hover{background:var(--surface2);}
-.tela-redes-sociais :deep(.btn-camp-none){font-family:var(--fonte-principal);font-size:11px;font-weight:500;padding:9px 14px;border-radius:3px;border:1px solid rgba(176,30,58,.3);background:transparent;color:var(--red);cursor:pointer;transition:background .1s;}
+.tela-redes-sociais :deep(.btn-camp-none){font-family:var(--fonte-principal);font-size:max(9px, calc(11px * var(--escala-texto, 1)));font-weight:500;padding:9px 14px;border-radius:3px;border:1px solid rgba(176,30,58,.3);background:transparent;color:var(--red);cursor:pointer;transition:background .1s;}
 .tela-redes-sociais :deep(.btn-camp-none):hover{background:rgba(176,30,58,.04);}
-.tela-redes-sociais :deep(.btn-camp-save){flex:2;font-family:var(--fonte-principal);font-size:12px;font-weight:600;padding:9px 20px;border-radius:3px;border:none;background:var(--accent);color:var(--sobre-cor);cursor:pointer;transition:opacity .15s;text-transform:uppercase;letter-spacing:.8px;}
+.tela-redes-sociais :deep(.btn-camp-save){flex:2;font-family:var(--fonte-principal);font-size:max(9px, calc(12px * var(--escala-texto, 1)));font-weight:600;padding:9px 20px;border-radius:3px;border:none;background:var(--accent);color:var(--sobre-cor);cursor:pointer;transition:opacity .15s;text-transform:uppercase;letter-spacing:.8px;}
 .tela-redes-sociais :deep(.btn-camp-save):hover{opacity:.88;}
 
 /* Painel admin embutido (compartilhado com tela-de-login/Admin tool p/ .admin-input/
    .admin-select/.admin-action-btn/.admin-msg/.user-list/.auth-label — cópia própria) */
 .tela-redes-sociais :deep(#admin-panel){background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:28px;margin-bottom:32px;animation:fadeUp .3s ease;}
-.tela-redes-sociais :deep(.admin-title){font-family:'Oswald',sans-serif;font-size:20px;font-weight:500;letter-spacing:3px;text-transform:uppercase;margin-bottom:20px;display:flex;align-items:center;gap:10px;color:var(--text);}
+.tela-redes-sociais :deep(.admin-title){font-family:'Oswald',sans-serif;font-size:max(16px, calc(20px * var(--escala-texto, 1)));font-weight:500;letter-spacing:3px;text-transform:uppercase;margin-bottom:20px;display:flex;align-items:center;gap:10px;color:var(--text);}
 .tela-redes-sociais :deep(.admin-grid){display:grid;grid-template-columns:1fr 1fr;gap:20px;}
 @media(max-width:640px){.tela-redes-sociais :deep(.admin-grid){grid-template-columns:1fr;}}
-.tela-redes-sociais :deep(.admin-section-title){font-family:var(--fonte-principal);font-size:9px;letter-spacing:2px;color:var(--muted);text-transform:uppercase;margin-bottom:12px;font-weight:600;}
+.tela-redes-sociais :deep(.admin-section-title){font-family:var(--fonte-principal);font-size:max(9px, calc(9px * var(--escala-texto, 1)));letter-spacing:2px;color:var(--muted);text-transform:uppercase;margin-bottom:12px;font-weight:600;}
 .tela-redes-sociais :deep(.admin-input-row){display:flex;gap:8px;margin-bottom:10px;}
-.tela-redes-sociais :deep(.admin-input){flex:1;padding:9px 12px;background:var(--surface2);border:1.5px solid var(--border);border-radius:3px;color:var(--text);font-family:var(--fonte-principal);font-size:13px;outline:none;transition:border-color .18s;}
+.tela-redes-sociais :deep(.admin-input){flex:1;padding:9px 12px;background:var(--surface2);border:1.5px solid var(--border);border-radius:3px;color:var(--text);font-family:var(--fonte-principal);font-size:max(9px, calc(13px * var(--escala-texto, 1)));outline:none;transition:border-color .18s;}
 .tela-redes-sociais :deep(.admin-input):focus{border-color:var(--accent);}
-.tela-redes-sociais :deep(.admin-select){padding:9px 12px;background:var(--surface2);border:1.5px solid var(--border);border-radius:3px;color:var(--text);font-family:var(--fonte-principal);font-size:12px;outline:none;cursor:pointer;}
-.tela-redes-sociais :deep(.admin-action-btn){padding:9px 16px;background:var(--accent);color:var(--sobre-cor);border:none;border-radius:3px;font-family:var(--fonte-principal);font-size:11px;cursor:pointer;white-space:nowrap;transition:opacity .18s;font-weight:600;text-transform:uppercase;letter-spacing:.8px;}
+.tela-redes-sociais :deep(.admin-select){padding:9px 12px;background:var(--surface2);border:1.5px solid var(--border);border-radius:3px;color:var(--text);font-family:var(--fonte-principal);font-size:max(9px, calc(12px * var(--escala-texto, 1)));outline:none;cursor:pointer;}
+.tela-redes-sociais :deep(.admin-action-btn){padding:9px 16px;background:var(--accent);color:var(--sobre-cor);border:none;border-radius:3px;font-family:var(--fonte-principal);font-size:max(9px, calc(11px * var(--escala-texto, 1)));cursor:pointer;white-space:nowrap;transition:opacity .18s;font-weight:600;text-transform:uppercase;letter-spacing:.8px;}
 .tela-redes-sociais :deep(.admin-action-btn):hover{opacity:.85;}
 .tela-redes-sociais :deep(.admin-action-btn):disabled{opacity:.5;}
-.tela-redes-sociais :deep(.admin-msg){font-family:var(--fonte-principal);font-size:11px;margin-top:8px;padding:7px 12px;border-radius:3px;display:none;}
+.tela-redes-sociais :deep(.admin-msg){font-family:var(--fonte-principal);font-size:max(9px, calc(11px * var(--escala-texto, 1)));margin-top:8px;padding:7px 12px;border-radius:3px;display:none;}
 .tela-redes-sociais :deep(.admin-msg.ok){background:rgba(26,110,69,.07);color:var(--green);}
 .tela-redes-sociais :deep(.admin-msg.err){background:rgba(176,30,58,.06);color:var(--red);}
 .tela-redes-sociais :deep(.user-list){display:flex;flex-direction:column;gap:8px;}
 .tela-redes-sociais :deep(.user-row){display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--surface2);border-radius:3px;border:1px solid var(--border);}
 .tela-redes-sociais :deep(.user-info){display:flex;flex-direction:column;gap:2px;}
-.tela-redes-sociais :deep(.user-email){font-family:var(--fonte-principal);font-size:12px;font-weight:600;color:var(--text);}
-.tela-redes-sociais :deep(.user-name){font-family:var(--fonte-principal);font-size:11px;font-weight:400;color:var(--muted);}
-.tela-redes-sociais :deep(.user-role-select){font-family:var(--fonte-principal);font-size:11px;padding:4px 8px;background:var(--surface);border:1px solid var(--border);border-radius:3px;color:var(--text);cursor:pointer;outline:none;}
+.tela-redes-sociais :deep(.user-email){font-family:var(--fonte-principal);font-size:max(9px, calc(12px * var(--escala-texto, 1)));font-weight:600;color:var(--text);}
+.tela-redes-sociais :deep(.user-name){font-family:var(--fonte-principal);font-size:max(9px, calc(11px * var(--escala-texto, 1)));font-weight:400;color:var(--muted);}
+.tela-redes-sociais :deep(.user-role-select){font-family:var(--fonte-principal);font-size:max(9px, calc(11px * var(--escala-texto, 1)));padding:4px 8px;background:var(--surface);border:1px solid var(--border);border-radius:3px;color:var(--text);cursor:pointer;outline:none;}
 
 /* ── RESPONSIVE ── */
 
@@ -2954,47 +4470,50 @@ onUnmounted(() => {
   .tela-redes-sociais :deep(.topbar-right){gap:6px;padding:9px 12px;order:2;}
   .tela-redes-sociais :deep(.topbar-center){order:3;width:100%;padding:6px 12px 8px;border-top:1px solid var(--border);overflow-x:auto;-webkit-overflow-scrolling:touch;gap:6px;flex-wrap:nowrap;box-sizing:border-box;}
   .tela-redes-sociais :deep(.topbar) .rbv-logo{display:none!important;}
-  .tela-redes-sociais :deep(.gv-perf-tag){font-size:9px!important;letter-spacing:2px!important;}
+  .tela-redes-sociais :deep(.gv-perf-tag){font-size:max(9px, calc(9px * var(--escala-texto, 1)))!important;letter-spacing:2px!important;}
   .tela-redes-sociais :deep(.gv-brand-tag){display:none!important;}
   .tela-redes-sociais :deep(.period-tabs){gap:3px;flex-shrink:0;}
-  .tela-redes-sociais :deep(.ptab){padding:5px 10px;font-size:10px;letter-spacing:.5px;}
-  .tela-redes-sociais :deep(#dash-clock){font-size:11px;}
-  .tela-redes-sociais :deep(.live-dot){font-size:8px;letter-spacing:1px;}
+  .tela-redes-sociais :deep(.ptab){padding:5px 10px;font-size:max(9px, calc(10px * var(--escala-texto, 1)));letter-spacing:.5px;}
+  .tela-redes-sociais :deep(#dash-clock){font-size:max(9px, calc(11px * var(--escala-texto, 1)));}
+  .tela-redes-sociais :deep(.live-dot){font-size:max(9px, calc(8px * var(--escala-texto, 1)));letter-spacing:1px;}
   .tela-redes-sociais :deep(.ac-toggle-lbl){display:none;}
   .tela-redes-sociais :deep(.ac-toggle){flex-shrink:0;}
-  .tela-redes-sociais :deep(.gv-back){font-size:11px;padding:5px 10px;}
+  .tela-redes-sociais :deep(.gv-back){font-size:max(9px, calc(11px * var(--escala-texto, 1)));padding:5px 10px;}
   .tela-redes-sociais :deep(header){padding:8px 12px;margin-bottom:0;gap:8px;flex-wrap:nowrap;overflow:hidden;border-bottom:1px solid var(--border);}
   .tela-redes-sociais :deep(#header-collapsible){flex:1;min-width:0;overflow-x:auto;-webkit-overflow-scrolling:touch;}
   .tela-redes-sociais :deep(.profile-select){flex-wrap:nowrap;gap:5px;}
-  .tela-redes-sociais :deep(.profile-btn){padding:5px 8px;font-size:10px;white-space:nowrap;flex-shrink:0;}
-  .tela-redes-sociais :deep(.profile-btn .av){width:18px;height:18px;font-size:8px;}
+  .tela-redes-sociais :deep(.profile-btn){padding:5px 8px;font-size:max(9px, calc(10px * var(--escala-texto, 1)));white-space:nowrap;flex-shrink:0;}
+  .tela-redes-sociais :deep(.profile-btn .av){width:18px;height:18px;font-size:max(9px, calc(8px * var(--escala-texto, 1)));}
   .tela-redes-sociais :deep(#header-toggle){flex-shrink:0;align-self:center;}
   .tela-redes-sociais :deep(#active-profile-bar){padding:8px 12px;margin-bottom:0;gap:7px;border-bottom:1px solid var(--border);}
-  .tela-redes-sociais :deep(#apb-name){font-size:15px;letter-spacing:1.5px;}
+  .tela-redes-sociais :deep(#apb-name){font-size:max(9px, calc(15px * var(--escala-texto, 1)));letter-spacing:1.5px;}
   .tela-redes-sociais :deep(#apb-ring-wrap){display:flex;}
   .tela-redes-sociais :deep(#apb-img){width:28px;height:28px;}
   .tela-redes-sociais :deep(#apb-dot){width:6px;height:6px;}
   .tela-redes-sociais :deep(.sec-header){margin:14px 12px 8px;padding-bottom:0;}
-  .tela-redes-sociais :deep(.section-label){font-size:8px;letter-spacing:2px;}
-  .tela-redes-sociais :deep(.sec-chip){font-size:8px;padding:2px 6px;}
-  .tela-redes-sociais :deep(.camp-filter-bar){padding:6px 12px;font-size:10px;gap:5px;}
+  .tela-redes-sociais :deep(.section-label){font-size:max(9px, calc(8px * var(--escala-texto, 1)));letter-spacing:2px;}
+  .tela-redes-sociais :deep(.sec-chip){font-size:max(9px, calc(8px * var(--escala-texto, 1)));padding:2px 6px;}
+  /* Os 12px laterais alinham as pílulas com os cartões (que ganham
+     `padding:0 12px` no celular) e tiram a primeira de cima da borda da tela. */
+  .tela-redes-sociais :deep(.balde-bar){padding:6px 12px 8px;margin-bottom:0;}
+  .tela-redes-sociais :deep(.camp-filter-bar){padding:6px 12px;font-size:max(9px, calc(10px * var(--escala-texto, 1)));gap:5px;}
   .tela-redes-sociais :deep(.camp-filter-lbl){display:none;}
-  .tela-redes-sociais :deep(.btn-campaign-filter){font-size:9px;padding:4px 8px;}
+  .tela-redes-sociais :deep(.btn-campaign-filter){font-size:max(9px, calc(9px * var(--escala-texto, 1)));padding:4px 8px;}
   .tela-redes-sociais :deep(.sec1-grid),.tela-redes-sociais :deep(.sec2-grid),.tela-redes-sociais :deep(.sec3-grid),.tela-redes-sociais :deep(.sec4-grid){grid-template-columns:1fr;gap:8px;padding:0 12px;margin-left:0;margin-right:0;}
   .tela-redes-sociais :deep(.mb40){margin-bottom:16px;}
   .tela-redes-sociais :deep(.card){padding:13px 14px;border-radius:3px;}
-  .tela-redes-sociais :deep(.mc-val){font-size:32px;margin-bottom:5px;}
-  .tela-redes-sociais :deep(#total-followers){font-size:38px!important;}
-  .tela-redes-sociais :deep(.mc-lbl){font-size:8px;letter-spacing:1.5px;}
-  .tela-redes-sociais :deep(.mc-compare-prev),.tela-redes-sociais :deep(.mc-compare-delta){font-size:11px;}
-  .tela-redes-sociais :deep(.mc-pct){font-size:13px;}
-  .tela-redes-sociais :deep(.mc-diff){font-size:11px;}
-  .tela-redes-sociais :deep(.mc-icon){font-size:16px;}
-  .tela-redes-sociais :deep(.calc-badge){font-size:8px;padding:4px 8px;margin-top:8px;}
+  .tela-redes-sociais :deep(.mc-val){font-size:max(16px, calc(32px * var(--escala-texto, 1)));margin-bottom:5px;}
+  .tela-redes-sociais :deep(#total-followers){font-size:max(16px, calc(38px * var(--escala-texto, 1)))!important;}
+  .tela-redes-sociais :deep(.mc-lbl){font-size:max(9px, calc(8px * var(--escala-texto, 1)));letter-spacing:1.5px;}
+  .tela-redes-sociais :deep(.mc-compare-prev),.tela-redes-sociais :deep(.mc-compare-delta){font-size:max(9px, calc(11px * var(--escala-texto, 1)));}
+  .tela-redes-sociais :deep(.mc-pct){font-size:max(9px, calc(13px * var(--escala-texto, 1)));}
+  .tela-redes-sociais :deep(.mc-diff){font-size:max(9px, calc(11px * var(--escala-texto, 1)));}
+  .tela-redes-sociais :deep(.mc-icon){font-size:max(16px, calc(16px * var(--escala-texto, 1)));}
+  .tela-redes-sociais :deep(.calc-badge){font-size:max(9px, calc(8px * var(--escala-texto, 1)));padding:4px 8px;margin-top:8px;}
   .tela-redes-sociais :deep(#followers-hero){padding:14px 14px 12px;}
-  .tela-redes-sociais :deep(#followers-hero) .mc-lbl{font-size:7px;margin-bottom:6px;}
+  .tela-redes-sociais :deep(#followers-hero) .mc-lbl{font-size:max(9px, calc(7px * var(--escala-texto, 1)));margin-bottom:6px;}
   .tela-redes-sociais :deep(.chart-legend){flex-wrap:wrap;gap:4px;}
-  .tela-redes-sociais :deep(.x-labels){font-size:8px;}
+  .tela-redes-sociais :deep(.x-labels){font-size:max(9px, calc(8px * var(--escala-texto, 1)));}
 }
 
 /* TABLET (481px – 1024px) */
@@ -3002,78 +4521,78 @@ onUnmounted(() => {
   .tela-redes-sociais :deep(.wrapper){padding:14px 20px;}
   .tela-redes-sociais :deep(.sec1-grid){grid-template-columns:1fr;}
   .tela-redes-sociais :deep(.sec3-grid){grid-template-columns:repeat(2,1fr);}
-  .tela-redes-sociais :deep(.mc-val){font-size:38px;}
-  .tela-redes-sociais :deep(#total-followers){font-size:48px!important;}
-  .tela-redes-sociais :deep(#apb-name){font-size:18px;}
+  .tela-redes-sociais :deep(.mc-val){font-size:max(16px, calc(38px * var(--escala-texto, 1)));}
+  .tela-redes-sociais :deep(#total-followers){font-size:max(16px, calc(48px * var(--escala-texto, 1)))!important;}
+  .tela-redes-sociais :deep(#apb-name){font-size:max(16px, calc(18px * var(--escala-texto, 1)));}
 }
 
 /* TV / WIDESCREEN (≥ 1600px) */
 @media(min-width:1600px){
   .tela-redes-sociais :deep(.wrapper){max-width:none;padding:20px 28px;} /* usa a largura toda (era 5vw = ~84px de margem no notebook) */
   .tela-redes-sociais :deep(header){margin-bottom:18px;padding-bottom:14px;}
-  .tela-redes-sociais :deep(#apb-name){font-size:30px;}
+  .tela-redes-sociais :deep(#apb-name){font-size:max(16px, calc(30px * var(--escala-texto, 1)));}
   .tela-redes-sociais :deep(#apb-dot){width:11px;height:11px;}
-  .tela-redes-sociais :deep(.section-label){font-size:13px;}
-  .tela-redes-sociais :deep(.mc-lbl){font-size:13px;}
-  .tela-redes-sociais :deep(.mc-val){font-size:58px;}
-  .tela-redes-sociais :deep(#total-followers){font-size:72px!important;}
+  .tela-redes-sociais :deep(.section-label){font-size:max(9px, calc(13px * var(--escala-texto, 1)));}
+  .tela-redes-sociais :deep(.mc-lbl){font-size:max(9px, calc(13px * var(--escala-texto, 1)));}
+  .tela-redes-sociais :deep(.mc-val){font-size:max(16px, calc(58px * var(--escala-texto, 1)));}
+  .tela-redes-sociais :deep(#total-followers){font-size:max(16px, calc(72px * var(--escala-texto, 1)))!important;}
   .tela-redes-sociais :deep(.card){padding:28px 32px;}
   .tela-redes-sociais :deep(.mb40){margin-bottom:30px;}
   .tela-redes-sociais :deep(.sec-header){margin-bottom:12px;}
   .tela-redes-sociais :deep(.sec3-grid){grid-template-columns:repeat(3,1fr);gap:20px;}
   .tela-redes-sociais :deep(.sec4-grid){grid-template-columns:repeat(3,1fr);gap:20px;}
   .tela-redes-sociais :deep(.sec1-grid){grid-template-columns:340px 1fr;gap:20px;}
-  .tela-redes-sociais :deep(.ptab){padding:6px 20px;font-size:13px;}
-  .tela-redes-sociais :deep(.profile-btn){padding:9px 18px;font-size:13px;}
-  .tela-redes-sociais :deep(.profile-btn .av){width:26px;height:26px;font-size:11px;}
-  .tela-redes-sociais :deep(.mc-compare-prev),.tela-redes-sociais :deep(.mc-compare-delta){font-size:14px;}
-  .tela-redes-sociais :deep(.mc-pct){font-size:18px;}
-  .tela-redes-sociais :deep(.mc-diff){font-size:12px;}
-  .tela-redes-sociais :deep(.sec-chip){font-size:12px;padding:4px 10px;}
-  .tela-redes-sociais :deep(#autocycle-badge){font-size:13px;padding:9px 18px;}
+  .tela-redes-sociais :deep(.ptab){padding:6px 20px;font-size:max(9px, calc(13px * var(--escala-texto, 1)));}
+  .tela-redes-sociais :deep(.profile-btn){padding:9px 18px;font-size:max(9px, calc(13px * var(--escala-texto, 1)));}
+  .tela-redes-sociais :deep(.profile-btn .av){width:26px;height:26px;font-size:max(9px, calc(11px * var(--escala-texto, 1)));}
+  .tela-redes-sociais :deep(.mc-compare-prev),.tela-redes-sociais :deep(.mc-compare-delta){font-size:max(9px, calc(14px * var(--escala-texto, 1)));}
+  .tela-redes-sociais :deep(.mc-pct){font-size:max(16px, calc(18px * var(--escala-texto, 1)));}
+  .tela-redes-sociais :deep(.mc-diff){font-size:max(9px, calc(12px * var(--escala-texto, 1)));}
+  .tela-redes-sociais :deep(.sec-chip){font-size:max(9px, calc(12px * var(--escala-texto, 1)));padding:4px 10px;}
+  .tela-redes-sociais :deep(#autocycle-badge){font-size:max(9px, calc(13px * var(--escala-texto, 1)));padding:9px 18px;}
 }
 
 /* FULLHD+ (≥ 1920px) */
 @media(min-width:1920px){
-  .tela-redes-sociais :deep(.mc-val){font-size:68px;}
-  .tela-redes-sociais :deep(#total-followers){font-size:84px!important;}
-  .tela-redes-sociais :deep(#apb-name){font-size:36px;}
+  .tela-redes-sociais :deep(.mc-val){font-size:max(16px, calc(68px * var(--escala-texto, 1)));}
+  .tela-redes-sociais :deep(#total-followers){font-size:max(16px, calc(84px * var(--escala-texto, 1)))!important;}
+  .tela-redes-sociais :deep(#apb-name){font-size:max(16px, calc(36px * var(--escala-texto, 1)));}
   .tela-redes-sociais :deep(.card){padding:32px 36px;}
 }
 
 /* TV MODE (body.dev-tv — somente ≥ 1920px via JS de detecção de dispositivo) */
 body.dev-tv .tela-redes-sociais :deep(.wrapper){max-width:none;padding:24px 40px;}
-body.dev-tv .tela-redes-sociais :deep(#apb-name){font-size:52px;}
-body.dev-tv .tela-redes-sociais :deep(.section-label){font-size:18px;letter-spacing:3px;}
-body.dev-tv .tela-redes-sociais :deep(.mc-lbl){font-size:16px;letter-spacing:2px;}
-body.dev-tv .tela-redes-sociais :deep(.mc-val){font-size:100px;}
-body.dev-tv .tela-redes-sociais :deep(#total-followers){font-size:96px!important;}
-body.dev-tv .tela-redes-sociais :deep(.mc-compare-label){font-size:14px;}
-body.dev-tv .tela-redes-sociais :deep(.mc-compare-prev){font-size:20px;}
-body.dev-tv .tela-redes-sociais :deep(.mc-compare-delta){font-size:20px;}
-body.dev-tv .tela-redes-sociais :deep(.mc-pct){font-size:26px;}
-body.dev-tv .tela-redes-sociais :deep(.mc-diff){font-size:16px;}
-body.dev-tv .tela-redes-sociais :deep(.sec-chip){font-size:14px;padding:5px 12px;}
-body.dev-tv .tela-redes-sociais :deep(.profile-btn){font-size:16px;padding:10px 22px;}
-body.dev-tv .tela-redes-sociais :deep(.profile-btn .av){width:30px;height:30px;font-size:13px;}
+body.dev-tv .tela-redes-sociais :deep(#apb-name){font-size:max(16px, calc(52px * var(--escala-texto, 1)));}
+body.dev-tv .tela-redes-sociais :deep(.section-label){font-size:max(16px, calc(18px * var(--escala-texto, 1)));letter-spacing:3px;}
+body.dev-tv .tela-redes-sociais :deep(.mc-lbl){font-size:max(16px, calc(16px * var(--escala-texto, 1)));letter-spacing:2px;}
+body.dev-tv .tela-redes-sociais :deep(.mc-val){font-size:max(16px, calc(100px * var(--escala-texto, 1)));}
+body.dev-tv .tela-redes-sociais :deep(#total-followers){font-size:max(16px, calc(96px * var(--escala-texto, 1)))!important;}
+body.dev-tv .tela-redes-sociais :deep(.mc-compare-label){font-size:max(9px, calc(14px * var(--escala-texto, 1)));}
+body.dev-tv .tela-redes-sociais :deep(.mc-compare-prev){font-size:max(16px, calc(20px * var(--escala-texto, 1)));}
+body.dev-tv .tela-redes-sociais :deep(.mc-compare-delta){font-size:max(16px, calc(20px * var(--escala-texto, 1)));}
+body.dev-tv .tela-redes-sociais :deep(.mc-pct){font-size:max(16px, calc(26px * var(--escala-texto, 1)));}
+body.dev-tv .tela-redes-sociais :deep(.mc-diff){font-size:max(16px, calc(16px * var(--escala-texto, 1)));}
+body.dev-tv .tela-redes-sociais :deep(.sec-chip){font-size:max(9px, calc(14px * var(--escala-texto, 1)));padding:5px 12px;}
+body.dev-tv .tela-redes-sociais :deep(.profile-btn){font-size:max(16px, calc(16px * var(--escala-texto, 1)));padding:10px 22px;}
+body.dev-tv .tela-redes-sociais :deep(.profile-btn .av){width:30px;height:30px;font-size:max(9px, calc(13px * var(--escala-texto, 1)));}
 body.dev-tv .tela-redes-sociais :deep(#apb-img){width:64px;height:64px;}
-body.dev-tv .tela-redes-sociais :deep(.ptab){font-size:16px;padding:8px 24px;}
-body.dev-tv .tela-redes-sociais :deep(.live-dot){font-size:13px;}
-body.dev-tv .tela-redes-sociais :deep(.ac-toggle-lbl){font-size:14px;}
-body.dev-tv .tela-redes-sociais :deep(#dash-clock){font-size:23px;}
-body.dev-tv .tela-redes-sociais :deep(.insight-icon){font-size:17px;}
-body.dev-tv .tela-redes-sociais :deep(.insight-title){font-size:14px;}
-body.dev-tv .tela-redes-sociais :deep(.insight-period){font-size:14px;padding:3px 10px;}
-body.dev-tv .tela-redes-sociais :deep(.insight-item){font-size:17px;padding:5px 15px;}
-body.dev-tv .tela-redes-sociais :deep(.overall-bar-lbl){font-size:14px;}
-body.dev-tv .tela-redes-sociais :deep(.overall-bar-pct){font-size:20px;}
-body.dev-tv .tela-redes-sociais :deep(.legend-item){font-size:13px;}
-body.dev-tv .tela-redes-sociais :deep(.mc-goal-lbl){font-size:13px;}
-body.dev-tv .tela-redes-sociais :deep(.mc-goal-val){font-size:16px;}
-body.dev-tv .tela-redes-sociais :deep(.calc-badge){font-size:13px;padding:4px 12px;}
-body.dev-tv .tela-redes-sociais :deep(.camp-filter-lbl){font-size:13px;}
-body.dev-tv .tela-redes-sociais :deep(.camp-filter-info){font-size:16px;}
-body.dev-tv .tela-redes-sociais :deep(.btn-campaign-filter){font-size:13px;}
+body.dev-tv .tela-redes-sociais :deep(.ptab){font-size:max(16px, calc(16px * var(--escala-texto, 1)));padding:8px 24px;}
+body.dev-tv .tela-redes-sociais :deep(.live-dot){font-size:max(9px, calc(13px * var(--escala-texto, 1)));}
+body.dev-tv .tela-redes-sociais :deep(.ac-toggle-lbl){font-size:max(9px, calc(14px * var(--escala-texto, 1)));}
+body.dev-tv .tela-redes-sociais :deep(#dash-clock){font-size:max(16px, calc(23px * var(--escala-texto, 1)));}
+body.dev-tv .tela-redes-sociais :deep(.insight-icon){font-size:max(16px, calc(17px * var(--escala-texto, 1)));}
+body.dev-tv .tela-redes-sociais :deep(.insight-title){font-size:max(9px, calc(14px * var(--escala-texto, 1)));}
+body.dev-tv .tela-redes-sociais :deep(.insight-period){font-size:max(9px, calc(14px * var(--escala-texto, 1)));padding:3px 10px;}
+body.dev-tv .tela-redes-sociais :deep(.insight-item){font-size:max(16px, calc(17px * var(--escala-texto, 1)));padding:5px 15px;}
+body.dev-tv .tela-redes-sociais :deep(.overall-bar-lbl){font-size:max(9px, calc(14px * var(--escala-texto, 1)));}
+body.dev-tv .tela-redes-sociais :deep(.overall-bar-pct){font-size:max(16px, calc(20px * var(--escala-texto, 1)));}
+body.dev-tv .tela-redes-sociais :deep(.legend-item){font-size:max(9px, calc(13px * var(--escala-texto, 1)));}
+body.dev-tv .tela-redes-sociais :deep(.mc-goal-lbl){font-size:max(9px, calc(13px * var(--escala-texto, 1)));}
+body.dev-tv .tela-redes-sociais :deep(.mc-goal-val){font-size:max(16px, calc(16px * var(--escala-texto, 1)));}
+body.dev-tv .tela-redes-sociais :deep(.calc-badge){font-size:max(9px, calc(13px * var(--escala-texto, 1)));padding:4px 12px;}
+body.dev-tv .tela-redes-sociais :deep(.camp-filter-lbl){font-size:max(9px, calc(13px * var(--escala-texto, 1)));}
+body.dev-tv .tela-redes-sociais :deep(.camp-filter-info){font-size:max(16px, calc(16px * var(--escala-texto, 1)));}
+body.dev-tv .tela-redes-sociais :deep(.btn-campaign-filter){font-size:max(9px, calc(13px * var(--escala-texto, 1)));}
 body.dev-tv .tela-redes-sociais :deep(.rbv-logo){height:72px;}
 /* FAIXA DE CONTROLES — ver o comentario no template. */
 .gv-controles{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap;padding:0;background:transparent;}  /* mora DENTRO da barra: fundo, borda de baixo e respiro lateral sao dela */

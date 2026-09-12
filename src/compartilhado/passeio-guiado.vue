@@ -146,11 +146,11 @@ const estiloBalao = () => {
 /* O realce é um buraco de luz: a sombra gigante escurece tudo em volta dele. */
 .passeio-realce{position:fixed;border-radius:12px;border:2px solid var(--accent);box-shadow:0 0 0 9999px rgba(0,0,0,.55);pointer-events:none;transition:all .18s ease;}
 .passeio-balao{position:fixed;max-width:330px;background:var(--surface);border:1px solid var(--border);border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.28);padding:16px;font-family:var(--fonte-principal);z-index:10051;}
-.passeio-tit{font-size:15px;font-weight:700;color:var(--text);margin-bottom:6px;}
-.passeio-txt{font-size:13px;line-height:1.65;color:var(--muted);}
+.passeio-tit{font-size:max(9px, calc(15px * var(--escala-texto, 1)));font-weight:700;color:var(--text);margin-bottom:6px;}
+.passeio-txt{font-size:max(9px, calc(13px * var(--escala-texto, 1)));line-height:1.65;color:var(--muted);}
 .passeio-acoes{display:flex;align-items:center;gap:8px;margin-top:14px;flex-wrap:wrap;}
-.passeio-conta{flex:1;min-width:0;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;}
-.passeio-btn{font-family:var(--fonte-principal);font-size:12px;font-weight:600;padding:8px 13px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);cursor:pointer;touch-action:manipulation;}
+.passeio-conta{flex:1;min-width:0;font-size:max(9px, calc(11px * var(--escala-texto, 1)));color:var(--muted);font-variant-numeric:tabular-nums;}
+.passeio-btn{font-family:var(--fonte-principal);font-size:max(9px, calc(12px * var(--escala-texto, 1)));font-weight:600;padding:8px 13px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);cursor:pointer;touch-action:manipulation;}
 .passeio-btn:disabled{opacity:.45;cursor:not-allowed;}
 .passeio-btn.primario{background:var(--accent);border-color:var(--accent);color:var(--sobre-cor);}
 

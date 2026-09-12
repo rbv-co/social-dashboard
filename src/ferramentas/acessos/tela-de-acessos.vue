@@ -39,19 +39,31 @@ import { adminToast } from '../../compartilhado/avisos.js'
 import { hasPermission, estado } from '../../compartilhado/controle-de-login-e-usuario.js'
 import { hojeLocal } from '../../compartilhado/datas.js'
 import { montarArvoreDePastas } from './montar-arvore-de-pastas.js'
+// Desconfiar de nome repetido antes de gravar. Vale no cadastro novo E na
+// edição: renomear para um nome que já existe faz o mesmo estrago.
+import { parecidos, fraseDoParecido } from '../../compartilhado/ja-existe-alguem-parecido.js'
 import { montarDetalhePastas } from './montar-textos-do-topo.js'
 import { decidirEstadoAcesso, mensagemEstadoVazio, agruparPorEscopo, corDeAvatar, inicialDe } from './acesso-da-pasta.js'
 import { montarEmailsDeSelecao } from './onedrive-escrita.js'
-import { contarAcessosOneDrive, resumoAcessosOneDrive, statusWorkdrive, campoPreenchido, resumoDaFicha } from './ficha-do-colaborador.js'
-// Patrimônio (Tarefa 5): dinheiro em centavos + histórico de posse (módulo já testado)
-import { formatarValor, parsearValor, CATEGORIAS_PATRIMONIO, fecharEAbrirHistorico } from '../patrimonio/patrimonio.js'
-// Lógica pura da lista/consolidado de patrimônio (somar, filtrar, formatar data, histórico)
-// filtrarItens e donoAtualNome saíram junto com a aba Patrimônio (que virou
-// módulo próprio); os que ficam ainda servem os blocos de Dispositivos e
-// Veículos da ficha do colaborador, que só saem na Fase 3.
-import { somarCentavos, formatarDataBR, textoLinhaHistorico } from '../patrimonio/patrimonio-lista.js'
+import { contarAcessosOneDrive, resumoAcessosOneDrive, statusWorkdrive, campoPreenchido, resumoDaFicha, camposDaFicha, CAMPOS_DA_FICHA } from './ficha-do-colaborador.js'
+// Patrimônio: dinheiro em centavos (módulo já testado)
+import { formatarValor } from '../patrimonio/patrimonio.js'
+// Lógica pura da lista/consolidado de patrimônio (somar, formatar data)
+import { somarCentavos, formatarDataBR } from '../patrimonio/patrimonio-lista.js'
+// Rótulo/cor de cada situação real de patrimonio_bens (em_uso/em_estoque/em_manutencao/baixado)
+import { rotuloDaSituacao } from '../patrimonio/rotulos-do-bem.js'
 // Auditoria (Tarefa 6): classificação pura do volume de acesso ao OneDrive (destaque de "muitas pastas")
 import { volumeDeAcesso } from './auditoria-volume.js'
+// Bens & Veículos na ficha (13/08/2026): a ficha passa a ler patrimonio_bens e
+// frota_veiculos de verdade, em vez da acessos_dispositivos morta (0 linhas
+// desde sempre). temAcessoFrota é reaproveitada da Frota (mesma conta que
+// tela-de-patrimonio.vue já usa pra decidir o mesmo tipo de aviso); o gêmeo
+// para o Patrimônio mora em bens-e-veiculos-da-pessoa.js.
+import { temAcessoFrota } from '../patrimonio/ligacao-com-frota.js'
+import { temAcessoPatrimonio, pilulaDaSituacaoDoBem, agruparPorPessoa, decidirEstadoDaSecao } from './bens-e-veiculos-da-pessoa.js'
+// Auditoria: as consultas de bens/veículos agora têm limite explícito, e
+// detectam quando o número de linhas bate nele (corte silencioso do PostgREST).
+import { LIMITE_AUDITORIA, foiCortado, avisoDeCorte } from './auditoria-corte.js'
 
 const router = useRouter()
 
@@ -355,7 +367,7 @@ function _acWdRepaint(){
   // O invólucro com rolagem própria existe pro celular: um ramo fundo é largo,
   // e sem ele a árvore empurraria a PÁGINA inteira pro lado. Assim quem rola é
   // só a árvore.
-  cont.innerHTML=`<div class="ac-muted" style="font-size:11px;margin:0 0 12px">${_acWdPastas.length} pasta(s) sob controle. Clique no <b>▸</b> para abrir ou fechar um ramo.</div>
+  cont.innerHTML=`<div class="ac-muted" style="font-size:max(9px, calc(11px * var(--escala-texto, 1)));margin:0 0 12px">${_acWdPastas.length} pasta(s) sob controle. Clique no <b>▸</b> para abrir ou fechar um ramo.</div>
     <div class="ac-wd-arvore"><ul class="ac-tree ac-tree-root">${raizes.map(_acWdNo).join('')}</ul></div>`;
 }
 // Desenha uma pasta e, embaixo dela, as filhas — chamando a si mesma. É a
@@ -797,7 +809,7 @@ function _acConfirmar(msg,opts){
   return new Promise(resolve=>{
     const ov=document.createElement('div');ov.className='ac-modal-ov open';
     ov.innerHTML=`<div class="ac-modal" style="max-width:440px">
-      <div class="ac-modal-body" style="padding-top:18px"><div style="font-size:14px;line-height:1.5">${_acEsc(msg)}</div></div>
+      <div class="ac-modal-body" style="padding-top:18px"><div style="font-size:max(9px, calc(14px * var(--escala-texto, 1)));line-height:1.5">${_acEsc(msg)}</div></div>
       <div class="ac-modal-foot" style="justify-content:flex-end">
         <button class="ac-btn ghost" data-c="0">${_acEsc(opts.cancelar||'Cancelar')}</button>
         <button class="ac-btn ${opts.perigo?'danger':'primary'}" data-c="1">${_acEsc(opts.ok||'Confirmar')}</button>
@@ -870,8 +882,8 @@ function _acPaWdMostrarLink(url){
   const ov=document.createElement('div');ov.className='ac-modal-ov open';
   ov.innerHTML=`<div class="ac-modal" style="max-width:520px">
     <div class="ac-modal-body" style="padding-top:18px">
-      <div style="font-size:14px;font-weight:640;margin-bottom:8px">Link criado ✓</div>
-      <div class="ac-muted" style="font-size:12.5px;margin-bottom:12px">Copie e compartilhe. A lista de links da pasta pode levar alguns segundos para mostrar este link.</div>
+      <div style="font-size:max(9px, calc(14px * var(--escala-texto, 1)));font-weight:640;margin-bottom:8px">Link criado ✓</div>
+      <div class="ac-muted" style="font-size:max(9px, calc(12.5px * var(--escala-texto, 1)));margin-bottom:12px">Copie e compartilhe. A lista de links da pasta pode levar alguns segundos para mostrar este link.</div>
       <div class="ac-linkrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg><div class="grow" style="min-width:0"><div class="ac-linkurl">${_acEsc(url||'')}</div></div><button class="ac-btn2" id="ac-wd-copylink">Copiar</button></div>
     </div>
     <div class="ac-modal-foot" style="justify-content:flex-end"><button class="ac-btn primary" data-x>Fechar</button></div></div>`;
@@ -1102,12 +1114,12 @@ function _acDriveRepaint(){
   const folders=_acDriveTree;
   const secs=_acDriveAllSectors();
   const marca=_acDriveMarcas.find(m=>m.id===_acDriveSel);
-  const marcaBar=(marca&&marca.external_id)?`<div class="ac-drive-marcabar"><div class="grow"><span class="ac-drive-marca-nome">${_acEsc(marca.nome)}</span><span class="ac-muted" style="font-size:11px;display:block;margin-top:2px">Compartilhar a marca inteira dá acesso a TUDO dentro dela (a pessoa passa a ver toda a árvore).</span></div><button class="ac-btn primary" data-drv="share" data-id="${_acEsc(marca.external_id)}" data-name="${_acEsc(marca.nome)}">Compartilhar marca inteira</button></div>`:'';
+  const marcaBar=(marca&&marca.external_id)?`<div class="ac-drive-marcabar"><div class="grow"><span class="ac-drive-marca-nome">${_acEsc(marca.nome)}</span><span class="ac-muted" style="font-size:max(9px, calc(11px * var(--escala-texto, 1)));display:block;margin-top:2px">Compartilhar a marca inteira dá acesso a TUDO dentro dela (a pessoa passa a ver toda a árvore).</span></div><button class="ac-btn primary" data-drv="share" data-id="${_acEsc(marca.external_id)}" data-name="${_acEsc(marca.nome)}">Compartilhar marca inteira</button></div>`:'';
   const viewToggle=`<div class="ac-driveviews"><button class="ac-tab ${_acDriveView==='setor'?'active':''}" onclick="_acDriveSetView('setor')">Por setor</button><button class="ac-tab ${_acDriveView==='arvore'?'active':''}" onclick="_acDriveSetView('arvore')">Árvore (fluxo)</button></div>`;
   const depthCtl=`<div class="ac-depth"><span class="ac-muted">Camadas:</span>${[1,2,3,4].map(d=>'<button class="ac-depth-b '+(d===_acDriveDepth?'active':'')+'" onclick="_acDriveSetDepth('+d+')">'+d+'</button>').join('')}${_acDriveView==='setor'?'<button class="ac-btn ghost" onclick="_acDriveAddSetor()">+ Novo setor</button>':''}<span class="ac-muted" style="margin-left:auto">${folders.length} pasta(s)${_acDriveTreeTrunc?' · limite atingido':''}</span></div>`;
   let bodyHtml;
   if(_acDriveView==='arvore'){
-    bodyHtml=`<div class="ac-muted" style="font-size:11px;margin:0 0 12px">Fluxograma a partir da raiz da marca. Cores = setor. Clique no <b>▸</b> de um card para abrir o ramo; <b>⤴</b> compartilha a pasta; "Liberar setor" libera tudo do setor.</div>`+_acDriveLegend()+_acDriveRenderFlow();
+    bodyHtml=`<div class="ac-muted" style="font-size:max(9px, calc(11px * var(--escala-texto, 1)));margin:0 0 12px">Fluxograma a partir da raiz da marca. Cores = setor. Clique no <b>▸</b> de um card para abrir o ramo; <b>⤴</b> compartilha a pasta; "Liberar setor" libera tudo do setor.</div>`+_acDriveLegend()+_acDriveRenderFlow();
   }else{
     const buckets={};
     folders.forEach(f=>{const s=_acDriveSectorOf(f);(buckets[s.key]=buckets[s.key]||{label:s.label,list:[]}).list.push(f);});
@@ -1125,7 +1137,7 @@ function _acDriveRepaint(){
         <div class="ac-folder-grid ac-secbody" data-sec="${s.key}" style="${open?'':'display:none'}">${b.list.map(f=>_acDriveFolderCard(f,secs)).join('')}</div>
       </div>`;
     }).join('');
-    bodyHtml=`<div class="ac-muted" style="font-size:11px;margin:0 0 14px">Arraste uma pasta para outro setor (ou use o seletor no card). "Liberar setor" compartilha todas as pastas do setor.</div>`+(mods||'<div class="ac-empty">Nenhuma pasta encontrada nesta marca.</div>');
+    bodyHtml=`<div class="ac-muted" style="font-size:max(9px, calc(11px * var(--escala-texto, 1)));margin:0 0 14px">Arraste uma pasta para outro setor (ou use o seletor no card). "Liberar setor" compartilha todas as pastas do setor.</div>`+(mods||'<div class="ac-empty">Nenhuma pasta encontrada nesta marca.</div>');
   }
   cont.innerHTML=viewToggle+marcaBar+depthCtl+bodyHtml;
   _acDriveWire(cont);
@@ -1158,8 +1170,8 @@ function _acAbrirLiberacaoEmMassa(folders,titulo,subtitulo,onDone){
   if(!folders||!folders.length){adminToast('Nenhuma pasta para liberar',false);return;}
   const ov=document.createElement('div');ov.className='ac-modal-ov open';
   ov.innerHTML=`<div class="ac-modal ac-modal-lg">
-    <div class="ac-modal-head"><div><h3 style="margin:0">${_acEsc(titulo)}</h3><div class="ac-muted" style="font-size:12px;margin-top:3px">${_acEsc(subtitulo||'')}</div></div><button class="ac-btn ghost" id="ac-lib-x">Fechar</button></div>
-    <div class="ac-modal-body"><div id="ac-lib-has"><div class="ac-muted" style="font-size:12px;padding:0 0 12px">Carregando quem já tem acesso…</div></div><div class="ac-kicker" style="display:block;margin:0 0 6px">Escolha um setor inteiro (botão "todos") ou pessoas avulsas</div>${_acColabPicker('ac-lib-cb')}</div>
+    <div class="ac-modal-head"><div><h3 style="margin:0">${_acEsc(titulo)}</h3><div class="ac-muted" style="font-size:max(9px, calc(12px * var(--escala-texto, 1)));margin-top:3px">${_acEsc(subtitulo||'')}</div></div><button class="ac-btn ghost" id="ac-lib-x">Fechar</button></div>
+    <div class="ac-modal-body"><div id="ac-lib-has"><div class="ac-muted" style="font-size:max(9px, calc(12px * var(--escala-texto, 1)));padding:0 0 12px">Carregando quem já tem acesso…</div></div><div class="ac-kicker" style="display:block;margin:0 0 6px">Escolha um setor inteiro (botão "todos") ou pessoas avulsas</div>${_acColabPicker('ac-lib-cb')}</div>
     <div class="ac-modal-foot">
       <span class="ac-pick-count">0 selecionados</span>
       <input class="ac-input" id="ac-lib-extra" placeholder="ou e-mail avulso" style="flex:1;min-width:120px">
@@ -1173,8 +1185,8 @@ function _acAbrirLiberacaoEmMassa(folders,titulo,subtitulo,onDone){
   // quem já tem acesso às pastas (agregado) — consistente com o modal de pasta única
   (async()=>{const box=ov.querySelector('#ac-lib-has');if(!box)return;
     let sh=[];try{const r=await _acProxy('microsoft.sharesMany',{items:folders.map(f=>f.id)});sh=(r&&r.shares)||[];}catch(e){}
-    if(!sh.length){box.innerHTML='<div class="ac-muted" style="font-size:12px;padding:0 0 12px">Ninguém tem acesso a estas pastas ainda.</div>';return;}
-    box.innerHTML='<div class="ac-kicker" style="display:block;margin:0 0 6px">Quem já tem acesso <span class="ac-muted" style="text-transform:none;letter-spacing:0">('+folders.length+' pasta(s))</span></div><div style="margin-bottom:16px">'+sh.map(s=>'<div class="ac-row"><div class="grow">'+_acEsc(s.name||s.email||'—')+((s.email&&s.name)?' <span class="ac-muted">'+_acEsc(s.email)+'</span>':'')+' <span class="ac-pill '+(s.role==='edição'?'warn':'ok')+'">'+_acEsc(s.role)+'</span> <span class="ac-muted" style="font-size:11px">'+s.folders+'/'+folders.length+' pastas</span></div></div>').join('')+'</div>';
+    if(!sh.length){box.innerHTML='<div class="ac-muted" style="font-size:max(9px, calc(12px * var(--escala-texto, 1)));padding:0 0 12px">Ninguém tem acesso a estas pastas ainda.</div>';return;}
+    box.innerHTML='<div class="ac-kicker" style="display:block;margin:0 0 6px">Quem já tem acesso <span class="ac-muted" style="text-transform:none;letter-spacing:0">('+folders.length+' pasta(s))</span></div><div style="margin-bottom:16px">'+sh.map(s=>'<div class="ac-row"><div class="grow">'+_acEsc(s.name||s.email||'—')+((s.email&&s.name)?' <span class="ac-muted">'+_acEsc(s.email)+'</span>':'')+' <span class="ac-pill '+(s.role==='edição'?'warn':'ok')+'">'+_acEsc(s.role)+'</span> <span class="ac-muted" style="font-size:max(9px, calc(11px * var(--escala-texto, 1)))">'+s.folders+'/'+folders.length+' pastas</span></div></div>').join('')+'</div>';
   })();
   ov.querySelector('#ac-lib-go').onclick=async()=>{
     const role=ov.querySelector('#ac-lib-role').value;
@@ -1194,13 +1206,13 @@ function _acAbrirLiberacaoEmMassa(folders,titulo,subtitulo,onDone){
     const fixes=await _acFixAliases(mism); // auto-corrige o cadastro p/ a conta real
     const modal=ov.querySelector('.ac-modal');
     modal.innerHTML=`
-      <div class="ac-modal-head"><div><h3 style="margin:0">Liberado ✓</h3><div class="ac-muted" style="font-size:12px;margin-top:3px">✓ ${okN} compartilhamento(s)${(r&&r.fail)?(' · '+r.fail+' falha(s)'):''}${(r&&r.truncated)?' (limite atingido)':''}</div></div><button class="ac-btn ghost" id="ac-lib-x2">Fechar</button></div>
+      <div class="ac-modal-head"><div><h3 style="margin:0">Liberado ✓</h3><div class="ac-muted" style="font-size:max(9px, calc(12px * var(--escala-texto, 1)));margin-top:3px">✓ ${okN} compartilhamento(s)${(r&&r.fail)?(' · '+r.fail+' falha(s)'):''}${(r&&r.truncated)?' (limite atingido)':''}</div></div><button class="ac-btn ghost" id="ac-lib-x2">Fechar</button></div>
       <div class="ac-modal-body">
         ${fixes.length?`<div class="ac-note ac-note-warn">✅ <b>Apelido corrigido automaticamente.</b> Estes e-mails eram alias; o acesso já caiu na <b>conta Microsoft real</b> e atualizei o cadastro pra ela (futuros compartilhamentos já miram a conta certa):<br>${fixes.map(f=>'• '+_acEsc(f.invited)+' → <b>'+_acEsc(f.account)+'</b>'+(f.nome?' — '+_acEsc(f.nome)+' atualizado':' — não cadastrado, avise pra acessar com essa conta')).join('<br>')}</div>`:''}
         <div class="ac-note">Acessos concedidos. <b>Envie os links abaixo ao colaborador</b> — é mais confiável que o e-mail automático da Microsoft (que pode cair em outro endereço ou no spam). Só quem foi convidado consegue abrir.</div>
         <div class="ac-linklist">${links.map(l=>`<div class="ac-row"><div class="grow" style="min-width:0"><b>${_acEsc(l.name||'(pasta)')}</b><div class="ac-linkurl">${l.link?_acEsc(l.link):'<span class="ac-muted">link indisponível</span>'}</div></div>${l.link?`<button class="ac-btn" data-copy1="${_acEsc(l.link)}">Copiar</button>`:''}</div>`).join('')||'<div class="ac-muted">Nenhum link disponível.</div>'}</div>
       </div>
-      <div class="ac-modal-foot"><span class="ac-muted" style="font-size:11px">${emails.length} colaborador(es)</span><button class="ac-btn primary" id="ac-lib-copyall">Copiar todos os links</button></div>`;
+      <div class="ac-modal-foot"><span class="ac-muted" style="font-size:max(9px, calc(11px * var(--escala-texto, 1)))">${emails.length} colaborador(es)</span><button class="ac-btn primary" id="ac-lib-copyall">Copiar todos os links</button></div>`;
     modal.querySelector('#ac-lib-x2').onclick=close;
     modal.querySelectorAll('button[data-copy1]').forEach(b=>b.onclick=()=>_acCopy(b.dataset.copy1,b));
     const allText='Acessos (RBV):\n'+links.filter(l=>l.link).map(l=>'• '+(l.name||'pasta')+': '+l.link).join('\n');
@@ -1572,6 +1584,22 @@ async function _acSaveColaborador(id){
     atualizado_em:new Date().toISOString()
   };
   if(!rec.nome){adminToast('Nome é obrigatório',false);return;}
+  // ── JÁ EXISTE ALGUÉM PARECIDO? (27/08/2026) ──────────────────────────────
+  //
+  // O Douglas Pereira ganhou duas fichas porque nada aqui olhava o nome. Vale
+  // no cadastro NOVO e na edição: renomear alguém para um nome que já existe
+  // cria o mesmo estrago, por outro caminho. `ignorarId` tira a própria ficha,
+  // senão salvar sem mexer no nome acusaria a si mesma.
+  //
+  // Pergunta e obedece — não trava. Homônimo de verdade existe nesta base.
+  const parecidas=parecidos(rec.nome,_acData.pessoas,{ignorarId:id||null});
+  if(parecidas.length){
+    // Uma frase corrida: `_acConfirmar` joga o texto num `<div>` sem
+    // `white-space`, então quebra de linha aqui viraria só um espaço.
+    const seguir=await _acConfirmar(fraseDoParecido(parecidas)+' Se for a mesma pessoa, cancele e abra a ficha dela — duas fichas partem os bens e o histórico ao meio.',
+      {ok:'Não é, salvar assim mesmo'});
+    if(!seguir)return;
+  }
   const isEdit=!!id;
   let err;
   if(id){({error:err}=await sbClient.from('acessos_pessoas').update(rec).eq('id',id));}
@@ -1583,18 +1611,11 @@ async function _acSaveColaborador(id){
   // Onboarding (opção B): colaborador NOVO → abre o provisionamento de acessos na sequência
   if(!isEdit)setTimeout(()=>_acProvisionar(id),250);
 }
-// Campos editáveis da ficha (coluna DB -> rótulo + tipo do input). Fica no
-// escopo do módulo pra o render e o editor (_acFichaEditarCampo) compartilharem
-// a MESMA verdade — assim não dá pra o rótulo/tipo divergir entre os dois.
-const AC_FICHA_CAMPOS={
-  email_corporativo:{label:'E-mail corporativo',tipo:'email'},
-  conta_apple:{label:'Conta Apple (iCloud)',tipo:'email'},
-  numero_corporativo:{label:'Telefone corporativo',tipo:'tel'},
-  numero_pessoal:{label:'Telefone pessoal',tipo:'tel'},
-  data_inicio_contrato:{label:'Início de contrato',tipo:'date'},
-  data_fim_contrato:{label:'Fim de contrato',tipo:'date'},
-  motivo_saida:{label:'Motivo da saída',tipo:'text'},
-};
+// Campos editáveis da ficha: a verdade mora em ficha-do-colaborador.js, com
+// teste ao lado. Aqui era um objeto solto, e ao lado dele havia uma SEGUNDA
+// lista dizendo quais colunas aparecem — as duas divergiram (`email_outlook`
+// numa e não na outra) e NENHUMA ficha abria. Ver camposDaFicha().
+const AC_FICHA_CAMPOS=CAMPOS_DA_FICHA;
 // Avatar GRANDE da identidade (mockup: quadrado arredondado 76px). Se tem foto,
 // usa a foto; senão, iniciais coloridas de forma determinística (mesma pessoa =
 // mesma cor sempre, igual à bolinha de app de mensagem). corDeAvatar/inicialDe
@@ -1619,8 +1640,8 @@ function _acRenderFicha(id){
   const roleParts=[c.cargo,setor||'Sem setor'].filter(Boolean).map(_acEsc);
   // Uma linha de campo editável. Cheio = mostra o valor (clicar edita); vazio =
   // vira "+ adicionar" (nunca fica em branco morto, convida a preencher).
-  const fld=(col,logo)=>{
-    const cfg=AC_FICHA_CAMPOS[col];const raw=c[col];const cheio=campoPreenchido(raw);
+  const fld=(cfg,logo)=>{
+    const col=cfg.col;const raw=c[col];const cheio=campoPreenchido(raw);
     const disp=cheio?(cfg.tipo==='date'?dt(raw):raw):'';
     return `<div class="ac-fx-fld ${cheio?'':'vazio'}">
       <span class="ac-fx-fld-l">${logo||''}${_acEsc(cfg.label)}</span>
@@ -1629,8 +1650,9 @@ function _acRenderFicha(id){
         : `<button class="ac-fx-fld-add" onclick="_acFichaEditarCampo('${c.id}','${col}')">+ adicionar</button>`}
     </div>`;
   };
-  const contatoCampos=['email_corporativo','email_outlook','conta_apple','numero_corporativo','numero_pessoal','data_inicio_contrato']
-    .concat(ativo?[]:['data_fim_contrato','motivo_saida']);
+  // Já vem com rótulo e tipo junto de cada coluna: não há mais como listar uma
+  // coluna que não tenha configuração — que era o defeito.
+  const contatoCampos=camposDaFicha(ativo);
   const logoDe={email_corporativo:_acLogo('zoho'),email_outlook:_acLogo('ms'),conta_apple:_acLogo('apple')};
   document.getElementById('ac-body').innerHTML=`
     <button class="ac-btn ghost" onclick="_acVoltarSel('pessoa')" style="margin-bottom:14px">← Voltar</button>
@@ -1648,7 +1670,7 @@ function _acRenderFicha(id){
         </div>
         <div class="ac-fx-quick">
           <div class="ac-fx-qa"><span class="ac-fx-qn tnum" id="ac-fx-qn-pastas">…</span><span class="ac-fx-ql">pastas</span></div>
-          <div class="ac-fx-qa"><span class="ac-fx-qn tnum" id="ac-fx-qn-equip">…</span><span class="ac-fx-ql">equipamentos</span></div>
+          <div class="ac-fx-qa"><span class="ac-fx-qn tnum" id="ac-fx-qn-equip">…</span><span class="ac-fx-ql">itens</span></div>
           <div class="ac-fx-qa"><span class="ac-fx-qn tnum" id="ac-fx-qn-termos">…</span><span class="ac-fx-ql">termos</span></div>
         </div>
         <div class="ac-fx-actions">
@@ -1667,19 +1689,18 @@ function _acRenderFicha(id){
         <div class="ac-panel">
           <div class="ac-phead"><h2>Contatos &amp; contas</h2></div>
           <div class="ac-fx-fields">
-            ${contatoCampos.map(col=>fld(col,logoDe[col]||'')).join('')}
+            ${contatoCampos.map(cfg=>fld(cfg,logoDe[cfg.col]||'')).join('')}
           </div>
         </div>
 
-        <!-- Dispositivos & patrimônio (GANCHO — o CRUD completo é a Tarefa 5) -->
+        <!-- Bens & Veículos: só leitura (pedido do dono, 13/08/2026). Lê
+             patrimonio_bens e frota_veiculos de verdade — editar continua no
+             Patrimônio e na Frota, pra não ter dois lugares criando a mesma
+             coisa e divergindo. -->
         <div class="ac-panel">
-          <div class="ac-phead"><h2>Dispositivos &amp; patrimônio</h2>
-            <button class="ac-btn-mini" onclick="_acPatForm('${c.id}')">+ Registrar</button></div>
+          <div class="ac-phead"><h2>Bens &amp; Veículos</h2></div>
           <div id="ac-disp-wrap" class="ac-fx-wrap">
-            <div class="ac-fx-empty">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="14" rx="2"/><path d="M8 21h8M12 18v3"/></svg>
-              Nenhum notebook, celular ou equipamento registrado nesta pessoa. Registre para saber o que está sob a responsabilidade dela.
-            </div>
+            <div class="ac-fx-empty">Carregando bens e veículos…</div>
           </div>
         </div>
 
@@ -1718,7 +1739,7 @@ function _acRenderFicha(id){
   // sem travar a ficha. Cada um trata o próprio erro e é HONESTO (não vira 0).
   _acFichaCarregarAcessos(id);
   _acFichaCarregarContadores(id);
-  _acRenderPatItens(id); // preenche o painel "Dispositivos & patrimônio" (CRUD da Tarefa 5)
+  _acRenderPatItens(id); // preenche o painel "Bens & Veículos" (só leitura, ver bens-e-veiculos-da-pessoa.js)
   _acRenderTermos(id);   // preenche o painel "Termo de responsabilidade" (CRUD da Tarefa 7)
 }
 // Editor de UM campo da ficha, em modal PRÓPRIO (nada de prompt nativo). Salva
@@ -1773,17 +1794,21 @@ async function _acFichaCarregarAcessos(id){
   // Contagem no cabeçalho do painel de acessos (pastas do OneDrive).
   set('ac-fx-acc-cnt', r.indisponivel?'—':((r.parcial?'≥':'')+r.total+' pasta'+(r.total===1?'':'s')));
 }
-// Conta equipamentos e termos da pessoa (do banco) pros quadradinhos do topo.
-// Barato e honesto: se falhar, mostra "—" no lugar, não fake 0.
+// Conta bens (patrimonio_bens + frota_veiculos) e termos da pessoa (do banco)
+// pros quadradinhos do topo. Barato e honesto: se falhar, mostra "—" no
+// lugar, não fake 0. Fix round 1 / IMPORTANT 2: antes contava
+// acessos_dispositivos (0 linhas, estruturalmente); com o corpo da ficha
+// mostrando bens de verdade, o cabeçalho continuar em 0 ficava ridículo.
 async function _acFichaCarregarContadores(id){
   const set=(elId,txt)=>{const el=document.getElementById(elId);if(el)el.textContent=txt;};
   try{
-    const[d,t]=await Promise.all([
-      sbClient.from('acessos_dispositivos').select('*',{count:'exact',head:true}).eq('pessoa_id',id),
+    const[b,v,t]=await Promise.all([
+      sbClient.from('patrimonio_bens').select('*',{count:'exact',head:true}).eq('pessoa_id',id),
+      sbClient.from('frota_veiculos').select('*',{count:'exact',head:true}).eq('pessoa_id',id),
       sbClient.from('acessos_termos').select('*',{count:'exact',head:true}).eq('pessoa_id',id),
     ]);
     if(_acSel!==id)return;
-    set('ac-fx-qn-equip', d.error?'—':String(d.count||0));
+    set('ac-fx-qn-equip', (b.error||v.error)?'—':String((b.count||0)+(v.count||0)));
     set('ac-fx-qn-termos', t.error?'—':String(t.count||0));
   }catch(e){ if(_acSel!==id)return; set('ac-fx-qn-equip','—');set('ac-fx-qn-termos','—'); }
 }
@@ -1798,8 +1823,8 @@ function _acDesligar(id){
     <label style="display:block;margin-top:10px">Data de fim de contrato
       <input class="ac-input" type="date" id="ac-dlg-data" value="${hoje}"></label>
     <div class="ac-kicker" style="margin:14px 0 6px;display:block">Revogar acessos</div>
-    <label style="display:flex;align-items:center;gap:8px;margin-top:6px"><input type="checkbox" id="ac-dlg-equip" checked> Marcar equipamentos em uso para devolução</label>
-    <label style="display:flex;align-items:center;gap:8px;margin-top:6px"><input type="checkbox" id="ac-dlg-od" ${c.email_outlook?'checked':'disabled'}> Remover dos compartilhamentos do OneDrive${c.email_outlook?'':' <span class="ac-muted">(sem e-mail Outlook)</span>'}</label>
+    <div class="ac-muted" style="margin-top:2px">A devolução dos bens e veículos desta pessoa se registra no Patrimônio e na Frota — não por aqui.</div>
+    <label style="display:flex;align-items:center;gap:8px;margin-top:10px"><input type="checkbox" id="ac-dlg-od" ${c.email_outlook?'checked':'disabled'}> Remover dos compartilhamentos do OneDrive${c.email_outlook?'':' <span class="ac-muted">(sem e-mail Outlook)</span>'}</label>
     <label style="display:flex;align-items:center;gap:8px;margin-top:6px"><input type="checkbox" id="ac-dlg-zoho" ${c.email_corporativo?'checked':'disabled'}> Suspender caixa de e-mail Zoho${c.email_corporativo?'':' <span class="ac-muted">(sem e-mail corporativo)</span>'}</label>
     <div style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end">
       <button class="ac-btn ghost" id="ac-dlg-cancel">Cancelar</button>
@@ -1814,17 +1839,18 @@ function _acDesligar(id){
     const motivo=ov.querySelector('#ac-dlg-motivo').value.trim();
     const data=ov.querySelector('#ac-dlg-data').value||null;
     if(!motivo){adminToast('Informe o motivo',false);return;}
-    const doEquip=ov.querySelector('#ac-dlg-equip').checked;
     const doOd=ov.querySelector('#ac-dlg-od').checked&&!!c.email_outlook;
     const doZoho=ov.querySelector('#ac-dlg-zoho').checked&&!!c.email_corporativo;
     const okBtn=ov.querySelector('#ac-dlg-ok');okBtn.disabled=true;okBtn.textContent='Processando…';
     const{error}=await sbClient.from('acessos_pessoas').update({status:'desligado',motivo_saida:motivo,data_fim_contrato:data,atualizado_em:new Date().toISOString()}).eq('id',id);
     if(error){adminToast('Erro: '+error.message,false);okBtn.disabled=false;okBtn.textContent='Confirmar desligamento';return;}
     let resumo='Desligado';
-    if(doEquip){
-      const{error:e2}=await sbClient.from('acessos_dispositivos').update({status:'a_devolver',atualizado_em:new Date().toISOString()}).eq('pessoa_id',id).eq('status','em_uso');
-      resumo+=e2?' · equip. falhou':' · equipamentos → devolução';
-    }
+    // A caixinha "marcar equipamentos para devolução" saiu daqui (fix round 1
+    // / IMPORTANT 3): ela gravava em acessos_dispositivos, que está sempre
+    // vazia, e dizia "equipamentos → devolução" mesmo sem devolver nada — e
+    // agora que a ficha mostra bens de verdade, isso vira mentira visível.
+    // A devolução se registra no Patrimônio/na Frota (mudar `situacao`/
+    // `pessoa_id` de lá), não por aqui.
     if(doOd){
       try{const r=await _acProxy('microsoft.revokeForEmail',{email:c.email_outlook});resumo+=' · OneDrive: '+(r&&r.removed||0)+' removido(s)';}
       catch(e){resumo+=' · OneDrive falhou';}
@@ -1985,282 +2011,140 @@ function _acTiposFor(categoria){return categoria==='veiculo'?AC_VEI_TIPOS:AC_DEV
 function _acItemTipoLabel(t){const a=AC_DEV_TIPOS.concat(AC_VEI_TIPOS).find(x=>x[0]===t);return a?a[1]:t;}
 function _acWrapId(categoria){return categoria==='veiculo'?'ac-vei-wrap':'ac-disp-wrap';}
 function _acCatTitulo(categoria){return categoria==='veiculo'?'Veículos':'Dispositivos';}
-async function _acRenderItens(pessoaId,categoria){
-  const wrap=document.getElementById(_acWrapId(categoria));if(!wrap)return;
-  const{data,error}=await sbClient.from('acessos_dispositivos').select('*').eq('pessoa_id',pessoaId).eq('categoria',categoria).order('atualizado_em',{ascending:false});
-  if(error){wrap.innerHTML='<div class="ac-card">Erro: '+_acEsc(error.message)+'</div>';return;}
-  const list=(data||[]).map(d=>{
-    const m=_acDstMeta(d.status);
-    const det=(d.detalhes&&typeof d.detalhes==='object')?d.detalhes:{};
-    const chips=_acFieldsFor(d.tipo).filter(f=>det[f[0]]).map(f=>`<span class="ac-chip">${_acEsc(f[1])}: ${_acEsc(det[f[0]])}</span>`).join('');
-    return `<div class="ac-row">
-      <div class="grow">
-        <div><strong>${_acEsc(_acItemTipoLabel(d.tipo))}</strong> — ${_acEsc(d.descricao)} <span class="ac-pill ${m[2]}">${_acEsc(m[1])}</span></div>
-        <div style="margin-top:4px">${chips||'<span class="ac-muted">sem detalhes</span>'}</div>
-        ${d.observacao?'<div class="ac-muted" style="margin-top:3px">'+_acEsc(d.observacao)+'</div>':''}
-      </div>
-      <select class="ac-select" style="width:auto" onchange="_acSetItemStatus('${d.id}','${pessoaId}','${categoria}',this.value)">
-        ${AC_DST.map(s=>`<option value="${s[0]}" ${s[0]===d.status?'selected':''}>${s[1]}</option>`).join('')}
-      </select>
-      <button class="ac-btn ghost" onclick="_acFormItem('${pessoaId}','${categoria}','${d.id}')">Editar</button>
-      <button class="ac-btn danger" onclick="_acDelItem('${d.id}','${pessoaId}','${categoria}')">Excluir</button>
-    </div>`;}).join('');
-  wrap.innerHTML=`<div class="ac-card">
-    <div class="ac-section-h"><h3>${_acCatTitulo(categoria)}</h3>
-      <button class="ac-btn" style="margin-left:auto" onclick="_acFormItem('${pessoaId}','${categoria}')">+ Adicionar</button></div>
-    ${list||'<div class="ac-muted">Nenhum item.</div>'}
-  </div>`;
-}
-function _acRenderVeiculos(pessoaId){return _acRenderItens(pessoaId,'veiculo');}
-function _acRenderDispositivos(pessoaId){return _acRenderItens(pessoaId,'dispositivo');}
-async function _acFormItem(pessoaId,categoria,id){
-  let d={tipo:(categoria==='veiculo'?'carro':'celular'),descricao:'',desde:'',observacao:'',detalhes:{}};
-  if(id){const{data}=await sbClient.from('acessos_dispositivos').select('*').eq('id',id).single();if(data){d=data;d.detalhes=(data.detalhes&&typeof data.detalhes==='object')?data.detalhes:{};}}
-  const wrap=document.getElementById(_acWrapId(categoria));
-  const oldf=document.getElementById('ac-item-form');if(oldf)oldf.remove();
-  const tipos=_acTiposFor(categoria);
-  const form=document.createElement('div');form.className='ac-card';form.id='ac-item-form';
-  form.innerHTML=`<h3 style="margin-top:0">${id?'Editar':'Novo'} ${categoria==='veiculo'?'veículo':'dispositivo'}</h3>
-    <div class="ac-grid2">
-      <label>Tipo<select class="ac-select" id="aci-tipo">${tipos.map(t=>`<option value="${t[0]}" ${t[0]===d.tipo?'selected':''}>${t[1]}</option>`).join('')}</select></label>
-      <label>Identificação / descrição<input class="ac-input" id="aci-desc" value="${_acEsc(d.descricao||'')}"></label>
-      <label>Desde<input class="ac-input" id="aci-desde" type="date" value="${_acEsc(d.desde||'')}"></label>
-      <label style="grid-column:1/-1">Observação<input class="ac-input" id="aci-obs" value="${_acEsc(d.observacao||'')}"></label>
-    </div>
-    <div id="aci-dyn" class="ac-grid2" style="margin-top:10px"></div>
-    <div style="margin-top:12px;display:flex;gap:8px">
-      <button class="ac-btn" id="aci-save">Salvar</button>
-      <button class="ac-btn ghost" id="aci-cancel">Cancelar</button>
-    </div>`;
-  wrap.prepend(form);
-  const renderDyn=()=>{
-    const tipo=form.querySelector('#aci-tipo').value;
-    form.querySelector('#aci-dyn').innerHTML=_acFieldsFor(tipo).map(f=>{
-      const val=(d.tipo===tipo&&d.detalhes[f[0]])?d.detalhes[f[0]]:'';
-      if(f[0]==='combustivel')return `<label>${_acEsc(f[1])}<select class="ac-select" data-fk="${f[0]}"><option value="">—</option>${AC_COMB.map(o=>`<option ${o===val?'selected':''}>${o}</option>`).join('')}</select></label>`;
-      return `<label>${_acEsc(f[1])}<input class="ac-input" data-fk="${f[0]}" value="${_acEsc(val)}"></label>`;
-    }).join('');
-  };
-  renderDyn();
-  form.querySelector('#aci-tipo').onchange=renderDyn;
-  form.querySelector('#aci-cancel').onclick=()=>_acRenderItens(pessoaId,categoria);
-  form.querySelector('#aci-save').onclick=()=>_acSaveItem(pessoaId,categoria,id||null);
-}
-async function _acSaveItem(pessoaId,categoria,id){
-  const form=document.getElementById('ac-item-form');if(!form)return;
-  const tipo=form.querySelector('#aci-tipo').value;
-  const detalhes={};
-  form.querySelectorAll('#aci-dyn [data-fk]').forEach(el=>{const v=el.value.trim();if(v)detalhes[el.dataset.fk]=v;});
-  const rec={pessoa_id:pessoaId,categoria,tipo,descricao:form.querySelector('#aci-desc').value.trim(),desde:form.querySelector('#aci-desde').value||null,observacao:form.querySelector('#aci-obs').value.trim()||null,detalhes,atualizado_em:new Date().toISOString()};
-  if(!rec.descricao){adminToast('Identificação/descrição é obrigatória',false);return;}
-  let err;
-  if(id){({error:err}=await sbClient.from('acessos_dispositivos').update(rec).eq('id',id));}
-  else{({error:err}=await sbClient.from('acessos_dispositivos').insert(rec));}
-  if(err){adminToast('Erro: '+err.message,false);return;}
-  await _acLog(id?'item.editar':'item.criar',categoria+':'+rec.descricao,'ok',tipo);
-  adminToast('Item salvo');_acRenderItens(pessoaId,categoria);
-}
-async function _acSetItemStatus(id,pessoaId,categoria,status){
-  const{error}=await sbClient.from('acessos_dispositivos').update({status,atualizado_em:new Date().toISOString()}).eq('id',id);
-  if(error){adminToast('Erro: '+error.message,false);return;}
-  await _acLog('item.status',categoria+':'+id,'ok',status);
-  adminToast('Status atualizado');_acRenderItens(pessoaId,categoria);
-}
-async function _acDelItem(id,pessoaId,categoria){
-  if(!confirm('Excluir este item?'))return;
-  const{error}=await sbClient.from('acessos_dispositivos').delete().eq('id',id);
-  if(error){adminToast('Erro: '+error.message,false);return;}
-  await _acLog('item.excluir',categoria+':'+id,'ok',null);
-  adminToast('Item excluído');_acRenderItens(pessoaId,categoria);
-}
+// _acRenderItens/_acRenderVeiculos/_acRenderDispositivos/_acFormItem/_acSaveItem/
+// _acSetItemStatus/_acDelItem (CRUD do módulo antigo) foram REMOVIDAS em
+// 13/08/2026: gravavam em acessos_dispositivos (tabela do módulo antigo,
+// ZERO linhas desde sempre) e escreviam por cima de #ac-disp-wrap — o MESMO
+// nó que o painel novo "Bens & Veículos" (abaixo) usa para renderizar dado
+// de verdade. Confirmado por grep no repositório inteiro, antes de apagar,
+// que nada além delas mesmas as chamava: seus únicos pontos de entrada eram
+// os onclick que elas próprias desenhavam no HTML que geravam, e esses
+// botões não eram mais renderizados por ninguém. Usava confirm() nativo,
+// que o padrão da casa proíbe. CSS conferido: nenhuma classe/id fica sem
+// marcação — as classes que usavam (ac-card, ac-row, ac-pill, ac-chip,
+// ac-select, ac-grid2, ac-btn, ac-section-h) seguem em uso pelo resto da
+// tela, e os ids aci-*/#ac-item-form nunca tiveram regra de CSS própria.
 // ==========================================================================
-// PATRIMÔNIO (Tarefa 5 do redesign): CRUD na ficha + histórico de posse + aba
-// consolidada. Dinheiro SEMPRE em centavos inteiros (parsearValor na entrada,
-// formatarValor na saída — módulo patrimonio.js). Categorias novas em
-// CATEGORIAS_PATRIMONIO. Absorve a categoria "Veículos" (o painel _acRenderVeiculos
-// da ficha saiu na Tarefa 4): vira um item com campo de placa no jsonb "detalhes".
-// As funções antigas _acRenderItens/_acFormItem/_acSaveItem/_acSetItemStatus/_acDelItem
-// ficam preservadas acima (não são mais chamadas), conforme combinado no brief.
+// BENS & VEÍCULOS na ficha (13/08/2026, pedido do dono): SÓ LEITURA. Lia
+// acessos_dispositivos — tabela do módulo antigo, 0 linhas desde sempre, com
+// um CRUD completo (_acPatForm/_acPatTrocarDono/_acPatHistorico/_acPatDel)
+// gravando numa tabela que ninguém lia de volta. Removido depois de grep
+// confirmar que nada mais no repositório usava essas funções nem essa
+// tabela (só esta ficha). Agora lê as fontes de verdade — patrimonio_bens e
+// frota_veiculos — e não escreve nada: editar bem continua no Patrimônio,
+// editar carro continua na Frota. Duas telas criando/editando a mesma coisa
+// é como elas divergem.
 // ==========================================================================
 
-// Pill de situação do item (reusa AC_DST, a mesma tabela de status do CRUD antigo).
-function _acPatStatusPill(status){const m=_acDstMeta(status);return `<span class="ac-pill ${m[2]}">${_acEsc(m[1])}</span>`;}
+// Vai pra Patrimônio/Frota a partir da ficha ("Ver no Patrimônio"/"Ver na
+// Frota"). Só navega — em window pelo mesmo motivo do resto do cluster _ac*
+// (onclick embutido em string HTML).
+function _acVerPatrimonio(){router.push({name:'patrimonio'});}
+function _acVerFrota(){router.push({name:'frota'});}
 
-// Lista os itens de patrimônio de UMA pessoa no painel da ficha (#ac-disp-wrap).
-// Se não houver nada, mostra o mesmo estado vazio pontilhado do mockup.
+// Lista os bens e os veículos de UMA pessoa no painel da ficha (#ac-disp-wrap).
+// Duas seções, cada uma com o SEU estado — nunca uma lista vazia sozinha.
+// Fix round 1 (CRITICAL 1): quem decide o estado é `decidirEstadoDaSecao`,
+// NA ORDEM erro > com-dados > sem-acesso > vazio — dado na mão sempre vence a
+// flag de acesso (que é só uma aproximação da RLS real, mais generosa; ver
+// bens-e-veiculos-da-pessoa.js). Descartar linha de verdade porque a flag
+// achava que não devia existir é pior que o silêncio que esta tela veio
+// substituir.
+// Fix round 1 (IMPORTANT 4): as duas consultas vão dentro de um try/catch —
+// uma rejeição de verdade (offline, DNS, abort) não vira `{error}` do
+// Supabase, ela rejeita a Promise, e sem o catch a caixa ficava em
+// "Carregando…" pra sempre, sem explicação.
 async function _acRenderPatItens(pessoaId){
   const wrap=document.getElementById('ac-disp-wrap');if(!wrap)return;
-  const{data,error}=await sbClient.from('acessos_dispositivos').select('*').eq('pessoa_id',pessoaId).order('atualizado_em',{ascending:false});
-  if(_acSel!==pessoaId)return; // trocou de pessoa nesse meio-tempo: não escreve em ficha velha
-  if(error){wrap.innerHTML='<div class="ac-fx-empty">Não consegui carregar o patrimônio: '+_acEsc(error.message)+'</div>';return;}
-  const itens=data||[];
-  if(!itens.length){
-    wrap.innerHTML=`<div class="ac-fx-empty">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="14" rx="2"/><path d="M8 21h8M12 18v3"/></svg>
-      Nenhum notebook, celular ou equipamento registrado nesta pessoa. Registre para saber o que está sob a responsabilidade dela.
-    </div>`;return;
+  let bens=[],veiculos=[],erroBens=null,erroVeiculos=null;
+  try{
+    const r=await Promise.all([
+      sbClient.from('patrimonio_bens')
+        .select('id,numero,nome,marca,numero_serie,situacao,valor_centavos,data_compra,patrimonio_categorias(nome),patrimonio_locais(nome),patrimonio_comodos(nome)')
+        .eq('pessoa_id',pessoaId).order('nome'),
+      sbClient.from('frota_veiculos').select('id,nome,placa').eq('pessoa_id',pessoaId).order('nome')
+    ]);
+    bens=r[0].data||[];erroBens=r[0].error;
+    veiculos=r[1].data||[];erroVeiculos=r[1].error;
+  }catch(e){
+    erroBens=erroVeiculos=e&&e.message?e:{message:String(e)};
   }
-  const total=somarCentavos(itens);
-  wrap.innerHTML=`<div class="ac-pat-list">${itens.map(d=>_acPatRow(pessoaId,d)).join('')}</div>
-    <div class="ac-pat-total">Total do patrimônio desta pessoa <strong>${_acEsc(formatarValor(total))}</strong></div>`;
+  if(_acSel!==pessoaId)return; // trocou de pessoa nesse meio-tempo: não escreve em ficha velha
+  wrap.innerHTML=_acSecaoBens(bens,erroBens)+_acSecaoVeiculos(veiculos,erroVeiculos);
 }
-// Uma linha de item na ficha: categoria + situação, descrição e metadados, botões.
-function _acPatRow(pessoaId,d){
-  const desde=d.desde?formatarDataBR(d.desde):'—';
-  const placa=(d.detalhes&&typeof d.detalhes==='object'&&d.detalhes.placa)?d.detalhes.placa:'';
+// Seção "Bens" (patrimonio_bens). Sem filtro de categoria de propósito: a
+// ficha mostra TUDO que está com esta pessoa, categoria que for (a mesma
+// pessoa pode ter notebook, celular e mesa, por exemplo).
+function _acSecaoBens(bens,erro){
+  const estadoSecao=decidirEstadoDaSecao({lista:bens,erro,temAcesso:temAcessoPatrimonio(estado)});
+  let corpo;
+  if(estadoSecao==='erro'){
+    corpo='<div class="ac-fx-empty">Não consegui carregar os bens agora: '+_acEsc(erro.message)+'. Recarregue a página; se continuar assim, avise quem administra.</div>';
+  }else if(estadoSecao==='sem-acesso'){
+    corpo='<div class="ac-fx-empty">Você não tem acesso ao módulo Patrimônio, então não dá pra saber se esta pessoa está com algum bem. Peça acesso ao módulo Patrimônio, ou peça a quem administra pra conferir por lá.</div>';
+  }else if(estadoSecao==='vazio'){
+    corpo=`<div class="ac-fx-empty">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="14" rx="2"/><path d="M8 21h8M12 18v3"/></svg>
+      Nenhum bem do Patrimônio está registrado com esta pessoa.
+    </div>`;
+  }else{
+    const total=somarCentavos(bens);
+    corpo=`<div class="ac-pat-list">${bens.map(_acBemRow).join('')}</div>
+      <div class="ac-pat-total">Total dos bens desta pessoa <strong>${_acEsc(formatarValor(total))}</strong></div>`;
+  }
+  const link=temAcessoPatrimonio(estado)?'<button class="ac-btn ghost" style="margin-left:auto" onclick="_acVerPatrimonio()">Ver no Patrimônio →</button>':'';
+  return `<div class="ac-section-h" style="margin:0 0 10px"><h3>Bens</h3>${link}</div>${corpo}`;
+}
+// Uma linha de bem: categoria + situação, nome/marca e metadados. Só leitura
+// — sem botões de ação (editar é no Patrimônio).
+function _acBemRow(b){
+  const cat=(b.patrimonio_categorias&&b.patrimonio_categorias.nome)||null;
+  const local=(b.patrimonio_locais&&b.patrimonio_locais.nome)||null;
+  const comodo=(b.patrimonio_comodos&&b.patrimonio_comodos.nome)||null;
+  const onde=[local,comodo].filter(Boolean).join(' · ');
   return `<div class="ac-pat-item">
     <div class="ac-pat-main">
-      <div class="ac-pat-top"><span class="ac-chip">${_acEsc(d.categoria||'—')}</span> ${_acPatStatusPill(d.status)}</div>
-      <div class="ac-pat-desc">${_acEsc(d.descricao||'(sem descrição)')}</div>
+      <div class="ac-pat-top">${cat?'<span class="ac-chip">'+_acEsc(cat)+'</span>':''} <span class="ac-pill ${pilulaDaSituacaoDoBem(b.situacao)}">${_acEsc(rotuloDaSituacao(b.situacao))}</span></div>
+      <div class="ac-pat-desc">${_acEsc(b.nome||'(sem nome)')}${b.marca?' · '+_acEsc(b.marca):''}</div>
       <div class="ac-pat-meta">
-        ${d.identificador?'<span>Nº série: '+_acEsc(d.identificador)+'</span>':''}
-        ${placa?'<span>Placa: '+_acEsc(placa)+'</span>':''}
-        <span>Valor: ${_acEsc(formatarValor(d.valor_centavos))}</span>
-        <span>Desde: ${_acEsc(desde)}</span>
-        ${d.observacao?'<span>'+_acEsc(d.observacao)+'</span>':''}
+        ${b.numero!=null?'<span>Etiqueta nº '+_acEsc(b.numero)+'</span>':''}
+        ${b.numero_serie?'<span>Nº série: '+_acEsc(b.numero_serie)+'</span>':''}
+        ${onde?'<span>'+_acEsc(onde)+'</span>':''}
+        <span>Valor: ${_acEsc(formatarValor(b.valor_centavos))}</span>
+        ${b.data_compra?'<span>Desde: '+_acEsc(formatarDataBR(b.data_compra))+'</span>':''}
       </div>
     </div>
-    <div class="ac-pat-acts">
-      <button class="ac-btn ghost" onclick="_acPatForm('${pessoaId}','${d.id}')">Editar</button>
-      <button class="ac-btn ghost" onclick="_acPatTrocarDono('${d.id}','${pessoaId}')">Trocar dono</button>
-      <button class="ac-btn ghost" onclick="_acPatHistorico('${d.id}')">Histórico</button>
-      <button class="ac-btn danger" onclick="_acPatDel('${d.id}','${pessoaId}')">Remover</button>
-    </div>
   </div>`;
 }
-// Modal de adicionar/editar item. Sem id = novo. Grava em acessos_dispositivos.
-async function _acPatForm(pessoaId,id){
-  let d={categoria:'TI',status:'em_uso',descricao:'',identificador:'',valor_centavos:null,desde:hojeLocal(),observacao:'',detalhes:{}};
-  if(id){const{data}=await sbClient.from('acessos_dispositivos').select('*').eq('id',id).single();if(data){d=data;d.detalhes=(data.detalhes&&typeof data.detalhes==='object')?data.detalhes:{};}}
-  // valor vem em centavos: mostra sem o "R$ " pra facilitar editar (parsearValor aceita de volta)
-  const valorTxt=(d.valor_centavos!=null)?formatarValor(d.valor_centavos).replace('R$ ',''):'';
-  const ov=document.createElement('div');ov.className='ac-modal-ov open';
-  ov.innerHTML=`<div class="ac-modal" style="max-width:540px">
-    <h3 style="margin-top:0">${id?'Editar item':'Registrar item'} de patrimônio</h3>
-    <div class="ac-grid2">
-      <label>Categoria<select class="ac-select" id="ac-pat-cat">${CATEGORIAS_PATRIMONIO.map(c=>`<option ${c===d.categoria?'selected':''}>${_acEsc(c)}</option>`).join('')}</select></label>
-      <label>Situação<select class="ac-select" id="ac-pat-status">${AC_DST.map(s=>`<option value="${s[0]}" ${s[0]===(d.status||'em_uso')?'selected':''}>${_acEsc(s[1])}</option>`).join('')}</select></label>
-      <label style="grid-column:1/-1">Descrição<input class="ac-input" id="ac-pat-desc" value="${_acEsc(d.descricao||'')}" placeholder="Ex.: Notebook Dell Latitude 5440"></label>
-      <label>Nº de série / identificação<input class="ac-input" id="ac-pat-ident" value="${_acEsc(d.identificador||'')}"></label>
-      <label>Valor (R$)<input class="ac-input" id="ac-pat-valor" inputmode="decimal" value="${_acEsc(valorTxt)}" placeholder="Ex.: 3.500,00"></label>
-      <label>Desde<input class="ac-input" type="date" id="ac-pat-desde" value="${_acEsc(d.desde||'')}"></label>
-      <label id="ac-pat-placa-wrap" style="${d.categoria==='Veículos'?'':'display:none'}">Placa (veículo)<input class="ac-input" id="ac-pat-placa" value="${_acEsc((d.detalhes&&d.detalhes.placa)||'')}"></label>
-      <label style="grid-column:1/-1">Observação<input class="ac-input" id="ac-pat-obs" value="${_acEsc(d.observacao||'')}"></label>
-    </div>
-    <div style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end">
-      <button class="ac-btn ghost" data-x="0">Cancelar</button>
-      <button class="ac-btn primary" data-x="1">Salvar</button>
-    </div>
-  </div>`;
-  (document.getElementById('acessos-screen')||document.body).appendChild(ov);
-  const close=()=>ov.remove();
-  ov.addEventListener('click',e=>{if(e.target===ov)close();});
-  ov.querySelector('[data-x="0"]').onclick=close;
-  // o campo de placa só aparece pra categoria Veículos (absorve o antigo painel de veículos)
-  ov.querySelector('#ac-pat-cat').onchange=e=>{ov.querySelector('#ac-pat-placa-wrap').style.display=e.target.value==='Veículos'?'':'none';};
-  ov.querySelector('[data-x="1"]').onclick=async()=>{
-    const desc=(ov.querySelector('#ac-pat-desc').value||'').trim();
-    if(!desc){adminToast('A descrição é obrigatória',false);return;}
-    const valorRaw=(ov.querySelector('#ac-pat-valor').value||'').trim();
-    let valor_centavos=null;
-    if(valorRaw){valor_centavos=parsearValor(valorRaw);if(valor_centavos===null){adminToast('Valor inválido — use algo como 3.500,00',false);return;}}
-    const categoria=ov.querySelector('#ac-pat-cat').value;
-    const detalhes=Object.assign({},(d.detalhes&&typeof d.detalhes==='object')?d.detalhes:{});
-    const placaEl=ov.querySelector('#ac-pat-placa');const placa=placaEl?placaEl.value.trim():'';
-    if(categoria==='Veículos'&&placa)detalhes.placa=placa;else delete detalhes.placa;
-    const desde=ov.querySelector('#ac-pat-desde').value||null;
-    const rec={pessoa_id:pessoaId,categoria,status:ov.querySelector('#ac-pat-status').value,descricao:desc,identificador:(ov.querySelector('#ac-pat-ident').value||'').trim()||null,valor_centavos,desde,observacao:(ov.querySelector('#ac-pat-obs').value||'').trim()||null,detalhes,atualizado_em:new Date().toISOString()};
-    const btn=ov.querySelector('[data-x="1"]');btn.disabled=true;btn.textContent='Salvando…';
-    if(id){
-      const{error}=await sbClient.from('acessos_dispositivos').update(rec).eq('id',id);
-      if(error){adminToast('Erro: '+error.message,false);btn.disabled=false;btn.textContent='Salvar';return;}
-      await _acLog('patrimonio.editar',categoria+':'+desc,'ok',null);
-    }else{
-      const{data:novo,error}=await sbClient.from('acessos_dispositivos').insert(rec).select('id').single();
-      if(error){adminToast('Erro: '+error.message,false);btn.disabled=false;btn.textContent='Salvar';return;}
-      // Abre o histórico de posse do PRIMEIRO dono — assim "trocar dono" depois tem
-      // um registro aberto pra fechar (senão o período do dono inicial se perde).
-      const pessoa=(_acData.pessoas||[]).find(p=>p.id===pessoaId);
-      await sbClient.from('acessos_patrimonio_historico').insert({dispositivo_id:novo.id,pessoa_id:pessoaId,pessoa_nome:pessoa?pessoa.nome:null,de:desde||hojeLocal(),ate:null,motivo:'Registro inicial'});
-      await _acLog('patrimonio.criar',categoria+':'+desc,'ok',null);
-    }
-    close();adminToast('Item salvo');
-    _acRenderPatItens(pessoaId);_acFichaCarregarContadores(pessoaId);
-  };
-}
-// Trocar o dono de um item: escolhe outra pessoa; fecha o histórico do dono anterior
-// e abre o do novo (fecharEAbrirHistorico), e atualiza pessoa_id no próprio item.
-async function _acPatTrocarDono(id,pessoaAtualId){
-  const{data:item}=await sbClient.from('acessos_dispositivos').select('descricao,pessoa_id').eq('id',id).single();
-  const pessoas=(_acData.pessoas||[]).slice().sort((a,b)=>(a.nome||'').localeCompare(b.nome||''));
-  const ov=document.createElement('div');ov.className='ac-modal-ov open';
-  ov.innerHTML=`<div class="ac-modal" style="max-width:460px">
-    <h3 style="margin-top:0">Trocar dono</h3>
-    <div class="ac-muted" style="font-size:13px;margin-bottom:12px">${_acEsc(item?item.descricao:'Item')}</div>
-    <label style="display:block">Novo dono
-      <select class="ac-select" id="ac-pat-novodono">${pessoas.map(p=>`<option value="${p.id}" ${p.id===(item&&item.pessoa_id)?'selected':''}>${_acEsc(p.nome)}${p.status==='desligado'?' (desligado)':''}</option>`).join('')}</select></label>
-    <label style="display:block;margin-top:10px">Motivo (opcional)
-      <input class="ac-input" id="ac-pat-motivo" placeholder="Ex.: passou para o setor de vendas"></label>
-    <div style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end">
-      <button class="ac-btn ghost" data-x="0">Cancelar</button>
-      <button class="ac-btn primary" data-x="1">Trocar</button>
-    </div>
-  </div>`;
-  (document.getElementById('acessos-screen')||document.body).appendChild(ov);
-  const close=()=>ov.remove();
-  ov.addEventListener('click',e=>{if(e.target===ov)close();});
-  ov.querySelector('[data-x="0"]').onclick=close;
-  ov.querySelector('[data-x="1"]').onclick=async()=>{
-    const novoDonoId=ov.querySelector('#ac-pat-novodono').value;
-    const motivo=(ov.querySelector('#ac-pat-motivo').value||'').trim();
-    const novo=(_acData.pessoas||[]).find(p=>p.id===novoDonoId);
-    const hoje=hojeLocal();
-    const btn=ov.querySelector('[data-x="1"]');btn.disabled=true;btn.textContent='Trocando…';
-    // Histórico atual do item pra decidir o que fechar (a lógica é pura e testada).
-    const{data:hist}=await sbClient.from('acessos_patrimonio_historico').select('*').eq('dispositivo_id',id);
-    const plano=fecharEAbrirHistorico({historicoAtual:hist||[],novoDonoId,novoDonoNome:novo?novo.nome:null,hoje});
-    if(!plano.aAbrir){adminToast('Este item já é dessa pessoa',false);btn.disabled=false;btn.textContent='Trocar';return;}
-    // Fecha o dono anterior (se havia registro aberto).
-    if(plano.aFechar){const{error:eF}=await sbClient.from('acessos_patrimonio_historico').update({ate:plano.aFechar.ate}).eq('id',plano.aFechar.id);if(eF){adminToast('Erro ao fechar histórico: '+eF.message,false);btn.disabled=false;btn.textContent='Trocar';return;}}
-    // Abre o registro do novo dono (o motivo do usuário entra aqui).
-    const{error:eA}=await sbClient.from('acessos_patrimonio_historico').insert({dispositivo_id:id,pessoa_id:plano.aAbrir.pessoa_id,pessoa_nome:plano.aAbrir.pessoa_nome,de:plano.aAbrir.de,ate:plano.aAbrir.ate,motivo:motivo||null});
-    if(eA){adminToast('Erro ao abrir histórico: '+eA.message,false);btn.disabled=false;btn.textContent='Trocar';return;}
-    // Muda o dono no próprio item.
-    const{error:eU}=await sbClient.from('acessos_dispositivos').update({pessoa_id:novoDonoId,atualizado_em:new Date().toISOString()}).eq('id',id);
-    if(eU){adminToast('Erro ao atualizar item: '+eU.message,false);btn.disabled=false;btn.textContent='Trocar';return;}
-    await _acLog('patrimonio.trocar_dono','item:'+id,'ok',(novo?novo.nome:'')+(motivo?' · '+motivo:''));
-    close();adminToast('Dono atualizado');
-    // O item pode ter saído desta ficha (foi pra outra pessoa): re-render da ficha atual.
-    _acRenderPatItens(pessoaAtualId);_acFichaCarregarContadores(pessoaAtualId);
-  };
-}
-// Ver o histórico de posse de um item (quem teve, de–até, motivo).
-async function _acPatHistorico(id){
-  const{data,error}=await sbClient.from('acessos_patrimonio_historico').select('*').eq('dispositivo_id',id).order('de',{ascending:false});
+// Seção "Veículos" (frota_veiculos). Aqui pessoa_id é o DONO FIXO do carro na
+// Frota, não necessariamente quem está com ele agora — o vazio explica isso.
+// Mesma ordem de decisão da seção Bens (decidirEstadoDaSecao). Do lado da
+// Frota isso não muda comportamento nenhum: a flag `temAcessoFrota` e a RLS
+// de frota_veiculos são a MESMA expressão (`'frota' = any(features) or
+// is_superadmin`, conferido em is_frota_admin()) — usar a função em comum
+// só evita as duas seções divergirem de novo no futuro.
+function _acSecaoVeiculos(veiculos,erro){
+  const estadoSecao=decidirEstadoDaSecao({lista:veiculos,erro,temAcesso:temAcessoFrota(estado)});
   let corpo;
-  if(error)corpo='<div class="ac-fx-empty">Erro ao carregar: '+_acEsc(error.message)+'</div>';
-  else if(!data||!data.length)corpo='<div class="ac-fx-empty">Sem histórico de posse ainda.</div>';
-  else corpo=data.map(r=>`<div class="ac-pat-histrow">${_acEsc(textoLinhaHistorico(r))}</div>`).join('');
-  const ov=document.createElement('div');ov.className='ac-modal-ov open';
-  ov.innerHTML=`<div class="ac-modal" style="max-width:480px">
-    <h3 style="margin-top:0">Histórico de posse</h3>
-    <div class="ac-pat-hist">${corpo}</div>
-    <div style="margin-top:16px;display:flex;justify-content:flex-end"><button class="ac-btn primary" data-x="0">Fechar</button></div>
-  </div>`;
-  (document.getElementById('acessos-screen')||document.body).appendChild(ov);
-  const close=()=>ov.remove();
-  ov.addEventListener('click',e=>{if(e.target===ov)close();});
-  ov.querySelector('[data-x="0"]').onclick=close;
+  if(estadoSecao==='erro'){
+    corpo='<div class="ac-fx-empty">Não consegui carregar os veículos agora: '+_acEsc(erro.message)+'. Recarregue a página; se continuar assim, avise quem administra.</div>';
+  }else if(estadoSecao==='sem-acesso'){
+    corpo='<div class="ac-fx-empty">Você não tem acesso ao módulo Frota, então não dá pra saber se esta pessoa está com algum veículo. Peça acesso ao módulo Frota, ou peça a quem administra pra conferir por lá.</div>';
+  }else if(estadoSecao==='vazio'){
+    corpo='<div class="ac-fx-empty">Nenhum veículo da Frota tem esta pessoa cadastrada como dona fixa. (Quem usa o carro no dia a dia pode ser outra pessoa — confira na Frota.)</div>';
+  }else{
+    corpo=`<div class="ac-pat-list">${veiculos.map(_acVeiculoRow).join('')}</div>`;
+  }
+  const link=temAcessoFrota(estado)?'<button class="ac-btn ghost" style="margin-left:auto" onclick="_acVerFrota()">Ver na Frota →</button>':'';
+  return `<div class="ac-section-h" style="margin:18px 0 10px"><h3>Veículos</h3>${link}</div>${corpo}`;
 }
-// Remover um item (o histórico dele some junto — FK on delete cascade). Confirma em modal próprio.
-async function _acPatDel(id,pessoaId){
-  const ok=await _acConfirmar('Remover este item do patrimônio? O histórico de posse dele também será apagado.',{ok:'Remover',perigo:true});
-  if(!ok)return;
-  const{error}=await sbClient.from('acessos_dispositivos').delete().eq('id',id);
-  if(error){adminToast('Erro: '+error.message,false);return;}
-  await _acLog('patrimonio.remover','item:'+id,'ok',null);
-  adminToast('Item removido');
-  _acRenderPatItens(pessoaId);_acFichaCarregarContadores(pessoaId);
+function _acVeiculoRow(v){
+  return `<div class="ac-pat-item">
+    <div class="ac-pat-main">
+      <div class="ac-pat-desc">${_acEsc(v.nome||'(sem nome)')}</div>
+      <div class="ac-pat-meta"><span>Placa: ${_acEsc(v.placa||'—')}</span></div>
+    </div>
+  </div>`;
 }
 
 
@@ -2338,13 +2222,31 @@ async function _acRenderAuditoria(){
   const body=document.getElementById('ac-body');
   body.innerHTML='<div class="ac-muted">Carregando auditoria…</div>';
   _acAudAviso=null; // recomeça limpo: aviso de carga velha não pode sobrar na nova.
-  const[{data:orgs},{data:setores},{data:pessoas},{data:itens},{data:vincs}]=await Promise.all([
-    sbClient.from('acessos_organizacoes').select('*').order('ordem').order('nome'),
-    sbClient.from('acessos_setores').select('*').order('nome'),
-    sbClient.from('acessos_pessoas').select('*').order('nome'),
-    sbClient.from('acessos_dispositivos').select('*'),
-    sbClient.from('acessos_vinculos').select('pessoa_id,papel,estado,acessos_recursos(nome,tipo,arquivado_em)')
-  ]);
+  _acAudData=null; // idem: dado velho não pode sobreviver a uma carga que falhou.
+  let orgs,setores,pessoas,bens,erroBens,veiculosAud,erroVeiculosAud,vincs;
+  try{
+    ([{data:orgs},{data:setores},{data:pessoas},{data:bens,error:erroBens},{data:veiculosAud,error:erroVeiculosAud},{data:vincs}]=await Promise.all([
+      sbClient.from('acessos_organizacoes').select('*').order('ordem').order('nome'),
+      sbClient.from('acessos_setores').select('*').order('nome'),
+      sbClient.from('acessos_pessoas').select('*').order('nome'),
+      // Limite explícito (item C): sem ele o PostgREST corta em 1000 linhas
+      // SEM avisar. foiCortado() abaixo detecta quando a lista voltou exatamente
+      // no limite e transforma o corte silencioso num aviso na tela.
+      sbClient.from('patrimonio_bens').select('id,nome,pessoa_id').limit(LIMITE_AUDITORIA),
+      sbClient.from('frota_veiculos').select('id,nome,pessoa_id').limit(LIMITE_AUDITORIA),
+      sbClient.from('acessos_vinculos').select('pessoa_id,papel,estado,acessos_recursos(nome,tipo,arquivado_em)')
+    ]));
+  }catch(e){
+    // Promise.all sem try/catch deixava a aba presa em "Carregando auditoria…"
+    // pra sempre quando a rejeição era de VERDADE (offline, DNS, aborto) — que
+    // não vira {error} do Supabase, e sim uma promessa rejeitada de fato. A
+    // aba não pode terminar mostrando uma auditoria vazia como se não houvesse
+    // dado: por isso a mensagem substitui o "Carregando…" e _acAudData fica
+    // null (não existe estado inventado pra pintar).
+    body.innerHTML='<div class="ac-fx-empty">Não consegui carregar a auditoria agora ('+_acEsc((e&&e.message)?e.message:'falha na conexão')+'). Recarregue a página; se persistir, avise quem administra.</div>';
+    return;
+  }
+  const avisos=[]; // junta OneDrive + Patrimônio + Frota — um só bloco de aviso no topo.
   let odMap={},odByName={};
   try{const r=await _acProxy('microsoft.allShares');((r&&r.items)||[]).forEach(it=>{
     const e=(it.email||'').toLowerCase();
@@ -2357,22 +2259,46 @@ async function _acRenderAuditoria(){
   });
   // Pasta que o proxy não conseguiu ler vira aviso na tela, não silêncio.
   if(r&&Array.isArray(r.falhas)&&r.falhas.length){
-    _acAudAviso='Não consegui ler o acesso de '+r.falhas.length+' pasta(s) do OneDrive: '+r.falhas.map(f=>f.pasta).join(', ')+'. O que aparece abaixo está incompleto.';
+    avisos.push('Não consegui ler o acesso de '+r.falhas.length+' pasta(s) do OneDrive: '+r.falhas.map(f=>f.pasta).join(', ')+'. O que aparece abaixo está incompleto.');
   }
   }catch(e){
   // Este catch era vazio. Quando a chamada inteira falhava, a Auditoria pintava a
   // lista sem NENHUM acesso do OneDrive — igualzinho a "essas pessoas não têm acesso
   // a nada". Quem olhasse ia embora achando que estava tudo limpo. Agora a tela diz
   // que não conseguiu olhar, que é a verdade.
-  _acAudAviso='Não consegui consultar os acessos do OneDrive agora ('+(e&&e.message?e.message:'falha na conexão')+'). A coluna do OneDrive abaixo está VAZIA por causa disso — não porque as pessoas não tenham acesso.';
+  avisos.push('Não consegui consultar os acessos do OneDrive agora ('+(e&&e.message?e.message:'falha na conexão')+'). A coluna do OneDrive abaixo está VAZIA por causa disso — não porque as pessoas não tenham acesso.');
   }
+  // Mesma honestidade da ficha (item 2 do pedido do dono) — e o MESMO cuidado
+  // do CRITICAL 1 do fix round 1: aqui as linhas NÃO são descartadas (ao
+  // contrário da ficha antes da correção), então empurrar "sem acesso" sem
+  // checar se veio dado faria a tela se contradizer — o aviso diria "a
+  // coluna fica sempre vazia pra você" bem em cima de uma coluna cheia de
+  // nomes. Só entra quando é vazio DE VERDADE (sem dado e sem a flag).
+  if(erroBens){
+    avisos.push('Não consegui carregar os bens agora ('+(erroBens.message||'falha na conexão')+'). A coluna "Bens" abaixo pode estar incompleta.');
+  }else if(!temAcessoPatrimonio(estado)&&!(bens||[]).length){
+    avisos.push('Você não tem acesso ao módulo Patrimônio: a coluna "Bens" abaixo fica sempre vazia pra você — não significa que ninguém tem bem, peça acesso a quem administra.');
+  }
+  if(erroVeiculosAud){
+    avisos.push('Não consegui carregar os veículos agora ('+(erroVeiculosAud.message||'falha na conexão')+'). A coluna "Veículos" abaixo pode estar incompleta.');
+  }else if(!temAcessoFrota(estado)&&!(veiculosAud||[]).length){
+    avisos.push('Você não tem acesso ao módulo Frota: a coluna "Veículos" abaixo fica sempre vazia pra você — não significa que ninguém está com carro, peça acesso a quem administra.');
+  }
+  // Item C: número de linhas bateu igual ao limite explícito → tratamos como
+  // corte do PostgREST e avisamos, em vez de deixar a tela parecer completa.
+  const corteMsg=avisoDeCorte([foiCortado(bens)&&'bens',foiCortado(veiculosAud)&&'veículos']);
+  if(corteMsg)avisos.push(corteMsg);
+  if(avisos.length)_acAudAviso=avisos.join(' ');
   const setorById={};(setores||[]).forEach(s=>setorById[s.id]=s);
-  const itensByP={};(itens||[]).forEach(d=>{(itensByP[d.pessoa_id]=itensByP[d.pessoa_id]||[]).push(d);});
+  // Bens (patrimonio_bens) e veículos (frota_veiculos) de TODAS as pessoas,
+  // agrupados por pessoa_id — UMA consulta cada (acima), não uma por pessoa.
+  const bensByP=agruparPorPessoa(bens);
+  const veiculosByP=agruparPorPessoa(veiculosAud);
   // Pasta arquivada não conta na Auditoria: ela saiu de uso, então mostrar que
   // "fulano tem acesso" a ela só geraria cobrança de um acesso que não importa
   // mais. O vínculo em si continua no banco (nada foi apagado).
   const iclMap={};(vincs||[]).forEach(v=>{const r=v.acessos_recursos;if(r&&r.tipo==='icloud'&&!r.arquivado_em){(iclMap[v.pessoa_id]=iclMap[v.pessoa_id]||[]).push({pasta:r.nome,papel:v.papel,estado:v.estado});}});
-  _acAudData={orgs:orgs||[],setores:setores||[],pessoas:pessoas||[],setorById,itensByP,odMap,odByName,iclMap};
+  _acAudData={orgs:orgs||[],setores:setores||[],pessoas:pessoas||[],setorById,bensByP,veiculosByP,odMap,odByName,iclMap};
   _acAudPaint();
 }
 function _acNorm(s){return String(s==null?'':s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\s+/g,' ').trim();}
@@ -2412,7 +2338,7 @@ function _acOdSummary(od){
 }
 function _acAudPaint(){
   const body=document.getElementById('ac-body');if(!body||!_acAudData)return;
-  const {orgs,setores,pessoas,setorById,itensByP,odMap,odByName,iclMap}=_acAudData;
+  const {orgs,setores,pessoas,setorById,bensByP,veiculosByP,odMap,odByName,iclMap}=_acAudData;
   const orgName=id=>{const o=orgs.find(x=>x.id===id);return o?o.nome:null;};
   const tree={};
   pessoas.forEach(p=>{
@@ -2438,11 +2364,14 @@ function _acAudPaint(){
     }
     return [];
   };
-  const inPoss=d=>(d.status==='em_uso'||d.status==='a_devolver');
-  // Taxonomia nova de patrimônio (Tarefa 5): a categoria "Veículos" vai pra linha
-  // "Patrimônio"; todo o resto (TI, Móveis, Telefonia, Outro) cai em "Dispositivos".
-  const dispOf=p=>(itensByP[p.id]||[]).filter(d=>d.categoria!=='Veículos'&&inPoss(d));
-  const veicOf=p=>(itensByP[p.id]||[]).filter(d=>d.categoria==='Veículos'&&inPoss(d));
+  // Bens (patrimonio_bens) e veículos (frota_veiculos) desta pessoa — fonte de
+  // verdade nova (13/08/2026); acessos_dispositivos, que estas colunas liam
+  // antes, tinha 0 linhas desde sempre e dizia "nenhum" pra todo mundo.
+  // SEM filtro por situação de propósito (o antigo `inPoss` não volta): um bem
+  // no nome da pessoa é responsabilidade dela mesmo `em_estoque` — é isso que
+  // o dono quis dizer com "os bens que a pessoa usa". Não "consertar" de volta.
+  const dispOf=p=>bensByP[p.id]||[];
+  const veicOf=p=>veiculosByP[p.id]||[];
   const orgNomeOf=p=>{const s=p.setor_id?setorById[p.setor_id]:null;return p.organizacao_id?orgName(p.organizacao_id):(s&&s.organizacao_id?orgName(s.organizacao_id):null);};
   const item=(logo,k,v)=>`<div class="ac-aud-item"><div class="ac-aud-k">${logo||''}${k}</div><div class="ac-aud-v">${v}</div></div>`;
   // Selo de "muitas pastas": destaque honesto pra quem acumulou acesso ao OneDrive
@@ -2456,8 +2385,8 @@ function _acAudPaint(){
           <div class="ac-kicker">${_acEsc(p.cargo||'—')}${orgN?' · '+_acEsc(orgN):''}</div></div></div>
       ${item(_acLogo('zoho'),'Zoho',p.email_corporativo?_acEsc(p.email_corporativo):'<span class="ac-muted">—</span>')}
       ${item(_acLogo('apple'),'Apple',p.conta_apple?_acEsc(p.conta_apple):'<span class="ac-muted">—</span>')}
-      ${item('','Dispositivos',disp.length?disp.map(d=>_acEsc(d.descricao||_acItemTipoLabel(d.tipo))).join(', '):'<span class="ac-muted">nenhum</span>')}
-      ${item('','Patrimônio',veic.length?veic.map(d=>_acEsc(d.descricao||_acItemTipoLabel(d.tipo))).join(', '):'<span class="ac-muted">nenhum</span>')}
+      ${item('','Bens',disp.length?disp.map(d=>_acEsc(d.nome||'(sem nome)')).join(', '):'<span class="ac-muted">nenhum</span>')}
+      ${item('','Veículos',veic.length?veic.map(d=>_acEsc(d.nome||'(sem nome)')).join(', '):'<span class="ac-muted">nenhum</span>')}
     </div>`;
   };
   const listRow=p=>{
@@ -2469,7 +2398,7 @@ function _acAudPaint(){
       <div class="grow" style="min-width:0"><div class="ac-person-name">${_acEsc(p.nome)} ${p.status==='desligado'?'<span class="ac-pill neutral">desligado</span>':''}${odMuitas?`<span class="ac-badge-muitas" title="Acesso a muitas pastas do OneDrive — vale revisar">${od.length} pastas</span>`:''}</div>
         <div class="ac-kicker">${_acEsc(p.cargo||'—')}${orgN?' · '+_acEsc(orgN):''}</div>
         ${p.email_corporativo?`<div class="ac-person-email">${_acEsc(p.email_corporativo)}</div>`:''}</div>
-      <div class="ac-audrow-counts">${cnt(_acLogo('apple'),'iCloud',icl.length)}${cnt('','Disp',disp.length)}${cnt('','Patrim',veic.length)}</div>
+      <div class="ac-audrow-counts">${cnt(_acLogo('apple'),'iCloud',icl.length)}${cnt('','Bens',disp.length)}${cnt('','Veíc',veic.length)}</div>
       <button class="ac-btn ghost" onclick="_acOpenPessoa('${p.id}')">Abrir →</button>
     </div>`;
   };
@@ -2495,27 +2424,26 @@ function _acAudPaint(){
 // funcionarem (mesma técnica de window._npSetView em tela-de-noticias.vue).
 Object.assign(window, {
   _acAddOrg, _acAddSetor, _acAudPaint, _acAudSetView, _acAudTog, _acAvatar, _acCatTitulo, _acColabPicker,
-  _acConectarOneDrive, _acConectarZoho, _acCopy, _acCopyFallback, _acDelItem, _acDelOrg, _acDelSetor, _acDelTermo,
+  _acConectarOneDrive, _acConectarZoho, _acCopy, _acCopyFallback, _acDelOrg, _acDelSetor, _acDelTermo,
   _acDesligar, _acDownloadTermo, _acDriveAddMarca, _acDriveAddSetor, _acDriveAllSectors, _acDriveBuildTree, _acDriveClassify, _acDriveDelMarca,
   _acDriveDelSetor, _acDriveDragEnd, _acDriveDragLeave, _acDriveDragOver, _acDriveDragStart, _acDriveDrop, _acDriveExplode, _acDriveFlowNode,
   _acDriveFlowTog, _acDriveFolderCard, _acDriveLabelOf, _acDriveLegend, _acDriveLiberarSetor, _acDriveMove, _acDrivePaintShell, _acDriveRenderFlow,
   _acDriveRepaint, _acDriveSecColor, _acDriveSectorOf, _acDriveSelectMarca, _acDriveSetDepth, _acDriveSetView, _acDriveShare, _acDriveToggleSec,
-  _acDriveWire, _acDstMeta, _acEsc, _acExcluirColaborador, _acFieldsFor, _acFixAliases, _acFormColaborador, _acFormItem,
+  _acDriveWire, _acDstMeta, _acEsc, _acExcluirColaborador, _acFieldsFor, _acFixAliases, _acFormColaborador,
   _acFichaEditarCampo, _acFichaCarregarAcessos, _acFichaCarregarContadores, _acFichaAvatarGrande,
   _acFormSetorOpts, _acHandleZohoReturn, _acICAcessos, _acICAddAcesso, _acICAddFolder, _acICLoadFolders, _acICRemoveAcesso, _acICRemoveFolder,
   _acICToggleAcessos, _acICToggleFeito, _acImportarZoho, _acItemTipoLabel, _acLog, _acLogo, _acNorm, _acODAdd,
   _acODBrowse, _acODOpen, _acODPicker, _acODUp,
   _acODStatus, _acOdSummary, _acOpenICloud, _acOpenOrg,
   _acOpenPessoa, _acOpenSetor, _acOrgIco, _acPickAll, _acPickCount, _acPickFilter, _acProvisionar, _acProxy,
-  _acReativar, _acReconcileEmail, _acRender, _acRenderAuditoria, _acRenderColaboradores, _acRenderConfiguracoes, _acRenderDispositivos, _acRenderDrive,
-  _acRenderFicha, _acRenderICloud, _acRenderItens, _acRenderOrganizacoes, _acRenderSetores, _acRenderTermos, _acRenderVeiculos,
-  _acSanitizeName, _acSaveColaborador, _acSaveItem, _acSetItemStatus, _acSetorIco, _acSetTab, _acTiposFor, _acToggleOrg, _acVoltarSel,
+  _acReativar, _acReconcileEmail, _acRender, _acRenderAuditoria, _acRenderColaboradores, _acRenderConfiguracoes, _acRenderDrive,
+  _acRenderFicha, _acRenderICloud, _acRenderOrganizacoes, _acRenderSetores, _acRenderTermos,
+  _acSanitizeName, _acSaveColaborador, _acSetorIco, _acSetTab, _acTiposFor, _acToggleOrg, _acVoltarSel,
   _acUploadAvatar, _acUploadTermo, _acWrapId, _acZohoStatus,
   _acDriveSetProvedor, _acDriveProvedorBar, _acRenderWorkdrive, _acWdCarregarPastas, _acWdRepaint,
   _acWdNo, _acWdAlternar, _acWdImportar,
-  // Patrimônio (Tarefa 5): CRUD na ficha, histórico de posse e aba consolidada.
-  _acPatStatusPill, _acRenderPatItens, _acPatRow, _acPatForm, _acPatTrocarDono, _acPatHistorico,
-  _acPatDel
+  // Bens & Veículos na ficha: só leitura (patrimonio_bens + frota_veiculos).
+  _acRenderPatItens, _acVerPatrimonio, _acVerFrota
 })
 
 // ==========================================================================
@@ -2725,9 +2653,9 @@ const logoEscuroUrl = '/midia/LOGOTIPOBRENOBRANCO.png'
 .tela-acessos{display:flex;flex-direction:column;min-height:100vh;position:relative;z-index:1;background:transparent}
 .tela-acessos :deep(.ac-topbar .rbv-logo){height:24px;width:auto;}
 .tela-acessos :deep(.ac-topbar){display:flex;align-items:center;gap:18px;padding:16px 24px;border-bottom:1px solid rgba(255,255,255,.08);position:sticky;top:0;background:inherit;flex-wrap:wrap}
-.tela-acessos :deep(.ac-back){background:none;border:1px solid rgba(255,255,255,.18);color:inherit;border-radius:8px;padding:6px 12px;cursor:pointer;font-size:13px}
+.tela-acessos :deep(.ac-back){background:none;border:1px solid rgba(255,255,255,.18);color:inherit;border-radius:8px;padding:6px 12px;cursor:pointer;font-size:max(9px, calc(13px * var(--escala-texto, 1)))}
 .tela-acessos :deep(.ac-tabs){display:flex;gap:6px;margin-left:auto}
-.tela-acessos :deep(.ac-tab){background:none;border:1px solid rgba(255,255,255,.14);color:inherit;border-radius:8px;padding:6px 14px;cursor:pointer;font-size:13px}
+.tela-acessos :deep(.ac-tab){background:none;border:1px solid rgba(255,255,255,.14);color:inherit;border-radius:8px;padding:6px 14px;cursor:pointer;font-size:max(9px, calc(13px * var(--escala-texto, 1)))}
 .tela-acessos :deep(.ac-tab.active){background:var(--modulo);border-color:var(--modulo);color:var(--sobre-cor)}
 .tela-acessos :deep(.ac-body){padding:20px clamp(14px,2.4vw,44px);width:100%}
 
@@ -2741,12 +2669,12 @@ const logoEscuroUrl = '/midia/LOGOTIPOBRENOBRANCO.png'
 .tela-acessos .ac-topo{padding:clamp(16px,2.2vw,26px) clamp(14px,2.4vw,44px) 0;width:100%}
 .tela-acessos :deep(.ac-hero){display:flex;align-items:flex-end;justify-content:space-between;gap:20px;flex-wrap:wrap;margin-bottom:18px}
 .tela-acessos :deep(.ac-hero-brand){display:flex;align-items:center;gap:12px;min-width:0}
-.tela-acessos .ac-hero-mark{width:38px;height:38px;border-radius:10px;flex:none;display:grid;place-items:center;color:var(--sobre-cor);font-weight:800;font-size:16px;letter-spacing:.5px;background:linear-gradient(135deg,var(--accent),color-mix(in srgb,var(--accent) 72%,#000));box-shadow:var(--shadow-sm)}
+.tela-acessos .ac-hero-mark{width:38px;height:38px;border-radius:10px;flex:none;display:grid;place-items:center;color:var(--sobre-cor);font-weight:800;font-size:max(16px, calc(16px * var(--escala-texto, 1)));letter-spacing:.5px;background:linear-gradient(135deg,var(--accent),color-mix(in srgb,var(--accent) 72%,#000));box-shadow:var(--shadow-sm)}
 .tela-acessos :deep(.ac-hero-h1){margin:0;font-family:var(--fonte-principal);font-size:clamp(19px,2.3vw,25px);font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--text);line-height:1.05}
-.tela-acessos :deep(.ac-hero-sub){color:var(--muted);font-size:12.5px;margin-top:3px;line-height:1.35}
+.tela-acessos :deep(.ac-hero-sub){color:var(--muted);font-size:max(9px, calc(12.5px * var(--escala-texto, 1)));margin-top:3px;line-height:1.35}
 .tela-acessos :deep(.ac-hero-provs){display:flex;gap:8px;flex-wrap:wrap}
-.tela-acessos :deep(.ac-hero-prov){display:flex;align-items:center;gap:7px;padding:7px 12px;border:1px solid var(--border);border-radius:999px;background:var(--surface);font-size:12.5px;font-weight:600;color:var(--text);box-shadow:var(--shadow-sm)}
-.tela-acessos :deep(.ac-hero-prov-note){color:var(--muted);font-weight:500;font-size:11.5px}
+.tela-acessos :deep(.ac-hero-prov){display:flex;align-items:center;gap:7px;padding:7px 12px;border:1px solid var(--border);border-radius:999px;background:var(--surface);font-size:max(9px, calc(12.5px * var(--escala-texto, 1)));font-weight:600;color:var(--text);box-shadow:var(--shadow-sm)}
+.tela-acessos :deep(.ac-hero-prov-note){color:var(--muted);font-weight:500;font-size:max(9px, calc(11.5px * var(--escala-texto, 1)))}
 .tela-acessos :deep(.ac-hero-prov-note):empty{display:none}
 .tela-acessos :deep(.ac-hero-dot){width:8px;height:8px;border-radius:999px;flex:none;background:var(--muted)}
 .tela-acessos :deep(.ac-hero-dot).on{background:var(--green);box-shadow:0 0 0 3px color-mix(in srgb,var(--green) 20%,transparent)}
@@ -2766,7 +2694,7 @@ const logoEscuroUrl = '/midia/LOGOTIPOBRENOBRANCO.png'
 .tela-acessos :deep(.ac-kpi.k2 .ac-kpi-ico){background:linear-gradient(140deg,var(--green),var(--green))}
 .tela-acessos :deep(.ac-kpi.k3 .ac-kpi-ico){background:linear-gradient(140deg,var(--orange),var(--orange))}
 .tela-acessos :deep(.ac-kpi.k4 .ac-kpi-ico){background:linear-gradient(140deg,#4338ca,#7c6cf6)}
-.tela-acessos :deep(.ac-kpi-fine){order:3;font-size:11.5px;color:var(--muted);margin-top:8px;line-height:1.4;opacity:.85}
+.tela-acessos :deep(.ac-kpi-fine){order:3;font-size:max(9px, calc(11.5px * var(--escala-texto, 1)));color:var(--muted);margin-top:8px;line-height:1.4;opacity:.85}
 
 /* ── Atalhos da Visão geral ──────────────────────────────────────────────────
    Os três botões estavam sem regra nenhuma e ficavam jogados embaixo dos cards.
@@ -2780,9 +2708,9 @@ const logoEscuroUrl = '/midia/LOGOTIPOBRENOBRANCO.png'
 .tela-acessos :deep(.ac-atalho-ico.drive){background:linear-gradient(135deg,var(--orange),var(--orange))}
 .tela-acessos :deep(.ac-atalho-ico.aud){background:linear-gradient(135deg,#4f46e5,#7c3aed)}
 .tela-acessos :deep(.ac-atalho-txt){flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
-.tela-acessos :deep(.ac-atalho-txt b){font-size:14px;font-weight:600}
-.tela-acessos :deep(.ac-atalho-txt em){font-style:normal;font-size:11.5px;color:var(--muted);line-height:1.35}
-.tela-acessos :deep(.ac-atalho-seta){color:var(--muted);font-size:18px;flex:none}
+.tela-acessos :deep(.ac-atalho-txt b){font-size:max(9px, calc(14px * var(--escala-texto, 1)));font-weight:600}
+.tela-acessos :deep(.ac-atalho-txt em){font-style:normal;font-size:max(9px, calc(11.5px * var(--escala-texto, 1)));color:var(--muted);line-height:1.35}
+.tela-acessos :deep(.ac-atalho-seta){color:var(--muted);font-size:max(16px, calc(18px * var(--escala-texto, 1)));flex:none}
 @media(max-width:900px){.tela-acessos :deep(.ac-geral-atalhos){grid-template-columns:1fr}}
 /* No celular os 4 KPIs viram 2 colunas (não estoura a tela) e o cabeçalho
    empilha marca em cima, pills embaixo. */
@@ -2801,11 +2729,11 @@ const logoEscuroUrl = '/midia/LOGOTIPOBRENOBRANCO.png'
      esconder conteudo e exatamente o que o dono mandou parar de fazer. A
      altura sai do titulo, que estava grande demais pra tela pequena — o
      subtitulo custa 16px e diz de quem sao as pessoas listadas. */
-  .tela-acessos :deep(.ac-hero-h1){font-size:17px;letter-spacing:.6px}
-  .tela-acessos :deep(.ac-hero-sub){font-size:11.5px;margin-top:2px}
+  .tela-acessos :deep(.ac-hero-h1){font-size:max(16px, calc(17px * var(--escala-texto, 1)));letter-spacing:.6px}
+  .tela-acessos :deep(.ac-hero-sub){font-size:max(9px, calc(11.5px * var(--escala-texto, 1)));margin-top:2px}
 }
 @media(max-width:420px){
-  .tela-acessos :deep(.ac-kpi-val){font-size:27px}
+  .tela-acessos :deep(.ac-kpi-val){font-size:max(16px, calc(27px * var(--escala-texto, 1)))}
 }
 
 /* ===== Aba "Pastas & Acessos" (Tarefa 3): master-detail 3 colunas =====
@@ -2817,8 +2745,8 @@ const logoEscuroUrl = '/midia/LOGOTIPOBRENOBRANCO.png'
 .tela-acessos :deep(.ac-console){display:grid;grid-template-columns:230px 1.15fr 1fr;gap:16px;align-items:start}
 .tela-acessos :deep(.ac-panel){background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow-sm);overflow:hidden}
 .tela-acessos :deep(.ac-phead){padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:8px}
-.tela-acessos :deep(.ac-phead h2){font-size:13px;margin:0;font-weight:700;letter-spacing:-.01em;color:var(--text)}
-.tela-acessos :deep(.ac-cnt){font-size:12px;color:var(--muted);font-weight:600}
+.tela-acessos :deep(.ac-phead h2){font-size:max(9px, calc(13px * var(--escala-texto, 1)));margin:0;font-weight:700;letter-spacing:-.01em;color:var(--text)}
+.tela-acessos :deep(.ac-cnt){font-size:max(9px, calc(12px * var(--escala-texto, 1)));color:var(--muted);font-weight:600}
 .tela-acessos :deep(.tnum){font-variant-numeric:tabular-nums}
 /* rail de provedores */
 .tela-acessos :deep(.ac-rail-list){padding:8px}
@@ -2826,8 +2754,8 @@ const logoEscuroUrl = '/midia/LOGOTIPOBRENOBRANCO.png'
 .tela-acessos :deep(.ac-rail-item+.ac-rail-item){margin-top:4px}
 .tela-acessos :deep(.ac-rail-item:hover){background:var(--surface2)}
 .tela-acessos :deep(.ac-rail-item.sel){background:var(--accent-light);border-color:var(--accent-mid)}
-.tela-acessos :deep(.ac-rail-name){display:flex;align-items:center;gap:8px;font-weight:650;font-size:13.5px;color:var(--text)}
-.tela-acessos :deep(.ac-glyph){width:22px;height:22px;border-radius:6px;display:grid;place-items:center;color:#fff;font-size:12px;font-weight:800;flex:none}
+.tela-acessos :deep(.ac-rail-name){display:flex;align-items:center;gap:8px;font-weight:650;font-size:max(9px, calc(13.5px * var(--escala-texto, 1)));color:var(--text)}
+.tela-acessos :deep(.ac-glyph){width:22px;height:22px;border-radius:6px;display:grid;place-items:center;color:#fff;font-size:max(9px, calc(12px * var(--escala-texto, 1)));font-weight:800;flex:none}
 /* CORES DE MARCA DE TERCEIRO — NÃO trocar por token, e não é esquecimento.
    Verde do Zoho, azul da Microsoft, cinza da Apple: elas identificam o serviço
    de onde o acesso vem, e trocar por --green/--accent faria os três parecerem
@@ -2836,8 +2764,8 @@ const logoEscuroUrl = '/midia/LOGOTIPOBRENOBRANCO.png'
 .tela-acessos :deep(.ac-g-zoho){background:var(--green)}
 .tela-acessos :deep(.ac-g-ms){background:var(--accent)}
 .tela-acessos :deep(.ac-g-ap){background:#586172}
-.tela-acessos :deep(.ac-rail-meta){display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--muted);padding-left:30px;flex-wrap:wrap}
-.tela-acessos :deep(.ac-tag){display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding:2px 7px;border-radius:999px}
+.tela-acessos :deep(.ac-rail-meta){display:flex;align-items:center;gap:8px;font-size:max(9px, calc(11.5px * var(--escala-texto, 1)));color:var(--muted);padding-left:30px;flex-wrap:wrap}
+.tela-acessos :deep(.ac-tag){display:inline-flex;align-items:center;gap:4px;font-size:max(9px, calc(10.5px * var(--escala-texto, 1)));font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding:2px 7px;border-radius:999px}
 .tela-acessos :deep(.ac-tag.ativo){color:var(--green);background:color-mix(in srgb,var(--green) 14%,transparent)}
 .tela-acessos :deep(.ac-tag.legado){color:var(--orange);background:color-mix(in srgb,var(--orange) 14%,transparent)}
 /* lista de pastas */
@@ -2847,45 +2775,45 @@ const logoEscuroUrl = '/midia/LOGOTIPOBRENOBRANCO.png'
 .tela-acessos :deep(.ac-frow){display:flex;align-items:center;gap:9px;padding:10px 12px;cursor:pointer;border-left:2px solid transparent}
 .tela-acessos :deep(.ac-frow:hover){background:var(--surface2)}
 .tela-acessos :deep(.ac-frow.sel){background:var(--accent-light);border-left-color:var(--accent-forte)}
-.tela-acessos :deep(.ac-ftog){background:none;border:none;color:var(--muted);cursor:pointer;font-size:11px;line-height:1;padding:2px;flex:none;transition:transform .15s ease;transform:rotate(0deg)}
+.tela-acessos :deep(.ac-ftog){background:none;border:none;color:var(--muted);cursor:pointer;font-size:max(9px, calc(11px * var(--escala-texto, 1)));line-height:1;padding:2px;flex:none;transition:transform .15s ease;transform:rotate(0deg)}
 .tela-acessos :deep(.ac-ftog.open){transform:rotate(90deg)}
 .tela-acessos :deep(.ac-fdot){width:5px;height:5px;border-radius:999px;background:var(--border);flex:none;margin:0 6px}
 .tela-acessos :deep(.ac-fic){width:16px;height:16px;flex:none;color:var(--muted)}
-.tela-acessos :deep(.ac-fname){font-weight:600;font-size:13.5px;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text)}
+.tela-acessos :deep(.ac-fname){font-weight:600;font-size:max(9px, calc(13.5px * var(--escala-texto, 1)));flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text)}
 /* detalhe */
 .tela-acessos :deep(.ac-pa-detpanel){min-height:220px}
-.tela-acessos :deep(.ac-det-empty){padding:40px 24px;display:flex;flex-direction:column;align-items:center;gap:12px;text-align:center;color:var(--muted);font-size:13px}
+.tela-acessos :deep(.ac-det-empty){padding:40px 24px;display:flex;flex-direction:column;align-items:center;gap:12px;text-align:center;color:var(--muted);font-size:max(9px, calc(13px * var(--escala-texto, 1)))}
 .tela-acessos :deep(.ac-det-empty svg){width:34px;height:34px;opacity:.5}
 .tela-acessos :deep(.ac-det-hero){padding:18px 18px 16px;border-bottom:1px solid var(--border)}
-.tela-acessos :deep(.ac-det-crumb){font-size:11.5px;color:var(--muted);font-weight:600;margin-bottom:7px}
+.tela-acessos :deep(.ac-det-crumb){font-size:max(9px, calc(11.5px * var(--escala-texto, 1)));color:var(--muted);font-weight:600;margin-bottom:7px}
 .tela-acessos :deep(.ac-det-title){display:flex;align-items:center;gap:11px}
 .tela-acessos :deep(.ac-det-big){width:34px;height:34px;border-radius:9px;display:grid;place-items:center;color:#fff;flex:none}
 .tela-acessos :deep(.ac-det-big .ac-fic){width:18px;height:18px;color:#fff}
-.tela-acessos :deep(.ac-det-title h3){margin:0;font-size:17px;font-weight:700;letter-spacing:-.02em;color:var(--text)}
+.tela-acessos :deep(.ac-det-title h3){margin:0;font-size:max(16px, calc(17px * var(--escala-texto, 1)));font-weight:700;letter-spacing:-.02em;color:var(--text)}
 .tela-acessos :deep(.ac-det-chips){display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
-.tela-acessos :deep(.ac-chip){display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;padding:5px 11px;border-radius:999px;border:1px solid var(--border);background:var(--surface2);color:var(--text)}
+.tela-acessos :deep(.ac-chip){display:inline-flex;align-items:center;gap:6px;font-size:max(9px, calc(12px * var(--escala-texto, 1)));font-weight:600;padding:5px 11px;border-radius:999px;border:1px solid var(--border);background:var(--surface2);color:var(--text)}
 .tela-acessos :deep(.ac-ci){width:13px;height:13px;color:var(--muted)}
-.tela-acessos :deep(.ac-sec-lab){padding:15px 18px 4px;font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:700}
+.tela-acessos :deep(.ac-sec-lab){padding:15px 18px 4px;font-size:max(9px, calc(11.5px * var(--escala-texto, 1)));text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:700}
 .tela-acessos :deep(.ac-people){padding:6px 10px 12px}
 .tela-acessos :deep(.ac-prow){display:flex;align-items:center;gap:12px;padding:9px 8px;border-radius:var(--radius-sm)}
 .tela-acessos :deep(.ac-prow:hover){background:var(--surface2)}
-.tela-acessos :deep(.ac-av){width:34px;height:34px;border-radius:999px;flex:none;display:grid;place-items:center;color:#fff;font-weight:700;font-size:13px}
+.tela-acessos :deep(.ac-av){width:34px;height:34px;border-radius:999px;flex:none;display:grid;place-items:center;color:#fff;font-weight:700;font-size:max(9px, calc(13px * var(--escala-texto, 1)))}
 .tela-acessos :deep(.ac-pmeta){flex:1;min-width:0}
-.tela-acessos :deep(.ac-pname){font-weight:650;font-size:13.5px;color:var(--text)}
-.tela-acessos :deep(.ac-pmail){font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.tela-acessos :deep(.ac-role){font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:999px;flex:none;color:var(--accent-forte);background:var(--accent-light);white-space:nowrap}
+.tela-acessos :deep(.ac-pname){font-weight:650;font-size:max(9px, calc(13.5px * var(--escala-texto, 1)));color:var(--text)}
+.tela-acessos :deep(.ac-pmail){font-size:max(9px, calc(12px * var(--escala-texto, 1)));color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tela-acessos :deep(.ac-role){font-size:max(9px, calc(11.5px * var(--escala-texto, 1)));font-weight:700;padding:4px 10px;border-radius:999px;flex:none;color:var(--accent-forte);background:var(--accent-light);white-space:nowrap}
 .tela-acessos :deep(.ac-linkrow){display:flex;align-items:center;gap:11px;padding:10px 8px;border-radius:var(--radius-sm)}
 .tela-acessos :deep(.ac-linkrow svg){width:18px;height:18px;flex:none;color:var(--muted)}
-.tela-acessos :deep(.ac-linkurl){font-size:12.5px;color:var(--text);word-break:break-all;line-height:1.35}
-.tela-acessos :deep(.ac-btn2){flex:none;background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);padding:7px 13px;font-size:12.5px;font-weight:600;cursor:pointer}
+.tela-acessos :deep(.ac-linkurl){font-size:max(9px, calc(12.5px * var(--escala-texto, 1)));color:var(--text);word-break:break-all;line-height:1.35}
+.tela-acessos :deep(.ac-btn2){flex:none;background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);padding:7px 13px;font-size:max(9px, calc(12.5px * var(--escala-texto, 1)));font-weight:600;cursor:pointer}
 .tela-acessos :deep(.ac-btn2:hover){background:var(--surface2)}
-.tela-acessos :deep(.ac-pa-detpanel .ac-empty){display:flex;align-items:center;gap:10px;padding:14px 16px;border:1px dashed var(--border);border-radius:var(--radius-md);color:var(--muted);font-size:13px;background:var(--surface2)}
+.tela-acessos :deep(.ac-pa-detpanel .ac-empty){display:flex;align-items:center;gap:10px;padding:14px 16px;border:1px dashed var(--border);border-radius:var(--radius-md);color:var(--muted);font-size:max(9px, calc(13px * var(--escala-texto, 1)));background:var(--surface2)}
 .tela-acessos :deep(.ac-pa-detpanel .ac-empty svg){width:18px;height:18px;flex:none;opacity:.7}
 .tela-acessos :deep(.ac-actbar){padding:14px 18px;border-top:1px solid var(--border);display:flex;gap:9px;flex-wrap:wrap}
-.tela-acessos :deep(.ac-btn-lock){display:inline-flex;align-items:center;gap:7px;font-size:13px;font-weight:600;padding:9px 15px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--surface);color:var(--muted);cursor:not-allowed;opacity:.8}
+.tela-acessos :deep(.ac-btn-lock){display:inline-flex;align-items:center;gap:7px;font-size:max(9px, calc(13px * var(--escala-texto, 1)));font-weight:600;padding:9px 15px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--surface);color:var(--muted);cursor:not-allowed;opacity:.8}
 .tela-acessos :deep(.ac-btn-lock svg){width:15px;height:15px}
 /* Botões de ESCRITA do OneDrive na barra de ações (a versão "ligada" do ac-btn-lock). */
-.tela-acessos :deep(.ac-btn-do){display:inline-flex;align-items:center;gap:7px;font-size:13px;font-weight:640;padding:9px 15px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer;transition:background .12s ease,filter .12s ease}
+.tela-acessos :deep(.ac-btn-do){display:inline-flex;align-items:center;gap:7px;font-size:max(9px, calc(13px * var(--escala-texto, 1)));font-weight:640;padding:9px 15px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer;transition:background .12s ease,filter .12s ease}
 .tela-acessos :deep(.ac-btn-do svg){width:15px;height:15px}
 .tela-acessos :deep(.ac-btn-do:hover){background:var(--surface2)}
 .tela-acessos :deep(.ac-btn-do.primary){background:var(--accent);border-color:var(--accent);color:var(--sobre-cor)}
@@ -2898,7 +2826,7 @@ const logoEscuroUrl = '/midia/LOGOTIPOBRENOBRANCO.png'
 .tela-acessos :deep(.ac-prow-rem:hover){background:color-mix(in srgb,var(--red) 12%,transparent);color:var(--red);border-color:transparent}
 /* botãozinho "+ Adicionar pasta" no cabeçalho da lista + o agrupador à direita. */
 .tela-acessos :deep(.ac-phead-r){display:flex;align-items:center;gap:8px}
-.tela-acessos :deep(.ac-btn-mini){font-size:12px;font-weight:640;padding:5px 11px;border-radius:999px;border:1px solid var(--accent-mid);background:var(--accent-light);color:var(--accent-forte);cursor:pointer;white-space:nowrap}
+.tela-acessos :deep(.ac-btn-mini){font-size:max(9px, calc(12px * var(--escala-texto, 1)));font-weight:640;padding:5px 11px;border-radius:999px;border:1px solid var(--accent-mid);background:var(--accent-light);color:var(--accent-forte);cursor:pointer;white-space:nowrap}
 .tela-acessos :deep(.ac-btn-mini:hover){filter:brightness(1.04)}
 /* mobile: as 3 colunas empilham; o rail vira faixa rolável no topo */
 @media(max-width:1080px){
@@ -2916,12 +2844,12 @@ const logoEscuroUrl = '/midia/LOGOTIPOBRENOBRANCO.png'
    depois do recuo, e 330 estourava a tela. Em telas grandes o auto-fill
    continua enchendo com quantas colunas couberem, entao nada muda la. */
 .tela-acessos :deep(.ac-aud-grid){display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
-.tela-acessos :deep(.ac-aud-line){margin-top:5px;font-size:13px}
+.tela-acessos :deep(.ac-aud-line){margin-top:5px;font-size:max(9px, calc(13px * var(--escala-texto, 1)))}
 .tela-acessos :deep(.ac-aud-line .ac-kicker){display:inline}
 .tela-acessos :deep(.ac-card){border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:16px;margin-bottom:14px}
 .tela-acessos :deep(.ac-row){display:flex;align-items:center;gap:12px;padding:10px 12px;border:1px solid rgba(255,255,255,.08);border-radius:10px;margin-bottom:8px;flex-wrap:wrap}
 .tela-acessos :deep(.ac-row .grow){flex:1;min-width:160px}
-.tela-acessos :deep(.ac-muted){opacity:.6;font-size:12px}
+.tela-acessos :deep(.ac-muted){opacity:.6;font-size:max(9px, calc(12px * var(--escala-texto, 1)))}
 /* Aviso de "o quadro abaixo está incompleto".
    Usa var(--orange) e não cor cravada porque o painel tem tema claro E escuro:
    cor fixa ficaria ilegível num dos dois. Precisa de :deep() porque a Auditoria
@@ -2931,7 +2859,7 @@ const logoEscuroUrl = '/midia/LOGOTIPOBRENOBRANCO.png'
   border:1px solid var(--orange);border-left-width:4px;
   border-radius:var(--radius-md);
   background:color-mix(in srgb, var(--orange) 8%, transparent);
-  color:var(--orange);font-size:13px;line-height:1.45;font-weight:600;
+  color:var(--orange);font-size:max(9px, calc(13px * var(--escala-texto, 1)));line-height:1.45;font-weight:600;
 }
 /* Aviso "atualizando…" após uma escrita no WorkDrive (informativo, não alarme):
    usa o tom de acento, não o laranja de erro. Tokens de tema (claro E escuro). */
@@ -2940,18 +2868,18 @@ const logoEscuroUrl = '/midia/LOGOTIPOBRENOBRANCO.png'
   border:1px solid var(--accent-mid);border-left-width:4px;
   border-radius:var(--radius-md);
   background:var(--accent-light);
-  color:var(--accent);font-size:12.5px;line-height:1.45;font-weight:600;
+  color:var(--accent);font-size:max(9px, calc(12.5px * var(--escala-texto, 1)));line-height:1.45;font-weight:600;
 }
 /* Seletor leitura/edição da barra de ações do WorkDrive. */
-.tela-acessos :deep(.ac-wd-papel-wrap){display:inline-flex;align-items:center;gap:7px;font-size:12.5px;font-weight:640;color:var(--muted)}
-.tela-acessos :deep(.ac-wd-papel){font-size:13px;font-weight:600;padding:8px 10px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer}
-.tela-acessos :deep(.ac-btn){background:var(--modulo);border:none;color:var(--sobre-cor);border-radius:8px;padding:7px 14px;cursor:pointer;font-size:13px}
+.tela-acessos :deep(.ac-wd-papel-wrap){display:inline-flex;align-items:center;gap:7px;font-size:max(9px, calc(12.5px * var(--escala-texto, 1)));font-weight:640;color:var(--muted)}
+.tela-acessos :deep(.ac-wd-papel){font-size:max(9px, calc(13px * var(--escala-texto, 1)));font-weight:600;padding:8px 10px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer}
+.tela-acessos :deep(.ac-btn){background:var(--modulo);border:none;color:var(--sobre-cor);border-radius:8px;padding:7px 14px;cursor:pointer;font-size:max(9px, calc(13px * var(--escala-texto, 1)))}
 .tela-acessos :deep(.ac-btn.ghost){background:none;border:1px solid rgba(255,255,255,.18);color:inherit}
 .tela-acessos :deep(.ac-btn.danger){background:var(--red)}
-.tela-acessos :deep(.ac-input), .tela-acessos :deep(.ac-select), .tela-acessos :deep(.ac-textarea){background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.16);color:inherit;border-radius:8px;padding:8px 10px;font-size:13px;width:100%}
+.tela-acessos :deep(.ac-input), .tela-acessos :deep(.ac-select), .tela-acessos :deep(.ac-textarea){background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.16);color:inherit;border-radius:8px;padding:8px 10px;font-size:max(9px, calc(13px * var(--escala-texto, 1)));width:100%}
 .tela-acessos :deep(.ac-textarea){min-height:160px;font-family:ui-monospace,monospace}
 .tela-acessos :deep(.ac-grid2){display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.tela-acessos :deep(.ac-pill){display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:600}
+.tela-acessos :deep(.ac-pill){display:inline-block;padding:2px 9px;border-radius:999px;font-size:max(9px, calc(11px * var(--escala-texto, 1)));font-weight:600}
 .tela-acessos :deep(.ac-pill.ok){background:color-mix(in srgb,var(--green) 12%,var(--surface));color:color-mix(in srgb,var(--green) 75%,var(--text))}
 .tela-acessos :deep(.ac-pill.warn){background:color-mix(in srgb,var(--orange) 12%,var(--surface));color:color-mix(in srgb,var(--orange) 75%,var(--text))}
 .tela-acessos :deep(.ac-pill.bad){background:color-mix(in srgb,var(--red) 12%,var(--surface));color:color-mix(in srgb,var(--red) 65%,var(--text))}
@@ -2971,13 +2899,13 @@ const logoEscuroUrl = '/midia/LOGOTIPOBRENOBRANCO.png'
 .tela-acessos :deep(.ac-setor-card::before){content:"";position:absolute;inset:0;background:radial-gradient(120% 80% at 100% 0%,rgba(13,148,136,.18),transparent 60%);opacity:.7;pointer-events:none}
 .tela-acessos :deep(.ac-setor-card:hover){transform:translateY(-3px);border-color:rgba(13,148,136,.5);box-shadow:0 12px 28px -12px rgba(13,148,136,.5)}
 .tela-acessos :deep(.ac-setor-ico){width:42px;height:42px;border-radius:12px;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,color-mix(in srgb,var(--modulo) 80%,var(--text)),var(--modulo));color:var(--sobre-cor);margin-bottom:12px}
-.tela-acessos :deep(.ac-setor-nome){font-weight:700;font-size:15px;position:relative}
-.tela-acessos :deep(.ac-setor-sub){font-size:12px;opacity:.6;margin-top:2px;position:relative}
-.tela-acessos :deep(.ac-count){display:inline-flex;align-items:center;gap:5px;margin-top:12px;padding:3px 10px;border-radius:999px;background:rgba(13,148,136,.18);color:var(--modulo);font-size:12px;font-weight:700;position:relative}
-.tela-acessos :deep(.ac-setor-del){position:absolute;top:10px;right:10px;width:26px;height:26px;border-radius:8px;border:1px solid rgba(255,255,255,.14);background:rgba(0,0,0,.25);color:#f87171;cursor:pointer;opacity:0;transition:opacity .15s ease;display:flex;align-items:center;justify-content:center;font-size:14px;line-height:1}
+.tela-acessos :deep(.ac-setor-nome){font-weight:700;font-size:max(9px, calc(15px * var(--escala-texto, 1)));position:relative}
+.tela-acessos :deep(.ac-setor-sub){font-size:max(9px, calc(12px * var(--escala-texto, 1)));opacity:.6;margin-top:2px;position:relative}
+.tela-acessos :deep(.ac-count){display:inline-flex;align-items:center;gap:5px;margin-top:12px;padding:3px 10px;border-radius:999px;background:rgba(13,148,136,.18);color:var(--modulo);font-size:max(9px, calc(12px * var(--escala-texto, 1)));font-weight:700;position:relative}
+.tela-acessos :deep(.ac-setor-del){position:absolute;top:10px;right:10px;width:26px;height:26px;border-radius:8px;border:1px solid rgba(255,255,255,.14);background:rgba(0,0,0,.25);color:#f87171;cursor:pointer;opacity:0;transition:opacity .15s ease;display:flex;align-items:center;justify-content:center;font-size:max(9px, calc(14px * var(--escala-texto, 1)));line-height:1}
 .tela-acessos :deep(.ac-setor-card:hover .ac-setor-del){opacity:1}
 .tela-acessos :deep(.ac-pill.neutral){background:var(--surface2);color:var(--muted)}
-.tela-acessos :deep(.ac-chip){display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:8px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);font-size:11px;margin:2px 4px 2px 0}
+.tela-acessos :deep(.ac-chip){display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:8px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);font-size:max(9px, calc(11px * var(--escala-texto, 1)));margin:2px 4px 2px 0}
 /* overflow-y:auto no overlay = cinto de segurança: em telas MUITO baixas
    (paisagem no celular), se o modal + respiro ainda passar da janela, o
    próprio overlay rola em vez de cortar o conteúdo. */
@@ -3006,23 +2934,23 @@ const logoEscuroUrl = '/midia/LOGOTIPOBRENOBRANCO.png'
 /* ===== Acessos — lista de colaboradores premium ===== */
 .tela-acessos :deep(.ac-person){padding:13px 14px;gap:14px}
 .tela-acessos :deep(.ac-person .ac-avatar){box-shadow:var(--shadow-sm)}
-.tela-acessos :deep(.ac-person-name){font-family:var(--fonte-principal);font-size:19px;font-weight:600;color:var(--text);letter-spacing:0;display:flex;align-items:center;gap:10px;flex-wrap:wrap;line-height:1.15}
-.tela-acessos :deep(.ac-kicker){font-family:var(--fonte-principal);font-size:9.5px;font-weight:700;letter-spacing:1.8px;text-transform:uppercase;color:var(--muted);margin-top:4px}
-.tela-acessos :deep(.ac-person-email){font-family:var(--fonte-principal);font-size:12.5px;color:var(--muted);margin-top:3px}
+.tela-acessos :deep(.ac-person-name){font-family:var(--fonte-principal);font-size:max(16px, calc(19px * var(--escala-texto, 1)));font-weight:600;color:var(--text);letter-spacing:0;display:flex;align-items:center;gap:10px;flex-wrap:wrap;line-height:1.15}
+.tela-acessos :deep(.ac-kicker){font-family:var(--fonte-principal);font-size:max(9px, calc(9.5px * var(--escala-texto, 1)));font-weight:700;letter-spacing:1.8px;text-transform:uppercase;color:var(--muted);margin-top:4px}
+.tela-acessos :deep(.ac-person-email){font-family:var(--fonte-principal);font-size:max(9px, calc(12.5px * var(--escala-texto, 1)));color:var(--muted);margin-top:3px}
 /* ===== Acessos — tipografia (Sora principal + IBM Plex Mono nos números, alinhado ao app) ===== */
-.tela-acessos :deep(.ac-title){font-family:var(--fonte-principal);font-weight:600;font-size:19px;letter-spacing:.8px;text-transform:uppercase;color:var(--text)}
-.tela-acessos :deep(.ac-tab){font-family:var(--fonte-principal);font-size:11px;font-weight:600;letter-spacing:1.2px;text-transform:uppercase}
+.tela-acessos :deep(.ac-title){font-family:var(--fonte-principal);font-weight:600;font-size:max(16px, calc(19px * var(--escala-texto, 1)));letter-spacing:.8px;text-transform:uppercase;color:var(--text)}
+.tela-acessos :deep(.ac-tab){font-family:var(--fonte-principal);font-size:max(9px, calc(11px * var(--escala-texto, 1)));font-weight:600;letter-spacing:1.2px;text-transform:uppercase}
 .tela-acessos :deep(.ac-section-h){align-items:center;gap:12px;margin-bottom:18px;padding-bottom:12px;border-bottom:1px solid var(--border)}
-.tela-acessos :deep(.ac-section-h h3){font-family:var(--fonte-principal);font-weight:600;font-size:16px;letter-spacing:.7px;text-transform:uppercase;color:var(--text)}
+.tela-acessos :deep(.ac-section-h h3){font-family:var(--fonte-principal);font-weight:600;font-size:max(16px, calc(16px * var(--escala-texto, 1)));letter-spacing:.7px;text-transform:uppercase;color:var(--text)}
 .tela-acessos :deep(.ac-section-h h2){font-family:var(--fonte-principal);font-weight:800;font-size:clamp(22px,3vw,30px);letter-spacing:-.01em;line-height:1.05;text-transform:none;color:var(--text)}
-.tela-acessos :deep(.ac-card h3){font-family:var(--fonte-principal);font-weight:600;font-size:15px;letter-spacing:.6px;text-transform:uppercase;color:var(--text)}
+.tela-acessos :deep(.ac-card h3){font-family:var(--fonte-principal);font-weight:600;font-size:max(9px, calc(15px * var(--escala-texto, 1)));letter-spacing:.6px;text-transform:uppercase;color:var(--text)}
 .tela-acessos :deep(.ac-card){border-left:3px solid transparent;border-radius:14px;transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}
 .tela-acessos :deep(.ac-card:hover){border-left-color:var(--modulo)}
-.tela-acessos :deep(.ac-setor-nome){font-family:var(--fonte-principal);font-weight:600;font-size:18px;letter-spacing:.5px;text-transform:uppercase;color:var(--text)}
-.tela-acessos :deep(.ac-setor-sub){font-family:var(--fonte-principal);font-size:10px;font-weight:600;letter-spacing:1.6px;text-transform:uppercase;color:var(--muted);margin-top:5px}
-.tela-acessos :deep(.ac-count){font-family:var(--fonte-dados);font-size:13px;font-weight:500;letter-spacing:.6px;font-variant-numeric:tabular-nums}
+.tela-acessos :deep(.ac-setor-nome){font-family:var(--fonte-principal);font-weight:600;font-size:max(16px, calc(18px * var(--escala-texto, 1)));letter-spacing:.5px;text-transform:uppercase;color:var(--text)}
+.tela-acessos :deep(.ac-setor-sub){font-family:var(--fonte-principal);font-size:max(9px, calc(10px * var(--escala-texto, 1)));font-weight:600;letter-spacing:1.6px;text-transform:uppercase;color:var(--muted);margin-top:5px}
+.tela-acessos :deep(.ac-count){font-family:var(--fonte-dados);font-size:max(9px, calc(13px * var(--escala-texto, 1)));font-weight:500;letter-spacing:.6px;font-variant-numeric:tabular-nums}
 .tela-acessos :deep(.ac-row strong){font-weight:600;letter-spacing:.2px}
-.tela-acessos :deep(.ac-pill){font-family:var(--fonte-principal);font-size:10px;font-weight:700;letter-spacing:.6px;text-transform:uppercase}
+.tela-acessos :deep(.ac-pill){font-family:var(--fonte-principal);font-size:max(9px, calc(10px * var(--escala-texto, 1)));font-weight:700;letter-spacing:.6px;text-transform:uppercase}
 .tela-acessos :deep(.ac-chip){font-family:var(--fonte-principal);letter-spacing:.2px}
 .tela-acessos :deep(.ac-btn){font-family:var(--fonte-principal);font-weight:600;letter-spacing:.3px}
 .tela-acessos :deep(.ac-input), .tela-acessos :deep(.ac-select), .tela-acessos :deep(.ac-textarea){font-family:var(--fonte-principal)}
@@ -3038,9 +2966,9 @@ const logoEscuroUrl = '/midia/LOGOTIPOBRENOBRANCO.png'
 /* ===== Acessos — Fase 1: abertura expandida + mobile real ===== */
 .tela-acessos :deep(.ac-hero){display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:22px}
 .tela-acessos :deep(.ac-hero h2){font-family:var(--fonte-principal);font-weight:800;font-size:clamp(24px,4vw,34px);line-height:1.02;letter-spacing:-.01em;color:var(--text);margin:0}
-.tela-acessos :deep(.ac-hero .ac-sub){font-family:var(--fonte-principal);font-size:13px;color:var(--muted);margin-top:5px}
+.tela-acessos :deep(.ac-hero .ac-sub){font-family:var(--fonte-principal);font-size:max(9px, calc(13px * var(--escala-texto, 1)));color:var(--muted);margin-top:5px}
 .tela-acessos :deep(.ac-hero-actions){margin-left:auto;display:flex;gap:10px;flex-wrap:wrap}
-.tela-acessos :deep(.ac-btn.lg){padding:11px 18px;font-size:14px;border-radius:10px}
+.tela-acessos :deep(.ac-btn.lg){padding:11px 18px;font-size:max(9px, calc(14px * var(--escala-texto, 1)));border-radius:10px}
 .tela-acessos :deep(.ac-btn.primary){background:linear-gradient(135deg,color-mix(in srgb,var(--modulo) 80%,var(--text)),var(--modulo));color:var(--sobre-cor);border:none;box-shadow:0 6px 18px -8px rgba(13,148,136,.7)}
 .tela-acessos :deep(.ac-btn.primary:hover){border:none}
 .tela-acessos :deep(.ac-org-block){margin-bottom:18px;border:1px solid var(--border);border-radius:18px;background:var(--surface);box-shadow:var(--shadow-md);overflow:hidden;animation:acFadeUp .32s ease both}
@@ -3048,8 +2976,8 @@ const logoEscuroUrl = '/midia/LOGOTIPOBRENOBRANCO.png'
 .tela-acessos :deep(.ac-org-head:hover){background:rgba(13,148,136,.05)}
 .tela-acessos :deep(.ac-org-block.open .ac-org-head){border-bottom-color:var(--border)}
 .tela-acessos :deep(.ac-org-badge){width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,color-mix(in srgb,var(--modulo) 80%,var(--text)),var(--modulo));color:var(--sobre-cor);flex-shrink:0}
-.tela-acessos :deep(.ac-org-name){font-family:var(--fonte-principal);font-weight:700;font-size:21px;color:var(--text);line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.tela-acessos :deep(.ac-org-meta){font-family:var(--fonte-principal);font-size:10.5px;font-weight:600;letter-spacing:.6px;color:var(--muted);margin-top:3px;text-transform:uppercase}
+.tela-acessos :deep(.ac-org-name){font-family:var(--fonte-principal);font-weight:700;font-size:max(16px, calc(21px * var(--escala-texto, 1)));color:var(--text);line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tela-acessos :deep(.ac-org-meta){font-family:var(--fonte-principal);font-size:max(9px, calc(10.5px * var(--escala-texto, 1)));font-weight:600;letter-spacing:.6px;color:var(--muted);margin-top:3px;text-transform:uppercase}
 .tela-acessos :deep(.ac-org-chev){color:var(--muted);transition:transform .2s ease;flex-shrink:0}
 .tela-acessos :deep(.ac-org-block.open .ac-org-chev){transform:rotate(90deg)}
 .tela-acessos :deep(.ac-org-body){display:none;padding:16px 18px;gap:14px;grid-template-columns:repeat(auto-fill,minmax(240px,1fr))}
@@ -3057,20 +2985,20 @@ const logoEscuroUrl = '/midia/LOGOTIPOBRENOBRANCO.png'
 .tela-acessos :deep(.ac-stcard){border:1px solid var(--border);border-radius:14px;padding:14px;background:var(--surface2);cursor:pointer;transition:transform .16s ease,border-color .16s ease,box-shadow .16s ease}
 .tela-acessos :deep(.ac-stcard:hover){transform:translateY(-2px);border-color:var(--accent-mid);box-shadow:var(--shadow-md)}
 .tela-acessos :deep(.ac-stcard-h){display:flex;align-items:center;justify-content:space-between;gap:8px}
-.tela-acessos :deep(.ac-stcard-name){font-family:var(--fonte-principal);font-weight:600;font-size:15px;letter-spacing:.4px;text-transform:uppercase;color:var(--text)}
-.tela-acessos :deep(.ac-stcard-ct){font-family:var(--fonte-dados);font-size:12px;font-weight:500;color:color-mix(in srgb,var(--modulo) 75%,var(--text));background:color-mix(in srgb,var(--modulo) 16%,var(--surface));padding:2px 9px;border-radius:999px;white-space:nowrap}
+.tela-acessos :deep(.ac-stcard-name){font-family:var(--fonte-principal);font-weight:600;font-size:max(9px, calc(15px * var(--escala-texto, 1)));letter-spacing:.4px;text-transform:uppercase;color:var(--text)}
+.tela-acessos :deep(.ac-stcard-ct){font-family:var(--fonte-dados);font-size:max(9px, calc(12px * var(--escala-texto, 1)));font-weight:500;color:color-mix(in srgb,var(--modulo) 75%,var(--text));background:color-mix(in srgb,var(--modulo) 16%,var(--surface));padding:2px 9px;border-radius:999px;white-space:nowrap}
 .tela-acessos :deep(.ac-ava-stack){display:flex;align-items:center;margin-top:12px;flex-wrap:wrap;row-gap:6px}
 .tela-acessos :deep(.ac-ava-stack .ac-avatar){box-shadow:0 0 0 2px var(--surface2);margin-left:-8px}
 .tela-acessos :deep(.ac-ava-stack .ac-avatar:first-child){margin-left:0}
-.tela-acessos :deep(.ac-ava-more){font-family:var(--fonte-principal);font-size:11px;font-weight:700;color:var(--muted);margin-left:8px}
-.tela-acessos :deep(.ac-empty){font-family:var(--fonte-principal);color:var(--muted);font-size:13px;padding:8px 2px}
+.tela-acessos :deep(.ac-ava-more){font-family:var(--fonte-principal);font-size:max(9px, calc(11px * var(--escala-texto, 1)));font-weight:700;color:var(--muted);margin-left:8px}
+.tela-acessos :deep(.ac-empty){font-family:var(--fonte-principal);color:var(--muted);font-size:max(9px, calc(13px * var(--escala-texto, 1)));padding:8px 2px}
 @media(max-width:640px){
 .tela-acessos :deep(.ac-body){padding:16px 14px}
 .tela-acessos :deep(.ac-hero-actions){margin-left:0;width:100%}
 .tela-acessos :deep(.ac-hero-actions .ac-btn){flex:1;min-width:140px;text-align:center}
-.tela-acessos :deep(.ac-btn){padding:11px 14px;font-size:14px}
+.tela-acessos :deep(.ac-btn){padding:11px 14px;font-size:max(9px, calc(14px * var(--escala-texto, 1)))}
 .tela-acessos :deep(.ac-org-body){grid-template-columns:1fr}
-.tela-acessos :deep(.ac-org-name){font-size:18px;white-space:normal}
+.tela-acessos :deep(.ac-org-name){font-size:max(16px, calc(18px * var(--escala-texto, 1)));white-space:normal}
   /* No celular o cabecalho da organizacao ESPREMIA tudo numa linha so: o nome,
      a contagem em tres linhas e dois botoes, todos disputando 390px. E o
      "+ Setor" quebrava no meio — "+" em cima, "Setor" embaixo.
@@ -3103,16 +3031,16 @@ const logoEscuroUrl = '/midia/LOGOTIPOBRENOBRANCO.png'
 .tela-acessos :deep(.ac-ficha-hero .ac-avatar){box-shadow:0 10px 26px -12px rgba(0,0,0,.55),0 0 0 3px var(--surface)}
 .tela-acessos :deep(.ac-ficha-id){min-width:0;flex:1}
 .tela-acessos :deep(.ac-ficha-name){font-family:var(--fonte-principal);font-weight:800;font-size:clamp(22px,3.4vw,30px);line-height:1.05;letter-spacing:-.01em;color:var(--text);display:flex;align-items:center;gap:12px;flex-wrap:wrap}
-.tela-acessos :deep(.ac-ficha-sub){font-family:var(--fonte-principal);font-size:13px;color:var(--muted);margin-top:7px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.tela-acessos :deep(.ac-ficha-sub){font-family:var(--fonte-principal);font-size:max(9px, calc(13px * var(--escala-texto, 1)));color:var(--muted);margin-top:7px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .tela-acessos :deep(.ac-ficha-sub .dot){opacity:.4}
 .tela-acessos :deep(.ac-ficha-actions){display:flex;gap:8px;flex-wrap:wrap;margin-top:18px;padding-top:16px;border-top:1px solid var(--border)}
 .tela-acessos :deep(.ac-fgrid){display:grid;grid-template-columns:repeat(auto-fit,minmax(258px,1fr));gap:14px;margin-top:18px}
 .tela-acessos :deep(.ac-fblock){background:var(--surface2);border:1px solid var(--border);border-radius:14px;padding:6px 16px 10px}
-.tela-acessos :deep(.ac-fblock-h){font-family:var(--fonte-principal);font-weight:600;font-size:11px;letter-spacing:1.4px;text-transform:uppercase;color:var(--muted);margin:12px 0 4px}
+.tela-acessos :deep(.ac-fblock-h){font-family:var(--fonte-principal);font-weight:600;font-size:max(9px, calc(11px * var(--escala-texto, 1)));letter-spacing:1.4px;text-transform:uppercase;color:var(--muted);margin:12px 0 4px}
 .tela-acessos :deep(.ac-field){display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border)}
 .tela-acessos :deep(.ac-field:last-child){border-bottom:none}
-.tela-acessos :deep(.ac-field-l){font-family:var(--fonte-principal);font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px;min-width:0;white-space:nowrap}
-.tela-acessos :deep(.ac-field-v){font-family:var(--fonte-principal);font-size:13.5px;color:var(--text);margin-left:auto;text-align:right;word-break:break-word;font-weight:600}
+.tela-acessos :deep(.ac-field-l){font-family:var(--fonte-principal);font-size:max(9px, calc(12px * var(--escala-texto, 1)));color:var(--muted);display:flex;align-items:center;gap:6px;min-width:0;white-space:nowrap}
+.tela-acessos :deep(.ac-field-v){font-family:var(--fonte-principal);font-size:max(9px, calc(13.5px * var(--escala-texto, 1)));color:var(--text);margin-left:auto;text-align:right;word-break:break-word;font-weight:600}
 .tela-acessos :deep(.ac-field-v.empty){color:var(--muted);font-weight:400}
 @media(max-width:640px){
 .tela-acessos :deep(.ac-ficha-actions){width:100%}
@@ -3129,32 +3057,32 @@ const logoEscuroUrl = '/midia/LOGOTIPOBRENOBRANCO.png'
 .tela-acessos :deep(.ac-fx-ficha){display:grid;grid-template-columns:320px 1fr;gap:16px;align-items:start}
 .tela-acessos :deep(.ac-fx-idcol){position:sticky;top:16px}
 .tela-acessos :deep(.ac-fx-hero){padding:22px 20px 18px;text-align:center;border-bottom:1px solid var(--border)}
-.tela-acessos :deep(.ac-fx-av){width:76px;height:76px;border-radius:20px;margin:0 auto 14px;display:grid;place-items:center;color:#fff;font-family:var(--fonte-principal);font-weight:600;font-size:26px;letter-spacing:1px;object-fit:cover;box-shadow:var(--shadow-md)}
+.tela-acessos :deep(.ac-fx-av){width:76px;height:76px;border-radius:20px;margin:0 auto 14px;display:grid;place-items:center;color:#fff;font-family:var(--fonte-principal);font-weight:600;font-size:max(16px, calc(26px * var(--escala-texto, 1)));letter-spacing:1px;object-fit:cover;box-shadow:var(--shadow-md)}
 .tela-acessos :deep(.ac-fx-av-fb){text-transform:uppercase}
-.tela-acessos :deep(.ac-fx-name){font-family:var(--fonte-principal);font-size:22px;font-weight:800;letter-spacing:-.01em;color:var(--text);line-height:1.1}
-.tela-acessos :deep(.ac-fx-role){font-family:var(--fonte-principal);font-size:13px;color:var(--muted);margin-top:4px}
+.tela-acessos :deep(.ac-fx-name){font-family:var(--fonte-principal);font-size:max(16px, calc(22px * var(--escala-texto, 1)));font-weight:800;letter-spacing:-.01em;color:var(--text);line-height:1.1}
+.tela-acessos :deep(.ac-fx-role){font-family:var(--fonte-principal);font-size:max(9px, calc(13px * var(--escala-texto, 1)));color:var(--muted);margin-top:4px}
 .tela-acessos :deep(.ac-fx-pills){display:flex;gap:7px;justify-content:center;flex-wrap:wrap;margin-top:13px}
-.tela-acessos :deep(.ac-fx-stpill){display:inline-flex;align-items:center;gap:6px;font-family:var(--fonte-principal);font-size:11.5px;font-weight:600;padding:5px 11px;border-radius:999px;border:1px solid var(--border);background:var(--surface2);color:var(--text)}
+.tela-acessos :deep(.ac-fx-stpill){display:inline-flex;align-items:center;gap:6px;font-family:var(--fonte-principal);font-size:max(9px, calc(11.5px * var(--escala-texto, 1)));font-weight:600;padding:5px 11px;border-radius:999px;border:1px solid var(--border);background:var(--surface2);color:var(--text)}
 .tela-acessos :deep(.ac-fx-stpill.on){color:var(--green);background:color-mix(in srgb,var(--green) 13%,transparent);border-color:transparent}
 .tela-acessos :deep(.ac-fx-quick){display:grid;grid-template-columns:repeat(3,1fr);padding:8px 6px;gap:2px}
 .tela-acessos :deep(.ac-fx-qa){text-align:center;padding:12px 4px;border-radius:var(--radius-md)}
-.tela-acessos :deep(.ac-fx-qn){display:block;font-family:var(--fonte-dados);font-size:24px;font-weight:600;letter-spacing:.5px;color:var(--text);line-height:1;font-variant-numeric:tabular-nums}
-.tela-acessos :deep(.ac-fx-ql){font-family:var(--fonte-principal);font-size:11px;color:var(--muted);font-weight:500;letter-spacing:.2px}
+.tela-acessos :deep(.ac-fx-qn){display:block;font-family:var(--fonte-dados);font-size:max(16px, calc(24px * var(--escala-texto, 1)));font-weight:600;letter-spacing:.5px;color:var(--text);line-height:1;font-variant-numeric:tabular-nums}
+.tela-acessos :deep(.ac-fx-ql){font-family:var(--fonte-principal);font-size:max(9px, calc(11px * var(--escala-texto, 1)));color:var(--muted);font-weight:500;letter-spacing:.2px}
 .tela-acessos :deep(.ac-fx-actions){display:flex;gap:8px;flex-wrap:wrap;padding:14px 16px;border-top:1px solid var(--border)}
 .tela-acessos :deep(.ac-fx-data){display:flex;flex-direction:column;gap:16px;min-width:0}
 /* linhas de campo (Contatos & contas) */
 .tela-acessos :deep(.ac-fx-fields){padding:6px 16px 12px}
 .tela-acessos :deep(.ac-fx-fld){display:flex;align-items:center;justify-content:space-between;gap:14px;padding:11px 2px;min-height:44px}
 .tela-acessos :deep(.ac-fx-fld+.ac-fx-fld){border-top:1px solid var(--border)}
-.tela-acessos :deep(.ac-fx-fld-l){font-family:var(--fonte-principal);font-size:12.5px;color:var(--muted);font-weight:500;display:flex;align-items:center;gap:5px;min-width:0}
+.tela-acessos :deep(.ac-fx-fld-l){font-family:var(--fonte-principal);font-size:max(9px, calc(12.5px * var(--escala-texto, 1)));color:var(--muted);font-weight:500;display:flex;align-items:center;gap:5px;min-width:0}
 .tela-acessos :deep(.ac-fx-fld.vazio .ac-fx-fld-l){color:var(--faint,var(--muted));opacity:.85}
-.tela-acessos :deep(.ac-fx-fld-v){font-family:var(--fonte-principal);font-size:13.5px;font-weight:600;color:var(--text);text-align:right;word-break:break-word;background:none;border:none;cursor:pointer;padding:4px 6px;border-radius:var(--radius-sm);max-width:62%}
+.tela-acessos :deep(.ac-fx-fld-v){font-family:var(--fonte-principal);font-size:max(9px, calc(13.5px * var(--escala-texto, 1)));font-weight:600;color:var(--text);text-align:right;word-break:break-word;background:none;border:none;cursor:pointer;padding:4px 6px;border-radius:var(--radius-sm);max-width:62%}
 .tela-acessos :deep(.ac-fx-fld-v:hover){background:var(--surface2);color:var(--accent)}
-.tela-acessos :deep(.ac-fx-fld-add){font-family:var(--fonte-principal);border:1px dashed var(--accent-mid);background:transparent;color:var(--accent);font-size:12.5px;font-weight:600;padding:5px 12px;border-radius:999px;cursor:pointer;white-space:nowrap}
+.tela-acessos :deep(.ac-fx-fld-add){font-family:var(--fonte-principal);border:1px dashed var(--accent-mid);background:transparent;color:var(--accent);font-size:max(9px, calc(12.5px * var(--escala-texto, 1)));font-weight:600;padding:5px 12px;border-radius:999px;cursor:pointer;white-space:nowrap}
 .tela-acessos :deep(.ac-fx-fld-add:hover){background:var(--accent-light)}
 /* ganchos (dispositivos / termos): estado vazio pontilhado do mockup */
 .tela-acessos :deep(.ac-fx-wrap){padding:14px 16px}
-.tela-acessos :deep(.ac-fx-empty){display:flex;align-items:center;gap:11px;padding:16px;border:1px dashed var(--border);border-radius:var(--radius-md);background:var(--surface2);color:var(--muted);font-family:var(--fonte-principal);font-size:12.5px;line-height:1.45}
+.tela-acessos :deep(.ac-fx-empty){display:flex;align-items:center;gap:11px;padding:16px;border:1px dashed var(--border);border-radius:var(--radius-md);background:var(--surface2);color:var(--muted);font-family:var(--fonte-principal);font-size:max(9px, calc(12.5px * var(--escala-texto, 1)));line-height:1.45}
 .tela-acessos :deep(.ac-fx-empty svg){width:20px;height:20px;flex:none;opacity:.65}
 /* ===== Patrimônio (Tarefa 5): lista na ficha, histórico e aba consolidada ===== */
 .tela-acessos :deep(.ac-pat-list){display:flex;flex-direction:column;gap:10px}
@@ -3162,29 +3090,23 @@ const logoEscuroUrl = '/midia/LOGOTIPOBRENOBRANCO.png'
 .tela-acessos :deep(.ac-pat-item:hover){border-color:var(--accent-mid)}
 .tela-acessos :deep(.ac-pat-main){flex:1;min-width:180px}
 .tela-acessos :deep(.ac-pat-top){display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:5px}
-.tela-acessos :deep(.ac-pat-desc){font-family:var(--fonte-principal);font-weight:600;font-size:14px;color:var(--text);line-height:1.3}
-.tela-acessos :deep(.ac-pat-meta){display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:5px;font-family:var(--fonte-principal);font-size:12px;color:var(--muted)}
-.tela-acessos :deep(.ac-pat-acts){display:flex;gap:6px;flex-wrap:wrap;align-items:center}
-.tela-acessos :deep(.ac-pat-acts .ac-btn){padding:6px 11px;font-size:12px}
-.tela-acessos :deep(.ac-pat-total){margin-top:12px;text-align:right;font-family:var(--fonte-principal);font-size:13px;color:var(--muted)}
-.tela-acessos :deep(.ac-pat-total strong){font-family:var(--fonte-dados);font-size:16px;color:var(--text);margin-left:6px;font-variant-numeric:tabular-nums}
-.tela-acessos :deep(.ac-pat-hist){display:flex;flex-direction:column;gap:8px;max-height:52vh;overflow:auto}
-.tela-acessos :deep(.ac-pat-histrow){padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface2);font-family:var(--fonte-principal);font-size:13px;color:var(--text);line-height:1.4}
+.tela-acessos :deep(.ac-pat-desc){font-family:var(--fonte-principal);font-weight:600;font-size:max(9px, calc(14px * var(--escala-texto, 1)));color:var(--text);line-height:1.3}
+.tela-acessos :deep(.ac-pat-meta){display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:5px;font-family:var(--fonte-principal);font-size:max(9px, calc(12px * var(--escala-texto, 1)));color:var(--muted)}
+.tela-acessos :deep(.ac-pat-total){margin-top:12px;text-align:right;font-family:var(--fonte-principal);font-size:max(9px, calc(13px * var(--escala-texto, 1)));color:var(--muted)}
+.tela-acessos :deep(.ac-pat-total strong){font-family:var(--fonte-dados);font-size:max(16px, calc(16px * var(--escala-texto, 1)));color:var(--text);margin-left:6px;font-variant-numeric:tabular-nums}
 .tela-acessos :deep(.ac-pat-filtros){display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px}
 .tela-acessos :deep(.ac-pat-filtros .ac-select){width:auto;min-width:180px;flex:1 1 200px}
-.tela-acessos :deep(.ac-pat-kpi){margin-left:auto;font-family:var(--fonte-principal);font-size:13px;color:var(--muted)}
-.tela-acessos :deep(.ac-pat-kpi strong){font-family:var(--fonte-dados);font-size:17px;color:var(--text);margin-left:4px;font-variant-numeric:tabular-nums}
+.tela-acessos :deep(.ac-pat-kpi){margin-left:auto;font-family:var(--fonte-principal);font-size:max(9px, calc(13px * var(--escala-texto, 1)));color:var(--muted)}
+.tela-acessos :deep(.ac-pat-kpi strong){font-family:var(--fonte-dados);font-size:max(16px, calc(17px * var(--escala-texto, 1)));color:var(--text);margin-left:4px;font-variant-numeric:tabular-nums}
 .tela-acessos :deep(.ac-pat-tablewrap){width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface)}
-.tela-acessos :deep(.ac-pat-table){width:100%;border-collapse:collapse;font-family:var(--fonte-principal);font-size:13px}
-.tela-acessos :deep(.ac-pat-table th){text-align:left;padding:11px 14px;font-size:10.5px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border);white-space:nowrap}
+.tela-acessos :deep(.ac-pat-table){width:100%;border-collapse:collapse;font-family:var(--fonte-principal);font-size:max(9px, calc(13px * var(--escala-texto, 1)))}
+.tela-acessos :deep(.ac-pat-table th){text-align:left;padding:11px 14px;font-size:max(9px, calc(10.5px * var(--escala-texto, 1)));font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border);white-space:nowrap}
 .tela-acessos :deep(.ac-pat-table td){padding:11px 14px;border-bottom:1px solid var(--border);color:var(--text);vertical-align:middle}
 .tela-acessos :deep(.ac-pat-table tbody tr){cursor:pointer;transition:background .15s ease}
 .tela-acessos :deep(.ac-pat-table tbody tr:hover){background:var(--surface2)}
 .tela-acessos :deep(.ac-pat-table tbody tr:last-child td){border-bottom:none}
 .tela-acessos :deep(.ac-pat-r){text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 @media(max-width:640px){
-  .tela-acessos :deep(.ac-pat-acts){width:100%}
-  .tela-acessos :deep(.ac-pat-acts .ac-btn){flex:1 1 calc(50% - 3px);text-align:center;justify-content:center}
   .tela-acessos :deep(.ac-pat-kpi){width:100%;margin-left:0;margin-top:4px}
 }
 /* acessos desta pessoa */
@@ -3195,9 +3117,9 @@ const logoEscuroUrl = '/midia/LOGOTIPOBRENOBRANCO.png'
 .tela-acessos :deep(.ac-fx-accrow.ac-fx-muted){opacity:.62}
 .tela-acessos :deep(.ac-fx-accrow .ac-glyph){width:30px;height:30px;border-radius:8px}
 .tela-acessos :deep(.ac-fx-accmeta){flex:1;min-width:0}
-.tela-acessos :deep(.ac-fx-accname){font-family:var(--fonte-principal);font-weight:600;font-size:13.5px;color:var(--text)}
-.tela-acessos :deep(.ac-fx-accfine){font-family:var(--fonte-principal);font-size:12px;color:var(--muted);line-height:1.35;overflow-wrap:anywhere}
-.tela-acessos :deep(.ac-fx-acccnt){font-family:var(--fonte-dados);font-size:18px;font-weight:600;letter-spacing:.4px;color:var(--text);flex:none;font-variant-numeric:tabular-nums}
+.tela-acessos :deep(.ac-fx-accname){font-family:var(--fonte-principal);font-weight:600;font-size:max(9px, calc(13.5px * var(--escala-texto, 1)));color:var(--text)}
+.tela-acessos :deep(.ac-fx-accfine){font-family:var(--fonte-principal);font-size:max(9px, calc(12px * var(--escala-texto, 1)));color:var(--muted);line-height:1.35;overflow-wrap:anywhere}
+.tela-acessos :deep(.ac-fx-acccnt){font-family:var(--fonte-dados);font-size:max(16px, calc(18px * var(--escala-texto, 1)));font-weight:600;letter-spacing:.4px;color:var(--text);flex:none;font-variant-numeric:tabular-nums}
 
 /* ===== Termos / documentos (Tarefa 7): lista limpa dentro do painel da ficha ===== */
 .tela-acessos :deep(.ac-termo-list){display:flex;flex-direction:column;gap:10px}
@@ -3206,10 +3128,10 @@ const logoEscuroUrl = '/midia/LOGOTIPOBRENOBRANCO.png'
 .tela-acessos :deep(.ac-g-doc){width:30px;height:30px;border-radius:8px;background:var(--accent-light);color:var(--accent-forte)}
 .tela-acessos :deep(.ac-g-doc svg){width:16px;height:16px}
 .tela-acessos :deep(.ac-termo-main){flex:1;min-width:160px}
-.tela-acessos :deep(.ac-termo-name){font-family:var(--fonte-principal);font-weight:600;font-size:14px;color:var(--text);line-height:1.3;overflow-wrap:anywhere}
-.tela-acessos :deep(.ac-termo-meta){font-family:var(--fonte-principal);font-size:12px;color:var(--muted);margin-top:3px}
+.tela-acessos :deep(.ac-termo-name){font-family:var(--fonte-principal);font-weight:600;font-size:max(9px, calc(14px * var(--escala-texto, 1)));color:var(--text);line-height:1.3;overflow-wrap:anywhere}
+.tela-acessos :deep(.ac-termo-meta){font-family:var(--fonte-principal);font-size:max(9px, calc(12px * var(--escala-texto, 1)));color:var(--muted);margin-top:3px}
 .tela-acessos :deep(.ac-termo-acts){display:flex;gap:6px;flex-wrap:wrap;align-items:center}
-.tela-acessos :deep(.ac-termo-acts .ac-btn){padding:6px 11px;font-size:12px}
+.tela-acessos :deep(.ac-termo-acts .ac-btn){padding:6px 11px;font-size:max(9px, calc(12px * var(--escala-texto, 1)))}
 @media(max-width:640px){
   .tela-acessos :deep(.ac-termo-acts){width:100%}
   .tela-acessos :deep(.ac-termo-acts .ac-btn){flex:1 1 calc(50% - 3px);text-align:center;justify-content:center}
@@ -3218,7 +3140,7 @@ const logoEscuroUrl = '/midia/LOGOTIPOBRENOBRANCO.png'
 /* ===== Auditoria (Tarefa 6): destaque de quem tem acesso a MUITAS pastas ===== */
 /* Selo âmbar ao lado do nome + realce do contador/borda. É sinal de atenção
    (possível permissão demais), não de erro — por isso âmbar, não vermelho. */
-.tela-acessos :deep(.ac-badge-muitas){display:inline-flex;align-items:center;gap:4px;margin-left:6px;padding:2px 9px;border-radius:999px;font-family:var(--fonte-principal);font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--orange);background:color-mix(in srgb,var(--orange) 14%,transparent);border:1px solid color-mix(in srgb,var(--orange) 34%,transparent);vertical-align:middle;white-space:nowrap}
+.tela-acessos :deep(.ac-badge-muitas){display:inline-flex;align-items:center;gap:4px;margin-left:6px;padding:2px 9px;border-radius:999px;font-family:var(--fonte-principal);font-size:max(9px, calc(10px * var(--escala-texto, 1)));font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--orange);background:color-mix(in srgb,var(--orange) 14%,transparent);border:1px solid color-mix(in srgb,var(--orange) 34%,transparent);vertical-align:middle;white-space:nowrap}
 .tela-acessos :deep(.ac-cnt.ac-cnt-hot){color:var(--orange);border-color:color-mix(in srgb,var(--orange) 42%,transparent);background:color-mix(in srgb,var(--orange) 12%,transparent);font-weight:700}
 .tela-acessos :deep(.ac-audcard-hot){border-color:color-mix(in srgb,var(--orange) 40%,var(--border))}
 .tela-acessos :deep(.ac-audrow-hot){border-left:3px solid var(--orange)}
@@ -3238,15 +3160,15 @@ const logoEscuroUrl = '/midia/LOGOTIPOBRENOBRANCO.png'
 .tela-acessos :deep(.ac-aud-hd){display:flex;align-items:center;gap:12px;padding-bottom:12px;border-bottom:1px solid var(--border);margin-bottom:2px}
 .tela-acessos :deep(.ac-aud-item){padding:9px 0;border-bottom:1px solid var(--border);display:grid;grid-template-columns:104px 1fr;gap:12px;align-items:baseline}
 .tela-acessos :deep(.ac-aud-item:last-child){border-bottom:none}
-.tela-acessos :deep(.ac-aud-k){font-family:var(--fonte-principal);font-size:10px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--muted);display:flex;align-items:center;gap:5px}
-.tela-acessos :deep(.ac-aud-v){font-family:var(--fonte-principal);font-size:13px;color:var(--text);word-break:break-word;line-height:1.45}
+.tela-acessos :deep(.ac-aud-k){font-family:var(--fonte-principal);font-size:max(9px, calc(10px * var(--escala-texto, 1)));font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--muted);display:flex;align-items:center;gap:5px}
+.tela-acessos :deep(.ac-aud-v){font-family:var(--fonte-principal);font-size:max(9px, calc(13px * var(--escala-texto, 1)));color:var(--text);word-break:break-word;line-height:1.45}
 .tela-acessos :deep(.ac-audrow){display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:12px 14px;background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow-sm);margin-bottom:8px;transition:border-color .15s,box-shadow .15s}
 .tela-acessos :deep(.ac-audrow:hover){border-color:rgba(13,148,136,.45);box-shadow:var(--shadow-md)}
 .tela-acessos :deep(.ac-audrow .grow){flex:1;min-width:140px}
 .tela-acessos :deep(.ac-audrow-counts){display:flex;gap:6px;flex-wrap:wrap;margin-left:auto}
-.tela-acessos :deep(.ac-cnt){display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:8px;background:var(--surface2);border:1px solid var(--border);font-family:var(--fonte-principal);font-size:11px;font-weight:600;color:var(--text);white-space:nowrap}
+.tela-acessos :deep(.ac-cnt){display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:8px;background:var(--surface2);border:1px solid var(--border);font-family:var(--fonte-principal);font-size:max(9px, calc(11px * var(--escala-texto, 1)));font-weight:600;color:var(--text);white-space:nowrap}
 .tela-acessos :deep(.ac-cnt.zero){color:var(--muted);opacity:.65}
-.tela-acessos :deep(.ac-aud-setor){font-family:var(--fonte-principal);font-weight:600;font-size:12px;letter-spacing:1.2px;text-transform:uppercase;color:var(--text);margin:18px 0 10px;display:flex;align-items:center;gap:8px}
+.tela-acessos :deep(.ac-aud-setor){font-family:var(--fonte-principal);font-weight:600;font-size:max(9px, calc(12px * var(--escala-texto, 1)));letter-spacing:1.2px;text-transform:uppercase;color:var(--text);margin:18px 0 10px;display:flex;align-items:center;gap:8px}
 .tela-acessos :deep(.ac-aud-setor::after){content:"";flex:1;height:1px;background:var(--border)}
 @media(max-width:640px){
 .tela-acessos :deep(.ac-audrow-counts){width:100%;margin-left:0;order:3}
@@ -3256,22 +3178,22 @@ const logoEscuroUrl = '/midia/LOGOTIPOBRENOBRANCO.png'
 /* ===== Acessos — anti-zoom no mobile (iOS dá zoom ao focar campo <16px) ===== */
 .tela-acessos{touch-action:manipulation}
 @media(max-width:640px){
-.tela-acessos :deep(.ac-input), .tela-acessos :deep(.ac-select), .tela-acessos :deep(.ac-textarea){font-size:16px}
-.tela-acessos :deep(.ac-modal .ac-input), .tela-acessos :deep(.ac-modal .ac-select), .tela-acessos :deep(.ac-modal .ac-textarea){font-size:16px}
+.tela-acessos :deep(.ac-input), .tela-acessos :deep(.ac-select), .tela-acessos :deep(.ac-textarea){font-size:max(16px, calc(16px * var(--escala-texto, 1)))}
+.tela-acessos :deep(.ac-modal .ac-input), .tela-acessos :deep(.ac-modal .ac-select), .tela-acessos :deep(.ac-modal .ac-textarea){font-size:max(16px, calc(16px * var(--escala-texto, 1)))}
 }
 /* ===== Acessos — Fase 2: Drive ===== */
 .tela-acessos :deep(.ac-brand-bar){display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px}
-.tela-acessos :deep(.ac-brand-chip){position:relative;display:inline-flex;align-items:center;gap:8px;padding:9px 14px;border-radius:12px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:var(--fonte-principal);font-weight:600;font-size:13px;letter-spacing:.5px;text-transform:uppercase;cursor:pointer;transition:border-color .15s,box-shadow .15s,background .15s}
+.tela-acessos :deep(.ac-brand-chip){position:relative;display:inline-flex;align-items:center;gap:8px;padding:9px 14px;border-radius:12px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:var(--fonte-principal);font-weight:600;font-size:max(9px, calc(13px * var(--escala-texto, 1)));letter-spacing:.5px;text-transform:uppercase;cursor:pointer;transition:border-color .15s,box-shadow .15s,background .15s}
 .tela-acessos :deep(.ac-brand-chip:hover){border-color:var(--accent-mid)}
 .tela-acessos :deep(.ac-brand-chip.active){background:linear-gradient(135deg,color-mix(in srgb,var(--modulo) 80%,var(--text)),var(--modulo));border-color:var(--modulo);color:var(--sobre-cor);box-shadow:0 6px 16px -8px rgba(13,148,136,.7)}
-.tela-acessos :deep(.ac-brand-x){opacity:.55;font-size:11px;line-height:1}
+.tela-acessos :deep(.ac-brand-x){opacity:.55;font-size:max(9px, calc(11px * var(--escala-texto, 1)));line-height:1}
 .tela-acessos :deep(.ac-brand-x:hover){opacity:1}
-.tela-acessos :deep(.ac-crumb){display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:16px;font-family:var(--fonte-principal);font-size:13px;color:var(--muted)}
+.tela-acessos :deep(.ac-crumb){display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:16px;font-family:var(--fonte-principal);font-size:max(9px, calc(13px * var(--escala-texto, 1)));color:var(--muted)}
 .tela-acessos :deep(.ac-crumb-b){background:none;border:none;color:var(--accent-mid);cursor:pointer;font:inherit;padding:2px 4px;border-radius:6px}
 .tela-acessos :deep(.ac-crumb-b:hover){background:rgba(13,148,136,.1)}
 .tela-acessos :deep(.ac-secmod){margin-bottom:26px}
-.tela-acessos :deep(.ac-secmod-h){font-family:var(--fonte-principal);font-weight:600;font-size:13px;letter-spacing:1.4px;text-transform:uppercase;color:var(--text);margin:0 0 12px;display:flex;align-items:center;gap:10px;padding-bottom:8px;border-bottom:1px solid var(--border)}
-.tela-acessos :deep(.ac-move){width:auto;max-width:138px;padding:6px 8px;font-size:11px}
+.tela-acessos :deep(.ac-secmod-h){font-family:var(--fonte-principal);font-weight:600;font-size:max(9px, calc(13px * var(--escala-texto, 1)));letter-spacing:1.4px;text-transform:uppercase;color:var(--text);margin:0 0 12px;display:flex;align-items:center;gap:10px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+.tela-acessos :deep(.ac-move){width:auto;max-width:138px;padding:6px 8px;font-size:max(9px, calc(11px * var(--escala-texto, 1)))}
 .tela-acessos :deep(.ac-folder[draggable=true]){cursor:grab;-webkit-user-select:none;user-select:none}
 .tela-acessos :deep(.ac-folder[draggable=true]:active){cursor:grabbing}
 .tela-acessos :deep(.ac-folder.ac-dragging){opacity:.45;border-style:dashed}
@@ -3287,7 +3209,7 @@ const logoEscuroUrl = '/midia/LOGOTIPOBRENOBRANCO.png'
 @media(max-width:640px){.tela-acessos :deep(.ac-wd-arvore .ac-vcard){max-width:none}}
 .tela-acessos :deep(.ac-drive-marcabar){display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 16px;border:1px solid var(--border);border-radius:12px;background:var(--surface2);margin-bottom:14px}
 .tela-acessos :deep(.ac-drive-marcabar .grow){flex:1;min-width:160px}
-.tela-acessos :deep(.ac-drive-marca-nome){font-family:var(--fonte-principal);font-weight:700;font-size:17px;color:var(--text)}
+.tela-acessos :deep(.ac-drive-marca-nome){font-family:var(--fonte-principal);font-weight:700;font-size:max(16px, calc(17px * var(--escala-texto, 1)));color:var(--text)}
 @media(max-width:640px){.tela-acessos :deep(.ac-drive-marcabar .ac-btn){width:100%}}
 .tela-acessos :deep(.ac-tree){list-style:none;margin:0;padding-left:20px}
 .tela-acessos :deep(.ac-tnode){position:relative;padding-left:20px}
@@ -3298,23 +3220,23 @@ const logoEscuroUrl = '/midia/LOGOTIPOBRENOBRANCO.png'
 .tela-acessos :deep(.ac-tree-root>.ac-tnode){padding-left:0}
 .tela-acessos :deep(.ac-tree-root>.ac-tnode::before), .tela-acessos :deep(.ac-tree-root>.ac-tnode::after){display:none}
 .tela-acessos :deep(.ac-tn-row){display:flex;align-items:center;gap:8px;padding:4px 0}
-.tela-acessos :deep(.ac-tn-tog){width:20px;height:20px;border:1px solid var(--border);background:var(--surface);color:var(--muted);border-radius:6px;cursor:pointer;font-size:10px;flex-shrink:0;transition:transform .15s ease;line-height:1}
+.tela-acessos :deep(.ac-tn-tog){width:20px;height:20px;border:1px solid var(--border);background:var(--surface);color:var(--muted);border-radius:6px;cursor:pointer;font-size:max(9px, calc(10px * var(--escala-texto, 1)));flex-shrink:0;transition:transform .15s ease;line-height:1}
 .tela-acessos :deep(.ac-tn-tog.open){transform:rotate(90deg)}
 .tela-acessos :deep(.ac-tn-dot){width:20px;flex-shrink:0}
-.tela-acessos :deep(.ac-tn-ico){font-size:15px;line-height:1}
-.tela-acessos :deep(.ac-tn-name){font-family:var(--fonte-principal);font-size:13px;font-weight:600;color:var(--text);word-break:break-word}
-.tela-acessos :deep(.ac-tn-sec){font-family:var(--fonte-principal);font-size:9.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--modulo);background:rgba(13,148,136,.14);padding:2px 7px;border-radius:999px;white-space:nowrap}
-.tela-acessos :deep(.ac-tn-share){padding:3px 9px;font-size:11px;margin-left:auto;flex-shrink:0}
+.tela-acessos :deep(.ac-tn-ico){font-size:max(9px, calc(15px * var(--escala-texto, 1)));line-height:1}
+.tela-acessos :deep(.ac-tn-name){font-family:var(--fonte-principal);font-size:max(9px, calc(13px * var(--escala-texto, 1)));font-weight:600;color:var(--text);word-break:break-word}
+.tela-acessos :deep(.ac-tn-sec){font-family:var(--fonte-principal);font-size:max(9px, calc(9.5px * var(--escala-texto, 1)));font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--modulo);background:rgba(13,148,136,.14);padding:2px 7px;border-radius:999px;white-space:nowrap}
+.tela-acessos :deep(.ac-tn-share){padding:3px 9px;font-size:max(9px, calc(11px * var(--escala-texto, 1)));margin-left:auto;flex-shrink:0}
 /* O setor NAO some mais no celular — ele diz de quem e a pasta, que e metade
    do sentido desta arvore. Antes era display:none pra caber na largura;
    agora a linha quebra e o selo desce, custando altura em vez de
    informacao. */
-@media(max-width:640px){.tela-acessos :deep(.ac-tn-row){flex-wrap:wrap}.tela-acessos :deep(.ac-tn-sec){font-size:9px;order:9}.tela-acessos :deep(.ac-tree){padding-left:14px}.tela-acessos :deep(.ac-tnode){padding-left:14px}}
+@media(max-width:640px){.tela-acessos :deep(.ac-tn-row){flex-wrap:wrap}.tela-acessos :deep(.ac-tn-sec){font-size:max(9px, calc(9px * var(--escala-texto, 1)));order:9}.tela-acessos :deep(.ac-tree){padding-left:14px}.tela-acessos :deep(.ac-tnode){padding-left:14px}}
 /* ===== Drive: fluxograma (org-chart) ===== */
 .tela-acessos :deep(.ac-legend){display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px}
-.tela-acessos :deep(.ac-leg){display:inline-flex;align-items:center;gap:7px;font-family:var(--fonte-principal);font-size:12px;color:var(--text);background:var(--surface);border:1px solid var(--border);border-radius:999px;padding:4px 6px 4px 11px}
+.tela-acessos :deep(.ac-leg){display:inline-flex;align-items:center;gap:7px;font-family:var(--fonte-principal);font-size:max(9px, calc(12px * var(--escala-texto, 1)));color:var(--text);background:var(--surface);border:1px solid var(--border);border-radius:999px;padding:4px 6px 4px 11px}
 .tela-acessos :deep(.ac-leg-dot){width:11px;height:11px;border-radius:50%;flex-shrink:0}
-.tela-acessos :deep(.ac-leg-go){border:none;background:var(--modulo);color:var(--sobre-cor);border-radius:999px;font-size:10px;font-weight:700;padding:4px 10px;cursor:pointer;text-transform:uppercase;letter-spacing:.4px}
+.tela-acessos :deep(.ac-leg-go){border:none;background:var(--modulo);color:var(--sobre-cor);border-radius:999px;font-size:max(9px, calc(10px * var(--escala-texto, 1)));font-weight:700;padding:4px 10px;cursor:pointer;text-transform:uppercase;letter-spacing:.4px}
 .tela-acessos :deep(.ac-leg-go:hover){filter:brightness(1.08)}
 .tela-acessos :deep(.ac-org-wrap){overflow:auto;padding:8px 4px 24px}
 .tela-acessos :deep(.ac-org), .tela-acessos :deep(.ac-org ul){display:flex;justify-content:center;padding-top:22px;position:relative;margin:0;list-style:none}
@@ -3332,55 +3254,55 @@ const logoEscuroUrl = '/midia/LOGOTIPOBRENOBRANCO.png'
 .tela-acessos :deep(.ac-fcard:hover){transform:translateY(-2px);box-shadow:var(--shadow-md)}
 .tela-acessos :deep(.ac-fcard-root){border-top:3px solid var(--modulo);background:linear-gradient(180deg,rgba(13,148,136,.14),var(--surface));width:200px}
 .tela-acessos :deep(.ac-fcard-body){padding:9px 11px}
-.tela-acessos :deep(.ac-fcard-name){font-family:var(--fonte-principal);font-size:12px;font-weight:600;color:var(--text);line-height:1.25;max-height:3.1em;overflow:hidden}
-.tela-acessos :deep(.ac-fcard-root .ac-fcard-name){font-family:var(--fonte-principal);font-size:15px;font-weight:700}
-.tela-acessos :deep(.ac-fcard-sec){font-family:var(--fonte-principal);font-size:9px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;margin-top:4px;color:var(--muted)}
+.tela-acessos :deep(.ac-fcard-name){font-family:var(--fonte-principal);font-size:max(9px, calc(12px * var(--escala-texto, 1)));font-weight:600;color:var(--text);line-height:1.25;max-height:3.1em;overflow:hidden}
+.tela-acessos :deep(.ac-fcard-root .ac-fcard-name){font-family:var(--fonte-principal);font-size:max(9px, calc(15px * var(--escala-texto, 1)));font-weight:700}
+.tela-acessos :deep(.ac-fcard-sec){font-family:var(--fonte-principal);font-size:max(9px, calc(9px * var(--escala-texto, 1)));font-weight:700;letter-spacing:.5px;text-transform:uppercase;margin-top:4px;color:var(--muted)}
 .tela-acessos :deep(.ac-fcard-acts){display:flex;gap:5px;margin-top:8px;justify-content:flex-end}
-.tela-acessos :deep(.ac-fcard-share), .tela-acessos :deep(.ac-fcard-tog){border:1px solid var(--border);background:var(--surface2);border-radius:7px;cursor:pointer;font-size:12px;padding:3px 8px;color:var(--text);min-width:26px;line-height:1.1}
+.tela-acessos :deep(.ac-fcard-share), .tela-acessos :deep(.ac-fcard-tog){border:1px solid var(--border);background:var(--surface2);border-radius:7px;cursor:pointer;font-size:max(9px, calc(12px * var(--escala-texto, 1)));padding:3px 8px;color:var(--text);min-width:26px;line-height:1.1}
 .tela-acessos :deep(.ac-fcard-share:hover), .tela-acessos :deep(.ac-fcard-tog:hover){border-color:var(--accent-mid);color:var(--accent-mid)}
 .tela-acessos :deep(.ac-fcard-tog){font-weight:700}
 /* ===== Drive: arvore vertical (cards coloridos, sem scroll lateral) ===== */
 .tela-acessos :deep(.ac-vcard){display:inline-flex;align-items:center;gap:9px;max-width:560px;background:var(--surface);border:1px solid var(--border);border-left:4px solid var(--sc,var(--modulo));border-radius:10px;padding:7px 11px;box-shadow:var(--shadow-sm);transition:box-shadow .14s ease,transform .14s ease}
 .tela-acessos :deep(.ac-vcard:hover){box-shadow:var(--shadow-md);transform:translateX(2px)}
 .tela-acessos :deep(.ac-vcard-root){border-left-color:var(--modulo);background:linear-gradient(90deg,rgba(13,148,136,.16),var(--surface))}
-.tela-acessos :deep(.ac-vc-ico){font-size:15px;line-height:1;flex-shrink:0}
-.tela-acessos :deep(.ac-vc-name){font-family:var(--fonte-principal);font-size:13px;font-weight:600;color:var(--text);min-width:0;overflow-wrap:anywhere;line-height:1.25}
-.tela-acessos :deep(.ac-vcard-root .ac-vc-name){font-family:var(--fonte-principal);font-size:16px;font-weight:700}
-.tela-acessos :deep(.ac-vc-sec){font-family:var(--fonte-principal);font-size:9px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;white-space:nowrap;flex-shrink:0}
-.tela-acessos :deep(.ac-vc-count){font-family:var(--fonte-dados);font-size:11px;font-weight:600;color:var(--muted);background:var(--surface2);border:1px solid var(--border);border-radius:999px;padding:1px 8px;flex-shrink:0}
-.tela-acessos :deep(.ac-vc-share){border:1px solid var(--border);background:var(--surface2);border-radius:7px;cursor:pointer;font-size:12px;padding:3px 8px;color:var(--text);flex-shrink:0;line-height:1.1}
+.tela-acessos :deep(.ac-vc-ico){font-size:max(9px, calc(15px * var(--escala-texto, 1)));line-height:1;flex-shrink:0}
+.tela-acessos :deep(.ac-vc-name){font-family:var(--fonte-principal);font-size:max(9px, calc(13px * var(--escala-texto, 1)));font-weight:600;color:var(--text);min-width:0;overflow-wrap:anywhere;line-height:1.25}
+.tela-acessos :deep(.ac-vcard-root .ac-vc-name){font-family:var(--fonte-principal);font-size:max(16px, calc(16px * var(--escala-texto, 1)));font-weight:700}
+.tela-acessos :deep(.ac-vc-sec){font-family:var(--fonte-principal);font-size:max(9px, calc(9px * var(--escala-texto, 1)));font-weight:700;letter-spacing:.5px;text-transform:uppercase;white-space:nowrap;flex-shrink:0}
+.tela-acessos :deep(.ac-vc-count){font-family:var(--fonte-dados);font-size:max(9px, calc(11px * var(--escala-texto, 1)));font-weight:600;color:var(--muted);background:var(--surface2);border:1px solid var(--border);border-radius:999px;padding:1px 8px;flex-shrink:0}
+.tela-acessos :deep(.ac-vc-share){border:1px solid var(--border);background:var(--surface2);border-radius:7px;cursor:pointer;font-size:max(9px, calc(12px * var(--escala-texto, 1)));padding:3px 8px;color:var(--text);flex-shrink:0;line-height:1.1}
 .tela-acessos :deep(.ac-vc-share:hover){border-color:var(--accent-mid);color:var(--accent-mid)}
 /* Idem no cartao da arvore: o setor desce de linha em vez de sumir. */
-@media(max-width:640px){.tela-acessos :deep(.ac-vcard){gap:5px 7px;padding:6px 9px;flex-wrap:wrap}.tela-acessos :deep(.ac-vc-sec){font-size:8.5px;flex-basis:100%}}
+@media(max-width:640px){.tela-acessos :deep(.ac-vcard){gap:5px 7px;padding:6px 9px;flex-wrap:wrap}.tela-acessos :deep(.ac-vc-sec){font-size:max(9px, calc(8.5px * var(--escala-texto, 1)));flex-basis:100%}}
 .tela-acessos :deep(.ac-folder-grid){display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px}
 .tela-acessos :deep(.ac-folder){background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px;box-shadow:var(--shadow-sm);display:flex;flex-direction:column;gap:10px;transition:border-color .15s,box-shadow .15s,transform .15s}
 .tela-acessos :deep(.ac-folder:hover){border-color:var(--accent-mid);box-shadow:var(--shadow-md);transform:translateY(-2px)}
 .tela-acessos :deep(.ac-folder-top){display:flex;align-items:center;gap:10px}
-.tela-acessos :deep(.ac-folder-ico){font-size:20px;line-height:1}
-.tela-acessos :deep(.ac-folder-name){font-family:var(--fonte-principal);font-weight:600;font-size:13.5px;color:var(--text);word-break:break-word;line-height:1.25}
-.tela-acessos :deep(.ac-folder-sub){font-family:var(--fonte-principal);font-size:11px;color:var(--muted);margin-top:2px}
+.tela-acessos :deep(.ac-folder-ico){font-size:max(16px, calc(20px * var(--escala-texto, 1)));line-height:1}
+.tela-acessos :deep(.ac-folder-name){font-family:var(--fonte-principal);font-weight:600;font-size:max(9px, calc(13.5px * var(--escala-texto, 1)));color:var(--text);word-break:break-word;line-height:1.25}
+.tela-acessos :deep(.ac-folder-sub){font-family:var(--fonte-principal);font-size:max(9px, calc(11px * var(--escala-texto, 1)));color:var(--muted);margin-top:2px}
 .tela-acessos :deep(.ac-folder-actions){display:flex;gap:6px;flex-wrap:wrap;margin-top:auto}
-.tela-acessos :deep(.ac-folder-actions .ac-btn){padding:6px 12px;font-size:12px}
+.tela-acessos :deep(.ac-folder-actions .ac-btn){padding:6px 12px;font-size:max(9px, calc(12px * var(--escala-texto, 1)))}
 .tela-acessos :deep(.ac-pick){display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:8px;cursor:pointer}
 .tela-acessos :deep(.ac-pick:hover){background:rgba(13,148,136,.06)}
-.tela-acessos :deep(.ac-pick .grow){font-family:var(--fonte-principal);font-size:13px;min-width:0}
+.tela-acessos :deep(.ac-pick .grow){font-family:var(--fonte-principal);font-size:max(9px, calc(13px * var(--escala-texto, 1)));min-width:0}
 .tela-acessos :deep(.ac-pick-search){margin-bottom:8px}
 .tela-acessos :deep(.ac-pick-list){max-height:42vh;overflow:auto;border:1px solid var(--border);border-radius:10px;background:var(--surface)}
-.tela-acessos :deep(.ac-pick-grp-h){position:sticky;top:0;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 10px;background:var(--surface2);border-bottom:1px solid var(--border);font-family:var(--fonte-principal);font-size:11px;font-weight:600;letter-spacing:.8px;text-transform:uppercase;color:var(--muted);z-index:1}
-.tela-acessos :deep(.ac-pick-all){border:1px solid var(--border);background:var(--surface);color:var(--accent-mid);border-radius:6px;font-family:var(--fonte-principal);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;padding:3px 9px;cursor:pointer}
+.tela-acessos :deep(.ac-pick-grp-h){position:sticky;top:0;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 10px;background:var(--surface2);border-bottom:1px solid var(--border);font-family:var(--fonte-principal);font-size:max(9px, calc(11px * var(--escala-texto, 1)));font-weight:600;letter-spacing:.8px;text-transform:uppercase;color:var(--muted);z-index:1}
+.tela-acessos :deep(.ac-pick-all){border:1px solid var(--border);background:var(--surface);color:var(--accent-mid);border-radius:6px;font-family:var(--fonte-principal);font-size:max(9px, calc(10px * var(--escala-texto, 1)));font-weight:700;text-transform:uppercase;letter-spacing:.4px;padding:3px 9px;cursor:pointer}
 .tela-acessos :deep(.ac-pick-all:hover){border-color:var(--accent-mid)}
 .tela-acessos :deep(.ac-pick-list .ac-pick){border-radius:0;border-bottom:1px solid var(--border);padding:8px 10px}
 .tela-acessos :deep(.ac-pick-grp:last-child .ac-pick:last-child){border-bottom:none}
 .tela-acessos :deep(.ac-pick .grow){display:flex;flex-direction:column;min-width:0}
-.tela-acessos :deep(.ac-pick-name){font-family:var(--fonte-principal);font-size:13.5px;font-weight:600;color:var(--text);line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.tela-acessos :deep(.ac-pick-meta){font-family:var(--fonte-principal);font-size:11.5px;color:var(--muted);line-height:1.2;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tela-acessos :deep(.ac-pick-name){font-family:var(--fonte-principal);font-size:max(9px, calc(13.5px * var(--escala-texto, 1)));font-weight:600;color:var(--text);line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tela-acessos :deep(.ac-pick-meta){font-family:var(--fonte-principal);font-size:max(9px, calc(11.5px * var(--escala-texto, 1)));color:var(--muted);line-height:1.2;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* painel grande de compartilhar */
 .tela-acessos :deep(.ac-modal-lg){max-width:720px;width:100%;max-height:90vh;display:flex;flex-direction:column;padding:0;overflow:hidden}
 .tela-acessos :deep(.ac-modal-head){display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:18px 22px;border-bottom:1px solid var(--border)}
-.tela-acessos :deep(.ac-modal-head h3){font-family:var(--fonte-principal);font-weight:600;letter-spacing:.5px;font-size:18px}
+.tela-acessos :deep(.ac-modal-head h3){font-family:var(--fonte-principal);font-weight:600;letter-spacing:.5px;font-size:max(16px, calc(18px * var(--escala-texto, 1)))}
 .tela-acessos :deep(.ac-modal-body){flex:1;min-height:0;overflow:auto;padding:18px 22px}
 .tela-acessos :deep(.ac-modal-foot){display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:14px 22px;border-top:1px solid var(--border);background:var(--surface2)}
-.tela-acessos :deep(.ac-pick-count){font-family:var(--fonte-principal);font-size:12px;font-weight:600;color:var(--muted);white-space:nowrap}
+.tela-acessos :deep(.ac-pick-count){font-family:var(--fonte-principal);font-size:max(9px, calc(12px * var(--escala-texto, 1)));font-weight:600;color:var(--muted);white-space:nowrap}
 .tela-acessos :deep(.ac-pick-count.on){color:var(--accent-mid)}
 .tela-acessos :deep(.ac-modal-lg .ac-pick-list){max-height:none;border:1px solid var(--border)}
 @media(max-width:640px){
@@ -3389,9 +3311,9 @@ const logoEscuroUrl = '/midia/LOGOTIPOBRENOBRANCO.png'
 .tela-acessos :deep(.ac-modal-foot .ac-btn.primary){flex:1}
 }
 .tela-acessos :deep(.ac-secmod-toggle){cursor:pointer;user-select:none}
-.tela-acessos :deep(.ac-secchev){display:inline-block;transition:transform .18s ease;color:var(--muted);font-size:11px}
+.tela-acessos :deep(.ac-secchev){display:inline-block;transition:transform .18s ease;color:var(--muted);font-size:max(9px, calc(11px * var(--escala-texto, 1)))}
 .tela-acessos :deep(.ac-secchev.open){transform:rotate(90deg)}
-.tela-acessos :deep(.ac-depth){display:flex;align-items:center;gap:8px;margin-bottom:18px;flex-wrap:wrap;font-family:var(--fonte-principal);font-size:12px;color:var(--muted)}
+.tela-acessos :deep(.ac-depth){display:flex;align-items:center;gap:8px;margin-bottom:18px;flex-wrap:wrap;font-family:var(--fonte-principal);font-size:max(9px, calc(12px * var(--escala-texto, 1)));color:var(--muted)}
 .tela-acessos :deep(.ac-depth-b){border:1px solid var(--border);background:var(--surface);color:var(--text);border-radius:8px;width:30px;height:30px;cursor:pointer;font-weight:600;font-family:var(--fonte-principal)}
 .tela-acessos :deep(.ac-depth-b.active){background:var(--modulo);border-color:var(--modulo);color:var(--sobre-cor)}
 .tela-acessos :deep(.ac-folder-sub){white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -3401,8 +3323,8 @@ const logoEscuroUrl = '/midia/LOGOTIPOBRENOBRANCO.png'
 .tela-acessos :deep(.ac-conn){background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:18px;box-shadow:var(--shadow-md);display:flex;flex-direction:column;gap:10px;transition:border-color .16s,box-shadow .16s}
 .tela-acessos :deep(.ac-conn:hover){border-color:var(--accent-mid);box-shadow:var(--shadow-lg)}
 .tela-acessos :deep(.ac-conn-top){display:flex;align-items:center;gap:10px}
-.tela-acessos :deep(.ac-conn-name){font-family:var(--fonte-principal);font-weight:600;font-size:16px;letter-spacing:.5px;text-transform:uppercase;color:var(--text)}
-.tela-acessos :deep(.ac-conn-desc){font-family:var(--fonte-principal);font-size:12.5px;color:var(--muted);line-height:1.45;flex:1}
+.tela-acessos :deep(.ac-conn-name){font-family:var(--fonte-principal);font-weight:600;font-size:max(16px, calc(16px * var(--escala-texto, 1)));letter-spacing:.5px;text-transform:uppercase;color:var(--text)}
+.tela-acessos :deep(.ac-conn-desc){font-family:var(--fonte-principal);font-size:max(9px, calc(12.5px * var(--escala-texto, 1)));color:var(--muted);line-height:1.45;flex:1}
 .tela-acessos :deep(.ac-conn-actions){display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}
 @media(max-width:640px){.tela-acessos :deep(.ac-conn-actions .ac-btn){flex:1;min-width:120px;text-align:center}}
 .tela-acessos :deep(.ac-muted){color:var(--muted);opacity:1}
@@ -3426,19 +3348,19 @@ const logoEscuroUrl = '/midia/LOGOTIPOBRENOBRANCO.png'
 .tela-acessos :deep(.ac-modal){background:var(--surface);border:1px solid var(--border);color:var(--text);box-shadow:var(--shadow-lg)}
 /* Copiar link (Compartilhar + Liberar setor) */
 .tela-acessos :deep(.ac-linkbar){display:flex;align-items:center;gap:12px;padding:12px 14px;margin:0 0 16px;border:1px solid var(--accent-mid);background:var(--accent-light);border-radius:12px}
-.tela-acessos :deep(.ac-linkurl){font-family:var(--fonte-dados);font-size:11.5px;color:var(--text);opacity:.85;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.tela-acessos :deep(.ac-note){font-size:12.5px;line-height:1.55;color:var(--muted);background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:11px 13px;margin:0 0 14px}
+.tela-acessos :deep(.ac-linkurl){font-family:var(--fonte-dados);font-size:max(9px, calc(11.5px * var(--escala-texto, 1)));color:var(--text);opacity:.85;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tela-acessos :deep(.ac-note){font-size:max(9px, calc(12.5px * var(--escala-texto, 1)));line-height:1.55;color:var(--muted);background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:11px 13px;margin:0 0 14px}
 .tela-acessos :deep(.ac-note-warn){color:var(--text);background:rgba(184,88,0,.12);border-color:var(--orange)}
 .tela-acessos :deep(.ac-note-warn b){color:var(--text)}
 /* Auditoria — OneDrive consolidado (drive completo / setor + detalhar) */
-.tela-acessos :deep(.ac-od-chip){display:block;margin:0 0 5px;font-size:12.5px;line-height:1.5}
+.tela-acessos :deep(.ac-od-chip){display:block;margin:0 0 5px;font-size:max(9px, calc(12.5px * var(--escala-texto, 1)));line-height:1.5}
 .tela-acessos :deep(.ac-od-chip:last-child){margin-bottom:0}
-.tela-acessos :deep(.ac-detbtn){font-size:10.5px;border:1px solid var(--border);background:transparent;color:var(--accent);border-radius:7px;padding:1px 7px;cursor:pointer;margin-left:4px;font-weight:700}
+.tela-acessos :deep(.ac-detbtn){font-size:max(9px, calc(10.5px * var(--escala-texto, 1)));border:1px solid var(--border);background:transparent;color:var(--accent);border-radius:7px;padding:1px 7px;cursor:pointer;margin-left:4px;font-weight:700}
 .tela-acessos :deep(.ac-detbtn:hover){background:var(--accent-light)}
-.tela-acessos :deep(.ac-detlist){font-size:11.5px;color:var(--muted);margin:5px 0 2px;padding:7px 10px;border-left:2px solid var(--border);background:var(--surface2);border-radius:0 8px 8px 0;line-height:1.7}
+.tela-acessos :deep(.ac-detlist){font-size:max(9px, calc(11.5px * var(--escala-texto, 1)));color:var(--muted);margin:5px 0 2px;padding:7px 10px;border-left:2px solid var(--border);background:var(--surface2);border-radius:0 8px 8px 0;line-height:1.7}
 .tela-acessos :deep(.ac-linklist){display:flex;flex-direction:column;gap:8px}
 .tela-acessos :deep(.ac-linklist .ac-row){align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:var(--surface2)}
-.tela-acessos :deep(.ac-linklist .ac-row b){font-size:13px;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tela-acessos :deep(.ac-linklist .ac-row b){font-size:max(9px, calc(13px * var(--escala-texto, 1)));display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 [data-theme="dark"] .tela-acessos :deep(.ac-pill.ok){color:var(--modulo)}
 .tela-acessos :deep(.ac-avatar){border-radius:50%;object-fit:cover;flex:none;border:1px solid var(--border);background:var(--surface2)}
 .tela-acessos :deep(.ac-avatar-fb){display:inline-flex;align-items:center;justify-content:center;font-weight:700;color:var(--sobre-cor);background:linear-gradient(135deg,color-mix(in srgb,var(--modulo) 80%,var(--text)),var(--modulo))}

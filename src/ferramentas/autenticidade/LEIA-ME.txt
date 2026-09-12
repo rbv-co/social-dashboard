@@ -8,23 +8,211 @@ A pagina da cliente NAO esta aqui: ela e um arquivo separado, em
 public/verify/index.html, porque precisa abrir em 1 segundo no 4G de uma loja e
 nao pode carregar o painel inteiro junto.
 
-AS QUATRO ABAS
-==============
+O NUMERO DE SERIE
+=================
 
-LOTES      Cada lote e uma fornada de bolsas do mesmo modelo. Ao criar um lote
+Ate 02/09/2026 uma bolsa era descrita por DOIS campos: a REFERENCIA do lote
+("H0015S") e o numero da PECA dentro dele ("no 3"). O dono decidiu unir os dois
+num NUMERO DE SERIE so, e escolheu o formato COLADO: os DIGITOS da referencia
+seguidos da sequencia da peca, sem separador e sem zeros de enchimento.
+
+    referencia H0015S, peca 1    ->  00151
+    referencia H0015S, peca 12   ->  001512
+    referencia C0011S, peca 3    ->  00113
+
+POR QUE UM SO. O numero da peca sozinho ("no 3") so e unico DENTRO de um lote:
+dois lotes tem uma peca 3 cada. O numero de serie e unico entre todos, e e ele
+que fica impresso na bolsa.
+
+AS LETRAS DA REFERENCIA NAO ENTRAM — so os digitos. Por isso a referencia crua
+continua escrita no cartao do lote ("ref. H0015S"): sem aquela linha, o "H" e o
+"S" sumiriam da tela inteira. O numero da PECA tambem nao se perde: ele continua
+em coluna propria na planilha que se baixa do lote, e volta a aparecer na tela
+inteira quando o lote nao tem referencia nenhuma.
+
+SEM REFERENCIA NAO HA NUMERO DE SERIE. Nesse caso a tela mostra o que sempre
+mostrou — "no 3" — que e a verdade que se tem, e nunca um traco.
+
+O CUIDADO QUE VEM JUNTO. Colado so nao e ambiguo enquanto TODA referencia tiver
+a mesma quantidade de digitos. Hoje sao quatro (0011, 0012, 0015), entao
+"001512" so pode ser a referencia 0015 na peca 12. No dia em que entrar uma de
+tres ou de cinco, "001512" passa a poder ser 0015+12 OU 00151+2 — e um numero
+que aponta para duas bolsas nao e numero de serie.
+
+A tela AVISA, e nao impede: ao criar ou editar um lote com uma referencia
+assim, aparece um recado embaixo do campo explicando as duas leituras
+possiveis, e o cartao do lote ganha um selo "No de serie ambiguo". O campo
+continua aceitando e o botao continua ligado — quem decide se a referencia muda
+e o dono.
+
+A MESMA CONTA MORA DO OUTRO LADO, em vessel-brasil/verify/regras.js, que e a
+pagina que a CLIENTE abre ao encostar o celular. As duas sao iguais de
+proposito: o numero da etiqueta e o numero da bancada tem de bater. Mudou uma,
+muda a outra.
+
+O QUE CONTINUOU SENDO O NUMERO DA PECA: o "no 8 de 20" GRANDE da bancada. Ele
+nao identifica a bolsa — aponta a posicao na fila, lido de pe e de longe. Duas
+pecas seguidas seriam "001517" e "001518", que a 32px do outro lado da bancada
+sao a mesma mancha; e "001518 de 20" nao e frase nenhuma. Quem identifica a
+bolsa ali e o endereco ao lado e a fila logo abaixo, que diz o numero de serie
+de cada peca. Ha teste segurando essa decisao.
+
+AS SEIS ABAS, E POR QUE QUATRO DELAS TEM NUMERO
+==============================================
+
+A barra de abas mostra uma SEQUENCIA, porque a ferramenta e um caminho e nao um
+armario:
+
+    1 LOTES   2 GRAVAR   3 ETIQUETAS   4 CARTOES EAN   .   GARANTIAS   ALERTAS
+
+Os quatro primeiros sao os passos, na ordem em que se faz. Garantias e Alertas
+ficam do outro lado do separador porque nao sao passos: sao consulta. Numerar os
+seis mentiria sobre o fluxo.
+
+A BARRA E A `.abas` GLOBAL, a mesma da Frota, do Patrimonio e dos Acessos. Uma
+entrega anterior escreveu uma barra propria aqui (com fundo, moldura e rolagem
+por dentro) e o dono viu na hora que a tela tinha ficado diferente das irmas.
+Nao ha regra de `.abas` no CSS desta tela, e ha teste que reprova se voltar. Com
+seis itens ela quebra em duas linhas no celular — igual as irmas fariam.
+
+1 LOTES    Cada lote e uma fornada de bolsas do mesmo modelo. Ao criar um lote
            de 20, nascem 20 codigos DIFERENTES, um por bolsa.
+           "Ver as pecas e os links" abre a lista do lote: numero de serie,
+           codigo, o endereco que foi gravado, o estado (gravada com a data,
+           pendente, ou baixada com o motivo), copiar o endereco e abrir a
+           pagina que a CLIENTE ve.
+           No computador ela e tabela, e a coluna "No de serie" diz o que o
+           numero e. No celular a mesma lista vira cartao e o cabecalho some —
+           entao o rotulo "no de serie" vem junto do numero, senao ele ficaria
+           encostado no codigo sem nada dizendo qual e qual. E de la que sai "Baixar a lista inteira",
+           a planilha para arquivar junto da ordem de producao.
 
-GRAVAR     Mostra UMA etiqueta por vez, com o endereco em letra grande, botao de
-           copiar e "Gravei essa". Existe por um motivo pratico: 20 etiquetas
-           sao fisicamente identicas, e sem essa tela e questao de tempo ate
-           alguem gravar a mesma duas vezes e pular outra.
+2 GRAVAR   E A BANCADA. Nao ha modo para entrar: escolheu o lote, trabalha.
+           Um seletor compacto de lote no alto e, logo abaixo, o painel de
+           trabalho.
+           Existe por um motivo pratico: 20 etiquetas sao fisicamente
+           identicas, e sem essa tela e questao de tempo ate alguem gravar a
+           mesma duas vezes e pular outra.
 
-REGISTROS  Quem registrou a garantia: nome, WhatsApp, onde comprou. Da pra
-           buscar e baixar em planilha.
+           NO COMPUTADOR SAO DUAS COLUNAS (a partir de 900px de largura), e o
+           desenho e do dono: "de um lado a animacao de gravacao e na direita o
+           link e os botoes".
+             ESQUERDA, o que esta acontecendo: qual peca e agora e o bloco de
+             estado, com os aneis GRANDES (200px) no alto dele e o mesmo estado
+             por escrito embaixo. E o que se ve de longe, de pe na bancada.
+             DIREITA, o que voce faz: o endereco da peca, o botao principal, o
+             secundario e o progresso do lote.
+             EMBAIXO DAS DUAS, atravessada, a faixa com a fila do lote — a que
+             saiu, a da vez marcada com "Agora" e as quatro seguintes.
+           Medido a 1440px: 705,8 + 654,2 de 1440, ou 96,7% da largura, sem
+           faixa vazia de lado nenhum. A coluna da direita e `min(680px, 47%)`
+           porque o endereco pede 576px para nao quebrar no meio do codigo — que
+           e justamente o que a pessoa le e copia no modo do aplicativo.
+
+           NO CELULAR TUDO EMPILHA, na mesma ordem: peca, estado, endereco,
+           botoes, progresso, fila. A ordem do HTML e essa, e as colunas sao so
+           um `@media (min-width:900px)` — por isso o celular saiu IDENTICO ao
+           que era antes das colunas, conferido pixel a pixel a 375px nos dois
+           temas.
+
+           SEM BUSCA, SEM FILTROS, SEM PARAGRAFOS. Ate 01/09/2026 vinham OITO
+           blocos antes da area de trabalho — um paragrafo de explicacao, os
+           tres passos, o link do guia, o painel de busca inteiro, o seletor, o
+           botao "Entrar no modo bancada", um paragrafo explicando esse botao e
+           a barra de progresso. A area de trabalho comecava a dois tercos da
+           pagina, e o progresso aparecia TRES vezes. O dono reclamou quatro
+           vezes; da quarta, o pedido foi refazer o layout do zero.
+           O "modo bancada" era um remendo: se a aba precisa de um modo para
+           ficar usavel, a aba deveria SER aquilo. Agora ela e.
+
+           AS ACOES RARAS FICAM ATRAS DE UM PONTO SO, "Mais opcoes deste lote":
+           dar baixa, excluir a peca, trocar o jeito de gravar, a trava
+           permanente, quais lotes o seletor oferece e as pecas baixadas com o
+           "Desfazer". Antes eram seis links do MESMO peso soltos na tela, e
+           seis do mesmo peso e o mesmo que nenhuma acao principal.
+
+           A GAVETA "GRAVADOR DE MESA" SAIU DAQUI EM 02/09/2026. O dono
+           perguntou se ela ainda fazia sentido, e metade nao fazia:
+             - "Baixar a lista das que faltam" SAIU DA FERRAMENTA. Nasceu
+               quando nao existia programa de gravacao nenhum; hoje ha tres
+               caminhos melhores ("Por onde gravar", nesta mesma gaveta) e uma
+               lista em arquivo MAIS COMPLETA na aba 1 Lotes: "Baixar a lista
+               inteira", dentro de "Ver as pecas e os links", em CSV com todas
+               as pecas, o estado e o endereco de cada uma;
+             - o CAMPO DE COLAR O RETORNO mudou de casa, para a aba 3
+               Etiquetas. Ele marca cinquenta pecas de uma vez a partir de um
+               log, e continua sendo o unico jeito de fazer isso sem cinquenta
+               cliques. Nunca foi da bancada: aqui se grava UMA peca por vez.
+
+3 ETIQUETAS
+           O desfazer da aba Gravar: apagar uma gravacao feita errado, com duas
+           perguntas e a senha. A peca volta para a fila; o codigo e a garantia
+           da cliente continuam existindo. Abre nos ULTIMOS 30 DIAS.
+
+           E TAMBEM O MARCAR EM BLOCO, desde 02/09/2026: a gaveta "Marcar
+           varias de uma vez, pelo gravador de mesa", logo abaixo do seletor de
+           lote. Cole o que o gravador devolveu — arquivo, planilha ou log
+           solto — e a tela procura os codigos la dentro. Ela mora aqui porque
+           esta aba e o conserto EM BLOCO da gravacao, nos dois sentidos:
+           apagar uma e marcar cinquenta.
+           GANHOU ALGO NA MUDANCA: na bancada ela so conferia contra o lote da
+           bancada; aqui o seletor abre em "Todos os lotes", e quem colou o log
+           de duas fornadas juntas nao precisa mais colar duas vezes.
+           ⚠️ E O UNICO CAMINHO DA FERRAMENTA QUE MARCA SEM CONFERIR ETIQUETA
+           NENHUMA, e por isso passa por uma pergunta que diz o numero e diz
+           isso por escrito.
+
+GARANTIAS  Quem registrou a garantia: nome, WhatsApp, onde comprou. Da pra
+           buscar e baixar em planilha. (A chave interna dela continua sendo
+           `registros`, que e o nome da tabela; o que mudou foi so o rotulo.)
 
 ALERTAS    Os sinais de falsificacao. A etiqueta guarda um endereco, e endereco
            se copia — entao a etiqueta sozinha nao impede nada. O que denuncia a
            copia e a MESMA peca sendo lida de muitos aparelhos diferentes.
+
+4 CARTOES  O cartao EAN e o PAPEL que vai dentro da bolsa: nome do modelo, foto
+  EAN      da peca, numero de serie e o codigo de barras EAN-13 do produto.
+           Marque as pecas, confira a previa, mande gerar. O robo desenha e
+           entrega em PNG e PDF no Zoho, em "Cartoes com EAN/<AAAA-MM-DD>".
+
+           ⚠️ DEPOIS DE O CARTAO SAIR, O NUMERO DAQUELA PECA NAO MUDA MAIS.
+           Papel dentro de bolsa nao se regrava — diferente da etiqueta NFC. A
+           peca com cartao passa a contar como PRESA, junto com a gravada e a
+           que tem garantia: nem `vessel_editar_lote` nem `vessel_renumerar_lote`
+           mexem nela, e o lote dela nao pode ser apagado.
+           Ja aconteceu o contrario: no Zoho ha a pasta "Cartoes com EAN - BKP
+           07-09-2026 (numero de serie antigo)", com 620 cartoes que deixaram de
+           valer porque os numeros mudaram depois de eles saírem.
+
+           ⚠️ A PREVIA E O CARTAO, e nao um desenho parecido. Ela e a pagina
+           `fotos/cartao/previa.html`, do repositorio do SITE, embutida num
+           iframe — montada pelo MESMO `montar-puro.mjs` que o robo usa, com a
+           mesma foto tratada, o mesmo enquadramento e a mesma tipografia.
+           O desenho NAO pode ser copiado para ca: duas contas do mesmo cartao
+           acertam no comeco e divergem depois, caladas, e o dono aprovaria na
+           tela uma composicao que a grafica nao imprime.
+           O aplicativo nao EXECUTA nada de la: ele so embute uma pagina de
+           outro endereco. `cartoes-ean.js` guarda a conta que e desta tela —
+           quais pecas podem, quais ja tem, e o que vai para a fila.
+
+           SO VEM MARCADO O QUE AINDA NAO TEM CARTAO. Refazer e permitido —
+           cartao rasga, mancha, some — mas nunca por padrao: vindo marcado, um
+           clique reimprimiria a leva inteira e a pasta do Zoho voltaria com o
+           dobro dos arquivos, sem ninguem saber qual e o bom.
+
+           A FILA e `vessel_cartao_pedidos`: a tela pede, o robo executa. A marca
+           `cartao_gerado_em` e do ROBO, e so nas pecas que ele CONFIRMA —
+           marcar o pedido inteiro deixaria a marca mentindo nas que falharam no
+           meio, e e ela que prende o numero. Pedido em aberto ja prende: entre
+           o "gerar" e o arquivo no Zoho ha uma janela de minutos.
+
+           A REGRA DE "PECA PRESA" MORA EM UM LUGAR SO: `vessel_peca_presa`, no
+           banco, que devolve o MOTIVO ('garantia', 'gravada', 'cartao') e nao
+           sim/nao — quem recusa apagar um lote precisa dizer por que. Ela estava
+           escrita QUATRO vezes em tres funcoes ate 11/09/2026, e somar uma
+           condicao em quatro lugares e somar em tres e esquecer um.
+           Guarda: `db/cartao-trava-a-serie.test.mjs`.
+
 
 DE ONDE VEM O CODIGO
 ====================
@@ -50,11 +238,382 @@ permissions{} (RECURSOS e PERMISSION_TREE em
 src/compartilhado/controle-de-login-e-usuario.js) e o banco le features[]
 (is_vessel_admin()). Mexer so num dos dois tira o acesso em silencio.
 
+O ARQUIVAMENTO AUTOMATICO, E A BUSCA
+====================================
+
+A tela acumulava tudo para sempre: com 50 lotes ela virava um muro, o seletor da
+aba Gravar oferecia 40 lotes sem nada a fazer, e a aba Etiquetas listava todas
+as gravacoes desde o comeco.
+
+UM LOTE ESTA ENCERRADO quando todas as pecas dele ja foram gravadas ou baixadas.
+Isso e CONTADO NA HORA, com o que a tela ja lia — nao ha coluna nova, nao ha
+migration, nao ha estado gravado em lugar nenhum. Desfazer uma baixa devolve o
+lote para "em andamento" sozinho, sem ninguem precisar destravar nada.
+
+  aba Lotes      abre nos EM ANDAMENTO; os encerrados ficam atras do botao
+                 "Ver encerrados (N)", que diz o numero e tem volta;
+  aba Gravar     o seletor so oferece lote com peca POR GRAVAR. Duas excecoes,
+                 e as duas para a tela nao mentir: o lote ESCOLHIDO nunca sai
+                 (ao gravar a ultima peca ele encerra na hora, e o seletor
+                 ficaria em branco com o check ainda na tela), e o interruptor
+                 "Mostrar tambem os lotes encerrados" — dentro de "Mais opcoes
+                 deste lote" — traz os outros de volta, e e o unico caminho para
+                 DESFAZER uma baixa num lote encerrado. Ele e um interruptor
+                 escrito, e nao um painel de filtros: o painel inteiro numa aba
+                 onde se escolhe UM lote eram 260px de altura que quem grava
+                 nunca usa;
+  aba Etiquetas  abre nos ULTIMOS 30 DIAS, e o resto vem no "Qualquer data" ou
+                 no "Limpar a busca".
+
+A BUSCA E A MESMA NAS DUAS ABAS QUE PROCURAM ENTRE MUITOS — Lotes e Etiquetas:
+por data (com atalhos — hoje, 7 dias, 30 dias, este mes, este ano — e o periodo
+exato numa gaveta), por modelo, por cor, por referencia, pelo CODIGO DE UMA
+PECA, pelo NUMERO DE SERIE e por estado. Sem acento e sem caixa, e cada palavra
+digitada pode estar num campo diferente ("monaco quartz" acha o lote).
+
+O NUMERO DE SERIE CASA EXATO, e so quando o que se digitou e so digito —
+"10881" acha a peca de numero de serie 10881, e nada mais. Pedaco de numero nao
+vale, pelo mesmo motivo que o numero da peca nunca entrou no palheiro de texto:
+um pedaco de numero aparece em quase todo codigo, e devolveria meia lista.
+Digitar so o numero da PECA continua funcionando ("9" acha a peca 9), para quem
+tem a ordem de producao antiga na mesa.
+Ate 03/09/2026 a dica do campo ja PROMETIA "ou o no da serie" e a busca nao
+sabia procurar por ele: quem digitasse o numero impresso na bolsa nao achava
+nada.
+A aba Gravar NAO tem busca: ali se escolhe UM lote, e quem procura entre muitos
+faz isso na aba 1 Lotes — de la, "Gravar as etiquetas deste lote" traz para a
+bancada com o lote ja escolhido.
+
+O CODIGO DA PECA ACHA O LOTE DELA: quem esta com a etiqueta na mao tem o codigo,
+e nao o modelo — esse caminho nao existia em lugar nenhum da tela.
+
+E AS TRES DIZEM SEMPRE "N DE M". Lista recortada sem numero faz a pessoa achar
+que perdeu dado, e aqui o dado e o link que ficou dentro de uma bolsa de couro.
+
+O GUIA DE BANCADA
+=================
+
+`tutorial.js` guarda cinco coisas, todas testadas:
+
+  PASSOS        (NAO E MAIS DESENHADO NA TELA, desde 01/09/2026: a barra de abas
+                 ja e a mesma sequencia, com os mesmos numeros, e duas
+                 numeracoes seriam duas verdades. O modulo continua, com os
+                 testes dele, e o texto por extenso vive nos ESTAGIOS);
+  AJUDA_DA_ABA   uma ou duas linhas DENTRO de cada aba, sempre a vista. Guia
+                 unico ninguem reabre: quem cai na aba Alertas seis meses depois
+                 nao vai procurar um guia para entender aquela lista. Aba nova
+                 sem verbete aqui reprova no teste;
+  ESTAGIOS       os tres estagios por extenso — o que fazer, o que a tela mostra
+                 e como saber que deu certo. As telas do guia NASCEM daqui;
+  SOCORRO        "deu errado, e agora?": sete casos, cada um com o que houve e o
+                 que fazer. E a parte que quem esta de pe na bancada mais
+                 procura, e era a que nao estava escrita em lugar nenhum;
+  ONDE_SE_GRAVA  quem grava por onde. O gravador de mesa esta marcado
+                 `pronto: false` — a maquina ainda nao foi comprada, e prometer
+                 mandaria alguem procurar na bancada uma coisa que nao esta la.
+
+O guia abre sozinho na primeira visita (o "ja vi" mora no aparelho, nunca no
+banco) e volta pelo "?" do alto da bancada — um alvo pequeno, com a frase
+inteira no `title` e no `aria-label`. Ele era um link de uma linha e meia
+ocupando o melhor espaco da tela toda vez, para sempre.
+
 OS ARQUIVOS
 ===========
 
-tela-de-autenticidade.vue  a tela inteira, com as quatro abas
+tela-de-autenticidade.vue  a tela inteira, com as cinco abas
+painel-de-busca.vue        o bloco de busca das abas Lotes e Etiquetas. E um
+                           componente porque busca escrita duas vezes e busca
+                           que diverge — a aba que ficasse para tras passaria a
+                           esconder dado que a outra acha. Ele nao filtra nada:
+                           so devolve o que a pessoa pediu.
+busca-e-arquivamento.js    as contas do arquivamento e da busca (estado do lote,
+                           atalhos de data no fuso de Sao Paulo, os filtros das
+                           tres abas, a frase "N de M"). Testadas sem navegador
+                           em busca-e-arquivamento.test.mjs.
+tutorial.js                o guia de bancada — ver a secao acima.
 lotes.js                   as continhas soltas (endereco da etiqueta, progresso
                            do lote, proxima a gravar, planilha, resumo de
-                           alertas). Ficam separadas porque sao testadas em
-                           lotes.test.mjs
+                           alertas, frases de recusa). Ficam separadas porque
+                           sao testadas em lotes.test.mjs. `naFila` — a regra de
+                           que peca baixada sai da fila — mora AQUI e so aqui:
+                           nfc-fila.js importa em vez de reescrever. O mesmo
+                           vale para `rotuloDoMotivo`: a tela e a planilha do
+                           lote escrevem o MESMO motivo porque bebem daqui.
+
+OS TRES MODOS DE GRAVAR
+=======================
+
+A aba Gravar tem TRES modos, e a tela oferece o melhor que a maquina daquela
+pessoa tiver. A fabrica nao pode ficar refem do aparelho.
+
+  GRAVAR PELO LEITOR DE MESA   O caminho automatico da bancada, e o PREFERIDO
+                               onde ele existe. So aparece dentro do programa
+                               do gravador (gravador/janela/), que abre ESTA
+                               MESMA tela e empresta o leitor ACR122U para ela.
+                               A pessoa poe a etiqueta no leitor e clica: a
+                               tela le, grava, le de volta, confere e marca.
+
+  GRAVAR ENCOSTANDO O CELULAR  Onde o navegador grava NFC (Chrome no Android).
+                               Encosta a etiqueta e ela grava sozinha.
+
+  GRAVAR PELO APLICATIVO       Onde nao ha nem um nem outro (iPhone, computador
+                               sem o programa). Como sempre foi: endereco
+                               grande, copiar, "Gravei essa".
+
+Da para ir de qualquer modo para qualquer outro pelos botoes — e cada botao so
+aparece quando o caminho dele existe de verdade naquela maquina.
+
+O QUE MUDA ENTRE O CELULAR E O LEITOR DE MESA:
+
+  * A TRAVA PERMANENTE nao aparece no leitor de mesa. Travar mexe na pagina 40
+    e no Capability Container, e irreversivel, e o motor do leitor de mesa nao
+    faz isso. Interruptor que nao trava nada seria promessa falsa numa acao que
+    nao tem volta.
+  * O PLANO DE GRAVACAO se monta em cima da memoria que acabou de ser lida. No
+    celular quem monta os bytes e o proprio navegador; no leitor de mesa somos
+    nos, e a NTAG213 NAO vem em branco de fabrica (as paginas 4 e 5 trazem um
+    Lock Control de 5 bytes). Medido em 01/09/2026: plano montado supondo
+    etiqueta de fabrica, gravado numa etiqueta reaproveitada — doze `90 00` e a
+    etiqueta ilegivel para o celular.
+
+ONDE MORA CADA COISA:
+
+  gravador-nfc.js                          a porta do celular
+  gravador-de-mesa/porta-do-gravador-de-mesa.js
+                                           a porta do leitor de mesa. Irma da
+                                           de cima: e a UNICA que fala com
+                                           `window.gravadorDeMesa`
+  gravador-de-mesa/gravar-pelo-leitor-de-mesa.js
+                                           a sequencia (ler, planejar, gravar,
+                                           conferir, marcar). Mora fora do
+                                           `.vue` porque `node --test` nao
+                                           compila `.vue`, e e justamente o que
+                                           precisa de prova
+  gravador-de-mesa/ndef-para-ntag213.js    o tradutor: endereco -> bytes de cada
+                                           pagina, e de volta
+
+O programa que empresta o leitor mora em `gravador/janela/`, FORA do painel, e
+tem LEIA-ME proprio. O painel nao importa nada de la — o caminho e so de ida.
+
+A REGRA: LER ANTES E LER DEPOIS.
+Antes, porque etiqueta que ja tem OUTRA peca nao pode ser sobrescrita - isso
+mandaria duas bolsas para o lixo de uma vez.
+Depois, porque a prova de que gravou nao e o navegador nao reclamar: e a
+etiqueta devolver o que se pos nela. Sem essa leitura, uma peca entraria como
+pronta com a etiqueta EM BRANCO ja costurada dentro da bolsa.
+
+A TRAVA e permanente e nasce DESLIGADA. Quando for ligar, o primeiro teste tem
+de ser numa etiqueta descartavel - etiqueta travada nunca mais se regrava.
+
+A ETIQUETA vai costurada no forro interno, longe de fecho, rebite e corrente:
+NFC nao funciona encostado em metal.
+
+QUANDO ESTA PASTA MUDAR DE REPOSITORIO
+======================================
+
+Ela foi escrita para sair daqui e ir para o repositorio que tiver o modulo de
+producao. Sao DUAS amarras com o iamundi, e as duas moram so no .vue:
+
+  1. o login e a permissao 'autenticidade'
+  2. o cliente do banco `sbClient` e o `adminToast`
+
+nfc-fila.js, gravador-nfc.js, lotes.js e a pasta gravador-de-mesa/ nao importam
+NADA do projeto - sao contas puras mais duas portas para o navegador. Mudar de
+casa e copiar a pasta e trocar essas duas amarras.
+
+⚠️ UMA AMARRA A MAIS, NO SENTIDO CONTRARIO: o motor do gravador de mesa
+(`gravador/comandos-do-acr122u.js`, fora do painel) IMPORTA
+`gravador-de-mesa/ndef-para-ntag213.js` daqui, para que a faixa de paginas da
+etiqueta nao exista escrita em dois lugares. Levando esta pasta embora, aquele
+`import` precisa ir junto.
+
+O QUE NAO PODE MUDAR NUNCA
+==========================
+
+O endereco gravado na etiqueta: https://vesselbrasil.com.br/verify/<CODIGO>.
+Etiqueta costurada dentro de bolsa vendida nao se regrava. A partir da primeira
+etiqueta gravada, renovar vesselbrasil.com.br deixa de ser opcional - e o
+caminho /verify/ e o formato do codigo congelam junto.
+O dominio sai de enderecoDaTag() em lotes.js e de nenhum outro lugar.
+
+AS DUAS LISTAS DO LOTE, E POR QUE ERAM DUAS
+==========================================
+
+⚠️ HOJE SO UMA DELAS TEM BOTAO. Desde 02/09/2026 a unica lista em arquivo da
+ferramenta e a `linhasDaListaDoLote` — a de baixo. A outra continua no codigo,
+com os testes dela, e a explicacao aqui fica porque a REGRA dela continua
+valendo para quem for mexer.
+
+`listaParaGravadorDeMesa` (nfc-fila.js) e a FILA DO QUE FALTA: uma URL por
+linha, para alimentar o gravador de mesa. Ela TIRA as gravadas e as baixadas —
+misturar as gravadas nela mandaria a maquina regravar etiqueta que ja esta
+costurada dentro de uma bolsa. O botao que a baixava ("Baixar a lista das que
+faltam") saiu da tela: ela sabia MENOS que a de baixo, e duas listas para o
+mesmo dedo era uma a mais.
+
+`linhasDaListaDoLote` (lotes.js) CONTA A HISTORIA: sai com TODAS as pecas, na
+ordem da serie, com NUMERO DE SERIE, numero da peca, codigo, endereco, estado,
+a data da gravacao e o motivo da baixa. O numero de serie vem na primeira
+coluna, porque e por ele que se procura a bolsa; o numero da peca fica na
+segunda, porque e o que casa com as ordens de producao arquivadas antes de
+02/09/2026. A REFERENCIA DO LOTE entra por parametro (`sku`), pelo mesmo motivo
+que a data: ela e do LOTE, e esta conta recebe as PECAS. Sem ela a coluna sai
+vazia — lote sem referencia nao tem numero de serie, e a planilha nao inventa. E a lista para arquivar junto da ordem de producao — quem
+arquiva precisa saber o que aconteceu com cada numero.
+
+Sao duas de proposito. Juntar numa so quebra uma das duas, e a que quebra e a
+que manda a maquina gravar de novo.
+
+A DATA DA PLANILHA ENTRA POR PARAMETRO (`formatarData`), e nao e formatada
+dentro de lotes.js: o fuso da Central mora na tela (`dataCurta`, em
+America/Sao_Paulo). Escrevendo uma segunda formatacao la, o arquivo sairia com a
+data de um dia e a tela com a de outro.
+
+A ANIMACAO NUNCA E O UNICO AVISO
+================================
+
+A bancada se mexe, e o movimento CONTA o que esta acontecendo: aneis
+concentricos, em CSS e SVG puros, so com `transform` e `opacity` (a maquina vai
+gravar 50 seguidas).
+
+  esperando  largos, lentos, calmos ................. "encoste"
+  gravando   aceleram e apertam, a cor esquenta ..... "nao tire"
+  gravou     colapsam e viram um check que cresce ... "pode tirar"
+  erro       travam, tremem, cor de recusa .......... "para"
+
+Mas `@media (prefers-reduced-motion: reduce)` desliga o movimento — e nesses
+casos os quatro estados tem de APARECER sem se mexer, e DISTINGUIVEIS: a cor do
+anel (token), o nucleo vazio em "encoste" e cheio em "nao tire" e em "para", e o
+check desenhado em "pode tirar". Por isso cada estado tambem esta ESCRITO, no
+titulo e no detalhe que saem de `estadoDaBancada` — a conta pura.
+
+⚠️ O BLOCO DE MOVIMENTO REDUZIDO PRECISA DE `!important`, e isso foi medido: as
+regras de estado tem DUAS classes no seletor (`.au-aneis-gravando .au-anel-2`) e
+a de desligar tinha UMA (`.au-aneis circle`). Quem tem mais especificidade
+ganha, esteja onde estiver no arquivo — e o bloco inteiro virava enfeite, sem
+erro nenhum. Ha teste que exige o `!important`.
+
+⚠️ NADA PISCA MAIS DE 3 VEZES POR SEGUNDO — e gatilho de convulsao
+fotossensivel. Contado: em "gravando", o mais rapido, cada anel acende uma vez a
+cada 1,2s e sao tres defasados em 0,4s: 2,5 acendimentos por segundo. O tremor
+do erro roda UMA vez e para. Ha teste que le as duracoes do proprio CSS.
+
+Ha teste que varre o CSS da tela, junta toda classe que anima e reprova a que
+nao estiver desligada naquele bloco (gravacao-com-vida.test.mjs). Animacao nova
+entra por ali ou nao entra.
+
+Pela mesma razao a barra de progresso NAO substituiu o "6 de 20": barra sozinha
+nao diz quantas faltam e nao da para ler em voz alta na bancada.
+
+EXCLUIR, EDITAR E BAIXAR
+========================
+
+EXCLUIR SO O QUE NUNCA FOI GRAVADO. A pagina da cliente, diante de um codigo
+que nao existe, diz "nao consta no nosso registro de pecas". Entao apagar uma
+peca cuja etiqueta ja foi costurada dentro de uma bolsa faz a bolsa ORIGINAL
+parecer falsa para quem comprou - e nao ha como desfazer, porque a etiqueta
+esta dentro da bolsa.
+
+Por isso peca gravada vira BAIXA, com motivo (extraviada, defeito, devolvida,
+etiqueta perdida). O codigo continua respondendo normalmente para a cliente: a
+pagina NAO MUDA, por decisao do dono. O que muda e que a peca sai da fila de
+gravacao - senao a tela mandaria alguem gravar a etiqueta de uma peca dada como
+refugo.
+
+A BAIXA SE DESFAZ, e o historico guarda as duas coisas. Peca dada como
+extraviada reaparece, e um clique errado nao pode ser definitivo numa peca que
+ja esta com a cliente. Por isso e TABELA e nao coluna: com coluna, baixar de
+novo depois de desfazer apagaria a baixa anterior.
+
+A RECUSA MORA NO BANCO, nao na tela. A tela impedir nao basta: quem chama a
+funcao direto passaria por cima. As funcoes de excluir se negam sozinhas quando
+ha peca PRESA, e dizem QUANTAS estao presas.
+
+PECA PRESA = GRAVADA **OU** COM GARANTIA REGISTRADA. `gravada_em` nao e a unica
+prova de que a peca esta no mundo: a cliente registra a garantia pelo CODIGO, e
+o codigo existe desde que o lote nasceu — ha registro de garantia em peca que
+nunca foi gravada. E `vessel_registros` cai por `on delete cascade` junto com a
+peca: apagar uma peca "nao gravada" com garantia apagava A GARANTIA DA CLIENTE,
+calado. Motivo da recusa: `tem_garantia`. Aqui nao ha conselho a dar — diferente
+do `esta_gravada`, nao existe "de baixa em vez disso".
+
+A ABA GRAVAR OFERECE OS DOIS CAMINHOS para a peca da vez, dentro de "Mais
+opcoes deste lote": "Dar baixa nesta peca" e "Excluir esta peca". O excluir so
+aparece para peca nao gravada — para a nao
+gravada o certo quase sempre e excluir, e encher o lote de baixa no lugar disso
+suja o historico do que nunca existiu.
+
+O ALERTA DE PECA BAIXADA LIDA existe porque a pagina nao avisa nada. Como ela
+ja registra toda leitura, o painel avisa quando alguem encosta o celular numa
+peca baixada - o dono fica sabendo que a bolsa extraviada apareceu, sem
+incomodar quem esta com ela.
+
+EDITAR: modelo, cor, SKU e data de fabricacao sao seguros a qualquer momento,
+porque nao tocam em codigo nenhum. Aumentar a quantidade cria codigos novos
+continuando a serie. Diminuir tira as que NAO estao presas, de maior numero;
+abaixo do que ja esta preso, recusa.
+
+A SERIE E RENUMERADA A CADA SALVAMENTO, e nao so quando a quantidade muda. A
+renumeracao vivia dentro do if/elsif da quantidade, entao salvar um lote com
+buraco na serie sem mexer no numero nao consertava nada — e buraco nao e
+hipotese: o lote real do Monaco tinha quantidade 20 com pecas numeradas de 7 a
+11, e a cliente lia "peca 7 de 20" numa fornada de 5.
+
+O PORQUE DE RENUMERAR. A pagina da cliente mostra "peca N de TOTAL". Sem
+renumerar, diminuir um lote de 10 para 5 deixaria quem tem a peca 10 lendo
+"peca 10 de 5". O CODIGO da etiqueta NAO muda - e ele que identifica a peca, e
+e ele que esta costurado dentro da bolsa - mas o NUMERO podia mudar.
+
+⚠️ ESTA REGRA FOI VIRADA EM 03/09/2026, E A PREMISSA DELA E QUE MUDOU.
+
+Ate 02/09 valia "numero coerente vale mais que numero imutavel: incoerencia a
+cliente percebe, mudanca silenciosa quase nunca". Estava certo enquanto
+`numero_na_serie` era POSICAO — o "nº 7 de 20" da bancada, dado de dentro de
+casa. Em 02/09 a REFERENCIA e a PECA viraram um NUMERO DE SERIE so, que aparece
+no certificado. O numero deixou de ser posicao e virou IDENTIDADE, e a frase
+acima passou a autorizar exatamente o que ela queria evitar: a identidade da
+bolsa de uma cliente mudando calado.
+
+O caminho, medido no banco e nao deduzido: lote com as pecas 1 a 10, a 6 e a 7
+gravadas e com as clientes; excluo a peca 5, que esta LIVRE e cuja exclusao e
+permitida; a renumeracao fecha o buraco e a 6 vira 5, a 7 vira 6. A cliente que
+anotou 001517 na compra volta meses depois e le 001516.
+
+A REGRA DE HOJE: PECA PRESA NUNCA MUDA DE NUMERO. Presa e a mesma definicao que
+`vessel_editar_lote` ja usava — GRAVADA ou COM GARANTIA REGISTRADA. As livres
+continuam se acomodando nos menores numeros que sobram, porque ninguem as viu
+ainda. O preco combinado com o dono e o BURACO na serie: um lote de nove pecas
+pode ter uma numerada 10. Um vao na numeracao e feio; um numero de serie que
+muda depois de vendido e defeito.
+
+Por causa do buraco, as DUAS frases que juntam numero e total ganharam guarda, e
+elas sao irmas: `fraseDaPecaNaMao` (lotes.js) no "nº 8 de 20" da bancada e
+`pecaDaSerie` (vessel-brasil/verify/regras.js) no "01 de 12" do certificado.
+Quando o numero nao cabe no total, o "de N" sai. "nº 10 de 9" e "10 de 09" sao
+frases impossiveis — e a segunda apareceria no documento que existe para a
+cliente CONFIRMAR que a bolsa e verdadeira.
+
+O que NAO mudou, e ja estava certo: `vessel_excluir_peca` recusa peca gravada
+(`esta_gravada`) e peca com garantia (`tem_garantia`), e `vessel_editar_lote`
+recusa baixar a quantidade abaixo das presas (`abaixo_do_gravado`). Ninguem
+consegue apagar uma peca que esta no mundo. O buraco era o EFEITO COLATERAL de
+apagar a peca do lado.
+
+Prova: docs/provar-serie-congelada.sql, 16 assercoes em begin/rollback. Rodada
+tambem SEM a migration, para provar que ela pega o defeito: as pecas gravadas
+voltavam "5,6" onde tinham de voltar "6,7".
+
+AS MIGRATIONS DE 30/08, E A ORDEM DELAS
+=======================================
+
+O runner (coletor/run-migrations.mjs) aplica os .sql em ORDEM ALFABETICA. Cinco
+arquivos do mesmo dia mexem nas MESMAS funcoes, e por isso um deles se chama
+`2026-08-30-vessel-zz-fecha-o-portao-e-garantias.sql`: o `zz` existe para ele ser
+SEMPRE O ULTIMO. Ele e a palavra final sobre vessel_criar_pecas,
+vessel_baixar_peca, vessel_excluir_lote, vessel_excluir_peca e
+vessel_editar_lote.
+
+NAO RENOMEIE AQUELE ARQUIVO. Sem o `zz` ele roda antes de
+`2026-08-30-vessel-editar-lote.sql`, que recria vessel_criar_pecas SEM o portao
+por dentro — e o buraco de seguranca que ele existe para fechar volta inteiro em
+banco novo, com a producao certa e a suite verde.

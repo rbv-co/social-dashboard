@@ -169,3 +169,85 @@ export function podeCopiarTelefoneDoCarro({ pessoa, veiculo, pessoas }) {
   if (!telCarro) return false;
   return mesmaPessoaDoContato({ nomeContato: veiculo.contato_nome, pessoa, pessoas });
 }
+
+/* ── DIGITAR O TELEFONE ALI MESMO (D5) ──────────────────────────────────────
+ *
+ * Pedido do dono (19/08/2026). O `podeCopiarTelefoneDoCarro` acima só resolve
+ * quando o telefone JÁ existe na ficha do carro. Medido no banco no mesmo dia,
+ * isso deixa de fora justamente quem precisa:
+ *
+ *   Breno (BMW X1 e VOLVO XC90), Humberto Mendonça (XC60) e Raissa Herculano
+ *   (PORSCHE CAYENNE) não têm telefone em lugar NENHUM.
+ *
+ * Para esses quatro carros não existe hoje jeito nenhum de cobrar o checklist:
+ * o botão de WhatsApp não aparece, e o de copiar também não, porque não há o
+ * que copiar. */
+
+/**
+ * Dá pra digitar um telefone pra esta pessoa?
+ *
+ * Três condições, e a terceira é de desenho, não de segurança:
+ *   1. tem de ser um COLABORADOR de verdade (com `id`) — gente de fora não tem
+ *      cadastro pra receber telefone;
+ *   2. o cadastro dela tem de estar sem telefone; se já tem, digitar por cima
+ *      apagaria o que alguém pôs lá;
+ *   3. quando dá pra COPIAR do carro, o caminho é copiar. Dois controles pra
+ *      mesma coisa fazem a pessoa parar pra escolher — o padrão da casa manda
+ *      uma ação por bloco.
+ *
+ * Repare que 'carro_outra_pessoa' NÃO bloqueia: é o caso do FIAT DOBLO, que é
+ * do Jeremias Vieira mas tem "Siqueira" no contato. Copiar está proibido ali,
+ * e com razão — mas o Jeremias continua sem telefone, e é exatamente aí que
+ * digitar é o único caminho.
+ */
+export function podeDigitarTelefone({ pessoa, veiculo, pessoas } = {}) {
+  if (!pessoa || !pessoa.id) return false;
+  if (telefoneDaCobranca(pessoa)) return false;
+  return !podeCopiarTelefoneDoCarro({ pessoa, veiculo, pessoas });
+}
+
+/**
+ * O que a pessoa digitou serve? E, se serve, como se guarda?
+ *
+ * Guarda-se SÓ DÍGITOS, que é como os três telefones que já existem no banco
+ * estão gravados ('19998086930'). Aceitar a máscara junto criaria duas formas
+ * do mesmo número, e o link do WhatsApp passaria a depender de qual delas veio.
+ *
+ * A CONFERÊNCIA ACONTECE ANTES DE GRAVAR, e é para isso que ela existe: um
+ * número errado no cadastro não avisa que está errado — ele só faz a cobrança
+ * ir para o vazio, e ninguém descobre até alguém perguntar por que fulano
+ * nunca respondeu.
+ */
+export function conferirTelefoneDigitado(bruto) {
+  let d = String(bruto ?? '').replace(/\D/g, '');
+  if (!d) return { ok: false, motivo: 'vazio' };
+
+  // O 55 da frente é país, não telefone. Quem copia do WhatsApp traz ele junto.
+  if ((d.length === 12 || d.length === 13) && d.startsWith('55')) d = d.slice(2);
+
+  if (d.length < 10) return { ok: false, motivo: 'curto' };
+  if (d.length > 11) return { ok: false, motivo: 'longo' };
+
+  // DDD brasileiro vai de 11 a 99. "01" costuma ser gente colando o número com
+  // o zero da operadora na frente, e ele derrubaria a ligação e o WhatsApp.
+  const ddd = Number(d.slice(0, 2));
+  if (ddd < 11 || ddd > 99) return { ok: false, motivo: 'ddd' };
+
+  return { ok: true, numero: d };
+}
+
+/** A frase da recusa, em português. Código de motivo nunca chega na tela. */
+export function porQueOTelefoneNaoServe(motivo) {
+  switch (motivo) {
+    case 'vazio':
+      return 'Escreva o telefone antes de salvar.';
+    case 'curto':
+      return 'Faltam números. Escreva com o DDD — 11 dígitos no celular, 10 no fixo.';
+    case 'longo':
+      return 'Sobraram números. Escreva só o DDD e o telefone, sem o código do país.';
+    case 'ddd':
+      return 'Esse DDD não existe. Confira os dois primeiros números.';
+    default:
+      return 'Não consegui entender esse telefone. Confira e tente de novo.';
+  }
+}

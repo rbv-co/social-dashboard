@@ -306,9 +306,20 @@ test('o desenho fica FORA do bloco de texto — dentro dele o leitor recusa a p�
       assert.equal(dentro, false, `operador de desenho dentro de BT…ET: ${linha}`);
     }
   }
-  // e os dois blocos de texto continuam existindo, um antes e um depois
-  assert.equal((fluxo.match(/^BT$/gm) || []).length, 2);
-  assert.equal((fluxo.match(/^ET$/gm) || []).length, 2);
+  /* TODO BLOCO ABERTO É FECHADO. Um `BT` sem `ET` deixa o leitor esperando
+     texto até o fim da página, e nada mais é desenhado.
+
+     Este teste media o NÚMERO exato de blocos (dois) até 13/08/2026, quando o
+     papel ganhou a faixa da marca em cima e o rodapé embaixo: agora cada página
+     abre e fecha bloco de texto mais vezes, porque desenho e texto se alternam
+     mais. O número era consequência do desenho da página, não a regra — a
+     regra é o laço acima (nada de desenho dentro de BT…ET) e o par abaixo. */
+  const abre = (fluxo.match(/^BT$/gm) || []).length;
+  const fecha = (fluxo.match(/^ET$/gm) || []).length;
+  assert.equal(abre, fecha, 'sobrou um BT sem ET — o resto da página não desenha');
+  assert.ok(abre >= 2, 'esperava texto antes e depois do desenho');
+  // E o desenho continua entre os dois: texto, rabisco, texto.
+  assert.ok(fluxo.indexOf(' m\n') > fluxo.indexOf('BT'), 'o desenho veio antes de todo texto');
 });
 
 test('a ficha assinada COM rabisco traz o desenho, e o papel diz o que é', () => {

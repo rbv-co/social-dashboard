@@ -45,3 +45,159 @@ Acessos):
   fundo animado por "tema" da tela inicial (setHomeBgTheme).
 
 Para mexer só nesta tela, edite apenas esta pasta.
+
+QUEM É DE TIME DE VENDA VÊ SÓ A LOJA DELA (12/08/2026)
+------------------------------------------------------
+Mesma regra e MESMO módulo da Análise de Vendas
+(supabase/functions/_shared/canais-de-venda-permitidos.js; a tela importa pela
+ponte src/compartilhado/canais-de-venda-permitidos.js) — duas telas de venda
+recortando por conta própria divergiriam no primeiro ajuste.
+- DESDE 13/08/2026 A MESMA REGRA RODA NA EDGE bling-proxy, sobre a resposta do
+  Bling. Até então isto era só o recorte da tela, e quem abrisse o console
+  continuava conseguindo pedir o faturamento das outras lojas.
+- Quem NÃO está sob escopo por equipe continua vendo tudo, com os canais
+  zerados aparecendo como sempre apareceram. Isso foi pedido explicitamente.
+- Para quem é de time: os chips de canal, os pedidos das duas janelas (atual e
+  anterior) e as metas são recortados. Uma faixa acima do board diz qual canal
+  está sendo mostrado.
+- ⚠️ Recorte de TELA. A edge `bling-proxy` confere permissão, não canal, e
+  devolve todos os canais para quem tem 'sales'. A tranca do banco
+  (`pode_ver_canal`) protege `gc_vendas_item`, que esta tela não usa.
+
+CARDS DO MESMO TAMANHO E BOTÕES DA MESMA MEDIDA (20/08/2026)
+------------------------------------------------------------
+Os velocímetros por canal saíam com TRÊS alturas diferentes na mesma fileira:
+o card de um canal sem meta e sem histórico tinha menos da METADE da altura do
+card de um canal completo. A causa era a altura do viewBox do SVG, calculada
+sob medida para as linhas de texto que aquele canal tinha (133 / 96 / 62), com
+o SVG em width:100% + height:auto — viewBox diferente, card renderizado
+diferente.
+
+Agora a tela mede a rodada inteira ANTES de desenhar (duas passadas em
+renderGestaoVista) e todos os cards usam a MAIOR altura. A sobra do card mais
+pobre vira respiro no RODAPÉ — escolha do dono. As linhas continuam empilhando
+coladas no arco, sem reabrir o vão que uma rodada anterior tinha consertado.
+
+A conta ficou em velocimetro-gv.js (montarLinhas / posicionarLinhas /
+alturaComum), com testes em velocimetro-gv.test.mjs — mesma ideia do
+estoque-gv.js. O smGauge do .vue só desenha.
+
+Segunda causa, também resolvida: o rótulo do canal quebrava em 1 ou 2 linhas
+conforme o nome ("Site" contra "Mercado Livre") e mexia na altura do card. Ele
+agora tem caixa fixa de duas linhas.
+
+Botões: altura, cantos e respiro interno saem de uma medida só
+(--gv-btn-alt / --gv-btn-raio, reafinada por faixa). Duas regras POR ID
+cravavam fonte e padding próprios no botão AUTO e o deixavam menor que os
+demais em todo celular — saíram. As margens dos painéis passaram para a escala
+de tokens (--sp-*).
+
+A LARGURA também é única (--gv-btn-larg: 12ch, o tamanho do rótulo mais largo,
+"ATÉ AGORA"). Ela só passou a caber depois que a barra-de-topo ganhou
+flex:0 1 auto + min-width:0 no .bt-dir (B23, 20/08/2026) — antes disso a faixa
+crescia de 712px para 963px e o título "Performance de Vendas" quebrava em 19
+linhas. Se alguém reverter a barra, é essa linha que quebra o título de novo.
+
+Como a barra agora encolhe, a régua PRECISA encolher junto (min-width:0 +
+overflow-x:auto). O que não encolhe não fica menor: vaza para fora da barra.
+
+⚠️ .gv-topbar e .gv-topbar-brand no <style> são CSS ÓRFÃO desde 06/08/2026 —
+não existem mais no template. Quem for ajustar a margem do topo mexe em
+.gv-controles e na barra-de-topo, não neles.
+
+COMO CONFERIR ESTA TELA SEM LOGIN
+---------------------------------
+Não dá Playwright logado no iamundi (a conta loga no erickIA), então a prova é
+um harness fora do repositório: uma página que usa o CSS do BUILD (dist/assets)
+e a árvore real de elementos, servida por http (file:// não vale), medida em
+várias larguras e nos dois temas. O harness não é versionado porque depende de
+playwright-core, que não é dependência daqui.
+
+A receita, com os três tropeços que já custaram tempo:
+
+1. As funções de desenho (fitAttr, smGauge) devem ser EXTRAÍDAS do .vue, nunca
+   reescritas — harness com réplica mede a réplica.
+2. O data-v do escopo muda a cada edição do .vue. Leia-o do CSS do build; com o
+   hash antigo cravado a página abre SEM CSS e o relatório acusa defeito em tudo.
+3. Espere document.fonts.ready antes de medir. Com a fonte de fallback as
+   larguras oscilam e o relatório acusa "título em 19 linhas" onde não há nada.
+
+E dois critérios que precisam ser escritos direito, senão inventam defeito:
+a partir de 640px os cards viram GRADE, então arcos em linhas de base
+diferentes são fileiras diferentes — compare DENTRO da fileira. E letter-spacing
+soma o espaço do último caractere ao scrollWidth: 1-2px de sobra é da fonte,
+não é texto cortado.
+
+MATÉRIA-PRIMA NO ESTOQUE: O QUE ERA E O QUE PASSOU A SER (20/08/2026)
+----------------------------------------------------------------------
+Estava escrito aqui e na memória que "matéria-prima entra com categoria vazia;
+produto de verdade sempre tem categoria". NOS DADOS ISSO ERA FALSO. Das 1.386
+linhas visíveis do estoque, 213 eram insumo: argola, botão de pressão, botão
+imã, corrente, corda, couro, camurça, espuma, retalho, bobina plástica, caixa,
+aplicador, cursor de zíper, fivela injetada, alça e certificado de garantia.
+Conferidas uma a uma nos três depósitos — nenhuma era produto de venda.
+
+A culpa não era desta tela. Era de classificarItem() em
+coletor/lib/bling-comercial.mjs, que termina num PEGA-TUDO: o nome que a lista
+de palavras não reconhece vira 'Outros acessórios', ou seja, produto vendável.
+
+O que mudou: a mesma função respondia a DUAS perguntas diferentes.
+  · "que categoria é este produto?"  — VENDAS. O pega-tudo está CERTO aqui: se
+    foi vendido, é produto. classificarItem() segue igual, inclusive o pega-tudo.
+  · "isto é um produto vendável?"    — ESTOQUE. O pega-tudo É o defeito aqui.
+    categoriaDeEstoque() é a nova, e só devolve categoria para nome RECONHECIDO.
+
+A regra desta tela NÃO mudou: categoria vazia continua não aparecendo. O que
+mudou é que o coletor passou a gravar vazio no que não reconheceu. Medido sobre
+os 973 nomes reais do banco: 192 somem, 592 continuam, ZERO produto se perdeu e
+ZERO trocou de categoria.
+
+⚠️ O RISCO AGORA É O OPOSTO, e por isso existe a vigia. Uma linha de produto
+nova que a lista não conheça some da tela — e some CALADA, que é pior de
+perceber do que aparecer indevidamente. Duas coisas cuidam disso:
+  · o robô (relatorios-comerciais.mjs) registra no log quantos SKUs caíram em
+    "não reconhecido", com exemplos. Se esse número pular, é produto novo
+    faltando na lista, não insumo;
+  · a contagem da seção mostra "N ocultos (matéria-prima/sem classificação)",
+    para a tela não dar a entender que aquilo é tudo o que existe no depósito.
+
+Se aparecer produto novo sumido: a lista de palavras está em classificarItem().
+
+MENU DE CANAIS AGRUPADO — ATACADO / VAREJO (20/08/2026)
+--------------------------------------------------------
+O dropdown de canal mostra um bloco por GRUPO do canal, com "marcar todos" /
+"desmarcar todos" em cada bloco. O grupo vem de `bling_lojas.grupo` e se
+configura em Config de Admin > Canais de venda — não aqui.
+
+Canal sem grupo NÃO some: cai no bloco "Outros", no fim. E enquanto nenhum canal
+tiver grupo, o menu fica IDÊNTICO ao que sempre foi, sem cabeçalho nenhum — a
+tela não pede configuração para funcionar.
+
+A regra de agrupar e a de marcar/desmarcar todos moram em
+`src/compartilhado/grupo-do-canal.js`, testadas sem navegador, e são as MESMAS
+que a Análise de Vendas usa. Duas cópias da regra é como duas telas decidindo o
+mesmo: mais cedo ou mais tarde discordam.
+
+O menu já tinha `max-height:360px` + rolagem, então os cabeçalhos não escondem
+canal nenhum — o que não cabe rola.
+
+LOJA QUE FECHOU (09/09/2026)
+---------------------------
+Canal com data em `bling_lojas.fechado_em` SOME do menu quando o periodo
+escolhido comeca DEPOIS dessa data, e VOLTA quando o periodo alcanca os dias em
+que a loja operava. Pedido do dono: "oculte os canais de vendas, dom pedro pq
+fecharam, deixe somente o historico pra tras". A Loja Dom Pedro fechou em
+31/08/2026.
+
+A regra e pura e mora em `src/compartilhado/canal-fechado.js` (14 testes). A data
+se edita na Config de Admin > Canais de venda — nao e lista escrita a mao, entao
+a proxima loja que fechar nao precisa de codigo novo.
+
+⚠️ TIRAR A LINHA DO CADASTRO NAO ESCONDE O CANAL. O menu e a UNIAO do cadastro
+com quem teve pedido no periodo: sem o nome, a loja fechada voltaria a tela como
+"Canal #7609". Por isso o mapa de nomes continua CHEIO e o que se remove e o id
+da exibicao.
+
+⚠️ O TOTAL DO PERIODO NAO MUDA. Ele vem dos pedidos, nao da lista de canais —
+entao a soma dos canais visiveis pode ficar menor que o total. E de proposito:
+venda que aconteceu e faturamento real, e o dono pediu para manter o historico.

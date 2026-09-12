@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   seAtropelam, conflitosDe, problemasDaRequisicao, bloqueios,
   podeDecidir, motivoEmPortugues, ordenarFila, quando, ANTECEDENCIA_IDEAL_DIAS,
+  reservaParaPegar, reservaSegurando, meusPedidos,
 } from './requisicoes.js'
 
 const AGORA = '2026-08-04T12:00:00Z'
@@ -133,23 +134,27 @@ test('sem destino é só um empurrão, não uma trava', () => {
 
 /* ── Quem decide ──────────────────────────────────────────────────────────── */
 
-test('ninguém aprova a própria requisição', () => {
-  // É o sentido da aprovação: um segundo par de olhos. Existem dois
-  // aprovadores justamente para que sempre haja alguém.
-  const r = podeDecidir({ requisicao: req({ pessoa_id: 'p1' }), minhaPessoaId: 'p1', temPermissaoAprovar: true })
-  assert.equal(r.pode, false)
-  assert.equal(r.motivo, 'propria')
-  assert.match(motivoEmPortugues('propria'), /dois aprovadores/)
-})
+/* Os dois testes que ficavam aqui — "ninguém aprova a própria requisição" e
+ * "nem quando pediu para outra pessoa dirigir" — guardavam a regra que o dono
+ * derrubou em 12/08/2026. Foram apagados, não adaptados: teste que continua
+ * verde por outro caminho depois que a regra muda vira armadilha, porque quem
+ * ler acredita que a regra velha ainda vale em algum canto. */
 
-test('nem quando pediu para outra pessoa dirigir', () => {
-  // Quem CRIOU a requisição também não decide, mesmo pondo outro no volante.
+test('quem administra a Frota aprova a própria requisição', () => {
+  // Decisão do dono, consultado sobre marcar visualmente: aprova como qualquer
+  // outra, sem selo diferente. O caso real: as 2 requisições pendentes de
+  // OLW4I46 eram dele, e ficaram travadas desde 11/08 sem saída na tela.
   const r = podeDecidir({
-    requisicao: req({ pessoa_id: 'p9', criada_por: 'u1' }),
+    requisicao: req({ pessoa_id: 'p1', criada_por: 'u1' }),
     minhaPessoaId: 'p1', meuUsuarioId: 'u1', temPermissaoAprovar: true,
   })
-  assert.equal(r.pode, false)
-  assert.equal(r.motivo, 'propria')
+  assert.equal(r.pode, true)
+  assert.equal(r.motivo, null)
+})
+
+test('a frase da regra velha não existe mais — nem sobrando no código', () => {
+  // Frase que a tela nunca mostra é frase que alguém lê e acredita.
+  assert.equal(motivoEmPortugues('propria'), '')
 })
 
 test('o outro aprovador decide normalmente', () => {
@@ -167,7 +172,9 @@ test('sem permissão não decide, e requisição já decidida não reabre', () =
 })
 
 test('toda recusa tem frase, nenhuma sai muda', () => {
-  for (const m of ['propria', 'ja-decidida', 'sem-permissao']) {
+  // 'propria' saiu da lista em 12/08/2026: deixou de ser uma recusa possível
+  // quando o dono passou a aprovar a própria requisição.
+  for (const m of ['ja-decidida', 'sem-permissao']) {
     assert.ok(motivoEmPortugues(m).length > 15, `motivo ${m} sem frase`)
   }
 })
@@ -193,3 +200,221 @@ test('data ilegível não vira "Invalid Date" na cara da pessoa', () => {
   assert.equal(quando('banana'), '—')
   assert.match(quando('2026-08-10T14:30:00Z'), /\d{2}\/\d{2} às \d{2}:\d{2}/)
 })
+
+/* ── Quem pode PEGAR o carro (o "Vou usar" virou "Peguei o carro") ──────────
+ *
+ * O dono mandou tirar o "Vou usar" em 12/08/2026: com ele ao lado do
+ * "Reservar", quem quisesse evitar o pedido bastava tocar no outro, e a
+ * aprovação virava enfeite. O botão volta SÓ pra quem já foi aprovado. */
+
+const APROVADA = {
+  veiculo_id: 'v1', pessoa_id: 'p1', situacao: 'aprovada',
+  retirada_prevista: '2026-08-12T08:00:00Z', devolucao_prevista: '2026-08-12T18:00:00Z',
+}
+const pegar = (extra = {}) => reservaParaPegar({
+  requisicoes: [APROVADA], veiculoId: 'v1', minhaPessoaId: 'p1',
+  agoraIso: '2026-08-12T09:00:00Z', ...extra,
+})
+
+test('com reserva aprovada e na hora, dá pra pegar', () => {
+  assert.equal(pegar()?.veiculo_id, 'v1')
+})
+
+test('reserva PENDENTE não acende o botão — é isso que impede furar a aprovação', () => {
+  const r = reservaParaPegar({
+    requisicoes: [{ ...APROVADA, situacao: 'pendente' }],
+    veiculoId: 'v1', minhaPessoaId: 'p1', agoraIso: '2026-08-12T09:00:00Z',
+  })
+  assert.equal(r, null)
+})
+
+test('reserva de OUTRA pessoa não acende o botão pra mim', () => {
+  assert.equal(pegar({ minhaPessoaId: 'p9' }), null)
+})
+
+test('reserva de OUTRO carro não acende neste', () => {
+  assert.equal(pegar({ veiculoId: 'v9' }), null)
+})
+
+test('quem não foi achado no cadastro não pega por reserva nenhuma', () => {
+  // `euId` nulo: sem saber quem é a pessoa, não dá pra dizer que a reserva é dela.
+  assert.equal(pegar({ minhaPessoaId: null }), null)
+})
+
+test('carro JÁ na rua não acende "peguei" — o que falta é devolver', () => {
+  assert.equal(pegar({ usoJaAberto: true }), null)
+})
+
+test('um pouco antes da hora marcada JÁ dá pra pegar', () => {
+  // Reserva não é hora marcada: quem reservou pras 8h pega às 7h50.
+  assert.equal(pegar({ agoraIso: '2026-08-12T07:50:00Z' })?.veiculo_id, 'v1')
+})
+
+test('cedo DEMAIS não acende — reserva de amanhã não é carro de hoje', () => {
+  assert.equal(pegar({ agoraIso: '2026-08-11T10:00:00Z' }), null)
+})
+
+test('reserva velha não acende botão hoje', () => {
+  // Sem isto, uma reserva de duas semanas atrás viraria autorização permanente.
+  assert.equal(pegar({ agoraIso: '2026-08-26T09:00:00Z' }), null)
+})
+
+test('depois da devolução prevista ainda dá uma folga, mas não pra sempre', () => {
+  assert.ok(pegar({ agoraIso: '2026-08-12T22:00:00Z' }), 'até 12h depois, ainda vale')
+  assert.equal(pegar({ agoraIso: '2026-08-13T12:00:00Z' }), null, 'no dia seguinte, não')
+})
+
+test('reserva sem hora de volta vale a partir da retirada, com a mesma folga', () => {
+  const r = reservaParaPegar({
+    requisicoes: [{ ...APROVADA, devolucao_prevista: null }],
+    veiculoId: 'v1', minhaPessoaId: 'p1', agoraIso: '2026-08-12T15:00:00Z',
+  })
+  assert.ok(r)
+})
+
+test('sem reserva nenhuma, sem botão', () => {
+  assert.equal(reservaParaPegar({ requisicoes: [], veiculoId: 'v1', minhaPessoaId: 'p1' }), null)
+  assert.equal(reservaParaPegar({}), null)
+})
+
+/* ── A reserva segura o carro (o defeito da Bravo Essence) ──────────────────
+ *
+ * Medido em 12/08/2026: a Bravo Essence tinha reserva APROVADA e em vigor até
+ * 24/08 pro Felipe, e a tela continuava listando ela como livre pra pegar. */
+
+const EMVIGOR = {
+  veiculo_id: 'v1', situacao: 'aprovada',
+  retirada_prevista: '2026-08-11T20:09:00Z', devolucao_prevista: '2026-08-24T20:09:00Z',
+}
+const segura = (extra = {}) => reservaSegurando({
+  requisicoes: [EMVIGOR], veiculoId: 'v1', agoraIso: '2026-08-12T15:00:00Z', ...extra,
+})
+
+test('reserva aprovada e em vigor SEGURA o carro', () => {
+  assert.ok(segura())
+})
+
+test('reserva PENDENTE não segura — o carro é de todos até alguém decidir', () => {
+  // Travar por pedido que pode ser recusado deixaria a frota parada por engano.
+  assert.equal(segura({ requisicoes: [{ ...EMVIGOR, situacao: 'pendente' }] }), null)
+})
+
+test('reserva RECUSADA não segura nada', () => {
+  // O caso real: a Bravo tinha DUAS, uma aprovada e uma recusada.
+  assert.equal(segura({ requisicoes: [{ ...EMVIGOR, situacao: 'recusada' }] }), null)
+})
+
+test('antes de começar e depois de acabar, o carro está livre', () => {
+  assert.equal(segura({ agoraIso: '2026-08-10T10:00:00Z' }), null)
+  assert.equal(segura({ agoraIso: '2026-08-25T10:00:00Z' }), null)
+})
+
+test('reserva de outro carro não segura este', () => {
+  assert.equal(segura({ veiculoId: 'v9' }), null)
+})
+
+test('reserva sem hora de volta segura o dia inteiro, e só ele', () => {
+  const r = [{ ...EMVIGOR, retirada_prevista: '2026-08-12T08:00:00Z', devolucao_prevista: null }]
+  assert.ok(reservaSegurando({ requisicoes: r, veiculoId: 'v1', agoraIso: '2026-08-12T20:00:00Z' }))
+  assert.equal(reservaSegurando({ requisicoes: r, veiculoId: 'v1', agoraIso: '2026-08-14T09:00:00Z' }), null)
+})
+
+test('reserva para pessoa DE FORA é válida — nome sem cadastro basta', () => {
+  // O caso do Felipe: sem isto, o dono tinha de se pôr como motorista e
+  // escrever a verdade na finalidade, e a multa cairia no nome errado.
+  const p = problemasDaRequisicao(
+    req({ pessoa_id: null, pessoa_nome: 'Felipe modelista' }), [], AGORA)
+  assert.equal(bloqueios(p).length, 0)
+})
+
+test('sem colaborador E sem nome nenhum continua bloqueado', () => {
+  const p = problemasDaRequisicao(req({ pessoa_id: null, pessoa_nome: '  ' }), [], AGORA)
+  assert.ok(bloqueios(p).some((x) => /quem vai dirigir/i.test(x.texto)))
+})
+
+/* ── O que a pessoa vê em "Seus pedidos" ──────────────────────────────────── */
+
+test('a recusa CHEGA em quem pediu, com o motivo escrito por quem recusou', () => {
+  // O defeito (medido em 20/08/2026): a lista trazia só pendente e aprovada.
+  // Quem recusa é OBRIGADO pela tela a escrever o motivo — "quem pediu precisa
+  // saber o que fazer diferente" —, e esse motivo não chegava em ninguém: o
+  // pedido simplesmente sumia da tela de quem pediu.
+  const lista = meusPedidos({
+    requisicoes: [
+      { id: 'a', situacao: 'pendente', pessoa_id: 'p-eu', retirada_prevista: '2026-08-22T11:00Z' },
+      { id: 'b', situacao: 'aprovada', pessoa_id: 'p-eu', retirada_prevista: '2026-08-21T11:00Z' },
+      { id: 'c', situacao: 'recusada', pessoa_id: 'p-eu', retirada_prevista: '2026-08-23T11:00Z',
+        decidida_em: '2026-08-20T09:00Z', motivo_decisao: 'A Strada já está com a equipe de Conchal.' },
+    ],
+    minhaPessoaId: 'p-eu',
+    agoraIso: '2026-08-20T12:00Z',
+  });
+  assert.deepEqual(lista.map((r) => r.id), ['b', 'a', 'c'], 'ordenadas pela retirada, a mais próxima primeiro');
+});
+
+test('a reserva REVOGADA também chega — quem ia pegar o carro precisa saber', () => {
+  // Revogada é a que já valia e alguém encerrou no meio. Sumir em silêncio faz
+  // a pessoa ir até o estacionamento buscar um carro que não é mais dela.
+  const lista = meusPedidos({
+    requisicoes: [{
+      id: 'r', situacao: 'revogada', pessoa_id: 'p-eu', retirada_prevista: '2026-08-21T11:00Z',
+      encerrada_em: '2026-08-20T08:00Z', encerrada_motivo: 'O carro entrou na oficina.',
+    }],
+    minhaPessoaId: 'p-eu',
+    agoraIso: '2026-08-20T12:00Z',
+  });
+  assert.equal(lista.length, 1);
+});
+
+test('recusa velha sai da frente sozinha, e a recente fica', () => {
+  const recusa = (id, decidida) => ({
+    id, situacao: 'recusada', pessoa_id: 'p-eu',
+    retirada_prevista: '2026-08-10T11:00Z', decidida_em: decidida,
+  });
+  const lista = meusPedidos({
+    requisicoes: [recusa('ontem', '2026-08-19T09:00Z'), recusa('mes-passado', '2026-07-15T09:00Z')],
+    minhaPessoaId: 'p-eu',
+    agoraIso: '2026-08-20T12:00Z',
+  });
+  assert.deepEqual(lista.map((r) => r.id), ['ontem'], 'a lista é um aviso, não um arquivo morto');
+});
+
+test('pedido dos outros não entra na minha lista, nem por engano', () => {
+  const lista = meusPedidos({
+    requisicoes: [
+      { id: 'dele', situacao: 'pendente', pessoa_id: 'p-outro', retirada_prevista: '2026-08-22T11:00Z' },
+      { id: 'que-eu-abri', situacao: 'pendente', pessoa_id: 'p-outro', criada_por: 'u-eu',
+        retirada_prevista: '2026-08-23T11:00Z' },
+    ],
+    minhaPessoaId: 'p-eu', meuUsuarioId: 'u-eu',
+    agoraIso: '2026-08-20T12:00Z',
+  });
+  // O pedido que EU abri pra outra pessoa continua meu de acompanhar: fui eu
+  // que pedi, é a mim que a resposta interessa.
+  assert.deepEqual(lista.map((r) => r.id), ['que-eu-abri']);
+});
+
+test('sem saber quem eu sou, a lista fica vazia — nunca a de outra pessoa', () => {
+  const lista = meusPedidos({
+    requisicoes: [{ id: 'x', situacao: 'pendente', pessoa_id: 'p-outro' }],
+    agoraIso: '2026-08-20T12:00Z',
+  });
+  assert.deepEqual(lista, []);
+});
+
+test('a reserva CANCELADA por outra pessoa também chega em quem pediu', () => {
+  // Cancelar exige permissão de aprovar (acoesDaReserva), então quem pediu
+  // nunca cancela o próprio pedido pela tela: é sempre outra pessoa mexendo na
+  // reserva alheia, com motivo obrigatório escrito. A primeira versão deixou
+  // esta situação de fora por supor o contrário.
+  const lista = meusPedidos({
+    requisicoes: [{
+      id: 'c', situacao: 'cancelada', pessoa_id: 'p-eu', retirada_prevista: '2026-08-23T11:00Z',
+      encerrada_em: '2026-08-20T10:00Z', encerrada_motivo: 'A viagem foi adiada.',
+    }],
+    minhaPessoaId: 'p-eu',
+    agoraIso: '2026-08-20T12:00Z',
+  });
+  assert.equal(lista.length, 1);
+  assert.equal(lista[0].encerrada_motivo, 'A viagem foi adiada.');
+});

@@ -82,3 +82,34 @@ export function diasSemPublicacao(serie, pular = []) {
     .filter((d) => d && d.publicado === false && !pular.includes(d.label))
     .map((d) => d.label);
 }
+
+/**
+ * O NÚMERO DO CARD: a soma do que o gráfico está desenhando.
+ *
+ * Decisão do dono (09/09/2026): "o importante é o card de novos seguidores bater
+ * sempre com o gráfico diário".
+ *
+ * ⚠️ O ERRO DE ORIGEM ERA PERSEGUIR O PAINEL PROFISSIONAL. Ele filtra OUTRO
+ * período — medido pelo dono no painel dele: "últimos 7 dias" vai de 2 a 7, e
+ * "5 a 8" mostra 4 a 7. Enquanto se tentava casar os dois, o card e o gráfico da
+ * NOSSA tela divergiam entre si — e é isso que a pessoa vê. Medido no mesmo dia,
+ * em "últimos 7 dias" na Vessel: barras somando 1593, card mostrando 967, porque a
+ * janela do card parava no dia 08 e deixava de fora os dois maiores dias.
+ *
+ * ⚠️ A BARRA ESTIMADA GUARDA O LÍQUIDO, não a quebra: o saldo positivo entra em
+ * `gained`, o negativo em `lost`. Por isso `seguiu`/`deixou` são aproximados
+ * quando há dia estimado — o total é que continua certo. Quem usa `seguiu` como
+ * denominador de custo precisa olhar `estimado` e marcar prévia.
+ *
+ * Devolve `null` quando não há gráfico: zero seria "não seguiu ninguém", uma
+ * afirmação, onde a verdade é "não há de onde somar".
+ */
+export function totalPelasBarras(chart) {
+  const g = chart && Array.isArray(chart.gained) ? chart.gained : null;
+  if (!g || !g.length) return null;
+  const l = chart && Array.isArray(chart.lost) ? chart.lost : [];
+  const est = chart && Array.isArray(chart.estimado) ? chart.estimado : [];
+  const soma = (arr) => arr.reduce((t, v) => t + (Number(v) || 0), 0);
+  const seguiu = soma(g), deixou = soma(l);
+  return { seguiu, deixou, total: seguiu - deixou, estimado: est.some(Boolean) };
+}

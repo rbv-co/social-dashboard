@@ -19,15 +19,97 @@ Como funciona (resumido):
   selo "✓ confirmado pelo Instagram" ou "⏳ em consolidação" — explicado no
   botão "?") + gráfico de seguidores ganhos/perdidos por dia (passe o mouse
   pra ver o tooltip com o valor de cada dia).
-- "02 Meta Ads": quanto foi gasto em anúncios, custo por seguidor, por
-  interação e por curtida — só conta as campanhas marcadas no botão
-  "⚙ Filtrar campanhas".
+- "02 Meta Ads": tem uma barra de TIPO DE CAMPANHA em cima (Todos, Seguidores,
+  Contatos, Site e alcance, Vendas). Escolher um tipo faz os cartões falarem só
+  daquele dinheiro — e os indicadores mudam junto: Seguidores mostra custo por
+  seguidor/interação/curtida, Contatos mostra custo por conversa e por cadastro,
+  Site e alcance mostra custo por visita, Vendas mostra custo por venda. Em
+  "Todos" ficam os quatro que valem pra qualquer campanha: investimento,
+  custo por mil impressões, alcance e frequência.
+  Quem decide o tipo de cada campanha é o DESTINO que a Meta afirma no conjunto
+  (perfil, WhatsApp, site), nunca o nome da campanha — está em
+  baldes-do-painel.js, com teste ao lado. A tela abre em "Seguidores", ou em
+  "Todos" se o perfil não tiver campanha de seguidor no período.
+  O botão "⚙ Filtrar campanhas" continua e vale DENTRO do tipo escolhido.
+  Tipo sem gasto no período fica apagado, com o motivo — não some.
+  Onde não dá para calcular, o cartão mostra "—" e nunca R$ 0,00: número que
+  ainda não foi coletado e número que é zero de verdade são coisas
+  diferentes. A frequência não tem meta editável — ela acende vermelho a
+  partir de 4, que é o mesmo limiar que a Gestão de Tráfego usa para mandar
+  reduzir verba.
+
+  A CONTA DO CUSTO POR SEGUIDOR FECHA NA MÃO (corrigido em 20/08/2026). O
+  divisor é o MESMO número de seguidores que está impresso na seção 01 — em
+  7D/14D/30D é o bruto ("Seguidores", quem seguiu); em HOJE e 1D, onde o
+  Instagram ainda não publicou a quebra seguiu/saiu, é o líquido que o cartão
+  mostra, e o custo sai com o selo "⏳ prévia" porque ele se ajusta quando o
+  dia fecha. Antes disso o divisor vinha da última coleta do robô enquanto o
+  dinheiro vinha do minuto: na Raíssa, em HOJE, a tela mostrava 53 seguidores
+  e dividia R$ 435,88 por 26, imprimindo R$ 16,76 onde a conta na mão dá
+  R$ 8,22 — e sem selo nenhum avisando. Quem decide de onde sai o divisor é
+  seguidores-do-custo.js, com teste ao lado.
+
+  A JANELA DOS RESULTADOS ERA DE UM DIA A MAIS (corrigido no coletor em
+  20/08/2026). O investimento sempre cobriu os N dias que a tela diz; os
+  denominadores (impressões, alcance, cliques, interações, curtidas, conversas,
+  cadastros, visitas, vendas) vinham de N+1 dias, com o dia de HOJE — incompleto
+  — dentro, porque o `time_range` da Meta conta as duas pontas. Todo custo por
+  resultado saía barato demais (uns 10 a 14% em 7D, ~3% em 30D) e o ALCANCE
+  nunca fechava com o "Últimos 7 dias" do painel da Meta. O conserto está em
+  supabase/functions/_shared/janela-de-ads.js e vale só para as coletas NOVAS:
+  os dias já gravados continuam com a janela velha, então os números dessa
+  seção acertam aos poucos, conforme a janela exibida vai só tendo captura nova.
+
+  Perfil recém-adicionado (antes da primeira coleta dos conjuntos): a tela
+  avisa em vermelho que a classificação por tipo ainda é provisória — o
+  destino de cada campanha ainda não foi confirmado, então ela cai pelo
+  objetivo, que às vezes engana. O aviso some sozinho assim que o coletor
+  passar por aquele perfil pela primeira vez. O mesmo aviso aparece, com a
+  contagem, quando só ALGUMAS campanhas estão nesse estado ("3 campanhas
+  ainda sem tipo confirmado") — é o caso de campanha criada agora, que só
+  ganha o tipo definitivo na próxima coleta.
+
+  DOIS TIPOS QUE APARECEM APAGADOS, E ISSO NÃO É DEFEITO:
+
+  "Vendas" fica apagado de propósito e vai continuar assim. As campanhas que
+  vendem nestas contas vendem pelo WhatsApp, e campanha de WhatsApp conta em
+  "Contatos" — medida por custo por conversa, que é o número que interessa
+  ali. O dono viu isso e decidiu manter: faz tempo que não roda campanha de
+  venda. Se um dia rodar uma que venda direto no site ou no catálogo, ela
+  aparece em Vendas sozinha, sem ninguém mexer em nada.
+
+  "Site e alcance" aparece apagado na maior parte dos perfis hoje. Ele tem
+  dinheiro no histórico, mas não nas coletas recentes — e botão apagado quer
+  dizer "não teve dinheiro desse tipo NESTE período", nunca "quebrou". Trocar
+  o período para uma janela maior costuma reacendê-lo.
+
+  MÊS e ATÉ AGORA ainda não mostram os números novos. Nesses dois períodos,
+  custo por conversa, por cadastro, por venda e por visita ficam em "—",
+  mesmo que apareçam normalmente em 7D e 30D. O motivo é que esse recorte é
+  gravado por um robô antigo que ainda não pede essas contagens à Meta —
+  está escrito, com o conserto exato, no item B17 de docs/pendencias.md. Os
+  números de sempre (investimento, impressões, cliques, alcance) continuam
+  normais nesses dois períodos.
 - "03/04/05": engajamento de posts/reels, engajamento de stories, e
   quantidade de conteúdo publicado (stories/posts/reels).
 - Cada card tem uma "META" editável — clique no número da meta, digite o
   novo valor e clique fora (ou aperte Enter): a barrinha de progresso do
   card atualiza sozinha. A meta é salva por conta + período, tanto no
   navegador quanto no banco (compartilhada entre quem usa o dashboard).
+- A LINHA "vs …" DIZ DE QUANDO É O NÚMERO (corrigido em 21/08/2026). Esta tela
+  tem DUAS janelas anteriores, e cada cartão usa a sua: o que vem AO VIVO (e
+  também os novos seguidores e os stories) compara com os N dias imediatamente
+  anteriores; o que vem do agregado coletado (engajamento, posts, reels, e o
+  gasto quando o ao vivo não responde) compara com a mesma janela de N dias
+  tirada UM MÊS atrás. Havia um rótulo só, o do mês atrás, escrito ao lado de
+  todos: em 7D o cartão de investimento dizia "vs 14 Jul – 21 Jul" mostrando o
+  gasto de 07–13/08. O número estava certo; a data, um mês fora — e quem lê
+  acredita na data.
+  Junto saiu a comparação do CUSTO POR SEGUIDOR nos casos em que os dois lados
+  da divisão eram de janelas diferentes (sem ao vivo, o gasto anterior é de um
+  mês atrás e os seguidores anteriores são da semana passada). Ali o cartão
+  passa a dizer "Acumulando histórico…", que é a verdade, em vez de imprimir uma
+  seta sobre um número que não é de período nenhum.
 - Painel de administração embutido (enviar convite por e-mail, listar
   usuários): existe no código, mas hoje NENHUM botão do dashboard o abre —
   isso já vinha assim do site antigo (não foi quebrado nesta migração).
@@ -42,3 +124,188 @@ Esta tela é 100% independente das outras — não compartilha estado com
 Gestão de Tráfego, Gestão à Vista ou Análise de Campanhas (cada uma tem sua
 própria cópia dos pedacinhos de visual que se parecem, de propósito, pra não
 quebrar uma mexendo na outra).
+
+GRÁFICOS QUE ROLAM PARA O LADO NO CELULAR (17/08)
+-------------------------------------------------
+Os gráficos "novos seguidores / dia" (seção 01) e os dois gráficos diários da
+seção 02 agora dão no MÍNIMO 30px para cada dia. Enquanto os dias cabem nesse
+mínimo, nada muda: o gráfico continua do tamanho do cartão. Quando não cabem
+(celular em 14D, 30D e MÊS; e a seção 02 também no computador em 30D e MÊS,
+porque os dois cartões dividem a linha), o gráfico fica mais largo que o cartão
+e ROLA PARA O LADO dentro dele — a página nunca ganha rolagem horizontal. Uma
+faixa apagada na direita avisa que tem mais gráfico para o lado.
+
+O motivo: a 375px, com 30 dias, sobravam ~10px por dia, e "R$ 17,34" não cabe em
+10px. Os valores se sobrepunham. A conta de "cabe ou não cabe" está em
+largura-do-grafico.js, com teste ao lado, e vale para os dois gráficos.
+
+Junto vieram: os valores em reais da seção 02 em 11px (era 9px, que era o menor
+legível) quando o gráfico rola, e o rótulo da meta ("Meta máxima", "Meta N/dia")
+mudado para o canto de cima à esquerda, numa faixa que é só dele — ele era o
+culpado de 5 das 8 sobreposições medidas.
+
+LIMITE CONHECIDO: a regra é uma só, para toda tela — numa tela bem larga com
+muitos dias o gráfico rola para o lado do mesmo jeito (a 1920, os dois cartões da
+seção 02 dividem a linha e ficam com 836px cada, e 30 dias pedem 900). Numa tela
+em que ninguém encosta — uma TV passeando pelos perfis sozinha — só o primeiro
+trecho de dias ficaria à vista, porque não há quem arraste. Se um dia este painel
+for para uma TV, é isto que precisa ser revisto.
+
+Detalhes e medidas em docs/superpowers/relatorio-graficos-celular.md.
+
+⚠️ NAO ERA O DIA 8 FALTANDO, que foi a primeira hipotese. A contagem total foi de
+15.877 (dia 7) para 16.320 (dia 8): o dia 8 rendeu ~443 liquidos. Se ele fosse os
+44/7 que faltam para 951, a contagem teria subido 37.
+
+⚠️ O NUMERO DO CARD NASCE EM `janelasDoPeriodo` (folSince/folUntil), que alimenta
+a edge `insights-ao-vivo` — o card usa `d.live.novos.total` sempre que o ao vivo
+responde. `followStart`/`followEnd` sao o caminho COLETADO, que e so a reserva.
+Consertar so a reserva nao muda nada na tela: foi o erro cometido na primeira
+tentativa, em 09/09/2026. Os DOIS foram deslocados, para nao divergirem.
+
+Por isso o PERSONALIZADO recorta com -1 dia nos dois lados (`janela-de-seguidores.js`,
+7 testes). ⚠️ SO ELE: os rolantes (7D/14D/30D) e o mes corrente ja batem com o
+painel SEM deslocamento e estao congelados em `_TRAVA_JANELAS`; o mes passado ja
+deslocava. Mexer nos que funcionam para consertar um que nao funciona troca um
+defeito conhecido por tres.
+
+⚠️ O RECORTE DO CARD NAO SAI DE `janelasDoPeriodo`. Ele e calculado em
+`followStart`/`followEnd`, num segundo lugar do mesmo arquivo — foi por isso que
+a primeira leitura ("desloca em janelasDoPeriodo") teria sido no lugar errado.
+`janelasDoPeriodo` alimenta a serie AO VIVO (as barras) e o engajamento.
+
+As BARRAS continuam mostrando o dia real, sem deslocamento — mesmo comportamento
+do painel, e mesma escolha que ja valia para o mes passado. Entao a soma das
+barras pode diferir do numero do card, de proposito.
+
+⚠️ POR QUE A SOMA DAS BARRAS E MAIOR QUE O CARD (medido em 09/09/2026)
+As barras mostram os dias do CALENDARIO que o dono escolheu (05..08); o card usa
+a regua do painel (04..07). Escolhendo 5 a 8 de setembro na Vessel:
+  05: +179 · 06: +331 · 07: +373 · 08: +443 (ESTIMATIVA — a Meta nao publicou)
+  soma das barras 1326 · card 920 · diferenca 406 = + o dia 08 − o dia 04 (37)
+O dia 08 sozinho vale +443 e entra so nas barras; o dia 04 vale +37 e entra so no
+card. A barra estimada vem VAZADA e com `≈` — nao e um numero fechado da Meta.
+
+⚠️ O DIA NAO PUBLICADO SOME DO AGREGADO, E SOME CALADO (09/09/2026)
+Medido ao vivo na Vessel: a janela [05/09, 09/09) tem QUATRO dias, o dia 08 valeu
+~443 liquidos, e a Meta devolveu 907/24 — o mesmo dos tres dias publicados. Nenhum
+campo diz "faltou um dia": o total so sai menor. E o card carimbava
+"✓ confirmado pelo Instagram" em cima disso, porque a linha do selo forcava
+`confirmado = true` sempre que o ao vivo respondia.
+
+Agora, no PERSONALIZADO: o saldo do dia que falta entra pela variacao da contagem
+(`faltaNaJanela`, em estimativa-de-seguidores.js) e o selo vira "≈ falta 08/09",
+com a frase inteira no `title` — o selo e `white-space:nowrap` e a tela se mede a
+375px. Regra do dono: "Dia 8 n pode ficar zerado".
+
+⚠️ SO NO PERSONALIZADO. E o unico periodo em que a janela do card
+(`followStart`/`followEnd`) e a do AO VIVO (`folSince`/`folUntil`) sao
+comprovadamente a MESMA — as duas deslocadas -1 dia. Nos rolantes elas diferem por
+um dia (o `capFol`), e somar ali contaria dia que o ao vivo ja contou.
+
+O coletor re-pergunta qualquer dia 0/0 dos ultimos 14 dias, 4x por dia: quando a
+Meta publicar o dia 08, o bruto real entra sozinho e a estimativa sai de cena.
+
+⚠️ A SOMA DAS BARRAS NAO FECHA COM O CARD, E ISSO E DA FONTE (09/09/2026)
+O PROPRIO PAINEL DO INSTAGRAM NAO FECHA COM ELE MESMO. Medido pelo dono: filtrando
+5 a 8 de setembro o painel da total 951 e o GRAFICO dele vai so ate o dia 7. O
+total e deslocado (janela um dia antes) e as barras sao do dia real — as duas
+coisas ao mesmo tempo.
+
+Tentamos fazer a soma fechar rotulando as barras um dia a frente. NAO FUNCIONA, e o
+dono derrubou na hora: a barra "9" mostrava 443 (que e o dia 8) enquanto o filtro
+"hoje" mostrava 326 para o mesmo dia 9 — O MESMO DIA COM DOIS NUMEROS. Decisao
+dele: "data real manda".
+
+Entao: BARRAS no dia real, CARD na regua do painel, e a diferenca EXPLICADA por
+`notaDaDiferenca` (em janela-de-seguidores.js, com teste) numa nota sob o grafico,
+com os dois numeros. Esconder a diferenca seria inventar uma coerencia que a fonte
+nao tem.
+
+⚠️ O CUSTO POR SEGUIDOR CONTINUA DIVIDINDO O BRUTO (quem seguiu). Custo de
+aquisicao nao divide por liquido, senao quem saiu entra na conta de quem foi
+conquistado. O que mudou e so o selo: falta dia na janela -> o bruto vem
+subestimado (o dia ausente soma ZERO no agregado) e o custo sai ALTO demais, entao
+agora vai marcado como previa.
+
+⚠️⚠️ O CARD E A SOMA DO GRAFICO — E NAO TENTA BATER COM O PAINEL (09/09/2026)
+O DONO ACHOU A RAIZ depois de uma tarde inteira de tentativas minhas: o painel
+profissional FILTRA OUTRO PERIODO. Medido por ele no painel dele — "ultimos 7 dias"
+vai de 2 a 7, e "5 a 8" mostra de 4 a 7. Nao existe arranjo que faca a nossa janela
+e a dele darem o mesmo numero, porque nao sao a mesma janela.
+
+Ordem dele: "o importante e o card de novos seguidores bater sempre com o grafico
+diario". Entao:
+
+  CARD = soma das barras (`totalPelasBarras`, em estimativa-de-seguidores.js).
+  As TRES linhas — Seguidores, Deixaram, Total — saem da MESMA soma.
+  O custo por seguidor divide o BRUTO dessas mesmas barras.
+
+⚠️ ISSO MUDOU TODO PERIODO, nao so o personalizado. Medido em 09/09: "ultimos 7
+dias" saiu de 967 para 1593, porque a janela do card parava no dia 08 e deixava de
+fora os dois maiores dias.
+
+⚠️ NENHUM CARD BATE COM O PAINEL, e isso e ESPERADO. Para validar, faz-se a conta
+pela janela que o painel mostrar.
+
+⚠️ COM DIA ESTIMADO, "Seguidores"/"Deixaram" sao APROXIMADOS: a barra estimada
+guarda so o liquido, e a quebra daquele dia e justamente o que a Meta nao publicou.
+O TOTAL continua certo, e o cartao sai marcado como previa.
+
+O QUE FOI APAGADO (e por que nao volta): deslocamento da janela do personalizado,
+rotulo de barra um dia a frente, e a nota explicando a diferenca. Tudo isso existia
+para casar com o painel — objetivo que se provou impossivel e errado.
+
+⚠️ O PERSONALIZADO RECEBE OS DIAS QUE FORAM ESCOLHIDOS (09/09/2026)
+`capFol` corta o ultimo dia ("ontem, ainda assentando") e existe para os ROLANTES.
+Num intervalo FECHADO isso e defeito: filtrar 5 a 9 mostrava TRES dias e parava no
+dia 7. O dono escolheu as datas e tem de receber aquelas datas — dia sem numero da
+Meta aparece como estimativa marcada; sumir do grafico e que nao pode.
+Congelado em `_TRAVA_JANELAS`, que agora tambem cobre o personalizado.
+
+⚠️ A CONTAGEM DE HOJE VEM DO AO VIVO, NAO DA FOTO DO COLETOR. O coletor roda 4x por
+dia e a foto dele fica velha em horas. Sem isso, a barra de hoje mostrava 183 (foto
+da madrugada) e o filtro "hoje" mostrava 326 (ao vivo) — o MESMO DIA com dois
+numeros, a confusao que o dono ja tinha apontado.
+
+⚠️ "O CARD E A SOMA DO GRAFICO" VALE ONDE O GRAFICO E O PERIODO (09/09/2026)
+Em HOJE e ONTEM o grafico desenha os ULTIMOS 7 DIAS de contexto — uma barra so
+seria um retangulo sem leitura. Somar esse grafico fez o card do DIA mostrar a
+SEMANA: "ontem" saiu 1,7 mil quando o dia tinha sido 443, e "hoje" o mesmo 1,7 mil
+no lugar de 336. Nesses dois o card e a ULTIMA barra (`netRecente`), nao a soma.
+Quem decide e `ehGraficoDeContexto(period)`, com teste.
+
+⚠️⚠️ DECIDIR O PERIODO SO PELO NUMERO QUEBRA O INTERVALO ESCOLHIDO
+Ao escolher datas, `period` CONTINUA com o valor antigo (0, 1, 7, 30…). Toda
+decisao tomada so por ele trata o intervalo escolhido como o periodo anterior.
+
+QUEBROU TRES VEZES EM 09/09/2026, sempre com o dono achando:
+  1. `_rolante` — o personalizado ganhava barras de ontem/hoje coladas no fim, e a
+     barra do dia 8 aparecia DUAS VEZES;
+  2. `ehGraficoDeContexto` — a funcao foi criada para o caso 1 e a seguinte foi
+     escrita sem as datas: o card do personalizado mostrava o DIA, nao o intervalo;
+  3. `isHoje` — "Hoje" selecionado + datas escolhidas recortava a janela em um dia.
+
+Hoje TODAS as decisoes olham as datas: `ehCustom`, `isHoje`, `isOntem`,
+`isCalMonth`, `ehRecorteRolante(period, ini, fim)` e
+`ehGraficoDeContexto(period, ini, fim)`. Congelado em periodo-olha-as-datas.test.mjs
+— se alguem voltar a decidir so pelo numero, o teste quebra.
+
+⚠️⚠️ OS CARTOES DE META ADS NUNCA TIVERAM JANELA PERSONALIZADA (ate 09/09/2026)
+Eles liam `period_days = closestStoredPeriod(dias)` — arredondavam o intervalo
+escolhido para a captura AGREGADA de 1, 7, 14 ou 30 dias mais proxima, e pegavam
+UMA captura. Escolher 5 a 9 (4 dias) caia na de 1 dia; vindo de "7 dias", caia na
+MESMA de antes e os numeros nao mudavam ao trocar de periodo. O dono achou.
+
+Agora, no intervalo escolhido: `period_days = 0` (captura DIARIA) somando todos os
+dias da janela, por `capturasDaJanela` (em captura-do-agregado.js, com teste).
+Medido: 5 a 9 de setembro somam R$ 14.948,60 de investimento.
+
+⚠️ NAO HA ALCANCE DEDUPLICADO NO INTERVALO. `account_insights` tambem tem uma linha
+por captura: com `limit=1` num intervalo o numero seria o de UM DIA, menor que a
+verdade e impresso como se fosse do periodo. Fica o alcance SOMADO, que o cartao ja
+declara ("repete pessoa").
+
+⚠️ E O TETO DE LINHAS VIROU AVISO. O `limit=200` servia para uma captura so; somando
+dias sao ~30 campanhas POR DIA. Bater no teto agora acende recado — antes o
+PostgREST cortava em silencio e o investimento saia MENOR sem ninguem saber.

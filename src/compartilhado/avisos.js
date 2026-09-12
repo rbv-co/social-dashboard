@@ -6,7 +6,7 @@ export function adminToast(msg, ok = true) {
   if (!t) {
     t = document.createElement('div')
     t.id = 'admin-toast'
-    t.style.cssText = 'position:fixed;bottom:24px;right:24px;padding:12px 20px;border-radius:8px;font-family:"IBM Plex Sans",sans-serif;font-size:13px;font-weight:500;z-index:9999;transition:opacity .3s;box-shadow:0 4px 16px rgba(0,0,0,.15)'
+    t.style.cssText = 'position:fixed;bottom:24px;right:24px;padding:12px 20px;border-radius:8px;font-family:"IBM Plex Sans",sans-serif;font-size:max(9px, calc(13px * var(--escala-texto, 1)));font-weight:500;z-index:9999;transition:opacity .3s;box-shadow:0 4px 16px rgba(0,0,0,.15)'
     document.body.appendChild(t)
   }
   t.textContent = msg

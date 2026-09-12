@@ -44,6 +44,16 @@ export function posseAberta(usos, veiculoId) {
 export function passarPara({ usos, veiculoId, para, donoFixo, quando }) {
   const atual = posseAberta(usos, veiculoId);
   const alvo = para || donoFixo || null;
+  // Passar o carro pra quem JÁ está com ele não é evento nenhum. Sem esta
+  // guarda, confirmar a opção padrão num carro cuja posse aberta já é a do dono
+  // fixo fechava e reabria a posse da MESMA pessoa — e a linha do tempo ganhava
+  // uma transferência que nunca aconteceu. Num histórico que serve pra
+  // responder "quem estava com o carro no dia da multa", evento inventado é
+  // ruído caro. Comparação por identificador, não por nome: dois Gabriéis.
+  // `alvo.id` nulo é pessoa de fora — aí não há como ser "a mesma", e passa.
+  if (atual && alvo && alvo.id && atual.pessoa_id === alvo.id) {
+    return { fechar: null, abrir: null };
+  }
   return {
     fechar: atual ? { id: atual.id, volta_em: quando } : null,
     abrir: alvo ? {
@@ -62,10 +72,21 @@ export function passarPara({ usos, veiculoId, para, donoFixo, quando }) {
  * caminhos respondeu, pra quem consome poder distinguir "é o dono" de "está
  * emprestado com essa pessoa".
  */
-export function quemEstaComOCarro(veiculo, usos) {
+export function quemEstaComOCarro(veiculo, usos, pessoas) {
   const posse = veiculo ? posseAberta(usos, veiculo.id) : null;
   if (posse) {
-    return { pessoaId: posse.pessoa_id || null, pessoaNome: posse.pessoa_nome || null, porPosse: true };
+    // O nome GRAVADO na posse vence sempre: ele é o que valia no dia em que a
+    // posse foi aberta, e histórico que muda quando o cadastro muda deixa de
+    // ser histórico. A lista só entra quando o nome está em BRANCO — as 5
+    // posses abertas em 06/08 gravaram só o pessoa_id, e sem este resgate 5
+    // carros com dono cadastrado aparecem sem ninguém (defeito B2).
+    // `pessoas` é opcional de propósito: a Edge chama com dois argumentos e
+    // não tem a lista à mão. Sem ela, o comportamento é o de antes.
+    const nome = posse.pessoa_nome
+      || (posse.pessoa_id && pessoas
+        ? ((pessoas.find((p) => p && p.id === posse.pessoa_id) || {}).nome || null)
+        : null);
+    return { pessoaId: posse.pessoa_id || null, pessoaNome: nome || null, porPosse: true };
   }
   return {
     pessoaId: (veiculo && veiculo.pessoa_id) || null,
@@ -172,4 +193,33 @@ export function trocarDonoFixo({ usos, veiculoId, deId, paraId, paraNome, quando
     fechar: atual ? { id: atual.id, volta_em: quando } : null,
     abrir: { veiculo_id: veiculoId, tipo: 'posse', pessoa_id: paraId, pessoa_nome: paraNome || null, saida_em: quando },
   };
+}
+
+/**
+ * QUEM DEVE CONFERIR O CARRO HOJE — e por que não é `quemEstaComOCarro`.
+ *
+ * Aquela responde "de quem é este carro", e por isso olha só a POSSE: a viagem
+ * é passageira e não muda de dono nada. Esta responde outra coisa — "quem está
+ * com a chave na mão agora" —, e aí a viagem aberta vence, porque é ela que diz
+ * quem vai dirigir hoje.
+ *
+ * O QUE ISTO CONSERTA (relatado pelo dono em 21/08/2026): ele retirou a Bravo
+ * Blackmotion, um carro de rodízio, e o cartão do checklist não abria pra ele —
+ * o app só reconhecia como "seu carro" o que estava por posse. Para fazer o
+ * checklist do carro que estava DIRIGINDO, ele tinha que caçar o veículo num
+ * seletor, coisa que só quem administra a Frota enxerga.
+ *
+ * A ordem é: viagem aberta → posse → dono no papel.
+ */
+export function quemDeveConferir(veiculo, usos, pessoas) {
+  const viagem = (usos || []).find((u) => u
+    && u.veiculo_id === (veiculo && veiculo.id)
+    && !u.volta_em
+    && (u.tipo || 'viagem') === 'viagem') || null;
+  if (viagem && viagem.pessoa_id) {
+    const nome = viagem.pessoa_nome
+      || (pessoas ? ((pessoas.find((p) => p && p.id === viagem.pessoa_id) || {}).nome || null) : null);
+    return { pessoaId: viagem.pessoa_id, pessoaNome: nome || null, porViagem: true };
+  }
+  return { ...quemEstaComOCarro(veiculo, usos, pessoas), porViagem: false };
 }

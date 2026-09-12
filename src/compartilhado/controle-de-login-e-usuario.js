@@ -14,6 +14,10 @@ export const estado = reactive({
   permissions: {},
   allowed_accounts: null, // null = todos os perfis
   is_superadmin: false,
+  // Limitada aos canais dos times dela? É a chave que as duas dashboards de
+  // venda usam para mostrar só a loja da pessoa (canais-de-venda-permitidos.js).
+  // `false` é o estado de quem já usava o sistema; conta nova nasce `true`.
+  escopo_por_equipe: false,
   // Conta criada em lote (vendedoras): a senha inicial foi entregue por outra
   // pessoa. Enquanto for `true`, a moldura do aplicativo cobra a troca — marca
   // sem cobrança seria promessa não cumprida.
@@ -41,6 +45,7 @@ export function limparEstado() {
   estado.permissions = {}
   estado.allowed_accounts = null
   estado.is_superadmin = false
+  estado.escopo_por_equipe = false
   estado.precisa_trocar_senha = false
   estado.erroPerfil = null
 }
@@ -56,7 +61,7 @@ export async function carregarPerfil(session) {
   estado.userId = session?.user?.id || null
   try {
     const tok = session?.access_token || SUPABASE_ANON_KEY
-    const r = await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${session.user.id}&select=role,features,avatar_url,permissions,allowed_accounts,is_superadmin,precisa_trocar_senha`, {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${session.user.id}&select=role,features,avatar_url,permissions,allowed_accounts,is_superadmin,precisa_trocar_senha,escopo_por_equipe`, {
       headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${tok}` },
     })
     const corpo = await r.json().catch(() => null)
@@ -73,6 +78,7 @@ export async function carregarPerfil(session) {
     estado.allowed_accounts = p.allowed_accounts ?? null
     estado.is_superadmin = !!p.is_superadmin
     estado.precisa_trocar_senha = !!p.precisa_trocar_senha
+    estado.escopo_por_equipe = !!p.escopo_por_equipe
     estado.avatarUrl = p.avatar_url || null
     return { ok: true, erro: null }
   } catch (e) {
@@ -82,13 +88,30 @@ export async function carregarPerfil(session) {
 }
 
 // Catálogo de recursos → ações válidas. Fonte de verdade do editor de permissões (Fase 1).
+//
+// REGRA QUE PASSOU A VALER EM 13/08/2026 (itens B1d e B1e da lista): **uma ação
+// só entra aqui se existir código que a respeite.** Ação sem dono vira degrau
+// no editor, o admin concede achando que controlou alguma coisa, e não controlou
+// — é uma mentira que o sistema conta com cara de recurso.
+//
+// Saíram nesse dia, todas medidas antes:
+//   - 'exportar' de `social`, `sales.gestao`, `sales.analise` e `meta.campanha`:
+//     as quatro ofereciam o degrau "Ver e baixar" e NENHUMA tem código de
+//     download. Estava concedido a 13, 12, 12 e 8 pessoas. Onde o download
+//     existe de verdade — social.relatorio, patrimonio.relatorios,
+//     frota.relatorios e gestor.relatorios — a ação continua, e é respeitada.
+//   - `sales.metas` inteira: nenhuma tela consultava a chave. Quem edita meta
+//     é o painel de Administração, que já é só de super-admin; e VER a meta
+//     acompanha ver o telão, recortada pela loja da pessoa como o resto
+//     (decisão do dono em 13/08: "metas todos podem ver, todos que veem todas
+//     ou somente sua loja"). Esse recorte já era feito, e foi conferido:
+//     tela-de-gestao-a-vista.vue:685 e tela-de-analise-vendas.vue:404-406.
 export const RECURSOS = [
-  { key: 'social', label: 'Redes Sociais — Dashboard', acoes: ['ver', 'exportar'] },
+  { key: 'social', label: 'Redes Sociais — Dashboard', acoes: ['ver'] },
   { key: 'social.relatorio', label: 'Redes Sociais — Relatório Interativo', acoes: ['ver', 'exportar'] },
-  { key: 'sales.gestao', label: 'Gestão à Vista', acoes: ['ver', 'exportar'] },
-  { key: 'sales.analise', label: 'Análise de Vendas', acoes: ['ver', 'exportar'] },
-  { key: 'sales.metas', label: 'Metas de Vendas', acoes: ['ver', 'editar'] },
-  { key: 'meta.campanha', label: 'Análise de Campanhas', acoes: ['ver', 'exportar'] },
+  { key: 'sales.gestao', label: 'Gestão à Vista', acoes: ['ver'] },
+  { key: 'sales.analise', label: 'Análise de Vendas', acoes: ['ver'] },
+  { key: 'meta.campanha', label: 'Análise de Campanhas', acoes: ['ver'] },
   { key: 'meta.gestor', label: 'Gestão de Tráfego', acoes: ['ver', 'editar'] },
   { key: 'meta.fabrica', label: 'Fábrica de Anúncios', acoes: ['ver', 'editar'] },
   { key: 'banco', label: 'Banco de Arquivos', acoes: ['ver', 'criar', 'excluir'] },
@@ -105,7 +128,7 @@ export const RECURSOS = [
   { key: 'noticias', label: 'Portal de Notícias', acoes: ['ver'] },
   { key: 'gestor', label: 'Gestão Comercial (IA)', acoes: ['ver'] },
   { key: 'gestor.relatorios', label: 'Relatórios Comerciais', acoes: ['ver', 'exportar'] },
-  { key: 'claude.status', label: 'Painel de Status do Claude', acoes: ['ver'] },
+  { key: 'claude.status', label: 'Painel de Status da IA', acoes: ['ver'] },
   { key: 'conteudo', label: 'Redes Sociais — Central de Conteúdo', acoes: ['ver', 'criar', 'editar', 'excluir'] },
   // Chave separada em vez de uma 6ª coluna 'aprovar' na matriz: ACOES_MATRIZ é
   // fixa em 5 colunas, e uma coluna nova abriria célula vazia nas 15 linhas
@@ -125,7 +148,7 @@ export function hasPermission(recurso, acao = 'ver') {
   if (estado.is_superadmin) return true
   const key = _legado[recurso] || recurso
   // Pais 'sales'/'meta' (tool:*) = tem acesso se tiver QUALQUER filho do grupo.
-  if (key === 'sales') return ['sales.gestao', 'sales.analise', 'sales.metas'].some(k => (estado.permissions[k] || []).includes('ver'))
+  if (key === 'sales') return ['sales.gestao', 'sales.analise'].some(k => (estado.permissions[k] || []).includes('ver'))
   if (key === 'meta') return ['meta.campanha', 'meta.gestor', 'meta.fabrica'].some(k => (estado.permissions[k] || []).includes('ver'))
   return (estado.permissions[key] || []).includes(acao)
 }
@@ -170,7 +193,7 @@ export const PERMISSION_TREE = [
     // acesso no banco em silêncio.
     { key: 'autenticidade', label: 'Autenticidade e Garantia' },
   ] },
-  { key: 'claude.status', label: 'Painel de Status do Claude', children: [] },
+  { key: 'claude.status', label: 'Painel de Status da IA', children: [] },
   // ESCRITÓRIO 3D. Entrou na árvore em 04/08/2026, a pedido do dono: até então
   // era a única ferramenta da home SEM porteiro — qualquer pessoa logada abria.
   // Como toda chave nova, ela sobe concedida a NINGUÉM: quem tinha acesso por

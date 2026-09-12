@@ -1,0 +1,55 @@
+name: Faxina do Storage (sobras + vigia do teto)
+
+# Roda todo dia às 05:23 UTC (02:23 de Brasília) — uma hora DEPOIS da purga da Fábrica
+# (`fabrica-purga`, 04:17 UTC), de propósito: a purga apaga os arquivos que têm linha no
+# banco e, ao fazer isso, deixa para trás os que nunca tiveram (os MP4 de motion e as
+# pastas de rodada que sumiram do banco). Esta faxina passa em seguida e recolhe a sobra.
+#
+# Minuto quebrado porque hora cheia cai no pico do Actions e atrasa (medido neste repo,
+# ver o comentário do coletor-noticias.yml).
+#
+# O passo 2 (vigia) tem DOIS níveis, e a diferença é o que mantém o aviso útil: acima de
+# 80% ele deixa uma ANOTAÇÃO e a rodada segue verde; só acima de 95% ele derruba a rodada.
+# Alarme que toca todo dia deixa de ser alarme — e o projeto vive na faixa dos 86%.
+on:
+  schedule:
+    - cron: '23 5 * * *'
+  workflow_dispatch:
+    inputs:
+      dry:
+        description: 'Só listar (não apaga nada)'
+        type: boolean
+        default: false
+
+concurrency:
+  group: faxina-storage
+  cancel-in-progress: false
+
+jobs:
+  faxina:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SUPABASE_URL: https://kounqtdoioootxqegkij.supabase.co
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
+      - name: 1/2 · Faxina das sobras da Fábrica
+        timeout-minutes: 10
+        env:
+          DRY: ${{ inputs.dry && '1' || '0' }}
+        run: node coletor/faxina-fabrica.mjs
+
+      # if: always() — o vigia precisa reportar mesmo se a faxina abortar numa trava.
+      - name: 2/2 · Vigia do teto de armazenamento
+        if: always()
+        timeout-minutes: 5
+        run: node coletor/vigia-armazenamento.mjs

@@ -9,8 +9,20 @@ mostra dados de redes sociais (Instagram/Meta), anúncios (Meta Ads),
 vendas (Bling), notícias de concorrentes e Controle de Acessos, tudo
 num só lugar.
 
-Está publicado na Vercel no endereço:
-   socialdashboard.rbvcompany.com   (domínio "Inteligência RBV")
+Está publicado na Vercel em DOIS endereços, que servem o mesmo app:
+   central.rbvcompany.com           (o nome novo, desde 19/08/2026)
+   socialdashboard.rbvcompany.com   (o nome antigo, que CONTINUA valendo)
+
+   Os dois ficam vivos. O antigo não vai ser aposentado: sessão de login,
+   aplicativo instalado no celular e inscrição dos avisos são POR ENDEREÇO
+   no navegador e não passam de um para o outro — quem já usa o antigo
+   perderia as três de uma vez. Quem chegar agora usa o novo.
+
+   A lista dos endereços mora num lugar só, em
+   supabase/functions/_shared/enderecos-do-app.js. Endereço novo se
+   acrescenta LÁ, e também na lista de retornos do Supabase
+   (Authentication -> URL Configuration), senão o convite e a troca de
+   senha caem no endereço padrão em vez do que a pessoa estava usando.
 
 No GitHub o repositório se chama:  brenoov/social-dashboard
 A identidade do git aqui é a sua:  brenoov / breno@rbvcompany.com

@@ -72,7 +72,20 @@ export function statusCampanhaGerar(ok) { return ok ? 'pronta' : 'erro'; }
 // rate limit (pendentes>0) vira 'erro' pra UI oferecer "re-disparar" (subir-estudio é idempotente,
 // então re-rodar só completa o que falta, sem duplicar). ---
 export function estadoTerminalSubir(res) {
+  // Nada escolhido no Curar: não subiu nada, então não é 'concluido' e a rodada NÃO fecha. Antes
+  // caía no return final e a tela dizia "Publicado (pausado)!" com 0 anúncios — job 66a8e030.
+  if (res.semCriativos) {
+    return { status: 'erro', fecha: false, erro: 'Nenhum criativo escolhido — volte no passo Curar e escolha pelo menos um antes de publicar.' };
+  }
   if (res.pendentes > 0) return { status: 'erro', fecha: false, erro: 'rate limit — re-disparar pra continuar' };
+  // Multi-loja parcial: alguma loja não subiu. As outras SUBIRAM de verdade (o `resultado` é gravado
+  // junto), então não é "tudo falhou" — mas também não é 'concluido', e a rodada não fecha.
+  if (res.falhas?.length) {
+    return {
+      status: 'erro', fecha: false,
+      erro: `Subiu ${res.campanhas?.length ?? 0} de ${(res.campanhas?.length ?? 0) + res.falhas.length} loja(s). Não subiu: ${res.falhas.map((f) => `${f.loja} (${f.erro})`).join('; ')}`,
+    };
+  }
   return { status: 'concluido', fecha: true };
 }
 
@@ -113,8 +126,25 @@ async function main() {
   const _t0 = Date.now();
   const _robo = { gerar: 'fabrica-gerar', subir: 'fabrica-subir', ativar: 'fabrica-ativar', excluir: 'fabrica-excluir', preview: 'fabrica-preview' };
   const _acao = { gerar: 'gerar criativos', subir: 'subir campanha', ativar: 'ativar anúncios', excluir: 'excluir remessa', preview: 'gerar previews' };
+  // O MOTOR DE CADA TAREFA, e por que isto importa (18/08/2026).
+  //
+  // Antes, TODA tarefa da Fábrica era registrada com `modelo: null, usd: 0` — e
+  // `gerar` chama o gpt-image-2, que é API PAGA da OpenAI. Resultado: 473
+  // criativos gravados como US$ 0,00, e a tela do Status do Claude AFIRMANDO que
+  // criar imagem custa R$ 0.
+  //
+  // As outras tarefas (subir, ativar, excluir, preview) não chamam IA nenhuma:
+  // para elas o zero é verdade, e continua zero. A diferença agora está escrita.
+  const _motor = { gerar: 'gpt-image-2' };
+  const motor = _motor[job.tipo] || null;
+
   const reg = (itens, unidade, status, detalhe) => registrarExecucao({
-    robo: _robo[job.tipo] || 'fabrica', acao: _acao[job.tipo] || job.tipo, modelo: null, usd: 0,
+    robo: _robo[job.tipo] || 'fabrica', acao: _acao[job.tipo] || job.tipo,
+    modelo: motor,
+    // `usd` fica de fora de propósito quando há motor pago: sem ele,
+    // custoDaExecucao() devolve NULO ("não sei") em vez de zero. O valor real
+    // virá do gasto cobrado, quando a chave de administrador da OpenAI existir.
+    ...(motor ? {} : { usd: 0 }),
     duracaoMs: Date.now() - _t0, itens, unidade, status, detalhe,
   });
 

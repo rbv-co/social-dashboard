@@ -696,19 +696,29 @@ test('sem cidade E advantage+ conflict coexistem — dois bloqueios, nenhum se p
   assert.ok(bloqueios.some(x => /Advantage/i.test(x.texto)), 'outro bloqueio é sobre Advantage+');
 });
 
-test('lerPublico: targeting com regions popula outrasLocalizacoes', () => {
+// Este teste dizia "regions popula outrasLocalizacoes" até 13/08/2026, quando o
+// editor passou a DESENHAR estado. O que ele guarda continua sendo o mesmo: a
+// região não se perde na leitura. Mudou só onde ela aparece.
+test('lerPublico: targeting com regions popula ESTADOS (nao mais outrasLocalizacoes)', () => {
   const comRegioes = { geo_locations: { cities: [{ key: '1058', name: 'Campinas' }], regions: [{ key: '456', name: 'SP' }] } };
   const p = lerPublico(comRegioes);
-  assert.ok(p.outrasLocalizacoes.includes('regions'), 'deve listar regions em outrasLocalizacoes');
+  assert.deepEqual(p.estados, [{ key: '456', nome: 'SP' }], 'estado é gerenciado, com nome');
+  assert.ok(!p.outrasLocalizacoes.includes('regions'), 'não pode avisar "não mexo nisso" sobre o que agora edita');
   assert.deepEqual(p.cidades.length, 1, 'cities ainda aparecem normalmente');
 });
 
-test('lerPublico: targeting com countries e zips popula outrasLocalizacoes', () => {
-  const comPaises = { geo_locations: { countries: [{ key: 'BR' }], zips: [{ key: '13000' }] } };
+test('lerPublico: countries vira PAIS e zips continua sendo outra localizacao', () => {
+  // A Meta manda country como STRING ("BR"); o formato de objeto é aceito por
+  // tolerância, para nunca virar "[object Object]" caso ela mude.
+  const comPaises = { geo_locations: { countries: ['BR'], zips: [{ key: '13000' }] } };
   const p = lerPublico(comPaises);
-  assert.ok(p.outrasLocalizacoes.includes('countries'), 'deve listar countries');
-  assert.ok(p.outrasLocalizacoes.includes('zips'), 'deve listar zips');
+  assert.deepEqual(p.paises, [{ key: 'BR', nome: 'BR' }]);
+  assert.ok(!p.outrasLocalizacoes.includes('countries'), 'país é gerenciado');
+  assert.ok(p.outrasLocalizacoes.includes('zips'), 'CEP continua preservado sem ser editado');
   assert.deepEqual(p.cidades.length, 0, 'sem cities, cidades vazio');
+
+  const emObjeto = lerPublico({ geo_locations: { countries: [{ key: 'BR' }] } });
+  assert.deepEqual(emObjeto.paises, [{ key: 'BR', nome: 'BR' }], 'tolera o formato de objeto');
 });
 
 test('lerPublico: só cities não popula outrasLocalizacoes', () => {
@@ -726,20 +736,36 @@ test('cities E regions: round-trip preserva regions enquanto cities atualiza', (
   const p = lerPublico(original);
   p.cidades = [{ key: '999', nome: 'Piracicaba', raio: 0, unidade: 'kilometer' }];
   const { targeting } = montarTargeting(p, original);
-  // Regions devem permanecer intactas
+  // A REGIÃO SOBREVIVE — agora pelo caminho gerenciado, não pela preservação
+  // cega. O `name` não viaja de volta, e isso é de propósito: quem segmenta é a
+  // CHAVE, e é exatamente assim que a cidade sempre funcionou aqui. Mandar o
+  // rótulo de volta não muda nada na Meta.
   assert.ok(targeting.geo_locations.regions, 'regions sobrevivem');
-  assert.deepEqual(targeting.geo_locations.regions, [{ key: '456', name: 'SP' }], 'regions preservadas intactas');
+  assert.deepEqual(targeting.geo_locations.regions, [{ key: '456' }], 'a chave é o que segmenta');
   // Cities devem ser atualizadas
   assert.deepEqual(targeting.geo_locations.cities[0].key, '999', 'cities atualizada');
 });
 
 test('só regions: montarTargeting NÃO deleta geo_locations inteira', () => {
   const original = { geo_locations: { regions: [{ key: '456', name: 'SP' }] } };
-  const p = { ...PUBLICO_VAZIO, outrasLocalizacoes: ['regions'] };
+  const p = lerPublico(original);
   const { targeting } = montarTargeting(p, original);
   assert.ok('geo_locations' in targeting, 'geo_locations deve existir');
   assert.ok(targeting.geo_locations.regions, 'regions deve estar lá');
   assert.ok(!('cities' in targeting.geo_locations), 'cities não deve estar (foi vazia)');
+});
+
+// A CONTRAPARTIDA DE GERENCIAR UMA CHAVE, escrita para quem vier depois: chave
+// gerenciada é AUTORITATIVA. Um público montado à mão, sem passar por
+// `lerPublico`, apagaria o estado do conjunto — do mesmo jeito que sempre
+// apagaria a cidade. Os dois chamadores de montarTargeting no app partem de
+// `lerPublico` (conferido em 13/08/2026); quem acrescentar um terceiro tem de
+// fazer o mesmo.
+test('publico montado a mao SEM estados apaga os estados — o preco de gerenciar', () => {
+  const original = { geo_locations: { regions: [{ key: '456', name: 'SP' }], zips: [{ key: '13000' }] } };
+  const { targeting } = montarTargeting({ ...PUBLICO_VAZIO }, original);
+  assert.ok(!('regions' in targeting.geo_locations), 'estado é gerenciado: lista vazia apaga');
+  assert.deepEqual(targeting.geo_locations.zips, [{ key: '13000' }], 'o que NÃO é gerenciado continua intocado');
 });
 
 test('cities esvaziada (só tinha cities): geo_locations removida, compatível com comportamento anterior', () => {
@@ -778,7 +804,17 @@ test('tipo geo desconhecido sobrevive a ida e volta (mas NAO conta como localiza
 // beco sem saída que o bloqueio de Advantage+ já custou. Este teste percorre a
 // lista INTEIRA, então tipo novo acrescentado lá entra aqui sozinho.
 test('TODO tipo de lugar da lista conta como lugar, nao trava o salvar e volta intacto', () => {
-  assert.ok(CHAVES_DE_LOCALIZACAO.length >= 15, 'a lista não pode encolher sem alguém perceber');
+  // 12 desde 13/08/2026: `countries` e `regions` SAÍRAM daqui porque o editor
+  // passou a desenhar Brasil e Estado (antes, em 12/08, saiu `custom_locations`
+  // pelo pin). Encolher a lista sem mais nada teria travado o Salvar de conjunto
+  // mirado só por país ou só por estado — os testes lá no fim do arquivo são a
+  // prova de que isso não acontece. Quem tirar outra chave daqui tem a mesma
+  // obrigação: um lugar próprio no editor E contar no bloqueio de "sem
+  // localização".
+  assert.ok(CHAVES_DE_LOCALIZACAO.length >= 12, 'a lista não pode encolher sem alguém perceber');
+  assert.ok(!CHAVES_DE_LOCALIZACAO.includes('custom_locations'), 'pin é gerenciado pelo editor, não preservado às cegas');
+  assert.ok(!CHAVES_DE_LOCALIZACAO.includes('countries'), 'país é gerenciado pelo editor');
+  assert.ok(!CHAVES_DE_LOCALIZACAO.includes('regions'), 'estado é gerenciado pelo editor');
   for (const chave of CHAVES_DE_LOCALIZACAO) {
     const conteudo = [{ key: 'x1' }];
     const original = { geo_locations: { [chave]: conteudo }, age_min: 25 };
@@ -901,3 +937,159 @@ test('a frase promete o que o codigo cumpre: nada se perde', () => {
   assert.match(a.texto, /nada se perde/)
   assert.equal(a.bloqueia, false)
 })
+
+
+// A REGRESSAO QUE ESTE ARQUIVO PEGOU EM 12/08/2026, guardada pra nao voltar:
+// ao tirar `custom_locations` de CHAVES_DE_LOCALIZACAO, um conjunto mirado SO
+// por pin virou "sem localizacao nenhuma" e o Salvar morreu sem o dono ter
+// mudado nada.
+test('conjunto mirado SO por PIN nao trava o Salvar, e o pin volta intacto', () => {
+  const pin = {
+    name: 'Rua Miguel Guidotti, Limeira, SP, Brasil',
+    address_string: 'Rua Miguel Guidotti, Limeira, SP, Brasil',
+    distance_unit: 'kilometer', latitude: -22.53414, longitude: -47.3843, radius: 3,
+    primary_city_id: 258269, region_id: 460, country: 'BR',
+  };
+  const original = { geo_locations: { custom_locations: [pin] }, age_min: 25 };
+  const p = lerPublico(original);
+  assert.equal(p.pins.length, 1, 'o pin tem que ser lido');
+  assert.deepEqual(p.cidades, [], 'pin nao e cidade');
+
+  const bloqueios = avisosDe(p, p, {}).filter((x) => x.bloqueia);
+  assert.deepEqual(bloqueios, [], 'so pin NAO pode bloquear o salvar');
+
+  const { targeting } = montarTargeting(p, original);
+  const volta = targeting.geo_locations.custom_locations;
+  assert.equal(volta.length, 1);
+  assert.equal(volta[0].latitude, -22.53414);
+  assert.equal(volta[0].radius, 3);
+  assert.equal(volta[0].primary_city_id, 258269, 'o id da cidade vem da Meta e tem que voltar igual');
+});
+
+test('tirar o ultimo pin APAGA a chave, nao manda lista vazia', () => {
+  // A Meta trata `[]` e ausente de formas diferentes — mandar `[]` e outra coisa.
+  const original = { geo_locations: { custom_locations: [{ latitude: -22.5, longitude: -47.4, radius: 1, distance_unit: 'kilometer', country: 'BR' }], cities: [{ key: '1' }] } };
+  const p = lerPublico(original);
+  p.pins = [];
+  const { targeting } = montarTargeting(p, original);
+  assert.ok(!('custom_locations' in (targeting.geo_locations || {})), 'a chave tem que sumir');
+});
+
+// ── PAÍS E ESTADO PASSARAM A SER GERENCIADOS (13/08/2026) ──────────────────
+// Saíram de CHAVES_DE_LOCALIZACAO porque o editor agora os desenha. A regra do
+// arquivo obriga: quem sai da lista tem que contar no bloqueio de "sem
+// localização". Os testes abaixo são essa obrigação, escrita.
+
+test('pais vem como STRING no geo_locations e e lido assim', () => {
+  const p = lerPublico({ geo_locations: { countries: ['BR', 'PT'] } });
+  assert.deepEqual(p.paises, [{ key: 'BR', nome: 'BR' }, { key: 'PT', nome: 'PT' }]);
+  assert.deepEqual(p.outrasLocalizacoes, [], 'país não é mais "outra localização"');
+});
+
+test('estado vem como objeto com key e nome', () => {
+  const p = lerPublico({ geo_locations: { regions: [{ key: '449', name: 'Minas Gerais' }] } });
+  assert.deepEqual(p.estados, [{ key: '449', nome: 'Minas Gerais' }]);
+  assert.deepEqual(p.outrasLocalizacoes, []);
+});
+
+test('pais e estado voltam pra Meta na forma certa de cada um', () => {
+  const p = { ...PUBLICO_VAZIO, paises: [{ key: 'BR', nome: 'Brasil' }], estados: [{ key: '449', nome: 'Minas Gerais' }] };
+  const { targeting } = montarTargeting(p, {});
+  assert.deepEqual(targeting.geo_locations.countries, ['BR'], 'país é string crua');
+  assert.deepEqual(targeting.geo_locations.regions, [{ key: '449' }], 'estado é objeto com key');
+});
+
+test('pais que sai APAGA a chave em vez de mandar lista vazia', () => {
+  const original = { geo_locations: { countries: ['BR'], cities: [{ key: '1058' }] } };
+  const p = lerPublico(original);
+  const { targeting } = montarTargeting({ ...p, paises: [] }, original);
+  assert.ok(!('countries' in targeting.geo_locations), 'a Meta trata [] e ausente de formas diferentes');
+  assert.deepEqual(targeting.geo_locations.cities, [{ key: '1058' }], 'a cidade ao lado não pode sumir junto');
+});
+
+test('conjunto mirado SO por pais salva — nao pode travar', () => {
+  const original = { geo_locations: { countries: ['BR'] }, targeting_automation: { advantage_audience: 0 } };
+  const p = lerPublico(original);
+  const avisos = avisosDe(p, { ...p, idadeMin: 30 }, { ativo: false, ajustes: [] });
+  assert.ok(!avisos.some((x) => x.bloqueia), 'país é localização — o Salvar não pode morrer');
+});
+
+test('conjunto mirado SO por estado salva — nao pode travar', () => {
+  const original = { geo_locations: { regions: [{ key: '449', name: 'Minas Gerais' }] }, targeting_automation: { advantage_audience: 0 } };
+  const p = lerPublico(original);
+  const avisos = avisosDe(p, { ...p, idadeMin: 30 }, { ativo: false, ajustes: [] });
+  assert.ok(!avisos.some((x) => x.bloqueia), 'estado é localização — o Salvar não pode morrer');
+});
+
+test('sem cidade, sem pais, sem estado, sem pin: ai sim bloqueia', () => {
+  const avisos = avisosDe(PUBLICO_VAZIO, PUBLICO_VAZIO, { ativo: false, ajustes: [] });
+  assert.ok(avisos.some((x) => x.bloqueia && x.tipo === 'sem-lugar'));
+});
+
+test('o resumo diz o que entrou e saiu de pais e estado, com nome', () => {
+  const antes = { ...PUBLICO_VAZIO, estados: [{ key: '449', nome: 'Minas Gerais' }] };
+  const depois = { ...PUBLICO_VAZIO, paises: [{ key: 'BR', nome: 'Brasil' }], estados: [] };
+  const linhas = resumoDasMudancas(antes, depois);
+  assert.ok(linhas.some((l) => l.includes('+Brasil')), 'entrou o Brasil');
+  assert.ok(linhas.some((l) => l.includes('−Minas Gerais')), 'saiu Minas Gerais');
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// O PIN NO MAPA PRECISA CONTAR COMO MUDANÇA.
+//
+// O DEFEITO REAL (17/08/2026), visto na conta da Vessel com sessão logada: pus
+// um ponto no mapa do conjunto "Criativos Genspark", a tela desenhou o ponto,
+// descobriu sozinha o endereço ("CBMEG/FEAGRI · Avenida Marechal Cândido Rondon
+// · Cidade Universitária · Campinas · SP") e mostrou "2 lugares no mapa" com
+// raio de 1 km. Ao confirmar, a janela respondeu **"Nada mudou. Não há o que
+// salvar."** e fechou.
+//
+// A causa: `lerPublico` LÊ o pin (de `geo_locations.custom_locations`) e
+// `montarTargeting` MANDA o pin de volta — mas `resumoDasMudancas` não olhava
+// para `pins`. Como a tela desiste quando o resumo vem vazio, o ponto morria ali
+// e NUNCA chegava na Meta. Nada avisava: a tela desenha o pin, e o pin some.
+//
+// É o pior formato de falha do padrão da Central: a tela mente por omissão.
+
+test('pin NOVO no mapa conta como mudança', () => {
+  const antes = lerPublico(ALVO_META);
+  const depois = lerPublico(ALVO_META);
+  depois.pins = [{ lat: -22.8184, lng: -47.0647, raio: 1, unidade: 'kilometer', nome: 'CBMEG/FEAGRI', endereco: 'Av. Marechal Cândido Rondon' }];
+  const r = resumoDasMudancas(antes, depois).join(' | ');
+  assert.match(r, /CBMEG/, 'o ponto novo tem de aparecer no resumo, pelo nome');
+  assert.ok(resumoDasMudancas(antes, depois).length > 0, 'sem linha, a tela diz "nada mudou" e o pin morre');
+});
+
+test('pin REMOVIDO do mapa também conta', () => {
+  const antes = lerPublico(ALVO_META);
+  antes.pins = [{ lat: -22.8184, lng: -47.0647, raio: 1, unidade: 'kilometer', nome: 'CBMEG/FEAGRI' }];
+  const depois = lerPublico(ALVO_META);
+  depois.pins = [];
+  assert.match(resumoDasMudancas(antes, depois).join(' | '), /CBMEG/);
+});
+
+test('só o RAIO do pin mudando já conta — o ponto continua o mesmo', () => {
+  const base = { lat: -22.8184, lng: -47.0647, unidade: 'kilometer', nome: 'CBMEG/FEAGRI' };
+  const antes = { ...lerPublico(ALVO_META), pins: [{ ...base, raio: 1 }] };
+  const depois = { ...lerPublico(ALVO_META), pins: [{ ...base, raio: 8 }] };
+  const r = resumoDasMudancas(antes, depois).join(' | ');
+  assert.match(r, /CBMEG/);
+  assert.match(r, /1 km.*8 km|8 km/);
+});
+
+test('pin sem nome aparece pela COORDENADA, nunca "sem nome (undefined)"', () => {
+  const antes = lerPublico(ALVO_META);
+  const depois = { ...lerPublico(ALVO_META), pins: [{ lat: -22.8184, lng: -47.0647, raio: 1, unidade: 'kilometer', nome: '', endereco: '' }] };
+  const r = resumoDasMudancas(antes, depois).join(' | ');
+  assert.match(r, /-22\.81|-47\.06/, 'sem nome, a coordenada é o que identifica o ponto');
+  assert.ok(!/undefined/.test(r));
+});
+
+test('pin IGUAL nos dois lados não vira mudança falsa', () => {
+  // A outra metade: um resumo que acusa o que não mudou faz o dono aprovar no
+  // automático, e aí a janela de confirmação deixa de significar alguma coisa.
+  const pin = { lat: -22.8184, lng: -47.0647, raio: 1, unidade: 'kilometer', nome: 'CBMEG/FEAGRI' };
+  const antes = { ...lerPublico(ALVO_META), pins: [{ ...pin }] };
+  const depois = { ...lerPublico(ALVO_META), pins: [{ ...pin }] };
+  assert.deepEqual(resumoDasMudancas(antes, depois), []);
+});

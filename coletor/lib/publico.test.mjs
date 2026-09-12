@@ -52,3 +52,60 @@ test('interesses viram flexible_spec; custom_audiences só quando houver', () =>
   const t2 = montarTargeting({ interesses: [] }, LOJA);
   assert.ok(!('flexible_spec' in t2)); assert.ok(!('custom_audiences' in t2));
 });
+
+// ── OS QUATRO JEITOS DE MIRAR UM LUGAR (13/08/2026) ───────────────────────
+// Antes só existia cidade. O editor passou a oferecer Brasil, Estado, Cidade e
+// Local (ponto com raio), e a Fábrica precisa saber montar os quatro — senão o
+// dono escolhe um estado na tela e o robô sobe outra coisa.
+
+test('pais, estado e ponto entram no targeting da Fabrica', () => {
+  const t = montarTargeting({
+    geo: {
+      cities: [{ key: '1058', radius: 0 }],
+      countries: [{ key: 'BR' }],
+      regions: [{ key: '449' }],
+      pins: [{ lat: -18.91, lng: -48.26, raio: 2, unidade: 'kilometer', nome: 'Center Shopping', endereco: 'Rua Argentina' }],
+      excluded: [],
+    },
+  }, { geoCities: ['999'] });
+  assert.deepEqual(t.geo_locations.countries, ['BR'], 'país é string crua');
+  assert.deepEqual(t.geo_locations.regions, [{ key: '449' }]);
+  assert.equal(t.geo_locations.custom_locations.length, 1);
+  assert.equal(t.geo_locations.custom_locations[0].latitude, -18.91);
+  assert.equal(t.geo_locations.custom_locations[0].radius, 2);
+  assert.equal(t.geo_locations.custom_locations[0].name, 'Center Shopping');
+  assert.deepEqual(t.geo_locations.cities, [{ key: '1058' }]);
+});
+
+// A cidade da loja é a rede de segurança contra público mundial. Ela só entra
+// quando NÃO há lugar nenhum — e ponto, país e estado são lugar. Sem esta
+// regra, escolher só um estado faria a cidade da loja entrar por baixo e
+// alargar o anúncio sem ninguém pedir.
+test('lugar sem cidade nao cai na cidade da loja', () => {
+  const t = montarTargeting({
+    geo: { cities: [], countries: [], regions: [{ key: '449' }], pins: [], excluded: [] },
+  }, { geoCities: ['999'] });
+  assert.ok(!t.geo_locations.cities, 'com estado escolhido, a cidade da loja não pode entrar por baixo');
+  assert.deepEqual(t.geo_locations.regions, [{ key: '449' }]);
+});
+
+test('so por ponto tambem nao cai na cidade da loja', () => {
+  const t = montarTargeting({
+    geo: { cities: [], pins: [{ lat: -18.9, lng: -48.2, raio: 1 }], excluded: [] },
+  }, { geoCities: ['999'] });
+  assert.ok(!t.geo_locations.cities);
+  assert.equal(t.geo_locations.custom_locations.length, 1);
+});
+
+test('publico sem lugar NENHUM ainda cai na cidade da loja', () => {
+  const t = montarTargeting({ geo: { cities: [], excluded: [] } }, { geoCities: ['999'] });
+  assert.deepEqual(t.geo_locations.cities, [{ key: '999' }]);
+});
+
+// Preset salvo ANTES de 13/08/2026 não tem as chaves novas. Ele tem que
+// continuar subindo igual — `fabrica_publicos.geo` é jsonb e o que falta lê como
+// lista vazia.
+test('preset antigo, sem as chaves novas, sobe igual', () => {
+  const t = montarTargeting({ geo: { cities: [{ key: '1058' }], excluded: [] } }, { geoCities: ['999'] });
+  assert.deepEqual(t.geo_locations, { cities: [{ key: '1058' }] });
+});

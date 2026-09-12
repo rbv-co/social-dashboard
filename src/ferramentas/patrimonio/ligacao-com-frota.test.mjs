@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   temAcessoFrota, categoriaVeiculoEntre, bemEhCategoriaVeiculo, veiculoLigadoAoBem,
   veiculosParaLigar, patchVeiculoDoBem,
+  exigePlacaNoBem, placaObrigatoria,
 } from './ligacao-com-frota.js'
 
 test('categoriaVeiculoEntre: acha "Veículos" com acento e caixa normais', () => {
@@ -96,4 +97,35 @@ test('patchVeiculoDoBem: bem sem marca não gera campo vazio', () => {
   const vForm = { nome: '', marca: '' }
   const bem = { nome: 'BMW X1', marca: null }
   assert.deepEqual(patchVeiculoDoBem(vForm, bem), { nome: 'BMW X1' })
+})
+
+test('exigePlacaNoBem: só a categoria Veículos exige placa', () => {
+  // Decisão do dono (20/08/2026): item de veículo não salva sem placa. Não é
+  // burocracia — é a placa que faz o carro NASCER na Frota. Sem ela o item fica
+  // órfão, exatamente como o nº 291 "KWID" ficou naquele mesmo dia.
+  assert.equal(exigePlacaNoBem({ categoria_id: 'cat-veic' }, 'cat-veic'), true)
+  assert.equal(exigePlacaNoBem({ categoria_id: 'cat-moveis' }, 'cat-veic'), false)
+})
+
+test('exigePlacaNoBem: sem a categoria identificada, NÃO exige nada', () => {
+  // Mesma cautela de bemEhCategoriaVeiculo: se a busca da categoria falhar
+  // (Patrimônio meio carregado, nome da categoria mudou), exigir placa travaria
+  // o cadastro de QUALQUER item da empresa — são 362 deles.
+  assert.equal(exigePlacaNoBem({ categoria_id: 'cat-veic' }, null), false)
+  assert.equal(exigePlacaNoBem(null, 'cat-veic'), false)
+})
+
+test('placaObrigatoria: cobra no cadastro novo, avisa sem travar no que já existe', () => {
+  const veiculo = { categoria_id: 'cat-veic' }
+  // Item NOVO de veículo: sem placa não nasce. É o que impede órfão novo.
+  assert.equal(placaObrigatoria(veiculo, 'cat-veic', true), true)
+  // Item que JÁ EXISTE: não trava. Decisão do dono em 20/08 — o item nº 291
+  // fica sem placa até o carro dele ser levantado, e travar obrigaria a
+  // inventar uma placa só pra corrigir um nome.
+  assert.equal(placaObrigatoria(veiculo, 'cat-veic', false), false)
+})
+
+test('placaObrigatoria: o que não é veículo nunca pede placa', () => {
+  assert.equal(placaObrigatoria({ categoria_id: 'cat-moveis' }, 'cat-veic', true), false)
+  assert.equal(placaObrigatoria({ categoria_id: 'cat-veic' }, null, true), false)
 })

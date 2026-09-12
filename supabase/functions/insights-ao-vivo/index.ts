@@ -2,6 +2,7 @@
 // Exige USUÁRIO autenticado COM permissão social. Trata CORS. verify_jwt=false (auth feita aqui). Atual + anterior.
 // Todas as chamadas à Meta rodam em PARALELO (Promise.all) — latência = a mais lenta, não a soma.
 import { createClient } from 'jsr:@supabase/supabase-js@2'
+import { somarGasto, semRespostaDaMeta, podeBuscarProximaPagina } from '../_shared/gasto-de-campanhas.js'
 
 const GRAPH = 'https://graph.facebook.com/v21.0'
 const cors = {
@@ -50,10 +51,47 @@ async function interacoes(ig: string, eS: string, eU: string, token: string) {
   return inter
 }
 
-async function gasto(adAccountId: string, eS: string, eU: string, token: string) {
+// GASTO do período. Sem `campanhas`, continua exatamente como sempre foi:
+// level=account, uma linha, o número exato da conta. COM `campanhas`, desce para
+// level=campaign e soma só as escolhidas — é assim que o cartão de investimento
+// passa a obedecer ao balde e ao filtro manual.
+// TETO DE PÁGINAS. 126 campanhas na maior conta com `limit=500` cabem numa
+// página só — vinte é folga de 80x. O teto existe para o caso em que a Graph
+// devolve `paging.next` para sempre: sem ele, esta função ficaria girando dentro
+// de uma Edge Function até o tempo acabar, queimando o limite de taxa que já
+// derrubou esta tela uma vez.
+const MAX_PAGINAS = 20
+
+// NULO É "NÃO SEI", ZERO É "NÃO GASTOU" — quem sabe a diferença é
+// `semRespostaDaMeta`, no módulo puro ao lado do `somarGasto`, com teste.
+async function gasto(adAccountId: string, eS: string, eU: string, token: string, campanhas?: string[]) {
   const dstr = (u: number) => new Date(u * 1000).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' })
-  const ads = await apiGet(`act_${adAccountId}/insights`, { fields: 'spend', level: 'account', time_range: JSON.stringify({ since: dstr(Number(eS)), until: dstr(Number(eU) - 1) }) }, token)
-  return parseFloat(ads.data?.[0]?.spend ?? '0') || 0
+  const janela = JSON.stringify({ since: dstr(Number(eS)), until: dstr(Number(eU) - 1) })
+  if (!campanhas || campanhas.length === 0) {
+    const ads = await apiGet(`act_${adAccountId}/insights`, { fields: 'spend', level: 'account', time_range: janela }, token)
+    if (semRespostaDaMeta(ads)) return null
+    return parseFloat(ads.data?.[0]?.spend ?? '0') || 0
+  }
+  // level=campaign pode passar de 500 linhas numa conta grande — segue
+  // `paging.next` até acabar (mesmo padrão de `apiGetAll` em coletar-dados/index.ts),
+  // senão as campanhas depois do corte contribuem zero e o cartão mostra menos
+  // dinheiro do que o real, calado.
+  let pagina = await apiGet(`act_${adAccountId}/insights`, { fields: 'campaign_id,spend', level: 'campaign', time_range: janela, limit: '500' }, token)
+  if (semRespostaDaMeta(pagina)) return null
+  const linhas: any[] = [...pagina.data]
+  let paginas = 1
+  // Quando parar é decisão pura e testada (`podeBuscarProximaPagina`): sem
+  // `paging.next`, com página vazia — a Graph manda `next` em página vazia, e o
+  // laço giraria para sempre — ou no teto de páginas.
+  while (podeBuscarProximaPagina(pagina, paginas, MAX_PAGINAS)) {
+    const r = await fetch(pagina.paging.next)
+    if (!r.ok) return null           // meia soma sob rótulo de "ao vivo" é pior que cair no coletado
+    pagina = await r.json()
+    if (semRespostaDaMeta(pagina)) return null
+    linhas.push(...pagina.data)
+    paginas++
+  }
+  return somarGasto({ data: linhas }, campanhas)
 }
 
 // Respostas (replies) de stories — métrica de conta agregada (validado: 7D = 7).
@@ -87,7 +125,9 @@ Deno.serve(async (req) => {
     const podeSocial = !!perfil && (perfil.role === 'admin' || (perfil.features ?? []).includes('social'))
     if (!podeSocial) return json({ meta_erro: 'sem acesso' }, 403)
 
-    const { account_id, engSince, engUntil, folSince, folUntil, prevEngSince, prevEngUntil, prevFolSince, prevFolUntil } = await req.json()
+    const body = await req.json()
+    const { account_id, engSince, engUntil, folSince, folUntil, prevEngSince, prevEngUntil, prevFolSince, prevFolUntil } = body
+    const campanhas: string[] = Array.isArray(body?.campanhas) ? body.campanhas.map(String) : []
     const { data: acc } = await sb.from('accounts').select('instagram_id,access_token,ad_account_id').eq('id', account_id).single()
     if (!acc) return json({ meta_erro: 'conta não encontrada' }, 404)
     const ig = acc.instagram_id as string, token = acc.access_token as string, adAcc = acc.ad_account_id as string | null
@@ -99,13 +139,13 @@ Deno.serve(async (req) => {
       engaj(ig, engSince, engUntil, token),
       interacoes(ig, engSince, engUntil, token),
       novos(ig, folSince, folUntil, token),
-      adAcc ? gasto(adAcc, engSince, engUntil, token) : Promise.resolve(null),
+      adAcc ? gasto(adAcc, engSince, engUntil, token, campanhas) : Promise.resolve(null),
       respostas(ig, engSince, engUntil, token),
       adAcc ? adAcoes(adAcc, engSince, engUntil, token) : Promise.resolve(null),
       wantPrev ? engaj(ig, prevEngSince, prevEngUntil, token) : Promise.resolve(null),
       wantPrev ? interacoes(ig, prevEngSince, prevEngUntil, token) : Promise.resolve(null),
       wantPrev ? novos(ig, prevFolSince, prevFolUntil, token) : Promise.resolve(null),
-      (wantPrev && adAcc) ? gasto(adAcc, prevEngSince, prevEngUntil, token) : Promise.resolve(null),
+      (wantPrev && adAcc) ? gasto(adAcc, prevEngSince, prevEngUntil, token, campanhas) : Promise.resolve(null),
       wantPrev ? respostas(ig, prevEngSince, prevEngUntil, token) : Promise.resolve(null),
       (wantPrev && adAcc) ? adAcoes(adAcc, prevEngSince, prevEngUntil, token) : Promise.resolve(null),
     ])

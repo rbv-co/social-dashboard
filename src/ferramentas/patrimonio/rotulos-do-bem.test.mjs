@@ -47,6 +47,38 @@ test('dono: pessoa_id que não existe mais não vira "undefined"', () => {
   assert.equal(textoDoDono({ pessoa_id: 'sumiu', dono_texto: null }, {}), 'Pessoa removida')
 })
 
+/* ── "Pessoa removida" só quando a lista foi LIDA ─────────────────────────────
+   A leitura de colaboradores é uma RPC que ESTOURA quando falta acesso, e a
+   tela já sabe disso (`pessoasErro`). Com a lista em branco por falha, todo bem
+   que TEM dono passava a dizer que a pessoa dele foi removida — uma mentira
+   sobre gente que existe, e a mesma família do "R$ 0,00 por 17 horas": a tela
+   nunca inventa um fato a partir de uma leitura que não deu certo. */
+
+test('dono: lista que NÃO carregou não acusa pessoa removida', () => {
+  assert.equal(
+    textoDoDono({ pessoa_id: 'p1', dono_texto: null }, {}, true),
+    'Não consegui ler a lista de colaboradores')
+})
+
+test('dono: com a lista falhando, quem TEM nome solto continua aparecendo por ele', () => {
+  // O nome solto vem do próprio bem, não da lista — a falha não o alcança.
+  assert.equal(
+    textoDoDono({ pessoa_id: null, dono_texto: 'Raíssa' }, {}, true),
+    'Raíssa (não cadastrada)')
+  assert.equal(textoDoDono({ pessoa_id: null, dono_texto: null }, {}, true), 'Sem dono')
+})
+
+test('dono: lista falhou mas a pessoa está no mapa — o nome dela vence', () => {
+  // Pode acontecer com leitura parcial; havendo o nome, não há o que esconder.
+  const pessoas = { p1: { id: 'p1', nome: 'Larissa Sousa' } }
+  assert.equal(textoDoDono({ pessoa_id: 'p1' }, pessoas, true), 'Larissa Sousa')
+})
+
+test('dono: lista lida OK continua dizendo "Pessoa removida"', () => {
+  // O caso legítimo não se perde: a lista veio, e o id não está nela.
+  assert.equal(textoDoDono({ pessoa_id: 'sumiu' }, {}, false), 'Pessoa removida')
+})
+
 /* ── Dono é OPCIONAL em qualquer situação ─────────────────────────────────────
    A mesa da Produção está em uso e não é de ninguém em particular — foi o dono
    quem apontou isso, olhando os 104 móveis e 78 máquinas que a regra antiga

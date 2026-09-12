@@ -9,7 +9,8 @@ const subs = [
 ];
 
 test('os tipos que existem hoje', () => {
-  assert.deepEqual(TIPOS_DE_NOTIFICACAO.map((t) => t.chave), ['vendas', 'saldo', 'conteudo', 'frota']);
+  assert.deepEqual(TIPOS_DE_NOTIFICACAO.map((t) => t.chave),
+    ['vendas', 'saldo', 'conteudo', 'frota', 'frota_reserva']);
   assert.equal(ehTipoValido('vendas'), true);
   assert.equal(ehTipoValido('inventado'), false);
 });
@@ -48,15 +49,22 @@ test('todo tipo tem chave, rotulo e descricao (a tela de preferencias le esta li
 
 test('a lista de tipos bate com o CHECK de push_preferencias.tipo', () => {
   // Se um tipo novo entrar aqui sem a migration que solta o CHECK, salvar a
-  // preferencia falha com erro de constraint. Ja aconteceu com 'conteudo'.
+  // preferencia falha com erro de constraint. Ja aconteceu com 'conteudo' e
+  // com 'frota'.
   //
-  // 'frota' entrou aqui na Tarefa 11 (F6c); a migration que solta o CHECK pra
-  // aceitar 'frota' ainda NAO existe (ver db/migrations/2026-07-30-conteudo-04-hora-h.sql,
-  // que fez o mesmo pra 'conteudo') — fica pendente pra quem ligar o robo da
-  // manha (Tarefa 12), senao salvar a preferencia de 'frota' quebra em runtime.
+  // Cada chave desta lista tem a migration que a liberou:
+  //   vendas, saldo   o CHECK original
+  //   conteudo        db/migrations/2026-07-30-conteudo-04-hora-h.sql
+  //   frota           db/migrations/acessos/030_push_tipo_frota.sql
+  //   frota_reserva   db/migrations/acessos/052_push_tipo_reserva.sql
+  //
+  // A 052 foi APLICADA no banco em 21/08/2026, e a prova foi feita com
+  // `rollback`: dentro da transação o insert de 'frota_reserva' passou, e
+  // depois do rollback a tabela ficou com zero linha do tipo. Ligar o
+  // interruptor na tela não quebra mais.
   assert.deepEqual(
     TIPOS_DE_NOTIFICACAO.map((t) => t.chave).sort(),
-    ['conteudo', 'frota', 'saldo', 'vendas'],
+    ['conteudo', 'frota', 'frota_reserva', 'saldo', 'vendas'],
   );
 });
 

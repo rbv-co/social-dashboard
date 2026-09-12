@@ -5,6 +5,9 @@ import { useRouter } from 'vue-router'
 import { hasPermission } from '../../compartilhado/controle-de-login-e-usuario.js'
 import { sb } from '../../compartilhado/buscar-e-salvar-dados.js'
 import { sbClient } from '../../compartilhado/conectar-no-banco-de-dados.js'
+// O aviso do canto da tela, o mesmo do resto da central. Não trava a página
+// como o `alert()` nativo, que aqui aparecia no meio de um arrasto de ordem.
+import { adminToast } from '../../compartilhado/avisos.js'
 import './estudio.css'
 import AjudaTooltip from './ajuda-tooltip.vue'
 const router = useRouter()
@@ -18,7 +21,7 @@ async function carregar() {
 }
 async function salvar(l) {
   const { error } = await sbClient.functions.invoke('fabrica-looks', { body: { acao: 'salvar', look: { chave: l.chave, nome: l.nome, objetivos: l.objetivos, ativo: l.ativo } } })
-  if (error) { alert('Falha ao salvar: ' + error.message); carregar() }
+  if (error) { adminToast('Não consegui salvar o look: ' + error.message, false); carregar() }
 }
 function toggleObjetivo(l, o) { const i = l.objetivos.indexOf(o); i > -1 ? l.objetivos.splice(i, 1) : l.objetivos.push(o); salvar(l) }
 function toggleAtivo(l) { l.ativo = !l.ativo; salvar(l) }
@@ -28,19 +31,27 @@ async function mover(l, dir) {
   const arr = looks.value; [arr[i], arr[j]] = [arr[j], arr[i]]
   const ordem = arr.map((x, idx) => ({ chave: x.chave, ordem: idx + 1 }))
   arr.forEach((x, idx) => { x.ordem = idx + 1 })
-  await sbClient.functions.invoke('fabrica-looks', { body: { acao: 'ordenar', ordem } })
+  // A FALHA ERA ENGOLIDA: a lista já tinha trocado de lugar na tela, e se a
+  // gravação não fosse aceita a ordem certa só voltava num recarregar inteiro
+  // — até lá a tela mostrava uma ordem que não existe no servidor. Desfaz a
+  // troca e diz o que houve, do mesmo jeito que `salvar()` aqui do lado.
+  const { error } = await sbClient.functions.invoke('fabrica-looks', { body: { acao: 'ordenar', ordem } })
+  if (error) {
+    adminToast('Não consegui mudar a ordem. A lista voltou para como estava.', false)
+    carregar()
+  }
 }
 async function renomear(l) { const nome = prompt('Nome do look:', l.nome); if (nome && nome !== l.nome) { l.nome = nome; salvar(l) } }
 async function excluir(l) {
   if (!confirm(`Excluir o look "${l.nome}" da galeria? Ele some daqui e não gera mais criativos. Dá pra restaurar em "Mostrar excluídos".`)) return
   l.excluido = true // otimista
   const { error } = await sbClient.functions.invoke('fabrica-looks', { body: { acao: 'excluir', chave: l.chave, excluido: true } })
-  if (error) { l.excluido = false; alert('Falha ao excluir: ' + error.message) }
+  if (error) { l.excluido = false; adminToast('Não consegui excluir o look: ' + error.message, false) }
 }
 async function restaurar(l) {
   l.excluido = false // otimista
   const { error } = await sbClient.functions.invoke('fabrica-looks', { body: { acao: 'excluir', chave: l.chave, excluido: false } })
-  if (error) { l.excluido = true; alert('Falha ao restaurar: ' + error.message) }
+  if (error) { l.excluido = true; adminToast('Não consegui restaurar o look: ' + error.message, false) }
 }
 async function gerarPreviews() {
   gerandoPreview.value = true

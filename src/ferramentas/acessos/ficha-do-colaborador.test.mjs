@@ -143,3 +143,65 @@ test('resumoDaFicha conta arrays ou números de equipamentos/termos', () => {
   assert.equal(r.equipamentos, 2)
   assert.equal(r.termos, 1)
 })
+
+// ── OS CAMPOS DA FICHA (11/08/2026) ──────────────────────────────────────────
+//
+// POR QUE ESTES TESTES EXISTEM: NENHUMA ficha de colaborador abria. O dono
+// clicava em "Abrir ficha →" e não acontecia nada.
+//
+// A causa: a tela tinha DUAS listas que precisavam concordar e não concordavam
+// — `contatoCampos` (quais colunas aparecem) citava `email_outlook`, e
+// `AC_FICHA_CAMPOS` (o rótulo e o tipo de cada uma) não tinha essa chave. O
+// desenho de cada campo lia `cfg.label` sem guarda, então dava TypeError e
+// `_acRenderFicha` abortava ANTES de escrever o `innerHTML`. Por isso não
+// abria nenhuma, pra pessoa nenhuma.
+//
+// A ironia é que o comentário sobre `AC_FICHA_CAMPOS` já dizia que ele existia
+// pra "o render e o editor compartilharem a MESMA verdade". O que faltava era a
+// lista de colunas sair da mesma verdade também — agora sai daqui, e uma coluna
+// não tem como ser listada sem ter configuração.
+import { camposDaFicha, CAMPOS_DA_FICHA } from './ficha-do-colaborador.js'
+
+test('todo campo listado tem rotulo e tipo — a divergencia que quebrou a ficha', () => {
+  for (const ativo of [true, false]) {
+    for (const campo of camposDaFicha(ativo)) {
+      assert.ok(campo.col, 'campo sem coluna')
+      assert.ok(campo.label, `campo ${campo.col} sem rotulo`)
+      assert.ok(campo.tipo, `campo ${campo.col} sem tipo`)
+    }
+  }
+})
+
+test('email_outlook esta na ficha — 13 das 26 pessoas tem ele preenchido', () => {
+  // O caso exato do defeito. Ele nao pode simplesmente sumir da ficha: e coluna
+  // real e mais da metade das pessoas tem valor la.
+  const cols = camposDaFicha(true).map((c) => c.col)
+  assert.ok(cols.includes('email_outlook'))
+})
+
+test('quem esta ativo NAO ve fim de contrato nem motivo de saida', () => {
+  const cols = camposDaFicha(true).map((c) => c.col)
+  assert.ok(!cols.includes('data_fim_contrato'))
+  assert.ok(!cols.includes('motivo_saida'))
+})
+
+test('quem foi desligado ve os dois campos de saida, no fim', () => {
+  const cols = camposDaFicha(false).map((c) => c.col)
+  assert.ok(cols.includes('data_fim_contrato'))
+  assert.ok(cols.includes('motivo_saida'))
+  assert.equal(cols.at(-2), 'data_fim_contrato')
+  assert.equal(cols.at(-1), 'motivo_saida')
+})
+
+test('a ordem dos campos do contato nao muda por acidente', () => {
+  assert.deepEqual(camposDaFicha(true).map((c) => c.col), [
+    'email_corporativo', 'email_outlook', 'conta_apple',
+    'numero_corporativo', 'numero_pessoal', 'data_inicio_contrato',
+  ])
+})
+
+test('o editor de UM campo acha a config pela coluna', () => {
+  // _acFichaEditarCampo precisa do rotulo e do tipo pra montar o input.
+  assert.equal(CAMPOS_DA_FICHA.data_inicio_contrato.tipo, 'date')
+  assert.equal(CAMPOS_DA_FICHA.email_outlook.tipo, 'email')
+})

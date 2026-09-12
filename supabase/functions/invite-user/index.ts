@@ -1,16 +1,29 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { enderecoDeRetorno } from '../_shared/enderecos-do-app.js'
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-const PROD_URL = 'https://socialdashboard.rbvcompany.com'
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors })
 
   try {
+    // PARA ONDE O LINK DO E-MAIL LEVA.
+    //
+    // A Central atende em dois endereços enquanto muda de nome. O link do
+    // convite e o da troca de senha têm de cair no endereço de onde o admin
+    // clicou — senão quem for convidado a partir do endereço novo recebe um
+    // e-mail que leva ao antigo. `enderecoDeRetorno` só aceita endereço da
+    // nossa lista: um `Origin` forjado cai no padrão, nunca vira o link.
+    //
+    // ATENÇÃO: cada endereço daqui precisa estar TAMBÉM na lista do Supabase
+    // (Authentication -> URL Configuration -> Redirect URLs). O que não estiver
+    // lá é recusado e o e-mail sai apontando para a raiz do projeto.
+    const destinoDoLink = enderecoDeRetorno(req.headers.get('Origin'))
+
     const anonClient = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_ANON_KEY')!,
@@ -96,7 +109,7 @@ Deno.serve(async (req: Request) => {
       })
     } else {
       const { data: invited, error: inviteErr } = await adminClient.auth.admin.inviteUserByEmail(email, {
-        redirectTo: PROD_URL,
+        redirectTo: destinoDoLink,
         data: { name: name || '', role: validRole },
       })
 
@@ -104,7 +117,7 @@ Deno.serve(async (req: Request) => {
         if (inviteErr.message.toLowerCase().includes('already been registered') ||
             inviteErr.message.toLowerCase().includes('already registered')) {
           const { error: resetErr } = await adminClient.auth.resetPasswordForEmail(email, {
-            redirectTo: PROD_URL,
+            redirectTo: destinoDoLink,
           })
           if (resetErr) throw resetErr
         } else {

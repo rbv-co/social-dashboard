@@ -1,0 +1,26 @@
+# O QUE NAO SOBE PARA A VERCEL.
+#
+# Por que este arquivo existe: `vercel --prod` daqui abortava o upload com
+# "Upload aborted", sem dizer o motivo. A causa medida: a pasta `coletor` tem
+# 1,4 GB de fotos baixadas (fotos_por_sku 1,1 GB, fotos-bling 245 MB). Elas
+# estao no .gitignore, mas a CLI nao as respeitou — e nada disso e usado pelo
+# build: o site e Vite (index.html + src + public), os robos do coletor rodam
+# fora daqui.
+#
+# ATENCAO: quando existe .vercelignore, a Vercel usa ELE no lugar do
+# .gitignore. Entao o que estiver aqui precisa cobrir o que pesa.
+
+# as worktrees de desenvolvimento
+/arvores/
+
+# cache de fotos dos robos — 1,4 GB, nada disso vai para o site
+/coletor/fotos_por_sku/
+/coletor/fotos-bling/
+/coletor/fotos-cutout/
+
+# dependencias e build local: a Vercel instala e compila do zero
+node_modules
+/dist/
+
+# registros de trabalho das sessoes
+/.superpowers/

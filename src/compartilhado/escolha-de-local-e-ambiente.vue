@@ -212,12 +212,13 @@
  * que decide o que fazer com a coluna de texto antiga. Aqui ela só é MOSTRADA. */
 import { ref, reactive, computed, watch, nextTick } from 'vue'
 import { montarArvore, filtrarArvore, listarLocais, estadoDaEscolha } from './arvore-de-locais.js'
-// De propósito reaproveitando a regra do "+" que o Patrimônio já usa, em vez de
-// escrever uma segunda: ela decide se o nome digitado vira cadastro novo ou se
+// De propósito reaproveitando a regra do "+" compartilhada — a mesma que o
+// Patrimônio e a escolha de pessoa usam —, em vez de escrever uma segunda: ela
+// decide se o nome digitado vira cadastro novo ou se
 // já existe e é só selecionar (comparando sem caixa e sem espaço nas pontas —
 // senão a lista vira "Volvo", "VOLVO" e "volvo" convivendo, que é o estado real
 // de Marcas hoje).
-import { resolverNovaOpcao, normalizarNome } from '../ferramentas/patrimonio/nova-opcao.js'
+import { resolverNovaOpcao, normalizarNome } from './nova-opcao.js'
 
 const props = defineProps({
   // As três listas cruas do banco, do jeito que a tela de Patrimônio já busca.
@@ -450,10 +451,10 @@ watch(() => props.localId, () => { if (novoNivel.value && !esperando.value) canc
 }
 .esc-local-atual-txt{ flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; }
 .esc-local-etiqueta{
-  font-size:10px; text-transform:uppercase; letter-spacing:1.5px; color:var(--muted);
+  font-size:max(9px, calc(10px * var(--escala-texto, 1))); text-transform:uppercase; letter-spacing:1.5px; color:var(--muted);
 }
 /* Texto NUNCA corta: o dono não distingue dois locais que viram "Fábrica C…". */
-.esc-local-caminho{ font-size:14px; line-height:1.35; overflow-wrap:anywhere; }
+.esc-local-caminho{ font-size:max(9px, calc(14px * var(--escala-texto, 1))); line-height:1.35; overflow-wrap:anywhere; }
 .esc-local-caminho-fraco{ color:var(--muted); font-weight:400; }
 .esc-local-acao{ flex-shrink:0; }
 
@@ -469,20 +470,20 @@ watch(() => props.localId, () => { if (novoNivel.value && !esperando.value) canc
   background:color-mix(in srgb, var(--orange) 10%, var(--surface));
   color:var(--text);
 }
-.esc-local-aviso-txt{ margin:0; font-size:13px; line-height:1.6; overflow-wrap:anywhere; }
+.esc-local-aviso-txt{ margin:0; font-size:max(9px, calc(13px * var(--escala-texto, 1))); line-height:1.6; overflow-wrap:anywhere; }
 .esc-local-sugestoes{ display:flex; flex-direction:column; gap:var(--sp-1); }
-.esc-local-sugestoes-titulo{ font-size:12px; color:var(--muted); }
+.esc-local-sugestoes-titulo{ font-size:max(9px, calc(12px * var(--escala-texto, 1))); color:var(--muted); }
 .esc-local-sugestao{
   min-height:40px; padding:var(--sp-2) var(--sp-3); text-align:left;
   border:1px solid var(--border); border-radius:var(--radius-md);
   background:var(--surface); color:var(--text);
-  font-family:inherit; font-size:13px; line-height:1.4;
+  font-family:inherit; font-size:max(9px, calc(13px * var(--escala-texto, 1))); line-height:1.4;
   cursor:pointer; overflow-wrap:anywhere; touch-action:manipulation;
 }
 .esc-local-sugestao:hover{ border-color:var(--accent); }
 .esc-local-nota{
   margin:0; padding:var(--sp-2) var(--sp-3);
-  font-size:12px; line-height:1.6; color:var(--muted);
+  font-size:max(9px, calc(12px * var(--escala-texto, 1))); line-height:1.6; color:var(--muted);
   background:var(--surface2); border-radius:var(--radius-md);
   overflow-wrap:anywhere;
 }
@@ -493,7 +494,7 @@ watch(() => props.localId, () => { if (novoNivel.value && !esperando.value) canc
 .esc-local-busca-campo{
   flex:1; min-width:0; min-height:44px;
   padding:0 var(--sp-3);
-  font-family:inherit; font-size:16px; color:var(--text);
+  font-family:inherit; font-size:max(16px, calc(16px * var(--escala-texto, 1))); color:var(--text);
   background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-md);
 }
 .esc-local-busca-campo:focus{ outline:2px solid var(--accent); outline-offset:-1px; }
@@ -505,7 +506,7 @@ watch(() => props.localId, () => { if (novoNivel.value && !esperando.value) canc
   flex-shrink:0; width:44px; min-height:44px;
   border:1px solid var(--border); border-radius:var(--radius-md);
   background:var(--surface); color:var(--accent);
-  font-family:inherit; font-size:20px; line-height:1;
+  font-family:inherit; font-size:max(16px, calc(20px * var(--escala-texto, 1))); line-height:1;
   cursor:pointer; touch-action:manipulation;
 }
 .esc-local-mais:hover:not(:disabled){ border-color:var(--accent); }
@@ -516,7 +517,7 @@ watch(() => props.localId, () => { if (novoNivel.value && !esperando.value) canc
 .esc-local-novo-campo{
   flex:1 1 180px; min-width:0; min-height:44px;
   padding:0 var(--sp-3);
-  font-family:inherit; font-size:16px; color:var(--text);
+  font-family:inherit; font-size:max(16px, calc(16px * var(--escala-texto, 1))); color:var(--text);
   background:var(--surface); border:1px solid var(--accent-mid); border-radius:var(--radius-md);
 }
 .esc-local-novo-campo:focus{ outline:2px solid var(--accent); outline-offset:-1px; }
@@ -544,7 +545,7 @@ watch(() => props.localId, () => { if (novoNivel.value && !esperando.value) canc
   flex:1; min-width:0;
   display:flex; align-items:center; gap:var(--sp-2);
   min-height:44px; padding:var(--sp-1) var(--sp-2);
-  text-align:left; font-family:inherit; font-size:14px; color:var(--text);
+  text-align:left; font-family:inherit; font-size:max(9px, calc(14px * var(--escala-texto, 1))); color:var(--text);
   background:transparent; border:1px solid transparent; border-radius:var(--radius-md);
   cursor:pointer; touch-action:manipulation;
 }
@@ -554,8 +555,8 @@ watch(() => props.localId, () => { if (novoNivel.value && !esperando.value) canc
    em cima e a pessoa quer conferir se acertou. */
 .esc-local-no:hover:not(:disabled):not(.esc-local-no-marcado){ background:var(--surface2); }
 .esc-local-no:focus-visible{ outline:2px solid var(--accent); outline-offset:-2px; }
-.esc-local-no-marca{ font-weight:600; text-transform:uppercase; letter-spacing:1px; font-size:11px; color:var(--muted); }
-.esc-local-no-ambiente{ font-size:13px; }
+.esc-local-no-marca{ font-weight:600; text-transform:uppercase; letter-spacing:1px; font-size:max(9px, calc(11px * var(--escala-texto, 1))); color:var(--muted); }
+.esc-local-no-ambiente{ font-size:max(9px, calc(13px * var(--escala-texto, 1))); }
 .esc-local-no-marcado{
   background:var(--accent-light);
   border-color:color-mix(in srgb, var(--accent) 45%, var(--surface));
@@ -565,7 +566,7 @@ watch(() => props.localId, () => { if (novoNivel.value && !esperando.value) canc
 
 /* Tamanho próprio, e não o da linha: no cabeçalho da marca a linha é 11px, e a
    seta some virando um ponto — o que esconde que o grupo abre e fecha. */
-.esc-local-seta{ flex-shrink:0; width:16px; font-size:13px; line-height:1; color:var(--muted); }
+.esc-local-seta{ flex-shrink:0; width:16px; font-size:max(9px, calc(13px * var(--escala-texto, 1))); line-height:1; color:var(--muted); }
 /* Nome quebra em duas linhas em vez de virar reticências. */
 .esc-local-nome{ flex:1; min-width:0; overflow-wrap:anywhere; line-height:1.35; }
 
@@ -578,13 +579,13 @@ watch(() => props.localId, () => { if (novoNivel.value && !esperando.value) canc
    do cabeçalho que já diz VESSEL. Inline, ela é legenda — só desce de linha
    quando o nome é comprido de verdade. */
 .esc-local-marca-do-local{
-  font-size:11px; line-height:1.3; color:var(--muted); font-weight:400;
+  font-size:max(9px, calc(11px * var(--escala-texto, 1))); line-height:1.3; color:var(--muted); font-weight:400;
   white-space:nowrap;
 }
 .esc-local-marca-do-local::before{ content:' · '; }
 .esc-local-selo{
   flex-shrink:0; padding:2px 7px; border-radius:999px;
-  font-size:10px; line-height:1.5; white-space:nowrap;
+  font-size:max(9px, calc(10px * var(--escala-texto, 1))); line-height:1.5; white-space:nowrap;
   color:var(--text);
   background:color-mix(in srgb, var(--orange) 16%, var(--surface));
   border:1px solid color-mix(in srgb, var(--orange) 38%, var(--surface));
@@ -592,12 +593,12 @@ watch(() => props.localId, () => { if (novoNivel.value && !esperando.value) canc
 .esc-local-conta{
   flex-shrink:0; min-width:22px; text-align:center;
   padding:1px 6px; border-radius:999px;
-  font-family:var(--fonte-dados); font-size:11px;
+  font-family:var(--fonte-dados); font-size:max(9px, calc(11px * var(--escala-texto, 1)));
   color:var(--muted); background:var(--surface2);
 }
 .esc-local-vazio{
   margin:0; padding:var(--sp-3);
-  font-size:13px; line-height:1.6; color:var(--muted); overflow-wrap:anywhere;
+  font-size:max(9px, calc(13px * var(--escala-texto, 1))); line-height:1.6; color:var(--muted); overflow-wrap:anywhere;
 }
 
 /* Container estreito (ficha dentro de modal no celular): o selo de nome

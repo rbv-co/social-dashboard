@@ -1,0 +1,66 @@
+A ferramenta de Frota: quem dirige pega e devolve carro, quem administra cuida
+da frota inteira. A tela é `tela-de-frota.vue`, e ao redor dela cada regra mora
+num arquivo próprio, testado sem precisar montar componente.
+
+AS DUAS ÁREAS (areas-da-frota.js): Motorista e Gestão. Motorista é quem está de
+pé no estacionamento e quer resolver uma coisa só — cada dado a mais na tela é
+um obstáculo. Gestão é a frota inteira, com contrato e valor. A separação é de
+ATENÇÃO, não de sigilo: quem dirige e precisa do Renavam pede a quem administra.
+
+  areas-da-frota.js         quais abas cada pessoa vê, e o que a área
+                            Motorista mostra
+  botoes-rapidos.js         os botões do topo, com a resposta já no rótulo
+  gavetas.js                as seções que abrem e fecham. Gaveta com algo
+                            esperando a pessoa ABRE SOZINHA e não deixa
+                            fechar — senão ela vira esconderijo de aviso
+  estado-do-veiculo.js      se o carro está livre, na rua, na oficina
+  historico-de-reservas.js  a linha do tempo de reserva, retirada e posse
+  requisicoes.js            o pedido de carro e a decisão de quem aprova
+  revisoes.js               de quantos em quantos km cada item se troca
+  assinar-checklist.js      a ficha do dia e a assinatura de quem conferiu
+  conferencia-de-assinaturas.js  se a assinatura é de quem pegou o carro
+  copias-no-zoho.js         se a ficha assinada chegou no Zoho
+  contato-do-motorista.js   como cobrar o checklist de quem não fez
+  bens-para-veiculo.js      que item do Patrimônio pode virar carro
+  etiqueta-do-veiculo.js    o nº de patrimônio, "como o carro fica" e a
+                            frase do que a sincronia fez
+
+A VIA DE MÃO DUPLA COM O PATRIMÔNIO (20/08/2026)
+------------------------------------------------
+Cadastrar carro aqui cria o item no Patrimônio, e cadastrar item de veículo lá
+cria o carro aqui. O vínculo mora numa coluna só: `frota_veiculos.bem_id`, que
+é ÚNICA desde a migration 048 — um item pertence a um carro só.
+
+Quem costura é a função `sincronizar_carro_e_bem` no BANCO (migrations 049 e
+050), não a tela. O motivo: os portões de permissão das duas ferramentas são
+diferentes (`is_frota_admin` x `is_patrimonio_admin`), e medido em 20/08, de 22
+pessoas, 5 têm só Frota e 2 têm só Patrimônio. Se a tela fizesse os dois
+inserts, pra essas 7 a metade do outro lado bateria na RLS e falharia — e o
+cadastro em dobro voltaria justo pra quem menos pode resolver.
+
+⚠️ O NÚMERO É DIGITADO À MÃO, sem sugestão (decisão do dono): quem cadastra tem
+o adesivo na mão. Em troca, a tela pergunta ao banco (`etiqueta_quem_e`) o que
+aquele número JÁ É e avisa antes de gravar. Isso não é luxo — 1 a 6 são
+Macbooks, 47 é um microfone e 100 é uma cadeira. Sem esse aviso, um dígito
+trocado ligaria o carro no computador de alguém.
+
+⚠️ `codigo_patrimonial` NÃO é o nº de patrimônio. É um campo de texto com duas
+espécies de conteúdo: os carros novos carregam o número da etiqueta ("298") e
+os nove antigos carregam o código interno da Frota ("RBB-004"), que não é
+etiqueta nenhuma. `etiquetaDoCodigo` só aproveita o que for número puro — "RBB-
+004" NÃO vira 4, porque o 4 é um Macbook.
+
+O outro lado da ponte é `../patrimonio/ligacao-com-frota.js`.
+
+CUIDADO AO MEXER
+----------------
+`tela-de-frota.vue` passa de 5.000 linhas — é onde um import esquecido se
+esconde melhor. E import esquecido NÃO quebra o `npm run build`: o Vite supõe
+que é global do navegador, e o erro só nasce quando alguém clica, com a tela
+ficando EM BRANCO e muitas vezes sem nada no console. Por isso existe
+`imports.test.mjs` nesta pasta; ele já salvou quatro telas.
+
+Nome de classe CSS nasce ÚNICO. Em 20/08 duas listas diferentes dividiam
+`fr-outros` e saíam com o estilo trocada uma da outra — a lista simples ganhou
+o cartão que o comentário dela mandava não ter. Antes de reusar um nome,
+`grep -n` e conte quantas definições existem.

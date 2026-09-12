@@ -4,7 +4,7 @@ import {
   PAPEIS, acharPapel, nivelDo,
   podeAdministrarTime, papeisQuePossoConceder, podeRemover,
   avisosDoTime, validarTime, canaisLivres, linhaDoTime, ordenarTimes,
-  veOEstoque, podeLiberarEstoque,
+  veOEstoque, podeLiberarEstoque, PAPEIS_DO_TIME,
 } from './equipes.js'
 
 const dono = { is_superadmin: true }
@@ -42,7 +42,31 @@ test('quem nao administra nao concede papel nenhum', () => {
 
 test('gestor concede ate gestor — precisa poder passar o bastao', () => {
   const ids = papeisQuePossoConceder(gente, 'gestor').map((p) => p.id)
-  assert.deepEqual(ids, ['vendedora', 'supervisora', 'gestor'])
+  // Sem 'supervisora' desde 27/08: ela mora no GRUPO, nao no time.
+  assert.deepEqual(ids, ['vendedora', 'gestor'])
+})
+
+// ── A supervisora saiu do seletor DO TIME (27/08/2026) ──────────────────────
+
+test('nem o superadmin concede supervisora DENTRO do time', () => {
+  // Decisao do dono: "a supervisora fica a nivel pai, gestora e vendedora fica a
+  // nivel loja". Dois lugares para conceder a mesma coisa, com alcances
+  // diferentes, e ninguem saberia qual vale.
+  const ids = papeisQuePossoConceder(dono, 'gestor').map((p) => p.id)
+  assert.deepEqual(ids, ['vendedora', 'gestor'])
+  assert.ok(!ids.includes('supervisora'))
+})
+
+test('mas supervisora CONTINUA em PAPEIS, com o nivel dela', () => {
+  // Tira-la da lista faria uma supervisora antiga virar nivel 0 e perder acesso
+  // em silencio. Hoje nao existe nenhuma, e mesmo assim a regra tem de aguentar.
+  assert.equal(nivelDo('supervisora'), 2)
+  assert.ok(acharPapel('supervisora'), 'o papel continua existindo')
+})
+
+test('supervisora ANTIGA de time continua vendo e liberando o estoque', () => {
+  assert.deepEqual(veOEstoque({ papel: 'supervisora' }, []), { ve: true, porque: 'pelo papel' })
+  assert.equal(podeLiberarEstoque(gente, 'supervisora'), true)
 })
 
 // ── O último gestor não sai ─────────────────────────────────────────────────

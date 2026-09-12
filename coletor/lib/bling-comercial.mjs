@@ -11,12 +11,36 @@ const GESTOR_EMAIL = process.env.GESTOR_USER_EMAIL;
 const GESTOR_PASS = process.env.GESTOR_USER_PASSWORD;
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
+// A regra de qual dia a venda conta + o leitor das linhas. Ver notas-bling.mjs.
+import { ajustarPelaDataDaNota, linhasDaJanela } from './notas-bling.mjs';
+
 // Depósito de cada canal foco (mapeado no Bling):
+// ⚠️ ESTA LISTA DEIXOU DE SER A VERDADE em 05/09/2026. Ela ficou só como
+// SEMENTE, para o caso de a chamada de depósitos ao Bling falhar — assim o robô
+// continua coletando os três de sempre em vez de coletar nada.
+//
+// A verdade agora é a tabela `bling_depositos`, alimentada pelo próprio Bling
+// (ver `blingDepositos`). Depósito novo entra sozinho; ninguém mexe em código.
 export const DEP_FOCO = [
   { canal: 'Shopping Tivoli (Santa Bárbara)', deposito_id: '14888726315' },
   { canal: 'Shopping Dom Pedro',              deposito_id: '14888617206' },
   { canal: 'Atacado Nuvem Shop (Estoque Pulmão)', deposito_id: '14888248253' },
 ];
+
+// OS DEPOSITOS QUE O BLING TEM, com nome. É o que substitui a lista de cima.
+// `situacao` do Bling: 1 = ativo. Depósito inativo continua vindo, marcado —
+// sumir com ele daqui esconderia estoque parado que ainda existe.
+export async function blingDepositos(token) {
+  const resp = await blingProxy(token, 'depositos', { pagina: 1, limite: 100 });
+  const d = resp.data;
+  if (!Array.isArray(d)) return [];
+  return d.map((x) => ({
+    deposito_id: Number(x.id),
+    nome: String(x.descricao || x.nome || '').slice(0, 120) || `Depósito ${x.id}`,
+    ativo: Number(x.situacao) === 1,
+    padrao: !!x.padrao,
+  })).filter((x) => Number.isFinite(x.deposito_id) && x.deposito_id > 0);
+}
 
 // ── Conta de serviço: login → access_token ──
 export async function loginServico() {
@@ -50,7 +74,19 @@ export async function blingProxy(token, endpoint, params) {
   throw new Error('bling-proxy ' + endpoint + ' -> falhou (429/5xx repetido)');
 }
 
-// Lista todas as páginas de pedidos de venda concluídos no intervalo
+// Lista os pedidos de venda cuja venda CONTA no intervalo.
+//
+// Não é a mesma coisa que "pedidos feitos no intervalo": a venda conta no dia em
+// que a NOTA saiu. A loja emite NFC-e na hora, mas o Atacado emite NF-e no dia
+// seguinte — então a venda de sexta caía na quinta. Medido em 11/08/2026 sobre
+// 12 meses: 197 dos 325 dias com venda mostravam valor errado.
+//
+// O AJUSTE MORA AQUI, e não em cada robô, DE PROPÓSITO: três robôs chamam esta
+// função (gestor-comercial, relatorios-comerciais e atualizar-cards-comercial).
+// Corrigir um a um deixaria o esquecido publicando outro número — e dois lugares
+// discordando é pior que um errado, porque ninguém sabe em qual acreditar.
+//
+// Se não der para ler a data certa, esta função LANÇA (ver linhasDaJanela).
 export async function blingPedidos(token, dataInicial, dataFinal) {
   const all = [];
   for (let pagina = 1; pagina <= 10; pagina++) {
@@ -65,7 +101,14 @@ export async function blingPedidos(token, dataInicial, dataFinal) {
     all.push(...items);
     if (items.length < 100) break;
   }
-  return all;
+
+  // A chave de serviço passa por cima do RLS. Sem ela, a leitura iria pelo JWT
+  // da conta de serviço — que hoje enxerga tudo, mas passaria a enxergar nada se
+  // um dia alguém ligasse o escopo por equipe nessa conta, e o robô ficaria
+  // errado em silêncio. Com a chave, isso não depende de configuração de conta.
+  const chave = process.env.SUPABASE_SERVICE_KEY || token;
+  const linhas = await linhasDaJanela(SUPABASE_URL, chave, dataInicial, dataFinal);
+  return ajustarPelaDataDaNota(all, linhas, dataInicial, dataFinal).pedidos;
 }
 
 // Lista o catálogo de produtos (id → nome/código/preço). Bounded por segurança.
@@ -84,10 +127,14 @@ export async function blingProdutos(token, maxPaginas = 20) {
 }
 
 // Saldo físico por depósito foco, por produto (em lotes de idsProdutos).
+// ⚠️ ATE 05/09/2026 ESTA FUNCAO JOGAVA FORA o saldo de todo deposito que nao
+// estivesse na lista cravada — e o Bling MANDA TODOS eles na mesma resposta. O
+// deposito de uma loja nova chegava aqui e era descartado numa linha, sem erro
+// nenhum: a loja simplesmente nao existia na Gestao a Vista ate alguem editar
+// codigo. Agora nada e descartado; quem decide o que mostrar e a tela.
 export async function blingSaldoFoco(token, prodMap) {
   const ids = Object.keys(prodMap);
   const saldoPorDep = {};            // deposito_id → { produtoId → saldo }
-  for (const x of DEP_FOCO) saldoPorDep[x.deposito_id] = {};
   for (let i = 0; i < ids.length; i += 40) {
     const batch = ids.slice(i, i + 40);
     const params = {};
@@ -99,9 +146,10 @@ export async function blingSaldoFoco(token, prodMap) {
       const pid = String(row.produto?.id || '');
       for (const dep of (row.depositos || [])) {
         const did = String(dep.id);
-        if (did in saldoPorDep) {
-          const saldo = Number(dep.saldoFisico) || 0;
-          if (saldo > 0) saldoPorDep[did][pid] = saldo;
+        const saldo = Number(dep.saldoFisico) || 0;
+        if (saldo > 0) {
+          if (!saldoPorDep[did]) saldoPorDep[did] = {};
+          saldoPorDep[did][pid] = saldo;
         }
       }
     }
@@ -109,24 +157,65 @@ export async function blingSaldoFoco(token, prodMap) {
   return saldoPorDep;
 }
 
-// Classifica o item pela descrição (categoria) ou null se não-vendável.
-export function classificarItem(nome) {
-  const n = (nome || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
-  if (/(sacola|tnt|embalagem|caixa|linha|poliamida|poliester|nylon|tinta|materia.?prima|aviamento|ziper|ziper|tecido|forro|cola|verniz|fivela a granel)/.test(n)) return null;
-  if (/carteira/.test(n)) return 'Carteira';
-  if (/transversal|tiracolo|crossbody/.test(n)) return 'Transversal';
-  if (/tote/.test(n)) return 'Tote';
-  if (/mochila/.test(n)) return 'Mochila';
-  if (/clutch|festa|baguete/.test(n)) return 'Festa/Clutch';
-  if (/ombro/.test(n)) return 'Bolsa de ombro';
-  if (/(alca de mao|de mao|handbag)/.test(n)) return 'Bolsa de mão';
-  if (/(porta.?cartao|porta cartao| cartao)/.test(n)) return 'Porta-cartão';
-  if (/(porta.?niquel|niquel|porta.?moeda|moedeir)/.test(n)) return 'Porta-níquel';
-  if (/necessaire|nessaire/.test(n)) return 'Necessaire';
-  if (/oculos/.test(n)) return 'Óculos';
-  if (/cinto/.test(n)) return 'Cinto';
-  if (/chaveiro/.test(n)) return 'Chaveiro';
-  if (/mala/.test(n)) return 'Mala/Viagem';
-  if (/bolsa|bag/.test(n)) return 'Bolsa (outros)';
-  return 'Outros acessórios';
+// DUAS PERGUNTAS DIFERENTES, E ELAS NÃO TÊM A MESMA RESPOSTA.
+//
+//   · "que categoria é este produto?"  — VENDAS. Aqui o pega-tudo está CERTO:
+//     se o item foi vendido, ele é produto; perder a categoria dele estragaria
+//     o relatório. `classificarItem()` responde a esta.
+//   · "isto é um produto vendável?"    — ESTOQUE. Aqui o pega-tudo É o defeito.
+//     `categoriaDeEstoque()` responde a esta.
+//
+// Enquanto as duas foram a MESMA função, todo insumo cujo nome não estava nas
+// palavras de matéria-prima caía no pega-tudo, virava 'Outros acessórios' e
+// aparecia no telão da Gestão à Vista — 213 das 1.386 linhas visíveis em
+// 20/08/2026: argola, botão, corrente, couro, camurça, espuma, retalho, bobina,
+// caixa, aplicador, fivela injetada, alça. Conferidas uma a uma nos três
+// depósitos, nenhuma era produto de venda.
+//
+// ⚠️ A lista abaixo é escrita à MÃO e vai envelhecer — é da natureza dela. O que
+// mudou é para que lado ela erra: no estoque, o que ela não reconhece fica de
+// FORA em vez de entrar como produto. Por isso o `reconhecido` existe e por isso
+// o robô conta quantos caíram no pega-tudo (ver relatorios-comerciais.mjs): uma
+// linha de produto nova que ninguém cadastrou na lista some da tela, e some
+// CALADA se ninguém estiver contando.
+const CATEGORIA_PEGA_TUDO = 'Outros acessórios';
+
+export function classificarItemDetalhado(nome) {
+  const n = (nome || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const reconheci = (categoria) => ({ categoria, reconhecido: true });
+  if (!n.trim()) return { categoria: null, reconhecido: true };
+  // `insumo` entrou em 20/08: "INSUMOS DE PRODUCAO - BOLSAS" escapava por match
+  // POSITIVO em /bolsa|bag/, não pelo pega-tudo. Não há venda com esse nome, então
+  // acrescentá-lo não mexe em nada do lado de vendas (medido antes).
+  if (/(sacola|tnt|embalagem|caixa|linha|poliamida|poliester|nylon|tinta|materia.?prima|insumo|aviamento|ziper|ziper|tecido|forro|cola|verniz|fivela a granel)/.test(n)) return reconheci(null);
+  if (/carteira/.test(n)) return reconheci('Carteira');
+  if (/transversal|tiracolo|crossbody/.test(n)) return reconheci('Transversal');
+  if (/tote/.test(n)) return reconheci('Tote');
+  if (/mochila/.test(n)) return reconheci('Mochila');
+  if (/clutch|festa|baguete/.test(n)) return reconheci('Festa/Clutch');
+  if (/ombro/.test(n)) return reconheci('Bolsa de ombro');
+  if (/(alca de mao|de mao|handbag)/.test(n)) return reconheci('Bolsa de mão');
+  if (/(porta.?cartao|porta cartao| cartao)/.test(n)) return reconheci('Porta-cartão');
+  if (/(porta.?niquel|niquel|porta.?moeda|moedeir)/.test(n)) return reconheci('Porta-níquel');
+  if (/necessaire|nessaire/.test(n)) return reconheci('Necessaire');
+  if (/oculos/.test(n)) return reconheci('Óculos');
+  if (/cinto/.test(n)) return reconheci('Cinto');
+  if (/chaveiro/.test(n)) return reconheci('Chaveiro');
+  if (/mala/.test(n)) return reconheci('Mala/Viagem');
+  if (/bolsa|bag/.test(n)) return reconheci('Bolsa (outros)');
+  return { categoria: CATEGORIA_PEGA_TUDO, reconhecido: false };
 }
+
+// VENDAS — comportamento inalterado, inclusive o pega-tudo.
+export function classificarItem(nome) {
+  return classificarItemDetalhado(nome).categoria;
+}
+
+// ESTOQUE — só entra o que foi reconhecido como produto. O que a lista não
+// conhece fica de fora, e a seção de estoque da Gestão à Vista continua com a
+// regra de sempre: categoria vazia não aparece.
+export function categoriaDeEstoque(nome) {
+  const d = classificarItemDetalhado(nome);
+  return d.reconhecido ? d.categoria : null;
+}
+

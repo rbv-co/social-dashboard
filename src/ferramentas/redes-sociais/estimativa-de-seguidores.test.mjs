@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { barraDoDia, netPelaContagem, diaAnterior, diasSemPublicacao } from './estimativa-de-seguidores.js';
+import { barraDoDia, netPelaContagem, diaAnterior, diasSemPublicacao , totalPelasBarras } from './estimativa-de-seguidores.js';
 
 // TODOS os números abaixo são REAIS: contagem de seguidores do perfil Breno Vale
 // gravada em daily_snapshots, e a resposta que a Graph API deu em 2026-08-06 para
@@ -110,3 +110,54 @@ test('o dia anterior atravessa a virada do mês sem escorregar', () => {
   assert.equal(diaAnterior('2026-03-01'), '2026-02-28');
   assert.equal(diaAnterior('2026-01-01'), '2025-12-31');
 });
+
+/* ── O CARD É A SOMA DO GRÁFICO ─────────────────────────────────────────────
+ *
+ * Decisão do dono (09/09/2026), depois de uma tarde inteira de tentativas:
+ * "o importante é o card de novos seguidores bater sempre com o gráfico diário".
+ *
+ * ⚠️ O QUE ESTAVA ERRADO NA ORIGEM: perseguir igualdade com o painel profissional.
+ * Ele filtra OUTRO período — "últimos 7 dias" nele vai de 2 a 7, e "5 a 8" mostra
+ * 4 a 7. Medido pelo dono no painel dele. Enquanto se tentava casar os dois, o
+ * card e o gráfico da nossa tela divergiam entre si, que é o que a pessoa vê.
+ *
+ * Medido em 09/09/2026, "últimos 7 dias" na Vessel: as barras somavam 1593 e o
+ * card mostrava 967 — a janela do card parava no dia 08 e deixava de fora os dois
+ * maiores dias. Agora o card É a soma.
+ */
+
+test('o total do card sai da soma das barras', () => {
+  const r = totalPelasBarras({ gained: [27, 20, 37, 183], lost: [0, 0, 0, 4], estimado: [false, false, false, false] })
+  assert.equal(r.seguiu, 267)
+  assert.equal(r.deixou, 4)
+  assert.equal(r.total, 263)
+  assert.equal(r.estimado, false)
+})
+
+test('⚠️ barra estimada guarda o LÍQUIDO, e o total continua certo', () => {
+  /* Dia sem publicação vira uma barra só, com o saldo: positivo entra em `gained`,
+   * negativo em `lost`. Somar os dois lados e subtrair dá o líquido certo — o que
+   * NÃO dá para saber é quantos seguiram e quantos saíram nesse dia. */
+  const r = totalPelasBarras({ gained: [385, 443], lost: [12, 0], estimado: [false, true] })
+  assert.equal(r.total, 816, '385−12 + 443')
+  assert.equal(r.estimado, true, 'e o total sai marcado')
+})
+
+test('dia negativo estimado desce o total', () => {
+  const r = totalPelasBarras({ gained: [100, 0], lost: [0, 30], estimado: [false, true] })
+  assert.equal(r.total, 70)
+})
+
+test('⚠️ gráfico vazio ou estragado devolve nulo, não zero', () => {
+  /* Zero seria "não seguiu ninguém" — uma afirmação. A verdade é "não há gráfico",
+   * e quem chama tem de manter o número que já estava. */
+  for (const ruim of [null, undefined, {}, { gained: null }, { gained: [] }]) {
+    assert.equal(totalPelasBarras(ruim), null)
+  }
+})
+
+test('lost ausente não quebra a conta', () => {
+  const r = totalPelasBarras({ gained: [10, 20] })
+  assert.equal(r.total, 30)
+  assert.equal(r.deixou, 0)
+})

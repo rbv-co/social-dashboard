@@ -17,7 +17,33 @@ export function montarTargeting(publico, loja) {
     }
     return o;
   });
-  t.geo_locations = { cities: cities.length ? cities : cidadesLoja };
+  // AS QUATRO FORMAS DE MIRAR UM LUGAR (13/08/2026). Antes só existia cidade;
+  // o editor passou a oferecer Brasil, Estado, Cidade e Local (ponto com raio).
+  // A cidade da loja continua sendo a rede contra público mundial — mas só
+  // quando NÃO há lugar nenhum, senão ela entraria por baixo de uma escolha
+  // deliberada do dono e alargaria o anúncio sem ninguém pedir.
+  const geo = {};
+  if (cities.length) geo.cities = cities;
+  const paises = (publico.geo?.countries || []).map((c) => String(c?.key ?? c)).filter(Boolean);
+  if (paises.length) geo.countries = paises;
+  const estados = (publico.geo?.regions || []).filter((r) => r && r.key != null).map((r) => ({ key: String(r.key) }));
+  if (estados.length) geo.regions = estados;
+  const pontos = (publico.geo?.pins || [])
+    .filter((p) => p && Number.isFinite(Number(p.lat)) && Number.isFinite(Number(p.lng)))
+    .map((p) => {
+      const o = {
+        latitude: Number(Number(p.lat).toFixed(6)),
+        longitude: Number(Number(p.lng).toFixed(6)),
+        radius: Number(p.raio) > 0 ? Number(p.raio) : 1,
+        distance_unit: p.unidade === 'mile' ? 'mile' : 'kilometer',
+        country: p.pais || 'BR',
+      };
+      if (p.nome) { o.name = p.nome; o.address_string = p.endereco || p.nome; }
+      return o;
+    });
+  if (pontos.length) geo.custom_locations = pontos;
+  if (!Object.keys(geo).length) geo.cities = cidadesLoja;
+  t.geo_locations = geo;
 
   const excl = publico.geo?.excluded || [];
   if (excl.length) {

@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   ultimaRevisao, estadoDaRevisao, revisoesDoVeiculo, resumoDeRevisoes,
-  problemasDoItem, avisoAoDesativar, FATIA_DE_AVISO,
+  problemasDoItem, avisoAoDesativar, FATIA_DE_AVISO, ordenarCarrosPorUrgencia,
 } from './revisoes.js'
 
 const PLANO = [
@@ -94,6 +94,23 @@ test('item desativado sai da conta', () => {
   assert.equal(itens.length, 2)
 })
 
+test('plano vazio: revisoesDoVeiculo já devolve [], então "Chegando a hora" some o carro sozinho', () => {
+  // Confirma (não supõe) que o card de plano vazio fica invisível em
+  // "Chegando a hora" mesmo com resumoDeRevisoes([]) agora dando 'sem-registro'
+  // em vez de 'em-dia'. tela-de-frota.vue monta `revisoesPorVeiculo` assim:
+  //   const todos = revisoesDoVeiculo({ veiculo, kmAtual, plano, revisoes })
+  //   const itens = todos.filter((i) => i.situacao === 'vencida' || i.situacao === 'perto')
+  //   ...depois: .filter((r) => r.itens.length)
+  // Com plano:[], `revisoesDoVeiculo` já não tem itens pra devolver — logo
+  // `itens` fica [] independente do nível do resumo, e o `.filter` final tira
+  // o carro da lista. O card só aparece na sanfona "Todos os carros" (D30),
+  // que não tem esse filtro — e é lá que precisa dizer "Sem plano de revisão".
+  const todos = revisoesDoVeiculo({ veiculo: CARRO, kmAtual: 100000, plano: [], revisoes: [] })
+  assert.deepEqual(todos, [])
+  const itens = todos.filter((i) => i.situacao === 'vencida' || i.situacao === 'perto')
+  assert.equal(itens.length, 0, '"Chegando a hora" descarta este carro pelo itens.length, não pelo nivel')
+})
+
 test('o que dói primeiro aparece primeiro', () => {
   const revisoes = [
     { veiculo_id: 'v1', item: 'Troca de óleo', km: 90000 },      // vencida
@@ -121,7 +138,20 @@ test('o resumo do cartão: vencida ganha de "chegando"', () => {
   assert.equal(resumoDeRevisoes([{ situacao: 'vencida' }, { situacao: 'vencida' }]).texto, '2 revisões vencidas')
   assert.equal(resumoDeRevisoes([{ situacao: 'perto' }, { situacao: 'em-dia' }]).texto, '1 revisão chegando')
   assert.equal(resumoDeRevisoes([{ situacao: 'em-dia' }]).nivel, 'em-dia')
-  assert.equal(resumoDeRevisoes([]).nivel, 'em-dia')
+})
+
+test('plano vazio não é "em dia" — é o que uma consulta que FALHOU devolve', () => {
+  // Medido: antes desta correção, resumoDeRevisoes([]) caía direto no
+  // `return` final e dava nivel:'em-dia'. Isso não é hipotético — é
+  // literalmente o que tela-de-frota.vue produz quando a consulta ao plano
+  // falha: `plano.value = pl && !pl.error ? (pl.data || []) : []`. Permissão
+  // negada ou rede fora vira `[]`, e o accordion adicionado nesta fase (sem o
+  // `.filter((r) => r.itens.length)` que a versão antiga tinha) deixa isso
+  // chegar até a tela: os 10 carros mostrariam selo verde sobre uma sanfona
+  // vazia — exatamente a mentira que esta função existe pra impedir.
+  const r = resumoDeRevisoes([])
+  assert.equal(r.nivel, 'sem-registro')
+  assert.equal(r.texto, 'Sem plano de revisão')
 })
 
 test('carro sem histórico nenhum não diz "em dia" — seria mentira', () => {
@@ -190,4 +220,29 @@ test('um item em dia entre desconhecidos ainda conta como em dia', () => {
   // Aqui SE SABE de alguma coisa, e nada está vencendo.
   const r = resumoDeRevisoes([{ situacao: 'em-dia' }, { situacao: 'sem-km' }])
   assert.equal(r.nivel, 'em-dia')
+})
+
+/* ── A ordem da aba Revisões quando ela mostra TUDO (D30) ───────────────── */
+
+const cartao = (nome, nivel) => ({ linha: { veiculo: { id: nome, nome } }, itens: [], resumo: { nivel } })
+
+test('o que dói primeiro vem primeiro, e nada é descartado', () => {
+  // A aba antiga jogava fora o carro inteiro que não tivesse item vencendo.
+  // Medido em 12/08: isso escondia 8 dos 10 carros.
+  const fora = [cartao('BMW', 'em-dia'), cartao('Doblo', 'sem-km'),
+    cartao('XC60', 'vencida'), cartao('Porsche', 'perto'), cartao('Fit', 'sem-registro')]
+  const dentro = ordenarCarrosPorUrgencia(fora)
+  assert.deepEqual(dentro.map((c) => c.linha.veiculo.nome),
+    ['XC60', 'Porsche', 'BMW', 'Fit', 'Doblo'])
+  assert.equal(dentro.length, 5, 'nenhum carro pode sumir da aba')
+})
+
+test('empate de urgência desempata pelo nome, pra a lista não dançar a cada carregada', () => {
+  const dentro = ordenarCarrosPorUrgencia([cartao('Volvo', 'vencida'), cartao('Fiat', 'vencida')])
+  assert.deepEqual(dentro.map((c) => c.linha.veiculo.nome), ['Fiat', 'Volvo'])
+})
+
+test('lista vazia não quebra', () => {
+  assert.deepEqual(ordenarCarrosPorUrgencia([]), [])
+  assert.deepEqual(ordenarCarrosPorUrgencia(null), [])
 })

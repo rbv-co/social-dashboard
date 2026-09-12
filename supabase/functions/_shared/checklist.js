@@ -84,6 +84,71 @@ export function precisaDeChecklist({ veiculoId, fichas, hoje }) {
   return !(fichas || []).some((f) => f && f.veiculo_id === veiculoId && f.feita_em === hoje);
 }
 
+/**
+ * O QUE PEDIR A QUEM ESTÁ PEGANDO O CARRO AGORA.
+ *
+ * Desenho: docs/superpowers/specs/2026-08-13-frota-gestao-reservas-design.md
+ *
+ * POR QUE ESTA FUNÇÃO EXISTE, e o que ela conserta. `precisaDeChecklist` acima
+ * olha só CARRO e DIA. A consequência, medida no banco em 13/08/2026: das 5
+ * retiradas reais, nenhuma tinha a assinatura de quem pegou o carro. No único
+ * dia em que houve ficha assinada, quem assinou foi Erick Martins às 7h30 e
+ * quem pegou o carro foi Breno às 17h49 — e como o carro "já tinha checklist
+ * hoje", a tela não pediu nada a ele.
+ *
+ * São duas frases diferentes, e é por isso que uma não cobre a outra:
+ *   o checklist diz  "o carro estava assim neste dia, e fulano viu";
+ *   a retirada diz   "eu, fulano, recebi este carro assim e respondo por ele".
+ *
+ * A REGRA PASSA A SER POR PESSOA, e não por carro:
+ *
+ *   ninguém conferiu hoje      → o checklist inteiro, assinado (como já era)
+ *   quem está pegando conferiu → nada. Ninguém confere o mesmo carro 2x no dia
+ *   conferiu OUTRA pessoa      → o aceite: uma linha curta, assinada
+ *   conferiram e não assinaram → o aceite também. A conferência valeu; o que
+ *                                falta é a prova, e o aceite é ela.
+ *
+ * NÃO EXISTE "assinar duas vezes": `frota_checklist` tem `unique (veiculo_id,
+ * feita_em)`, um checklist por carro por dia, de propósito. O aceite mora na
+ * viagem (`frota_uso`), não numa segunda ficha — continua sendo uma assinatura
+ * por viagem, e nenhum PDF a mais. Foi assim que o dono aprovou.
+ */
+export function oQuePedirNaRetirada({ veiculoId, fichas, hoje, pessoaId, pessoaNome }) {
+  const ficha = (fichas || []).find((f) => f && f.veiculo_id === veiculoId && f.feita_em === hoje) || null;
+
+  if (!ficha) return { pedir: 'checklist', porque: 'sem-ficha', ficha: null, quemConferiu: null };
+
+  const nome = (s) => String(s ?? '').trim().toLowerCase();
+  const mesmaPessoa = (pessoaId && ficha.pessoa_id && pessoaId === ficha.pessoa_id)
+    // O nome só decide quando os DOIS têm nome escrito: dois vazios não são a
+    // mesma pessoa, são duas ausências — e tratá-los como iguais dispensaria a
+    // assinatura de quem pega justamente nos casos sem cadastro.
+    || (!!nome(pessoaNome) && nome(pessoaNome) === nome(ficha.pessoa_nome));
+
+  if (!ficha.assinada_em) {
+    return { pedir: 'aceite', porque: 'ficha-sem-assinatura', ficha, quemConferiu: ficha.pessoa_nome || null };
+  }
+  if (mesmaPessoa) {
+    return { pedir: 'nada', porque: 'ja-assinou', ficha, quemConferiu: ficha.pessoa_nome || null };
+  }
+  return { pedir: 'aceite', porque: 'assinou-outra', ficha, quemConferiu: ficha.pessoa_nome || null };
+}
+
+/** A frase que a ficha de retirada mostra em cima do campo de assinar. */
+export function porQuePedirOAceite(porque, quemConferiu) {
+  const quem = String(quemConferiu ?? '').trim();
+  switch (porque) {
+    case 'assinou-outra':
+      return `${quem || 'Outra pessoa'} já conferiu este carro hoje e assinou. `
+        + 'Você não precisa conferir de novo — só assinar que está recebendo o carro assim.';
+    case 'ficha-sem-assinatura':
+      return 'Este carro já foi conferido hoje, mas a ficha ficou sem assinatura. '
+        + 'Assine que está recebendo o carro no estado registrado.';
+    default:
+      return '';
+  }
+}
+
 /* ── O que entra na ficha ─────────────────────────────────────────────────── */
 
 /** Os itens ativos das cadências pedidas, na ordem que o gestor definiu. */
@@ -303,7 +368,7 @@ export function resumoDaCobranca(linhas, hoje) {
  * teria um buraco: o quadro de cobrança JÁ olha a posse, então cobraria de
  * quem pegou emprestado uma ficha que o cartão não deixava preencher.
  */
-export function veiculosParaConferir({ veiculos, euId, ehGestor, fichas, hoje, quemEstaCom }) {
+export function veiculosParaConferir({ veiculos, euId, ehGestor, fichas, hoje, quemEstaCom, emViagem }) {
   const dono = typeof quemEstaCom === 'function' ? quemEstaCom : (v) => v.pessoa_id;
   return (veiculos || [])
     .filter((v) => v && v.situacao === 'ativo')
@@ -317,9 +382,165 @@ export function veiculosParaConferir({ veiculos, euId, ehGestor, fichas, hoje, q
       // nulo) visto por quem não foi achado no cadastro (`euId` nulo) daria
       // `null === null` e abriria sozinho como se fosse o carro da pessoa.
       meu: !!(euId && dono(v) === euId),
+      // Está com a pessoa por VIAGEM aberta — não por posse nem no papel.
+      naMinhaMao: !!(euId && typeof emViagem === 'function' && emViagem(v) === euId),
     }))
     .filter((x) => ehGestor || x.meu)
-    .sort((a, b) => (a.meu === b.meu
-      ? String(a.veiculo.nome || '').localeCompare(String(b.veiculo.nome || ''))
-      : (a.meu ? -1 : 1)));
+    /* A ORDEM: o carro que está na mão da pessoa AGORA vem primeiro, depois o
+     * resto dos dela, depois os dos outros (quando é gestor).
+     *
+     * `naMinhaMao` entrou em 21/08/2026: quem tem carro fixo E pegou um de
+     * rodízio via os dois como "meus", e o desempate era alfabético — abria
+     * sozinho o FIAT TORO enquanto a pessoa estava de pé ao lado da SAVEIRO
+     * que acabou de retirar. O que ela veio conferir é o que está com ela. */
+    .sort((a, b) => {
+      if (a.meu !== b.meu) return a.meu ? -1 : 1;
+      if (a.naMinhaMao !== b.naMinhaMao) return a.naMinhaMao ? -1 : 1;
+      return String(a.veiculo.nome || '').localeCompare(String(b.veiculo.nome || ''));
+    });
+}
+
+/**
+ * O RESULTADO da ficha, deduzido dos itens conferidos. Não se escolhe.
+ *
+ * Até 12/08/2026 a pessoa que conferia podia trocar o resultado a dedo (D14: "a
+ * palavra final continua sendo dela"). O dono derrubou, e a razão é o pior
+ * desfecho que a regra antiga permitia: marcar LIBERADO com vazamento embaixo
+ * do carro, e a ficha assinada registrar isso como verdade. Num histórico que
+ * serve pra responder por multa e por acidente, o resultado não pode depender
+ * da pressa de quem está com a chave na mão.
+ *
+ * Três desfechos:
+ *  - 'nao_liberado'  → algum item marcado como problema tem `impede_uso`. O
+ *                      carro não sai.
+ *  - 'com_ressalvas' → há problema, mas nenhum que impeça rodar.
+ *  - 'liberado'      → nenhum problema.
+ *
+ * QUAIS ITENS IMPEDEM O USO É DECISÃO DO DONO, não do código: vem de
+ * `frota_checklist_itens.impede_uso`, editável na aba Plano. Item que o
+ * `itens` não conhece conta como "não impede" — inventar gravidade sobre um
+ * item que ninguém classificou seria pior que a ressalva.
+ */
+export function resultadoDoChecklist(respostas, itens) {
+  const problemas = (respostas || []).filter((r) => r && r.estado === 'nao_ok');
+  if (!problemas.length) return 'liberado';
+
+  const bloqueia = new Set(
+    (itens || []).filter((i) => i && i.impede_uso).map((i) => String(i.item || '').trim()),
+  );
+  const grave = problemas.some((r) => bloqueia.has(String(r.item_texto || r.item || '').trim()));
+  return grave ? 'nao_liberado' : 'com_ressalvas';
+}
+
+/**
+ * Os itens que produziram o resultado, pra tela poder DIZER o porquê.
+ * "Não liberado" sozinho não ajuda ninguém a resolver; "Não liberado —
+ * vazamento sob o veículo" manda a pessoa direto pra oficina.
+ */
+export function porQueDoResultado(respostas, itens) {
+  const problemas = (respostas || []).filter((r) => r && r.estado === 'nao_ok');
+  const bloqueia = new Set(
+    (itens || []).filter((i) => i && i.impede_uso).map((i) => String(i.item || '').trim()),
+  );
+  const nome = (r) => String(r.item_texto || r.item || '').trim();
+  const graves = problemas.filter((r) => bloqueia.has(nome(r))).map(nome);
+  const leves = problemas.filter((r) => !bloqueia.has(nome(r))).map(nome);
+  return { graves, leves };
+}
+
+/**
+ * O fim da frase "Pela sua reserva de ..., para ...". Aqui só falta ___.
+ *
+ * Era texto fixo — "o checklist e o combustível" — e mentia na tela em que
+ * outra pessoa já tinha conferido o carro: ali não há checklist nenhum para
+ * fazer, só a assinatura de quem está recebendo. A pessoa procurava na ficha
+ * uma coisa que não estava lá.
+ *
+ * Recebe o `pedir` de oQuePedirNaRetirada(), e nunca devolve vazio.
+ */
+export function oQueFaltaNaRetirada(pedir) {
+  switch (pedir) {
+    case 'checklist': return 'Aqui só falta o checklist e o combustível.';
+    case 'aceite': return 'Aqui só falta assinar que está recebendo o carro, e o combustível.';
+    default: return 'Aqui só falta o combustível.';
+  }
+}
+
+/**
+ * O CHECKLIST DE HOJE, INTEIRO: o que falta e o que já foi feito, num quadro só.
+ *
+ * `quemFaltaHoje` responde a outra pergunta — "de quem eu cobro hoje?" — e por
+ * isso olha só carro com dono fixo, e devolve vazio no fim de semana. Esta aqui
+ * responde "o que aconteceu de checklist hoje, na frota toda", e é o que o
+ * quadro da Gestão passa a mostrar.
+ *
+ * O BURACO QUE ELA FECHA (medido em 21/08/2026): o dono retirou a Bravo
+ * Blackmotion, um carro de rodízio, e o quadro não mostrava esse carro pra
+ * ninguém — nem como pendente, nem como feito. Carro sem dono fixo não entrava
+ * na conta, então uma retirada sem checklist não era cobrada de pessoa nenhuma.
+ *
+ * AS DUAS ETIQUETAS:
+ *   fixo    — o carro é de alguém (dono fixo ou posse aberta). Cobrado de
+ *             segunda a sexta, como sempre foi.
+ *   reserva — o carro saiu numa retirada de HOJE. Entra em QUALQUER dia,
+ *             inclusive sábado e domingo: quem pega carro confere antes de
+ *             sair, e o papel não conhece fim de semana.
+ */
+export function checklistDeHoje({ veiculos, fichasDeHoje, pessoas, usos, hoje }) {
+  const fichaDoCarro = new Map();
+  for (const f of fichasDeHoje || []) if (f && f.veiculo_id) fichaDoCarro.set(f.veiculo_id, f);
+  const diaUtil = !hoje || diaDaSemana(hoje) <= 5;
+  const nome = (id) => {
+    const p = (pessoas || []).find((x) => x && x.id === id);
+    return p ? p.nome : null;
+  };
+
+  // A retirada de hoje: viagem cuja saída caiu no dia de hoje. Uma viagem que
+  // começou ontem e continua aberta NÃO pede checklist hoje — o de hoje é de
+  // quem pega o carro hoje.
+  const retiradaDeHoje = new Map();
+  for (const u of usos || []) {
+    if (!u || (u.tipo || 'viagem') !== 'viagem') continue;
+    if (diaEmBrasiliaDoInstante(u.saida_em) !== hoje) continue;
+    retiradaDeHoje.set(u.veiculo_id, u);
+  }
+
+  const linhas = [];
+  for (const v of veiculos || []) {
+    if (!v || v.situacao !== 'ativo') continue;
+    const uso = retiradaDeHoje.get(v.id) || null;
+    const ficha = fichaDoCarro.get(v.id) || null;
+    const quem = usos ? quemEstaComOCarro(v, usos) : null;
+    const donoId = (quem && quem.pessoaId) || v.pessoa_id || null;
+    const ehFixo = !!donoId && !uso;
+
+    // Entra no quadro quem: saiu hoje (rodízio), é de alguém em dia útil, ou
+    // simplesmente teve ficha hoje — esta última pega o carro que alguém
+    // conferiu por fora das duas regras, e que sumiria do quadro sem ela.
+    if (!uso && !ficha && !(ehFixo && diaUtil)) continue;
+
+    linhas.push({
+      veiculo: v,
+      tag: uso ? 'reserva' : 'fixo',
+      quemId: uso ? (uso.pessoa_id || null) : donoId,
+      quem: uso ? (uso.pessoa_nome || nome(uso.pessoa_id)) : nome(donoId),
+      fez: !!ficha,
+      ficha,
+      assinada: !!(ficha && ficha.assinada_em),
+    });
+  }
+
+  // Pendente primeiro — é o que pede providência; depois por nome.
+  return linhas.sort((a, b) => (a.fez === b.fez
+    ? String(a.veiculo.nome || '').localeCompare(String(b.veiculo.nome || ''))
+    : (a.fez ? 1 : -1)));
+}
+
+/** O dia (AAAA-MM-DD) de um instante, no fuso de Brasília. Mesma conta do resto
+ *  da casa: `toISOString()` puro dá o dia em UTC, e depois das 21h isso já é o
+ *  dia seguinte. */
+function diaEmBrasiliaDoInstante(iso) {
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return null;
+  return new Date(t - 3 * 3600 * 1000).toISOString().slice(0, 10);
 }

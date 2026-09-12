@@ -12,6 +12,12 @@ from datetime import date, datetime, timedelta
 from supabase import create_client, Client
 from dotenv import load_dotenv
 
+from acoes_de_campanha import contagens_da_campanha
+# A janela de datas do recorte de N dias. Cópia vigiada da que a Edge Function usa
+# (supabase/functions/_shared/janela-de-ads.js): os dois robôs gravam as MESMAS
+# linhas, e quem roda por último vence.
+from janela_de_ads import janela_de_ads, janela_do_mes_corrente
+
 load_dotenv()
 
 SUPABASE_URL = "https://kounqtdoioootxqegkij.supabase.co"
@@ -248,10 +254,21 @@ def coletar_ads_por_campanha(supabase, ad_account_id, account_id, token, dias, h
     """Busca gasto por campanha individual e salva em campaign_insights.
     store_as: grava sob esse period_days (ex.: 99=mês-corrente) usando a janela de `dias`."""
     pdays = store_as if store_as is not None else dias
-    since = (date.today() - timedelta(days=dias)).isoformat()
-    until = date.today().isoformat()
+    # `store_as` só é usado pelo recorte 99 (mês corrente), que vai do 1º do mês
+    # ATÉ HOJE de propósito — é o que o botão "MÊS / ATÉ AGORA" do painel promete.
+    # Os recortes rolantes (0, 1, 7, 14, 30) passam pela janela comum: N dias
+    # COMPLETOS, terminando ontem. Até 20/08/2026 eles pediam `until = hoje` e,
+    # como o time_range da Meta conta as duas pontas, cobriam N+1 dias com o dia
+    # de hoje (incompleto) dentro.
+    janela = janela_do_mes_corrente(hoje, dias) if store_as is not None else janela_de_ads(hoje, dias)
+    if janela is None:
+        print(f"   ⚠️  janela inválida ({dias}D, {hoje}) — recorte pulado")
+        return
+    since, until = janela
     params = {
-        "fields": "campaign_id,spend,impressions,clicks,reach",
+        # `actions` vem na MESMA resposta: não é chamada nova à Meta, não gasta
+        # limite de taxa. É de dentro dele que saem conversas/cadastros/compras/visitas.
+        "fields": "campaign_id,spend,impressions,clicks,reach,actions",
         "time_range": json.dumps({"since": since, "until": until}),
         "level": "campaign",
         "access_token": token,
@@ -271,6 +288,12 @@ def coletar_ads_por_campanha(supabase, ad_account_id, account_id, token, dias, h
                 "impressions": int(r.get("impressions", 0) or 0),
                 "clicks": int(r.get("clicks", 0) or 0),
                 "reach": int(r.get("reach", 0) or 0),
+                # As quatro contagens novas. Sem elas, o recorte MÊS/ATÉ AGORA do
+                # painel de Redes mostrava "—" no custo por conversa, por cadastro,
+                # por venda e por visita — porque quem escreve essa fatia é ESTE
+                # robô, e ele não pedia `actions`. A regra de quais nomes valem é a
+                # mesma da nuvem; ver acoes_de_campanha.py.
+                **contagens_da_campanha(r.get("actions")),
             }
             for r in rows
         ]
@@ -288,8 +311,17 @@ def coletar_ads_conta(supabase, ad_account_id, account_id, token, dias, hoje, st
     (campaign_insights) ou por dia conta a mesma pessoa várias vezes.
     store_as: grava sob esse period_days (ex.: 99=mês-corrente)."""
     pdays = store_as if store_as is not None else dias
-    since = (date.today() - timedelta(days=dias)).isoformat()
-    until = date.today().isoformat()
+    # `store_as` só é usado pelo recorte 99 (mês corrente), que vai do 1º do mês
+    # ATÉ HOJE de propósito — é o que o botão "MÊS / ATÉ AGORA" do painel promete.
+    # Os recortes rolantes (0, 1, 7, 14, 30) passam pela janela comum: N dias
+    # COMPLETOS, terminando ontem. Até 20/08/2026 eles pediam `until = hoje` e,
+    # como o time_range da Meta conta as duas pontas, cobriam N+1 dias com o dia
+    # de hoje (incompleto) dentro.
+    janela = janela_do_mes_corrente(hoje, dias) if store_as is not None else janela_de_ads(hoje, dias)
+    if janela is None:
+        print(f"   ⚠️  janela inválida ({dias}D, {hoje}) — recorte pulado")
+        return
+    since, until = janela
     params = {
         "fields": "spend,impressions,clicks,reach,frequency",
         "time_range": json.dumps({"since": since, "until": until}),

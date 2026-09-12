@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="RBV">
+  <!-- FAVICON DA CENTRAL — o monograma, não o logotipo inteiro.
+       O logotipo completo ("RBV & Co." + o filete + "CONSULTANCY") é feito para
+       ser lido grande. Encolhido para 16 ou 32 pixels — que é o tamanho de uma
+       aba e do ícone na barra do Windows — ele vira um borrão cinzento, e foi
+       exatamente por isso que o app apareceu "sem logotipo" no Windows.
+       O que sobrevive nesse tamanho é a sigla.
+       Fundo CHEIO, e não transparente: a arte da marca é preta, e sobre a barra
+       escura do Windows um PNG preto sem fundo simplesmente some. -->
+  <rect width="512" height="512" rx="96" fill="#000000"/>
+  <text x="256" y="266" text-anchor="middle" dominant-baseline="middle"
+        font-family="Georgia, 'Times New Roman', 'Liberation Serif', serif"
+        font-size="176" font-weight="400" letter-spacing="2" fill="#ffffff">RBV</text>
+  <!-- O filete que existe no logotipo, na mesma proporção: é o que faz a sigla
+       ser lida como a marca, e não como três letras quaisquer. -->
+  <rect x="126" y="330" width="260" height="14" fill="#ffffff"/>
+</svg>

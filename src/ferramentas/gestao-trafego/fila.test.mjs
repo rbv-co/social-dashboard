@@ -219,6 +219,56 @@ test('alerta em campanha ja RESPONDIDA tambem nao volta', () => {
   assert.equal(r.pendentes.length, 0);
 });
 
+// --- DISPENSAR O ALERTA DE SAUDE (item 2 da lista do dono, medido em 12/08/2026) ---
+// O alerta que vira item PROPRIO (campanha sem sugestao de verba) nao passava por
+// nenhuma checagem de decisao: `mesclarSaude` roda depois de `montarFila` e so
+// pulava campanha que ja estivesse na fila. Clicar em "Recusar" nao fazia nada.
+const soSaude = (extra) => ({
+  campaign_id: 'so-saude', campaign_name: '[Leads] Para WhatsApp', conta_nome: 'Motoeasy',
+  saude: saudeAlerta, budget_atual_centavos: 11532, medido_em: dias(0), ...extra,
+});
+
+test('alerta de saude DISPENSADO nao volta enquanto o silencio durar', () => {
+  const f = montarFila([], [], AGORA);
+  const r = mesclarSaude(f, [soSaude()], [
+    { campaign_id: 'so-saude', escopo: 'saude', decisao: 'recusada', decidido_em: dias(-1), silenciar_ate: dias(6) },
+  ], AGORA);
+  assert.equal(r.pendentes.length, 0, 'dispensar tem que dispensar de verdade');
+});
+
+test('passado o silencio, o alerta so volta se a medicao for MAIS NOVA que a decisao', () => {
+  const f = () => montarFila([], [], AGORA);
+  const decisaoVelha = [{ campaign_id: 'so-saude', escopo: 'saude', decisao: 'recusada', decidido_em: dias(-10), silenciar_ate: dias(-3) }];
+  // medicao de hoje, decisao de 10 dias atras e silencio ja vencido -> volta
+  assert.equal(mesclarSaude(f(), [soSaude({ medido_em: dias(0) })], decisaoVelha, AGORA).pendentes.length, 1);
+  // medicao ANTERIOR a decisao -> e a mesma situacao ja respondida, nao volta
+  assert.equal(mesclarSaude(f(), [soSaude({ medido_em: dias(-20) })], decisaoVelha, AGORA).pendentes.length, 0);
+});
+
+test('decisao de OUTRO escopo nao dispensa o alerta de saude', () => {
+  // O espelho do defeito: pausar criativos (ou aprovar verba) nao responde
+  // "esta campanha esta queimando a audiencia".
+  const f = montarFila([], [], AGORA);
+  const r = mesclarSaude(f, [soSaude()], [
+    { campaign_id: 'so-saude', escopo: 'criativos', decisao: 'aprovada', decidido_em: dias(0), silenciar_ate: dias(7) },
+  ], AGORA);
+  assert.equal(r.pendentes.length, 1);
+});
+
+test('sem decisoes de saude o comportamento e o de antes (retrocompat)', () => {
+  const f = montarFila([], [], AGORA);
+  assert.equal(mesclarSaude(f, [soSaude()], undefined, AGORA).pendentes.length, 1);
+  assert.equal(mesclarSaude(f, [soSaude()], [], AGORA).pendentes.length, 1);
+});
+
+// E O OUTRO LADO: a dispensa da saude NAO pode calar a sugestao de orcamento.
+test('dispensar a saude NAO cala a sugestao de orcamento da mesma campanha', () => {
+  const dispensaSaude = [{ campaign_id: 'c1', escopo: 'saude', decisao: 'recusada', decidido_em: dias(0), silenciar_ate: dias(7) }];
+  const f = montarFila([analise()], dispensaSaude, AGORA);
+  assert.equal(f.pendentes.length, 1, 'a pergunta de verba continua de pe');
+  assert.equal(f.silenciadas.length, 0);
+});
+
 test('itens de saude entram na mesma ordem por gasto', () => {
   const f = montarFila([analise({ campaign_id: 'media', budget_atual_centavos: 9000 })], [], AGORA);
   const r = mesclarSaude(f, [
@@ -289,4 +339,53 @@ test('sem criativo nenhum a fila passa intacta', () => {
   const f = montarFila([analise()], [], AGORA);
   assert.equal(anexarCriativos(f, [], []).pendentes.length, 1);
   assert.equal(anexarCriativos(f, null, null).pendentes[0].criativos, undefined);
+});
+
+// ── a fila vazia se explica (item 1 da lista do dono, 12/08/2026) ────────────
+// "Sugestoes na Mantova inexistente na fila da IA". Medido no banco: a Mantova
+// TEM analise -- na ultima rodada o robo olhou 2 campanhas ativas e disse
+// 'manter' nas duas. 'manter' nao entra na fila, entao ela ficava vazia, e vazia
+// e indistinguivel de quebrada.
+import { resumoDoRobo, fraseDaFilaVazia } from './fila.js';
+
+const MANTOVA = 'de592c37-9a0e-40a3-98c3-2b44a5db57ac';
+// as duas linhas ATIVAS reais da Mantova em 12/08/2026
+const analisesMantova = [
+  { campaign_id: '120249070538900381', account_id: MANTOVA, veredito: 'manter', gerado_em: '2026-08-12T11:54:19Z' },
+  { campaign_id: '120249145035940381', account_id: MANTOVA, veredito: 'manter', gerado_em: '2026-08-12T11:53:55Z' },
+  { campaign_id: 'de-outra-conta', account_id: 'outra', veredito: 'escalar', gerado_em: '2026-08-12T11:00:00Z' },
+];
+
+test('resumoDoRobo conta so a conta pedida, e conta o "manter" que a fila descarta', () => {
+  const r = resumoDoRobo(analisesMantova, MANTOVA);
+  assert.equal(r.analisadas, 2);
+  assert.equal(r.manter, 2);
+  assert.equal(r.ultima, '2026-08-12T11:54:19.000Z', 'a mais recente das duas');
+});
+
+test('a frase da Mantova diz o que o robo fez, em vez de deixar a tela muda', () => {
+  const f = fraseDaFilaVazia(resumoDoRobo(analisesMantova, MANTOVA));
+  assert.match(f, /2 campanhas/);
+  assert.match(f, /manter como est/);
+});
+
+test('uma campanha so nao vira "1 campanhas"', () => {
+  const f = fraseDaFilaVazia({ analisadas: 1, manter: 1 });
+  assert.match(f, /1 campanha e a recomenda/);
+});
+
+test('conta que o robo NUNCA analisou nao ganha frase inventada', () => {
+  assert.equal(fraseDaFilaVazia(resumoDoRobo(analisesMantova, 'conta-sem-analise')), '');
+  assert.equal(fraseDaFilaVazia(null), '');
+  assert.equal(fraseDaFilaVazia({ analisadas: 0, manter: 0 }), '');
+});
+
+test('analisou e propos algo, mas nada chegou: a tela NAO chuta o motivo', () => {
+  const f = fraseDaFilaVazia({ analisadas: 3, manter: 1 });
+  assert.match(f, /3 campanhas/);
+  assert.doesNotMatch(f, /manter como est/, 'nem todas foram manter — nao pode dizer que foram');
+});
+
+test('sem conta pedida, conta tudo (a fila sem filtro)', () => {
+  assert.equal(resumoDoRobo(analisesMantova, null).analisadas, 3);
 });

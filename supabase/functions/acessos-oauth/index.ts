@@ -20,10 +20,19 @@
 // public.acessos_conexoes and NEVER leak into any redirect URL or response body.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { ENDERECO_PADRAO } from "../_shared/enderecos-do-app.js";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const APP_RETURN = "https://socialdashboard.rbvcompany.com/";
+// Para onde a volta do Zoho / do OneDrive joga a pessoa.
+//
+// Aqui NÃO dá para descobrir de onde ela saiu: quem bate nesta rota é o Zoho,
+// não o navegador dela — não vem cabeçalho `Origin` nenhum. Então o retorno é
+// sempre o endereço padrão do app, que mora em `_shared/enderecos-do-app.js`.
+// Consequência enquanto a Central atende em dois endereços: quem começa a
+// conexão pelo endereço NOVO volta no ANTIGO. Não quebra (os dois servem o
+// mesmo app), e conserta sozinho quando o padrão virar.
+const APP_RETURN = `${ENDERECO_PADRAO}/`;
 const CALLBACK_URI =
   "https://kounqtdoioootxqegkij.supabase.co/functions/v1/acessos-oauth/callback/zoho";
 // Microsoft (personal/consumer account) — redirect URI registered in Azure.

@@ -84,8 +84,8 @@ onUnmounted(() => {
 /* Embaixo, não em cima: em cima ela cobriria a barra de topo e o botão de
    voltar. Aqui ela fica no caminho do polegar e some ao ser resolvida. */
 .atz-faixa{position:fixed;left:12px;right:12px;bottom:calc(env(safe-area-inset-bottom,0px) + 12px);z-index:10070;display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 14px;background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:12px;box-shadow:0 12px 34px rgba(0,0,0,.22);}
-.atz-txt{flex:1 1 auto;min-width:0;font-family:var(--fonte-principal);font-size:13.5px;color:var(--text);}
-.atz-btn{min-height:40px;padding:9px 15px;border:1px solid var(--border);border-radius:9px;background:var(--surface);color:var(--text);font-family:var(--fonte-principal);font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;touch-action:manipulation;}
+.atz-txt{flex:1 1 auto;min-width:0;font-family:var(--fonte-principal);font-size:max(9px, calc(13.5px * var(--escala-texto, 1)));color:var(--text);}
+.atz-btn{min-height:40px;padding:9px 15px;border:1px solid var(--border);border-radius:9px;background:var(--surface);color:var(--text);font-family:var(--fonte-principal);font-size:max(9px, calc(13px * var(--escala-texto, 1)));font-weight:600;cursor:pointer;white-space:nowrap;touch-action:manipulation;}
 .atz-btn.primario{background:var(--accent);border-color:var(--accent);color:var(--sobre-cor);}
 @media(max-width:520px){
   .atz-txt{flex:1 1 100%;}

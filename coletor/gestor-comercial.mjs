@@ -10,6 +10,10 @@ import { loginServico, blingProxy, blingPedidos, blingProdutos, blingSaldoFoco, 
 import { CANAIS, realPorCanalDe, canaisFocoDe } from './lib/comercial-canais.mjs';
 import { bcgClass } from './lib/classificacao-comercial.mjs';
 import { registrarExecucao } from './registrar-execucao.mjs';
+// A REGRA DE "ISTO E LOJA?" MORA EM UM LUGAR SO — a mesma pergunta respondida
+// em dois arquivos e a que diverge no dia em que um deles muda.
+import { normalizarDepositos, ehDepositoDeLoja } from '../src/ferramentas/gestao-a-vista/estoque-gv.js';
+import { pathToFileURL } from 'node:url';
 
 const _t0 = Date.now(); // início da rodada (para medir duração no painel de status)
 
@@ -107,11 +111,29 @@ function montarEstoque(saldoPorDep, prodMap, giro, diaDoMes) {
 // Degradê de % (amplo/base): rotaciona entre as categorias a cada semana.
 const PARES_OPP = [[40, 15], [35, 20], [30, 25], [25, 30], [20, 35], [15, 40]];
 const CAT_OFERTA = ['Transversal', 'Tote', 'Festa/Clutch', 'Bolsa de ombro', 'Bolsa de mão', 'Mochila', 'Bolsa (outros)'];
-const LOJAS_VAREJO = [
+// ⚠️ ESTA LISTA DEIXOU DE SER A VERDADE em 05/09/2026 — era o terceiro lugar do
+// repositório com os depósitos escritos à mão. Ficou como SEMENTE.
+//
+// Quem manda agora é `bling_depositos`, e a regra de "isto é loja?" mora em UM
+// lugar só (`estoque-gv.js`), importada aqui: a mesma pergunta respondida em
+// dois arquivos é a que diverge no dia em que um deles muda.
+const LOJAS_VAREJO_SEMENTE = [
   { loja: 'Tivoli (Santa Bárbara)', deposito_id: '14888726315' },
   { loja: 'Shopping Dom Pedro',     deposito_id: '14888617206' },
 ];
-const DEP_PULMAO = '14888248253';
+const DEP_PULMAO_SEMENTE = '14888248253';
+
+// As lojas de varejo e o pulmão, a partir do que o Bling tem hoje. Sem depósito
+// nenhum, cai na semente — o robô publica a vitrine de sempre em vez de nenhuma.
+export function lojasEPulmao(depositosDoBanco) {
+  const deps = normalizarDepositos(depositosDoBanco);
+  const lojas = deps.filter(ehDepositoDeLoja)
+    .map((d) => ({ loja: d.nome.replace(/^estoque\s+loja\s+/i, '').trim() || d.nome,
+                   deposito_id: String(d.id) }));
+  const pulmao = deps.find((d) => d.pulmao);
+  if (!lojas.length) return { lojas: LOJAS_VAREJO_SEMENTE, pulmao: DEP_PULMAO_SEMENTE };
+  return { lojas, pulmao: pulmao ? String(pulmao.id) : DEP_PULMAO_SEMENTE };
+}
 function _diasSemVender(ultima, hoje) {
   if (!ultima) return '90+';
   const d = Math.round((new Date(hoje + 'T00:00:00') - new Date(ultima + 'T00:00:00')) / 864e5);
@@ -123,7 +145,8 @@ function _diasSemVender(ultima, hoje) {
 const BCG_META = { 'Estrela': 2, 'Vaca leiteira': 3, 'Interrogação': 4, 'Abacaxi': 3 };
 // Escada de desconto por nível de desejo (campeã leva menos, parada leva mais) — respeita 15/20/25/30/35/40.
 const LADDER = [15, 20, 25, 30, 35, 40];
-function montarOportunidades(saldoPorDep, prodMap, giro, ultimaVenda, hoje) {
+function montarOportunidades(saldoPorDep, prodMap, giro, ultimaVenda, hoje, depositos = null) {
+  const { lojas: LOJAS_VAREJO, pulmao: DEP_PULMAO } = lojasEPulmao(depositos);
   const saldoPulmao = saldoPorDep[DEP_PULMAO] || {};
   return LOJAS_VAREJO.map(L => {
     const saldos = saldoPorDep[L.deposito_id] || {};
@@ -196,7 +219,8 @@ const GARIMPO_TETO = 40;        // % máximo de desconto (padrão)
 const GARIMPO_TETO_ALTO = 60;   // % máximo das ofertas-âncora agressivas
 const GARIMPO_MAX_ALTO = 2;     // quantas ofertas por loja podem usar o teto alto (60%)
 // Cardápio de candidatos por loja de varejo: qualquer item vendável com estoque e preço.
-function montarCardapio(saldoPorDep, prodMap, giro, ultimaVenda, hoje, capPorLoja = 60) {
+function montarCardapio(saldoPorDep, prodMap, giro, ultimaVenda, hoje, capPorLoja = 60, depositos = null) {
+  const { lojas: LOJAS_VAREJO, pulmao: DEP_PULMAO } = lojasEPulmao(depositos);
   const saldoPulmao = saldoPorDep[DEP_PULMAO] || {};
   const out = {};
   for (const L of LOJAS_VAREJO) {
@@ -246,7 +270,8 @@ function _garimpoKeyMatch(obj, loja) {
   return [];
 }
 // Valida os picks da IA contra o cardápio e precifica (exato pelo sistema).
-function validarGarimpo(picksPorLoja, cardapio, oportunidades) {
+function validarGarimpo(picksPorLoja, cardapio, oportunidades, depositos = null) {
+  const { lojas: LOJAS_VAREJO } = lojasEPulmao(depositos);
   const usadosOpp = {};   // loja -> SKUs já nos 12 (não repetir)
   for (const o of (oportunidades || [])) usadosOpp[o.loja] = new Set((o.itens || []).map(i => String(i.sku)));
   const out = [];
@@ -493,9 +518,20 @@ async function main() {
   });
 }
 
-main().catch(async (e) => {
-  console.error('FALHA:', e.message);
-  await logGestor('fim', e.message.slice(0, 500), 'falha geral');
-  await registrarExecucao({ robo: 'gestor-comercial', acao: 'briefing semanal', modelo: MODEL, duracaoMs: Date.now() - _t0, status: 'erro', detalhe: e.message.slice(0, 500) });
-  process.exit(1);
-});
+// ⚠️ SÓ RODA QUANDO CHAMADO DIRETO. Até 05/09/2026 este `main()` estava solto:
+// QUALQUER `import` deste arquivo disparava o robô inteiro contra produção —
+// login, chamadas ao Bling, chamadas à IA e escrita no log. Descobri isso da
+// pior maneira, importando o arquivo para testar uma função pura: o robô saiu
+// rodando e gravou uma linha "início" às 21:00 de 05/09.
+//
+// É também o motivo de este arquivo nunca ter tido teste: não havia como
+// importá-lo sem executá-lo. O irmão `relatorios-comerciais.mjs` já tinha esta
+// trava; este ficou sem.
+if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
+  main().catch(async (e) => {
+    console.error('FALHA:', e.message);
+    await logGestor('fim', e.message.slice(0, 500), 'falha geral');
+    await registrarExecucao({ robo: 'gestor-comercial', acao: 'briefing semanal', modelo: MODEL, duracaoMs: Date.now() - _t0, status: 'erro', detalhe: e.message.slice(0, 500) });
+    process.exit(1);
+  });
+}

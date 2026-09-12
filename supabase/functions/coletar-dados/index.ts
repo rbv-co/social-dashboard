@@ -9,6 +9,12 @@ import { somaDoDetalhe, leituraParcial, leituraServe } from '../_shared/leitura-
 // Meta não publicou". Vinham iguais para cá e saíam iguais no painel — foi o que
 // deixou os 7 perfis com "novos seguidores" zerado por 4 dias sem ninguém saber.
 import { lerBrutoDoDia, atrasoDoBruto, recadoDeAtraso } from '../_shared/bruto-de-seguidores.js';
+// As quatro contagens (conversa, cadastro, compra, visita) que já vêm no
+// `actions` do insight de campanha — sem chamada nova à Meta.
+import { contagensDaCampanha } from '../_shared/acoes-de-campanha.js';
+// A janela de datas do recorte de N dias. Estava escrita aqui dentro e cobria
+// N+1 dias, com o dia de HOJE (incompleto) dentro — ver janela-de-ads.js.
+import { janelaDeAds } from '../_shared/janela-de-ads.js';
 
 const GRAPH = 'https://graph.facebook.com/v21.0';
 const APP_ID = Deno.env.get('META_APP_ID') ?? '';
@@ -391,10 +397,44 @@ async function sincronizarCampanhas(sb: any, accountId: string, adAccountId: str
   } catch { /* sem ads */ }
 }
 
+// O SINAL DO CONJUNTO — destination_type e optimization_goal — é o que decide o
+// balde da campanha no painel de Redes Sociais. Uma chamada por perfil por
+// rodada; os mesmos campos que a Gestão de Tráfego já lê ao vivo.
+// Falhar aqui NÃO pode derrubar o resto da rodada: sem conjunto, a tela
+// classifica pelo objetivo e avisa que é provisório.
+async function sincronizarConjuntos(sb: any, accountId: string, adAccountId: string, token: string) {
+  try {
+    const items = await apiGetAll(`act_${adAccountId}/adsets`, {
+      fields: 'id,campaign_id,destination_type,optimization_goal', access_token: token,
+    });
+    const rows = items.map((s: any) => ({
+      adset_id: s.id, campaign_id: s.campaign_id ?? '', account_id: accountId,
+      destination_type: s.destination_type ?? null,
+      optimization_goal: s.optimization_goal ?? null,
+      synced_at: todayBR(),
+    })).filter((r: any) => r.campaign_id);
+    if (rows.length) await sb.from('campaign_adsets').upsert(rows, { onConflict: 'adset_id' });
+    console.log(`  conjuntos: ${rows.length}`);
+  } catch (e) {
+    // A rodada SEGUE (falhar aqui não pode derrubar o resto), mas não em
+    // silêncio. Este catch foi deixado calado na premissa de que o sintoma
+    // apareceria na tela como "classificação provisória" — e não aparece: aquele
+    // aviso só fala quando o perfil não tem NENHUM conjunto, e todos já têm. Sem
+    // esta linha, um perfil que parou de sincronizar conjuntos fica classificando
+    // campanha pelo objetivo por tempo indeterminado, sem ninguém ficar sabendo.
+    console.warn(`  conjuntos FALHOU (conta ${accountId} / ads ${adAccountId}):`, e instanceof Error ? e.message : e);
+  }
+}
+
 async function coletarAdsPorCampanha(sb: any, adAccountId: string, accountId: string, token: string, dias: number, hoje: string) {
-  const until = hoje;
-  const d = new Date(hoje + 'T12:00:00'); d.setDate(d.getDate() - dias);
-  const since = d.toLocaleDateString('en-CA');
+  // A JANELA SAI DO MÓDULO PURO, com teste ao lado. Ela morava aqui e pedia
+  // `until = hoje`: como o `time_range` da Meta é inclusive nas duas pontas,
+  // "7 dias" virava OITO, com o dia de hoje (incompleto) dentro. O engajamento
+  // logo acima neste mesmo arquivo sempre pediu N dias COMPLETOS — agora os dois
+  // usam a mesma régua, e o alcance volta a fechar com o painel da Meta.
+  const janela = janelaDeAds(hoje, dias);
+  if (!janela) return;                       // recorte que ninguém sabe medir não vira pergunta à Meta
+  const { since, until } = janela;
   try {
     const items = await apiGetAll(`act_${adAccountId}/insights`, {
       fields: 'campaign_id,spend,impressions,clicks,reach,actions',
@@ -413,6 +453,7 @@ async function coletarAdsPorCampanha(sb: any, adAccountId: string, accountId: st
       comments: actVal(r.actions, ['comment']),
       shares: actVal(r.actions, ['post', 'share']),
       saves: actVal(r.actions, ['onsite_conversion.post_save', 'post_save']),
+      ...contagensDaCampanha(r.actions),
     }));
     if (rows.length) await sb.from('campaign_insights').upsert(rows, { onConflict: 'campaign_id,account_id,captured_at,period_days' });
   } catch { /* sem dados de ads */ }
@@ -435,6 +476,7 @@ async function coletarAdsDia(sb: any, adAccountId: string, accountId: string, to
       post_engagement: actVal(r.actions, ['post_engagement']),
       likes: actVal(r.actions, ['post_reaction', 'like']), comments: actVal(r.actions, ['comment']),
       shares: actVal(r.actions, ['post', 'share']), saves: actVal(r.actions, ['onsite_conversion.post_save', 'post_save']),
+      ...contagensDaCampanha(r.actions),
     }));
     if (rows.length) await sb.from('campaign_insights').upsert(rows, { onConflict: 'campaign_id,account_id,captured_at,period_days' });
   } catch { /* sem dados de ads */ }
@@ -522,6 +564,7 @@ async function processarConta(sb: any, acc: any, degraded: string[], semBruto: s
   // Perfil sem ad_account_id preenchido não tem anúncios — pula, sem erro.
   if (adAccountId) {
     await sincronizarCampanhas(sb, accountId, adAccountId, token);
+    await sincronizarConjuntos(sb, accountId, adAccountId, token);
     for (const dias of PERIODS) await coletarAdsPorCampanha(sb, adAccountId, accountId, token, dias, hoje);
     // Re-coleta o gasto pd=0 dos últimos 7 dias (ontem→-7): captura a atribuição tardia da Meta,
     // pra o relatório (que usa pd=0) bater com o valor final. Hoje já foi coletado no loop acima.

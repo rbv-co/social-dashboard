@@ -18,6 +18,7 @@
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import webpush from 'npm:web-push@3';
 import { agregarVendasPorCanal, montarCorpo } from '../_shared/vendas-do-dia.js';
+import { ajustarPelaDataDaNota } from '../_shared/data-da-venda.js';
 import { exigirSegredoDeCron } from '../_shared/segredo-de-cron.ts';
 // Quem quer receber ESTE tipo (ver _shared/notificacoes.js). 'vendas' vem
 // ligado por padrão — quem não quiser, o admin desliga na tela de Usuários.
@@ -133,8 +134,34 @@ Deno.serve(async (req) => {
     return json({ ok: true, enviado: false, motivo: 'bling_indisponivel', erro: String(e) });
   }
 
+  // 2b) A VENDA CONTA NO DIA DA NOTA, não no dia do pedido. O Bling entrega por
+  //     data do pedido; a loja emite NFC-e na hora e o Atacado emite NF-e no dia
+  //     seguinte. Sem este ajuste, o push da noite e o telão dariam números
+  //     DIFERENTES para o mesmo dia — e dois lugares discordando é pior que um
+  //     errado, porque ninguém sabe em qual acreditar.
+  //
+  //     Regra desta Edge, mais dura que a das telas: aqui não existe "mostra o
+  //     que dá". Se não der para saber a data certa, NÃO ENVIA — a mesma regra
+  //     que já vale para token, Bling fora do ar e itens incompletos.
+  const linhasDoDia = async (dia: string) => {
+    const { data, error } = await sb.from('bling_pedido_nota')
+      .select('pedido_id,pedido_numero,data_pedido,data_da_venda,total,loja_id')
+      .or(`and(data_da_venda.gte.${dia},data_da_venda.lte.${dia}),and(data_pedido.gte.${dia},data_pedido.lte.${dia})`);
+    if (error) throw new Error(`bling_pedido_nota: ${error.message}`);
+    return data || [];
+  };
+  try {
+    const [lRef, lCmp] = await Promise.all([linhasDoDia(diaRef), linhasDoDia(diaCmp)]);
+    pedRef = ajustarPelaDataDaNota(pedRef, lRef, diaRef, diaRef).pedidos;
+    pedCmp = ajustarPelaDataDaNota(pedCmp, lCmp, diaCmp, diaCmp).pedidos;
+  } catch (e) {
+    return json({ ok: true, enviado: false, motivo: 'data_da_venda_indisponivel', erro: String(e) });
+  }
+
   // 3) Itens por pedido: cache + detalhe do que falta. Se não der pra contar TODOS
   //    (falha ou estouro de tempo), os itens não seriam exatos -> NÃO envia.
+  //    Roda DEPOIS do ajuste acima, para contar os itens dos pedidos que entraram
+  //    de outro dia — senão eles chegariam ao push com zero itens.
   const todos = [...pedRef, ...pedCmp];
   const ids = todos.map((p) => parseInt(p.id)).filter(Boolean);
   const cache = new Map<number, number>();

@@ -125,6 +125,46 @@ export function montarFila(analises, decisoes, agora) {
   return saida;
 }
 
+// O QUE O ROBÔ FEZ NESTA CONTA — para a fila vazia poder se explicar.
+//
+// POR QUE EXISTE (item 1 da lista do dono, 12/08/2026: "sugestões na Mantova
+// inexistente na fila da IA"). Medido no banco: a Mantova TEM análise. Na última
+// rodada o robô olhou 2 campanhas ativas e disse 'manter' nas duas — e 'manter'
+// não entra na fila, porque não há o que aprovar. A fila então ficava vazia, e
+// vazia é indistinguível de quebrada: a tela dizia "nada esperando decisão" sem
+// dizer se o robô tinha passado por ali. Calar também é mentir (PADRÃO item 9).
+//
+// Conta sobre as análises CRUAS (antes do filtro de `pedeAcao`), por isso recebe
+// a lista original. PURO.
+export function resumoDoRobo(analises, contaId) {
+  const alvo = contaId == null ? null : String(contaId);
+  let analisadas = 0, manter = 0, ultima = null;
+  for (const a of analises || []) {
+    if (!a || a.campaign_id == null) continue;
+    if (alvo != null && String(a.account_id || '') !== alvo) continue;
+    analisadas += 1;
+    if (a.veredito === 'manter') manter += 1;
+    const q = quando(a.gerado_em);
+    if (q != null && (ultima == null || q > ultima)) ultima = q;
+  }
+  return { analisadas, manter, ultima: ultima == null ? null : new Date(ultima).toISOString() };
+}
+
+// A FRASE da fila vazia. Devolve '' quando não há o que acrescentar — uma conta
+// que o robô nunca analisou não ganha frase inventada.
+export function fraseDaFilaVazia(resumo) {
+  const r = resumo || {};
+  if (!r.analisadas) return '';
+  if (r.manter === r.analisadas) {
+    return r.analisadas === 1
+      ? 'O robô analisou 1 campanha e a recomendação foi manter como está — por isso não há nada para aprovar.'
+      : `O robô analisou ${r.analisadas} campanhas e em todas a recomendação foi manter como está — por isso não há nada para aprovar.`;
+  }
+  // Analisou e propôs algo, mas nada chegou aqui: a sugestão foi respondida,
+  // recusada, venceu, ou é de campanha que já parou. A tela não deve chutar qual.
+  return `O robô analisou ${r.analisadas} campanha${r.analisadas > 1 ? 's' : ''} nesta conta. O que ele propôs já foi respondido, recusado ou é de campanha que não está mais rodando.`;
+}
+
 // Junta a leitura de SAÚDE às sugestões do robô (2026-07-29, pedido do dono:
 // "não dá pra linkar também a saúde junto com as análises?").
 //
@@ -142,11 +182,31 @@ export function montarFila(analises, decisoes, agora) {
 // `saudes` é uma lista de { campaign_id, account_id, campaign_name, conta_nome,
 // saude, budget_atual_centavos }. Só 'alerta' vira item próprio — 'atencao' é
 // observação e só aparece grudada numa sugestão que já existia. PURO.
-export function mesclarSaude(fila, saudes) {
+//
+// `decisoesSaude` são as decisões de escopo 'saude'. MEDIDO EM 12/08/2026, e é o
+// item 2 da lista do dono ("qualquer ação tomada finaliza a sugestão"): sem elas o
+// alerta de saúde dispensado VOLTAVA na hora — `mesclarSaude` roda depois de
+// `montarFila` e só pulava campanha que já estivesse na fila de orçamento. Uma
+// campanha com alerta e sem sugestão de verba não estava em lugar nenhum, então
+// ressuscitava a cada carregamento. Dispensar não dispensava nada.
+// `agora` entra pelo parâmetro, como em `montarFila`: o silêncio de 7 dias não se
+// testa esperando 7 dias, e um `Date.now()` aqui dentro furaria o relógio fixo.
+export function mesclarSaude(fila, saudes, decisoesSaude, agora) {
   const f = fila || {};
   const pendentes = [...(f.pendentes || [])];
   const porCampanha = new Map();
   for (const s of saudes || []) if (s && s.campaign_id != null) porCampanha.set(String(s.campaign_id), s);
+
+  // A decisão mais recente de saúde por campanha. Mesma semântica das outras: a
+  // dispensa cala até `silenciar_ate`, e alerta MEDIDO depois da decisão volta a
+  // perguntar (a situação mudou, e calar aí esconderia piora real).
+  const decididas = new Map();
+  for (const d of decisoesSaude || []) {
+    if (!d || d.campaign_id == null || d.escopo !== 'saude') continue;
+    const k = String(d.campaign_id);
+    const atual = decididas.get(k);
+    if (!atual || (quando(d.decidido_em) ?? 0) > (quando(atual.decidido_em) ?? 0)) decididas.set(k, d);
+  }
 
   const jaNaFila = new Set(pendentes.concat(f.vencidas || [], f.silenciadas || [], f.respondidas || [])
     .map((i) => String(i.campaign_id)));
@@ -156,10 +216,22 @@ export function mesclarSaude(fila, saudes) {
     if (s && s.saude) item.saude = s.saude;
   }
 
+  const agoraMs = quando(agora) ?? Date.now();
   const novos = [];
   for (const [id, s] of porCampanha) {
     if (jaNaFila.has(id)) continue;
     if (!s.saude || s.saude.nivel !== 'alerta') continue;
+    const d = decididas.get(id);
+    if (d) {
+      const ate = quando(d.silenciar_ate);
+      const calada = ate != null && agoraMs < ate;
+      // Alerta medido DEPOIS da decisão volta a perguntar mesmo dentro do
+      // silêncio? Não: senão a dispensa de 7 dias não valeria nada, já que a
+      // saúde é remedida a cada carregamento da tela.
+      if (calada) continue;
+      // Fora do silêncio, só volta se a medição for mais nova que a decisão.
+      if ((quando(s.medido_em) ?? 0) <= (quando(d.decidido_em) ?? 0)) continue;
+    }
     novos.push({
       campaign_id: id,
       account_id: s.account_id || null,

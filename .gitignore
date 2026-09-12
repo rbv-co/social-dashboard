@@ -19,6 +19,11 @@
 **/coletor/logs/
 **/backup/*.bak.html
 **/backup/*.log
+# diário dos robôs que rodam nesta máquina (backfill, retomadas, erro do launchd).
+# É registro de execução local, não fonte: cada máquina escreve o seu, e versionar
+# só produziria conflito em arquivo que ninguém lê no repositório. O que precisa
+# durar já está na lista de pendências e no commit.
+coletor/*.log
 
 # config local / ferramentas
 .DS_Store
@@ -28,6 +33,11 @@
 .superpowers/
 .serena/
 **/.temp/
+
+# retomada do backfill dos quatro números de campanha (estado local de execução,
+# não é fonte; some sem prejuízo — o UPDATE só toca linha ainda nula)
+coletor/.preencher-numeros-de-campanha.json
+coletor/.preencher-numeros-de-campanha.json.tmp
 
 # node
 **/node_modules/
@@ -75,3 +85,22 @@ __repro/
 public/_sessao-temp.json
 public/*sessao*.json
 public/*.session.json
+
+# Material que gera o PDF do tutorial do motorista (instalar o app + checklist
+# da Frota). Fica local por decisão do dono, 19/08/2026: são ~7 MB de fotos das
+# telas, e o que precisa durar é o PDF, não a matéria-prima dele.
+#
+# Quem precisar refazer: o LEIA-ME da pasta tem os três comandos, e as fotos se
+# regeram sozinhas a partir do app rodando local — nada ali é insubstituível.
+docs/tutorial-motorista/
+
+# AS WORKTREES. Elas moravam so no .git/info/exclude, que e LOCAL — cada clone
+# precisava configurar de novo, e quem NAO le esse arquivo tropeca: a CLI da
+# Vercel le o .gitignore, entao um `vercel --prod` daqui tentava subir 140 MB
+# de worktrees e abortava o upload. Aqui vale para todo mundo.
+/arvores/
+
+# O PACOTE GERADO DO GRAVADOR — 106 MB, e ele NASCE de novo a cada empacotamento.
+# Sem esta linha, um `git add .` distraído joga o Electron inteiro no
+# repositório, que é público, e nao ha como tirar do historico depois.
+entregas/

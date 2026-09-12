@@ -701,13 +701,13 @@ onMounted(() => {
 .gc-bcg-q.q-vaca{fill:var(--accent);}
 .gc-bcg-q.q-interrogacao{fill:#7c3aed;}
 .gc-bcg-q.q-abacaxi{fill:#e11d48;}
-.gc-bcg-qlbl{font-family:var(--fonte-principal);font-size:13px;font-weight:600;letter-spacing:.5px;opacity:.55;text-transform:uppercase;}
+.gc-bcg-qlbl{font-family:var(--fonte-principal);font-size:max(9px, calc(13px * var(--escala-texto, 1)));font-weight:600;letter-spacing:.5px;opacity:.55;text-transform:uppercase;}
 .gc-bcg-qlbl.r{text-anchor:end;}
 .gc-bcg-qlbl.q-estrela{fill:var(--orange);}
 .gc-bcg-qlbl.q-vaca{fill:var(--accent);}
 .gc-bcg-qlbl.q-interrogacao{fill:#7c3aed;}
 .gc-bcg-qlbl.q-abacaxi{fill:#e11d48;}
-.gc-bcg-axl{fill:var(--muted);font-size:10px;font-family:var(--fonte-principal);}
+.gc-bcg-axl{fill:var(--muted);font-size:max(9px, calc(10px * var(--escala-texto, 1)));font-family:var(--fonte-principal);}
 .gc-bcg-axl.r{text-anchor:end;}
 .gc-bcg-scatter circle.q-estrela{fill:var(--orange);}
 .gc-bcg-scatter circle.q-vaca{fill:var(--accent);}

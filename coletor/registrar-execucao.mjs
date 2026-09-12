@@ -4,20 +4,12 @@
 //
 // Regra de ouro: telemetria NUNCA derruba um robô. Tudo em try/catch silencioso.
 //
-// Preço oficial (US$ por 1M tokens) — fonte de verdade única, reaproveitável:
-//   Opus 4.8:  entrada US$5,  saída US$25
-//   Sonnet 4.6: entrada US$3, saída US$15
-// (o lib-llm.mjs tem uma tabela antiga com Opus 15/75 — NÃO usar para custo.)
-export const PRECO = {
-  opus:   { in: 5, out: 25 },
-  sonnet: { in: 3, out: 15 },
-};
-
-// Calcula o custo em US$ a partir do modelo + tokens (usa PRECO centralizado).
-export function calcularUsd(modelo, inputTokens = 0, outputTokens = 0) {
-  const p = String(modelo || '').includes('opus') ? PRECO.opus : PRECO.sonnet;
-  return (inputTokens / 1e6) * p.in + (outputTokens / 1e6) * p.out;
-}
+// A REGRA DE CUSTO mudou de casa em 18/08/2026: foi para `lib/custo-da-execucao.mjs`,
+// com teste. Aqui ela não tinha como quebrar teste nenhum, e foi por isso que um
+// `: 0` escondido gravou 473 criativos pagos como US$ 0,00 durante um mês.
+// Reexportado para quem já importava daqui não quebrar.
+export { PRECO, calcularUsd, ehModeloAnthropic, custoDaExecucao } from './lib/custo-da-execucao.mjs';
+import { custoDaExecucao } from './lib/custo-da-execucao.mjs';
 
 // Registra uma execução. `usd` é opcional: se vier undefined, calcula de modelo+tokens.
 export async function registrarExecucao({
@@ -31,9 +23,8 @@ export async function registrarExecucao({
     const SUPABASE_URL = process.env.SUPABASE_URL || 'https://kounqtdoioootxqegkij.supabase.co';
     const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
     if (!SERVICE_KEY) { console.error('aviso ia_execucoes: falta SUPABASE_SERVICE_KEY'); return; }
-    const custo = (usd === undefined || usd === null)
-      ? (modelo ? calcularUsd(modelo, inputTokens, outputTokens) : 0)
-      : usd;
+    // NULO quando ninguém sabe (motor pago de fora), 0 só quando é zero mesmo.
+    const custo = custoDaExecucao({ modelo, inputTokens, outputTokens, usd });
     const body = {
       robo, acao, modelo,
       input_tokens: inputTokens, output_tokens: outputTokens, chamadas,

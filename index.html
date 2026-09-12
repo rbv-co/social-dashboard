@@ -4,10 +4,23 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>Central de Inteligência RBV</title>
-  <link rel="icon" type="image/png" href="/midia/LOGOTIPOBRENOPRETO.png" />
-  <!-- Ícone do app na tela inicial (iOS/Android): fundo preto + logo branco, quadrado -->
-  <link rel="apple-touch-icon" sizes="180x180" href="/midia/app-icon-180.png" />
-  <link rel="apple-touch-icon" sizes="192x192" href="/midia/app-icon-192.png" />
+  <!-- O ÍCONE DA ABA E DA BARRA DO WINDOWS (corrigido em 13/08/2026).
+       Era o logotipo inteiro, `LOGOTIPOBRENOPRETO.png`: 2000x2000, arte PRETA e
+       fundo TRANSPARENTE. Duas coisas davam errado ao mesmo tempo:
+         1. encolhido para 16px, a arte "RBV & Co. + CONSULTANCY" some. Medido
+            no navegador: 16px = ZERO pixel claro, 32px = UM. Um quadrado vazio;
+         2. arte preta sem fundo, sobre a barra escura do Windows, desaparece
+            mesmo quando aparece.
+       Foi por isso que o app instalado apareceu "sem logotipo".
+       O ícone agora é o MONOGRAMA — a sigla e o filete da marca, branco sobre
+       preto, fundo cheio. É o que sobrevive a 16px: 26 pixels claros em 4
+       linhas. O logotipo inteiro continua na tela, onde ele é lido grande. -->
+  <link rel="icon" type="image/svg+xml" href="/midia/favicon.svg" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/midia/icone-32.png" />
+  <link rel="icon" type="image/png" sizes="192x192" href="/midia/icone-192.png" />
+  <!-- Ícone do app na tela inicial (iOS/Android): fundo preto + monograma branco -->
+  <link rel="apple-touch-icon" sizes="180x180" href="/midia/icone-180.png" />
+  <link rel="apple-touch-icon" sizes="192x192" href="/midia/icone-192.png" />
   <link rel="manifest" href="/manifest.webmanifest" />
   <meta name="theme-color" content="#000000" />
   <meta name="apple-mobile-web-app-capable" content="yes" />

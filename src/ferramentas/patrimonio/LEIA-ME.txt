@@ -12,9 +12,23 @@ O que tem aqui:
   patrimonio-lista.js     somar, formatar data, texto de linha do histórico
   rotulos-do-bem.js       situações do bem e como cada uma aparece na tela
   filtro-de-bens.js       busca por texto, filtros e total
-  nova-opcao.js           o "+" que cria empresa/categoria/local/ambiente/tipo
-                          direto no formulário, sem precisar abrir Listas
+  (a regra do "+" saiu daqui para src/compartilhado/nova-opcao.js — agora ela
+   também serve a escolha de local e a escolha de pessoa)
   ligacao-com-frota.js    a ligação bem↔veículo vista da ficha do bem: liga a
+
+  A LIGAÇÃO VIROU MÃO DUPLA DE VERDADE em 20/08/2026: item da categoria
+  Veículos ganha campo de PLACA, e salvar já cria (ou acha) o carro na Frota.
+  Quem costura é `sincronizar_carro_e_bem` no banco, não a tela — os portões de
+  permissão das duas ferramentas são diferentes, e 7 das 22 pessoas têm só um
+  dos dois.
+
+  ⚠️ A PLACA NÃO É COLUNA DO ITEM. Ela mora em `frota_veiculos.placa`, e a
+  ficha a mostra lendo o carro ligado. Cópia nas duas tabelas é o que diverge
+  depois. Obrigatória só no CADASTRO NOVO: item que já existe avisa sem travar,
+  porque o nº 291 fica sem placa até o carro dele ser levantado — e placa
+  inventada é pior que placa faltando, já que ela é UNIQUE e ocupa o lugar de
+  uma real.
+
                           um carro existente, cria um carro a partir do bem, ou
                           desfaz — a gravação é em frota_veiculos.bem_id, então
                           exige a mesma permissão da Frota (RLS is_frota_admin)

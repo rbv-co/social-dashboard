@@ -1,0 +1,252 @@
+O QUE E ESTA PASTA
+==================
+
+E o MOTOR do gravador de etiquetas de mesa da Vessel. Ele fala com o leitor NFC
+ACR122U ligado na USB do computador da bancada, grava o endereco da peca dentro
+da etiqueta NTAG213 que vai costurada no forro da bolsa, e registra no sistema
+quem gravou o que.
+
+O MOTOR mora aqui na raiz da pasta. A JANELA — o programa que a bancada abre e
+que empresta o leitor para a tela da Central — mora em `janela/`, e tem LEIA-ME
+proprio.
+
+NAO HA TELA NENHUMA ESCRITA AQUI, nem na janela: o que a bancada ve e a tela do
+painel (`/autenticidade`), aberta dentro da janela. Uma segunda tela seria uma
+segunda tela para manter, e a que ficasse para tras contaria outra historia
+sobre as mesmas bolsas.
+
+
+POR QUE ELA MORA FORA DO PAINEL
+===============================
+
+O painel (src/) e um site que a Vercel compila e serve. Falar com o leitor so
+funciona no Windows, com um leitor ligado. Se o painel passasse a depender
+disso, o site inteiro ficaria refem de uma peca que so vive na bancada — e um
+dia o deploy quebraria por causa de um aparelho.
+
+Entao esta pasta tem package.json PROPRIO, dependencias proprias, e IMPORTA os
+modulos do painel por caminho relativo (../src/...). Eles sao JavaScript puro,
+sem DOM: a mesma regra vale nos dois lados, e nao ha copia para envelhecer.
+
+O caminho contrario NAO existe: nada do painel importa esta pasta.
+
+
+OS ARQUIVOS
+===========
+
+comandos-do-acr122u.js   Monta e le os bytes que o leitor entende. Conta pura:
+                         nao abre USB, nao tem rede. Recusa pagina fora de 4-39
+                         e escrita que nao tenha exatamente 4 bytes ANTES de
+                         mandar para o aparelho.
+
+ponte-do-powershell.js   A ponte ate o Windows: UM processo de powershell.exe
+                         vivo, falando com o winscard.dll. Troca uma linha de
+                         texto por vez, tudo em hexadecimal. O processo entra
+                         por injecao, para o teste passar um de mentira.
+
+leitor-de-mesa.js        A UNICA PORTA para o leitor. A ponte entra por
+                         injecao. Se este arquivo crescer para alem de "falar
+                         com o chip", ele esta errado.
+
+gravar-uma-peca.js       A sequencia: ler antes, planejar a partir do que leu,
+                         escrever pagina por pagina, ler de volta e conferir, e
+                         SO ENTAO marcar no sistema.
+
+fila.js                  Gravar cinquenta, nao uma. Qual e a proxima, o que
+                         fazer quando falha, e como retomar depois de o programa
+                         fechar.
+
+entrar.js                Login por pessoa, por linha de comando.
+
+                         ⚠️ NAO E MAIS USADO. No desenho da janela quem entra e
+                         a PESSOA, na Central, dentro da propria janela — o
+                         `auth.uid()` sai da sessao dela, e o programa nao guarda
+                         senha nem chave nenhuma. Este arquivo fica de pe (ele
+                         serve a quem quiser rodar o motor sozinho, sem janela),
+                         mas nao entra no instalador e nao deve ser usado.
+
+janela/                  O PROGRAMA. Electron, com a tela vinda da Central e o
+                         leitor emprestado por uma superficie estreita. Ver
+                         `janela/LEIA-ME.txt` — e onde estao as travas e o que
+                         a pessoa ve na primeira execucao no Windows.
+
+*.test.mjs               Os testes. `motor-inteiro.test.mjs` liga tudo e grava
+                         um lote com uma NTAG213 de mentira que responde aos
+                         bytes de verdade.
+
+
+COMO RODAR OS TESTES
+====================
+
+    cd gravador
+    npm install
+    npm test
+
+Rodam os do motor e os da janela, juntos.
+
+Nenhum teste encosta em etiqueta de verdade, nem abre janela, nem escreve no
+banco. O Electron entra por injecao, como a ponte do PowerShell.
+
+
+O QUE ESTA PROVADO, E ONDE
+==========================
+
+Em 01/09/2026 o caminho inteiro foi provado a mao, no Windows do dono, com um
+ACR122U de firmware ACR122U220, pelo PowerShell e o winscard.dll: as 12 escritas
+responderam 90 00 e o celular abriu o certificado. O roteiro daquele teste esta
+em src/ferramentas/autenticidade/gravador-de-mesa/testar-leitor.ps1.
+
+NAO E PRECISO INSTALAR DRIVER: o do ACR122U ja vem no Windows.
+
+OS COMANDOS, e nenhum outro:
+
+    escrever 4 bytes numa pagina   FF D6 00 <pagina> 04 <b1 b2 b3 b4>
+    ler                            FF B0 00 <pagina> <quantos bytes>
+    numero de serie da etiqueta    FF CA 00 00 00
+    versao do firmware do leitor   FF 00 48 00 00
+
+    resposta boa termina em 90 00
+    paginas do usuario: 4 a 39. Nunca escrever fora. Nunca escrever na 3.
+
+O TAMANHO DE CADA COMANDO E FIXO, e o programa recusa o que estiver fora:
+
+    ler       FF B0 00 <pagina> <n>                ->  5 bytes
+    escrever  FF D6 00 <pagina> 04 <b1 b2 b3 b4>   ->  9 bytes  (5 + 4)
+    serie     FF CA 00 00 00                       ->  5 bytes
+    versao    FF 00 48 00 00                       ->  5 bytes
+
+ESCREVER SAO NOVE, NAO DEZ. Cinco de cabecalho mais quatro de dados. E o
+comando que a bancada provou. Quem "corrigir" para dez faz toda gravacao ser
+recusada e o gravador morre na primeira etiqueta.
+
+A LEITURA atravessa paginas (ate 16 bytes de uma vez); A ESCRITA nao (4 bytes,
+uma pagina por comando).
+
+
+AS CINCO ARMADILHAS QUE MAIS CUSTAM
+===================================
+
+1. A ETIQUETA NAO VEM EM BRANCO DE FABRICA. As paginas 4 e 5 saem com um Lock
+   Control TLV de 5 bytes, que atravessa a pagina 4 para dentro da 5. Por isso o
+   plano de gravacao se monta A PARTIR DA MEMORIA QUE ACABOU DE SER LIDA, nunca
+   do zero.
+
+2. "NAO CONSEGUI LER" NAO E "ESTA EM BRANCO". O tradutor devolve vazio nos dois
+   casos, e vazio quer dizer PODE GRAVAR. Uma leitura truncada virando
+   autorizacao de gravacao e uma bolsa perdendo a identidade dentro do forro,
+   onde nao se reabre. Quem fecha esse buraco e `decidirPelaLeitura`, em
+   gravar-uma-peca.js: leitura incompleta vira 'nao-li', e 'nao-li' nunca
+   autoriza nada.
+
+3. O BANCO DIZ "OK" SEM TER MUDADO NADA. `vessel_marcar_gravada` faz o update e
+   devolve ok: true sem olhar quantas linhas mudaram. Por isso `marcarGravada`
+   (entrar.js) LE A PECA DE VOLTA: quem diz que ficou registrado e o dado, nunca
+   a resposta.
+
+4. A PRIMEIRA CONEXAO DE TODO TURNO FALHA. O servico de cartao do Windows sobe
+   SOB DEMANDA: a primeira chamada depois de abrir o processo pega ele
+   levantando e volta 0x8010001D; a segunda funciona. `conectar` tenta de novo
+   sozinho, ate 3 vezes, com 300ms de pausa. Sem isso o operador aprende a
+   "tentar duas vezes" — e superstição esconde falha de verdade depois.
+
+   MAS SO PARA ESSA FAMILIA. "Nao ha etiqueta" tem o laco de espera dele, que e
+   longo de proposito (o operador esta pegando a proxima bolsa). Leitor ocupado
+   por outro programa falha na hora. Repetir cegamente qualquer erro
+   transformaria recusa rapida em travamento.
+
+5. `63 00` NAO QUER DIZER ETIQUETA RUIM. Na bancada, um comando com UM BYTE A
+   MAIS (FFB000030400, seis onde cabem cinco) respondeu 63 00, e duas rodadas
+   foram gastas procurando defeito na etiqueta e no aparelho. O tamanho agora e
+   conferido ANTES do cabo, e a frase do 63 00 diz que o leitor nao entendeu o
+   comando — nunca manda trocar etiqueta boa.
+
+
+COMO ELE FALA COM O LEITOR
+==========================
+
+NADA E INSTALADO NA BANCADA. Decisao do dono, em 01/09/2026.
+
+O `powershell.exe` ja vem no Windows e fala com o `winscard.dll` sem instalar
+nada — foi assim que a etiqueta de verdade foi gravada a mao. Entao a ponte e um
+processo de powershell VIVO, aberto uma vez e mantido o turno inteiro:
+
+    JS  -> PS :  <numero> <COMANDO> [argumento em hexadecimal]
+    PS  -> JS :  #<numero> OK <hexadecimal>
+                 #<numero> ERRO <hexadecimal do recado>
+
+Os comandos sao cinco: PING, LEITORES, CONECTAR, APDU, DESCONECTAR (e SAIR).
+Tudo atravessa em hexadecimal, uma linha por vez, com numero de sequencia na
+frente. Quanto mais burra a ponte, menos ela quebra.
+
+UM PROCESSO SO, e nao um por comando: o contexto do PC/SC e a conexao com a
+etiqueta vivem DENTRO dele. Abrir um processo por pagina seria lento e perderia
+a conexao entre uma pagina e a seguinte.
+
+O lado PowerShell nao decide NADA: estabelece contexto, lista, conecta,
+transmite, desconecta. Regra de peca, de pagina e de fila mora no JavaScript,
+que se testa.
+
+O UNICO `npm install` que sobrou e o do @supabase/supabase-js, que e JavaScript
+puro e instala em qualquer Windows com Node, sem ferramenta de programacao
+nenhuma.
+
+
+AS ARMADILHAS DO POWERSHELL, TODAS MEDIDAS A MAO
+================================================
+
+Cada uma travou o console de verdade em 01/09/2026. Ha teste que reprova a volta
+de cada uma — daqui nao da para provar que o script RODA, so que ele continua
+escrito do jeito que passou:
+
+1. BLOCO DE TEXTO LONGO (@" ... "@) TRAVA O CONSOLE esperando o fim. O Add-Type
+   vem numa LINHA SO, com aspas simples.
+2. STRUCT ANINHADA CONFUNDE O New-Object. A SCardIO e declarada NO TOPO, fora da
+   classe, e se cria com [SCardIO]::new().
+3. Add-Type RODA UMA VEZ SO por processo. Protegido com
+   if (-not ("PcscPonte" -as [type])).
+4. NADA DE $_ : ele ja chegou mutilado como $. Em catch usa-se $Error[0]; para
+   bytes, [BitConverter]::ToString; para separar, [char]0 com RemoveEmptyEntries.
+5. NADA DE switch: o break dele quebra o switch, nao o laco de fora.
+6. Entre } e a instrucao seguinte NA MESMA LINHA vai ponto-e-virgula, senao o
+   PowerShell reclama de "Unexpected token".
+
+
+PARA OLHAR O SCRIPT COM OS PROPRIOS OLHOS
+=========================================
+
+O script vai para um arquivo temporario e o PowerShell e chamado com -File, de
+proposito: assim ele pode ser aberto e rodado A MAO na bancada quando algo der
+errado — que e exatamente como este caminho foi provado da primeira vez.
+
+Para escrever uma copia dele aqui na pasta:
+
+    node -e "import('./ponte-do-powershell.js').then(m=>require('fs').writeFileSync('ponte-pcsc.ps1',m.SCRIPT_DA_PONTE))"
+
+E entao, no Windows:
+
+    powershell -ExecutionPolicy Bypass -File .\ponte-pcsc.ps1
+
+Ele fica esperando comandos. Digite (com uma etiqueta encostada):
+
+    1 PING
+    2 LEITORES
+    3 CONECTAR <o nome do leitor em hexadecimal>
+    4 APDU FFB0000304
+    5 SAIR
+
+
+O QUE JA FOI PROVADO NO WINDOWS
+===============================
+
+A PONTE RODOU DE VERDADE, no Windows do dono, em 01/09/2026:
+
+    CONECTAR ...          -> OK  (na segunda tentativa: ver armadilha 4)
+    APDU FFB0000304       -> E11012009000   (NTAG213 de fabrica)
+    APDU FFCA000000       -> 5A4584461D4189 9000  (numero de serie)
+
+O protocolo numerado casou todas as respostas. O caminho inteiro — processo
+vivo, linha em hexadecimal, winscard.dll — esta provado.
+
+O QUE AINDA NAO FOI PROVADO: a GRAVACAO (FF D6) por este programa, e o motor
+completo rodando um lote. O primeiro teste de escrita no Windows tem de ser numa
+etiqueta descartavel.

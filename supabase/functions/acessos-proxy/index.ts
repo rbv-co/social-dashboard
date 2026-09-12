@@ -72,6 +72,8 @@ import {
   montarLinhasDeRecursos,
   separarNovasDasExistentes,
 } from "./normalizar-pastas-do-workdrive.js";
+// A lista dos endereços em que o app atende (a Central mudou de endereço).
+import { ENDERECO_PADRAO, corsDoPedido } from "../_shared/enderecos-do-app.js";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -106,9 +108,12 @@ const MS_AUTH_URL = "https://login.microsoftonline.com/consumers/oauth2/v2.0/aut
 const MS_TOKEN_URL = "https://login.microsoftonline.com/consumers/oauth2/v2.0/token";
 const GRAPH_BASE = "https://graph.microsoft.com/v1.0";
 
-const ALLOW_ORIGIN = "https://socialdashboard.rbvcompany.com";
+// O CORS que `json()` carimba é o PADRÃO. A origem certa de cada pedido é
+// escrita por cima na saída (ver o Deno.serve no fim do arquivo) — fazer isso
+// no fim, e não numa variável de módulo, é o que evita o cruzamento entre dois
+// pedidos de endereços diferentes atendidos ao mesmo tempo.
 const CORS = {
-  "Access-Control-Allow-Origin": ALLOW_ORIGIN,
+  "Access-Control-Allow-Origin": ENDERECO_PADRAO,
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   Vary: "Origin",
@@ -1610,8 +1615,7 @@ async function logZohoPastas(sb: any, quem: string | null, resultado: string, de
   }
 }
 
-Deno.serve(async (req: Request) => {
-  if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
+async function tratarPedido(req: Request): Promise<Response> {
   if (req.method !== "POST") return json({ error: "metodo_invalido" }, 405);
 
   // --- Auth gate ---
@@ -1712,4 +1716,20 @@ Deno.serve(async (req: Request) => {
     console.error("[acessos-proxy] erro acao", action, e instanceof Error ? e.message : e);
     return json({ error: "falha_interna", detalhe: e instanceof Error ? e.message : String(e) }, 500);
   }
+}
+
+// A PORTA. Aqui, e só aqui, a resposta recebe a origem certa.
+//
+// Antes o CORS era um endereço só, escrito na mão. Com a Central atendendo em
+// DOIS endereços, uma origem fixa faria o navegador barrar o módulo inteiro no
+// endereço que não fosse o escolhido — e o Controle de Acessos simplesmente
+// não abriria, sem erro visível na tela.
+Deno.serve(async (req: Request) => {
+  const cors = corsDoPedido(req, "POST, OPTIONS");
+  if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
+
+  const resp = await tratarPedido(req);
+  const headers = new Headers(resp.headers);
+  for (const [chave, valor] of Object.entries(cors)) headers.set(chave, valor);
+  return new Response(resp.body, { status: resp.status, statusText: resp.statusText, headers });
 });

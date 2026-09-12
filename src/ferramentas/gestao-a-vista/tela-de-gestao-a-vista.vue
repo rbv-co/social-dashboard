@@ -58,6 +58,20 @@
     </div>
     </template>
     </barra-de-topo>
+    <!-- A FAIXA DO RECORTE. Só aparece para quem é de time de venda: um total
+         menor sem explicação parece dado errado. -->
+    <div id="gv-recorte" class="gv-recorte" style="display:none"></div>
+    <!-- A FAIXA DO BLING FORA DO AR. Só aparece quando a busca falha, e não
+         apaga o painel: o telão fica numa TV, e tela em branco é pior que
+         número de cinco minutos atrás — desde que rotulado com a hora. -->
+    <div id="gv-aviso" class="gv-aviso" hidden>
+      <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+        <path d="M12 3 2 20h20L12 3z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+        <path d="M12 9v5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        <circle cx="12" cy="17.2" r="1.1" fill="currentColor"/>
+      </svg>
+      <div><strong id="gv-aviso-titulo"></strong><span id="gv-aviso-detalhe"></span></div>
+    </div>
     <div class="gv-board" id="gv-board">
       <div class="gv-loading-screen">
         <div class="gv-spinner"></div>
@@ -105,10 +119,27 @@ import BarraDeTopo from '../../compartilhado/barra-de-topo.vue'
 import { useRouter } from 'vue-router'
 import TourCoachmark from '../meta-ads/tour-coachmark.vue'
 import { TOUR_GV } from './tutorial-gv.js'
-import { sbClient, SUPABASE_URL, SUPABASE_ANON_KEY } from '../../compartilhado/conectar-no-banco-de-dados.js'
-import { hasPermission } from '../../compartilhado/controle-de-login-e-usuario.js'
+import { sbClient } from '../../compartilhado/conectar-no-banco-de-dados.js'
+import { hasPermission, estado } from '../../compartilhado/controle-de-login-e-usuario.js'
+// QUEM É DE TIME DE VENDA VÊ SÓ A LOJA DELA (pedido do dono, 12/08/2026).
+// MESMO módulo da Análise de Vendas — duas telas de venda recortando por conta
+// própria divergiriam no primeiro ajuste. ⚠️ Recorte de TELA: a edge
+// `bling-proxy` continua devolvendo todos os canais.
+import {
+  canaisDoEscopo, estaLimitada, filtrarPedidos, filtrarMapaDeCanais, fraseDoRecorte,
+} from '../../compartilhado/canais-de-venda-permitidos.js'
 import { adminToast } from '../../compartilhado/avisos.js'
-import { filtrarPedidosPorCanal, depositosVisiveis, prepararEstoque, statusSaldo, categoriasDisponiveis, DEPOSITOS } from './estoque-gv.js'
+import { ocultosNoPeriodo } from '../../compartilhado/canal-fechado.js'
+import { filtrarPedidosPorCanal, depositosVisiveis, prepararEstoque, statusSaldo, categoriasDisponiveis, normalizarDepositos, DEPOSITOS_SEMENTE } from './estoque-gv.js'
+import { montarLinhas, posicionarLinhas, alturaComum } from './velocimetro-gv.js'
+import { agruparCanais, estadoDoGrupo, alternarGrupo } from '../../compartilhado/grupo-do-canal.js'
+import { aplicarDataDaVenda } from '../../compartilhado/data-da-venda.js'
+// Quando a recarga de 5 minutos deve acontecer — e quando é só desperdício.
+import { decidirNoTique, decidirAoVoltar } from '../../compartilhado/recarga-automatica.js'
+// A PORTA DO BLING E O QUE FAZER QUANDO ELE NÃO RESPONDE. Mesmo módulo da
+// Análise de Vendas: em 12/08/2026 a chamada devolvia o corpo sem olhar o status
+// HTTP, e a tela mostrou R$ 0,00 por 17 horas como se não tivesse havido venda.
+import { chamarBling, paginasDoBling, ErroDoBling, textoDoAviso } from '../../compartilhado/chamada-do-bling.js'
 
 const router = useRouter()
 
@@ -134,10 +165,12 @@ const logoEscuroUrl = '/midia/LOGOTIPOBRENOBRANCO.png'
 // viraram onMounted/closeGestaoVista(cleanup+router) abaixo).
 //
 // Dependências externas resolvidas:
-//   - sbClient, SUPABASE_URL, SUPABASE_ANON_KEY  → import (conectar-no-banco-de-dados.js)
+//   - sbClient                                   → import (conectar-no-banco-de-dados.js)
+//     (a URL e a chave anônima moram dentro de chamada-do-bling.js agora)
 //   - adminToast                                  → import (avisos.js) — usado só na guarda
 //   - hasPermission                                → import (controle-de-login-e-usuario.js)
-//   - fmtR, fmtR0, escHtml, _fadeSwap, blingCall, blingPages → COPIADOS abaixo
+//   - chamarBling, paginasDoBling, textoDoAviso    → import (chamada-do-bling.js)
+//   - fmtR, fmtR0, escHtml, _fadeSwap → COPIADOS abaixo
 //     (helpers do legado que a Gestão à Vista usa e que ainda não têm um lugar
 //     compartilhado no Vue; ver legacy L3394, L6294, L4851, L5410, L6261, L6275).
 //   - setHomeBgTheme('sales') / o toggle de tela via getElementById+display /
@@ -170,38 +203,11 @@ function _fadeSwap(el,swapFn){
     },80);
   },190);
 }
-async function blingCall(endpoint,params){
-  const{data:{session}}=await sbClient.auth.getSession();
-  if(!session)throw new Error('Não autenticado');
-  const r=await fetch(SUPABASE_URL+'/functions/v1/bling-proxy',{
-    method:'POST',
-    headers:{
-      'Authorization':'Bearer '+session.access_token,
-      'apikey':SUPABASE_ANON_KEY,
-      'Content-Type':'application/json'
-    },
-    body:JSON.stringify({endpoint,params})
-  });
-  return r.json();
-}
-async function blingPages(endpoint,params){
-  const all=[];let page=1;
-  for(;;){
-    let items=[];
-    for(let retry=0;retry<3;retry++){
-      const resp=await blingCall(endpoint,{...params,pagina:page,limite:100});
-      const d=resp.data;
-      if(Array.isArray(d)&&d.length>0){items=d;break;}
-      if(retry<2)await new Promise(r=>setTimeout(r,700));
-    }
-    if(!items.length)break;
-    all.push(...items);
-    if(items.length<100)break;
-    page++;
-    if(page>10)break;
-  }
-  return all;
-}
+// A chamada e a paginação moram em src/compartilhado/chamada-do-bling.js — o
+// mesmo módulo que a Análise de Vendas usa. Aqui ficam só atalhos com o
+// sbClient já preso, para as chamadas desta tela não repetirem o argumento.
+const blingCall=(endpoint,params)=>chamarBling(sbClient,endpoint,params);
+const blingPages=(endpoint,params)=>paginasDoBling(sbClient,endpoint,params);
 
 /* ── Estado do módulo (legacy/index.html, verbatim) ── */
 let _gvSkuVersion=0;
@@ -229,7 +235,7 @@ async function _gvBuildSkuSlide(pedidos,pedidosPrev){
         // A LOJA VAI JUNTO. O Bling sempre mandou `loja.id` no pedido e esta
         // linha jogava fora — e sem ela não há como saber de qual loja é cada
         // vendedora, que é o que o time de venda precisa saber.
-        bgMappings.push({pedido_id:parseInt(p.id),vendor_id:vid,pedido_data:p.data?.slice(0,10)||null,qtd_itens:det?.itens?.length||1,loja_id:det?.loja?.id??p.loja?.id??null});
+        bgMappings.push({pedido_id:parseInt(p.id),vendor_id:vid,pedido_data:p.dataDoPedido||p.data?.slice(0,10)||null,qtd_itens:det?.itens?.length||1,loja_id:det?.loja?.id??p.loja?.id??null});
         if(!window._gvVendedoresCache[vid])newVendIds.add(vid);
         if(isNew)newVendorFound=true;
       }
@@ -267,7 +273,7 @@ async function _gvBuildSkuSlide(pedidos,pedidosPrev){
       const vid=resp.data?.vendedor?.id;
       if(vid){
         window._gvPedidoVendorMap[p.id]=vid;
-        bgMappings.push({pedido_id:parseInt(p.id),vendor_id:vid,pedido_data:p.data?.slice(0,10)||null,qtd_itens:resp.data?.itens?.length||1,loja_id:resp.data?.loja?.id??p.loja?.id??null});
+        bgMappings.push({pedido_id:parseInt(p.id),vendor_id:vid,pedido_data:p.dataDoPedido||p.data?.slice(0,10)||null,qtd_itens:resp.data?.itens?.length||1,loja_id:resp.data?.loja?.id??p.loja?.id??null});
         if(!window._gvVendedoresCache[vid])newVendIds.add(vid);
         newVendorFound=true;
       }
@@ -573,6 +579,31 @@ function updateGvUpdateStatus(){
   el.textContent=`ULT. ${fmt(_gvLastLoadTime)} · PRÓX. ${fmt(next)}`;
 }
 
+// ── A faixa de aviso do Bling ─────────────────────────────────────────────
+// Quem é admin lê a causa e o que fazer; todos os outros — e a TV da loja —
+// leem só que o número está velho, sem jargão na frente de cliente.
+// A hora vem de _gvLastLoadTime, que SÓ avança em busca que deu certo: carimbar
+// uma tentativa que falhou diria "números de agora" sobre número velho, que é
+// exatamente a mentira que esta faixa existe para desfazer.
+function ehAdminGv(){ return estado.role==='admin'||estado.is_superadmin===true; }
+function horaDoDadoGv(){
+  if(!_gvLastLoadTime)return null;
+  const p=n=>String(n).padStart(2,'0');
+  return `${p(_gvLastLoadTime.getHours())}:${p(_gvLastLoadTime.getMinutes())}`;
+}
+function mostrarAvisoGv(causa,tecnica){
+  const el=document.getElementById('gv-aviso');
+  if(!el)return;
+  const {titulo,detalhe}=textoDoAviso(causa,{ehAdmin:ehAdminGv(),horaDoDado:horaDoDadoGv(),tecnica});
+  document.getElementById('gv-aviso-titulo').textContent=titulo;
+  document.getElementById('gv-aviso-detalhe').textContent=detalhe?' '+detalhe:'';
+  el.hidden=false;
+}
+function esconderAvisoGv(){
+  const el=document.getElementById('gv-aviso');
+  if(el)el.hidden=true;
+}
+
 let _gvCurrentPeriod='today';
 let _gvLoadId=0; // cancela fetches anteriores imediatamente ao trocar período
 async function loadGestaoVistaData(period){
@@ -606,20 +637,95 @@ async function loadGestaoVistaData(period){
   let diPrev=subMes(di),dfPrev=subMes(df);
   if(period==='monthfull'||period==='sofar'){const _pme=new Date(y,m-1,0);dfPrev=`${_pme.getFullYear()}-${pad2(_pme.getMonth()+1)}-${pad2(_pme.getDate())}`; }
   try{
+    esconderAvisoGv();
     // Bling: chamadas SEQUENCIAIS para evitar rate limit (3 simultâneas causavam paginação incompleta)
-    const pedidos=await blingPages('pedidos/vendas',{dataInicial:di,dataFinal:df,'idsSituacoes[]':9});
+    const pedidosBrutos=await blingPages('pedidos/vendas',{dataInicial:di,dataFinal:df,'idsSituacoes[]':9});
     if(myLoad!==_gvLoadId)return;
-    const pedidosPrev=await blingPages('pedidos/vendas',{dataInicial:diPrev,dataFinal:dfPrev,'idsSituacoes[]':9}).catch(()=>[]);
+    const pedidosPrevBrutos=await blingPages('pedidos/vendas',{dataInicial:diPrev,dataFinal:dfPrev,'idsSituacoes[]':9}).catch(()=>[]);
     if(myLoad!==_gvLoadId)return;
+
+    // A VENDA CONTA NO DIA DA NOTA, não no dia do pedido. O Bling entrega por
+    // data do pedido; aqui os pedidos faturados em outro dia saem desta janela
+    // e os que foram faturados nela entram. Ver src/compartilhado/data-da-venda.js.
+    // O período anterior recebe o MESMO tratamento — senão o "vs. anterior"
+    // compararia uma régua com outra.
+    const ajuste=await aplicarDataDaVenda(sbClient,pedidosBrutos,di,df);
+    const ajustePrev=await aplicarDataDaVenda(sbClient,pedidosPrevBrutos,diPrev,dfPrev);
+    if(myLoad!==_gvLoadId)return;
+    // `let`, e não `const`: o recorte por time (mais abaixo) reatribui os dois.
+    let pedidos=ajuste.pedidos;
+    let pedidosPrev=ajustePrev.pedidos;
 
     // Supabase: pode rodar em paralelo (API diferente)
-    const[canais,metasRows]=await Promise.all([
-      sbClient.from('bling_lojas').select('loja_id,nome').then(r=>{const mp={};(r.data||[]).forEach(l=>mp[l.loja_id]=l.nome);return mp;}).catch(()=>({})),
-      sbClient.from('bling_metas').select('loja_id,meta_valor,daily_goals').eq('year',metaY).eq('month',metaM).then(r=>r.data||[]).catch(()=>[])
+    const[canaisCheio,metasRows,eqTimes,eqMembros,eqMembrosDeGrupo,depsRows,vincRows]=await Promise.all([
+      // O GRUPO vem na mesma leitura do nome (Peça 2, 20/08/2026): é ele que
+      // separa o menu de canais em Atacado / Varejo / Outros.
+      sbClient.from('bling_lojas').select('loja_id,nome,grupo,grupo_id,fechado_em').then(r=>{const mp={};_gvGrupoDoCanal={};_gvCanaisBrutos=r.data||[];_gvCanaisBrutos.forEach(l=>{mp[l.loja_id]=l.nome;_gvGrupoDoCanal[l.loja_id]=l.grupo||null;});return mp;}).catch(()=>({})),
+      sbClient.from('bling_metas').select('loja_id,meta_valor,daily_goals').eq('year',metaY).eq('month',metaM).then(r=>r.data||[]).catch(()=>[]),
+      // Os times e quem está neles. Falhar devolve lista vazia — e com ela quem
+      // é de time fica com `[]` (tela vazia com o motivo escrito), não com a
+      // empresa inteira. É o lado seguro do erro.
+      sbClient.from('equipes').select('id,nome,canal_loja_id').then(r=>r.data||[]).catch(()=>[]),
+      // `papel` entrou em 20/08: sem ele a supervisora é tratada como vendedora.
+      sbClient.from('equipes_membros').select('equipe_id,profile_id,papel').then(r=>r.data||[]).catch(()=>[]),
+      // A supervisora que mora no GRUPO (27/08/2026). O banco já reconhece este
+      // vínculo desde 21/08 (`meus_vinculos`); sem ler aqui, o banco liberaria e
+      // esta tela mostraria zero, sem erro. Falhar devolve lista vazia — o lado
+      // seguro do erro, igual aos vizinhos.
+      sbClient.from('canais_grupos_membros').select('grupo_id,profile_id,papel').then(r=>r.data||[]).catch(()=>[]),
+      // ── OS DEPÓSITOS, e o vínculo canal↔depósito ──
+      //
+      // ⚠️ ANTES ISTO ERA UMA LISTA ESCRITA À MÃO com três depósitos, e o Bling
+      // tem sete. Loja nova exigia mexer em código aqui, no coletor e no robô
+      // comercial. Agora vem de `bling_depositos`, alimentada pelo próprio
+      // Bling; falhar cai na semente, e a seção continua desenhando.
+      sbClient.from('bling_depositos').select('deposito_id,nome,ativo,padrao').then(r=>r.data||[]).catch(()=>[]),
+      // O vínculo EXPLÍCITO. É ele que resolve o caso em que o nome não resolve:
+      // o canal "Loja Santa Bárbara d'Oeste" corresponde ao depósito "Estoque
+      // Loja Sbo. Tivoli", e não há uma palavra em comum entre os dois.
+      sbClient.from('fabrica_lojas').select('deposito_id,canal_loja_id').then(r=>r.data||[]).catch(()=>[])
     ]);
 
+    // Guardados fora do ctx porque a seção de estoque desenha depois, por conta.
+    _gvDepositos = normalizarDepositos(depsRows);
+    _gvVinculoCanalDeposito = new Map((vincRows||[])
+      .filter(v=>v && v.canal_loja_id && v.deposito_id)
+      .map(v=>[String(v.canal_loja_id), Number(v.deposito_id)]));
+
+    // O RECORTE POR TIME. `null` = vê tudo, o caminho de 15 dos 17 perfis de
+    // hoje: para eles nada muda, inclusive os canais zerados continuam
+    // aparecendo como sempre apareceram (pedido do dono).
+    const meusCanais=canaisDoEscopo({
+      isSuperadmin:estado.is_superadmin,
+      escopoPorEquipe:estado.escopo_por_equipe,
+      meuId:estado.userId,
+      times:eqTimes,membros:eqMembros,
+      // A lista de canais com grupo: é ela que deixa a supervisora ver o grupo
+      // inteiro dos times onde supervisiona (Peça 3).
+      canais:_gvCanaisBrutos,
+      membrosDeGrupo:eqMembrosDeGrupo,
+    });
+    const canais=filtrarMapaDeCanais(canaisCheio,meusCanais);
+    if(estaLimitada(meusCanais)){
+      // Os pedidos das DUAS janelas: recortar só a atual faria o comparativo
+      // medir a loja dela contra a empresa inteira.
+      pedidos=filtrarPedidos(pedidos,meusCanais);
+      pedidosPrev=filtrarPedidos(pedidosPrev,meusCanais);
+    }
+
     const metasMap={};const dailyGoalsMap={};
-    metasRows.forEach(r=>{metasMap[r.loja_id]=r.meta_valor;if(r.daily_goals)dailyGoalsMap[r.loja_id]=r.daily_goals;});
+    // A META TAMBÉM É RECORTADA: sem isto a venda de UMA loja seria medida
+    // contra a meta de TODAS, e a vendedora apareceria sempre a 8% do alvo.
+    metasRows.filter(r=>!estaLimitada(meusCanais)||meusCanais.map(String).includes(String(r.loja_id)))
+      .forEach(r=>{metasMap[r.loja_id]=r.meta_valor;if(r.daily_goals)dailyGoalsMap[r.loja_id]=r.daily_goals;});
+
+    const faixaGv=document.getElementById('gv-recorte');
+    if(faixaGv){
+      const frase=fraseDoRecorte(meusCanais,canaisCheio);
+      faixaGv.textContent=frase;
+      faixaGv.style.display=frase?'block':'none';
+      faixaGv.classList.toggle('gv-recorte-vazio',estaLimitada(meusCanais)&&!meusCanais.length);
+    }
 
     // Vendedores: carrega do Supabase (instantâneo) + descobre mapeamentos faltantes via detalhe Bling
     if(!window._gvVendedoresCache)window._gvVendedoresCache={};
@@ -656,7 +762,7 @@ async function loadGestaoVistaData(period){
       if(_gvCanaisSel.size>0)_gvAplicaFiltro();
     });
     if(window._gvTimer)clearInterval(window._gvTimer);
-    window._gvTimer=setInterval(()=>loadGestaoVistaData(_gvCurrentPeriod),5*60*1000);
+    window._gvTimer=setInterval(()=>_gvTiqueDaRecarga(),5*60*1000);
     _gvLastLoadTime=new Date();
     updateGvUpdateStatus();
     if(!_gvStatusTimer)_gvStatusTimer=setInterval(updateGvUpdateStatus,60000);
@@ -664,7 +770,44 @@ async function loadGestaoVistaData(period){
     document.getElementById('gv-refresh-tag').textContent='PRÓX. '+String(brtNow.getHours()).padStart(2,'0')+':'+String((brtNow.getMinutes()+5)%60).padStart(2,'0');
   }catch(e){
     if(myLoad!==_gvLoadId)return;
-    board.innerHTML=`<div class="gv-loading-full">Erro ao carregar — ${escHtml(e.message)}</div>`;
+    // Erro que NAO veio do Bling e defeito nosso, e o texto tem de dizer isso —
+    // senao a tela manda consertar o fornecedor por bug da Central.
+    const causa=e instanceof ErroDoBling?e.causa:'erro-na-tela';
+    mostrarAvisoGv(causa,e?.tecnica||e?.message||'');
+    // Painel com número bom: FICA como está, só rotulado pela faixa. Sem número
+    // anterior (primeira carga), o recado ocupa o lugar — nunca R$ 0,00, que é a
+    // mentira mais cara que uma tela de dinheiro conta (padrão, item 9).
+    if(!_gvLastLoadTime){
+      const recado=document.getElementById('gv-aviso-titulo')?.textContent||'Não foi possível buscar as vendas agora.';
+      board.innerHTML=`<div class="gv-loading-full">${escHtml(recado)}</div>`;
+    }
+    // A recarga de 5 min é armada DENTRO do try (abaixo). Sem esta linha, uma
+    // falha na primeira carga deixava o telão sem nunca tentar de novo — era o
+    // que aconteceria com quem abrisse a tela durante o apagão de 12/08.
+    if(!window._gvTimer)window._gvTimer=setInterval(()=>_gvTiqueDaRecarga(),5*60*1000);
+  }
+}
+
+// ── A RECARGA DE 5 MINUTOS SÓ COM A ABA VISÍVEL (27/08/2026) ─────────────
+//
+// Medido no registro do gateway: uma conta sozinha fez 92% das 20.268 chamadas
+// ao Bling em 24h, ATIVA NAS 24 HORAS — uma aba esquecida recarregando esta
+// tela a noite inteira, em rajadas de ~266 chamadas de 5 em 5 minutos. Era o
+// que fazia o Bling limitar ~24% de tudo.
+//
+// Quem decide tem teste, em `recarga-automatica.js`. Aqui só se obedece.
+function _gvTiqueDaRecarga(){
+  if(decidirNoTique({visivel:!document.hidden})!=='recarregar')return;
+  loadGestaoVistaData(_gvCurrentPeriod);
+}
+// Voltou para a aba: se o que está na tela já passou dos 5 minutos, busca AGORA.
+// Sem isto, economizar chamada viraria mostrar dinheiro velho — que é o defeito
+// mais caro que uma tela destas conta (padrão, item 9).
+function _gvAoVoltarParaAAba(){
+  if(document.hidden)return;
+  const ms=_gvLastLoadTime?Date.now()-_gvLastLoadTime.getTime():null;
+  if(decidirAoVoltar({msDesdeAUltimaRecarga:ms,intervaloMs:5*60*1000})==='recarregar'){
+    loadGestaoVistaData(_gvCurrentPeriod);
   }
 }
 
@@ -686,13 +829,56 @@ function _gvUpdateCanalTrigger(){
   }
   t.textContent=n+' canais';
 }
+// O grupo de cada canal, lido de bling_lojas junto com o nome. Fora do ctx de
+// propósito: o ctx é reconstruído a cada render e isto muda só quando o dono
+// mexe na Config de Admin.
+let _gvGrupoDoCanal={};
+// As linhas cruas de bling_lojas ({loja_id, nome, grupo}). O escopo da
+// supervisora precisa da LISTA para poder ampliar para o grupo inteiro — sem
+// ela a regra não amplia, que é o lado seguro.
+let _gvCanaisBrutos=[];
+
 function _gvMontaChips(){
   const ctx=window._gvRenderCtx; if(!ctx)return;
+  // Loja fechada não entra no menu quando o período começa depois do
+  // fechamento — e volta sozinha quando o período alcança os dias em que ela
+  // operava. Ver `src/compartilhado/canal-fechado.js`.
+  const ocultos=ocultosNoPeriodo(_gvCanaisBrutos,ctx.di);
   const ids=Object.keys(ctx.canais||{}).map(id=>parseInt(id,10)).filter(id=>!isNaN(id))
+    .filter(id=>!ocultos.has(id))
     .sort((a,b)=>String(ctx.canais[a]||'').localeCompare(String(ctx.canais[b]||''),'pt-BR'));
   const chips=document.getElementById('gv-cf-chips'); if(!chips)return;
   const mk=(id,nome)=>`<button class="gv-cf-chip${(id===null?_gvCanaisSel.size===0:_gvCanaisSel.has(id))?' active':''}" data-id="${id===null?'':id}"><svg class="gv-cf-check" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span>${escHtml(nome)}</span></button>`;
-  chips.innerHTML=mk(null,'Todos os canais')+ids.map(id=>mk(id,ctx.canais[id]||('Canal #'+String(id).slice(-4)))).join('');
+  // ── O MENU AGRUPADO (Peça 2) ──────────────────────────────────────────────
+  // Um bloco por grupo do canal, com marcar/desmarcar todos em cada um. Canal
+  // sem grupo NÃO some: cai no bloco "Outros", no fim. Enquanto o dono não
+  // marcar nenhum canal na Config, existe só esse bloco — e o menu fica igual
+  // ao que sempre foi, sem cabeçalho nenhum.
+  const canais=ids.map(id=>({loja_id:id,nome:ctx.canais[id]||('Canal #'+String(id).slice(-4)),grupo:_gvGrupoDoCanal[id]||null}));
+  const baldes=agruparCanais(canais);
+  const temGrupo=baldes.some(b=>b.grupo!==null);
+  let html=mk(null,'Todos os canais');
+  for(const b of baldes){
+    if(temGrupo){
+      const est=estadoDoGrupo(b.canais,_gvCanaisSel);
+      const rotulo=est==='todos'?'desmarcar todos':'marcar todos';
+      html+=`<div class="gv-cf-grupo"><span class="gv-cf-grupo-nome">${escHtml(b.grupo||'Outros')}</span>`
+        +`<button type="button" class="gv-cf-grupo-todos" data-grupo="${escHtml(b.grupo||'')}">${rotulo}</button></div>`;
+    }
+    html+=b.canais.map(c=>mk(c.loja_id,c.nome)).join('');
+  }
+  chips.innerHTML=html;
+  chips.querySelectorAll('.gv-cf-grupo-todos').forEach(bt=>{
+    bt.onclick=(e)=>{
+      e.stopPropagation();   // o menu só fecha no clique-fora
+      const alvo=baldes.find(b=>(b.grupo||'')===bt.dataset.grupo);
+      if(!alvo)return;
+      _gvCanaisSel=alternarGrupo(alvo.canais,_gvCanaisSel);
+      _gvMontaChips();       // recria: os rótulos "marcar/desmarcar" mudaram
+      _gvUpdateCanalTrigger();
+      _gvAplicaFiltro({rebuildChips:false});
+    };
+  });
   chips.querySelectorAll('.gv-cf-chip').forEach(b=>{
     b.onclick=(e)=>{
       // não deixa o clique borbulhar pro handler de clique-fora (senão o menu fecharia
@@ -742,9 +928,13 @@ function _gvAplicaFiltro(opts){
 // e mostra uma coluna por depósito visível ao(s) canal(is) selecionado(s) no
 // filtro de canal (_gvCanaisSel), com busca/status/ordenação/limite próprios.
 let _gvEstoqueCache=null; // [{deposito_id,sku,produto,saldo}]
+// Os depósitos que existem, lidos de `bling_depositos` no carregamento. Nasce
+// com a semente para o caso de a seção desenhar antes da leitura terminar.
+let _gvDepositos=DEPOSITOS_SEMENTE.slice();
+let _gvVinculoCanalDeposito=new Map();
 async function _gvCarregaEstoque(){
   if(_gvEstoqueCache)return _gvEstoqueCache;
-  const ids=DEPOSITOS.map(d=>d.id);
+  const ids=_gvDepositos.map(d=>d.id);
   const size=1000, rows=[];
   try{
     for(let from=0;;from+=size){
@@ -814,7 +1004,11 @@ async function _gvRenderEstoque(){
   const itens=await _gvCarregaEstoque();
   const ctx=window._gvRenderCtx;
   const canaisNomes=[..._gvCanaisSel].map(id=>ctx&&ctx.canais&&ctx.canais[id]).filter(Boolean);
-  const deps=depositosVisiveis(canaisNomes);
+  // Passa os IDS dos canais junto com o nome: o vínculo explícito casa por id, e
+  // o nome é só a queda para a loja nova que ninguém cadastrou ainda.
+  const canaisComId=[..._gvCanaisSel].map(id=>({loja_id:String(id), nome:(ctx&&ctx.canais&&ctx.canais[id])||''}))
+                                     .filter(c=>c.nome);
+  const deps=depositosVisiveis(canaisComId,_gvDepositos,_gvVinculoCanalDeposito);
   // Popula as categorias no dropdown uma vez (categorias reais, já sem matéria-prima).
   const catChips=document.getElementById('gv-est-cat-chips');
   if(catChips&&catChips.childElementCount===0){
@@ -828,11 +1022,11 @@ async function _gvRenderEstoque(){
   };
   const limitSel=document.getElementById('gv-est-limit').value;
   const lim=limitSel==='all'?'all':parseInt(limitSel,10);
-  let mostrado=0,filtrado=0;
+  let mostrado=0,filtrado=0,ocultos=0;
   document.getElementById('gv-est-cols').innerHTML=deps.map(dep=>{
     const itensDep=itens.filter(it=>it.deposito_id===dep.id);
-    const { rows, full }=prepararEstoque(itensDep,{...opts,limit:lim});
-    mostrado+=rows.length; filtrado+=full;
+    const { rows, full, semClassificacao }=prepararEstoque(itensDep,{...opts,limit:lim});
+    mostrado+=rows.length; filtrado+=full; ocultos+=semClassificacao;
     const tot=rows.reduce((a,b)=>a+(Number(b.saldo)||0),0);
     const more=(lim!=='all'&&full>rows.length)?`<div class="gv-est-more">+ ${full-rows.length} ocultos · ${rows.length} de ${full}</div>`:'';
     const linhas=rows.length?rows.map(r=>{
@@ -842,7 +1036,12 @@ async function _gvRenderEstoque(){
     }).join(''):'<div class="gv-est-empty">Nada com esse filtro.</div>';
     return `<div class="gv-est-col"><div class="gv-est-colh"><span>${escHtml(dep.nome)}${dep.pulmao?' · pulmão':''}</span><span class="gv-est-tot">${tot} un.</span></div>${linhas}${more}</div>`;
   }).join('');
-  document.getElementById('gv-est-count').textContent=`mostrando ${mostrado} de ${filtrado} itens · ${deps.length} depósito(s)`;
+  // O que a tela esconde SEMPRE (matéria-prima e o que o coletor não classificou)
+  // aparece aqui como número. Sem isto a tela dá a entender que aquilo é tudo o
+  // que existe no depósito — e some calada com produto novo que a lista de
+  // classificação ainda não conhece.
+  const nota=ocultos?` · ${ocultos} oculto${ocultos>1?'s':''} (matéria-prima/sem classificação)`:'';
+  document.getElementById('gv-est-count').textContent=`mostrando ${mostrado} de ${filtrado} itens · ${deps.length} depósito(s)${nota}`;
 }
 
 function initGvBgAnim(){
@@ -935,8 +1134,13 @@ function renderGestaoVista(pedidos,canais,metasMap,hoje,diasMes,diaAtual,di,peri
   // ("Todos"), a união de TODOS os canais cadastrados (`canais`, bling_lojas)
   // com os que aparecem em `porCanal` (cobre id fora do cadastro, ex.: 0/"Outros").
   // Canal sem venda no período entra com v=0/cnt=0 — R$ 0,00, não some da tela.
+  // ⚠️ LOJA QUE FECHOU SAI DAQUI — mas o NOME dela continua em `canais`.
+  // O universo é a união do cadastro com quem teve pedido no período; tirar a
+  // linha do cadastro esconderia só o nome, e a loja fechada voltaria à tela
+  // como "Canal #7609". Ver `src/compartilhado/canal-fechado.js`.
+  const _ocultos=ocultosNoPeriodo(_gvCanaisBrutos,di);
   const universo=[...new Set([...Object.keys(canais),...Object.keys(porCanal)])]
-    .map(id=>parseInt(id,10)).filter(id=>!isNaN(id));
+    .map(id=>parseInt(id,10)).filter(id=>!isNaN(id)).filter(id=>!_ocultos.has(id));
   const displayIds=(_gvCanaisSel&&_gvCanaisSel.size)?[..._gvCanaisSel]:universo;
   const canaisArr=displayIds.map(id=>({id,nm:canais[id]||(id?'Canal #'+String(id).slice(-4):'Outros'),v:porCanal[id]||0,cnt:cntCanal[id]||0})).sort((a,b)=>b.v-a.v);
   const maxC=canaisArr[0]?.v||1;
@@ -1022,38 +1226,20 @@ function renderGestaoVista(pedidos,canais,metasMap,hoje,diasMes,diaAtual,di,peri
       ${line4svg}
     </svg>`;
   }
-  function smGauge(p,hexColor,uid,topText,vendidoStr,metaStr,desvioStr,desvioCol,canalNm,deltaStr,deltaCol){
+  // `linhas` já vem pronta de montarLinhas() (velocimetro-gv.js) e `alturaMinima`
+  // é a altura comum da rodada — é ela que faz todos os cards saírem do MESMO
+  // tamanho. O porquê das duas coisas está escrito no cabeçalho daquele módulo.
+  function smGauge(p,hexColor,uid,topText,linhas,alturaMinima){
     const R=34,cx=50,cy=44;
     const C=2*Math.PI*R,sweep=240/360*C,gap=C-sweep;
     const fill=p!==null?Math.min(Math.max(p,0),100)/100*sweep:0;
     const rot=150;
-    // As linhas abaixo do arco EMPILHAM: cada uma só ocupa espaço se existir.
-    //
-    // Antes cada linha tinha um y fixo (86, 99, 111, 123, 135) e o viewBox tinha
-    // altura fixa. Quando o canal não tem meta, as três do meio (vendido, meta,
-    // desvio) não renderizam — mas o delta continuava cravado lá embaixo e a altura
-    // continuava reservada, deixando um vão enorme entre o valor e a última linha.
-    // Era o caso mais comum na tela, porque a maioria dos canais não tem meta.
-    //
-    // O `vao` de cada linha é a distância até a PRÓXIMA. Os valores preservam o
-    // espaçamento original de quando todas as 5 aparecem — só o caso incompleto muda.
-    const linhas=[
-      vendidoStr&&{t:vendidoStr,tam:15, peso:500,fonte:'IBM Plex Mono,ui-monospace,monospace',      cor:'var(--text)',            vao:13},
-      metaStr   &&{t:metaStr,   tam:9,  peso:400,fonte:'Sora,sans-serif',cor:'var(--muted)',          vao:12},
-      desvioStr &&{t:desvioStr, tam:7.5,peso:700,fonte:'Sora,sans-serif',cor:desvioCol||'var(--muted)',vao:12},
-      canalNm   &&{t:canalNm,   tam:5.4,peso:400,fonte:'Sora,sans-serif',cor:'var(--muted)',          vao:12},
-      deltaStr  &&{t:deltaStr,  tam:7.5,peso:700,fonte:'Sora,sans-serif',cor:deltaCol||'var(--muted)', vao:0},
-    ].filter(Boolean);
-    let _y=86; // primeira linha logo abaixo do arco (que termina em y≈78)
-    const linhasSvg=linhas.map(l=>{
+    const posicionadas=posicionarLinhas(linhas,alturaMinima);
+    const linhasSvg=posicionadas.linhas.map(l=>{
       const mono=/Mono/.test(l.fonte);
-      const svg=`<text x="50" y="${_y}" text-anchor="middle" font-family="${l.fonte}" font-size="${l.tam}" font-weight="${l.peso}" fill="${l.cor}"${fitAttr(l.t,l.tam,92,mono)}>${l.t}</text>`;
-      _y+=l.vao;
-      return svg;
+      return `<text x="50" y="${l.y}" text-anchor="middle" font-family="${l.fonte}" font-size="${l.tam}" font-weight="${l.peso}" fill="${l.cor}"${fitAttr(l.t,l.tam,92,mono)}>${l.t}</text>`;
     }).join('');
-    // Altura sob medida: sobra só o respiro da última linha. Sem linha nenhuma, 62
-    // (só o arco), como era antes.
-    const vbH=linhas.length?_y+10:62;
+    const vbH=posicionadas.altura;
     const isGoal=p!==null&&p>=100;
     const gid=`sgliq_${uid}`;
     const neonFilter=isGoal?`drop-shadow(0 0 4px ${hexColor}) drop-shadow(0 0 12px ${hexColor}99)`:`drop-shadow(0 0 4px ${hexColor}88)`;
@@ -1097,7 +1283,11 @@ function renderGestaoVista(pedidos,canais,metasMap,hoje,diasMes,diaAtual,di,peri
 
   // ── SMALL GAUGES (per canal) ── um gauge por canal em EXIBIÇÃO (canaisArr já
   // é o universo completo — ver comentário acima), incluindo os com R$ 0,00.
-  const smGaugesHtml=canaisArr.map((c,i)=>{
+  // DUAS PASSADAS, de propósito: a 1ª monta as linhas de cada canal, a 2ª desenha.
+  // No meio delas sai a `alturaDosCards` — a maior altura da rodada, aplicada a
+  // TODOS. Sem isso, canal sem meta e sem histórico saía com menos da metade da
+  // altura do canal completo, e a fileira ficava desalinhada.
+  const cardsCanal=canaisArr.map((c,i)=>{
     const hasMeta=!!metasMap[c.id];
     const cMetaP=hasMeta?_calcMetaPeriodo(c.id,metasMap[c.id]/diasMes*diasTotMeta):null;
     const cPct=cMetaP?Math.round(c.v/cMetaP*100):null;
@@ -1106,17 +1296,21 @@ function renderGestaoVista(pedidos,canais,metasMap,hoje,diasMes,diaAtual,di,peri
     const cPrev=porCanalPrev[c.id]||0;
     const cDelta=cPrev>0?Math.round((c.v-cPrev)/cPrev*100):null;
     const cDesvio=cMetaP!=null?c.v-cMetaP:null;
-    const vendStr=hasMeta?fmtR0(c.v):null;
-    const metaTxt=cMetaP?'meta '+fmtR0(cMetaP):null;
-    const desvTxt=cDesvio!=null?(cDesvio>=0?'↑ R$':'↓ R$')+fmtK(Math.abs(cDesvio))+' da meta':null;
-    const desvCol=cDesvio!=null?(cDesvio>=0?'var(--green)':'var(--red)'):null;
-    const cDeltaTxt=cDelta!=null?(cDelta>=0?'↑':'↓')+Math.abs(cDelta)+'% vs '+prevLbl:null;
-    const cDeltaCol=cDelta!=null?(cDelta>=0?'var(--green)':'var(--red)'):null;
-    return `<div class="gv-sm-item">
-      <div class="gv-sm-item-lbl">${escHtml(c.nm)}</div>
-      ${smGauge(hasMeta?cPct:null,cHex,'gv-g-c'+i,topText,vendStr,metaTxt,desvTxt,desvCol,'',cDeltaTxt,cDeltaCol)}
-    </div>`;
-  }).join('');
+    const linhas=montarLinhas({
+      vendidoStr:hasMeta?fmtR0(c.v):null,
+      metaStr:cMetaP?'meta '+fmtR0(cMetaP):null,
+      desvioStr:cDesvio!=null?(cDesvio>=0?'↑ R$':'↓ R$')+fmtK(Math.abs(cDesvio))+' da meta':null,
+      desvioCol:cDesvio!=null?(cDesvio>=0?'var(--green)':'var(--red)'):null,
+      deltaStr:cDelta!=null?(cDelta>=0?'↑':'↓')+Math.abs(cDelta)+'% vs '+prevLbl:null,
+      deltaCol:cDelta!=null?(cDelta>=0?'var(--green)':'var(--red)'):null,
+    });
+    return {c,i,linhas,pct:hasMeta?cPct:null,hex:cHex,topText};
+  });
+  const alturaDosCards=alturaComum(cardsCanal.map(k=>k.linhas));
+  const smGaugesHtml=cardsCanal.map(k=>`<div class="gv-sm-item">
+      <div class="gv-sm-item-lbl">${escHtml(k.c.nm)}</div>
+      ${smGauge(k.pct,k.hex,'gv-g-c'+k.i,k.topText,k.linhas,alturaDosCards)}
+    </div>`).join('');
 
   // ── RANKINGS ──
   const canaisRank=canaisArr.map((c,i)=>{
@@ -1164,7 +1358,7 @@ function renderGestaoVista(pedidos,canais,metasMap,hoje,diasMes,diaAtual,di,peri
   document.getElementById('gv-board').innerHTML=`
     <div class="gv-left">
       <div class="gv-kpi-period">${period&&period!=='today'&&di?di.split('-').reverse().join('/')+' → '+(period==='monthfull'?`${String(diasMes).padStart(2,'0')}/${hoje.slice(5,7)}/${hoje.slice(0,4)}`:hoje.split('-').reverse().join('/')):'Dia '+diaAtual+' de '+diasMes+' · '+hoje.split('-').reverse().join('/')}</div>
-      <div class="gv-col-grid-label gv-main-chart-title" style="margin-bottom:2px;margin-top:4px;font-size:11.2px;font-weight:700;color:var(--text)">Vendas Geral</div>
+      <div class="gv-col-grid-label gv-main-chart-title" style="margin-bottom:2px;margin-top:4px;font-size:max(9px, calc(11.2px * var(--escala-texto, 1)));font-weight:700;color:var(--text)">Vendas Geral</div>
       <div class="gv-gauge-wrap" data-tour="gv-geral">
         <div class="gv-gauge-inner">
           ${bigGauge(pct,mainHex,'gv-g-main',mainLine1,mainLine2,mainLine3,line4parts)}
@@ -1380,6 +1574,9 @@ onMounted(() => {
   _gvCurrentPeriod = 'sofar'
   loadGestaoVistaData('sofar')
   if (localStorage.getItem('gv-autocycle') !== '0') gvAutoStart() // respeita o desligar do usuário
+  // Registrado aqui e removido no onUnmounted: ouvinte de `document` que
+  // sobrevive à saída da tela é vazamento, e este dispara uma busca inteira.
+  document.addEventListener('visibilitychange', _gvAoVoltarParaAAba)
 })
 
 // CRÍTICO: limpa TODOS os timers/intervals que a Gestão à Vista inicia, para não
@@ -1387,6 +1584,7 @@ onMounted(() => {
 // closeGestaoVista() cobre o caminho do botão "Voltar"; isto cobre qualquer
 // outra forma de sair da rota, ex.: navegação direto pela URL).
 onUnmounted(() => {
+  document.removeEventListener('visibilitychange', _gvAoVoltarParaAAba)
   _gvStopAllTimers()
 })
 </script>
@@ -1421,37 +1619,42 @@ onUnmounted(() => {
    no toggle de _gvInitEstoqueUI. Não mexe no telão fechado nem no ≤1024px
    (que já é overflow-y:auto por conta própria). */
 .tela-gestao-a-vista.is-est-open{height:auto;min-height:100vh;max-height:none;overflow-y:auto;}
-.tela-gestao-a-vista :deep(#gv-watermark){position:absolute;bottom:100px;right:32px;font-family:var(--fonte-principal);font-size:73px;font-weight:700;letter-spacing:8px;text-transform:uppercase;color:var(--text);opacity:.18;pointer-events:none;user-select:none;z-index:1;line-height:1;}
-.tela-gestao-a-vista :deep(.gv-topbar){display:flex;align-items:center;justify-content:space-between;padding:7px 28px;border-bottom:1px solid var(--border);background:var(--surface);position:sticky;top:0;z-index:10;}
-.tela-gestao-a-vista :deep(.gv-back){display:flex;align-items:center;gap:4px;font-family:var(--fonte-principal);font-size:10px;font-weight:600;color:var(--accent);cursor:pointer;background:none;border:none;padding:0;transition:opacity .15s;letter-spacing:.3px;text-transform:uppercase;}
+.tela-gestao-a-vista :deep(#gv-watermark){position:absolute;bottom:100px;right:32px;font-family:var(--fonte-principal);font-size:max(16px, calc(73px * var(--escala-texto, 1)));font-weight:700;letter-spacing:8px;text-transform:uppercase;color:var(--text);opacity:.18;pointer-events:none;user-select:none;z-index:1;line-height:1;}
+/* ⚠️ `.gv-topbar` e `.gv-topbar-brand` NÃO EXISTEM MAIS NO TEMPLATE: saíram em
+   06/08/2026, quando a faixa de controles passou para o encaixe de ações do
+   <barra-de-topo>. Hoje a barra é `.bt-barra > .bt-dir > .gv-controles`. Estas
+   regras ficam por serem inertes, mas mexer nelas não muda nada na tela —
+   quem for ajustar a margem do topo ajusta `.gv-controles` e a barra-de-topo. */
+.tela-gestao-a-vista :deep(.gv-topbar){display:flex;align-items:center;justify-content:space-between;padding:var(--gv-pad-y) var(--gv-pad-borda);border-bottom:1px solid var(--border);background:var(--surface);position:sticky;top:0;z-index:10;}
+.tela-gestao-a-vista :deep(.gv-back){display:flex;align-items:center;gap:4px;font-family:var(--fonte-principal);font-size:max(9px, calc(10px * var(--escala-texto, 1)));font-weight:600;color:var(--accent);cursor:pointer;background:none;border:none;padding:0;transition:opacity .15s;letter-spacing:.3px;text-transform:uppercase;}
 .tela-gestao-a-vista :deep(.gv-back:hover){opacity:.75;}
-.tela-gestao-a-vista :deep(.gv-tut-btn){display:flex;align-items:center;gap:5px;font-family:var(--fonte-principal);font-size:9px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--accent);cursor:pointer;background:transparent;border:1px solid var(--border);border-radius:999px;padding:4px 10px;transition:border-color .12s,background .12s;}
+.tela-gestao-a-vista :deep(.gv-tut-btn){display:flex;align-items:center;gap:5px;font-family:var(--fonte-principal);font-size:max(9px, calc(9px * var(--escala-texto, 1)));font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--accent);cursor:pointer;background:transparent;border:1px solid var(--border);border-radius:999px;padding:4px 10px;transition:border-color .12s,background .12s;}
 .tela-gestao-a-vista :deep(.gv-tut-btn:hover){border-color:var(--accent);}
 /* ── Tour interativo (coach-marks) — reusa ../meta-ads/tour-coachmark.vue; estilizado
    aqui com os tokens da GV via :deep() (o estudio.css é .fest-scoped e não vale aqui). */
 .tela-gestao-a-vista :deep(.tour-overlay){position:fixed;inset:0;z-index:9998;pointer-events:none;}
 .tela-gestao-a-vista :deep(.tour-realce){position:absolute;border:2px solid var(--accent);border-radius:10px;box-shadow:0 0 0 9999px rgba(3,6,10,.55);pointer-events:none;transition:top .15s ease,left .15s ease,width .15s ease,height .15s ease;}
 .tela-gestao-a-vista :deep(.tour-balao){position:absolute;z-index:9999;pointer-events:auto;width:min(320px,86vw);background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px;box-shadow:0 16px 40px rgba(0,0,0,.42);color:var(--text);}
-.tela-gestao-a-vista :deep(.tour-tit){font-family:var(--fonte-principal);font-weight:700;font-size:14px;color:var(--text);}
-.tela-gestao-a-vista :deep(.tour-txt){font-family:var(--fonte-principal);font-size:13px;line-height:1.45;color:var(--muted);margin:6px 0 12px;}
+.tela-gestao-a-vista :deep(.tour-tit){font-family:var(--fonte-principal);font-weight:700;font-size:max(9px, calc(14px * var(--escala-texto, 1)));color:var(--text);}
+.tela-gestao-a-vista :deep(.tour-txt){font-family:var(--fonte-principal);font-size:max(9px, calc(13px * var(--escala-texto, 1)));line-height:1.45;color:var(--muted);margin:6px 0 12px;}
 .tela-gestao-a-vista :deep(.tour-acoes){display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
-.tela-gestao-a-vista :deep(.tour-passo){font-family:var(--fonte-dados);font-size:11px;color:var(--muted);margin-right:auto;}
-.tela-gestao-a-vista :deep(.tour-balao .mini){font-family:var(--fonte-principal);font-size:12px;padding:6px 11px;border-radius:7px;border:1px solid var(--border);background:var(--surface2);color:var(--text);cursor:pointer;}
+.tela-gestao-a-vista :deep(.tour-passo){font-family:var(--fonte-dados);font-size:max(9px, calc(11px * var(--escala-texto, 1)));color:var(--muted);margin-right:auto;}
+.tela-gestao-a-vista :deep(.tour-balao .mini){font-family:var(--fonte-principal);font-size:max(9px, calc(12px * var(--escala-texto, 1)));padding:6px 11px;border-radius:7px;border:1px solid var(--border);background:var(--surface2);color:var(--text);cursor:pointer;}
 .tela-gestao-a-vista :deep(.tour-balao .mini:disabled){opacity:.4;cursor:default;}
-.tela-gestao-a-vista :deep(.tour-balao .cmd){font-family:var(--fonte-principal);font-size:12px;font-weight:600;padding:6px 14px;border-radius:7px;border:1px solid var(--accent);background:var(--accent);color:var(--sobre-cor);cursor:pointer;}
+.tela-gestao-a-vista :deep(.tour-balao .cmd){font-family:var(--fonte-principal);font-size:max(9px, calc(12px * var(--escala-texto, 1)));font-weight:600;padding:6px 14px;border-radius:7px;border:1px solid var(--accent);background:var(--accent);color:var(--sobre-cor);cursor:pointer;}
 @media (prefers-reduced-motion:reduce){ .tela-gestao-a-vista :deep(.tour-realce){transition:none;} }
-.tela-gestao-a-vista :deep(.gv-brand-tag){font-family:var(--fonte-principal);font-size:10px;font-weight:600;letter-spacing:3px;text-transform:uppercase;color:var(--text);opacity:.6;line-height:1;}
-.tela-gestao-a-vista :deep(.gv-perf-tag){font-family:var(--fonte-principal);font-size:13.5px;font-weight:700;letter-spacing:6px;text-transform:uppercase;color:var(--text);opacity:1;line-height:1.2;}
+.tela-gestao-a-vista :deep(.gv-brand-tag){font-family:var(--fonte-principal);font-size:max(9px, calc(10px * var(--escala-texto, 1)));font-weight:600;letter-spacing:3px;text-transform:uppercase;color:var(--text);opacity:.6;line-height:1;}
+.tela-gestao-a-vista :deep(.gv-perf-tag){font-family:var(--fonte-principal);font-size:max(9px, calc(13.5px * var(--escala-texto, 1)));font-weight:700;letter-spacing:6px;text-transform:uppercase;color:var(--text);opacity:1;line-height:1.2;}
 .tela-gestao-a-vista :deep(.gv-clock-wrap){text-align:right;}
 /* Relógio menor (era 28px). O bloco .gv-topbar-controls quebrava em DUAS linhas
    entre 1280 e 1440 — a faixa de um notebook — e o relógio era o item mais
    largo depois dos botões de período. Medido: com 18px volta a caber em uma. */
-.tela-gestao-a-vista :deep(.gv-clock-time){font-family:var(--fonte-dados);font-size:18px;font-weight:400;letter-spacing:3px;color:var(--text);line-height:1;}
-.tela-gestao-a-vista :deep(.gv-clock-date){font-family:var(--fonte-principal);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-top:3px;}
-.tela-gestao-a-vista :deep(.gv-update-status){font-family:var(--fonte-principal);font-size:8px;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);opacity:.45;margin-top:4px;text-align:right;}
-.tela-gestao-a-vista :deep(.gv-cf-lbl){font-family:var(--fonte-principal);font-size:8px;letter-spacing:4px;text-transform:uppercase;color:var(--muted);}
+.tela-gestao-a-vista :deep(.gv-clock-time){font-family:var(--fonte-dados);font-size:max(16px, calc(18px * var(--escala-texto, 1)));font-weight:400;letter-spacing:3px;color:var(--text);line-height:1;}
+.tela-gestao-a-vista :deep(.gv-clock-date){font-family:var(--fonte-principal);font-size:max(9px, calc(8px * var(--escala-texto, 1)));letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-top:3px;}
+.tela-gestao-a-vista :deep(.gv-update-status){font-family:var(--fonte-principal);font-size:max(9px, calc(8px * var(--escala-texto, 1)));letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);opacity:.45;margin-top:4px;text-align:right;}
+.tela-gestao-a-vista :deep(.gv-cf-lbl){font-family:var(--fonte-principal);font-size:max(9px, calc(8px * var(--escala-texto, 1)));letter-spacing:4px;text-transform:uppercase;color:var(--muted);}
 .tela-gestao-a-vista :deep(.gv-cf-dd){position:relative;}
-.tela-gestao-a-vista :deep(.gv-cf-trigger){font-family:var(--fonte-principal);font-size:11px;letter-spacing:.3px;padding:6px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);color:var(--text);cursor:pointer;display:inline-flex;align-items:center;gap:10px;min-width:170px;justify-content:space-between;transition:border-color .12s ease,background .12s ease;}
+.tela-gestao-a-vista :deep(.gv-cf-trigger){font-family:var(--fonte-principal);font-size:max(9px, calc(11px * var(--escala-texto, 1)));letter-spacing:.3px;padding:0 var(--sp-3);border:1px solid var(--border);background:var(--surface2);color:var(--text);cursor:pointer;display:inline-flex;align-items:center;gap:10px;min-width:170px;justify-content:space-between;transition:border-color .12s ease,background .12s ease;}
 .tela-gestao-a-vista :deep(.gv-cf-trigger:hover){border-color:var(--accent);}
 .tela-gestao-a-vista :deep(.gv-cf-dd.open .gv-cf-trigger){border-color:var(--accent);background:var(--surface);}
 .tela-gestao-a-vista :deep(.gv-cf-trigger-txt){font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
@@ -1460,7 +1663,20 @@ onUnmounted(() => {
 .tela-gestao-a-vista :deep(.gv-cf-menu){position:absolute;top:calc(100% + 6px);left:0;z-index:40;min-width:230px;max-height:min(60vh,360px);overflow-y:auto;background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:0 14px 34px rgba(0,0,0,.30);padding:6px;}
 .tela-gestao-a-vista :deep(.gv-cf-menu[hidden]){display:none;}
 .tela-gestao-a-vista :deep(.gv-cf-chips){display:flex;flex-direction:column;gap:2px;}
-.tela-gestao-a-vista :deep(.gv-cf-chip){font-family:var(--fonte-principal);font-size:12px;padding:8px 10px;border-radius:7px;border:1px solid transparent;background:none;color:var(--text);cursor:pointer;display:flex;align-items:center;gap:9px;text-align:left;width:100%;transition:background .1s ease;}
+/* ── CABEÇALHO DE GRUPO NO MENU DE CANAIS (Peça 2, 20/08/2026) ──────────────
+   Só aparece quando existe ao menos um canal com grupo: enquanto o dono não
+   marcar nada na Config de Admin, o menu fica idêntico ao que sempre foi. */
+.tela-gestao-a-vista :deep(.gv-cf-grupo){display:flex;align-items:center;justify-content:space-between;gap:var(--sp-2);padding:var(--sp-2) var(--sp-2) var(--sp-1);margin-top:var(--sp-1);border-top:1px solid var(--border);}
+.tela-gestao-a-vista :deep(.gv-cf-grupo:first-child){border-top:none;margin-top:0;}
+.tela-gestao-a-vista :deep(.gv-cf-grupo-nome){font-family:var(--fonte-principal);font-size:max(9px, calc(10px * var(--escala-texto, 1)));font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);overflow-wrap:anywhere;}
+.tela-gestao-a-vista :deep(.gv-cf-grupo-todos){flex:0 0 auto;font-family:var(--fonte-principal);font-size:max(9px, calc(10px * var(--escala-texto, 1)));font-weight:600;color:var(--accent);background:none;border:1px solid var(--border);border-radius:var(--radius-md);padding:var(--sp-1) var(--sp-2);cursor:pointer;white-space:nowrap;transition:border-color .12s ease;}
+.tela-gestao-a-vista :deep(.gv-cf-grupo-todos:hover){border-color:var(--accent);}
+/* Alvo do dedo de 40px sem engordar o botão — receita do PADRAO-DA-CENTRAL. */
+@media(max-width:640px){
+  .tela-gestao-a-vista :deep(.gv-cf-grupo-todos){position:relative;}
+  .tela-gestao-a-vista :deep(.gv-cf-grupo-todos)::after{content:'';position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);height:40px;}
+}
+.tela-gestao-a-vista :deep(.gv-cf-chip){font-family:var(--fonte-principal);font-size:max(9px, calc(12px * var(--escala-texto, 1)));padding:8px 10px;border-radius:7px;border:1px solid transparent;background:none;color:var(--text);cursor:pointer;display:flex;align-items:center;gap:9px;text-align:left;width:100%;transition:background .1s ease;}
 .tela-gestao-a-vista :deep(.gv-cf-chip:hover){background:color-mix(in srgb,var(--accent) 13%,transparent);}
 .tela-gestao-a-vista :deep(.gv-cf-check){opacity:0;color:var(--accent);flex-shrink:0;}
 .tela-gestao-a-vista :deep(.gv-cf-chip.active){color:var(--accent);font-weight:700;}
@@ -1472,7 +1688,7 @@ onUnmounted(() => {
    filho fica do tamanho do conteúdo e quebra por dentro em vez de usar a folga
    que está bem ali. Agora ele cresce até o que houver. Medido em 1280/1366/
    1440/1920. */
-.tela-gestao-a-vista :deep(.gv-topbar-controls){display:flex;align-items:center;justify-content:flex-end;gap:12px;flex-wrap:wrap;flex:1 1 auto;min-width:0;}
+.tela-gestao-a-vista :deep(.gv-topbar-controls){display:flex;align-items:center;justify-content:flex-end;gap:var(--sp-3);flex-wrap:wrap;flex:1 1 auto;min-width:0;}
 /* ── Topbar do notebook (1025–1500px) ──────────────────────────────────────
    Nesta faixa a barra pedia ~1.390px de conteúdo: marca 544 + períodos 493 +
    canal 218 + relógio 110. O filtro de canal caía para uma segunda linha, e a
@@ -1489,21 +1705,30 @@ onUnmounted(() => {
   .tela-gestao-a-vista :deep(.gv-cf-dd),.tela-gestao-a-vista :deep(.gv-cf-lbl){flex-shrink:0;}
   /* O bloco da marca cede primeiro: os dois títulos são o que menos se perde. */
   .tela-gestao-a-vista :deep(.gv-topbar-brand){min-width:0;}
-  .tela-gestao-a-vista :deep(.gv-perf-tag){letter-spacing:3px;font-size:12px;}
+  .tela-gestao-a-vista :deep(.gv-perf-tag){letter-spacing:3px;font-size:max(9px, calc(12px * var(--escala-texto, 1)));}
   .tela-gestao-a-vista :deep(.gv-brand-tag){letter-spacing:1.5px;}
 }
 /* Board layout — 2-column grid: left=gauge panel, right=canal gauges + rankings */
+.tela-gestao-a-vista :deep(.gv-recorte){margin:0 0 10px;padding:9px 12px;border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:8px;background:var(--surface2);color:var(--muted);font-family:var(--fonte-principal);font-size:max(9px, calc(12px * var(--escala-texto, 1)));line-height:1.45;}
+.tela-gestao-a-vista :deep(.gv-recorte-vazio){border-left-color:var(--orange,#d97706);color:var(--orange,#d97706);}
+/* Faixa do Bling fora do ar. Fundo por color-mix com --orange (o tema cuida dos
+   dois lados) e TEXTO em --text: o laranja do tema claro sobre esse fundo dá
+   4,14 de contraste, abaixo do mínimo. A cor é o sinal; o texto é para ler. */
+.tela-gestao-a-vista :deep(.gv-aviso){display:flex;align-items:center;gap:var(--sp-2);margin:0 0 10px;padding:9px 12px;border:1px solid color-mix(in srgb, var(--orange) 38%, var(--surface));border-left:3px solid var(--orange);border-radius:var(--radius-md);background:color-mix(in srgb, var(--orange) 10%, var(--surface));color:var(--text);font-family:var(--fonte-principal);font-size:max(9px, calc(12px * var(--escala-texto, 1)));line-height:1.45;overflow-wrap:anywhere;}
+.tela-gestao-a-vista :deep(.gv-aviso[hidden]){display:none;}
+.tela-gestao-a-vista :deep(.gv-aviso svg){flex:0 0 auto;color:var(--orange);}
+.tela-gestao-a-vista :deep(.gv-aviso span){color:var(--muted);}
 .tela-gestao-a-vista :deep(.gv-board){flex:1;display:grid;grid-template-columns:480px 1fr;gap:1px;background:var(--border);overflow:hidden;min-height:0;position:relative;z-index:2;backdrop-filter:none;}
-.tela-gestao-a-vista :deep(.gv-left){background:var(--bg);display:flex;flex-direction:column;align-items:center;padding:8px 22px;gap:0;overflow:hidden;justify-content:space-between;}
+.tela-gestao-a-vista :deep(.gv-left){background:var(--bg);display:flex;flex-direction:column;align-items:center;padding:var(--gv-pad-y) var(--gv-pad-borda);gap:0;overflow:hidden;justify-content:space-between;}
 /* align-items:safe center — quando o conteúdo é mais alto que a área (telão/dev-tv com
    muitos canais), 'safe' alinha pelo TOPO em vez de centralizar e cortar o topo do
    velocímetro/rótulo (o overflow:hidden cortava o topo). Ao caber, se comporta como center. */
 .tela-gestao-a-vista :deep(.gv-gauge-wrap){flex:1;min-height:0;max-height:min(50vh,420px);width:100%;display:flex;align-items:safe center;justify-content:center;}
 .tela-gestao-a-vista :deep(.gv-gauge-inner){width:100%;max-width:460px;aspect-ratio:1;}
 .tela-gestao-a-vista :deep(.gv-right){display:grid;grid-template-rows:55fr 45fr;gap:1px;background:var(--border);overflow:hidden;min-height:0;}
-.tela-gestao-a-vista :deep(.gv-canal-panel){background:var(--bg);padding:7px 12px;display:flex;flex-direction:column;overflow:hidden;}
+.tela-gestao-a-vista :deep(.gv-canal-panel){background:var(--bg);padding:var(--gv-pad-y) var(--gv-pad-x);display:flex;flex-direction:column;overflow:hidden;}
 .tela-gestao-a-vista :deep(.gv-canal-head){display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px;}
-.tela-gestao-a-vista :deep(.gv-canal-vermais){font-family:var(--fonte-principal);font-size:10px;font-weight:600;letter-spacing:.3px;padding:4px 11px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--accent);cursor:pointer;flex-shrink:0;white-space:nowrap;transition:border-color .12s ease;}
+.tela-gestao-a-vista :deep(.gv-canal-vermais){font-family:var(--fonte-principal);font-size:max(9px, calc(10px * var(--escala-texto, 1)));font-weight:600;letter-spacing:.3px;display:inline-flex;align-items:center;justify-content:center;padding:0 var(--sp-3);border:1px solid var(--border);background:var(--surface2);color:var(--accent);cursor:pointer;flex-shrink:0;white-space:nowrap;transition:border-color .12s ease;}
 .tela-gestao-a-vista :deep(.gv-canal-vermais:hover){border-color:var(--accent);}
 /* Colapsado: uma linha horizontal de ATÉ 5 velocímetros (largura fixa = 1/5, normalizada) */
 .tela-gestao-a-vista :deep(.gv-canal-scroll){flex:1;min-height:0;overflow:hidden;display:flex;align-items:safe center;scrollbar-width:thin;}
@@ -1518,40 +1743,43 @@ onUnmounted(() => {
 .tela-gestao-a-vista :deep(.gv-canal-panel.gv-canal-expandido .gv-canal-grid > .gv-sm-item){flex:none;max-width:none;}
 .tela-gestao-a-vista :deep(.gv-canal-panel.gv-canal-expandido .gv-canal-grid > .gv-sm-item:nth-child(n+6)){display:flex;}
 .tela-gestao-a-vista :deep(.gv-sm-item){display:flex;flex-direction:column;align-items:center;gap:2px;}
-.tela-gestao-a-vista :deep(.gv-sm-item-lbl){font-family:var(--fonte-principal);font-size:14px;font-weight:700;letter-spacing:.5px;color:var(--muted);text-align:center;line-height:1.3;overflow-wrap:break-word;word-break:break-word;max-width:100%;}
-.tela-gestao-a-vista :deep(.gv-sm-item-val){font-family:var(--fonte-dados);font-size:13px;color:var(--text);}
-.tela-gestao-a-vista :deep(.gv-sm-item-delta){font-family:var(--fonte-principal);font-size:9px;font-weight:700;letter-spacing:.3px;text-align:center;}
+/* min-height de DUAS linhas: "Site" (uma linha) e "Mercado Livre" (duas) deixavam
+   os cards da fileira com alturas diferentes e os arcos desalinhados. A caixa é
+   sempre de duas linhas e o nome curto fica centrado nela. */
+.tela-gestao-a-vista :deep(.gv-sm-item-lbl){font-family:var(--fonte-principal);font-size:max(9px, calc(14px * var(--escala-texto, 1)));font-weight:700;letter-spacing:.5px;color:var(--muted);text-align:center;line-height:1.3;min-height:2.6em;display:flex;align-items:center;justify-content:center;overflow-wrap:anywhere;max-width:100%;}
+.tela-gestao-a-vista :deep(.gv-sm-item-val){font-family:var(--fonte-dados);font-size:max(9px, calc(13px * var(--escala-texto, 1)));color:var(--text);}
+.tela-gestao-a-vista :deep(.gv-sm-item-delta){font-family:var(--fonte-principal);font-size:max(9px, calc(9px * var(--escala-texto, 1)));font-weight:700;letter-spacing:.3px;text-align:center;}
 .tela-gestao-a-vista :deep(.gv-sm-item-delta.up){color:var(--green);}
 .tela-gestao-a-vista :deep(.gv-sm-item-delta.dn){color:var(--red);}
-.tela-gestao-a-vista :deep(.gv-sm-item-desvio){font-family:var(--fonte-principal);font-size:9px;color:var(--muted);text-align:center;}
-.tela-gestao-a-vista :deep(.gv-rank-delta){font-family:var(--fonte-principal);font-size:10px;font-weight:700;flex-shrink:0;margin-right:2px;}
+.tela-gestao-a-vista :deep(.gv-sm-item-desvio){font-family:var(--fonte-principal);font-size:max(9px, calc(9px * var(--escala-texto, 1)));color:var(--muted);text-align:center;}
+.tela-gestao-a-vista :deep(.gv-rank-delta){font-family:var(--fonte-principal);font-size:max(9px, calc(10px * var(--escala-texto, 1)));font-weight:700;flex-shrink:0;margin-right:2px;}
 .tela-gestao-a-vista :deep(.gv-rank-delta.up){color:var(--green);}
 .tela-gestao-a-vista :deep(.gv-rank-delta.dn){color:var(--red);}
-.tela-gestao-a-vista :deep(.gv-rank-desvio){font-family:var(--fonte-principal);font-size:10px;font-weight:600;flex-shrink:0;}
+.tela-gestao-a-vista :deep(.gv-rank-desvio){font-family:var(--fonte-principal);font-size:max(9px, calc(10px * var(--escala-texto, 1)));font-weight:600;flex-shrink:0;}
 .tela-gestao-a-vista :deep(.gv-rank-desvio.pos){color:var(--green);}
 .tela-gestao-a-vista :deep(.gv-rank-desvio.neg){color:var(--red);}
 .tela-gestao-a-vista :deep(.gv-rankings){display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--border);overflow:hidden;min-height:0;}
-.tela-gestao-a-vista :deep(.gv-rank-panel){background:var(--bg);padding:7px 12px;display:flex;flex-direction:column;overflow:hidden;}
+.tela-gestao-a-vista :deep(.gv-rank-panel){background:var(--bg);padding:var(--gv-pad-y) var(--gv-pad-x);display:flex;flex-direction:column;overflow:hidden;}
 .tela-gestao-a-vista :deep(.gv-rank-scroll){flex:1;overflow:hidden;min-height:0;position:relative;}
 .tela-gestao-a-vista :deep(.gv-rank-scroll-inner){display:flex;flex-direction:column;}
 @keyframes gvRankUp{0%,8%{transform:translateY(0)}92%,100%{transform:translateY(var(--gv-scroll-h,0px))}}
 .tela-gestao-a-vista :deep(.gv-rank-scroll-inner.scrolling){animation:gvRankUp var(--gv-scroll-dur,20s) ease-in-out infinite alternate;}
-.tela-gestao-a-vista :deep(.gv-col-grid-label){font-family:var(--fonte-principal);font-size:8px;letter-spacing:4px;text-transform:uppercase;color:var(--muted);margin-bottom:8px;padding-bottom:6px;flex-shrink:0;border-bottom:1px solid var(--border);}
-.tela-gestao-a-vista :deep(.gv-main-kpi){font-family:var(--fonte-principal);font-size:9px;letter-spacing:.3px;text-transform:uppercase;color:var(--muted);display:grid;grid-template-columns:repeat(3,1fr);gap:0;flex-shrink:0;border:1px solid var(--border);width:100%;}
+.tela-gestao-a-vista :deep(.gv-col-grid-label){font-family:var(--fonte-principal);font-size:max(9px, calc(8px * var(--escala-texto, 1)));letter-spacing:4px;text-transform:uppercase;color:var(--muted);margin-bottom:8px;padding-bottom:6px;flex-shrink:0;border-bottom:1px solid var(--border);}
+.tela-gestao-a-vista :deep(.gv-main-kpi){font-family:var(--fonte-principal);font-size:max(9px, calc(9px * var(--escala-texto, 1)));letter-spacing:.3px;text-transform:uppercase;color:var(--muted);display:grid;grid-template-columns:repeat(3,1fr);gap:0;flex-shrink:0;border:1px solid var(--border);width:100%;}
 .tela-gestao-a-vista :deep(.gv-main-kpi-item){display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:8px 6px;text-align:center;border-right:1px solid var(--border);border-bottom:1px solid var(--border);min-width:0;}
 .tela-gestao-a-vista :deep(.gv-main-kpi-item:nth-child(3n)){border-right:none;}
 .tela-gestao-a-vista :deep(.gv-main-kpi-item:nth-child(n+4)){border-bottom:none;}
-.tela-gestao-a-vista :deep(.gv-main-kpi-v){font-family:var(--fonte-dados);font-size:20px;font-weight:500;color:var(--text);white-space:nowrap;max-width:100%;}
-.tela-gestao-a-vista :deep(.gv-main-kpi-l){font-family:var(--fonte-principal);font-size:9px;letter-spacing:.5px;text-transform:uppercase;color:var(--muted);}
-.tela-gestao-a-vista :deep(.gv-main-kpi-d){font-family:var(--fonte-principal);font-size:9px;font-weight:700;letter-spacing:.2px;white-space:nowrap;}
-.tela-gestao-a-vista :deep(.gv-loading-full){grid-column:1/-1;display:flex;align-items:center;justify-content:center;font-family:var(--fonte-principal);font-size:14px;letter-spacing:4px;text-transform:uppercase;color:var(--muted);opacity:.4;}
+.tela-gestao-a-vista :deep(.gv-main-kpi-v){font-family:var(--fonte-dados);font-size:max(16px, calc(20px * var(--escala-texto, 1)));font-weight:500;color:var(--text);white-space:nowrap;max-width:100%;}
+.tela-gestao-a-vista :deep(.gv-main-kpi-l){font-family:var(--fonte-principal);font-size:max(9px, calc(9px * var(--escala-texto, 1)));letter-spacing:.5px;text-transform:uppercase;color:var(--muted);}
+.tela-gestao-a-vista :deep(.gv-main-kpi-d){font-family:var(--fonte-principal);font-size:max(9px, calc(9px * var(--escala-texto, 1)));font-weight:700;letter-spacing:.2px;white-space:nowrap;}
+.tela-gestao-a-vista :deep(.gv-loading-full){grid-column:1/-1;display:flex;align-items:center;justify-content:center;font-family:var(--fonte-principal);font-size:max(9px, calc(14px * var(--escala-texto, 1)));letter-spacing:4px;text-transform:uppercase;color:var(--muted);opacity:.4;}
 @keyframes gvSpin{to{transform:rotate(360deg)}}
 .tela-gestao-a-vista :deep(.gv-loading-screen){grid-column:1/-1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;min-height:60vh;}
 .tela-gestao-a-vista :deep(.gv-spinner){width:48px;height:48px;border-radius:50%;border:3px solid var(--border);border-top-color:var(--accent);animation:gvSpin .9s linear infinite;}
-.tela-gestao-a-vista :deep(.gv-loading-lbl){font-family:var(--fonte-principal);font-size:10px;letter-spacing:4px;text-transform:uppercase;color:var(--muted);}
+.tela-gestao-a-vista :deep(.gv-loading-lbl){font-family:var(--fonte-principal);font-size:max(9px, calc(10px * var(--escala-texto, 1)));letter-spacing:4px;text-transform:uppercase;color:var(--muted);}
 /* KPI col */
-.tela-gestao-a-vista :deep(.gv-kpi-period){font-family:var(--fonte-principal);font-size:8px;letter-spacing:4px;text-transform:uppercase;color:var(--muted);margin-bottom:3px;flex-shrink:0;}
-.tela-gestao-a-vista :deep(.gv-big-num){font-family:var(--fonte-dados);font-size:58px;font-weight:600;letter-spacing:-2px;line-height:1;transition:color .6s,text-shadow .6s;font-variant-numeric:tabular-nums;}
+.tela-gestao-a-vista :deep(.gv-kpi-period){font-family:var(--fonte-principal);font-size:max(9px, calc(8px * var(--escala-texto, 1)));letter-spacing:4px;text-transform:uppercase;color:var(--muted);margin-bottom:3px;flex-shrink:0;}
+.tela-gestao-a-vista :deep(.gv-big-num){font-family:var(--fonte-dados);font-size:max(16px, calc(58px * var(--escala-texto, 1)));font-weight:600;letter-spacing:-2px;line-height:1;transition:color .6s,text-shadow .6s;font-variant-numeric:tabular-nums;}
 .tela-gestao-a-vista :deep(.gv-big-num.c-white){color:var(--text);}
 .tela-gestao-a-vista :deep(.gv-big-num.c-green){color:var(--green);text-shadow:0 0 50px rgba(34,197,94,.18);}
 .tela-gestao-a-vista :deep(.gv-big-num.c-yellow){color:var(--yellow);text-shadow:0 0 50px rgba(245,158,11,.15);}
@@ -1559,12 +1787,12 @@ onUnmounted(() => {
 /* Progress ring (legado — não usada pelo gauge SVG atual, mantida por fidelidade) */
 .tela-gestao-a-vista :deep(.gv-ring-area){display:flex;align-items:center;gap:16px;margin:14px 0;}
 .tela-gestao-a-vista :deep(.gv-ring-right){display:flex;flex-direction:column;gap:5px;}
-.tela-gestao-a-vista :deep(.gv-ring-pct){font-family:var(--fonte-dados);font-size:40px;font-weight:600;line-height:1;}
+.tela-gestao-a-vista :deep(.gv-ring-pct){font-family:var(--fonte-dados);font-size:max(16px, calc(40px * var(--escala-texto, 1)));font-weight:600;line-height:1;}
 .tela-gestao-a-vista :deep(.gv-ring-pct.c-green){color:var(--green);}
 .tela-gestao-a-vista :deep(.gv-ring-pct.c-yellow){color:var(--yellow);}
 .tela-gestao-a-vista :deep(.gv-ring-pct.c-red){color:var(--red);}
 .tela-gestao-a-vista :deep(.gv-ring-pct.c-white){color:var(--text);}
-.tela-gestao-a-vista :deep(.gv-ring-meta){font-family:var(--fonte-principal);font-size:9px;letter-spacing:1.5px;color:var(--muted);text-transform:uppercase;}
+.tela-gestao-a-vista :deep(.gv-ring-meta){font-family:var(--fonte-principal);font-size:max(9px, calc(9px * var(--escala-texto, 1)));letter-spacing:1.5px;color:var(--muted);text-transform:uppercase;}
 .tela-gestao-a-vista :deep(.gv-ring-meta strong){color:var(--text);font-weight:500;}
 /* Gauge liquid shimmer & neon glow */
 @keyframes gaugeShimmer{0%{transform:translateX(-220px)}100%{transform:translateX(440px)}}
@@ -1574,41 +1802,41 @@ onUnmounted(() => {
 /* Sub KPIs (legado — não usada pelo layout atual, mantida por fidelidade) */
 .tela-gestao-a-vista :deep(.gv-sub-row){display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:auto;}
 .tela-gestao-a-vista :deep(.gv-sub-box){background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:11px 13px;}
-.tela-gestao-a-vista :deep(.gv-sub-lbl){font-family:var(--fonte-principal);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:4px;}
-.tela-gestao-a-vista :deep(.gv-sub-val){font-family:var(--fonte-dados);font-size:20px;font-weight:500;color:var(--text);}
+.tela-gestao-a-vista :deep(.gv-sub-lbl){font-family:var(--fonte-principal);font-size:max(9px, calc(8px * var(--escala-texto, 1)));letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:4px;}
+.tela-gestao-a-vista :deep(.gv-sub-val){font-family:var(--fonte-dados);font-size:max(16px, calc(20px * var(--escala-texto, 1)));font-weight:500;color:var(--text);}
 /* Rank cols */
-.tela-gestao-a-vista :deep(.gv-rank-col-hdr){font-family:var(--fonte-principal);font-size:8px;letter-spacing:5px;text-transform:uppercase;color:var(--muted);margin-bottom:6px;display:flex;align-items:center;gap:10px;}
+.tela-gestao-a-vista :deep(.gv-rank-col-hdr){font-family:var(--fonte-principal);font-size:max(9px, calc(8px * var(--escala-texto, 1)));letter-spacing:5px;text-transform:uppercase;color:var(--muted);margin-bottom:6px;display:flex;align-items:center;gap:10px;}
 .tela-gestao-a-vista :deep(.gv-rank-col-hdr::after){content:'';flex:1;height:1px;background:var(--border);}
 .tela-gestao-a-vista :deep(.gv-rank-entry){display:flex;align-items:flex-start;gap:8px;padding-bottom:5px;margin-bottom:5px;border-bottom:1px solid var(--border);}
 .tela-gestao-a-vista :deep(.gv-rank-entry:last-child){border-bottom:none;margin-bottom:0;}
-.tela-gestao-a-vista :deep(.gv-rank-num){font-family:var(--fonte-dados);font-size:12px;font-weight:600;width:16px;text-align:center;flex-shrink:0;margin-top:1px;}
+.tela-gestao-a-vista :deep(.gv-rank-num){font-family:var(--fonte-dados);font-size:max(9px, calc(12px * var(--escala-texto, 1)));font-weight:600;width:16px;text-align:center;flex-shrink:0;margin-top:1px;}
 .tela-gestao-a-vista :deep(.gv-rank-num.gold){color:var(--orange);}
 .tela-gestao-a-vista :deep(.gv-rank-num.silver){color:#94a3b8;}
 .tela-gestao-a-vista :deep(.gv-rank-num.bronze){color:#b87333;}
 .tela-gestao-a-vista :deep(.gv-rank-num.rest){color:var(--muted);}
 .tela-gestao-a-vista :deep(.gv-rank-body){flex:1;min-width:0;}
 .tela-gestao-a-vista :deep(.gv-rank-row){display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px;}
-.tela-gestao-a-vista :deep(.gv-rank-nm){font-family:var(--fonte-principal);font-size:14px;font-weight:400;color:var(--text);overflow-wrap:break-word;word-break:break-word;line-height:1.3;}
-.tela-gestao-a-vista :deep(.gv-rank-v){font-family:var(--fonte-dados);font-size:17px;font-weight:500;color:var(--text);flex-shrink:0;margin-left:6px;}
+.tela-gestao-a-vista :deep(.gv-rank-nm){font-family:var(--fonte-principal);font-size:max(9px, calc(14px * var(--escala-texto, 1)));font-weight:400;color:var(--text);overflow-wrap:break-word;word-break:break-word;line-height:1.3;}
+.tela-gestao-a-vista :deep(.gv-rank-v){font-family:var(--fonte-dados);font-size:max(16px, calc(17px * var(--escala-texto, 1)));font-weight:500;color:var(--text);flex-shrink:0;margin-left:6px;}
 .tela-gestao-a-vista :deep(.gv-rank-bar){height:4px;background:var(--surface2);border-radius:2px;overflow:hidden;}
 .tela-gestao-a-vista :deep(.gv-rank-bar-fill){height:100%;border-radius:2px;transition:width 1.8s cubic-bezier(.4,0,.2,1);}
 .tela-gestao-a-vista :deep(.gv-rank-bar-fill.gold){background:linear-gradient(90deg,var(--orange),#fbbf24);}
 .tela-gestao-a-vista :deep(.gv-rank-bar-fill.silver){background:linear-gradient(90deg,#475569,#94a3b8);}
 .tela-gestao-a-vista :deep(.gv-rank-bar-fill.bronze){background:linear-gradient(90deg,#78350f,#b87333);}
 .tela-gestao-a-vista :deep(.gv-rank-bar-fill.rest){background:linear-gradient(90deg,var(--accent-mid),var(--accent));}
-.tela-gestao-a-vista :deep(.gv-rank-hint){font-family:var(--fonte-principal);font-size:12px;color:var(--muted);margin-top:1px;}
+.tela-gestao-a-vista :deep(.gv-rank-hint){font-family:var(--fonte-principal);font-size:max(9px, calc(12px * var(--escala-texto, 1)));color:var(--muted);margin-top:1px;}
 /* Ticker */
 .tela-gestao-a-vista :deep(.gv-ticker){border-top:1px solid var(--border);padding:0 28px;display:flex;align-items:center;gap:16px;background:var(--surface2);flex-shrink:0;height:30px;overflow:hidden;position:relative;z-index:2;transition:opacity .35s ease;}
-.tela-gestao-a-vista :deep(.gv-ticker-lbl){font-family:var(--fonte-principal);font-size:8px;letter-spacing:4px;text-transform:uppercase;color:var(--accent);flex-shrink:0;min-width:130px;}
+.tela-gestao-a-vista :deep(.gv-ticker-lbl){font-family:var(--fonte-principal);font-size:max(9px, calc(8px * var(--escala-texto, 1)));letter-spacing:4px;text-transform:uppercase;color:var(--accent);flex-shrink:0;min-width:130px;}
 .tela-gestao-a-vista :deep(.gv-ticker-sep){width:1px;height:14px;background:var(--border);flex-shrink:0;}
 .tela-gestao-a-vista :deep(.gv-ticker-outer){flex:1;overflow:hidden;}
 .tela-gestao-a-vista :deep(.gv-ticker-inner){display:flex;gap:48px;white-space:nowrap;}
 .tela-gestao-a-vista :deep(.gv-ticker-inner.animate){animation:gvTickerBF var(--ticker-dur,14s) ease-in-out 2 alternate;}
 @keyframes gvTickerBF{0%,4%{transform:translateX(0)}96%,100%{transform:translateX(var(--ticker-travel,0px))}}
-.tela-gestao-a-vista :deep(.gv-ticker-item){font-family:var(--fonte-principal);font-size:12px;color:var(--muted);flex-shrink:0;}
+.tela-gestao-a-vista :deep(.gv-ticker-item){font-family:var(--fonte-principal);font-size:max(9px, calc(12px * var(--escala-texto, 1)));color:var(--muted);flex-shrink:0;}
 .tela-gestao-a-vista :deep(.gv-ticker-item strong){color:var(--text);}
 .tela-gestao-a-vista :deep(.gv-ticker-dot){display:inline-block;width:3px;height:3px;border-radius:50%;background:var(--accent);vertical-align:middle;margin:0 14px;}
-.tela-gestao-a-vista :deep(.gv-refresh-tag){font-family:var(--fonte-principal);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);opacity:.4;flex-shrink:0;}
+.tela-gestao-a-vista :deep(.gv-refresh-tag){font-family:var(--fonte-principal);font-size:max(9px, calc(8px * var(--escala-texto, 1)));letter-spacing:2px;text-transform:uppercase;color:var(--muted);opacity:.4;flex-shrink:0;}
 /* GV animated background */
 .tela-gestao-a-vista :deep(#gv-bg-anim){position:absolute;left:0;right:0;top:40px;bottom:30px;z-index:0;pointer-events:none;overflow:hidden;opacity:1;}
 .tela-gestao-a-vista :deep(#gv-bg-anim svg){width:100%;height:100%;position:absolute;inset:0;}
@@ -1620,13 +1848,37 @@ onUnmounted(() => {
 @media(prefers-reduced-motion:reduce){
   .tela-gestao-a-vista :deep(.gauge-shimmer){animation:none!important;}
 }
+/* ── MEDIDA ÚNICA DE BOTÃO ──────────────────────────────────────────────────
+   A faixa de controles tinha três alturas na mesma linha (período 22px, AUTO
+   22px com raio diferente, Canal 27px) e o período ainda variava de largura com
+   o texto — "1D" contra "MÊS PASS.". Daqui pra frente os quatro botões desta
+   tela saem da mesma medida; quem muda o tamanho muda AQUI, não em cada regra.
+   `--gv-btn-larg` está em `ch` (largura do "0" da fonte em uso) para acompanhar
+   a escala de texto em vez de virar um pixel cravado. 12ch é o que cabe o
+   rótulo mais largo, "ATÉ AGORA".
+   HISTÓRIA, porque quase virou "não dá": a largura igual leva a faixa de 712px
+   para 963px, e enquanto `.bt-dir` da barra-de-topo foi `flex:0 0 auto` isso
+   esmagava o título até zerar. Só passou a caber depois que a barra ganhou
+   `flex:0 1 auto;min-width:0` (20/08/2026, conferido nas 25 telas). Se um dia
+   alguém reverter a barra, é ESTA linha que volta a quebrar o título. */
+.tela-gestao-a-vista{--gv-btn-alt:28px;--gv-btn-larg:12ch;--gv-btn-raio:var(--radius-md);
+  /* MARGEM: cada painel do board tinha a sua (topo 7/28, esquerda 8/22, painéis
+     7/12) e nenhuma saía da escala do PADRAO-DA-CENTRAL. Agora são duas medidas,
+     em token, reafinadas por faixa igual à do botão. */
+  --gv-pad-y:var(--sp-2);--gv-pad-x:var(--sp-3);--gv-pad-borda:var(--sp-5);}
+.tela-gestao-a-vista :deep(.gv-pbtn),
+.tela-gestao-a-vista :deep(.vs-ac-toggle),
+.tela-gestao-a-vista :deep(.gv-cf-trigger),
+.tela-gestao-a-vista :deep(.gv-canal-vermais){box-sizing:border-box;min-height:var(--gv-btn-alt);border-radius:var(--gv-btn-raio);}
+
 /* Botão de período (compartilhado com Análise de Vendas/Meta Ads/GT no legado —
    aqui portado só para a Gestão à Vista, que é a única já migrada) */
-.tela-gestao-a-vista :deep(.gv-period-btns){display:flex;align-items:center;gap:4px;}
-.tela-gestao-a-vista :deep(.gv-pbtn){font-family:var(--fonte-principal);font-size:10px;padding:4px 9px;border-radius:5px;border:1px solid var(--border);background:none;color:var(--muted);cursor:pointer;transition:all .15s;}
+.tela-gestao-a-vista :deep(.gv-period-btns){display:flex;align-items:center;gap:var(--sp-1);}
+.tela-gestao-a-vista :deep(.gv-pbtn){font-family:var(--fonte-principal);font-size:max(9px, calc(10px * var(--escala-texto, 1)));display:inline-flex;align-items:center;justify-content:center;min-width:var(--gv-btn-larg);padding:0 var(--sp-2);border:1px solid var(--border);background:none;color:var(--muted);cursor:pointer;white-space:nowrap;transition:all .15s;}
 .tela-gestao-a-vista :deep(.gv-pbtn.active){background:var(--accent);color:var(--sobre-cor);border-color:var(--accent);}
-/* Auto-ciclo (idem — classe compartilhada, portada só aqui) */
-.tela-gestao-a-vista :deep(.vs-ac-toggle){font-family:var(--fonte-principal);font-size:10px;letter-spacing:.8px;text-transform:uppercase;padding:4px 8px;border-radius:6px;border:1px solid var(--border);background:none;color:var(--muted);cursor:pointer;transition:all .15s;margin-left:6px;}
+/* Auto-ciclo (idem — classe compartilhada, portada só aqui). Sem margin-left
+   avulso: o `gap` da faixa já dá o respiro, e a margem desalinhava o conjunto. */
+.tela-gestao-a-vista :deep(.vs-ac-toggle){font-family:var(--fonte-principal);font-size:max(9px, calc(10px * var(--escala-texto, 1)));letter-spacing:.8px;text-transform:uppercase;display:inline-flex;align-items:center;justify-content:center;min-width:var(--gv-btn-larg);padding:0 var(--sp-2);border:1px solid var(--border);background:none;color:var(--muted);cursor:pointer;white-space:nowrap;transition:all .15s;}
 .tela-gestao-a-vista :deep(.vs-ac-toggle.running){border-color:var(--green);color:var(--green);}
 
 /* ── RESPONSIVE: GESTÃO À VISTA (legacy L625-767) ── */
@@ -1634,11 +1886,12 @@ onUnmounted(() => {
   .tela-gestao-a-vista{height:auto;min-height:100vh;max-height:none;overflow-y:auto;-webkit-overflow-scrolling:touch;}
   .tela-gestao-a-vista :deep(#gv-bg-anim){display:none;}
   .tela-gestao-a-vista :deep(.gv-board){display:flex;flex-direction:column;gap:1px;background:var(--border);overflow:visible;min-height:0;padding:0;}
-  .tela-gestao-a-vista :deep(.gv-left){overflow:visible;flex:none;min-height:auto;padding:16px 20px;gap:12px;justify-content:flex-start;}
+  .tela-gestao-a-vista :deep(.gv-left){overflow:visible;flex:none;min-height:auto;padding:var(--gv-pad-y) var(--gv-pad-borda);gap:var(--sp-3);justify-content:flex-start;}
   /* Tablet e celular deitado: 260px era pouco pro elemento principal da tela. */
   .tela-gestao-a-vista :deep(.gv-gauge-wrap){flex:none;min-height:0;height:340px;max-height:340px;}
   .tela-gestao-a-vista :deep(.gv-right){display:flex;flex-direction:column;gap:1px;background:var(--border);overflow:visible;min-height:0;}
-  .tela-gestao-a-vista :deep(.gv-canal-panel){overflow:visible;padding:12px 16px;}
+  .tela-gestao-a-vista{--gv-pad-y:var(--sp-3);--gv-pad-x:var(--sp-4);--gv-pad-borda:var(--sp-4);}
+  .tela-gestao-a-vista :deep(.gv-canal-panel){overflow:visible;padding:var(--gv-pad-y) var(--gv-pad-x);}
   .tela-gestao-a-vista :deep(.gv-canal-scroll){display:block;overflow:visible;flex:none;min-height:0;}
   /* Mobile em grade; o "ver mais" também vale aqui (colapsado = 5, expandido = todos).
      A base .gv-sm-item:nth-child(n+6){display:none} esconde os extras; a classe
@@ -1646,10 +1899,10 @@ onUnmounted(() => {
   .tela-gestao-a-vista :deep(.gv-canal-grid){display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:6px;}
   .tela-gestao-a-vista :deep(.gv-canal-grid > .gv-sm-item){flex:none;max-width:none;}
   .tela-gestao-a-vista :deep(.gv-rankings){display:flex;flex-direction:column;gap:1px;background:var(--border);overflow:visible;min-height:0;}
-  .tela-gestao-a-vista :deep(.gv-rank-panel){overflow:visible;padding:12px 16px;}
+  .tela-gestao-a-vista :deep(.gv-rank-panel){overflow:visible;padding:var(--gv-pad-y) var(--gv-pad-x);}
   .tela-gestao-a-vista :deep(.gv-rank-scroll){overflow:visible;flex:none;min-height:0;}
   .tela-gestao-a-vista :deep(.gv-rank-scroll-inner){animation:none!important;transform:none!important;}
-  .tela-gestao-a-vista :deep(.gv-topbar){flex-wrap:wrap;padding:8px 14px;gap:6px;}
+  .tela-gestao-a-vista :deep(.gv-topbar){flex-wrap:wrap;padding:var(--gv-pad-y) var(--gv-pad-borda);gap:var(--sp-2);}
   .tela-gestao-a-vista :deep(.gv-clock-wrap){display:none;}
   .tela-gestao-a-vista :deep(.gv-ticker){height:auto;flex-shrink:0;padding:8px 12px;gap:6px;}
   .tela-gestao-a-vista :deep(.gv-ticker-outer){flex:1;overflow-x:auto;}
@@ -1657,27 +1910,31 @@ onUnmounted(() => {
   .tela-gestao-a-vista :deep(.gv-ticker-inner.animate){animation:none;}
 }
 @media(max-width:640px){
-  .tela-gestao-a-vista :deep(.gv-topbar){padding:6px 10px;}
+  .tela-gestao-a-vista{--gv-pad-y:var(--sp-2);--gv-pad-x:var(--sp-3);--gv-pad-borda:var(--sp-3);}
+  .tela-gestao-a-vista :deep(.gv-topbar){padding:var(--gv-pad-y) var(--gv-pad-borda);}
   .tela-gestao-a-vista :deep(.gv-brand-tag){display:none;}
   .tela-gestao-a-vista :deep(.gv-period-btns){flex-wrap:wrap;gap:3px;}
-  .tela-gestao-a-vista :deep(.gv-pbtn){font-size:9px;padding:3px 7px;border-radius:4px;}
-  .tela-gestao-a-vista :deep(#gv-ac-toggle){font-size:9px;padding:3px 7px;}
+  /* Cada faixa reafina a medida única em vez de mexer botão a botão. */
+  .tela-gestao-a-vista{--gv-btn-alt:24px;--gv-btn-raio:var(--radius-sm);}
+  .tela-gestao-a-vista :deep(.gv-pbtn),
+  .tela-gestao-a-vista :deep(.vs-ac-toggle){font-size:max(9px, calc(9px * var(--escala-texto, 1)));padding:0 var(--sp-1);}
+  .tela-gestao-a-vista :deep(#gv-ac-toggle){flex-shrink:0;}
   .tela-gestao-a-vista :deep(.gv-update-status){display:none;}
-  .tela-gestao-a-vista :deep(.gv-left){display:grid!important;grid-template-columns:42% 1fr;grid-template-rows:auto 1fr;padding:8px 12px;gap:4px 10px;align-items:start;flex:none;}
+  .tela-gestao-a-vista :deep(.gv-left){display:grid!important;grid-template-columns:42% 1fr;grid-template-rows:auto 1fr;padding:var(--gv-pad-y) var(--gv-pad-borda);gap:4px 10px;align-items:start;flex:none;}
   .tela-gestao-a-vista :deep(.gv-kpi-period){grid-column:1/-1;margin-bottom:0;}
   .tela-gestao-a-vista :deep(.gv-gauge-wrap){grid-column:1;grid-row:2;height:auto!important;max-height:none!important;align-self:center;}
   .tela-gestao-a-vista :deep(.gv-gauge-inner){max-width:none;}
   .tela-gestao-a-vista :deep(.gv-main-kpi){display:flex!important;grid-column:2;grid-row:2;flex-direction:column;align-items:flex-start;flex-wrap:nowrap;gap:5px;padding:4px 0;justify-content:center;border-top:none;border-bottom:none;}
   .tela-gestao-a-vista :deep(.gv-main-kpi-item){display:flex!important;flex-direction:row;align-items:baseline;flex-wrap:wrap;gap:3px;row-gap:0;padding:2px 0;border-right:none;}
-  .tela-gestao-a-vista :deep(.gv-main-kpi-v){font-size:14px;}
-  .tela-gestao-a-vista :deep(.gv-main-kpi-l){font-size:8px;letter-spacing:.3px;}
-  .tela-gestao-a-vista :deep(.gv-main-kpi-d){font-size:8px;width:100%;}
-  .tela-gestao-a-vista :deep(.gv-canal-panel), .tela-gestao-a-vista :deep(.gv-rank-panel){padding:8px 12px;}
+  .tela-gestao-a-vista :deep(.gv-main-kpi-v){font-size:max(9px, calc(14px * var(--escala-texto, 1)));}
+  .tela-gestao-a-vista :deep(.gv-main-kpi-l){font-size:max(9px, calc(8px * var(--escala-texto, 1)));letter-spacing:.3px;}
+  .tela-gestao-a-vista :deep(.gv-main-kpi-d){font-size:max(9px, calc(8px * var(--escala-texto, 1)));width:100%;}
+  .tela-gestao-a-vista :deep(.gv-canal-panel), .tela-gestao-a-vista :deep(.gv-rank-panel){padding:var(--gv-pad-y) var(--gv-pad-x);}
   .tela-gestao-a-vista :deep(.gv-canal-grid){grid-template-columns:repeat(3,1fr);gap:6px;}
   .tela-gestao-a-vista :deep(.gv-rankings){display:flex!important;flex-direction:column;}
-  .tela-gestao-a-vista :deep(.gv-big-num){font-size:30px;}
-  .tela-gestao-a-vista :deep(.gv-ticker-lbl){font-size:9px;min-width:80px;}
-  .tela-gestao-a-vista :deep(.gv-ticker-item){font-size:11px;}
+  .tela-gestao-a-vista :deep(.gv-big-num){font-size:max(16px, calc(30px * var(--escala-texto, 1)));}
+  .tela-gestao-a-vista :deep(.gv-ticker-lbl){font-size:max(9px, calc(9px * var(--escala-texto, 1)));min-width:80px;}
+  .tela-gestao-a-vista :deep(.gv-ticker-item){font-size:max(9px, calc(11px * var(--escala-texto, 1)));}
 }
 /* ── GESTÃO À VISTA · MOBILE (≤480px) — seletores com id para especificidade,
    igual ao legado (comentário original: "supera o CSS desktop independente
@@ -1691,7 +1948,7 @@ onUnmounted(() => {
   #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-topbar){flex-wrap:wrap;padding:0;gap:0;border-bottom:1px solid var(--border);flex-shrink:0;position:sticky;top:0;z-index:10;background:var(--surface);}
   #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-topbar-brand){order:1;flex:1;min-width:0;display:flex;align-items:center;gap:8px;padding:10px 14px;}
   #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-topbar .rbv-logo){display:none;}
-  #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-perf-tag){font-size:10px;letter-spacing:3px;}
+  #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-perf-tag){font-size:max(9px, calc(10px * var(--escala-texto, 1)));letter-spacing:3px;}
   #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-brand-tag){display:none;}
   #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-clock-wrap){display:none;}
   #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-update-status){display:none;}
@@ -1702,10 +1959,21 @@ onUnmounted(() => {
   #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-cf-dd){order:3;width:100%;box-sizing:border-box;padding:0 14px 9px;background:var(--surface);}
   #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-cf-trigger){width:100%;}
   #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-cf-menu){left:14px;right:14px;min-width:0;}
-  #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-pbtn){font-size:10px;padding:5px 11px;flex-shrink:0;border-radius:4px;}
-  #gestao-vista-screen.tela-gestao-a-vista :deep(#gv-ac-toggle){flex-shrink:0;font-size:9px;padding:5px 10px;}
-  #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-board){display:flex;flex-direction:column;gap:12px;background:var(--surface2);overflow:visible;height:auto;min-height:0;flex:none;padding:12px;}
-  #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-left){display:flex!important;flex-direction:column;align-items:center;padding:16px;gap:12px;overflow:visible;height:auto;background:var(--surface);border:1px solid var(--border);border-radius:6px;width:100%;box-sizing:border-box;flex:none;justify-content:flex-start;}
+  .tela-gestao-a-vista{--gv-btn-alt:28px;--gv-btn-raio:var(--radius-sm);}
+  #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-pbtn),
+  #gestao-vista-screen.tela-gestao-a-vista :deep(.vs-ac-toggle){font-size:max(9px, calc(10px * var(--escala-texto, 1)));padding:0 var(--sp-2);flex-shrink:0;}
+  /* ALVO DE TOQUE DE 40px SEM ENGORDAR O BOTÃO (PADRAO-DA-CENTRAL, item 6).
+     O ::after estica só a área que recebe o dedo. Sem `pointer-events:none` —
+     é ele que precisa receber o toque. Cresce apenas na vertical, para não
+     cobrir o botão vizinho da faixa (a conferência de que cada alvo ainda cai
+     nele mesmo está em docs/provar-botoes-gv.md). */
+  #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-pbtn),
+  #gestao-vista-screen.tela-gestao-a-vista :deep(.vs-ac-toggle){position:relative;}
+  #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-pbtn)::after,
+  #gestao-vista-screen.tela-gestao-a-vista :deep(.vs-ac-toggle)::after{content:'';position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);height:40px;}
+  #gestao-vista-screen.tela-gestao-a-vista :deep(#gv-ac-toggle){flex-shrink:0;}
+  #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-board){display:flex;flex-direction:column;gap:var(--sp-3);background:var(--surface2);overflow:visible;height:auto;min-height:0;flex:none;padding:var(--sp-3);}
+  #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-left){display:flex!important;flex-direction:column;align-items:center;padding:var(--sp-4);gap:var(--sp-3);overflow:visible;height:auto;background:var(--surface);border:1px solid var(--border);border-radius:6px;width:100%;box-sizing:border-box;flex:none;justify-content:flex-start;}
   #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-kpi-period){align-self:flex-start;grid-column:unset;grid-row:unset;margin:0;}
   #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-col-grid-label.gv-main-chart-title){align-self:flex-start;grid-column:unset;margin:0;border-bottom:none;padding-bottom:0;}
   /* O velocimetro geral e o numero que a pessoa abre a tela pra ver. Estava
@@ -1713,16 +1981,16 @@ onUnmounted(() => {
      tela, com teto pra nao estourar em aparelho grande. */
   #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-gauge-wrap){flex:none;grid-column:unset;grid-row:unset;height:auto;max-height:none;min-height:0;width:100%;max-width:min(340px,88vw);margin-inline:auto;}
   #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-gauge-inner){width:100%;max-width:none;aspect-ratio:200/190;}
-  #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-big-num){font-size:24px;letter-spacing:-0.5px;}
+  #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-big-num){font-size:max(16px, calc(24px * var(--escala-texto, 1)));letter-spacing:-0.5px;}
   #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-main-kpi){display:grid!important;grid-template-columns:repeat(2,1fr)!important;grid-column:unset;grid-row:unset;align-items:stretch;width:100%;border:1px solid var(--border);border-radius:4px;overflow:hidden;gap:0;padding:0;flex-wrap:unset;flex-shrink:0;}
   #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-main-kpi-item){display:flex!important;flex-direction:column!important;align-items:center;text-align:center;padding:12px 8px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);border-left:none;border-top:none;flex-wrap:unset;row-gap:unset;}
   #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-main-kpi-item:nth-child(2n)){border-right:none;}
   #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-main-kpi-item:nth-child(n+3)){border-bottom:none;}
-  #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-main-kpi-v){font-size:16px;}
-  #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-main-kpi-l){font-size:8px;letter-spacing:.5px;}
-  #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-main-kpi-d){font-size:9px;width:auto;}
+  #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-main-kpi-v){font-size:max(16px, calc(16px * var(--escala-texto, 1)));}
+  #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-main-kpi-l){font-size:max(9px, calc(8px * var(--escala-texto, 1)));letter-spacing:.5px;}
+  #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-main-kpi-d){font-size:max(9px, calc(9px * var(--escala-texto, 1)));width:auto;}
   #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-right){display:flex;flex-direction:column;gap:12px;background:transparent;overflow:visible;height:auto;min-height:0;}
-  #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-canal-panel){display:flex;flex-direction:column;gap:10px;overflow:visible;height:auto;padding:14px;background:var(--surface);border:1px solid var(--border);border-radius:6px;}
+  #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-canal-panel){display:flex;flex-direction:column;gap:10px;overflow:visible;height:auto;padding:var(--sp-4);background:var(--surface);border:1px solid var(--border);border-radius:6px;}
   #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-col-grid-label){border-bottom:none;padding-bottom:0;margin-bottom:0;}
   #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-canal-scroll){display:block;overflow:visible;flex:none;height:auto;min-height:0;}
   #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-canal-grid){display:grid;grid-template-columns:repeat(2,1fr);gap:8px;}
@@ -1730,139 +1998,143 @@ onUnmounted(() => {
   /* "Ver mais" no celular: colapsado esconde do 6º em diante (precisa de id + !important
      pra vencer o display:flex!important do .gv-sm-item acima); expandido mostra todos. */
   #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-canal-panel:not(.gv-canal-expandido) .gv-canal-grid > .gv-sm-item:nth-child(n+6)){display:none!important;}
-  #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-sm-item-lbl){font-size:9px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);width:100%;word-break:break-word;line-height:1.2;}
+  /* min-height acompanha a line-height deste bloco (1.2), para a caixa continuar
+     valendo duas linhas — mesma razão da regra base. */
+  #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-sm-item-lbl){font-size:max(9px, calc(9px * var(--escala-texto, 1)));font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);width:100%;overflow-wrap:anywhere;line-height:1.2;min-height:2.4em;}
   #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-sm-item svg){width:100%!important;}
   #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-sm-item-val){display:none;}
   #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-sm-item-delta){display:none;}
   #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-sm-item-desvio){display:none;}
   #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-rankings){display:flex;flex-direction:column;gap:12px;background:transparent;overflow:visible;height:auto;}
-  #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-rank-panel){display:flex;flex-direction:column;gap:10px;overflow:visible;height:auto;padding:16px;background:var(--surface);border:1px solid var(--border);border-radius:6px;}
-  #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-rank-col-hdr){margin-bottom:0;font-size:8px;letter-spacing:4px;}
+  #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-rank-panel){display:flex;flex-direction:column;gap:10px;overflow:visible;height:auto;padding:var(--sp-4);background:var(--surface);border:1px solid var(--border);border-radius:6px;}
+  #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-rank-col-hdr){margin-bottom:0;font-size:max(9px, calc(8px * var(--escala-texto, 1)));letter-spacing:4px;}
   #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-rank-scroll){overflow:visible;flex:none;height:auto;min-height:0;}
   #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-rank-scroll-inner){display:flex;flex-direction:column;animation:none;transform:none;}
   #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-rank-entry){margin-bottom:8px;padding-bottom:8px;gap:8px;}
   #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-rank-entry:last-child){margin-bottom:0;padding-bottom:0;border-bottom:none;}
-  #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-rank-num){font-size:11px;width:16px;}
-  #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-rank-nm){font-size:12px;}
-  #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-rank-v){font-size:13px;}
-  #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-rank-hint){font-size:9px;}
+  #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-rank-num){font-size:max(9px, calc(11px * var(--escala-texto, 1)));width:16px;}
+  #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-rank-nm){font-size:max(9px, calc(12px * var(--escala-texto, 1)));}
+  #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-rank-v){font-size:max(9px, calc(13px * var(--escala-texto, 1)));}
+  #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-rank-hint){font-size:max(9px, calc(9px * var(--escala-texto, 1)));}
   #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-rank-bar){height:3px;}
-  #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-rank-delta){font-size:9px;}
-  #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-rank-desvio){font-size:9px;}
+  #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-rank-delta){font-size:max(9px, calc(9px * var(--escala-texto, 1)));}
+  #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-rank-desvio){font-size:max(9px, calc(9px * var(--escala-texto, 1)));}
   #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-ticker){height:auto;padding:8px 14px;gap:6px;flex-shrink:0;}
   #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-ticker-sep){display:none;}
   #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-ticker-outer){flex:1;overflow-x:auto;-webkit-overflow-scrolling:touch;}
   #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-ticker-inner){white-space:nowrap;animation:none;}
-  #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-ticker-lbl){font-size:8px;min-width:72px;letter-spacing:2px;}
-  #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-ticker-item){font-size:10px;}
+  #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-ticker-lbl){font-size:max(9px, calc(8px * var(--escala-texto, 1)));min-width:72px;letter-spacing:2px;}
+  #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-ticker-item){font-size:max(9px, calc(10px * var(--escala-texto, 1)));}
 }
 /* ── GV DESKTOP RESPONSIVO (1025px–1600px) ── */
 @media(min-width:1025px) and (max-width:1600px){
   .tela-gestao-a-vista :deep(.gv-board){grid-template-columns:360px 1fr;}
   .tela-gestao-a-vista :deep(.gv-gauge-wrap){max-height:min(42vh,340px);}
-  .tela-gestao-a-vista :deep(.gv-left){padding:6px 14px;}
+  .tela-gestao-a-vista{--gv-pad-borda:var(--sp-4);}
   .tela-gestao-a-vista :deep(.gv-main-kpi){gap:0;}
-  .tela-gestao-a-vista :deep(.gv-main-kpi-v){font-size:16px;}
-  .tela-gestao-a-vista :deep(.gv-main-kpi-l){font-size:8px;}
-  .tela-gestao-a-vista :deep(.gv-main-kpi-d){font-size:8px;}
+  .tela-gestao-a-vista :deep(.gv-main-kpi-v){font-size:max(16px, calc(16px * var(--escala-texto, 1)));}
+  .tela-gestao-a-vista :deep(.gv-main-kpi-l){font-size:max(9px, calc(8px * var(--escala-texto, 1)));}
+  .tela-gestao-a-vista :deep(.gv-main-kpi-d){font-size:max(9px, calc(8px * var(--escala-texto, 1)));}
   .tela-gestao-a-vista :deep(.gv-canal-grid){gap:10px;}
-  .tela-gestao-a-vista :deep(.gv-sm-item-lbl){font-size:11px;}
-  .tela-gestao-a-vista :deep(.gv-rank-nm){font-size:12px;}
-  .tela-gestao-a-vista :deep(.gv-rank-v){font-size:14px;}
-  .tela-gestao-a-vista :deep(.gv-rank-hint){font-size:10px;}
-  .tela-gestao-a-vista :deep(.gv-rank-num){font-size:11px;}
+  .tela-gestao-a-vista :deep(.gv-sm-item-lbl){font-size:max(9px, calc(11px * var(--escala-texto, 1)));}
+  .tela-gestao-a-vista :deep(.gv-rank-nm){font-size:max(9px, calc(12px * var(--escala-texto, 1)));}
+  .tela-gestao-a-vista :deep(.gv-rank-v){font-size:max(9px, calc(14px * var(--escala-texto, 1)));}
+  .tela-gestao-a-vista :deep(.gv-rank-hint){font-size:max(9px, calc(10px * var(--escala-texto, 1)));}
+  .tela-gestao-a-vista :deep(.gv-rank-num){font-size:max(9px, calc(11px * var(--escala-texto, 1)));}
   .tela-gestao-a-vista :deep(.gv-rank-entry){margin-bottom:4px;}
-  .tela-gestao-a-vista :deep(.gv-col-grid-label){font-size:7px;}
-  .tela-gestao-a-vista :deep(.gv-kpi-period){font-size:7px;}
+  .tela-gestao-a-vista :deep(.gv-col-grid-label){font-size:max(9px, calc(7px * var(--escala-texto, 1)));}
+  .tela-gestao-a-vista :deep(.gv-kpi-period){font-size:max(9px, calc(7px * var(--escala-texto, 1)));}
 }
 @media(min-width:1025px) and (max-width:1280px){
   .tela-gestao-a-vista :deep(.gv-board){grid-template-columns:320px 1fr;}
   .tela-gestao-a-vista :deep(.gv-gauge-wrap){max-height:min(38vh,300px);}
   .tela-gestao-a-vista :deep(.gv-canal-grid){gap:10px;}
-  .tela-gestao-a-vista :deep(.gv-sm-item-lbl){font-size:10px;}
-  .tela-gestao-a-vista :deep(.gv-rank-nm){font-size:11px;}
-  .tela-gestao-a-vista :deep(.gv-rank-v){font-size:13px;}
+  .tela-gestao-a-vista :deep(.gv-sm-item-lbl){font-size:max(9px, calc(10px * var(--escala-texto, 1)));}
+  .tela-gestao-a-vista :deep(.gv-rank-nm){font-size:max(9px, calc(11px * var(--escala-texto, 1)));}
+  .tela-gestao-a-vista :deep(.gv-rank-v){font-size:max(9px, calc(13px * var(--escala-texto, 1)));}
 }
 /* ── TV OVERRIDES (≥1920px) — ativadas por body.dev-tv, um toggle ainda não
    exposto na UI Vue (existia no menu de administração do legado) ── */
 body.dev-tv .tela-gestao-a-vista :deep(.gv-board){grid-template-columns:1fr 2fr;}
 body.dev-tv .tela-gestao-a-vista :deep(.gv-right){grid-template-rows:62fr 38fr;}
-body.dev-tv .tela-gestao-a-vista :deep(.gv-left){padding:20px 36px;gap:0;}
+body.dev-tv .tela-gestao-a-vista :deep(.gv-left){padding:var(--gv-pad-y) var(--gv-pad-borda);gap:0;}
 body.dev-tv .tela-gestao-a-vista :deep(.gv-gauge-wrap){max-height:none;}
 body.dev-tv .tela-gestao-a-vista :deep(.gv-gauge-inner){max-width:680px;}
-body.dev-tv .tela-gestao-a-vista :deep(.gv-canal-panel){padding:18px 28px;}
+body.dev-tv .tela-gestao-a-vista :deep(.gv-canal-panel){padding:var(--gv-pad-y) var(--gv-pad-x);}
 body.dev-tv .tela-gestao-a-vista :deep(.gv-canal-grid){gap:10px;}
-body.dev-tv .tela-gestao-a-vista :deep(.gv-rank-panel){padding:18px 44px;}
-body.dev-tv .tela-gestao-a-vista :deep(.gv-clock-time){font-size:72px;letter-spacing:5px;}
-body.dev-tv .tela-gestao-a-vista :deep(.gv-clock-date){font-size:20px;}
-body.dev-tv .tela-gestao-a-vista :deep(.gv-kpi-period){font-size:20px;letter-spacing:4px;}
-body.dev-tv .tela-gestao-a-vista :deep(.gv-col-grid-label){font-size:20px;margin-bottom:14px;}
+body.dev-tv .tela-gestao-a-vista :deep(.gv-rank-panel){padding:var(--gv-pad-y) var(--gv-pad-x);}
+body.dev-tv .tela-gestao-a-vista :deep(.gv-clock-time){font-size:max(16px, calc(72px * var(--escala-texto, 1)));letter-spacing:5px;}
+body.dev-tv .tela-gestao-a-vista :deep(.gv-clock-date){font-size:max(16px, calc(20px * var(--escala-texto, 1)));}
+body.dev-tv .tela-gestao-a-vista :deep(.gv-kpi-period){font-size:max(16px, calc(20px * var(--escala-texto, 1)));letter-spacing:4px;}
+body.dev-tv .tela-gestao-a-vista :deep(.gv-col-grid-label){font-size:max(16px, calc(20px * var(--escala-texto, 1)));margin-bottom:14px;}
 body.dev-tv .tela-gestao-a-vista :deep(.gv-main-kpi){grid-template-columns:repeat(3,1fr);}
 body.dev-tv .tela-gestao-a-vista :deep(.gv-main-kpi-item){padding:16px 20px;}
-body.dev-tv .tela-gestao-a-vista :deep(.gv-main-kpi-v){font-size:48px;}
-body.dev-tv .tela-gestao-a-vista :deep(.gv-main-kpi-l){font-size:20px;}
-body.dev-tv .tela-gestao-a-vista :deep(.gv-main-kpi-d){font-size:22px;}
-body.dev-tv .tela-gestao-a-vista :deep(.gv-rank-col-hdr){font-size:20px;letter-spacing:5px;margin-bottom:20px;}
-body.dev-tv .tela-gestao-a-vista :deep(.gv-rank-num){font-size:30px;width:36px;}
-body.dev-tv .tela-gestao-a-vista :deep(.gv-rank-nm){font-size:30px;}
-body.dev-tv .tela-gestao-a-vista :deep(.gv-rank-v){font-size:39px;}
-body.dev-tv .tela-gestao-a-vista :deep(.gv-rank-hint){font-size:23px;}
+body.dev-tv .tela-gestao-a-vista :deep(.gv-main-kpi-v){font-size:max(16px, calc(48px * var(--escala-texto, 1)));}
+body.dev-tv .tela-gestao-a-vista :deep(.gv-main-kpi-l){font-size:max(16px, calc(20px * var(--escala-texto, 1)));}
+body.dev-tv .tela-gestao-a-vista :deep(.gv-main-kpi-d){font-size:max(16px, calc(22px * var(--escala-texto, 1)));}
+body.dev-tv .tela-gestao-a-vista :deep(.gv-rank-col-hdr){font-size:max(16px, calc(20px * var(--escala-texto, 1)));letter-spacing:5px;margin-bottom:20px;}
+body.dev-tv .tela-gestao-a-vista :deep(.gv-rank-num){font-size:max(16px, calc(30px * var(--escala-texto, 1)));width:36px;}
+body.dev-tv .tela-gestao-a-vista :deep(.gv-rank-nm){font-size:max(16px, calc(30px * var(--escala-texto, 1)));}
+body.dev-tv .tela-gestao-a-vista :deep(.gv-rank-v){font-size:max(16px, calc(39px * var(--escala-texto, 1)));}
+body.dev-tv .tela-gestao-a-vista :deep(.gv-rank-hint){font-size:max(16px, calc(23px * var(--escala-texto, 1)));}
 body.dev-tv .tela-gestao-a-vista :deep(.gv-rank-entry){margin-bottom:20px;}
 body.dev-tv .tela-gestao-a-vista :deep(.gv-rank-bar){height:9px;}
-body.dev-tv .tela-gestao-a-vista :deep(.gv-sm-item-lbl){font-size:30px;}
-body.dev-tv .tela-gestao-a-vista :deep(.gv-sm-item-val){font-size:24px;}
-body.dev-tv .tela-gestao-a-vista :deep(.gv-sm-item-delta){font-size:18px;}
-body.dev-tv .tela-gestao-a-vista :deep(.gv-sm-item-desvio){font-size:17px;}
-body.dev-tv .tela-gestao-a-vista :deep(.gv-rank-delta){font-size:22px;}
-body.dev-tv .tela-gestao-a-vista :deep(.gv-rank-desvio){font-size:20px;}
+body.dev-tv .tela-gestao-a-vista :deep(.gv-sm-item-lbl){font-size:max(16px, calc(30px * var(--escala-texto, 1)));}
+body.dev-tv .tela-gestao-a-vista :deep(.gv-sm-item-val){font-size:max(16px, calc(24px * var(--escala-texto, 1)));}
+body.dev-tv .tela-gestao-a-vista :deep(.gv-sm-item-delta){font-size:max(16px, calc(18px * var(--escala-texto, 1)));}
+body.dev-tv .tela-gestao-a-vista :deep(.gv-sm-item-desvio){font-size:max(16px, calc(17px * var(--escala-texto, 1)));}
+body.dev-tv .tela-gestao-a-vista :deep(.gv-rank-delta){font-size:max(16px, calc(22px * var(--escala-texto, 1)));}
+body.dev-tv .tela-gestao-a-vista :deep(.gv-rank-desvio){font-size:max(16px, calc(20px * var(--escala-texto, 1)));}
 body.dev-tv .tela-gestao-a-vista :deep(.gv-ticker){height:70px;}
-body.dev-tv .tela-gestao-a-vista :deep(.gv-ticker-lbl){font-size:20px;}
-body.dev-tv .tela-gestao-a-vista :deep(.gv-ticker-item){font-size:30px;}
+body.dev-tv .tela-gestao-a-vista :deep(.gv-ticker-lbl){font-size:max(16px, calc(20px * var(--escala-texto, 1)));}
+body.dev-tv .tela-gestao-a-vista :deep(.gv-ticker-item){font-size:max(16px, calc(30px * var(--escala-texto, 1)));}
 body.dev-tv .tela-gestao-a-vista :deep(.gv-ticker-dot){width:6px;height:6px;}
-body.dev-tv .tela-gestao-a-vista :deep(.gv-topbar){padding:22px 56px;}
-body.dev-tv .tela-gestao-a-vista :deep(.gv-back){font-size:18px;}
-body.dev-tv .tela-gestao-a-vista :deep(.gv-brand-tag){font-size:16px;color:var(--text);}
-body.dev-tv .tela-gestao-a-vista :deep(.gv-perf-tag){font-size:24px;color:var(--text);}
-body.dev-tv .tela-gestao-a-vista :deep(.gv-main-chart-title){font-size:20px!important;font-weight:700!important;color:var(--text)!important;}
-body.dev-tv .tela-gestao-a-vista :deep(.gv-pbtn){font-size:21px;padding:8px 19px;border-radius:8px;}
-body.dev-tv .tela-gestao-a-vista :deep(#gv-ac-toggle){font-size:21px;padding:8px 17px;}
+body.dev-tv .tela-gestao-a-vista{--gv-pad-y:var(--sp-5);--gv-pad-x:var(--sp-6);--gv-pad-borda:var(--sp-8);}
+body.dev-tv .tela-gestao-a-vista :deep(.gv-topbar){padding:var(--gv-pad-y) var(--gv-pad-borda);}
+body.dev-tv .tela-gestao-a-vista :deep(.gv-back){font-size:max(16px, calc(18px * var(--escala-texto, 1)));}
+body.dev-tv .tela-gestao-a-vista :deep(.gv-brand-tag){font-size:max(16px, calc(16px * var(--escala-texto, 1)));color:var(--text);}
+body.dev-tv .tela-gestao-a-vista :deep(.gv-perf-tag){font-size:max(16px, calc(24px * var(--escala-texto, 1)));color:var(--text);}
+body.dev-tv .tela-gestao-a-vista :deep(.gv-main-chart-title){font-size:max(16px, calc(20px * var(--escala-texto, 1)))!important;font-weight:700!important;color:var(--text)!important;}
+body.dev-tv .tela-gestao-a-vista{--gv-btn-alt:48px;--gv-btn-raio:var(--radius-lg);}
+body.dev-tv .tela-gestao-a-vista :deep(.gv-pbtn),
+body.dev-tv .tela-gestao-a-vista :deep(#gv-ac-toggle){font-size:max(16px, calc(21px * var(--escala-texto, 1)));padding:0 var(--sp-4);}
 
 /* ── Estoque por canal (Task 3) — prefixo gv-est-* pra não colidir com nada
    global; segue os mesmos tokens de tema da tela (funciona claro/escuro). */
 .tela-gestao-a-vista :deep(.gv-est){border-top:1px solid var(--border);background:transparent;flex-shrink:0;position:relative;z-index:2;}
 .tela-gestao-a-vista :deep(.gv-est-head){width:100%;display:flex;align-items:center;gap:10px;padding:6px 28px;background:none;border:none;cursor:pointer;font-family:var(--fonte-principal);text-align:left;}
-.tela-gestao-a-vista :deep(.gv-est-caret){font-size:9px;color:var(--accent);transition:transform .15s ease;display:inline-block;}
+.tela-gestao-a-vista :deep(.gv-est-caret){font-size:max(9px, calc(9px * var(--escala-texto, 1)));color:var(--accent);transition:transform .15s ease;display:inline-block;}
 .tela-gestao-a-vista :deep(.gv-est.open .gv-est-caret){transform:rotate(90deg);}
-.tela-gestao-a-vista :deep(.gv-est-t){font-size:9px;letter-spacing:3px;text-transform:uppercase;color:var(--text);font-weight:600;}
-.tela-gestao-a-vista :deep(.gv-est-sub){font-size:9px;letter-spacing:1px;color:var(--muted);}
+.tela-gestao-a-vista :deep(.gv-est-t){font-size:max(9px, calc(9px * var(--escala-texto, 1)));letter-spacing:3px;text-transform:uppercase;color:var(--text);font-weight:600;}
+.tela-gestao-a-vista :deep(.gv-est-sub){font-size:max(9px, calc(9px * var(--escala-texto, 1)));letter-spacing:1px;color:var(--muted);}
 .tela-gestao-a-vista :deep(.gv-est-body[hidden]){display:none;}
 /* Sem teto de altura: com a tela rolável (.is-est-open) o estoque cresce à vontade e
    quem rola é a PÁGINA. O nº de linhas por depósito é controlado pelo seletor "mostrar"
    (10/20/50/100/todos); a largura (muitos depósitos) rola na horizontal em .gv-est-cols. */
 .tela-gestao-a-vista :deep(.gv-est-body){padding:0 28px 14px;}
 .tela-gestao-a-vista :deep(.gv-est-controls){display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;}
-.tela-gestao-a-vista :deep(.gv-est-search){flex:1;min-width:160px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 10px;font-family:var(--fonte-principal);font-size:11px;}
+.tela-gestao-a-vista :deep(.gv-est-search){flex:1;min-width:160px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 10px;font-family:var(--fonte-principal);font-size:max(9px, calc(11px * var(--escala-texto, 1)));}
 .tela-gestao-a-vista :deep(.gv-est-search::placeholder){color:var(--muted);}
-.tela-gestao-a-vista :deep(.gv-est-sel){background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 8px;font-family:var(--fonte-principal);font-size:11px;}
-.tela-gestao-a-vista :deep(.gv-est-count){font-size:10px;color:var(--muted);letter-spacing:.3px;margin-left:auto;white-space:nowrap;}
+.tela-gestao-a-vista :deep(.gv-est-sel){background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 8px;font-family:var(--fonte-principal);font-size:max(9px, calc(11px * var(--escala-texto, 1)));}
+.tela-gestao-a-vista :deep(.gv-est-count){font-size:max(9px, calc(10px * var(--escala-texto, 1)));color:var(--muted);letter-spacing:.3px;margin-left:auto;white-space:nowrap;}
 .tela-gestao-a-vista :deep(.gv-est-cols){display:flex;align-items:flex-start;gap:12px;overflow-x:auto;padding-bottom:6px;scrollbar-width:thin;}
 .tela-gestao-a-vista :deep(.gv-est-cols::-webkit-scrollbar){height:8px;}
 .tela-gestao-a-vista :deep(.gv-est-cols::-webkit-scrollbar-thumb){background:var(--border);border-radius:8px;}
 .tela-gestao-a-vista :deep(.gv-est-col){flex:0 0 clamp(240px,24vw,300px);border:1px solid var(--border);border-radius:8px;background:var(--bg);overflow:hidden;}
-.tela-gestao-a-vista :deep(.gv-est-colh){display:flex;align-items:center;justify-content:space-between;padding:7px 10px;background:var(--surface2);border-bottom:1px solid var(--border);font-size:10px;letter-spacing:.5px;color:var(--text);font-weight:600;}
-.tela-gestao-a-vista :deep(.gv-est-tot){font-family:var(--fonte-dados);font-size:10px;color:var(--muted);font-weight:400;}
+.tela-gestao-a-vista :deep(.gv-est-colh){display:flex;align-items:center;justify-content:space-between;padding:7px 10px;background:var(--surface2);border-bottom:1px solid var(--border);font-size:max(9px, calc(10px * var(--escala-texto, 1)));letter-spacing:.5px;color:var(--text);font-weight:600;}
+.tela-gestao-a-vista :deep(.gv-est-tot){font-family:var(--fonte-dados);font-size:max(9px, calc(10px * var(--escala-texto, 1)));color:var(--muted);font-weight:400;}
 .tela-gestao-a-vista :deep(.gv-est-row){display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid var(--border);}
 .tela-gestao-a-vista :deep(.gv-est-row:last-child){border-bottom:none;}
 .tela-gestao-a-vista :deep(.gv-est-info){display:flex;flex-direction:column;gap:1px;flex:1;min-width:0;}
-.tela-gestao-a-vista :deep(.gv-est-sku){font-family:var(--fonte-dados);font-size:11px;color:var(--accent);font-weight:600;}
-.tela-gestao-a-vista :deep(.gv-est-nm){font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.tela-gestao-a-vista :deep(.gv-est-pill){font-size:8px;letter-spacing:.5px;text-transform:uppercase;padding:2px 7px;border-radius:999px;flex-shrink:0;font-weight:600;}
+.tela-gestao-a-vista :deep(.gv-est-sku){font-family:var(--fonte-dados);font-size:max(9px, calc(11px * var(--escala-texto, 1)));color:var(--accent);font-weight:600;}
+.tela-gestao-a-vista :deep(.gv-est-nm){font-size:max(9px, calc(10px * var(--escala-texto, 1)));color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.tela-gestao-a-vista :deep(.gv-est-pill){font-size:max(9px, calc(8px * var(--escala-texto, 1)));letter-spacing:.5px;text-transform:uppercase;padding:2px 7px;border-radius:999px;flex-shrink:0;font-weight:600;}
 .tela-gestao-a-vista :deep(.gv-est-pill-ok){background:color-mix(in srgb, var(--green) 18%, transparent);color:var(--green);}
 .tela-gestao-a-vista :deep(.gv-est-pill-low){background:color-mix(in srgb, var(--yellow) 20%, transparent);color:var(--yellow);}
 .tela-gestao-a-vista :deep(.gv-est-pill-crit){background:color-mix(in srgb, var(--red) 20%, transparent);color:var(--red);}
-.tela-gestao-a-vista :deep(.gv-est-q){font-family:var(--fonte-dados);font-size:12px;color:var(--text);font-weight:600;min-width:28px;text-align:right;flex-shrink:0;}
-.tela-gestao-a-vista :deep(.gv-est-more){padding:6px 10px;font-size:9px;color:var(--muted);text-align:center;}
-.tela-gestao-a-vista :deep(.gv-est-empty){padding:12px 10px;font-size:10px;color:var(--muted);text-align:center;}
+.tela-gestao-a-vista :deep(.gv-est-q){font-family:var(--fonte-dados);font-size:max(9px, calc(12px * var(--escala-texto, 1)));color:var(--text);font-weight:600;min-width:28px;text-align:right;flex-shrink:0;}
+.tela-gestao-a-vista :deep(.gv-est-more){padding:6px 10px;font-size:max(9px, calc(9px * var(--escala-texto, 1)));color:var(--muted);text-align:center;}
+.tela-gestao-a-vista :deep(.gv-est-empty){padding:12px 10px;font-size:max(9px, calc(10px * var(--escala-texto, 1)));color:var(--muted);text-align:center;}
 @media (max-width:768px){
   .tela-gestao-a-vista :deep(.gv-est-head){padding:6px 14px;}
   .tela-gestao-a-vista :deep(.gv-est-body){padding:0 14px 12px;}
@@ -1871,6 +2143,11 @@ body.dev-tv .tela-gestao-a-vista :deep(#gv-ac-toggle){font-size:21px;padding:8px
   .tela-gestao-a-vista :deep(.gv-est-col){flex:1 1 auto;width:100%;}
 }
 /* FAIXA DE CONTROLES — ver o comentario no template. */
-.tela-gestao-a-vista :deep(.gv-controles){display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap;padding:0;background:transparent;}  /* mora DENTRO da barra: fundo, borda de baixo e respiro lateral sao dela */
-@media(max-width:640px){.tela-gestao-a-vista :deep(.gv-controles){padding:8px 12px;flex-direction:column;align-items:stretch;gap:8px;}}
+/* A régua e a faixa PRECISAM encolher: com o `.bt-dir` da barra encolhendo, o
+   que não encolhe não fica menor — vaza para fora da barra. */
+.tela-gestao-a-vista :deep(.gv-controles){display:flex;align-items:center;justify-content:flex-end;gap:var(--sp-2);flex-wrap:wrap;padding:0;background:transparent;min-width:0;}
+.tela-gestao-a-vista :deep(.gv-period-btns){min-width:0;overflow-x:auto;scrollbar-width:none;}
+.tela-gestao-a-vista :deep(.gv-period-btns)::-webkit-scrollbar{display:none;}
+.tela-gestao-a-vista :deep(.gv-pbtn),.tela-gestao-a-vista :deep(.vs-ac-toggle){flex-shrink:0;}  /* mora DENTRO da barra: fundo, borda de baixo e respiro lateral sao dela */
+@media(max-width:640px){.tela-gestao-a-vista :deep(.gv-controles){padding:var(--gv-pad-y) var(--gv-pad-x);flex-direction:column;align-items:stretch;gap:var(--sp-2);}}
 </style>

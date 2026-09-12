@@ -1,0 +1,44 @@
+name: Vigia dos problemas da Meta
+
+# TODO DIA, de madrugada. Por que existe: a memória do que a Meta reclama
+# (`gt_problemas_meta`) era escrita SÓ pela tela — ficava registrado apenas o que
+# alguém via ao abrir a Gestão de Tráfego. Problema que nascia e morria entre duas
+# visitas não deixava rastro, e foi exatamente esse o caso que originou a tabela.
+#
+# Por que aqui e não no Mac do dono: um vigia que só roda quando a máquina está
+# ligada falta justo no dia em que a Meta barra a campanha.
+#
+# Por que 07:07 UTC e não 07:00: hora cheia cai no pico de carga do GitHub
+# Actions e atrasa muito. 07:07 UTC = 04:07 em Brasília — depois do backfill das
+# 03h07, para os dois não brigarem pelo mesmo limite da Meta.
+#
+# Custo: zero de IA. É só leitura do Graph e uma chamada de banco por conta.
+on:
+  schedule:
+    - cron: '7 7 * * *'
+  workflow_dispatch: {}
+
+concurrency:
+  group: vigia-problemas-meta
+  cancel-in-progress: false
+
+jobs:
+  rodada:
+    runs-on: ubuntu-latest
+    # Folgado: a leitura das 6 contas leva ~2 min, mas a Meta às vezes engasga e
+    # a paginação espera. Cortar aqui só produziria rodada pela metade.
+    timeout-minutes: 20
+    env:
+      SUPABASE_URL: https://kounqtdoioootxqegkij.supabase.co
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
+      # Os tokens da Meta NÃO são segredo daqui: o robô lê o de cada conta em
+      # `accounts.access_token`, com a chave de serviço. Um segredo a menos para
+      # rotacionar em dois lugares.
+      - name: Ler a Meta e registrar o que ela reclama
+        run: node coletor/vigia-problemas-meta.mjs

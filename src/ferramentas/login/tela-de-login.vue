@@ -45,7 +45,7 @@
       <!-- Forgot password -->
       <div v-show="view === 'forgot'">
         <button class="auth-back-link" @click="view = 'login'">← Voltar</button>
-        <p class="auth-info" style="margin-bottom:18px;font-size:12px">Digite seu email e enviaremos um link para redefinir sua senha.</p>
+        <p class="auth-info" style="margin-bottom:18px;font-size:max(9px, calc(12px * var(--escala-texto, 1)))">Digite seu email e enviaremos um link para redefinir sua senha.</p>
         <div class="auth-field">
           <label class="auth-label">Email</label>
           <input type="email" v-model="forgotEmail" class="auth-input" placeholder="seu@email.com">
@@ -57,7 +57,7 @@
       <!-- Request access -->
       <div v-show="view === 'request'">
         <button class="auth-back-link" @click="view = 'login'">← Voltar</button>
-        <p class="auth-info" style="margin-bottom:18px;font-size:12px">Preencha os dados abaixo. Sua solicitação será analisada pelo administrador.</p>
+        <p class="auth-info" style="margin-bottom:18px;font-size:max(9px, calc(12px * var(--escala-texto, 1)))">Preencha os dados abaixo. Sua solicitação será analisada pelo administrador.</p>
         <div class="auth-field">
           <label class="auth-label">Nome</label>
           <input type="text" v-model="reqNome" class="auth-input" placeholder="Seu nome completo">

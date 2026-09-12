@@ -27,6 +27,23 @@ Como funciona (resumido):
   sozinhos a cada 5 minutos enquanto a tela estiver aberta.
 - Botão "Canais": filtra quais lojas/canais entram nos números (checkboxes,
   com atalhos "Todos"/"Nenhum").
+- QUEM É DE TIME DE VENDA VÊ SÓ A LOJA DELA (12/08/2026). A regra mora em
+  supabase/functions/_shared/canais-de-venda-permitidos.js (a tela importa pela
+  ponte src/compartilhado/canais-de-venda-permitidos.js), compartilhada com a
+  Gestão à Vista E com a edge bling-proxy, que desde 13/08/2026 recorta a
+  resposta do Bling antes de ela sair do servidor. Quem NÃO está sob escopo por equipe (15 dos 17 perfis de hoje)
+  continua vendo tudo, inclusive os canais zerados, exatamente como antes.
+  O recorte vale para as TRÊS janelas de pedidos (atual, anterior e a de 15
+  dias) e também para as METAS — recortar só a venda mediria uma loja contra a
+  meta de todas, e a vendedora apareceria sempre a 8% do alvo. Uma faixa no
+  topo diz qual canal está sendo mostrado; sem ela, um total menor parece dado
+  errado.
+  ⚠️ ISTO É RECORTE DE TELA, NÃO É TRANCA. Esta tela lê os pedidos AO VIVO do
+  Bling pela edge `bling-proxy`, e essa edge confere PERMISSÃO, não canal —
+  ela devolve os pedidos de todos os canais para qualquer um que tenha
+  'sales'. A tranca de verdade seria filtrar dentro da edge. A trava do banco
+  (`pode_ver_canal`, RLS) só protege `gc_vendas_item`, que é a Gestão
+  Comercial — não passa por aqui.
 - Botão "Marcas" (topo esquerdo): limpa todos os timers/gráficos e volta para
   o seletor de marca.
 - Só abre para quem tem a permissão "sales.analise-vendas" liberada (ou é
@@ -66,3 +83,40 @@ da Gestão de Tráfego):
   tempo (troca por rota).
 
 Para mexer só nesta pasta, edite apenas estes 2 arquivos.
+
+MENU DE CANAIS AGRUPADO — ATACADO / VAREJO (20/08/2026)
+--------------------------------------------------------
+O dropdown de canal mostra um bloco por GRUPO do canal, com "marcar todos" /
+"desmarcar todos" em cada bloco. O grupo vem de `bling_lojas.grupo` e se
+configura em Config de Admin > Canais de venda — não aqui.
+
+Canal sem grupo NÃO some: cai no bloco "Outros", no fim. Enquanto nenhum canal
+tiver grupo, o menu fica IDÊNTICO ao que sempre foi.
+
+A regra mora em `src/compartilhado/grupo-do-canal.js` e é a MESMA da Gestão à
+Vista — duas cópias da mesma regra acabam discordando.
+
+⚠️ O menu ganhou `max-height:min(60vh,360px)` + rolagem, que ele não tinha. Com
+os cabeçalhos novos ele ia a 547px de altura e a lista passava do fim da tela; a
+Gestão à Vista já tinha esse teto desde sempre.
+
+LOJA QUE FECHOU (09/09/2026)
+---------------------------
+Canal com data em `bling_lojas.fechado_em` SOME do menu quando o periodo
+escolhido comeca DEPOIS dessa data, e VOLTA quando o periodo alcanca os dias em
+que a loja operava. Pedido do dono: "oculte os canais de vendas, dom pedro pq
+fecharam, deixe somente o historico pra tras". A Loja Dom Pedro fechou em
+31/08/2026.
+
+A regra e pura e mora em `src/compartilhado/canal-fechado.js` (14 testes). A data
+se edita na Config de Admin > Canais de venda — nao e lista escrita a mao, entao
+a proxima loja que fechar nao precisa de codigo novo.
+
+⚠️ TIRAR A LINHA DO CADASTRO NAO ESCONDE O CANAL. O menu e a UNIAO do cadastro
+com quem teve pedido no periodo: sem o nome, a loja fechada voltaria a tela como
+"Canal #7609". Por isso o mapa de nomes continua CHEIO e o que se remove e o id
+da exibicao.
+
+⚠️ O TOTAL DO PERIODO NAO MUDA. Ele vem dos pedidos, nao da lista de canais —
+entao a soma dos canais visiveis pode ficar menor que o total. E de proposito:
+venda que aconteceu e faturamento real, e o dono pediu para manter o historico.

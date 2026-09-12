@@ -75,3 +75,25 @@ pela própria campanha que você está publicando.
 
 Se a sugestão estiver ruim, não dá pra editar por aqui — quem muda é o robô
 (ver coletor/LEIA-ME.txt).
+
+ONDE MOSTRAR: BRASIL, ESTADO, CIDADE OU LOCAL (13/08/2026)
+-----------------------------------------------------------
+O "Subir para a Meta" passou a usar o MESMO painel de lugares do editor de
+público da Gestão de Tráfego. Você escolhe o tipo (Brasil, Estado, Cidade ou
+Local), procura pelo nome, e cada lugar entra na lista podendo valer como A
+ÁREA INTEIRA ou como PONTO COM RAIO. O mapa embaixo mostra tudo, e clicar nele
+põe um ponto que descobre sozinho em que rua caiu.
+
+"Local" é shopping, loja, esquina, endereço — isso NÃO existe no catálogo da
+Meta (foi medido) e vem do mapa, virando sempre um ponto com raio.
+
+A cidade da loja continua entrando sozinha quando você não escolhe nada: é a
+rede de segurança contra público mundial. Mas se você escolher QUALQUER lugar
+(inclusive só um estado ou só um ponto), ela não entra mais por baixo — senão o
+anúncio ficaria mais largo do que você pediu.
+
+EXCLUIR CIDADE continua onde estava, na busca logo abaixo do mapa. É uma lista
+separada na Meta, e não passa pelo painel.
+
+PRESET SALVO ANTES DISSO CONTINUA VALENDO. As chaves novas (país, estado, ponto)
+nascem vazias num preset antigo e ele sobe exatamente como sempre subiu.

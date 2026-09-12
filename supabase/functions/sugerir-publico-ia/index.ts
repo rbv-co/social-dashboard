@@ -26,7 +26,13 @@ const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 // O modelo dos robôs de tráfego. Julgamento sobre dinheiro é onde vale o modelo
 // bom — e a chamada é uma por clique, não uma por campanha.
 const MODELO = 'claude-opus-4-5';
-const MAX_TOKENS = 1200;
+// 1600, NÃO 1200. O repositório dizia 1200 e a função NO AR rodava 1600 desde
+// 04/08/2026 — alguém subiu o aumento direto pela mão e nunca trouxe de volta pro
+// código (descoberto em 12/08/2026 comparando o deploy com o arquivo). O modo
+// 'texto' devolve TRÊS anúncios inteiros num JSON só; com 1200 a resposta corta no
+// meio e cai em 'resposta_ilegivel'. Deployar o 1200 teria sido uma regressão
+// silenciosa — por isso o número certo é o de produção, e agora ele está aqui.
+const MAX_TOKENS = 1600;
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -77,9 +83,12 @@ Deno.serve(async (req) => {
   // DOIS TRABALHOS, dois prompts. Uma função só porque a permissão, a chave e o
   // tratamento de erro são idênticos — e três cópias disso divergiriam.
   const modo = corpo.modo === 'texto' ? 'texto' : 'publico';
+  // A PERSONA vem da tela (accounts.persona). Cortada aqui também: o teto do
+  // módulo da tela não protege esta função de um corpo montado à mão.
+  const persona = typeof corpo.persona === 'string' ? corpo.persona.trim().slice(0, 4000) : '';
   const prompt = modo === 'texto'
-    ? promptDeTexto(evidencia, corpo.marca, corpo.objetivo)
-    : montarPrompt(evidencia, corpo.marca, corpo.objetivo);
+    ? promptDeTexto(evidencia, corpo.marca, corpo.objetivo, persona)
+    : montarPrompt(evidencia, corpo.marca, corpo.objetivo, persona);
 
   let r: Response;
   try {
@@ -131,12 +140,30 @@ Deno.serve(async (req) => {
   });
 });
 
-function montarPrompt(ev: any, marca?: string, objetivo?: string) {
+// O BLOCO DA PERSONA. Vai ANTES dos números de propósito: o modelo lê em ordem, e
+// a ordem aqui é a hierarquia. Sem isto o pedido dizia só "A marca é: Vessel", e a
+// faixa etária saía dos números da conta — que dizem quem CLICOU, não para quem a
+// marca quer vender. Foi o defeito relatado pelo dono em 12/08/2026 ("sugere
+// idades que não casam com a marca").
+function blocoPersona(persona?: string) {
+  if (!persona) return [];
+  return [
+    'QUEM A MARCA ATENDE, nas palavras do dono do negócio. Isto é verdade sobre a marca e vale MAIS que qualquer padrão que você encontrar nos números:',
+    '<persona>',
+    persona,
+    '</persona>',
+    'Se os números apontarem para um público que contradiz esta descrição, NÃO o recomende: diga na leitura que os números vão para outro lado e por quê. Número de conta mostra quem clicou, não para quem a marca quer vender.',
+    '',
+  ];
+}
+
+function montarPrompt(ev: any, marca?: string, objetivo?: string, persona?: string) {
   return [
     'Você ajuda quem cuida de anúncios no Meta Ads de um negócio pequeno, e escreve em português do Brasil, direto, sem jargão.',
     marca ? `A marca é: ${marca}.` : '',
     objetivo ? `O tipo de campanha que está sendo criada: ${objetivo}.` : '',
     '',
+    ...blocoPersona(persona),
     'Estes números são REAIS, medidos nos últimos 90 dias desta conta de anúncios. Não invente outros, não recalcule, não estime:',
     '```json',
     JSON.stringify(ev).slice(0, 6000),
@@ -170,12 +197,13 @@ function montarPrompt(ev: any, marca?: string, objetivo?: string) {
 // Eles chegam SEPARADOS na evidência, e o prompt diz explicitamente para não
 // copiar o tom deles. Sem isso, a IA escreveria anúncio de recrutamento para
 // vender produto, com um número ótimo por trás para justificar.
-function promptDeTexto(ev: any, marca?: string, objetivo?: string) {
+function promptDeTexto(ev: any, marca?: string, objetivo?: string, persona?: string) {
   return [
     'Você escreve texto de anúncio para o Meta Ads de um negócio pequeno, em português do Brasil.',
     marca ? `A marca é: ${marca}.` : '',
     objetivo ? `O tipo de campanha: ${objetivo}.` : '',
     '',
+    ...blocoPersona(persona),
     'Estes são os textos que esta conta JÁ RODOU, com o custo real por resultado. São medidos, não estimados:',
     '```json',
     JSON.stringify(ev).slice(0, 7000),

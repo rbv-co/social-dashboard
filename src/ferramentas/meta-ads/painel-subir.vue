@@ -1,19 +1,31 @@
 <script setup>
-import { ref, reactive, computed, onMounted, watch } from 'vue'
+import { ref, reactive, computed, onMounted, watch, nextTick } from 'vue'
 import { sbClient } from '../../compartilhado/conectar-no-banco-de-dados.js'
 import { sb } from '../../compartilhado/buscar-e-salvar-dados.js'
+// O aviso do canto da tela, o mesmo do resto da central. Substituiu o
+// `alert()` nativo, que trava a página inteira até alguém clicar em OK.
+import { adminToast } from '../../compartilhado/avisos.js'
 import { useJobStatus } from './use-job-status.js'
 import AjudaTooltip from './ajuda-tooltip.vue'
 import TourCoachmark from './tour-coachmark.vue'
 import { TOUR_SUBIR } from './tutorial-fabrica.js'
 import { orcamentoBase, validarOrcamento, orcamentoParaEnvio } from './orcamento-form.js'
+import { resumoDoDestino } from './resumo-do-destino.js'
 import { baldeDoObjetivoDaFabrica } from '../gestao-trafego/baldes.js'
+// ESCOLHER LUGAR (13/08/2026): o painel e o mapa são os MESMOS do editor de
+// público da Gestão de Tráfego. Uma peça só, para o dono escolher lugar do
+// mesmo jeito nos dois lugares.
+import { montarPainelDeLugares } from '../../compartilhado/painel-de-lugares.js'
+import { deListas, paraListas } from '../../compartilhado/lugares-do-anuncio.js'
+import { enderecoDeOndeCaiu } from '../../compartilhado/busca-de-lugar.js'
+import { montarMapa } from '../gestao-trafego/painel-do-mapa.js'
 const tourAberto = ref(false)
 const props = defineProps({ campanhaId: String, retomarJobId: String })
 const emit = defineEmits(['subido'])
 const ACCOUNT_ID = 'b6883e82-07cb-4f21-9fd7-ea7626786174', ACT = 'act_1197997517858139'
 const campanhas = ref([]); const destino = reactive({ tipo: 'nova', lojas: ['tivoli'], campaignId: '' })
 const LOJAS = [{ slug: 'tivoli', nome: 'Tivoli' }, { slug: 'dp', nome: 'Dom Pedro' }]
+const resumo = computed(() => resumoDoDestino(destino, LOJAS))
 const { job, start } = useJobStatus()
 
 // ===== Localização + Público POR LOJA (abas; só quando destino.tipo === 'nova') =====
@@ -41,7 +53,16 @@ async function resolverNomesCidades(keys) {
   for (const k of Object.keys(cidades)) cidadeNomes[k] = cidades[k].region ? `${cidades[k].name} · ${cidades[k].region}` : cidades[k].name
 }
 function publicoBase(slug) {
-  return { presetId: '', nome: '', geo: { cities: cidadesDaLoja(slug), excluded: [] }, idade_min: 18, idade_max: 65, generos: [], interesses: [], custom_audiences: [] }
+  // `countries`, `regions` e `pins` entraram em 13/08/2026 junto com o painel de
+  // lugares. Preset salvo antes disso não tem essas chaves e continua válido —
+  // `fabrica_publicos.geo` é jsonb, e o que falta lê como lista vazia.
+  return { presetId: '', nome: '', geo: { cities: cidadesDaLoja(slug), excluded: [], countries: [], regions: [], pins: [] }, idade_min: 18, idade_max: 65, generos: [], interesses: [], custom_audiences: [] }
+}
+// Preset antigo (ou qualquer geo vindo do banco) pode não ter as chaves novas.
+// Completar aqui evita `undefined.push` espalhado por toda a tela.
+function geoCompleto(geo) {
+  const g = geo || {}
+  return { cities: g.cities || [], excluded: g.excluded || [], countries: g.countries || [], regions: g.regions || [], pins: g.pins || [] }
 }
 const publico = reactive(publicoBase('tivoli'))
 const publicoPorLoja = reactive({})   // slug -> snapshot do público daquela loja
@@ -57,6 +78,12 @@ function salvarAtiva() {
 function carregarLoja(slug) {
   Object.assign(publico, clone(publicoPorLoja[slug] || publicoBase(slug)))
   Object.assign(orcamento, clone(orcamentoPorLoja[slug] || orcamentoBase()))
+  // TROCAR DE LOJA TROCA O PÚBLICO INTEIRO. Sem remontar aqui, o painel
+  // continuaria mexendo na lista da loja anterior — a tela mostraria os lugares
+  // de uma loja enquanto grava na outra. Fica em `carregarLoja` (e não só num
+  // watch de `lojaAtiva`) porque no primeiro carregamento a loja ativa já é
+  // 'tivoli' e o watch não dispararia.
+  montarLugares()
 }
 function trocarAba(slug) { if (slug === lojaAtiva.value) return; salvarAtiva(); lojaAtiva.value = slug; carregarLoja(slug) }
 function toggleLoja(slug) {
@@ -71,13 +98,83 @@ function toggleLoja(slug) {
     lojaAtiva.value = slug; carregarLoja(slug)
   }
 }
+// O PAINEL DE LUGARES, o MESMO da Gestão de Tráfego. As chaves da Fábrica
+// (`geo.cities`, `geo.countries`, `geo.regions`, `geo.pins`) são refeitas a cada
+// mudança a partir da lista única que o painel e o mapa compartilham.
+const caixaLugares = ref(null); const caixaMapaLugares = ref(null)
+let painelLugares = null; let mapaLugares = null; let lugares = []
+function listasParaGeo() {
+  const l = paraListas(lugares)
+  publico.geo.cities = l.cidades.map((c) => ({ key: c.key, nome: c.nome, radius: c.raio, distance_unit: c.unidade }))
+  publico.geo.countries = l.paises
+  publico.geo.regions = l.estados
+  publico.geo.pins = l.pins
+}
+function geoParaListas() {
+  const g = geoCompleto(publico.geo)
+  return deListas({
+    paises: g.countries,
+    estados: g.regions,
+    // A Fábrica guarda o raio da cidade como `radius`/`distance_unit` (nome da
+    // Meta); o painel fala `raio`/`unidade`. A tradução é aqui, e só aqui.
+    cidades: g.cities.map((c) => ({ key: c.key, nome: c.nome, raio: c.radius, unidade: c.distance_unit })),
+    pins: g.pins,
+  })
+}
+async function buscarNoMapa(termo) {
+  const { data, error } = await sbClient.functions.invoke('buscar-lugar', { body: { acao: 'buscar', termo } })
+  // O motivo vai pra tela: busca que falha não pode virar "nada encontrado".
+  if (error || data?.error) throw new Error(data?.error || error?.message || 'a recepção do mapa não respondeu')
+  return data
+}
+async function montarLugares() {
+  // O bloco inteiro vive atrás de `v-if="destino.tipo==='nova'"`: sem o
+  // nextTick, a caixa ainda não existe no exato momento em que o destino muda e
+  // o painel nunca apareceria.
+  await nextTick()
+  if (!caixaLugares.value || !caixaMapaLugares.value) return
+  lugares = geoParaListas()
+  painelLugares = montarPainelDeLugares(caixaLugares.value, {
+    lugares,
+    buscarNaMeta: async (params) => {
+      const { data, error } = await sbClient.functions.invoke('meta-proxy', { body: { accountId: ACCOUNT_ID, path: '/search', params, method: 'GET' } })
+      if (error || data?.error) throw new Error(data?.error?.message || error?.message || 'a Meta não respondeu')
+      return data
+    },
+    buscarNoMapa,
+    aoMudar: () => { listasParaGeo(); if (mapaLugares) mapaLugares.desenhar() },
+  })
+  mapaLugares = montarMapa(caixaMapaLugares.value, {
+    lugares, editavel: true,
+    aoMudar: () => { listasParaGeo(); painelLugares.redesenhar() },
+    // O ponto se apresenta: nasce na hora, e o endereço chega em seguida.
+    aoPorPonto: async (ponto) => {
+      try {
+        const { data, error } = await sbClient.functions.invoke('buscar-lugar', { body: { acao: 'ondeCaiu', lat: ponto.lat, lng: ponto.lng } })
+        if (error || data?.error) throw new Error(data?.error || error?.message || 'sem resposta')
+        const achado = enderecoDeOndeCaiu(data)
+        ponto.nome = achado.nome; ponto.endereco = achado.endereco
+      } catch (e) {
+        painelLugares.dizer('Pus o ponto, mas não consegui o endereço dele: ' + String(e?.message || e).slice(0, 120), true)
+      } finally {
+        ponto.procurandoNome = false
+        listasParaGeo(); painelLugares.redesenhar(); mapaLugares.desenhar()
+      }
+    },
+  })
+  listasParaGeo()
+}
+
 const buscaCidade = ref(''); const cidadesAchadas = ref([])
 const buscaInteresse = ref(''); const interessesAchados = ref([])
 async function carregarPresets() { presets.value = await sb('fabrica_publicos?select=*&ativo=eq.true&order=created_at.desc') }
 function aplicarPreset() {
   const p = presets.value.find((x) => x.id === publico.presetId)
-  if (!p) { Object.assign(publico, { nome: '', geo: { cities: [], excluded: [] }, idade_min: 18, idade_max: 65, generos: [], interesses: [], custom_audiences: [] }); return }
-  Object.assign(publico, { nome: p.nome, geo: p.geo || { cities: [], excluded: [] }, idade_min: p.idade_min, idade_max: p.idade_max, generos: p.generos || [], interesses: p.interesses || [], custom_audiences: p.custom_audiences || [] })
+  if (!p) { Object.assign(publico, { nome: '', geo: geoCompleto(null), idade_min: 18, idade_max: 65, generos: [], interesses: [], custom_audiences: [] }); montarLugares(); return }
+  Object.assign(publico, { nome: p.nome, geo: geoCompleto(p.geo), idade_min: p.idade_min, idade_max: p.idade_max, generos: p.generos || [], interesses: p.interesses || [], custom_audiences: p.custom_audiences || [] })
+  // O preset troca o público inteiro: sem remontar, o painel continuaria
+  // mexendo na lista do público anterior e a tela mostraria o lugar errado.
+  montarLugares()
 }
 const erroCidade = ref('')
 async function buscarCidades() {
@@ -89,8 +186,6 @@ async function buscarCidades() {
   cidadesAchadas.value = data?.data || []
   if (!cidadesAchadas.value.length) erroCidade.value = 'Nenhuma cidade encontrada pra essa busca.'
 }
-function addCidade(c) { if (!publico.geo.cities.some((x) => x.key === c.key)) publico.geo.cities.push({ key: c.key, nome: `${c.name}${c.region ? ' · ' + c.region : ''}`, radius: 0, distance_unit: 'kilometer' }); cidadesAchadas.value = []; buscaCidade.value = ''; erroCidade.value = '' }
-function rmCidade(key) { publico.geo.cities = publico.geo.cities.filter((x) => x.key !== key) }
 function excluirCidade(c) { if (!publico.geo.excluded.some((x) => x.key === c.key)) publico.geo.excluded.push({ key: c.key, nome: c.name, type: 'city' }); cidadesAchadas.value = []; buscaCidade.value = '' }
 function rmExcluida(key) { publico.geo.excluded = publico.geo.excluded.filter((x) => x.key !== key) }
 async function buscarInteresses() {
@@ -176,21 +271,39 @@ const chipsSugeridos = computed(() => {
 })
 function toggleGenero(g) { const i = publico.generos.indexOf(g); i > -1 ? publico.generos.splice(i, 1) : publico.generos.push(g) }
 function publicoParaEnvio(p = publico) {
-  return { geo: { cities: p.geo.cities.map((c) => ({ key: c.key, nome: c.nome, radius: c.radius, distance_unit: c.distance_unit })), excluded: p.geo.excluded.map((e) => ({ key: e.key, nome: e.nome, type: e.type })) }, idade_min: p.idade_min, idade_max: p.idade_max, generos: [...p.generos], interesses: p.interesses.map((i) => ({ id: i.id, name: i.name })), custom_audiences: p.custom_audiences.map((a) => ({ id: a.id, name: a.name, subtype: a.subtype })) }
+  const g = geoCompleto(p.geo)
+  return {
+    geo: {
+      cities: g.cities.map((c) => ({ key: c.key, nome: c.nome, radius: c.radius, distance_unit: c.distance_unit })),
+      excluded: g.excluded.map((e) => ({ key: e.key, nome: e.nome, type: e.type })),
+      // Os três que entraram em 13/08/2026. `coletor/lib/publico.mjs` é quem os
+      // traduz para o targeting da Meta.
+      countries: g.countries.map((c) => ({ key: c.key, nome: c.nome })),
+      regions: g.regions.map((r) => ({ key: r.key, nome: r.nome })),
+      pins: g.pins.map((x) => ({ lat: x.lat, lng: x.lng, raio: x.raio, unidade: x.unidade, nome: x.nome, endereco: x.endereco, pais: x.pais })),
+    },
+    idade_min: p.idade_min, idade_max: p.idade_max, generos: [...p.generos],
+    interesses: p.interesses.map((i) => ({ id: i.id, name: i.name })),
+    custom_audiences: p.custom_audiences.map((a) => ({ id: a.id, name: a.name, subtype: a.subtype })),
+  }
 }
 async function salvarPreset() {
   const nome = prompt('Nome do preset:', publico.nome || ''); if (!nome) return
   const preset = { ...publicoParaEnvio(), nome }
   if (publico.presetId) preset.id = publico.presetId
   const { data, error } = await sbClient.functions.invoke('fabrica-publicos', { body: { acao: 'salvar', preset } })
-  if (error) return alert('Falha ao salvar: ' + error.message)
+  if (error) { adminToast('Não consegui salvar o preset: ' + error.message, false); return }
   publico.nome = nome; await carregarPresets(); if (data?.id) publico.presetId = data.id
+  // Salvar não mudava nada visível: o mesmo público continuava na tela, e a
+  // pessoa não tinha como saber se o preset entrou na lista.
+  adminToast(`Preset "${nome}" salvo.`)
 }
 async function apagarPreset() {
   if (!publico.presetId) return; if (!confirm('Apagar este preset?')) return
   const { error } = await sbClient.functions.invoke('fabrica-publicos', { body: { acao: 'apagar', id: publico.presetId } })
-  if (error) return alert('Falha ao apagar: ' + error.message)
+  if (error) { adminToast('Não consegui apagar o preset: ' + error.message, false); return }
   publico.presetId = ''; await carregarPresets()
+  adminToast('Preset apagado.')
 }
 
 // ===== Públicos salvos (audiences do Meta: engajamento/lookalike) =====
@@ -272,6 +385,9 @@ async function subir() {
 }
 // ao concluir a subida, entrega o resultado (adIds/adsetIds/metaCampaignId/criouCampanha) pro passo Conferir
 watch(job, (j) => { if (j?.status === 'concluido' && j.resultado) emit('subido', j.resultado) })
+// Trocar o DESTINO faz o bloco inteiro aparecer e sumir (`v-if`), então o painel
+// precisa nascer de novo quando ele volta.
+watch(() => destino.tipo, () => { montarLugares() })
 </script>
 <template>
   <section class="stage">
@@ -297,6 +413,13 @@ watch(job, (j) => { if (j?.status === 'concluido' && j.resultado) emit('subido',
           <span class="ch-nm">Campanha existente</span>
           <select v-if="destino.tipo==='existente'" v-model="destino.campaignId"><option v-for="c in campanhas" :key="c.id" :value="c.id">{{ c.name }}</option></select>
         </label>
+      </div>
+
+      <!-- O que vai acontecer, em português, ANTES de clicar. Pendência B4: sem esta frase, subir
+           só pra uma loja era indistinguível de subir pras duas — só se descobria no Gerenciador. -->
+      <div v-if="resumo" class="resumo-destino" :class="{ atencao: resumo.atencao }">
+        <p class="rd-texto">{{ resumo.texto }}</p>
+        <p v-if="resumo.fora" class="rd-fora">{{ resumo.fora }}</p>
       </div>
 
       <div class="cmdrow">
@@ -345,7 +468,7 @@ watch(job, (j) => { if (j?.status === 'concluido' && j.resultado) emit('subido',
           <button type="button" class="loja-chip" :class="{ sel: orcamento.modo==='ABO' }" @click="orcamento.modo='ABO'">ABO — no conjunto</button>
           <button type="button" class="loja-chip" :class="{ sel: orcamento.modo==='CBO' }" @click="orcamento.modo='CBO'">CBO — na campanha</button>
         </div>
-        <p class="muted" style="font-size:12px; margin:-4px 0 12px">
+        <p class="muted" style="font-size:max(9px, calc(12px * var(--escala-texto, 1))); margin:-4px 0 12px">
           {{ orcamento.modo==='CBO' ? 'CBO: você dá um orçamento único e a Meta divide entre os conjuntos, otimizando sozinha.' : 'ABO: o orçamento fica fixo neste conjunto de anúncios.' }}
         </p>
 
@@ -369,7 +492,7 @@ watch(job, (j) => { if (j?.status === 'concluido' && j.resultado) emit('subido',
             <input type="date" v-model="orcamento.fim" style="width:100%">
           </label>
         </div>
-        <p v-if="orcamento.tipo==='total'" class="muted" style="font-size:12px; margin:8px 0 0">
+        <p v-if="orcamento.tipo==='total'" class="muted" style="font-size:max(9px, calc(12px * var(--escala-texto, 1))); margin:8px 0 0">
           A campanha sobe pausada; se a data de início já tiver passado quando você ativar, a Meta ajusta pra ativação.
         </p>
       </div>
@@ -384,9 +507,18 @@ watch(job, (j) => { if (j?.status === 'concluido' && j.resultado) emit('subido',
         </label>
       </div>
 
+      <!-- ONDE MOSTRAR: Brasil, Estado, Cidade ou Local, com o mapa dos dois
+           lados. O painel e o mapa são os MESMOS do editor de público da Gestão
+           de Tráfego (13/08/2026). -->
+      <p class="fl" style="margin:12px 0 6px">Onde mostrar</p>
+      <div ref="caixaLugares"></div>
+      <div ref="caixaMapaLugares"></div>
+
+      <!-- EXCLUIR continua pela busca de cidade da Meta: é uma lista à parte
+           (`excluded_geo_locations`) e não passa pelo painel. -->
       <div class="fields" style="margin-top:12px">
         <label class="field wide">
-          <span class="fl">Buscar cidade (incluir ou excluir)</span>
+          <span class="fl">Buscar cidade para EXCLUIR</span>
           <div class="searchrow">
             <input class="fi" v-model="buscaCidade" placeholder="ex.: São Paulo" @keyup.enter="buscarCidades">
             <button class="marcar-todos" type="button" @click="buscarCidades">Buscar</button>
@@ -394,29 +526,16 @@ watch(job, (j) => { if (j?.status === 'concluido' && j.resultado) emit('subido',
         </label>
       </div>
 
-      <p v-if="erroCidade" style="color:var(--abort);font-size:13px;margin:4px 0">{{ erroCidade }}</p>
+      <p v-if="erroCidade" style="color:var(--abort);font-size:max(9px, calc(13px * var(--escala-texto, 1)));margin:4px 0">{{ erroCidade }}</p>
 
       <ul v-if="cidadesAchadas.length" class="resultlist">
         <li v-for="c in cidadesAchadas" :key="c.key">
           <span>{{ c.name }}<span v-if="c.region"> · {{ c.region }}</span><span v-if="c.type && c.type!=='city'" style="color:var(--ink-dim)"> · {{ c.type }}</span></span>
           <span class="resultacoes">
-            <button class="marcar-todos" type="button" @click="addCidade(c)">Incluir</button>
             <button class="marcar-todos" type="button" @click="excluirCidade(c)">Excluir</button>
           </span>
         </li>
       </ul>
-
-      <div class="chips" v-if="publico.geo.cities.length">
-        <span class="chip" v-for="c in publico.geo.cities" :key="c.key">
-          {{ c.nome }}
-          <input class="fi num chip-radius" type="number" min="0" max="80" v-model.number="c.radius" title="0 = cidade inteira; acima disso o Meta usa mínimo de 17 km">
-          <select class="chip-unit" v-model="c.distance_unit">
-            <option value="kilometer">km</option>
-            <option value="mile">mi</option>
-          </select>
-          <button class="chip-x" type="button" @click="rmCidade(c.key)">×</button>
-        </span>
-      </div>
 
       <div class="chips" v-if="publico.geo.excluded.length">
         <span class="chip excluido" v-for="e in publico.geo.excluded" :key="e.key">
@@ -491,7 +610,7 @@ watch(job, (j) => { if (j?.status === 'concluido' && j.resultado) emit('subido',
         <button class="cmd cyan" type="button" @click="listarAudiences">{{ carregandoAud ? 'Carregando…' : 'Carregar públicos' }}</button>
         <button class="cmd cyan" type="button" @click="criarEngajamento">Criar engajamento</button>
       </div>
-      <p v-if="erroAud" style="color:var(--abort);font-size:13px;margin:4px 0">{{ erroAud }}</p>
+      <p v-if="erroAud" style="color:var(--abort);font-size:max(9px, calc(13px * var(--escala-texto, 1)));margin:4px 0">{{ erroAud }}</p>
 
       <ul v-if="audiences.length" class="resultlist">
         <li v-for="a in audiences" :key="a.id">

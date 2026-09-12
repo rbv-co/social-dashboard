@@ -13,6 +13,84 @@ Arquivos ".mjs" = módulos JavaScript que rodam no Node.
 
 O que é cada arquivo?
 ---------------------
+  conferir-a-madrugada.mjs
+     -> Confere de manha o que os robos fizeram de madrugada (o
+        backfill das 03h07 e o vigia das 04h07) e avisa por
+        notificacao do macOS, com o resultado pronto. Nao conserta
+        nada: so le. Sobre o vigia ele NAO pergunta ao GitHub se
+        rodou -- pergunta ao banco quando foi a ultima vez que um
+        problema foi visto, porque um job verde que gravou nada
+        seria "sucesso" na aba Actions e mentira aqui.
+        Agendado em ~/Library/LaunchAgents/com.iamundi.conferir-madrugada.plist
+        para 19/08 as 9h. Para virar conferencia de TODA manha, e so
+        apagar as chaves <Month> e <Day> desse arquivo.
+
+  retomar-backfill-madrugada.sh   (TEMPORARIO)
+     -> Casca em volta do "preencher-numeros-de-campanha.mjs", para a
+        madrugada. O robo para sozinho depois de 5 erros seguidos (de
+        proposito: erro em serie e quase sempre limite de taxa da
+        Meta), e foi isso que acabou com a noite de 18/08 pela
+        metade. A casca faz ate 3 passadas, com 10 min de pausa. Ela
+        se desliga sozinha quando o robo anunciar "0 pela frente":
+        apaga o arquivo de retomada, deixa o marcador
+        ".backfill-numeros-PRONTO" e tira o proprio agendamento.
+        Agendada em ~/Library/LaunchAgents/com.iamundi.backfill-numeros.plist
+        para 03h07. APAGUE os dois quando o backfill terminar.
+
+  vigia-problemas-meta.mjs
+     -> Robô VIGIA DOS PROBLEMAS DA META. Todo dia de madrugada ele
+        pergunta à Meta o que ela está reclamando dos anúncios de
+        cada conta e guarda em "gt_problemas_meta" — a memória que a
+        Meta não tem, porque ela APAGA a reclamação quando o anúncio
+        é excluído ou o problema é resolvido. Antes dele, só a tela
+        registrava: problema que nascia e morria entre duas visitas
+        não deixava rastro. Roda no GitHub Actions, 04h07 de
+        Brasília. Custo zero de IA. Use "--dry" para ver sem gravar.
+        REGRA: conta cuja leitura falha é PULADA, nunca mandada
+        vazia -- a lista vazia é o que FECHA o que sumiu.
+
+  faxina-fabrica.mjs
+     -> Robô que recolhe as SOBRAS do balde "fabrica-criativos".
+        Existe porque a purga que já roda (a função fabrica-purga,
+        01h17 de Brasília) apaga arquivo pela LINHA dele no banco:
+        arquivo que nunca virou linha, ela não enxerga, e ele fica
+        para sempre. Era o caso dos MP4 de "motion" (que sobem junto
+        do PNG mas não são registrados) e das pastas de rodadas que
+        sumiram do banco. Medido em 19/08/2026: 81 arquivos de sobra,
+        64 MB, num balde de 165 MB.
+        A regra é de propósito apertada: só apaga dentro de pasta de
+        RODADA (nome da pasta = o código da campanha) que o banco
+        confirma estar MORTA — campanha purgada, ou campanha que não
+        existe mais. Pasta de biblioteca ("_previews", "favoritos",
+        "logo") nunca entra, e arquivo ainda apontado por linha viva
+        também não. Duas travas: se o banco responder vazio ele
+        ABORTA sem apagar (falha de leitura viraria "não tem dono,
+        pode apagar"), e se a conta passar de 400 arquivos ele para
+        pra você conferir.
+        Roda no GitHub Actions todo dia, 02h23 de Brasília, uma hora
+        DEPOIS da purga — pra recolher justamente o que ela deixou.
+        Na mão, sem apagar nada:  DRY=1 node faxina-fabrica.mjs
+
+  vigia-armazenamento.mjs
+     -> Robô que SOMA quanto cada balde do Storage ocupa e avisa
+        antes de encher. Só lê; não apaga nada.
+        Existe porque o plano grátis do Supabase dá 1 GB de arquivos
+        e ninguém é avisado ao se aproximar: em 19/08/2026 o projeto
+        estava com 876 MB (86%) e a conta só aparecia pra quem
+        abrisse o painel. Passar de 100% não dá erro bonito — a
+        subida de arquivo começa a falhar, e isso vira criativo que
+        não sobe e foto que não aparece na tela.
+        Ele avisa em DOIS níveis: acima de 80% deixa uma anotação na
+        rodada (que segue VERDE) e acima de 95% derruba a rodada. A
+        primeira versão dele falhava já aos 80%, e como o projeto vive
+        em 86% isso deixaria a rodada vermelha todo dia — alarme que
+        toca todo dia ninguém olha mais, e a falha de verdade da faxina
+        (que roda no mesmo job) ficaria escondida atrás dele.
+        ATENÇÃO: o aviso por webhook está MUDO. O segredo
+        ALERT_WEBHOOK_URL não existe neste repo (conferido em 19/08) —
+        o coletor de notícias também manda pra esse mesmo vazio. Até
+        alguém criar o segredo, o único canal é a aba Actions.
+
   agente-noticias.mjs
      -> Robô que COLETA NOTÍCIAS dos concorrentes. Usa a IA (Claude
         Sonnet) com busca na web para achar, julgar e resumir
@@ -44,6 +122,24 @@ O que é cada arquivo?
         de LLM). Rodados na mão ou por outro script desta pasta,
         não direto pelo GitHub Actions.
 
+  notas-dos-pedidos.mjs
+     -> Robô da DATA DA VENDA. Descobre em que dia cada venda foi
+        FATURADA (o dia da NOTA FISCAL) e guarda na tabela
+        bling_pedido_nota. Existe porque a dashboard lança a venda no
+        dia em que o PEDIDO foi gerado, e não é a mesma coisa: a loja
+        emite NFC-e no mesmo dia, mas o Atacado emite NF-e no dia
+        seguinte — então a venda de sexta aparecia na quinta.
+        Ele NÃO muda número de tela nenhuma; só guarda a data certa.
+        Roda DE HORA EM HORA no GitHub Actions, olhando os pedidos
+        mexidos nos últimos 7 dias (é assim que aparece o pedido
+        antigo que só hoje foi concluído). De hora em hora porque o
+        telão mostra "hoje": com rodada diária, uma nota emitida hoje
+        de manhã só entraria no dia certo amanhã.
+        Na mão:
+           node notas-dos-pedidos.mjs --previa        (não grava nada)
+           node notas-dos-pedidos.mjs --dias=15
+           node notas-dos-pedidos.mjs --backfill=12   (histórico)
+
   run-migrations.mjs
      -> "Aplicador de mudanças no banco". Pega os arquivos .sql do
         NÍVEL DE CIMA de db/migrations/ que ainda NÃO foram aplicados
@@ -64,6 +160,14 @@ O que é cada arquivo?
                              Não acessa internet — fácil de testar.
      meta-pace.test.mjs   -> Os TESTES do arquivo acima (confere se
                              as contas estão certas).
+     notas-bling.mjs      -> As regras da DATA DA VENDA: monta a linha
+                             do pedido com a data da nota, calcula o
+                             impacto por mês e lê as notas no Bling.
+                             Guarda duas armadilhas MEDIDAS: o filtro
+                             de data da lista de notas deixa escapar a
+                             borda de baixo, e "pedido sem nota" chega
+                             do Bling como id ZERO, não como vazio.
+     notas-bling.test.mjs -> Os TESTES do arquivo acima.
 
   package.json        -> Lista as "dependências" (bibliotecas que os
                          robôs usam) e comandos do projeto Node.

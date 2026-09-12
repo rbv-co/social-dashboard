@@ -24,12 +24,17 @@ export function bensLivresParaFrota(bens, veiculos, categoriaVeiculoId) {
  * esses continuam por conta de quem cadastra. Cada campo só entra se a ficha
  * ainda estiver vazia nele: o bem SUGERE, nunca apaga o que a pessoa já tinha
  * digitado antes de escolher.
+ *
+ * NÃO sugere `codigo_patrimonial`, e isso é conserto de 20/08/2026: até então
+ * ele virava seis dígitos ("000042"), formato que não batia com os "RBB-00X"
+ * dos carros antigos, nem com o número puro que os novos usam, nem com
+ * nenhuma tela. O nº de patrimônio tem campo próprio agora — ver
+ * etiqueta-do-veiculo.js.
  */
 export function patchDoBem(vForm, bem) {
   const patch = {};
   if (!vForm.nome && bem.nome) patch.nome = bem.nome;
   if (!vForm.marca && bem.marca) patch.marca = bem.marca;
   if (!vForm.fipe && bem.valor_centavos != null) patch.fipe = (bem.valor_centavos / 100).toString();
-  if (!vForm.codigo_patrimonial && bem.numero) patch.codigo_patrimonial = String(bem.numero).padStart(6, '0');
   return patch;
 }

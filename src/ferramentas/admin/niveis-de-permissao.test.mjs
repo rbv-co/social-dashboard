@@ -11,12 +11,11 @@ import { degrausDoRecurso, degrauDoConjunto, acoesDoDegrau } from './niveis-de-p
 // silenciosamente desatualizado.
 
 const RECURSOS = [
-  { key: 'social', label: 'Redes Sociais — Dashboard', acoes: ['ver', 'exportar'] },
+  { key: 'social', label: 'Redes Sociais — Dashboard', acoes: ['ver'] },
   { key: 'social.relatorio', label: 'Redes Sociais — Relatório Interativo', acoes: ['ver', 'exportar'] },
-  { key: 'sales.gestao', label: 'Gestão à Vista', acoes: ['ver', 'exportar'] },
-  { key: 'sales.analise', label: 'Análise de Vendas', acoes: ['ver', 'exportar'] },
-  { key: 'sales.metas', label: 'Metas de Vendas', acoes: ['ver', 'editar'] },
-  { key: 'meta.campanha', label: 'Análise de Campanhas', acoes: ['ver', 'exportar'] },
+  { key: 'sales.gestao', label: 'Gestão à Vista', acoes: ['ver'] },
+  { key: 'sales.analise', label: 'Análise de Vendas', acoes: ['ver'] },
+  { key: 'meta.campanha', label: 'Análise de Campanhas', acoes: ['ver'] },
   { key: 'meta.gestor', label: 'Gestão de Tráfego', acoes: ['ver', 'editar'] },
   { key: 'meta.fabrica', label: 'Fábrica de Anúncios', acoes: ['ver', 'editar'] },
   { key: 'banco', label: 'Banco de Arquivos', acoes: ['ver', 'criar', 'excluir'] },
@@ -30,7 +29,7 @@ const RECURSOS = [
   { key: 'noticias', label: 'Portal de Notícias', acoes: ['ver'] },
   { key: 'gestor', label: 'Gestão Comercial (IA)', acoes: ['ver'] },
   { key: 'gestor.relatorios', label: 'Relatórios Comerciais', acoes: ['ver', 'exportar'] },
-  { key: 'claude.status', label: 'Painel de Status do Claude', acoes: ['ver'] },
+  { key: 'claude.status', label: 'Painel de Status da IA', acoes: ['ver'] },
   { key: 'conteudo', label: 'Redes Sociais — Central de Conteúdo', acoes: ['ver', 'criar', 'editar', 'excluir'] },
   { key: 'conteudo.aprovar', label: 'Redes Sociais — Aprovar peças', acoes: ['ver'] },
 ]
@@ -44,13 +43,17 @@ test('ferramenta que so deixa VER tem dois degraus', () => {
 })
 
 test('ferramenta de ver+exportar termina em "Ver e baixar"', () => {
-  assert.deepEqual(chaves(acha('social')), ['sem', 'ver', 'exportar'])
-  assert.deepEqual(acoesDoDegrau(acha('social'), 'exportar'), ['ver', 'exportar'])
+  // O exemplo era `social`, que perdeu a acao 'exportar' em 13/08 (B1e) por
+  // nunca ter tido download. Agora e o Relatorio Interativo, que baixa de
+  // verdade — exemplo que so continua valendo enquanto a ferramenta existir.
+  assert.deepEqual(chaves(acha('social.relatorio')), ['sem', 'ver', 'exportar'])
+  assert.deepEqual(acoesDoDegrau(acha('social.relatorio'), 'exportar'), ['ver', 'exportar'])
 })
 
 test('ferramenta de ver+editar termina em "Ver e mexer"', () => {
-  assert.deepEqual(chaves(acha('sales.metas')), ['sem', 'ver', 'mexer'])
-  assert.deepEqual(acoesDoDegrau(acha('sales.metas'), 'mexer'), ['ver', 'editar'])
+  // Era `sales.metas`, que saiu do catalogo em 13/08 (B1d).
+  assert.deepEqual(chaves(acha('meta.gestor')), ['sem', 'ver', 'mexer'])
+  assert.deepEqual(acoesDoDegrau(acha('meta.gestor'), 'mexer'), ['ver', 'editar'])
 })
 
 test('Banco nao tem "editar" no catalogo, entao nao ganha degrau de mexer', () => {
@@ -88,23 +91,30 @@ test('a ordem das acoes nao importa para reconhecer o degrau', () => {
 // escada consegue representar todos sem perda.
 //
 // Se este teste falhar, a escada esta prestes a mudar o acesso de alguem.
+//
+// RELIDO NO BANCO EM 13/08/2026, depois da limpeza dos itens B1d e B1e — nao
+// editado a mao. As quatro ferramentas que prometiam 'exportar' sem baixar nada
+// ficaram so com ['ver'], e `sales.metas` deixou de existir.
 const CONJUNTOS_EM_USO = {
-  'social':            [['ver'], ['ver', 'exportar']],
+  'social':            [['ver']],
   'social.relatorio':  [['ver'], ['ver', 'exportar']],
-  'sales.gestao':      [['ver'], ['ver', 'exportar']],
-  'sales.analise':     [['ver'], ['ver', 'exportar']],
-  'sales.metas':       [['ver'], ['ver', 'editar']],
-  'meta.campanha':     [['ver', 'exportar']],
-  'meta.gestor':       [['ver', 'editar']],
-  'meta.fabrica':      [['ver', 'editar']],
-  'banco':             [['ver', 'criar', 'excluir']],
-  'acessos':           [['ver', 'criar', 'editar', 'excluir']],
-  'patrimonio':        [['ver', 'criar', 'editar', 'excluir']],
-  'frota':             [['ver', 'editar'], ['ver', 'criar', 'editar', 'excluir']],
+  'sales.gestao':      [['ver']],
+  'sales.analise':     [['ver']],
+  'meta.campanha':     [['ver']],
+  'meta.gestor':       [['ver'], ['ver', 'editar']],
+  'meta.fabrica':      [['ver'], ['ver', 'editar']],
+  'banco':             [['ver'], ['ver', 'criar', 'excluir']],
+  'acessos':           [['ver'], ['ver', 'criar', 'editar', 'excluir']],
+  'patrimonio':        [['ver'], ['ver', 'criar', 'editar', 'excluir']],
+  'patrimonio.relatorios': [['ver']],
+  'frota':             [['ver'], ['ver', 'editar'], ['ver', 'criar', 'editar', 'excluir']],
+  'frota.relatorios':  [['ver']],
   'frota.aprovar':     [['ver']],
+  'autenticidade':     [['ver'], ['ver', 'criar', 'editar']],
+  'conteudo':          [['ver']],
   'noticias':          [['ver']],
   'gestor':            [['ver']],
-  'gestor.relatorios': [['ver', 'exportar']],
+  'gestor.relatorios': [['ver'], ['ver', 'exportar']],
   'claude.status':     [['ver']],
 }
 
