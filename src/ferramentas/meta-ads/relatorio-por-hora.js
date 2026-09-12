@@ -29,11 +29,17 @@ export function agruparPorDiaEHora(linhas, nomesPorCampanha = {}) {
   return [...porDia.keys()].sort().reverse().map((dia) => {
     const porHora = porDia.get(dia);
     const horas = [...porHora.keys()].sort((a, b) => a - b).map((hora) => {
-      const campanhas = [...porHora.get(hora)].sort((a, b) => b.gastoHora - a.gastoHora);
+      const todasCampanhas = [...porHora.get(hora)].sort((a, b) => b.gastoHora - a.gastoHora);
+      // Só entra na lista quem converteu nessa hora — a maioria não converte
+      // e só faria poluição visual (pedido do dono, 12/09/2026). O total da
+      // hora continua somando TODAS as campanhas, inclusive as escondidas:
+      // "quanto se gastou nessa hora" é o gasto real, não só o de quem
+      // apareceu na lista.
+      const campanhas = todasCampanhas.filter((c) => c.conversasHora > 0);
       return {
         hora,
-        gastoTotal: campanhas.reduce((s, c) => s + c.gastoHora, 0),
-        conversasTotal: campanhas.reduce((s, c) => s + c.conversasHora, 0),
+        gastoTotal: todasCampanhas.reduce((s, c) => s + c.gastoHora, 0),
+        conversasTotal: todasCampanhas.reduce((s, c) => s + c.conversasHora, 0),
         campanhas,
       };
     });
