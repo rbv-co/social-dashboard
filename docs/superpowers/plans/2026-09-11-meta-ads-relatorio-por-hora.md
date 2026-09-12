@@ -42,6 +42,11 @@ Deno), `node --test` para os módulos puros, `pg_cron` para o agendamento.
 
 ### Task 1: Tabela `campaign_insights_hora` + RLS
 
+> **ERRATO (revisão final, 11/09/2026):** a migration abaixo só cria a policy
+> RESTRICTIVE — sem PERMISSIVE nenhuma, toda leitura era negada (200 + `[]`
+> pra sempre). Ver a correção em
+> `db/migrations/2026-09-11-meta-ads-hora-permissiva.sql`.
+
 **Files:**
 - Create: `db/migrations/2026-09-11-meta-ads-hora-tabela.sql`
 
@@ -290,6 +295,15 @@ git commit -m "feat(coletor): lógica pura do delta de hora (gasto e conversas)"
 
 ### Task 4: Edge Function `coletar-dados-hora`
 
+> **ERRATO (revisão final, 11/09/2026):** a implementação abaixo busca a
+> "última linha" sem excluir a hora atual (`order by hora desc limit 1`),
+> então uma segunda rodada na mesma hora se autocompara e corrompe o delta;
+> e nenhuma chamada Supabase checava `.error`, então uma falha de leitura
+> virava `anterior = null` (delta = dia inteiro) sem aparecer em lugar
+> nenhum. Corrigido em `supabase/functions/coletar-dados-hora/index.ts`
+> (`.lt('hora', hora)` + checagem de `error` em cada chamada + uma query por
+> conta em vez de uma por campanha).
+
 **Files:**
 - Create: `supabase/functions/coletar-dados-hora/index.ts`
 - Create: `supabase/functions/coletar-dados-hora/LEIA-ME.txt`
@@ -463,6 +477,13 @@ git commit -m "feat(coletor): Edge Function coletar-dados-hora"
 ---
 
 ### Task 5: Ligar o cron de hora em hora
+
+> **ERRATO (revisão final, 11/09/2026):** o rótulo de robô (1º argumento de
+> `disparar_robo`) abaixo é `'coletar-dados-hora'`, que colide com o prefixo
+> `'coletar-dados'` que `robos_saude` usa para agrupar (`like x.robo || '%'`)
+> — escondia este robô atrás do robô crítico. Corrigido em
+> `db/migrations/2026-09-11-meta-ads-hora-cron.sql`: rótulo passou a ser
+> `'meta-hora'`, com registro próprio em `robos_esperados`.
 
 **Files:**
 - Create: `db/migrations/2026-09-11-meta-ads-hora-cron.sql`
