@@ -114,6 +114,43 @@ export function montarMensagemWpp(dia, hora, campanhas) {
   return [cabecalho, '', ...linhas, '', consolidado].join('\n');
 }
 
+// Texto pronto pra copiar (mesmo espírito de montarMensagemWpp): cliques por
+// campanha [+ SEGUIDORES] + o delta de seguidores da CONTA no topo, já que
+// pedido do dono foi "a mensagem de seguidores E cliques" — os dois juntos.
+// `seguidoresDelta` vem de `seguidoresNaHora` (null = sem leitura pra essa
+// hora, não entra na mensagem). `null` geral quando não há nada a dizer:
+// nenhuma campanha de seguidores E nenhum delta de seguidor.
+export function montarMensagemSeguidores(dia, hora, campanhas, seguidoresDelta) {
+  const segs = deSeguidores(campanhas);
+  if (!segs.length && seguidoresDelta === null) return null;
+
+  const [ano, mes, d] = dia.split('-');
+  const horaStr = String(hora).padStart(2, '0');
+  const linhas = segs.map((c) => `${c.nome} — ${c.cliquesHora} clique${c.cliquesHora === 1 ? '' : 's'} · ${formatarReais(c.gastoHora)}`);
+
+  const totalCliques = segs.reduce((s, c) => s + c.cliquesHora, 0);
+  const totalGasto = segs.reduce((s, c) => s + c.gastoHora, 0);
+  const custoMedio = custoPorLead(totalGasto, totalCliques);
+
+  const cabecalho = `📊 Seguidores e cliques — ${horaStr}h, ${d}/${mes}`;
+  const linhaSeguidores = seguidoresDelta !== null
+    ? `Seguidores da conta: ${seguidoresDelta > 0 ? '+' : ''}${seguidoresDelta}`
+    : null;
+  const consolidado = segs.length
+    ? `Total: ${totalCliques} clique${totalCliques === 1 ? '' : 's'} · ${formatarReais(totalGasto)} investidos`
+      + (custoMedio !== null ? ` · ${formatarReais(custoMedio)}/clique` : '')
+    : null;
+
+  const corpo = [cabecalho, ''];
+  if (linhaSeguidores) corpo.push(linhaSeguidores, '');
+  if (linhas.length) corpo.push(...linhas, '');
+  if (consolidado) corpo.push(consolidado);
+  // Sem consolidado (só tinha delta de seguidor, nenhuma campanha), tira a
+  // linha em branco solta no fim.
+  while (corpo[corpo.length - 1] === '') corpo.pop();
+  return corpo.join('\n');
+}
+
 function diaEHoraSP(isoTimestamp) {
   const d = new Date(isoTimestamp);
   const dia = d.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
