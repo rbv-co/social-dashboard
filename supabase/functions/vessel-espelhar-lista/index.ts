@@ -338,17 +338,84 @@ async function mandarPraBling(t: string, linha: any): Promise<{ id: string } | {
 
 // ── A rodada ────────────────────────────────────────────────────────────────
 
+const ROBO = 'vessel-espelhar-lista';
+
+/* ⚠️ UMA RODADA POR VEZ — E POR QUE ISSO SUBSTITUIU UM FREIO DE TEMPO.
+ *
+ * Até 12/09/2026 o gatilho da tabela tinha um freio: se uma rodada tivesse
+ * acontecido nos últimos 20 segundos, o cadastro novo NÃO disparava nada e
+ * esperava o cron de 3 em 3 minutos. Medido nas 12 últimas pessoas: 10 chegaram
+ * ao Bling em 5-9s, e 2 levaram ~175s — as que caíram nessa janela.
+ *
+ * O freio existia por um motivo real, que continua valendo: duas rodadas ao
+ * mesmo tempo veem a MESMA linha pendente e criam DOIS contatos no Bling para a
+ * mesma pessoa. Mas freio de tempo é palpite nos dois sentidos — atrasa quem não
+ * precisava, e ainda deixa colidir uma rodada que demore mais que a janela (elas
+ * existem: medi rodadas de até 35s).
+ *
+ * A trava é exata. E quem não pega a trava SAI NA HORA, sem fazer nada: não é
+ * perda, porque quem está com ela lê a lista INTEIRA e cobre a linha nova.
+ *
+ * ⚠️ SOBRA UMA JANELA, E ELA É TRATADA NO `finally`: quem se cadastrou DEPOIS de
+ * a rodada em curso ter lido a lista não seria coberto por ela nem por quem foi
+ * barrado. Por isso, ao soltar a trava, a rodada confere se entrou alguém no
+ * meio e dispara o robô de novo. A condição é `criado_em > comecouEm`, o que
+ * TERMINA: só dispara por gente que chegou durante esta rodada, nunca por uma
+ * linha que está pendente porque o Bling está fora do ar. */
 Deno.serve(async (req) => {
-  const barrado = await exigirSegredoDeCron(req, 'vessel-espelhar-lista');
+  const barrado = await exigirSegredoDeCron(req, ROBO);
   if (barrado) return barrado;
 
   const sb = createClient(SUPABASE_URL, SERVICE_KEY);
+  const comecouEm = new Date().toISOString();
 
-  const { data: todas, error } = await sb
-    .from('vessel_lista_espera')
-    .select('*')
-    .order('criado_em', { ascending: true });
-  if (error) return json({ erro: 'não consegui ler a lista', detalhe: error.message }, 500);
+  // 120s é o mesmo prazo que o `disparar_robo` dá à chamada. Se esta rodada
+  // morrer no meio, a trava vence sozinha e a próxima entra.
+  const { data: pegouATrava } = await sb.rpc('tomar_trava', { p_robo: ROBO, p_segundos: 120 });
+  if (!pegouATrava) return json({ ok: true, situacao: 'outra rodada ja esta correndo' });
+
+  try {
+    return await rodada(sb);
+  } finally {
+    await sb.rpc('soltar_trava', { p_robo: ROBO });
+    try {
+      const { count } = await sb.from('vessel_lista_espera')
+        .select('id', { count: 'exact', head: true })
+        .gt('criado_em', comecouEm);
+      if ((count ?? 0) > 0) {
+        // ⚠️ OS NOMES SÃO `p_body` e `p_timeout`, conferidos na assinatura real da
+        // função no banco. Escrevi `p_corpo`/`p_timeout_ms` de cabeça primeiro e
+        // teria falhado CALADO: nome de parâmetro errado no `rpc` vira erro, o
+        // erro cai no `catch` de baixo, e ninguém saberia que o re-disparo nunca
+        // aconteceu — só que às vezes um cadastro demorava 3 minutos.
+        await sb.rpc('disparar_robo', {
+          p_robo: ROBO, p_funcao: ROBO, p_segredo: ROBO,
+          p_body: { origem: 'entrou-no-meio' }, p_timeout: 120000,
+        });
+      }
+    } catch { /* o cron de 3 minutos cobre; não vale derrubar a resposta por isto */ }
+  }
+});
+
+async function rodada(sb: any): Promise<Response> {
+
+  /* ⚠️ A LISTA TAMBÉM TEM DE TENTAR DE NOVO (medido em 12/09/2026). Esta leitura
+   * devolvia `Gateway Timeout` várias vezes por dia, e a rodada morria inteira —
+   * mesma causa do 401 do guardião: na virada do minuto vários cron disparam
+   * juntos e o PostgREST engasga. Uma rodada perdida não perde ninguém (a
+   * seguinte compara tudo de novo), mas atrasa o cadastro em até 3 minutos — e o
+   * dono pediu que fosse ao vivo.
+   * Três tentativas, espera curta. Se ainda assim não vier, devolve o erro: a
+   * rodada seguinte cobre. */
+  let todas: any[] | null = null;
+  let ultimoErro = '';
+  for (let tentativa = 1; tentativa <= 3; tentativa++) {
+    const r = await sb.from('vessel_lista_espera').select('*').order('criado_em', { ascending: true });
+    if (!r.error) { todas = r.data; break; }
+    ultimoErro = r.error.message;
+    if (tentativa < 3) await new Promise((ok) => setTimeout(ok, 600 * tentativa));
+  }
+  if (todas === null) return json({ erro: 'não consegui ler a lista', detalhe: ultimoErro }, 500);
 
   const linhas = todas ?? [];
   const pendentesBling = linhas.filter((l: any) => !l.bling_em);
@@ -588,4 +655,4 @@ Deno.serve(async (req) => {
   }
 
   return json(resultado);
-});
+}
