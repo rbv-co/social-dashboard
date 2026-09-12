@@ -18,11 +18,13 @@
 
         <div v-if="expandido(d.dia)" class="rph-horas">
           <div v-for="h in d.horas" :key="h.hora" class="rph-hora">
-            <div class="rph-hora-cabecalho">
+            <button class="rph-hora-cabecalho" @click="alternarHora(d.dia, h.hora)">
+              <span class="rph-hora-seta" :class="{ aberto: horaExpandida(d.dia, h.hora) }">▸</span>
               <span class="rph-hora-rotulo">{{ String(h.hora).padStart(2, '0') }}h</span>
               <span class="rph-hora-totais">{{ formatarReais(h.gastoTotal) }} · {{ h.conversasTotal }} conversas</span>
-            </div>
+            </button>
 
+            <template v-if="horaExpandida(d.dia, h.hora)">
             <!-- Três seções, cada uma expande/recolhe por tipo de campanha
                  (o clique vale pras horas todas de uma vez — é o TIPO que
                  abre/fecha, não uma hora isolada). -->
@@ -96,6 +98,22 @@
                 </div>
               </template>
             </div>
+
+            <div v-if="mensagemSeguidores(d, h)" class="rph-secao">
+              <button class="rph-secao-cabecalho" @click="secoesAbertas.mensagemSeguidores = !secoesAbertas.mensagemSeguidores">
+                <span class="section-label">Mensagem Seguidores</span>
+                <span class="rph-secao-seta" :class="{ aberto: secoesAbertas.mensagemSeguidores }">▸</span>
+              </button>
+              <template v-if="secoesAbertas.mensagemSeguidores">
+                <div class="rph-msg-bloco">
+                  <pre class="rph-msg-wpp">{{ mensagemSeguidores(d, h) }}</pre>
+                  <button class="btn" @click="copiar(mensagemSeguidores(d, h))">
+                    {{ textoCopiado === mensagemSeguidores(d, h) ? 'Copiado!' : 'Copiar' }}
+                  </button>
+                </div>
+              </template>
+            </div>
+            </template>
           </div>
         </div>
       </div>
@@ -110,7 +128,7 @@ import BarraDeTopo from '../../compartilhado/barra-de-topo.vue'
 import FaixaDeErro from '../../compartilhado/faixa-de-erro.vue'
 import { sb } from '../../compartilhado/buscar-e-salvar-dados.js'
 import {
-  agruparPorDiaEHora, comResultado, deSeguidores, comCliques, montarMensagemWpp, formatarReais,
+  agruparPorDiaEHora, comResultado, deSeguidores, comCliques, montarMensagemWpp, montarMensagemSeguidores, formatarReais,
   deltaDeSeguidoresPorHora, seguidoresNaHora,
 } from './relatorio-por-hora.js'
 
@@ -133,11 +151,12 @@ const erro = ref(null)
 const dias = ref([])
 const deltasSeguidores = ref([])
 const expandidos = ref(new Set())
+const horasExpandidas = ref(new Set())
 
 // Expandir/recolher e o toggle "só resultado/todas" são POR TIPO de seção,
 // não por hora isolada — pedido do dono (12/09/2026): um clique afeta a
 // seção inteira, em todas as horas de uma vez, não uma hora só.
-const secoesAbertas = ref({ campanhas: true, seguidores: true, wpp: true })
+const secoesAbertas = ref({ campanhas: true, seguidores: true, wpp: true, mensagemSeguidores: true })
 const modoCampanhas = ref('resultado')
 const modoSeguidores = ref('resultado')
 
@@ -149,6 +168,9 @@ function campanhasParaExibir(h) {
 function seguidoresParaExibir(h) {
   return modoSeguidores.value === 'resultado' ? comCliques(h.campanhas) : deSeguidores(h.campanhas)
 }
+function mensagemSeguidores(d, h) {
+  return montarMensagemSeguidores(d.dia, h.hora, h.campanhas, seguidoresNaHora(deltasSeguidores.value, d.dia, h.hora))
+}
 
 function expandido(dia) {
   return expandidos.value.has(dia)
@@ -158,6 +180,22 @@ function alternar(dia) {
   if (s.has(dia)) s.delete(dia)
   else s.add(dia)
   expandidos.value = s
+}
+
+// Cada HORA expande/recolhe por si só, dentro do dia — diferente do toggle
+// de seção (que é por tipo, valendo pras horas todas de uma vez).
+function chaveHora(dia, hora) {
+  return `${dia}|${hora}`
+}
+function horaExpandida(dia, hora) {
+  return horasExpandidas.value.has(chaveHora(dia, hora))
+}
+function alternarHora(dia, hora) {
+  const chave = chaveHora(dia, hora)
+  const s = new Set(horasExpandidas.value)
+  if (s.has(chave)) s.delete(chave)
+  else s.add(chave)
+  horasExpandidas.value = s
 }
 
 function formatarDia(iso) {
@@ -209,11 +247,6 @@ async function carregar() {
   dias.value = agruparPorDiaEHora(linhas, nomesPorCampanha)
   deltasSeguidores.value = deltaDeSeguidoresPorHora(leiturasSeguidores)
 
-  // Hoje nasce expandido; dias passados nascem fechados — "visão simples"
-  // pedida: quem abre a tela já vê o dia de hoje sem precisar clicar.
-  const hoje = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' })
-  if (dias.value.some((d) => d.dia === hoje)) expandidos.value = new Set([hoje])
-
   carregando.value = false
 }
 
@@ -235,7 +268,9 @@ onMounted(carregar)
 .rph-horas { border-top: 1px solid var(--border); display: flex; flex-direction: column; }
 .rph-hora { padding: var(--sp-3) var(--sp-4); border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: var(--sp-3); }
 .rph-hora:last-child { border-bottom: none; }
-.rph-hora-cabecalho { display: flex; align-items: baseline; gap: var(--sp-3); }
+.rph-hora-cabecalho { width: 100%; min-height: 40px; display: flex; align-items: baseline; gap: var(--sp-3); background: none; border: none; cursor: pointer; padding: 0; text-align: left; font-family: var(--fonte-principal); color: var(--text); }
+.rph-hora-seta { color: var(--muted); transition: transform .15s; flex-shrink: 0; }
+.rph-hora-seta.aberto { transform: rotate(90deg); }
 .rph-hora-rotulo { font-weight: 600; font-size: var(--texto-corpo); }
 .rph-hora-totais { color: var(--muted); font-size: var(--texto-etiqueta); }
 
