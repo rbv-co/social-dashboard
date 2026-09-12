@@ -23,69 +23,78 @@
               <span class="rph-hora-totais">{{ formatarReais(h.gastoTotal) }} · {{ h.conversasTotal }} conversas</span>
             </div>
 
-            <!-- Quatro seções, uma embaixo da outra — nunca misturadas.
-                 [+ SEGUIDORES] tem seção própria (não é campanha de lead);
-                 as demais campanhas se separam por ter tido conversa ou não. -->
-            <div v-if="comResultado(h.campanhas).length" class="rph-secao">
-              <div class="section-label">Resultados</div>
-              <table class="rph-tabela">
-                <thead><tr><th>Campanha</th><th>Investido</th><th>Conversas</th><th>Custo/lead</th></tr></thead>
-                <tbody>
-                  <tr v-for="c in comResultado(h.campanhas)" :key="c.campaignId">
-                    <td class="rph-campanha">{{ c.nome }}</td>
-                    <td>{{ formatarReais(c.gastoHora) }}</td>
-                    <td>{{ c.conversasHora }}</td>
-                    <td>{{ c.custoPorLead === null ? '—' : formatarReais(c.custoPorLead) }}</td>
-                  </tr>
-                </tbody>
-              </table>
+            <!-- Três seções, cada uma expande/recolhe por tipo de campanha
+                 (o clique vale pras horas todas de uma vez — é o TIPO que
+                 abre/fecha, não uma hora isolada). -->
+
+            <div class="rph-secao">
+              <button class="rph-secao-cabecalho" @click="secoesAbertas.campanhas = !secoesAbertas.campanhas">
+                <span class="section-label">Campanhas</span>
+                <span class="rph-secao-seta" :class="{ aberto: secoesAbertas.campanhas }">▸</span>
+              </button>
+              <template v-if="secoesAbertas.campanhas">
+                <button class="btn rph-toggle" @click="modoCampanhas = modoCampanhas === 'resultado' ? 'todas' : 'resultado'">
+                  {{ modoCampanhas === 'resultado' ? 'Mostrar todas' : 'Só com resultado' }}
+                </button>
+                <table v-if="campanhasParaExibir(h).length" class="rph-tabela">
+                  <thead><tr><th>Campanha</th><th>Investido</th><th>Conversas</th><th>Custo/lead</th></tr></thead>
+                  <tbody>
+                    <tr v-for="c in campanhasParaExibir(h)" :key="c.campaignId">
+                      <td class="rph-campanha">{{ c.nome }}</td>
+                      <td>{{ formatarReais(c.gastoHora) }}</td>
+                      <td>{{ c.conversasHora }}</td>
+                      <td>{{ c.custoPorLead === null ? '—' : formatarReais(c.custoPorLead) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+                <p v-else class="rph-vazio">Nenhuma campanha nessa hora, com esse filtro.</p>
+              </template>
             </div>
 
             <div v-if="deSeguidores(h.campanhas).length" class="rph-secao">
-              <div class="section-label">Seguidores</div>
-              <!-- Da CONTA inteira, não da campanha — a Meta não diz qual
-                   anúncio trouxe qual seguidor. Some quando não há leitura
-                   pra essa hora (nunca mostra 0 como se fosse "não mudou"). -->
-              <p v-if="seguidoresNaHora(deltasSeguidores, d.dia, h.hora) !== null" class="rph-seguidores-conta">
-                Seguidores da conta nessa hora:
-                <strong>{{ seguidoresNaHora(deltasSeguidores, d.dia, h.hora) > 0 ? '+' : '' }}{{ seguidoresNaHora(deltasSeguidores, d.dia, h.hora) }}</strong>
-              </p>
-              <table class="rph-tabela">
-                <thead><tr><th>Campanha</th><th>Investido</th><th>Conversas</th><th>Custo/lead</th></tr></thead>
-                <tbody>
-                  <tr v-for="c in deSeguidores(h.campanhas)" :key="c.campaignId">
-                    <td class="rph-campanha">{{ c.nome }}</td>
-                    <td>{{ formatarReais(c.gastoHora) }}</td>
-                    <td>{{ c.conversasHora }}</td>
-                    <td>{{ c.custoPorLead === null ? '—' : formatarReais(c.custoPorLead) }}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-
-            <div v-if="semResultado(h.campanhas).length" class="rph-secao">
-              <div class="section-label">Outras</div>
-              <table class="rph-tabela">
-                <thead><tr><th>Campanha</th><th>Investido</th><th>Conversas</th><th>Custo/lead</th></tr></thead>
-                <tbody>
-                  <tr v-for="c in semResultado(h.campanhas)" :key="c.campaignId">
-                    <td class="rph-campanha">{{ c.nome }}</td>
-                    <td>{{ formatarReais(c.gastoHora) }}</td>
-                    <td>{{ c.conversasHora }}</td>
-                    <td>—</td>
-                  </tr>
-                </tbody>
-              </table>
+              <button class="rph-secao-cabecalho" @click="secoesAbertas.seguidores = !secoesAbertas.seguidores">
+                <span class="section-label">Seguidores</span>
+                <span class="rph-secao-seta" :class="{ aberto: secoesAbertas.seguidores }">▸</span>
+              </button>
+              <template v-if="secoesAbertas.seguidores">
+                <!-- Da CONTA inteira, não da campanha — a Meta não diz qual
+                     anúncio trouxe qual seguidor. Some quando não há leitura
+                     pra essa hora (nunca mostra 0 como se fosse "não mudou"). -->
+                <p v-if="seguidoresNaHora(deltasSeguidores, d.dia, h.hora) !== null" class="rph-seguidores-conta">
+                  Seguidores da conta nessa hora:
+                  <strong>{{ seguidoresNaHora(deltasSeguidores, d.dia, h.hora) > 0 ? '+' : '' }}{{ seguidoresNaHora(deltasSeguidores, d.dia, h.hora) }}</strong>
+                </p>
+                <button class="btn rph-toggle" @click="modoSeguidores = modoSeguidores === 'resultado' ? 'todas' : 'resultado'">
+                  {{ modoSeguidores === 'resultado' ? 'Mostrar todas' : 'Só com clique' }}
+                </button>
+                <table v-if="seguidoresParaExibir(h).length" class="rph-tabela">
+                  <thead><tr><th>Campanha</th><th>Investido</th><th>Visitantes</th><th>Custo/visitante</th></tr></thead>
+                  <tbody>
+                    <tr v-for="c in seguidoresParaExibir(h)" :key="c.campaignId">
+                      <td class="rph-campanha">{{ c.nome }}</td>
+                      <td>{{ formatarReais(c.gastoHora) }}</td>
+                      <td>{{ c.cliquesHora }}</td>
+                      <td>{{ c.custoPorClique === null ? '—' : formatarReais(c.custoPorClique) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+                <p v-else class="rph-vazio">Nenhuma campanha de seguidores nessa hora, com esse filtro.</p>
+              </template>
             </div>
 
             <div v-if="montarMensagemWpp(d.dia, h.hora, h.campanhas)" class="rph-secao">
-              <div class="section-label">Mensagem WPP</div>
-              <div class="rph-msg-bloco">
-                <pre class="rph-msg-wpp">{{ montarMensagemWpp(d.dia, h.hora, h.campanhas) }}</pre>
-                <button class="btn" @click="copiar(montarMensagemWpp(d.dia, h.hora, h.campanhas))">
-                  {{ textoCopiado === montarMensagemWpp(d.dia, h.hora, h.campanhas) ? 'Copiado!' : 'Copiar' }}
-                </button>
-              </div>
+              <button class="rph-secao-cabecalho" @click="secoesAbertas.wpp = !secoesAbertas.wpp">
+                <span class="section-label">Mensagem WPP</span>
+                <span class="rph-secao-seta" :class="{ aberto: secoesAbertas.wpp }">▸</span>
+              </button>
+              <template v-if="secoesAbertas.wpp">
+                <div class="rph-msg-bloco">
+                  <pre class="rph-msg-wpp">{{ montarMensagemWpp(d.dia, h.hora, h.campanhas) }}</pre>
+                  <button class="btn" @click="copiar(montarMensagemWpp(d.dia, h.hora, h.campanhas))">
+                    {{ textoCopiado === montarMensagemWpp(d.dia, h.hora, h.campanhas) ? 'Copiado!' : 'Copiar' }}
+                  </button>
+                </div>
+              </template>
             </div>
           </div>
         </div>
@@ -101,7 +110,7 @@ import BarraDeTopo from '../../compartilhado/barra-de-topo.vue'
 import FaixaDeErro from '../../compartilhado/faixa-de-erro.vue'
 import { sb } from '../../compartilhado/buscar-e-salvar-dados.js'
 import {
-  agruparPorDiaEHora, comResultado, semResultado, deSeguidores, montarMensagemWpp, formatarReais,
+  agruparPorDiaEHora, comResultado, deSeguidores, comCliques, montarMensagemWpp, formatarReais,
   deltaDeSeguidoresPorHora, seguidoresNaHora,
 } from './relatorio-por-hora.js'
 
@@ -124,6 +133,22 @@ const erro = ref(null)
 const dias = ref([])
 const deltasSeguidores = ref([])
 const expandidos = ref(new Set())
+
+// Expandir/recolher e o toggle "só resultado/todas" são POR TIPO de seção,
+// não por hora isolada — pedido do dono (12/09/2026): um clique afeta a
+// seção inteira, em todas as horas de uma vez, não uma hora só.
+const secoesAbertas = ref({ campanhas: true, seguidores: true, wpp: true })
+const modoCampanhas = ref('resultado')
+const modoSeguidores = ref('resultado')
+
+// "Campanhas" junta Resultados+Outras num recorte só, controlado pelo
+// toggle acima — preserva a ordem por gasto que `agruparPorDiaEHora` já traz.
+function campanhasParaExibir(h) {
+  return modoCampanhas.value === 'resultado' ? comResultado(h.campanhas) : h.campanhas.filter((c) => c.tipo !== 'seguidores')
+}
+function seguidoresParaExibir(h) {
+  return modoSeguidores.value === 'resultado' ? comCliques(h.campanhas) : deSeguidores(h.campanhas)
+}
 
 function expandido(dia) {
   return expandidos.value.has(dia)
@@ -171,7 +196,7 @@ async function carregar() {
   const desdeISO = desde.toISOString().slice(0, 10)
 
   const [linhas, campanhas, leiturasSeguidores] = await Promise.all([
-    sb(`campaign_insights_hora?select=dia,hora,campaign_id,gasto_hora,conversas_hora&dia=gte.${desdeISO}&account_id=eq.${CONTA_VESSEL}&order=dia.desc,hora.asc`),
+    sb(`campaign_insights_hora?select=dia,hora,campaign_id,gasto_hora,conversas_hora,cliques_hora&dia=gte.${desdeISO}&account_id=eq.${CONTA_VESSEL}&order=dia.desc,hora.asc`),
     sb('campaigns?select=campaign_id,name'),
     sb(`followers_leituras?select=followers_count,lido_em&account_id=eq.${CONTA_VESSEL}&lido_em=gte.${desde.toISOString()}&order=lido_em.asc`),
   ])
@@ -215,6 +240,10 @@ onMounted(carregar)
 .rph-hora-totais { color: var(--muted); font-size: var(--texto-etiqueta); }
 
 .rph-secao { display: flex; flex-direction: column; gap: var(--sp-2); }
+.rph-secao-cabecalho { display: flex; align-items: center; gap: var(--sp-2); background: none; border: none; cursor: pointer; padding: var(--sp-1) 0; min-height: 40px; text-align: left; }
+.rph-secao-seta { color: var(--muted); transition: transform .15s; }
+.rph-secao-seta.aberto { transform: rotate(90deg); }
+.rph-toggle { align-self: flex-start; }
 .rph-seguidores-conta { margin: 0; font-size: var(--texto-corpo); color: var(--text); }
 
 .rph-tabela { width: 100%; border-collapse: collapse; font-size: var(--texto-corpo); }

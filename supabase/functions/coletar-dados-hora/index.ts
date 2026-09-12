@@ -1,6 +1,8 @@
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { exigirSegredoDeCron } from '../_shared/segredo-de-cron.ts';
-import { conversasIniciadas, calcularDeltaHora } from '../_shared/delta-de-hora.js';
+import {
+  conversasIniciadas, calcularDeltaHora, cliquesNoLink, deltaSimples,
+} from '../_shared/delta-de-hora.js';
 
 const GRAPH = 'https://graph.facebook.com/v22.0';
 
@@ -61,7 +63,7 @@ async function coletarConta(sb: any, acc: any, dia: string, hora: number, degrad
     // decrescente, a PRIMEIRA ocorrência de cada campaign_id é a mais recente.
     const { data: anterioresRows, error: erroAnteriores } = await sb
       .from('campaign_insights_hora')
-      .select('campaign_id,gasto_acumulado,conversas_acumuladas,hora')
+      .select('campaign_id,gasto_acumulado,conversas_acumuladas,cliques_acumulados,hora')
       .eq('account_id', accountId).eq('dia', dia).lt('hora', hora)
       .order('hora', { ascending: false });
     if (erroAnteriores) {
@@ -77,12 +79,15 @@ async function coletarConta(sb: any, acc: any, dia: string, hora: number, degrad
       const campaignId = r.campaign_id;
       const gastoAcumulado = parseFloat(r.spend ?? '0');
       const conversasAcumuladas = conversasIniciadas(r.actions);
+      const cliquesAcumulados = cliquesNoLink(r.actions);
       const anterior = anteriorPorCampanha.get(campaignId) ?? null;
       const { gasto_hora, conversas_hora } = calcularDeltaHora(gastoAcumulado, conversasAcumuladas, anterior);
+      const cliques_hora = deltaSimples(cliquesAcumulados, anterior?.cliques_acumulados);
       return {
         campaign_id: campaignId, account_id: accountId, dia, hora,
         gasto_acumulado: gastoAcumulado, conversas_acumuladas: conversasAcumuladas,
-        gasto_hora, conversas_hora,
+        cliques_acumulados: cliquesAcumulados,
+        gasto_hora, conversas_hora, cliques_hora,
       };
     });
 

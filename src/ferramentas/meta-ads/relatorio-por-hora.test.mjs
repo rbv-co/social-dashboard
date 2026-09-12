@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  custoPorLead, agruparPorDiaEHora, tipoDaCampanha, comResultado, semResultado, deSeguidores, montarMensagemWpp,
-  deltaDeSeguidoresPorHora, seguidoresNaHora,
+  custoPorLead, agruparPorDiaEHora, tipoDaCampanha, comResultado, semResultado, deSeguidores, comCliques,
+  montarMensagemWpp, deltaDeSeguidoresPorHora, seguidoresNaHora,
 } from './relatorio-por-hora.js';
 
 test('custoPorLead divide gasto por conversas', () => {
@@ -176,4 +176,23 @@ test('seguidoresNaHora: acha a hora certa, e null quando não tem leitura', () =
   assert.equal(seguidoresNaHora(deltas, '2026-09-11', 11), 5);
   assert.equal(seguidoresNaHora(deltas, '2026-09-11', 10), null, 'primeira leitura da série: null, não 0');
   assert.equal(seguidoresNaHora(deltas, '2026-09-11', 15), null, 'hora sem leitura nenhuma');
+});
+
+test('agruparPorDiaEHora: cliquesHora e custoPorClique entram na campanha, mesma regra do custo por lead', () => {
+  const linhas = [{ dia: '2026-09-11', hora: 8, campaign_id: 'c1', gasto_hora: 88, conversas_hora: 0, cliques_hora: 8 }];
+  const out = agruparPorDiaEHora(linhas);
+  const c = out[0].horas[0].campanhas[0];
+  assert.equal(c.cliquesHora, 8);
+  assert.equal(c.custoPorClique, 11);
+});
+
+test('comCliques: só campanha de seguidores com clique > 0', () => {
+  const linhas = [
+    { dia: '2026-09-11', hora: 8, campaign_id: 'c1', gasto_hora: 10, conversas_hora: 0, cliques_hora: 5 },
+    { dia: '2026-09-11', hora: 8, campaign_id: 'c2', gasto_hora: 10, conversas_hora: 0, cliques_hora: 0 },
+    { dia: '2026-09-11', hora: 8, campaign_id: 'c3', gasto_hora: 10, conversas_hora: 1, cliques_hora: 5 },
+  ];
+  const nomes = { c1: '[+ SEGUIDORES] A', c2: '[+ SEGUIDORES] B', c3: '[CAMPANHA WPP] C' };
+  const campanhas = agruparPorDiaEHora(linhas, nomes)[0].horas[0].campanhas;
+  assert.deepEqual(comCliques(campanhas).map((c) => c.campaignId), ['c1']);
 });

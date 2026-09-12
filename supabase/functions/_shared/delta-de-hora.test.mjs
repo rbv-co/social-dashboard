@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { conversasIniciadas, calcularDeltaHora } from './delta-de-hora.js';
+import {
+  conversasIniciadas, calcularDeltaHora, cliquesNoLink, deltaSimples,
+} from './delta-de-hora.js';
 
 test('conversasIniciadas acha messaging_conversation_started_7d', () => {
   const actions = [
@@ -33,4 +35,18 @@ test('calcularDeltaHora: subtrai contra a última linha gravada', () => {
 test('calcularDeltaHora: nunca devolve negativo (Meta pode corrigir pra baixo)', () => {
   const anterior = { gasto_acumulado: 100, conversas_acumuladas: 10 };
   assert.deepEqual(calcularDeltaHora(90, 8, anterior), { gasto_hora: 0, conversas_hora: 0 });
+});
+
+test('cliquesNoLink acha link_click, e 0 sem actions ou sem o tipo', () => {
+  assert.equal(cliquesNoLink([{ action_type: 'link_click', value: '88' }]), 88);
+  assert.equal(cliquesNoLink(null), 0);
+  assert.equal(cliquesNoLink([]), 0);
+  assert.equal(cliquesNoLink([{ action_type: 'post_reaction', value: '9' }]), 0);
+});
+
+test('deltaSimples: primeira leitura (sem anterior) = o próprio valor, nunca negativo', () => {
+  assert.equal(deltaSimples(50, null), 50);
+  assert.equal(deltaSimples(50, undefined), 50);
+  assert.equal(deltaSimples(30, 40), 0, 'Meta corrigiu pra baixo — nunca negativo');
+  assert.equal(deltaSimples(88, 20), 68);
 });

@@ -31,6 +31,7 @@ export function agruparPorDiaEHora(linhas, nomesPorCampanha = {}) {
     if (!porHora.has(l.hora)) porHora.set(l.hora, []);
     const gastoHora = Number(l.gasto_hora) || 0;
     const conversasHora = Number(l.conversas_hora) || 0;
+    const cliquesHora = Number(l.cliques_hora) || 0;
     const nome = nomesPorCampanha[l.campaign_id] || l.campaign_id;
     porHora.get(l.hora).push({
       campaignId: l.campaign_id,
@@ -38,7 +39,12 @@ export function agruparPorDiaEHora(linhas, nomesPorCampanha = {}) {
       tipo: tipoDaCampanha(nome),
       gastoHora,
       conversasHora,
+      cliquesHora,
       custoPorLead: custoPorLead(gastoHora, conversasHora),
+      // Cliques no link: indicador de [+ SEGUIDORES] (pedido do dono,
+      // 12/09/2026) — a Meta não atribui seguidor a campanha, mas atribui
+      // clique. Mesma matemática de custoPorLead (null sem clique, nunca 0).
+      custoPorClique: custoPorLead(gastoHora, cliquesHora),
     });
   }
 
@@ -78,6 +84,11 @@ export function semResultado(campanhas) {
 }
 export function deSeguidores(campanhas) {
   return campanhas.filter((c) => c.tipo === 'seguidores');
+}
+// Recorte do toggle "só com clique" dentro da seção Seguidores — mesma ideia
+// de comResultado, só que por clique (o "resultado" que existe pra esse tipo).
+export function comCliques(campanhas) {
+  return deSeguidores(campanhas).filter((c) => c.cliquesHora > 0);
 }
 
 // Texto pronto pra copiar e mandar no grupo de WhatsApp (manual por

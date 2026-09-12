@@ -34,3 +34,20 @@ export function calcularDeltaHora(gastoAcumulado, conversasAcumuladas, anterior)
     conversas_hora: Math.max(0, conversasAcumuladas - conversasAnterior),
   };
 }
+
+// Cliques no link — indicador das campanhas [+ SEGUIDORES] (pedido do dono,
+// 12/09/2026). A Meta não atribui "novo seguidor" a uma campanha (conferido
+// na Graph API real: nenhuma tinha ação de follow), então o número real
+// disponível por campanha é o clique — quem foi levado até a página.
+export function cliquesNoLink(actions) {
+  if (!Array.isArray(actions)) return 0;
+  const achado = actions.find((a) => a && a.action_type === 'link_click');
+  return achado ? parseInt(achado.value ?? '0', 10) || 0 : 0;
+}
+
+// Delta genérico de UM valor acumulado contra a leitura anterior (mesma
+// regra do calcularDeltaHora: nunca negativo). Usado pra cliques, e serve
+// pra qualquer métrica futura de acumulado único.
+export function deltaSimples(atual, anteriorValor) {
+  return Math.max(0, atual - (anteriorValor ?? 0));
+}
