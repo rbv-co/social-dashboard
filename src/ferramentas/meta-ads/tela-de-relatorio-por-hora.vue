@@ -18,11 +18,13 @@
 
         <div v-if="expandido(d.dia)" class="rph-horas">
           <div v-for="h in d.horas" :key="h.hora" class="rph-hora">
-            <div class="rph-hora-cabecalho">
+            <button class="rph-hora-cabecalho" @click="alternarHora(d.dia, h.hora)">
+              <span class="rph-hora-seta" :class="{ aberto: horaExpandida(d.dia, h.hora) }">▸</span>
               <span class="rph-hora-rotulo">{{ String(h.hora).padStart(2, '0') }}h</span>
               <span class="rph-hora-totais">{{ formatarReais(h.gastoTotal) }} · {{ h.conversasTotal }} conversas</span>
-            </div>
+            </button>
 
+            <template v-if="horaExpandida(d.dia, h.hora)">
             <!-- Três seções, cada uma expande/recolhe por tipo de campanha
                  (o clique vale pras horas todas de uma vez — é o TIPO que
                  abre/fecha, não uma hora isolada). -->
@@ -111,6 +113,7 @@
                 </div>
               </template>
             </div>
+            </template>
           </div>
         </div>
       </div>
@@ -148,6 +151,7 @@ const erro = ref(null)
 const dias = ref([])
 const deltasSeguidores = ref([])
 const expandidos = ref(new Set())
+const horasExpandidas = ref(new Set())
 
 // Expandir/recolher e o toggle "só resultado/todas" são POR TIPO de seção,
 // não por hora isolada — pedido do dono (12/09/2026): um clique afeta a
@@ -176,6 +180,22 @@ function alternar(dia) {
   if (s.has(dia)) s.delete(dia)
   else s.add(dia)
   expandidos.value = s
+}
+
+// Cada HORA expande/recolhe por si só, dentro do dia — diferente do toggle
+// de seção (que é por tipo, valendo pras horas todas de uma vez).
+function chaveHora(dia, hora) {
+  return `${dia}|${hora}`
+}
+function horaExpandida(dia, hora) {
+  return horasExpandidas.value.has(chaveHora(dia, hora))
+}
+function alternarHora(dia, hora) {
+  const chave = chaveHora(dia, hora)
+  const s = new Set(horasExpandidas.value)
+  if (s.has(chave)) s.delete(chave)
+  else s.add(chave)
+  horasExpandidas.value = s
 }
 
 function formatarDia(iso) {
@@ -227,11 +247,6 @@ async function carregar() {
   dias.value = agruparPorDiaEHora(linhas, nomesPorCampanha)
   deltasSeguidores.value = deltaDeSeguidoresPorHora(leiturasSeguidores)
 
-  // Hoje nasce expandido; dias passados nascem fechados — "visão simples"
-  // pedida: quem abre a tela já vê o dia de hoje sem precisar clicar.
-  const hoje = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' })
-  if (dias.value.some((d) => d.dia === hoje)) expandidos.value = new Set([hoje])
-
   carregando.value = false
 }
 
@@ -253,7 +268,9 @@ onMounted(carregar)
 .rph-horas { border-top: 1px solid var(--border); display: flex; flex-direction: column; }
 .rph-hora { padding: var(--sp-3) var(--sp-4); border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: var(--sp-3); }
 .rph-hora:last-child { border-bottom: none; }
-.rph-hora-cabecalho { display: flex; align-items: baseline; gap: var(--sp-3); }
+.rph-hora-cabecalho { width: 100%; min-height: 40px; display: flex; align-items: baseline; gap: var(--sp-3); background: none; border: none; cursor: pointer; padding: 0; text-align: left; font-family: var(--fonte-principal); color: var(--text); }
+.rph-hora-seta { color: var(--muted); transition: transform .15s; flex-shrink: 0; }
+.rph-hora-seta.aberto { transform: rotate(90deg); }
 .rph-hora-rotulo { font-weight: 600; font-size: var(--texto-corpo); }
 .rph-hora-totais { color: var(--muted); font-size: var(--texto-etiqueta); }
 
