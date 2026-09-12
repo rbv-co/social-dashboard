@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  custoPorLead, agruparPorDiaEHora, tipoDaCampanha, comResultado, semResultado, montarMensagemWpp,
+  custoPorLead, agruparPorDiaEHora, tipoDaCampanha, comResultado, semResultado, deSeguidores, montarMensagemWpp,
 } from './relatorio-por-hora.js';
 
 test('custoPorLead divide gasto por conversas', () => {
@@ -50,6 +50,26 @@ test('comResultado/semResultado recortam a mesma lista sem se sobrepor', () => {
   const campanhas = agruparPorDiaEHora(linhas)[0].horas[0].campanhas;
   assert.deepEqual(comResultado(campanhas).map((c) => c.campaignId), ['converteu']);
   assert.deepEqual(semResultado(campanhas).map((c) => c.campaignId), ['nao-converteu']);
+});
+
+test('comResultado/semResultado NUNCA devolvem campanha de seguidores — ela tem seção própria', () => {
+  const linhas = [
+    { dia: '2026-09-11', hora: 8, campaign_id: 'c1', gasto_hora: 10, conversas_hora: 1 },
+  ];
+  const campanhas = agruparPorDiaEHora(linhas, { c1: '[+ SEGUIDORES] Reels 1' })[0].horas[0].campanhas;
+  assert.deepEqual(comResultado(campanhas), []);
+  assert.deepEqual(semResultado(campanhas), []);
+  assert.deepEqual(deSeguidores(campanhas).map((c) => c.campaignId), ['c1']);
+});
+
+test('deSeguidores pega toda campanha [+ SEGUIDORES], com ou sem conversão', () => {
+  const linhas = [
+    { dia: '2026-09-11', hora: 8, campaign_id: 'c1', gasto_hora: 10, conversas_hora: 1 },
+    { dia: '2026-09-11', hora: 8, campaign_id: 'c2', gasto_hora: 20, conversas_hora: 0 },
+  ];
+  const nomes = { c1: '[+ SEGUIDORES] A', c2: '[+ SEGUIDORES] B' };
+  const campanhas = agruparPorDiaEHora(linhas, nomes)[0].horas[0].campanhas;
+  assert.deepEqual(deSeguidores(campanhas).map((c) => c.campaignId).sort(), ['c1', 'c2']);
 });
 
 test('agruparPorDiaEHora: subtotal de hora e de dia somam as campanhas', () => {

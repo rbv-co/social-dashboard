@@ -65,13 +65,19 @@ export function agruparPorDiaEHora(linhas, nomesPorCampanha = {}) {
   });
 }
 
-// As duas telas (aba Resultados / aba Outras) recortam a mesma lista de
-// campanhas de `agruparPorDiaEHora` — nunca duas listas discordando.
+// As quatro seções da tela (Resultados / Seguidores / Outras / Mensagem WPP)
+// recortam a MESMA lista de campanhas de `agruparPorDiaEHora` — nunca listas
+// discordando. `[+ SEGUIDORES]` sai de Resultados/Outras e ganha seção
+// própria (pedido do dono, 12/09/2026): não é campanha de lead, misturar as
+// duas só confundia quem lia.
 export function comResultado(campanhas) {
-  return campanhas.filter((c) => c.conversasHora > 0);
+  return campanhas.filter((c) => c.tipo !== 'seguidores' && c.conversasHora > 0);
 }
 export function semResultado(campanhas) {
-  return campanhas.filter((c) => c.conversasHora === 0);
+  return campanhas.filter((c) => c.tipo !== 'seguidores' && c.conversasHora === 0);
+}
+export function deSeguidores(campanhas) {
+  return campanhas.filter((c) => c.tipo === 'seguidores');
 }
 
 // Texto pronto pra copiar e mandar no grupo de WhatsApp (manual por

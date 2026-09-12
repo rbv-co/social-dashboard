@@ -2,13 +2,6 @@
   <div class="tela-relatorio-hora">
     <barra-de-topo voltar="Meta Ads" titulo="Relatório por Hora" @voltar="voltar" />
 
-    <div class="abas" role="tablist">
-      <button role="tab" type="button" :class="{ on: aba === 'resultados' }" @click="aba = 'resultados'">Resultados</button>
-      <button role="tab" type="button" :class="{ on: aba === 'outras' }" @click="aba = 'outras'">Outras</button>
-      <button role="tab" type="button" :class="{ on: aba === 'wpp' }" @click="aba = 'wpp'">Mensagem WPP</button>
-      <button role="tab" type="button" :class="{ on: aba === 'seguidores' }" @click="aba = 'seguidores'">Seguidores</button>
-    </div>
-
     <div class="rph-body">
       <faixa-de-erro :erro="erro" @tentar-de-novo="carregar" />
 
@@ -16,15 +9,7 @@
         Ainda não há leitura por hora. O robô roda de hora em hora — volte daqui a pouco.
       </p>
 
-      <p v-else-if="!erro && !carregando && aba === 'seguidores'" class="rph-vazio">
-        Em breve — indicadores de seguidores chegam numa próxima entrega.
-      </p>
-
-      <p v-else-if="!erro && !carregando && diasExibidos.length === 0" class="rph-vazio">
-        Nenhuma campanha nessa aba, no período mostrado.
-      </p>
-
-      <div v-for="d in diasExibidos" :key="d.dia" class="rph-dia">
+      <div v-for="d in dias" :key="d.dia" class="rph-dia">
         <button class="rph-dia-cabecalho" @click="alternar(d.dia)">
           <span class="rph-dia-seta" :class="{ aberto: expandido(d.dia) }">▸</span>
           <span class="rph-dia-data">{{ formatarDia(d.dia) }}</span>
@@ -38,23 +23,62 @@
               <span class="rph-hora-totais">{{ formatarReais(h.gastoTotal) }} · {{ h.conversasTotal }} conversas</span>
             </div>
 
-            <table v-if="aba !== 'wpp'" class="rph-tabela">
-              <thead>
-                <tr><th>Campanha</th><th>Investido</th><th>Conversas</th><th>Custo/lead</th></tr>
-              </thead>
-              <tbody>
-                <tr v-for="c in h.campanhasFiltradas" :key="c.campaignId">
-                  <td class="rph-campanha">{{ c.nome }}</td>
-                  <td>{{ formatarReais(c.gastoHora) }}</td>
-                  <td>{{ c.conversasHora }}</td>
-                  <td>{{ c.custoPorLead === null ? '—' : formatarReais(c.custoPorLead) }}</td>
-                </tr>
-              </tbody>
-            </table>
+            <!-- Quatro seções, uma embaixo da outra — nunca misturadas.
+                 [+ SEGUIDORES] tem seção própria (não é campanha de lead);
+                 as demais campanhas se separam por ter tido conversa ou não. -->
+            <div v-if="comResultado(h.campanhas).length" class="rph-secao">
+              <div class="section-label">Resultados</div>
+              <table class="rph-tabela">
+                <thead><tr><th>Campanha</th><th>Investido</th><th>Conversas</th><th>Custo/lead</th></tr></thead>
+                <tbody>
+                  <tr v-for="c in comResultado(h.campanhas)" :key="c.campaignId">
+                    <td class="rph-campanha">{{ c.nome }}</td>
+                    <td>{{ formatarReais(c.gastoHora) }}</td>
+                    <td>{{ c.conversasHora }}</td>
+                    <td>{{ c.custoPorLead === null ? '—' : formatarReais(c.custoPorLead) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
 
-            <div v-else class="rph-msg-bloco">
-              <pre class="rph-msg-wpp">{{ h.mensagem }}</pre>
-              <button class="btn" @click="copiar(h.mensagem)">{{ textoCopiado === h.mensagem ? 'Copiado!' : 'Copiar' }}</button>
+            <div v-if="deSeguidores(h.campanhas).length" class="rph-secao">
+              <div class="section-label">Seguidores</div>
+              <table class="rph-tabela">
+                <thead><tr><th>Campanha</th><th>Investido</th><th>Conversas</th><th>Custo/lead</th></tr></thead>
+                <tbody>
+                  <tr v-for="c in deSeguidores(h.campanhas)" :key="c.campaignId">
+                    <td class="rph-campanha">{{ c.nome }}</td>
+                    <td>{{ formatarReais(c.gastoHora) }}</td>
+                    <td>{{ c.conversasHora }}</td>
+                    <td>{{ c.custoPorLead === null ? '—' : formatarReais(c.custoPorLead) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div v-if="semResultado(h.campanhas).length" class="rph-secao">
+              <div class="section-label">Outras</div>
+              <table class="rph-tabela">
+                <thead><tr><th>Campanha</th><th>Investido</th><th>Conversas</th><th>Custo/lead</th></tr></thead>
+                <tbody>
+                  <tr v-for="c in semResultado(h.campanhas)" :key="c.campaignId">
+                    <td class="rph-campanha">{{ c.nome }}</td>
+                    <td>{{ formatarReais(c.gastoHora) }}</td>
+                    <td>{{ c.conversasHora }}</td>
+                    <td>—</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div v-if="montarMensagemWpp(d.dia, h.hora, h.campanhas)" class="rph-secao">
+              <div class="section-label">Mensagem WPP</div>
+              <div class="rph-msg-bloco">
+                <pre class="rph-msg-wpp">{{ montarMensagemWpp(d.dia, h.hora, h.campanhas) }}</pre>
+                <button class="btn" @click="copiar(montarMensagemWpp(d.dia, h.hora, h.campanhas))">
+                  {{ textoCopiado === montarMensagemWpp(d.dia, h.hora, h.campanhas) ? 'Copiado!' : 'Copiar' }}
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -64,12 +88,14 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import BarraDeTopo from '../../compartilhado/barra-de-topo.vue'
 import FaixaDeErro from '../../compartilhado/faixa-de-erro.vue'
 import { sb } from '../../compartilhado/buscar-e-salvar-dados.js'
-import { agruparPorDiaEHora, comResultado, semResultado, montarMensagemWpp, formatarReais } from './relatorio-por-hora.js'
+import {
+  agruparPorDiaEHora, comResultado, semResultado, deSeguidores, montarMensagemWpp, formatarReais,
+} from './relatorio-por-hora.js'
 
 const router = useRouter()
 function voltar() {
@@ -89,44 +115,6 @@ const carregando = ref(true)
 const erro = ref(null)
 const dias = ref([])
 const expandidos = ref(new Set())
-
-// Pedido do dono (12/09/2026): quatro recortes da mesma leitura.
-// - resultados/outras: mesma tabela, recorte por ter tido conversa ou não.
-// - wpp: só campanhas [CAMPANHA WPP], como texto pronto pra copiar (baniza
-//   o envio manual hoje; quando o Z-API entrar, é este texto que sai).
-// - seguidores: reservada pras [+ SEGUIDORES] — indicadores ainda não
-//   definidos, fica só o aviso "em breve".
-const aba = ref('resultados')
-
-// Nunca duas listas discordando: resultados/outras recortam com a MESMA
-// função pura que a tela de mensagem usa pra achar quem é WPP — ver
-// relatorio-por-hora.js. O total do dia/hora exibido é sempre o de TODAS as
-// campanhas daquela hora, não só das que aparecem na aba — é "quanto se
-// gastou", não "quanto se gastou no que apareceu aqui".
-const diasExibidos = computed(() => {
-  if (aba.value === 'resultados' || aba.value === 'outras') {
-    const filtro = aba.value === 'resultados' ? comResultado : semResultado
-    return dias.value
-      .map((d) => ({
-        ...d,
-        horas: d.horas
-          .map((h) => ({ ...h, campanhasFiltradas: filtro(h.campanhas) }))
-          .filter((h) => h.campanhasFiltradas.length > 0),
-      }))
-      .filter((d) => d.horas.length > 0)
-  }
-  if (aba.value === 'wpp') {
-    return dias.value
-      .map((d) => ({
-        ...d,
-        horas: d.horas
-          .map((h) => ({ ...h, mensagem: montarMensagemWpp(d.dia, h.hora, h.campanhas) }))
-          .filter((h) => h.mensagem !== null),
-      }))
-      .filter((d) => d.horas.length > 0)
-  }
-  return []
-})
 
 function expandido(dia) {
   return expandidos.value.has(dia)
@@ -208,11 +196,13 @@ onMounted(carregar)
 .rph-dia-totais { margin-left: auto; color: var(--muted); font-size: var(--texto-etiqueta); white-space: nowrap; }
 
 .rph-horas { border-top: 1px solid var(--border); display: flex; flex-direction: column; }
-.rph-hora { padding: var(--sp-3) var(--sp-4); border-bottom: 1px solid var(--border); }
+.rph-hora { padding: var(--sp-3) var(--sp-4); border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: var(--sp-3); }
 .rph-hora:last-child { border-bottom: none; }
-.rph-hora-cabecalho { display: flex; align-items: baseline; gap: var(--sp-3); margin-bottom: var(--sp-2); }
+.rph-hora-cabecalho { display: flex; align-items: baseline; gap: var(--sp-3); }
 .rph-hora-rotulo { font-weight: 600; font-size: var(--texto-corpo); }
 .rph-hora-totais { color: var(--muted); font-size: var(--texto-etiqueta); }
+
+.rph-secao { display: flex; flex-direction: column; gap: var(--sp-2); }
 
 .rph-tabela { width: 100%; border-collapse: collapse; font-size: var(--texto-corpo); }
 .rph-tabela th { text-align: left; color: var(--muted); font-weight: 600; padding: var(--sp-1) var(--sp-2); border-bottom: 1px solid var(--border); }
