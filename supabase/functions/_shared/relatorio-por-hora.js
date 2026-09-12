@@ -1,3 +1,10 @@
+// CÓPIA de src/ferramentas/meta-ads/relatorio-por-hora.js.
+//
+// POR QUE DUPLICADO E NÃO IMPORTADO: a Edge `enviar-relatorio-hora` roda no
+// Deno e não alcança `src/` (mesmo motivo de `_shared/valor-corrigido.js` —
+// ver o comentário lá). É a MESMA regra que o Relatório por Hora usa pra
+// montar as mensagens; mudou uma, muda a outra à mão.
+//
 // Agrupa campaign_insights_hora em dias > horas > campanhas, para o
 // acordeão do Relatório por Hora. Pura, sem I/O — recebe os dados já
 // buscados do Supabase (ver tela-de-relatorio-por-hora.vue).
@@ -65,24 +72,9 @@ export function agruparPorDiaEHora(linhas, nomesPorCampanha = {}) {
   });
 }
 
-// As quatro seções da tela (Resultados / Seguidores / Outras / Mensagem WPP)
-// recortam a MESMA lista de campanhas de `agruparPorDiaEHora` — nunca listas
-// discordando. `[+ SEGUIDORES]` sai de Resultados/Outras e ganha seção
-// própria (pedido do dono, 12/09/2026): não é campanha de lead, misturar as
-// duas só confundia quem lia.
-export function comResultado(campanhas) {
-  return campanhas.filter((c) => c.tipo !== 'seguidores' && c.conversasHora > 0);
-}
-export function semResultado(campanhas) {
-  return campanhas.filter((c) => c.tipo !== 'seguidores' && c.conversasHora === 0);
-}
-
-// Texto pronto pra copiar (a tela ainda tem o botão) — e é a MESMA regra que
-// `enviar-relatorio-hora` usa pra mandar automático no grupo de WhatsApp via
-// Z-API, de hora em hora (ligado em 12/09/2026; ver cópia comentada em
-// supabase/functions/_shared/relatorio-por-hora.js). Só entram campanhas
-// [CAMPANHA WPP]; `null` quando não há nenhuma nessa hora (não força
-// mensagem vazia).
+// Texto pronto pra mandar no grupo de WhatsApp via Z-API, de hora em hora.
+// Só entram campanhas [CAMPANHA WPP]; `null` quando não há nenhuma nessa
+// hora (não força mensagem vazia).
 export function montarMensagemWpp(dia, hora, campanhas) {
   const wpp = campanhas.filter((c) => c.tipo === 'wpp');
   if (!wpp.length) return null;
@@ -102,15 +94,12 @@ export function montarMensagemWpp(dia, hora, campanhas) {
   return [cabecalho, '', ...linhas, '', consolidado].join('\n');
 }
 
-// Texto pronto pra copiar (mesmo espírito de montarMensagemWpp), mas só com
-// os dois números DA CONTA — seguidores e visita ao perfil. Nunca teve
-// (cliques, 12/09/2026) e depois teve e foi tirado de novo no mesmo dia
-// (pedido do dono: "tira o link_click, apenas visitas no perfil e
-// seguidores") — não existe por campanha pra nenhum dos dois (Meta não
-// atribui nem seguidor nem visita a uma campanha específica), então não tem
-// por que fingir granularidade que não existe. `null` em cada delta = sem
-// leitura pra essa hora, não entra na mensagem. `null` geral = nem um nem
-// outro tinham o que dizer.
+// Texto pronto pra mandar no grupo de WhatsApp via Z-API, mesmo espírito de
+// montarMensagemWpp — só com os dois números DA CONTA: seguidores e visita
+// ao perfil. Não existe por campanha pra nenhum dos dois (Meta não atribui
+// nem seguidor nem visita a uma campanha específica). `null` em cada delta =
+// sem leitura pra essa hora, não entra na mensagem. `null` geral = nem um
+// nem outro tinham o que dizer.
 export function montarMensagemSeguidores(dia, hora, seguidoresDelta, visitasPerfilDelta) {
   if (seguidoresDelta === null && visitasPerfilDelta === null) return null;
 
@@ -175,16 +164,4 @@ export function deltaDeSeguidoresPorHora(leituras) {
 export function seguidoresNaHora(deltas, dia, hora) {
   const achado = deltas.find((d) => d.dia === dia && d.hora === hora);
   return achado ? achado.seguidoresDelta : null;
-}
-
-// Visitas ao perfil da CONTA (12/09/2026, "vai atras desse dado") — mesma
-// limitação de seguidores: a Meta não atribui por campanha, só dá o total da
-// conta. Diferente de seguidor (estoque, delta calculado aqui contra a
-// última leitura), visita é atividade — o robô já grava o delta calculado
-// (perfil_visitas_hora.visitas_hora, reseta por dia, mesma regra de
-// gasto_hora), então aqui é só achar a linha certa. `null` = sem leitura
-// pra essa hora (nunca mostra 0 como se fosse "não teve visita").
-export function visitasPerfilNaHora(linhas, dia, hora) {
-  const achada = linhas.find((l) => l.dia === dia && l.hora === hora);
-  return achada ? achada.visitas_hora : null;
 }
