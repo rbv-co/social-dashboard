@@ -83,23 +83,52 @@ export function semResultado(campanhas) {
 // supabase/functions/_shared/relatorio-por-hora.js). Só entram campanhas
 // [CAMPANHA WPP]; `null` quando não há nenhuma nessa hora (não força
 // mensagem vazia).
-export function montarMensagemWpp(dia, hora, campanhas) {
+//
+// MESMO ESQUEMA da Mensagem Seguidores (pedido de um colega no grupo,
+// repassado pelo dono em 12/09/2026: "tem que ter o msm esquema de: Leads no
+// intervalo: +xx / Total de leads diário: xx" — e o dono: "coloca a palavra
+// gasto antes do valor, pra saber também, se não fica confuso"). Cada número
+// com o RÓTULO na frente, nunca só o valor solto — foi isso que confundiu
+// antes ("parece que não teve nenhum lead no dia" quando só a hora tinha 0).
+// `leadsHoje`/`gastoHoje` são os totais WPP do dia inteiro (vêm de
+// `leadsWppNoDia`/`gastoWppNoDia`); `null`/`undefined` não mostra a linha
+// (chamador ainda não tem o dado).
+export function montarMensagemWpp(dia, hora, campanhas, leadsHoje, gastoHoje) {
   const wpp = campanhas.filter((c) => c.tipo === 'wpp');
   if (!wpp.length) return null;
 
   const [ano, mes, d] = dia.split('-');
   const horaStr = String(hora).padStart(2, '0');
-  const linhas = wpp.map((c) => `${c.nome} — ${c.conversasHora} lead${c.conversasHora === 1 ? '' : 's'} · ${formatarReais(c.gastoHora)}`);
+  const linhas = wpp.map((c) => `${c.nome} — ${c.conversasHora} lead${c.conversasHora === 1 ? '' : 's'} · Gasto: ${formatarReais(c.gastoHora)}`);
 
   const totalLeads = wpp.reduce((s, c) => s + c.conversasHora, 0);
   const totalGasto = wpp.reduce((s, c) => s + c.gastoHora, 0);
   const custoMedio = custoPorLead(totalGasto, totalLeads);
 
   const cabecalho = `📊 Leads recebidos — ${horaStr}h, ${d}/${mes}`;
-  const consolidado = `Total: ${totalLeads} lead${totalLeads === 1 ? '' : 's'} · ${formatarReais(totalGasto)} investidos`
-    + (custoMedio !== null ? ` · ${formatarReais(custoMedio)}/lead` : '');
+  const linhaNoPeriodo = `Leads no período: ${totalLeads}`;
+  const linhaGasto = `Gasto: ${formatarReais(totalGasto)}`;
+  const linhaCustoPorLead = custoMedio !== null ? `Custo por lead: ${formatarReais(custoMedio)}` : null;
+  const linhaLeadsDoDia = leadsHoje != null ? `Total de leads no dia: ${leadsHoje}` : null;
+  const linhaGastoDoDia = gastoHoje != null ? `Total de gasto no dia: ${formatarReais(gastoHoje)}` : null;
 
-  return [cabecalho, '', ...linhas, '', consolidado].join('\n');
+  const doPeriodo = [linhaNoPeriodo, linhaGasto, linhaCustoPorLead].filter((l) => l !== null);
+  const doDia = [linhaLeadsDoDia, linhaGastoDoDia].filter((l) => l !== null);
+
+  const corpo = [cabecalho, '', ...linhas, '', ...doPeriodo];
+  if (doDia.length) corpo.push('', ...doDia);
+  return corpo.join('\n');
+}
+
+// Soma os leads (ou o gasto) das campanhas [CAMPANHA WPP] em TODAS as horas
+// do dia — o "Total de leads/gasto diário" pedido acima. `horas` é o array
+// que `agruparPorDiaEHora` já devolve para um dia (`dias.value[i].horas`,
+// cada uma com `.campanhas`) — não precisa de leitura nova.
+export function leadsWppNoDia(horas) {
+  return horas.reduce((soma, h) => soma + h.campanhas.filter((c) => c.tipo === 'wpp').reduce((s, c) => s + c.conversasHora, 0), 0);
+}
+export function gastoWppNoDia(horas) {
+  return horas.reduce((soma, h) => soma + h.campanhas.filter((c) => c.tipo === 'wpp').reduce((s, c) => s + c.gastoHora, 0), 0);
 }
 
 // Texto pronto pra copiar (mesmo espírito de montarMensagemWpp), mas só com

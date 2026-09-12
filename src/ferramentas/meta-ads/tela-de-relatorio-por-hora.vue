@@ -77,17 +77,17 @@
                 </p>
               </div>
 
-              <div v-if="montarMensagemWpp(d.dia, h.hora, h.campanhas) || mensagemSeguidores(d, h)" class="rph-bloco rph-bloco-mensagens">
+              <div v-if="mensagemWpp(d, h) || mensagemSeguidores(d, h)" class="rph-bloco rph-bloco-mensagens">
                 <button class="rph-bloco-topo rph-mensagens-cabecalho" @click="alternarMensagens(d.dia, h.hora)">
                   <span class="section-label">Mensagens do grupo</span>
                   <span class="rph-secao-seta" :class="{ aberto: mensagensAbertas(d.dia, h.hora) }">▸</span>
                 </button>
                 <template v-if="mensagensAbertas(d.dia, h.hora)">
-                  <div v-if="montarMensagemWpp(d.dia, h.hora, h.campanhas)" class="rph-msg-bloco">
+                  <div v-if="mensagemWpp(d, h)" class="rph-msg-bloco">
                     <span class="rph-msg-rotulo">WPP</span>
-                    <pre class="rph-msg-wpp">{{ montarMensagemWpp(d.dia, h.hora, h.campanhas) }}</pre>
-                    <button class="btn" @click="copiar(montarMensagemWpp(d.dia, h.hora, h.campanhas))">
-                      {{ textoCopiado === montarMensagemWpp(d.dia, h.hora, h.campanhas) ? 'Copiado!' : 'Copiar' }}
+                    <pre class="rph-msg-wpp">{{ mensagemWpp(d, h) }}</pre>
+                    <button class="btn" @click="copiar(mensagemWpp(d, h))">
+                      {{ textoCopiado === mensagemWpp(d, h) ? 'Copiado!' : 'Copiar' }}
                     </button>
                   </div>
                   <div v-if="mensagemSeguidores(d, h)" class="rph-msg-bloco">
@@ -114,7 +114,7 @@ import BarraDeTopo from '../../compartilhado/barra-de-topo.vue'
 import FaixaDeErro from '../../compartilhado/faixa-de-erro.vue'
 import { sb } from '../../compartilhado/buscar-e-salvar-dados.js'
 import {
-  agruparPorDiaEHora, comResultado, montarMensagemWpp, montarMensagemSeguidores, formatarReais,
+  agruparPorDiaEHora, comResultado, montarMensagemWpp, leadsWppNoDia, gastoWppNoDia, montarMensagemSeguidores, formatarReais,
   deltaDeSeguidoresPorHora, seguidoresNaHora, seguidoresTotalNaHora, seguidoresNoDia, visitasPerfilNaHora,
 } from './relatorio-por-hora.js'
 
@@ -151,6 +151,9 @@ const modoCampanhas = ref('resultado')
 // toggle acima — preserva a ordem por gasto que `agruparPorDiaEHora` já traz.
 function campanhasParaExibir(h) {
   return modoCampanhas.value === 'resultado' ? comResultado(h.campanhas) : h.campanhas.filter((c) => c.tipo !== 'seguidores')
+}
+function mensagemWpp(d, h) {
+  return montarMensagemWpp(d.dia, h.hora, h.campanhas, leadsWppNoDia(d.horas), gastoWppNoDia(d.horas))
 }
 // Gasto das campanhas [+ SEGUIDORES] nessa hora — pedido do dono (12/09/2026,
 // "faz uma linha de investimento também"): o mesmo gasto que já vem em

@@ -18,7 +18,7 @@
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { exigirSegredoDeCron } from '../_shared/segredo-de-cron.ts';
 import {
-  agruparPorDiaEHora, montarMensagemWpp, montarMensagemSeguidores,
+  agruparPorDiaEHora, montarMensagemWpp, leadsWppNoDia, gastoWppNoDia, montarMensagemSeguidores,
   deltaDeSeguidoresPorHora, seguidoresNaHora, seguidoresTotalNaHora, seguidoresNoDia,
 } from '../_shared/relatorio-por-hora.js';
 
@@ -74,9 +74,13 @@ Deno.serve(async (req: Request) => {
 
   // As quatro leituras não dependem uma da outra — em paralelo (mesmo
   // cuidado do code review de 12/09/2026 em coletar-dados-hora).
+  //
+  // campaign_insights_hora vem do DIA INTEIRO, não só desta hora: precisa das
+  // horas anteriores pra somar "Total de leads no dia" (pedido de um colega
+  // no grupo, repassado pelo dono, 12/09/2026).
   const [linhasRes, campanhasRes, leiturasRes, visitasRes] = await Promise.all([
     sb.from('campaign_insights_hora').select('dia,hora,campaign_id,gasto_hora,conversas_hora')
-      .eq('account_id', CONTA_VESSEL).eq('dia', dia).eq('hora', hora),
+      .eq('account_id', CONTA_VESSEL).eq('dia', dia),
     sb.from('campaigns').select('campaign_id,name'),
     // 25h de folga: cobre a virada do dia (seguidor é estoque, delta
     // atravessa a meia-noite — ver deltaDeSeguidoresPorHora).
@@ -95,7 +99,10 @@ Deno.serve(async (req: Request) => {
 
   const nomesPorCampanha = Object.fromEntries((campanhasRes.data ?? []).map((c: any) => [c.campaign_id, c.name]));
   const agrupado = agruparPorDiaEHora(linhasRes.data ?? [], nomesPorCampanha);
-  const campanhasDaHora = agrupado[0]?.horas?.[0]?.campanhas ?? [];
+  const horasDoDia = agrupado[0]?.horas ?? [];
+  const campanhasDaHora = horasDoDia.find((h: any) => h.hora === hora)?.campanhas ?? [];
+  const leadsHoje = leadsWppNoDia(horasDoDia);
+  const gastoWppHoje = gastoWppNoDia(horasDoDia);
 
   const deltasSeguidores = deltaDeSeguidoresPorHora(leiturasRes.data ?? []);
   const seguidoresDelta = seguidoresNaHora(deltasSeguidores, dia, hora);
@@ -109,7 +116,7 @@ Deno.serve(async (req: Request) => {
     .reduce((s: number, c: any) => s + c.gastoHora, 0);
 
   const mensagens: [string, string | null][] = [
-    ['wpp', montarMensagemWpp(dia, hora, campanhasDaHora)],
+    ['wpp', montarMensagemWpp(dia, hora, campanhasDaHora, leadsHoje, gastoWppHoje)],
     ['seguidores', montarMensagemSeguidores(dia, hora, seguidoresDelta, visitasPerfilDelta, seguidoresTotal, seguidoresHoje, gastoSeguidores)],
   ];
 

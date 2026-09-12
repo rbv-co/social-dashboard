@@ -2,8 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   custoPorLead, agruparPorDiaEHora, tipoDaCampanha,
-  montarMensagemWpp, montarMensagemSeguidores, deltaDeSeguidoresPorHora, seguidoresNaHora, seguidoresTotalNaHora,
-  seguidoresNoDia,
+  montarMensagemWpp, leadsWppNoDia, gastoWppNoDia, montarMensagemSeguidores, deltaDeSeguidoresPorHora, seguidoresNaHora,
+  seguidoresTotalNaHora, seguidoresNoDia,
 } from './relatorio-por-hora.js';
 
 // Cópia de src/ferramentas/meta-ads/relatorio-por-hora.test.mjs, só a parte
@@ -37,16 +37,25 @@ test('montarMensagemWpp: null quando não há campanha WPP nessa hora', () => {
   assert.equal(montarMensagemWpp('2026-09-12', 13, campanhas), null);
 });
 
-test('montarMensagemWpp: lista as campanhas WPP e termina com o consolidado', () => {
+test('montarMensagemWpp: lista as campanhas, depois Leads no período / Gasto / Custo por lead / Total de leads no dia', () => {
   const campanhas = [
     { campaignId: 'c1', nome: '[CAMPANHA WPP] Criativo 1', tipo: 'wpp', gastoHora: 100, conversasHora: 4 },
     { campaignId: 'c2', nome: 'Post do Instagram', tipo: 'outro', gastoHora: 999, conversasHora: 999 },
   ];
-  const msg = montarMensagemWpp('2026-09-12', 13, campanhas);
+  const msg = montarMensagemWpp('2026-09-12', 13, campanhas, 9, 145.9);
   assert.match(msg, /^📊 Leads recebidos — 13h, 12\/09/);
-  assert.match(msg, /\[CAMPANHA WPP\] Criativo 1 — 4 leads · R\$\s?100,00/);
+  assert.match(msg, /\[CAMPANHA WPP\] Criativo 1 — 4 leads · Gasto: R\$\s?100,00/);
   assert.doesNotMatch(msg, /Post do Instagram/, 'campanha fora do WPP vazou pra mensagem');
-  assert.match(msg, /Total: 4 leads · R\$\s?100,00 investidos · R\$\s?25,00\/lead$/);
+  assert.match(msg, /Leads no período: 4\nGasto: R\$\s?100,00\nCusto por lead: R\$\s?25,00\n\nTotal de leads no dia: 9\nTotal de gasto no dia: R\$\s?145,90$/);
+});
+
+test('leadsWppNoDia/gastoWppNoDia: somam só WPP, em todas as horas do dia', () => {
+  const horas = [
+    { campanhas: [{ tipo: 'wpp', conversasHora: 4, gastoHora: 100 }] },
+    { campanhas: [{ tipo: 'wpp', conversasHora: 5, gastoHora: 45.9 }, { tipo: 'outro', conversasHora: 999, gastoHora: 999 }] },
+  ];
+  assert.equal(leadsWppNoDia(horas), 9);
+  assert.equal(gastoWppNoDia(horas), 145.9);
 });
 
 test('montarMensagemSeguidores: null quando nem o total de seguidores nem a visita ao perfil têm dado', () => {
