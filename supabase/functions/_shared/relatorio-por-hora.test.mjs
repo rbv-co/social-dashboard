@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   custoPorLead, agruparPorDiaEHora, tipoDaCampanha,
   montarMensagemWpp, montarMensagemSeguidores, deltaDeSeguidoresPorHora, seguidoresNaHora, seguidoresTotalNaHora,
+  seguidoresNoDia,
 } from './relatorio-por-hora.js';
 
 // Cópia de src/ferramentas/meta-ads/relatorio-por-hora.test.mjs, só a parte
@@ -49,15 +50,22 @@ test('montarMensagemWpp: lista as campanhas WPP e termina com o consolidado', ()
 });
 
 test('montarMensagemSeguidores: null quando nem o total de seguidores nem a visita ao perfil têm dado', () => {
-  assert.equal(montarMensagemSeguidores('2026-09-12', 13, null, null, null), null);
+  assert.equal(montarMensagemSeguidores('2026-09-12', 13, null, null, null, null), null);
 });
 
-test('montarMensagemSeguidores: total, delta de seguidor e visita ao perfil, todos juntos', () => {
-  const msg = montarMensagemSeguidores('2026-09-12', 13, 17, 129, 1017);
-  assert.equal(msg, '📊 Seguidores e visitas ao perfil — 13h, 12/09\n\nSeguidores da conta: 1.017 (+17 nessa hora)\nVisitas ao perfil da conta: 129');
+test('montarMensagemSeguidores: período, dia, total de seguidores e visita ao perfil, tudo junto', () => {
+  const msg = montarMensagemSeguidores('2026-09-12', 13, 17, 129, 1017, 45);
+  assert.equal(
+    msg,
+    '📊 Seguidores e visitas ao perfil — 13h, 12/09\n\n'
+    + 'Novos seguidores no período: +17\n'
+    + 'Total do dia: +45\n'
+    + 'Total da conta: 1.017\n'
+    + 'Visitas ao perfil da conta: 129',
+  );
 });
 
-test('deltaDeSeguidoresPorHora + seguidoresNaHora/seguidoresTotalNaHora: acham a hora certa', () => {
+test('deltaDeSeguidoresPorHora + seguidoresNaHora/seguidoresTotalNaHora/seguidoresNoDia: acham a hora e o dia certos', () => {
   const deltas = deltaDeSeguidoresPorHora([
     { followers_count: 1000, lido_em: '2026-09-12T15:05:00Z' }, // 12h SP
     { followers_count: 1017, lido_em: '2026-09-12T16:05:00Z' }, // 13h SP: +17
@@ -66,4 +74,5 @@ test('deltaDeSeguidoresPorHora + seguidoresNaHora/seguidoresTotalNaHora: acham a
   assert.equal(seguidoresNaHora(deltas, '2026-09-12', 20), null, 'hora sem leitura nenhuma');
   assert.equal(seguidoresTotalNaHora(deltas, '2026-09-12', 12), 1000, 'primeira leitura: sem delta, mas com total');
   assert.equal(seguidoresTotalNaHora(deltas, '2026-09-12', 13), 1017);
+  assert.equal(seguidoresNoDia(deltas, '2026-09-12'), 17, 'a primeira leitura do dia entra como 0 na soma');
 });

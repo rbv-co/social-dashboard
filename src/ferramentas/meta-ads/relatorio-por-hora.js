@@ -103,28 +103,36 @@ export function montarMensagemWpp(dia, hora, campanhas) {
 }
 
 // Texto pronto pra copiar (mesmo espírito de montarMensagemWpp), mas só com
-// os números DA CONTA — total de seguidores, delta de seguidores, e visita
-// ao perfil. Nunca teve (cliques, 12/09/2026) e depois teve e foi tirado de
-// novo no mesmo dia (pedido do dono: "tira o link_click, apenas visitas no
-// perfil e seguidores") — não existe por campanha pra nenhum dos dois (Meta
-// não atribui nem seguidor nem visita a uma campanha específica), então não
-// tem por que fingir granularidade que não existe.
+// os números DA CONTA — seguidores (do período, do dia, e total) e visita ao
+// perfil. Nunca teve (cliques, 12/09/2026) e depois teve e foi tirado de novo
+// no mesmo dia (pedido do dono: "tira o link_click, apenas visitas no perfil
+// e seguidores") — não existe por campanha pra nenhum dos dois (Meta não
+// atribui nem seguidor nem visita a uma campanha específica), então não tem
+// por que fingir granularidade que não existe.
 //
-// `seguidoresTotal` decide se a linha de seguidor aparece (vem de
-// `seguidoresTotalNaHora`) — é o mais permissivo dos dois: a primeira
-// leitura da série tem total mas não tem delta (pedido do dono, 12/09/2026:
-// "coloca o total de seguidores também, fica mais completo"). `null` em cada
-// valor = sem leitura pra essa hora, não entra na mensagem. `null` geral =
-// nem seguidor (total) nem visita ao perfil tinham o que dizer.
-export function montarMensagemSeguidores(dia, hora, seguidoresDelta, visitasPerfilDelta, seguidoresTotal) {
+// `seguidoresTotal` decide se o bloco de seguidor aparece (vem de
+// `seguidoresTotalNaHora`) — é o mais permissivo dos três: a primeira
+// leitura da série tem total mas não tem delta de período (pedido do dono,
+// 12/09/2026: "coloca o total de seguidores também" e depois "novos
+// seguidores no período / total do dia / total da conta"). `null` em cada
+// valor = sem leitura pra essa hora (ou pro dia), não entra na mensagem.
+// `null` geral = nem seguidor (total) nem visita ao perfil tinham o que dizer.
+export function montarMensagemSeguidores(dia, hora, seguidoresDelta, visitasPerfilDelta, seguidoresTotal, seguidoresHoje) {
   if (seguidoresTotal === null && visitasPerfilDelta === null) return null;
 
   const [ano, mes, d] = dia.split('-');
   const horaStr = String(hora).padStart(2, '0');
   const cabecalho = `📊 Seguidores e visitas ao perfil — ${horaStr}h, ${d}/${mes}`;
-  const linhaSeguidores = seguidoresTotal !== null
-    ? `Seguidores da conta: ${seguidoresTotal.toLocaleString('pt-BR')}`
-      + (seguidoresDelta !== null ? ` (${seguidoresDelta > 0 ? '+' : ''}${seguidoresDelta} nessa hora)` : '')
+  const comSinal = (n) => `${n > 0 ? '+' : ''}${n}`;
+
+  const linhaNoPeriodo = seguidoresDelta !== null
+    ? `Novos seguidores no período: ${comSinal(seguidoresDelta)}`
+    : null;
+  const linhaDoDia = seguidoresHoje !== null
+    ? `Total do dia: ${comSinal(seguidoresHoje)}`
+    : null;
+  const linhaTotalConta = seguidoresTotal !== null
+    ? `Total da conta: ${seguidoresTotal.toLocaleString('pt-BR')}`
     : null;
   // Visita é atividade (nunca negativa), não estoque como seguidor — sem
   // sinal de "+" na frente.
@@ -132,7 +140,8 @@ export function montarMensagemSeguidores(dia, hora, seguidoresDelta, visitasPerf
     ? `Visitas ao perfil da conta: ${visitasPerfilDelta}`
     : null;
 
-  return [cabecalho, '', linhaSeguidores, linhaVisitasPerfil].filter((l) => l !== null).join('\n');
+  return [cabecalho, '', linhaNoPeriodo, linhaDoDia, linhaTotalConta, linhaVisitasPerfil]
+    .filter((l) => l !== null).join('\n');
 }
 
 function diaEHoraSP(isoTimestamp) {
@@ -192,6 +201,18 @@ export function seguidoresNaHora(deltas, dia, hora) {
 export function seguidoresTotalNaHora(deltas, dia, hora) {
   const achado = deltas.find((d) => d.dia === dia && d.hora === hora);
   return achado ? achado.seguidoresTotal : null;
+}
+
+// Soma os deltas de TODAS as horas do dia até agora — "quanto ganhou (ou
+// perdeu) hoje", não só nessa hora isolada (pedido do dono, 12/09/2026).
+// Bucket sem delta (a primeiríssima leitura da série inteira, se calhar de
+// cair nesse dia) entra como 0 na soma — é a única leitura sem "anterior"
+// pra comparar, tratar como null quebraria a soma do dia inteiro por causa
+// de uma leitura só. `null` quando o dia não tem NENHUMA leitura ainda.
+export function seguidoresNoDia(deltas, dia) {
+  const doDia = deltas.filter((d) => d.dia === dia);
+  if (!doDia.length) return null;
+  return doDia.reduce((soma, d) => soma + (d.seguidoresDelta ?? 0), 0);
 }
 
 // Visitas ao perfil da CONTA (12/09/2026, "vai atras desse dado") — mesma

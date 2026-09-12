@@ -19,7 +19,7 @@ import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { exigirSegredoDeCron } from '../_shared/segredo-de-cron.ts';
 import {
   agruparPorDiaEHora, montarMensagemWpp, montarMensagemSeguidores,
-  deltaDeSeguidoresPorHora, seguidoresNaHora, seguidoresTotalNaHora,
+  deltaDeSeguidoresPorHora, seguidoresNaHora, seguidoresTotalNaHora, seguidoresNoDia,
 } from '../_shared/relatorio-por-hora.js';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
@@ -100,11 +100,12 @@ Deno.serve(async (req: Request) => {
   const deltasSeguidores = deltaDeSeguidoresPorHora(leiturasRes.data ?? []);
   const seguidoresDelta = seguidoresNaHora(deltasSeguidores, dia, hora);
   const seguidoresTotal = seguidoresTotalNaHora(deltasSeguidores, dia, hora);
+  const seguidoresHoje = seguidoresNoDia(deltasSeguidores, dia);
   const visitasPerfilDelta = visitasRes.data?.visitas_hora ?? null;
 
   const mensagens: [string, string | null][] = [
     ['wpp', montarMensagemWpp(dia, hora, campanhasDaHora)],
-    ['seguidores', montarMensagemSeguidores(dia, hora, seguidoresDelta, visitasPerfilDelta, seguidoresTotal)],
+    ['seguidores', montarMensagemSeguidores(dia, hora, seguidoresDelta, visitasPerfilDelta, seguidoresTotal, seguidoresHoje)],
   ];
 
   // As DUAS em mensagens separadas (pedido do dono, 12/09/2026), na ORDEM
