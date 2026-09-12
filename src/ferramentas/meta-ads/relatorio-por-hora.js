@@ -113,12 +113,21 @@ export function montarMensagemWpp(dia, hora, campanhas) {
 // DUAS PARTES, separadas por linha em branco (pedido do dono, 12/09/2026:
 // "separa entre total e resultado do horário, tipo novos seguidores, visitas
 // ao perfil ---- total do dia, total da conta"): o RESULTADO DO PERÍODO
-// (novos seguidores + visita ao perfil) primeiro, os TOTAIS (do dia e da
-// conta) depois. Cada linha só entra se o próprio valor não for `null`; cada
-// PARTE só entra se tiver ao menos uma linha; a linha em branco entre as
-// partes só aparece se as duas tiverem conteúdo. `null` geral = nada em
-// nenhuma das duas partes.
-export function montarMensagemSeguidores(dia, hora, seguidoresDelta, visitasPerfilDelta, seguidoresTotal, seguidoresHoje) {
+// (novos seguidores + visita ao perfil + investimento e custos) primeiro, os
+// TOTAIS (do dia e da conta) depois. Cada linha só entra se o próprio valor
+// não for `null`; cada PARTE só entra se tiver ao menos uma linha; a linha em
+// branco entre as partes só aparece se as duas tiverem conteúdo. `null`
+// geral = nada em nenhuma das duas partes.
+//
+// `gastoSeguidores` é a soma do gasto das campanhas [+ SEGUIDORES] nessa
+// hora (pedido do dono, 12/09/2026: "faz uma linha de investimento também
+// ... investimento, custo por visita, custo por seguidor" — o mesmo dado que
+// existia antes de "tira o link_click", agora do lado de visita/seguidor em
+// vez de clique). Só aparece o bloco de investimento quando teve gasto de
+// verdade — sem isso, três linhas de "—" seriam paisagem. Custo por
+// seguidor null quando o delta é <= 0 (perdeu seguidor, ou zero): dividir
+// gasto por um delta negativo daria um "custo" sem sentido.
+export function montarMensagemSeguidores(dia, hora, seguidoresDelta, visitasPerfilDelta, seguidoresTotal, seguidoresHoje, gastoSeguidores) {
   if (seguidoresTotal === null && seguidoresHoje === null && visitasPerfilDelta === null) return null;
 
   const [ano, mes, d] = dia.split('-');
@@ -134,6 +143,14 @@ export function montarMensagemSeguidores(dia, hora, seguidoresDelta, visitasPerf
   const linhaVisitasPerfil = visitasPerfilDelta !== null
     ? `Visitas ao perfil da conta: ${visitasPerfilDelta}`
     : null;
+
+  const teveGasto = gastoSeguidores > 0;
+  const linhaInvestimento = teveGasto ? `Investimento: ${formatarReais(gastoSeguidores)}` : null;
+  const custoPorVisita = teveGasto ? custoPorLead(gastoSeguidores, visitasPerfilDelta) : null;
+  const linhaCustoPorVisita = custoPorVisita !== null ? `Custo por visita ao perfil: ${formatarReais(custoPorVisita)}` : null;
+  const custoPorSeguidor = teveGasto && seguidoresDelta > 0 ? custoPorLead(gastoSeguidores, seguidoresDelta) : null;
+  const linhaCustoPorSeguidor = custoPorSeguidor !== null ? `Custo por seguidor: ${formatarReais(custoPorSeguidor)}` : null;
+
   const linhaDoDia = seguidoresHoje !== null
     ? `Total do dia: ${comSinal(seguidoresHoje)}`
     : null;
@@ -141,7 +158,8 @@ export function montarMensagemSeguidores(dia, hora, seguidoresDelta, visitasPerf
     ? `Total da conta: ${seguidoresTotal.toLocaleString('pt-BR')}`
     : null;
 
-  const doPeriodo = [linhaNoPeriodo, linhaVisitasPerfil].filter((l) => l !== null);
+  const doPeriodo = [linhaNoPeriodo, linhaVisitasPerfil, linhaInvestimento, linhaCustoPorVisita, linhaCustoPorSeguidor]
+    .filter((l) => l !== null);
   const totais = [linhaDoDia, linhaTotalConta].filter((l) => l !== null);
 
   const corpo = [cabecalho, ''];

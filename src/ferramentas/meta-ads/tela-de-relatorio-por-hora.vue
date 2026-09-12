@@ -152,6 +152,12 @@ const modoCampanhas = ref('resultado')
 function campanhasParaExibir(h) {
   return modoCampanhas.value === 'resultado' ? comResultado(h.campanhas) : h.campanhas.filter((c) => c.tipo !== 'seguidores')
 }
+// Gasto das campanhas [+ SEGUIDORES] nessa hora — pedido do dono (12/09/2026,
+// "faz uma linha de investimento também"): o mesmo gasto que já vem em
+// h.campanhas, só somado pro tipo certo. Não precisa de leitura nova.
+function gastoSeguidores(h) {
+  return h.campanhas.filter((c) => c.tipo === 'seguidores').reduce((s, c) => s + c.gastoHora, 0)
+}
 function mensagemSeguidores(d, h) {
   return montarMensagemSeguidores(
     d.dia, h.hora,
@@ -159,6 +165,7 @@ function mensagemSeguidores(d, h) {
     visitasPerfilNaHora(visitasPerfil.value, d.dia, h.hora),
     seguidoresTotalNaHora(deltasSeguidores.value, d.dia, h.hora),
     seguidoresNoDia(deltasSeguidores.value, d.dia),
+    gastoSeguidores(h),
   )
 }
 

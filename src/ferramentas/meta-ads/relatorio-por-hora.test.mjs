@@ -224,6 +224,32 @@ test('montarMensagemSeguidores: seguidor sem visita ao perfil — só a parte de
   );
 });
 
+test('⚠️ montarMensagemSeguidores: com gasto, mostra investimento e os dois custos, na ordem certa', () => {
+  const msg = montarMensagemSeguidores('2026-09-12', 13, 12, 156, 5012, 30, 37.4);
+  assert.match(msg, /Novos seguidores no período: \+12\nVisitas ao perfil da conta: 156\nInvestimento: R\$\s?37,40\nCusto por visita ao perfil: R\$\s?0,24\nCusto por seguidor: R\$\s?3,12\n\nTotal do dia/);
+});
+
+test('montarMensagemSeguidores: sem gasto (0 ou ausente), nenhuma linha de investimento', () => {
+  const msg = montarMensagemSeguidores('2026-09-12', 13, 12, 156, 5012, 30, 0);
+  assert.doesNotMatch(msg, /Investimento/);
+  assert.doesNotMatch(msg, /Custo por/);
+});
+
+test('⚠️ montarMensagemSeguidores: custo por seguidor é null quando o delta é negativo ou zero (não divide por baixo de zero)', () => {
+  const semSeguidorNovo = montarMensagemSeguidores('2026-09-12', 13, 0, 156, 5012, 30, 37.4);
+  assert.doesNotMatch(semSeguidorNovo, /Custo por seguidor/);
+  assert.match(semSeguidorNovo, /Custo por visita ao perfil/, 'esse continua saindo, o gasto/visita não depende do delta de seguidor');
+
+  const perdeuSeguidor = montarMensagemSeguidores('2026-09-12', 13, -2, 156, 5012, 30, 37.4);
+  assert.doesNotMatch(perdeuSeguidor, /Custo por seguidor/, 'delta negativo daria um "custo" sem sentido');
+});
+
+test('montarMensagemSeguidores: custo por visita é null sem leitura de visita, mesmo com gasto', () => {
+  const msg = montarMensagemSeguidores('2026-09-12', 13, 12, null, 5012, 30, 37.4);
+  assert.match(msg, /Investimento: R\$\s?37,40/);
+  assert.doesNotMatch(msg, /Custo por visita/);
+});
+
 test('seguidoresNoDia: soma os deltas do dia inteiro, não só a hora', () => {
   const deltas = deltaDeSeguidoresPorHora([
     { followers_count: 1000, lido_em: '2026-09-12T13:05:00Z' }, // 10h SP

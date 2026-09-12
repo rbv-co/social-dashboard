@@ -102,10 +102,15 @@ Deno.serve(async (req: Request) => {
   const seguidoresTotal = seguidoresTotalNaHora(deltasSeguidores, dia, hora);
   const seguidoresHoje = seguidoresNoDia(deltasSeguidores, dia);
   const visitasPerfilDelta = visitasRes.data?.visitas_hora ?? null;
+  // Gasto das campanhas [+ SEGUIDORES] nessa hora — pedido do dono (12/09/2026,
+  // "faz uma linha de investimento também").
+  const gastoSeguidores = campanhasDaHora
+    .filter((c: any) => c.tipo === 'seguidores')
+    .reduce((s: number, c: any) => s + c.gastoHora, 0);
 
   const mensagens: [string, string | null][] = [
     ['wpp', montarMensagemWpp(dia, hora, campanhasDaHora)],
-    ['seguidores', montarMensagemSeguidores(dia, hora, seguidoresDelta, visitasPerfilDelta, seguidoresTotal, seguidoresHoje)],
+    ['seguidores', montarMensagemSeguidores(dia, hora, seguidoresDelta, visitasPerfilDelta, seguidoresTotal, seguidoresHoje, gastoSeguidores)],
   ];
 
   // As DUAS em mensagens separadas (pedido do dono, 12/09/2026), na ORDEM

@@ -66,6 +66,18 @@ test('⚠️ montarMensagemSeguidores: DUAS PARTES separadas — resultado do pe
   );
 });
 
+test('montarMensagemSeguidores: com gasto, mostra investimento e os dois custos', () => {
+  const msg = montarMensagemSeguidores('2026-09-12', 13, 12, 156, 5012, 30, 37.4);
+  assert.match(msg, /Investimento: R\$\s?37,40/);
+  assert.match(msg, /Custo por visita ao perfil: R\$\s?0,24/);
+  assert.match(msg, /Custo por seguidor: R\$\s?3,12/);
+});
+
+test('montarMensagemSeguidores: sem gasto, nenhuma linha de investimento', () => {
+  const msg = montarMensagemSeguidores('2026-09-12', 13, 12, 156, 5012, 30, 0);
+  assert.doesNotMatch(msg, /Investimento|Custo por/);
+});
+
 test('deltaDeSeguidoresPorHora + seguidoresNaHora/seguidoresTotalNaHora/seguidoresNoDia: acham a hora e o dia certos', () => {
   const deltas = deltaDeSeguidoresPorHora([
     { followers_count: 1000, lido_em: '2026-09-12T15:05:00Z' }, // 12h SP
