@@ -166,7 +166,14 @@
         />
       </template>
 
-      <div v-else class="ctd-vazio">
+      <!-- `!erro` é o que separa "não tem perfil" de "não consegui ler".
+           Sem ele, uma falha no carregarContas() zerava `contas` e caía aqui: a
+           tela afirmava "Você não tem acesso a nenhum perfil" e mandava a pessoa
+           procurar um administrador por um problema que NÃO era de permissão —
+           enquanto a faixa de erro, logo acima, dizia o contrário. Duas frases
+           contradizendo uma à outra na mesma tela. A faixa já conta o que houve;
+           aqui o silêncio é mais honesto que a frase errada. (PADRÃO, item 9.) -->
+      <div v-else-if="!erro" class="ctd-vazio">
         <h3>Nenhum perfil disponível</h3>
         <p>Você não tem acesso a nenhum perfil de rede social. Fale com um administrador.</p>
       </div>
