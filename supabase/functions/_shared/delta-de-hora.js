@@ -35,14 +35,26 @@ export function calcularDeltaHora(gastoAcumulado, conversasAcumuladas, anterior)
   };
 }
 
-// Cliques no link — indicador das campanhas [+ SEGUIDORES] (pedido do dono,
+// Visita ao perfil — indicador das campanhas [+ SEGUIDORES] (pedido do dono,
 // 12/09/2026). A Meta não atribui "novo seguidor" a uma campanha (conferido
-// na Graph API real: nenhuma tinha ação de follow), então o número real
-// disponível por campanha é o clique — quem foi levado até a página.
-export function cliquesNoLink(actions) {
+// na Graph API real: nenhuma tinha ação de follow).
+//
+// `profile_visits`/`profile_views` é o dado CERTO, mas só existe quando o
+// anúncio é configurado com destino "Instagram Profile" — conferido ao vivo
+// em 12/09/2026 (30 dias de histórico, todo anúncio [+ SEGUIDORES], ativo ou
+// pausado): NENHUM tem essa ação, porque todos usam destino LINK (por isso
+// `link_click`/`landing_page_view` aparecem no lugar). Não é campo errado, é
+// configuração do anúncio no Ads Manager — mudar isso é decisão de mídia, não
+// de código. Por isso o fallback pra `link_click` continua: se algum anúncio
+// futuro for configurado com destino "Instagram Profile", este código já
+// pega `profile_visits`/`profile_views` sem precisar mexer de novo.
+export function visitasNoPerfil(actions) {
   if (!Array.isArray(actions)) return 0;
-  const achado = actions.find((a) => a && a.action_type === 'link_click');
-  return achado ? parseInt(achado.value ?? '0', 10) || 0 : 0;
+  for (const tipo of ['profile_visits', 'profile_views', 'link_click']) {
+    const achado = actions.find((a) => a && a.action_type === tipo);
+    if (achado) return parseInt(achado.value ?? '0', 10) || 0;
+  }
+  return 0;
 }
 
 // Delta genérico de UM valor acumulado contra a leitura anterior (mesma

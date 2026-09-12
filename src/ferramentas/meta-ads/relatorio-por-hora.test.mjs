@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  custoPorLead, agruparPorDiaEHora, tipoDaCampanha, comResultado, semResultado, deSeguidores, comCliques,
-  montarMensagemWpp, montarMensagemSeguidores, deltaDeSeguidoresPorHora, seguidoresNaHora,
+  custoPorLead, agruparPorDiaEHora, tipoDaCampanha, comResultado, semResultado,
+  montarMensagemWpp, montarMensagemSeguidores, deltaDeSeguidoresPorHora, seguidoresNaHora, visitasPerfilNaHora,
 } from './relatorio-por-hora.js';
 
 test('custoPorLead divide gasto por conversas', () => {
@@ -60,17 +60,6 @@ test('comResultado/semResultado NUNCA devolvem campanha de seguidores — ela te
   const campanhas = agruparPorDiaEHora(linhas, { c1: '[+ SEGUIDORES] Reels 1' })[0].horas[0].campanhas;
   assert.deepEqual(comResultado(campanhas), []);
   assert.deepEqual(semResultado(campanhas), []);
-  assert.deepEqual(deSeguidores(campanhas).map((c) => c.campaignId), ['c1']);
-});
-
-test('deSeguidores pega toda campanha [+ SEGUIDORES], com ou sem conversão', () => {
-  const linhas = [
-    { dia: '2026-09-11', hora: 8, campaign_id: 'c1', gasto_hora: 10, conversas_hora: 1 },
-    { dia: '2026-09-11', hora: 8, campaign_id: 'c2', gasto_hora: 20, conversas_hora: 0 },
-  ];
-  const nomes = { c1: '[+ SEGUIDORES] A', c2: '[+ SEGUIDORES] B' };
-  const campanhas = agruparPorDiaEHora(linhas, nomes)[0].horas[0].campanhas;
-  assert.deepEqual(deSeguidores(campanhas).map((c) => c.campaignId).sort(), ['c1', 'c2']);
 });
 
 test('agruparPorDiaEHora: subtotal de hora e de dia somam as campanhas', () => {
@@ -178,59 +167,36 @@ test('seguidoresNaHora: acha a hora certa, e null quando não tem leitura', () =
   assert.equal(seguidoresNaHora(deltas, '2026-09-11', 15), null, 'hora sem leitura nenhuma');
 });
 
-test('agruparPorDiaEHora: cliquesHora e custoPorClique entram na campanha, mesma regra do custo por lead', () => {
-  const linhas = [{ dia: '2026-09-11', hora: 8, campaign_id: 'c1', gasto_hora: 88, conversas_hora: 0, cliques_hora: 8 }];
-  const out = agruparPorDiaEHora(linhas);
-  const c = out[0].horas[0].campanhas[0];
-  assert.equal(c.cliquesHora, 8);
-  assert.equal(c.custoPorClique, 11);
+test('montarMensagemSeguidores: null quando nem seguidor nem visita ao perfil têm delta', () => {
+  assert.equal(montarMensagemSeguidores('2026-09-12', 0, null, null), null);
 });
 
-test('comCliques: só campanha de seguidores com clique > 0', () => {
-  const linhas = [
-    { dia: '2026-09-11', hora: 8, campaign_id: 'c1', gasto_hora: 10, conversas_hora: 0, cliques_hora: 5 },
-    { dia: '2026-09-11', hora: 8, campaign_id: 'c2', gasto_hora: 10, conversas_hora: 0, cliques_hora: 0 },
-    { dia: '2026-09-11', hora: 8, campaign_id: 'c3', gasto_hora: 10, conversas_hora: 1, cliques_hora: 5 },
-  ];
-  const nomes = { c1: '[+ SEGUIDORES] A', c2: '[+ SEGUIDORES] B', c3: '[CAMPANHA WPP] C' };
-  const campanhas = agruparPorDiaEHora(linhas, nomes)[0].horas[0].campanhas;
-  assert.deepEqual(comCliques(campanhas).map((c) => c.campaignId), ['c1']);
+test('montarMensagemSeguidores: seguidor e visita ao perfil, os dois juntos', () => {
+  const msg = montarMensagemSeguidores('2026-09-12', 0, 144, 553);
+  assert.equal(msg, '📊 Seguidores e visitas ao perfil — 00h, 12/09\n\nSeguidores da conta: +144\nVisitas ao perfil da conta: 553');
 });
 
-test('montarMensagemSeguidores: null quando não há campanha de seguidores nem delta de seguidor', () => {
-  const campanhas = [{ campaignId: 'c1', nome: '[CAMPANHA WPP] X', tipo: 'wpp', gastoHora: 10, conversasHora: 1, cliquesHora: 0 }];
-  assert.equal(montarMensagemSeguidores('2026-09-12', 0, campanhas, null), null);
-});
-
-test('montarMensagemSeguidores: lista cliques por campanha, delta de seguidor no topo, consolidado no fim', () => {
-  const campanhas = [
-    { campaignId: 'c1', nome: '[+ SEGUIDORES] A', tipo: 'seguidores', gastoHora: 10, conversasHora: 0, cliquesHora: 4 },
-    { campaignId: 'c2', nome: '[+ SEGUIDORES] B', tipo: 'seguidores', gastoHora: 5, conversasHora: 0, cliquesHora: 1 },
-    { campaignId: 'c3', nome: '[CAMPANHA WPP] C', tipo: 'wpp', gastoHora: 999, conversasHora: 999, cliquesHora: 999 },
-  ];
-  const msg = montarMensagemSeguidores('2026-09-12', 0, campanhas, 144);
-  assert.match(msg, /^📊 Seguidores e cliques — 00h, 12\/09/);
-  assert.match(msg, /Seguidores da conta: \+144/);
-  assert.match(msg, /\[\+ SEGUIDORES\] A — 4 cliques · R\$\s?10,00/);
-  assert.match(msg, /\[\+ SEGUIDORES\] B — 1 clique · R\$\s?5,00/);
-  assert.doesNotMatch(msg, /CAMPANHA WPP/, 'campanha fora de seguidores vazou pra mensagem');
-  assert.match(msg, /Total: 5 cliques · R\$\s?15,00 investidos · R\$\s?3,00\/clique$/);
-});
-
-test('montarMensagemSeguidores: delta negativo aparece sem sinal de mais', () => {
-  const campanhas = [{ campaignId: 'c1', nome: '[+ SEGUIDORES] A', tipo: 'seguidores', gastoHora: 10, conversasHora: 0, cliquesHora: 1 }];
-  const msg = montarMensagemSeguidores('2026-09-12', 0, campanhas, -3);
+test('montarMensagemSeguidores: delta de seguidor negativo aparece sem sinal de mais', () => {
+  const msg = montarMensagemSeguidores('2026-09-12', 0, -3, null);
   assert.match(msg, /Seguidores da conta: -3/);
 });
 
-test('montarMensagemSeguidores: sem leitura de seguidor (delta null) não menciona seguidor, só cliques', () => {
-  const campanhas = [{ campaignId: 'c1', nome: '[+ SEGUIDORES] A', tipo: 'seguidores', gastoHora: 10, conversasHora: 0, cliquesHora: 1 }];
-  const msg = montarMensagemSeguidores('2026-09-12', 0, campanhas, null);
+test('montarMensagemSeguidores: visita ao perfil nunca leva sinal de mais (é atividade, não estoque)', () => {
+  const msg = montarMensagemSeguidores('2026-09-12', 0, null, 8);
+  assert.match(msg, /Visitas ao perfil da conta: 8/);
   assert.doesNotMatch(msg, /Seguidores da conta/);
-  assert.match(msg, /\[\+ SEGUIDORES\] A/);
 });
 
-test('montarMensagemSeguidores: só delta de seguidor, nenhuma campanha — mensagem sem lista nem consolidado de clique', () => {
-  const msg = montarMensagemSeguidores('2026-09-12', 0, [], 12);
-  assert.equal(msg, '📊 Seguidores e cliques — 00h, 12/09\n\nSeguidores da conta: +12');
+test('montarMensagemSeguidores: só um dos dois com leitura — não menciona o outro', () => {
+  const msg = montarMensagemSeguidores('2026-09-12', 0, 12, null);
+  assert.equal(msg, '📊 Seguidores e visitas ao perfil — 00h, 12/09\n\nSeguidores da conta: +12');
+});
+
+test('visitasPerfilNaHora: acha a hora certa, e null quando não tem leitura', () => {
+  const linhas = [
+    { dia: '2026-09-12', hora: 10, visitas_hora: 40 },
+    { dia: '2026-09-12', hora: 11, visitas_hora: 12 },
+  ];
+  assert.equal(visitasPerfilNaHora(linhas, '2026-09-12', 11), 12);
+  assert.equal(visitasPerfilNaHora(linhas, '2026-09-12', 15), null, 'hora sem leitura nenhuma');
 });

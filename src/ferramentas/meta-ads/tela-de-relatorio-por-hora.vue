@@ -53,34 +53,28 @@
               </template>
             </div>
 
-            <div v-if="deSeguidores(h.campanhas).length" class="rph-secao">
+            <div
+              v-if="seguidoresNaHora(deltasSeguidores, d.dia, h.hora) !== null || visitasPerfilNaHora(visitasPerfil, d.dia, h.hora) !== null"
+              class="rph-secao"
+            >
               <button class="rph-secao-cabecalho" @click="secoesAbertas.seguidores = !secoesAbertas.seguidores">
                 <span class="section-label">Seguidores</span>
                 <span class="rph-secao-seta" :class="{ aberto: secoesAbertas.seguidores }">▸</span>
               </button>
               <template v-if="secoesAbertas.seguidores">
-                <!-- Da CONTA inteira, não da campanha — a Meta não diz qual
-                     anúncio trouxe qual seguidor. Some quando não há leitura
-                     pra essa hora (nunca mostra 0 como se fosse "não mudou"). -->
+                <!-- Da CONTA inteira, nunca por campanha — a Meta não atribui
+                     nem seguidor nem visita ao perfil a uma campanha
+                     específica (conferido ao vivo, 12/09/2026). Some quando
+                     não há leitura pra essa hora (nunca mostra 0 como se
+                     fosse "não mudou"/"não teve"). -->
                 <p v-if="seguidoresNaHora(deltasSeguidores, d.dia, h.hora) !== null" class="rph-seguidores-conta">
                   Seguidores da conta nessa hora:
                   <strong>{{ seguidoresNaHora(deltasSeguidores, d.dia, h.hora) > 0 ? '+' : '' }}{{ seguidoresNaHora(deltasSeguidores, d.dia, h.hora) }}</strong>
                 </p>
-                <button class="btn rph-toggle" @click="modoSeguidores = modoSeguidores === 'resultado' ? 'todas' : 'resultado'">
-                  {{ modoSeguidores === 'resultado' ? 'Mostrar todas' : 'Só com clique' }}
-                </button>
-                <table v-if="seguidoresParaExibir(h).length" class="rph-tabela">
-                  <thead><tr><th>Campanha</th><th>Investido</th><th>Visitantes</th><th>Custo/visitante</th></tr></thead>
-                  <tbody>
-                    <tr v-for="c in seguidoresParaExibir(h)" :key="c.campaignId">
-                      <td class="rph-campanha">{{ c.nome }}</td>
-                      <td>{{ formatarReais(c.gastoHora) }}</td>
-                      <td>{{ c.cliquesHora }}</td>
-                      <td>{{ c.custoPorClique === null ? '—' : formatarReais(c.custoPorClique) }}</td>
-                    </tr>
-                  </tbody>
-                </table>
-                <p v-else class="rph-vazio">Nenhuma campanha de seguidores nessa hora, com esse filtro.</p>
+                <p v-if="visitasPerfilNaHora(visitasPerfil, d.dia, h.hora) !== null" class="rph-seguidores-conta">
+                  Visitas ao perfil da conta nessa hora:
+                  <strong>{{ visitasPerfilNaHora(visitasPerfil, d.dia, h.hora) }}</strong>
+                </p>
               </template>
             </div>
 
@@ -128,8 +122,8 @@ import BarraDeTopo from '../../compartilhado/barra-de-topo.vue'
 import FaixaDeErro from '../../compartilhado/faixa-de-erro.vue'
 import { sb } from '../../compartilhado/buscar-e-salvar-dados.js'
 import {
-  agruparPorDiaEHora, comResultado, deSeguidores, comCliques, montarMensagemWpp, montarMensagemSeguidores, formatarReais,
-  deltaDeSeguidoresPorHora, seguidoresNaHora,
+  agruparPorDiaEHora, comResultado, montarMensagemWpp, montarMensagemSeguidores, formatarReais,
+  deltaDeSeguidoresPorHora, seguidoresNaHora, visitasPerfilNaHora,
 } from './relatorio-por-hora.js'
 
 const router = useRouter()
@@ -150,6 +144,7 @@ const carregando = ref(true)
 const erro = ref(null)
 const dias = ref([])
 const deltasSeguidores = ref([])
+const visitasPerfil = ref([])
 const expandidos = ref(new Set())
 const horasExpandidas = ref(new Set())
 
@@ -158,18 +153,18 @@ const horasExpandidas = ref(new Set())
 // seção inteira, em todas as horas de uma vez, não uma hora só.
 const secoesAbertas = ref({ campanhas: true, seguidores: true, wpp: true, mensagemSeguidores: true })
 const modoCampanhas = ref('resultado')
-const modoSeguidores = ref('resultado')
 
 // "Campanhas" junta Resultados+Outras num recorte só, controlado pelo
 // toggle acima — preserva a ordem por gasto que `agruparPorDiaEHora` já traz.
 function campanhasParaExibir(h) {
   return modoCampanhas.value === 'resultado' ? comResultado(h.campanhas) : h.campanhas.filter((c) => c.tipo !== 'seguidores')
 }
-function seguidoresParaExibir(h) {
-  return modoSeguidores.value === 'resultado' ? comCliques(h.campanhas) : deSeguidores(h.campanhas)
-}
 function mensagemSeguidores(d, h) {
-  return montarMensagemSeguidores(d.dia, h.hora, h.campanhas, seguidoresNaHora(deltasSeguidores.value, d.dia, h.hora))
+  return montarMensagemSeguidores(
+    d.dia, h.hora,
+    seguidoresNaHora(deltasSeguidores.value, d.dia, h.hora),
+    visitasPerfilNaHora(visitasPerfil.value, d.dia, h.hora),
+  )
 }
 
 function expandido(dia) {
@@ -233,19 +228,22 @@ async function carregar() {
   desde.setDate(desde.getDate() - JANELA_DIAS)
   const desdeISO = desde.toISOString().slice(0, 10)
 
-  const [linhas, campanhas, leiturasSeguidores] = await Promise.all([
-    sb(`campaign_insights_hora?select=dia,hora,campaign_id,gasto_hora,conversas_hora,cliques_hora&dia=gte.${desdeISO}&account_id=eq.${CONTA_VESSEL}&order=dia.desc,hora.asc`),
+  const [linhas, campanhas, leiturasSeguidores, visitas] = await Promise.all([
+    sb(`campaign_insights_hora?select=dia,hora,campaign_id,gasto_hora,conversas_hora&dia=gte.${desdeISO}&account_id=eq.${CONTA_VESSEL}&order=dia.desc,hora.asc`),
     sb('campaigns?select=campaign_id,name'),
     sb(`followers_leituras?select=followers_count,lido_em&account_id=eq.${CONTA_VESSEL}&lido_em=gte.${desde.toISOString()}&order=lido_em.asc`),
+    sb(`perfil_visitas_hora?select=dia,hora,visitas_hora&dia=gte.${desdeISO}&account_id=eq.${CONTA_VESSEL}&order=dia.desc,hora.asc`),
   ])
 
   if (linhas.erro) { erro.value = linhas.erro; carregando.value = false; return }
   if (campanhas.erro) { erro.value = campanhas.erro; carregando.value = false; return }
   if (leiturasSeguidores.erro) { erro.value = leiturasSeguidores.erro; carregando.value = false; return }
+  if (visitas.erro) { erro.value = visitas.erro; carregando.value = false; return }
 
   const nomesPorCampanha = Object.fromEntries(campanhas.map((c) => [c.campaign_id, c.name]))
   dias.value = agruparPorDiaEHora(linhas, nomesPorCampanha)
   deltasSeguidores.value = deltaDeSeguidoresPorHora(leiturasSeguidores)
+  visitasPerfil.value = visitas
 
   carregando.value = false
 }

@@ -31,7 +31,6 @@ export function agruparPorDiaEHora(linhas, nomesPorCampanha = {}) {
     if (!porHora.has(l.hora)) porHora.set(l.hora, []);
     const gastoHora = Number(l.gasto_hora) || 0;
     const conversasHora = Number(l.conversas_hora) || 0;
-    const cliquesHora = Number(l.cliques_hora) || 0;
     const nome = nomesPorCampanha[l.campaign_id] || l.campaign_id;
     porHora.get(l.hora).push({
       campaignId: l.campaign_id,
@@ -39,12 +38,7 @@ export function agruparPorDiaEHora(linhas, nomesPorCampanha = {}) {
       tipo: tipoDaCampanha(nome),
       gastoHora,
       conversasHora,
-      cliquesHora,
       custoPorLead: custoPorLead(gastoHora, conversasHora),
-      // Cliques no link: indicador de [+ SEGUIDORES] (pedido do dono,
-      // 12/09/2026) — a Meta não atribui seguidor a campanha, mas atribui
-      // clique. Mesma matemática de custoPorLead (null sem clique, nunca 0).
-      custoPorClique: custoPorLead(gastoHora, cliquesHora),
     });
   }
 
@@ -82,14 +76,6 @@ export function comResultado(campanhas) {
 export function semResultado(campanhas) {
   return campanhas.filter((c) => c.tipo !== 'seguidores' && c.conversasHora === 0);
 }
-export function deSeguidores(campanhas) {
-  return campanhas.filter((c) => c.tipo === 'seguidores');
-}
-// Recorte do toggle "só com clique" dentro da seção Seguidores — mesma ideia
-// de comResultado, só que por clique (o "resultado" que existe pra esse tipo).
-export function comCliques(campanhas) {
-  return deSeguidores(campanhas).filter((c) => c.cliquesHora > 0);
-}
 
 // Texto pronto pra copiar e mandar no grupo de WhatsApp (manual por
 // enquanto — quando o Z-API entrar, este mesmo texto vira o corpo da
@@ -114,41 +100,31 @@ export function montarMensagemWpp(dia, hora, campanhas) {
   return [cabecalho, '', ...linhas, '', consolidado].join('\n');
 }
 
-// Texto pronto pra copiar (mesmo espírito de montarMensagemWpp): cliques por
-// campanha [+ SEGUIDORES] + o delta de seguidores da CONTA no topo, já que
-// pedido do dono foi "a mensagem de seguidores E cliques" — os dois juntos.
-// `seguidoresDelta` vem de `seguidoresNaHora` (null = sem leitura pra essa
-// hora, não entra na mensagem). `null` geral quando não há nada a dizer:
-// nenhuma campanha de seguidores E nenhum delta de seguidor.
-export function montarMensagemSeguidores(dia, hora, campanhas, seguidoresDelta) {
-  const segs = deSeguidores(campanhas);
-  if (!segs.length && seguidoresDelta === null) return null;
+// Texto pronto pra copiar (mesmo espírito de montarMensagemWpp), mas só com
+// os dois números DA CONTA — seguidores e visita ao perfil. Nunca teve
+// (cliques, 12/09/2026) e depois teve e foi tirado de novo no mesmo dia
+// (pedido do dono: "tira o link_click, apenas visitas no perfil e
+// seguidores") — não existe por campanha pra nenhum dos dois (Meta não
+// atribui nem seguidor nem visita a uma campanha específica), então não tem
+// por que fingir granularidade que não existe. `null` em cada delta = sem
+// leitura pra essa hora, não entra na mensagem. `null` geral = nem um nem
+// outro tinham o que dizer.
+export function montarMensagemSeguidores(dia, hora, seguidoresDelta, visitasPerfilDelta) {
+  if (seguidoresDelta === null && visitasPerfilDelta === null) return null;
 
   const [ano, mes, d] = dia.split('-');
   const horaStr = String(hora).padStart(2, '0');
-  const linhas = segs.map((c) => `${c.nome} — ${c.cliquesHora} clique${c.cliquesHora === 1 ? '' : 's'} · ${formatarReais(c.gastoHora)}`);
-
-  const totalCliques = segs.reduce((s, c) => s + c.cliquesHora, 0);
-  const totalGasto = segs.reduce((s, c) => s + c.gastoHora, 0);
-  const custoMedio = custoPorLead(totalGasto, totalCliques);
-
-  const cabecalho = `📊 Seguidores e cliques — ${horaStr}h, ${d}/${mes}`;
+  const cabecalho = `📊 Seguidores e visitas ao perfil — ${horaStr}h, ${d}/${mes}`;
   const linhaSeguidores = seguidoresDelta !== null
     ? `Seguidores da conta: ${seguidoresDelta > 0 ? '+' : ''}${seguidoresDelta}`
     : null;
-  const consolidado = segs.length
-    ? `Total: ${totalCliques} clique${totalCliques === 1 ? '' : 's'} · ${formatarReais(totalGasto)} investidos`
-      + (custoMedio !== null ? ` · ${formatarReais(custoMedio)}/clique` : '')
+  // Visita é atividade (nunca negativa), não estoque como seguidor — sem
+  // sinal de "+" na frente.
+  const linhaVisitasPerfil = visitasPerfilDelta !== null
+    ? `Visitas ao perfil da conta: ${visitasPerfilDelta}`
     : null;
 
-  const corpo = [cabecalho, ''];
-  if (linhaSeguidores) corpo.push(linhaSeguidores, '');
-  if (linhas.length) corpo.push(...linhas, '');
-  if (consolidado) corpo.push(consolidado);
-  // Sem consolidado (só tinha delta de seguidor, nenhuma campanha), tira a
-  // linha em branco solta no fim.
-  while (corpo[corpo.length - 1] === '') corpo.pop();
-  return corpo.join('\n');
+  return [cabecalho, '', linhaSeguidores, linhaVisitasPerfil].filter((l) => l !== null).join('\n');
 }
 
 function diaEHoraSP(isoTimestamp) {
@@ -197,4 +173,16 @@ export function deltaDeSeguidoresPorHora(leituras) {
 export function seguidoresNaHora(deltas, dia, hora) {
   const achado = deltas.find((d) => d.dia === dia && d.hora === hora);
   return achado ? achado.seguidoresDelta : null;
+}
+
+// Visitas ao perfil da CONTA (12/09/2026, "vai atras desse dado") — mesma
+// limitação de seguidores: a Meta não atribui por campanha, só dá o total da
+// conta. Diferente de seguidor (estoque, delta calculado aqui contra a
+// última leitura), visita é atividade — o robô já grava o delta calculado
+// (perfil_visitas_hora.visitas_hora, reseta por dia, mesma regra de
+// gasto_hora), então aqui é só achar a linha certa. `null` = sem leitura
+// pra essa hora (nunca mostra 0 como se fosse "não teve visita").
+export function visitasPerfilNaHora(linhas, dia, hora) {
+  const achada = linhas.find((l) => l.dia === dia && l.hora === hora);
+  return achada ? achada.visitas_hora : null;
 }

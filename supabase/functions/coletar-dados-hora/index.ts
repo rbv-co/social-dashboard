@@ -1,7 +1,7 @@
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { exigirSegredoDeCron } from '../_shared/segredo-de-cron.ts';
 import {
-  conversasIniciadas, calcularDeltaHora, cliquesNoLink, deltaSimples,
+  conversasIniciadas, calcularDeltaHora, visitasNoPerfil, deltaSimples,
 } from '../_shared/delta-de-hora.js';
 
 const GRAPH = 'https://graph.facebook.com/v22.0';
@@ -14,6 +14,14 @@ function todayBR(): string {
 // ler na tela. Ver "a hora gravada é a hora da rodada" na spec, §4.
 function horaBR(): number {
   return Number(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo', hour: '2-digit', hour12: false }));
+}
+
+// Meia-noite em São Paulo, em epoch — usado pra pedir "quanto teve HOJE até
+// agora" pro profile_views (metric_type=total_value exige since/until, não
+// tem period=hour). Brasil não observa horário de verão desde 2019, -03:00 é
+// fixo o ano inteiro — não precisa calcular fuso.
+function epochInicioDoDiaSP(dia: string): number {
+  return Math.floor(new Date(`${dia}T00:00:00-03:00`).getTime() / 1000);
 }
 
 async function apiGet(path: string, params: Record<string, string>): Promise<any> {
@@ -79,14 +87,18 @@ async function coletarConta(sb: any, acc: any, dia: string, hora: number, degrad
       const campaignId = r.campaign_id;
       const gastoAcumulado = parseFloat(r.spend ?? '0');
       const conversasAcumuladas = conversasIniciadas(r.actions);
-      const cliquesAcumulados = cliquesNoLink(r.actions);
+      const visitasAcumuladas = visitasNoPerfil(r.actions);
       const anterior = anteriorPorCampanha.get(campaignId) ?? null;
       const { gasto_hora, conversas_hora } = calcularDeltaHora(gastoAcumulado, conversasAcumuladas, anterior);
-      const cliques_hora = deltaSimples(cliquesAcumulados, anterior?.cliques_acumulados);
+      const cliques_hora = deltaSimples(visitasAcumuladas, anterior?.cliques_acumulados);
       return {
         campaign_id: campaignId, account_id: accountId, dia, hora,
         gasto_acumulado: gastoAcumulado, conversas_acumuladas: conversasAcumuladas,
-        cliques_acumulados: cliquesAcumulados,
+        // Coluna se chama "cliques_*" por herança do schema (db/migrations/
+        // 2026-09-12-meta-ads-hora-cliques.sql) — o CONTEÚDO virou visita ao
+        // perfil (profile_visits/profile_views), nunca mais link_click. Ver
+        // visitasNoPerfil() em _shared/delta-de-hora.js.
+        cliques_acumulados: visitasAcumuladas,
         gasto_hora, conversas_hora, cliques_hora,
       };
     });
@@ -127,6 +139,54 @@ async function coletarSeguidoresDaConta(sb: any, acc: any, degraded: string[]): 
   }
 }
 
+// Visitas ao perfil da CONTA (profile_views) — pedido do dono (12/09/2026,
+// "vai atras desse dado"). Só existe agregado da conta inteira (orgânico +
+// todo anúncio), nunca por campanha — conferido ao vivo que nenhum anúncio
+// [+ SEGUIDORES] tem destino "Instagram Profile" (mesmo motivo do fallback
+// em visitasNoPerfil()). E só vem como ACUMULADO DO DIA
+// (metric_type=total_value; period=hour não existe — testado na Graph API
+// real em 12/09/2026, devolve erro). Por isso o desenho é igual ao gasto:
+// pergunta "quanto teve hoje até agora" e calcula o delta contra a hora
+// anterior da MESMA conta, MESMO dia — reseta na virada (é atividade, não
+// estoque como seguidor).
+async function coletarVisitasPerfilDaConta(sb: any, acc: any, dia: string, hora: number, degraded: string[]): Promise<void> {
+  const { id: accountId, instagram_id: igId, access_token: token, name } = acc;
+  if (!igId || !token) return;
+  try {
+    const d = await apiGet(`${igId}/insights`, {
+      metric: 'profile_views',
+      metric_type: 'total_value',
+      period: 'day',
+      since: String(epochInicioDoDiaSP(dia)),
+      until: String(Math.floor(Date.now() / 1000)),
+      access_token: token,
+    });
+    const visitasAcumuladas = d.data?.[0]?.total_value?.value ?? 0;
+
+    // Última linha já gravada HOJE ANTES desta hora (mesmo padrão de
+    // coletarConta) — pra não comparar consigo mesma numa segunda rodada.
+    const { data: anteriorRows, error: erroAnterior } = await sb
+      .from('perfil_visitas_hora')
+      .select('visitas_acumuladas')
+      .eq('account_id', accountId).eq('dia', dia).lt('hora', hora)
+      .order('hora', { ascending: false })
+      .limit(1);
+    if (erroAnterior) {
+      degraded.push(`${name}: falha ao ler visitas ao perfil anteriores (${erroAnterior.message})`);
+      return;
+    }
+    const visitas_hora = deltaSimples(visitasAcumuladas, anteriorRows?.[0]?.visitas_acumuladas);
+
+    const { error } = await sb.from('perfil_visitas_hora').upsert(
+      { account_id: accountId, dia, hora, visitas_acumuladas: visitasAcumuladas, visitas_hora },
+      { onConflict: 'account_id,dia,hora' },
+    );
+    if (error) degraded.push(`${name}: falha ao gravar visitas ao perfil (${error.message})`);
+  } catch (e) {
+    degraded.push(`${name}: visitas ao perfil (${e instanceof Error ? e.message : String(e)})`);
+  }
+}
+
 Deno.serve(async (req: Request) => {
   const negado = await exigirSegredoDeCron(req, 'coletar-dados-hora');
   if (negado) return negado;
@@ -151,6 +211,7 @@ Deno.serve(async (req: Request) => {
   for (const acc of contas ?? []) {
     campanhas += await coletarConta(sb, acc, dia, hora, degraded);
     await coletarSeguidoresDaConta(sb, acc, degraded);
+    await coletarVisitasPerfilDaConta(sb, acc, dia, hora, degraded);
   }
 
   // 500 quando havia conta pra processar e NADA foi coletado — sinal pro
