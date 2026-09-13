@@ -90,36 +90,39 @@ export function agruparPorDiaEHora(linhas, nomesPorCampanha = {}) {
 // `leadsHoje`/`gastoHoje` são os totais WPP do dia inteiro (vêm de
 // `leadsWppNoDia`/`gastoWppNoDia`); `null`/`undefined` não mostra a linha
 // (chamador ainda não tem o dado).
+// Reformulada pra bater com o mock que um colega mandou no grupo (repassado
+// pelo dono, 12/09/2026): cabeçalhos "INTERVALO"/"TOTAL DESDOBRADO" (mesmo
+// espírito do INTERVALO/TOTAL da Mensagem Seguidores), custo por lead antes
+// do valor bruto de gasto (mesma regra: indicador por unidade primeiro, valor
+// investido por último). O rótulo "Gasto Dia" por campanha é o que veio no
+// mock — o valor é o gasto do PERÍODO desta campanha (`gastoHora`), não o
+// acumulado do dia; "Gasto total das campanhas" saiu de cena, redundante com
+// "Total de gasto no dia" no rodapé.
 export function montarMensagemWpp(dia, hora, campanhas, leadsHoje, gastoHoje) {
   const wpp = campanhas.filter((c) => c.tipo === 'wpp');
   if (!wpp.length) return null;
 
   const [ano, mes, d] = dia.split('-');
   const horaStr = String(hora).padStart(2, '0');
-  const linhas = wpp.map((c) => `${c.nome} — ${c.conversasHora} lead${c.conversasHora === 1 ? '' : 's'}`
-    + ` · Gasto no período: ${formatarReais(c.gastoHora)} · Gasto total: ${formatarReais(c.gastoAcumulado)}`);
-  // Soma o "Gasto total" (acumulado do dia) das campanhas LISTADAS acima —
-  // pedido do dono (12/09/2026: "coloca um gasto total das 3 campanhas lá na
-  // linha de baixo"). Fica logo abaixo da lista, separado do "Total de gasto
-  // no dia" (que soma o dia inteiro, não só estas campanhas desta lista).
-  const totalGastoAcumulado = wpp.reduce((s, c) => s + c.gastoAcumulado, 0);
-  const linhaGastoTotalCampanhas = `Gasto total das campanhas: ${formatarReais(totalGastoAcumulado)}`;
+  const cabecalho = `📊 Leads recebidos — ${horaStr}h, ${d}/${mes}`;
 
   const totalLeads = wpp.reduce((s, c) => s + c.conversasHora, 0);
   const totalGasto = wpp.reduce((s, c) => s + c.gastoHora, 0);
   const custoMedio = custoPorLead(totalGasto, totalLeads);
 
-  const cabecalho = `📊 Leads recebidos — ${horaStr}h, ${d}/${mes}`;
   const linhaNoPeriodo = `Leads no período: ${totalLeads}`;
-  const linhaGasto = `Gasto: ${formatarReais(totalGasto)}`;
   const linhaCustoPorLead = custoMedio !== null ? `Custo por lead: ${formatarReais(custoMedio)}` : null;
+  const linhaGasto = `Gasto no período: ${formatarReais(totalGasto)}`;
+  const doPeriodo = [linhaNoPeriodo, linhaCustoPorLead, linhaGasto].filter((l) => l !== null);
+
+  const linhasCampanhas = wpp.map((c) => `${c.nome} — ${c.conversasHora} lead${c.conversasHora === 1 ? '' : 's'}`
+    + ` · Gasto Dia: ${formatarReais(c.gastoHora)}`);
+
   const linhaLeadsDoDia = leadsHoje != null ? `Total de leads no dia: ${leadsHoje}` : null;
   const linhaGastoDoDia = gastoHoje != null ? `Total de gasto no dia: ${formatarReais(gastoHoje)}` : null;
-
-  const doPeriodo = [linhaNoPeriodo, linhaGasto, linhaCustoPorLead].filter((l) => l !== null);
   const doDia = [linhaLeadsDoDia, linhaGastoDoDia].filter((l) => l !== null);
 
-  const corpo = [cabecalho, '', ...linhas, linhaGastoTotalCampanhas, '', ...doPeriodo];
+  const corpo = [cabecalho, '', 'INTERVALO', ...doPeriodo, '', 'TOTAL DESDOBRADO', ...linhasCampanhas];
   if (doDia.length) corpo.push('', ...doDia);
   return corpo.join('\n');
 }

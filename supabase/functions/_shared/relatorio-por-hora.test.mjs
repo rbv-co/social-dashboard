@@ -37,16 +37,29 @@ test('montarMensagemWpp: null quando não há campanha WPP nessa hora', () => {
   assert.equal(montarMensagemWpp('2026-09-12', 13, campanhas), null);
 });
 
-test('montarMensagemWpp: lista as campanhas, depois Leads no período / Gasto / Custo por lead / Total de leads no dia', () => {
+test('montarMensagemWpp: cabeçalhos INTERVALO/TOTAL DESDOBRADO, custo por lead antes do gasto bruto', () => {
   const campanhas = [
     { campaignId: 'c1', nome: '[CAMPANHA WPP] Criativo 1', tipo: 'wpp', gastoHora: 100, gastoAcumulado: 400, conversasHora: 4 },
     { campaignId: 'c2', nome: 'Post do Instagram', tipo: 'outro', gastoHora: 999, gastoAcumulado: 999, conversasHora: 999 },
   ];
   const msg = montarMensagemWpp('2026-09-12', 13, campanhas, 9, 145.9);
-  assert.match(msg, /^📊 Leads recebidos — 13h, 12\/09/);
-  assert.match(msg, /\[CAMPANHA WPP\] Criativo 1 — 4 leads · Gasto no período: R\$\s?100,00 · Gasto total: R\$\s?400,00/);
+  assert.match(
+    msg,
+    new RegExp(
+      '^📊 Leads recebidos — 13h, 12\\/09\\n\\n'
+      + 'INTERVALO\\n'
+      + 'Leads no período: 4\\n'
+      + 'Custo por lead: R\\$\\s?25,00\\n'
+      + 'Gasto no período: R\\$\\s?100,00\\n'
+      + '\\n'
+      + 'TOTAL DESDOBRADO\\n'
+      + '\\[CAMPANHA WPP\\] Criativo 1 — 4 leads · Gasto Dia: R\\$\\s?100,00\\n'
+      + '\\n'
+      + 'Total de leads no dia: 9\\n'
+      + 'Total de gasto no dia: R\\$\\s?145,90$',
+    ),
+  );
   assert.doesNotMatch(msg, /Post do Instagram/, 'campanha fora do WPP vazou pra mensagem');
-  assert.match(msg, /Gasto total das campanhas: R\$\s?400,00\n\nLeads no período: 4\nGasto: R\$\s?100,00\nCusto por lead: R\$\s?25,00\n\nTotal de leads no dia: 9\nTotal de gasto no dia: R\$\s?145,90$/);
 });
 
 test('leadsWppNoDia/gastoWppNoDia: somam só WPP, em todas as horas do dia', () => {

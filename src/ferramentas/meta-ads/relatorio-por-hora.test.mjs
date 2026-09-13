@@ -95,37 +95,46 @@ test('montarMensagemWpp: null quando não há campanha WPP nessa hora', () => {
   assert.equal(montarMensagemWpp('2026-09-11', 23, campanhas), null);
 });
 
-test('⚠️ montarMensagemWpp: lista as campanhas, depois Leads no período / Gasto / Custo por lead, com RÓTULO na frente de cada valor', () => {
-  // Pedido de um colega no grupo, repassado pelo dono (12/09/2026): "mesmo
-  // esquema" da Mensagem Seguidores — número nunca solto, sempre com rótulo.
+test('⚠️ montarMensagemWpp: cabeçalhos INTERVALO/TOTAL DESDOBRADO, custo por lead antes do gasto bruto', () => {
+  // Reformulado pra bater com o mock que um colega mandou no grupo (repassado
+  // pelo dono, 12/09/2026): mesmo espírito da Mensagem Seguidores — número
+  // nunca solto, sempre com rótulo, e agora com cabeçalho de seção.
   const campanhas = [
     { campaignId: 'c1', nome: '[CAMPANHA WPP] Criativo 1', tipo: 'wpp', gastoHora: 100, gastoAcumulado: 400, conversasHora: 4 },
     { campaignId: 'c2', nome: '[CAMPANHA WPP] Criativo 2', tipo: 'wpp', gastoHora: 50, gastoAcumulado: 120, conversasHora: 1 },
     { campaignId: 'c3', nome: 'Post do Instagram', tipo: 'outro', gastoHora: 999, gastoAcumulado: 999, conversasHora: 999 },
   ];
   const msg = montarMensagemWpp('2026-09-11', 23, campanhas);
-  assert.match(msg, /^📊 Leads recebidos — 23h, 11\/09/);
-  assert.match(msg, /\[CAMPANHA WPP\] Criativo 1 — 4 leads · Gasto no período: R\$\s?100,00 · Gasto total: R\$\s?400,00/);
-  assert.match(msg, /\[CAMPANHA WPP\] Criativo 2 — 1 lead · Gasto no período: R\$\s?50,00 · Gasto total: R\$\s?120,00/);
+  assert.match(
+    msg,
+    new RegExp(
+      '^📊 Leads recebidos — 23h, 11\\/09\\n\\n'
+      + 'INTERVALO\\n'
+      + 'Leads no período: 5\\n'
+      + 'Custo por lead: R\\$\\s?30,00\\n'
+      + 'Gasto no período: R\\$\\s?150,00\\n'
+      + '\\n'
+      + 'TOTAL DESDOBRADO\\n'
+      + '\\[CAMPANHA WPP\\] Criativo 1 — 4 leads · Gasto Dia: R\\$\\s?100,00\\n'
+      + '\\[CAMPANHA WPP\\] Criativo 2 — 1 lead · Gasto Dia: R\\$\\s?50,00$',
+    ),
+  );
   assert.doesNotMatch(msg, /Post do Instagram/, 'campanha fora do WPP vazou pra mensagem');
-  // "Gasto total das campanhas" logo abaixo da lista (400+120, NÃO soma a
-  // c3 que é 'outro') — antes do bloco "Leads no período".
-  assert.match(msg, /Gasto total: R\$\s?120,00\nGasto total das campanhas: R\$\s?520,00\n\nLeads no período: 5\nGasto: R\$\s?150,00\nCusto por lead: R\$\s?30,00$/);
 });
 
 test('montarMensagemWpp: total zero não inventa custo por lead na mensagem', () => {
   const campanhas = [{ campaignId: 'c1', nome: '[CAMPANHA WPP] X', tipo: 'wpp', gastoHora: 40, gastoAcumulado: 90, conversasHora: 0 }];
   const msg = montarMensagemWpp('2026-09-11', 23, campanhas);
-  assert.match(msg, /X — 0 leads · Gasto no período: R\$\s?40,00 · Gasto total: R\$\s?90,00/);
-  assert.match(msg, /Gasto total das campanhas: R\$\s?90,00/, 'com uma campanha só, o total das campanhas é o dela mesma');
-  assert.match(msg, /Leads no período: 0\nGasto: R\$\s?40,00$/);
+  assert.match(msg, /Leads no período: 0\nGasto no período: R\$\s?40,00/);
+  assert.match(msg, /X — 0 leads · Gasto Dia: R\$\s?40,00/);
   assert.doesNotMatch(msg, /Custo por lead/);
 });
 
-test('⚠️ montarMensagemWpp: com leadsHoje e gastoHoje, mostra as duas linhas do dia ao final, separadas por linha em branco', () => {
+test('⚠️ montarMensagemWpp: com leadsHoje e gastoHoje, mostra as duas linhas do dia ao final, depois da lista de campanhas', () => {
   const campanhas = [{ campaignId: 'c1', nome: '[CAMPANHA WPP] X', tipo: 'wpp', gastoHora: 40, conversasHora: 2 }];
   const msg = montarMensagemWpp('2026-09-11', 23, campanhas, 9, 210.5);
-  assert.match(msg, /Custo por lead: R\$\s?20,00\n\nTotal de leads no dia: 9\nTotal de gasto no dia: R\$\s?210,50$/);
+  assert.match(msg, /Custo por lead: R\$\s?20,00\nGasto no período: R\$\s?40,00/);
+  assert.match(msg, /Gasto Dia: R\$\s?40,00\n\nTotal de leads no dia: 9\nTotal de gasto no dia: R\$\s?210,50$/);
 });
 
 test('montarMensagemWpp: sem leadsHoje/gastoHoje (null/undefined), não mostra as linhas do dia', () => {
