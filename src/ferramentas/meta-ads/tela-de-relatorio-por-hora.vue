@@ -153,8 +153,18 @@ const modoCampanhas = ref('resultado')
 function campanhasParaExibir(h) {
   return modoCampanhas.value === 'resultado' ? comResultado(h.campanhas) : h.campanhas.filter((c) => c.tipo !== 'seguidores')
 }
+// Os totais do dia mostrados numa hora PASSADA são os que existiam ATÉ
+// aquela hora, não os de agora — pedido do dono (12/09/2026: "o recalculo não
+// deve acontecer para mensagens já enviadas, assim eu consigo ver o
+// crescimento por hora no dia"). Sem isso, reabrir a hora das 02h com o dia
+// já todo coletado mostrava o total do dia INTEIRO (até a hora atual), como
+// se a mensagem das 02h já soubesse do que ainda ia acontecer.
+function horasAte(d, h) {
+  return d.horas.filter((hh) => hh.hora <= h.hora)
+}
 function mensagemWpp(d, h) {
-  return montarMensagemWpp(d.dia, h.hora, h.campanhas, leadsWppNoDia(d.horas), gastoWppNoDia(d.horas))
+  const horasAteAgora = horasAte(d, h)
+  return montarMensagemWpp(d.dia, h.hora, h.campanhas, leadsWppNoDia(horasAteAgora), gastoWppNoDia(horasAteAgora))
 }
 // Gasto das campanhas [+ SEGUIDORES] nessa hora — pedido do dono (12/09/2026,
 // "faz uma linha de investimento também"): o mesmo gasto que já vem em
@@ -163,15 +173,18 @@ function gastoSeguidores(h) {
   return h.campanhas.filter((c) => c.tipo === 'seguidores').reduce((s, c) => s + c.gastoHora, 0)
 }
 function mensagemSeguidores(d, h) {
+  const horasAteAgora = horasAte(d, h)
+  const deltasAteAgora = deltasSeguidores.value.filter((x) => x.dia === d.dia && x.hora <= h.hora)
+  const visitasAteAgora = visitasPerfil.value.filter((x) => x.dia === d.dia && x.hora <= h.hora)
   return montarMensagemSeguidores(
     d.dia, h.hora,
     seguidoresNaHora(deltasSeguidores.value, d.dia, h.hora),
     visitasPerfilNaHora(visitasPerfil.value, d.dia, h.hora),
     seguidoresTotalNaHora(deltasSeguidores.value, d.dia, h.hora),
-    seguidoresNoDia(deltasSeguidores.value, d.dia),
+    seguidoresNoDia(deltasAteAgora, d.dia),
     gastoSeguidores(h),
-    gastoSeguidoresNoDia(d.horas),
-    visitasPerfilNoDia(visitasPerfil.value, d.dia),
+    gastoSeguidoresNoDia(horasAteAgora),
+    visitasPerfilNoDia(visitasAteAgora, d.dia),
   )
 }
 
