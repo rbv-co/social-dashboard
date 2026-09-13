@@ -234,16 +234,17 @@ test('⚠️ montarMensagemSeguidores: cabeçalhos INTERVALO/TOTAL, e as linhas 
       + 'INTERVALO\\n'
       + 'Novos seguidores no período: \\+17\\n'
       + 'Visitas ao perfil da conta: 553\\n'
-      + 'Investimento: R\\$\\s?37,40\\n'
       + 'Custo por visita ao perfil: R\\$\\s?0,07\\n'
       + 'Custo por seguidor: R\\$\\s?2,20\\n'
+      + 'Investimento: R\\$\\s?37,40\\n'
       + '\\n'
       + 'TOTAL\\n'
       + 'Total seguidores do dia: \\+45\\n'
       + 'Custo de seguidores dia: R\\$\\s?3,24\\n'
       + 'Total seguidores da conta: 5\\.234\\n'
       + 'Total visitantes dia: 620\\n'
-      + 'Custo visitantes dia: R\\$\\s?0,24$',
+      + 'Custo visitantes dia: R\\$\\s?0,24\\n'
+      + 'Investimento no dia: R\\$\\s?145,90$',
     ),
   );
 });
@@ -279,9 +280,9 @@ test('montarMensagemSeguidores: seguidor sem visita ao perfil — só a parte de
   );
 });
 
-test('⚠️ montarMensagemSeguidores: com gasto do período, mostra investimento e os dois custos, na ordem certa', () => {
+test('⚠️ montarMensagemSeguidores: com gasto do período, mostra os dois custos e o investimento por último', () => {
   const msg = montarMensagemSeguidores('2026-09-12', 13, 12, 156, 5012, 30, 37.4);
-  assert.match(msg, /Novos seguidores no período: \+12\nVisitas ao perfil da conta: 156\nInvestimento: R\$\s?37,40\nCusto por visita ao perfil: R\$\s?0,24\nCusto por seguidor: R\$\s?3,12\n\nTOTAL/);
+  assert.match(msg, /Novos seguidores no período: \+12\nVisitas ao perfil da conta: 156\nCusto por visita ao perfil: R\$\s?0,24\nCusto por seguidor: R\$\s?3,12\nInvestimento: R\$\s?37,40\n\nTOTAL/);
 });
 
 test('montarMensagemSeguidores: sem gasto do período (0 ou ausente), nenhuma linha de investimento do período', () => {

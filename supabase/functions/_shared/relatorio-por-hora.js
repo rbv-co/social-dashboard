@@ -214,6 +214,7 @@ export function montarMensagemSeguidores(
     ? `Total seguidores do dia: ${comSinal(seguidoresHoje)}`
     : null;
   const teveGastoHoje = gastoSeguidoresHoje > 0;
+  const linhaInvestimentoDia = teveGastoHoje ? `Investimento no dia: ${formatarReais(gastoSeguidoresHoje)}` : null;
   const custoSeguidorDia = teveGastoHoje && seguidoresHoje > 0 ? custoPorLead(gastoSeguidoresHoje, seguidoresHoje) : null;
   const linhaCustoSeguidoresDia = custoSeguidorDia !== null ? `Custo de seguidores dia: ${formatarReais(custoSeguidorDia)}` : null;
   const linhaTotalConta = seguidoresTotal !== null
@@ -223,10 +224,14 @@ export function montarMensagemSeguidores(
   const custoVisitaDia = teveGastoHoje && visitasPerfilHoje > 0 ? custoPorLead(gastoSeguidoresHoje, visitasPerfilHoje) : null;
   const linhaCustoVisitantesDia = custoVisitaDia !== null ? `Custo visitantes dia: ${formatarReais(custoVisitaDia)}` : null;
 
-  const doPeriodo = [linhaNoPeriodo, linhaVisitasPerfil, linhaInvestimento, linhaCustoPorVisita, linhaCustoPorSeguidor]
+  // Investimento por último (pedido do dono, 12/09/2026): primeiro os
+  // indicadores por unidade (custo por X), o valor bruto vem depois.
+  const doPeriodo = [linhaNoPeriodo, linhaVisitasPerfil, linhaCustoPorVisita, linhaCustoPorSeguidor, linhaInvestimento]
     .filter((l) => l !== null);
-  const totais = [linhaSeguidoresDoDia, linhaCustoSeguidoresDia, linhaTotalConta, linhaVisitantesDia, linhaCustoVisitantesDia]
-    .filter((l) => l !== null);
+  const totais = [
+    linhaSeguidoresDoDia, linhaCustoSeguidoresDia, linhaTotalConta,
+    linhaVisitantesDia, linhaCustoVisitantesDia, linhaInvestimentoDia,
+  ].filter((l) => l !== null);
 
   const corpo = [cabecalho, ''];
   if (doPeriodo.length) corpo.push('INTERVALO', ...doPeriodo);
