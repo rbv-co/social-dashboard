@@ -20,6 +20,7 @@ import { exigirSegredoDeCron } from '../_shared/segredo-de-cron.ts';
 import {
   agruparPorDiaEHora, montarMensagemWpp, leadsWppNoDia, gastoWppNoDia, montarMensagemSeguidores,
   deltaDeSeguidoresPorHora, seguidoresNaHora, seguidoresTotalNaHora, seguidoresNoDia,
+  gastoSeguidoresNoDia, visitasPerfilNoDia,
 } from '../_shared/relatorio-por-hora.js';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
@@ -88,8 +89,10 @@ Deno.serve(async (req: Request) => {
       .eq('account_id', CONTA_VESSEL)
       .gte('lido_em', new Date(Date.now() - 25 * 3600 * 1000).toISOString())
       .order('lido_em', { ascending: true }),
-    sb.from('perfil_visitas_hora').select('visitas_hora')
-      .eq('account_id', CONTA_VESSEL).eq('dia', dia).eq('hora', hora).maybeSingle(),
+    // Dia inteiro também aqui (não só a hora) — pra somar "Total visitantes
+    // dia" e "Custo visitantes dia" (pedido do dono, 12/09/2026, "MELHORIA").
+    sb.from('perfil_visitas_hora').select('dia,hora,visitas_hora')
+      .eq('account_id', CONTA_VESSEL).eq('dia', dia),
   ]);
 
   if (linhasRes.error) return json({ ok: true, enviado: false, motivo: 'campanhas_indisponivel', erro: linhasRes.error.message });
@@ -108,16 +111,22 @@ Deno.serve(async (req: Request) => {
   const seguidoresDelta = seguidoresNaHora(deltasSeguidores, dia, hora);
   const seguidoresTotal = seguidoresTotalNaHora(deltasSeguidores, dia, hora);
   const seguidoresHoje = seguidoresNoDia(deltasSeguidores, dia);
-  const visitasPerfilDelta = visitasRes.data?.visitas_hora ?? null;
+  const visitasDoDia = visitasRes.data ?? [];
+  const visitasPerfilDelta = visitasDoDia.find((v: any) => v.hora === hora)?.visitas_hora ?? null;
+  const visitasPerfilHoje = visitasPerfilNoDia(visitasDoDia, dia);
   // Gasto das campanhas [+ SEGUIDORES] nessa hora — pedido do dono (12/09/2026,
   // "faz uma linha de investimento também").
   const gastoSeguidores = campanhasDaHora
     .filter((c: any) => c.tipo === 'seguidores')
     .reduce((s: number, c: any) => s + c.gastoHora, 0);
+  const gastoSeguidoresHoje = gastoSeguidoresNoDia(horasDoDia);
 
   const mensagens: [string, string | null][] = [
     ['wpp', montarMensagemWpp(dia, hora, campanhasDaHora, leadsHoje, gastoWppHoje)],
-    ['seguidores', montarMensagemSeguidores(dia, hora, seguidoresDelta, visitasPerfilDelta, seguidoresTotal, seguidoresHoje, gastoSeguidores)],
+    ['seguidores', montarMensagemSeguidores(
+      dia, hora, seguidoresDelta, visitasPerfilDelta, seguidoresTotal, seguidoresHoje, gastoSeguidores,
+      gastoSeguidoresHoje, visitasPerfilHoje,
+    )],
   ];
 
   // As DUAS em mensagens separadas (pedido do dono, 12/09/2026), na ORDEM

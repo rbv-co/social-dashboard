@@ -116,6 +116,7 @@ import { sb } from '../../compartilhado/buscar-e-salvar-dados.js'
 import {
   agruparPorDiaEHora, comResultado, montarMensagemWpp, leadsWppNoDia, gastoWppNoDia, montarMensagemSeguidores, formatarReais,
   deltaDeSeguidoresPorHora, seguidoresNaHora, seguidoresTotalNaHora, seguidoresNoDia, visitasPerfilNaHora,
+  gastoSeguidoresNoDia, visitasPerfilNoDia,
 } from './relatorio-por-hora.js'
 
 const router = useRouter()
@@ -169,6 +170,8 @@ function mensagemSeguidores(d, h) {
     seguidoresTotalNaHora(deltasSeguidores.value, d.dia, h.hora),
     seguidoresNoDia(deltasSeguidores.value, d.dia),
     gastoSeguidores(h),
+    gastoSeguidoresNoDia(d.horas),
+    visitasPerfilNoDia(visitasPerfil.value, d.dia),
   )
 }
 

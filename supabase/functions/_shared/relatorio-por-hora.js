@@ -135,6 +135,21 @@ export function gastoWppNoDia(horas) {
   return horas.reduce((soma, h) => soma + h.campanhas.filter((c) => c.tipo === 'wpp').reduce((s, c) => s + c.gastoHora, 0), 0);
 }
 
+// Mesma soma de gastoWppNoDia, mas pro tipo 'seguidores' — usado pra "Custo de
+// seguidores dia" e "Custo visitantes dia" (pedido do dono, 12/09/2026:
+// mostrar o custo do DIA inteiro, não só do período).
+export function gastoSeguidoresNoDia(horas) {
+  return horas.reduce((soma, h) => soma + h.campanhas.filter((c) => c.tipo === 'seguidores').reduce((s, c) => s + c.gastoHora, 0), 0);
+}
+
+// Soma visitas ao perfil de TODAS as horas do dia — "Total visitantes dia"
+// (pedido do dono, 12/09/2026). `linhas` é o que a Edge já busca de
+// perfil_visitas_hora (cada uma com `dia`/`hora`/`visitas_hora`) — sem
+// leitura nova, só soma o que já veio.
+export function visitasPerfilNoDia(linhas, dia) {
+  return linhas.filter((l) => l.dia === dia).reduce((soma, l) => soma + (l.visitas_hora ?? 0), 0);
+}
+
 // Texto pronto pra mandar no grupo de WhatsApp via Z-API, mesmo espírito de
 // montarMensagemWpp — com os números DA CONTA: seguidores (do período, do
 // dia, e total) e visita ao perfil. Não existe por campanha pra nenhum dos
@@ -157,7 +172,21 @@ export function gastoWppNoDia(horas) {
 // verdade — sem isso, três linhas de "—" seriam paisagem. Custo por
 // seguidor null quando o delta é <= 0 (perdeu seguidor, ou zero): dividir
 // gasto por um delta negativo daria um "custo" sem sentido.
-export function montarMensagemSeguidores(dia, hora, seguidoresDelta, visitasPerfilDelta, seguidoresTotal, seguidoresHoje, gastoSeguidores) {
+//
+// `gastoSeguidoresHoje`/`visitasPerfilHoje` são os mesmos dois números, só
+// que do DIA inteiro (pedido do dono, 12/09/2026, "MELHORIA": renomeia
+// "Total do dia"/"Total da conta" pra "Total seguidores do dia"/"Total
+// seguidores da conta" — porque agora tem MAIS de um "total do dia" na
+// mensagem — e acrescenta "Custo de seguidores dia", "Total visitantes dia"
+// e "Custo visitantes dia", na ORDEM exata que ele desenhou). Mesma regra de
+// custo do período: null sem gasto do dia, ou sem o denominador (nunca
+// divide por zero nem por delta negativo). Cada parte ganha um cabeçalho
+// próprio ("INTERVALO"/"TOTAL", mesmo pedido) — só aparece se a parte tiver
+// alguma linha.
+export function montarMensagemSeguidores(
+  dia, hora, seguidoresDelta, visitasPerfilDelta, seguidoresTotal, seguidoresHoje, gastoSeguidores,
+  gastoSeguidoresHoje, visitasPerfilHoje,
+) {
   if (seguidoresTotal === null && seguidoresHoje === null && visitasPerfilDelta === null) return null;
 
   const [ano, mes, d] = dia.split('-');
@@ -181,21 +210,28 @@ export function montarMensagemSeguidores(dia, hora, seguidoresDelta, visitasPerf
   const custoPorSeguidor = teveGasto && seguidoresDelta > 0 ? custoPorLead(gastoSeguidores, seguidoresDelta) : null;
   const linhaCustoPorSeguidor = custoPorSeguidor !== null ? `Custo por seguidor: ${formatarReais(custoPorSeguidor)}` : null;
 
-  const linhaDoDia = seguidoresHoje !== null
-    ? `Total do dia: ${comSinal(seguidoresHoje)}`
+  const linhaSeguidoresDoDia = seguidoresHoje !== null
+    ? `Total seguidores do dia: ${comSinal(seguidoresHoje)}`
     : null;
+  const teveGastoHoje = gastoSeguidoresHoje > 0;
+  const custoSeguidorDia = teveGastoHoje && seguidoresHoje > 0 ? custoPorLead(gastoSeguidoresHoje, seguidoresHoje) : null;
+  const linhaCustoSeguidoresDia = custoSeguidorDia !== null ? `Custo de seguidores dia: ${formatarReais(custoSeguidorDia)}` : null;
   const linhaTotalConta = seguidoresTotal !== null
-    ? `Total da conta: ${seguidoresTotal.toLocaleString('pt-BR')}`
+    ? `Total seguidores da conta: ${seguidoresTotal.toLocaleString('pt-BR')}`
     : null;
+  const linhaVisitantesDia = visitasPerfilHoje != null ? `Total visitantes dia: ${visitasPerfilHoje}` : null;
+  const custoVisitaDia = teveGastoHoje && visitasPerfilHoje > 0 ? custoPorLead(gastoSeguidoresHoje, visitasPerfilHoje) : null;
+  const linhaCustoVisitantesDia = custoVisitaDia !== null ? `Custo visitantes dia: ${formatarReais(custoVisitaDia)}` : null;
 
   const doPeriodo = [linhaNoPeriodo, linhaVisitasPerfil, linhaInvestimento, linhaCustoPorVisita, linhaCustoPorSeguidor]
     .filter((l) => l !== null);
-  const totais = [linhaDoDia, linhaTotalConta].filter((l) => l !== null);
+  const totais = [linhaSeguidoresDoDia, linhaCustoSeguidoresDia, linhaTotalConta, linhaVisitantesDia, linhaCustoVisitantesDia]
+    .filter((l) => l !== null);
 
   const corpo = [cabecalho, ''];
-  corpo.push(...doPeriodo);
+  if (doPeriodo.length) corpo.push('INTERVALO', ...doPeriodo);
   if (doPeriodo.length && totais.length) corpo.push('');
-  corpo.push(...totais);
+  if (totais.length) corpo.push('TOTAL', ...totais);
 
   return corpo.join('\n');
 }

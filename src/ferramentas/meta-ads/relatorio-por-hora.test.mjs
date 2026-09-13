@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   custoPorLead, agruparPorDiaEHora, tipoDaCampanha, comResultado, semResultado,
   montarMensagemWpp, leadsWppNoDia, gastoWppNoDia, montarMensagemSeguidores, deltaDeSeguidoresPorHora, seguidoresNaHora,
-  seguidoresTotalNaHora, seguidoresNoDia, visitasPerfilNaHora,
+  seguidoresTotalNaHora, seguidoresNoDia, visitasPerfilNaHora, gastoSeguidoresNoDia, visitasPerfilNoDia,
 } from './relatorio-por-hora.js';
 
 test('custoPorLead divide gasto por conversas', () => {
@@ -221,34 +221,48 @@ test('montarMensagemSeguidores: null quando nem o total de seguidores nem a visi
   assert.equal(montarMensagemSeguidores('2026-09-12', 0, null, null, null, null), null);
 });
 
-test('⚠️ montarMensagemSeguidores: DUAS PARTES separadas — resultado do período primeiro, totais depois', () => {
-  const msg = montarMensagemSeguidores('2026-09-12', 13, 17, 553, 5234, 45);
-  assert.equal(
+test('⚠️ montarMensagemSeguidores: cabeçalhos INTERVALO/TOTAL, e as linhas do dia renomeadas + os três campos novos', () => {
+  // "MELHORIA" (pedido do dono, 12/09/2026): renomeia "Total do dia"/"Total
+  // da conta" (agora tem mais de um "total do dia" na mensagem) e acrescenta
+  // Custo de seguidores dia / Total visitantes dia / Custo visitantes dia,
+  // cada bloco com um cabeçalho ("INTERVALO"/"TOTAL").
+  const msg = montarMensagemSeguidores('2026-09-12', 13, 17, 553, 5234, 45, 37.4, 145.9, 620);
+  assert.match(
     msg,
-    '📊 Seguidores e visitas ao perfil — 13h, 12/09\n\n'
-    + 'Novos seguidores no período: +17\n'
-    + 'Visitas ao perfil da conta: 553\n'
-    + '\n'
-    + 'Total do dia: +45\n'
-    + 'Total da conta: 5.234',
+    new RegExp(
+      '^📊 Seguidores e visitas ao perfil — 13h, 12/09\\n\\n'
+      + 'INTERVALO\\n'
+      + 'Novos seguidores no período: \\+17\\n'
+      + 'Visitas ao perfil da conta: 553\\n'
+      + 'Investimento: R\\$\\s?37,40\\n'
+      + 'Custo por visita ao perfil: R\\$\\s?0,07\\n'
+      + 'Custo por seguidor: R\\$\\s?2,20\\n'
+      + '\\n'
+      + 'TOTAL\\n'
+      + 'Total seguidores do dia: \\+45\\n'
+      + 'Custo de seguidores dia: R\\$\\s?3,24\\n'
+      + 'Total seguidores da conta: 5\\.234\\n'
+      + 'Total visitantes dia: 620\\n'
+      + 'Custo visitantes dia: R\\$\\s?0,24$',
+    ),
   );
 });
 
 test('montarMensagemSeguidores: delta negativo (período e dia) aparece sem sinal de mais', () => {
   const msg = montarMensagemSeguidores('2026-09-12', 13, -3, null, 5000, -8);
   assert.match(msg, /Novos seguidores no período: -3/);
-  assert.match(msg, /Total do dia: -8/);
+  assert.match(msg, /Total seguidores do dia: -8/);
 });
 
 test('montarMensagemSeguidores: visita ao perfil nunca leva sinal de mais (é atividade, não estoque)', () => {
   const msg = montarMensagemSeguidores('2026-09-12', 13, null, 8, null, null);
   assert.match(msg, /Visitas ao perfil da conta: 8/);
-  assert.doesNotMatch(msg, /Total da conta/);
+  assert.doesNotMatch(msg, /TOTAL|Total seguidores da conta/);
 });
 
 test('⚠️ montarMensagemSeguidores: primeira leitura da série — só total da conta, sem período nem dia', () => {
   const msg = montarMensagemSeguidores('2026-09-12', 13, null, null, 5000, null);
-  assert.equal(msg, '📊 Seguidores e visitas ao perfil — 13h, 12/09\n\nTotal da conta: 5.000');
+  assert.equal(msg, '📊 Seguidores e visitas ao perfil — 13h, 12/09\n\nTOTAL\nTotal seguidores da conta: 5.000');
 });
 
 test('montarMensagemSeguidores: seguidor sem visita ao perfil — só a parte de período fica sem a linha de visita', () => {
@@ -256,37 +270,71 @@ test('montarMensagemSeguidores: seguidor sem visita ao perfil — só a parte de
   assert.equal(
     msg,
     '📊 Seguidores e visitas ao perfil — 13h, 12/09\n\n'
+    + 'INTERVALO\n'
     + 'Novos seguidores no período: +12\n'
     + '\n'
-    + 'Total do dia: +30\n'
-    + 'Total da conta: 5.012',
+    + 'TOTAL\n'
+    + 'Total seguidores do dia: +30\n'
+    + 'Total seguidores da conta: 5.012',
   );
 });
 
-test('⚠️ montarMensagemSeguidores: com gasto, mostra investimento e os dois custos, na ordem certa', () => {
+test('⚠️ montarMensagemSeguidores: com gasto do período, mostra investimento e os dois custos, na ordem certa', () => {
   const msg = montarMensagemSeguidores('2026-09-12', 13, 12, 156, 5012, 30, 37.4);
-  assert.match(msg, /Novos seguidores no período: \+12\nVisitas ao perfil da conta: 156\nInvestimento: R\$\s?37,40\nCusto por visita ao perfil: R\$\s?0,24\nCusto por seguidor: R\$\s?3,12\n\nTotal do dia/);
+  assert.match(msg, /Novos seguidores no período: \+12\nVisitas ao perfil da conta: 156\nInvestimento: R\$\s?37,40\nCusto por visita ao perfil: R\$\s?0,24\nCusto por seguidor: R\$\s?3,12\n\nTOTAL/);
 });
 
-test('montarMensagemSeguidores: sem gasto (0 ou ausente), nenhuma linha de investimento', () => {
+test('montarMensagemSeguidores: sem gasto do período (0 ou ausente), nenhuma linha de investimento do período', () => {
   const msg = montarMensagemSeguidores('2026-09-12', 13, 12, 156, 5012, 30, 0);
   assert.doesNotMatch(msg, /Investimento/);
-  assert.doesNotMatch(msg, /Custo por/);
+  assert.doesNotMatch(msg, /Custo por visita ao perfil|Custo por seguidor:/);
 });
 
-test('⚠️ montarMensagemSeguidores: custo por seguidor é null quando o delta é negativo ou zero (não divide por baixo de zero)', () => {
+test('⚠️ montarMensagemSeguidores: custo por seguidor (período) é null quando o delta é negativo ou zero', () => {
   const semSeguidorNovo = montarMensagemSeguidores('2026-09-12', 13, 0, 156, 5012, 30, 37.4);
-  assert.doesNotMatch(semSeguidorNovo, /Custo por seguidor/);
+  assert.doesNotMatch(semSeguidorNovo, /Custo por seguidor:/);
   assert.match(semSeguidorNovo, /Custo por visita ao perfil/, 'esse continua saindo, o gasto/visita não depende do delta de seguidor');
 
   const perdeuSeguidor = montarMensagemSeguidores('2026-09-12', 13, -2, 156, 5012, 30, 37.4);
-  assert.doesNotMatch(perdeuSeguidor, /Custo por seguidor/, 'delta negativo daria um "custo" sem sentido');
+  assert.doesNotMatch(perdeuSeguidor, /Custo por seguidor:/, 'delta negativo daria um "custo" sem sentido');
 });
 
-test('montarMensagemSeguidores: custo por visita é null sem leitura de visita, mesmo com gasto', () => {
+test('montarMensagemSeguidores: custo por visita (período) é null sem leitura de visita, mesmo com gasto', () => {
   const msg = montarMensagemSeguidores('2026-09-12', 13, 12, null, 5012, 30, 37.4);
   assert.match(msg, /Investimento: R\$\s?37,40/);
   assert.doesNotMatch(msg, /Custo por visita/);
+});
+
+test('⚠️ montarMensagemSeguidores: custo de seguidores/visitantes do DIA seguem a mesma regra do período (nunca dividir por <= 0)', () => {
+  // Sem gasto do dia: nenhuma das duas linhas de custo do dia aparece, mas
+  // os totais (que não dependem de gasto) continuam.
+  const semGastoDia = montarMensagemSeguidores('2026-09-12', 13, 12, 156, 5012, 30, 37.4, 0, 620);
+  assert.doesNotMatch(semGastoDia, /Custo de seguidores dia|Custo visitantes dia/);
+  assert.match(semGastoDia, /Total seguidores do dia: \+30\nTotal seguidores da conta: 5\.012\nTotal visitantes dia: 620/);
+
+  // Seguidores do dia <= 0: custo de seguidores do dia some, custo de
+  // visitantes do dia continua (não depende do mesmo denominador).
+  const seguidoresDiaZero = montarMensagemSeguidores('2026-09-12', 13, 12, 156, 5012, 0, 37.4, 145.9, 620);
+  assert.doesNotMatch(seguidoresDiaZero, /Custo de seguidores dia/);
+  assert.match(seguidoresDiaZero, /Custo visitantes dia/);
+});
+
+test('gastoSeguidoresNoDia: soma só o gasto das campanhas [+ SEGUIDORES], em todas as horas do dia', () => {
+  const horas = [
+    { campanhas: [{ tipo: 'seguidores', gastoHora: 10 }, { tipo: 'wpp', gastoHora: 999 }] },
+    { campanhas: [{ tipo: 'seguidores', gastoHora: 5.4 }] },
+  ];
+  assert.equal(gastoSeguidoresNoDia(horas), 15.4);
+});
+
+test('visitasPerfilNoDia: soma as visitas de todas as horas do dia certo', () => {
+  const linhas = [
+    { dia: '2026-09-12', hora: 10, visitas_hora: 100 },
+    { dia: '2026-09-12', hora: 11, visitas_hora: 128 },
+    { dia: '2026-09-13', hora: 0, visitas_hora: 999 },
+  ];
+  assert.equal(visitasPerfilNoDia(linhas, '2026-09-12'), 228);
+  assert.equal(visitasPerfilNoDia(linhas, '2026-09-14'), 0, 'dia sem nenhuma leitura soma 0, não é null (é soma, não delta)');
 });
 
 test('seguidoresNoDia: soma os deltas do dia inteiro, não só a hora', () => {
