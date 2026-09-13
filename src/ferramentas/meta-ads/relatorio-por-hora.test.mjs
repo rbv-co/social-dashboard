@@ -248,8 +248,8 @@ test('⚠️ montarMensagemSeguidores: cabeçalhos INTERVALO/TOTAL, e as linhas 
       + 'Investimento: R\\$\\s?37,40\\n'
       + '\\n'
       + 'TOTAL\\n'
-      + 'Total seguidores do dia: \\+45\\n'
       + 'Total seguidores da conta: 5\\.234\\n'
+      + 'Total seguidores do dia: \\+45\\n'
       + 'Total visitantes dia: 620\\n'
       + 'Custo de seguidores dia: R\\$\\s?3,24\\n'
       + 'Custo visitantes dia: R\\$\\s?0,24\\n'
@@ -284,8 +284,8 @@ test('montarMensagemSeguidores: seguidor sem visita ao perfil — só a parte de
     + 'Novos seguidores no período: +12\n'
     + '\n'
     + 'TOTAL\n'
-    + 'Total seguidores do dia: +30\n'
-    + 'Total seguidores da conta: 5.012',
+    + 'Total seguidores da conta: 5.012\n'
+    + 'Total seguidores do dia: +30',
   );
 });
 
@@ -320,7 +320,7 @@ test('⚠️ montarMensagemSeguidores: custo de seguidores/visitantes do DIA seg
   // os totais (que não dependem de gasto) continuam.
   const semGastoDia = montarMensagemSeguidores('2026-09-12', 13, 12, 156, 5012, 30, 37.4, 0, 620);
   assert.doesNotMatch(semGastoDia, /Custo de seguidores dia|Custo visitantes dia/);
-  assert.match(semGastoDia, /Total seguidores do dia: \+30\nTotal seguidores da conta: 5\.012\nTotal visitantes dia: 620/);
+  assert.match(semGastoDia, /Total seguidores da conta: 5\.012\nTotal seguidores do dia: \+30\nTotal visitantes dia: 620/);
 
   // Seguidores do dia <= 0: custo de seguidores do dia some, custo de
   // visitantes do dia continua (não depende do mesmo denominador).

@@ -244,7 +244,7 @@ export function montarMensagemSeguidores(
   const doPeriodo = [linhaNoPeriodo, linhaVisitasPerfil, linhaCustoPorVisita, linhaCustoPorSeguidor, linhaInvestimento]
     .filter((l) => l !== null);
   const totais = [
-    linhaSeguidoresDoDia, linhaTotalConta, linhaVisitantesDia,
+    linhaTotalConta, linhaSeguidoresDoDia, linhaVisitantesDia,
     linhaCustoSeguidoresDia, linhaCustoVisitantesDia, linhaInvestimentoDia,
   ].filter((l) => l !== null);
 
