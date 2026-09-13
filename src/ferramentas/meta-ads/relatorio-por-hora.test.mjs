@@ -115,8 +115,8 @@ test('⚠️ montarMensagemWpp: cabeçalhos INTERVALO/TOTAL DESDOBRADO, custo po
       + 'Gasto no período: R\\$\\s?150,00\\n'
       + '\\n'
       + 'TOTAL DESDOBRADO\\n'
-      + '\\[CAMPANHA WPP\\] Criativo 1 — 4 leads · Gasto Dia: R\\$\\s?100,00\\n'
-      + '\\[CAMPANHA WPP\\] Criativo 2 — 1 lead · Gasto Dia: R\\$\\s?50,00$',
+      + '\\[CAMPANHA WPP\\] Criativo 1 — 4 leads · Gasto Dia: R\\$\\s?400,00\\n'
+      + '\\[CAMPANHA WPP\\] Criativo 2 — 1 lead · Gasto Dia: R\\$\\s?120,00$',
     ),
   );
   assert.doesNotMatch(msg, /Post do Instagram/, 'campanha fora do WPP vazou pra mensagem');
@@ -126,15 +126,15 @@ test('montarMensagemWpp: total zero não inventa custo por lead na mensagem', ()
   const campanhas = [{ campaignId: 'c1', nome: '[CAMPANHA WPP] X', tipo: 'wpp', gastoHora: 40, gastoAcumulado: 90, conversasHora: 0 }];
   const msg = montarMensagemWpp('2026-09-11', 23, campanhas);
   assert.match(msg, /Leads no período: 0\nGasto no período: R\$\s?40,00/);
-  assert.match(msg, /X — 0 leads · Gasto Dia: R\$\s?40,00/);
+  assert.match(msg, /X — 0 leads · Gasto Dia: R\$\s?90,00/, '"Gasto Dia" é o acumulado do dia, não o gasto desta hora isolada');
   assert.doesNotMatch(msg, /Custo por lead/);
 });
 
 test('⚠️ montarMensagemWpp: com leadsHoje e gastoHoje, mostra as duas linhas do dia ao final, depois da lista de campanhas', () => {
-  const campanhas = [{ campaignId: 'c1', nome: '[CAMPANHA WPP] X', tipo: 'wpp', gastoHora: 40, conversasHora: 2 }];
+  const campanhas = [{ campaignId: 'c1', nome: '[CAMPANHA WPP] X', tipo: 'wpp', gastoHora: 40, gastoAcumulado: 130, conversasHora: 2 }];
   const msg = montarMensagemWpp('2026-09-11', 23, campanhas, 9, 210.5);
   assert.match(msg, /Custo por lead: R\$\s?20,00\nGasto no período: R\$\s?40,00/);
-  assert.match(msg, /Gasto Dia: R\$\s?40,00\n\nTotal de leads no dia: 9\nTotal de gasto no dia: R\$\s?210,50$/);
+  assert.match(msg, /Gasto Dia: R\$\s?130,00\n\nTotal de leads no dia: 9\nTotal de gasto no dia: R\$\s?210,50$/);
 });
 
 test('montarMensagemWpp: sem leadsHoje/gastoHoje (null/undefined), não mostra as linhas do dia', () => {

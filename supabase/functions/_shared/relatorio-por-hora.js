@@ -94,10 +94,14 @@ export function agruparPorDiaEHora(linhas, nomesPorCampanha = {}) {
 // pelo dono, 12/09/2026): cabeçalhos "INTERVALO"/"TOTAL DESDOBRADO" (mesmo
 // espírito do INTERVALO/TOTAL da Mensagem Seguidores), custo por lead antes
 // do valor bruto de gasto (mesma regra: indicador por unidade primeiro, valor
-// investido por último). O rótulo "Gasto Dia" por campanha é o que veio no
-// mock — o valor é o gasto do PERÍODO desta campanha (`gastoHora`), não o
-// acumulado do dia; "Gasto total das campanhas" saiu de cena, redundante com
-// "Total de gasto no dia" no rodapé.
+// investido por último). "Gasto total das campanhas" saiu de cena, redundante
+// com "Total de gasto no dia" no rodapé.
+//
+// "Gasto Dia" por campanha é o ACUMULADO do dia (`gastoAcumulado`), não o
+// gasto desta hora isolada (pedido do dono, 12/09/2026: "não quero o gasto
+// por período, quero o gasto total do dia... assim eu consigo ver
+// exatamente o crescimento por hora" — R$3 de uma hora isolada não mostra
+// crescimento, o acumulado subindo hora a hora mostra).
 export function montarMensagemWpp(dia, hora, campanhas, leadsHoje, gastoHoje) {
   const wpp = campanhas.filter((c) => c.tipo === 'wpp');
   if (!wpp.length) return null;
@@ -116,7 +120,7 @@ export function montarMensagemWpp(dia, hora, campanhas, leadsHoje, gastoHoje) {
   const doPeriodo = [linhaNoPeriodo, linhaCustoPorLead, linhaGasto].filter((l) => l !== null);
 
   const linhasCampanhas = wpp.map((c) => `${c.nome} — ${c.conversasHora} lead${c.conversasHora === 1 ? '' : 's'}`
-    + ` · Gasto Dia: ${formatarReais(c.gastoHora)}`);
+    + ` · Gasto Dia: ${formatarReais(c.gastoAcumulado)}`);
 
   const linhaLeadsDoDia = leadsHoje != null ? `Total de leads no dia: ${leadsHoje}` : null;
   const linhaGastoDoDia = gastoHoje != null ? `Total de gasto no dia: ${formatarReais(gastoHoje)}` : null;

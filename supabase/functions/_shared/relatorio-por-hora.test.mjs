@@ -53,7 +53,7 @@ test('montarMensagemWpp: cabeçalhos INTERVALO/TOTAL DESDOBRADO, custo por lead 
       + 'Gasto no período: R\\$\\s?100,00\\n'
       + '\\n'
       + 'TOTAL DESDOBRADO\\n'
-      + '\\[CAMPANHA WPP\\] Criativo 1 — 4 leads · Gasto Dia: R\\$\\s?100,00\\n'
+      + '\\[CAMPANHA WPP\\] Criativo 1 — 4 leads · Gasto Dia: R\\$\\s?400,00\\n'
       + '\\n'
       + 'Total de leads no dia: 9\\n'
       + 'Total de gasto no dia: R\\$\\s?145,90$',
