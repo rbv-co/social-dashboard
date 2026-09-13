@@ -240,9 +240,9 @@ test('⚠️ montarMensagemSeguidores: cabeçalhos INTERVALO/TOTAL, e as linhas 
       + '\\n'
       + 'TOTAL\\n'
       + 'Total seguidores do dia: \\+45\\n'
-      + 'Custo de seguidores dia: R\\$\\s?3,24\\n'
       + 'Total seguidores da conta: 5\\.234\\n'
       + 'Total visitantes dia: 620\\n'
+      + 'Custo de seguidores dia: R\\$\\s?3,24\\n'
       + 'Custo visitantes dia: R\\$\\s?0,24\\n'
       + 'Investimento no dia: R\\$\\s?145,90$',
     ),
