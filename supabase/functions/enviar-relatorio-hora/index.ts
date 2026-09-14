@@ -12,9 +12,11 @@
 // SÓ A CONTA VESSEL, de propósito — mesmo recorte fixo que a tela usa
 // (CONTA_VESSEL em tela-de-relatorio-por-hora.vue).
 //
-// NÃO MANDA quando a mensagem dá `null` (nada pra dizer nessa hora) — e NÃO
-// MANDA quando não dá pra ler o banco com segurança: aviso errado é pior que
-// aviso nenhum (padrão do projeto, PADRAO-DA-CENTRAL.md §9).
+// Quando não há dado nenhum pra essa hora (mensagem `null`, ou erro lendo o
+// banco), manda um AVISO curto em vez de ficar em silêncio — pedido do dono
+// (14/09/2026, depois do gap de 20h-22h do dia 13/09 passar batido até
+// alguém notar no grupo). O aviso nunca inventa número: é só "não saiu",
+// nunca um valor fabricado (padrão do projeto, PADRAO-DA-CENTRAL.md §9).
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { exigirSegredoDeCron } from '../_shared/segredo-de-cron.ts';
 import {
@@ -48,6 +50,23 @@ function todayBR(): string {
 // a hora que a pessoa vai ler na mensagem, não a hora UTC.
 function horaBR(): number {
   return Number(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo', hour: '2-digit', hour12: false }));
+}
+
+// Avisa no grupo quando não dá pra gerar relatório nenhum nessa hora — melhor
+// um aviso curto do que silêncio total (pedido do dono, 14/09/2026: "quando
+// não tiver dados, mandar uma mensagem avisando pelo menos" — foi assim que o
+// gap de 20h-22h do dia 13/09 passou batido até alguém notar no grupo).
+// Best-effort: se o próprio aviso falhar (Z-API fora do ar), não derruba a
+// resposta da função, só entra em `falhas`.
+async function avisarSemDados(dia: string, hora: number, motivo: string): Promise<string | null> {
+  const [, mes, d] = dia.split('-');
+  const horaStr = String(hora).padStart(2, '0');
+  try {
+    await mandarWhatsapp(`⚠️ Relatório das ${horaStr}h, ${d}/${mes} não saiu — ${motivo}.`);
+    return null;
+  } catch (e) {
+    return e instanceof Error ? e.message : String(e);
+  }
 }
 
 // Uma mensagem de texto pro grupo. Lança se a Z-API recusar — quem chama
@@ -95,10 +114,22 @@ Deno.serve(async (req: Request) => {
       .eq('account_id', CONTA_VESSEL).eq('dia', dia),
   ]);
 
-  if (linhasRes.error) return json({ ok: true, enviado: false, motivo: 'campanhas_indisponivel', erro: linhasRes.error.message });
-  if (campanhasRes.error) return json({ ok: true, enviado: false, motivo: 'campanhas_indisponivel', erro: campanhasRes.error.message });
-  if (leiturasRes.error) return json({ ok: true, enviado: false, motivo: 'seguidores_indisponivel', erro: leiturasRes.error.message });
-  if (visitasRes.error) return json({ ok: true, enviado: false, motivo: 'visitas_indisponivel', erro: visitasRes.error.message });
+  if (linhasRes.error) {
+    const falhaAviso = await avisarSemDados(dia, hora, 'não consegui ler os dados de campanha');
+    return json({ ok: true, enviado: false, motivo: 'campanhas_indisponivel', erro: linhasRes.error.message, falhaAviso });
+  }
+  if (campanhasRes.error) {
+    const falhaAviso = await avisarSemDados(dia, hora, 'não consegui ler os dados de campanha');
+    return json({ ok: true, enviado: false, motivo: 'campanhas_indisponivel', erro: campanhasRes.error.message, falhaAviso });
+  }
+  if (leiturasRes.error) {
+    const falhaAviso = await avisarSemDados(dia, hora, 'não consegui ler os dados de seguidores');
+    return json({ ok: true, enviado: false, motivo: 'seguidores_indisponivel', erro: leiturasRes.error.message, falhaAviso });
+  }
+  if (visitasRes.error) {
+    const falhaAviso = await avisarSemDados(dia, hora, 'não consegui ler os dados de visita ao perfil');
+    return json({ ok: true, enviado: false, motivo: 'visitas_indisponivel', erro: visitasRes.error.message, falhaAviso });
+  }
 
   const nomesPorCampanha = Object.fromEntries((campanhasRes.data ?? []).map((c: any) => [c.campaign_id, c.name]));
   const agrupado = agruparPorDiaEHora(linhasRes.data ?? [], nomesPorCampanha);
@@ -141,6 +172,14 @@ Deno.serve(async (req: Request) => {
     } catch (e) {
       falhas.push(`${nome}: ${e instanceof Error ? e.message : String(e)}`);
     }
+  }
+
+  // Nenhuma das duas tinha o que dizer (não é erro de leitura — as queries
+  // acima foram bem, só não tinha dado pra essa hora) — avisa mesmo assim,
+  // em vez de sumir sem explicação (pedido do dono, 14/09/2026).
+  if (!enviadas.length && !falhas.length) {
+    const falhaAviso = await avisarSemDados(dia, hora, 'sem dado disponível pra essa hora');
+    if (falhaAviso) falhas.push(`aviso: ${falhaAviso}`);
   }
 
   return json({
