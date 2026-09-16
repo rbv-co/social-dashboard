@@ -1,0 +1,87 @@
+name: Cópia de segurança do banco
+
+# TODO DIA, às 06h12 UTC (03h12 em Campinas): copia o banco inteiro para o Zoho
+# WorkDrive.
+#
+# ⚠️ POR QUE ESTE AGENDAMENTO EXISTE
+# A organização está no plano FREE da Supabase. A documentação deles é
+# explícita: backup diário automático é só de Pro para cima, e projetos Free
+# devem exportar por conta própria. Até 16/09/2026 ninguém exportava — o banco
+# não tinha cópia NENHUMA. Esta é a única que existe.
+#
+# ⚠️ POR QUE AQUI E NÃO NUMA EDGE FUNCTION
+# Mais de uma pessoa publica Edge Function neste projeto, cada uma do próprio
+# computador, e quem publica por último vence — já apagou trabalho no ar em
+# 14/09. Uma cópia de segurança não pode depender de quem publicou por último.
+# GitHub Actions também roda FORA da Supabase, que é o que se quer de um backup:
+# se a conta da Supabase for perdida, o robô que faz a cópia não vai junto.
+#
+# O minuto 12 evita a hora cheia (medido neste repo: agendar na hora cheia
+# atrasa de 2 a 3 horas) e a madrugada evita disputar banda com os robôs do dia.
+#
+# DOMINGO leva `--semanal`: inclui o histórico de métrica, que é grande e quase
+# todo recoletável, e por isso não vale copiar todo dia.
+on:
+  schedule:
+    - cron: '12 6 * * *'
+  workflow_dispatch:
+    inputs:
+      semanal:
+        description: 'Incluir o histórico de métrica? (sim/não)'
+        required: false
+        default: ''
+      ensaio:
+        description: 'Só ensaiar, sem enviar nada? (sim/não)'
+        required: false
+        default: ''
+
+concurrency:
+  group: copia-do-banco
+  cancel-in-progress: false
+
+jobs:
+  copiar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - name: Guardar a cópia
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SEMANAL: ${{ github.event.inputs.semanal }}
+          ENSAIO: ${{ github.event.inputs.ensaio }}
+        run: |
+          argumentos=""
+          # Domingo é 0 em `date +%w`. Também aceita o pedido manual.
+          if [ "$(date -u +%w)" = "0" ] || [ -n "$SEMANAL" ]; then
+            argumentos="$argumentos --semanal"
+          fi
+          if [ -n "$ENSAIO" ]; then
+            argumentos="$argumentos --ensaio"
+          else
+            # A limpeza do que passou do prazo só na rodada automática, e ela
+            # tem teto de 5 pastas por vez: se um dia a conta da data sair
+            # errada, ela leva cinco, não o acervo inteiro.
+            argumentos="$argumentos --limpar"
+          fi
+          node coletor/guardar-copia-do-banco.mjs $argumentos
+
+      - name: Conferir a cópia de ontem, dia 1º de cada mês
+        # ⚠️ BACKUP QUE NUNCA FOI RESTAURADO NÃO É BACKUP, É UM ARQUIVO.
+        # Uma vez por mês o robô baixa a cópia do dia anterior e confere cada
+        # arquivo contra o manifesto — contagem de linhas e soma de verificação.
+        if: github.event.inputs.ensaio == ''
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          if [ "$(date -u +%d)" = "01" ]; then
+            ontem=$(date -u -d 'yesterday' +%Y-%m-%d)
+            node coletor/restaurar-copia.mjs --conferir "$ontem"
+          else
+            echo "não é dia 1º — a conferência mensal roda no dia 1º."
+          fi
