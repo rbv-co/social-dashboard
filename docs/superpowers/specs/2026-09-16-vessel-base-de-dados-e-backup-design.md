@@ -424,22 +424,58 @@ arquivo.**
 
 ---
 
-## 9. O que depende do dono
+## 9. Decidido pelo dono em 16/09/2026
 
-1. **A política de privacidade precisa de três finalidades novas** — agendar
-   atendimento presencial, captação em evento de parceiro, e programa
-   profissional. A que está no ar cobre só lista de espera. Eu escrevo o texto;
-   a validação é de quem responde pela empresa. **Enquanto não subir, o gerador
-   do Appointment Card continua sem gravar.**
-2. **Qual data da venda vale para o Meta** — a da confirmação do pedido ou a da
-   nota autorizada, que é quando o valor definitivo existe.
-3. **Qual das duas contas de anúncio** recebe os eventos, e qual conjunto de
-   dados.
-4. **Se o plano Free continua.** Este desenho funciona no Free. Mas backup feito
-   por nós é a única linha de defesa — no Pro, a Supabase faz a dela também, e
-   as duas juntas são bem mais do que o dobro.
+1. **Texto das três finalidades novas na política de privacidade** — eu escrevo,
+   alguém da empresa valida. **Enquanto não subir, o gerador do Appointment Card
+   continua sem gravar.** ⚠️ As tabelas e as portas já existem no banco; o que
+   falta é a página do cartão passar a chamar `vessel_registrar_cartao`.
+2. **A data da venda é a do Bling**, seguindo a regra que a casa já tem: a venda
+   entra quando o pedido vira *Atendido*, na **data do pedido** — não na da
+   nota. Está em cinco lugares do código e foi medida em agosto.
+   ⚠️ **Consequência para o Meta:** pedido concluído muito depois chega fora da
+   janela de atribuição e não será creditado. Existe caso real na base (pedido
+   de 27/07 concluído em 11/08). Não há conserto do nosso lado — o que há é
+   **medir quantos caem fora** e mostrar, em vez de a conta não fechar.
+3. **Conta de anúncio: C1 — Vessel Brasil** (`act_1197997517858139`).
+   ⚠️ São duas contas no mesmo CNPJ e **as duas se chamam Vessel**; o nome no
+   nosso cadastro não é o nome na Meta. A outra é `act_1193360736025748`
+   ("C2 - La Vessel").
+4. **Plano da Supabase: fica no Free por enquanto.** A cópia que construímos é a
+   única linha de defesa, então ela não é opcional.
 
----
+## 9.1. O buraco de segurança que a prova achou, e o conserto
+
+Ao provar a porta com a chave que está no HTML do site — que é o que qualquer
+visitante tem — apareceu isto:
+
+```
+POST /rest/v1/rpc/vessel_pessoa_por_telefone
+  { "p_nome": "…", "p_telefone": "…" }        → HTTP 200, e GRAVOU.
+```
+
+Qualquer pessoa podia criar registros de gente à vontade, pulando a armadilha e
+o teto por hora.
+
+**A causa:** `revoke all on function … from public` **não fecha**. No Supabase
+os papéis `anon` e `authenticated` recebem execute por privilégio padrão do
+schema, que é uma concessão separada da do papel `public`. Só fecha revogando
+dos três.
+
+**A segunda lição, e é da prova:** ela dava 404 nessa função e eu li como
+"fechada". Era assinatura errada — eu chamava sem os dois argumentos
+obrigatórios. Prova que passa por engano é pior que prova nenhuma. Agora ela
+chama com argumentos de verdade e só aceita "não é 200".
+
+Consertado em `db/migrations/2026-09-16-vessel-fecha-as-funcoes-internas.sql`.
+
+**Varredura do resto do banco:** 22 funções com poder de dono são alcançáveis
+pela chave pública. Sete são portas públicas de propósito (lista de espera,
+selo, contador da pré-venda, e as três novas). As outras quinze são ajudantes
+das regras de acesso (`pode_ver_*`, `minhas_equipes`, `is_vessel_admin`…) e
+**precisam** ser chamáveis: as próprias regras as invocam em nome de quem
+consulta, e revogar quebraria as regras. Para quem não está logado elas só
+respondem "não". **Nenhum outro buraco.**
 
 ## 10. Como se prova que funcionou
 
