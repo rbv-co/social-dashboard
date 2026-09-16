@@ -1,5 +1,10 @@
 # A base de dados da Vessel, e o backup que não existe
 
+> **Estado em 16/09/2026, 21h:** as camadas 1 e 2 e o backup estão CONSTRUÍDOS,
+> aplicados e provados. O que falta é a camada 3 (o pedido, pedido a pedido), os
+> espelhos das tabelas novas, e o texto das finalidades da política de
+> privacidade. Ver a seção 11, no fim.
+
 **16/09/2026** · desenho aprovado em conversa, aguardando revisão do dono.
 
 Este documento desenha duas coisas que andam juntas:
@@ -501,3 +506,37 @@ E três que são deste desenho:
 | BK01 | a cópia do dia abre, e o manifesto bate linha a linha |
 | BK02 | queda de mais de 10% nas linhas de uma tabela FALHA a cópia |
 | BK03 | a restauração num schema separado reproduz as contagens da cópia |
+
+
+---
+
+## 11. O que foi construído em 16/09/2026
+
+### Feito e provado
+
+| | |
+|---|---|
+| `vessel_pessoas`, `vessel_origens`, `vessel_atendimentos`, `vessel_permissoes`, `vessel_convite_aberturas` | no ar, trava ligada, zero política |
+| `vessel_pedir_atendimento`, `vessel_registrar_cartao`, `vessel_abrir_convite` | as três portas, no ar |
+| `coletor/provar-porta-de-vessel-pessoas.mjs` | prova pela chave pública; achou e fechou um buraco real |
+| `coletor/guardar-copia-do-banco.mjs` | a cópia diária; 113 tabelas, 8,7 MB, primeira rodada feita |
+| `coletor/restaurar-copia.mjs` | confere e restaura num schema separado; restauração provada |
+| `.github/workflows/copia-do-banco.yml` | 06h12 UTC todo dia; domingo com o histórico de métrica |
+| painel de saúde | o robô da cópia entrou como **crítico**, cobra após 30h |
+
+**A prova de ponta a ponta da cópia, feita hoje:** as 113 tabelas subiram para o
+WorkDrive, foram baixadas de volta, toda soma de verificação bateu, a
+restauração num schema separado reproduziu `vessel_pecas` com as 210 linhas e
+conteúdo legível, o segredo de cron veio redigido, e o schema de teste foi
+apagado.
+
+### Falta
+
+1. **A camada 3** — `vessel_pedidos` e `vessel_pedido_itens`, com o robô que
+   traz do Bling pedido a pedido. É ela que destrava T07, T08 e T09.
+2. **Os espelhos das tabelas novas** no CSV do WorkDrive.
+3. **O texto das três finalidades novas** da política de privacidade. Até ele
+   subir, a página do Appointment Card **não chama** `vessel_registrar_cartao` —
+   a porta existe e está fechada por escolha, não por falta.
+4. **Enviar os commits para o GitHub.** Enquanto não forem, o agendamento da
+   cópia não roda: hoje existe uma cópia, de hoje, feita à mão.
