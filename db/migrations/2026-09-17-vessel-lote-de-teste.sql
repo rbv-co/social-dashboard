@@ -45,9 +45,10 @@ alter table public.vessel_lotes
   add column if not exists teste boolean not null default false;
 
 comment on column public.vessel_lotes.teste is
-  'Lote de ensaio (não uma peça de verdade). Marcado sozinho quando o SKU '
-  'começa com TESTE- (ver trg_vessel_lotes_marcar_teste). Filtrar painel e '
-  'relatórios por esta coluna é trabalho da Fase 2 — ainda não filtram.';
+  'Lote de ensaio (não uma peça de verdade). Recalculada sozinha, na criação '
+  'e em toda edição de SKU, a partir do prefixo TESTE- '
+  '(ver trg_vessel_lotes_marcar_teste) — nunca editada à mão. Filtrar painel '
+  'e relatórios por esta coluna é trabalho da Fase 2 — ainda não filtram.';
 
 create index if not exists vessel_lotes_teste_idx
   on public.vessel_lotes (teste) where teste;
@@ -60,27 +61,38 @@ create index if not exists vessel_lotes_teste_idx
 -- vira lote de teste contado como venda de verdade num relatório da Fase 2.
 --
 -- TRIGGER, e não um `update` de uma vez só: isto tem que valer para TODO lote
--- de teste que nascer daqui pra frente (o de hoje e os próximos, sempre que
--- alguém repetir o teste), não só para a linha que existir no momento em que
--- esta migration rodar. Um `update` cobriria só o passado.
+-- de teste que nascer ou for editado daqui pra frente, não só para a linha
+-- que existir no momento em que esta migration rodar. Um `update` cobriria
+-- só o passado.
 --
--- O contrato com o dono, escrito em verify/novo/LEIA-ME.txt: para gerar um
--- lote de teste pelo painel, o SKU tem que começar com `TESTE-`. É a única
--- coisa que ele precisa lembrar; o resto (marcar `teste = true`) é sozinho.
+-- ⚠️ RODADA DE CORREÇÃO 2: O GATILHO TAMBÉM COBRE EDIÇÃO DE SKU, NOS DOIS
+-- SENTIDOS. `vessel_editar_lote` (2026-08-30-vessel-editar-lote.sql) deixa
+-- editar o SKU de um lote JÁ EXISTENTE. Com o gatilho só em `insert` (versão
+-- anterior deste arquivo), um lote de verdade editado para um SKU `TESTE-*`
+-- continuava com `teste = false`, calado — e o caminho contrário também
+-- valia: um lote de teste editado para um SKU comum continuaria marcado como
+-- teste para sempre. As duas situações são o mesmo defeito (a coluna
+-- descolada do SKU que a define), então a função RECALCULA `teste` do zero
+-- toda vez que o SKU muda, em vez de só ligar a marca e nunca desligar: como
+-- não existe tela para ligar/desligar `teste` à mão, o SKU é a ÚNICA fonte de
+-- verdade dela, e as duas têm de andar sempre juntas.
+--
+-- O contrato com o dono, escrito em verify/novo/LEIA-ME.txt: para gerar (ou
+-- manter) um lote de teste pelo painel, o SKU tem que começar com `TESTE-`.
+-- É a única coisa que ele precisa lembrar; o resto (marcar/desmarcar `teste`)
+-- é sozinho.
 create or replace function public.vessel_lotes_marcar_teste()
 returns trigger
 language plpgsql
 as $$
 begin
-  if left(upper(coalesce(new.sku, '')), 6) = 'TESTE-' then
-    new.teste := true;
-  end if;
+  new.teste := left(upper(coalesce(new.sku, '')), 6) = 'TESTE-';
   return new;
 end;
 $$;
 
 drop trigger if exists trg_vessel_lotes_marcar_teste on public.vessel_lotes;
 create trigger trg_vessel_lotes_marcar_teste
-  before insert on public.vessel_lotes
+  before insert or update of sku on public.vessel_lotes
   for each row
   execute function public.vessel_lotes_marcar_teste();
