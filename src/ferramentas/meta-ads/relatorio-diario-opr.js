@@ -74,6 +74,11 @@ function somar(campanhas, campo) {
 //   campaign_insights do banco: ontem (16/09) foram 289 curtidas, 1
 //   comentário, 2 compartilhamentos, 1 salvamento, 293 interações no
 //   total, R$362,98 de investimento — custos batendo nas duas fontes.
+// - Media Mix (17/09/2026, pedido do dono: "preenche o media mix, tá
+//   fácil") — não é dado novo, é aritmética em cima de investimento já
+//   confirmado (growth/engagement/wpp, todos batidos acima). Campanhas
+//   WPP estão desativadas hoje (gasto R$0,00, confirmado ao listar as 33
+//   campanhas do dia), então mix.leads = 0% de verdade, não null.
 const CAMPOS_CONFIRMADOS = new Set([
   'header.novosSeguidores',
   'growth.seguidores',
@@ -96,6 +101,9 @@ const CAMPOS_CONFIRMADOS = new Set([
   'engagement.custoPorSalvamento',
   'engagement.totalInteracoes',
   'engagement.custoMedioPorEngajamento',
+  'mix.growth',
+  'mix.engagement',
+  'mix.leads',
 ]);
 
 function ligado(secao, campo, valor) {
