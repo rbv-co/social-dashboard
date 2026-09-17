@@ -404,6 +404,10 @@ declare
 begin
   -- ⚠️ O TETO É POR LOGIN E VEM ANTES DE QUALQUER COMPARAÇÃO DE SENHA: sem ele
   -- esta função vira um chutador de senhas com a chave anônima na mão.
+  --
+  -- ⚠️ E A CHAVE DO TETO É NORMALIZADA (CPF só dígitos, ou e-mail minúsculo).
+  -- Com a chave crua, "390.533.447-05" e "39053344705" são a MESMA conta e
+  -- DUAS cotas de 5 tentativas — e a pontuação livre dá cotas infinitas.
   select count(*) into v_erros from public.vessel_tentativas_de_login
    where chave = v_login and acertou = false and quando > now() - interval '15 minutes';
   if v_erros >= 5 then
