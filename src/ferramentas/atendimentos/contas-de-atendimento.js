@@ -38,6 +38,43 @@ export const SITUACOES = {
 /** O selo do que é linha de ensaio — laranja: "cuidado, isto não é real". */
 export const SELO_DE_ENSAIO = 'selo-atencao'
 
+/** As marcações do dia a dia. Cancelar NÃO está aqui — ver `podeCancelar`. */
+export const MARCACOES = [
+  { situacao: 'realizado', rotulo: 'Veio' },
+  { situacao: 'no_show', rotulo: 'Não veio' },
+  { situacao: 'remarcado', rotulo: 'Remarcou' },
+]
+
+/**
+ * O que dá para marcar nesta linha.
+ *
+ * ⚠️ A LINHA NUNCA OFERECE O QUE ELA JÁ É: um atendimento marcado "Veio"
+ * mostrando um botão "Veio" é ruído, e o que sobra lê-se como corrigir.
+ *
+ * ⚠️ E UMA LINHA CANCELADA OFERECE AS TRÊS. Parece contraintuitivo, e é de
+ * propósito: cancelar por engano tem de ter volta. Esconder as marcações de uma
+ * linha cancelada transformaria um clique errado em linha morta para sempre.
+ */
+export function marcacoesDe(status) {
+  return MARCACOES.filter((m) => m.situacao !== status)
+}
+
+/**
+ * Dá para cancelar esta linha?
+ *
+ * ⚠️ CANCELAR É O CONSERTO DO CARTÃO REPETIDO. O gerador não impede que a mesma
+ * cliente ganhe dois convites para o mesmo dia — acontece quando a Client
+ * Advisor erra o nome e refaz o cartão. O convite fantasma fica na agenda e
+ * conta na taxa de comparecimento como alguém que não veio. Cancelado sai da
+ * conta (ver CONTAM_NA_TAXA) sem destruir o atendimento nem a pessoa.
+ *
+ * ⚠️ E CANCELAR NÃO É UMA QUARTA MARCAÇÃO SOLTA NA LISTA. Ele é difícil de
+ * desfazer no olho de quem lê ("sumiu da conta"), então na tela mora atrás de
+ * um passo a mais — o padrão da casa proíbe botão de perigo repetido em toda
+ * linha de uma lista.
+ */
+export const podeCancelar = (status) => status !== 'cancelado'
+
 /** 'AAAA-MM-DD' pelo calendário LOCAL — `toISOString` daria o dia de UTC. */
 export function diaLocal(data) {
   const d = data instanceof Date ? data : new Date(data)

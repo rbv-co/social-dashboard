@@ -98,10 +98,25 @@
                    E não são três barras da largura do cartão: botão repetido em
                    toda linha de uma lista vira parede — foi o estrago do
                    "Excluir" vermelho em cada uma das quinze pessoas. -->
-              <div v-if="podeMarcar && acoesDe(a).length" class="atd-linha-botoes">
-                <button v-for="acao in acoesDe(a)" :key="acao.situacao"
-                        class="btn" type="button" :disabled="marcando === a.id"
-                        @click="marcar(a, acao.situacao)">{{ acao.rotulo }}</button>
+              <div v-if="podeMarcar" class="atd-linha-botoes">
+                <template v-if="confirmandoCancelar === a.id">
+                  <!-- ⚠️ O PASSO A MAIS. Cancelar tira a linha da taxa de
+                       comparecimento — some da conta sem sumir da tela. O padrão
+                       da casa proíbe botão de perigo repetido em toda linha de
+                       uma lista; ele mora atrás desta pergunta. -->
+                  <span class="atd-pergunta">Cancelar este atendimento?</span>
+                  <button class="btn btn-perigo" type="button" :disabled="marcando === a.id"
+                          @click="marcar(a, 'cancelado')">Sim, cancelar</button>
+                  <button class="btn" type="button"
+                          @click="confirmandoCancelar = null">Voltar</button>
+                </template>
+                <template v-else>
+                  <button v-for="acao in marcacoesDe(a.status)" :key="acao.situacao"
+                          class="btn" type="button" :disabled="marcando === a.id"
+                          @click="marcar(a, acao.situacao)">{{ acao.rotulo }}</button>
+                  <button v-if="podeCancelar(a.status)" class="atd-cancelar" type="button"
+                          @click="confirmandoCancelar = a.id">Cancelar</button>
+                </template>
               </div>
             </article>
           </div>
@@ -157,7 +172,7 @@ import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../../compartilhado/conectar-no
 import { classificarErro, ERRO_DE_REDE } from '../../compartilhado/classificar-erro.js'
 import {
   SITUACOES, SELO_DE_ENSAIO, resumoDosAtendimentos, comprasDaVisita, porDia,
-  janelaDoPeriodo, horaCurta, telefoneLegivel,
+  janelaDoPeriodo, horaCurta, telefoneLegivel, marcacoesDe, podeCancelar,
 } from './contas-de-atendimento.js'
 
 const router = useRouter()
@@ -177,6 +192,8 @@ const carregando = ref(true)
 const erro = ref(null)
 const marcando = ref(null)
 const erroAoMarcar = ref('')
+// Qual linha está com a pergunta de cancelar aberta. Uma de cada vez.
+const confirmandoCancelar = ref(null)
 
 const podeMarcar = computed(() => hasPermission('atendimentos', 'editar'))
 
@@ -208,14 +225,6 @@ const soDigitos = (t) => String(t || '').replace(/\D/g, '')
 const dinheiro = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 const compraDe = (a) => comprasDaVisita(a, pedidos.value)
 
-/** O que dá para marcar nesta linha — tirando o que ela já é. */
-const ACOES = [
-  { situacao: 'realizado', rotulo: 'Veio' },
-  { situacao: 'no_show', rotulo: 'Não veio' },
-  { situacao: 'remarcado', rotulo: 'Remarcou' },
-]
-const acoesDe = (a) => (a.status === 'cancelado' ? [] : ACOES.filter((x) => x.situacao !== a.status))
-
 function diaPorExtenso(dia) {
   if (!dia || dia === 'sem-data') return 'Sem data marcada'
   const [a, m, d] = dia.split('-').map(Number)
@@ -242,6 +251,7 @@ async function carregar() {
   carregando.value = true
   erro.value = null
   erroAoMarcar.value = ''
+  confirmandoCancelar.value = null
   try {
     // ⚠️ SEM SESSÃO NÃO SE TENTA LER. Com a chave anônima a resposta é 200 com
     // lista vazia — a tela diria "nenhum atendimento" em vez de "faça login de
@@ -322,6 +332,7 @@ async function marcar(atendimento, situacao) {
     }
     atendimento.status = situacao
     if (situacao !== 'realizado') atendimento.presenca_em = null
+    confirmandoCancelar.value = null
   } catch {
     erroAoMarcar.value = 'Não consegui falar com o servidor. Confira a conexão e tente de novo.'
   } finally {
@@ -400,6 +411,18 @@ onMounted(() => {
 
 .atd-linha-botoes{display:flex;flex-wrap:wrap;gap:var(--sp-2);flex:0 0 auto;margin-left:auto;}
 .atd-linha-botoes .btn{flex:0 0 auto;}
+
+/* ⚠️ "Cancelar" NÃO é um quarto botão igual aos três. Ele é texto sublinhado,
+   discreto, e abre a pergunta — é o "passo a mais" que o padrão da casa exige
+   para ação difícil de desfazer dentro de uma lista. A ÁREA do dedo tem 40px
+   sem o desenho engordar. */
+.atd-cancelar{display:inline-flex;align-items:center;min-height:40px;padding:0 var(--sp-2);
+  background:none;border:none;color:var(--muted);cursor:pointer;
+  font-family:var(--fonte-principal);font-size:var(--texto-corpo);text-decoration:underline;
+  text-underline-offset:3px;}
+.atd-cancelar:hover,.atd-cancelar:focus-visible{color:var(--red);}
+.atd-pergunta{display:inline-flex;align-items:center;font-family:var(--fonte-principal);
+  font-size:var(--texto-corpo);color:var(--text);font-weight:600;}
 
 .atd-erro-marcar{margin:var(--sp-2) 0 0;font-family:var(--fonte-principal);
   font-size:var(--texto-corpo);color:var(--red);}
