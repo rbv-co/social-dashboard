@@ -106,6 +106,7 @@ test('⚠️ montarDadosOpr: só os campos confirmados saem com valor, o resto c
     'header.novosSeguidores', 'growth.seguidores',
     'header.investimentoTotal', 'header.engajamentos', 'header.leadsGerados',
     'growth.investimento', 'growth.custoPorSeguidor',
+    'growth.visitasPerfil', 'growth.custoPorVisita', 'growth.conversaoVisitaSeguidor',
   ]);
 
   for (const secao of ['header', 'growth', 'engagement', 'sales', 'mix']) {

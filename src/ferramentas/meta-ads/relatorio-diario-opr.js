@@ -60,20 +60,23 @@ function somar(campanhas, campo) {
 //   fonte já validada acima (spend das campanhas seguidores, R$494,11) —
 //   não dependem de Visitas ao Perfil, então confirmados já.
 // - growth.visitasPerfil / growth.custoPorVisita / growth.conversaoVisitaSeguidor
-//   AINDA NÃO — achado um buraco real: a leitura de hora em hora
-//   (perfil_visitas_hora, usada pela TELA) sempre perde os últimos ~55min
-//   do dia (~280-290 visitas/dia, batido em 15 e 16/09). O robô do
-//   fechamento (coletor/gerar-opr-diario.mjs) já foi corrigido — pergunta
-//   pro Meta o dia fechado direto, sem esse buraco — mas a TELA (período
-//   customizável, roda no navegador) ainda soma a mesma leitura horária:
-//   ligar este campo agora faria a tela mostrar um número sistematicamente
-//   menor que o do PNG pro mesmo dia. Fica de fora até decidir sobre uma
-//   ponte server-side pra tela também.
+//   (17/09/2026) — achado um buraco real primeiro: a soma por hora
+//   (perfil_visitas_hora) sempre perde os últimos ~55min do dia (~280-290
+//   visitas/dia, batido em 15 e 16/09 contra o profile_views oficial da
+//   Meta). Corrigido com cache: o fechamento grava o dia certo em
+//   visitas_perfil_dia (Meta, dia fechado, sem esse buraco) e a tela
+//   passou a ler esse cache pra qualquer período
+//   (visitasPerfilNoPeriodoComCache), só caindo pra soma-por-hora nos
+//   dias ainda não fechados. Backfill de 30 dias rodado. 16/09 bateu:
+//   1642 visitas, custo por visita R$0,30, conversão 10,4%.
 const CAMPOS_CONFIRMADOS = new Set([
   'header.novosSeguidores',
   'growth.seguidores',
   'header.investimentoTotal',
   'header.engajamentos',
+  'growth.visitasPerfil',
+  'growth.custoPorVisita',
+  'growth.conversaoVisitaSeguidor',
   'header.leadsGerados',
   'growth.investimento',
   'growth.custoPorSeguidor',
