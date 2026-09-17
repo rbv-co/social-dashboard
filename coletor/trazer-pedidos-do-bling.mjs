@@ -171,10 +171,15 @@ try {
           outras_despesas = excluded.outras_despesas,
           total_do_bling = excluded.total_do_bling, total_corrigido = excluded.total_corrigido,
           situacao_id = excluded.situacao_id,
-          -- As observações são o que a vendedora escreve no pedido — é onde
-          -- mora a marca PRESENTE (vessel_pedido_marcado_presente). Sempre
-          -- atualizadas: a loja pode editar o pedido depois de gravado.
-          observacoes = excluded.observacoes, observacoes_internas = excluded.observacoes_internas,
+          -- ⚠️ NUNCA APAGAR uma observação que já está gravada. É nela que
+          -- mora a marca PRESENTE (vessel_pedido_marcado_presente), e o Bling
+          -- pode devolver o detalhe SEM esses dois campos (campo ausente vira
+          -- null na ligação acima, não string vazia). Sem o coalesce, essa
+          -- ausência calada apagaria um "PRESENTE" já lido numa rodada
+          -- anterior, e o "É presente?" mudaria de resposta sem erro nenhum —
+          -- mesmo risco que pessoa_id/casou_por já tratam acima.
+          observacoes = coalesce(excluded.observacoes, vessel_pedidos.observacoes),
+          observacoes_internas = coalesce(excluded.observacoes_internas, vessel_pedidos.observacoes_internas),
           atualizado_em = now()
        returning id`,
       [p.id, String(p.numero ?? ''), contatoId, p.contato?.nome || null, pessoaId, casouPor,
