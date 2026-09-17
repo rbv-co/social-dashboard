@@ -182,6 +182,29 @@ export function visitasPerfilNoPeriodo(linhas, diaInicio, diaFim) {
   return linhas.filter((l) => l.dia >= diaInicio && l.dia <= diaFim).reduce((soma, l) => soma + (l.visitas_hora ?? 0), 0);
 }
 
+function somarDiaISO(diaISO) {
+  const [ano, mes, dia] = diaISO.split('-').map(Number);
+  const d = new Date(Date.UTC(ano, mes - 1, dia, 12));
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
+// Visitas ao Perfil de um período, preferindo o CACHE (visitas_perfil_dia —
+// calculado certinho pela Meta no fechamento do dia, sem o buraco dos
+// últimos ~55min que a soma por hora tem) e só caindo pra soma-por-hora
+// (perfil_visitas_hora) nos dias do período que ainda NÃO têm linha no
+// cache — normalmente só "hoje", que ainda não fechou (achado com o dono,
+// 17/09/2026). `cache` = linhas de visitas_perfil_dia (`{dia, visitas}`);
+// `linhasHora` = linhas de perfil_visitas_hora, só usadas pros dias faltantes.
+export function visitasPerfilNoPeriodoComCache(cache, linhasHora, diaInicio, diaFim) {
+  const diasNoCache = new Set(cache.map((r) => r.dia));
+  let soma = cache.reduce((s, r) => s + (r.visitas ?? 0), 0);
+  for (let dia = diaInicio; dia <= diaFim; dia = somarDiaISO(dia)) {
+    if (!diasNoCache.has(dia)) soma += visitasPerfilNoDia(linhasHora, dia) ?? 0;
+  }
+  return soma;
+}
+
 // Texto pronto pra copiar (mesmo espírito de montarMensagemWpp), mas só com
 // os números DA CONTA — seguidores (do período, do dia, e total) e visita ao
 // perfil. Nunca teve (cliques, 12/09/2026) e depois teve e foi tirado de novo

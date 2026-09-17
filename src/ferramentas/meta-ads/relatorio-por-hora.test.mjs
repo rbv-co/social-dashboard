@@ -4,7 +4,7 @@ import {
   custoPorLead, agruparPorDiaEHora, tipoDaCampanha, comResultado, semResultado,
   montarMensagemWpp, leadsWppNoDia, gastoWppNoDia, montarMensagemSeguidores, deltaDeSeguidoresPorHora, seguidoresNaHora,
   seguidoresTotalNaHora, seguidoresNoDia, visitasPerfilNaHora, gastoSeguidoresNoDia, visitasPerfilNoDia,
-  seguidoresNoPeriodo, visitasPerfilNoPeriodo, seguidoresTotalNoFimDoDia,
+  seguidoresNoPeriodo, visitasPerfilNoPeriodo, seguidoresTotalNoFimDoDia, visitasPerfilNoPeriodoComCache,
   montarMensagemLeadsFechamentoDia, montarMensagemSeguidoresFechamentoDia,
 } from './relatorio-por-hora.js';
 
@@ -390,6 +390,45 @@ test('visitasPerfilNoPeriodo: soma as visitas de todos os dias do intervalo, inc
   ];
   assert.equal(visitasPerfilNoPeriodo(linhas, '2026-09-12', '2026-09-13'), 1099, 'soma só os dias dentro do intervalo, incluindo as duas pontas');
   assert.equal(visitasPerfilNoPeriodo(linhas, '2026-09-20', '2026-09-21'), 0, 'intervalo sem leitura nenhuma soma 0');
+});
+
+// ⚠️ Achado com o dono, 17/09/2026: a soma por hora (perfil_visitas_hora)
+// sempre perde os últimos ~55min do dia (última leitura ~23:05 SP, sem
+// nenhuma antes da virada) — batido em 2 dias seguidos, ~280-290 visitas
+// de diferença por dia contra o profile_views real da Meta. O fechamento
+// do dia passou a gravar o número certo em visitas_perfil_dia; a tela
+// usa esse cache pros dias já fechados, e só cai pra soma-por-hora no que
+// ainda não foi fechado (tipicamente só "hoje").
+test('visitasPerfilNoPeriodoComCache: todo o período já tem cache — usa só o cache, ignora a soma por hora', () => {
+  const cache = [
+    { dia: '2026-09-15', visitas: 1607 },
+    { dia: '2026-09-16', visitas: 1642 },
+  ];
+  const linhasHora = [{ dia: '2026-09-15', hora: 23, visitas_hora: 1 }, { dia: '2026-09-16', hora: 23, visitas_hora: 1 }];
+  assert.equal(
+    visitasPerfilNoPeriodoComCache(cache, linhasHora, '2026-09-15', '2026-09-16'),
+    3249,
+    'usa 1607+1642 do cache, não os 2 da soma por hora (que estaria incompleta)',
+  );
+});
+
+test('visitasPerfilNoPeriodoComCache: "hoje" ainda não tem cache — soma o cache dos dias fechados + soma por hora só de hoje', () => {
+  const cache = [{ dia: '2026-09-16', visitas: 1642 }];
+  const linhasHora = [
+    { dia: '2026-09-16', hora: 10, visitas_hora: 999 }, // dia 16 JÁ tem cache — essa linha é ignorada
+    { dia: '2026-09-17', hora: 5, visitas_hora: 40 }, // dia 17 (hoje) não tem cache — essa conta
+    { dia: '2026-09-17', hora: 6, visitas_hora: 20 },
+  ];
+  assert.equal(
+    visitasPerfilNoPeriodoComCache(cache, linhasHora, '2026-09-16', '2026-09-17'),
+    1642 + 60,
+    '1642 do cache (dia 16) + 60 da soma por hora (só dia 17, que ainda não fechou)',
+  );
+});
+
+test('visitasPerfilNoPeriodoComCache: nada em cache nenhum, cai inteiro pra soma por hora (comportamento antigo)', () => {
+  const linhasHora = [{ dia: '2026-09-16', hora: 10, visitas_hora: 5 }, { dia: '2026-09-16', hora: 11, visitas_hora: 3 }];
+  assert.equal(visitasPerfilNoPeriodoComCache([], linhasHora, '2026-09-16', '2026-09-16'), 8);
 });
 
 test('seguidoresNoDia: soma os deltas do dia inteiro, não só a hora', () => {

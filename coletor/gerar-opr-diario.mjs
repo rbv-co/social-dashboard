@@ -20,7 +20,7 @@ import {
   deltaDeSeguidoresPorHora, seguidoresNoDia, seguidoresTotalNoFimDoDia,
   montarMensagemLeadsFechamentoDia, montarMensagemSeguidoresFechamentoDia,
 } from '../src/ferramentas/meta-ads/relatorio-por-hora.js';
-import { visitasPerfilDoDiaMeta } from './lib/visitas-perfil-meta.mjs';
+import { visitasPerfilDoDiaMeta, salvarVisitasPerfilDoDia } from './lib/visitas-perfil-meta.mjs';
 
 // Nome sem ser "URL" — o global `URL` (usado abaixo pra montar o caminho do
 // PNG em --dry) fica sombreado por um `const URL` no escopo do módulo.
@@ -105,6 +105,9 @@ async function main() {
     // numa chamada só, sem esse buraco.
     const { instagram_id: igId, access_token: token } = contas[0];
     const visitasPerfilDoDia = await visitasPerfilDoDiaMeta(igId, token, dia);
+    // Alimenta o cache que a tela do OPR lê pra qualquer período (fora de
+    // --dry — dry é só preview, nunca escreve nada além do PNG local).
+    if (!DRY) await salvarVisitasPerfilDoDia(REST, H, CONTA_VESSEL, dia, visitasPerfilDoDia);
 
     dados = montarDadosOpr(campanhasDoDia, seguidoresDoDia, visitasPerfilDoDia);
     html = montarHtmlOpr(dados, { conta: 'Vessel Brasil', periodoLabel: periodoLabel(dia) });

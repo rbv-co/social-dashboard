@@ -167,7 +167,7 @@ import { useRouter } from 'vue-router'
 import BarraDeTopo from '../../compartilhado/barra-de-topo.vue'
 import FaixaDeErro from '../../compartilhado/faixa-de-erro.vue'
 import { sb } from '../../compartilhado/buscar-e-salvar-dados.js'
-import { deltaDeSeguidoresPorHora, seguidoresNoPeriodo, visitasPerfilNoPeriodo } from './relatorio-por-hora.js'
+import { deltaDeSeguidoresPorHora, seguidoresNoPeriodo, visitasPerfilNoPeriodoComCache } from './relatorio-por-hora.js'
 import { agruparCampanhasDoDia, montarDadosOpr } from './relatorio-diario-opr.js'
 
 const router = useRouter()
@@ -274,23 +274,30 @@ async function carregar() {
   // período é escolhido na tela, não fixo em "ontem").
   const desdeSeguidores = new Date(new Date(`${inicio}T00:00:00-03:00`).getTime() - 48 * 3600 * 1000).toISOString()
 
-  const [campanhas, insights, leituras, visitas] = await Promise.all([
+  const [campanhas, insights, leituras, visitasCache, visitasHora] = await Promise.all([
     sb('campaigns?select=campaign_id,name'),
     sb(`campaign_insights?select=campaign_id,spend,likes,comments,shares,saves,conversas,post_engagement&account_id=eq.${CONTA_VESSEL}&captured_at=gte.${inicio}&captured_at=lte.${fim}&period_days=eq.0`),
     sb(`followers_leituras?select=followers_count,lido_em,origem&account_id=eq.${CONTA_VESSEL}&lido_em=gte.${desdeSeguidores}&order=lido_em.asc`),
+    // Visitas ao Perfil: prefere o cache (visitas_perfil_dia, calculado
+    // certinho pela Meta no fechamento do dia — ver
+    // coletor/lib/visitas-perfil-meta.mjs) e só cai pra soma-por-hora
+    // (perfil_visitas_hora, que perde os últimos ~55min do dia) nos dias
+    // que ainda não fecharam — normalmente só "hoje".
+    sb(`visitas_perfil_dia?select=dia,visitas&account_id=eq.${CONTA_VESSEL}&dia=gte.${inicio}&dia=lte.${fim}`),
     sb(`perfil_visitas_hora?select=dia,hora,visitas_hora&account_id=eq.${CONTA_VESSEL}&dia=gte.${inicio}&dia=lte.${fim}`),
   ])
 
   if (campanhas.erro) { erro.value = campanhas.erro; carregando.value = false; return }
   if (insights.erro) { erro.value = insights.erro; carregando.value = false; return }
   if (leituras.erro) { erro.value = leituras.erro; carregando.value = false; return }
-  if (visitas.erro) { erro.value = visitas.erro; carregando.value = false; return }
+  if (visitasCache.erro) { erro.value = visitasCache.erro; carregando.value = false; return }
+  if (visitasHora.erro) { erro.value = visitasHora.erro; carregando.value = false; return }
 
   const nomesPorCampanha = Object.fromEntries(campanhas.map((c) => [c.campaign_id, c.name]))
   const campanhasDoPeriodo = agruparCampanhasDoDia(insights, nomesPorCampanha)
   const deltas = deltaDeSeguidoresPorHora(leituras)
   const seguidoresDoPeriodo = seguidoresNoPeriodo(deltas, inicio, fim)
-  const visitasPerfilDoPeriodo = visitasPerfilNoPeriodo(visitas, inicio, fim)
+  const visitasPerfilDoPeriodo = visitasPerfilNoPeriodoComCache(visitasCache, visitasHora, inicio, fim)
 
   dados.value = montarDadosOpr(campanhasDoPeriodo, seguidoresDoPeriodo, visitasPerfilDoPeriodo)
   carregando.value = false
