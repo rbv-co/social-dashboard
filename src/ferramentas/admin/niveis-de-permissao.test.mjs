@@ -19,6 +19,7 @@ const RECURSOS = [
   { key: 'meta.gestor', label: 'Gestão de Tráfego', acoes: ['ver', 'editar'] },
   { key: 'meta.fabrica', label: 'Fábrica de Anúncios', acoes: ['ver', 'editar'] },
   { key: 'meta.hora', label: 'Relatório por Hora', acoes: ['ver'] },
+  { key: 'meta.opr', label: 'Relatório OPR', acoes: ['ver'] },
   { key: 'banco', label: 'Banco de Arquivos', acoes: ['ver', 'criar', 'excluir'] },
   { key: 'acessos', label: 'Colaboradores e Acessos', acoes: ['ver', 'criar', 'editar', 'excluir'] },
   { key: 'patrimonio', label: 'Patrimônio', acoes: ['ver', 'criar', 'editar', 'excluir'] },

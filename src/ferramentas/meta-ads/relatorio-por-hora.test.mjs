@@ -4,6 +4,7 @@ import {
   custoPorLead, agruparPorDiaEHora, tipoDaCampanha, comResultado, semResultado,
   montarMensagemWpp, leadsWppNoDia, gastoWppNoDia, montarMensagemSeguidores, deltaDeSeguidoresPorHora, seguidoresNaHora,
   seguidoresTotalNaHora, seguidoresNoDia, visitasPerfilNaHora, gastoSeguidoresNoDia, visitasPerfilNoDia,
+  seguidoresNoPeriodo, visitasPerfilNoPeriodo,
 } from './relatorio-por-hora.js';
 
 test('custoPorLead divide gasto por conversas', () => {
@@ -351,6 +352,17 @@ test('visitasPerfilNoDia: soma as visitas de todas as horas do dia certo', () =>
   assert.equal(visitasPerfilNoDia(linhas, '2026-09-14'), 0, 'dia sem nenhuma leitura soma 0, não é null (é soma, não delta)');
 });
 
+test('visitasPerfilNoPeriodo: soma as visitas de todos os dias do intervalo, inclusive nas pontas', () => {
+  const linhas = [
+    { dia: '2026-09-11', hora: 23, visitas_hora: 50 },
+    { dia: '2026-09-12', hora: 10, visitas_hora: 100 },
+    { dia: '2026-09-13', hora: 0, visitas_hora: 999 },
+    { dia: '2026-09-14', hora: 0, visitas_hora: 7 },
+  ];
+  assert.equal(visitasPerfilNoPeriodo(linhas, '2026-09-12', '2026-09-13'), 1099, 'soma só os dias dentro do intervalo, incluindo as duas pontas');
+  assert.equal(visitasPerfilNoPeriodo(linhas, '2026-09-20', '2026-09-21'), 0, 'intervalo sem leitura nenhuma soma 0');
+});
+
 test('seguidoresNoDia: soma os deltas do dia inteiro, não só a hora', () => {
   const deltas = deltaDeSeguidoresPorHora([
     { followers_count: 1000, lido_em: '2026-09-12T13:05:00Z' }, // 10h SP
@@ -359,6 +371,17 @@ test('seguidoresNoDia: soma os deltas do dia inteiro, não só a hora', () => {
   ]);
   assert.equal(seguidoresNoDia(deltas, '2026-09-12'), 3, '5 - 2, a primeira leitura do dia entra como 0');
   assert.equal(seguidoresNoDia(deltas, '2026-09-13'), null, 'dia sem nenhuma leitura');
+});
+
+test('seguidoresNoPeriodo: soma os deltas de todos os dias do intervalo, inclusive nas pontas; null só se o intervalo inteiro não tiver leitura', () => {
+  const deltas = deltaDeSeguidoresPorHora([
+    { followers_count: 1000, lido_em: '2026-09-11T13:05:00Z' },
+    { followers_count: 1005, lido_em: '2026-09-12T14:05:00Z' }, // +5, dia 12
+    { followers_count: 1003, lido_em: '2026-09-13T15:05:00Z' }, // -2, dia 13
+    { followers_count: 1020, lido_em: '2026-09-14T15:05:00Z' }, // +17, dia 14 — fora do intervalo abaixo
+  ]);
+  assert.equal(seguidoresNoPeriodo(deltas, '2026-09-12', '2026-09-13'), 3, '5 - 2, sem contar o dia 14 (fora do intervalo)');
+  assert.equal(seguidoresNoPeriodo(deltas, '2026-09-20', '2026-09-21'), null, 'intervalo sem NENHUMA leitura');
 });
 
 test('visitasPerfilNaHora: acha a hora certa, e null quando não tem leitura', () => {

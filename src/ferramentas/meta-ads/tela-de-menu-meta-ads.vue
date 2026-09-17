@@ -62,6 +62,14 @@
           <div class="smenu-card-desc">Gasto, conversas iniciadas e custo por lead de cada campanha, hora a hora.</div>
           <span class="smenu-card-enter">→</span>
         </div>
+        <div class="smenu-card" v-if="hasPermission('meta.opr')" @click="ir('meta-relatorio-opr')">
+          <div class="smenu-card-icon" style="background:var(--green)">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--sobre-cor)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M18 17V9M13 17V5M8 17v-4"/></svg>
+          </div>
+          <div class="smenu-card-title">Relatório OPR</div>
+          <div class="smenu-card-desc">Dashboard executivo: growth, engagement e leads por período — o mesmo relatório que vai pro grupo, só que consultável a qualquer hora.</div>
+          <span class="smenu-card-enter">→</span>
+        </div>
       </div>
     </div>
   </div>

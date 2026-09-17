@@ -174,6 +174,14 @@ export function visitasPerfilNoDia(linhas, dia) {
   return linhas.filter((l) => l.dia === dia).reduce((soma, l) => soma + (l.visitas_hora ?? 0), 0);
 }
 
+// Mesma soma de visitasPerfilNoDia, mas pra um INTERVALO de dias — pedido do
+// dono (17/09/2026: "consultar por período" na tela de dashboard do OPR).
+// `diaInicio`/`diaFim` são 'AAAA-MM-DD', inclusive dos dois lados; comparação
+// por string funciona porque a data já vem nesse formato ISO.
+export function visitasPerfilNoPeriodo(linhas, diaInicio, diaFim) {
+  return linhas.filter((l) => l.dia >= diaInicio && l.dia <= diaFim).reduce((soma, l) => soma + (l.visitas_hora ?? 0), 0);
+}
+
 // Texto pronto pra copiar (mesmo espírito de montarMensagemWpp), mas só com
 // os números DA CONTA — seguidores (do período, do dia, e total) e visita ao
 // perfil. Nunca teve (cliques, 12/09/2026) e depois teve e foi tirado de novo
@@ -340,6 +348,16 @@ export function seguidoresNoDia(deltas, dia) {
   const doDia = deltas.filter((d) => d.dia === dia);
   if (!doDia.length) return null;
   return doDia.reduce((soma, d) => soma + (d.seguidoresDelta ?? 0), 0);
+}
+
+// Mesma soma de seguidoresNoDia, mas pra um INTERVALO de dias — pedido do
+// dono (17/09/2026: "consultar por período" na tela de dashboard do OPR).
+// `diaInicio`/`diaFim` são 'AAAA-MM-DD', inclusive dos dois lados. `null` só
+// quando não há NENHUMA leitura no intervalo inteiro (mesma regra do dia).
+export function seguidoresNoPeriodo(deltas, diaInicio, diaFim) {
+  const doPeriodo = deltas.filter((d) => d.dia >= diaInicio && d.dia <= diaFim);
+  if (!doPeriodo.length) return null;
+  return doPeriodo.reduce((soma, d) => soma + (d.seguidoresDelta ?? 0), 0);
 }
 
 // Visitas ao perfil da CONTA (12/09/2026, "vai atras desse dado") — mesma

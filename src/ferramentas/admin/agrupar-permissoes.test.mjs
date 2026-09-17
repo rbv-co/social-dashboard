@@ -21,6 +21,7 @@ const RECURSOS = [
   { key: 'meta.gestor', label: 'Gestão de Tráfego', acoes: ['ver', 'editar'] },
   { key: 'meta.fabrica', label: 'Fábrica de Anúncios', acoes: ['ver', 'editar'] },
   { key: 'meta.hora', label: 'Relatório por Hora', acoes: ['ver'] },
+  { key: 'meta.opr', label: 'Relatório OPR', acoes: ['ver'] },
   { key: 'banco', label: 'Banco de Arquivos', acoes: ['ver', 'criar', 'excluir'] },
   { key: 'acessos', label: 'Colaboradores e Acessos', acoes: ['ver', 'criar', 'editar', 'excluir'] },
   { key: 'patrimonio', label: 'Patrimônio', acoes: ['ver', 'criar', 'editar', 'excluir'] },
@@ -68,7 +69,7 @@ test('agrupa o catálogo por ferramenta, na ordem do catálogo', () => {
   assert.deepEqual(g.map((x) => x.key), ['social', 'sales', 'meta', 'banco', 'gestao-interna', 'noticias', 'gestor', 'claude', 'conteudo'])
   assert.deepEqual(g[0].recursos.map((r) => r.key), ['social', 'social.relatorio'])
   assert.deepEqual(g[1].recursos.map((r) => r.key), ['sales.gestao', 'sales.analise'])
-  assert.deepEqual(g[2].recursos.map((r) => r.key), ['meta.campanha', 'meta.gestor', 'meta.fabrica', 'meta.hora'])
+  assert.deepEqual(g[2].recursos.map((r) => r.key), ['meta.campanha', 'meta.gestor', 'meta.fabrica', 'meta.hora', 'meta.opr'])
   // Achado pela CHAVE, não pela posição: recurso novo inserido antes de 'gestor'
   // deslocava o índice e quebrava este teste por um motivo que não é o dele.
   assert.deepEqual(g.find((x) => x.key === 'gestor').recursos.map((r) => r.key), ['gestor', 'gestor.relatorios'])
@@ -109,7 +110,7 @@ test('estado da seleção: vazio / parcial / cheio', () => {
   assert.equal(estadoDaSelecao(grupo.recursos, {}), 'vazio')
   assert.equal(estadoDaSelecao(grupo.recursos, { 'meta.gestor': ['ver'] }), 'parcial')
   assert.equal(estadoDaSelecao(grupo.recursos, {
-    'meta.campanha': ['ver', 'exportar'], 'meta.gestor': ['ver', 'editar'], 'meta.fabrica': ['ver', 'editar'], 'meta.hora': ['ver'],
+    'meta.campanha': ['ver', 'exportar'], 'meta.gestor': ['ver', 'editar'], 'meta.fabrica': ['ver', 'editar'], 'meta.hora': ['ver'], 'meta.opr': ['ver'],
   }), 'cheio')
 })
 

@@ -115,6 +115,7 @@ export const RECURSOS = [
   { key: 'meta.gestor', label: 'Gestão de Tráfego', acoes: ['ver', 'editar'] },
   { key: 'meta.fabrica', label: 'Fábrica de Anúncios', acoes: ['ver', 'editar'] },
   { key: 'meta.hora', label: 'Relatório por Hora', acoes: ['ver'] },
+  { key: 'meta.opr', label: 'Relatório OPR', acoes: ['ver'] },
   { key: 'banco', label: 'Banco de Arquivos', acoes: ['ver', 'criar', 'excluir'] },
   { key: 'acessos', label: 'Colaboradores e Acessos', acoes: ['ver', 'criar', 'editar', 'excluir'] },
   { key: 'patrimonio', label: 'Patrimônio', acoes: ['ver', 'criar', 'editar', 'excluir'] },
@@ -154,7 +155,7 @@ export function permissaoDoPerfil(perfil, recurso, acao = 'ver') {
   const permissions = perfil?.permissions || {}
   // Pais 'sales'/'meta' (tool:*) = tem acesso se tiver QUALQUER filho do grupo.
   if (key === 'sales') return ['sales.gestao', 'sales.analise'].some(k => (permissions[k] || []).includes('ver'))
-  if (key === 'meta') return ['meta.campanha', 'meta.gestor', 'meta.fabrica', 'meta.hora'].some(k => (permissions[k] || []).includes('ver'))
+  if (key === 'meta') return ['meta.campanha', 'meta.gestor', 'meta.fabrica', 'meta.hora', 'meta.opr'].some(k => (permissions[k] || []).includes('ver'))
   return (permissions[key] || []).includes(acao)
 }
 
@@ -182,6 +183,7 @@ export const PERMISSION_TREE = [
     { key: 'meta.gestor', label: 'Gestão de Tráfego' },
     { key: 'meta.fabrica', label: 'Fábrica de Anúncios' },
     { key: 'meta.hora', label: 'Relatório por Hora' },
+    { key: 'meta.opr', label: 'Relatório OPR' },
   ] },
   { key: 'banco', label: 'Banco de Arquivos', children: [] },
   { key: 'noticias', label: 'Portal de Notícias', children: [] },
