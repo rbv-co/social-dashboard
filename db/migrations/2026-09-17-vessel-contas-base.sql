@@ -119,10 +119,20 @@ begin
     return json_build_object('ok', false, 'motivo', 'ja_existe');
   end if;
 
-  insert into public.vessel_clientes (nome, cpf, email, whatsapp, nascimento, senha_hash)
-  values (trim(p_nome), v_cpf, v_email, p_whatsapp, p_nascimento,
-          extensions.crypt(p_senha, extensions.gen_salt('bf', 10)))
-  returning id into v_id;
+  -- ⚠️ CORRIDA ENTRE O EXISTS() E O INSERT: duplo clique, ou duas abas abertas
+  -- ao mesmo tempo, passam pelo exists() acima antes de qualquer um dos dois
+  -- ter inserido — e o segundo insert bate na unique de cpf/email como erro
+  -- cru do Postgres (`unique_violation`), não como o {ok:false} que a edge
+  -- espera. Este bloco pega esse erro e devolve a MESMA resposta do exists().
+  begin
+    insert into public.vessel_clientes (nome, cpf, email, whatsapp, nascimento, senha_hash)
+    values (trim(p_nome), v_cpf, v_email, p_whatsapp, p_nascimento,
+            extensions.crypt(p_senha, extensions.gen_salt('bf', 10)))
+    returning id into v_id;
+  exception
+    when unique_violation then
+      return json_build_object('ok', false, 'motivo', 'ja_existe');
+  end;
 
   return json_build_object('ok', true, 'cliente_id', v_id, 'email', v_email);
 end;
@@ -137,6 +147,16 @@ create or replace function public.vessel_conta_entrar(
 declare
   v_login  text := lower(trim(coalesce(p_login, '')));
   v_cpf    text := public.vessel_cpf_digitos(p_login);
+  -- ⚠️ A CHAVE DO TETO TEM DE SER A MESMA PARA A MESMA CONTA, em qualquer
+  -- formato que a cliente digitar o CPF. '390.533.447-05', '39053344705' e
+  -- '390-533-447.05' são O MESMO CPF, mas três strings diferentes — contando
+  -- por v_login cru, cada formato ganhava sua própria cota de 5 tentativas, e
+  -- a trava de "5 erros em 15 minutos" virava, na prática, "5 erros por
+  -- formato de CPF digitado". A chave usada para CONTAR, para GRAVAR o erro e
+  -- para GRAVAR o acerto é sempre a mesma: o CPF normalizado quando o login
+  -- veio como CPF (11 dígitos), e o e-mail normalizado nos outros casos.
+  v_chave  text := case when v_cpf is not null and length(v_cpf) = 11
+                        then v_cpf else v_login end;
   v_c      record;
   v_erros  int;
   v_token  text;
@@ -145,7 +165,7 @@ begin
   -- ⚠️ O TETO É POR LOGIN E VEM ANTES DE QUALQUER COMPARAÇÃO DE SENHA: sem ele
   -- esta função vira um chutador de senhas com a chave anônima na mão.
   select count(*) into v_erros from public.vessel_tentativas_de_login
-   where chave = v_login and acertou = false and quando > now() - interval '15 minutes';
+   where chave = v_chave and acertou = false and quando > now() - interval '15 minutes';
   if v_erros >= 5 then
     return json_build_object('ok', false, 'motivo', 'muitas_tentativas');
   end if;
@@ -153,12 +173,26 @@ begin
   select * into v_c from public.vessel_clientes
    where email = v_login or cpf = v_cpf limit 1;
 
-  if v_c.id is null or v_c.senha_hash <> extensions.crypt(p_senha, v_c.senha_hash) then
-    insert into public.vessel_tentativas_de_login (chave, acertou) values (v_login, false);
+  if v_c.id is null then
+    -- ⚠️ CANAL DE TEMPO: sem isto, "conta não existe" responde na hora (nunca
+    -- chega a rodar o bcrypt) e "senha errada" responde devagar (rodou o
+    -- bcrypt de verdade contra o hash da cliente) — e só o TEMPO da resposta
+    -- já entrega quem é cliente da marca, sem nenhuma mensagem diferente na
+    -- tela. Rodar o mesmo `crypt` contra um hash de descarte fixo (nunca
+    -- gravado, de ninguém) e jogar o resultado fora deixa as duas respostas
+    -- com o mesmo custo.
+    perform extensions.crypt(p_senha,
+      '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy');
+    insert into public.vessel_tentativas_de_login (chave, acertou) values (v_chave, false);
     return json_build_object('ok', false, 'motivo', 'senha_errada');
   end if;
 
-  insert into public.vessel_tentativas_de_login (chave, acertou) values (v_login, true);
+  if v_c.senha_hash <> extensions.crypt(p_senha, v_c.senha_hash) then
+    insert into public.vessel_tentativas_de_login (chave, acertou) values (v_chave, false);
+    return json_build_object('ok', false, 'motivo', 'senha_errada');
+  end if;
+
+  insert into public.vessel_tentativas_de_login (chave, acertou) values (v_chave, true);
 
   v_token  := encode(extensions.gen_random_bytes(32), 'hex');
   v_expira := now() + case when coalesce(p_lembrar, false) then interval '90 days'
@@ -211,6 +245,14 @@ $$;
 -- ── esqueci a senha ──────────────────────────────────────────────────────────
 -- ⚠️ A RESPOSTA É IGUAL EXISTINDO OU NÃO O PERFIL. Diferenciar transformaria a
 -- página num confirmador de quem é cliente da marca.
+--
+-- ⚠️ NÃO "CONSERTAR" O E-MAIL REAL NO RETORNO ABAIXO. Esta função é
+-- concedida SÓ a `service_role` (ver o portão no fim do arquivo) — quem a
+-- chama é a edge, nunca a página direto. É a edge que usa o e-mail devolvido
+-- aqui para SABER PARA ONDE MANDAR o link de troca de senha, e é ela quem
+-- responde à página só com `{ok:true}`, sem e-mail nenhum. A página nunca
+-- enxerga esta diferença. Trocar por um retorno "cego" aqui quebraria o envio
+-- do link (decisão registrada na correção da Tarefa 3, rodada 1).
 
 create or replace function public.vessel_conta_nova_senha(p_login text, p_senha text)
 returns json language plpgsql security definer set search_path to 'public' as $$
