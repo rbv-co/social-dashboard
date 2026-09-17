@@ -28,14 +28,34 @@ test('montarDadosOpr: soma cada categoria certa e ignora "outro"', () => {
 
   const dados = montarDadosOpr(campanhas, 12, 150);
 
-  assert.equal(dados.leads.leads, 5);
-  assert.equal(dados.leads.investimento, 100);
+  assert.equal(dados.sales.leads, 5);
+  assert.equal(dados.sales.investimento, 100);
   assert.equal(dados.engagement.investimento, 200);
   assert.equal(dados.engagement.curtidas, 30);
   assert.equal(dados.engagement.totalInteracoes, 40);
   assert.equal(dados.header.investimentoTotal, 300, 'soma wpp+engajamento+seguidores, nunca a campanha "outro"');
   assert.equal(dados.header.engajamentos, 80);
   assert.equal(dados.header.leadsGerados, 5);
+
+  // Media Mix: % do investimento total (300) em cada categoria.
+  assert.equal(dados.mix.leads, 100 / 300 * 100);
+  assert.equal(dados.mix.engagement, 200 / 300 * 100);
+  assert.equal(dados.mix.growth, 0, 'sem campanha [+ SEGUIDORES] nesse dia, 0% de verdade (não null — o total é positivo)');
+});
+
+test('montarDadosOpr: Leads Quentes/Vendas e tudo que depende deles é null (sem fonte ainda — Chatwoot)', () => {
+  const campanhas = agruparCampanhasDoDia(
+    [{ campaign_id: 'c1', spend: 100, conversas: 5 }],
+    { c1: '[CAMPANHA WPP] X' },
+  );
+  const dados = montarDadosOpr(campanhas, null, 0);
+  assert.equal(dados.sales.leadsQuentes, null);
+  assert.equal(dados.sales.vendas, null);
+  assert.equal(dados.sales.custoPorLeadQuente, null);
+  assert.equal(dados.sales.custoPorVenda, null);
+  assert.equal(dados.sales.conversaoLeadQuente, null);
+  assert.equal(dados.sales.conversaoQuenteVenda, null);
+  assert.equal(dados.sales.leads, 5, 'leads (WPP) já tem fonte real, continua saindo');
 });
 
 test('montarDadosOpr: custo nunca nasce de contagem ou investimento <= 0', () => {
@@ -45,7 +65,10 @@ test('montarDadosOpr: custo nunca nasce de contagem ou investimento <= 0', () =>
   assert.equal(semNada.growth.conversaoVisitaSeguidor, null, 'visita 0 é denominador inválido, não 0%');
   assert.equal(semNada.engagement.custoPorCurtida, null);
   assert.equal(semNada.engagement.custoMedioPorEngajamento, null);
-  assert.equal(semNada.leads.custoPorLead, null);
+  assert.equal(semNada.sales.custoPorLead, null);
+  assert.equal(semNada.mix.growth, null, 'sem investimento nenhum, 0/0 não é 0% — é null');
+  assert.equal(semNada.mix.engagement, null);
+  assert.equal(semNada.mix.leads, null);
 });
 
 test('montarDadosOpr: conversão visita->seguidor pode ser 0% de verdade (não é custo)', () => {

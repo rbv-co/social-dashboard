@@ -24,10 +24,17 @@ export function formatarReais(v) {
 // sinal que temos hoje pra saber o que ela é. `[CAMPANHA WPP]` vira mensagem
 // de leads; `[+ SEGUIDORES]` reserva a aba própria (indicadores dela ainda
 // não existem, pedido do dono em 12/09/2026); o resto cai em "outro".
+//
+// `[ENGAJAMENTO]` (sem "+") também conta — pedido do dono (17/09/2026): as
+// campanhas de engajamento reais no Meta Ads Manager já usam esse prefixo
+// (ex.: "[ENGAJAMENTO] POST 10"), sem o "+" do padrão novo. NÃO confundir
+// com "[Engajamento]"/"[engajamento]" (minúsculo/misto) — esses são soltos,
+// inconsistentes, e pelo menos um é vaga de emprego; `startsWith` é
+// case-sensitive de propósito, só o prefixo exato conta.
 export function tipoDaCampanha(nome) {
   if (nome.startsWith('[CAMPANHA WPP]')) return 'wpp';
   if (nome.startsWith('[+ SEGUIDORES]')) return 'seguidores';
-  if (nome.startsWith('[+ ENGAJAMENTO]')) return 'engajamento';
+  if (nome.startsWith('[+ ENGAJAMENTO]') || nome.startsWith('[ENGAJAMENTO]')) return 'engajamento';
   return 'outro';
 }
 

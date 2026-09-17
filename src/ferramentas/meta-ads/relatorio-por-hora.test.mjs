@@ -83,11 +83,13 @@ test('agruparPorDiaEHora: campanhas de uma hora vêm ordenadas por gasto decresc
   assert.deepEqual(out[0].horas[0].campanhas.map((c) => c.campaignId), ['cara', 'barata']);
 });
 
-test('tipoDaCampanha: reconhece os três prefixos e cai em "outro" pro resto', () => {
+test('tipoDaCampanha: reconhece os prefixos de engajamento (com e sem "+") e cai em "outro" pro resto', () => {
   assert.equal(tipoDaCampanha('[CAMPANHA WPP] Criativo 1'), 'wpp');
   assert.equal(tipoDaCampanha('[+ SEGUIDORES] Reels 1'), 'seguidores');
   assert.equal(tipoDaCampanha('[+ ENGAJAMENTO] Feed 1'), 'engajamento');
-  assert.equal(tipoDaCampanha('[Engajamento] Vaga Gerente'), 'outro', 'prefixo solto/minúsculo não conta — só "[+ ENGAJAMENTO]" exato');
+  assert.equal(tipoDaCampanha('[ENGAJAMENTO] POST 10'), 'engajamento', 'prefixo real das campanhas ativas no Meta Ads Manager, sem o "+"');
+  assert.equal(tipoDaCampanha('[Engajamento] Vaga Gerente'), 'outro', 'prefixo solto/minúsculo não conta — vaga de emprego usa essa grafia');
+  assert.equal(tipoDaCampanha('[engajamento] Vaga Gerente Tivoli'), 'outro', 'idem, tudo minúsculo');
   assert.equal(tipoDaCampanha('Post do Instagram: Vlog'), 'outro');
   assert.equal(tipoDaCampanha('120250373182240342'), 'outro'); // id cru, sem nome mapeado
 });

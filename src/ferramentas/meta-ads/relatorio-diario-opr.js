@@ -85,12 +85,21 @@ export function montarDadosOpr(campanhasDoDia, seguidoresDoDia, visitasPerfilDoD
       ? custoPorLead(investimentoEngajamento, totalInteracoes) : null,
   };
 
+  // Leads Quentes/Vendas (e tudo que depende deles) ainda não têm fonte —
+  // vêm do Chatwoot, integração futura (pedido do dono, 17/09/2026: "mostra
+  // só Leads, resto com —"). `null` explícito, nunca 0 nem inventado.
   const leadsCount = somar(wpp, 'conversas');
-  const leads = {
+  const sales = {
     leads: leadsCount,
+    leadsQuentes: null,
+    vendas: null,
     investimento: investimentoWpp,
     custoPorLead: investimentoWpp > 0 && leadsCount > 0
       ? custoPorLead(investimentoWpp, leadsCount) : null,
+    custoPorLeadQuente: null,
+    custoPorVenda: null,
+    conversaoLeadQuente: null,
+    conversaoQuenteVenda: null,
   };
 
   const header = {
@@ -100,5 +109,17 @@ export function montarDadosOpr(campanhasDoDia, seguidoresDoDia, visitasPerfilDoD
     leadsGerados: leadsCount,
   };
 
-  return { header, growth, engagement, leads };
+  // Media Mix: % do investimento total em cada categoria — definição
+  // provisória (pedido do dono, 17/09/2026: "deixa lá, mas vou confirmar
+  // ainda" — o gerente de marketing ainda vai validar). `null` quando não
+  // houve investimento nenhum no dia (0/0 não é 0%, é "sem dado").
+  const investimentoTotal = header.investimentoTotal;
+  const pctDoTotal = (valor) => (investimentoTotal > 0 ? (valor / investimentoTotal) * 100 : null);
+  const mix = {
+    growth: pctDoTotal(investimentoSeguidores),
+    engagement: pctDoTotal(investimentoEngajamento),
+    leads: pctDoTotal(investimentoWpp),
+  };
+
+  return { header, growth, engagement, sales, mix };
 }
