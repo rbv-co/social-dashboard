@@ -71,6 +71,17 @@ begin
   assert (v->>'ok')::boolean, 'registrar como cliente falhou: ' || v::text;
   assert (v->>'sku') = 'SKU-TESTE-PRESENTE', 'sku devolvido deveria ser o do lote, veio: ' || (v->>'sku');
 
+  -- ── ja_tem_dono e dono_curto atravessam de vessel_abrir_pedido_de_registro
+  -- (Rodada de correção 2 da Tarefa 7: eles se perdiam no json_build_object
+  -- de vessel_registrar_como_cliente, e uma peça já registrada responderia
+  -- como se estivesse livre). Esta peça é NOVA (nasceu agora, nesta prova,
+  -- sem ninguém em vessel_registros) — o par certo é ja_tem_dono=false e
+  -- dono_curto nulo.
+  assert (v->>'ja_tem_dono')::boolean = false,
+    'peça nova não deveria já ter dono, veio: ' || coalesce(v->>'ja_tem_dono', '(ausente)');
+  assert (v->>'dono_curto') is null,
+    'peça sem dono não deveria ter dono_curto, veio: ' || coalesce(v->>'dono_curto', '(null)');
+
   -- o pedido de registro nasceu ligado ao cliente (Passo 1 desta tarefa)
   assert exists (
     select 1 from public.vessel_pedidos_de_registro

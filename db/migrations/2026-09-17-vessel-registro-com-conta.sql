@@ -83,8 +83,16 @@ begin
   update public.vessel_pedidos_de_registro
      set cliente_id = v_c.id where id = (v_aberto ->> 'pedido')::uuid;
 
+  -- `ja_tem_dono` e `dono_curto` atravessam de `vessel_abrir_pedido_de_registro`
+  -- sem alteração: é a peça já ter dona OU NÃO, e a edge (e a tela) precisam
+  -- disso para explicar a situação à cliente. Sem repassar, uma peça que já
+  -- tem dona responderia como se estivesse livre — não é falha de segurança
+  -- (nada usa este campo para liberar ou barrar registro), mas é informação
+  -- sumindo em silêncio.
   return json_build_object('ok', true, 'pedido', v_aberto ->> 'pedido',
-                           'sku', v_aberto ->> 'sku', 'cliente_id', v_c.id);
+                           'sku', v_aberto ->> 'sku', 'cliente_id', v_c.id,
+                           'ja_tem_dono', (v_aberto ->> 'ja_tem_dono')::boolean,
+                           'dono_curto', v_aberto ->> 'dono_curto');
 end;
 $$;
 

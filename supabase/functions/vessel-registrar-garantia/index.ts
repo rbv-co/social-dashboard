@@ -229,7 +229,8 @@ Deno.serve(async (req) => {
       console.error('vessel_candidatos_de_presente', erroCandidatos.message);
       // O pedido já está guardado (passo anterior); sem lista de candidatos
       // não há como casar nome nenhum, então cai na fila — nunca recusa.
-      return responder({ ok: true, estado: 'pendente' });
+      return responder({ ok: true, estado: 'pendente',
+                         ja_tem_dono: pedidoAberto.ja_tem_dono === true, dono_curto: pedidoAberto.dono_curto ?? null });
     }
 
     const bons = (candidatos ?? []).filter((c: any) =>
@@ -243,7 +244,8 @@ Deno.serve(async (req) => {
     // ⚠️ MAIS DE UM CANDIDATO = FILA. Escolher "o mais provável" seria dar a
     // garantia de uma peça para quem talvez não seja a dona.
     if (bons.length !== 1) {
-      return responder({ ok: true, estado: 'pendente' });
+      return responder({ ok: true, estado: 'pendente',
+                         ja_tem_dono: pedidoAberto.ja_tem_dono === true, dono_curto: pedidoAberto.dono_curto ?? null });
     }
     // ⚠️ `p_quem_decidiu` NÃO é 'presente'. Medido no banco: a função
     // `vessel_decidir_pedido_de_registro` só aceita 'bling' ou 'na_mao'
@@ -261,9 +263,13 @@ Deno.serve(async (req) => {
     });
     if (erroDecidir) {
       console.error('vessel_decidir_pedido_de_registro', erroDecidir.message);
-      return responder({ ok: true, estado: 'pendente' });
+      return responder({ ok: true, estado: 'pendente',
+                         ja_tem_dono: pedidoAberto.ja_tem_dono === true, dono_curto: pedidoAberto.dono_curto ?? null });
     }
-    if (!decidido?.ok) return responder({ ok: true, estado: 'pendente' });
+    if (!decidido?.ok) {
+      return responder({ ok: true, estado: 'pendente',
+                         ja_tem_dono: pedidoAberto.ja_tem_dono === true, dono_curto: pedidoAberto.dono_curto ?? null });
+    }
     return responder({ ok: true, estado: 'aprovado', garantia_ate: decidido.garantia_ate });
   }
 

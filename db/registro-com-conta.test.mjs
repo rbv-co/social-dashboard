@@ -13,6 +13,18 @@ test('⚠️ registrar exige sessão', () => {
   assert.match(f, /sem_sessao/);
 });
 
+test('⚠️ ja_tem_dono e dono_curto atravessam — senão peça com dona vira "livre" calado', () => {
+  // vessel_abrir_pedido_de_registro já devolve os dois campos; a versão
+  // anterior de vessel_registrar_como_cliente montava o retorno do zero
+  // (json_build_object com só ok/pedido/sku/cliente_id) e os dois se
+  // perdiam — a página não teria como avisar a cliente que a peça já tem
+  // dona. Rodada de correção 2 da Tarefa 7.
+  const f = SQL.slice(SQL.indexOf('function public.vessel_registrar_como_cliente'),
+                       SQL.indexOf('-- ── o portão'));
+  assert.match(f, /'ja_tem_dono'/, 'o retorno de vessel_registrar_como_cliente precisa de ja_tem_dono');
+  assert.match(f, /'dono_curto'/, 'o retorno de vessel_registrar_como_cliente precisa de dono_curto');
+});
+
 test('⚠️ as duas funções novas são revogadas de anon E authenticated, uma a uma', () => {
   // ⚠️ A primeira versão deste teste casava o NOME DA FUNÇÃO colado ao texto
   // '...to (anon|authenticated)' — mas o revoke/grant deste arquivo é montado
