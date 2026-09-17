@@ -129,6 +129,17 @@ export const FRASES = {
     exportar: 'Abre a aba de Relatórios Comerciais, consulta e baixa o '
       + 'relatório.',
   },
+  atendimentos: {
+    // mapa-de-enderecos.js (rota gateada em 'ver'). O 'editar' é o botão que
+    // marca a presença — ele chama `vessel_situacao_do_atendimento`, que CHECA
+    // a permissão POR DENTRO, no banco: tirar o acesso aqui fecha a porta de
+    // verdade, não só esconde o botão.
+    sem: 'Os atendimentos da Vessel não aparecem no menu dela.',
+    ver: 'Vê quem tem horário marcado, quem veio, a taxa de comparecimento e '
+      + 'o que a cliente comprou depois da visita. Não marca nada.',
+    mexer: 'Além de ver, marca que a cliente veio, não veio ou remarcou — é '
+      + 'esse clique que alimenta a taxa de comparecimento.',
+  },
   'claude.status': {
     // mapa-de-enderecos.js:31 (rota gateada em 'ver'); dentro da tela não há
     // NENHUM hasPermission. Em 19/08/2026 o quadro de projetos saiu da tela, e

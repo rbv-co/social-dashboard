@@ -138,6 +138,18 @@
           </div>
           <span class="home-card-enter">→</span>
         </div>
+        <!-- Vessel — Atendimentos: os private appointments. Quem tem horário,
+             quem veio, e quanto comprou depois. -->
+        <div class="home-card" id="home-card-atendimentos" v-show="podeAtendimentos" @click="ir('atendimentos')" @mouseenter="definirTemaFundo('default')" @mouseleave="definirTemaFundo('default')">
+          <div class="home-card-icon" style="background:linear-gradient(135deg,#9a6b3f 0%,#c3a36a 100%)">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><path d="m9 16 2 2 4-4"/></svg>
+          </div>
+          <div class="home-card-text">
+            <h3>Vessel<br>Atendimentos</h3>
+            <p>Quem tem horário, quem veio e quanto comprou depois</p>
+          </div>
+          <span class="home-card-enter">→</span>
+        </div>
         <div class="home-card" id="home-card-claude-status" v-show="podeClaudeStatus" @click="ir('claude-status')" @mouseenter="definirTemaFundo('default')" @mouseleave="definirTemaFundo('default')">
           <div class="home-card-icon" style="background:linear-gradient(135deg,#4f46e5 0%,#7c3aed 100%)">
             <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
@@ -210,6 +222,7 @@ const podeFrota = computed(() => hasPermission('frota', 'ver'))
 // Ver `gestao-interna/chaves-da-gestao-interna.js`.
 const podeGestaoInterna = computed(() => podeVerGestaoInterna(hasPermission))
 const podeClaudeStatus = computed(() => hasPermission('claude.status', 'ver'))
+const podeAtendimentos = computed(() => hasPermission('atendimentos', 'ver'))
 // O 3D era o único cartão sem porteiro. Agora segue a mesma chave dos outros.
 const podeEscritorio3D = computed(() => hasPermission('escritorio3d', 'ver'))
 
@@ -220,7 +233,12 @@ const podeEscritorio3D = computed(() => hasPermission('escritorio3d', 'ver'))
 const semNenhumaFerramenta = computed(() =>
   !ehAdmin.value && !podeRedes.value && !podeVendas.value && !podeMeta.value &&
   !podeBanco.value && !podeNoticias.value && !podeGestor.value &&
-  !podeGestaoInterna.value && !podeClaudeStatus.value && !podeEscritorio3D.value
+  !podeGestaoInterna.value && !podeClaudeStatus.value && !podeEscritorio3D.value &&
+  // ⚠️ TODA CHAVE NOVA ENTRA AQUI TAMBÉM. Faltando, quem tivesse SÓ esta
+  // permissão leria "você ainda não tem acesso a nenhuma ferramenta" com o
+  // cartão dela aparecendo na mesma tela. A Frota e a Autenticidade já pagaram
+  // esse defeito, cada uma no seu mês.
+  !podeAtendimentos.value
 )
 
 // O perfil não carregou (rede, sessão expirada, servidor). É DIFERENTE de "não tem

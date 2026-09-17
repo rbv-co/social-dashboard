@@ -34,6 +34,7 @@ const RECURSOS = [
   { key: 'claude.status', label: 'Painel de Status da IA', acoes: ['ver'] },
   { key: 'conteudo', label: 'Redes Sociais — Central de Conteúdo', acoes: ['ver', 'criar', 'editar', 'excluir'] },
   { key: 'conteudo.aprovar', label: 'Redes Sociais — Aprovar peças', acoes: ['ver'] },
+  { key: 'atendimentos', label: 'Vessel — Atendimentos', acoes: ['ver', 'editar'] },
 ]
 
 const acha = (k) => RECURSOS.find((r) => r.key === k)
