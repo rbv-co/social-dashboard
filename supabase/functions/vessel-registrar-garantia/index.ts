@@ -240,8 +240,16 @@ Deno.serve(async (req) => {
     if (bons.length !== 1) {
       return responder({ ok: true, estado: 'pendente' });
     }
+    // ⚠️ `p_quem_decidiu` NÃO é 'presente'. Medido no banco: a função
+    // `vessel_decidir_pedido_de_registro` só aceita 'bling' ou 'na_mao'
+    // (`vessel_pedidos_de_registro_decidido_por_que_check`), e ela é
+    // compartilhada com o painel que está no ar — não é desta tarefa mexer
+    // nela nem na trava. Quem distingue o presente da conferência normal é o
+    // `p_conferencia` logo abaixo: carrega `pedido`, `de` (o nome de quem
+    // deu) e `marca` (se veio da marca PRESENTE do Bling) — é ali, na
+    // trilha, que fica guardado que esta aprovação foi um presente.
     const { data: decidido, error: erroDecidir } = await sb.rpc('vessel_decidir_pedido_de_registro', {
-      p_pedido: pedidoAberto.pedido, p_estado: 'aprovado', p_quem_decidiu: 'presente',
+      p_pedido: pedidoAberto.pedido, p_estado: 'aprovado', p_quem_decidiu: 'bling',
       p_conferencia: { pedido: bons[0].bling_pedido, de: bons[0].contato_nome,
                        marca: bons[0].tem_marca === true },
       p_motivo: null,
