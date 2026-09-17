@@ -35,7 +35,24 @@ function somar(campanhas, campo) {
   return campanhas.reduce((s, c) => s + c[campo], 0);
 }
 
-// Números prontos do relatório OPR diário. `seguidoresDoDia` pode ser `null`
+// Rollout controlado do OPR (pedido do dono, 17/09/2026: "esvazia esse
+// relatório por completo, deixa tudo —, vamos ir batendo um por um e
+// preenchendo"). Só o que está neste Set sai com o valor calculado; todo o
+// resto sai `null` ("—"), mesmo já calculado corretamente logo abaixo — a
+// conta fica pronta, só falta o dono confirmar o campo pra "ligar" ele aqui.
+// Chave = "secao.campo" (ex.: "header.investimentoTotal").
+const CAMPOS_CONFIRMADOS = new Set([]);
+
+function ligado(secao, campo, valor) {
+  return CAMPOS_CONFIRMADOS.has(`${secao}.${campo}`) ? valor : null;
+}
+function aplicarRollout(secao, objeto) {
+  return Object.fromEntries(Object.entries(objeto).map(([campo, valor]) => [campo, ligado(secao, campo, valor)]));
+}
+
+// Números prontos do relatório OPR diário — o CÁLCULO de verdade, sem
+// rollout (exportada à parte pra testar a conta em si, independente de quais
+// campos já estão liberados pro dono ver). `seguidoresDoDia` pode ser `null`
 // (nenhuma leitura de seguidor nesse dia ainda); `visitasPerfilDoDia` nunca é
 // null (a soma do dia é 0 quando não há leitura).
 //
@@ -43,7 +60,7 @@ function somar(campanhas, campo) {
 // nem por investimento <= 0 — cai pra `null`, nunca "R$ 0,00" inventado.
 // Diferente disso, TAXA/PERCENTUAL (conversão) pode ser 0% de verdade — não é
 // mentira, é fato quando a base é positiva e o resultado é zero.
-export function montarDadosOpr(campanhasDoDia, seguidoresDoDia, visitasPerfilDoDia) {
+export function calcularDadosOpr(campanhasDoDia, seguidoresDoDia, visitasPerfilDoDia) {
   const seguidores = porTipo(campanhasDoDia, 'seguidores');
   const engajamento = porTipo(campanhasDoDia, 'engajamento');
   const wpp = porTipo(campanhasDoDia, 'wpp');
@@ -122,4 +139,18 @@ export function montarDadosOpr(campanhasDoDia, seguidoresDoDia, visitasPerfilDoD
   };
 
   return { header, growth, engagement, sales, mix };
+}
+
+// Ponto que o dashboard e o robô do WhatsApp realmente chamam — mesmo
+// cálculo de `calcularDadosOpr`, com o rollout de campo por campo aplicado
+// em cima (ver `CAMPOS_CONFIRMADOS` acima).
+export function montarDadosOpr(campanhasDoDia, seguidoresDoDia, visitasPerfilDoDia) {
+  const dados = calcularDadosOpr(campanhasDoDia, seguidoresDoDia, visitasPerfilDoDia);
+  return {
+    header: aplicarRollout('header', dados.header),
+    growth: aplicarRollout('growth', dados.growth),
+    engagement: aplicarRollout('engagement', dados.engagement),
+    sales: aplicarRollout('sales', dados.sales),
+    mix: aplicarRollout('mix', dados.mix),
+  };
 }

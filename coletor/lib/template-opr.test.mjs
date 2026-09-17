@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { montarHtmlOpr } from './template-opr.mjs';
-import { agruparCampanhasDoDia, montarDadosOpr } from '../../src/ferramentas/meta-ads/relatorio-diario-opr.js';
+import { agruparCampanhasDoDia, calcularDadosOpr } from '../../src/ferramentas/meta-ads/relatorio-diario-opr.js';
 
 function dadosBase() {
   return {
@@ -66,11 +66,14 @@ test('montarHtmlOpr: Media Mix — barra nunca passa de 100% de largura mesmo co
   assert.match(html, /width:0%/, 'engagement null não tem barra (nem null% nem negativo)');
 });
 
-test('integração: agruparCampanhasDoDia -> montarDadosOpr -> montarHtmlOpr, sem mocks no meio', () => {
+test('integração: agruparCampanhasDoDia -> calcularDadosOpr -> montarHtmlOpr, sem mocks no meio', () => {
   // Fixture pequena, à mão — se algum campo mudar de nome de um lado (ex. em
-  // montarDadosOpr) sem o outro lado (template) acompanhar, é este teste que
-  // quebra; os outros dois arquivos de teste isolam cada ponta com fixtures
-  // próprias e não pegariam essa quebra.
+  // calcularDadosOpr) sem o outro lado (template) acompanhar, é este teste
+  // que quebra; os outros dois arquivos de teste isolam cada ponta com
+  // fixtures próprias e não pegariam essa quebra. Usa calcularDadosOpr (sem
+  // o rollout de montarDadosOpr) porque aqui o que se testa é a formatação
+  // no HTML de um valor JÁ calculado, não o rollout em si (esse tem teste
+  // próprio em relatorio-diario-opr.test.mjs).
   const linhas = [
     { campaign_id: 'c1', spend: 301, likes: 0, comments: 0, shares: 0, saves: 0, conversas: 4, post_engagement: 0 },
     { campaign_id: 'c2', spend: 100, likes: 0, comments: 0, shares: 0, saves: 0, conversas: 0, post_engagement: 0 },
@@ -83,7 +86,7 @@ test('integração: agruparCampanhasDoDia -> montarDadosOpr -> montarHtmlOpr, se
   };
 
   const campanhasDoDia = agruparCampanhasDoDia(linhas, nomesPorCampanha);
-  const dados = montarDadosOpr(campanhasDoDia, /* seguidoresDoDia */ 5, /* visitasPerfilDoDia */ 40);
+  const dados = calcularDadosOpr(campanhasDoDia, /* seguidoresDoDia */ 5, /* visitasPerfilDoDia */ 40);
 
   // Contas de cabeça, pra conferir que a agregação bateu antes de olhar o HTML:
   // custoPorLead = 301 / 4 conversas = 75.25 -> "R$ 75,25"
