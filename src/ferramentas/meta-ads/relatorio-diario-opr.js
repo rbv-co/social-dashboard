@@ -41,7 +41,17 @@ function somar(campanhas, campo) {
 // resto sai `null` ("—"), mesmo já calculado corretamente logo abaixo — a
 // conta fica pronta, só falta o dono confirmar o campo pra "ligar" ele aqui.
 // Chave = "secao.campo" (ex.: "header.investimentoTotal").
-const CAMPOS_CONFIRMADOS = new Set([]);
+//
+// Confirmados até agora:
+// - header.novosSeguidores / growth.seguidores (17/09/2026) — batido contra
+//   a Graph API (GET /{ig-id}?fields=followers_count) e as leituras em
+//   followers_leituras: ontem (16/09) foi de 18622 (última leitura de
+//   15/09, 02:59 UTC) pra 18792 (última leitura de 16/09, 02:59 UTC) = 170,
+//   igual ao que a tela já mostrava.
+const CAMPOS_CONFIRMADOS = new Set([
+  'header.novosSeguidores',
+  'growth.seguidores',
+]);
 
 function ligado(secao, campo, valor) {
   return CAMPOS_CONFIRMADOS.has(`${secao}.${campo}`) ? valor : null;

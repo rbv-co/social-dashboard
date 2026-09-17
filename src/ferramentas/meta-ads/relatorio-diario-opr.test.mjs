@@ -92,17 +92,23 @@ test('calcularDadosOpr: seguidoresDoDia null (sem leitura nenhuma) propaga null,
 // completo, deixa tudo —, vamos ir batendo um por um e preenchendo") — a
 // conta em si é `calcularDadosOpr` (testada acima); `montarDadosOpr` é o que
 // o dashboard e o robô do WhatsApp realmente usam, e aplica esse rollout.
-test('⚠️ montarDadosOpr: com nenhum campo confirmado ainda, tudo sai null ("—"), mesmo já calculável', () => {
+test('⚠️ montarDadosOpr: só os campos confirmados saem com valor, o resto continua null ("—")', () => {
   const campanhas = agruparCampanhasDoDia([
     { campaign_id: 'c1', spend: 100, conversas: 5 },
     { campaign_id: 'c2', spend: 200, likes: 30, comments: 5, shares: 2, saves: 3, post_engagement: 80 },
   ], { c1: '[CAMPANHA WPP] X', c2: '[+ ENGAJAMENTO] Y' });
 
   const dados = montarDadosOpr(campanhas, 12, 150);
+  const CONFIRMADOS = new Set(['header.novosSeguidores', 'growth.seguidores']);
 
   for (const secao of ['header', 'growth', 'engagement', 'sales', 'mix']) {
     for (const campo of Object.keys(dados[secao])) {
-      assert.equal(dados[secao][campo], null, `${secao}.${campo} deveria ser null (nada confirmado ainda)`);
+      const chave = `${secao}.${campo}`;
+      if (CONFIRMADOS.has(chave)) {
+        assert.equal(dados[secao][campo], 12, `${chave} é confirmado — deveria sair com o valor calculado (12)`);
+      } else {
+        assert.equal(dados[secao][campo], null, `${chave} deveria ser null (ainda não confirmado)`);
+      }
     }
   }
 });
