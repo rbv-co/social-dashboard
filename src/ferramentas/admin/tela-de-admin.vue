@@ -3395,7 +3395,11 @@ function _construirAcoes(p, u, { isSelf, canEdit }) {
     // Dois botões porque alguns navegadores bloqueiam window.open depois de
     // um await (o popup só é permitido dentro do mesmo gesto síncrono do
     // clique) — "Copiar link" é o caminho manual quando isso acontece.
-    const entrarBtn = mkEl('button', 'btn usr-acao-btn btn-perigo'); entrarBtn.type = 'button'; entrarBtn.textContent = 'Entrar como'
+    // Nem "Entrar como" nem "Copiar link" apagam ou desativam nada — não são
+    // .btn-perigo. A cor de perigo é para o que é difícil de desfazer
+    // (Desativar, Excluir, logo abaixo); usar a mesma cor aqui ensinaria a
+    // pessoa a temer um botão que só abre uma sessão, igual ao "Permissões".
+    const entrarBtn = mkEl('button', 'btn usr-acao-btn'); entrarBtn.type = 'button'; entrarBtn.textContent = 'Entrar como'
     entrarBtn.title = `Abrir a Central autenticado como "${p.nome || p.email}"`
     entrarBtn.addEventListener('click', async () => {
       if (!_confirmarEntrarComo(p.nome || p.email)) return
@@ -3405,7 +3409,7 @@ function _construirAcoes(p, u, { isSelf, canEdit }) {
       try {
         const hash = await _sessaoDeEntrarComo(u.id)
         if (aba) aba.location.href = `/?modo=entrar-como#${hash}`
-        else adminToast('O navegador bloqueou a aba nova. Use "Copiar link" ao lado.', false)
+        else adminToast('O navegador bloqueou a aba nova. Use o ícone de copiar link ao lado.', false)
       } catch (e) {
         aba?.close()
         adminToast(e.message || 'Não consegui entrar como essa pessoa.', false)
@@ -3413,14 +3417,19 @@ function _construirAcoes(p, u, { isSelf, canEdit }) {
     })
     acoes.appendChild(entrarBtn)
 
-    const copiarLinkBtn = mkEl('button', 'btn usr-acao-btn btn-perigo'); copiarLinkBtn.type = 'button'; copiarLinkBtn.textContent = 'Copiar link'
+    // Só ícone, sem rótulo — "Copiar link" por extenso ao lado de "Entrar
+    // como" competia pela mesma ação em duas frases. `aria-label`/`title`
+    // seguram a acessibilidade que o texto visível deixou de dar.
+    const copiarLinkBtn = mkEl('button', 'btn usr-acao-btn'); copiarLinkBtn.type = 'button'
+    copiarLinkBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>'
+    copiarLinkBtn.setAttribute('aria-label', `Copiar link de sessão real como "${p.nome || p.email}"`)
     copiarLinkBtn.title = `Copiar um link de sessão real como "${p.nome || p.email}", para colar numa aba nova`
     copiarLinkBtn.addEventListener('click', async () => {
       if (!_confirmarEntrarComo(p.nome || p.email)) return
       try {
         const hash = await _sessaoDeEntrarComo(u.id)
-        await navigator.clipboard.writeText(`${window.location.origin}/?modo=entrar-como#${hash}`)
-        adminToast('Link copiado — cole numa aba nova')
+        const link = `${window.location.origin}/?modo=entrar-como#${hash}`
+        _copiar(link, (ok) => adminToast(ok ? 'Link copiado — cole numa aba nova' : 'Não consegui copiar — tente de novo.', ok))
       } catch (e) {
         adminToast(e.message || 'Não consegui gerar o link.', false)
       }
