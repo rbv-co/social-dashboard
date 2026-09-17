@@ -272,7 +272,7 @@ async function carregar() {
   const [linhas, campanhas, leiturasSeguidores, visitas] = await Promise.all([
     sb(`campaign_insights_hora?select=dia,hora,campaign_id,gasto_hora,gasto_acumulado,conversas_hora&dia=gte.${desdeISO}&account_id=eq.${CONTA_VESSEL}&order=dia.desc,hora.asc`),
     sb('campaigns?select=campaign_id,name'),
-    sb(`followers_leituras?select=followers_count,lido_em&account_id=eq.${CONTA_VESSEL}&lido_em=gte.${desde.toISOString()}&order=lido_em.asc`),
+    sb(`followers_leituras?select=followers_count,lido_em,origem&account_id=eq.${CONTA_VESSEL}&lido_em=gte.${desde.toISOString()}&order=lido_em.asc`),
     sb(`perfil_visitas_hora?select=dia,hora,visitas_hora&dia=gte.${desdeISO}&account_id=eq.${CONTA_VESSEL}&order=dia.desc,hora.asc`),
   ])
 

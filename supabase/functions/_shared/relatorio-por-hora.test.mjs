@@ -138,3 +138,21 @@ test('deltaDeSeguidoresPorHora + seguidoresNaHora/seguidoresTotalNaHora/seguidor
   assert.equal(seguidoresTotalNaHora(deltas, '2026-09-12', 13), 1017);
   assert.equal(seguidoresNoDia(deltas, '2026-09-12'), 17, 'a primeira leitura do dia entra como 0 na soma');
 });
+
+// ⚠️ Achado com o dono, 17/09/2026: a mensagem das 23h mandada pro grupo
+// dizia "154" no total do dia, mas quem consultasse a mesma hora depois via
+// "170" — 16 a mais. Causa: `coletar-dados-2359` (roda às 23:59 em SP) grava
+// no MESMO bucket (dia, hora=23) que `coletar-dados-hora` (roda às 23:05), e
+// "fica com a mais recente" deixava a leitura das 23:59 sobrescrever a das
+// 23:05 depois que a mensagem já tinha sido mandada.
+test('⚠️ deltaDeSeguidoresPorHora: leitura origem "hora" sempre vence no bucket, mesmo chegando depois de uma "diario"', () => {
+  const leituras = [
+    { followers_count: 18761, lido_em: '2026-09-17T01:05:06Z', origem: 'hora' }, // 22h SP
+    { followers_count: 18776, lido_em: '2026-09-17T02:05:03Z', origem: 'hora' }, // 23h SP (coletor de hora)
+    { followers_count: 18792, lido_em: '2026-09-17T02:59:02Z', origem: 'diario' }, // ainda 23h SP, mas do coletor diário — chega DEPOIS
+  ];
+  const out = deltaDeSeguidoresPorHora(leituras);
+  const hora23 = out.find((d) => d.hora === 23);
+  assert.equal(hora23.seguidoresTotal, 18776, 'a leitura "hora" (18776) vence, não a "diario" (18792) que chegou depois');
+  assert.equal(hora23.seguidoresDelta, 15, '18776 - 18761, o mesmo que a mensagem das 23h realmente mandou');
+});

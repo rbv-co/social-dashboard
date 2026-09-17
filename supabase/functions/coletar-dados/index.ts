@@ -504,7 +504,7 @@ async function processarConta(sb: any, acc: any, degraded: string[], semBruto: s
   // Não substitui o bruto da Meta (seguiram/saíram), que ela só publica no dia
   // seguinte — a contagem só revela o LÍQUIDO. Mas mostra que houve movimento, que
   // é o que hoje se perde.
-  await sb.from('followers_leituras').insert({ account_id: accountId, followers_count: seguidores });
+  await sb.from('followers_leituras').insert({ account_id: accountId, followers_count: seguidores, origem: 'diario' });
 
   await atualizarFotoDoPerfil(sb, accountId, igId, token, fotoAtual, name, degraded);
 

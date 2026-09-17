@@ -298,16 +298,30 @@ function diaEHoraSP(isoTimestamp) {
 // leitura da série INTEIRA não tem "anterior": vem com delta `null` (não
 // `0` — `0` diria "não mudou", e a verdade é "ainda não sei").
 //
-// Duas leituras no mesmo bucket dia+hora (o coletor de 4x/dia e o de hora
-// em hora podem cair na mesma hora) — fica só a MAIS RECENTE das duas.
+// Duas leituras no mesmo bucket dia+hora (o coletor de 4x/dia — `origem:
+// 'diario'` — roda perto da virada, 23:59 em SP, e cai no MESMO bucket que
+// a leitura das 23h do coletor de hora em hora — `origem: 'hora'`). Ficar
+// com "a mais recente" (como era antes) deixava a leitura das 23:59
+// sobrescrever a das 23:05 DEPOIS que a mensagem das 23h já tinha sido
+// mandada pro grupo com o valor de antes — o total do dia batia, mas a
+// hora 23 sozinha virava outra coisa se alguém olhasse depois (achado e
+// confirmado com o dono, 17/09/2026). Por isso: dentro do bucket, uma
+// leitura `origem: 'hora'` sempre vence, não importa a ordem no tempo; só
+// cai pra "a mais recente" quando nenhuma das duas é `'hora'` (inclui
+// leituras antigas, de antes desta coluna existir, com `origem` nulo).
 export function deltaDeSeguidoresPorHora(leituras) {
   const porBucket = new Map();
   for (const l of leituras) {
     const { dia, hora } = diaEHoraSP(l.lido_em);
     const chave = `${dia}|${hora}`;
     const atual = porBucket.get(chave);
-    if (!atual || new Date(l.lido_em) > new Date(atual.lidoEm)) {
-      porBucket.set(chave, { dia, hora, followersCount: l.followers_count, lidoEm: l.lido_em });
+    const candidato = { dia, hora, followersCount: l.followers_count, lidoEm: l.lido_em, ehHora: l.origem === 'hora' };
+    if (!atual) {
+      porBucket.set(chave, candidato);
+    } else if (candidato.ehHora && !atual.ehHora) {
+      porBucket.set(chave, candidato);
+    } else if (candidato.ehHora === atual.ehHora && new Date(l.lido_em) > new Date(atual.lidoEm)) {
+      porBucket.set(chave, candidato);
     }
   }
   const ordenado = [...porBucket.values()].sort((a, b) => new Date(a.lidoEm) - new Date(b.lidoEm));

@@ -136,7 +136,7 @@ async function coletarSeguidoresDaConta(sb: any, acc: any, degraded: string[]): 
   try {
     const d = await apiGet(igId, { fields: 'followers_count', access_token: token });
     const seguidores = d.followers_count ?? 0;
-    const { error } = await sb.from('followers_leituras').insert({ account_id: accountId, followers_count: seguidores });
+    const { error } = await sb.from('followers_leituras').insert({ account_id: accountId, followers_count: seguidores, origem: 'hora' });
     if (error) degraded.push(`${name}: falha ao gravar seguidores (${error.message})`);
   } catch (e) {
     degraded.push(`${name}: seguidores (${e instanceof Error ? e.message : String(e)})`);

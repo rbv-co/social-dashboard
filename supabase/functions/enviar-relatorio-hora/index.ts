@@ -104,7 +104,7 @@ Deno.serve(async (req: Request) => {
     sb.from('campaigns').select('campaign_id,name'),
     // 25h de folga: cobre a virada do dia (seguidor é estoque, delta
     // atravessa a meia-noite — ver deltaDeSeguidoresPorHora).
-    sb.from('followers_leituras').select('followers_count,lido_em')
+    sb.from('followers_leituras').select('followers_count,lido_em,origem')
       .eq('account_id', CONTA_VESSEL)
       .gte('lido_em', new Date(Date.now() - 25 * 3600 * 1000).toISOString())
       .order('lido_em', { ascending: true }),
