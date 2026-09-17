@@ -46,16 +46,22 @@ test('⚠️ montarHtmlOpr: Leads Quentes/Vendas aparecem como travessão (sem f
   const html = montarHtmlOpr(dados, { conta: 'Vessel Brasil', periodoLabel: '16/09/2026' });
   assert.match(html, /Leads Quentes[\s\S]*?—/, 'sem número inventado pra Leads Quentes');
   assert.match(html, /Vendas[\s\S]*?—/);
-  assert.match(html, /funnel-value">5</, 'Leads (WPP) já tem fonte real — sales.leads=5 aparece de verdade, não travessão');
+  assert.match(html, /<span>Leads<\/span><strong>5<\/strong>/, 'Leads (WPP) já tem fonte real — sales.leads=5 aparece de verdade, não travessão');
 });
 
-test('⚠️ montarHtmlOpr: números ≥ mil/milhão abreviam ("mil"/"M"), nunca quebram linha por dígito', () => {
+test('⚠️ montarHtmlOpr: números grandes aparecem por extenso, sem abreviar — mesma formatação da tela do app', () => {
+  // O layout novo (cópia visual de tela-de-relatorio-opr.vue) tem colunas
+  // largas o bastante pra qualquer valor realista caber numa linha só — a
+  // abreviação "mil"/"M" do mockup antigo (denso, 4-5 colunas) foi removida
+  // de propósito, pra não divergir do número que a tela mostra.
   const dados = dadosBase();
   dados.header.investimentoTotal = 1_250_000;
   dados.header.novosSeguidores = 8420;
   const html = montarHtmlOpr(dados, { conta: 'Vessel Brasil', periodoLabel: '16/09/2026' });
-  assert.match(html, /R\$\s?1,3\sM/, 'milhão abrevia com "M"');
-  assert.match(html, /8,4\smil/, 'mil abrevia com "mil"');
+  assert.match(html, /R\$\s?1\.250\.000,00/, 'valor por extenso, igual à tela');
+  assert.match(html, /8\.420/, 'valor por extenso, igual à tela');
+  assert.doesNotMatch(html, /\bmil\b/, 'nunca abrevia');
+  assert.doesNotMatch(html, />\s?1,3\s?M</, 'nunca abrevia');
 });
 
 test('montarHtmlOpr: Media Mix — barra nunca passa de 100% de largura mesmo com % maluco, e null vira travessão sem quebrar a barra', () => {
