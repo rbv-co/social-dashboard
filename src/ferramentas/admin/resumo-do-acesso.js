@@ -29,6 +29,9 @@ const ASSUNTO = {
   conteudo: 'Conteúdo',
   autenticidade: 'Autenticidade',
   banco: 'Arquivos',
+  // 'editar' aqui é marcar que a cliente veio, não veio ou remarcou — muda o
+  // atendimento dela, então é poder e tem de aparecer na frase.
+  atendimentos: 'Atendimentos',
 }
 
 // Exportado para o teste de guarda: toda ferramenta do catálogo que dá poder

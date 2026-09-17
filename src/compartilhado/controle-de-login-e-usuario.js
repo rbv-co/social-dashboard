@@ -136,6 +136,13 @@ export const RECURSOS = [
   // fixa em 5 colunas, e uma coluna nova abriria célula vazia nas 15 linhas
   // existentes para servir só a esta. Mesmo padrão de social.relatorio.
   { key: 'conteudo.aprovar', label: 'Redes Sociais — Aprovar peças', acoes: ['ver'] },
+  // ⚠️ A STRING 'atendimentos' É A MESMA EM TRÊS LUGARES, e renomear num só tira
+  // o acesso nos outros EM SILÊNCIO: aqui, na árvore logo abaixo, e dentro da
+  // função `is_vessel_atendimentos()` do banco, que procura esta palavra dentro
+  // de `profiles.features[]`. Quem leva a chave daqui para lá é
+  // `derivar-features.js` — chave sem ponto vira feature com o mesmo nome.
+  // 'editar' é marcar que a cliente veio, não veio ou remarcou.
+  { key: 'atendimentos', label: 'Vessel — Atendimentos', acoes: ['ver', 'editar'] },
 ]
 
 // Ponte: chaves antigas (call sites legados) → recurso novo. Assim nada quebra durante a migração.
@@ -213,4 +220,7 @@ export const PERMISSION_TREE = [
   { key: 'conteudo', label: 'Central de Conteúdo', children: [
     { key: 'conteudo.aprovar', label: 'Aprovar peças' },
   ] },
+  // Os private appointments da Vessel: quem tem horário, quem veio e quanto
+  // comprou. Como toda chave nova, nasce concedida a NINGUÉM — é de propósito.
+  { key: 'atendimentos', label: 'Vessel — Atendimentos', children: [] },
 ]
