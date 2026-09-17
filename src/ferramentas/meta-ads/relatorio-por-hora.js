@@ -20,6 +20,7 @@ export function formatarReais(v) {
 export function tipoDaCampanha(nome) {
   if (nome.startsWith('[CAMPANHA WPP]')) return 'wpp';
   if (nome.startsWith('[+ SEGUIDORES]')) return 'seguidores';
+  if (nome.startsWith('[+ ENGAJAMENTO]')) return 'engajamento';
   return 'outro';
 }
 

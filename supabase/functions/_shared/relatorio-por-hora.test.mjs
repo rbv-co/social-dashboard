@@ -14,9 +14,11 @@ test('custoPorLead é null sem conversa — nunca 0,00 enganoso', () => {
   assert.equal(custoPorLead(40, 2), 20);
 });
 
-test('tipoDaCampanha: reconhece os dois prefixos e cai em "outro" pro resto', () => {
+test('tipoDaCampanha: reconhece os três prefixos e cai em "outro" pro resto', () => {
   assert.equal(tipoDaCampanha('[CAMPANHA WPP] Criativo 1'), 'wpp');
   assert.equal(tipoDaCampanha('[+ SEGUIDORES] Reels 1'), 'seguidores');
+  assert.equal(tipoDaCampanha('[+ ENGAJAMENTO] Feed 1'), 'engajamento');
+  assert.equal(tipoDaCampanha('[Engajamento] Vaga Gerente'), 'outro', 'prefixo solto/minúsculo não conta — só "[+ ENGAJAMENTO]" exato');
   assert.equal(tipoDaCampanha('Post do Instagram: Vlog'), 'outro');
 });
 

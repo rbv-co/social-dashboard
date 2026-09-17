@@ -83,9 +83,11 @@ test('agruparPorDiaEHora: campanhas de uma hora vêm ordenadas por gasto decresc
   assert.deepEqual(out[0].horas[0].campanhas.map((c) => c.campaignId), ['cara', 'barata']);
 });
 
-test('tipoDaCampanha: reconhece os dois prefixos e cai em "outro" pro resto', () => {
+test('tipoDaCampanha: reconhece os três prefixos e cai em "outro" pro resto', () => {
   assert.equal(tipoDaCampanha('[CAMPANHA WPP] Criativo 1'), 'wpp');
   assert.equal(tipoDaCampanha('[+ SEGUIDORES] Reels 1'), 'seguidores');
+  assert.equal(tipoDaCampanha('[+ ENGAJAMENTO] Feed 1'), 'engajamento');
+  assert.equal(tipoDaCampanha('[Engajamento] Vaga Gerente'), 'outro', 'prefixo solto/minúsculo não conta — só "[+ ENGAJAMENTO]" exato');
   assert.equal(tipoDaCampanha('Post do Instagram: Vlog'), 'outro');
   assert.equal(tipoDaCampanha('120250373182240342'), 'outro'); // id cru, sem nome mapeado
 });
