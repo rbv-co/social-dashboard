@@ -495,8 +495,8 @@ router.afterEach(() => fecharTodosOsModaisLegadosAoTrocarDeRota())
    automatizado/fora do fluxo normal está agindo em seu nome" no resto da
    Central (item 2 do PADRAO-DA-CENTRAL), e "você está vestindo a sessão de
    outra pessoa" é exatamente esse tipo de estado. ── */
-.faixa-entrar-como{position:fixed;top:0;left:0;right:0;z-index:10000;display:flex;align-items:center;justify-content:center;gap:var(--sp-3);flex-wrap:wrap;padding:8px var(--gutter);background:var(--roxo);color:var(--sobre-cor);font-family:var(--fonte-principal);font-size:max(9px, calc(12.5px * var(--escala-texto, 1)));text-align:center;}
-.faixa-entrar-como button{flex-shrink:0;min-height:32px;padding:4px 14px;border:1px solid var(--sobre-cor);border-radius:var(--radius-md);background:transparent;color:var(--sobre-cor);font-family:inherit;font-size:inherit;font-weight:600;cursor:pointer;}
+.faixa-entrar-como{position:fixed;top:0;left:0;right:0;z-index:100000;display:flex;align-items:center;justify-content:center;gap:var(--sp-3);flex-wrap:wrap;padding:8px var(--gutter);background:var(--roxo);color:var(--sobre-cor);font-family:var(--fonte-principal);font-size:max(9px, calc(12.5px * var(--escala-texto, 1)));text-align:center;}
+.faixa-entrar-como button{flex-shrink:0;min-height:40px;padding:4px 14px;border:1px solid var(--sobre-cor);border-radius:var(--radius-md);background:transparent;color:var(--sobre-cor);font-family:inherit;font-size:inherit;font-weight:600;cursor:pointer;}
 .faixa-entrar-como button:hover{background:color-mix(in srgb, var(--sobre-cor) 15%, transparent);}
 
 /* ── Perfil ── */
