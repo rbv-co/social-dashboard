@@ -27,3 +27,25 @@ test('mascarar mostra a primeira letra e o domínio', () => {
   assert.equal(mascararEmail('tereza@exemplo.com.br'), 't•••@exemplo.com.br');
   assert.equal(mascararEmail(''), '');
 });
+
+test('⚠️ nome com HTML sai ESCAPADO no html (nunca cru) e literal no texto', () => {
+  // Sem espaço logo após o nome: `textoDoPrimeiroAcesso` usa só a 1ª "palavra"
+  // do nome (split por espaço) — um ataque de verdade não avisa com espaço
+  // antes da tag, então o teste tem de refletir isso.
+  const m = textoDoPrimeiroAcesso('José<img/src=x/onerror=alert(1)>', 'ABCdef234567');
+  assert.ok(!m.html.includes('<img'), 'o html não pode conter a tag crua do nome');
+  assert.match(m.html, /&lt;img/);
+  assert.match(m.texto, /<img\/src=x\/onerror=alert\(1\)>/, 'texto puro não precisa de escape');
+});
+
+test('⚠️ senha com < e & sai escapada no html', () => {
+  const m = textoDaSenhaNova('Tereza', 'AB<cd&ef>23');
+  assert.ok(!m.html.includes('<cd&ef>'), 'a senha crua não pode aparecer no html');
+  assert.match(m.html, /AB&lt;cd&amp;ef&gt;23/);
+});
+
+test('escapar não estraga o caso normal — nome simples continua legível', () => {
+  const m = textoDoPrimeiroAcesso('Tereza Aparecida', 'ABCdef234567');
+  assert.match(m.html, /Bem-vinda, Tereza/);
+  assert.ok(!m.html.includes('&amp;'), 'nome sem caractere especial não deve ganhar &amp; nenhum');
+});
