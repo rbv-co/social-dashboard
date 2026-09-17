@@ -20,10 +20,21 @@ test('⚠️ NÃO bate quando só o primeiro nome coincide', () => {
 });
 
 test('chega perto aceita sobrenome escrito errado, mas exige primeiro nome', () => {
-  assert.ok(nomesChegamPerto('Ana Sousa', 'Ana Souza'));   // z/s
-  assert.ok(nomesChegamPerto('Ana Soza', 'Ana Souza'));    // letra faltando
+  assert.ok(nomesChegamPerto('Ana Sousa', 'Ana Souza'));   // z/s, sobrenome de 5 letras
+  assert.ok(!nomesChegamPerto('Ana Soza', 'Ana Souza'));   // sobrenome curto (4): exige igualdade exata
+  assert.ok(nomesChegamPerto('Ana Rodriges', 'Ana Rodrigues'));  // sobrenome longo (8+): 1 letra faltando é erro de digitação
   assert.ok(!nomesChegamPerto('Bia Souza', 'Ana Souza'));  // outro primeiro nome
   assert.ok(!nomesChegamPerto('Ana', 'Ana Souza'));        // sem sobrenome
+});
+
+test('⚠️ sobrenome curto e DIFERENTE não é erro de digitação — é outra pessoa', () => {
+  // Achado da revisão: distância fixa ≤2 aprovava sobrenomes curtos e
+  // diferentes (pessoas diferentes) como se fossem erro de digitação. O
+  // limite agora escala com o tamanho do menor sobrenome.
+  assert.ok(!nomesChegamPerto('Ana Pina', 'Ana Lima'));
+  assert.ok(!nomesChegamPerto('Ana Neis', 'Ana Reis'));
+  assert.ok(!nomesChegamPerto('Ana Nelo', 'Ana Melo'));
+  assert.ok(!nomesChegamPerto('Ana Dip', 'Ana Dias'));
 });
 
 test('vazio nunca bate com nada', () => {

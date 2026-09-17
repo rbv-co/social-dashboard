@@ -40,12 +40,31 @@ function distancia(a, b) {
   return d[a.length][b.length];
 }
 
-/** Frouxa: primeiro nome IGUAL e sobrenome quase igual (até 2 letras de
- *  diferença). ⚠️ Só pode ser usada quando o pedido está marcado PRESENTE —
- *  a marca é a segunda prova que autoriza afrouxar o nome. */
+/** O quanto a distância pode tolerar, dado o tamanho do MENOR sobrenome.
+ *
+ *  ⚠️ Correção de revisão (rodada 1): um limite fixo de 2 aprovava
+ *  sobrenomes CURTOS e diferentes como se fossem erro de digitação —
+ *  "Pina"/"Lima", "Neis"/"Reis", "Nelo"/"Melo", "Dip"/"Dias" são pessoas
+ *  diferentes, não a mesma pessoa digitando errado. Num nome curto, 2 letras
+ *  trocadas já é a metade da palavra — isso é outra pessoa, não um erro de
+ *  digitação. O limite escala com o tamanho: nome curto exige igualdade
+ *  exata, nome longo aceita mais erro. Esta função aprova garantia sem
+ *  ninguém olhar; na dúvida, o limite fica mais apertado, não mais frouxo. */
+function limiteDeDistancia(tamanho) {
+  if (tamanho < 5) return 0;
+  if (tamanho <= 7) return 1;
+  return 2;
+}
+
+/** Frouxa: primeiro nome IGUAL e sobrenome quase igual (dentro do limite que
+ *  escala com o tamanho — ver `limiteDeDistancia`). ⚠️ Só pode ser usada
+ *  quando o pedido está marcado PRESENTE — a marca é a segunda prova que
+ *  autoriza afrouxar o nome. */
 export function nomesChegamPerto(digitado, doPedido) {
   const a = pedacos(digitado), b = pedacos(doPedido);
   if (a.length < 2 || b.length < 2) return false;
   if (a[0] !== b[0]) return false;
-  return distancia(a[a.length - 1], b[b.length - 1]) <= 2;
+  const sobrenomeA = a[a.length - 1], sobrenomeB = b[b.length - 1];
+  const limite = limiteDeDistancia(Math.min(sobrenomeA.length, sobrenomeB.length));
+  return distancia(sobrenomeA, sobrenomeB) <= limite;
 }
