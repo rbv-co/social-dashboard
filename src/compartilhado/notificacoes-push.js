@@ -1,4 +1,4 @@
-import { sbClient } from './conectar-no-banco-de-dados.js';
+import { sbClient, emModoEntrarComo } from './conectar-no-banco-de-dados.js';
 
 // VAPID pública (pode ficar no front; a privada vive só nos secrets do Supabase).
 // TROCAR pelo valor real gerado na Task 6 antes do deploy.
@@ -92,7 +92,11 @@ function comLimite(promessa, ms = LIMITE_MS) {
 // gravação viravam todos `false`, e a tela fechava o convite sem dizer nada.
 // Os motivos e as frases de cada um moram em `recado-do-push.js`.
 export async function inscrever(userId) {
-  if (!pushSuportado()) return { ok: false, motivo: 'nao-suportado' };
+  // Na aba de "entrar como", `userId` é a PESSOA-ALVO e o endpoint é o do
+  // navegador do ADMIN. O upsert por endpoint é persistente: as notificações
+  // dela passariam a chegar no aparelho dele, para sempre. A guarda fica aqui,
+  // e não em cada botão, porque é aqui que a gravação acontece.
+  if (!pushSuportado() || emModoEntrarComo) return { ok: false, motivo: 'nao-suportado' };
   let perm;
   try {
     perm = await Notification.requestPermission();
