@@ -104,3 +104,12 @@ docs/tutorial-motorista/
 # Sem esta linha, um `git add .` distraído joga o Electron inteiro no
 # repositório, que é público, e nao ha como tirar do historico depois.
 entregas/
+
+# A CASA PÚBLICA DA VESSEL mora aqui dentro por organização (pedido do dono:
+# "são do mesmo grupo de ferramentas"), mas é um REPOSITÓRIO PRÓPRIO e um
+# projeto Vercel PRÓPRIO.
+#
+# ELA NÃO PODE ENTRAR NO QUE A CENTRAL PUBLICA. Se entrar, a blindagem cai e
+# volta o vesselbrasil.com.br/frota abrindo o painel interno — que foi o
+# defeito que o dono pediu para eliminar. Por isso ela é ignorada aqui.
+/vessel-brasil/

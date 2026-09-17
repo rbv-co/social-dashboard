@@ -1,0 +1,68 @@
+name: Pedidos da Vessel (a venda, pedido a pedido)
+
+# TODO DIA, às 07h34 UTC (04h34 em Campinas): traz do Bling as vendas dos
+# últimos 30 dias, pedido a pedido, e liga cada uma à pessoa que já conhecemos.
+#
+# ⚠️ POR QUE 30 DIAS E NÃO 1
+# O pedido não é concluído no dia em que é feito. Medido em agosto: o nº2372 era
+# de 27/07 e só virou Atendido em 11/08 — quinze dias. Janela de 1 dia o perderia
+# para sempre. O robô é idempotente (grava por número do pedido), então reler o
+# mesmo pedido trinta vezes não custa nada além de tempo.
+#
+# ⚠️ POR QUE DEPOIS DAS NOTAS
+# `notas-dos-pedidos.mjs` roda de hora em hora e escreve `data_da_venda` em
+# `bling_pedido_nota`. Este robô COPIA esse número em vez de calcular o dele —
+# duas contas para a mesma data é como dois painéis discordam em público. Rodar
+# de madrugada garante que a nota de ontem já foi lida.
+#
+# O minuto 34 evita a hora cheia (medido neste repo: agendar na hora cheia
+# atrasa de 2 a 3 horas) e não colide com a cópia de segurança (06h12) nem com
+# os relatórios comerciais (08h52) — os três batem no mesmo Bling, que limita
+# 3 chamadas por segundo.
+on:
+  schedule:
+    - cron: '34 7 * * *'
+  workflow_dispatch:
+    inputs:
+      dias:
+        description: 'Janela em dias (vazio = 30)'
+        required: false
+        default: ''
+      ensaio:
+        description: 'Só ler, sem gravar? (qualquer texto = sim)'
+        required: false
+        default: ''
+
+concurrency:
+  group: pedidos-da-vessel
+  cancel-in-progress: false
+
+jobs:
+  trazer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - name: Instalar as dependências do coletor
+        working-directory: coletor
+        run: npm ci
+
+      - name: Trazer os pedidos
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          GESTOR_USER_EMAIL: ${{ secrets.GESTOR_USER_EMAIL }}
+          GESTOR_USER_PASSWORD: ${{ secrets.GESTOR_USER_PASSWORD }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DIAS: ${{ github.event.inputs.dias }}
+          ENSAIO: ${{ github.event.inputs.ensaio }}
+        run: |
+          if [ -n "$DIAS" ] && ! printf '%s' "$DIAS" | grep -qE '^[0-9]+$'; then
+            echo "DIAS inválido (esperado número): $DIAS"; exit 1
+          fi
+          argumentos="--dias=${DIAS:-30}"
+          if [ -n "$ENSAIO" ]; then argumentos="$argumentos --ensaio"; fi
+          node coletor/trazer-pedidos-do-bling.mjs $argumentos
