@@ -56,12 +56,27 @@ function somar(campanhas, campo) {
 //   R$857,09 de investimento (seguidores+engajamento+wpp, nunca a
 //   campanha "outro"), 1008 engajamentos, 1 lead — igual ao que a tela já
 //   mostrava.
+// - growth.investimento / growth.custoPorSeguidor (17/09/2026) — mesma
+//   fonte já validada acima (spend das campanhas seguidores, R$494,11) —
+//   não dependem de Visitas ao Perfil, então confirmados já.
+// - growth.visitasPerfil / growth.custoPorVisita / growth.conversaoVisitaSeguidor
+//   AINDA NÃO — achado um buraco real: a leitura de hora em hora
+//   (perfil_visitas_hora, usada pela TELA) sempre perde os últimos ~55min
+//   do dia (~280-290 visitas/dia, batido em 15 e 16/09). O robô do
+//   fechamento (coletor/gerar-opr-diario.mjs) já foi corrigido — pergunta
+//   pro Meta o dia fechado direto, sem esse buraco — mas a TELA (período
+//   customizável, roda no navegador) ainda soma a mesma leitura horária:
+//   ligar este campo agora faria a tela mostrar um número sistematicamente
+//   menor que o do PNG pro mesmo dia. Fica de fora até decidir sobre uma
+//   ponte server-side pra tela também.
 const CAMPOS_CONFIRMADOS = new Set([
   'header.novosSeguidores',
   'growth.seguidores',
   'header.investimentoTotal',
   'header.engajamentos',
   'header.leadsGerados',
+  'growth.investimento',
+  'growth.custoPorSeguidor',
 ]);
 
 function ligado(secao, campo, valor) {

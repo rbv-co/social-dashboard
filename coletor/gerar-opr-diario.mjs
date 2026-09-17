@@ -17,9 +17,10 @@ import { renderPNG, fecharRender } from './lib/render-criativo.mjs';
 import { montarHtmlOpr, DIM_OPR } from './lib/template-opr.mjs';
 import { agruparCampanhasDoDia, montarDadosOpr } from '../src/ferramentas/meta-ads/relatorio-diario-opr.js';
 import {
-  deltaDeSeguidoresPorHora, seguidoresNoDia, visitasPerfilNoDia, seguidoresTotalNoFimDoDia,
+  deltaDeSeguidoresPorHora, seguidoresNoDia, seguidoresTotalNoFimDoDia,
   montarMensagemLeadsFechamentoDia, montarMensagemSeguidoresFechamentoDia,
 } from '../src/ferramentas/meta-ads/relatorio-por-hora.js';
+import { visitasPerfilDoDiaMeta } from './lib/visitas-perfil-meta.mjs';
 
 // Nome sem ser "URL" — o global `URL` (usado abaixo pra montar o caminho do
 // PNG em --dry) fica sombreado por um `const URL` no escopo do módulo.
@@ -83,21 +84,27 @@ async function main() {
   // nesse modo, nem em erro.
   let dados, html, mensagemLeads, mensagemSeguidores;
   try {
-    const [campanhas, insights, leituras, visitas] = await Promise.all([
+    const [campanhas, insights, leituras, contas] = await Promise.all([
       sbGet('/campaigns?select=campaign_id,name'),
       sbGet(`/campaign_insights?select=campaign_id,spend,likes,comments,shares,saves,conversas,post_engagement&account_id=eq.${CONTA_VESSEL}&captured_at=eq.${dia}&period_days=eq.0`),
       // 48h de folga: garante leitura ANTERIOR ao primeiro bucket de ontem, pra
       // deltaDeSeguidoresPorHora ter "anterior" pra comparar desde a primeira
       // hora do dia inteiro (não só a última hora, como no relatório por hora).
       sbGet(`/followers_leituras?select=followers_count,lido_em,origem&account_id=eq.${CONTA_VESSEL}&lido_em=gte.${new Date(Date.now() - 48 * 3600 * 1000).toISOString()}&order=lido_em.asc`),
-      sbGet(`/perfil_visitas_hora?select=dia,hora,visitas_hora&account_id=eq.${CONTA_VESSEL}&dia=eq.${dia}`),
+      sbGet(`/accounts?select=instagram_id,access_token&id=eq.${CONTA_VESSEL}`),
     ]);
 
     const nomesPorCampanha = Object.fromEntries(campanhas.map((c) => [c.campaign_id, c.name]));
     const campanhasDoDia = agruparCampanhasDoDia(insights, nomesPorCampanha);
     const deltas = deltaDeSeguidoresPorHora(leituras);
     const seguidoresDoDia = seguidoresNoDia(deltas, dia);
-    const visitasPerfilDoDia = visitasPerfilNoDia(visitas, dia);
+    // Direto da Meta, dia já FECHADO — não soma perfil_visitas_hora (achado
+    // com o dono, 17/09/2026: a leitura de hora em hora sempre perde os
+    // últimos ~55min do dia, veja coletor/lib/visitas-perfil-meta.mjs). O
+    // fechamento roda de manhã, bem depois da virada — pede o dia inteiro
+    // numa chamada só, sem esse buraco.
+    const { instagram_id: igId, access_token: token } = contas[0];
+    const visitasPerfilDoDia = await visitasPerfilDoDiaMeta(igId, token, dia);
 
     dados = montarDadosOpr(campanhasDoDia, seguidoresDoDia, visitasPerfilDoDia);
     html = montarHtmlOpr(dados, { conta: 'Vessel Brasil', periodoLabel: periodoLabel(dia) });

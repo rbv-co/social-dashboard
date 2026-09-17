@@ -105,6 +105,7 @@ test('⚠️ montarDadosOpr: só os campos confirmados saem com valor, o resto c
   const CONFIRMADOS = new Set([
     'header.novosSeguidores', 'growth.seguidores',
     'header.investimentoTotal', 'header.engajamentos', 'header.leadsGerados',
+    'growth.investimento', 'growth.custoPorSeguidor',
   ]);
 
   for (const secao of ['header', 'growth', 'engagement', 'sales', 'mix']) {
