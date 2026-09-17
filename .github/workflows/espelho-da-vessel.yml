@@ -1,0 +1,56 @@
+name: Espelho da Vessel (as planilhas da base de clientes)
+
+# DE HORA EM HORA, aos 47 minutos: regrava no Zoho WorkDrive as planilhas de
+# pessoas, atendimentos, convites abertos e vendas.
+#
+# ⚠️ ESPELHO NÃO É BACKUP, E É DE PROPÓSITO
+# Aqui o arquivo INTEIRO é comparado e regravado quando difere: apagou do banco,
+# some da planilha na rodada seguinte. É assim que a promessa da Política de
+# Privacidade vira verdade. A cópia de segurança é outro robô (06h12), e ela
+# guarda justamente o que aqui some.
+#
+# ⚠️ POR QUE COMPARAR O ARQUIVO INTEIRO
+# O robô da lista de espera tropeçou nisso em agosto: só regravava quando havia
+# cadastro novo, e apagar alguém deixava os dados dela na planilha para sempre.
+#
+# De hora em hora, e não de 15 em 15 minutos como o da lista de espera, porque
+# estas planilhas são de LEITURA do dono — ninguém as abre esperando o dado de
+# cinco minutos atrás. E o robô só sobe o que mudou, então rodada sem novidade
+# custa quatro leituras e nada mais.
+#
+# O minuto 47 fica longe da hora cheia (medido neste repo: agendar na hora cheia
+# atrasa de 2 a 3 horas) e não colide com os outros robôs da conta.
+on:
+  schedule:
+    - cron: '47 * * * *'
+  workflow_dispatch:
+    inputs:
+      ensaio:
+        description: 'Só montar as planilhas, sem enviar? (qualquer texto = sim)'
+        required: false
+        default: ''
+
+concurrency:
+  group: espelho-da-vessel
+  cancel-in-progress: false
+
+jobs:
+  espelhar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - name: Regravar as planilhas
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          ENSAIO: ${{ github.event.inputs.ensaio }}
+        run: |
+          if [ -n "$ENSAIO" ]; then
+            node coletor/espelhar-vessel-no-zoho.mjs --ensaio
+          else
+            node coletor/espelhar-vessel-no-zoho.mjs
+          fi

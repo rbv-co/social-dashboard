@@ -21,16 +21,21 @@
 // Desenho: docs/superpowers/specs/2026-09-16-vessel-base-de-dados-e-backup-design.md
 import './lib/carregar-env.mjs';
 import { createHash } from 'node:crypto';
+// ⚠️ As funções do Zoho moram em `lib/zoho-da-central.mjs` desde 17/09/2026,
+// quando o robô dos espelhos precisou das mesmas. Duas cópias das mesmas regras
+// é uma delas envelhecendo em silêncio — e aqui as regras são cheias de
+// pegadinhas (o `override-name-exist`, o multipart sem Content-Type).
+import {
+  RAIZ_RBV, conexaoZoho, tokenZoho, pastasDe, acharOuCriarPasta,
+  baixarArquivo, subirArquivo, mandarParaLixeira,
+} from './lib/zoho-da-central.mjs';
 
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://kounqtdoioootxqegkij.supabase.co';
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 const REST = SUPABASE_URL + '/rest/v1';
 const WD = 'https://www.zohoapis.com/workdrive/api/v1';
 
-// ⚠️ CAMINHO POR NOME, NUNCA POR ID ESCRITO AQUI. Se alguém recriar a pasta no
-// Zoho o id muda, e um id fixo continuaria apontando, calado, para o lugar
-// errado. Mesma regra do robô da lista de espera.
-const RAIZ = 'wbp6sefe483fe7da14c6ebe53225105f1f389';   // espaço "01. RBV and Company"
+const RAIZ = RAIZ_RBV;
 const PASTA_BASE = '00. Copias de seguranca da Central';
 
 const ensaio = process.argv.includes('--ensaio');
@@ -143,95 +148,6 @@ async function lerTabela(nome) {
   return linhas;
 }
 
-// ── Zoho WorkDrive ───────────────────────────────────────────────────────────
-
-async function conexaoZoho() {
-  const r = await fetch(`${REST}/acessos_conexoes?provedor=eq.zoho`
-    + '&select=client_id,client_secret,refresh_token,data_center&limit=1', { headers: cabSb });
-  const [c] = await r.json();
-  if (!c?.refresh_token) {
-    throw new Error('A Central não está conectada ao Zoho. Abra Acessos → Zoho e clique em conectar.');
-  }
-  return c;
-}
-
-async function tokenZoho(c) {
-  let dc = String(c.data_center || '.com');
-  if (!dc.startsWith('.')) dc = '.' + dc;
-  const r = await fetch(`https://accounts.zoho${dc}/oauth/v2/token`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      grant_type: 'refresh_token',
-      client_id: c.client_id, client_secret: c.client_secret, refresh_token: c.refresh_token,
-    }),
-  });
-  const j = await r.json().catch(() => null);
-  if (!j?.access_token) throw new Error('Não consegui entrar no Zoho.');
-  return j.access_token;
-}
-
-const wdCab = (t) => ({ Authorization: `Zoho-oauthtoken ${t}`, Accept: 'application/vnd.api+json' });
-
-async function pastasDe(t, paiId) {
-  const r = await fetch(`${WD}/files/${encodeURIComponent(paiId)}/folders?page%5Blimit%5D=200`,
-    { headers: wdCab(t) });
-  if (!r.ok) return [];
-  const j = await r.json().catch(() => null);
-  return (j?.data ?? []).map((f) => ({ id: String(f.id), nome: String(f?.attributes?.name ?? '').trim() }));
-}
-
-async function acharOuCriarPasta(t, paiId, nome) {
-  const jaTem = (await pastasDe(t, paiId)).find((p) => p.nome === nome);
-  if (jaTem) return jaTem.id;
-  const r = await fetch(`${WD}/files`, {
-    method: 'POST',
-    headers: { ...wdCab(t), 'Content-Type': 'application/json' },
-    body: JSON.stringify({ data: { attributes: { name: nome, parent_id: paiId }, type: 'files' } }),
-  });
-  const j = await r.json().catch(() => null);
-  if (!r.ok) throw new Error(`não consegui criar a pasta "${nome}" no Zoho (HTTP ${r.status})`);
-  const nova = Array.isArray(j?.data) ? j.data[0] : j?.data;
-  const id = nova?.id ?? nova?.attributes?.resource_id;
-  if (!id) throw new Error(`o Zoho criou a pasta "${nome}" e não disse o identificador dela`);
-  return String(id);
-}
-
-async function subirArquivo(t, pastaId, nome, texto) {
-  const fd = new FormData();
-  fd.append('content', new Blob([texto], { type: 'application/json' }), nome);
-  const r = await fetch(`${WD}/upload?filename=${encodeURIComponent(nome)}`
-    + `&parent_id=${encodeURIComponent(pastaId)}&override-name-exist=true`, {
-    method: 'POST',
-    // Sem Content-Type de propósito: quem monta a fronteira do multipart é o
-    // próprio fetch, a partir do FormData. Escrever à mão quebra o envio.
-    headers: wdCab(t),
-    body: fd,
-  });
-  if (!r.ok) throw new Error(`o Zoho recusou ${nome} (HTTP ${r.status})`);
-}
-
-async function baixarArquivo(t, pastaId, nome) {
-  const r = await fetch(`${WD}/files/${encodeURIComponent(pastaId)}/files?page%5Blimit%5D=200`,
-    { headers: wdCab(t) });
-  if (!r.ok) return null;
-  const j = await r.json().catch(() => null);
-  const achado = (j?.data ?? []).find((f) => String(f?.attributes?.name ?? '').trim() === nome);
-  if (!achado) return null;
-  const d = await fetch(`${WD}/download/${encodeURIComponent(achado.id)}`,
-    { headers: { Authorization: `Zoho-oauthtoken ${t}` } });
-  return d.ok ? await d.text() : null;
-}
-
-async function mandarParaLixeira(t, id) {
-  const r = await fetch(`${WD}/files/${encodeURIComponent(id)}`, {
-    method: 'PATCH',
-    headers: { ...wdCab(t), 'Content-Type': 'application/json' },
-    body: JSON.stringify({ data: { attributes: { status: '51' }, type: 'files' } }),
-  });
-  return r.ok;
-}
-
 /** Conta ao painel de saúde que esta rodada aconteceu, e como foi. */
 async function registrar(deuCerto, recado) {
   try {
@@ -265,6 +181,8 @@ process.on('unhandledRejection', async (erro) => {
 // ── a rodada ─────────────────────────────────────────────────────────────────
 
 const soma = (texto) => createHash('sha256').update(texto).digest('hex');
+const subirArquivoDoMes = (t, pasta, texto) =>
+  subirArquivo(t, pasta, 'manifesto.json', texto, 'application/json', false);
 const hoje = new Date();
 const p = (n) => String(n).padStart(2, '0');
 const DIA = `${hoje.getFullYear()}-${p(hoje.getMonth() + 1)}-${p(hoje.getDate())}`;
@@ -342,7 +260,7 @@ if (ensaio) {
   process.exit(0);
 }
 
-const conexao = await conexaoZoho();
+const conexao = await conexaoZoho(REST, cabSb);
 const tz = await tokenZoho(conexao);
 const base = await acharOuCriarPasta(tz, RAIZ, PASTA_BASE);
 const pastaDiaria = await acharOuCriarPasta(tz, base, 'diario');
@@ -377,8 +295,8 @@ if (ultima) {
 }
 
 const pastaDoDia = await acharOuCriarPasta(tz, pastaDiaria, DIA);
-for (const a of arquivos) await subirArquivo(tz, pastaDoDia, a.nome, a.texto);
-await subirArquivo(tz, pastaDoDia, 'manifesto.json', JSON.stringify(manifesto, null, 2));
+for (const a of arquivos) await subirArquivo(tz, pastaDoDia, a.nome, a.texto, 'application/json', false);
+await subirArquivo(tz, pastaDoDia, 'manifesto.json', JSON.stringify(manifesto, null, 2), 'application/json', false);
 console.log(`\nenviado para ${PASTA_BASE} / diario / ${DIA}`);
 
 // A cópia mensal: só o que NÃO é dado de cliente. Ver o comentário de DE_CLIENTE.
@@ -386,8 +304,8 @@ if (hoje.getDate() === 1 || process.argv.includes('--mensal')) {
   const pastaMensal = await acharOuCriarPasta(tz, base, 'mensal');
   const doMes = await acharOuCriarPasta(tz, pastaMensal, MES);
   const semCliente = arquivos.filter((a) => !DE_CLIENTE.has(a.nome.replace(/\.jsonl$/, '')));
-  for (const a of semCliente) await subirArquivo(tz, doMes, a.nome, a.texto);
-  await subirArquivo(tz, doMes, 'manifesto.json', JSON.stringify({
+  for (const a of semCliente) await subirArquivo(tz, doMes, a.nome, a.texto, 'application/json', false);
+  await subirArquivoDoMes(tz, doMes, JSON.stringify({
     ...manifesto, tipo: 'mensal',
     sem_dado_de_cliente: [...DE_CLIENTE],
     porque: 'Dado de cliente fica so na copia diaria de 30 dias: guardar por 12 meses briga com o direito ao apagamento.',

@@ -559,6 +559,10 @@ E três que são deste desenho:
 | `coletor/restaurar-copia.mjs` | confere e restaura num schema separado; restauração provada |
 | `.github/workflows/copia-do-banco.yml` | 06h12 UTC todo dia; domingo com o histórico de métrica |
 | painel de saúde | o robô da cópia entrou como **crítico**, cobra após 30h |
+| `vessel_pedidos`, `vessel_pedido_itens`, `vessel_envios_ao_meta` | a camada 3, com 456 pedidos de 90 dias |
+| `coletor/trazer-pedidos-do-bling.mjs` | diário às 07h34 UTC |
+| `coletor/espelhar-vessel-no-zoho.mjs` | de hora em hora, 4 planilhas |
+| `coletor/lib/zoho-da-central.mjs` | as funções do Zoho, num lugar só |
 
 **A prova de ponta a ponta da cópia, feita hoje:** as 113 tabelas subiram para o
 WorkDrive, foram baixadas de volta, toda soma de verificação bateu, a
@@ -571,7 +575,11 @@ apagado.
 1. ~~A camada 3~~ — **FEITA em 17/09/2026.** `vessel_pedidos`,
    `vessel_pedido_itens` e `vessel_envios_ao_meta` no ar, com o robô
    `coletor/trazer-pedidos-do-bling.mjs` e agendamento diário às 07h34 UTC.
-2. **Os espelhos das tabelas novas** no CSV do WorkDrive.
+2. ~~Os espelhos das tabelas novas~~ — **FEITOS em 17/09/2026.**
+   `coletor/espelhar-vessel-no-zoho.mjs`, de hora em hora, em
+   `04. Vessel Brasil / 17. Marketing / Base de clientes`: pessoas,
+   atendimentos, convites abertos e vendas. Mesma disciplina de sempre — compara
+   o arquivo INTEIRO e só regrava o que mudou.
 3. **O texto das três finalidades novas** da política de privacidade. Até ele
    subir, a página do Appointment Card **não chama** `vessel_registrar_cartao` —
    a porta existe e está fechada por escolha, não por falta.
