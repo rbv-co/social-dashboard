@@ -53,6 +53,11 @@ import { createClient } from 'jsr:@supabase/supabase-js@2';
 // A regra do casamento mora fora daqui, em `_shared`, porque e ela que decide
 // se a cliente ganha a garantia na hora ou espera na fila — e la ela tem teste.
 import { casaComOSku } from '../_shared/casar-sku-do-bling.js';
+// A regra de nome de quem deu (Tarefa 2), usada só no caminho "É presente?"
+// lá embaixo: `nomesBatem` é a regra estrita, sempre válida; `nomesChegamPerto`
+// é a regra frouxa, e só pode ser usada quando o pedido do Bling tem a marca
+// PRESENTE (ver o uso, junto de `tem_marca`, mais abaixo).
+import { nomesBatem, nomesChegamPerto } from '../_shared/nome-de-quem-deu.js';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -340,11 +345,3 @@ Deno.serve(async (req) => {
   }
   return responder({ ok: true, estado: 'aprovado', garantia_ate: decidido.garantia_ate });
 });
-
-// A regra de nome de quem deu (Tarefa 2) só é usada no caminho "É presente?",
-// lá em cima. O import fica aqui embaixo — e não junto dos outros, no topo —
-// de propósito: import de módulo ES é IÇADO (funciona igual não importa onde
-// a linha física mora no arquivo), e isso mantém o `nomesChegamPerto` perto
-// do único lugar em que ele é usado, junto da marca PRESENTE que autoriza a
-// regra frouxa — em vez de repetir esse contexto duas vezes no arquivo.
-import { nomesBatem, nomesChegamPerto } from '../_shared/nome-de-quem-deu.js';

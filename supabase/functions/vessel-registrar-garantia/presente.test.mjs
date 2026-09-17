@@ -15,9 +15,21 @@ test('⚠️ o caminho do presente exige UM candidato só', () => {
 
 test('⚠️ a regra frouxa só vale com a marca PRESENTE', () => {
   // Sem a marca, "Ana Sousa" não pode virar "Ana Souza" sozinho.
-  const i = FONTE.indexOf('nomesChegamPerto');
-  assert.ok(i > 0, 'a edge tem de usar a regra frouxa');
-  assert.match(FONTE.slice(Math.max(0, i - 300), i + 200), /tem_marca/);
+  //
+  // ⚠️ Rodada de correção 1: a versão anterior media uma JANELA DE
+  // CARACTERES (-300/+200) a partir da PRIMEIRA ocorrência de
+  // "nomesChegamPerto" no arquivo. Isso é frágil: a própria linha de
+  // `import { ..., nomesChegamPerto } from ...` já contém o texto
+  // "nomesChegamPerto", e se ela vier ANTES do uso de verdade (o normal, e
+  // como o código está escrito), a distância medida é a do import até
+  // qualquer coisa perto dele — não prova nada sobre o USO da função. Prova
+  // certa: achar a linha que de fato CHAMA `nomesChegamPerto` (descartando a
+  // linha de import) e exigir `tem_marca` NELA.
+  const linhaDeUso = FONTE.split('\n').find((linha) =>
+    linha.includes('nomesChegamPerto(') && !linha.trimStart().startsWith('import'));
+  assert.ok(linhaDeUso, 'a edge tem de USAR a regra frouxa, não só importá-la');
+  assert.match(linhaDeUso, /tem_marca/,
+    'a regra frouxa (nomesChegamPerto) só pode entrar junto da marca PRESENTE');
 });
 
 test('a decisão de aprovar é a mesma da regra pura', () => {
