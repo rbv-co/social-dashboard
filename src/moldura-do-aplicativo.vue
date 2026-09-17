@@ -1,5 +1,14 @@
 <template>
   <div class="moldura">
+    <!-- Faixa de aviso de "entrar como": só existe na aba aberta via "Entrar
+         como" (Task 5 detecta o modo pelo sessionStorage isolado da aba).
+         Fica em primeiro lugar dentro da moldura e position:fixed no topo,
+         para nenhuma tela cobrir o aviso de que a sessão é de outra pessoa. -->
+    <div v-if="emModoEntrarComo" class="faixa-entrar-como">
+      Você está vendo como <b>{{ estado.user?.email }}</b>
+      <button type="button" @click="sairDoModoEntrarComo">Sair</button>
+    </div>
+
     <!-- Fundo animado global (orbs/anéis/ícones flutuantes). CSS em estilos-globais.css (#bg-shapes).
          Escondido em telas densas (ex.: admin) onde atrapalha a leitura. -->
     <div id="bg-shapes" aria-hidden="true" v-show="mostrarFundo">
@@ -178,7 +187,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import AvisoDeAtualizacao from './compartilhado/aviso-de-atualizacao.vue'
 import { useRouter, useRoute } from 'vue-router'
 import { estado } from './compartilhado/controle-de-login-e-usuario.js'
-import { sbClient } from './compartilhado/conectar-no-banco-de-dados.js'
+import { sbClient, emModoEntrarComo } from './compartilhado/conectar-no-banco-de-dados.js'
 import { inscrever, jaInscrito, permissaoAtual, pushSuportado, registrarSW, devePedirPush, deveInscreverEmSilencio, observarPermissao } from './compartilhado/notificacoes-push.js'
 import { recadoDoPush, deuCerto } from './compartilhado/recado-do-push.js'
 // O recado do push tambem sai por aqui quando o convite nao esta aberto (o
@@ -271,6 +280,20 @@ async function sair() {
   menuAberto.value = false
   try { await sbClient.auth.signOut() } catch (e) { /* segue para o login de qualquer forma */ }
   router.push({ name: 'login' })
+}
+
+// Sai do modo "entrar como" — função DIFERENTE de sair(): esta roda na aba
+// que foi aberta pelo botão "Entrar como" (window.open em tela-de-visao-como.vue)
+// e o objetivo é fechar essa aba, não navegar para o login dentro dela.
+async function sairDoModoEntrarComo() {
+  try { await sbClient.auth.signOut() } catch (e) { /* segue mesmo assim */ }
+  try { sessionStorage.removeItem('modo_entrar_como') } catch (e) {}
+  // A aba foi aberta por script (window.open em tela-de-visao-como.vue),
+  // entao fecha sem pedir permissao na maioria dos navegadores.
+  window.close()
+  // Se o navegador recusar fechar (aba que o usuario navegou manualmente
+  // depois), cai aqui: mostra o login normal, sem sessao nenhuma.
+  setTimeout(() => { window.location.href = '/login' }, 300)
 }
 
 /* ── Trocar senha (o usuário digita a própria senha nova) ── */
@@ -468,6 +491,14 @@ router.afterEach(() => fecharTodosOsModaisLegadosAoTrocarDeRota())
 </script>
 
 <style scoped>
+/* ── Faixa "entrar como" ── Roxo porque a mesma cor já significa "algo
+   automatizado/fora do fluxo normal está agindo em seu nome" no resto da
+   Central (item 2 do PADRAO-DA-CENTRAL), e "você está vestindo a sessão de
+   outra pessoa" é exatamente esse tipo de estado. ── */
+.faixa-entrar-como{position:fixed;top:0;left:0;right:0;z-index:10000;display:flex;align-items:center;justify-content:center;gap:var(--sp-3);flex-wrap:wrap;padding:8px var(--gutter);background:var(--roxo);color:var(--sobre-cor);font-family:var(--fonte-principal);font-size:max(9px, calc(12.5px * var(--escala-texto, 1)));text-align:center;}
+.faixa-entrar-como button{flex-shrink:0;min-height:32px;padding:4px 14px;border:1px solid var(--sobre-cor);border-radius:var(--radius-md);background:transparent;color:var(--sobre-cor);font-family:inherit;font-size:inherit;font-weight:600;cursor:pointer;}
+.faixa-entrar-como button:hover{background:color-mix(in srgb, var(--sobre-cor) 15%, transparent);}
+
 /* ── Perfil ── */
 /* top respeita a área segura do iOS (notch / Dynamic Island) — senão o avatar
    fica embaixo do entalhe no iPhone com o app na Tela de Início. */
