@@ -128,5 +128,20 @@ Deno.serve(async (req) => {
     return responder(data ?? { ok: false, motivo: 'falhou' });
   }
 
+  if (corpo.acao === 'minhas-pecas') {
+    // ⚠️ MESMO PADRÃO DAS OUTRAS AÇÕES: o rpc já lê o dono pelo TOKEN da
+    // sessão (`vessel_conta_da_sessao` por dentro) — a edge nunca manda um
+    // id de cliente vindo da página. `error` (falha de infraestrutura) é
+    // desestruturado e tratado à parte, sem dado de cliente no log; o `data`
+    // do banco (que já traz {ok:false, motivo:'sem_sessao'} para token
+    // vencido/errado) segue direto para a página.
+    const { data, error } = await sb.rpc('vessel_minhas_pecas', { p_token: corpo.token });
+    if (error) {
+      console.error('vessel_minhas_pecas', error.message);
+      return responder({ ok: false, motivo: 'falhou' });
+    }
+    return responder(data ?? { ok: false, motivo: 'falhou' });
+  }
+
   return responder({ ok: false, motivo: 'acao_desconhecida' }, 400);
 });

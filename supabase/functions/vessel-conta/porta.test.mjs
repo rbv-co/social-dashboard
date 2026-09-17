@@ -69,8 +69,10 @@ test('⚠️ a edge não responde nada sem passar pelas funções do banco', () 
   assert.match(FONTE, /rpc\('vessel_conta_entrar'/);
 });
 
-test('a edge trata as seis ações', () => {
-  for (const acao of ['criar', 'entrar', 'sair', 'esqueci', 'editar', 'eu']) {
+test('a edge trata as sete ações', () => {
+  // 'minhas-pecas' entrou na Tarefa 9 (Registered Pieces — Contas Fase 1):
+  // a tela "Minhas peças" lista o que está no nome da cliente logada.
+  for (const acao of ['criar', 'entrar', 'sair', 'esqueci', 'editar', 'eu', 'minhas-pecas']) {
     assert.ok(FONTE.includes(`'${acao}'`), `falta a ação ${acao}`);
   }
 });
@@ -124,7 +126,7 @@ test('⚠️ "esqueci" nunca devolve o e-mail da cliente, e a resposta de sucess
   }
 });
 
-test('⚠️ as seis chamadas de rpc conferem `error` e não deixam falha de infraestrutura calada', () => {
+test('⚠️ as sete chamadas de rpc conferem `error` e não deixam falha de infraestrutura calada', () => {
   // Achado de revisão: sem olhar `error`, um parâmetro que um dia divergir do
   // banco faz o erro do Postgres sumir — a edge devolve o mesmo {ok:false}
   // genérico de uma tentativa legítima, e ninguém percebe. Cada rpc tem de
@@ -132,6 +134,7 @@ test('⚠️ as seis chamadas de rpc conferem `error` e não deixam falha de inf
   const nomesDeRpc = [
     'vessel_conta_criar', 'vessel_conta_entrar', 'vessel_conta_da_sessao',
     'vessel_conta_sair', 'vessel_conta_nova_senha', 'vessel_conta_editar',
+    'vessel_minhas_pecas',
   ];
   for (const nome of nomesDeRpc) {
     const marcador = `rpc('${nome}'`;
@@ -147,7 +150,7 @@ test('⚠️ as seis chamadas de rpc conferem `error` e não deixam falha de inf
   // ⚠️ Nada de dado da cliente no log de erro — nem senha, nem token, nem
   // CPF, nem e-mail. Só o nome do rpc e a mensagem do Postgres.
   const logs = FONTE.match(/console\.error\([^)]*\)/gs) ?? [];
-  assert.ok(logs.length >= 6, `esperava pelo menos 6 console.error (um por rpc), achei ${logs.length}`);
+  assert.ok(logs.length >= 7, `esperava pelo menos 7 console.error (um por rpc), achei ${logs.length}`);
   for (const log of logs) {
     for (const proibido of [/\bsenha\b/i, /\btoken\b/i, /\bcpf\b/i, /\bemail\b/i]) {
       assert.ok(!proibido.test(log), `log de erro carrega dado da cliente: ${log}`);
