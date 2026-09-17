@@ -3341,6 +3341,13 @@ function _confirmarEntrarComo(nome) {
   return confirm(`Entrar como "${nome}"?\n\nVocê vai abrir a Central autenticado de verdade como ela, numa aba separada. Isto fica registrado.`)
 }
 
+// Texto PRÓPRIO — o de "Entrar como" fala em abrir aba, e "Copiar link" não
+// abre nada sozinho. Confirmação com a frase errada lê como bug (foi
+// reportado como "o botão de copiar tá abrindo pop-up").
+function _confirmarCopiarLink(nome) {
+  return confirm(`Copiar um link de sessão real como "${nome}"?\n\nQuem abrir esse link entra na Central autenticado como ela. Isto fica registrado.`)
+}
+
 // Chama a Edge Function e devolve o fragmento de URL pronto (#access_token=...).
 // Cada chamada minta uma sessão nova e grava uma linha de auditoria — não há
 // como "reaproveitar" uma sessão entre o botão "Entrar como" e "Copiar link".
@@ -3430,7 +3437,7 @@ function _construirAcoes(p, u, { isSelf, canEdit }) {
     copiarLinkBtn.setAttribute('aria-label', `Copiar link de sessão real como "${p.nome || p.email}"`)
     copiarLinkBtn.title = `Copiar um link de sessão real como "${p.nome || p.email}", para colar numa aba nova`
     copiarLinkBtn.addEventListener('click', async () => {
-      if (!_confirmarEntrarComo(p.nome || p.email)) return
+      if (!_confirmarCopiarLink(p.nome || p.email)) return
       try {
         const hash = await _sessaoDeEntrarComo(u.id)
         const link = `${window.location.origin}/?modo=entrar-como#${hash}`
