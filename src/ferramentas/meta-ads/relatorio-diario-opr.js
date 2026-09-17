@@ -69,6 +69,11 @@ function somar(campanhas, campo) {
 //   (visitasPerfilNoPeriodoComCache), só caindo pra soma-por-hora nos
 //   dias ainda não fechados. Backfill de 30 dias rodado. 16/09 bateu:
 //   1642 visitas, custo por visita R$0,30, conversão 10,4%.
+// - Painel Engagement inteiro (17/09/2026) — batido contra a Graph API
+//   (act_.../insights, classificado com tipoDaCampanha) E contra
+//   campaign_insights do banco: ontem (16/09) foram 289 curtidas, 1
+//   comentário, 2 compartilhamentos, 1 salvamento, 293 interações no
+//   total, R$362,98 de investimento — custos batendo nas duas fontes.
 const CAMPOS_CONFIRMADOS = new Set([
   'header.novosSeguidores',
   'growth.seguidores',
@@ -80,6 +85,17 @@ const CAMPOS_CONFIRMADOS = new Set([
   'header.leadsGerados',
   'growth.investimento',
   'growth.custoPorSeguidor',
+  'engagement.investimento',
+  'engagement.curtidas',
+  'engagement.comentarios',
+  'engagement.compartilhamentos',
+  'engagement.salvamentos',
+  'engagement.custoPorCurtida',
+  'engagement.custoPorComentario',
+  'engagement.custoPorCompartilhamento',
+  'engagement.custoPorSalvamento',
+  'engagement.totalInteracoes',
+  'engagement.custoMedioPorEngajamento',
 ]);
 
 function ligado(secao, campo, valor) {
