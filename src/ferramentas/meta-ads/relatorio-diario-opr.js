@@ -48,9 +48,20 @@ function somar(campanhas, campo) {
 //   followers_leituras: ontem (16/09) foi de 18622 (última leitura de
 //   15/09, 02:59 UTC) pra 18792 (última leitura de 16/09, 02:59 UTC) = 170,
 //   igual ao que a tela já mostrava.
+// - header.investimentoTotal / header.engajamentos / header.leadsGerados
+//   (17/09/2026) — batido contra a Graph API (act_.../insights,
+//   level=campaign, classificado com o mesmo tipoDaCampanha do projeto) E
+//   contra campaign_insights do banco, ambos rodando o pipeline real
+//   (agruparCampanhasDoDia + calcularDadosOpr): ontem (16/09) fechou em
+//   R$857,09 de investimento (seguidores+engajamento+wpp, nunca a
+//   campanha "outro"), 1008 engajamentos, 1 lead — igual ao que a tela já
+//   mostrava.
 const CAMPOS_CONFIRMADOS = new Set([
   'header.novosSeguidores',
   'growth.seguidores',
+  'header.investimentoTotal',
+  'header.engajamentos',
+  'header.leadsGerados',
 ]);
 
 function ligado(secao, campo, valor) {

@@ -98,14 +98,20 @@ test('⚠️ montarDadosOpr: só os campos confirmados saem com valor, o resto c
     { campaign_id: 'c2', spend: 200, likes: 30, comments: 5, shares: 2, saves: 3, post_engagement: 80 },
   ], { c1: '[CAMPANHA WPP] X', c2: '[+ ENGAJAMENTO] Y' });
 
+  const esperado = calcularDadosOpr(campanhas, 12, 150);
   const dados = montarDadosOpr(campanhas, 12, 150);
-  const CONFIRMADOS = new Set(['header.novosSeguidores', 'growth.seguidores']);
+  // Mantido em sincronia à mão com o `CAMPOS_CONFIRMADOS` real do arquivo —
+  // se um lado mudar sem o outro, este teste é quem acusa a divergência.
+  const CONFIRMADOS = new Set([
+    'header.novosSeguidores', 'growth.seguidores',
+    'header.investimentoTotal', 'header.engajamentos', 'header.leadsGerados',
+  ]);
 
   for (const secao of ['header', 'growth', 'engagement', 'sales', 'mix']) {
     for (const campo of Object.keys(dados[secao])) {
       const chave = `${secao}.${campo}`;
       if (CONFIRMADOS.has(chave)) {
-        assert.equal(dados[secao][campo], 12, `${chave} é confirmado — deveria sair com o valor calculado (12)`);
+        assert.equal(dados[secao][campo], esperado[secao][campo], `${chave} é confirmado — deveria sair com o valor calculado`);
       } else {
         assert.equal(dados[secao][campo], null, `${chave} deveria ser null (ainda não confirmado)`);
       }
