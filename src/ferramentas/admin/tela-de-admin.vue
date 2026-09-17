@@ -3337,6 +3337,24 @@ function _criarLinhaPessoa(p, gaveta, currentEmail) {
 // As ações de uma pessoa, num bloco só. Usada pela LINHA (no computador) e pela
 // FICHA (sempre) — uma função só para os dois, senão os dois lugares divergem
 // e um deles fica com o comportamento velho sem ninguém perceber.
+function _confirmarEntrarComo(nome) {
+  return confirm(`Entrar como "${nome}"?\n\nVocê vai abrir a Central autenticado de verdade como ela, numa aba separada. Isto fica registrado.`)
+}
+
+// Chama a Edge Function e devolve o fragmento de URL pronto (#access_token=...).
+// Cada chamada minta uma sessão nova e grava uma linha de auditoria — não há
+// como "reaproveitar" uma sessão entre o botão "Entrar como" e "Copiar link".
+async function _sessaoDeEntrarComo(alvoId) {
+  const r = await fetch(`${SUPABASE_URL}/functions/v1/entrar-como-usuario`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${adTok()}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ alvoId }),
+  })
+  const dados = await r.json().catch(() => null)
+  if (!r.ok || !dados || dados.error) throw new Error(dados?.error || 'Não consegui gerar a sessão.')
+  return `access_token=${dados.access_token}&refresh_token=${dados.refresh_token}&expires_in=${dados.expires_in}&token_type=bearer&type=magiclink`
+}
+
 function _construirAcoes(p, u, { isSelf, canEdit }) {
   const acoes = mkEl('div', 'usr-acoes')
 
@@ -3369,16 +3387,45 @@ function _construirAcoes(p, u, { isSelf, canEdit }) {
     permBtn.addEventListener('click', () => openPermModal(u))
     acoes.appendChild(permBtn)
 
-    // Abre em nova aba, só leitura — nunca a sessão real dela (ver o motivo
-    // completo em admin/visao-como-usuario.js). Mesmo padrão de abrir em nova
-    // aba já usado no Escritório 3D (tela-de-inicio.vue).
-    const visaoBtn = mkEl('button', 'btn usr-acao-btn'); visaoBtn.type = 'button'; visaoBtn.textContent = 'Visão como'
-    visaoBtn.title = `Ver quais painéis "${p.nome || p.email}" enxerga, sem abrir a conta dela`
-    visaoBtn.addEventListener('click', () => {
-      const { href } = router.resolve({ name: 'admin-visao', params: { id: u.id } })
-      window.open(href, '_blank')
+    // ENTRAR COMO — sessão real da pessoa, via entrar-como-usuario (Edge
+    // Function, chave de serviço, gera o token com auth.admin.generateLink +
+    // verifyOtp e grava auditoria). Nunca senha, nunca a sessão do admin é
+    // tocada — cada clique confirma, mints uma sessão nova e audita.
+    //
+    // Dois botões porque alguns navegadores bloqueiam window.open depois de
+    // um await (o popup só é permitido dentro do mesmo gesto síncrono do
+    // clique) — "Copiar link" é o caminho manual quando isso acontece.
+    const entrarBtn = mkEl('button', 'btn usr-acao-btn btn-perigo'); entrarBtn.type = 'button'; entrarBtn.textContent = 'Entrar como'
+    entrarBtn.title = `Abrir a Central autenticado como "${p.nome || p.email}"`
+    entrarBtn.addEventListener('click', async () => {
+      if (!_confirmarEntrarComo(p.nome || p.email)) return
+      // Reserva a aba ANTES do fetch: depois de um await, o navegador trata
+      // window.open como popup e bloqueia.
+      const aba = window.open('', '_blank')
+      try {
+        const hash = await _sessaoDeEntrarComo(u.id)
+        if (aba) aba.location.href = `/?modo=entrar-como#${hash}`
+        else adminToast('O navegador bloqueou a aba nova. Use "Copiar link" ao lado.', false)
+      } catch (e) {
+        aba?.close()
+        adminToast(e.message || 'Não consegui entrar como essa pessoa.', false)
+      }
     })
-    acoes.appendChild(visaoBtn)
+    acoes.appendChild(entrarBtn)
+
+    const copiarLinkBtn = mkEl('button', 'btn usr-acao-btn btn-perigo'); copiarLinkBtn.type = 'button'; copiarLinkBtn.textContent = 'Copiar link'
+    copiarLinkBtn.title = `Copiar um link de sessão real como "${p.nome || p.email}", para colar numa aba nova`
+    copiarLinkBtn.addEventListener('click', async () => {
+      if (!_confirmarEntrarComo(p.nome || p.email)) return
+      try {
+        const hash = await _sessaoDeEntrarComo(u.id)
+        await navigator.clipboard.writeText(`${window.location.origin}/?modo=entrar-como#${hash}`)
+        adminToast('Link copiado — cole numa aba nova')
+      } catch (e) {
+        adminToast(e.message || 'Não consegui gerar o link.', false)
+      }
+    })
+    acoes.appendChild(copiarLinkBtn)
 
     const disBtn = mkEl('button', 'btn usr-acao-btn' + (u.disabled ? '' : ' btn-perigo'))
     disBtn.type = 'button'; disBtn.textContent = u.disabled ? 'Ativar' : 'Desativar'

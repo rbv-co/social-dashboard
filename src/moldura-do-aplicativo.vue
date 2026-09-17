@@ -297,7 +297,7 @@ async function sair() {
 }
 
 // Sai do modo "entrar como" — função DIFERENTE de sair(): esta roda na aba
-// que foi aberta pelo botão "Entrar como" (window.open em tela-de-visao-como.vue)
+// que foi aberta pelo botão "Entrar como" (window.open em tela-de-admin.vue)
 // e o objetivo é fechar essa aba, não navegar para o login dentro dela.
 async function sairDoModoEntrarComo() {
   // scope 'local' é OBRIGATÓRIO aqui: a sessão desta aba é a REAL da pessoa-alvo,
@@ -306,7 +306,7 @@ async function sairDoModoEntrarComo() {
   // 'local' encerra só esta aba (sessionStorage). Não copie para `sair()`.
   try { await sbClient.auth.signOut({ scope: 'local' }) } catch (e) { /* segue mesmo assim */ }
   try { sessionStorage.removeItem('modo_entrar_como') } catch (e) {}
-  // A aba foi aberta por script (window.open em tela-de-visao-como.vue),
+  // A aba foi aberta por script (window.open em tela-de-admin.vue),
   // entao fecha sem pedir permissao na maioria dos navegadores.
   window.close()
   // Se o navegador recusar fechar (aba que o usuario navegou manualmente

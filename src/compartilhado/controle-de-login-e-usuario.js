@@ -146,9 +146,7 @@ const _legado = {
 }
 
 // Mesma regra de acesso de `hasPermission`, mas sobre um perfil explícito em
-// vez do `estado` global — para simular o acesso de OUTRA pessoa (Visão como,
-// em admin/visao-como-usuario.js) sem jamais tocar na sessão de quem está
-// logado. `hasPermission` é só esta função aplicada a `estado`.
+// vez do `estado` global. `hasPermission` é só esta função aplicada a `estado`.
 export function permissaoDoPerfil(perfil, recurso, acao = 'ver') {
   if (perfil?.is_superadmin) return true
   const key = _legado[recurso] || recurso
