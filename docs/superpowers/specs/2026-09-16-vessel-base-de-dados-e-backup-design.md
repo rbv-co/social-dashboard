@@ -624,8 +624,29 @@ Consertado em duas partes, e a segunda é a que importa:
 As duas diferenças têm causa conhecida:
 
 1. **Receita: o comercial conta BRUTO, antes do desconto do item; a tabela nova
-   conta LÍQUIDO.** Nenhum dos dois está errado — são perguntas diferentes. Quem
-   for montar o painel da T09 tem de escolher uma e dizer qual.
+   conta LÍQUIDO.**
+
+   ✅ **DECIDIDO pelo dono em 17/09/2026: o painel novo conta o que ENTROU NO
+   CAIXA.** A coluna é `vessel_pedidos.receita_liquida`, já calculada.
+
+   ⚠️ E o `total` do Bling **não é** esse número. Medido em 456 pedidos de 90
+   dias:
+
+   | | |
+   |---|---|
+   | itens, preço cheio | R$ 165.044,04 |
+   | − desconto do pedido | R$ 3.359,91 |
+   | = o que o Bling chama de "total" | **R$ 161.545,19** ← não desconta o desconto do ITEM |
+   | itens já com o desconto do item, − desconto do pedido | **R$ 151.370,19** |
+
+   **Dez mil reais de diferença em noventa dias.** Quem somasse
+   `total_do_bling` achando que era o líquido erraria 6% para cima, e erraria
+   calado. Por isso a coluna existe com nome que diz o que ela é, e a planilha
+   mostra as duas lado a lado: "Valor que entrou" e "Preço de tabela".
+
+   ⚠️ **O painel novo vai mostrar um número MENOR que o comercial.** Isso é
+   esperado e precisa estar escrito na tela, senão a primeira pergunta em toda
+   reunião vai ser essa.
 2. **Agrupamento: `gc_vendas_item` agrupa por DEPÓSITO; a tabela nova agrupa
    pela LOJA do pedido.** Um pedido pode sair de um depósito que não é o da loja
    — por isso o Atacado difere e por isso Loja Shopify e Atacado Fábrica nem

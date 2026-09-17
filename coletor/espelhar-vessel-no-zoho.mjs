@@ -113,8 +113,11 @@ const PLANILHAS = [
       const quem = new Map(pessoas.map((p) => [p.id, p.nome]));
       const loja = new Map(lojas.map((l) => [String(l.loja_id), l.nome]));
       return montarCsv(
+        // ⚠️ "Valor que entrou" e nao "Valor": o `total` do Bling nao desconta o
+        // desconto do item e sai ~6% maior. Coluna com nome vago e como alguem
+        // soma a errada sem perceber.
         ['Data da venda', 'Pedido', 'Loja', 'Cliente (no Bling)', 'Conhecemos?',
-         'Como casou', 'Valor', 'Contado pelo dia de'],
+         'Como casou', 'Valor que entrou', 'Preço de tabela', 'Contado pelo dia de'],
         pedidos.map((p) => [
           dia(p.data_da_venda), p.numero, loja.get(String(p.loja_id)) || '',
           p.contato_nome,
@@ -124,7 +127,8 @@ const PLANILHAS = [
           p.pessoa_id ? quem.get(p.pessoa_id) || 'sim' : 'órfã',
           p.casou_por === 'bling_contato' ? 'ficha do Bling'
             : p.casou_por === 'telefone' ? 'telefone' : '',
-          reais(p.total_corrigido ?? p.total_do_bling),
+          reais(p.receita_liquida),
+          reais(p.total_do_bling),
           p.origem_da_data === 'nota' ? 'nota fiscal' : 'pedido']));
     },
   },

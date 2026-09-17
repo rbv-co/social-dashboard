@@ -206,6 +206,21 @@ try {
         [linha.id, it.codigo || it.produto?.codigo || null, it.descricao || null,
          it.quantidade ?? null, it.valor ?? null, it.desconto ?? null, totalDoItem]);
     }
+    // ⚠️ A RECEITA LÍQUIDA É CALCULADA AQUI, depois dos itens, porque ela
+    // DEPENDE deles — e porque o `total` do Bling NÃO é esse número: ele não
+    // desconta o desconto do item e sai ~6% maior (medido: R$ 161.545 contra
+    // R$ 151.370 em 90 dias). Quem somasse a coluna errada erraria calado.
+    //
+    // Ajuste manual VENCE: quando a nota autorizada congelou o pedido errado, o
+    // valor corrigido é o dinheiro de verdade.
+    await cli.query(
+      `update vessel_pedidos p
+          set receita_liquida = round(greatest(
+                coalesce(p.total_corrigido,
+                         (select coalesce(sum(i.total_do_item), 0) from vessel_pedido_itens i
+                           where i.pedido_id = p.id) - coalesce(p.desconto, 0)),
+                0), 2)
+        where p.id = $1`, [linha.id]);
     gravados++;
   }
 
@@ -221,10 +236,10 @@ try {
       `select count(*)::int as pedidos,
               count(*) filter (where pessoa_id is not null)::int as com_pessoa,
               count(distinct bling_contato_id)::int as compradoras,
-              coalesce(sum(coalesce(total_corrigido, total_do_bling)), 0)::numeric(12,2) as receita
+              coalesce(sum(receita_liquida), 0)::numeric(12,2) as liquida
          from vessel_pedidos`);
     console.log(`\nno banco: ${t.pedidos} pedidos, ${t.compradoras} compradoras distintas, `
-      + `R$ ${t.receita} · ${t.com_pessoa} ligados a alguém que conhecemos`);
+      + `R$ ${t.liquida} que entraram · ${t.com_pessoa} ligados a alguém que conhecemos`);
   }
 } finally {
   await cli.end();
