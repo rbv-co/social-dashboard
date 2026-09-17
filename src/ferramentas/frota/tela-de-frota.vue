@@ -441,6 +441,18 @@ const paraConferir = computed(() => veiculosParaConferir({
     const q = quemDeveConferir(v, usos.value)
     return q.porViagem ? q.pessoaId : null
   },
+  // A AGENDA entra no checklist (17/09/2026). Sem isto, carro de RODÍZIO
+  // reservado pra alguém não caía no checklist de ninguém: `veiculosParaConferir`
+  // perguntava só posse/viagem e dono fixo. Medido no banco — o dono reservou o
+  // KWID RVU6B06 pro Caio Dias e o Caio abria o app sem nada pra fazer.
+  // `reservaSegurando` é a MESMA função que já decide se o carro está preso pra
+  // outra pessoa na lista de livres: uma pergunta só, duas telas.
+  reservadoPara: (v) => {
+    const r = reservaSegurando({
+      requisicoes: requisicoes.value, veiculoId: v.id, agoraIso: new Date().toISOString(),
+    })
+    return r ? (r.pessoa_id || null) : null
+  },
 }))
 /* Qual carro está aberto pra preencher. Guarda o ID, nunca o objeto: a lista é
  * recalculada a cada leitura, e um objeto guardado ficaria velho — depois de

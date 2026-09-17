@@ -368,8 +368,18 @@ export function resumoDaCobranca(linhas, hoje) {
  * teria um buraco: o quadro de cobrança JÁ olha a posse, então cobraria de
  * quem pegou emprestado uma ficha que o cartão não deixava preencher.
  */
-export function veiculosParaConferir({ veiculos, euId, ehGestor, fichas, hoje, quemEstaCom, emViagem }) {
+export function veiculosParaConferir({ veiculos, euId, ehGestor, fichas, hoje, quemEstaCom, emViagem, reservadoPara }) {
   const dono = typeof quemEstaCom === 'function' ? quemEstaCom : (v) => v.pessoa_id;
+  // A AGENDA DE RESERVAS entra aqui desde 17/09/2026. Até então a pergunta era
+  // só "quem está com o carro" e "de quem ele é" — e carro de RODÍZIO reservado
+  // pra alguém não caía no checklist de ninguém. Medido: o dono reservou o KWID
+  // RVU6B06 pro Caio Dias e o Caio abria o app sem nada pra fazer; em 14/09 o
+  // carro foi virado "fixo do Caio" só pra destravar a tela, o que é mentira
+  // sobre o dado — a reserva acaba dia 30, dono fixo não acaba.
+  //
+  // Vem como FUNÇÃO, no mesmo molde de `quemEstaCom`: esta função é pura e não
+  // conhece a agenda. Quem chama resolve a janela da reserva.
+  const reservado = typeof reservadoPara === 'function' ? reservadoPara : () => null;
   return (veiculos || [])
     .filter((v) => v && v.situacao === 'ativo')
     // A mesma pergunta que o resto da ferramenta já faz — reaproveitada, e não
@@ -381,7 +391,9 @@ export function veiculosParaConferir({ veiculos, euId, ehGestor, fichas, hoje, q
       // `euId &&` é obrigatório: sem ele, um carro de rodízio (`pessoa_id`
       // nulo) visto por quem não foi achado no cadastro (`euId` nulo) daria
       // `null === null` e abriria sozinho como se fosse o carro da pessoa.
-      meu: !!(euId && dono(v) === euId),
+      // A posse/dono vem PRIMEIRO e a reserva é o resgate: quem está com a chave
+      // na mão confere, mesmo que o carro esteja reservado pra outro amanhã.
+      meu: !!(euId && (dono(v) === euId || reservado(v) === euId)),
       // Está com a pessoa por VIAGEM aberta — não por posse nem no papel.
       naMinhaMao: !!(euId && typeof emViagem === 'function' && emViagem(v) === euId),
     }))

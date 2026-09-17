@@ -602,6 +602,47 @@ test('carro fora de operação não entra nem pro gestor', () => {
   assert.equal(l.some((x) => x.veiculo.id === 'v4'), false)
 })
 
+/* O DEFEITO, medido no banco em 17/09/2026. O dono reservou o KWID RVU6B06 pro
+   Caio Dias (reserva aprovada de 11/09 a 30/09, criada pelo próprio dono) e o
+   Caio abria o app e NÃO VIA o checklist. `veiculosParaConferir` só perguntava
+   duas coisas — quem está com o carro por posse/viagem, e quem é o dono fixo —
+   e a AGENDA DE RESERVAS não entrava na conta. Carro de rodízio reservado pra
+   alguém não aparecia pra ninguém conferir.
+
+   O rastro de que isso doeu: em 14/09 o KWID foi transformado em carro FIXO do
+   Caio (`frota_veiculos.atualizado_em` bate no segundo com a abertura da posse)
+   só pra destravar a tela — o que muda o significado do dado, porque a reserva
+   acaba dia 30 e "dono fixo" não acaba.
+
+   Pedido do dono, textual: "mesmo sendo eu que reservei pra ele, ele precisa
+   fazer o checklist". */
+test('reserva aprovada em vigor põe o carro no checklist de quem reservou', () => {
+  const reservadoPara = (v) => (v.id === 'v3' ? 'p1' : null)
+  const l = veiculosParaConferir({
+    veiculos: FROTA, euId: 'p1', ehGestor: false, fichas: [], hoje: '2026-08-06', reservadoPara,
+  })
+  assert.deepEqual(l.map((x) => x.veiculo.id), ['v1', 'v3'])
+  assert.equal(l.find((x) => x.veiculo.id === 'v3').meu, true)
+})
+
+test('reserva de OUTRA pessoa não põe o carro no meu checklist', () => {
+  const reservadoPara = (v) => (v.id === 'v3' ? 'p9' : null)
+  const l = veiculosParaConferir({
+    veiculos: FROTA, euId: 'p1', ehGestor: false, fichas: [], hoje: '2026-08-06', reservadoPara,
+  })
+  assert.deepEqual(l.map((x) => x.veiculo.id), ['v1'])
+})
+
+test('quem está com o carro na mão ganha da reserva de outro', () => {
+  // A posse é a verdade do momento: quem está com a chave é quem confere.
+  const reservadoPara = () => 'p9'
+  const l = veiculosParaConferir({
+    veiculos: FROTA, euId: 'p1', ehGestor: false, fichas: [], hoje: '2026-08-06',
+    quemEstaCom: (v) => (v.id === 'v3' ? 'p1' : v.pessoa_id), reservadoPara,
+  })
+  assert.equal(l.find((x) => x.veiculo.id === 'v3').meu, true)
+})
+
 test('carro que já tem ficha hoje sai da lista', () => {
   const fichas = [{ veiculo_id: 'v1', feita_em: '2026-08-06' }]
   const l = veiculosParaConferir({ veiculos: FROTA, euId: 'p1', ehGestor: true, fichas, hoje: '2026-08-06' })
