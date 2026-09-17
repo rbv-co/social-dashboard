@@ -23,6 +23,34 @@ npm run dev -- --port 5199 --strictPort   # porta fixa: há mais de uma janela n
 `coletor/.env` é gitignored e não vem em worktree novo — copie do checkout
 principal, senão dois testes da fábrica falham por credencial ausente.
 
+## AS CONTAS DESTE PROJETO — nunca trocar conta global
+
+Esta máquina tem **três contas de GitHub** (`brenoov`, `erickjcbp`, `emsilva99`) e
+mais de uma de Vercel, porque o dono toca vários projetos ao mesmo tempo e
+costuma ter **mais de uma janela aberta**. O iamundi é da conta de trabalho.
+
+**Regra: NUNCA rodar `gh auth switch` nem `vercel switch`.** A troca é global e
+derruba a outra janela, que pode estar em produção. Em 13/08/2026 e de novo em
+17/09/2026 isso custou tempo.
+
+- **GitHub** → `rbv-co/social-dashboard`, conta `brenoov`. **Já é automático:**
+  está gravado no `git config` **local** desta pasta um ajudante de credencial
+  que busca o acesso da conta certa na hora do comando. `git push` e `git pull`
+  comuns funcionam daqui seja qual for a conta ativa. Nenhum segredo em arquivo.
+  ⚠️ Se precisar refazer: o `-c credential.helper=` **vazio** antes do ajudante é
+  obrigatório — `credential.helper` é uma LISTA que acumula, e sem zerar a fila o
+  `osxkeychain` responde primeiro, com a conta errada.
+- **Vercel** → time `brenoov-7581s-projects`, projeto `social-dashboard`. A
+  conexão interna (MCP da Vercel) **já está nesta conta**; não precisa login.
+  O CLI da Vercel é que não tem login global — se precisar dele aqui, usar um
+  login por pasta (`vercel login --global-config ~/.vercel-iamundi`) em vez de
+  trocar conta.
+
+**Sintoma que engana:** repositório privado + conta errada dá **`Repository not
+found`**, e não "sem permissão" — parece repositório apagado ou renomeado, e não
+é. Conferir a lista da conta dona antes de investigar qualquer outra coisa:
+`GH_TOKEN=$(gh auth token -u brenoov) gh repo list rbv-co`
+
 ## ⚠️ ANTES DE PUBLICAR EDGE FUNCTION (`supabase functions deploy`)
 
 **Mais de uma pessoa publica robô neste projeto, cada uma do próprio computador.**
