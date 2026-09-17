@@ -3399,6 +3399,11 @@ function _construirAcoes(p, u, { isSelf, canEdit }) {
     // .btn-perigo. A cor de perigo é para o que é difícil de desfazer
     // (Desativar, Excluir, logo abaixo); usar a mesma cor aqui ensinaria a
     // pessoa a temer um botão que só abre uma sessão, igual ao "Permissões".
+    // Os dois moram num grupo próprio: `.usr-acoes` quebra linha por botão
+    // (flex-wrap), e sem este agrupador o ícone de copiar podia cair sozinho
+    // na linha de baixo, longe do "Entrar como" que ele complementa.
+    const entrarGrupo = mkEl('div', 'usr-acao-grupo')
+
     const entrarBtn = mkEl('button', 'btn usr-acao-btn'); entrarBtn.type = 'button'; entrarBtn.textContent = 'Entrar como'
     entrarBtn.title = `Abrir a Central autenticado como "${p.nome || p.email}"`
     entrarBtn.addEventListener('click', async () => {
@@ -3415,12 +3420,12 @@ function _construirAcoes(p, u, { isSelf, canEdit }) {
         adminToast(e.message || 'Não consegui entrar como essa pessoa.', false)
       }
     })
-    acoes.appendChild(entrarBtn)
+    entrarGrupo.appendChild(entrarBtn)
 
-    // Só ícone, sem rótulo — "Copiar link" por extenso ao lado de "Entrar
-    // como" competia pela mesma ação em duas frases. `aria-label`/`title`
-    // seguram a acessibilidade que o texto visível deixou de dar.
-    const copiarLinkBtn = mkEl('button', 'btn usr-acao-btn'); copiarLinkBtn.type = 'button'
+    // Só ícone, sem rótulo nem borda — "Copiar link" por extenso ao lado de
+    // "Entrar como" competia pela mesma ação em duas frases. `aria-label`/
+    // `title` seguram a acessibilidade que o texto visível deixou de dar.
+    const copiarLinkBtn = mkEl('button', 'usr-acao-icone'); copiarLinkBtn.type = 'button'
     copiarLinkBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>'
     copiarLinkBtn.setAttribute('aria-label', `Copiar link de sessão real como "${p.nome || p.email}"`)
     copiarLinkBtn.title = `Copiar um link de sessão real como "${p.nome || p.email}", para colar numa aba nova`
@@ -3434,7 +3439,8 @@ function _construirAcoes(p, u, { isSelf, canEdit }) {
         adminToast(e.message || 'Não consegui gerar o link.', false)
       }
     })
-    acoes.appendChild(copiarLinkBtn)
+    entrarGrupo.appendChild(copiarLinkBtn)
+    acoes.appendChild(entrarGrupo)
 
     const disBtn = mkEl('button', 'btn usr-acao-btn' + (u.disabled ? '' : ' btn-perigo'))
     disBtn.type = 'button'; disBtn.textContent = u.disabled ? 'Ativar' : 'Desativar'
@@ -4671,6 +4677,13 @@ Object.assign(window, {
 .tela-admin :deep(.usr-acoes){display:flex;flex-wrap:wrap;align-items:center;gap:8px;}
 .tela-admin :deep(.usr-acoes select){min-height:40px;box-sizing:border-box;}
 .tela-admin :deep(.usr-acao-select){max-width:130px;font-size:max(9px, calc(12px * var(--escala-texto, 1)));padding:6px 8px;}
+/* "Entrar como" + o ícone de copiar ficam num grupo próprio (gap menor que o
+   dos outros botões), pra não separarem quando `.usr-acoes` quebra linha. */
+.tela-admin :deep(.usr-acao-grupo){display:flex;align-items:center;gap:2px;}
+/* Ícone sem borda — mesma receita do "X" de fechar modal (.ficha-x): sem
+   fundo cravado, 40px de alvo de toque, cor de --muted até o hover. */
+.tela-admin :deep(.usr-acao-icone){display:flex;align-items:center;justify-content:center;min-width:40px;min-height:40px;border:none;background:transparent;border-radius:var(--radius-md);color:var(--muted);cursor:pointer;transition:background .15s,color .15s;}
+.tela-admin :deep(.usr-acao-icone:hover){background:var(--surface2);color:var(--text);}
 .tela-admin :deep(.usr-gavetas){display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:14px 0 8px;}
 .tela-admin :deep(.usr-gavetas-rot){font-size:max(9px, calc(11px * var(--escala-texto, 1)));color:var(--muted);}
 .tela-admin :deep(.usr-preencher){font-size:max(9px, calc(11px * var(--escala-texto, 1)));color:color-mix(in srgb,var(--orange) 75%,var(--text));cursor:pointer;}
