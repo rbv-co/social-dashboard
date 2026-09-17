@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   CONTAM_NA_TAXA, SITUACOES, SELO_DE_ENSAIO, resumoDosAtendimentos, comprasDaVisita,
   porDia, janelaDoPeriodo, diaLocal, horaCurta, diaCurto, telefoneLegivel,
+  marcacoesDe, podeCancelar,
 } from './contas-de-atendimento.js'
 
 const HOJE = new Date(2026, 8, 17) // 17/09/2026, meia-noite LOCAL
@@ -123,4 +124,29 @@ test('⚠️ toda classe de selo usada EXISTE na folha de estilos', async () => 
   const usadas = [...Object.values(SITUACOES).map((s) => s.selo), SELO_DE_ENSAIO]
   for (const classe of usadas)
     assert.ok(folha.includes(`.${classe}`), `${classe} não existe em estilos-globais.css`)
+})
+
+test('a linha nunca oferece o que ela já é', () => {
+  assert.deepEqual(marcacoesDe('realizado').map((m) => m.situacao), ['no_show', 'remarcado'])
+  assert.deepEqual(marcacoesDe('no_show').map((m) => m.situacao), ['realizado', 'remarcado'])
+  assert.deepEqual(marcacoesDe('confirmado').map((m) => m.situacao), ['realizado', 'no_show', 'remarcado'])
+})
+
+test('⚠️ cancelar por engano TEM volta: a linha cancelada oferece as três', () => {
+  // Esconder as marcações de uma linha cancelada transformaria um clique errado
+  // em linha morta para sempre.
+  assert.deepEqual(marcacoesDe('cancelado').map((m) => m.situacao), ['realizado', 'no_show', 'remarcado'])
+  assert.equal(podeCancelar('cancelado'), false, 'mas cancelar de novo não faz sentido')
+  assert.equal(podeCancelar('confirmado'), true)
+})
+
+test('⚠️ cancelado SAI da taxa — é o conserto do convite repetido', () => {
+  // Dois cartões para a mesma cliente no mesmo dia: o fantasma contava como
+  // alguém que não veio e afundava a taxa.
+  const antes = resumoDosAtendimentos([{ status: 'confirmado' }, { status: 'confirmado' }, { status: 'realizado' }])
+  assert.equal(antes.naBase, 3)
+  assert.equal(Math.round(antes.taxa * 100), 33)
+  const depois = resumoDosAtendimentos([{ status: 'cancelado' }, { status: 'confirmado' }, { status: 'realizado' }])
+  assert.equal(depois.naBase, 2)
+  assert.equal(depois.taxa, 0.5)
 })
