@@ -153,8 +153,9 @@ try {
       `insert into vessel_pedidos
          (bling_pedido_id, numero, bling_contato_id, contato_nome, pessoa_id, casou_por,
           loja_id, vendedor_id, data_do_pedido, data_da_nota, data_da_venda, origem_da_data,
-          total_produtos, desconto, outras_despesas, total_do_bling, total_corrigido, situacao_id)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+          total_produtos, desconto, outras_despesas, total_do_bling, total_corrigido, situacao_id,
+          observacoes, observacoes_internas)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
        on conflict (bling_pedido_id) do update set
           numero = excluded.numero, bling_contato_id = excluded.bling_contato_id,
           contato_nome = excluded.contato_nome,
@@ -169,7 +170,12 @@ try {
           total_produtos = excluded.total_produtos, desconto = excluded.desconto,
           outras_despesas = excluded.outras_despesas,
           total_do_bling = excluded.total_do_bling, total_corrigido = excluded.total_corrigido,
-          situacao_id = excluded.situacao_id, atualizado_em = now()
+          situacao_id = excluded.situacao_id,
+          -- As observações são o que a vendedora escreve no pedido — é onde
+          -- mora a marca PRESENTE (vessel_pedido_marcado_presente). Sempre
+          -- atualizadas: a loja pode editar o pedido depois de gravado.
+          observacoes = excluded.observacoes, observacoes_internas = excluded.observacoes_internas,
+          atualizado_em = now()
        returning id`,
       [p.id, String(p.numero ?? ''), contatoId, p.contato?.nome || null, pessoaId, casouPor,
        detalhe.loja?.id || null, detalhe.vendedor?.id || null,
@@ -182,7 +188,8 @@ try {
        detalhe.totalProdutos ?? p.totalProdutos ?? null,
        detalhe.desconto?.valor ?? null, detalhe.outrasDespesas ?? null,
        p.total ?? null, corrigidoPorId.get(String(p.id)) ?? null,
-       p.situacao?.id ?? ATENDIDO]);
+       p.situacao?.id ?? ATENDIDO,
+       detalhe.observacoes || null, detalhe.observacoesInternas || null]);
 
     // Os itens são REFEITOS a cada rodada: pedido editado no Bling muda de
     // itens, e acrescentar deixaria os antigos ali para sempre.
