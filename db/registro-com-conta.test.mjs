@@ -13,8 +13,35 @@ test('⚠️ registrar exige sessão', () => {
   assert.match(f, /sem_sessao/);
 });
 
-test('⚠️ as funções novas não são concedidas a anon', () => {
-  assert.ok(!/grant execute on function public\.vessel_(registrar_como_cliente|candidatos_de_presente)[^;]*to (anon|authenticated)/.test(SQL));
+test('⚠️ as duas funções novas são revogadas de anon E authenticated, uma a uma', () => {
+  // ⚠️ A primeira versão deste teste casava o NOME DA FUNÇÃO colado ao texto
+  // '...to (anon|authenticated)' — mas o revoke/grant deste arquivo é montado
+  // num LAÇO com `format('grant execute on function public.%s to
+  // service_role', f)`. O papel de verdade não está perto do nome nenhuma vez:
+  // está uma linha abaixo, dentro do template. Trocar `service_role` por
+  // `authenticated` no format() fazia o teste antigo continuar VERDE — teste
+  // que não prova nada. Aqui: acha o bloco `do $$ ... end $$` e exige as DUAS
+  // assinaturas, uma a uma, pelo nome, e confere o TEXTO do template de
+  // revoke/grant (mesmo padrão de db/contas-nascem-fechadas.test.mjs).
+  const bloco = SQL.match(/do \$\$[\s\S]*?end \$\$;/);
+  assert.ok(bloco, 'falta o bloco do $$ que revoga e concede as funções novas');
+  const assinaturas = [
+    'vessel_registrar_como_cliente(text,text,text,date)',
+    'vessel_candidatos_de_presente(text)',
+  ];
+  for (const assinatura of assinaturas) {
+    assert.ok(bloco[0].includes(`'${assinatura}'`),
+      `falta ${assinatura} no array que revoga/concede`);
+  }
+  assert.match(bloco[0], /revoke all on function public\.%s from public, anon, authenticated/);
+  assert.match(bloco[0], /grant execute on function public\.%s to service_role/);
+});
+
+test('⚠️ nenhuma função ganha grant para anon ou authenticated em lugar nenhum do arquivo', () => {
+  // Olha o TEXTO inteiro, inclusive dentro de um format(...): se o template do
+  // grant virar '...to authenticated', esta regex casa mesmo sem `format` ter
+  // rodado — é o que faltava no teste anterior.
+  assert.ok(!/grant execute on function[^;]*\bto\b[^;]*\b(anon|authenticated)\b/.test(SQL));
 });
 
 test('a marca PRESENTE é lida sem acento e sem maiúscula', () => {
