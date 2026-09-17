@@ -266,30 +266,66 @@ um atendimento registrado.
 
 ### 4.6. `vessel_pedidos` e `vessel_pedido_itens` — a venda, pedido a pedido
 
+⚠️ **CORRIGIDO EM 17/09/2026, MEDINDO O BLING.** Este item dizia que o elo com a
+pessoa era o telefone. **Não é: o pedido do Bling NÃO TRAZ telefone**, nem na
+lista nem no detalhe. Traz `contato.id`, nome, tipo de pessoa e CPF.
+
+O casamento tem duas escadas, nesta ordem:
+
+1. **`bling_contato_id` — exato.** O robô do espelho já cria a ficha do lead no
+   Bling quando ela preenche uma landing page; no dia da venda a loja escolhe
+   essa ficha, e o pedido vem com o mesmo id. Sem fuzzy, sem dúvida.
+2. **O telefone da FICHA** (`contatos/<id>`), normalizado — para quem comprou
+   sem ter passado por nós antes. Ler os **dois** campos: a ficha criada pela
+   loja no PDV preenche `telefone`; a criada pelo nosso robô preenche `celular`.
+   Ler só um perde metade, e perde calado.
+
+**O que a medição de 90 dias disse** (400 pedidos atendidos):
+
+| | |
+|---|---|
+| pedidos sem contato nenhum | **0** — a loja registra a cliente, sempre |
+| contatos distintos | 341 |
+| fichas com telefone aproveitável | **88%** |
+| fichas com e-mail | 21% |
+| fichas com marca de origem | 0 — nenhuma compradora veio pela lista de espera |
+
+Ou seja: **a corrente tem chão.** O medo de que a loja não preenchesse a cliente
+era infundado — ela preenche.
+
 ```
 vessel_pedidos
-  id, bling_pedido_id (unique), pessoa_id, loja, canal,
-  confirmado_em, receita_bruta, ajustes, receita_liquida,
-  situacao, vendedor, nota_em, criado_em
+  bling_pedido_id (unico), numero, bling_contato_id, contato_nome,
+  pessoa_id (nulo quando orfa), casou_por (bling_contato | telefone),
+  loja_id, vendedor_id,
+  data_do_pedido, data_da_nota, data_da_venda, origem_da_data,
+  total_produtos, desconto, outras_despesas,
+  total_do_bling, total_corrigido, situacao_id
 
 vessel_pedido_itens
-  id, pedido_id, sku, descricao, quantidade, valor_unitario, peca_serial
+  pedido_id, sku, descricao, quantidade, valor_unitario, desconto
+
+vessel_envios_ao_meta
+  pedido_id, evento, event_id (unico com o evento), enviado_em, resposta
 ```
 
-O elo que falta. Trazidos do Bling por robô, no mesmo molde dos que já rodam.
-`pessoa_id` é preenchido pelo casamento do telefone, e **fica nulo quando não
-casa** — venda órfã é um fato a medir, não um erro a esconder.
+⚠️ **A data da venda é COPIADA, não recalculada.** `bling_pedido_nota` já traz
+`data_da_venda` e `origem_da_data`, escritas pelo robô que roda de hora em hora
+— é o número que a Gestão à Vista e os relatórios usam. Derivar o nosso daria um
+segundo número, parecido e não igual, e um dia alguém perguntaria por que o
+painel da Vessel diz 12 e o comercial diz 14.
 
-Duas regras do módulo 10 que o desenho carrega:
+⚠️ **O robô NÃO CRIA PESSOA.** Ele só liga o pedido a quem já existe. Trazer as
+341 compradoras do Bling para `vessel_pessoas` seria copiar dado de gente de uma
+tabela para outra sem ninguém ter decidido isso. Para contar compradoras, o
+painel usa `bling_contato_id` distinto — mesma resposta, sem duplicar ninguém.
 
-- **nunca criar venda por avanço manual** — só entra pedido que existe no Bling;
-- **devolução não é compra nova**: vira ajuste em `receita_liquida`, e a
-  reconciliação para o Meta é um evento de ajuste, não um `Purchase` novo.
+⚠️ **Venda órfã é um fato a medir, não um erro a esconder.** Entra com
+`pessoa_id` nulo, tem índice próprio, e o robô diz quantas foram a cada rodada.
 
-⚠️ O valor definitivo só existe depois da nota autorizada (que congela o pedido
-no Bling — ver `bling_pedido_ajuste_valor`). Mandar cedo demais manda o valor
-errado; tarde demais o Meta já fechou a janela. **Qual data usar é decisão do
-dono, e está na lista de pendências abaixo.**
+Duas regras do módulo 10 que o desenho carrega: **nunca criar venda por avanço
+manual** (só entra pedido que existe no Bling) e **devolução não é compra nova**
+(vira ajuste no valor, e para o Meta é evento de ajuste, não um `Purchase` novo).
 
 ---
 
@@ -532,11 +568,61 @@ apagado.
 
 ### Falta
 
-1. **A camada 3** — `vessel_pedidos` e `vessel_pedido_itens`, com o robô que
-   traz do Bling pedido a pedido. É ela que destrava T07, T08 e T09.
+1. ~~A camada 3~~ — **FEITA em 17/09/2026.** `vessel_pedidos`,
+   `vessel_pedido_itens` e `vessel_envios_ao_meta` no ar, com o robô
+   `coletor/trazer-pedidos-do-bling.mjs` e agendamento diário às 07h34 UTC.
 2. **Os espelhos das tabelas novas** no CSV do WorkDrive.
 3. **O texto das três finalidades novas** da política de privacidade. Até ele
    subir, a página do Appointment Card **não chama** `vessel_registrar_cartao` —
    a porta existe e está fechada por escolha, não por falta.
 4. **Enviar os commits para o GitHub.** Enquanto não forem, o agendamento da
    cópia não roda: hoje existe uma cópia, de hoje, feita à mão.
+
+
+---
+
+## 12. A conferência contra o que o comercial já usa (17/09/2026)
+
+A tabela nova (pedido a pedido) foi comparada com `gc_vendas_item` (total do mês
+por loja por SKU), em agosto inteiro. **Elas não batem, e isso está certo** — mas
+só depois de um defeito meu ter sido consertado.
+
+### O defeito, que a comparação achou
+
+Um item de R$ 97,80 saía por R$ 0,80 na minha conta: eu subtraía o `desconto` do
+item como se fosse dinheiro.
+
+**Medido: é PORCENTAGEM.** Em 1.125 itens, o maior `desconto` é 84,36 — e em 21
+deles ele é maior que o valor do próprio item, o que em reais seria pagar para a
+cliente levar.
+
+Consertado em duas partes, e a segunda é a que importa:
+- a coluna passou a se chamar `desconto_percentual` — nome que mente é pior que
+  coluna ausente, porque o próximo a chegar subtrai de novo;
+- entrou `total_do_item`, **já calculado**, para ninguém precisar saber da
+  pegadinha para somar receita.
+
+### O que sobra de diferença, e por quê
+
+| | pedido a pedido | comercial |
+|---|---|---|
+| Dom Pedro — **peças** | **161** | **161** ✓ |
+| Dom Pedro — receita | 23.696,45 | 25.245,24 |
+| Atacado — peças | 275 | 257 |
+| Loja Shopify, Atacado Fábrica | aparecem | não existem lá |
+
+**As peças do Dom Pedro batem exatamente.** A coleta está completa e certa.
+
+As duas diferenças têm causa conhecida:
+
+1. **Receita: o comercial conta BRUTO, antes do desconto do item; a tabela nova
+   conta LÍQUIDO.** Nenhum dos dois está errado — são perguntas diferentes. Quem
+   for montar o painel da T09 tem de escolher uma e dizer qual.
+2. **Agrupamento: `gc_vendas_item` agrupa por DEPÓSITO; a tabela nova agrupa
+   pela LOJA do pedido.** Um pedido pode sair de um depósito que não é o da loja
+   — por isso o Atacado difere e por isso Loja Shopify e Atacado Fábrica nem
+   aparecem lá (não estão entre os canais foco).
+
+⚠️ **Isto precisa estar decidido ANTES da T09.** Dois painéis lendo os mesmos
+pedidos e dando números diferentes é como se perde a confiança nos dois — e já
+aconteceu aqui, com as conversas do Instagram (12 no gerenciador, 33 na dash).
