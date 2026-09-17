@@ -50,6 +50,19 @@ jobs:
         working-directory: coletor
         run: npm ci
 
+      # ⚠️ ANTES DOS PEDIDOS, e de propósito: este passo renova o token do Bling
+      # quando ele está vencendo, e o robô dos pedidos usa o mesmo token para
+      # buscar o telefone do contato. Invertida, a ordem só funcionaria por
+      # sorte.
+      #
+      # É a lista de quem vende no Bling — o nome que o gerador de cartão mostra
+      # quando pergunta à Client Advisor "você é Fulana de Tal?". Sem ela, a
+      # pergunta não tem o que oferecer, e o convite nunca se liga à venda.
+      - name: Trazer a lista de vendedores
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: node coletor/trazer-vendedores-do-bling.mjs
+
       - name: Trazer os pedidos
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
