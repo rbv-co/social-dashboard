@@ -30,6 +30,18 @@
           Nenhum card apareceria. A tela de Início dela mostraria
           "Você ainda não tem acesso a nenhuma ferramenta."
         </p>
+
+        <div v-if="pessoa" class="vcu-entrar-bloco">
+          <button class="btn btn-perigo" type="button" @click="entrarComo" :disabled="entrando">
+            {{ entrando ? 'Entrando…' : 'Entrar como (sessão real)' }}
+          </button>
+          <p class="vcu-entrar-aviso">
+            Abre uma aba nova, autenticado de verdade como
+            <b>{{ pessoa.name || pessoa.email }}</b> — dado real dela, sem senha
+            nenhuma. Fica registrado quem entrou e quando.
+          </p>
+          <p v-if="erroEntrar" class="vcu-entrar-erro">{{ erroEntrar }}</p>
+        </div>
       </template>
     </div>
   </div>
@@ -56,6 +68,8 @@ function voltar() { router.push({ name: 'admin' }) }
 const pessoa = ref(null)
 const erro = ref(null)
 const carregando = ref(true)
+const entrando = ref(false)
+const erroEntrar = ref(null)
 
 async function carregar() {
   carregando.value = true
@@ -83,6 +97,36 @@ async function carregar() {
   }
 }
 
+async function entrarComo() {
+  if (!pessoa.value) return
+  const nome = pessoa.value.name || pessoa.value.email
+  if (!confirm(`Entrar como "${nome}"?\n\nVocê vai abrir a Central autenticado de verdade como ela, numa aba separada. Isto fica registrado.`)) return
+
+  erroEntrar.value = null
+  entrando.value = true
+  // Reserva a aba ANTES do fetch: depois de um await, o navegador trata
+  // window.open como popup e bloqueia.
+  const aba = window.open('', '_blank')
+  try {
+    const tok = estado.currentSession?.access_token || SUPABASE_ANON_KEY
+    const r = await fetch(`${SUPABASE_URL}/functions/v1/entrar-como-usuario`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ alvoId: pessoa.value.id }),
+    })
+    const dados = await r.json().catch(() => null)
+    if (!r.ok || !dados || dados.error) throw new Error(dados?.error || 'Não consegui gerar a sessão.')
+    const hash = `access_token=${dados.access_token}&refresh_token=${dados.refresh_token}&expires_in=${dados.expires_in}&token_type=bearer&type=magiclink`
+    if (aba) aba.location.href = `/?modo=entrar-como#${hash}`
+    else erroEntrar.value = 'O navegador bloqueou a aba nova. Permita pop-ups para este site e tente de novo.'
+  } catch (e) {
+    aba?.close()
+    erroEntrar.value = e.message || 'Não consegui entrar como essa pessoa.'
+  } finally {
+    entrando.value = false
+  }
+}
+
 onMounted(() => {
   if (!estado.is_superadmin) { router.push({ name: 'inicio' }); return }
   carregar()
@@ -106,4 +150,7 @@ const cartoesVisiveis = computed(() => pessoa.value ? visaoComoUsuario(pessoa.va
 .vcu-sub-lista li:first-child{padding-top:0;border-top:none;}
 .vcu-sub-label{font-family:var(--fonte-principal);font-size:var(--texto-corpo);font-weight:600;color:var(--text);overflow-wrap:anywhere;}
 .vcu-sub-frase{font-family:var(--fonte-principal);font-size:var(--texto-corpo);color:var(--muted);overflow-wrap:anywhere;}
+.vcu-entrar-bloco{margin-top:var(--sp-5);padding-top:var(--sp-5);border-top:1px solid var(--border);display:flex;flex-direction:column;align-items:flex-start;gap:var(--sp-2);}
+.vcu-entrar-aviso{margin:0;font-family:var(--fonte-principal);font-size:var(--texto-corpo);color:var(--muted);max-width:60ch;}
+.vcu-entrar-erro{margin:0;font-family:var(--fonte-principal);font-size:var(--texto-corpo);color:var(--red);}
 </style>
