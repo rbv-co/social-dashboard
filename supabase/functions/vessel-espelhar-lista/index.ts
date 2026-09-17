@@ -224,12 +224,46 @@ function objetivoLegivel(v: string | null | undefined): string {
   return 'ainda nao escolheu';
 }
 
+// AS RESPOSTAS DO SEGUNDO FORMULÁRIO, EM PORTUGUÊS DE GENTE. O banco guarda
+// `shoulder-bag` porque é um valor que não muda nunca; quem abre a planilha
+// precisa ler "Shoulder Bag". Chave desconhecida sai como veio, em vez de
+// virar vazio: uma escolha nova apareceria na planilha em vez de sumir dela.
+const PECA: Record<string, string> = {
+  'hand-bag': 'Hand Bag', 'shoulder-bag': 'Shoulder Bag',
+  'east-west': 'East West', 'toda-colecao': 'quer ver a colecao inteira',
+};
+const OCASIAO: Record<string, string> = {
+  'dia-a-dia': 'dia a dia', trabalho: 'trabalho', viagem: 'viagem',
+  noite: 'noite e eventos', presente: 'presente',
+};
+const legivel = (mapa: Record<string, string>, v: string | null | undefined) =>
+  v ? (mapa[v] ?? v) : '';
+
+// ⚠️ `0` É RESPOSTA ("venho sozinha"), `null` é "não respondeu". Um `||` aqui
+// transformaria a primeira na segunda, e a Client Advisor prepararia a sala
+// sem saber se alguém vem junto.
+function acompanhantesLegivel(v: number | null | undefined): string {
+  if (v === null || v === undefined) return '';
+  return v === 0 ? 'vem sozinha' : String(v);
+}
+
+// A data vem do Postgres como 'AAAA-MM-DD' e é ASSIM que ela tem de sair.
+// ⚠️ Passar por `new Date(...).toISOString()` seria ler a data como UTC e
+// devolver o DIA ANTERIOR no fuso do Brasil — a visita de segunda viraria
+// domingo na planilha, sem erro nenhum aparecer.
+const diaDaVisita = (v: unknown): string => (v ? String(v).slice(0, 10) : '');
+
 function montarCsv(linhas: any[]): string {
   // ⚠️ COLUNA NOVA SEMPRE NO FIM. Quem já baixou este CSV montou planilha em
   // cima desta ordem; inserir no meio deslocaria todas as colunas seguintes e
   // quebraria o trabalho dessa pessoa, sem erro nenhum aparecendo em lugar algum.
   const cab = ['nome', 'email', 'whatsapp', 'origem', 'entrou_em', 'aceite_em', 'aceite_versao', 'no_bling',
-    'objetivo'];
+    'objetivo',
+    // As preferências da visita (segundo formulário da LP, 17/09/2026). No FIM,
+    // pela regra do comentário acima — quem já montou planilha em cima deste
+    // arquivo não perde o trabalho.
+    'visita_dia', 'visita_hora', 'visita_peca', 'visita_ocasiao',
+    'personal_atelier', 'acompanhantes', 'pedido_especial'];
   const corpo = linhas.map((l) => [
     l.nome, l.email, l.whatsapp, l.origem,
     new Date(l.criado_em).toISOString().slice(0, 19).replace('T', ' '),
@@ -237,6 +271,13 @@ function montarCsv(linhas: any[]): string {
     l.aceite_versao,
     l.bling_id ? 'sim' : 'ainda não',
     objetivoLegivel(l.objetivo),
+    diaDaVisita(l.visita_data),
+    l.visita_hora || '',
+    legivel(PECA, l.visita_bolsa),
+    legivel(OCASIAO, l.visita_ocasiao),
+    l.visita_atelier === true ? 'sim' : (l.visita_atelier === false ? 'nao' : ''),
+    acompanhantesLegivel(l.visita_acompanhantes),
+    l.visita_pedido || '',
   ].map(celula).join(','));
   return [cab.join(','), ...corpo].join('\n') + '\n';
 }
