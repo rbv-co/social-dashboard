@@ -21,7 +21,7 @@ Deno.serve(async (req: Request) => {
 
     const { data: chamador } = await anonClient
       .from('profiles')
-      .select('id, is_superadmin')
+      .select('id, is_superadmin, disabled')
       .eq('id', user.id)
       .single()
 
@@ -40,8 +40,25 @@ Deno.serve(async (req: Request) => {
       .eq('id', alvoId)
       .maybeSingle()
 
-    const recusa = motivoDeRecusa({ chamador: { id: user.id, is_superadmin: chamador?.is_superadmin }, alvoId, alvo })
+    const recusa = motivoDeRecusa({
+      chamador: { id: user.id, is_superadmin: chamador?.is_superadmin, disabled: chamador?.disabled },
+      alvoId,
+      alvo,
+    })
     if (recusa) throw new Error(recusa)
+
+    // Auditoria PRIMEIRO, antes de qualquer sessão existir. A tela promete
+    // "fica registrado quem entrou e quando" — se o insert falhar (RLS, coluna,
+    // rede), abortamos aqui e nenhuma sessão chega a ser emitida. Na ordem
+    // antiga (auditar depois do verifyOtp) uma falha de insert só virava
+    // console.error e os tokens saíam mesmo assim: entrada sem registro.
+    const { error: auditErr } = await adminClient.from('entradas_como_outro_usuario').insert({
+      admin_id: user.id,
+      admin_email: user.email,
+      alvo_id: alvo.id,
+      alvo_email: alvo.email,
+    })
+    if (auditErr) throw new Error('Não consegui registrar a auditoria: ' + auditErr.message)
 
     // Gera o link SEM enviar e-mail — generateLink so cria; quem manda e-mail
     // e outra chamada (inviteUserByEmail), que nao fazemos aqui.
@@ -65,17 +82,6 @@ Deno.serve(async (req: Request) => {
       type: 'magiclink',
     })
     if (verifyErr || !sessionData.session) throw verifyErr || new Error('Não consegui gerar a sessão')
-
-    // Auditoria: quem entrou como quem, quando. So depois de ter a sessao —
-    // se isto falhar, a entrada ja aconteceu; registramos o erro mas nao
-    // desfazemos a sessao ja emitida (nao ha como "desemitir" um token).
-    const { error: auditErr } = await adminClient.from('entradas_como_outro_usuario').insert({
-      admin_id: user.id,
-      admin_email: user.email,
-      alvo_id: alvo.id,
-      alvo_email: alvo.email,
-    })
-    if (auditErr) console.error('auditoria de entrar-como falhou:', auditErr.message)
 
     return new Response(JSON.stringify({
       access_token: sessionData.session.access_token,

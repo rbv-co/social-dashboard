@@ -2,8 +2,9 @@
   <div class="moldura">
     <!-- Faixa de aviso de "entrar como": só existe na aba aberta via "Entrar
          como" (Task 5 detecta o modo pelo sessionStorage isolado da aba).
-         Fica em primeiro lugar dentro da moldura e position:fixed no topo,
-         para nenhuma tela cobrir o aviso de que a sessão é de outra pessoa. -->
+         Fica em primeiro lugar dentro da moldura e position:sticky no topo,
+         para nenhuma tela cobrir o aviso de que a sessão é de outra pessoa —
+         e, sendo sticky, ela ocupa espaço: o conteúdo começa abaixo dela. -->
     <div v-if="emModoEntrarComo" class="faixa-entrar-como">
       Você está vendo como <b>{{ estado.user?.email }}</b>
       <button type="button" @click="sairDoModoEntrarComo">Sair</button>
@@ -34,7 +35,7 @@
          espaço pra ele custava caro: uma quebrou 10 topbars, outra apertou barras
          que já estavam no limite. Quem quer trocar senha ou sair volta pra
          Central — um toque, e as barras ficam livres pro que é da ferramenta. -->
-    <div v-if="estado.user && naTelaInicio" class="perfil-menu">
+    <div v-if="estado.user && naTelaInicio" class="perfil-menu" :class="{ 'perfil-menu--com-faixa': emModoEntrarComo }">
       <button class="perfil-avatar" type="button" @click="menuAberto = !menuAberto" :title="estado.user.email" aria-label="Menu do perfil">
         <img v-if="estado.avatarUrl" :src="estado.avatarUrl" alt="Perfil">
         <span v-else class="perfil-avatar-ph">{{ iniciais }}</span>
@@ -46,16 +47,26 @@
           <div class="perfil-dropdown-role" v-if="estado.role === 'admin'">Administrador</div>
           <div class="perfil-dropdown-sep"></div>
           <!-- Ativar notificações: só aparece enquanto NÃO ativou. Ativação é só
-               de ida — depois de ativar, o item some (sem opção de desativar). -->
-          <button v-if="pushSuportado() && !pushAtivo" class="perfil-dropdown-item" type="button" @click="ativarPush">
+               de ida — depois de ativar, o item some (sem opção de desativar).
+               Some também na aba de "entrar como": ali a inscrição amarraria o
+               aparelho do ADMIN ao user_id da pessoa-alvo (`inscrever` recusa),
+               e oferecer um botão que não funciona é a tela mentindo. -->
+          <button v-if="pushSuportado() && !pushAtivo && !emModoEntrarComo" class="perfil-dropdown-item" type="button" @click="ativarPush">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
             Ativar notificações
           </button>
-          <button class="perfil-dropdown-item" type="button" @click="abrirTrocarSenha">
+          <!-- Trocar senha: a MESMA porta que a parede de troca obrigatória,
+               só que voluntária — na aba de "entrar como" ela definiria a senha
+               da PESSOA-ALVO (é a sessão dela que o `updateUser` alcança), sem
+               ela saber. É exatamente o que a feature promete não fazer. -->
+          <button v-if="!emModoEntrarComo" class="perfil-dropdown-item" type="button" @click="abrirTrocarSenha">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
             Trocar senha
           </button>
-          <button class="perfil-dropdown-item perfil-dropdown-sair" type="button" @click="sair">
+          <!-- Na aba de "entrar como", Sair é a MESMA saída da faixa roxa:
+               `sair()` faria signOut global e deslogaria a pessoa-alvo de todos
+               os aparelhos dela (o padrão do supabase-js v2). -->
+          <button class="perfil-dropdown-item perfil-dropdown-sair" type="button" @click="emModoEntrarComo ? sairDoModoEntrarComo() : sair()">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
             Sair
           </button>
@@ -163,7 +174,10 @@
     <!-- Este é o mais importante dos três: a troca obrigatória de senha não tem
          como ser dispensada, então deixar o fundo rolar convida a pessoa a
          tentar usar o app por trás de uma parede. -->
-    <div v-if="estado.precisa_trocar_senha" class="ts-fundo" v-trava-rolagem>
+    <!-- NUNCA na aba de "entrar como": ali `estado` é o perfil da pessoa-ALVO, e
+         esta parede não tem como ser fechada — o admin acabaria definindo a
+         senha dela por ela, que é exatamente o que a feature promete não fazer. -->
+    <div v-if="estado.precisa_trocar_senha && !emModoEntrarComo" class="ts-fundo" v-trava-rolagem>
       <div class="ts-caixa">
         <h2>Escolha uma senha sua</h2>
         <p>Esta conta foi criada com uma senha provisória, que alguém digitou e te entregou.
@@ -286,7 +300,11 @@ async function sair() {
 // que foi aberta pelo botão "Entrar como" (window.open em tela-de-visao-como.vue)
 // e o objetivo é fechar essa aba, não navegar para o login dentro dela.
 async function sairDoModoEntrarComo() {
-  try { await sbClient.auth.signOut() } catch (e) { /* segue mesmo assim */ }
+  // scope 'local' é OBRIGATÓRIO aqui: a sessão desta aba é a REAL da pessoa-alvo,
+  // e o padrão do supabase-js v2 (`global`) revogaria todos os refresh tokens
+  // dela — deslogando a pessoa do celular e do computador dela sem motivo.
+  // 'local' encerra só esta aba (sessionStorage). Não copie para `sair()`.
+  try { await sbClient.auth.signOut({ scope: 'local' }) } catch (e) { /* segue mesmo assim */ }
   try { sessionStorage.removeItem('modo_entrar_como') } catch (e) {}
   // A aba foi aberta por script (window.open em tela-de-visao-como.vue),
   // entao fecha sem pedir permissao na maioria dos navegadores.
@@ -352,6 +370,10 @@ const DISPENSOU_PUSH = 'push-dispensado-v1'
 const dispensouPush = () => { try { return localStorage.getItem(DISPENSOU_PUSH) === '1' } catch { return false } }
 
 async function avaliarPush() {
+  // Aba de "entrar como": `estado.user` é a pessoa-alvo, mas o aparelho é o do
+  // admin. Nem inscrever nem convidar a inscrever — o convite sai daqui
+  // (`mostrarModalPush`), então sair antes já o cala.
+  if (emModoEntrarComo) return
   if (!estado.user || !pushSuportado()) return
   pushAtivo.value = await jaInscrito()
   const situacao = {
@@ -495,7 +517,10 @@ router.afterEach(() => fecharTodosOsModaisLegadosAoTrocarDeRota())
    automatizado/fora do fluxo normal está agindo em seu nome" no resto da
    Central (item 2 do PADRAO-DA-CENTRAL), e "você está vestindo a sessão de
    outra pessoa" é exatamente esse tipo de estado. ── */
-.faixa-entrar-como{position:fixed;top:0;left:0;right:0;z-index:100000;display:flex;align-items:center;justify-content:center;gap:var(--sp-3);flex-wrap:wrap;padding:8px var(--gutter);background:var(--roxo);color:var(--sobre-cor);font-family:var(--fonte-principal);font-size:max(9px, calc(12.5px * var(--escala-texto, 1)));text-align:center;}
+/* sticky, e não fixed: sticky ocupa espaço de verdade no fluxo, então tudo que
+   vem depois (`.conteudo-da-rota`) já começa abaixo da faixa — sem padding
+   calculado em lugar nenhum — e ela continua grudada no topo ao rolar. */
+.faixa-entrar-como{position:sticky;top:0;left:0;right:0;z-index:100000;display:flex;align-items:center;justify-content:center;gap:var(--sp-3);flex-wrap:wrap;padding:8px var(--gutter);background:var(--roxo);color:var(--sobre-cor);font-family:var(--fonte-principal);font-size:max(9px, calc(12.5px * var(--escala-texto, 1)));text-align:center;}
 .faixa-entrar-como button{flex-shrink:0;min-height:40px;padding:4px 14px;border:1px solid var(--sobre-cor);border-radius:var(--radius-md);background:transparent;color:var(--sobre-cor);font-family:inherit;font-size:inherit;font-weight:600;cursor:pointer;}
 .faixa-entrar-como button:hover{background:color-mix(in srgb, var(--sobre-cor) 15%, transparent);}
 
@@ -503,6 +528,14 @@ router.afterEach(() => fecharTodosOsModaisLegadosAoTrocarDeRota())
 /* top respeita a área segura do iOS (notch / Dynamic Island) — senão o avatar
    fica embaixo do entalhe no iPhone com o app na Tela de Início. */
 .perfil-menu { position: fixed; top: calc(env(safe-area-inset-top, 0px) + 14px); right: 18px; z-index: 9999; }
+/* `fixed` não é empurrado pela faixa sticky (ela é irmã, não ancestral) e o
+   z-index dela é maior — sem isto o avatar fica atrás da faixa, inalcançável.
+   Medido no navegador: a faixa tem 56px a 1440px e 84px a 375px, onde o texto
+   quebra em duas linhas. 92px limpa as duas; a 1440px sobra folga, e sobrar é
+   o lado certo de errar — o outro lado é o avatar sumir atrás da faixa.
+   ponytail: valor fixo; se um e-mail muito longo levar a faixa a três linhas,
+   medir a altura real (ResizeObserver) em vez de aumentar o número. */
+.perfil-menu--com-faixa { top: calc(env(safe-area-inset-top, 0px) + 92px); }
 .perfil-avatar {
   width: 40px; height: 40px; border-radius: 50%; padding: 0; overflow: hidden;
   border: 2px solid var(--border); background: var(--surface2); cursor: pointer;

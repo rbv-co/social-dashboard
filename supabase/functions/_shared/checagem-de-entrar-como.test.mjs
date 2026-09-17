@@ -11,6 +11,11 @@ test('admin comum (nao superadmin) e recusado', () => {
   assert.match(m, /super-admin/i)
 })
 
+test('superadmin DESATIVADO e recusado — o JWT dele ainda vale por ~1h depois de desativar', () => {
+  const m = motivoDeRecusa({ chamador: { ...SUPERADMIN, disabled: true }, alvoId: ALVO.id, alvo: ALVO })
+  assert.match(m, /sua conta está desativada/i)
+})
+
 test('entrar como si mesmo e recusado, mesmo sendo superadmin', () => {
   const m = motivoDeRecusa({ chamador: SUPERADMIN, alvoId: SUPERADMIN.id, alvo: SUPERADMIN })
   assert.match(m, /você já é você/i)
