@@ -39,11 +39,19 @@ Deno.serve(async (req) => {
 
   if (corpo.acao === 'criar') {
     const senha = gerarSenha();
-    const { data } = await sb.rpc('vessel_conta_criar', {
+    const { data, error } = await sb.rpc('vessel_conta_criar', {
       p_nome: corpo.nome, p_cpf: corpo.cpf, p_email: corpo.email,
       p_whatsapp: corpo.whatsapp ?? null, p_nascimento: corpo.nascimento ?? null,
       p_senha: senha,
     });
+    // ⚠️ SEM OLHAR "error", um parâmetro que um dia divergir do banco faz o
+    // erro do Postgres sumir: a edge devolveria o mesmo {ok:false} genérico
+    // de uma tentativa legítima — falha calada. O log leva só o nome do rpc
+    // e a mensagem do Postgres, nunca CPF, e-mail, senha ou token.
+    if (error) {
+      console.error('vessel_conta_criar', error.message);
+      return responder({ ok: false, motivo: 'falhou' });
+    }
     if (!data?.ok) return responder(data ?? { ok: false, motivo: 'falhou' });
     const enviou = await mandarEmail(data.email, textoDoPrimeiroAcesso(corpo.nome, senha));
     // ⚠️ E-mail que não sai deixaria a cliente com perfil e sem senha. Nesse
@@ -56,43 +64,67 @@ Deno.serve(async (req) => {
   }
 
   if (corpo.acao === 'entrar') {
-    const { data } = await sb.rpc('vessel_conta_entrar', {
+    const { data, error } = await sb.rpc('vessel_conta_entrar', {
       p_login: corpo.login, p_senha: corpo.senha, p_lembrar: corpo.lembrar === true,
       p_agente: agente, p_ip_hash: null,
     });
+    if (error) {
+      console.error('vessel_conta_entrar', error.message);
+      return responder({ ok: false, motivo: 'falhou' });
+    }
     return responder(data ?? { ok: false, motivo: 'falhou' });
   }
 
   if (corpo.acao === 'eu') {
-    const { data } = await sb.rpc('vessel_conta_da_sessao', { p_token: corpo.token });
+    const { data, error } = await sb.rpc('vessel_conta_da_sessao', { p_token: corpo.token });
+    if (error) {
+      console.error('vessel_conta_da_sessao', error.message);
+      return responder({ ok: false, motivo: 'falhou' });
+    }
     return responder(data ?? { ok: false });
   }
 
   if (corpo.acao === 'sair') {
-    const { data } = await sb.rpc('vessel_conta_sair', {
+    const { data, error } = await sb.rpc('vessel_conta_sair', {
       p_token: corpo.token, p_todas: corpo.todas === true });
+    if (error) {
+      console.error('vessel_conta_sair', error.message);
+      return responder({ ok: false, motivo: 'falhou' });
+    }
     return responder(data ?? { ok: true });
   }
 
   if (corpo.acao === 'esqueci') {
     const senha = gerarSenha();
-    const { data } = await sb.rpc('vessel_conta_nova_senha', {
+    const { data, error } = await sb.rpc('vessel_conta_nova_senha', {
       p_login: corpo.login, p_senha: senha });
-    // ⚠️ A RESPOSTA É IGUAL EXISTINDO OU NÃO O PERFIL. A função do banco
-    // devolve o e-mail real quando o perfil existe (é assim que a gente sabe
-    // para onde mandar a senha nova) — mas esse e-mail para AQUI. A página
-    // recebe só {ok:true}, sempre, senão "esqueci minha senha" vira um jeito
-    // de descobrir se um CPF/e-mail é cliente da marca. Há teste em
-    // porta.test.mjs que reprova qualquer `email` ou `motivo` neste retorno.
+    // ⚠️ Erro de infraestrutura (parâmetro divergente, banco fora do ar) NÃO
+    // reabre o vazamento que o parágrafo abaixo evita: é a MESMA resposta
+    // para qualquer login, exista ou não o perfil — o rpc nem chegou a
+    // rodar. Só por isso pode carregar `motivo` aqui.
+    if (error) {
+      console.error('vessel_conta_nova_senha', error.message);
+      return responder({ ok: false, motivo: 'falhou' });
+    }
+    // ⚠️ A RESPOSTA DE SUCESSO É IGUAL EXISTINDO OU NÃO O PERFIL. A função do
+    // banco devolve o e-mail real quando o perfil existe (é assim que a gente
+    // sabe para onde mandar a senha nova) — mas esse e-mail para AQUI. A
+    // página recebe só {ok:true}, sempre, senão "esqueci minha senha" vira um
+    // jeito de descobrir se um CPF/e-mail é cliente da marca. Há teste em
+    // porta.test.mjs que reprova qualquer `email` neste retorno de sucesso.
     if (data?.email) await mandarEmail(data.email, textoDaSenhaNova('', senha));
     return responder({ ok: true });
   }
 
   if (corpo.acao === 'editar') {
-    const { data } = await sb.rpc('vessel_conta_editar', {
+    const { data, error } = await sb.rpc('vessel_conta_editar', {
       p_token: corpo.token, p_nome: corpo.nome ?? null, p_whatsapp: corpo.whatsapp ?? null,
       p_senha_atual: corpo.senha_atual ?? null, p_senha_nova: corpo.senha_nova ?? null,
     });
+    if (error) {
+      console.error('vessel_conta_editar', error.message);
+      return responder({ ok: false, motivo: 'falhou' });
+    }
     return responder(data ?? { ok: false, motivo: 'falhou' });
   }
 

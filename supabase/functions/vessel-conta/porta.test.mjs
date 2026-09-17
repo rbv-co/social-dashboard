@@ -7,6 +7,39 @@ import { fileURLToPath } from 'node:url';
 
 const FONTE = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'index.ts'), 'utf8');
 
+// ⚠️ Achador de chamadas a responder(...) que CONTA PARÊNTESES, em vez de
+// regex que para no primeiro `)`.
+//
+// O regex ingênuo (`/responder\([^)]*\)/`) foi provado errado por mutação
+// numa rodada de revisão: `responder({ ok: true, email_mascarado:
+// mascararEmail(data.email), senha: senha })` passava LIMPO, porque o regex
+// parava no `)` de `mascararEmail(data.email)` — tudo que vem depois (o
+// `senha: senha` que a gente quer pegar) fica FORA do trecho analisado. Ou
+// seja: o teste que existe para impedir vazamento de senha não mordia no
+// caso mais provável de acontecer de verdade, que é alguém acrescentar um
+// campo novo logo depois de uma chamada de função dentro do objeto.
+//
+// Este achador anda pelo texto a partir de cada `responder(`, contando `(` e
+// `)` até a profundidade voltar a zero — a chamada inteira, com qualquer
+// aninhamento dentro, e não só até o primeiro parêntese que fecha.
+function chamadasDeResponder(fonte) {
+  const chamadas = [];
+  const marcador = 'responder(';
+  let pos = 0;
+  while ((pos = fonte.indexOf(marcador, pos)) !== -1) {
+    let i = pos + marcador.length;
+    let profundidade = 1;
+    while (i < fonte.length && profundidade > 0) {
+      if (fonte[i] === '(') profundidade++;
+      else if (fonte[i] === ')') profundidade--;
+      i++;
+    }
+    chamadas.push(fonte.slice(pos, i));
+    pos = i;
+  }
+  return chamadas;
+}
+
 test('⚠️ a edge NUNCA devolve a senha gerada para a página', () => {
   // A senha vai por e-mail, e só. Devolvê-la no JSON deixaria a senha no
   // histórico do navegador e em qualquer registro de rede pelo caminho.
@@ -20,10 +53,11 @@ test('⚠️ a edge NUNCA devolve a senha gerada para a página', () => {
   // A prova de verdade é isolar só o que vai para `responder(...)` — que é o
   // JSON que sai para a página — e checar que a chave `senha` não aparece
   // ali. O parâmetro do rpc fica de fora porque nunca está dentro de uma
-  // chamada a `responder(`.
-  const chamadasDeResponder = FONTE.match(/responder\([^)]*\)/gs) ?? [];
-  assert.ok(chamadasDeResponder.length > 0, 'não achei nenhuma chamada a responder() no arquivo');
-  for (const chamada of chamadasDeResponder) {
+  // chamada a `responder(`. E a chamada é lida INTEIRA (ver
+  // `chamadasDeResponder` acima), não só até o primeiro `)`.
+  const chamadas = chamadasDeResponder(FONTE);
+  assert.ok(chamadas.length > 0, 'não achei nenhuma chamada a responder() no arquivo');
+  for (const chamada of chamadas) {
     assert.ok(!/\bsenha\s*[,:]/.test(chamada),
       `a resposta não pode conter a senha em claro: ${chamada}`);
   }
@@ -41,14 +75,27 @@ test('a edge trata as seis ações', () => {
   }
 });
 
-test('⚠️ "esqueci" responde IGUAL exista ou não o perfil: sem e-mail, sem motivo', () => {
+test('⚠️ "esqueci" nunca devolve o e-mail da cliente, e a resposta de sucesso é igual exista ou não o perfil', () => {
   // Requisito extra de uma revisão do banco (17/09/2026): a função
   // `vessel_conta_nova_senha` devolve o e-mail real quando o perfil existe —
   // é assim que a edge sabe para onde mandar a senha nova. Mas esse e-mail
   // NUNCA pode chegar na resposta para a página: se chegasse, "esqueci minha
   // senha" virava um jeito de descobrir se um CPF/e-mail é cliente da marca
   // (perfil existe → resposta com email; perfil não existe → resposta sem
-  // email). A página só pode receber `{ok:true}` seco, sempre igual.
+  // email).
+  //
+  // ⚠️ Sobre `motivo`: numa rodada de correção posterior, as seis chamadas de
+  // rpc passaram a conferir `error` (falha de infraestrutura — parâmetro
+  // divergente, banco fora do ar) e responder `{ok:false, motivo:'falhou'}`
+  // nesse caso, IGUAL nas seis ações. Isso NÃO reabre o vazamento: um erro de
+  // rpc é o MESMO para qualquer login, exista ou não o perfil — não é o rpc
+  // dizendo "achei"/"não achei", é o rpc dizendo "não consegui nem tentar".
+  // Por isso este teste não bane `motivo` em qualquer lugar do bloco (isso
+  // reprovaria a guarda de erro, que é comportamento correto e pedido à
+  // parte); ele prova as duas coisas que IMPORTAM: (1) `email` nunca aparece
+  // em nenhuma resposta da ação, e (2) a resposta de SUCESSO — a que de fato
+  // diferenciaria perfil existente de inexistente, se vazasse algo — continua
+  // sendo o `{ok:true}` seco, sem motivo, sem email.
   //
   // Isola o bloco da ação "esqueci" (do próprio `if` até o próximo `if
   // (corpo.acao ===` ou o fim do arquivo), para não confundir com as outras
@@ -59,11 +106,51 @@ test('⚠️ "esqueci" responde IGUAL exista ou não o perfil: sem e-mail, sem m
   const proximoIf = resto.indexOf('corpo.acao ===', 1);
   const bloco = proximoIf > -1 ? resto.slice(0, proximoIf) : resto;
 
-  // Toda chamada a responder(...) dentro do bloco é o que a página recebe.
-  const chamadas = bloco.match(/responder\([^)]*\)/gs) ?? [];
+  const chamadas = chamadasDeResponder(bloco);
   assert.ok(chamadas.length > 0, 'não achei nenhuma chamada a responder() no bloco de "esqueci"');
+
+  // (1) email nunca vaza, em NENHUMA chamada do bloco (sucesso ou erro).
   for (const chamada of chamadas) {
-    assert.ok(!/email/i.test(chamada), `resposta de "esqueci" vazou email: ${chamada}`);
-    assert.ok(!/motivo/i.test(chamada), `resposta de "esqueci" vazou motivo: ${chamada}`);
+    assert.ok(!/\bemail\b/i.test(chamada), `resposta de "esqueci" vazou email: ${chamada}`);
+  }
+
+  // (2) a resposta de sucesso continua {ok:true} seca — sem motivo.
+  const sucesso = chamadas.filter((c) => /ok:\s*true/.test(c) && !/motivo/i.test(c));
+  assert.ok(sucesso.length > 0,
+    'não achei a resposta de sucesso {ok:true} seca (sem motivo) em "esqueci"');
+  for (const chamada of sucesso) {
+    assert.match(chamada, /responder\(\s*\{\s*ok:\s*true\s*\}\s*\)/,
+      `a resposta de sucesso de "esqueci" tem de ser {ok:true} e nada mais: ${chamada}`);
+  }
+});
+
+test('⚠️ as seis chamadas de rpc conferem `error` e não deixam falha de infraestrutura calada', () => {
+  // Achado de revisão: sem olhar `error`, um parâmetro que um dia divergir do
+  // banco faz o erro do Postgres sumir — a edge devolve o mesmo {ok:false}
+  // genérico de uma tentativa legítima, e ninguém percebe. Cada rpc tem de
+  // desestruturar `error` (não só `data`) e tratar o caso.
+  const nomesDeRpc = [
+    'vessel_conta_criar', 'vessel_conta_entrar', 'vessel_conta_da_sessao',
+    'vessel_conta_sair', 'vessel_conta_nova_senha', 'vessel_conta_editar',
+  ];
+  for (const nome of nomesDeRpc) {
+    const marcador = `rpc('${nome}'`;
+    const pos = FONTE.indexOf(marcador);
+    assert.ok(pos > -1, `não achei a chamada a ${nome}`);
+    // A desestruturação vem sempre logo antes de `await sb.rpc(`, na mesma
+    // janela de texto.
+    const janela = FONTE.slice(Math.max(0, pos - 100), pos + marcador.length);
+    assert.match(janela, /const\s*\{\s*data\s*,\s*error\s*\}\s*=\s*await\s+sb\.rpc\(/,
+      `${nome}: falta desestruturar "error" (só "data" deixa erro do rpc calado)`);
+  }
+
+  // ⚠️ Nada de dado da cliente no log de erro — nem senha, nem token, nem
+  // CPF, nem e-mail. Só o nome do rpc e a mensagem do Postgres.
+  const logs = FONTE.match(/console\.error\([^)]*\)/gs) ?? [];
+  assert.ok(logs.length >= 6, `esperava pelo menos 6 console.error (um por rpc), achei ${logs.length}`);
+  for (const log of logs) {
+    for (const proibido of [/\bsenha\b/i, /\btoken\b/i, /\bcpf\b/i, /\bemail\b/i]) {
+      assert.ok(!proibido.test(log), `log de erro carrega dado da cliente: ${log}`);
+    }
   }
 });
