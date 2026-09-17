@@ -16,7 +16,10 @@ import { writeFile } from 'node:fs/promises';
 import { renderPNG, fecharRender } from './lib/render-criativo.mjs';
 import { montarHtmlOpr, DIM_OPR } from './lib/template-opr.mjs';
 import { agruparCampanhasDoDia, montarDadosOpr } from '../src/ferramentas/meta-ads/relatorio-diario-opr.js';
-import { deltaDeSeguidoresPorHora, seguidoresNoDia, visitasPerfilNoDia } from '../src/ferramentas/meta-ads/relatorio-por-hora.js';
+import {
+  deltaDeSeguidoresPorHora, seguidoresNoDia, visitasPerfilNoDia, seguidoresTotalNoFimDoDia,
+  montarMensagemLeadsFechamentoDia, montarMensagemSeguidoresFechamentoDia,
+} from '../src/ferramentas/meta-ads/relatorio-por-hora.js';
 
 // Nome sem ser "URL" — o global `URL` (usado abaixo pra montar o caminho do
 // PNG em --dry) fica sombreado por um `const URL` no escopo do módulo.
@@ -78,7 +81,7 @@ async function main() {
   // relatório não saiu" — e cai no mesmo aviso de texto (spec 6.3). Em
   // --dry nunca manda aviso — só relança, pra nunca arriscar tocar Z-API
   // nesse modo, nem em erro.
-  let dados, html;
+  let dados, html, mensagemLeads, mensagemSeguidores;
   try {
     const [campanhas, insights, leituras, visitas] = await Promise.all([
       sbGet('/campaigns?select=campaign_id,name'),
@@ -98,6 +101,21 @@ async function main() {
 
     dados = montarDadosOpr(campanhasDoDia, seguidoresDoDia, visitasPerfilDoDia);
     html = montarHtmlOpr(dados, { conta: 'Vessel Brasil', periodoLabel: periodoLabel(dia) });
+
+    // Mensagens de FECHAMENTO DO DIA (pedido do dono, 17/09/2026) — mandadas
+    // antes da imagem do OPR. Usam os mesmos dados já buscados acima, direto
+    // de `campanhasDoDia`/`deltas` (nunca passam pelo rollout de
+    // `montarDadosOpr` — essas mensagens são da MESMA família das de hora em
+    // hora, que já mostram dado real desde 12/09, não fazem parte do
+    // rollout campo-a-campo do OPR).
+    const gastoSeguidoresDoDia = campanhasDoDia
+      .filter((c) => c.tipo === 'seguidores')
+      .reduce((s, c) => s + c.gasto, 0);
+    const seguidoresTotal = seguidoresTotalNoFimDoDia(deltas, dia);
+    mensagemLeads = montarMensagemLeadsFechamentoDia(dia, campanhasDoDia);
+    mensagemSeguidores = montarMensagemSeguidoresFechamentoDia(
+      dia, seguidoresDoDia, visitasPerfilDoDia, gastoSeguidoresDoDia, seguidoresTotal,
+    );
   } catch (e) {
     console.error('Falha ao buscar/agregar dados:', e.message);
     if (DRY) throw e;
@@ -124,7 +142,23 @@ async function main() {
   if (DRY) {
     console.log('--dry: PNG salvo em coletor/opr-preview.png, nada enviado.');
     console.log(JSON.stringify(dados, null, 2));
+    console.log('--- mensagem de leads (fechamento do dia) ---');
+    console.log(mensagemLeads ?? '(nenhuma campanha WPP no dia — mensagem não seria enviada)');
+    console.log('--- mensagem de seguidores (fechamento do dia) ---');
+    console.log(mensagemSeguidores ?? '(sem dado de seguidor/visita no dia — mensagem não seria enviada)');
     return;
+  }
+
+  // As duas mensagens de FECHAMENTO DO DIA vão ANTES da imagem (pedido do
+  // dono, 17/09/2026) — cada uma tenta independente, uma falhando não
+  // impede a outra nem a imagem (mesmo espírito de enviar-relatorio-hora).
+  for (const [nome, msg] of [['leads', mensagemLeads], ['seguidores', mensagemSeguidores]]) {
+    if (!msg) continue;
+    try {
+      await mandarTextoWhatsapp(msg);
+    } catch (e) {
+      console.error(`Falha ao mandar a mensagem de fechamento (${nome}):`, e.message);
+    }
   }
 
   try {

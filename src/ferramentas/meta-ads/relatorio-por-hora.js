@@ -279,6 +279,61 @@ export function montarMensagemSeguidores(
   return corpo.join('\n');
 }
 
+// Mensagem de LEADS do FECHAMENTO DO DIA (pedido do dono, 17/09/2026) — mesmo
+// espírito de `montarMensagemWpp`, mas pro dia inteiro: `campanhasDoDia` vem
+// de `agruparCampanhasDoDia` (relatorio-diario-opr.js), já com gasto/leads do
+// DIA por campanha — não por hora, então os campos são `.gasto`/`.conversas`,
+// não `.gastoHora`/`.conversasHora`. Sem campanha WPP no dia: `null` (nada a
+// dizer), mesma regra de `montarMensagemWpp`.
+export function montarMensagemLeadsFechamentoDia(dia, campanhasDoDia) {
+  const wpp = campanhasDoDia.filter((c) => c.tipo === 'wpp');
+  if (!wpp.length) return null;
+
+  const [, mes, d] = dia.split('-');
+  const cabecalho = `📊 Leads recebidos — FECHAMENTO DO DIA, ${d}/${mes}`;
+
+  const totalLeads = wpp.reduce((s, c) => s + c.conversas, 0);
+  const totalGasto = wpp.reduce((s, c) => s + c.gasto, 0);
+  // Custo por lead exige investimento > 0 (não só conversas > 0) — mesma
+  // regra de relatorio-diario-opr.js: 0/N não é R$ 0,00, é "sem custo pra
+  // calcular" (campanha de teste sem verba, mas com lead atribuído).
+  const custoMedio = totalGasto > 0 && totalLeads > 0 ? custoPorLead(totalGasto, totalLeads) : null;
+
+  const linhaLeads = `Leads no dia: ${totalLeads}`;
+  const linhaCusto = custoMedio !== null ? `Custo por lead: ${formatarReais(custoMedio)}` : null;
+  const linhaGasto = `Gasto no dia: ${formatarReais(totalGasto)}`;
+  const doDia = [linhaLeads, linhaCusto, linhaGasto].filter((l) => l !== null);
+
+  const linhasCampanhas = wpp.map((c) => `${c.nome} — ${c.conversas} lead${c.conversas === 1 ? '' : 's'}`
+    + ` · Gasto: ${formatarReais(c.gasto)}`);
+
+  return [cabecalho, '', 'TOTAL DO DIA', ...doDia, '', 'POR CAMPANHA', ...linhasCampanhas].join('\n');
+}
+
+// Mensagem de SEGUIDORES do FECHAMENTO DO DIA (pedido do dono, 17/09/2026) —
+// mesmo espírito de `montarMensagemSeguidores`, só que sem seção de hora:
+// aqui só existe "o dia inteiro". `null` quando não há dado nenhum pro dia
+// (mesma regra de `montarMensagemSeguidores`).
+export function montarMensagemSeguidoresFechamentoDia(
+  dia, seguidoresDoDia, visitasPerfilDoDia, gastoSeguidoresDoDia, seguidoresTotal,
+) {
+  if (seguidoresDoDia === null && visitasPerfilDoDia == null && seguidoresTotal === null) return null;
+
+  const [, mes, d] = dia.split('-');
+  const cabecalho = `📊 Seguidores e visitas ao perfil — FECHAMENTO DO DIA, ${d}/${mes}`;
+  const comSinal = (n) => `${n > 0 ? '+' : ''}${n}`;
+
+  const linhaSeguidores = seguidoresDoDia !== null ? `Novos seguidores no dia: ${comSinal(seguidoresDoDia)}` : null;
+  const linhaVisitas = visitasPerfilDoDia != null ? `Visitas ao perfil no dia: ${visitasPerfilDoDia}` : null;
+  const custoPorSeguidor = gastoSeguidoresDoDia > 0 && seguidoresDoDia > 0
+    ? custoPorLead(gastoSeguidoresDoDia, seguidoresDoDia) : null;
+  const linhaCusto = custoPorSeguidor !== null ? `Custo por seguidor: ${formatarReais(custoPorSeguidor)}` : null;
+  const linhaTotal = seguidoresTotal !== null ? `Total seguidores da conta: ${seguidoresTotal.toLocaleString('pt-BR')}` : null;
+
+  const linhas = [linhaSeguidores, linhaVisitas, linhaCusto, linhaTotal].filter((l) => l !== null);
+  return [cabecalho, '', ...linhas].join('\n');
+}
+
 function diaEHoraSP(isoTimestamp) {
   const d = new Date(isoTimestamp);
   const dia = d.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
@@ -350,6 +405,16 @@ export function seguidoresNaHora(deltas, dia, hora) {
 export function seguidoresTotalNaHora(deltas, dia, hora) {
   const achado = deltas.find((d) => d.dia === dia && d.hora === hora);
   return achado ? achado.seguidoresTotal : null;
+}
+
+// O TOTAL absoluto de seguidores na ÚLTIMA leitura que existe do dia — pro
+// "fechamento do dia" (pedido do dono, 17/09/2026), que quer "Total
+// seguidores da conta" sem amarrar numa hora específica. `null` só quando o
+// dia não teve leitura nenhuma.
+export function seguidoresTotalNoFimDoDia(deltas, dia) {
+  const doDia = deltas.filter((d) => d.dia === dia);
+  if (!doDia.length) return null;
+  return doDia.reduce((ultimo, d) => (d.hora > ultimo.hora ? d : ultimo)).seguidoresTotal;
 }
 
 // Soma os deltas de TODAS as horas do dia até agora — "quanto ganhou (ou

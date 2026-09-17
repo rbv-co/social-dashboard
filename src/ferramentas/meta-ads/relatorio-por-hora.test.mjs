@@ -4,7 +4,8 @@ import {
   custoPorLead, agruparPorDiaEHora, tipoDaCampanha, comResultado, semResultado,
   montarMensagemWpp, leadsWppNoDia, gastoWppNoDia, montarMensagemSeguidores, deltaDeSeguidoresPorHora, seguidoresNaHora,
   seguidoresTotalNaHora, seguidoresNoDia, visitasPerfilNaHora, gastoSeguidoresNoDia, visitasPerfilNoDia,
-  seguidoresNoPeriodo, visitasPerfilNoPeriodo,
+  seguidoresNoPeriodo, visitasPerfilNoPeriodo, seguidoresTotalNoFimDoDia,
+  montarMensagemLeadsFechamentoDia, montarMensagemSeguidoresFechamentoDia,
 } from './relatorio-por-hora.js';
 
 test('custoPorLead divide gasto por conversas', () => {
@@ -419,4 +420,63 @@ test('visitasPerfilNaHora: acha a hora certa, e null quando não tem leitura', (
   ];
   assert.equal(visitasPerfilNaHora(linhas, '2026-09-12', 11), 12);
   assert.equal(visitasPerfilNaHora(linhas, '2026-09-12', 15), null, 'hora sem leitura nenhuma');
+});
+
+test('seguidoresTotalNoFimDoDia: pega o total da ÚLTIMA hora que tem leitura nesse dia', () => {
+  const deltas = deltaDeSeguidoresPorHora([
+    { followers_count: 1000, lido_em: '2026-09-12T13:05:00Z' }, // 10h SP
+    { followers_count: 1005, lido_em: '2026-09-12T14:05:00Z' }, // 11h SP
+    { followers_count: 1020, lido_em: '2026-09-12T20:05:00Z' }, // 17h SP — a mais tardia do dia
+    { followers_count: 1030, lido_em: '2026-09-13T14:05:00Z' }, // já é outro dia
+  ]);
+  assert.equal(seguidoresTotalNoFimDoDia(deltas, '2026-09-12'), 1020);
+  assert.equal(seguidoresTotalNoFimDoDia(deltas, '2026-09-20'), null, 'dia sem leitura nenhuma');
+});
+
+test('montarMensagemLeadsFechamentoDia: soma leads/gasto do dia por campanha WPP, ignora as outras', () => {
+  const campanhasDoDia = [
+    { campaignId: 'c1', nome: '[CAMPANHA WPP] Promo A', tipo: 'wpp', gasto: 300, conversas: 8 },
+    { campaignId: 'c2', nome: '[CAMPANHA WPP] Promo B', tipo: 'wpp', gasto: 240, conversas: 4 },
+    { campaignId: 'c3', nome: '[+ SEGUIDORES] Reels', tipo: 'seguidores', gasto: 100, conversas: 0 },
+  ];
+  const msg = montarMensagemLeadsFechamentoDia('2026-09-16', campanhasDoDia);
+  assert.match(msg, /FECHAMENTO DO DIA, 16\/09/);
+  assert.match(msg, /Leads no dia: 12/);
+  assert.match(msg, /Custo por lead: R\$\s?45,00/, '540 \\/ 12 = 45,00');
+  assert.match(msg, /Gasto no dia: R\$\s?540,00/);
+  assert.match(msg, /Promo A — 8 leads · Gasto: R\$\s?300,00/);
+  assert.match(msg, /Promo B — 4 leads · Gasto: R\$\s?240,00/);
+  assert.doesNotMatch(msg, /Reels/, 'campanha de seguidores não entra na mensagem de leads');
+});
+
+test('montarMensagemLeadsFechamentoDia: sem nenhuma campanha WPP no dia, null (nada a dizer)', () => {
+  const campanhasDoDia = [{ campaignId: 'c1', nome: '[+ SEGUIDORES] X', tipo: 'seguidores', gasto: 50, conversas: 0 }];
+  assert.equal(montarMensagemLeadsFechamentoDia('2026-09-16', campanhasDoDia), null);
+});
+
+test('⚠️ montarMensagemLeadsFechamentoDia: campanha de teste sem verba (gasto 0) não inventa "Custo por lead: R$ 0,00"', () => {
+  const campanhasDoDia = [{ campaignId: 'c1', nome: '[CAMPANHA WPP] Teste', tipo: 'wpp', gasto: 0, conversas: 1 }];
+  const msg = montarMensagemLeadsFechamentoDia('2026-09-16', campanhasDoDia);
+  assert.match(msg, /Leads no dia: 1/);
+  assert.doesNotMatch(msg, /Custo por lead/, '0 de investimento é denominador inválido pra custo, mesmo com lead > 0');
+});
+
+test('montarMensagemSeguidoresFechamentoDia: monta os totais do dia inteiro, sem seção de hora', () => {
+  const msg = montarMensagemSeguidoresFechamentoDia('2026-09-16', 170, 1400, 494.11, 18792);
+  assert.match(msg, /FECHAMENTO DO DIA, 16\/09/);
+  assert.match(msg, /Novos seguidores no dia: \+170/);
+  assert.match(msg, /Visitas ao perfil no dia: 1400/);
+  assert.match(msg, /Custo por seguidor: R\$\s?2,91/, '494,11 \\/ 170 ≈ 2,91');
+  assert.match(msg, /Total seguidores da conta: 18\.792/);
+  assert.doesNotMatch(msg, /INTERVALO|TOTAL\n/, 'fechamento do dia não tem seção de hora, só o dia inteiro');
+});
+
+test('montarMensagemSeguidoresFechamentoDia: sem dado nenhum do dia, null', () => {
+  assert.equal(montarMensagemSeguidoresFechamentoDia('2026-09-16', null, null, 0, null), null);
+});
+
+test('montarMensagemSeguidoresFechamentoDia: custo por seguidor só aparece com investimento E seguidor > 0', () => {
+  const msg = montarMensagemSeguidoresFechamentoDia('2026-09-16', 0, 100, 50, 18000);
+  assert.doesNotMatch(msg, /Custo por seguidor/, '0 seguidor é denominador inválido pra custo, mesmo com investimento');
+  assert.match(msg, /Novos seguidores no dia: 0/, '0 seguidor de verdade aparece como 0, não some');
 });
