@@ -72,28 +72,46 @@ async function mandarTextoWhatsapp(mensagem) {
 async function main() {
   const dia = ontemBR();
 
-  const [campanhas, insights, leituras, visitas] = await Promise.all([
-    sbGet('/campaigns?select=campaign_id,name'),
-    sbGet(`/campaign_insights?select=campaign_id,spend,likes,comments,shares,saves,conversas,post_engagement&account_id=eq.${CONTA_VESSEL}&captured_at=eq.${dia}&period_days=eq.1`),
-    // 48h de folga: garante leitura ANTERIOR ao primeiro bucket de ontem, pra
-    // deltaDeSeguidoresPorHora ter "anterior" pra comparar desde a primeira
-    // hora do dia inteiro (não só a última hora, como no relatório por hora).
-    sbGet(`/followers_leituras?select=followers_count,lido_em&account_id=eq.${CONTA_VESSEL}&lido_em=gte.${new Date(Date.now() - 48 * 3600 * 1000).toISOString()}&order=lido_em.asc`),
-    sbGet(`/perfil_visitas_hora?select=dia,hora,visitas_hora&account_id=eq.${CONTA_VESSEL}&dia=eq.${dia}`),
-  ]);
+  // Busca + agregação num try/catch só: qualquer falha aqui (rede, coluna
+  // errada, credencial) é a mesma categoria de problema pro dono — "o
+  // relatório não saiu" — e cai no mesmo aviso de texto (spec 6.3). Em
+  // --dry nunca manda aviso — só relança, pra nunca arriscar tocar Z-API
+  // nesse modo, nem em erro.
+  let dados, html;
+  try {
+    const [campanhas, insights, leituras, visitas] = await Promise.all([
+      sbGet('/campaigns?select=campaign_id,name'),
+      sbGet(`/campaign_insights?select=campaign_id,spend,likes,comments,shares,saves,conversas,post_engagement&account_id=eq.${CONTA_VESSEL}&captured_at=eq.${dia}&period_days=eq.1`),
+      // 48h de folga: garante leitura ANTERIOR ao primeiro bucket de ontem, pra
+      // deltaDeSeguidoresPorHora ter "anterior" pra comparar desde a primeira
+      // hora do dia inteiro (não só a última hora, como no relatório por hora).
+      sbGet(`/followers_leituras?select=followers_count,lido_em&account_id=eq.${CONTA_VESSEL}&lido_em=gte.${new Date(Date.now() - 48 * 3600 * 1000).toISOString()}&order=lido_em.asc`),
+      sbGet(`/perfil_visitas_hora?select=dia,hora,visitas_hora&account_id=eq.${CONTA_VESSEL}&dia=eq.${dia}`),
+    ]);
 
-  const nomesPorCampanha = Object.fromEntries(campanhas.map((c) => [c.campaign_id, c.name]));
-  const campanhasDoDia = agruparCampanhasDoDia(insights, nomesPorCampanha);
-  const deltas = deltaDeSeguidoresPorHora(leituras);
-  const seguidoresDoDia = seguidoresNoDia(deltas, dia);
-  const visitasPerfilDoDia = visitasPerfilNoDia(visitas, dia);
+    const nomesPorCampanha = Object.fromEntries(campanhas.map((c) => [c.campaign_id, c.name]));
+    const campanhasDoDia = agruparCampanhasDoDia(insights, nomesPorCampanha);
+    const deltas = deltaDeSeguidoresPorHora(leituras);
+    const seguidoresDoDia = seguidoresNoDia(deltas, dia);
+    const visitasPerfilDoDia = visitasPerfilNoDia(visitas, dia);
 
-  const dados = montarDadosOpr(campanhasDoDia, seguidoresDoDia, visitasPerfilDoDia);
-  const html = montarHtmlOpr(dados, { conta: 'Vessel Brasil', periodoLabel: periodoLabel(dia) });
+    dados = montarDadosOpr(campanhasDoDia, seguidoresDoDia, visitasPerfilDoDia);
+    html = montarHtmlOpr(dados, { conta: 'Vessel Brasil', periodoLabel: periodoLabel(dia) });
+  } catch (e) {
+    console.error('Falha ao buscar/agregar dados:', e.message);
+    if (DRY) throw e;
+    await mandarTextoWhatsapp(`⚠️ Relatório OPR de ${periodoLabel(dia)} não saiu — falha ao buscar dados: ${e.message}`);
+    return;
+  }
 
   let buf;
   try {
     buf = await renderPNG(html, DIM_OPR);
+  } catch (e) {
+    console.error('Falha ao renderizar a imagem:', e.message);
+    if (DRY) throw e;
+    await mandarTextoWhatsapp(`⚠️ Relatório OPR de ${periodoLabel(dia)} não saiu — falha ao renderizar: ${e.message}`);
+    return;
   } finally {
     await fecharRender();
   }
