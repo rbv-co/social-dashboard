@@ -3369,6 +3369,17 @@ function _construirAcoes(p, u, { isSelf, canEdit }) {
     permBtn.addEventListener('click', () => openPermModal(u))
     acoes.appendChild(permBtn)
 
+    // Abre em nova aba, só leitura — nunca a sessão real dela (ver o motivo
+    // completo em admin/visao-como-usuario.js). Mesmo padrão de abrir em nova
+    // aba já usado no Escritório 3D (tela-de-inicio.vue).
+    const visaoBtn = mkEl('button', 'btn usr-acao-btn'); visaoBtn.type = 'button'; visaoBtn.textContent = 'Visão como'
+    visaoBtn.title = `Ver quais painéis "${p.nome || p.email}" enxerga, sem abrir a conta dela`
+    visaoBtn.addEventListener('click', () => {
+      const { href } = router.resolve({ name: 'admin-visao', params: { id: u.id } })
+      window.open(href, '_blank')
+    })
+    acoes.appendChild(visaoBtn)
+
     const disBtn = mkEl('button', 'btn usr-acao-btn' + (u.disabled ? '' : ' btn-perigo'))
     disBtn.type = 'button'; disBtn.textContent = u.disabled ? 'Ativar' : 'Desativar'
     disBtn.addEventListener('click', async () => {

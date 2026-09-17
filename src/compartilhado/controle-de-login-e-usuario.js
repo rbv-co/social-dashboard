@@ -144,14 +144,23 @@ const _legado = {
   'module:meta:campanha': 'meta.campanha', 'module:meta:gestor': 'meta.gestor', 'module:meta:fabrica': 'meta.fabrica',
 }
 
+// Mesma regra de acesso de `hasPermission`, mas sobre um perfil explícito em
+// vez do `estado` global — para simular o acesso de OUTRA pessoa (Visão como,
+// em admin/visao-como-usuario.js) sem jamais tocar na sessão de quem está
+// logado. `hasPermission` é só esta função aplicada a `estado`.
+export function permissaoDoPerfil(perfil, recurso, acao = 'ver') {
+  if (perfil?.is_superadmin) return true
+  const key = _legado[recurso] || recurso
+  const permissions = perfil?.permissions || {}
+  // Pais 'sales'/'meta' (tool:*) = tem acesso se tiver QUALQUER filho do grupo.
+  if (key === 'sales') return ['sales.gestao', 'sales.analise'].some(k => (permissions[k] || []).includes('ver'))
+  if (key === 'meta') return ['meta.campanha', 'meta.gestor', 'meta.fabrica', 'meta.hora'].some(k => (permissions[k] || []).includes('ver'))
+  return (permissions[key] || []).includes(acao)
+}
+
 // Libera/bloqueia por recurso E ação. Super-admin vê tudo. Retrocompatível com as chaves antigas.
 export function hasPermission(recurso, acao = 'ver') {
-  if (estado.is_superadmin) return true
-  const key = _legado[recurso] || recurso
-  // Pais 'sales'/'meta' (tool:*) = tem acesso se tiver QUALQUER filho do grupo.
-  if (key === 'sales') return ['sales.gestao', 'sales.analise'].some(k => (estado.permissions[k] || []).includes('ver'))
-  if (key === 'meta') return ['meta.campanha', 'meta.gestor', 'meta.fabrica', 'meta.hora'].some(k => (estado.permissions[k] || []).includes('ver'))
-  return (estado.permissions[key] || []).includes(acao)
+  return permissaoDoPerfil(estado, recurso, acao)
 }
 
 // Perfis de rede que o usuário pode ver (null = todos). Usado p/ filtrar o seletor de perfis.

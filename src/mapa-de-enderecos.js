@@ -29,6 +29,7 @@ const rotas = [
   { path: '/redes-sociais', name: 'redes-sociais', component: () => import('./ferramentas/redes-sociais/tela-de-redes-sociais.vue') },
   { path: '/redes-relatorio', name: 'redes-relatorio', component: () => import('./ferramentas/redes-sociais/tela-de-relatorio-redes.vue') },
   { path: '/admin', name: 'admin', component: () => import('./ferramentas/admin/tela-de-admin.vue') },
+  { path: '/admin/visao/:id', name: 'admin-visao', component: () => import('./ferramentas/admin/tela-de-visao-como.vue'), props: true },
   { path: '/claude-status', name: 'claude-status', component: () => import('./ferramentas/claude-status/tela-de-status-claude.vue'), meta: { recurso: 'claude.status' } },
   { path: '/conteudo', name: 'conteudo', component: () => import('./ferramentas/conteudo/tela-de-conteudo.vue'), meta: { recurso: 'conteudo' } },
   // Tela de uma peça só. É o destino do push da hora H, então precisa abrir
