@@ -213,7 +213,16 @@ substituir por olhar.
 está, esperando ser feito. O antigo **B5 foi fundido aqui** no mesmo dia; o
 número B5 fica vago e não será reaproveitado.
 
-### B7 · Fotos Vessel › os retoques antes de publicar 🟡 *aberto em 14/09/2026 — DESTRAVADO em 14/09; o B8 foi fundido aqui em 15/09*
+### B7 · Fotos Vessel › as fotos de detalhe ✅ *RESOLVIDO em 16/09/2026 — as 42 saíram da Shopify*
+
+⚠️ **O desfecho NÃO foi o que este item previa.** Ele nasceu como "retocar as
+alças tortas antes de publicar" e terminou como "**tirar as fotos de detalhe da
+vitrine**". O retoque foi tentado em 21 versões, o dono reprovou, e a varredura
+mostrou por quê: **a alça torta é posicionamento do ENSAIO, não defeito da peça**
+— a mesma bolsa em outras cores saiu reta. Retocar era consertar o sintoma.
+
+O histórico do retoque fica abaixo porque o programa existe, funciona e está
+guardado — mas **não é mais o caminho recomendado**.
 
 São **duas partes do mesmo trabalho**, no mesmo acervo de 485 fotos, com o mesmo
 mapa e o mesmo bloqueio (que caiu em 14/09): **as alças que caem tortas** e as
@@ -242,13 +251,107 @@ antigo A24) acabou: em 14/09 às 21h a pasta do Zoho abre e os PNG de 2160×2880
 são lidos normalmente (conferido lendo `Alba_Gray_Alca.png`, 2160×2880). Não
 precisa mais copiar nada pelo Finder.
 
-**O que falta:** o preenchimento do couro que fica descoberto ao girar ainda
-aparece. Já corrigidos: fio preto na borda (girar RGB e transparência separados),
-degrau de tom (0,62 de 255), contorno justo. Agora dá para refazer no original.
+✅ **RESOLVIDO EM 15/09/2026 — e a causa não era a que estava escrita aqui.**
+O "blur" que o dono via **não vinha da foto pequena**. Vinha da **SOMBRA que a
+alça torta projeta no couro**: o recorte pega só a alça, a sombra não gira junto
+e sobra no lugar antigo. Medido: **21.042 px de sombra sobrando; depois do
+conserto, 212**. Entrega:
+`entregas/EM USO (nao apagar)/fotos-vessel_alca-reta-no-original_2026-09-15_1942_v1/`
+(exemplo Oriane Big Blanc no original 2160×2880, com antes/depois, contraste
+esticado e `programas/endireitar-no-original.py`).
+
+No caminho apareceram mais dois defeitos, os dois consertados:
+- **A IA redesenhava a FERRAGEM.** A dilatação que engole a sombra alcançava o
+  mosquetão; o encaixe abriu e o rebite virou anel. O metal agora é **poupado**
+  por saturação (`poupar_metal` no caso) e a IA não encosta nele.
+- **O tom do couro que a IA devolve é levemente diferente** e o RETÂNGULO da
+  área repintada aparecia no contraste esticado. Casado por canal contra um anel
+  de couro real logo fora da área.
+
+Também: o pivô certo é a **barra de cima da argola** (de onde a alça pendura),
+não o giratório — girar pelo giratório leva a ferragem junto.
+
+⚠️ **REVISÃO COM LUPA EM 16/09/2026** (o dono: *"quase ficou bom, vc pode ser
+mais crítico e detalhista"*). Olhando faixa por faixa em tamanho real, apareceram
+**três defeitos**, todos vindos de reaproveitar o contorno traçado na cópia de
+1000 px:
+1. o contorno **parava 187 px antes do fim da foto** → corte horizontal no couro;
+2. **entrava até 50 px dentro da alça** à direita e **por cima do braço da
+   argola** em cima → tira de alça para trás e ferragem redesenhada;
+3. **girar a peça inteira é errado**: a alça é uma DOBRA em volta da barra; o
+   alto descia 25 px e ela descolava.
+
+Resolvido: contorno traçado na foto grande; **o corpo gira e a dobra fica
+parada** (rampa de 150 px); a ferragem é recolada por cima no fim. Cisalhar
+("entortar") foi testado e descartado — deixa o **rebite redondo virar elipse**.
+Entrega v2: `.../fotos-vessel_alca-reta-no-original_2026-09-15_1942_v1/` (a v1
+está em `VERSAO-ANTERIOR-nao-usar/`).
+
+⚠️ **REVISÃO 2, EM 16/09/2026** — o dono viu **costura dupla**, couro **sem grão** e uma
+**linha** no couro. Os três eram defeito de verdade:
+- a **costura dupla** era a minha trava de proteger a ferragem: ela marcava metal por saturação
+  e as **marcas escuras da costura passavam no teste** — 32.038 px da alça eram recolados do
+  original no lugar velho. Achado rodando **só o movimento, sem repintar nada** (saiu perfeito),
+  o que provou que o defeito era da montagem;
+- o **grão** saía ZERO em todas as rodadas porque a referência era um retalho liso (grão 1,0) e
+  não o couro em volta (11,6);
+- a **linha** era a borda da área repintada: o tom era casado com um número só, que não
+  acompanha o degradê do couro. Virou correção ponto a ponto.
+
+✅ **A versão final NÃO USA IA.** `cv2.inpaint` + o grão do couro real da própria foto ficou
+melhor que o gpt-image-2, que inventava cordão e costura mesmo proibido no pedido. Grão do
+remendo **12,07** contra **12,07** do couro ao lado; **0 px** de ferragem alterados; **259 px**
+de sombra velha (eram 21.042). Entrega v4 em `exemplo-oriane-big-blanc/`.
+
+✅ **RESOLVIDO EM 16/09/2026 — as fotos saíram da Shopify.** O dono escolheu, em vez de
+retocar, **tirar as fotos de detalhe da vitrine**, com a regra "se uma da família está ruim,
+sai a família inteira". Ele marcou **42 fotos em 9 famílias** numa página de seleção; removi
+por `productDeleteMedia` e conferi relendo a loja: a Shopify foi de **479 para 437 imagens**,
+nenhum produto ficou sem foto, a contagem de cada um caiu exatamente 1, e a vitrine pública
+abre sem imagem quebrada. Cópia de segurança das 350 imagens em
+`entregas/COPIAS DE SEGURANCA/shopify-fotos-antes-de-remover-detalhes_2026-09-16/`.
+
+**Consequência aceita:** 42 produtos ficam sem a foto de detalhe da ferragem; os demais
+mantêm. A galeria já não era padronizada (a Oriane Mostarda vive com 1 foto de detalhe só).
+
+⚠️ **O que continua em aberto:** as fotos seguem no acervo e no Bling — só saíram da vitrine.
+Se um dia houver ensaio novo, o [[project_vessel_alca_torta_e_do_ensaio]] mostra que o defeito
+é de POSICIONAMENTO, e as cores irmãs servem de referência de como posicionar.
+
+🔄 **(histórico) MUDANÇA DE RUMO EM 16/09/2026.** Depois de 17 versões o dono reprovou o retoque
+("ficou ruim, to pensando em abordar de outra forma") e pediu para procurar **outra foto**.
+A varredura mudou o problema de lugar: **a alça torta é POSICIONAMENTO DO ENSAIO, não defeito
+da peça** — a mesma bolsa em outras cores saiu reta, e isso vale nas 6 famílias. Além disso, a
+galeria **não é padronizada** (a Oriane Mostarda vive com 1 foto de detalhe só), então tirar a
+foto torta da galeria é saída de custo zero e não remendo. Ver
+[[project_vessel_alca_torta_e_do_ensaio]] e a entrega
+`fotos-vessel_tem-outra-foto-com-alca-reta_2026-09-16_1420_v1/`.
+⚠️ **As 16 não são o mesmo caso** — na Lunea a alça entra cortada no canto, não pende torta.
+
+**Decisão pendente do dono, por foto ou por lote:** tirar da galeria · refotografar · deixar.
+O retoque continua existindo e funciona (programa em `programas/`, sem IA), mas deixou de ser
+o caminho recomendado.
+
+*(histórico) O que faltava no rumo antigo:* aplicar nas **16 fotos de detalhe do
+mesmo caso** ("inclinada"). Cada foto pede o contorno traçado **na foto grande**,
+a barra de onde a alça pendura e o ângulo, tudo à mão — foi o atalho de converter
+um contorno pronto que causou os três defeitos acima. A medição automática também
+já errou (deu −26,9° onde o certo era 9°); a prova de que ficou reta é o PRUMO,
+linhas verticais desenhadas sobre a foto.
 
 ⚠️ A régua de textura que eu usava estava errada (comparava com um anel que
-pegava a borda da alça: alvo 26 contra 1,3–2,9 do couro limpo). Referência tem de
-ser retalho de couro limpo, longe de borda.
+pegava a borda da alça: alvo 26 contra 1,3–2,9 do couro limpo). Hoje ela é
+**informativa**, não critério: o miolo do remendo tem a sombra nova e a curva da
+bolsa dentro, então é naturalmente mais texturizado que um retalho liso. O
+veredito sai de: nada mudou fora da zona, a sombra velha sumiu, e a emenda não
+tem degrau de tom.
+
+⚠️ **Contagem conferida em 15/09:** das 158 fotos com alça fora de posição,
+**25 são `Detalhe`** (16 inclinada, 7 torcida, 1 fivela pendurada, 1 ponta
+solta) e **22 são `Alca`** (16 ponta solta, 5 fivela pendurada, 1 assimétrica).
+As outras 111 são fotos gerais. O número "23 de detalhe" escrito antes estava
+errado. **3 das 25 `Detalhe`** só acham o arquivo grande por outro nome (as
+Linear Branca Média e Chocolate Pequena, já anotadas como pastas repetidas).
 
 #### Parte 2 · as 306 imperfeições *(era o item B8)*
 
