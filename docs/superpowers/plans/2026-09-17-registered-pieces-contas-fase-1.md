@@ -157,7 +157,8 @@ test('⚠️ NÃO bate quando só o primeiro nome coincide', () => {
 
 test('chega perto aceita sobrenome escrito errado, mas exige primeiro nome', () => {
   assert.ok(nomesChegamPerto('Ana Sousa', 'Ana Souza'));   // z/s
-  assert.ok(nomesChegamPerto('Ana Soza', 'Ana Souza'));    // letra faltando
+  assert.ok(!nomesChegamPerto('Ana Soza', 'Ana Souza'));   // 4 letras: não dá para distinguir erro de outra pessoa
+  assert.ok(nomesChegamPerto('Ana Rodriges', 'Ana Rodrigues')); // sobrenome longo: erro de digitação
   assert.ok(!nomesChegamPerto('Bia Souza', 'Ana Souza'));  // outro primeiro nome
   assert.ok(!nomesChegamPerto('Ana', 'Ana Souza'));        // sem sobrenome
 });
@@ -219,8 +220,10 @@ function distancia(a, b) {
   return d[a.length][b.length];
 }
 
-/** Frouxa: primeiro nome IGUAL e sobrenome quase igual (até 2 letras de
- *  diferença). ⚠️ Só pode ser usada quando o pedido está marcado PRESENTE —
+/** Frouxa: primeiro nome IGUAL e sobrenome quase igual. ⚠️ O QUANTO "quase"
+ *  ESCALA COM O TAMANHO: 4 letras ou menos exige igualdade, porque "Pina" e
+ *  "Lima" (ou "Neis" e "Reis") são pessoas diferentes, não erro de digitação —
+ *  e esta regra aprova garantia sem ninguém olhar. ⚠️ Só pode ser usada quando o pedido está marcado PRESENTE —
  *  a marca é a segunda prova que autoriza afrouxar o nome. */
 export function nomesChegamPerto(digitado, doPedido) {
   const a = pedacos(digitado), b = pedacos(doPedido);
