@@ -10,7 +10,7 @@ export const DIM_OPR = { width: 1200, height: 800 };
 
 const fmtNum = (v) => (v == null ? '—' : String(Math.round(v)));
 const fmtReais = (v) => (v == null ? '—' : formatarReais(v));
-const fmtPct = (v) => (v == null ? '—' : `${v.toFixed(1)}%`);
+const fmtPct = (v) => (v == null ? '—' : `${v.toFixed(1).replace('.', ',')}%`);
 
 function card(label, valor) {
   return `<div class="card"><div class="card-label">${label}</div><div class="card-valor">${valor}</div></div>`;

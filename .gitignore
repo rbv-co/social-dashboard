@@ -42,6 +42,10 @@ coletor/.preencher-numeros-de-campanha.json.tmp
 # node
 **/node_modules/
 
+# preview do relatório OPR diário (--dry): PNG com gasto/seguidores/leads
+# REAIS da conta — nunca pode entrar por um `git add .` distraído.
+coletor/opr-preview.png
+
 # monitor local do coletor (utilitário; já lê do .env, sem credencial embutida)
 coletor/np-poll.mjs
 coletor/np-watch.mjs

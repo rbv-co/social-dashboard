@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { montarHtmlOpr } from './template-opr.mjs';
+import { agruparCampanhasDoDia, montarDadosOpr } from '../../src/ferramentas/meta-ads/relatorio-diario-opr.js';
 
 test('montarHtmlOpr: injeta os valores calculados no HTML, formatados', () => {
   const dados = {
@@ -27,4 +28,34 @@ test('montarHtmlOpr: valor null aparece como travessão, nunca "null" ou número
   const html = montarHtmlOpr(dados, { conta: 'Vessel Brasil', periodoLabel: '16/09/2026' });
   assert.doesNotMatch(html, /null/);
   assert.match(html, /—/);
+});
+
+test('integração: agruparCampanhasDoDia -> montarDadosOpr -> montarHtmlOpr, sem mocks no meio', () => {
+  // Fixture pequena, à mão — se algum campo mudar de nome de um lado (ex. em
+  // montarDadosOpr) sem o outro lado (template) acompanhar, é este teste que
+  // quebra; os outros dois arquivos de teste isolam cada ponta com fixtures
+  // próprias e não pegariam essa quebra.
+  const linhas = [
+    { campaign_id: 'c1', spend: 301, likes: 0, comments: 0, shares: 0, saves: 0, conversas: 4, post_engagement: 0 },
+    { campaign_id: 'c2', spend: 100, likes: 0, comments: 0, shares: 0, saves: 0, conversas: 0, post_engagement: 0 },
+    { campaign_id: 'c3', spend: 50, likes: 10, comments: 2, shares: 1, saves: 1, conversas: 0, post_engagement: 14 },
+  ];
+  const nomesPorCampanha = {
+    c1: '[CAMPANHA WPP] Promo',
+    c2: '[+ SEGUIDORES] Reels',
+    c3: '[+ ENGAJAMENTO] Post',
+  };
+
+  const campanhasDoDia = agruparCampanhasDoDia(linhas, nomesPorCampanha);
+  const dados = montarDadosOpr(campanhasDoDia, /* seguidoresDoDia */ 5, /* visitasPerfilDoDia */ 40);
+
+  // Contas de cabeça, pra conferir que a agregação bateu antes de olhar o HTML:
+  // custoPorLead = 301 / 4 conversas = 75.25 -> "R$ 75,25"
+  // conversaoVisitaSeguidor = 5 seguidores / 40 visitas * 100 = 12.5 -> "12,5%"
+  assert.equal(dados.leads.custoPorLead, 75.25);
+  assert.equal(dados.growth.conversaoVisitaSeguidor, 12.5);
+
+  const html = montarHtmlOpr(dados, { conta: 'Vessel Brasil', periodoLabel: '16/09/2026' });
+  assert.match(html, /R\$\s?75,25/, 'custoPorLead calculado bate no HTML final, formatado em reais');
+  assert.match(html, /12,5%/, 'conversão calculada bate no HTML final, com vírgula (pt-BR)');
 });
