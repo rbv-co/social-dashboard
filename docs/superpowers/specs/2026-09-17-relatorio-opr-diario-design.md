@@ -1,7 +1,7 @@
 # Relatório OPR diário (Paid Media Performance)
 
 **Data:** 17/09/2026
-**Estado:** desenho aprovado pelo dono, aguardando plano de execução. Envio pro grupo fica DESLIGADO até aprovação explícita.
+**Estado:** implementado e em produção — dono validou o preview (local e via `workflow_dispatch`) e aprovou ligar o envio real em 17/09/2026. Cron diário ativo (`schedule` em `.github/workflows/opr-diario.yml`, 08h BRT).
 
 ---
 

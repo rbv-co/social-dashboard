@@ -1,12 +1,10 @@
 name: Relatório OPR Diário
 on:
   workflow_dispatch: {}
-  # Cron DESLIGADO até o dono aprovar o preview (spec:
-  # docs/superpowers/specs/2026-09-17-relatorio-opr-diario-design.md). Quando
-  # aprovar: descomentar o schedule abaixo E trocar --dry por envio real em
-  # coletor/gerar-opr-diario.mjs (commit separado).
-  # schedule:
-  #   - cron: '0 11 * * *'  # 08h BRT — Brasil não tem horário de verão desde 2019
+  # Ligado (dono aprovou em 17/09/2026, depois de validar o preview local e
+  # via workflow_dispatch — ver docs/superpowers/specs/2026-09-17-relatorio-opr-diario-design.md).
+  schedule:
+    - cron: '0 11 * * *'  # 08h BRT — Brasil não tem horário de verão desde 2019
 jobs:
   gerar:
     runs-on: ubuntu-latest
@@ -17,13 +15,13 @@ jobs:
         with: { node-version: '24' }
       - name: Instalar deps
         run: cd coletor && npm ci
-      - name: Gerar relatório (--dry, envio real ainda desligado)
+      - name: Gerar e mandar o relatório pro grupo
         env:
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           ZAPI_INSTANCE_ID: ${{ secrets.ZAPI_INSTANCE_ID }}
           ZAPI_INSTANCE_TOKEN: ${{ secrets.ZAPI_INSTANCE_TOKEN }}
           ZAPI_TOKEN: ${{ secrets.ZAPI_TOKEN }}
-        run: node coletor/gerar-opr-diario.mjs --dry
+        run: node coletor/gerar-opr-diario.mjs
       - name: Guardar o PNG gerado
         uses: actions/upload-artifact@v4
         with:

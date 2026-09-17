@@ -6,10 +6,11 @@
 // BRT. Ver spec: docs/superpowers/specs/2026-09-17-relatorio-opr-diario-design.md.
 //
 // Uso: node coletor/gerar-opr-diario.mjs [--dry]
-//   --dry: salva o PNG em coletor/opr-preview.png e imprime os números no
-//   terminal — NUNCA chama a Z-API. Único modo usado até o dono aprovar o
-//   preview (pedido do dono, 17/09/2026: "monta pra mim mas não envia nada
-//   lá no grupo ainda").
+//   --dry: salva o PNG em coletor/opr-preview.png, imprime os números no
+//   terminal e para — NUNCA chama a Z-API. Modo de teste/preview.
+//   sem --dry (modo do cron, ligado em 17/09/2026 depois do dono aprovar o
+//   preview): salva o MESMO PNG (fica de rastro no artefato do Actions) e
+//   manda pro grupo de verdade.
 import './lib/carregar-env.mjs';
 import { writeFile } from 'node:fs/promises';
 import { renderPNG, fecharRender } from './lib/render-criativo.mjs';
@@ -116,8 +117,11 @@ async function main() {
     await fecharRender();
   }
 
+  // Salva sempre (dry ou real) — fica de rastro no artefato do Actions
+  // mesmo numa rodada real, útil pra conferir depois o que foi mandado.
+  await writeFile(new URL('./opr-preview.png', import.meta.url), buf);
+
   if (DRY) {
-    await writeFile(new URL('./opr-preview.png', import.meta.url), buf);
     console.log('--dry: PNG salvo em coletor/opr-preview.png, nada enviado.');
     console.log(JSON.stringify(dados, null, 2));
     return;
