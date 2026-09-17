@@ -7,11 +7,11 @@
 
       <div class="ropr-periodo">
         <div class="ropr-atalhos">
-          <button class="btn" :class="{ 'btn-principal': atalho === 'hoje' }" @click="aplicarAtalho('hoje')">Hoje</button>
-          <button class="btn" :class="{ 'btn-principal': atalho === 'ontem' }" @click="aplicarAtalho('ontem')">Ontem</button>
-          <button class="btn" :class="{ 'btn-principal': atalho === '7dias' }" @click="aplicarAtalho('7dias')">7 dias</button>
-          <button class="btn" :class="{ 'btn-principal': atalho === '30dias' }" @click="aplicarAtalho('30dias')">30 dias</button>
-          <button class="btn" :class="{ 'btn-principal': atalho === 'mes' }" @click="aplicarAtalho('mes')">Mês atual</button>
+          <button :class="{ ativo: atalho === 'hoje' }" @click="aplicarAtalho('hoje')">Hoje</button>
+          <button :class="{ ativo: atalho === 'ontem' }" @click="aplicarAtalho('ontem')">Ontem</button>
+          <button :class="{ ativo: atalho === '7dias' }" @click="aplicarAtalho('7dias')">7 dias</button>
+          <button :class="{ ativo: atalho === '30dias' }" @click="aplicarAtalho('30dias')">30 dias</button>
+          <button :class="{ ativo: atalho === 'mes' }" @click="aplicarAtalho('mes')">Mês atual</button>
         </div>
         <div class="ropr-intervalo">
           <label class="ropr-campo-data">
@@ -22,93 +22,141 @@
             <span>Até</span>
             <input type="date" v-model="diaFimInput" :max="hojeISO" />
           </label>
-          <button class="btn btn-principal" @click="aplicarIntervaloCustom">Aplicar</button>
+          <button class="ropr-aplicar" @click="aplicarIntervaloCustom">Aplicar</button>
         </div>
       </div>
 
-      <p v-if="!erro" class="ropr-periodo-label">{{ periodoLabel }}</p>
+      <main v-if="!carregando && !erro && dados" class="report">
+        <header class="header">
+          <div>
+            <div class="eyebrow-line"></div>
+            <h1 class="title">PAID MEDIA PERFORMANCE</h1>
+            <div class="subtitle">Dashboard Executivo · Tráfego Pago</div>
+          </div>
+          <div class="meta">
+            <div class="meta-item"><div class="meta-label">Conta / Perfil:</div><div class="meta-value">{{ CONTA_LABEL }}</div></div>
+            <div class="meta-item"><div class="meta-label">Período:</div><div class="meta-value">{{ periodoLabel }}</div></div>
+            <div class="meta-item accent"><div class="meta-label">Estratégia<br>Dados<br>Crescimento</div></div>
+          </div>
+        </header>
 
-      <template v-if="!carregando && !erro && dados">
-        <div class="ropr-kpis">
-          <div class="ropr-kpi">
-            <span class="ropr-kpi-label">Investimento Total</span>
-            <span class="ropr-kpi-valor">{{ formatarReaisOuTraco(dados.header.investimentoTotal) }}</span>
+        <section class="kpis">
+          <div class="kpi-card">
+            <div class="icon-circle"><svg viewBox="0 0 48 48"><ellipse cx="17" cy="13" rx="9" ry="4"/><path d="M8 13v7c0 2.2 4 4 9 4s9-1.8 9-4v-7"/><ellipse cx="28" cy="20" rx="9" ry="4"/><path d="M19 20v7c0 2.2 4 4 9 4s9-1.8 9-4v-7"/><ellipse cx="18" cy="29" rx="9" ry="4"/><path d="M9 29v7c0 2.2 4 4 9 4s9-1.8 9-4v-7"/></svg></div>
+            <div><div class="kpi-label">Investimento Total</div><div class="kpi-value">{{ fmtValor(dados.header.investimentoTotal, 'moeda') }}</div><div class="kpi-caption">Em tráfego pago</div></div>
           </div>
-          <div class="ropr-kpi">
-            <span class="ropr-kpi-label">Novos Seguidores</span>
-            <span class="ropr-kpi-valor">{{ formatarNumOuTraco(dados.header.novosSeguidores) }}</span>
+          <div class="kpi-card">
+            <div class="icon-circle"><svg viewBox="0 0 48 48"><circle cx="18" cy="17" r="5"/><circle cx="31" cy="18" r="4"/><path d="M8 36c0-7 4-11 10-11s10 4 10 11"/><path d="M27 27c1.4-.8 2.8-1 4-1 5 0 8 3.4 8 9"/></svg></div>
+            <div><div class="kpi-label">Novos Seguidores</div><div class="kpi-value">{{ fmtValor(dados.header.novosSeguidores) }}</div><div class="kpi-caption">+ audiência qualificada</div></div>
           </div>
-          <div class="ropr-kpi">
-            <span class="ropr-kpi-label">Engajamentos</span>
-            <span class="ropr-kpi-valor">{{ formatarNumOuTraco(dados.header.engajamentos) }}</span>
+          <div class="kpi-card">
+            <div class="icon-circle"><svg viewBox="0 0 48 48"><path d="M24 39S9 30 9 18c0-5 3.4-8 8-8 3.4 0 5.6 1.7 7 4 1.4-2.3 3.6-4 7-4 4.6 0 8 3 8 8 0 12-15 21-15 21Z"/></svg></div>
+            <div><div class="kpi-label">Engajamentos</div><div class="kpi-value">{{ fmtValor(dados.header.engajamentos) }}</div><div class="kpi-caption">Interações totais</div></div>
           </div>
-          <div class="ropr-kpi">
-            <span class="ropr-kpi-label">Leads Gerados</span>
-            <span class="ropr-kpi-valor">{{ formatarNumOuTraco(dados.header.leadsGerados) }}</span>
+          <div class="kpi-card">
+            <div class="icon-circle"><svg viewBox="0 0 48 48"><path d="M8 10h32L28 25v11l-8 4V25L8 10Z"/></svg></div>
+            <div><div class="kpi-label">Leads Gerados</div><div class="kpi-value">{{ fmtValor(dados.header.leadsGerados) }}</div><div class="kpi-caption">Oportunidades de negócio</div></div>
           </div>
-        </div>
+        </section>
 
-        <div class="ropr-secoes">
-          <section class="ropr-secao">
-            <h2>Growth / Seguidores</h2>
-            <div class="ropr-metricas">
-              <div class="ropr-metrica"><span>Investimento</span><strong>{{ formatarReaisOuTraco(dados.growth.investimento) }}</strong></div>
-              <div class="ropr-metrica"><span>Seguidores</span><strong>{{ formatarNumOuTraco(dados.growth.seguidores) }}</strong></div>
-              <div class="ropr-metrica"><span>Visitas ao Perfil</span><strong>{{ formatarNumOuTraco(dados.growth.visitasPerfil) }}</strong></div>
-              <div class="ropr-metrica"><span>Custo por Seguidor</span><strong>{{ formatarReaisOuTraco(dados.growth.custoPorSeguidor) }}</strong></div>
-              <div class="ropr-metrica"><span>Custo por Visita</span><strong>{{ formatarReaisOuTraco(dados.growth.custoPorVisita) }}</strong></div>
-              <div class="ropr-metrica"><span>Conversão Visita → Seguidor</span><strong>{{ formatarPctOuTraco(dados.growth.conversaoVisitaSeguidor) }}</strong></div>
+        <section class="sections">
+          <article class="panel">
+            <div class="panel-head">
+              <div class="panel-num">01</div>
+              <div><div class="panel-title">Growth / Seguidores</div><div class="panel-sub">Aquisição e expansão de audiência</div></div>
             </div>
-          </section>
-
-          <section class="ropr-secao">
-            <h2>Engagement</h2>
-            <div class="ropr-metricas">
-              <div class="ropr-metrica"><span>Investimento</span><strong>{{ formatarReaisOuTraco(dados.engagement.investimento) }}</strong></div>
-              <div class="ropr-metrica"><span>Curtidas</span><strong>{{ formatarNumOuTraco(dados.engagement.curtidas) }}</strong></div>
-              <div class="ropr-metrica"><span>Comentários</span><strong>{{ formatarNumOuTraco(dados.engagement.comentarios) }}</strong></div>
-              <div class="ropr-metrica"><span>Compartilhamentos</span><strong>{{ formatarNumOuTraco(dados.engagement.compartilhamentos) }}</strong></div>
-              <div class="ropr-metrica"><span>Salvamentos</span><strong>{{ formatarNumOuTraco(dados.engagement.salvamentos) }}</strong></div>
-              <div class="ropr-metrica"><span>Custo por Curtida</span><strong>{{ formatarReaisOuTraco(dados.engagement.custoPorCurtida) }}</strong></div>
-              <div class="ropr-metrica"><span>Custo por Comentário</span><strong>{{ formatarReaisOuTraco(dados.engagement.custoPorComentario) }}</strong></div>
-              <div class="ropr-metrica"><span>Custo por Compartilhamento</span><strong>{{ formatarReaisOuTraco(dados.engagement.custoPorCompartilhamento) }}</strong></div>
-              <div class="ropr-metrica"><span>Custo por Salvamento</span><strong>{{ formatarReaisOuTraco(dados.engagement.custoPorSalvamento) }}</strong></div>
-              <div class="ropr-metrica"><span>Total de Interações</span><strong>{{ formatarNumOuTraco(dados.engagement.totalInteracoes) }}</strong></div>
-              <div class="ropr-metrica"><span>Custo Médio por Engajamento</span><strong>{{ formatarReaisOuTraco(dados.engagement.custoMedioPorEngajamento) }}</strong></div>
+            <div class="metric-grid growth-top">
+              <div class="metric"><div class="metric-label">Investimento</div><div class="metric-value">{{ fmtValor(dados.growth.investimento, 'moeda') }}</div></div>
+              <div class="metric"><div class="metric-label">Seguidores</div><div class="metric-value">{{ fmtValor(dados.growth.seguidores) }}</div></div>
+              <div class="metric"><div class="metric-label">Visitas ao Perfil</div><div class="metric-value">{{ fmtValor(dados.growth.visitasPerfil) }}</div></div>
             </div>
-          </section>
+            <div class="metric-grid growth-bottom">
+              <div class="metric"><div class="metric-label">Custo por Seguidor</div><div class="metric-value">{{ fmtValor(dados.growth.custoPorSeguidor, 'moeda') }}</div></div>
+              <div class="metric"><div class="metric-label">Custo por Visita</div><div class="metric-value">{{ fmtValor(dados.growth.custoPorVisita, 'moeda') }}</div></div>
+              <div class="metric"><div class="metric-label">Conversão Visita → Seguidor</div><div class="metric-value">{{ fmtValor(dados.growth.conversaoVisitaSeguidor, 'percentual') }}</div></div>
+            </div>
+            <div class="panel-note">
+              <div class="icon-circle"><svg viewBox="0 0 48 48"><path d="M12 37V27M24 37V18M36 37V10"/></svg></div>
+              <div class="note-text">Mais pessoas. Mais relevância.<br>Uma comunidade em crescimento.</div>
+            </div>
+          </article>
 
-          <section class="ropr-secao">
-            <h2>Leads &amp; Sales</h2>
+          <article class="panel">
+            <div class="panel-head">
+              <div class="panel-num">02</div>
+              <div><div class="panel-title">Engagement</div><div class="panel-sub">Interações que fortalecem a marca</div></div>
+            </div>
+            <div class="metric-grid engagement-top">
+              <div class="metric"><div class="metric-label">Investimento</div><div class="metric-value">{{ fmtValor(dados.engagement.investimento, 'moeda') }}</div></div>
+              <div class="metric"><div class="metric-label">Curtidas</div><div class="metric-value">{{ fmtValor(dados.engagement.curtidas) }}</div></div>
+              <div class="metric"><div class="metric-label">Comentários</div><div class="metric-value">{{ fmtValor(dados.engagement.comentarios) }}</div></div>
+              <div class="metric"><div class="metric-label">Compart.</div><div class="metric-value">{{ fmtValor(dados.engagement.compartilhamentos) }}</div></div>
+              <div class="metric"><div class="metric-label">Salvamentos</div><div class="metric-value">{{ fmtValor(dados.engagement.salvamentos) }}</div></div>
+            </div>
+            <div class="metric-grid engagement-mid">
+              <div class="metric"><div class="metric-label">Custo / Curtida</div><div class="metric-value">{{ fmtValor(dados.engagement.custoPorCurtida, 'moeda') }}</div></div>
+              <div class="metric"><div class="metric-label">Custo / Comentário</div><div class="metric-value">{{ fmtValor(dados.engagement.custoPorComentario, 'moeda') }}</div></div>
+              <div class="metric"><div class="metric-label">Custo / Compart.</div><div class="metric-value">{{ fmtValor(dados.engagement.custoPorCompartilhamento, 'moeda') }}</div></div>
+              <div class="metric"><div class="metric-label">Custo / Salvamento</div><div class="metric-value">{{ fmtValor(dados.engagement.custoPorSalvamento, 'moeda') }}</div></div>
+            </div>
+            <div class="metric-grid engagement-bottom">
+              <div class="metric center"><div class="metric-label">Total de Interações</div><div class="metric-value">{{ fmtValor(dados.engagement.totalInteracoes) }}</div></div>
+              <div class="metric center"><div class="metric-label">Custo Médio por Engajamento</div><div class="metric-value">{{ fmtValor(dados.engagement.custoMedioPorEngajamento, 'moeda') }}</div></div>
+            </div>
+            <div class="panel-note">
+              <div class="icon-circle"><svg viewBox="0 0 48 48"><path d="M24 39S9 30 9 18c0-5 3.4-8 8-8 3.4 0 5.6 1.7 7 4 1.4-2.3 3.6-4 7-4 4.6 0 8 3 8 8 0 12-15 21-15 21Z"/></svg></div>
+              <div class="note-text">Conteúdo que conecta.<br>Resultados que constroem valor.</div>
+            </div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-head">
+              <div class="panel-num">03</div>
+              <div><div class="panel-title">Leads &amp; Sales</div><div class="panel-sub">Do interesse ao faturamento</div></div>
+            </div>
             <!-- Leads Quentes/Vendas e tudo que depende deles vem `null`
                  (Chatwoot ainda não integrado) — aparece "—", nunca um número
                  inventado. Mesma regra do relatório que vai pro WhatsApp. -->
-            <div class="ropr-funil">
-              <div class="ropr-funil-etapa"><span>Leads</span><strong>{{ formatarNumOuTraco(dados.sales.leads) }}</strong></div>
-              <div class="ropr-funil-etapa"><span>Leads Quentes</span><strong>{{ formatarNumOuTraco(dados.sales.leadsQuentes) }}</strong></div>
-              <div class="ropr-funil-etapa"><span>Vendas</span><strong>{{ formatarNumOuTraco(dados.sales.vendas) }}</strong></div>
+            <div class="funnel">
+              <div class="funnel-step"><div class="funnel-label">Leads</div><div class="funnel-value">{{ fmtValor(dados.sales.leads) }}</div></div>
+              <div class="funnel-step mid"><div class="funnel-label">Leads Quentes</div><div class="funnel-value">{{ fmtValor(dados.sales.leadsQuentes) }}</div></div>
+              <div class="funnel-step end"><div class="funnel-label">Vendas</div><div class="funnel-value">{{ fmtValor(dados.sales.vendas) }}</div></div>
             </div>
-            <div class="ropr-metricas">
-              <div class="ropr-metrica"><span>Investimento</span><strong>{{ formatarReaisOuTraco(dados.sales.investimento) }}</strong></div>
-              <div class="ropr-metrica"><span>Custo por Lead</span><strong>{{ formatarReaisOuTraco(dados.sales.custoPorLead) }}</strong></div>
-              <div class="ropr-metrica"><span>Custo por Lead Quente</span><strong>{{ formatarReaisOuTraco(dados.sales.custoPorLeadQuente) }}</strong></div>
-              <div class="ropr-metrica"><span>Custo por Venda</span><strong>{{ formatarReaisOuTraco(dados.sales.custoPorVenda) }}</strong></div>
-              <div class="ropr-metrica"><span>Conversão Lead → Quente</span><strong>{{ formatarPctOuTraco(dados.sales.conversaoLeadQuente) }}</strong></div>
-              <div class="ropr-metrica"><span>Conversão Quente → Venda</span><strong>{{ formatarPctOuTraco(dados.sales.conversaoQuenteVenda) }}</strong></div>
+            <div class="metric-grid leads-costs">
+              <div class="metric"><div class="metric-label">Investimento</div><div class="metric-value">{{ fmtValor(dados.sales.investimento, 'moeda') }}</div></div>
+              <div class="metric"><div class="metric-label">Custo por Lead</div><div class="metric-value">{{ fmtValor(dados.sales.custoPorLead, 'moeda') }}</div></div>
+              <div class="metric"><div class="metric-label">Custo por Lead Quente</div><div class="metric-value">{{ fmtValor(dados.sales.custoPorLeadQuente, 'moeda') }}</div></div>
+              <div class="metric"><div class="metric-label">Custo por Venda</div><div class="metric-value">{{ fmtValor(dados.sales.custoPorVenda, 'moeda') }}</div></div>
             </div>
-          </section>
-        </div>
-
-        <section class="ropr-mix">
-          <h2>Media Mix</h2>
-          <p class="ropr-mix-sub">Distribuição do investimento por categoria — definição provisória, aguardando confirmação do gerente de marketing.</p>
-          <div class="ropr-mix-linha" v-for="item in mixLista" :key="item.label">
-            <span class="ropr-mix-rotulo">{{ item.label }}</span>
-            <div class="ropr-mix-barra"><span :style="{ width: Math.min(Math.max(item.valor ?? 0, 0), 100) + '%' }"></span></div>
-            <strong class="ropr-mix-valor">{{ formatarPctOuTraco(item.valor) }}</strong>
-          </div>
+            <div class="metric-grid leads-conv">
+              <div class="metric center"><div class="metric-label">Conversão Lead → Quente</div><div class="metric-value">{{ fmtValor(dados.sales.conversaoLeadQuente, 'percentual') }}</div></div>
+              <div class="metric center"><div class="metric-label">Conversão Quente → Venda</div><div class="metric-value">{{ fmtValor(dados.sales.conversaoQuenteVenda, 'percentual') }}</div></div>
+            </div>
+            <div class="panel-note">
+              <div class="icon-circle"><svg viewBox="0 0 48 48"><path d="M8 10h32L28 25v11l-8 4V25L8 10Z"/></svg></div>
+              <div class="note-text">Mais oportunidades.<br>Mais receita para o negócio.</div>
+            </div>
+          </article>
         </section>
-      </template>
+
+        <footer class="footer">
+          <div class="footer-left">Tráfego que gera pessoas. Pessoas que geram resultados.</div>
+          <div class="mix-card">
+            <div>
+              <div class="mix-title">Media Mix</div>
+              <div class="mix-sub">Distribuição do investimento</div>
+              <div class="mix-row" v-for="item in mixLista" :key="item.label">
+                <div>{{ item.label }}</div>
+                <div class="bar"><span :style="{ width: Math.min(Math.max(item.valor ?? 0, 0), 100) + '%' }"></span></div>
+                <strong>{{ fmtValor(item.valor, 'percentual') }}</strong>
+              </div>
+            </div>
+            <div class="mix-side">Equilíbrio<br>para um crescimento<br>sustentável.
+              <small>Dados hoje.<br>Mais amanhã.</small>
+            </div>
+          </div>
+        </footer>
+      </main>
     </div>
   </div>
 </template>
@@ -119,7 +167,7 @@ import { useRouter } from 'vue-router'
 import BarraDeTopo from '../../compartilhado/barra-de-topo.vue'
 import FaixaDeErro from '../../compartilhado/faixa-de-erro.vue'
 import { sb } from '../../compartilhado/buscar-e-salvar-dados.js'
-import { formatarReais, deltaDeSeguidoresPorHora, seguidoresNoPeriodo, visitasPerfilNoPeriodo } from './relatorio-por-hora.js'
+import { deltaDeSeguidoresPorHora, seguidoresNoPeriodo, visitasPerfilNoPeriodo } from './relatorio-por-hora.js'
 import { agruparCampanhasDoDia, montarDadosOpr } from './relatorio-diario-opr.js'
 
 const router = useRouter()
@@ -130,6 +178,7 @@ function voltar() {
 // Mesmo recorte fixo da tela de Relatório por Hora e do robô que manda pro
 // WhatsApp (pedido do dono, 12/09/2026) — só a conta "Vessel".
 const CONTA_VESSEL = 'b6883e82-07cb-4f21-9fd7-ea7626786174'
+const CONTA_LABEL = 'Vessel Brasil'
 
 function hojeISOSaoPaulo() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' })
@@ -194,9 +243,23 @@ const mixLista = computed(() => {
   ]
 })
 
-function formatarReaisOuTraco(v) { return v == null ? '—' : formatarReais(v) }
-function formatarNumOuTraco(v) { return v == null ? '—' : v.toLocaleString('pt-BR') }
-function formatarPctOuTraco(v) { return v == null ? '—' : `${v.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%` }
+// Mesma lógica de coletor/lib/template-opr.mjs (PNG do WhatsApp) — layout
+// aprovado pelo dono em 17/09/2026. As duas cópias existem porque uma roda
+// no navegador e a outra no robô do WhatsApp; qualquer ajuste aqui (regra
+// de abreviação, formato) precisa espelhar lá também.
+function abreviar(n) {
+  const abs = Math.abs(n)
+  if (abs >= 1_000_000) return `${(n / 1_000_000).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} M`
+  if (abs >= 1_000) return `${(n / 1_000).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} mil`
+  return null
+}
+function fmtValor(n, tipo) {
+  if (n == null) return '—'
+  if (tipo === 'percentual') return `${n.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`
+  const abreviado = abreviar(n)
+  if (tipo === 'moeda') return `R$ ${abreviado ?? n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  return abreviado ?? n.toLocaleString('pt-BR')
+}
 
 async function carregar() {
   carregando.value = true
@@ -240,54 +303,115 @@ onMounted(() => carregar())
 .tela-relatorio-opr { min-height: 100vh; display: flex; flex-direction: column; background: var(--bg); }
 .ropr-body { flex: 1; padding: var(--sp-6) var(--sp-6); display: flex; flex-direction: column; gap: var(--sp-5); }
 
-.ropr-periodo { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3); }
-.ropr-atalhos { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
-.ropr-intervalo { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); margin-left: auto; }
-.ropr-campo-data { display: flex; flex-direction: column; gap: 2px; font-size: var(--texto-etiqueta); color: var(--muted); }
-.ropr-campo-data input {
-  min-height: 40px; padding: 0 var(--sp-2); border: 1px solid var(--border); border-radius: var(--radius-md);
-  background: var(--surface); color: var(--text); font-family: var(--fonte-principal); font-size: 16px;
+/* Seletor de período — reskin pra combinar com o visual do relatório
+   abaixo (papel/dourado). Deliberadamente fora dos tokens do
+   PADRAO-DA-CENTRAL: pedido explícito do dono, esta tela é uma exceção. */
+.ropr-periodo { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; padding: 14px 18px; background: #fffefa; border: 1px solid #e7e4dc; border-radius: 8px; }
+.ropr-atalhos { display: flex; flex-wrap: wrap; gap: 8px; }
+.ropr-atalhos button { font: 400 13px/1 Georgia, "Times New Roman", serif; letter-spacing: .08em; text-transform: uppercase; padding: 9px 16px; border: 1px solid #d9d5cc; border-radius: 20px; background: #fff; color: #123b39; cursor: pointer; }
+.ropr-atalhos button.ativo { background: #123b39; border-color: #123b39; color: #f4efe3; }
+.ropr-intervalo { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-left: auto; }
+.ropr-campo-data { display: flex; flex-direction: column; gap: 2px; font: 400 10px/1 Inter, sans-serif; letter-spacing: .18em; text-transform: uppercase; color: #7b7b73; }
+.ropr-campo-data input { min-height: 36px; padding: 0 10px; border: 1px solid #d9d5cc; border-radius: 5px; background: #fff; color: #123b39; font: 400 14px Georgia, serif; }
+.ropr-aplicar { font: 400 13px/1 Georgia, serif; letter-spacing: .08em; text-transform: uppercase; padding: 9px 18px; border: none; border-radius: 20px; background: #b59a67; color: #173b39; cursor: pointer; }
+
+/* A partir daqui: mesmo CSS de coletor/lib/template-opr.mjs (visual
+   aprovado pelo dono em 17/09/2026), adaptado de imagem fixa 1600×900 pra
+   página que rola — sem aspect-ratio/overflow:hidden, com quebra em
+   telas estreitas. Qualquer ajuste de cor/fonte/ícone deve espelhar lá. */
+.report, .report * { min-width: 0; }
+.report {
+  --ink:#123b39; --gold:#b59a67; --gold-soft:#f4efe3; --paper:#fffefa;
+  --line:#e7e4dc; --line-2:#d9d5cc; --soft:#f8f6f0; --verde-relatorio:#195c52;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: var(--ink);
+  width: 100%;
+  max-width: 1600px;
+  margin: 0 auto;
+  background: var(--paper);
+  padding: 34px 34px 24px;
+  display: grid;
+  gap: 14px;
+  box-shadow: 0 12px 60px rgba(0,0,0,.16);
+  border-radius: 8px;
 }
-.ropr-periodo-label { color: var(--muted); font-size: var(--texto-corpo); font-weight: 600; }
+.header { display: grid; grid-template-columns: 1.8fr 1fr; gap: 26px; align-items: start; }
+.eyebrow-line { width: 56px; height: 4px; background: var(--gold); margin: 2px 0 10px; }
+.title { font: 700 clamp(28px,3vw,58px)/.96 Georgia, "Times New Roman", serif; letter-spacing: .02em; margin: 0; color: #123432; }
+.subtitle { margin-top: 6px; font-size: clamp(14px,1.25vw,25px); letter-spacing: .13em; color: #686b68; }
+.meta { display: grid; grid-template-columns: 1fr .9fr .7fr; min-height: 88px; border-left: 1px solid var(--line-2); }
+.meta-item { padding: 10px 22px; border-right: 1px solid var(--line-2); }
+.meta-label { font-size: 10px; letter-spacing: .32em; text-transform: uppercase; color: #7b7b73; margin-bottom: 8px; }
+.meta-value { font: 400 18px Georgia, serif; color: #173b39; overflow-wrap: anywhere; }
+.meta .accent::after { content: ""; display: block; width: 28px; height: 3px; background: var(--gold); margin-top: 15px; }
+.kpis { display: grid; grid-template-columns: repeat(4,1fr); gap: 14px; }
+.kpi-card { border: 1px solid var(--line); border-radius: 7px; padding: 18px 20px; display: grid; grid-template-columns: 86px 1fr; align-items: center; min-height: 148px; box-shadow: 0 1px 0 rgba(0,0,0,.025); }
+.icon-circle { width: 72px; height: 72px; border-radius: 50%; background: var(--gold-soft); display: grid; place-items: center; color: var(--ink); }
+.icon-circle svg { width: 40px; height: 40px; stroke: currentColor; fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.kpi-label { font: 400 18px Georgia, serif; margin-bottom: 3px; overflow-wrap: anywhere; }
+.kpi-value { font: 700 clamp(27px,2.3vw,47px)/1 Georgia, serif; letter-spacing: .02em; overflow-wrap: anywhere; }
+.kpi-caption { margin-top: 12px; font-size: 10px; letter-spacing: .26em; text-transform: uppercase; color: #797b77; }
+.sections { display: grid; grid-template-columns: 1fr 1.18fr 1.08fr; gap: 14px; align-items: start; }
+.panel { border: 1px solid var(--line); border-radius: 7px; padding: 12px 14px 10px; display: flex; flex-direction: column; min-width: 0; }
+.panel-head { display: grid; grid-template-columns: 76px 1fr; gap: 14px; align-items: center; padding: 2px 4px 14px; border-bottom: 1px solid var(--line); }
+.panel-num { font: 400 40px Georgia, serif; color: var(--gold); padding-right: 12px; border-right: 1px solid #8e8d86; }
+.panel-title { font: 700 28px Georgia, serif; line-height: 1.05; }
+.panel-sub { font-size: 10px; letter-spacing: .24em; text-transform: uppercase; color: #747975; margin-top: 5px; }
+.metric-grid { display: grid; gap: 0; margin-top: 11px; }
+.growth-top { grid-template-columns: repeat(3,1fr); }
+.growth-bottom { grid-template-columns: 1fr 1fr 1.15fr; border-top: 1px solid var(--line); margin-top: 10px; }
+.engagement-top { grid-template-columns: 1.5fr repeat(4,1fr); }
+.engagement-mid { grid-template-columns: repeat(4,1fr); border-top: 1px solid var(--line); margin-top: 9px; }
+.engagement-bottom { grid-template-columns: 1fr 1fr; border-top: 1px solid var(--line); margin-top: 9px; }
+.leads-costs { grid-template-columns: repeat(4,1fr); margin-top: 12px; }
+.leads-conv { grid-template-columns: 1fr 1fr; border-top: 1px solid var(--line); margin-top: 8px; }
+.metric { padding: 6px 8px; min-width: 0; }
+.metric:not(:first-child) { border-left: 1px solid var(--line); }
+.metric-label { font-size: 12px; color: #58635f; line-height: 1.25; overflow-wrap: anywhere; height: 30px; display: flex; align-items: flex-end; }
+.metric-value { font: 700 18px Georgia, serif; line-height: 1.15; margin-top: 9px; overflow-wrap: anywhere; }
+.metric.center { text-align: center; }
+.panel-note { margin-top: auto; min-height: 74px; background: var(--soft); display: grid; grid-template-columns: 74px 1fr; align-items: center; padding: 10px 14px; gap: 0 0; }
+.panel-note .icon-circle { width: 56px; height: 56px; }
+.panel-note .icon-circle svg { width: 28px; height: 28px; }
+.note-text { font: italic 17px/1.15 Georgia, serif; color: #48615d; }
+.funnel { display: grid; grid-template-columns: 1fr 1fr 1fr; height: 62px; margin: 13px 0 8px; overflow: hidden; }
+.funnel-step { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #e7e7df; color: #29443f; padding-left: 17px; text-align: center; clip-path: polygon(0 0, 88% 0, 100% 50%, 88% 100%, 0 100%, 12% 50%); margin-left: -8px; }
+.funnel-step:first-child { margin-left: 0; clip-path: polygon(0 0,88% 0,100% 50%,88% 100%,0 100%); }
+.funnel-step.mid { background: #cfd5d1; }
+.funnel-step.end { background: var(--verde-relatorio); color: #fff; clip-path: polygon(0 0,88% 0,100% 50%,88% 100%,0 100%,12% 50%); }
+.funnel-label { font-size: 13px; }
+.funnel-value { font: 700 22px Georgia, serif; margin-top: 2px; }
+.footer { display: grid; grid-template-columns: 1.35fr .9fr; gap: 20px; align-items: end; }
+.footer-left { border-top: 2px solid #aaa9a3; padding: 18px 22px 0; font-size: 11px; letter-spacing: .29em; text-transform: uppercase; color: #9a9690; min-height: 84px; }
+.mix-card { border: 1px solid var(--line); border-radius: 6px; padding: 8px 12px; display: grid; grid-template-columns: 1fr 190px; gap: 16px; align-items: center; }
+.mix-title { font: 700 17px Georgia, serif; }
+.mix-sub { font-size: 9px; letter-spacing: .26em; color: #8c8d87; text-transform: uppercase; margin-top: 1px; }
+.mix-row { display: grid; grid-template-columns: 72px 1fr minmax(45px,auto); gap: 10px; align-items: center; margin-top: 9px; font-size: 11px; }
+.mix-row strong { white-space: nowrap; }
+.bar { height: 10px; background: #e9e9e6; border-radius: 4px; overflow: hidden; }
+.bar span { display: block; height: 100%; background: var(--verde-relatorio); }
+.mix-side { border-left: 1px solid var(--line-2); padding-left: 18px; font: italic 15px/1.25 Georgia, serif; color: #52645f; }
+.mix-side small { display: block; font: 9px/1.5 Inter, sans-serif; letter-spacing: .25em; text-transform: uppercase; color: #aaa59c; margin-top: 10px; }
+.mix-side small::after { content: ""; display: block; width: 28px; height: 2px; background: var(--gold); margin-top: 8px; }
 
-.ropr-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--sp-3); }
-.ropr-kpi {
-  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
-  padding: var(--sp-4); display: flex; flex-direction: column; gap: var(--sp-1);
+@media (max-width: 900px) {
+  .header { grid-template-columns: 1fr; }
+  .meta { grid-template-columns: 1fr; border-left: none; min-height: 0; }
+  .meta-item { border-right: none; border-bottom: 1px solid var(--line-2); }
+  .kpis { grid-template-columns: repeat(2,1fr); }
+  .sections { grid-template-columns: 1fr; }
+  .growth-top, .engagement-top, .engagement-mid, .leads-costs { grid-template-columns: repeat(auto-fit, minmax(110px,1fr)); }
+  .growth-bottom, .engagement-bottom, .leads-conv { grid-template-columns: 1fr 1fr; }
+  .footer { grid-template-columns: 1fr; }
+  .mix-card { grid-template-columns: 1fr; }
+  .mix-side { border-left: none; border-top: 1px solid var(--line-2); padding-left: 0; padding-top: 12px; margin-top: 4px; }
 }
-.ropr-kpi-label { font-size: var(--texto-etiqueta); color: var(--muted); }
-.ropr-kpi-valor { font-family: var(--fonte-dados); font-variant-numeric: tabular-nums; font-size: var(--texto-numero); font-weight: 700; color: var(--text); }
-
-.ropr-secoes { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: var(--sp-4); align-items: start; }
-.ropr-secao { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: var(--sp-4); display: flex; flex-direction: column; gap: var(--sp-3); }
-.ropr-secao h2 { margin: 0; font-size: var(--texto-campo); font-weight: 700; color: var(--text); }
-
-.ropr-metricas { display: flex; flex-direction: column; gap: var(--sp-2); }
-.ropr-metrica { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-3); padding: var(--sp-1) 0; border-bottom: 1px solid var(--border); }
-.ropr-metrica:last-child { border-bottom: none; }
-.ropr-metrica span { color: var(--muted); font-size: var(--texto-corpo); overflow-wrap: anywhere; }
-.ropr-metrica strong { font-family: var(--fonte-dados); font-variant-numeric: tabular-nums; color: var(--text); white-space: nowrap; }
-
-.ropr-funil { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
-.ropr-funil-etapa {
-  flex: 1; min-width: 100px; background: var(--surface2); border-radius: var(--radius-md); padding: var(--sp-3);
-  display: flex; flex-direction: column; gap: var(--sp-1); text-align: center;
-}
-.ropr-funil-etapa span { font-size: var(--texto-etiqueta); color: var(--muted); }
-.ropr-funil-etapa strong { font-family: var(--fonte-dados); font-variant-numeric: tabular-nums; font-size: var(--texto-campo); color: var(--text); }
-
-.ropr-mix { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: var(--sp-4); display: flex; flex-direction: column; gap: var(--sp-2); }
-.ropr-mix h2 { margin: 0; font-size: var(--texto-campo); font-weight: 700; color: var(--text); }
-.ropr-mix-sub { margin: 0; color: var(--muted); font-size: var(--texto-etiqueta); }
-.ropr-mix-linha { display: grid; grid-template-columns: 100px 1fr 60px; align-items: center; gap: var(--sp-3); }
-.ropr-mix-rotulo { color: var(--text); font-size: var(--texto-corpo); overflow-wrap: anywhere; }
-.ropr-mix-barra { height: 10px; background: var(--surface2); border-radius: var(--radius-sm); overflow: hidden; }
-.ropr-mix-barra span { display: block; height: 100%; background: var(--green); }
-.ropr-mix-valor { font-family: var(--fonte-dados); font-variant-numeric: tabular-nums; text-align: right; color: var(--text); }
-
 @media (max-width: 640px) {
   .ropr-body { padding: var(--sp-4) var(--sp-3); }
   .ropr-intervalo { margin-left: 0; width: 100%; }
-  .ropr-mix-linha { grid-template-columns: 72px 1fr 50px; gap: var(--sp-2); }
+  .report { padding: 20px 16px 16px; }
+  .kpis { grid-template-columns: 1fr; }
+  .funnel { grid-template-columns: 1fr; height: auto; gap: 6px; }
+  .funnel-step { clip-path: none !important; margin-left: 0; border-radius: 6px; padding: 10px; min-height: 48px; }
 }
 </style>
