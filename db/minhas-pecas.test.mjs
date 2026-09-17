@@ -16,3 +16,12 @@ test('⚠️ a lista sai da SESSÃO, nunca de um id vindo da página', () => {
 test('a peça em conferência aparece com esse estado', () => {
   assert.match(SQL, /em conferência/);
 });
+
+test('⚠️ Correção 1: uma peça já registrada não aparece de novo como "em conferência"', () => {
+  // Sem esta trava, a própria dona reabrindo um pedido de registro para um
+  // código que já é dela faria a peça sair DUAS VEZES na lista: uma como
+  // "registrada", outra como "em conferência" do mesmo código.
+  const ramoPendente = SQL.slice(SQL.indexOf('em conferência'));
+  assert.match(ramoPendente, /not exists\s*\(\s*select 1 from public\.vessel_registros r2 where r2\.codigo = pr\.codigo\s*\)/,
+    'o ramo "em conferência" precisa excluir códigos que já estão em vessel_registros');
+});

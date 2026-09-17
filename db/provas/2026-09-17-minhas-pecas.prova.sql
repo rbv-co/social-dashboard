@@ -27,7 +27,7 @@
 --
 -- Depois de rodar, confira que nada sobrou:
 --   select count(*) from public.vessel_clientes where email = 'minhas-pecas-teste@exemplo.com.br';
---   select count(*) from public.vessel_pecas where codigo in ('MINHASPECASREG01','MINHASPECASPEN01');
+--   select count(*) from public.vessel_pecas where codigo in ('MINHASPECASREG01','MINHASPECASPEN01','MINHASPECASDUP01');
 -- Esperado: 0 nos dois.
 --
 -- Nenhum dado real é usado: o CPF abaixo ('111.444.777-35') é o mesmo CPF de
@@ -39,7 +39,8 @@ do $$
 declare
   v json; v_token text; v_cliente_id uuid;
   v_lote uuid; v_codigo_reg text := 'MINHASPECASREG01'; v_codigo_pen text := 'MINHASPECASPEN01';
-  v_pecas json; v_qtd int;
+  v_codigo_dup text := 'MINHASPECASDUP01';
+  v_pecas json; v_qtd int; v_qtd_dup int;
 begin
   -- ── sem sessão, nem tenta ─────────────────────────────────────────────────
   v := public.vessel_minhas_pecas('token-que-nao-existe');
@@ -77,13 +78,29 @@ begin
   assert coalesce(v->>'estado', 'pendente') <> 'aprovado',
     'esta prova espera a peça 2 ficar em conferência (pendente), não aprovada de cara: ' || v::text;
 
+  -- ── peça 3: JÁ REGISTRADA e, além disso, com um pedido PENDENTE do mesmo
+  -- código (a dona reabriu um pedido para uma peça que já é dela — a edge e
+  -- o rpc de abrir pedido não impedem isso hoje). Correção 1 (revisão
+  -- 17/09/2026): sem o `not exists` no ramo "em conferência", esta peça
+  -- sairia DUAS VEZES na lista. Insere direto nas duas tabelas (em vez de
+  -- passar por `vessel_registrar_como_cliente`) para isolar exatamente o
+  -- cenário que o `not exists` precisa cobrir, sem depender de nenhum outro
+  -- caminho de negócio no meio ─────────────────────────────────────────────
+  insert into public.vessel_pecas (codigo, lote_id, numero_na_serie)
+  values (v_codigo_dup, v_lote, 3);
+  insert into public.vessel_registros (codigo, nome, whatsapp, garantia_ate, cliente_id)
+  values (v_codigo_dup, 'Cliente Minhas Peças', '19999990002',
+          (current_date + interval '2 years')::date, v_cliente_id);
+  insert into public.vessel_pedidos_de_registro (codigo, nome, cpf, whatsapp, cliente_id, estado)
+  values (v_codigo_dup, 'Cliente Minhas Peças', '11144477735', '19999990002', v_cliente_id, 'pendente');
+
   -- ── a lista, pela sessão ──────────────────────────────────────────────────
   v := public.vessel_minhas_pecas(v_token);
   assert (v->>'ok')::boolean, 'vessel_minhas_pecas falhou: ' || v::text;
   v_pecas := v->'pecas';
 
   select count(*) into v_qtd from json_array_elements(v_pecas);
-  assert v_qtd = 2, 'esperava 2 peças (1 registrada + 1 em conferência), veio ' || v_qtd::text;
+  assert v_qtd = 3, 'esperava 3 peças (registrada + em conferência + registrada-com-pedido-pendente), veio ' || v_qtd::text;
 
   assert exists (
     select 1 from json_array_elements(v_pecas) e
@@ -96,6 +113,18 @@ begin
      where e->>'codigo' = v_codigo_pen and e->>'estado' = 'em conferência'
        and (e->>'garantia_ate') is null
   ), 'a peça pendente deveria vir com estado "em conferência" e sem garantia_ate: ' || v_pecas::text;
+
+  -- ⚠️ O PONTO DA CORREÇÃO 1: a peça 3 (registrada + pedido pendente do MESMO
+  -- código) aparece UMA VEZ SÓ, como "registrada" — nunca como "em
+  -- conferência", e nunca duas vezes.
+  select count(*) into v_qtd_dup
+    from json_array_elements(v_pecas) e where e->>'codigo' = v_codigo_dup;
+  assert v_qtd_dup = 1,
+    'a peça já registrada com pedido pendente do mesmo código deveria aparecer 1 VEZ SÓ, apareceu ' || v_qtd_dup::text;
+  assert exists (
+    select 1 from json_array_elements(v_pecas) e
+     where e->>'codigo' = v_codigo_dup and e->>'estado' = 'registrada'
+  ), 'a peça 3 deveria vir como "registrada" (nunca como "em conferência"): ' || v_pecas::text;
 
   -- ⚠️ nenhuma palavra que acuse quem espera: nem "atraso", nem "fila", nem
   -- qualquer coisa que aponte demora da equipe — só "em conferência".

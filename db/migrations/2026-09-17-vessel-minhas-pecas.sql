@@ -21,12 +21,21 @@ begin
         join public.vessel_lotes l on l.id = p.lote_id
        where r.cliente_id = v_id
       union all
+      -- ⚠️ UMA PEÇA SÓ APARECE UMA VEZ. Correção 1 (revisão 17/09/2026): a
+      -- própria dona pode reabrir um pedido de registro para um código que
+      -- JÁ é dela (por exemplo depois de já ter virado dona por outro
+      -- caminho) — a edge e o rpc de abrir pedido não impedem isso. Sem o
+      -- `not exists` abaixo, essa peça sairia DUAS VEZES em "Minhas peças":
+      -- uma como "registrada" e outra como "em conferência" do mesmo código.
+      -- O lugar certo de blindar é aqui, na leitura, e não confiar que quem
+      -- escreve nunca vai deixar passar essa sobreposição.
       select pr.codigo, l.modelo, l.cor, l.sku, p.numero_na_serie,
              pr.criado_em, null::date, 'em conferência'
         from public.vessel_pedidos_de_registro pr
         join public.vessel_pecas p on p.codigo = pr.codigo
         join public.vessel_lotes l on l.id = p.lote_id
        where pr.cliente_id = v_id and pr.estado = 'pendente'
+         and not exists (select 1 from public.vessel_registros r2 where r2.codigo = pr.codigo)
     ) x;
 
   return json_build_object('ok', true, 'pecas', v_pecas);
