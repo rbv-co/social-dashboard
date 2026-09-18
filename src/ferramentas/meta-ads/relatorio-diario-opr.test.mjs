@@ -112,6 +112,7 @@ test('⚠️ montarDadosOpr: só os campos confirmados saem com valor, o resto c
     'engagement.custoPorComentario', 'engagement.custoPorCompartilhamento',
     'engagement.custoPorSalvamento', 'engagement.totalInteracoes', 'engagement.custoMedioPorEngajamento',
     'mix.growth', 'mix.engagement', 'mix.leads',
+    'sales.leads', 'sales.investimento', 'sales.custoPorLead',
   ]);
 
   for (const secao of ['header', 'growth', 'engagement', 'sales', 'salesLink', 'leadsLink', 'mix']) {

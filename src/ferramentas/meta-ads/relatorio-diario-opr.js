@@ -97,6 +97,15 @@ function somar(campanhas, campo) {
 //   confirmado (growth/engagement/wpp, todos batidos acima). Campanhas
 //   WPP estão desativadas hoje (gasto R$0,00, confirmado ao listar as 33
 //   campanhas do dia), então mix.leads = 0% de verdade, não null.
+// - sales.leads / sales.investimento / sales.custoPorLead (18/09/2026,
+//   achado ao revisar a imagem: a seção "03 · Leads & Sales" nunca tinha
+//   sido ligada, mesmo o dado já estando validado — `sales.leads` é o
+//   MESMO `leadsCount` de `header.leadsGerados` (confirmado em 17/09) e
+//   `sales.investimento` é a mesma fatia wpp que já compõe
+//   `header.investimentoTotal` (também confirmado). Não é dado novo, só
+//   nunca tinha sido propagado pra esta seção. `leadsQuentes`/`vendas`/
+//   conversões continuam `null` de propósito — dependem do Chatwoot,
+//   integração futura, fora de escopo.
 const CAMPOS_CONFIRMADOS = new Set([
   'header.novosSeguidores',
   'growth.seguidores',
@@ -122,6 +131,9 @@ const CAMPOS_CONFIRMADOS = new Set([
   'mix.growth',
   'mix.engagement',
   'mix.leads',
+  'sales.leads',
+  'sales.investimento',
+  'sales.custoPorLead',
 ]);
 
 function ligado(secao, campo, valor) {
