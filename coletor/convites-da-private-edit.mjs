@@ -28,7 +28,7 @@ const arg = (nome) => {
     ? process.argv[i + 1] : null;
 };
 const comQR = process.argv.includes('--qr');
-const SAIDA = arg('--qr') || join(SITE, 'entregas', 'private-edit-convites');
+const SAIDA = arg('--qr') || join(SITE, 'entregas', 'O QUE DEPENDE DE VOCE', '7-convites-das-private-edits');
 
 /** PNG preto e branco, sem depender de biblioteca nenhuma. */
 function png(matriz, escala = 16, margem = 4) {

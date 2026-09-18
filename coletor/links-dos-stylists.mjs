@@ -27,7 +27,7 @@ const SITE = join(dirname(fileURLToPath(import.meta.url)), '..', 'vessel-brasil'
 const comQR = process.argv.includes('--qr');
 const SAIDA = process.argv[process.argv.indexOf('--qr') + 1]?.startsWith('--') === false
   && process.argv[process.argv.indexOf('--qr') + 1]
-  || join(SITE, 'entregas', 'stylist-links-qr');
+  || join(SITE, 'entregas', 'O QUE DEPENDE DE VOCE', '6-links-e-qr-das-stylists');
 
 /** PNG preto e branco, sem depender de biblioteca nenhuma. */
 function png(matriz, escala = 16, margem = 4) {
