@@ -63,11 +63,26 @@
     return m ? decodeURIComponent(m[1]) : null;
   }
 
+  // _fbp existe pra QUALQUER visitante com o Pixel do Meta rodando na loja
+  // (não só quem clicou em anúncio); _fbc só existe em quem chegou por um
+  // link com fbclid. Quem não veio do Meta segue sem os dois — o
+  // identificador de sessão continua sendo o cart_token, de qualquer jeito.
+  function pegarCookie(nome) {
+    var m = document.cookie.match(new RegExp('(?:^|; )' + nome + '=([^;]*)'));
+    return m ? decodeURIComponent(m[1]) : null;
+  }
+
   function enviar(tipo, dados) {
     try {
+      var base = {
+        tipo: tipo,
+        cart_token: pegarCartTokenDoCookie(),
+        fbp: pegarCookie('_fbp'),
+        fbc: pegarCookie('_fbc'),
+      };
       fetch(URL_DA_EDGE, {
         method: 'POST',
-        body: JSON.stringify(Object.assign({ tipo: tipo, cart_token: pegarCartTokenDoCookie() }, dados)),
+        body: JSON.stringify(Object.assign(base, dados)),
       }).catch(function () {
         // Falha de rede nunca pode aparecer pro cliente — é telemetria, não
         // é o fluxo de compra. Silenciada de propósito.

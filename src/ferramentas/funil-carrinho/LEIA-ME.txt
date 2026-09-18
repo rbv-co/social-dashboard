@@ -35,6 +35,14 @@ Como chega o dado (ATUALIZADO 18/09/2026 — terceira tentativa, a que ficou):
   (db/migrations/2026-09-17-carrinho-eventos.sql), calculada na consulta —
   carrinho com produto adicionado, sem checkout iniciado, parado há mais de
   30 minutos.
+- IDENTIDADE DE SESSÃO (18/09/2026): o cart_token (cookie `cart` da própria
+  Shopify) já rastreia QUALQUER visitante, venha de onde vier — não depende
+  de anúncio nenhum. Além dele, cada evento também manda os cookies `_fbp`
+  (id de navegador do Pixel do Meta — existe pra todo mundo que passa pelo
+  Pixel, não só quem clicou em anúncio) e `_fbc` (id do clique do anúncio —
+  só existe em quem chegou por link com fbclid), quando existirem — ver
+  db/migrations/2026-09-18-carrinho-eventos-fbp-fbc.sql. Quem não veio do
+  Meta grava os dois como null e segue identificado só pelo cart_token.
 
 CAMINHOS TENTADOS E DESCARTADOS (fica registrado pra ninguém repetir):
 1. Web Pixel App Extension (shopify-app/funil-carrinho-pixel/) — escrita,

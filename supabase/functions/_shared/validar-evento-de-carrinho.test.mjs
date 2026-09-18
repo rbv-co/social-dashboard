@@ -48,3 +48,17 @@ test('rate limit: abaixo do teto passa, no teto e acima barra', () => {
 test('teto default é 60/minuto', () => {
   assert.equal(TETO_POR_MINUTO, 60)
 })
+
+test('fbp/fbc são opcionais: vêm junto quando existem, viram null quando faltam ou são lixo', () => {
+  const comAtribuicao = validarPayload({ tipo: 'produto_adicionado', cart_token: 'x', fbp: 'fb.1.111.222', fbc: 'fb.1.111.fbclid' })
+  assert.equal(comAtribuicao.evento.fbp, 'fb.1.111.222')
+  assert.equal(comAtribuicao.evento.fbc, 'fb.1.111.fbclid')
+
+  const semAtribuicao = validarPayload({ tipo: 'produto_adicionado', cart_token: 'x' })
+  assert.equal(semAtribuicao.evento.fbp, null)
+  assert.equal(semAtribuicao.evento.fbc, null)
+
+  const lixo = validarPayload({ tipo: 'produto_adicionado', cart_token: 'x', fbp: '   ', fbc: 123 })
+  assert.equal(lixo.evento.fbp, null)
+  assert.equal(lixo.evento.fbc, null)
+})

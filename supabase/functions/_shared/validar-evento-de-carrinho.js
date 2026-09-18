@@ -18,6 +18,12 @@ function numeroOuNulo(v) {
   return Number.isFinite(n) ? n : null
 }
 
+function textoOuNulo(v) {
+  if (typeof v !== 'string') return null
+  const limpo = v.trim()
+  return limpo ? limpo : null
+}
+
 /**
  * Valida o corpo cru recebido pela edge function.
  * @returns {{ok:true, evento:object}|{ok:false, motivo:string}}
@@ -38,6 +44,10 @@ export function validarPayload(corpo) {
       variante_id: corpo.variante_id != null ? String(corpo.variante_id) : null,
       quantidade: numeroOuNulo(corpo.quantidade),
       preco: numeroOuNulo(corpo.preco),
+      // Atribuição do Meta, quando existir — ver
+      // db/migrations/2026-09-18-carrinho-eventos-fbp-fbc.sql.
+      fbp: textoOuNulo(corpo.fbp),
+      fbc: textoOuNulo(corpo.fbc),
     },
   }
 }
