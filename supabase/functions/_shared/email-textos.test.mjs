@@ -49,3 +49,12 @@ test('escapar não estraga o caso normal — nome simples continua legível', ()
   assert.match(m.html, /Bem-vinda, Tereza/);
   assert.ok(!m.html.includes('&amp;'), 'nome sem caractere especial não deve ganhar &amp; nenhum');
 });
+
+test('⚠️ o e-mail não crava prazo de garantia — o prazo depende do material da peça', () => {
+  // Regra de 18/09/2026: canvas 2 anos, couro 6 meses. `vessel-conta` não sabe
+  // o material, então nenhum prazo fixo pode entrar no texto.
+  for (const m of [textoDoPrimeiroAcesso('Tereza', 'x'), textoDaSenhaNova('Tereza', 'x')]) {
+    const tudo = (m.assunto + m.html + m.texto).toLowerCase();
+    assert.doesNotMatch(tudo, /\b2 anos\b|24 meses|dois anos|6 meses|seis meses/);
+  }
+});

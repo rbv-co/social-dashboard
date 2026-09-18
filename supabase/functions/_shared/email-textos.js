@@ -5,10 +5,16 @@
 // são nossos e fica na caixa da pessoa para sempre. Há teste que reprova essas
 // palavras. O que o e-mail carrega é o mínimo: quem somos e a senha.
 //
-// ⚠️ NUNCA dizer que registrar é obrigatório. A garantia legal (90 dias) já
-// existe sem registro; o registro só ESTENDE para 2 anos a partir da compra.
-// Prometer o contrário no e-mail é a mesma mentira que o padrão já proíbe na
-// tela — só que aqui ela fica gravada na caixa de entrada da cliente.
+// ⚠️ NUNCA dizer que registrar é obrigatório, nem que o registro dá ou estende
+// a garantia. A regra (decisão do dono, 18/09/2026): 2 anos para peça em
+// canvas e 6 meses para peça em couro, contados da DATA DA COMPRA, e vale com
+// a nota ou o cupom fiscal — NÃO depende de registro.
+// ⚠️ E NUNCA ESCREVER UM PRAZO FIXO AQUI. Quem monta estes e-mails
+// (`vessel-conta`) não recebe o material da peça; um "2 anos" cravado seria
+// mentira para toda cliente de bolsa de couro. Se um dia o e-mail falar de
+// prazo, que seja o texto geral acima — ou o prazo da peça vindo do banco.
+// Prometer errado no e-mail é a mesma mentira que o padrão já proíbe na tela —
+// só que aqui ela fica gravada na caixa de entrada da cliente.
 
 const ASSINATURA = 'VESSEL Brasil · vesselbrasil.com.br';
 
