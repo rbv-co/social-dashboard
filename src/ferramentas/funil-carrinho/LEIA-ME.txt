@@ -34,8 +34,19 @@ Como chega o dado (ATUALIZADO 18/09/2026 — terceira tentativa, a que ficou):
   preço vem em REAIS como string, diferente de items[].price (centavos).
 - ADIÇÃO repetida do mesmo produto: a Shopify devolve a quantidade TOTAL da
   linha (não o incremento) — corrigido comparando com a última quantidade
-  conhecida da mesma linha, guardada só durante a navegação atual (reload
-  zera essa memória; nesse caso a quantidade total vira a aproximação).
+  conhecida da mesma linha.
+  ⚠️ ATUALIZADO 18/09/2026 — bug real achado em produção: essa memória
+  vivia só durante a navegação (variável de página), e um reload no meio
+  de duas adições fazia a SEGUNDA registrar o TOTAL da Shopify como se
+  fosse o incremento (carrinho tinha 2, reload, "+1" virava "Adicionado 3"
+  — inflando o que de fato foi adicionado; a soma de "Adicionado" parava
+  de bater com o carrinho real). Corrigido persistindo essa memória em
+  `localStorage`, presa ao `cart_token` atual (se o carrinho mudou —
+  checkout concluído, expirou — o cache velho é descartado de propósito,
+  senão contaminaria o cálculo do carrinho novo). Testado ao vivo: add 1 →
+  "reload" → add 1 → remove 2 — antes registrava Adicionado 1, 2, Removido
+  2 (soma dava 1, carrinho tinha 0, não batia); agora registra Adicionado
+  1, 1, Removido 2 (soma bate: 1+1-2=0).
 - Sem robô de agregação: "abandonado" é a view carrinho_abandonados
   (db/migrations/2026-09-17-carrinho-eventos.sql), calculada na consulta —
   carrinho com produto adicionado, sem checkout iniciado, parado há mais de

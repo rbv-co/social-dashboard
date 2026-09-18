@@ -119,21 +119,61 @@
     };
   }
 
+  var CHAVE_CACHE_CARRINHO = 'rbv_carrinho_conhecido';
+
+  function lerCacheDoCarrinho() {
+    try {
+      var bruto = localStorage.getItem(CHAVE_CACHE_CARRINHO);
+      var dado = bruto ? JSON.parse(bruto) : null;
+      return dado && typeof dado === 'object' ? dado : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function persistirCache() {
+    try {
+      localStorage.setItem(CHAVE_CACHE_CARRINHO, JSON.stringify({
+        cart_token: pegarCartTokenDoCookie(),
+        porChave: carrinhoConhecidoPorChave,
+        porVariante: carrinhoConhecidoPorVariante,
+      }));
+    } catch (e) {
+      // localStorage cheio ou bloqueado (algumas abas anônimas recusam
+      // escrita) — sem persistir, a quantidade volta a ser aproximação
+      // depois de um reload, mas isso nunca pode quebrar o fluxo de compra.
+    }
+  }
+
   // Cache da última quantidade conhecida de cada linha, usado só pra saber
   // o INCREMENTO real de um "adicionar" repetido (a Shopify devolve o
   // total da linha, não o incremento). Chave = `key` da linha (estável
   // dentro da sessão) e, como reforço, o variant_id.
-  var carrinhoConhecidoPorChave = {};
-  var carrinhoConhecidoPorVariante = {};
+  //
+  // ⚠️ PERSISTIDO em localStorage, não só memória de página — achado ao
+  // vivo em produção, 18/09/2026: um reload no meio de duas adições fazia
+  // a segunda registrar o TOTAL da Shopify como se fosse o incremento
+  // (ex.: carrinho tinha 2, reload, "adicionar mais 1" virava "Adicionado
+  // 3" em vez de "Adicionado 1"), inflando o que de fato foi adicionado.
+  // PRESO ao cart_token atual: se o carrinho mudou (checkout concluído,
+  // carrinho expirou), o cache velho é descartado de propósito — senão uma
+  // linha igual (mesmo produto+variante, mesma `key`) de um carrinho
+  // ANTERIOR contaminaria o cálculo do carrinho novo.
+  var cacheSalvo = lerCacheDoCarrinho();
+  var cacheEhDoCarrinhoAtual = cacheSalvo && cacheSalvo.cart_token === pegarCartTokenDoCookie();
+  var carrinhoConhecidoPorChave = (cacheEhDoCarrinhoAtual && cacheSalvo.porChave) || {};
+  var carrinhoConhecidoPorVariante = (cacheEhDoCarrinhoAtual && cacheSalvo.porVariante) || {};
+
   function atualizarCache(dadoDoCarrinho) {
     var novo = {};
     var novoPorVariante = {};
     (dadoDoCarrinho.items || []).forEach(function (item) {
-      novo[item.key] = item;
-      if (!(item.variant_id in novoPorVariante)) novoPorVariante[item.variant_id] = item;
+      novo[item.key] = item.quantity;
+      if (!(item.variant_id in novoPorVariante)) novoPorVariante[item.variant_id] = item.quantity;
     });
     carrinhoConhecidoPorChave = novo;
     carrinhoConhecidoPorVariante = novoPorVariante;
+    persistirCache();
   }
 
   // Igual a atualizarCache, mas SOMA linhas em vez de trocar tudo — usada
@@ -142,14 +182,17 @@
   // outras linhas.
   function atualizarCacheParcial(itens) {
     itens.forEach(function (item) {
-      carrinhoConhecidoPorChave[item.key] = item;
-      carrinhoConhecidoPorVariante[item.variant_id] = item;
+      carrinhoConhecidoPorChave[item.key] = item.quantity;
+      carrinhoConhecidoPorVariante[item.variant_id] = item.quantity;
     });
+    persistirCache();
   }
 
-  function achaLinhaConhecida(idDoPedido) {
+  function achaQuantidadeConhecida(idDoPedido) {
     if (idDoPedido == null) return null;
-    return carrinhoConhecidoPorChave[idDoPedido] || carrinhoConhecidoPorVariante[idDoPedido] || null;
+    if (idDoPedido in carrinhoConhecidoPorChave) return carrinhoConhecidoPorChave[idDoPedido];
+    if (idDoPedido in carrinhoConhecidoPorVariante) return carrinhoConhecidoPorVariante[idDoPedido];
+    return null;
   }
 
   // Processa a resposta de UMA chamada de carrinho, não importa se ela
@@ -173,11 +216,12 @@
         // o item já estava no carrinho, quantity é a NOVA quantidade
         // total"), não quanto foi adicionado nesta chamada. Corrigido pra
         // gravar o incremento de verdade, comparando com a última
-        // quantidade conhecida desta linha (só dentro desta mesma
-        // navegação — um reload zera essa memória, e nesse caso a
-        // quantidade total é a melhor aproximação disponível).
-        var linhaAntiga = achaLinhaConhecida(item.key) || achaLinhaConhecida(item.variant_id);
-        var incremento = item.quantity - (linhaAntiga ? linhaAntiga.quantity : 0);
+        // quantidade conhecida desta linha — persistida em localStorage,
+        // sobrevive a reload (ver cache acima).
+        var quantidadeAntiga = achaQuantidadeConhecida(item.key);
+        if (quantidadeAntiga == null) quantidadeAntiga = achaQuantidadeConhecida(item.variant_id);
+        if (quantidadeAntiga == null) quantidadeAntiga = 0;
+        var incremento = item.quantity - quantidadeAntiga;
         var dados = linhaParaDados(item);
         dados.quantidade = incremento > 0 ? incremento : item.quantity;
         enviar('produto_adicionado', dados);
