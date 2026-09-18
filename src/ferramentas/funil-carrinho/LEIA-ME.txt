@@ -19,8 +19,13 @@ Como chega o dado (ATUALIZADO 18/09/2026 — terceira tentativa, a que ficou):
   "remover" é `quantity: 0`), e manda cada evento pra Edge Function pública
   supabase/functions/capturar-evento-carrinho, que valida e grava cru na
   tabela carrinho_eventos.
-- checkout_iniciado é detectado por navegação: dispara uma vez quando a
-  página carregada é `/checkout`.
+- checkout_iniciado: ⚠️ NÃO vem do interceptador do tema. Confirmado ao vivo
+  em 18/09/2026: o checkout da Shopify roda numa aplicação SEPARADA do
+  tema — o HTML da página de checkout nem inclui `layout/theme.liquid`,
+  então o script nunca chega a rodar lá (a detecção antiga por
+  `pathname.indexOf('/checkout')` nunca disparou de verdade). Quem grava
+  esse evento hoje é o Webhook nativo `checkouts/create` da Shopify, via
+  supabase/functions/receber-webhook-checkout — ver seção própria abaixo.
 - REMOÇÃO usa o campo `items_removed` da resposta de /cart/change.js e
   /cart/update.js (não documentado nas páginas indexadas da Shopify, mas
   confirmado ao vivo, 18/09/2026) — a própria Shopify devolve o produto
@@ -57,6 +62,31 @@ Como chega o dado (ATUALIZADO 18/09/2026 — terceira tentativa, a que ficou):
   existirem — ver db/migrations/2026-09-18-carrinho-eventos-fbp-fbc.sql.
   Quem não veio do Meta grava os dois como null e segue identificado pelo
   session_id/cart_token.
+
+WEBHOOK NATIVO DA SHOPIFY (18/09/2026) — supabase/functions/receber-webhook-checkout:
+- Recebe o webhook `checkouts/create` que a PRÓPRIA Shopify dispara quando
+  um checkout começa — não depende de tema, de navegador, nem de nenhum
+  script nosso rodar em lugar nenhum. É infraestrutura pronta da Shopify,
+  só precisa cadastrar.
+- Quem chama aqui é servidor da Shopify, não navegador — a autenticação é
+  por assinatura HMAC-SHA256 no cabeçalho `X-Shopify-Hmac-Sha256`, contra o
+  segredo `SHOPIFY_WEBHOOK_SECRET` (ver supabase/functions/_shared/
+  verificar-webhook-shopify.js). Sem CORS/Origin pra conferir, porque quem
+  chama não é página nenhuma.
+- Precisa CADASTRAR no admin da loja (Configurações > Notificações >
+  Webhooks > Criar webhook): evento "Criação do checkout", formato JSON,
+  URL da função publicada, versão de API mais recente. A Shopify mostra um
+  "Webhook signing secret" nesse momento (uma vez só) — é esse valor que
+  vira o segredo `SHOPIFY_WEBHOOK_SECRET` no `supabase secrets set`.
+- Grava `checkout_iniciado` com o `cart_token` do próprio payload (mesmo
+  campo/valor do cookie `cart` que os outros eventos já usam — confirmado
+  na doc oficial da Shopify) — assim liga com o resto do funil daquele
+  carrinho sem precisar de nada novo. `session_id` fica null aqui: o
+  webhook não sabe nada do cookie `_shopify_s`, é servidor puro.
+- Só cobre a ENTRADA no checkout (mesmo papel do antigo checkout_iniciado
+  quebrado). Se um dia quiser mais detalhe do checkout (endereço, e-mail,
+  se completou), dá pra somar `checkouts/update`/`orders/create` depois —
+  fora do escopo de agora, de propósito.
 
 CAMINHOS TENTADOS E DESCARTADOS (fica registrado pra ninguém repetir):
 1. Web Pixel App Extension (shopify-app/funil-carrinho-pixel/) — escrita,

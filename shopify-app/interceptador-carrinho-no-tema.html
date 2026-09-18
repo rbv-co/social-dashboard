@@ -254,15 +254,12 @@
     return xhrSendOriginal.apply(this, arguments);
   };
 
-  // checkout iniciado: não é uma chamada de carrinho, é navegação de
-  // página — dispara uma vez por sessão de navegador ao chegar em /checkout.
-  if (window.location.pathname.indexOf('/checkout') === 0) {
-    var jaMandouChave = 'rbv_checkout_iniciado_enviado';
-    if (!sessionStorage.getItem(jaMandouChave)) {
-      sessionStorage.setItem(jaMandouChave, '1');
-      enviar('checkout_iniciado', {});
-    }
-  }
+  // checkout_iniciado NÃO dispara daqui — removido em 18/09/2026: o
+  // checkout da Shopify roda numa aplicação separada do tema, este script
+  // nunca chega a carregar lá (confirmado ao vivo: HTML da página de
+  // checkout não inclui este arquivo). Quem grava esse evento agora é o
+  // Webhook nativo checkouts/create — ver
+  // supabase/functions/receber-webhook-checkout.
 
   // sessao_iniciada: dispara uma vez por sessão, na primeira página
   // carregada — marca a entrada, ANTES de existir carrinho. Não existe
