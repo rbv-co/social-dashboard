@@ -13,6 +13,11 @@
 -- prova que o preenchimento sozinho funciona; é a peça 4 que fecha esse
 -- buraco.
 --
+-- ⚠️ ATUALIZADA DE NOVO na conferência da mesma onda (achado N2): o lote
+-- desta prova passou a nascer com SKU `TESTE-...` — desde a correção do N2,
+-- `vessel_registrar_como_cliente` exige SEMPRE peça de lote marcado
+-- `teste = true`, e não só quando `so_teste = true` é passado.
+--
 -- Rode inteiro, de uma vez, DEPOIS de aplicar (nesta ordem, pelo MCP da
 -- Supabase, `apply_migration`):
 --   1. db/migrations/2026-09-17-vessel-contas-base.sql
@@ -24,6 +29,9 @@
 --      (cliente_id em vessel_registros e vessel_pedidos_de_registro,
 --      vessel_registrar_como_cliente)
 --   4. db/migrations/2026-09-17-vessel-minhas-pecas.sql (esta tarefa)
+--   5. db/migrations/2026-09-17-vessel-lote-de-teste.sql (dona da coluna
+--      `vessel_lotes.teste` — desde o achado N2 da conferência da onda,
+--      `vessel_registrar_como_cliente` exige SEMPRE lote marcado teste=true)
 --
 -- ⚠️ TERMINA EM ERRO DE PROPÓSITO, no mesmo desenho das provas irmãs
 -- (db/provas/2026-09-17-contas-base.prova.sql e
@@ -69,8 +77,14 @@ begin
   assert (v->>'ok')::boolean, 'entrar falhou: ' || v::text;
   v_token := v->>'token';
 
+  -- ⚠️ SKU começa com 'TESTE-' de propósito (achado N2 da conferência da
+  -- onda, 17/09/2026): desde a correção, a conferência de lote de
+  -- vessel_registrar_como_cliente é INCONDICIONAL — toda chamada exige lote
+  -- marcado teste=true, não só quando so_teste=true é passado. Sem isto, as
+  -- chamadas das peças 2 e 4 abaixo (que usam vessel_registrar_como_cliente)
+  -- cairiam em 'fora_do_teste'.
   insert into public.vessel_lotes (modelo, cor, sku, quantidade, fabricado_em)
-  values ('Modelo Minhas Peças', 'Areia', 'SKU-MINHAS-PECAS', 2, current_date)
+  values ('Modelo Minhas Peças', 'Areia', 'TESTE-MINHAS-PECAS', 2, current_date)
   returning id into v_lote;
 
   -- ── peça 1: JÁ REGISTRADA no nome da cliente ─────────────────────────────

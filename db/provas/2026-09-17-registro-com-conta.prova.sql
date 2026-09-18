@@ -30,13 +30,15 @@
 -- mensagem de erro é defeito de verdade, não o fim combinado da prova.
 --
 -- Depois de rodar, confira que nada sobrou:
---   select count(*) from public.vessel_clientes where email = 'presente-teste@exemplo.com.br';
---   select count(*) from public.vessel_pecas where codigo = 'PRESENTETESTE01';
+--   select count(*) from public.vessel_clientes
+--    where email in ('presente-teste@exemplo.com.br', 'segunda-cliente@exemplo.com.br');
+--   select count(*) from public.vessel_pecas
+--    where codigo in ('PRESENTETESTE01', 'FORADOTESTE01', 'DENTRODOTESTE1', 'DOISPEDIDOS01');
 -- Esperado: 0 nos dois.
 --
--- Nenhum dado real é usado: o CPF abaixo ('111.444.777-35') é CPF de teste,
--- matematicamente válido, que não pertence a ninguém; o lote e a peça são
--- criados dentro do próprio bloco, só para esta prova.
+-- Nenhum dado real é usado: os CPFs ('111.444.777-35' e '271.844.930-60') são
+-- CPFs de teste, matematicamente válidos, que não pertencem a ninguém; lotes,
+-- peças e contas nascem dentro do próprio bloco, só para esta prova.
 
 do $$
 declare
@@ -46,6 +48,8 @@ declare
   v_lote_fora uuid; v_codigo_fora text := 'FORADOTESTE01';
   v_lote_dentro uuid; v_codigo_dentro text := 'DENTRODOTESTE1';
   v_tentativa json;
+  v_lote_dois uuid; v_codigo_dois text := 'DOISPEDIDOS01';
+  v_token_b text; v_cliente_id_b uuid; v_pedido_a json; v_pedido_b json;
 begin
   -- ── a marca PRESENTE: tolerante a acento e maiúscula, e não inventa marca ──
   v_marcado := public.vessel_pedido_marcado_presente('Entrega para PRESENTE de aniversário');
@@ -67,8 +71,12 @@ begin
 
   -- ── agora COM sessão: a peça precisa existir para vessel_abrir_pedido_de_
   -- registro achar o SKU (join com vessel_lotes) ───────────────────────────
+  -- ⚠️ SKU começa com 'TESTE-' de propósito (achado N2 da conferência da
+  -- onda): desde a correção, TODA chamada a vessel_registrar_como_cliente
+  -- exige lote marcado teste=true — a conferência deixou de ser opt-in por
+  -- p_so_teste.
   insert into public.vessel_lotes (modelo, cor, sku, quantidade, fabricado_em)
-  values ('Modelo de Teste', 'Teste', 'SKU-TESTE-PRESENTE', 1, current_date)
+  values ('Modelo de Teste', 'Teste', 'TESTE-SKU-PRESENTE', 1, current_date)
   returning id into v_lote;
   insert into public.vessel_pecas (codigo, lote_id, numero_na_serie)
   values (v_codigo, v_lote, 1);
@@ -83,7 +91,7 @@ begin
 
   v := public.vessel_registrar_como_cliente(v_token, v_codigo, 'Loja Teste', current_date);
   assert (v->>'ok')::boolean, 'registrar como cliente falhou: ' || v::text;
-  assert (v->>'sku') = 'SKU-TESTE-PRESENTE', 'sku devolvido deveria ser o do lote, veio: ' || (v->>'sku');
+  assert (v->>'sku') = 'TESTE-SKU-PRESENTE', 'sku devolvido deveria ser o do lote, veio: ' || (v->>'sku');
 
   -- ── ja_tem_dono e dono_curto atravessam de vessel_abrir_pedido_de_registro
   -- (Rodada de correção 2 da Tarefa 7: eles se perdiam no json_build_object
@@ -118,6 +126,62 @@ begin
      where codigo = v_codigo and cliente_id = v_cliente_id
   ), 'C1: vessel_registros.cliente_id deveria ter sido preenchido pelo gatilho — é ele que faz a peça aparecer em "Minhas peças"';
 
+  -- ── CRÍTICO N1 (conferência da onda, 17/09/2026): DOIS pedidos pendentes
+  -- na MESMA peça — o desenho deste projeto ("pendente não tranca a
+  -- etiqueta", 2026-09-03-zz-vessel-garantia-com-dono.sql) — e a aprovação
+  -- tem de ligar a peça à CLIENTE CERTA (a do pedido aprovado), não à última
+  -- que tentou. A primeira versão do gatilho buscava "o pedido mais recente
+  -- com cliente_id preenchido", o que ligaria esta peça à cliente B mesmo
+  -- aprovando o pedido de A ─────────────────────────────────────────────────
+  -- ⚠️ SKU começa com 'TESTE-' de propósito: desde a correção do N2, TODA
+  -- chamada a vessel_registrar_como_cliente exige lote marcado teste=true
+  -- (a conferência deixou de ser opt-in por p_so_teste) — sem isto, as duas
+  -- chamadas abaixo cairiam em 'fora_do_teste' antes de chegar no ponto que
+  -- este bloco quer provar.
+  insert into public.vessel_lotes (modelo, cor, sku, quantidade, fabricado_em)
+  values ('Modelo Dois Pedidos', 'Teste', 'TESTE-DOIS-PEDIDOS', 1, current_date)
+  returning id into v_lote_dois;
+  insert into public.vessel_pecas (codigo, lote_id, numero_na_serie)
+  values (v_codigo_dois, v_lote_dois, 1);
+
+  -- cliente A é a mesma já logada (v_token / v_cliente_id) — abre o pedido PRIMEIRO.
+  v_pedido_a := public.vessel_registrar_como_cliente(v_token, v_codigo_dois, null, null);
+  assert (v_pedido_a->>'ok')::boolean, 'pedido da cliente A falhou: ' || v_pedido_a::text;
+
+  -- cliente B é uma SEGUNDA pessoa, que abre o pedido DEPOIS — mesma peça.
+  v := public.vessel_conta_criar('Segunda Cliente', '271.844.930-60',
+        'segunda-cliente@exemplo.com.br', '(19) 99999-0003', '1990-01-01', 'senha-de-teste');
+  assert (v->>'ok')::boolean, 'criar conta B falhou: ' || v::text;
+  v_cliente_id_b := (v->>'cliente_id')::uuid;
+  v := public.vessel_conta_entrar('segunda-cliente@exemplo.com.br', 'senha-de-teste', false, null, null);
+  assert (v->>'ok')::boolean, 'entrar como B falhou: ' || v::text;
+  v_token_b := v->>'token';
+
+  v_pedido_b := public.vessel_registrar_como_cliente(v_token_b, v_codigo_dois, null, null);
+  assert (v_pedido_b->>'ok')::boolean, 'pedido da cliente B falhou: ' || v_pedido_b::text;
+
+  assert (v_pedido_a->>'pedido') <> (v_pedido_b->>'pedido'),
+    'A e B têm de abrir DOIS pedidos DIFERENTES para a mesma peça — é o cenário que expõe o defeito';
+  assert exists (
+    select 1 from public.vessel_pedidos_de_registro
+     where codigo = v_codigo_dois and estado = 'pendente'
+    having count(*) = 2
+  ), 'esperava 2 pedidos PENDENTES para a mesma peça (A e B)';
+
+  -- aprova o pedido de A — o de B, mais recente, continua pendente.
+  v_decidido := public.vessel_decidir_pedido_de_registro(
+    (v_pedido_a->>'pedido')::uuid, 'aprovado', 'bling',
+    jsonb_build_object('pedido', 'BLING-TESTE-A'), null);
+  assert (v_decidido->>'ok')::boolean, 'aprovar o pedido de A falhou: ' || v_decidido::text;
+
+  assert exists (
+    select 1 from public.vessel_registros where codigo = v_codigo_dois and cliente_id = v_cliente_id
+  ), 'N1: a peça tinha de ficar com o cliente_id de A (o pedido APROVADO), devolveu outra coisa';
+  assert not exists (
+    select 1 from public.vessel_registros where codigo = v_codigo_dois and cliente_id = v_cliente_id_b
+  ), 'N1: a peça NÃO PODE ficar com o cliente_id de B só porque o pedido dela é mais recente — '
+     || 'isto é exatamente o defeito que o gatilho buscando "o pedido mais recente" reintroduzia';
+
   -- ── C2: p_so_teste recusa peça fora do lote de teste ─────────────────────
   insert into public.vessel_lotes (modelo, cor, sku, quantidade, fabricado_em)
   values ('Modelo de Teste', 'Teste', 'SKU-TESTE-FORA', 1, current_date)
@@ -129,12 +193,17 @@ begin
   assert (v->>'motivo') = 'fora_do_teste',
     'C2: peça de lote NÃO marcado teste tem de ser recusada com so_teste=true, devolveu: ' || v::text;
 
-  -- a mesma chamada, sem so_teste (a página de verdade nunca manda isto),
-  -- continua funcionando normalmente — a trava não pode vazar para quem não
-  -- pediu ensaio.
+  -- ⚠️ CRÍTICO N2 (conferência da onda, 17/09/2026): a MESMA chamada, SEM
+  -- so_teste, tem de continuar RECUSADA. A versão anterior desta prova
+  -- afirmava o contrário ("sem so_teste, o comportamento de sempre não pode
+  -- mudar", esperando ok:true) — e isso CRAVAVA o próprio buraco que o C2
+  -- existia para fechar: bastava omitir so_teste (a chave anônima está no
+  -- HTML público) para registrar uma bolsa VENDIDA. vessel_registrar_como_
+  -- cliente é usada só pela página de ensaio nesta fase — a conferência de
+  -- lote é incondicional, não opt-in.
   v := public.vessel_registrar_como_cliente(v_token, v_codigo_fora, null, null);
-  assert (v->>'ok')::boolean,
-    'C2: sem so_teste, o comportamento de sempre não pode mudar, devolveu: ' || v::text;
+  assert (v->>'motivo') = 'fora_do_teste',
+    'N2: sem so_teste, a conferência de lote tem de continuar valendo — devolveu: ' || v::text;
 
   insert into public.vessel_lotes (modelo, cor, sku, quantidade, fabricado_em, teste)
   values ('Modelo de Teste', 'Teste', 'TESTE-SKU-OK', 1, current_date, true)
