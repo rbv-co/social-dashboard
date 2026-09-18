@@ -200,6 +200,12 @@ export function calcularDadosOpr(campanhasDoDia, seguidoresDoDia, visitasPerfilD
     conversaoQuenteVenda: null,
   };
 
+  // salesLink/leadsLink (calculados mais abaixo) ficam de fora de
+  // investimentoTotal e do mix de propósito — pedido do dono (17/09/2026,
+  // spec original do OPR): campanha "outro" nunca entra no total, porque
+  // esse balaio também tem vaga, DRE, atacado etc. salesLink/leadsLink só
+  // classificam UMA fatia de "outro" (a com link reconhecido); misturar só
+  // essa fatia seria inconsistente com o resto de "outro" continuar fora.
   const header = {
     investimentoTotal: investimentoSeguidores + investimentoEngajamento + investimentoWpp,
     novosSeguidores: seguidoresDoDia,

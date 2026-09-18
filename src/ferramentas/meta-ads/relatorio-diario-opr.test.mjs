@@ -114,7 +114,7 @@ test('⚠️ montarDadosOpr: só os campos confirmados saem com valor, o resto c
     'mix.growth', 'mix.engagement', 'mix.leads',
   ]);
 
-  for (const secao of ['header', 'growth', 'engagement', 'sales', 'mix']) {
+  for (const secao of ['header', 'growth', 'engagement', 'sales', 'salesLink', 'leadsLink', 'mix']) {
     for (const campo of Object.keys(dados[secao])) {
       const chave = `${secao}.${campo}`;
       if (CONFIRMADOS.has(chave)) {
