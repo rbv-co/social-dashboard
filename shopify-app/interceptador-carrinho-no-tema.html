@@ -268,9 +268,21 @@
   // evento inundaria a tabela de "encerradas" falsas. O fim da sessão
   // continua sendo inferido por inatividade, do mesmo jeito que
   // carrinho_abandonados já faz.
-  var jaMandouSessaoChave = 'rbv_sessao_iniciada_enviada';
-  if (!sessionStorage.getItem(jaMandouSessaoChave)) {
-    sessionStorage.setItem(jaMandouSessaoChave, '1');
+  //
+  // ⚠️ Usa localStorage, NÃO sessionStorage — achado ao vivo em produção,
+  // 18/09/2026: sessionStorage é isolado POR ABA, mas o cookie _shopify_s
+  // (a sessão de verdade) é do navegador inteiro. Com sessionStorage,
+  // abrir uma segunda aba da loja (ou qualquer pré-carregamento que crie
+  // um contexto novo) mandava sessao_iniciada de novo pra MESMA sessão —
+  // visto no banco: mesmo session_id, mesmo IP, gravado várias vezes em
+  // minutos, alguns a menos de 1 segundo de distância. Comparar com a
+  // sessão ATUAL (não só "já mandei alguma vez") resolve os dois lados:
+  // não duplica em aba nova da mesma sessão, e ainda manda de novo quando
+  // uma sessão de verdade nova começa (_shopify_s muda, ~30min de troca).
+  var sessaoAtual = pegarCookie('_shopify_s');
+  var chaveUltimaSessao = 'rbv_ultima_sessao_iniciada';
+  if (sessaoAtual && localStorage.getItem(chaveUltimaSessao) !== sessaoAtual) {
+    localStorage.setItem(chaveUltimaSessao, sessaoAtual);
     enviar('sessao_iniciada', {});
   }
 })();

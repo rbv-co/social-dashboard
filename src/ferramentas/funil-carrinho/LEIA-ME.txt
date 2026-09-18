@@ -49,6 +49,16 @@ Como chega o dado (ATUALIZADO 18/09/2026 — terceira tentativa, a que ficou):
   carrinho — por isso cart_token deixou de ser NOT NULL). Evento novo
   `sessao_iniciada` dispara uma vez por sessão, na primeira página. Ver
   db/migrations/2026-09-18-carrinho-eventos-sessao.sql.
+  ⚠️ BUG REAL ENCONTRADO EM PRODUÇÃO (18/09/2026, mesmo dia): o controle de
+  "já mandei" usava `sessionStorage`, que é isolado POR ABA — mas
+  `_shopify_s` é do navegador inteiro. Abrir uma segunda aba da mesma
+  sessão (ou qualquer pré-carregamento que crie um contexto novo) mandava
+  `sessao_iniciada` de novo pra MESMA sessão. Achado revisando o banco de
+  verdade: mesmo `session_id`, mesmo IP, gravado várias vezes em poucos
+  minutos (um caso a 21ms de distância). Corrigido comparando com a sessão
+  ATUAL num `localStorage` (compartilhado entre abas), em vez de uma flag
+  booleana por aba — testado ao vivo com duas abas reais da mesma sessão,
+  só disparou uma vez.
   ⚠️ NÃO existe evento de "sessão encerrada", de propósito: `pagehide`
   dispara em QUALQUER troca de página, não só ao sair do site — gravar
   isso como evento inundaria a tabela de "encerradas" falsas a cada clique
