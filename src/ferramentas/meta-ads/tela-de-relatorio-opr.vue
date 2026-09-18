@@ -168,7 +168,7 @@ import BarraDeTopo from '../../compartilhado/barra-de-topo.vue'
 import FaixaDeErro from '../../compartilhado/faixa-de-erro.vue'
 import { sb } from '../../compartilhado/buscar-e-salvar-dados.js'
 import { deltaDeSeguidoresPorHora, seguidoresNoPeriodo, visitasPerfilNoPeriodoComCache } from './relatorio-por-hora.js'
-import { agruparCampanhasDoDia, montarDadosOpr } from './relatorio-diario-opr.js'
+import { agruparCampanhasDoDia, agruparAnunciosDoDia, montarDadosOpr } from './relatorio-diario-opr.js'
 
 const router = useRouter()
 function voltar() {
@@ -240,6 +240,8 @@ const mixLista = computed(() => {
     { label: 'Growth', valor: dados.value.mix.growth },
     { label: 'Engagement', valor: dados.value.mix.engagement },
     { label: 'Leads', valor: dados.value.mix.leads },
+    { label: 'Sales (Link)', valor: dados.value.mix.salesLink },
+    { label: 'Leads (Link)', valor: dados.value.mix.leadsLink },
   ]
 })
 
@@ -274,7 +276,7 @@ async function carregar() {
   // período é escolhido na tela, não fixo em "ontem").
   const desdeSeguidores = new Date(new Date(`${inicio}T00:00:00-03:00`).getTime() - 48 * 3600 * 1000).toISOString()
 
-  const [campanhas, insights, leituras, visitasCache, visitasHora] = await Promise.all([
+  const [campanhas, insights, leituras, visitasCache, visitasHora, ads, adInsights] = await Promise.all([
     sb('campaigns?select=campaign_id,name'),
     sb(`campaign_insights?select=campaign_id,spend,likes,comments,shares,saves,conversas,post_engagement&account_id=eq.${CONTA_VESSEL}&captured_at=gte.${inicio}&captured_at=lte.${fim}&period_days=eq.0`),
     sb(`followers_leituras?select=followers_count,lido_em,origem&account_id=eq.${CONTA_VESSEL}&lido_em=gte.${desdeSeguidores}&order=lido_em.asc`),
@@ -285,6 +287,12 @@ async function carregar() {
     // que ainda não fecharam — normalmente só "hoje".
     sb(`visitas_perfil_dia?select=dia,visitas&account_id=eq.${CONTA_VESSEL}&dia=gte.${inicio}&dia=lte.${fim}`),
     sb(`perfil_visitas_hora?select=dia,hora,visitas_hora&account_id=eq.${CONTA_VESSEL}&dia=gte.${inicio}&dia=lte.${fim}`),
+    // Sales/Leads por link do anúncio (18/09/2026) — mesma fonte que
+    // coletor/gerar-opr-diario.mjs já usa; esta tela nunca tinha recebido
+    // esse parâmetro, então salesLink/leadsLink/investimentoTotal ficavam
+    // sem a fatia "outro" classificada por link.
+    sb(`ads?select=ad_id,destino_link&account_id=eq.${CONTA_VESSEL}`),
+    sb(`ad_insights_hora?select=ad_id,gasto_hora,cliques_hora&account_id=eq.${CONTA_VESSEL}&dia=gte.${inicio}&dia=lte.${fim}`),
   ])
 
   if (campanhas.erro) { erro.value = campanhas.erro; carregando.value = false; return }
@@ -292,14 +300,18 @@ async function carregar() {
   if (leituras.erro) { erro.value = leituras.erro; carregando.value = false; return }
   if (visitasCache.erro) { erro.value = visitasCache.erro; carregando.value = false; return }
   if (visitasHora.erro) { erro.value = visitasHora.erro; carregando.value = false; return }
+  if (ads.erro) { erro.value = ads.erro; carregando.value = false; return }
+  if (adInsights.erro) { erro.value = adInsights.erro; carregando.value = false; return }
 
   const nomesPorCampanha = Object.fromEntries(campanhas.map((c) => [c.campaign_id, c.name]))
   const campanhasDoPeriodo = agruparCampanhasDoDia(insights, nomesPorCampanha)
   const deltas = deltaDeSeguidoresPorHora(leituras)
   const seguidoresDoPeriodo = seguidoresNoPeriodo(deltas, inicio, fim)
   const visitasPerfilDoPeriodo = visitasPerfilNoPeriodoComCache(visitasCache, visitasHora, inicio, fim)
+  const linksPorAnuncio = Object.fromEntries(ads.map((a) => [a.ad_id, a.destino_link]))
+  const anunciosDoPeriodo = agruparAnunciosDoDia(adInsights, linksPorAnuncio)
 
-  dados.value = montarDadosOpr(campanhasDoPeriodo, seguidoresDoPeriodo, visitasPerfilDoPeriodo)
+  dados.value = montarDadosOpr(campanhasDoPeriodo, seguidoresDoPeriodo, visitasPerfilDoPeriodo, anunciosDoPeriodo)
   carregando.value = false
 }
 
