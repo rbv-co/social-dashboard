@@ -249,7 +249,7 @@ const semNenhumaFerramenta = computed(() =>
   // permissão leria "você ainda não tem acesso a nenhuma ferramenta" com o
   // cartão dela aparecendo na mesma tela. A Frota e a Autenticidade já pagaram
   // esse defeito, cada uma no seu mês.
-  !podeAtendimentos.value
+  !podeAtendimentos.value && !podeCarrinho.value
 )
 
 // O perfil não carregou (rede, sessão expirada, servidor). É DIFERENTE de "não tem
