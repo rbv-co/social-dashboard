@@ -77,6 +77,36 @@
                 </p>
               </div>
 
+              <div v-if="anunciosPorCategoria(anunciosDaHora(d.dia, h.hora), 'sales').length" class="rph-bloco">
+                <span class="section-label">Sales</span>
+                <table class="rph-tabela">
+                  <thead><tr><th>Anúncio</th><th>Investido</th><th>Cliques</th><th>Custo/clique</th></tr></thead>
+                  <tbody>
+                    <tr v-for="a in anunciosPorCategoria(anunciosDaHora(d.dia, h.hora), 'sales')" :key="a.adId">
+                      <td class="rph-campanha">{{ a.nome }}</td>
+                      <td class="rph-num">{{ formatarReais(a.gastoHora) }}</td>
+                      <td class="rph-num">{{ a.cliquesHora }}</td>
+                      <td class="rph-num">{{ a.custoPorClique === null ? '—' : formatarReais(a.custoPorClique) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div v-if="anunciosPorCategoria(anunciosDaHora(d.dia, h.hora), 'leads').length" class="rph-bloco">
+                <span class="section-label">Leads (Link)</span>
+                <table class="rph-tabela">
+                  <thead><tr><th>Anúncio</th><th>Investido</th><th>Cliques</th><th>Custo/clique</th></tr></thead>
+                  <tbody>
+                    <tr v-for="a in anunciosPorCategoria(anunciosDaHora(d.dia, h.hora), 'leads')" :key="a.adId">
+                      <td class="rph-campanha">{{ a.nome }}</td>
+                      <td class="rph-num">{{ formatarReais(a.gastoHora) }}</td>
+                      <td class="rph-num">{{ a.cliquesHora }}</td>
+                      <td class="rph-num">{{ a.custoPorClique === null ? '—' : formatarReais(a.custoPorClique) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
               <div v-if="mensagemWpp(d, h) || mensagemSeguidores(d, h)" class="rph-bloco rph-bloco-mensagens">
                 <button class="rph-bloco-topo rph-mensagens-cabecalho" @click="alternarMensagens(d.dia, h.hora)">
                   <span class="section-label">Mensagens do grupo</span>
@@ -116,7 +146,7 @@ import { sb } from '../../compartilhado/buscar-e-salvar-dados.js'
 import {
   agruparPorDiaEHora, comResultado, montarMensagemWpp, leadsWppNoDia, gastoWppNoDia, montarMensagemSeguidores, formatarReais,
   deltaDeSeguidoresPorHora, seguidoresNaHora, seguidoresTotalNaHora, seguidoresNoDia, visitasPerfilNaHora,
-  gastoSeguidoresNoDia, visitasPerfilNoDia,
+  gastoSeguidoresNoDia, visitasPerfilNoDia, agruparAnunciosPorDiaEHora, anunciosPorCategoria,
 } from './relatorio-por-hora.js'
 
 const router = useRouter()
@@ -138,6 +168,7 @@ const erro = ref(null)
 const dias = ref([])
 const deltasSeguidores = ref([])
 const visitasPerfil = ref([])
+const diasAnuncios = ref([])
 const expandidos = ref(new Set())
 const horasExpandidas = ref(new Set())
 const mensagensExpandidas = ref(new Set())
@@ -171,6 +202,16 @@ function mensagemWpp(d, h) {
 // h.campanhas, só somado pro tipo certo. Não precisa de leitura nova.
 function gastoSeguidores(h) {
   return h.campanhas.filter((c) => c.tipo === 'seguidores').reduce((s, c) => s + c.gastoHora, 0)
+}
+// Acha os anúncios (Sales/Leads-por-link) da mesma dia/hora que a hora de
+// campanha `h` já está mostrando — diasAnuncios é uma árvore PARALELA a
+// `dias` (chave própria, granularidade de anúncio), não plugada dentro de
+// `h` porque agruparAnunciosPorDiaEHora é uma função IRMÃ de
+// agruparPorDiaEHora, não uma extensão.
+function anunciosDaHora(dia, hora) {
+  const d = diasAnuncios.value.find((x) => x.dia === dia)
+  const h = d?.horas.find((x) => x.hora === hora)
+  return h?.anuncios ?? []
 }
 function mensagemSeguidores(d, h) {
   const horasAteAgora = horasAte(d, h)
@@ -269,22 +310,30 @@ async function carregar() {
   desde.setDate(desde.getDate() - JANELA_DIAS)
   const desdeISO = desde.toISOString().slice(0, 10)
 
-  const [linhas, campanhas, leiturasSeguidores, visitas] = await Promise.all([
+  const [linhas, campanhas, leiturasSeguidores, visitas, anuncios, linhasAnuncios] = await Promise.all([
     sb(`campaign_insights_hora?select=dia,hora,campaign_id,gasto_hora,gasto_acumulado,conversas_hora&dia=gte.${desdeISO}&account_id=eq.${CONTA_VESSEL}&order=dia.desc,hora.asc`),
     sb('campaigns?select=campaign_id,name'),
     sb(`followers_leituras?select=followers_count,lido_em,origem&account_id=eq.${CONTA_VESSEL}&lido_em=gte.${desde.toISOString()}&order=lido_em.asc`),
     sb(`perfil_visitas_hora?select=dia,hora,visitas_hora&dia=gte.${desdeISO}&account_id=eq.${CONTA_VESSEL}&order=dia.desc,hora.asc`),
+    sb(`ads?select=ad_id,name,destino_link&account_id=eq.${CONTA_VESSEL}`),
+    sb(`ad_insights_hora?select=dia,hora,ad_id,campaign_id,gasto_hora,cliques_hora&dia=gte.${desdeISO}&account_id=eq.${CONTA_VESSEL}&order=dia.desc,hora.asc`),
   ])
 
   if (linhas.erro) { erro.value = linhas.erro; carregando.value = false; return }
   if (campanhas.erro) { erro.value = campanhas.erro; carregando.value = false; return }
   if (leiturasSeguidores.erro) { erro.value = leiturasSeguidores.erro; carregando.value = false; return }
   if (visitas.erro) { erro.value = visitas.erro; carregando.value = false; return }
+  if (anuncios.erro) { erro.value = anuncios.erro; carregando.value = false; return }
+  if (linhasAnuncios.erro) { erro.value = linhasAnuncios.erro; carregando.value = false; return }
 
   const nomesPorCampanha = Object.fromEntries(campanhas.map((c) => [c.campaign_id, c.name]))
   dias.value = agruparPorDiaEHora(linhas, nomesPorCampanha)
   deltasSeguidores.value = deltaDeSeguidoresPorHora(leiturasSeguidores)
   visitasPerfil.value = visitas
+
+  const nomesPorAnuncio = Object.fromEntries(anuncios.map((a) => [a.ad_id, a.name]))
+  const linksPorAnuncio = Object.fromEntries(anuncios.map((a) => [a.ad_id, a.destino_link]))
+  diasAnuncios.value = agruparAnunciosPorDiaEHora(linhasAnuncios, nomesPorAnuncio, linksPorAnuncio)
 
   carregando.value = false
 }
