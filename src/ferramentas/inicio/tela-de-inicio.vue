@@ -150,6 +150,18 @@
           </div>
           <span class="home-card-enter">→</span>
         </div>
+        <!-- Vessel — Beauty Sessions: as sessões de salão. Criar, ver quantas
+             leram o QR e quantas viraram cliente, e encerrar quando acaba. -->
+        <div class="home-card" id="home-card-beauty-sessions" v-show="podeAtendimentos" @click="ir('beauty-sessions')" @mouseenter="definirTemaFundo('default')" @mouseleave="definirTemaFundo('default')">
+          <div class="home-card-icon" style="background:linear-gradient(135deg,#7a5c8a 0%,#b89ac4 100%)">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM18 18h3v3h-3z"/></svg>
+          </div>
+          <div class="home-card-text">
+            <h3>Vessel<br>Beauty Sessions</h3>
+            <p>Criar a sessão, ver quem leu o QR e encerrar quando acaba</p>
+          </div>
+          <span class="home-card-enter">→</span>
+        </div>
         <div class="home-card" id="home-card-claude-status" v-show="podeClaudeStatus" @click="ir('claude-status')" @mouseenter="definirTemaFundo('default')" @mouseleave="definirTemaFundo('default')">
           <div class="home-card-icon" style="background:linear-gradient(135deg,#4f46e5 0%,#7c3aed 100%)">
             <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>

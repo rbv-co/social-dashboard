@@ -11,6 +11,11 @@ const rotas = [
   { path: '/frota', name: 'frota', component: () => import('./ferramentas/frota/tela-de-frota.vue'), meta: { recurso: 'frota' } },
   { path: '/autenticidade', name: 'autenticidade', component: () => import('./ferramentas/autenticidade/tela-de-autenticidade.vue'), meta: { recurso: 'autenticidade' } },
   { path: '/atendimentos', name: 'atendimentos', component: () => import('./ferramentas/atendimentos/tela-de-atendimentos.vue'), meta: { recurso: 'atendimentos' } },
+  // Mesma chave de Atendimentos de propósito: a função do banco que lê os
+  // números das sessões já gateia em `is_vessel_atendimentos()`. Uma permissão
+  // nova nasceria DESMARCADA para todo mundo, e a tela abriria vazia para quem
+  // hoje já cuida disso.
+  { path: '/beauty-sessions', name: 'beauty-sessions', component: () => import('./ferramentas/beauty-sessions/tela-de-beauty-sessions.vue'), meta: { recurso: 'atendimentos' } },
   { path: '/banco', name: 'banco', component: () => import('./ferramentas/banco/tela-de-banco.vue') },
   { path: '/vendas', name: 'vendas', component: () => import('./ferramentas/vendas/tela-de-menu-vendas.vue') },
   { path: '/gestao-vista', name: 'gestao-vista', component: () => import('./ferramentas/gestao-a-vista/tela-de-gestao-a-vista.vue') },
