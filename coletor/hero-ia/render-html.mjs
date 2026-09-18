@@ -28,6 +28,17 @@ export const VARIANTES = { parcelamento: 'parcelado', avista: 'avista', desconto
 
 const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
+// A pílula de garantia (selo + texto) — SÓ aparece com `d.garantiaTexto` já resolvido
+// (por `texto-da-garantia.mjs`, a partir do material do lote do SKU). Sem material
+// (SKU sem lote, lote sem material, ou falha na busca), `d.garantiaTexto` vem `null`/
+// ausente e a pílula simplesmente NÃO ENTRA na arte — nunca chuta "2 anos" fixo.
+function pilulaGarantiaHtml(d, s) {
+  if (!d.garantiaTexto) return '';
+  return `<div style="display:inline-flex;align-items:center;gap:${s(12)}px;border:2px solid ${CHAMP};border-radius:999px;padding:${s(11)}px ${s(24)}px;width:fit-content;white-space:nowrap;">
+          <svg width="${s(26)}" height="${s(26)}" viewBox="0 0 24 24" fill="none" stroke="${CHAMP}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 L20 5 V11 C20 16 16 19.5 12 22 C8 19.5 4 16 4 11 V5 Z"/><path d="M8.5 12 l2.5 2.5 l4.5-5"/></svg>
+          <span style="font-size:${s(27)}px;font-weight:500;color:${LIGHT};">${esc(d.garantiaTexto)}</span></div>`;
+}
+
 function priceBlock(variant, s, big, d) {
   const de = `<div style="display:flex;align-items:baseline;gap:${s(10)}px;">
       <span style="font-size:${s(24)}px;letter-spacing:.26em;font-weight:600;color:${MUTED};">DE</span>
@@ -65,9 +76,7 @@ export function buildHtml(fmt, variant, heroDataUrl, d, opts = {}) {
           <span style="font-size:${s(26)}px;letter-spacing:.14em;font-weight:600;color:${ESP};text-transform:uppercase;">Conheça a coleção</span>
           <span style="font-size:${s(30)}px;color:${CHAMP};line-height:1;">&#8594;</span></div>`
     : `<div style="display:flex;flex-direction:column;gap:${s(10)}px;">${priceBlock(variant, s, f.big, d)}</div>
-        <div style="display:inline-flex;align-items:center;gap:${s(12)}px;border:2px solid ${CHAMP};border-radius:999px;padding:${s(11)}px ${s(24)}px;width:fit-content;white-space:nowrap;">
-          <svg width="${s(26)}" height="${s(26)}" viewBox="0 0 24 24" fill="none" stroke="${CHAMP}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 L20 5 V11 C20 16 16 19.5 12 22 C8 19.5 4 16 4 11 V5 Z"/><path d="M8.5 12 l2.5 2.5 l4.5-5"/></svg>
-          <span style="font-size:${s(27)}px;font-weight:500;color:${LIGHT};">2 anos de garantia</span></div>
+        ${pilulaGarantiaHtml(d, s)}
         <div style="display:inline-flex;align-items:center;gap:${s(12)}px;background:${IVORY};border-radius:999px;padding:${s(13)}px ${s(18)}px;width:fit-content;max-width:100%;box-shadow:0 16px 34px rgba(0,0,0,.32);white-space:nowrap;">
           <span style="font-size:${s(21)}px;font-weight:700;color:${ESP};">Converse com nossas vendedoras</span>
           <span style="display:flex;align-items:center;justify-content:center;width:${s(38)}px;height:${s(38)}px;border-radius:50%;background:${ESP};color:${IVORY};font-size:${s(20)}px;flex:0 0 auto;">&#8594;</span></div>`;
