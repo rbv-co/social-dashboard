@@ -179,12 +179,24 @@ async function decidirPeloBlingComoCliente(
   });
   if (error) {
     console.error('vessel_decidir_pedido_de_registro', error.message);
-    return { ok: true, estado: 'pendente', ja_tem_dono: true, dono_curto: aberto.dono_curto ?? null };
+    // ⚠️ I3 (revisão final): antes este ramo cravava o literal `true` em
+    // `ja_tem_dono`. Um erro de INFRAESTRUTURA no rpc de decisão (banco fora
+    // do ar, parâmetro divergente) não tem NADA a ver com a peça já ter dona
+    // ou não — cravar o literal aqui podia anunciar como "já tem dona" uma
+    // peça LIVRE, só porque o rpc tropeçou. O bloco irmão, duas linhas acima,
+    // já usa o valor de verdade (`aberto.ja_tem_dono === true`); este ramo
+    // passa a fazer o mesmo.
+    return { ok: true, estado: 'pendente',
+             ja_tem_dono: aberto.ja_tem_dono === true, dono_curto: aberto.dono_curto ?? null };
   }
   if (!decidido?.ok) {
     // A conferência bateu mas a aprovação não passou (a peça pode ter ganhado
     // dono entre uma coisa e outra). Fica pendente: uma pessoa decide.
-    return { ok: true, estado: 'pendente', ja_tem_dono: true, dono_curto: aberto.dono_curto ?? null };
+    //
+    // ⚠️ I3: mesmo conserto do ramo acima — `ja_tem_dono` vem do valor de
+    // verdade, não de um literal cravado.
+    return { ok: true, estado: 'pendente',
+             ja_tem_dono: aberto.ja_tem_dono === true, dono_curto: aberto.dono_curto ?? null };
   }
   return { ok: true, estado: 'aprovado', garantia_ate: decidido.garantia_ate };
 }
@@ -215,12 +227,47 @@ Deno.serve(async (req) => {
     const { data: pedidoAberto, error: erroAbrir } = await sb.rpc('vessel_registrar_como_cliente', {
       p_token: corpo.token, p_codigo: corpo.codigo,
       p_onde: corpo.onde ?? null, p_comprado_em: corpo.comprado_em ?? null,
+      // ⚠️ C2 (revisão final): `corpo.so_teste === true` — nunca repassar o
+      // valor cru. A página de ensaio (/verify/novo) manda este campo; a
+      // trava de verdade mora no banco (vessel_lotes.teste), aqui só garante
+      // que o booleano CHEGA no rpc.
+      p_so_teste: corpo.so_teste === true,
+      // ⚠️ I1 (revisão final): sem isto, presente_de_nome nascia e nunca era
+      // gravado — a fila do painel via o pedido pendente sem NENHUMA pista do
+      // que a cliente afirmou ter recebido de presente.
+      p_presente_de_nome: corpo.presente_de,
     });
     if (erroAbrir) {
       console.error('vessel_registrar_como_cliente', erroAbrir.message);
       return responder({ ok: false, motivo: 'falhou' });
     }
     if (!pedidoAberto?.ok) return responder(pedidoAberto ?? { ok: false }, 200);
+
+    // ⚠️ C3 (revisão final): TETO DE TENTATIVAS, conferido no BANCO — uma
+    // edge não guarda estado entre chamadas, então o contador tem de morar
+    // numa tabela, não numa variável daqui. Isto vem ANTES de buscar
+    // candidatos de propósito: se o teto já estourou, nem vale a pena rodar o
+    // casamento de nome — a resposta tem de ser SEMPRE pendente, sem revelar
+    // se o nome digitado bateria ou não.
+    const { data: tentativa, error: erroTentativa } = await sb.rpc('vessel_tentativa_de_presente', {
+      p_codigo: corpo.codigo,
+    });
+    if (erroTentativa) {
+      console.error('vessel_tentativa_de_presente', erroTentativa.message);
+      // Mesma regra de sempre: qualquer tropeço de infraestrutura cai na
+      // fila, nunca recusa e nunca aprova sozinho.
+      return responder({ ok: true, estado: 'pendente',
+                         ja_tem_dono: pedidoAberto.ja_tem_dono === true, dono_curto: pedidoAberto.dono_curto ?? null });
+    }
+    if (!tentativa?.permitido) {
+      // ⚠️ ESTOUROU O TETO (3 tentativas por peça a cada 24h): cai na fila
+      // SEM rodar `vessel_candidatos_de_presente` nem o casamento de nome —
+      // não é só "esconder o resultado na resposta", é NÃO CALCULAR o
+      // resultado, para um bug futuro na tela não poder vazá-lo de outro
+      // jeito.
+      return responder({ ok: true, estado: 'pendente',
+                         ja_tem_dono: pedidoAberto.ja_tem_dono === true, dono_curto: pedidoAberto.dono_curto ?? null });
+    }
 
     const { data: candidatos, error: erroCandidatos } = await sb.rpc('vessel_candidatos_de_presente', {
       p_sku: pedidoAberto.sku,
@@ -278,6 +325,10 @@ Deno.serve(async (req) => {
     const { data: aberto2, error: erroAbrir2 } = await sb.rpc('vessel_registrar_como_cliente', {
       p_token: corpo.token, p_codigo: corpo.codigo,
       p_onde: corpo.onde ?? null, p_comprado_em: corpo.comprado_em ?? null,
+      // ⚠️ C2: mesma trava do caminho do presente — ver o comentário lá em
+      // cima. Este caminho normal também pode ser chamado pela página de
+      // ensaio (sem "É presente?").
+      p_so_teste: corpo.so_teste === true,
     });
     if (erroAbrir2) {
       console.error('vessel_registrar_como_cliente', erroAbrir2.message);
