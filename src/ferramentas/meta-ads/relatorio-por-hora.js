@@ -31,6 +31,31 @@ export function tipoDaCampanha(nome) {
   return 'outro';
 }
 
+// Classifica um ANÚNCIO (não campanha) pelo destino do link do criativo —
+// pedido do dono (18/09/2026): campanhas "outro" (sem prefixo, ex. AXIOM)
+// misturam anúncio Sales e anúncio Leads na MESMA campanha/conjunto,
+// confirmado com dado real; por isso o recorte é por anúncio, e nunca por
+// campanha.
+//
+// ORDEM IMPORTA: checa o caminho de Leads ANTES do domínio de Sales — o
+// link real observado (vesselbrasil.com.br/universovessel#narrativa) tem o
+// MESMO domínio da lista de Sales só que com esse caminho, e o dono
+// classificou como Leads. Checar domínio primeiro classificaria errado.
+export function classificarLinkAnuncio(url) {
+  if (!url) return null;
+  if (url.includes('universovessel') && url.includes('narrativa')) return 'leads';
+  let host;
+  try {
+    host = new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    return null;
+  }
+  if (host === 'vesselbrasil.com.br' || host === 'loja.vesselbrasil.com.br' || host === 'lavessel.com.br') {
+    return 'sales';
+  }
+  return null;
+}
+
 export function agruparPorDiaEHora(linhas, nomesPorCampanha = {}) {
   const porDia = new Map();
   for (const l of linhas) {

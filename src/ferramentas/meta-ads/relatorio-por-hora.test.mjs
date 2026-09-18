@@ -5,7 +5,7 @@ import {
   montarMensagemWpp, leadsWppNoDia, gastoWppNoDia, montarMensagemSeguidores, deltaDeSeguidoresPorHora, seguidoresNaHora,
   seguidoresTotalNaHora, seguidoresNoDia, visitasPerfilNaHora, gastoSeguidoresNoDia, visitasPerfilNoDia,
   seguidoresNoPeriodo, visitasPerfilNoPeriodo, seguidoresTotalNoFimDoDia, visitasPerfilNoPeriodoComCache,
-  montarMensagemLeadsFechamentoDia, montarMensagemSeguidoresFechamentoDia,
+  montarMensagemLeadsFechamentoDia, montarMensagemSeguidoresFechamentoDia, classificarLinkAnuncio,
 } from './relatorio-por-hora.js';
 
 test('custoPorLead divide gasto por conversas', () => {
@@ -532,4 +532,32 @@ test('montarMensagemSeguidoresFechamentoDia: custo por seguidor só aparece com 
   const msg = montarMensagemSeguidoresFechamentoDia('2026-09-16', 0, 100, 50, 18000);
   assert.doesNotMatch(msg, /Custo por seguidor/, '0 seguidor é denominador inválido pra custo, mesmo com investimento');
   assert.match(msg, /Novos seguidores no dia: 0/, '0 seguidor de verdade aparece como 0, não some');
+});
+
+test('classificarLinkAnuncio: domínios de Sales, com e sem www', () => {
+  assert.equal(classificarLinkAnuncio('https://vesselbrasil.com.br/?utm_source=meta'), 'sales');
+  assert.equal(classificarLinkAnuncio('https://loja.vesselbrasil.com.br/'), 'sales');
+  assert.equal(classificarLinkAnuncio('https://www.lavessel.com.br/'), 'sales');
+  assert.equal(classificarLinkAnuncio('https://lavessel.com.br/'), 'sales');
+});
+
+test('classificarLinkAnuncio: caminho /universovessel#narrativa é Leads', () => {
+  assert.equal(classificarLinkAnuncio('https://vesselbrasil.com.br/universovessel#narrativa'), 'leads');
+});
+
+test('classificarLinkAnuncio: mesmo domínio de Sales, caminho de Leads GANHA de Sales', () => {
+  // Link real observado (18/09/2026): mesmo host de vesselbrasil.com.br,
+  // mas o CAMINHO é o de narrativa — tem que sair "leads", não "sales".
+  assert.equal(classificarLinkAnuncio('https://vesselbrasil.com.br/universovessel#narrativa?utm_content=x'), 'leads');
+});
+
+test('classificarLinkAnuncio: domínio desconhecido e ausência de link viram null', () => {
+  assert.equal(classificarLinkAnuncio('https://outraloja.com.br/'), null);
+  assert.equal(classificarLinkAnuncio(null), null);
+  assert.equal(classificarLinkAnuncio(undefined), null);
+  assert.equal(classificarLinkAnuncio(''), null);
+});
+
+test('classificarLinkAnuncio: URL malformada não quebra, vira null', () => {
+  assert.equal(classificarLinkAnuncio('não é url'), null);
 });
