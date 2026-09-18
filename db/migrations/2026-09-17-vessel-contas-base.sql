@@ -302,6 +302,15 @@ $$;
 -- enxerga esta diferença. Trocar por um retorno "cego" aqui quebraria o envio
 -- do link (decisão registrada na correção da Tarefa 3, rodada 1, mantida
 -- aqui).
+--
+-- ⚠️ MENOR N4 (conferência da onda, 17/09/2026): `create or replace function`
+-- não troca assinatura — cria SOBRECARGA. `vessel_conta_nova_senha(text,text)`
+-- é exatamente a função que este conserto (C4) substitui: a que trocava a
+-- senha ANTES de o e-mail sair. Num banco onde ela já tivesse sido aplicada,
+-- deixá-la viva (concedida, fora do revoke novo) reabriria o próprio buraco
+-- do C4 por uma porta que ninguém mais chama, mas que continua existindo. O
+-- `drop` garante que ela não sobrevive à aplicação deste arquivo.
+drop function if exists public.vessel_conta_nova_senha(text, text);
 create or replace function public.vessel_conta_pedido_de_nova_senha(p_login text)
 returns json language plpgsql security definer set search_path to 'public' as $$
 declare

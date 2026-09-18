@@ -168,3 +168,13 @@ test('⚠️ as assinaturas novas são revogadas/concedidas com os parâmetros c
       `falta ${assinatura} no array que revoga/concede`);
   }
 });
+
+test('⚠️ MENOR N4 — a assinatura antiga de vessel_registrar_como_cliente é derrubada antes do create', () => {
+  // create or replace NÃO troca assinatura — cria sobrecarga. Sem o drop, um
+  // banco que já tivesse a versão de 4 parâmetros (sem p_so_teste) ficaria
+  // com as DUAS, e a antiga continuaria concedida, sem a trava do C2.
+  const pos = SQL.indexOf('function public.vessel_registrar_como_cliente(\n  p_token text, p_codigo text, p_onde text default null, p_comprado_em date default null,\n  p_so_teste');
+  assert.ok(pos > -1, 'não achei a nova definição de vessel_registrar_como_cliente');
+  const antes = SQL.slice(Math.max(0, pos - 400), pos);
+  assert.match(antes, /drop function if exists public\.vessel_registrar_como_cliente\(text, text, text, date\)/);
+});

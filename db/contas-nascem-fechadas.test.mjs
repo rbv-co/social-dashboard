@@ -113,3 +113,15 @@ test('⚠️ C4 — efetivar a senha nova derruba as sessões abertas', () => {
   const f = SQL.slice(SQL.indexOf('function public.vessel_conta_efetivar_nova_senha'));
   assert.match(f, /update public\.vessel_sessoes set encerrada_em = now\(\)/);
 });
+
+test('⚠️ MENOR N4 — a assinatura antiga vessel_conta_nova_senha(text,text) é derrubada antes do create novo', () => {
+  // create or replace NÃO troca assinatura — cria sobrecarga. Num banco que
+  // já tivesse a versão antiga (a que trocava a senha ANTES do e-mail sair),
+  // sem o drop ela sobreviveria concedida, fora do revoke novo — reabrindo o
+  // próprio buraco do C4 por uma porta que ninguém mais chama de propósito,
+  // mas que continuaria existindo.
+  const pos = SQL.indexOf('function public.vessel_conta_pedido_de_nova_senha');
+  assert.ok(pos > -1, 'não achei vessel_conta_pedido_de_nova_senha');
+  const antes = SQL.slice(Math.max(0, pos - 600), pos);
+  assert.match(antes, /drop function if exists public\.vessel_conta_nova_senha\(text, text\)/);
+});
