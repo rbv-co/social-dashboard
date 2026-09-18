@@ -97,7 +97,18 @@ declare
   v_email text := lower(trim(coalesce(p_email, '')));
   v_id    uuid;
 begin
-  if v_cpf is null or length(v_cpf) <> 11 then
+  -- ⚠️ C6 (revisão final, 17/09/2026): antes, só a CONTAGEM de dígitos era
+  -- conferida aqui — "11111111111" e qualquer sequência de 11 dígitos
+  -- passavam, mesmo sem o dígito verificador bater.
+  -- `vessel_abrir_pedido_de_registro` (2026-09-03-zz-vessel-garantia-com-dono.sql)
+  -- exige `vessel_cpf_valido(v_cpf)` no caminho de registrar a peça — a MESMA
+  -- regra que faltava aqui. Sem ela: a cliente criava perfil com CPF digitado
+  -- errado (ou incompleto), o cadastro passava, o e-mail chegava, ela entrava
+  -- — e ao tocar em "Registrar" recebia "Confira o CPF..." para sempre, sem
+  -- NENHUM formulário na tela da peça para consertar (e o CPF, por desenho
+  -- §5.8, não muda pelo perfil). Perfil nasce, cliente nunca consegue usar:
+  -- conta morta, sem saída pela tela.
+  if v_cpf is null or not public.vessel_cpf_valido(v_cpf) then
     return json_build_object('ok', false, 'motivo', 'cpf_invalido');
   end if;
   if v_email !~ '^[^@\s]+@[^@\s]+\.[^@\s]+$' then
