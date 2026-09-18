@@ -13,10 +13,15 @@
         >{{ p.rotulo }}</button>
       </div>
 
+      <div class="fc-abas">
+        <button class="btn" :class="{ 'btn-principal': aba === 'visao' }" @click="aba = 'visao'">Visão geral</button>
+        <button class="btn" :class="{ 'btn-principal': aba === 'registros' }" @click="aba = 'registros'">Registros</button>
+      </div>
+
       <p v-if="erro" class="fc-erro" role="alert">Não consegui carregar os dados: {{ erro }}</p>
       <p v-if="cortado" class="fc-erro" role="alert">Tem mais de {{ LIMITE_CARRINHO }} linhas neste período — a lista pode estar CORTADA e os números incompletos. Diminua o período.</p>
 
-      <div class="fc-grade">
+      <div v-show="aba === 'visao'" class="fc-grade">
         <section class="fc-cartao card-base">
           <h2 class="fc-titulo-secao">Mais adicionados ao carrinho</h2>
           <p v-if="carregando" class="fc-carregando">Carregando…</p>
@@ -63,6 +68,28 @@
           </table>
         </section>
       </div>
+
+      <div v-show="aba === 'registros'" class="fc-grade">
+        <section class="fc-cartao fc-cartao-largo card-base">
+          <h2 class="fc-titulo-secao">Registros</h2>
+          <p class="fc-explicacao">Cada evento cru, mais recente primeiro.</p>
+          <p v-if="carregando" class="fc-carregando">Carregando…</p>
+          <p v-else-if="!erro && !registros.length" class="fc-vazio">Nenhum evento neste período.</p>
+          <table v-else class="fc-tabela">
+            <thead><tr><th>Data/hora</th><th>Tipo</th><th>Produto</th><th>Qtd.</th><th>Preço</th><th>Carrinho</th></tr></thead>
+            <tbody>
+              <tr v-for="r in registros" :key="r.id">
+                <td>{{ formatarData(r.criado_em) }}</td>
+                <td>{{ TIPO_LABEL[r.tipo] || r.tipo }}</td>
+                <td>{{ r.produto_titulo || '—' }}</td>
+                <td>{{ r.quantidade ?? '—' }}</td>
+                <td>{{ formatarPreco(r.preco) }}</td>
+                <td>{{ r.cart_token ? r.cart_token.slice(0, 8) + '…' : '—' }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+      </div>
     </div>
   </div>
 </template>
@@ -84,6 +111,13 @@ const PERIODOS = [
   { dias: 30, rotulo: '30D' },
 ]
 
+const TIPO_LABEL = {
+  produto_adicionado: 'Adicionado',
+  produto_removido: 'Removido',
+  checkout_iniciado: 'Checkout iniciado',
+}
+
+const aba = ref('visao')
 const periodoAtivo = ref(7)
 const carregando = ref(true)
 const erro = ref(null)
@@ -91,9 +125,14 @@ const cortado = ref(false)
 const maisAdicionados = ref([])
 const maisRemovidos = ref([])
 const abandonados = ref([])
+const registros = ref([])
 
 function formatarData(iso) {
   return new Date(iso).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
+}
+
+function formatarPreco(preco) {
+  return preco == null ? '—' : preco.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 }
 
 async function carregar() {
@@ -106,25 +145,28 @@ async function carregar() {
   maisAdicionados.value = []
   maisRemovidos.value = []
   abandonados.value = []
+  registros.value = []
   const desde = `${diasAtras(periodoAtivo.value)}T00:00:00-03:00`
 
-  const [adicionados, removidos, carrinhosAbandonados] = await Promise.all([
+  const [adicionados, removidos, carrinhosAbandonados, eventosCrus] = await Promise.all([
     sbClient.from('carrinho_eventos').select('produto_titulo').eq('tipo', 'produto_adicionado').gte('criado_em', desde).limit(LIMITE_CARRINHO),
     sbClient.from('carrinho_eventos').select('produto_titulo').eq('tipo', 'produto_removido').gte('criado_em', desde).limit(LIMITE_CARRINHO),
     sbClient.from('carrinho_abandonados').select('cart_token,iniciado_em,ultimo_evento').gte('iniciado_em', desde).limit(LIMITE_CARRINHO),
+    sbClient.from('carrinho_eventos').select('id,criado_em,tipo,produto_titulo,quantidade,preco,cart_token').gte('criado_em', desde).order('criado_em', { ascending: false }).limit(LIMITE_CARRINHO),
   ])
 
-  const primeiroErro = adicionados.error || removidos.error || carrinhosAbandonados.error
+  const primeiroErro = adicionados.error || removidos.error || carrinhosAbandonados.error || eventosCrus.error
   if (primeiroErro) {
     erro.value = primeiroErro.message
     carregando.value = false
     return
   }
 
-  cortado.value = foiCortado(adicionados.data) || foiCortado(removidos.data) || foiCortado(carrinhosAbandonados.data)
+  cortado.value = foiCortado(adicionados.data) || foiCortado(removidos.data) || foiCortado(carrinhosAbandonados.data) || foiCortado(eventosCrus.data)
   maisAdicionados.value = rankearProdutos(adicionados.data)
   maisRemovidos.value = rankearProdutos(removidos.data)
   abandonados.value = ordenarAbandonados(carrinhosAbandonados.data)
+  registros.value = eventosCrus.data
   carregando.value = false
 }
 
@@ -141,6 +183,7 @@ onMounted(carregar)
 .fc-body { padding: var(--sp-6); display: flex; flex-direction: column; gap: var(--sp-6); }
 .fc-periodo { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
 .fc-periodo-label { font-size: var(--texto-etiqueta); text-transform: uppercase; letter-spacing: 1.5px; color: var(--muted); margin-right: var(--sp-2); }
+.fc-abas { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
 .fc-grade { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: var(--sp-6); }
 .fc-cartao-largo { grid-column: 1 / -1; }
 .fc-titulo-secao { font-size: var(--texto-titulo); margin: 0 0 var(--sp-4); overflow-wrap: anywhere; }
