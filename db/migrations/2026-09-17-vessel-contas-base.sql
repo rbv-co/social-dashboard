@@ -253,9 +253,46 @@ begin
 end;
 $$;
 
--- ── esqueci a senha ──────────────────────────────────────────────────────────
--- ⚠️ A RESPOSTA É IGUAL EXISTINDO OU NÃO O PERFIL. Diferenciar transformaria a
--- página num confirmador de quem é cliente da marca.
+-- ── esqueci a senha: dois passos ─────────────────────────────────────────────
+-- ⚠️ ORDEM INVERTIDA (achado C4 da revisão final, 17/09/2026). Antes, UMA
+-- função trocava a senha, matava as sessões e SÓ DEPOIS a edge tentava mandar
+-- o e-mail; se o envio falhasse (ZeptoMail fora do ar, DNS do remetente ainda
+-- não publicado no Registro.br, token errado), a senha ANTIGA já estava
+-- morta — e "esqueci a senha" é o ÚNICO caminho que a cliente tem para
+-- recuperar acesso, pelo MESMO canal que acabou de falhar. Ela ficava
+-- trancada para sempre, sem desfazer nada (o caminho `criar` tem
+-- `vessel_conta_apagar_recem_criada` para esse mesmo problema; o `esqueci`
+-- não tinha nenhum).
+--
+-- Agora são DOIS PASSOS, e a troca só acontece DEPOIS que o e-mail sai:
+--   1. `vessel_conta_pedido_de_nova_senha` confere o teto e diz PARA ONDE
+--      mandar — sem mexer em senha nem sessão nenhuma ainda.
+--   2. a edge manda o e-mail.
+--   3. só se `mandarEmail` devolver `true`, a edge chama
+--      `vessel_conta_efetivar_nova_senha`, que troca a senha de verdade e
+--      derruba as sessões.
+-- Falha no envio agora não destrói nada: a cliente pode tentar de novo (até o
+-- teto) e a senha antiga continua valendo até o e-mail realmente sair.
+--
+-- ⚠️ TETO DE 3 PEDIDOS POR HORA POR PERFIL (desenho §5.3), que não existia em
+-- lugar nenhum. Sem ele, qualquer pessoa com a chave anônima — que mora
+-- dentro do HTML da página pública — chamava esta ação em laço com o e-mail
+-- de uma cliente: senha destruída a cada volta, sessões derrubadas, caixa de
+-- entrada inundada, e o domínio `vesselbrasil.com.br` (verificado no
+-- ZeptoMail um dia antes) queimado como remetente de spam.
+--
+-- A chave do teto é a MESMA normalização de `vessel_conta_entrar` (CPF só
+-- dígitos quando o login tem 11 dígitos, e-mail minúsculo nos outros casos),
+-- reaproveitando `vessel_tentativas_de_login` com um prefixo (`esqueci:`) que
+-- não colide com a contagem de senha errada do login normal — são cotas
+-- independentes, uma por ação.
+--
+-- ⚠️ O PEDIDO É CONTADO ACHE OU NÃO O PERFIL. Contar só quando acha
+-- entregaria, para quem está do lado de fora, se aquele login existe: um
+-- login inexistente nunca bateria no teto, um login existente bateria depois
+-- de 3 tentativas — e essa DIFERENÇA DE COMPORTAMENTO é o mesmo vazamento que
+-- a resposta idêntica (`vessel_conta_pedido_de_nova_senha`, abaixo) existe
+-- para fechar.
 --
 -- ⚠️ NÃO "CONSERTAR" O E-MAIL REAL NO RETORNO ABAIXO. Esta função é
 -- concedida SÓ a `service_role` (ver o portão no fim do arquivo) — quem a
@@ -263,30 +300,56 @@ $$;
 -- aqui para SABER PARA ONDE MANDAR o link de troca de senha, e é ela quem
 -- responde à página só com `{ok:true}`, sem e-mail nenhum. A página nunca
 -- enxerga esta diferença. Trocar por um retorno "cego" aqui quebraria o envio
--- do link (decisão registrada na correção da Tarefa 3, rodada 1).
-
-create or replace function public.vessel_conta_nova_senha(p_login text, p_senha text)
+-- do link (decisão registrada na correção da Tarefa 3, rodada 1, mantida
+-- aqui).
+create or replace function public.vessel_conta_pedido_de_nova_senha(p_login text)
 returns json language plpgsql security definer set search_path to 'public' as $$
 declare
   v_login text := lower(trim(coalesce(p_login, '')));
   v_cpf   text := public.vessel_cpf_digitos(p_login);
+  v_chave text := 'esqueci:' || (case when v_cpf is not null and length(v_cpf) = 11
+                                       then v_cpf else v_login end);
+  v_pedidos int;
   v_c     record;
 begin
+  select count(*) into v_pedidos from public.vessel_tentativas_de_login
+   where chave = v_chave and quando > now() - interval '1 hour';
+  if v_pedidos >= 3 then
+    return json_build_object('ok', false, 'motivo', 'muitas_tentativas');
+  end if;
+
+  -- conta o pedido de qualquer forma, ache ou não o perfil.
+  insert into public.vessel_tentativas_de_login (chave, acertou) values (v_chave, false);
+
   select * into v_c from public.vessel_clientes
    where email = v_login or cpf = v_cpf limit 1;
   if v_c.id is null then
-    return json_build_object('ok', true, 'email', null);   -- resposta idêntica
+    return json_build_object('ok', true, 'cliente_id', null, 'email', null);   -- resposta idêntica
   end if;
 
+  return json_build_object('ok', true, 'cliente_id', v_c.id, 'email', v_c.email);
+end;
+$$;
+
+-- ⚠️ SÓ TROCA. Não confere teto (já foi conferido no passo 1) nem manda
+-- e-mail (a edge já mandou, e só chega aqui se deu certo). Chamada só pela
+-- edge, depois de `mandarEmail` devolver `true`.
+create or replace function public.vessel_conta_efetivar_nova_senha(p_cliente_id uuid, p_senha text)
+returns json language plpgsql security definer set search_path to 'public' as $$
+begin
   update public.vessel_clientes
      set senha_hash = extensions.crypt(p_senha, extensions.gen_salt('bf', 10)),
          senha_trocada_em = now()
-   where id = v_c.id;
+   where id = p_cliente_id;
+  if not found then
+    return json_build_object('ok', false, 'motivo', 'nao_existe');
+  end if;
+
   -- a senha nova derruba as sessões abertas: se alguém entrou, perde o acesso
   update public.vessel_sessoes set encerrada_em = now()
-   where cliente_id = v_c.id and encerrada_em is null;
+   where cliente_id = p_cliente_id and encerrada_em is null;
 
-  return json_build_object('ok', true, 'email', v_c.email);
+  return json_build_object('ok', true);
 end;
 $$;
 
@@ -343,7 +406,8 @@ begin
     'vessel_conta_entrar(text,text,boolean,text,text)',
     'vessel_conta_da_sessao(text)',
     'vessel_conta_sair(text,boolean)',
-    'vessel_conta_nova_senha(text,text)',
+    'vessel_conta_pedido_de_nova_senha(text)',
+    'vessel_conta_efetivar_nova_senha(uuid,text)',
     'vessel_conta_editar(text,text,text,text,text)'
   ] loop
     execute format('revoke all on function public.%s from public, anon, authenticated', f);

@@ -95,24 +95,41 @@ Deno.serve(async (req) => {
   }
 
   if (corpo.acao === 'esqueci') {
-    const senha = gerarSenha();
-    const { data, error } = await sb.rpc('vessel_conta_nova_senha', {
-      p_login: corpo.login, p_senha: senha });
+    // ⚠️ ORDEM INVERTIDA (achado C4 da revisão final, 17/09/2026). Antes, uma
+    // única função trocava a senha e derrubava as sessões ANTES de a edge
+    // tentar mandar o e-mail; se `mandarEmail` desse `false` (ZeptoMail fora
+    // do ar, DNS do remetente ainda sem publicar), a cliente ficava trancada
+    // PARA SEMPRE — o único caminho de recuperação dela é o mesmo canal que
+    // acabou de falhar. Agora é em dois passos: primeiro só se PERGUNTA para
+    // onde mandar (e isso já confere o teto de 3/hora, no banco); a senha só
+    // é trocada de verdade DEPOIS que o e-mail sai.
+    const { data, error } = await sb.rpc('vessel_conta_pedido_de_nova_senha', {
+      p_login: corpo.login });
     // ⚠️ Erro de infraestrutura (parâmetro divergente, banco fora do ar) NÃO
     // reabre o vazamento que o parágrafo abaixo evita: é a MESMA resposta
     // para qualquer login, exista ou não o perfil — o rpc nem chegou a
     // rodar. Só por isso pode carregar `motivo` aqui.
     if (error) {
-      console.error('vessel_conta_nova_senha', error.message);
+      console.error('vessel_conta_pedido_de_nova_senha', error.message);
       return responder({ ok: false, motivo: 'falhou' });
     }
-    // ⚠️ A RESPOSTA DE SUCESSO É IGUAL EXISTINDO OU NÃO O PERFIL. A função do
-    // banco devolve o e-mail real quando o perfil existe (é assim que a gente
-    // sabe para onde mandar a senha nova) — mas esse e-mail para AQUI. A
-    // página recebe só {ok:true}, sempre, senão "esqueci minha senha" vira um
-    // jeito de descobrir se um CPF/e-mail é cliente da marca. Há teste em
-    // porta.test.mjs que reprova qualquer `email` neste retorno de sucesso.
-    if (data?.email) await mandarEmail(data.email, textoDaSenhaNova('', senha));
+    // ⚠️ A RESPOSTA DE SUCESSO É IGUAL EXISTINDO OU NÃO O PERFIL, E IGUAL
+    // TAMBÉM SE O TETO ESTOUROU. Nenhuma das três situações (perfil existe,
+    // não existe, ou pedido demais) pode virar sinal diferente na tela — a
+    // página recebe só {ok:true}, sempre. Há teste em porta.test.mjs que
+    // reprova qualquer `email` neste retorno de sucesso.
+    if (data?.ok && data.cliente_id) {
+      const senha = gerarSenha();
+      const enviou = await mandarEmail(data.email, textoDaSenhaNova('', senha));
+      // ⚠️ SÓ EFETIVA SE O E-MAIL SAIU. Envio que falha não troca mais nada:
+      // a senha antiga continua valendo, e a cliente pode tentar de novo (até
+      // o teto) em vez de ficar sem senha e sem e-mail ao mesmo tempo.
+      if (enviou) {
+        const { error: erroEfetivar } = await sb.rpc('vessel_conta_efetivar_nova_senha', {
+          p_cliente_id: data.cliente_id, p_senha: senha });
+        if (erroEfetivar) console.error('vessel_conta_efetivar_nova_senha', erroEfetivar.message);
+      }
+    }
     return responder({ ok: true });
   }
 

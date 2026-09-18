@@ -47,7 +47,8 @@ test('⚠️ as seis funções de conta são revogadas de anon E authenticated, 
     'vessel_conta_entrar(text,text,boolean,text,text)',
     'vessel_conta_da_sessao(text)',
     'vessel_conta_sair(text,boolean)',
-    'vessel_conta_nova_senha(text,text)',
+    'vessel_conta_pedido_de_nova_senha(text)',
+    'vessel_conta_efetivar_nova_senha(uuid,text)',
     'vessel_conta_editar(text,text,text,text,text)',
   ];
   for (const assinatura of assinaturas) {
@@ -71,4 +72,44 @@ test('⚠️ pgcrypto é chamado qualificado (extensions.)', () => {
 
 test('⚠️ a senha é guardada com bcrypt, nunca em claro nem em sha', () => {
   assert.match(SQL, /extensions\.crypt\([^)]*extensions\.gen_salt\('bf'/);
+});
+
+test('⚠️ C6 — vessel_conta_criar exige CPF com dígito verificador válido, não só 11 dígitos', () => {
+  // Antes, "11111111111" (e qualquer sequência de 11 dígitos) passava aqui.
+  // `vessel_abrir_pedido_de_registro` recusa esse mesmo CPF depois, quando a
+  // cliente tenta registrar a peça — e como o CPF não muda pelo perfil, a
+  // conta fica morta para sempre, sem formulário nenhum na tela para
+  // consertar.
+  const f = SQL.slice(SQL.indexOf('function public.vessel_conta_criar'),
+                       SQL.indexOf('-- ── entrar'));
+  assert.match(f, /vessel_cpf_valido\(v_cpf\)/,
+    'vessel_conta_criar precisa da MESMA validação de vessel_abrir_pedido_de_registro');
+});
+
+test('⚠️ C4 — "esqueci a senha" vira dois passos: pedir, depois efetivar', () => {
+  // A senha só pode trocar DEPOIS que o e-mail sair — a função que troca não
+  // pode mais ser a mesma que decide para onde mandar.
+  assert.match(SQL, /function public\.vessel_conta_pedido_de_nova_senha\(p_login text\)/);
+  assert.match(SQL, /function public\.vessel_conta_efetivar_nova_senha\(p_cliente_id uuid, p_senha text\)/);
+  assert.ok(!SQL.includes('function public.vessel_conta_nova_senha('),
+    'a função antiga (que trocava a senha ANTES de mandar o e-mail) não pode sobrar');
+});
+
+test('⚠️ C4 — o pedido de nova senha tem teto de 3 por hora, contado ache ou não o perfil', () => {
+  const f = SQL.slice(SQL.indexOf('function public.vessel_conta_pedido_de_nova_senha'),
+                       SQL.indexOf('function public.vessel_conta_efetivar_nova_senha'));
+  assert.match(f, /interval '1 hour'/);
+  assert.match(f, />=\s*3/);
+  // a contagem tem de acontecer ANTES do "if v_c.id is null": senão um login
+  // sem perfil nunca bateria no teto, e essa diferença de comportamento já
+  // seria o vazamento que a resposta idêntica existe para fechar.
+  const posConta = f.search(/insert into public\.vessel_tentativas_de_login/);
+  const posAcha = f.search(/v_c\.id is null/);
+  assert.ok(posConta > -1 && posAcha > -1 && posConta < posAcha,
+    'o pedido tem de ser contado antes de saber se o perfil existe');
+});
+
+test('⚠️ C4 — efetivar a senha nova derruba as sessões abertas', () => {
+  const f = SQL.slice(SQL.indexOf('function public.vessel_conta_efetivar_nova_senha'));
+  assert.match(f, /update public\.vessel_sessoes set encerrada_em = now\(\)/);
 });

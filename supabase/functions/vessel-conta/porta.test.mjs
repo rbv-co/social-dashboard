@@ -126,15 +126,20 @@ test('⚠️ "esqueci" nunca devolve o e-mail da cliente, e a resposta de sucess
   }
 });
 
-test('⚠️ as sete chamadas de rpc conferem `error` e não deixam falha de infraestrutura calada', () => {
+test('⚠️ as chamadas de rpc conferem `error` e não deixam falha de infraestrutura calada', () => {
   // Achado de revisão: sem olhar `error`, um parâmetro que um dia divergir do
   // banco faz o erro do Postgres sumir — a edge devolve o mesmo {ok:false}
   // genérico de uma tentativa legítima, e ninguém percebe. Cada rpc tem de
   // desestruturar `error` (não só `data`) e tratar o caso.
+  //
+  // ⚠️ C4 (revisão final): "esqueci" deixou de ser UM rpc e virou DOIS —
+  // `vessel_conta_pedido_de_nova_senha` (sempre chamado) e
+  // `vessel_conta_efetivar_nova_senha` (só chamado se o e-mail saiu). Por
+  // isso a lista cresceu de sete para oito.
   const nomesDeRpc = [
     'vessel_conta_criar', 'vessel_conta_entrar', 'vessel_conta_da_sessao',
-    'vessel_conta_sair', 'vessel_conta_nova_senha', 'vessel_conta_editar',
-    'vessel_minhas_pecas',
+    'vessel_conta_sair', 'vessel_conta_pedido_de_nova_senha',
+    'vessel_conta_efetivar_nova_senha', 'vessel_conta_editar', 'vessel_minhas_pecas',
   ];
   for (const nome of nomesDeRpc) {
     const marcador = `rpc('${nome}'`;
@@ -143,14 +148,14 @@ test('⚠️ as sete chamadas de rpc conferem `error` e não deixam falha de inf
     // A desestruturação vem sempre logo antes de `await sb.rpc(`, na mesma
     // janela de texto.
     const janela = FONTE.slice(Math.max(0, pos - 100), pos + marcador.length);
-    assert.match(janela, /const\s*\{\s*data\s*,\s*error\s*\}\s*=\s*await\s+sb\.rpc\(/,
+    assert.match(janela, /const\s*\{[^}]*\berror\b[^}]*\}\s*=\s*await\s+sb\.rpc\(/,
       `${nome}: falta desestruturar "error" (só "data" deixa erro do rpc calado)`);
   }
 
   // ⚠️ Nada de dado da cliente no log de erro — nem senha, nem token, nem
   // CPF, nem e-mail. Só o nome do rpc e a mensagem do Postgres.
   const logs = FONTE.match(/console\.error\([^)]*\)/gs) ?? [];
-  assert.ok(logs.length >= 7, `esperava pelo menos 7 console.error (um por rpc), achei ${logs.length}`);
+  assert.ok(logs.length >= 8, `esperava pelo menos 8 console.error (um por rpc), achei ${logs.length}`);
   for (const log of logs) {
     for (const proibido of [/\bsenha\b/i, /\btoken\b/i, /\bcpf\b/i, /\bemail\b/i]) {
       assert.ok(!proibido.test(log), `log de erro carrega dado da cliente: ${log}`);
