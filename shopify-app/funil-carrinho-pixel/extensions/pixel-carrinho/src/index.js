@@ -6,22 +6,51 @@
 import { register } from '@shopify/web-pixels-extension';
 
 const URL_DA_EDGE = 'https://kounqtdoioootxqegkij.supabase.co/functions/v1/capturar-evento-carrinho';
+const CHAVE_DO_ID = 'rbv_carrinho_id';
 
-register(({ analytics, init }) => {
-  // O tipo Cart da Web Pixels API não tem campo "token" (isso é da Cart AJAX
-  // API, outra API) — o identificador aqui é `id`, um GID
-  // (gid://shopify/Cart/...). Confirmado na doc oficial antes de escrever
-  // isto: https://shopify.dev/docs/api/web-pixels-api/standard-api/init.
-  const cartId = () => init?.data?.cart?.id;
+register(({ analytics, browser }) => {
+  // NÃO usar init.data.cart.id: `init` é só uma FOTO tirada no carregamento
+  // da página (doc oficial: "a snapshot of the page at time of page
+  // render"), nunca atualiza. No primeiro "adicionar ao carrinho" da
+  // sessão, o carrinho ainda não existia quando a página carregou —
+  // init.data.cart vinha `null`, e cart_token saía undefined bem no evento
+  // mais importante do funil. Corrigido depois de revisão que pegou isso.
+  //
+  // Em vez de depender do carrinho da Shopify, geramos e guardamos o NOSSO
+  // próprio identificador por navegador, com o localStorage do próprio Web
+  // Pixel (`browser.localStorage`, acesso padrão da API — doc:
+  // https://shopify.dev/docs/api/web-pixels-api/standard-api/browser).
+  // Sempre disponível desde o primeiro evento, e persiste entre páginas do
+  // mesmo jeito que o cookie de carrinho da Shopify persistiria.
+  // `crypto` NÃO está na lista de globais garantidos do sandbox estrito
+  // (só self, console, setTimeout/clearInterval e fetch são garantidos —
+  // doc oficial: https://shopify.dev/docs/apps/build/marketing/pixels).
+  // `crypto.randomUUID()` quebraria aqui. Math/Date são da linguagem, não
+  // API de navegador, e por isso continuam garantidos.
+  const gerarId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+
+  let idEmCache = null;
+  const cartId = async () => {
+    if (idEmCache) return idEmCache;
+    const existente = await browser.localStorage.getItem(CHAVE_DO_ID);
+    if (existente) { idEmCache = existente; return existente; }
+    const novo = gerarId();
+    await browser.localStorage.setItem(CHAVE_DO_ID, novo);
+    idEmCache = novo;
+    return novo;
+  };
 
   const enviar = (tipo, dados = {}) => {
-    fetch(URL_DA_EDGE, {
-      method: 'POST',
-      body: JSON.stringify({ tipo, cart_token: cartId(), ...dados }),
-    }).catch(() => {
-      // Falha de rede do lado do visitante nunca deve aparecer pra ele —
-      // é telemetria, não é o fluxo de compra. Silenciada de propósito.
-    });
+    cartId()
+      .then((cart_token) => fetch(URL_DA_EDGE, {
+        method: 'POST',
+        body: JSON.stringify({ tipo, cart_token, ...dados }),
+      }))
+      .catch(() => {
+        // Falha de rede ou de storage do lado do visitante nunca deve
+        // aparecer pra ele — é telemetria, não é o fluxo de compra.
+        // Silenciada de propósito.
+      });
   };
 
   analytics.subscribe('product_added_to_cart', (evento) => {

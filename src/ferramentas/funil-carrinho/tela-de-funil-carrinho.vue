@@ -14,6 +14,7 @@
       </div>
 
       <p v-if="erro" class="fc-erro" role="alert">Não consegui carregar os dados: {{ erro }}</p>
+      <p v-if="cortado" class="fc-erro" role="alert">Tem mais de {{ LIMITE_CARRINHO }} linhas neste período — a lista pode estar CORTADA e os números incompletos. Diminua o período.</p>
 
       <div class="fc-grade">
         <section class="fc-cartao card-base">
@@ -72,7 +73,7 @@ import { useRouter } from 'vue-router'
 import BarraDeTopo from '../../compartilhado/barra-de-topo.vue'
 import { sbClient } from '../../compartilhado/conectar-no-banco-de-dados.js'
 import { diasAtras } from '../../compartilhado/datas.js'
-import { rankearProdutos, ordenarAbandonados } from './agregacoes-carrinho.js'
+import { rankearProdutos, ordenarAbandonados, foiCortado, LIMITE_CARRINHO } from './agregacoes-carrinho.js'
 
 const router = useRouter()
 const voltar = () => router.push({ name: 'inicio' })
@@ -86,6 +87,7 @@ const PERIODOS = [
 const periodoAtivo = ref(7)
 const carregando = ref(true)
 const erro = ref(null)
+const cortado = ref(false)
 const maisAdicionados = ref([])
 const maisRemovidos = ref([])
 const abandonados = ref([])
@@ -97,12 +99,19 @@ function formatarData(iso) {
 async function carregar() {
   carregando.value = true
   erro.value = null
+  cortado.value = false
+  // Limpa ANTES de buscar: sem isto, uma troca de período que falha deixava
+  // a tabela do período anterior na tela, por baixo da faixa de erro, como
+  // se fosse dado do período novo.
+  maisAdicionados.value = []
+  maisRemovidos.value = []
+  abandonados.value = []
   const desde = `${diasAtras(periodoAtivo.value)}T00:00:00-03:00`
 
   const [adicionados, removidos, carrinhosAbandonados] = await Promise.all([
-    sbClient.from('carrinho_eventos').select('produto_titulo').eq('tipo', 'produto_adicionado').gte('criado_em', desde),
-    sbClient.from('carrinho_eventos').select('produto_titulo').eq('tipo', 'produto_removido').gte('criado_em', desde),
-    sbClient.from('carrinho_abandonados').select('cart_token,iniciado_em,ultimo_evento').gte('iniciado_em', desde),
+    sbClient.from('carrinho_eventos').select('produto_titulo').eq('tipo', 'produto_adicionado').gte('criado_em', desde).limit(LIMITE_CARRINHO),
+    sbClient.from('carrinho_eventos').select('produto_titulo').eq('tipo', 'produto_removido').gte('criado_em', desde).limit(LIMITE_CARRINHO),
+    sbClient.from('carrinho_abandonados').select('cart_token,iniciado_em,ultimo_evento').gte('iniciado_em', desde).limit(LIMITE_CARRINHO),
   ])
 
   const primeiroErro = adicionados.error || removidos.error || carrinhosAbandonados.error
@@ -112,6 +121,7 @@ async function carregar() {
     return
   }
 
+  cortado.value = foiCortado(adicionados.data) || foiCortado(removidos.data) || foiCortado(carrinhosAbandonados.data)
   maisAdicionados.value = rankearProdutos(adicionados.data)
   maisRemovidos.value = rankearProdutos(removidos.data)
   abandonados.value = ordenarAbandonados(carrinhosAbandonados.data)

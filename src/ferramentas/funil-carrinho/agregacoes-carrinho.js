@@ -3,6 +3,17 @@
 // do Supabase (carrinho_eventos, carrinho_abandonados) em ranking pronto pra
 // tabela. Sem rede aqui — a tela busca, isto agrega.
 
+// Sem `.limit()` explícito, o PostgREST corta em 1000 linhas por padrão —
+// SEM erro, devolvendo uma lista incompleta que parece completa (mesmo
+// defeito já documentado em src/ferramentas/acessos/auditoria-corte.js).
+// A tela usa este teto na consulta E chama foiCortado() pra avisar, em vez
+// de deixar o ranking parecer completo quando não está.
+export const LIMITE_CARRINHO = 5000
+
+export function foiCortado(linhas) {
+  return Array.isArray(linhas) && linhas.length === LIMITE_CARRINHO
+}
+
 /**
  * Ranking de produtos por número de eventos (não soma quantidade: cada
  * evento é UMA vez que alguém adicionou/removeu, e é isso que a spec pediu

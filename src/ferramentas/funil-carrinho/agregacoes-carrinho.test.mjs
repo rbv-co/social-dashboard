@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { rankearProdutos, ordenarAbandonados } from './agregacoes-carrinho.js'
+import { rankearProdutos, ordenarAbandonados, foiCortado, LIMITE_CARRINHO } from './agregacoes-carrinho.js'
 
 test('rankeia por número de eventos, do maior pro menor', () => {
   const linhas = [
@@ -42,4 +42,14 @@ test('abandonados: mais recente primeiro', () => {
 test('abandonados: lista vazia não quebra', () => {
   assert.deepEqual(ordenarAbandonados([]), [])
   assert.deepEqual(ordenarAbandonados(undefined), [])
+})
+
+test('foiCortado: só acusa corte quando bate EXATAMENTE no teto do .limit()', () => {
+  assert.equal(foiCortado(new Array(LIMITE_CARRINHO)), true)
+  assert.equal(foiCortado(new Array(LIMITE_CARRINHO - 1)), false)
+})
+
+test('foiCortado: entrada que não é array nunca acusa corte', () => {
+  assert.equal(foiCortado(undefined), false)
+  assert.equal(foiCortado(null), false)
 })
