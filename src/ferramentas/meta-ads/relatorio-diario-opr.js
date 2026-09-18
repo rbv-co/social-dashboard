@@ -4,7 +4,7 @@
 //
 // Nunca a mensagem/HTML pronta (isso é responsabilidade do template em
 // coletor/lib/template-opr.mjs) — só os NÚMEROS, testáveis por igualdade.
-import { tipoDaCampanha, custoPorLead } from './relatorio-por-hora.js';
+import { tipoDaCampanha, custoPorLead, classificarLinkAnuncio } from './relatorio-por-hora.js';
 
 // Agrupa linhas de campaign_insights (period_days=1, já filtradas pro dia e
 // conta certos) em campanhas classificadas — mesmo espírito de
@@ -26,6 +26,24 @@ export function agruparCampanhasDoDia(linhas, nomesPorCampanha = {}) {
       postEngagement: Number(l.post_engagement) || 0,
     };
   });
+}
+
+// Soma gasto/clique de um anúncio ao longo de TODAS as horas do dia
+// (linhas = ad_insights_hora do dia inteiro, uma por hora) e classifica
+// pelo link — pedido do dono (18/09/2026). Mesmo espírito de
+// agruparCampanhasDoDia, um nível abaixo (anúncio, não campanha).
+export function agruparAnunciosDoDia(linhas, linksPorAnuncio = {}) {
+  const porAnuncio = new Map();
+  for (const l of linhas) {
+    const destinoLink = linksPorAnuncio[l.ad_id] ?? null;
+    const atual = porAnuncio.get(l.ad_id) ?? {
+      adId: l.ad_id, gasto: 0, cliques: 0, categoria: classificarLinkAnuncio(destinoLink),
+    };
+    atual.gasto += Number(l.gasto_hora) || 0;
+    atual.cliques += Number(l.cliques_hora) || 0;
+    porAnuncio.set(l.ad_id, atual);
+  }
+  return [...porAnuncio.values()];
 }
 
 function porTipo(campanhas, tipo) {
@@ -123,7 +141,7 @@ function aplicarRollout(secao, objeto) {
 // nem por investimento <= 0 — cai pra `null`, nunca "R$ 0,00" inventado.
 // Diferente disso, TAXA/PERCENTUAL (conversão) pode ser 0% de verdade — não é
 // mentira, é fato quando a base é positiva e o resultado é zero.
-export function calcularDadosOpr(campanhasDoDia, seguidoresDoDia, visitasPerfilDoDia) {
+export function calcularDadosOpr(campanhasDoDia, seguidoresDoDia, visitasPerfilDoDia, anunciosDoDia = []) {
   const seguidores = porTipo(campanhasDoDia, 'seguidores');
   const engajamento = porTipo(campanhasDoDia, 'engajamento');
   const wpp = porTipo(campanhasDoDia, 'wpp');
@@ -201,19 +219,45 @@ export function calcularDadosOpr(campanhasDoDia, seguidoresDoDia, visitasPerfilD
     leads: pctDoTotal(investimentoWpp),
   };
 
-  return { header, growth, engagement, sales, mix };
+  // Sales/Leads por LINK do anúncio (18/09/2026) — eixo totalmente
+  // separado de `sales` acima: `sales.leads` é conversa WPP, isto aqui é
+  // anúncio "outro" classificado pelo destino do link. NUNCA somar os
+  // dois juntos (pedido do dono: "campanhas wpp desconsidera").
+  const salesAnuncios = anunciosDoDia.filter((a) => a.categoria === 'sales');
+  const leadsLinkAnuncios = anunciosDoDia.filter((a) => a.categoria === 'leads');
+  const investimentoSalesLink = somar(salesAnuncios, 'gasto');
+  const cliquesSalesLink = somar(salesAnuncios, 'cliques');
+  const investimentoLeadsLink = somar(leadsLinkAnuncios, 'gasto');
+  const cliquesLeadsLink = somar(leadsLinkAnuncios, 'cliques');
+
+  const salesLink = {
+    investimento: investimentoSalesLink,
+    cliques: cliquesSalesLink,
+    custoPorClique: investimentoSalesLink > 0 && cliquesSalesLink > 0
+      ? custoPorLead(investimentoSalesLink, cliquesSalesLink) : null,
+  };
+  const leadsLink = {
+    investimento: investimentoLeadsLink,
+    cliques: cliquesLeadsLink,
+    custoPorClique: investimentoLeadsLink > 0 && cliquesLeadsLink > 0
+      ? custoPorLead(investimentoLeadsLink, cliquesLeadsLink) : null,
+  };
+
+  return { header, growth, engagement, sales, salesLink, leadsLink, mix };
 }
 
 // Ponto que o dashboard e o robô do WhatsApp realmente chamam — mesmo
 // cálculo de `calcularDadosOpr`, com o rollout de campo por campo aplicado
 // em cima (ver `CAMPOS_CONFIRMADOS` acima).
-export function montarDadosOpr(campanhasDoDia, seguidoresDoDia, visitasPerfilDoDia) {
-  const dados = calcularDadosOpr(campanhasDoDia, seguidoresDoDia, visitasPerfilDoDia);
+export function montarDadosOpr(campanhasDoDia, seguidoresDoDia, visitasPerfilDoDia, anunciosDoDia = []) {
+  const dados = calcularDadosOpr(campanhasDoDia, seguidoresDoDia, visitasPerfilDoDia, anunciosDoDia);
   return {
     header: aplicarRollout('header', dados.header),
     growth: aplicarRollout('growth', dados.growth),
     engagement: aplicarRollout('engagement', dados.engagement),
     sales: aplicarRollout('sales', dados.sales),
+    salesLink: aplicarRollout('salesLink', dados.salesLink),
+    leadsLink: aplicarRollout('leadsLink', dados.leadsLink),
     mix: aplicarRollout('mix', dados.mix),
   };
 }

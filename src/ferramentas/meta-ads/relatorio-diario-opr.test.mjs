@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { agruparCampanhasDoDia, calcularDadosOpr, montarDadosOpr } from './relatorio-diario-opr.js';
+import { agruparCampanhasDoDia, calcularDadosOpr, montarDadosOpr, agruparAnunciosDoDia } from './relatorio-diario-opr.js';
 
 test('agruparCampanhasDoDia: classifica pelo nome e converte os números (string->number, ausente->0)', () => {
   const linhas = [
@@ -124,4 +124,59 @@ test('⚠️ montarDadosOpr: só os campos confirmados saem com valor, o resto c
       }
     }
   }
+});
+
+test('agruparAnunciosDoDia: soma gasto/clique por anúncio ao longo das horas do dia, classifica pelo link', () => {
+  const linhas = [
+    { ad_id: 'a1', gasto_hora: 10, cliques_hora: 2 },
+    { ad_id: 'a1', gasto_hora: 5, cliques_hora: 1 }, // segunda hora do mesmo anúncio
+    { ad_id: 'a2', gasto_hora: 8, cliques_hora: 3 },
+  ];
+  const links = { a1: 'https://vesselbrasil.com.br/', a2: 'https://vesselbrasil.com.br/universovessel#narrativa' };
+  const out = agruparAnunciosDoDia(linhas, links);
+  assert.equal(out.length, 2);
+  const a1 = out.find((a) => a.adId === 'a1');
+  assert.equal(a1.gasto, 15);
+  assert.equal(a1.cliques, 3);
+  assert.equal(a1.categoria, 'sales');
+  assert.equal(out.find((a) => a.adId === 'a2').categoria, 'leads');
+});
+
+test('agruparAnunciosDoDia: sem link classificável vira categoria null, campo ausente vira 0', () => {
+  const out = agruparAnunciosDoDia([{ ad_id: 'a9' }], {});
+  assert.equal(out[0].categoria, null);
+  assert.equal(out[0].gasto, 0);
+  assert.equal(out[0].cliques, 0);
+});
+
+test('calcularDadosOpr: salesLink/leadsLink somam certo, sem misturar com sales.leads (wpp)', () => {
+  const campanhas = agruparCampanhasDoDia(
+    [{ campaign_id: 'c1', spend: 100, conversas: 5 }],
+    { c1: '[CAMPANHA WPP] X' },
+  );
+  const anunciosDoDia = [
+    { adId: 'a1', gasto: 50, cliques: 10, categoria: 'sales' },
+    { adId: 'a2', gasto: 20, cliques: 4, categoria: 'leads' },
+    { adId: 'a3', gasto: 999, cliques: 999, categoria: null },
+  ];
+  const dados = calcularDadosOpr(campanhas, 0, 0, anunciosDoDia);
+  assert.equal(dados.salesLink.investimento, 50);
+  assert.equal(dados.salesLink.cliques, 10);
+  assert.equal(dados.salesLink.custoPorClique, 5);
+  assert.equal(dados.leadsLink.investimento, 20);
+  assert.equal(dados.leadsLink.cliques, 4);
+  assert.equal(dados.leadsLink.custoPorClique, 5);
+  assert.equal(dados.sales.leads, 5, 'sales.leads continua sendo só WPP, não mistura com leadsLink');
+});
+
+test('calcularDadosOpr: sem anúncio nenhum, salesLink/leadsLink saem zerados com custo null (nunca undefined)', () => {
+  const dados = calcularDadosOpr([], null, 0);
+  assert.deepEqual(dados.salesLink, { investimento: 0, cliques: 0, custoPorClique: null });
+  assert.deepEqual(dados.leadsLink, { investimento: 0, cliques: 0, custoPorClique: null });
+});
+
+test('montarDadosOpr: salesLink/leadsLink ficam null (rollout não confirmado ainda) mesmo com número calculado certo', () => {
+  const anunciosDoDia = [{ adId: 'a1', gasto: 50, cliques: 10, categoria: 'sales' }];
+  const dados = montarDadosOpr([], null, 0, anunciosDoDia);
+  assert.deepEqual(dados.salesLink, { investimento: null, cliques: null, custoPorClique: null });
 });
