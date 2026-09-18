@@ -47,6 +47,36 @@
 -- (`pg_advisory_xact_lock`, solto sozinho no fim da transação). A segunda
 -- espera a primeira terminar e já vê o registro gravado.
 --
+-- QUEM PODE DIZER 'bling' (segundo furo, achado na mesma revisão): a função
+-- tem EXECUTE para `authenticated` de propósito — o painel usa 'na_mao', que
+-- exige admin. Mas o caminho 'bling' não conferia QUEM chamava: qualquer uma
+-- das contas da Central, logada, podia chamar direto pela API
+-- `(pedido, 'aprovado', 'bling', '{"pedido":"qualquer"}')` e aprovar um
+-- pedido pendente sem conferência nenhuma. Agora 'bling' só passa para:
+--   · a chave de serviço (a edge `vessel-registrar-garantia`); ou
+--   · o dono do banco numa conexão direta (sem API no meio).
+-- Todo o resto → `ok:false, 'sem_permissao'`, antes de ler ou gravar nada.
+--
+-- COMO SE CONFERE, e por que assim — MEDIDO no banco em 18/09/2026 com uma
+-- função sonda `security definer` dentro de begin/rollback:
+--   · `current_user` → SEMPRE 'postgres' (é o dono da função: security
+--     definer troca o usuário). Não serve.
+--   · `session_user` → 'authenticator' pela API; numa conexão direta é quem
+--     conectou, mesmo depois de `set role`. Não distingue os papéis. Não serve.
+--   · `current_setting('role')` → o papel que o PostgREST ligou com
+--     `set local role` a partir da chave: 'service_role', 'authenticated' ou
+--     'anon'. O security definer NÃO muda este valor. Conexão direta sem
+--     `set role` → 'none'. É o papel de verdade, o que dá o privilégio.
+--   · `auth.role()` → o 'role' de dentro das claims do JWT que o PostgREST
+--     grava; nulo numa conexão direta.
+-- A regra usa os dois juntos: serviço = papel 'service_role' (e as claims,
+-- se houver, dizendo o mesmo); dono do banco = papel 'none' e sem claims.
+-- Claims dizendo outra coisa (alguém simulando uma sessão) → barra.
+-- A edge usa `SUPABASE_SERVICE_ROLE_KEY`. Com a chave antiga (JWT) o PostgREST
+-- liga 'service_role' direto; com as chaves novas (`sb_secret_...`) o
+-- gateway da Supabase troca a chave por um JWT de papel 'service_role' antes
+-- do PostgREST — o papel que chega ao banco é o mesmo.
+--
 -- A EDGE JÁ TRATA `ok:false` COMO PENDENTE nos três caminhos (antigo sem
 -- conta, logada, e "É presente?") — conferido em
 -- supabase/functions/vessel-registrar-garantia/index.ts. Nada muda lá.
@@ -96,6 +126,19 @@ begin
   if p_quem_decidiu = 'na_mao' and not public.is_vessel_admin() then
     return json_build_object('ok', false, 'motivo', 'sem_permissao');
   end if;
+  -- >>> TRAVA DA DONA (quem pode dizer 'bling')
+  -- 'bling' é a palavra da EDGE (chave de serviço) — ou do dono do banco,
+  -- numa conexão direta. Conta da Central logada ('authenticated') e a chave
+  -- pública ('anon') NÃO: sem isto, qualquer login aprovava um pedido
+  -- pendente com uma "conferência" inventada. Ver o cabeçalho do arquivo.
+  if p_quem_decidiu = 'bling' and not (
+       (current_setting('role', true) = 'service_role'
+        and coalesce(auth.role(), 'service_role') = 'service_role')
+    or (current_setting('role', true) = 'none' and auth.role() is null)
+  ) then
+    return json_build_object('ok', false, 'motivo', 'sem_permissao');
+  end if;
+  -- <<< TRAVA DA DONA
   -- Aprovacao automatica SEM a prova do Bling anexada nao entra: e ela que
   -- explica a decisao daqui a um ano, e sem ela "conferido no Bling" e so uma
   -- palavra que o sistema deu a si mesmo.

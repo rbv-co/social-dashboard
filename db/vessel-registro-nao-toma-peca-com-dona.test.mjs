@@ -84,6 +84,21 @@ test('c) pedido do Bling já sustenta outra peça do mesmo SKU → pedido_ja_usa
   assert.match(c, /'motivo', 'pedido_ja_usado'/);
 });
 
+test("⚠️ 'bling' só para a chave de serviço ou o dono do banco — antes de ler qualquer tabela", () => {
+  const ini = NOVO.indexOf("-- >>> TRAVA DA DONA (quem pode dizer 'bling')");
+  const fim = NOVO.indexOf('-- <<< TRAVA DA DONA', ini);
+  assert.ok(ini > 0 && fim > ini, 'bloco do portão existe');
+  const portao = NOVO.slice(ini, fim);
+  assert.match(portao, /if p_quem_decidiu = 'bling' and not \(/);
+  assert.match(portao, /current_setting\('role', true\) = 'service_role'\s+and coalesce\(auth\.role\(\), 'service_role'\) = 'service_role'/);
+  assert.match(portao, /current_setting\('role', true\) = 'none' and auth\.role\(\) is null/);
+  assert.match(portao, /'motivo', 'sem_permissao'/);
+  assert.doesNotMatch(portao, /current_user|session_user/, 'current_user é sempre o dono da função; session_user não distingue');
+  assert.ok(ini < NOVO.indexOf('from public.vessel_pedidos_de_registro'), 'barra antes de ler o pedido');
+  // o portão do na_mao continua o mesmo, e vem antes
+  assert.ok(NOVO.indexOf("if p_quem_decidiu = 'na_mao' and not public.is_vessel_admin() then") < ini);
+});
+
 test('trava contra corrida: linha da peça e número do pedido do Bling', () => {
   assert.match(TRAVA, /for no key update of p/);
   assert.match(TRAVA, /pg_advisory_xact_lock\(\s*hashtext\('vessel_bling_pedido:'/);
