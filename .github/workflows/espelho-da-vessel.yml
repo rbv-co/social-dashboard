@@ -1,7 +1,14 @@
 name: Espelho da Vessel (as planilhas da base de clientes)
 
-# DE HORA EM HORA, aos 47 minutos: regrava no Zoho WorkDrive as planilhas de
-# pessoas, atendimentos, convites abertos e vendas.
+# DE HORA EM HORA, aos 47 minutos: regrava no Zoho WorkDrive as NOVE planilhas
+# da base de clientes.
+#
+#   pessoas · atendimentos · convites-abertos · vendas
+#   atribuicao ......... a que responde "de onde veio e deu em que" (a principal)
+#   origens ............ toda linha de origem, para provar o first touch
+#   stylists ........... com o LINK de cada uma
+#   private-edits ...... com o LINK de cada convite
+#   beauty-sessions .... com o endereco do QR e o salao parceiro
 #
 # ⚠️ ESPELHO NÃO É BACKUP, E É DE PROPÓSITO
 # Aqui o arquivo INTEIRO é comparado e regravado quando difere: apagou do banco,
@@ -17,6 +24,10 @@ name: Espelho da Vessel (as planilhas da base de clientes)
 # estas planilhas são de LEITURA do dono — ninguém as abre esperando o dado de
 # cinco minutos atrás. E o robô só sobe o que mudou, então rodada sem novidade
 # custa quatro leituras e nada mais.
+#
+# ⚠️ A PLANILHA E DE MAO UNICA. Escrever nela nao muda nada no sistema: na
+# rodada seguinte o robo regrava o arquivo inteiro e o que foi digitado la some.
+# Corrigir dado se faz na Central ou no formulario, nunca na planilha.
 #
 # O minuto 47 fica longe da hora cheia (medido neste repo: agendar na hora cheia
 # atrasa de 2 a 3 horas) e não colide com os outros robôs da conta.
