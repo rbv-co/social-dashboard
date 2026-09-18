@@ -26,6 +26,7 @@ register(({ analytics, init }) => {
 
   analytics.subscribe('product_added_to_cart', (evento) => {
     const item = evento.data.cartLine;
+    if (!item) return; // cartLine é nullable na doc oficial; sem isto o evento derruba o pixel
     enviar('produto_adicionado', {
       produto_id: item.merchandise.product.id,
       produto_titulo: item.merchandise.product.title,
@@ -37,6 +38,7 @@ register(({ analytics, init }) => {
 
   analytics.subscribe('product_removed_from_cart', (evento) => {
     const item = evento.data.cartLine;
+    if (!item) return; // cartLine é nullable na doc oficial; sem isto o evento derruba o pixel
     enviar('produto_removido', {
       produto_id: item.merchandise.product.id,
       produto_titulo: item.merchandise.product.title,
