@@ -91,6 +91,29 @@ test('⚠️ C2 — p_so_teste recusa peça fora do lote de teste (a trava é no
   assert.match(f, /l\.teste/);
 });
 
+test('⚠️ CRÍTICO N2 — a conferência de lote é INCONDICIONAL, não opt-in por p_so_teste', () => {
+  // Achado da conferência da onda: "if p_so_teste and not exists (...)" era
+  // OPT-IN — bastava a chamadora OMITIR so_teste (a chave anônima está no
+  // HTML público) para desligar a conferência inteira, e uma bolsa VENDIDA
+  // registrava normal. vessel_registrar_como_cliente é usada só pela página
+  // de ensaio nesta fase (o caminho das 157 etiquetas usa
+  // vessel_abrir_pedido_de_registro direto), então o padrão SEGURO é recusar
+  // sempre peça fora do lote de teste, quer a chamada mande so_teste ou não.
+  const f = SQL.slice(SQL.indexOf('function public.vessel_registrar_como_cliente'),
+                       SQL.indexOf('function public.vessel_registros_preencher_cliente_id'));
+  assert.ok(!/if\s+p_so_teste\s+and\s+not\s+exists/.test(f),
+    'a checagem não pode depender de p_so_teste — tem de rodar sempre');
+  // a checagem de lote continua existindo, só que fora de qualquer "if
+  // p_so_teste" — isolamos o trecho logo antes de "not exists (" que junta
+  // vessel_pecas/vessel_lotes e conferimos que não há "p_so_teste" colado
+  // nele.
+  const pos = f.search(/not exists\s*\(\s*\n\s*select 1 from public\.vessel_pecas/);
+  assert.ok(pos > -1, 'não achei a checagem de lote de teste');
+  const janela = f.slice(Math.max(0, pos - 60), pos);
+  assert.ok(!/p_so_teste/.test(janela),
+    'a checagem de lote não pode estar condicionada a p_so_teste na mesma linha do if');
+});
+
 test('⚠️ I1 — presente_de_nome é gravado, não fica coluna morta', () => {
   const f = SQL.slice(SQL.indexOf('function public.vessel_registrar_como_cliente'),
                        SQL.indexOf('function public.vessel_registros_preencher_cliente_id'));

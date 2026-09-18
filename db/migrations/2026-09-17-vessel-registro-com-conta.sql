@@ -78,15 +78,29 @@ $$;
 -- mudança ainda não existe vai ver `function does not exist`; a correção é
 -- ajustar a assinatura de origem, não este arquivo.
 --
--- ⚠️ `p_so_teste` (achado C2 da revisão final, 17/09/2026): a página de
--- ensaio `/verify/novo` chama esta função com `p_so_teste = true`. QUANDO
--- TRUE, a função RECUSA qualquer peça cujo lote não esteja marcado `teste` —
--- sem isso, a página de teste abria as 157 bolsas JÁ VENDIDAS e escrevia nas
--- MESMAS tabelas de produção. A trava fica no SERVIDOR, não na tela: a página
--- é só HTML e JS, qualquer um reescreve a chamada com o dev tools aberto.
--- `p_so_teste` nasce com `default false` de propósito — a página de verdade
--- (as 157 etiquetas já vendidas) nunca manda este campo, e o comportamento
--- dela não muda em nada.
+-- ⚠️ CRÍTICO N2 (conferência da onda, 17/09/2026) — A PRIMEIRA VERSÃO da
+-- trava de C2 era `if p_so_teste and not exists (...)`: OPT-IN. Bastava
+-- omitir `so_teste` na chamada (a chave anônima está no HTML público —
+-- qualquer um chama a edge direto, sem passar pela tela) para a conferência
+-- de lote inteira ficar DESLIGADA, e a bolsa VENDIDA registrava normal. Pior:
+-- a prova por rollback deste arquivo CRAVAVA esse buraco como comportamento
+-- esperado ("sem so_teste, o comportamento de sempre não pode mudar", numa
+-- peça de lote não marcado teste — corrigido na mesma conferência).
+--
+-- ⚠️ `vessel_registrar_como_cliente` É USADA SÓ PELA PÁGINA DE ENSAIO
+-- (`/verify/novo`) NESTA FASE — conferido: o caminho das 157 etiquetas já
+-- vendidas chama `vessel_abrir_pedido_de_registro` DIRETO (ver o bloco
+-- "CAMINHO ANTIGO" na edge `vessel-registrar-garantia`), nunca esta função.
+-- Por isso a conferência de lote abaixo é INCONDICIONAL enquanto a fase for
+-- de teste: qualquer chamada a esta função — mande `so_teste` ou não — exige
+-- peça de lote `teste = true`. O padrão tem de ser SEGURO por si só, nunca
+-- depender de a chamadora lembrar de pedir a trava.
+--
+-- `p_so_teste` continua existindo como parâmetro (não removido) para servir
+-- de gancho para a Fase 2, quando esta MESMA função puder passar a atender
+-- também o caminho de produção (hoje ela não atende) — nesse dia, quem
+-- decide o que `so_teste` faz de novo é quem estiver reformando esta função
+-- para os dois caminhos, e não antes.
 --
 -- ⚠️ `p_presente_de_nome` (achado I1): grava o nome que a presenteada digitou
 -- em "É presente?". Antes, a coluna `presente_de_nome` nascia e NINGUÉM a
@@ -107,7 +121,7 @@ begin
   end if;
   select * into v_c from public.vessel_clientes where id = (v_sessao ->> 'cliente_id')::uuid;
 
-  if p_so_teste and not exists (
+  if not exists (
     select 1 from public.vessel_pecas p
     join public.vessel_lotes l on l.id = p.lote_id
    where p.codigo = v_codigo and l.teste
