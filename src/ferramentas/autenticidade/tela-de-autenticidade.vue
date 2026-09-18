@@ -1396,7 +1396,7 @@
               </p>
               <p class="au-aviso-menor">
                 <template v-if="decidindo.estado === 'aprovado'">
-                  A garantia passa a valer no nome dela, contando 2 anos da data da compra.
+                  {{ avisoDaAprovacao(materialDoCodigo(pd.codigo, pecas, lotes)) }}
                 </template>
                 <template v-else>
                   Ela continua podendo registrar de novo. A recusa fica no histórico da peça.
@@ -1450,7 +1450,13 @@
         <div v-for="r in registrosFiltrados" :key="r.codigo" class="au-card">
           <div class="au-card-topo">
             <span class="au-modelo">{{ r.nome }}</span>
-            <span class="au-progresso">até {{ dataCurta(r.garantia_ate) }}</span>
+            <!-- O MATERIAL DO LOTE vai junto da data: é ele que decide o prazo
+                 (o prazo de cada material está em garantia-pelo-material.js).
+                 Só leitura por enquanto. Sem material, diz isso em vez de chutar. -->
+            <span class="au-progresso">até {{ dataCurta(r.garantia_ate) }}
+              <span class="au-garantia-material">{{
+                prazoDoMaterial(materialDoCodigo(r.codigo, pecas, lotes)) || 'lote sem material'
+              }}</span></span>
           </div>
           <div class="au-card-linha">
             <span class="au-ref">{{ r.codigo }}</span>
@@ -1525,8 +1531,7 @@
               Trocar o dono desta peça? Hoje ela está em nome de <strong>{{ r.nome }}</strong>.
             </p>
             <p class="au-aviso-menor">
-              A garantia <strong>não recomeça</strong>: continua valendo até
-              {{ dataCurta(r.garantia_ate) }}, contando da compra original.
+              A garantia <strong>não recomeça</strong>: {{ avisoDaTroca(r.garantia_ate ? dataCurta(r.garantia_ate) : null) }}
             </p>
 
             <label class="au-campo"><span class="au-rot">Nome do novo dono</span>
@@ -2020,6 +2025,7 @@ import {
   filaDeGarantia, comoConferir, fraseDaRecusaDeGarantia,
   podeTrocarDono, cpfComMascara, cpfLimpo,
 } from './registros-de-garantia.js'
+import { prazoDoMaterial, materialDoCodigo, avisoDaAprovacao, avisoDaTroca } from './garantia-pelo-material.js'
 import {
   // ⚠️ `listaParaGravadorDeMesa` NÃO entra mais aqui, e não é esquecimento: o
   // botão "Baixar a lista das que faltam" saiu da ferramenta em 02/09/2026 (o
@@ -4531,6 +4537,9 @@ onUnmounted(() => window.removeEventListener('message', ouvirAPrevia))
 .au-card-topo{display:flex;justify-content:space-between;align-items:baseline;gap:var(--sp-3);flex-wrap:wrap;padding-bottom:var(--sp-2);border-bottom:1px solid color-mix(in srgb,var(--accent) 40%,var(--border));}
 .au-modelo{font-family:var(--fonte-principal);font-size:var(--texto-titulo);font-weight:700;line-height:1.3;color:var(--text);overflow-wrap:anywhere;}
 .au-progresso{font-family:var(--fonte-principal);font-size:var(--texto-corpo);color:var(--accent);white-space:nowrap;}
+/* O prazo pelo material, embaixo da data da garantia: linha própria, em cinza —
+   é a explicação da data, não um segundo dado competindo com ela. */
+.au-garantia-material{display:block;color:var(--muted);white-space:normal;overflow-wrap:anywhere;}
 .au-card-linha{display:flex;gap:var(--sp-4);flex-wrap:wrap;margin-top:var(--sp-3);font-family:var(--fonte-principal);font-size:var(--texto-corpo);color:var(--muted);}
 .au-ref{font-family:var(--fonte-dados);}
 

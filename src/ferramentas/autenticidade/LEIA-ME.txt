@@ -165,6 +165,12 @@ seis itens ela quebra em duas linhas no celular — igual as irmas fariam.
 GARANTIAS  Quem registrou a garantia: nome, WhatsApp, onde comprou. Da pra
            buscar e baixar em planilha. (A chave interna dela continua sendo
            `registros`, que e o nome da tabela; o que mudou foi so o rotulo.)
+           O PRAZO DEPENDE DO MATERIAL DO LOTE (decisao do dono, 18/09/2026):
+           canvas 2 anos, couro 6 meses, contados da data da compra, e vale com
+           a nota ou o cupom fiscal. Embaixo da data, a lista mostra o prazo
+           do material ("2 anos (canvas)"). "lote sem material" = a data fica
+           em branco ate alguem escolher o material do lote. Os textos saem de
+           garantia-pelo-material.js — nunca escrever "2 anos" cravado na tela.
 
 ALERTAS    Os sinais de falsificacao. A etiqueta guarda um endereco, e endereco
            se copia — entao a etiqueta sozinha nao impede nada. O que denuncia a
