@@ -55,13 +55,17 @@ function esperar(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// 2 tentativas extras (18/09/2026) — visto 2x seguidas o mesmo erro
-// ("Illegal base64 character 2c", ou seja, a Z-API tentando decodificar o
-// prefixo "data:image/...;base64," como se fosse base64) só na PRIMEIRA
-// chamada de imagem depois de já ter mandado texto no mesmo processo;
-// reenviar isolado (processo novo) sempre funcionou de primeira — cheira a
-// conexão reaproveitada entre chamadas, não a payload errado. `keepalive:
-// false` força conexão nova; a retentativa cobre o resto (glitch da Z-API).
+// Retentativa com backoff (18/09/2026) — visto 3x (2x local, 1x no cron real
+// do GitHub Actions) o mesmo erro ("Illegal base64 character 2c": a Z-API
+// tentando decodificar o prefixo "data:image/...;base64," como se fosse
+// base64 de verdade). Tentei reproduzir de propósito (2 send-text reais
+// seguidos de send-image, o mesmo padrão do robô) 2x e as duas vezes
+// funcionou de primeira — não é 100% determinístico, então não é bug óbvio
+// de conexão reaproveitada nem payload errado (confirmado: o base64 puro
+// nunca tem vírgula). Parece falha transiente do LADO da Z-API que se
+// resolve sozinha em alguns segundos — mas 3 tentativas de 2s (primeira
+// versão deste fix) NÃO foram suficientes no cron real. Backoff mais longo
+// (3s/6s/12s/24s, 5 tentativas) dá mais chance de pegar a janela boa.
 async function mandarImagemWhatsapp(buf, legenda) {
   const instanceId = process.env.ZAPI_INSTANCE_ID;
   const instanceToken = process.env.ZAPI_INSTANCE_TOKEN;
@@ -69,16 +73,15 @@ async function mandarImagemWhatsapp(buf, legenda) {
   const body = JSON.stringify({ phone: GRUPO_WHATSAPP, image: `data:image/png;base64,${buf.toString('base64')}`, caption: legenda });
 
   let ultimoErro;
-  for (let tentativa = 1; tentativa <= 3; tentativa++) {
+  for (let tentativa = 1; tentativa <= 5; tentativa++) {
     const r = await fetch(`https://api.z-api.io/instances/${instanceId}/token/${instanceToken}/send-image`, {
       method: 'POST',
       headers: { 'Client-Token': clientToken, 'Content-Type': 'application/json' },
-      keepalive: false,
       body,
     });
     if (r.ok) return;
     ultimoErro = new Error(`Z-API send-image: ${r.status} ${await r.text()}`);
-    if (tentativa < 3) await esperar(2000);
+    if (tentativa < 5) await esperar(3000 * 2 ** (tentativa - 1));
   }
   throw ultimoErro;
 }
