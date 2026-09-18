@@ -90,6 +90,17 @@
     carrinhoConhecidoPorVariante = novoPorVariante;
   }
 
+  // Igual a atualizarCache, mas SOMA linhas em vez de trocar tudo — usada
+  // depois de /cart/add.js, cuja resposta só traz as linhas afetadas (não
+  // o carrinho inteiro); usar atualizarCache aqui apagaria a memória das
+  // outras linhas.
+  function atualizarCacheParcial(itens) {
+    itens.forEach(function (item) {
+      carrinhoConhecidoPorChave[item.key] = item;
+      carrinhoConhecidoPorVariante[item.variant_id] = item;
+    });
+  }
+
   function achaLinhaConhecida(idDoPedido) {
     if (idDoPedido == null) return null;
     return carrinhoConhecidoPorChave[idDoPedido] || carrinhoConhecidoPorVariante[idDoPedido] || null;
@@ -117,8 +128,20 @@
     if (ehAdd) {
       var itens = respostaJson.items ? respostaJson.items : [respostaJson];
       itens.forEach(function (item) {
-        enviar('produto_adicionado', linhaParaDados(item));
+        // A Shopify devolve a quantidade TOTAL da linha (doc oficial: "se
+        // o item já estava no carrinho, quantity é a NOVA quantidade
+        // total"), não quanto foi adicionado nesta chamada. Corrigido pra
+        // gravar o incremento de verdade, comparando com a última
+        // quantidade conhecida desta linha (só dentro desta mesma
+        // navegação — um reload zera essa memória, e nesse caso a
+        // quantidade total é a melhor aproximação disponível).
+        var linhaAntiga = achaLinhaConhecida(item.key) || achaLinhaConhecida(item.variant_id);
+        var incremento = item.quantity - (linhaAntiga ? linhaAntiga.quantity : 0);
+        var dados = linhaParaDados(item);
+        dados.quantidade = incremento > 0 ? incremento : item.quantity;
+        enviar('produto_adicionado', dados);
       });
+      atualizarCacheParcial(itens);
       return;
     }
 
