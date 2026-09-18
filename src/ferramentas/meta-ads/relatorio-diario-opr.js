@@ -106,6 +106,14 @@ function somar(campanhas, campo) {
 //   nunca tinha sido propagado pra esta seção. `leadsQuentes`/`vendas`/
 //   conversões continuam `null` de propósito — dependem do Chatwoot,
 //   integração futura, fora de escopo.
+// - salesLink / leadsLink (18/09/2026) — confirmado com backfill real: as
+//   campanhas AXIOM de 17/09 (sem dado ainda em ad_insights_hora, robô
+//   novo) foram buscadas direto na Meta (act_.../insights, level=ad,
+//   time_range do dia) e gravadas; header.investimentoTotal foi de
+//   R$928,51 pra R$1.363,38 — bateu exatamente com os R$434,76 das duas
+//   campanhas AXIOM já confirmadas na lista de campanhas de 17/09 (spend
+//   R$325,98 + R$108,78). mix.salesLink/mix.leadsLink também confirmados,
+//   mesma aritmética já validada do resto do mix.
 const CAMPOS_CONFIRMADOS = new Set([
   'header.novosSeguidores',
   'growth.seguidores',
@@ -131,9 +139,17 @@ const CAMPOS_CONFIRMADOS = new Set([
   'mix.growth',
   'mix.engagement',
   'mix.leads',
+  'mix.salesLink',
+  'mix.leadsLink',
   'sales.leads',
   'sales.investimento',
   'sales.custoPorLead',
+  'salesLink.investimento',
+  'salesLink.cliques',
+  'salesLink.custoPorClique',
+  'leadsLink.investimento',
+  'leadsLink.cliques',
+  'leadsLink.custoPorClique',
 ]);
 
 function ligado(secao, campo, valor) {

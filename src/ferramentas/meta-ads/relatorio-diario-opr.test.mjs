@@ -111,8 +111,10 @@ test('⚠️ montarDadosOpr: só os campos confirmados saem com valor, o resto c
     'engagement.compartilhamentos', 'engagement.salvamentos', 'engagement.custoPorCurtida',
     'engagement.custoPorComentario', 'engagement.custoPorCompartilhamento',
     'engagement.custoPorSalvamento', 'engagement.totalInteracoes', 'engagement.custoMedioPorEngajamento',
-    'mix.growth', 'mix.engagement', 'mix.leads',
+    'mix.growth', 'mix.engagement', 'mix.leads', 'mix.salesLink', 'mix.leadsLink',
     'sales.leads', 'sales.investimento', 'sales.custoPorLead',
+    'salesLink.investimento', 'salesLink.cliques', 'salesLink.custoPorClique',
+    'leadsLink.investimento', 'leadsLink.cliques', 'leadsLink.custoPorClique',
   ]);
 
   for (const secao of ['header', 'growth', 'engagement', 'sales', 'salesLink', 'leadsLink', 'mix']) {
@@ -176,8 +178,10 @@ test('calcularDadosOpr: sem anúncio nenhum, salesLink/leadsLink saem zerados co
   assert.deepEqual(dados.leadsLink, { investimento: 0, cliques: 0, custoPorClique: null });
 });
 
-test('montarDadosOpr: salesLink/leadsLink ficam null (rollout não confirmado ainda) mesmo com número calculado certo', () => {
+// salesLink/leadsLink foram confirmados em 18/09/2026 (backfill real batido
+// contra a Meta) — ver CAMPOS_CONFIRMADOS. Agora saem com o valor calculado.
+test('montarDadosOpr: salesLink/leadsLink já confirmados, saem com o valor calculado', () => {
   const anunciosDoDia = [{ adId: 'a1', gasto: 50, cliques: 10, categoria: 'sales' }];
   const dados = montarDadosOpr([], null, 0, anunciosDoDia);
-  assert.deepEqual(dados.salesLink, { investimento: null, cliques: null, custoPorClique: null });
+  assert.deepEqual(dados.salesLink, { investimento: 50, cliques: 10, custoPorClique: 5 });
 });
