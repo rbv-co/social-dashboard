@@ -27,7 +27,7 @@
 --
 -- Nenhum dado real é usado: os CPFs e os e-mails abaixo são fictícios (o CPF
 -- '390.533.447-05' é um CPF de teste, matematicamente válido, que não
--- pertence a ninguém; o mesmo vale para '484.523.220-73').
+-- pertence a ninguém; o mesmo vale para '123.456.789-09').
 
 do $$
 declare v json; v_token text; v_erros int;
@@ -59,35 +59,35 @@ begin
   assert not (v->>'ok')::boolean, 'sessao encerrada ainda responde';
 
   -- ── A TRAVA DE TENTATIVAS É POR CPF NORMALIZADO, NÃO POR FORMATO ─────────
-  -- Correção da Tarefa 3, rodada 1: '484.523.220-73', '48452322073' e
-  -- '484-523-220.73' são O MESMO CPF, mas eram TRÊS CHAVES diferentes na
+  -- Correção da Tarefa 3, rodada 1: '123.456.789-09', '12345678909' e
+  -- '123-456-789.09' são O MESMO CPF, mas eram TRÊS CHAVES diferentes na
   -- versão original — cada formato tinha sua própria cota de 5 erros, e
   -- misturar formatos dava chute de senha praticamente ilimitado. Esta conta
   -- é NOVA, só para não misturar contagem com a de cima.
-  v := public.vessel_conta_criar('Cliente Formatos','484.523.220-73',
+  v := public.vessel_conta_criar('Cliente Formatos','123.456.789-09',
         'formatos@exemplo.com.br',null,'1990-01-01','senha-de-teste-2');
   assert (v->>'ok')::boolean, 'criar (conta dos formatos) falhou: ' || v::text;
 
   -- 5 erros, um em cada formato diferente do MESMO CPF.
-  v := public.vessel_conta_entrar('484.523.220-73','errada',false,null,null);
+  v := public.vessel_conta_entrar('123.456.789-09','errada',false,null,null);
   assert (v->>'motivo') = 'senha_errada', 'formato 1 deveria falhar por senha';
-  v := public.vessel_conta_entrar('48452322073','errada',false,null,null);
+  v := public.vessel_conta_entrar('12345678909','errada',false,null,null);
   assert (v->>'motivo') = 'senha_errada', 'formato 2 deveria falhar por senha';
-  v := public.vessel_conta_entrar('484-523-220.73','errada',false,null,null);
+  v := public.vessel_conta_entrar('123-456-789.09','errada',false,null,null);
   assert (v->>'motivo') = 'senha_errada', 'formato 3 deveria falhar por senha';
-  v := public.vessel_conta_entrar('484 523 220 73','errada',false,null,null);
+  v := public.vessel_conta_entrar('123 456 789 09','errada',false,null,null);
   assert (v->>'motivo') = 'senha_errada', 'formato 4 deveria falhar por senha';
-  v := public.vessel_conta_entrar('484.523.220.73','errada',false,null,null);
+  v := public.vessel_conta_entrar('123.456.789.09','errada',false,null,null);
   assert (v->>'motivo') = 'senha_errada', 'formato 5 deveria falhar por senha';
 
   select count(*) into v_erros from public.vessel_tentativas_de_login
-   where chave = '48452322073' and acertou = false;
+   where chave = '12345678909' and acertou = false;
   assert v_erros = 5, 'os 5 erros deveriam ter caido na MESMA chave (o CPF), e caiu ' || v_erros::text;
 
   -- 6º erro, num SEXTO formato — mesmo com a SENHA CERTA, tem de barrar por
   -- excesso de tentativas. Se isto voltar 'senha_errada' ou 'ok:true', a
   -- trava voltou a ser furável por formato.
-  v := public.vessel_conta_entrar('484.523.220-73 ','senha-de-teste-2',false,null,null);
+  v := public.vessel_conta_entrar('123.456.789-09 ','senha-de-teste-2',false,null,null);
   assert (v->>'motivo') = 'muitas_tentativas',
     'a trava deveria ter barrado por formato-diferente-mesmo-cpf, devolveu: ' || v::text;
 
