@@ -1,7 +1,14 @@
--- PROVA POR ROLLBACK das seis funções de conta do Registered Pieces
+-- PROVA POR ROLLBACK das funções de conta do Registered Pieces
 -- (vessel_conta_criar, vessel_conta_entrar, vessel_conta_da_sessao,
--- vessel_conta_sair, e as travas de CPF repetido, nascimento obrigatório e
--- senha errada).
+-- vessel_conta_sair, vessel_conta_pedido_de_nova_senha,
+-- vessel_conta_efetivar_nova_senha, e as travas de CPF repetido/inválido,
+-- nascimento obrigatório e senha errada).
+--
+-- ⚠️ ATUALIZADA NA ONDA FINAL DE CORREÇÃO (17/09/2026, achados C4 e C6 da
+-- revisão da branch inteira): `vessel_conta_nova_senha` deixou de existir —
+-- virou dois passos (`vessel_conta_pedido_de_nova_senha` e
+-- `vessel_conta_efetivar_nova_senha`); e `vessel_conta_criar` passou a exigir
+-- CPF com dígito verificador válido, não só 11 dígitos.
 --
 -- Rode inteiro, de uma vez, DEPOIS de aplicar
 -- db/migrations/2026-09-17-vessel-contas-base.sql. Ele mesmo desfaz tudo:
@@ -83,6 +90,67 @@ begin
   v := public.vessel_conta_entrar('484.523.220-73 ','senha-de-teste-2',false,null,null);
   assert (v->>'motivo') = 'muitas_tentativas',
     'a trava deveria ter barrado por formato-diferente-mesmo-cpf, devolveu: ' || v::text;
+
+  -- ── C6: CPF com 11 dígitos mas SEM dígito verificador válido é recusado ──
+  -- Antes, só a CONTAGEM de dígitos era conferida — '111.111.111-11' (11
+  -- dígitos repetidos) passava aqui e só quebrava depois, ao tentar
+  -- registrar uma peça: conta morta, sem formulário na tela para consertar.
+  v := public.vessel_conta_criar('CPF Repetido','111.111.111-11',
+        'cpf-repetido@exemplo.com.br',null,'1990-01-01','x');
+  assert (v->>'motivo') = 'cpf_invalido',
+    'CPF com dígitos repetidos (sem verificador válido) deveria ser recusado, devolveu: ' || v::text;
+
+  -- ── C4: "esqueci a senha" em dois passos ─────────────────────────────────
+  declare
+    v_cliente_teste record;
+    v_senha_antiga  text;
+    v_pedido        json;
+  begin
+    select id, senha_hash into v_cliente_teste
+      from public.vessel_clientes where cpf = '39053344705';
+    v_senha_antiga := v_cliente_teste.senha_hash;
+
+    -- resposta IDÊNTICA para login que não existe: {ok:true, cliente_id:null}
+    v_pedido := public.vessel_conta_pedido_de_nova_senha('nao-existe@exemplo.com.br');
+    assert (v_pedido->>'ok')::boolean and (v_pedido->>'cliente_id') is null,
+      'login inexistente tem de responder ok:true com cliente_id nulo, devolveu: ' || v_pedido::text;
+
+    -- pedido de verdade: diz para onde mandar, mas NÃO troca nada ainda.
+    v_pedido := public.vessel_conta_pedido_de_nova_senha('teste-conta@exemplo.com.br');
+    assert (v_pedido->>'ok')::boolean and (v_pedido->>'cliente_id') = v_cliente_teste.id::text,
+      'pedido para login existente tem de devolver cliente_id, devolveu: ' || v_pedido::text;
+
+    select senha_hash into v_senha_antiga from public.vessel_clientes where id = v_cliente_teste.id;
+    assert v_senha_antiga = v_cliente_teste.senha_hash,
+      'vessel_conta_pedido_de_nova_senha NÃO PODE mexer na senha — só o passo 2 troca';
+
+    -- teto de 3 por hora: já gastamos 1 tentativa acima com o login que
+    -- existe (mais 1 com o que não existe, chave diferente). Mais 2 no MESMO
+    -- login ainda cabem no teto (total 3); a 4ª tem de barrar.
+    v_pedido := public.vessel_conta_pedido_de_nova_senha('teste-conta@exemplo.com.br');
+    assert (v_pedido->>'ok')::boolean, '2º pedido do mesmo login ainda deveria caber no teto';
+    v_pedido := public.vessel_conta_pedido_de_nova_senha('teste-conta@exemplo.com.br');
+    assert (v_pedido->>'ok')::boolean, '3º pedido do mesmo login ainda deveria caber no teto';
+    v_pedido := public.vessel_conta_pedido_de_nova_senha('teste-conta@exemplo.com.br');
+    assert (v_pedido->>'motivo') = 'muitas_tentativas',
+      '4º pedido em menos de uma hora tem de estourar o teto, devolveu: ' || v_pedido::text;
+
+    -- passo 2: só agora a senha troca de verdade, e as sessões caem.
+    v := public.vessel_conta_entrar('teste-conta@exemplo.com.br','senha-de-teste',true,'teste',null);
+    assert (v->>'ok')::boolean, 'precisava logar de novo para ter sessão a derrubar';
+    v := public.vessel_conta_efetivar_nova_senha(v_cliente_teste.id, 'senha-novissima');
+    assert (v->>'ok')::boolean, 'efetivar a senha nova falhou: ' || v::text;
+
+    select senha_hash into v_senha_antiga from public.vessel_clientes where id = v_cliente_teste.id;
+    assert v_senha_antiga <> v_cliente_teste.senha_hash, 'a senha tinha de ter mudado';
+
+    v := public.vessel_conta_entrar('teste-conta@exemplo.com.br','senha-novissima',false,null,null);
+    assert (v->>'ok')::boolean, 'a senha nova deveria funcionar para logar';
+
+    -- efetivar para um cliente_id que não existe: não quebra, só avisa.
+    v := public.vessel_conta_efetivar_nova_senha(gen_random_uuid(), 'x');
+    assert (v->>'motivo') = 'nao_existe', 'cliente_id inexistente deveria devolver nao_existe';
+  end;
 
   raise exception 'rollback proposital: todas as asserções passaram';
 end $$;
