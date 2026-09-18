@@ -1,0 +1,31 @@
+# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+
+client_id = "3a7a6b9d4a6e2eb5d0f2ed7d53e3b0ff"
+name = "funil-carrinho-pixel"
+application_url = "https://example.com"
+embedded = true
+
+[access_scopes]
+# write_pixels: grava as configurações do web pixel do app.
+# read_customer_events: acessa os eventos de cliente (o que o pixel escuta).
+# Nada de escopo de produto/metaobject — esta é uma extensão de leitura só
+# de telemetria, sem nada a ver com o template padrão do CLI.
+scopes = "write_pixels,read_customer_events"
+
+[webhooks]
+api_version = "2026-10"
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/app/uninstalled"
+  topics = [ "app/uninstalled" ]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/app/scopes_update"
+  topics = [ "app/scopes_update" ]
+
+[auth]
+redirect_urls = [ "https://example.com/api/auth" ]
+
+[build]
+include_config_on_deploy = true
+automatically_update_urls_on_dev = true

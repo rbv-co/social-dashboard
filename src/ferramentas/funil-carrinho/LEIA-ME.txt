@@ -1,0 +1,31 @@
+FERRAMENTA: Funil de Carrinho
+==============================
+Rastreamento de carrinho da loja Shopify ANTES do checkout — a Shopify não
+guarda nada disso nativamente (o "checkout abandonado" dela só nasce quando a
+pessoa clica em finalizar compra). Ver spec
+docs/superpowers/specs/2026-09-17-funil-carrinho-shopify-design.md.
+
+Como chega o dado:
+- Web Pixel Extension (pasta shopify-app/, fora de src/) escuta 3 eventos da
+  Web Pixels API do Shopify (produto adicionado, produto removido, checkout
+  iniciado) e manda cada um pra Edge Function pública
+  supabase/functions/capturar-evento-carrinho, que valida e grava cru na
+  tabela carrinho_eventos.
+- Sem robô de agregação: "abandonado" é a view carrinho_abandonados
+  (db/migrations/2026-09-17-carrinho-eventos.sql), calculada na consulta —
+  carrinho com produto adicionado, sem checkout iniciado, parado há mais de
+  30 minutos.
+
+A tela é SÓ DE LEITURA, com três blocos: mais adicionados, mais removidos,
+carrinhos abandonados — filtro de período (7D/14D/30D) no topo.
+
+FORA DO MVP (de propósito, ver spec §2 e §9):
+- Evento "carrinho visualizado" (Shopify não garante).
+- Valor em R$ parado no carrinho (só contagem por enquanto).
+- Reconciliação com pedido/venda de verdade (o Bling já cobre isso).
+- Robô de agregação e rate limit por cart_token (dono pediu só por IP).
+
+Permissão: 'carrinho' (RECURSOS e PERMISSION_TREE em
+src/compartilhado/controle-de-login-e-usuario.js). Quem ganha acesso precisa
+que um admin marque e salve a permissão — mesmo mecanismo de toda ferramenta
+nova daqui (ver derivar-features.js).

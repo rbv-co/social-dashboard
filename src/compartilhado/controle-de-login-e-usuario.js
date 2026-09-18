@@ -143,6 +143,7 @@ export const RECURSOS = [
   // `derivar-features.js` — chave sem ponto vira feature com o mesmo nome.
   // 'editar' é marcar que a cliente veio, não veio ou remarcou.
   { key: 'atendimentos', label: 'Vessel — Atendimentos', acoes: ['ver', 'editar'] },
+  { key: 'carrinho', label: 'Funil de Carrinho', acoes: ['ver'] },
 ]
 
 // Ponte: chaves antigas (call sites legados) → recurso novo. Assim nada quebra durante a migração.
@@ -212,6 +213,7 @@ export const PERMISSION_TREE = [
     { key: 'autenticidade', label: 'Autenticidade e Garantia' },
   ] },
   { key: 'claude.status', label: 'Painel de Status da IA', children: [] },
+  { key: 'carrinho', label: 'Funil de Carrinho', children: [] },
   // ESCRITÓRIO 3D. Entrou na árvore em 04/08/2026, a pedido do dono: até então
   // era a única ferramenta da home SEM porteiro — qualquer pessoa logada abria.
   // Como toda chave nova, ela sobe concedida a NINGUÉM: quem tinha acesso por

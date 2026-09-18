@@ -1034,6 +1034,31 @@ git commit -m "feat(carrinho): tela Funil de Carrinho + rota + card na Home"
   nega a leitura mesmo com a rota liberada.
 - Peça pro cliente instalar o app Shopify (Task 4, Step 4) se ainda não
   instalou.
+- **⚠️ ATIVAR O PIXEL, DEPOIS DE INSTALAR (achado na revisão final, não
+  estava no plano original):** um Web Pixel com App Extension **não liga
+  sozinho** ao instalar o app — precisa de UMA chamada da mutation GraphQL
+  `webPixelCreate` contra a Admin API da loja, feita uma vez só (loja única,
+  não precisa de automação nenhuma pro backend fazer isso a cada instalação).
+  O jeito mais simples: `shopify app dev` abre um GraphiQL local já
+  autenticado contra a loja de dev/teste — rodar lá:
+  ```graphql
+  mutation {
+    webPixelCreate(webPixel: { settings: "{}" }) {
+      userErrors { code field message }
+      webPixel { id }
+    }
+  }
+  ```
+  (a extensão não tem campo de settings próprio — `"{}"` está certo). Depois
+  de rodar, confirme em Configurações → Customer events da loja que
+  "funil-carrinho-pixel" aparece como Conectado. Sem este passo, o app fica
+  instalado e o pixel nunca dispara nada — silenciosamente.
 - Depois de alguns dias de dado real, releia com o dono se 30 minutos
   (janela de "abandonado") e 60/minuto (rate limit) continuam certos —
   os dois são ajustáveis, nenhum foi medido.
+- **Achados da revisão final registrados, não bloqueantes (ver ledger do SDD
+  para o texto completo):** o rótulo "Última movimentação" na tela conta só
+  produto adicionado, não remoção (mesma definição da spec, não é bug de
+  código); linhas de carrinho abandonado mostram só duas datas, sem produto
+  nem cart_token, então não dá pra agir em cima — ambos ficam pra uma
+  iteração futura, coerente com "com o tempo vamos pensando em mais coisas".

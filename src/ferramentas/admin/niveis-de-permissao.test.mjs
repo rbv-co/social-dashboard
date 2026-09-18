@@ -35,6 +35,7 @@ const RECURSOS = [
   { key: 'conteudo', label: 'Redes Sociais — Central de Conteúdo', acoes: ['ver', 'criar', 'editar', 'excluir'] },
   { key: 'conteudo.aprovar', label: 'Redes Sociais — Aprovar peças', acoes: ['ver'] },
   { key: 'atendimentos', label: 'Vessel — Atendimentos', acoes: ['ver', 'editar'] },
+  { key: 'carrinho', label: 'Funil de Carrinho', acoes: ['ver'] },
 ]
 
 const acha = (k) => RECURSOS.find((r) => r.key === k)

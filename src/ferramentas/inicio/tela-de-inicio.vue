@@ -160,6 +160,16 @@
           </div>
           <span class="home-card-enter">→</span>
         </div>
+        <div class="home-card" id="home-card-carrinho" v-show="podeCarrinho" @click="ir('funil-carrinho')" @mouseenter="definirTemaFundo('default')" @mouseleave="definirTemaFundo('default')">
+          <div class="home-card-icon" style="background:linear-gradient(135deg,#ea580c 0%,#c2410c 100%)">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+          </div>
+          <div class="home-card-text">
+            <h3>Funil de<br>Carrinho</h3>
+            <p>Produtos mais adicionados/removidos e carrinhos abandonados antes do checkout</p>
+          </div>
+          <span class="home-card-enter">→</span>
+        </div>
         <!-- Escritório 3D dos Agentes: rota ainda não existe. -->
         <div v-if="podeEscritorio3D" class="home-card" id="home-card-hq3d" @click="abrirEscritorio3D" @mouseenter="definirTemaFundo('default')" @mouseleave="definirTemaFundo('default')">
           <div class="home-card-icon" style="background:linear-gradient(135deg,#0d9488 0%,#16a89a 100%)">
@@ -222,6 +232,7 @@ const podeFrota = computed(() => hasPermission('frota', 'ver'))
 // Ver `gestao-interna/chaves-da-gestao-interna.js`.
 const podeGestaoInterna = computed(() => podeVerGestaoInterna(hasPermission))
 const podeClaudeStatus = computed(() => hasPermission('claude.status', 'ver'))
+const podeCarrinho = computed(() => hasPermission('carrinho', 'ver'))
 const podeAtendimentos = computed(() => hasPermission('atendimentos', 'ver'))
 // O 3D era o único cartão sem porteiro. Agora segue a mesma chave dos outros.
 const podeEscritorio3D = computed(() => hasPermission('escritorio3d', 'ver'))
@@ -238,7 +249,7 @@ const semNenhumaFerramenta = computed(() =>
   // permissão leria "você ainda não tem acesso a nenhuma ferramenta" com o
   // cartão dela aparecendo na mesma tela. A Frota e a Autenticidade já pagaram
   // esse defeito, cada uma no seu mês.
-  !podeAtendimentos.value
+  !podeAtendimentos.value && !podeCarrinho.value
 )
 
 // O perfil não carregou (rede, sessão expirada, servidor). É DIFERENTE de "não tem

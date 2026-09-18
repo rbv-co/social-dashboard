@@ -37,6 +37,7 @@ const RECURSOS = [
   { key: 'conteudo', label: 'Redes Sociais — Central de Conteúdo', acoes: ['ver', 'criar', 'editar', 'excluir'] },
   { key: 'conteudo.aprovar', label: 'Redes Sociais — Aprovar peças', acoes: ['ver'] },
   { key: 'atendimentos', label: 'Vessel — Atendimentos', acoes: ['ver', 'editar'] },
+  { key: 'carrinho', label: 'Funil de Carrinho', acoes: ['ver'] },
 ]
 
 const TREE = [
@@ -56,6 +57,7 @@ const TREE = [
     { key: 'autenticidade', label: 'Autenticidade e Garantia' },
   ] },
   { key: 'claude.status', label: 'Painel de Status da IA', children: [] },
+  { key: 'carrinho', label: 'Funil de Carrinho', children: [] },
   { key: 'conteudo', label: 'Central de Conteúdo', children: [] },
 ]
 
@@ -67,7 +69,7 @@ test('ferramentaDaChave pega o trecho antes do primeiro ponto', () => {
 
 test('agrupa o catálogo por ferramenta, na ordem do catálogo', () => {
   const g = agruparRecursos(RECURSOS, TREE)
-  assert.deepEqual(g.map((x) => x.key), ['social', 'sales', 'meta', 'banco', 'gestao-interna', 'noticias', 'gestor', 'claude', 'conteudo', 'atendimentos'])
+  assert.deepEqual(g.map((x) => x.key), ['social', 'sales', 'meta', 'banco', 'gestao-interna', 'noticias', 'gestor', 'claude', 'conteudo', 'atendimentos', 'carrinho'])
   assert.deepEqual(g[0].recursos.map((r) => r.key), ['social', 'social.relatorio'])
   assert.deepEqual(g[1].recursos.map((r) => r.key), ['sales.gestao', 'sales.analise'])
   assert.deepEqual(g[2].recursos.map((r) => r.key), ['meta.campanha', 'meta.gestor', 'meta.fabrica', 'meta.hora', 'meta.opr'])
