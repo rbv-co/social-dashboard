@@ -49,6 +49,16 @@
     XMLHttpRequest, pra não depender de qual biblioteca o app usa por baixo.
   - `product_title` (não `title`, que combina "Produto - Variante") é o
     nome limpo do produto.
+
+  ATUALIZADO 18/09/2026 — identidade de sessão ponta a ponta: todo evento
+  agora leva `session_id` (cookie `_shopify_s`, da própria Shopify — grava
+  sozinho em QUALQUER visita, antes de qualquer ação de carrinho) e, quando
+  existirem, `_fbp`/`_fbc` (atribuição do Meta). Evento novo `sessao_iniciada`
+  dispara uma vez por sessão, na entrada do site. NÃO existe evento de
+  "sessão encerrada": `pagehide` dispara em toda troca de página, não só ao
+  sair do site — gravar isso como evento inundaria a tabela de "encerradas"
+  falsas. O fim da sessão é inferido por inatividade, igual carrinho
+  abandonado.
 -->
 <script>
 (function () {
@@ -77,6 +87,12 @@
       var base = {
         tipo: tipo,
         cart_token: pegarCartTokenDoCookie(),
+        // _shopify_s é o ID de sessão da própria Shopify — grava sozinho em
+        // QUALQUER visita, mesmo antes de qualquer ação de carrinho
+        // (confirmado ao vivo, 18/09/2026: presente numa visita nova, sem
+        // cookie nenhum antes). É ele que liga entrada, carrinho e
+        // checkout na mesma sessão.
+        session_id: pegarCookie('_shopify_s'),
         fbp: pegarCookie('_fbp'),
         fbc: pegarCookie('_fbc'),
       };
@@ -246,6 +262,19 @@
       sessionStorage.setItem(jaMandouChave, '1');
       enviar('checkout_iniciado', {});
     }
+  }
+
+  // sessao_iniciada: dispara uma vez por sessão, na primeira página
+  // carregada — marca a entrada, ANTES de existir carrinho. Não existe
+  // evento de "sessão encerrada": pagehide dispara em qualquer troca de
+  // página (não só ao sair do site de verdade), então gravar isso como
+  // evento inundaria a tabela de "encerradas" falsas. O fim da sessão
+  // continua sendo inferido por inatividade, do mesmo jeito que
+  // carrinho_abandonados já faz.
+  var jaMandouSessaoChave = 'rbv_sessao_iniciada_enviada';
+  if (!sessionStorage.getItem(jaMandouSessaoChave)) {
+    sessionStorage.setItem(jaMandouSessaoChave, '1');
+    enviar('sessao_iniciada', {});
   }
 })();
 </script>

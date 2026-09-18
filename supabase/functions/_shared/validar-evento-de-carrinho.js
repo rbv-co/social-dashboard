@@ -5,7 +5,13 @@
 // sem subir nada — ver spec
 // docs/superpowers/specs/2026-09-17-funil-carrinho-shopify-design.md.
 
-export const TIPOS_ACEITOS = ['produto_adicionado', 'produto_removido', 'checkout_iniciado']
+export const TIPOS_ACEITOS = ['produto_adicionado', 'produto_removido', 'checkout_iniciado', 'sessao_iniciada']
+
+// Só estes três exigem cart_token — na entrada da sessão (sessao_iniciada)
+// ainda não existe carrinho nenhum. session_id (cookie _shopify_s da
+// própria Shopify) é quem liga tudo, esse sim obrigatório em todo evento —
+// ver db/migrations/2026-09-18-carrinho-eventos-sessao.sql.
+const TIPOS_QUE_EXIGEM_CART_TOKEN = ['produto_adicionado', 'produto_removido', 'checkout_iniciado']
 
 // Teto de eventos por IP, por minuto. Por IP, nunca por cart_token — pedido
 // explícito do dono, pra nunca barrar um cliente de verdade por conta de
@@ -31,14 +37,18 @@ function textoOuNulo(v) {
 export function validarPayload(corpo) {
   if (!corpo || typeof corpo !== 'object') return { ok: false, motivo: 'corpo_invalido' }
   if (!TIPOS_ACEITOS.includes(corpo.tipo)) return { ok: false, motivo: 'tipo_invalido' }
-  if (typeof corpo.cart_token !== 'string' || !corpo.cart_token.trim()) {
+  if (TIPOS_QUE_EXIGEM_CART_TOKEN.includes(corpo.tipo) && (typeof corpo.cart_token !== 'string' || !corpo.cart_token.trim())) {
     return { ok: false, motivo: 'cart_token_obrigatorio' }
+  }
+  if (typeof corpo.session_id !== 'string' || !corpo.session_id.trim()) {
+    return { ok: false, motivo: 'session_id_obrigatorio' }
   }
   return {
     ok: true,
     evento: {
       tipo: corpo.tipo,
-      cart_token: corpo.cart_token.trim(),
+      session_id: corpo.session_id.trim(),
+      cart_token: textoOuNulo(corpo.cart_token),
       produto_id: corpo.produto_id != null ? String(corpo.produto_id) : null,
       produto_titulo: corpo.produto_titulo != null ? String(corpo.produto_titulo) : null,
       variante_id: corpo.variante_id != null ? String(corpo.variante_id) : null,

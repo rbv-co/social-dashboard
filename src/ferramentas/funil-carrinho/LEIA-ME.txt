@@ -35,14 +35,28 @@ Como chega o dado (ATUALIZADO 18/09/2026 — terceira tentativa, a que ficou):
   (db/migrations/2026-09-17-carrinho-eventos.sql), calculada na consulta —
   carrinho com produto adicionado, sem checkout iniciado, parado há mais de
   30 minutos.
-- IDENTIDADE DE SESSÃO (18/09/2026): o cart_token (cookie `cart` da própria
-  Shopify) já rastreia QUALQUER visitante, venha de onde vier — não depende
-  de anúncio nenhum. Além dele, cada evento também manda os cookies `_fbp`
-  (id de navegador do Pixel do Meta — existe pra todo mundo que passa pelo
-  Pixel, não só quem clicou em anúncio) e `_fbc` (id do clique do anúncio —
-  só existe em quem chegou por link com fbclid), quando existirem — ver
-  db/migrations/2026-09-18-carrinho-eventos-fbp-fbc.sql. Quem não veio do
-  Meta grava os dois como null e segue identificado só pelo cart_token.
+- IDENTIDADE DE SESSÃO PONTA A PONTA (18/09/2026): todo evento leva
+  `session_id`, lido do cookie `_shopify_s` — a própria Shopify grava esse
+  cookie sozinha em QUALQUER visita, antes de qualquer ação de carrinho
+  (confirmado ao vivo: presente numa visita nova, sem cookie nenhum antes).
+  É ele que liga entrada, carrinho e checkout de uma mesma sessão, mesmo
+  pra quem nunca chega a ter cart_token (que só nasce na primeira ação de
+  carrinho — por isso cart_token deixou de ser NOT NULL). Evento novo
+  `sessao_iniciada` dispara uma vez por sessão, na primeira página. Ver
+  db/migrations/2026-09-18-carrinho-eventos-sessao.sql.
+  ⚠️ NÃO existe evento de "sessão encerrada", de propósito: `pagehide`
+  dispara em QUALQUER troca de página, não só ao sair do site — gravar
+  isso como evento inundaria a tabela de "encerradas" falsas a cada clique
+  em outro produto. O fim da sessão é inferido por inatividade, do mesmo
+  jeito que carrinho_abandonados já faz (nenhuma consulta nova criada pra
+  isso ainda; é só a mesma lógica, disponível se um dia quiser expor).
+- ATRIBUIÇÃO DO META (18/09/2026): cada evento também manda os cookies
+  `_fbp` (id de navegador do Pixel do Meta — existe pra todo mundo que
+  passa pelo Pixel, não só quem clicou em anúncio) e `_fbc` (id do clique
+  do anúncio — só existe em quem chegou por link com fbclid), quando
+  existirem — ver db/migrations/2026-09-18-carrinho-eventos-fbp-fbc.sql.
+  Quem não veio do Meta grava os dois como null e segue identificado pelo
+  session_id/cart_token.
 
 CAMINHOS TENTADOS E DESCARTADOS (fica registrado pra ninguém repetir):
 1. Web Pixel App Extension (shopify-app/funil-carrinho-pixel/) — escrita,

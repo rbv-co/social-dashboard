@@ -115,6 +115,7 @@ const TIPO_LABEL = {
   produto_adicionado: 'Adicionado',
   produto_removido: 'Removido',
   checkout_iniciado: 'Checkout iniciado',
+  sessao_iniciada: 'Sessão iniciada',
 }
 
 const aba = ref('visao')
