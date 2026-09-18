@@ -404,7 +404,7 @@ async function sincronizarCampanhas(sb: any, accountId: string, adAccountId: str
 // tudo aqui e filtrar por tipoDaCampanha na hora de LER (coletar-dados-hora),
 // assim uma campanha que muda de "outro" pra um prefixo conhecido não deixa
 // lixo travado no catálogo.
-async function sincronizarAnuncios(sb: any, accountId: string, adAccountId: string, token: string) {
+async function sincronizarAnuncios(sb: any, accountId: string, adAccountId: string, token: string, degraded: string[]) {
   try {
     const items = await apiGetAll(`act_${adAccountId}/ads`, {
       fields: 'id,name,campaign_id,status,creative{object_story_spec,asset_feed_spec,object_url}',
@@ -415,8 +415,13 @@ async function sincronizarAnuncios(sb: any, accountId: string, adAccountId: stri
       name: a.name ?? '', status: a.status ?? '',
       destino_link: linkDoCriativo(a.creative), synced_at: todayBR(),
     }));
-    if (rows.length) await sb.from('ads').upsert(rows, { onConflict: 'ad_id' });
-  } catch { /* sem ads */ }
+    if (rows.length) {
+      const { error } = await sb.from('ads').upsert(rows, { onConflict: 'ad_id' });
+      if (error) degraded.push(`ads (${accountId}): falha ao gravar — ${error.message}`);
+    }
+  } catch (e) {
+    degraded.push(`ads (${accountId}): ${e instanceof Error ? e.message : String(e)}`);
+  }
 }
 
 // O SINAL DO CONJUNTO — destination_type e optimization_goal — é o que decide o
@@ -586,7 +591,7 @@ async function processarConta(sb: any, acc: any, degraded: string[], semBruto: s
   // Perfil sem ad_account_id preenchido não tem anúncios — pula, sem erro.
   if (adAccountId) {
     await sincronizarCampanhas(sb, accountId, adAccountId, token);
-    await sincronizarAnuncios(sb, accountId, adAccountId, token);
+    await sincronizarAnuncios(sb, accountId, adAccountId, token, degraded);
     await sincronizarConjuntos(sb, accountId, adAccountId, token);
     for (const dias of PERIODS) await coletarAdsPorCampanha(sb, adAccountId, accountId, token, dias, hoje);
     // Re-coleta o gasto pd=0 dos últimos 7 dias (ontem→-7): captura a atribuição tardia da Meta,
