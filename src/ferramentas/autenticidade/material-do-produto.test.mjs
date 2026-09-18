@@ -6,12 +6,20 @@ import { classificarMaterial } from './material-do-produto.js'
 // Nomes e NCM medidos de verdade no Bling em 18/09/2026 (GET /produtos/{id}),
 // para os três produtos citados na decisão. Não são exemplos inventados.
 
-test('Cyrène Café (SS0002SB.M1): lona + camurça + couro na mesma estrutura — a regra não sabe qual está por fora, e diz isso', () => {
-  // Por fora, esta bolsa É camurça — mas nenhum nome de insumo diz "este é o
-  // de fora". "LONA AMERICA CAFE" bate canvas; "CAMURCA CAFE (DUPLA)" e
-  // "MundoCamurca - Couro - Bristol nozes" batem couro. Chutar "couro" aqui
-  // por já ter dois candidatos seria acertar por sorte, não concluir com
-  // segurança — por isso o resultado HONESTO é ambíguo.
+// ── O ACABAMENTO FIXO DA LINHA (decisão do dono, 18/09/2026) ─────────────────
+// "MundoCamurca - Couro - Bristol nozes", "Recouro - Tex Braz - Natural 0,5" e
+// "LONA AMERICA CAFE" aparecem em quase toda a linha, em qualquer cor: são
+// acabamento, alça e estrutura, não o material de fora.
+const ACABAMENTO_FIXO = [
+  'MundoCamurca - Couro - Bristol nozes',
+  'Recouro - Tex Braz - Natural 0,5',
+  'LONA AMERICA CAFE',
+]
+
+test('Cyrène Café (SS0002SB.M1): tirado o acabamento fixo, sobra só a camurça — couro', () => {
+  // Estrutura real do Bling (18/09/2026). Antes desta regra, a lona e o
+  // Bristol nozes deixavam esta bolsa "ambígua"; o dono confirmou que os dois
+  // são acabamento, e que por fora ela é camurça.
   const r = classificarMaterial({
     componentes: [
       'FIM250-9 9K ESCOV COMPLETO',
@@ -41,49 +49,97 @@ test('Cyrène Café (SS0002SB.M1): lona + camurça + couro na mesma estrutura �
     ],
     ncm: '4202.32.00',
   })
-  assert.equal(r.material, null)
-  assert.equal(r.ambiguo, true)
-  assert.deepEqual(r.evidencia, ['CAMURCA CAFE (DUPLA)', 'MundoCamurca - Couro - Bristol nozes', 'LONA AMERICA CAFE'])
+  assert.equal(r.material, 'couro')
+  assert.equal(r.ambiguo, false)
+  assert.deepEqual(r.evidencia, ['CAMURCA CAFE (DUPLA)'])
 })
 
-test('Astrea Bordô (SS0001EW.B3): recouro + napa sintética de um lado, couro do outro — mesma forma de ambiguidade da Cyrène', () => {
-  // "Recouro" e "Napa Fly" são sintéticos (regra 3: contam como canvas);
-  // "MundoCamurca - Couro - Bristol nozes" bate couro. A ferragem Reginato
-  // inteira é ignorada (botão, ímã, puxador, placa, pé de bolsa não bate
-  // nenhum dos dois grupos). Dois grupos com candidato → ambíguo, pela mesma
-  // razão da Cyrène: nome nenhum diz qual componente é a pele de fora.
+test('SS0002SB.M1 enxuto: camurça + os três fixos → couro', () => {
+  const r = classificarMaterial({ componentes: ['CAMURCA CAFE (DUPLA)', ...ACABAMENTO_FIXO] })
+  assert.equal(r.material, 'couro')
+  assert.equal(r.ambiguo, false)
+})
+
+test('SS0008HB.M3: Napa Fly Preto Brilho + fixos → canvas (o "MundoCamurca - Couro -" é o fornecedor, não o material)', () => {
+  const r = classificarMaterial({
+    componentes: ['MundoCamurca - Couro - Napa Fly Preto Brilho', ...ACABAMENTO_FIXO, 'Reforco Nylon 600 - LemaPlast - Bege'],
+    ncm: '4202.32.00',
+  })
+  assert.equal(r.material, 'canvas')
+  assert.equal(r.ambiguo, false)
+  assert.deepEqual(r.evidencia, ['MundoCamurca - Couro - Napa Fly Preto Brilho'])
+})
+
+test('SS0008HB.M6: Bristol Oliva + Napa Fly Amendoa + fixos → canvas (Bristol de outra cor é sintético e conta)', () => {
+  const r = classificarMaterial({
+    componentes: [
+      'MundoCamurca - Couro - Bristol nozes',
+      'LONA AMERICA CAFE',
+      'Reforco Nylon 600 - LemaPlast - Bege',
+      'Recouro - Tex Braz - Natural 0,5',
+      'MundoCamurca - Couro - Napa Fly Amendoa',
+      'MundoCamurca - Couro - Bristol Oliva',
+    ],
+  })
+  assert.equal(r.material, 'canvas')
+  assert.equal(r.ambiguo, false)
+  assert.deepEqual(r.evidencia, ['MundoCamurca - Couro - Napa Fly Amendoa', 'MundoCamurca - Couro - Bristol Oliva'])
+})
+
+test('SS0001HB.B1: York Tecidos - Detroid Vermelho + fixos → canvas', () => {
+  const r = classificarMaterial({
+    componentes: ['York Tecidos - Detroid Vermelho - 7617', ...ACABAMENTO_FIXO, 'Retalho - York - Diversos'],
+  })
+  assert.equal(r.material, 'canvas')
+  assert.equal(r.ambiguo, false)
+  assert.deepEqual(r.evidencia, ['York Tecidos - Detroid Vermelho - 7617'])
+})
+
+test('Astrea Bordô (SS0001EW.B3): Napa Fly Vinho + fixos → canvas', () => {
+  // Antes era "ambíguo" por causa do Bristol nozes e do Recouro Natural —
+  // os dois são acabamento fixo. Sobra a napa sintética, que é canvas.
   const r = classificarMaterial({
     componentes: [
       'Reginato -  Botao Pressao SS Escovado 9K - EI6026-39',
       'Reginato - Puxador Vessel Escovado 9K - XI26-8',
       'Botão  ima invisível 15MM',
-      'Botão  ima invisível 10MM',
-      'Reginato - Pe de Bolsa Escovado 9K - EI4026-7',
       'Reginato - Placa Vessel Brasil Escovado 9K - 40mmX24mm - KI5026-12',
       'Termoplastico - Magma',
-      'Artedur - Sh 7007/2 - Magma',
       'Recouro - Tex Braz - Natural 0,5',
       'Placa De Eva Impregnado - 2mm',
-      'Cartolina Grossa',
       'NAPA FLY VINHO',
-      'FQ 16923 - AGEN PRIMER',
-      'FastQuimica - Resina Top Fosco - FQ 12878',
-      'FQ 19168 - LEON PAINT NOZES',
-      'FQ 19165 - LEON PAINT BORDO',
       'MundoCamurca - Couro - Bristol nozes',
-      'Hot Stamping - Fita Carimbo Ouro Claro - 40mm',
-      'Hot Stamping - Fita Carimbo Transparente - 40mm',
       'NFC',
       'Linha Poliamida - NZ-40/80g - Merlot 60 - Linhasita',
-      'Linha Poliamida - NZ-60/80g - Merlot 60 - Linhasita',
       'Ziper Metal - 048 Vinho',
-      '6,00MM- C. NITRILICO PRETO TOL. +- 0,5',
     ],
+    ncm: '4202.32.00',
+  })
+  assert.equal(r.material, 'canvas')
+  assert.equal(r.ambiguo, false)
+  assert.deepEqual(r.evidencia, ['NAPA FLY VINHO'])
+})
+
+test('sobra camurça E napa de verdade (SS0002SB.M2, real): continua ambíguo — nunca chuta', () => {
+  const r = classificarMaterial({
+    componentes: ['CAMURCA MARFIM (DUPLA)', 'MundoCamurca - Couro - Napa Fly Amendoa', ...ACABAMENTO_FIXO],
     ncm: '4202.32.00',
   })
   assert.equal(r.material, null)
   assert.equal(r.ambiguo, true)
-  assert.deepEqual(r.evidencia, ['MundoCamurca - Couro - Bristol nozes', 'Recouro - Tex Braz - Natural 0,5', 'NAPA FLY VINHO'])
+  assert.deepEqual(r.evidencia, ['CAMURCA MARFIM (DUPLA)', 'MundoCamurca - Couro - Napa Fly Amendoa'])
+})
+
+test('só os três fixos, sem nada que mude com a cor: não conclui pela estrutura (vai para o NCM)', () => {
+  const r = classificarMaterial({ componentes: ACABAMENTO_FIXO, ncm: '' })
+  assert.equal(r.material, null)
+  assert.equal(r.ambiguo, true)
+})
+
+test('o acabamento fixo é pelo nome inteiro, sem depender de caixa ou espaço', () => {
+  const r = classificarMaterial({ componentes: ['mundocamurca -  couro - BRISTOL NOZES', 'Lona  America  Café', 'Tecido - York - JC Preto'] })
+  assert.equal(r.material, 'canvas')
+  assert.deepEqual(r.evidencia, ['Tecido - York - JC Preto'])
 })
 
 test('Bath Mostarda (SS1088-Mostarda): forro de suede e reforço de nylon NÃO contam — só o tecido de fora sobra, e a regra conclui canvas', () => {

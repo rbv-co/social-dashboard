@@ -56,12 +56,40 @@ const IGNORAR = [
 // Bling usa, e cortar em palavras ("insumos", "producao") pegaria coisa demais.
 const IGNORAR_FRASES = ['insumos de producao']
 
+// ── O ACABAMENTO FIXO DA LINHA — nunca é o material de fora ────────────────
+// Decisão do dono, 18/09/2026, conferida na estrutura de 60 SKUs do Bling: três
+// insumos aparecem em quase toda a linha, NÃO IMPORTA A COR da bolsa —
+//   "MundoCamurca - Couro - Bristol nozes"   em 50 de 60 SKUs
+//   "Recouro - Tex Braz - Natural 0,5"       em 48
+//   "LONA AMERICA CAFE"                      em 46
+// São acabamento, alça e estrutura. O material de fora é o que MUDA com a cor
+// (um tecido York, uma napa, uma camurça). Se estes três contassem, quase toda
+// bolsa teria "couro" (o Bristol nozes) e "canvas" (a lona) ao mesmo tempo, e a
+// regra diria "ambíguo" em 109 de 140 lotes — foi exatamente o que aconteceu
+// na primeira varredura.
+// A comparação é pelo NOME INTEIRO (já sem acento e sem caixa): o Bristol de
+// OUTRA cor ("Bristol Oliva") não é acabamento — é o que muda com a cor, e aí
+// conta, como sintético.
+const ACABAMENTO_FIXO = [
+  'mundocamurca - couro - bristol nozes',
+  'recouro - tex braz - natural 0,5',
+  'lona america cafe',
+]
+
+// ── O NOME DO FORNECEDOR QUE PARECE MATERIAL ───────────────────────────────
+// "MundoCamurca - Couro - Napa Fly Preto Brilho": "MundoCamurca - Couro" é o
+// nome do FORNECEDOR (e a categoria dele no Bling), não o material. O que vem
+// depois é o material de verdade — Napa Fly e Bristol são sintéticos. Sem
+// cortar este começo, toda napa sintética desse fornecedor contava como couro.
+const PREFIXO_DO_FORNECEDOR = /^mundocamurca\s*-\s*couro\s*-\s*/
+
 // ── OS DOIS GRUPOS QUE DECIDEM ─────────────────────────────────────────────
 // Regra 2 e 3 do dono: camurça é couro; sintético é canvas.
+// "bristol" é sintético — confirmado pelo dono em 18/09/2026.
 const PALAVRAS_COURO = ['couro', 'camurca', 'suede', 'vaqueta', 'pelica']
 const PALAVRAS_CANVAS = [
   'lona', 'canvas', 'tecido', 'tecidos', 'nylon', 'napa', 'recouro',
-  'sintetico', 'laminado',
+  'sintetico', 'laminado', 'bristol',
 ]
 // "PU" sozinho vira falso positivo dentro de qualquer palavra comum — por
 // isso ele é conferido à parte, como palavra inteira.
@@ -80,11 +108,13 @@ function bateAlgumaPalavra(normalizado, palavras) {
 }
 
 function ehIgnorado(normalizado) {
+  if (ACABAMENTO_FIXO.includes(normalizado)) return true
   if (bateAlgumaPalavra(normalizado, IGNORAR)) return true
   return IGNORAR_FRASES.some((frase) => normalizado.includes(frase))
 }
 
-function grupoDoComponente(normalizado) {
+function grupoDoComponente(normalizadoCompleto) {
+  const normalizado = normalizadoCompleto.replace(PREFIXO_DO_FORNECEDOR, '')
   if (bateAlgumaPalavra(normalizado, PALAVRAS_COURO)) return 'couro'
   if (bateAlgumaPalavra(normalizado, PALAVRAS_CANVAS) || PALAVRA_PU.test(normalizado)) return 'canvas'
   return null
@@ -110,11 +140,11 @@ function grupoDoNcm(ncm) {
  * A regra pura. Recebe os nomes dos componentes JÁ RESOLVIDOS (não os ids) e
  * o NCM fiscal do produto, e devolve o material do CORPO EXTERNO da bolsa.
  *
- * ⚠️ NA DÚVIDA, NÃO CHUTA. Uma bolsa como a Cyrène tem lona, camurça E couro
- * na estrutura ao mesmo tempo — "por fora é camurça" é um fato que só quem
- * viu a peça sabe, e nenhum nome de insumo diz "este aqui é o que fica por
- * fora". Quando sobra candidato dos dois grupos ao mesmo tempo, a resposta
- * honesta é `ambiguo: true` — quem decide, aí, é a pessoa no painel.
+ * ⚠️ NA DÚVIDA, NÃO CHUTA. Tirado o acabamento fixo (ver `ACABAMENTO_FIXO`),
+ * se AINDA sobra candidato dos dois grupos ao mesmo tempo — por exemplo uma
+ * camurça e uma napa de outra cor na mesma bolsa —, nenhum nome de insumo diz
+ * qual dos dois fica por fora. A resposta honesta é `ambiguo: true`, e quem
+ * decide é a pessoa no painel.
  */
 export function classificarMaterial({ componentes = [], ncm = '' } = {}) {
   const lista = Array.isArray(componentes) ? componentes : []
