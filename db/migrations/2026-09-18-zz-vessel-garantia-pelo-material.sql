@@ -19,6 +19,8 @@
 --      usar a regra nova. Todo o resto dela fica igual.
 --   4. Um gatilho: quando o material de um lote muda, a garantia das peças
 --      já registradas daquele lote é recalculada.
+--   4b. Outro gatilho: lote NOVO sem material herda o do lote mais recente do
+--      mesmo SKU (decisão do dono, 18/09/2026). SKU inédito fica nulo.
 --   5. `vessel_verificar` devolve também `material` e `garantia_meses`.
 --   6. Os 140 lotes de hoje recebem o material da lista conferida pelo dono.
 --   7. As peças já registradas têm `garantia_ate` recalculada.
@@ -61,10 +63,12 @@ alter table public.vessel_lotes add constraint vessel_lotes_material_check
 --   dono            — a lista conferida pelo dono (esta migration);
 --   bling_estrutura — sugerido pela estrutura do produto no Bling
 --                     (coletor/classificar-material-dos-lotes.mjs);
---   painel          — alguém escolheu no painel Autenticidade.
+--   painel          — alguém escolheu no painel Autenticidade;
+--   herdado         — copiado do lote mais recente do MESMO SKU quando o lote
+--                     novo nasceu sem material (gatilho da seção 4b).
 alter table public.vessel_lotes drop constraint if exists vessel_lotes_material_fonte_check;
 alter table public.vessel_lotes add constraint vessel_lotes_material_fonte_check
-  check (material_fonte is null or material_fonte in ('dono', 'bling_estrutura', 'painel'));
+  check (material_fonte is null or material_fonte in ('dono', 'bling_estrutura', 'painel', 'herdado'));
 
 -- Fonte sem material não quer dizer nada.
 alter table public.vessel_lotes drop constraint if exists vessel_lotes_material_com_fonte_check;
@@ -76,7 +80,7 @@ comment on column public.vessel_lotes.material is
   'meses). Camurça = couro; sintético = canvas. Nulo = ainda não decidido, e aí '
   'a garantia fica nula. Decisão do dono, 18/09/2026.';
 comment on column public.vessel_lotes.material_fonte is
-  'De onde saiu o material: dono, bling_estrutura ou painel.';
+  'De onde saiu o material: dono, bling_estrutura, painel ou herdado.';
 
 -- ── A GARANTIA DO REGISTRO PASSA A ACEITAR NULO ─────────────────────────────
 -- `vessel_registros.garantia_ate` nasceu `not null` (2026-08-04-vessel-
@@ -332,6 +336,51 @@ create trigger trg_vessel_lote_material_recalcula_garantia
   execute function public.vessel_lote_material_recalcula_garantia();
 
 -- ══════════════════════════════════════════════════════════════════════════
+-- 4b. LOTE NOVO HERDA O MATERIAL DO ÚLTIMO LOTE DO MESMO SKU
+-- ══════════════════════════════════════════════════════════════════════════
+--
+-- Decisão do dono, 18/09/2026. Sem isto, todo lote criado pelo painel
+-- (`vessel_gerar_lote`, que não conhece a coluna) nasceria sem material, e
+-- toda peça dele ficaria com garantia NULA até alguém lembrar de preencher.
+-- O mesmo SKU é o mesmo produto: a produção nova é feita do mesmo material.
+--
+-- - Só age quando o lote chega SEM material. Quem mandou um material
+--   explícito manda.
+-- - "Mais recente" = maior `criado_em` (a coluna de criação real da tabela),
+--   desempatado pelo `id`, entre os lotes do MESMO SKU que TÊM material.
+-- - SKU inédito (nenhum lote anterior com material) → fica nulo. Nunca chutar.
+-- - Lote de teste herda igual: o teste precisa do mesmo comportamento.
+create or replace function public.vessel_lote_novo_herda_material()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_material text;
+begin
+  if new.material is null and nullif(trim(coalesce(new.sku, '')), '') is not null then
+    select l.material into v_material
+      from public.vessel_lotes l
+     where l.sku = new.sku and l.material is not null
+     order by l.criado_em desc, l.id desc
+     limit 1;
+    if v_material is not null then
+      new.material := v_material;
+      new.material_fonte := 'herdado';
+    end if;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_vessel_lote_novo_herda_material on public.vessel_lotes;
+create trigger trg_vessel_lote_novo_herda_material
+  before insert on public.vessel_lotes
+  for each row
+  execute function public.vessel_lote_novo_herda_material();
+
+-- ══════════════════════════════════════════════════════════════════════════
 -- 5. A CONSULTA PÚBLICA: vessel_verificar
 -- ══════════════════════════════════════════════════════════════════════════
 --
@@ -416,7 +465,8 @@ begin
     'vessel_data_da_compra(text,text,timestamptz)',
     'vessel_garantia_ate(date,text)',
     'vessel_garantia_ate_do_registro(text)',
-    'vessel_lote_material_recalcula_garantia()'
+    'vessel_lote_material_recalcula_garantia()',
+    'vessel_lote_novo_herda_material()'
   ] loop
     execute format('revoke all on function public.%s from public, anon, authenticated', f);
     execute format('grant execute on function public.%s to service_role', f);
