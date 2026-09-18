@@ -1,0 +1,16 @@
+name = "pixel-carrinho"
+type = "web_pixel_extension"
+uid = "dd16e98a-fd80-7e6c-3687-e5800664e85f3e0977d5"
+
+runtime_context = "strict"
+
+[settings]
+type = "object"
+
+[settings.fields.accountID]
+name = "Account ID"
+description = "Account ID"
+type = "single_line_text_field"
+validations =  [
+  { name = "min", value = "1" }
+]
