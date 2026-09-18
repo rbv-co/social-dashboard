@@ -75,19 +75,48 @@
           <p class="fc-explicacao">Cada evento cru, mais recente primeiro.</p>
           <p v-if="carregando" class="fc-carregando">Carregando…</p>
           <p v-else-if="!erro && !registros.length" class="fc-vazio">Nenhum evento neste período.</p>
-          <table v-else class="fc-tabela">
-            <thead><tr><th>Data/hora</th><th>Tipo</th><th>Produto</th><th>Qtd.</th><th>Preço</th><th>Carrinho</th></tr></thead>
+          <div v-else class="fc-tabela-scroll"><table class="fc-tabela">
+            <thead><tr><th>Data/hora</th><th>Tipo</th><th>Produto</th><th>Qtd.</th><th>Preço</th><th>Carrinho</th><th>Sessão</th></tr></thead>
             <tbody>
-              <tr v-for="r in registros" :key="r.id">
-                <td>{{ formatarData(r.criado_em) }}</td>
-                <td>{{ TIPO_LABEL[r.tipo] || r.tipo }}</td>
-                <td>{{ r.produto_titulo || '—' }}</td>
-                <td>{{ r.quantidade ?? '—' }}</td>
-                <td>{{ formatarPreco(r.preco) }}</td>
-                <td>{{ r.cart_token ? r.cart_token.slice(0, 8) + '…' : '—' }}</td>
-              </tr>
+              <template v-for="r in registros" :key="r.agrupado ? r.session_id : r.id">
+                <tr v-if="r.agrupado" class="fc-linha-sessao" @click="alternarSessao(r.session_id)">
+                  <td>{{ formatarData(r.eventos[0].criado_em) }}</td>
+                  <td>
+                    <button
+                      type="button" class="fc-expandir"
+                      :aria-expanded="sessoesAbertas.has(r.session_id)"
+                      @click.stop="alternarSessao(r.session_id)"
+                    ><span class="fc-seta" :class="{ 'fc-seta-aberta': sessoesAbertas.has(r.session_id) }">▸</span> {{ TIPO_LABEL[r.eventos[0].tipo] || r.eventos[0].tipo }}</button>
+                  </td>
+                  <td>{{ r.eventos.length }} evento(s)</td>
+                  <td>—</td>
+                  <td>—</td>
+                  <td>—</td>
+                  <td>{{ r.session_id.slice(0, 8) }}…</td>
+                </tr>
+                <template v-if="r.agrupado && sessoesAbertas.has(r.session_id)">
+                  <tr v-for="ev in r.eventos" :key="ev.id" class="fc-linha-detalhe">
+                    <td>{{ formatarData(ev.criado_em) }}</td>
+                    <td>{{ TIPO_LABEL[ev.tipo] || ev.tipo }}</td>
+                    <td>{{ ev.produto_titulo || '—' }}</td>
+                    <td>{{ ev.quantidade ?? '—' }}</td>
+                    <td>{{ formatarPreco(ev.preco) }}</td>
+                    <td>{{ ev.cart_token ? ev.cart_token.slice(0, 8) + '…' : '—' }}</td>
+                    <td></td>
+                  </tr>
+                </template>
+                <tr v-if="!r.agrupado">
+                  <td>{{ formatarData(r.criado_em) }}</td>
+                  <td>{{ TIPO_LABEL[r.tipo] || r.tipo }}</td>
+                  <td>{{ r.produto_titulo || '—' }}</td>
+                  <td>{{ r.quantidade ?? '—' }}</td>
+                  <td>{{ formatarPreco(r.preco) }}</td>
+                  <td>{{ r.cart_token ? r.cart_token.slice(0, 8) + '…' : '—' }}</td>
+                  <td>{{ r.session_id ? r.session_id.slice(0, 8) + '…' : '—' }}</td>
+                </tr>
+              </template>
             </tbody>
-          </table>
+          </table></div>
         </section>
       </div>
     </div>
@@ -100,7 +129,7 @@ import { useRouter } from 'vue-router'
 import BarraDeTopo from '../../compartilhado/barra-de-topo.vue'
 import { sbClient } from '../../compartilhado/conectar-no-banco-de-dados.js'
 import { diasAtras } from '../../compartilhado/datas.js'
-import { rankearProdutos, ordenarAbandonados, foiCortado, LIMITE_CARRINHO } from './agregacoes-carrinho.js'
+import { rankearProdutos, ordenarAbandonados, foiCortado, agruparPorSessao, LIMITE_CARRINHO } from './agregacoes-carrinho.js'
 
 const router = useRouter()
 const voltar = () => router.push({ name: 'inicio' })
@@ -127,6 +156,14 @@ const maisAdicionados = ref([])
 const maisRemovidos = ref([])
 const abandonados = ref([])
 const registros = ref([])
+const sessoesAbertas = ref(new Set())
+
+function alternarSessao(sessionId) {
+  const novo = new Set(sessoesAbertas.value)
+  if (novo.has(sessionId)) novo.delete(sessionId)
+  else novo.add(sessionId)
+  sessoesAbertas.value = novo
+}
 
 function formatarData(iso) {
   return new Date(iso).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
@@ -147,13 +184,14 @@ async function carregar() {
   maisRemovidos.value = []
   abandonados.value = []
   registros.value = []
+  sessoesAbertas.value = new Set()
   const desde = `${diasAtras(periodoAtivo.value)}T00:00:00-03:00`
 
   const [adicionados, removidos, carrinhosAbandonados, eventosCrus] = await Promise.all([
     sbClient.from('carrinho_eventos').select('produto_titulo').eq('tipo', 'produto_adicionado').gte('criado_em', desde).limit(LIMITE_CARRINHO),
     sbClient.from('carrinho_eventos').select('produto_titulo').eq('tipo', 'produto_removido').gte('criado_em', desde).limit(LIMITE_CARRINHO),
     sbClient.from('carrinho_abandonados').select('cart_token,iniciado_em,ultimo_evento').gte('iniciado_em', desde).limit(LIMITE_CARRINHO),
-    sbClient.from('carrinho_eventos').select('id,criado_em,tipo,produto_titulo,quantidade,preco,cart_token').gte('criado_em', desde).order('criado_em', { ascending: false }).limit(LIMITE_CARRINHO),
+    sbClient.from('carrinho_eventos').select('id,criado_em,tipo,produto_titulo,quantidade,preco,cart_token,session_id').gte('criado_em', desde).order('criado_em', { ascending: false }).limit(LIMITE_CARRINHO),
   ])
 
   const primeiroErro = adicionados.error || removidos.error || carrinhosAbandonados.error || eventosCrus.error
@@ -167,7 +205,7 @@ async function carregar() {
   maisAdicionados.value = rankearProdutos(adicionados.data)
   maisRemovidos.value = rankearProdutos(removidos.data)
   abandonados.value = ordenarAbandonados(carrinhosAbandonados.data)
-  registros.value = eventosCrus.data
+  registros.value = agruparPorSessao(eventosCrus.data)
   carregando.value = false
 }
 
@@ -191,9 +229,23 @@ onMounted(carregar)
 .fc-explicacao { font-size: var(--texto-corpo); color: var(--muted); margin: 0 0 var(--sp-4); }
 .fc-carregando, .fc-vazio { font-size: var(--texto-corpo); color: var(--muted); }
 .fc-erro { font-size: var(--texto-campo); color: var(--red); }
+.fc-tabela-scroll { overflow-x: auto; }
+.fc-tabela-scroll .fc-tabela { min-width: 760px; }
 .fc-tabela { width: 100%; border-collapse: collapse; font-size: var(--texto-corpo); }
 .fc-tabela th, .fc-tabela td { text-align: left; padding: var(--sp-2) var(--sp-3); border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
 .fc-tabela th { color: var(--muted); font-size: var(--texto-etiqueta); text-transform: uppercase; letter-spacing: 1.5px; }
+
+.fc-linha-sessao { background: var(--surface2); cursor: pointer; }
+.fc-linha-detalhe td { color: var(--muted); padding-left: calc(var(--sp-3) + var(--sp-4)); }
+.fc-expandir {
+  display: inline-flex; align-items: center; gap: var(--sp-1);
+  min-height: 40px; padding: var(--sp-1) var(--sp-2);
+  background: transparent; border: none; cursor: pointer;
+  font-size: var(--texto-corpo); font-family: var(--fonte-principal); color: var(--text);
+  border-radius: var(--radius-md);
+}
+.fc-seta { display: inline-block; transition: transform .15s; color: var(--muted); }
+.fc-seta-aberta { transform: rotate(90deg); }
 
 @media (max-width: 640px) {
   .fc-body { padding: var(--sp-4); }

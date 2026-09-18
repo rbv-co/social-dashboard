@@ -40,3 +40,42 @@ export function rankearProdutos(linhas) {
 export function ordenarAbandonados(linhas) {
   return [...(linhas || [])].sort((a, b) => new Date(b.ultimo_evento) - new Date(a.ultimo_evento))
 }
+
+/**
+ * Agrupa os registros crus por session_id, pra tela de Registros mostrar
+ * "sessão iniciada" como uma linha só, expansível, com o que aconteceu
+ * dentro dela por baixo — em vez de uma lista solta sem narrativa.
+ *
+ * Regras:
+ * - Sem session_id (ex.: checkout_iniciado vindo do webhook, que não sabe o
+ *   cookie do navegador) nunca agrupa — vira linha solta, como hoje.
+ * - Sessão com um evento só (ex.: entrou e não fez mais nada) também não
+ *   vira grupo — não tem o que expandir.
+ * - Dentro do grupo, do mais antigo pro mais novo (é a ordem que a pessoa
+ *   viveu: entrou, colocou, tirou, foi pro checkout).
+ * - A lista inteira ordena pelo evento mais recente de cada item/grupo, do
+ *   mais novo pro mais antigo — mesmo critério que a tela já usava.
+ * @param {{id:number, criado_em:string, session_id:string|null}[]} linhas
+ * @returns {(object|{agrupado:true, session_id:string, criado_em:string, eventos:object[]})[]}
+ */
+export function agruparPorSessao(linhas) {
+  const porSessao = new Map()
+  const itens = []
+
+  for (const linha of linhas || []) {
+    if (!linha.session_id) { itens.push(linha); continue }
+    if (!porSessao.has(linha.session_id)) porSessao.set(linha.session_id, [])
+    porSessao.get(linha.session_id).push(linha)
+  }
+
+  for (const [session_id, eventos] of porSessao) {
+    if (eventos.length === 1) { itens.push(eventos[0]); continue }
+    const ordenados = [...eventos].sort((a, b) => new Date(a.criado_em) - new Date(b.criado_em))
+    const maisRecente = ordenados.reduce(
+      (max, e) => (new Date(e.criado_em) > new Date(max) ? e.criado_em : max), ordenados[0].criado_em,
+    )
+    itens.push({ agrupado: true, session_id, criado_em: maisRecente, eventos: ordenados })
+  }
+
+  return itens.sort((a, b) => new Date(b.criado_em) - new Date(a.criado_em))
+}
