@@ -31,6 +31,82 @@ export function tipoDaCampanha(nome) {
   return 'outro';
 }
 
+// Classifica um ANÚNCIO (não campanha) pelo destino do link do criativo —
+// pedido do dono (18/09/2026): campanhas "outro" (sem prefixo, ex. AXIOM)
+// misturam anúncio Sales e anúncio Leads na MESMA campanha/conjunto,
+// confirmado com dado real; por isso o recorte é por anúncio, e nunca por
+// campanha.
+//
+// ORDEM IMPORTA: checa o caminho de Leads ANTES do domínio de Sales — o
+// link real observado (vesselbrasil.com.br/universovessel#narrativa) tem o
+// MESMO domínio da lista de Sales só que com esse caminho, e o dono
+// classificou como Leads. Checar domínio primeiro classificaria errado.
+export function classificarLinkAnuncio(url) {
+  if (!url) return null;
+  if (url.includes('universovessel') && url.includes('narrativa')) return 'leads';
+  let host;
+  try {
+    host = new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    return null;
+  }
+  if (host === 'vesselbrasil.com.br' || host === 'loja.vesselbrasil.com.br' || host === 'lavessel.com.br') {
+    return 'sales';
+  }
+  return null;
+}
+
+// Mesmo espírito de agruparPorDiaEHora, mas pra ANÚNCIO (ad_id), não
+// campanha — função IRMÃ, não uma extensão da existente (evita
+// `if (ehAnuncio)` espalhado numa função que já está grande). Pedido do
+// dono (18/09/2026): Sales/Leads por link precisa de granularidade de
+// anúncio, confirmado que campanha/conjunto misturam destinos diferentes.
+export function agruparAnunciosPorDiaEHora(linhas, nomesPorAnuncio = {}, linksPorAnuncio = {}) {
+  const porDia = new Map();
+  for (const l of linhas) {
+    if (!porDia.has(l.dia)) porDia.set(l.dia, new Map());
+    const porHora = porDia.get(l.dia);
+    if (!porHora.has(l.hora)) porHora.set(l.hora, []);
+    const gastoHora = Number(l.gasto_hora) || 0;
+    const cliquesHora = Number(l.cliques_hora) || 0;
+    const nome = nomesPorAnuncio[l.ad_id] || l.ad_id;
+    const destinoLink = linksPorAnuncio[l.ad_id] ?? null;
+    porHora.get(l.hora).push({
+      adId: l.ad_id,
+      campaignId: l.campaign_id,
+      nome,
+      destinoLink,
+      gastoHora,
+      cliquesHora,
+      custoPorClique: custoPorLead(gastoHora, cliquesHora),
+    });
+  }
+
+  return [...porDia.keys()].sort().reverse().map((dia) => {
+    const porHora = porDia.get(dia);
+    const horas = [...porHora.keys()].sort((a, b) => a - b).map((hora) => {
+      const anuncios = [...porHora.get(hora)].sort((a, b) => b.gastoHora - a.gastoHora);
+      return {
+        hora,
+        gastoTotal: anuncios.reduce((s, a) => s + a.gastoHora, 0),
+        cliquesTotal: anuncios.reduce((s, a) => s + a.cliquesHora, 0),
+        anuncios,
+      };
+    });
+    return {
+      dia,
+      gastoTotal: horas.reduce((s, h) => s + h.gastoTotal, 0),
+      horas,
+    };
+  });
+}
+
+// Recorte por categoria (sales/leads) dentro de uma lista de anúncios já
+// agrupada — mesma ideia de comResultado/deSeguidores, um nível abaixo.
+export function anunciosPorCategoria(anuncios, categoria) {
+  return anuncios.filter((a) => classificarLinkAnuncio(a.destinoLink) === categoria);
+}
+
 export function agruparPorDiaEHora(linhas, nomesPorCampanha = {}) {
   const porDia = new Map();
   for (const l of linhas) {

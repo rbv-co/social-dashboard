@@ -63,3 +63,27 @@ export function visitasNoPerfil(actions) {
 export function deltaSimples(atual, anteriorValor) {
   return Math.max(0, atual - (anteriorValor ?? 0));
 }
+
+// Extrai o link de destino de um criativo de anúncio — testado ao vivo na
+// Graph API (18/09/2026) contra os 4 formatos reais encontrados nas
+// campanhas AXIOM. `null` quando nenhum campo bate (ex.: anúncio de
+// clique-para-WhatsApp, que não tem link de site nenhum — `message_extensions`
+// com `type: whatsapp` no lugar de link).
+export function linkDoCriativo(creative) {
+  if (!creative) return null;
+  const osp = creative.object_story_spec;
+  if (osp?.link_data?.link) return osp.link_data.link;
+  if (osp?.video_data?.call_to_action?.value?.link) return osp.video_data.call_to_action.value.link;
+  const afs = creative.asset_feed_spec;
+  if (afs?.link_urls?.length) return afs.link_urls.map((l) => l.website_url).join(' | ');
+  if (creative.object_url) return creative.object_url;
+  return null;
+}
+
+// Cliques no link (link_click) — mesmo formato de conversasIniciadas, tipo
+// de ação diferente. Usado pra Sales/Leads por link de anúncio (18/09/2026).
+export function linkClicks(actions) {
+  if (!Array.isArray(actions)) return 0;
+  const achado = actions.find((a) => a && a.action_type === 'link_click');
+  return achado ? parseInt(achado.value ?? '0', 10) || 0 : 0;
+}

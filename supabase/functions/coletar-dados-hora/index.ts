@@ -1,8 +1,9 @@
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { exigirSegredoDeCron } from '../_shared/segredo-de-cron.ts';
 import {
-  conversasIniciadas, calcularDeltaHora, visitasNoPerfil, deltaSimples,
+  conversasIniciadas, calcularDeltaHora, visitasNoPerfil, deltaSimples, linkClicks,
 } from '../_shared/delta-de-hora.js';
+import { tipoDaCampanha } from '../_shared/relatorio-por-hora.js';
 
 const GRAPH = 'https://graph.facebook.com/v22.0';
 
@@ -191,6 +192,76 @@ async function coletarVisitasPerfilDaConta(sb: any, acc: any, dia: string, hora:
   }
 }
 
+// Gasto e clique no link, por ANÚNCIO, só pra campanhas "outro" (sem
+// prefixo conhecido — AXIOM e afins) — pedido do dono (18/09/2026):
+// classificar Sales/Leads pelo destino do link do anúncio, confirmado que
+// precisa ser por ANÚNCIO porque a mesma campanha/conjunto mistura
+// destinos. `campaigns`/`ads` já estão sincronizadas pelo coletar-dados
+// (nome/link não mudam de hora em hora, não vale perguntar de novo aqui).
+async function coletarAnunciosOutroPorHora(sb: any, acc: any, dia: string, hora: number, degraded: string[]): Promise<void> {
+  const { id: accountId, ad_account_id: adAccountId, access_token: token, name } = acc;
+  if (!adAccountId || !token) return;
+  try {
+    const { data: campanhasRows, error: erroCampanhas } = await sb
+      .from('campaigns').select('campaign_id,name').eq('account_id', accountId);
+    if (erroCampanhas) { degraded.push(`${name}: falha ao ler campanhas p/ ads (${erroCampanhas.message})`); return; }
+    const campanhasOutro = new Set(
+      (campanhasRows ?? []).filter((c: any) => tipoDaCampanha(c.name ?? '') === 'outro').map((c: any) => c.campaign_id),
+    );
+    if (!campanhasOutro.size) return;
+
+    const { data: adsRows, error: erroAds } = await sb
+      .from('ads').select('ad_id,campaign_id,destino_link')
+      .eq('account_id', accountId).not('destino_link', 'is', null);
+    if (erroAds) { degraded.push(`${name}: falha ao ler catálogo de ads (${erroAds.message})`); return; }
+    const adsNoEscopo = new Set(
+      (adsRows ?? []).filter((a: any) => campanhasOutro.has(a.campaign_id)).map((a: any) => a.ad_id),
+    );
+    if (!adsNoEscopo.size) return;
+
+    const items = await apiGetAll(`act_${adAccountId}/insights`, {
+      fields: 'ad_id,campaign_id,spend,actions',
+      time_range: JSON.stringify({ since: dia, until: dia }),
+      level: 'ad',
+      access_token: token,
+    });
+    const itemsNoEscopo = items.filter((r: any) => adsNoEscopo.has(r.ad_id));
+    if (!itemsNoEscopo.length) return;
+
+    const { data: anterioresRows, error: erroAnteriores } = await sb
+      .from('ad_insights_hora')
+      .select('ad_id,gasto_acumulado,cliques_acumulados,hora')
+      .eq('account_id', accountId).eq('dia', dia).lt('hora', hora)
+      .order('hora', { ascending: false });
+    if (erroAnteriores) { degraded.push(`${name}: falha ao ler ad_insights_hora anterior (${erroAnteriores.message})`); return; }
+    const anteriorPorAnuncio = new Map<string, any>();
+    for (const row of anterioresRows ?? []) {
+      if (!anteriorPorAnuncio.has(row.ad_id)) anteriorPorAnuncio.set(row.ad_id, row);
+    }
+
+    const linhas = itemsNoEscopo.map((r: any) => {
+      const adId = r.ad_id;
+      const gastoAcumulado = parseFloat(r.spend ?? '0');
+      const cliquesAcumulados = linkClicks(r.actions);
+      const anterior = anteriorPorAnuncio.get(adId) ?? null;
+      return {
+        ad_id: adId, campaign_id: r.campaign_id, account_id: accountId, dia, hora,
+        gasto_acumulado: gastoAcumulado, cliques_acumulados: cliquesAcumulados,
+        gasto_hora: deltaSimples(gastoAcumulado, anterior?.gasto_acumulado),
+        cliques_hora: deltaSimples(cliquesAcumulados, anterior?.cliques_acumulados),
+      };
+    });
+
+    const { error: erroUpsert } = await sb
+      .from('ad_insights_hora').upsert(linhas, { onConflict: 'ad_id,account_id,dia,hora' });
+    if (erroUpsert) { degraded.push(`${name}: falha ao gravar ad_insights_hora (${erroUpsert.message})`); return; }
+
+    console.log(`✓ ${name}: ${linhas.length} anúncios (sales/leads por link)`);
+  } catch (e) {
+    degraded.push(`${name}: ads outro (${e instanceof Error ? e.message : String(e)})`);
+  }
+}
+
 Deno.serve(async (req: Request) => {
   const negado = await exigirSegredoDeCron(req, 'coletar-dados-hora');
   if (negado) return negado;
@@ -219,6 +290,7 @@ Deno.serve(async (req: Request) => {
     await Promise.all([
       coletarSeguidoresDaConta(sb, acc, degraded),
       coletarVisitasPerfilDaConta(sb, acc, dia, hora, degraded),
+      coletarAnunciosOutroPorHora(sb, acc, dia, hora, degraded),
     ]);
   }
 

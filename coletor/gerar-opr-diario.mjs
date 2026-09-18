@@ -15,7 +15,7 @@ import './lib/carregar-env.mjs';
 import { writeFile } from 'node:fs/promises';
 import { renderPNG, fecharRender } from './lib/render-criativo.mjs';
 import { montarHtmlOpr, DIM_OPR } from './lib/template-opr.mjs';
-import { agruparCampanhasDoDia, montarDadosOpr } from '../src/ferramentas/meta-ads/relatorio-diario-opr.js';
+import { agruparCampanhasDoDia, agruparAnunciosDoDia, montarDadosOpr } from '../src/ferramentas/meta-ads/relatorio-diario-opr.js';
 import {
   deltaDeSeguidoresPorHora, seguidoresNoDia, seguidoresTotalNoFimDoDia,
   montarMensagemLeadsFechamentoDia, montarMensagemSeguidoresFechamentoDia,
@@ -107,7 +107,7 @@ async function main() {
   // nesse modo, nem em erro.
   let dados, html, mensagemLeads, mensagemSeguidores;
   try {
-    const [campanhas, insights, leituras, contas] = await Promise.all([
+    const [campanhas, insights, leituras, contas, ads, adInsights] = await Promise.all([
       sbGet('/campaigns?select=campaign_id,name'),
       sbGet(`/campaign_insights?select=campaign_id,spend,likes,comments,shares,saves,conversas,post_engagement&account_id=eq.${CONTA_VESSEL}&captured_at=eq.${dia}&period_days=eq.0`),
       // 48h de folga: garante leitura ANTERIOR ao primeiro bucket de ontem, pra
@@ -115,10 +115,14 @@ async function main() {
       // hora do dia inteiro (não só a última hora, como no relatório por hora).
       sbGet(`/followers_leituras?select=followers_count,lido_em,origem&account_id=eq.${CONTA_VESSEL}&lido_em=gte.${new Date(Date.now() - 48 * 3600 * 1000).toISOString()}&order=lido_em.asc`),
       sbGet(`/accounts?select=instagram_id,access_token&id=eq.${CONTA_VESSEL}`),
+      sbGet(`/ads?select=ad_id,destino_link&account_id=eq.${CONTA_VESSEL}`),
+      sbGet(`/ad_insights_hora?select=ad_id,gasto_hora,cliques_hora&account_id=eq.${CONTA_VESSEL}&dia=eq.${dia}`),
     ]);
 
     const nomesPorCampanha = Object.fromEntries(campanhas.map((c) => [c.campaign_id, c.name]));
     const campanhasDoDia = agruparCampanhasDoDia(insights, nomesPorCampanha);
+    const linksPorAnuncio = Object.fromEntries(ads.map((a) => [a.ad_id, a.destino_link]));
+    const anunciosDoDia = agruparAnunciosDoDia(adInsights, linksPorAnuncio);
     const deltas = deltaDeSeguidoresPorHora(leituras);
     const seguidoresDoDia = seguidoresNoDia(deltas, dia);
     // Direto da Meta, dia já FECHADO — não soma perfil_visitas_hora (achado
@@ -132,7 +136,7 @@ async function main() {
     // --dry — dry é só preview, nunca escreve nada além do PNG local).
     if (!DRY) await salvarVisitasPerfilDoDia(REST, H, CONTA_VESSEL, dia, visitasPerfilDoDia);
 
-    dados = montarDadosOpr(campanhasDoDia, seguidoresDoDia, visitasPerfilDoDia);
+    dados = montarDadosOpr(campanhasDoDia, seguidoresDoDia, visitasPerfilDoDia, anunciosDoDia);
     html = montarHtmlOpr(dados, { conta: 'Vessel Brasil', periodoLabel: periodoLabel(dia) });
 
     // Mensagens de FECHAMENTO DO DIA (pedido do dono, 17/09/2026) — mandadas

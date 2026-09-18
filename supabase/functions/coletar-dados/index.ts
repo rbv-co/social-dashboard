@@ -15,6 +15,7 @@ import { contagensDaCampanha } from '../_shared/acoes-de-campanha.js';
 // A janela de datas do recorte de N dias. Estava escrita aqui dentro e cobria
 // N+1 dias, com o dia de HOJE (incompleto) dentro — ver janela-de-ads.js.
 import { janelaDeAds } from '../_shared/janela-de-ads.js';
+import { linkDoCriativo } from '../_shared/delta-de-hora.js';
 
 const GRAPH = 'https://graph.facebook.com/v21.0';
 const APP_ID = Deno.env.get('META_APP_ID') ?? '';
@@ -397,6 +398,27 @@ async function sincronizarCampanhas(sb: any, accountId: string, adAccountId: str
   } catch { /* sem ads */ }
 }
 
+// Catálogo de anúncios (nome, status, link de destino) — pedido do dono
+// (18/09/2026), pra classificar Sales/Leads por link. Busca TODOS os
+// anúncios da conta, não só os de campanha "outro": mais simples sincronizar
+// tudo aqui e filtrar por tipoDaCampanha na hora de LER (coletar-dados-hora),
+// assim uma campanha que muda de "outro" pra um prefixo conhecido não deixa
+// lixo travado no catálogo.
+async function sincronizarAnuncios(sb: any, accountId: string, adAccountId: string, token: string) {
+  try {
+    const items = await apiGetAll(`act_${adAccountId}/ads`, {
+      fields: 'id,name,campaign_id,status,creative{object_story_spec,asset_feed_spec,object_url}',
+      access_token: token,
+    });
+    const rows = items.map((a: any) => ({
+      ad_id: a.id, campaign_id: a.campaign_id, account_id: accountId,
+      name: a.name ?? '', status: a.status ?? '',
+      destino_link: linkDoCriativo(a.creative), synced_at: todayBR(),
+    }));
+    if (rows.length) await sb.from('ads').upsert(rows, { onConflict: 'ad_id' });
+  } catch { /* sem ads */ }
+}
+
 // O SINAL DO CONJUNTO — destination_type e optimization_goal — é o que decide o
 // balde da campanha no painel de Redes Sociais. Uma chamada por perfil por
 // rodada; os mesmos campos que a Gestão de Tráfego já lê ao vivo.
@@ -564,6 +586,7 @@ async function processarConta(sb: any, acc: any, degraded: string[], semBruto: s
   // Perfil sem ad_account_id preenchido não tem anúncios — pula, sem erro.
   if (adAccountId) {
     await sincronizarCampanhas(sb, accountId, adAccountId, token);
+    await sincronizarAnuncios(sb, accountId, adAccountId, token);
     await sincronizarConjuntos(sb, accountId, adAccountId, token);
     for (const dias of PERIODS) await coletarAdsPorCampanha(sb, adAccountId, accountId, token, dias, hoje);
     // Re-coleta o gasto pd=0 dos últimos 7 dias (ontem→-7): captura a atribuição tardia da Meta,
