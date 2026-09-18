@@ -1032,27 +1032,37 @@ git commit -m "feat(carrinho): tela Funil de Carrinho + rota + card na Home"
 - Conceda a permissão `carrinho` pra si mesmo (ou pra quem for usar) em
   Admin → Permissões, e salve — sem isso a RLS de `carrinho_eventos` (Task 1)
   nega a leitura mesmo com a rota liberada.
-- Peça pro cliente instalar o app Shopify (Task 4, Step 4) se ainda não
-  instalou.
-- **⚠️ ATIVAR O PIXEL, DEPOIS DE INSTALAR (achado na revisão final, não
-  estava no plano original):** um Web Pixel com App Extension **não liga
-  sozinho** ao instalar o app — precisa de UMA chamada da mutation GraphQL
-  `webPixelCreate` contra a Admin API da loja, feita uma vez só (loja única,
-  não precisa de automação nenhuma pro backend fazer isso a cada instalação).
-  O jeito mais simples: `shopify app dev` abre um GraphiQL local já
-  autenticado contra a loja de dev/teste — rodar lá:
-  ```graphql
-  mutation {
-    webPixelCreate(webPixel: { settings: "{}" }) {
-      userErrors { code field message }
-      webPixel { id }
-    }
-  }
-  ```
-  (a extensão não tem campo de settings próprio — `"{}"` está certo). Depois
-  de rodar, confirme em Configurações → Customer events da loja que
-  "funil-carrinho-pixel" aparece como Conectado. Sem este passo, o app fica
-  instalado e o pixel nunca dispara nada — silenciosamente.
+- **⚠️ MUDANÇA DE ÚLTIMA HORA (18/09/2026), depois deste plano já ter sido
+  executado — o mecanismo de captação NÃO é mais o Web Pixel App
+  Extension nem o Custom Pixel descritos nas Tasks 4/originais.** Os dois
+  foram tentados de verdade em produção e descartados:
+  1. **App Extension** (`shopify-app/funil-carrinho-pixel/`) — publicada
+     com sucesso, mas instalar exige OAuth contra um backend hospedado de
+     verdade (este app não tem, nem precisa). Sem hospedar isso em algum
+     lugar, a instalação nunca sai do `example.com` do template.
+  2. **Custom Pixel** (`shopify-app/pixel-custom-colado-no-admin.js`,
+     colado em Configurações → Customer events) — funcionou, mas só
+     dispara pra quem aceita cookie de Marketing+Análises, sub-relatando o
+     funil. Testado ao vivo e depois **desconectado**.
+
+  O que roda de verdade: um **interceptador colado direto no tema**
+  (`layout/theme.liquid` do tema ativo "VESSEL BRASIL V1.0 ERICK"), cópia
+  de referência em `shopify-app/interceptador-carrinho-no-tema.html`. Ele
+  troca `window.fetch`/`XMLHttpRequest` no navegador do cliente pra
+  enxergar as chamadas de QUALQUER app de carrinho da loja aos endpoints
+  padrão da Ajax Cart API (`/cart/add.js`, `/cart/change.js`,
+  `/cart/update.js`) — captura 100% das ações, sem depender de
+  consentimento de cookies (decisão de privacidade explícita do dono).
+  Testado ao vivo na loja de produção em 18/09/2026, com eventos reais
+  confirmados na tabela `carrinho_eventos` (produto, preço e quantidade
+  corretos). Ver `src/ferramentas/funil-carrinho/LEIA-ME.txt` pro relato
+  completo, incluindo uma limitação aceita (remoção após recarregar a
+  página perde o nome do produto — o evento conta, só não identifica a
+  peça).
+
+  **Se um dia o tema for trocado**, este bloco de script some
+  silenciosamente — colar de novo a partir de
+  `shopify-app/interceptador-carrinho-no-tema.html`.
 - Depois de alguns dias de dado real, releia com o dono se 30 minutos
   (janela de "abandonado") e 60/minuto (rate limit) continuam certos —
   os dois são ajustáveis, nenhum foi medido.

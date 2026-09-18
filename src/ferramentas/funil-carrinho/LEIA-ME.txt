@@ -5,29 +5,44 @@ guarda nada disso nativamente (o "checkout abandonado" dela só nasce quando a
 pessoa clica em finalizar compra). Ver spec
 docs/superpowers/specs/2026-09-17-funil-carrinho-shopify-design.md.
 
-Como chega o dado:
-- O pixel roda como CUSTOM PIXEL, colado direto em Configurações →
-  Customer events → Add custom pixel no admin da loja — não como App
-  Extension. O código de origem/referência é
-  shopify-app/pixel-custom-colado-no-admin.js, mas o que roda de verdade é
-  a cópia colada no admin (fora do git; editar aqui não atualiza sozinho o
-  que está lá).
-  ⚠️ POR QUÊ NÃO É APP EXTENSION (o plano original preferia isso, código
-  versionado): a pasta shopify-app/funil-carrinho-pixel/ existe, foi
-  publicada com sucesso (`shopify app deploy`), mas instalar via App
-  Extension exige OAuth contra um backend hospedado de verdade — e este
-  app não tem servidor nenhum no ar (não precisa, pra um pixel só). Sem
-  hospedar isso em algum lugar (Vercel etc.), a instalação nunca sai do
-  `example.com` do template. Trocado pra Custom Pixel por decisão do dono,
-  em 18/09/2026, pra não depender de infraestrutura nova só pra isso.
-- O pixel escuta 3 eventos da Web Pixels API do Shopify (produto
-  adicionado, produto removido, checkout iniciado) e manda cada um pra
-  Edge Function pública supabase/functions/capturar-evento-carrinho, que
-  valida e grava cru na tabela carrinho_eventos.
+Como chega o dado (ATUALIZADO 18/09/2026 — terceira tentativa, a que ficou):
+- O dado vem de um INTERCEPTADOR COLADO NO TEMA (layout/theme.liquid do
+  tema ativo, "VESSEL BRASIL V1.0 ERICK"), não de um Web Pixel. Cópia de
+  referência versionada: shopify-app/interceptador-carrinho-no-tema.html —
+  o que roda de verdade é o que foi publicado no tema via
+  `shopify theme push --only layout/theme.liquid --allow-live`; editar a
+  referência aqui não atualiza sozinho o tema, precisa publicar de novo.
+- Ele troca `window.fetch` e `XMLHttpRequest` no navegador do cliente pra
+  enxergar as chamadas que QUALQUER app de carrinho da loja faz nos
+  endpoints padrão da Ajax Cart API da Shopify (/cart/add.js,
+  /cart/change.js, /cart/update.js — confirmado na doc oficial que
+  "remover" é `quantity: 0`), e manda cada evento pra Edge Function pública
+  supabase/functions/capturar-evento-carrinho, que valida e grava cru na
+  tabela carrinho_eventos.
+- checkout_iniciado é detectado por navegação: dispara uma vez quando a
+  página carregada é `/checkout`.
+- Limitação conhecida, aceita: se a página for recarregada, o script perde
+  a memória de qual produto era cada linha do carrinho — uma remoção logo
+  após recarregar chega SEM produto_titulo/produto_id (o evento em si conta
+  certo, só não identifica a peça).
 - Sem robô de agregação: "abandonado" é a view carrinho_abandonados
   (db/migrations/2026-09-17-carrinho-eventos.sql), calculada na consulta —
   carrinho com produto adicionado, sem checkout iniciado, parado há mais de
   30 minutos.
+
+CAMINHOS TENTADOS E DESCARTADOS (fica registrado pra ninguém repetir):
+1. Web Pixel App Extension (shopify-app/funil-carrinho-pixel/) — escrita,
+   publicada com sucesso (`shopify app deploy`), mas instalar exige OAuth
+   contra um backend hospedado de verdade, e este app não tem (nem precisa
+   de) servidor no ar. `shopify app dev` também recusou a loja de produção
+   por não ser loja de desenvolvimento na organização. Descartado por
+   exigir infraestrutura nova só pra isso.
+2. Custom Pixel colado no admin (shopify-app/pixel-custom-colado-no-admin.js)
+   — funcionou, mas só dispara pra quem aceita cookie de Marketing+Análises
+   (gate oficial da Shopify pra Customer Events), sub-relatando o funil.
+   Descartado por decisão do dono, em favor de captar 100%. DESCONECTADO
+   no admin em 18/09/2026 — deixado ativo teria duplicado os eventos do
+   interceptador do tema.
 
 A tela é SÓ DE LEITURA, com três blocos: mais adicionados, mais removidos,
 carrinhos abandonados — filtro de período (7D/14D/30D) no topo.
