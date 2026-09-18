@@ -1,7 +1,7 @@
 # Pendências do iamundi
 
-Última revisão: **15/09/2026** — revisão item a item com o dono, tudo medido.
-**Restaram 3 pendências.**
+Última revisão: **18/09/2026** — os três últimos itens saíram.
+**A lista está vazia: não há pendência aberta.**
 
 O que é este arquivo: a lista viva do que está **em aberto** no projeto. Cada item
 diz o que falta, **por que importa** e **onde** se resolve. É a memória escrita —
@@ -27,9 +27,10 @@ saindo e o número ficava). Ficou difícil de ler. A pedido do dono, foram
 renumerados em sequência: **A1 a A5** e **B1 a B8**.
 
 ⚠️ **Na mesma revisão, a maioria desses itens saiu** — sobraram **A1, B4 e B7**.
-Então a sequência já nasceu com buracos de novo, e é assim mesmo: buraco é o
-preço de o código ser estável. A tabela abaixo continua valendo para ler
-conversa antiga.
+E esses três saíram depois, em 16 e 18/09 — o motivo de cada um está na seção
+seguinte —, então hoje a lista está vazia. A sequência ficou cheia de buracos, e
+é assim mesmo: buraco é o preço de o código ser estável. A tabela abaixo continua
+valendo para ler conversa antiga.
 
 **Se você está lendo uma conversa ou um commit de antes de 15/09, é por aqui:**
 
@@ -114,277 +115,118 @@ mesmo assim, por decisão do dono — o motivo está na linha dele, acima.
 
 ---
 
-## Parte A — Só o dono resolve (clique, sem código)
+## O que saiu da lista em 16 e 18/09/2026
 
-*(Estava vazia em 18/08. Voltou a ter itens em 20/08, com a via de mão dupla
-entre Frota e Patrimônio.)*
+Saíram os **três últimos** itens: um resolvido e dois por decisão do dono. Com
+eles, **a lista ficou vazia**. O motivo de cada saída fica escrito aqui, porque
+item que desaparece sem explicação é o que faz alguém reabrir o assunto daqui a
+um mês achando que é defeito novo.
 
-### A1 · os 9 carros antigos não têm etiqueta de patrimônio
-Medido em 20/08/2026: o sistema tem **362 itens, 353 com número**, e os **9 sem
-número são exatamente os 9 carros antigos** — nenhum outro item da empresa
-ficou de fora. Eles carregam o código `RBB-00X`, que é só da Frota e nenhum
-leitor de código lê.
+### B7 · Fotos Vessel, as fotos de detalhe ✅ *RESOLVIDO em 16/09/2026*
 
-Desde 20/08 carro novo já nasce com número de etiqueta pelos dois caminhos.
-Falta o passado: **colar o adesivo nesses 9 e escrever o número na ficha do
-carro** (campo "Nº de patrimônio", na ficha do veículo).
+**O desfecho não foi o que o item previa.** Ele nasceu como "retocar as alças
+tortas antes de publicar" e terminou como **"tirar as fotos de detalhe da
+vitrine"**. O dono reprovou o retoque depois de 21 versões, e a varredura mostrou
+por quê: a **alça torta é posicionamento do ENSAIO, não defeito da peça** — a
+mesma bolsa em outra cor saiu reta. Retocar era consertar o sintoma.
 
-Enquanto não for feito, o leitor de código não acha carro nenhum, e o `RBB-00X`
-continua sendo a única identificação que eles têm — **por isso ele não foi
-aposentado.**
+**Como foi provado:** o dono marcou **42 fotos em 9 famílias** numa página de
+seleção, com a regra "se uma da família está ruim, sai a família inteira". Elas
+saíram por `productDeleteMedia` e a loja foi relida depois: de **479 para 437
+imagens**, nenhum produto ficou sem foto, a contagem de cada um caiu exatamente
+1, e a vitrine pública abre sem imagem quebrada.
 
-Os 9: VOLVO XC60, FIAT DOBLO, FIAT BRAVO ESSENCE, FIAT BRAVO BLACKMOTION, HONDA
-FIT, FORD FIESTA SEDAN, VOLVO XC90, PORSCHE CAYENNE PHEV, BMW X1.
-*(O FIAT PUNTO escapou: já tem o nº 14.)*
+⚠️ **Consequência aceita:** 42 produtos ficam sem a foto de detalhe da ferragem.
+A galeria já não era padronizada (a Oriane Mostarda vive com 1 foto de detalhe
+só). **As fotos continuam no acervo e no Bling** — saíram da vitrine, não do
+arquivo.
 
-✔️ **Reconferido em 15/09/2026, direto no banco:** o Patrimônio está com
-**377 bens**, e os **sem número continuam exatamente 9** — os mesmos nove carros,
-todos com `etiquetado = false`. Nada mudou desde 20/08.
+**O que fica guardado, caso o assunto volte:**
 
-✔️ **Revisto com o dono em 15/09/2026: FICA na lista**, como está, esperando
-alguém colar os adesivos e preencher as fichas.
+- cópia de segurança das 350 imagens em
+  `entregas/COPIAS DE SEGURANCA/shopify-fotos-antes-de-remover-detalhes_2026-09-16/`;
+- o programa de endireitar alça **existe, funciona e não usa IA** —
+  `entregas/EM USO (nao apagar)/fotos-vessel_alca-reta-no-original_2026-09-15_1942_v1/`
+  (grão do remendo **12,07** contra **12,07** do couro ao lado, **0 px** de
+  ferragem alterados). Ele deixou de ser o caminho recomendado, não de funcionar;
+- se houver **ensaio novo**, as cores irmãs são a referência de como posicionar a
+  alça — é no ensaio que o defeito nasce.
 
-## Parte B — Precisa programar
+### B4 · Cartões EAN, o robô da fila e os 27 a refazer · *sai em 18/09/2026*
 
-### B4 · Cartões EAN › o robô da fila, e os 27 cartões a refazer 🟡 *aberto em 12/09/2026 — o B5 foi fundido aqui em 15/09*
+**Decisão do dono em 18/09/2026: o trabalho vai ser feito, só não fica mais
+nesta lista** — o acompanhamento passa a ser por fora. Não é cancelamento, e não
+há consequência aceita.
 
-A aba "Cartões EAN" está no ar e manda pedido; a fila `vessel_cartao_pedidos`
-existe no banco. **Falta quem atende.** Hoje o pedido entra e ninguém pega.
-
-O que já está pronto e é para REAPROVEITAR, não reconstruir:
+Como ele vai ser feito, o que já está pronto fica anotado aqui para **não ser
+reconstruído**:
 
 - **desenhar e exportar** — `cartao/exportar.mjs`, que roda fora do Mac. Provado
-  em 8 produtos contra o `exportar.sh` (o do Quartz): mesmo tamanho 2042×1300,
-  desenho no mesmo lugar (1 px = 0,04 mm), código de barras lido da imagem;
+  em 8 produtos: mesmo tamanho 2042×1300, desenho no mesmo lugar (1 px =
+  0,04 mm), código de barras lido da imagem;
 - **subir no Zoho** — `coletor/lib/zoho-workdrive.mjs` (`acharOuCriarPasta` +
   `uploadArquivo`), que a Fábrica de Anúncios já usa do GitHub Actions com os
   segredos configurados;
 - **pegar e devolver** — `vessel_cartao_pegar_da_fila()` e
   `vessel_cartao_pedido_terminou()`, já no banco, só para `service_role`.
 
-Falta amarrar os três num workflow e criar o gatilho que acorda o robô quando o
-pedido entra (o molde é `vessel_lote_novo_pede_foto`, que já faz isso para as
-fotos, com o segredo em `segredos_de_cron`).
+Faltava amarrar os três num workflow e criar o gatilho que acorda o robô quando o
+pedido entra — o molde é `vessel_lote_novo_pede_foto`, que já faz isso para as
+fotos, com o segredo em `segredos_de_cron`.
 
-⚠️ `cartao_gerado_em` é marcado **só nas peças que o robô confirma**. Marcar o
-pedido inteiro deixaria a marca mentindo nas que falharam no meio — e é ela que
-PRENDE o número de série.
+⚠️ **Dois cuidados que já custaram caro:**
 
-✔️ **Reconferido em 15/09/2026:** continua sem nenhum workflow de cartão em
-`.github/workflows/` (só o `provar-cartoes-fila-e-trava.mjs`, que é prova, não
-robô), e a fila `vessel_cartao_pedidos` segue com **zero linhas** — ninguém
-chegou a usar a aba, então ninguém sente a falta hoje.
+1. `cartao_gerado_em` é marcado **só nas peças que o robô confirma**. Marcar o
+   pedido inteiro deixa a marca mentindo nas que falharam no meio — e é ela que
+   **prende o número de série**.
+2. **"Tem pasta de cartão" NÃO é "tem cartão bom".** Foi assim que 5 cartões sem
+   código de barras passaram batidos por três semanas. Quem medir, meça com
+   `vessel-brasil/ferramentas/o-que-falta-de-cartao.mjs`, que abre cada arquivo e
+   lê o código como o leitor da loja lê — é o único teste que não dá para
+   substituir por olhar.
 
-🔄 **O ALVO MUDOU EM 15/09.** Com a saída do antigo A3 (as 23 fotos), o robô não
-mira mais os 86 do catálogo: mira os **63 que têm foto tratada**. Os outros 23
-não terão cartão, e isso é decisão tomada, não pendência. Quem for fazer o robô
-deve tratar "produto sem foto" como **caso normal e relatado**, não como erro.
+**O retrato de 15/09, para quem retomar:** dos 86 do catálogo, **35 prontos**,
+**27 a refazer por meia resolução** (saíram a 300 dpi em vez de 600: a barra fica
+com 3,1 px, e a 300 dpi o código de barras não perdoa arredondamento), **1 sem
+código de barras** e **23 sem foto, fora do alvo**. O alvo são os **63 com foto
+tratada** — "produto sem foto" é caso normal e relatado, não erro. A fila
+`vessel_cartao_pedidos` seguia com **zero linhas**: ninguém chegou a usar a aba.
 
----
+### A1 · os 9 carros antigos sem etiqueta de patrimônio · *sai em 18/09/2026*
 
-#### O que o robô vai encontrar quando existir *(era o item B5, fundido aqui em 15/09)*
+**Decisão do dono em 18/09/2026: fica assim.**
 
-O B5 não tinha tarefa própria: o próprio texto dizia *"assim que o robô estiver
-de pé, isto é marcar as peças na aba e mandar"*. É a mesma tarefa, na etapa
-seguinte — então virou esta parte.
+✔️ **Medido no banco em 18/09/2026, antes de tirar:** o Patrimônio está com
+**377 bens, 368 com número**, e os **9 sem número continuam sendo exatamente os
+9 carros antigos**, todos com `etiquetado = false`. Isto é, o adesivo não foi
+colado e o número não foi digitado — a saída é **decisão, não conclusão**.
 
-**O retrato dos 86, medido em 15/09** abrindo cada cartão e LENDO o código de
-barras da imagem:
+Os 9: VOLVO XC60, FIAT DOBLO, FIAT BRAVO ESSENCE, FIAT BRAVO BLACKMOTION, HONDA
+FIT, FORD FIESTA SEDAN, VOLVO XC90, PORSCHE CAYENNE PHEV, BMW X1. *(O FIAT PUNTO
+escapou: já tem o nº 14.)*
 
-| Situação | Produtos |
-|---|---|
-| Pronto | 35 |
-| **REFAZER — meia resolução (300 dpi em vez de 600)** | **27** |
-| REFAZER — sem código de barras | 1 |
-| Sem foto, fora do alvo | 23 |
+⚠️ **Consequências aceitas:**
 
-**Os 27 de meia resolução** leem, mas a barra fica com **3,1 px** — e a 300 dpi o
-código de barras não perdoa arredondamento. Alguma rodada saiu com o `DPI=`
-trocado, e a pasta do Zoho tem as duas resoluções misturadas. Refazer é marcar
-na aba e mandar, assim que o robô existir.
+1. **O leitor de código não acha carro nenhum** — nenhum dos 9 tem número que um
+   leitor leia.
+2. O código `RBB-00X`, que é só da Frota e nenhum leitor lê, **continua sendo a
+   única identificação desses carros** — e por isso **não pode ser aposentado**.
 
-⚠️ **"Tem pasta de cartão" NÃO é "tem cartão bom".** Foi assim que 5 cartões sem
-código de barras passaram batidos por três semanas. Quem medir, meça com
-`vessel-brasil/ferramentas/o-que-falta-de-cartao.mjs`, que abre cada arquivo e
-lê o código como o leitor da loja lê — é o único teste que não dá para
-substituir por olhar.
-
-✔️ **Revisto item a item em 15/09/2026: o dono decidiu que FICA na lista**, como
-está, esperando ser feito. O antigo **B5 foi fundido aqui** no mesmo dia; o
-número B5 fica vago e não será reaproveitado.
-
-### B7 · Fotos Vessel › as fotos de detalhe ✅ *RESOLVIDO em 16/09/2026 — as 42 saíram da Shopify*
-
-⚠️ **O desfecho NÃO foi o que este item previa.** Ele nasceu como "retocar as
-alças tortas antes de publicar" e terminou como "**tirar as fotos de detalhe da
-vitrine**". O retoque foi tentado em 21 versões, o dono reprovou, e a varredura
-mostrou por quê: **a alça torta é posicionamento do ENSAIO, não defeito da peça**
-— a mesma bolsa em outras cores saiu reta. Retocar era consertar o sintoma.
-
-O histórico do retoque fica abaixo porque o programa existe, funciona e está
-guardado — mas **não é mais o caminho recomendado**.
-
-São **duas partes do mesmo trabalho**, no mesmo acervo de 485 fotos, com o mesmo
-mapa e o mesmo bloqueio (que caiu em 14/09): **as alças que caem tortas** e as
-**306 imperfeições**. Ficaram separadas até 15/09, quando o dono mandou juntar.
-
-#### Parte 1 · as alças que caem tortas (158 fotos)
-
-Pedido do dono: na foto de detalhe lateral a alça tem de **descer reta** embaixo
-do mosquetão. Exemplo dele: Oriane Big Blanc, `Detalhe2` (a alça pende ~9° para
-a esquerda).
-
-**Onde está o trabalho:** `entregas/fotos-vessel_alcas-tortas_2026-09-14_1956_v1/`
-(página com o exemplo antes/depois + as 23 fotos de detalhe do mesmo caso) e
-`entregas/fotos-vessel_mapa-de-retoques_2026-09-14_2057_v1/dados/alcas-foto-a-foto_*.json`
-(as 485 fotos olhadas; **158 com alça fora de posição**, cada uma com a caixa em
-pixels). Programa: `entregas/fotos-vessel_mapa-de-retoques_2026-09-14_2057_v1/programas/endireitar2.py` — ⚠️ o caminho antes escrito aqui (`programas/…`) **não existe**; os programas moram dentro da pasta da entrega. Corrigido em 15/09.
-
-**O método que o dono aprovou:** a alça e a argola são **recortadas da própria
-foto e giradas** até ficarem retas — não são redesenhadas. Mandar o gpt-image-2
-redesenhar a alça deixa ela **mais estreita e chapada** e chega a mudar o tamanho
-da argola. Só o **gpt-image-2** pode ser usado (gpt-image-1 é proibido pelo dono,
-em qualquer projeto).
-
-✅ **A RESOLUÇÃO NATIVA VOLTOU.** O bloqueio do `~/Library/CloudStorage` (o
-antigo A24) acabou: em 14/09 às 21h a pasta do Zoho abre e os PNG de 2160×2880
-são lidos normalmente (conferido lendo `Alba_Gray_Alca.png`, 2160×2880). Não
-precisa mais copiar nada pelo Finder.
-
-✅ **RESOLVIDO EM 15/09/2026 — e a causa não era a que estava escrita aqui.**
-O "blur" que o dono via **não vinha da foto pequena**. Vinha da **SOMBRA que a
-alça torta projeta no couro**: o recorte pega só a alça, a sombra não gira junto
-e sobra no lugar antigo. Medido: **21.042 px de sombra sobrando; depois do
-conserto, 212**. Entrega:
-`entregas/EM USO (nao apagar)/fotos-vessel_alca-reta-no-original_2026-09-15_1942_v1/`
-(exemplo Oriane Big Blanc no original 2160×2880, com antes/depois, contraste
-esticado e `programas/endireitar-no-original.py`).
-
-No caminho apareceram mais dois defeitos, os dois consertados:
-- **A IA redesenhava a FERRAGEM.** A dilatação que engole a sombra alcançava o
-  mosquetão; o encaixe abriu e o rebite virou anel. O metal agora é **poupado**
-  por saturação (`poupar_metal` no caso) e a IA não encosta nele.
-- **O tom do couro que a IA devolve é levemente diferente** e o RETÂNGULO da
-  área repintada aparecia no contraste esticado. Casado por canal contra um anel
-  de couro real logo fora da área.
-
-Também: o pivô certo é a **barra de cima da argola** (de onde a alça pendura),
-não o giratório — girar pelo giratório leva a ferragem junto.
-
-⚠️ **REVISÃO COM LUPA EM 16/09/2026** (o dono: *"quase ficou bom, vc pode ser
-mais crítico e detalhista"*). Olhando faixa por faixa em tamanho real, apareceram
-**três defeitos**, todos vindos de reaproveitar o contorno traçado na cópia de
-1000 px:
-1. o contorno **parava 187 px antes do fim da foto** → corte horizontal no couro;
-2. **entrava até 50 px dentro da alça** à direita e **por cima do braço da
-   argola** em cima → tira de alça para trás e ferragem redesenhada;
-3. **girar a peça inteira é errado**: a alça é uma DOBRA em volta da barra; o
-   alto descia 25 px e ela descolava.
-
-Resolvido: contorno traçado na foto grande; **o corpo gira e a dobra fica
-parada** (rampa de 150 px); a ferragem é recolada por cima no fim. Cisalhar
-("entortar") foi testado e descartado — deixa o **rebite redondo virar elipse**.
-Entrega v2: `.../fotos-vessel_alca-reta-no-original_2026-09-15_1942_v1/` (a v1
-está em `VERSAO-ANTERIOR-nao-usar/`).
-
-⚠️ **REVISÃO 2, EM 16/09/2026** — o dono viu **costura dupla**, couro **sem grão** e uma
-**linha** no couro. Os três eram defeito de verdade:
-- a **costura dupla** era a minha trava de proteger a ferragem: ela marcava metal por saturação
-  e as **marcas escuras da costura passavam no teste** — 32.038 px da alça eram recolados do
-  original no lugar velho. Achado rodando **só o movimento, sem repintar nada** (saiu perfeito),
-  o que provou que o defeito era da montagem;
-- o **grão** saía ZERO em todas as rodadas porque a referência era um retalho liso (grão 1,0) e
-  não o couro em volta (11,6);
-- a **linha** era a borda da área repintada: o tom era casado com um número só, que não
-  acompanha o degradê do couro. Virou correção ponto a ponto.
-
-✅ **A versão final NÃO USA IA.** `cv2.inpaint` + o grão do couro real da própria foto ficou
-melhor que o gpt-image-2, que inventava cordão e costura mesmo proibido no pedido. Grão do
-remendo **12,07** contra **12,07** do couro ao lado; **0 px** de ferragem alterados; **259 px**
-de sombra velha (eram 21.042). Entrega v4 em `exemplo-oriane-big-blanc/`.
-
-✅ **RESOLVIDO EM 16/09/2026 — as fotos saíram da Shopify.** O dono escolheu, em vez de
-retocar, **tirar as fotos de detalhe da vitrine**, com a regra "se uma da família está ruim,
-sai a família inteira". Ele marcou **42 fotos em 9 famílias** numa página de seleção; removi
-por `productDeleteMedia` e conferi relendo a loja: a Shopify foi de **479 para 437 imagens**,
-nenhum produto ficou sem foto, a contagem de cada um caiu exatamente 1, e a vitrine pública
-abre sem imagem quebrada. Cópia de segurança das 350 imagens em
-`entregas/COPIAS DE SEGURANCA/shopify-fotos-antes-de-remover-detalhes_2026-09-16/`.
-
-**Consequência aceita:** 42 produtos ficam sem a foto de detalhe da ferragem; os demais
-mantêm. A galeria já não era padronizada (a Oriane Mostarda vive com 1 foto de detalhe só).
-
-⚠️ **O que continua em aberto:** as fotos seguem no acervo e no Bling — só saíram da vitrine.
-Se um dia houver ensaio novo, o [[project_vessel_alca_torta_e_do_ensaio]] mostra que o defeito
-é de POSICIONAMENTO, e as cores irmãs servem de referência de como posicionar.
-
-🔄 **(histórico) MUDANÇA DE RUMO EM 16/09/2026.** Depois de 17 versões o dono reprovou o retoque
-("ficou ruim, to pensando em abordar de outra forma") e pediu para procurar **outra foto**.
-A varredura mudou o problema de lugar: **a alça torta é POSICIONAMENTO DO ENSAIO, não defeito
-da peça** — a mesma bolsa em outras cores saiu reta, e isso vale nas 6 famílias. Além disso, a
-galeria **não é padronizada** (a Oriane Mostarda vive com 1 foto de detalhe só), então tirar a
-foto torta da galeria é saída de custo zero e não remendo. Ver
-[[project_vessel_alca_torta_e_do_ensaio]] e a entrega
-`fotos-vessel_tem-outra-foto-com-alca-reta_2026-09-16_1420_v1/`.
-⚠️ **As 16 não são o mesmo caso** — na Lunea a alça entra cortada no canto, não pende torta.
-
-**Decisão pendente do dono, por foto ou por lote:** tirar da galeria · refotografar · deixar.
-O retoque continua existindo e funciona (programa em `programas/`, sem IA), mas deixou de ser
-o caminho recomendado.
-
-*(histórico) O que faltava no rumo antigo:* aplicar nas **16 fotos de detalhe do
-mesmo caso** ("inclinada"). Cada foto pede o contorno traçado **na foto grande**,
-a barra de onde a alça pendura e o ângulo, tudo à mão — foi o atalho de converter
-um contorno pronto que causou os três defeitos acima. A medição automática também
-já errou (deu −26,9° onde o certo era 9°); a prova de que ficou reta é o PRUMO,
-linhas verticais desenhadas sobre a foto.
-
-⚠️ A régua de textura que eu usava estava errada (comparava com um anel que
-pegava a borda da alça: alvo 26 contra 1,3–2,9 do couro limpo). Hoje ela é
-**informativa**, não critério: o miolo do remendo tem a sombra nova e a curva da
-bolsa dentro, então é naturalmente mais texturizado que um retalho liso. O
-veredito sai de: nada mudou fora da zona, a sombra velha sumiu, e a emenda não
-tem degrau de tom.
-
-⚠️ **Contagem conferida em 15/09:** das 158 fotos com alça fora de posição,
-**25 são `Detalhe`** (16 inclinada, 7 torcida, 1 fivela pendurada, 1 ponta
-solta) e **22 são `Alca`** (16 ponta solta, 5 fivela pendurada, 1 assimétrica).
-As outras 111 são fotos gerais. O número "23 de detalhe" escrito antes estava
-errado. **3 das 25 `Detalhe`** só acham o arquivo grande por outro nome (as
-Linear Branca Média e Chocolate Pequena, já anotadas como pastas repetidas).
-
-#### Parte 2 · as 306 imperfeições *(era o item B8)*
-
-Mapa entregue em `entregas/fotos-vessel_mapa-de-retoques_2026-09-14_2057_v1/`:
-cada foto com **quadrado numerado** em cima de cada defeito (vermelho =
-imperfeição, laranja "A" = alça), lista agrupada embaixo, e os dados com a caixa
-em pixels em `dados/imperfeicoes-foto-a-foto_*.json`.
-
-**306 imperfeições em 64 bolsas, 33 delas em METAL** (mancha, risco, oxidação,
-marca de dedo e reflexo estourado em fivela, mosquetão, placa e rebite). O resto
-é poeira, fiapo, cabelo, cola, risco no couro, tinta de borda descascada, linha
-solta e fundo sujo. O dono aprovou esse tipo de retoque.
-
-**Prova de que funciona:** fiapo branco em couro liso sai limpo com gpt-image-2
-(antes/depois em `entregas/fotos-vessel_como-salvar-sem-refotografar_*/provas-de-retoque/`).
-Alça de outra bolsa no fundo sai, mas a borda da bolsa pede acabamento à mão.
-
-**Falta terminar a varredura da linha LINEAR.** Medido em 14/09 às 21h: o
-acervo tem **12 pastas Linear** e o mapa cobre **5** — faltam **7**
-(`Linear_Big_Blanc`, `Big_Caramelo`, `Big_Chocolate`, `Big_Vermelho`,
-`Caramelo M1`, `Caramelo_Pequena S1`, `Chocolate_Pequena S3`). O revisor parou
-no **limite de uso da sessão** (429, reabre 00:40 de 15/09). As alças da Linear
-já estão no mapa. É rodar o mesmo prompt do lote 3 e regerar a página com
-`entregas/fotos-vessel_mapa-de-retoques_2026-09-14_2057_v1/programas/montar_mapa.py` (⚠️ caminho corrigido em 15/09 — não existe pasta `programas/` na raiz).
-
-✅ Fazer o retoque no original já é possível — o bloqueio da pasta da nuvem
-acabou em 14/09 (era o A24). Na cópia de 1000 px o remendo aparece; no original
-de 2160×2880, não.
+Isto não cresce: carro novo já nasce com número de etiqueta pelos dois caminhos
+desde 20/08, então a dívida tem tamanho fixo, nesses 9. Se um dia for feito, o
+campo é "Nº de patrimônio", na ficha do veículo.
 
 ---
 
-✔️ **Revisto com o dono em 15/09/2026: FICA na lista.** O antigo **B8 foi fundido
-aqui** no mesmo dia — o número B8 fica vago e não será reaproveitado.
+## Parte A — Só o dono resolve (clique, sem código)
+
+**Vazia desde 18/09/2026.** O último item daqui foi o A1 — está logo acima, com o
+motivo da saída.
+
+## Parte B — Precisa programar
+
+**Vazia desde 18/09/2026.** O último item daqui foi o B4 — está logo acima, com o
+motivo da saída.
 
 ## Como manter esta lista
 
@@ -393,9 +235,10 @@ aqui** no mesmo dia — o número B8 fica vago e não será reaproveitado.
 - Item que o dono **adia** fica, com a data e o motivo.
 - Item novo entra com **o porquê**, não só o quê. "Falta X" sem o motivo vira
   item que ninguém entende em duas semanas.
-- Ao encostar num assunto, reler o item aqui **antes** — vários guardam um
-  cuidado que já custou caro (a resolução nativa no B7; o `cartao_gerado_em` que
-  prende o número de série, no B4).
+- Ao encostar num assunto, reler **antes** o que está escrito aqui — inclusive
+  na seção do que saiu. Vários guardam um cuidado que já custou caro (o
+  `cartao_gerado_em` que prende o número de série, no B4; "tem pasta de cartão"
+  não é "tem cartão bom").
 - **O teste para ficar na lista:** *alguém ainda tem que FAZER alguma coisa?* Se
   a resposta é não — está certo assim, é história, ou ninguém pediu — o item sai.
   Foi esse filtro que tirou sete de uma vez em 14/09.
