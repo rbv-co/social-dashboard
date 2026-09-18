@@ -3,3 +3,15 @@ type = "web_pixel_extension"
 uid = "dd16e98a-fd80-7e6c-3687-e5800664e85f3e0977d5"
 
 runtime_context = "strict"
+
+[settings]
+type = "object"
+
+# Campo exigido pelo schema da extensão (precisa de pelo menos 1 field em
+# settings) — não é usado pelo Funil de Carrinho, e não é obrigatório
+# preencher (sem validação de min). Não confundir com "conta"/multi-loja do
+# nosso desenho: é só o placeholder genérico do template da Shopify.
+[settings.fields.accountID]
+name = "Account ID"
+description = "Não usado pelo Funil de Carrinho."
+type = "single_line_text_field"
