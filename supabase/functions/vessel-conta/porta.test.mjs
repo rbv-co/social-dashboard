@@ -70,7 +70,9 @@ test('⚠️ a senha só volta para a página numa resposta: a de SUCESSO de "cr
 test('⚠️ nenhuma outra ação devolve senha — "esqueci" continua SÓ por e-mail', () => {
   // Em "esqueci" o e-mail é a prova de quem é: devolver a senha na tela
   // entregaria a conta a quem só sabe o CPF ou o e-mail de outra pessoa.
-  for (const acao of ['entrar', 'eu', 'sair', 'esqueci', 'editar', 'minhas-pecas']) {
+  for (const acao of ['entrar', 'eu', 'sair', 'esqueci', 'editar', 'minhas-pecas',
+                      'transferir-gerar', 'transferir-aberta', 'transferir-cancelar',
+                      'transferir-aceitar']) {
     for (const chamada of chamadasDeResponder(blocoDaAcao(FONTE, acao))) {
       assert.ok(!levaSenha(chamada), `a ação ${acao} não pode devolver senha: ${chamada}`);
     }
@@ -112,11 +114,114 @@ test('⚠️ a edge não responde nada sem passar pelas funções do banco', () 
   assert.match(FONTE, /rpc\('vessel_conta_entrar'/);
 });
 
-test('a edge trata as sete ações', () => {
+test('a edge trata as onze ações', () => {
   // 'minhas-pecas' entrou na Tarefa 9 (Registered Pieces — Contas Fase 1):
   // a tela "Minhas peças" lista o que está no nome da cliente logada.
-  for (const acao of ['criar', 'entrar', 'sair', 'esqueci', 'editar', 'eu', 'minhas-pecas']) {
+  // As quatro 'transferir-*' entraram em 18/09/2026, com a transferência de
+  // propriedade (docs/superpowers/specs/2026-09-18-transferencia-de-propriedade-design.md).
+  for (const acao of ['criar', 'entrar', 'sair', 'esqueci', 'editar', 'eu', 'minhas-pecas',
+                      'transferir-gerar', 'transferir-aberta', 'transferir-cancelar',
+                      'transferir-aceitar']) {
     assert.ok(FONTE.includes(`'${acao}'`), `falta a ação ${acao}`);
+  }
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * TRANSFERÊNCIA DE PROPRIEDADE (18/09/2026)
+ * ══════════════════════════════════════════════════════════════════════════
+ * O código de 6 dígitos vale por uma bolsa. Ele aparece UMA vez — na resposta
+ * de sucesso de `transferir-gerar` — e nunca mais: nem em outra resposta, nem
+ * em log, nem na trilha do banco. É a mesma regra da senha, e por isso as
+ * guardas abaixo são as mesmas, na letra. */
+
+const levaCodigoDeTransferencia = (chamada) => /\bcodigo_transferencia\b/.test(chamada);
+
+test('⚠️ a edge NUNCA toca no código de transferência — ele só atravessa dentro do `data`', () => {
+  // ⚠️ A PRIMEIRA VERSÃO DESTE TESTE PROCURAVA `codigo_transferencia` DENTRO DE
+  // UM `responder(...)` — e não achava nada, porque a edge devolve o `data` do
+  // banco inteiro, sem montar objeto nenhum. Achar zero seria "passou por
+  // vacuidade": o teste pareceria guardar o código e não guardava nada.
+  //
+  // O que realmente importa aqui: o código só existe dentro do `data` que veio
+  // do rpc de geração e vai direto para a página. A edge nunca o lê, nunca o
+  // copia para outro objeto, nunca o guarda. A única menção permitida é o
+  // PARÂMETRO de entrada de "transferir-aceitar" — o que a cliente digitou,
+  // indo para o banco conferir.
+  const mencoes = FONTE.split('\n').filter(levaCodigoDeTransferencia);
+  assert.ok(mencoes.length > 0, 'não achei menção nenhuma — o nome do campo mudou?');
+  for (const linha of mencoes) {
+    assert.match(linha.trim(), /^p_codigo_transferencia:\s*corpo\.codigo_transferencia,?$/,
+      `a edge só pode NOMEAR o código ao repassá-lo para o banco: ${linha.trim()}`);
+  }
+
+  // E o `data` cru só vira resposta pelo caminho de sempre: `responder(data ...)`.
+  const gerar = blocoDaAcao(FONTE, 'transferir-gerar');
+  assert.match(gerar, /return responder\(data \?\? \{ ok: false, motivo: 'falhou' \}\);/,
+    '"transferir-gerar" devolve o data do banco como está — sem remontar');
+});
+
+test('⚠️ nenhuma resposta da edge monta um campo com o código', () => {
+  for (const chamada of chamadasDeResponder(FONTE)) {
+    assert.ok(!levaCodigoDeTransferencia(chamada),
+      `resposta montada à mão com o código: ${chamada}`);
+  }
+});
+
+test('⚠️ o código de transferência nunca vai para log', () => {
+  // A guarda geral de log ('a senha nunca vai para log') já exige o formato
+  // `console.error('vessel_x', erro.message)`. Esta aqui diz a mesma coisa com
+  // a palavra desta tarefa, para quem for mexer na edge amanhã ler o motivo.
+  // O NOME do rpc pode conter "transferencia" (é o nome da função); o que não
+  // pode é o campo com o código, nem o corpo da chamada, nem o `data`.
+  for (const log of FONTE.match(/console\.error\([^)]*\)/gs) ?? []) {
+    for (const proibido of [/codigo_transferencia/i, /\bcorpo\b/, /\bdata\b/]) {
+      assert.ok(!proibido.test(log), `log carrega o código de transferência: ${log}`);
+    }
+  }
+});
+
+test('⚠️ as quatro ações novas chamam o rpc certo e conferem `error`', () => {
+  const esperado = {
+    'transferir-gerar': 'vessel_transferencia_gerar',
+    'transferir-aberta': 'vessel_transferencia_aberta',
+    'transferir-cancelar': 'vessel_transferencia_cancelar',
+    'transferir-aceitar': 'vessel_transferencia_aceitar',
+  };
+  for (const [acao, rpc] of Object.entries(esperado)) {
+    const bloco = blocoDaAcao(FONTE, acao);
+    assert.ok(bloco.includes(`rpc('${rpc}'`), `${acao} tem de chamar ${rpc}`);
+    assert.match(bloco, /const\s*\{[^}]*\berror\b[^}]*\}\s*=\s*await\s+sb\.rpc\(/,
+      `${acao}: falta desestruturar "error" (só "data" deixa erro do rpc calado)`);
+    assert.match(bloco, /motivo:\s*'falhou'/,
+      `${acao}: falha de infraestrutura tem de virar {ok:false, motivo:'falhou'}`);
+  }
+});
+
+test('⚠️ a edge não decide nada sobre transferência: quem decide é o banco', () => {
+  // ⚠️ POR QUE ISTO É UM TESTE. Uma Edge Function não guarda estado entre
+  // chamadas: qualquer contagem de tentativa, comparação de código ou conta de
+  // prazo escrita aqui seria decoração — e pior, esconderia que a trava de
+  // verdade nunca existiu. O teto de 5/24h, o prazo de 7 dias e a comparação
+  // do hash moram TODOS no banco (2026-09-18-zzzzz-vessel-transferencia-de-
+  // propriedade.sql). A edge só repassa.
+  for (const acao of ['transferir-gerar', 'transferir-aberta', 'transferir-cancelar',
+                      'transferir-aceitar']) {
+    const bloco = blocoDaAcao(FONTE, acao);
+    assert.ok(!/crypt|bcrypt|Math\.random|Date\.now\(\)|new Date\(/.test(bloco),
+      `${acao}: sorteio, hash e prazo são do banco, não da edge`);
+  }
+});
+
+test('⚠️ as ações que já existiam não mudaram de rpc', () => {
+  // A tarefa da transferência acrescenta; não mexe no que está no ar.
+  const antigas = {
+    criar: 'vessel_conta_criar', entrar: 'vessel_conta_entrar',
+    eu: 'vessel_conta_da_sessao', sair: 'vessel_conta_sair',
+    editar: 'vessel_conta_editar', 'minhas-pecas': 'vessel_minhas_pecas',
+  };
+  for (const [acao, rpc] of Object.entries(antigas)) {
+    assert.ok(blocoDaAcao(FONTE, acao).includes(`rpc('${rpc}'`),
+      `a ação ${acao} deixou de chamar ${rpc}`);
   }
 });
 

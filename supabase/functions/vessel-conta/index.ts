@@ -178,5 +178,68 @@ Deno.serve(async (req) => {
     return responder(data ?? { ok: false, motivo: 'falhou' });
   }
 
+  // ══════════════════════════════════════════════════════════════════════════
+  // TRANSFERÊNCIA DE PROPRIEDADE (18/09/2026)
+  // Desenho: docs/superpowers/specs/2026-09-18-transferencia-de-propriedade-design.md
+  // Banco:   db/migrations/2026-09-18-zzzzz-vessel-transferencia-de-propriedade.sql
+  //
+  // ⚠️ A EDGE NÃO DECIDE NADA AQUI. O sorteio do código, o hash, o prazo de 7
+  // dias, o teto de 5 tentativas por peça a cada 24h e a conferência de quem é
+  // a dona moram TODOS no banco. Uma Edge Function não guarda estado entre
+  // chamadas — um contador em variável JavaScript não seguraria nada, e a
+  // trava pareceria existir sem existir. Aqui só se repassa.
+  //
+  // ⚠️ O CÓDIGO DE 6 DÍGITOS NUNCA VAI PARA LOG, e sai numa resposta só: a de
+  // sucesso de `transferir-gerar`. Ele vale por uma bolsa — é a mesma regra da
+  // senha, e há teste em porta.test.mjs para as duas coisas.
+  //
+  // Motivos de recusa que atravessam do banco para a página, sem tradução:
+  // `sem_sessao`, `nao_e_sua`, `sua_ja`, `codigo_invalido`, `muitas_tentativas`,
+  // `fora_do_teste` (fase de ensaio) — e `falhou`, que é desta edge.
+  if (corpo.acao === 'transferir-gerar') {
+    const { data, error } = await sb.rpc('vessel_transferencia_gerar', {
+      p_token: corpo.token, p_codigo: corpo.codigo,
+    });
+    if (error) {
+      console.error('vessel_transferencia_gerar', error.message);
+      return responder({ ok: false, motivo: 'falhou' });
+    }
+    return responder(data ?? { ok: false, motivo: 'falhou' });
+  }
+
+  if (corpo.acao === 'transferir-aberta') {
+    const { data, error } = await sb.rpc('vessel_transferencia_aberta', {
+      p_token: corpo.token, p_codigo: corpo.codigo,
+    });
+    if (error) {
+      console.error('vessel_transferencia_aberta', error.message);
+      return responder({ ok: false, motivo: 'falhou' });
+    }
+    return responder(data ?? { ok: false, motivo: 'falhou' });
+  }
+
+  if (corpo.acao === 'transferir-cancelar') {
+    const { data, error } = await sb.rpc('vessel_transferencia_cancelar', {
+      p_token: corpo.token, p_codigo: corpo.codigo,
+    });
+    if (error) {
+      console.error('vessel_transferencia_cancelar', error.message);
+      return responder({ ok: false, motivo: 'falhou' });
+    }
+    return responder(data ?? { ok: false, motivo: 'falhou' });
+  }
+
+  if (corpo.acao === 'transferir-aceitar') {
+    const { data, error } = await sb.rpc('vessel_transferencia_aceitar', {
+      p_token: corpo.token, p_codigo: corpo.codigo,
+      p_codigo_transferencia: corpo.codigo_transferencia,
+    });
+    if (error) {
+      console.error('vessel_transferencia_aceitar', error.message);
+      return responder({ ok: false, motivo: 'falhou' });
+    }
+    return responder(data ?? { ok: false, motivo: 'falhou' });
+  }
+
   return responder({ ok: false, motivo: 'acao_desconhecida' }, 400);
 });
