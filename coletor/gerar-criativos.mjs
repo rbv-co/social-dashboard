@@ -16,6 +16,7 @@ import { renderPNG, fecharRender } from './lib/render-criativo.mjs';
 import { TEMPLATES, DIM } from './templates-criativos/templates.mjs';
 import { variacoesProduto, variacoesPromo, precoDePor, parcelado } from './lib/criativo-modelo.mjs';
 import { gerarLookIA, IA_LOOKS } from './hero-ia/hero-ia.mjs';
+import { pilulaDeGarantiaDoSku } from './hero-ia/texto-da-garantia.mjs';
 import { gerarCopysProduto, gerarCopyPromo } from './lib/copy-efeito.mjs';
 import { carregarMarcasELojas } from './lib/config-lojas.mjs';
 import { carregarObjetivos, mapaObjetivo, looksDoObjetivo } from './lib/objetivos.mjs';
@@ -350,6 +351,11 @@ export async function run({
     if (heroIaLooks.length && !DRY && foto) {
       const pct = cand.pct ?? campanha.desconto_pct ?? 0;
       const pp = precoDePor(cand.preco, pct);
+      // Pílula de garantia (decisão do dono, 18/09/2026): pelo material do LOTE mais
+      // recente do SKU (canvas 2 anos, couro 6 meses). Sem material, ou se a busca
+      // falhar (rede/banco), sai `null` e a arte é gerada SEM pílula — nunca chuta
+      // "2 anos". Ver coletor/hero-ia/texto-da-garantia.mjs.
+      const garantiaTexto = await pilulaDeGarantiaDoSku(cand.sku, sbGet);
       const dados = {
         name: String(copyInfo.nome || cand.nome || cand.sku).toUpperCase(),
         camp: 'NOVA COLEÇÃO', tagline: 'ELEGÂNCIA ATEMPORAL',
@@ -358,6 +364,7 @@ export async function run({
         preco_de: cand.preco, preco_por: pp.porNum,
         modeloFotoUrl: mapaModelo[cand.sku] || null, // foto REAL da modelo+bolsa (acervo); looks de modelo
         // IA só rodam com ela — a imagem da modelo não pode ser gerada por IA. Sem ela: só looks de bolsa.
+        garantiaTexto,
       };
       for (const lk of heroIaLooks) {
         try {
