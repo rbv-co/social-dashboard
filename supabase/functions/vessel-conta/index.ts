@@ -4,7 +4,17 @@
 // A página pública chama AQUI, com a chave anônima. As funções `vessel_conta_*`
 // não são concedidas a `anon`: só esta edge as chama, com a chave de serviço.
 //
-// ⚠️ A SENHA GERADA SÓ SAI POR E-MAIL. A resposta devolve o e-mail mascarado.
+// ⚠️ A SENHA GERADA SAI POR E-MAIL SEMPRE, e na tela SÓ NA CRIAÇÃO QUE DEU CERTO.
+// Pedido do dono (18/09/2026): ao criar a conta, a página mostra a senha na
+// hora, com botão de copiar, para a cliente entrar sem abrir o e-mail. Por
+// isso a resposta de SUCESSO de "criar" traz `senha` — e é a ÚNICA resposta
+// desta edge que traz. "esqueci" continua SÓ por e-mail: ali o e-mail é a
+// prova de quem é; devolver a senha na tela entregaria a conta a quem só
+// sabe o CPF ou o e-mail de outra pessoa. Há teste em porta.test.mjs que
+// reprova `senha` em qualquer outra resposta.
+//
+// ⚠️ A senha nunca vai para log: nenhum console.* desta edge recebe a
+// resposta nem a senha — só o nome do rpc e a mensagem do Postgres.
 //
 // ⚠️ UMA EDGE SÓ, e não seis como a spec original desenhou. Publicar edge é o
 // ponto frágil deste projeto (mais de uma pessoa publica, e quem publica por
@@ -56,11 +66,19 @@ Deno.serve(async (req) => {
     const enviou = await mandarEmail(data.email, textoDoPrimeiroAcesso(corpo.nome, senha));
     // ⚠️ E-mail que não sai deixaria a cliente com perfil e sem senha. Nesse
     // caso a conta é apagada e ela tenta de novo, em vez de ficar travada.
+    //
+    // ⚠️ CONTINUA ASSIM MESMO COM A SENHA NA TELA (decisão de 18/09/2026). Se
+    // o e-mail não saiu, a senha NÃO é mostrada: a conta é apagada e a
+    // resposta é erro. Senão nasceria uma conta cujo e-mail nunca funcionou —
+    // e o "esqueci a senha" dela manda justamente para esse e-mail.
     if (!enviou) {
-      await sb.rpc('vessel_conta_apagar_recem_criada', { p_cliente_id: data.cliente_id });
+      const { error: erroApagar } = await sb.rpc('vessel_conta_apagar_recem_criada', {
+        p_cliente_id: data.cliente_id });
+      if (erroApagar) console.error('vessel_conta_apagar_recem_criada', erroApagar.message);
       return responder({ ok: false, motivo: 'email_nao_saiu' });
     }
-    return responder({ ok: true, email_mascarado: mascararEmail(data.email) });
+    // A única resposta com a senha: conta criada E e-mail entregue ao ZeptoMail.
+    return responder({ ok: true, email_mascarado: mascararEmail(data.email), senha });
   }
 
   if (corpo.acao === 'entrar') {

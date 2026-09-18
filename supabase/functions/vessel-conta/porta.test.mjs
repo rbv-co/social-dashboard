@@ -40,26 +40,69 @@ function chamadasDeResponder(fonte) {
   return chamadas;
 }
 
-test('⚠️ a edge NUNCA devolve a senha gerada para a página', () => {
-  // A senha vai por e-mail, e só. Devolvê-la no JSON deixaria a senha no
-  // histórico do navegador e em qualquer registro de rede pelo caminho.
+// Isola o bloco de uma ação: do próprio `if` até o próximo `if (corpo.acao ===`.
+function blocoDaAcao(fonte, acao) {
+  const inicio = fonte.indexOf(`corpo.acao === '${acao}'`);
+  assert.ok(inicio > -1, `não achei o bloco da ação ${acao}`);
+  const resto = fonte.slice(inicio);
+  const proximoIf = resto.indexOf('corpo.acao ===', 1);
+  return proximoIf > -1 ? resto.slice(0, proximoIf) : resto;
+}
+const levaSenha = (chamada) => /\bsenha\s*[,:}]/.test(chamada);
+
+test('⚠️ a senha só volta para a página numa resposta: a de SUCESSO de "criar"', () => {
+  // Pedido do dono (18/09/2026): mostrar a senha na tela ao criar a conta.
+  // Até então nenhuma resposta podia levar `senha`; agora UMA pode, e só ela.
   //
-  // A forma ingênua do brief (`/senha:\s*senha/` no ARQUIVO INTEIRO) dá FALSO
-  // POSITIVO: ela também casa com `p_senha: senha`, que é a passagem legítima
-  // da senha gerada como PARÂMETRO DO RPC (`vessel_conta_criar` e
-  // `vessel_conta_nova_senha` recebem a senha para gravar o hash — a edge
-  // TEM de mandar isso para o banco). Aquele regex reprovava a edge correta.
-  //
-  // A prova de verdade é isolar só o que vai para `responder(...)` — que é o
-  // JSON que sai para a página — e checar que a chave `senha` não aparece
-  // ali. O parâmetro do rpc fica de fora porque nunca está dentro de uma
-  // chamada a `responder(`. E a chamada é lida INTEIRA (ver
-  // `chamadasDeResponder` acima), não só até o primeiro `)`.
-  const chamadas = chamadasDeResponder(FONTE);
-  assert.ok(chamadas.length > 0, 'não achei nenhuma chamada a responder() no arquivo');
-  for (const chamada of chamadas) {
-    assert.ok(!/\bsenha\s*[,:]/.test(chamada),
-      `a resposta não pode conter a senha em claro: ${chamada}`);
+  // `p_senha: senha` (o parâmetro do rpc que grava o hash) nunca está dentro
+  // de `responder(`, por isso não conta. E a chamada é lida INTEIRA (ver
+  // `chamadasDeResponder`), não só até o primeiro `)` — o caso real de
+  // `mascararEmail(data.email), senha` é exatamente o que o regex ingênuo
+  // deixava passar.
+  const comSenha = chamadasDeResponder(FONTE).filter(levaSenha);
+  assert.equal(comSenha.length, 1, `esperava UMA resposta com senha, achei: ${comSenha.join(' | ')}`);
+  assert.match(comSenha[0], /ok:\s*true/, 'a resposta com senha tem de ser a de sucesso');
+
+  const criar = chamadasDeResponder(blocoDaAcao(FONTE, 'criar')).filter(levaSenha);
+  assert.equal(criar.length, 1, 'a resposta com senha tem de estar no bloco de "criar"');
+});
+
+test('⚠️ nenhuma outra ação devolve senha — "esqueci" continua SÓ por e-mail', () => {
+  // Em "esqueci" o e-mail é a prova de quem é: devolver a senha na tela
+  // entregaria a conta a quem só sabe o CPF ou o e-mail de outra pessoa.
+  for (const acao of ['entrar', 'eu', 'sair', 'esqueci', 'editar', 'minhas-pecas']) {
+    for (const chamada of chamadasDeResponder(blocoDaAcao(FONTE, acao))) {
+      assert.ok(!levaSenha(chamada), `a ação ${acao} não pode devolver senha: ${chamada}`);
+    }
+  }
+});
+
+test('⚠️ "criar" só mostra a senha DEPOIS de o e-mail sair; se não saiu, apaga a conta e responde erro', () => {
+  const bloco = blocoDaAcao(FONTE, 'criar');
+  const envio = bloco.indexOf('await mandarEmail(');
+  const falhou = bloco.indexOf('if (!enviou)');
+  const apaga = bloco.indexOf("rpc('vessel_conta_apagar_recem_criada'");
+  const erro = bloco.indexOf("motivo: 'email_nao_saiu'");
+  const comSenha = chamadasDeResponder(bloco).find(levaSenha);
+  const posSenha = bloco.indexOf(comSenha);
+  assert.ok(envio > -1 && falhou > envio, 'o envio do e-mail tem de ser conferido');
+  assert.ok(apaga > falhou && erro > apaga, 'e-mail que não sai: apaga a conta recém-criada e responde erro');
+  assert.ok(posSenha > erro, 'a senha só pode sair depois do desvio de "e-mail não saiu"');
+  // O desvio de erro não pode levar a senha.
+  const desvio = bloco.slice(falhou, posSenha);
+  for (const chamada of chamadasDeResponder(desvio)) {
+    assert.ok(!levaSenha(chamada), `o desvio de e-mail que falhou não pode levar a senha: ${chamada}`);
+  }
+});
+
+test('⚠️ a senha nunca vai para log', () => {
+  // Nada de console.log/info/debug/warn nesta edge; console.error leva só o
+  // nome do rpc e a mensagem do Postgres (o teste de rpc abaixo confere o
+  // conteúdo). E nenhum log recebe a resposta, o corpo ou o `data` inteiro.
+  assert.doesNotMatch(FONTE, /console\.(log|info|debug|warn|trace)\s*\(/);
+  for (const log of FONTE.match(/console\.error\([^)]*\)/gs) ?? []) {
+    assert.match(log, /^console\.error\('vessel_[a-z_]+',\s*\w+\.message\)$/,
+      `log fora do formato (nome do rpc, mensagem do erro): ${log}`);
   }
 });
 
