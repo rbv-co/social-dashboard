@@ -19,7 +19,7 @@
         <section class="fc-cartao card-base">
           <h2 class="fc-titulo-secao">Mais adicionados ao carrinho</h2>
           <p v-if="carregando" class="fc-carregando">Carregando…</p>
-          <p v-else-if="!maisAdicionados.length" class="fc-vazio">Nenhum produto adicionado ao carrinho neste período.</p>
+          <p v-else-if="!erro && !maisAdicionados.length" class="fc-vazio">Nenhum produto adicionado ao carrinho neste período.</p>
           <table v-else class="fc-tabela">
             <thead><tr><th>Produto</th><th>Vezes adicionado</th></tr></thead>
             <tbody>
@@ -34,7 +34,7 @@
         <section class="fc-cartao card-base">
           <h2 class="fc-titulo-secao">Mais removidos do carrinho</h2>
           <p v-if="carregando" class="fc-carregando">Carregando…</p>
-          <p v-else-if="!maisRemovidos.length" class="fc-vazio">Nenhum produto removido do carrinho neste período.</p>
+          <p v-else-if="!erro && !maisRemovidos.length" class="fc-vazio">Nenhum produto removido do carrinho neste período.</p>
           <table v-else class="fc-tabela">
             <thead><tr><th>Produto</th><th>Vezes removido</th></tr></thead>
             <tbody>
@@ -50,7 +50,7 @@
           <h2 class="fc-titulo-secao">Carrinhos abandonados antes do checkout</h2>
           <p class="fc-explicacao">Teve produto adicionado, nunca chegou a iniciar o checkout, e ficou parado por mais de 30 minutos.</p>
           <p v-if="carregando" class="fc-carregando">Carregando…</p>
-          <p v-else-if="!abandonados.length" class="fc-vazio">Nenhum carrinho abandonado neste período.</p>
+          <p v-else-if="!erro && !abandonados.length" class="fc-vazio">Nenhum carrinho abandonado neste período.</p>
           <table v-else class="fc-tabela">
             <thead><tr><th>Carrinho iniciado em</th><th>Última movimentação</th></tr></thead>
             <tbody>
