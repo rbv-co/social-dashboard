@@ -135,8 +135,23 @@ CAMINHOS TENTADOS E DESCARTADOS (fica registrado pra ninguém repetir):
 
 A tela é SÓ DE LEITURA, com duas abas: Visão geral (três blocos — mais
 adicionados, mais removidos, carrinhos abandonados) e Registros (tabela
-crua de cada evento) — filtro de período (7D/14D/30D) no topo, vale pras
-duas abas.
+crua de cada evento, agrupável — ver abaixo) — filtro de período
+(7D/14D/30D) no topo, vale pras duas abas.
+
+AGRUPAMENTO DA ABA REGISTROS: por cart_token, NÃO por session_id (decisão
+de 18/09/2026, depois de achar ao vivo que agrupar por sessão não fechava
+a conta). session_id (cookie _shopify_s) é o cookie MAIS FRÁGIL que existe
+— navegador de privacidade (Brave, etc.) apaga ele por ser visto como
+rastreamento, e a MESMA visita vira duas "sessões" sem aviso nenhum.
+cart_token é o cookie MAIS RESISTENTE — sem ele o checkout não funciona,
+então nenhum navegador ousa bloqueá-lo. Por isso agregacoes-carrinho.js
+tem `agruparPorCarrinho`, não mais `agruparPorSessao`: carrinho com mais
+de um evento vira uma linha "▸ Carrinho" expansível, mostrando
+adicionado/removido/checkout daquele carrinho em ordem, MESMO que os
+eventos tenham session_id diferente entre si ou nenhum (o checkout do
+webhook nunca tem session_id, e ainda assim entra no grupo certo pelo
+cart_token). `sessao_iniciada` nunca tem cart_token — continua como
+número solto de "entrada", sem tentar ser a cola de nada.
 
 FORA DO MVP (de propósito, ver spec §2 e §9):
 - Evento "carrinho visualizado" (Shopify não garante).

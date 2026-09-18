@@ -78,31 +78,31 @@
           <div v-else class="fc-tabela-scroll"><table class="fc-tabela">
             <thead><tr><th>Data/hora</th><th>Tipo</th><th>Produto</th><th>Qtd.</th><th>Preço</th><th>Carrinho</th><th>Sessão</th></tr></thead>
             <tbody>
-              <template v-for="r in registros" :key="r.agrupado ? r.session_id : r.id">
-                <tr v-if="r.agrupado" class="fc-linha-sessao" @click="alternarSessao(r.session_id)">
+              <template v-for="r in registros" :key="r.agrupado ? r.cart_token : r.id">
+                <tr v-if="r.agrupado" class="fc-linha-sessao" @click="alternarCarrinho(r.cart_token)">
                   <td>{{ formatarData(r.eventos[0].criado_em) }}</td>
                   <td>
                     <button
                       type="button" class="fc-expandir"
-                      :aria-expanded="sessoesAbertas.has(r.session_id)"
-                      @click.stop="alternarSessao(r.session_id)"
-                    ><span class="fc-seta" :class="{ 'fc-seta-aberta': sessoesAbertas.has(r.session_id) }">▸</span> {{ TIPO_LABEL[r.eventos[0].tipo] || r.eventos[0].tipo }}</button>
+                      :aria-expanded="carrinhosAbertos.has(r.cart_token)"
+                      @click.stop="alternarCarrinho(r.cart_token)"
+                    ><span class="fc-seta" :class="{ 'fc-seta-aberta': carrinhosAbertos.has(r.cart_token) }">▸</span> Carrinho</button>
                   </td>
                   <td>{{ r.eventos.length }} evento(s)</td>
                   <td>—</td>
                   <td>—</td>
+                  <td>{{ r.cart_token.slice(0, 8) }}…</td>
                   <td>—</td>
-                  <td>{{ r.session_id.slice(0, 8) }}…</td>
                 </tr>
-                <template v-if="r.agrupado && sessoesAbertas.has(r.session_id)">
+                <template v-if="r.agrupado && carrinhosAbertos.has(r.cart_token)">
                   <tr v-for="ev in r.eventos" :key="ev.id" class="fc-linha-detalhe">
                     <td>{{ formatarData(ev.criado_em) }}</td>
                     <td>{{ TIPO_LABEL[ev.tipo] || ev.tipo }}</td>
                     <td>{{ ev.produto_titulo || '—' }}</td>
                     <td>{{ ev.quantidade ?? '—' }}</td>
                     <td>{{ formatarPreco(ev.preco) }}</td>
-                    <td>{{ ev.cart_token ? ev.cart_token.slice(0, 8) + '…' : '—' }}</td>
                     <td></td>
+                    <td>{{ ev.session_id ? ev.session_id.slice(0, 8) + '…' : '—' }}</td>
                   </tr>
                 </template>
                 <tr v-if="!r.agrupado">
@@ -129,7 +129,7 @@ import { useRouter } from 'vue-router'
 import BarraDeTopo from '../../compartilhado/barra-de-topo.vue'
 import { sbClient } from '../../compartilhado/conectar-no-banco-de-dados.js'
 import { diasAtras } from '../../compartilhado/datas.js'
-import { rankearProdutos, ordenarAbandonados, foiCortado, agruparPorSessao, LIMITE_CARRINHO } from './agregacoes-carrinho.js'
+import { rankearProdutos, ordenarAbandonados, foiCortado, agruparPorCarrinho, LIMITE_CARRINHO } from './agregacoes-carrinho.js'
 
 const router = useRouter()
 const voltar = () => router.push({ name: 'inicio' })
@@ -156,13 +156,13 @@ const maisAdicionados = ref([])
 const maisRemovidos = ref([])
 const abandonados = ref([])
 const registros = ref([])
-const sessoesAbertas = ref(new Set())
+const carrinhosAbertos = ref(new Set())
 
-function alternarSessao(sessionId) {
-  const novo = new Set(sessoesAbertas.value)
-  if (novo.has(sessionId)) novo.delete(sessionId)
-  else novo.add(sessionId)
-  sessoesAbertas.value = novo
+function alternarCarrinho(cartToken) {
+  const novo = new Set(carrinhosAbertos.value)
+  if (novo.has(cartToken)) novo.delete(cartToken)
+  else novo.add(cartToken)
+  carrinhosAbertos.value = novo
 }
 
 function formatarData(iso) {
@@ -184,7 +184,7 @@ async function carregar() {
   maisRemovidos.value = []
   abandonados.value = []
   registros.value = []
-  sessoesAbertas.value = new Set()
+  carrinhosAbertos.value = new Set()
   const desde = `${diasAtras(periodoAtivo.value)}T00:00:00-03:00`
 
   const [adicionados, removidos, carrinhosAbandonados, eventosCrus] = await Promise.all([
@@ -205,7 +205,7 @@ async function carregar() {
   maisAdicionados.value = rankearProdutos(adicionados.data)
   maisRemovidos.value = rankearProdutos(removidos.data)
   abandonados.value = ordenarAbandonados(carrinhosAbandonados.data)
-  registros.value = agruparPorSessao(eventosCrus.data)
+  registros.value = agruparPorCarrinho(eventosCrus.data)
   carregando.value = false
 }
 

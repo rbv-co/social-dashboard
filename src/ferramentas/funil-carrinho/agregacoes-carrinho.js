@@ -42,39 +42,47 @@ export function ordenarAbandonados(linhas) {
 }
 
 /**
- * Agrupa os registros crus por session_id, pra tela de Registros mostrar
- * "sessão iniciada" como uma linha só, expansível, com o que aconteceu
- * dentro dela por baixo — em vez de uma lista solta sem narrativa.
+ * Agrupa os registros crus por cart_token, pra tela de Registros mostrar a
+ * vida de um carrinho como uma linha só, expansível — em vez de uma lista
+ * solta sem narrativa.
+ *
+ * ⚠️ Agrupa por cart_token, NÃO por session_id — decisão de 18/09/2026.
+ * session_id (cookie _shopify_s) é o cookie MAIS FRÁGIL que temos: navegador
+ * de privacidade (Brave, etc.) apaga ele por ser visto como rastreamento, e
+ * a mesma visita vira duas "sessões" sem aviso. cart_token é o cookie MAIS
+ * RESISTENTE — sem ele o checkout não funciona, então nenhum navegador
+ * ousa bloqueá-lo. Por isso o carrinho, não a sessão, é a cola confiável
+ * pra juntar adicionado → removido → checkout de uma mesma pessoa.
+ * `sessao_iniciada` nunca tem cart_token (ainda não existe carrinho na
+ * entrada) — por isso nunca agrupa, fica como número solto de "entrada".
  *
  * Regras:
- * - Sem session_id (ex.: checkout_iniciado vindo do webhook, que não sabe o
- *   cookie do navegador) nunca agrupa — vira linha solta, como hoje.
- * - Sessão com um evento só (ex.: entrou e não fez mais nada) também não
- *   vira grupo — não tem o que expandir.
+ * - Sem cart_token nunca agrupa — vira linha solta.
+ * - Carrinho com um evento só também não vira grupo — não tem o que expandir.
  * - Dentro do grupo, do mais antigo pro mais novo (é a ordem que a pessoa
- *   viveu: entrou, colocou, tirou, foi pro checkout).
+ *   viveu: adicionou, tirou, foi pro checkout).
  * - A lista inteira ordena pelo evento mais recente de cada item/grupo, do
- *   mais novo pro mais antigo — mesmo critério que a tela já usava.
- * @param {{id:number, criado_em:string, session_id:string|null}[]} linhas
- * @returns {(object|{agrupado:true, session_id:string, criado_em:string, eventos:object[]})[]}
+ *   mais novo pro mais antigo.
+ * @param {{id:number, criado_em:string, cart_token:string|null}[]} linhas
+ * @returns {(object|{agrupado:true, cart_token:string, criado_em:string, eventos:object[]})[]}
  */
-export function agruparPorSessao(linhas) {
-  const porSessao = new Map()
+export function agruparPorCarrinho(linhas) {
+  const porCarrinho = new Map()
   const itens = []
 
   for (const linha of linhas || []) {
-    if (!linha.session_id) { itens.push(linha); continue }
-    if (!porSessao.has(linha.session_id)) porSessao.set(linha.session_id, [])
-    porSessao.get(linha.session_id).push(linha)
+    if (!linha.cart_token) { itens.push(linha); continue }
+    if (!porCarrinho.has(linha.cart_token)) porCarrinho.set(linha.cart_token, [])
+    porCarrinho.get(linha.cart_token).push(linha)
   }
 
-  for (const [session_id, eventos] of porSessao) {
+  for (const [cart_token, eventos] of porCarrinho) {
     if (eventos.length === 1) { itens.push(eventos[0]); continue }
     const ordenados = [...eventos].sort((a, b) => new Date(a.criado_em) - new Date(b.criado_em))
     const maisRecente = ordenados.reduce(
       (max, e) => (new Date(e.criado_em) > new Date(max) ? e.criado_em : max), ordenados[0].criado_em,
     )
-    itens.push({ agrupado: true, session_id, criado_em: maisRecente, eventos: ordenados })
+    itens.push({ agrupado: true, cart_token, criado_em: maisRecente, eventos: ordenados })
   }
 
   return itens.sort((a, b) => new Date(b.criado_em) - new Date(a.criado_em))
