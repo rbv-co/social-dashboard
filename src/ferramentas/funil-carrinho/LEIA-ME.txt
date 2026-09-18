@@ -47,6 +47,20 @@ Como chega o dado (ATUALIZADO 18/09/2026 — terceira tentativa, a que ficou):
   "reload" → add 1 → remove 2 — antes registrava Adicionado 1, 2, Removido
   2 (soma dava 1, carrinho tinha 0, não batia); agora registra Adicionado
   1, 1, Removido 2 (soma bate: 1+1-2=0).
+- ⚠️ BUG REAL ACHADO EM PRODUÇÃO (18/09/2026): o "+"/"-" do carrinho
+  (drawer ou página do carrinho) chama `/cart/change.js`/`update.js`, NÃO
+  `/cart/add.js`. Só tratávamos esses dois endpoints pra detectar
+  DIMINUIÇÃO (via items_removed); clicar "+" no carrinho já existente
+  ficava 100% INVISÍVEL, nunca virava produto_adicionado. Corrigido
+  comparando cada linha do carrinho novo com a última quantidade conhecida
+  (mesmo cache persistido do "adicionar"). Linha desconhecida (nunca vista
+  antes) não inventa um "adicionado" do tamanho todo — fica em silêncio.
+  Testado ao vivo: add 1 → "+" pra 2 → "-" pra 1 → remove — registra
+  Adicionado 1, Adicionado 1, Removido 1, Removido 1 (antes o "+" sumia
+  sem deixar rastro).
+  De brinde, confirmado ao vivo: `items_removed` já reporta o DELTA certo
+  mesmo em diminuição PARCIAL (3→1 reporta quantity:2, não o total antigo)
+  — não precisou de lógica extra pra esse lado, só faltava o aumento.
 - Sem robô de agregação: "abandonado" é a view carrinho_abandonados
   (db/migrations/2026-09-17-carrinho-eventos.sql), calculada na consulta —
   carrinho com produto adicionado, sem checkout iniciado, parado há mais de
@@ -134,24 +148,17 @@ CAMINHOS TENTADOS E DESCARTADOS (fica registrado pra ninguém repetir):
    interceptador do tema.
 
 A tela é SÓ DE LEITURA, com duas abas: Visão geral (três blocos — mais
-adicionados, mais removidos, carrinhos abandonados) e Registros (tabela
-crua de cada evento, agrupável — ver abaixo) — filtro de período
-(7D/14D/30D) no topo, vale pras duas abas.
+adicionados, mais removidos, carrinhos abandonados) e Registros (lista
+crua de cada evento, mais recente primeiro, com coluna de cart_token e de
+session_id) — filtro de período (7D/14D/30D) no topo, vale pras duas abas.
 
-AGRUPAMENTO DA ABA REGISTROS: por cart_token, NÃO por session_id (decisão
-de 18/09/2026, depois de achar ao vivo que agrupar por sessão não fechava
-a conta). session_id (cookie _shopify_s) é o cookie MAIS FRÁGIL que existe
-— navegador de privacidade (Brave, etc.) apaga ele por ser visto como
-rastreamento, e a MESMA visita vira duas "sessões" sem aviso nenhum.
-cart_token é o cookie MAIS RESISTENTE — sem ele o checkout não funciona,
-então nenhum navegador ousa bloqueá-lo. Por isso agregacoes-carrinho.js
-tem `agruparPorCarrinho`, não mais `agruparPorSessao`: carrinho com mais
-de um evento vira uma linha "▸ Carrinho" expansível, mostrando
-adicionado/removido/checkout daquele carrinho em ordem, MESMO que os
-eventos tenham session_id diferente entre si ou nenhum (o checkout do
-webhook nunca tem session_id, e ainda assim entra no grupo certo pelo
-cart_token). `sessao_iniciada` nunca tem cart_token — continua como
-número solto de "entrada", sem tentar ser a cola de nada.
+⚠️ TENTADO E REVERTIDO (18/09/2026): agrupar a aba Registros por
+cart_token (linha "▸ Carrinho" expansível, juntando adicionado/removido/
+checkout de um mesmo carrinho). Chegou a ser implementado, testado a
+375px/1440px e publicado — revertido a pedido do dono no mesmo dia. Fica
+registrado pra não reconstruir sem necessidade; se algum dia fizer sentido
+de novo, o histórico de `agruparPorSessao`/`agruparPorCarrinho` está no
+git log deste arquivo.
 
 FORA DO MVP (de propósito, ver spec §2 e §9):
 - Evento "carrinho visualizado" (Shopify não garante).

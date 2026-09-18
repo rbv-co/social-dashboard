@@ -256,13 +256,32 @@
       return;
     }
 
-    // /cart/change.js e /cart/update.js devolvem o carrinho inteiro, e a
-    // própria Shopify já diz exatamente o que saiu em `items_removed` —
-    // com produto, preço e quantidade prontos. Descoberto testando ao
-    // vivo (18/09/2026): não é documentado nas páginas indexadas, mas
-    // confirmado numa resposta real da loja. Muito mais confiável que
-    // adivinhar pela nossa própria memória de página, que se perde a cada
-    // recarregamento.
+    // ⚠️ AUMENTO via /cart/change.js e /cart/update.js — achado ao vivo,
+    // 18/09/2026: o "+"/"-" do carrinho (drawer/página do carrinho) chama
+    // esses dois endpoints, não /cart/add.js. Só tratávamos diminuição
+    // aqui (por items_removed); clicar "+" no carrinho ficava INVISÍVEL,
+    // nunca virava produto_adicionado. Corrigido comparando cada linha do
+    // carrinho novo com a última quantidade conhecida — mesmo cache
+    // persistido do "adicionar". Se a linha for desconhecida (nunca vista
+    // por um /cart/add.js), não inventa um "adicionado" do tamanho todo —
+    // fica em silêncio, é mais seguro que supor.
+    (respostaJson.items || []).forEach(function (item) {
+      if (item.product_id == null && item.variant_id == null) return;
+      var quantidadeAntiga = achaQuantidadeConhecida(item.key);
+      if (quantidadeAntiga == null) quantidadeAntiga = achaQuantidadeConhecida(item.variant_id);
+      if (quantidadeAntiga == null || item.quantity <= quantidadeAntiga) return;
+      var dadosAdd = linhaParaDados(item);
+      dadosAdd.quantidade = item.quantity - quantidadeAntiga;
+      enviar('produto_adicionado', dadosAdd);
+    });
+
+    // A própria Shopify já diz exatamente o que saiu em `items_removed` —
+    // com produto, preço e quantidade prontos, e reporta o DELTA certo
+    // mesmo em diminuição parcial (testado ao vivo: 3→1 reporta quantity:2,
+    // não o total antigo). Descoberto testando ao vivo (18/09/2026): não é
+    // documentado nas páginas indexadas, mas confirmado numa resposta real
+    // da loja. Muito mais confiável que adivinhar pela nossa própria
+    // memória de página.
     (respostaJson.items_removed || []).forEach(function (item) {
       if (item.product_id == null && item.variant_id == null) return;
       enviar('produto_removido', {
