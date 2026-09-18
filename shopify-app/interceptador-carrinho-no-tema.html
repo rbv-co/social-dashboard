@@ -1,0 +1,176 @@
+<!--
+  INTERCEPTADOR DE CARRINHO — colado direto no tema (layout/theme.liquid),
+  não é Web Pixel/Customer Events. Decisão do dono, 18/09/2026: o Custom
+  Pixel (shopify-app/pixel-custom-colado-no-admin.js) só dispara pra quem
+  aceita cookie de Marketing+Análises — a Shopify exige isso oficialmente
+  pra esse tipo de rastreamento. Rodar dentro do próprio tema não passa por
+  esse gate (decisão de privacidade assumida pela Vessel, não uma escolha
+  técnica) e funciona igual em qualquer tema/app de carrinho, porque todos
+  no fim chamam os mesmos endpoints da Ajax Cart API da Shopify
+  (/cart/add.js, /cart/change.js, /cart/update.js) — confirmado na doc
+  oficial antes de escrever isto: https://shopify.dev/docs/api/ajax/reference/cart.
+
+  ONDE COLAR: dentro de <head>, o quanto antes possível — precisa rodar
+  ANTES de qualquer script do tema que chame o carrinho, senão o fetch já
+  está sendo usado sem o interceptador no lugar. Em
+  layout/theme.liquid, logo depois de <head> (linha 4), antes de qualquer
+  outro <script> (o tema atual, VESSEL BRASIL V1.0 ERICK, carrega
+  vendor.min.js/theme.js como <script type="module">, que são adiados — um
+  <script> comum (sem type="module", sem defer/async) colado antes deles
+  roda primeiro de qualquer forma, mas colar o mais cedo possível é a
+  garantia mais simples de não depender de ordem de execução).
+
+  ATENÇÃO — ATUALIZAÇÃO DE TEMA: isto fica DENTRO do código do tema. Se um
+  dia o tema for trocado ou "resetado" a partir de um tema novo (não uma
+  edição no editor visual, que preserva o código), este bloco some junto,
+  silenciosamente. Quem for trocar de tema precisa colar isto de novo.
+-->
+<script>
+(function () {
+  var URL_DA_EDGE = 'https://kounqtdoioootxqegkij.supabase.co/functions/v1/capturar-evento-carrinho';
+
+  function enviar(tipo, dados) {
+    try {
+      fetch(URL_DA_EDGE, {
+        method: 'POST',
+        body: JSON.stringify(Object.assign({ tipo: tipo }, dados)),
+      }).catch(function () {
+        // Falha de rede nunca pode aparecer pro cliente — é telemetria, não
+        // é o fluxo de compra. Silenciada de propósito.
+      });
+    } catch (e) {}
+  }
+
+  // A Ajax Cart API devolve preço em CENTAVOS (confirmado na doc: "price":
+  // 900 = R$9,00) — nossa coluna `preco` é decimal, por isso a divisão.
+  function linhaParaDados(item) {
+    return {
+      produto_id: item.product_id != null ? String(item.product_id) : null,
+      // `product_title` confirmado numa resposta real da loja (18/09/2026)
+      // — mais limpo que `title`, que combina "Produto - Variante".
+      // Fallback pra `title` só se algum dia vier ausente.
+      produto_titulo: item.product_title || item.title || null,
+      variante_id: item.variant_id != null ? String(item.variant_id) : null,
+      quantidade: item.quantity,
+      preco: item.price != null ? item.price / 100 : null,
+    };
+  }
+
+  // Cache da última foto conhecida do carrinho, pra saber QUAL produto
+  // saiu quando o pedido de mudança só manda "linha X, quantidade 0" (a
+  // resposta depois da mudança não tem mais a linha nenhuma). Chave =
+  // `key` da linha (estável dentro da sessão) e, como reforço, o
+  // variant_id (menos preciso: duas linhas podem repetir variant_id com
+  // propriedades diferentes — pega a primeira nesse caso).
+  var carrinhoConhecidoPorChave = {};
+  var carrinhoConhecidoPorVariante = {};
+  function atualizarCache(dadoDoCarrinho) {
+    var novo = {};
+    var novoPorVariante = {};
+    (dadoDoCarrinho.items || []).forEach(function (item) {
+      novo[item.key] = item;
+      if (!(item.variant_id in novoPorVariante)) novoPorVariante[item.variant_id] = item;
+    });
+    carrinhoConhecidoPorChave = novo;
+    carrinhoConhecidoPorVariante = novoPorVariante;
+  }
+
+  function achaLinhaConhecida(idDoPedido) {
+    if (idDoPedido == null) return null;
+    return carrinhoConhecidoPorChave[idDoPedido] || carrinhoConhecidoPorVariante[idDoPedido] || null;
+  }
+
+  var fetchOriginal = window.fetch;
+  window.fetch = function (entrada, opcoes) {
+    var url = typeof entrada === 'string' ? entrada : (entrada && entrada.url) || '';
+    var metodo = ((opcoes && opcoes.method) || (entrada && entrada.method) || 'GET').toUpperCase();
+    var promessa = fetchOriginal.apply(this, arguments);
+
+    if (metodo !== 'POST') return promessa;
+
+    var ehAdd = /\/cart\/add(\.js)?(\?|$)/.test(url);
+    var ehChange = /\/cart\/change(\.js)?(\?|$)/.test(url);
+    var ehUpdate = /\/cart\/update(\.js)?(\?|$)/.test(url);
+    if (!ehAdd && !ehChange && !ehUpdate) return promessa;
+
+    var corpoDoPedido = null;
+    try {
+      var corpoBruto = opcoes && opcoes.body;
+      if (typeof corpoBruto === 'string') corpoDoPedido = JSON.parse(corpoBruto);
+    } catch (e) {
+      // ponytail: corpo enviado como FormData (não string JSON) não é
+      // lido aqui — a maioria dos temas modernos manda JSON; se algum dia
+      // isto passar a perder eventos de remoção, é o primeiro lugar a
+      // olhar.
+    }
+
+    if (ehAdd) {
+      promessa.then(function (resposta) {
+        resposta.clone().json().then(function (dado) {
+          var itens = dado.items ? dado.items : [dado];
+          itens.forEach(function (item) {
+            enviar('produto_adicionado', Object.assign({ cart_token: dado.token || null }, linhaParaDados(item)));
+          });
+          // A resposta de /cart/add.js não é o carrinho inteiro — não dá
+          // pra atualizar o cache com ela (ficaria com só o item novo).
+        }).catch(function () {});
+      }).catch(function () {});
+      return promessa;
+    }
+
+    if (ehChange && corpoDoPedido && Number(corpoDoPedido.quantity) === 0) {
+      var idAlvo = corpoDoPedido.id;
+      var linhaAntiga = achaLinhaConhecida(idAlvo);
+      promessa.then(function (resposta) {
+        resposta.clone().json().then(function (cart) {
+          var dadosDaLinha = linhaAntiga ? linhaParaDados(linhaAntiga) : {};
+          enviar('produto_removido', Object.assign({ cart_token: cart.token || null }, dadosDaLinha));
+          atualizarCache(cart);
+        }).catch(function () {});
+      }).catch(function () {});
+      return promessa;
+    }
+
+    if (ehUpdate && corpoDoPedido && corpoDoPedido.updates) {
+      var chavesZeradas = Object.keys(corpoDoPedido.updates).filter(function (chave) {
+        return Number(corpoDoPedido.updates[chave]) === 0;
+      });
+      if (chavesZeradas.length) {
+        promessa.then(function (resposta) {
+          resposta.clone().json().then(function (cart) {
+            chavesZeradas.forEach(function (chave) {
+              var linhaAntiga = achaLinhaConhecida(chave);
+              var dadosDaLinha = linhaAntiga ? linhaParaDados(linhaAntiga) : {};
+              enviar('produto_removido', Object.assign({ cart_token: cart.token || null }, dadosDaLinha));
+            });
+            atualizarCache(cart);
+          }).catch(function () {});
+        }).catch(function () {});
+        return promessa;
+      }
+    }
+
+    // Mudança de quantidade que NÃO é remoção (aumentou, ou diminuiu sem
+    // zerar): não gera evento — fora do escopo do MVP (só entrada e saída
+    // total do carrinho) — mas atualiza o cache mesmo assim, pra próxima
+    // remoção continuar sabendo o que tinha.
+    if (ehChange || ehUpdate) {
+      promessa.then(function (resposta) {
+        resposta.clone().json().then(function (cart) { atualizarCache(cart); }).catch(function () {});
+      }).catch(function () {});
+    }
+
+    return promessa;
+  };
+
+  // checkout iniciado: não é uma chamada de carrinho, é navegação de
+  // página — dispara uma vez por sessão de navegador ao chegar em /checkout.
+  if (window.location.pathname.indexOf('/checkout') === 0) {
+    var jaMandouChave = 'rbv_checkout_iniciado_enviado';
+    if (!sessionStorage.getItem(jaMandouChave)) {
+      sessionStorage.setItem(jaMandouChave, '1');
+      enviar('checkout_iniciado', {});
+    }
+  }
+})();
+</script>
