@@ -83,6 +83,16 @@ Como chega o dado (ATUALIZADO 18/09/2026 — terceira tentativa, a que ficou):
   existirem — ver db/migrations/2026-09-18-carrinho-eventos-fbp-fbc.sql.
   Quem não veio do Meta grava os dois como null e segue identificado pelo
   session_id/cart_token.
+  ⚠️ ATUALIZADO 18/09/2026 — reforço pra quem bloqueia o Pixel do Meta
+  (Brave bloqueia o script dele por padrão, então `_fbc` nunca nasce como
+  cookie pra esse visitante): `fbclid` vem na PRÓPRIA URL de quem clicou no
+  anúncio, não é cookie, nenhum navegador filtra isso. Guardamos uma versão
+  própria (`fb.1.<timestamp>.<fbclid>`, formato que o próprio Meta
+  recomenda pra quem constrói isso na mão) em localStorage assim que a URL
+  de entrada tem `fbclid` — o cookie de verdade do Pixel, quando existe,
+  continua sendo preferido; a reserva só entra quando ele falta. Testado
+  ao vivo: sem o Pixel ainda ter carregado, usa a reserva; assim que o
+  Pixel real seta o cookie, passa a usar o de verdade.
 
 WEBHOOK NATIVO DA SHOPIFY (18/09/2026) — supabase/functions/receber-webhook-checkout:
 - Recebe o webhook `checkouts/create` que a PRÓPRIA Shopify dispara quando

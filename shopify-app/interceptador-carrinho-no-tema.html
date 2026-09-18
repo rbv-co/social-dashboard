@@ -82,6 +82,32 @@
     return m ? decodeURIComponent(m[1]) : null;
   }
 
+  // fbclid vem na PRÓPRIA URL de quem clicou num anúncio do Meta — não é
+  // cookie, nenhum navegador filtra isso (senão link nenhum funcionaria).
+  // Serve de reforço quando o Pixel do Meta nem chega a rodar (bloqueado
+  // por navegador/extensão de privacidade — Brave bloqueia o script dele
+  // por padrão) e por isso _fbc nunca nasce como cookie. Formato imitando
+  // o do próprio _fbc (recomendado pelo Meta pra quem constrói esse valor
+  // na mão): fb.1.<timestamp>.<fbclid>. Guardado em localStorage porque o
+  // fbclid só aparece na URL da página de entrada — sem persistir, some na
+  // primeira navegação interna, antes de qualquer ação de carrinho.
+  var CHAVE_FBC_RESERVA = 'rbv_fbc_reserva';
+  (function () {
+    var fbclid = new URLSearchParams(window.location.search).get('fbclid');
+    if (fbclid) {
+      try { localStorage.setItem(CHAVE_FBC_RESERVA, 'fb.1.' + Date.now() + '.' + fbclid); } catch (e) {}
+    }
+  })();
+
+  function pegarFbc() {
+    // O cookie de verdade do Pixel do Meta, quando existe, é a fonte
+    // preferida (mais completa); a reserva de localStorage é só pra quem
+    // bloqueou o Pixel mas ainda assim veio de um clique de anúncio.
+    var doCookie = pegarCookie('_fbc');
+    if (doCookie) return doCookie;
+    try { return localStorage.getItem(CHAVE_FBC_RESERVA); } catch (e) { return null; }
+  }
+
   function enviar(tipo, dados) {
     try {
       var base = {
@@ -94,7 +120,7 @@
         // checkout na mesma sessão.
         session_id: pegarCookie('_shopify_s'),
         fbp: pegarCookie('_fbp'),
-        fbc: pegarCookie('_fbc'),
+        fbc: pegarFbc(),
       };
       fetch(URL_DA_EDGE, {
         method: 'POST',
