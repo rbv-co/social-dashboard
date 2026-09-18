@@ -6,6 +6,7 @@ import {
   seguidoresTotalNaHora, seguidoresNoDia, visitasPerfilNaHora, gastoSeguidoresNoDia, visitasPerfilNoDia,
   seguidoresNoPeriodo, visitasPerfilNoPeriodo, seguidoresTotalNoFimDoDia, visitasPerfilNoPeriodoComCache,
   montarMensagemLeadsFechamentoDia, montarMensagemSeguidoresFechamentoDia, classificarLinkAnuncio,
+  agruparAnunciosPorDiaEHora, anunciosPorCategoria,
 } from './relatorio-por-hora.js';
 
 test('custoPorLead divide gasto por conversas', () => {
@@ -560,4 +561,42 @@ test('classificarLinkAnuncio: domínio desconhecido e ausência de link viram nu
 
 test('classificarLinkAnuncio: URL malformada não quebra, vira null', () => {
   assert.equal(classificarLinkAnuncio('não é url'), null);
+});
+
+test('agruparAnunciosPorDiaEHora: agrupa por dia/hora, granularidade é ad_id (não campaign_id)', () => {
+  const linhas = [
+    { dia: '2026-09-18', hora: 9, ad_id: 'a1', campaign_id: 'c1', gasto_hora: 10, cliques_hora: 2 },
+    { dia: '2026-09-18', hora: 9, ad_id: 'a2', campaign_id: 'c1', gasto_hora: 5, cliques_hora: 0 },
+  ];
+  const out = agruparAnunciosPorDiaEHora(linhas, { a1: 'Anúncio A', a2: 'Anúncio B' }, { a1: 'https://vesselbrasil.com.br/', a2: 'https://vesselbrasil.com.br/universovessel#narrativa' });
+  assert.equal(out.length, 1);
+  assert.equal(out[0].horas[0].anuncios.length, 2, 'dois anúncios da MESMA campanha não se misturam numa linha só');
+  assert.deepEqual(out[0].horas[0].anuncios.map((a) => a.adId).sort(), ['a1', 'a2']);
+  assert.equal(out[0].horas[0].gastoTotal, 15);
+  assert.equal(out[0].horas[0].cliquesTotal, 2);
+});
+
+test('agruparAnunciosPorDiaEHora: custoPorClique null sem clique, nome cai pro próprio ad_id sem mapa', () => {
+  const linhas = [{ dia: '2026-09-18', hora: 9, ad_id: 'a9', campaign_id: 'c1', gasto_hora: 30, cliques_hora: 0 }];
+  const out = agruparAnunciosPorDiaEHora(linhas);
+  const a = out[0].horas[0].anuncios[0];
+  assert.equal(a.nome, 'a9');
+  assert.equal(a.custoPorClique, null);
+  assert.equal(a.destinoLink, null);
+});
+
+test('agruparAnunciosPorDiaEHora: zero linhas não quebra, devolve array vazio', () => {
+  assert.deepEqual(agruparAnunciosPorDiaEHora([]), []);
+});
+
+test('anunciosPorCategoria: recorta certo por sales/leads, link não classificável não entra em nenhuma', () => {
+  const linhas = [
+    { dia: '2026-09-18', hora: 9, ad_id: 'a1', campaign_id: 'c1', gasto_hora: 10, cliques_hora: 2 },
+    { dia: '2026-09-18', hora: 9, ad_id: 'a2', campaign_id: 'c1', gasto_hora: 5, cliques_hora: 1 },
+    { dia: '2026-09-18', hora: 9, ad_id: 'a3', campaign_id: 'c1', gasto_hora: 3, cliques_hora: 0 },
+  ];
+  const links = { a1: 'https://vesselbrasil.com.br/', a2: 'https://vesselbrasil.com.br/universovessel#narrativa', a3: 'https://outraloja.com.br/' };
+  const anuncios = agruparAnunciosPorDiaEHora(linhas, {}, links)[0].horas[0].anuncios;
+  assert.deepEqual(anunciosPorCategoria(anuncios, 'sales').map((a) => a.adId), ['a1']);
+  assert.deepEqual(anunciosPorCategoria(anuncios, 'leads').map((a) => a.adId), ['a2']);
 });
