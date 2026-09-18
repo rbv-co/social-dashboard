@@ -20,19 +20,35 @@
   bloco some junto, silenciosamente — colar de novo.
 
   TESTADO AO VIVO na loja de produção em 18/09/2026 (produto, preço,
-  quantidade e cart_token corretos chegando em carrinho_eventos). Achados
-  reais que moldaram este código, registrados pra ninguém repetir:
+  quantidade e cart_token corretos chegando em carrinho_eventos, incluindo
+  o cenário de adicionar o mesmo produto duas vezes e depois remover
+  tudo). Achados reais que moldaram este código, registrados pra ninguém
+  repetir:
   - A resposta de /cart/add.js pra UM item só NÃO tem campo `token` (só a
     resposta cheia do carrinho tem) — o primeiro código chegou a rejeitar
     TODO evento de "adicionado" em silêncio por causa disso. Corrigido lendo
     o cookie `cart` do navegador, que a Shopify sempre grava, em qualquer
     chamada.
+  - Quando o mesmo produto é adicionado de novo (já estava no carrinho), a
+    Shopify devolve a quantidade TOTAL da linha, não o incremento — sem
+    corrigir isso, "adicionei 1" registrava o total acumulado (ex.: 3→5 em
+    vez de 2). Corrigido comparando com a última quantidade conhecida da
+    linha (cache de página).
+  - A resposta de /cart/change.js e /cart/update.js traz um campo
+    `items_removed`, com o produto INTEIRO de quem saiu (id, título,
+    variante, quantidade, preço) — não documentado nas páginas indexadas,
+    mas confirmado numa resposta real da loja. Muito mais confiável que
+    tentar adivinhar pela nossa própria memória de página (que se perde a
+    cada recarregamento) — por isso o cache só é usado hoje pro cálculo do
+    incremento de "adicionado", não mais pra achar o que foi removido.
+  - ⚠️ Dentro de `items_removed`, o preço vem em REAIS como STRING
+    ("1250.00") — diferente de `items[].price`, que vem em CENTAVOS como
+    número. Duas unidades diferentes na mesma API, mesma resposta.
   - Esta loja tem um app de carrinho de terceiro (nomes "cartbot-*" nas
     chamadas de rede) — coberto interceptando tanto fetch quanto
     XMLHttpRequest, pra não depender de qual biblioteca o app usa por baixo.
   - `product_title` (não `title`, que combina "Produto - Variante") é o
-    nome limpo do produto, confirmado numa resposta real da loja.
-  - A Ajax Cart API devolve preço em CENTAVOS — daí a divisão por 100.
+    nome limpo do produto.
 -->
 <script>
 (function () {
@@ -59,8 +75,9 @@
     } catch (e) {}
   }
 
-  // A Ajax Cart API devolve preço em CENTAVOS — nossa coluna `preco` é
-  // decimal, por isso a divisão.
+  // A Ajax Cart API devolve preço em CENTAVOS em items[].price — nossa
+  // coluna `preco` é decimal, por isso a divisão. Usado só pra ADD; a
+  // remoção usa items_removed, que tem outra unidade (ver mais abaixo).
   function linhaParaDados(item) {
     return {
       produto_id: item.product_id != null ? String(item.product_id) : null,
@@ -71,12 +88,10 @@
     };
   }
 
-  // Cache da última foto conhecida do carrinho, pra saber QUAL produto
-  // saiu quando o pedido de mudança só manda "linha X, quantidade 0" (a
-  // resposta depois da mudança não tem mais a linha nenhuma). Chave =
-  // `key` da linha (estável dentro da sessão) e, como reforço, o
-  // variant_id (menos preciso: duas linhas podem repetir variant_id com
-  // propriedades diferentes — pega a primeira nesse caso).
+  // Cache da última quantidade conhecida de cada linha, usado só pra saber
+  // o INCREMENTO real de um "adicionar" repetido (a Shopify devolve o
+  // total da linha, não o incremento). Chave = `key` da linha (estável
+  // dentro da sessão) e, como reforço, o variant_id.
   var carrinhoConhecidoPorChave = {};
   var carrinhoConhecidoPorVariante = {};
   function atualizarCache(dadoDoCarrinho) {
@@ -108,26 +123,21 @@
 
   // Processa a resposta de UMA chamada de carrinho, não importa se ela
   // saiu via fetch ou via XMLHttpRequest — as duas formas terminam aqui.
-  // `url`/`corpoBruto` são os dados do PEDIDO; `respostaJson` é o corpo
-  // JÁ PARSEADO da resposta (o objeto carrinho, ou o item, da Ajax Cart
-  // API).
-  function processarChamadaDeCarrinho(url, corpoBruto, respostaJson) {
+  // `url` é o endereço do pedido; `respostaJson` é o corpo JÁ PARSEADO da
+  // resposta (o objeto carrinho, ou o item, da Ajax Cart API).
+  function processarChamadaDeCarrinho(url, respostaJson) {
     var ehAdd = /\/cart\/add(\.js)?(\?|$)/.test(url);
     var ehChange = /\/cart\/change(\.js)?(\?|$)/.test(url);
     var ehUpdate = /\/cart\/update(\.js)?(\?|$)/.test(url);
     if (!ehAdd && !ehChange && !ehUpdate) return;
 
-    var corpoDoPedido = null;
-    try {
-      if (typeof corpoBruto === 'string') corpoDoPedido = JSON.parse(corpoBruto);
-    } catch (e) {
-      // ponytail: corpo enviado como FormData (não string JSON) não é
-      // lido aqui — a maioria dos apps modernos manda JSON.
-    }
-
     if (ehAdd) {
       var itens = respostaJson.items ? respostaJson.items : [respostaJson];
       itens.forEach(function (item) {
+        // Guarda contra item sem identificador nenhum (visto ao vivo uma
+        // vez, causa não confirmada) — melhor não mandar nada do que
+        // gravar uma linha totalmente vazia e inútil.
+        if (item.product_id == null && item.variant_id == null) return;
         // A Shopify devolve a quantidade TOTAL da linha (doc oficial: "se
         // o item já estava no carrinho, quantity é a NOVA quantidade
         // total"), não quanto foi adicionado nesta chamada. Corrigido pra
@@ -145,31 +155,28 @@
       return;
     }
 
-    if (ehChange && corpoDoPedido && Number(corpoDoPedido.quantity) === 0) {
-      var linhaAntiga = achaLinhaConhecida(corpoDoPedido.id);
-      var dadosDaLinha = linhaAntiga ? linhaParaDados(linhaAntiga) : {};
-      enviar('produto_removido', dadosDaLinha);
-      atualizarCache(respostaJson);
-      return;
-    }
-
-    if (ehUpdate && corpoDoPedido && corpoDoPedido.updates) {
-      var chavesZeradas = Object.keys(corpoDoPedido.updates).filter(function (chave) {
-        return Number(corpoDoPedido.updates[chave]) === 0;
+    // /cart/change.js e /cart/update.js devolvem o carrinho inteiro, e a
+    // própria Shopify já diz exatamente o que saiu em `items_removed` —
+    // com produto, preço e quantidade prontos. Descoberto testando ao
+    // vivo (18/09/2026): não é documentado nas páginas indexadas, mas
+    // confirmado numa resposta real da loja. Muito mais confiável que
+    // adivinhar pela nossa própria memória de página, que se perde a cada
+    // recarregamento.
+    (respostaJson.items_removed || []).forEach(function (item) {
+      if (item.product_id == null && item.variant_id == null) return;
+      enviar('produto_removido', {
+        produto_id: item.product_id != null ? String(item.product_id) : null,
+        produto_titulo: item.product_title || item.title || null,
+        variante_id: item.variant_id != null ? String(item.variant_id) : null,
+        quantidade: item.quantity,
+        // Aqui o preço já vem em REAIS, como string ("1250.00") — ao
+        // contrário de items[].price, que vem em CENTAVOS. Conferido numa
+        // resposta real; são dois campos com unidades diferentes na mesma
+        // API.
+        preco: item.price != null ? parseFloat(item.price) : null,
       });
-      if (chavesZeradas.length) {
-        chavesZeradas.forEach(function (chave) {
-          var linhaAntigaU = achaLinhaConhecida(chave);
-          var dadosDaLinhaU = linhaAntigaU ? linhaParaDados(linhaAntigaU) : {};
-          enviar('produto_removido', dadosDaLinhaU);
-        });
-        atualizarCache(respostaJson);
-        return;
-      }
-    }
+    });
 
-    // Mudança de quantidade que NÃO é remoção: sem evento (fora do MVP),
-    // mas atualiza o cache pra próxima remoção continuar sabendo o que tinha.
     if (ehChange || ehUpdate) atualizarCache(respostaJson);
   }
 
@@ -180,10 +187,9 @@
     var promessa = fetchOriginal.apply(this, arguments);
 
     if (metodo === 'POST' && /\/cart\/(add|change|update)(\.js)?(\?|$)/.test(url)) {
-      var corpoBruto = opcoes && opcoes.body;
       promessa.then(function (resposta) {
         resposta.clone().json().then(function (json) {
-          processarChamadaDeCarrinho(url, corpoBruto, json);
+          processarChamadaDeCarrinho(url, json);
         }).catch(function () {});
       }).catch(function () {});
     }
@@ -210,7 +216,7 @@
     if (metodo === 'POST' && /\/cart\/(add|change|update)(\.js)?(\?|$)/.test(url)) {
       xhr.addEventListener('load', function () {
         try {
-          processarChamadaDeCarrinho(url, corpo, JSON.parse(xhr.responseText));
+          processarChamadaDeCarrinho(url, JSON.parse(xhr.responseText));
         } catch (e) {}
       });
     }

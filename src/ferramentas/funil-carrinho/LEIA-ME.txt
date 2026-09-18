@@ -21,10 +21,16 @@ Como chega o dado (ATUALIZADO 18/09/2026 — terceira tentativa, a que ficou):
   tabela carrinho_eventos.
 - checkout_iniciado é detectado por navegação: dispara uma vez quando a
   página carregada é `/checkout`.
-- Limitação conhecida, aceita: se a página for recarregada, o script perde
-  a memória de qual produto era cada linha do carrinho — uma remoção logo
-  após recarregar chega SEM produto_titulo/produto_id (o evento em si conta
-  certo, só não identifica a peça).
+- REMOÇÃO usa o campo `items_removed` da resposta de /cart/change.js e
+  /cart/update.js (não documentado nas páginas indexadas da Shopify, mas
+  confirmado ao vivo, 18/09/2026) — a própria Shopify devolve o produto
+  INTEIRO de quem saiu, então não depende de memória de página nenhuma
+  (funciona certo mesmo logo após um reload). ⚠️ Nesse campo específico o
+  preço vem em REAIS como string, diferente de items[].price (centavos).
+- ADIÇÃO repetida do mesmo produto: a Shopify devolve a quantidade TOTAL da
+  linha (não o incremento) — corrigido comparando com a última quantidade
+  conhecida da mesma linha, guardada só durante a navegação atual (reload
+  zera essa memória; nesse caso a quantidade total vira a aproximação).
 - Sem robô de agregação: "abandonado" é a view carrinho_abandonados
   (db/migrations/2026-09-17-carrinho-eventos.sql), calculada na consulta —
   carrinho com produto adicionado, sem checkout iniciado, parado há mais de
@@ -44,8 +50,10 @@ CAMINHOS TENTADOS E DESCARTADOS (fica registrado pra ninguém repetir):
    no admin em 18/09/2026 — deixado ativo teria duplicado os eventos do
    interceptador do tema.
 
-A tela é SÓ DE LEITURA, com três blocos: mais adicionados, mais removidos,
-carrinhos abandonados — filtro de período (7D/14D/30D) no topo.
+A tela é SÓ DE LEITURA, com duas abas: Visão geral (três blocos — mais
+adicionados, mais removidos, carrinhos abandonados) e Registros (tabela
+crua de cada evento) — filtro de período (7D/14D/30D) no topo, vale pras
+duas abas.
 
 FORA DO MVP (de propósito, ver spec §2 e §9):
 - Evento "carrinho visualizado" (Shopify não garante).
