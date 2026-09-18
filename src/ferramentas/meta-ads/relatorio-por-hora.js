@@ -348,12 +348,21 @@ export function montarMensagemSeguidoresFechamentoDia(
 
   const linhaSeguidores = seguidoresDoDia !== null ? `Novos seguidores no dia: ${comSinal(seguidoresDoDia)}` : null;
   const linhaVisitas = visitasPerfilDoDia != null ? `Visitas ao perfil no dia: ${visitasPerfilDoDia}` : null;
-  const custoPorSeguidor = gastoSeguidoresDoDia > 0 && seguidoresDoDia > 0
+  const teveGasto = gastoSeguidoresDoDia > 0;
+  const custoPorSeguidor = teveGasto && seguidoresDoDia > 0
     ? custoPorLead(gastoSeguidoresDoDia, seguidoresDoDia) : null;
   const linhaCusto = custoPorSeguidor !== null ? `Custo por seguidor: ${formatarReais(custoPorSeguidor)}` : null;
+  const custoPorVisita = teveGasto && visitasPerfilDoDia > 0
+    ? custoPorLead(gastoSeguidoresDoDia, visitasPerfilDoDia) : null;
+  const linhaCustoVisita = custoPorVisita !== null ? `Custo por visita ao perfil: ${formatarReais(custoPorVisita)}` : null;
   const linhaTotal = seguidoresTotal !== null ? `Total seguidores da conta: ${seguidoresTotal.toLocaleString('pt-BR')}` : null;
+  // Investimento por último (mesma regra de montarMensagemSeguidores,
+  // pedido do dono, 12/09/2026): indicadores por unidade primeiro, valor
+  // bruto no fim.
+  const linhaInvestimento = teveGasto ? `Investimento no dia: ${formatarReais(gastoSeguidoresDoDia)}` : null;
 
-  const linhas = [linhaSeguidores, linhaVisitas, linhaCusto, linhaTotal].filter((l) => l !== null);
+  const linhas = [linhaSeguidores, linhaVisitas, linhaCusto, linhaCustoVisita, linhaTotal, linhaInvestimento]
+    .filter((l) => l !== null);
   return [cabecalho, '', ...linhas].join('\n');
 }
 

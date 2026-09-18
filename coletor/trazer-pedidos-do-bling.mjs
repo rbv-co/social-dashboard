@@ -38,6 +38,7 @@ import pg from 'pg';
 import { loginServico, blingProxy } from './lib/bling-comercial.mjs';
 import { aplicarValorCorrigido } from '../supabase/functions/_shared/valor-corrigido.js';
 import { ajustesDeValor } from './lib/ajustes-de-valor.mjs';
+import { colunasExistem } from './lib/colunas-existem.mjs';
 
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://kounqtdoioootxqegkij.supabase.co';
 const BLING = 'https://api.bling.com.br/Api/v3';
@@ -67,6 +68,22 @@ try {
   const { rows: [tk] } = await cli.query(
     'select access_token from bling_tokens order by id desc limit 1');
   if (!tk?.access_token) throw new Error('não há token do Bling guardado.');
+
+  // ⚠️ C5 (revisão final, 17/09/2026): este robô roda da `main` todo dia às
+  // 07h34 UTC. Se a migration que cria `observacoes`/`observacoes_internas`
+  // (db/migrations/2026-09-17-vessel-registro-com-conta.sql) entrar na `main`
+  // antes de ser aplicada no banco, o insert abaixo quebraria com "column
+  // does not exist" e a VENDA DO DIA inteira se perderia, calada. Confere UMA
+  // vez por rodada, e grava sem essas duas colunas quando faltarem — a venda
+  // nunca se perde por causa da ordem entre merge e migration.
+  const temObservacoes = await colunasExistem(
+    (sql, params) => cli.query(sql, params), 'vessel_pedidos',
+    ['observacoes', 'observacoes_internas']);
+  if (!temObservacoes) {
+    console.warn('\n⚠️  vessel_pedidos ainda não tem observacoes/observacoes_internas — '
+      + 'aplique db/migrations/2026-09-17-vessel-registro-com-conta.sql. '
+      + 'Gravando os pedidos SEM essas duas colunas por enquanto.\n');
+  }
 
   const token = await loginServico();
   const ate = new Date();
@@ -149,12 +166,51 @@ try {
     if (pessoaId) { casouPor === 'bling_contato' ? porFicha++ : porTel++; } else { orfaos++; }
     if (ensaio) continue;
 
+    // ⚠️ C5: as colunas de observações só entram na lista (e no valor) quando
+    // `temObservacoes` for true. Assim o insert nunca cita uma coluna que
+    // pode não existir ainda no banco — ver o comentário no início do
+    // arquivo.
+    const colunasBase = [
+      'bling_pedido_id', 'numero', 'bling_contato_id', 'contato_nome', 'pessoa_id', 'casou_por',
+      'loja_id', 'vendedor_id', 'data_do_pedido', 'data_da_nota', 'data_da_venda', 'origem_da_data',
+      'total_produtos', 'desconto', 'outras_despesas', 'total_do_bling', 'total_corrigido',
+      'situacao_id',
+    ];
+    const valoresBase = [
+      p.id, String(p.numero ?? ''), contatoId, p.contato?.nome || null, pessoaId, casouPor,
+      detalhe.loja?.id || null, detalhe.vendedor?.id || null,
+      String(p.data).slice(0, 10),
+      notaPorPedido.get(String(p.id))?.data_da_nota || null,
+      // Sem linha na tabela da nota, a venda conta no dia do pedido — que é a
+      // regra da casa para pedido que ainda não virou nota.
+      notaPorPedido.get(String(p.id))?.data_da_venda || String(p.data).slice(0, 10),
+      notaPorPedido.get(String(p.id))?.origem_da_data || 'pedido',
+      detalhe.totalProdutos ?? p.totalProdutos ?? null,
+      detalhe.desconto?.valor ?? null, detalhe.outrasDespesas ?? null,
+      p.total ?? null, corrigidoPorId.get(String(p.id)) ?? null,
+      p.situacao?.id ?? ATENDIDO,
+    ];
+    const colunas = temObservacoes ? [...colunasBase, 'observacoes', 'observacoes_internas'] : colunasBase;
+    const valores = temObservacoes
+      ? [...valoresBase, detalhe.observacoes || null, detalhe.observacoesInternas || null]
+      : valoresBase;
+    const marcadores = colunas.map((_, i) => `$${i + 1}`).join(',');
+
+    const setObservacoes = temObservacoes
+      // ⚠️ NUNCA APAGAR uma observação que já está gravada. É nela que mora a
+      // marca PRESENTE (vessel_pedido_marcado_presente), e o Bling pode
+      // devolver o detalhe SEM esses dois campos (campo ausente vira null na
+      // ligação acima, não string vazia). Sem o coalesce, essa ausência
+      // calada apagaria um "PRESENTE" já lido numa rodada anterior, e o "É
+      // presente?" mudaria de resposta sem erro nenhum — mesmo risco que
+      // pessoa_id/casou_por já tratam abaixo.
+      ? `, observacoes = coalesce(excluded.observacoes, vessel_pedidos.observacoes),
+           observacoes_internas = coalesce(excluded.observacoes_internas, vessel_pedidos.observacoes_internas)`
+      : '';
+
     const { rows: [linha] } = await cli.query(
-      `insert into vessel_pedidos
-         (bling_pedido_id, numero, bling_contato_id, contato_nome, pessoa_id, casou_por,
-          loja_id, vendedor_id, data_do_pedido, data_da_nota, data_da_venda, origem_da_data,
-          total_produtos, desconto, outras_despesas, total_do_bling, total_corrigido, situacao_id)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+      `insert into vessel_pedidos (${colunas.join(', ')})
+       values (${marcadores})
        on conflict (bling_pedido_id) do update set
           numero = excluded.numero, bling_contato_id = excluded.bling_contato_id,
           contato_nome = excluded.contato_nome,
@@ -169,20 +225,10 @@ try {
           total_produtos = excluded.total_produtos, desconto = excluded.desconto,
           outras_despesas = excluded.outras_despesas,
           total_do_bling = excluded.total_do_bling, total_corrigido = excluded.total_corrigido,
-          situacao_id = excluded.situacao_id, atualizado_em = now()
+          situacao_id = excluded.situacao_id${setObservacoes},
+          atualizado_em = now()
        returning id`,
-      [p.id, String(p.numero ?? ''), contatoId, p.contato?.nome || null, pessoaId, casouPor,
-       detalhe.loja?.id || null, detalhe.vendedor?.id || null,
-       String(p.data).slice(0, 10),
-       notaPorPedido.get(String(p.id))?.data_da_nota || null,
-       // Sem linha na tabela da nota, a venda conta no dia do pedido — que é a
-       // regra da casa para pedido que ainda não virou nota.
-       notaPorPedido.get(String(p.id))?.data_da_venda || String(p.data).slice(0, 10),
-       notaPorPedido.get(String(p.id))?.origem_da_data || 'pedido',
-       detalhe.totalProdutos ?? p.totalProdutos ?? null,
-       detalhe.desconto?.valor ?? null, detalhe.outrasDespesas ?? null,
-       p.total ?? null, corrigidoPorId.get(String(p.id)) ?? null,
-       p.situacao?.id ?? ATENDIDO]);
+      valores);
 
     // Os itens são REFEITOS a cada rodada: pedido editado no Bling muda de
     // itens, e acrescentar deixaria os antigos ali para sempre.

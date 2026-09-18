@@ -3,8 +3,13 @@ on:
   workflow_dispatch: {}
   # Ligado (dono aprovou em 17/09/2026, depois de validar o preview local e
   # via workflow_dispatch — ver docs/superpowers/specs/2026-09-17-relatorio-opr-diario-design.md).
+  # Movido pra 05h BRT (18/09/2026, pedido do dono) — meio-termo entre "cedo"
+  # e dar folga pra Meta assentar o dado do dia anterior antes de perguntar
+  # (achamos ao vivo, 17/09, que menos folga = número mais cru/instável;
+  # 8h dava 8h de folga, 5h dá 5h — sem garantia de que é suficiente,
+  # ajustar de novo se o dado sair sistematicamente mais baixo que o real).
   schedule:
-    - cron: '0 11 * * *'  # 08h BRT — Brasil não tem horário de verão desde 2019
+    - cron: '0 8 * * *'  # 05h BRT — Brasil não tem horário de verão desde 2019
 jobs:
   gerar:
     runs-on: ubuntu-latest

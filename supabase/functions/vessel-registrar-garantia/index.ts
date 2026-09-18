@@ -35,10 +35,29 @@
 // concedida a `anon` nem a `authenticated`. Só esta função a chama, com a chave
 // de serviço. Se a página pudesse abrir pedidos direto, a fila encheria de
 // pedidos que ninguém tentou casar com uma venda — que é metade do valor disto.
+//
+// ── 17/09/2026: DUAS ENTRADAS NOVAS, o caminho antigo (sem token) CONTINUA
+// vivo e não foi tocado — é dele que a página no ar, com 157 etiquetas já
+// gravadas em bolsas vendidas, depende.
+//
+//   - `{token, codigo, onde, comprado_em}`  → cliente LOGADA. O pedido nasce
+//     ligado ao perfil dela (`vessel_registrar_como_cliente`), e a compra é
+//     procurada no Bling pelo CPF DO PERFIL — nunca pelo que vier no corpo,
+//     senão a página poderia mandar um CPF diferente do da própria conta.
+//   - `{token, codigo, presente_de}`         → "É PRESENTE?": a compra está
+//     no CPF de QUEM DEU, não no da presenteada. Em vez de vasculhar o Bling
+//     por CPF, comparamos o nome digitado com quem comprou aquele MODELO
+//     (mesmo SKU) — ver `vessel_candidatos_de_presente` e
+//     `_shared/nome-de-quem-deu.js`.
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 // A regra do casamento mora fora daqui, em `_shared`, porque e ela que decide
 // se a cliente ganha a garantia na hora ou espera na fila — e la ela tem teste.
 import { casaComOSku } from '../_shared/casar-sku-do-bling.js';
+// A regra de nome de quem deu (Tarefa 2), usada só no caminho "É presente?"
+// lá embaixo: `nomesBatem` é a regra estrita, sempre válida; `nomesChegamPerto`
+// é a regra frouxa, e só pode ser usada quando o pedido do Bling tem a marca
+// PRESENTE (ver o uso, junto de `tem_marca`, mais abaixo).
+import { nomesBatem, nomesChegamPerto } from '../_shared/nome-de-quem-deu.js';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -130,6 +149,58 @@ async function procurarACompra(t: string, cpf: string, sku: string): Promise<Ach
   return null;
 }
 
+/**
+ * O mesmo casamento com o Bling do caminho antigo (procurar a compra pelo
+ * CPF e decidir), reaproveitado para a cliente LOGADA — a diferença entre os
+ * dois é só de onde vem o CPF. Escrita como função NOVA, e não puxando o
+ * bloco do caminho antigo para dentro dela: o caminho antigo não é tocado
+ * nesta fase (ver nota no topo do arquivo).
+ */
+async function decidirPeloBlingComoCliente(
+  sb: ReturnType<typeof createClient>, aberto: any, cpf: string,
+) {
+  let achado: Achado = null;
+  try {
+    const t = await tokenDoBling(sb);
+    if (t) achado = await procurarACompra(t, cpf.replace(/\D/g, ''), String(aberto.sku ?? ''));
+  } catch {
+    // Mesma decisão do caminho antigo: qualquer tropeço aqui é PENDENTE.
+    achado = null;
+  }
+
+  if (!achado) {
+    return { ok: true, estado: 'pendente',
+             ja_tem_dono: aberto.ja_tem_dono === true, dono_curto: aberto.dono_curto ?? null };
+  }
+
+  const { data: decidido, error } = await sb.rpc('vessel_decidir_pedido_de_registro', {
+    p_pedido: aberto.pedido, p_estado: 'aprovado', p_quem_decidiu: 'bling',
+    p_conferencia: achado, p_motivo: null,
+  });
+  if (error) {
+    console.error('vessel_decidir_pedido_de_registro', error.message);
+    // ⚠️ I3 (revisão final): antes este ramo cravava o literal `true` em
+    // `ja_tem_dono`. Um erro de INFRAESTRUTURA no rpc de decisão (banco fora
+    // do ar, parâmetro divergente) não tem NADA a ver com a peça já ter dona
+    // ou não — cravar o literal aqui podia anunciar como "já tem dona" uma
+    // peça LIVRE, só porque o rpc tropeçou. O bloco irmão, duas linhas acima,
+    // já usa o valor de verdade (`aberto.ja_tem_dono === true`); este ramo
+    // passa a fazer o mesmo.
+    return { ok: true, estado: 'pendente',
+             ja_tem_dono: aberto.ja_tem_dono === true, dono_curto: aberto.dono_curto ?? null };
+  }
+  if (!decidido?.ok) {
+    // A conferência bateu mas a aprovação não passou (a peça pode ter ganhado
+    // dono entre uma coisa e outra). Fica pendente: uma pessoa decide.
+    //
+    // ⚠️ I3: mesmo conserto do ramo acima — `ja_tem_dono` vem do valor de
+    // verdade, não de um literal cravado.
+    return { ok: true, estado: 'pendente',
+             ja_tem_dono: aberto.ja_tem_dono === true, dono_curto: aberto.dono_curto ?? null };
+  }
+  return { ok: true, estado: 'aprovado', garantia_ate: decidido.garantia_ate };
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   if (req.method !== 'POST') return responder({ ok: false, motivo: 'metodo' }, 405);
@@ -139,6 +210,151 @@ Deno.serve(async (req) => {
 
   const sb = createClient(SUPABASE_URL, SERVICE_KEY);
 
+  // ── "É PRESENTE?" ──────────────────────────────────────────────────────────
+  // A compra está no CPF de quem deu. A presenteada informa o nome dessa
+  // pessoa; aprovamos só quando há UM candidato e o nome fecha — mais de um
+  // candidato possível vai para a fila, nunca no chute.
+  if (corpo.presente_de) {
+    const { data: sessao, error: erroSessao } = await sb.rpc('vessel_conta_da_sessao', {
+      p_token: corpo.token,
+    });
+    if (erroSessao) {
+      console.error('vessel_conta_da_sessao', erroSessao.message);
+      return responder({ ok: false, motivo: 'falhou' });
+    }
+    if (!sessao?.ok) return responder({ ok: false, motivo: 'sem_sessao' }, 401);
+
+    const { data: pedidoAberto, error: erroAbrir } = await sb.rpc('vessel_registrar_como_cliente', {
+      p_token: corpo.token, p_codigo: corpo.codigo,
+      p_onde: corpo.onde ?? null, p_comprado_em: corpo.comprado_em ?? null,
+      // ⚠️ C2 (revisão final): `corpo.so_teste === true` — nunca repassar o
+      // valor cru. A página de ensaio (/verify/novo) manda este campo; a
+      // trava de verdade mora no banco (vessel_lotes.teste), aqui só garante
+      // que o booleano CHEGA no rpc.
+      p_so_teste: corpo.so_teste === true,
+      // ⚠️ I1 (revisão final): sem isto, presente_de_nome nascia e nunca era
+      // gravado — a fila do painel via o pedido pendente sem NENHUMA pista do
+      // que a cliente afirmou ter recebido de presente.
+      p_presente_de_nome: corpo.presente_de,
+    });
+    if (erroAbrir) {
+      console.error('vessel_registrar_como_cliente', erroAbrir.message);
+      return responder({ ok: false, motivo: 'falhou' });
+    }
+    if (!pedidoAberto?.ok) return responder(pedidoAberto ?? { ok: false }, 200);
+
+    // ⚠️ C3 (revisão final): TETO DE TENTATIVAS, conferido no BANCO — uma
+    // edge não guarda estado entre chamadas, então o contador tem de morar
+    // numa tabela, não numa variável daqui. Isto vem ANTES de buscar
+    // candidatos de propósito: se o teto já estourou, nem vale a pena rodar o
+    // casamento de nome — a resposta tem de ser SEMPRE pendente, sem revelar
+    // se o nome digitado bateria ou não.
+    const { data: tentativa, error: erroTentativa } = await sb.rpc('vessel_tentativa_de_presente', {
+      p_codigo: corpo.codigo,
+    });
+    if (erroTentativa) {
+      console.error('vessel_tentativa_de_presente', erroTentativa.message);
+      // Mesma regra de sempre: qualquer tropeço de infraestrutura cai na
+      // fila, nunca recusa e nunca aprova sozinho.
+      return responder({ ok: true, estado: 'pendente',
+                         ja_tem_dono: pedidoAberto.ja_tem_dono === true, dono_curto: pedidoAberto.dono_curto ?? null });
+    }
+    if (!tentativa?.permitido) {
+      // ⚠️ ESTOUROU O TETO (3 tentativas por peça a cada 24h): cai na fila
+      // SEM rodar `vessel_candidatos_de_presente` nem o casamento de nome —
+      // não é só "esconder o resultado na resposta", é NÃO CALCULAR o
+      // resultado, para um bug futuro na tela não poder vazá-lo de outro
+      // jeito.
+      return responder({ ok: true, estado: 'pendente',
+                         ja_tem_dono: pedidoAberto.ja_tem_dono === true, dono_curto: pedidoAberto.dono_curto ?? null });
+    }
+
+    const { data: candidatos, error: erroCandidatos } = await sb.rpc('vessel_candidatos_de_presente', {
+      p_sku: pedidoAberto.sku,
+    });
+    if (erroCandidatos) {
+      console.error('vessel_candidatos_de_presente', erroCandidatos.message);
+      // O pedido já está guardado (passo anterior); sem lista de candidatos
+      // não há como casar nome nenhum, então cai na fila — nunca recusa.
+      return responder({ ok: true, estado: 'pendente',
+                         ja_tem_dono: pedidoAberto.ja_tem_dono === true, dono_curto: pedidoAberto.dono_curto ?? null });
+    }
+
+    const bons = (candidatos ?? []).filter((c: any) =>
+      nomesBatem(corpo.presente_de, c.contato_nome) ||
+      // ⚠️ A regra frouxa só entra quando o PRÓPRIO PEDIDO do Bling trouxer a
+      // marca "presente" nas observações — sem ela, "Ana Sousa" não vira
+      // sozinha "Ana Souza". A marca não aprova nada por si: ela só destrava
+      // o nome quase igual.
+      (c.tem_marca && nomesChegamPerto(corpo.presente_de, c.contato_nome)));
+
+    // ⚠️ MAIS DE UM CANDIDATO = FILA. Escolher "o mais provável" seria dar a
+    // garantia de uma peça para quem talvez não seja a dona.
+    if (bons.length !== 1) {
+      return responder({ ok: true, estado: 'pendente',
+                         ja_tem_dono: pedidoAberto.ja_tem_dono === true, dono_curto: pedidoAberto.dono_curto ?? null });
+    }
+    // ⚠️ `p_quem_decidiu` NÃO é 'presente'. Medido no banco: a função
+    // `vessel_decidir_pedido_de_registro` só aceita 'bling' ou 'na_mao'
+    // (`vessel_pedidos_de_registro_decidido_por_que_check`), e ela é
+    // compartilhada com o painel que está no ar — não é desta tarefa mexer
+    // nela nem na trava. Quem distingue o presente da conferência normal é o
+    // `p_conferencia` logo abaixo: carrega `pedido`, `de` (o nome de quem
+    // deu) e `marca` (se veio da marca PRESENTE do Bling) — é ali, na
+    // trilha, que fica guardado que esta aprovação foi um presente.
+    const { data: decidido, error: erroDecidir } = await sb.rpc('vessel_decidir_pedido_de_registro', {
+      p_pedido: pedidoAberto.pedido, p_estado: 'aprovado', p_quem_decidiu: 'bling',
+      p_conferencia: { pedido: bons[0].bling_pedido, de: bons[0].contato_nome,
+                       marca: bons[0].tem_marca === true },
+      p_motivo: null,
+    });
+    if (erroDecidir) {
+      console.error('vessel_decidir_pedido_de_registro', erroDecidir.message);
+      return responder({ ok: true, estado: 'pendente',
+                         ja_tem_dono: pedidoAberto.ja_tem_dono === true, dono_curto: pedidoAberto.dono_curto ?? null });
+    }
+    if (!decidido?.ok) {
+      return responder({ ok: true, estado: 'pendente',
+                         ja_tem_dono: pedidoAberto.ja_tem_dono === true, dono_curto: pedidoAberto.dono_curto ?? null });
+    }
+    return responder({ ok: true, estado: 'aprovado', garantia_ate: decidido.garantia_ate });
+  }
+
+  // ── REGISTRO NORMAL, ESTANDO LOGADA ──────────────────────────────────────
+  if (corpo.token) {
+    const { data: aberto2, error: erroAbrir2 } = await sb.rpc('vessel_registrar_como_cliente', {
+      p_token: corpo.token, p_codigo: corpo.codigo,
+      p_onde: corpo.onde ?? null, p_comprado_em: corpo.comprado_em ?? null,
+      // ⚠️ C2: mesma trava do caminho do presente — ver o comentário lá em
+      // cima. Este caminho normal também pode ser chamado pela página de
+      // ensaio (sem "É presente?").
+      p_so_teste: corpo.so_teste === true,
+    });
+    if (erroAbrir2) {
+      console.error('vessel_registrar_como_cliente', erroAbrir2.message);
+      return responder({ ok: false, motivo: 'falhou' }, 500);
+    }
+    if (!aberto2?.ok) return responder(aberto2 ?? { ok: false }, 200);
+
+    // O CPF NÃO VEM NO CORPO desta ação: é o do PERFIL da sessão, lido direto
+    // da tabela com a chave de serviço. `vessel_conta_da_sessao` de propósito
+    // só devolve os 2 últimos dígitos (é o que a TELA pode mostrar) — a busca
+    // no Bling precisa do CPF inteiro, que só existe aqui, servidor a
+    // servidor, e nunca volta para a página.
+    const { data: cliente, error: erroCliente } = await sb
+      .from('vessel_clientes').select('cpf').eq('id', aberto2.cliente_id).single();
+    if (erroCliente || !cliente?.cpf) {
+      console.error('vessel_clientes', erroCliente?.message ?? 'cpf_ausente');
+      return responder({ ok: true, estado: 'pendente',
+                         ja_tem_dono: aberto2.ja_tem_dono === true, dono_curto: aberto2.dono_curto ?? null });
+    }
+    return responder(await decidirPeloBlingComoCliente(sb, aberto2, cliente.cpf));
+  }
+
+  // ── CAMINHO ANTIGO (sem token) — NÃO TOCADO NESTA FASE ───────────────────
+  // A página de verdade, com 157 etiquetas já gravadas em bolsas vendidas,
+  // continua chamando exatamente assim; ela só muda na Fase 2.
+  //
   // ── 1. guardar o pedido ANTES de falar com qualquer sistema de fora ──
   // Se o Bling cair no meio, a cliente não perde o que digitou.
   const { data: aberto, error } = await sb.rpc('vessel_abrir_pedido_de_registro', {

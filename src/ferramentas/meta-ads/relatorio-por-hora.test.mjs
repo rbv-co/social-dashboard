@@ -506,8 +506,22 @@ test('montarMensagemSeguidoresFechamentoDia: monta os totais do dia inteiro, sem
   assert.match(msg, /Novos seguidores no dia: \+170/);
   assert.match(msg, /Visitas ao perfil no dia: 1400/);
   assert.match(msg, /Custo por seguidor: R\$\s?2,91/, '494,11 \\/ 170 ≈ 2,91');
+  assert.match(msg, /Custo por visita ao perfil: R\$\s?0,35/, '494,11 \\/ 1400 ≈ 0,35');
   assert.match(msg, /Total seguidores da conta: 18\.792/);
+  assert.match(msg, /Investimento no dia: R\$\s?494,11/);
   assert.doesNotMatch(msg, /INTERVALO|TOTAL\n/, 'fechamento do dia não tem seção de hora, só o dia inteiro');
+});
+
+test('⚠️ montarMensagemSeguidoresFechamentoDia: Investimento no dia e Custo por visita — a mensagem de hora em hora já tinha essas duas linhas, a de fechamento estava faltando', () => {
+  const msg = montarMensagemSeguidoresFechamentoDia('2026-09-17', 380, 2011, 535.72, 19172);
+  assert.match(msg, /Investimento no dia: R\$\s?535,72/, 'linha que faltava — investimento bruto do dia');
+  assert.match(msg, /Custo por visita ao perfil: R\$\s?0,27/, 'linha que faltava — 535,72 \\/ 2011 ≈ 0,27');
+});
+
+test('montarMensagemSeguidoresFechamentoDia: sem gasto no dia, nem Investimento nem Custo por visita aparecem (não inventa R$0,00)', () => {
+  const msg = montarMensagemSeguidoresFechamentoDia('2026-09-16', 170, 1400, 0, 18792);
+  assert.doesNotMatch(msg, /Investimento no dia/);
+  assert.doesNotMatch(msg, /Custo por visita/);
 });
 
 test('montarMensagemSeguidoresFechamentoDia: sem dado nenhum do dia, null', () => {
