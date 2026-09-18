@@ -212,35 +212,10 @@ export function calcularDadosOpr(campanhasDoDia, seguidoresDoDia, visitasPerfilD
     conversaoQuenteVenda: null,
   };
 
-  // salesLink/leadsLink (calculados mais abaixo) ficam de fora de
-  // investimentoTotal e do mix de propósito — pedido do dono (17/09/2026,
-  // spec original do OPR): campanha "outro" nunca entra no total, porque
-  // esse balaio também tem vaga, DRE, atacado etc. salesLink/leadsLink só
-  // classificam UMA fatia de "outro" (a com link reconhecido); misturar só
-  // essa fatia seria inconsistente com o resto de "outro" continuar fora.
-  const header = {
-    investimentoTotal: investimentoSeguidores + investimentoEngajamento + investimentoWpp,
-    novosSeguidores: seguidoresDoDia,
-    engajamentos: somar(engajamento, 'postEngagement'),
-    leadsGerados: leadsCount,
-  };
-
-  // Media Mix: % do investimento total em cada categoria — definição
-  // provisória (pedido do dono, 17/09/2026: "deixa lá, mas vou confirmar
-  // ainda" — o gerente de marketing ainda vai validar). `null` quando não
-  // houve investimento nenhum no dia (0/0 não é 0%, é "sem dado").
-  const investimentoTotal = header.investimentoTotal;
-  const pctDoTotal = (valor) => (investimentoTotal > 0 ? (valor / investimentoTotal) * 100 : null);
-  const mix = {
-    growth: pctDoTotal(investimentoSeguidores),
-    engagement: pctDoTotal(investimentoEngajamento),
-    leads: pctDoTotal(investimentoWpp),
-  };
-
   // Sales/Leads por LINK do anúncio (18/09/2026) — eixo totalmente
   // separado de `sales` acima: `sales.leads` é conversa WPP, isto aqui é
   // anúncio "outro" classificado pelo destino do link. NUNCA somar os
-  // dois juntos (pedido do dono: "campanhas wpp desconsidera").
+  // dois eixos entre si (pedido do dono: "campanhas wpp desconsidera").
   const salesAnuncios = anunciosDoDia.filter((a) => a.categoria === 'sales');
   const leadsLinkAnuncios = anunciosDoDia.filter((a) => a.categoria === 'leads');
   const investimentoSalesLink = somar(salesAnuncios, 'gasto');
@@ -259,6 +234,35 @@ export function calcularDadosOpr(campanhasDoDia, seguidoresDoDia, visitasPerfilD
     cliques: cliquesLeadsLink,
     custoPorClique: investimentoLeadsLink > 0 && cliquesLeadsLink > 0
       ? custoPorLead(investimentoLeadsLink, cliquesLeadsLink) : null,
+  };
+
+  // investimentoTotal ENTRA salesLink+leadsLink (correção do dono,
+  // 18/09/2026, revisando a imagem real: "isso deve contar em investimento
+  // total também") — ao contrário da campanha "outro" genérica (que
+  // continua fora, porque tem vaga/DRE/atacado misturado), salesLink e
+  // leadsLink já são uma fatia CLASSIFICADA de mídia paga de verdade (pelo
+  // link de destino do anúncio), então contam no total igual
+  // growth/engagement/leads contam. Decisão anterior (excluir) revertida.
+  const header = {
+    investimentoTotal: investimentoSeguidores + investimentoEngajamento + investimentoWpp
+      + investimentoSalesLink + investimentoLeadsLink,
+    novosSeguidores: seguidoresDoDia,
+    engajamentos: somar(engajamento, 'postEngagement'),
+    leadsGerados: leadsCount,
+  };
+
+  // Media Mix: % do investimento total em cada categoria — definição
+  // provisória (pedido do dono, 17/09/2026: "deixa lá, mas vou confirmar
+  // ainda" — o gerente de marketing ainda vai validar). `null` quando não
+  // houve investimento nenhum no dia (0/0 não é 0%, é "sem dado").
+  const investimentoTotal = header.investimentoTotal;
+  const pctDoTotal = (valor) => (investimentoTotal > 0 ? (valor / investimentoTotal) * 100 : null);
+  const mix = {
+    growth: pctDoTotal(investimentoSeguidores),
+    engagement: pctDoTotal(investimentoEngajamento),
+    leads: pctDoTotal(investimentoWpp),
+    salesLink: pctDoTotal(investimentoSalesLink),
+    leadsLink: pctDoTotal(investimentoLeadsLink),
   };
 
   return { header, growth, engagement, sales, salesLink, leadsLink, mix };
