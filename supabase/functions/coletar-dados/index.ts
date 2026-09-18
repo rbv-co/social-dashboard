@@ -66,7 +66,12 @@ async function apiGet(path: string, params: Record<string, string>): Promise<any
 
 async function apiGetAll(path: string, params: Record<string, string>): Promise<any[]> {
   const all: any[] = [];
-  let data = await apiGet(path, { ...params, limit: '500' });
+  // `limit` do chamador vence o padrão (500) — pedido com campo aninhado
+  // pesado (ex.: creative{object_story_spec,...}) a Meta recusa em 500 por
+  // página ("Please reduce the amount of data..."), testado ao vivo
+  // (18/09/2026) contra a conta Vessel: 500 falha, 200 funciona. Página
+  // menor só significa mais páginas, a paginação abaixo já lida com isso.
+  let data = await apiGet(path, { limit: '500', ...params });
   all.push(...(data.data ?? []));
   while (data.paging?.next) {
     const r = await fetch(data.paging.next);
@@ -408,6 +413,7 @@ async function sincronizarAnuncios(sb: any, accountId: string, adAccountId: stri
   try {
     const items = await apiGetAll(`act_${adAccountId}/ads`, {
       fields: 'id,name,campaign_id,status,creative{object_story_spec,asset_feed_spec,object_url}',
+      limit: '100',
       access_token: token,
     });
     const rows = items.map((a: any) => ({
