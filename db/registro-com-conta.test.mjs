@@ -75,14 +75,28 @@ test('⚠️ C1 — gatilho preenche cliente_id sozinho, sem mexer em vessel_dec
   const f = SQL.slice(SQL.indexOf('function public.vessel_registros_preencher_cliente_id'));
   assert.match(f, /new\.cliente_id is null/, 'só preenche se ainda não veio preenchido');
   assert.match(f, /from public\.vessel_pedidos_de_registro/,
-    'a origem do cliente_id é o pedido daquele código');
-  assert.match(f, /order by pr\.criado_em desc/, 'tem de ser o pedido MAIS RECENTE');
+    'a origem do cliente_id é o pedido');
 });
 
-test('⚠️ C2 — p_so_teste recusa peça fora do lote de teste (a trava é no servidor)', () => {
-  // /verify/novo não pode abrir uma bolsa VENDIDA e escrever em produção. A
-  // página manda p_so_teste=true; o banco RECUSA se o lote da peça não
-  // estiver marcado teste=true.
+test('⚠️ CRÍTICO N1 — o gatilho usa new.pedido_id, NUNCA "o pedido mais recente do código"', () => {
+  // Achado da conferência da onda: "pendente não tranca a etiqueta" é o
+  // DESENHO deste projeto — mais de um pedido pendente para a mesma peça é
+  // esperado, não exceção. Buscar "o pedido mais recente daquele código com
+  // cliente_id preenchido" pode pegar o pedido de OUTRA cliente que abriu
+  // depois: a dona A é aprovada, mas o gatilho ligaria a peça à dona B, que
+  // só tentou registrar por último. É o mesmo defeito que o C1 existia para
+  // consertar, entre contas.
+  const f = SQL.slice(SQL.indexOf('function public.vessel_registros_preencher_cliente_id'));
+  assert.match(f, /where pr\.id = new\.pedido_id/,
+    'tem de buscar pelo pedido EXATO (new.pedido_id), não pelo código');
+  assert.ok(!/order by pr\.criado_em desc/.test(f),
+    '"o mais recente" é exatamente o bug: dois pedidos pendentes na mesma peça pegariam o pedido errado');
+  assert.match(f, /new\.pedido_id is not null/,
+    'sem pedido_id, cliente_id fica nulo — não adivinhar dona é melhor que adivinhar errado');
+});
+
+test('⚠️ C2 — vessel_registrar_como_cliente recusa peça fora do lote de teste (a trava é no servidor)', () => {
+  // /verify/novo não pode abrir uma bolsa VENDIDA e escrever em produção.
   const f = SQL.slice(SQL.indexOf('function public.vessel_registrar_como_cliente'),
                        SQL.indexOf('function public.vessel_registros_preencher_cliente_id'));
   assert.match(f, /p_so_teste boolean default false/);

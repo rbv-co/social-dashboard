@@ -107,6 +107,17 @@ $$;
 -- preenchia — a fila do painel recebia o pedido pendente sem nenhuma pista do
 -- que a cliente afirmou, que é justamente o que a conferência humana precisa
 -- ler. Fica nulo no caminho normal (sem presente).
+--
+-- ⚠️ MENOR N4 (conferência da onda, 17/09/2026): `create or replace function`
+-- NÃO troca a assinatura de uma função — assinatura diferente cria
+-- SOBRECARGA (as duas convivem, mesmo nome). A versão de 4 parâmetros desta
+-- função (sem `p_so_teste`/`p_presente_de_nome`) nunca foi aplicada em
+-- produção nesta fase, mas se algum dia tivesse sido, o `create or replace`
+-- abaixo deixaria as DUAS no ar — e a de 4 parâmetros, sem a trava do C2,
+-- continuaria concedida e chamável. O `drop` garante que só existe UMA
+-- versão desta função, qualquer que seja o estado do banco em que este
+-- arquivo for aplicado.
+drop function if exists public.vessel_registrar_como_cliente(text, text, text, date);
 create or replace function public.vessel_registrar_como_cliente(
   p_token text, p_codigo text, p_onde text default null, p_comprado_em date default null,
   p_so_teste boolean default false, p_presente_de_nome text default null
@@ -169,9 +180,32 @@ $$;
 -- compartilhada com o painel, testada e em produção; editar uma função usada
 -- por dois caminhos para consertar só um deles é o tipo de conserto que
 -- quebra o outro sem avisar. Em vez disso, um GATILHO em `vessel_registros`
--- preenche `cliente_id` sozinho, olhando o pedido MAIS RECENTE daquele
--- código que já tem `cliente_id` preenchido — que é exatamente o pedido que
--- `vessel_registrar_como_cliente`, acima, acabou de gravar.
+-- preenche `cliente_id` sozinho, olhando o `pedido_id` que aquela mesma
+-- função (`2026-09-03-zz-vessel-garantia-com-dono.sql`, seção 5) JÁ GRAVA em
+-- `vessel_registros.pedido_id` no `insert` — é o pedido EXATO que está sendo
+-- aprovado, não "um pedido daquele código".
+--
+-- ⚠️ CRÍTICO N1 (conferência da onda, 17/09/2026) — A PRIMEIRA VERSÃO deste
+-- gatilho buscava "o pedido mais recente daquele código com cliente_id não
+-- nulo" (`order by criado_em desc limit 1`), em vez de usar `new.pedido_id`.
+-- Isso reabria o MESMO defeito que o C1 existia para consertar, só que entre
+-- contas: "pendente não tranca a etiqueta" é o desenho deste projeto (ver o
+-- cabeçalho de `2026-09-03-zz-vessel-garantia-com-dono.sql`) — MAIS DE UM
+-- pedido pendente para a mesma peça é esperado, não exceção. Cenário: a dona
+-- A abre um pedido; a dona B abre outro depois, para a mesma peça; a equipe
+-- aprova o de A — mas "o mais recente com cliente_id preenchido" é o de B. O
+-- gatilho errado ligaria a peça à cliente ERRADA: a peça sumiria de "Minhas
+-- peças" da A (a dona de verdade) e apareceria na de B. Consertado: o gatilho
+-- lê `new.pedido_id`, que é preenchido pela PRÓPRIA LINHA que está nascendo,
+-- não por uma busca que pode pegar outro pedido de outra pessoa.
+--
+-- ⚠️ SE `new.pedido_id` VIER NULO (por exemplo, um `insert` direto em
+-- `vessel_registros` fora do fluxo de aprovação, como `vessel_trocar_dono` —
+-- que hoje zera `pedido_id` de propósito — ou uma migração de dado antiga),
+-- `cliente_id` FICA NULO. Não adivinhar a dona é melhor que adivinhar
+-- errado: a peça volta a aparecer só como "em conferência"/sem "Minhas
+-- peças" para essa cliente, que é o estado ANTERIOR a esta fase — não um
+-- estado novo, pior.
 --
 -- ⚠️ SÓ NO INSERT. O `on conflict (codigo) do update` de
 -- `vessel_decidir_pedido_de_registro` não passa pelo caminho de INSERT deste
@@ -184,12 +218,10 @@ $$;
 create or replace function public.vessel_registros_preencher_cliente_id()
 returns trigger language plpgsql as $$
 begin
-  if new.cliente_id is null then
+  if new.cliente_id is null and new.pedido_id is not null then
     select pr.cliente_id into new.cliente_id
       from public.vessel_pedidos_de_registro pr
-     where pr.codigo = new.codigo and pr.cliente_id is not null
-     order by pr.criado_em desc
-     limit 1;
+     where pr.id = new.pedido_id;
   end if;
   return new;
 end;
