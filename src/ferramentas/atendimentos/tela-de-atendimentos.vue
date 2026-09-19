@@ -1,6 +1,7 @@
 <template>
   <div class="tela-atendimentos">
-    <barra-de-topo voltar="Central" titulo="Vessel — Private Appointment"
+    <barra-de-topo :voltar="ROTULO_DO_PAI[paiDaTela('atendimentos')]"
+                   titulo="Vessel — Private Appointment"
                    :subtitulo="subtitulo" @voltar="voltar" />
 
     <div class="container-app atd-body">
@@ -174,9 +175,10 @@ import {
   SITUACOES, SELO_DE_ENSAIO, resumoDosAtendimentos, comprasDaVisita, porDia,
   janelaDoPeriodo, horaCurta, telefoneLegivel, marcacoesDe, podeCancelar,
 } from './contas-de-atendimento.js'
+import { paiDaTela, ROTULO_DO_PAI } from '../comercial-vessel/navegacao.js'
 
 const router = useRouter()
-function voltar() { router.push({ name: 'inicio' }) }
+function voltar() { router.push({ name: paiDaTela('atendimentos') }) }
 
 const LOJAS = {
   iguatemi: 'Iguatemi Campinas',

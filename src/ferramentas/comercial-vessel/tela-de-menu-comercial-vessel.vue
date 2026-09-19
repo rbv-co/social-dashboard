@@ -3,7 +3,8 @@
        @click do Vue, sem innerHTML e sem expor nada em window. Mesmo padrão de
        tela-de-menu-gestao-interna.vue. -->
   <div class="tela-menu-comercial-vessel">
-    <barra-de-topo voltar="Central" titulo="Comercial Vessel" @voltar="voltar" />
+    <barra-de-topo :voltar="ROTULO_DO_PAI[paiDaTela('comercial-vessel')]"
+                   titulo="Comercial Vessel" @voltar="voltar" />
 
     <div class="cvmenu-body">
       <div class="cvmenu-headline">
@@ -82,13 +83,16 @@ import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import BarraDeTopo from '../../compartilhado/barra-de-topo.vue'
 import { hasPermission } from '../../compartilhado/controle-de-login-e-usuario.js'
+import { paiDaTela, ROTULO_DO_PAI } from './navegacao.js'
 
 const router = useRouter()
 
 const podeAtendimentos = computed(() => hasPermission('atendimentos', 'ver'))
 const podeCarrinho = computed(() => hasPermission('carrinho', 'ver'))
 
-function voltar() { router.push({ name: 'inicio' }) }
+// ⚠️ O menu é o pai da família: aqui SIM o voltar é 'inicio' na mão — é o
+// próprio paiDaTela('comercial-vessel') dizendo isso, não um atalho.
+function voltar() { router.push({ name: paiDaTela('comercial-vessel') }) }
 function ir(nome) { router.push({ name: nome }) }
 </script>
 

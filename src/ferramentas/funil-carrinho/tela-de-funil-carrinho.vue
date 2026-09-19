@@ -1,7 +1,8 @@
 <!-- src/ferramentas/funil-carrinho/tela-de-funil-carrinho.vue -->
 <template>
   <div class="fc-tela">
-    <barra-de-topo voltar="Central" titulo="Funil de Carrinho" @voltar="voltar" />
+    <barra-de-topo :voltar="ROTULO_DO_PAI[paiDaTela('funil-carrinho')]"
+                   titulo="Funil de Carrinho" @voltar="voltar" />
 
     <div class="fc-body">
       <div class="fc-periodo">
@@ -102,9 +103,10 @@ import BarraDeTopo from '../../compartilhado/barra-de-topo.vue'
 import { sbClient } from '../../compartilhado/conectar-no-banco-de-dados.js'
 import { diasAtras } from '../../compartilhado/datas.js'
 import { rankearProdutos, ordenarAbandonados, foiCortado, LIMITE_CARRINHO } from './agregacoes-carrinho.js'
+import { paiDaTela, ROTULO_DO_PAI } from '../comercial-vessel/navegacao.js'
 
 const router = useRouter()
-const voltar = () => router.push({ name: 'inicio' })
+const voltar = () => router.push({ name: paiDaTela('funil-carrinho') })
 
 const PERIODOS = [
   { dias: 7, rotulo: '7D' },

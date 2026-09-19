@@ -1,6 +1,7 @@
 <template>
   <div class="tela-sty">
-    <barra-de-topo voltar="Comercial Vessel" titulo="Vessel — Stylist Circle"
+    <barra-de-topo :voltar="ROTULO_DO_PAI[paiDaTela('stylist-circle')]"
+                   titulo="Vessel — Stylist Circle"
                    :subtitulo="subtitulo" @voltar="voltar" />
 
     <div class="container-app cv-body">
@@ -175,9 +176,10 @@ import {
   proporcao, proporcaoDoConjunto, razao, razaoEscrita, taxaEscrita, margemEscrita,
   emPorcento, emReais, janelaEscrita,
 } from './estatistica.js'
+import { paiDaTela, ROTULO_DO_PAI } from './navegacao.js'
 
 const router = useRouter()
-function voltar() { router.push({ name: 'comercial-vessel' }) }
+function voltar() { router.push({ name: paiDaTela('stylist-circle') }) }
 
 const stylists = ref([])
 const carregando = ref(true)

@@ -1,6 +1,7 @@
 <template>
   <div class="tela-pe">
-    <barra-de-topo voltar="Comercial Vessel" titulo="Vessel — Private Edit"
+    <barra-de-topo :voltar="ROTULO_DO_PAI[paiDaTela('private-edit')]"
+                   titulo="Vessel — Private Edit"
                    :subtitulo="subtitulo" @voltar="voltar" />
 
     <div class="container-app cv-body">
@@ -215,9 +216,10 @@ import {
   proporcao, proporcaoDoConjunto, taxaEscrita, margemEscrita, emPorcento,
   emReais, janelaEscrita,
 } from './estatistica.js'
+import { paiDaTela, ROTULO_DO_PAI } from './navegacao.js'
 
 const router = useRouter()
-function voltar() { router.push({ name: 'comercial-vessel' }) }
+function voltar() { router.push({ name: paiDaTela('private-edit') }) }
 
 const PRACAS = { CPS: 'Campinas', SAO: 'São Paulo', SBO: 'Santa Bárbara', BSB: 'Brasília' }
 

@@ -1,6 +1,7 @@
 <template>
   <div class="tela-bs">
-    <barra-de-topo voltar="Central" titulo="Vessel — Beauty Sessions"
+    <barra-de-topo :voltar="ROTULO_DO_PAI[paiDaTela('beauty-sessions')]"
+                   titulo="Vessel — Beauty Sessions"
                    :subtitulo="subtitulo" @voltar="voltar" />
 
     <div class="container-app bs-body">
@@ -211,9 +212,10 @@ import {
 import {
   proporcao, taxaEscrita, margemEscrita, emPorcento, emReais, janelaEscrita,
 } from '../comercial-vessel/estatistica.js'
+import { paiDaTela, ROTULO_DO_PAI } from '../comercial-vessel/navegacao.js'
 
 const router = useRouter()
-function voltar() { router.push({ name: 'inicio' }) }
+function voltar() { router.push({ name: paiDaTela('beauty-sessions') }) }
 
 const sessoes = ref([])
 const carregando = ref(true)
