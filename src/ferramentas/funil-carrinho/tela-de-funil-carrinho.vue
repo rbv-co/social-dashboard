@@ -184,7 +184,8 @@ onMounted(carregar)
 
 <style scoped>
 .fc-tela { min-height: 100vh; background: var(--bg); }
-.fc-body { padding: var(--sp-6); display: flex; flex-direction: column; gap: var(--sp-6); }
+/* respiro lateral que cresce com a tela, igual às outras cinco telas da família — o piso de 16px é o --gutter de hoje, o celular não muda */
+.fc-body { padding: clamp(16px, 2.4vw, 40px); display: flex; flex-direction: column; gap: var(--sp-6); }
 .fc-periodo { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
 .fc-periodo-label { font-size: var(--texto-etiqueta); text-transform: uppercase; letter-spacing: 1.5px; color: var(--muted); margin-right: var(--sp-2); }
 .fc-abas { display: flex; gap: var(--sp-2); flex-wrap: wrap; }

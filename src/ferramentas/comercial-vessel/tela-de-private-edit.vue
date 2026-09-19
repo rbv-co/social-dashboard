@@ -4,7 +4,7 @@
                    titulo="Vessel — Private Edit"
                    :subtitulo="subtitulo" @voltar="voltar" />
 
-    <div class="container-app cv-body">
+    <div class="cv-largo cv-body">
       <faixa-de-erro :erro="erro" @tentar-de-novo="carregar" />
 
       <!-- ── CRIAR ──────────────────────────────────────────────────────── -->

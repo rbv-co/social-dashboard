@@ -4,7 +4,7 @@
                    titulo="Vessel — Private Appointment"
                    :subtitulo="subtitulo" @voltar="voltar" />
 
-    <div class="container-app atd-body">
+    <div class="cv-largo atd-body">
       <faixa-de-erro :erro="erro" @tentar-de-novo="carregar" />
 
       <!-- ── O QUE ESTOU OLHANDO ─────────────────────────────────────────── -->
@@ -349,6 +349,7 @@ onMounted(() => {
 </script>
 
 <style scoped>
+@import '../comercial-vessel/estilo-comercial.css';
 .tela-atendimentos{min-height:100vh;}
 .atd-body{padding-block:var(--sp-5);display:flex;flex-direction:column;gap:var(--sp-5);}
 .atd-carregando{color:var(--muted);font-family:var(--fonte-principal);font-size:var(--texto-corpo);padding:var(--sp-5) 0;}

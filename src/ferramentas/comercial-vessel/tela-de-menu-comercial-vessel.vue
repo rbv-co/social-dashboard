@@ -98,9 +98,8 @@ function ir(nome) { router.push({ name: nome }) }
 
 <style scoped>
 .cvmenu-body {
-  max-width: 62rem;
-  margin: 0 auto;
-  padding: var(--sp-5) var(--sp-4) var(--sp-6);
+  width: 100%;
+  padding: var(--sp-5) clamp(16px, 2.4vw, 40px) var(--sp-6);
 }
 
 .cvmenu-headline { margin-bottom: var(--sp-5); }
@@ -119,7 +118,7 @@ function ir(nome) { router.push({ name: nome }) }
 
 .cvmenu-cards {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: var(--sp-3);
 }
 
@@ -167,7 +166,4 @@ function ir(nome) { router.push({ name: nome }) }
   font-size: var(--texto-corpo);
 }
 
-@media (min-width: 48rem) {
-  .cvmenu-cards { grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr)); }
-}
 </style>

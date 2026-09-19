@@ -4,7 +4,7 @@
                    titulo="Vessel — Beauty Sessions"
                    :subtitulo="subtitulo" @voltar="voltar" />
 
-    <div class="container-app bs-body">
+    <div class="cv-largo bs-body">
       <faixa-de-erro :erro="erro" @tentar-de-novo="carregar" />
 
       <!-- ── CRIAR ──────────────────────────────────────────────────────── -->
@@ -351,6 +351,7 @@ onMounted(carregar)
 </script>
 
 <style scoped>
+@import '../comercial-vessel/estilo-comercial.css';
 .bs-body { padding-bottom: var(--sp-6); }
 
 .bs-bloco {

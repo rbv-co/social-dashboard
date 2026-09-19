@@ -214,3 +214,17 @@
   .cv-form { grid-template-columns: repeat(3, 1fr); }
   .cv-campo-largo { grid-column: 1 / -1; }
 }
+
+/* A LARGURA DA FAMÍLIA — pedido do dono em 19/09/2026: "entrando nas
+ * ferramentas de comercial vessel elas n pegam a lateral toda da tela".
+ *
+ * ⚠️ NÃO É `--container-max`. Aquele é global e mudá-lo reflete em TODA a
+ * Central no mesmo instante. A largura do resto da Central é a entrega 2,
+ * com varredura tela por tela a 1920px.
+ *
+ * ⚠️ O CELULAR NÃO MUDA: o clamp desce a 16px, que é o --gutter de hoje.
+ */
+.cv-largo {
+  width: 100%;
+  padding-inline: clamp(16px, 2.4vw, 40px);
+}
