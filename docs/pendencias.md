@@ -1,7 +1,7 @@
 # Pendências do iamundi
 
-Última revisão: **18/09/2026** — os três últimos itens saíram.
-**A lista está vazia: não há pendência aberta.**
+Última revisão: **19/09/2026** — entrou **um** item: o **B9**, as telas do
+"Register Later". A lista estava vazia desde 18/09.
 
 O que é este arquivo: a lista viva do que está **em aberto** no projeto. Cada item
 diz o que falta, **por que importa** e **onde** se resolve. É a memória escrita —
@@ -225,8 +225,52 @@ motivo da saída.
 
 ## Parte B — Precisa programar
 
-**Vazia desde 18/09/2026.** O último item daqui foi o B4 — está logo acima, com o
-motivo da saída.
+### B9 · Register Later, as telas — *aberto em 19/09/2026*
+
+**O banco e o robô estão prontos; o que falta é tela.** O desenho aprovado pelo
+dono em 19/09 está em
+`docs/superpowers/specs/2026-09-19-register-later-design.md`: na peça ainda não
+registrada, um botão discreto **"Deixar para depois"**, a cliente deixa o e-mail
+e marca o consentimento, e a marca manda **dois e-mails, em 7 e em 30 dias**,
+com o link do certificado daquela peça.
+
+**Por que importa:** hoje quem abre a etiqueta e não quer registrar na hora
+simplesmente vai embora, e a marca não tem como voltar a falar com ela sobre
+aquela peça. É a última peça da lista da Fase 2.
+
+**O que já existe (e está provado, mas AINDA NÃO APLICADO nem publicado):**
+
+- a migration `db/migrations/2026-09-19-zzz-vessel-lembretes-register-later.sql`
+  — tabela `vessel_lembretes`, um lembrete aberto por peça, dois tetos (1 por
+  peça a cada 24h e 3 por e-mail a cada 24h), e o gatilho que mata o lembrete
+  quando a peça ganha registro;
+- o robô `supabase/functions/vessel-lembretes/` (cron diário) e as ações
+  `lembrete-criar` e `lembrete-parar` na edge `vessel-conta`;
+- a prova por rollback em `coletor/provar-lembretes.mjs`.
+
+**O que falta, e é onde se resolve:**
+
+1. **`/verify`** (repositório `vessel-brasil`): o botão "Deixar para depois", a
+   folha com e-mail e consentimento, e o agradecimento — que é o MESMO
+   agradecimento em qualquer caso. ⚠️ **Não inventar mensagem diferente:** a
+   função do banco responde `{ok:true}` igualzinho quando a peça já tem dona,
+   já tem lembrete ou o teto estourou, de propósito — traduzir isso na tela
+   desfaria a única trava que impede descobrir, por fora, quais bolsas já têm
+   dona.
+2. **`/verify/parar-lembrete`**: a tela que o link do e-mail abre, **sem
+   login** — o token é a prova. Ela sempre diz "você não vai mais receber",
+   inclusive com link velho: é verdade, e responder outra coisa transformaria
+   o endereço num testador de tokens.
+3. **Painel Autenticidade**: a lista de lembretes (peça, e-mail, quando pediu,
+   o que já foi enviado e o estado). Só leitura nesta entrega. O e-mail aparece
+   **inteiro**, por decisão do dono — é dele que a equipe precisa para socorrer
+   a cliente.
+
+⚠️ **E antes de qualquer tela, três passos de operação, nesta ordem:** aplicar a
+migration → gravar o segredo `vessel-lembretes` em `segredos_de_cron` → publicar
+as duas edges → **só então** agendar o cron. O passo a passo exato está em
+`supabase/functions/vessel-lembretes/LEIA-ME.txt`. Agendar antes da migration faz
+o robô errar todo dia, calado.
 
 ## Como manter esta lista
 
