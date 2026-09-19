@@ -241,5 +241,37 @@ Deno.serve(async (req) => {
     return responder(data ?? { ok: false, motivo: 'falhou' });
   }
 
+  // ══════════════════════════════════════════════════════════════════════════
+  // PARAR DE RECEBER O LEMBRETE (19/09/2026)
+  // Desenho: docs/superpowers/specs/2026-09-19-register-later-design.md
+  // Banco:   db/migrations/2026-09-19-zzz-vessel-lembretes-register-later.sql
+  //
+  // ⚠️ A ÚNICA AÇÃO DESTA EDGE QUE NÃO PEDE SESSÃO — e é de propósito. Quem
+  // clica em "não quero mais receber" veio de um e-mail, não está logada e
+  // muitas vezes nem tem conta (o lembrete existe justamente para quem ainda
+  // não registrou). Exigir sessão aqui deixaria a saída do e-mail impossível
+  // para quem mais precisa dela, e o desenho manda: em um toque, sem login.
+  // O token do link É a prova — ele foi sorteado pelo banco, só existe dentro
+  // daquele e-mail e aqui é conferido pelo hash.
+  //
+  // ⚠️ O CAMPO É `corpo.t`, e não `corpo.token`: `token` nesta edge é sempre o
+  // token de SESSÃO da conta. Misturar os dois faria uma página logada mandar
+  // a sessão da cliente para uma ação que a trata como token de e-mail.
+  //
+  // ⚠️ A RESPOSTA É SEMPRE A MESMA, com token certo, errado ou vazio. Esta
+  // porta é pública e sem login: um "não achei" a transformaria num testador
+  // de tokens. Quem decide isso é o banco (`vessel_lembrete_cancelar_por_token`
+  // devolve `{ok:true}` em qualquer caso); aqui só se repassa.
+  if (corpo.acao === 'lembrete-parar') {
+    const { data, error } = await sb.rpc('vessel_lembrete_cancelar_por_token', {
+      p_token: corpo.t ?? null,
+    });
+    if (error) {
+      console.error('vessel_lembrete_cancelar_por_token', error.message);
+      return responder({ ok: false, motivo: 'falhou' });
+    }
+    return responder(data ?? { ok: true });
+  }
+
   return responder({ ok: false, motivo: 'acao_desconhecida' }, 400);
 });
