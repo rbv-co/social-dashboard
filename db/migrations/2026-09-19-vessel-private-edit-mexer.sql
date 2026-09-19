@@ -6,6 +6,23 @@
 -- ⚠️ `codigo` e `chave` NUNCA se editam. O `codigo` e o identificador do CRM e a
 -- `chave` esta dentro de todo convite JA ENVIADO. Trocar qualquer um dos dois
 -- mata links que ja estao circulando.
+--
+-- ⚠️ O `codigo` QUE CHEGA E NORMALIZADO IGUALZINHO AO DA IRMA
+-- `vessel_private_edit_encerrar` — `upper(nullif(trim(coalesce(p_codigo,'')),''))`,
+-- mesma expressao e mesma ordem (ver
+-- `db/migrations/2026-09-19-vessel-private-edit-pela-tela.sql`). E copia
+-- deliberada, para as duas nao poderem divergir. O motivo: as quatro acoes
+-- moram NA MESMA TELA, lado a lado. Um codigo com espaco na ponta ou em
+-- minusculas que faz "Encerrar" funcionar e "Editar", "Apagar" e "Arquivar"
+-- responderem `nao_achei` e pior do que os quatro recusarem juntos: recusa em
+-- bloco a pessoa entende como codigo errado; recusa pela metade ela entende
+-- como sistema quebrado, e nao ha nada na tela que explique a diferenca.
+--
+-- ⚠️ E O VALOR NORMALIZADO VALE PARA A FUNCAO INTEIRA: o `exists`, o `update`,
+-- o `delete`, a conferencia de convidadas e o `codigo` que volta no json. Um
+-- so desses lugares lendo `p_codigo` cru ja e um buraco — a conferencia de
+-- convidadas lendo o cru, por exemplo, nao acharia ninguem pendurado e o
+-- `delete` (que usaria o normalizado) apagaria um encontro com gente.
 
 create or replace function public.vessel_private_edit_editar(
   p_codigo  text,
@@ -22,13 +39,15 @@ security definer
 set search_path to 'public'
 as $function$
 declare
+  -- ⚠️ MESMA EXPRESSAO E MESMA ORDEM da irma `vessel_private_edit_encerrar`.
+  v_codigo  text := upper(nullif(trim(coalesce(p_codigo, '')), ''));
   v_stylist bigint;
 begin
   if not public.is_vessel_atendimentos_editar() then
     return json_build_object('ok', false, 'situacao', 'sem_permissao');
   end if;
 
-  if not exists (select 1 from public.vessel_private_edits where codigo = p_codigo) then
+  if not exists (select 1 from public.vessel_private_edits where codigo = v_codigo) then
     return json_build_object('ok', false, 'situacao', 'nao_achei');
   end if;
 
@@ -47,9 +66,9 @@ begin
          loja       = coalesce(p_loja, loja),
          vagas      = coalesce(p_vagas, vagas),
          stylist_id = coalesce(v_stylist, stylist_id)
-   where codigo = p_codigo;
+   where codigo = v_codigo;
 
-  return json_build_object('ok', true, 'situacao', 'ok', 'codigo', p_codigo);
+  return json_build_object('ok', true, 'situacao', 'ok', 'codigo', v_codigo);
 end;
 $function$;
 
@@ -59,24 +78,32 @@ language plpgsql
 security definer
 set search_path to 'public'
 as $function$
+declare
+  -- ⚠️ MESMA EXPRESSAO E MESMA ORDEM da irma `vessel_private_edit_encerrar`.
+  v_codigo text := upper(nullif(trim(coalesce(p_codigo, '')), ''));
 begin
   if not public.is_vessel_atendimentos_editar() then
     return json_build_object('ok', false, 'situacao', 'sem_permissao');
   end if;
 
-  if not exists (select 1 from public.vessel_private_edits where codigo = p_codigo) then
+  if not exists (select 1 from public.vessel_private_edits where codigo = v_codigo) then
     return json_build_object('ok', false, 'situacao', 'nao_achei');
   end if;
 
   -- ⚠️ APAGAR COM GENTE PENDURADA DEIXARIA LINHAS ORFAS em vessel_atendimentos,
   -- e a receita passaria a somar sobre um encontro que nao existe mais. Para
   -- esses, a tela oferece encerrar e arquivar.
-  if exists (select 1 from public.vessel_atendimentos where evento_codigo = p_codigo) then
+  --
+  -- ⚠️ E AQUI TAMBEM E `v_codigo`, NAO `p_codigo`. Se esta linha lesse o cru
+  -- enquanto o `delete` abaixo le o normalizado, um codigo em minusculas nao
+  -- acharia ninguem pendurado e o `delete` apagaria um encontro COM GENTE —
+  -- exatamente o estrago que esta conferencia existe para impedir.
+  if exists (select 1 from public.vessel_atendimentos where evento_codigo = v_codigo) then
     return json_build_object('ok', false, 'situacao', 'tem_gente');
   end if;
 
-  delete from public.vessel_private_edits where codigo = p_codigo;
-  return json_build_object('ok', true, 'situacao', 'ok', 'codigo', p_codigo);
+  delete from public.vessel_private_edits where codigo = v_codigo;
+  return json_build_object('ok', true, 'situacao', 'ok', 'codigo', v_codigo);
 end;
 $function$;
 
@@ -89,21 +116,24 @@ language plpgsql
 security definer
 set search_path to 'public'
 as $function$
+declare
+  -- ⚠️ MESMA EXPRESSAO E MESMA ORDEM da irma `vessel_private_edit_encerrar`.
+  v_codigo text := upper(nullif(trim(coalesce(p_codigo, '')), ''));
 begin
   if not public.is_vessel_atendimentos_editar() then
     return json_build_object('ok', false, 'situacao', 'sem_permissao');
   end if;
 
-  if not exists (select 1 from public.vessel_private_edits where codigo = p_codigo) then
+  if not exists (select 1 from public.vessel_private_edits where codigo = v_codigo) then
     return json_build_object('ok', false, 'situacao', 'nao_achei');
   end if;
 
   update public.vessel_private_edits
      set arquivada = coalesce(p_arquivada, true)
-   where codigo = p_codigo;
+   where codigo = v_codigo;
 
   return json_build_object('ok', true, 'situacao', 'ok',
-                           'codigo', p_codigo, 'arquivada', coalesce(p_arquivada, true));
+                           'codigo', v_codigo, 'arquivada', coalesce(p_arquivada, true));
 end;
 $function$;
 

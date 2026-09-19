@@ -186,13 +186,48 @@ begin
   insert into resultado values (24, 'arquivar NÃO encerrou o encontro de tabela',
     'true', coalesce(v_texto,'(nulo)'), coalesce(v_texto = 'true', false));
 
+  -- ══ 3b. O CÓDIGO TORTO — minúsculas e espaço na ponta ═════════════════
+  --
+  -- ⚠️ AS QUATRO AÇÕES MORAM NA MESMA TELA, lado a lado. A irmã
+  -- `vessel_private_edit_encerrar` já normaliza o código com
+  -- `upper(nullif(trim(coalesce(p_codigo,'')),''))`; as três daqui copiam a
+  -- MESMA expressão, na MESMA ordem, para as duas não poderem divergir. Sem
+  -- isso, o mesmo código faria "Encerrar" funcionar e "Editar", "Apagar" e
+  -- "Arquivar" responderem `nao_achei` — e recusa pela metade a pessoa lê como
+  -- sistema quebrado, não como código errado. Recusar os quatro juntos seria
+  -- menos ruim do que isso.
+  v_texto := '  ' || lower(c_sem) || '  ';
+
+  v_r := public.vessel_private_edit_arquivar(v_texto, true)::jsonb;
+  insert into resultado values (25, 'código torto (minúsculas + espaço) ACHA o encontro',
+    'ok', coalesce(v_r->>'situacao','(nulo)'), coalesce((v_r->>'situacao') = 'ok', false));
+  insert into resultado values (26, 'e o código volta NORMALIZADO na resposta',
+    c_sem, coalesce(v_r->>'codigo','(nulo)'), coalesce((v_r->>'codigo') = c_sem, false));
+
+  select arquivada::text into v_texto from public.vessel_private_edits where codigo = c_sem;
+  insert into resultado values (27, 'e gravou de verdade (não foi só um ok de mentira)',
+    'true', coalesce(v_texto,'(nulo)'), coalesce(v_texto = 'true', false));
+
+  v_r := public.vessel_private_edit_editar('  ' || lower(c_sem) || '  ', null, null, null, null, 7, null)::jsonb;
+  insert into resultado values (28, 'editar também aceita o código torto',
+    'ok', coalesce(v_r->>'situacao','(nulo)'), coalesce((v_r->>'situacao') = 'ok', false));
+  select vagas::text into v_texto from public.vessel_private_edits where codigo = c_sem;
+  insert into resultado values (29, 'e editou a linha certa',
+    '7', coalesce(v_texto,'(nulo)'), coalesce(v_texto = '7', false));
+
+  -- Devolve o encontro para fora do arquivo, para o caso 4 apagar de verdade.
+  v_r := public.vessel_private_edit_arquivar(c_sem, false)::jsonb;
+
   -- ══ 4. APAGAR SEM NINGUÉM PENDURADO ═══════════════════════════════════
   select count(*) into v_n from public.vessel_atendimentos where evento_codigo = c_sem;
   insert into resultado values (30, 'o encontro de prova está mesmo vazio antes de apagar',
     '0', v_n::text, v_n = 0);
 
-  v_r := public.vessel_private_edit_apagar(c_sem)::jsonb;
-  insert into resultado values (31, 'encontro SEM gente: apaga',
+  -- ⚠️ E VAI PELO CÓDIGO TORTO de propósito: se o `exists` normalizasse e o
+  -- `delete` lesse o cru, a resposta seria `ok` e a linha CONTINUARIA LÁ — um
+  -- "apaguei" que não apagou nada, que só a asserção 32 denuncia.
+  v_r := public.vessel_private_edit_apagar('  ' || lower(c_sem) || '  ')::jsonb;
+  insert into resultado values (31, 'encontro SEM gente: apaga (pelo código torto)',
     'ok', coalesce(v_r->>'situacao','(nulo)'), coalesce((v_r->>'situacao') = 'ok', false));
   select count(*) into v_n from public.vessel_private_edits where codigo = c_sem;
   insert into resultado values (32, 'e a linha sumiu mesmo (não foi só um ok de mentira)',
@@ -232,9 +267,24 @@ begin
   insert into resultado values (44, 'e a linha da convidada NÃO foi tocada',
     '1', v_n::text, v_n = 1);
 
+  -- ⚠️ E COM O CÓDIGO TORTO A RECUSA TEM DE SER A MESMA. Esta é a fresta mais
+  -- perigosa da normalização: se a conferência de convidadas lesse `p_codigo`
+  -- cru enquanto o `delete` lê o normalizado, este `apagar` não acharia
+  -- ninguém pendurado, responderia `ok` e levaria embora um encontro COM
+  -- GENTE — deixando linhas órfãs em `vessel_atendimentos`.
+  v_r := public.vessel_private_edit_apagar('  ' || lower(c_com) || '  ')::jsonb;
+  insert into resultado values (45, 'código torto NÃO fura a conferência de convidadas',
+    'tem_gente', coalesce(v_r->>'situacao','(nulo)'), coalesce((v_r->>'situacao') = 'tem_gente', false));
+  select count(*) into v_n from public.vessel_private_edits where codigo = c_com;
+  insert into resultado values (46, 'e o encontro com gente continua lá',
+    '1', v_n::text, v_n = 1);
+  select count(*) into v_n from public.vessel_atendimentos where evento_codigo = c_com;
+  insert into resultado values (47, 'e a convidada também',
+    '1', v_n::text, v_n = 1);
+
   -- E o caminho que sobra para esses: arquivar, que funciona mesmo com gente.
   v_r := public.vessel_private_edit_arquivar(c_com, true)::jsonb;
-  insert into resultado values (45, 'o que tem gente ainda pode ser ARQUIVADO',
+  insert into resultado values (48, 'o que tem gente ainda pode ser ARQUIVADO',
     'ok', coalesce(v_r->>'situacao','(nulo)'), coalesce((v_r->>'situacao') = 'ok', false));
 
   -- ══ 6. ENCONTRO QUE NÃO EXISTE ════════════════════════════════════════

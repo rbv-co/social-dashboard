@@ -241,7 +241,31 @@ try {
   // ⚠️ ARQUIVAR NAO E ENCERRAR: `ativa` nao pode ter sido tocada no caminho.
   if ((await linha()).ativa !== true) throw new Error('arquivar encerrou o encontro de tabela')
 
-  // ── 4d. APAGAR SO QUANDO NAO TEM NINGUEM PENDURADO ──────────────────────
+  // ── 4d. O CODIGO TORTO: minusculas e espaco na ponta ────────────────────
+  // ⚠️ AS QUATRO ACOES MORAM NA MESMA TELA. A irma `vessel_private_edit_encerrar`
+  // normaliza o codigo com `upper(nullif(trim(coalesce(p_codigo,'')),''))`; as
+  // tres daqui copiam a MESMA expressao, na MESMA ordem. Sem isso, o mesmo
+  // codigo faria o botao "Encerrar" funcionar e os outros tres responderem
+  // `nao_achei` — e recusa pela metade a pessoa le como sistema quebrado, nao
+  // como codigo errado.
+  const PE_TORTO = `  ${PE.toLowerCase()}  `
+
+  const { r: t1 } = await uma(`select public.vessel_private_edit_arquivar($1, true) as r`, [PE_TORTO])
+  if (t1.ok !== true) throw new Error(`arquivar nao achou o codigo torto: ${JSON.stringify(t1)}`)
+  if (t1.codigo !== PE) throw new Error(`arquivar devolveu o codigo sem normalizar: ${JSON.stringify(t1)}`)
+  if ((await linha()).arquivada !== true) throw new Error('arquivar com codigo torto nao gravou')
+
+  const { r: t2 } = await uma(`select public.vessel_private_edit_arquivar($1, false) as r`, [PE_TORTO])
+  if (t2.ok !== true) throw new Error(`desarquivar nao achou o codigo torto: ${JSON.stringify(t2)}`)
+  if ((await linha()).arquivada !== false) throw new Error('desarquivar com codigo torto nao gravou')
+
+  const { r: t3 } = await uma(
+    `select public.vessel_private_edit_editar($1, null, null, null, null, 7, null) as r`, [PE_TORTO])
+  if (t3.ok !== true) throw new Error(`editar nao achou o codigo torto: ${JSON.stringify(t3)}`)
+  if (t3.codigo !== PE) throw new Error(`editar devolveu o codigo sem normalizar: ${JSON.stringify(t3)}`)
+  if ((await linha()).vagas !== 7) throw new Error('editar com codigo torto nao gravou')
+
+  // ── 4e. APAGAR SO QUANDO NAO TEM NINGUEM PENDURADO ──────────────────────
   if (await temGente(PE) !== false) throw new Error('o encontro de prova ja nasceu com gente')
 
   const { id: pes } = await uma(
@@ -266,12 +290,27 @@ try {
   const depois = await quantasGente(PE)
   if (antes !== depois) throw new Error(`a tentativa de apagar mexeu nas convidadas: ${antes} -> ${depois}`)
 
+  // ⚠️ E COM O CODIGO TORTO A RECUSA TEM DE SER A MESMA. Este caso mira a
+  // fresta mais perigosa da normalizacao: se a conferencia de convidadas lesse
+  // `p_codigo` cru enquanto o `delete` le o normalizado, este `apagar` nao
+  // acharia ninguem pendurado, responderia `ok` e levaria embora um encontro
+  // COM GENTE — deixando linhas orfas em vessel_atendimentos.
+  const { r: ap1t } = await uma(`select public.vessel_private_edit_apagar($1) as r`, [PE_TORTO])
+  if (ap1t.situacao !== 'tem_gente')
+    throw new Error(`codigo torto furou a conferencia de convidadas: ${JSON.stringify(ap1t)}`)
+  if ((await linha()) === undefined) throw new Error('o encontro com gente sumiu pelo codigo torto')
+  if ((await quantasGente(PE)) !== antes) throw new Error('o codigo torto mexeu nas convidadas')
+
   // Sem ninguem pendurado, apaga.
   await uma(`delete from public.vessel_atendimentos where evento_codigo = $1`, [PE])
   if (await temGente(PE) !== false) throw new Error('a convidada nao saiu para o proximo caso')
-  const { r: ap2 } = await uma(`select public.vessel_private_edit_apagar($1) as r`, [PE])
+  // ⚠️ E VAI PELO CODIGO TORTO de proposito: se o `exists` normalizasse e o
+  // `delete` lesse o cru, a resposta seria `ok` e a linha CONTINUARIA LA — um
+  // "apaguei" que nao apagou nada, que so a ultima asercao abaixo denuncia.
+  const { r: ap2 } = await uma(`select public.vessel_private_edit_apagar($1) as r`, [PE_TORTO])
   if (ap2.ok !== true) throw new Error(`apagar recusou encontro vazio: ${JSON.stringify(ap2)}`)
   if (ap2.situacao !== 'ok') throw new Error(`apagar vazio respondeu: ${JSON.stringify(ap2)}`)
+  if (ap2.codigo !== PE) throw new Error(`apagar devolveu o codigo sem normalizar: ${JSON.stringify(ap2)}`)
   if ((await linha()) !== undefined) throw new Error('apagar disse ok e a linha ficou')
 
   // ── 5. NADA DISSO FICA ──────────────────────────────────────────────────
