@@ -126,5 +126,33 @@ const logoEscuroUrl = '/midia/LOGOTIPOBRENOBRANCO.png'
      inline e quebra só quando precisa. */
   .bt-dir{flex:1 1 auto;min-width:0;flex-wrap:wrap;row-gap:8px;}
   .bt-dir:empty{display:none;}
+
+  /* O ALVO DE DEDO DO "VOLTAR" (19/09/2026). MEDIDO antes: 26px de altura a
+     375px, nas seis telas conferidas e nas duas larguras. O PADRÃO item 6 pede
+     40px — dedo não acerta menos que isso — e esta barra sai em TODA tela da
+     Central, então o conserto vale para as 35 de uma vez.
+
+     CRESCE A ÁREA, NÃO O DESENHO. É a receita do PADRÃO item 6 ("40px de alvo
+     sem engordar o botão"): uma faixa absoluta de 40px centrada no botão. Pôr
+     `min-height:40px` no próprio `.bt-voltar` seria o caminho óbvio e o
+     errado — engordaria o botão, empurraria o título e cresceria a barra das
+     35 telas, que é o estrago que fez a primeira versão desta barra ser
+     revertida pelo dono.
+
+     A faixa fica DENTRO da largura do botão (`left:0;right:0`), então não
+     alcança o logo nem o título ao lado; e os 7px que ela passa para cima e
+     para baixo cabem no `padding:10px` da barra e no `row-gap:8px` da fileira
+     de ações. Conferido com `elementFromPoint` no centro de cada vizinho.
+
+     ⚠️ SEM `pointer-events:none`. O pseudo PRECISA receber o toque — é para
+     isso que ele existe. Com `none` a altura continua medindo 40px, a tela
+     continua igual, e o dedo continua sem acertar.
+
+     ⚠️ O `position:relative` não é asseio: sem ele a faixa absoluta se ancora
+     na `.bt-barra`, que é `sticky` (logo, posicionada), e nasce cobrindo a
+     barra inteira — logo e título ficam inalcançáveis. */
+  .bt-voltar{position:relative;}
+  .bt-voltar::after{content:'';position:absolute;left:0;right:0;top:50%;
+                    transform:translateY(-50%);height:40px;}
 }
 </style>
