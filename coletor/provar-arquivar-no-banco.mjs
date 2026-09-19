@@ -13,6 +13,7 @@
 // para gente de verdade agora.
 import './lib/carregar-env.mjs'
 import pg from 'pg'
+import { conferirQueOPortaoVoltou } from './lib/o-portao-dos-atendimentos.mjs'
 
 const cli = new pg.Client({ connectionString: process.env.DATABASE_URL })
 await cli.connect()
@@ -85,6 +86,22 @@ for (const nome of ['vessel_conta_das_private_edits', 'vessel_conta_das_beauty_s
   if (r.some((l) => l.arquivada === true)) nao(`${nome} trouxe arquivada no padrao`)
 }
 await cli.query('rollback')
+
+// 5c. ⚠️ E O PORTAO VOLTOU? A LINHA ACIMA E A UNICA COISA QUE DESFAZ O STUB.
+// Este script existe justamente porque "um COMMIT depois de um erro vira um
+// ROLLBACK calado e o script imprime sucesso do mesmo jeito" — seria
+// incoerente ele imprimir "tela no ar intacta" sem nunca olhar para o UNICO
+// objeto que ele mesmo estragou de proposito. `is_vessel_atendimentos()` e o
+// `using` das politicas de RLS de SEIS tabelas (vessel_pessoas,
+// vessel_atendimentos, vessel_convite_aberturas, vessel_client_advisors,
+// vessel_pedidos, vessel_pedido_itens): deixar um `select true` no lugar dele
+// abriria as seis de uma vez, caladamente. A conferencia vem ANTES de qualquer
+// linha de sucesso, e compara corpo, `security definer` e `search_path` contra
+// a migration que criou o portao — nunca contra uma string redigitada aqui.
+try {
+  await conferirQueOPortaoVoltou(cli)
+  ok('is_vessel_atendimentos() voltou inteira: corpo da migration, security definer, search_path')
+} catch (e) { nao(e.message) }
 
 // ── 6. nenhuma linha nasceu arquivada, e nada da prova sobrou ──────────────
 const sobra = await uma(

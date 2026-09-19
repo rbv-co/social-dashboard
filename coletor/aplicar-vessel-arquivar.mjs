@@ -8,6 +8,7 @@
 import './lib/carregar-env.mjs'
 import { readFileSync } from 'node:fs'
 import pg from 'pg'
+import { conferirQueOPortaoVoltou } from './lib/o-portao-dos-atendimentos.mjs'
 
 const ARQUIVO = '2026-09-19-vessel-arquivar.sql'
 const PE = 'PE-20260919-CPS-Z9'
@@ -168,6 +169,27 @@ try {
     throw new Error('a regua da venda parou de viajar na resposta')
 
   await cli.query('rollback to savepoint prova')
+
+  // ── 4. O PORTAO VOLTOU? ─────────────────────────────────────────────────
+  // ⚠️ A LINHA MAIS PERIGOSA DESTE SCRIPT E A DE CIMA. O `select true` que
+  // substituiu `is_vessel_atendimentos()` la em cima nao e desfeito por nada
+  // automatico: e desfeito pela ORDEM DE DUAS LINHAS — aquele
+  // `rollback to savepoint prova` tendo de vir antes do `commit`. Ordem de
+  // linha nao e garantia: basta alguem mover, editar ou engolir aquela linha
+  // num refactor para o `commit` PUBLICAR o portao aberto.
+  //
+  // ⚠️ E o portao nao guarda so estas contas: ele e o `using` das politicas de
+  // RLS de SEIS tabelas — vessel_pessoas, vessel_atendimentos,
+  // vessel_convite_aberturas, vessel_client_advisors, vessel_pedidos e
+  // vessel_pedido_itens. Um `select true` no lugar dele abriria as seis de uma
+  // vez, para qualquer pessoa logada, sem erro nenhum para denunciar. O stub
+  // ainda larga pelo caminho o `security definer` e o `search_path`.
+  //
+  // Por isso a conferencia e AQUI: depois do rollback, ANTES do commit e antes
+  // de qualquer linha de sucesso. Dizer no relatorio que se conferiu depois
+  // nao vale — depois do commit o estrago ja esta publicado.
+  await conferirQueOPortaoVoltou(cli)
+
   await cli.query('commit')
   console.log('✅ aplicada, registrada e provada:', ARQUIVO)
 } catch (e) {
