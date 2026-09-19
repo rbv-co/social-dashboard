@@ -114,21 +114,22 @@ test('⚠️ a edge não responde nada sem passar pelas funções do banco', () 
   assert.match(FONTE, /rpc\('vessel_conta_entrar'/);
 });
 
-test('a edge trata as doze ações', () => {
+test('a edge trata as treze ações', () => {
   // 'minhas-pecas' entrou na Tarefa 9 (Registered Pieces — Contas Fase 1):
   // a tela "Minhas peças" lista o que está no nome da cliente logada.
   // As quatro 'transferir-*' entraram em 18/09/2026, com a transferência de
   // propriedade (docs/superpowers/specs/2026-09-18-transferencia-de-propriedade-design.md).
-  // 'lembrete-parar' entrou em 19/09/2026, com o "Register Later"
-  // (docs/superpowers/specs/2026-09-19-register-later-design.md): é o link de
-  // "não quero mais receber" do e-mail, e é a ÚNICA ação desta edge que não
-  // depende de sessão nenhuma.
+  // 'lembrete-criar' e 'lembrete-parar' entraram em 19/09/2026, com o
+  // "Register Later" (docs/superpowers/specs/2026-09-19-register-later-design.md).
+  // São as duas ÚNICAS desta edge que funcionam sem sessão: a de criar aceita
+  // o token de sessão como opcional (só para ligar o lembrete à conta), e a de
+  // parar não usa sessão nenhuma — o token do e-mail é a prova.
   //
   // ⚠️ Entrega nova NÃO mexe no que já está no ar: esta lista é fechada, e
   // apagar um `if` sem querer derruba uma tela inteira, calada.
   for (const acao of ['criar', 'entrar', 'sair', 'esqueci', 'editar', 'eu', 'minhas-pecas',
                       'transferir-gerar', 'transferir-aberta', 'transferir-cancelar',
-                      'transferir-aceitar', 'lembrete-parar']) {
+                      'transferir-aceitar', 'lembrete-criar', 'lembrete-parar']) {
     assert.ok(FONTE.includes(`'${acao}'`), `falta a ação ${acao}`);
   }
 });
@@ -321,6 +322,38 @@ test('⚠️ as chamadas de rpc conferem `error` e não deixam falha de infraest
 // ── PARAR DE RECEBER O LEMBRETE (19/09/2026) ─────────────────────────────────
 // Desenho: docs/superpowers/specs/2026-09-19-register-later-design.md
 
+test('⚠️ "lembrete-criar" funciona COM e SEM sessão, e não inventa motivo', () => {
+  const bloco = blocoDaAcao(FONTE, 'lembrete-criar');
+  assert.match(bloco, /rpc\('vessel_lembrete_criar'/);
+
+  // O token de sessão é OPCIONAL: quem não tem conta pede o lembrete do mesmo
+  // jeito — é justamente para quem ainda não registrou. A edge não confere
+  // sessão nenhuma; quem faz isso, e sem derrubar o pedido, é o banco.
+  assert.ok(!/vessel_conta_da_sessao/.test(bloco),
+    'exigir sessão aqui tiraria o botão de quem não tem conta');
+  assert.match(bloco, /p_token_opcional:\s*corpo\.token\s*\?\?\s*null/,
+    'o token de sessão entra como opcional, e nunca obrigatório');
+
+  // ⚠️ A EDGE NÃO INVENTA MOTIVO. A regra de "a mesma resposta em qualquer
+  // situação da peça" mora no banco; se a edge traduzisse, bastaria um
+  // `motivo` a mais aqui para contar que a peça já tem dona.
+  for (const chamada of chamadasDeResponder(bloco)) {
+    assert.ok(!/motivo:\s*'(ja_registrada|ja_tem_dona|ja_tem_lembrete|sem_sessao)'/.test(chamada),
+      `a edge não pode inventar motivo sobre a peça: ${chamada}`);
+  }
+  // Só `falhou`, que é desta edge, e o que vier do banco.
+  assert.match(bloco, /return responder\(data \?\? \{ ok: false, motivo: 'falhou' \}\)/);
+});
+
+test('⚠️ "lembrete-criar" e "lembrete-parar" nunca logam o e-mail nem o token', () => {
+  for (const acao of ['lembrete-criar', 'lembrete-parar']) {
+    for (const log of blocoDaAcao(FONTE, acao).match(/console\.[a-z]+\([^)]*\)/gs) ?? []) {
+      assert.ok(!/corpo\.(email|token|t)\b|\bdata\b/.test(log),
+        `${acao}: o log só leva o nome do rpc e a mensagem do Postgres: ${log}`);
+    }
+  }
+});
+
 test('⚠️ "lembrete-parar" NÃO exige sessão — o token do e-mail é a prova', () => {
   const bloco = blocoDaAcao(FONTE, 'lembrete-parar');
   assert.match(bloco, /rpc\('vessel_lembrete_cancelar_por_token'/);
@@ -344,7 +377,7 @@ test('⚠️ "lembrete-parar" responde sempre a mesma coisa — token errado nã
 test('⚠️ as ações que já existiam continuam todas lá, e a nova chega inteira', () => {
   for (const acao of ['criar', 'entrar', 'eu', 'sair', 'esqueci', 'editar', 'minhas-pecas',
                       'transferir-gerar', 'transferir-aberta', 'transferir-cancelar',
-                      'transferir-aceitar', 'lembrete-parar']) {
+                      'transferir-aceitar', 'lembrete-criar', 'lembrete-parar']) {
     assert.ok(FONTE.includes(`corpo.acao === '${acao}'`), `a ação ${acao} sumiu`);
   }
   // E o rpc novo confere `error`, como todos os outros.

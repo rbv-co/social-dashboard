@@ -24,6 +24,10 @@ inclusive os de `_shared/` — publicar UM robô leva a cópia dele de `_shared`
 
 O QUE PRECISA EXISTIR PARA ELE FUNCIONAR
 1. a migration aplicada (tabela `vessel_lembretes` e as quatro funções);
+1b. a edge `vessel-conta` republicada — é ela que tem as ações
+   `lembrete-criar` (a página pede o lembrete) e `lembrete-parar` (o link do
+   e-mail), e as duas usam a MESMA cópia de `_shared/email-textos.js` que
+   este robô;
 2. a linha `vessel-lembretes` em `public.segredos_de_cron` (o mesmo valor que
    o cron manda no Authorization) — sem ela toda chamada volta 401;
 3. o segredo `ZEPTOMAIL_TOKEN` já setado na Supabase (o mesmo que a
