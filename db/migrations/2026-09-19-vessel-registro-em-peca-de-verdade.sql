@@ -91,7 +91,14 @@ alter table public.vessel_edicoes
     'desmarcar_gravada','sobrescrever_para_fila','sobrescrever_para_baixa',
     'registro_aprovado','registro_recusado','dono_trocado','baixar_garantia',
     'lote_excluido','peca_excluida','etiqueta_adotada','numero_trocado',
-    'transferida_pela_dona','conta_ligada_pelo_cpf'
+    'transferida_pela_dona','conta_ligada_pelo_cpf',
+    -- ⚠️ ACRESCENTADA EM 19/09/2026, DEPOIS DE APLICAR. A entrega do material do
+    -- lote andou ao mesmo tempo que esta e criou `material_do_lote`; como as duas
+    -- reescreviam a lista inteira, quem aplicasse por último apagava a ação da
+    -- outra. O banco já foi consertado por
+    -- `2026-09-19-zz-vessel-trilha-a-lista-inteira.sql`; a ação entra aqui para
+    -- este arquivo nunca mais devolver uma lista MENOR do que a que já existia.
+    'material_do_lote'
   ]));
 
 
