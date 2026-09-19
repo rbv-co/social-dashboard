@@ -1966,7 +1966,26 @@ onUnmounted(() => {
   #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-update-status){display:none;}
   /* controls "desaparece" do layout p/ período e canal virarem filhos diretos do topbar (ordem/linhas) */
   #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-topbar-controls){display:contents;}
-  #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-period-btns){order:2;width:100%;box-sizing:border-box;overflow-x:auto;-webkit-overflow-scrolling:touch;display:flex;flex-wrap:nowrap;gap:4px;padding:7px 14px 9px;border-top:1px solid var(--border);background:var(--surface);}
+  /* A RÉGUA PARA EM BOTÃO INTEIRO (19/09/2026).
+     O DEFEITO, MEDIDO a 375px: a régua rola na horizontal (868px de botões
+     dentro de uma janela de 323px) e parava em qualquer lugar. Sobrava um
+     TOQUINHO de botão na borda — 7,8px no pior caso, 16,5px no caso do meio.
+     Um toco de 8px não dá para ler nem para acertar com o dedo, e o CENTRO
+     desse botão cai FORA do recorte da régua: `elementFromPoint` no centro
+     responde `.bt-barra`, e parece que a barra de topo roubou o toque. Não
+     roubou — não há nada por cima (varrido ponto a ponto, 0 de 270 pontos
+     visíveis tapados). O centro é que ficou do lado de fora do recorte.
+     `scroll-snap` faz a régua descansar em botão inteiro: MEDIDO, o menor
+     pedaço à vista sobe de 7,8px para 43,5px, e o rótulo volta a ser legível.
+     O desenho do botão não muda — muda só ONDE a régua para.
+
+     ⚠️ SEM `scroll-padding-left`. Parece asseio (a régua tem 14px de margem
+     interna), e é o contrário: com ele o encaixe alinha o botão à margem em
+     vez da borda, e sobra o RABO do botão anterior do lado esquerdo. MEDIDO:
+     com `scroll-padding-left:14px` o menor pedaço à vista cai para 10,5px —
+     pior do que sem conserto nenhum. */
+  #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-period-btns){order:2;width:100%;box-sizing:border-box;overflow-x:auto;-webkit-overflow-scrolling:touch;display:flex;flex-wrap:nowrap;gap:4px;padding:7px 14px 9px;border-top:1px solid var(--border);background:var(--surface);scroll-snap-type:x mandatory;}
+  #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-period-btns) > *{scroll-snap-align:start;}
   #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-cf-lbl){display:none;}
   #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-cf-dd){order:3;width:100%;box-sizing:border-box;padding:0 14px 9px;background:var(--surface);}
   #gestao-vista-screen.tela-gestao-a-vista :deep(.gv-cf-trigger){width:100%;}
