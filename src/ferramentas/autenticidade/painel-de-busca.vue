@@ -286,14 +286,57 @@ function limpar() {
 .pb-mais[open] > summary .pb-seta{transform:rotate(90deg)}
 /* ABERTA, A GAVETA TOMA A LINHA INTEIRA. Fechada ela é um alvo curto do tamanho
    do próprio rótulo; aberta, os dois campos de data precisam de largura, e sem
-   isto eles sairiam espremidos ao lado da contagem. */
-.pb-mais[open]{flex:1 1 100%}
+   isto eles sairiam espremidos ao lado da contagem.
+
+   ⚠️ `min-width:0` (19/09/2026) É O QUE FAZ A ROLAGEM DE BAIXO EXISTIR, e sem
+   ele o `overflow-x:auto` do `.pb-linha` não serve para nada — foi medido: com
+   um e sem o outro, a tela sai IDÊNTICA.
+
+   O motivo: um item de flex tem largura mínima automática igual ao MÍNIMO DE
+   CONTEÚDO dele. O conteúdo aqui são dois `input type="date"`, que têm piso
+   próprio (189px, e 330px com a letra em 2×). Então a gaveta não encolhia até
+   a caixa do pai: ela CRESCIA até o piso do conteúdo e empurrava tudo para fora
+   da barra de busca. Não era o `.pb-linha` transbordando da gaveta — era a
+   gaveta inteira transbordando da barra, que é por que a rolagem de baixo não
+   tinha o que rolar.
+
+   Com `min-width:0` a gaveta volta a caber no pai, e aí o bloco das datas rola
+   em si mesmo em vez de sair pela borda da tela. O rótulo não corre risco: o
+   `summary` é `flex-wrap:wrap` e quebra em duas linhas, nunca corta. */
+.pb-mais[open]{flex:1 1 100%; min-width:0}
+.pb-mais{min-width:0}
 /* O período escolhido aparece no próprio rótulo, com a gaveta fechada: filtro
    ligado escondido é filtro que a pessoa não entende por que corta a lista. */
 .pb-periodo{font-weight:400; color:var(--muted)}
 /* Os dois campos de data lado a lado no computador; a 375px eles empilham,
-   porque espremer um `input type="date"` corta a data escrita dentro dele. */
-.pb-linha{display:flex; gap:var(--sp-3); flex-wrap:wrap; padding-top:var(--sp-2)}
+   porque espremer um `input type="date"` corta a data escrita dentro dele.
+
+   ⚠️ `overflow-x:auto` (19/09/2026): O CAMPO DE DATA TEM UM PISO DE LARGURA QUE
+   NENHUM CSS REDUZ. `input type="date"` é controle nativo, e o mínimo dele é
+   189px num navegador de celular (177px no computador) — e cresce junto com a
+   letra: 232px a 1,3×, 260px a 1,5×, 330px a 2× do zoom de leitura. O
+   `.pb-campo` já tem `min-width:0` e mesmo assim não desce daí, porque quem
+   manda é o mínimo do próprio controle.
+
+   Por isso o conteúdo desta linha às vezes é MAIOR que a caixa dela, e aí ele
+   vazava para fora da barra de busca. Medido antes: 42px para fora a 320px e
+   2px a 360px, com a letra em 2× e a gaveta aberta. Com a gaveta fechada e o
+   rótulo curto a conta é ainda pior — a `.pb-mais` fica do tamanho do próprio
+   rótulo (115px medidos a 375px) para um conteúdo de 189px.
+
+   A saída NÃO é espremer o campo: isso corta a data escrita dentro dele, e
+   texto que corta é defeito (PADRÃO item 5) — é o que a linha acima já dizia.
+   Como o piso não se reduz, o bloco passa a rolar em si mesmo. `auto` só age
+   QUANDO não cabe: em largura confortável nada muda, e no aperto a pessoa
+   arrasta o bloco em vez de ver a tela vazar. É a mesma saída que o PADRÃO
+   item 6 admite para régua de controles, e a que a barra de abas desta tela usa.
+
+   Fica na regra-BASE de propósito: o aperto não é só do celular — ele depende
+   da razão entre a largura da caixa e o tamanho da letra, e o zoom de leitura
+   mexe nos dois. Preso a um `@media` de celular, o conserto sumiria justamente
+   para quem aumentou a letra numa tela média. */
+.pb-linha{display:flex; gap:var(--sp-3); flex-wrap:wrap; padding-top:var(--sp-2);
+          overflow-x:auto}
 .pb-linha .pb-campo{flex:1 1 180px}
 .pb-conta{
   display:flex; align-items:center; min-height:40px; margin:0;
