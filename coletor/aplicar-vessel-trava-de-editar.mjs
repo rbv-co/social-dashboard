@@ -91,11 +91,19 @@ try {
   // hoje) mas nao tem superadmin nem a chave `atendimentos` em `permissions`.
   const buraco = await perfil(['atendimentos'], {})
 
-  if (await comoSe(so_ve)) throw new Error('quem so ve passou pela trava de editar')
-  if (!(await comoSe(mexe))) throw new Error('quem pode editar foi barrado')
-  if (await comoSe(solto)) throw new Error('editar ficou MAIS FROUXO que ver')
-  if (!(await comoSe(chefe))) throw new Error('o superadmin foi barrado')
-  if (await comoSe(buraco)) throw new Error('a armadilha do nulo escapou: permissions {} passou pela trava')
+  // ⚠️ `if (valor)` NAO BASTA: `null` e falsy em JavaScript, entao um
+  // `comoSe()` que devolvesse SQL NULL (por exemplo se algum dia alguem
+  // remover o `coalesce(..., false)` da copia acima ou da migration) passaria
+  // batido pelo `if (await comoSe(buraco))` — o `throw` simplesmente nao
+  // dispara para `null`, do mesmo jeito que nao dispara para `false`. As
+  // comparacoes abaixo sao estritas (`!== false` / `!== true`) exatamente
+  // para que NULL seja tratado como reprovacao dos dois lados, e nao como
+  // "nem passou nem falhou". Nao trocar de volta para `if (valor)`.
+  if ((await comoSe(so_ve)) !== false) throw new Error('quem so ve passou pela trava de editar')
+  if ((await comoSe(mexe)) !== true) throw new Error('quem pode editar foi barrado')
+  if ((await comoSe(solto)) !== false) throw new Error('editar ficou MAIS FROUXO que ver')
+  if ((await comoSe(chefe)) !== true) throw new Error('o superadmin foi barrado')
+  if ((await comoSe(buraco)) !== false) throw new Error('a armadilha do nulo escapou: permissions {} passou pela trava (ou virou NULL)')
 
   await cli.query('rollback to savepoint prova')
   await cli.query('commit')
