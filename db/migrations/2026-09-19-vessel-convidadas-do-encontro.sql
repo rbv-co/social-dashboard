@@ -33,12 +33,21 @@ create or replace function public.vessel_convidadas_do_encontro(
   -- ⚠️ A JANELA DE VENDA ENTRA POR PARÂMETRO PORQUE O `comprou` DEPENDE DELA.
   -- Ver o bloco grande sobre `comprou` lá embaixo.
   --
-  -- ⚠️⚠️ QUEM CHAMA TEM DE MANDAR O MESMO NÚMERO QUE MANDOU PARA
-  -- `vessel_conta_das_private_edits`, cujo padrão é OUTRO (14). Os dois padrões
-  -- são diferentes de propósito no pedido desta tarefa, mas na tela eles têm de
-  -- ser o mesmo valor: a receita do topo e o "Comprou: Sim" da lista respondem
-  -- à mesma pergunta e não podem usar réguas diferentes.
-  p_dias int default 7
+  -- ⚠️⚠️ O PADRÃO É 14 DE PROPÓSITO: é EXATAMENTE o padrão da irmã
+  -- `vessel_conta_das_private_edits(p_dias int default 14, ...)`. Não é
+  -- coincidência e não pode ser mexido de um lado só.
+  --
+  -- A receita do topo e a coluna "Comprou" da lista respondem à MESMA pergunta
+  -- sobre o MESMO encontro, lado a lado na mesma tela. Se os dois padrões
+  -- fossem diferentes, bastaria quem chama esquecer de passar a janela para UMA
+  -- das duas — e a tela mostraria um número medido com uma régua e uma coluna
+  -- medida com outra, sem erro nenhum para denunciar. Com o mesmo padrão, o
+  -- esquecimento ainda dá o mesmo resultado nos dois.
+  --
+  -- ⚠️ E quando a tela PASSA a janela, tem de passar o MESMO número para as
+  -- duas. O padrão igual tira a armadilha do caminho de quem esquece; ele não
+  -- conserta quem manda dois números diferentes de propósito.
+  p_dias int default 14
 )
 returns json
 language plpgsql
@@ -53,7 +62,11 @@ declare
   -- quem manda `p_dias: null` de fora NÃO cai no padrão do parâmetro, cai em
   -- NULL — e `between x and NULL` não devolve linha nenhuma, calado. Janela
   -- negativa também não existe.
-  v_dias     int := greatest(coalesce(p_dias, 7), 0);
+  --
+  -- ⚠️ E O 14 AQUI É O MESMO 14 DO PARÂMETRO, que é o mesmo da irmã que conta.
+  -- Mexer num e esquecer do outro faria `p_dias: null` medir uma janela e
+  -- `p_dias` omitido medir outra, na mesma função.
+  v_dias     int := greatest(coalesce(p_dias, 14), 0);
   v_quando   timestamptz;
   v_resposta json;
 begin
@@ -157,4 +170,6 @@ comment on function public.vessel_convidadas_do_encontro(text, integer) is
   'is_vessel_atendimentos() e so para authenticated. `comprou` usa a MESMA '
   'regra da receita de vessel_conta_das_private_edits: compareceu E comprou '
   'dentro da janela de p_dias, contada do dia do encontro no fuso de Sao '
-  'Paulo. Mandar o MESMO p_dias que a conta recebeu.';
+  'Paulo. O padrao de p_dias e 14, o MESMO da irma que conta, para que quem '
+  'esquecer de passar a janela a uma das duas ainda receba as duas medidas '
+  'com a mesma regua. Passando, passar o MESMO numero para as duas.';

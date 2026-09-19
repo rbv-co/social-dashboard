@@ -26,11 +26,16 @@
 // em que `is_vessel_atendimentos()` (o `using` do RLS de SEIS tabelas) esteja
 // aberto.
 //
-// ⚠️ A PROVA DO `comprou` E O CORACAO DESTE ARQUIVO. Ela monta QUATRO
+// ⚠️ A PROVA DO `comprou` E O CORACAO DESTE ARQUIVO. Ela monta CINCO
 // convidadas de propriedades diferentes de proposito, porque uma prova com so
 // a convidada facil (compareceu e comprou) nao consegue distinguir a regra
 // certa — "compareceu E comprou dentro da janela" — da regra errada e obvia,
 // "comprou alguma vez na vida". As duas passariam. Ver o bloco 4c.
+//
+// ⚠️ E O PADRAO DE `p_dias` E 14 NAS DUAS FUNCOES, de proposito. O bloco 4e
+// chama as duas SEM argumento nenhum e exige que elas continuem concordando —
+// um padrao diferente de cada lado poria, na mesma tela, uma receita medida
+// com uma regua e uma coluna "Comprou" medida com outra.
 //
 // ⚠️ NENHUMA DATA CRAVADA: o encontro e as compras sao posicionados em
 // OFICINAS de dias a partir de `now()`, e as compras a partir do DIA DO
@@ -58,10 +63,18 @@ const MARCA = 'prova-convidadas-do-encontro'
 // arquivo.
 const PEDIDO_BASE = 9000000000001
 
-// A janela padrao da funcao nova, e a que esta prova manda de proposito para
-// `vessel_conta_das_private_edits` — o numero do topo e a lista de baixo tem de
-// usar a MESMA regua.
-const DIAS = 7
+// A janela de venda. ⚠️ E O PADRAO DAS DUAS FUNCOES: a nova nasce com
+// `p_dias int default 14` porque `vessel_conta_das_private_edits` ja tinha
+// `default 14`. O numero do topo e a lista de baixo tem de usar a MESMA regua —
+// inclusive quando quem chama esquece de passar a regua (bloco 4e).
+const DIAS = 14
+
+// ⚠️ UMA COMPRA NO MEIO DO CAMINHO, entre 7 e 14 dias do encontro. Ela existe
+// so para que um padrao DIFERENTE entre as duas funcoes doa: com 14 nos dois
+// lados ela conta em ambos; com 7 na lista e 14 na conta, ela alimenta a
+// receita do topo e NAO aparece marcada na lista — que e exatamente a
+// contradicao na tela que este padrao igual existe para matar.
+const DIAS_DO_MEIO = 10
 
 // ⚠️ A IMPRESSAO DOS PEDIDOS DE VERDADE, campo a campo e em ordem fixa. Nao e
 // `count(*)`: trocar a data ou a receita de um pedido deixaria a contagem igual
@@ -169,11 +182,12 @@ try {
        from public.vessel_private_edits e where e.codigo = $5`,
     [proximoPedido++, id, offsetDias, valor, PE])
 
-  // ── 3a. AS QUATRO CONVIDADAS E A DE TESTE ────────────────────────────────
+  // ── 3a. AS CINCO CONVIDADAS E A DE TESTE ─────────────────────────────────
   // ⚠️ CADA UMA EXISTE PARA SEPARAR UM CASO DO `comprou`. Juntas, elas sao a
   // unica coisa que distingue a regra certa da regra errada.
   //
   //   comprou_dentro  compareceu E comprou na janela ......... comprou = SIM
+  //   comprou_no_meio compareceu E comprou no dia 10 ......... comprou = SIM
   //   comprou_fora    compareceu, comprou FORA da janela ..... comprou = nao
   //   nao_veio        comprou na janela, mas NAO compareceu .. comprou = nao
   //   sem_compra      compareceu e nao comprou nada .......... comprou = nao
@@ -181,6 +195,7 @@ try {
   const pFora   = await pessoa('Convidada que comprou fora',   '5519955555552')
   const pFaltou = await pessoa('Convidada que nao veio',       '5519955555553')
   const pNada   = await pessoa('Convidada que nao comprou',    '5519955555554')
+  const pMeio   = await pessoa('Convidada que comprou no meio','5519955555555')
   const pTeste  = await pessoa('Convidada de teste',           '5519944444444')
 
   await convidada(pDentro, 'realizado', false)
@@ -189,12 +204,13 @@ try {
   // `status = 'realizado'` a separa de quem entra na receita.
   await convidada(pFaltou, 'no_show',   false)
   await convidada(pNada,   'realizado', false)
+  await convidada(pMeio,   'realizado', false)
   await convidada(pTeste,  'realizado', true)
 
   // ⚠️ UMA DAS COMPRAS DA `dentro` CAI EXATAMENTE NO ULTIMO DIA DA JANELA
-  // (dia do encontro + 7). O `between` do Postgres e INCLUSIVO nas duas pontas,
-  // e a receita conta com isso; um `<` no lugar do `between` perderia esta
-  // compra calado.
+  // (dia do encontro + 14). O `between` do Postgres e INCLUSIVO nas duas
+  // pontas, e a receita conta com isso; um `<` no lugar do `between` perderia
+  // esta compra calado.
   await compra(pDentro, 0, '1000.00')
   await compra(pDentro, DIAS, '250.00')
   // ⚠️ E AS DUAS DA `fora` MIRAM OS DOIS LADOS: uma muito antes do encontro
@@ -202,10 +218,12 @@ try {
   await compra(pFora, -60, '777.00')
   await compra(pFora, DIAS + 1, '333.00')
   await compra(pFaltou, 1, '555.00')
+  // ⚠️ A COMPRA QUE MEDE OS DOIS PADROES: dia 10, dentro de 14 e fora de 7.
+  await compra(pMeio, DIAS_DO_MEIO, '400.00')
   await compra(pTeste, 1, '111.00')
 
-  const RECEITA_ESPERADA = 1250          // 1000.00 + 250.00, so a `dentro`
-  const RECEITA_JANELA_LARGA = 1583      // + os 333.00 da `fora`, com 70 dias
+  const RECEITA_ESPERADA = 1650          // 1000 + 250 (`dentro`) + 400 (`meio`)
+  const RECEITA_JANELA_LARGA = 1983      // + os 333.00 da `fora`, com 70 dias
 
   // ── 4. PERFIS DE MENTIRA E SESSAO DE VERDADE ─────────────────────────────
   // ⚠️ `profiles.id` tem FK para `auth.users(id)` e `profiles.email` e NOT NULL
@@ -237,7 +255,26 @@ try {
       : `select public.vessel_convidadas_do_encontro($1, $2) as r`,
     dias === null ? [codigo] : [codigo, dias])).r
   const conta = async (dias = DIAS) => (await uma(
-    `select public.vessel_conta_das_private_edits($1) as r`, [dias])).r
+    dias === null
+      ? `select public.vessel_conta_das_private_edits() as r`
+      : `select public.vessel_conta_das_private_edits($1) as r`,
+    dias === null ? [] : [dias])).r
+
+  // ⚠️ A SOMA E FEITA NO BANCO, com a MESMA conta da receita — e a janela vem
+  // de fora, porque e justamente a janela que esta em julgamento nos blocos
+  // abaixo. Somar em JavaScript poria `numeric` dentro de `Number` e a prova
+  // passaria a discutir arredondamento em vez de regra.
+  const somaDaJanela = async (telefones, dias) => (await uma(
+    `select coalesce(sum(coalesce(p.receita_liquida, p.total_corrigido, 0)), 0)::text as soma
+       from public.vessel_pedidos p
+       join public.vessel_pessoas pe on pe.id = p.pessoa_id
+      where pe.telefone = any($1)
+        and p.data_do_pedido
+              between (select (e.quando at time zone 'America/Sao_Paulo')::date
+                         from public.vessel_private_edits e where e.codigo = $2)
+                  and (select (e.quando at time zone 'America/Sao_Paulo')::date + $3::int
+                         from public.vessel_private_edits e where e.codigo = $2)`,
+    [telefones, PE, dias])).soma
 
   // ── 4a. SEM SESSAO E SEM A PERMISSAO: LISTA VAZIA, NUNCA DADO ────────────
   // ⚠️ `auth.uid()` e nulo sem sessao, entao este caso sozinho nao separa "o
@@ -263,8 +300,8 @@ try {
   await falarComo(so_ve)
   const lista = await convidadas()
 
-  if (lista.length !== 4)
-    throw new Error(`a lista trouxe ${lista.length}, esperava 4: ${JSON.stringify(lista)}`)
+  if (lista.length !== 5)
+    throw new Error(`a lista trouxe ${lista.length}, esperava 5: ${JSON.stringify(lista)}`)
 
   // ⚠️ SO QUEM NAO E `teste` — o MESMO filtro das contas.
   if (lista.some((c) => c.nome === 'Convidada de teste'))
@@ -275,7 +312,8 @@ try {
   const fora   = porNome['Convidada que comprou fora']
   const faltou = porNome['Convidada que nao veio']
   const nada   = porNome['Convidada que nao comprou']
-  for (const [nome, c] of Object.entries({ dentro, fora, faltou, nada }))
+  const meio   = porNome['Convidada que comprou no meio']
+  for (const [nome, c] of Object.entries({ dentro, fora, faltou, nada, meio }))
     if (!c) throw new Error(`a convidada ${nome} nao veio na lista: ${JSON.stringify(lista)}`)
 
   // Os campos do contrato, um por um.
@@ -288,7 +326,7 @@ try {
   if (dentro.respondeu_em === null) throw new Error('respondeu_em veio nulo')
 
   // ── 4c. O `comprou` TEM DE SER A REGRA DA RECEITA ────────────────────────
-  // ⚠️ AS QUATRO ASERCOES ABAIXO SAO O MOTIVO DESTE ARQUIVO EXISTIR. Escrito
+  // ⚠️ AS CINCO ASERCOES ABAIXO SAO O MOTIVO DESTE ARQUIVO EXISTIR. Escrito
   // como `exists (select 1 from vessel_pedidos where pessoa_id = t.pessoa_id)`
   // — qualquer compra, de qualquer epoca — a primeira passaria e as duas do
   // meio cairiam. E e exatamente esse o erro que poria "Comprou: Sim" ao lado
@@ -305,6 +343,8 @@ try {
     throw new Error(`quem NAO compareceu marcou comprou: ${JSON.stringify(faltou)}`)
   if (nada.comprou !== false)
     throw new Error(`quem nao comprou nada marcou comprou: ${JSON.stringify(nada)}`)
+  if (meio.comprou !== true)
+    throw new Error(`quem comprou no dia ${DIAS_DO_MEIO} nao marcou comprou: ${JSON.stringify(meio)}`)
 
   // ── 4d. O NUMERO DO TOPO E A LISTA DE BAIXO, NA MESMA TELA ───────────────
   // ⚠️ E A MESMA JANELA NOS DOIS: a conta recebe o mesmo `DIAS` que a lista.
@@ -324,23 +364,52 @@ try {
   // alimenta a receita ficou sem a marca — as duas contas divergem e esta
   // linha quebra.
   const compradoras = lista.filter((c) => c.comprou === true).map((c) => c.telefone)
-  const { soma } = await uma(
-    `select coalesce(sum(coalesce(p.receita_liquida, p.total_corrigido, 0)), 0)::text as soma
-       from public.vessel_pedidos p
-       join public.vessel_pessoas pe on pe.id = p.pessoa_id
-      where pe.telefone = any($1)
-        and p.data_do_pedido
-              between (select (e.quando at time zone 'America/Sao_Paulo')::date
-                         from public.vessel_private_edits e where e.codigo = $2)
-                  and (select (e.quando at time zone 'America/Sao_Paulo')::date + $3::int
-                         from public.vessel_private_edits e where e.codigo = $2)`,
-    [compradoras, PE, DIAS])
+  const soma = await somaDaJanela(compradoras, DIAS)
   if (Number(linha.receita) !== Number(soma))
     throw new Error(`a receita do topo (${linha.receita}) nao e a soma das compras de quem a lista marcou comprou (${soma})`)
   if (Number(linha.receita) !== RECEITA_ESPERADA)
     throw new Error(`a receita do topo deu ${linha.receita}, esperava ${RECEITA_ESPERADA}`)
 
-  // ── 4e. A JANELA E DE VERDADE, E ANDA PARA A FRENTE ──────────────────────
+  // ── 4e. SEM ARGUMENTO NENHUM, AS DUAS AINDA CONCORDAM ────────────────────
+  // ⚠️ ESTE E O CASO QUE O PADRAO IGUAL EXISTE PARA GARANTIR. As duas funcoes
+  // sao chamadas aqui SEM `p_dias` — do jeito que uma tela distraida vai
+  // chamar — e a exigencia e a mesma do bloco 4d: a receita do topo tem de ser
+  // EXATAMENTE a soma das compras de quem a lista marcou `comprou`.
+  //
+  // ⚠️ A JANELA DA CONTA NAO E REDIGITADA AQUI: ela e lida de
+  // `janela_de_venda_em_dias`, que a propria conta devolve na resposta. Cravar
+  // um 14 nesta linha faria a prova concordar consigo mesma em vez de
+  // concordar com a funcao.
+  //
+  // ⚠️ E E POR ISSO QUE A `meio` EXISTE. Com os dois padroes iguais (14 e 14)
+  // ela e marcada `comprou` e alimenta a receita — as duas contas batem. Com a
+  // lista em 7 e a conta em 14, a compra dela do dia 10 CONTINUA alimentando a
+  // receita do topo e some da coluna "Comprou" — e a soma daqui fica menor que
+  // a receita. Sem uma compra entre 7 e 14, os dois padroes dariam o mesmo
+  // resultado e este caso nao provaria nada.
+  const listaSemArgumento = await convidadas(PE, null)
+  const contaSemArgumento = (await conta(null) || []).find((l) => l.codigo === PE)
+  if (!contaSemArgumento) throw new Error('o encontro nao apareceu na conta sem argumento')
+
+  const compradorasSemArgumento = listaSemArgumento
+    .filter((c) => c.comprou === true).map((c) => c.telefone)
+  const somaSemArgumento = await somaDaJanela(
+    compradorasSemArgumento, contaSemArgumento.janela_de_venda_em_dias)
+  if (Number(contaSemArgumento.receita) !== Number(somaSemArgumento))
+    throw new Error(
+      `sem argumento as duas mediram com reguas diferentes: a receita do topo deu ` +
+      `${contaSemArgumento.receita} e as compras de quem a lista marcou comprou somam ` +
+      `${somaSemArgumento} (a conta usou ${contaSemArgumento.janela_de_venda_em_dias} dias)`)
+
+  // ⚠️ E O PADRAO DA LISTA E O MESMO NUMERO, nao so um numero que por sorte da
+  // a mesma soma: a lista sem argumento tem de ser identica a lista pedida com
+  // a janela da conta na mao.
+  if (JSON.stringify(listaSemArgumento) !==
+      JSON.stringify(await convidadas(PE, contaSemArgumento.janela_de_venda_em_dias)))
+    throw new Error(
+      `o padrao de p_dias da lista nao e o mesmo ${contaSemArgumento.janela_de_venda_em_dias} da conta`)
+
+  // ── 4f. A JANELA E DE VERDADE, E ANDA PARA A FRENTE ──────────────────────
   // ⚠️ COM 70 DIAS a compra da `fora` que caiu UM DIA depois do fim entra, e o
   // `comprou` dela vira SIM — junto com a receita do topo. Sem este caso, um
   // `p_dias` ignorado (janela cravada no corpo da funcao) passaria despercebido.
@@ -358,13 +427,13 @@ try {
     throw new Error(`com 70 dias a receita deu ${linhaLarga.receita}, esperava ${RECEITA_JANELA_LARGA}`)
 
   // ⚠️ E A JANELA CURTA FECHA: com 0 dias so o que foi comprado NO DIA do
-  // encontro conta. A compra da `dentro` no ultimo dia (+7) sai, e ela
+  // encontro conta. A compra da `dentro` no ultimo dia (+14) sai, e ela
   // continua `comprou` pela outra — mas a receita cai.
   const curta = (await conta(0) || []).find((l) => l.codigo === PE)
   if (Number(curta.receita) !== 1000)
     throw new Error(`com 0 dias a receita deu ${curta.receita}, esperava 1000`)
 
-  // ── 4f. O CODIGO TORTO: minusculas e espaco na ponta ─────────────────────
+  // ── 4g. O CODIGO TORTO: minusculas e espaco na ponta ─────────────────────
   // ⚠️ AS CINCO ACOES MORAM NO MESMO BLOCO DA TELA — encerrar, editar, apagar,
   // arquivar e este "ver quem foi". As quatro primeiras normalizam o codigo com
   // `upper(nullif(trim(coalesce(p_codigo,'')),''))`; esta copia a MESMA
@@ -389,13 +458,13 @@ try {
   const vazio = await convidadas('   ')
   if (vazio.length !== 0) throw new Error('codigo em branco devolveu convidada')
 
-  // ── 4g. O PADRAO DO `p_dias` E 7, E NULO NAO APAGA A JANELA ──────────────
+  // ── 4h. O PADRAO DO `p_dias` E 7, E NULO NAO APAGA A JANELA ──────────────
   // ⚠️ Quem manda `p_dias: null` de fora NAO cai no padrao do parametro, cai em
   // NULL — e `between x and NULL` nao devolve linha nenhuma, calado. Sem o
   // `coalesce`, todo `comprou` viraria `false` e ninguem perceberia.
   const semDias = await convidadas(PE, null)
   if (JSON.stringify(semDias) !== JSON.stringify(lista))
-    throw new Error('o padrao de p_dias nao e o mesmo 7 que a prova usou')
+    throw new Error(`o padrao de p_dias nao e o mesmo ${DIAS} que a prova usou`)
   const comNulo = (await uma(
     `select public.vessel_convidadas_do_encontro($1, null) as r`, [PE])).r
   if (JSON.stringify(comNulo) !== JSON.stringify(lista))
