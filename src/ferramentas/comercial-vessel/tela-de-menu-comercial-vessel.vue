@@ -16,8 +16,8 @@
           <div class="cvmenu-card-icon" style="background:linear-gradient(135deg,#9a6b3f 0%,#c3a36a 100%)">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><path d="m9 16 2 2 4-4"/></svg>
           </div>
-          <div class="cvmenu-card-title">Atendimentos</div>
-          <div class="cvmenu-card-desc">Quem tem horário, quem veio e quanto comprou depois.</div>
+          <div class="cvmenu-card-title">Private Appointment</div>
+          <div class="cvmenu-card-desc">A visita agendada à loja: quem tem horário, quem veio e quanto comprou depois.</div>
           <span class="cvmenu-card-enter">→</span>
         </div>
 
@@ -27,6 +27,24 @@
           </div>
           <div class="cvmenu-card-title">Beauty Sessions</div>
           <div class="cvmenu-card-desc">Criar a sessão, ver quem leu o QR e encerrar quando acaba.</div>
+          <span class="cvmenu-card-enter">→</span>
+        </div>
+
+        <div class="cvmenu-card" v-if="podeAtendimentos" @click="ir('private-edit')">
+          <div class="cvmenu-card-icon" style="background:linear-gradient(135deg,#6b4a7a 0%,#9b7bb0 100%)">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2z"/><path d="m2 8 10 6 10-6"/></svg>
+          </div>
+          <div class="cvmenu-card-title">Private Edit</div>
+          <div class="cvmenu-card-desc">O encontro da stylist com as convidadas dela: marcar, convidar e ver quem foi.</div>
+          <span class="cvmenu-card-enter">→</span>
+        </div>
+
+        <div class="cvmenu-card" v-if="podeAtendimentos" @click="ir('stylist-circle')">
+          <div class="cvmenu-card-icon" style="background:linear-gradient(135deg,#1e5f74 0%,#3d9bb5 100%)">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3"/><path d="M5.5 21a6.5 6.5 0 0 1 13 0"/><circle cx="19" cy="6" r="2"/><circle cx="5" cy="6" r="2"/></svg>
+          </div>
+          <div class="cvmenu-card-title">Stylist Circle</div>
+          <div class="cvmenu-card-desc">Quem são as parceiras, quanto tráfego cada uma traz e o que isso virou.</div>
           <span class="cvmenu-card-enter">→</span>
         </div>
 

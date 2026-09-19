@@ -101,16 +101,31 @@
               <span class="bs-numero-rotulo">Foram à loja</span>
             </div>
             <div class="bs-numero bs-numero-destaque">
-              <!-- ⚠️ SEM LEITURA NÃO É 0%. "0%" faria uma sessão que ninguém
-                   abriu parecer uma que fracassou — e só a segunda pede decisão.
-                   O lugar fica marcado com um traço DISCRETO: em tamanho de
-                   número, um travessão vira uma barra preta atravessada que
-                   parece defeito de tela. -->
-              <span v-if="conta(s).taxa === null" class="bs-numero-vazio">sem leitura ainda</span>
-              <span v-else class="bs-numero-valor">{{ taxaEscrita(conta(s).taxa) }}</span>
+              <!-- ⚠️ SEM LEITURA NÃO É 0%: "0%" faria uma sessão que ninguém
+                   abriu parecer uma que fracassou, e só a segunda pede decisão.
+                   ⚠️ E A TAXA NUNCA SAI SOZINHA — vem com de quantos saiu, e com
+                   a faixa quando a base é pequena demais para decidir. Uma
+                   sessão de salão tem dezenas de leituras: "50%" sobre 4 é duas
+                   pessoas, e sem o denominador vira tendência na cabeça de quem
+                   lê. -->
+              <span v-if="!conversao(s).temBase" class="bs-numero-vazio">sem leitura ainda</span>
+              <span v-else class="bs-numero-valor">{{ emPorcento(conversao(s).valor) }}</span>
               <span class="bs-numero-rotulo">Leram → se identificaram</span>
+              <span v-if="conversao(s).temBase" class="bs-numero-base">
+                {{ taxaEscrita(conversao(s)) }}</span>
+              <span v-if="margemEscrita(conversao(s))" class="bs-numero-margem">
+                {{ margemEscrita(conversao(s)) }}</span>
             </div>
           </div>
+
+          <!-- ⚠️ A RECEITA SÓ APARECE COM A RÉGUA JUNTO. Não existe no dado
+               campo dizendo "esta compra veio desta sessão": o que existe é a
+               mesma cliente comprando perto da visita. A janela vem do banco,
+               dentro da resposta, para não divergir da conta que a produziu. -->
+          <p v-if="janelaEscrita(s.janela_de_venda_em_dias)" class="bs-nota">
+            Receita atribuída: <b>{{ emReais(s.receita) }}</b> —
+            {{ janelaEscrita(s.janela_de_venda_em_dias) }}.
+          </p>
 
           <!-- ── OS DOIS ENDEREÇOS ──────────────────────────────────────── -->
           <h3 class="bs-etiqueta bs-etiqueta-interna">Os dois QR desta sessão</h3>
@@ -188,8 +203,14 @@ import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../../compartilhado/conectar-no
 import { classificarErro } from '../../compartilhado/classificar-erro.js'
 import {
   LOJAS, codigoSugerido, problemasDaSessao, enderecoDaMesa, enderecoDoCartao,
-  resumoDaSessao, taxaEscrita, dataLegivel,
+  resumoDaSessao, dataLegivel,
 } from './contas-das-sessoes.js'
+// ⚠️ AS CONTAS DE PROPORÇÃO SÃO AS DA FAMÍLIA, e não uma versão local: as três
+// telas do Comercial Vessel mostram taxa sobre base pequena, e a regra de
+// quando a base deixa de servir tem de ser a MESMA nas três.
+import {
+  proporcao, taxaEscrita, margemEscrita, emPorcento, emReais, janelaEscrita,
+} from '../comercial-vessel/estatistica.js'
 
 const router = useRouter()
 function voltar() { router.push({ name: 'inicio' }) }
@@ -214,6 +235,15 @@ const subtitulo = computed(() => {
 })
 
 function conta(s) { return resumoDaSessao(s) }
+
+/* ⚠️ APROXIMADA, E A TELA DIZ ISSO: o denominador são LEITURAS, e a mesma
+ * pessoa lendo duas vezes entra duas. O intervalo de Wilson pressupõe uma
+ * decisão por unidade, então ele é uma boa aproximação aqui — não uma
+ * garantia. É melhor do que mostrar a taxa pelada, que é o que havia antes. */
+function conversao(s) {
+  const c = resumoDaSessao(s)
+  return proporcao(c.pessoas, c.leituras)
+}
 
 /* A tela monta o código; a pessoa confere. Digitar à mão é onde nasce o erro
  * que ninguém vê — uma letra trocada vira campanha órfã no painel. */
@@ -439,6 +469,20 @@ onMounted(carregar)
   font-family: var(--fonte-principal);
   font-size: var(--texto-etiqueta);
   color: var(--muted);
+}
+/* ⚠️ A BASE FICA COLADA NO NÚMERO, e não numa nota de rodapé: é ela que impede
+   a leitura de "50%" como tendência quando são 2 de 4 leituras. */
+.bs-numero-base {
+  font-family: var(--fonte-principal);
+  font-size: var(--texto-etiqueta);
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.bs-numero-margem {
+  font-family: var(--fonte-principal);
+  font-size: var(--texto-etiqueta);
+  color: var(--orange, var(--red));
+  overflow-wrap: anywhere;
 }
 .bs-numero-destaque .bs-numero-valor { color: var(--accent); }
 .bs-numero-vazio {

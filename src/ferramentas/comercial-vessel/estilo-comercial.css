@@ -1,0 +1,216 @@
+/* O VISUAL DAS TELAS DO COMERCIAL VESSEL.
+ *
+ * Uma folha só para Private Edit e Stylist Circle: as duas mostram a mesma
+ * coisa (uma lista de blocos com funil, links e ações), e duas cópias do mesmo
+ * CSS viram duas telas diferentes no dia em que alguém ajusta uma delas.
+ *
+ * ⚠️ SÓ TOKEN, NUNCA HEX — item 2 do PADRAO-DA-CENTRAL. As cores mudam sozinhas
+ * entre o tema claro e o escuro, e um hex aqui ficaria ilegível num dos dois.
+ *
+ * Importada dentro de `<style scoped>`, então as classes continuam presas a
+ * cada tela.
+ */
+
+.cv-body { padding-bottom: var(--sp-6); }
+
+.cv-bloco {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--sp-4);
+  margin-top: var(--sp-3);
+}
+.cv-bloco-leitura { background: var(--bg); }
+
+.cv-etiqueta {
+  font-family: var(--fonte-principal);
+  font-size: var(--texto-etiqueta);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 var(--sp-3);
+}
+.cv-etiqueta-interna { margin-top: var(--sp-4); }
+
+/* ── formulário ─────────────────────────────────────────────────────────── */
+.cv-form {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--sp-3);
+}
+.cv-campo { display: flex; flex-direction: column; gap: 6px; }
+.cv-campo > span {
+  font-family: var(--fonte-principal);
+  font-size: var(--texto-etiqueta);
+  color: var(--muted);
+}
+.cv-campo input, .cv-campo select {
+  font-family: var(--fonte-principal);
+  font-size: var(--texto-campo);
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  min-height: 40px;
+  width: 100%;
+}
+
+.cv-problemas {
+  margin: var(--sp-3) 0 0;
+  padding-left: 1.1rem;
+  font-family: var(--fonte-principal);
+  font-size: var(--texto-corpo);
+  color: var(--muted);
+}
+
+.cv-acoes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+}
+
+/* ── cabeça de cada bloco ───────────────────────────────────────────────── */
+.cv-cabeca {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-2);
+}
+.cv-cabeca-texto { min-width: 0; }
+.cv-titulo {
+  font-family: var(--fonte-principal);
+  font-size: var(--texto-titulo);
+  color: var(--text);
+  margin: 0;
+}
+.cv-sub {
+  font-family: var(--fonte-principal);
+  font-size: var(--texto-corpo);
+  color: var(--muted);
+  margin: 4px 0 0;
+  /* texto nunca corta: quebra em vez de sumir */
+  overflow-wrap: anywhere;
+}
+.cv-codigo {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--texto-corpo);
+}
+
+.cv-selo {
+  font-family: var(--fonte-principal);
+  font-size: var(--texto-etiqueta);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  border-radius: var(--radius-sm);
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  white-space: nowrap;
+}
+.cv-selo-viva { color: var(--green); border-color: var(--green); }
+.cv-selo-fim { color: var(--muted); }
+
+/* ── os números ─────────────────────────────────────────────────────────── */
+.cv-numeros {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+  gap: var(--sp-3);
+  margin-top: var(--sp-4);
+}
+.cv-numero { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.cv-numero-valor {
+  font-family: var(--fonte-principal);
+  font-size: var(--texto-numero);
+  color: var(--text);
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+}
+.cv-numero-rotulo {
+  font-family: var(--fonte-principal);
+  font-size: var(--texto-etiqueta);
+  color: var(--muted);
+}
+/* ⚠️ A BASE FICA COLADA NO NÚMERO, e não numa nota de rodapé: é ela que impede
+   a leitura de "67%" como tendência quando são 2 de 3 pessoas. */
+.cv-numero-base {
+  font-family: var(--fonte-principal);
+  font-size: var(--texto-etiqueta);
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.cv-numero-margem {
+  font-family: var(--fonte-principal);
+  font-size: var(--texto-etiqueta);
+  color: var(--orange, var(--red));
+  overflow-wrap: anywhere;
+}
+.cv-numero-vazio {
+  font-family: var(--fonte-principal);
+  font-size: var(--texto-corpo);
+  color: var(--muted);
+  min-height: calc(var(--texto-numero) * 1.1);
+  display: flex;
+  align-items: center;
+}
+
+/* ── notas ──────────────────────────────────────────────────────────────── */
+.cv-nota {
+  font-family: var(--fonte-principal);
+  font-size: var(--texto-corpo);
+  color: var(--muted);
+  margin: var(--sp-3) 0 0;
+  line-height: 1.5;
+}
+.cv-nota-primeira { margin-top: 0; }
+.cv-nota-erro { color: var(--red); }
+.cv-nota-ok { color: var(--green); }
+
+/* ── links ──────────────────────────────────────────────────────────────── */
+.cv-link {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: var(--sp-3);
+  margin-top: var(--sp-2);
+}
+.cv-link-texto { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1 1 14rem; }
+.cv-link-nome {
+  font-family: var(--fonte-principal);
+  font-size: var(--texto-etiqueta);
+  color: var(--muted);
+}
+.cv-link-url {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--texto-corpo);
+  color: var(--text);
+  /* endereço longo QUEBRA; sumir é que não pode */
+  overflow-wrap: anywhere;
+}
+
+.cv-confirma {
+  font-family: var(--fonte-principal);
+  font-size: var(--texto-corpo);
+  color: var(--muted);
+  flex: 1 1 14rem;
+}
+
+.cv-carregando, .cv-vazio {
+  font-family: var(--fonte-principal);
+  font-size: var(--texto-corpo);
+  color: var(--muted);
+  padding: var(--sp-5) 0;
+  text-align: center;
+}
+
+/* Do celular para cima: os campos ganham colunas quando há espaço. */
+@media (min-width: 40rem) {
+  .cv-form { grid-template-columns: repeat(3, 1fr); }
+  .cv-campo-largo { grid-column: 1 / -1; }
+}

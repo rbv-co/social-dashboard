@@ -1,6 +1,6 @@
 <template>
   <div class="tela-atendimentos">
-    <barra-de-topo voltar="Central" titulo="Vessel — Atendimentos"
+    <barra-de-topo voltar="Central" titulo="Vessel — Private Appointment"
                    :subtitulo="subtitulo" @voltar="voltar" />
 
     <div class="container-app atd-body">

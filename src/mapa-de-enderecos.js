@@ -18,6 +18,8 @@ const rotas = [
   // números das sessões já gateia em `is_vessel_atendimentos()`. Uma permissão
   // nova nasceria DESMARCADA para todo mundo, e a tela abriria vazia para quem
   // hoje já cuida disso.
+  { path: '/private-edit', name: 'private-edit', component: () => import('./ferramentas/comercial-vessel/tela-de-private-edit.vue'), meta: { recurso: 'atendimentos' } },
+  { path: '/stylist-circle', name: 'stylist-circle', component: () => import('./ferramentas/comercial-vessel/tela-de-stylist-circle.vue'), meta: { recurso: 'atendimentos' } },
   { path: '/beauty-sessions', name: 'beauty-sessions', component: () => import('./ferramentas/beauty-sessions/tela-de-beauty-sessions.vue'), meta: { recurso: 'atendimentos' } },
   { path: '/banco', name: 'banco', component: () => import('./ferramentas/banco/tela-de-banco.vue') },
   { path: '/vendas', name: 'vendas', component: () => import('./ferramentas/vendas/tela-de-menu-vendas.vue') },
