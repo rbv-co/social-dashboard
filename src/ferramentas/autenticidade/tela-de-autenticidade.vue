@@ -126,6 +126,36 @@
             <span>{{ l.quantidade }} {{ l.quantidade === 1 ? 'peça' : 'peças' }}</span>
             <span>{{ dataCurta(l.fabricado_em) }}</span>
           </div>
+
+          <!-- ── O MATERIAL DO LOTE ────────────────────────────────────────
+               Ele decide o PRAZO da garantia de toda peça deste lote — canvas e
+               couro dão prazos diferentes, e os dois moram em
+               `garantia-pelo-material.js`, nunca escritos aqui. Quando o
+               material falta, a peça fica SEM data de fim.
+               Ficava invisível no painel:
+               existia no banco desde 18/09 e não havia tela nenhuma para vê-lo.
+               Linha própria, e não mais um item em `.au-card-linha`: lá ele
+               ficaria do mesmo tamanho e da mesma cor que "12 peças", e não é
+               a mesma coisa que 12 peças.
+               DE ONDE VEIO VEM JUNTO, e não é enfeite: "herdado" quer dizer
+               que ninguém olhou ESTE lote — o material veio do lote anterior do
+               mesmo SKU. É exatamente aí que mora o erro quando a produção
+               troca de material sem trocar de referência. -->
+          <p class="au-material">
+            <span class="au-material-rot">Material</span>
+            <template v-if="materialDoLote(l).temMaterial">
+              <strong class="au-material-valor">{{ materialDoLote(l).rotulo }}</strong>
+              <span v-if="materialDoLote(l).prazo">{{ materialDoLote(l).prazo }}</span>
+              <span v-if="materialDoLote(l).origem" class="au-material-origem">{{ materialDoLote(l).origem }}</span>
+            </template>
+            <strong v-else class="au-material-valor">ainda não escolhido</strong>
+          </p>
+          <!-- Aviso que aparece sempre vira paisagem (PADRÃO item 9): este só
+               existe no lote que ainda não tem material. -->
+          <p v-if="!materialDoLote(l).temMaterial" class="au-confirma au-confirma-texto au-aviso-material">
+            {{ AVISO_SEM_MATERIAL }}
+          </p>
+
           <!-- A AÇÃO PRINCIPAL DO CARTÃO, e a única com desenho de botão. As
                outras três — ver as peças, editar, excluir — continuam links, e é
                essa diferença que diz qual delas a tela quer que você faça
@@ -145,9 +175,84 @@
               {{ loteAberto === l.id ? 'Esconder as peças' : 'Ver as peças e os links' }}
             </button>
             <template v-if="podeEditar">
+              <!-- MESMO PORTÃO DAS OUTRAS DUAS (`podeEditar`, que é
+                   `hasPermission('autenticidade','editar')`). Nenhuma permissão
+                   nova: quem já pode mexer no lote pode escolher o material
+                   dele, e quem não pode continua vendo o material escrito sem
+                   nenhum jeito de mexer. Quem recusa de verdade é
+                   `is_vessel_admin()` por dentro da função do banco. -->
+              <button class="au-link" type="button" :aria-expanded="String(materialAberto === l.id)"
+                      @click="alternarMaterial(l)">
+                {{ materialDoLote(l).temMaterial ? 'Corrigir o material' : 'Escolher o material' }}
+              </button>
               <button class="au-link" type="button" @click="abrirEdicao(l)">Editar</button>
               <button class="au-link" type="button" @click="pedirExcluir(l.id)">Excluir</button>
             </template>
+          </div>
+
+          <!-- ── ESCOLHER O MATERIAL ───────────────────────────────────────
+               Bloco PRÓPRIO, e não um campo a mais no formulário de Editar: lá
+               a gravação passa por `vessel_editar_lote`, que mexe na QUANTIDADE
+               do lote — aumentar cria etiquetas, diminuir apaga as que ainda
+               não foram gravadas. Corrigir "canvas → couro" não pode passar
+               pelo mesmo caminho que apaga código de etiqueta. -->
+          <div v-if="materialAberto === l.id" class="au-material-edicao">
+            <p class="au-rot">Material deste lote</p>
+            <!-- NADA NASCE MARCADO. A escolha começa vazia mesmo quando o lote
+                 já tem material: marcar de véspera é o primeiro passo para
+                 alguém gravar sem olhar. -->
+            <label v-for="m in MATERIAIS" :key="m.valor" class="au-material-opcao">
+              <input type="radio" :name="'material-' + l.id" :value="m.valor"
+                     v-model="materialEscolhido">
+              <span><strong>{{ m.rotulo }}</strong> — {{ m.prazo }}</span>
+            </label>
+
+            <!-- ── A AJUDA QUE NÃO CHUTA ──────────────────────────────────
+                 A estrutura de insumos do produto no Bling costuma dizer o
+                 material, e a regra que lê isso já existe
+                 (`material-do-produto.js`). Ela só entra quando alguém PEDE:
+                 são três a quatro idas ao Bling por lote, e abrir o bloco não
+                 pode custar isso.
+                 A EVIDÊNCIA VEM JUNTO — os componentes que decidiram. Sem eles
+                 a sugestão seria um palpite de origem desconhecida, e quem
+                 confirma não teria como discordar com fundamento. -->
+            <p v-if="!l.sku" class="au-aviso-menor">
+              Este lote não tem referência, então não dá para procurar a estrutura dele no Bling.
+              Escolha olhando a bolsa.
+            </p>
+            <button v-else-if="!sugestaoDoMaterial" class="au-link au-material-pedir" type="button"
+                    :disabled="sugestaoEmVoo" @click="buscarSugestaoDeMaterial(l)">
+              {{ sugestaoEmVoo ? 'Lendo a estrutura do produto no Bling…' : 'Ver o que a estrutura do Bling diz' }}
+            </button>
+
+            <div v-if="sugestaoDoMaterial" class="au-confirma au-material-sugestao">
+              <p class="au-confirma-texto">{{ sugestaoDoMaterial.frase }}</p>
+              <template v-if="sugestaoDoMaterial.evidencia.length">
+                <p class="au-aviso-menor">Os componentes que decidiram:</p>
+                <ul class="au-material-evidencia">
+                  <li v-for="c in sugestaoDoMaterial.evidencia" :key="c">{{ c }}</li>
+                </ul>
+              </template>
+              <!-- SÓ QUANDO A REGRA TEM CERTEZA, e mesmo assim ele só PREENCHE:
+                   gravar continua sendo outro clique, da pessoa. Ambíguo não
+                   ganha botão nenhum e não marca opção nenhuma. -->
+              <div v-if="sugestaoDoMaterial.podeUsar" class="au-acoes">
+                <button class="au-botao secundario" type="button" @click="usarSugestaoDeMaterial">
+                  Usar esta sugestão ({{ rotuloDoMaterial(sugestaoDoMaterial.material) }})
+                </button>
+              </div>
+            </div>
+
+            <p v-if="erroDoMaterial" class="au-recusa">{{ erroDoMaterial }}</p>
+
+            <div class="au-acoes">
+              <button class="au-botao secundario" type="button" @click="fecharMaterial">Cancelar</button>
+              <button class="au-botao" type="button"
+                      :disabled="!materialEscolhido || materialEmVoo"
+                      @click="salvarMaterial(l)">
+                {{ materialEmVoo ? 'Gravando…' : 'Gravar o material' }}
+              </button>
+            </div>
           </div>
 
           <!-- A PERGUNTA DE EXCLUIR MORA NA PRÓPRIA TELA: a caixinha nativa do
@@ -2026,6 +2131,14 @@ import {
   podeTrocarDono, cpfComMascara, cpfLimpo,
 } from './registros-de-garantia.js'
 import { prazoDoMaterial, materialDoCodigo, avisoDaAprovacao, avisoDaTroca } from './garantia-pelo-material.js'
+// O material do LOTE: as frases da tela e a leitura da sugestão do Bling. A
+// regra que decide o material pela estrutura é a mesma que o robô de varredura
+// usa (`coletor/classificar-material-dos-lotes.mjs`) — uma cópia só.
+import {
+  MATERIAIS, AVISO_SEM_MATERIAL, rotuloDoMaterial, resumoDoMaterialDoLote,
+  sugestaoParaATela, fraseDaRecusaDoMaterial,
+} from './material-do-lote.js'
+import { classificarMaterial } from './material-do-produto.js'
 import {
   // ⚠️ `listaParaGravadorDeMesa` NÃO entra mais aqui, e não é esquecimento: o
   // botão "Baixar a lista das que faltam" saiu da ferramenta em 02/09/2026 (o
@@ -3699,6 +3812,9 @@ function abrirEdicao(l) {
   // pergunta de excluir pela metade deixaria a senha digitada viva na memória
   // da tela, esperando o próximo clique.
   fecharExcluir()
+  // e o bloco do material também: três caixas abertas no mesmo cartão empurram
+  // o lote seguinte para fora da vista no celular
+  fecharMaterial()
   editando.value = l.id
   edicao.modelo = l.modelo || ''
   edicao.cor = l.cor || ''
@@ -3712,8 +3828,150 @@ function abrirEdicao(l) {
   trazerOLoteParaAVista(l.id)
 }
 
+// ── O MATERIAL DO LOTE ────────────────────────────────────────────────────
+//
+// UM LOTE POR VEZ, como a edição e a pergunta de excluir: são estados soltos e
+// não um campo dentro de `edicao`, porque a gravação é OUTRA função do banco
+// (`vessel_definir_material_do_lote`) e não pode pegar carona no `salvarEdicao`,
+// que mexe na quantidade de peças do lote.
+const materialAberto = ref(null)       // o lote com o bloco do material aberto
+const materialEscolhido = ref('')      // o que a pessoa marcou, ainda não gravado
+const materialEmVoo = ref(false)
+const erroDoMaterial = ref('')
+const sugestaoDoMaterial = ref(null)   // null = ninguém pediu
+const sugestaoEmVoo = ref(false)
+
+/** O que a linha do cartão mostra. Sai do lote como ele vem do banco. */
+function materialDoLote(l) {
+  return resumoDoMaterialDoLote(l)
+}
+
+function fecharMaterial() {
+  materialAberto.value = null
+  // ⚠️ TUDO VOLTA À ESTACA ZERO, inclusive a sugestão: ela é de UM SKU, e
+  // deixá-la viva faria a evidência de um lote aparecer dentro de outro.
+  materialEscolhido.value = ''
+  erroDoMaterial.value = ''
+  sugestaoDoMaterial.value = null
+  sugestaoEmVoo.value = false
+}
+
+function alternarMaterial(l) {
+  const jaAberto = materialAberto.value === l.id
+  fecharMaterial()
+  if (jaAberto) return
+  // abrir um bloco fecha os outros dois do mesmo cartão: três caixas abertas
+  // uma embaixo da outra empurram o cartão seguinte para fora da vista
+  editando.value = null
+  fecharExcluir()
+  materialAberto.value = l.id
+  trazerOLoteParaAVista(l.id)
+}
+
+/**
+ * A SUGESTÃO DA ESTRUTURA DO BLING — só quando alguém pede.
+ *
+ * São três a quatro idas ao Bling por lote (achar o produto pelo SKU, ler o
+ * detalhe dele, e o nome de cada componente), e por isso ela não acontece ao
+ * abrir o bloco. O caminho é o mesmo do robô de varredura, e a REGRA é a
+ * mesma função — nada aqui decide material por conta própria.
+ *
+ * ⚠️ FALHAR EM SUGERIR NÃO PODE TRAVAR A ESCOLHA. O erro vira uma frase dentro
+ * da caixa da sugestão, e os dois botões de material continuam lá: a pessoa
+ * está com a bolsa na mão, e ela decide sem o Bling.
+ */
+async function buscarSugestaoDeMaterial(l) {
+  if (sugestaoEmVoo.value) return
+  sugestaoEmVoo.value = true
+  sugestaoDoMaterial.value = null
+  try {
+    const sku = String(l?.sku ?? '').trim()
+    if (!sku) {
+      sugestaoDoMaterial.value = sugestaoParaATela({ erro: 'este lote não tem referência (SKU)' })
+      return
+    }
+    // `criterio: 5` é "todos" na busca de produtos — o produto pode ter saído
+    // de linha e o lote antigo continuar precisando de material.
+    const busca = await chamarBling(sbClient, 'produtos', { criterio: 5, codigo: sku })
+    const achado = busca?.data?.[0]
+    if (!achado?.id) {
+      sugestaoDoMaterial.value = sugestaoParaATela({ erro: `não achei a referência ${sku} no Bling` })
+      return
+    }
+    const detalhe = await chamarBling(sbClient, `produtos/${achado.id}`, {})
+    const produto = detalhe?.data
+    const componentes = produto?.estrutura?.componentes
+    if (!Array.isArray(componentes) || !componentes.length) {
+      sugestaoDoMaterial.value = sugestaoParaATela({
+        erro: 'este produto não tem estrutura de insumos cadastrada',
+      })
+      return
+    }
+    // O nome de cada insumo mora no produto DELE — a estrutura só traz o id.
+    const nomes = []
+    for (const c of componentes) {
+      const id = c?.produto?.id
+      if (id == null) continue
+      const p = await chamarBling(sbClient, `produtos/${id}`, {})
+      nomes.push(String(p?.data?.nome ?? `(insumo ${id})`))
+    }
+    sugestaoDoMaterial.value = sugestaoParaATela(
+      classificarMaterial({ componentes: nomes, ncm: produto?.tributacao?.ncm ?? '' }))
+  } catch (e) {
+    // `avisoDoErro` traduz a falha do Bling em duas frases; aqui interessa a
+    // primeira. Jogar o objeto inteiro na tela já fez alguém ler `[object
+    // Object]` nesta mesma tela.
+    const aviso = avisoDoErro(e, { ehAdmin: podeEditar.value })
+    sugestaoDoMaterial.value = sugestaoParaATela({ erro: aviso?.titulo || 'o Bling não respondeu' })
+  } finally {
+    sugestaoEmVoo.value = false
+  }
+}
+
+/** A sugestão PREENCHE a escolha; gravar continua sendo outro clique. */
+function usarSugestaoDeMaterial() {
+  if (!sugestaoDoMaterial.value?.podeUsar) return
+  materialEscolhido.value = sugestaoDoMaterial.value.material
+}
+
+// QUEM RECUSA É O BANCO. `vessel_lotes` não tem política de escrita nenhuma —
+// um `update` direto daqui voltaria 0 linhas SEM ERRO, e a tela anunciaria
+// "salvo" com nada salvo. A gravação passa por `vessel_definir_material_do_lote`
+// (db/migrations/2026-09-19-vessel-material-do-lote-pelo-painel.sql), que tem o
+// portão `is_vessel_admin()` por dentro e marca a fonte como 'painel'.
+async function salvarMaterial(l) {
+  if (materialEmVoo.value) return
+  if (!materialEscolhido.value) return
+  materialEmVoo.value = true
+  erroDoMaterial.value = ''
+  try {
+    const { data, error } = await sbClient.rpc('vessel_definir_material_do_lote', {
+      p_lote: l.id,
+      p_material: materialEscolhido.value,
+    })
+    if (error) {
+      erroDoMaterial.value = 'Não consegui gravar agora. Nada foi alterado. '
+        + `O banco recusou assim: ${error.message || 'sem detalhe'}`
+      return
+    }
+    if (!data?.ok) { erroDoMaterial.value = fraseDaRecusaDoMaterial(data?.motivo); return }
+
+    // O número que interessa é quantas peças JÁ REGISTRADAS tiveram a data de
+    // fim da garantia recalculada: é o que mexeu na vida de alguém.
+    const quantas = Number(data.registros_recalculados) || 0
+    fecharMaterial()
+    await carregar()
+    adminToast(quantas
+      ? `Material gravado. ${quantas} peça(s) já registrada(s) tiveram a data da garantia recalculada.`
+      : 'Material gravado. As peças deste lote passam a ter data de garantia.')
+  } finally {
+    materialEmVoo.value = false
+  }
+}
+
 function pedirExcluir(id) {
   editando.value = null
+  materialAberto.value = null
   excluindo.value = id
   // toda pergunta recomeça da primeira etapa, com o campo de senha limpo: uma
   // pergunta que abre já na etapa 2, com a senha de antes escrita, é um clique
@@ -5482,9 +5740,19 @@ onUnmounted(() => window.removeEventListener('message', ouvirAPrevia))
      `@media (min-width:900px)`: no celular a lista é uma coluna, não há grade,
      não há buraco — e `order:-1` ali faria o cartão saltar para o alto da tela
      sem motivo nenhum. */
+  /* ⚠️ O AVISO DE "LOTE SEM MATERIAL" É A EXCEÇÃO, e ela é obrigatória.
+     Ele reaproveita `.au-confirma` porque é o desenho de aviso desta tela — mas
+     ele NÃO é uma conversa: é um recado permanente do cartão, que fica lá
+     enquanto o lote não tiver material. Sem o `:not`, MEDIDO a 1440px em
+     19/09/2026, todo lote sem material virava faixa de ponta a ponta e SUBIA
+     para o alto da lista (`order:-1`) — a grade de duas colunas virava uma
+     pilha, e a ordem que o olho lê deixava de ser a da lista.
+     O BLOCO DE ESCOLHER O MATERIAL, esse sim, entra na regra: ele é conversa,
+     igual ao formulário de editar. */
   .au-grade-de-lotes > .au-card:has(.au-pecas),
   .au-grade-de-lotes > .au-card:has(.au-edicao),
-  .au-grade-de-lotes > .au-card:has(.au-confirma){grid-column:1 / -1; order:-1;}
+  .au-grade-de-lotes > .au-card:has(.au-material-edicao),
+  .au-grade-de-lotes > .au-card:has(.au-confirma:not(.au-aviso-material)){grid-column:1 / -1; order:-1;}
 
   /* ── 3. AS LISTAS DE VARREDURA VIRAM TABELA ────────────────────────────
      Cartão é a forma certa para UMA coisa por vez, e continua sendo a do
@@ -5927,7 +6195,63 @@ onUnmounted(() => window.removeEventListener('message', ouvirAPrevia))
   margin-top:var(--sp-4);
 }
 .au-pedir-cartoes .au-aviso-menor{flex:1 1 16em; min-width:0;}
-@media` do celular é a ÚLTIMA coisa deste arquivo, e tem de continuar
+
+/* ── O MATERIAL DO LOTE ─────────────────────────────────────────────────────
+   A LINHA DO CARTÃO. Não entrou em `.au-card-linha` (que é `--muted` e
+   `--texto-corpo`, para cor, referência, quantidade e data) porque o material
+   não é mais um dado do mesmo peso: é ele que decide o prazo da garantia de
+   toda peça deste lote. O rótulo em maiúsculas é o mesmo `--texto-etiqueta` dos
+   outros rótulos da tela; o valor sobe um degrau, para `--texto-campo`, que é o
+   degrau do "dado que se lê de pé". */
+.au-material{
+  display:flex; flex-wrap:wrap; align-items:baseline; gap:var(--sp-2) var(--sp-3);
+  margin:var(--sp-3) 0 0; font-family:var(--fonte-principal);
+  font-size:var(--texto-corpo); color:var(--muted); overflow-wrap:anywhere;
+}
+.au-material-rot{
+  font-size:var(--texto-etiqueta); font-weight:700; letter-spacing:1.5px;
+  text-transform:uppercase; color:var(--muted);
+}
+.au-material-valor{font-size:var(--texto-campo); color:var(--text); font-weight:700;}
+/* De onde veio o material fica em segundo plano — é contexto, não o dado. */
+.au-material-origem{font-style:italic;}
+/* O aviso do lote SEM material reaproveita `.au-confirma`, o desenho de aviso
+   desta tela (cor de sinal misturada à superfície, texto em `--text` para se
+   ler — PADRÃO item 2). Só o recuo de cima é dele. */
+.au-aviso-material{margin-top:var(--sp-2);}
+
+/* O BLOCO DE ESCOLHER, irmão de `.au-edicao` — mesmo desenho, porque é o mesmo
+   tipo de coisa: uma gaveta que abre dentro do cartão do lote. */
+.au-material-edicao{
+  margin-top:var(--sp-2); padding:var(--sp-3);
+  border:1px solid var(--border); border-radius:var(--radius-md);
+  background:var(--surface2);
+}
+.au-material-edicao .au-acoes{padding:var(--sp-3) 0 0;}
+/* AS DUAS OPÇÕES. Alvo de dedo de 40px inteiros (PADRÃO item 6) — a bolinha do
+   `radio` tem 13px, e é a LINHA toda que recebe o toque, não a bolinha.
+   `--texto-campo` porque é o que se lê de pé, com a bolsa na outra mão. */
+.au-material-opcao{
+  display:flex; align-items:center; gap:var(--sp-3);
+  min-height:40px; padding:var(--sp-2) 0; cursor:pointer;
+  font-family:var(--fonte-principal); font-size:var(--texto-campo);
+  color:var(--text); overflow-wrap:anywhere;
+}
+/* A bolinha cresce para o dedo acertar; o `accent-color` faz ela usar a cor de
+   ação da casa em vez do azul do sistema. */
+.au-material-opcao input{width:20px; height:20px; flex:none; accent-color:var(--accent);}
+.au-material-pedir{display:inline-flex; align-items:center; min-height:40px;}
+.au-material-sugestao{margin-top:var(--sp-2);}
+/* A EVIDÊNCIA — os componentes que decidiram. Lista mesmo, e não um parágrafo
+   com vírgulas: são nomes de insumo com hífen e cor dentro ("MundoCamurca -
+   Couro - Napa Fly Preto Brilho"), e no meio de uma frase eles viram sopa. */
+.au-material-evidencia{
+  margin:var(--sp-1) 0 0; padding-left:var(--sp-5);
+  font-family:var(--fonte-principal); font-size:var(--texto-corpo);
+  line-height:1.45; color:var(--text); overflow-wrap:anywhere;
+}
+
+/* ⚠️ NÃO ESCREVA REGRA NOVA ABAIXO DAQUI. O `@media` do celular é a ÚLTIMA coisa deste arquivo, e tem de continuar
    sendo: duas regras de mesma especificidade, ganha a última — uma regra-base
    escrita depois daqui apagaria o ajuste de celular em silêncio.
    Medido no CSS do build antes de escrever esta linha. */
