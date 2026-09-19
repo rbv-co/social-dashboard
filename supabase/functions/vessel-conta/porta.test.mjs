@@ -322,6 +322,20 @@ test('⚠️ as chamadas de rpc conferem `error` e não deixam falha de infraest
 // ── PARAR DE RECEBER O LEMBRETE (19/09/2026) ─────────────────────────────────
 // Desenho: docs/superpowers/specs/2026-09-19-register-later-design.md
 
+test('⚠️ "lembrete-criar" lê os quatro campos que a página manda', () => {
+  // Contrato com a frente das telas, alinhado em 19/09/2026: `codigo`,
+  // `email`, `consentimento` e `token` (o de SESSÃO, opcional). Nome de campo
+  // é contrato — a página manda um objeto, e um nome trocado aqui vira um
+  // pedido que sempre falha sem ninguém entender por quê.
+  const bloco = blocoDaAcao(FONTE, 'lembrete-criar');
+  assert.match(bloco, /p_codigo:\s*corpo\.codigo\b/);
+  assert.match(bloco, /p_email:\s*corpo\.email\b/);
+  assert.match(bloco, /p_consentimento:\s*corpo\.consentimento === true/,
+    'consentimento tem de ser EXATAMENTE true — "on", "1" ou "sim" não valem');
+  assert.match(bloco, /p_token_opcional:\s*corpo\.token\s*\?\?\s*null/,
+    'o token de sessão se chama `token`, como nas outras ações, e é opcional');
+});
+
 test('⚠️ "lembrete-criar" funciona COM e SEM sessão, e não inventa motivo', () => {
   const bloco = blocoDaAcao(FONTE, 'lembrete-criar');
   assert.match(bloco, /rpc\('vessel_lembrete_criar'/);
@@ -362,8 +376,20 @@ test('⚠️ "lembrete-parar" NÃO exige sessão — o token do e-mail é a prov
   // justamente para quem mais precisa dele.
   assert.ok(!/vessel_conta_da_sessao/.test(bloco),
     'exigir sessão aqui quebra o link do e-mail');
+  // ⚠️ O NOME DO CAMPO É `token_lembrete`, e é contrato com a página
+  // (alinhado em 19/09/2026, antes de qualquer publicação). Em TODAS as outras
+  // ações desta edge `token` é a sessão da cliente; um campo chamado `token`
+  // aqui faria uma página logada mandar a sessão dela para uma ação que a
+  // trata como token de e-mail. E `t`, o nome curto de antes, não se entende
+  // seis meses depois.
+  assert.match(bloco, /p_token:\s*corpo\.token_lembrete\s*\?\?\s*null/,
+    'o campo é o token do LINK do e-mail: corpo.token_lembrete');
   assert.ok(!/corpo\.token\b/.test(bloco),
-    'o campo é o token do LINK (corpo.t), não o token de sessão da conta');
+    'não pode ler o token de SESSÃO da conta nesta ação');
+  // UM nome só, sem atalho antigo aceito por baixo: dois nomes vivos viram
+  // dois contratos, e um dia a página manda um e a edge lê o outro.
+  assert.ok(!/corpo\.t\s*\?\?/.test(bloco),
+    'sem fallback para o nome velho `t`: um nome só');
 });
 
 test('⚠️ "lembrete-parar" responde sempre a mesma coisa — token errado não conta nada', () => {

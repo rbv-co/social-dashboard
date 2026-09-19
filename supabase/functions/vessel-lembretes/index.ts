@@ -43,6 +43,14 @@ const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 // A tela de parar de receber é irmã dele e não pede login — o token é a prova.
 const SITE = 'https://vesselbrasil.com.br';
 const linkDoCertificado = (codigo: string) => `${SITE}/verify/${encodeURIComponent(codigo)}`;
+// ⚠️ `?t=` É O NOME NO ENDEREÇO, e não o nome no pedido. A tela
+// /verify/parar-lembrete lê este `t` da barra do navegador e manda o valor
+// para a edge `vessel-conta` no campo **`token_lembrete`** (ação
+// `lembrete-parar`) — são dois nomes para o mesmo token, em dois lugares
+// diferentes, e isso é de propósito: na barra do navegador o nome curto cabe
+// melhor no e-mail, e no corpo do pedido o nome longo evita que ele seja
+// confundido com o `token` de SESSÃO, que é o que todas as outras ações
+// daquela edge usam. Se um dia mudar um, mude o outro junto.
 const linkDeParar = (token: string) =>
   `${SITE}/verify/parar-lembrete?t=${encodeURIComponent(token)}`;
 

@@ -291,9 +291,19 @@ Deno.serve(async (req) => {
   // O token do link É a prova — ele foi sorteado pelo banco, só existe dentro
   // daquele e-mail e aqui é conferido pelo hash.
   //
-  // ⚠️ O CAMPO É `corpo.t`, e não `corpo.token`: `token` nesta edge é sempre o
-  // token de SESSÃO da conta. Misturar os dois faria uma página logada mandar
-  // a sessão da cliente para uma ação que a trata como token de e-mail.
+  // ⚠️ O CAMPO É `corpo.token_lembrete`, e não `corpo.token`: em TODAS as
+  // outras ações desta edge `token` é o token de SESSÃO da cliente. Misturar
+  // os dois faria uma página logada mandar a sessão dela para uma ação que a
+  // trata como token de e-mail — e o nome é o único aviso que o próximo a
+  // mexer aqui vai ter.
+  //
+  // ⚠️ UM NOME SÓ, SEM ATALHO ANTIGO POR BAIXO. Este campo se chamou `t` por
+  // algumas horas, antes de qualquer publicação, e o nome foi alinhado com a
+  // frente das telas em 19/09/2026. Aceitar os dois "por segurança" criaria
+  // dois contratos vivos para a mesma coisa, e um dia a página mandaria um e a
+  // edge leria o outro — calada, porque token que não casa responde `{ok:true}`
+  // igual a token certo. Há teste em porta.test.mjs para o nome e para a
+  // ausência do atalho.
   //
   // ⚠️ A RESPOSTA É SEMPRE A MESMA, com token certo, errado ou vazio. Esta
   // porta é pública e sem login: um "não achei" a transformaria num testador
@@ -301,7 +311,7 @@ Deno.serve(async (req) => {
   // devolve `{ok:true}` em qualquer caso); aqui só se repassa.
   if (corpo.acao === 'lembrete-parar') {
     const { data, error } = await sb.rpc('vessel_lembrete_cancelar_por_token', {
-      p_token: corpo.t ?? null,
+      p_token: corpo.token_lembrete ?? null,
     });
     if (error) {
       console.error('vessel_lembrete_cancelar_por_token', error.message);
