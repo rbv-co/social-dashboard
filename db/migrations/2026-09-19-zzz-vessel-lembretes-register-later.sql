@@ -124,6 +124,11 @@ create unique index if not exists vessel_lembretes_um_aberto_idx
 create index if not exists vessel_lembretes_peca_idx
   on public.vessel_lembretes (peca_codigo, criado_em desc);
 
+-- O teto por E-MAIL (3 a cada 24h) lê por endereço e por data. Sem índice, essa
+-- conferência varreria a tabela inteira a cada pedido — e ela só cresce.
+create index if not exists vessel_lembretes_email_idx
+  on public.vessel_lembretes (email, criado_em desc);
+
 -- O link do e-mail chega pelo hash do token.
 create index if not exists vessel_lembretes_token_idx
   on public.vessel_lembretes (token_hash)
@@ -145,6 +150,12 @@ comment on column public.vessel_lembretes.token_hash is
 -- segue essa linha porque o desenho pede a lista de lembretes NA TELA de
 -- Autenticidade. `vessel_transferencias` fica sem política nenhuma, mas ali o
 -- painel não precisa de nada; aqui precisa.
+--
+-- ⚠️ O E-MAIL APARECE INTEIRO PARA O ADMIN, e é decisão do dono (19/09/2026):
+-- é dele que a equipe precisa para socorrer a cliente que escreve dizendo que
+-- não recebeu, ou que quer parar e perdeu o link. Mascarar aqui deixaria a
+-- lista bonita e inútil. Quem alcança esta política é `authenticated` E
+-- `is_vessel_admin()` — a cliente nunca é nem uma coisa nem outra.
 --
 -- ⚠️ E O `token_hash` NA LEITURA NÃO É BURACO: é um hash sha256, e cancelar
 -- compara o hash do token DIGITADO com esta coluna. Quem lê a coluna não
@@ -172,10 +183,16 @@ create policy vessel_lembretes_read on public.vessel_lembretes
 --   · o que a PRÓPRIA pessoa digitou errado vira recusa com motivo
 --     (`sem_consentimento`, `email_invalido`): ela precisa saber para
 --     corrigir, e nenhum dos dois fala da peça;
---   · tudo que é ESTADO DA PEÇA — não existe, já registrada, já tem lembrete
---     aberto, já foi pedida nas últimas 24h — responde `{ok:true}`, igualzinho
---     ao sucesso, e simplesmente não grava nada. A tela agradece do mesmo
---     jeito, e ninguém do lado de fora aprende nada.
+--   · tudo que é ESTADO DA PEÇA ou TETO — não existe, já registrada, já tem
+--     lembrete aberto, já foi pedida nas últimas 24h, ou o e-mail já pediu 3
+--     vezes hoje — responde `{ok:true}`, igualzinho ao sucesso, e simplesmente
+--     não grava nada. A tela agradece do mesmo jeito, e ninguém do lado de
+--     fora aprende nada.
+--
+-- SÃO DOIS TETOS, e um não substitui o outro:
+--   · 1 pedido por PEÇA a cada 24h — impede incomodar a dona de uma bolsa;
+--   · 3 lembretes por E-MAIL a cada 24h — impede usar a marca para mandar
+--     e-mail a um endereço qualquer, apontando 50 peças diferentes para ele.
 --
 -- ⚠️ O TETO DE 1 PEDIDO POR PEÇA A CADA 24H é contado sobre `criado_em` desta
 -- tabela, e não sobre uma tabela de tentativas como nas irmãs. Motivo medido:
@@ -248,7 +265,32 @@ begin
     return json_build_object('ok', true);
   end if;
 
-  -- 7. já existe um aberto (de mais de 24h atrás): um por peça, e pronto.
+  -- 7. ⚠️ TETO DE 3 POR E-MAIL A CADA 24H (decisão do dono, 19/09/2026).
+  -- O teto por peça, sozinho, não segura o abuso que importa. Ele conta por
+  -- BOLSA: com uma lista de códigos de peça na mão — e os códigos estão
+  -- gravados na etiqueta de cada peça que circula —, um pedido por peça ainda
+  -- é um e-mail por peça, e TODOS podem apontar para o MESMO endereço. Sem
+  -- este segundo teto, o lembrete vira um jeito de mandar e-mail para qualquer
+  -- pessoa com o remetente da VESSEL: inunda a caixa dela e queima
+  -- `vesselbrasil.com.br` como remetente no ZeptoMail — o mesmo estrago que o
+  -- teto de "esqueci a senha" existe para impedir
+  -- (2026-09-17-vessel-contas-base.sql).
+  --
+  -- ⚠️ CONTA O QUE NASCEU NAS ÚLTIMAS 24H, cancelado ou não. Contar só os
+  -- "abertos" deixaria a cota se refazer sozinha: bastaria clicar no link de
+  -- parar (ou esperar o registro) para liberar vaga e pedir de novo, e o teto
+  -- viraria enfeite. E é por isso que o e-mail é gravado normalizado: sem o
+  -- `lower(btrim(...))`, "Ana@X.com" e "ana@x.com" teriam cotas separadas.
+  --
+  -- ⚠️ E É CEGO, como as outras recusas de estado: quem estourou recebe o
+  -- MESMO `{ok:true}`. Um motivo aqui contaria a quem está do lado de fora
+  -- que aquele endereço já pediu hoje — dado de outra pessoa.
+  if (select count(*) from public.vessel_lembretes
+       where email = v_email and criado_em > now() - interval '24 hours') >= 3 then
+    return json_build_object('ok', true);
+  end if;
+
+  -- 8. já existe um aberto (de mais de 24h atrás): um por peça, e pronto.
   if exists (
     select 1 from public.vessel_lembretes
      where peca_codigo = v_codigo and cancelado_em is null and enviado_30_em is null

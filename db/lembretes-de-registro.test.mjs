@@ -130,6 +130,28 @@ test('⚠️ teto de UM pedido por peça a cada 24h', () => {
     'sem teto, o lembrete vira uma porta de incomodar a dona de uma peça');
 });
 
+test('⚠️ teto de 3 lembretes por E-MAIL a cada 24h', () => {
+  // Decisão do dono, 19/09/2026. O teto por peça sozinho não segura o abuso
+  // que importa: com uma lista de códigos de peça na mão, um pedido por peça
+  // ainda é UM e-mail por peça — e todos podem apontar para o MESMO endereço.
+  // Sem este segundo teto, a marca vira um jeito de mandar e-mail para
+  // qualquer pessoa, com o remetente da VESSEL.
+  const f = corpo('vessel_lembrete_criar');
+  assert.match(f, /email = v_email[\s\S]{0,200}interval\s+'24 hours'/,
+    'falta o teto por e-mail: contar por peça não impede apontar 50 peças para o mesmo endereço');
+  assert.match(f, />=\s*3|>\s*2/, 'o teto do dono é 3 por dia');
+
+  // E ele é CEGO, como os outros do estado da peça: quem estourou não pode
+  // descobrir isso pela resposta.
+  for (const vazado of ['muitos_lembretes', 'teto_de_email', 'email_demais']) {
+    assert.ok(!f.includes(vazado), `"${vazado}" contaria que o teto existe`);
+  }
+});
+
+test('⚠️ o teto por e-mail tem índice — senão a conferência varre a tabela toda', () => {
+  assert.match(SQL, /create index[^;]+on public\.vessel_lembretes\s*\(\s*email\s*,/);
+});
+
 test('⚠️ o e-mail é guardado com trim e minúsculo, e a trava é do BANCO', () => {
   const f = corpo('vessel_lembrete_criar');
   assert.match(f, /lower\(\s*btrim\(/, 'o e-mail entra normalizado');

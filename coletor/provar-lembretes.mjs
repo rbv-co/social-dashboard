@@ -139,6 +139,54 @@ try {
     mesmaResposta(naoExiste, rSucesso) && (await contar('NAOEXISTE999')) === 0,
     JSON.stringify(naoExiste));
 
+  // ── 4b. o teto de 3 por E-MAIL a cada 24h (decisao do dono, 19/09/2026) ──
+  console.log('\n[4b] teto de 3 lembretes por e-mail a cada 24h');
+  // Um lote novo, com pecas livres, todas apontando para o MESMO endereco:
+  // e exatamente o abuso que este teto existe para impedir.
+  const loteE = (await c.query(
+    `insert into public.vessel_lotes (modelo, cor, sku, quantidade, fabricado_em, teste, material)
+     values ('ENSAIO TETO EMAIL','Preto','ENSAIO-TETO',5, current_date, true, 'canvas')
+     returning id`)).rows[0].id;
+  const DOTETO = ['TETOEMAIL1','TETOEMAIL2','TETOEMAIL3','TETOEMAIL4','TETOEMAIL5'];
+  for (const [i, cod] of DOTETO.entries()) {
+    await c.query(`insert into public.vessel_pecas (codigo, lote_id, numero_na_serie) values ($1,$2,$3)`,
+      [cod, loteE, i + 1]);
+  }
+  const ALVO = 'alvo@exemplo.com';
+  const respostas = [];
+  for (const cod of DOTETO) respostas.push(await criar(cod, ALVO, null, true));
+  const nasceram = Number((await c.query(
+    `select count(*) n from public.vessel_lembretes where email=$1`, [ALVO])).rows[0].n);
+  ok('5 pecas diferentes, o MESMO e-mail: so 3 nascem', nasceram === 3, `nasceram ${nasceram}`);
+  ok('e as 5 respostas sao IDENTICAS entre si e iguais a do sucesso',
+    respostas.every((r) => mesmaResposta(r, rSucesso)),
+    JSON.stringify(respostas));
+
+  // O teto conta o que NASCEU, cancelado ou nao: cancelar nao devolve vaga.
+  await c.query(`update public.vessel_lembretes set cancelado_em = now(), cancelado_por='cliente'
+                  where email=$1`, [ALVO]);
+  const depoisDeCancelar = await criar(DOTETO[3], ALVO, null, true);
+  const aindaTres = Number((await c.query(
+    `select count(*) n from public.vessel_lembretes where email=$1`, [ALVO])).rows[0].n);
+  ok('cancelar os 3 NAO devolve vaga na cota de 24h',
+    mesmaResposta(depoisDeCancelar, rSucesso) && aindaTres === 3, `agora ha ${aindaTres}`);
+
+  // O e-mail normalizado e a MESMA cota: maiuscula e espaco nao criam cota nova.
+  const disfarcado = await criar(DOTETO[4], '  ALVO@Exemplo.Com ', null, true);
+  const aindaTres2 = Number((await c.query(
+    `select count(*) n from public.vessel_lembretes where email=$1`, [ALVO])).rows[0].n);
+  ok('"ALVO@Exemplo.Com" cai na MESMA cota de "alvo@exemplo.com"',
+    mesmaResposta(disfarcado, rSucesso) && aindaTres2 === 3, `agora ha ${aindaTres2}`);
+
+  // E o teto solta quando os pedidos envelhecem 24h.
+  await c.query(`update public.vessel_lembretes set criado_em = now() - interval '25 hours'
+                  where email=$1`, [ALVO]);
+  const depoisDe25h = await criar(DOTETO[3], ALVO, null, true);
+  const quatro = Number((await c.query(
+    `select count(*) n from public.vessel_lembretes where email=$1`, [ALVO])).rows[0].n);
+  ok('passadas 24h, o e-mail pode pedir de novo',
+    mesmaResposta(depoisDe25h, rSucesso) && quatro === 4, `agora ha ${quatro}`);
+
   // ── 5. o indice unico ────────────────────────────────────────────────────
   console.log('\n[5] o indice unico parcial');
   // empurra o pedido para tras para sair do teto de 24h
