@@ -234,6 +234,27 @@ de `ver`. Quem só vê continua só vendo. Conferido: o módulo já aceita as du
 ações (`acoes: ['ver','editar']`) e a tela de Private Appointment já usa a
 segunda — não é capacidade nova, é usar a que existe.
 
+⚠️ **ACHADO EM 19/09, DEPOIS DO DESENHO: o banco não sabe o que é "editar".**
+`is_vessel_atendimentos()` lê `profiles.features`, que é uma lista de chaves
+**sem ação** — ela responde igual para quem só vê e para quem mexe. A tela lê
+outro modelo, `profiles.permissions`, que é `recurso → [ações]`. São **dois
+modelos de permissão que não conversam**.
+
+Consequência se ficasse assim: esconder o botão na tela seria só esconder. A
+função de apagar aceitaria a chamada de qualquer um com `atendimentos`, por
+fora da tela.
+
+Por isso nasce `is_vessel_atendimentos_editar()`, e ela é **as duas coisas
+juntas**:
+
+```sql
+select public.is_vessel_atendimentos()          -- o portão de hoje, features
+   and (p.is_superadmin or (p.permissions -> 'atendimentos') ? 'editar')
+```
+
+⚠️ **Nunca mais frouxa que ver.** Começando pelo portão de hoje, ninguém passa a
+editar sem antes poder ver — mesmo que os dois modelos discordem entre si.
+
 ⚠️ **O rótulo do módulo na tela de permissões ainda diz "Vessel — Atendimentos"**,
 o nome de antes. Passa a dizer **"Vessel — Private Appointment"**, para quem
 configura reconhecer o que está marcando. A **chave continua `atendimentos`** —
