@@ -72,9 +72,14 @@
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;opacity:.6"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
               Se a senha for deixada em branco, um link de primeiro acesso será enviado para o email.
             </div>
-            <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
+            <!-- As DUAS classes não são enfeite: são o que o `@media` de celular
+                 pega para deixar esta fileira quebrar no zoom de leitura 2×. Ver
+                 o comentário no CSS, em `.adm-convite-rodape`. O `flex-shrink:0`
+                 dos botões saiu do `style=` e foi para o CSS pelo mesmo motivo:
+                 estilo inline ganha da folha, e no celular ele precisa ceder. -->
+            <div class="adm-convite-rodape" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
               <div id="adm-invite-msg" style="font-family:var(--fonte-principal);font-size:max(9px, calc(12px * var(--escala-texto, 1)));color:var(--muted);flex:1"></div>
-              <div style="display:flex;gap:8px;flex-shrink:0">
+              <div class="adm-convite-botoes" style="display:flex;gap:8px">
                 <button class="btn" onclick="adminInviteUser('invite')">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
                   Enviar convite
@@ -4406,6 +4411,11 @@ Object.assign(window, {
 .tela-admin :deep(.admin-nav-item svg){flex-shrink:0;opacity:.6;}
 .tela-admin :deep(.admin-nav-item.active svg){opacity:1;}
 .tela-admin :deep(.admin-content){padding:36px 44px;overflow-y:auto;max-height:calc(100vh - 50px);}
+/* A fileira de "Enviar convite" / "Criar com senha". No computador ela não
+   encolhe — é o que o `style=` fazia antes, e continua igual aqui. A regra saiu
+   do `style=` porque estilo inline ganha da folha, e no celular (ver o `@media`
+   abaixo) esta fileira PRECISA ceder. */
+.tela-admin :deep(.adm-convite-botoes){flex-shrink:0;}
 .tela-admin :deep(.admin-section){display:none;}
 .tela-admin :deep(.admin-section.active){display:block;}
 .tela-admin :deep(.admin-section-title){font-family:var(--fonte-principal);font-size:max(16px, calc(22px * var(--escala-texto, 1)));font-weight:500;letter-spacing:1.5px;text-transform:uppercase;color:var(--text);margin-bottom:3px;}
@@ -4425,7 +4435,10 @@ Object.assign(window, {
 .tela-admin :deep(.admin-stat-val){font-family:var(--fonte-dados);font-size:max(16px, calc(30px * var(--escala-texto, 1)));font-weight:500;color:var(--accent);}
 .tela-admin :deep(.admin-stat-lbl){font-family:var(--fonte-principal);font-size:max(9px, calc(9px * var(--escala-texto, 1)));color:var(--muted);letter-spacing:1.5px;text-transform:uppercase;margin-top:3px;}
 @media(max-width:768px){
-  .tela-admin :deep(.admin-layout){grid-template-columns:1fr;}
+  /* `minmax(0,1fr)`, não `1fr` — o porquê está no bloco do zoom 2×, no fim
+     deste mesmo `@media`. Em uma palavra: `1fr` sozinho não deixa a coluna
+     encolher abaixo do conteúdo, e a tela vazava para fora da borda. */
+  .tela-admin :deep(.admin-layout){grid-template-columns:minmax(0,1fr);}
   .tela-admin :deep(.admin-sidebar){display:flex;overflow-x:auto;border-right:none;border-bottom:1px solid var(--border);padding:8px;gap:4px;}
   .tela-admin :deep(.admin-nav-group-label){display:none;}
   /* O CELULAR ROLA A PÁGINA INTEIRA, e o conteúdo não tem teto de altura.
@@ -4451,6 +4464,35 @@ Object.assign(window, {
    * já rola sozinha, e uma caixa que rola por dentro de uma página que rola
    * é sempre pior — o dedo nunca sabe qual das duas vai se mexer. */
   .tela-admin :deep(.admin-content){padding:20px 16px;max-height:none;overflow-y:visible;}
+
+  /* ── A TELA PARAVA DE CABER NO ZOOM DE LEITURA 2× (19/09/2026) ────────────
+   *
+   * O DEFEITO, MEDIDO a 375px com o zoom de leitura do app em 2×: o
+   * `.admin-content` ficava com 590,8px dentro de uma tela de 375 — passava
+   * 215,8px da borda. E `html,body` têm `overflow-x:clip`, ou seja **a página
+   * não rola para o lado**: o que passa da borda não fica escondido atrás de
+   * uma barra de rolagem, ele simplesmente DEIXA DE EXISTIR para quem está no
+   * aparelho. O campo "Email", o seletor "Perfil de acesso" e o botão "Criar
+   * com senha" ficavam fora da tela, inalcançáveis. Não dava para convidar
+   * ninguém pelo celular — que é para isso que esta tela serve.
+   *
+   * A CAUSA: item de grade nasce com `min-width:auto`, e isso o proíbe de
+   * encolher abaixo da largura mínima do conteúdo. Com a letra em dobro essa
+   * largura mínima passou dos 375px, e a coluna `1fr` inchou junto. O
+   * `minmax(0,1fr)` é o que autoriza a coluna a encolher de verdade.
+   *
+   * MEDIDO DEPOIS, nas cinco seções (Usuários, Contas, Solicitações, Metas e
+   * Dados), a 320/360/375px e nos dois zooms: NADA passa da borda. A 1× a tela
+   * não mudou — lá nada estourava, então não há o que encolher.
+   *
+   * ⚠️ A FILEIRA DOS BOTÕES não se resolve só com isso: os dois botões somam
+   * 507px no zoom 2× e o `flex-shrink:0` os impedia de ceder. Ela quebra em
+   * duas linhas aqui, e cada botão ocupa a largura toda — 301px, bem acima dos
+   * 40px de alvo que o PADRÃO pede. */
+  .tela-admin :deep(.admin-content){min-width:0;}
+  .tela-admin :deep(.adm-convite-rodape){flex-wrap:wrap;}
+  .tela-admin :deep(.adm-convite-botoes){flex-wrap:wrap;flex-shrink:1;min-width:0;}
+  .tela-admin :deep(.adm-convite-botoes) > .btn{flex:1 1 auto;}
 }
 .tela-admin :deep(.admin-btn-sm){font-family:var(--fonte-principal);font-size:max(9px, calc(10px * var(--escala-texto, 1)));color:var(--sobre-cor);background:var(--accent);border:none;border-radius:3px;padding:5px 10px;cursor:pointer;letter-spacing:.6px;white-space:nowrap;transition:opacity .18s;text-transform:uppercase;}
 .tela-admin :deep(.admin-btn-sm:hover){opacity:.85;}
