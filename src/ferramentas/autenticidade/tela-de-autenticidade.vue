@@ -1671,6 +1671,58 @@
       </div>
     </template>
 
+    <!-- ── LEMBRETES ────────────────────────────────────────────────────
+         O "Deixar para depois" (desenho do dono, 19/09/2026): a cliente abriu
+         o certificado de uma peça sem dona, não quis registrar agora e deixou
+         o e-mail. A marca manda dois e-mails, um em 7 dias e outro em 30.
+
+         ⚠️ SÓ LEITURA NESTA ENTREGA. Nenhum botão, nenhuma permissão nova:
+         quem abre a tela de Autenticidade vê esta lista, e ninguém mexe nela
+         por aqui. Quem cancela é a cliente, pelo link do próprio e-mail; e o
+         lembrete morre sozinho quando a peça for registrada.
+
+         ⚠️ A TABELA `vessel_lembretes` AINDA NÃO EXISTE — ela é da outra
+         frente desta entrega. Por isso esta leitura é SEPARADA da que carrega
+         o resto da tela: ali qualquer falha derruba tudo de propósito, e aqui
+         a falha esperada vira a lista vazia com um aviso curto. -->
+    <template v-else-if="aba === 'lembretes'">
+      <p v-if="avisoDosLembretes.tipo === 'aguardando'" class="au-vazio">
+        {{ avisoDosLembretes.texto }}
+      </p>
+      <p v-else-if="avisoDosLembretes.tipo === 'erro'" class="au-erro" role="alert">
+        {{ avisoDosLembretes.texto }}
+      </p>
+      <p v-else-if="!linhasDosLembretes.length" class="au-vazio">
+        Nenhuma cliente pediu para ser lembrada ainda.
+      </p>
+
+      <!-- Tabela no computador, cartão no celular — a mesma forma das outras
+           listas desta tela. -->
+      <div v-if="linhasDosLembretes.length" class="au-lista au-tabela au-tabela-lembretes">
+        <div class="au-tabela-cab" aria-hidden="true">
+          <span>Peça</span><span>Código</span><span>E-mail</span>
+          <span>Pediu em</span><span>Já enviamos</span><span>Estado</span>
+        </div>
+        <div v-for="lb in linhasDosLembretes" :key="lb.id" class="au-card">
+          <div class="au-card-topo">
+            <span class="au-modelo">{{ lb.modelo || 'Peça sem lote conhecido'
+              }}<template v-if="lb.cor"> · {{ lb.cor }}</template></span>
+            <span class="au-ref">{{ lb.codigo }}</span>
+          </div>
+          <!-- ⚠️ OS RÓTULOS SÓ EXISTEM NO CELULAR. No computador o cabeçalho da
+               tabela já diz o que é cada coluna, e repetir ali seria ruído; no
+               cartão do celular não há cabeçalho nenhum, e "Nenhum ainda" solto
+               não diz nada. É o mesmo `au-rot-serie` da aba Cartões EAN. -->
+          <div class="au-card-linha">
+            <span>{{ lb.email }}</span>
+            <span><span class="au-rot-lembrete">pediu em </span>{{ dataCurta(lb.criadoEm) }}</span>
+            <span><span class="au-rot-lembrete">já enviamos: </span>{{ lb.envios.texto }}</span>
+          </div>
+          <span class="selo" :class="seloDoEstadoDoLembrete(lb.estado)">{{ lb.rotuloDoEstado }}</span>
+        </div>
+      </div>
+    </template>
+
     <!-- ── ALERTAS ──────────────────────────────────────────────────────── -->
     <template v-else>
       <!-- ⚠️ MESMO CORTE DA ABA ETIQUETAS: a segunda metade deste parágrafo
@@ -2130,6 +2182,11 @@ import {
   filaDeGarantia, comoConferir, fraseDaRecusaDeGarantia,
   podeTrocarDono, cpfComMascara, cpfLimpo,
 } from './registros-de-garantia.js'
+// O "Deixar para depois" (19/09/2026): as decisões da lista de lembretes, com
+// teste ao lado. A tela só lê e desenha.
+import {
+  COLUNAS_DO_LEMBRETE, linhasDeLembretes, avisoDaListaDeLembretes, seloDoEstadoDoLembrete,
+} from './lembretes-do-selo.js'
 import { prazoDoMaterial, materialDoCodigo, avisoDaAprovacao, avisoDaTroca } from './garantia-pelo-material.js'
 // O material do LOTE: as frases da tela e a leitura da sugestão do Bling. A
 // regra que decide o material pela estrutura é a mesma que o robô de varredura
@@ -2231,6 +2288,10 @@ const ABAS = [
   { chave: 'cartoes', n: 4, rotulo: 'Cartões EAN', leitura: 'Passo 4: Cartões EAN' },
   { chave: 'registros', rotulo: 'Garantias', leitura: 'Garantias', separaAntes: true },
   { chave: 'alertas', rotulo: 'Alertas', leitura: 'Alertas' },
+  // LEMBRETES é consulta, como Garantias e Alertas: fica do lado de cá do
+  // separador e SEM número. Numerar mentiria sobre o fluxo — ninguém "faz"
+  // lembrete aqui, quem pede é a cliente, na página do certificado dela.
+  { chave: 'lembretes', rotulo: 'Lembretes', leitura: 'Lembretes' },
 ]
 
 const router = useRouter()
@@ -2244,6 +2305,16 @@ const pecas = ref([])
 const registros = ref([])
 const pedidosDeGarantia = ref([])
 const alertas = ref(null)
+
+// ── OS LEMBRETES DO "DEIXAR PARA DEPOIS" (19/09/2026) ──────────────────────
+// Lista SÓ LEITURA. `erroDosLembretes` guarda o que o banco disse, porque a
+// tabela ainda não existe — e "não há lembretes" numa leitura que falhou é a
+// mentira mais cara que uma tela conta (PADRAO-DA-CENTRAL, item 9).
+const lembretes = ref([])
+const erroDosLembretes = ref(null)
+const avisoDosLembretes = computed(() => avisoDaListaDeLembretes(erroDosLembretes.value))
+const linhasDosLembretes = computed(
+  () => linhasDeLembretes(lembretes.value, { pecas: pecas.value, lotes: lotes.value }))
 
 const loteEscolhido = ref('')
 const busca = ref('')
@@ -3769,6 +3840,30 @@ async function carregar() {
       : 'Não consegui carregar. Confira sua conexão e tente de novo.'
   } finally {
     carregando.value = false
+  }
+  // ⚠️ DEPOIS DO `finally`, E FORA DO `Promise.all` DE CIMA, DE PROPÓSITO.
+  // Lá qualquer falha derruba a tela inteira — e tem de derrubar mesmo, porque
+  // sem aquelas listas a tela mente. Aqui não: a tabela `vessel_lembretes`
+  // AINDA NÃO EXISTE (é a outra frente desta entrega), então esta leitura
+  // falha hoje, todos os dias, e não pode levar junto lotes, gravação,
+  // etiquetas e cartões. Ela fala por si, na aba dela.
+  await carregarLembretes()
+}
+
+// A lista de lembretes. NÃO ESTOURA NUNCA: guarda o que o banco disse e deixa
+// `avisoDaListaDeLembretes` decidir se aquilo é "a tabela ainda não subiu" ou
+// "não deu para ler" — que são coisas diferentes para quem está olhando.
+async function carregarLembretes() {
+  try {
+    const { data, error } = await sbClient
+      .from('vessel_lembretes')
+      .select(COLUNAS_DO_LEMBRETE)
+      .order('criado_em', { ascending: false })
+    erroDosLembretes.value = error || null
+    lembretes.value = error ? [] : (data || [])
+  } catch (e) {
+    erroDosLembretes.value = e || { message: 'o banco não respondeu' }
+    lembretes.value = []
   }
 }
 
@@ -5848,6 +5943,16 @@ onUnmounted(() => window.removeEventListener('message', ouvirAPrevia))
   .au-tabela-baixadas .au-tabela-cab, .au-tabela-baixadas .au-card{
     grid-template-columns:minmax(0,1.6fr) minmax(0,1fr) minmax(0,1.4fr) minmax(0,1.4fr);
   }
+  /* LEMBRETES: as seis colunas são sempre as mesmas (nenhuma é opcional), então
+     a linha de baixo do cartão também vira `display:contents` e tudo fica
+     alinhado de ponta a ponta. O e-mail é a coluna mais larga: ele é o dado
+     mais comprido da linha, e texto cortado é defeito (PADRAO item 5). */
+  .au-tabela-lembretes .au-tabela-cab, .au-tabela-lembretes .au-card{
+    grid-template-columns:minmax(0,1.8fr) minmax(0,1.1fr) minmax(0,2.2fr)
+                          minmax(0,1fr) minmax(0,1.3fr) minmax(0,1.3fr);
+  }
+  .au-tabela-lembretes .au-card-linha{display:contents;}
+  .au-tabela-lembretes .au-rot-lembrete{display:none}
   .au-tabela-cartoes .au-tabela-cab, .au-tabela-cartoes .au-card{
     grid-template-columns:minmax(0,2.4fr) minmax(0,1.4fr) minmax(0,1fr) minmax(0,1.6fr);
   }

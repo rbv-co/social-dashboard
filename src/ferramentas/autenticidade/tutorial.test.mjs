@@ -68,11 +68,12 @@ test('ESTAGIOS: o de gravar avisa que sem o sinal a peca NAO foi marcada', () =>
 
 // ── a ajuda dentro de cada aba ─────────────────────────────────────────────
 
-test('AJUDA_DA_ABA: as SEIS abas tem ajuda propria, e nenhuma e rotulo', () => {
+test('AJUDA_DA_ABA: as SETE abas tem ajuda propria, e nenhuma e rotulo', () => {
   // guia unico ninguem reabre: quem chega na aba Alertas seis meses depois
   // precisa da explicacao ALI
+  // (19/09/2026: entrou a setima, Lembretes — o "Deixar para depois")
   assert.deepEqual(Object.keys(AJUDA_DA_ABA).sort(),
-    ['alertas', 'cartoes', 'etiquetas', 'gravar', 'lotes', 'registros'])
+    ['alertas', 'cartoes', 'etiquetas', 'gravar', 'lembretes', 'lotes', 'registros'])
   for (const [aba, texto] of Object.entries(AJUDA_DA_ABA)) {
     assert.ok(texto.length > 80, `a ajuda da aba ${aba} e curta demais para explicar`)
   }

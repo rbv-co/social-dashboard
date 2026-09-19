@@ -42,7 +42,10 @@ const aba = template.slice(
 test('a aba existe, e na ordem do caminho', () => {
   const lista = script.slice(script.indexOf('const ABAS = ['), script.indexOf(']', script.indexOf('const ABAS = [')));
   const chaves = [...lista.matchAll(/chave: '([\w-]+)'/g)].map((m) => m[1]);
-  assert.deepEqual(chaves, ['lotes', 'gravar', 'etiquetas', 'cartoes', 'registros', 'alertas'],
+  // 19/09/2026: entrou LEMBRETES, no fim. Ela é consulta, como Garantias e
+  // Alertas — fica do lado de lá do separador e sem número de passo.
+  assert.deepEqual(chaves,
+    ['lotes', 'gravar', 'etiquetas', 'cartoes', 'registros', 'alertas', 'lembretes'],
     'Etiquetas é o desfazer de Gravar: ela vem logo depois. Cartões EAN vem em '
     + 'seguida porque o número de série tem de estar resolvido antes de virar papel');
 });
@@ -61,12 +64,15 @@ test('a corrente das abas continua inteira, do carregando ao v-else final', () =
     "else-if=\"aba === 'etiquetas'\"",
     "else-if=\"aba === 'cartoes'\"",
     "else-if=\"aba === 'registros'\"",
+    // 19/09/2026: Lembretes entrou como o último `v-else-if` da corrente,
+    // logo antes do `v-else` que é a aba Alertas.
+    "else-if=\"aba === 'lembretes'\"",
   ], 'a aba nova tem de ser um `v-else-if` entre Gravar e Registros, na mesma corrente');
   // e a aba Alertas continua sendo o `v-else` que fecha a corrente
   const alertas = template.indexOf('<!-- ── ALERTAS');
   assert.notEqual(alertas, -1, 'o bloco da aba Alertas sumiu');
   assert.match(template.slice(alertas, alertas + 260), /<template v-else>/,
-    'a aba Alertas tem de continuar sendo o `v-else` logo depois de Registros');
+    'a aba Alertas tem de continuar sendo o `v-else` que FECHA a corrente');
 });
 
 /* ── A LISTA ─────────────────────────────────────────────────────────────── */

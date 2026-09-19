@@ -80,6 +80,10 @@ export const AJUDA_DA_ABA = {
     + 'Só leitura: dá para buscar pelo nome ou pelo código e baixar a planilha.',
   alertas: 'O que anda estranho nos últimos 30 dias: o mesmo código lido de muitos aparelhos, '
     + 'códigos que não existem sendo tentados, e peças baixadas que voltaram a ser lidas.',
+  lembretes: 'Quem abriu o certificado de uma peça sem dona, não quis registrar na hora e deixou '
+    + 'o e-mail para a gente lembrar. São dois e-mails, um em 7 dias e outro em 30, só sobre '
+    + 'aquela peça. Só leitura: quem cancela é a própria cliente, pelo link do e-mail, e o '
+    + 'lembrete se encerra sozinho quando a peça for registrada.',
 }
 
 // ── OS TRÊS ESTÁGIOS, POR EXTENSO ──────────────────────────────────────────
