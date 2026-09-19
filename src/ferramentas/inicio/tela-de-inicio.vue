@@ -138,27 +138,18 @@
           </div>
           <span class="home-card-enter">→</span>
         </div>
-        <!-- Vessel — Atendimentos: os private appointments. Quem tem horário,
-             quem veio, e quanto comprou depois. -->
-        <div class="home-card" id="home-card-atendimentos" v-show="podeAtendimentos" @click="ir('atendimentos')" @mouseenter="definirTemaFundo('default')" @mouseleave="definirTemaFundo('default')">
-          <div class="home-card-icon" style="background:linear-gradient(135deg,#9a6b3f 0%,#c3a36a 100%)">
-            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><path d="m9 16 2 2 4-4"/></svg>
+        <!-- COMERCIAL VESSEL: a porta única do atendimento e da ação comercial
+             da marca. Antes eram TRÊS cartões soltos aqui (Atendimentos, Beauty
+             Sessions e Funil de Carrinho), e a home crescia um por entrega.
+             ⚠️ Cada módulo continua atrás da MESMA chave de antes, e os
+             endereços diretos seguem valendo — link salvo não quebra. -->
+        <div class="home-card" id="home-card-comercial-vessel" v-show="podeComercialVessel" @click="ir('comercial-vessel')" @mouseenter="definirTemaFundo('default')" @mouseleave="definirTemaFundo('default')">
+          <div class="home-card-icon" style="background:linear-gradient(135deg,#7a3f52 0%,#c3708a 100%)">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h18v4H3z"/><path d="M5 7v13h14V7"/><path d="M9 11h6"/></svg>
           </div>
           <div class="home-card-text">
-            <h3>Vessel<br>Atendimentos</h3>
-            <p>Quem tem horário, quem veio e quanto comprou depois</p>
-          </div>
-          <span class="home-card-enter">→</span>
-        </div>
-        <!-- Vessel — Beauty Sessions: as sessões de salão. Criar, ver quantas
-             leram o QR e quantas viraram cliente, e encerrar quando acaba. -->
-        <div class="home-card" id="home-card-beauty-sessions" v-show="podeAtendimentos" @click="ir('beauty-sessions')" @mouseenter="definirTemaFundo('default')" @mouseleave="definirTemaFundo('default')">
-          <div class="home-card-icon" style="background:linear-gradient(135deg,#7a5c8a 0%,#b89ac4 100%)">
-            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM18 18h3v3h-3z"/></svg>
-          </div>
-          <div class="home-card-text">
-            <h3>Vessel<br>Beauty Sessions</h3>
-            <p>Criar a sessão, ver quem leu o QR e encerrar quando acaba</p>
+            <h3>Comercial<br>Vessel</h3>
+            <p>Atendimentos, Beauty Sessions e o funil de carrinho da loja</p>
           </div>
           <span class="home-card-enter">→</span>
         </div>
@@ -169,16 +160,6 @@
           <div class="home-card-text">
             <h3>Status<br>da IA</h3>
             <p>Robôs de IA, quanto cada tarefa custou e o gasto real das contas</p>
-          </div>
-          <span class="home-card-enter">→</span>
-        </div>
-        <div class="home-card" id="home-card-carrinho" v-show="podeCarrinho" @click="ir('funil-carrinho')" @mouseenter="definirTemaFundo('default')" @mouseleave="definirTemaFundo('default')">
-          <div class="home-card-icon" style="background:linear-gradient(135deg,#ea580c 0%,#c2410c 100%)">
-            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
-          </div>
-          <div class="home-card-text">
-            <h3>Funil de<br>Carrinho</h3>
-            <p>Produtos mais adicionados/removidos e carrinhos abandonados antes do checkout</p>
           </div>
           <span class="home-card-enter">→</span>
         </div>
@@ -246,6 +227,10 @@ const podeGestaoInterna = computed(() => podeVerGestaoInterna(hasPermission))
 const podeClaudeStatus = computed(() => hasPermission('claude.status', 'ver'))
 const podeCarrinho = computed(() => hasPermission('carrinho', 'ver'))
 const podeAtendimentos = computed(() => hasPermission('atendimentos', 'ver'))
+// ⚠️ O CARTÃO APARECE SE QUALQUER MÓDULO DE DENTRO ESTIVER LIBERADO. Exigir as
+// duas chaves esconderia a porta de quem tem só uma, e a pessoa leria "não
+// tenho acesso" tendo acesso. Dentro do menu, cada módulo se esconde sozinho.
+const podeComercialVessel = computed(() => podeAtendimentos.value || podeCarrinho.value)
 // O 3D era o único cartão sem porteiro. Agora segue a mesma chave dos outros.
 const podeEscritorio3D = computed(() => hasPermission('escritorio3d', 'ver'))
 

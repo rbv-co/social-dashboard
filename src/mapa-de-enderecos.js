@@ -10,6 +10,9 @@ const rotas = [
   { path: '/patrimonio', name: 'patrimonio', component: () => import('./ferramentas/patrimonio/tela-de-patrimonio.vue'), meta: { recurso: 'patrimonio' } },
   { path: '/frota', name: 'frota', component: () => import('./ferramentas/frota/tela-de-frota.vue'), meta: { recurso: 'frota' } },
   { path: '/autenticidade', name: 'autenticidade', component: () => import('./ferramentas/autenticidade/tela-de-autenticidade.vue'), meta: { recurso: 'autenticidade' } },
+  // A porta única do Comercial Vessel. ⚠️ Os endereços diretos de cada módulo
+  // continuam valendo: agrupar na Central não pode quebrar link salvo.
+  { path: '/comercial-vessel', name: 'comercial-vessel', component: () => import('./ferramentas/comercial-vessel/tela-de-menu-comercial-vessel.vue') },
   { path: '/atendimentos', name: 'atendimentos', component: () => import('./ferramentas/atendimentos/tela-de-atendimentos.vue'), meta: { recurso: 'atendimentos' } },
   // Mesma chave de Atendimentos de propósito: a função do banco que lê os
   // números das sessões já gateia em `is_vessel_atendimentos()`. Uma permissão
