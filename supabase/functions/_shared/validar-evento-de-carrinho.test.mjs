@@ -74,3 +74,26 @@ test('fbp/fbc são opcionais: vêm junto quando existem, viram null quando falta
   assert.equal(lixo.evento.fbp, null)
   assert.equal(lixo.evento.fbc, null)
 })
+
+test('utm/gclid/referrer são opcionais: vêm junto quando existem, viram null quando faltam ou são lixo', () => {
+  const comOrigem = validarPayload({
+    tipo: 'sessao_iniciada', session_id: 's1',
+    utm_source: 'google', utm_medium: 'cpc', utm_campaign: 'promo-inverno',
+    gclid: 'abc123', referrer: 'https://www.google.com/',
+  })
+  assert.equal(comOrigem.evento.utm_source, 'google')
+  assert.equal(comOrigem.evento.utm_medium, 'cpc')
+  assert.equal(comOrigem.evento.utm_campaign, 'promo-inverno')
+  assert.equal(comOrigem.evento.gclid, 'abc123')
+  assert.equal(comOrigem.evento.referrer, 'https://www.google.com/')
+
+  const semOrigem = validarPayload({ tipo: 'sessao_iniciada', session_id: 's1' })
+  assert.equal(semOrigem.evento.utm_source, null)
+  assert.equal(semOrigem.evento.gclid, null)
+  assert.equal(semOrigem.evento.referrer, null)
+
+  const lixo = validarPayload({ tipo: 'sessao_iniciada', session_id: 's1', utm_source: '   ', gclid: 123, referrer: '' })
+  assert.equal(lixo.evento.utm_source, null)
+  assert.equal(lixo.evento.gclid, null)
+  assert.equal(lixo.evento.referrer, null)
+})

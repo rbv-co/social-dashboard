@@ -58,6 +58,13 @@ export function validarPayload(corpo) {
       // db/migrations/2026-09-18-carrinho-eventos-fbp-fbc.sql.
       fbp: textoOuNulo(corpo.fbp),
       fbc: textoOuNulo(corpo.fbc),
+      // Atribuição multi-canal (Google Ads, e-mail, orgânico) — ver
+      // db/migrations/2026-09-19-carrinho-eventos-origem.sql.
+      utm_source: textoOuNulo(corpo.utm_source),
+      utm_medium: textoOuNulo(corpo.utm_medium),
+      utm_campaign: textoOuNulo(corpo.utm_campaign),
+      gclid: textoOuNulo(corpo.gclid),
+      referrer: textoOuNulo(corpo.referrer),
     },
   }
 }

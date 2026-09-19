@@ -108,8 +108,68 @@
     try { return localStorage.getItem(CHAVE_FBC_RESERVA); } catch (e) { return null; }
   }
 
+  // Atribuição multi-canal (Google Ads, e-mail, orgânico) — mesmo truque do
+  // fbclid: vem da URL de entrada, não é cookie, persiste em localStorage
+  // porque some da URL na primeira navegação interna. Só sobrescreve
+  // quando o parâmetro está presente na página atual — assim a sessão
+  // guarda sempre a ORIGEM de entrada, não o que a navegação interna traria.
+  var CHAVE_ORIGEM_RESERVA = 'rbv_origem_reserva';
+  (function () {
+    var params = new URLSearchParams(window.location.search);
+    var origem = {};
+    ['utm_source', 'utm_medium', 'utm_campaign', 'gclid'].forEach(function (chave) {
+      var valor = params.get(chave);
+      if (valor) origem[chave] = valor;
+    });
+    if (Object.keys(origem).length) {
+      try { localStorage.setItem(CHAVE_ORIGEM_RESERVA, JSON.stringify(origem)); } catch (e) {}
+    }
+  })();
+
+  function pegarOrigem() {
+    try {
+      var bruto = localStorage.getItem(CHAVE_ORIGEM_RESERVA);
+      return bruto ? JSON.parse(bruto) : {};
+    } catch (e) {
+      return {};
+    }
+  }
+
+  // Detecta sessão nova UMA vez, cedo — usado tanto pra decidir se manda
+  // sessao_iniciada (lá embaixo) quanto pra saber se deve (re)gravar o
+  // referrer de entrada agora. localStorage, não sessionStorage: é do
+  // navegador inteiro, não por aba (ver achado de produção mais abaixo).
+  var CHAVE_ULTIMA_SESSAO = 'rbv_ultima_sessao_iniciada';
+  var sessaoAtual = pegarCookie('_shopify_s');
+  var ehSessaoNova = !!sessaoAtual && localStorage.getItem(CHAVE_ULTIMA_SESSAO) !== sessaoAtual;
+  if (ehSessaoNova) {
+    try { localStorage.setItem(CHAVE_ULTIMA_SESSAO, sessaoAtual); } catch (e) {}
+  }
+
+  // document.referrer só é útil na ENTRADA (de onde a pessoa veio de fora)
+  // — numa navegação interna ele vira a própria página anterior do site,
+  // sem valor nenhum. Só é conferido/regravado numa sessão NOVA — senão
+  // uma navegação interna no meio da mesma sessão apagaria o referrer de
+  // entrada correto, e uma sessão velha ficaria com o referrer de uma
+  // sessão anterior grudado pra sempre.
+  var CHAVE_REFERRER_RESERVA = 'rbv_referrer_reserva';
+  if (ehSessaoNova) {
+    try {
+      if (document.referrer && document.referrer.indexOf(window.location.hostname) === -1) {
+        localStorage.setItem(CHAVE_REFERRER_RESERVA, document.referrer);
+      } else {
+        localStorage.removeItem(CHAVE_REFERRER_RESERVA);
+      }
+    } catch (e) {}
+  }
+
+  function pegarReferrer() {
+    try { return localStorage.getItem(CHAVE_REFERRER_RESERVA); } catch (e) { return null; }
+  }
+
   function enviar(tipo, dados) {
     try {
+      var origem = pegarOrigem();
       var base = {
         tipo: tipo,
         cart_token: pegarCartTokenDoCookie(),
@@ -121,6 +181,11 @@
         session_id: pegarCookie('_shopify_s'),
         fbp: pegarCookie('_fbp'),
         fbc: pegarFbc(),
+        utm_source: origem.utm_source || null,
+        utm_medium: origem.utm_medium || null,
+        utm_campaign: origem.utm_campaign || null,
+        gclid: origem.gclid || null,
+        referrer: pegarReferrer(),
       };
       fetch(URL_DA_EDGE, {
         method: 'POST',
@@ -358,20 +423,18 @@
   // continua sendo inferido por inatividade, do mesmo jeito que
   // carrinho_abandonados já faz.
   //
-  // ⚠️ Usa localStorage, NÃO sessionStorage — achado ao vivo em produção,
-  // 18/09/2026: sessionStorage é isolado POR ABA, mas o cookie _shopify_s
-  // (a sessão de verdade) é do navegador inteiro. Com sessionStorage,
-  // abrir uma segunda aba da loja (ou qualquer pré-carregamento que crie
-  // um contexto novo) mandava sessao_iniciada de novo pra MESMA sessão —
-  // visto no banco: mesmo session_id, mesmo IP, gravado várias vezes em
-  // minutos, alguns a menos de 1 segundo de distância. Comparar com a
-  // sessão ATUAL (não só "já mandei alguma vez") resolve os dois lados:
-  // não duplica em aba nova da mesma sessão, e ainda manda de novo quando
-  // uma sessão de verdade nova começa (_shopify_s muda, ~30min de troca).
-  var sessaoAtual = pegarCookie('_shopify_s');
-  var chaveUltimaSessao = 'rbv_ultima_sessao_iniciada';
-  if (sessaoAtual && localStorage.getItem(chaveUltimaSessao) !== sessaoAtual) {
-    localStorage.setItem(chaveUltimaSessao, sessaoAtual);
+  // ⚠️ ehSessaoNova (calculado lá em cima) usa localStorage, NÃO
+  // sessionStorage — achado ao vivo em produção, 18/09/2026: sessionStorage
+  // é isolado POR ABA, mas o cookie _shopify_s (a sessão de verdade) é do
+  // navegador inteiro. Com sessionStorage, abrir uma segunda aba da loja
+  // (ou qualquer pré-carregamento que crie um contexto novo) mandava
+  // sessao_iniciada de novo pra MESMA sessão — visto no banco: mesmo
+  // session_id, mesmo IP, gravado várias vezes em minutos, alguns a menos
+  // de 1 segundo de distância. Comparar com a sessão ATUAL (não só "já
+  // mandei alguma vez") resolve os dois lados: não duplica em aba nova da
+  // mesma sessão, e ainda manda de novo quando uma sessão de verdade nova
+  // começa (_shopify_s muda, ~30min de troca).
+  if (ehSessaoNova) {
     enviar('sessao_iniciada', {});
   }
 })();
