@@ -152,11 +152,20 @@ try {
     `select count(*)::int as n from public.vessel_atendimentos where evento_codigo = $1`, [cod])).n
 
   // ── 4a. QUEM SO VE CONTINUA SO VENDO, inclusive por fora da tela ────────
-  // ⚠️ ESTE E O CASO QUE FAZ A TRAVA VALER ALGUMA COISA. Ele bate num codigo
-  // que EXISTE: se a chamada a `is_vessel_atendimentos_editar()` sumir das
-  // funcoes, a resposta deixa de ser `sem_permissao` e vira `ok` — e a
-  // asercao quebra. Com um codigo inexistente (como no caso 3) a mesma
-  // remocao passaria despercebida, escondida atras de `nao_achei`.
+  // ⚠️ ESTE E O CASO QUE SEPARA A TRAVA DE EDITAR DA TRAVA DE VER.
+  //
+  // Nao e que o caso 3 seja cego ao sumico da trava: ele exige `sem_permissao`
+  // em cheio, e uma funcao destravada responderia `nao_achei` para o
+  // `PE-X` inexistente — a asercao quebraria la mesmo. O que o caso 3 NAO
+  // consegue e distinguir UMA trava da OUTRA: sem sessao, `auth.uid()` e nulo
+  // e `is_vessel_atendimentos()` e `is_vessel_atendimentos_editar()` dao falso
+  // igual.
+  //
+  // O perfil daqui e o que morde essa diferenca: ele TEM `atendimentos` em
+  // `features` (passa pelo portao de ver) e NAO tem `editar` em `permissions`.
+  // Trocar `is_vessel_atendimentos_editar()` por `is_vessel_atendimentos()` —
+  // o erro mais facil de cometer neste arquivo, porque as duas leem parecido —
+  // passa batido pelo caso 3 e quebra aqui.
   await falarComo(so_ve)
   const antesDeVer = await linha()
   for (const [nome, chamada, args] of [
@@ -195,6 +204,39 @@ try {
   if (d1.loja !== 'iguatemi') throw new Error(`a loja foi apagada por um nulo: ${JSON.stringify(d1)}`)
   if (d1.stylist_id !== sty) throw new Error(`a stylist foi apagada por um nulo: ${JSON.stringify(d1)}`)
   if (d1.quando === null) throw new Error(`o quando foi apagado por um nulo: ${JSON.stringify(d1)}`)
+
+  // ── 4b-bis. E A OUTRA METADE DO CONTRATO: UM VALOR DE VERDADE ENTRA ─────
+  // ⚠️ O `coalesce(p_x, x)` PROMETE DUAS COISAS, e tudo que veio acima prova
+  // so UMA — "um nulo nao apaga". A outra — "um valor de verdade LANDA" — so
+  // estava provada para `vagas` e `stylist_id`. Um `set local = local` (com o
+  // parametro silenciosamente ignorado) passaria por todas as asercoes deste
+  // arquivo ate esta linha. E mudar dia, local, praca e loja e o caminho
+  // PRINCIPAL da tela: e o que a pessoa faz quando o encontro muda de data ou
+  // troca de shopping.
+  //
+  // ⚠️ E OS QUATRO NA MESMA CHAMADA, nao um de cada vez: e assim que a tela
+  // manda o formulario inteiro, e e o unico jeito de pegar um campo que so
+  // some quando vem acompanhado dos outros.
+  const NOVO_QUANDO = '2027-03-14 15:09:26+00'
+  const { r: ed4 } = await uma(
+    `select public.vessel_private_edit_editar(
+              $1, $2::timestamptz, 'Mezanino, ao lado da escada', 'SP', 'tivoli', null, null) as r`,
+    [PE, NOVO_QUANDO])
+  if (ed4.ok !== true) throw new Error(`editar os quatro campos recusou: ${JSON.stringify(ed4)}`)
+  const d4 = await linha()
+  if (d4.local !== 'Mezanino, ao lado da escada') throw new Error(`o local NAO entrou: ${JSON.stringify(d4)}`)
+  if (d4.praca !== 'SP') throw new Error(`a praca NAO entrou: ${JSON.stringify(d4)}`)
+  if (d4.loja !== 'tivoli') throw new Error(`a loja NAO entrou: ${JSON.stringify(d4)}`)
+  // ⚠️ O `quando` e comparado NO BANCO, nao em JavaScript: `pg` devolve
+  // timestamptz como objeto `Date`, e comparar Date com string passa por
+  // qualquer coisa. Quem sabe se duas datas sao a mesma e o Postgres.
+  const { quando_entrou } = await uma(
+    `select (quando = $2::timestamptz) as quando_entrou
+       from public.vessel_private_edits where codigo = $1`, [PE, NOVO_QUANDO])
+  if (quando_entrou !== true) throw new Error(`o quando NAO entrou: ${JSON.stringify(d4.quando)}`)
+  // ⚠️ E AS DUAS METADES VALENDO NA MESMA CHAMADA: as vagas foram nulas aqui e
+  // continuam as 12 de cima.
+  if (d4.vagas !== 12) throw new Error(`as vagas foram apagadas pela edicao dos quatro: ${JSON.stringify(d4)}`)
 
   // ⚠️ `codigo` e `chave` NAO SE MEXEM — nem por dentro, sem querer. A `chave`
   // esta em todo convite JA ENVIADO e o `codigo` e o identificador do CRM.
@@ -237,6 +279,19 @@ try {
   if (ar2.ok !== true) throw new Error(`desarquivar recusou: ${JSON.stringify(ar2)}`)
   if (ar2.arquivada !== false) throw new Error(`desarquivar nao devolveu arquivada=false: ${JSON.stringify(ar2)}`)
   if ((await linha()).arquivada !== false) throw new Error('desarquivar nao gravou')
+
+  // ⚠️ E `arquivar(codigo, null)` ARQUIVA. O `coalesce(p_arquivada, true)`
+  // existe para isso: quando a tela manda so o codigo — ou quando o PostgREST
+  // deixa o segundo parametro de fora e ele chega nulo — "arquivar" tem de
+  // significar ARQUIVAR. Sem o `coalesce`, `arquivada` receberia NULL e a
+  // coluna e `not null`: a chamada morreria com erro de banco na cara da
+  // pessoa. E se a coluna um dia aceitasse nulo, seria pior — silenciosamente
+  // nem arquivado nem desarquivado.
+  const { r: ar3 } = await uma(`select public.vessel_private_edit_arquivar($1, null) as r`, [PE])
+  if (ar3.ok !== true) throw new Error(`arquivar com nulo recusou: ${JSON.stringify(ar3)}`)
+  if (ar3.arquivada !== true) throw new Error(`arquivar com nulo nao caiu no padrao true: ${JSON.stringify(ar3)}`)
+  if ((await linha()).arquivada !== true) throw new Error('arquivar com nulo nao gravou')
+  await uma(`select public.vessel_private_edit_arquivar($1, false) as r`, [PE])
 
   // ⚠️ ARQUIVAR NAO E ENCERRAR: `ativa` nao pode ter sido tocada no caminho.
   if ((await linha()).ativa !== true) throw new Error('arquivar encerrou o encontro de tabela')

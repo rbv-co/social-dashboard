@@ -163,27 +163,85 @@ begin
   insert into resultado values (19, 'e nem assim a stylist boa foi trocada',
     'true', coalesce(v_bool::text,'(nulo)'), coalesce(v_bool, false));
 
+  -- ══ 2b. A OUTRA METADE DO CONTRATO: UM VALOR DE VERDADE ENTRA ═════════
+  --
+  -- ⚠️ O `coalesce(p_x, x)` PROMETE DUAS COISAS, e as asserções 12–15 acima
+  -- provam só UMA: "um nulo não apaga". A outra — "um valor de verdade
+  -- ENTRA" — estava provada só para `vagas` (11) e para a stylist (17). Um
+  -- `set local = local`, com o parâmetro silenciosamente ignorado, passaria
+  -- por todas as asserções desta prova até esta linha. E mudar dia, local,
+  -- praça e loja é o caminho PRINCIPAL da tela: é o que a pessoa faz quando o
+  -- encontro muda de data ou troca de shopping.
+  --
+  -- ⚠️ E OS QUATRO NA MESMA CHAMADA, não um de cada vez: é assim que a tela
+  -- manda o formulário inteiro, e é o único jeito de pegar um campo que só
+  -- some quando vem acompanhado dos outros.
+  v_r := public.vessel_private_edit_editar(
+           c_sem, timestamptz '2027-03-14 15:09:26+00',
+           'Mezanino, ao lado da escada', 'SP', 'tivoli', null, null)::jsonb;
+  insert into resultado values (20, 'editar os quatro campos de uma vez: aceita',
+    'ok', coalesce(v_r->>'situacao','(nulo)'), coalesce((v_r->>'situacao') = 'ok', false));
+
+  select local into v_texto from public.vessel_private_edits where codigo = c_sem;
+  insert into resultado values (21, 'o local novo ENTROU',
+    'Mezanino, ao lado da escada', coalesce(v_texto,'(nulo)'),
+    coalesce(v_texto = 'Mezanino, ao lado da escada', false));
+  select praca into v_texto from public.vessel_private_edits where codigo = c_sem;
+  insert into resultado values (22, 'a praça nova ENTROU',
+    'SP', coalesce(v_texto,'(nulo)'), coalesce(v_texto = 'SP', false));
+  select loja into v_texto from public.vessel_private_edits where codigo = c_sem;
+  insert into resultado values (23, 'a loja nova ENTROU',
+    'tivoli', coalesce(v_texto,'(nulo)'), coalesce(v_texto = 'tivoli', false));
+
+  -- ⚠️ A DATA É COMPARADA NO BANCO, não por texto: quem sabe se dois
+  -- timestamptz são o mesmo instante é o Postgres, não a forma como cada um
+  -- deles foi escrito.
+  select (quando = timestamptz '2027-03-14 15:09:26+00') into v_bool
+    from public.vessel_private_edits where codigo = c_sem;
+  insert into resultado values (24, 'a data nova ENTROU',
+    'true', coalesce(v_bool::text,'(nulo)'), coalesce(v_bool, false));
+
+  -- ⚠️ E AS DUAS METADES VALENDO NA MESMA CHAMADA: as vagas foram nulas nesta
+  -- edição e continuam as 12 da asserção 11.
+  select vagas::text into v_texto from public.vessel_private_edits where codigo = c_sem;
+  insert into resultado values (25, 'e as vagas, nulas nesta chamada, continuam as de antes',
+    '12', coalesce(v_texto,'(nulo)'), coalesce(v_texto = '12', false));
+
   -- ══ 3. ARQUIVAR E DESARQUIVAR ═════════════════════════════════════════
   v_r := public.vessel_private_edit_arquivar(c_sem, true)::jsonb;
-  insert into resultado values (20, 'quem tem editar ARQUIVA',
+  insert into resultado values (30, 'quem tem editar ARQUIVA',
     'ok', coalesce(v_r->>'situacao','(nulo)'), coalesce((v_r->>'situacao') = 'ok', false));
   select arquivada::text into v_texto from public.vessel_private_edits where codigo = c_sem;
-  insert into resultado values (21, 'e a coluna arquivada virou true de verdade',
+  insert into resultado values (31, 'e a coluna arquivada virou true de verdade',
     'true', coalesce(v_texto,'(nulo)'), coalesce(v_texto = 'true', false));
 
   -- ⚠️ ARQUIVAR TEM DE TER VOLTA. Uma linha que sai da lista e nunca mais pode
   -- voltar nunca mais pode ser DESARQUIVADA, e o botão de desarquivar viraria
   -- código morto.
   v_r := public.vessel_private_edit_arquivar(c_sem, false)::jsonb;
-  insert into resultado values (22, 'e DESARQUIVA',
+  insert into resultado values (32, 'e DESARQUIVA',
     'false', coalesce(v_r->>'arquivada','(nulo)'), coalesce((v_r->>'arquivada') = 'false', false));
   select arquivada::text into v_texto from public.vessel_private_edits where codigo = c_sem;
-  insert into resultado values (23, 'a coluna voltou para false',
+  insert into resultado values (33, 'a coluna voltou para false',
     'false', coalesce(v_texto,'(nulo)'), coalesce(v_texto = 'false', false));
+
+  -- ⚠️ E `arquivar(codigo, null)` ARQUIVA. O `coalesce(p_arquivada, true)`
+  -- existe para isso: quando a tela manda só o código — ou quando o PostgREST
+  -- deixa o segundo parâmetro de fora e ele chega nulo — "arquivar" tem de
+  -- significar ARQUIVAR. Sem o `coalesce`, `arquivada` receberia NULL e a
+  -- coluna é `not null`: a chamada morreria com erro de banco na cara da
+  -- pessoa.
+  v_r := public.vessel_private_edit_arquivar(c_sem, null)::jsonb;
+  insert into resultado values (34, 'arquivar SEM dizer o que fazer cai no padrão: arquiva',
+    'true', coalesce(v_r->>'arquivada','(nulo)'), coalesce((v_r->>'arquivada') = 'true', false));
+  select arquivada::text into v_texto from public.vessel_private_edits where codigo = c_sem;
+  insert into resultado values (35, 'e gravou (não foi só o json dizendo true)',
+    'true', coalesce(v_texto,'(nulo)'), coalesce(v_texto = 'true', false));
+  v_r := public.vessel_private_edit_arquivar(c_sem, false)::jsonb;
 
   -- ⚠️ ARQUIVAR NÃO É ENCERRAR: `ativa` não pode ter sido tocada no caminho.
   select ativa::text into v_texto from public.vessel_private_edits where codigo = c_sem;
-  insert into resultado values (24, 'arquivar NÃO encerrou o encontro de tabela',
+  insert into resultado values (36, 'arquivar NÃO encerrou o encontro de tabela',
     'true', coalesce(v_texto,'(nulo)'), coalesce(v_texto = 'true', false));
 
   -- ══ 3b. O CÓDIGO TORTO — minúsculas e espaço na ponta ═════════════════
@@ -199,20 +257,20 @@ begin
   v_texto := '  ' || lower(c_sem) || '  ';
 
   v_r := public.vessel_private_edit_arquivar(v_texto, true)::jsonb;
-  insert into resultado values (25, 'código torto (minúsculas + espaço) ACHA o encontro',
+  insert into resultado values (40, 'código torto (minúsculas + espaço) ACHA o encontro',
     'ok', coalesce(v_r->>'situacao','(nulo)'), coalesce((v_r->>'situacao') = 'ok', false));
-  insert into resultado values (26, 'e o código volta NORMALIZADO na resposta',
+  insert into resultado values (41, 'e o código volta NORMALIZADO na resposta',
     c_sem, coalesce(v_r->>'codigo','(nulo)'), coalesce((v_r->>'codigo') = c_sem, false));
 
   select arquivada::text into v_texto from public.vessel_private_edits where codigo = c_sem;
-  insert into resultado values (27, 'e gravou de verdade (não foi só um ok de mentira)',
+  insert into resultado values (42, 'e gravou de verdade (não foi só um ok de mentira)',
     'true', coalesce(v_texto,'(nulo)'), coalesce(v_texto = 'true', false));
 
   v_r := public.vessel_private_edit_editar('  ' || lower(c_sem) || '  ', null, null, null, null, 7, null)::jsonb;
-  insert into resultado values (28, 'editar também aceita o código torto',
+  insert into resultado values (43, 'editar também aceita o código torto',
     'ok', coalesce(v_r->>'situacao','(nulo)'), coalesce((v_r->>'situacao') = 'ok', false));
   select vagas::text into v_texto from public.vessel_private_edits where codigo = c_sem;
-  insert into resultado values (29, 'e editou a linha certa',
+  insert into resultado values (44, 'e editou a linha certa',
     '7', coalesce(v_texto,'(nulo)'), coalesce(v_texto = '7', false));
 
   -- Devolve o encontro para fora do arquivo, para o caso 4 apagar de verdade.
@@ -220,17 +278,17 @@ begin
 
   -- ══ 4. APAGAR SEM NINGUÉM PENDURADO ═══════════════════════════════════
   select count(*) into v_n from public.vessel_atendimentos where evento_codigo = c_sem;
-  insert into resultado values (30, 'o encontro de prova está mesmo vazio antes de apagar',
+  insert into resultado values (50, 'o encontro de prova está mesmo vazio antes de apagar',
     '0', v_n::text, v_n = 0);
 
   -- ⚠️ E VAI PELO CÓDIGO TORTO de propósito: se o `exists` normalizasse e o
   -- `delete` lesse o cru, a resposta seria `ok` e a linha CONTINUARIA LÁ — um
-  -- "apaguei" que não apagou nada, que só a asserção 32 denuncia.
+  -- "apaguei" que não apagou nada, que só a asserção 52 denuncia.
   v_r := public.vessel_private_edit_apagar('  ' || lower(c_sem) || '  ')::jsonb;
-  insert into resultado values (31, 'encontro SEM gente: apaga (pelo código torto)',
+  insert into resultado values (51, 'encontro SEM gente: apaga (pelo código torto)',
     'ok', coalesce(v_r->>'situacao','(nulo)'), coalesce((v_r->>'situacao') = 'ok', false));
   select count(*) into v_n from public.vessel_private_edits where codigo = c_sem;
-  insert into resultado values (32, 'e a linha sumiu mesmo (não foi só um ok de mentira)',
+  insert into resultado values (52, 'e a linha sumiu mesmo (não foi só um ok de mentira)',
     '0', v_n::text, v_n = 0);
 
   -- ══ 5. APAGAR COM GENTE PENDURADA — O CASO QUE EXISTE PARA RECUSAR ════
@@ -247,24 +305,24 @@ begin
        values (v_pes, 'iguatemi', 'private-edit', c_com, 'sim');
 
   select count(*) into v_n from public.vessel_atendimentos where evento_codigo = c_com;
-  insert into resultado values (40, 'a convidada pendurou no encontro',
+  insert into resultado values (60, 'a convidada pendurou no encontro',
     '1', v_n::text, v_n = 1);
 
   v_r := public.vessel_private_edit_apagar(c_com)::jsonb;
-  insert into resultado values (41, 'encontro COM gente: recusa, e pelo motivo certo',
+  insert into resultado values (61, 'encontro COM gente: recusa, e pelo motivo certo',
     'tem_gente', coalesce(v_r->>'situacao','(nulo)'), coalesce((v_r->>'situacao') = 'tem_gente', false));
-  insert into resultado values (42, 'e a recusa vem com ok = false (não nulo)',
+  insert into resultado values (62, 'e a recusa vem com ok = false (não nulo)',
     'false', coalesce(v_r->>'ok','(nulo)'), coalesce((v_r->>'ok') = 'false', false));
 
   select count(*) into v_n from public.vessel_private_edits where codigo = c_com;
-  insert into resultado values (43, 'o encontro com gente continua lá',
+  insert into resultado values (63, 'o encontro com gente continua lá',
     '1', v_n::text, v_n = 1);
 
   -- ⚠️ E A CONVIDADA CONTINUA LÁ. Esta é a asserção que a recusa existe para
   -- proteger: se o `delete` rodasse antes da conferência, a resposta poderia
   -- até dizer "tem_gente" e a linha do encontro já teria ido embora.
   select count(*) into v_n from public.vessel_atendimentos where evento_codigo = c_com;
-  insert into resultado values (44, 'e a linha da convidada NÃO foi tocada',
+  insert into resultado values (64, 'e a linha da convidada NÃO foi tocada',
     '1', v_n::text, v_n = 1);
 
   -- ⚠️ E COM O CÓDIGO TORTO A RECUSA TEM DE SER A MESMA. Esta é a fresta mais
@@ -273,53 +331,53 @@ begin
   -- ninguém pendurado, responderia `ok` e levaria embora um encontro COM
   -- GENTE — deixando linhas órfãs em `vessel_atendimentos`.
   v_r := public.vessel_private_edit_apagar('  ' || lower(c_com) || '  ')::jsonb;
-  insert into resultado values (45, 'código torto NÃO fura a conferência de convidadas',
+  insert into resultado values (65, 'código torto NÃO fura a conferência de convidadas',
     'tem_gente', coalesce(v_r->>'situacao','(nulo)'), coalesce((v_r->>'situacao') = 'tem_gente', false));
   select count(*) into v_n from public.vessel_private_edits where codigo = c_com;
-  insert into resultado values (46, 'e o encontro com gente continua lá',
+  insert into resultado values (66, 'e o encontro com gente continua lá',
     '1', v_n::text, v_n = 1);
   select count(*) into v_n from public.vessel_atendimentos where evento_codigo = c_com;
-  insert into resultado values (47, 'e a convidada também',
+  insert into resultado values (67, 'e a convidada também',
     '1', v_n::text, v_n = 1);
 
   -- E o caminho que sobra para esses: arquivar, que funciona mesmo com gente.
   v_r := public.vessel_private_edit_arquivar(c_com, true)::jsonb;
-  insert into resultado values (48, 'o que tem gente ainda pode ser ARQUIVADO',
+  insert into resultado values (68, 'o que tem gente ainda pode ser ARQUIVADO',
     'ok', coalesce(v_r->>'situacao','(nulo)'), coalesce((v_r->>'situacao') = 'ok', false));
 
   -- ══ 6. ENCONTRO QUE NÃO EXISTE ════════════════════════════════════════
   -- ⚠️ `nao_achei`, e não um `ok` sobre zero linhas: um `update`/`delete` que
   -- não acha nada não levanta erro nenhum no Postgres.
   v_r := public.vessel_private_edit_editar('PE-NAO-EXISTE', null, null, null, null, 1, null)::jsonb;
-  insert into resultado values (50, 'editar encontro inexistente: nao_achei',
+  insert into resultado values (80, 'editar encontro inexistente: nao_achei',
     'nao_achei', coalesce(v_r->>'situacao','(nulo)'), coalesce((v_r->>'situacao') = 'nao_achei', false));
   v_r := public.vessel_private_edit_apagar('PE-NAO-EXISTE')::jsonb;
-  insert into resultado values (51, 'apagar encontro inexistente: nao_achei',
+  insert into resultado values (81, 'apagar encontro inexistente: nao_achei',
     'nao_achei', coalesce(v_r->>'situacao','(nulo)'), coalesce((v_r->>'situacao') = 'nao_achei', false));
   v_r := public.vessel_private_edit_arquivar('PE-NAO-EXISTE', true)::jsonb;
-  insert into resultado values (52, 'arquivar encontro inexistente: nao_achei',
+  insert into resultado values (82, 'arquivar encontro inexistente: nao_achei',
     'nao_achei', coalesce(v_r->>'situacao','(nulo)'), coalesce((v_r->>'situacao') = 'nao_achei', false));
 
   -- ══ 7. QUEM PODE CHAMAR — a asserção que nenhuma das de cima faz ══════
   -- ⚠️ `revoke ... from public` NÃO fecha `authenticated`, e função nova nasce
   -- aberta para `public` — ou seja, também para `anon`, que é a página pública
   -- do convite.
-  insert into resultado values (60, 'anon NÃO executa editar', 'false',
+  insert into resultado values (90, 'anon NÃO executa editar', 'false',
     has_function_privilege('anon','public.vessel_private_edit_editar(text, timestamptz, text, text, text, integer, text)','execute')::text,
     has_function_privilege('anon','public.vessel_private_edit_editar(text, timestamptz, text, text, text, integer, text)','execute') = false);
-  insert into resultado values (61, 'anon NÃO executa apagar', 'false',
+  insert into resultado values (91, 'anon NÃO executa apagar', 'false',
     has_function_privilege('anon','public.vessel_private_edit_apagar(text)','execute')::text,
     has_function_privilege('anon','public.vessel_private_edit_apagar(text)','execute') = false);
-  insert into resultado values (62, 'anon NÃO executa arquivar', 'false',
+  insert into resultado values (92, 'anon NÃO executa arquivar', 'false',
     has_function_privilege('anon','public.vessel_private_edit_arquivar(text, boolean)','execute')::text,
     has_function_privilege('anon','public.vessel_private_edit_arquivar(text, boolean)','execute') = false);
-  insert into resultado values (63, 'authenticated executa editar (a tela chama; a trava é por dentro)', 'true',
+  insert into resultado values (93, 'authenticated executa editar (a tela chama; a trava é por dentro)', 'true',
     has_function_privilege('authenticated','public.vessel_private_edit_editar(text, timestamptz, text, text, text, integer, text)','execute')::text,
     has_function_privilege('authenticated','public.vessel_private_edit_editar(text, timestamptz, text, text, text, integer, text)','execute') = true);
-  insert into resultado values (64, 'authenticated executa apagar', 'true',
+  insert into resultado values (94, 'authenticated executa apagar', 'true',
     has_function_privilege('authenticated','public.vessel_private_edit_apagar(text)','execute')::text,
     has_function_privilege('authenticated','public.vessel_private_edit_apagar(text)','execute') = true);
-  insert into resultado values (65, 'authenticated executa arquivar', 'true',
+  insert into resultado values (95, 'authenticated executa arquivar', 'true',
     has_function_privilege('authenticated','public.vessel_private_edit_arquivar(text, boolean)','execute')::text,
     has_function_privilege('authenticated','public.vessel_private_edit_arquivar(text, boolean)','execute') = true);
 
