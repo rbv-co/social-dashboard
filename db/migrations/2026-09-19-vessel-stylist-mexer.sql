@@ -62,6 +62,8 @@ declare
   v_praca  text := upper(nullif(trim(coalesce(p_praca, '')), ''));
   v_codigo text;
   v_n      int;
+  v_volta  int;
+  v_indice text;
 begin
   -- ⚠️ A TRAVA DE MEXER, NAO A DE VER. `is_vessel_atendimentos()` responde
   -- verdadeiro para quem so tem permissao de OLHAR o Comercial Vessel; quem
@@ -119,42 +121,113 @@ begin
   -- da `chave` do Private Edit porque aquela precisa ser IMPREVISIVEL; este
   -- codigo nao precisa, precisa e conviver com quem ja numera.
   --
-  -- ⚠️ O LACO E O DE `vessel_criar_private_edit`: repete ate nao colidir. So
-  -- que com TETO e com volta ao comeco — sao 10.000 codigos possiveis, e sem o
-  -- teto um banco cheio giraria para sempre segurando a transacao.
-  select coalesce(max((substring(s.codigo from '^STY-([0-9]{4})$'))::int), 0)
-    into v_n
-    from public.vessel_stylists s
-   where s.codigo ~ '^STY-[0-9]{4}$';
+  -- ⚠️⚠️ A TRAVA DE FILA, E ELA E O CORACAO DESTE PEDACO. Ler o maior numero e
+  -- so depois gravar sao DUAS operacoes, e entre uma e outra cabe outra
+  -- chamada. Duas transacoes abertas ao mesmo tempo NAO enxergam a linha uma da
+  -- outra: as duas leem o mesmo maior numero, as duas escolhem `STY-0001`, e a
+  -- segunda a commitar levanta `23505 duplicate key ... vessel_stylists_codigo_idx`
+  -- — erro CRU do Postgres, que aborta a transacao de quem chamou, em vez do
+  -- `{ok:false, situacao:...}` que todo o resto destas funcoes devolve. Medido
+  -- com duas conexoes de verdade, nao deduzido.
+  --
+  -- `pg_advisory_xact_lock` poe as duas chamadas EM FILA: a segunda espera a
+  -- primeira terminar (commit ou rollback) e so entao le o maior numero, ja
+  -- enxergando a linha da primeira. E `_xact_`, entao solta sozinha no fim da
+  -- transacao — nao ha como esquecer de soltar, nem trava presa se o processo
+  -- de quem chamou morrer no meio.
+  --
+  -- ⚠️ A CHAVE DA TRAVA E SO UM NUMERO COMBINADO. Nao precisa significar nada
+  -- no banco; precisa ser O MESMO para todo mundo que entra nesta fila. Por
+  -- isso sai de `hashtext` de um texto fixo: qualquer um que leia esta linha
+  -- escreve a mesma chave sem ter de procurar uma constante em outro arquivo.
+  --
+  -- ⚠️ E A TRAVA VEM DEPOIS DAS RECUSAS, de proposito: quem vai levar
+  -- `sem_nome`, `whatsapp_invalido` ou `praca_invalida` nao tem por que fazer
+  -- ninguem esperar na fila.
+  perform pg_advisory_xact_lock(hashtext('public.vessel_stylists.codigo')::bigint);
 
-  for i in 1..10000 loop
-    v_n := v_n + 1;
-    if v_n > 9999 then
-      v_n := 1;                       -- buraco deixado por um codigo antigo
-    end if;
-    v_codigo := 'STY-' || lpad(v_n::text, 4, '0');
-    exit when not exists (select 1 from public.vessel_stylists s where s.codigo = v_codigo);
+  -- ⚠️ O LACO E O DE `vessel_criar_private_edit`: repete ate nao colidir. So
+  -- que com TETO e com volta ao comeco — e sao 10.000 codigos possiveis, de
+  -- `STY-0000` a `STY-9999`, porque a volta cai em 0 e nao em 1. Sem o teto um
+  -- banco cheio giraria para sempre segurando a transacao.
+  -- ⚠️ O PRIMEIRO CODIGO DE UM BANCO VAZIO E `STY-0001`, NAO `STY-0000`: a
+  -- numeracao comeca no maior que existe MAIS UM, e num banco vazio o maior e
+  -- zero. `STY-0000` so e usado se um dia a numeracao der a volta e ele estiver
+  -- livre. E de proposito — e o mesmo primeiro numero que o formulario publico
+  -- daria com o seu `count(*) + 1`.
+  --
+  -- ⚠️ E O `for` DE FORA E O CINTO DA TRAVA. Com a fila, duas chamadas nao
+  -- escolhem mais o mesmo numero — mas uma funcao que nunca deixa escapar erro
+  -- cru nao pode depender de UMA linha estar no lugar certo. Se a trava sumir
+  -- num refactor, o `exception` aqui embaixo transforma a colisao em nova
+  -- tentativa; e se nem assim assentar, sai `codigo_em_disputa`, que e contrato
+  -- e nao excecao.
+  for v_volta in 1..3 loop
+    select coalesce(max((substring(s.codigo from '^STY-([0-9]{4})$'))::int), 0)
+      into v_n
+      from public.vessel_stylists s
+     where s.codigo ~ '^STY-[0-9]{4}$';
+
     v_codigo := null;
+    for i in 1..10000 loop
+      v_n := v_n + 1;
+      if v_n > 9999 then
+        v_n := 0;                     -- da a volta e alcanca o `STY-0000`
+      end if;
+      v_codigo := 'STY-' || lpad(v_n::text, 4, '0');
+      exit when not exists (select 1 from public.vessel_stylists s where s.codigo = v_codigo);
+      v_codigo := null;
+    end loop;
+
+    if v_codigo is null then
+      return json_build_object('ok', false, 'situacao', 'sem_codigo_livre');
+    end if;
+
+    begin
+      -- ⚠️ `origem_canal`, `origem_campanha` e `origem_utm` ficam NULOS aqui de
+      -- proposito: esta parceira nao chegou por campanha nenhuma, chegou pela
+      -- mao de alguem da casa. Inventar 'central' como canal faria a atribuicao
+      -- contar como aquisicao uma pessoa que ninguem adquiriu.
+      insert into public.vessel_stylists
+        (codigo, nome, whatsapp, cidade, instagram, atuacao, praca_preview)
+      values
+        (v_codigo, trim(p_nome), v_fone,
+         nullif(trim(coalesce(p_cidade, '')), ''),
+         nullif(trim(coalesce(p_instagram, '')), ''),
+         nullif(trim(coalesce(p_atuacao, '')), ''),
+         v_praca);
+
+      return json_build_object('ok', true, 'situacao', 'ok', 'codigo', v_codigo);
+
+    exception when unique_violation then
+      -- ⚠️ SAO DOIS INDICES UNICOS NESTA TABELA, e tratar os dois como a mesma
+      -- coisa mentiria para quem chamou: uma chamada que bateu no telefone
+      -- repetido receberia "tente de novo" tres vezes e depois um erro sobre
+      -- CODIGO, que nao tem nada a ver com o que aconteceu. Por isso o nome do
+      -- indice e lido do proprio erro.
+      get stacked diagnostics v_indice = constraint_name;
+
+      if v_indice = 'vessel_stylists_whatsapp_idx' then
+        -- A conferencia la em cima nao pega este caso: a outra chamada ainda
+        -- estava aberta quando ela rodou. A resposta e a MESMA daquela — quem
+        -- chamou nao precisa saber se perdeu por milissegundos.
+        return json_build_object('ok', false, 'situacao', 'whatsapp_repetido');
+      end if;
+
+      if v_indice is distinct from 'vessel_stylists_codigo_idx' then
+        -- Indice que esta funcao nao conhece (um que nasca num `alter table`
+        -- futuro). Continua saindo CONTRATO, com o nome do indice dentro para
+        -- quem for investigar — nunca uma excecao crua na cara de quem chamou.
+        return json_build_object('ok', false, 'situacao', 'conflito_no_cadastro',
+                                 'onde', v_indice);
+      end if;
+      -- Codigo levado por outra chamada: volta ao topo e escolhe outro.
+    end;
   end loop;
 
-  if v_codigo is null then
-    return json_build_object('ok', false, 'situacao', 'sem_codigo_livre');
-  end if;
-
-  -- ⚠️ `origem_canal`, `origem_campanha` e `origem_utm` ficam NULOS aqui de
-  -- proposito: esta parceira nao chegou por campanha nenhuma, chegou pela mao
-  -- de alguem da casa. Inventar 'central' como canal faria a atribuicao contar
-  -- como aquisicao uma pessoa que ninguem adquiriu.
-  insert into public.vessel_stylists
-    (codigo, nome, whatsapp, cidade, instagram, atuacao, praca_preview)
-  values
-    (v_codigo, trim(p_nome), v_fone,
-     nullif(trim(coalesce(p_cidade, '')), ''),
-     nullif(trim(coalesce(p_instagram, '')), ''),
-     nullif(trim(coalesce(p_atuacao, '')), ''),
-     v_praca);
-
-  return json_build_object('ok', true, 'situacao', 'ok', 'codigo', v_codigo);
+  -- Tres voltas e ainda disputando: e contrato, nao excecao. Quem chamou tenta
+  -- de novo, e a tela sabe o que dizer.
+  return json_build_object('ok', false, 'situacao', 'codigo_em_disputa');
 end;
 $function$;
 

@@ -43,7 +43,9 @@ const ESCOLHER  = 'public.vessel_stylists_para_escolher()'
 const FONE_1 = '5519990000001'
 const FONE_2 = '5519990000002'
 const FONE_3 = '5519990000003'
-const FONES  = [FONE_1, FONE_2, FONE_3]
+const FONE_4 = '5519990000004'
+const FONE_5 = '5519990000005'
+const FONES  = [FONE_1, FONE_2, FONE_3, FONE_4, FONE_5]
 
 // ⚠️ A UNICA MUDANCA PERMITIDA EM CADA UMA DAS DUAS FUNCOES DE LEITURA, escrita
 // como o PEDACO DE TEXTO DE ANTES e o PEDACO DE TEXTO DE DEPOIS, com a
@@ -202,6 +204,25 @@ try {
   // parametro e o unico cujo nome nao bate com o da coluna (`praca_preview`).
   if (!/(^|,)p_praca(,|$)/.test(nomes)) throw new Error(`editar nao recebe p_praca: ${nomes}`)
 
+  // ── 4b. A TRAVA DE FILA E O CINTO DELA CONTINUAM NO CORPO ────────────────
+  // ⚠️ POR QUE UMA CONFERENCIA DE TEXTO AQUI. A corrida de duas chamadas ao
+  // mesmo tempo NAO da para provar por esta conexao: as duas transacoes
+  // precisam estar abertas AO MESMO TEMPO, e este aplicador e uma so. A prova
+  // de verdade foi feita com duas conexoes (esta no relatorio da tarefa, com o
+  // `23505 duplicate key ... vessel_stylists_codigo_idx` de antes e as duas
+  // respostas de contrato depois). O que sobra para cá é impedir que um
+  // refactor leve embora, calado, qualquer uma das tres pecas — e e isso que
+  // estas tres linhas fazem.
+  const { corpo } = await uma(
+    `select p.prosrc as corpo from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname = 'public' and p.proname = 'vessel_stylist_criar'`)
+  if (!corpo.includes('pg_advisory_xact_lock'))
+    throw new Error('vessel_stylist_criar perdeu a trava de fila: duas chamadas juntas voltam a colidir')
+  if (!corpo.includes('exception when unique_violation'))
+    throw new Error('vessel_stylist_criar perdeu o cinto: a colisao volta a virar erro cru do Postgres')
+  if (!corpo.includes("get stacked diagnostics"))
+    throw new Error('vessel_stylist_criar deixou de separar o indice de codigo do de whatsapp')
+
   // ── 5. A PORTA: a Central usa, a pagina publica nao ──────────────────────
   // ⚠️ `revoke ... from public` NAO fecha `authenticated`, e um `create or
   // replace` sobre funcao nova nasce ABERTA para `public` — ou seja, para
@@ -356,6 +377,20 @@ try {
   if (STY2 === STY) throw new Error('criar repetiu o codigo')
   if (Number(STY2.slice(4)) !== Number(STY.slice(4)) + 1)
     throw new Error(`a numeracao nao e sequencial: ${STY} -> ${STY2}`)
+
+  // ⚠️ E A VOLTA ALCANCA O `STY-0000`. A faixa e de 10.000 codigos, `STY-0000`
+  // a `STY-9999`; uma volta que caisse em 1 deixaria o `STY-0000` inalcancavel
+  // para sempre e o comentario da funcao estaria mentindo sobre o tamanho da
+  // faixa. Com o topo ocupado, o proximo TEM de ser o `STY-0000`.
+  await uma(
+    `insert into public.vessel_stylists (codigo, nome, whatsapp) values ('STY-9999','Topo da Faixa',$1)`,
+    [FONE_4])
+  const { r: cVolta } = await uma(
+    `select public.vessel_stylist_criar('Depois da Volta', $1, null, null, null, null) as r`, [FONE_5])
+  if (cVolta.ok !== true) throw new Error(`criar recusou depois da volta: ${JSON.stringify(cVolta)}`)
+  if (cVolta.codigo !== 'STY-0000')
+    throw new Error(`a volta nao alcancou o STY-0000: veio ${cVolta.codigo}`)
+  await uma(`delete from public.vessel_stylists where whatsapp = any($1::text[])`, [[FONE_4, FONE_5]])
 
   // ── 7c. CORRIGIR: TODOS OS CAMPOS DE UMA VEZ, TODOS DIFERENTES ───────────
   // ⚠️ O `coalesce(p_x, x)` PROMETE DUAS COISAS e e facil provar so uma. Aqui
