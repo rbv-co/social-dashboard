@@ -239,10 +239,55 @@ test('FIACAO: o conjunto e calculado sobre a lista FILTRADA, nunca a cheia', () 
     'e exatamente o Critical 2 da rodada anterior')
 })
 
+/**
+ * Quantos `<template>` a mais foram ABERTOS do que FECHADOS entre dois
+ * pontos do arquivo. Zero quer dizer "tudo que abriu aqui dentro também
+ * fechou aqui dentro" — ou seja, o ponto de chegada ainda está dentro de
+ * QUALQUER template que já estivesse aberto antes do ponto de partida.
+ */
+function saldoDeTemplates(fonte, doIndex, ateIndex) {
+  const trecho = fonte.slice(doIndex, ateIndex)
+  const aberturas = (trecho.match(/<template\b/g) || []).length
+  const fechamentos = (trecho.match(/<\/template>/g) || []).length
+  return aberturas - fechamentos
+}
+
 test('FIACAO: Encerrar/Reabrir passam pela mesma trava de editar que os outros tres', () => {
   const fonte = telaFonte()
-  assert.ok(fonte.includes(`podeExecutarAcao('encerrar', podeEditar)`),
-    'o bloco de Encerrar/Reabrir precisa estar atras de ' +
-    "podeExecutarAcao('encerrar', podeEditar) — sem isso, quem so tem `ver` " +
-    'volta a ver o botao e leva sem_permissao do banco (Critical 1 da rodada anterior)')
+  const tagDoGate = `<template v-if="podeExecutarAcao('encerrar', podeEditar)">`
+  const idxGate = fonte.indexOf(tagDoGate)
+  assert.ok(idxGate !== -1, `a tela precisa ter a tag ${tagDoGate}`)
+  const inicioDoConteudo = idxGate + tagDoGate.length
+
+  const idxEncerrar = fonte.indexOf('>Encerrar…<', inicioDoConteudo)
+  assert.ok(idxEncerrar !== -1, 'o botão "Encerrar…" precisa estar dentro do gate')
+  const idxReabrir = fonte.indexOf('>Reabrir<', inicioDoConteudo)
+  assert.ok(idxReabrir !== -1, 'o botão "Reabrir" precisa estar depois do gate no arquivo')
+
+  // ⚠️⚠️ POR QUE CONTAR `<template>` EM VEZ DE SÓ `fonte.includes(gate)`: a
+  // versão anterior deste teste só conferia que a STRING do gate existisse
+  // EM ALGUM LUGAR do arquivo inteiro — nem posição, nem aninhamento. Medido
+  // ao vivo (achado na T12, na tela irmã Stylist Circle, e replicado aqui):
+  // mover a abertura do gate para DENTRO do `<template v-if="e.ativa !==
+  // false">` — ou seja, o MESMO Critical 1 que este teste afirma proteger,
+  // só que disfarçado — deixa a string do gate presente no arquivo do mesmo
+  // jeito, e a versão antiga deste teste PASSAVA com essa mutação. Só a
+  // conta de saldo de `<template>`/`</template>` pega: um gate que fechou
+  // antes de chegar em "Reabrir" deixa saldo 0 (nível do gate), não o saldo
+  // ≥1 esperado quando o botão ainda está dentro do `e.ativa !== false`
+  // aninhado por dentro do gate.
+  const saldoAteEncerrar = saldoDeTemplates(fonte, inicioDoConteudo, idxEncerrar)
+  assert.ok(saldoAteEncerrar >= 1,
+    `o botão "Encerrar…" precisa estar dentro de pelo menos um <template> aninhado ` +
+    `ainda aberto (o de e.ativa !== false) — saldo veio ${saldoAteEncerrar}`)
+  const saldoAteReabrir = saldoDeTemplates(fonte, inicioDoConteudo, idxReabrir)
+  assert.equal(saldoAteReabrir, 0,
+    'o botão "Reabrir" não está mais dentro do template do gate (saldo de <template> quebrado) — ' +
+    'é o Critical 1 desta tela, só que com o gate movido para DENTRO do if de ativa')
+
+  const antesDoGate = fonte.slice(0, idxGate)
+  assert.doesNotMatch(antesDoGate, />Reabrir</,
+    '"Reabrir" apareceu ANTES do gate de encerrar — está solto, sem trava')
+  assert.doesNotMatch(antesDoGate, />Encerrar…</,
+    '"Encerrar…" apareceu ANTES do gate de encerrar — está solto, sem trava')
 })

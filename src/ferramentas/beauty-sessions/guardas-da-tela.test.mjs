@@ -37,29 +37,58 @@ test('⚠️ a lista renderizada (v-for) é a filtrada, não a cheia', () => {
     'o v-for das sessões precisa iterar sobre sessoesNaTela, não sessoes')
 })
 
+/**
+ * Quantos `<template>` a mais foram ABERTOS do que FECHADOS entre dois
+ * pontos do arquivo. Zero quer dizer "tudo que abriu aqui dentro também
+ * fechou aqui dentro" — ou seja, o ponto de chegada ainda está dentro de
+ * QUALQUER template que já estivesse aberto antes do ponto de partida.
+ */
+function saldoDeTemplates(fonte, doIndex, ateIndex) {
+  const trecho = fonte.slice(doIndex, ateIndex)
+  const aberturas = (trecho.match(/<template\b/g) || []).length
+  const fechamentos = (trecho.match(/<\/template>/g) || []).length
+  return aberturas - fechamentos
+}
+
 test('⚠️ R13: Encerrar E Reabrir vivem atrás do MESMO gate de editar que os outros três', () => {
   const fonte = ler()
-  const gate = "podeExecutarAcao('encerrar', podeEditar)"
-  const idxGate = fonte.indexOf(gate)
-  assert.ok(idxGate !== -1, `a tela precisa ter o gate ${gate}`)
+  const tagDoGate = `<template v-if="podeExecutarAcao('encerrar', podeEditar)">`
+  const idxGate = fonte.indexOf(tagDoGate)
+  assert.ok(idxGate !== -1, `a tela precisa ter a tag ${tagDoGate}`)
+  const inicioDoConteudo = idxGate + tagDoGate.length
 
-  // O próximo gate de ação (editar) marca o fim do bloco de encerrar/reabrir
-  // no template — tudo que fica ENTRE os dois gates está atrás do primeiro.
-  const gateEditar = "podeExecutarAcao('editar', podeEditar)"
-  const idxGateEditar = fonte.indexOf(gateEditar, idxGate + gate.length)
-  assert.ok(idxGateEditar !== -1 && idxGateEditar > idxGate,
-    'não achei o gate de editar depois do gate de encerrar')
+  const idxEncerrar = fonte.indexOf('>Encerrar…<', inicioDoConteudo)
+  assert.ok(idxEncerrar !== -1, 'o botão "Encerrar…" precisa estar dentro do gate')
+  const idxReabrir = fonte.indexOf('>Reabrir<', inicioDoConteudo)
+  assert.ok(idxReabrir !== -1, 'o botão "Reabrir" precisa estar depois do gate no arquivo')
 
-  const trecho = fonte.slice(idxGate, idxGateEditar)
-  assert.match(trecho, />Encerrar…?</, 'o botão "Encerrar…" precisa estar dentro do gate')
-  assert.match(trecho, />Reabrir</, 'o botão "Reabrir" precisa estar dentro do MESMO gate')
+  // ⚠️⚠️ POR QUE CONTAR `<template>` EM VEZ DE FATIAR ATÉ O PRÓXIMO GATE: a
+  // versão anterior deste teste cortava o texto do gate de encerrar até o
+  // gate de editar e só conferia PRESENÇA de texto na fatia — não posição
+  // nem aninhamento. Medido ao vivo (achado na T12, na tela irmã Stylist
+  // Circle, e replicado aqui): mover a abertura do gate para DENTRO do
+  // `<template v-if="s.ativa">` — o MESMO Critical que este teste afirma
+  // proteger, só que disfarçado — deixa ">Reabrir<" caindo na MESMA fatia
+  // (ele continua antes do gate de editar), e a versão antiga deste teste
+  // PASSAVA com essa mutação. Só a conta de saldo de
+  // `<template>`/`</template>` pega: um gate que fechou antes de chegar em
+  // "Reabrir" deixa saldo 0 (nível do gate), não o saldo ≥1 esperado quando
+  // o botão ainda está dentro do `s.ativa` aninhado por dentro do gate.
+  const saldoAteEncerrar = saldoDeTemplates(fonte, inicioDoConteudo, idxEncerrar)
+  assert.ok(saldoAteEncerrar >= 1,
+    `o botão "Encerrar…" precisa estar dentro de pelo menos um <template> aninhado ` +
+    `ainda aberto (o de s.ativa) — saldo veio ${saldoAteEncerrar}`)
+  const saldoAteReabrir = saldoDeTemplates(fonte, inicioDoConteudo, idxReabrir)
+  assert.equal(saldoAteReabrir, 0,
+    'o botão "Reabrir" não está mais dentro do template do gate (saldo de <template> quebrado) — ' +
+    'é o Critical desta tela, só que com o gate movido para DENTRO do if de ativa')
 
   // ⚠️ E OS DOIS BOTÕES NÃO PODEM APARECER FORA DO GATE, antes dele — o
   // defeito da tela irmã era exatamente "Reabrir" solto, sem v-if nenhum.
   const antesDoGate = fonte.slice(0, idxGate)
   assert.doesNotMatch(antesDoGate, />Reabrir</,
     '"Reabrir" apareceu ANTES do gate de encerrar — está solto, sem trava')
-  assert.doesNotMatch(antesDoGate, />Encerrar…?</,
+  assert.doesNotMatch(antesDoGate, />Encerrar…</,
     '"Encerrar…" apareceu ANTES do gate de encerrar — está solto, sem trava')
 })
 

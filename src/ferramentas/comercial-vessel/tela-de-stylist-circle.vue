@@ -76,7 +76,16 @@
       <!-- ── BUSCAR, FILTRAR E ORDENAR ──────────────────────────────────────
            ⚠️ SEM PERÍODO E SEM LOJA: esta é uma lista de PARCEIRAS, não de
            eventos numa loja — ligar um "Período" da barra a algo aqui não
-           faria sentido nenhum e não tem para onde apontar no banco. -->
+           faria sentido nenhum e não tem para onde apontar no banco.
+           ⚠️ SEM "Mais nova primeiro" TAMBÉM, DE PROPÓSITO:
+           `vessel_rastreio_dos_stylists` não devolve data de criação nenhuma
+           (nem `criado_em`, nem `quando`) — `filtrar()` (`filtros.js`)
+           ordenaria por uma data que não existe, e o resultado seria a MESMA
+           ordem de sempre, sem avisar ninguém. Uma opção que a pessoa escolhe
+           e que não muda nada na tela é a mesma família de mentira que os
+           campos que o banco escondia: oferecer o que a tela não consegue
+           entregar. Quando a função devolver uma data de cadastro de
+           verdade, esta opção volta. -->
       <barra-de-lista v-model="filtro" :estagios="ESTAGIOS"
                       :mostrar="['busca', 'situacao', 'estagio', 'ordem']"
                       placeholder-busca="nome, cidade ou código"
@@ -88,7 +97,6 @@
                       :ordens="[
                         { valor: 'nome', rotulo: 'Nome' },
                         { valor: 'aberturas', rotulo: 'Quem traz mais tráfego' },
-                        { valor: 'data-nova', rotulo: 'Mais nova primeiro' },
                       ]" />
 
       <!-- ── COMO LER ───────────────────────────────────────────────────── -->
@@ -389,7 +397,11 @@ const carregando = ref(true)
 const erro = ref(null)
 const copiado = ref(null)
 
-const filtro = ref({ ...FILTRO_VAZIO, situacao: 'abertas' })
+// ⚠️ `ordem: 'nome'` SOBRESCREVE O PADRÃO DE `FILTRO_VAZIO` ('data-nova'): essa
+// opção não existe na barra desta tela (ver o comentário no template) — um
+// valor inicial que não é nenhuma das opções mostradas deixaria o <select>
+// sem nada selecionado visualmente.
+const filtro = ref({ ...FILTRO_VAZIO, situacao: 'abertas', ordem: 'nome' })
 
 // ⚠️ O FILTRO E O TOTAL AGEM SOBRE O QUE ESTÁ NA TELA: busca por
 // nome/cidade/código, estágio e ordem — tudo client-side, sobre `stylists`,
