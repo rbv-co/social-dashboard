@@ -92,13 +92,47 @@ test('⚠️ R13: Encerrar E Reabrir vivem atrás do MESMO gate de editar que os
     '"Encerrar…" apareceu ANTES do gate de encerrar — está solto, sem trava')
 })
 
-test('editar, arquivar e apagar vivem atrás do gate de editar', () => {
+test('⚠️ editar, arquivar e apagar vivem atrás do MESMO gate de editar (aninhamento, não só texto por perto)', () => {
   const fonte = ler()
-  const gate = "podeExecutarAcao('editar', podeEditar)"
-  const idxGate = fonte.lastIndexOf(gate) // o segundo uso: o das ações (o primeiro é o do bloco inline de editar)
-  assert.ok(idxGate !== -1, `a tela precisa ter o gate ${gate} nas ações`)
-  const trecho = fonte.slice(idxGate, idxGate + 900)
-  assert.match(trecho, />Editar…</)
-  assert.match(trecho, /rotuloDeArquivar\(s\.arquivada\)/)
-  assert.match(trecho, />Apagar…</)
+  const tagDoGate = `<template v-if="podeExecutarAcao('editar', podeEditar)">`
+  // ⚠️ é o SEGUNDO uso desta tag: o primeiro abre o formulário inline de
+  // editar (`editando === s.codigo`), o segundo é o bloco de ações.
+  const idxGate = fonte.lastIndexOf(tagDoGate)
+  assert.ok(idxGate !== -1, `a tela precisa ter a tag ${tagDoGate} no bloco de ações`)
+  const inicioDoConteudo = idxGate + tagDoGate.length
+
+  const idxEditar = fonte.indexOf('>Editar…<', inicioDoConteudo)
+  assert.ok(idxEditar !== -1, 'o botão "Editar…" precisa estar dentro do gate')
+  const idxArquivar = fonte.indexOf('rotuloDeArquivar(s.arquivada)', inicioDoConteudo)
+  assert.ok(idxArquivar !== -1, 'o botão de arquivar (rotuloDeArquivar) precisa estar dentro do gate')
+  const idxApagar = fonte.indexOf('>Apagar…<', inicioDoConteudo)
+  assert.ok(idxApagar !== -1, 'o botão "Apagar…" precisa estar dentro do gate')
+
+  // ⚠️ POR QUE CONTAR <template> EM VEZ DE UMA JANELA FIXA DE 900 CARACTERES
+  // (a versão anterior deste teste): uma janela fixa a partir do índice do
+  // gate PASSA mesmo quando o `</template>` que fecha o gate foi movido para
+  // ANTES do bloco de Apagar — o texto ">Apagar…<" continua caindo dentro da
+  // mesma janela de 900 caracteres, só que fora da proteção de verdade. É o
+  // MESMO defeito da tela irmã (R13/R21), disfarçado num botão diferente: o
+  // destrutivo, o que apaga uma sessão de vez. Só a conta de saldo de
+  // `<template>`/`</template>` pega — o saldo no ponto de "Apagar…" cai de 1
+  // (ainda dentro do gate de editar E do `<template v-if="!bloqueioDeApagar
+  // ...">` aninhado por dentro dele) para 0 (o gate já fechou cedo demais, e
+  // só o `bloqueioDeApagar` ficou de pé).
+  const saldoAteEditar = saldoDeTemplates(fonte, inicioDoConteudo, idxEditar)
+  assert.equal(saldoAteEditar, 0,
+    `o botão "Editar…" precisa estar no MESMO nível do gate (saldo 0) — saldo veio ${saldoAteEditar}`)
+  const saldoAteArquivar = saldoDeTemplates(fonte, inicioDoConteudo, idxArquivar)
+  assert.equal(saldoAteArquivar, 0,
+    `o botão de arquivar precisa estar no MESMO nível do gate (saldo 0) — saldo veio ${saldoAteArquivar}`)
+  const saldoAteApagar = saldoDeTemplates(fonte, inicioDoConteudo, idxApagar)
+  assert.equal(saldoAteApagar, 1,
+    'o botão "Apagar…" precisa estar dentro de mais um <template> aninhado (o de ' +
+    `!bloqueioDeApagar), ainda por dentro do gate de editar — saldo veio ${saldoAteApagar}`)
+
+  const antesDoGate = fonte.slice(0, idxGate)
+  assert.doesNotMatch(antesDoGate, />Editar…</,
+    '"Editar…" apareceu ANTES do gate de editar — está solto, sem trava')
+  assert.doesNotMatch(antesDoGate, />Apagar…</,
+    '"Apagar…" apareceu ANTES do gate de editar — está solto, sem trava')
 })

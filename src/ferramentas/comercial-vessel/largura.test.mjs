@@ -23,6 +23,28 @@ test('nenhuma tela da familia usa o container estreito', () => {
   }
 })
 
+// ⚠️ FALTAVA A METADE POSITIVA DESTA PROVA: o teste acima só afirma que as
+// telas PERDERAM `container-app` — nunca que GANHARAM `cv-largo`. Trocar a
+// classe por QUALQUER OUTRO NOME passava nele do mesmo jeito, e a largura
+// total é o ponto inteiro desta parte da entrega. Só QUATRO das cinco telas
+// acima ganham `cv-largo` de verdade: o menu (`tela-de-menu-comercial-vessel.vue`)
+// não usa a classe (ver R8/o teste "o menu nao prende os cards em 62rem" —
+// o menu resolve a largura de outro jeito, sem folha do Comercial Vessel
+// aplicada a um `cv-body`).
+const TELAS_COM_CV_LARGO = [
+  'src/ferramentas/comercial-vessel/tela-de-private-edit.vue',
+  'src/ferramentas/comercial-vessel/tela-de-stylist-circle.vue',
+  'src/ferramentas/atendimentos/tela-de-atendimentos.vue',
+  'src/ferramentas/beauty-sessions/tela-de-beauty-sessions.vue',
+]
+
+test('as quatro telas que usam a folha da familia GANHARAM .cv-largo', () => {
+  for (const c of TELAS_COM_CV_LARGO) {
+    assert.ok(/class="cv-largo\b/.test(ler(c)),
+      `${c} precisa ter a classe cv-largo — sem ela a largura total não é garantida`)
+  }
+})
+
 test('o menu nao prende os cards em 62rem', () => {
   const fonte = ler('src/ferramentas/comercial-vessel/tela-de-menu-comercial-vessel.vue')
   assert.ok(!/max-width:\s*62rem/.test(fonte), 'o menu ainda tem a trava de 62rem')

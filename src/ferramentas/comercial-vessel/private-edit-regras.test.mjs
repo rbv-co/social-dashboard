@@ -291,3 +291,64 @@ test('FIACAO: Encerrar/Reabrir passam pela mesma trava de editar que os outros t
   assert.doesNotMatch(antesDoGate, />Encerrar…</,
     '"Encerrar…" apareceu ANTES do gate de encerrar — está solto, sem trava')
 })
+
+// ⚠️ AS DUAS GUARDAS ABAIXO FALTAVAM NESTA TELA (achado da revisão final da
+// branch): a T11/T12 levaram as duas — o v-for sobre a lista FILTRADA e o
+// gate forte de editar/arquivar/apagar — para as telas irmãs (Beauty
+// Sessions, Stylist Circle), mas a Private Edit, por ser a tela mais antiga,
+// nunca as recebeu. Sem elas, a mesma mutação de gate-no-aninhamento-errado
+// que o R21 achou nas duas irmãs passaria batida aqui, sem ninguém notar —
+// e é exatamente sobre o botão destrutivo (Apagar).
+
+test('FIACAO: o v-for dos encontros itera sobre a lista FILTRADA, nao a cheia', () => {
+  const fonte = telaFonte()
+  assert.match(fonte, /v-for="e in encontrosNaTela"/,
+    'o v-for dos encontros precisa iterar sobre encontrosNaTela, não encontros')
+  assert.doesNotMatch(fonte, /v-for="e in encontros"/,
+    'o v-for NAO pode iterar sobre a lista cheia (encontros) — é o mesmo Critical do conjunto, só que na lista renderizada')
+})
+
+test('FIACAO: editar, arquivar e apagar vivem atrás do MESMO gate de editar (aninhamento, não só texto por perto)', () => {
+  const fonte = telaFonte()
+  const tagDoGate = `<template v-if="podeExecutarAcao('editar', podeEditar)">`
+  // ⚠️ é o SEGUNDO uso desta tag: o primeiro abre o formulário inline de
+  // editar (`editando === e.codigo`), o segundo é o bloco de ações.
+  const idxGate = fonte.lastIndexOf(tagDoGate)
+  assert.ok(idxGate !== -1, `a tela precisa ter a tag ${tagDoGate} no bloco de ações`)
+  const inicioDoConteudo = idxGate + tagDoGate.length
+
+  const idxEditar = fonte.indexOf('>Editar…<', inicioDoConteudo)
+  assert.ok(idxEditar !== -1, 'o botão "Editar…" precisa estar dentro do gate')
+  const idxArquivar = fonte.indexOf('rotuloDeArquivar(e.arquivada)', inicioDoConteudo)
+  assert.ok(idxArquivar !== -1, 'o botão de arquivar (rotuloDeArquivar) precisa estar dentro do gate')
+  const idxApagar = fonte.indexOf('>Apagar…<', inicioDoConteudo)
+  assert.ok(idxApagar !== -1, 'o botão "Apagar…" precisa estar dentro do gate')
+
+  // ⚠️ POR QUE CONTAR <template> EM VEZ DE SÓ `fonte.includes(gate)` OU UMA
+  // JANELA FIXA DE CARACTERES: qualquer uma dessas duas passa mesmo quando o
+  // `</template>` que fecha o gate foi movido para ANTES do bloco de Apagar —
+  // o texto ">Apagar…<" continua existindo (e perto) no arquivo, só que fora
+  // da proteção de verdade. É o Critical destrutivo que a revisão final
+  // apontou: apagar remove um encontro PARA SEMPRE, e era exatamente o botão
+  // que ficaria sem trava se essa guarda não existisse. Só a conta de saldo
+  // de `<template>`/`</template>` pega — o saldo no ponto de "Apagar…" cai de
+  // 1 (ainda dentro do gate de editar E do `<template v-if="!bloqueioDeApagar
+  // ...">` aninhado por dentro dele) para 0 (o gate já fechou cedo demais, e
+  // só o `bloqueioDeApagar` ficou de pé).
+  const saldoAteEditar = saldoDeTemplates(fonte, inicioDoConteudo, idxEditar)
+  assert.equal(saldoAteEditar, 0,
+    `o botão "Editar…" precisa estar no MESMO nível do gate (saldo 0) — saldo veio ${saldoAteEditar}`)
+  const saldoAteArquivar = saldoDeTemplates(fonte, inicioDoConteudo, idxArquivar)
+  assert.equal(saldoAteArquivar, 0,
+    `o botão de arquivar precisa estar no MESMO nível do gate (saldo 0) — saldo veio ${saldoAteArquivar}`)
+  const saldoAteApagar = saldoDeTemplates(fonte, inicioDoConteudo, idxApagar)
+  assert.equal(saldoAteApagar, 1,
+    'o botão "Apagar…" precisa estar dentro de mais um <template> aninhado (o de ' +
+    `!bloqueioDeApagar), ainda por dentro do gate de editar — saldo veio ${saldoAteApagar}`)
+
+  const antesDoGate = fonte.slice(0, idxGate)
+  assert.doesNotMatch(antesDoGate, />Editar…</,
+    '"Editar…" apareceu ANTES do gate de editar — está solto, sem trava')
+  assert.doesNotMatch(antesDoGate, />Apagar…</,
+    '"Apagar…" apareceu ANTES do gate de editar — está solto, sem trava')
+})

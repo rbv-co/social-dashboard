@@ -229,11 +229,32 @@ test('FIACAO: Desativar E Reativar vivem atras do MESMO gate de editar', () => {
 
 test('FIACAO: Editar (abrir o formulário de corrigir) vive atras do gate de editar', () => {
   const fonte = telaFonte()
-  const gate = "podeExecutarAcao('editar', podeEditar)"
-  assert.ok(fonte.includes(gate), `a tela precisa ter o gate ${gate}`)
-  const idxGate = fonte.lastIndexOf(gate)
-  const trecho = fonte.slice(idxGate, idxGate + 600)
-  assert.match(trecho, />Corrigir…?</)
+  const tagDoGate = `<template v-if="podeExecutarAcao('editar', podeEditar)">`
+  const idxGate = fonte.lastIndexOf(tagDoGate)
+  assert.ok(idxGate !== -1, `a tela precisa ter a tag ${tagDoGate}`)
+  const inicioDoConteudo = idxGate + tagDoGate.length
+
+  const idxCorrigir = fonte.indexOf('>Corrigir…<', inicioDoConteudo)
+  assert.ok(idxCorrigir !== -1, 'o botão "Corrigir…" precisa estar dentro do gate')
+
+  // ⚠️ POR QUE CONTAR <template> EM VEZ DE UMA JANELA FIXA DE 600 CARACTERES
+  // (a versão anterior deste teste): uma janela fixa a partir do índice do
+  // gate PASSA mesmo quando o `</template>` que fecha o gate foi movido para
+  // ANTES do botão "Corrigir…" — o texto continua caindo dentro da mesma
+  // janela de 600 caracteres, só que fora da proteção de verdade. É o MESMO
+  // defeito que o R21 já achou tentando derrubar a guarda de
+  // Desativar/Reativar nesta tela (ver o teste logo acima), só que aqui não
+  // há um `v-else` para esconder o furo — basta o gate fechar cedo demais.
+  // Medido ao vivo: fechar o `<template>` logo depois de abri-lo (deixando o
+  // botão de fora, sem trava nenhuma) faz o saldo cair de 0 para -1, e a
+  // versão antiga deste teste continuava passando.
+  const saldoAteCorrigir = saldoDeTemplates(fonte, inicioDoConteudo, idxCorrigir)
+  assert.equal(saldoAteCorrigir, 0,
+    `o botão "Corrigir…" precisa estar no MESMO nível do gate (saldo 0) — saldo veio ${saldoAteCorrigir}`)
+
+  const antesDoGate = fonte.slice(0, idxGate)
+  assert.doesNotMatch(antesDoGate, />Corrigir…</,
+    '"Corrigir…" apareceu ANTES do gate de editar — está solto, sem trava')
 })
 
 test('FIACAO: a re-busca ao banco pede p_incluir_desativadas com precisaDasDesativadas', () => {

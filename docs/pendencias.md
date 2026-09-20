@@ -1,7 +1,7 @@
 # Pendências do iamundi
 
-Última revisão: **19/09/2026** — a lista deixou de estar vazia: entrou o **B9**.
-**Há uma pendência aberta: o B9, na Parte B.**
+Última revisão: **20/09/2026** — entrou o **B10**.
+**Há duas pendências abertas: o B9 e o B10, ambas na Parte B.**
 
 O que é este arquivo: a lista viva do que está **em aberto** no projeto. Cada item
 diz o que falta, **por que importa** e **onde** se resolve. É a memória escrita —
@@ -312,6 +312,44 @@ palavra.
 nesses nove. Mas ela reaparece a cada mudança nova, porque o molde de programa de
 instalação que o projeto usa é justamente o que cria o problema. É por isso que a
 saída 2 vale mais do que a 1.
+
+### B10 · `vessel_criar_private_edit` e `vessel_beauty_session_criar` ainda pedem só "ver", não "editar" · *entrou em 20/09/2026*
+
+**O que é.** Nesta entrega (o R13), a permissão de "editar" passou a proteger
+toda ação que muda dado nas três telas do Comercial Vessel: Encerrar, Reabrir,
+Editar, Arquivar e Apagar. Duas funções de **criar** ficaram de fora dessa
+régua e continuam na permissão mais fraca, a de "ver":
+
+- `vessel_criar_private_edit` — o botão "Criar encontro" da tela Private Edit;
+- `vessel_beauty_session_criar` — o botão "Criar sessão" da tela Beauty
+  Sessions.
+
+A irmã das duas, `vessel_stylist_criar` (Stylist Circle), já usa a permissão
+certa — é a única das três que nasceu depois de essa régua existir.
+
+**Por que importa.** O mesmo argumento que justificou apertar "Encerrar" nesta
+entrega — *encerrar muda o encontro, então precisa de permissão para editar* —
+vale palavra por palavra para **criar**: marcar um encontro novo ou abrir uma
+sessão nova é tanto mudança de dado quanto fechar um já existente. Hoje, depois
+desta entrega, quem tem só "ver" **não consegue mais** editar, arquivar,
+encerrar ou apagar um encontro — mas **ainda consegue criar** um novo. É um
+degrau fora de ordem: a porta mais fácil de todas ficou sendo justamente a de
+criar.
+
+⚠️ **Ninguém é afetado hoje** — medido, não suposto: dos 24 perfis do sistema,
+ZERO tem `atendimentos` em `features` e ZERO tem `editar` em
+`permissions.atendimentos`. Quem passa por qualquer uma das duas portas hoje
+são só os 3 superadmins — e superadmin passa pelas duas, porque a permissão de
+editar já inclui a de ver. Ou seja: apertar isso agora não tiraria acesso de
+ninguém; é uma trava para o dia em que alguém receber só a permissão de ver.
+
+**Onde se resolve.** É a mesma mudança de uma linha já aplicada às duas
+funções de encerrar nesta entrega
+(`db/migrations/2026-09-19-vessel-encerrar-exige-editar.sql`): trocar, dentro
+de cada função, a checagem de `is_vessel_atendimentos()` (ver) por
+`is_vessel_atendimentos_editar()` (editar). Fica para o dono decidir quando —
+não bloqueou esta entrega, e o comportamento de hoje continua exatamente igual
+até alguém aplicar a troca.
 
 ## Como manter esta lista
 
