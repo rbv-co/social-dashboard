@@ -228,3 +228,30 @@
   width: 100%;
   padding-inline: clamp(16px, 2.4vw, 40px);
 }
+
+/* ── A BARRA DE LISTA ──────────────────────────────────────────────────────
+ * Buscar, período, situação, loja, estágio, ordem — uma só, compartilhada
+ * pelas três telas. Enrola no celular em vez de estourar a tela: nada de
+ * scroll horizontal a 375px. */
+.cv-barra {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+  align-items: flex-end;
+  margin-top: var(--sp-3);
+  padding: var(--sp-3);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.cv-barra-campo { display: flex; flex-direction: column; gap: 4px; flex: 1 1 12rem; min-width: 0; }
+.cv-barra-campo input, .cv-barra-campo select {
+  width: 100%;
+  font-family: var(--fonte-principal);
+  font-size: var(--texto-corpo);
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+}
