@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import {
   FORMATO_STYLIST, FORMATO_ENCONTRO, FORMATO_DA_CHAVE, ENDERECO_DO_CIRCLE,
+  ENDERECO_DO_GERADOR_DE_CARTAO, SITE,
   enderecoDaStylist, enderecoDoConvite, dataLegivel, dataHoraLegivel,
   problemasDoEncontro,
 } from './enderecos-publicos.js'
@@ -33,6 +34,19 @@ test('⚠️ a chave não usa as letras que se confundem em voz alta', () => {
 
 test('a porta do Circle é uma só', () => {
   assert.equal(ENDERECO_DO_CIRCLE, 'https://vesselbrasil.com.br/stylist-circle/')
+})
+
+test('o gerador do Appointment Card mora no site da Vessel', () => {
+  assert.equal(ENDERECO_DO_GERADOR_DE_CARTAO, `${SITE}/geradorappointmentcard/`)
+})
+
+// ⚠️ O GERADOR ABRE VAZIO. Decisão do dono em 19/09: ele não lê nada da barra de
+// endereço hoje, e ensiná-lo a ler exige mexer e publicar o OUTRO repositório.
+// Um `?` aqui seria uma promessa de preenchimento que o gerador não sabe
+// cumprir — a Client Advisor acharia que preencheu algo quando não preencheu.
+test('a porta não promete preenchimento que o gerador não sabe ler', () => {
+  assert.ok(!ENDERECO_DO_GERADOR_DE_CARTAO.includes('?'),
+    'a porta do cartão não leva parâmetro: o gerador ignora e a pessoa acha que preencheu')
 })
 
 /* ── A TRAVA CONTRA A MESMA VERDADE EM DOIS LUGARES ──────────────────────── */

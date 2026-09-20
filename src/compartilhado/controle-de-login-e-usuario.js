@@ -142,7 +142,7 @@ export const RECURSOS = [
   // de `profiles.features[]`. Quem leva a chave daqui para lá é
   // `derivar-features.js` — chave sem ponto vira feature com o mesmo nome.
   // 'editar' é marcar que a cliente veio, não veio ou remarcou.
-  { key: 'atendimentos', label: 'Vessel — Atendimentos', acoes: ['ver', 'editar'] },
+  { key: 'atendimentos', label: 'Vessel — Private Appointment', acoes: ['ver', 'editar'] },
   { key: 'carrinho', label: 'Funil de Carrinho', acoes: ['ver'] },
 ]
 
@@ -224,5 +224,11 @@ export const PERMISSION_TREE = [
   ] },
   // Os private appointments da Vessel: quem tem horário, quem veio e quanto
   // comprou. Como toda chave nova, nasce concedida a NINGUÉM — é de propósito.
-  { key: 'atendimentos', label: 'Vessel — Atendimentos', children: [] },
+  //
+  // ⚠️ MESMO RÓTULO QUE O DE RECURSOS (linha ~145), DE PROPÓSITO. É esta cópia
+  // aqui — não a de RECURSOS — que `agruparRecursos()` usa como título do CARD
+  // na tela de permissões (a de RECURSOS vira o nome da LINHA dentro do card).
+  // Trocar um rótulo sem trocar o outro deixaria o card com o cabeçalho velho
+  // e a linha com o nome novo — a mesma verdade escrita errado em dois campos.
+  { key: 'atendimentos', label: 'Vessel — Private Appointment', children: [] },
 ]

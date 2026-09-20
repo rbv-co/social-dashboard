@@ -6,7 +6,7 @@ import assert from 'node:assert/strict'
 // existe; aqui no node, não. Então fingimos um window mínimo ANTES de importar —
 // por isso o import é dinâmico e não estático, senão ele rodaria primeiro.
 globalThis.window = { supabase: { createClient: () => ({}) } }
-const { estado, limparEstado, carregarPerfil } = await import('./controle-de-login-e-usuario.js')
+const { estado, limparEstado, carregarPerfil, RECURSOS, PERMISSION_TREE } = await import('./controle-de-login-e-usuario.js')
 
 const SESSAO = { access_token: 'tok', user: { id: 'u1' } }
 
@@ -116,6 +116,24 @@ test('lista vazia e viewer de verdade, sem erro', async () => {
   assert.equal(estado.role, 'viewer')
   assert.equal(estado.is_superadmin, false)
   assert.deepEqual(estado.permissions, {})
+})
+
+// ⚠️ O RÓTULO PODE MUDAR, A CHAVE NÃO — 'atendimentos' é lida em TRÊS lugares
+// além daqui (a árvore logo abaixo dela mesma, `derivar-features.js` e a
+// função `is_vessel_atendimentos()` do banco). Trocar a chave tiraria o acesso
+// de quem já usa o módulo hoje, em silêncio. Este teste é a trava contra isso.
+test('a chave do módulo Vessel continua "atendimentos", e as duas ações continuam oferecidas', () => {
+  const recurso = RECURSOS.find((r) => r.key === 'atendimentos')
+  assert.ok(recurso, 'a chave "atendimentos" sumiu de RECURSOS — isso tira o acesso de todo mundo de uma vez')
+  assert.deepEqual(recurso.acoes, ['ver', 'editar'])
+
+  const naArvore = PERMISSION_TREE.find((n) => n.key === 'atendimentos')
+  assert.ok(naArvore, 'a chave "atendimentos" sumiu de PERMISSION_TREE')
+
+  // Os dois rótulos podem mudar de texto livremente, mas têm de continuar
+  // IGUAIS entre si — é o card e a linha da MESMA ferramenta na tela de
+  // permissões (ver o comentário em PERMISSION_TREE).
+  assert.equal(recurso.label, naArvore.label)
 })
 
 // Uma tentativa nova tem que apagar o erro da tentativa anterior.

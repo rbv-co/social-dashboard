@@ -51,6 +51,23 @@ export function enderecoDoConvite(chave) {
 /** A porta de entrada do programa, onde a stylist se inscreve. Uma só. */
 export const ENDERECO_DO_CIRCLE = `${SITE}/stylist-circle/`
 
+/* O GERADOR DO APPOINTMENT CARD.
+ *
+ * ⚠️ MORA NO OUTRO REPOSITÓRIO (`rbv-co/vessel-brasil`), que o .gitignore deste
+ * exclui de propósito. Isto é uma PORTA, não uma cópia: copiar o gerador para cá
+ * seriam 831 linhas de tela, o fundo de 377 KB, três fontes e o codificador de
+ * QR duplicados — junto com três contas delicadas que passariam a existir em
+ * dose dupla: a arte que é 1,35x a especificação, o QR que tem de caber em 43
+ * caracteres, e a fonte Versatile que tem ':' e ';' trocados no arquivo.
+ *
+ * ⚠️ E NÃO DÁ PARA EMBUTIR EM MOLDURA: a Vercel manda `frame-ancestors` e o
+ * quadro sai branco, com o erro só no console.
+ *
+ * ⚠️ ABRE VAZIO. O gerador não lê nada da barra de endereço, e mandar
+ * parâmetro faria a Client Advisor achar que preencheu quando não preencheu.
+ */
+export const ENDERECO_DO_GERADOR_DE_CARTAO = `${SITE}/geradorappointmentcard/`
+
 export const ESTAGIOS = {
   pedido: 'Pediu convite',
   convidada: 'Convidada',
