@@ -39,6 +39,58 @@ const DESATIVAR = 'public.vessel_stylist_desativar(text, boolean)'
 const RASTREIO  = 'public.vessel_rastreio_dos_stylists(integer)'
 const ESCOLHER  = 'public.vessel_stylists_para_escolher()'
 
+// ⚠️⚠️ ESTE APLICADOR ENVELHECEU PARA UMA DAS DUAS FUNCOES QUE RECRIA: a T12
+// (a tela do Stylist Circle ganhar cadastrar, corrigir e desativar) precisou
+// de um SEGUNDO parametro em `vessel_rastreio_dos_stylists`
+// (`p_incluir_desativadas`) e por isso a migration dela comeca com `drop
+// function if exists public.vessel_rastreio_dos_stylists(integer)` antes de
+// criar a versao de dois parametros. Este arquivo faz `create or replace
+// function public.vessel_rastreio_dos_stylists(p_dias integer default 7)` —
+// a assinatura de UM parametro, sem `drop`. Reaplica-lo depois da T12
+// ressuscita essa assinatura ao lado da nova: o banco fica com as DUAS, e uma
+// chamada por nome de parametro (o jeito que a Central chama) responde
+// "function is not unique" — a tela do Stylist Circle para de carregar. A
+// outra funcao que este arquivo mexe, `vessel_stylists_para_escolher()`, nao
+// muda de assinatura na T12 e nao entra nesta trava.
+const DEPOIS_DESTE = [
+  {
+    migration: '2026-09-20-vessel-rastreio-devolve-ativa-e-contato.sql',
+    estrago:
+      'ressuscitaria `vessel_rastreio_dos_stylists(integer)` — a assinatura de\n' +
+      '       UM parâmetro que aquela migration derrubou de propósito — ao lado da\n' +
+      '       de dois parâmetros que ela criou (que também devolve `ativa`,\n' +
+      '       `whatsapp`, `instagram` e `atuacao`, que a versão de um parâmetro\n' +
+      '       nunca devolveu). Com as duas no banco, uma chamada por nome de\n' +
+      '       parâmetro (o jeito que a Central chama) responde "function is not\n' +
+      '       unique" e a tela do Stylist Circle para de carregar, sem erro nenhum\n' +
+      '       até o clique de alguém.',
+  },
+]
+
+// ⚠️ ANTES DE ABRIR TRANSAÇÃO E ANTES DE APLICAR QUALQUER COISA.
+{
+  const cliDeChecagem = new pg.Client({ connectionString: process.env.DATABASE_URL })
+  await cliDeChecagem.connect()
+  const { rows: posteriores } = await cliDeChecagem.query(
+    `select name from public.schema_migrations where name = any($1::text[]) order by name`,
+    [DEPOIS_DESTE.map((x) => x.migration)])
+  await cliDeChecagem.end()
+  if (posteriores.length > 0) {
+    console.error(
+      `❌ nao aplicada: ${ARQUIVO} ja foi superada e reaplica-la ressuscitaria assinatura morta.\n\n` +
+      `Este arquivo faz \`create or replace\` em ` +
+      `\`vessel_rastreio_dos_stylists(integer)\`.\n` +
+      `Migration(s) mais nova(s) JA APLICADA(S) trocaram essa assinatura, e rodar este\n` +
+      `aplicador agora recriaria a versao antiga do lado da nova:\n\n` +
+      posteriores.map(({ name }) =>
+        `  · ${name}\n       ${DEPOIS_DESTE.find((x) => x.migration === name).estrago}`).join('\n\n') +
+      `\n\nVa ler essa migration em db/migrations/ antes de qualquer coisa. Se voce PRECISA mesmo\n` +
+      `reaplicar este arquivo, a saida NAO e apagar esta trava: e reaplicar a migration\n` +
+      `posterior logo depois, pelo aplicador dela.\n`)
+    process.exit(1)
+  }
+}
+
 // Telefones INVENTADOS para esta prova, todos canonicos e todos diferentes.
 const FONE_1 = '5519990000001'
 const FONE_2 = '5519990000002'

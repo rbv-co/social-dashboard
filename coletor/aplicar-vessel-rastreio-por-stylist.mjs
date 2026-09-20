@@ -9,9 +9,58 @@ const CONFERE = 'public.vessel_stylist_do_codigo(text)'
 const PAINEL = 'public.vessel_rastreio_dos_stylists(integer)'
 const PEDIR = 'public.vessel_solicitar_atendimento(text, text, text, text, text, text, boolean, text, jsonb, text, boolean)'
 
+// ⚠️⚠️ ESTE APLICADOR ENVELHECEU: RODAR DE NOVO RESSUSCITA UMA ASSINATURA
+// MORTA. A migration deste arquivo faz `create or replace function
+// public.vessel_rastreio_dos_stylists(p_dias integer default 7)` — UM
+// parâmetro. A T12 (a tela do Stylist Circle ganhar cadastrar, corrigir e
+// desativar) precisou de um SEGUNDO parâmetro (`p_incluir_desativadas`) para
+// devolver quem está desativada só quando a tela pede, e por isso a migration
+// dela começa com `drop function if exists
+// public.vessel_rastreio_dos_stylists(integer)` antes de criar a versão de
+// dois parâmetros — `create or replace` não troca uma função por outra de
+// assinatura diferente, então sem o `drop` as duas ficariam sobrepostas.
+// Reaplicar ESTE arquivo depois da T12 recria a versão de UM parâmetro do
+// zero: o banco passa a ter as DUAS assinaturas ao mesmo tempo, e uma chamada
+// por nome de parâmetro (`{p_dias: 7}`, do jeito que a Central chama) morre
+// com "function is not unique" — a tela do Stylist Circle quebra inteira,
+// sem erro nenhum até o clique de alguém.
+const DEPOIS_DESTE = [
+  {
+    migration: '2026-09-20-vessel-rastreio-devolve-ativa-e-contato.sql',
+    estrago:
+      'ressuscitaria `vessel_rastreio_dos_stylists(integer)` — a assinatura de\n' +
+      '       UM parâmetro que aquela migration derrubou de propósito — ao lado da\n' +
+      '       de dois parâmetros que ela criou. Com as duas no banco, uma chamada\n' +
+      '       por nome de parâmetro (o jeito que a Central chama) responde\n' +
+      '       "function is not unique" e a tela do Stylist Circle para de\n' +
+      '       carregar, sem erro nenhum até o clique de alguém.',
+  },
+]
+
 const sql = readFileSync(new URL(`../db/migrations/${ARQUIVO}`, import.meta.url), 'utf8')
 const cli = new pg.Client({ connectionString: process.env.DATABASE_URL })
 await cli.connect()
+
+// ⚠️ ANTES DE ABRIR TRANSAÇÃO E ANTES DE APLICAR QUALQUER COISA.
+const { rows: posteriores } = await cli.query(
+  `select name from public.schema_migrations where name = any($1::text[]) order by name`,
+  [DEPOIS_DESTE.map((x) => x.migration)])
+if (posteriores.length > 0) {
+  console.error(
+    `❌ nao aplicada: ${ARQUIVO} ja foi superada e reaplica-la ressuscitaria assinatura morta.\n\n` +
+    `Esta migration faz \`create or replace\` em ` +
+    `\`vessel_rastreio_dos_stylists(integer)\`.\n` +
+    `Migration(s) mais nova(s) JA APLICADA(S) trocaram essa assinatura, e rodar este\n` +
+    `aplicador agora recriaria a versao antiga do lado da nova:\n\n` +
+    posteriores.map(({ name }) =>
+      `  · ${name}\n       ${DEPOIS_DESTE.find((x) => x.migration === name).estrago}`).join('\n\n') +
+    `\n\nVa ler essa migration em db/migrations/ antes de qualquer coisa. Se voce PRECISA mesmo\n` +
+    `reaplicar este arquivo, a saida NAO e apagar esta trava: e reaplicar a migration\n` +
+    `posterior logo depois, pelo aplicador dela.\n`)
+  await cli.end()
+  process.exit(1)
+}
+
 await cli.query('begin')
 try {
   await cli.query(sql)
