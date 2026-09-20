@@ -45,6 +45,21 @@ const DEPOIS_DESTE = [
       '       ficar sempre vazios, e o formulário de editar perderia a praça/loja\n' +
       '       atuais para pré-preencher, tudo sem erro nenhum na tela.',
   },
+  {
+    // ⚠️ T11 (a tela de Beauty Sessions ganhar tudo): a mesma volta atrás,
+    // pelo mesmo motivo, na irmã. Reaplicar este arquivo faria
+    // `create or replace` em `vessel_conta_das_beauty_sessions(int, boolean)`
+    // devolvendo-a para o SELECT SEM `arquivada` — a migration posterior só
+    // acrescentou esse UM campo (`ativa` já vinha desde 18/09).
+    migration: '2026-09-19-vessel-beauty-sessions-lista-devolve-arquivada.sql',
+    estrago:
+      'devolveria `vessel_conta_das_beauty_sessions` para o SELECT sem\n' +
+      '       `arquivada` por linha (`ativa` continuaria, essa é anterior a esta\n' +
+      '       migration) — o filtro "Situação" (Só arquivadas) da tela de Beauty\n' +
+      '       Sessions voltaria a ficar sempre vazio, e o botão "Desarquivar" não\n' +
+      '       teria como saber quando aparecer no lugar de "Arquivar…", tudo sem\n' +
+      '       erro nenhum na tela.',
+  },
 ]
 
 const sql = readFileSync(new URL(`../db/migrations/${ARQUIVO}`, import.meta.url), 'utf8')
