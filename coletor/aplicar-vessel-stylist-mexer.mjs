@@ -143,16 +143,23 @@ try {
       throw new Error(`${proname}: o pedaco de antes aparece ${quantas}x no texto original, esperava 1`)
     return texto.replace(antes, depois)
   }
+  // ⚠️ RODAR DE NOVO NAO PODE QUEBRAR. Na SEGUNDA vez, o texto de "antes" ja e
+  // o texto de depois — a troca ja esta no banco —, e insistir em aplica-la
+  // outra vez acrescentaria o filtro DUAS vezes no esperado e reprovaria uma
+  // migration correta. O que a conferencia quer saber e sempre a mesma coisa:
+  // "o texto no banco e exatamente o original com esta troca, e so ela?".
   for (const proname of Object.keys(A_TROCA)) {
     const depois = await definicao(cli, proname)
     if (!depois) throw new Error(`${proname} sumiu depois da migration`)
-    const esperado = soATroca(proname, defAntes[proname])
+    const jaEstava = defAntes[proname].includes(A_TROCA[proname].depois)
+    const esperado = jaEstava ? defAntes[proname] : soATroca(proname, defAntes[proname])
+    if (jaEstava) diffs[proname] = '(ja estava aplicado: o texto no banco nao mudou nesta rodada)'
     if (depois !== esperado)
       throw new Error(
         `${proname} mudou ALEM do filtro de desativada.\n` +
         `ESPERADO (o texto de antes com a troca, e so ela)\n${esperado}\n` +
         `NO BANCO\n${depois}`)
-    diffs[proname] = '+ and coalesce(s.ativa, true)   (1 linha, nada mais)'
+    if (!jaEstava) diffs[proname] = '+ and coalesce(s.ativa, true)   (1 troca, nada mais)'
   }
 
   // ── 3. SOBROU UMA SO DE CADA, com a assinatura combinada ─────────────────
@@ -608,8 +615,14 @@ try {
     // conta se perdeu no caminho.
     for (const proname of Object.keys(A_TROCA)) {
       const depois = await definicao(outra, proname)
-      if (depois !== soATroca(proname, defAntes[proname]))
+      const jaEstava = defAntes[proname].includes(A_TROCA[proname].depois)
+      if (depois !== (jaEstava ? defAntes[proname] : soATroca(proname, defAntes[proname])))
         throw new Error(`depois do commit, ${proname} mudou alem do filtro de desativada`)
+      // ⚠️ E, DE QUALQUER JEITO, O FILTRO TEM DE ESTAR LA. A comparacao acima
+      // aprova "nada mudou"; esta aqui e a que exige que o que nao mudou seja
+      // a versao COM o filtro, e nao a velha.
+      if (!depois.includes(A_TROCA[proname].depois))
+        throw new Error(`depois do commit, ${proname} esta SEM o filtro de desativada`)
     }
 
     // ⚠️ OS DOIS PORTOES, JA PUBLICADOS.
