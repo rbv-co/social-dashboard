@@ -14,9 +14,62 @@ const ARQUIVO = '2026-09-19-vessel-arquivar.sql'
 const PE = 'PE-20260919-CPS-Z9'
 const BS = 'BS-20260919-CPS-Z9'
 
+// ⚠️⚠️ ESTE APLICADOR ENVELHECEU: RODAR DE NOVO APAGA CAMPO QUE VEIO DEPOIS.
+//
+// A migration deste arquivo faz `create or replace` em
+// `vessel_conta_das_private_edits(int, boolean)`. Uma migration POSTERIOR
+// acrescentou `ativa`, `arquivada`, `praca` e `loja` ao `json_build_object`
+// dela (mesma assinatura, sem `drop`). Reaplicar a versão daqui devolve a
+// função para o SELECT de antes — sem esses quatro campos, sem erro nenhum,
+// com a linha de sucesso impressa igual no fim. Medido com
+// `pg_get_functiondef` antes e depois, numa transação desfeita: é exatamente
+// esta volta atrás.
+//
+// Na prática, para quem usa a tela do Private Edit: "Só arquivadas" e
+// "Só encerradas" voltam a ficar sempre vazios (o filtro de tela não teria
+// mais `arquivada`/`ativa` para ler), o filtro de Loja para de achar
+// qualquer coisa além de "Todas", e o formulário de editar perde a praça e a
+// loja atuais para pré-preencher — tudo isso calado, sem nenhum erro na tela.
+//
+// ⚠️ POR QUE A TRAVA É UMA CONSULTA, E NÃO UM `process.exit` cravado: num
+// banco NOVO, onde a migration posterior não foi aplicada, não há nada para
+// desfazer e este aplicador tem de rodar normalmente. Uma recusa cravada
+// seria indistinguível de um script quebrado e travaria o replay legítimo.
+const DEPOIS_DESTE = [
+  {
+    migration: '2026-09-19-vessel-private-edit-lista-devolve-ativa-e-arquivada.sql',
+    estrago:
+      'devolveria `vessel_conta_das_private_edits` para o SELECT sem `ativa`,\n' +
+      '       `arquivada`, `praca` e `loja` — o filtro "Situação" (Só arquivadas /\n' +
+      '       Só encerradas) e o filtro de Loja da tela do Private Edit voltariam a\n' +
+      '       ficar sempre vazios, e o formulário de editar perderia a praça/loja\n' +
+      '       atuais para pré-preencher, tudo sem erro nenhum na tela.',
+  },
+]
+
 const sql = readFileSync(new URL(`../db/migrations/${ARQUIVO}`, import.meta.url), 'utf8')
 const cli = new pg.Client({ connectionString: process.env.DATABASE_URL })
 await cli.connect()
+
+// ⚠️ ANTES DE ABRIR TRANSAÇÃO E ANTES DE APLICAR QUALQUER COISA.
+const { rows: posteriores } = await cli.query(
+  `select name from public.schema_migrations where name = any($1::text[]) order by name`,
+  [DEPOIS_DESTE.map((x) => x.migration)])
+if (posteriores.length > 0) {
+  console.error(
+    `❌ nao aplicada: ${ARQUIVO} ja foi superada e reaplica-la apagaria campo posterior.\n\n` +
+    `Esta migration faz \`create or replace\` em \`vessel_conta_das_private_edits\`.\n` +
+    `Migration(s) mais nova(s) JA APLICADA(S) mudaram essa funcao, e rodar este aplicador\n` +
+    `agora voltaria atras sem erro nenhum:\n\n` +
+    posteriores.map(({ name }) =>
+      `  · ${name}\n       ${DEPOIS_DESTE.find((x) => x.migration === name).estrago}`).join('\n\n') +
+    `\n\nVa ler essa migration em db/migrations/ antes de qualquer coisa. Se voce PRECISA mesmo\n` +
+    `reaplicar este arquivo, a saida NAO e apagar esta trava: e reaplicar a migration\n` +
+    `posterior logo depois, pelo aplicador dela.\n`)
+  await cli.end()
+  process.exit(1)
+}
+
 await cli.query('begin')
 try {
   await cli.query(sql)
