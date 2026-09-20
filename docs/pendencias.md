@@ -1,7 +1,7 @@
 # Pendências do iamundi
 
-Última revisão: **18/09/2026** — os três últimos itens saíram.
-**A lista está vazia: não há pendência aberta.**
+Última revisão: **19/09/2026** — a lista deixou de estar vazia: entrou o **B9**.
+**Há uma pendência aberta: o B9, na Parte B.**
 
 O que é este arquivo: a lista viva do que está **em aberto** no projeto. Cada item
 diz o que falta, **por que importa** e **onde** se resolve. É a memória escrita —
@@ -225,8 +225,93 @@ motivo da saída.
 
 ## Parte B — Precisa programar
 
-**Vazia desde 18/09/2026.** O último item daqui foi o B4 — está logo acima, com o
-motivo da saída.
+*(Esteve vazia de 18 para 19/09/2026. O item anterior daqui foi o B4 — está mais
+acima, com o motivo da saída.)*
+
+### B9 · Nove programas de instalação que, se rodarem de novo, desfazem trabalho mais novo · *entrou em 19/09/2026*
+
+**O que é.** Cada mudança no banco do iamundi vem com um programinha que a
+instala — são os arquivos `coletor/aplicar-*.mjs`. São **31**, dos quais **29**
+dizem qual mudança instalam; medi esses 29 um por um e descobri que **11 deles,
+se alguém rodar hoje, desfazem coisa que foi feita depois** — sem dar erro nenhum
+e imprimindo a mesma linha de sucesso de sempre.
+
+**A causa, numa frase:** cada um desses programas carrega uma *fotografia* da
+função do dia em que foi escrito, e instalar de novo significa regravar aquela
+fotografia por cima — apagando qualquer coisa mais nova que tenha entrado no
+lugar.
+
+**Como eu medi** (não é leitura de código, é o banco respondendo): para cada
+programa, abri uma transação, pedi ao banco a versão atual de cada função que ele
+instala, rodei o programa, pedi de novo e comparei letra por letra — e desfiz a
+transação. O que mudou nessa comparação é, literalmente, o que mudaria de
+verdade.
+
+⚠️ **Dois já foram travados em 19/09, e não fazem mais parte da dívida** —
+porque mexiam em coisa desta mesma entrega:
+
+- `aplicar-vessel-private-edit-pela-tela.mjs` — voltaria a deixar quem só pode
+  **olhar** encerrar um encontro, e traria as parceiras desativadas de volta para
+  a lista de escolher;
+- `aplicar-vessel-beauty-sessions-com-tela.mjs` — voltaria a deixar quem só pode
+  **olhar** encerrar uma Beauty Session (e as três que existem hoje têm QR
+  impresso, na mão de cliente).
+
+Os dois agora **se recusam a rodar** e explicam na tela o que aconteceria. A
+recusa não é cravada: eles perguntam ao banco se a mudança mais nova já foi
+instalada — num banco novo, onde ela não foi, eles rodam normalmente.
+
+⚠️ **E aqui está o que faz isso ser difícil de enxergar: a ordem dos NOMES dos
+arquivos não é a ordem em que eles foram instalados.** O arquivo
+`2026-09-19-vessel-encerrar-exige-editar.sql` vem **antes** de
+`2026-09-19-vessel-private-edit-pela-tela.sql` quando se lê a pasta em ordem
+alfabética — e foi instalado **23 horas depois** dele. Quem decidir "qual é a
+mais nova" olhando o nome do arquivo chega à resposta errada. Foi o que
+aconteceu comigo na primeira varredura, e é um engano fácil de repetir. **A única
+fonte honesta é a coluna `applied_at` da tabela `schema_migrations`** — é o
+relógio, não o nome.
+
+**Os nove que faltam.** Quatro deles são menos perigosos, e está dito por quê:
+
+| Programa | O que ele faria |
+|---|---|
+| `aplicar-vessel-pessoas.mjs` | Criaria **cópia duplicada** de `vessel_abrir_convite` e `vessel_registrar_cartao` |
+| `aplicar-vessel-contar-as-beauty-sessions.mjs` | Desfaria `vessel_sessao_do_codigo`; **duplicaria** `vessel_conta_das_beauty_sessions` |
+| `aplicar-vessel-private-edit.mjs` | Desfaria `vessel_criar_private_edit`; **duplicaria** `vessel_conta_das_private_edits` |
+| `aplicar-vessel-rastreio-por-stylist.mjs` | Desfaria `vessel_rastreio_dos_stylists` (traria as parceiras desativadas de volta ao relatório) e `vessel_solicitar_atendimento` |
+| `aplicar-vessel-beauty-sessions.mjs` | Desfaria `vessel_interesse_da_beauty_session` e `vessel_solicitar_atendimento` |
+| `aplicar-vessel-chave-sorteada-a-serio.mjs` | Desfaria `vessel_criar_private_edit` |
+| `aplicar-vessel-pedido-de-atendimento.mjs` | Desfaria `vessel_solicitar_atendimento` |
+| `aplicar-vessel-personal-atelier.mjs` | Desfaria `vessel_pedido_de_personal_atelier` |
+| `aplicar-vessel-preferencias-da-visita.mjs` | Desfaria `vessel_detalhar_visita` |
+
+⚠️ **As quatro funções marcadas como "duplicada" são as MENOS perigosas** —
+`vessel_abrir_convite`, `vessel_registrar_cartao`,
+`vessel_conta_das_beauty_sessions` e `vessel_conta_das_private_edits`. Nesses
+casos o banco não troca uma pela outra: fica com **duas**, e a tela que chamar
+morre na hora com o erro `function is not unique`. É chato, mas **aparece** — e
+o que aparece não é o problema desta lista. O problema é o resto, que é **calado**.
+
+**Por que importa.** Nenhum desses programas é rodado no dia a dia — eles rodam
+uma vez, quando a mudança vai para o banco. O risco é alguém rodar um deles
+achando que está reinstalando algo inofensivo, ou por engano ao copiar uma linha
+de comando de uma conversa antiga. Aí o sistema volta atrás sozinho, sem uma
+palavra.
+
+**Onde se resolve.** Duas saídas, e a segunda é melhor:
+
+1. Escrever a mesma trava nos nove, um a um. Funciona, mas são nove listas
+   digitadas à mão, e cada uma envelhece sozinha na próxima mudança.
+2. **Uma conferência só, em `coletor/lib/`, que todo programa de instalação chama
+   no começo:** ela pergunta ao banco como estão as funções, instala num ponto de
+   retorno, compara, desfaz — e só deixa seguir se nada regrediu. Aí a trava é
+   **medida**, não digitada, e vale para os programas que ainda nem foram
+   escritos.
+
+**Não tem pressa e não cresce por conta própria** — a dívida tem tamanho fixo,
+nesses nove. Mas ela reaparece a cada mudança nova, porque o molde de programa de
+instalação que o projeto usa é justamente o que cria o problema. É por isso que a
+saída 2 vale mais do que a 1.
 
 ## Como manter esta lista
 
