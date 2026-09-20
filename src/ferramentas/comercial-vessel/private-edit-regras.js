@@ -6,6 +6,13 @@
  * seria testada, e é exatamente o tipo de regra que uma refatoração de tela
  * quebra sem ninguém perceber. Aqui, cada uma tem um teste ao lado.
  *
+ * ⚠️⚠️ ESTE ARQUIVO EXISTE POR CAUSA DE DOIS CRITICAL QUE PASSARAM DIRETO: a
+ * primeira versão cobria só frases e rótulos — QUEM PODE CLICAR em qual botão
+ * e SOBRE QUE LISTA um total é somado ficaram só dentro do `.vue`, sem teste
+ * nenhum, e foi exatamente aí que Encerrar escapou da trava de editar e o
+ * total de vagas escapou do filtro. As duas regras agora moram aqui, como
+ * função pura, chamadas pelo template — não reimplementadas nele.
+ *
  * ⚠️ AS QUATRO SITUAÇÕES DE `vessel_private_edit_editar`, sem tratar a quarta
  * como as três: `ok`, `sem_permissao`, `nao_achei` e `stylist_nao_achei`. O
  * brief da tarefa listava só três — a quarta nasceu depois, do jeito que
@@ -13,6 +20,52 @@
  * "não achei o encontro" para um código de stylist errado manda quem lê
  * procurar no lugar errado.
  */
+import { proporcaoDoConjunto } from './estatistica.js'
+
+/**
+ * R13: quais ações cada encontro permite, dado só se a pessoa TEM a permissão
+ * de editar (`hasPermission('atendimentos', 'editar')`).
+ *
+ * ⚠️ "ENCERRAR" E "REABRIR" ENTRARAM NA LISTA: a migration
+ * `2026-09-19-vessel-encerrar-exige-editar.sql` apertou
+ * `vessel_private_edit_encerrar` para a MESMA trava de editar/apagar/arquivar
+ * — encerrar deixou de ser uma ação de quem só "vê". Foi exatamente esta
+ * linha que faltou no template: o botão ficou fora do `v-if="podeEditar"` que
+ * já protegia os outros três, e quem só tem `ver` passou a clicar num botão
+ * que o banco agora recusa com `sem_permissao` — a tela mostrava o erro
+ * genérico "tente de novo", que nunca ia funcionar.
+ *
+ * "Ver quem foi" NÃO entra: é leitura, atrás da trava de VER
+ * (`is_vessel_atendimentos()`), não da de editar.
+ */
+export const ACOES_QUE_EXIGEM_EDITAR = ['encerrar', 'reabrir', 'editar', 'arquivar', 'apagar']
+
+export function podeExecutarAcao(acao, podeEditar) {
+  if (ACOES_QUE_EXIGEM_EDITAR.includes(acao)) return !!podeEditar
+  return true // ações de leitura (ex.: "ver quem foi") não pedem editar
+}
+
+/**
+ * Os números do bloco "Todos os encontros juntos", a partir de UMA lista.
+ *
+ * ⚠️ QUEM CHAMA DECIDE A LISTA, E TEM DE SER SEMPRE A FILTRADA: esta função
+ * não sabe nada sobre filtro — ela soma o que recebe. O bug que a criou foi
+ * exatamente o contrário: `totalVagas` estava cravado sobre a lista CHEIA
+ * (`encontros.value`) enquanto a contagem ao lado (`encontrosNaTela.length`)
+ * já seguia o filtro — a mesma seção mostrando "3 Encontros" e a soma de
+ * vagas dos 10. Centralizar a conta aqui, como função pura testável, é o que
+ * torna esse descompasso impossível de reintroduzir em silêncio: não existe
+ * um segundo lugar no `.vue` fazendo a mesma soma com a lista errada.
+ */
+export function calcularConjunto(lista) {
+  const l = Array.isArray(lista) ? lista : []
+  return {
+    totalEncontros: l.length,
+    totalVagas: l.reduce((s, e) => s + (Number(e?.vagas) || 0), 0),
+    resposta: proporcaoDoConjunto(l, 'responderam', 'vagas'),
+    presenca: proporcaoDoConjunto(l, 'compareceram', 'disseram_sim'),
+  }
+}
 
 /** A frase de erro de `editar`, para cada `situacao` que a função devolve. */
 export function mensagemDeEditar(situacao) {
@@ -58,9 +111,26 @@ export function mensagemDeArquivar(situacao) {
  * as DUAS saídas de verdade (encerrar ou arquivar). Um "erro" vermelho aqui
  * diria "tente de novo", quando tentar de novo dá exatamente a mesma recusa
  * sempre: apagar um encontro com gente pendurada nunca vai ser permitido.
+ *
+ * ⚠️ ZERO NÃO É "SEM GENTE" — É UM NÚMERO QUE MENTE. `vessel_private_edit_apagar`
+ * recusa com `tem_gente` olhando `vessel_atendimentos` SEM filtrar `teste`,
+ * enquanto `e.responderam` (o número que a tela mostra e que esta função
+ * recebe) já sai filtrado por `not coalesce(t.teste, false)`. Um encontro só
+ * com convidadas de teste pendicionadas tem `responderam: 0` e AINDA ASSIM é
+ * recusado — dizer "tem 0 convidada(s)" citaria um número que contradiz a
+ * própria recusa que o banco acabou de dar. O banco está certo em recusar
+ * (tem gente pendurada de verdade); o que está errado é a frase quantificar
+ * algo que ela não sabe contar. Por isso, com zero, a frase NÃO cita número.
  */
 export function mensagemDeTemGente(quantasResponderam) {
   const n = Number(quantasResponderam) || 0
+  if (n <= 0) {
+    return 'Este encontro já tem convidada(s) associada(s) (provavelmente de '
+      + 'teste, por isso não aparecem nos números acima). Apagar deixaria '
+      + 'essa(s) convidada(s) sem encontro e a receita somando sobre algo que '
+      + 'não existe mais. Dá para encerrar (continua no histórico) ou '
+      + 'arquivar (sai das contas e da lista).'
+  }
   const convidadas = n === 1 ? '1 convidada' : `${n} convidada(s)`
   const pronome = n === 1 ? 'ela' : 'elas'
   return `Este encontro já tem ${convidadas}. Apagar deixaria ${pronome} sem `

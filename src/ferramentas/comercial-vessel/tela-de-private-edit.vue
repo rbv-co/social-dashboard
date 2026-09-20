@@ -97,22 +97,22 @@
           </p>
           <div class="cv-numeros">
             <div class="cv-numero">
-              <span class="cv-numero-valor">{{ encontrosNaTela.length }}</span>
+              <span class="cv-numero-valor">{{ conjunto.totalEncontros }}</span>
               <span class="cv-numero-rotulo">Encontros</span>
             </div>
             <div class="cv-numero">
-              <span class="cv-numero-valor">{{ totalVagas }}</span>
+              <span class="cv-numero-valor">{{ conjunto.totalVagas }}</span>
               <span class="cv-numero-rotulo">Vagas somadas</span>
             </div>
             <div class="cv-numero">
-              <span class="cv-numero-valor">{{ emPorcento(conjuntoResposta.valor) }}</span>
+              <span class="cv-numero-valor">{{ emPorcento(conjunto.resposta.valor) }}</span>
               <span class="cv-numero-rotulo">Responderam</span>
-              <span class="cv-numero-base">{{ taxaEscrita(conjuntoResposta) }}</span>
+              <span class="cv-numero-base">{{ taxaEscrita(conjunto.resposta) }}</span>
             </div>
             <div class="cv-numero">
-              <span class="cv-numero-valor">{{ emPorcento(conjuntoPresenca.valor) }}</span>
+              <span class="cv-numero-valor">{{ emPorcento(conjunto.presenca.valor) }}</span>
               <span class="cv-numero-rotulo">Foram, de quem disse sim</span>
-              <span class="cv-numero-base">{{ taxaEscrita(conjuntoPresenca) }}</span>
+              <span class="cv-numero-base">{{ taxaEscrita(conjunto.presenca) }}</span>
             </div>
           </div>
           <!-- ⚠️ A taxa do conjunto é a SOMA dos numeradores sobre a SOMA dos
@@ -187,7 +187,7 @@
           </p>
 
           <!-- ── EDITAR (inline, sem modal) ──────────────────────────────── -->
-          <template v-if="podeEditar && editando === e.codigo">
+          <template v-if="podeExecutarAcao('editar', podeEditar) && editando === e.codigo">
             <h3 class="cv-etiqueta cv-etiqueta-interna">Editar</h3>
             <div class="cv-form">
               <label class="cv-campo cv-campo-largo" :for="`ed-stylist-${e.codigo}`"><span>Anfitriã</span>
@@ -225,26 +225,34 @@
           </template>
 
           <!-- ── APAGAR: tem_gente vira explicação, nunca erro vermelho ──── -->
-          <template v-else-if="podeEditar && bloqueioDeApagar[e.codigo]">
+          <template v-else-if="podeExecutarAcao('apagar', podeEditar) && bloqueioDeApagar[e.codigo]">
             <p class="cv-nota cv-nota-aviso">{{ bloqueioDeApagar[e.codigo] }}</p>
           </template>
 
           <div class="cv-acoes">
-            <template v-if="e.ativa !== false">
-              <button v-if="confirmando !== e.codigo" class="btn"
-                      @click="confirmando = e.codigo">Encerrar…</button>
-              <template v-else>
-                <span class="cv-confirma">Encerrar faz o convite parar de aceitar
-                  resposta. Os números ficam.</span>
-                <button class="btn" @click="confirmando = null">Deixar como está</button>
-                <button class="btn btn-perigo" :disabled="mexendo === e.codigo"
-                        @click="encerrar(e, false)">Encerrar</button>
+            <!-- ⚠️ R13: Encerrar/Reabrir agora EXIGEM a mesma permissão de
+                 editar que Editar/Arquivar/Apagar já exigiam —
+                 `vessel_private_edit_encerrar` passou a checar
+                 `is_vessel_atendimentos_editar()`. A regra mora em
+                 `podeExecutarAcao` (private-edit-regras.js), testada — não
+                 reescrita aqui como um `v-if` solto de novo. -->
+            <template v-if="podeExecutarAcao('encerrar', podeEditar)">
+              <template v-if="e.ativa !== false">
+                <button v-if="confirmando !== e.codigo" class="btn"
+                        @click="confirmando = e.codigo">Encerrar…</button>
+                <template v-else>
+                  <span class="cv-confirma">Encerrar faz o convite parar de aceitar
+                    resposta. Os números ficam.</span>
+                  <button class="btn" @click="confirmando = null">Deixar como está</button>
+                  <button class="btn btn-perigo" :disabled="mexendo === e.codigo"
+                          @click="encerrar(e, false)">Encerrar</button>
+                </template>
               </template>
+              <button v-else class="btn" :disabled="mexendo === e.codigo"
+                      @click="encerrar(e, true)">Reabrir</button>
             </template>
-            <button v-else class="btn" :disabled="mexendo === e.codigo"
-                    @click="encerrar(e, true)">Reabrir</button>
 
-            <template v-if="podeEditar">
+            <template v-if="podeExecutarAcao('editar', podeEditar)">
               <button v-if="editando !== e.codigo" class="btn" @click="abrirEditar(e)">Editar…</button>
 
               <button class="btn" :disabled="arquivando === e.codigo"
@@ -351,14 +359,14 @@ import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../../compartilhado/conectar-no
 import { classificarErro } from '../../compartilhado/classificar-erro.js'
 import { enderecoDoConvite, dataHoraLegivel, problemasDoEncontro } from './enderecos-publicos.js'
 import {
-  proporcao, proporcaoDoConjunto, taxaEscrita, margemEscrita, emPorcento,
-  emReais, janelaEscrita,
+  proporcao, taxaEscrita, margemEscrita, emPorcento, emReais, janelaEscrita,
 } from './estatistica.js'
 import { filtrar, FILTRO_VAZIO, precisaDoBanco } from './filtros.js'
 import {
   mensagemDeEditar, mensagemDeArquivar, mensagemDeTemGente, mensagemDeApagar,
   seloDoEncontro, rotuloDeArquivar, rsvpLegivel, confirmouLegivel,
   compareceuLegivel, comprouLegivel, paraCampoDatetimeLocal,
+  podeExecutarAcao, calcularConjunto,
 } from './private-edit-regras.js'
 import { paiDaTela, ROTULO_DO_PAI } from './navegacao.js'
 
@@ -392,10 +400,6 @@ const filtro = ref({ ...FILTRO_VAZIO })
 const novo = reactive({ stylist: '', quando: '', praca: '', loja: '', vagas: 8, local: '' })
 
 const problemas = computed(() => problemasDoEncontro(novo))
-const subtitulo = computed(() => {
-  if (carregando.value || erro.value) return ''
-  return `${encontros.value.length} encontro(s) · ${totalVagas.value} vagas somadas`
-})
 
 // ⚠️ O FILTRO E O TOTAL AGEM SOBRE O QUE ESTÁ NA TELA (R do bloco "Todos os
 // encontros juntos"): busca por código/anfitriã, situação, loja e ordem — tudo
@@ -404,15 +408,21 @@ const subtitulo = computed(() => {
 const encontrosNaTela = computed(() =>
   filtrar(encontros.value, filtro.value, { busca: ['codigo', 'anfitria', 'stylist'], loja: 'loja' }))
 
-const totalVagas = computed(() =>
-  encontros.value.reduce((s, e) => s + (Number(e.vagas) || 0), 0))
+// ⚠️ CRITICAL DA RODADA ANTERIOR: `totalVagas` somava sobre `encontros.value`
+// (a lista CHEIA) enquanto a contagem ao lado já seguia o filtro — "3
+// Encontros" ao lado da soma de vagas dos 10. `calcularConjunto` (testada em
+// private-edit-regras.test.mjs) só soma o que RECEBE; aqui ela sempre recebe
+// `encontrosNaTela`, nunca `encontros`.
+const conjunto = computed(() => calcularConjunto(encontrosNaTela.value))
 
-/* ⚠️ AS TAXAS DO CONJUNTO SOMAM NUMERADORES E DENOMINADORES, e sobre o que
- * está NA TELA — não sobre `encontros` inteiro, que ignoraria o filtro. */
-const conjuntoResposta = computed(() =>
-  proporcaoDoConjunto(encontrosNaTela.value, 'responderam', 'vagas'))
-const conjuntoPresenca = computed(() =>
-  proporcaoDoConjunto(encontrosNaTela.value, 'compareceram', 'disseram_sim'))
+// ⚠️ O SUBTÍTULO TEM DE CONCORDAR COM O QUE ESTÁ NA TELA — mesma razão do
+// bloco do conjunto: contar `encontros.value` (a lista cheia) enquanto a tela
+// abaixo mostra a filtrada é a mesma mentira com número certo, só que no
+// cabeçalho em vez do corpo.
+const subtitulo = computed(() => {
+  if (carregando.value || erro.value) return ''
+  return `${conjunto.value.totalEncontros} encontro(s) · ${conjunto.value.totalVagas} vagas somadas`
+})
 
 /* Cada uma é uma proporção de verdade: cada convidada responde ou não, diz sim
  * ou não, vai ou não. Por isso o intervalo de Wilson se aplica. */
@@ -509,6 +519,12 @@ async function encerrar(encontro, ativa) {
     // salvou é o defeito mais caro de perceber.
     if (!r?.ok) { erroAoMexer.value = encontro.codigo; return }
     confirmando.value = null
+    // ⚠️ O encontro mudou de estado: a explicação de "tem_gente" (se estava
+    // na tela) fica desatualizada — encerrar não muda quem está pendurado,
+    // mas deixar a frase parada ali depois de uma ação bem-sucedida confunde
+    // mais do que ajuda. Some junto; se a pessoa tentar apagar de novo, a
+    // recusa (e a frase) voltam do zero, com o estado atual.
+    delete bloqueioDeApagar[encontro.codigo]
     await carregar()
   } catch {
     erroAoMexer.value = encontro.codigo
@@ -588,6 +604,9 @@ async function alternarArquivar(e) {
       mensagemArquivar.value = mensagemDeArquivar(r?.situacao)
       return
     }
+    // ⚠️ MESMO MOTIVO DE `encerrar()`: o estado mudou, a explicação de
+    // "tem_gente" (se estava visível) não pode ficar parada na tela.
+    delete bloqueioDeApagar[e.codigo]
     await carregar()
   } catch {
     erroDeArquivar.value = e.codigo
