@@ -1,11 +1,14 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import {
   mensagemDeEditar, mensagemDeArquivar, mensagemDeTemGente, mensagemDeApagar,
   seloDoEncontro, rotuloDeArquivar, rsvpLegivel, confirmouLegivel,
   compareceuLegivel, comprouLegivel, paraCampoDatetimeLocal,
   podeExecutarAcao, calcularConjunto,
 } from './private-edit-regras.js'
+
+const telaFonte = () => readFileSync(new URL('./tela-de-private-edit.vue', import.meta.url), 'utf8')
 
 test('editar: as quatro situacoes, cada uma com a sua frase', () => {
   assert.equal(mensagemDeEditar('ok'), '')
@@ -209,4 +212,37 @@ test('calcularConjunto: as taxas somam numerador e denominador do CONJUNTO, nao 
   assert.equal(c.resposta.x, 2)
   assert.equal(c.resposta.n, 10)
   assert.equal(c.resposta.valor, 0.2)
+})
+
+// ── guardas de FIAÇÃO no .vue (texto-fonte, não execução) ───────────────────
+//
+// ⚠️ POR QUE ISTO EXISTE, E POR QUE UM TESTE DE FUNÇÃO PURA NÃO BASTA: os dois
+// Critical da rodada anterior não estavam em `calcularConjunto` nem em
+// `podeExecutarAcao` — as duas funções sempre estiveram certas. O defeito
+// morava no TEMPLATE: ele somava sobre a lista errada (`encontros.value` em
+// vez de `encontrosNaTela.value`) e deixava Encerrar/Reabrir fora do
+// `v-if` que chama `podeExecutarAcao('encerrar', ...)`. Um teste que só
+// chama `calcularConjunto(list)` diretamente NUNCA vê qual lista o `.vue`
+// decidiu entregar a ela — a fiação entre o template e a função é invisível
+// para um teste de unidade, e é exatamente aí que os dois bugs viveram.
+// Como `.vue` não roda na suíte (`npm test` só pega `.js`/`.mjs`), a única
+// rede que alcança essa fiação é ler o arquivo como TEXTO e exigir a
+// chamada certa — o mesmo padrão já usado em `navegacao.test.mjs` e
+// `largura.test.mjs` para este mesmo motivo.
+test('FIACAO: o conjunto e calculado sobre a lista FILTRADA, nunca a cheia', () => {
+  const fonte = telaFonte()
+  assert.ok(fonte.includes('calcularConjunto(encontrosNaTela.value)'),
+    'a tela precisa chamar calcularConjunto(encontrosNaTela.value) — sem isso, ' +
+    'o conjunto pode voltar a somar sobre a lista sem filtro')
+  assert.ok(!fonte.includes('calcularConjunto(encontros.value)'),
+    'a tela NAO pode chamar calcularConjunto com a lista cheia (encontros.value) — ' +
+    'e exatamente o Critical 2 da rodada anterior')
+})
+
+test('FIACAO: Encerrar/Reabrir passam pela mesma trava de editar que os outros tres', () => {
+  const fonte = telaFonte()
+  assert.ok(fonte.includes(`podeExecutarAcao('encerrar', podeEditar)`),
+    'o bloco de Encerrar/Reabrir precisa estar atras de ' +
+    "podeExecutarAcao('encerrar', podeEditar) — sem isso, quem so tem `ver` " +
+    'volta a ver o botao e leva sem_permissao do banco (Critical 1 da rodada anterior)')
 })
