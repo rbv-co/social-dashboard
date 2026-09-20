@@ -189,7 +189,15 @@ onMounted(carregar)
 .fc-periodo { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
 .fc-periodo-label { font-size: var(--texto-etiqueta); text-transform: uppercase; letter-spacing: 1.5px; color: var(--muted); margin-right: var(--sp-2); }
 .fc-abas { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
-.fc-grade { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: var(--sp-6); }
+/* ⚠️ Esta grade tem uma FORMA CONHECIDA — dois cartões lado a lado mais um
+   que ocupa a linha toda — nunca "quantos cartões couberem". `auto-fit` com
+   um mínimo de 320px cria ~5 colunas a 1920px: os dois cartões comuns ficam
+   presos em ~370px cada, encostados à esquerda, com um vazio de ~1150px à
+   direita (achado da foto de 19/09/2026 — exatamente o "não pega a lateral
+   toda" que motivou esta entrega). Com 2 colunas fixas, os dois cartões
+   comuns dividem a largura inteira entre si; `.fc-cartao-largo` continua
+   varrendo as duas. No celular vira 1 coluna (ver @media abaixo). */
+.fc-grade { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-6); }
 .fc-cartao-largo { grid-column: 1 / -1; }
 .fc-titulo-secao { font-size: var(--texto-titulo); margin: 0 0 var(--sp-4); overflow-wrap: anywhere; }
 .fc-explicacao { font-size: var(--texto-corpo); color: var(--muted); margin: 0 0 var(--sp-4); }
@@ -203,5 +211,6 @@ onMounted(carregar)
 
 @media (max-width: 640px) {
   .fc-body { padding: var(--sp-4); }
+  .fc-grade { grid-template-columns: 1fr; }
 }
 </style>

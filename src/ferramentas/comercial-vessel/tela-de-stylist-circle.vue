@@ -183,9 +183,19 @@
                 <span v-if="s.praca_preview"> · preview em {{ s.praca_preview }}</span>
               </p>
             </div>
+            <!-- ⚠️ `estagio` é texto livre, sem validação no banco (comentário
+                 acima confirma) — então nada impede alguém de digitar
+                 "ativa" como ESTÁGIO no funil, que é uma coisa (onde ela está
+                 na jornada) totalmente diferente de "ativa" como SITUAÇÃO da
+                 parceria (ela continua com a gente). Quando as duas
+                 coincidem, as regras antigas imprimiam "Ativa" duas vezes
+                 empilhado — lido na tela, parece bug de renderização
+                 duplicada, não duas informações. A situação só é digna de um
+                 selo à parte quando é a exceção: "Desativada". Continuar
+                 ativa é o normal, não precisa de selo — só o estágio aparece
+                 sozinho nesse caso, sem duplicar a palavra. -->
             <div class="cv-selos">
-              <span class="cv-selo" :class="s.ativa === false ? 'cv-selo-fim' : 'cv-selo-viva'">
-                {{ s.ativa === false ? 'Desativada' : 'Ativa' }}</span>
+              <span v-if="s.ativa === false" class="cv-selo cv-selo-fim">Desativada</span>
               <span class="cv-selo" :class="s.estagio === 'ativa' ? 'cv-selo-viva' : 'cv-selo-fim'">
                 {{ ESTAGIOS[s.estagio] || s.estagio || 'sem estágio' }}</span>
             </div>
