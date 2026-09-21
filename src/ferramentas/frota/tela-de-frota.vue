@@ -20,6 +20,7 @@ import { useRouter } from 'vue-router'
 import { sbClient, SUPABASE_URL, SUPABASE_ANON_KEY } from '../../compartilhado/conectar-no-banco-de-dados.js'
 import { hasPermission, estado } from '../../compartilhado/controle-de-login-e-usuario.js'
 import { estadoDoVeiculo, resumoDoEstado, ordenarEstados, rotuloDoTanque, NIVEIS_TANQUE, problemasDaDevolucao, problemasDoRegistroAvulso, ultimoHodometro } from './estado-do-veiculo.js'
+import { seloDoVeiculo, acaoPrincipalDoVeiculo, cartaoCompacto } from './cartao-do-veiculo.js'
 import { nomeDeQuemAgiu } from './nome-de-quem-agiu.js'
 import { montarArvore } from '../../compartilhado/arvore-de-locais.js'
 import { localCurto } from './onde-o-carro-fica.js'
@@ -1933,6 +1934,11 @@ async function salvarConfigDeChecklist(cfg) {
    ninguém compara com as outras. */
 const requisicoes = ref([])
 const podeAprovar = computed(() => hasPermission('frota.aprovar', 'ver'))
+
+/* A ação principal do cartão, com a permissão já dentro. Ajudante e não
+ * `computed` porque a resposta é por CARRO; o template chamaria a regra três
+ * vezes na mesma linha sem ele. */
+const acaoDoCartao = (l) => acaoPrincipalDoVeiculo(l, { podeEditar: podeEditar.value })
 
 const pedido = ref(null)   // o formulário aberto, ou nulo
 const pedidoForm = reactive({
@@ -4075,16 +4081,34 @@ onMounted(async () => {
               :aberta="gv('veiculos').aberta" :travada-aberta="gv('veiculos').travadaAberta"
               id="gv-veiculos" @alternar="alternarGaveta('veiculos')">
       <div class="fr-lista" id="fr-ancora-veiculos">
-        <div v-for="l in linhas" :key="l.veiculo.id" class="fr-card" :class="{ rua: l.naRua, parado: !l.disponivel && !l.naRua }">
+        <div v-for="l in linhas" :key="l.veiculo.id" class="fr-card fr-carro"
+             :class="{ rua: l.naRua, parado: l.veiculo.situacao !== 'ativo', compacto: cartaoCompacto(l) }">
           <div class="fr-card-topo">
+            <!-- Ícone em SVG, nunca emoji: está no padrão da casa. -->
+            <span class="fr-carro-icone" aria-hidden="true">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                <path d="M5 11l1.5-4.2A2 2 0 0 1 8.4 5.5h7.2a2 2 0 0 1 1.9 1.3L19 11m-14 0h14m-14 0a1 1 0 0 0-1 1v4a1 1 0 0 0 1 1h1m13-6a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1h-1M6 17h12M6 17v1.5a1 1 0 0 1-1 1H4.5m13.5-2.5v1.5a1 1 0 0 0 1 1h.5M7.5 14h1m7 0h1"
+                      stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </span>
             <div class="fr-card-ident">
+              <!-- A PLACA SOBE (pedido do dono, 21/09/2026: "a placa uso sim").
+                   Ela era apoio embaixo do nome; agora é irmã dele, porque é
+                   por ela que ele acha o carro na lista. -->
               <span class="fr-card-nome">{{ l.veiculo.nome }}</span>
               <span class="fr-placa">{{ l.veiculo.placa }}</span>
             </div>
-            <span class="fr-selo" :class="{ rua: l.naRua, livre: l.disponivel }">{{ resumoDoEstado(l) }}</span>
+            <!-- UMA PALAVRA. A frase inteira desce pra linha de baixo, onde
+                 cabe sem cortar — ver seloDoVeiculo() em cartao-do-veiculo.js. -->
+            <span class="selo" :class="'selo-' + seloDoVeiculo(l).tom">{{ seloDoVeiculo(l).texto }}</span>
           </div>
 
-          <div class="fr-dados">
+          <p class="fr-carro-frase">{{ resumoDoEstado(l) }}</p>
+
+          <!-- No cartão pequeno (oficina e fora da frota) os números saem: eles
+               não mudam enquanto o carro está parado lá, e é isso que "menores no
+               fim" quer dizer. A ficha continua a um toque. -->
+          <div class="fr-dados" v-if="!cartaoCompacto(l)">
             <div class="fr-dado">
               <span class="fr-dado-lab">Quilometragem</span>
               <span class="fr-dado-val">{{ l.km == null ? '—' : l.km.toLocaleString('pt-BR') + ' km' }}</span>
@@ -4110,9 +4134,20 @@ onMounted(async () => {
 
           <!-- Sem "Vou usar" aqui (correção do dono): esta aba é para GERIR a
                frota. Pegar carro é na aba Motorista. -->
+          <!-- UMA AÇÃO PRINCIPAL, escolhida pelo estado (21/09/2026). O padrão
+               da casa manda uma por bloco — "duas competindo é o mesmo que
+               nenhuma" — e aqui eram quatro do mesmo peso. Nada sumiu: as
+               outras seguem logo abaixo, em botão comum. Qual é a principal se
+               decide em `acaoPrincipalDoVeiculo`, que tem teste. -->
+          <button v-if="acaoDoCartao(l)" class="fr-btn fr-btn-largo primario"
+                  @click="acaoDoCartao(l).chave === 'devolver' ? abrirDevolucao(l)
+                          : acaoDoCartao(l).chave === 'passe' ? abrirPasse(l.veiculo)
+                          : abrirRetiradaAvulsa(l)">
+            {{ acaoDoCartao(l).rotulo }}
+          </button>
+
           <div class="fr-acoes fr-acoes-veiculo">
-            <button class="fr-btn primario" v-if="podeEditar" @click="abrirVeiculo(l.veiculo)">Abrir ficha</button>
-            <button v-if="podeEditar && l.naRua" class="fr-btn" @click="abrirDevolucao(l)">Devolver</button>
+            <button class="fr-btn" v-if="podeEditar" @click="abrirVeiculo(l.veiculo)">Abrir ficha</button>
             <!-- REGISTRAR O QUE ACONTECEU FORA DO APLICATIVO (21/08/2026).
                  Antes disto não havia porta nenhuma: carro só saía pelo "Peguei
                  o carro" da aba Motorista, que exige reserva aprovada. Quem
@@ -4122,8 +4157,6 @@ onMounted(async () => {
                  Só no carro que a tela mostra parado: oferecer isso num carro
                  que já está na rua criaria duas viagens abertas do mesmo
                  veículo. -->
-            <button v-if="podeEditar && !l.naRua && l.veiculo.situacao === 'ativo'"
-                    class="fr-btn" @click="abrirRetiradaAvulsa(l)">Registrar retirada</button>
             <!-- POSSE (D26): quem administra a Frota passa ou encerra a posse de
                  QUALQUER carro, não só do seu. O caso real: a Bravo Blackmotion
                  está com Gabriel Alves desde 11/08 — o dono emprestou, ele
@@ -4151,8 +4184,12 @@ onMounted(async () => {
                  "Devolver" e "encerrar" saíram do rótulo, não da tela: devolver
                  é passar de volta pro dono, e encerrar é recolher. As duas
                  continuam no modal, com nome próprio. -->
-            <button v-if="podeEditar && l.veiculo.situacao !== 'alienado'" class="fr-btn"
-                    @click="abrirPasse(l.veiculo)">Passar ou recolher</button>
+            <!-- Escondido quando ELE é a ação principal logo acima: o mesmo
+                 botão duas vezes no mesmo cartão faz a pessoa parar pra
+                 decidir qual dos dois é o certo. -->
+            <button v-if="podeEditar && l.veiculo.situacao !== 'alienado' && !cartaoCompacto(l)
+                          && (!acaoDoCartao(l) || acaoDoCartao(l).chave !== 'passe')"
+                    class="fr-btn" @click="abrirPasse(l.veiculo)">Passar ou recolher</button>
             <a v-if="zapDoVeiculo(l.veiculo)" class="fr-btn fr-zap" :href="zapDoVeiculo(l.veiculo)"
                  target="_blank" rel="noopener"
                  :title="l.veiculo.contato_nome ? ('Falar com ' + l.veiculo.contato_nome + ' no WhatsApp') : 'Falar no WhatsApp'">
@@ -5683,6 +5720,11 @@ onMounted(async () => {
 .tela-frota .fr-card{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--green,#16a34a);border-radius:var(--card-radius);padding:var(--card-pad);display:flex;flex-direction:column;}
 .tela-frota .fr-card.rua{border-left-color:var(--accent);}
 .tela-frota .fr-card.parado{border-left-color:var(--muted);opacity:.72;}
+/* `parado` ERA `!disponivel && !naRua`, e isso apagava o carro FIXO com uma
+ * pessoa (21/09/2026, visto na foto): o Bravo do Humberto aparecia a 72% de
+ * opacidade, como se estivesse desligado, ao lado de um selo dizendo FIXO.
+ * Carro com dono é carro em uso. Quem esmaece agora é a situação de verdade —
+ * oficina, parado, fora da frota —, que é a mesma que o selo já anuncia. */
 /* CARRO FIXO. Cor do accent porque é um estado NORMAL — o carro está onde
    deveria estar. E SEM o `opacity` do `.parado`: apagar o cartão diria que a
    informação vale menos, quando ela é a resposta de "quem está com o quê". */
@@ -5753,6 +5795,33 @@ onMounted(async () => {
 .tela-frota .fr-card-ident{display:flex;flex-direction:column;gap:2px;min-width:0;}
 .tela-frota .fr-card-nome{font-family:var(--fonte-principal);font-size:max(9px, calc(13.5px * var(--escala-texto, 1)));font-weight:700;color:var(--text);}
 .tela-frota .fr-placa{font-family:var(--fonte-dados);font-size:max(9px, calc(11px * var(--escala-texto, 1)));letter-spacing:1.5px;color:var(--muted);}
+
+/* ── O CARTÃO DO CARRO, cara de app de motorista (21/09/2026) ─────────────
+ * Pedido do dono: "o visual da frota não parece que é de um app de frota,
+ * quero algo nível uber, 99". Ele entra pela Gestão e escolheu manter a ordem
+ * da tela: o que muda é a roupa do cartão.
+ *
+ * Tudo aqui sai de token — inclusive o TAMANHO DE LETRA. As regras vizinhas
+ * ainda têm `max(9px, calc(13.5px * …))` porque a Frota é uma das telas que
+ * o padrão ainda não converteu; bloco NOVO não nasce com número solto. */
+.tela-frota .fr-carro{gap:var(--sp-2);}
+.tela-frota .fr-carro .fr-card-topo{align-items:center;gap:var(--sp-3);flex-wrap:nowrap;}
+.tela-frota .fr-carro-icone{display:grid;place-items:center;width:40px;height:40px;flex:0 0 40px;
+  border-radius:var(--radius-md);background:var(--surface2);color:var(--muted);}
+.tela-frota .fr-carro .fr-card-ident{flex:1 1 auto;gap:var(--sp-1);}
+.tela-frota .fr-carro .fr-card-nome{font-size:var(--texto-titulo);line-height:1.15;overflow-wrap:anywhere;}
+/* A PLACA é irmã do nome, não rodapé dele: é por ela que o dono acha o carro. */
+.tela-frota .fr-carro .fr-placa{font-size:var(--texto-corpo);letter-spacing:2px;color:var(--text);}
+.tela-frota .fr-carro-frase{margin:0;font-family:var(--fonte-principal);font-size:var(--texto-corpo);
+  color:var(--muted);overflow-wrap:anywhere;}
+/* A ação principal ocupa a largura toda — é o que a separa das outras. */
+.tela-frota .fr-btn-largo{width:100%;margin-top:var(--sp-3);}
+/* O CARTÃO PEQUENO: oficina e fora da frota. Eles já caem no fim por
+ * `ordenarEstados()`; aqui só param de ocupar tela. */
+.tela-frota .fr-carro.compacto{padding:var(--sp-3);opacity:.85;}
+.tela-frota .fr-carro.compacto .fr-carro-icone{width:32px;height:32px;flex-basis:32px;}
+.tela-frota .fr-carro.compacto .fr-card-nome{font-size:var(--texto-campo);}
+.tela-frota .fr-carro.compacto .fr-acoes{margin-top:var(--sp-2);padding-top:0;}
 .tela-frota .fr-selo{font-family:var(--fonte-principal);font-size:max(9px, calc(10px * var(--escala-texto, 1)));font-weight:700;letter-spacing:.4px;padding:4px 10px;border-radius:999px;background:color-mix(in srgb,var(--muted) 16%,transparent);color:var(--text);white-space:nowrap;}
 .tela-frota .fr-selo.livre{background:color-mix(in srgb,var(--green,#16a34a) 18%,transparent);color:var(--green,#16a34a);}
 .tela-frota .fr-selo.rua{background:color-mix(in srgb,var(--accent) 18%,transparent);color:var(--accent);}
