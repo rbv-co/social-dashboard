@@ -17,10 +17,10 @@ const AGORA = '2026-09-21T20:30:00.000Z';
 
 // Frases de SUCESSO, medidas no ar
 const SUCESSOS = [
-  'em dia (Lista de espera: 150, Vendas: 464, Garantias: 1, Atribuição: 0, Origens: 0,'
-  + ' Pessoas: 0, Atendimentos: 0, Convites abertos: 1, Stylists: 0, Private Edits: 0,'
-  + ' Beauty Sessions: 3)',
-  'regravada, 42.8 KB (Lista de espera: 150, Vendas: 464, Garantias: 1)',
+  'em dia (Landing page: 150, Clientes: 0, Visitas às lojas: 0, Vendas: 464,'
+  + ' Garantias: 1, De onde veio e no que deu: 0, Histórico de origem: 0,'
+  + ' Convites abertos: 1, Stylists: 0, Private Edits: 0, Beauty Sessions: 3)',
+  'regravada, 42.8 KB (Landing page: 150, Vendas: 464, Garantias: 1)',
   'em dia',
   'nenhum pendente',
   '3 de 5 cadastrado(s)',

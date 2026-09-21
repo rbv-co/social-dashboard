@@ -136,7 +136,97 @@ const maisNovoPrimeiro = (campo) => (a, b) =>
 const maisVelhoPrimeiro = (campo) => (a, b) =>
   String(a[campo] ?? '').localeCompare(String(b[campo] ?? ''));
 
-// ── as onze abas ─────────────────────────────────────────────────────────────
+// ── OS NOMES DAS ABAS: corrigidos pelo dono em 21/09/2026 ───────────────────
+//
+// Cinco nomes mudaram, e o motivo foi confusão de verdade na mão dele: três
+// pares diziam quase a mesma coisa. "Pessoas" e "Lista de espera" eram as duas
+// "gente"; "Atribuição" e "Origens" eram as duas "de onde veio"; "Atendimentos"
+// soava igual a "Convites abertos".
+//
+//   Lista de espera  →  Landing page                 (quem chegou pelo site)
+//   Pessoas          →  Clientes
+//   Atendimentos     →  Visitas às lojas
+//   Atribuição       →  De onde veio e no que deu
+//   Origens          →  Histórico de origem
+//
+// ⚠️ AS TABELAS NÃO FORAM RENOMEADAS, e isso não é descuido. `vessel_lista_espera`
+// continua com esse nome porque renomear tabela em produção arrasta migration,
+// RLS, gatilho e o vigia; renomear o rótulo custa uma linha. A tabela nasceu
+// servindo só a lista de espera e hoje recebe quem chega por QUALQUER página de
+// captação — a LP comum e a pré-venda, que se distinguem na coluna
+// "Como chegou". É por isso que o rótulo certo é "Landing page".
+//
+// ⚠️ NOME DE ABA TEM TETO DE 31 LETRAS (regra do Excel, não nossa). O maior
+// daqui, "De onde veio e no que deu", tem 25. `nomeDeAba` corta o que passar e
+// numera repetido, então um nome longo demais não quebra o arquivo — ele
+// aparece cortado, que é pior de notar. Contar antes de batizar.
+
+// ── A ABA DE INSTRUÇÕES ──────────────────────────────────────────────────────
+//
+// Pedido do dono em 21/09/2026: uma aba explicando a planilha, em primeiro lugar.
+//
+// ⚠️ UMA COLUNA SÓ, E LINHAS CURTAS, e os dois detalhes são a mesma armadilha:
+// o Excel NÃO estica a altura da linha sozinho quando o texto quebra — ele usa a
+// altura padrão e o resto do texto fica escondido, sem aviso. Quem escrever
+// linha nova aqui: mantenha abaixo de ~100 letras, que é o que cabe na largura
+// desta coluna, em vez de contar com quebra automática.
+//
+// ⚠️ `filtro: false`: seta de filtro numa aba de texto corrido parece defeito.
+//
+// ⚠️ O SEPARADOR É UM RISCO, E NÃO UMA LINHA VAZIA. Linha vazia existe no
+// arquivo (medido: 6 delas), e o Excel a mostra — mas o visualizador do macOS a
+// ENGOLE, e os blocos aparecem grudados. Como não dá para saber em que leitor
+// esta planilha vai ser aberta (Excel, Zoho, Google, a prévia do celular), o
+// risco garante a separação em todos. `SEPARADOR` também facilita mudar de
+// ideia num lugar só.
+const SEPARADOR = '─'.repeat(40);
+const INSTRUCOES = [
+  'O QUE É ISTO',
+  'Esta planilha é uma fotografia da base da VESSEL BRASIL, tirada do sistema.',
+  'Ela se atualiza sozinha: no segundo em que alguém se cadastra no site, e de 3 em 3 minutos.',
+  'É o único arquivo desta pasta. Os onze CSV antigos foram para a lixeira do Zoho em 21/09/2026.',
+  SEPARADOR,
+  '⚠️ ESCREVER AQUI NÃO MUDA NADA NO SISTEMA',
+  'Se você digitar, corrigir ou apagar algo nesta planilha, isso some na atualização seguinte.',
+  'O robô regrava o arquivo inteiro a cada rodada. Para corrigir um dado de verdade,',
+  'corrija na Central ou no formulário do site.',
+  SEPARADOR,
+  'SE ALGUÉM PEDIR PARA SAIR DA BASE',
+  'Apague a pessoa no sistema. Ela desaparece desta planilha na rodada seguinte, sozinha.',
+  'Não precisa mexer no arquivo. É assim que a Política de Privacidade do site vira verdade.',
+  SEPARADOR,
+  'A HORA É A DE BRASÍLIA',
+  'Todas as datas e horas desta planilha estão no horário de Brasília.',
+  'Elas são data de verdade, e não texto: dá para ordenar, filtrar e contar por período.',
+  'As colunas de dinheiro também somam.',
+  SEPARADOR,
+  'O QUE TEM EM CADA ABA',
+  'Landing page — quem se cadastrou pelo site, e o que ela pediu para a visita',
+  'Clientes — as pessoas da base, com cidade e Client Advisor',
+  'Visitas às lojas — horário marcado, quem veio e quem não veio',
+  'Vendas — os pedidos, com o valor que entrou de verdade',
+  'Garantias — o selo registrado e a fila de conferência',
+  'De onde veio e no que deu — uma linha por visita: por onde chegou e o que comprou depois',
+  'Histórico de origem — todo registro de origem, para provar por onde ela chegou',
+  'Convites abertos — quem abriu convite, pelo QR do cartão ou pelo link',
+  'Stylists — cada stylist, com o link dela e quantas clientes trouxe',
+  'Private Edits — cada encontro, com o link do convite e quem compareceu',
+  'Beauty Sessions — cada sessão, com o endereço do QR e o salão parceiro',
+  SEPARADOR,
+  'ABA VAZIA NÃO É DEFEITO',
+  'Aba sem nenhuma linha quer dizer que esse dado ainda não existe no sistema.',
+  SEPARADOR,
+  'SE A PLANILHA PARAR DE ATUALIZAR',
+  'Abra a Central, vá em Status e procure "vessel-espelhar-lista".',
+  'Se ele estiver ATRASADO, o painel diz qual parte parou: a planilha ou o Bling.',
+];
+
+// ⚠️ A ORDEM DESTE ARRAY É A ORDEM DAS ABAS NO ARQUIVO, e ela foi escolhida pelo
+// dono: a explicação primeiro, depois as pessoas, depois o que elas fizeram,
+// depois a análise, e por último os programas da marca. Mexer aqui muda o que
+// ele vê ao abrir.
+
+// ── as doze abas ─────────────────────────────────────────────────────────────
 // A ordem é a ordem das abas no arquivo, e ela segue o que o dono abre primeiro.
 export function montarAbas(d) {
   const pessoaPorId = new Map(d.pessoas.map((p) => [p.id, p]));
@@ -171,7 +261,16 @@ export function montarAbas(d) {
 
   return [
     {
-      nome: 'Lista de espera',
+      nome: 'Instruções',
+      // `documentacao` não vai para o arquivo: é para o robô não contar esta aba
+      // na linha de resultado dele ("Instruções: 38 linhas" não diz nada).
+      documentacao: true,
+      filtro: false,
+      colunas: [{ titulo: 'COMO USAR ESTA PLANILHA', largura: 104 }],
+      linhas: INSTRUCOES.map((l) => [l]),
+    },
+    {
+      nome: 'Landing page',
       colunas: [
         { titulo: 'Nome', largura: 28 },
         { titulo: 'E-mail', largura: 30 },
@@ -197,6 +296,44 @@ export function montarAbas(d) {
         simNao(l.visita_atelier), acompanhantes(l.visita_acompanhantes),
         l.visita_pedido, l.aceite_em, l.aceite_versao,
         l.bling_id ? 'sim' : 'ainda não',
+      ]),
+    },
+    {
+      nome: 'Clientes',
+      // ⚠️ SEM o hash de origem e SEM a data de atualização: planilha é para
+      // pessoa ler, e coluna que ninguém usa só atrapalha a leitura.
+      colunas: [
+        { titulo: 'Nome', largura: 28 },
+        { titulo: 'WhatsApp', largura: 18 },
+        { titulo: 'E-mail', largura: 30 },
+        { titulo: 'Cidade', largura: 20 },
+        { titulo: 'Client Advisor', largura: 20 },
+        { titulo: 'Ficha no Bling', largura: 14 },
+        { titulo: 'Entrou em', tipo: 'dia-de-instante', largura: 14 },
+      ],
+      linhas: [...d.pessoas].sort(maisNovoPrimeiro('criado_em')).map((p) => [p.nome, p.telefone, p.email, p.cidade, p.consultora,
+          p.bling_contato_id, p.criado_em]),
+    },
+    {
+      nome: 'Visitas às lojas',
+      colunas: [
+        { titulo: 'Cliente', largura: 28 },
+        { titulo: 'WhatsApp', largura: 18 },
+        { titulo: 'Loja', largura: 20 },
+        { titulo: 'Quando', tipo: 'instante', largura: 18 },
+        { titulo: 'Client Advisor', largura: 20 },
+        { titulo: 'Situação', largura: 16 },
+        { titulo: 'Veio em', tipo: 'dia-de-instante', largura: 14 },
+        { titulo: 'Convite', largura: 14 },
+        { titulo: 'Veio de', largura: 12 },
+        { titulo: 'Pedido em', tipo: 'dia-de-instante', largura: 14 },
+      ],
+      linhas: [...d.atendimentos].sort(maisNovoPrimeiro('criado_em')).map((a) => [
+        nomeDaPessoa(a.pessoa_id), zapDaPessoa(a.pessoa_id),
+        LOJA[a.loja] || a.loja, a.quando, a.client_advisor,
+        STATUS[a.status] || a.status, a.presenca_em, a.convite_codigo,
+        a.origem_registro === 'appointment_card' ? 'Cartão' : 'Site',
+        a.criado_em,
       ]),
     },
     {
@@ -238,7 +375,7 @@ export function montarAbas(d) {
       // A ABA QUE RESPONDE "DE ONDE VEIO E DEU EM QUÊ" — uma linha por
       // atendimento, com a etiqueta de origem e o que aconteceu depois. É a
       // versão em planilha do painel de atribuição.
-      nome: 'Atribuição',
+      nome: 'De onde veio e no que deu',
       colunas: [
         { titulo: 'Cliente', largura: 28 },
         { titulo: 'WhatsApp', largura: 18 },
@@ -279,7 +416,7 @@ export function montarAbas(d) {
       // TODA linha de origem, na ordem em que chegou. A de atribuição mostra só
       // a primeira; esta mostra o histórico inteiro, que é o que prova o first
       // touch.
-      nome: 'Origens',
+      nome: 'Histórico de origem',
       colunas: [
         { titulo: 'Quando', tipo: 'instante', largura: 18 },
         { titulo: 'Cliente', largura: 28 },
@@ -305,44 +442,6 @@ export function montarAbas(d) {
         // identificador de publicidade ligado a uma pessoa: ele serve para o
         // retorno ao Meta e não tem uso nenhum numa planilha que circula.
         o.clique_meta ? 'sim' : 'não',
-      ]),
-    },
-    {
-      nome: 'Pessoas',
-      // ⚠️ SEM o hash de origem e SEM a data de atualização: planilha é para
-      // pessoa ler, e coluna que ninguém usa só atrapalha a leitura.
-      colunas: [
-        { titulo: 'Nome', largura: 28 },
-        { titulo: 'WhatsApp', largura: 18 },
-        { titulo: 'E-mail', largura: 30 },
-        { titulo: 'Cidade', largura: 20 },
-        { titulo: 'Client Advisor', largura: 20 },
-        { titulo: 'Ficha no Bling', largura: 14 },
-        { titulo: 'Entrou em', tipo: 'dia-de-instante', largura: 14 },
-      ],
-      linhas: [...d.pessoas].sort(maisNovoPrimeiro('criado_em')).map((p) => [p.nome, p.telefone, p.email, p.cidade, p.consultora,
-          p.bling_contato_id, p.criado_em]),
-    },
-    {
-      nome: 'Atendimentos',
-      colunas: [
-        { titulo: 'Cliente', largura: 28 },
-        { titulo: 'WhatsApp', largura: 18 },
-        { titulo: 'Loja', largura: 20 },
-        { titulo: 'Quando', tipo: 'instante', largura: 18 },
-        { titulo: 'Client Advisor', largura: 20 },
-        { titulo: 'Situação', largura: 16 },
-        { titulo: 'Veio em', tipo: 'dia-de-instante', largura: 14 },
-        { titulo: 'Convite', largura: 14 },
-        { titulo: 'Veio de', largura: 12 },
-        { titulo: 'Pedido em', tipo: 'dia-de-instante', largura: 14 },
-      ],
-      linhas: [...d.atendimentos].sort(maisNovoPrimeiro('criado_em')).map((a) => [
-        nomeDaPessoa(a.pessoa_id), zapDaPessoa(a.pessoa_id),
-        LOJA[a.loja] || a.loja, a.quando, a.client_advisor,
-        STATUS[a.status] || a.status, a.presenca_em, a.convite_codigo,
-        a.origem_registro === 'appointment_card' ? 'Cartão' : 'Site',
-        a.criado_em,
       ]),
     },
     {
@@ -435,6 +534,7 @@ export function montarAbas(d) {
           e.ativa ? 'sim' : 'não',
         ]),
     },
+
   ];
 }
 

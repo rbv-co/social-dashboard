@@ -59,5 +59,5 @@ test('o codigo continua unico por pessoa', () => {
  * de dentro desta edge para `_shared/abas-da-vessel.js`, para que o node
  * conseguisse testa-las. A prova de verdade — com linha de pre-venda passando
  * pela planilha e voltando na celula — esta em `_shared/abas-da-vessel.test.mjs`,
- * no teste "Lista de espera: a origem de cada LP chega na planilha".
+ * no teste "Landing page: a origem de cada LP chega na planilha".
  * Este comentario e um LEMBRETE de onde procurar, nao um teste. */

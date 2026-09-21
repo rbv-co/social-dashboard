@@ -25,11 +25,17 @@ const PESSOA = { id: 1, nome: 'Marisa Carvalho', telefone: '+5511948670004',
   email: 'marisa@exemplo.com', cidade: 'Campinas', consultora: 'Ionara',
   bling_contato_id: '9001', criado_em: '2026-09-21T02:11:23+00:00' };
 
-test('as onze abas estão todas lá, nesta ordem', async () => {
+// ⚠️ A ORDEM É A QUE O DONO APROVOU em 21/09/2026, e o teste a guarda: a
+// explicação primeiro, depois as pessoas, depois o que elas fizeram, depois a
+// análise, e por último os programas da marca.
+const ORDEM_DAS_ABAS = [
+  'Instruções', 'Landing page', 'Clientes', 'Visitas às lojas', 'Vendas', 'Garantias',
+  'De onde veio e no que deu', 'Histórico de origem', 'Convites abertos', 'Stylists',
+  'Private Edits', 'Beauty Sessions'];
+
+test('as doze abas estão todas lá, na ordem que o dono aprovou', async () => {
   const todas = abasDoXlsx(await montarXlsx(montarAbas(vazio())));
-  assert.deepEqual(todas.map((a) => a.nome), [
-    'Lista de espera', 'Vendas', 'Garantias', 'Atribuição', 'Origens', 'Pessoas',
-    'Atendimentos', 'Convites abertos', 'Stylists', 'Private Edits', 'Beauty Sessions']);
+  assert.deepEqual(todas.map((a) => a.nome), ORDEM_DAS_ABAS);
 });
 
 test('nenhuma consulta pede `*` na tabela da lista de espera (tem senha e IP lá)', () => {
@@ -40,8 +46,8 @@ test('nenhuma consulta pede `*` na tabela da lista de espera (tem senha e IP lá
   }
 });
 
-test('Lista de espera: a hora é do Brasil e os rótulos são de gente', async () => {
-  const a = await aba('Lista de espera', {
+test('Landing page: a hora é do Brasil e os rótulos são de gente', async () => {
+  const a = await aba('Landing page', {
     listaDeEspera: [{
       nome: 'Marisa Carvalho', email: 'marisa@exemplo.com', whatsapp: '+5511948670004',
       origem: 'lp-vesselbrasil', criado_em: '2026-09-21T02:11:23.050085+00:00',
@@ -62,8 +68,8 @@ test('Lista de espera: a hora é do Brasil e os rótulos são de gente', async (
   assert.equal(c('Já está no Bling?'), 'ainda não');
 });
 
-test('Lista de espera: escolha nova no formulário aparece, em vez de sumir', async () => {
-  const a = await aba('Lista de espera', {
+test('Landing page: escolha nova no formulário aparece, em vez de sumir', async () => {
+  const a = await aba('Landing page', {
     listaDeEspera: [{ nome: 'x', visita_bolsa: 'clutch-que-nao-existia', criado_em: '2026-09-21T12:00:00Z' }],
   });
   assert.equal(a.linhas[0][a.colunas.indexOf('Peça')], 'clutch-que-nao-existia');
@@ -93,11 +99,11 @@ test('Vendas: cliente conhecida sai pelo nome dela', async () => {
   assert.equal(a.linhas[0][a.colunas.indexOf('Como casou')], 'telefone');
 });
 
-test('⚠️ Atribuição: a janela de 7 dias começa no dia BRASILEIRO da visita', async () => {
+test('⚠️ De onde veio e no que deu: a janela de 7 dias começa no dia BRASILEIRO da visita', async () => {
   // Visita às 22h30 do dia 05/10 no Brasil — que em UTC já é 06/10.
   // Com a conta em UTC, a compra do próprio dia 05 ficaria FORA da janela e a
   // visita apareceria como "não comprou". Este teste morre se isso voltar.
-  const a = await aba('Atribuição', {
+  const a = await aba('De onde veio e no que deu', {
     atendimentos: [{ pessoa_id: 1, loja: 'iguatemi', status: 'realizado',
       quando: '2026-10-06T01:30:00+00:00', criado_em: '2026-10-01T12:00:00Z' }],
     pessoas: [PESSOA],
@@ -111,8 +117,8 @@ test('⚠️ Atribuição: a janela de 7 dias começa no dia BRASILEIRO da visit
   assert.equal(c('Veio?'), 'sim');
 });
 
-test('Atribuição: compra de 8 dias depois fica FORA da janela', async () => {
-  const a = await aba('Atribuição', {
+test('De onde veio e no que deu: compra de 8 dias depois fica FORA da janela', async () => {
+  const a = await aba('De onde veio e no que deu', {
     atendimentos: [{ pessoa_id: 1, status: 'no_show', quando: '2026-10-05T15:00:00Z',
       criado_em: '2026-10-01T12:00:00Z' }],
     pessoas: [PESSOA],
@@ -122,7 +128,7 @@ test('Atribuição: compra de 8 dias depois fica FORA da janela', async () => {
   assert.equal(a.linhas[0][a.colunas.indexOf('Veio?')], 'não');
 });
 
-test('Atribuição e Origens: o first touch é a origem MAIS ANTIGA', async () => {
+test('Atribuição e origem: o first touch é a origem MAIS ANTIGA', async () => {
   const dados = {
     pessoas: [PESSOA],
     origens: [
@@ -132,11 +138,11 @@ test('Atribuição e Origens: o first touch é a origem MAIS ANTIGA', async () =
     atendimentos: [{ pessoa_id: 1, status: 'realizado', quando: '2026-09-15T15:00:00Z',
       criado_em: '2026-09-15T12:00:00Z' }],
   };
-  const atrib = await aba('Atribuição', dados);
+  const atrib = await aba('De onde veio e no que deu', dados);
   assert.equal(atrib.linhas[0][atrib.colunas.indexOf('Chegou por (1ª vez)')], 'Anúncio (Meta)');
   assert.equal(atrib.linhas[0][atrib.colunas.indexOf('Campanha')], 'lancamento');
 
-  const origens = await aba('Origens', dados);
+  const origens = await aba('Histórico de origem', dados);
   // A aba de origens mostra as duas, mais nova primeiro, e marca qual é a 1ª.
   const ehPrimeira = origens.colunas.indexOf('É a 1ª origem dela?');
   assert.equal(origens.linhas[0][origens.colunas.indexOf('Canal')], 'Instagram');
@@ -145,7 +151,7 @@ test('Atribuição e Origens: o first touch é a origem MAIS ANTIGA', async () =
 });
 
 test('⚠️ Origens: o identificador de anúncio NUNCA vai para a planilha', async () => {
-  const a = await aba('Origens', {
+  const a = await aba('Histórico de origem', {
     pessoas: [PESSOA],
     origens: [{ id: 1, pessoa_id: 1, canal: 'meta', momento: '2026-09-01T12:00:00Z',
       clique_meta: 'IwAR0-um-identificador-de-pessoa-real' }],
@@ -155,8 +161,8 @@ test('⚠️ Origens: o identificador de anúncio NUNCA vai para a planilha', as
   assert.equal(a.linhas[0][a.colunas.indexOf('Veio de clique de anúncio?')], 'sim');
 });
 
-test('Pessoas: "Entrou em" é o dia do Brasil, não o do UTC', async () => {
-  const a = await aba('Pessoas', { pessoas: [PESSOA] });
+test('Clientes: "Entrou em" é o dia do Brasil, não o do UTC', async () => {
+  const a = await aba('Clientes', { pessoas: [PESSOA] });
   const c = (t) => a.linhas[0][a.colunas.indexOf(t)];
   // criado_em é 21/09 02h11 em UTC = 20/09 no Brasil.
   assert.equal(c('Entrou em'), '20/09/2026');
@@ -164,8 +170,8 @@ test('Pessoas: "Entrou em" é o dia do Brasil, não o do UTC', async () => {
   assert.equal(c('Ficha no Bling'), '9001');
 });
 
-test('Atendimentos: situação em português e os três dias certos', async () => {
-  const a = await aba('Atendimentos', {
+test('Visitas às lojas: situação em português e os três dias certos', async () => {
+  const a = await aba('Visitas às lojas', {
     pessoas: [PESSOA],
     atendimentos: [{ pessoa_id: 1, loja: 'tivoli', status: 'no_show',
       quando: '2026-10-06T01:30:00+00:00', client_advisor: 'Ionara',
@@ -282,7 +288,7 @@ test('⚠️ a ordem das linhas não depende da ordem que o banco devolveu', asy
     { nome: 'Meio', criado_em: '2026-09-10T12:00:00Z' },
   ];
   const daOrdem = async (ordem) => {
-    const a = await aba('Lista de espera', { listaDeEspera: ordem });
+    const a = await aba('Landing page', { listaDeEspera: ordem });
     return a.linhas.map((l) => l[0]);
   };
   const esperado = ['Nova', 'Meio', 'Velha'];
@@ -307,12 +313,12 @@ test('mesmo dado em ordem diferente gera bytes IDÊNTICOS', async () => {
   assert.equal(Buffer.from(a).toString('base64'), Buffer.from(b).toString('base64'));
 });
 
-test('Lista de espera: a origem de cada LP chega na planilha', async () => {
+test('Landing page: a origem de cada LP chega na planilha', async () => {
   // ⚠️ ESTE É O PORTÃO que `vessel-espelhar-lista/marca-de-origem.test.mjs`
   // aponta. No Bling as LPs se separam por um prefixo no `codigo` (LP, PV); na
   // planilha se separam por esta coluna. Perder a coluna numa faxina deixaria as
   // duas captações misturadas, e ninguém saberia qual página trouxe quem.
-  const a = await aba('Lista de espera', {
+  const a = await aba('Landing page', {
     listaDeEspera: [
       { nome: 'Da pré-venda', origem: 'pre-venda', criado_em: '2026-09-21T12:00:00Z' },
       { nome: 'Da LP comum', origem: 'lp-vesselbrasil', criado_em: '2026-09-20T12:00:00Z' },
@@ -322,4 +328,64 @@ test('Lista de espera: a origem de cada LP chega na planilha', async () => {
   assert.notEqual(i, -1, 'a coluna da origem saiu da planilha');
   assert.equal(a.linhas[0][i], 'pre-venda');
   assert.equal(a.linhas[1][i], 'lp-vesselbrasil');
+});
+
+// ── A ABA DE INSTRUÇÕES ─────────────────────────────────────────────────────
+
+// ⚠️ `?? ''` porque a linha EM BRANCO volta do arquivo como célula ausente: o
+// gerador não escreve célula vazia (planilha com milhares delas fica pesada).
+// Sem isto, o teste estoura em `undefined.length` e parece defeito do conteúdo.
+const instrucoes = async () =>
+  (await aba('Instruções', {})).linhas.map((l) => l[0] ?? '');
+
+test('a aba de Instruções é a PRIMEIRA — é a que abre', async () => {
+  const todas = abasDoXlsx(await montarXlsx(montarAbas(vazio())));
+  assert.equal(todas[0].nome, 'Instruções');
+  assert.equal(todas[0].colunas[0], 'COMO USAR ESTA PLANILHA');
+});
+
+test('⚠️ as instruções nomeiam TODAS as outras abas', async () => {
+  // Esta é a trava que importa: sem ela, renomear uma aba e esquecer a
+  // explicação deixaria a planilha se contradizendo — o dono leria um nome na
+  // aba e outro na instrução, e não saberia qual está velho.
+  const texto = (await instrucoes()).join('\n');
+  for (const nome of ORDEM_DAS_ABAS) {
+    if (nome === 'Instruções') continue;
+    assert.ok(texto.includes(nome), `as instruções não falam da aba "${nome}"`);
+  }
+});
+
+test('⚠️ nenhuma linha das instruções passa de 100 letras', async () => {
+  // O Excel NÃO estica a altura da linha sozinho quando o texto quebra: ele usa
+  // a altura padrão e o resto do texto fica ESCONDIDO, sem aviso nenhum. Linha
+  // curta é o que impede isso — não a quebra automática.
+  for (const l of await instrucoes()) {
+    assert.ok(l.length <= 100, `linha com ${l.length} letras ficaria cortada: "${l}"`);
+  }
+});
+
+test('as instruções dizem as três coisas que mais confundem', async () => {
+  const texto = (await instrucoes()).join('\n').toLowerCase();
+  // 1. que escrever na planilha não muda nada no sistema
+  assert.match(texto, /escrever aqui não muda nada/);
+  // 2. que apagar no sistema apaga daqui (a promessa da Política de Privacidade)
+  assert.match(texto, /desaparece desta planilha/);
+  // 3. em que fuso está a hora — foi o defeito que originou tudo isto
+  assert.match(texto, /horário de brasília/);
+});
+
+test('a aba de Instruções não entra na contagem da rodada', async () => {
+  // O robô imprime "Landing page: 150, Vendas: 464..." no resultado. "Instruções:
+  // 38" ali no meio não diz nada e atrapalha quem lê o log.
+  const doc = montarAbas(vazio()).filter((a) => a.documentacao);
+  assert.equal(doc.length, 1);
+  assert.equal(doc[0].nome, 'Instruções');
+});
+
+test('a aba de Instruções não tem filtro, e as de dado têm', async () => {
+  const abas = montarAbas(vazio());
+  assert.equal(abas.find((a) => a.nome === 'Instruções').filtro, false);
+  for (const a of abas.filter((x) => !x.documentacao)) {
+    assert.notEqual(a.filtro, false, `a aba "${a.nome}" perdeu o filtro`);
+  }
 });

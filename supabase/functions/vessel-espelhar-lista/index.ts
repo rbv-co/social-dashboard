@@ -516,7 +516,10 @@ async function rodada(sb: any): Promise<Response> {
         pasta = await acharOuCriarPasta(tz, pasta, CAMINHO[i], i === CAMINHO.length - 1);
       }
       const deHoje = await baixarPlanilha(tz, pasta);
-      const contagem = abas.map((a: any) => `${a.nome}: ${a.linhas.length}`).join(', ');
+      // A aba de instruções fica fora da contagem: "Instruções: 38" não diz nada
+      // a quem lê o resultado da rodada, e entraria no meio dos números que dizem.
+      const contagem = abas.filter((a: any) => !a.documentacao)
+        .map((a: any) => `${a.nome}: ${a.linhas.length}`).join(', ');
 
       if (bytesIguais(deHoje, queDeveriaEstar)) {
         resultado.planilha = `em dia (${contagem})`;
