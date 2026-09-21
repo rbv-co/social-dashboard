@@ -108,6 +108,20 @@ export function estadoDoVeiculo(veiculo, usos, fichas, revisoes) {
     // pra separar "o meu carro" de "o carro de outra pessoa" — comparar por
     // nome quebraria com dois Gabriéis, e a empresa tem dois.
     usoAbertoPessoaId: aberto ? (aberto.pessoa_id || null) : null,
+    // O DONO FIXO, quando quem está com o carro é OUTRA pessoa (21/09/2026).
+    // A regra acima — quem está com o carro vence o responsável fixo — está
+    // certa pra dizer onde o carro está, mas ela fazia a tela ESCONDER o dono
+    // fixo por completo. O dono pôs a Héllen como dona fixa do KWID RUL1A35 e
+    // a lista continuou dizendo "Cristian Leonel", que estava numa viagem
+    // aberta havia 11 dias; ele leu isso como "não consegui colocar como
+    // fixo". Gravou — a tela é que contava metade.
+    //
+    // Nulo quando é a mesma pessoa, pra não escrever o nome duas vezes. A
+    // comparação é por IDENTIFICADOR, nunca por nome: a empresa tem dois
+    // Gabriéis, pela mesma razão que `usoAbertoPessoaId` existe.
+    donoFixoNome: (aberto && veiculo.pessoa_id
+      && veiculo.pessoa_id !== (aberto.pessoa_id || null))
+      ? (veiculo.pessoa_nome || null) : null,
     // ONDE ELE ESTÁ: o local apontado na árvore VENCE o texto digitado à mão.
     // O contrário era o defeito B1 — 9 dos 10 carros tinham local apontado e a
     // lista lia só `local_texto`, então o trabalho de apontar não aparecia em
@@ -158,6 +172,12 @@ export function resumoDoEstado(e) {
   if (e.veiculo.situacao === 'em_manutencao') return 'Na oficina';
   if (e.veiculo.situacao === 'alienado') return 'Fora da frota';
   if (e.veiculo.situacao === 'inativo') return 'Parado';
+  // O selo NÃO carrega o dono fixo, mesmo quando ele existe e é outra pessoa:
+  // isto aqui é etiqueta, e "Na rua com Cristian Leonel · fixo com Héllen
+  // Cristiane Cardoso" tem 57 caracteres — do tamanho do rótulo que em 20/08
+  // quebrou o botão em quatro linhas numa coluna de 95px. Quem diz de quem é o
+  // carro é a linha "Responsável" do cartão, que só aparece quando há o que
+  // dizer. Ver `donoFixoNome` em estadoDoVeiculo().
   if (e.naRua) return e.comQuem ? `Na rua com ${e.comQuem}` : 'Na rua';
   // Carro com responsável NÃO é livre — e o texto tem que dizer isso. A
   // primeira versão escrevia "Livre, com Humberto", que se contradiz na mesma

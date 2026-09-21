@@ -4089,6 +4089,17 @@ onMounted(async () => {
               <span class="fr-dado-lab">Quilometragem</span>
               <span class="fr-dado-val">{{ l.km == null ? '—' : l.km.toLocaleString('pt-BR') + ' km' }}</span>
             </div>
+            <!-- RESPONSÁVEL (21/09/2026). Só aparece quando o carro está na
+                 mão de UMA pessoa e é FIXO de outra — que é justamente quando
+                 o selo em cima fala só de quem está com ele. Sem esta linha, o
+                 dono pôs a Héllen como dona fixa do KWID, o selo continuou
+                 dizendo "Cristian Leonel" (viagem aberta havia 11 dias) e ele
+                 leu isso como "não consegui colocar como fixo". Carro parado
+                 não repete o nome: aí o próprio selo já diz "Com Fulano". -->
+            <div class="fr-dado" v-if="l.donoFixoNome">
+              <span class="fr-dado-lab">Responsável</span>
+              <span class="fr-dado-val">{{ l.donoFixoNome }}</span>
+            </div>
             <div class="fr-dado">
               <span class="fr-dado-lab">Combustível</span>
               <span class="fr-dado-val" :class="{ alerta: l.precisaAbastecer }">
