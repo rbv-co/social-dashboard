@@ -382,20 +382,29 @@ export function montarMensagemSeguidores(
 // espírito de `montarMensagemWpp`, mas pro dia inteiro: `campanhasDoDia` vem
 // de `agruparCampanhasDoDia` (relatorio-diario-opr.js), já com gasto/leads do
 // DIA por campanha — não por hora, então os campos são `.gasto`/`.conversas`,
-// não `.gastoHora`/`.conversasHora`. Sem campanha WPP no dia: `null` (nada a
-// dizer), mesma regra de `montarMensagemWpp`.
+// não `.gastoHora`/`.conversasHora`. Sem campanha `leads` no dia: `null`
+// (nada a dizer), mesma regra de `montarMensagemWpp`.
+//
+// Filtra por `tipo === 'leads'` (objective da Meta, desde 21/09/2026) — soma
+// TODAS as campanhas Leads-objective do dia, não só as nomeadas
+// `[CAMPANHA WPP]` como antes: essa era uma convenção de nome, o objective é
+// a fonte de verdade da própria Meta pra "essa campanha existe pra gerar
+// lead". Lead = `cadastros` (formulário) + `conversas` (WhatsApp) — mesmos
+// dois canais que relatorio-diario-opr.js soma pro painel de Leads da
+// imagem/tela, nunca se sobrepõem (uma campanha otimiza pra um tipo de ação).
 export function montarMensagemLeadsFechamentoDia(dia, campanhasDoDia) {
-  const wpp = campanhasDoDia.filter((c) => c.tipo === 'wpp');
-  if (!wpp.length) return null;
+  const leads = campanhasDoDia.filter((c) => c.tipo === 'leads');
+  if (!leads.length) return null;
 
   const [, mes, d] = dia.split('-');
   const cabecalho = `📊 Leads recebidos — FECHAMENTO DO DIA, ${d}/${mes}`;
+  const leadsDaCampanha = (c) => (c.cadastros ?? 0) + c.conversas;
 
-  const totalLeads = wpp.reduce((s, c) => s + c.conversas, 0);
-  const totalGasto = wpp.reduce((s, c) => s + c.gasto, 0);
-  // Custo por lead exige investimento > 0 (não só conversas > 0) — mesma
-  // regra de relatorio-diario-opr.js: 0/N não é R$ 0,00, é "sem custo pra
-  // calcular" (campanha de teste sem verba, mas com lead atribuído).
+  const totalLeads = leads.reduce((s, c) => s + leadsDaCampanha(c), 0);
+  const totalGasto = leads.reduce((s, c) => s + c.gasto, 0);
+  // Custo por lead exige investimento > 0 (não só leads > 0) — mesma regra de
+  // relatorio-diario-opr.js: 0/N não é R$ 0,00, é "sem custo pra calcular"
+  // (campanha de teste sem verba, mas com lead atribuído).
   const custoMedio = totalGasto > 0 && totalLeads > 0 ? custoPorLead(totalGasto, totalLeads) : null;
 
   const linhaLeads = `Leads no dia: ${totalLeads}`;
@@ -403,8 +412,10 @@ export function montarMensagemLeadsFechamentoDia(dia, campanhasDoDia) {
   const linhaGasto = `Gasto no dia: ${formatarReais(totalGasto)}`;
   const doDia = [linhaLeads, linhaCusto, linhaGasto].filter((l) => l !== null);
 
-  const linhasCampanhas = wpp.map((c) => `${c.nome} — ${c.conversas} lead${c.conversas === 1 ? '' : 's'}`
-    + ` · Gasto: ${formatarReais(c.gasto)}`);
+  const linhasCampanhas = leads.map((c) => {
+    const n = leadsDaCampanha(c);
+    return `${c.nome} — ${n} lead${n === 1 ? '' : 's'} · Gasto: ${formatarReais(c.gasto)}`;
+  });
 
   return [cabecalho, '', 'TOTAL DO DIA', ...doDia, '', 'POR CAMPANHA', ...linhasCampanhas].join('\n');
 }

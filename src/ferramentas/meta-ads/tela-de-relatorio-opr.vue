@@ -59,82 +59,84 @@
           </div>
         </section>
 
+        <!-- Grade 2×2 — reforma de 21/09/2026: classificação por objective da
+             Meta (Tráfego/Engajamento/Vendas/Leads), em vez de nome. Mesmo
+             layout de coletor/lib/template-opr.mjs (imagem do WhatsApp) —
+             qualquer ajuste aqui precisa espelhar lá também. -->
         <section class="sections">
           <article class="panel">
             <div class="panel-head">
               <div class="panel-num">01</div>
-              <div><div class="panel-title">Growth / Seguidores</div><div class="panel-sub">Aquisição e expansão de audiência</div></div>
+              <div><div class="panel-title">Tráfego</div><div class="panel-sub">Visitas geradas pela mídia paga</div></div>
             </div>
-            <div class="metric-grid growth-top">
-              <div class="metric"><div class="metric-label">Investimento</div><div class="metric-value">{{ fmtValor(dados.growth.investimento, 'moeda') }}</div></div>
-              <div class="metric"><div class="metric-label">Seguidores</div><div class="metric-value">{{ fmtValor(dados.growth.seguidores) }}</div></div>
-              <div class="metric"><div class="metric-label">Visitas ao Perfil</div><div class="metric-value">{{ fmtValor(dados.growth.visitasPerfil) }}</div></div>
+            <div class="metric-grid panel-top">
+              <div class="metric"><div class="metric-label">Investimento</div><div class="metric-value">{{ fmtValor(dados.trafego.investimento, 'moeda') }}</div></div>
+              <div class="metric"><div class="metric-label">Visitas</div><div class="metric-value">{{ fmtValor(dados.trafego.visitas) }}</div></div>
             </div>
-            <div class="metric-grid growth-bottom">
-              <div class="metric"><div class="metric-label">Custo por Seguidor</div><div class="metric-value">{{ fmtValor(dados.growth.custoPorSeguidor, 'moeda') }}</div></div>
-              <div class="metric"><div class="metric-label">Custo por Visita</div><div class="metric-value">{{ fmtValor(dados.growth.custoPorVisita, 'moeda') }}</div></div>
-              <div class="metric"><div class="metric-label">Conversão Visita → Seguidor</div><div class="metric-value">{{ fmtValor(dados.growth.conversaoVisitaSeguidor, 'percentual') }}</div></div>
+            <div class="metric-grid panel-bottom">
+              <div class="metric"><div class="metric-label">Custo por Visita</div><div class="metric-value">{{ fmtValor(dados.trafego.custoPorVisita, 'moeda') }}</div></div>
             </div>
             <div class="panel-note">
-              <div class="icon-circle"><svg viewBox="0 0 48 48"><path d="M12 37V27M24 37V18M36 37V10"/></svg></div>
-              <div class="note-text">Mais pessoas. Mais relevância.<br>Uma comunidade em crescimento.</div>
+              <div class="icon-circle"><svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="17"/><path d="M30 18l-4 10-10 4 4-10 10-4Z"/></svg></div>
+              <div class="note-text">Mais visitas. Mais chance de conversão.</div>
             </div>
           </article>
 
           <article class="panel">
             <div class="panel-head">
               <div class="panel-num">02</div>
-              <div><div class="panel-title">Engagement</div><div class="panel-sub">Interações que fortalecem a marca</div></div>
+              <div><div class="panel-title">Engajamento</div><div class="panel-sub">Interações que fortalecem a marca</div></div>
             </div>
-            <div class="metric-grid engagement-top">
-              <div class="metric"><div class="metric-label">Investimento</div><div class="metric-value">{{ fmtValor(dados.engagement.investimento, 'moeda') }}</div></div>
-              <div class="metric"><div class="metric-label">Curtidas</div><div class="metric-value">{{ fmtValor(dados.engagement.curtidas) }}</div></div>
-              <div class="metric"><div class="metric-label">Comentários</div><div class="metric-value">{{ fmtValor(dados.engagement.comentarios) }}</div></div>
-              <div class="metric"><div class="metric-label">Compart.</div><div class="metric-value">{{ fmtValor(dados.engagement.compartilhamentos) }}</div></div>
-              <div class="metric"><div class="metric-label">Salvamentos</div><div class="metric-value">{{ fmtValor(dados.engagement.salvamentos) }}</div></div>
+            <div class="metric-grid panel-top">
+              <div class="metric"><div class="metric-label">Investimento</div><div class="metric-value">{{ fmtValor(dados.engajamento.investimento, 'moeda') }}</div></div>
+              <div class="metric"><div class="metric-label">Curtidas</div><div class="metric-value">{{ fmtValor(dados.engajamento.curtidas) }}</div></div>
+              <div class="metric"><div class="metric-label">Comentários</div><div class="metric-value">{{ fmtValor(dados.engajamento.comentarios) }}</div></div>
+              <div class="metric"><div class="metric-label">Compart.</div><div class="metric-value">{{ fmtValor(dados.engajamento.compartilhamentos) }}</div></div>
+              <div class="metric"><div class="metric-label">Salvamentos</div><div class="metric-value">{{ fmtValor(dados.engajamento.salvamentos) }}</div></div>
             </div>
-            <div class="metric-grid engagement-mid">
-              <div class="metric"><div class="metric-label">Custo / Curtida</div><div class="metric-value">{{ fmtValor(dados.engagement.custoPorCurtida, 'moeda') }}</div></div>
-              <div class="metric"><div class="metric-label">Custo / Comentário</div><div class="metric-value">{{ fmtValor(dados.engagement.custoPorComentario, 'moeda') }}</div></div>
-              <div class="metric"><div class="metric-label">Custo / Compart.</div><div class="metric-value">{{ fmtValor(dados.engagement.custoPorCompartilhamento, 'moeda') }}</div></div>
-              <div class="metric"><div class="metric-label">Custo / Salvamento</div><div class="metric-value">{{ fmtValor(dados.engagement.custoPorSalvamento, 'moeda') }}</div></div>
-            </div>
-            <div class="metric-grid engagement-bottom">
-              <div class="metric center"><div class="metric-label">Total de Interações</div><div class="metric-value">{{ fmtValor(dados.engagement.totalInteracoes) }}</div></div>
-              <div class="metric center"><div class="metric-label">Custo Médio por Engajamento</div><div class="metric-value">{{ fmtValor(dados.engagement.custoMedioPorEngajamento, 'moeda') }}</div></div>
+            <div class="metric-grid panel-bottom">
+              <div class="metric center"><div class="metric-label">Total de Interações</div><div class="metric-value">{{ fmtValor(dados.engajamento.totalInteracoes) }}</div></div>
+              <div class="metric center"><div class="metric-label">Custo Médio por Engajamento</div><div class="metric-value">{{ fmtValor(dados.engajamento.custoMedioPorEngajamento, 'moeda') }}</div></div>
             </div>
             <div class="panel-note">
               <div class="icon-circle"><svg viewBox="0 0 48 48"><path d="M24 39S9 30 9 18c0-5 3.4-8 8-8 3.4 0 5.6 1.7 7 4 1.4-2.3 3.6-4 7-4 4.6 0 8 3 8 8 0 12-15 21-15 21Z"/></svg></div>
-              <div class="note-text">Conteúdo que conecta.<br>Resultados que constroem valor.</div>
+              <div class="note-text">Conteúdo que conecta. Resultados que constroem valor.</div>
             </div>
           </article>
 
           <article class="panel">
             <div class="panel-head">
               <div class="panel-num">03</div>
-              <div><div class="panel-title">Leads &amp; Sales</div><div class="panel-sub">Do interesse ao faturamento</div></div>
+              <div><div class="panel-title">Vendas</div><div class="panel-sub">Conversão direta em compra</div></div>
             </div>
-            <!-- Leads Quentes/Vendas e tudo que depende deles vem `null`
-                 (Chatwoot ainda não integrado) — aparece "—", nunca um número
-                 inventado. Mesma regra do relatório que vai pro WhatsApp. -->
-            <div class="funnel">
-              <div class="funnel-step"><div class="funnel-label">Leads</div><div class="funnel-value">{{ fmtValor(dados.sales.leads) }}</div></div>
-              <div class="funnel-step mid"><div class="funnel-label">Leads Quentes</div><div class="funnel-value">{{ fmtValor(dados.sales.leadsQuentes) }}</div></div>
-              <div class="funnel-step end"><div class="funnel-label">Vendas</div><div class="funnel-value">{{ fmtValor(dados.sales.vendas) }}</div></div>
+            <div class="metric-grid panel-top">
+              <div class="metric"><div class="metric-label">Investimento</div><div class="metric-value">{{ fmtValor(dados.vendas.investimento, 'moeda') }}</div></div>
+              <div class="metric"><div class="metric-label">Compras</div><div class="metric-value">{{ fmtValor(dados.vendas.compras) }}</div></div>
             </div>
-            <div class="metric-grid leads-costs">
-              <div class="metric"><div class="metric-label">Investimento</div><div class="metric-value">{{ fmtValor(dados.sales.investimento, 'moeda') }}</div></div>
-              <div class="metric"><div class="metric-label">Custo por Lead</div><div class="metric-value">{{ fmtValor(dados.sales.custoPorLead, 'moeda') }}</div></div>
-              <div class="metric"><div class="metric-label">Custo por Lead Quente</div><div class="metric-value">{{ fmtValor(dados.sales.custoPorLeadQuente, 'moeda') }}</div></div>
-              <div class="metric"><div class="metric-label">Custo por Venda</div><div class="metric-value">{{ fmtValor(dados.sales.custoPorVenda, 'moeda') }}</div></div>
+            <div class="metric-grid panel-bottom">
+              <div class="metric"><div class="metric-label">Custo por Compra</div><div class="metric-value">{{ fmtValor(dados.vendas.custoPorCompra, 'moeda') }}</div></div>
             </div>
-            <div class="metric-grid leads-conv">
-              <div class="metric center"><div class="metric-label">Conversão Lead → Quente</div><div class="metric-value">{{ fmtValor(dados.sales.conversaoLeadQuente, 'percentual') }}</div></div>
-              <div class="metric center"><div class="metric-label">Conversão Quente → Venda</div><div class="metric-value">{{ fmtValor(dados.sales.conversaoQuenteVenda, 'percentual') }}</div></div>
+            <div class="panel-note">
+              <div class="icon-circle"><svg viewBox="0 0 48 48"><path d="M8 10h5l4 22h20l4-16H15"/><circle cx="20" cy="38" r="2.5"/><circle cx="33" cy="38" r="2.5"/></svg></div>
+              <div class="note-text">Mais oportunidades. Mais receita para o negócio.</div>
+            </div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-head">
+              <div class="panel-num">04</div>
+              <div><div class="panel-title">Leads</div><div class="panel-sub">Do interesse ao primeiro contato</div></div>
+            </div>
+            <div class="metric-grid panel-top">
+              <div class="metric"><div class="metric-label">Investimento</div><div class="metric-value">{{ fmtValor(dados.leads.investimento, 'moeda') }}</div></div>
+              <div class="metric"><div class="metric-label">Leads</div><div class="metric-value">{{ fmtValor(dados.leads.resultado) }}</div></div>
+            </div>
+            <div class="metric-grid panel-bottom">
+              <div class="metric"><div class="metric-label">Custo por Lead</div><div class="metric-value">{{ fmtValor(dados.leads.custoPorLead, 'moeda') }}</div></div>
             </div>
             <div class="panel-note">
               <div class="icon-circle"><svg viewBox="0 0 48 48"><path d="M8 10h32L28 25v11l-8 4V25L8 10Z"/></svg></div>
-              <div class="note-text">Mais oportunidades.<br>Mais receita para o negócio.</div>
+              <div class="note-text">Mais conversas. Mais oportunidades de negócio.</div>
             </div>
           </article>
         </section>
@@ -167,8 +169,8 @@ import { useRouter } from 'vue-router'
 import BarraDeTopo from '../../compartilhado/barra-de-topo.vue'
 import FaixaDeErro from '../../compartilhado/faixa-de-erro.vue'
 import { sb } from '../../compartilhado/buscar-e-salvar-dados.js'
-import { deltaDeSeguidoresPorHora, seguidoresNoPeriodo, visitasPerfilNoPeriodoComCache } from './relatorio-por-hora.js'
-import { agruparCampanhasDoDia, agruparAnunciosDoDia, montarDadosOpr } from './relatorio-diario-opr.js'
+import { deltaDeSeguidoresPorHora, seguidoresNoPeriodo } from './relatorio-por-hora.js'
+import { agruparCampanhasDoDia, agruparAnunciosDoDia, calcularDadosOpr } from './relatorio-diario-opr.js'
 
 const router = useRouter()
 function voltar() {
@@ -234,21 +236,27 @@ const periodoLabel = computed(() => (
     : `${formatarDiaBR(diaInicio.value)} — ${formatarDiaBR(diaFim.value)}`
 ))
 
+// Mesmas 4 fatias que a imagem mostra no rodapé (Media Mix) — antes esta
+// tela também mostrava Sales (Link)/Leads (Link) aqui, mas ficavam sem
+// equivalente na imagem; reforma de 21/09/2026 pediu as duas telas iguais,
+// então as duas mostram só as 4 categorias por objective. O dado de
+// salesLink/leadsLink continua calculado em `dados.value` (entra no
+// Investimento Total), só não ganha linha própria no Media Mix.
 const mixLista = computed(() => {
   if (!dados.value) return []
   return [
-    { label: 'Growth', valor: dados.value.mix.growth },
-    { label: 'Engagement', valor: dados.value.mix.engagement },
+    { label: 'Tráfego', valor: dados.value.mix.trafego },
+    { label: 'Engajamento', valor: dados.value.mix.engajamento },
+    { label: 'Vendas', valor: dados.value.mix.vendas },
     { label: 'Leads', valor: dados.value.mix.leads },
-    { label: 'Sales (Link)', valor: dados.value.mix.salesLink },
-    { label: 'Leads (Link)', valor: dados.value.mix.leadsLink },
   ]
 })
 
 // Mesma lógica de coletor/lib/template-opr.mjs (PNG do WhatsApp) — layout
-// aprovado pelo dono em 17/09/2026. As duas cópias existem porque uma roda
-// no navegador e a outra no robô do WhatsApp; qualquer ajuste aqui (regra
-// de abreviação, formato) precisa espelhar lá também.
+// aprovado pelo dono em 17/09/2026, reformado em 21/09/2026. As duas cópias
+// existem porque uma roda no navegador e a outra no robô do WhatsApp;
+// qualquer ajuste aqui (regra de abreviação, formato) precisa espelhar lá
+// também.
 function abreviar(n) {
   const abs = Math.abs(n)
   if (abs >= 1_000_000) return `${(n / 1_000_000).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} M`
@@ -276,21 +284,14 @@ async function carregar() {
   // período é escolhido na tela, não fixo em "ontem").
   const desdeSeguidores = new Date(new Date(`${inicio}T00:00:00-03:00`).getTime() - 48 * 3600 * 1000).toISOString()
 
-  const [campanhas, insights, leituras, visitasCache, visitasHora, ads, adInsights] = await Promise.all([
-    sb('campaigns?select=campaign_id,name'),
-    sb(`campaign_insights?select=campaign_id,spend,likes,comments,shares,saves,conversas,post_engagement&account_id=eq.${CONTA_VESSEL}&captured_at=gte.${inicio}&captured_at=lte.${fim}&period_days=eq.0`),
+  const [campanhas, insights, leituras, ads, adInsights] = await Promise.all([
+    sb('campaigns?select=campaign_id,name,objective'),
+    sb(`campaign_insights?select=campaign_id,spend,likes,comments,shares,saves,conversas,cadastros,compras,visitas,post_engagement&account_id=eq.${CONTA_VESSEL}&captured_at=gte.${inicio}&captured_at=lte.${fim}&period_days=eq.0`),
     sb(`followers_leituras?select=followers_count,lido_em,origem&account_id=eq.${CONTA_VESSEL}&lido_em=gte.${desdeSeguidores}&order=lido_em.asc`),
-    // Visitas ao Perfil: prefere o cache (visitas_perfil_dia, calculado
-    // certinho pela Meta no fechamento do dia — ver
-    // coletor/lib/visitas-perfil-meta.mjs) e só cai pra soma-por-hora
-    // (perfil_visitas_hora, que perde os últimos ~55min do dia) nos dias
-    // que ainda não fecharam — normalmente só "hoje".
-    sb(`visitas_perfil_dia?select=dia,visitas&account_id=eq.${CONTA_VESSEL}&dia=gte.${inicio}&dia=lte.${fim}`),
-    sb(`perfil_visitas_hora?select=dia,hora,visitas_hora&account_id=eq.${CONTA_VESSEL}&dia=gte.${inicio}&dia=lte.${fim}`),
     // Sales/Leads por link do anúncio (18/09/2026) — mesma fonte que
-    // coletor/gerar-opr-diario.mjs já usa; esta tela nunca tinha recebido
-    // esse parâmetro, então salesLink/leadsLink/investimentoTotal ficavam
-    // sem a fatia "outro" classificada por link.
+    // coletor/gerar-opr-diario.mjs já usa, eixo separado da classificação
+    // por objective (entra só no Investimento Total, ver comentário de
+    // `mixLista` acima).
     sb(`ads?select=ad_id,destino_link&account_id=eq.${CONTA_VESSEL}`),
     sb(`ad_insights_hora?select=ad_id,gasto_hora,cliques_hora&account_id=eq.${CONTA_VESSEL}&dia=gte.${inicio}&dia=lte.${fim}`),
   ])
@@ -298,20 +299,18 @@ async function carregar() {
   if (campanhas.erro) { erro.value = campanhas.erro; carregando.value = false; return }
   if (insights.erro) { erro.value = insights.erro; carregando.value = false; return }
   if (leituras.erro) { erro.value = leituras.erro; carregando.value = false; return }
-  if (visitasCache.erro) { erro.value = visitasCache.erro; carregando.value = false; return }
-  if (visitasHora.erro) { erro.value = visitasHora.erro; carregando.value = false; return }
   if (ads.erro) { erro.value = ads.erro; carregando.value = false; return }
   if (adInsights.erro) { erro.value = adInsights.erro; carregando.value = false; return }
 
   const nomesPorCampanha = Object.fromEntries(campanhas.map((c) => [c.campaign_id, c.name]))
-  const campanhasDoPeriodo = agruparCampanhasDoDia(insights, nomesPorCampanha)
+  const objectivesPorCampanha = Object.fromEntries(campanhas.map((c) => [c.campaign_id, c.objective]))
+  const campanhasDoPeriodo = agruparCampanhasDoDia(insights, nomesPorCampanha, objectivesPorCampanha)
   const deltas = deltaDeSeguidoresPorHora(leituras)
   const seguidoresDoPeriodo = seguidoresNoPeriodo(deltas, inicio, fim)
-  const visitasPerfilDoPeriodo = visitasPerfilNoPeriodoComCache(visitasCache, visitasHora, inicio, fim)
   const linksPorAnuncio = Object.fromEntries(ads.map((a) => [a.ad_id, a.destino_link]))
   const anunciosDoPeriodo = agruparAnunciosDoDia(adInsights, linksPorAnuncio)
 
-  dados.value = montarDadosOpr(campanhasDoPeriodo, seguidoresDoPeriodo, visitasPerfilDoPeriodo, anunciosDoPeriodo)
+  dados.value = calcularDadosOpr(campanhasDoPeriodo, seguidoresDoPeriodo, anunciosDoPeriodo)
   carregando.value = false
 }
 
@@ -335,9 +334,10 @@ onMounted(() => carregar())
 .ropr-aplicar { font: 400 13px/1 Georgia, serif; letter-spacing: .08em; text-transform: uppercase; padding: 9px 18px; border: none; border-radius: 20px; background: #b59a67; color: #173b39; cursor: pointer; }
 
 /* A partir daqui: mesmo CSS de coletor/lib/template-opr.mjs (visual
-   aprovado pelo dono em 17/09/2026), adaptado de imagem fixa 1600×900 pra
-   página que rola — sem aspect-ratio/overflow:hidden, com quebra em
-   telas estreitas. Qualquer ajuste de cor/fonte/ícone deve espelhar lá. */
+   aprovado pelo dono em 17/09/2026, reformado em 21/09/2026 — grade 2×2),
+   adaptado de imagem fixa 1600×900 pra página que rola — sem
+   aspect-ratio/overflow:hidden, com quebra em telas estreitas. Qualquer
+   ajuste de cor/fonte/ícone deve espelhar lá. */
 .report, .report * { min-width: 0; }
 .report {
   --ink:#123b39; --gold:#b59a67; --gold-soft:#f4efe3; --paper:#fffefa;
@@ -370,20 +370,17 @@ onMounted(() => carregar())
 .kpi-label { font: 400 18px Georgia, serif; margin-bottom: 3px; overflow-wrap: anywhere; }
 .kpi-value { font: 700 clamp(27px,2.3vw,47px)/1 Georgia, serif; letter-spacing: .02em; overflow-wrap: anywhere; }
 .kpi-caption { margin-top: 12px; font-size: 10px; letter-spacing: .26em; text-transform: uppercase; color: #797b77; }
-.sections { display: grid; grid-template-columns: 1fr 1.18fr 1.08fr; gap: 14px; align-items: start; }
+/* Grade 2×2 — cada painel com a mesma largura que os 3-em-linha tinham
+   antes (metade da tela, não um quarto), pra caber Tráfego + Engajamento +
+   Vendas + Leads sem espremer número/rótulo. */
+.sections { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: start; }
 .panel { border: 1px solid var(--line); border-radius: 7px; padding: 12px 14px 10px; display: flex; flex-direction: column; min-width: 0; }
 .panel-head { display: grid; grid-template-columns: 76px 1fr; gap: 14px; align-items: center; padding: 2px 4px 14px; border-bottom: 1px solid var(--line); }
 .panel-num { font: 400 40px Georgia, serif; color: var(--gold); padding-right: 12px; border-right: 1px solid #8e8d86; }
 .panel-title { font: 700 28px Georgia, serif; line-height: 1.05; }
 .panel-sub { font-size: 10px; letter-spacing: .24em; text-transform: uppercase; color: #747975; margin-top: 5px; }
-.metric-grid { display: grid; gap: 0; margin-top: 11px; }
-.growth-top { grid-template-columns: repeat(3,1fr); }
-.growth-bottom { grid-template-columns: 1fr 1fr 1.15fr; border-top: 1px solid var(--line); margin-top: 10px; }
-.engagement-top { grid-template-columns: 1.5fr repeat(4,1fr); }
-.engagement-mid { grid-template-columns: repeat(4,1fr); border-top: 1px solid var(--line); margin-top: 9px; }
-.engagement-bottom { grid-template-columns: 1fr 1fr; border-top: 1px solid var(--line); margin-top: 9px; }
-.leads-costs { grid-template-columns: repeat(4,1fr); margin-top: 12px; }
-.leads-conv { grid-template-columns: 1fr 1fr; border-top: 1px solid var(--line); margin-top: 8px; }
+.metric-grid { display: grid; gap: 0; margin-top: 11px; grid-template-columns: repeat(auto-fit, minmax(120px,1fr)); }
+.panel-bottom { border-top: 1px solid var(--line); margin-top: 10px; padding-top: 8px; }
 .metric { padding: 6px 8px; min-width: 0; }
 .metric:not(:first-child) { border-left: 1px solid var(--line); }
 .metric-label { font-size: 12px; color: #58635f; line-height: 1.25; overflow-wrap: anywhere; height: 30px; display: flex; align-items: flex-end; }
@@ -393,13 +390,6 @@ onMounted(() => carregar())
 .panel-note .icon-circle { width: 56px; height: 56px; }
 .panel-note .icon-circle svg { width: 28px; height: 28px; }
 .note-text { font: italic 17px/1.15 Georgia, serif; color: #48615d; }
-.funnel { display: grid; grid-template-columns: 1fr 1fr 1fr; height: 62px; margin: 13px 0 8px; overflow: hidden; }
-.funnel-step { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #e7e7df; color: #29443f; padding-left: 17px; text-align: center; clip-path: polygon(0 0, 88% 0, 100% 50%, 88% 100%, 0 100%, 12% 50%); margin-left: -8px; }
-.funnel-step:first-child { margin-left: 0; clip-path: polygon(0 0,88% 0,100% 50%,88% 100%,0 100%); }
-.funnel-step.mid { background: #cfd5d1; }
-.funnel-step.end { background: var(--verde-relatorio); color: #fff; clip-path: polygon(0 0,88% 0,100% 50%,88% 100%,0 100%,12% 50%); }
-.funnel-label { font-size: 13px; }
-.funnel-value { font: 700 22px Georgia, serif; margin-top: 2px; }
 .footer { display: grid; grid-template-columns: 1.35fr .9fr; gap: 20px; align-items: end; }
 .footer-left { border-top: 2px solid #aaa9a3; padding: 18px 22px 0; font-size: 11px; letter-spacing: .29em; text-transform: uppercase; color: #9a9690; min-height: 84px; }
 .mix-card { border: 1px solid var(--line); border-radius: 6px; padding: 8px 12px; display: grid; grid-template-columns: 1fr 190px; gap: 16px; align-items: center; }
@@ -419,8 +409,6 @@ onMounted(() => carregar())
   .meta-item { border-right: none; border-bottom: 1px solid var(--line-2); }
   .kpis { grid-template-columns: repeat(2,1fr); }
   .sections { grid-template-columns: 1fr; }
-  .growth-top, .engagement-top, .engagement-mid, .leads-costs { grid-template-columns: repeat(auto-fit, minmax(110px,1fr)); }
-  .growth-bottom, .engagement-bottom, .leads-conv { grid-template-columns: 1fr 1fr; }
   .footer { grid-template-columns: 1fr; }
   .mix-card { grid-template-columns: 1fr; }
   .mix-side { border-left: none; border-top: 1px solid var(--line-2); padding-left: 0; padding-top: 12px; margin-top: 4px; }
@@ -430,7 +418,6 @@ onMounted(() => carregar())
   .ropr-intervalo { margin-left: 0; width: 100%; }
   .report { padding: 20px 16px 16px; }
   .kpis { grid-template-columns: 1fr; }
-  .funnel { grid-template-columns: 1fr; height: auto; gap: 6px; }
-  .funnel-step { clip-path: none !important; margin-left: 0; border-radius: 6px; padding: 10px; min-height: 48px; }
+  .metric-grid { grid-template-columns: repeat(auto-fit, minmax(110px,1fr)); }
 }
 </style>

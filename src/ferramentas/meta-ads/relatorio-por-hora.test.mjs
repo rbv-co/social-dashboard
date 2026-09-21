@@ -473,11 +473,11 @@ test('seguidoresTotalNoFimDoDia: pega o total da ÚLTIMA hora que tem leitura ne
   assert.equal(seguidoresTotalNoFimDoDia(deltas, '2026-09-20'), null, 'dia sem leitura nenhuma');
 });
 
-test('montarMensagemLeadsFechamentoDia: soma leads/gasto do dia por campanha WPP, ignora as outras', () => {
+test('montarMensagemLeadsFechamentoDia: soma leads (cadastros+conversas)/gasto do dia por campanha tipo=leads, ignora as outras', () => {
   const campanhasDoDia = [
-    { campaignId: 'c1', nome: '[CAMPANHA WPP] Promo A', tipo: 'wpp', gasto: 300, conversas: 8 },
-    { campaignId: 'c2', nome: '[CAMPANHA WPP] Promo B', tipo: 'wpp', gasto: 240, conversas: 4 },
-    { campaignId: 'c3', nome: '[+ SEGUIDORES] Reels', tipo: 'seguidores', gasto: 100, conversas: 0 },
+    { campaignId: 'c1', nome: 'Promo A', tipo: 'leads', gasto: 300, conversas: 8, cadastros: 0 },
+    { campaignId: 'c2', nome: 'Promo B', tipo: 'leads', gasto: 240, conversas: 0, cadastros: 4 },
+    { campaignId: 'c3', nome: '[+ SEGUIDORES] Reels', tipo: 'trafego', gasto: 100, conversas: 0, cadastros: 0 },
   ];
   const msg = montarMensagemLeadsFechamentoDia('2026-09-16', campanhasDoDia);
   assert.match(msg, /FECHAMENTO DO DIA, 16\/09/);
@@ -486,16 +486,16 @@ test('montarMensagemLeadsFechamentoDia: soma leads/gasto do dia por campanha WPP
   assert.match(msg, /Gasto no dia: R\$\s?540,00/);
   assert.match(msg, /Promo A — 8 leads · Gasto: R\$\s?300,00/);
   assert.match(msg, /Promo B — 4 leads · Gasto: R\$\s?240,00/);
-  assert.doesNotMatch(msg, /Reels/, 'campanha de seguidores não entra na mensagem de leads');
+  assert.doesNotMatch(msg, /Reels/, 'campanha de tráfego não entra na mensagem de leads');
 });
 
-test('montarMensagemLeadsFechamentoDia: sem nenhuma campanha WPP no dia, null (nada a dizer)', () => {
-  const campanhasDoDia = [{ campaignId: 'c1', nome: '[+ SEGUIDORES] X', tipo: 'seguidores', gasto: 50, conversas: 0 }];
+test('montarMensagemLeadsFechamentoDia: sem nenhuma campanha tipo=leads no dia, null (nada a dizer)', () => {
+  const campanhasDoDia = [{ campaignId: 'c1', nome: '[+ SEGUIDORES] X', tipo: 'trafego', gasto: 50, conversas: 0, cadastros: 0 }];
   assert.equal(montarMensagemLeadsFechamentoDia('2026-09-16', campanhasDoDia), null);
 });
 
 test('⚠️ montarMensagemLeadsFechamentoDia: campanha de teste sem verba (gasto 0) não inventa "Custo por lead: R$ 0,00"', () => {
-  const campanhasDoDia = [{ campaignId: 'c1', nome: '[CAMPANHA WPP] Teste', tipo: 'wpp', gasto: 0, conversas: 1 }];
+  const campanhasDoDia = [{ campaignId: 'c1', nome: 'Teste', tipo: 'leads', gasto: 0, conversas: 1, cadastros: 0 }];
   const msg = montarMensagemLeadsFechamentoDia('2026-09-16', campanhasDoDia);
   assert.match(msg, /Leads no dia: 1/);
   assert.doesNotMatch(msg, /Custo por lead/, '0 de investimento é denominador inválido pra custo, mesmo com lead > 0');

@@ -16,7 +16,7 @@ import { writeFile } from 'node:fs/promises';
 import { renderPNG, fecharRender } from './lib/render-criativo.mjs';
 import { subirStorageResiliente } from './lib/storage-upload.mjs';
 import { montarHtmlOpr, DIM_OPR } from './lib/template-opr.mjs';
-import { agruparCampanhasDoDia, agruparAnunciosDoDia, montarDadosOpr } from '../src/ferramentas/meta-ads/relatorio-diario-opr.js';
+import { agruparCampanhasDoDia, agruparAnunciosDoDia, calcularDadosOpr } from '../src/ferramentas/meta-ads/relatorio-diario-opr.js';
 import {
   deltaDeSeguidoresPorHora, seguidoresNoDia, seguidoresTotalNoFimDoDia,
   montarMensagemLeadsFechamentoDia, montarMensagemSeguidoresFechamentoDia,
@@ -113,8 +113,8 @@ async function main() {
   let dados, html, mensagemLeads, mensagemSeguidores;
   try {
     const [campanhas, insights, leituras, contas, ads, adInsights] = await Promise.all([
-      sbGet('/campaigns?select=campaign_id,name'),
-      sbGet(`/campaign_insights?select=campaign_id,spend,likes,comments,shares,saves,conversas,post_engagement&account_id=eq.${CONTA_VESSEL}&captured_at=eq.${dia}&period_days=eq.0`),
+      sbGet('/campaigns?select=campaign_id,name,objective'),
+      sbGet(`/campaign_insights?select=campaign_id,spend,likes,comments,shares,saves,conversas,cadastros,compras,visitas,post_engagement&account_id=eq.${CONTA_VESSEL}&captured_at=eq.${dia}&period_days=eq.0`),
       // 48h de folga: garante leitura ANTERIOR ao primeiro bucket de ontem, pra
       // deltaDeSeguidoresPorHora ter "anterior" pra comparar desde a primeira
       // hora do dia inteiro (não só a última hora, como no relatório por hora).
@@ -125,7 +125,8 @@ async function main() {
     ]);
 
     const nomesPorCampanha = Object.fromEntries(campanhas.map((c) => [c.campaign_id, c.name]));
-    const campanhasDoDia = agruparCampanhasDoDia(insights, nomesPorCampanha);
+    const objectivesPorCampanha = Object.fromEntries(campanhas.map((c) => [c.campaign_id, c.objective]));
+    const campanhasDoDia = agruparCampanhasDoDia(insights, nomesPorCampanha, objectivesPorCampanha);
     const linksPorAnuncio = Object.fromEntries(ads.map((a) => [a.ad_id, a.destino_link]));
     const anunciosDoDia = agruparAnunciosDoDia(adInsights, linksPorAnuncio);
     const deltas = deltaDeSeguidoresPorHora(leituras);
@@ -141,17 +142,19 @@ async function main() {
     // --dry — dry é só preview, nunca escreve nada além do PNG local).
     if (!DRY) await salvarVisitasPerfilDoDia(REST, H, CONTA_VESSEL, dia, visitasPerfilDoDia);
 
-    dados = montarDadosOpr(campanhasDoDia, seguidoresDoDia, visitasPerfilDoDia, anunciosDoDia);
+    dados = calcularDadosOpr(campanhasDoDia, seguidoresDoDia, anunciosDoDia);
     html = montarHtmlOpr(dados, { conta: 'Vessel Brasil', periodoLabel: periodoLabel(dia) });
 
     // Mensagens de FECHAMENTO DO DIA (pedido do dono, 17/09/2026) — mandadas
     // antes da imagem do OPR. Usam os mesmos dados já buscados acima, direto
-    // de `campanhasDoDia`/`deltas` (nunca passam pelo rollout de
-    // `montarDadosOpr` — essas mensagens são da MESMA família das de hora em
-    // hora, que já mostram dado real desde 12/09, não fazem parte do
-    // rollout campo-a-campo do OPR).
+    // de `campanhasDoDia`/`deltas`.
+    //
+    // "Investimento"/"Custo por visita" da mensagem de Seguidores usa o gasto
+    // das campanhas tipo=trafego (21/09/2026: classificação por objective —
+    // a maioria das campanhas de seguidor usa objective Tráfego; antes era
+    // filtrado por nome `[+ SEGUIDORES]`).
     const gastoSeguidoresDoDia = campanhasDoDia
-      .filter((c) => c.tipo === 'seguidores')
+      .filter((c) => c.tipo === 'trafego')
       .reduce((s, c) => s + c.gasto, 0);
     const seguidoresTotal = seguidoresTotalNoFimDoDia(deltas, dia);
     mensagemLeads = montarMensagemLeadsFechamentoDia(dia, campanhasDoDia);
@@ -185,7 +188,7 @@ async function main() {
     console.log('--dry: PNG salvo em coletor/opr-preview.png, nada enviado.');
     console.log(JSON.stringify(dados, null, 2));
     console.log('--- mensagem de leads (fechamento do dia) ---');
-    console.log(mensagemLeads ?? '(nenhuma campanha WPP no dia — mensagem não seria enviada)');
+    console.log(mensagemLeads ?? '(nenhuma campanha tipo=leads no dia — mensagem não seria enviada)');
     console.log('--- mensagem de seguidores (fechamento do dia) ---');
     console.log(mensagemSeguidores ?? '(sem dado de seguidor/visita no dia — mensagem não seria enviada)');
     return;
