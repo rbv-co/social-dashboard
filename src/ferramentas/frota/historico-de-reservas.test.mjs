@@ -625,3 +625,21 @@ test('sem nada, a frase ainda diz o que a linha é', () => {
   assert.equal(resumoCurtoDaLinha({}), 'sem situação')
   assert.equal(resumoCurtoDaLinha(null), 'sem situação')
 })
+
+test('D4 · reserva USADA pode ser arquivada — o carro saiu e voltou (21/09/2026)', () => {
+  // A queixa do dono: "não consigo limpar as reservas que já foram". Medido em
+  // 21/09/2026: de 14 reservas, 7 estavam `usada` e 4 `aprovada` vencidas, e
+  // NENHUMA das 11 tinha botão pra sair da lista — só as 2 revogadas tinham.
+  // `usada` é o fim normal e feliz de uma reserva: o carro saiu, rodou e voltou.
+  const a = acoesDaReserva({
+    requisicao: reserva({ situacao: 'usada' }), temPermissaoAprovar: true, agoraIso: AGORA,
+  })
+  assert.equal(a.arquivar.pode, true)
+  // E continua sendo verdade que pendente NUNCA arquiva — um pedido por
+  // decidir que some da fila é o pior destino possível.
+  const p = acoesDaReserva({
+    requisicao: reserva({ situacao: 'pendente' }), temPermissaoAprovar: true, agoraIso: AGORA,
+  })
+  assert.equal(p.arquivar.pode, false)
+  assert.equal(p.arquivar.motivo, 'ainda-em-aberto')
+})

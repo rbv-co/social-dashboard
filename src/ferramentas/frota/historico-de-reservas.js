@@ -167,7 +167,12 @@ export function acoesDaReserva({ requisicao, temPermissaoAprovar, agoraIso } = {
    * sido decidida — o pior destino possível pra um pedido. A trava de verdade
    * está no gatilho da migration 047; isto aqui só evita oferecer o botão. */
   const jaArquivada = !!r.arquivada_em;
-  const acabou = ['recusada', 'cancelada', 'revogada'].includes(r.situacao);
+  // `usada` entrou em 21/09/2026. Ela é o fim NORMAL de uma reserva — o carro
+  // saiu, rodou e voltou —, e ficar de fora desta lista era o que prendia a
+  // tela: das 14 reservas medidas naquele dia, 7 estavam `usada` e não tinham
+  // como sair da lista, nunca. A queixa do dono foi "não consigo limpar as
+  // reservas que já foram".
+  const acabou = ['recusada', 'cancelada', 'revogada', 'usada'].includes(r.situacao);
 
   let arquivar;
   if (!temPermissaoAprovar) arquivar = semPermissao();

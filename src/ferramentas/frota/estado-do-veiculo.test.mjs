@@ -389,3 +389,31 @@ test('data impossível é recusada, não tratada como vazia', () => {
   assert.equal(p.length, 1)
   assert.match(p[0], /não entendi|inválida|confira/i)
 })
+
+test('carro na rua com um, fixo com outro: o dono fixo não some da tela (21/09/2026)', () => {
+  // O caso real: o dono pôs a Héllen como dona fixa do KWID RUL1A35 e a lista
+  // continuou dizendo "Cristian Leonel" — que estava numa viagem aberta havia
+  // 11 dias. Ele leu isso como "não consegui colocar como fixo". Gravou; a
+  // tela é que escondia metade da verdade.
+  const v = carro({ pessoa_id: 'p-hellen', pessoa_nome: 'Héllen Cristiane Cardoso' })
+  const usos = [{ veiculo_id: 'v1', pessoa_id: 'p-cristian', pessoa_nome: 'Cristian Leonel', saida_em: '2026-09-10T16:03Z' }]
+  const e = estadoDoVeiculo(v, usos, [])
+  assert.equal(e.donoFixoNome, 'Héllen Cristiane Cardoso')
+  // O SELO continua curto — quem mostra o dono fixo é a linha "Responsável" do
+  // cartão. Selo é etiqueta; frase de 57 caracteres nele quebra o cartão.
+  assert.equal(resumoDoEstado(e), 'Na rua com Cristian Leonel')
+})
+
+test('na rua com o PRÓPRIO dono fixo: não escreve o nome duas vezes', () => {
+  // Comparado por identificador, nunca por nome: a empresa tem dois Gabriéis.
+  const v = carro({ pessoa_id: 'p-erick', pessoa_nome: 'Erick Martins' })
+  const usos = [{ veiculo_id: 'v1', pessoa_id: 'p-erick', pessoa_nome: 'Erick Martins', saida_em: '2026-09-10T16:03Z' }]
+  const e = estadoDoVeiculo(v, usos, [])
+  assert.equal(e.donoFixoNome, null)
+  assert.equal(resumoDoEstado(e), 'Na rua com Erick Martins')
+})
+
+test('carro sem dono fixo na rua: a frase não muda', () => {
+  const usos = [{ veiculo_id: 'v1', pessoa_id: 'p-x', pessoa_nome: 'Siqueira', saida_em: '2026-09-10T16:03Z' }]
+  assert.equal(resumoDoEstado(estadoDoVeiculo(carro(), usos, [])), 'Na rua com Siqueira')
+})
