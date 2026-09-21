@@ -1,5 +1,36 @@
 // APLICA, REGISTRA e PROVA a porta da LP Private Appointment (T03).
 // As provas seguem os testes de aceite do modulo 10 do Growth Plan.
+//
+// ⚠️⚠️ ESTE APLICADOR ENVELHECEU: RODAR DE NOVO DESFAZ COISA QUE VEIO DEPOIS
+// (B11 de docs/pendencias.md).
+//
+// Este é o arquivo que CRIOU `vessel_solicitar_atendimento` — a porta que a
+// LP inteira usa. Três migrations, na mesma assinatura, foram por cima dela
+// para acrescentar o que faltava: a Beauty Session (`vessel-beauty-sessions`),
+// a stylist (`vessel-rastreio-por-stylist`) e o cruzamento das duas
+// (`vessel-contar-as-beauty-sessions`, a mais nova das três). `create or
+// replace` reaplica sem erro nenhum: reaplicar este arquivo hoje devolveria a
+// função para a versão de 17/09, que não sabe nem de Beauty Session nem de
+// stylist — toda cliente que chegou por um QR de sessão ou por um link de
+// stylist passaria a entrar como se tivesse vindo do nada, e a marca perderia
+// o rastro de quem trouxe quem.
+//
+// ⚠️ POR QUE A TRAVA É UMA CONSULTA, E NÃO UM `process.exit` cravado: num
+// banco NOVO, onde nenhuma das migrations posteriores foi aplicada, não há
+// nada para desfazer e este aplicador tem de rodar normalmente.
+const DEPOIS_DESTE = [
+  {
+    migration: '2026-09-18-vessel-contar-as-beauty-sessions.sql',
+    estrago:
+      'devolveria `vessel_solicitar_atendimento` para a versão de 17/09,\n' +
+      '       que não cruza Beauty Session nem stylist na origem da cliente.\n' +
+      '       Toda cliente vinda de um QR de sessão ou de um link de stylist\n' +
+      '       entraria como se tivesse vindo do nada, calada — o painel de\n' +
+      '       rastreio por parceira e o painel de Beauty Sessions ficam sem\n' +
+      '       tráfego nenhum, mesmo com pedidos entrando.',
+  },
+]
+
 import './lib/carregar-env.mjs'
 import { readFileSync } from 'node:fs'
 import pg from 'pg'
@@ -9,6 +40,26 @@ const ASSINATURA = 'public.vessel_solicitar_atendimento(text, text, text, text, 
 const sql = readFileSync(new URL(`../db/migrations/${ARQUIVO}`, import.meta.url), 'utf8')
 const cli = new pg.Client({ connectionString: process.env.DATABASE_URL })
 await cli.connect()
+
+// ⚠️ ANTES DE ABRIR TRANSACAO E ANTES DE APLICAR QUALQUER COISA.
+const { rows: posteriores } = await cli.query(
+  `select name from public.schema_migrations where name = any($1::text[]) order by name`,
+  [DEPOIS_DESTE.map((x) => x.migration)])
+if (posteriores.length > 0) {
+  console.error(
+    `❌ nao aplicada: ${ARQUIVO} ja foi superada e reaplica-la desfaria trabalho posterior.\n\n` +
+    `Este arquivo cria \`vessel_solicitar_atendimento\`. Migration(s) mais nova(s) JA\n` +
+    `APLICADA(S) mudaram essa funcao, e rodar este aplicador agora voltaria atras sem\n` +
+    `erro nenhum:\n\n` +
+    posteriores.map(({ name }) =>
+      `  · ${name}\n       ${DEPOIS_DESTE.find((x) => x.migration === name).estrago}`).join('\n\n') +
+    `\n\nVa ler essa(s) migration(s) em db/migrations/ antes de qualquer coisa. Se voce PRECISA\n` +
+    `mesmo reaplicar este arquivo, a saida NAO e apagar esta trava: e reaplicar a(s)\n` +
+    `migration(s) posterior(es) logo depois, pelo aplicador de cada uma.\n`)
+  await cli.end()
+  process.exit(1)
+}
+
 await cli.query('begin')
 try {
   await cli.query(sql)

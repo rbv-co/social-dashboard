@@ -35,6 +35,26 @@ const DEPOIS_DESTE = [
       '       "function is not unique" e a tela do Stylist Circle para de\n' +
       '       carregar, sem erro nenhum até o clique de alguém.',
   },
+  // ⚠️ ACRESCENTADO NA MEDIÇÃO DO B11 (21/09/2026): esta lista tinha ficado
+  // para trás num segundo ponto. Além de `vessel_rastreio_dos_stylists`, este
+  // arquivo também faz `create or replace` em `vessel_solicitar_atendimento`
+  // — a MESMA assinatura que `2026-09-18-vessel-contar-as-beauty-sessions.sql`
+  // reescreveu depois, para cruzar stylist e Beauty Session na mesma origem.
+  // Sem esta linha, reaplicar hoje devolveria essa função em silêncio: sem
+  // "function is not unique" nenhum, porque a assinatura é igual — só o
+  // corpo mais velho voltando por cima.
+  {
+    migration: '2026-09-18-vessel-contar-as-beauty-sessions.sql',
+    estrago:
+      'devolveria `vessel_solicitar_atendimento` para a versão SEM o\n' +
+      '       cruzamento com Beauty Session — mesma assinatura, `create or\n' +
+      '       replace` de verdade, sem erro nenhum na hora. Na prática: quem\n' +
+      '       chegou pelo QR de uma Beauty Session e TAMBÉM foi indicada por\n' +
+      '       uma stylist passaria a não contar nem para uma coisa nem para a\n' +
+      '       outra do jeito certo — o painel de rastreio por parceira e o\n' +
+      '       painel de Beauty Sessions voltam a mostrar números que não\n' +
+      '       batem com o que a cliente realmente contou na LP.',
+  },
 ]
 
 const sql = readFileSync(new URL(`../db/migrations/${ARQUIVO}`, import.meta.url), 'utf8')

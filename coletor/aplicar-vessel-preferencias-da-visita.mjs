@@ -5,6 +5,32 @@
 // Sem isso não dá para saber se a função grava: `create function` sempre "dá
 // certo", e um erro de lógica só apareceria com uma cliente de verdade do outro
 // lado.
+// ⚠️⚠️ ESTE APLICADOR ENVELHECEU: RODAR DE NOVO DESFAZ COISA QUE VEIO DEPOIS
+// (B11 de docs/pendencias.md).
+//
+// Este arquivo aceita QUALQUER horário dentro de uma faixa única (segunda a
+// quinta, 11h-17h — sem checar o dia). `2026-09-17-vessel-visita-sexta-e-
+// ate-as-20h.sql` mudou o horário do Private Appointment (segunda a quinta
+// 11h-20h, sexta 11h-17h) e, com isso, trocou a conferência de uma faixa só
+// para uma que olha o DIA da semana — porque o mesmo horário passou a valer
+// numa terça e não valer numa sexta. Reaplicar este arquivo hoje devolve a
+// regra antiga: a página voltaria a aceitar uma visita de sexta às 19h30, e o
+// "não" só apareceria na loja, com a cliente na porta.
+//
+// ⚠️ POR QUE A TRAVA É UMA CONSULTA, E NÃO UM `process.exit` cravado: num
+// banco NOVO, onde a migration posterior não foi aplicada, não há nada para
+// desfazer e este aplicador tem de rodar normalmente.
+const DEPOIS_DESTE = [
+  {
+    migration: '2026-09-17-vessel-visita-sexta-e-ate-as-20h.sql',
+    estrago:
+      'devolveria `vessel_detalhar_visita` para a faixa de horário única\n' +
+      '       (sem olhar o dia da semana) — a página voltaria a aceitar uma\n' +
+      '       visita marcada para sexta às 19h30, horário em que a loja já\n' +
+      '       fechou, e o "não" só apareceria com a cliente na porta.',
+  },
+]
+
 import './lib/carregar-env.mjs'
 import { readFileSync } from 'node:fs'
 import pg from 'pg'
@@ -28,6 +54,25 @@ function proximoSabado() {
 
 const cli = new pg.Client({ connectionString: process.env.DATABASE_URL })
 await cli.connect()
+
+// ⚠️ ANTES DE ABRIR TRANSACAO E ANTES DE APLICAR QUALQUER COISA.
+const { rows: posteriores } = await cli.query(
+  `select name from public.schema_migrations where name = any($1::text[]) order by name`,
+  [DEPOIS_DESTE.map((x) => x.migration)])
+if (posteriores.length > 0) {
+  console.error(
+    `❌ nao aplicada: ${ARQUIVO} ja foi superada e reaplica-la desfaria trabalho posterior.\n\n` +
+    `Este arquivo cria \`vessel_detalhar_visita\`. Migration(s) mais nova(s) JA APLICADA(S)\n` +
+    `mudaram essa funcao, e rodar este aplicador agora voltaria atras sem erro nenhum:\n\n` +
+    posteriores.map(({ name }) =>
+      `  · ${name}\n       ${DEPOIS_DESTE.find((x) => x.migration === name).estrago}`).join('\n\n') +
+    `\n\nVa ler essa(s) migration(s) em db/migrations/ antes de qualquer coisa. Se voce PRECISA\n` +
+    `mesmo reaplicar este arquivo, a saida NAO e apagar esta trava: e reaplicar a(s)\n` +
+    `migration(s) posterior(es) logo depois, pelo aplicador de cada uma.\n`)
+  await cli.end()
+  process.exit(1)
+}
+
 await cli.query('begin')
 try {
   await cli.query(sql)

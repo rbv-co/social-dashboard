@@ -9,8 +9,53 @@
 //
 // Se qualquer metade falhar, o rollback desfaz tudo: nunca sobra meio banco.
 //
-// O SQL é todo `if not exists` / `create or replace` / `drop … if exists`, então
-// rodar de novo é inofensivo. Mas não há motivo para rodar.
+// ⚠️⚠️ ESTE APLICADOR ENVELHECEU: RODAR DE NOVO RESSUSCITA DUAS ASSINATURAS
+// MORTAS DE `vessel_abrir_convite` E `vessel_registrar_cartao` (B11 de
+// docs/pendencias.md).
+//
+// Este arquivo cria as duas com a assinatura de 16/09 (sem `p_teste`).
+// `2026-09-17-vessel-portas-nascem-reais.sql` acrescentou `p_teste boolean`
+// às duas — e virou o padrão dela de `true` para `false`, porque com o
+// gerador ATIVO uma chamada sem o parâmetro passou a criar um atendimento
+// REAL marcado como ensaio, em vez do contrário. Reaplicar este arquivo hoje
+// não sobrescreve essa versão: `create or replace` não troca uma função por
+// outra de assinatura diferente, então o banco passa a ter AS DUAS ao mesmo
+// tempo. Toda chamada da Central, que informa `p_teste`, bate nas duas
+// assinaturas e morre com `function ... is not unique` — abrir um convite ou
+// registrar um cartão na tela para de funcionar até alguém apagar a versão
+// velha.
+//
+// ⚠️ `vessel_registrar_cartao` tem um segundo motivo, mais silencioso:
+// `2026-09-17-vessel-um-horario-uma-visita.sql` acrescentou a trava de fila
+// (`pg_advisory_xact_lock`) que impede duas Client Advisors marcarem a MESMA
+// visita na mesma loja e dia. Isso está DENTRO do corpo da versão nova, não
+// na assinatura — então mesmo sem a colisão de "function is not unique" (se
+// algum dia uma chamada bater só na versão velha), a trava de conflito de
+// horário desapareceria de volta, calada.
+//
+// ⚠️ POR QUE A TRAVA É UMA CONSULTA, E NÃO UM `process.exit` cravado: num
+// banco NOVO, onde nenhuma das duas migrations posteriores foi aplicada, não
+// há nada para desfazer e este aplicador tem de rodar normalmente.
+const DEPOIS_DESTE = [
+  {
+    migration: '2026-09-17-vessel-portas-nascem-reais.sql',
+    estrago:
+      'recria `vessel_abrir_convite` com a assinatura de 16/09 (sem\n' +
+      '       `p_teste`) AO LADO da de hoje — a Central passa a ter duas\n' +
+      '       versoes, e abrir um convite pela tela quebra com `function ...\n' +
+      '       is not unique` ate alguem apagar a velha.',
+  },
+  {
+    migration: '2026-09-17-vessel-um-horario-uma-visita.sql',
+    estrago:
+      'recria `vessel_registrar_cartao` com a assinatura de 16/09 AO LADO\n' +
+      '       da de hoje — registrar um cartao pela tela quebra com `function\n' +
+      '       ... is not unique`; e a versao velha nem tem a trava de fila que\n' +
+      '       impede duas Client Advisors marcarem a MESMA visita na mesma\n' +
+      '       loja e dia.',
+  },
+]
+
 import './lib/carregar-env.mjs'
 import { readFileSync } from 'node:fs'
 import pg from 'pg'
@@ -20,6 +65,26 @@ const sql = readFileSync(new URL(`../db/migrations/${ARQUIVO}`, import.meta.url)
 
 const cli = new pg.Client({ connectionString: process.env.DATABASE_URL })
 await cli.connect()
+
+// ⚠️ ANTES DE ABRIR TRANSACAO E ANTES DE APLICAR QUALQUER COISA.
+const { rows: posteriores } = await cli.query(
+  `select name from public.schema_migrations where name = any($1::text[]) order by name`,
+  [DEPOIS_DESTE.map((x) => x.migration)])
+if (posteriores.length > 0) {
+  console.error(
+    `❌ nao aplicada: ${ARQUIVO} ja foi superada e reaplica-la ressuscitaria assinatura(s) morta(s).\n\n` +
+    `Este arquivo cria \`vessel_abrir_convite\` e \`vessel_registrar_cartao\` com a assinatura de\n` +
+    `16/09 (sem \`p_teste\`). Migration(s) mais nova(s) JA APLICADA(S) trocaram essa assinatura, e\n` +
+    `rodar este aplicador agora recriaria a versao antiga do lado da nova:\n\n` +
+    posteriores.map(({ name }) =>
+      `  · ${name}\n       ${DEPOIS_DESTE.find((x) => x.migration === name).estrago}`).join('\n\n') +
+    `\n\nVa ler essa(s) migration(s) em db/migrations/ antes de qualquer coisa. Se voce PRECISA\n` +
+    `mesmo reaplicar este arquivo, a saida NAO e apagar esta trava: e reaplicar a(s)\n` +
+    `migration(s) posterior(es) logo depois, pelo aplicador de cada uma.\n`)
+  await cli.end()
+  process.exit(1)
+}
+
 await cli.query('begin')
 try {
   await cli.query(sql)

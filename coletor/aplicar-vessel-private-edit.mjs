@@ -51,6 +51,21 @@ const DEPOIS_DESTE = [
       '       mande só `p_dias` passaria a falhar com "function ... is not\n' +
       '       unique", em vez de escolher uma das duas.',
   },
+  // ⚠️ ACRESCENTADO NA MEDIÇÃO DO B11 (21/09/2026): esta lista tinha ficado
+  // para trás. `2026-09-21-vessel-criar-exige-editar.sql` (B10) apertou
+  // `vessel_criar_private_edit` de "ver" para "editar" DEPOIS que
+  // `2026-09-19-vessel-private-edit-pela-tela.sql` (já listada acima) pôs o
+  // portão de "ver". As duas mexem na MESMA função: a de cima já bastava
+  // para recusar hoje, mas sem esta linha a recusa dependeria só dela — e o
+  // motivo mostrado para quem tentasse rodar não contaria a parte do B10.
+  {
+    migration: '2026-09-21-vessel-criar-exige-editar.sql',
+    estrago:
+      'devolveria `vessel_criar_private_edit` para uma versão sem a trava de\n' +
+      '       editar nenhuma — ou seja, quem só tem permissão de OLHAR o\n' +
+      '       Comercial Vessel voltaria a poder criar um encontro novo (B10 de\n' +
+      '       docs/pendencias.md).',
+  },
 ]
 
 const sql = readFileSync(new URL(`../db/migrations/${ARQUIVO}`, import.meta.url), 'utf8')

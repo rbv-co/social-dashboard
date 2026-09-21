@@ -1,4 +1,46 @@
 // APLICA, REGISTRA e PROVA a porta das Beauty Sessions (T05).
+//
+// ⚠️⚠️ ESTE APLICADOR ENVELHECEU: RODAR DE NOVO DESFAZ COISA QUE VEIO DEPOIS
+// (B11 de docs/pendencias.md).
+//
+// Este arquivo faz `create or replace` em `vessel_interesse_da_beauty_session`
+// e em `vessel_solicitar_atendimento` — MESMA assinatura nas duas vezes, então
+// reaplicar não dá erro nenhum: só volta o corpo antigo por cima.
+//
+// (1) `2026-09-18-zzzzz-vessel-beauty-sessions-com-tela.sql` mexeu em
+//     `vessel_interesse_da_beauty_session` para respeitar o encerramento da
+//     sessão (ver o cabeçalho daquele arquivo). Reaplicar este arquivo hoje
+//     devolve a versão que aceita interesse numa Beauty Session JÁ ENCERRADA.
+//
+// (2) `2026-09-18-vessel-contar-as-beauty-sessions.sql` reescreveu
+//     `vessel_solicitar_atendimento` para cruzar stylist e Beauty Session na
+//     mesma origem, com a stylist ganhando quando as duas vierem. Reaplicar
+//     este arquivo hoje devolve a versão que só sabe da Beauty Session — uma
+//     cliente indicada por uma stylist E que também leu o QR de um evento
+//     passaria a contar só para o evento, silenciosamente.
+//
+// ⚠️ POR QUE A TRAVA É UMA CONSULTA, E NÃO UM `process.exit` cravado: num
+// banco NOVO, onde nenhuma das duas migrations posteriores foi aplicada, não
+// há nada para desfazer e este aplicador tem de rodar normalmente.
+const DEPOIS_DESTE = [
+  {
+    migration: '2026-09-18-zzzzz-vessel-beauty-sessions-com-tela.sql',
+    estrago:
+      'devolveria `vessel_interesse_da_beauty_session` para a versão que NAO\n' +
+      '       confere se a sessão está ENCERRADA — o formulário da página\n' +
+      '       voltaria a aceitar contato para uma Beauty Session que já\n' +
+      '       terminou, sem avisar ninguém.',
+  },
+  {
+    migration: '2026-09-18-vessel-contar-as-beauty-sessions.sql',
+    estrago:
+      'devolveria `vessel_solicitar_atendimento` para a versão que só sabe\n' +
+      '       de Beauty Session, sem cruzar com stylist — uma cliente indicada\n' +
+      '       por uma stylist E que também leu o QR de um evento passaria a\n' +
+      '       contar só para o evento; a stylist perde o crédito, calada.',
+  },
+]
+
 import './lib/carregar-env.mjs'
 import { readFileSync } from 'node:fs'
 import pg from 'pg'
@@ -10,6 +52,26 @@ const A_LP = 'public.vessel_solicitar_atendimento(text, text, text, text, text, 
 const sql = readFileSync(new URL(`../db/migrations/${ARQUIVO}`, import.meta.url), 'utf8')
 const cli = new pg.Client({ connectionString: process.env.DATABASE_URL })
 await cli.connect()
+
+// ⚠️ ANTES DE ABRIR TRANSACAO E ANTES DE APLICAR QUALQUER COISA.
+const { rows: posteriores } = await cli.query(
+  `select name from public.schema_migrations where name = any($1::text[]) order by name`,
+  [DEPOIS_DESTE.map((x) => x.migration)])
+if (posteriores.length > 0) {
+  console.error(
+    `❌ nao aplicada: ${ARQUIVO} ja foi superada e reaplica-la desfaria trabalho posterior.\n\n` +
+    `Este arquivo faz \`create or replace\` em \`vessel_interesse_da_beauty_session\` e em\n` +
+    `\`vessel_solicitar_atendimento\`. Migration(s) mais nova(s) JA APLICADA(S) mudaram essas\n` +
+    `funcoes, e rodar este aplicador agora voltaria atras sem erro nenhum:\n\n` +
+    posteriores.map(({ name }) =>
+      `  · ${name}\n       ${DEPOIS_DESTE.find((x) => x.migration === name).estrago}`).join('\n\n') +
+    `\n\nVa ler essa(s) migration(s) em db/migrations/ antes de qualquer coisa. Se voce PRECISA\n` +
+    `mesmo reaplicar este arquivo, a saida NAO e apagar esta trava: e reaplicar a(s)\n` +
+    `migration(s) posterior(es) logo depois, pelo aplicador de cada uma.\n`)
+  await cli.end()
+  process.exit(1)
+}
+
 await cli.query('begin')
 try {
   await cli.query(sql)

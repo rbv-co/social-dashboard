@@ -7,6 +7,52 @@
 // ⚠️ AS PROVAS ESCREVEM DADO DE VERDADE e são desfeitas antes do commit
 // (`savepoint prova` → `rollback to savepoint prova`). O que fica no banco é só
 // a estrutura.
+//
+// ⚠️⚠️ ESTE APLICADOR ENVELHECEU: RODAR DE NOVO RESSUSCITA UMA ASSINATURA
+// MORTA E DEVOLVE `vessel_sessao_do_codigo` PARA ANTES DO ENCERRAMENTO EXISTIR
+// (B11 de docs/pendencias.md).
+//
+// (1) Este arquivo cria `vessel_conta_das_beauty_sessions(integer)` — UM
+//     argumento. Migrations posteriores trocaram para DOIS
+//     (`integer, boolean`, o `p_incluir_arquivadas`), com `drop function`
+//     antes — `create or replace` não troca uma assinatura por outra.
+//     Reaplicar hoje ressuscita a versão de UM argumento AO LADO da de dois:
+//     o Painel Autenticidade, que chama com os dois, passa a bater nas duas
+//     e quebra com `function ... is not unique`.
+//
+// (2) Este arquivo cria `vessel_sessao_do_codigo` SEM filtrar por
+//     `s.ativa` — qualquer código de Beauty Session, encerrada ou não, conta
+//     como válido. `2026-09-18-zzzzz-vessel-beauty-sessions-com-tela.sql`
+//     acrescentou esse filtro para que ENCERRAR uma sessão tire a etiqueta do
+//     cartão físico dela (a cliente não perde o pedido, só deixa de contar
+//     para um evento que já acabou). Reaplicar este arquivo hoje é
+//     `create or replace` de VERDADE — mesma assinatura —, então o corpo
+//     antigo volta calado: o cartão de uma sessão JÁ ENCERRADA volta a
+//     etiquetar pedido novo, sem erro nenhum até alguém reparar que o painel
+//     está contando visita para um evento que já fechou.
+//
+// ⚠️ POR QUE A TRAVA É UMA CONSULTA, E NÃO UM `process.exit` cravado: num
+// banco NOVO, onde nenhuma das migrations posteriores foi aplicada, não há
+// nada para desfazer e este aplicador tem de rodar normalmente.
+const DEPOIS_DESTE = [
+  {
+    migration: '2026-09-19-vessel-beauty-sessions-lista-devolve-arquivada.sql',
+    estrago:
+      'ressuscitaria `vessel_conta_das_beauty_sessions(integer)` — a\n' +
+      '       assinatura de UM argumento que ja foi trocada por DOIS — ao lado\n' +
+      '       da de hoje. O Painel Autenticidade, que chama com os dois\n' +
+      '       argumentos, quebraria com `function ... is not unique`.',
+  },
+  {
+    migration: '2026-09-18-zzzzz-vessel-beauty-sessions-com-tela.sql',
+    estrago:
+      'devolveria `vessel_sessao_do_codigo` para a versao que NAO confere\n' +
+      '       `ativa` — o cartao fisico de uma Beauty Session JA ENCERRADA\n' +
+      '       voltaria a etiquetar pedido novo, calado, ate alguem reparar que\n' +
+      '       o painel conta visita para um evento que ja fechou.',
+  },
+]
+
 import './lib/carregar-env.mjs'
 import { readFileSync } from 'node:fs'
 import pg from 'pg'
@@ -20,6 +66,26 @@ const PEDIR = 'public.vessel_solicitar_atendimento(text, text, text, text, text,
 const sql = readFileSync(new URL(`../db/migrations/${ARQUIVO}`, import.meta.url), 'utf8')
 const cli = new pg.Client({ connectionString: process.env.DATABASE_URL })
 await cli.connect()
+
+// ⚠️ ANTES DE ABRIR TRANSACAO E ANTES DE APLICAR QUALQUER COISA.
+const { rows: posteriores } = await cli.query(
+  `select name from public.schema_migrations where name = any($1::text[]) order by name`,
+  [DEPOIS_DESTE.map((x) => x.migration)])
+if (posteriores.length > 0) {
+  console.error(
+    `❌ nao aplicada: ${ARQUIVO} ja foi superada e reaplica-la desfaria trabalho posterior.\n\n` +
+    `Esta migration cria \`vessel_conta_das_beauty_sessions(integer)\` e \`vessel_sessao_do_codigo\`.\n` +
+    `Migration(s) mais nova(s) JA APLICADA(S) mudaram essas funcoes, e rodar este aplicador agora\n` +
+    `voltaria atras sem erro nenhum (ou pior, quebraria com function is not unique):\n\n` +
+    posteriores.map(({ name }) =>
+      `  · ${name}\n       ${DEPOIS_DESTE.find((x) => x.migration === name).estrago}`).join('\n\n') +
+    `\n\nVa ler essa(s) migration(s) em db/migrations/ antes de qualquer coisa. Se voce PRECISA\n` +
+    `mesmo reaplicar este arquivo, a saida NAO e apagar esta trava: e reaplicar a(s)\n` +
+    `migration(s) posterior(es) logo depois, pelo aplicador de cada uma.\n`)
+  await cli.end()
+  process.exit(1)
+}
+
 await cli.query('begin')
 try {
   await cli.query(sql)
