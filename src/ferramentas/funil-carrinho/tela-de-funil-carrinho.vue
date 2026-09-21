@@ -23,6 +23,13 @@
 
       <div v-show="aba === 'visao'" class="fc-grade">
         <section class="fc-cartao card-base">
+          <h2 class="fc-titulo-secao">Sessões iniciadas</h2>
+          <p class="fc-explicacao">Visitantes únicos que entraram no site neste período — deduplicado por sessão, não por evento cru.</p>
+          <p v-if="carregando" class="fc-carregando">Carregando…</p>
+          <div v-else class="fc-numero-valor">{{ sessoesIniciadas }}</div>
+        </section>
+
+        <section class="fc-cartao card-base">
           <h2 class="fc-titulo-secao">Mais adicionados ao carrinho</h2>
           <p v-if="carregando" class="fc-carregando">Carregando…</p>
           <p v-else-if="!erro && !maisAdicionados.length" class="fc-vazio">Nenhum produto adicionado ao carrinho neste período.</p>
@@ -101,7 +108,7 @@ import { useRouter } from 'vue-router'
 import BarraDeTopo from '../../compartilhado/barra-de-topo.vue'
 import { sbClient } from '../../compartilhado/conectar-no-banco-de-dados.js'
 import { diasAtras } from '../../compartilhado/datas.js'
-import { rankearProdutos, ordenarAbandonados, foiCortado, LIMITE_CARRINHO } from './agregacoes-carrinho.js'
+import { rankearProdutos, ordenarAbandonados, foiCortado, contarSessoesUnicas, LIMITE_CARRINHO } from './agregacoes-carrinho.js'
 
 const router = useRouter()
 const voltar = () => router.push({ name: 'inicio' })
@@ -128,6 +135,7 @@ const maisAdicionados = ref([])
 const maisRemovidos = ref([])
 const abandonados = ref([])
 const registros = ref([])
+const sessoesIniciadas = ref(0)
 
 function formatarData(iso) {
   return new Date(iso).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
@@ -148,6 +156,7 @@ async function carregar() {
   maisRemovidos.value = []
   abandonados.value = []
   registros.value = []
+  sessoesIniciadas.value = 0
   const desde = `${diasAtras(periodoAtivo.value)}T00:00:00-03:00`
 
   const [adicionados, removidos, carrinhosAbandonados, eventosCrus] = await Promise.all([
@@ -169,6 +178,7 @@ async function carregar() {
   maisRemovidos.value = rankearProdutos(removidos.data)
   abandonados.value = ordenarAbandonados(carrinhosAbandonados.data)
   registros.value = eventosCrus.data
+  sessoesIniciadas.value = contarSessoesUnicas(eventosCrus.data.filter((e) => e.tipo === 'sessao_iniciada'))
   carregando.value = false
 }
 
@@ -191,6 +201,7 @@ onMounted(carregar)
 .fc-titulo-secao { font-size: var(--texto-titulo); margin: 0 0 var(--sp-4); overflow-wrap: anywhere; }
 .fc-explicacao { font-size: var(--texto-corpo); color: var(--muted); margin: 0 0 var(--sp-4); }
 .fc-carregando, .fc-vazio { font-size: var(--texto-corpo); color: var(--muted); }
+.fc-numero-valor { font-family: var(--fonte-principal); font-size: var(--texto-numero); font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; line-height: 1.1; }
 .fc-erro { font-size: var(--texto-campo); color: var(--red); }
 .fc-tabela-scroll { overflow-x: auto; }
 .fc-tabela-scroll .fc-tabela { min-width: 760px; }
