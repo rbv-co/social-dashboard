@@ -11,12 +11,14 @@
 // foi enviado e o estado. Nenhum botão, nenhuma permissão nova — ela mora
 // atrás do mesmo portão da tela de Autenticidade.
 //
-// ⚠️ A TABELA `vessel_lembretes` AINDA NÃO EXISTE. Ela é da outra frente desta
-// entrega. Até subir, a leitura falha — e a tela tem de continuar inteira, com
-// a lista vazia e um aviso curto. É `tabelaAindaNaoExiste` que separa "ainda
-// não subiu" de "o banco está fora do ar": são coisas diferentes, e confundir
-// as duas faz a tela dizer "logo aparece" para uma falha que ninguém está
-// consertando.
+// A TABELA `vessel_lembretes` já está no ar (migration registrada em
+// 21/09/2026, RLS conferida — SELECT para `authenticated` sob
+// `is_vessel_admin()`, o mesmo portão de `vessel_pecas` e `vessel_registros`).
+// A leitura continua defensiva mesmo assim: `tabelaAindaNaoExiste` separa "a
+// tabela não existe" (PostgREST 42P01/PGRST205 — hoje não deveria mais
+// acontecer, mas um deploy futuro sem a migration cairia aqui) de "o banco
+// está fora do ar" — são coisas diferentes, e confundir as duas faria a tela
+// dizer "logo aparece" para uma falha que ninguém está consertando.
 
 // AS COLUNAS QUE A TELA PEDE. Escritas aqui, e não soltas no `select`, porque
 // há teste que confere o que sai daqui.
@@ -27,15 +29,24 @@
 export const COLUNAS_DO_LEMBRETE =
   'id,peca_codigo,email,criado_em,enviado_7_em,enviado_30_em,cancelado_em,cancelado_por'
 
-// OS TRÊS ESTADOS DO DESENHO, e só estes três.
+// OS TRÊS ESTADOS DO DESENHO, mais o quarto que o desenho não prevê — a linha
+// incoerente. Não é "mais um estado normal": é a tela recusando inventar uma
+// resposta bonita para um dado que não devia existir.
 export const ESTADOS_DO_LEMBRETE = {
   aberto: 'Aberto',
   cancelado_cliente: 'Cancelado pela cliente',
   encerrado_registro: 'Encerrado pelo registro',
+  incoerente: 'Estado incoerente',
 }
 
+// ⚠️ NULO NÃO É FALSO. `cancelado_em` nulo com `cancelado_por` preenchido não
+// existe hoje — a tabela só grava os dois juntos, no mesmo UPDATE — mas se
+// aparecer (falha de robô, migration futura, mão na tabela) a tela NÃO pode
+// chamar isso de "aberto" em silêncio: a linha está dizendo "foi cancelada"
+// sem dizer quando, e "aberto" diria o oposto disso.
 export function estadoDoLembrete(lembrete) {
   const l = lembrete || {}
+  if (!l.cancelado_em && l.cancelado_por) return 'incoerente'
   if (!l.cancelado_em) return 'aberto'
   return l.cancelado_por === 'registro' ? 'encerrado_registro' : 'cancelado_cliente'
 }
@@ -48,14 +59,17 @@ export function rotuloDoEstadoDoLembrete(lembrete) {
 // estilos-globais.css) — estado com cor inventada é o que o PADRAO-DA-CENTRAL
 // proíbe no item 2.
 //
-// ⚠️ NENHUM DOS TRÊS É ERRO. "Encerrado pelo registro" é o FINAL FELIZ: a
-// cliente registrou a peça e o lembrete morreu sozinho, como o desenho manda.
-// "Cancelado pela cliente" é ela exercendo o direito dela. Pintar qualquer um
-// dos dois de vermelho faria a lista parecer cheia de problema.
+// ⚠️ NENHUM DOS TRÊS ESTADOS DO DESENHO É ERRO. "Encerrado pelo registro" é o
+// FINAL FELIZ: a cliente registrou a peça e o lembrete morreu sozinho, como o
+// desenho manda. "Cancelado pela cliente" é ela exercendo o direito dela.
+// Pintar qualquer um dos dois de vermelho faria a lista parecer cheia de
+// problema. Já "incoerente" É para chamar atenção — por isso leva
+// `selo-atencao` (laranja), a única cor de alarme desta lista.
 const SELOS = {
   aberto: 'selo-info',
   cancelado_cliente: 'selo-neutro',
   encerrado_registro: 'selo-ok',
+  incoerente: 'selo-atencao',
 }
 
 export function seloDoEstadoDoLembrete(estado) {
@@ -126,10 +140,16 @@ export function tabelaAindaNaoExiste(erro) {
 export function avisoDaListaDeLembretes(erro) {
   if (!erro) return { tipo: '', texto: '' }
   if (tabelaAindaNaoExiste(erro)) {
+    // ⚠️ A TABELA ESTÁ NO AR DESDE 21/09/2026. Este texto já foi "está
+    // chegando" — fazia sentido enquanto a tabela ainda não existia. Hoje, se
+    // este ramo disparar, é porque algo QUEBROU (schema cache desatualizado,
+    // tabela apagada por engano, ambiente sem a migration) — não porque uma
+    // funcionalidade está a caminho. Dizer "logo aparece" aqui seria mentir
+    // exatamente do jeito que o PADRAO-DA-CENTRAL item 9 proíbe.
     return {
       tipo: 'aguardando',
-      texto: 'Os lembretes ainda não existem no banco. Assim que a parte do banco subir, '
-        + 'eles aparecem aqui sozinhos.',
+      texto: 'Não encontrei a tabela de lembretes no banco — e isso não é esperado, '
+        + 'porque ela já está no ar. Avise quem cuida do sistema.',
     }
   }
   return {

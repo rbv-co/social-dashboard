@@ -14,14 +14,18 @@ import {
  * SÓ LEITURA nesta entrega: a tela mostra peça, e-mail, quando pediu, o que já
  * foi enviado e o estado. Nada de botão.
  *
- * Duas coisas aqui são mais graves do que parecem:
+ * Três coisas aqui são mais graves do que parecem:
  *
- * 1. A TABELA `vessel_lembretes` AINDA NÃO EXISTE (a outra frente desta
- *    entrega está fazendo o banco). A tela tem de aguentar isso: lista vazia e
- *    um aviso curto — e NUNCA o erro cru, nem uma tela quebrada.
+ * 1. A TABELA `vessel_lembretes` JÁ ESTÁ NO AR (migration registrada em
+ *    21/09/2026), mas a leitura continua defensiva: se um dia a tabela sumir
+ *    de algum ambiente, a tela tem de aguentar isso — lista vazia e um aviso
+ *    curto, e NUNCA o erro cru, nem uma tela quebrada.
  * 2. FALHA DE LEITURA NÃO PODE VIRAR "não há lembretes" (PADRAO-DA-CENTRAL,
- *    item 9: a tela nunca mente). Tabela que ainda não subiu e banco fora do ar
+ *    item 9: a tela nunca mente). Tabela que não existe e banco fora do ar
  *    são coisas diferentes, e a tela diz qual das duas é.
+ * 3. ⚠️ NULO NÃO É FALSO: `cancelado_em` nulo com `cancelado_por` preenchido
+ *    não existe hoje, mas se existir a tela não pode chamar isso de "aberto"
+ *    em silêncio — ganhou o quarto estado, "incoerente".
  */
 
 const L = (extra = {}) => ({
@@ -38,12 +42,13 @@ const L = (extra = {}) => ({
 
 // ── O ESTADO ────────────────────────────────────────────────────────────────
 
-test('os três estados são os do desenho, e são só esses três', () => {
+test('os três estados são os do desenho, mais o quarto que não é do desenho: o incoerente', () => {
   assert.deepEqual(Object.keys(ESTADOS_DO_LEMBRETE).sort(),
-    ['aberto', 'cancelado_cliente', 'encerrado_registro'])
+    ['aberto', 'cancelado_cliente', 'encerrado_registro', 'incoerente'])
   assert.equal(ESTADOS_DO_LEMBRETE.aberto, 'Aberto')
   assert.equal(ESTADOS_DO_LEMBRETE.cancelado_cliente, 'Cancelado pela cliente')
   assert.equal(ESTADOS_DO_LEMBRETE.encerrado_registro, 'Encerrado pelo registro')
+  assert.equal(ESTADOS_DO_LEMBRETE.incoerente, 'Estado incoerente')
 })
 
 test('sem cancelamento, o lembrete está aberto', () => {
@@ -72,16 +77,35 @@ test('⚠️ cancelado SEM dizer por quem não vira "cliente" por chute', () => 
     'sem motivo, o cancelamento é tratado como o da cliente só se isso estiver escrito')
 })
 
-test('⚠️ nenhum dos três estados é pintado de ERRO', () => {
+// ⚠️ NULO NÃO É FALSO. `cancelado_em` nulo com `cancelado_por` preenchido não
+// existe hoje, mas se existir a tela não pode chamar isso de "aberto" em
+// silêncio — é o próprio pedido do dono, quase palavra por palavra.
+test('⚠️ estado incoerente (cancelado_por preenchido sem cancelado_em) não vira "aberto" calado', () => {
+  const r = estadoDoLembrete({ cancelado_em: null, cancelado_por: 'cliente' })
+  assert.notEqual(r, 'aberto')
+  assert.equal(r, 'incoerente')
+  assert.equal(rotuloDoEstadoDoLembrete({ cancelado_em: null, cancelado_por: 'registro' }),
+    'Estado incoerente')
+})
+
+test('⚠️ nenhum dos TRÊS estados do desenho é pintado de ERRO ou de ALARME', () => {
   // "Encerrado pelo registro" é o final feliz — a cliente registrou a peça e o
   // lembrete morreu sozinho. "Cancelado pela cliente" é ela exercendo o direito
-  // dela. Vermelho nos dois faria a lista parecer cheia de problema.
+  // dela. Vermelho ou laranja em qualquer um dos dois faria a lista parecer
+  // cheia de problema. O QUARTO estado ("incoerente") é a exceção de propósito
+  // — ver o teste seguinte — por isso fica de fora deste laço.
   assert.equal(seloDoEstadoDoLembrete('aberto'), 'selo-info')
   assert.equal(seloDoEstadoDoLembrete('cancelado_cliente'), 'selo-neutro')
   assert.equal(seloDoEstadoDoLembrete('encerrado_registro'), 'selo-ok')
-  for (const estado of Object.keys(ESTADOS_DO_LEMBRETE)) {
+  for (const estado of Object.keys(ESTADOS_DO_LEMBRETE).filter((e) => e !== 'incoerente')) {
     assert.ok(!/erro|atencao/.test(seloDoEstadoDoLembrete(estado)), estado)
   }
+})
+
+test('⚠️ o estado incoerente É a exceção: leva a cor de alarme, de propósito', () => {
+  // Dar cor neutra ou de sucesso a uma linha incoerente esconderia exatamente
+  // o que a tela precisa mostrar: que aquele dado não bate com o desenho.
+  assert.equal(seloDoEstadoDoLembrete('incoerente'), 'selo-atencao')
 })
 
 test('estado que não conhecemos não escolhe cor de alarme', () => {
@@ -184,11 +208,19 @@ test('sem erro nenhum, não há aviso', () => {
   assert.deepEqual(avisoDaListaDeLembretes(null), { tipo: '', texto: '' })
 })
 
-test('⚠️ tabela que ainda não subiu: aviso curto, e a lista fica vazia', () => {
+// ⚠️ A TABELA ESTÁ NO AR DESDE 21/09/2026. Se este ramo disparar hoje, é
+// porque algo QUEBROU — não porque a tabela está "a caminho". O texto
+// mudou de "assim que a parte do banco subir" (fazia sentido antes) para
+// "isso não é esperado" (a verdade de hoje) — este teste prova a mensagem
+// NOVA, e reprova qualquer redação que volte a soar como "logo chega".
+test('⚠️ tabela ausente: o aviso diz que é INESPERADO, não que "está a caminho"', () => {
   const a = avisoDaListaDeLembretes({ code: '42P01' })
   assert.equal(a.tipo, 'aguardando')
   assert.ok(a.texto.length > 20 && a.texto.length < 200, 'o aviso é curto: ' + a.texto)
-  assert.match(a.texto, /ainda não/i)
+  assert.match(a.texto, /não é esperado|não deveria|quebrou|avise/i,
+    'o texto precisa soar como "algo quebrou", não como "funcionalidade pendente"')
+  assert.ok(!/ainda não existem|assim que a parte do banco subir|logo (aparece|chega)/i.test(a.texto),
+    'o texto NÃO pode mais soar como "coming soon" — a tabela já está no ar')
   assert.ok(!/42P01|PGRST|schema cache/i.test(a.texto),
     'quem lê a tela não precisa do código técnico do banco')
 })
@@ -240,20 +272,69 @@ test('⚠️ a aba de Lembretes existe, e é consulta (depois do separador)', ()
     'a aba de consulta não leva número de passo')
 })
 
-test('⚠️ a lista de lembretes NÃO tem botão de mexer — só leitura nesta entrega', () => {
+// ⚠️ ESTRUTURAL, NÃO POR PALAVRA. A primeira versão desta guarda procurava só
+// `<button` e `@click` — e um `<Button @dblclick="cancelarLembrete(lb.id)">`
+// PASSOU direto por ela (confirmado por mutação real: 29/29 verdes com o botão
+// disfarçado lá dentro). Duas fugas cabiam nela: (1) qualquer evento que não
+// se chame "click" — `@dblclick`, `@keyup.enter`, `v-on:submit`, `onclick=`
+// cru — e (2) um COMPONENTE Vue (`<Button>`, tag em PascalCase pela convenção
+// deste projeto) escondendo um `<button>` de verdade dentro dele. A prova
+// fica embaixo, no teste de mutação real.
+test('⚠️ a lista de lembretes NÃO tem botão nem ação de mexer — só leitura nesta entrega', () => {
   const bloco = blocoDaAbaDeLembretes()
-  assert.ok(!/<button/.test(bloco), 'apareceu botão numa lista que é só leitura')
-  assert.ok(!/@click/.test(bloco), 'apareceu ação numa lista que é só leitura')
+  // Nenhum jeito de amarrar evento do Vue: `@algumacoisa`, `v-on:algumacoisa`,
+  // ou o `onclick=`/`onsubmit=`/... cru do DOM.
+  assert.ok(!/@[a-z]/i.test(bloco), 'apareceu um binding de evento (@...) numa lista que é só leitura: ' + bloco)
+  assert.ok(!/v-on:/i.test(bloco), 'apareceu v-on: numa lista que é só leitura: ' + bloco)
+  assert.ok(!/\bon[a-z]+\s*=/i.test(bloco), 'apareceu um "on..." (evento cru do DOM) numa lista que é só leitura: ' + bloco)
+  // Nenhuma tag pode ser <button>, em qualquer combinação de maiúscula/minúscula.
+  assert.ok(!/<\/?button/i.test(bloco), 'apareceu <button> (ou variação de caixa) numa lista só leitura')
+  // Nenhum COMPONENTE (tag em PascalCase — a convenção deste projeto para
+  // componente Vue, como <BarraDeTopo> e <PainelDeBusca>) pode aparecer dentro
+  // da linha: só elementos nativos (div, span, p, template). Um componente
+  // escondido passaria pelas checagens de cima sem ser pego.
+  const tagsDeAbertura = bloco.match(/<([A-Za-z][A-Za-z0-9-]*)[\s/>]/g) || []
+  for (const tag of tagsDeAbertura) {
+    const nome = tag.slice(1).replace(/[\s/>]$/, '')
+    assert.ok(/^[a-z]/.test(nome),
+      `apareceu a tag <${nome}> (nome em maiúscula = componente Vue) dentro da lista de lembretes — ` +
+      'só leitura não monta componente nenhum')
+  }
 })
 
+// ⚠️ ESTRUTURAL, NÃO POR PALAVRA. A primeira versão procurava a palavra
+// "vessel_lembretes" dentro do Promise.all — e um
+// `const TABELA_LEMB = 'vessel_' + 'lembretes'; sbClient.from(TABELA_LEMB)`
+// dentro do Promise.all PASSOU direto por ela (confirmado por mutação real:
+// 29/29 verdes com a leitura fatal disfarçada lá dentro). Uma variável, um
+// alias ou uma concatenação escapam de uma busca por texto. A prova certa é
+// o INVERSO: a LISTA FECHADA de leituras que têm permissão de estar aqui —
+// nada além dela, seja qual for o nome usado para chegar lá.
 test('⚠️ a leitura dos lembretes NÃO entra no Promise.all que derruba a tela', () => {
   // As outras leituras estouram de propósito: sem elas a tela mente. Esta não
-  // pode estourar, porque a tabela AINDA NÃO EXISTE — e a tela inteira
-  // (lotes, gravação, etiquetas, cartões) iria junto.
+  // pode estourar, junto com elas, porque uma falha nos lembretes não pode
+  // derrubar lotes, gravação, etiquetas e cartões.
   const carregar = TELA.match(/async function carregar\(\)[\s\S]*?\n}/)[0]
   const dentroDoPromiseAll = carregar.match(/await Promise\.all\(\[[\s\S]*?\]\)/)[0]
-  assert.ok(!/vessel_lembretes/.test(dentroDoPromiseAll),
-    'a tabela que ainda não existe não pode estar na leitura que derruba a tela')
+
+  const FROM_PERMITIDOS = ["'vessel_lotes'", "'vessel_pecas'", "'vessel_registros'", "'vessel_baixas'"]
+  const RPC_PERMITIDOS = ["'vessel_alertas'", "'vessel_fila_de_registros'"]
+
+  const chamadasDeFrom = [...dentroDoPromiseAll.matchAll(/\.from\(([^)]*)\)/g)].map((m) => m[1].trim())
+  const chamadasDeRpc = [...dentroDoPromiseAll.matchAll(/\.rpc\(([^,)]*)/g)].map((m) => m[1].trim())
+
+  assert.equal(chamadasDeFrom.length, 4, 'o Promise.all precisa ter exatamente as quatro leituras de tabela conhecidas')
+  assert.equal(chamadasDeRpc.length, 2, 'o Promise.all precisa ter exatamente as duas chamadas de função conhecidas')
+  for (const chamada of chamadasDeFrom) {
+    assert.ok(FROM_PERMITIDOS.includes(chamada),
+      `achei ".from(${chamada})" dentro do Promise.all, fora da lista fechada dos quatro permitidos — ` +
+      'se for vessel_lembretes disfarçado (variável, alias, concatenação), ele NÃO pode estar aqui: ' +
+      'falha aqui derruba a tela inteira')
+  }
+  for (const chamada of chamadasDeRpc) {
+    assert.ok(RPC_PERMITIDOS.includes(chamada),
+      `achei ".rpc(${chamada}" dentro do Promise.all, fora da lista fechada das duas permitidas`)
+  }
   assert.ok(/vessel_lembretes/.test(TELA), 'a tela precisa ler os lembretes em algum lugar')
 })
 
@@ -267,4 +348,187 @@ test('a tela mostra as cinco colunas que o dono pediu', () => {
 test('⚠️ a tela não mostra o token de cancelamento', () => {
   const bloco = blocoDaAbaDeLembretes()
   assert.ok(!/token/i.test(bloco))
+})
+
+// ── A GUARDA SOBRE O ARQUIVO INTEIRO ────────────────────────────────────────
+//
+// ⚠️ AS DUAS GUARDAS DE CIMA SÓ ENXERGAM UM PEDAÇO DO ARQUIVO — o bloco da aba
+// (`blocoDaAbaDeLembretes`) e o array de dentro do `Promise.all`. Uma escrita
+// IMPERATIVA fora dos dois — em `onMounted`, num `watch`, atrás de uma
+// `ref` de template — é invisível para as duas. Confirmado por mutação real,
+// no estilo idiomático que o próprio arquivo já usa para
+// `window.addEventListener('message', ouvirAPrevia)`:
+//
+//   document.querySelector('.au-tabela-lembretes')
+//     ?.addEventListener('click', () => { sbClient.from('vessel_lembretes').delete().eq('id', '1') })
+//
+// As duas guardas de cima continuaram 29/29 verdes com isso dentro do
+// `onMounted`. Uma guarda que só olha metade do arquivo não guarda o arquivo.
+//
+// A resposta não é enumerar mais um ataque (a lista já tem cinco: portão
+// aninhado errado, campo renomeado, `<Button @dblclick>`, nome de tabela por
+// concatenação, e agora um ouvinte imperativo — enumerar perde por definição).
+// A resposta é NEGAR POR PADRÃO sobre o ARQUIVO INTEIRO:
+//
+// 1. `.from(...)` e `.rpc(...)`, em QUALQUER lugar do arquivo, só podem
+//    receber uma STRING LITERAL como argumento — nunca uma variável, nunca uma
+//    expressão. Isso fecha de vez a fuga por indireção (a variável
+//    `TABELA_LEMB = 'vessel_' + 'lembretes'` do ataque anterior), sem precisar
+//    avaliar concatenação: uma variável não é mais aceita, ponto, veio de onde
+//    vier o valor dela.
+// 2. De todo `.from('vessel_lembretes')` do arquivo, a única continuação
+//    aceita é `.select(` — nunca `.delete(`, `.update(` ou `.insert(`.
+// 3. Nenhuma chamada `.rpc(...)` pode nomear algo que comece com
+//    `vessel_lembrete` — nenhuma das funções de escrita do desenho
+//    (`vessel_lembrete_criar`, `vessel_lembrete_cancelar_por_token`,
+//    `vessel_lembrete_marcar_enviado`) tem por que ser chamada por este painel;
+//    elas são `service_role`, chamadas pela edge, nunca daqui.
+// 4. `addEventListener` só pode existir numa forma: `window.addEventListener`
+//    para o evento `'message'` — a única entrada imperativa que o arquivo já
+//    usa, e por um motivo documentado (a prévia do cartão). Qualquer outro
+//    receptor (um `querySelector`, uma `ref` de template, um elemento
+//    guardado em variável) ou qualquer outro evento reprova. Isto pega o
+//    ataque de cima e qualquer variação dele (outro evento, outro elemento),
+//    sem precisar saber o nome da classe CSS visada.
+// 5. Nenhuma atribuição de `.onclick =` cru em lugar nenhum do arquivo — o
+//    código de hoje não usa essa forma nenhuma vez; se aparecer, é um jeito a
+//    mais de amarrar clique sem passar pelas guardas de template.
+// 6. Nenhum acesso por colchete a `sbClient` (`sbClient[`), e nenhum dos
+//    primitivos de ofuscação mais comuns (`String.fromCharCode`, `atob`,
+//    `unescape`, `eval`, `new Function`).
+//
+// ┌────────────────────────────────────────────────────────────────────────┐
+// │ ⚠️⚠️⚠️ LEIA ISTO ANTES DE CONFIAR NESTA GUARDA — MEDIDO, NÃO SUPOSTO.  │
+// └────────────────────────────────────────────────────────────────────────┘
+//
+// O QUE ELA PEGA: o erro honesto. Alguém — inclusive uma IA apressada —
+// escreve um botão, um listener ou uma chamada de escrita nesta tela achando
+// que "é só mais uma ação", sem pensar que esta lista é SÓ LEITURA por
+// desenho do dono. É o caso comum, e é aqui que a guarda ganha o lugar dela:
+// pegou de verdade um `<Button @dblclick>`, uma leitura escondida atrás de
+// `TABELA_LEMB = 'vessel_' + 'lembretes'` dentro do `Promise.all`, e um
+// `addEventListener` em `onMounted` fora dos dois blocos que as guardas
+// antigas liam — os cinco primeiros ataques da tabela abaixo.
+//
+// O QUE ELA NÃO PEGA, E NÃO PODE PEGAR: MEDIDO com sete ataques por mutação
+// real (backup → editar → `node --test` → restaurar → `git diff` limpo).
+// Seis fecharam. O SÉTIMO NÃO:
+//
+//   const cliente = sbClient
+//   const chave = 'fr' + 'om'
+//   cliente[chave]('vessel_lembretes').delete().eq('id', '1')
+//
+// — apelidar `sbClient` para um nome novo (`cliente`) e montar o NOME DO
+// MÉTODO por concatenação (`chave`) escapa da regra 6, que bane o texto
+// literal `sbClient[`. Isto não é um buraco que "esquecemos de tapar": é o
+// limite estrutural de QUALQUER varredura de texto/regex contra uma
+// linguagem Turing-completa. JavaScript deixa construir qualquer
+// identificador, qualquer nome de propriedade, em tempo de execução — um
+// denylist textual sempre pode ser contornado renomeando o que ele proíbe, e
+// essa corrida não tem fim por regex (só um parser de AST que resolva
+// bindings de verdade fecharia a classe inteira, e isto aqui não é isso).
+//
+// ONDE MORA A GARANTIA DE VERDADE: NÃO é este arquivo. É o banco. Conferido
+// em produção, por leitura direta em `pg_policy` (conexão nova, só SELECT):
+// `vessel_lembretes` tem EXATAMENTE UMA política — `vessel_lembretes_read`,
+// comando SELECT, role `authenticated`. NÃO existe política de INSERT,
+// UPDATE ou DELETE para `authenticated` nem para `anon`. Isso significa que
+// mesmo o ataque #7 acima, SE chegasse a rodar num navegador de verdade, o
+// `.delete()` seria recusado pelo Postgres antes de tocar uma linha — o RLS
+// nega por padrão o que não tem política, e não existe política de escrita
+// aqui. Esta guarda é DEFESA EM PROFUNDIDADE, uma camada a mais; o PORTÃO de
+// verdade é o RLS. ⚠️ SE ALGUÉM UM DIA ADICIONAR UMA POLÍTICA DE ESCRITA A
+// `vessel_lembretes` (para a Task 1/2 do desenho, que roda como usuário sem
+// login — hoje ela passa pela edge com `service_role`, nunca por aqui), esta
+// guarda DEIXA DE SER camada extra e VIRA a última linha — e nesse dia ela
+// precisa ser revista com esse peso em mente, não deixada como está.
+//
+// A CONSEQUÊNCIA PARA QUEM LER ISTO DEPOIS: trate esta guarda como um
+// LEMBRETE, não como um portão. Uma proteção que PARECE completa e não é
+// vale MENOS que proteção nenhuma — porque desliga a desconfiança de quem
+// vem depois. Quem chegar aqui pensando "os testes são verdes, então está
+// seguro" está lendo errado; o que os testes verdes provam é "não caiu no
+// erro honesto", não "está à prova do adversário que sabe o que está
+// fazendo". Essa segunda garantia vem do banco, sempre.
+//
+// O CUSTO DE FALSO ALARME desta guarda mais estrita — escrito aqui de
+// propósito, para não ser descoberto por quem vier depois:
+//   · regra 1 (só string literal em `.from`/`.rpc`): reprova qualquer
+//     código são que precise ler uma tabela por nome dinâmico. Custo ZERO
+//     hoje (nenhum `.from`/`.rpc` deste arquivo usava variável antes desta
+//     guarda), mas é uma restrição real sobre como o arquivo pode crescer;
+//   · regra 4 (`addEventListener` só como `window`/`'message'`): a PRÓXIMA
+//     feature que precisar ouvir `resize`, `scroll` ou `keydown` num campo
+//     vai reprovar esta guarda por motivo BENIGNO, até alguém abrir este
+//     comentário e estender a lista do que é permitido — é o preço
+//     deliberado de "enumerar o permitido" em vez de "enumerar o proibido";
+//   · regra 6 (bane `sbClient[` + quatro primitivos de ofuscação): lista
+//     FECHADA de quatro nomes, não uma regra geral — e, como o ataque #7
+//     prova, nem fecha a classe que tenta fechar. É a menor barreira que
+//     vale pagar em regex antes de precisar de um parser de verdade.
+test('⚠️⚠️ NEGAR POR PADRÃO: nenhuma escrita imperativa alcança vessel_lembretes, em NENHUM lugar do arquivo — não só no bloco da aba', () => {
+  // 1 e 2 — .from(...) só com string literal, e só .select( depois de
+  // .from('vessel_lembretes').
+  const chamadasDeFrom = [...TELA.matchAll(/\.from\(\s*([^)]*)\)([\s\S]{0,40})/g)]
+  assert.ok(chamadasDeFrom.length > 0, 'não achei nenhum .from( no arquivo — a extração quebrou')
+  for (const [trecho, argumentoCru, depois] of chamadasDeFrom) {
+    const argumento = argumentoCru.trim()
+    assert.match(argumento, /^(['"])[^'"]*\1$/,
+      `achei ".from(${argumento})" com argumento que NÃO é uma string literal — nenhuma indireção é ` +
+      `permitida em .from(...) neste arquivo, seja qual for o nome da variável: ${trecho}`)
+    if (argumento.replace(/['"]/g, '') === 'vessel_lembretes') {
+      const proximaChamada = depois.match(/^\s*\.([a-zA-Z]+)\(/)
+      assert.ok(proximaChamada, `.from('vessel_lembretes') sem nenhuma chamada encadeada logo depois: ${depois}`)
+      assert.equal(proximaChamada[1], 'select',
+        `.from('vessel_lembretes') encadeado com ".${proximaChamada[1]}(", e a única continuação ` +
+        'permitida é ".select(" — qualquer escrita nesta tabela, deste painel, é proibida')
+    }
+  }
+
+  // 3 — nenhuma .rpc(...) de escrita dos lembretes, em lugar nenhum.
+  const chamadasDeRpcNoArquivo = [...TELA.matchAll(/\.rpc\(\s*([^,)]*)/g)]
+  for (const [, argumentoCru] of chamadasDeRpcNoArquivo) {
+    const argumento = argumentoCru.trim()
+    assert.match(argumento, /^(['"])[^'"]*\1$/,
+      `achei ".rpc(${argumento}" com argumento que NÃO é uma string literal — mesma regra do .from(...)`)
+    const nome = argumento.replace(/['"]/g, '')
+    assert.ok(!nome.startsWith('vessel_lembrete'),
+      `achei uma chamada a ".rpc('${nome}')" — nenhuma função de "vessel_lembrete*" pode ser chamada ` +
+      'deste painel: as três de escrita do desenho são service_role, só a edge chama')
+  }
+
+  // 4 — addEventListener só na forma exata já documentada no arquivo.
+  const chamadasDeEvento = [...TELA.matchAll(/([\s\S]{0,80}?)\??\.addEventListener\(\s*(['"][^'"]+['"])/g)]
+  assert.ok(chamadasDeEvento.length > 0, 'não achei nenhum addEventListener — a extração quebrou')
+  for (const [, receptorCru, eventoCru] of chamadasDeEvento) {
+    const receptor = receptorCru.replace(/\s+$/, '')
+    const evento = eventoCru.replace(/['"]/g, '')
+    assert.match(receptor, /\bwindow$/,
+      `achei um addEventListener cujo receptor NÃO é "window" (é "...${receptor.slice(-40)}") — a única ` +
+      'entrada imperativa permitida neste arquivo é window.addEventListener; qualquer outro receptor ' +
+      '(querySelector, ref de template, elemento em variável) é uma porta que os dois testes de cima não veem'
+    )
+    assert.equal(evento, 'message',
+      `achei window.addEventListener para o evento "${evento}", e o único documentado é "message"`)
+  }
+
+  // 5 — nenhum onclick cru.
+  assert.ok(!/\.onclick\s*=/.test(TELA), 'achei uma atribuição de ".onclick =" — este arquivo não usa essa forma')
+
+  // 6 — nenhum acesso por COLCHETE a sbClient, e nenhum dos primitivos de
+  // ofuscação de string mais comuns. ⚠️ ISTO NÃO FECHA A CLASSE — é uma
+  // mitigação PARCIAL, e está escrita assim de propósito no relatório: um
+  // ataque real por mutação (`sbClient['from'](...)['delete'](...)` com o
+  // nome do evento montado por `String.fromCharCode`) driblou as regras 1-5
+  // (elas procuram `.from(`, `.rpc(`, `.addEventListener(` — texto com PONTO
+  // antes do nome; colchete não bate com nenhuma). Bloquear estes quatro
+  // primitivos (nenhum tem uso legítimo hoje neste arquivo) fecha ESTE
+  // disfarce específico, não a classe inteira: um parser de texto não prova
+  // ausência de código dinâmico em JavaScript — só um parser de AST prova.
+  assert.ok(!/sbClient\s*\[/.test(TELA),
+    'achei "sbClient[" — acesso por colchete ao cliente do banco não tem uso legítimo aqui; ' +
+    'é a forma mais simples de escapar de ".from(" e ".rpc(" no texto')
+  assert.ok(!/String\.fromCharCode\(|\batob\(|\bunescape\(|\beval\(|new Function\(/.test(TELA),
+    'achei um primitivo de ofuscação de string/código (fromCharCode/atob/unescape/eval/Function) — ' +
+    'nenhum tem uso legítimo neste arquivo')
 })

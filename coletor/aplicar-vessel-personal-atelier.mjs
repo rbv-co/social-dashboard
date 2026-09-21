@@ -1,4 +1,32 @@
 // APLICA, REGISTRA e PROVA a porta da LP Personal Atelier (T04).
+//
+// ⚠️⚠️ ESTE APLICADOR ENVELHECEU: RODAR DE NOVO DESFAZ COISA QUE VEIO DEPOIS
+// (B11 de docs/pendencias.md).
+//
+// Este arquivo aceita a COLEÇÃO INTEIRA como modelo do Personal Atelier — "a
+// equipe confirma o modelo elegível" resolvia na conversa. O dono decidiu, em
+// 17/09, restringir a TRÊS modelos (Nerea, Cyrène e Astrea):
+// `2026-09-18-vessel-atelier-so-tres-modelos.sql` trocou só a lista aceita,
+// mesma assinatura, resto do corpo intocado. Reaplicar este arquivo hoje
+// devolve a lista aberta, calado: a página voltaria a aceitar um pedido de
+// personalização para um modelo que a Vessel não personaliza, e a cliente só
+// descobre isso numa conversa depois, não na hora do formulário.
+//
+// ⚠️ POR QUE A TRAVA É UMA CONSULTA, E NÃO UM `process.exit` cravado: num
+// banco NOVO, onde a migration posterior não foi aplicada, não há nada para
+// desfazer e este aplicador tem de rodar normalmente.
+const DEPOIS_DESTE = [
+  {
+    migration: '2026-09-18-vessel-atelier-so-tres-modelos.sql',
+    estrago:
+      'devolveria `vessel_pedido_de_personal_atelier` para a lista de\n' +
+      '       modelos ABERTA — a página voltaria a aceitar um pedido de\n' +
+      '       personalização para um modelo que a Vessel não personaliza\n' +
+      '       (fora Nerea, Cyrène e Astrea), e ninguém descobre isso na hora\n' +
+      '       do formulário, só numa conversa depois.',
+  },
+]
+
 import './lib/carregar-env.mjs'
 import { readFileSync } from 'node:fs'
 import pg from 'pg'
@@ -8,6 +36,26 @@ const A = 'public.vessel_pedido_de_personal_atelier(text, text, text, text, text
 const sql = readFileSync(new URL(`../db/migrations/${ARQUIVO}`, import.meta.url), 'utf8')
 const cli = new pg.Client({ connectionString: process.env.DATABASE_URL })
 await cli.connect()
+
+// ⚠️ ANTES DE ABRIR TRANSACAO E ANTES DE APLICAR QUALQUER COISA.
+const { rows: posteriores } = await cli.query(
+  `select name from public.schema_migrations where name = any($1::text[]) order by name`,
+  [DEPOIS_DESTE.map((x) => x.migration)])
+if (posteriores.length > 0) {
+  console.error(
+    `❌ nao aplicada: ${ARQUIVO} ja foi superada e reaplica-la desfaria trabalho posterior.\n\n` +
+    `Este arquivo cria \`vessel_pedido_de_personal_atelier\`. Migration(s) mais nova(s) JA\n` +
+    `APLICADA(S) mudaram essa funcao, e rodar este aplicador agora voltaria atras sem\n` +
+    `erro nenhum:\n\n` +
+    posteriores.map(({ name }) =>
+      `  · ${name}\n       ${DEPOIS_DESTE.find((x) => x.migration === name).estrago}`).join('\n\n') +
+    `\n\nVa ler essa(s) migration(s) em db/migrations/ antes de qualquer coisa. Se voce PRECISA\n` +
+    `mesmo reaplicar este arquivo, a saida NAO e apagar esta trava: e reaplicar a(s)\n` +
+    `migration(s) posterior(es) logo depois, pelo aplicador de cada uma.\n`)
+  await cli.end()
+  process.exit(1)
+}
+
 await cli.query('begin')
 try {
   await cli.query(sql)

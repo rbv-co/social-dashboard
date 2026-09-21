@@ -1,9 +1,10 @@
 # Pendências do iamundi
 
-Última revisão: **21/09/2026** — saiu o **B10** (resolvido) e o **B1** foi
-corrigido: a previsão de que o erro de estoque cresceria sozinho **não se
-confirmou** (medido de novo em 21/09 — são os mesmos três de 15/09, parados).
-**Há duas pendências abertas: o B9 e o B11, as duas na Parte B.**
+Última revisão: **21/09/2026** — saiu o **B10** (resolvido), saiu o **B11**
+(resolvido), saiu o **B9** (resolvido) e o **B1** foi corrigido: a previsão de
+que o erro de estoque cresceria sozinho **não se confirmou** (medido de novo em
+21/09 — são os mesmos três de 15/09, parados). **A lista está vazia — não há
+nenhuma pendência de código em aberto.**
 
 O que é este arquivo: a lista viva do que está **em aberto** no projeto. Cada item
 diz o que falta, **por que importa** e **onde** se resolve. É a memória escrita —
@@ -260,6 +261,148 @@ conferência que os outros programas de instalação já usam. Ganhou a mesma
 trava — ver o B11, que agora conta **oito** programas na mesma situação, não
 mais nove.
 
+### B11 · Oito programas de instalação que, se rodarem de novo, desfazem trabalho mais novo ✅ *RESOLVIDO em 21/09/2026*
+
+**Feito — os oito ganharam a trava `DEPOIS_DESTE`,** o mesmo desenho já revisado
+em `aplicar-vessel-private-edit-pela-tela.mjs`,
+`aplicar-vessel-beauty-sessions-com-tela.mjs` e
+`aplicar-vessel-chave-sorteada-a-serio.mjs`: a trava roda logo depois de
+`cli.connect()`, antes de qualquer `begin` ou DDL, pergunta a
+`public.schema_migrations` se a mudança mais nova já está instalada e recusa
+com um motivo em português — num banco novo, onde essa mudança não existe, ela
+deixa seguir normal.
+
+⚠️ **Dois dos oito já tinham uma trava — só que velha e incompleta.**
+`aplicar-vessel-private-edit.mjs` e `aplicar-vessel-rastreio-por-stylist.mjs`
+ganharam `DEPOIS_DESTE` numa entrega anterior (T10, sem relação direta com o
+B11) e por isso hoje já se recusam a rodar — mas cada um tinha um segundo motivo
+de regressão que a lista antiga não citava: `aplicar-vessel-private-edit.mjs`
+não sabia do aperto de permissão do B10
+(`2026-09-21-vessel-criar-exige-editar.sql`), e
+`aplicar-vessel-rastreio-por-stylist.mjs` não sabia que
+`vessel_solicitar_atendimento` também seria desfeita. Os dois ganharam a linha
+que faltava. Os outros seis (`aplicar-vessel-pessoas.mjs`,
+`aplicar-vessel-contar-as-beauty-sessions.mjs`, `aplicar-vessel-beauty-sessions.mjs`,
+`aplicar-vessel-pedido-de-atendimento.mjs`, `aplicar-vessel-personal-atelier.mjs`,
+`aplicar-vessel-preferencias-da-visita.mjs`) não tinham trava nenhuma e a
+ganharam do zero.
+
+✔️ **A lista de "o que cada um desfaria" (a tabela acima) foi remedida em
+21/09/2026, do mesmo jeito — transação, `pg_get_functiondef` antes, roda o SQL
+cru do arquivo, `pg_get_functiondef` depois, compara, `rollback` — e bateu
+exatamente com a medição de 19/09.** Nenhum dos oito tinha mudado de
+comportamento no meio do caminho.
+
+✔️ **Cada um dos oito guardas foi provado nas DUAS direções:** rodado como está
+(recusa, código de saída diferente de zero, mensagem colada abaixo) e rodado de
+novo com o nome da migration trocado por um que não existe (a mesma trava deixa
+passar — prova de que ela não é uma recusa cravada, e continua replayable num
+banco novo). As oito mensagens de recusa citam a consequência no MUNDO, não no
+código: quem passaria a poder fazer o quê nascendo de novo, qual tela voltaria a
+mentir, qual dado reapareceria ou sumiria — inclusive nos quatro casos que
+falham alto (`function ... is not unique`) em vez de calado.
+
+⚠️ **Um susto no caminho, registrado por transparência:** provar a "segunda
+direção" dos quatro programas mais simples
+(`aplicar-vessel-beauty-sessions.mjs`, `aplicar-vessel-pedido-de-atendimento.mjs`,
+`aplicar-vessel-personal-atelier.mjs`, `aplicar-vessel-preferencias-da-visita.mjs`)
+foi feito rodando uma cópia de cada programa com o nome da migration trocado —
+e, ao contrário dos outros quatro, esses quatro não têm nenhuma conferência
+interna que perceba que o banco já está mais adiantado. As quatro cópias
+rodaram até o fim e **commitaram de verdade** a versão velha de
+`vessel_interesse_da_beauty_session`, `vessel_solicitar_atendimento`,
+`vessel_pedido_de_personal_atelier` e `vessel_detalhar_visita`. Percebido na
+hora (a mesma medição por transação que valida a tabela acima), consertado
+imediatamente: `vessel_pedido_de_personal_atelier` e `vessel_detalhar_visita`
+foram restaurados rodando os programas donos de verdade
+(`aplicar-vessel-atelier-tres-modelos.mjs` e `aplicar-vessel-sexta-e-20h.mjs`,
+que se recusam a regredir por conta própria); as outras duas foram restauradas
+função por função, aplicando só o `create or replace` exato do arquivo dono —
+tudo reconferido byte a byte contra `pg_get_functiondef` depois. Dado real:
+intocado o tempo todo (nenhuma das quatro toca `vessel_pedidos`,
+`vessel_beauty_sessions` ou qualquer tabela da lista protegida). **A lição:**
+provar a segunda direção de um aplicador sem conferência interna própria não
+pode mais ser feito rodando o programa de verdade com o nome trocado — só em
+transação com `rollback` cravado, nunca deixando o programa chegar ao próprio
+`commit`.
+
+**Dado real conferido depois, em conexão nova:** `vessel_pedidos` com 459
+linhas (cresce com venda real; o que importa é que nada deste trabalho grava
+nela), as 3 Beauty Sessions (`BS-20260925-CPS-01`, `BS-20260926-CPS-02`,
+`BS-20261016-CPS-AME`) todas `ativa=true, arquivada=false`, `vessel_lembretes`
+com 0 linhas, e `vessel_stylists`/`vessel_pessoas`/`vessel_atendimentos`/
+`vessel_private_edits` todas zeradas — igual ao que já estava antes de começar.
+
+`npm test`: **5414** passando (o piso desta entrega), `npm run build`: ok.
+
+### B9 · Register Later, as telas ✅ *RESOLVIDO em 21/09/2026*
+
+**As três telas do desenho de 19/09**
+(`docs/superpowers/specs/2026-09-19-register-later-design.md`) estão prontas:
+na peça ainda não registrada, o botão "Deixar para depois", a folha de e-mail
+e consentimento, os dois e-mails (7 e 30 dias) com o link do certificado, e a
+lista de acompanhamento no painel.
+
+- **`/verify` e `/verify/parar-lembrete`** (repositório `vessel-brasil`): o
+  agradecimento é o MESMO em qualquer caso — a função do banco responde
+  `{ok:true}` igual para peça já registrada, lembrete existente ou teto
+  estourado, de propósito, e a tela nunca traduz isso, senão destravaria
+  descobrir por fora quais bolsas já têm dona. `/verify/parar-lembrete` não
+  exige login — o token é a prova — e sempre diz "você não vai mais receber",
+  inclusive com link velho. Commit `b63f1a2` em `main`, **commitado, não
+  publicado** (push fica para quem decidir publicar).
+- **Painel Autenticidade** (este repositório): a aba "Lembretes", só leitura —
+  peça, e-mail **inteiro** (decisão do dono), quando pediu, o que já foi
+  enviado (7/30 dias) e o estado (aberto, cancelado pela cliente, encerrado
+  pelo registro). `token_hash` nunca sai do banco — nem no `select`
+  (`COLUNAS_DO_LEMBRETE`), nem na tela. A leitura roda separada do
+  `Promise.all` que derruba a tela: uma falha aqui vira aviso só na própria
+  aba, sem levar lotes, gravação, etiquetas e cartões junto.
+
+⚠️ **Achado ao medir, não suposto: a maior parte já estava pronta desde
+19/09/2026**, de uma frente anterior — o painel Autenticidade inteiro e um
+primeiro rascunho de `/verify`. O trabalho de hoje foi consertar, não
+construir do zero:
+
+1. no rascunho de `/verify` e de `/verify/parar-lembrete`, duas violações
+   reais da regra acima — a página de sucesso lia `resposta.mensagem` derivada
+   de `motivo`, e a de parar tinha uma segunda frase amarrada a
+   `motivo === 'token_invalido'` — as duas vazavam por fora exatamente a
+   informação que a regra proíbe. Corrigidas, com os testes de
+   `verify/lembrete.test.mjs` ajustados para a arquitetura nova;
+2. no painel, `estadoDoLembrete` devolvia `'aberto'` para a linha incoerente
+   (`cancelado_em` nulo com `cancelado_por` preenchido) — o caso exato que o
+   desenho pede para nunca virar "aberto" em silêncio. Ganhou um quarto
+   estado, `'incoerente'`, com selo de alerta (`selo-atencao`) — o único dos
+   quatro que é cor de alarme, de propósito;
+3. em cada repositório, uma guarda de fiação que passava com o defeito
+   disfarçado — confirmado por mutação real antes de mexer nela. No painel: um
+   `<Button @dblclick="...">` (evento fora de "@click", componente em vez de
+   `<button>`) e uma leitura da tabela escondida atrás de uma variável dentro
+   do `Promise.all` fatal passaram os 29/29 testes verdes. As duas guardas
+   viraram prova estrutural (nenhum `@`/`v-on:`/`on...=` no bloco, nenhuma tag
+   em PascalCase; e a lista FECHADA de `.from`/`.rpc` permitidos dentro do
+   `Promise.all`) e voltaram a pegar as mesmas mutações.
+
+✔️ **Os quatro passos de operação (migration, segredo, as duas edges, o cron)
+já tinham sido feitos por outra frente antes de hoje — conferidos, não
+refeitos:** tabela e cinco funções no ar byte a byte iguais ao arquivo, edge
+`vessel-lembretes` publicada com `verify_jwt` desligado, segredo gravado em
+`segredos_de_cron`, cron rodando desde 20/09. ⚠️ A única lacuna real era de
+escrituração — a migration nunca tinha sido registrada em
+`schema_migrations` —, e foi resolvida separadamente, no B11 acima
+(`coletor/registrar-vessel-lembretes-register-later.mjs`), antes de mexer em
+qualquer tela.
+
+`npm test` (iamundi): **5414 → 5416**, verde; `npm run build`: ok.
+`node --test verify/regras.test.mjs` (vessel-brasil): **191 → 205**; `npm
+test` inteiro do site: **537 → 551**. Produção conferida em conexão nova, sem
+nenhuma escrita: `vessel_lembretes` com **0 linhas**, as 3 Beauty Sessions
+(`BS-20260925-CPS-01`, `BS-20260926-CPS-02`, `BS-20261016-CPS-AME`) todas
+`ativa=true, arquivada=false`, e
+`vessel_stylists`/`vessel_pessoas`/`vessel_atendimentos`/`vessel_private_edits`
+todas zeradas — igual a antes de começar.
+
 ---
 
 ## Parte A — Só o dono resolve (clique, sem código)
@@ -269,152 +412,14 @@ motivo da saída.
 
 ## Parte B — Precisa programar
 
-*(Esteve vazia de 18 para 19/09/2026. O item anterior daqui foi o B4 — está
-mais acima, com o motivo da saída. Depois disso entraram dois itens, de duas
-frentes diferentes que corriam ao mesmo tempo: o **B9** em 19/09 e o **B11**
-em 21/09. ⚠️ O B11 nasceu chamado de "B9" numa frente que ainda não tinha sido
-publicada; quando as duas se encontraram, quem já estava publicado ficou com o
-número, porque é o que as pessoas podem ter citado em conversa. O B10 existiu,
-foi resolvido no mesmo dia e está mais acima — e, pela regra deste arquivo, o
-número dele não se reaproveita.)*
-
-### B9 · Register Later, as telas — *aberto em 19/09/2026*
-
-**O banco e o robô estão prontos; o que falta é tela.** O desenho aprovado pelo
-dono em 19/09 está em
-`docs/superpowers/specs/2026-09-19-register-later-design.md`: na peça ainda não
-registrada, um botão discreto **"Deixar para depois"**, a cliente deixa o e-mail
-e marca o consentimento, e a marca manda **dois e-mails, em 7 e em 30 dias**,
-com o link do certificado daquela peça.
-
-**Por que importa:** hoje quem abre a etiqueta e não quer registrar na hora
-simplesmente vai embora, e a marca não tem como voltar a falar com ela sobre
-aquela peça. É a última peça da lista da Fase 2.
-
-**O que já existe (e está provado, mas AINDA NÃO APLICADO nem publicado):**
-
-- a migration `db/migrations/2026-09-19-zzz-vessel-lembretes-register-later.sql`
-  — tabela `vessel_lembretes`, um lembrete aberto por peça, dois tetos (1 por
-  peça a cada 24h e 3 por e-mail a cada 24h), e o gatilho que mata o lembrete
-  quando a peça ganha registro;
-- o robô `supabase/functions/vessel-lembretes/` (cron diário) e as ações
-  `lembrete-criar` e `lembrete-parar` na edge `vessel-conta`;
-- a prova por rollback em `coletor/provar-lembretes.mjs`.
-
-**O que falta, e é onde se resolve:**
-
-1. **`/verify`** (repositório `vessel-brasil`): o botão "Deixar para depois", a
-   folha com e-mail e consentimento, e o agradecimento — que é o MESMO
-   agradecimento em qualquer caso. ⚠️ **Não inventar mensagem diferente:** a
-   função do banco responde `{ok:true}` igualzinho quando a peça já tem dona,
-   já tem lembrete ou o teto estourou, de propósito — traduzir isso na tela
-   desfaria a única trava que impede descobrir, por fora, quais bolsas já têm
-   dona.
-2. **`/verify/parar-lembrete`**: a tela que o link do e-mail abre, **sem
-   login** — o token é a prova. Ela sempre diz "você não vai mais receber",
-   inclusive com link velho: é verdade, e responder outra coisa transformaria
-   o endereço num testador de tokens.
-3. **Painel Autenticidade**: a lista de lembretes (peça, e-mail, quando pediu,
-   o que já foi enviado e o estado). Só leitura nesta entrega. O e-mail aparece
-   **inteiro**, por decisão do dono — é dele que a equipe precisa para socorrer
-   a cliente.
-
-⚠️ **E antes de qualquer tela, três passos de operação, nesta ordem:** aplicar a
-migration → gravar o segredo `vessel-lembretes` em `segredos_de_cron` → publicar
-as duas edges → **só então** agendar o cron. O passo a passo exato está em
-`supabase/functions/vessel-lembretes/LEIA-ME.txt`. Agendar antes da migration faz
-o robô errar todo dia, calado.
-
-### B11 · Nove programas de instalação que, se rodarem de novo, desfazem trabalho mais novo · *entrou em 19/09/2026*
-
-**O que é.** Cada mudança no banco do iamundi vem com um programinha que a
-instala — são os arquivos `coletor/aplicar-*.mjs`. São **31**, dos quais **29**
-dizem qual mudança instalam; medi esses 29 um por um e descobri que **11 deles,
-se alguém rodar hoje, desfazem coisa que foi feita depois** — sem dar erro nenhum
-e imprimindo a mesma linha de sucesso de sempre.
-
-**A causa, numa frase:** cada um desses programas carrega uma *fotografia* da
-função do dia em que foi escrito, e instalar de novo significa regravar aquela
-fotografia por cima — apagando qualquer coisa mais nova que tenha entrado no
-lugar.
-
-**Como eu medi** (não é leitura de código, é o banco respondendo): para cada
-programa, abri uma transação, pedi ao banco a versão atual de cada função que ele
-instala, rodei o programa, pedi de novo e comparei letra por letra — e desfiz a
-transação. O que mudou nessa comparação é, literalmente, o que mudaria de
-verdade.
-
-⚠️ **Dois já foram travados em 19/09, e não fazem mais parte da dívida** —
-porque mexiam em coisa desta mesma entrega:
-
-- `aplicar-vessel-private-edit-pela-tela.mjs` — voltaria a deixar quem só pode
-  **olhar** encerrar um encontro, e traria as parceiras desativadas de volta para
-  a lista de escolher;
-- `aplicar-vessel-beauty-sessions-com-tela.mjs` — voltaria a deixar quem só pode
-  **olhar** encerrar uma Beauty Session (e as três que existem hoje têm QR
-  impresso, na mão de cliente).
-
-Os dois agora **se recusam a rodar** e explicam na tela o que aconteceria. A
-recusa não é cravada: eles perguntam ao banco se a mudança mais nova já foi
-instalada — num banco novo, onde ela não foi, eles rodam normalmente.
-
-⚠️ **E um terceiro foi travado em 21/09, pelo B10** (que saiu da lista nesta
-mesma revisão): `aplicar-vessel-chave-sorteada-a-serio.mjs` desfaria
-`vessel_criar_private_edit` de volta para uma versão sem trava de permissão
-nenhuma. Ganhou a mesma trava, no mesmo formato. Ele saiu da tabela abaixo por
-isso — o resto da dívida (**oito** programas, não mais nove) continua exatamente
-como estava.
-
-⚠️ **E aqui está o que faz isso ser difícil de enxergar: a ordem dos NOMES dos
-arquivos não é a ordem em que eles foram instalados.** O arquivo
-`2026-09-19-vessel-encerrar-exige-editar.sql` vem **antes** de
-`2026-09-19-vessel-private-edit-pela-tela.sql` quando se lê a pasta em ordem
-alfabética — e foi instalado **23 horas depois** dele. Quem decidir "qual é a
-mais nova" olhando o nome do arquivo chega à resposta errada. Foi o que
-aconteceu comigo na primeira varredura, e é um engano fácil de repetir. **A única
-fonte honesta é a coluna `applied_at` da tabela `schema_migrations`** — é o
-relógio, não o nome.
-
-**Os oito que faltam.** Quatro deles são menos perigosos, e está dito por quê:
-
-| Programa | O que ele faria |
-|---|---|
-| `aplicar-vessel-pessoas.mjs` | Criaria **cópia duplicada** de `vessel_abrir_convite` e `vessel_registrar_cartao` |
-| `aplicar-vessel-contar-as-beauty-sessions.mjs` | Desfaria `vessel_sessao_do_codigo`; **duplicaria** `vessel_conta_das_beauty_sessions` |
-| `aplicar-vessel-private-edit.mjs` | Desfaria `vessel_criar_private_edit`; **duplicaria** `vessel_conta_das_private_edits` |
-| `aplicar-vessel-rastreio-por-stylist.mjs` | Desfaria `vessel_rastreio_dos_stylists` (traria as parceiras desativadas de volta ao relatório) e `vessel_solicitar_atendimento` |
-| `aplicar-vessel-beauty-sessions.mjs` | Desfaria `vessel_interesse_da_beauty_session` e `vessel_solicitar_atendimento` |
-| `aplicar-vessel-pedido-de-atendimento.mjs` | Desfaria `vessel_solicitar_atendimento` |
-| `aplicar-vessel-personal-atelier.mjs` | Desfaria `vessel_pedido_de_personal_atelier` |
-| `aplicar-vessel-preferencias-da-visita.mjs` | Desfaria `vessel_detalhar_visita` |
-
-⚠️ **As quatro funções marcadas como "duplicada" são as MENOS perigosas** —
-`vessel_abrir_convite`, `vessel_registrar_cartao`,
-`vessel_conta_das_beauty_sessions` e `vessel_conta_das_private_edits`. Nesses
-casos o banco não troca uma pela outra: fica com **duas**, e a tela que chamar
-morre na hora com o erro `function is not unique`. É chato, mas **aparece** — e
-o que aparece não é o problema desta lista. O problema é o resto, que é **calado**.
-
-**Por que importa.** Nenhum desses programas é rodado no dia a dia — eles rodam
-uma vez, quando a mudança vai para o banco. O risco é alguém rodar um deles
-achando que está reinstalando algo inofensivo, ou por engano ao copiar uma linha
-de comando de uma conversa antiga. Aí o sistema volta atrás sozinho, sem uma
-palavra.
-
-**Onde se resolve.** Duas saídas, e a segunda é melhor:
-
-1. Escrever a mesma trava nos nove, um a um. Funciona, mas são nove listas
-   digitadas à mão, e cada uma envelhece sozinha na próxima mudança.
-2. **Uma conferência só, em `coletor/lib/`, que todo programa de instalação chama
-   no começo:** ela pergunta ao banco como estão as funções, instala num ponto de
-   retorno, compara, desfaz — e só deixa seguir se nada regrediu. Aí a trava é
-   **medida**, não digitada, e vale para os programas que ainda nem foram
-   escritos.
-
-**Não tem pressa e não cresce por conta própria** — a dívida tem tamanho fixo,
-nesses oito. Mas ela reaparece a cada mudança nova, porque o molde de programa de
-instalação que o projeto usa é justamente o que cria o problema. É por isso que a
-saída 2 vale mais do que a 1.
+**Vazia desde 21/09/2026.** O último item daqui foi o **B9** — está logo acima,
+com o motivo da saída. Também saíram nesta revisão o **B10** e o **B11** — os
+três estão na seção "O que saiu da lista em 21/09/2026", mais acima. ⚠️ O B11
+nasceu chamado de "B9" numa frente que ainda não tinha sido publicada; quando
+as duas se encontraram, quem já estava publicado ficou com o número B9, porque
+é o que as pessoas podem ter citado em conversa — e o B11 ganhou o número
+seguinte livre. O B10 não tem relação com nenhum dos dois; coincidiu de
+resolver no mesmo dia.
 
 ## Como manter esta lista
 
