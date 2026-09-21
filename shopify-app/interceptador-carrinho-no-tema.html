@@ -53,12 +53,14 @@
   ATUALIZADO 18/09/2026 — identidade de sessão ponta a ponta: todo evento
   agora leva `session_id` (cookie `_shopify_s`, da própria Shopify — grava
   sozinho em QUALQUER visita, antes de qualquer ação de carrinho) e, quando
-  existirem, `_fbp`/`_fbc` (atribuição do Meta). Evento novo `sessao_iniciada`
-  dispara uma vez por sessão, na entrada do site. NÃO existe evento de
-  "sessão encerrada": `pagehide` dispara em toda troca de página, não só ao
-  sair do site — gravar isso como evento inundaria a tabela de "encerradas"
-  falsas. O fim da sessão é inferido por inatividade, igual carrinho
-  abandonado.
+  existirem, `_fbp`/`_fbc` (atribuição do Meta).
+
+  REMOVIDO 21/09/2026 — evento `sessao_iniciada` (disparava uma vez por
+  sessão, na entrada do site): ~25% do volume era bot conhecido (Googlebot,
+  o próprio crawler da Meta pré-visitando link de anúncio), sem
+  user_agent gravado pra filtrar isso. A detecção de sessão nova
+  (`ehSessaoNova`) continua existindo só pra gravar o referrer de entrada
+  certo.
 -->
 <script>
 (function () {
@@ -135,10 +137,15 @@
     }
   }
 
-  // Detecta sessão nova UMA vez, cedo — usado tanto pra decidir se manda
-  // sessao_iniciada (lá embaixo) quanto pra saber se deve (re)gravar o
-  // referrer de entrada agora. localStorage, não sessionStorage: é do
-  // navegador inteiro, não por aba (ver achado de produção mais abaixo).
+  // Detecta sessão nova UMA vez, cedo — usado pra saber se deve (re)gravar
+  // o referrer de entrada agora. localStorage, não sessionStorage: é do
+  // navegador inteiro, não por aba — achado ao vivo em produção,
+  // 18/09/2026, quando isto ainda decidia o extinto evento
+  // `sessao_iniciada`: sessionStorage é isolado POR ABA, mas o cookie
+  // _shopify_s (a sessão de verdade) é do navegador inteiro; abrir uma
+  // segunda aba da mesma sessão detectava "sessão nova" de novo. Continua
+  // valendo aqui, mesmo sem o evento: uma troca pra sessionStorage
+  // reintroduziria o mesmo bug, agora no referrer.
   var CHAVE_ULTIMA_SESSAO = 'rbv_ultima_sessao_iniciada';
   var sessaoAtual = pegarCookie('_shopify_s');
   var ehSessaoNova = !!sessaoAtual && localStorage.getItem(CHAVE_ULTIMA_SESSAO) !== sessaoAtual;
@@ -415,27 +422,13 @@
   // Webhook nativo checkouts/create — ver
   // supabase/functions/receber-webhook-checkout.
 
-  // sessao_iniciada: dispara uma vez por sessão, na primeira página
-  // carregada — marca a entrada, ANTES de existir carrinho. Não existe
-  // evento de "sessão encerrada": pagehide dispara em qualquer troca de
-  // página (não só ao sair do site de verdade), então gravar isso como
-  // evento inundaria a tabela de "encerradas" falsas. O fim da sessão
-  // continua sendo inferido por inatividade, do mesmo jeito que
-  // carrinho_abandonados já faz.
-  //
-  // ⚠️ ehSessaoNova (calculado lá em cima) usa localStorage, NÃO
-  // sessionStorage — achado ao vivo em produção, 18/09/2026: sessionStorage
-  // é isolado POR ABA, mas o cookie _shopify_s (a sessão de verdade) é do
-  // navegador inteiro. Com sessionStorage, abrir uma segunda aba da loja
-  // (ou qualquer pré-carregamento que crie um contexto novo) mandava
-  // sessao_iniciada de novo pra MESMA sessão — visto no banco: mesmo
-  // session_id, mesmo IP, gravado várias vezes em minutos, alguns a menos
-  // de 1 segundo de distância. Comparar com a sessão ATUAL (não só "já
-  // mandei alguma vez") resolve os dois lados: não duplica em aba nova da
-  // mesma sessão, e ainda manda de novo quando uma sessão de verdade nova
-  // começa (_shopify_s muda, ~30min de troca).
-  if (ehSessaoNova) {
-    enviar('sessao_iniciada', {});
-  }
+  // sessao_iniciada REMOVIDO em 21/09/2026 — chegou a disparar uma vez por
+  // sessão pra marcar "entrou no site", mas ~25% do volume era bot
+  // conhecido (Googlebot, o próprio crawler da Meta pré-visitando o link
+  // do anúncio — confirmado por reverse DNS de IP), sem user_agent gravado
+  // pra filtrar isso de forma confiável. A edge function já rejeita esse
+  // tipo (ver supabase/functions/_shared/validar-evento-de-carrinho.js);
+  // tirado daqui também pra não gastar request à toa. `ehSessaoNova`
+  // continua existindo só pra gate do referrer de entrada, acima.
 })();
 </script>

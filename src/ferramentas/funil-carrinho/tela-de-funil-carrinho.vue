@@ -118,7 +118,6 @@ const TIPO_LABEL = {
   produto_adicionado: 'Adicionado',
   produto_removido: 'Removido',
   checkout_iniciado: 'Checkout iniciado',
-  sessao_iniciada: 'Sessão iniciada',
 }
 
 const aba = ref('visao')
@@ -156,7 +155,11 @@ async function carregar() {
     sbClient.from('carrinho_eventos').select('produto_titulo').eq('tipo', 'produto_adicionado').gte('criado_em', desde).limit(LIMITE_CARRINHO),
     sbClient.from('carrinho_eventos').select('produto_titulo').eq('tipo', 'produto_removido').gte('criado_em', desde).limit(LIMITE_CARRINHO),
     sbClient.from('carrinho_abandonados').select('cart_token,iniciado_em,ultimo_evento').gte('iniciado_em', desde).limit(LIMITE_CARRINHO),
-    sbClient.from('carrinho_eventos').select('id,criado_em,tipo,produto_titulo,quantidade,preco,cart_token,session_id').gte('criado_em', desde).order('criado_em', { ascending: false }).limit(LIMITE_CARRINHO),
+    // sessao_iniciada excluído: ~25% do volume é bot conhecido (Googlebot,
+    // crawler da própria Meta — confirmado por reverse DNS de IP em
+    // 21/09/2026), sem user_agent gravado pra filtrar isso de forma
+    // confiável. Dado real, mas não em condição de aparecer como registro.
+    sbClient.from('carrinho_eventos').select('id,criado_em,tipo,produto_titulo,quantidade,preco,cart_token,session_id').neq('tipo', 'sessao_iniciada').gte('criado_em', desde).order('criado_em', { ascending: false }).limit(LIMITE_CARRINHO),
   ])
 
   const primeiroErro = adicionados.error || removidos.error || carrinhosAbandonados.error || eventosCrus.error
