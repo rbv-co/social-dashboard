@@ -5,11 +5,16 @@
 // esta versão troca o `mockData`/JS de cliente por interpolação direta dos
 // números reais (nunca client-side, mesma regra do resto do projeto).
 //
-// `dados.sales.leadsQuentes/vendas` (e tudo que depende deles) e
-// `dados.mix` chegam como `null` até: Leads Quentes/Vendas dependerem do
-// Chatwoot (integração futura); Media Mix ser confirmado pelo gerente de
-// marketing (dono pediu pra manter o card, "vou confirmar ainda",
-// 17/09/2026) — `null` sempre aparece como "—", nunca um número inventado.
+// `dados.sales.leadsQuentes/vendas` (e tudo que depende deles) chegam como
+// `null` — dependem do Chatwoot, integração futura — `null` sempre aparece
+// como "—", nunca um número inventado. Media Mix já foi confirmado
+// (17-18/09/2026, ver CAMPOS_CONFIRMADOS em relatorio-diario-opr.js) e tem
+// CINCO fatias, não três: Growth/Engagement/Leads (WPP) + Sales (Link)/
+// Leads (Link) (anúncio "outro" classificado pelo destino do link,
+// 18/09/2026) — as duas últimas entraram em investimentoTotal desde então,
+// então mostrar só as três primeiras aqui deixaria o card sem bater 100%
+// com o resto do relatório (a tela interativa, tela-de-relatorio-opr.vue,
+// já mostra as cinco).
 export const DIM_OPR = { width: 1600, height: 900 };
 
 // Abrevia acima de mil/milhão (arredondado, 1 decimal) — pedido do dono
@@ -133,9 +138,13 @@ export function montarHtmlOpr(dados, meta) {
   .mix-card{border:1px solid var(--line);border-radius:6px;padding:8px 12px;display:grid;grid-template-columns:1fr 190px;gap:16px;align-items:center}
   .mix-title{font:700 17px Georgia,serif}
   .mix-sub{font-size:9px;letter-spacing:.26em;color:#8c8d87;text-transform:uppercase;margin-top:1px}
-  .mix-row{display:grid;grid-template-columns:72px 1fr minmax(45px,auto);gap:10px;align-items:center;margin-top:9px;font-size:11px}
+  /* 5 fatias desde 21/09/2026 (Sales/Leads por Link entraram) — linha mais
+     enxuta que a original (era pensada pra 3): com o espaçamento antigo o
+     card cresce, empurra a seção 03 pra fora e sobrepõe (visto ao vivo,
+     renderizando com dado real). */
+  .mix-row{display:grid;grid-template-columns:72px 1fr minmax(45px,auto);gap:10px;align-items:center;margin-top:5px;font-size:10px}
   .mix-row strong{white-space:nowrap}
-  .bar{height:10px;background:#e9e9e6;border-radius:4px;overflow:hidden}
+  .bar{height:7px;background:#e9e9e6;border-radius:3px;overflow:hidden}
   .bar span{display:block;height:100%;background:var(--green)}
   .mix-side{border-left:1px solid var(--line-2);padding-left:18px;font:italic 15px/1.25 Georgia,serif;color:#52645f}
   .mix-side small{display:block;font:9px/1.5 Inter,sans-serif;letter-spacing:.25em;text-transform:uppercase;color:#aaa59c;margin-top:10px}
@@ -241,6 +250,8 @@ export function montarHtmlOpr(dados, meta) {
           ${mixRow('Growth', mix.growth)}
           ${mixRow('Engagement', mix.engagement)}
           ${mixRow('Leads', mix.leads)}
+          ${mixRow('Sales (Link)', mix.salesLink)}
+          ${mixRow('Leads (Link)', mix.leadsLink)}
         </div>
         <div class="mix-side">Equilíbrio<br>para um crescimento<br>sustentável.
           <small>Dados hoje.<br>Mais amanhã.</small>

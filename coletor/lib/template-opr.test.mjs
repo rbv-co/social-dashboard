@@ -12,7 +12,7 @@ function dadosBase() {
       leads: 5, leadsQuentes: null, vendas: null, investimento: 100, custoPorLead: 20,
       custoPorLeadQuente: null, custoPorVenda: null, conversaoLeadQuente: null, conversaoQuenteVenda: null,
     },
-    mix: { growth: 33.3, engagement: 66.7, leads: 33.3 },
+    mix: { growth: 33.3, engagement: 66.7, leads: 33.3, salesLink: 0, leadsLink: 0 },
   };
 }
 
@@ -34,7 +34,7 @@ test('montarHtmlOpr: valor null aparece como travessão, nunca "null" ou número
       leads: 0, leadsQuentes: null, vendas: null, investimento: 0, custoPorLead: null,
       custoPorLeadQuente: null, custoPorVenda: null, conversaoLeadQuente: null, conversaoQuenteVenda: null,
     },
-    mix: { growth: null, engagement: null, leads: null },
+    mix: { growth: null, engagement: null, leads: null, salesLink: null, leadsLink: null },
   };
   const html = montarHtmlOpr(dados, { conta: 'Vessel Brasil', periodoLabel: '16/09/2026' });
   assert.doesNotMatch(html, /null/);
@@ -60,10 +60,18 @@ test('⚠️ montarHtmlOpr: números ≥ mil/milhão abreviam ("mil"/"M"), nunca
 
 test('montarHtmlOpr: Media Mix — barra nunca passa de 100% de largura mesmo com % maluco, e null vira travessão sem quebrar a barra', () => {
   const dados = dadosBase();
-  dados.mix = { growth: 250, engagement: null, leads: 40 };
+  dados.mix = { growth: 250, engagement: null, leads: 40, salesLink: 0, leadsLink: 0 };
   const html = montarHtmlOpr(dados, { conta: 'Vessel Brasil', periodoLabel: '16/09/2026' });
   assert.match(html, /width:100%/, 'growth=250% nunca estica a barra além do card');
   assert.match(html, /width:0%/, 'engagement null não tem barra (nem null% nem negativo)');
+});
+
+test('⚠️ montarHtmlOpr: Media Mix mostra Sales (Link) e Leads (Link) — confirmados em 18/09/2026, nunca apareciam na imagem mesmo já calculados', () => {
+  const dados = dadosBase();
+  dados.mix = { growth: 20, engagement: 30, leads: 10, salesLink: 25, leadsLink: 15 };
+  const html = montarHtmlOpr(dados, { conta: 'Vessel Brasil', periodoLabel: '16/09/2026' });
+  assert.match(html, /Sales \(Link\)[\s\S]*?25,0%/);
+  assert.match(html, /Leads \(Link\)[\s\S]*?15,0%/);
 });
 
 test('integração: agruparCampanhasDoDia -> calcularDadosOpr -> montarHtmlOpr, sem mocks no meio', () => {
