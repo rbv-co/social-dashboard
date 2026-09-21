@@ -100,9 +100,28 @@ function serialDeDiaPuro(v) {
 }
 
 // ── os estilos ───────────────────────────────────────────────────────────────
-// A ordem aqui é a ordem dos `s="n"` nas células. Mexer na ordem sem mexer nos
-// números troca o formato de todas as colunas de uma vez.
-const ESTILO = { TEXTO: 0, CABECALHO: 1, DIA: 2, INSTANTE: 3, DINHEIRO: 4, NUMERO: 5 };
+//
+// ⚠️ OS NÚMEROS AQUI SÃO O CONTRATO. O `s="n"` de cada célula é o índice dentro
+// de `cellXfs`, na ordem em que estão escritos. Mexer na ordem sem mexer nos
+// números troca o formato de todas as colunas de uma vez, calado.
+//
+// A ordem é de propósito: os cinco estilos de corpo vêm primeiro, e logo depois
+// vêm os MESMOS cinco com o fundo listrado. Assim o estilo da linha par é
+// `base + ZEBRA`, uma conta e não uma tabela.
+const ESTILO = { TEXTO: 0, DIA: 1, INSTANTE: 2, DINHEIRO: 3, NUMERO: 4 };
+const ZEBRA = 5;          // deslocamento do bloco listrado (índices 5 a 9)
+const CABECALHO = 10;
+const SECAO = 11;         // título de bloco na aba de instruções
+
+// A FONTE É HELVETICA, em tudo. No Windows ela cai para Arial sozinha, que é o
+// desenho irmão — o que não pode acontecer é a planilha abrir em Calibri, que é
+// o padrão do Excel e não tem nada a ver com a marca.
+const FONTE = 'Helvetica';
+
+// Cinza quentinho para a listra: cinza puro (F2F2F2) esfria a página e briga
+// com as fotos da marca. Este tem um pingo de amarelo.
+const LISTRA = 'FFF7F6F3';
+const TINTA = 'FF1A1A1A';
 
 const ESTILOS = `${CABECA}
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
@@ -111,67 +130,92 @@ const ESTILOS = `${CABECA}
 <numFmt numFmtId="165" formatCode="dd/mm/yyyy\\ hh:mm"/>
 <numFmt numFmtId="166" formatCode="&quot;R$&quot;\\ #,##0.00"/>
 </numFmts>
-<fonts count="2">
-<font><sz val="11"/><name val="Calibri"/></font>
-<font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font>
+<fonts count="3">
+<font><sz val="11"/><color rgb="${TINTA}"/><name val="${FONTE}"/></font>
+<font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="${FONTE}"/></font>
+<font><b/><sz val="11"/><color rgb="${TINTA}"/><name val="${FONTE}"/></font>
 </fonts>
-<fills count="3">
+<fills count="4">
 <fill><patternFill patternType="none"/></fill>
 <fill><patternFill patternType="gray125"/></fill>
-<fill><patternFill patternType="solid"><fgColor rgb="FF1A1A1A"/><bgColor indexed="64"/></patternFill></fill>
+<fill><patternFill patternType="solid"><fgColor rgb="${TINTA}"/><bgColor indexed="64"/></patternFill></fill>
+<fill><patternFill patternType="solid"><fgColor rgb="${LISTRA}"/><bgColor indexed="64"/></patternFill></fill>
 </fills>
 <borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>
 <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-<cellXfs count="6">
-<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf>
-<xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment vertical="center"/></xf>
-<xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>
-<xf numFmtId="165" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>
-<xf numFmtId="166" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>
-<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
+<cellXfs count="12">
+<xf numFmtId="0"   fontId="0" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf>
+<xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyFont="1" applyNumberFormat="1" applyAlignment="1"><alignment vertical="center"/></xf>
+<xf numFmtId="165" fontId="0" fillId="0" borderId="0" xfId="0" applyFont="1" applyNumberFormat="1" applyAlignment="1"><alignment vertical="center"/></xf>
+<xf numFmtId="166" fontId="0" fillId="0" borderId="0" xfId="0" applyFont="1" applyNumberFormat="1" applyAlignment="1"><alignment vertical="center"/></xf>
+<xf numFmtId="0"   fontId="0" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment vertical="center"/></xf>
+<xf numFmtId="0"   fontId="0" fillId="3" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf>
+<xf numFmtId="164" fontId="0" fillId="3" borderId="0" xfId="0" applyFont="1" applyFill="1" applyNumberFormat="1" applyAlignment="1"><alignment vertical="center"/></xf>
+<xf numFmtId="165" fontId="0" fillId="3" borderId="0" xfId="0" applyFont="1" applyFill="1" applyNumberFormat="1" applyAlignment="1"><alignment vertical="center"/></xf>
+<xf numFmtId="166" fontId="0" fillId="3" borderId="0" xfId="0" applyFont="1" applyFill="1" applyNumberFormat="1" applyAlignment="1"><alignment vertical="center"/></xf>
+<xf numFmtId="0"   fontId="0" fillId="3" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment vertical="center"/></xf>
+<xf numFmtId="0"   fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment vertical="center"/></xf>
+<xf numFmtId="0"   fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment vertical="center"/></xf>
 </cellXfs>
 <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
 </styleSheet>`;
 
 // ── uma célula ───────────────────────────────────────────────────────────────
 /**
- * Devolve o XML de uma célula, já com o tipo da coluna aplicado.
+ * Devolve o XML de uma célula, já com o tipo da coluna e a listra da linha.
+ *
  * ⚠️ Vazio devolve célula AUSENTE, não célula com texto vazio: planilha com
  * milhares de células vazias declaradas fica pesada e o Excel a abre devagar.
+ * ⚠️ MAS numa linha LISTRADA a célula vazia precisa existir, senão o fundo da
+ * listra some naquela coluna e a faixa fica furada. Por isso `listrada` manda
+ * escrever a célula só com o estilo, sem valor.
  */
-function celula(ref, valor, tipo) {
-  if (valor === null || valor === undefined || valor === '') return '';
+function celula(ref, valor, tipo, listrada) {
+  const s = (base) => base + (listrada ? ZEBRA : 0);
+  const vazio = valor === null || valor === undefined || valor === '';
+
+  if (vazio) return listrada ? `<c r="${ref}" s="${s(ESTILO.TEXTO)}"/>` : '';
+
+  // Título de bloco da aba de instruções: `{ texto, secao: true }`.
+  if (typeof valor === 'object' && valor !== null && 'texto' in valor) {
+    const estilo = valor.secao ? SECAO : s(ESTILO.TEXTO);
+    return `<c r="${ref}" s="${estilo}" t="inlineStr">`
+         + `<is><t xml:space="preserve">${xml(valor.texto)}</t></is></c>`;
+  }
 
   if (tipo === 'instante' || tipo === 'dia-de-instante') {
     const h = paredeEmSaoPaulo(valor);
-    if (!h) return '';
+    if (!h) return listrada ? `<c r="${ref}" s="${s(ESTILO.TEXTO)}"/>` : '';
     if (tipo === 'dia-de-instante') {
       // Só o dia, mas o dia CERTO: zera a hora depois de converter o fuso.
-      const s = serialDeParede({ ano: h.ano, mes: h.mes, dia: h.dia });
-      return `<c r="${ref}" s="${ESTILO.DIA}"><v>${s}</v></c>`;
+      return `<c r="${ref}" s="${s(ESTILO.DIA)}"><v>`
+           + `${serialDeParede({ ano: h.ano, mes: h.mes, dia: h.dia })}</v></c>`;
     }
-    return `<c r="${ref}" s="${ESTILO.INSTANTE}"><v>${serialDeParede(h)}</v></c>`;
+    return `<c r="${ref}" s="${s(ESTILO.INSTANTE)}"><v>${serialDeParede(h)}</v></c>`;
   }
 
   if (tipo === 'dia') {
-    const s = serialDeDiaPuro(valor);
+    const serial = serialDeDiaPuro(valor);
     // Texto que não é data cai como texto, em vez de sumir. Some, o dono não
     // descobre; texto na coluna de data ele vê na hora.
-    if (s === null) return `<c r="${ref}" s="${ESTILO.TEXTO}" t="inlineStr"><is><t>${xml(valor)}</t></is></c>`;
-    return `<c r="${ref}" s="${ESTILO.DIA}"><v>${s}</v></c>`;
+    if (serial === null) {
+      return `<c r="${ref}" s="${s(ESTILO.TEXTO)}" t="inlineStr"><is><t>${xml(valor)}</t></is></c>`;
+    }
+    return `<c r="${ref}" s="${s(ESTILO.DIA)}"><v>${serial}</v></c>`;
   }
 
   if (tipo === 'dinheiro' || tipo === 'numero') {
     const n = Number(valor);
-    if (!Number.isFinite(n)) return `<c r="${ref}" s="${ESTILO.TEXTO}" t="inlineStr"><is><t>${xml(valor)}</t></is></c>`;
-    const s = tipo === 'dinheiro' ? ESTILO.DINHEIRO : ESTILO.NUMERO;
-    return `<c r="${ref}" s="${s}"><v>${n}</v></c>`;
+    if (!Number.isFinite(n)) {
+      return `<c r="${ref}" s="${s(ESTILO.TEXTO)}" t="inlineStr"><is><t>${xml(valor)}</t></is></c>`;
+    }
+    return `<c r="${ref}" s="${s(tipo === 'dinheiro' ? ESTILO.DINHEIRO : ESTILO.NUMERO)}">`
+         + `<v>${n}</v></c>`;
   }
 
   // Texto. `xml:space="preserve"` senão o Excel come espaço do começo e do fim.
-  const t = String(valor);
-  return `<c r="${ref}" s="${ESTILO.TEXTO}" t="inlineStr">`
-       + `<is><t xml:space="preserve">${xml(t)}</t></is></c>`;
+  return `<c r="${ref}" s="${s(ESTILO.TEXTO)}" t="inlineStr">`
+       + `<is><t xml:space="preserve">${xml(String(valor))}</t></is></c>`;
 }
 
 // ── uma aba ──────────────────────────────────────────────────────────────────
@@ -191,19 +235,23 @@ export function nomeDeAba(bruto, jaUsados = new Set()) {
   return n;
 }
 
-function abaXml({ colunas, linhas, filtro = true }) {
+function abaXml({ colunas, linhas, filtro = true, zebra = true }) {
   const ultima = letraDaColuna(colunas.length);
   const alcance = `A1:${ultima}${linhas.length + 1}`;
 
-  const cabecalho = '<row r="1" ht="22" customHeight="1">' + colunas.map((c, i) =>
-    `<c r="${letraDaColuna(i + 1)}1" s="${ESTILO.CABECALHO}" t="inlineStr">`
+  const cabecalho = '<row r="1" ht="26" customHeight="1">' + colunas.map((c, i) =>
+    `<c r="${letraDaColuna(i + 1)}1" s="${CABECALHO}" t="inlineStr">`
     + `<is><t>${xml(c.titulo)}</t></is></c>`).join('') + '</row>';
 
+  // ⚠️ A LISTRA É A DA LINHA DA PLANILHA, e não a do índice do array. Uma linha
+  // sim, uma não, começando pela SEGUNDA linha de dado — assim a primeira fica
+  // branca, colada no cabeçalho escuro, e o contraste não vira listra dupla.
   const corpo = linhas.map((linha, y) => {
     const r = y + 2;
+    const listrada = zebra && y % 2 === 1;
     const celulas = colunas.map((c, i) =>
-      celula(`${letraDaColuna(i + 1)}${r}`, linha[i], c.tipo)).join('');
-    return `<row r="${r}">${celulas}</row>`;
+      celula(`${letraDaColuna(i + 1)}${r}`, linha[i], c.tipo, listrada)).join('');
+    return `<row r="${r}" ht="19" customHeight="1">${celulas}</row>`;
   }).join('');
 
   const larguras = colunas.map((c, i) =>
@@ -214,10 +262,10 @@ function abaXml({ colunas, linhas, filtro = true }) {
   return `${CABECA}
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
 <dimension ref="${alcance}"/>
-<sheetViews><sheetView workbookViewId="0">
+<sheetViews><sheetView workbookViewId="0" showGridLines="0">
 <pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/>
 </sheetView></sheetViews>
-<sheetFormatPr defaultRowHeight="15"/>
+<sheetFormatPr defaultRowHeight="19"/>
 <cols>${larguras}</cols>
 <sheetData>${cabecalho}${corpo}</sheetData>${filtro ? `
 <autoFilter ref="${alcance}"/>` : ''}
@@ -351,7 +399,14 @@ export async function montarXlsx(abas, { comprimir = 'auto' } = {}) {
     // ⚠️ `filtro: false` existe para a aba de INSTRUÇÕES. Seta de filtro no
     // cabeçalho de uma aba que é texto corrido parece defeito — quem abre
     // procura o que filtrar e não encontra nada.
-    xml: abaXml({ colunas: a.colunas, linhas: a.linhas ?? [], filtro: a.filtro !== false }),
+    xml: abaXml({
+      colunas: a.colunas,
+      linhas: a.linhas ?? [],
+      filtro: a.filtro !== false,
+      // ⚠️ `zebra: false` na aba de instruções: listra em texto corrido parece
+      // tabela, e a pessoa começa a procurar a coluna que não existe.
+      zebra: a.zebra !== false,
+    }),
   }));
 
   const tipos = `${CABECA}

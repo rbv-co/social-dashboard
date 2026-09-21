@@ -181,3 +181,68 @@ test('aba pode nascer SEM filtro — é o caso da de instruções', async () => 
   // E o cabeçalho continua congelado nas duas: rolar e perder o título é pior.
   assert.match(sem, /state="frozen"/);
 });
+
+test('a fonte é Helvetica em tudo, e nunca Calibri', async () => {
+  // Calibri é o padrão do Excel e não tem nada a ver com a marca. Abrir a
+  // planilha e ver Calibri é o sintoma de que alguém mexeu nos estilos.
+  const estilos = arquivosDoXlsx(await montarXlsx(UMA_ABA)).get('xl/styles.xml');
+  const fontes = [...estilos.matchAll(/<name val="([^"]+)"\/>/g)].map((m) => m[1]);
+  assert.ok(fontes.length >= 3, 'faltou fonte declarada');
+  for (const f of fontes) assert.equal(f, 'Helvetica');
+});
+
+test('as linhas de fundo da planilha ficam OCULTAS em toda aba', async () => {
+  const bytes = await montarXlsx([UMA_ABA[0], { ...UMA_ABA[0], nome: 'outra', filtro: false }]);
+  const dentro = arquivosDoXlsx(bytes);
+  for (const n of [1, 2]) {
+    assert.match(dentro.get(`xl/worksheets/sheet${n}.xml`), /showGridLines="0"/,
+      `a aba ${n} ficou com a grade à mostra`);
+  }
+});
+
+test('as linhas se alternam: uma sim, uma não, começando pela segunda', async () => {
+  const linhas = [['a'], ['b'], ['c'], ['d']];
+  const folha = arquivosDoXlsx(await montarXlsx([{
+    nome: 'x', colunas: [{ titulo: 'Nome' }], linhas,
+  }])).get('xl/worksheets/sheet1.xml');
+  // estilo de texto = 0; listrado = 0 + ZEBRA(5)
+  const estilos = [...folha.matchAll(/<c r="A(\d+)" s="(\d+)"/g)]
+    .map((m) => [Number(m[1]), Number(m[2])]);
+  const porLinha = Object.fromEntries(estilos);
+  assert.equal(porLinha[2], 0, 'a 1ª linha de dado tem de ser branca, colada no cabeçalho');
+  assert.equal(porLinha[3], 5, 'a 2ª linha de dado tem de ser listrada');
+  assert.equal(porLinha[4], 0);
+  assert.equal(porLinha[5], 5);
+});
+
+test('aba com listra desligada não pinta nenhuma linha', async () => {
+  const folha = arquivosDoXlsx(await montarXlsx([{
+    nome: 'x', colunas: [{ titulo: 'Nome' }], linhas: [['a'], ['b'], ['c']], zebra: false,
+  }])).get('xl/worksheets/sheet1.xml');
+  const estilos = [...folha.matchAll(/<c r="A\d+" s="(\d+)"/g)].map((m) => Number(m[1]));
+  assert.deepEqual(estilos.slice(1), [0, 0, 0]);
+});
+
+test('⚠️ célula vazia em linha LISTRADA existe, senão a faixa fica furada', async () => {
+  const folha = arquivosDoXlsx(await montarXlsx([{
+    nome: 'x',
+    colunas: [{ titulo: 'a' }, { titulo: 'b' }],
+    linhas: [['1', '2'], ['3', null]],
+  }])).get('xl/worksheets/sheet1.xml');
+  // a linha 3 é a listrada; a coluna B dela está vazia e mesmo assim tem célula
+  assert.match(folha, /<c r="B3" s="5"\/>/);
+  // já na linha branca, a célula vazia não é escrita (planilha mais leve)
+  const semListra = arquivosDoXlsx(await montarXlsx([{
+    nome: 'x', colunas: [{ titulo: 'a' }, { titulo: 'b' }], linhas: [['1', null]],
+  }])).get('xl/worksheets/sheet1.xml');
+  assert.ok(!/<c r="B2"/.test(semListra));
+});
+
+test('título de bloco tem estilo próprio, diferente do texto comum', async () => {
+  const folha = arquivosDoXlsx(await montarXlsx([{
+    nome: 'x', colunas: [{ titulo: 'a' }], zebra: false,
+    linhas: [[{ texto: 'UM BLOCO', secao: true }], ['texto comum']],
+  }])).get('xl/worksheets/sheet1.xml');
+  assert.match(folha, /<c r="A2" s="11" t="inlineStr"><is><t xml:space="preserve">UM BLOCO/);
+  assert.match(folha, /<c r="A3" s="0" t="inlineStr"/);
+});
