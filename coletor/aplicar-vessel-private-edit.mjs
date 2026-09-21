@@ -9,9 +9,73 @@ const RSVP = 'public.vessel_rsvp_da_private_edit(text, text, text, text, boolean
 const CRIAR = 'public.vessel_criar_private_edit(text, timestamptz, text, text, text, integer, boolean)'
 const CONTA = 'public.vessel_conta_das_private_edits(integer)'
 
+// ⚠️⚠️ ESTE APLICADOR ENVELHECEU EM DUAS FUNÇÕES DIFERENTES.
+//
+// (1) Este arquivo cria `vessel_criar_private_edit` SEM `is_vessel_atendimentos()`
+//     por dentro e termina com `revoke all ... from public, anon, authenticated`
+//     na função — a versão "no ar sem poder ser chamada" que
+//     `2026-09-19-vessel-private-edit-pela-tela.sql` veio corrigir (portão por
+//     dentro + grant para `authenticated`). Reaplicar este arquivo hoje
+//     devolveria o portão para fora da função E revogaria de novo o acesso de
+//     `authenticated` — ninguém mais conseguiria criar encontro pela Central,
+//     sem erro nenhum na hora de aplicar.
+//
+// (2) Este arquivo cria `vessel_conta_das_private_edits(int)` — UM argumento.
+//     `2026-09-19-vessel-arquivar.sql` fez `drop function` desta versão antes
+//     de criar a de DOIS argumentos (`int, boolean`), exatamente para não
+//     conviverem (ver R2 do plano: `create or replace` não troca assinatura).
+//     Reaplicar este arquivo hoje RESSUSCITA a versão de um argumento AO LADO
+//     da de dois — medido ao vivo, numa transação desfeita: qualquer chamada
+//     que mande só `p_dias` (sem `p_incluir_arquivadas`) para de funcionar com
+//     `function ... is not unique`, porque as duas assinaturas aceitam a
+//     chamada.
+//
+// ⚠️ POR QUE A TRAVA É UMA CONSULTA, E NÃO UM `process.exit` cravado: num
+// banco NOVO, onde nenhuma das duas migrations posteriores foi aplicada, não
+// há nada para desfazer e este aplicador tem de rodar normalmente.
+const DEPOIS_DESTE = [
+  {
+    migration: '2026-09-19-vessel-private-edit-pela-tela.sql',
+    estrago:
+      'devolveria `vessel_criar_private_edit` para a versão SEM\n' +
+      '       `is_vessel_atendimentos()` por dentro e, ao revogar tudo de novo no\n' +
+      '       fim da migration, ninguém — nem authenticated — conseguiria mais\n' +
+      '       criar um encontro pela Central.',
+  },
+  {
+    migration: '2026-09-19-vessel-arquivar.sql',
+    estrago:
+      'ressuscitaria `vessel_conta_das_private_edits(integer)` — a versão de UM\n' +
+      '       argumento que aquela migration tinha derrubado de propósito — ao\n' +
+      '       lado da versão de DOIS que está no ar hoje. Qualquer chamada que\n' +
+      '       mande só `p_dias` passaria a falhar com "function ... is not\n' +
+      '       unique", em vez de escolher uma das duas.',
+  },
+]
+
 const sql = readFileSync(new URL(`../db/migrations/${ARQUIVO}`, import.meta.url), 'utf8')
 const cli = new pg.Client({ connectionString: process.env.DATABASE_URL })
 await cli.connect()
+
+// ⚠️ ANTES DE ABRIR TRANSAÇÃO E ANTES DE APLICAR QUALQUER COISA.
+const { rows: posteriores } = await cli.query(
+  `select name from public.schema_migrations where name = any($1::text[]) order by name`,
+  [DEPOIS_DESTE.map((x) => x.migration)])
+if (posteriores.length > 0) {
+  console.error(
+    `❌ nao aplicada: ${ARQUIVO} ja foi superada e reaplica-la desfaria trabalho posterior.\n\n` +
+    `Este arquivo cria \`vessel_criar_private_edit\` e \`vessel_conta_das_private_edits(int)\`.\n` +
+    `Migration(s) mais nova(s) JA APLICADA(S) mudaram essas funcoes, e rodar este aplicador\n` +
+    `agora voltaria atras sem erro nenhum:\n\n` +
+    posteriores.map(({ name }) =>
+      `  · ${name}\n       ${DEPOIS_DESTE.find((x) => x.migration === name).estrago}`).join('\n\n') +
+    `\n\nVa ler essa(s) migration(s) em db/migrations/ antes de qualquer coisa. Se voce PRECISA\n` +
+    `mesmo reaplicar este arquivo, a saida NAO e apagar esta trava: e reaplicar a(s)\n` +
+    `migration(s) posterior(es) logo depois, pelo aplicador de cada uma.\n`)
+  await cli.end()
+  process.exit(1)
+}
+
 await cli.query('begin')
 try {
   await cli.query(sql)

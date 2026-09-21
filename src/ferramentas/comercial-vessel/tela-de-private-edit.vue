@@ -1,9 +1,10 @@
 <template>
   <div class="tela-pe">
-    <barra-de-topo voltar="Comercial Vessel" titulo="Vessel — Private Edit"
+    <barra-de-topo :voltar="ROTULO_DO_PAI[paiDaTela('private-edit')]"
+                   titulo="Vessel — Private Edit"
                    :subtitulo="subtitulo" @voltar="voltar" />
 
-    <div class="container-app cv-body">
+    <div class="cv-largo cv-body">
       <faixa-de-erro :erro="erro" @tentar-de-novo="carregar" />
 
       <!-- ── CRIAR ──────────────────────────────────────────────────────── -->
@@ -49,6 +50,14 @@
         </div>
       </section>
 
+      <!-- ── BUSCAR, FILTRAR, PERÍODO E ORDENAR ────────────────────────────
+           ⚠️ A BARRA NUNCA VAI SOZINHA AO BANCO, salvo o caso de baixo
+           (`precisaDoBanco`). Busca, situação (fora arquivada/todas), loja e
+           ordem acontecem sobre o que já está em memória — ver filtros.js. -->
+      <barra-de-lista v-model="filtro" :lojas="LOJAS"
+                      :mostrar="['busca', 'periodo', 'situacao', 'loja', 'ordem']"
+                      placeholder-busca="código ou anfitriã" />
+
       <!-- ── COMO LER ───────────────────────────────────────────────────── -->
       <section v-if="!carregando && !erro && encontros.length" class="cv-bloco cv-bloco-leitura">
         <h2 class="cv-etiqueta">Como ler os números</h2>
@@ -63,6 +72,13 @@
           valor. Não existe no dado nenhum campo dizendo “esta compra veio deste
           encontro” — o que existe é a mesma pessoa comprando perto da visita.
         </p>
+        <p class="cv-nota">
+          <b>Encerrada</b> e <b>arquivada</b> são coisas diferentes. Encerrada
+          aconteceu e continua contando na receita e nos números. Arquivada é o
+          que não devia ter ficado ali — duplicata, engano — e por isso sai das
+          contas e da lista por padrão; o filtro "Situação" traz de volta quem
+          precisar olhar para ela.
+        </p>
       </section>
 
       <div v-if="carregando" class="cv-carregando">Carregando…</div>
@@ -71,24 +87,32 @@
         <!-- ── O CONJUNTO ───────────────────────────────────────────────── -->
         <section v-if="encontros.length" class="cv-bloco">
           <h2 class="cv-etiqueta">Todos os encontros juntos</h2>
+          <!-- ⚠️ O CONJUNTO É SOBRE O QUE ESTÁ NA TELA, NÃO SOBRE O QUE VEIO
+               DO BANCO: se a pessoa filtrou por loja ou período, o total tem
+               de acompanhar — reusar o total de antes do filtro é a tela
+               mentindo com número certo. -->
+          <p class="cv-nota cv-nota-primeira">
+            {{ encontrosNaTela.length }} de {{ encontros.length }} encontros
+            (o filtro de cima decide quais).
+          </p>
           <div class="cv-numeros">
             <div class="cv-numero">
-              <span class="cv-numero-valor">{{ encontros.length }}</span>
+              <span class="cv-numero-valor">{{ conjunto.totalEncontros }}</span>
               <span class="cv-numero-rotulo">Encontros</span>
             </div>
             <div class="cv-numero">
-              <span class="cv-numero-valor">{{ totalVagas }}</span>
+              <span class="cv-numero-valor">{{ conjunto.totalVagas }}</span>
               <span class="cv-numero-rotulo">Vagas somadas</span>
             </div>
             <div class="cv-numero">
-              <span class="cv-numero-valor">{{ emPorcento(conjuntoResposta.valor) }}</span>
+              <span class="cv-numero-valor">{{ emPorcento(conjunto.resposta.valor) }}</span>
               <span class="cv-numero-rotulo">Responderam</span>
-              <span class="cv-numero-base">{{ taxaEscrita(conjuntoResposta) }}</span>
+              <span class="cv-numero-base">{{ taxaEscrita(conjunto.resposta) }}</span>
             </div>
             <div class="cv-numero">
-              <span class="cv-numero-valor">{{ emPorcento(conjuntoPresenca.valor) }}</span>
+              <span class="cv-numero-valor">{{ emPorcento(conjunto.presenca.valor) }}</span>
               <span class="cv-numero-rotulo">Foram, de quem disse sim</span>
-              <span class="cv-numero-base">{{ taxaEscrita(conjuntoPresenca) }}</span>
+              <span class="cv-numero-base">{{ taxaEscrita(conjunto.presenca) }}</span>
             </div>
           </div>
           <!-- ⚠️ A taxa do conjunto é a SOMA dos numeradores sobre a SOMA dos
@@ -102,7 +126,7 @@
         </section>
 
         <!-- ── CADA ENCONTRO ────────────────────────────────────────────── -->
-        <section v-for="e in encontros" :key="e.codigo" class="cv-bloco">
+        <section v-for="e in encontrosNaTela" :key="e.codigo" class="cv-bloco">
           <div class="cv-cabeca">
             <div class="cv-cabeca-texto">
               <h2 class="cv-titulo">{{ dataHoraLegivel(e.quando) }}</h2>
@@ -112,8 +136,7 @@
                 <span v-if="e.local"> · {{ e.local }}</span>
               </p>
             </div>
-            <span class="cv-selo" :class="e.ativa === false ? 'cv-selo-fim' : 'cv-selo-viva'">
-              {{ e.ativa === false ? 'Encerrado' : 'Aceitando' }}</span>
+            <span class="cv-selo" :class="seloDoEncontro(e).classe">{{ seloDoEncontro(e).texto }}</span>
           </div>
 
           <div class="cv-numeros">
@@ -163,26 +186,136 @@
             trocando a data.
           </p>
 
+          <!-- ── EDITAR (inline, sem modal) ──────────────────────────────── -->
+          <template v-if="podeExecutarAcao('editar', podeEditar) && editando === e.codigo">
+            <h3 class="cv-etiqueta cv-etiqueta-interna">Editar</h3>
+            <div class="cv-form">
+              <label class="cv-campo cv-campo-largo" :for="`ed-stylist-${e.codigo}`"><span>Anfitriã</span>
+                <select :id="`ed-stylist-${e.codigo}`" v-model="rascunho.stylist">
+                  <option v-for="s in stylists" :key="s.codigo" :value="s.codigo">
+                    {{ s.codigo }} — {{ s.nome }}</option>
+                </select></label>
+              <label class="cv-campo" :for="`ed-quando-${e.codigo}`"><span>Dia e hora</span>
+                <input :id="`ed-quando-${e.codigo}`" type="datetime-local" v-model="rascunho.quando"></label>
+              <label class="cv-campo" :for="`ed-praca-${e.codigo}`"><span>Praça</span>
+                <select :id="`ed-praca-${e.codigo}`" v-model="rascunho.praca">
+                  <option value="">Escolha…</option>
+                  <option v-for="(nome, sigla) in PRACAS" :key="sigla" :value="sigla">{{ nome }}</option>
+                </select></label>
+              <label class="cv-campo" :for="`ed-loja-${e.codigo}`"><span>Loja</span>
+                <select :id="`ed-loja-${e.codigo}`" v-model="rascunho.loja">
+                  <option value="">Escolha…</option>
+                  <option v-for="(nome, chave) in LOJAS" :key="chave" :value="chave">{{ nome }}</option>
+                </select></label>
+              <label class="cv-campo" :for="`ed-vagas-${e.codigo}`"><span>Vagas</span>
+                <input :id="`ed-vagas-${e.codigo}`" type="number" min="1" max="60" v-model.number="rascunho.vagas"></label>
+              <label class="cv-campo cv-campo-largo" :for="`ed-local-${e.codigo}`"><span>Lugar</span>
+                <input :id="`ed-local-${e.codigo}`" type="text" maxlength="90" v-model="rascunho.local"></label>
+            </div>
+            <p class="cv-nota">
+              <b>Código e chave nunca mudam</b>: a chave já está dentro de um
+              convite que pode já ter sido mandado.
+            </p>
+            <p v-if="erroDeEditar === e.codigo" class="cv-nota cv-nota-erro">{{ mensagemEditar }}</p>
+            <div class="cv-acoes">
+              <button class="btn" :disabled="salvandoEdicao === e.codigo" @click="fecharEditar">Cancelar</button>
+              <button class="btn btn-principal" :disabled="salvandoEdicao === e.codigo"
+                      @click="salvarEdicao(e)">{{ salvandoEdicao === e.codigo ? 'Salvando…' : 'Salvar' }}</button>
+            </div>
+          </template>
+
+          <!-- ── APAGAR: tem_gente vira explicação, nunca erro vermelho ──── -->
+          <template v-else-if="podeExecutarAcao('apagar', podeEditar) && bloqueioDeApagar[e.codigo]">
+            <p class="cv-nota cv-nota-aviso">{{ bloqueioDeApagar[e.codigo] }}</p>
+          </template>
+
           <div class="cv-acoes">
-            <template v-if="e.ativa !== false">
-              <button v-if="confirmando !== e.codigo" class="btn"
-                      @click="confirmando = e.codigo">Encerrar…</button>
-              <template v-else>
-                <span class="cv-confirma">Encerrar faz o convite parar de aceitar
-                  resposta. Os números ficam.</span>
-                <button class="btn" @click="confirmando = null">Deixar como está</button>
-                <button class="btn btn-perigo" :disabled="mexendo === e.codigo"
-                        @click="encerrar(e, false)">Encerrar</button>
+            <!-- ⚠️ R13: Encerrar/Reabrir agora EXIGEM a mesma permissão de
+                 editar que Editar/Arquivar/Apagar já exigiam —
+                 `vessel_private_edit_encerrar` passou a checar
+                 `is_vessel_atendimentos_editar()`. A regra mora em
+                 `podeExecutarAcao` (private-edit-regras.js), testada — não
+                 reescrita aqui como um `v-if` solto de novo. -->
+            <template v-if="podeExecutarAcao('encerrar', podeEditar)">
+              <template v-if="e.ativa !== false">
+                <button v-if="confirmando !== e.codigo" class="btn"
+                        @click="confirmando = e.codigo">Encerrar…</button>
+                <template v-else>
+                  <span class="cv-confirma">Encerrar faz o convite parar de aceitar
+                    resposta. Os números ficam.</span>
+                  <button class="btn" @click="confirmando = null">Deixar como está</button>
+                  <button class="btn btn-perigo" :disabled="mexendo === e.codigo"
+                          @click="encerrar(e, false)">Encerrar</button>
+                </template>
+              </template>
+              <button v-else class="btn" :disabled="mexendo === e.codigo"
+                      @click="encerrar(e, true)">Reabrir</button>
+            </template>
+
+            <template v-if="podeExecutarAcao('editar', podeEditar)">
+              <button v-if="editando !== e.codigo" class="btn" @click="abrirEditar(e)">Editar…</button>
+
+              <button class="btn" :disabled="arquivando === e.codigo"
+                      @click="alternarArquivar(e)">
+                {{ arquivando === e.codigo ? 'Gravando…' : rotuloDeArquivar(e.arquivada) }}
+              </button>
+
+              <template v-if="!bloqueioDeApagar[e.codigo]">
+                <button v-if="apagando !== e.codigo" class="btn btn-perigo"
+                        @click="apagando = e.codigo">Apagar…</button>
+                <template v-else>
+                  <span class="cv-confirma">Apagar não pode ser desfeito.</span>
+                  <button class="btn" @click="apagando = null">Deixar como está</button>
+                  <button class="btn btn-perigo" :disabled="mexendoApagar === e.codigo"
+                          @click="apagar(e)">Apagar de vez</button>
+                </template>
               </template>
             </template>
-            <button v-else class="btn" :disabled="mexendo === e.codigo"
-                    @click="encerrar(e, true)">Reabrir</button>
+
+            <button class="btn" :disabled="carregandoConvidadas === e.codigo"
+                    @click="verQuemFoi(e)">
+              {{ carregandoConvidadas === e.codigo ? 'Buscando…' : 'Ver quem foi' }}
+            </button>
           </div>
           <p v-if="erroAoMexer === e.codigo" class="cv-nota cv-nota-erro">
             Não consegui gravar agora. Tente de novo em um instante.
           </p>
+          <p v-if="erroDeArquivar === e.codigo" class="cv-nota cv-nota-erro">{{ mensagemArquivar }}</p>
+          <p v-if="erroDeApagar === e.codigo" class="cv-nota cv-nota-erro">{{ mensagemApagar }}</p>
+
+          <!-- ── QUEM FOI ─────────────────────────────────────────────────
+               ⚠️ A TABELA VAI DENTRO DE `overflow-x: auto` — é a única coisa
+               que pode passar da largura no celular; a página em si nunca
+               pode rolar de lado. -->
+          <template v-if="convidadasAbertas === e.codigo">
+            <h3 class="cv-etiqueta cv-etiqueta-interna">Quem foi</h3>
+            <div v-if="convidadasErro[e.codigo]" class="cv-nota cv-nota-erro">
+              Deu erro ao buscar as convidadas. Tente de novo em um instante.
+            </div>
+            <p v-else-if="convidadasVazias[e.codigo]" class="cv-vazio">
+              Ninguém respondeu a este convite ainda.
+            </p>
+            <div v-else-if="convidadas[e.codigo]" class="cv-tabela-caixa">
+              <table class="cv-tabela">
+                <thead><tr><th>Convidada</th><th>Respondeu</th><th>Confirmou</th><th>Compareceu</th><th>Comprou</th></tr></thead>
+                <tbody>
+                  <tr v-for="c in convidadas[e.codigo]" :key="c.telefone">
+                    <td>{{ c.nome }}</td>
+                    <td>{{ rsvpLegivel(c.rsvp) }}</td>
+                    <td>{{ confirmouLegivel(c.status) }}</td>
+                    <td>{{ compareceuLegivel(c.status) }}</td>
+                    <td>{{ comprouLegivel(c.comprou) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </template>
         </section>
 
+        <p v-if="!encontrosNaTela.length && encontros.length" class="cv-vazio">
+          Nenhum encontro passa neste filtro. Experimente "Todas, inclusive
+          arquivadas" ou um período maior.
+        </p>
         <p v-if="!encontros.length" class="cv-vazio">
           Nenhum encontro marcado ainda. Marque o primeiro no bloco de cima.
         </p>
@@ -192,7 +325,8 @@
 </template>
 
 <script setup>
-/* VESSEL — PRIVATE EDIT: marcar o encontro, acompanhar e encerrar.
+/* VESSEL — PRIVATE EDIT: marcar o encontro, acompanhar, editar, arquivar,
+ * apagar e ver quem foi.
  *
  * ⚠️ LÊ COM O TOKEN DA SESSÃO, NUNCA COM A CHAVE ANÔNIMA: as funções conferem
  * `is_vessel_atendimentos()` por dentro, e com a chave anônima o PostgREST
@@ -202,24 +336,52 @@
  * ⚠️ TODA TAXA AQUI SAI COM O DENOMINADOR E, QUANDO A BASE É PEQUENA, COM A
  * FAIXA. Um encontro tem 5 a 8 convidadas: sem isso, "67%" sobre 3 pessoas
  * viraria uma tendência na cabeça de quem lê, e é uma pessoa.
+ *
+ * ⚠️ O PERÍODO DA BARRA RECORTA A LISTA, NÃO O BANCO. As duas chamadas
+ * (`vessel_conta_das_private_edits` e `vessel_convidadas_do_encontro`) usam a
+ * MESMA régua de `p_dias` (14, o padrão das duas) só para a janela de
+ * atribuição de venda — nunca para decidir quais linhas aparecem. Quem decide
+ * isso é `filtrar()`, sobre o que já voltou. Ver `filtros.js`.
+ *
+ * ⚠️ ARQUIVADA PRECISA DE RE-FETCH, NÃO DE FILTRO: a função de conta já chega
+ * SEM as arquivadas (`p_incluir_arquivadas` nasce `false`). Só quando a
+ * situação escolhida é "Só arquivadas" ou "Todas, inclusive arquivadas" a
+ * tela volta ao banco pedindo `p_incluir_arquivadas: true` — ver
+ * `precisaDoBanco` em `filtros.js`.
  */
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import BarraDeTopo from '../../compartilhado/barra-de-topo.vue'
 import FaixaDeErro from '../../compartilhado/faixa-de-erro.vue'
-import { estado } from '../../compartilhado/controle-de-login-e-usuario.js'
+import BarraDeLista from './barra-de-lista.vue'
+import { estado, hasPermission } from '../../compartilhado/controle-de-login-e-usuario.js'
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../../compartilhado/conectar-no-banco-de-dados.js'
 import { classificarErro } from '../../compartilhado/classificar-erro.js'
 import { enderecoDoConvite, dataHoraLegivel, problemasDoEncontro } from './enderecos-publicos.js'
 import {
-  proporcao, proporcaoDoConjunto, taxaEscrita, margemEscrita, emPorcento,
-  emReais, janelaEscrita,
+  proporcao, taxaEscrita, margemEscrita, emPorcento, emReais, janelaEscrita,
 } from './estatistica.js'
+import { filtrar, FILTRO_VAZIO, precisaDoBanco } from './filtros.js'
+import {
+  mensagemDeEditar, mensagemDeArquivar, mensagemDeTemGente, mensagemDeApagar,
+  seloDoEncontro, rotuloDeArquivar, rsvpLegivel, confirmouLegivel,
+  compareceuLegivel, comprouLegivel, paraCampoDatetimeLocal,
+  podeExecutarAcao, calcularConjunto,
+} from './private-edit-regras.js'
+import { paiDaTela, ROTULO_DO_PAI } from './navegacao.js'
 
 const router = useRouter()
-function voltar() { router.push({ name: 'comercial-vessel' }) }
+function voltar() { router.push({ name: paiDaTela('private-edit') }) }
 
 const PRACAS = { CPS: 'Campinas', SAO: 'São Paulo', SBO: 'Santa Bárbara', BSB: 'Brasília' }
+const LOJAS = { iguatemi: 'Iguatemi', tivoli: 'Tivoli', parkshopping: 'ParkShopping' }
+
+// ⚠️ A MESMA JANELA PARA AS DUAS CHAMADAS (R14): a receita do topo e a coluna
+// "Comprou" da lista de convidadas medem com a MESMA régua. Um número
+// diferente em cada uma faria as duas se contradizerem na mesma tela.
+const P_DIAS = 14
+
+const podeEditar = computed(() => hasPermission('atendimentos', 'editar'))
 
 const encontros = ref([])
 const stylists = ref([])
@@ -233,23 +395,34 @@ const erroAoMexer = ref(null)
 const confirmando = ref(null)
 const copiado = ref(null)
 
+const filtro = ref({ ...FILTRO_VAZIO })
+
 const novo = reactive({ stylist: '', quando: '', praca: '', loja: '', vagas: 8, local: '' })
 
 const problemas = computed(() => problemasDoEncontro(novo))
+
+// ⚠️ O FILTRO E O TOTAL AGEM SOBRE O QUE ESTÁ NA TELA (R do bloco "Todos os
+// encontros juntos"): busca por código/anfitriã, situação, loja e ordem — tudo
+// client-side, sobre `encontros`, que só volta ao banco quando a situação
+// exige arquivada (ver o watch abaixo).
+const encontrosNaTela = computed(() =>
+  filtrar(encontros.value, filtro.value, { busca: ['codigo', 'anfitria', 'stylist'], loja: 'loja' }))
+
+// ⚠️ CRITICAL DA RODADA ANTERIOR: `totalVagas` somava sobre `encontros.value`
+// (a lista CHEIA) enquanto a contagem ao lado já seguia o filtro — "3
+// Encontros" ao lado da soma de vagas dos 10. `calcularConjunto` (testada em
+// private-edit-regras.test.mjs) só soma o que RECEBE; aqui ela sempre recebe
+// `encontrosNaTela`, nunca `encontros`.
+const conjunto = computed(() => calcularConjunto(encontrosNaTela.value))
+
+// ⚠️ O SUBTÍTULO TEM DE CONCORDAR COM O QUE ESTÁ NA TELA — mesma razão do
+// bloco do conjunto: contar `encontros.value` (a lista cheia) enquanto a tela
+// abaixo mostra a filtrada é a mesma mentira com número certo, só que no
+// cabeçalho em vez do corpo.
 const subtitulo = computed(() => {
   if (carregando.value || erro.value) return ''
-  return `${encontros.value.length} encontro(s) · ${totalVagas.value} vagas somadas`
+  return `${conjunto.value.totalEncontros} encontro(s) · ${conjunto.value.totalVagas} vagas somadas`
 })
-
-const totalVagas = computed(() =>
-  encontros.value.reduce((s, e) => s + (Number(e.vagas) || 0), 0))
-
-/* ⚠️ AS TAXAS DO CONJUNTO SOMAM NUMERADORES E DENOMINADORES. Média das taxas
- * daria a um encontro de 2 vagas o mesmo peso de um de 8. */
-const conjuntoResposta = computed(() =>
-  proporcaoDoConjunto(encontros.value, 'responderam', 'vagas'))
-const conjuntoPresenca = computed(() =>
-  proporcaoDoConjunto(encontros.value, 'compareceram', 'disseram_sim'))
 
 /* Cada uma é uma proporção de verdade: cada convidada responde ou não, diz sim
  * ou não, vai ou não. Por isso o intervalo de Wilson se aplica. */
@@ -283,8 +456,13 @@ async function carregar() {
         mensagem: 'Sua sessão expirou. Recarregue a página e entre de novo.' }
       return
     }
+    // ⚠️ SÓ PEDE AS ARQUIVADAS QUANDO A SITUAÇÃO PRECISA (R1): a função de
+    // conta chega sem elas por padrão, e um array que nunca as recebeu não
+    // passa a tê-las só porque o filtro de tela mudou — ver `filtros.js`.
+    const incluirArquivadas = precisaDoBanco(filtro.value.situacao)
     const [lista, quem] = await Promise.all([
-      chamar('vessel_conta_das_private_edits', { p_dias: 7 }),
+      chamar('vessel_conta_das_private_edits',
+        { p_dias: P_DIAS, p_incluir_arquivadas: incluirArquivadas }),
       chamar('vessel_stylists_para_escolher', {}),
     ])
     encontros.value = lista || []
@@ -295,6 +473,14 @@ async function carregar() {
     carregando.value = false
   }
 }
+
+// ⚠️ O ÚNICO GATILHO DE VOLTAR AO BANCO É A SITUAÇÃO PEDIR ARQUIVADA — nunca
+// busca, loja, ordem ou período: essas quatro filtram o que já está em
+// memória. Recarregar a cada letra digitada seria uma chamada ao banco por
+// tecla (ver o cabeçalho de `filtros.js`).
+watch(() => precisaDoBanco(filtro.value.situacao), (precisaAgora, precisavaAntes) => {
+  if (precisaAgora !== precisavaAntes) carregar()
+})
 
 async function criar() {
   if (problemas.value.length) return
@@ -332,12 +518,171 @@ async function encerrar(encontro, ativa) {
     // ⚠️ Se a gravação falha, o selo NÃO muda: tela que parece salva e não
     // salvou é o defeito mais caro de perceber.
     if (!r?.ok) { erroAoMexer.value = encontro.codigo; return }
-    encontro.ativa = ativa
     confirmando.value = null
+    // ⚠️ O encontro mudou de estado: a explicação de "tem_gente" (se estava
+    // na tela) fica desatualizada — encerrar não muda quem está pendurado,
+    // mas deixar a frase parada ali depois de uma ação bem-sucedida confunde
+    // mais do que ajuda. Some junto; se a pessoa tentar apagar de novo, a
+    // recusa (e a frase) voltam do zero, com o estado atual.
+    delete bloqueioDeApagar[encontro.codigo]
+    await carregar()
   } catch {
     erroAoMexer.value = encontro.codigo
   } finally {
     mexendo.value = null
+  }
+}
+
+// ── editar (inline) ─────────────────────────────────────────────────────────
+const editando = ref(null)
+const rascunho = reactive({ stylist: '', quando: '', local: '', praca: '', loja: '', vagas: 8 })
+const salvandoEdicao = ref(null)
+const erroDeEditar = ref(null)
+const mensagemEditar = ref('')
+
+function abrirEditar(e) {
+  editando.value = e.codigo
+  erroDeEditar.value = null
+  apagando.value = null
+  Object.assign(rascunho, {
+    stylist: e.stylist || '',
+    quando: paraCampoDatetimeLocal(e.quando),
+    local: e.local || '',
+    praca: e.praca || '',
+    loja: e.loja || '',
+    vagas: e.vagas,
+  })
+}
+
+function fecharEditar() {
+  editando.value = null
+  erroDeEditar.value = null
+}
+
+async function salvarEdicao(e) {
+  salvandoEdicao.value = e.codigo
+  erroDeEditar.value = null
+  try {
+    const quandoISO = rascunho.quando ? new Date(rascunho.quando).toISOString() : null
+    const r = await chamar('vessel_private_edit_editar', {
+      p_codigo: e.codigo,
+      p_quando: quandoISO,
+      p_local: rascunho.local || null,
+      p_praca: rascunho.praca || null,
+      p_loja: rascunho.loja || null,
+      p_vagas: rascunho.vagas || null,
+      p_stylist: rascunho.stylist || null,
+    })
+    if (!r?.ok) {
+      erroDeEditar.value = e.codigo
+      mensagemEditar.value = mensagemDeEditar(r?.situacao)
+      return
+    }
+    editando.value = null
+    await carregar()
+  } catch {
+    erroDeEditar.value = e.codigo
+    mensagemEditar.value = mensagemDeEditar('erro_de_rede')
+  } finally {
+    salvandoEdicao.value = null
+  }
+}
+
+// ── arquivar / desarquivar ───────────────────────────────────────────────────
+const arquivando = ref(null)
+const erroDeArquivar = ref(null)
+const mensagemArquivar = ref('')
+
+async function alternarArquivar(e) {
+  arquivando.value = e.codigo
+  erroDeArquivar.value = null
+  try {
+    const r = await chamar('vessel_private_edit_arquivar',
+      { p_codigo: e.codigo, p_arquivada: !e.arquivada })
+    if (!r?.ok) {
+      erroDeArquivar.value = e.codigo
+      mensagemArquivar.value = mensagemDeArquivar(r?.situacao)
+      return
+    }
+    // ⚠️ MESMO MOTIVO DE `encerrar()`: o estado mudou, a explicação de
+    // "tem_gente" (se estava visível) não pode ficar parada na tela.
+    delete bloqueioDeApagar[e.codigo]
+    await carregar()
+  } catch {
+    erroDeArquivar.value = e.codigo
+    mensagemArquivar.value = mensagemDeArquivar('erro_de_rede')
+  } finally {
+    arquivando.value = null
+  }
+}
+
+// ── apagar ───────────────────────────────────────────────────────────────────
+const apagando = ref(null)
+const mexendoApagar = ref(null)
+const erroDeApagar = ref(null)
+const mensagemApagar = ref('')
+// codigo -> frase (quando a resposta foi `tem_gente`; NÃO é um erro).
+const bloqueioDeApagar = reactive({})
+
+async function apagar(e) {
+  mexendoApagar.value = e.codigo
+  erroDeApagar.value = null
+  try {
+    const r = await chamar('vessel_private_edit_apagar', { p_codigo: e.codigo })
+    if (r?.ok) {
+      apagando.value = null
+      await carregar()
+      return
+    }
+    if (r?.situacao === 'tem_gente') {
+      // ⚠️ NÃO é erro vermelho: é a explicação de por que apagar está fora de
+      // questão, com as duas saídas de verdade — ver private-edit-regras.js.
+      bloqueioDeApagar[e.codigo] = mensagemDeTemGente(e.responderam)
+      apagando.value = null
+      return
+    }
+    erroDeApagar.value = e.codigo
+    mensagemApagar.value = mensagemDeApagar(r?.situacao)
+  } catch {
+    erroDeApagar.value = e.codigo
+    mensagemApagar.value = mensagemDeApagar('erro_de_rede')
+  } finally {
+    mexendoApagar.value = null
+  }
+}
+
+// ── ver quem foi ─────────────────────────────────────────────────────────────
+const convidadasAbertas = ref(null)
+const carregandoConvidadas = ref(null)
+const convidadas = reactive({})
+const convidadasVazias = reactive({})
+const convidadasErro = reactive({})
+
+async function verQuemFoi(e) {
+  // Um segundo clique no mesmo encontro fecha o bloco, sem ir ao banco de novo.
+  if (convidadasAbertas.value === e.codigo) { convidadasAbertas.value = null; return }
+  convidadasAbertas.value = e.codigo
+  if (convidadas[e.codigo] || convidadasVazias[e.codigo]) return // já tem, não busca de novo
+  carregandoConvidadas.value = e.codigo
+  convidadasErro[e.codigo] = false
+  try {
+    // ⚠️ MESMA JANELA (P_DIAS) da conta do topo — R14: a régua da receita e a
+    // régua da coluna "Comprou" têm de ser a mesma, na mesma tela.
+    const lista = await chamar('vessel_convidadas_do_encontro',
+      { p_codigo: e.codigo, p_dias: P_DIAS })
+    if (Array.isArray(lista) && lista.length) {
+      convidadas[e.codigo] = lista
+      convidadasVazias[e.codigo] = false
+    } else {
+      // ⚠️ LISTA VAZIA NÃO É ERRO — é "ninguém respondeu ainda", diferente de
+      // "deu erro ao buscar". As duas precisam de telas diferentes.
+      convidadas[e.codigo] = null
+      convidadasVazias[e.codigo] = true
+    }
+  } catch {
+    convidadasErro[e.codigo] = true
+  } finally {
+    carregandoConvidadas.value = null
   }
 }
 

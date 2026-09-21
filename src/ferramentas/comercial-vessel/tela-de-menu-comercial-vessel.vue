@@ -3,7 +3,8 @@
        @click do Vue, sem innerHTML e sem expor nada em window. Mesmo padrão de
        tela-de-menu-gestao-interna.vue. -->
   <div class="tela-menu-comercial-vessel">
-    <barra-de-topo voltar="Central" titulo="Comercial Vessel" @voltar="voltar" />
+    <barra-de-topo :voltar="ROTULO_DO_PAI[paiDaTela('comercial-vessel')]"
+                   titulo="Comercial Vessel" @voltar="voltar" />
 
     <div class="cvmenu-body">
       <div class="cvmenu-headline">
@@ -56,6 +57,23 @@
           <div class="cvmenu-card-desc">O que entra e sai do carrinho na loja, e quem desistiu antes de pagar.</div>
           <span class="cvmenu-card-enter">→</span>
         </div>
+
+        <!-- ⚠️ PORTA, NÃO TELA: o gerador do Appointment Card mora no OUTRO
+             repositório (vesselbrasil.com.br), fora daqui — ver o comentário em
+             ENDERECO_DO_GERADOR_DE_CARTAO. Por isso é <a> de verdade, não
+             <div @click>: a pessoa sai do sistema, e precisa poder abrir noutra
+             aba, copiar o link e ver para onde vai antes de clicar.
+             `rel="noopener noreferrer"` é obrigatório junto de target="_blank".
+             A seta é ↗ (sai daqui), não → (outra tela da Central). -->
+        <a class="cvmenu-card" v-if="podeAtendimentos"
+           :href="ENDERECO_DO_GERADOR_DE_CARTAO" target="_blank" rel="noopener noreferrer">
+          <div class="cvmenu-card-icon" style="background:linear-gradient(135deg,#8a6a3a 0%,#d4b483 100%)">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/></svg>
+          </div>
+          <div class="cvmenu-card-title">Appointment Card</div>
+          <div class="cvmenu-card-desc">Desenha o cartão do agendamento no celular da Client Advisor. Abre o gerador no site da Vessel.</div>
+          <span class="cvmenu-card-enter">↗</span>
+        </a>
       </div>
     </div>
   </div>
@@ -82,21 +100,24 @@ import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import BarraDeTopo from '../../compartilhado/barra-de-topo.vue'
 import { hasPermission } from '../../compartilhado/controle-de-login-e-usuario.js'
+import { paiDaTela, ROTULO_DO_PAI } from './navegacao.js'
+import { ENDERECO_DO_GERADOR_DE_CARTAO } from './enderecos-publicos.js'
 
 const router = useRouter()
 
 const podeAtendimentos = computed(() => hasPermission('atendimentos', 'ver'))
 const podeCarrinho = computed(() => hasPermission('carrinho', 'ver'))
 
-function voltar() { router.push({ name: 'inicio' }) }
+// ⚠️ O menu é o pai da família: aqui SIM o voltar é 'inicio' na mão — é o
+// próprio paiDaTela('comercial-vessel') dizendo isso, não um atalho.
+function voltar() { router.push({ name: paiDaTela('comercial-vessel') }) }
 function ir(nome) { router.push({ name: nome }) }
 </script>
 
 <style scoped>
 .cvmenu-body {
-  max-width: 62rem;
-  margin: 0 auto;
-  padding: var(--sp-5) var(--sp-4) var(--sp-6);
+  width: 100%;
+  padding: var(--sp-5) clamp(16px, 2.4vw, 40px) var(--sp-6);
 }
 
 .cvmenu-headline { margin-bottom: var(--sp-5); }
@@ -115,7 +136,7 @@ function ir(nome) { router.push({ name: nome }) }
 
 .cvmenu-cards {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: var(--sp-3);
 }
 
@@ -127,6 +148,12 @@ function ir(nome) { router.push({ name: nome }) }
   padding: var(--sp-4);
   cursor: pointer;
   transition: border-color .15s ease, transform .12s ease;
+  /* ⚠️ O card do Appointment Card é um <a>, não um <div> — sem isto ele
+     nasceria sublinhado e azul, como qualquer link, em vez de igual aos
+     outros cinco cards. */
+  text-decoration: none;
+  color: inherit;
+  display: block;
 }
 .cvmenu-card:hover { border-color: var(--accent); }
 .cvmenu-card:active { transform: scale(.995); }
@@ -163,7 +190,4 @@ function ir(nome) { router.push({ name: nome }) }
   font-size: var(--texto-corpo);
 }
 
-@media (min-width: 48rem) {
-  .cvmenu-cards { grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr)); }
-}
 </style>

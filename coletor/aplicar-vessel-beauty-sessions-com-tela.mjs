@@ -11,9 +11,69 @@ const CRIAR = 'public.vessel_beauty_session_criar(text, date, text, text, text)'
 const ENCERRAR = 'public.vessel_beauty_session_encerrar(text, boolean)'
 const INTERESSE = 'public.vessel_interesse_da_beauty_session(text, text, text, text, boolean, text, jsonb, text, boolean)'
 
+// ⚠️⚠️ ESTE APLICADOR ENVELHECEU: RODAR DE NOVO REABRE UM BURACO DE PERMISSAO.
+//
+// A migration deste arquivo faz `create or replace` em
+// `vessel_beauty_session_encerrar`, e essa funcao foi APERTADA depois, por
+// `2026-09-19-vessel-encerrar-exige-editar.sql`. Reaplicar a versao daqui
+// devolve a versao VELHA — sem erro nenhum, com a linha de sucesso impressa
+// igual no fim. Medido com `pg_get_functiondef` antes e depois, numa transacao
+// desfeita; e uma linha so, e e justamente a da trava:
+//
+//     AGORA:      if not public.is_vessel_atendimentos_editar() then
+//     VOLTARIA A: if not public.is_vessel_atendimentos() then
+//
+// Na pratica: quem so tem permissao de OLHAR o Comercial Vessel voltaria a
+// poder ENCERRAR uma Beauty Session — as tres que existem hoje tem QR impresso
+// e na mao de cliente. As outras tres funcoes desta migration
+// (`vessel_beauty_session_criar`, `vessel_interesse_da_beauty_session`,
+// `vessel_sessao_do_codigo`) continuam identicas: so esta regride.
+//
+// ⚠️ A ORDEM DOS NOMES DE ARQUIVO MENTE AQUI. Por `schema_migrations.applied_at`
+// esta migration entrou em 18/09 23:39 e a que a superou em 19/09 23:09 —
+// conferir "quem e mais nova" pelo nome do arquivo ja levou a resposta errada
+// neste mesmo plano.
+//
+// ⚠️ POR QUE A TRAVA E UMA CONSULTA, E NAO UM `process.exit` cravado: num banco
+// NOVO, onde a migration posterior nao foi aplicada, nao ha nada para desfazer
+// e este aplicador tem de rodar normalmente. Uma recusa cravada seria
+// indistinguivel de um script quebrado e travaria o replay legitimo.
+const DEPOIS_DESTE = [
+  {
+    migration: '2026-09-19-vessel-encerrar-exige-editar.sql',
+    estrago:
+      'devolveria `vessel_beauty_session_encerrar` para o portao de VER\n' +
+      '       (`is_vessel_atendimentos()`) no lugar do portao de MEXER\n' +
+      '       (`is_vessel_atendimentos_editar()`) — ou seja, quem so tem\n' +
+      '       permissao de OLHAR o Comercial Vessel voltaria a poder ENCERRAR\n' +
+      '       uma Beauty Session, e as tres que existem hoje tem QR impresso e\n' +
+      '       na mao de cliente.',
+  },
+]
+
 const sql = readFileSync(new URL(`../db/migrations/${ARQUIVO}`, import.meta.url), 'utf8')
 const cli = new pg.Client({ connectionString: process.env.DATABASE_URL })
 await cli.connect()
+
+// ⚠️ ANTES DE ABRIR TRANSACAO E ANTES DE APLICAR QUALQUER COISA.
+const { rows: posteriores } = await cli.query(
+  `select name from public.schema_migrations where name = any($1::text[]) order by name`,
+  [DEPOIS_DESTE.map((x) => x.migration)])
+if (posteriores.length > 0) {
+  console.error(
+    `❌ nao aplicada: ${ARQUIVO} ja foi superada e reaplica-la reabriria um buraco de permissao.\n\n` +
+    `Esta migration faz \`create or replace\` em \`vessel_beauty_session_encerrar\`.\n` +
+    `Migration(s) mais nova(s) JA APLICADA(S) mudaram essa funcao, e rodar este aplicador\n` +
+    `agora voltaria atras sem erro nenhum:\n\n` +
+    posteriores.map(({ name }) =>
+      `  · ${name}\n       ${DEPOIS_DESTE.find((x) => x.migration === name).estrago}`).join('\n\n') +
+    `\n\nVa ler essa migration em db/migrations/ antes de qualquer coisa. Se voce PRECISA mesmo\n` +
+    `reaplicar este arquivo, a saida NAO e apagar esta trava: e reaplicar a migration\n` +
+    `posterior logo depois, pelo aplicador dela.\n`)
+  await cli.end()
+  process.exit(1)
+}
+
 await cli.query('begin')
 try {
   await cli.query(sql)

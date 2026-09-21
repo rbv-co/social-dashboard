@@ -9,9 +9,66 @@ const CRIAR = 'public.vessel_criar_private_edit(text, timestamptz, text, text, t
 const ENCERRAR = 'public.vessel_private_edit_encerrar(text, boolean)'
 const LISTA = 'public.vessel_stylists_para_escolher()'
 
+// ⚠️⚠️ ESTE APLICADOR ENVELHECEU: RODAR DE NOVO DESFAZ COISA QUE VEIO DEPOIS.
+//
+// A migration deste arquivo faz `create or replace` em
+// `vessel_private_edit_encerrar` e em `vessel_stylists_para_escolher`. As DUAS
+// foram mudadas por migrations POSTERIORES. Reaplicar a versao daqui devolve a
+// versao VELHA das duas — sem erro nenhum, com a linha de sucesso impressa
+// igual no fim. Medido com `pg_get_functiondef` antes e depois, numa transacao
+// desfeita: sao exatamente estas duas voltas atras.
+//
+// ⚠️ A ORDEM DOS NOMES DE ARQUIVO MENTE AQUI. `...encerrar-exige-editar.sql`
+// vem ANTES deste alfabeticamente e DEPOIS dele no relogio (23:09 contra
+// 00:09, em `schema_migrations.applied_at`). Quem conferir so pelo nome conclui
+// que este aqui e o mais novo — e e justamente o contrario.
+//
+// ⚠️ POR QUE A TRAVA E UMA CONSULTA, E NAO UM `process.exit` cravado: num banco
+// NOVO, onde nenhuma das duas migrations posteriores foi aplicada, nao ha nada
+// para desfazer e este aplicador tem de rodar normalmente. Uma recusa cravada
+// seria indistinguivel de um script quebrado e travaria o replay legitimo.
+const DEPOIS_DESTE = [
+  {
+    migration: '2026-09-19-vessel-encerrar-exige-editar.sql',
+    estrago:
+      'devolveria `vessel_private_edit_encerrar` para o portao de VER\n' +
+      '       (`is_vessel_atendimentos()`) no lugar do portao de MEXER\n' +
+      '       (`is_vessel_atendimentos_editar()`) — ou seja, quem so tem\n' +
+      '       permissao de OLHAR o Comercial Vessel voltaria a poder encerrar\n' +
+      '       um encontro.',
+  },
+  {
+    migration: '2026-09-19-vessel-stylist-mexer.sql',
+    estrago:
+      'devolveria `vessel_stylists_para_escolher` para a versao SEM o filtro\n' +
+      '       `and coalesce(s.ativa, true)` — as stylists DESATIVADAS voltariam,\n' +
+      '       caladas, para a lista de escolher da tela.',
+  },
+]
+
 const sql = readFileSync(new URL(`../db/migrations/${ARQUIVO}`, import.meta.url), 'utf8')
 const cli = new pg.Client({ connectionString: process.env.DATABASE_URL })
 await cli.connect()
+
+// ⚠️ ANTES DE ABRIR TRANSACAO E ANTES DE APLICAR QUALQUER COISA.
+const { rows: posteriores } = await cli.query(
+  `select name from public.schema_migrations where name = any($1::text[]) order by name`,
+  [DEPOIS_DESTE.map((x) => x.migration)])
+if (posteriores.length > 0) {
+  console.error(
+    `❌ nao aplicada: ${ARQUIVO} ja foi superada e reaplica-la desfaria trabalho posterior.\n\n` +
+    `Esta migration faz \`create or replace\` em \`vessel_private_edit_encerrar\` e em\n` +
+    `\`vessel_stylists_para_escolher\`. Migration(s) mais nova(s) JA APLICADA(S) mudaram essas\n` +
+    `funcoes, e rodar este aplicador agora voltaria atras sem erro nenhum:\n\n` +
+    posteriores.map(({ name }) =>
+      `  · ${name}\n       ${DEPOIS_DESTE.find((x) => x.migration === name).estrago}`).join('\n\n') +
+    `\n\nVa ler essa(s) migration(s) em db/migrations/ antes de qualquer coisa. Se voce PRECISA\n` +
+    `mesmo reaplicar este arquivo, a saida NAO e apagar esta trava: e reaplicar a(s)\n` +
+    `migration(s) posterior(es) logo depois, pelo aplicador de cada uma.\n`)
+  await cli.end()
+  process.exit(1)
+}
+
 await cli.query('begin')
 try {
   await cli.query(sql)

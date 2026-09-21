@@ -1,0 +1,155 @@
+/* AS REGRAS DA TELA DO STYLIST CIRCLE — cadastrar, corrigir e desativar
+ * parceira.
+ *
+ * ⚠️ POR QUE ISTO NÃO MORA NO `.vue`: a mesma explicação de
+ * `private-edit-regras.js` e `beauty-sessions-regras.js`, as duas telas irmãs
+ * que já levaram Critical porque a regra estava só no template — arquivo
+ * `.vue` não roda na suíte (`npm test` só pega `.js`/`.mjs`). QUEM PODE CLICAR
+ * em qual botão e SOBRE QUE LISTA um total é somado são exatamente as duas
+ * regras que escaparam de teste lá; aqui elas nascem como função pura, com
+ * teste ao lado, e o `.vue` só CHAMA — nunca reimplementa.
+ *
+ * ⚠️ R13: esta tela usa `is_vessel_atendimentos_editar()` desde que nasceu —
+ * `vessel_stylist_criar`, `_editar` e `_desativar` já checam a trava de
+ * MEXER dentro de si (ver `2026-09-19-vessel-stylist-mexer.sql`). Não há aqui
+ * uma versão "antiga" que usava a trava de ver, então não há uma segunda
+ * migration de aperto — mas a regra de QUAL BOTÃO aparece atrás de qual trava
+ * mora aqui do mesmo jeito, pelo mesmo motivo: só teste de função pura nunca
+ * vê se o template esqueceu o `v-if`.
+ */
+import { proporcaoDoConjunto } from './estatistica.js'
+
+/**
+ * Quais ações exigem `hasPermission('atendimentos', 'editar')`.
+ *
+ * ⚠️ "REATIVAR" ENTRA JUNTO COM "DESATIVAR": são o mesmo botão, chamando a
+ * mesma função (`vessel_stylist_desativar`) com `p_ativa` trocado — não duas
+ * ações diferentes. Um `v-else` sem o MESMO gate do `v-if` foi exatamente o
+ * Critical que a tela irmã do Private Edit levou com Encerrar/Reabrir.
+ */
+export const ACOES_QUE_EXIGEM_EDITAR = ['criar', 'editar', 'desativar', 'reativar']
+
+export function podeExecutarAcao(acao, podeEditar) {
+  if (ACOES_QUE_EXIGEM_EDITAR.includes(acao)) return !!podeEditar
+  return true // leitura (copiar o link, por exemplo) não pede editar
+}
+
+/**
+ * Os números do bloco "Todas as stylists juntas", a partir de UMA lista.
+ *
+ * ⚠️ QUEM CHAMA DECIDE A LISTA, E TEM DE SER SEMPRE A FILTRADA: esta função
+ * não sabe nada sobre filtro — ela soma o que recebe. A mesma defesa das duas
+ * irmãs, criada depois de um Critical em que o total somava a lista CHEIA ao
+ * lado de uma contagem que já seguia o filtro.
+ */
+export function calcularConjunto(lista) {
+  const l = Array.isArray(lista) ? lista : []
+  return {
+    totalStylists: l.length,
+    totalAberturas: l.reduce((s, x) => s + (Number(x?.aberturas) || 0), 0),
+    totalReceita: l.reduce((s, x) => s + (Number(x?.receita) || 0), 0),
+    conjuntoClientes: proporcaoDoConjunto(l, 'clientes', 'aberturas'),
+    // A régua da venda vem do banco e é a mesma para todas as linhas.
+    janela: l[0]?.janela_de_venda_em_dias ?? null,
+  }
+}
+
+/**
+ * As duas situações em que a tela TEM DE VOLTAR AO BANCO com
+ * `p_incluir_desativadas: true` antes de filtrar.
+ *
+ * ⚠️ NÃO É `precisaDoBanco` DE `filtros.js`: aquela função pergunta pela
+ * situação "arquivada" (Private Edit e Beauty Session). O Stylist Circle não
+ * tem arquivada — tem ativa/desativada, e a função de conta já chega SEM as
+ * desativadas por padrão (`p_incluir_desativadas boolean default false`).
+ * Um array que nunca as recebeu não passa a tê-las só porque o filtro de tela
+ * mudou — o mesmo buraco que `precisaDoBanco` existe para evitar na irmã.
+ */
+export function precisaDasDesativadas(situacao) {
+  return situacao === 'encerradas' || situacao === 'todas'
+}
+
+/** A frase de erro/situação de `vessel_stylist_criar`, uma por `situacao`. */
+export function mensagemDeCriar(situacao) {
+  switch (situacao) {
+    case 'ok':
+      return ''
+    case 'sem_permissao':
+      return 'Você não tem a permissão de Atendimentos para cadastrar parceira.'
+    case 'sem_nome':
+      return 'Escreva o nome da parceira.'
+    case 'whatsapp_invalido':
+      return 'Este WhatsApp não dá para usar. Confira o número (com DDD).'
+    case 'praca_invalida':
+      return 'Escolha uma praça da lista.'
+    case 'whatsapp_repetido':
+      return 'Já existe uma parceira com este WhatsApp.'
+    case 'sem_codigo_livre':
+      return 'Não sobrou código livre agora. Tente de novo em um instante.'
+    case 'codigo_em_disputa':
+      return 'Duas pessoas cadastraram ao mesmo tempo. Tente de novo.'
+    case 'conflito_no_cadastro':
+      return 'Não consegui cadastrar agora. Tente de novo em um instante.'
+    default:
+      return 'Não consegui cadastrar agora. Tente de novo em um instante.'
+  }
+}
+
+/** A frase de erro de `vessel_stylist_editar`, uma por `situacao`. */
+export function mensagemDeEditar(situacao) {
+  switch (situacao) {
+    case 'ok':
+      return ''
+    case 'sem_permissao':
+      return 'Você não tem a permissão de Atendimentos para corrigir parceira.'
+    case 'nao_achei':
+      return 'Não achei mais esta parceira — a lista pode ter mudado. Recarregue e tente de novo.'
+    case 'whatsapp_invalido':
+      return 'Este WhatsApp não dá para usar. Confira o número (com DDD).'
+    case 'whatsapp_repetido':
+      return 'Já existe outra parceira com este WhatsApp.'
+    case 'praca_invalida':
+      return 'Escolha uma praça da lista.'
+    default:
+      return 'Não consegui salvar agora. Tente de novo em um instante.'
+  }
+}
+
+/** A frase de erro de `vessel_stylist_desativar` (desativar OU reativar). */
+export function mensagemDeDesativar(situacao) {
+  switch (situacao) {
+    case 'ok':
+      return ''
+    case 'sem_permissao':
+      return 'Você não tem a permissão de Atendimentos para mexer nesta parceira.'
+    case 'nao_achei':
+      return 'Não achei mais esta parceira — a lista pode ter mudado. Recarregue e tente de novo.'
+    default:
+      return 'Não consegui gravar agora. Tente de novo em um instante.'
+  }
+}
+
+/** O rótulo do botão — o oposto do estado atual. */
+export function rotuloDeDesativar(ativa) {
+  return ativa === false ? 'Reativar' : 'Desativar…'
+}
+
+/**
+ * O que está errado numa parceira nova, em frases da operação.
+ *
+ * ⚠️ ESPELHA SÓ AS DUAS CONFERÊNCIAS QUE `vessel_stylist_criar` FAZ ANTES DE
+ * QUALQUER OUTRA COISA — nome vazio e telefone sem dígito nenhum. O resto
+ * (formato exato do telefone, praça, WhatsApp repetido) é do banco: ele já
+ * devolve a frase certa em português, e repetir a validação aqui só criaria
+ * uma segunda verdade que pode divergir da primeira. `praca` é OPCIONAL para
+ * criar (`p_praca default null`) — diferente da Private Edit, onde a praça é
+ * obrigatória porque vira parte do código do encontro.
+ */
+export function problemasDaParceira({ nome, whatsapp } = {}) {
+  const problemas = []
+  if (!nome || !String(nome).trim()) problemas.push('Escreva o nome da parceira.')
+  if (!whatsapp || !String(whatsapp).replace(/\D/g, '').length) {
+    problemas.push('Escreva o WhatsApp da parceira (com DDD).')
+  }
+  return problemas
+}

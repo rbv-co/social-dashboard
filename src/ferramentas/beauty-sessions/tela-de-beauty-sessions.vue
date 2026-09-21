@@ -1,9 +1,10 @@
 <template>
   <div class="tela-bs">
-    <barra-de-topo voltar="Central" titulo="Vessel — Beauty Sessions"
+    <barra-de-topo :voltar="ROTULO_DO_PAI[paiDaTela('beauty-sessions')]"
+                   titulo="Vessel — Beauty Sessions"
                    :subtitulo="subtitulo" @voltar="voltar" />
 
-    <div class="container-app bs-body">
+    <div class="cv-largo bs-body">
       <faixa-de-erro :erro="erro" @tentar-de-novo="carregar" />
 
       <!-- ── CRIAR ──────────────────────────────────────────────────────── -->
@@ -44,6 +45,14 @@
         </div>
       </section>
 
+      <!-- ── BUSCAR, FILTRAR, PERÍODO E ORDENAR ────────────────────────────
+           ⚠️ A BARRA NUNCA VAI SOZINHA AO BANCO, salvo o caso de baixo
+           (`precisaDoBanco`). Busca, situação (fora arquivada/todas), loja e
+           ordem acontecem sobre o que já está em memória — ver filtros.js. -->
+      <barra-de-lista v-model="filtro" :lojas="LOJAS"
+                      :mostrar="['busca', 'periodo', 'situacao', 'loja', 'ordem']"
+                      placeholder-busca="código, loja ou salão parceiro" />
+
       <!-- ⚠️ ESTAS DUAS NOTAS FICAM AQUI, UMA VEZ. Elas estavam repetidas dentro
            de cada sessão — com três sessões na tela, o mesmo parágrafo aparecia
            três vezes e virava paisagem, que é exatamente o que o item 9 do
@@ -57,6 +66,13 @@
           diferença que diz qual peça vale imprimir de novo.
         </p>
         <p class="bs-nota">
+          <b>Encerrada</b> e <b>arquivada</b> são coisas diferentes. Encerrada
+          aconteceu e continua contando na receita e nos números. Arquivada é o
+          que não devia ter ficado ali — duplicata, engano — e por isso sai das
+          contas e da lista por padrão; o filtro "Situação" traz de volta quem
+          precisar olhar para ela.
+        </p>
+        <p class="bs-nota">
           O desenho do QR sai por
           <code class="bs-codigo">node ferramentas/qrs-das-beauty-sessions.mjs</code>,
           no repositório do site. Ele é gerado e <b>lido de volta por uma câmera</b>
@@ -68,8 +84,67 @@
       <div v-if="carregando" class="bs-carregando">Carregando…</div>
 
       <template v-else-if="!erro">
+        <!-- ── O CONJUNTO ───────────────────────────────────────────────── -->
+        <section v-if="sessoes.length" class="bs-bloco">
+          <h2 class="bs-etiqueta">Todas as sessões juntas</h2>
+          <!-- ⚠️ O CONJUNTO É SOBRE O QUE ESTÁ NA TELA, NÃO SOBRE O QUE VEIO
+               DO BANCO: se a pessoa filtrou por loja ou período, o total tem
+               de acompanhar — reusar o total de antes do filtro é a tela
+               mentindo com número certo. `calcularConjunto` só soma o que
+               RECEBE (beauty-sessions-regras.js), e aqui ela sempre recebe
+               `sessoesNaTela`, nunca `sessoes`. -->
+          <p class="bs-nota bs-nota-primeira">
+            {{ sessoesNaTela.length }} de {{ sessoes.length }} sessões
+            (o filtro de cima decide quais).
+          </p>
+          <div class="bs-numeros">
+            <div class="bs-numero">
+              <span class="bs-numero-valor">{{ conjunto.totalSessoes }}</span>
+              <span class="bs-numero-rotulo">Sessões</span>
+            </div>
+            <div class="bs-numero">
+              <span class="bs-numero-valor">{{ conjunto.totalMesa }}</span>
+              <span class="bs-numero-rotulo">Leram na mesa</span>
+            </div>
+            <div class="bs-numero">
+              <span class="bs-numero-valor">{{ conjunto.totalCartao }}</span>
+              <span class="bs-numero-rotulo">Leram o cartão</span>
+            </div>
+            <div class="bs-numero">
+              <span class="bs-numero-valor">{{ conjunto.totalPessoas }}</span>
+              <span class="bs-numero-rotulo">Se identificaram</span>
+            </div>
+            <div class="bs-numero">
+              <span class="bs-numero-valor">{{ conjunto.totalCompareceram }}</span>
+              <span class="bs-numero-rotulo">Foram à loja</span>
+            </div>
+            <div class="bs-numero bs-numero-destaque">
+              <span v-if="!conjunto.conversao.temBase" class="bs-numero-vazio">sem leitura ainda</span>
+              <span v-else class="bs-numero-valor">{{ emPorcento(conjunto.conversao.valor) }}</span>
+              <span class="bs-numero-rotulo">Leram → se identificaram</span>
+              <span v-if="conjunto.conversao.temBase" class="bs-numero-base">
+                {{ taxaEscrita(conjunto.conversao) }}</span>
+              <span v-if="margemEscrita(conjunto.conversao)" class="bs-numero-margem">
+                {{ margemEscrita(conjunto.conversao) }}</span>
+            </div>
+            <div class="bs-numero">
+              <span class="bs-numero-valor">{{ emReais(conjunto.totalReceita) }}</span>
+              <span class="bs-numero-rotulo">Receita somada</span>
+              <span class="bs-numero-base">{{ janelaEscrita(P_DIAS) }}</span>
+            </div>
+          </div>
+          <!-- ⚠️ A conversão do conjunto é a SOMA dos numeradores sobre a SOMA
+               dos denominadores, nunca a média das taxas de cada sessão: uma
+               sessão de 4 leituras pesaria igual a uma de 200. -->
+          <p class="bs-nota">
+            A conversão do conjunto soma leituras e identificações — não é a
+            média das taxas de cada sessão, que daria a uma sessão pequena o
+            mesmo peso de uma cheia.
+          </p>
+        </section>
+
         <!-- ── AS SESSÕES ───────────────────────────────────────────────── -->
-        <section v-for="s in sessoes" :key="s.codigo" class="bs-bloco bs-sessao">
+        <section v-for="s in sessoesNaTela" :key="s.codigo" class="bs-bloco bs-sessao">
           <div class="bs-cabeca">
             <div class="bs-cabeca-texto">
               <h2 class="bs-titulo">{{ dataLegivel(s.quando) }} · {{ LOJAS[s.loja] || s.loja }}</h2>
@@ -79,8 +154,7 @@
                 <span v-else class="bs-sem-parceiro"> · sem salão informado</span>
               </p>
             </div>
-            <span class="bs-selo" :class="s.ativa ? 'bs-selo-viva' : 'bs-selo-fim'">
-              {{ s.ativa ? 'Aceitando' : 'Encerrada' }}</span>
+            <span class="bs-selo" :class="seloDaSessao(s).classe">{{ seloDaSessao(s).texto }}</span>
           </div>
 
           <div class="bs-numeros">
@@ -146,27 +220,96 @@
               {{ copiado === s.codigo + '-cartao' ? 'Copiado' : 'Copiar' }}</button>
           </div>
 
+          <!-- ── EDITAR (inline, sem modal) ───────────────────────────────
+               ⚠️ SÓ "QUANDO" E "LOJA" — o `codigo` nunca entra aqui: ele está
+               dentro dos DOIS links já copiados acima (mesa e cartão), e os
+               dois estão IMPRESSOS. `vessel_beauty_session_editar` nem aceita
+               `p_codigo` de novo por acaso: a garantia é a ausência dele. -->
+          <template v-if="podeExecutarAcao('editar', podeEditar) && editando === s.codigo">
+            <h3 class="bs-etiqueta bs-etiqueta-interna">Editar</h3>
+            <div class="bs-form">
+              <label class="bs-campo" :for="`ed-quando-${s.codigo}`"><span>Quando</span>
+                <input :id="`ed-quando-${s.codigo}`" type="date" v-model="rascunho.quando"></label>
+              <label class="bs-campo" :for="`ed-loja-${s.codigo}`"><span>Loja</span>
+                <select :id="`ed-loja-${s.codigo}`" v-model="rascunho.loja">
+                  <option value="">Escolha…</option>
+                  <option v-for="(nome, chave) in LOJAS" :key="chave" :value="chave">{{ nome }}</option>
+                </select></label>
+            </div>
+            <p class="bs-nota">
+              <b>Código nunca muda</b>: ele está nos dois QR já impressos — o do
+              display e o do cartão na mão da cliente.
+            </p>
+            <p v-if="erroDeEditar === s.codigo" class="bs-nota bs-nota-erro">{{ mensagemEditar }}</p>
+            <div class="bs-acoes">
+              <button class="btn" :disabled="salvandoEdicao === s.codigo" @click="fecharEditar">Cancelar</button>
+              <button class="btn btn-principal" :disabled="salvandoEdicao === s.codigo"
+                      @click="salvarEdicao(s)">{{ salvandoEdicao === s.codigo ? 'Salvando…' : 'Salvar' }}</button>
+            </div>
+          </template>
+
+          <!-- ── APAGAR: tem_gente vira explicação, nunca erro vermelho ──── -->
+          <template v-else-if="podeExecutarAcao('apagar', podeEditar) && bloqueioDeApagar[s.codigo]">
+            <p class="bs-nota bs-nota-aviso">{{ bloqueioDeApagar[s.codigo] }}</p>
+          </template>
+
           <!-- ⚠️ Botão de perigo NÃO fica solto na lista: pede um passo a mais. -->
           <div class="bs-acoes">
-            <template v-if="s.ativa">
-              <button v-if="confirmando !== s.codigo" class="btn"
-                      @click="confirmando = s.codigo">Encerrar…</button>
-              <template v-else>
-                <span class="bs-confirma">Encerrar faz o QR parar de aceitar contato novo.
-                  Os números ficam.</span>
-                <button class="btn" @click="confirmando = null">Deixar como está</button>
-                <button class="btn btn-perigo" :disabled="mexendo === s.codigo"
-                        @click="encerrar(s, false)">Encerrar</button>
+            <!-- ⚠️ R13: Encerrar/Reabrir agora EXIGEM a mesma permissão de
+                 editar que Editar/Arquivar/Apagar já exigiam —
+                 `vessel_beauty_session_encerrar` passou a checar
+                 `is_vessel_atendimentos_editar()`
+                 (2026-09-19-vessel-encerrar-exige-editar.sql). A regra mora em
+                 `podeExecutarAcao` (beauty-sessions-regras.js), testada — não
+                 reescrita aqui como um `v-if` solto de novo, que foi
+                 exatamente o Critical que a tela irmã levou. -->
+            <template v-if="podeExecutarAcao('encerrar', podeEditar)">
+              <template v-if="s.ativa">
+                <button v-if="confirmando !== s.codigo" class="btn"
+                        @click="confirmando = s.codigo">Encerrar…</button>
+                <template v-else>
+                  <span class="bs-confirma">Encerrar faz o QR parar de aceitar contato novo.
+                    Os números ficam.</span>
+                  <button class="btn" @click="confirmando = null">Deixar como está</button>
+                  <button class="btn btn-perigo" :disabled="mexendo === s.codigo"
+                          @click="encerrar(s, false)">Encerrar</button>
+                </template>
+              </template>
+              <button v-else class="btn" :disabled="mexendo === s.codigo"
+                      @click="encerrar(s, true)">Reabrir</button>
+            </template>
+
+            <template v-if="podeExecutarAcao('editar', podeEditar)">
+              <button v-if="editando !== s.codigo" class="btn" @click="abrirEditar(s)">Editar…</button>
+
+              <button class="btn" :disabled="arquivando === s.codigo"
+                      @click="alternarArquivar(s)">
+                {{ arquivando === s.codigo ? 'Gravando…' : rotuloDeArquivar(s.arquivada) }}
+              </button>
+
+              <template v-if="!bloqueioDeApagar[s.codigo]">
+                <button v-if="apagando !== s.codigo" class="btn btn-perigo"
+                        @click="apagando = s.codigo">Apagar…</button>
+                <template v-else>
+                  <span class="bs-confirma">Apagar não pode ser desfeito.</span>
+                  <button class="btn" @click="apagando = null">Deixar como está</button>
+                  <button class="btn btn-perigo" :disabled="mexendoApagar === s.codigo"
+                          @click="apagar(s)">Apagar de vez</button>
+                </template>
               </template>
             </template>
-            <button v-else class="btn" :disabled="mexendo === s.codigo"
-                    @click="encerrar(s, true)">Reabrir</button>
           </div>
           <p v-if="erroAoMexer === s.codigo" class="bs-nota bs-nota-erro">
             Não consegui gravar agora. Tente de novo em um instante.
           </p>
+          <p v-if="erroDeArquivar === s.codigo" class="bs-nota bs-nota-erro">{{ mensagemArquivar }}</p>
+          <p v-if="erroDeApagar === s.codigo" class="bs-nota bs-nota-erro">{{ mensagemApagar }}</p>
         </section>
 
+        <p v-if="!sessoesNaTela.length && sessoes.length" class="bs-vazio">
+          Nenhuma sessão passa neste filtro. Experimente "Todas, inclusive
+          arquivadas" ou um período maior.
+        </p>
         <p v-if="!sessoes.length" class="bs-vazio">
           Nenhuma Beauty Session criada ainda. Crie a primeira no bloco de cima.
         </p>
@@ -176,7 +319,7 @@
 </template>
 
 <script setup>
-/* VESSEL — BEAUTY SESSIONS: criar, acompanhar e encerrar.
+/* VESSEL — BEAUTY SESSIONS: criar, filtrar, editar, arquivar, apagar e encerrar.
  *
  * POR QUE ESTA TELA EXISTE: em 18/09/2026 o dono disse que sentia "perda de
  * controle" nas gerações de link, cartão e QR. O levantamento deu razão a ele —
@@ -193,27 +336,59 @@
  * repositório LÊ CADA UM DE VOLTA com uma câmera de verdade antes de entregar.
  * Uma tela não faz isso, e QR que a câmera não lê só se descobre com o material
  * já impresso.
+ *
+ * ⚠️ O PERÍODO DA BARRA RECORTA A LISTA, NÃO O BANCO (R10/R17/R18). As duas
+ * funções de conta do Comercial Vessel recebem `p_dias`, mas ele NUNCA filtra
+ * linha nenhuma — só decide a janela de atribuição de venda
+ * (`janela_de_venda_em_dias` na resposta). As três Beauty Sessions reais estão
+ * marcadas para DEPOIS de hoje (19/09/2026): ligar "Período" ao `p_dias` do
+ * banco não tiraria nem poria linha nenhuma, e um filtro de dois lados (ver
+ * `filtros.js`) apagaria a tela inteira. Por isso não existe
+ * `watch(() => filtro.value.dias, ...)` aqui — quem recorta por data é
+ * `filtrar()`, sobre o que já voltou.
+ *
+ * ⚠️ ARQUIVADA PRECISA DE RE-FETCH, NÃO DE FILTRO (R1). A função de conta já
+ * chega SEM as arquivadas (`p_incluir_arquivadas` nasce `false`). Só quando a
+ * situação escolhida precisa delas a tela volta ao banco pedindo
+ * `p_incluir_arquivadas: true` — ver `precisaDoBanco` em `filtros.js`.
+ *
+ * ⚠️ R14: UMA RÉGUA SÓ. `P_DIAS` é a mesma constante mandada para a (única)
+ * chamada de conta desta tela — não há aqui uma segunda chamada com janela
+ * diferente para divergir dela.
  */
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import BarraDeTopo from '../../compartilhado/barra-de-topo.vue'
 import FaixaDeErro from '../../compartilhado/faixa-de-erro.vue'
-import { estado } from '../../compartilhado/controle-de-login-e-usuario.js'
+import BarraDeLista from '../comercial-vessel/barra-de-lista.vue'
+import { estado, hasPermission } from '../../compartilhado/controle-de-login-e-usuario.js'
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../../compartilhado/conectar-no-banco-de-dados.js'
 import { classificarErro } from '../../compartilhado/classificar-erro.js'
 import {
   LOJAS, codigoSugerido, problemasDaSessao, enderecoDaMesa, enderecoDoCartao,
   resumoDaSessao, dataLegivel,
 } from './contas-das-sessoes.js'
+import {
+  podeExecutarAcao, calcularConjunto, mensagemDeEditar, mensagemDeArquivar,
+  mensagemDeApagar, mensagemDeTemGente, seloDaSessao, rotuloDeArquivar,
+} from './beauty-sessions-regras.js'
 // ⚠️ AS CONTAS DE PROPORÇÃO SÃO AS DA FAMÍLIA, e não uma versão local: as três
 // telas do Comercial Vessel mostram taxa sobre base pequena, e a regra de
 // quando a base deixa de servir tem de ser a MESMA nas três.
 import {
   proporcao, taxaEscrita, margemEscrita, emPorcento, emReais, janelaEscrita,
 } from '../comercial-vessel/estatistica.js'
+import { filtrar, FILTRO_VAZIO, precisaDoBanco } from '../comercial-vessel/filtros.js'
+import { paiDaTela, ROTULO_DO_PAI } from '../comercial-vessel/navegacao.js'
 
 const router = useRouter()
-function voltar() { router.push({ name: 'inicio' }) }
+function voltar() { router.push({ name: paiDaTela('beauty-sessions') }) }
+
+// ⚠️ A JANELA DE ATRIBUIÇÃO DE VENDA (R14) — não é o período da barra. Mantida
+// no valor de sempre desta tela (era `p_dias: 7` cravado antes desta tarefa).
+const P_DIAS = 7
+
+const podeEditar = computed(() => hasPermission('atendimentos', 'editar'))
 
 const sessoes = ref([])
 const carregando = ref(true)
@@ -225,13 +400,29 @@ const erroAoMexer = ref(null)
 const confirmando = ref(null)
 const copiado = ref(null)
 
+const filtro = ref({ ...FILTRO_VAZIO })
+
 const nova = reactive({ quando: '', loja: '', sequencia: '01', parceiro: '', codigo: '' })
 
 const problemas = computed(() => problemasDaSessao(nova))
+
+// ⚠️ O FILTRO E O TOTAL AGEM SOBRE O QUE ESTÁ NA TELA: busca por
+// código/loja/parceiro, situação, loja e ordem — tudo client-side, sobre
+// `sessoes`, que só volta ao banco quando a situação exige arquivada (ver o
+// watch abaixo).
+const sessoesNaTela = computed(() =>
+  filtrar(sessoes.value, filtro.value, { busca: ['codigo', 'loja', 'parceiro'], loja: 'loja' }))
+
+// ⚠️ MESMO CUIDADO DA IRMÃ (Private Edit, Critical da rodada anterior): o
+// conjunto tem de somar SEMPRE a lista filtrada, nunca a cheia.
+// `calcularConjunto` (beauty-sessions-regras.js, testada) só soma o que
+// RECEBE — aqui ela sempre recebe `sessoesNaTela`.
+const conjunto = computed(() => calcularConjunto(sessoesNaTela.value))
+
 const subtitulo = computed(() => {
   if (carregando.value || erro.value) return ''
-  const vivas = sessoes.value.filter((s) => s.ativa).length
-  return `${sessoes.value.length} sessão(ões) · ${vivas} aceitando contato`
+  return `${conjunto.value.totalSessoes} sessão(ões) de ${sessoes.value.length} · `
+    + `${conjunto.value.totalPessoas} identificação(ões)`
 })
 
 function conta(s) { return resumoDaSessao(s) }
@@ -260,6 +451,14 @@ function cabecalho() {
   }
 }
 
+async function chamar(funcao, corpo) {
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${funcao}`, {
+    method: 'POST', headers: cabecalho(), body: JSON.stringify(corpo || {}),
+  })
+  if (!r.ok) throw new Error(`o banco respondeu ${r.status}`)
+  return r.json()
+}
+
 async function carregar() {
   carregando.value = true
   erro.value = null
@@ -271,17 +470,26 @@ async function carregar() {
         mensagem: 'Sua sessão expirou. Recarregue a página e entre de novo.' }
       return
     }
-    const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/vessel_conta_das_beauty_sessions`, {
-      method: 'POST', headers: cabecalho(), body: JSON.stringify({ p_dias: 7 }),
-    })
-    if (!r.ok) throw new Error(`o banco respondeu ${r.status}`)
-    sessoes.value = (await r.json()) || []
+    // ⚠️ SÓ PEDE AS ARQUIVADAS QUANDO A SITUAÇÃO PRECISA (R1): a função de
+    // conta chega sem elas por padrão, e um array que nunca as recebeu não
+    // passa a tê-las só porque o filtro de tela mudou — ver `filtros.js`.
+    const incluirArquivadas = precisaDoBanco(filtro.value.situacao)
+    sessoes.value = await chamar('vessel_conta_das_beauty_sessions',
+      { p_dias: P_DIAS, p_incluir_arquivadas: incluirArquivadas }) || []
   } catch (e) {
     erro.value = classificarErro(e)
   } finally {
     carregando.value = false
   }
 }
+
+// ⚠️ O ÚNICO GATILHO DE VOLTAR AO BANCO É A SITUAÇÃO PEDIR ARQUIVADA — nunca
+// busca, loja, ordem ou período: essas quatro filtram o que já está em
+// memória. Recarregar a cada letra digitada seria uma chamada ao banco por
+// tecla (ver o cabeçalho de `filtros.js`).
+watch(() => precisaDoBanco(filtro.value.situacao), (precisaAgora, precisavaAntes) => {
+  if (precisaAgora !== precisavaAntes) carregar()
+})
 
 async function criar() {
   if (problemas.value.length) return
@@ -325,12 +533,126 @@ async function encerrar(sessao, ativa) {
     // ⚠️ SE A GRAVAÇÃO FALHA, O SELO NÃO MUDA. Tela que parece salva e não
     // salvou é o defeito mais caro de perceber (item 9 do padrão).
     if (!resposta?.ok) { erroAoMexer.value = sessao.codigo; return }
-    sessao.ativa = ativa
     confirmando.value = null
+    // ⚠️ `await carregar()` — a memória não é a tela (a explicação de
+    // "tem_gente", se estava na tela, também fica desatualizada; some junto).
+    delete bloqueioDeApagar[sessao.codigo]
+    await carregar()
   } catch {
     erroAoMexer.value = sessao.codigo
   } finally {
     mexendo.value = null
+  }
+}
+
+// ── editar (inline) ─────────────────────────────────────────────────────────
+const editando = ref(null)
+const rascunho = reactive({ quando: '', loja: '' })
+const salvandoEdicao = ref(null)
+const erroDeEditar = ref(null)
+const mensagemEditar = ref('')
+
+function abrirEditar(s) {
+  editando.value = s.codigo
+  erroDeEditar.value = null
+  apagando.value = null
+  // ⚠️ `s.quando` já chega como "aaaa-mm-dd" (a coluna é `date`) — o mesmo
+  // formato que `<input type="date">` espera e que `criar()` já manda direto
+  // ao banco, sem passar por `Date`/fuso nenhum. É essa ausência de conversão
+  // que evita o gotcha do `p_quando date` (ver comentário da migration
+  // `2026-09-19-vessel-beauty-session-mexer.sql`): mandar um instante faria o
+  // Postgres gravar o dia do FUSO de quem chamou, não o dia escrito na tela.
+  rascunho.quando = String(s.quando || '').slice(0, 10)
+  rascunho.loja = s.loja || ''
+}
+
+function fecharEditar() {
+  editando.value = null
+  erroDeEditar.value = null
+}
+
+async function salvarEdicao(s) {
+  salvandoEdicao.value = s.codigo
+  erroDeEditar.value = null
+  try {
+    const r = await chamar('vessel_beauty_session_editar', {
+      p_codigo: s.codigo,
+      p_quando: rascunho.quando || null,
+      p_loja: rascunho.loja || null,
+    })
+    if (!r?.ok) {
+      erroDeEditar.value = s.codigo
+      mensagemEditar.value = mensagemDeEditar(r?.situacao)
+      return
+    }
+    editando.value = null
+    await carregar()
+  } catch {
+    erroDeEditar.value = s.codigo
+    mensagemEditar.value = mensagemDeEditar('erro_de_rede')
+  } finally {
+    salvandoEdicao.value = null
+  }
+}
+
+// ── arquivar / desarquivar ───────────────────────────────────────────────────
+const arquivando = ref(null)
+const erroDeArquivar = ref(null)
+const mensagemArquivar = ref('')
+
+async function alternarArquivar(s) {
+  arquivando.value = s.codigo
+  erroDeArquivar.value = null
+  try {
+    const r = await chamar('vessel_beauty_session_arquivar',
+      { p_codigo: s.codigo, p_arquivada: !s.arquivada })
+    if (!r?.ok) {
+      erroDeArquivar.value = s.codigo
+      mensagemArquivar.value = mensagemDeArquivar(r?.situacao)
+      return
+    }
+    delete bloqueioDeApagar[s.codigo]
+    await carregar()
+  } catch {
+    erroDeArquivar.value = s.codigo
+    mensagemArquivar.value = mensagemDeArquivar('erro_de_rede')
+  } finally {
+    arquivando.value = null
+  }
+}
+
+// ── apagar ───────────────────────────────────────────────────────────────────
+const apagando = ref(null)
+const mexendoApagar = ref(null)
+const erroDeApagar = ref(null)
+const mensagemApagar = ref('')
+// codigo -> frase (quando a resposta foi `tem_gente`; NÃO é um erro).
+const bloqueioDeApagar = reactive({})
+
+async function apagar(s) {
+  mexendoApagar.value = s.codigo
+  erroDeApagar.value = null
+  try {
+    const r = await chamar('vessel_beauty_session_apagar', { p_codigo: s.codigo })
+    if (r?.ok) {
+      apagando.value = null
+      await carregar()
+      return
+    }
+    if (r?.situacao === 'tem_gente') {
+      // ⚠️ NÃO é erro vermelho: é a explicação de por que apagar está fora de
+      // questão, com as duas saídas de verdade — ver beauty-sessions-regras.js.
+      bloqueioDeApagar[s.codigo] = mensagemDeTemGente(conta(s).leituras)
+      apagando.value = null
+      return
+    }
+    erroDeApagar.value = s.codigo
+    mensagemApagar.value = mensagemDeApagar(r?.situacao)
+  } catch {
+    erroDeApagar.value = s.codigo
+    mensagemApagar.value = mensagemDeApagar('erro_de_rede')
+  } finally {
+    mexendoApagar.value = null
   }
 }
 
@@ -349,6 +671,7 @@ onMounted(carregar)
 </script>
 
 <style scoped>
+@import '../comercial-vessel/estilo-comercial.css';
 .bs-body { padding-bottom: var(--sp-6); }
 
 .bs-bloco {
@@ -506,6 +829,7 @@ onMounted(carregar)
 .bs-bloco-leitura { background: var(--bg); }
 .bs-nota-atencao { color: var(--red); }
 .bs-nota-erro { color: var(--red); }
+.bs-nota-aviso { color: var(--orange, var(--red)); }
 
 .bs-link {
   display: flex;

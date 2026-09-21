@@ -214,3 +214,75 @@
   .cv-form { grid-template-columns: repeat(3, 1fr); }
   .cv-campo-largo { grid-column: 1 / -1; }
 }
+
+/* A LARGURA DA FAMÍLIA — pedido do dono em 19/09/2026: "entrando nas
+ * ferramentas de comercial vessel elas n pegam a lateral toda da tela".
+ *
+ * ⚠️ NÃO É `--container-max`. Aquele é global e mudá-lo reflete em TODA a
+ * Central no mesmo instante. A largura do resto da Central é a entrega 2,
+ * com varredura tela por tela a 1920px.
+ *
+ * ⚠️ O CELULAR NÃO MUDA: o clamp desce a 16px, que é o --gutter de hoje.
+ */
+.cv-largo {
+  width: 100%;
+  padding-inline: clamp(16px, 2.4vw, 40px);
+}
+
+/* ── A BARRA DE LISTA ──────────────────────────────────────────────────────
+ * Buscar, período, situação, loja, estágio, ordem — uma só, compartilhada
+ * pelas três telas. Enrola no celular em vez de estourar a tela: nada de
+ * scroll horizontal a 375px. */
+.cv-barra {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+  align-items: flex-end;
+  margin-top: var(--sp-3);
+  padding: var(--sp-3);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.cv-barra-campo { display: flex; flex-direction: column; gap: 4px; flex: 1 1 12rem; min-width: 0; }
+.cv-barra-campo input, .cv-barra-campo select {
+  width: 100%;
+  font-family: var(--fonte-principal);
+  font-size: var(--texto-corpo);
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+}
+
+/* ⚠️ AVISO NÃO É ERRO: cor diferente de `.cv-nota-erro`, para "isto não é uma
+ * falha, é uma explicação" (ex.: apagar bloqueado por ter gente pendurada). */
+.cv-nota-aviso { color: var(--orange); }
+
+/* ── a tabela de convidadas ("ver quem foi") ──────────────────────────────
+ * ⚠️ A TABELA É A ÚNICA COISA QUE PODE PASSAR DA LARGURA — nunca a página. A
+ * caixa com `overflow-x: auto` é o que isola o scroll horizontal nela. */
+.cv-tabela-caixa {
+  overflow-x: auto;
+  max-width: 100%;
+  margin-top: var(--sp-2);
+}
+.cv-tabela {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--fonte-principal);
+  font-size: var(--texto-corpo);
+}
+.cv-tabela th, .cv-tabela td {
+  text-align: left;
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.cv-tabela th {
+  color: var(--muted);
+  font-size: var(--texto-etiqueta);
+  text-transform: uppercase;
+  letter-spacing: .5px;
+}

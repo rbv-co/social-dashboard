@@ -1,9 +1,10 @@
 <template>
   <div class="tela-atendimentos">
-    <barra-de-topo voltar="Central" titulo="Vessel — Private Appointment"
+    <barra-de-topo :voltar="ROTULO_DO_PAI[paiDaTela('atendimentos')]"
+                   titulo="Vessel — Private Appointment"
                    :subtitulo="subtitulo" @voltar="voltar" />
 
-    <div class="container-app atd-body">
+    <div class="cv-largo atd-body">
       <faixa-de-erro :erro="erro" @tentar-de-novo="carregar" />
 
       <!-- ── O QUE ESTOU OLHANDO ─────────────────────────────────────────── -->
@@ -174,9 +175,10 @@ import {
   SITUACOES, SELO_DE_ENSAIO, resumoDosAtendimentos, comprasDaVisita, porDia,
   janelaDoPeriodo, horaCurta, telefoneLegivel, marcacoesDe, podeCancelar,
 } from './contas-de-atendimento.js'
+import { paiDaTela, ROTULO_DO_PAI } from '../comercial-vessel/navegacao.js'
 
 const router = useRouter()
-function voltar() { router.push({ name: 'inicio' }) }
+function voltar() { router.push({ name: paiDaTela('atendimentos') }) }
 
 const LOJAS = {
   iguatemi: 'Iguatemi Campinas',
@@ -347,6 +349,7 @@ onMounted(() => {
 </script>
 
 <style scoped>
+@import '../comercial-vessel/estilo-comercial.css';
 .tela-atendimentos{min-height:100vh;}
 .atd-body{padding-block:var(--sp-5);display:flex;flex-direction:column;gap:var(--sp-5);}
 .atd-carregando{color:var(--muted);font-family:var(--fonte-principal);font-size:var(--texto-corpo);padding:var(--sp-5) 0;}
