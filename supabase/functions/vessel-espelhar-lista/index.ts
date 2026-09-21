@@ -79,6 +79,7 @@ import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { exigirSegredoDeCron } from '../_shared/segredo-de-cron.ts';
 import { montarAbas, CONSULTAS } from '../_shared/abas-da-vessel.js';
 import { montarXlsx, bytesIguais } from '../_shared/planilha-xlsx.js';
+import { linhasDoVigia, ROBO_ETAPAS_LIKE, DIAS_DE_HISTORICO } from '../_shared/vigia-do-espelho.js';
 import { celularParaOBling } from '../_shared/celular-do-bling.js';
 import { completarContato } from '../_shared/completar-contato-do-bling.js';
 
@@ -108,6 +109,35 @@ const TIPOS_DO_CADASTRO = [{ id: 14580785954 }]; // Cliente
 
 const json = (corpo: unknown, status = 200) =>
   new Response(JSON.stringify(corpo), { status, headers: { 'Content-Type': 'application/json' } });
+
+// ── O VIGIA, UMA LINHA POR ETAPA ────────────────────────────────────────────
+// Por que existe, e por que `bloqueado` conta como falha: leia o cabeçalho de
+// `_shared/vigia-do-espelho.js`. A regra que decide sucesso ou falha mora lá,
+// pura e com teste — aqui só se grava.
+async function responder(sb: any, resultado: Record<string, unknown>): Promise<Response> {
+  try {
+    const agora = new Date().toISOString();
+    const { error } = await sb.from('robos_execucoes').insert(linhasDoVigia(resultado, agora));
+    if (error) throw new Error(error.message);
+
+    // ⚠️ O ROBÔ LIMPA O PRÓPRIO RASTRO. `conferir_robos()` guarda 60 dias para
+    // todos os robôs; aqui são 2 linhas a cada 3 minutos, 960 por dia, e 60
+    // dias disso seriam ~25 MB num banco de 126 MB com teto de 500 MB (plano
+    // FREE, medido em 21/09/2026). Sete dias custam ~3 MB e bastam: a view
+    // aposenta variante sem sinal em 72h. As linhas da RODADA não são tocadas.
+    const corte = new Date(Date.now() - DIAS_DE_HISTORICO * 86400000).toISOString();
+    await sb.from('robos_execucoes').delete()
+      .like('robo', ROBO_ETAPAS_LIKE).lt('disparado_em', corte);
+  } catch (e) {
+    // ⚠️ TERMÔMETRO NÃO DERRUBA RODADA. Quando isto roda, a planilha já subiu e
+    // o cadastro já entrou; perder a rodada por causa do registro seria trocar
+    // trabalho feito por anotação. O problema vai na resposta, que fica gravada
+    // em `robos_execucoes` pela linha da rodada e aparece no painel.
+    resultado.vigia = `não consegui registrar as etapas: `
+      + (e instanceof Error ? e.message : String(e));
+  }
+  return json(resultado);
+}
 
 // ── Zoho ────────────────────────────────────────────────────────────────────
 
@@ -643,7 +673,7 @@ async function rodada(sb: any): Promise<Response> {
               .update({ ultimo_erro: r.erro }).is('bling_em', null);
             resultado.bling = `bloqueado: falta a permissão de contatos no Bling `
               + `(${pendentesBling.length} esperando)`;
-            return json(resultado);
+            return await responder(sb, resultado);
           }
         }
       }
@@ -659,5 +689,5 @@ async function rodada(sb: any): Promise<Response> {
     resultado.bling = 'em dia';
   }
 
-  return json(resultado);
+  return await responder(sb, resultado);
 }
