@@ -393,6 +393,79 @@ test('⚠️ a tela não mostra o token de cancelamento', () => {
 // 5. Nenhuma atribuição de `.onclick =` cru em lugar nenhum do arquivo — o
 //    código de hoje não usa essa forma nenhuma vez; se aparecer, é um jeito a
 //    mais de amarrar clique sem passar pelas guardas de template.
+// 6. Nenhum acesso por colchete a `sbClient` (`sbClient[`), e nenhum dos
+//    primitivos de ofuscação mais comuns (`String.fromCharCode`, `atob`,
+//    `unescape`, `eval`, `new Function`).
+//
+// ┌────────────────────────────────────────────────────────────────────────┐
+// │ ⚠️⚠️⚠️ LEIA ISTO ANTES DE CONFIAR NESTA GUARDA — MEDIDO, NÃO SUPOSTO.  │
+// └────────────────────────────────────────────────────────────────────────┘
+//
+// O QUE ELA PEGA: o erro honesto. Alguém — inclusive uma IA apressada —
+// escreve um botão, um listener ou uma chamada de escrita nesta tela achando
+// que "é só mais uma ação", sem pensar que esta lista é SÓ LEITURA por
+// desenho do dono. É o caso comum, e é aqui que a guarda ganha o lugar dela:
+// pegou de verdade um `<Button @dblclick>`, uma leitura escondida atrás de
+// `TABELA_LEMB = 'vessel_' + 'lembretes'` dentro do `Promise.all`, e um
+// `addEventListener` em `onMounted` fora dos dois blocos que as guardas
+// antigas liam — os cinco primeiros ataques da tabela abaixo.
+//
+// O QUE ELA NÃO PEGA, E NÃO PODE PEGAR: MEDIDO com sete ataques por mutação
+// real (backup → editar → `node --test` → restaurar → `git diff` limpo).
+// Seis fecharam. O SÉTIMO NÃO:
+//
+//   const cliente = sbClient
+//   const chave = 'fr' + 'om'
+//   cliente[chave]('vessel_lembretes').delete().eq('id', '1')
+//
+// — apelidar `sbClient` para um nome novo (`cliente`) e montar o NOME DO
+// MÉTODO por concatenação (`chave`) escapa da regra 6, que bane o texto
+// literal `sbClient[`. Isto não é um buraco que "esquecemos de tapar": é o
+// limite estrutural de QUALQUER varredura de texto/regex contra uma
+// linguagem Turing-completa. JavaScript deixa construir qualquer
+// identificador, qualquer nome de propriedade, em tempo de execução — um
+// denylist textual sempre pode ser contornado renomeando o que ele proíbe, e
+// essa corrida não tem fim por regex (só um parser de AST que resolva
+// bindings de verdade fecharia a classe inteira, e isto aqui não é isso).
+//
+// ONDE MORA A GARANTIA DE VERDADE: NÃO é este arquivo. É o banco. Conferido
+// em produção, por leitura direta em `pg_policy` (conexão nova, só SELECT):
+// `vessel_lembretes` tem EXATAMENTE UMA política — `vessel_lembretes_read`,
+// comando SELECT, role `authenticated`. NÃO existe política de INSERT,
+// UPDATE ou DELETE para `authenticated` nem para `anon`. Isso significa que
+// mesmo o ataque #7 acima, SE chegasse a rodar num navegador de verdade, o
+// `.delete()` seria recusado pelo Postgres antes de tocar uma linha — o RLS
+// nega por padrão o que não tem política, e não existe política de escrita
+// aqui. Esta guarda é DEFESA EM PROFUNDIDADE, uma camada a mais; o PORTÃO de
+// verdade é o RLS. ⚠️ SE ALGUÉM UM DIA ADICIONAR UMA POLÍTICA DE ESCRITA A
+// `vessel_lembretes` (para a Task 1/2 do desenho, que roda como usuário sem
+// login — hoje ela passa pela edge com `service_role`, nunca por aqui), esta
+// guarda DEIXA DE SER camada extra e VIRA a última linha — e nesse dia ela
+// precisa ser revista com esse peso em mente, não deixada como está.
+//
+// A CONSEQUÊNCIA PARA QUEM LER ISTO DEPOIS: trate esta guarda como um
+// LEMBRETE, não como um portão. Uma proteção que PARECE completa e não é
+// vale MENOS que proteção nenhuma — porque desliga a desconfiança de quem
+// vem depois. Quem chegar aqui pensando "os testes são verdes, então está
+// seguro" está lendo errado; o que os testes verdes provam é "não caiu no
+// erro honesto", não "está à prova do adversário que sabe o que está
+// fazendo". Essa segunda garantia vem do banco, sempre.
+//
+// O CUSTO DE FALSO ALARME desta guarda mais estrita — escrito aqui de
+// propósito, para não ser descoberto por quem vier depois:
+//   · regra 1 (só string literal em `.from`/`.rpc`): reprova qualquer
+//     código são que precise ler uma tabela por nome dinâmico. Custo ZERO
+//     hoje (nenhum `.from`/`.rpc` deste arquivo usava variável antes desta
+//     guarda), mas é uma restrição real sobre como o arquivo pode crescer;
+//   · regra 4 (`addEventListener` só como `window`/`'message'`): a PRÓXIMA
+//     feature que precisar ouvir `resize`, `scroll` ou `keydown` num campo
+//     vai reprovar esta guarda por motivo BENIGNO, até alguém abrir este
+//     comentário e estender a lista do que é permitido — é o preço
+//     deliberado de "enumerar o permitido" em vez de "enumerar o proibido";
+//   · regra 6 (bane `sbClient[` + quatro primitivos de ofuscação): lista
+//     FECHADA de quatro nomes, não uma regra geral — e, como o ataque #7
+//     prova, nem fecha a classe que tenta fechar. É a menor barreira que
+//     vale pagar em regex antes de precisar de um parser de verdade.
 test('⚠️⚠️ NEGAR POR PADRÃO: nenhuma escrita imperativa alcança vessel_lembretes, em NENHUM lugar do arquivo — não só no bloco da aba', () => {
   // 1 e 2 — .from(...) só com string literal, e só .select( depois de
   // .from('vessel_lembretes').
