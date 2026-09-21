@@ -6,19 +6,30 @@ Mantém UMA planilha no Zoho WorkDrive sempre igual ao que está no sistema:
 
   04. Vessel Brasil / 17. Marketing / Base de clientes / Base de clientes.xlsx
 
-São ONZE ABAS, nesta ordem:
+São DOZE ABAS, nesta ordem:
 
-  Lista de espera .... quem se cadastrou pelo site (vesselbrasil.com.br)
-  Vendas ............. os pedidos, com o valor que realmente entrou
-  Garantias .......... as garantias confirmadas e a fila de conferência
-  Atribuição ......... "de onde veio e deu em quê", uma linha por atendimento
-  Origens ............ todo registro de origem, para provar por onde ela chegou
-  Pessoas ............ as clientes cadastradas
-  Atendimentos ....... os horários marcados nas lojas
-  Convites abertos ... quem abriu convite, por QR ou por link
-  Stylists ........... com o link de cada uma e quantas clientes ela trouxe
-  Private Edits ...... com o link de cada convite e quem compareceu
-  Beauty Sessions .... com o endereço do QR e o salão parceiro
+  Instruções ................. como usar a planilha, em português
+  Landing page ............... quem se cadastrou pelo site (vesselbrasil.com.br)
+  Clientes ................... as pessoas da base, com cidade e Client Advisor
+  Visitas às lojas ........... horário marcado, quem veio e quem não veio
+  Vendas ..................... os pedidos, com o valor que realmente entrou
+  Garantias .................. as garantias confirmadas e a fila de conferência
+  De onde veio e no que deu .. uma linha por visita: origem + o que comprou depois
+  Histórico de origem ........ todo registro de origem, para provar por onde chegou
+  Convites abertos ........... quem abriu convite, por QR ou por link
+  Stylists ................... com o link de cada uma e quantas clientes trouxe
+  Private Edits .............. com o link de cada convite e quem compareceu
+  Beauty Sessions ............ com o endereço do QR e o salão parceiro
+
+Os nomes de cinco abas foram corrigidos pelo dono em 21/09/2026, porque três
+pares diziam quase a mesma coisa: "Pessoas" e "Lista de espera" eram as duas
+"gente"; "Atribuição" e "Origens" eram as duas "de onde veio"; e "Atendimentos"
+soava igual a "Convites abertos".
+
+⚠️ A TABELA do sistema continua se chamando `vessel_lista_espera`, e isso é de
+propósito: renomear tabela em produção arrasta migração, permissão, gatilho e o
+vigia; renomear o rótulo da aba custa uma linha. Quem olhar o sistema por dentro
+vai ver o nome antigo — é a mesma coisa.
 
 Ele também cadastra a pessoa no Bling e completa a ficha dela lá.
 

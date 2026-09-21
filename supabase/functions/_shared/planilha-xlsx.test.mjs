@@ -109,7 +109,7 @@ test('aba sem linha nenhuma continua abrindo, com o cabeçalho', async () => {
 });
 
 test('as onze abas entram, cada uma com o seu nome', async () => {
-  const nomes = ['Lista de espera', 'Garantias', 'Vendas', 'Atribuição', 'Origens',
+  const nomes = ['Landing page', 'Garantias', 'Vendas', 'Atribuição', 'Origens',
     'Pessoas', 'Atendimentos', 'Convites abertos', 'Stylists', 'Private Edits',
     'Beauty Sessions'];
   const abas = abasDoXlsx(await montarXlsx(nomes.map((n) => ({
@@ -169,4 +169,15 @@ test('sem compressor o arquivo AINDA abre — é o caminho que roda no Deno sem 
 test('as duas saídas do zip são determinísticas, cada uma na sua', async () => {
   assert.ok(bytesIguais(await montarXlsx(UMA_ABA, { comprimir: false }),
     await montarXlsx(UMA_ABA, { comprimir: false })));
+});
+
+test('aba pode nascer SEM filtro — é o caso da de instruções', async () => {
+  // Seta de filtro no cabeçalho de uma aba que é texto corrido parece defeito.
+  const com = arquivosDoXlsx(await montarXlsx(UMA_ABA)).get('xl/worksheets/sheet1.xml');
+  const sem = arquivosDoXlsx(await montarXlsx([{ ...UMA_ABA[0], filtro: false }]))
+    .get('xl/worksheets/sheet1.xml');
+  assert.match(com, /<autoFilter/);
+  assert.ok(!/<autoFilter/.test(sem), 'a aba sem filtro saiu com filtro');
+  // E o cabeçalho continua congelado nas duas: rolar e perder o título é pior.
+  assert.match(sem, /state="frozen"/);
 });

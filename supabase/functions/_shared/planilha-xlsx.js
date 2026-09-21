@@ -191,7 +191,7 @@ export function nomeDeAba(bruto, jaUsados = new Set()) {
   return n;
 }
 
-function abaXml({ colunas, linhas }) {
+function abaXml({ colunas, linhas, filtro = true }) {
   const ultima = letraDaColuna(colunas.length);
   const alcance = `A1:${ultima}${linhas.length + 1}`;
 
@@ -219,8 +219,8 @@ function abaXml({ colunas, linhas }) {
 </sheetView></sheetViews>
 <sheetFormatPr defaultRowHeight="15"/>
 <cols>${larguras}</cols>
-<sheetData>${cabecalho}${corpo}</sheetData>
-<autoFilter ref="${alcance}"/>
+<sheetData>${cabecalho}${corpo}</sheetData>${filtro ? `
+<autoFilter ref="${alcance}"/>` : ''}
 </worksheet>`;
 }
 
@@ -348,7 +348,10 @@ export async function montarXlsx(abas, { comprimir = 'auto' } = {}) {
   const prontas = abas.map((a, i) => ({
     nome: nomeDeAba(a.nome, usados),
     arquivo: `xl/worksheets/sheet${i + 1}.xml`,
-    xml: abaXml({ colunas: a.colunas, linhas: a.linhas ?? [] }),
+    // ⚠️ `filtro: false` existe para a aba de INSTRUÇÕES. Seta de filtro no
+    // cabeçalho de uma aba que é texto corrido parece defeito — quem abre
+    // procura o que filtrar e não encontra nada.
+    xml: abaXml({ colunas: a.colunas, linhas: a.linhas ?? [], filtro: a.filtro !== false }),
   }));
 
   const tipos = `${CABECA}
