@@ -37,6 +37,16 @@
 // A compressão é TENTADA e, se não houver, o zip sai SEM COMPRIMIR (o formato
 // zip aceita as duas coisas). Medido: 42 KB comprimido contra 379 KB sem. As
 // duas saídas abrem no Excel, e há teste para cada uma.
+//
+// ✅ MEDIDO EM PRODUÇÃO (21/09/2026): o runtime da Supabase TEM `node:zlib`. A
+// rodada de verdade gravou 42,8 KB, e não os 379 KB do caminho sem compressão.
+//
+// ⚠️ MAS OS BYTES NÃO SÃO IGUAIS ENTRE OS DOIS RUNTIMES: o mesmo conteúdo deu
+// 42,4 KB no node e 42,8 KB no Deno, porque cada um traz a sua compilação do
+// zlib. O determinismo que o robô precisa é DENTRO de um runtime só (a edge
+// compara o que ela mesma gerou), e é isso que os testes provam. A consequência
+// prática, pequena e conhecida: se alguém rodar o resgate manual em node, a
+// rodada seguinte da edge vai achar que o arquivo mudou e regravar UMA vez.
 import { paredeEmSaoPaulo } from './hora-de-sao-paulo.js';
 
 // `null` = ainda não tentei; `false` = tentei e não existe.

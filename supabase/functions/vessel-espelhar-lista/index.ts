@@ -504,7 +504,25 @@ async function rodada(sb: any): Promise<Response> {
       }
     } catch (e) {
       const frase = e instanceof Error ? e.message : String(e);
+      // A linha que ainda espera espelho carrega o motivo, em português.
       await sb.from('vessel_lista_espera').update({ ultimo_erro: frase }).is('planilha_em', null);
+
+      // ⚠️ E QUANDO NÃO HÁ NENHUMA ESPERANDO, O ERRO CAÍA NO VÁCUO. Medido em
+      // 21/09/2026: as 150 linhas já tinham `planilha_em`, então o `update` de
+      // cima atingia ZERO linhas — a planilha falhava e o `ultimo_erro`, que é
+      // o lugar que o LEIA-ME manda o dono olhar, continuava vazio. A função
+      // devolve 200 (o Bling pode ter dado certo), então `robos_execucoes`
+      // também marcava `ok`. Silêncio completo.
+      // Agora, nesse caso, o motivo vai na linha MAIS RECENTE — uma só, para
+      // não apagar o erro de Bling das outras 149.
+      if (!linhas.some((l: any) => !l.planilha_em)) {
+        const maisNova = linhas.reduce((a: any, b: any) =>
+          String(b.criado_em ?? '') > String(a?.criado_em ?? '') ? b : a, linhas[0]);
+        if (maisNova?.id) {
+          await sb.from('vessel_lista_espera')
+            .update({ ultimo_erro: frase }).eq('id', maisNova.id);
+        }
+      }
       resultado.planilha = `falhou: ${frase}`;
     }
   }
