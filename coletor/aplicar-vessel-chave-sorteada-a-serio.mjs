@@ -2,12 +2,67 @@
 import './lib/carregar-env.mjs'
 import { readFileSync } from 'node:fs'
 import pg from 'pg'
+//
+// ⚠️⚠️ ESTE APLICADOR ENVELHECEU: RODAR DE NOVO DESFAZ COISA QUE VEIO DEPOIS.
+//
+// A migration deste arquivo faz `create or replace` em
+// `vessel_criar_private_edit`. Ela nem tinha o portao de permissao por dentro
+// (esse buraco so foi fechado por `2026-09-19-vessel-private-edit-pela-tela.sql`,
+// que tambem trocou o `revoke` cego do fim desta migration por um `grant` para
+// `authenticated`) — e mais tarde a versao com portao foi apertada de "ver"
+// para "editar" por `2026-09-21-vessel-criar-exige-editar.sql` (B10 de
+// docs/pendencias.md). Reaplicar este arquivo hoje devolveria
+// `vessel_criar_private_edit` para a versao SEM portao nenhum e, ao revogar
+// tudo de novo no fim, ninguem — nem authenticated — conseguiria mais criar
+// um encontro pela Central.
+//
+// ⚠️ POR QUE A TRAVA E UMA CONSULTA, E NAO UM `process.exit` cravado: num
+// banco NOVO, onde nenhuma das migrations posteriores foi aplicada, nao ha
+// nada para desfazer e este aplicador tem de rodar normalmente.
+const DEPOIS_DESTE = [
+  {
+    migration: '2026-09-19-vessel-private-edit-pela-tela.sql',
+    estrago:
+      'devolveria `vessel_criar_private_edit` para a versao SEM\n' +
+      '       `is_vessel_atendimentos()` (nem `_editar()`) por dentro e, ao\n' +
+      '       revogar tudo de novo no fim da migration, ninguem — nem\n' +
+      '       authenticated — conseguiria mais criar um encontro pela Central.',
+  },
+  {
+    migration: '2026-09-21-vessel-criar-exige-editar.sql',
+    estrago:
+      'devolveria `vessel_criar_private_edit` para uma versao sem a trava de\n' +
+      '       editar nenhuma — ou seja, quem so tem permissao de OLHAR o\n' +
+      '       Comercial Vessel voltaria a poder criar um encontro novo (B10 de\n' +
+      '       docs/pendencias.md).',
+  },
+]
 
 const ARQUIVO = '2026-09-18-vessel-chave-do-convite-sorteada-a-serio.sql'
 const F = 'public.vessel_criar_private_edit(text, timestamptz, text, text, text, integer, boolean)'
 const sql = readFileSync(new URL(`../db/migrations/${ARQUIVO}`, import.meta.url), 'utf8')
 const cli = new pg.Client({ connectionString: process.env.DATABASE_URL })
 await cli.connect()
+
+// ⚠️ ANTES DE ABRIR TRANSACAO E ANTES DE APLICAR QUALQUER COISA.
+const { rows: posteriores } = await cli.query(
+  `select name from public.schema_migrations where name = any($1::text[]) order by name`,
+  [DEPOIS_DESTE.map((x) => x.migration)])
+if (posteriores.length > 0) {
+  console.error(
+    `❌ nao aplicada: ${ARQUIVO} ja foi superada e reaplica-la desfaria trabalho posterior.\n\n` +
+    `Esta migration faz \`create or replace\` em \`vessel_criar_private_edit\`.\n` +
+    `Migration(s) mais nova(s) JA APLICADA(S) mudaram essa funcao, e rodar este aplicador\n` +
+    `agora voltaria atras sem erro nenhum:\n\n` +
+    posteriores.map(({ name }) =>
+      `  · ${name}\n       ${DEPOIS_DESTE.find((x) => x.migration === name).estrago}`).join('\n\n') +
+    `\n\nVa ler essa(s) migration(s) em db/migrations/ antes de qualquer coisa. Se voce PRECISA\n` +
+    `mesmo reaplicar este arquivo, a saida NAO e apagar esta trava: e reaplicar a(s)\n` +
+    `migration(s) posterior(es) logo depois, pelo aplicador de cada uma.\n`)
+  await cli.end()
+  process.exit(1)
+}
+
 await cli.query('begin')
 try {
   await cli.query(sql)

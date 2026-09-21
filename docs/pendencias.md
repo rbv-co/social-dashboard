@@ -1,7 +1,8 @@
 # Pendências do iamundi
 
-Última revisão: **20/09/2026** — entrou o **B10**.
-**Há duas pendências abertas: o B9 e o B10, ambas na Parte B.**
+Última revisão: **21/09/2026** — saiu o **B10** (resolvido) e o **B1** foi
+corrigido (a previsão de erro crescente não se confirmou — medido de novo).
+**Há uma pendência aberta: o B9, na Parte B.**
 
 O que é este arquivo: a lista viva do que está **em aberto** no projeto. Cada item
 diz o que falta, **por que importa** e **onde** se resolve. É a memória escrita —
@@ -96,7 +97,7 @@ novo: O filtro foi
 | B6 · a tela do valor corrigido (era B31) | **Não vai ter tela.** Decisão do dono em 15/09. ⚠️ **O que JÁ FUNCIONA e não pode ser desfeito por engano:** a tabela `bling_pedido_ajuste_valor` guarda o valor real da venda que o Bling congelou errada, e **as duas telas de venda, a mensagem das 22h e os robôs do coletor já leem de lá**, pela mesma regra em `supabase/functions/_shared/valor-corrigido.js`. Isso continua no ar. ⚠️ **Consequências aceitas:** (1) cadastrar um ajuste continua sendo **comando de banco, de super-admin** — conferido em 15/09, hoje há **1 ajuste** cadastrado, então ainda é caso raro; na terceira vez vira lista à mão e alguém edita banco no escuro; (2) **a tela não mostra que o número foi ajustado** — quem olha vê o valor corrigido sem saber que o Bling diz outro. ⚠️ **Risco que segue de pé:** a Edge `enviar-push-vendas` é republicada do Mac do Gabriel (v11 → v14 em 14/09) — a regra sobreviveu daquela vez, mas pode não sobreviver da próxima. |
 | B3 · montar foto de outro tamanho (era B28) | **Ficou sem tarefa.** Ele era a varredura das 23 peças sem foto, e o item que as cobrava (o antigo A3) saiu no mesmo dia. Medido em 15/09: as **5 que dariam para montar já estão ATIVAS na Shopify com 3 fotos cada** — a montagem para a vitrine está feita. O que restava era a foto do cartão, que saiu junto. Decisão do dono em 15/09: sai inteiro, sem salvar os cuidados em outro arquivo — eles ficam no histórico do repositório. |
 | B2 · usar a medida da Cyrène (era B27) | **Não vai ser usada.** Decisão do dono em 15/09 — no dia seguinte ao número finalmente aparecer. **Guarde o número, que custou a chegar: a família Cyrène/Evening é 24 × 17 × 11 cm** (`SS0002SB.M1` Café, `.M2` Marfim, `.P1` Personalizada), conferido no Bling em 14 e 15/09. ⚠️ **Consequências aceitas:** (1) as duas Evening ficam em 82% de ocupação do quadro, fora da escada de tamanho que vale para as outras 49 capas — a grade mente um pouco sobre elas; (2) a descrição das três segue **sem medida nenhuma**, então quem abre a página não sabe o tamanho da bolsa. ⚠️ Se um dia for fazer: escrever produto no Bling é **PUT, e PUT APAGA as fotos** — repor é pelo campo `imagensURL`, que acrescenta. |
-| B1 · o robô da vitrine da Shopify (era B26) | **Não vai ter robô.** Decisão do dono em 15/09 *(depois de ele mesmo ter destravado o desenho em 14/09: etiqueta `nao-mexer`)*. A vitrine segue atualizada **à mão, quando alguém lembrar**. ⚠️ **Consequência aceita, e ela cresce sozinha:** a última sincronização foi em **11/09, na mão**. Em 15/09 já eram **3 saldos errados** de 55 produtos do Iguatemi (Lenço Brasil Colorido 9→10, Linear Medium Caramelo 5→6, Alba Big Bordô 3→2). Cada dia sem sincronizar acrescenta erro, nos dois sentidos: peça que chegou não aparece, peça que acabou continua à venda. Para refazer a conta a qualquer momento: `vessel-brasil/ferramentas/bling-x-shopify.mjs`. ⚠️ A Shopify espelha o **depósito do Iguatemi**, não o total do Bling — comparar com o total inventa erro. |
+| B1 · o robô da vitrine da Shopify (era B26) | **Não vai ter robô.** Decisão do dono em 15/09 *(depois de ele mesmo ter destravado o desenho em 14/09: etiqueta `nao-mexer`)*. A vitrine segue atualizada **à mão, quando alguém lembrar**. ⚠️ **Consequência aceita — a previsão em 15/09 era que ela cresceria sozinha:** a última sincronização foi em **11/09, na mão**. Em 15/09 já eram **3 saldos errados** de 55 produtos do Iguatemi (Lenço Brasil Colorido 9→10, Linear Medium Caramelo 5→6, Alba Big Bordô 3→2). *Cada dia sem sincronizar acrescenta erro*, nos dois sentidos: peça que chegou não aparece, peça que acabou continua à venda — era o raciocínio razoável na hora. ✔️ **Medido de novo em 21/09, seis dias depois: NÃO se confirmou.** São os MESMOS três saldos, sem mudar nem crescer nem sumir: Lenço Brasil Colorido 9→10, HandBag Linear Medium Caramelo 5→6, HandBag Alba Big Bordô 3→2. *(Uma quarta linha, `SS0001EW.B2` East West Astrea Big Caramelo aparecendo como RASCUNHO na Shopify, não é discrepância de saldo — é a decisão do dono registrada no A2, de propósito.)* Ou seja: não é alarme que cresce, são três números parados — não precisa tratar como urgência crescente. Para refazer a conta a qualquer momento: `vessel-brasil/ferramentas/bling-x-shopify.mjs`. ⚠️ A Shopify espelha o **depósito do Iguatemi**, não o total do Bling — comparar com o total inventa erro. |
 | A5 · ligar o aviso de reserva (era B25) | **Ninguém vai receber.** Decisão do dono em 15/09, com a lista na mão. ⚠️ **Atenção: o código está TODO no ar** — migration aplicada, Edge `avisar-decisao-de-reserva` publicada e provada, e a tela na `main` desde 14/09. Não foi cancelado: está ligado a zero pessoas, de propósito. Levantado em 15/09: 8 pessoas têm aparelho registrado, e dessas **4 são as que pedem carro** (Cristian Leonel, Humberto Mendonça, Jeremias Vieira, Mariá Pessoa), 1 só aprova (Erick Martins) e 3 não têm acesso à Frota. **Consequência aceita:** quem pede carro continua descobrindo a resposta abrindo o app, e quem decide continua lendo na tela *"Não consegui avisar quem pediu — fale com a pessoa."* Para ligar um dia: Administração › Usuários › "Resposta do pedido de carro". |
 | A4 · o que vai para o GS1 (era A23) | **Só o catálogo novo importa.** Decisão do dono em 15/09. Os 86 da Vessel Brasil já têm GTIN, e é o que vende. ⚠️ **Consequência aceita e medida em 15/09:** ficam **98 bolsas ativas, com preço e sem código de barras nenhum** — 86 da LA VESSEL e 12 do catálogo antigo (SS10xx). Elas não serão lidas por leitor em loja nenhuma, e não entram em GS1. A planilha com as 98 já existe, na aba "Sem GTIN" de `entregas/produtos-vessel_para-o-gs1_*_v2.xlsx`, caso um dia mude. *(A pergunta que travava — se a LA VESSEL tem CNPJ próprio, porque prefixo GS1 é por empresa — fica sem precisar de resposta.)* |
 | A3 · as 23 fotos do cartão (era A21) | **Não há peça para fotografar, e ninguém pediu as que dariam para montar.** Decisão do dono em 15/09. O levantamento que sustenta: das 18 que precisariam de ensaio, **17 têm ZERO nos sete depósitos do Bling** e a 18ª (Astrea, 4 peças) está na Loja Iguatemi, sem exemplar liberado. As outras **5 dariam para montar sem ensaio** (Linear Big Blanc/Chocolate/Caramelo, Linear Small Branca e Ravelle Small Mostarda, todas já ATIVAS na loja com 3 fotos) — o dono optou por não fazer. ⚠️ **Consequência aceita:** esses 23 produtos **não terão cartão EAN** enquanto isso valer; o robô do B4 trabalha com os 63 que têm foto. |
@@ -218,6 +219,48 @@ campo é "Nº de patrimônio", na ficha do veículo.
 
 ---
 
+## O que saiu da lista em 21/09/2026
+
+### B10 · `vessel_criar_private_edit` e `vessel_beauty_session_criar` ainda pedem só "ver", não "editar" ✅ *RESOLVIDO em 21/09/2026*
+
+**Feito.** As duas funções passaram a exigir `is_vessel_atendimentos_editar()`
+em vez de `is_vessel_atendimentos()` — a mesma troca de uma linha já aplicada
+às funções de encerrar em 19/09
+(`db/migrations/2026-09-21-vessel-criar-exige-editar.sql`). O resto de cada
+função — geração de código, validação, o JSON de volta — ficou byte a byte
+igual: conferido linha a linha contra a definição que já estava no banco antes
+da troca, não contra o arquivo que a criou (a ordem dos arquivos mente aqui,
+como o B9 já registra).
+
+✔️ **Medido antes de aplicar, e a medida bateu com o previsto:** dos 24 perfis
+do sistema, ZERO tinha `atendimentos` em `features` e ZERO tinha `editar` em
+`permissions.atendimentos`. Só os 3 superadmins passavam por qualquer uma das
+duas travas — e superadmin passa pelas duas. **Ninguém perdeu acesso**: é a
+mesma conclusão do B9 desta lista, medida de novo na hora de aplicar, como
+manda a régua deste projeto.
+
+✔️ **Provado com sessão fabricada de verdade** (`set_config` +
+`request.jwt.claims`, nunca um portão trocado por `select true`): um perfil só
+com "ver" criava um encontro e uma sessão antes da troca — a linha realmente
+gravada, lida de volta da tabela — e é recusado, sem escrever nada, depois.
+Dois mutantes (cada função devolvida à trava de ver) foram testados e os dois
+foram rejeitados pela prova, dentro de savepoints desfeitos.
+
+**Dado real intocado:** as vendas de `vessel_pedidos`/`vessel_pedido_itens`
+(459 pedidos, medido em 21/09 — a migration não toca nessas tabelas, então
+qualquer diferença com uma medição de outro dia é venda nova, não efeito
+desta troca), as 3 Beauty Sessions com QR impresso (conferidas campo a campo
+antes e depois) e as tabelas de Stylist Circle, Private Edit e Atendimentos —
+todas zeradas antes — continuaram zeradas.
+
+⚠️ **Efeito colateral achado no caminho:** `aplicar-vessel-chave-sorteada-a-serio.mjs`
+recriava `vessel_criar_private_edit` sem trava nenhuma e não tinha a
+conferência que os outros programas de instalação já usam. Ganhou a mesma
+trava — ver o B9, que agora conta **oito** programas na mesma situação, não
+mais nove.
+
+---
+
 ## Parte A — Só o dono resolve (clique, sem código)
 
 **Vazia desde 18/09/2026.** O último item daqui foi o A1 — está logo acima, com o
@@ -261,6 +304,13 @@ Os dois agora **se recusam a rodar** e explicam na tela o que aconteceria. A
 recusa não é cravada: eles perguntam ao banco se a mudança mais nova já foi
 instalada — num banco novo, onde ela não foi, eles rodam normalmente.
 
+⚠️ **E um terceiro foi travado em 21/09, pelo B10** (que saiu da lista nesta
+mesma revisão): `aplicar-vessel-chave-sorteada-a-serio.mjs` desfaria
+`vessel_criar_private_edit` de volta para uma versão sem trava de permissão
+nenhuma. Ganhou a mesma trava, no mesmo formato. Ele saiu da tabela abaixo por
+isso — o resto da dívida (**oito** programas, não mais nove) continua exatamente
+como estava.
+
 ⚠️ **E aqui está o que faz isso ser difícil de enxergar: a ordem dos NOMES dos
 arquivos não é a ordem em que eles foram instalados.** O arquivo
 `2026-09-19-vessel-encerrar-exige-editar.sql` vem **antes** de
@@ -271,7 +321,7 @@ aconteceu comigo na primeira varredura, e é um engano fácil de repetir. **A ú
 fonte honesta é a coluna `applied_at` da tabela `schema_migrations`** — é o
 relógio, não o nome.
 
-**Os nove que faltam.** Quatro deles são menos perigosos, e está dito por quê:
+**Os oito que faltam.** Quatro deles são menos perigosos, e está dito por quê:
 
 | Programa | O que ele faria |
 |---|---|
@@ -280,7 +330,6 @@ relógio, não o nome.
 | `aplicar-vessel-private-edit.mjs` | Desfaria `vessel_criar_private_edit`; **duplicaria** `vessel_conta_das_private_edits` |
 | `aplicar-vessel-rastreio-por-stylist.mjs` | Desfaria `vessel_rastreio_dos_stylists` (traria as parceiras desativadas de volta ao relatório) e `vessel_solicitar_atendimento` |
 | `aplicar-vessel-beauty-sessions.mjs` | Desfaria `vessel_interesse_da_beauty_session` e `vessel_solicitar_atendimento` |
-| `aplicar-vessel-chave-sorteada-a-serio.mjs` | Desfaria `vessel_criar_private_edit` |
 | `aplicar-vessel-pedido-de-atendimento.mjs` | Desfaria `vessel_solicitar_atendimento` |
 | `aplicar-vessel-personal-atelier.mjs` | Desfaria `vessel_pedido_de_personal_atelier` |
 | `aplicar-vessel-preferencias-da-visita.mjs` | Desfaria `vessel_detalhar_visita` |
@@ -309,47 +358,9 @@ palavra.
    escritos.
 
 **Não tem pressa e não cresce por conta própria** — a dívida tem tamanho fixo,
-nesses nove. Mas ela reaparece a cada mudança nova, porque o molde de programa de
+nesses oito. Mas ela reaparece a cada mudança nova, porque o molde de programa de
 instalação que o projeto usa é justamente o que cria o problema. É por isso que a
 saída 2 vale mais do que a 1.
-
-### B10 · `vessel_criar_private_edit` e `vessel_beauty_session_criar` ainda pedem só "ver", não "editar" · *entrou em 20/09/2026*
-
-**O que é.** Nesta entrega (o R13), a permissão de "editar" passou a proteger
-toda ação que muda dado nas três telas do Comercial Vessel: Encerrar, Reabrir,
-Editar, Arquivar e Apagar. Duas funções de **criar** ficaram de fora dessa
-régua e continuam na permissão mais fraca, a de "ver":
-
-- `vessel_criar_private_edit` — o botão "Criar encontro" da tela Private Edit;
-- `vessel_beauty_session_criar` — o botão "Criar sessão" da tela Beauty
-  Sessions.
-
-A irmã das duas, `vessel_stylist_criar` (Stylist Circle), já usa a permissão
-certa — é a única das três que nasceu depois de essa régua existir.
-
-**Por que importa.** O mesmo argumento que justificou apertar "Encerrar" nesta
-entrega — *encerrar muda o encontro, então precisa de permissão para editar* —
-vale palavra por palavra para **criar**: marcar um encontro novo ou abrir uma
-sessão nova é tanto mudança de dado quanto fechar um já existente. Hoje, depois
-desta entrega, quem tem só "ver" **não consegue mais** editar, arquivar,
-encerrar ou apagar um encontro — mas **ainda consegue criar** um novo. É um
-degrau fora de ordem: a porta mais fácil de todas ficou sendo justamente a de
-criar.
-
-⚠️ **Ninguém é afetado hoje** — medido, não suposto: dos 24 perfis do sistema,
-ZERO tem `atendimentos` em `features` e ZERO tem `editar` em
-`permissions.atendimentos`. Quem passa por qualquer uma das duas portas hoje
-são só os 3 superadmins — e superadmin passa pelas duas, porque a permissão de
-editar já inclui a de ver. Ou seja: apertar isso agora não tiraria acesso de
-ninguém; é uma trava para o dia em que alguém receber só a permissão de ver.
-
-**Onde se resolve.** É a mesma mudança de uma linha já aplicada às duas
-funções de encerrar nesta entrega
-(`db/migrations/2026-09-19-vessel-encerrar-exige-editar.sql`): trocar, dentro
-de cada função, a checagem de `is_vessel_atendimentos()` (ver) por
-`is_vessel_atendimentos_editar()` (editar). Fica para o dono decidir quando —
-não bloqueou esta entrega, e o comportamento de hoje continua exatamente igual
-até alguém aplicar a troca.
 
 ## Como manter esta lista
 
