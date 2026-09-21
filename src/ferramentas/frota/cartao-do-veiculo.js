@@ -62,15 +62,51 @@ export function acaoPrincipalDoVeiculo(e, { podeEditar = false } = {}) {
 }
 
 /**
+ * A linha embaixo do nome: o COMPLEMENTO do selo, nunca a repetição dele.
+ *
+ * Ela nasceu como `resumoDoEstado()`, que carregava a frase inteira ("Na rua
+ * com Cristian Leonel") porque não havia selo. Com o selo, a frase passou a
+ * dizer duas vezes a mesma coisa — o dono viu na primeira foto e pediu para
+ * tirar: *"quero funcional, não carregado"*. A função antiga foi movida para
+ * cá e encurtada, em vez de ganhar uma irmã: duas funções respondendo à mesma
+ * pergunta divergem no primeiro ajuste.
+ *
+ * Vazio é resposta legítima — o template esconde a linha. Carro na oficina sem
+ * local não tem o que acrescentar ao selo que já diz OFICINA.
+ */
+export function linhaDoCartao(e) {
+  if (!e || !e.veiculo) return '';
+  const onde = e.ondeEsta ? `Em ${e.ondeEsta}` : '';
+  // Carro que não está circulando: o selo já disse o que ele é. Sobra o lugar.
+  if (e.veiculo.situacao !== 'ativo') return onde;
+  // Quem está com o carro vence, na rua ou em posse — é a mesma precedência
+  // que `estadoDoVeiculo` usa, e o nome não se repete no selo (ele diz NA RUA
+  // ou FIXO, nunca um nome de pessoa).
+  if (e.comQuem) return `Com ${e.comQuem}`;
+  if (e.reservadaPor) return `Para ${e.reservadaPor}`;
+  // Sem responsável mas COM contato: responsável é quem responde pelo carro,
+  // contato é a quem perguntar. O dono estranhou a Doblo justamente por as
+  // duas coisas se confundirem, e a resposta continua sendo dizer as duas.
+  if (e.veiculo.contato_nome) {
+    return onde ? `${onde} · perguntar a ${e.veiculo.contato_nome}`
+      : `Perguntar a ${e.veiculo.contato_nome}`;
+  }
+  return onde;
+}
+
+/**
  * Quem vira cartão PEQUENO, no fim da lista.
  *
  * Decisão do dono, 21/09/2026: oficina e fora da frota "menores no fim". Eles
  * já caem no fim por `ordenarEstados()`; o que falta é ocupar menos tela.
  *
- * PARADO fica grande de propósito: ele não foi citado, e é um carro que volta a
- * circular — encolher esconderia justamente o que precisa de decisão.
+ * PARADO entrou na segunda passada, olhando a foto: eu o tinha deixado grande
+ * por ele não ter sido citado, e o dono fechou a regra — *"funcional, não
+ * carregado"*. A regra ficou uma só e fácil de dizer: **carro que não está
+ * circulando ocupa menos tela.** É a mesma linha que decide o esmaecido do
+ * cartão, então as duas nunca discordam.
  */
 export function cartaoCompacto(e) {
   if (!e || !e.veiculo) return false;
-  return e.veiculo.situacao === 'em_manutencao' || e.veiculo.situacao === 'alienado';
+  return e.veiculo.situacao !== 'ativo';
 }

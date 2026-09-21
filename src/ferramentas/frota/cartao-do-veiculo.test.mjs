@@ -71,14 +71,16 @@ test('quem não pode editar não vê ação principal nenhuma', () => {
   assert.equal(acaoPrincipalDoVeiculo(naRua(carro()), {}), null, 'sem opção nenhuma, assume que NÃO pode')
 })
 
-test('só oficina e fora da frota viram cartão pequeno — PARADO continua grande', () => {
-  // Decisão do dono em 21/09: "menores no fim". Ele citou os dois; parado não
-  // foi citado, e é carro que volta a circular.
-  assert.equal(cartaoCompacto(estado(carro({ situacao: 'em_manutencao' }))), true)
-  assert.equal(cartaoCompacto(estado(carro({ situacao: 'alienado' }))), true)
-  assert.equal(cartaoCompacto(estado(carro({ situacao: 'inativo' }))), false)
-  assert.equal(cartaoCompacto(estado(carro())), false)
-  assert.equal(cartaoCompacto(naRua(carro())), false)
+test('carro que não está circulando vira cartão pequeno, no fim', () => {
+  // Decisão do dono em 21/09: "menores no fim" para oficina e fora da frota, e
+  // na segunda passada ele fechou a regra incluindo o PARADO — "funcional, não
+  // carregado". Uma regra só, e a mesma que decide o cartão esmaecido: quem
+  // não está circulando ocupa menos tela.
+  for (const s of ['em_manutencao', 'alienado', 'inativo']) {
+    assert.equal(cartaoCompacto(estado(carro({ situacao: s }))), true, `${s} devia ser pequeno`)
+  }
+  assert.equal(cartaoCompacto(estado(carro())), false, 'carro livre é grande')
+  assert.equal(cartaoCompacto(naRua(carro())), false, 'carro na rua é grande')
 })
 
 test('os cartões pequenos ficam NO FIM da lista, que é onde o dono os quer', () => {
@@ -92,11 +94,90 @@ test('os cartões pequenos ficam NO FIM da lista, que é onde o dono os quer', (
   ])
   const compactos = lista.map(cartaoCompacto)
   assert.deepEqual(compactos, [false, false, true, true],
-    'os compactos têm de ser os dois últimos')
+    'os compactos têm de ser os últimos — encolher sem descer deixaria o '
+    + 'cartão pequeno no meio da lista')
 })
 
 test('nada quebra com entrada vazia', () => {
   assert.deepEqual(seloDoVeiculo(null), { texto: '', tom: 'neutro' })
   assert.equal(acaoPrincipalDoVeiculo(null, { podeEditar: true }), null)
   assert.equal(cartaoCompacto(null), false)
+})
+
+/* ── A LINHA embaixo do nome ──────────────────────────────────────────────
+ * Estes testes vieram de `resumoDoEstado`, em estado-do-veiculo.test.mjs, e
+ * foram reescritos para o par selo+linha. As decisões do dono que eles
+ * prendiam continuam prendidas — o que mudou é ONDE cada metade aparece. */
+import { linhaDoCartao } from './cartao-do-veiculo.js'
+
+test('a linha NÃO repete o selo', () => {
+  // Pedido do dono, 21/09/2026, vendo a primeira foto: "quero funcional, não
+  // carregado". O selo dizia NA RUA e a linha, logo abaixo, "Na rua com
+  // Cristian Leonel".
+  const e = naRua(carro())
+  assert.equal(seloDoVeiculo(e).texto, 'NA RUA')
+  assert.equal(linhaDoCartao(e), 'Com Cristian Leonel')
+  assert.ok(!/na rua/i.test(linhaDoCartao(e)), 'o que o selo já diz não se repete')
+})
+
+test('carro na rua mostra COM QUEM, nunca o local', () => {
+  const v = carro({ local_texto: 'Barracão' })
+  assert.equal(linhaDoCartao(naRua(v)), 'Com Cristian Leonel')
+})
+
+test('carro parado num lugar mostra o LUGAR', () => {
+  assert.equal(linhaDoCartao(estado(carro({ local_texto: 'Barracão' }))), 'Em Barracão')
+})
+
+test('carro com responsável fixo: o par nunca diz LIVRE', () => {
+  // A contradição original era "Livre, com Humberto" numa frase só. Agora são
+  // duas metades, e a invariante vale para as duas juntas.
+  const e = estado(carro({ pessoa_id: 'p1', pessoa_nome: 'Humberto' }))
+  assert.equal(seloDoVeiculo(e).texto, 'FIXO')
+  assert.equal(linhaDoCartao(e), 'Com Humberto')
+  assert.ok(!/livre/i.test(seloDoVeiculo(e).texto + ' ' + linhaDoCartao(e)))
+})
+
+test('oficina e fora da frota: o selo basta, a linha fica vazia', () => {
+  // Vazio é resposta: o template esconde a linha. Repetir "Na oficina" embaixo
+  // de um selo OFICINA é exatamente o "carregado" que o dono não quer.
+  for (const s of ['em_manutencao', 'alienado', 'inativo']) {
+    assert.equal(linhaDoCartao(estado(carro({ situacao: s }))), '', `${s} não precisa de linha`)
+  }
+})
+
+test('na oficina COM lugar apontado, a linha diz o lugar', () => {
+  assert.equal(linhaDoCartao(estado(carro({ situacao: 'em_manutencao', local_texto: 'Oficina do Zé' }))),
+    'Em Oficina do Zé')
+})
+
+test('sem responsável mas com contato, a linha diz a quem perguntar', () => {
+  // O dono estranhou a Doblo: sem responsável na Frota e com "Siqueira" no
+  // contato, as duas coisas se confundiam. Responsável responde pelo carro;
+  // contato é a quem perguntar.
+  const v = carro({ pessoa_id: null, contato_nome: 'Siqueira' })
+  assert.equal(linhaDoCartao(estado(v)), 'Perguntar a Siqueira')
+  assert.equal(linhaDoCartao(estado(carro({ contato_nome: 'Siqueira', local_texto: 'Barracão' }))),
+    'Em Barracão · perguntar a Siqueira')
+})
+
+test('o contato NÃO é apresentado como se fosse o responsável', () => {
+  const v = carro({ pessoa_id: null, contato_nome: 'Siqueira' })
+  assert.doesNotMatch(linhaDoCartao(estado(v)), /^Com /)
+})
+
+test('com responsável, o contato não entra na linha', () => {
+  const v = carro({ pessoa_id: 'p1', pessoa_nome: 'Marcus', contato_nome: 'Outro' })
+  assert.equal(linhaDoCartao(estado(v)), 'Com Marcus')
+})
+
+test('reservado diz PARA QUEM — é com quem se resolve no WhatsApp', () => {
+  const e = estado(carro({ reservada: true, reservada_por: 'Mariá Pessoa' }))
+  assert.equal(seloDoVeiculo(e).texto, 'RESERVADO')
+  assert.equal(linhaDoCartao(e), 'Para Mariá Pessoa')
+})
+
+test('a linha não quebra com entrada vazia', () => {
+  assert.equal(linhaDoCartao(null), '')
+  assert.equal(linhaDoCartao({}), '')
 })

@@ -19,8 +19,8 @@ import BarraDeTopo from '../../compartilhado/barra-de-topo.vue'
 import { useRouter } from 'vue-router'
 import { sbClient, SUPABASE_URL, SUPABASE_ANON_KEY } from '../../compartilhado/conectar-no-banco-de-dados.js'
 import { hasPermission, estado } from '../../compartilhado/controle-de-login-e-usuario.js'
-import { estadoDoVeiculo, resumoDoEstado, ordenarEstados, rotuloDoTanque, NIVEIS_TANQUE, problemasDaDevolucao, problemasDoRegistroAvulso, ultimoHodometro } from './estado-do-veiculo.js'
-import { seloDoVeiculo, acaoPrincipalDoVeiculo, cartaoCompacto } from './cartao-do-veiculo.js'
+import { estadoDoVeiculo, ordenarEstados, rotuloDoTanque, NIVEIS_TANQUE, problemasDaDevolucao, problemasDoRegistroAvulso, ultimoHodometro } from './estado-do-veiculo.js'
+import { seloDoVeiculo, linhaDoCartao, acaoPrincipalDoVeiculo, cartaoCompacto } from './cartao-do-veiculo.js'
 import { nomeDeQuemAgiu } from './nome-de-quem-agiu.js'
 import { montarArvore } from '../../compartilhado/arvore-de-locais.js'
 import { localCurto } from './onde-o-carro-fica.js'
@@ -4103,7 +4103,9 @@ onMounted(async () => {
             <span class="selo" :class="'selo-' + seloDoVeiculo(l).tom">{{ seloDoVeiculo(l).texto }}</span>
           </div>
 
-          <p class="fr-carro-frase">{{ resumoDoEstado(l) }}</p>
+          <!-- A linha COMPLETA o selo, não o repete — e some quando não tem o
+               que acrescentar. Aviso que aparece sempre vira paisagem. -->
+          <p class="fr-carro-frase" v-if="linhaDoCartao(l)">{{ linhaDoCartao(l) }}</p>
 
           <!-- No cartão pequeno (oficina e fora da frota) os números saem: eles
                não mudam enquanto o carro está parado lá, e é isso que "menores no

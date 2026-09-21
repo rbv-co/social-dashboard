@@ -166,42 +166,12 @@ export function estadoDoVeiculo(veiculo, usos, fichas, revisoes) {
   };
 }
 
-/** A frase curta que resume a linha, pra quem só bate o olho. */
-export function resumoDoEstado(e) {
-  if (!e) return '';
-  if (e.veiculo.situacao === 'em_manutencao') return 'Na oficina';
-  if (e.veiculo.situacao === 'alienado') return 'Fora da frota';
-  if (e.veiculo.situacao === 'inativo') return 'Parado';
-  // O selo NÃO carrega o dono fixo, mesmo quando ele existe e é outra pessoa:
-  // isto aqui é etiqueta, e "Na rua com Cristian Leonel · fixo com Héllen
-  // Cristiane Cardoso" tem 57 caracteres — do tamanho do rótulo que em 20/08
-  // quebrou o botão em quatro linhas numa coluna de 95px. Quem diz de quem é o
-  // carro é a linha "Responsável" do cartão, que só aparece quando há o que
-  // dizer. Ver `donoFixoNome` em estadoDoVeiculo().
-  if (e.naRua) return e.comQuem ? `Na rua com ${e.comQuem}` : 'Na rua';
-  // Carro com responsável NÃO é livre — e o texto tem que dizer isso. A
-  // primeira versão escrevia "Livre, com Humberto", que se contradiz na mesma
-  // frase e fazia a pessoa achar que podia pegar.
-  if (e.comQuem) return `Com ${e.comQuem}`;
-  // Reservado NÃO é livre, e a frase tem de dizer POR QUE — senão o carro some
-  // da lista de livres e ninguém entende o motivo. Com o nome de quem reservou,
-  // quem precisa do carro resolve no WhatsApp em trinta segundos, que é a mesma
-  // razão pela qual o aviso de conflito carrega nome e destino.
-  if (e.reservadaPor) return `Reservado para ${e.reservadaPor}`;
-  if (e.veiculo.reservada) return 'Reservado';
-  // Sem responsável mas COM contato: o vazio sozinho parecia defeito, e o
-  // dono estranhou a Doblo justamente por isso — ela não tem responsável na
-  // Frota e tem "Siqueira" no contato, e as duas coisas se confundiam.
-  // Responsável é quem responde pelo carro; contato é a quem perguntar. Dizer
-  // as duas na mesma frase resolve, sem fingir que uma é a outra.
-  if (e.veiculo.contato_nome) {
-    return e.ondeEsta
-      ? `Livre, em ${e.ondeEsta} — perguntar a ${e.veiculo.contato_nome}`
-      : `Livre — sem responsável; perguntar a ${e.veiculo.contato_nome}`;
-  }
-  if (e.ondeEsta) return `Livre, em ${e.ondeEsta}`;
-  return 'Livre';
-}
+/* A FRASE DA LINHA SAIU DAQUI em 21/09/2026 (era `resumoDoEstado`).
+ * Com o cartão novo, o estado virou um selo de uma palavra e a frase virou o
+ * complemento dele — as duas coisas se decidem juntas, e agora moram juntas em
+ * `cartao-do-veiculo.js` (`seloDoVeiculo` + `linhaDoCartao`). Deixar as duas
+ * metades em arquivos diferentes era o caminho curto para elas divergirem. */
+
 
 /** Ordena a lista do jeito que ajuda: o que está livre primeiro, sucata por último. */
 export function ordenarEstados(estados) {
