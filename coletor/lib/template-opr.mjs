@@ -1,15 +1,15 @@
 // coletor/lib/template-opr.mjs
 // HTML autocontido (CSS inline, sem fonte/imagem externa) pro relatório OPR
-// diário — vira PNG via render-criativo.mjs::renderPNG. Layout aprovado pelo
-// dono em 17/09/2026, a partir de um HTML de exemplo que ele mesmo trouxe —
-// esta versão troca o `mockData`/JS de cliente por interpolação direta dos
-// números reais (nunca client-side, mesma regra do resto do projeto).
+// diário — vira PNG via render-criativo.mjs::renderPNG. Layout original
+// aprovado pelo dono em 17/09/2026; reformado em 21/09/2026 pra classificar
+// campanha por OBJECTIVE da Meta (Tráfego/Engajamento/Vendas/Leads) em vez de
+// nome — 4 categorias reais, por isso os 3 painéis em linha viraram grade
+// 2×2 (cada painel mantém a mesma largura que tinha antes, agora em 2
+// linhas, em vez de espremer 4 colunas — ver docs/superpowers/specs, mockup
+// aprovado no companheiro visual).
 //
-// `dados.sales.leadsQuentes/vendas` (e tudo que depende deles) e
-// `dados.mix` chegam como `null` até: Leads Quentes/Vendas dependerem do
-// Chatwoot (integração futura); Media Mix ser confirmado pelo gerente de
-// marketing (dono pediu pra manter o card, "vou confirmar ainda",
-// 17/09/2026) — `null` sempre aparece como "—", nunca um número inventado.
+// `dados.mix` chega com uma fatia por categoria; nunca `null` inventado —
+// mesma regra de sempre.
 export const DIM_OPR = { width: 1600, height: 900 };
 
 // Abrevia acima de mil/milhão (arredondado, 1 decimal) — pedido do dono
@@ -17,8 +17,8 @@ export const DIM_OPR = { width: 1600, height: 900 };
 // arredondar em valores muito altos". `null` quando NÃO precisa abreviar.
 function abreviar(n) {
   const abs = Math.abs(n);
-  if (abs >= 1_000_000) return `${(n / 1_000_000).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} M`;
-  if (abs >= 1_000) return `${(n / 1_000).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} mil`;
+  if (abs >= 1_000_000) return `${(n / 1_000_000).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} M`;
+  if (abs >= 1_000) return `${(n / 1_000).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} mil`;
   return null;
 }
 // `null` no dado vira "—" — nunca "R$ 0,00"/"0%" inventado (regra "a tela
@@ -27,7 +27,7 @@ function fmtValor(n, tipo) {
   if (n == null) return '—';
   if (tipo === 'percentual') return `${n.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
   const abreviado = abreviar(n);
-  if (tipo === 'moeda') return `R$ ${abreviado ?? n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  if (tipo === 'moeda') return `R$ ${abreviado ?? n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   return abreviado ?? n.toLocaleString('pt-BR');
 }
 
@@ -37,6 +37,8 @@ const ICONES = {
   heart: '<svg viewBox="0 0 48 48"><path d="M24 39S9 30 9 18c0-5 3.4-8 8-8 3.4 0 5.6 1.7 7 4 1.4-2.3 3.6-4 7-4 4.6 0 8 3 8 8 0 12-15 21-15 21Z"/></svg>',
   funnel: '<svg viewBox="0 0 48 48"><path d="M8 10h32L28 25v11l-8 4V25L8 10Z"/></svg>',
   bars: '<svg viewBox="0 0 48 48"><path d="M12 37V27M24 37V18M36 37V10"/></svg>',
+  compass: '<svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="17"/><path d="M30 18l-4 10-10 4 4-10 10-4Z"/></svg>',
+  cart: '<svg viewBox="0 0 48 48"><path d="M8 10h5l4 22h20l4-16H15"/><circle cx="20" cy="38" r="2.5"/><circle cx="33" cy="38" r="2.5"/></svg>',
 };
 
 function kpiCard(icone, label, valor, caption) {
@@ -45,9 +47,6 @@ function kpiCard(icone, label, valor, caption) {
 function metric(label, valor, extra = '') {
   return `<div class="metric ${extra}"><div class="metric-label">${label}</div><div class="metric-value">${valor}</div></div>`;
 }
-function funnelStep(label, valor, classe = '') {
-  return `<div class="funnel-step ${classe}"><div class="funnel-label">${label}</div><div class="funnel-value">${valor}</div></div>`;
-}
 function panelNote(icone, texto) {
   return `<div class="panel-note"><div class="icon-circle">${ICONES[icone]}</div><div class="note-text">${texto}</div></div>`;
 }
@@ -55,9 +54,24 @@ function mixRow(label, pct) {
   const largura = pct == null ? 0 : Math.min(Math.max(pct, 0), 100);
   return `<div class="mix-row"><div>${label}</div><div class="bar"><span style="width:${largura}%"></span></div><strong>${fmtValor(pct, 'percentual')}</strong></div>`;
 }
+// Um painel da grade 2×2 — mesma anatomia pros 4 (Investimento + resultado(s)
+// + custo por resultado), pra ficarem visualmente parelhos.
+function painel(numero, icone, titulo, subtitulo, metricasTop, metricasBottom, nota) {
+  return `<article class="panel">
+    <div class="panel-head">
+      <div class="panel-num">${numero}</div>
+      <div><div class="panel-title">${titulo}</div><div class="panel-sub">${subtitulo}</div></div>
+    </div>
+    <div class="metric-grid panel-top">${metricasTop.join('')}</div>
+    <div class="metric-grid panel-bottom">${metricasBottom.join('')}</div>
+    ${panelNote(icone, nota)}
+  </article>`;
+}
 
 export function montarHtmlOpr(dados, meta) {
-  const { header, growth, engagement, sales, mix } = dados;
+  const {
+    header, trafego, engajamento, vendas, leads, mix,
+  } = dados;
   return `<!doctype html>
 <html lang="pt-BR">
 <head>
@@ -75,71 +89,66 @@ export function montarHtmlOpr(dados, meta) {
     aspect-ratio:16/9;
     margin:0 auto;
     background:var(--paper);
-    padding:34px 34px 24px;
+    padding:26px 28px 18px;
     display:grid;
     grid-template-rows:auto auto 1fr auto;
-    gap:14px;
+    gap:10px;
     overflow:hidden;
     box-shadow:0 12px 60px rgba(0,0,0,.24);
   }
   .header{display:grid;grid-template-columns:1.8fr 1fr;gap:26px;align-items:start}
-  .eyebrow-line{width:56px;height:4px;background:var(--gold);margin:2px 0 10px}
-  .title{font:700 clamp(28px,3vw,58px)/.96 Georgia, "Times New Roman", serif;letter-spacing:.02em;margin:0;color:#123432}
-  .subtitle{margin-top:6px;font-size:clamp(14px,1.25vw,25px);letter-spacing:.13em;color:#686b68}
-  .meta{display:grid;grid-template-columns:1fr .9fr .7fr;min-height:88px;border-left:1px solid var(--line-2)}
-  .meta-item{padding:10px 22px;border-right:1px solid var(--line-2)}
-  .meta-label{font-size:10px;letter-spacing:.32em;text-transform:uppercase;color:#7b7b73;margin-bottom:8px}
-  .meta-value{font:400 18px Georgia, serif;color:#173b39}
-  .meta .accent::after{content:"";display:block;width:28px;height:3px;background:var(--gold);margin-top:15px}
-  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
-  .kpi-card{border:1px solid var(--line);border-radius:7px;padding:18px 20px;display:grid;grid-template-columns:86px 1fr;align-items:center;min-height:148px;box-shadow:0 1px 0 rgba(0,0,0,.025)}
-  .icon-circle{width:72px;height:72px;border-radius:50%;background:var(--gold-soft);display:grid;place-items:center;color:var(--ink)}
-  .icon-circle svg{width:40px;height:40px;stroke:currentColor;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
-  .kpi-label{font:400 18px Georgia,serif;margin-bottom:3px}
-  .kpi-value{font:700 clamp(27px,2.3vw,47px)/1 Georgia,serif;letter-spacing:.02em}
-  .kpi-caption{margin-top:12px;font-size:10px;letter-spacing:.26em;text-transform:uppercase;color:#797b77}
-  .sections{display:grid;grid-template-columns:1fr 1.18fr 1.08fr;gap:14px;min-height:0}
-  .panel{border:1px solid var(--line);border-radius:7px;padding:12px 14px 10px;display:flex;flex-direction:column;min-width:0}
-  .panel-head{display:grid;grid-template-columns:76px 1fr;gap:14px;align-items:center;padding:2px 4px 14px;border-bottom:1px solid var(--line)}
-  .panel-num{font:400 40px Georgia,serif;color:var(--gold);padding-right:12px;border-right:1px solid #8e8d86}
-  .panel-title{font:700 28px Georgia,serif;line-height:1.05}
-  .panel-sub{font-size:10px;letter-spacing:.24em;text-transform:uppercase;color:#747975;margin-top:5px}
-  .metric-grid{display:grid;gap:0;margin-top:11px}
-  .growth-top{grid-template-columns:repeat(3,1fr)}
-  .growth-bottom{grid-template-columns:1fr 1fr 1.15fr;border-top:1px solid var(--line);margin-top:10px}
-  .engagement-top{grid-template-columns:1.5fr repeat(4,1fr)}
-  .engagement-mid{grid-template-columns:repeat(4,1fr);border-top:1px solid var(--line);margin-top:9px}
-  .engagement-bottom{grid-template-columns:1fr 1fr;border-top:1px solid var(--line);margin-top:9px}
-  .leads-costs{grid-template-columns:repeat(4,1fr);margin-top:12px}
-  .leads-conv{grid-template-columns:1fr 1fr;border-top:1px solid var(--line);margin-top:8px}
-  .metric{padding:6px 8px;min-width:0}
+  .eyebrow-line{width:48px;height:3px;background:var(--gold);margin:2px 0 6px}
+  .title{font:700 clamp(24px,2.6vw,46px)/.96 Georgia, "Times New Roman", serif;letter-spacing:.02em;margin:0;color:#123432}
+  .subtitle{margin-top:4px;font-size:clamp(12px,1.1vw,20px);letter-spacing:.13em;color:#686b68}
+  .meta{display:grid;grid-template-columns:1fr .9fr .7fr;min-height:62px;border-left:1px solid var(--line-2)}
+  .meta-item{padding:6px 18px}
+  .meta-item:not(:last-child){border-right:1px solid var(--line-2)}
+  .meta-label{font-size:9px;letter-spacing:.28em;text-transform:uppercase;color:#7b7b73;margin-bottom:5px}
+  .meta-value{font:400 15px Georgia, serif;color:#173b39}
+  .meta .accent::after{content:"";display:block;width:24px;height:2px;background:var(--gold);margin-top:10px}
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+  .kpi-card{border:1px solid var(--line);border-radius:7px;padding:12px 16px;display:grid;grid-template-columns:52px 1fr;align-items:center;min-height:96px;box-shadow:0 1px 0 rgba(0,0,0,.025)}
+  .icon-circle{width:46px;height:46px;border-radius:50%;background:var(--gold-soft);display:grid;place-items:center;color:var(--ink)}
+  .icon-circle svg{width:26px;height:26px;stroke:currentColor;fill:none;stroke-width:2.3;stroke-linecap:round;stroke-linejoin:round}
+  .kpi-label{font:400 13px Georgia,serif;margin-bottom:1px}
+  .kpi-value{font:700 clamp(20px,1.7vw,32px)/1 Georgia,serif;letter-spacing:.02em}
+  .kpi-caption{margin-top:5px;font-size:9px;letter-spacing:.22em;text-transform:uppercase;color:#797b77}
+  /* Grade 2×2 — cada painel com a mesma largura que os 3-em-linha tinham
+     antes (metade do relatório, não um quarto), pra caber Tráfego +
+     Engajamento + Vendas + Leads sem espremer número/rótulo. Espaçamento
+     bem mais apertado que o layout de 3 painéis: são 2 LINHAS agora, na
+     mesma altura fixa de 900px (imagem, overflow escondido — o que não
+     coube aqui simplesmente some, por isso cada medida foi conferida
+     renderizando de verdade, não só no navegador). */
+  .sections{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:10px;min-height:0}
+  .panel{border:1px solid var(--line);border-radius:6px;padding:10px 16px 8px;display:flex;flex-direction:column;min-width:0;min-height:0}
+  .panel-head{display:grid;grid-template-columns:42px 1fr;gap:10px;align-items:center;padding:0 2px 6px;border-bottom:1px solid var(--line)}
+  .panel-num{font:400 22px Georgia,serif;color:var(--gold);padding-right:9px;border-right:1px solid #8e8d86}
+  .panel-title{font:700 18px Georgia,serif;line-height:1.05}
+  .panel-sub{font-size:9px;letter-spacing:.18em;text-transform:uppercase;color:#747975;margin-top:2px}
+  .metric-grid{display:grid;gap:0;margin-top:8px}
+  .panel-top{grid-template-columns:repeat(auto-fit,minmax(96px,1fr))}
+  .panel-bottom{grid-template-columns:repeat(auto-fit,minmax(96px,1fr));border-top:1px solid var(--line);margin-top:6px}
+  .metric{padding:4px 8px;min-width:0}
   .metric:not(:first-child){border-left:1px solid var(--line)}
-  .metric-label{font-size:12px;color:#58635f;line-height:1.25;overflow-wrap:break-word;height:30px;display:flex;align-items:flex-end}
-  .metric-value{font:700 18px Georgia,serif;line-height:1.15;margin-top:9px;overflow-wrap:break-word}
-  .metric.center{text-align:center}
-  .panel-note{margin-top:auto;min-height:74px;background:var(--soft);display:grid;grid-template-columns:74px 1fr;align-items:center;padding:10px 14px}
-  .panel-note .icon-circle{width:56px;height:56px}
-  .panel-note .icon-circle svg{width:28px;height:28px}
-  .note-text{font:italic 17px/1.15 Georgia,serif;color:#48615d}
-  .funnel{display:grid;grid-template-columns:1fr 1fr 1fr;height:62px;margin:13px 0 8px;overflow:hidden}
-  .funnel-step{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#e7e7df;color:#29443f;padding-left:17px;text-align:center;clip-path:polygon(0 0, 88% 0, 100% 50%, 88% 100%, 0 100%, 12% 50%);margin-left:-8px}
-  .funnel-step:first-child{margin-left:0;clip-path:polygon(0 0,88% 0,100% 50%,88% 100%,0 100%)}
-  .funnel-step.mid{background:#cfd5d1}
-  .funnel-step.end{background:var(--green);color:#fff;clip-path:polygon(0 0,88% 0,100% 50%,88% 100%,0 100%,12% 50%)}
-  .funnel-label{font-size:13px}
-  .funnel-value{font:700 22px Georgia,serif;margin-top:2px}
-  .footer{display:grid;grid-template-columns:1.35fr .9fr;gap:20px;align-items:end}
-  .footer-left{border-top:2px solid #aaa9a3;padding:18px 22px 0;font-size:11px;letter-spacing:.29em;text-transform:uppercase;color:#9a9690;min-height:84px}
-  .mix-card{border:1px solid var(--line);border-radius:6px;padding:8px 12px;display:grid;grid-template-columns:1fr 190px;gap:16px;align-items:center}
-  .mix-title{font:700 17px Georgia,serif}
-  .mix-sub{font-size:9px;letter-spacing:.26em;color:#8c8d87;text-transform:uppercase;margin-top:1px}
-  .mix-row{display:grid;grid-template-columns:72px 1fr minmax(45px,auto);gap:10px;align-items:center;margin-top:9px;font-size:11px}
+  .metric-label{font-size:10px;color:#58635f;line-height:1.2;overflow-wrap:break-word;height:20px;display:flex;align-items:flex-end}
+  .metric-value{font:700 15px Georgia,serif;line-height:1.1;margin-top:4px;overflow-wrap:break-word}
+  .panel-note{margin-top:auto;min-height:42px;background:var(--soft);display:grid;grid-template-columns:34px 1fr;align-items:center;padding:6px 10px;gap:0 8px}
+  .panel-note .icon-circle{width:28px;height:28px}
+  .panel-note .icon-circle svg{width:15px;height:15px}
+  .note-text{font:italic 12px/1.15 Georgia,serif;color:#48615d}
+  .footer{display:grid;grid-template-columns:1.35fr .9fr;gap:16px;align-items:end}
+  .footer-left{border-top:2px solid #aaa9a3;padding:8px 18px 0;font-size:9px;letter-spacing:.24em;text-transform:uppercase;color:#9a9690;min-height:0}
+  .mix-card{border:1px solid var(--line);border-radius:6px;padding:6px 10px;display:grid;grid-template-columns:1fr 170px;gap:12px;align-items:center}
+  .mix-title{font:700 13px Georgia,serif}
+  .mix-sub{font-size:8px;letter-spacing:.22em;color:#8c8d87;text-transform:uppercase;margin-top:0}
+  .mix-row{display:grid;grid-template-columns:60px 1fr minmax(40px,auto);gap:8px;align-items:center;margin-top:5px;font-size:10px}
   .mix-row strong{white-space:nowrap}
-  .bar{height:10px;background:#e9e9e6;border-radius:4px;overflow:hidden}
+  .bar{height:7px;background:#e9e9e6;border-radius:4px;overflow:hidden}
   .bar span{display:block;height:100%;background:var(--green)}
-  .mix-side{border-left:1px solid var(--line-2);padding-left:18px;font:italic 15px/1.25 Georgia,serif;color:#52645f}
-  .mix-side small{display:block;font:9px/1.5 Inter,sans-serif;letter-spacing:.25em;text-transform:uppercase;color:#aaa59c;margin-top:10px}
-  .mix-side small::after{content:"";display:block;width:28px;height:2px;background:var(--gold);margin-top:8px}
+  .mix-side{border-left:1px solid var(--line-2);padding-left:14px;font:italic 12px/1.2 Georgia,serif;color:#52645f}
+  .mix-side small{display:block;font:8px/1.4 Inter,sans-serif;letter-spacing:.2em;text-transform:uppercase;color:#aaa59c;margin-top:6px}
+  .mix-side small::after{content:"";display:block;width:22px;height:2px;background:var(--gold);margin-top:6px}
 </style>
 </head>
 <body>
@@ -165,71 +174,37 @@ export function montarHtmlOpr(dados, meta) {
     </section>
 
     <section class="sections">
-      <article class="panel">
-        <div class="panel-head">
-          <div class="panel-num">01</div>
-          <div><div class="panel-title">Growth / Seguidores</div><div class="panel-sub">Aquisição e expansão de audiência</div></div>
-        </div>
-        <div class="metric-grid growth-top">
-          ${metric('Investimento', fmtValor(growth.investimento, 'moeda'))}
-          ${metric('Seguidores', fmtValor(growth.seguidores))}
-          ${metric('Visitas ao Perfil', fmtValor(growth.visitasPerfil))}
-        </div>
-        <div class="metric-grid growth-bottom">
-          ${metric('Custo por Seguidor', fmtValor(growth.custoPorSeguidor, 'moeda'))}
-          ${metric('Custo por Visita', fmtValor(growth.custoPorVisita, 'moeda'))}
-          ${metric('Conversão Visita → Seguidor', fmtValor(growth.conversaoVisitaSeguidor, 'percentual'))}
-        </div>
-        ${panelNote('bars', 'Mais pessoas. Mais relevância.<br>Uma comunidade em crescimento.')}
-      </article>
+      ${painel('01', 'compass', 'Tráfego', 'Visitas geradas pela mídia paga', [
+        metric('Investimento', fmtValor(trafego.investimento, 'moeda')),
+        metric('Visitas', fmtValor(trafego.visitas)),
+      ], [
+        metric('Custo por Visita', fmtValor(trafego.custoPorVisita, 'moeda')),
+      ], 'Mais visitas. Mais chance de conversão.')}
 
-      <article class="panel">
-        <div class="panel-head">
-          <div class="panel-num">02</div>
-          <div><div class="panel-title">Engagement</div><div class="panel-sub">Interações que fortalecem a marca</div></div>
-        </div>
-        <div class="metric-grid engagement-top">
-          ${metric('Investimento', fmtValor(engagement.investimento, 'moeda'))}
-          ${metric('Curtidas', fmtValor(engagement.curtidas))}
-          ${metric('Comentários', fmtValor(engagement.comentarios))}
-          ${metric('Compart.', fmtValor(engagement.compartilhamentos))}
-          ${metric('Salvamentos', fmtValor(engagement.salvamentos))}
-        </div>
-        <div class="metric-grid engagement-mid">
-          ${metric('Custo / Curtida', fmtValor(engagement.custoPorCurtida, 'moeda'))}
-          ${metric('Custo / Comentário', fmtValor(engagement.custoPorComentario, 'moeda'))}
-          ${metric('Custo / Compart.', fmtValor(engagement.custoPorCompartilhamento, 'moeda'))}
-          ${metric('Custo / Salvamento', fmtValor(engagement.custoPorSalvamento, 'moeda'))}
-        </div>
-        <div class="metric-grid engagement-bottom">
-          ${metric('Total de Interações', fmtValor(engagement.totalInteracoes), 'center')}
-          ${metric('Custo Médio por Engajamento', fmtValor(engagement.custoMedioPorEngajamento, 'moeda'), 'center')}
-        </div>
-        ${panelNote('heart', 'Conteúdo que conecta.<br>Resultados que constroem valor.')}
-      </article>
+      ${painel('02', 'heart', 'Engajamento', 'Interações que fortalecem a marca', [
+        metric('Investimento', fmtValor(engajamento.investimento, 'moeda')),
+        metric('Curtidas', fmtValor(engajamento.curtidas)),
+        metric('Comentários', fmtValor(engajamento.comentarios)),
+        metric('Compart.', fmtValor(engajamento.compartilhamentos)),
+        metric('Salvamentos', fmtValor(engajamento.salvamentos)),
+      ], [
+        metric('Total de Interações', fmtValor(engajamento.totalInteracoes)),
+        metric('Custo Médio por Engajamento', fmtValor(engajamento.custoMedioPorEngajamento, 'moeda')),
+      ], 'Conteúdo que conecta. Resultados que constroem valor.')}
 
-      <article class="panel">
-        <div class="panel-head">
-          <div class="panel-num">03</div>
-          <div><div class="panel-title">Leads & Sales</div><div class="panel-sub">Do interesse ao faturamento</div></div>
-        </div>
-        <div class="funnel">
-          ${funnelStep('Leads', fmtValor(sales.leads))}
-          ${funnelStep('Leads Quentes', fmtValor(sales.leadsQuentes), 'mid')}
-          ${funnelStep('Vendas', fmtValor(sales.vendas), 'end')}
-        </div>
-        <div class="metric-grid leads-costs">
-          ${metric('Investimento', fmtValor(sales.investimento, 'moeda'))}
-          ${metric('Custo por Lead', fmtValor(sales.custoPorLead, 'moeda'))}
-          ${metric('Custo por Lead Quente', fmtValor(sales.custoPorLeadQuente, 'moeda'))}
-          ${metric('Custo por Venda', fmtValor(sales.custoPorVenda, 'moeda'))}
-        </div>
-        <div class="metric-grid leads-conv">
-          ${metric('Conversão Lead → Quente', fmtValor(sales.conversaoLeadQuente, 'percentual'), 'center')}
-          ${metric('Conversão Quente → Venda', fmtValor(sales.conversaoQuenteVenda, 'percentual'), 'center')}
-        </div>
-        ${panelNote('funnel', 'Mais oportunidades.<br>Mais receita para o negócio.')}
-      </article>
+      ${painel('03', 'cart', 'Vendas', 'Conversão direta em compra', [
+        metric('Investimento', fmtValor(vendas.investimento, 'moeda')),
+        metric('Compras', fmtValor(vendas.compras)),
+      ], [
+        metric('Custo por Compra', fmtValor(vendas.custoPorCompra, 'moeda')),
+      ], 'Mais oportunidades. Mais receita para o negócio.')}
+
+      ${painel('04', 'funnel', 'Leads', 'Do interesse ao primeiro contato', [
+        metric('Investimento', fmtValor(leads.investimento, 'moeda')),
+        metric('Leads', fmtValor(leads.resultado)),
+      ], [
+        metric('Custo por Lead', fmtValor(leads.custoPorLead, 'moeda')),
+      ], 'Mais conversas. Mais oportunidades de negócio.')}
     </section>
 
     <footer class="footer">
@@ -238,8 +213,9 @@ export function montarHtmlOpr(dados, meta) {
         <div>
           <div class="mix-title">Media Mix</div>
           <div class="mix-sub">Distribuição do investimento</div>
-          ${mixRow('Growth', mix.growth)}
-          ${mixRow('Engagement', mix.engagement)}
+          ${mixRow('Tráfego', mix.trafego)}
+          ${mixRow('Engajamento', mix.engajamento)}
+          ${mixRow('Vendas', mix.vendas)}
           ${mixRow('Leads', mix.leads)}
         </div>
         <div class="mix-side">Equilíbrio<br>para um crescimento<br>sustentável.
