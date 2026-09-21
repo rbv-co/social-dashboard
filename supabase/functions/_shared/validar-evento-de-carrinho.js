@@ -5,12 +5,17 @@
 // sem subir nada — ver spec
 // docs/superpowers/specs/2026-09-17-funil-carrinho-shopify-design.md.
 
-export const TIPOS_ACEITOS = ['produto_adicionado', 'produto_removido', 'checkout_iniciado', 'sessao_iniciada']
+// sessao_iniciada removido da lista em 21/09/2026 — ~25% do volume era bot
+// conhecido (Googlebot, crawler da própria Meta), sem user_agent gravado
+// pra filtrar isso de forma confiável. Rejeitar aqui barra a escrita no
+// banco mesmo antes de republicar o tema — o interceptador silencia erro
+// de rede de propósito (ver `enviar()`), então uma cópia antiga ainda
+// mandando o evento falha em silêncio, sem quebrar nada pro visitante.
+export const TIPOS_ACEITOS = ['produto_adicionado', 'produto_removido', 'checkout_iniciado']
 
-// Só estes três exigem cart_token — na entrada da sessão (sessao_iniciada)
-// ainda não existe carrinho nenhum. session_id (cookie _shopify_s da
-// própria Shopify) é quem liga tudo, esse sim obrigatório em todo evento —
-// ver db/migrations/2026-09-18-carrinho-eventos-sessao.sql.
+// session_id (cookie _shopify_s da própria Shopify) é quem liga tudo,
+// obrigatório em todo evento — ver
+// db/migrations/2026-09-18-carrinho-eventos-sessao.sql.
 const TIPOS_QUE_EXIGEM_CART_TOKEN = ['produto_adicionado', 'produto_removido', 'checkout_iniciado']
 
 // Teto de eventos por IP, por minuto. Por IP, nunca por cart_token — pedido

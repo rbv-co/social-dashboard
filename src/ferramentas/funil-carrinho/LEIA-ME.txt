@@ -90,6 +90,20 @@ Como chega o dado (ATUALIZADO 18/09/2026 — terceira tentativa, a que ficou):
   em outro produto. O fim da sessão é inferido por inatividade, do mesmo
   jeito que carrinho_abandonados já faz (nenhuma consulta nova criada pra
   isso ainda; é só a mesma lógica, disponível se um dia quiser expor).
+  ⚠️ REMOVIDO 21/09/2026 — o evento `sessao_iniciada` em si (não a
+  detecção de sessão nova, que continua viva só pro referrer, ver acima):
+  auditando uma amostra de 60 eventos recentes por reverse DNS de IP,
+  ~25% eram bot conhecido — Googlebot (`*.googlebot.com`) e a própria
+  infra de crawler da Meta (`fwdproxy-*.fbsv.net`) pré-visitando o link do
+  anúncio. O evento não grava `user_agent`, só IP, então não dava pra
+  filtrar isso de forma confiável na leitura. Verificado também que a
+  Shopify não expõe "sessões do site" via API pra terceiro nenhum (nem
+  GraphQL Admin, nem ShopifyQL) — não tinha substituto barato mais
+  confiável. Decisão do dono: melhor não ter esse número do que ter um
+  número errado. Tirado de três lugares: TIPOS_ACEITOS na edge function
+  (rejeita na origem), o `enviar('sessao_iniciada', {})` no interceptador
+  do tema, e a exibição na tela (rótulo em Registros). Linhas antigas
+  apagadas da tabela — não é mais possível reconstruir esse histórico.
 - ATRIBUIÇÃO DO META (18/09/2026): cada evento também manda os cookies
   `_fbp` (id de navegador do Pixel do Meta — existe pra todo mundo que
   passa pelo Pixel, não só quem clicou em anúncio) e `_fbc` (id do clique

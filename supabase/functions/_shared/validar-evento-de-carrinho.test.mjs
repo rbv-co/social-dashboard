@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { validarPayload, passouDoLimite, TIPOS_ACEITOS, TETO_POR_MINUTO } from './validar-evento-de-carrinho.js'
 
-test('aceita os quatro tipos aceitos (com cart_token, quando exigido)', () => {
+test('aceita os três tipos aceitos (com cart_token, quando exigido)', () => {
   for (const tipo of TIPOS_ACEITOS) {
     const r = validarPayload({ tipo, cart_token: 'abc123', session_id: 's1' })
     assert.equal(r.ok, true)
@@ -16,22 +16,22 @@ test('rejeita tipo fora da lista (ex.: carrinho_visualizado, cortado no desenho)
   assert.equal(r.motivo, 'tipo_invalido')
 })
 
+test('rejeita sessao_iniciada — removido em 21/09/2026, ~25% do volume era bot conhecido', () => {
+  const r = validarPayload({ tipo: 'sessao_iniciada', session_id: 's1' })
+  assert.equal(r.ok, false)
+  assert.equal(r.motivo, 'tipo_invalido')
+})
+
 test('rejeita sem cart_token nos tipos que dependem de carrinho', () => {
   assert.equal(validarPayload({ tipo: 'produto_adicionado', session_id: 's1' }).ok, false)
   assert.equal(validarPayload({ tipo: 'produto_adicionado', cart_token: '', session_id: 's1' }).ok, false)
   assert.equal(validarPayload({ tipo: 'produto_adicionado', cart_token: '   ', session_id: 's1' }).ok, false)
 })
 
-test('sessao_iniciada NÃO precisa de cart_token — ainda não existe carrinho na entrada da sessão', () => {
-  const r = validarPayload({ tipo: 'sessao_iniciada', session_id: 's1' })
-  assert.equal(r.ok, true)
-  assert.equal(r.evento.cart_token, null)
-})
-
 test('rejeita sem session_id, mesmo com cart_token presente', () => {
   assert.equal(validarPayload({ tipo: 'produto_adicionado', cart_token: 'x' }).ok, false)
   assert.equal(validarPayload({ tipo: 'produto_adicionado', cart_token: 'x', session_id: '' }).ok, false)
-  assert.equal(validarPayload({ tipo: 'sessao_iniciada', session_id: '   ' }).ok, false)
+  assert.equal(validarPayload({ tipo: 'produto_adicionado', cart_token: 'x', session_id: '   ' }).ok, false)
 })
 
 test('rejeita corpo que não é objeto', () => {
@@ -77,7 +77,7 @@ test('fbp/fbc são opcionais: vêm junto quando existem, viram null quando falta
 
 test('utm/gclid/referrer são opcionais: vêm junto quando existem, viram null quando faltam ou são lixo', () => {
   const comOrigem = validarPayload({
-    tipo: 'sessao_iniciada', session_id: 's1',
+    tipo: 'produto_adicionado', cart_token: 'x', session_id: 's1',
     utm_source: 'google', utm_medium: 'cpc', utm_campaign: 'promo-inverno',
     gclid: 'abc123', referrer: 'https://www.google.com/',
   })
@@ -87,12 +87,12 @@ test('utm/gclid/referrer são opcionais: vêm junto quando existem, viram null q
   assert.equal(comOrigem.evento.gclid, 'abc123')
   assert.equal(comOrigem.evento.referrer, 'https://www.google.com/')
 
-  const semOrigem = validarPayload({ tipo: 'sessao_iniciada', session_id: 's1' })
+  const semOrigem = validarPayload({ tipo: 'produto_adicionado', cart_token: 'x', session_id: 's1' })
   assert.equal(semOrigem.evento.utm_source, null)
   assert.equal(semOrigem.evento.gclid, null)
   assert.equal(semOrigem.evento.referrer, null)
 
-  const lixo = validarPayload({ tipo: 'sessao_iniciada', session_id: 's1', utm_source: '   ', gclid: 123, referrer: '' })
+  const lixo = validarPayload({ tipo: 'produto_adicionado', cart_token: 'x', session_id: 's1', utm_source: '   ', gclid: 123, referrer: '' })
   assert.equal(lixo.evento.utm_source, null)
   assert.equal(lixo.evento.gclid, null)
   assert.equal(lixo.evento.referrer, null)
