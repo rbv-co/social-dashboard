@@ -23,13 +23,6 @@
 
       <div v-show="aba === 'visao'" class="fc-grade">
         <section class="fc-cartao card-base">
-          <h2 class="fc-titulo-secao">Sessões iniciadas</h2>
-          <p class="fc-explicacao">Visitantes únicos que entraram no site neste período — deduplicado por sessão, não por evento cru.</p>
-          <p v-if="carregando" class="fc-carregando">Carregando…</p>
-          <div v-else class="fc-numero-valor">{{ sessoesIniciadas }}</div>
-        </section>
-
-        <section class="fc-cartao card-base">
           <h2 class="fc-titulo-secao">Mais adicionados ao carrinho</h2>
           <p v-if="carregando" class="fc-carregando">Carregando…</p>
           <p v-else-if="!erro && !maisAdicionados.length" class="fc-vazio">Nenhum produto adicionado ao carrinho neste período.</p>
@@ -108,7 +101,7 @@ import { useRouter } from 'vue-router'
 import BarraDeTopo from '../../compartilhado/barra-de-topo.vue'
 import { sbClient } from '../../compartilhado/conectar-no-banco-de-dados.js'
 import { diasAtras } from '../../compartilhado/datas.js'
-import { rankearProdutos, ordenarAbandonados, foiCortado, contarSessoesUnicas, LIMITE_CARRINHO } from './agregacoes-carrinho.js'
+import { rankearProdutos, ordenarAbandonados, foiCortado, LIMITE_CARRINHO } from './agregacoes-carrinho.js'
 
 const router = useRouter()
 const voltar = () => router.push({ name: 'inicio' })
@@ -123,7 +116,6 @@ const TIPO_LABEL = {
   produto_adicionado: 'Adicionado',
   produto_removido: 'Removido',
   checkout_iniciado: 'Checkout iniciado',
-  sessao_iniciada: 'Sessão iniciada',
 }
 
 const aba = ref('visao')
@@ -135,7 +127,6 @@ const maisAdicionados = ref([])
 const maisRemovidos = ref([])
 const abandonados = ref([])
 const registros = ref([])
-const sessoesIniciadas = ref(0)
 
 function formatarData(iso) {
   return new Date(iso).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
@@ -156,14 +147,17 @@ async function carregar() {
   maisRemovidos.value = []
   abandonados.value = []
   registros.value = []
-  sessoesIniciadas.value = 0
   const desde = `${diasAtras(periodoAtivo.value)}T00:00:00-03:00`
 
   const [adicionados, removidos, carrinhosAbandonados, eventosCrus] = await Promise.all([
     sbClient.from('carrinho_eventos').select('produto_titulo').eq('tipo', 'produto_adicionado').gte('criado_em', desde).limit(LIMITE_CARRINHO),
     sbClient.from('carrinho_eventos').select('produto_titulo').eq('tipo', 'produto_removido').gte('criado_em', desde).limit(LIMITE_CARRINHO),
     sbClient.from('carrinho_abandonados').select('cart_token,iniciado_em,ultimo_evento').gte('iniciado_em', desde).limit(LIMITE_CARRINHO),
-    sbClient.from('carrinho_eventos').select('id,criado_em,tipo,produto_titulo,quantidade,preco,cart_token,session_id').gte('criado_em', desde).order('criado_em', { ascending: false }).limit(LIMITE_CARRINHO),
+    // sessao_iniciada excluído: ~25% do volume é bot conhecido (Googlebot,
+    // crawler da própria Meta — confirmado por reverse DNS de IP em
+    // 21/09/2026), sem user_agent gravado pra filtrar isso de forma
+    // confiável. Dado real, mas não em condição de aparecer como registro.
+    sbClient.from('carrinho_eventos').select('id,criado_em,tipo,produto_titulo,quantidade,preco,cart_token,session_id').neq('tipo', 'sessao_iniciada').gte('criado_em', desde).order('criado_em', { ascending: false }).limit(LIMITE_CARRINHO),
   ])
 
   const primeiroErro = adicionados.error || removidos.error || carrinhosAbandonados.error || eventosCrus.error
@@ -178,7 +172,6 @@ async function carregar() {
   maisRemovidos.value = rankearProdutos(removidos.data)
   abandonados.value = ordenarAbandonados(carrinhosAbandonados.data)
   registros.value = eventosCrus.data
-  sessoesIniciadas.value = contarSessoesUnicas(eventosCrus.data.filter((e) => e.tipo === 'sessao_iniciada'))
   carregando.value = false
 }
 
@@ -201,7 +194,6 @@ onMounted(carregar)
 .fc-titulo-secao { font-size: var(--texto-titulo); margin: 0 0 var(--sp-4); overflow-wrap: anywhere; }
 .fc-explicacao { font-size: var(--texto-corpo); color: var(--muted); margin: 0 0 var(--sp-4); }
 .fc-carregando, .fc-vazio { font-size: var(--texto-corpo); color: var(--muted); }
-.fc-numero-valor { font-family: var(--fonte-principal); font-size: var(--texto-numero); font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; line-height: 1.1; }
 .fc-erro { font-size: var(--texto-campo); color: var(--red); }
 .fc-tabela-scroll { overflow-x: auto; }
 .fc-tabela-scroll .fc-tabela { min-width: 760px; }

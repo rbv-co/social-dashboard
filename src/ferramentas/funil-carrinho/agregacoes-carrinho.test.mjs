@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { rankearProdutos, ordenarAbandonados, foiCortado, contarSessoesUnicas, LIMITE_CARRINHO } from './agregacoes-carrinho.js'
+import { rankearProdutos, ordenarAbandonados, foiCortado, LIMITE_CARRINHO } from './agregacoes-carrinho.js'
 
 test('rankeia por número de eventos, do maior pro menor', () => {
   const linhas = [
@@ -52,18 +52,4 @@ test('foiCortado: só acusa corte quando bate EXATAMENTE no teto do .limit()', (
 test('foiCortado: entrada que não é array nunca acusa corte', () => {
   assert.equal(foiCortado(undefined), false)
   assert.equal(foiCortado(null), false)
-})
-
-test('contarSessoesUnicas: conta session_id distintos, não linhas', () => {
-  const linhas = [{ session_id: 'a' }, { session_id: 'a' }, { session_id: 'b' }]
-  assert.equal(contarSessoesUnicas(linhas), 2)
-})
-
-test('contarSessoesUnicas: ignora session_id nulo/vazio', () => {
-  assert.equal(contarSessoesUnicas([{ session_id: null }, { session_id: '' }, {}]), 0)
-})
-
-test('contarSessoesUnicas: período vazio devolve zero, nunca quebra', () => {
-  assert.equal(contarSessoesUnicas([]), 0)
-  assert.equal(contarSessoesUnicas(undefined), 0)
 })

@@ -40,19 +40,3 @@ export function rankearProdutos(linhas) {
 export function ordenarAbandonados(linhas) {
   return [...(linhas || [])].sort((a, b) => new Date(b.ultimo_evento) - new Date(a.ultimo_evento))
 }
-
-/**
- * Sessões únicas entre eventos sessao_iniciada — conta session_id distintos,
- * não linhas: o coletor no navegador ainda manda uma duplicata residual numa
- * fatia pequena das sessões (corrida no localStorage, aba anônima), mesmo
- * depois do fix de 18/09/2026 (commit 6a9fd627). Contar linha por linha
- * infla o número; isto conta pessoa, não evento.
- * @param {{session_id: string|null}[]} linhas
- */
-export function contarSessoesUnicas(linhas) {
-  const ids = new Set()
-  for (const linha of linhas || []) {
-    if (linha?.session_id) ids.add(linha.session_id)
-  }
-  return ids.size
-}
