@@ -140,10 +140,16 @@ export function tabelaAindaNaoExiste(erro) {
 export function avisoDaListaDeLembretes(erro) {
   if (!erro) return { tipo: '', texto: '' }
   if (tabelaAindaNaoExiste(erro)) {
+    // ⚠️ A TABELA ESTÁ NO AR DESDE 21/09/2026. Este texto já foi "está
+    // chegando" — fazia sentido enquanto a tabela ainda não existia. Hoje, se
+    // este ramo disparar, é porque algo QUEBROU (schema cache desatualizado,
+    // tabela apagada por engano, ambiente sem a migration) — não porque uma
+    // funcionalidade está a caminho. Dizer "logo aparece" aqui seria mentir
+    // exatamente do jeito que o PADRAO-DA-CENTRAL item 9 proíbe.
     return {
       tipo: 'aguardando',
-      texto: 'Os lembretes ainda não existem no banco. Assim que a parte do banco subir, '
-        + 'eles aparecem aqui sozinhos.',
+      texto: 'Não encontrei a tabela de lembretes no banco — e isso não é esperado, '
+        + 'porque ela já está no ar. Avise quem cuida do sistema.',
     }
   }
   return {

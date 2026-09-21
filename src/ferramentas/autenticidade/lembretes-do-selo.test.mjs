@@ -208,11 +208,19 @@ test('sem erro nenhum, não há aviso', () => {
   assert.deepEqual(avisoDaListaDeLembretes(null), { tipo: '', texto: '' })
 })
 
-test('⚠️ tabela que ainda não subiu: aviso curto, e a lista fica vazia', () => {
+// ⚠️ A TABELA ESTÁ NO AR DESDE 21/09/2026. Se este ramo disparar hoje, é
+// porque algo QUEBROU — não porque a tabela está "a caminho". O texto
+// mudou de "assim que a parte do banco subir" (fazia sentido antes) para
+// "isso não é esperado" (a verdade de hoje) — este teste prova a mensagem
+// NOVA, e reprova qualquer redação que volte a soar como "logo chega".
+test('⚠️ tabela ausente: o aviso diz que é INESPERADO, não que "está a caminho"', () => {
   const a = avisoDaListaDeLembretes({ code: '42P01' })
   assert.equal(a.tipo, 'aguardando')
   assert.ok(a.texto.length > 20 && a.texto.length < 200, 'o aviso é curto: ' + a.texto)
-  assert.match(a.texto, /ainda não/i)
+  assert.match(a.texto, /não é esperado|não deveria|quebrou|avise/i,
+    'o texto precisa soar como "algo quebrou", não como "funcionalidade pendente"')
+  assert.ok(!/ainda não existem|assim que a parte do banco subir|logo (aparece|chega)/i.test(a.texto),
+    'o texto NÃO pode mais soar como "coming soon" — a tabela já está no ar')
   assert.ok(!/42P01|PGRST|schema cache/i.test(a.texto),
     'quem lê a tela não precisa do código técnico do banco')
 })
@@ -340,4 +348,114 @@ test('a tela mostra as cinco colunas que o dono pediu', () => {
 test('⚠️ a tela não mostra o token de cancelamento', () => {
   const bloco = blocoDaAbaDeLembretes()
   assert.ok(!/token/i.test(bloco))
+})
+
+// ── A GUARDA SOBRE O ARQUIVO INTEIRO ────────────────────────────────────────
+//
+// ⚠️ AS DUAS GUARDAS DE CIMA SÓ ENXERGAM UM PEDAÇO DO ARQUIVO — o bloco da aba
+// (`blocoDaAbaDeLembretes`) e o array de dentro do `Promise.all`. Uma escrita
+// IMPERATIVA fora dos dois — em `onMounted`, num `watch`, atrás de uma
+// `ref` de template — é invisível para as duas. Confirmado por mutação real,
+// no estilo idiomático que o próprio arquivo já usa para
+// `window.addEventListener('message', ouvirAPrevia)`:
+//
+//   document.querySelector('.au-tabela-lembretes')
+//     ?.addEventListener('click', () => { sbClient.from('vessel_lembretes').delete().eq('id', '1') })
+//
+// As duas guardas de cima continuaram 29/29 verdes com isso dentro do
+// `onMounted`. Uma guarda que só olha metade do arquivo não guarda o arquivo.
+//
+// A resposta não é enumerar mais um ataque (a lista já tem cinco: portão
+// aninhado errado, campo renomeado, `<Button @dblclick>`, nome de tabela por
+// concatenação, e agora um ouvinte imperativo — enumerar perde por definição).
+// A resposta é NEGAR POR PADRÃO sobre o ARQUIVO INTEIRO:
+//
+// 1. `.from(...)` e `.rpc(...)`, em QUALQUER lugar do arquivo, só podem
+//    receber uma STRING LITERAL como argumento — nunca uma variável, nunca uma
+//    expressão. Isso fecha de vez a fuga por indireção (a variável
+//    `TABELA_LEMB = 'vessel_' + 'lembretes'` do ataque anterior), sem precisar
+//    avaliar concatenação: uma variável não é mais aceita, ponto, veio de onde
+//    vier o valor dela.
+// 2. De todo `.from('vessel_lembretes')` do arquivo, a única continuação
+//    aceita é `.select(` — nunca `.delete(`, `.update(` ou `.insert(`.
+// 3. Nenhuma chamada `.rpc(...)` pode nomear algo que comece com
+//    `vessel_lembrete` — nenhuma das funções de escrita do desenho
+//    (`vessel_lembrete_criar`, `vessel_lembrete_cancelar_por_token`,
+//    `vessel_lembrete_marcar_enviado`) tem por que ser chamada por este painel;
+//    elas são `service_role`, chamadas pela edge, nunca daqui.
+// 4. `addEventListener` só pode existir numa forma: `window.addEventListener`
+//    para o evento `'message'` — a única entrada imperativa que o arquivo já
+//    usa, e por um motivo documentado (a prévia do cartão). Qualquer outro
+//    receptor (um `querySelector`, uma `ref` de template, um elemento
+//    guardado em variável) ou qualquer outro evento reprova. Isto pega o
+//    ataque de cima e qualquer variação dele (outro evento, outro elemento),
+//    sem precisar saber o nome da classe CSS visada.
+// 5. Nenhuma atribuição de `.onclick =` cru em lugar nenhum do arquivo — o
+//    código de hoje não usa essa forma nenhuma vez; se aparecer, é um jeito a
+//    mais de amarrar clique sem passar pelas guardas de template.
+test('⚠️⚠️ NEGAR POR PADRÃO: nenhuma escrita imperativa alcança vessel_lembretes, em NENHUM lugar do arquivo — não só no bloco da aba', () => {
+  // 1 e 2 — .from(...) só com string literal, e só .select( depois de
+  // .from('vessel_lembretes').
+  const chamadasDeFrom = [...TELA.matchAll(/\.from\(\s*([^)]*)\)([\s\S]{0,40})/g)]
+  assert.ok(chamadasDeFrom.length > 0, 'não achei nenhum .from( no arquivo — a extração quebrou')
+  for (const [trecho, argumentoCru, depois] of chamadasDeFrom) {
+    const argumento = argumentoCru.trim()
+    assert.match(argumento, /^(['"])[^'"]*\1$/,
+      `achei ".from(${argumento})" com argumento que NÃO é uma string literal — nenhuma indireção é ` +
+      `permitida em .from(...) neste arquivo, seja qual for o nome da variável: ${trecho}`)
+    if (argumento.replace(/['"]/g, '') === 'vessel_lembretes') {
+      const proximaChamada = depois.match(/^\s*\.([a-zA-Z]+)\(/)
+      assert.ok(proximaChamada, `.from('vessel_lembretes') sem nenhuma chamada encadeada logo depois: ${depois}`)
+      assert.equal(proximaChamada[1], 'select',
+        `.from('vessel_lembretes') encadeado com ".${proximaChamada[1]}(", e a única continuação ` +
+        'permitida é ".select(" — qualquer escrita nesta tabela, deste painel, é proibida')
+    }
+  }
+
+  // 3 — nenhuma .rpc(...) de escrita dos lembretes, em lugar nenhum.
+  const chamadasDeRpcNoArquivo = [...TELA.matchAll(/\.rpc\(\s*([^,)]*)/g)]
+  for (const [, argumentoCru] of chamadasDeRpcNoArquivo) {
+    const argumento = argumentoCru.trim()
+    assert.match(argumento, /^(['"])[^'"]*\1$/,
+      `achei ".rpc(${argumento}" com argumento que NÃO é uma string literal — mesma regra do .from(...)`)
+    const nome = argumento.replace(/['"]/g, '')
+    assert.ok(!nome.startsWith('vessel_lembrete'),
+      `achei uma chamada a ".rpc('${nome}')" — nenhuma função de "vessel_lembrete*" pode ser chamada ` +
+      'deste painel: as três de escrita do desenho são service_role, só a edge chama')
+  }
+
+  // 4 — addEventListener só na forma exata já documentada no arquivo.
+  const chamadasDeEvento = [...TELA.matchAll(/([\s\S]{0,80}?)\??\.addEventListener\(\s*(['"][^'"]+['"])/g)]
+  assert.ok(chamadasDeEvento.length > 0, 'não achei nenhum addEventListener — a extração quebrou')
+  for (const [, receptorCru, eventoCru] of chamadasDeEvento) {
+    const receptor = receptorCru.replace(/\s+$/, '')
+    const evento = eventoCru.replace(/['"]/g, '')
+    assert.match(receptor, /\bwindow$/,
+      `achei um addEventListener cujo receptor NÃO é "window" (é "...${receptor.slice(-40)}") — a única ` +
+      'entrada imperativa permitida neste arquivo é window.addEventListener; qualquer outro receptor ' +
+      '(querySelector, ref de template, elemento em variável) é uma porta que os dois testes de cima não veem'
+    )
+    assert.equal(evento, 'message',
+      `achei window.addEventListener para o evento "${evento}", e o único documentado é "message"`)
+  }
+
+  // 5 — nenhum onclick cru.
+  assert.ok(!/\.onclick\s*=/.test(TELA), 'achei uma atribuição de ".onclick =" — este arquivo não usa essa forma')
+
+  // 6 — nenhum acesso por COLCHETE a sbClient, e nenhum dos primitivos de
+  // ofuscação de string mais comuns. ⚠️ ISTO NÃO FECHA A CLASSE — é uma
+  // mitigação PARCIAL, e está escrita assim de propósito no relatório: um
+  // ataque real por mutação (`sbClient['from'](...)['delete'](...)` com o
+  // nome do evento montado por `String.fromCharCode`) driblou as regras 1-5
+  // (elas procuram `.from(`, `.rpc(`, `.addEventListener(` — texto com PONTO
+  // antes do nome; colchete não bate com nenhuma). Bloquear estes quatro
+  // primitivos (nenhum tem uso legítimo hoje neste arquivo) fecha ESTE
+  // disfarce específico, não a classe inteira: um parser de texto não prova
+  // ausência de código dinâmico em JavaScript — só um parser de AST prova.
+  assert.ok(!/sbClient\s*\[/.test(TELA),
+    'achei "sbClient[" — acesso por colchete ao cliente do banco não tem uso legítimo aqui; ' +
+    'é a forma mais simples de escapar de ".from(" e ".rpc(" no texto')
+  assert.ok(!/String\.fromCharCode\(|\batob\(|\bunescape\(|\beval\(|new Function\(/.test(TELA),
+    'achei um primitivo de ofuscação de string/código (fromCharCode/atob/unescape/eval/Function) — ' +
+    'nenhum tem uso legítimo neste arquivo')
 })
