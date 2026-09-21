@@ -1,51 +1,70 @@
-ROBÔ DO ESPELHO DA LISTA DE ESPERA (VESSEL BRASIL)
-==================================================
+O ROBÔ DA PLANILHA DA VESSEL
+============================
 
 O QUE ELE FAZ
-Pega quem entrou na lista de espera pela LP (vesselbrasil.com.br) e leva o
-cadastro para onde você trabalha:
+Mantém UMA planilha no Zoho WorkDrive sempre igual ao que está no sistema:
 
-  1. PLANILHA  → um arquivo CSV no Zoho WorkDrive, em
-                 04. Vessel Brasil / 17. Marketing / Lista de espera (LP)
-                 FUNCIONANDO.
-  2. BLING     → cadastra o contato com a marca de origem.
-                 BLOQUEADO: falta permissão (leia abaixo).
+  04. Vessel Brasil / 17. Marketing / Base de clientes / Base de clientes.xlsx
 
-Roda sozinho a cada 15 minutos.
+São ONZE ABAS, nesta ordem:
 
+  Lista de espera .... quem se cadastrou pelo site (vesselbrasil.com.br)
+  Vendas ............. os pedidos, com o valor que realmente entrou
+  Garantias .......... as garantias confirmadas e a fila de conferência
+  Atribuição ......... "de onde veio e deu em quê", uma linha por atendimento
+  Origens ............ todo registro de origem, para provar por onde ela chegou
+  Pessoas ............ as clientes cadastradas
+  Atendimentos ....... os horários marcados nas lojas
+  Convites abertos ... quem abriu convite, por QR ou por link
+  Stylists ........... com o link de cada uma e quantas clientes ela trouxe
+  Private Edits ...... com o link de cada convite e quem compareceu
+  Beauty Sessions .... com o endereço do QR e o salão parceiro
 
-POR QUE A PÁGINA NÃO ESCREVE DIRETO
-A LP nunca fala com o Bling nem com o Zoho. Quem fala é este robô. Três
-motivos, e nenhum é preciosismo:
-  - a portaria pública do Bling continua SÓ LEITURA, como está hoje;
-  - se o Bling ou o Zoho caírem, o cadastro NÃO SE PERDE — já está gravado, e
-    o robô tenta de novo;
-  - a moça que preencheu recebe resposta na hora, sem esperar dois sistemas
-    de terceiro.
+Ele também cadastra a pessoa no Bling e completa a ficha dela lá.
 
-
-O QUE ESTÁ BLOQUEADO, E O QUE CUSTA DESTRAVAR
-O aplicativo do Bling nunca foi autorizado para contatos. Medido: o mesmo
-token lê produtos (200) e é barrado em contatos (403).
-
-Para destravar, você precisa reautorizar o app do Bling incluindo contatos.
-
-  ⚠️ ISSO MATA O TOKEN ATUAL. Enquanto o novo não for gravado, TUDO que
-     depende do Bling para de funcionar — Gestão Comercial, notificação de
-     vendas, o proxy inteiro. Faça com alguém acompanhando, de preferência
-     fora do horário comercial.
-
-Enquanto não for feito, o robô escreve na própria linha, em português, que
-está esperando essa permissão. Nada se perde. No dia em que a permissão
-existir, ele começa a cadastrar sozinho, sem ninguém mexer no código.
+QUANDO ELE RODA
+Ao vivo: no segundo em que alguém entra na lista de espera (um gatilho no banco
+o chama) e, de qualquer forma, de 3 em 3 minutos.
 
 
-SE ALGUÉM PEDIR PARA SAIR DA LISTA
-Apague a linha em vessel_lista_espera. Na próxima rodada (até 15 minutos), o
-robô percebe e reescreve a planilha sem ela. Não precisa mexer no arquivo do
-Zoho à mão.
+A PLANILHA É DE MÃO ÚNICA
+Escrever nela não muda nada no sistema. Na rodada seguinte o robô regrava o
+arquivo inteiro, e o que você digitou lá some. Para corrigir um dado, corrija
+na Central ou no formulário.
+
+Vale ao contrário também, e é de propósito: se alguém pedir para sair da lista,
+apague a linha no sistema e ela sai da planilha na rodada seguinte — sem
+ninguém mexer no arquivo do Zoho. É assim que a Política de Privacidade é
+cumprida de verdade.
+
+⚠️ A planilha NÃO é cópia de segurança. Ela é uma fotografia do agora: o que
+sai do sistema sai dela. A cópia de segurança é outro robô, que roda às 06h12,
+e guarda justamente o que aqui desaparece.
+
+
+O QUE MUDOU EM 21/09/2026
+1. ERA ONZE ARQUIVOS EM DUAS PASTAS, virou UM arquivo com onze abas, numa
+   pasta só, como você pediu. Os arquivos antigos (os onze .csv e a pasta
+   "Lista de espera (LP)") foram para a lixeira do Zoho, onde ficam
+   recuperáveis por 30 dias.
+
+2. ⚠️ A HORA ESTAVA TRÊS HORAS ADIANTADA EM TODAS AS PLANILHAS, e agora está
+   certa. O sistema guarda a hora no fuso de Londres; as planilhas escreviam
+   esse número como se fosse a hora daqui. Dos 150 cadastros da lista de
+   espera, 24 apareciam no DIA ERRADO — quem se cadastrava depois das 21h
+   aparecia no dia seguinte.
+
+3. As datas agora são DATA DE VERDADE na planilha, não texto: dá para ordenar,
+   filtrar e contar. O mesmo vale para os valores em reais — a coluna soma.
 
 
 ONDE VER SE ESTÁ TUDO BEM
-A coluna `ultimo_erro` de vessel_lista_espera. Se tiver texto, é uma frase em
-português dizendo o que houve e o que fazer.
+A coluna `ultimo_erro` da lista de espera. Se tiver texto, é uma frase em
+português dizendo o que houve e o que fazer. Não há erro guardado em silêncio.
+
+
+SE A PLANILHA PARAR DE ATUALIZAR
+Dá para gerar o mesmo arquivo pela mão, do computador, com o mesmo código:
+
+  node coletor/espelhar-vessel-no-zoho.mjs --ensaio    (monta e mostra, sem enviar)
+  node coletor/espelhar-vessel-no-zoho.mjs             (envia para o Zoho)

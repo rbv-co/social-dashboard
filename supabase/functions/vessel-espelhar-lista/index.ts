@@ -1,8 +1,14 @@
 // supabase/functions/vessel-espelhar-lista/index.ts
 //
-// O ROBÔ DO ESPELHO: pega quem entrou na lista de espera da VESSEL BRASIL e
-// leva o cadastro para onde o dono trabalha — a planilha (CSV no Zoho
-// WorkDrive) e o Bling.
+// O ROBÔ DO ESPELHO: leva a base da VESSEL BRASIL para onde o dono trabalha — a
+// planilha "Base de clientes.xlsx" no Zoho WorkDrive, com ONZE ABAS, e o Bling.
+//
+// ⚠️ O NOME DELE FICOU MENOR QUE O TRABALHO. Ele nasceu espelhando só a lista de
+// espera; desde 21/09/2026 escreve a planilha inteira (lista de espera,
+// garantias, vendas, atribuição, origens, pessoas, atendimentos, convites
+// abertos, stylists, private edits, beauty sessions). Renomear a função
+// obrigaria a mexer no cron e no gatilho do banco, que apontam para este nome —
+// risco sem ganho. Ele é O escritor da planilha.
 //
 // A REGRA QUE MANDA AQUI: **o cadastro nunca esperou por isto.** Quando este
 // robô roda, a pessoa já está gravada em `vessel_lista_espera` e já viu a tela
@@ -57,18 +63,22 @@
 //    planilha responde HTTP 400 ("parameter [method] missing"), não 401 nem
 //    403 — ela reclama do formato ANTES de checar permissão, e isso parece
 //    "quase funcionando". Não é.
-//    Por isso o espelho da planilha é um CSV, com a permissão de ARQUIVO que
-//    já existe e já está provada em produção pelo robô de PDF do checklist.
+//    Por isso o espelho é um ARQUIVO (era CSV, hoje .xlsx), com a permissão de
+//    arquivo que já existe e já está provada em produção pelo robô de PDF do
+//    checklist. O .xlsx é montado por nós, sem biblioteca — ver
+//    `_shared/planilha-xlsx.js`, que explica por quê.
 //
 // 5. `override-name-exist=false` NÃO guarda versão nova: cria um arquivo com
 //    data e hora no nome ("lista-de-espera-vessel 28-08-2026 20:39:19:335.csv").
 //    Rodando 4x por dia isso viraria ~120 arquivos por mês. Medido. Aqui vai
-//    `true`, que atualiza o MESMO arquivo — id e link não mudam.
+//    `true`, que atualiza o MESMO arquivo — id e link não mudam. Rodando de 3
+//    em 3 minutos, como hoje, seriam ~14 mil arquivos por mês.
 //    (O robô do checklist usa `false` de propósito, e está certo: ficha
 //    assinada não se sobrescreve. Aqui o arquivo é uma fotografia da lista.)
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { exigirSegredoDeCron } from '../_shared/segredo-de-cron.ts';
-import { montarCsvDeGarantias } from '../_shared/csv-de-garantias.js';
+import { montarAbas, CONSULTAS } from '../_shared/abas-da-vessel.js';
+import { montarXlsx, bytesIguais } from '../_shared/planilha-xlsx.js';
 import { celularParaOBling } from '../_shared/celular-do-bling.js';
 import { completarContato } from '../_shared/completar-contato-do-bling.js';
 
@@ -81,14 +91,16 @@ const BLING = 'https://api.bling.com.br/Api/v3';
 // recriar uma pasta no Zoho, o id muda — e um id fixo continuaria apontando,
 // calado, para o lugar errado. Mesma regra do robô do checklist.
 const RAIZ = 'wbp6sefe483fe7da14c6ebe53225105f1f389'; // espaço "01. RBV and Company"
-const CAMINHO = ['04. Vessel Brasil', '17. Marketing', 'Lista de espera (LP)'];
-const ARQUIVO = 'lista-de-espera-vessel.csv';
-
-// A SEGUNDA PLANILHA, na MESMA pasta (pedido do dono em 06/09/2026). Arquivo
-// separado, e nao colunas somadas no de cima: uma lista de espera tem
-// nome/e-mail/origem e uma garantia tem selo, modelo, prazo e pedido — juntar as
-// duas daria uma planilha em que metade das colunas esta sempre vazia.
-const ARQUIVO_GARANTIAS = 'garantias-vessel.csv';
+//
+// ⚠️ MUDOU EM 21/09/2026, POR PEDIDO DO DONO. Eram duas pastas e onze arquivos
+// CSV: dois aqui ("Lista de espera (LP)": a lista e as garantias) e nove em
+// "Base de clientes", escritos por um robô do GitHub Actions de hora em hora.
+// Agora é UM arquivo .xlsx com ONZE ABAS, numa pasta só, escrito só por aqui.
+// O robô do GitHub foi desligado no mesmo dia: dois escritores no mesmo arquivo
+// fariam a planilha pular entre duas versões, e o último a subir venceria.
+const CAMINHO = ['04. Vessel Brasil', '17. Marketing', 'Base de clientes'];
+const ARQUIVO = 'Base de clientes.xlsx';
+const TIPO_XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
 // As etiquetas que o contato recebe no Bling. Hoje só "Cliente", que é o que
 // existe. Quando o dono criar um tipo "Lista de espera (LP)", some o id aqui.
@@ -172,25 +184,31 @@ async function acharOuCriarPasta(t: string, paiId: string, nome: string, podeCri
   return String(id);
 }
 
-/** Baixa o CSV que está lá hoje. Devolve '' se não existir ainda. */
-async function baixarCsv(t: string, pastaId: string, nomeDoArquivo: string = ARQUIVO): Promise<string> {
+/**
+ * Baixa a planilha que está lá hoje, em bytes. `null` se ainda não existir.
+ *
+ * ⚠️ BYTES, E NÃO TEXTO. Um .xlsx é um zip: ler com `.text()` o decodifica como
+ * UTF-8 e estraga os bytes calado — a comparação nunca bateria, e o robô subiria
+ * arquivo novo a cada três minutos, para sempre.
+ */
+async function baixarPlanilha(t: string, pastaId: string): Promise<Uint8Array | null> {
   const lista = await wdGet(t, `/files/${encodeURIComponent(pastaId)}/files?page%5Blimit%5D=100`);
   const achado = (lista.corpo?.data ?? []).find((f: any) =>
-    String(f?.attributes?.name ?? '').trim() === nomeDoArquivo);
-  if (!achado) return '';
+    String(f?.attributes?.name ?? '').trim() === ARQUIVO);
+  if (!achado) return null;
   const r = await fetch(`${WD}/download/${encodeURIComponent(achado.id)}`, {
     headers: { Authorization: `Zoho-oauthtoken ${t}` } });
-  if (!r.ok) return '';
-  return (await r.text()).replace(/^\uFEFF/, '');
+  if (!r.ok) return null;
+  return new Uint8Array(await r.arrayBuffer());
 }
 
-async function subirCsv(t: string, pastaId: string, texto: string,
-                        nomeDoArquivo: string = ARQUIVO): Promise<void> {
+async function subirPlanilha(t: string, pastaId: string, bytes: Uint8Array): Promise<void> {
   const fd = new FormData();
-  // BOM no início: sem ele o Excel abre "Ana" como "AnÃ¡". O arquivo vai ser
-  // aberto também fora do Zoho.
-  fd.append('content', new Blob(['\uFEFF' + texto], { type: 'text/csv' }), nomeDoArquivo);
-  const url = `${WD}/upload?filename=${encodeURIComponent(nomeDoArquivo)}`
+  // ⚠️ Nada de BOM aqui. Ele resolvia o acento no CSV; num zip, três bytes a
+  // mais no começo fazem o Excel recusar o arquivo inteiro. O .xlsx guarda o
+  // texto em UTF-8 por dentro, então o acento já vem certo.
+  fd.append('content', new Blob([bytes], { type: TIPO_XLSX }), ARQUIVO);
+  const url = `${WD}/upload?filename=${encodeURIComponent(ARQUIVO)}`
     + `&parent_id=${encodeURIComponent(pastaId)}&override-name-exist=true`;
   const r = await fetch(url, {
     method: 'POST',
@@ -205,81 +223,38 @@ async function subirCsv(t: string, pastaId: string, texto: string,
   }
 }
 
-// ── CSV ─────────────────────────────────────────────────────────────────────
+// ── A PLANILHA ──────────────────────────────────────────────────────────────
+//
+// ⚠️ AS ONZE ABAS NÃO MORAM AQUI, e é de propósito: `_shared/abas-da-vessel.js`
+// diz quais colunas, de que tipo e em que ordem, e `_shared/planilha-xlsx.js`
+// monta o arquivo. Os dois rodam também em node, então há teste para cada aba e
+// para cada tipo de data — o que era impossível quando isto vivia dentro da
+// edge, que o `node --test` não carrega. Cinco das onze abas estão vazias no
+// banco hoje, e sem teste ninguém veria coluna trocada nelas.
+//
+// ⚠️ E O FUSO: até 21/09/2026 a planilha imprimia a hora como o banco a guarda
+// (UTC) e saía TRÊS HORAS ADIANTADA. Dos 150 cadastros da lista de espera, 24
+// apareciam no DIA ERRADO. Quem converte agora é `planilha-xlsx.js`, num lugar
+// só, pelo tipo declarado na coluna.
 
-function celula(v: unknown): string {
-  const s = v === null || v === undefined ? '' : String(v);
-  // Aspas, ponto-e-vírgula, vírgula e quebra de linha dentro do campo quebram
-  // a planilha se não forem escapados. Nome de gente tem vírgula.
-  return /[",;\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-}
-
-// O TEXTO É PARA GENTE LER, não o valor cru do banco: quem abre a planilha no
-// Bling e no Zoho não sabe o que "visita" ou "ecommerce" significam sem olhar
-// o código. `null` é "ainda não chegou na segunda pergunta" — a LP cadastra
-// primeiro e pergunta depois (Task 1), então toda linha nasce assim.
-function objetivoLegivel(v: string | null | undefined): string {
-  if (v === 'visita') return 'quer visitar a loja';
-  if (v === 'ecommerce') return 'quer comprar pelo site';
-  return 'ainda nao escolheu';
-}
-
-// AS RESPOSTAS DO SEGUNDO FORMULÁRIO, EM PORTUGUÊS DE GENTE. O banco guarda
-// `shoulder-bag` porque é um valor que não muda nunca; quem abre a planilha
-// precisa ler "Shoulder Bag". Chave desconhecida sai como veio, em vez de
-// virar vazio: uma escolha nova apareceria na planilha em vez de sumir dela.
-const PECA: Record<string, string> = {
-  'hand-bag': 'Hand Bag', 'shoulder-bag': 'Shoulder Bag',
-  'east-west': 'East West', 'toda-colecao': 'quer ver a colecao inteira',
-};
-const OCASIAO: Record<string, string> = {
-  'dia-a-dia': 'dia a dia', trabalho: 'trabalho', viagem: 'viagem',
-  noite: 'noite e eventos', presente: 'presente',
-};
-const legivel = (mapa: Record<string, string>, v: string | null | undefined) =>
-  v ? (mapa[v] ?? v) : '';
-
-// ⚠️ `0` É RESPOSTA ("venho sozinha"), `null` é "não respondeu". Um `||` aqui
-// transformaria a primeira na segunda, e a Client Advisor prepararia a sala
-// sem saber se alguém vem junto.
-function acompanhantesLegivel(v: number | null | undefined): string {
-  if (v === null || v === undefined) return '';
-  return v === 0 ? 'vem sozinha' : String(v);
-}
-
-// A data vem do Postgres como 'AAAA-MM-DD' e é ASSIM que ela tem de sair.
-// ⚠️ Passar por `new Date(...).toISOString()` seria ler a data como UTC e
-// devolver o DIA ANTERIOR no fuso do Brasil — a visita de segunda viraria
-// domingo na planilha, sem erro nenhum aparecer.
-const diaDaVisita = (v: unknown): string => (v ? String(v).slice(0, 10) : '');
-
-function montarCsv(linhas: any[]): string {
-  // ⚠️ COLUNA NOVA SEMPRE NO FIM. Quem já baixou este CSV montou planilha em
-  // cima desta ordem; inserir no meio deslocaria todas as colunas seguintes e
-  // quebraria o trabalho dessa pessoa, sem erro nenhum aparecendo em lugar algum.
-  const cab = ['nome', 'email', 'whatsapp', 'origem', 'entrou_em', 'aceite_em', 'aceite_versao', 'no_bling',
-    'objetivo',
-    // As preferências da visita (segundo formulário da LP, 17/09/2026). No FIM,
-    // pela regra do comentário acima — quem já montou planilha em cima deste
-    // arquivo não perde o trabalho.
-    'visita_dia', 'visita_hora', 'visita_peca', 'visita_ocasiao',
-    'personal_atelier', 'acompanhantes', 'pedido_especial'];
-  const corpo = linhas.map((l) => [
-    l.nome, l.email, l.whatsapp, l.origem,
-    new Date(l.criado_em).toISOString().slice(0, 19).replace('T', ' '),
-    l.aceite_em ? new Date(l.aceite_em).toISOString().slice(0, 19).replace('T', ' ') : '',
-    l.aceite_versao,
-    l.bling_id ? 'sim' : 'ainda não',
-    objetivoLegivel(l.objetivo),
-    diaDaVisita(l.visita_data),
-    l.visita_hora || '',
-    legivel(PECA, l.visita_bolsa),
-    legivel(OCASIAO, l.visita_ocasiao),
-    l.visita_atelier === true ? 'sim' : (l.visita_atelier === false ? 'nao' : ''),
-    acompanhantesLegivel(l.visita_acompanhantes),
-    l.visita_pedido || '',
-  ].map(celula).join(','));
-  return [cab.join(','), ...corpo].join('\n') + '\n';
+/**
+ * Lê uma tabela inteira, de mil em mil.
+ *
+ * ⚠️ PAGINAR NÃO É PRECIOSISMO: o cliente do Supabase devolve no MÁXIMO 1000
+ * linhas e NÃO avisa que cortou. `vessel_pedidos` já tem 464; no dia em que
+ * passar de mil, a planilha perderia as vendas mais antigas em silêncio.
+ */
+async function lerTudo(sb: any, { tabela, colunas, ordem }: any): Promise<any[]> {
+  const linhas: any[] = [];
+  for (let inicio = 0; ; inicio += 1000) {
+    let consulta = sb.from(tabela).select(colunas).range(inicio, inicio + 999);
+    if (ordem) consulta = consulta.order(ordem.coluna, { ascending: !ordem.desc });
+    const { data, error } = await consulta;
+    if (error) throw new Error(`não consegui ler ${tabela}: ${error.message}`);
+    linhas.push(...(data ?? []));
+    if ((data ?? []).length < 1000) break;
+  }
+  return linhas;
 }
 
 // ── Bling ───────────────────────────────────────────────────────────────────
@@ -463,26 +438,44 @@ async function rodada(sb: any): Promise<Response> {
 
   // POR QUE NÃO BASTA OLHAR "TEM LINHA NOVA":
   // se alguém pedir para sair e a linha for apagada do banco, não existe linha
-  // nova — e o CSV continuaria com os dados dela no Zoho. A Política de
+  // nova — e a planilha continuaria com os dados dela no Zoho. A Política de
   // Privacidade promete apagar em 7 dias, e isso seria promessa quebrada.
   // Por isso a rodada COMPARA o arquivo com o que ele deveria ser, e regrava
   // sempre que diferir: some linha, muda linha, entra linha, tanto faz.
-  const csvQueDeveriaEstar = montarCsv(linhas);
 
   const resultado: Record<string, unknown> = { total: linhas.length };
 
-  // ── 1. A PLANILHA ─────────────────────────────────────────────────────────
-  // Os dois espelhos são INDEPENDENTES: o Bling falhar não pode impedir a
-  // planilha, e vice-versa. Por isso cada um tem seu try.
+  // ── 1. A PLANILHA, com as ONZE abas ───────────────────────────────────────
+  // A planilha e o Bling são INDEPENDENTES: um falhar não pode impedir o outro.
+  // Por isso cada um tem o seu `try`.
   {
     try {
+      // ⚠️ A LISTA DE ESPERA REAPROVEITA A LEITURA DE CIMA, em vez de ler a
+      // mesma tabela duas vezes. As linhas de lá vêm com `select('*')` porque o
+      // Bling precisa de `bling_em` e companhia; as abas usam só as colunas que
+      // declaram, então sobra dado na memória e falta nenhum.
+      const dados: Record<string, any[]> = { listaDeEspera: linhas };
+
+      // Em grupos de cinco, e não as catorze de uma vez: na virada do minuto
+      // vários cron disparam juntos e o PostgREST engasga (medido em 12/09).
+      const chaves = Object.keys(CONSULTAS).filter((k) => k !== 'listaDeEspera');
+      for (let i = 0; i < chaves.length; i += 5) {
+        const lote = chaves.slice(i, i + 5);
+        const partes = await Promise.all(
+          lote.map((n) => lerTudo(sb, (CONSULTAS as any)[n])));
+        lote.forEach((n, x) => { dados[n] = partes[x]; });
+      }
+
+      const abas = montarAbas(dados);
+      const queDeveriaEstar = await montarXlsx(abas);
+
       const { data: conexao } = await sb
         .from('acessos_conexoes')
         .select('client_id, client_secret, refresh_token, data_center')
         .eq('provedor', 'zoho').maybeSingle();
       if (!conexao?.refresh_token) {
         throw new Error('A central não está conectada ao Zoho. Abra Acessos → Zoho e clique em '
-          + 'conectar; a lista sobe sozinha na rodada seguinte.');
+          + 'conectar; a planilha sobe sozinha na rodada seguinte.');
       }
       const tz = await tokenZoho(conexao);
 
@@ -492,75 +485,28 @@ async function rodada(sb: any): Promise<Response> {
         // são do dono: criar uma delas por engano esconderia um erro de caminho.
         pasta = await acharOuCriarPasta(tz, pasta, CAMINHO[i], i === CAMINHO.length - 1);
       }
-      const csvDeHoje = await baixarCsv(tz, pasta);
-      if (csvDeHoje === csvQueDeveriaEstar) {
-        resultado.planilha = `em dia (${linhas.length} linha(s))`;
+      const deHoje = await baixarPlanilha(tz, pasta);
+      const contagem = abas.map((a: any) => `${a.nome}: ${a.linhas.length}`).join(', ');
+
+      if (bytesIguais(deHoje, queDeveriaEstar)) {
+        resultado.planilha = `em dia (${contagem})`;
       } else {
-        // O CSV é uma FOTOGRAFIA da lista inteira, não um acréscimo.
-        await subirCsv(tz, pasta, csvQueDeveriaEstar);
+        // A planilha é uma FOTOGRAFIA do banco inteiro, não um acréscimo.
+        await subirPlanilha(tz, pasta, queDeveriaEstar);
+        // ⚠️ ESTA MARCA NÃO É ENFEITE: `vessel_lista_atrasados` acusa qualquer
+        // cadastro que passe 10 minutos sem ela. Se a planilha subir e isto não
+        // for gravado, o vigia grita sem motivo — e alarme falso cega.
         await sb.from('vessel_lista_espera')
           .update({ planilha_em: new Date().toISOString() })
           .is('planilha_em', null);
-        resultado.planilha = `regravada com ${linhas.length} linha(s)`;
+        resultado.planilha = `regravada, ${(queDeveriaEstar.length / 1024).toFixed(1)} KB `
+          + `(${contagem})`;
       }
     } catch (e) {
       const frase = e instanceof Error ? e.message : String(e);
       await sb.from('vessel_lista_espera').update({ ultimo_erro: frase }).is('planilha_em', null);
       resultado.planilha = `falhou: ${frase}`;
     }
-  }
-
-  // ── 1b. A PLANILHA DAS GARANTIAS, na mesma pasta ─────────────────────────
-  //
-  // ⚠️ VAI NUM `try` PRÓPRIO, e não junto do de cima: se o Zoho recusar ESTA
-  // planilha, a lista de espera — que já funcionava — não pode parar de subir
-  // por tabela. Cada uma reporta o seu próprio resultado.
-  //
-  // ⚠️ CPF INTEIRO, por decisão do dono em 06/09/2026 (a alternativa mascarada
-  // estava na mesa). O arquivo mora num drive compartilhado.
-  try {
-    const { data: conexao } = await sb
-      .from('acessos_conexoes')
-      .select('client_id, client_secret, refresh_token, data_center')
-      .eq('provedor', 'zoho').maybeSingle();
-    if (!conexao?.refresh_token) throw new Error('A central não está conectada ao Zoho.');
-    const tz = await tokenZoho(conexao);
-
-    let pasta = RAIZ;
-    for (let i = 0; i < CAMINHO.length; i++) {
-      pasta = await acharOuCriarPasta(tz, pasta, CAMINHO[i], i === CAMINHO.length - 1);
-    }
-
-    const [regs, peds, pecas, lotes] = await Promise.all([
-      sb.from('vessel_registros').select('*'),
-      sb.from('vessel_pedidos_de_registro').select('*'),
-      sb.from('vessel_pecas').select('codigo, lote_id'),
-      sb.from('vessel_lotes').select('id, modelo, cor'),
-    ]);
-
-    // Duas leituras e um mapa, em vez de um `select` aninhado: embed com nome
-    // ambíguo já derrubou consulta nesta casa, e aqui o custo é o mesmo.
-    const loteDoId: Record<string, any> = {};
-    for (const l of (lotes.data ?? [])) loteDoId[String(l.id)] = l;
-    const pecaParaLote: Record<string, any> = {};
-    for (const p of (pecas.data ?? [])) {
-      const l = loteDoId[String(p.lote_id)];
-      if (l) pecaParaLote[String(p.codigo)] = { modelo: l.modelo, cor: l.cor };
-    }
-
-    const csvGarantias = montarCsvDeGarantias(regs.data ?? [], peds.data ?? [], pecaParaLote);
-    const csvLaDentro = await baixarCsv(tz, pasta, ARQUIVO_GARANTIAS);
-    if (csvLaDentro === csvGarantias) {
-      resultado.garantias = `em dia (${(regs.data ?? []).length} garantia(s))`;
-    } else {
-      await subirCsv(tz, pasta, csvGarantias, ARQUIVO_GARANTIAS);
-      resultado.garantias = `regravada com ${(regs.data ?? []).length} garantia(s) `
-        + `e ${(peds.data ?? []).length} na fila`;
-    }
-  } catch (e) {
-    // Falha aqui NÃO trava a lista de espera nem perde garantia: a garantia
-    // continua inteira no banco, e a próxima rodada tenta de novo em 15 min.
-    resultado.garantias = `falhou: ${e instanceof Error ? e.message : String(e)}`;
   }
 
   // ── 1c. COMPLETAR O CADASTRO DA CLIENTE NO BLING ─────────────────────────

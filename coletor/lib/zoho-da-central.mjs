@@ -106,6 +106,21 @@ export async function baixarArquivo(t, pastaId, nome) {
 }
 
 /**
+ * O mesmo, para arquivo que NÃO é texto (.xlsx é um zip).
+ * ⚠️ Não dá para reaproveitar `baixarArquivo`: `r.text()` decodifica os bytes
+ * como UTF-8 e estraga o zip calado — o arquivo "baixa", a comparação byte a
+ * byte nunca bate, e o robô subiria versão nova de hora em hora para sempre.
+ * Devolve `null` quando o arquivo ainda não existe.
+ */
+export async function baixarArquivoBinario(t, pastaId, nome) {
+  const achado = (await arquivosDe(t, pastaId)).find((a) => a.nome === nome);
+  if (!achado) return null;
+  const r = await fetch(`${WD}/download/${encodeURIComponent(achado.id)}`,
+    { headers: { Authorization: `Zoho-oauthtoken ${t}` } });
+  return r.ok ? Buffer.from(await r.arrayBuffer()) : null;
+}
+
+/**
  * Sobe um arquivo, substituindo o que já estiver lá com o mesmo nome.
  *
  * ⚠️ `override-name-exist=true` é obrigatório: com `false` o Zoho NÃO versiona —
@@ -119,6 +134,22 @@ export async function subirArquivo(t, pastaId, nome, texto, tipo = 'text/csv', b
   const fd = new FormData();
   // BOM no começo dos CSV: sem ele o Excel abre "Ana" como "AnÃ¡".
   fd.append('content', new Blob([(bom ? '﻿' : '') + texto], { type: tipo }), nome);
+  const r = await fetch(`${WD}/upload?filename=${encodeURIComponent(nome)}`
+    + `&parent_id=${encodeURIComponent(pastaId)}&override-name-exist=true`, {
+    method: 'POST', headers: cabZoho(t), body: fd,
+  });
+  if (!r.ok) throw new Error(`o Zoho recusou ${nome} (HTTP ${r.status})`);
+}
+
+/**
+ * Sobe bytes crus (.xlsx, .pdf, foto). É função separada de `subirArquivo` por
+ * um motivo que não aparece em teste nenhum: lá o texto é CONCATENADO com o BOM
+ * (`'﻿' + texto`), e concatenar string com Buffer transforma o arquivo
+ * inteiro em texto estragado. Zip não sobrevive a isso.
+ */
+export async function subirArquivoBinario(t, pastaId, nome, bytes, tipo) {
+  const fd = new FormData();
+  fd.append('content', new Blob([bytes], { type: tipo }), nome);
   const r = await fetch(`${WD}/upload?filename=${encodeURIComponent(nome)}`
     + `&parent_id=${encodeURIComponent(pastaId)}&override-name-exist=true`, {
     method: 'POST', headers: cabZoho(t), body: fd,

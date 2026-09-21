@@ -1,43 +1,31 @@
-name: Espelho da Vessel (as planilhas da base de clientes)
+name: Espelho da Vessel (resgate manual da planilha)
 
-# DE HORA EM HORA, aos 47 minutos: regrava no Zoho WorkDrive as NOVE planilhas
-# da base de clientes.
+# ⚠️ ESTE ROBÔ NÃO TEM MAIS HORÁRIO. Ele só roda quando alguém aperta o botão.
 #
-#   pessoas · atendimentos · convites-abertos · vendas
-#   atribuicao ......... a que responde "de onde veio e deu em que" (a principal)
-#   origens ............ toda linha de origem, para provar o first touch
-#   stylists ........... com o LINK de cada uma
-#   private-edits ...... com o LINK de cada convite
-#   beauty-sessions .... com o endereco do QR e o salao parceiro
+# Até 21/09/2026 ele regravava, de hora em hora, NOVE arquivos CSV na pasta
+# "Base de clientes". Nesse dia as onze planilhas viraram UM arquivo .xlsx com
+# onze abas, e quem passou a escrevê-lo é a edge `vessel-espelhar-lista` — que
+# escreve AO VIVO (um gatilho no banco a dispara no segundo do cadastro, e o
+# cron a chama de 3 em 3 minutos).
 #
-# ⚠️ ESPELHO NÃO É BACKUP, E É DE PROPÓSITO
-# Aqui o arquivo INTEIRO é comparado e regravado quando difere: apagou do banco,
-# some da planilha na rodada seguinte. É assim que a promessa da Política de
-# Privacidade vira verdade. A cópia de segurança é outro robô (06h12), e ela
-# guarda justamente o que aqui some.
+# ⚠️ POR QUE O HORÁRIO SAIU, E NÃO PODE VOLTAR SEM PENSAR: são DOIS programas
+# capazes de escrever o MESMO arquivo. Com os dois no automático, o último a
+# subir vence e a planilha fica pulando entre duas versões — cada um comparando
+# o arquivo com a sua própria ideia do que deveria estar lá, e regravando. O
+# dono veria a planilha "mudando sozinha" sem motivo aparente.
 #
-# ⚠️ POR QUE COMPARAR O ARQUIVO INTEIRO
-# O robô da lista de espera tropeçou nisso em agosto: só regravava quando havia
-# cadastro novo, e apagar alguém deixava os dados dela na planilha para sempre.
+# ELE FICA AQUI PORQUE SERVE DE RESGATE: se a edge estiver quebrada e a planilha
+# precisar sair agora, este botão gera o MESMO arquivo, pelo MESMO código
+# (`supabase/functions/_shared/abas-da-vessel.js`). Rodar uma vez à mão não
+# atropela nada — a edge compara o arquivo e, se estiver igual, não faz nada.
 #
-# De hora em hora, e não de 15 em 15 minutos como o da lista de espera, porque
-# estas planilhas são de LEITURA do dono — ninguém as abre esperando o dado de
-# cinco minutos atrás. E o robô só sobe o que mudou, então rodada sem novidade
-# custa quatro leituras e nada mais.
-#
-# ⚠️ A PLANILHA E DE MAO UNICA. Escrever nela nao muda nada no sistema: na
-# rodada seguinte o robo regrava o arquivo inteiro e o que foi digitado la some.
-# Corrigir dado se faz na Central ou no formulario, nunca na planilha.
-#
-# O minuto 47 fica longe da hora cheia (medido neste repo: agendar na hora cheia
-# atrasa de 2 a 3 horas) e não colide com os outros robôs da conta.
+# O modo ENSAIO monta a planilha e imprime as primeiras linhas de cada aba sem
+# enviar nada. É o jeito de conferir uma coluna nova sem tocar no Zoho.
 on:
-  schedule:
-    - cron: '47 * * * *'
   workflow_dispatch:
     inputs:
       ensaio:
-        description: 'Só montar as planilhas, sem enviar? (qualquer texto = sim)'
+        description: 'Só montar e mostrar, sem enviar? (qualquer texto = sim)'
         required: false
         default: ''
 
@@ -54,14 +42,14 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
-      - name: Regravar as planilhas
+      - name: Regravar a planilha
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           ENSAIO: ${{ github.event.inputs.ensaio }}
         run: |
           if [ -n "$ENSAIO" ]; then
-            node coletor/espelhar-vessel-no-zoho.mjs --ensaio
+            node coletor/espelhar-vessel-no-zoho.mjs --ensaio --mostrar
           else
             node coletor/espelhar-vessel-no-zoho.mjs
           fi
