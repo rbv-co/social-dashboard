@@ -1681,10 +1681,12 @@
          por aqui. Quem cancela é a cliente, pelo link do próprio e-mail; e o
          lembrete morre sozinho quando a peça for registrada.
 
-         ⚠️ A TABELA `vessel_lembretes` AINDA NÃO EXISTE — ela é da outra
-         frente desta entrega. Por isso esta leitura é SEPARADA da que carrega
-         o resto da tela: ali qualquer falha derruba tudo de propósito, e aqui
-         a falha esperada vira a lista vazia com um aviso curto. -->
+         A TABELA `vessel_lembretes` já está no ar (migration registrada em
+         21/09/2026). Mesmo assim esta leitura continua SEPARADA da que
+         carrega o resto da tela: ali qualquer falha derruba tudo de
+         propósito, e aqui uma falha (mesmo que hoje improvável) vira a lista
+         vazia com um aviso curto, sem levar lotes, gravação, etiquetas e
+         cartões junto. -->
     <template v-else-if="aba === 'lembretes'">
       <p v-if="avisoDosLembretes.tipo === 'aguardando'" class="au-vazio">
         {{ avisoDosLembretes.texto }}
@@ -2306,10 +2308,11 @@ const registros = ref([])
 const pedidosDeGarantia = ref([])
 const alertas = ref(null)
 
-// ── OS LEMBRETES DO "DEIXAR PARA DEPOIS" (19/09/2026) ──────────────────────
-// Lista SÓ LEITURA. `erroDosLembretes` guarda o que o banco disse, porque a
-// tabela ainda não existe — e "não há lembretes" numa leitura que falhou é a
-// mentira mais cara que uma tela conta (PADRAO-DA-CENTRAL, item 9).
+// ── OS LEMBRETES DO "DEIXAR PARA DEPOIS" (19/09/2026, banco no ar desde
+// 21/09/2026) ────────────────────────────────────────────────────────────
+// Lista SÓ LEITURA. `erroDosLembretes` guarda o que o banco disse — a leitura
+// segue separada e defensiva porque "não há lembretes" numa leitura que
+// falhou é a mentira mais cara que uma tela conta (PADRAO-DA-CENTRAL, item 9).
 const lembretes = ref([])
 const erroDosLembretes = ref(null)
 const avisoDosLembretes = computed(() => avisoDaListaDeLembretes(erroDosLembretes.value))
@@ -3843,10 +3846,10 @@ async function carregar() {
   }
   // ⚠️ DEPOIS DO `finally`, E FORA DO `Promise.all` DE CIMA, DE PROPÓSITO.
   // Lá qualquer falha derruba a tela inteira — e tem de derrubar mesmo, porque
-  // sem aquelas listas a tela mente. Aqui não: a tabela `vessel_lembretes`
-  // AINDA NÃO EXISTE (é a outra frente desta entrega), então esta leitura
-  // falha hoje, todos os dias, e não pode levar junto lotes, gravação,
-  // etiquetas e cartões. Ela fala por si, na aba dela.
+  // sem aquelas listas a tela mente. Aqui não: a tabela `vessel_lembretes` já
+  // está no ar, mas esta leitura continua separada e não pode levar junto
+  // lotes, gravação, etiquetas e cartões se um dia falhar sozinha. Ela fala
+  // por si, na aba dela.
   await carregarLembretes()
 }
 

@@ -14,14 +14,18 @@ import {
  * SÓ LEITURA nesta entrega: a tela mostra peça, e-mail, quando pediu, o que já
  * foi enviado e o estado. Nada de botão.
  *
- * Duas coisas aqui são mais graves do que parecem:
+ * Três coisas aqui são mais graves do que parecem:
  *
- * 1. A TABELA `vessel_lembretes` AINDA NÃO EXISTE (a outra frente desta
- *    entrega está fazendo o banco). A tela tem de aguentar isso: lista vazia e
- *    um aviso curto — e NUNCA o erro cru, nem uma tela quebrada.
+ * 1. A TABELA `vessel_lembretes` JÁ ESTÁ NO AR (migration registrada em
+ *    21/09/2026), mas a leitura continua defensiva: se um dia a tabela sumir
+ *    de algum ambiente, a tela tem de aguentar isso — lista vazia e um aviso
+ *    curto, e NUNCA o erro cru, nem uma tela quebrada.
  * 2. FALHA DE LEITURA NÃO PODE VIRAR "não há lembretes" (PADRAO-DA-CENTRAL,
- *    item 9: a tela nunca mente). Tabela que ainda não subiu e banco fora do ar
+ *    item 9: a tela nunca mente). Tabela que não existe e banco fora do ar
  *    são coisas diferentes, e a tela diz qual das duas é.
+ * 3. ⚠️ NULO NÃO É FALSO: `cancelado_em` nulo com `cancelado_por` preenchido
+ *    não existe hoje, mas se existir a tela não pode chamar isso de "aberto"
+ *    em silêncio — ganhou o quarto estado, "incoerente".
  */
 
 const L = (extra = {}) => ({
@@ -38,12 +42,13 @@ const L = (extra = {}) => ({
 
 // ── O ESTADO ────────────────────────────────────────────────────────────────
 
-test('os três estados são os do desenho, e são só esses três', () => {
+test('os três estados são os do desenho, mais o quarto que não é do desenho: o incoerente', () => {
   assert.deepEqual(Object.keys(ESTADOS_DO_LEMBRETE).sort(),
-    ['aberto', 'cancelado_cliente', 'encerrado_registro'])
+    ['aberto', 'cancelado_cliente', 'encerrado_registro', 'incoerente'])
   assert.equal(ESTADOS_DO_LEMBRETE.aberto, 'Aberto')
   assert.equal(ESTADOS_DO_LEMBRETE.cancelado_cliente, 'Cancelado pela cliente')
   assert.equal(ESTADOS_DO_LEMBRETE.encerrado_registro, 'Encerrado pelo registro')
+  assert.equal(ESTADOS_DO_LEMBRETE.incoerente, 'Estado incoerente')
 })
 
 test('sem cancelamento, o lembrete está aberto', () => {
@@ -72,16 +77,35 @@ test('⚠️ cancelado SEM dizer por quem não vira "cliente" por chute', () => 
     'sem motivo, o cancelamento é tratado como o da cliente só se isso estiver escrito')
 })
 
-test('⚠️ nenhum dos três estados é pintado de ERRO', () => {
+// ⚠️ NULO NÃO É FALSO. `cancelado_em` nulo com `cancelado_por` preenchido não
+// existe hoje, mas se existir a tela não pode chamar isso de "aberto" em
+// silêncio — é o próprio pedido do dono, quase palavra por palavra.
+test('⚠️ estado incoerente (cancelado_por preenchido sem cancelado_em) não vira "aberto" calado', () => {
+  const r = estadoDoLembrete({ cancelado_em: null, cancelado_por: 'cliente' })
+  assert.notEqual(r, 'aberto')
+  assert.equal(r, 'incoerente')
+  assert.equal(rotuloDoEstadoDoLembrete({ cancelado_em: null, cancelado_por: 'registro' }),
+    'Estado incoerente')
+})
+
+test('⚠️ nenhum dos TRÊS estados do desenho é pintado de ERRO ou de ALARME', () => {
   // "Encerrado pelo registro" é o final feliz — a cliente registrou a peça e o
   // lembrete morreu sozinho. "Cancelado pela cliente" é ela exercendo o direito
-  // dela. Vermelho nos dois faria a lista parecer cheia de problema.
+  // dela. Vermelho ou laranja em qualquer um dos dois faria a lista parecer
+  // cheia de problema. O QUARTO estado ("incoerente") é a exceção de propósito
+  // — ver o teste seguinte — por isso fica de fora deste laço.
   assert.equal(seloDoEstadoDoLembrete('aberto'), 'selo-info')
   assert.equal(seloDoEstadoDoLembrete('cancelado_cliente'), 'selo-neutro')
   assert.equal(seloDoEstadoDoLembrete('encerrado_registro'), 'selo-ok')
-  for (const estado of Object.keys(ESTADOS_DO_LEMBRETE)) {
+  for (const estado of Object.keys(ESTADOS_DO_LEMBRETE).filter((e) => e !== 'incoerente')) {
     assert.ok(!/erro|atencao/.test(seloDoEstadoDoLembrete(estado)), estado)
   }
+})
+
+test('⚠️ o estado incoerente É a exceção: leva a cor de alarme, de propósito', () => {
+  // Dar cor neutra ou de sucesso a uma linha incoerente esconderia exatamente
+  // o que a tela precisa mostrar: que aquele dado não bate com o desenho.
+  assert.equal(seloDoEstadoDoLembrete('incoerente'), 'selo-atencao')
 })
 
 test('estado que não conhecemos não escolhe cor de alarme', () => {
@@ -240,20 +264,69 @@ test('⚠️ a aba de Lembretes existe, e é consulta (depois do separador)', ()
     'a aba de consulta não leva número de passo')
 })
 
-test('⚠️ a lista de lembretes NÃO tem botão de mexer — só leitura nesta entrega', () => {
+// ⚠️ ESTRUTURAL, NÃO POR PALAVRA. A primeira versão desta guarda procurava só
+// `<button` e `@click` — e um `<Button @dblclick="cancelarLembrete(lb.id)">`
+// PASSOU direto por ela (confirmado por mutação real: 29/29 verdes com o botão
+// disfarçado lá dentro). Duas fugas cabiam nela: (1) qualquer evento que não
+// se chame "click" — `@dblclick`, `@keyup.enter`, `v-on:submit`, `onclick=`
+// cru — e (2) um COMPONENTE Vue (`<Button>`, tag em PascalCase pela convenção
+// deste projeto) escondendo um `<button>` de verdade dentro dele. A prova
+// fica embaixo, no teste de mutação real.
+test('⚠️ a lista de lembretes NÃO tem botão nem ação de mexer — só leitura nesta entrega', () => {
   const bloco = blocoDaAbaDeLembretes()
-  assert.ok(!/<button/.test(bloco), 'apareceu botão numa lista que é só leitura')
-  assert.ok(!/@click/.test(bloco), 'apareceu ação numa lista que é só leitura')
+  // Nenhum jeito de amarrar evento do Vue: `@algumacoisa`, `v-on:algumacoisa`,
+  // ou o `onclick=`/`onsubmit=`/... cru do DOM.
+  assert.ok(!/@[a-z]/i.test(bloco), 'apareceu um binding de evento (@...) numa lista que é só leitura: ' + bloco)
+  assert.ok(!/v-on:/i.test(bloco), 'apareceu v-on: numa lista que é só leitura: ' + bloco)
+  assert.ok(!/\bon[a-z]+\s*=/i.test(bloco), 'apareceu um "on..." (evento cru do DOM) numa lista que é só leitura: ' + bloco)
+  // Nenhuma tag pode ser <button>, em qualquer combinação de maiúscula/minúscula.
+  assert.ok(!/<\/?button/i.test(bloco), 'apareceu <button> (ou variação de caixa) numa lista só leitura')
+  // Nenhum COMPONENTE (tag em PascalCase — a convenção deste projeto para
+  // componente Vue, como <BarraDeTopo> e <PainelDeBusca>) pode aparecer dentro
+  // da linha: só elementos nativos (div, span, p, template). Um componente
+  // escondido passaria pelas checagens de cima sem ser pego.
+  const tagsDeAbertura = bloco.match(/<([A-Za-z][A-Za-z0-9-]*)[\s/>]/g) || []
+  for (const tag of tagsDeAbertura) {
+    const nome = tag.slice(1).replace(/[\s/>]$/, '')
+    assert.ok(/^[a-z]/.test(nome),
+      `apareceu a tag <${nome}> (nome em maiúscula = componente Vue) dentro da lista de lembretes — ` +
+      'só leitura não monta componente nenhum')
+  }
 })
 
+// ⚠️ ESTRUTURAL, NÃO POR PALAVRA. A primeira versão procurava a palavra
+// "vessel_lembretes" dentro do Promise.all — e um
+// `const TABELA_LEMB = 'vessel_' + 'lembretes'; sbClient.from(TABELA_LEMB)`
+// dentro do Promise.all PASSOU direto por ela (confirmado por mutação real:
+// 29/29 verdes com a leitura fatal disfarçada lá dentro). Uma variável, um
+// alias ou uma concatenação escapam de uma busca por texto. A prova certa é
+// o INVERSO: a LISTA FECHADA de leituras que têm permissão de estar aqui —
+// nada além dela, seja qual for o nome usado para chegar lá.
 test('⚠️ a leitura dos lembretes NÃO entra no Promise.all que derruba a tela', () => {
   // As outras leituras estouram de propósito: sem elas a tela mente. Esta não
-  // pode estourar, porque a tabela AINDA NÃO EXISTE — e a tela inteira
-  // (lotes, gravação, etiquetas, cartões) iria junto.
+  // pode estourar, junto com elas, porque uma falha nos lembretes não pode
+  // derrubar lotes, gravação, etiquetas e cartões.
   const carregar = TELA.match(/async function carregar\(\)[\s\S]*?\n}/)[0]
   const dentroDoPromiseAll = carregar.match(/await Promise\.all\(\[[\s\S]*?\]\)/)[0]
-  assert.ok(!/vessel_lembretes/.test(dentroDoPromiseAll),
-    'a tabela que ainda não existe não pode estar na leitura que derruba a tela')
+
+  const FROM_PERMITIDOS = ["'vessel_lotes'", "'vessel_pecas'", "'vessel_registros'", "'vessel_baixas'"]
+  const RPC_PERMITIDOS = ["'vessel_alertas'", "'vessel_fila_de_registros'"]
+
+  const chamadasDeFrom = [...dentroDoPromiseAll.matchAll(/\.from\(([^)]*)\)/g)].map((m) => m[1].trim())
+  const chamadasDeRpc = [...dentroDoPromiseAll.matchAll(/\.rpc\(([^,)]*)/g)].map((m) => m[1].trim())
+
+  assert.equal(chamadasDeFrom.length, 4, 'o Promise.all precisa ter exatamente as quatro leituras de tabela conhecidas')
+  assert.equal(chamadasDeRpc.length, 2, 'o Promise.all precisa ter exatamente as duas chamadas de função conhecidas')
+  for (const chamada of chamadasDeFrom) {
+    assert.ok(FROM_PERMITIDOS.includes(chamada),
+      `achei ".from(${chamada})" dentro do Promise.all, fora da lista fechada dos quatro permitidos — ` +
+      'se for vessel_lembretes disfarçado (variável, alias, concatenação), ele NÃO pode estar aqui: ' +
+      'falha aqui derruba a tela inteira')
+  }
+  for (const chamada of chamadasDeRpc) {
+    assert.ok(RPC_PERMITIDOS.includes(chamada),
+      `achei ".rpc(${chamada}" dentro do Promise.all, fora da lista fechada das duas permitidas`)
+  }
   assert.ok(/vessel_lembretes/.test(TELA), 'a tela precisa ler os lembretes em algum lugar')
 })
 

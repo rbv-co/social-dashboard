@@ -1,9 +1,10 @@
 # Pendências do iamundi
 
 Última revisão: **21/09/2026** — saiu o **B10** (resolvido), saiu o **B11**
-(resolvido) e o **B1** foi corrigido: a previsão de que o erro de estoque
-cresceria sozinho **não se confirmou** (medido de novo em 21/09 — são os
-mesmos três de 15/09, parados). **Há uma pendência aberta: o B9, na Parte B.**
+(resolvido), saiu o **B9** (resolvido) e o **B1** foi corrigido: a previsão de
+que o erro de estoque cresceria sozinho **não se confirmou** (medido de novo em
+21/09 — são os mesmos três de 15/09, parados). **A lista está vazia — não há
+nenhuma pendência de código em aberto.**
 
 O que é este arquivo: a lista viva do que está **em aberto** no projeto. Cada item
 diz o que falta, **por que importa** e **onde** se resolve. É a memória escrita —
@@ -334,6 +335,74 @@ com 0 linhas, e `vessel_stylists`/`vessel_pessoas`/`vessel_atendimentos`/
 
 `npm test`: **5414** passando (o piso desta entrega), `npm run build`: ok.
 
+### B9 · Register Later, as telas ✅ *RESOLVIDO em 21/09/2026*
+
+**As três telas do desenho de 19/09**
+(`docs/superpowers/specs/2026-09-19-register-later-design.md`) estão prontas:
+na peça ainda não registrada, o botão "Deixar para depois", a folha de e-mail
+e consentimento, os dois e-mails (7 e 30 dias) com o link do certificado, e a
+lista de acompanhamento no painel.
+
+- **`/verify` e `/verify/parar-lembrete`** (repositório `vessel-brasil`): o
+  agradecimento é o MESMO em qualquer caso — a função do banco responde
+  `{ok:true}` igual para peça já registrada, lembrete existente ou teto
+  estourado, de propósito, e a tela nunca traduz isso, senão destravaria
+  descobrir por fora quais bolsas já têm dona. `/verify/parar-lembrete` não
+  exige login — o token é a prova — e sempre diz "você não vai mais receber",
+  inclusive com link velho. Commit `b63f1a2` em `main`, **commitado, não
+  publicado** (push fica para quem decidir publicar).
+- **Painel Autenticidade** (este repositório): a aba "Lembretes", só leitura —
+  peça, e-mail **inteiro** (decisão do dono), quando pediu, o que já foi
+  enviado (7/30 dias) e o estado (aberto, cancelado pela cliente, encerrado
+  pelo registro). `token_hash` nunca sai do banco — nem no `select`
+  (`COLUNAS_DO_LEMBRETE`), nem na tela. A leitura roda separada do
+  `Promise.all` que derruba a tela: uma falha aqui vira aviso só na própria
+  aba, sem levar lotes, gravação, etiquetas e cartões junto.
+
+⚠️ **Achado ao medir, não suposto: a maior parte já estava pronta desde
+19/09/2026**, de uma frente anterior — o painel Autenticidade inteiro e um
+primeiro rascunho de `/verify`. O trabalho de hoje foi consertar, não
+construir do zero:
+
+1. no rascunho de `/verify` e de `/verify/parar-lembrete`, duas violações
+   reais da regra acima — a página de sucesso lia `resposta.mensagem` derivada
+   de `motivo`, e a de parar tinha uma segunda frase amarrada a
+   `motivo === 'token_invalido'` — as duas vazavam por fora exatamente a
+   informação que a regra proíbe. Corrigidas, com os testes de
+   `verify/lembrete.test.mjs` ajustados para a arquitetura nova;
+2. no painel, `estadoDoLembrete` devolvia `'aberto'` para a linha incoerente
+   (`cancelado_em` nulo com `cancelado_por` preenchido) — o caso exato que o
+   desenho pede para nunca virar "aberto" em silêncio. Ganhou um quarto
+   estado, `'incoerente'`, com selo de alerta (`selo-atencao`) — o único dos
+   quatro que é cor de alarme, de propósito;
+3. em cada repositório, uma guarda de fiação que passava com o defeito
+   disfarçado — confirmado por mutação real antes de mexer nela. No painel: um
+   `<Button @dblclick="...">` (evento fora de "@click", componente em vez de
+   `<button>`) e uma leitura da tabela escondida atrás de uma variável dentro
+   do `Promise.all` fatal passaram os 29/29 testes verdes. As duas guardas
+   viraram prova estrutural (nenhum `@`/`v-on:`/`on...=` no bloco, nenhuma tag
+   em PascalCase; e a lista FECHADA de `.from`/`.rpc` permitidos dentro do
+   `Promise.all`) e voltaram a pegar as mesmas mutações.
+
+✔️ **Os quatro passos de operação (migration, segredo, as duas edges, o cron)
+já tinham sido feitos por outra frente antes de hoje — conferidos, não
+refeitos:** tabela e cinco funções no ar byte a byte iguais ao arquivo, edge
+`vessel-lembretes` publicada com `verify_jwt` desligado, segredo gravado em
+`segredos_de_cron`, cron rodando desde 20/09. ⚠️ A única lacuna real era de
+escrituração — a migration nunca tinha sido registrada em
+`schema_migrations` —, e foi resolvida separadamente, no B11 acima
+(`coletor/registrar-vessel-lembretes-register-later.mjs`), antes de mexer em
+qualquer tela.
+
+`npm test` (iamundi): **5414 → 5416**, verde; `npm run build`: ok.
+`node --test verify/regras.test.mjs` (vessel-brasil): **191 → 205**; `npm
+test` inteiro do site: **537 → 551**. Produção conferida em conexão nova, sem
+nenhuma escrita: `vessel_lembretes` com **0 linhas**, as 3 Beauty Sessions
+(`BS-20260925-CPS-01`, `BS-20260926-CPS-02`, `BS-20261016-CPS-AME`) todas
+`ativa=true, arquivada=false`, e
+`vessel_stylists`/`vessel_pessoas`/`vessel_atendimentos`/`vessel_private_edits`
+todas zeradas — igual a antes de começar.
+
 ---
 
 ## Parte A — Só o dono resolve (clique, sem código)
@@ -343,68 +412,14 @@ motivo da saída.
 
 ## Parte B — Precisa programar
 
-*(Esteve vazia de 18 para 19/09/2026. O item anterior daqui foi o B4 — está
-mais acima, com o motivo da saída. Depois disso entraram dois itens, de duas
-frentes diferentes que corriam ao mesmo tempo: o **B9** em 19/09 e o **B11**
-em 21/09. ⚠️ O B11 nasceu chamado de "B9" numa frente que ainda não tinha sido
-publicada; quando as duas se encontraram, quem já estava publicado ficou com o
-número, porque é o que as pessoas podem ter citado em conversa. O B10 existiu,
-foi resolvido no mesmo dia e está mais acima — e, pela regra deste arquivo, o
-número dele não se reaproveita.)*
-
-### B9 · Register Later, as telas — *aberto em 19/09/2026*
-
-**O banco e o robô estão prontos; o que falta é tela.** O desenho aprovado pelo
-dono em 19/09 está em
-`docs/superpowers/specs/2026-09-19-register-later-design.md`: na peça ainda não
-registrada, um botão discreto **"Deixar para depois"**, a cliente deixa o e-mail
-e marca o consentimento, e a marca manda **dois e-mails, em 7 e em 30 dias**,
-com o link do certificado daquela peça.
-
-**Por que importa:** hoje quem abre a etiqueta e não quer registrar na hora
-simplesmente vai embora, e a marca não tem como voltar a falar com ela sobre
-aquela peça. É a última peça da lista da Fase 2.
-
-**O que já existe (e está provado):**
-
-- a migration `db/migrations/2026-09-19-zzz-vessel-lembretes-register-later.sql`
-  — tabela `vessel_lembretes`, um lembrete aberto por peça, dois tetos (1 por
-  peça a cada 24h e 3 por e-mail a cada 24h), e o gatilho que mata o lembrete
-  quando a peça ganha registro. ⚠️ **Achado em 21/09/2026, resolvendo o B11:**
-  o DDL já tinha sido aplicado em produção por outra frente, mas nenhuma linha
-  tinha sido gravada em `schema_migrations` — a tabela e as cinco funções
-  ficaram conferidas byte a byte contra o arquivo (corpo, `security definer`,
-  `search_path=public`) por `coletor/registrar-vessel-lembretes-register-later.mjs`,
-  que só então gravou o registro. Sem essa linha, as travas `DEPOIS_DESTE` do
-  B11 responderiam "pode seguir" sobre algo que já estava no banco;
-- o robô `supabase/functions/vessel-lembretes/` (cron diário) e as ações
-  `lembrete-criar` e `lembrete-parar` na edge `vessel-conta`;
-- a prova por rollback em `coletor/provar-lembretes.mjs`.
-
-**O que falta, e é onde se resolve:**
-
-1. **`/verify`** (repositório `vessel-brasil`): o botão "Deixar para depois", a
-   folha com e-mail e consentimento, e o agradecimento — que é o MESMO
-   agradecimento em qualquer caso. ⚠️ **Não inventar mensagem diferente:** a
-   função do banco responde `{ok:true}` igualzinho quando a peça já tem dona,
-   já tem lembrete ou o teto estourou, de propósito — traduzir isso na tela
-   desfaria a única trava que impede descobrir, por fora, quais bolsas já têm
-   dona.
-2. **`/verify/parar-lembrete`**: a tela que o link do e-mail abre, **sem
-   login** — o token é a prova. Ela sempre diz "você não vai mais receber",
-   inclusive com link velho: é verdade, e responder outra coisa transformaria
-   o endereço num testador de tokens.
-3. **Painel Autenticidade**: a lista de lembretes (peça, e-mail, quando pediu,
-   o que já foi enviado e o estado). Só leitura nesta entrega. O e-mail aparece
-   **inteiro**, por decisão do dono — é dele que a equipe precisa para socorrer
-   a cliente.
-
-⚠️ **E antes de qualquer tela, os passos de operação que restam, nesta ordem:** a
-migration ✔️ já está aplicada e registrada (achado do B11, acima) → gravar o
-segredo `vessel-lembretes` em `segredos_de_cron` → publicar as duas edges →
-**só então** agendar o cron. O passo a passo exato está em
-`supabase/functions/vessel-lembretes/LEIA-ME.txt`. Agendar antes do segredo e das
-edges publicadas faz o robô errar todo dia, calado.
+**Vazia desde 21/09/2026.** O último item daqui foi o **B9** — está logo acima,
+com o motivo da saída. Também saíram nesta revisão o **B10** e o **B11** — os
+três estão na seção "O que saiu da lista em 21/09/2026", mais acima. ⚠️ O B11
+nasceu chamado de "B9" numa frente que ainda não tinha sido publicada; quando
+as duas se encontraram, quem já estava publicado ficou com o número B9, porque
+é o que as pessoas podem ter citado em conversa — e o B11 ganhou o número
+seguinte livre. O B10 não tem relação com nenhum dos dois; coincidiu de
+resolver no mesmo dia.
 
 ## Como manter esta lista
 
