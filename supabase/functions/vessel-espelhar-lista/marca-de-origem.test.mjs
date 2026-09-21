@@ -53,8 +53,11 @@ test('o codigo continua unico por pessoa', () => {
     'o pedaco do id tem de continuar no codigo');
 });
 
-test('a planilha continua carregando a origem na propria coluna', () => {
-  // Ela sempre soube separar; o teste existe para nao se perder numa faxina.
-  assert.match(FONTE, /const cab = \['nome', 'email', 'whatsapp', 'origem',/,
-    'a coluna `origem` saiu do CSV');
-});
+/* A planilha tambem separa as LPs, na coluna "Como chegou" — e ela sempre soube.
+ *
+ * ⚠️ O PORTAO DAQUELA COLUNA NAO MORA MAIS AQUI. Em 21/09/2026 as abas sairam
+ * de dentro desta edge para `_shared/abas-da-vessel.js`, para que o node
+ * conseguisse testa-las. A prova de verdade — com linha de pre-venda passando
+ * pela planilha e voltando na celula — esta em `_shared/abas-da-vessel.test.mjs`,
+ * no teste "Lista de espera: a origem de cada LP chega na planilha".
+ * Este comentario e um LEMBRETE de onde procurar, nao um teste. */
