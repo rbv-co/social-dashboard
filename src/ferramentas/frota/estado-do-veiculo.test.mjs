@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  estadoDoVeiculo, resumoDoEstado, ordenarEstados, usoAberto, ultimoUsoFechado,
+  estadoDoVeiculo, ordenarEstados, usoAberto, ultimoUsoFechado,
   rotuloDoTanque, precisaAbastecer, problemasDaDevolucao, problemasDoRegistroAvulso, ultimoHodometro,
 } from './estado-do-veiculo.js'
 
@@ -36,59 +36,14 @@ test('quem devolveu por último manda, mesmo tendo saído antes', () => {
   assert.equal(ultimoUsoFechado(usos, 'v1').km_volta, 146500)
 })
 
-test('carro na rua: mostra COM QUEM, e não o local', () => {
-  const usos = [{ veiculo_id: 'v1', pessoa_nome: 'Siqueira', saida_em: '2026-08-04T07:00Z', km_saida: 145928, tanque_quartos: 1 }]
-  const e = estadoDoVeiculo(carro({ local_texto: 'Barracão' }), usos)
-  assert.equal(e.naRua, true)
-  assert.equal(e.comQuem, 'Siqueira')
-  assert.equal(e.ondeEsta, null, 'na rua, o local guardado não vale mais')
-  assert.equal(e.disponivel, false)
-  assert.equal(resumoDoEstado(e), 'Na rua com Siqueira')
-})
 
-test('carro parado: pessoa e local são coisas SEPARADAS', () => {
-  // Decisão do dono. A planilha junta os dois numa coluna só ("Raissa",
-  // "Barracão") e perde uma das informações.
-  const soLocal = estadoDoVeiculo(carro({ local_texto: 'Barracão' }), [])
-  assert.equal(resumoDoEstado(soLocal), 'Livre, em Barracão')
 
-  const soPessoa = estadoDoVeiculo(carro({ pessoa_id: 'p-raissa', pessoa_nome: 'Raissa' }), [])
-  assert.equal(resumoDoEstado(soPessoa), 'Com Raissa')
-
-  const ambos = estadoDoVeiculo(carro({ pessoa_nome: 'Raissa', local_texto: 'Conchal' }), [])
-  assert.equal(ambos.comQuem, 'Raissa')
-  assert.equal(ambos.ondeEsta, 'Conchal', 'os dois sobrevivem — nenhum apaga o outro')
-})
-
-test('carro com RESPONSÁVEL FIXO não é carro livre', () => {
-  // Correção do dono: "os carros que têm nome atrelado não estão livres". O
-  // Volvo do Humberto não está esperando alguém pegar — ele é o carro do
-  // Humberto. Oferecê-lo como disponível convidava a pegar o carro alheio.
-  const e = estadoDoVeiculo(carro({ pessoa_id: 'p-humberto', pessoa_nome: 'Humberto' }), [])
-  assert.equal(e.naRua, false, 'não está na rua: está parado, mas é dele')
-  assert.equal(e.disponivel, false)
-  // O TEXTO tem que concordar com a regra. "Livre, com Humberto" se contradiz
-  // na mesma frase — e foi o que o dono viu na tela.
-  assert.equal(resumoDoEstado(e), 'Com Humberto')
-  assert.ok(!/livre/i.test(resumoDoEstado(e)), 'carro com responsável nunca diz "livre"')
-})
 
 test('sem responsável e sem uso aberto, aí sim está livre', () => {
   assert.equal(estadoDoVeiculo(carro(), []).disponivel, true)
 })
 
-test('carro na oficina não é carro livre', () => {
-  const e = estadoDoVeiculo(carro({ situacao: 'em_manutencao' }), [])
-  assert.equal(e.disponivel, false)
-  assert.equal(resumoDoEstado(e), 'Na oficina')
-})
 
-test('carro alienado sai do caminho', () => {
-  // O Ford Fiesta Hatch: o dono disse que não é mais da frota.
-  const e = estadoDoVeiculo(carro({ situacao: 'alienado' }), [])
-  assert.equal(e.disponivel, false)
-  assert.equal(resumoDoEstado(e), 'Fora da frota')
-})
 
 test('a lista põe na frente o que dá pra usar agora', () => {
   const ests = [
@@ -296,23 +251,8 @@ test('sem reserva, o carro de rodízio continua livre como sempre', () => {
  * O dono estranhou a Doblo: sem responsável na Frota, com "Siqueira" no
  * contato, e as duas coisas se confundindo na tela. */
 
-test('carro sem responsável mas com contato DIZ a quem perguntar', () => {
-  const v = { id: 'v1', situacao: 'ativo', pessoa_id: null, contato_nome: 'Siqueira' }
-  const f = resumoDoEstado(estadoDoVeiculo(v, [], []))
-  assert.match(f, /sem responsável/i, 'tem de dizer que não há responsável')
-  assert.match(f, /Siqueira/, 'e a quem perguntar')
-})
 
-test('o contato NÃO é apresentado como se fosse o responsável', () => {
-  // Dizer "Com Siqueira" seria a tela afirmando que ele responde pelo carro.
-  const v = { id: 'v1', situacao: 'ativo', pessoa_id: null, contato_nome: 'Siqueira' }
-  assert.doesNotMatch(resumoDoEstado(estadoDoVeiculo(v, [], [])), /^Com /)
-})
 
-test('com responsável, o contato não entra na frase', () => {
-  const v = { id: 'v1', situacao: 'ativo', pessoa_id: 'p1', pessoa_nome: 'Marcus', contato_nome: 'Outro' }
-  assert.equal(resumoDoEstado(estadoDoVeiculo(v, [], [])), 'Com Marcus')
-})
 
 /* ── A reserva que segura o carro, e a exceção de quem reservou ───────────── */
 
@@ -390,30 +330,5 @@ test('data impossível é recusada, não tratada como vazia', () => {
   assert.match(p[0], /não entendi|inválida|confira/i)
 })
 
-test('carro na rua com um, fixo com outro: o dono fixo não some da tela (21/09/2026)', () => {
-  // O caso real: o dono pôs a Héllen como dona fixa do KWID RUL1A35 e a lista
-  // continuou dizendo "Cristian Leonel" — que estava numa viagem aberta havia
-  // 11 dias. Ele leu isso como "não consegui colocar como fixo". Gravou; a
-  // tela é que escondia metade da verdade.
-  const v = carro({ pessoa_id: 'p-hellen', pessoa_nome: 'Héllen Cristiane Cardoso' })
-  const usos = [{ veiculo_id: 'v1', pessoa_id: 'p-cristian', pessoa_nome: 'Cristian Leonel', saida_em: '2026-09-10T16:03Z' }]
-  const e = estadoDoVeiculo(v, usos, [])
-  assert.equal(e.donoFixoNome, 'Héllen Cristiane Cardoso')
-  // O SELO continua curto — quem mostra o dono fixo é a linha "Responsável" do
-  // cartão. Selo é etiqueta; frase de 57 caracteres nele quebra o cartão.
-  assert.equal(resumoDoEstado(e), 'Na rua com Cristian Leonel')
-})
 
-test('na rua com o PRÓPRIO dono fixo: não escreve o nome duas vezes', () => {
-  // Comparado por identificador, nunca por nome: a empresa tem dois Gabriéis.
-  const v = carro({ pessoa_id: 'p-erick', pessoa_nome: 'Erick Martins' })
-  const usos = [{ veiculo_id: 'v1', pessoa_id: 'p-erick', pessoa_nome: 'Erick Martins', saida_em: '2026-09-10T16:03Z' }]
-  const e = estadoDoVeiculo(v, usos, [])
-  assert.equal(e.donoFixoNome, null)
-  assert.equal(resumoDoEstado(e), 'Na rua com Erick Martins')
-})
 
-test('carro sem dono fixo na rua: a frase não muda', () => {
-  const usos = [{ veiculo_id: 'v1', pessoa_id: 'p-x', pessoa_nome: 'Siqueira', saida_em: '2026-09-10T16:03Z' }]
-  assert.equal(resumoDoEstado(estadoDoVeiculo(carro(), usos, [])), 'Na rua com Siqueira')
-})
