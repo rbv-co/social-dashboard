@@ -75,11 +75,16 @@
           </p>
           <!-- Um robô como o coletar-dados roda para 8 perfis, 4 vezes por dia.
                Dizer só "coletar-dados parou" manda procurar agulha em 32 rodadas
-               — quando o banco já sabe exatamente qual delas travou. -->
+               — quando o banco já sabe exatamente qual delas travou.
+               ⚠️ NÃO ESCREVER "rodadas" AQUI. Variante nem sempre é rodada: desde
+               21/09/2026 o `vessel-espelhar-lista` aparece em variantes que são
+               ETAPAS (· planilha, · bling), e "as outras 2 rodadas deste robô"
+               seria simplesmente falso na tela. "as outras 2" serve para os dois
+               casos. -->
           <p v-if="r.quem_falhou && r.quem_falhou.length" class="csc-alerta-txt">
-            Parou {{ r.quem_falhou.length === 1 ? 'em' : 'em' }}
+            Parou em
             <b>{{ r.quem_falhou.join(', ') }}</b>{{ r.variantes_vivas > r.quem_falhou.length
-              ? ' — as outras ' + (r.variantes_vivas - r.quem_falhou.length) + ' rodadas deste robô estão em dia.'
+              ? ' — as outras ' + (r.variantes_vivas - r.quem_falhou.length) + ' deste robô estão em dia.'
               : '.' }}
           </p>
           <p class="csc-alerta-porque">{{ r.porque }}</p>

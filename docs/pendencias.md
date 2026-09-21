@@ -5,9 +5,8 @@
 que o erro de estoque cresceria sozinho **não se confirmou** (medido de novo em
 21/09 — são os mesmos três de 15/09, parados).
 
-**Em aberto: um item, o B12** — o robô que escreve a planilha da Vessel não é
-vigiado pelo painel Saúde dos Robôs, e ele passou a ser o único escritor das
-onze abas. Entrou na mesma revisão, ao publicar a planilha única.
+Entrou e saiu no mesmo dia o **B12** (o vigia do robô da planilha da Vessel).
+**A lista está vazia — não há nenhuma pendência de código em aberto.**
 
 O que é este arquivo: a lista viva do que está **em aberto** no projeto. Cada item
 diz o que falta, **por que importa** e **onde** se resolve. É a memória escrita —
@@ -226,6 +225,52 @@ campo é "Nº de patrimônio", na ficha do veículo.
 
 ## O que saiu da lista em 21/09/2026
 
+### B12 · O robô da planilha da Vessel não era vigiado ✅ *RESOLVIDO em 21/09/2026*
+
+**Entrou e saiu no mesmo dia**, horas depois de a planilha única subir.
+
+**O furo:** `vessel-espelhar-lista` não estava em `robos_esperados` — o painel
+Saúde dos Robôs não olhava para ele. E ele havia acabado de se tornar o **único
+escritor das onze abas**: o que antes seria "um espelho atrasado" passou a ser
+"a planilha toda parada", sem nada acusar.
+
+⚠️ **E só registrar não resolveria.** A função devolve HTTP 200 quando UMA das
+duas etapas dá certo — de propósito, porque derrubar a rodada inteira porque o
+Zoho caiu perderia o cadastro no Bling. E `conferir_robos()` calcula
+`ok = status_code entre 200 e 299`. Ou seja: a rodada em que a planilha NÃO subiu
+ficava gravada como sucesso. **Aconteceu de verdade às 17h09 de 21/09.**
+Registrar assim daria um vigia que diz "em dia" para sempre — pior que vigia
+nenhum, porque ninguém mais olha.
+
+**O que foi feito (a saída A, escolhida pelo dono):** o robô grava uma linha
+**por etapa** em `robos_execucoes`, e o vigia já sabe juntá-las por prefixo —
+mesmo desenho dos perfis do `coletar-dados`, de 19/08. **Zero mudança no vigia**,
+que serve 33 robôs.
+
+```
+vessel-espelhar-lista            ← a rodada (de disparar_robo)
+vessel-espelhar-lista · planilha ← a planilha no Zoho
+vessel-espelhar-lista · bling    ← cadastrar e completar a ficha
+```
+
+**Onde está provado:** a regra que decide sucesso ou falha mora em
+`supabase/functions/_shared/vigia-do-espelho.js`, pura e fora da edge, com 14
+testes cujas frases foram **copiadas das respostas reais** gravadas em
+`net._http_response`. E `coletor/aplicar-vigia-do-espelho.mjs` aplicou,
+registrou e **provou na mesma transação**, com savepoint desfeito: planilha 5h
+sem sucesso → `ATRASADO` nomeando a planilha; Bling 5h sem sucesso → `ATRASADO`
+nomeando o Bling; e uma etapa parada **não** acusa a outra.
+
+**No ar, conferido às 17h48 (Brasília):** as duas etapas gravando, painel com
+**3 variantes vivas**, situação `ok`, teto de 3 horas, 496 disparos em 24h e zero
+falhas.
+
+**Duas decisões que ficaram escritas no código, com o motivo:** `bloqueado:`
+(o app do Bling sem permissão de contatos) conta como **falha** — alarme não se
+desliga porque a causa é conhecida; e o robô **limpa o próprio rastro** em 7
+dias, porque 2 linhas a cada 3 minutos guardadas 60 dias seriam ~25 MB num banco
+de 126 MB com teto de 500 MB (plano free, medido).
+
 ### B10 · `vessel_criar_private_edit` e `vessel_beauty_session_criar` ainda pedem só "ver", não "editar" ✅ *RESOLVIDO em 21/09/2026*
 
 **Feito.** As duas funções passaram a exigir `is_vessel_atendimentos_editar()`
@@ -415,45 +460,10 @@ motivo da saída.
 
 ## Parte B — Precisa programar
 
-### B12 · O robô da planilha da Vessel não é vigiado pelo painel Saúde dos Robôs
-
-**Entrou em 21/09/2026**, ao publicar a planilha única da Vessel.
-
-`vessel-espelhar-lista` **não está em `robos_esperados`** — medido, a consulta
-devolve zero linhas. Então o painel Saúde dos Robôs não olha para ele: se o robô
-parar, nada acusa.
-
-**Por que virou item agora, e não antes:** até hoje ele espelhava só a lista de
-espera. Desde 21/09 ele é o ÚNICO escritor da planilha inteira, com as onze abas
-(vendas, garantias, atribuição, origens…). O que antes era um espelho atrasado
-agora é a planilha toda parada.
-
-⚠️ **E tem um segundo furo, que precisa de decisão:** a função devolve HTTP 200
-mesmo quando a planilha falha, de propósito — o Bling pode ter dado certo na
-mesma rodada, e derrubar a rodada inteira por causa do Zoho perderia o cadastro.
-Consequência: `robos_execucoes` grava `ok = true` numa rodada em que a planilha
-não subiu. Aconteceu de verdade em 21/09, às 17h09. Registrar o robô em
-`robos_esperados` sem resolver isso daria um vigia que sempre diz "em dia".
-
-**As duas saídas, para o dono escolher:**
-1. o robô grava em `robos_execucoes` uma linha POR ETAPA (`vessel-espelhar-lista
-   · planilha` e `· bling`), e cada uma acusa sozinha. É o desenho que o vigia
-   já entende — ele raciocina por variante desde 19/08;
-2. ou a rodada devolve 207 quando uma etapa falha, e o vigia passa a tratar 207
-   como falha parcial. Mexe no vigia, que serve 33 robôs.
-
-A recomendação é a **1**: não toca em nada que os outros robôs usam.
-
-*Conserto parcial já feito em 21/09:* a falha da planilha agora aparece no
-`ultimo_erro` da linha mais recente. Antes ela era escrita só nas linhas com
-`planilha_em` nulo — e, como as 150 já tinham a marca, o erro caía em ZERO
-linhas. O dono olharia a coluna que o LEIA-ME manda olhar e veria vazio.
-
----
-
-O último item que **saiu** daqui foi o **B9** — está logo acima,
-com o motivo da saída. Também saíram nesta revisão o **B10** e o **B11** — os
-três estão na seção "O que saiu da lista em 21/09/2026", mais acima. ⚠️ O B11
+**Vazia desde 21/09/2026.** Os últimos itens daqui foram o **B12** (entrou e
+saiu no mesmo dia) e o **B9**. Também saíram nesta revisão o **B10** e o
+**B11** — os quatro estão na seção "O que saiu da lista em 21/09/2026", mais
+acima, cada um com o motivo da saída. ⚠️ O B11
 nasceu chamado de "B9" numa frente que ainda não tinha sido publicada; quando
 as duas se encontraram, quem já estava publicado ficou com o número B9, porque
 é o que as pessoas podem ter citado em conversa — e o B11 ganhou o número
