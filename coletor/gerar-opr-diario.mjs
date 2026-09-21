@@ -14,6 +14,7 @@
 import './lib/carregar-env.mjs';
 import { writeFile } from 'node:fs/promises';
 import { renderPNG, fecharRender } from './lib/render-criativo.mjs';
+import { subirStorageResiliente } from './lib/storage-upload.mjs';
 import { montarHtmlOpr, DIM_OPR } from './lib/template-opr.mjs';
 import { agruparCampanhasDoDia, agruparAnunciosDoDia, montarDadosOpr } from '../src/ferramentas/meta-ads/relatorio-diario-opr.js';
 import {
@@ -55,25 +56,29 @@ function esperar(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// Retentativa com backoff (18/09/2026) — visto 3x (2x local, 1x no cron real
-// do GitHub Actions) o mesmo erro ("Illegal base64 character 2c": a Z-API
-// tentando decodificar o prefixo "data:image/...;base64," como se fosse
-// base64 de verdade). Tentei reproduzir de propósito (2 send-text reais
-// seguidos de send-image, o mesmo padrão do robô) 2x e as duas vezes
-// funcionou de primeira — não é 100% determinístico, então não é bug óbvio
-// de conexão reaproveitada nem payload errado (confirmado: o base64 puro
-// nunca tem vírgula). Parece falha transiente do LADO da Z-API que se
-// resolve sozinha em alguns segundos — mas 3 tentativas de 2s (primeira
-// versão deste fix) NÃO foram suficientes no cron real. Backoff mais longo
-// (3s/6s/12s/24s, 5 tentativas) dá mais chance de pegar a janela boa.
-async function mandarImagemWhatsapp(buf, legenda) {
+// Manda por URL, não por base64 (19/09/2026) — o envio por base64
+// ("data:image/png;base64,...") falhou 3 de 3 vezes no cron real (18/09,
+// 19/09 automático, 19/09 manual) com "Illegal base64 character 2c" na
+// Z-API, mesmo com retry/backoff de 5 tentativas (18/09/2026, nunca deu
+// certo nenhuma vez) e mesmo trocando o Node do runner de 24 pra 22
+// (testado ao vivo, não mudou nada — descarta a hipótese de ser o cliente
+// fetch). SEMPRE funcionou local, SEMPRE falhou no runner do GitHub
+// Actions — cheira a algo específico da rede/proxy daquele ambiente
+// mexendo no corpo da requisição, não um bug do payload em si (o base64
+// puro nunca tem vírgula, já confirmado antes). Em vez de continuar
+// caçando a causa exata, usa a OUTRA forma que a própria Z-API documenta
+// (https://developer.z-api.io/en/message/send-message-image): manda um
+// link, não o arquivo — sobe o PNG pro Storage (mesmo bucket público que
+// gerar-criativos.mjs já usa) e manda a URL. Sem base64 no corpo, sem
+// como esse bug específico se repetir.
+async function mandarImagemWhatsapp(imagemUrlOuBuf, legenda) {
   const instanceId = process.env.ZAPI_INSTANCE_ID;
   const instanceToken = process.env.ZAPI_INSTANCE_TOKEN;
   const clientToken = process.env.ZAPI_TOKEN;
-  const body = JSON.stringify({ phone: GRUPO_WHATSAPP, image: `data:image/png;base64,${buf.toString('base64')}`, caption: legenda });
+  const body = JSON.stringify({ phone: GRUPO_WHATSAPP, image: imagemUrlOuBuf, caption: legenda });
 
   let ultimoErro;
-  for (let tentativa = 1; tentativa <= 5; tentativa++) {
+  for (let tentativa = 1; tentativa <= 3; tentativa++) {
     const r = await fetch(`https://api.z-api.io/instances/${instanceId}/token/${instanceToken}/send-image`, {
       method: 'POST',
       headers: { 'Client-Token': clientToken, 'Content-Type': 'application/json' },
@@ -81,7 +86,7 @@ async function mandarImagemWhatsapp(buf, legenda) {
     });
     if (r.ok) return;
     ultimoErro = new Error(`Z-API send-image: ${r.status} ${await r.text()}`);
-    if (tentativa < 5) await esperar(3000 * 2 ** (tentativa - 1));
+    if (tentativa < 3) await esperar(3000 * 2 ** (tentativa - 1));
   }
   throw ultimoErro;
 }
@@ -199,7 +204,13 @@ async function main() {
   }
 
   try {
-    await mandarImagemWhatsapp(buf, `Paid Media Performance — ${periodoLabel(dia)}`);
+    // Sobe pro Storage e manda o LINK, não o arquivo em base64 — ver
+    // comentário de mandarImagemWhatsapp. Path com o dia: cada rodada
+    // sobrescreve a de ontem (x-upsert), não acumula lixo no bucket.
+    const imagemUrl = await subirStorageResiliente({
+      url: SUPABASE_URL, sk: SK, bucket: 'fabrica-criativos', path: `opr/vessel-${dia}.png`, buf,
+    });
+    await mandarImagemWhatsapp(imagemUrl, `Paid Media Performance — ${periodoLabel(dia)}`);
   } catch (e) {
     console.error('Falha ao mandar a imagem, avisando por texto:', e.message);
     await mandarTextoWhatsapp(`⚠️ Relatório OPR de ${periodoLabel(dia)} não saiu — ${e.message}`);

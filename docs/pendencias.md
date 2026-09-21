@@ -1,8 +1,9 @@
 # Pendências do iamundi
 
 Última revisão: **21/09/2026** — saiu o **B10** (resolvido) e o **B1** foi
-corrigido (a previsão de erro crescente não se confirmou — medido de novo).
-**Há uma pendência aberta: o B9, na Parte B.**
+corrigido: a previsão de que o erro de estoque cresceria sozinho **não se
+confirmou** (medido de novo em 21/09 — são os mesmos três de 15/09, parados).
+**Há duas pendências abertas: o B9 e o B11, as duas na Parte B.**
 
 O que é este arquivo: a lista viva do que está **em aberto** no projeto. Cada item
 diz o que falta, **por que importa** e **onde** se resolve. É a memória escrita —
@@ -230,13 +231,13 @@ em vez de `is_vessel_atendimentos()` — a mesma troca de uma linha já aplicada
 função — geração de código, validação, o JSON de volta — ficou byte a byte
 igual: conferido linha a linha contra a definição que já estava no banco antes
 da troca, não contra o arquivo que a criou (a ordem dos arquivos mente aqui,
-como o B9 já registra).
+como o B11 já registra).
 
 ✔️ **Medido antes de aplicar, e a medida bateu com o previsto:** dos 24 perfis
 do sistema, ZERO tinha `atendimentos` em `features` e ZERO tinha `editar` em
 `permissions.atendimentos`. Só os 3 superadmins passavam por qualquer uma das
 duas travas — e superadmin passa pelas duas. **Ninguém perdeu acesso**: é a
-mesma conclusão do B9 desta lista, medida de novo na hora de aplicar, como
+mesma conclusão do B11 desta lista, medida de novo na hora de aplicar, como
 manda a régua deste projeto.
 
 ✔️ **Provado com sessão fabricada de verdade** (`set_config` +
@@ -256,7 +257,7 @@ todas zeradas antes — continuaram zeradas.
 ⚠️ **Efeito colateral achado no caminho:** `aplicar-vessel-chave-sorteada-a-serio.mjs`
 recriava `vessel_criar_private_edit` sem trava nenhuma e não tinha a
 conferência que os outros programas de instalação já usam. Ganhou a mesma
-trava — ver o B9, que agora conta **oito** programas na mesma situação, não
+trava — ver o B11, que agora conta **oito** programas na mesma situação, não
 mais nove.
 
 ---
@@ -268,10 +269,63 @@ motivo da saída.
 
 ## Parte B — Precisa programar
 
-*(Esteve vazia de 18 para 19/09/2026. O item anterior daqui foi o B4 — está mais
-acima, com o motivo da saída.)*
+*(Esteve vazia de 18 para 19/09/2026. O item anterior daqui foi o B4 — está
+mais acima, com o motivo da saída. Depois disso entraram dois itens, de duas
+frentes diferentes que corriam ao mesmo tempo: o **B9** em 19/09 e o **B11**
+em 21/09. ⚠️ O B11 nasceu chamado de "B9" numa frente que ainda não tinha sido
+publicada; quando as duas se encontraram, quem já estava publicado ficou com o
+número, porque é o que as pessoas podem ter citado em conversa. O B10 existiu,
+foi resolvido no mesmo dia e está mais acima — e, pela regra deste arquivo, o
+número dele não se reaproveita.)*
 
-### B9 · Nove programas de instalação que, se rodarem de novo, desfazem trabalho mais novo · *entrou em 19/09/2026*
+### B9 · Register Later, as telas — *aberto em 19/09/2026*
+
+**O banco e o robô estão prontos; o que falta é tela.** O desenho aprovado pelo
+dono em 19/09 está em
+`docs/superpowers/specs/2026-09-19-register-later-design.md`: na peça ainda não
+registrada, um botão discreto **"Deixar para depois"**, a cliente deixa o e-mail
+e marca o consentimento, e a marca manda **dois e-mails, em 7 e em 30 dias**,
+com o link do certificado daquela peça.
+
+**Por que importa:** hoje quem abre a etiqueta e não quer registrar na hora
+simplesmente vai embora, e a marca não tem como voltar a falar com ela sobre
+aquela peça. É a última peça da lista da Fase 2.
+
+**O que já existe (e está provado, mas AINDA NÃO APLICADO nem publicado):**
+
+- a migration `db/migrations/2026-09-19-zzz-vessel-lembretes-register-later.sql`
+  — tabela `vessel_lembretes`, um lembrete aberto por peça, dois tetos (1 por
+  peça a cada 24h e 3 por e-mail a cada 24h), e o gatilho que mata o lembrete
+  quando a peça ganha registro;
+- o robô `supabase/functions/vessel-lembretes/` (cron diário) e as ações
+  `lembrete-criar` e `lembrete-parar` na edge `vessel-conta`;
+- a prova por rollback em `coletor/provar-lembretes.mjs`.
+
+**O que falta, e é onde se resolve:**
+
+1. **`/verify`** (repositório `vessel-brasil`): o botão "Deixar para depois", a
+   folha com e-mail e consentimento, e o agradecimento — que é o MESMO
+   agradecimento em qualquer caso. ⚠️ **Não inventar mensagem diferente:** a
+   função do banco responde `{ok:true}` igualzinho quando a peça já tem dona,
+   já tem lembrete ou o teto estourou, de propósito — traduzir isso na tela
+   desfaria a única trava que impede descobrir, por fora, quais bolsas já têm
+   dona.
+2. **`/verify/parar-lembrete`**: a tela que o link do e-mail abre, **sem
+   login** — o token é a prova. Ela sempre diz "você não vai mais receber",
+   inclusive com link velho: é verdade, e responder outra coisa transformaria
+   o endereço num testador de tokens.
+3. **Painel Autenticidade**: a lista de lembretes (peça, e-mail, quando pediu,
+   o que já foi enviado e o estado). Só leitura nesta entrega. O e-mail aparece
+   **inteiro**, por decisão do dono — é dele que a equipe precisa para socorrer
+   a cliente.
+
+⚠️ **E antes de qualquer tela, três passos de operação, nesta ordem:** aplicar a
+migration → gravar o segredo `vessel-lembretes` em `segredos_de_cron` → publicar
+as duas edges → **só então** agendar o cron. O passo a passo exato está em
+`supabase/functions/vessel-lembretes/LEIA-ME.txt`. Agendar antes da migration faz
+o robô errar todo dia, calado.
+
+### B11 · Nove programas de instalação que, se rodarem de novo, desfazem trabalho mais novo · *entrou em 19/09/2026*
 
 **O que é.** Cada mudança no banco do iamundi vem com um programinha que a
 instala — são os arquivos `coletor/aplicar-*.mjs`. São **31**, dos quais **29**

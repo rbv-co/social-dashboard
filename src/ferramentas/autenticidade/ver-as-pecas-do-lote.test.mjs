@@ -148,8 +148,23 @@ test('o cartão do lote não perdeu NADA do que já mostrava', () => {
 });
 
 test('editar e excluir continuam atrás de podeEditar', () => {
-  assert.match(cartao, /<template v-if="podeEditar">\s*\n\s*<button class="au-link" type="button" @click="abrirEdicao\(l\)">/,
-    'quem só pode ver não pode ganhar os botões de mexer');
+  /* A CONFERÊNCIA É POR DENTRO DO BLOCO, e não pela linha logo abaixo do
+     `<template>`. Ela era um `match` no par de linhas coladas, e quebrou quando
+     "Escolher o material" entrou no mesmo bloco em 19/09/2026 — com a tela
+     CERTA. O que importa é que os botões de mexer estejam dentro do portão, não
+     em que ordem eles aparecem lá dentro. */
+  const inicio = cartao.indexOf('<template v-if="podeEditar">');
+  assert.notEqual(inicio, -1, 'o portão `podeEditar` sumiu do cartão do lote');
+  const dentro = cartao.slice(inicio, cartao.indexOf('</template>', inicio));
+  for (const [nome, regra] of [
+    ['Editar', /@click="abrirEdicao\(l\)"/],
+    ['Excluir', /@click="pedirExcluir\(l\.id\)"/],
+    // entrou em 19/09/2026 e segue o MESMO portão: nenhuma permissão nova
+    ['Escolher o material', /@click="alternarMaterial\(l\)"/],
+  ]) {
+    assert.match(dentro, regra,
+      `"${nome}" saiu de dentro do portão — quem só pode ver ganharia um botão de mexer`);
+  }
 });
 
 /* A ORDEM DAS REGRAS DE CSS. Duas regras de mesma especificidade: ganha a

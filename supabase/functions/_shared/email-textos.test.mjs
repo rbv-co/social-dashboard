@@ -58,3 +58,53 @@ test('⚠️ o e-mail não crava prazo de garantia — o prazo depende do materi
     assert.doesNotMatch(tudo, /\b2 anos\b|24 meses|dois anos|6 meses|seis meses/);
   }
 });
+
+// ── o lembrete de "registrar depois" (19/09/2026) ────────────────────────────
+// Desenho: docs/superpowers/specs/2026-09-19-register-later-design.md
+import { textoDoLembrete } from './email-textos.js';
+
+const LEMBRETE = () => textoDoLembrete(
+  'TBNWXAS28A',
+  'https://vesselbrasil.com.br/verify/TBNWXAS28A',
+  'https://vesselbrasil.com.br/verify/parar-lembrete?t=abc123',
+);
+
+test('o lembrete traz o link do certificado e o de parar de receber, nos DOIS formatos', () => {
+  const m = LEMBRETE();
+  for (const parte of [m.html, m.texto]) {
+    assert.ok(parte.includes('https://vesselbrasil.com.br/verify/TBNWXAS28A'),
+      'sem o link do certificado o e-mail não serve para nada');
+    assert.ok(parte.includes('https://vesselbrasil.com.br/verify/parar-lembrete?t=abc123'),
+      '"não quero mais receber" em um toque, sem login — em todo e-mail');
+  }
+  assert.match(m.assunto, /VESSEL/);
+});
+
+test('⚠️ o lembrete NUNCA crava prazo de garantia — canvas 2 anos, couro 6 meses', () => {
+  // O robô do lembrete não recebe o material da peça. Um prazo fixo aqui seria
+  // mentira para toda cliente de bolsa de couro — e ficaria gravado na caixa
+  // de entrada dela.
+  const m = LEMBRETE();
+  const tudo = (m.assunto + m.html + m.texto).toLowerCase();
+  assert.doesNotMatch(tudo, /\b2 anos\b|24 meses|dois anos|6 meses|seis meses|garantia de/);
+});
+
+test('⚠️ o lembrete não diz que registrar é obrigatório nem que dá garantia', () => {
+  const m = LEMBRETE();
+  const tudo = (m.assunto + m.html + m.texto).toLowerCase();
+  for (const proibido of ['obrigat', 'cpf', 'pedido', 'nota fiscal', 'comprou']) {
+    assert.ok(!tudo.includes(proibido), `o texto não pode conter "${proibido}"`);
+  }
+});
+
+test('⚠️ o lembrete não leva senha nenhuma — não é e-mail de conta', () => {
+  const m = LEMBRETE();
+  assert.ok(!(m.html + m.texto).toLowerCase().includes('senha'));
+});
+
+test('⚠️ código e links saem escapados no html', () => {
+  const m = textoDoLembrete('A<b>', 'https://x/"onload=1', 'https://y/&z');
+  assert.ok(!m.html.includes('<b>'), 'o código cru não pode virar tag');
+  assert.ok(!m.html.includes('"onload=1'), 'o link cru não pode escapar do atributo');
+  assert.match(m.html, /&lt;b&gt;/);
+});

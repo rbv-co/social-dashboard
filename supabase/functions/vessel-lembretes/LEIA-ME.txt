@@ -1,0 +1,56 @@
+vessel-lembretes — o robô do "lembrar de registrar depois"
+
+O QUE FAZ
+Uma vez por dia o cron chama esta função. Ela pergunta ao banco quais
+lembretes venceram (7 ou 30 dias) e cuja peça CONTINUA sem registro, manda
+para cada um um e-mail com o link do certificado daquela peça, e marca o
+envio. E-mail que falha não some: fica para a próxima rodada, com o motivo
+no log.
+
+Desenho: docs/superpowers/specs/2026-09-19-register-later-design.md
+Banco:   db/migrations/2026-09-19-zzz-vessel-lembretes-register-later.sql
+
+COMO PUBLICAR
+  npx supabase functions deploy vessel-lembretes \
+    --project-ref kounqtdoioootxqegkij --no-verify-jwt
+
+⚠️ `--no-verify-jwt` não é frouxidão: a tranca é o SEGREDO DO CRON
+(`_shared/segredo-de-cron.ts`). O toggle verify_jwt só confere que o JWT foi
+assinado pelo projeto — e a chave anônima é um JWT desses, publicada no HTML
+do site. Ver o cabeçalho de CLAUDE.md antes de qualquer publicação.
+
+ANTES DE PUBLICAR, conferir o que está no ar arquivo por arquivo (shasum),
+inclusive os de `_shared/` — publicar UM robô leva a cópia dele de `_shared`.
+
+O QUE PRECISA EXISTIR PARA ELE FUNCIONAR
+1. a migration aplicada (tabela `vessel_lembretes` e as quatro funções);
+1b. a edge `vessel-conta` republicada — é ela que tem as ações
+   `lembrete-criar` (a página pede o lembrete) e `lembrete-parar` (o link do
+   e-mail), e as duas usam a MESMA cópia de `_shared/email-textos.js` que
+   este robô;
+2. a linha `vessel-lembretes` em `public.segredos_de_cron` (o mesmo valor que
+   o cron manda no Authorization) — sem ela toda chamada volta 401;
+3. o segredo `ZEPTOMAIL_TOKEN` já setado na Supabase (o mesmo que a
+   `vessel-conta` usa);
+4. o agendamento no pg_cron (ver "COMO AGENDAR", abaixo).
+
+COMO AGENDAR (uma vez, à mão, por SQL — o runner de migrations NÃO faz isto:
+`cron.schedule` não é idempotente e rodar de novo cria job duplicado):
+
+  select cron.schedule(
+    'vessel-lembretes',
+    '0 12 * * *',                 -- 09h de Brasília (o banco está em UTC)
+    $$ select public.disparar_robo(
+         'vessel-lembretes', 'vessel-lembretes', 'vessel-lembretes',
+         '{"origem":"cron"}'::jsonb, 120000) $$
+  );
+
+`disparar_robo(robo, funcao, segredo, body, timeout)` lê o segredo de
+`segredos_de_cron` na hora do disparo (o valor não aparece em
+`cron.job.command`) e grava a rodada em `robos_execucoes`, que o
+`conferir_robos` confere depois — é assim que a Saúde dos Robôs enxerga.
+
+DEPOIS DE PUBLICAR
+Chamar com `Authorization: Bearer errado`: tem de voltar
+401 {"error":"nao_autorizado"} da PRÓPRIA função. 503 BOOT_ERROR = subiu
+quebrado.

@@ -241,5 +241,84 @@ Deno.serve(async (req) => {
     return responder(data ?? { ok: false, motivo: 'falhou' });
   }
 
+  // ══════════════════════════════════════════════════════════════════════════
+  // DEIXAR PARA DEPOIS — o lembrete de registrar (19/09/2026)
+  // Desenho: docs/superpowers/specs/2026-09-19-register-later-design.md
+  // Banco:   db/migrations/2026-09-19-zzz-vessel-lembretes-register-later.sql
+  //
+  // ⚠️ FUNCIONA SEM SESSÃO, e tem de funcionar: o lembrete existe justamente
+  // para quem AINDA NÃO registrou, e registrar não exige conta. O token de
+  // sessão entra como OPCIONAL, só para o lembrete nascer ligado à conta
+  // quando ela estiver logada — token vencido ou errado não derruba o pedido,
+  // ele só fica sem dona (quem decide isso é o banco).
+  //
+  // ⚠️ A EDGE NÃO INVENTA MOTIVO NENHUM. A regra que mais importa desta
+  // entrega — "a resposta é a mesma em qualquer situação da peça" — mora no
+  // banco. Se aqui alguém traduzisse a resposta, bastaria um `motivo` a mais
+  // para contar, a quem digitou um código alheio, que aquela bolsa já tem
+  // dona. Aqui só se repassa o que o banco devolveu.
+  //
+  // Motivos que atravessam do banco, sem tradução: `sem_consentimento` e
+  // `email_invalido` (as duas únicas coisas que a própria pessoa digitou
+  // errado) — e `falhou`, que é desta edge.
+  //
+  // ⚠️ NEM O E-MAIL NEM O TOKEN VÃO PARA LOG, nunca: só o nome do rpc e a
+  // mensagem do Postgres. Há teste em porta.test.mjs para isso.
+  if (corpo.acao === 'lembrete-criar') {
+    const { data, error } = await sb.rpc('vessel_lembrete_criar', {
+      p_codigo: corpo.codigo,
+      p_email: corpo.email,
+      p_token_opcional: corpo.token ?? null,
+      p_consentimento: corpo.consentimento === true,
+    });
+    if (error) {
+      console.error('vessel_lembrete_criar', error.message);
+      return responder({ ok: false, motivo: 'falhou' });
+    }
+    return responder(data ?? { ok: false, motivo: 'falhou' });
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // PARAR DE RECEBER O LEMBRETE (19/09/2026)
+  // Desenho: docs/superpowers/specs/2026-09-19-register-later-design.md
+  // Banco:   db/migrations/2026-09-19-zzz-vessel-lembretes-register-later.sql
+  //
+  // ⚠️ A ÚNICA AÇÃO DESTA EDGE QUE NÃO PEDE SESSÃO — e é de propósito. Quem
+  // clica em "não quero mais receber" veio de um e-mail, não está logada e
+  // muitas vezes nem tem conta (o lembrete existe justamente para quem ainda
+  // não registrou). Exigir sessão aqui deixaria a saída do e-mail impossível
+  // para quem mais precisa dela, e o desenho manda: em um toque, sem login.
+  // O token do link É a prova — ele foi sorteado pelo banco, só existe dentro
+  // daquele e-mail e aqui é conferido pelo hash.
+  //
+  // ⚠️ O CAMPO É `corpo.token_lembrete`, e não `corpo.token`: em TODAS as
+  // outras ações desta edge `token` é o token de SESSÃO da cliente. Misturar
+  // os dois faria uma página logada mandar a sessão dela para uma ação que a
+  // trata como token de e-mail — e o nome é o único aviso que o próximo a
+  // mexer aqui vai ter.
+  //
+  // ⚠️ UM NOME SÓ, SEM ATALHO ANTIGO POR BAIXO. Este campo se chamou `t` por
+  // algumas horas, antes de qualquer publicação, e o nome foi alinhado com a
+  // frente das telas em 19/09/2026. Aceitar os dois "por segurança" criaria
+  // dois contratos vivos para a mesma coisa, e um dia a página mandaria um e a
+  // edge leria o outro — calada, porque token que não casa responde `{ok:true}`
+  // igual a token certo. Há teste em porta.test.mjs para o nome e para a
+  // ausência do atalho.
+  //
+  // ⚠️ A RESPOSTA É SEMPRE A MESMA, com token certo, errado ou vazio. Esta
+  // porta é pública e sem login: um "não achei" a transformaria num testador
+  // de tokens. Quem decide isso é o banco (`vessel_lembrete_cancelar_por_token`
+  // devolve `{ok:true}` em qualquer caso); aqui só se repassa.
+  if (corpo.acao === 'lembrete-parar') {
+    const { data, error } = await sb.rpc('vessel_lembrete_cancelar_por_token', {
+      p_token: corpo.token_lembrete ?? null,
+    });
+    if (error) {
+      console.error('vessel_lembrete_cancelar_por_token', error.message);
+      return responder({ ok: false, motivo: 'falhou' });
+    }
+    return responder(data ?? { ok: true });
+  }
+
   return responder({ ok: false, motivo: 'acao_desconhecida' }, 400);
 });

@@ -16,8 +16,16 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
+      # Fixado em 22 (19/09/2026) — o send-image da Z-API falha com
+      # "Illegal base64 character 2c" em TODAS as rodadas reais do cron
+      # (18/09 e 19/09), mesmo com o retry/backoff de 5 tentativas
+      # (18/09/2026). A reprodução manual local sempre funcionou — e local
+      # roda Node 22, o cron rodava Node 24. Testando a hipótese de que é o
+      # cliente fetch/undici do Node 24 se comportando diferente no runner
+      # do GitHub Actions (rede/proxy diferentes) na hora de montar a
+      # requisição grande (~200KB de base64), não um bug do payload em si.
       - uses: actions/setup-node@v6
-        with: { node-version: '24' }
+        with: { node-version: '22' }
       - name: Instalar deps
         run: cd coletor && npm ci
       - name: Gerar e mandar o relatório pro grupo

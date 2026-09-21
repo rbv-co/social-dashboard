@@ -114,14 +114,22 @@ test('⚠️ a edge não responde nada sem passar pelas funções do banco', () 
   assert.match(FONTE, /rpc\('vessel_conta_entrar'/);
 });
 
-test('a edge trata as onze ações', () => {
+test('a edge trata as treze ações', () => {
   // 'minhas-pecas' entrou na Tarefa 9 (Registered Pieces — Contas Fase 1):
   // a tela "Minhas peças" lista o que está no nome da cliente logada.
   // As quatro 'transferir-*' entraram em 18/09/2026, com a transferência de
   // propriedade (docs/superpowers/specs/2026-09-18-transferencia-de-propriedade-design.md).
+  // 'lembrete-criar' e 'lembrete-parar' entraram em 19/09/2026, com o
+  // "Register Later" (docs/superpowers/specs/2026-09-19-register-later-design.md).
+  // São as duas ÚNICAS desta edge que funcionam sem sessão: a de criar aceita
+  // o token de sessão como opcional (só para ligar o lembrete à conta), e a de
+  // parar não usa sessão nenhuma — o token do e-mail é a prova.
+  //
+  // ⚠️ Entrega nova NÃO mexe no que já está no ar: esta lista é fechada, e
+  // apagar um `if` sem querer derruba uma tela inteira, calada.
   for (const acao of ['criar', 'entrar', 'sair', 'esqueci', 'editar', 'eu', 'minhas-pecas',
                       'transferir-gerar', 'transferir-aberta', 'transferir-cancelar',
-                      'transferir-aceitar']) {
+                      'transferir-aceitar', 'lembrete-criar', 'lembrete-parar']) {
     assert.ok(FONTE.includes(`'${acao}'`), `falta a ação ${acao}`);
   }
 });
@@ -309,4 +317,99 @@ test('⚠️ as chamadas de rpc conferem `error` e não deixam falha de infraest
       assert.ok(!proibido.test(log), `log de erro carrega dado da cliente: ${log}`);
     }
   }
+});
+
+// ── PARAR DE RECEBER O LEMBRETE (19/09/2026) ─────────────────────────────────
+// Desenho: docs/superpowers/specs/2026-09-19-register-later-design.md
+
+test('⚠️ "lembrete-criar" lê os quatro campos que a página manda', () => {
+  // Contrato com a frente das telas, alinhado em 19/09/2026: `codigo`,
+  // `email`, `consentimento` e `token` (o de SESSÃO, opcional). Nome de campo
+  // é contrato — a página manda um objeto, e um nome trocado aqui vira um
+  // pedido que sempre falha sem ninguém entender por quê.
+  const bloco = blocoDaAcao(FONTE, 'lembrete-criar');
+  assert.match(bloco, /p_codigo:\s*corpo\.codigo\b/);
+  assert.match(bloco, /p_email:\s*corpo\.email\b/);
+  assert.match(bloco, /p_consentimento:\s*corpo\.consentimento === true/,
+    'consentimento tem de ser EXATAMENTE true — "on", "1" ou "sim" não valem');
+  assert.match(bloco, /p_token_opcional:\s*corpo\.token\s*\?\?\s*null/,
+    'o token de sessão se chama `token`, como nas outras ações, e é opcional');
+});
+
+test('⚠️ "lembrete-criar" funciona COM e SEM sessão, e não inventa motivo', () => {
+  const bloco = blocoDaAcao(FONTE, 'lembrete-criar');
+  assert.match(bloco, /rpc\('vessel_lembrete_criar'/);
+
+  // O token de sessão é OPCIONAL: quem não tem conta pede o lembrete do mesmo
+  // jeito — é justamente para quem ainda não registrou. A edge não confere
+  // sessão nenhuma; quem faz isso, e sem derrubar o pedido, é o banco.
+  assert.ok(!/vessel_conta_da_sessao/.test(bloco),
+    'exigir sessão aqui tiraria o botão de quem não tem conta');
+  assert.match(bloco, /p_token_opcional:\s*corpo\.token\s*\?\?\s*null/,
+    'o token de sessão entra como opcional, e nunca obrigatório');
+
+  // ⚠️ A EDGE NÃO INVENTA MOTIVO. A regra de "a mesma resposta em qualquer
+  // situação da peça" mora no banco; se a edge traduzisse, bastaria um
+  // `motivo` a mais aqui para contar que a peça já tem dona.
+  for (const chamada of chamadasDeResponder(bloco)) {
+    assert.ok(!/motivo:\s*'(ja_registrada|ja_tem_dona|ja_tem_lembrete|sem_sessao)'/.test(chamada),
+      `a edge não pode inventar motivo sobre a peça: ${chamada}`);
+  }
+  // Só `falhou`, que é desta edge, e o que vier do banco.
+  assert.match(bloco, /return responder\(data \?\? \{ ok: false, motivo: 'falhou' \}\)/);
+});
+
+test('⚠️ "lembrete-criar" e "lembrete-parar" nunca logam o e-mail nem o token', () => {
+  for (const acao of ['lembrete-criar', 'lembrete-parar']) {
+    for (const log of blocoDaAcao(FONTE, acao).match(/console\.[a-z]+\([^)]*\)/gs) ?? []) {
+      assert.ok(!/corpo\.(email|token|t)\b|\bdata\b/.test(log),
+        `${acao}: o log só leva o nome do rpc e a mensagem do Postgres: ${log}`);
+    }
+  }
+});
+
+test('⚠️ "lembrete-parar" NÃO exige sessão — o token do e-mail é a prova', () => {
+  const bloco = blocoDaAcao(FONTE, 'lembrete-parar');
+  assert.match(bloco, /rpc\('vessel_lembrete_cancelar_por_token'/);
+  // Quem clica no link do e-mail não está logada — nem precisa ter conta. Uma
+  // conferência de sessão aqui deixaria o "não quero mais receber" impossível
+  // justamente para quem mais precisa dele.
+  assert.ok(!/vessel_conta_da_sessao/.test(bloco),
+    'exigir sessão aqui quebra o link do e-mail');
+  // ⚠️ O NOME DO CAMPO É `token_lembrete`, e é contrato com a página
+  // (alinhado em 19/09/2026, antes de qualquer publicação). Em TODAS as outras
+  // ações desta edge `token` é a sessão da cliente; um campo chamado `token`
+  // aqui faria uma página logada mandar a sessão dela para uma ação que a
+  // trata como token de e-mail. E `t`, o nome curto de antes, não se entende
+  // seis meses depois.
+  assert.match(bloco, /p_token:\s*corpo\.token_lembrete\s*\?\?\s*null/,
+    'o campo é o token do LINK do e-mail: corpo.token_lembrete');
+  assert.ok(!/corpo\.token\b/.test(bloco),
+    'não pode ler o token de SESSÃO da conta nesta ação');
+  // UM nome só, sem atalho antigo aceito por baixo: dois nomes vivos viram
+  // dois contratos, e um dia a página manda um e a edge lê o outro.
+  assert.ok(!/corpo\.t\s*\?\?/.test(bloco),
+    'sem fallback para o nome velho `t`: um nome só');
+});
+
+test('⚠️ "lembrete-parar" responde sempre a mesma coisa — token errado não conta nada', () => {
+  const bloco = blocoDaAcao(FONTE, 'lembrete-parar');
+  for (const chamada of chamadasDeResponder(bloco)) {
+    assert.ok(!/motivo:\s*'(nao_existe|token_invalido|nao_achei)'/.test(chamada),
+      `esta porta é pública e sem login: um "não achei" a transforma num testador de tokens: ${chamada}`);
+  }
+});
+
+test('⚠️ as ações que já existiam continuam todas lá, e a nova chega inteira', () => {
+  for (const acao of ['criar', 'entrar', 'eu', 'sair', 'esqueci', 'editar', 'minhas-pecas',
+                      'transferir-gerar', 'transferir-aberta', 'transferir-cancelar',
+                      'transferir-aceitar', 'lembrete-criar', 'lembrete-parar']) {
+    assert.ok(FONTE.includes(`corpo.acao === '${acao}'`), `a ação ${acao} sumiu`);
+  }
+  // E o rpc novo confere `error`, como todos os outros.
+  const pos = FONTE.indexOf("rpc('vessel_lembrete_cancelar_por_token'");
+  assert.ok(pos > -1);
+  assert.match(FONTE.slice(Math.max(0, pos - 100), pos + 4),
+    /const\s*\{[^}]*\berror\b[^}]*\}\s*=\s*await\s+sb\.rpc\(/,
+    'falta desestruturar "error" (só "data" deixa erro do rpc calado)');
 });

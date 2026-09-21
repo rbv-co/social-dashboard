@@ -107,6 +107,21 @@ Como chega o dado (ATUALIZADO 18/09/2026 — terceira tentativa, a que ficou):
   continua sendo preferido; a reserva só entra quando ele falta. Testado
   ao vivo: sem o Pixel ainda ter carregado, usa a reserva; assim que o
   Pixel real seta o cookie, passa a usar o de verdade.
+- ATRIBUIÇÃO MULTI-CANAL (19/09/2026): depois de revisar todos os
+  caminhos de entrada da loja (auditoria completa — inclusive testado ao
+  vivo o botão de checkout acelerado, Shop Pay/PayPal/Apple Pay, que
+  também passa por /cart/add via AJAX, coberto igual ao resto), somamos:
+  - `utm_source`/`utm_medium`/`utm_campaign` e `gclid` (Google Ads) — mesmo
+    truque do fbclid: vêm da URL de entrada, não são cookie, persistidos
+    em localStorage porque somem na primeira navegação interna. Só
+    sobrescreve quando o parâmetro está presente na URL atual.
+  - `referrer` (document.referrer) — de onde a pessoa veio quando não tem
+    UTM/fbclid/gclid nenhum (Instagram orgânico, Google orgânico, etc.).
+    ⚠️ Só é conferido/regravado numa SESSÃO NOVA (mesma flag do
+    sessao_iniciada) — navegação interna do mesmo visitante nunca
+    sobrescreve o referrer de entrada correto, e uma sessão nova sempre
+    reflete o referrer dela mesma, nunca o de uma sessão anterior grudado.
+  Ver db/migrations/2026-09-19-carrinho-eventos-origem.sql.
 
 WEBHOOK NATIVO DA SHOPIFY (18/09/2026) — supabase/functions/receber-webhook-checkout:
 - Recebe o webhook `checkouts/create` que a PRÓPRIA Shopify dispara quando
