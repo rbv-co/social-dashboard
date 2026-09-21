@@ -338,6 +338,11 @@ test('Landing page: a origem de cada LP chega na planilha', async () => {
 const instrucoes = async () =>
   (await aba('Instruções', {})).linhas.map((l) => l[0] ?? '');
 
+// O que foi ENTREGUE ao gerador, antes de virar arquivo — é onde dá para ver
+// quais linhas são título de bloco.
+const instrucoesCruas = () =>
+  montarAbas(vazio()).find((a) => a.nome === 'Instruções').linhas.map((l) => l[0]);
+
 test('a aba de Instruções é a PRIMEIRA — é a que abre', async () => {
   const todas = abasDoXlsx(await montarXlsx(montarAbas(vazio())));
   assert.equal(todas[0].nome, 'Instruções');
@@ -387,5 +392,28 @@ test('a aba de Instruções não tem filtro, e as de dado têm', async () => {
   assert.equal(abas.find((a) => a.nome === 'Instruções').filtro, false);
   for (const a of abas.filter((x) => !x.documentacao)) {
     assert.notEqual(a.filtro, false, `a aba "${a.nome}" perdeu o filtro`);
+  }
+});
+
+test('os títulos de bloco das instruções são negrito de verdade, não maiúscula com risco', () => {
+  // A primeira versão separava os blocos com uma linha de traços, porque não
+  // havia estilo nenhum — ficou com cara de arquivo de texto dentro de uma
+  // planilha. Agora são células com estilo próprio.
+  const cruas = instrucoesCruas();
+  const titulos = cruas.filter((l) => l && typeof l === 'object' && l.secao);
+  assert.ok(titulos.length >= 6, `só ${titulos.length} títulos de bloco`);
+  assert.equal(titulos[0].texto, 'O QUE É ISTO');
+  // E nenhum risquinho sobrou.
+  for (const l of cruas) {
+    const texto = typeof l === 'object' && l ? l.texto : String(l ?? '');
+    assert.ok(!texto.includes('──'), `sobrou um risco: "${texto}"`);
+  }
+});
+
+test('a aba de Instruções não tem listra — listra em texto corrido vira tabela falsa', () => {
+  const abas = montarAbas(vazio());
+  assert.equal(abas.find((a) => a.nome === 'Instruções').zebra, false);
+  for (const a of abas.filter((x) => !x.documentacao)) {
+    assert.notEqual(a.zebra, false, `a aba "${a.nome}" perdeu a listra`);
   }
 });

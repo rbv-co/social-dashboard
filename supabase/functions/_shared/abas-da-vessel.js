@@ -165,42 +165,41 @@ const maisVelhoPrimeiro = (campo) => (a, b) =>
 //
 // Pedido do dono em 21/09/2026: uma aba explicando a planilha, em primeiro lugar.
 //
-// ⚠️ UMA COLUNA SÓ, E LINHAS CURTAS, e os dois detalhes são a mesma armadilha:
-// o Excel NÃO estica a altura da linha sozinho quando o texto quebra — ele usa a
-// altura padrão e o resto do texto fica escondido, sem aviso. Quem escrever
-// linha nova aqui: mantenha abaixo de ~100 letras, que é o que cabe na largura
-// desta coluna, em vez de contar com quebra automática.
+// ⚠️ TÍTULO DE BLOCO É `{ texto, secao: true }`, e não MAIÚSCULA com risquinho.
+// A primeira versão separava os blocos com uma linha de traços porque não havia
+// estilo nenhum — ficou com cara de arquivo de texto dentro de uma planilha. Com
+// o negrito de verdade, o risco sai e a linha em branco basta.
 //
-// ⚠️ `filtro: false`: seta de filtro numa aba de texto corrido parece defeito.
+// ⚠️ UMA COLUNA SÓ, E LINHAS CURTAS. O Excel NÃO estica a altura da linha quando
+// o texto quebra: ele usa a altura padrão e o resto some, sem aviso. Quem
+// escrever linha nova aqui: até ~100 letras, que é o que cabe na largura desta
+// coluna. Há teste medindo cada uma.
 //
-// ⚠️ O SEPARADOR É UM RISCO, E NÃO UMA LINHA VAZIA. Linha vazia existe no
-// arquivo (medido: 6 delas), e o Excel a mostra — mas o visualizador do macOS a
-// ENGOLE, e os blocos aparecem grudados. Como não dá para saber em que leitor
-// esta planilha vai ser aberta (Excel, Zoho, Google, a prévia do celular), o
-// risco garante a separação em todos. `SEPARADOR` também facilita mudar de
-// ideia num lugar só.
-const SEPARADOR = '─'.repeat(40);
+// ⚠️ `zebra: false` e `filtro: false`: listra e seta de filtro em texto corrido
+// fazem a pessoa procurar a coluna e a tabela que não existem.
+const bloco = (texto) => ({ texto, secao: true });
+
 const INSTRUCOES = [
-  'O QUE É ISTO',
+  bloco('O QUE É ISTO'),
   'Esta planilha é uma fotografia da base da VESSEL BRASIL, tirada do sistema.',
   'Ela se atualiza sozinha: no segundo em que alguém se cadastra no site, e de 3 em 3 minutos.',
   'É o único arquivo desta pasta. Os onze CSV antigos foram para a lixeira do Zoho em 21/09/2026.',
-  SEPARADOR,
-  '⚠️ ESCREVER AQUI NÃO MUDA NADA NO SISTEMA',
+  '',
+  bloco('ESCREVER AQUI NÃO MUDA NADA NO SISTEMA'),
   'Se você digitar, corrigir ou apagar algo nesta planilha, isso some na atualização seguinte.',
-  'O robô regrava o arquivo inteiro a cada rodada. Para corrigir um dado de verdade,',
-  'corrija na Central ou no formulário do site.',
-  SEPARADOR,
-  'SE ALGUÉM PEDIR PARA SAIR DA BASE',
+  'O robô regrava o arquivo inteiro a cada rodada.',
+  'Para corrigir um dado de verdade, corrija na Central ou no formulário do site.',
+  '',
+  bloco('SE ALGUÉM PEDIR PARA SAIR DA BASE'),
   'Apague a pessoa no sistema. Ela desaparece desta planilha na rodada seguinte, sozinha.',
   'Não precisa mexer no arquivo. É assim que a Política de Privacidade do site vira verdade.',
-  SEPARADOR,
-  'A HORA É A DE BRASÍLIA',
+  '',
+  bloco('A HORA É A DE BRASÍLIA'),
   'Todas as datas e horas desta planilha estão no horário de Brasília.',
   'Elas são data de verdade, e não texto: dá para ordenar, filtrar e contar por período.',
   'As colunas de dinheiro também somam.',
-  SEPARADOR,
-  'O QUE TEM EM CADA ABA',
+  '',
+  bloco('O QUE TEM EM CADA ABA'),
   'Landing page — quem se cadastrou pelo site, e o que ela pediu para a visita',
   'Clientes — as pessoas da base, com cidade e Client Advisor',
   'Visitas às lojas — horário marcado, quem veio e quem não veio',
@@ -212,11 +211,11 @@ const INSTRUCOES = [
   'Stylists — cada stylist, com o link dela e quantas clientes trouxe',
   'Private Edits — cada encontro, com o link do convite e quem compareceu',
   'Beauty Sessions — cada sessão, com o endereço do QR e o salão parceiro',
-  SEPARADOR,
-  'ABA VAZIA NÃO É DEFEITO',
+  '',
+  bloco('ABA VAZIA NÃO É DEFEITO'),
   'Aba sem nenhuma linha quer dizer que esse dado ainda não existe no sistema.',
-  SEPARADOR,
-  'SE A PLANILHA PARAR DE ATUALIZAR',
+  '',
+  bloco('SE A PLANILHA PARAR DE ATUALIZAR'),
   'Abra a Central, vá em Status e procure "vessel-espelhar-lista".',
   'Se ele estiver ATRASADO, o painel diz qual parte parou: a planilha ou o Bling.',
 ];
@@ -266,6 +265,7 @@ export function montarAbas(d) {
       // na linha de resultado dele ("Instruções: 38 linhas" não diz nada).
       documentacao: true,
       filtro: false,
+      zebra: false,
       colunas: [{ titulo: 'COMO USAR ESTA PLANILHA', largura: 104 }],
       linhas: INSTRUCOES.map((l) => [l]),
     },
