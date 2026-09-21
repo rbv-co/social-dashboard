@@ -3,8 +3,11 @@
 Última revisão: **21/09/2026** — saiu o **B10** (resolvido), saiu o **B11**
 (resolvido), saiu o **B9** (resolvido) e o **B1** foi corrigido: a previsão de
 que o erro de estoque cresceria sozinho **não se confirmou** (medido de novo em
-21/09 — são os mesmos três de 15/09, parados). **A lista está vazia — não há
-nenhuma pendência de código em aberto.**
+21/09 — são os mesmos três de 15/09, parados).
+
+**Em aberto: um item, o B12** — o robô que escreve a planilha da Vessel não é
+vigiado pelo painel Saúde dos Robôs, e ele passou a ser o único escritor das
+onze abas. Entrou na mesma revisão, ao publicar a planilha única.
 
 O que é este arquivo: a lista viva do que está **em aberto** no projeto. Cada item
 diz o que falta, **por que importa** e **onde** se resolve. É a memória escrita —
@@ -412,7 +415,43 @@ motivo da saída.
 
 ## Parte B — Precisa programar
 
-**Vazia desde 21/09/2026.** O último item daqui foi o **B9** — está logo acima,
+### B12 · O robô da planilha da Vessel não é vigiado pelo painel Saúde dos Robôs
+
+**Entrou em 21/09/2026**, ao publicar a planilha única da Vessel.
+
+`vessel-espelhar-lista` **não está em `robos_esperados`** — medido, a consulta
+devolve zero linhas. Então o painel Saúde dos Robôs não olha para ele: se o robô
+parar, nada acusa.
+
+**Por que virou item agora, e não antes:** até hoje ele espelhava só a lista de
+espera. Desde 21/09 ele é o ÚNICO escritor da planilha inteira, com as onze abas
+(vendas, garantias, atribuição, origens…). O que antes era um espelho atrasado
+agora é a planilha toda parada.
+
+⚠️ **E tem um segundo furo, que precisa de decisão:** a função devolve HTTP 200
+mesmo quando a planilha falha, de propósito — o Bling pode ter dado certo na
+mesma rodada, e derrubar a rodada inteira por causa do Zoho perderia o cadastro.
+Consequência: `robos_execucoes` grava `ok = true` numa rodada em que a planilha
+não subiu. Aconteceu de verdade em 21/09, às 17h09. Registrar o robô em
+`robos_esperados` sem resolver isso daria um vigia que sempre diz "em dia".
+
+**As duas saídas, para o dono escolher:**
+1. o robô grava em `robos_execucoes` uma linha POR ETAPA (`vessel-espelhar-lista
+   · planilha` e `· bling`), e cada uma acusa sozinha. É o desenho que o vigia
+   já entende — ele raciocina por variante desde 19/08;
+2. ou a rodada devolve 207 quando uma etapa falha, e o vigia passa a tratar 207
+   como falha parcial. Mexe no vigia, que serve 33 robôs.
+
+A recomendação é a **1**: não toca em nada que os outros robôs usam.
+
+*Conserto parcial já feito em 21/09:* a falha da planilha agora aparece no
+`ultimo_erro` da linha mais recente. Antes ela era escrita só nas linhas com
+`planilha_em` nulo — e, como as 150 já tinham a marca, o erro caía em ZERO
+linhas. O dono olharia a coluna que o LEIA-ME manda olhar e veria vazio.
+
+---
+
+O último item que **saiu** daqui foi o **B9** — está logo acima,
 com o motivo da saída. Também saíram nesta revisão o **B10** e o **B11** — os
 três estão na seção "O que saiu da lista em 21/09/2026", mais acima. ⚠️ O B11
 nasceu chamado de "B9" numa frente que ainda não tinha sido publicada; quando
