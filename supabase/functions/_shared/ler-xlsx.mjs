@@ -69,9 +69,21 @@ function deSerial(n, comHora) {
   return comHora ? `${data} ${dois(d.getUTCHours())}:${dois(d.getUTCMinutes())}` : data;
 }
 
-// Os mesmos números de estilo do gerador (`planilha-xlsx.mjs`).
-const ESTILO_DIA = '2';
-const ESTILO_INSTANTE = '3';
+// ⚠️ O FORMATO SAI DO ARQUIVO, NÃO DE UM NÚMERO CRAVADO AQUI.
+// Antes este leitor sabia de cor que o estilo 2 era data e o 3 era data-hora. Em
+// 21/09/2026 o gerador ganhou linhas listradas, os estilos dobraram e esses
+// números viraram outros. Agora ele abre o `styles.xml`, lê o formato de cada
+// estilo e decide por ele — e passa a valer para qualquer estilo que apareça
+// depois, sem ninguém ter de lembrar de mexer aqui.
+const FORMATO_DIA = '164';
+const FORMATO_INSTANTE = '165';
+
+/** índice do estilo -> numFmtId, na ordem em que os `<xf>` aparecem. */
+function formatoPorEstilo(estilosXml) {
+  const bloco = /<cellXfs[^>]*>([\s\S]*?)<\/cellXfs>/.exec(estilosXml || '');
+  if (!bloco) return [];
+  return [...bloco[1].matchAll(/<xf[^>]*\bnumFmtId="(\d+)"/g)].map((m) => m[1]);
+}
 
 /**
  * As abas, com cada célula já como o Excel a mostraria.
@@ -79,6 +91,7 @@ const ESTILO_INSTANTE = '3';
  */
 export function abasDoXlsx(bytes) {
   const dentro = arquivosDoXlsx(bytes);
+  const formatos = formatoPorEstilo(dentro.get('xl/styles.xml'));
   const livro = dentro.get('xl/workbook.xml') || '';
   const nomes = [...livro.matchAll(/<sheet name="([^"]*)"/g)].map((m) => desxml(m[1]));
 
@@ -97,8 +110,10 @@ export function abasDoXlsx(bytes) {
           valor = desxml((/<t[^>]*>([\s\S]*?)<\/t>/.exec(miolo) || [, ''])[1]);
         } else {
           const cru = (/<v>([\s\S]*?)<\/v>/.exec(miolo) || [, ''])[1];
-          if (estilo === ESTILO_DIA) valor = deSerial(cru, false);
-          else if (estilo === ESTILO_INSTANTE) valor = deSerial(cru, true);
+          const formato = formatos[Number(estilo ?? 0)];
+          if (cru === '') valor = '';
+          else if (formato === FORMATO_DIA) valor = deSerial(cru, false);
+          else if (formato === FORMATO_INSTANTE) valor = deSerial(cru, true);
           else valor = cru;
         }
         celulas[coluna - 1] = valor;
