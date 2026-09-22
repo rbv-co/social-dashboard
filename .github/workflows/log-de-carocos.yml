@@ -1,0 +1,61 @@
+name: Log de caroços (o que PARECE errado)
+
+# TODO DIA, às 09h18 UTC (06h18 em Campinas): roda as conferências e sobe a
+# planilha "Log de caroços.xlsx" no Zoho, em
+# 04. Vessel Brasil / 17. Marketing / Acompanhamento.
+#
+# O QUE É: pedido do dono em 21/09/2026 — "um log de possíveis erros, o que
+# PARECE ser erro, caroço no angu, pode ser do Bling e de outras coisas da
+# nossa empresa".
+#
+# ⚠️ ELE NÃO CONSERTA NADA, e é de propósito. Um robô que arruma sozinho o que
+# "parece" errado vai um dia apagar dado bom — venda duplicada pode ser duas
+# bolsas iguais no mesmo dia. Ele aponta e diz o que fazer; quem decide é gente.
+#
+# ⚠️ DEPOIS DO ROBÔ DOS PEDIDOS, e a ordem importa. `pedidos-da-vessel.yml` roda
+# às 07h34 e é ele quem confere a situação de cada pedido com o Bling. Rodar o
+# log antes mostraria como "caroço" o que o outro robô ia consertar meia hora
+# depois — e alarme que se resolve sozinho é o que faz a pessoa parar de olhar.
+#
+# O minuto 18 evita a hora cheia (medido neste repo: agendar na hora cheia
+# atrasa de 2 a 3 horas) e não colide com nenhum dos outros onze agendamentos
+# deste repositório.
+on:
+  schedule:
+    - cron: '18 9 * * *'
+  workflow_dispatch:
+    inputs:
+      ensaio:
+        description: 'Só conferir e mostrar, sem enviar? (qualquer texto = sim)'
+        required: false
+        default: ''
+
+concurrency:
+  group: log-de-carocos
+  cancel-in-progress: false
+
+jobs:
+  conferir:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - name: Instalar as dependências do coletor
+        working-directory: coletor
+        run: npm ci
+
+      - name: Rodar as conferências
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          ENSAIO: ${{ github.event.inputs.ensaio }}
+        run: |
+          if [ -n "$ENSAIO" ]; then
+            node coletor/log-de-carocos.mjs --ensaio
+          else
+            node coletor/log-de-carocos.mjs
+          fi
