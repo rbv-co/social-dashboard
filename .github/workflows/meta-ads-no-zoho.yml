@@ -1,0 +1,50 @@
+name: Meta Ads da Vessel (a planilha)
+
+# TODO DIA, às 09h42 UTC (06h42 em Campinas): sobe "Meta Ads.xlsx" no Zoho, em
+# 04. Vessel Brasil / 17. Marketing / Acompanhamento.
+#
+# ⚠️ SÓ A CONTA DA VESSEL. O banco guarda seis contas de anúncio de empresas
+# diferentes; a escolha da conta é decisão do Growth Plan (18/09/2026), e o
+# motivo está no cabeçalho de `coletor/lib/abas-do-meta-ads.mjs`.
+#
+# ⚠️ DEPOIS DO LOG DE CAROÇOS (09h18) e do robô dos pedidos (07h34), pelo mesmo
+# motivo deles: os três batem no mesmo banco, e o minuto quebrado evita a hora
+# cheia, que neste repositório atrasa de 2 a 3 horas.
+on:
+  schedule:
+    - cron: '42 9 * * *'
+  workflow_dispatch:
+    inputs:
+      ensaio:
+        description: 'Só montar e mostrar, sem enviar? (qualquer texto = sim)'
+        required: false
+        default: ''
+
+concurrency:
+  group: meta-ads-no-zoho
+  cancel-in-progress: false
+
+jobs:
+  montar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - name: Instalar as dependências do coletor
+        working-directory: coletor
+        run: npm ci
+      - name: Montar e subir a planilha
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          ENSAIO: ${{ github.event.inputs.ensaio }}
+        run: |
+          if [ -n "$ENSAIO" ]; then
+            node coletor/meta-ads-no-zoho.mjs --ensaio
+          else
+            node coletor/meta-ads-no-zoho.mjs
+          fi

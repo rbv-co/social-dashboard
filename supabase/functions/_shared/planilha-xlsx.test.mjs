@@ -246,3 +246,18 @@ test('título de bloco tem estilo próprio, diferente do texto comum', async () 
   assert.match(folha, /<c r="A2" s="11" t="inlineStr"><is><t xml:space="preserve">UM BLOCO/);
   assert.match(folha, /<c r="A3" s="0" t="inlineStr"/);
 });
+
+test('⚠️ coluna de dia aceita o objeto Date que o `pg` devolve', async () => {
+  // O driver do Postgres devolve coluna `date` como Date; o PostgREST devolve
+  // texto. Sem os dois caminhos, o robô que fala direto com o banco escrevia
+  // "Sat Jul 11 2026 00:00:00 GMT-0300" no meio de uma coluna de data.
+  const [aba] = abasDoXlsx(await montarXlsx([{
+    nome: 'x',
+    colunas: [{ titulo: 'Dia', tipo: 'dia' }],
+    // meia-noite LOCAL, que é como o `pg` monta uma coluna `date`
+    linhas: [[new Date(2026, 6, 11)], ['2026-07-11'], [new Date('nao-e-data')]],
+  }]));
+  assert.equal(aba.linhas[0][0], '11/07/2026', 'o Date virou texto feio');
+  assert.equal(aba.linhas[1][0], '11/07/2026', 'o texto parou de funcionar');
+  assert.equal(aba.linhas[2][0] ?? '', '', 'Date inválido tinha de sair vazio');
+});

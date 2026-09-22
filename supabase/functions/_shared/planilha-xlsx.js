@@ -92,8 +92,24 @@ const DIA_EM_MS = 86400000;
 const serialDeParede = ({ ano, mes, dia, hora = 0, minuto = 0, segundo = 0 }) =>
   (Date.UTC(ano, mes - 1, dia, hora, minuto, segundo) - ZERO_DO_EXCEL) / DIA_EM_MS;
 
-/** 'AAAA-MM-DD' (ou 'AAAA-MM-DDT...') vindo de coluna `date`. SEM fuso. */
+/**
+ * 'AAAA-MM-DD' (ou 'AAAA-MM-DDT...') vindo de coluna `date`. SEM fuso.
+ *
+ * ⚠️ ACEITA TAMBÉM UM `Date`, e isso não é conveniência: o driver do Postgres
+ * (`pg`) devolve coluna `date` como objeto Date, enquanto o PostgREST devolve
+ * texto. Sem este ramo, todo robô que fala direto com o banco via `pg` escrevia
+ * "Sat Jul 11 2026 00:00:00 GMT-0300" na célula — texto, no meio de uma coluna
+ * de data, sem erro nenhum. Apareceu na planilha do Meta Ads em 22/09/2026.
+ *
+ * ⚠️ E LÊ OS COMPONENTES LOCAIS (`getFullYear`, e não `getUTCFullYear`): o `pg`
+ * monta a data como meia-noite LOCAL. Ler em UTC devolveria o dia anterior para
+ * quem está a oeste de Greenwich — o mesmo defeito de fuso, por outra porta.
+ */
 function serialDeDiaPuro(v) {
+  if (v instanceof Date) {
+    if (Number.isNaN(v.getTime())) return null;
+    return serialDeParede({ ano: v.getFullYear(), mes: v.getMonth() + 1, dia: v.getDate() });
+  }
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(v));
   if (!m) return null;
   return serialDeParede({ ano: +m[1], mes: +m[2], dia: +m[3] });
@@ -196,6 +212,12 @@ function celula(ref, valor, tipo, listrada) {
 
   if (tipo === 'dia') {
     const serial = serialDeDiaPuro(valor);
+    // ⚠️ `Date` INVÁLIDO SAI VAZIO, e não como o texto "Invalid Date". Texto
+    // que a pessoa digitou vale a pena mostrar (ela reconhece e conserta);
+    // "Invalid Date" não é dado de ninguém, é o JavaScript falando sozinho.
+    if (serial === null && valor instanceof Date) {
+      return listrada ? `<c r="${ref}" s="${s(ESTILO.TEXTO)}"/>` : '';
+    }
     // Texto que não é data cai como texto, em vez de sumir. Some, o dono não
     // descobre; texto na coluna de data ele vê na hora.
     if (serial === null) {
