@@ -65,3 +65,75 @@ export function problemasDoAbastecimento({
 
   return { barra, avisa };
 }
+
+const CHEIO = 4;
+
+/** Os trechos fechados: de um tanque CHEIO ao próximo tanque CHEIO.
+ *
+ * D36. O parcial do meio ENTRA nos litros do trecho — ele foi queimado ali. O
+ * que ele não faz é FECHAR um trecho sozinho, porque ninguém sabe quanto havia
+ * no tanque antes nem depois dele.
+ *
+ * Os litros do PRIMEIRO cheio não entram: eles encheram o tanque que rodou
+ * ANTES deste trecho. É o erro clássico dessa conta, e ele infla o consumo. */
+export function trechosDeConsumo(abastecimentos) {
+  const lista = (abastecimentos || [])
+    .filter((a) => a && Number.isFinite(Number(a.km)) && Number.isFinite(Number(a.litros)))
+    .slice()
+    .sort((a, b) => Number(a.km) - Number(b.km));
+
+  const trechos = [];
+  let inicio = null;
+  let litros = 0;
+  for (const a of lista) {
+    if (inicio === null) {
+      if (Number(a.tanque_depois) === CHEIO) { inicio = a; litros = 0; }
+      continue;
+    }
+    litros += Number(a.litros);
+    if (Number(a.tanque_depois) !== CHEIO) continue;
+    const km = Number(a.km) - Number(inicio.km);
+    // Combustível diferente nas pontas não vira consumo (D37): etanol rende
+    // menos que gasolina, e misturar os dois inventaria uma piora.
+    if (km > 0 && litros > 0 && a.combustivel === inicio.combustivel) {
+      trechos.push({
+        de: inicio.id, ate: a.id, km, litros,
+        kmPorLitro: km / litros, combustivel: a.combustivel,
+      });
+    }
+    inicio = a;
+    litros = 0;
+  }
+  return trechos;
+}
+
+/** O consumo do carro: o trecho mais novo e a média de todos. Nulo enquanto não
+ *  houver dois cheios — a tela diz "ainda não dá para calcular", nunca um zero. */
+export function consumoDoVeiculo(abastecimentos) {
+  const trechos = trechosDeConsumo(abastecimentos);
+  if (!trechos.length) return null;
+  const soma = trechos.reduce((t, x) => t + x.kmPorLitro, 0);
+  return {
+    kmPorLitro: trechos[trechos.length - 1].kmPorLitro,
+    media: soma / trechos.length,
+    trechos,
+  };
+}
+
+const KML_MIN = 3;    // Frouxo de propósito, como os outros pés: pega o dedo
+const KML_MAX = 30;   // errado (litro digitado no lugar do valor), não a
+                      // diferença entre um carro pesado e um popular.
+
+/** O aviso de consumo, quando o registro novo FECHA um trecho e o resultado não
+ *  se sustenta. Lista vazia é a resposta normal — a maioria dos abastecimentos
+ *  não fecha trecho nenhum, e aviso que aparece sempre vira paisagem. */
+export function avisosDeConsumo(abastecimentos, veiculoId) {
+  const meus = (abastecimentos || []).filter((a) => a && a.veiculo_id === veiculoId);
+  const trechos = trechosDeConsumo(meus);
+  if (!trechos.length) return [];
+  const ultimo = trechos[trechos.length - 1];
+  if (ultimo.kmPorLitro >= KML_MIN && ultimo.kmPorLitro <= KML_MAX) return [];
+  return [`Este trecho deu ${ultimo.kmPorLitro.toFixed(1).replace('.', ',')} km/l `
+    + `(${ultimo.km.toLocaleString('pt-BR')} km com ${ultimo.litros.toLocaleString('pt-BR')} litros). `
+    + 'Confira os números.'];
+}
