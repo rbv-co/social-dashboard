@@ -228,3 +228,36 @@ test('nenhum botão devolvido carrega a marca de exigência pra fora', () => {
   const b = botoesDaGestao({ linhas: [], cobranca: [], fila: [], podeCriar: true, podeReservar: true })
   for (const x of b) assert.equal('exige' in x, false)
 })
+
+test('o motorista ganha o botão de abastecimento', () => {
+  const b = botoesDoMotorista({ painel: { livres: [] }, nomeDoMeuCarro: 'RENAULT KWID' })
+  const abast = b.find((x) => x.chave === 'abasteci')
+  assert.ok(abast, 'o botão tem de existir')
+  assert.equal(abast.rotulo, 'Abasteci o carro')
+})
+
+test('D38c · quem não tem carro na mão TAMBÉM vê o botão, e o estado diz por quê', () => {
+  // Esconder faria quem abasteceu carro emprestado procurar onde registrar e
+  // desistir — e é esse registro que ninguém lança depois.
+  const b = botoesDoMotorista({ painel: { livres: [] } })
+  const abast = b.find((x) => x.chave === 'abasteci')
+  assert.ok(abast)
+  assert.match(abast.estado, /não tem carro/i)
+})
+
+test('o estado do botão mostra o consumo quando ele existe', () => {
+  const b = botoesDoMotorista({
+    painel: { livres: [] }, nomeDoMeuCarro: 'RENAULT KWID',
+    consumoDoMeuCarro: { kmPorLitro: 11.234, media: 11, trechos: [{}, {}] },
+  })
+  const abast = b.find((x) => x.chave === 'abasteci')
+  assert.match(abast.estado, /11,2 km\/l/)
+})
+
+test('sem consumo ainda, o botão NÃO inventa número', () => {
+  const b = botoesDoMotorista({
+    painel: { livres: [] }, nomeDoMeuCarro: 'RENAULT KWID', consumoDoMeuCarro: null,
+  })
+  const abast = b.find((x) => x.chave === 'abasteci')
+  assert.doesNotMatch(abast.estado || '', /km\/l/)
+})
