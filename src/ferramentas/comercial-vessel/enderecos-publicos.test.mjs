@@ -100,9 +100,9 @@ test('⚠️ encontro no passado é barrado — o convite nasceria vencido', () 
   assert.ok(p.some((x) => /já passou/i.test(x)), JSON.stringify(p))
 })
 
-test('⚠️ vagas é o DENOMINADOR da taxa de comparecimento — zero não passa', () => {
+test('⚠️ vagas é o DENOMINADOR da taxa de comparecimento — zero não passa, e a T11 fecha em 7 a 10', () => {
   const amanha = new Date(Date.now() + 10 * 86400000).toISOString()
-  for (const v of [0, -3, 999, 2.5, null]) {
+  for (const v of [0, -3, 6, 11, 999, 2.5, null]) {
     const p = problemasDoEncontro({ stylist: 'STY-0001', quando: amanha, praca: 'CPS', vagas: v })
     assert.ok(p.some((x) => /vagas/i.test(x)), `passou vagas ${v}`)
   }

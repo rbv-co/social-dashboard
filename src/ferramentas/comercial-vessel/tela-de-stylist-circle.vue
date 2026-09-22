@@ -25,6 +25,151 @@
         </p>
       </section>
 
+      <!-- ── O PLACAR (T11) ─────────────────────────────────────────────────
+           ⚠️ NENHUM NÚMERO DAQUI SE DIGITA: sai das três bases e dos pedidos,
+           por `vessel_placar_do_stylist_circle`. E TODA TAXA VEM COM DE
+           QUANTOS ELA SAIU — `taxasDoPlacar` (t11-regras.js, testada). -->
+      <section v-if="!erro" class="cv-bloco">
+        <div class="cv-cabeca">
+          <div class="cv-cabeca-texto">
+            <h2 class="cv-etiqueta">O placar do Stylist Circle</h2>
+          </div>
+          <label class="cv-campo cv-campo-periodo" for="sty-periodo"><span>Período</span>
+            <select id="sty-periodo" v-model="periodoDoPlacarEscolhido">
+              <option v-for="(rotulo, chave) in PERIODOS_DO_PLACAR" :key="chave" :value="chave">{{ rotulo }}</option>
+            </select></label>
+        </div>
+        <p v-if="erroDoPlacar" class="cv-nota cv-nota-erro">{{ erroDoPlacar }}</p>
+        <div v-else-if="carregandoPlacar && !placar" class="cv-carregando">Carregando o placar…</div>
+        <template v-else-if="placar">
+          <h3 class="cv-etiqueta cv-etiqueta-interna">As parceiras</h3>
+          <div class="cv-numeros cv-numeros-placar">
+            <div class="cv-numero">
+              <span class="cv-numero-valor">{{ placar.prospectadas }}</span>
+              <span class="cv-numero-rotulo">Prospectadas</span>
+              <span class="cv-numero-base">pela data da prospecção</span>
+            </div>
+            <div class="cv-numero">
+              <span class="cv-numero-valor">{{ placar.ativadas }}</span>
+              <span class="cv-numero-rotulo">Ativadas</span>
+              <span class="cv-numero-base">{{ taxaEscrita(taxas.ativacao) }} das prospectadas</span>
+              <span v-if="margemEscrita(taxas.ativacao)" class="cv-numero-margem">{{ margemEscrita(taxas.ativacao) }}</span>
+            </div>
+            <div class="cv-numero">
+              <span class="cv-numero-valor">{{ placar.recorrentes_no_periodo }}</span>
+              <span class="cv-numero-rotulo">Ficaram recorrentes</span>
+              <span class="cv-numero-base">2º encontro realizado no período</span>
+            </div>
+            <div class="cv-numero">
+              <span class="cv-numero-valor">{{ emPorcento(taxas.repeticao.valor) }}</span>
+              <span class="cv-numero-rotulo">Taxa de repetição</span>
+              <span class="cv-numero-base">{{ taxaEscrita(taxas.repeticao) }}, desde o início</span>
+            </div>
+            <div class="cv-numero">
+              <span class="cv-numero-valor">{{ placar.intervalos ? `${formatarDias(placar.intervalo_medio_em_dias)}` : '—' }}</span>
+              <span class="cv-numero-rotulo">Intervalo entre encontros</span>
+              <span class="cv-numero-base">{{ placar.intervalos ? `média de ${placar.intervalos} intervalo(s)` : 'sem base ainda' }}</span>
+            </div>
+          </div>
+
+          <h3 class="cv-etiqueta cv-etiqueta-interna">Os encontros e as convidadas</h3>
+          <div class="cv-numeros cv-numeros-placar">
+            <div class="cv-numero">
+              <span class="cv-numero-valor">{{ placar.encontros_agendados }}</span>
+              <span class="cv-numero-rotulo">Encontros agendados</span>
+              <span class="cv-numero-base">{{ placar.encontros_cancelados }} cancelado(s) ou não realizado(s)</span>
+            </div>
+            <div class="cv-numero">
+              <span class="cv-numero-valor">{{ placar.encontros_realizados }}</span>
+              <span class="cv-numero-rotulo">Realizados</span>
+              <span class="cv-numero-base">{{ taxaEscrita(taxas.realizacao) }} dos agendados</span>
+            </div>
+            <div class="cv-numero">
+              <span class="cv-numero-valor">{{ placar.convidadas }}</span>
+              <span class="cv-numero-rotulo">Convidadas</span>
+            </div>
+            <div class="cv-numero">
+              <span class="cv-numero-valor">{{ placar.confirmadas }}</span>
+              <span class="cv-numero-rotulo">Confirmadas</span>
+              <span class="cv-numero-base">inclui quem confirmou e faltou</span>
+            </div>
+            <div class="cv-numero">
+              <span class="cv-numero-valor">{{ placar.presentes }}</span>
+              <span class="cv-numero-rotulo">Presentes</span>
+              <span class="cv-numero-base">{{ taxaEscrita(taxas.showRate) }} das confirmadas</span>
+              <span v-if="margemEscrita(taxas.showRate)" class="cv-numero-margem">{{ margemEscrita(taxas.showRate) }}</span>
+            </div>
+          </div>
+
+          <h3 class="cv-etiqueta cv-etiqueta-interna">A venda ({{ janelaEscrita(placar.janela_de_venda_em_dias) }})</h3>
+          <div class="cv-numeros cv-numeros-placar">
+            <div class="cv-numero">
+              <span class="cv-numero-valor">{{ emReais(placar.receita) }}</span>
+              <span class="cv-numero-rotulo">Receita atribuída</span>
+              <span class="cv-numero-base">{{ placar.vendas }} venda(s) · {{ formatarPecas(placar.pecas) }} peça(s)</span>
+            </div>
+            <div class="cv-numero">
+              <span class="cv-numero-valor">{{ placar.compradoras }}</span>
+              <span class="cv-numero-rotulo">Compradoras</span>
+              <span class="cv-numero-base">{{ taxaEscrita(taxas.conversao) }} das presentes</span>
+              <span v-if="margemEscrita(taxas.conversao)" class="cv-numero-margem">{{ margemEscrita(taxas.conversao) }}</span>
+            </div>
+            <div class="cv-numero">
+              <span class="cv-numero-valor">{{ taxas.ticket.temBase ? emReais(taxas.ticket.valor) : '—' }}</span>
+              <span class="cv-numero-rotulo">Ticket médio</span>
+              <span class="cv-numero-base">{{ taxas.ticket.temBase ? `sobre ${taxas.ticket.n} venda(s)` : 'sem base ainda' }}</span>
+            </div>
+            <div class="cv-numero">
+              <span class="cv-numero-valor">{{ taxas.receitaPorConvidada.temBase ? emReais(taxas.receitaPorConvidada.valor) : '—' }}</span>
+              <span class="cv-numero-rotulo">Receita por presente</span>
+              <span class="cv-numero-base">{{ taxas.receitaPorConvidada.temBase ? `sobre ${taxas.receitaPorConvidada.n} presente(s)` : 'sem base ainda' }}</span>
+            </div>
+            <div class="cv-numero">
+              <span class="cv-numero-valor">{{ taxas.receitaPorEncontro.temBase ? emReais(taxas.receitaPorEncontro.valor) : '—' }}</span>
+              <span class="cv-numero-rotulo">Receita por encontro</span>
+              <span class="cv-numero-base">{{ taxas.receitaPorEncontro.temBase ? `sobre ${taxas.receitaPorEncontro.n} realizado(s)` : 'sem base ainda' }}</span>
+            </div>
+            <div class="cv-numero">
+              <span class="cv-numero-valor">{{ razaoEscrita(taxas.pecasPorCliente).split(' (')[0] }}</span>
+              <span class="cv-numero-rotulo">Peças por compradora</span>
+              <span class="cv-numero-base">{{ taxas.pecasPorCliente.temBase ? `${formatarPecas(taxas.pecasPorCliente.x)} peça(s) em ${taxas.pecasPorCliente.n}` : 'sem base ainda' }}</span>
+            </div>
+          </div>
+
+          <template v-if="placar.por_stylist && placar.por_stylist.length">
+            <h3 class="cv-etiqueta cv-etiqueta-interna">Receita por stylist</h3>
+            <!-- ⚠️ LISTA, NÃO TABELA: medido a 375px, a coluna do nome empurrava
+                 as outras três para fora da tela. -->
+            <ul class="cv-convidadas">
+              <li v-for="p in placar.por_stylist" :key="p.codigo" class="cv-convidada">
+                <p class="cv-convidada-nome">{{ p.nome }}</p>
+                <p class="cv-sub">
+                  <span class="cv-codigo">{{ p.codigo }}</span>
+                  · {{ p.encontros_realizados }} realizado(s) · {{ p.vendas }} venda(s) ·
+                  <b>{{ emReais(p.receita) }}</b>
+                </p>
+              </li>
+            </ul>
+          </template>
+
+          <p class="cv-nota">
+            Cada número usa a sua data: <b>prospectadas</b> pela data da
+            prospecção, <b>ativadas</b> pelo dia do primeiro encontro agendado, e
+            <b>encontros, convidadas e venda</b> pelo dia do encontro.
+            <b>Agendados</b> inclui os que depois caíram — eles chegaram a ter
+            data, e tirá-los faria a taxa de realização subir justamente quando
+            a operação cancela.
+          </p>
+          <p class="cv-nota">
+            <b>A venda</b> é o pedido atendido no Bling de uma convidada que
+            <b>esteve presente</b>, até 14 dias depois do encontro. Quem foi a
+            dois encontros tem a compra contada no <b>primeiro</b>, uma vez só.
+            A cliente é reconhecida pelo WhatsApp do convite, na conferência de
+            pedidos de toda madrugada.
+          </p>
+        </template>
+      </section>
+
       <!-- ── CADASTRAR ──────────────────────────────────────────────────── -->
       <section v-if="podeExecutarAcao('criar', podeEditar)" class="cv-bloco">
         <h2 class="cv-etiqueta">Cadastrar parceira</h2>
@@ -47,6 +192,25 @@
               <option value="">Escolha…</option>
               <option v-for="(nome, sigla) in PRACAS" :key="sigla" :value="sigla">{{ nome }}</option>
             </select></label>
+          <label class="cv-campo" for="sty-loja"><span>Loja relacionada</span>
+            <select id="sty-loja" v-model="novo.loja">
+              <option value="">Escolha…</option>
+              <option v-for="(nome, chave) in LOJAS" :key="chave" :value="chave">{{ nome }}</option>
+            </select></label>
+          <label class="cv-campo" for="sty-origem"><span>Como ela chegou</span>
+            <select id="sty-origem" v-model="novo.comoChegou">
+              <option value="">Escolha…</option>
+              <option v-for="(rotulo, chave) in ORIGENS_DE_CONTATO" :key="chave" :value="chave">{{ rotulo }}</option>
+            </select></label>
+          <label class="cv-campo" for="sty-responsavel"><span>Responsável</span>
+            <input id="sty-responsavel" type="text" maxlength="80" v-model="novo.responsavel"></label>
+          <label class="cv-campo" for="sty-prospectado"><span>Data da prospecção</span>
+            <input id="sty-prospectado" type="date" :max="hojeLocal" v-model="novo.prospectadoEm"></label>
+          <label class="cv-campo cv-campo-largo" for="sty-proxima"><span>Próxima ação</span>
+            <input id="sty-proxima" type="text" maxlength="120" v-model="novo.proximaAcao"
+                   placeholder="Ex.: ligar para apresentar o Circle"></label>
+          <label class="cv-campo" for="sty-proxima-em"><span>Até quando</span>
+            <input id="sty-proxima-em" type="date" v-model="novo.proximaAcaoEm"></label>
         </div>
 
         <!-- ⚠️ O CÓDIGO NÃO EXISTE COMO CAMPO: quem gera é o banco, no formato
@@ -161,7 +325,7 @@
             </div>
             <div class="cv-numero">
               <span class="cv-numero-valor">{{ emReais(conjunto.totalReceita) }}</span>
-              <span class="cv-numero-rotulo">Receita somada</span>
+              <span class="cv-numero-rotulo">Receita pelo link, somada</span>
               <span class="cv-numero-base">{{ janelaEscrita(conjunto.janela) }}</span>
             </div>
           </div>
@@ -181,6 +345,12 @@
                 <span class="cv-codigo">{{ s.codigo }}</span>
                 <span v-if="s.cidade"> · {{ s.cidade }}</span>
                 <span v-if="s.praca_preview"> · preview em {{ s.praca_preview }}</span>
+                <span v-if="s.loja"> · loja {{ LOJAS[s.loja] || s.loja }}</span>
+              </p>
+              <p class="cv-sub">
+                {{ ORIGENS_DE_CONTATO[s.origem_contato] || s.origem_contato }}
+                <span v-if="s.prospectado_em"> · prospectada em {{ dataLegivel(s.prospectado_em) }}</span>
+                <span v-if="s.responsavel"> · com {{ s.responsavel }}</span>
               </p>
             </div>
             <!-- ⚠️ `estagio` é texto livre, sem validação no banco (comentário
@@ -196,11 +366,40 @@
                  sozinho nesse caso, sem duplicar a palavra. -->
             <div class="cv-selos">
               <span v-if="s.ativa === false" class="cv-selo cv-selo-fim">Desativada</span>
-              <span class="cv-selo" :class="s.estagio === 'ativa' ? 'cv-selo-viva' : 'cv-selo-fim'">
-                {{ ESTAGIOS[s.estagio] || s.estagio || 'sem estágio' }}</span>
+              <span class="cv-selo" :class="seloDoEstagio(s.estagio).classe">
+                {{ seloDoEstagio(s.estagio).texto }}</span>
             </div>
           </div>
 
+          <p v-if="s.proxima_acao" class="cv-nota cv-nota-aviso cv-nota-primeira">
+            <b>Próxima ação:</b> {{ s.proxima_acao }}<span v-if="s.proxima_acao_em">
+              — até {{ dataLegivel(s.proxima_acao_em) }}</span>
+          </p>
+
+          <h3 class="cv-etiqueta cv-etiqueta-interna">Os encontros dela</h3>
+          <div class="cv-numeros">
+            <div class="cv-numero">
+              <span class="cv-numero-valor">{{ s.encontros_realizados || 0 }}</span>
+              <span class="cv-numero-rotulo">Realizados</span>
+              <span class="cv-numero-base">{{ s.ativada_em ? `ativada em ${dataLegivel(dataDoInstante(s.ativada_em))}` : 'ainda não ativada' }}</span>
+            </div>
+            <div class="cv-numero">
+              <span class="cv-numero-valor">{{ s.ultima_private_edit ? dataLegivel(s.ultima_private_edit) : '—' }}</span>
+              <span class="cv-numero-rotulo">Última Private Edit</span>
+            </div>
+            <div class="cv-numero">
+              <span class="cv-numero-valor">{{ s.proxima_data_permitida ? dataLegivel(s.proxima_data_permitida) : '—' }}</span>
+              <span class="cv-numero-rotulo">Próxima data permitida</span>
+              <span class="cv-numero-base">último encontro + 45 dias</span>
+            </div>
+            <div class="cv-numero">
+              <span class="cv-numero-valor">{{ emReais(s.receita_dos_encontros) }}</span>
+              <span class="cv-numero-rotulo">Receita dos encontros</span>
+              <span class="cv-numero-base">{{ janelaEscrita(s.janela_de_venda_em_dias) }}</span>
+            </div>
+          </div>
+
+          <h3 class="cv-etiqueta cv-etiqueta-interna">O link dela, em números</h3>
           <div class="cv-numeros">
             <div class="cv-numero">
               <span class="cv-numero-valor">{{ s.aberturas }}</span>
@@ -229,7 +428,7 @@
             </div>
             <div class="cv-numero">
               <span class="cv-numero-valor">{{ emReais(s.receita) }}</span>
-              <span class="cv-numero-rotulo">Receita</span>
+              <span class="cv-numero-rotulo">Receita pelo link</span>
               <span class="cv-numero-base">{{ janelaEscrita(s.janela_de_venda_em_dias) }}</span>
             </div>
           </div>
@@ -267,14 +466,41 @@
                 <input :id="`ed-instagram-${s.codigo}`" type="text" maxlength="60" v-model="rascunho.instagram"></label>
               <label class="cv-campo" :for="`ed-atuacao-${s.codigo}`"><span>Atuação</span>
                 <input :id="`ed-atuacao-${s.codigo}`" type="text" maxlength="60" v-model="rascunho.atuacao"></label>
+              <!-- ⚠️ LISTA, NÃO TEXTO LIVRE (T11). Os três degraus que saem dos
+                   encontros não aparecem: "Manter" é o jeito de não mexer. -->
               <label class="cv-campo" :for="`ed-estagio-${s.codigo}`"><span>Estágio</span>
-                <input :id="`ed-estagio-${s.codigo}`" type="text" maxlength="40" v-model="rascunho.estagio"
-                       list="sty-estagios-sugeridos"></label>
+                <select :id="`ed-estagio-${s.codigo}`" v-model="rascunho.estagio">
+                  <option value="">Manter: {{ seloDoEstagio(s.estagio).texto }}</option>
+                  <option v-for="k in estagiosDeEscolher(s.ativada_em)" :key="k" :value="k"
+                          :disabled="k === s.estagio">{{ ESTAGIOS_DA_STYLIST[k] }}</option>
+                </select></label>
               <label class="cv-campo" :for="`ed-praca-${s.codigo}`"><span>Praça</span>
                 <select :id="`ed-praca-${s.codigo}`" v-model="rascunho.praca">
                   <option value="">Escolha…</option>
                   <option v-for="(nome, sigla) in PRACAS" :key="sigla" :value="sigla">{{ nome }}</option>
                 </select></label>
+              <label class="cv-campo" :for="`ed-loja-${s.codigo}`"><span>Loja relacionada</span>
+                <select :id="`ed-loja-${s.codigo}`" v-model="rascunho.loja">
+                  <option value="">Escolha…</option>
+                  <option v-for="(nome, chave) in LOJAS" :key="chave" :value="chave">{{ nome }}</option>
+                </select></label>
+              <label class="cv-campo" :for="`ed-chegou-${s.codigo}`"><span>Como ela chegou</span>
+                <select :id="`ed-chegou-${s.codigo}`" v-model="rascunho.comoChegou">
+                  <option v-for="(rotulo, chave) in ORIGENS_DE_CONTATO" :key="chave" :value="chave">{{ rotulo }}</option>
+                </select></label>
+              <label class="cv-campo" :for="`ed-responsavel-${s.codigo}`"><span>Responsável</span>
+                <input :id="`ed-responsavel-${s.codigo}`" type="text" maxlength="80" v-model="rascunho.responsavel"></label>
+              <label class="cv-campo" :for="`ed-prospectado-${s.codigo}`"><span>Data da prospecção</span>
+                <input :id="`ed-prospectado-${s.codigo}`" type="date" :max="hojeLocal" v-model="rascunho.prospectadoEm"></label>
+              <label class="cv-campo cv-campo-largo" :for="`ed-proxima-${s.codigo}`"><span>Próxima ação</span>
+                <input :id="`ed-proxima-${s.codigo}`" type="text" maxlength="120" v-model="rascunho.proximaAcao"
+                       :disabled="rascunho.acaoFeita"></label>
+              <label class="cv-campo" :for="`ed-proxima-em-${s.codigo}`"><span>Até quando</span>
+                <input :id="`ed-proxima-em-${s.codigo}`" type="date" v-model="rascunho.proximaAcaoEm"
+                       :disabled="rascunho.acaoFeita"></label>
+              <label v-if="s.proxima_acao" class="cv-marcar" :for="`ed-feita-${s.codigo}`">
+                <input :id="`ed-feita-${s.codigo}`" type="checkbox" v-model="rascunho.acaoFeita">
+                <span>A próxima ação foi feita — apagar</span></label>
             </div>
             <p class="cv-nota">
               <b>Código nunca muda</b> — está dentro do link já colado por aí.
@@ -330,9 +556,6 @@
       </template>
     </div>
 
-    <datalist id="sty-estagios-sugeridos">
-      <option v-for="(rotulo, chave) in ESTAGIOS" :key="chave" :value="chave">{{ rotulo }}</option>
-    </datalist>
   </div>
 </template>
 
@@ -353,8 +576,13 @@
  * `is_vessel_atendimentos()` por dentro, e com a chave anônima o PostgREST
  * responde 200 com lista VAZIA — "nenhuma stylist" para um programa cheio.
  *
+ * ⚠️ T11 (22/09/2026): o funil virou lista fechada, a ficha ganhou loja,
+ * origem do contato, responsável e próxima ação, e a tela ganhou O PLACAR —
+ * que TEM período, só dele, num seletor próprio dentro do bloco. A barra da
+ * lista continua sem período nenhum.
+ *
  * ⚠️ SEM PERÍODO NENHUM NESTA BARRA (R do controlador): esta tela é uma lista
- * de PARCEIRAS, não de eventos numa loja/data. `p_dias` (7, cravado abaixo)
+ * de PARCEIRAS, não de eventos numa loja/data. `p_dias` (14, cravado abaixo)
  * só decide a janela de atribuição de venda que já vem dentro de cada linha
  * (`janela_de_venda_em_dias`) — nunca filtra quem aparece. Por isso não existe
  * aqui nenhum observador sobre o campo de dias do filtro.
@@ -379,7 +607,7 @@ import BarraDeLista from './barra-de-lista.vue'
 import { estado, hasPermission } from '../../compartilhado/controle-de-login-e-usuario.js'
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../../compartilhado/conectar-no-banco-de-dados.js'
 import { classificarErro } from '../../compartilhado/classificar-erro.js'
-import { enderecoDaStylist, ENDERECO_DO_CIRCLE, ESTAGIOS } from './enderecos-publicos.js'
+import { enderecoDaStylist, ENDERECO_DO_CIRCLE, ESTAGIOS, dataLegivel } from './enderecos-publicos.js'
 import {
   proporcao, razao, razaoEscrita, taxaEscrita, margemEscrita,
   emPorcento, emReais, janelaEscrita,
@@ -390,6 +618,10 @@ import {
   mensagemDeCriar, mensagemDeEditar, mensagemDeDesativar,
 } from './stylist-circle-regras.js'
 import { paiDaTela, ROTULO_DO_PAI } from './navegacao.js'
+import {
+  ESTAGIOS_DA_STYLIST, estagiosDeEscolher, seloDoEstagio, ORIGENS_DE_CONTATO, LOJAS,
+  PERIODOS_DO_PLACAR, periodoDoPlacar, taxasDoPlacar,
+} from './t11-regras.js'
 
 const router = useRouter()
 function voltar() { router.push({ name: paiDaTela('stylist-circle') }) }
@@ -397,8 +629,9 @@ function voltar() { router.push({ name: paiDaTela('stylist-circle') }) }
 const PRACAS = { CPS: 'Campinas', SAO: 'São Paulo', SBO: 'Santa Bárbara', BSB: 'Brasília' }
 
 // ⚠️ A JANELA DE ATRIBUIÇÃO DE VENDA — não é o período da barra (que nem
-// existe nesta tela). Mantida no valor de sempre desta tela.
-const P_DIAS = 7
+// existe nesta tela). T11: D0 a D+14, a MESMA do Private Edit e do placar.
+// Antes era 7 aqui e 14 lá, e a mesma stylist tinha duas receitas.
+const P_DIAS = 14
 
 const podeEditar = computed(() => hasPermission('atendimentos', 'editar'))
 
@@ -470,6 +703,7 @@ async function carregar() {
     const r = await chamar('vessel_rastreio_dos_stylists',
       { p_dias: P_DIAS, p_incluir_desativadas: incluirDesativadas })
     stylists.value = r || []
+    carregarPlacar()
   } catch (e) {
     erro.value = classificarErro(e)
   } finally {
@@ -483,9 +717,54 @@ watch(() => precisaDasDesativadas(filtro.value.situacao), (precisaAgora, precisa
   if (precisaAgora !== precisavaAntes) carregar()
 })
 
+// ── o placar (T11) ───────────────────────────────────────────────────────────
+// ⚠️ ERRO DO PLACAR NÃO DERRUBA A LISTA, e a lista não derruba o placar: são
+// duas leituras, e cada uma mostra o próprio erro no próprio bloco.
+const periodoDoPlacarEscolhido = ref('mes')
+const placar = ref(null)
+const carregandoPlacar = ref(false)
+const erroDoPlacar = ref('')
+const taxas = computed(() => taxasDoPlacar(placar.value))
+
+async function carregarPlacar() {
+  carregandoPlacar.value = true
+  erroDoPlacar.value = ''
+  try {
+    const { p_de, p_ate } = periodoDoPlacar(periodoDoPlacarEscolhido.value)
+    placar.value = await chamar('vessel_placar_do_stylist_circle', { p_de, p_ate, p_dias: P_DIAS })
+  } catch {
+    // ⚠️ Nunca zeros no lugar do erro: um placar zerado é uma afirmação.
+    placar.value = null
+    erroDoPlacar.value = 'Não consegui ler o placar agora. Recarregue a página em um instante.'
+  } finally {
+    carregandoPlacar.value = false
+  }
+}
+watch(periodoDoPlacarEscolhido, carregarPlacar)
+
+const doisDigitos = (n) => String(n).padStart(2, '0')
+const hojeLocal = (() => {
+  const d = new Date()
+  return `${d.getFullYear()}-${doisDigitos(d.getMonth() + 1)}-${doisDigitos(d.getDate())}`
+})()
+/* O dia (local) de um instante do banco — `ativada_em` é timestamptz. */
+function dataDoInstante(iso) {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  return `${d.getFullYear()}-${doisDigitos(d.getMonth() + 1)}-${doisDigitos(d.getDate())}`
+}
+const formatarDias = (n) => `${Number(n).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} dias`
+const formatarPecas = (n) => Number(n || 0).toLocaleString('pt-BR', { maximumFractionDigits: 0 })
+
 // ── cadastrar ────────────────────────────────────────────────────────────────
-const novo = reactive({ nome: '', whatsapp: '', cidade: '', instagram: '', atuacao: '', praca: '' })
-const problemas = computed(() => problemasDaParceira(novo))
+const nomeDeQuemUsa = () => estado.user?.user_metadata?.name || estado.user?.email || ''
+const NOVA_VAZIA = () => ({
+  nome: '', whatsapp: '', cidade: '', instagram: '', atuacao: '', praca: '',
+  loja: '', comoChegou: '', responsavel: nomeDeQuemUsa(), prospectadoEm: hojeLocal,
+  proximaAcao: '', proximaAcaoEm: '',
+})
+const novo = reactive(NOVA_VAZIA())
+const problemas = computed(() => problemasDaParceira({ ...novo, origem: novo.comoChegou }))
 const criando = ref(false)
 const criado = ref(null)
 const erroAoCriar = ref('')
@@ -503,6 +782,12 @@ async function criar() {
       p_instagram: novo.instagram || null,
       p_atuacao: novo.atuacao || null,
       p_praca: novo.praca || null,
+      p_loja: novo.loja || null,
+      p_origem_contato: novo.comoChegou || null,
+      p_responsavel: novo.responsavel || null,
+      p_prospectado_em: novo.prospectadoEm || null,
+      p_proxima_acao: novo.proximaAcao || null,
+      p_proxima_acao_em: novo.proximaAcaoEm || null,
     })
     if (!r?.ok) {
       erroAoCriar.value = mensagemDeCriar(r?.situacao)
@@ -510,7 +795,7 @@ async function criar() {
       return
     }
     criado.value = r
-    Object.assign(novo, { nome: '', whatsapp: '', cidade: '', instagram: '', atuacao: '', praca: '' })
+    Object.assign(novo, NOVA_VAZIA())
     await carregar()
   } catch {
     erroAoCriar.value = 'Não consegui falar com o banco agora. Tente de novo em um instante.'
@@ -521,7 +806,11 @@ async function criar() {
 
 // ── corrigir (inline) ────────────────────────────────────────────────────────
 const editando = ref(null)
-const rascunho = reactive({ nome: '', whatsapp: '', cidade: '', instagram: '', atuacao: '', estagio: '', praca: '' })
+const rascunho = reactive({
+  nome: '', whatsapp: '', cidade: '', instagram: '', atuacao: '', estagio: '', praca: '',
+  loja: '', comoChegou: '', responsavel: '', prospectadoEm: '', proximaAcao: '', proximaAcaoEm: '',
+  acaoFeita: false,
+})
 const salvandoEdicao = ref(null)
 const erroDeEditar = ref(null)
 const mensagemEditar = ref('')
@@ -536,8 +825,18 @@ function abrirEditar(s) {
     cidade: s.cidade || '',
     instagram: s.instagram || '',
     atuacao: s.atuacao || '',
-    estagio: s.estagio || '',
+    // ⚠️ VAZIO = "MANTER". O estágio atual pode ser um dos três automáticos,
+    // que não estão na lista — pré-selecioná-lo deixaria o campo em branco e
+    // pareceria que ela não tem estágio.
+    estagio: '',
     praca: s.praca_preview || '',
+    loja: s.loja || '',
+    comoChegou: s.origem_contato || 'inbound',
+    responsavel: s.responsavel || '',
+    prospectadoEm: s.prospectado_em || '',
+    proximaAcao: s.proxima_acao || '',
+    proximaAcaoEm: s.proxima_acao_em || '',
+    acaoFeita: false,
   })
 }
 
@@ -559,6 +858,13 @@ async function salvarEdicao(s) {
       p_atuacao: rascunho.atuacao || null,
       p_estagio: rascunho.estagio || null,
       p_praca: rascunho.praca || null,
+      p_loja: rascunho.loja || null,
+      p_origem_contato: rascunho.comoChegou || null,
+      p_responsavel: rascunho.responsavel || null,
+      p_prospectado_em: rascunho.prospectadoEm || null,
+      p_proxima_acao: rascunho.acaoFeita ? null : (rascunho.proximaAcao || null),
+      p_proxima_acao_em: rascunho.acaoFeita ? null : (rascunho.proximaAcaoEm || null),
+      p_sem_proxima_acao: rascunho.acaoFeita,
     })
     if (!r?.ok) {
       erroDeEditar.value = s.codigo

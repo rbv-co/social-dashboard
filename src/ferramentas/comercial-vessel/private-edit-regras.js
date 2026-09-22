@@ -38,7 +38,11 @@ import { proporcaoDoConjunto } from './estatistica.js'
  * "Ver quem foi" NÃO entra: é leitura, atrás da trava de VER
  * (`is_vessel_atendimentos()`), não da de editar.
  */
-export const ACOES_QUE_EXIGEM_EDITAR = ['encerrar', 'reabrir', 'editar', 'arquivar', 'apagar']
+export const ACOES_QUE_EXIGEM_EDITAR = ['encerrar', 'reabrir', 'editar', 'arquivar', 'apagar',
+  // T11: mudar a situação do encontro e incluir convidada também mexem. Marcar
+  // o convite e a presença NÃO entram: passam pela trava de ver, a mesma de
+  // `vessel_situacao_do_atendimento` na Central de Atendimentos.
+  'situacao', 'convidar']
 
 export function podeExecutarAcao(acao, podeEditar) {
   if (ACOES_QUE_EXIGEM_EDITAR.includes(acao)) return !!podeEditar
@@ -62,8 +66,16 @@ export function calcularConjunto(lista) {
   return {
     totalEncontros: l.length,
     totalVagas: l.reduce((s, e) => s + (Number(e?.vagas) || 0), 0),
-    resposta: proporcaoDoConjunto(l, 'responderam', 'vagas'),
-    presenca: proporcaoDoConjunto(l, 'compareceram', 'disseram_sim'),
+    // ⚠️ T11: a resposta é sobre quem foi CONVIDADA, não sobre as vagas. Antes
+    // toda convidada nascia do RSVP, e vagas era o único denominador possível;
+    // agora a equipe pode convidar mais gente que as cadeiras, e "9 de 8" dava
+    // 113% com a faixa de erro quebrada. Cada convidada responde ou não: é
+    // proporção de verdade.
+    resposta: proporcaoDoConjunto(l, 'responderam', 'convidadas'),
+    // ⚠️ T11: o denominador do comparecimento é quem CONFIRMOU (inclusive quem
+    // confirmou e faltou), não quem disse "sim" no convite. Com a equipe
+    // confirmando por telefone, "sim" deixou de ser a única porta.
+    presenca: proporcaoDoConjunto(l, 'compareceram', 'confirmadas'),
   }
 }
 
@@ -78,6 +90,8 @@ export function mensagemDeEditar(situacao) {
       return 'Não achei mais este encontro — a lista pode ter mudado. Recarregue e tente de novo.'
     case 'stylist_nao_achei':
       return 'Não achei esta stylist. Confira o código — ele é o STY-0000 dela.'
+    case 'vagas_invalidas':
+      return 'As vagas (capacidade planejada) precisam ficar entre 7 e 10.'
     default:
       return 'Não consegui salvar agora. Tente de novo em um instante.'
   }

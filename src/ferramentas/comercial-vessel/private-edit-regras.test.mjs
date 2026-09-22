@@ -175,9 +175,9 @@ test('calcularConjunto: soma so o que esta NA LISTA recebida', () => {
   // soma de vagas dos 10. Uma funcao pura que so soma o que recebe torna esse
   // descompasso impossivel: quem chama e quem decide a lista.
   const TODOS = [
-    { codigo: 'PE-1', vagas: 8, responderam: 4, disseram_sim: 2, compareceram: 1 },
-    { codigo: 'PE-2', vagas: 6, responderam: 3, disseram_sim: 3, compareceram: 3 },
-    { codigo: 'PE-3', vagas: 10, responderam: 5, disseram_sim: 4, compareceram: 2 },
+    { codigo: 'PE-1', vagas: 8, responderam: 4, disseram_sim: 2, confirmadas: 2, compareceram: 1 },
+    { codigo: 'PE-2', vagas: 6, responderam: 3, disseram_sim: 3, confirmadas: 3, compareceram: 3 },
+    { codigo: 'PE-3', vagas: 10, responderam: 5, disseram_sim: 4, confirmadas: 4, compareceram: 2 },
   ]
   const FILTRADA = TODOS.slice(0, 2) // como se o filtro tivesse deixado so 2 de 3
 
@@ -204,8 +204,8 @@ test('calcularConjunto: lista vazia nao quebra, e sem base as taxas nao viram 0%
 
 test('calcularConjunto: as taxas somam numerador e denominador do CONJUNTO, nao a media', () => {
   const LISTA = [
-    { vagas: 2, responderam: 2, disseram_sim: 2, compareceram: 2 }, // 100%
-    { vagas: 8, responderam: 0, disseram_sim: 0, compareceram: 0 }, // 0%
+    { vagas: 7, convidadas: 2, responderam: 2, disseram_sim: 2, compareceram: 2 }, // 100%
+    { vagas: 8, convidadas: 8, responderam: 0, disseram_sim: 0, compareceram: 0 }, // 0%
   ]
   const c = calcularConjunto(LISTA)
   // Media simples daria 50%; a conta certa e 2 de 10 = 20%.
@@ -351,4 +351,22 @@ test('FIACAO: editar, arquivar e apagar vivem atrás do MESMO gate de editar (an
     '"Editar…" apareceu ANTES do gate de editar — está solto, sem trava')
   assert.doesNotMatch(antesDoGate, />Apagar…</,
     '"Apagar…" apareceu ANTES do gate de editar — está solto, sem trava')
+})
+
+test('T11: o comparecimento do conjunto é sobre quem CONFIRMOU, não sobre quem disse sim', () => {
+  // Uma convidada confirmada por telefone (sem "sim" no convite) que veio.
+  const c = calcularConjunto([{ vagas: 8, responderam: 1, disseram_sim: 0, confirmadas: 1, compareceram: 1 }])
+  assert.equal(c.presenca.n, 1)
+  assert.equal(c.presenca.valor, 1)
+})
+
+test('T11: mudar a situação e convidar exigem editar; marcar convite e presença não', () => {
+  for (const a of ['situacao', 'convidar']) assert.equal(podeExecutarAcao(a, false), false)
+  for (const a of ['marcar-convite', 'marcar-presenca']) assert.equal(podeExecutarAcao(a, false), true)
+})
+
+test('T11: a resposta é sobre as CONVIDADAS — convidar mais que as vagas não passa de 100%', () => {
+  const c = calcularConjunto([{ vagas: 8, convidadas: 9, responderam: 9, confirmadas: 8, compareceram: 7 }])
+  assert.equal(c.resposta.n, 9)
+  assert.equal(c.resposta.valor, 1)
 })

@@ -68,12 +68,10 @@ export const ENDERECO_DO_CIRCLE = `${SITE}/stylist-circle/`
  */
 export const ENDERECO_DO_GERADOR_DE_CARTAO = `${SITE}/geradorappointmentcard/`
 
-export const ESTAGIOS = {
-  pedido: 'Pediu convite',
-  convidada: 'Convidada',
-  ativa: 'Ativa',
-  pausada: 'Pausada',
-}
+// ⚠️ T11: o funil virou lista fechada no banco, e a lista (com os rótulos)
+// mora em `t11-regras.js`, testada contra o CHECK da migration. Este nome fica
+// para quem já importava daqui.
+export { ESTAGIOS_DA_STYLIST as ESTAGIOS } from './t11-regras.js'
 
 /** dd/mm/aaaa sem passar por Date — fuso não muda o dia. */
 export function dataLegivel(iso) {
@@ -119,9 +117,11 @@ export function problemasDoEncontro({ stylist, quando, praca, vagas } = {}) {
   if (!praca || !['CPS', 'SAO', 'SBO', 'BSB'].includes(String(praca).toUpperCase())) {
     problemas.push('Escolha a praça.')
   }
+  // ⚠️ T11: capacidade planejada de 7 a 10 (decisão do dono, 22/09/2026) — a
+  // mesma régua de `vessel_criar_private_edit`.
   const v = Number(vagas)
-  if (!Number.isInteger(v) || v < 1 || v > 60) {
-    problemas.push('As vagas precisam ser um número entre 1 e 60.')
+  if (!Number.isInteger(v) || v < 7 || v > 10) {
+    problemas.push('As vagas (capacidade planejada) precisam ficar entre 7 e 10.')
   }
   return problemas
 }

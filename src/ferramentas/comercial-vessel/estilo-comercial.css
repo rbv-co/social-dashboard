@@ -286,3 +286,44 @@
   text-transform: uppercase;
   letter-spacing: .5px;
 }
+
+/* ── T11: o período do placar, o "feita" da próxima ação e as convidadas ── */
+.cv-campo-periodo { min-width: 12rem; }
+.cv-marcar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 40px;
+  font-family: var(--fonte-principal);
+  font-size: var(--texto-corpo);
+  color: var(--text);
+  grid-column: 1 / -1;
+}
+.cv-marcar input { width: 20px; height: 20px; margin: 0; }
+.cv-convidadas {
+  list-style: none;
+  margin: var(--sp-3) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.cv-convidada {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--sp-3);
+  background: var(--surface);
+}
+.cv-convidada-nome {
+  font-family: var(--fonte-principal);
+  font-size: var(--texto-campo);
+  color: var(--text);
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+/* O placar tem 16 números: no celular, dois por linha em vez de um. Só nele —
+   as outras grades da família continuam como estão. */
+@media (max-width: 40rem) {
+  .cv-numeros-placar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

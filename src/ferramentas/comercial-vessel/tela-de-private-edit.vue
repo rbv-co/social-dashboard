@@ -26,16 +26,17 @@
               <option v-for="(nome, sigla) in PRACAS" :key="sigla" :value="sigla">{{ nome }}</option>
             </select></label>
           <label class="cv-campo" for="pe-vagas"><span>Vagas</span>
-            <input id="pe-vagas" type="number" min="1" max="60" v-model.number="novo.vagas"></label>
+            <input id="pe-vagas" type="number" min="7" max="10" v-model.number="novo.vagas"></label>
           <label class="cv-campo cv-campo-largo" for="pe-local"><span>Lugar</span>
             <input id="pe-local" type="text" maxlength="90" v-model="novo.local"
                    placeholder="Onde o encontro acontece"></label>
         </div>
 
         <p class="cv-nota">
-          <b>Vagas</b> é o denominador da taxa de resposta desta tela — é sobre ele
-          que "quantas responderam" é calculado. O plano fala em 5 a 8 convidadas.
+          <b>Vagas</b> é a capacidade planejada: de 7 a 10 convidadas. A taxa de
+          resposta é sobre quem foi convidada, e não sobre as vagas.
         </p>
+        <p v-if="avisoDaCadencia" class="cv-nota cv-nota-aviso">{{ avisoDaCadencia }}</p>
         <ul v-if="problemas.length" class="cv-problemas">
           <li v-for="p in problemas" :key="p">{{ p }}</li>
         </ul>
@@ -62,7 +63,7 @@
       <section v-if="!carregando && !erro && encontros.length" class="cv-bloco cv-bloco-leitura">
         <h2 class="cv-etiqueta">Como ler os números</h2>
         <p class="cv-nota cv-nota-primeira">
-          Toda taxa aqui vem com <b>de quantos</b> ela saiu. Um encontro tem 5 a 8
+          Toda taxa aqui vem com <b>de quantos</b> ela saiu. Um encontro tem 7 a 10
           convidadas: <b>“67%” sobre 3 pessoas é uma pessoa</b>, não uma tendência —
           quando a base é pequena demais para separar um cenário do outro, a tela
           escreve a faixa em que a taxa real pode estar.
@@ -71,6 +72,12 @@
           <b>Receita</b> é a compra das convidadas na janela declarada ao lado do
           valor. Não existe no dado nenhum campo dizendo “esta compra veio deste
           encontro” — o que existe é a mesma pessoa comprando perto da visita.
+          Só conta pedido atendido no Bling, e quem foi a dois encontros tem a
+          compra contada no <b>primeiro</b>, uma vez só.
+        </p>
+        <p class="cv-nota">
+          <b>Confirmadas</b> inclui quem confirmou e faltou — sem ela no
+          denominador, o comparecimento daria perto de 100% sempre.
         </p>
         <p class="cv-nota">
           <b>Encerrada</b> e <b>arquivada</b> são coisas diferentes. Encerrada
@@ -111,7 +118,7 @@
             </div>
             <div class="cv-numero">
               <span class="cv-numero-valor">{{ emPorcento(conjunto.presenca.valor) }}</span>
-              <span class="cv-numero-rotulo">Foram, de quem disse sim</span>
+              <span class="cv-numero-rotulo">Foram, de quem confirmou</span>
               <span class="cv-numero-base">{{ taxaEscrita(conjunto.presenca) }}</span>
             </div>
           </div>
@@ -136,30 +143,31 @@
                 <span v-if="e.local"> · {{ e.local }}</span>
               </p>
             </div>
-            <span class="cv-selo" :class="seloDoEncontro(e).classe">{{ seloDoEncontro(e).texto }}</span>
+            <span class="cv-selo" :class="seloDoStatus(e).classe">{{ seloDoStatus(e).texto }}</span>
           </div>
 
           <div class="cv-numeros">
             <div class="cv-numero">
               <span class="cv-numero-valor">{{ e.vagas }}</span>
               <span class="cv-numero-rotulo">Vagas</span>
+              <span class="cv-numero-base">{{ e.convidadas || 0 }} convidada(s) na lista</span>
             </div>
             <div class="cv-numero">
               <span class="cv-numero-valor">{{ e.responderam }}</span>
               <span class="cv-numero-rotulo">Responderam</span>
-              <span class="cv-numero-base">{{ taxaEscrita(taxaResposta(e)) }}</span>
+              <span class="cv-numero-base">{{ taxaEscrita(taxaResposta(e)) }} das convidadas</span>
               <span v-if="margemEscrita(taxaResposta(e))" class="cv-numero-margem">
                 {{ margemEscrita(taxaResposta(e)) }}</span>
             </div>
             <div class="cv-numero">
-              <span class="cv-numero-valor">{{ e.disseram_sim }}</span>
-              <span class="cv-numero-rotulo">Disseram sim</span>
-              <span class="cv-numero-base">{{ taxaEscrita(taxaSim(e)) }} de quem respondeu</span>
+              <span class="cv-numero-valor">{{ e.confirmadas }}</span>
+              <span class="cv-numero-rotulo">Confirmadas</span>
+              <span class="cv-numero-base">{{ e.disseram_sim }} disseram sim no convite</span>
             </div>
             <div class="cv-numero">
               <span class="cv-numero-valor">{{ e.compareceram }}</span>
               <span class="cv-numero-rotulo">Foram</span>
-              <span class="cv-numero-base">{{ taxaEscrita(taxaPresenca(e)) }} de quem disse sim</span>
+              <span class="cv-numero-base">{{ taxaEscrita(taxaPresenca(e)) }} de quem confirmou</span>
               <span v-if="margemEscrita(taxaPresenca(e))" class="cv-numero-margem">
                 {{ margemEscrita(taxaPresenca(e)) }}</span>
             </div>
@@ -181,10 +189,49 @@
               {{ copiado === e.codigo ? 'Copiado' : 'Copiar' }}</button>
           </div>
           <p class="cv-nota">
+            {{ e.ativa !== false ? 'O convite está aceitando respostas.' : 'O convite parou de aceitar respostas.' }}
             O endereço vai pela <b>chave sorteada</b>, e não pelo código do encontro:
             o código é adivinhável, e quem recebesse um convite listaria os outros
             trocando a data.
           </p>
+
+          <!-- ── A SITUAÇÃO DO ENCONTRO (T11) ──────────────────────────────
+               ⚠️ O QUE ESTÁ GRAVADO APARECE PARA TODOS; MUDAR, SÓ COM EDITAR.
+               O motivo e a data de realização são exigidos pelo BANCO (CHECK
+               na tabela) — a tela só pede antes para poupar a ida e volta. -->
+          <h3 class="cv-etiqueta cv-etiqueta-interna">A situação</h3>
+          <!-- Quem não pode mudar LÊ o que está gravado; quem pode, vê nos
+               próprios campos — escrever as duas coisas repetia a mesma frase. -->
+          <template v-if="!podeExecutarAcao('situacao', podeEditar)">
+            <p class="cv-nota cv-nota-primeira">{{ seloDoStatus(e).texto }}<span
+               v-if="e.status === 'realizado' && e.realizado_em"> em <b>{{ dataLegivel(e.realizado_em) }}</b></span>.</p>
+            <p v-if="e.motivo" class="cv-nota cv-nota-primeira"><b>Motivo:</b> {{ e.motivo }}</p>
+            <p v-if="e.observacoes" class="cv-nota cv-nota-primeira"><b>Observações:</b> {{ e.observacoes }}</p>
+          </template>
+          <template v-if="podeExecutarAcao('situacao', podeEditar)">
+            <div class="cv-form">
+              <label class="cv-campo" :for="`sit-status-${e.codigo}`"><span>Situação</span>
+                <select :id="`sit-status-${e.codigo}`" :value="situacaoDe(e).status"
+                        @change="situacaoDe(e).status = $event.target.value">
+                  <option v-for="(rotulo, chave) in STATUS_DO_ENCONTRO" :key="chave" :value="chave">{{ rotulo }}</option>
+                </select></label>
+              <label v-if="situacaoDe(e).status === 'realizado'" class="cv-campo" :for="`sit-data-${e.codigo}`">
+                <span>Data em que aconteceu</span>
+                <input :id="`sit-data-${e.codigo}`" type="date" :max="hojeLocal" v-model="situacaoDe(e).realizadoEm"></label>
+              <label v-if="precisaDeMotivo(situacaoDe(e).status)" class="cv-campo cv-campo-largo" :for="`sit-motivo-${e.codigo}`">
+                <span>Motivo</span>
+                <input :id="`sit-motivo-${e.codigo}`" type="text" maxlength="200" v-model="situacaoDe(e).motivo"></label>
+              <label class="cv-campo cv-campo-largo" :for="`sit-obs-${e.codigo}`"><span>Observações do dia</span>
+                <input :id="`sit-obs-${e.codigo}`" type="text" maxlength="300" v-model="situacaoDe(e).observacoes"
+                       placeholder="Exceções e ocorrências relevantes"></label>
+            </div>
+            <p v-if="erroDaSituacao[e.codigo]" class="cv-nota cv-nota-erro">{{ erroDaSituacao[e.codigo] }}</p>
+            <div class="cv-acoes">
+              <button class="btn" :disabled="gravandoSituacao === e.codigo || !situacaoMudou(e)"
+                      @click="gravarSituacao(e)">
+                {{ gravandoSituacao === e.codigo ? 'Gravando…' : 'Gravar situação' }}</button>
+            </div>
+          </template>
 
           <!-- ── EDITAR (inline, sem modal) ──────────────────────────────── -->
           <template v-if="podeExecutarAcao('editar', podeEditar) && editando === e.codigo">
@@ -208,7 +255,7 @@
                   <option v-for="(nome, chave) in LOJAS" :key="chave" :value="chave">{{ nome }}</option>
                 </select></label>
               <label class="cv-campo" :for="`ed-vagas-${e.codigo}`"><span>Vagas</span>
-                <input :id="`ed-vagas-${e.codigo}`" type="number" min="1" max="60" v-model.number="rascunho.vagas"></label>
+                <input :id="`ed-vagas-${e.codigo}`" type="number" min="7" max="10" v-model.number="rascunho.vagas"></label>
               <label class="cv-campo cv-campo-largo" :for="`ed-local-${e.codigo}`"><span>Lugar</span>
                 <input :id="`ed-local-${e.codigo}`" type="text" maxlength="90" v-model="rascunho.local"></label>
             </div>
@@ -274,7 +321,8 @@
 
             <button class="btn" :disabled="carregandoConvidadas === e.codigo"
                     @click="verQuemFoi(e)">
-              {{ carregandoConvidadas === e.codigo ? 'Buscando…' : 'Ver quem foi' }}
+              {{ carregandoConvidadas === e.codigo ? 'Buscando…'
+                 : (convidadasAbertas === e.codigo ? 'Fechar convidadas' : 'Convidadas e presença') }}
             </button>
           </div>
           <p v-if="erroAoMexer === e.codigo" class="cv-nota cv-nota-erro">
@@ -283,32 +331,67 @@
           <p v-if="erroDeArquivar === e.codigo" class="cv-nota cv-nota-erro">{{ mensagemArquivar }}</p>
           <p v-if="erroDeApagar === e.codigo" class="cv-nota cv-nota-erro">{{ mensagemApagar }}</p>
 
-          <!-- ── QUEM FOI ─────────────────────────────────────────────────
-               ⚠️ A TABELA VAI DENTRO DE `overflow-x: auto` — é a única coisa
-               que pode passar da largura no celular; a página em si nunca
-               pode rolar de lado. -->
+          <!-- ── AS CONVIDADAS (T11) ──────────────────────────────────────
+               ⚠️ CARTÕES, NÃO TABELA: a gerente marca presença NO CELULAR, na
+               porta da loja. Uma tabela de cinco colunas com botões dentro não
+               cabe em 375px sem rolar de lado.
+               ⚠️ O NÚMERO DA CONVIDADA (Guest ID) NASCE NO CONVITE e não é o
+               número da ficha de cliente — o documento manda não misturar. -->
           <template v-if="convidadasAbertas === e.codigo">
-            <h3 class="cv-etiqueta cv-etiqueta-interna">Quem foi</h3>
+            <h3 class="cv-etiqueta cv-etiqueta-interna">As convidadas</h3>
+
+            <template v-if="podeExecutarAcao('convidar', podeEditar) && e.status !== 'cancelado' && !e.arquivada">
+              <div class="cv-form">
+                <label class="cv-campo" :for="`cv-nome-${e.codigo}`"><span>Nome completo</span>
+                  <input :id="`cv-nome-${e.codigo}`" type="text" maxlength="120" v-model="convidarDe(e).nome"></label>
+                <label class="cv-campo" :for="`cv-whats-${e.codigo}`"><span>WhatsApp</span>
+                  <input :id="`cv-whats-${e.codigo}`" type="tel" maxlength="20" v-model="convidarDe(e).whatsapp"
+                         placeholder="(19) 99999-9999"></label>
+                <label class="cv-campo" :for="`cv-mail-${e.codigo}`"><span>E-mail (se tiver)</span>
+                  <input :id="`cv-mail-${e.codigo}`" type="email" maxlength="120" v-model="convidarDe(e).email"></label>
+              </div>
+              <ul v-if="convidarDe(e).tocado && problemasDaConvidada(convidarDe(e)).length" class="cv-problemas">
+                <li v-for="p in problemasDaConvidada(convidarDe(e))" :key="p">{{ p }}</li>
+              </ul>
+              <p v-if="respostaDoConvidar[e.codigo]" class="cv-nota"
+                 :class="respostaDoConvidar[e.codigo].ok ? 'cv-nota-ok' : 'cv-nota-erro'">
+                {{ respostaDoConvidar[e.codigo].texto }}</p>
+              <div class="cv-acoes">
+                <button class="btn btn-principal" :disabled="convidando === e.codigo"
+                        @click="convidar(e)">{{ convidando === e.codigo ? 'Incluindo…' : 'Incluir convidada' }}</button>
+              </div>
+            </template>
+
             <div v-if="convidadasErro[e.codigo]" class="cv-nota cv-nota-erro">
               Deu erro ao buscar as convidadas. Tente de novo em um instante.
             </div>
             <p v-else-if="convidadasVazias[e.codigo]" class="cv-vazio">
-              Ninguém respondeu a este convite ainda.
+              Ninguém na lista deste encontro ainda.
             </p>
-            <div v-else-if="convidadas[e.codigo]" class="cv-tabela-caixa">
-              <table class="cv-tabela">
-                <thead><tr><th>Convidada</th><th>Respondeu</th><th>Confirmou</th><th>Compareceu</th><th>Comprou</th></tr></thead>
-                <tbody>
-                  <tr v-for="c in convidadas[e.codigo]" :key="c.telefone">
-                    <td>{{ c.nome }}</td>
-                    <td>{{ rsvpLegivel(c.rsvp) }}</td>
-                    <td>{{ confirmouLegivel(c.status) }}</td>
-                    <td>{{ compareceuLegivel(c.status) }}</td>
-                    <td>{{ comprouLegivel(c.comprou) }}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+            <ul v-else-if="convidadas[e.codigo]" class="cv-convidadas">
+              <li v-for="c in convidadas[e.codigo]" :key="c.id" class="cv-convidada">
+                <div class="cv-cabeca">
+                  <div class="cv-cabeca-texto">
+                    <p class="cv-convidada-nome">{{ c.nome }}</p>
+                    <p class="cv-sub">
+                      <span class="cv-codigo">Convidada nº {{ c.id }}</span>
+                      · {{ telefoneLegivel(c.telefone) }}<span v-if="c.email"> · {{ c.email }}</span>
+                    </p>
+                    <p class="cv-sub">
+                      Ficha de cliente nº {{ c.pessoa_id }}
+                      <span v-if="c.rsvp === 'falar-com-equipe'"> · pediu para falar com a equipe</span>
+                      <span v-if="c.comprou"> · <b>comprou</b></span>
+                    </p>
+                  </div>
+                  <span class="cv-selo" :class="seloDoConvite(c.situacao).classe">{{ seloDoConvite(c.situacao).texto }}</span>
+                </div>
+                <div class="cv-acoes">
+                  <button v-for="g in gestosDaConvidada(c)" :key="g.gesto" class="btn"
+                          :disabled="marcando === c.id" @click="marcar(e, c, g.gesto)">{{ g.rotulo }}</button>
+                </div>
+                <p v-if="erroDeMarcar[c.id]" class="cv-nota cv-nota-erro">{{ erroDeMarcar[c.id] }}</p>
+              </li>
+            </ul>
           </template>
         </section>
 
@@ -343,6 +426,13 @@
  * atribuição de venda — nunca para decidir quais linhas aparecem. Quem decide
  * isso é `filtrar()`, sobre o que já voltou. Ver `filtros.js`.
  *
+ * ⚠️ T11 (22/09/2026): o encontro ganhou SITUAÇÃO (agendado → realizado…,
+ * com motivo quando cai), e "Ver quem foi" virou a lista de CONVIDADAS — a
+ * equipe inclui quem convidou, e a gerente marca convite e presença pelo
+ * celular. Presença passa por `vessel_situacao_do_atendimento`, a MESMA porta
+ * da Central de Atendimentos: duas portas para a mesma presença seriam duas
+ * regras de "veio".
+ *
  * ⚠️ ARQUIVADA PRECISA DE RE-FETCH, NÃO DE FILTRO: a função de conta já chega
  * SEM as arquivadas (`p_incluir_arquivadas` nasce `false`). Só quando a
  * situação escolhida é "Só arquivadas" ou "Todas, inclusive arquivadas" a
@@ -357,17 +447,20 @@ import BarraDeLista from './barra-de-lista.vue'
 import { estado, hasPermission } from '../../compartilhado/controle-de-login-e-usuario.js'
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../../compartilhado/conectar-no-banco-de-dados.js'
 import { classificarErro } from '../../compartilhado/classificar-erro.js'
-import { enderecoDoConvite, dataHoraLegivel, problemasDoEncontro } from './enderecos-publicos.js'
+import { enderecoDoConvite, dataHoraLegivel, dataLegivel, problemasDoEncontro } from './enderecos-publicos.js'
 import {
   proporcao, taxaEscrita, margemEscrita, emPorcento, emReais, janelaEscrita,
 } from './estatistica.js'
 import { filtrar, FILTRO_VAZIO, precisaDoBanco } from './filtros.js'
 import {
   mensagemDeEditar, mensagemDeArquivar, mensagemDeTemGente, mensagemDeApagar,
-  seloDoEncontro, rotuloDeArquivar, rsvpLegivel, confirmouLegivel,
-  compareceuLegivel, comprouLegivel, paraCampoDatetimeLocal,
-  podeExecutarAcao, calcularConjunto,
+  rotuloDeArquivar, paraCampoDatetimeLocal, podeExecutarAcao, calcularConjunto,
 } from './private-edit-regras.js'
+import {
+  STATUS_DO_ENCONTRO, precisaDeMotivo, seloDoStatus, mensagemDeSituacaoDoEncontro,
+  seloDoConvite, gestosDaConvidada, problemasDaConvidada, mensagemDeConvidar,
+  mensagemDeMarcar, telefoneLegivel, avisoDos45Dias, proximaDataPermitidaDaLista,
+} from './t11-regras.js'
 import { paiDaTela, ROTULO_DO_PAI } from './navegacao.js'
 
 const router = useRouter()
@@ -426,9 +519,22 @@ const subtitulo = computed(() => {
 
 /* Cada uma é uma proporção de verdade: cada convidada responde ou não, diz sim
  * ou não, vai ou não. Por isso o intervalo de Wilson se aplica. */
-const taxaResposta = (e) => proporcao(e.responderam, e.vagas)
-const taxaSim = (e) => proporcao(e.disseram_sim, e.responderam)
-const taxaPresenca = (e) => proporcao(e.compareceram, e.disseram_sim)
+// ⚠️ T11: sobre as CONVIDADAS, não as vagas — ver `calcularConjunto`.
+const taxaResposta = (e) => proporcao(e.responderam, e.convidadas)
+// ⚠️ T11: sobre quem CONFIRMOU (inclusive quem faltou), não sobre o "sim" do
+// convite — a mesma régua do placar e de `calcularConjunto`.
+const taxaPresenca = (e) => proporcao(e.compareceram, e.confirmadas)
+
+const doisDigitos = (n) => String(n).padStart(2, '0')
+const hojeLocal = (() => {
+  const d = new Date()
+  return `${d.getFullYear()}-${doisDigitos(d.getMonth() + 1)}-${doisDigitos(d.getDate())}`
+})()
+
+// ⚠️ OS 45 DIAS SÃO AVISO, NÃO TRAVA: o banco não recusa. A conta sai da lista
+// que a tela já tem (`proximaDataPermitidaDaLista`, testada).
+const avisoDaCadencia = computed(() =>
+  avisoDos45Dias(proximaDataPermitidaDaLista(encontros.value, novo.stylist), novo.quando))
 
 function cabecalho() {
   const token = estado.currentSession?.access_token
@@ -447,8 +553,12 @@ async function chamar(funcao, corpo) {
   return r.json()
 }
 
-async function carregar() {
-  carregando.value = true
+// ⚠️ `silencioso`: depois de marcar presença, a lista se atualiza SEM virar
+// "Carregando…". Na porta da loja, marcando uma convidada atrás da outra, a
+// tela piscando e fechando o bloco a cada toque seria inusável.
+async function carregar(opcoes) {
+  const silencioso = opcoes?.silencioso === true
+  if (!silencioso) carregando.value = true
   erro.value = null
   try {
     if (!estado.currentSession?.access_token) {
@@ -467,6 +577,21 @@ async function carregar() {
     ])
     encontros.value = lista || []
     stylists.value = quem || []
+    // O que está gravado mudou: os rascunhos de situação voltam ao banco.
+    // ⚠️ NASCEM AQUI, e não durante o desenho: escrever em estado reativo no
+    // meio do render faz o Vue redesenhar de novo.
+    for (const k of Object.keys(rascunhosDaSituacao)) delete rascunhosDaSituacao[k]
+    for (const e of encontros.value) {
+      rascunhosDaSituacao[e.codigo] = {
+        status: e.status || 'agendado',
+        realizadoEm: e.realizado_em || '',
+        motivo: e.motivo || '',
+        observacoes: e.observacoes || '',
+      }
+      if (!formulariosDeConvidar[e.codigo]) {
+        formulariosDeConvidar[e.codigo] = { nome: '', whatsapp: '', email: '', tocado: false }
+      }
+    }
   } catch (e) {
     erro.value = classificarErro(e)
   } finally {
@@ -663,7 +788,11 @@ async function verQuemFoi(e) {
   if (convidadasAbertas.value === e.codigo) { convidadasAbertas.value = null; return }
   convidadasAbertas.value = e.codigo
   if (convidadas[e.codigo] || convidadasVazias[e.codigo]) return // já tem, não busca de novo
-  carregandoConvidadas.value = e.codigo
+  await buscarConvidadas(e)
+}
+
+async function buscarConvidadas(e, opcoes) {
+  if (opcoes?.silencioso !== true) carregandoConvidadas.value = e.codigo
   convidadasErro[e.codigo] = false
   try {
     // ⚠️ MESMA JANELA (P_DIAS) da conta do topo — R14: a régua da receita e a
@@ -683,6 +812,110 @@ async function verQuemFoi(e) {
     convidadasErro[e.codigo] = true
   } finally {
     carregandoConvidadas.value = null
+  }
+}
+
+// ── a situação do encontro (T11) ─────────────────────────────────────────────
+const rascunhosDaSituacao = reactive({})
+const gravandoSituacao = ref(null)
+const erroDaSituacao = reactive({})
+
+const SEM_RASCUNHO = Object.freeze({ status: 'agendado', realizadoEm: '', motivo: '', observacoes: '' })
+function situacaoDe(e) {
+  return rascunhosDaSituacao[e.codigo] || SEM_RASCUNHO
+}
+
+function situacaoMudou(e) {
+  const r = situacaoDe(e)
+  return r.status !== (e.status || 'agendado') || (r.realizadoEm || '') !== (e.realizado_em || '')
+    || (r.motivo || '') !== (e.motivo || '') || (r.observacoes || '') !== (e.observacoes || '')
+}
+
+async function gravarSituacao(e) {
+  const r = situacaoDe(e)
+  erroDaSituacao[e.codigo] = ''
+  if (precisaDeMotivo(r.status) && !String(r.motivo || '').trim()) {
+    erroDaSituacao[e.codigo] = mensagemDeSituacaoDoEncontro('sem_motivo')
+    return
+  }
+  gravandoSituacao.value = e.codigo
+  try {
+    const resp = await chamar('vessel_private_edit_situacao', {
+      p_codigo: e.codigo,
+      p_status: r.status,
+      p_realizado_em: r.status === 'realizado' ? (r.realizadoEm || null) : null,
+      p_motivo: precisaDeMotivo(r.status) ? r.motivo : null,
+      // ⚠️ String vazia APAGA a observação no banco; nula não mexe. Aqui o
+      // campo sempre vai como está, então apagar o texto apaga de verdade.
+      p_observacoes: r.observacoes ?? '',
+    })
+    if (!resp?.ok) { erroDaSituacao[e.codigo] = mensagemDeSituacaoDoEncontro(resp?.situacao); return }
+    await carregar({ silencioso: true })
+  } catch {
+    erroDaSituacao[e.codigo] = mensagemDeSituacaoDoEncontro('erro_de_rede')
+  } finally {
+    gravandoSituacao.value = null
+  }
+}
+
+// ── incluir convidada (T11) ──────────────────────────────────────────────────
+const formulariosDeConvidar = reactive({})
+const convidando = ref(null)
+const respostaDoConvidar = reactive({})
+
+const SEM_FORMULARIO = Object.freeze({ nome: '', whatsapp: '', email: '', tocado: false })
+function convidarDe(e) {
+  return formulariosDeConvidar[e.codigo] || SEM_FORMULARIO
+}
+
+async function convidar(e) {
+  const f = convidarDe(e)
+  f.tocado = true
+  respostaDoConvidar[e.codigo] = null
+  if (problemasDaConvidada(f).length) return
+  convidando.value = e.codigo
+  try {
+    const r = await chamar('vessel_convidar_para_encontro', {
+      p_codigo: e.codigo, p_nome: f.nome, p_whatsapp: f.whatsapp, p_email: f.email || null,
+    })
+    if (!r?.ok) {
+      respostaDoConvidar[e.codigo] = { ok: false, texto: mensagemDeConvidar(r?.situacao) }
+      return
+    }
+    respostaDoConvidar[e.codigo] = {
+      ok: true,
+      texto: r.situacao === 'ja_estava' ? mensagemDeConvidar('ja_estava')
+        : `${f.nome.trim()} entrou na lista como convidada nº ${r.id}.`,
+    }
+    Object.assign(f, { nome: '', whatsapp: '', email: '', tocado: false })
+    await Promise.all([buscarConvidadas(e, { silencioso: true }), carregar({ silencioso: true })])
+  } catch {
+    respostaDoConvidar[e.codigo] = { ok: false, texto: mensagemDeConvidar('erro_de_rede') }
+  } finally {
+    convidando.value = null
+  }
+}
+
+// ── marcar convite e presença (T11) ──────────────────────────────────────────
+const marcando = ref(null)
+const erroDeMarcar = reactive({})
+
+async function marcar(e, c, gesto) {
+  marcando.value = c.id
+  erroDeMarcar[c.id] = ''
+  try {
+    // ⚠️ DUAS PORTAS, CADA UMA COM O SEU DADO: o convite (enviado / sim / não)
+    // em `vessel_convite_marcar`; a presença (veio / não veio) na porta da
+    // Central de Atendimentos, que carimba e descarimba a hora de chegada.
+    const r = ['realizado', 'no_show'].includes(gesto)
+      ? await chamar('vessel_situacao_do_atendimento', { p_id: c.id, p_situacao: gesto })
+      : await chamar('vessel_convite_marcar', { p_id: c.id, p_marca: gesto })
+    if (!r?.ok) { erroDeMarcar[c.id] = mensagemDeMarcar(r?.situacao); return }
+    await Promise.all([buscarConvidadas(e, { silencioso: true }), carregar({ silencioso: true })])
+  } catch {
+    erroDeMarcar[c.id] = mensagemDeMarcar('erro_de_rede')
+  } finally {
+    marcando.value = null
   }
 }
 
