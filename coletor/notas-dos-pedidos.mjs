@@ -53,7 +53,52 @@ async function pedidosAlterados(token, dataInicial, dataFinal) {
     todos.push(...arr);
     if (arr.length < 100) break;
   }
-  return todos.filter(p => p?.situacao?.id === SITUACAO_ATENDIDO);
+  // ⚠️ DEVOLVE OS DOIS LADOS, e isto é o conserto de 22/09/2026.
+  // Até hoje esta função jogava fora o que não era "atendido" — e era por isso
+  // que pedido CANCELADO continuava contado como venda nos painéis: ele entrava
+  // em `bling_pedido_nota` enquanto era venda, e nunca mais era revisitado.
+  // Medido no dia: a Gestão à Vista mostrava R$ 6.900 para 21/09 porque o
+  // pedido 2680 (cancelado) estava na tabela ao lado do 2682, os dois de
+  // R$ 3.450 — a mesma venda da Luiza Maria Carvalho, emitida três vezes.
+  //
+  // A busca é por data de ALTERAÇÃO, então o pedido que muda de estado aparece
+  // aqui sozinho. Só faltava não descartá-lo.
+  return {
+    atendidos: todos.filter(p => p?.situacao?.id === SITUACAO_ATENDIDO),
+    naoSaoMaisVenda: todos.filter(p => p?.situacao?.id !== SITUACAO_ATENDIDO),
+  };
+}
+
+/**
+ * Tira da tabela os pedidos que deixaram de ser venda.
+ *
+ * ⚠️ SÓ APAGA O QUE O BLING DISSE EXPLICITAMENTE QUE NÃO É MAIS VENDA. Nunca
+ * por ausência: pedido que não veio na resposta pode ser falha de rede, e
+ * apagar venda boa é pior que guardar venda cancelada.
+ *
+ * ⚠️ E APAGA, em vez de marcar: a tabela não tem coluna de situação, e os dois
+ * painéis que a leem (Gestão à Vista e Análise de Vendas) não filtram nada.
+ * Marcar exigiria mexer nas duas telas e em quem mais venha a ler; apagar
+ * conserta todo mundo de uma vez. Não se perde história: a linha é derivada do
+ * Bling, e se o pedido voltar a ser venda a rodada seguinte o traz de volta.
+ */
+async function apagarOsQueNaoSaoMaisVenda(pedidos, previa) {
+  if (!pedidos.length) return 0;
+  const ids = pedidos.map(p => p.id).filter(Boolean);
+  if (!ids.length) return 0;
+  if (previa) return ids.length;
+  let apagados = 0;
+  for (let i = 0; i < ids.length; i += 200) {
+    const lote = ids.slice(i, i + 200);
+    const r = await fetch(
+      `${REST}/bling_pedido_nota?pedido_id=in.(${lote.join(',')})`,
+      { method: 'DELETE', headers: { ...sb, Prefer: 'return=representation' } });
+    if (!r.ok) {
+      throw new Error(`delete bling_pedido_nota -> ${r.status} ${(await r.text()).slice(0, 200)}`);
+    }
+    apagados += ((await r.json().catch(() => [])) || []).length;
+  }
+  return apagados;
 }
 
 // ── Pedidos atendidos de um período, pela data do pedido (usado no backfill) ──
@@ -180,8 +225,14 @@ async function main() {
     const de = dia(new Date(hoje.getTime() - dias * 864e5));
     const ate = dia(hoje);
     console.log(`→ Pedidos mexidos entre ${de} e ${ate}`);
-    const pedidos = await pedidosAlterados(token, de, ate);
-    console.log(`  ${pedidos.length} pedidos atendidos na janela`);
+    const { atendidos: pedidos, naoSaoMaisVenda } = await pedidosAlterados(token, de, ate);
+    console.log(`  ${pedidos.length} pedidos atendidos na janela`
+      + ` · ${naoSaoMaisVenda.length} em outra situação`);
+    const tirados = await apagarOsQueNaoSaoMaisVenda(naoSaoMaisVenda, previa);
+    if (tirados) {
+      console.log(`  ⚠️ ${tirados} pedido(s) DEIXARAM de ser venda e saíram da tabela`
+        + `${previa ? ' (prévia: nada foi apagado)' : ''}`);
+    }
     const indice = await indiceDeNotas(blingProxy, token, dia(new Date(hoje.getTime() - (dias + 40) * 864e5)), ate, console.log);
     const r = await linhasDosPedidos(token, pedidos, indice, console.log);
     console.log(`  ${r.comNota} com nota · ${r.semNota} sem nota · ${r.buscadasUmaAUma} buscadas uma a uma · ${r.pendentes.length} pendente(s) · ${r.naoAbriu} pedido(s) que não abriram`);
