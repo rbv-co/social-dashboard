@@ -643,3 +643,44 @@ test('D4 · reserva USADA pode ser arquivada — o carro saiu e voltou (21/09/20
   assert.equal(p.arquivar.pode, false)
   assert.equal(p.arquivar.motivo, 'ainda-em-aberto')
 })
+
+test('D4 · reserva APROVADA que venceu sem o carro sair também sai da lista (21/09/2026)', () => {
+  // "as 4 reservas vencidas pode limpar" — dono, 21/09/2026. Elas nunca foram
+  // encerradas: o prazo passou e o carro não saiu.
+  const vencida = reserva({
+    situacao: 'aprovada',
+    // Relativo ao relógio do teste: data cravada envelhece e a prova passa a
+    // medir o calendário, não a regra.
+    retirada_prevista: daqui(-48), devolucao_prevista: daqui(-24),
+  })
+  const a = acoesDaReserva({ requisicao: vencida, temPermissaoAprovar: true, agoraIso: AGORA })
+  assert.equal(a.arquivar.pode, true)
+})
+
+test('D4 · reserva aprovada AINDA VÁLIDA continua presa à lista', () => {
+  // É o caso do Caio com o KWID até 30/09: arquivar a reserva que está
+  // segurando um carro esconderia justamente o que precisa estar à vista.
+  const a = acoesDaReserva({ requisicao: reserva(), temPermissaoAprovar: true, agoraIso: AGORA })
+  assert.equal(a.arquivar.pode, false)
+  assert.equal(a.arquivar.motivo, 'ainda-em-aberto')
+})
+
+test('D4 · aprovada vencida que VIROU VIAGEM não se arquiva por vencimento', () => {
+  // Se o carro saiu, quem encerra a reserva é a devolução — e aí ela vira
+  // `usada`, que já tem o seu próprio caminho. Arquivar pelo prazo aqui
+  // esconderia uma viagem que pode estar aberta.
+  const comViagem = reserva({
+    situacao: 'aprovada', uso_id: 'u1',
+    retirada_prevista: daqui(-48), devolucao_prevista: daqui(-24),
+  })
+  const a = acoesDaReserva({ requisicao: comViagem, temPermissaoAprovar: true, agoraIso: AGORA })
+  assert.equal(a.arquivar.pode, false)
+})
+
+test('D4 · pendente NUNCA arquiva, nem vencida', () => {
+  const p = acoesDaReserva({
+    requisicao: reserva({ situacao: 'pendente', retirada_prevista: daqui(-48), devolucao_prevista: daqui(-24) }),
+    temPermissaoAprovar: true, agoraIso: AGORA,
+  })
+  assert.equal(p.arquivar.pode, false, 'pedido por decidir não some da fila')
+})

@@ -167,12 +167,26 @@ export function acoesDaReserva({ requisicao, temPermissaoAprovar, agoraIso } = {
    * sido decidida — o pior destino possível pra um pedido. A trava de verdade
    * está no gatilho da migration 047; isto aqui só evita oferecer o botão. */
   const jaArquivada = !!r.arquivada_em;
+  /* VENCIDA: o prazo passou e o carro nunca saiu com esta reserva. Ela não foi
+   * usada e ninguém a encerrou — e sem isto ela fica na lista para sempre,
+   * porque não existe um "encerrar como não usada". Sem hora de devolução não
+   * dá pra dizer que venceu, e aí ela continua à vista. */
+  const fim = ms(r.devolucao_prevista);
+  const venceu = fim !== null && agora > fim && !virouViagem;
   // `usada` entrou em 21/09/2026. Ela é o fim NORMAL de uma reserva — o carro
   // saiu, rodou e voltou —, e ficar de fora desta lista era o que prendia a
   // tela: das 14 reservas medidas naquele dia, 7 estavam `usada` e não tinham
   // como sair da lista, nunca. A queixa do dono foi "não consigo limpar as
   // reservas que já foram".
-  const acabou = ['recusada', 'cancelada', 'revogada', 'usada'].includes(r.situacao);
+  //
+  // A APROVADA VENCIDA entrou no mesmo dia, quando ele disse "as 4 reservas
+  // vencidas pode limpar". Ela é a outra metade das 11 presas.
+  //
+  // ⚠️ Esta lista tem uma CÓPIA NO BANCO, no gatilho `frota_checar_arquivamento`
+  // (migration 053), e é ela que manda de verdade: mudar só aqui faz a tela
+  // oferecer um botão que o banco recusa. Mexeu numa, mexa na outra.
+  const acabou = ['recusada', 'cancelada', 'revogada', 'usada'].includes(r.situacao)
+    || (r.situacao === 'aprovada' && venceu);
 
   let arquivar;
   if (!temPermissaoAprovar) arquivar = semPermissao();
