@@ -107,17 +107,35 @@ export function trechosDeConsumo(abastecimentos) {
   return trechos;
 }
 
-/** O consumo do carro: o trecho mais novo e a média de todos. Nulo enquanto não
- *  houver dois cheios — a tela diz "ainda não dá para calcular", nunca um zero. */
+/** O consumo do carro: o trecho mais novo e a média — do MESMO combustível do
+ *  trecho mais novo (D37). Nulo enquanto não houver dois cheios — a tela diz
+ *  "ainda não dá para calcular", nunca um zero. */
 export function consumoDoVeiculo(abastecimentos) {
   const trechos = trechosDeConsumo(abastecimentos);
   if (!trechos.length) return null;
-  const soma = trechos.reduce((t, x) => t + x.kmPorLitro, 0);
+  const recente = trechos[trechos.length - 1];
+  /* A MÉDIA É DO MESMO COMBUSTÍVEL do trecho mais novo (D37). Somar etanol com
+   * gasolina inventa uma piora que não existe: etanol rende ~30% menos por
+   * litro, e um flex que alterna teria a média puxada para baixo sem nada ter
+   * acontecido com o carro. `trechos` continua vindo INTEIRO — quem quiser ver
+   * o histórico todo tem ele na mão. */
+  const mesmos = trechos.filter((t) => t.combustivel === recente.combustivel);
+  const soma = mesmos.reduce((total, t) => total + t.kmPorLitro, 0);
   return {
-    kmPorLitro: trechos[trechos.length - 1].kmPorLitro,
-    media: soma / trechos.length,
+    kmPorLitro: recente.kmPorLitro,
+    media: soma / mesmos.length,
     trechos,
   };
+}
+
+/** O maior km já registrado num abastecimento deste carro. A QUINTA fonte de
+ *  quilometragem (D40). Pelo MAIOR e não pela data, mesma razão das outras
+ *  quatro: data digitada errada acontece, odômetro só anda pra frente. */
+export function ultimoKmDeAbastecimento(abastecimentos, veiculoId) {
+  const meus = (abastecimentos || [])
+    .filter((a) => a && a.veiculo_id === veiculoId && Number.isFinite(Number(a.km)))
+    .map((a) => Number(a.km));
+  return meus.length ? Math.max(...meus) : null;
 }
 
 const KML_MIN = 3;    // Frouxo de propósito, como os outros pés: pega o dedo

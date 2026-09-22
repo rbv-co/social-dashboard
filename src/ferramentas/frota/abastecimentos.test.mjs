@@ -2,6 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   precoPorLitro, problemasDoAbastecimento, trechosDeConsumo, consumoDoVeiculo, avisosDeConsumo,
+  ultimoKmDeAbastecimento,
 } from './abastecimentos.js'
 
 const bom = {
@@ -152,4 +153,37 @@ test('D39 · o aviso olha só o carro pedido', () => {
     { ...ab(1000, 30, 4, { dia: 1 }), veiculo_id: 'v2' },
   ]
   assert.equal(avisosDeConsumo(a, 'v2').length, 0, 'v2 não tem trecho fechado')
+})
+
+test('o maior km de abastecimento do carro, no molde de ultimoKmDeRevisao', () => {
+  const lista = [
+    { veiculo_id: 'v1', km: 36000 }, { veiculo_id: 'v1', km: 36900 },
+    { veiculo_id: 'v2', km: 99999 }, { veiculo_id: 'v1', km: null },
+  ]
+  assert.equal(ultimoKmDeAbastecimento(lista, 'v1'), 36900, 'pelo MAIOR: odômetro só anda pra frente')
+  assert.equal(ultimoKmDeAbastecimento(lista, 'v3'), null)
+  assert.equal(ultimoKmDeAbastecimento(null, 'v1'), null)
+})
+
+test('D37 · a média é do MESMO combustível do trecho mais novo', () => {
+  // Três trechos: dois de gasolina (10 e 12 km/l) e um de etanol (7 km/l) no
+  // meio. A média de gasolina é 11 — o etanol não entra.
+  const c = consumoDoVeiculo([
+    ab(36000, 30, 4, { dia: 1 }),
+    ab(36400, 40, 4, { dia: 5 }),                                  // gasolina, 10 km/l
+    ab(36750, 50, 4, { dia: 9, combustivel: 'ETANOL' }),           // ponta trocada: descartado
+    ab(37100, 50, 4, { dia: 13, combustivel: 'ETANOL' }),          // etanol, 7 km/l
+    ab(37500, 40, 4, { dia: 17, combustivel: 'GASOLINA' }),        // ponta trocada: descartado
+    ab(38100, 50, 4, { dia: 21, combustivel: 'GASOLINA' }),        // gasolina, 12 km/l
+  ])
+  assert.equal(c.kmPorLitro, 12, 'o mais novo é o de gasolina')
+  assert.equal(c.media, 11, 'média só dos dois de gasolina: (10 + 12) / 2')
+  assert.equal(c.trechos.length, 3, 'o histórico continua vindo inteiro')
+})
+
+test('D37 · com um combustível só, a média não muda de comportamento', () => {
+  const c = consumoDoVeiculo([
+    ab(36000, 30, 4, { dia: 1 }), ab(36400, 40, 4, { dia: 5 }), ab(36900, 50, 4, { dia: 9 }),
+  ])
+  assert.equal(c.media, 10, '(10 + 10) / 2')
 })

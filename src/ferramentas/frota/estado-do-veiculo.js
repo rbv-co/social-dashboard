@@ -6,6 +6,8 @@
  * é por isso que a aba "Alertas" nasceu vazia: o número que alimenta o alerta
  * nunca chega. */
 
+import { ultimoKmDeAbastecimento } from './abastecimentos.js';
+
 export const NIVEIS_TANQUE = ['Reserva', '1/4', '2/4', '3/4', 'Cheio'];
 
 /** O ponteiro do tanque como a pessoa lê no painel. */
@@ -75,7 +77,7 @@ export function ultimoUsoFechado(usos, veiculoId) {
  * Monta a linha da tela para um veículo: onde está, com quem, KM e tanque.
  * Não inventa nada: campo sem resposta volta nulo, e a tela mostra travessão.
  */
-export function estadoDoVeiculo(veiculo, usos, fichas, revisoes) {
+export function estadoDoVeiculo(veiculo, usos, fichas, revisoes, abastecimentos) {
   const aberto = usoAberto(usos, veiculo.id);
   const fechado = ultimoUsoFechado(usos, veiculo.id);
   // O KM mais alto que se conhece. QUATRO fontes: a última devolução, a saída de
@@ -92,6 +94,10 @@ export function estadoDoVeiculo(veiculo, usos, fichas, revisoes) {
     aberto && aberto.km_saida,
     ultimoHodometro(fichas, veiculo.id),
     ultimoKmDeRevisao(revisoes, veiculo.id),
+    // A QUINTA (21/09/2026): quem abastece toda semana passa a alimentar o
+    // alerta de revisão sem digitar nada. `abastecimentos` é OPCIONAL pelo
+    // mesmo motivo que `revisoes` é — a Edge não tem a lista à mão.
+    ultimoKmDeAbastecimento(abastecimentos, veiculo.id),
   ].filter(Number.isInteger);
   const km = kms.length ? Math.max(...kms) : null;
   // O tanque também vem do registro mais recente que tiver informado.

@@ -330,5 +330,29 @@ test('data impossível é recusada, não tratada como vazia', () => {
   assert.match(p[0], /não entendi|inválida|confira/i)
 })
 
+/* ── O abastecimento como QUINTA fonte de quilometragem (D40) ─────────────── */
+
+test('D40 · o abastecimento é a QUINTA fonte de quilometragem', () => {
+  // O ganho de graça: quem abastece toda semana alimenta o alerta de revisão
+  // sem digitar nada em lugar nenhum.
+  const v = { id: 'v1', situacao: 'ativo' }
+  const usos = [{ veiculo_id: 'v1', saida_em: '2026-08-01', volta_em: '2026-08-02', km_volta: 36000 }]
+  const abast = [{ veiculo_id: 'v1', km: 36900, litros: 40, tanque_depois: 4 }]
+  assert.equal(estadoDoVeiculo(v, usos, [], [], abast).km, 36900)
+})
+
+test('D40 · entre as cinco fontes vale o MAIOR, não a mais nova', () => {
+  const v = { id: 'v1', situacao: 'ativo' }
+  const usos = [{ veiculo_id: 'v1', saida_em: '2026-09-01', volta_em: '2026-09-02', km_volta: 37500 }]
+  const abast = [{ veiculo_id: 'v1', km: 36900, litros: 40, tanque_depois: 4 }]
+  assert.equal(estadoDoVeiculo(v, usos, [], [], abast).km, 37500)
+})
+
+test('D40 · chamar sem os abastecimentos continua funcionando', () => {
+  // Mesmo molde do `revisoes` opcional: a Edge não tem essa lista à mão.
+  const v = { id: 'v1', situacao: 'ativo' }
+  assert.equal(estadoDoVeiculo(v, [], []).km, null)
+})
+
 
 
