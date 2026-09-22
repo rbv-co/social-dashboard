@@ -617,6 +617,164 @@ git commit -m "feat(frota): o abastecimento vira a quinta fonte de quilometragem
 
 ---
 
+### Tarefa 4b: O tanque atual e o aviso de duplicata
+
+⚠️ **Estas duas regras estavam na spec (D40 item 2 e D38b) e a primeira versão
+deste plano não tinha tarefa para nenhuma das duas.** Achado na auto-revisão,
+conferindo a spec seção por seção contra as tarefas.
+
+**Arquivos:**
+- Modificar: `src/ferramentas/frota/abastecimentos.js`
+- Modificar: `src/ferramentas/frota/estado-do-veiculo.js`
+- Modificar: `src/ferramentas/frota/abastecimentos.test.mjs`
+- Modificar: `src/ferramentas/frota/estado-do-veiculo.test.mjs`
+
+**Interfaces:**
+- Produz: `tanqueMaisRecente(abastecimentos, usos, veiculoId) -> number|null` e
+  `abastecimentoRecente(abastecimentos, veiculoId, agoraIso, horas) -> objeto|null`.
+  A Tarefa 6 usa as duas na tela.
+
+- [ ] **Passo 1: Escrever os testes que falham**
+
+```js
+import { tanqueMaisRecente, abastecimentoRecente } from './abastecimentos.js'
+
+test('D40 · o tanque vem do registro MAIS RECENTE entre abastecer e devolver', () => {
+  // Quem abasteceu hoje sabe mais sobre o tanque do que quem devolveu semana
+  // passada. Hoje só a devolução informa, e em 7 das 25 viagens.
+  const usos = [{ veiculo_id: 'v1', volta_em: '2026-09-10T18:00:00Z', tanque_quartos: 1 }]
+  const abast = [{ veiculo_id: 'v1', abastecido_em: '2026-09-20T12:00:00Z', tanque_depois: 4 }]
+  assert.equal(tanqueMaisRecente(abast, usos, 'v1'), 4)
+})
+
+test('D40 · devolução mais nova que o abastecimento vence', () => {
+  const usos = [{ veiculo_id: 'v1', volta_em: '2026-09-21T18:00:00Z', tanque_quartos: 1 }]
+  const abast = [{ veiculo_id: 'v1', abastecido_em: '2026-09-20T12:00:00Z', tanque_depois: 4 }]
+  assert.equal(tanqueMaisRecente(abast, usos, 'v1'), 1)
+})
+
+test('D40 · sem nenhum dos dois, o tanque é NULO — travessão, nunca zero', () => {
+  assert.equal(tanqueMaisRecente([], [], 'v1'), null)
+  assert.equal(tanqueMaisRecente(null, null, 'v1'), null)
+})
+
+test('D38b · o abastecimento das últimas 12 horas é achado, para a tela avisar', () => {
+  const agora = '2026-09-21T20:00:00Z'
+  const lista = [{ veiculo_id: 'v1', abastecido_em: '2026-09-21T17:20:00Z', litros: 41.3, total_centavos: 25000 }]
+  const achado = abastecimentoRecente(lista, 'v1', agora, 12)
+  assert.ok(achado, 'três horas atrás tem de ser achado')
+  assert.equal(achado.litros, 41.3)
+})
+
+test('D38b · o de ontem NÃO vira aviso — dois no mesmo dia acontecem de verdade', () => {
+  const agora = '2026-09-21T20:00:00Z'
+  const lista = [{ veiculo_id: 'v1', abastecido_em: '2026-09-20T08:00:00Z' }]
+  assert.equal(abastecimentoRecente(lista, 'v1', agora, 12), null)
+  assert.equal(abastecimentoRecente([], 'v1', agora, 12), null)
+})
+```
+
+E em `estado-do-veiculo.test.mjs`:
+
+```js
+test('D40 · o tanque da linha passa a olhar o abastecimento', () => {
+  const v = { id: 'v1', situacao: 'ativo' }
+  const usos = [{ veiculo_id: 'v1', saida_em: '2026-09-01', volta_em: '2026-09-10T18:00:00Z', km_volta: 36000, tanque_quartos: 1 }]
+  const abast = [{ veiculo_id: 'v1', abastecido_em: '2026-09-20T12:00:00Z', km: 36900, litros: 40, tanque_depois: 4 }]
+  const e = estadoDoVeiculo(v, usos, [], [], abast)
+  assert.equal(e.tanque, 4)
+  assert.equal(e.precisaAbastecer, false, 'tanque cheio não pede combustível')
+})
+```
+
+- [ ] **Passo 2: Rodar e ver falhar**
+
+```bash
+node --test src/ferramentas/frota/abastecimentos.test.mjs src/ferramentas/frota/estado-do-veiculo.test.mjs
+```
+Esperado: FALHA — `tanqueMaisRecente is not a function`.
+
+- [ ] **Passo 3: Implementar**
+
+Em `abastecimentos.js`:
+
+```js
+/** O nível do tanque pelo registro MAIS RECENTE — abastecimento ou devolução
+ *  (D40). Nulo quando nenhum dos dois informou: travessão, nunca zero, que
+ *  seria "Reserva". */
+export function tanqueMaisRecente(abastecimentos, usos, veiculoId) {
+  const candidatos = [];
+  for (const a of abastecimentos || []) {
+    if (!a || a.veiculo_id !== veiculoId) continue;
+    const t = Date.parse(a.abastecido_em);
+    if (Number.isFinite(t) && Number.isInteger(Number(a.tanque_depois))) {
+      candidatos.push({ quando: t, nivel: Number(a.tanque_depois) });
+    }
+  }
+  for (const u of usos || []) {
+    if (!u || u.veiculo_id !== veiculoId) continue;
+    const t = Date.parse(u.volta_em || u.saida_em);
+    if (Number.isFinite(t) && Number.isInteger(u.tanque_quartos)) {
+      candidatos.push({ quando: t, nivel: u.tanque_quartos });
+    }
+  }
+  if (!candidatos.length) return null;
+  candidatos.sort((a, b) => b.quando - a.quando);
+  return candidatos[0].nivel;
+}
+
+/** O abastecimento deste carro nas últimas `horas`, para a tela avisar antes de
+ *  a pessoa digitar (D38b). Duplicata NÃO é barrada: dois abastecimentos no
+ *  mesmo dia acontecem de verdade, e uma trava recusaria o registro legítimo
+ *  com cara de erro do sistema. */
+export function abastecimentoRecente(abastecimentos, veiculoId, agoraIso, horas = 12) {
+  const agora = Date.parse(agoraIso || new Date().toISOString());
+  if (!Number.isFinite(agora)) return null;
+  const limite = agora - horas * 3600 * 1000;
+  const achados = (abastecimentos || [])
+    .filter((a) => {
+      if (!a || a.veiculo_id !== veiculoId) return false;
+      const t = Date.parse(a.abastecido_em);
+      return Number.isFinite(t) && t <= agora && t >= limite;
+    })
+    .sort((a, b) => Date.parse(b.abastecido_em) - Date.parse(a.abastecido_em));
+  return achados[0] || null;
+}
+```
+
+Em `estado-do-veiculo.js`, trocar o cálculo do tanque:
+
+```js
+import { ultimoKmDeAbastecimento, tanqueMaisRecente } from './abastecimentos.js';
+```
+
+```js
+  // O TANQUE passa a olhar as duas fontes (D40). Era só `ultimo` (o uso aberto
+  // ou o último fechado), e 18 das 25 viagens voltaram sem informar.
+  const tanqueDosUsos = ultimo && Number.isInteger(ultimo.tanque_quartos) ? ultimo.tanque_quartos : null;
+  const tanque = tanqueMaisRecente(abastecimentos, usos, veiculo.id) ?? tanqueDosUsos;
+```
+
+⚠️ O `??` e não `||`: `0` é Reserva, um nível legítimo, e `||` o trocaria pelo
+valor antigo em silêncio.
+
+- [ ] **Passo 4: Rodar e ver passar**
+
+```bash
+npm test
+```
+Esperado: suíte inteira passando, total maior que o da Tarefa 4.
+
+- [ ] **Passo 5: Commit**
+
+```bash
+git add src/ferramentas/frota/abastecimentos.js src/ferramentas/frota/abastecimentos.test.mjs \
+        src/ferramentas/frota/estado-do-veiculo.js src/ferramentas/frota/estado-do-veiculo.test.mjs
+git commit -m "feat(frota): o tanque atual vem do registro mais recente, e o aviso de duplicata"
+```
+
+---
+
 ### Tarefa 5: O botão do motorista
 
 **Arquivos:**
