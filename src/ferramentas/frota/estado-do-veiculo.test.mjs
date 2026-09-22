@@ -365,3 +365,15 @@ test('D40 · o tanque da linha passa a olhar o abastecimento', () => {
   assert.equal(e.tanque, 4)
   assert.equal(e.precisaAbastecer, false, 'tanque cheio não pede combustível')
 })
+
+test('D40 · Reserva (0) do abastecimento vence devolução antiga com tanque cheio — trava o `??`', () => {
+  // Prova por mutação (revisão): trocar o `??` por `||` no cálculo do tanque
+  // faz este teste FALHAR, porque `0 || tanqueDosUsos` descarta a Reserva e
+  // volta pro valor antigo. É exatamente o caso que o `??` protege.
+  const v = { id: 'v1', situacao: 'ativo' }
+  const usos = [{ veiculo_id: 'v1', saida_em: '2026-09-01', volta_em: '2026-09-05T18:00:00Z', tanque_quartos: 4 }]
+  const abast = [{ veiculo_id: 'v1', abastecido_em: '2026-09-20T12:00:00Z', tanque_depois: 0 }]
+  const e = estadoDoVeiculo(v, usos, [], [], abast)
+  assert.equal(e.tanque, 0, 'a Reserva do abastecimento mais novo vence a devolução antiga')
+  assert.equal(e.precisaAbastecer, true, 'é isto que o motorista vê na tela')
+})

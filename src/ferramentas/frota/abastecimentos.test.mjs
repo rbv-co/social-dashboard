@@ -223,3 +223,11 @@ test('D38b · o de ontem NÃO vira aviso — dois no mesmo dia acontecem de verd
   assert.equal(abastecimentoRecente(lista, 'v1', agora, 12), null)
   assert.equal(abastecimentoRecente([], 'v1', agora, 12), null)
 })
+
+test('D40 · Reserva (0) do abastecimento mais novo vence devolução antiga com tanque cheio', () => {
+  // Mesma prova, direto na função pura: `0` tem de vencer por ser mais
+  // recente, e não pode ser confundido com "não informou".
+  const usos = [{ veiculo_id: 'v1', volta_em: '2026-09-05T18:00:00Z', tanque_quartos: 4 }]
+  const abast = [{ veiculo_id: 'v1', abastecido_em: '2026-09-20T12:00:00Z', tanque_depois: 0 }]
+  assert.equal(tanqueMaisRecente(abast, usos, 'v1'), 0)
+})
