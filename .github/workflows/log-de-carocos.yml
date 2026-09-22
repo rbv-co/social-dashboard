@@ -1,8 +1,16 @@
-name: Log de caroços (o que PARECE errado)
+name: Log de caroços (resgate manual)
 
-# TODO DIA, às 09h18 UTC (06h18 em Campinas): roda as conferências e sobe a
-# planilha "Log de caroços.xlsx" no Zoho, em
-# 04. Vessel Brasil / 17. Marketing / Acompanhamento.
+# ⚠️ ESTE ROBÔ NÃO TEM MAIS HORÁRIO. Ele só roda quando alguém aperta o botão.
+#
+# Até 22/09/2026 ele montava o log uma vez por dia. Nesse dia o dono pediu que
+# fosse AO VIVO, e quem faz isso agora é a edge `vessel-log-de-carocos`, chamada
+# pelo cron do banco de 10 em 10 minutos. GitHub Actions não tem como ser ao
+# vivo — o agendamento atrasa de 2 a 3 horas neste repositório.
+#
+# ⚠️ O HORÁRIO SAIU PARA NÃO EXISTIREM DOIS ESCRITORES no mesmo arquivo: com os
+# dois no automático, o último a subir vence e a planilha fica pulando entre
+# duas versões. Ele fica aqui como resgate, pelo mesmo código e pela mesma
+# função do banco (`public.vessel_carocos()`).
 #
 # O QUE É: pedido do dono em 21/09/2026 — "um log de possíveis erros, o que
 # PARECE ser erro, caroço no angu, pode ser do Bling e de outras coisas da
@@ -21,8 +29,6 @@ name: Log de caroços (o que PARECE errado)
 # atrasa de 2 a 3 horas) e não colide com nenhum dos outros onze agendamentos
 # deste repositório.
 on:
-  schedule:
-    - cron: '18 9 * * *'
   workflow_dispatch:
     inputs:
       ensaio:

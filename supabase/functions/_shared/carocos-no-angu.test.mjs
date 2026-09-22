@@ -2,9 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   CONFERENCIAS, ABAS, montarAbasDoLog, TETO_POR_CONFERENCIA, GRAVE, OLHAR, SABER,
-} from './carocos-no-angu.mjs';
-import { montarXlsx } from '../../supabase/functions/_shared/planilha-xlsx.js';
-import { abasDoXlsx } from '../../supabase/functions/_shared/ler-xlsx.mjs';
+} from './carocos-no-angu.js';
+import { montarXlsx } from './planilha-xlsx.js';
+import { abasDoXlsx } from './ler-xlsx.mjs';
 
 const vazio = () => Object.fromEntries(CONFERENCIAS.map((c) => [c.chave, []]));
 
@@ -31,19 +31,16 @@ test('toda conferência está bem formada', () => {
     assert.ok(c.titulo, `${c.chave}: sem título`);
     assert.ok(ABAS.includes(c.aba), `${c.chave}: aba "${c.aba}" não existe`);
     assert.ok([GRAVE, OLHAR, SABER].includes(c.gravidade), `${c.chave}: gravidade estranha`);
-    assert.ok(c.sql?.includes('select'), `${c.chave}: sem consulta`);
     assert.ok(c.oQueFazer && c.oQueFazer.length > 20, `${c.chave}: sem o que fazer`);
   }
 });
 
-test('⚠️ toda consulta devolve as quatro colunas que a aba usa', () => {
-  // A aba lê `quem`, `quando`, `detalhe` e `valor`. Consulta que esqueça uma
-  // delas geraria célula vazia sem erro nenhum — o log mentiria em silêncio.
+test('⚠️ nenhuma conferência guarda consulta aqui — o SQL mora no banco', () => {
+  // Em 22/09/2026 as consultas foram para `public.vessel_carocos()`, porque a
+  // edge (Deno) não abre conexão de Postgres. Deixar uma sobrando aqui faria
+  // alguém editar a errada e não entender por que o log não mudou.
   for (const c of CONFERENCIAS) {
-    for (const coluna of ['quem', 'quando', 'detalhe', 'valor']) {
-      assert.match(c.sql, new RegExp(`\\b(as\\s+)?${coluna}\\b`),
-        `${c.chave}: a consulta não devolve "${coluna}"`);
-    }
+    assert.equal(c.sql, undefined, `${c.chave} ainda tem SQL no JavaScript`);
   }
 });
 
