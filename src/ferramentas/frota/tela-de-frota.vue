@@ -1717,9 +1717,49 @@ const abastecimentos = ref([])
 // a mentira mais cara que uma tela conta (PADRAO, item 9).
 const falhaAbastecimentos = ref(false)
 
-/* Os combustíveis que a bomba oferece, para o carro que não declarou o dele.
- * Maiúsculas porque é assim que `frota_veiculos.combustivel` já guarda. */
+/* Os combustíveis que a bomba oferece, para o carro que não declarou o dele —
+ * ou declarou algo que este arquivo não sabe ler. Maiúsculas porque é assim que
+ * `frota_veiculos.combustivel` já guarda. */
 const COMBUSTIVEIS = ['GASOLINA', 'ALCOOL', 'DIESEL', 'GNV']
+
+/* O QUE O CARRO ACEITA, dito como o CARRO — e o que a bomba entrega são outras
+ * palavras. Esta tabela traduz de um pro outro.
+ *
+ * MEDIDO NO BANCO (22/09/2026), e é por isso que ela existe: `combustivel` tem
+ * QUATRO valores nos 14 carros, não dois. O comentário da migration 022 só cita
+ * dois, e programar por ele deixava 11 dos 14 carros errados.
+ *
+ *   'ALCOOL/GASOLINA'    5 carros
+ *   'FLEX'               4 carros   ← o que quebrava tudo
+ *   'GASOLINA'           3 carros
+ *   'GASOLINA/ELETRICO'  2 carros
+ *
+ * 'FLEX' não é combustível: é o carro que aceita dois. Gravado como está,
+ * `abastecimentos.js` compara `'FLEX' === 'FLEX'` e diz que etanol e gasolina
+ * são a mesma coisa — o trecho fecha, e o app acusa "o carro piorou 30%" numa
+ * troca de combustível que ele mesmo deixou de enxergar. É a morte silenciosa
+ * do D37, nos 4 carros.
+ *
+ * ELÉTRICO e HÍBRIDO devolvem lista VAZIA de propósito: o que não entra em
+ * litros não é opção num formulário cujos campos obrigatórios são litros e
+ * reais. */
+const SINONIMOS_DE_COMBUSTIVEL = [
+  // Basta o PEDAÇO: `.test()` casa em qualquer posição, então este `FLEX`
+  // pega 'FLEX', 'TOTAL FLEX' e 'FLEX FUEL' sem grupo opcional nenhum. (Um
+  // `FLEX(...)` aqui também faria o guarda `nome-que-nao-existe` acusar uma
+  // função que não existe — ele lê por expressão regular, não por analisador.)
+  [/FLEX|BICOMBUSTIVEL/, ['ALCOOL', 'GASOLINA']],
+  [/ALCOOL|ETANOL/, ['ALCOOL']],
+  [/GASOLINA/, ['GASOLINA']],
+  [/DIESEL/, ['DIESEL']],
+  [/GNV|GAS NATURAL/, ['GNV']],
+  [/ELETRICO|HIBRIDO|PLUG/, []],
+]
+
+/** Sem acento e em maiúsculas: 'Álcool' e 'ELÉTRICO' têm de cair na mesma
+ *  linha da tabela que 'ALCOOL' e 'ELETRICO'. */
+const semAcento = (t) => String(t || '').normalize('NFD')
+  .replace(/[̀-ͯ]/g, '').toUpperCase().trim()
 
 const abast = ref(null)          // { } enquanto a ficha está aberta
 const formAbast = reactive({
@@ -1736,24 +1776,42 @@ const agoraNoCampo = () =>
 const veiculoDoAbast = computed(() =>
   veiculos.value.find((v) => v.id === formAbast.veiculoId) || null)
 
-/* Os combustíveis DESTE carro, um de cada vez.
+/* Os combustíveis DESTE carro, um de cada vez — o que a bomba pode ter posto.
  *
- * `frota_veiculos.combustivel` guarda o par do flex numa string só
- * ('ALCOOL/GASOLINA'), e gravar a string inteira mataria o D37 calado: o
- * consumo se compara DENTRO do mesmo combustível, e um flex que alternasse
- * seria comparado consigo mesmo como se nunca tivesse trocado — exatamente o
- * "carro que piorou 30%" que esta coluna existe pra não inventar. */
+ * O consumo se compara DENTRO do mesmo combustível (D37), então gravar o que
+ * está na ficha do carro ('ALCOOL/GASOLINA', 'FLEX') mataria a comparação em
+ * silêncio. NORMALIZA ANTES DE DIVIDIR, pela tabela acima: 'FLEX' não tem
+ * barra nenhuma pra dividir, e era esse o buraco nos 4 carros.
+ *
+ * Carro que não declarou nada — ou declarou só o que não entra em litros, como
+ * 'ELETRICO' — cai na lista padrão da bomba. Lista padrão não é palpite: são
+ * quatro opções e NENHUMA vem escolhida, então a pessoa responde. */
 const combustiveisDoCarro = computed(() => {
-  const doCarro = String((veiculoDoAbast.value && veiculoDoAbast.value.combustivel) || '')
-    .split('/').map((s) => s.trim().toUpperCase()).filter(Boolean)
-  return [...new Set([...doCarro, ...COMBUSTIVEIS])]
+  const bruto = semAcento(veiculoDoAbast.value && veiculoDoAbast.value.combustivel)
+  const achados = []
+  for (const pedaco of bruto.split('/')) {
+    const p = pedaco.trim()
+    if (!p) continue
+    const regra = SINONIMOS_DE_COMBUSTIVEL.find(([teste]) => teste.test(p))
+    // Palavra que a tabela não conhece é IGNORADA, e não gravada como está:
+    // um combustível inventado fecharia trecho de consumo só consigo mesmo,
+    // que é o defeito do 'FLEX' com outro nome.
+    if (regra) achados.push(...regra[1])
+  }
+  const doCarro = [...new Set(achados)]
+  return doCarro.length ? doCarro : [...COMBUSTIVEIS]
 })
 
 /* QUEM ADMINISTRA ESCOLHE QUALQUER CARRO (D38), e quem não tem carro na mão
  * também precisa escolher (D38c) — o botão aparece pra todo mundo justamente
  * pra capturar quem abasteceu o carro emprestado. A lista é a mesma das duas
  * abas, já ordenada. */
-const carrosParaAbastecer = computed(() => linhas.value.map((l) => l.veiculo))
+// Só o `alienado` ("fora da frota") fica de fora, o MESMO filtro da lista de
+// Revisões desta tela: carro vendido ou devolvido não se abastece mais, e
+// oferecê-lo é convidar a lançar o cupom no carro errado. `em_manutencao` e
+// `inativo` continuam — são carros da empresa, e carro parado abastece.
+const carrosParaAbastecer = computed(() =>
+  linhas.value.filter((l) => l.veiculo.situacao !== 'alienado').map((l) => l.veiculo))
 const escolheOCarro = computed(() => !meuCarroFixo.value || ehGestorDaFrota.value)
 
 /** Litros como a bomba escreve: três casas, vírgula ou ponto. Texto que não dá
@@ -1884,8 +1942,21 @@ function abrirAbastecimento(veiculo) {
     // D38b: nasce AGORA, e quem administra pode puxar para trás.
     abastecidoEm: agoraNoCampo(),
   })
-  formAbast.combustivel = combustiveisDoCarro.value[0] || ''
+  formAbast.combustivel = combustivelJaRespondido()
   erroAbast.value = ''
+}
+
+/* SÓ PRÉ-PREENCHE QUANDO NÃO HÁ O QUE PERGUNTAR — ou seja, quando o carro
+ * aceita UM combustível só. Com dois, deixar um escolhido é a tela respondendo
+ * pela pessoa: um `<select>` já preenchido é um campo que quem está na bomba
+ * não tem motivo pra tocar, e o que ficasse lá (o primeiro da string, não o
+ * mais provável) viraria o combustível gravado. Metade dos abastecimentos de
+ * carro flex sairia errada, e o app acusaria uma piora que não aconteceu.
+ *
+ * Vazio, quem grava é a pessoa: a `barra` tranca o botão até ela responder. */
+function combustivelJaRespondido() {
+  const opcoes = combustiveisDoCarro.value
+  return opcoes.length === 1 ? opcoes[0] : ''
 }
 
 /* Trocar de carro troca o combustível sugerido junto. Sem isto, quem escolhe o
@@ -1893,7 +1964,7 @@ function abrirAbastecimento(veiculo) {
  * e o consumo passaria a comparar combustíveis diferentes calado. */
 watch(() => formAbast.veiculoId, () => {
   if (!abast.value) return
-  formAbast.combustivel = combustiveisDoCarro.value[0] || ''
+  formAbast.combustivel = combustivelJaRespondido()
 })
 
 function fecharAbastecimento() {
@@ -5621,6 +5692,11 @@ onMounted(async () => {
                  sem esta resposta, o alerta de "está bebendo mais" viraria
                  alarme falso na primeira troca. -->
             <select v-model="formAbast.combustivel">
+              <!-- A OPÇÃO EM BRANCO É O PORTÃO. Sem ela o campo nunca fica
+                   vazio, e a trava "Diga qual combustível entrou" logo acima
+                   vira código morto: o carro flex gravaria o primeiro da lista
+                   caladinho. -->
+              <option value="">— qual entrou? —</option>
               <option v-for="c in combustiveisDoCarro" :key="c" :value="c">{{ c }}</option>
             </select>
           </label>
