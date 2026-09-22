@@ -126,11 +126,19 @@ function comprasPerto(pedidos, pessoaId, quando) {
   if (!d || !pessoaId) return [];
   const [a, m, x] = d.split('-').map(Number);
   const limite = new Date(Date.UTC(a, m - 1, x + DIAS_DA_VENDA)).toISOString().slice(0, 10);
-  return pedidos.filter((p) => String(p.pessoa_id) === String(pessoaId)
+  return pedidos.filter((p) => ehVenda(p) && String(p.pessoa_id) === String(pessoaId)
     && soDia(p.data_do_pedido) >= d && soDia(p.data_do_pedido) <= limite);
 }
 
 const naoEhTeste = (l) => !l.teste;
+
+// ⚠️ SÓ A SITUAÇÃO 9 É VENDA. O Bling tem vários estados; 12 é cancelado, e
+// `null` quer dizer que o pedido sumiu de lá. Até 21/09/2026 a planilha contava
+// os três como venda, porque o robô nunca voltava para conferir — medido, eram
+// 2 pedidos cancelados valendo R$ 3.850 no espelho. A Gestão à Vista sempre
+// filtrou assim (ela lê o Bling ao vivo); agora a planilha diz o mesmo número.
+const ATENDIDO = 9;
+const ehVenda = (p) => Number(p?.situacao_id) === ATENDIDO;
 
 // ⚠️ A ORDEM DAS LINHAS É DA ABA, NÃO DA CONSULTA (leia o aviso em CONSULTAS).
 // Texto em ordem alfabética resolve datas do Postgres porque elas vêm sempre no
@@ -218,6 +226,11 @@ const INSTRUCOES = [
   'Stylists — cada stylist, com o link dela e quantas clientes trouxe',
   'Private Edits — cada encontro, com o link do convite e quem compareceu',
   'Beauty Sessions — cada sessão, com o endereço do QR e o salão parceiro',
+  '',
+  bloco('PEDIDO CANCELADO SOME DAQUI SOZINHO'),
+  'A aba Vendas mostra só pedido com situação "atendido" no Bling.',
+  'Quando a loja cancela ou refaz um pedido, o robô percebe e ele sai da planilha.',
+  'É o mesmo critério da Gestão à Vista, então os dois números batem.',
   '',
   bloco('ABA VAZIA NÃO É DEFEITO'),
   'Aba sem nenhuma linha quer dizer que esse dado ainda não existe no sistema.',
@@ -419,7 +432,8 @@ export function montarAbas(d) {
         { titulo: 'Valor que entrou', tipo: 'dinheiro', largura: 17 },
         { titulo: 'Contado pelo dia de', largura: 17 },
       ],
-      linhas: [...d.pedidos].sort(maisNovoPrimeiro('data_da_venda')).map((p) => {
+      linhas: [...d.pedidos].filter(ehVenda)
+        .sort(maisNovoPrimeiro('data_da_venda')).map((p) => {
         const pecas = pecasDoPedido.get(String(p.id)) ?? [];
         const tabela = Number(p.total_produtos) || 0;
         const entrou = Number(p.receita_liquida) || 0;
