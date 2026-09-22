@@ -40,6 +40,12 @@ import {
   ordenarFila, quando, reservaParaPegar, reservaSegurando, meusPedidos,
 } from './requisicoes.js'
 import { revisoesDoVeiculo, resumoDeRevisoes, problemasDoItem, avisoAoDesativar, ordenarCarrosPorUrgencia } from './revisoes.js'
+// O ABASTECIMENTO (21/09/2026). A regra inteira mora em abastecimentos.js,
+// testada: a tela só pergunta, mostra e grava. Ver o desenho D35–D40.
+import {
+  precoPorLitro, problemasDoAbastecimento, consumoDoVeiculo,
+  avisosDeConsumo, abastecimentoRecente,
+} from './abastecimentos.js'
 import { linkDoWhatsapp, telefoneLegivel, porQueNaoDaLink } from '../../compartilhado/whatsapp.js'
 // Trava a rolagem do fundo enquanto um destes 6 modais estiver aberto (bronca
 // do dono: "abro um modal e a tela atrás continua rolando"). `v-trava-rolagem`
@@ -247,8 +253,18 @@ const meuChecklistHoje = computed(() => {
   return fichaDeHoje.value ? 'feito' : 'falta'
 })
 
+/* O CONSUMO DO MEU CARRO, pro estado embaixo do botão "Abasteci o carro".
+ * Nulo enquanto não houver dois tanques cheios no mesmo carro (D36) — e aí o
+ * botão não escreve número nenhum, que é a regra desta tela: "não sei" não
+ * vira zero. `meuCarroFixo` é o MESMO carro que o botão vai abrir (D38). */
+const consumoDoMeuCarro = computed(() => {
+  if (!meuCarroFixo.value) return null
+  return consumoDoVeiculo(abastecimentos.value.filter((a) => a.veiculo_id === meuCarroFixo.value.id))
+})
+
 const botoesMotorista = computed(() => botoesDoMotorista({
   painel: painel.value, checklistDeHoje: meuChecklistHoje.value, nomeDoMeuCarro: meuCarroNome.value,
+  consumoDoMeuCarro: consumoDoMeuCarro.value,
 }))
 // As duas permissões vão EXPLÍCITAS: os botões substituíram controles que já
 // eram protegidos — o "+ Acrescentar veículo" era `v-if="pode('criar')"`, e o
@@ -388,6 +404,9 @@ const gavetasDaGestao = computed(() => gavetasVisiveis([
 async function irPara(acao) {
   if (acao === 'reservar') return abrirPedido('')
   if (acao === 'acrescentar') return abrirVeiculoNovo()
+  // ABRE FICHA, não cria tela: o abastecimento segue a mesma regra dos outros
+  // botões rápidos (D33).
+  if (acao === 'abasteci') return abrirAbastecimento()
   const ancoras = {
     'meu-checklist': 'fr-ancora-checklist',
     'preciso-carro': 'fr-ancora-livres',
@@ -973,7 +992,7 @@ function voltar() { router.push({ name: 'gestao-interna' }) }
 async function carregar() {
   carregando.value = true
   falha.value = ''
-  const [v, ua, uh, p, pe, pf, se, q, pl, rv, bn, ci, cc, cf, catv] = await Promise.all([
+  const [v, ua, uh, p, pe, pf, se, q, pl, rv, bn, ci, cc, cf, catv, ab] = await Promise.all([
     sbClient.from('frota_veiculos').select('*').order('nome'),
     // frota_uso vem em DUAS consultas de propósito, e não numa só com limite.
     //
@@ -1040,6 +1059,11 @@ async function carregar() {
     // de propósito, em vez de listar bem de qualquer categoria (cadeira,
     // notebook…) como se fosse candidato a virar carro.
     sbClient.from('patrimonio_categorias').select('id,nome').ilike('nome', '%ve%cul%').limit(1),
+    // OS ABASTECIMENTOS (D40). Entram no mesmo molde das irmãs `frota_revisoes`
+    // e `frota_checklist`: leitura que pode falhar sozinha sem derrubar a tela.
+    // A ordem é a do índice da tabela — do mais novo para o mais velho —, que é
+    // como todo mundo que lê esta lista a quer.
+    sbClient.from('frota_abastecimentos').select('*').order('abastecido_em', { ascending: false }),
   ])
   // As duas metades de frota_uso são igualmente obrigatórias: sem as abertas a
   // tela não sabe quem está com cada carro; sem as fechadas ela não sabe o KM.
@@ -1067,6 +1091,13 @@ async function carregar() {
   requisicoes.value = q && !q.error ? (q.data || []) : []
   plano.value = pl && !pl.error ? (pl.data || []) : []
   revisoes.value = rv && !rv.error ? (rv.data || []) : []
+  // Mesmo padrão tolerante das irmãs: sem abastecimento a Frota ainda serve
+  // pra pegar e devolver carro — só o consumo e a quinta fonte de KM somem.
+  abastecimentos.value = ab && !ab.error ? (ab.data || []) : []
+  // ...mas a FALHA não vira lista vazia calada: a ficha diz que não conseguiu
+  // ler o histórico, senão "este é o primeiro abastecimento deste carro" seria
+  // a tela mentindo (PADRAO, item 9).
+  falhaAbastecimentos.value = !!(ab && ab.error)
   bensVeiculo.value = bn && !bn.error ? (bn.data || []) : []
   categoriaVeiculoId.value = catv && !catv.error && catv.data && catv.data[0] ? catv.data[0].id : null
   // Mesmo padrão tolerante a falha: sem o checklist a Frota ainda serve pra
@@ -1218,8 +1249,11 @@ const linhas = computed(() => ordenarEstados(
     const quem = quemEstaComOCarro(dono, usos.value, pessoas.value)
     // `revisoes` é a QUARTA fonte de KM (D29): sem ela, 8 dos 10 carros ficam
     // sem quilometragem conhecida e a aba Revisões não tem o que calcular.
+    // `abastecimentos` é a QUINTA fonte de KM (D40) e a mais recente do tanque:
+    // quem abastece toda semana alimenta o alerta de revisão sem digitar nada.
     const e = estadoDoVeiculo(
       { ...dono, pessoa_nome: quem.pessoaNome }, usos.value, fichas.value, revisoes.value,
+      abastecimentos.value,
     )
     // `porPosse` diz que quem está com o carro está por EMPRÉSTIMO, não por
     // viagem — e é ele que acende os botões de posse na Gestão. O caso real: a
@@ -1658,6 +1692,247 @@ async function confirmar() {
     return
   }
   fecharFicha()
+  carregar()
+}
+
+/* ── ABASTECIMENTO (D35 a D40) ────────────────────────────────────────────────
+ *
+ * A primeira fonte de LITRO e DINHEIRO da Frota. Medido em 21/09/2026: o tanque
+ * só era perguntado na devolução, e 18 das 25 viagens voltaram sem resposta.
+ *
+ * TODA a regra mora em `abastecimentos.js`, testada. Aqui a tela só pergunta,
+ * mostra a conta na hora e grava — e é de propósito: preço por litro, trecho de
+ * consumo e o que barra ou avisa são coisas que precisam de teste, e teste não
+ * alcança template.
+ *
+ * A ficha segue o MOLDE da de retirada/devolução, o mesmo `.fr-ficha-fundo` com
+ * `v-trava-rolagem` e camada própria. Nada é pendurado em `document.body`: o
+ * CSS desta tela é `scoped`, e um modal fora dela sai sem posição, sem fundo e
+ * sem camada — foi assim que a ficha da pessoa despencou como texto cru no pé
+ * da página (PADRAO, item 4). */
+
+const abastecimentos = ref([])
+// A leitura FALHOU é diferente de "este carro nunca foi abastecido". Sem esta
+// separação, permissão faltando viraria "primeiro abastecimento deste carro" —
+// a mentira mais cara que uma tela conta (PADRAO, item 9).
+const falhaAbastecimentos = ref(false)
+
+/* Os combustíveis que a bomba oferece, para o carro que não declarou o dele.
+ * Maiúsculas porque é assim que `frota_veiculos.combustivel` já guarda. */
+const COMBUSTIVEIS = ['GASOLINA', 'ALCOOL', 'DIESEL', 'GNV']
+
+const abast = ref(null)          // { } enquanto a ficha está aberta
+const formAbast = reactive({
+  veiculoId: '', km: '', valor: '', litros: '', tanque: '',
+  combustivel: '', posto: '', abastecidoEm: '',
+})
+const erroAbast = ref('')
+const gravandoAbast = ref(false)
+
+/** Agora, arredondado pro minuto: é o que o <input datetime-local> aceita. */
+const agoraNoCampo = () =>
+  new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)
+
+const veiculoDoAbast = computed(() =>
+  veiculos.value.find((v) => v.id === formAbast.veiculoId) || null)
+
+/* Os combustíveis DESTE carro, um de cada vez.
+ *
+ * `frota_veiculos.combustivel` guarda o par do flex numa string só
+ * ('ALCOOL/GASOLINA'), e gravar a string inteira mataria o D37 calado: o
+ * consumo se compara DENTRO do mesmo combustível, e um flex que alternasse
+ * seria comparado consigo mesmo como se nunca tivesse trocado — exatamente o
+ * "carro que piorou 30%" que esta coluna existe pra não inventar. */
+const combustiveisDoCarro = computed(() => {
+  const doCarro = String((veiculoDoAbast.value && veiculoDoAbast.value.combustivel) || '')
+    .split('/').map((s) => s.trim().toUpperCase()).filter(Boolean)
+  return [...new Set([...doCarro, ...COMBUSTIVEIS])]
+})
+
+/* QUEM ADMINISTRA ESCOLHE QUALQUER CARRO (D38), e quem não tem carro na mão
+ * também precisa escolher (D38c) — o botão aparece pra todo mundo justamente
+ * pra capturar quem abasteceu o carro emprestado. A lista é a mesma das duas
+ * abas, já ordenada. */
+const carrosParaAbastecer = computed(() => linhas.value.map((l) => l.veiculo))
+const escolheOCarro = computed(() => !meuCarroFixo.value || ehGestorDaFrota.value)
+
+/** Litros como a bomba escreve: três casas, vírgula ou ponto. Texto que não dá
+ *  pra ler vira `null` — e aí `problemasDoAbastecimento` BARRA, em vez de a
+ *  tela aceitar e jogar fora (PADRAO, item 9). */
+const emLitros = (txt) => {
+  const limpo = String(txt ?? '').replace(/[lL\s ]/g, '').replace(',', '.')
+  if (!/^\d+(\.\d{1,3})?$/.test(limpo)) return null
+  const n = Number(limpo)
+  return Number.isFinite(n) && n > 0 ? n : null
+}
+const litrosDoAbast = computed(() => emLitros(formAbast.litros))
+
+/* O dinheiro passa pelo MESMO leitor da manutenção (`centavos`), que já
+ * distingue milhar de decimal e devolve VALOR_INVALIDO no que for ambíguo —
+ * em dinheiro, adivinhar entre R$ 12.345,00 e R$ 12,34 erra por mil. */
+const valorIlegivel = computed(() => centavos(formAbast.valor) === VALOR_INVALIDO)
+const totalDoAbast = computed(() => {
+  const c = centavos(formAbast.valor)
+  return (c === VALOR_INVALIDO || c === null) ? null : c
+})
+
+/** A linha viva do cupom: some enquanto faltar um dos dois números. */
+const precoDoLitro = computed(() => precoPorLitro(totalDoAbast.value, litrosDoAbast.value))
+
+const kmConhecidoDoAbast = computed(() => {
+  const l = linhas.value.find((x) => x.veiculo.id === formAbast.veiculoId)
+  return l ? l.km : null
+})
+
+/* O AVISO DE CONSUMO (D39), calculado com o rascunho DENTRO da lista.
+ * O trecho que este registro vai fechar ainda não existe, e avisar depois de
+ * gravar é avisar tarde: o momento em que o número ainda pode ser corrigido é
+ * este. Nada disto vai pro banco — é uma cópia em memória. */
+const avisoDeConsumoDoAbast = computed(() => {
+  const km = inteiro(formAbast.km)
+  const litros = litrosDoAbast.value
+  const tanque = formAbast.tanque === '' ? null : Number(formAbast.tanque)
+  if (!formAbast.veiculoId || !Number.isInteger(km) || litros === null || tanque === null) return []
+  const rascunho = {
+    id: '__rascunho__', veiculo_id: formAbast.veiculoId, km, litros,
+    tanque_depois: tanque, combustivel: formAbast.combustivel,
+    abastecido_em: formAbast.abastecidoEm ? new Date(formAbast.abastecidoEm).toISOString() : null,
+  }
+  return avisosDeConsumo([...abastecimentos.value, rascunho], formAbast.veiculoId)
+})
+
+/* O QUE BARRA E O QUE AVISA (D39). `barra` tranca o botão de gravar; `avisa`
+ * aparece e deixa gravar — recusar o registro do que aconteceu de verdade
+ * ensina a pessoa a não registrar. */
+const problemasDoAbast = computed(() => {
+  const r = problemasDoAbastecimento({
+    km: inteiro(formAbast.km),
+    kmConhecido: kmConhecidoDoAbast.value,
+    litros: litrosDoAbast.value,
+    totalCentavos: totalDoAbast.value,
+    tanqueDepois: formAbast.tanque === '' ? null : Number(formAbast.tanque),
+    abastecidoEm: formAbast.abastecidoEm ? new Date(formAbast.abastecidoEm).toISOString() : null,
+    agoraIso: new Date().toISOString(),
+    // `tanqueDoCarro` fica de fora porque a coluna NÃO EXISTE em
+    // `frota_veiculos` — medido. Inventar uma capacidade aqui transformaria o
+    // aviso de "litros acima do tanque" em alarme falso, e alarme falso ensina
+    // a ignorar o alerta de verdade.
+  })
+  const barra = [...r.barra]
+  // O leitor de dinheiro devolveu "não dá pra ler": a primeira linha já disse
+  // que falta o valor; esta diz POR QUÊ, senão a pessoa digita o mesmo de novo.
+  if (valorIlegivel.value) {
+    barra.push('O que está escrito em "Quanto você pagou" não dá para ler como dinheiro. '
+      + 'Escreva assim: 250,00')
+  }
+  if (formAbast.litros.trim() && litrosDoAbast.value === null) {
+    barra.push('Os litros não dão para ler. Escreva assim: 41,300')
+  }
+  if (!formAbast.veiculoId) barra.push('Escolha em qual carro você abasteceu.')
+  if (!formAbast.combustivel) barra.push('Diga qual combustível entrou.')
+  // O campo de data pode ser APAGADO por quem administra, e `new Date('')` é
+  // uma data inválida que estoura no `.toISOString()` da gravação. Barrar aqui
+  // é o que transforma um erro de JavaScript numa frase que a pessoa resolve.
+  if (!formAbast.abastecidoEm) barra.push('Diga quando você abasteceu.')
+  return { barra, avisa: [...r.avisa, ...avisoDeConsumoDoAbast.value] }
+})
+
+/* O consumo que o carro JÁ tem, com o que está gravado. Nulo enquanto não
+ * houver dois tanques cheios — e aí a ficha DIZ isso (D36), em vez de mostrar
+ * um número chutado. */
+const consumoDoCarroDaFicha = computed(() => {
+  if (!formAbast.veiculoId) return null
+  return consumoDoVeiculo(abastecimentos.value.filter((a) => a.veiculo_id === formAbast.veiculoId))
+})
+
+/* A DUPLICATA (D38b): dois abastecimentos do mesmo carro no mesmo dia
+ * acontecem de verdade — duas bombas, dois motoristas, ida e volta de viagem
+ * longa. Por isso o banco não barra e a tela só AVISA, antes de a pessoa
+ * digitar. Quem está repetindo sem querer vê ali; quem abasteceu de novo mesmo,
+ * segue. */
+const duplicataDoAbast = computed(() => {
+  if (!formAbast.veiculoId) return null
+  return abastecimentoRecente(abastecimentos.value, formAbast.veiculoId, new Date().toISOString(), 12)
+})
+
+const reais = (centavosOuNumero) => Number(centavosOuNumero).toLocaleString('pt-BR',
+  { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+const umaCasa = (n) => Number(n).toFixed(1).replace('.', ',')
+
+/** O cupom da duplicata, dito por extenso. */
+const fraseDaDuplicata = computed(() => {
+  const d = duplicataDoAbast.value
+  if (!d) return ''
+  return `Este carro já foi abastecido em ${quando(d.abastecido_em)} — `
+    + `${Number(d.litros).toLocaleString('pt-BR', { maximumFractionDigits: 3 })} L `
+    + `por R$ ${reais(Number(d.total_centavos) / 100)}. `
+    + 'Se for o mesmo cupom, feche esta ficha; se abasteceu de novo, siga.'
+})
+
+function abrirAbastecimento(veiculo) {
+  subirCamada('abast')
+  // ABRE NO CARRO QUE ESTÁ COM A PESSOA (D38), pela mesma precedência que o
+  // checklist já usa. Sem carro na mão, abre com o seletor vazio (D38c).
+  const alvo = veiculo || meuCarroFixo.value || null
+  abast.value = {}
+  Object.assign(formAbast, {
+    veiculoId: alvo ? alvo.id : '',
+    km: '', valor: '', litros: '', tanque: '', posto: '',
+    // D37: já vem preenchido com o combustível do próprio carro. Só quem troca
+    // precisa tocar no campo.
+    combustivel: '',
+    // D38b: nasce AGORA, e quem administra pode puxar para trás.
+    abastecidoEm: agoraNoCampo(),
+  })
+  formAbast.combustivel = combustiveisDoCarro.value[0] || ''
+  erroAbast.value = ''
+}
+
+/* Trocar de carro troca o combustível sugerido junto. Sem isto, quem escolhe o
+ * carro DEPOIS de abrir a ficha (D38c) gravaria a gasolina do carro anterior —
+ * e o consumo passaria a comparar combustíveis diferentes calado. */
+watch(() => formAbast.veiculoId, () => {
+  if (!abast.value) return
+  formAbast.combustivel = combustiveisDoCarro.value[0] || ''
+})
+
+function fecharAbastecimento() {
+  descerCamada('abast'); abast.value = null; erroAbast.value = ''
+}
+
+async function gravarAbastecimento() {
+  if (gravandoAbast.value || !abast.value) return
+  // `barra` é o portão, e ele fecha aqui também: o `:disabled` do botão é
+  // lembrete, não tranca — teclado e leitor de tela chegam no botão do mesmo
+  // jeito.
+  if (problemasDoAbast.value.barra.length) return
+  gravandoAbast.value = true
+  erroAbast.value = ''
+  const { error } = await sbClient.from('frota_abastecimentos').insert({
+    veiculo_id: formAbast.veiculoId,
+    pessoa_id: euId.value || null,
+    pessoa_nome: euId.value ? nomeDaPessoa(euId.value) : null,
+    abastecido_em: new Date(formAbast.abastecidoEm).toISOString(),
+    km: inteiro(formAbast.km),
+    litros: litrosDoAbast.value,
+    total_centavos: totalDoAbast.value,
+    tanque_depois: Number(formAbast.tanque),
+    combustivel: formAbast.combustivel,
+    posto: formAbast.posto.trim() || null,
+    criado_por: estado.userId || null,
+  })
+  gravandoAbast.value = false
+  if (error) {
+    // A MENSAGEM DO BANCO VAI PRA TELA, inteira. "Não consegui gravar" sozinho
+    // manda a pessoa tentar para sempre sem saber o que está errado — e aqui as
+    // recusas prováveis (permissão, trava de km/litros/tanque) têm nome.
+    erroAbast.value = 'Não consegui gravar o abastecimento. O banco respondeu: '
+      + (error.message || 'sem mensagem.')
+      + ' Nada foi registrado.'
+    return
+  }
+  adminToast('Abastecimento registrado.')
+  fecharAbastecimento()
   carregar()
 }
 
@@ -5253,6 +5528,162 @@ onMounted(async () => {
       </div>
     </div>
 
+    <!-- A FICHA DO ABASTECIMENTO (D35 a D40). Mesmo molde da ficha de retirada:
+         `v-if` no fundo, `v-trava-rolagem`, camada própria e fechar clicando no
+         fundo. Modal e não bloco no card, porque abre do botão rápido da aba
+         Motorista — e quem administra abre pra qualquer carro (D38). -->
+    <div class="fr-ficha-fundo" v-if="abast" v-trava-rolagem
+         :style="{ zIndex: camadas.abast }" @click.self="fecharAbastecimento">
+      <div class="fr-ficha" role="dialog" aria-label="Registrar abastecimento">
+        <div class="fr-ficha-topo">
+          <span class="fr-ficha-titulo">
+            Abasteci o carro<template v-if="veiculoDoAbast"> · {{ veiculoDoAbast.nome }}</template>
+          </span>
+          <button class="fr-fechar" @click="fecharAbastecimento" aria-label="Fechar">✕</button>
+        </div>
+
+        <div class="fr-ficha-corpo">
+          <!-- A LEITURA FALHOU é diferente de "nunca abasteceu". Dizer qual das
+               duas é evita a tela afirmar que este é o primeiro cupom do carro
+               quando na verdade ela não conseguiu ver os anteriores. -->
+          <p class="fr-erro-inline" v-if="falhaAbastecimentos">
+            Não consegui ler os abastecimentos anteriores deste carro. O aviso de repetição e o
+            consumo podem não aparecer por causa disso, e não porque não existam. Você ainda pode
+            registrar este abastecimento.
+          </p>
+
+          <!-- O AVISO DE REPETIÇÃO vem ANTES de qualquer campo (D38b): quem
+               está lançando o mesmo cupom duas vezes descobre agora, não depois
+               de digitar tudo. -->
+          <p class="fr-abast-duplicata" v-if="duplicataDoAbast">{{ fraseDaDuplicata }}</p>
+
+          <!-- QUEM ADMINISTRA ESCOLHE QUALQUER CARRO (D38), e quem não tem
+               carro na mão escolhe o que pegou emprestado (D38c). Quem tem o
+               próprio carro na mão não vê este campo: ele já abriu no carro
+               certo. -->
+          <label class="fr-campo" v-if="escolheOCarro">
+            <span class="fr-lab">Qual carro</span>
+            <select v-model="formAbast.veiculoId">
+              <option value="">— escolha o carro —</option>
+              <option v-for="v in carrosParaAbastecer" :key="v.id" :value="v.id">{{ v.nome }}</option>
+            </select>
+          </label>
+
+          <label class="fr-campo">
+            <span class="fr-lab">KM no painel</span>
+            <input v-model="formAbast.km" type="text" inputmode="numeric">
+            <span class="fr-ajuda">Ex.: 145928</span>
+            <span class="fr-ajuda" v-if="kmConhecidoDoAbast != null">
+              O último KM conhecido deste carro é {{ kmConhecidoDoAbast.toLocaleString('pt-BR') }}.
+            </span>
+          </label>
+
+          <label class="fr-campo">
+            <span class="fr-lab">Quanto você pagou</span>
+            <input v-model="formAbast.valor" type="text" inputmode="decimal" placeholder="250,00">
+            <span class="fr-ajuda">Em reais, como está no cupom.</span>
+          </label>
+
+          <label class="fr-campo">
+            <span class="fr-lab">Quantos litros</span>
+            <input v-model="formAbast.litros" type="text" inputmode="decimal" placeholder="41,300">
+            <span class="fr-ajuda">A bomba dá três casas. Ex.: 41,300</span>
+          </label>
+
+          <!-- A LINHA VIVA DO CUPOM (D35). Só aparece com os dois números na
+               mão: é o número que a pessoa confere contra o papel antes de
+               salvar, e é onde o erro de digitação aparece — não no relatório
+               três semanas depois. -->
+          <p class="fr-abast-preco" v-if="precoDoLitro !== null">
+            R$ {{ reais(precoDoLitro) }} o litro
+          </p>
+
+          <div class="fr-campo">
+            <span class="fr-lab">Como ficou o tanque</span>
+            <!-- A escala que a Frota JÁ usa (NIVEIS_TANQUE), e não uma nova:
+                 duas escalas pra mesma coisa na mesma ferramenta é como o
+                 número do tanque deixa de querer dizer alguma coisa. -->
+            <div class="fr-niveis">
+              <button v-for="(n, i) in NIVEIS_TANQUE" :key="i" type="button" class="fr-nivel"
+                      :class="{ escolhido: formAbast.tanque === String(i) }"
+                      :aria-pressed="formAbast.tanque === String(i)"
+                      @click="formAbast.tanque = String(i)">{{ n }}</button>
+            </div>
+            <span class="fr-ajuda">
+              O consumo se mede de um tanque cheio ao próximo — por isso esta resposta importa.
+            </span>
+          </div>
+
+          <label class="fr-campo">
+            <span class="fr-lab">Combustível</span>
+            <!-- D37: já vem no do próprio carro. Um flex abastecido com etanol
+                 numa vez e gasolina na outra PARECE um carro que piorou 30% —
+                 sem esta resposta, o alerta de "está bebendo mais" viraria
+                 alarme falso na primeira troca. -->
+            <select v-model="formAbast.combustivel">
+              <option v-for="c in combustiveisDoCarro" :key="c" :value="c">{{ c }}</option>
+            </select>
+          </label>
+
+          <label class="fr-campo">
+            <span class="fr-lab">Posto</span>
+            <input v-model="formAbast.posto" type="text" placeholder="opcional">
+          </label>
+
+          <!-- A HORA DO CUPOM, só pra quem administra (D38b): é ela que lança o
+               abastecimento de ontem sem mentir sobre a data. Quem está na bomba
+               agora não precisa de mais um campo na frente. -->
+          <label class="fr-campo" v-if="ehGestorDaFrota">
+            <span class="fr-lab">Quando abasteceu</span>
+            <input v-model="formAbast.abastecidoEm" type="datetime-local">
+            <span class="fr-ajuda">
+              Já vem com a hora de agora. Mude só se estiver lançando um cupom de antes — data no
+              futuro não grava.
+            </span>
+          </label>
+
+          <!-- O CONSUMO DESTE CARRO, ou a frase de por que ainda não dá (D36).
+               Campo sem resposta mostra o motivo, nunca um zero: dividir km por
+               litros sem saber quanto havia no tanque dá um número errado com
+               cara de certo. -->
+          <p class="fr-abast-consumo" v-if="formAbast.veiculoId">
+            <template v-if="consumoDoCarroDaFicha">
+              Este carro vem fazendo {{ umaCasa(consumoDoCarroDaFicha.kmPorLitro) }} km/l no trecho
+              mais recente — média de {{ umaCasa(consumoDoCarroDaFicha.media) }} km/l.
+            </template>
+            <template v-else>
+              Ainda não dá para calcular o consumo deste carro: a conta precisa de dois
+              abastecimentos que tenham deixado o tanque <strong>Cheio</strong>.
+            </template>
+          </p>
+
+          <!-- O QUE AVISA e deixa gravar (D39). Número fora do pé é dedo errado
+               na maioria das vezes, mas não sempre — e um sistema que recusa o
+               registro do que aconteceu de verdade ensina a não registrar. -->
+          <ul class="fr-problemas" v-if="problemasDoAbast.avisa.length">
+            <li v-for="(a, i) in problemasDoAbast.avisa" :key="i">{{ a }}</li>
+          </ul>
+
+          <!-- O QUE BARRA: estes trancam o botão de gravar logo abaixo. -->
+          <ul class="fr-abast-barra" v-if="problemasDoAbast.barra.length">
+            <li v-for="(b, i) in problemasDoAbast.barra" :key="i">{{ b }}</li>
+          </ul>
+
+          <!-- A FALHA AO GRAVAR, com a mensagem do banco. -->
+          <p class="fr-abast-erro" v-if="erroAbast">{{ erroAbast }}</p>
+        </div>
+
+        <div class="fr-ficha-rodape">
+          <button class="fr-btn" @click="fecharAbastecimento">Cancelar</button>
+          <button class="fr-btn primario"
+                  :disabled="gravandoAbast || problemasDoAbast.barra.length > 0"
+                  @click="gravarAbastecimento">
+            {{ gravandoAbast ? 'Gravando…' : 'Registrar abastecimento' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- PASSAR / ENCERRAR A POSSE (D26). Modal e não bloco dentro do card,
          porque abre de DOIS lugares: do "Seu carro" na aba Motorista e de
          qualquer veículo na aba Gestão. -->
@@ -5951,6 +6382,52 @@ onMounted(async () => {
    avisar — não tire este `anywhere` sem também tirar o `clip` de cima. */
 .tela-frota .fr-ajuda{font-family:var(--fonte-principal);font-size:max(9px, calc(11.5px * var(--escala-texto, 1)));color:var(--muted);overflow-wrap:anywhere;}
 .tela-frota .fr-problemas{margin:0;padding:11px 13px 11px 30px;background:color-mix(in srgb,var(--orange,#d97706) 12%,transparent);border:1px solid color-mix(in srgb,var(--orange,#d97706) 34%,transparent);border-radius:10px;font-family:var(--fonte-principal);font-size:max(9px, calc(12.5px * var(--escala-texto, 1)));line-height:1.55;color:var(--text);}
+/* ── A ficha do abastecimento (D35 a D40) ────────────────────────────────────
+   BLOCO NOVO: tamanho de letra sai dos DEGRAUS (--texto-etiqueta/--texto-corpo/
+   --texto-titulo), nunca de um número escolhido no olho, e cor sai de token.
+   As regras antigas desta tela ainda têm número solto — elas vão uma a uma; o
+   que não pode é bloco novo nascer com o defeito. */
+.tela-frota .fr-abast-duplicata{margin:0;padding:10px 12px;font-family:var(--fonte-principal);
+  font-size:var(--texto-corpo);line-height:1.55;color:var(--text);overflow-wrap:anywhere;
+  background:color-mix(in srgb,var(--orange) 10%,var(--surface));
+  border:1px solid color-mix(in srgb,var(--orange) 38%,var(--surface));border-radius:var(--radius-lg);}
+/* A LINHA VIVA DO CUPOM. É o dado que se confere letra por letra contra o
+   papel, então ele vem no degrau de título — não como mais uma linha de corpo
+   perdida entre dois campos. */
+.tela-frota .fr-abast-preco{margin:0;padding:10px 12px;font-family:var(--fonte-dados);
+  font-size:var(--texto-titulo);font-weight:700;line-height:1.2;color:var(--text);
+  text-align:center;overflow-wrap:anywhere;
+  background:color-mix(in srgb,var(--accent) 10%,var(--surface));
+  border:1px solid color-mix(in srgb,var(--accent) 30%,var(--surface));border-radius:var(--radius-lg);}
+/* Os cinco níveis do tanque. `flex-wrap` e não cinco colunas fixas: a 375px,
+   cinco colunas espremeriam "Reserva" a ponto de cortar — e texto não corta
+   nesta casa. Com a base de 92px eles se acomodam em 3+2 no celular e numa
+   linha só no computador. */
+.tela-frota .fr-niveis{display:flex;flex-wrap:wrap;gap:var(--sp-2);}
+.tela-frota .fr-nivel{flex:1 1 92px;min-height:44px;padding:11px 10px;
+  font-family:var(--fonte-principal);font-size:var(--texto-corpo);font-weight:600;
+  border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);
+  color:var(--text);cursor:pointer;touch-action:manipulation;overflow-wrap:anywhere;}
+.tela-frota .fr-nivel:hover{border-color:var(--accent);}
+/* Escolhido pinta com o token e escreve com --sobre-cor: no tema escuro os
+   tokens são CLAROS de propósito, e branco cravado em cima não se lê. */
+.tela-frota .fr-nivel.escolhido{background:var(--accent);border-color:var(--accent);color:var(--sobre-cor);}
+.tela-frota .fr-abast-consumo{margin:0;padding:10px 12px;font-family:var(--fonte-principal);
+  font-size:var(--texto-corpo);line-height:1.55;color:var(--text);overflow-wrap:anywhere;
+  background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-lg);}
+/* O que BARRA, em vermelho: é o que tranca o botão do rodapé. Separado dos
+   avisos (laranja, `.fr-problemas`) de propósito — misturar os dois faria a
+   pessoa procurar qual dos itens está impedindo de gravar. */
+.tela-frota .fr-abast-barra{margin:0;padding:11px 13px 11px 30px;font-family:var(--fonte-principal);
+  font-size:var(--texto-corpo);line-height:1.55;color:var(--text);overflow-wrap:anywhere;
+  background:color-mix(in srgb,var(--red) 10%,var(--surface));
+  border:1px solid color-mix(in srgb,var(--red) 38%,var(--surface));border-radius:var(--radius-lg);}
+/* A mensagem do banco vai inteira pra tela, e ela é comprida e sem espaço:
+   `overflow-wrap:anywhere` é o que impede de ela empurrar o modal pros lados. */
+.tela-frota .fr-abast-erro{margin:0;padding:10px 12px;font-family:var(--fonte-principal);
+  font-size:var(--texto-corpo);line-height:1.55;color:var(--text);overflow-wrap:anywhere;
+  background:color-mix(in srgb,var(--red) 12%,var(--surface));
+  border:1px solid color-mix(in srgb,var(--red) 44%,var(--surface));border-radius:var(--radius-lg);}
 .tela-frota .fr-ficha-rodape{display:flex;gap:9px;padding:13px 15px;border-top:1px solid var(--border);}
 
 @media(min-width:900px){
