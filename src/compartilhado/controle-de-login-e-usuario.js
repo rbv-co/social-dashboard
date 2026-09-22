@@ -1,6 +1,7 @@
 import { reactive } from 'vue'
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './conectar-no-banco-de-dados.js'
-import { classificarErro, ERRO_DE_REDE } from './classificar-erro.js'
+import { classificarErro, ERRO_DE_REDE, CONTA_DESATIVADA } from './classificar-erro.js'
+import { lerPerfil, precisaPerguntarSeDesativou } from './leitura-de-perfil.js'
 
 export const estado = reactive({
   currentSession: null,
@@ -50,6 +51,32 @@ export function limparEstado() {
   estado.erroPerfil = null
 }
 
+/* A segunda pergunta: "eu fui desativado?". É a única que a conta desativada
+ * ainda responde sobre si mesma (migration 055) — não devolve nome, papel nem
+ * a existência de mais ninguém.
+ *
+ * Falha de rede aqui responde `false` de propósito: na dúvida, segue o caminho
+ * de sempre. Acusar desativação por causa de um blip derrubaria gente que não
+ * tem nada a ver com isso — é o mesmo cuidado que fez `carregarPerfil` parar de
+ * rebaixar o super-admin a viewer quando a rede falha. */
+async function contaEstaDesativada(tok) {
+  try {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/minha_conta_esta_desativada`, {
+      method: 'POST',
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${tok}`,
+        'Content-Type': 'application/json',
+      },
+      body: '{}',
+    })
+    if (!r.ok) return false
+    return (await r.json()) === true
+  } catch (e) {
+    return false
+  }
+}
+
 // Carrega o perfil (papel + permissões) da tabela `profiles`.
 // Antes engolia qualquer falha e produzia role='viewer', permissions={} — idêntico
 // ao caminho de sucesso com perfil vazio. Resultado: o super-admin dava F5 num blip
@@ -71,7 +98,22 @@ export async function carregarPerfil(session) {
       estado.erroPerfil = classificarErro(r.status, corpo)
       return { ok: false, erro: estado.erroPerfil }
     }
-    const p = corpo[0] || {}
+    /* LISTA VAZIA TEM DOIS DONOS (21/09/2026). Desde a migration 054 a conta
+     * DESATIVADA não lê nem o próprio perfil — é o que fecha as 46 políticas
+     * que consultam `profiles` direto. A resposta chega igualzinha à de quem
+     * nunca teve perfil, e esse caso é legítimo: duas contas reais entram
+     * assim hoje e recebem o Banco de Arquivos pelo padrão logo abaixo.
+     *
+     * Quem separa as duas é a pergunta ao banco, feita SÓ quando veio vazio.
+     * Sem ela, a Central abriria vazia e calada para quem foi desativado — e
+     * "a tela nunca mente" é regra escrita do padrão da casa. */
+    const leitura = lerPerfil(corpo,
+      precisaPerguntarSeDesativou(corpo) ? await contaEstaDesativada(tok) : false)
+    if (leitura.tipo === 'desativada') {
+      estado.erroPerfil = CONTA_DESATIVADA
+      return { ok: false, erro: CONTA_DESATIVADA }
+    }
+    const p = leitura.perfil || {}
     estado.role = p.role || 'viewer'
     estado.features = p.features || ['banco']
     estado.permissions = p.permissions || {}

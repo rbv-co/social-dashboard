@@ -36,11 +36,22 @@
            Dois motivos MUITO diferentes levam à tela sem cards, e dizer o motivo
            errado é pior que não dizer nada: "você não tem acesso" para quem só teve
            uma falha de rede é mentira, e manda a pessoa cobrar o admin à toa. -->
-      <div v-if="falhouAoCarregarPerfil" class="inicio-vazio">
+      <!-- CONTA DESATIVADA não é falha de carregamento (21/09/2026). O título
+           "não consegui carregar" manda a pessoa recarregar a página a manhã
+           inteira, e o botão "Tentar de novo" promete o que não pode cumprir:
+           nada vai mudar até alguém religar a conta em Administração. Por isso
+           este caso tem título próprio e NENHUM botão — `acao` é nula, e agora
+           a tela respeita isso. -->
+      <div v-if="contaDesativada" class="inicio-vazio">
+        <div class="inicio-vazio-icone" aria-hidden="true">🔒</div>
+        <p class="inicio-vazio-t">Esta conta está desativada.</p>
+        <p class="inicio-vazio-d">{{ estado.erroPerfil.mensagem }}</p>
+      </div>
+      <div v-else-if="falhouAoCarregarPerfil" class="inicio-vazio">
         <div class="inicio-vazio-icone" aria-hidden="true">⚠</div>
         <p class="inicio-vazio-t">Não consegui carregar seus acessos.</p>
         <p class="inicio-vazio-d">{{ estado.erroPerfil.mensagem }}</p>
-        <button class="inicio-vazio-btn" @click="tentarDeNovo">
+        <button class="inicio-vazio-btn" v-if="estado.erroPerfil.acao" @click="tentarDeNovo">
           {{ estado.erroPerfil.acao === 'entrar' ? 'Entrar de novo' : 'Tentar de novo' }}
         </button>
       </div>
@@ -254,6 +265,9 @@ const semNenhumaFerramenta = computed(() =>
 // anterior a preservar, então permissions fica {} e a pessoa cairia no aviso errado
 // — iria cobrar acesso do admin quando o problema era um blip de rede.
 const falhouAoCarregarPerfil = computed(() => !!estado.erroPerfil)
+/* Desativada é o único estado em que não há o que tentar: ver o bloco no
+ * template. Comparado pelo TIPO e não pela mensagem — texto muda, tipo não. */
+const contaDesativada = computed(() => estado.erroPerfil?.tipo === 'conta-desativada')
 
 async function tentarDeNovo() {
   if (estado.erroPerfil?.acao === 'entrar') { router.push({ name: 'login' }); return }

@@ -10,6 +10,17 @@ export const ERRO_DE_REDE = Object.freeze({
   acao: 'tentar',
 })
 
+/* A CONTA FOI DESATIVADA em Administração (21/09/2026).
+ *
+ * Não é falha de rede nem de permissão de uma tela: é a conta inteira. A ação é
+ * nula de propósito — "tentar de novo" não resolve, e "entrar de novo" mandaria
+ * a pessoa bater na porta fechada outra vez. */
+export const CONTA_DESATIVADA = Object.freeze({
+  tipo: 'conta-desativada',
+  mensagem: 'Esta conta foi desativada. Fale com quem administra a Central.',
+  acao: null,
+})
+
 export function classificarErro(status, corpo) {
   const codigo = corpo?.code || ''
 
