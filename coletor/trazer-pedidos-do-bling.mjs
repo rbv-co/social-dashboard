@@ -351,13 +351,23 @@ try {
 
   if (!ensaio) {
     const { rows: [t] } = await cli.query(
-      `select count(*)::int as pedidos,
-              count(*) filter (where pessoa_id is not null)::int as com_pessoa,
-              count(distinct bling_contato_id)::int as compradoras,
-              coalesce(sum(receita_liquida), 0)::numeric(12,2) as liquida
+      // ⚠️ `situacao_id = 9` AQUI TAMBÉM. Este resumo é a última frase que o
+      // robô diz, e ela vira print de conversa. Sem o filtro ele somava os
+      // cancelados e anunciava "R$ 169.525,79 que entraram" com R$ 3.850 que
+      // não entraram — o mesmo defeito que a conferência acabou de consertar no
+      // banco, repetido na frase que conta o resultado dela.
+      `select count(*) filter (where situacao_id = 9)::int as pedidos,
+              count(*) filter (where situacao_id = 9 and pessoa_id is not null)::int as com_pessoa,
+              count(distinct bling_contato_id) filter (where situacao_id = 9)::int as compradoras,
+              coalesce(sum(receita_liquida) filter (where situacao_id = 9), 0)::numeric(12,2) as liquida,
+              count(*) filter (where situacao_id is distinct from 9)::int as nao_sao_venda
          from vessel_pedidos`);
-    console.log(`\nno banco: ${t.pedidos} pedidos, ${t.compradoras} compradoras distintas, `
+    console.log(`\nno banco: ${t.pedidos} vendas, ${t.compradoras} compradoras distintas, `
       + `R$ ${t.liquida} que entraram · ${t.com_pessoa} ligados a alguém que conhecemos`);
+    if (t.nao_sao_venda > 0) {
+      console.log(`          (+ ${t.nao_sao_venda} pedido(s) guardado(s) que NÃO são venda: `
+        + `cancelados ou sumidos do Bling — ficam no histórico e fora de toda conta)`);
+    }
   }
 } finally {
   await cli.end();
