@@ -99,7 +99,7 @@ import { chamarBling, paginasDoBling, ErroDoBling, textoDoAviso } from '../../co
 // tela para poder ser provado sem navegador — ver o comentario do arquivo.
 import { corpoEstaVazio, deveMostrarCarregando, deveEscreverRecado } from './carregamento-da-tela.js'
 import { agruparCanais, estadoDoGrupo, alternarGrupo } from '../../compartilhado/grupo-do-canal.js'
-import { ocultosNoPeriodo } from '../../compartilhado/canal-fechado.js'
+import { ocultosNoPeriodo, semAsLojasFechadas } from '../../compartilhado/canal-fechado.js'
 
 // O grupo de cada canal, lido de bling_lojas junto com o nome (Peça 2).
 let _saGrupoDoCanal={}
@@ -457,9 +457,16 @@ async function loadSalesAnalysisData(period,opcoes){
     // AS TRÊS JANELAS RECEBEM O MESMO RECORTE. Recortar só a atual faria o
     // comparativo ("vs período anterior") medir a loja dela contra a empresa
     // inteira — um número errado com cara de verdade.
-    const pedidos=filtrarPedidos(aj.pedidos,meusCanais);
-    const pedidosPrev=filtrarPedidos(ajPrev.pedidos,meusCanais);
-    const pedidos15=filtrarPedidos(aj15.pedidos,meusCanais);
+    // ⚠️ E A LOJA QUE FECHOU SAI DAS TRÊS TAMBÉM, CADA UMA PELA DATA INICIAL
+    // DELA. Aqui a loja fechada já não entrava por outro caminho: o menu é
+    // montado sem ela e o desenho filtra pelos canais MARCADOS. Só que isso faz
+    // o número depender do menu — bastaria alguém marcar por outro caminho, ou
+    // o padrão do menu mudar, para a loja fechada voltar à soma sem ninguém
+    // perceber. Foi exatamente assim que a Gestão à Vista errou por 13 dias.
+    // Ver `src/compartilhado/canal-fechado.js`.
+    const pedidos=semAsLojasFechadas(filtrarPedidos(aj.pedidos,meusCanais),_saCanaisBrutos,di);
+    const pedidosPrev=semAsLojasFechadas(filtrarPedidos(ajPrev.pedidos,meusCanais),_saCanaisBrutos,diPrev);
+    const pedidos15=semAsLojasFechadas(filtrarPedidos(aj15.pedidos,meusCanais),_saCanaisBrutos,di15);
 
     const allIds=[...new Set([...pedidos,...pedidosPrev,...pedidos15].map(p=>parseInt(p.id)))];
     let pvMap={};let pvQtdMap={};

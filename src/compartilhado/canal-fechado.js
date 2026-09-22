@@ -66,6 +66,47 @@ export function ocultosNoPeriodo(canais, dataInicial) {
 }
 
 /**
+ * Os pedidos SEM os das lojas que já estavam fechadas no período.
+ *
+ * ⚠️ ESTA É A PARTE QUE FALTAVA, E O BURACO DUROU DE 09/09 A 22/09/2026.
+ * `ocultosNoPeriodo` tirava a loja fechada da LISTA e do MENU, e mais nada. O
+ * total no alto da tela continuava somando os pedidos dela, porque ele nasce de
+ * `pedidos.reduce(...)` e ninguém tinha filtrado `pedidos`.
+ *
+ * O resultado na tela do dono, em 22/09/2026: as barras do "Venda por canal"
+ * somavam R$ 28.056 e o número em cima delas dizia R$ 28.997. A diferença de
+ * R$ 941 era a Loja Dom Pedro inteira — inclusive um pedido de teste de R$ 1,01
+ * com nota fiscal autorizada de verdade. Ele olhou a lista, não viu a loja e
+ * comemorou; o dinheiro estava lá.
+ *
+ * ⚠️ POR ISSO O FILTRO MORA AQUI E É APLICADO UMA VEZ SÓ, NA LISTA DE PEDIDOS,
+ * antes de qualquer conta. Filtrar no desenho de cada bloco é o que produziu o
+ * defeito: são oito somas diferentes (total, projeção, ticket, desvio da meta,
+ * ranking por canal, ranking por vendedor, gráfico do dia, comparativo), e
+ * lembrar de filtrar nas oito é exatamente o tipo de coisa que ninguém lembra.
+ *
+ * O período ANTERIOR usa a data inicial DELE, não a desta janela: agosto tem de
+ * continuar com a Loja Dom Pedro dentro, senão o "vs. mês passado" apagaria o
+ * histórico que o dono pediu para manter.
+ *
+ * @param pedidos lista do Bling; cada item tem `loja.id`
+ * @param canais  linhas de `bling_lojas` (precisa de `loja_id` e `fechado_em`)
+ * @param dataInicial `YYYY-MM-DD`, o começo do período na tela
+ */
+export function semAsLojasFechadas(pedidos, canais, dataInicial) {
+  const lista = Array.isArray(pedidos) ? pedidos : []
+  const fora = ocultosNoPeriodo(canais, dataInicial)
+  if (!fora.size) return lista
+  // ⚠️ Pedido SEM loja (`loja` ausente, ou id que não vira número) FICA. Sumir
+  // com venda por falta de cadastro seria esconder dinheiro de verdade por causa
+  // de um dado faltando — o mesmo lado seguro de `canalApareceNoPeriodo`.
+  return lista.filter((p) => {
+    const id = parseInt(p && p.loja && p.loja.id, 10)
+    return Number.isNaN(id) ? true : !fora.has(id)
+  })
+}
+
+/**
  * A data como o dono digita na Config de Admin → `YYYY-MM-DD`.
  * Aceita `31/08/2026`, `31/8/2026` e `2026-08-31`. Vazio devolve `null`, que é
  * REABRIR a loja — e é explícito de propósito.

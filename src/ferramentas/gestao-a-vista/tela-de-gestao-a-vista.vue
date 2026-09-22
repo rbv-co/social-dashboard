@@ -129,7 +129,7 @@ import {
   canaisDoEscopo, estaLimitada, filtrarPedidos, filtrarMapaDeCanais, fraseDoRecorte,
 } from '../../compartilhado/canais-de-venda-permitidos.js'
 import { adminToast } from '../../compartilhado/avisos.js'
-import { ocultosNoPeriodo } from '../../compartilhado/canal-fechado.js'
+import { ocultosNoPeriodo, semAsLojasFechadas } from '../../compartilhado/canal-fechado.js'
 import { filtrarPedidosPorCanal, depositosVisiveis, prepararEstoque, statusSaldo, categoriasDisponiveis, normalizarDepositos, DEPOSITOS_SEMENTE } from './estoque-gv.js'
 import { montarLinhas, posicionarLinhas, alturaComum } from './velocimetro-gv.js'
 import { agruparCanais, estadoDoGrupo, alternarGrupo } from '../../compartilhado/grupo-do-canal.js'
@@ -697,6 +697,22 @@ async function loadGestaoVistaData(period){
       // Loja Sbo. Tivoli", e não há uma palavra em comum entre os dois.
       sbClient.from('fabrica_lojas').select('deposito_id,canal_loja_id').then(r=>r.data||[]).catch(()=>[])
     ]);
+
+    // ⚠️ A LOJA QUE FECHOU SAI DO NÚMERO, E NÃO SÓ DA LISTA.
+    //
+    // Aqui, na LISTA DE PEDIDOS, antes de qualquer soma — e não no desenho de
+    // cada bloco. De 09/09 a 22/09/2026 o filtro existia só no menu e no
+    // "Venda por canal": as barras somavam R$ 28.056 e o total em cima delas
+    // dizia R$ 28.997, porque os R$ 941 da Loja Dom Pedro continuavam dentro de
+    // `pedidos.reduce(...)`. São oito somas diferentes nesta tela (total,
+    // projeção, ticket, desvio da meta, os dois rankings, o gráfico do dia e o
+    // comparativo) — filtrar em todas é o que ninguém lembra de fazer.
+    //
+    // O período anterior usa a data inicial DELE: agosto continua com a Loja
+    // Dom Pedro dentro, que é o histórico que o dono pediu para manter.
+    // Ver `src/compartilhado/canal-fechado.js`.
+    pedidos=semAsLojasFechadas(pedidos,_gvCanaisBrutos,di);
+    pedidosPrev=semAsLojasFechadas(pedidosPrev,_gvCanaisBrutos,diPrev);
 
     // Guardados fora do ctx porque a seção de estoque desenha depois, por conta.
     _gvDepositos = normalizarDepositos(depsRows);

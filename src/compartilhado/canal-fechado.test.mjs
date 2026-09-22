@@ -1,6 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { canalApareceNoPeriodo, ocultosNoPeriodo, dataDigitadaParaISO, dataISOparaBR } from './canal-fechado.js'
+import {
+  canalApareceNoPeriodo, ocultosNoPeriodo, semAsLojasFechadas, dataDigitadaParaISO, dataISOparaBR,
+} from './canal-fechado.js'
 
 /* ⚠️ LOJA QUE FECHOU SAI DO MENU DAQUI PRA FRENTE, E CONTINUA NO PASSADO.
  *
@@ -119,4 +121,66 @@ test('a data volta para a tela como o dono escreve', () => {
   assert.equal(dataISOparaBR('2026-08-31'), '31/08/2026')
   assert.equal(dataISOparaBR(null), '')
   assert.equal(dataISOparaBR('qualquer coisa'), '', 'lixo não vira data invertida na tela')
+})
+
+/* ── ⚠️ O TOTAL, E NÃO SÓ A LISTA ──────────────────────────────────────────
+ *
+ * O defeito real de 22/09/2026: a Loja Dom Pedro tinha sumido do "Venda por
+ * canal" e do menu, e mesmo assim os R$ 941 dela estavam dentro do total do
+ * mês. As barras somavam R$ 28.056 e o número em cima delas dizia R$ 28.997.
+ *
+ * Os pedidos abaixo são os de verdade, tirados do banco em 22/09/2026. */
+const PED_DP_SETEMBRO = [
+  { id: 2603, loja: { id: 205657609 }, total: '489.90' },
+  { id: 2599, loja: { id: 205657609 }, total: '449.90' },
+  { id: 2641, loja: { id: 205657609 }, total: '1.01' },   // pedido de teste, com NF-e autorizada
+]
+const PED_IGUATEMI = [
+  { id: 2656, loja: { id: 205834116 }, total: '1615.00' },
+  { id: 2660, loja: { id: 205834116 }, total: '2000.00' },
+]
+const soma = (peds) => peds.reduce((t, p) => t + parseFloat(p.total), 0)
+
+test('⚠️ loja fechada sai do TOTAL, não só da lista', () => {
+  const todos = [...PED_IGUATEMI, ...PED_DP_SETEMBRO]
+  const ficam = semAsLojasFechadas(todos, [DOM_PEDRO, TIVOLI], '2026-09-01')
+
+  assert.equal(ficam.length, 2, 'só os do Iguatemi')
+  assert.equal(soma(ficam), 3615, 'o total perde os R$ 940,81 do Dom Pedro')
+  assert.equal(ficam.some((p) => p.loja.id === 205657609), false, 'nenhum pedido da loja fechada')
+})
+
+test('⚠️ o mês PASSADO continua com a loja fechada dentro — é o histórico', () => {
+  /* Se agosto perdesse a Loja Dom Pedro, o "vs. mês passado" compararia uma
+   * régua com outra e o dono veria uma queda que não existiu. O pedido dele em
+   * 09/09/2026 foi explícito: "deixe somente o histórico pra trás". */
+  const todos = [...PED_IGUATEMI, ...PED_DP_SETEMBRO]
+  const ficam = semAsLojasFechadas(todos, [DOM_PEDRO, TIVOLI], '2026-08-01')
+  assert.equal(ficam.length, todos.length, 'agosto fica inteiro')
+  assert.equal(soma(ficam), soma(todos))
+})
+
+test('⚠️ pedido SEM loja no cadastro FICA — falta de dado não apaga dinheiro', () => {
+  /* Mesmo lado seguro de `canalApareceNoPeriodo`: esconder é a exceção, e
+   * exceção precisa de prova. Um pedido sem `loja` é dado faltando, não prova. */
+  const orfaos = [
+    { id: 1, total: '100.00' },
+    { id: 2, loja: {}, total: '200.00' },
+    { id: 3, loja: { id: null }, total: '300.00' },
+    { id: 4, loja: { id: 'abc' }, total: '400.00' },
+  ]
+  const ficam = semAsLojasFechadas(orfaos, [DOM_PEDRO], '2026-09-01')
+  assert.equal(ficam.length, 4)
+  assert.equal(soma(ficam), 1000)
+})
+
+test('sem loja fechada nenhuma, devolve a mesma lista', () => {
+  const todos = [...PED_IGUATEMI]
+  assert.equal(semAsLojasFechadas(todos, [TIVOLI], '2026-09-01'), todos, 'sem cópia à toa')
+  assert.equal(semAsLojasFechadas(todos, [], '2026-09-01'), todos)
+})
+
+test('entrada estragada não derruba a tela', () => {
+  assert.deepEqual(semAsLojasFechadas(null, [DOM_PEDRO], '2026-09-01'), [])
+  assert.deepEqual(semAsLojasFechadas(undefined, null, null), [])
 })
