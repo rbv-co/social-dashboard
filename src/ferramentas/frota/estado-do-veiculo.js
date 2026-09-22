@@ -6,6 +6,8 @@
  * é por isso que a aba "Alertas" nasceu vazia: o número que alimenta o alerta
  * nunca chega. */
 
+import { ultimoKmDeAbastecimento, tanqueMaisRecente } from './abastecimentos.js';
+
 export const NIVEIS_TANQUE = ['Reserva', '1/4', '2/4', '3/4', 'Cheio'];
 
 /** O ponteiro do tanque como a pessoa lê no painel. */
@@ -75,7 +77,7 @@ export function ultimoUsoFechado(usos, veiculoId) {
  * Monta a linha da tela para um veículo: onde está, com quem, KM e tanque.
  * Não inventa nada: campo sem resposta volta nulo, e a tela mostra travessão.
  */
-export function estadoDoVeiculo(veiculo, usos, fichas, revisoes) {
+export function estadoDoVeiculo(veiculo, usos, fichas, revisoes, abastecimentos) {
   const aberto = usoAberto(usos, veiculo.id);
   const fechado = ultimoUsoFechado(usos, veiculo.id);
   // O KM mais alto que se conhece. QUATRO fontes: a última devolução, a saída de
@@ -92,11 +94,23 @@ export function estadoDoVeiculo(veiculo, usos, fichas, revisoes) {
     aberto && aberto.km_saida,
     ultimoHodometro(fichas, veiculo.id),
     ultimoKmDeRevisao(revisoes, veiculo.id),
+    // A QUINTA (21/09/2026): quem abastece toda semana passa a alimentar o
+    // alerta de revisão sem digitar nada. `abastecimentos` é OPCIONAL pelo
+    // mesmo motivo que `revisoes` é — a Edge não tem a lista à mão.
+    ultimoKmDeAbastecimento(abastecimentos, veiculo.id),
   ].filter(Number.isInteger);
   const km = kms.length ? Math.max(...kms) : null;
   // O tanque também vem do registro mais recente que tiver informado.
   const ultimo = aberto || fechado;
-  const tanque = ultimo && Number.isInteger(ultimo.tanque_quartos) ? ultimo.tanque_quartos : null;
+  // O TANQUE passa a olhar as duas fontes (D40): o abastecimento mais novo e
+  // ESTE uso — a viagem aberta ou a última devolução. Vai `ultimo`, e não
+  // `usos`: entregar a lista inteira fazia uma viagem antiga com o tanque
+  // preenchido passar na frente da devolução de ontem que não informou, e
+  // uma volta sem `km_volta` (descartada de propósito por `ultimoUsoFechado`)
+  // inverter Cheio em Reserva. Isso divergia da regra antiga já com a lista de
+  // abastecimentos VAZIA, que é o estado de produção. Ver o cabeçalho de
+  // `tanqueMaisRecente`.
+  const tanque = tanqueMaisRecente(abastecimentos, ultimo, veiculo.id);
 
   return {
     veiculo,

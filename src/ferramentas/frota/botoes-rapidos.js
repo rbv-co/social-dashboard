@@ -30,16 +30,44 @@ const contar = (n, um, muitos) => `${n} ${n === 1 ? um : muitos}`
 /**
  * Os botões da aba Motorista.
  * `checklistDeHoje`: 'feito' | 'falta' | null (null = não sei / não tem carro).
+ * `consumoDoMeuCarro`: resultado de consumoDoVeiculo, ou null (não calculado ainda).
+ * `nomeDoCarroParaAbastecer`: o carro que a pessoa tem NA MÃO agora.
+ *
+ * ⚠️ POR QUE SÃO DOIS NOMES DE CARRO, e não um.
+ *
+ * `nomeDoMeuCarro` é o carro por POSSE ou por DONO FIXO — é o que a ficha de
+ * checklist do topo desta aba usa, e é dele que `checklistDeHoje` fala.
+ * `nomeDoCarroParaAbastecer` é mais largo: inclui a VIAGEM aberta e a RESERVA
+ * aprovada, porque quem pegou um carro de rodízio pelo "Peguei o carro" está
+ * com ele na mão e vai abastecê-lo.
+ *
+ * Juntar os dois num só faria o estado do checklist descrever um carro e o
+ * nome ao lado dele descrever outro — o nome viria da viagem e o "feito hoje"
+ * da posse. Duas verdades na mesma linha é a tela mentindo devagar.
+ *
+ * Quem não passar o segundo cai no primeiro, e o comportamento é o de antes.
  */
-export function botoesDoMotorista({ painel, checklistDeHoje, nomeDoMeuCarro } = {}) {
+export function botoesDoMotorista({
+  painel, checklistDeHoje, nomeDoMeuCarro, consumoDoMeuCarro, nomeDoCarroParaAbastecer,
+} = {}) {
   const p = painel || {}
   const livres = (p.livres || []).length
   const carro = nomeCurto(nomeDoMeuCarro)
+  const carroNaMao = nomeCurto(nomeDoCarroParaAbastecer) || carro
 
   let estadoChecklist = null
   if (!carro) estadoChecklist = 'você não tem carro fixo'
   else if (checklistDeHoje === 'feito') estadoChecklist = `${carro} · feito hoje`
   else if (checklistDeHoje === 'falta') estadoChecklist = `${carro} · falta hoje`
+
+  /* O ESTADO DO ABASTECIMENTO. Sem carro na mão o botão FICA (D38c) e diz por
+   * quê — ele abre com o seletor de carro. Sem consumo calculado, não escreve
+   * número nenhum: a regra desta tela é que `estado` nulo não vira linha. */
+  let estadoAbastecimento = null
+  if (!carroNaMao) estadoAbastecimento = 'você não tem carro na mão'
+  else if (consumoDoMeuCarro && Number.isFinite(consumoDoMeuCarro.kmPorLitro)) {
+    estadoAbastecimento = `${carroNaMao} · ${consumoDoMeuCarro.kmPorLitro.toFixed(1).replace('.', ',')} km/l`
+  } else estadoAbastecimento = carroNaMao
 
   return [
     {
@@ -55,6 +83,12 @@ export function botoesDoMotorista({ painel, checklistDeHoje, nomeDoMeuCarro } = 
       // função. Ele fica e diz por que não adianta clicar.
       estado: livres ? contar(livres, 'carro livre', 'carros livres') : 'nenhum carro livre agora',
       acao: 'preciso-carro',
+    },
+    {
+      chave: 'abasteci',
+      rotulo: 'Abasteci o carro',
+      estado: estadoAbastecimento,
+      acao: 'abasteci',
     },
   ]
 }
