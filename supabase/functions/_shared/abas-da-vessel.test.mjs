@@ -77,7 +77,7 @@ test('Landing page: escolha nova no formulário aparece, em vez de sumir', async
 
 test('Vendas: valor é número somável, órfã é órfã, e a data não tem fuso', async () => {
   const a = await aba('Vendas', {
-    pedidos: [{ numero: '2680', loja_id: 205834116, data_da_venda: '2026-09-21',
+    pedidos: [{ numero: '2680', situacao_id: 9, loja_id: 205834116, data_da_venda: '2026-09-21',
       contato_nome: 'Luiza Maria', pessoa_id: null, receita_liquida: '3450.00',
       total_do_bling: '3670.00', origem_da_data: 'nota' }],
     lojasDoBling: [{ loja_id: 205834116, nome: 'Shopping Iguatemi Campinas' }],
@@ -92,7 +92,7 @@ test('Vendas: valor é número somável, órfã é órfã, e a data não tem fus
 
 test('Vendas: cliente conhecida sai pelo nome dela', async () => {
   const a = await aba('Vendas', {
-    pedidos: [{ numero: '1', pessoa_id: 1, casou_por: 'telefone', data_da_venda: '2026-09-21' }],
+    pedidos: [{ numero: '1', situacao_id: 9, pessoa_id: 1, casou_por: 'telefone', data_da_venda: '2026-09-21' }],
     pessoas: [PESSOA],
   });
   assert.equal(a.linhas[0][a.colunas.indexOf('Conhecemos?')], 'Marisa Carvalho');
@@ -107,7 +107,7 @@ test('⚠️ Visitas às lojas: a janela de 7 dias começa no dia BRASILEIRO da 
     atendimentos: [{ pessoa_id: 1, loja: 'iguatemi', status: 'realizado',
       quando: '2026-10-06T01:30:00+00:00', criado_em: '2026-10-01T12:00:00Z' }],
     pessoas: [PESSOA],
-    pedidos: [{ pessoa_id: 1, numero: '2700', data_do_pedido: '2026-10-05',
+    pedidos: [{ pessoa_id: 1, situacao_id: 9, numero: '2700', data_do_pedido: '2026-10-05',
       receita_liquida: '1200.00' }],
   });
   const c = (t) => a.linhas[0][a.colunas.indexOf(t)];
@@ -122,7 +122,7 @@ test('Visitas às lojas: compra de 8 dias depois fica FORA da janela', async () 
     atendimentos: [{ pessoa_id: 1, status: 'no_show', quando: '2026-10-05T15:00:00Z',
       criado_em: '2026-10-01T12:00:00Z' }],
     pessoas: [PESSOA],
-    pedidos: [{ pessoa_id: 1, numero: '2701', data_do_pedido: '2026-10-14' }],
+    pedidos: [{ pessoa_id: 1, situacao_id: 9, numero: '2701', data_do_pedido: '2026-10-14' }],
   });
   assert.equal(a.linhas[0][a.colunas.indexOf('Comprou até 7 dias depois')], '');
   assert.equal(a.linhas[0][a.colunas.indexOf('Veio?')], 'não');
@@ -275,7 +275,7 @@ test('pessoa apagada do banco não deixa nome de fantasma em aba nenhuma', async
   // A venda aponta para uma pessoa que não existe mais (LGPD: ela pediu para
   // sair). A planilha não pode inventar nome nem estourar.
   const a = await aba('Vendas', {
-    pedidos: [{ numero: '9', pessoa_id: 999, data_da_venda: '2026-09-21' }],
+    pedidos: [{ numero: '9', situacao_id: 9, pessoa_id: 999, data_da_venda: '2026-09-21' }],
     pessoas: [],
   });
   assert.equal(a.linhas[0][a.colunas.indexOf('Conhecemos?')], 'sim');
@@ -304,7 +304,8 @@ test('⚠️ a ordem das linhas não depende da ordem que o banco devolveu', asy
 test('mesmo dado em ordem diferente gera bytes IDÊNTICOS', async () => {
   const dados = {
     ...vazio(),
-    pedidos: [{ numero: '1', data_da_venda: '2026-09-01' }, { numero: '2', data_da_venda: '2026-09-21' }],
+    pedidos: [{ numero: '1', situacao_id: 9, data_da_venda: '2026-09-01' },
+      { numero: '2', situacao_id: 9, data_da_venda: '2026-09-21' }],
     beautySessions: [{ codigo: 'B2', quando: '2026-10-02' }, { codigo: 'B1', quando: '2026-10-01' }],
   };
   const trocado = {
@@ -430,13 +431,13 @@ test('⚠️ Vendas: preço de tabela − desconto = valor que entrou, SEMPRE', 
   const a = await aba('Vendas', {
     pedidos: [
       // desconto só no pedido
-      { numero: '1', data_da_venda: '2026-09-21', total_produtos: '800.00',
+      { numero: '1', situacao_id: 9, data_da_venda: '2026-09-21', total_produtos: '800.00',
         desconto: '400.00', total_do_bling: '400.00', receita_liquida: '400.00' },
       // desconto também na peça: o `total` do Bling não enxerga, a soma sim
-      { numero: '2', data_da_venda: '2026-09-20', total_produtos: '1000.00',
+      { numero: '2', situacao_id: 9, data_da_venda: '2026-09-20', total_produtos: '1000.00',
         desconto: '100.00', total_do_bling: '900.00', receita_liquida: '850.00' },
       // e o caso torto de verdade: o Bling se contradiz (pedido 2116, julho)
-      { numero: '3', data_da_venda: '2026-07-04', total_produtos: '389.90',
+      { numero: '3', situacao_id: 9, data_da_venda: '2026-07-04', total_produtos: '389.90',
         desconto: '50.00', total_do_bling: '194.95', receita_liquida: '339.90' },
     ],
   });
@@ -456,9 +457,9 @@ test('⚠️ Vendas: preço de tabela − desconto = valor que entrou, SEMPRE', 
 test('Vendas: quem vendeu sai pelo nome, e o desconhecido sai pelo número', async () => {
   const a = await aba('Vendas', {
     pedidos: [
-      { numero: '1', data_da_venda: '2026-09-21', vendedor_id: 77 },
-      { numero: '2', data_da_venda: '2026-09-20', vendedor_id: 999 },
-      { numero: '3', data_da_venda: '2026-09-19', vendedor_id: null },
+      { numero: '1', situacao_id: 9, data_da_venda: '2026-09-21', vendedor_id: 77 },
+      { numero: '2', situacao_id: 9, data_da_venda: '2026-09-20', vendedor_id: 999 },
+      { numero: '3', situacao_id: 9, data_da_venda: '2026-09-19', vendedor_id: null },
     ],
     vendedores: [{ bling_vendedor_id: 77, nome: 'Ionara Elias' }],
   });
@@ -476,8 +477,8 @@ test('Vendas: "O que saiu" traz as peças do pedido CERTO', async () => {
   // de outro pedido sem erro nenhum.
   const a = await aba('Vendas', {
     pedidos: [
-      { id: 1, bling_pedido_id: 26890674024, numero: '2668', data_da_venda: '2026-09-21' },
-      { id: 2, bling_pedido_id: 26889945274, numero: '2667', data_da_venda: '2026-09-20' },
+      { id: 1, situacao_id: 9, bling_pedido_id: 26890674024, numero: '2668', data_da_venda: '2026-09-21' },
+      { id: 2, situacao_id: 9, bling_pedido_id: 26889945274, numero: '2667', data_da_venda: '2026-09-20' },
     ],
     itensVendidos: [
       { pedido_id: 1, sku: 'SS1', descricao: 'ShoulderBag Ravelle Small Mostarda', quantidade: '1.000' },
@@ -501,7 +502,7 @@ test('⚠️ Visitas às lojas engoliu a aba de atribuição, e ficou com as dua
       convite_codigo: 'CV1', criado_em: '2026-10-01T12:00:00Z' }],
     origens: [{ id: 1, pessoa_id: 1, canal: 'meta', momento: '2026-09-01T12:00:00Z',
       utm_campaign: 'lancamento' }],
-    pedidos: [{ pessoa_id: 1, numero: '2700', data_do_pedido: '2026-10-05',
+    pedidos: [{ pessoa_id: 1, situacao_id: 9, numero: '2700', data_do_pedido: '2026-10-05',
       receita_liquida: '1200.00' }],
   });
   const c = (t) => a.linhas[0][a.colunas.indexOf(t)];
@@ -527,4 +528,52 @@ test('⚠️ Visitas às lojas não mostra linha de teste', async () => {
     ],
   });
   assert.equal(a.linhas.length, 1);
+});
+
+// ── PEDIDO QUE DEIXOU DE SER VENDA ──────────────────────────────────────────
+// ⚠️ Estes testes existem por causa de uma pergunta do dono sobre a Gestão à
+// Vista em 21/09/2026: ela mostrava R$ 6.900 porque a mesma venda tinha TRÊS
+// pedidos no Bling, dois cancelados. Ela lê o Bling ao vivo e se corrigiu; a
+// planilha, não — ela contava cancelado como venda desde sempre.
+
+const VENDA = (extra) => ({ numero: '1', data_da_venda: '2026-09-21',
+  data_do_pedido: '2026-09-21', situacao_id: 9, total_produtos: '1000.00',
+  receita_liquida: '1000.00', ...extra });
+
+test('⚠️ Vendas mostra só pedido ATENDIDO — cancelado e sumido ficam de fora', async () => {
+  const a = await aba('Vendas', {
+    pedidos: [
+      VENDA({ numero: '2682' }),                        // a venda de verdade
+      VENDA({ numero: '2680', situacao_id: 12 }),       // cancelado
+      VENDA({ numero: '2681', situacao_id: 12 }),       // cancelado
+      VENDA({ numero: '2099', situacao_id: null }),     // sumiu do Bling
+    ],
+  });
+  assert.equal(a.linhas.length, 1, 'contou pedido que não é venda');
+  assert.equal(a.linhas[0][a.colunas.indexOf('Pedido')], '2682');
+});
+
+test('⚠️ a janela de 7 dias também ignora pedido cancelado', async () => {
+  // Senão a visita apareceria como "comprou" por causa de um pedido desfeito, e
+  // a atribuição contaria receita que não existe.
+  const a = await aba('Visitas às lojas', {
+    pessoas: [PESSOA],
+    atendimentos: [{ pessoa_id: 1, status: 'realizado', quando: '2026-10-05T15:00:00Z',
+      criado_em: '2026-10-01T12:00:00Z' }],
+    pedidos: [
+      { pessoa_id: 1, numero: '900', data_do_pedido: '2026-10-06',
+        receita_liquida: '500.00', situacao_id: 12 },
+      { pessoa_id: 1, numero: '901', data_do_pedido: '2026-10-06',
+        receita_liquida: '700.00', situacao_id: 9 },
+    ],
+  });
+  const c = (t) => a.linhas[0][a.colunas.indexOf(t)];
+  assert.equal(c('Comprou até 7 dias depois'), '901');
+  assert.equal(c('Valor que entrou (7 dias)'), '700');
+});
+
+test('as instruções avisam que pedido cancelado sai sozinho', async () => {
+  const texto = (await instrucoes()).join('\n');
+  assert.match(texto, /cancelado/i);
+  assert.match(texto, /Gestão à Vista/);
 });

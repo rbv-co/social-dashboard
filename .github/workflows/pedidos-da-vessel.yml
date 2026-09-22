@@ -19,9 +19,28 @@ name: Pedidos da Vessel (a venda, pedido a pedido)
 # atrasa de 2 a 3 horas) e não colide com a cópia de segurança (06h12) nem com
 # os relatórios comerciais (08h52) — os três batem no mesmo Bling, que limita
 # 3 chamadas por segundo.
+#
+# ── E DE HORA EM HORA, UMA CONFERÊNCIA CURTA (21/09/2026) ───────────────────
+#
+# ⚠️ O QUE ELA CONSERTA: até hoje o robô perguntava ao Bling SÓ pelos pedidos
+# com situação 9 (atendido). Pedido que muda de estado DEPOIS de importado
+# nunca era revisitado — entrava como venda e ficava venda para sempre.
+# Medido: 2 dos 223 pedidos de 60 dias já estavam cancelados no Bling e
+# continuavam contados aqui, R$ 3.850 a mais. A loja refaz pedido quando erra;
+# em 21/09 uma venda tinha TRÊS pedidos, dois cancelados. Foi isso que fez a
+# Gestão à Vista mostrar R$ 6.900 — ela lê o Bling ao vivo e se corrigiu
+# sozinha; a nossa base é que guardava o fantasma.
+#
+# ⚠️ JANELA CURTA NA RODADA DE HORA EM HORA, e o motivo é custo: a chamada cara
+# é o DETALHE, um por pedido atendido. Três dias são ~10 pedidos; trinta dias
+# são ~220, e de hora em hora isso seriam 5.280 chamadas por dia no Bling, que
+# limita 3 por segundo e é o mesmo que a Central inteira usa. A varredura de 30
+# dias continua UMA vez por dia — é ela que pega o pedido que demora quinze
+# dias para virar Atendido.
 on:
   schedule:
-    - cron: '34 7 * * *'
+    - cron: '34 7 * * *'     # varredura profunda: 30 dias
+    - cron: '23 * * * *'     # conferência ao vivo: 3 dias
   workflow_dispatch:
     inputs:
       dias:
@@ -72,10 +91,16 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           DIAS: ${{ github.event.inputs.dias }}
           ENSAIO: ${{ github.event.inputs.ensaio }}
+          QUAL_CRON: ${{ github.event.schedule }}
         run: |
           if [ -n "$DIAS" ] && ! printf '%s' "$DIAS" | grep -qE '^[0-9]+$'; then
             echo "DIAS inválido (esperado número): $DIAS"; exit 1
           fi
-          argumentos="--dias=${DIAS:-30}"
+          # A rodada de hora em hora olha 3 dias; a da madrugada, 30. Quem
+          # aperta o botão à mão manda a janela que quiser, e ela vence.
+          padrao=30
+          if [ "$QUAL_CRON" = "23 * * * *" ]; then padrao=3; fi
+          argumentos="--dias=${DIAS:-$padrao}"
           if [ -n "$ENSAIO" ]; then argumentos="$argumentos --ensaio"; fi
+          echo "janela: $argumentos  (cron: ${QUAL_CRON:-manual})"
           node coletor/trazer-pedidos-do-bling.mjs $argumentos

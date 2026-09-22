@@ -296,7 +296,11 @@ async function carregarCompras(lista, de, ate) {
   const limite = new Date(a, m - 1, d + 7)
   const ateMais = `${limite.getFullYear()}-${String(limite.getMonth() + 1).padStart(2, '0')}-${String(limite.getDate()).padStart(2, '0')}`
   const r = await fetch(
-    `${SUPABASE_URL}/rest/v1/vessel_pedidos?select=pessoa_id,numero,data_da_venda,data_do_pedido,receita_liquida,total_corrigido`
+    // ⚠️ `situacao_id=eq.9` NÃO É ENFEITE: 9 é "atendido", a única situação que é
+    // venda. Sem isto a tela mostra como compra um pedido que a loja CANCELOU —
+    // e a loja refaz pedido com frequência (em 21/09/2026 uma venda tinha três,
+    // dois cancelados). Medido: 2 dos 223 pedidos de 60 dias estavam assim.
+    `${SUPABASE_URL}/rest/v1/vessel_pedidos?situacao_id=eq.9&select=pessoa_id,numero,data_da_venda,data_do_pedido,receita_liquida,total_corrigido`
       + `&pessoa_id=in.(${ids.join(',')})&data_do_pedido=gte.${de}&data_do_pedido=lte.${ateMais}&limit=1000`,
     { headers: cabecalho() })
   // ⚠️ FALHAR AQUI NÃO DERRUBA A LISTA. A agenda é o assunto da tela; o

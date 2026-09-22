@@ -90,16 +90,34 @@ try {
   const de = new Date(ate); de.setDate(de.getDate() - dias);
   console.log(`\njanela: ${iso(de)} a ${iso(ate)}${ensaio ? '  (ENSAIO — nada será gravado)' : ''}\n`);
 
-  // ── 1. os pedidos atendidos da janela ──────────────────────────────────────
-  const pedidos = [];
-  for (let pagina = 1; pagina <= 20; pagina++) {
+  // ── 1. TODOS os pedidos da janela, em qualquer situação ────────────────────
+  //
+  // ⚠️ ATÉ 21/09/2026 ESTA LEITURA FILTRAVA `idsSituacoes[]: ATENDIDO`, e era
+  // por isso que pedido cancelado virava venda eterna: quem nasce fora do
+  // filtro nunca mais é olhado. O robô importava o pedido enquanto ele estava
+  // atendido e nunca voltava para perguntar "e agora?".
+  //
+  // Medido no dia em que isso apareceu: 2 dos 223 pedidos dos últimos 60 dias
+  // já estavam cancelados no Bling e continuavam como venda aqui — R$ 3.850 a
+  // mais. A loja refaz o pedido quando erra, e a venda da Luiza Maria Carvalho
+  // chegou a ter TRÊS (2680 e 2681 cancelados, 2682 valendo).
+  //
+  // Agora a leitura é SEM filtro e o robô separa aqui dentro: os atendidos ele
+  // importa, e a situação de TODOS ele grava. Custa as mesmas páginas de
+  // listagem — a chamada cara (o detalhe, um por pedido) continua só para os
+  // atendidos.
+  const todosDoBling = [];
+  for (let pagina = 1; pagina <= 40; pagina++) {
     const r = await blingProxy(token, 'pedidos/vendas',
-      { dataInicial: iso(de), dataFinal: iso(ate), 'idsSituacoes[]': ATENDIDO, pagina, limite: 100 });
+      { dataInicial: iso(de), dataFinal: iso(ate), pagina, limite: 100 });
     const d = r.data || [];
-    pedidos.push(...d);
+    todosDoBling.push(...d);
     if (d.length < 100) break;
   }
-  console.log(`${pedidos.length} pedidos atendidos no Bling`);
+  const pedidos = todosDoBling.filter((p) => Number(p.situacao?.id) === ATENDIDO);
+  const outros = todosDoBling.length - pedidos.length;
+  console.log(`${todosDoBling.length} pedidos no Bling na janela`
+    + ` — ${pedidos.length} atendidos, ${outros} em outra situação`);
 
   // ── 2. quem já conhecemos ──────────────────────────────────────────────────
   const { rows: pessoas } = await cli.query(
@@ -268,6 +286,60 @@ try {
                 0), 2)
         where p.id = $1`, [linha.id]);
     gravados++;
+  }
+
+  // ── 6. A CONFERÊNCIA: o que a nossa base diz, e o que o Bling diz AGORA ────
+  //
+  // ⚠️ ESTA ETAPA É O CONSERTO DO FANTASMA. Importar é metade do trabalho; a
+  // outra metade é voltar e perguntar "isto ainda é verdade?". Sem ela, pedido
+  // cancelado depois de importado vira venda para sempre, e ninguém descobre —
+  // porque nada erra, nada avisa, e o número só fica maior.
+  //
+  // ⚠️ A JANELA É COMPARADA POR `data_do_pedido`, e não por `data_da_venda`.
+  // O Bling filtrou a listagem pelo campo `data`, que é o nosso
+  // `data_do_pedido`; `data_da_venda` vem da nota e pode cair em outro dia. Usar
+  // a data errada aqui faria o robô dizer "sumiu do Bling" sobre pedido que
+  // está lá, só com outra data — e apagar venda boa é pior que guardar venda
+  // cancelada.
+  const situacaoNoBling = new Map(
+    todosDoBling.map((p) => [String(p.numero), Number(p.situacao?.id)]));
+
+  const { rows: nossos } = await cli.query(
+    `select id, numero, situacao_id, receita_liquida, contato_nome
+       from vessel_pedidos
+      where data_do_pedido between $1 and $2`, [iso(de), iso(ate)]);
+
+  let confirmados = 0;
+  const mudaram = [];
+  const sumiram = [];
+  for (const n of nossos) {
+    const agora = situacaoNoBling.has(String(n.numero))
+      ? situacaoNoBling.get(String(n.numero)) : null;
+    if (agora === null) sumiram.push(n);
+    else if (agora !== n.situacao_id) mudaram.push({ ...n, agora });
+    else confirmados++;
+
+    if (!ensaio) {
+      await cli.query(
+        `update vessel_pedidos set situacao_id = $2, conferido_no_bling_em = now()
+          where id = $1`, [n.id, agora]);
+    }
+  }
+
+  const perdido = [...mudaram, ...sumiram]
+    .filter((x) => x.situacao_id === ATENDIDO)
+    .reduce((t, x) => t + Number(x.receita_liquida || 0), 0);
+
+  console.log(`\n  ── conferência com o Bling ──`);
+  console.log(`  conferidos e iguais ${confirmados}`);
+  console.log(`  MUDARAM de situação ${mudaram.length}`);
+  console.log(`  SUMIRAM do Bling    ${sumiram.length}`);
+  if (perdido > 0) {
+    console.log(`  ⚠️ deixam de ser venda: R$ ${perdido.toFixed(2)}`);
+  }
+  for (const x of [...mudaram, ...sumiram].slice(0, 15)) {
+    console.log(`     ${String(x.numero).padStart(6)}  ${x.situacao_id} -> `
+      + `${x.agora ?? 'sumiu'}  R$ ${Number(x.receita_liquida || 0).toFixed(2)}  ${x.contato_nome ?? ''}`);
   }
 
   console.log(`\n  gravados            ${gravados}`);
