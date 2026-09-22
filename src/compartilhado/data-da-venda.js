@@ -26,7 +26,10 @@ export async function buscarLinhasDaJanela(sbClient, di, df) {
     for (let inicio = 0; inicio < 20000; inicio += PAGINA) {
       const { data, error } = await sbClient
         .from('bling_pedido_nota')
-        .select('pedido_id,pedido_numero,data_pedido,data_da_venda,total,loja_id')
+        // ⚠️ `nota_situacao` ENTROU EM 22/09/2026 e não é enfeite: sem ela a regra não
+        // tem como saber se a nota foi autorizada, e a tela volta a mostrar pedido
+        // cancelado e nota rejeitada como faturamento.
+        .select('pedido_id,pedido_numero,data_pedido,data_da_venda,total,loja_id,nota_situacao')
         .or(`and(data_da_venda.gte.${a},data_da_venda.lte.${b}),and(data_pedido.gte.${a},data_pedido.lte.${b})`)
         .range(inicio, inicio + PAGINA - 1);
       if (error) return null;

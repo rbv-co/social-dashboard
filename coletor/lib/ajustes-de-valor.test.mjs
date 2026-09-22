@@ -79,6 +79,11 @@ test('data PRIMEIRO, valor DEPOIS: o pedido trazido de outro dia também é corr
     pedido_id: 26851358889, pedido_numero: '2656',
     data_pedido: '2026-09-11', data_da_venda: '2026-09-12',
     total: 1900, loja_id: 205834116,
+    // ⚠️ A NOTA AUTORIZADA (5) ENTROU NA FIXTURE em 22/09/2026, quando a regra
+    // passou a exigi-la. Não é enfeite de teste: o pedido 2656 é real (Ana
+    // Paula, R$ 1.900, Iguatemi) e a nota dele ESTÁ autorizada. Fixture sem o
+    // estado descrevia um pedido que não existe.
+    nota_situacao: 5,
   };
   const ajustes = [{ pedido_id: 26851358889, total_corrigido: 1615 }];
 
@@ -96,6 +101,11 @@ test('na ordem INVERTIDA o pedido trazido escaparia — é isto que a ordem prot
     pedido_id: 26851358889, pedido_numero: '2656',
     data_pedido: '2026-09-11', data_da_venda: '2026-09-12',
     total: 1900, loja_id: 205834116,
+    // ⚠️ A NOTA AUTORIZADA (5) ENTROU NA FIXTURE em 22/09/2026, quando a regra
+    // passou a exigi-la. Não é enfeite de teste: o pedido 2656 é real (Ana
+    // Paula, R$ 1.900, Iguatemi) e a nota dele ESTÁ autorizada. Fixture sem o
+    // estado descrevia um pedido que não existe.
+    nota_situacao: 5,
   };
   const ajustes = [{ pedido_id: 26851358889, total_corrigido: 1615 }];
 

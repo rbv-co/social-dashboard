@@ -35,6 +35,28 @@
 const soDia = (v) => String(v ?? '').slice(0, 10);
 const dentro = (dia, di, df) => !!dia && dia >= soDia(di) && dia <= soDia(df);
 
+// ── O ESTADO DA NOTA ────────────────────────────────────────────────────────
+//
+// Pedido do dono em 22/09/2026: "não pode acontecer de mostrar pedido
+// rejeitado, não autorizado, somente os que estiverem autorizado".
+//
+// Os números são os do Bling. Medido na nossa base: a NFC-e da loja fica em 5
+// e a NF-e do atacado vai para 6 — as duas querem dizer autorizada, e 6 é só
+// "autorizada e com a DANFE já emitida". Tratar 6 como "outra coisa" apagaria
+// R$ 643 mil de NF-e da conta.
+export const NOTA_AUTORIZADA = new Set([5, 6]);
+
+// ⚠️ NEGADA NÃO É O MESMO QUE PENDENTE, e a diferença decide se a venda some
+// da tela. Nota cancelada (2), rejeitada (4) ou denegada (9) NÃO é venda e sai.
+// Nota pendente (1, 3, 8) ou sem linha ainda é venda que está sendo processada:
+// ela FICA, pela regra 1 lá de cima. Tirar a venda de hoje porque a nota ainda
+// não voltou da Sefaz deixaria o painel vazio toda manhã — trocar um erro
+// pequeno por um buraco.
+export const NOTA_NEGADA = new Set([2, 4, 9]);
+
+const notaAutorizada = (l) => NOTA_AUTORIZADA.has(Number(l?.nota_situacao));
+const notaNegada = (l) => NOTA_NEGADA.has(Number(l?.nota_situacao));
+
 // ── O ajuste, puro e testável ─────────────────────────────────────────────
 // pedidos : o que o Bling devolveu para a janela (por data do pedido)
 // linhas  : linhas de bling_pedido_nota que tocam a janela
@@ -59,6 +81,10 @@ export function ajustarPelaDataDaNota(pedidos, linhas, di, df) {
       saida.push({ ...p, dataDoPedido });
       continue;
     }
+    // ⚠️ NOTA NEGADA TIRA A VENDA, mesmo o pedido estando "atendido" no Bling.
+    // Pedido atendido com nota rejeitada ou cancelada não é faturamento: é uma
+    // venda que não se completou. Pendente continua valendo (ver NOTA_NEGADA).
+    if (notaNegada(linha)) { removidos++; continue; }
     const dataDaVenda = soDia(linha.data_da_venda) || dataDoPedido;
     if (!dentro(dataDaVenda, di, df)) { removidos++; continue; }
     saida.push({ ...p, data: dataDaVenda, dataDoPedido });
@@ -70,6 +96,14 @@ export function ajustarPelaDataDaNota(pedidos, linhas, di, df) {
   for (const l of linhas || []) {
     const id = String(l.pedido_id);
     if (vistos.has(id)) continue;
+    // ⚠️ AQUI SÓ ENTRA NOTA AUTORIZADA, e esta linha é o conserto de um número
+    // errado que o dono viu na tela em 22/09/2026: a Gestão à Vista mostrava
+    // R$ 6.900 para 21/09 porque o pedido 2680 — CANCELADO no Bling — foi
+    // trazido daqui. Este bloco inventa um pedido a partir da tabela, e o
+    // Bling ao vivo NÃO o devolveu justamente porque ele não é mais venda.
+    // Exigir a nota autorizada fecha os dois buracos de uma vez: o pedido
+    // cancelado não tem nota autorizada, e o rejeitado também não.
+    if (!notaAutorizada(l)) continue;
     const dataDaVenda = soDia(l.data_da_venda);
     if (!dentro(dataDaVenda, di, df)) continue;
     trazidos++;
