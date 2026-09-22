@@ -95,6 +95,30 @@ mexer no navegador consegue lançar no carro de outro. Isso já vale para o
 checklist desde agosto; o que esta linha faz é não deixar ninguém achar que há
 uma tranca onde não há.
 
+### D38b — Quando foi, e o que acontece se lançarem duas vezes
+
+**`abastecido_em` nasce com o instante do registro**, e pode ser mudado para
+trás — quem administra lança o cupom de ontem sem mentir sobre a data. Data no
+futuro é barrada: abastecimento é coisa que já aconteceu.
+
+**Duplicata não é barrada pelo banco, e isso é escolha.** Dois abastecimentos do
+mesmo carro no mesmo dia acontecem de verdade (duas bombas, dois motoristas, ida
+e volta de viagem longa). Uma trava de unicidade recusaria o registro legítimo
+com cara de erro do sistema. O que a tela faz é **avisar**: ao abrir o
+formulário, se já existe abastecimento deste carro nas últimas 12 horas, ela diz
+*"este carro já foi abastecido hoje às 14h20 — 41,3 L por R$ 250,00"* antes de a
+pessoa digitar. Quem está repetindo sem querer vê ali; quem abasteceu de novo
+mesmo, segue.
+
+### D38c — Quem não tem carro na mão também vê o botão
+
+O botão aparece para todo mundo da aba Motorista, com o estado embaixo dizendo o
+que há: *"você não tem carro na mão"*. Esconder o botão faria a pessoa que
+acabou de abastecer o carro emprestado procurar onde registrar e desistir — e é
+justamente ela que a ferramenta precisa capturar, porque é o registro que ninguém
+lança depois. Sem carro na mão, ele abre com o seletor de carro no topo, como
+acontece com quem administra.
+
 ### D39 — Número que não fecha AVISA; só um barra
 
 Mesmo molde de `problemasDaDevolucao`, que já existe e é testado:
@@ -102,6 +126,7 @@ Mesmo molde de `problemasDaDevolucao`, que já existe e é testado:
 | Situação | O que acontece |
 |---|---|
 | Quilometragem **menor** que a maior já conhecida do carro | **barra** — é dedo errado, e o odômetro só anda para frente |
+| Data no futuro | **barra** — abastecimento é coisa que já aconteceu |
 | Sem quilometragem, sem litros, sem valor ou sem nível | **barra** — são os quatro que fazem o registro valer alguma coisa |
 | Litros **acima do tanque do carro** | avisa, deixa salvar |
 | Preço por litro fora do pé (menos de R$ 1 ou mais de R$ 15) | avisa, deixa salvar |
@@ -150,7 +175,7 @@ Tabela nova `frota_abastecimentos`, no molde das irmãs:
 | `veiculo_id` | uuid → `frota_veiculos` | |
 | `pessoa_id` | uuid → `acessos_pessoas`, nulo | quem abasteceu; SET NULL como nas irmãs |
 | `pessoa_nome` | text | o nome fica mesmo se a pessoa sair — igual `frota_uso` |
-| `abastecido_em` | timestamptz, not null | |
+| `abastecido_em` | timestamptz, not null | nasce agora; editável para trás (D38b) |
 | `km` | int, not null | a quinta fonte de quilometragem |
 | `litros` | numeric(7,3), not null | a bomba dá três casas |
 | `total_centavos` | int, not null | dinheiro em centavos, como no resto da central |
