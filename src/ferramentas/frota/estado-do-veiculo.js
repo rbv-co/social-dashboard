@@ -6,7 +6,7 @@
  * é por isso que a aba "Alertas" nasceu vazia: o número que alimenta o alerta
  * nunca chega. */
 
-import { ultimoKmDeAbastecimento } from './abastecimentos.js';
+import { ultimoKmDeAbastecimento, tanqueMaisRecente } from './abastecimentos.js';
 
 export const NIVEIS_TANQUE = ['Reserva', '1/4', '2/4', '3/4', 'Cheio'];
 
@@ -102,7 +102,10 @@ export function estadoDoVeiculo(veiculo, usos, fichas, revisoes, abastecimentos)
   const km = kms.length ? Math.max(...kms) : null;
   // O tanque também vem do registro mais recente que tiver informado.
   const ultimo = aberto || fechado;
-  const tanque = ultimo && Number.isInteger(ultimo.tanque_quartos) ? ultimo.tanque_quartos : null;
+  // O TANQUE passa a olhar as duas fontes (D40). Era só `ultimo` (o uso aberto
+  // ou o último fechado), e 18 das 25 viagens voltaram sem informar.
+  const tanqueDosUsos = ultimo && Number.isInteger(ultimo.tanque_quartos) ? ultimo.tanque_quartos : null;
+  const tanque = tanqueMaisRecente(abastecimentos, usos, veiculo.id) ?? tanqueDosUsos;
 
   return {
     veiculo,

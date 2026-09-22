@@ -138,6 +138,48 @@ export function ultimoKmDeAbastecimento(abastecimentos, veiculoId) {
   return meus.length ? Math.max(...meus) : null;
 }
 
+/** O nível do tanque pelo registro MAIS RECENTE — abastecimento ou devolução
+ *  (D40). Nulo quando nenhum dos dois informou: travessão, nunca zero, que
+ *  seria "Reserva". */
+export function tanqueMaisRecente(abastecimentos, usos, veiculoId) {
+  const candidatos = [];
+  for (const a of abastecimentos || []) {
+    if (!a || a.veiculo_id !== veiculoId) continue;
+    const t = Date.parse(a.abastecido_em);
+    if (Number.isFinite(t) && Number.isInteger(Number(a.tanque_depois))) {
+      candidatos.push({ quando: t, nivel: Number(a.tanque_depois) });
+    }
+  }
+  for (const u of usos || []) {
+    if (!u || u.veiculo_id !== veiculoId) continue;
+    const t = Date.parse(u.volta_em || u.saida_em);
+    if (Number.isFinite(t) && Number.isInteger(u.tanque_quartos)) {
+      candidatos.push({ quando: t, nivel: u.tanque_quartos });
+    }
+  }
+  if (!candidatos.length) return null;
+  candidatos.sort((a, b) => b.quando - a.quando);
+  return candidatos[0].nivel;
+}
+
+/** O abastecimento deste carro nas últimas `horas`, para a tela avisar antes de
+ *  a pessoa digitar (D38b). Duplicata NÃO é barrada: dois abastecimentos no
+ *  mesmo dia acontecem de verdade, e uma trava recusaria o registro legítimo
+ *  com cara de erro do sistema. */
+export function abastecimentoRecente(abastecimentos, veiculoId, agoraIso, horas = 12) {
+  const agora = Date.parse(agoraIso || new Date().toISOString());
+  if (!Number.isFinite(agora)) return null;
+  const limite = agora - horas * 3600 * 1000;
+  const achados = (abastecimentos || [])
+    .filter((a) => {
+      if (!a || a.veiculo_id !== veiculoId) return false;
+      const t = Date.parse(a.abastecido_em);
+      return Number.isFinite(t) && t <= agora && t >= limite;
+    })
+    .sort((a, b) => Date.parse(b.abastecido_em) - Date.parse(a.abastecido_em));
+  return achados[0] || null;
+}
+
 const KML_MIN = 3;    // Frouxo de propósito, como os outros pés: pega o dedo
 const KML_MAX = 30;   // errado (litro digitado no lugar do valor), não a
                       // diferença entre um carro pesado e um popular.

@@ -356,3 +356,12 @@ test('D40 · chamar sem os abastecimentos continua funcionando', () => {
 
 
 
+
+test('D40 · o tanque da linha passa a olhar o abastecimento', () => {
+  const v = { id: 'v1', situacao: 'ativo' }
+  const usos = [{ veiculo_id: 'v1', saida_em: '2026-09-01', volta_em: '2026-09-10T18:00:00Z', km_volta: 36000, tanque_quartos: 1 }]
+  const abast = [{ veiculo_id: 'v1', abastecido_em: '2026-09-20T12:00:00Z', km: 36900, litros: 40, tanque_depois: 4 }]
+  const e = estadoDoVeiculo(v, usos, [], [], abast)
+  assert.equal(e.tanque, 4)
+  assert.equal(e.precisaAbastecer, false, 'tanque cheio não pede combustível')
+})

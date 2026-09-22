@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   precoPorLitro, problemasDoAbastecimento, trechosDeConsumo, consumoDoVeiculo, avisosDeConsumo,
-  ultimoKmDeAbastecimento,
+  ultimoKmDeAbastecimento, tanqueMaisRecente, abastecimentoRecente,
 } from './abastecimentos.js'
 
 const bom = {
@@ -186,4 +186,40 @@ test('D37 · com um combustível só, a média não muda de comportamento', () =
     ab(36000, 30, 4, { dia: 1 }), ab(36400, 40, 4, { dia: 5 }), ab(36900, 50, 4, { dia: 9 }),
   ])
   assert.equal(c.media, 10, '(10 + 10) / 2')
+})
+
+/* ── D40/D38b: tanque mais recente e aviso de abastecimento recente ───────── */
+
+test('D40 · o tanque vem do registro MAIS RECENTE entre abastecer e devolver', () => {
+  // Quem abasteceu hoje sabe mais sobre o tanque do que quem devolveu semana
+  // passada. Hoje só a devolução informa, e em 7 das 25 viagens.
+  const usos = [{ veiculo_id: 'v1', volta_em: '2026-09-10T18:00:00Z', tanque_quartos: 1 }]
+  const abast = [{ veiculo_id: 'v1', abastecido_em: '2026-09-20T12:00:00Z', tanque_depois: 4 }]
+  assert.equal(tanqueMaisRecente(abast, usos, 'v1'), 4)
+})
+
+test('D40 · devolução mais nova que o abastecimento vence', () => {
+  const usos = [{ veiculo_id: 'v1', volta_em: '2026-09-21T18:00:00Z', tanque_quartos: 1 }]
+  const abast = [{ veiculo_id: 'v1', abastecido_em: '2026-09-20T12:00:00Z', tanque_depois: 4 }]
+  assert.equal(tanqueMaisRecente(abast, usos, 'v1'), 1)
+})
+
+test('D40 · sem nenhum dos dois, o tanque é NULO — travessão, nunca zero', () => {
+  assert.equal(tanqueMaisRecente([], [], 'v1'), null)
+  assert.equal(tanqueMaisRecente(null, null, 'v1'), null)
+})
+
+test('D38b · o abastecimento das últimas 12 horas é achado, para a tela avisar', () => {
+  const agora = '2026-09-21T20:00:00Z'
+  const lista = [{ veiculo_id: 'v1', abastecido_em: '2026-09-21T17:20:00Z', litros: 41.3, total_centavos: 25000 }]
+  const achado = abastecimentoRecente(lista, 'v1', agora, 12)
+  assert.ok(achado, 'três horas atrás tem de ser achado')
+  assert.equal(achado.litros, 41.3)
+})
+
+test('D38b · o de ontem NÃO vira aviso — dois no mesmo dia acontecem de verdade', () => {
+  const agora = '2026-09-21T20:00:00Z'
+  const lista = [{ veiculo_id: 'v1', abastecido_em: '2026-09-20T08:00:00Z' }]
+  assert.equal(abastecimentoRecente(lista, 'v1', agora, 12), null)
+  assert.equal(abastecimentoRecente([], 'v1', agora, 12), null)
 })
