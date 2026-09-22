@@ -17,6 +17,8 @@ ATENÇÃO, não de sigilo: quem dirige e precisa do Renavam pede a quem administ
   historico-de-reservas.js  a linha do tempo de reserva, retirada e posse
   requisicoes.js            o pedido de carro e a decisão de quem aprova
   revisoes.js               de quantos em quantos km cada item se troca
+  abastecimentos.js         o preço por litro, o que barra e o que avisa, e
+                            o consumo de um tanque cheio ao próximo cheio
   assinar-checklist.js      a ficha do dia e a assinatura de quem conferiu
   conferencia-de-assinaturas.js  se a assinatura é de quem pegou o carro
   copias-no-zoho.js         se a ficha assinada chegou no Zoho

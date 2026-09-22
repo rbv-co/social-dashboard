@@ -193,20 +193,23 @@ test('D37 · com um combustível só, a média não muda de comportamento', () =
 test('D40 · o tanque vem do registro MAIS RECENTE entre abastecer e devolver', () => {
   // Quem abasteceu hoje sabe mais sobre o tanque do que quem devolveu semana
   // passada. Hoje só a devolução informa, e em 7 das 25 viagens.
-  const usos = [{ veiculo_id: 'v1', volta_em: '2026-09-10T18:00:00Z', tanque_quartos: 1 }]
+  // `uso` é UM uso só, já escolhido por quem chama — nunca a lista inteira.
+  const uso = { veiculo_id: 'v1', volta_em: '2026-09-10T18:00:00Z', tanque_quartos: 1 }
   const abast = [{ veiculo_id: 'v1', abastecido_em: '2026-09-20T12:00:00Z', tanque_depois: 4 }]
-  assert.equal(tanqueMaisRecente(abast, usos, 'v1'), 4)
+  assert.equal(tanqueMaisRecente(abast, uso, 'v1'), 4)
 })
 
 test('D40 · devolução mais nova que o abastecimento vence', () => {
-  const usos = [{ veiculo_id: 'v1', volta_em: '2026-09-21T18:00:00Z', tanque_quartos: 1 }]
+  const uso = { veiculo_id: 'v1', volta_em: '2026-09-21T18:00:00Z', tanque_quartos: 1 }
   const abast = [{ veiculo_id: 'v1', abastecido_em: '2026-09-20T12:00:00Z', tanque_depois: 4 }]
-  assert.equal(tanqueMaisRecente(abast, usos, 'v1'), 1)
+  assert.equal(tanqueMaisRecente(abast, uso, 'v1'), 1)
 })
 
 test('D40 · sem nenhum dos dois, o tanque é NULO — travessão, nunca zero', () => {
-  assert.equal(tanqueMaisRecente([], [], 'v1'), null)
+  assert.equal(tanqueMaisRecente([], null, 'v1'), null)
   assert.equal(tanqueMaisRecente(null, null, 'v1'), null)
+  // Uso que existe mas não informou o tanque também é NULO, não zero.
+  assert.equal(tanqueMaisRecente([], { veiculo_id: 'v1', volta_em: '2026-09-10T18:00:00Z' }, 'v1'), null)
 })
 
 test('D38b · o abastecimento das últimas 12 horas é achado, para a tela avisar', () => {
@@ -227,7 +230,56 @@ test('D38b · o de ontem NÃO vira aviso — dois no mesmo dia acontecem de verd
 test('D40 · Reserva (0) do abastecimento mais novo vence devolução antiga com tanque cheio', () => {
   // Mesma prova, direto na função pura: `0` tem de vencer por ser mais
   // recente, e não pode ser confundido com "não informou".
-  const usos = [{ veiculo_id: 'v1', volta_em: '2026-09-05T18:00:00Z', tanque_quartos: 4 }]
+  const uso = { veiculo_id: 'v1', volta_em: '2026-09-05T18:00:00Z', tanque_quartos: 4 }
   const abast = [{ veiculo_id: 'v1', abastecido_em: '2026-09-20T12:00:00Z', tanque_depois: 0 }]
-  assert.equal(tanqueMaisRecente(abast, usos, 'v1'), 0)
+  assert.equal(tanqueMaisRecente(abast, uso, 'v1'), 0)
+})
+
+test('⚠️ D40 · a lista inteira de usos NÃO entra — só o uso escolhido', () => {
+  // A prova por MUTAÇÃO da assinatura: se alguém voltar a passar `usos` aqui,
+  // esta chamada com um ARRAY tem de devolver nulo, e não o tanque da primeira
+  // linha. Um array não tem `veiculo_id` nem `tanque_quartos`, então ele não é
+  // candidato a nada — é assim que o defeito do "dia zero" fica impossível de
+  // voltar calado.
+  const usos = [
+    { veiculo_id: 'v1', volta_em: '2026-07-01T18:00:00Z', tanque_quartos: 1 },
+    { veiculo_id: 'v1', volta_em: '2026-09-10T18:00:00Z' },
+  ]
+  assert.equal(tanqueMaisRecente([], usos, 'v1'), null,
+    'passar a lista inteira não pode mais achar tanque nenhum')
+  assert.equal(tanqueMaisRecente([], usos[1], 'v1'), null,
+    'e o uso escolhido, que não informou, continua sendo travessão')
+})
+
+/* ── D39: o aviso de consumo é sobre o registro NOVO, não sobre o passado ──── */
+
+test('⚠️ D39 · trecho ruim já gravado NÃO reclama de novo a cada abastecimento', () => {
+  // O defeito: `avisosDeConsumo` julgava `trechos[trechos.length-1]` sempre.
+  // Com um trecho ruim no histórico, TODO abastecimento parcial seguinte
+  // mostrava "Este trecho deu 1,3 km/l" falando de um cupom de meses atrás,
+  // como se fosse o que a pessoa acabou de digitar. Aviso que aparece sempre
+  // vira paisagem.
+  const ruim = [
+    { ...ab(36000, 30, 4, { dia: 1 }), id: 'a1' },
+    { ...ab(36400, 300, 4, { dia: 10 }), id: 'a2' },   // 1,3 km/l, já gravado
+  ]
+  // Sem o id, a função responde como antes — e é por isso que ela reclamava.
+  assert.equal(avisosDeConsumo(ruim, 'v1').length, 1, 'o comportamento antigo continua disponível')
+
+  // A tela passa o id do rascunho. Este rascunho é PARCIAL: não fecha trecho
+  // nenhum, então não há o que avisar sobre ELE.
+  const rascunho = { ...ab(36500, 20, 2, { dia: 20 }), id: '__rascunho__' }
+  assert.deepEqual(avisosDeConsumo([...ruim, rascunho], 'v1', '__rascunho__'), [],
+    'o trecho ruim é de antes; o registro novo não fechou trecho nenhum')
+})
+
+test('⚠️ D39 · mas o trecho que o registro NOVO fecha continua avisando', () => {
+  // A outra metade da prova: sem ela, "não avisa nunca" passaria verde.
+  const lista = [
+    { ...ab(36000, 30, 4, { dia: 1 }), id: 'a1' },
+    { ...ab(36400, 300, 4, { dia: 10 }), id: '__rascunho__' },   // 1,3 km/l, é ELE
+  ]
+  const avisos = avisosDeConsumo(lista, 'v1', '__rascunho__')
+  assert.equal(avisos.length, 1)
+  assert.match(avisos[0], /1,3 km\/l/)
 })

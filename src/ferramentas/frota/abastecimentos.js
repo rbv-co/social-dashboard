@@ -140,8 +140,31 @@ export function ultimoKmDeAbastecimento(abastecimentos, veiculoId) {
 
 /** O nível do tanque pelo registro MAIS RECENTE — abastecimento ou devolução
  *  (D40). Nulo quando nenhum dos dois informou: travessão, nunca zero, que
- *  seria "Reserva". */
-export function tanqueMaisRecente(abastecimentos, usos, veiculoId) {
+ *  seria "Reserva".
+ *
+ *  ⚠️ `uso` é UM USO SÓ, já escolhido por quem chama — a viagem aberta ou a
+ *  última devolução, exatamente o `aberto || fechado` que `estadoDoVeiculo` já
+ *  calcula. NÃO é a lista inteira, e a diferença não é estilo.
+ *
+ *  A primeira versão recebia todos os `frota_uso` do carro e pegava qualquer
+ *  linha com `tanque_quartos` preenchido. Isso já discordava da regra antiga
+ *  COM A LISTA DE ABASTECIMENTOS VAZIA, que é o estado de produção hoje:
+ *
+ *   - devolução de ontem sem informar o tanque (18 das 25 viagens) perdia para
+ *     uma viagem de semanas atrás que informou: "—, sem alerta" virava
+ *     "1/4 · abastecer";
+ *   - carro na rua agora, saída sem tanque: virava "Reserva · abastecer";
+ *   - volta gravada sem `km_volta` — que `ultimoUsoFechado` descarta de
+ *     propósito — passava a mandar, e **Cheio virava Reserva**. Inversão.
+ *
+ *  O D40 pediu "o registro mais recente ENTRE OS DOIS", não "qualquer uso que
+ *  por acaso tenha um número". Quem escolhe o uso é quem já sabe escolher.
+ *  As três linhas estão provadas em estado-do-veiculo.test.mjs ("dia zero").
+ *
+ *  `quando` vira -Infinity quando a data do uso não dá para ler: ele continua
+ *  valendo quando é o único candidato (que é o que a regra antiga fazia), e
+ *  perde para qualquer abastecimento datado. */
+export function tanqueMaisRecente(abastecimentos, uso, veiculoId) {
   const candidatos = [];
   for (const a of abastecimentos || []) {
     if (!a || a.veiculo_id !== veiculoId) continue;
@@ -150,12 +173,9 @@ export function tanqueMaisRecente(abastecimentos, usos, veiculoId) {
       candidatos.push({ quando: t, nivel: Number(a.tanque_depois) });
     }
   }
-  for (const u of usos || []) {
-    if (!u || u.veiculo_id !== veiculoId) continue;
-    const t = Date.parse(u.volta_em || u.saida_em);
-    if (Number.isFinite(t) && Number.isInteger(u.tanque_quartos)) {
-      candidatos.push({ quando: t, nivel: u.tanque_quartos });
-    }
+  if (uso && uso.veiculo_id === veiculoId && Number.isInteger(uso.tanque_quartos)) {
+    const t = Date.parse(uso.volta_em || uso.saida_em);
+    candidatos.push({ quando: Number.isFinite(t) ? t : -Infinity, nivel: uso.tanque_quartos });
   }
   if (!candidatos.length) return null;
   candidatos.sort((a, b) => b.quando - a.quando);
@@ -186,12 +206,22 @@ const KML_MAX = 30;   // errado (litro digitado no lugar do valor), não a
 
 /** O aviso de consumo, quando o registro novo FECHA um trecho e o resultado não
  *  se sustenta. Lista vazia é a resposta normal — a maioria dos abastecimentos
- *  não fecha trecho nenhum, e aviso que aparece sempre vira paisagem. */
-export function avisosDeConsumo(abastecimentos, veiculoId) {
+ *  não fecha trecho nenhum, e aviso que aparece sempre vira paisagem.
+ *
+ *  `idDoRegistroNovo` é QUEM está sendo julgado, e é o que faz a frase acima
+ *  ser verdade. Sem ele, um trecho ruim JÁ GRAVADO fazia todo abastecimento
+ *  parcial seguinte reclamar para sempre — "Este trecho deu 2,0 km/l" sobre um
+ *  cupom de meses atrás, na cara de quem acabou de digitar outro. O aviso só
+ *  sai quando o trecho mais novo é o que ESTE registro fechou.
+ *
+ *  Sem o terceiro argumento a função responde como antes (julga o último
+ *  trecho, seja de quem for). Quem chama da tela SEMPRE passa o id. */
+export function avisosDeConsumo(abastecimentos, veiculoId, idDoRegistroNovo) {
   const meus = (abastecimentos || []).filter((a) => a && a.veiculo_id === veiculoId);
   const trechos = trechosDeConsumo(meus);
   if (!trechos.length) return [];
   const ultimo = trechos[trechos.length - 1];
+  if (idDoRegistroNovo !== undefined && ultimo.ate !== idDoRegistroNovo) return [];
   if (ultimo.kmPorLitro >= KML_MIN && ultimo.kmPorLitro <= KML_MAX) return [];
   return [`Este trecho deu ${ultimo.kmPorLitro.toFixed(1).replace('.', ',')} km/l `
     + `(${ultimo.km.toLocaleString('pt-BR')} km com ${ultimo.litros.toLocaleString('pt-BR')} litros). `

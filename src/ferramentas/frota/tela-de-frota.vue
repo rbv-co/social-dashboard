@@ -253,18 +253,60 @@ const meuChecklistHoje = computed(() => {
   return fichaDeHoje.value ? 'feito' : 'falta'
 })
 
-/* O CONSUMO DO MEU CARRO, pro estado embaixo do botão "Abasteci o carro".
+/* ⚠️ O CARRO QUE A PESSOA TEM NA MÃO — e não é o mesmo que `meuCarroFixo`.
+ *
+ * `meuCarroFixo` sai de `quemEstaComOCarro`, que olha POSSE ABERTA e DONO
+ * FIXO. Quem pegou um carro de rodízio pelo "Peguei o carro" está com ele por
+ * VIAGEM, e lia "Abasteci o carro · você não tem carro na mão" — enquanto esta
+ * mesma tela, dois blocos acima, mostrava o carro na rua com ela.
+ *
+ * ⚠️ Este defeito exato já aconteceu aqui, com o checklist, em 21/08/2026
+ * (Bravo Blackmotion): "pra conferir o carro que estava dirigindo, teve que
+ * caçá-lo num seletor". Lá foi consertado com `quemDeveConferir` +
+ * `reservaSegurando`; a precedência abaixo é A MESMA de `veiculosParaConferir`
+ * e reaproveita as MESMAS peças — não é uma terceira regra de "de quem é este
+ * carro", que é como duas contas divergem com o tempo.
+ *
+ *   1. VIAGEM aberta minha — `painel.comigo` já responde isso, e é literalmente
+ *      a lista que a aba mostra logo acima;
+ *   2. POSSE aberta ou DONO FIXO — `meuCarroFixo`;
+ *   3. RESERVA aprovada em vigor — o resgate, com a mesma `reservaSegurando`
+ *      que decide se o carro está preso para outra pessoa na lista de livres.
+ *
+ * `meuCarroFixo` continua existindo e continua sendo o certo para o bloco "Seu
+ * carro" e para o botão "Passar o carro": passe é coisa de POSSE. */
+const meuCarroNaMao = computed(() => {
+  if (!euId.value) return null
+  const naRua = painel.value.comigo[0]
+  if (naRua) return naRua.veiculo
+  if (meuCarroFixo.value) return meuCarroFixo.value
+  const reservado = veiculos.value.find((v) => {
+    if (v.situacao !== 'ativo') return false
+    const r = reservaSegurando({
+      requisicoes: requisicoes.value, veiculoId: v.id, agoraIso: new Date().toISOString(),
+    })
+    return !!r && r.pessoa_id === euId.value
+  })
+  return reservado || null
+})
+
+/* O CONSUMO DO CARRO NA MÃO, pro estado embaixo do botão "Abasteci o carro".
  * Nulo enquanto não houver dois tanques cheios no mesmo carro (D36) — e aí o
  * botão não escreve número nenhum, que é a regra desta tela: "não sei" não
- * vira zero. `meuCarroFixo` é o MESMO carro que o botão vai abrir (D38). */
+ * vira zero. É o MESMO carro que o botão vai abrir (D38). */
 const consumoDoMeuCarro = computed(() => {
-  if (!meuCarroFixo.value) return null
-  return consumoDoVeiculo(abastecimentos.value.filter((a) => a.veiculo_id === meuCarroFixo.value.id))
+  if (!meuCarroNaMao.value) return null
+  return consumoDoVeiculo(abastecimentos.value.filter((a) => a.veiculo_id === meuCarroNaMao.value.id))
 })
 
 const botoesMotorista = computed(() => botoesDoMotorista({
   painel: painel.value, checklistDeHoje: meuChecklistHoje.value, nomeDoMeuCarro: meuCarroNome.value,
   consumoDoMeuCarro: consumoDoMeuCarro.value,
+  // DOIS nomes de carro de propósito: o do checklist fala de posse/dono fixo, e
+  // `checklistDeHoje` é calculado a partir DELE. Ver o cabeçalho de
+  // botoesDoMotorista — juntar os dois faria a linha dizer o nome de um carro e
+  // o estado de outro.
+  nomeDoCarroParaAbastecer: meuCarroNaMao.value ? meuCarroNaMao.value.nome : null,
 }))
 // As duas permissões vão EXPLÍCITAS: os botões substituíram controles que já
 // eram protegidos — o "+ Acrescentar veículo" era `v-if="pode('criar')"`, e o
@@ -1761,6 +1803,12 @@ const SINONIMOS_DE_COMBUSTIVEL = [
 const semAcento = (t) => String(t || '').normalize('NFD')
   .replace(/[̀-ͯ]/g, '').toUpperCase().trim()
 
+/* O id do registro que ainda NÃO existe. Vai para `avisosDeConsumo` dizer
+ * sobre QUEM é o aviso: sem ele, um trecho ruim já gravado reclamaria em todo
+ * abastecimento seguinte. Valor que nenhum uuid do banco teria, como o DE_FORA
+ * e o PARA_ESTOQUE desta mesma tela. */
+const ID_DO_RASCUNHO = '__rascunho__'
+
 const abast = ref(null)          // { } enquanto a ficha está aberta
 const formAbast = reactive({
   veiculoId: '', km: '', valor: '', litros: '', tanque: '',
@@ -1789,6 +1837,12 @@ const veiculoDoAbast = computed(() =>
 const combustiveisDoCarro = computed(() => {
   const bruto = semAcento(veiculoDoAbast.value && veiculoDoAbast.value.combustivel)
   const achados = []
+  // "A tabela RECONHECEU o que o carro declarou" é diferente de "o carro não
+  // declarou nada". Sem separar os dois, o `ELETRICO` que a tabela traduz para
+  // lista vazia caía na lista padrão e o formulário oferecia gasolina para um
+  // carro elétrico — o comentário da tabela prometia uma coisa e o código fazia
+  // outra.
+  let reconhecido = false
   for (const pedaco of bruto.split('/')) {
     const p = pedaco.trim()
     if (!p) continue
@@ -1796,11 +1850,23 @@ const combustiveisDoCarro = computed(() => {
     // Palavra que a tabela não conhece é IGNORADA, e não gravada como está:
     // um combustível inventado fecharia trecho de consumo só consigo mesmo,
     // que é o defeito do 'FLEX' com outro nome.
-    if (regra) achados.push(...regra[1])
+    if (!regra) continue
+    reconhecido = true
+    achados.push(...regra[1])
   }
   const doCarro = [...new Set(achados)]
-  return doCarro.length ? doCarro : [...COMBUSTIVEIS]
+  if (doCarro.length) return doCarro
+  // Reconheceu e não sobrou nada = o carro não bebe. Lista VAZIA, e a ficha diz
+  // por quê logo abaixo — campo que não pode gravar fica travado COM O MOTIVO
+  // escrito (PADRAO, item 9), nunca com quatro opções que não servem.
+  return reconhecido ? [] : [...COMBUSTIVEIS]
 })
+
+/** Este carro não tem o que abastecer (elétrico puro). Hoje não existe nenhum
+ *  na frota — os 2 híbridos são 'GASOLINA/ELETRICO' e sobra a gasolina —, mas
+ *  o dia em que existir a tela responde, em vez de oferecer diesel. */
+const carroNaoBebe = computed(() =>
+  !!formAbast.veiculoId && combustiveisDoCarro.value.length === 0)
 
 /* QUEM ADMINISTRA ESCOLHE QUALQUER CARRO (D38), e quem não tem carro na mão
  * também precisa escolher (D38c) — o botão aparece pra todo mundo justamente
@@ -1812,7 +1878,7 @@ const combustiveisDoCarro = computed(() => {
 // `inativo` continuam — são carros da empresa, e carro parado abastece.
 const carrosParaAbastecer = computed(() =>
   linhas.value.filter((l) => l.veiculo.situacao !== 'alienado').map((l) => l.veiculo))
-const escolheOCarro = computed(() => !meuCarroFixo.value || ehGestorDaFrota.value)
+const escolheOCarro = computed(() => !meuCarroNaMao.value || ehGestorDaFrota.value)
 
 /** Litros como a bomba escreve: três casas, vírgula ou ponto. Texto que não dá
  *  pra ler vira `null` — e aí `problemasDoAbastecimento` BARRA, em vez de a
@@ -1852,11 +1918,14 @@ const avisoDeConsumoDoAbast = computed(() => {
   const tanque = formAbast.tanque === '' ? null : Number(formAbast.tanque)
   if (!formAbast.veiculoId || !Number.isInteger(km) || litros === null || tanque === null) return []
   const rascunho = {
-    id: '__rascunho__', veiculo_id: formAbast.veiculoId, km, litros,
+    id: ID_DO_RASCUNHO, veiculo_id: formAbast.veiculoId, km, litros,
     tanque_depois: tanque, combustivel: formAbast.combustivel,
     abastecido_em: formAbast.abastecidoEm ? new Date(formAbast.abastecidoEm).toISOString() : null,
   }
-  return avisosDeConsumo([...abastecimentos.value, rascunho], formAbast.veiculoId)
+  // O ID VAI JUNTO: sem ele, um trecho ruim já gravado faria esta caixa
+  // reclamar em TODO abastecimento parcial seguinte, sobre um cupom de meses
+  // atrás. O aviso é sobre o que a pessoa acabou de digitar, ou não é aviso.
+  return avisosDeConsumo([...abastecimentos.value, rascunho], formAbast.veiculoId, ID_DO_RASCUNHO)
 })
 
 /* O QUE BARRA E O QUE AVISA (D39). `barra` tranca o botão de gravar; `avisa`
@@ -1887,7 +1956,10 @@ const problemasDoAbast = computed(() => {
     barra.push('Os litros não dão para ler. Escreva assim: 41,300')
   }
   if (!formAbast.veiculoId) barra.push('Escolha em qual carro você abasteceu.')
-  if (!formAbast.combustivel) barra.push('Diga qual combustível entrou.')
+  if (carroNaoBebe.value) {
+    barra.push('Este carro não usa combustível de bomba — não há abastecimento para registrar nele. '
+      + 'Se estiver errado, corrija o combustível na ficha do veículo.')
+  } else if (!formAbast.combustivel) barra.push('Diga qual combustível entrou.')
   // O campo de data pode ser APAGADO por quem administra, e `new Date('')` é
   // uma data inválida que estoura no `.toISOString()` da gravação. Barrar aqui
   // é o que transforma um erro de JavaScript numa frase que a pessoa resolve.
@@ -1931,7 +2003,7 @@ function abrirAbastecimento(veiculo) {
   subirCamada('abast')
   // ABRE NO CARRO QUE ESTÁ COM A PESSOA (D38), pela mesma precedência que o
   // checklist já usa. Sem carro na mão, abre com o seletor vazio (D38c).
-  const alvo = veiculo || meuCarroFixo.value || null
+  const alvo = veiculo || meuCarroNaMao.value || null
   abast.value = {}
   Object.assign(formAbast, {
     veiculoId: alvo ? alvo.id : '',
@@ -5685,7 +5757,14 @@ onMounted(async () => {
             </span>
           </div>
 
-          <label class="fr-campo">
+          <!-- O carro não bebe: diz por quê em vez de oferecer quatro opções que
+               não servem. O botão do rodapé já está travado pela `barra`. -->
+          <p class="fr-abast-barra" v-if="carroNaoBebe">
+            Este carro está cadastrado como elétrico — não há combustível de bomba para registrar
+            nele. Se estiver errado, corrija o combustível na ficha do veículo.
+          </p>
+
+          <label class="fr-campo" v-if="!carroNaoBebe">
             <span class="fr-lab">Combustível</span>
             <!-- D37: já vem no do próprio carro. Um flex abastecido com etanol
                  numa vez e gasolina na outra PARECE um carro que piorou 30% —
@@ -6464,7 +6543,7 @@ onMounted(async () => {
    As regras antigas desta tela ainda têm número solto — elas vão uma a uma; o
    que não pode é bloco novo nascer com o defeito. */
 .tela-frota .fr-abast-duplicata{margin:0;padding:10px 12px;font-family:var(--fonte-principal);
-  font-size:var(--texto-corpo);line-height:1.55;color:var(--text);overflow-wrap:anywhere;
+  font-size:var(--texto-campo);line-height:1.55;color:var(--text);overflow-wrap:anywhere;
   background:color-mix(in srgb,var(--orange) 10%,var(--surface));
   border:1px solid color-mix(in srgb,var(--orange) 38%,var(--surface));border-radius:var(--radius-lg);}
 /* A LINHA VIVA DO CUPOM. É o dado que se confere letra por letra contra o
@@ -6495,13 +6574,13 @@ onMounted(async () => {
    avisos (laranja, `.fr-problemas`) de propósito — misturar os dois faria a
    pessoa procurar qual dos itens está impedindo de gravar. */
 .tela-frota .fr-abast-barra{margin:0;padding:11px 13px 11px 30px;font-family:var(--fonte-principal);
-  font-size:var(--texto-corpo);line-height:1.55;color:var(--text);overflow-wrap:anywhere;
+  font-size:var(--texto-campo);line-height:1.55;color:var(--text);overflow-wrap:anywhere;
   background:color-mix(in srgb,var(--red) 10%,var(--surface));
   border:1px solid color-mix(in srgb,var(--red) 38%,var(--surface));border-radius:var(--radius-lg);}
 /* A mensagem do banco vai inteira pra tela, e ela é comprida e sem espaço:
    `overflow-wrap:anywhere` é o que impede de ela empurrar o modal pros lados. */
 .tela-frota .fr-abast-erro{margin:0;padding:10px 12px;font-family:var(--fonte-principal);
-  font-size:var(--texto-corpo);line-height:1.55;color:var(--text);overflow-wrap:anywhere;
+  font-size:var(--texto-campo);line-height:1.55;color:var(--text);overflow-wrap:anywhere;
   background:color-mix(in srgb,var(--red) 12%,var(--surface));
   border:1px solid color-mix(in srgb,var(--red) 44%,var(--surface));border-radius:var(--radius-lg);}
 .tela-frota .fr-ficha-rodape{display:flex;gap:9px;padding:13px 15px;border-top:1px solid var(--border);}

@@ -261,3 +261,53 @@ test('sem consumo ainda, o botão NÃO inventa número', () => {
   const abast = b.find((x) => x.chave === 'abasteci')
   assert.doesNotMatch(abast.estado || '', /km\/l/)
 })
+
+/* ── ⚠️ Quem está com o carro NA MÃO é reconhecido (22/09/2026) ─────────────
+ *
+ * O defeito: o estado do botão de abastecer saía de `nomeDoMeuCarro`, que é
+ * posse ou dono fixo. Quem pegou um carro de rodízio pelo "Peguei o carro" lia
+ * "Abasteci o carro · você não tem carro na mão" — enquanto a MESMA TELA, dois
+ * blocos acima, mostrava que ele estava na rua com aquele carro.
+ *
+ * Já tinha acontecido nesta ferramenta, com o checklist, em 21/08/2026 (Bravo
+ * Blackmotion): "pra conferir o carro que estava dirigindo, teve que caçá-lo
+ * num seletor". */
+
+test('⚠️ quem está com carro de rodízio na mão vê o NOME dele no botão de abastecer', () => {
+  const bs = botoesDoMotorista({
+    painel: { livres: [] },
+    checklistDeHoje: null,
+    nomeDoMeuCarro: null,                          // não tem posse nem dono fixo
+    nomeDoCarroParaAbastecer: 'VOLKSWAGEN SAVEIRO CS',   // está na rua com ela
+  })
+  const abastecer = bs.find((b) => b.chave === 'abasteci')
+  assert.equal(abastecer.estado, 'SAVEIRO CS', 'não pode dizer "você não tem carro na mão"')
+})
+
+test('⚠️ e o estado do CHECKLIST continua falando do carro dele, não do outro', () => {
+  // A razão de serem dois campos: `checklistDeHoje` é do carro fixo. Se o nome
+  // viesse da viagem e o "feito hoje" da posse, a linha diria duas verdades
+  // diferentes sobre carros diferentes.
+  const bs = botoesDoMotorista({
+    painel: { livres: [] },
+    checklistDeHoje: 'feito',
+    nomeDoMeuCarro: 'FIAT BRAVO ESSENCE',
+    nomeDoCarroParaAbastecer: 'VOLKSWAGEN SAVEIRO CS',
+  })
+  assert.equal(bs.find((b) => b.chave === 'meu-checklist').estado, 'BRAVO ESSENCE · feito hoje')
+  assert.equal(bs.find((b) => b.chave === 'abasteci').estado, 'SAVEIRO CS')
+})
+
+test('sem o campo novo, tudo responde como antes', () => {
+  const bs = botoesDoMotorista({
+    painel: { livres: [] }, checklistDeHoje: 'falta', nomeDoMeuCarro: 'FIAT BRAVO ESSENCE',
+  })
+  assert.equal(bs.find((b) => b.chave === 'abasteci').estado, 'BRAVO ESSENCE')
+})
+
+test('sem carro em lugar nenhum, o botão FICA e diz por quê (D38c)', () => {
+  const bs = botoesDoMotorista({ painel: { livres: [] } })
+  const abastecer = bs.find((b) => b.chave === 'abasteci')
+  assert.ok(abastecer, 'o botão não some — é justamente quem não tem carro que precisa registrar')
+  assert.equal(abastecer.estado, 'você não tem carro na mão')
+})

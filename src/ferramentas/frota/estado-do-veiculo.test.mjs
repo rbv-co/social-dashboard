@@ -377,3 +377,79 @@ test('D40 · Reserva (0) do abastecimento vence devolução antiga com tanque ch
   assert.equal(e.tanque, 0, 'a Reserva do abastecimento mais novo vence a devolução antiga')
   assert.equal(e.precisaAbastecer, true, 'é isto que o motorista vê na tela')
 })
+
+/* ── ⚠️ O DIA ZERO: com a lista de abastecimentos VAZIA, nada pode mudar ─────
+ *
+ * Este é o teste que faltava, e a falta dele deixou um defeito passar por duas
+ * revisões. A primeira versão de `tanqueMaisRecente` recebia a lista INTEIRA de
+ * `frota_uso` e pegava qualquer linha com `tanque_quartos` preenchido — então,
+ * mesmo SEM abastecimento nenhum no banco (que é o estado de produção no dia em
+ * que isto sobe), o tanque de quem já usa a Frota mudava sozinho.
+ *
+ * As três linhas abaixo são as três divergências medidas. Cada uma prova que o
+ * resultado voltou a ser o de ANTES do abastecimento existir. */
+
+test('⚠️ dia zero · devolução que não informou o tanque continua sendo travessão', () => {
+  // 18 das 25 viagens voltaram sem informar. O defeito: uma viagem ANTIGA que
+  // informou passava na frente, e "—, sem alerta" virava "1/4 · abastecer".
+  const usos = [
+    { veiculo_id: 'v1', saida_em: '2026-07-01T08:00Z', volta_em: '2026-07-01T18:00Z', km_saida: 145000, km_volta: 145300, tanque_quartos: 1 },
+    { veiculo_id: 'v1', saida_em: '2026-09-10T08:00Z', volta_em: '2026-09-10T18:00Z', km_saida: 145300, km_volta: 145928 },
+  ]
+  const e = estadoDoVeiculo(carro(), usos, [], [], [])
+  assert.equal(e.tanque, null, 'a devolução mais nova não informou: travessão, não o número velho')
+  assert.equal(e.precisaAbastecer, false, 'alarme em cima de leitura velha é alarme falso')
+})
+
+test('⚠️ dia zero · carro na rua com saída sem tanque continua sendo travessão', () => {
+  // O defeito: virava "Reserva · abastecer", de uma viagem encerrada semanas
+  // antes. A viagem ABERTA é quem responde pelo carro agora.
+  const usos = [
+    { veiculo_id: 'v1', saida_em: '2026-07-01T08:00Z', volta_em: '2026-07-01T18:00Z', km_saida: 145000, km_volta: 145300, tanque_quartos: 0 },
+    { veiculo_id: 'v1', saida_em: '2026-09-20T08:00Z', volta_em: null, km_saida: 145928, pessoa_id: 'p1' },
+  ]
+  const e = estadoDoVeiculo(carro(), usos, [], [], [])
+  assert.equal(e.naRua, true)
+  assert.equal(e.tanque, null)
+  assert.equal(e.precisaAbastecer, false)
+})
+
+test('⚠️ dia zero · volta sem km_volta NÃO inverte Cheio em Reserva', () => {
+  // A pior das três, porque não é alarme falso: é INVERSÃO. `ultimoUsoFechado`
+  // descarta de propósito a volta sem `km_volta` (ela não serve de odômetro), e
+  // a versão errada ressuscitava essa linha só para o tanque.
+  const usos = [
+    { veiculo_id: 'v1', saida_em: '2026-09-01T08:00Z', volta_em: '2026-09-01T18:00Z', km_saida: 145000, km_volta: 145300, tanque_quartos: 4 },
+    { veiculo_id: 'v1', saida_em: '2026-09-15T08:00Z', volta_em: '2026-09-15T18:00Z', km_saida: 145300, tanque_quartos: 0 },
+  ]
+  const e = estadoDoVeiculo(carro(), usos, [], [], [])
+  assert.equal(e.tanque, 4, 'Cheio, como era antes — não Reserva')
+  assert.equal(e.precisaAbastecer, false, 'e sem o alerta que a inversão acendia')
+})
+
+test('⚠️ dia zero · as três linhas dão o MESMO resultado sem o quinto argumento', () => {
+  // A prova de que a lista vazia e a ausência da lista são a mesma coisa: é
+  // assim que a Edge chama esta função, sem os abastecimentos à mão.
+  const casos = [
+    [{ veiculo_id: 'v1', saida_em: '2026-07-01T08:00Z', volta_em: '2026-07-01T18:00Z', km_saida: 1, km_volta: 2, tanque_quartos: 1 },
+      { veiculo_id: 'v1', saida_em: '2026-09-10T08:00Z', volta_em: '2026-09-10T18:00Z', km_saida: 2, km_volta: 3 }],
+    [{ veiculo_id: 'v1', saida_em: '2026-07-01T08:00Z', volta_em: '2026-07-01T18:00Z', km_saida: 1, km_volta: 2, tanque_quartos: 0 },
+      { veiculo_id: 'v1', saida_em: '2026-09-20T08:00Z', volta_em: null, km_saida: 3 }],
+    [{ veiculo_id: 'v1', saida_em: '2026-09-01T08:00Z', volta_em: '2026-09-01T18:00Z', km_saida: 1, km_volta: 2, tanque_quartos: 4 },
+      { veiculo_id: 'v1', saida_em: '2026-09-15T08:00Z', volta_em: '2026-09-15T18:00Z', km_saida: 2, tanque_quartos: 0 }],
+  ]
+  for (const usos of casos) {
+    assert.equal(
+      estadoDoVeiculo(carro(), usos, [], [], []).tanque,
+      estadoDoVeiculo(carro(), usos).tanque,
+      'lista vazia e argumento ausente têm de responder igual',
+    )
+  }
+})
+
+test('D40 continua valendo · o abastecimento mais novo vence a devolução', () => {
+  // O conserto não pode ter desligado o que a Tarefa 4 entregou.
+  const usos = [{ veiculo_id: 'v1', saida_em: '2026-09-10T08:00Z', volta_em: '2026-09-10T18:00Z', km_saida: 1, km_volta: 2, tanque_quartos: 1 }]
+  const abast = [{ veiculo_id: 'v1', abastecido_em: '2026-09-20T12:00:00Z', tanque_depois: 4 }]
+  assert.equal(estadoDoVeiculo(carro(), usos, [], [], abast).tanque, 4)
+})

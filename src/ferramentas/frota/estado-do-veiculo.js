@@ -102,10 +102,15 @@ export function estadoDoVeiculo(veiculo, usos, fichas, revisoes, abastecimentos)
   const km = kms.length ? Math.max(...kms) : null;
   // O tanque também vem do registro mais recente que tiver informado.
   const ultimo = aberto || fechado;
-  // O TANQUE passa a olhar as duas fontes (D40). Era só `ultimo` (o uso aberto
-  // ou o último fechado), e 18 das 25 viagens voltaram sem informar.
-  const tanqueDosUsos = ultimo && Number.isInteger(ultimo.tanque_quartos) ? ultimo.tanque_quartos : null;
-  const tanque = tanqueMaisRecente(abastecimentos, usos, veiculo.id) ?? tanqueDosUsos;
+  // O TANQUE passa a olhar as duas fontes (D40): o abastecimento mais novo e
+  // ESTE uso — a viagem aberta ou a última devolução. Vai `ultimo`, e não
+  // `usos`: entregar a lista inteira fazia uma viagem antiga com o tanque
+  // preenchido passar na frente da devolução de ontem que não informou, e
+  // uma volta sem `km_volta` (descartada de propósito por `ultimoUsoFechado`)
+  // inverter Cheio em Reserva. Isso divergia da regra antiga já com a lista de
+  // abastecimentos VAZIA, que é o estado de produção. Ver o cabeçalho de
+  // `tanqueMaisRecente`.
+  const tanque = tanqueMaisRecente(abastecimentos, ultimo, veiculo.id);
 
   return {
     veiculo,
