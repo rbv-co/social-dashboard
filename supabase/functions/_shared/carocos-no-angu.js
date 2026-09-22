@@ -15,9 +15,18 @@
 // parece "o robô quebrou", e são coisas opostas. Ver quinze conferências com o
 // número de cada uma é o que separa as duas.
 //
-// Como acrescentar uma conferência: uma entrada aqui, com a consulta e a frase
-// do que fazer. O teste que confere se toda conferência está bem formada pega
-// campo faltando antes de o robô rodar.
+// ⚠️ A CONSULTA DE CADA CONFERÊNCIA NÃO MORA MAIS AQUI. Em 22/09/2026 o log
+// virou AO VIVO (edge + cron do banco, de 10 em 10 minutos), e a edge é Deno:
+// ela não abre conexão de Postgres, ela chama função. As quinze consultas estão
+// em `public.vessel_carocos()`, criada por
+// `db/migrations/2026-09-22-log-de-carocos-ao-vivo.sql`.
+//
+// Aqui ficou o que decide TEXTO e FORMA — nome, gravidade, o que fazer, a
+// ordem do Resumo — que é o que o teste em node alcança.
+//
+// Como acrescentar uma conferência: uma entrada aqui E a consulta na função do
+// banco, com a MESMA chave. O teste "toda conferência está bem formada" pega
+// campo faltando; a prova do aplicador pega chave que existe de um lado só.
 
 /** A gravidade decide a ordem no Resumo e a palavra que o dono lê. */
 export const GRAVE = 'olhar hoje';
@@ -38,15 +47,6 @@ export const CONFERENCIAS = [
     gravidade: GRAVE,
     oQueFazer: 'Abra os dois no Bling e veja se é a mesma venda. Em 21/09 a venda '
       + 'da Luiza Maria Carvalho tinha TRÊS pedidos, dois cancelados.',
-    sql: `select contato_nome as quem,
-                 max(data_do_pedido)::text as quando,
-                 count(*)::text || ' pedidos iguais: ' || string_agg(numero, ', ' order by numero) as detalhe,
-                 sum(receita_liquida) as valor
-            from vessel_pedidos
-           where situacao_id = 9
-           group by contato_nome, data_do_pedido, total_produtos
-          having count(*) > 1
-           order by sum(receita_liquida) desc`,
   },
   {
     chave: 'venda-sem-vendedor',
@@ -55,11 +55,6 @@ export const CONFERENCIAS = [
     gravidade: OLHAR,
     oQueFazer: 'Sem vendedor a venda não entra na conta de ninguém. Confira no Bling '
       + 'quem atendeu, ou confirme que foi venda de site.',
-    sql: `select contato_nome as quem, data_do_pedido::text as quando,
-                 'pedido ' || numero as detalhe, receita_liquida as valor
-            from vessel_pedidos
-           where situacao_id = 9 and vendedor_id is null
-           order by data_do_pedido desc`,
   },
   {
     chave: 'venda-sem-item',
@@ -68,12 +63,6 @@ export const CONFERENCIAS = [
     gravidade: GRAVE,
     oQueFazer: 'Venda com valor e sem peça não fecha estoque. Veja no Bling se o '
       + 'pedido está mesmo vazio.',
-    sql: `select p.contato_nome as quem, p.data_do_pedido::text as quando,
-                 'pedido ' || p.numero as detalhe, p.receita_liquida as valor
-            from vessel_pedidos p
-           where p.situacao_id = 9
-             and not exists (select 1 from vessel_pedido_itens i where i.pedido_id = p.id)
-           order by p.data_do_pedido desc`,
   },
   {
     chave: 'venda-valor-zero',
@@ -82,11 +71,6 @@ export const CONFERENCIAS = [
     gravidade: GRAVE,
     oQueFazer: 'Pode ser brinde, troca ou erro de digitação. Se for brinde, tudo bem — '
       + 'só não deve entrar na conta de faturamento.',
-    sql: `select contato_nome as quem, data_do_pedido::text as quando,
-                 'pedido ' || numero as detalhe, 0::numeric as valor
-            from vessel_pedidos
-           where situacao_id = 9 and coalesce(receita_liquida, 0) = 0
-           order by data_do_pedido desc`,
   },
   {
     chave: 'venda-que-parece-teste',
@@ -97,20 +81,10 @@ export const CONFERENCIAS = [
       + 'Se for teste mesmo, cancele no Bling — na conferência seguinte ele sai daqui '
       + 'sozinho. ⚠️ O aviso por VALOR BAIXO pode pegar venda de verdade (brinde, '
       + 'ajuste); leia a coluna Detalhe antes de mexer.',
-    // ⚠️ DUAS RÉGUAS, e a linha diz qual pegou. Pelo NOME é quase certeza
-    // ("TESTE INTEGRACAO API - PODE EXCLUIR"); pelo VALOR é só desconfiança, e
-    // acusar venda boa de ser teste é pior que deixar o teste passar.
-    sql: `select contato_nome as quem, data_do_pedido::text as quando,
-                 'pedido ' || numero || ' — ' ||
-                 case when contato_nome ilike '%teste%' or contato_nome ilike '%test %'
-                      then 'o nome do cliente diz teste'
-                      else 'valor abaixo de R$ 5' end as detalhe,
-                 receita_liquida as valor
-            from vessel_pedidos
-           where situacao_id = 9
-             and (contato_nome ilike '%teste%' or contato_nome ilike '%test %'
-                  or receita_liquida < 5)
-           order by receita_liquida desc`,
+    // ⚠️ DUAS RÉGUAS, e a linha diz qual pegou (a consulta está em
+    // `db/migrations/2026-09-22-log-de-carocos-ao-vivo.sql`). Pelo NOME é quase
+    // certeza ("TESTE INTEGRACAO API - PODE EXCLUIR"); pelo VALOR é só
+    // desconfiança, e acusar venda boa de ser teste é pior que deixar passar.
   },
   {
     chave: 'venda-nunca-conferida',
@@ -120,11 +94,6 @@ export const CONFERENCIAS = [
     oQueFazer: 'A conferência ao vivo olha 30 dias para trás. Pedido mais antigo que '
       + 'isso nunca é revisitado — se tiver sido cancelado depois, ninguém vai saber. '
       + 'Para conferir tudo: rode o robô dos pedidos com uma janela maior.',
-    sql: `select contato_nome as quem, data_do_pedido::text as quando,
-                 'pedido ' || numero as detalhe, receita_liquida as valor
-            from vessel_pedidos
-           where situacao_id = 9 and conferido_no_bling_em is null
-           order by data_do_pedido desc`,
   },
 
   // ── CATÁLOGO ──────────────────────────────────────────────────────────────
@@ -135,13 +104,6 @@ export const CONFERENCIAS = [
     gravidade: OLHAR,
     oQueFazer: 'Sem código não dá para somar quanto cada modelo vendeu. Confira o '
       + 'cadastro do produto no Bling.',
-    sql: `select coalesce(i.descricao, '(sem descrição)') as quem,
-                 p.data_do_pedido::text as quando,
-                 'pedido ' || p.numero as detalhe, i.total_do_item as valor
-            from vessel_pedido_itens i
-            join vessel_pedidos p on p.id = i.pedido_id
-           where i.sku is null or i.sku = ''
-           order by p.data_do_pedido desc`,
   },
 
   // ── CADASTRO ──────────────────────────────────────────────────────────────
@@ -152,11 +114,6 @@ export const CONFERENCIAS = [
     gravidade: OLHAR,
     oQueFazer: 'Cadastro feito para testar não deve contar como lead. Apague na '
       + 'Central, e ele some da planilha na rodada seguinte.',
-    sql: `select nome as quem, criado_em::date::text as quando,
-                 'origem: ' || origem as detalhe, null::numeric as valor
-            from vessel_lista_espera
-           where origem ilike '%teste%' or nome ilike '%teste%'
-           order by criado_em desc`,
   },
   {
     chave: 'email-repetido',
@@ -165,12 +122,6 @@ export const CONFERENCIAS = [
     gravidade: OLHAR,
     oQueFazer: 'A mesma pessoa contada duas vezes infla a lista. Veja se são pessoas '
       + 'diferentes ou o mesmo cadastro repetido.',
-    sql: `select lower(email) as quem, max(criado_em)::date::text as quando,
-                 count(*)::text || ' cadastros: ' || string_agg(nome, ', ') as detalhe,
-                 null::numeric as valor
-            from vessel_lista_espera
-           where email is not null and email <> ''
-           group by lower(email) having count(*) > 1`,
   },
   {
     chave: 'whatsapp-torto',
@@ -178,13 +129,6 @@ export const CONFERENCIAS = [
     titulo: 'WhatsApp que não parece número',
     gravidade: OLHAR,
     oQueFazer: 'Sem WhatsApp certo ninguém consegue falar com ela. Confira o cadastro.',
-    sql: `select nome as quem, criado_em::date::text as quando,
-                 'guardado como: ' || coalesce(whatsapp, '(vazio)') as detalhe,
-                 null::numeric as valor
-            from vessel_lista_espera
-           where whatsapp is null
-              or length(regexp_replace(whatsapp, '\\D', '', 'g')) < 10
-           order by criado_em desc`,
   },
   {
     chave: 'sessao-sem-salao',
@@ -193,11 +137,6 @@ export const CONFERENCIAS = [
     gravidade: OLHAR,
     oQueFazer: 'Sem o salão não dá para saber, depois, qual parceiro trouxe mais gente. '
       + 'Preencha na Central.',
-    sql: `select codigo as quem, quando::text as quando,
-                 'praça ' || coalesce(praca, '—') as detalhe, null::numeric as valor
-            from vessel_beauty_sessions
-           where (parceiro is null or parceiro = '') and ativa
-           order by quando desc`,
   },
   {
     chave: 'evento-ativo-no-passado',
@@ -206,12 +145,6 @@ export const CONFERENCIAS = [
     gravidade: SABER,
     oQueFazer: 'Encontro que já aconteceu e continua ativo ainda aceita gente se '
       + 'inscrevendo. Encerre na Central.',
-    sql: `select codigo as quem, quando::date::text as quando,
-                 'Private Edit' as detalhe, null::numeric as valor
-            from vessel_private_edits where ativa and quando < now()
-           union all
-          select codigo, quando::text, 'Beauty Session', null::numeric
-            from vessel_beauty_sessions where ativa and quando < current_date`,
   },
   {
     chave: 'garantia-sem-peca',
@@ -220,11 +153,6 @@ export const CONFERENCIAS = [
     gravidade: GRAVE,
     oQueFazer: 'A cliente tem garantia de um selo que o sistema não conhece. Confira '
       + 'o código da peça.',
-    sql: `select r.nome as quem, r.registrado_em::date::text as quando,
-                 'selo ' || r.codigo as detalhe, null::numeric as valor
-            from vessel_registros r
-           where not exists (select 1 from vessel_pecas p where p.codigo = r.codigo)
-           order by r.registrado_em desc`,
   },
 
   // ── META ──────────────────────────────────────────────────────────────────
@@ -235,13 +163,6 @@ export const CONFERENCIAS = [
     gravidade: OLHAR,
     oQueFazer: 'É a reclamação que a Meta devolve sobre a campanha ou o anúncio. '
       + 'Resolva no Gerenciador de Anúncios.',
-    sql: `select coalesce(campanha_nome, conta_nome, '(sem nome)') as quem,
-                 primeira_vez::date::text as quando,
-                 titulo || coalesce(' — ' || detalhe, '') as detalhe,
-                 null::numeric as valor
-            from gt_problemas_meta
-           where resolvido_em is null
-           order by grave desc nulls last, primeira_vez desc`,
   },
 
   // ── ROBÔS ─────────────────────────────────────────────────────────────────
@@ -253,14 +174,6 @@ export const CONFERENCIAS = [
     oQueFazer: 'Abra a Central em Status. ⚠️ Antes de correr: confira se o teto de '
       + 'horas bate com a frequência do robô — robô que roda 1x por dia com teto de '
       + '4 horas vai parecer parado todo dia, e isso é alarme falso, não defeito.',
-    sql: `select robo as quem,
-                 coalesce(ultimo_sucesso::date::text, 'nunca') as quando,
-                 situacao || coalesce(' — parou em ' || array_to_string(quem_falhou, ', '), '')
-                   || ' (teto de ' || horas_sem_sucesso_ate || 'h)' as detalhe,
-                 null::numeric as valor
-            from robos_saude
-           where situacao <> 'ok'
-           order by critico desc, robo`,
   },
 ];
 

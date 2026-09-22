@@ -4,6 +4,11 @@
 //   node coletor/log-de-carocos.mjs --ensaio --gravar-em x.xlsx
 //   node coletor/log-de-carocos.mjs                          # ⚠️ sobe no Zoho
 //
+// ⚠️ QUEM MANTÉM O LOG NO DIA A DIA NÃO É ESTE ARQUIVO. Desde 22/09/2026 é a
+// edge `vessel-log-de-carocos`, chamada pelo cron do banco de 10 em 10 minutos.
+// Este aqui ficou como ENSAIO (montar e olhar sem enviar) e como RESGATE, se a
+// edge estiver quebrada — pelo mesmo código e pela mesma função do banco.
+//
 // O QUE É: pedido do dono em 21/09/2026 — "um log de possíveis erros, o que
 // PARECE ser erro, caroço no angu". As conferências, a gravidade e a frase do
 // que fazer moram em `lib/carocos-no-angu.mjs`, com teste. Aqui só se executa,
@@ -20,7 +25,7 @@
 import './lib/carregar-env.mjs';
 import { writeFileSync } from 'node:fs';
 import pg from 'pg';
-import { CONFERENCIAS, montarAbasDoLog } from './lib/carocos-no-angu.mjs';
+import { CONFERENCIAS, montarAbasDoLog } from '../supabase/functions/_shared/carocos-no-angu.js';
 import { montarXlsx, bytesIguais } from '../supabase/functions/_shared/planilha-xlsx.js';
 import { abasDoXlsx } from '../supabase/functions/_shared/ler-xlsx.mjs';
 import {
@@ -50,23 +55,18 @@ const TIPO_XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.s
 const cli = new pg.Client({ connectionString: process.env.DATABASE_URL });
 await cli.connect();
 
+// ⚠️ A MESMA FUNÇÃO QUE A EDGE CHAMA, e não uma cópia das consultas aqui. Duas
+// listas de SQL para o mesmo log é como o ensaio passa a mentir sobre o que o
+// robô de verdade faz.
 const resultados = {};
 const quebradas = [];
 try {
+  const { rows: [{ vessel_carocos: tudo }] } = await cli.query('select public.vessel_carocos()');
   for (const c of CONFERENCIAS) {
-    try {
-      const { rows } = await cli.query(c.sql);
-      resultados[c.chave] = rows;
-    } catch (e) {
-      // A conferência que quebrou vira linha no log, em vez de matar a rodada.
-      resultados[c.chave] = [{
-        quem: '⚠️ esta conferência não rodou',
-        quando: new Date().toISOString().slice(0, 10),
-        detalhe: `a consulta falhou: ${e.message}`.slice(0, 300),
-        valor: null,
-      }];
-      quebradas.push(`${c.chave}: ${e.message}`);
-    }
+    const linhas = tudo?.[c.chave];
+    if (Array.isArray(linhas)) { resultados[c.chave] = linhas; continue; }
+    resultados[c.chave] = [];
+    quebradas.push(`${c.chave}: a função do banco não devolveu esta conferência`);
   }
 } finally {
   await cli.end();
