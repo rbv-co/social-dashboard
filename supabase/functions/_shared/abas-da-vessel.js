@@ -52,6 +52,11 @@ export const CONSULTAS = {
   pecas: { tabela: 'vessel_pecas', colunas: 'codigo,lote_id' },
   lotes: { tabela: 'vessel_lotes', colunas: 'id,modelo,cor' },
   lojasDoBling: { tabela: 'bling_lojas', colunas: 'loja_id,nome' },
+  // Quem vendeu e o que saiu: os dois já estavam no banco e fora da planilha.
+  // 452 dos 464 pedidos têm vendedor; são 1.138 itens em 464 pedidos.
+  vendedores: { tabela: 'vessel_vendedores_bling', colunas: 'bling_vendedor_id,nome' },
+  itensVendidos: { tabela: 'vessel_pedido_itens',
+    colunas: 'pedido_id,sku,descricao,quantidade,total_do_item' },
 };
 
 // ── os rótulos em português ──────────────────────────────────────────────────
@@ -146,8 +151,11 @@ const maisVelhoPrimeiro = (campo) => (a, b) =>
 //   Lista de espera  →  Landing page                 (quem chegou pelo site)
 //   Pessoas          →  Clientes
 //   Atendimentos     →  Visitas às lojas
-//   Atribuição       →  De onde veio e no que deu
 //   Origens          →  Histórico de origem
+//
+// E em 21/09, à noite, a "Atribuição" (que tinha virado "De onde veio e no que
+// deu") FOI ABSORVIDA por "Visitas às lojas": as duas eram uma linha por visita,
+// da mesma tabela. Onze abas, e não mais doze.
 //
 // ⚠️ AS TABELAS NÃO FORAM RENOMEADAS, e isso não é descuido. `vessel_lista_espera`
 // continua com esse nome porque renomear tabela em produção arrasta migration,
@@ -202,10 +210,9 @@ const INSTRUCOES = [
   bloco('O QUE TEM EM CADA ABA'),
   'Landing page — quem se cadastrou pelo site, e o que ela pediu para a visita',
   'Clientes — as pessoas da base, com cidade e Client Advisor',
-  'Visitas às lojas — horário marcado, quem veio e quem não veio',
-  'Vendas — os pedidos, com o valor que entrou de verdade',
+  'Visitas às lojas — a visita inteira: quem veio, por onde chegou e o que comprou depois',
+  'Vendas — os pedidos: quem vendeu, o que saiu, e o valor que entrou de verdade',
   'Garantias — o selo registrado e a fila de conferência',
-  'De onde veio e no que deu — uma linha por visita: por onde chegou e o que comprou depois',
   'Histórico de origem — todo registro de origem, para provar por onde ela chegou',
   'Convites abertos — quem abriu convite, pelo QR do cartão ou pelo link',
   'Stylists — cada stylist, com o link dela e quantas clientes trouxe',
@@ -233,6 +240,20 @@ export function montarAbas(d) {
   const zapDaPessoa = (id) => pessoaPorId.get(id)?.telefone || '';
   const nomeDaLoja = new Map(d.lojasDoBling.map((l) => [String(l.loja_id), l.nome]));
   const nomeDaStylist = new Map(d.stylists.map((s) => [s.codigo, s.nome]));
+  const nomeDoVendedor = new Map(
+    (d.vendedores ?? []).map((v) => [String(v.bling_vendedor_id), v.nome]));
+
+  // As peças de cada pedido, resumidas numa célula. ⚠️ `pedido_id` aponta para
+  // `vessel_pedidos.id` (a chave da NOSSA tabela), e não para o id do Bling —
+  // conferido no banco antes de escrever, porque trocar os dois devolveria
+  // peças de outro pedido sem erro nenhum.
+  const pecasDoPedido = new Map();
+  for (const i of (d.itensVendidos ?? [])) {
+    const lista = pecasDoPedido.get(String(i.pedido_id)) ?? [];
+    const quantos = Math.round(Number(i.quantidade) || 1);
+    lista.push(`${i.descricao || i.sku}${quantos > 1 ? ` (${quantos}x)` : ''}`);
+    pecasDoPedido.set(String(i.pedido_id), lista);
+  }
 
   // ⚠️ A PRIMEIRA linha de origem de cada pessoa, nunca a última: é o first
   // touch, e o plano proíbe sobrescrevê-lo.
@@ -315,67 +336,18 @@ export function montarAbas(d) {
           p.bling_contato_id, p.criado_em]),
     },
     {
+      // ⚠️ ESTA ABA ENGOLIU A "De onde veio e no que deu" em 21/09/2026, e o
+      // motivo é que as duas eram A MESMA COISA: uma linha por visita agendada,
+      // da mesma tabela, com o mesmo grão. Uma mostrava loja/situação/Client
+      // Advisor e a outra mostrava origem/campanha/compra — uma tabela partida
+      // ao meio, que o dono leu como redundância. A segunda nasceu no Growth
+      // Plan como "a versão em planilha do painel de atribuição"; agora é a
+      // mesma aba, inteira.
+      //
+      // ⚠️ AS LINHAS DE TESTE SAEM. A aba antiga de visitas NÃO filtrava
+      // `teste` e a de atribuição filtrava — juntar sem decidir deixaria o
+      // número de visitas diferente do que o painel mostra. Fica o filtro.
       nome: 'Visitas às lojas',
-      colunas: [
-        { titulo: 'Cliente', largura: 28 },
-        { titulo: 'WhatsApp', largura: 18 },
-        { titulo: 'Loja', largura: 20 },
-        { titulo: 'Quando', tipo: 'instante', largura: 18 },
-        { titulo: 'Client Advisor', largura: 20 },
-        { titulo: 'Situação', largura: 16 },
-        { titulo: 'Veio em', tipo: 'dia-de-instante', largura: 14 },
-        { titulo: 'Convite', largura: 14 },
-        { titulo: 'Veio de', largura: 12 },
-        { titulo: 'Pedido em', tipo: 'dia-de-instante', largura: 14 },
-      ],
-      linhas: [...d.atendimentos].sort(maisNovoPrimeiro('criado_em')).map((a) => [
-        nomeDaPessoa(a.pessoa_id), zapDaPessoa(a.pessoa_id),
-        LOJA[a.loja] || a.loja, a.quando, a.client_advisor,
-        STATUS[a.status] || a.status, a.presenca_em, a.convite_codigo,
-        a.origem_registro === 'appointment_card' ? 'Cartão' : 'Site',
-        a.criado_em,
-      ]),
-    },
-    {
-      nome: 'Vendas',
-      colunas: [
-        { titulo: 'Data da venda', tipo: 'dia', largura: 14 },
-        { titulo: 'Pedido', largura: 12 },
-        { titulo: 'Loja', largura: 22 },
-        { titulo: 'Cliente (no Bling)', largura: 28 },
-        { titulo: 'Conhecemos?', largura: 22 },
-        { titulo: 'Como casou', largura: 16 },
-        // ⚠️ "Valor que entrou" e não "Valor": o `total` do Bling não desconta o
-        // desconto do item e sai ~6% maior. Coluna com nome vago é como alguém
-        // soma a errada sem perceber.
-        { titulo: 'Valor que entrou', tipo: 'dinheiro', largura: 16 },
-        { titulo: 'Preço de tabela', tipo: 'dinheiro', largura: 16 },
-        { titulo: 'Contado pelo dia de', largura: 16 },
-      ],
-      linhas: [...d.pedidos].sort(maisNovoPrimeiro('data_da_venda')).map((p) => [
-        p.data_da_venda, p.numero, nomeDaLoja.get(String(p.loja_id)) || '',
-        p.contato_nome,
-        // ⚠️ "Órfã" não é defeito: é venda de quem nunca passou por um
-        // formulário nosso. É o número que diz quanto do faturamento a captação
-        // ainda não alcança.
-        p.pessoa_id ? nomeDaPessoa(p.pessoa_id) || 'sim' : 'órfã',
-        p.casou_por === 'bling_contato' ? 'ficha do Bling'
-          : p.casou_por === 'telefone' ? 'telefone' : '',
-        p.receita_liquida, p.total_do_bling,
-        p.origem_da_data === 'nota' ? 'nota fiscal' : 'pedido',
-      ]),
-    },
-    {
-      nome: 'Garantias',
-      colunas: COLUNAS_DE_GARANTIAS,
-      linhas: linhasDeGarantias(d.registros, d.pedidosDeRegistro,
-        pecaParaLote(d.pecas, d.lotes)),
-    },
-    {
-      // A ABA QUE RESPONDE "DE ONDE VEIO E DEU EM QUÊ" — uma linha por
-      // atendimento, com a etiqueta de origem e o que aconteceu depois. É a
-      // versão em planilha do painel de atribuição.
-      nome: 'De onde veio e no que deu',
       colunas: [
         { titulo: 'Cliente', largura: 28 },
         { titulo: 'WhatsApp', largura: 18 },
@@ -383,34 +355,103 @@ export function montarAbas(d) {
         { titulo: 'Quando', tipo: 'instante', largura: 18 },
         { titulo: 'Situação', largura: 16 },
         { titulo: 'Veio?', largura: 8 },
+        { titulo: 'Veio em', tipo: 'dia-de-instante', largura: 13 },
+        { titulo: 'Client Advisor', largura: 20 },
         { titulo: 'Chegou por (1ª vez)', largura: 26 },
         { titulo: 'Campanha', largura: 22 },
         { titulo: 'Stylist', largura: 22 },
         { titulo: 'Encontro', largura: 14 },
+        { titulo: 'Convite', largura: 14 },
         { titulo: 'Este atendimento veio de', largura: 26 },
         { titulo: 'Comprou até 7 dias depois', largura: 24 },
         { titulo: 'Valor que entrou (7 dias)', tipo: 'dinheiro', largura: 20 },
-        { titulo: 'Pedido em', tipo: 'dia-de-instante', largura: 14 },
+        { titulo: 'Pedido em', tipo: 'dia-de-instante', largura: 13 },
       ],
       linhas: [...d.atendimentos].sort(maisNovoPrimeiro('criado_em'))
         .filter(naoEhTeste).map((a) => {
-        const o = primeiraOrigem.get(a.pessoa_id) || {};
-        const compras = comprasPerto(d.pedidos, a.pessoa_id, a.quando || a.criado_em);
+          const o = primeiraOrigem.get(a.pessoa_id) || {};
+          const compras = comprasPerto(d.pedidos, a.pessoa_id, a.quando || a.criado_em);
+          return [
+            nomeDaPessoa(a.pessoa_id), zapDaPessoa(a.pessoa_id),
+            LOJA[a.loja] || a.loja, a.quando, STATUS[a.status] || a.status,
+            a.status === 'realizado' ? 'sim' : a.status === 'no_show' ? 'não' : '',
+            a.presenca_em, a.client_advisor,
+            canal(o.canal), o.utm_campaign || '',
+            o.stylist_id ? `${nomeDaStylist.get(o.stylist_id) || ''} (${o.stylist_id})`.trim() : '',
+            a.evento_codigo || o.evento_id || '',
+            a.convite_codigo,
+            canal(a.origem_registro),
+            compras.map((c) => c.numero).join(' · '),
+            compras.length
+              ? compras.reduce((t, c) => t + Number(c.receita_liquida ?? c.total_corrigido ?? 0), 0)
+              : '',
+            a.criado_em,
+          ];
+        }),
+    },
+    {
+      nome: 'Vendas',
+      colunas: [
+        { titulo: 'Data da venda', tipo: 'dia', largura: 14 },
+        { titulo: 'Pedido', largura: 10 },
+        { titulo: 'Loja', largura: 24 },
+        { titulo: 'Quem vendeu', largura: 26 },
+        { titulo: 'Cliente (no Bling)', largura: 28 },
+        { titulo: 'Conhecemos?', largura: 22 },
+        { titulo: 'Como casou', largura: 15 },
+        { titulo: 'O que saiu', largura: 44 },
+        { titulo: 'Peças', tipo: 'numero', largura: 8 },
+        // ⚠️ AS TRÊS COLUNAS DE DINHEIRO SEMPRE FECHAM: tabela − desconto = entrou.
+        // Isso é uma escolha, e ela veio de medir. O desconto da Vessel mora em
+        // DOIS lugares no Bling: um no pedido e outro em cada peça — 119 dos 464
+        // pedidos (26%) têm o do item. Mostrar os dois separados parecia mais
+        // completo e era pior: em 2 pedidos antigos os números do próprio Bling
+        // se contradizem (o 2116 tem total 194,95 e soma de peças 339,90), e a
+        // coluna de desconto por peça sairia NEGATIVA. Uma coluna só, que é a
+        // conta que a pessoa faz de cabeça, nunca se contradiz.
+        //
+        // ⚠️ "Preço de tabela" é `total_produtos` (a soma dos preços cheios), e
+        // não o `total` do Bling, que já vem com o desconto do pedido aplicado e
+        // sem o do item — era ele que estava nesta coluna até 21/09/2026.
+        { titulo: 'Preço de tabela', tipo: 'dinheiro', largura: 16 },
+        { titulo: 'Desconto', tipo: 'dinheiro', largura: 13 },
+        { titulo: 'Desconto (%)', tipo: 'numero', largura: 13 },
+        { titulo: 'Valor que entrou', tipo: 'dinheiro', largura: 17 },
+        { titulo: 'Contado pelo dia de', largura: 17 },
+      ],
+      linhas: [...d.pedidos].sort(maisNovoPrimeiro('data_da_venda')).map((p) => {
+        const pecas = pecasDoPedido.get(String(p.id)) ?? [];
+        const tabela = Number(p.total_produtos) || 0;
+        const entrou = Number(p.receita_liquida) || 0;
+        const desconto = Math.round((tabela - entrou) * 100) / 100;
         return [
-          nomeDaPessoa(a.pessoa_id), zapDaPessoa(a.pessoa_id),
-          LOJA[a.loja] || a.loja, a.quando, STATUS[a.status] || a.status,
-          a.status === 'realizado' ? 'sim' : a.status === 'no_show' ? 'não' : '',
-          canal(o.canal), o.utm_campaign || '',
-          o.stylist_id ? `${nomeDaStylist.get(o.stylist_id) || ''} (${o.stylist_id})`.trim() : '',
-          a.evento_codigo || o.evento_id || '',
-          canal(a.origem_registro),
-          compras.map((c) => c.numero).join(' · '),
-          compras.length
-            ? compras.reduce((t, c) => t + Number(c.receita_liquida ?? c.total_corrigido ?? 0), 0)
-            : '',
-          a.criado_em,
+          p.data_da_venda, p.numero, nomeDaLoja.get(String(p.loja_id)) || '',
+          // Vendedor que o Bling não conhece mais sai com o número, e não vazio:
+          // vazio parece "venda sem vendedor", que é outra coisa.
+          nomeDoVendedor.get(String(p.vendedor_id))
+            || (p.vendedor_id ? `nº ${p.vendedor_id}` : ''),
+          p.contato_nome,
+          // ⚠️ "Órfã" não é defeito: é venda de quem nunca passou por um
+          // formulário nosso. É o número que diz quanto do faturamento a
+          // captação ainda não alcança.
+          p.pessoa_id ? nomeDaPessoa(p.pessoa_id) || 'sim' : 'órfã',
+          p.casou_por === 'bling_contato' ? 'ficha do Bling'
+            : p.casou_por === 'telefone' ? 'telefone' : '',
+          pecas.join(' · '), pecas.length,
+          tabela, desconto,
+          // Sem preço de tabela não há porcentagem a calcular — melhor vazio
+          // que um zero que parece "vendeu sem desconto".
+          tabela > 0 ? Math.round((desconto / tabela) * 1000) / 10 : '',
+          p.receita_liquida,
+          p.origem_da_data === 'nota' ? 'nota fiscal' : 'pedido',
         ];
       }),
+    },
+    {
+      nome: 'Garantias',
+      colunas: COLUNAS_DE_GARANTIAS,
+      linhas: linhasDeGarantias(d.registros, d.pedidosDeRegistro,
+        pecaParaLote(d.pecas, d.lotes)),
     },
     {
       // TODA linha de origem, na ordem em que chegou. A de atribuição mostra só
