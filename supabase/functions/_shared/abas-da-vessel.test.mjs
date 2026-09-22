@@ -30,10 +30,10 @@ const PESSOA = { id: 1, nome: 'Marisa Carvalho', telefone: '+5511948670004',
 // análise, e por último os programas da marca.
 const ORDEM_DAS_ABAS = [
   'Instruções', 'Landing page', 'Clientes', 'Visitas às lojas', 'Vendas', 'Garantias',
-  'De onde veio e no que deu', 'Histórico de origem', 'Convites abertos', 'Stylists',
-  'Private Edits', 'Beauty Sessions'];
+  'Histórico de origem', 'Convites abertos', 'Stylists', 'Private Edits',
+  'Beauty Sessions'];
 
-test('as doze abas estão todas lá, na ordem que o dono aprovou', async () => {
+test('as onze abas estão todas lá, na ordem que o dono aprovou', async () => {
   const todas = abasDoXlsx(await montarXlsx(montarAbas(vazio())));
   assert.deepEqual(todas.map((a) => a.nome), ORDEM_DAS_ABAS);
 });
@@ -99,11 +99,11 @@ test('Vendas: cliente conhecida sai pelo nome dela', async () => {
   assert.equal(a.linhas[0][a.colunas.indexOf('Como casou')], 'telefone');
 });
 
-test('⚠️ De onde veio e no que deu: a janela de 7 dias começa no dia BRASILEIRO da visita', async () => {
+test('⚠️ Visitas às lojas: a janela de 7 dias começa no dia BRASILEIRO da visita', async () => {
   // Visita às 22h30 do dia 05/10 no Brasil — que em UTC já é 06/10.
   // Com a conta em UTC, a compra do próprio dia 05 ficaria FORA da janela e a
   // visita apareceria como "não comprou". Este teste morre se isso voltar.
-  const a = await aba('De onde veio e no que deu', {
+  const a = await aba('Visitas às lojas', {
     atendimentos: [{ pessoa_id: 1, loja: 'iguatemi', status: 'realizado',
       quando: '2026-10-06T01:30:00+00:00', criado_em: '2026-10-01T12:00:00Z' }],
     pessoas: [PESSOA],
@@ -117,8 +117,8 @@ test('⚠️ De onde veio e no que deu: a janela de 7 dias começa no dia BRASIL
   assert.equal(c('Veio?'), 'sim');
 });
 
-test('De onde veio e no que deu: compra de 8 dias depois fica FORA da janela', async () => {
-  const a = await aba('De onde veio e no que deu', {
+test('Visitas às lojas: compra de 8 dias depois fica FORA da janela', async () => {
+  const a = await aba('Visitas às lojas', {
     atendimentos: [{ pessoa_id: 1, status: 'no_show', quando: '2026-10-05T15:00:00Z',
       criado_em: '2026-10-01T12:00:00Z' }],
     pessoas: [PESSOA],
@@ -138,7 +138,7 @@ test('Atribuição e origem: o first touch é a origem MAIS ANTIGA', async () =>
     atendimentos: [{ pessoa_id: 1, status: 'realizado', quando: '2026-09-15T15:00:00Z',
       criado_em: '2026-09-15T12:00:00Z' }],
   };
-  const atrib = await aba('De onde veio e no que deu', dados);
+  const atrib = await aba('Visitas às lojas', dados);
   assert.equal(atrib.linhas[0][atrib.colunas.indexOf('Chegou por (1ª vez)')], 'Anúncio (Meta)');
   assert.equal(atrib.linhas[0][atrib.colunas.indexOf('Campanha')], 'lancamento');
 
@@ -184,7 +184,11 @@ test('Visitas às lojas: situação em português e os três dias certos', async
   assert.equal(c('Quando'), '05/10/2026 22:30');
   assert.equal(c('Veio em'), '05/10/2026');
   assert.equal(c('Pedido em'), '30/09/2026');
-  assert.equal(c('Veio de'), 'Cartão');
+  // ⚠️ A coluna binária "Veio de" (Cartão / Site) MORREU na fusão das duas abas
+  // de visita. Ela chamava de "Site" tudo o que não fosse cartão — inclusive o
+  // link de uma stylist e o QR de uma Beauty Session. A que ficou sabe o canal.
+  assert.equal(c('Este atendimento veio de'), 'Cartão da loja');
+  assert.equal(c('Client Advisor'), 'Ionara');
 });
 
 test('Convites abertos: QR e link têm nomes diferentes', async () => {
@@ -416,4 +420,111 @@ test('a aba de Instruções não tem listra — listra em texto corrido vira tab
   for (const a of abas.filter((x) => !x.documentacao)) {
     assert.notEqual(a.zebra, false, `a aba "${a.nome}" perdeu a listra`);
   }
+});
+
+test('⚠️ Vendas: preço de tabela − desconto = valor que entrou, SEMPRE', async () => {
+  // O desconto da Vessel mora em DOIS lugares no Bling: um no pedido e outro em
+  // cada peça (119 dos 464 pedidos têm o segundo, medido em 21/09/2026). A aba
+  // mostra UMA coluna de desconto, somando os dois, justamente para as três
+  // colunas nunca se contradizerem na frente do dono.
+  const a = await aba('Vendas', {
+    pedidos: [
+      // desconto só no pedido
+      { numero: '1', data_da_venda: '2026-09-21', total_produtos: '800.00',
+        desconto: '400.00', total_do_bling: '400.00', receita_liquida: '400.00' },
+      // desconto também na peça: o `total` do Bling não enxerga, a soma sim
+      { numero: '2', data_da_venda: '2026-09-20', total_produtos: '1000.00',
+        desconto: '100.00', total_do_bling: '900.00', receita_liquida: '850.00' },
+      // e o caso torto de verdade: o Bling se contradiz (pedido 2116, julho)
+      { numero: '3', data_da_venda: '2026-07-04', total_produtos: '389.90',
+        desconto: '50.00', total_do_bling: '194.95', receita_liquida: '339.90' },
+    ],
+  });
+  const col = (t) => a.colunas.indexOf(t);
+  for (const l of a.linhas) {
+    const tabela = Number(l[col('Preço de tabela')]);
+    const desconto = Number(l[col('Desconto')]);
+    const entrou = Number(l[col('Valor que entrou')]);
+    assert.ok(Math.abs((tabela - desconto) - entrou) < 0.01,
+      `o pedido ${l[col('Pedido')]} não fecha: ${tabela} - ${desconto} ≠ ${entrou}`);
+    assert.ok(desconto >= 0, `desconto negativo no pedido ${l[col('Pedido')]}`);
+  }
+  // e a porcentagem acompanha
+  assert.equal(a.linhas[0][col('Desconto (%)')], '50');
+});
+
+test('Vendas: quem vendeu sai pelo nome, e o desconhecido sai pelo número', async () => {
+  const a = await aba('Vendas', {
+    pedidos: [
+      { numero: '1', data_da_venda: '2026-09-21', vendedor_id: 77 },
+      { numero: '2', data_da_venda: '2026-09-20', vendedor_id: 999 },
+      { numero: '3', data_da_venda: '2026-09-19', vendedor_id: null },
+    ],
+    vendedores: [{ bling_vendedor_id: 77, nome: 'Ionara Elias' }],
+  });
+  const i = a.colunas.indexOf('Quem vendeu');
+  assert.equal(a.linhas[0][i], 'Ionara Elias');
+  // ⚠️ Vendedor que o Bling não conhece mais sai com o NÚMERO, e não vazio:
+  // vazio parece "venda sem vendedor", que é outra coisa.
+  assert.equal(a.linhas[1][i], 'nº 999');
+  assert.equal(a.linhas[2][i] ?? '', '');
+});
+
+test('Vendas: "O que saiu" traz as peças do pedido CERTO', async () => {
+  // ⚠️ `vessel_pedido_itens.pedido_id` aponta para `vessel_pedidos.id` (a chave
+  // da nossa tabela), e não para o id do Bling. Trocar os dois devolveria peças
+  // de outro pedido sem erro nenhum.
+  const a = await aba('Vendas', {
+    pedidos: [
+      { id: 1, bling_pedido_id: 26890674024, numero: '2668', data_da_venda: '2026-09-21' },
+      { id: 2, bling_pedido_id: 26889945274, numero: '2667', data_da_venda: '2026-09-20' },
+    ],
+    itensVendidos: [
+      { pedido_id: 1, sku: 'SS1', descricao: 'ShoulderBag Ravelle Small Mostarda', quantidade: '1.000' },
+      { pedido_id: 1, sku: 'SS2', descricao: 'East West Astrea Big Bordô', quantidade: '2.000' },
+      { pedido_id: 2, sku: 'SS3', descricao: 'Bolsa Festa Dubrovnik', quantidade: '1.000' },
+    ],
+  });
+  const oQue = a.colunas.indexOf('O que saiu');
+  const quantas = a.colunas.indexOf('Peças');
+  assert.equal(a.linhas[0][oQue],
+    'ShoulderBag Ravelle Small Mostarda · East West Astrea Big Bordô (2x)');
+  assert.equal(a.linhas[0][quantas], '2');
+  assert.equal(a.linhas[1][oQue], 'Bolsa Festa Dubrovnik');
+});
+
+test('⚠️ Visitas às lojas engoliu a aba de atribuição, e ficou com as duas metades', async () => {
+  const a = await aba('Visitas às lojas', {
+    pessoas: [PESSOA],
+    atendimentos: [{ pessoa_id: 1, loja: 'tivoli', status: 'realizado',
+      quando: '2026-10-06T01:30:00+00:00', client_advisor: 'Ionara',
+      convite_codigo: 'CV1', criado_em: '2026-10-01T12:00:00Z' }],
+    origens: [{ id: 1, pessoa_id: 1, canal: 'meta', momento: '2026-09-01T12:00:00Z',
+      utm_campaign: 'lancamento' }],
+    pedidos: [{ pessoa_id: 1, numero: '2700', data_do_pedido: '2026-10-05',
+      receita_liquida: '1200.00' }],
+  });
+  const c = (t) => a.linhas[0][a.colunas.indexOf(t)];
+  // a metade que era de "Visitas às lojas"
+  assert.equal(c('Loja'), 'Tivoli');
+  assert.equal(c('Client Advisor'), 'Ionara');
+  assert.equal(c('Convite'), 'CV1');
+  // a metade que era de "De onde veio e no que deu"
+  assert.equal(c('Chegou por (1ª vez)'), 'Anúncio (Meta)');
+  assert.equal(c('Campanha'), 'lancamento');
+  assert.equal(c('Comprou até 7 dias depois'), '2700');
+  assert.equal(c('Valor que entrou (7 dias)'), '1200');
+});
+
+test('⚠️ Visitas às lojas não mostra linha de teste', async () => {
+  // A aba antiga de visitas NÃO filtrava `teste` e a de atribuição filtrava.
+  // Juntar sem decidir deixaria o número de visitas diferente do do painel.
+  const a = await aba('Visitas às lojas', {
+    pessoas: [PESSOA],
+    atendimentos: [
+      { pessoa_id: 1, status: 'realizado', criado_em: '2026-10-02T12:00:00Z', teste: true },
+      { pessoa_id: 1, status: 'realizado', criado_em: '2026-10-01T12:00:00Z' },
+    ],
+  });
+  assert.equal(a.linhas.length, 1);
 });

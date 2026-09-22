@@ -6,20 +6,29 @@ Mantém UMA planilha no Zoho WorkDrive sempre igual ao que está no sistema:
 
   04. Vessel Brasil / 17. Marketing / Base de clientes / Base de clientes.xlsx
 
-São DOZE ABAS, nesta ordem:
+São ONZE ABAS, nesta ordem:
 
-  Instruções ................. como usar a planilha, em português
-  Landing page ............... quem se cadastrou pelo site (vesselbrasil.com.br)
-  Clientes ................... as pessoas da base, com cidade e Client Advisor
-  Visitas às lojas ........... horário marcado, quem veio e quem não veio
-  Vendas ..................... os pedidos, com o valor que realmente entrou
-  Garantias .................. as garantias confirmadas e a fila de conferência
-  De onde veio e no que deu .. uma linha por visita: origem + o que comprou depois
-  Histórico de origem ........ todo registro de origem, para provar por onde chegou
-  Convites abertos ........... quem abriu convite, por QR ou por link
-  Stylists ................... com o link de cada uma e quantas clientes trouxe
-  Private Edits .............. com o link de cada convite e quem compareceu
-  Beauty Sessions ............ com o endereço do QR e o salão parceiro
+  Instruções ............ como usar a planilha, em português
+  Landing page .......... quem se cadastrou pelo site (vesselbrasil.com.br)
+  Clientes .............. as pessoas da base, com cidade e Client Advisor
+  Visitas às lojas ...... a visita inteira: quem veio, por onde chegou, o que comprou
+  Vendas ................ quem vendeu, o que saiu, desconto e o valor que entrou
+  Garantias ............. as garantias confirmadas e a fila de conferência
+  Histórico de origem ... todo registro de origem, para provar por onde ela chegou
+  Convites abertos ...... quem abriu convite, por QR ou por link
+  Stylists .............. com o link de cada uma e quantas clientes trouxe
+  Private Edits ......... com o link de cada convite e quem compareceu
+  Beauty Sessions ....... com o endereço do QR e o salão parceiro
+
+⚠️ "De onde veio e no que deu" NÃO EXISTE MAIS: ela foi absorvida por "Visitas
+às lojas" em 21/09/2026. As duas eram uma linha por visita, da mesma tabela —
+uma tabela partida ao meio. Agora é uma aba com tudo.
+
+AS TRÊS COLUNAS DE DINHEIRO DA ABA VENDAS SEMPRE FECHAM:
+preço de tabela − desconto = valor que entrou. Conferido nos 464 pedidos, sem
+uma única exceção. O desconto da Vessel mora em dois lugares no Bling (um no
+pedido e outro em cada peça, e 26% dos pedidos têm o segundo); a coluna soma os
+dois, porque é a conta que você faz de cabeça.
 
 Os nomes de cinco abas foram corrigidos pelo dono em 21/09/2026, porque três
 pares diziam quase a mesma coisa: "Pessoas" e "Lista de espera" eram as duas
