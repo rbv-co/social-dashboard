@@ -86,7 +86,9 @@ test('agruparCampanhasDoDia: objective desconhecido/ausente vira "outro" (fora d
 
 test('calcularDadosOpr: soma cada categoria certa (seguidores/trafego/engajamento/vendas/leads) e ignora "outro"', () => {
   const campanhas = agruparCampanhasDoDia([
-    { campaign_id: 'c0', spend: 40, visitas: 5 },
+    {
+      campaign_id: 'c0', spend: 40, visitas: 5, likes: 20, comments: 1, shares: 4, saves: 2,
+    },
     { campaign_id: 'c1', spend: 100, cadastros: 3, conversas: 2 },
     { campaign_id: 'c2', spend: 200, likes: 30, comments: 5, shares: 2, saves: 3, post_engagement: 80 },
     { campaign_id: 'c3', spend: 50, visitas: 40 },
@@ -102,6 +104,10 @@ test('calcularDadosOpr: soma cada categoria certa (seguidores/trafego/engajament
 
   assert.equal(dados.seguidores.investimento, 40);
   assert.equal(dados.seguidores.novos, 12);
+  assert.equal(dados.seguidores.curtidas, 20, 'campanha de seguidor também gera engajamento de verdade');
+  assert.equal(dados.seguidores.comentarios, 1);
+  assert.equal(dados.seguidores.compartilhamentos, 4);
+  assert.equal(dados.seguidores.salvamentos, 2);
   assert.equal(dados.seguidores.custoPorSeguidor, 40 / 12);
   assert.equal(dados.trafego.investimento, 50, 'a campanha de seguidor não entra mais em Tráfego');
   assert.equal(dados.trafego.visitas, 40);

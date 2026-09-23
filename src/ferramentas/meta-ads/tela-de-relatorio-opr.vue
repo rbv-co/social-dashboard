@@ -73,6 +73,10 @@
             <div class="metric-grid panel-top">
               <div class="metric"><div class="metric-label">Investimento</div><div class="metric-value">{{ fmtValor(dados.seguidores.investimento, 'moeda') }}</div></div>
               <div class="metric"><div class="metric-label">Novos Seguidores</div><div class="metric-value">{{ fmtValor(dados.seguidores.novos) }}</div></div>
+              <div class="metric"><div class="metric-label">Curtidas</div><div class="metric-value">{{ fmtValor(dados.seguidores.curtidas) }}</div></div>
+              <div class="metric"><div class="metric-label">Comentários</div><div class="metric-value">{{ fmtValor(dados.seguidores.comentarios) }}</div></div>
+              <div class="metric"><div class="metric-label">Compart.</div><div class="metric-value">{{ fmtValor(dados.seguidores.compartilhamentos) }}</div></div>
+              <div class="metric"><div class="metric-label">Salvamentos</div><div class="metric-value">{{ fmtValor(dados.seguidores.salvamentos) }}</div></div>
             </div>
             <div class="metric-grid panel-bottom">
               <div class="metric"><div class="metric-label">Custo por Seguidor</div><div class="metric-value">{{ fmtValor(dados.seguidores.custoPorSeguidor, 'moeda') }}</div></div>

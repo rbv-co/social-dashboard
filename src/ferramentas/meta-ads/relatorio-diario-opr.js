@@ -122,9 +122,19 @@ export function calcularDadosOpr(campanhasDoDia, seguidoresDoDia) {
   // `novos`/`seguidoresDoDia` é dado de CONTA (delta do Instagram), nunca de
   // campanha — por isso o custo por seguidor pode dar `null` mesmo com
   // investimento > 0 (seguidor pode ter vindo de orgânico no dia).
+  //
+  // Curtidas/comentários/compart./salvamentos entraram em 23/09/2026: campanha
+  // de seguidor roda em objective Tráfego/Engajamento, então gera engajamento
+  // de verdade também (o post do anúncio recebe curtida igual qualquer outro)
+  // — antes esse número ficava escondido, só aparecia se a campanha caísse no
+  // balde genérico de Tráfego/Engajamento.
   const seguidores = {
     investimento: investimentoSeguidores,
     novos: seguidoresDoDia,
+    curtidas: somar(seguidoresCampanhas, 'likes'),
+    comentarios: somar(seguidoresCampanhas, 'comments'),
+    compartilhamentos: somar(seguidoresCampanhas, 'shares'),
+    salvamentos: somar(seguidoresCampanhas, 'saves'),
     custoPorSeguidor: investimentoSeguidores > 0 && seguidoresDoDia > 0
       ? custoPorLead(investimentoSeguidores, seguidoresDoDia) : null,
   };
