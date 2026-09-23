@@ -73,6 +73,40 @@
        dono), desde que seja token e responda ao tema. Quem não define, herda o
        azul do sistema — que é o certo para a maioria. Ver PADRAO-DA-CENTRAL.md. */
     --modulo:var(--accent);
+    /* AS DUAS CORES DO COMERCIAL VESSEL (pedido do dono, 23/09/2026: "pouca
+       cor, isso dificulta saber o que é cada card"). São as MESMAS do ícone
+       de cada ferramenta no menu (`tela-de-menu-comercial-vessel.vue`), e
+       moram aqui no :root — e não só em `.tela-sty`/`.tela-pe` — porque o
+       placar do Stylist Circle mostra os encontros na cor do Private Edit.
+       Medido no navegador (23/09/2026, as duas telas, 375 e 1440): o pior
+       botão principal dá 7,13 no claro e 5,93 no escuro; o pior título de
+       bloco na cor, 6,25 no claro e 5,33 no escuro; o pior selo, 5,79/5,27.
+       ⚠️ O ROXO DO PRIVATE EDIT NÃO É `--roxo`: aquele é "o robô agindo". Este
+       é ameixa, apagado de propósito, para não ler como automação. */
+    --cor-stylist-circle:#1e5f74;
+    --cor-private-edit:#6b4a7a;
+    /* A SITUAÇÃO DE UMA COISA (stylist, encontro, convidada) — as mesmas cinco
+       cores nas três, para o olho aprender uma vez. Todas saem dos tokens de
+       estado, nenhuma é hex: o tema escuro vem de graça.
+         andamento  → ainda vai acontecer (em negociação, agendado, enviado)
+         viva       → aconteceu / está valendo (ativa, realizado, presente)
+         confirmada → verde-azulado: disse sim, ainda não veio
+         queda      → caiu (cancelado, saídas, recusou)
+         faltou     → vermelho suave: confirmou e não veio
+         parada     → cinza: pausada, arquivada, sem resposta */
+    --situacao-andamento:var(--accent);
+    --situacao-viva:var(--green);
+    --situacao-confirmada:color-mix(in srgb,var(--green) 55%,var(--accent));
+    --situacao-queda:var(--orange);
+    --situacao-faltou:color-mix(in srgb,var(--red) 80%,var(--orange));
+    --situacao-parada:color-mix(in srgb,var(--text) 38%,var(--surface));
+    /* O QUADRO POR ETAPAS: antes do encontro azul, com encontro verde, saída
+       laranja. Os degraus dentro de cada fase saem daqui por color-mix. */
+    --fase-antes:var(--situacao-andamento);
+    --fase-com-encontro:var(--situacao-viva);
+    --fase-saida:var(--situacao-queda);
+    /* "COMO LER OS NÚMEROS": azul de informação, para não parecer dado. */
+    --informacao:var(--accent);
     /* TEXTO EM CIMA DE BLOCO COLORIDO. Use SEMPRE que um token for fundo cheio
        (botao principal, selo solido, aba ativa). Branco NAO serve nos dois temas:
        no escuro os tokens sao claros de proposito, e branco sobre eles reprova. */
@@ -106,6 +140,11 @@
        tom fecha 7,20 no selo e 6,88 em bloco cheio. */
     --roxo:#a78bfa;
     --modulo:var(--accent);
+    /* Os tons claros do mesmo ícone do menu (o do Private Edit um pouco mais
+       claro que #9b7bb0, que dava 4,78 sobre o fundo tingido — perto demais do
+       mínimo). Medido no navegador: ver o :root. */
+    --cor-stylist-circle:#3d9bb5;
+    --cor-private-edit:#a98bbd;
     --sobre-cor:#12100b;
     /* TEXTO ACCENT EM CIMA DE --accent-light. O accent puro sobre o proprio
        tom aguado reprova no tema escuro (4,42). Este par ja vem medido. */
@@ -156,6 +195,10 @@
      da tela ja reprovavam, e manter seria preservar o defeito junto com a cor. */
   .tela-acessos{ --modulo:#0f766e; }
   [data-theme="dark"] .tela-acessos{ --modulo:#2dd4bf; }
+  /* COMERCIAL VESSEL: cada ferramenta com a cor do seu ícone no menu. O par
+     do tema escuro já vem no token (ver --cor-stylist-circle no :root). */
+  .tela-sty{ --modulo:var(--cor-stylist-circle); }
+  .tela-pe{ --modulo:var(--cor-private-edit); }
 
 .wrapper{max-width:none;width:100%;margin:0;padding:16px 28px;box-sizing:border-box;position:relative;z-index:1;}
 

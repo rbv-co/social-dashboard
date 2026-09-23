@@ -6,7 +6,7 @@ import {
   ORIGENS_DE_CONTATO, STATUS_DO_ENCONTRO, precisaDeMotivo, seloDoStatus,
   mensagemDeSituacaoDoEncontro, SITUACOES_DO_CONVITE, seloDoConvite, gestosDaConvidada,
   problemasDaConvidada, mensagemDeConvidar, telefoneLegivel, avisoDos45Dias,
-  periodoDoPlacar, taxasDoPlacar, legendaDaTaxa, proximaDataPermitidaDaLista,
+  periodoDoPlacar, taxasDoPlacar, legendaDaTaxa, proximaDataPermitidaDaLista, tomDaStylist,
 } from './t11-regras.js'
 
 // ⚠️ AS LISTAS DA TELA TÊM DE SER AS LISTAS DO BANCO, letra por letra. Lidas
@@ -237,4 +237,59 @@ test('FIAÇÃO: a situação do encontro e o convite passam pelas funções do b
 test('FIAÇÃO: as duas telas medem a venda com a MESMA janela de 14 dias', () => {
   assert.match(TELA_STY, /const P_DIAS = 14/)
   assert.match(TELA_PE, /const P_DIAS = 14/)
+})
+
+// ── A COR DA SITUAÇÃO (23/09/2026) ─────────────────────────────────────────
+const TONS = ['andamento', 'viva', 'confirmada', 'queda', 'faltou', 'parada']
+
+test('cor: todo estágio, status e convite do banco tem um tom conhecido', () => {
+  for (const k of listaDoCheck('vessel_stylists_estagio_valido')) {
+    assert.ok(TONS.includes(seloDoEstagio(k).tom), `estágio ${k} sem tom`)
+  }
+  for (const k of Object.keys(STATUS_DO_ENCONTRO)) {
+    assert.ok(TONS.includes(seloDoStatus({ status: k }).tom), `status ${k} sem tom`)
+  }
+  for (const k of Object.keys(SITUACOES_DO_CONVITE)) {
+    assert.ok(TONS.includes(seloDoConvite(k).tom), `convite ${k} sem tom`)
+  }
+  assert.equal(seloDoEstagio('xyz').tom, 'parada')
+  assert.equal(seloDoConvite(null).tom, 'parada')
+})
+
+test('cor: a stylist pela fase — antes do encontro azul, com encontro verde, saída laranja, parada cinza', () => {
+  assert.equal(seloDoEstagio('prospectado').tom, 'andamento')
+  assert.equal(seloDoEstagio('em_negociacao').tom, 'andamento')
+  assert.equal(seloDoEstagio('ativado').tom, 'viva')
+  assert.equal(seloDoEstagio('recorrente').tom, 'viva')
+  assert.equal(seloDoEstagio('sem_retorno').tom, 'queda')
+  assert.equal(seloDoEstagio('nao_interessado').tom, 'queda')
+  assert.equal(seloDoEstagio('pausado').tom, 'parada')
+  assert.equal(seloDoEstagio('inativo').tom, 'parada')
+  // desativada é cinza mesmo recorrente: a parceria parou
+  assert.equal(tomDaStylist({ estagio: 'recorrente', ativa: false }), 'parada')
+  assert.equal(tomDaStylist({ estagio: 'recorrente', ativa: true }), 'viva')
+})
+
+test('cor: o encontro — realizado verde, marcado azul, caiu laranja, arquivada cinza (vence)', () => {
+  assert.equal(seloDoStatus({ status: 'realizado' }).tom, 'viva')
+  assert.equal(seloDoStatus({ status: 'agendado' }).tom, 'andamento')
+  assert.equal(seloDoStatus({ status: 'confirmado' }).tom, 'andamento')
+  assert.equal(seloDoStatus({ status: 'cancelado' }).tom, 'queda')
+  assert.equal(seloDoStatus({ status: 'nao_realizado' }).tom, 'queda')
+  assert.equal(seloDoStatus({ status: 'realizado', arquivada: true }).tom, 'parada')
+})
+
+test('cor: a convidada — cada situação com a cor do pedido do dono', () => {
+  const esperado = { convidada: 'parada', convite_enviado: 'andamento', confirmada: 'confirmada',
+    presente: 'viva', nao_respondeu: 'parada', recusou: 'queda', nao_compareceu: 'faltou' }
+  for (const [k, tom] of Object.entries(esperado)) assert.equal(seloDoConvite(k).tom, tom, k)
+})
+
+test('FIAÇÃO: cada tom tem a classe no CSS e o token no tema — senão o filete some calado', () => {
+  const css = readFileSync(new URL('./estilo-comercial.css', import.meta.url), 'utf8')
+  const globais = readFileSync(new URL('../../estilos/estilos-globais.css', import.meta.url), 'utf8')
+  for (const tom of TONS) {
+    assert.match(css, new RegExp(`\\.cv-tom-${tom}\\s*\\{[^}]*--tom:\\s*var\\(--situacao-${tom}\\)`), `falta .cv-tom-${tom}`)
+    assert.match(globais, new RegExp(`--situacao-${tom}:`), `falta o token --situacao-${tom}`)
+  }
 })

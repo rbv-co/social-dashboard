@@ -61,6 +61,9 @@ const COR_PERMITIDA = new Set([
   '#e1251b',                                              // Zoho
   // identidade de módulo (ver --modulo no PADRAO)
   '#0f766e', '#2dd4bf', '#0d9488',
+  // Comercial Vessel: Stylist Circle e Private Edit, as cores do ícone de cada
+  // um no menu (pedido do dono, 23/09/2026) — definidas SÓ como token no :root
+  '#1e5f74', '#3d9bb5', '#6b4a7a', '#a98bbd',
   // medalha de ranking: ouro/prata/bronze são a coisa, não um estado
   '#b8860b', '#94a3b8', '#b87333', '#d4a017',
   // paleta de dado dos gráficos: cor por métrica, não por estado
