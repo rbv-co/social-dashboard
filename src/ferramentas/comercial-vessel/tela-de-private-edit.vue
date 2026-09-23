@@ -382,10 +382,14 @@
                       <span v-if="c.rsvp === 'falar-com-equipe'"> · pediu para falar com a equipe</span>
                       <span v-if="c.comprou"> · <b>comprou</b></span>
                     </p>
+                    <p class="cv-sub">{{ c.convite_aberto_em
+                      ? `abriu o convite em ${dataHoraLegivel(c.convite_aberto_em)} (${c.convite_aberturas}×)`
+                      : (c.convite_enviado_em ? 'ainda não abriu o convite' : '') }}</p>
                   </div>
                   <span class="cv-selo" :class="seloDoConvite(c.situacao).classe">{{ seloDoConvite(c.situacao).texto }}</span>
                 </div>
                 <div class="cv-acoes">
+                  <button type="button" class="btn" @click="cartaoAberto = { convidada: c, encontro: e }">Cartão e mensagem</button>
                   <button v-for="g in gestosDaConvidada(c)" :key="g.gesto" class="btn"
                           :disabled="marcando === c.id" @click="marcar(e, c, g.gesto)">{{ g.rotulo }}</button>
                 </div>
@@ -404,6 +408,11 @@
         </p>
       </template>
     </div>
+
+    <cartao-da-convidada v-if="cartaoAberto" :convidada="cartaoAberto.convidada" :encontro="cartaoAberto.encontro"
+                         :telefone-da-stylist="(stylists.find((s) => s.codigo === cartaoAberto.encontro.stylist) || {}).whatsapp || ''"
+                         :chamar="chamar" @fechar="cartaoAberto = null"
+                         @enviado="buscarConvidadas(cartaoAberto.encontro, { silencioso: true })" />
   </div>
 </template>
 
@@ -444,6 +453,7 @@ import { useRouter } from 'vue-router'
 import BarraDeTopo from '../../compartilhado/barra-de-topo.vue'
 import FaixaDeErro from '../../compartilhado/faixa-de-erro.vue'
 import BarraDeLista from './barra-de-lista.vue'
+import CartaoDaConvidada from './cartao-da-convidada.vue'
 import { estado, hasPermission } from '../../compartilhado/controle-de-login-e-usuario.js'
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../../compartilhado/conectar-no-banco-de-dados.js'
 import { classificarErro } from '../../compartilhado/classificar-erro.js'
@@ -487,6 +497,7 @@ const mexendo = ref(null)
 const erroAoMexer = ref(null)
 const confirmando = ref(null)
 const copiado = ref(null)
+const cartaoAberto = ref(null)
 
 const filtro = ref({ ...FILTRO_VAZIO })
 

@@ -63,3 +63,25 @@ test('as linhas que vêm de fora encolhem para caber', () => {
     assert.ok(l.larguraMaxima && l.tamanhoMinimo, `${campo} sem larguraMaxima/tamanhoMinimo`)
   }
 })
+
+// ── FIAÇÃO: os arquivos da marca, o cartão e a tela (Task 6) ────────────────
+import { readFileSync as lerArquivo, existsSync } from 'node:fs'
+const ler = (f) => lerArquivo(new URL(f, import.meta.url), 'utf8')
+test('FIAÇÃO: os arquivos da marca estão na pasta pública', () => {
+  for (const f of ['fundo.png', 'logomarca-escura.png', 'fontes/vessel-versatile.woff2',
+    'fontes/vessel-versatile-light.woff2', 'fontes/vessel-angeletta.woff2']) {
+    assert.ok(existsSync(new URL(`../../../public/cartao-private-edit/${f}`, import.meta.url)), `falta ${f}`)
+  }
+})
+test('FIAÇÃO: o cartão usa as regras e marca "convite enviado" pelo banco', () => {
+  const c = ler('./cartao-da-convidada.vue')
+  assert.match(c, /mensagemDoConvite\(/)
+  assert.match(c, /linkDaConvidada\(/)
+  assert.match(c, /vessel_chave_da_convidada/)
+  assert.match(c, /p_marca: 'enviado'/)
+  assert.match(c, /v-trava-rolagem/)
+  assert.match(ler('./desenhar-convite.js'), /LINHAS_DO_CONVITE/)
+})
+test('FIAÇÃO: a lista de convidadas abre o cartão', () => {
+  assert.match(ler('./tela-de-private-edit.vue'), /<cartao-da-convidada/)
+})
