@@ -136,3 +136,26 @@ test('⚠️ editar, arquivar e apagar vivem atrás do MESMO gate de editar (ani
   assert.doesNotMatch(antesDoGate, />Apagar…</,
     '"Apagar…" apareceu ANTES do gate de editar — está solto, sem trava')
 })
+
+// ── UM QR SÓ POR SESSÃO (23/09/2026) ────────────────────────────────────────
+// ⚠️ O dono decidiu: "concordo em ser só da mesa". O defeito que esta guarda
+// pega é o QR do cartão voltando pela porta dos fundos — um segundo link na
+// tela é um segundo QR indo para a gráfica, e a conta da sessão volta a sair
+// dividida em dois números que ninguém soma.
+test('⚠️ a tela mostra UM QR por sessão (o da mesa), pelo MESMO componente do Material Gráfico', () => {
+  const fonte = ler()
+  assert.doesNotMatch(fonte, /enderecoDoCartao/, 'o link do cartão voltou para a tela')
+  assert.doesNotMatch(fonte, /Os dois QR/, 'o bloco "Os dois QR" voltou')
+  assert.equal((fonte.match(/<qr-para-baixar\b/g) || []).length, 1, 'tem de haver exatamente um <qr-para-baixar>')
+  assert.match(fonte, /<qr-para-baixar[^>]*:endereco="itemDaBeauty\(s\)\.endereco"/,
+    'o QR da tela tem de vir de itemDaBeauty — o mesmo item do Material Gráfico')
+  assert.match(fonte, /name: 'material-grafico'/, 'falta o atalho "Ver no Material Gráfico"')
+})
+
+test('⚠️ "Leram o QR" é UM número (mesa + cartão), nas sessões e no conjunto', () => {
+  const fonte = ler()
+  assert.doesNotMatch(fonte, /Leram na mesa|Leram o cartão/, 'os dois números separados voltaram')
+  assert.match(fonte, /conta\(s\)\.leituras/, 'a sessão tem de mostrar resumoDaSessao().leituras (a soma)')
+  assert.match(fonte, /conjunto\.totalLeituras/, 'o conjunto tem de mostrar totalLeituras (a soma)')
+  assert.equal((fonte.match(/bs-numero-rotulo">Leram o QR</g) || []).length, 2, 'um "Leram o QR" na sessão e um no conjunto')
+})

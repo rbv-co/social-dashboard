@@ -73,3 +73,26 @@ test('⚠️ o Funil de Carrinho continua atrás de podeCarrinho, não de podeAt
   assert.match(tagFunil, /v-if="podeCarrinho"/,
     'o card do Funil de Carrinho precisa continuar atrás de podeCarrinho')
 })
+
+// ── O MATERIAL GRÁFICO (23/09/2026) ─────────────────────────────────────────
+// ⚠️ A PORTA E A ROTA NÃO PODEM DIVERGIR: um card que aponta para um nome que
+// o roteiro não conhece cai no "nao-encontrada" e volta para a Central calado;
+// uma rota com chave diferente da do card mostra o card para quem a rota
+// barra. Os três pontos são conferidos juntos: o card, o nome e a chave.
+test('⚠️ o card do Material Gráfico está atrás de podeAtendimentos e abre a rota material-grafico', () => {
+  const fonte = ler()
+  const idxTitulo = fonte.indexOf('>Material Gráfico<')
+  assert.ok(idxTitulo !== -1, 'o card "Material Gráfico" precisa existir no menu')
+  const antes = fonte.slice(0, idxTitulo)
+  const idxDiv = antes.lastIndexOf('<div class="cvmenu-card"')
+  const tag = fonte.slice(idxDiv, fonte.indexOf('>', idxDiv) + 1)
+  assert.match(tag, /v-if="podeAtendimentos"/, 'o card precisa estar atrás de podeAtendimentos')
+  assert.match(tag, /@click="ir\('material-grafico'\)"/, 'o card precisa abrir a rota material-grafico')
+
+  const mapa = readFileSync(new URL('../../mapa-de-enderecos.js', import.meta.url), 'utf8')
+  const linha = mapa.split('\n').find((l) => l.includes("name: 'material-grafico'"))
+  assert.ok(linha, 'a rota material-grafico precisa existir em mapa-de-enderecos.js')
+  assert.match(linha, /path: '\/material-grafico'/)
+  assert.match(linha, /recurso: 'atendimentos'/, 'a rota precisa da MESMA chave do card (atendimentos)')
+  assert.match(linha, /tela-de-material-grafico\.vue/)
+})

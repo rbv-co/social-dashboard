@@ -14,6 +14,7 @@ const TELAS = [
   'src/ferramentas/comercial-vessel/tela-de-stylist-circle.vue',
   'src/ferramentas/atendimentos/tela-de-atendimentos.vue',
   'src/ferramentas/beauty-sessions/tela-de-beauty-sessions.vue',
+  'src/ferramentas/comercial-vessel/tela-de-material-grafico.vue',
 ]
 
 test('nenhuma tela da familia usa o container estreito', () => {
@@ -36,9 +37,11 @@ const TELAS_COM_CV_LARGO = [
   'src/ferramentas/comercial-vessel/tela-de-stylist-circle.vue',
   'src/ferramentas/atendimentos/tela-de-atendimentos.vue',
   'src/ferramentas/beauty-sessions/tela-de-beauty-sessions.vue',
+  // Material Gráfico (23/09/2026): a quinta, nascida já com a folha da família
+  'src/ferramentas/comercial-vessel/tela-de-material-grafico.vue',
 ]
 
-test('as quatro telas que usam a folha da familia GANHARAM .cv-largo', () => {
+test('as telas que usam a folha da familia GANHARAM .cv-largo', () => {
   for (const c of TELAS_COM_CV_LARGO) {
     assert.ok(/class="cv-largo\b/.test(ler(c)),
       `${c} precisa ter a classe cv-largo — sem ela a largura total não é garantida`)

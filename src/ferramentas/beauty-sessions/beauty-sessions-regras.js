@@ -44,6 +44,12 @@ export function podeExecutarAcao(acao, podeEditar) {
  *
  * ⚠️ A CONVERSÃO DO CONJUNTO SOMA NUMERADOR E DENOMINADOR, não é a média das
  * taxas de cada sessão: uma sessão de 4 leituras pesaria igual a uma de 200.
+ *
+ * ⚠️ UM QR SÓ POR SESSÃO (decisão do dono, 23/09/2026): o do cartão saiu, fica
+ * o da mesa. O banco continua contando `leituras_mesa` e `leituras_cartao`
+ * separados, e a tela mostra UM número — `totalLeituras`, a SOMA das duas —
+ * para que nenhuma leitura que o cartão já teve suma da conta. `totalMesa` e
+ * `totalCartao` continuam aqui para quem precisar olhar a separação.
  */
 export function calcularConjunto(lista) {
   const l = Array.isArray(lista) ? lista : []
@@ -54,6 +60,7 @@ export function calcularConjunto(lista) {
     totalSessoes: l.length,
     totalMesa: mesa,
     totalCartao: cartao,
+    totalLeituras: mesa + cartao,
     totalPessoas: somar('pessoas'),
     totalCompareceram: somar('compareceram'),
     totalReceita: somar('receita'),

@@ -66,13 +66,25 @@ const COR_PERMITIDA = new Set([
   '#1e5f74', '#3d9bb5', '#6b4a7a', '#a98bbd',
   // e as outras três do Comercial Vessel + a do menu (Onda 0, 23/09/2026):
   // Private Appointment, Beauty Sessions, Funil de Carrinho, Comercial Vessel
-  '#8a5d35', '#c3a36a', '#7a5c8a', '#b89ac4', '#c2410c', '#f0703a', '#7a3f52', '#c3708a',
+  '#8a5d35', '#c3a36a', '#c2410c', '#f0703a', '#7a3f52', '#c3708a',
+  // Beauty Sessions em ROSÉ (decisão do dono, 23/09/2026 — o lilás
+  // #7a5c8a/#b89ac4 ficava igual à ameixa do Private Edit): o token claro e
+  // escuro, e a ponta clara do degradê do ícone dela no menu
+  '#8a4a66', '#d99ab4', '#c77d9c',
   // Gestão Interna (Onda 2a, 23/09/2026): Patrimônio, a ponta do ícone dele no
   // menu (a Gestão Interna reusa #0f766e/#2dd4bf, já listados acima)
   '#954903', '#f78e43',
   // identidade da Frota (Onda 2b): o anil, claro e escuro, e o degradê do
   // ícone dela no menu da Gestão Interna
   '#3730a3', '#a5b4fc', '#4f46e5',
+  // Material Gráfico (23/09/2026): o oliva, claro e escuro, e a ponta clara do
+  // degradê do ícone dele no menu do Comercial Vessel
+  '#556b2f', '#a3bf6b', '#8a9a4b',
+  // o papel da prévia do QR (claro nos dois temas: é como sai impresso)
+  '#e7e2d8',
+  // a tinta do QR impresso (src/compartilhado/qr.js): cor de marca do
+  // material impresso, a mesma do Appointment Card — não é cor de tela
+  '#29211c',
   // medalha de ranking: ouro/prata/bronze são a coisa, não um estado
   '#b8860b', '#94a3b8', '#b87333', '#d4a017',
   // paleta de dado dos gráficos: cor por métrica, não por estado

@@ -14,6 +14,7 @@ export const PAI_DA_TELA = {
   'beauty-sessions': 'comercial-vessel',
   'private-edit': 'comercial-vessel',
   'stylist-circle': 'comercial-vessel',
+  'material-grafico': 'comercial-vessel',
   'funil-carrinho': 'comercial-vessel',
   'comercial-vessel': 'inicio',
 }
