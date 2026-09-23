@@ -36,6 +36,8 @@ const PORTAS = {
   vessel_convidadas_do_encontro: 'vessel_convidadas_do_encontro(text,integer)',
   vessel_rastreio_dos_stylists: 'vessel_rastreio_dos_stylists(integer,boolean)',
   vessel_placar_do_stylist_circle: 'vessel_placar_do_stylist_circle(date,date,integer)',
+  vessel_stylist_registrar_contato: 'vessel_stylist_registrar_contato(text,text,text,text,text,date)',
+  vessel_stylist_contatos: 'vessel_stylist_contatos(text)',
 }
 // O miolo: ninguém de fora chama.
 const MIOLO = [
@@ -164,6 +166,40 @@ try {
   s = await uma(`select proxima_acao, proxima_acao_em from public.vessel_stylists where codigo = $1`, [STY])
   conferir(s.proxima_acao === null && s.proxima_acao_em === null, '"feita" apaga a próxima ação e a data', s)
 
+  console.log('\n── o CRM: contatos')
+  await falarComo(soVe)
+  const naoPode = await r(`public.vessel_stylist_registrar_contato($1, 'whatsapp', 'conversou')`, [STY])
+  conferir(naoPode.situacao === 'sem_permissao', 'quem só vê não registra contato', naoPode)
+  await falarComo(mexe)
+  const canalRuim = await r(`public.vessel_stylist_registrar_contato($1, 'telegrama', 'conversou')`, [STY])
+  conferir(canalRuim.situacao === 'canal_invalido', 'canal fora da lista é recusado', canalRuim)
+  const resRuim = await r(`public.vessel_stylist_registrar_contato($1, 'whatsapp', 'talvez')`, [STY])
+  conferir(resRuim.situacao === 'resultado_invalido', 'resultado fora da lista é recusado', resRuim)
+  const longa = await r(`public.vessel_stylist_registrar_contato($1, 'whatsapp', 'conversou', repeat('x', 501))`, [STY])
+  conferir(longa.situacao === 'nota_longa', 'nota de 501 caracteres é recusada', longa)
+  const c1 = await r(`public.vessel_stylist_registrar_contato($1, 'ligacao', 'proposta', 'Quer ver a coleção',
+                        'Mandar a proposta', current_date + 1)`, [STY])
+  // ⚠️ ESTE CONTATO E A ATIVAÇÃO DO PRIMEIRO ENCONTRO (mais abaixo) NASCEM NO
+  // MESMO `now()` da transação — sem recuar o relógio deste contato, o placar
+  // veria `criado_em = ativada_em` (não "<") e "contatos_ate_ativar" contaria
+  // zero, não um. É o único jeito de simular o tempo passando dentro da prova.
+  await cli.query(`update public.vessel_stylist_contatos set criado_em = now() - interval '1 minute' where id = $1`,
+    [c1.id])
+  s = await uma(`select estagio, proxima_acao from public.vessel_stylists where codigo = $1`, [STY])
+  conferir(c1.ok && c1.sugestao === null && s.estagio === 'em_negociacao' && s.proxima_acao === 'Mandar a proposta',
+    'em negociação, "pediu proposta" não sugere nada; a próxima ação foi trocada; a etapa NÃO mudou', { c1, s })
+  const hist = await r(`public.vessel_stylist_contatos($1)`, [STY])
+  conferir(hist.length === 1 && hist[0].canal === 'ligacao' && hist[0].criado_por_nome,
+    'o histórico traz o contato com quem registrou', hist)
+  const raC = (await r(`public.vessel_rastreio_dos_stylists(14, true)`)).find((x) => x.codigo === STY)
+  conferir(raC.contatos === 1 && raC.ultimo_contato_em, 'o rastreio conta os contatos', raC)
+  const sug = await uma(`select public.vessel_stylist_sugestao_de_etapa('conversou', 'prospectado', null) as a,
+                                public.vessel_stylist_sugestao_de_etapa('conversou', 'interessado', null) as b,
+                                public.vessel_stylist_sugestao_de_etapa('recusou', 'contatado', null) as c,
+                                public.vessel_stylist_sugestao_de_etapa('conversou', 'pausado', null) as d`)
+  conferir(sug.a === 'contatado' && sug.b === null && sug.c === 'nao_interessado' && sug.d === null,
+    'a sugestão do banco segue a tabela do desenho', sug)
+
   console.log('\n── o encontro')
   const seis = await r(`public.vessel_criar_private_edit($1, now() - interval '12 hours', null, 'CPS', 'iguatemi', 6)`, [STY])
   conferir(seis.situacao === 'vagas_invalidas', 'capacidade 6 é recusada (7 a 10)', seis)
@@ -266,10 +302,12 @@ try {
 
   const pl = await r(`public.vessel_placar_do_stylist_circle(null, null, 14)`)
   const esperado = { prospectadas: 1, ativadas: 1, encontros_agendados: 2, encontros_realizados: 2,
-    convidadas: 3, confirmadas: 3, presentes: 2, recorrentes_no_periodo: 1, compradoras: 1, vendas: 1 }
+    convidadas: 3, confirmadas: 3, presentes: 2, recorrentes_no_periodo: 1, compradoras: 1, vendas: 1,
+    stylists_com_contatos_ate_ativar: 1 }
   const bate = Object.entries(esperado).every(([k, v]) => pl[k] === v)
-  conferir(bate && Number(pl.receita) === 1500 && Number(pl.pecas) === 2 && pl.por_stylist.length === 1,
-    'o placar fecha com o que foi feito, sem digitar nada', pl)
+  conferir(bate && Number(pl.receita) === 1500 && Number(pl.pecas) === 2 && pl.por_stylist.length === 1
+    && Number(pl.contatos_ate_ativar) === 1,
+    'o placar fecha com o que foi feito, sem digitar nada (o contato foi registrado antes do primeiro encontro)', pl)
   const pvazio = await r(`public.vessel_placar_do_stylist_circle(current_date + 30, current_date + 60, 14)`)
   conferir(pvazio.encontros_agendados === 0 && pvazio.prospectadas === 0 && Number(pvazio.receita) === 0,
     'um período sem nada devolve zeros, não erro', pvazio)
@@ -288,6 +326,8 @@ try {
   conferir(fechado.situacao === 'encontro_fechado', 'não se convida para encontro cancelado', fechado)
 
   await cli.query('rollback to savepoint prova')
+  const { n: contatosSobrando } = await uma(`select count(*)::int as n from public.vessel_stylist_contatos`)
+  conferir(contatosSobrando === 0, 'a prova não deixou contato para trás', contatosSobrando)
   const depoisDaProva = await uma(IMPRESSAO)
   conferir(JSON.stringify(depoisDaProva) === JSON.stringify(antes), 'a prova não deixou rastro nas tabelas reais',
     { antes, depoisDaProva })

@@ -1041,6 +1041,8 @@ begin
         'proxima_data_permitida', ee.ultima + 45,
         'receita_dos_encontros', (select coalesce(sum(v.receita), 0) from vendas v
                                    where v.stylist_id = s.id),
+        'contatos', (select count(*)::int from public.vessel_stylist_contatos c where c.stylist_id = s.id),
+        'ultimo_contato_em', (select max(c.criado_em) from public.vessel_stylist_contatos c where c.stylist_id = s.id),
         'aberturas', (select count(*)::int from public.vessel_stylist_aberturas a
                        where a.codigo = s.codigo),
         'clientes', (select count(distinct o.pessoa_id)::int
@@ -1187,6 +1189,14 @@ begin
                     where intervalo is not null and realizado_em between v_de and v_ate),
     'intervalo_medio_em_dias', (select round(avg(intervalo)::numeric, 1) from realizados
                                  where intervalo is not null and realizado_em between v_de and v_ate),
+    -- Contatos registrados ANTES do primeiro encontro, entre as ativadas no
+    -- período. Razão, não proporção.
+    'contatos_ate_ativar', (select round(avg(n)::numeric, 1) from (
+        select (select count(*) from public.vessel_stylist_contatos c
+                 where c.stylist_id = s.id and c.criado_em < s.ativada_em) as n
+          from sty s where (s.ativada_em at time zone 'America/Sao_Paulo')::date between v_de and v_ate) x),
+    'stylists_com_contatos_ate_ativar', (select count(*)::int from sty s
+        where (s.ativada_em at time zone 'America/Sao_Paulo')::date between v_de and v_ate),
     -- ── integrados com a venda (D0 a D+14) ──
     'compradoras', (select count(distinct v.pessoa_id)::int from vendas v),
     'vendas', (select count(*)::int from vendas),
@@ -1204,6 +1214,133 @@ begin
        where exists (select 1 from ev_p e where e.stylist_id = s.id))
   ) into v_saida;
 
+  return v_saida;
+end;
+$function$;
+
+-- ── 13. O CRM DA STYLIST: o histórico de contatos ───────────────────────────
+
+-- ⚠️ UMA LINHA POR CONTATO, E NUNCA SE EDITA NEM APAGA: é o registro do que
+-- aconteceu. Errou a nota? Registra outro contato corrigindo.
+create table if not exists public.vessel_stylist_contatos (
+  id              bigserial primary key,
+  stylist_id      bigint not null references public.vessel_stylists(id) on delete cascade,
+  canal           text not null,
+  resultado       text not null,
+  nota            text,
+  criado_em       timestamptz not null default now(),
+  criado_por      uuid,
+  criado_por_nome text,
+  teste           boolean not null default false,
+  constraint vessel_stylist_contatos_canal_valido
+    check (canal in ('whatsapp', 'ligacao', 'instagram', 'email', 'presencial')),
+  constraint vessel_stylist_contatos_resultado_valido
+    check (resultado in ('sem_resposta', 'conversou', 'interesse', 'proposta', 'marcou_encontro', 'recusou')),
+  constraint vessel_stylist_contatos_nota_curta check (nota is null or length(nota) <= 500)
+);
+create index if not exists vessel_stylist_contatos_stylist_idx
+  on public.vessel_stylist_contatos (stylist_id, criado_em desc);
+alter table public.vessel_stylist_contatos enable row level security;
+revoke all on table public.vessel_stylist_contatos from anon, authenticated;
+
+-- ⚠️ A MESMA TABELA DE `sugestaoDeEtapa` (crm-da-stylist-regras.js); o teste
+-- de lá lê este corpo.
+create or replace function public.vessel_stylist_sugestao_de_etapa(
+  p_resultado text, p_estagio text, p_ativada timestamptz)
+returns text
+language sql
+immutable
+as $$
+  select case
+    when p_estagio in ('pausado', 'inativo') then null
+    when p_resultado = 'recusou' then case when p_ativada is null and p_estagio <> 'nao_interessado' then 'nao_interessado' end
+    else (
+      with alvo as (select case p_resultado
+                             when 'conversou' then 'contatado'
+                             when 'interesse' then 'interessado'
+                             when 'proposta'  then 'em_negociacao' end as a)
+      select case
+        when a is null then null
+        when p_estagio in ('sem_retorno', 'nao_interessado') then case when p_ativada is null then a end
+        when array_position(array['prospectado','contatado','interessado','em_negociacao',
+                                  'ativado','evento_realizado','recorrente'], a)
+           > coalesce(array_position(array['prospectado','contatado','interessado','em_negociacao',
+                                  'ativado','evento_realizado','recorrente'], p_estagio), 99)
+          then a
+      end from alvo)
+  end
+$$;
+revoke all on function public.vessel_stylist_sugestao_de_etapa(text, text, timestamptz) from public, anon;
+
+create or replace function public.vessel_stylist_registrar_contato(
+  p_codigo text, p_canal text, p_resultado text, p_nota text default null,
+  p_proxima_acao text default null, p_proxima_acao_em date default null)
+returns json
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_codigo text := upper(nullif(trim(coalesce(p_codigo, '')), ''));
+  v_canal  text := lower(nullif(trim(coalesce(p_canal, '')), ''));
+  v_res    text := lower(nullif(trim(coalesce(p_resultado, '')), ''));
+  v_nota   text := nullif(trim(coalesce(p_nota, '')), '');
+  v_s      public.vessel_stylists%rowtype;
+  v_id     bigint;
+begin
+  if not public.is_vessel_atendimentos_editar() then
+    return json_build_object('ok', false, 'situacao', 'sem_permissao');
+  end if;
+  select * into v_s from public.vessel_stylists where codigo = v_codigo;
+  if v_s.id is null then return json_build_object('ok', false, 'situacao', 'nao_achei'); end if;
+  if v_canal is null or v_canal not in ('whatsapp', 'ligacao', 'instagram', 'email', 'presencial') then
+    return json_build_object('ok', false, 'situacao', 'canal_invalido');
+  end if;
+  if v_res is null or v_res not in ('sem_resposta', 'conversou', 'interesse', 'proposta', 'marcou_encontro', 'recusou') then
+    return json_build_object('ok', false, 'situacao', 'resultado_invalido');
+  end if;
+  if v_nota is not null and length(v_nota) > 500 then
+    return json_build_object('ok', false, 'situacao', 'nota_longa');
+  end if;
+
+  insert into public.vessel_stylist_contatos
+    (stylist_id, canal, resultado, nota, criado_por, criado_por_nome, teste)
+  values (v_s.id, v_canal, v_res, v_nota, auth.uid(),
+          (select coalesce(nullif(trim(p.name), ''), p.email) from public.profiles p where p.id = auth.uid()),
+          v_s.teste)
+  returning id into v_id;
+
+  -- A próxima ação escrita aqui SUBSTITUI a de hoje; vazia, a de hoje fica.
+  if nullif(trim(coalesce(p_proxima_acao, '')), '') is not null then
+    update public.vessel_stylists
+       set proxima_acao = trim(p_proxima_acao), proxima_acao_em = p_proxima_acao_em, atualizado_em = now()
+     where id = v_s.id;
+  end if;
+
+  return json_build_object('ok', true, 'situacao', 'ok', 'id', v_id,
+    'sugestao', public.vessel_stylist_sugestao_de_etapa(v_res, v_s.estagio, v_s.ativada_em));
+end;
+$function$;
+
+create or replace function public.vessel_stylist_contatos(p_codigo text)
+returns json
+language plpgsql
+stable
+security definer
+set search_path to 'public'
+as $function$
+declare v_saida json;
+begin
+  -- Lista vazia, não erro: é um bloco dentro de uma ficha já aberta.
+  if not public.is_vessel_atendimentos() then return '[]'::json; end if;
+  select coalesce(json_agg(json_build_object(
+           'id', c.id, 'canal', c.canal, 'resultado', c.resultado, 'nota', c.nota,
+           'criado_em', c.criado_em, 'criado_por_nome', c.criado_por_nome)
+         order by c.criado_em desc, c.id desc), '[]'::json)
+    into v_saida
+    from public.vessel_stylist_contatos c
+    join public.vessel_stylists s on s.id = c.stylist_id
+   where s.codigo = upper(nullif(trim(coalesce(p_codigo, '')), ''));
   return v_saida;
 end;
 $function$;
@@ -1227,7 +1364,9 @@ begin
     'public.vessel_conta_das_private_edits(integer, boolean)',
     'public.vessel_convidadas_do_encontro(text, integer)',
     'public.vessel_rastreio_dos_stylists(integer, boolean)',
-    'public.vessel_placar_do_stylist_circle(date, date, integer)'
+    'public.vessel_placar_do_stylist_circle(date, date, integer)',
+    'public.vessel_stylist_registrar_contato(text, text, text, text, text, date)',
+    'public.vessel_stylist_contatos(text)'
   ] loop
     execute format('revoke all on function %s from public, anon', f);
     execute format('grant execute on function %s to authenticated', f);
