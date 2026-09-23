@@ -150,7 +150,14 @@ export function calcularDadosOpr(campanhasDoDia, seguidoresDoDia) {
   const comentarios = somar(engajamentoCampanhas, 'comments');
   const compartilhamentos = somar(engajamentoCampanhas, 'shares');
   const salvamentos = somar(engajamentoCampanhas, 'saves');
-  const totalInteracoes = curtidas + comentarios + compartilhamentos + salvamentos;
+  // `post_engagement` é a métrica da própria Meta pra "toda interação com o
+  // anúncio" (curtida+comentário+compart.+salvamento e mais: clique no post,
+  // visualização de foto/vídeo...) — sempre MAIOR que a soma dos 4 tipos que
+  // a gente abre em campo próprio. Pedido do dono, 23/09/2026: usar a métrica
+  // da Meta aqui, não a nossa soma parcial — mesma fonte que já usa pro KPI
+  // "Engajamentos" do topo (a diferença lá era outra: aquele soma TODAS as
+  // campanhas, este continua só as de objective Engajamento).
+  const totalInteracoes = somar(engajamentoCampanhas, 'postEngagement');
   const engajamento = {
     investimento: investimentoEngajamento,
     curtidas, comentarios, compartilhamentos, salvamentos,
