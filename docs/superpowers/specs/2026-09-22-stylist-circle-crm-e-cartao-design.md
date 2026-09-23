@@ -86,7 +86,7 @@ Soma **"Contatos até ativar"**: média de contatos registrados antes do primeir
 - 1080×1350, desenhado no navegador (canvas), como o Appointment Card. Nada vai para servidor.
 - Base do Appointment Card: `fundo.png` e as fontes `vessel-angeletta` e `vessel-versatile(-light)` (woff2 já recortadas e com `:`/`;` já destrocados por `ferramentas/fontes-do-cartao.py` do repositório do site), copiadas para a Central.
 - Hierarquia, de cima para baixo: **Private Edit** · *Hosted by [anfitriã]* (menor) · **[nome da convidada]** · data por extenso ("sábado, 10 de outubro") · horário ("19h") · local.
-- Nome longo quebra em duas linhas, nunca corta nem encolhe além de um piso; o teste cobre o nome mais comprido da base de exemplo.
+- Nome longo (e "Hosted by", data e local) encolhe a letra até caber, com um piso — a mesma regra do Appointment Card; nunca corta nem sai da moldura.
 - Arquivo baixado: `private-edit_<primeiro-nome>_<AAAA-MM-DD>.png`.
 
 ### 2.3 A janela "Cartão e mensagem"
