@@ -57,17 +57,16 @@
             <div class="icon-circle"><svg viewBox="0 0 48 48"><path d="M8 10h32L28 25v11l-8 4V25L8 10Z"/></svg></div>
             <div><div class="kpi-label">Leads Gerados</div><div class="kpi-value">{{ fmtValor(dados.header.leadsGerados) }}</div><div class="kpi-caption">Oportunidades de negócio</div></div>
           </div>
-          <div class="kpi-card">
+          <div class="kpi-card kpi-card--grupo">
             <div class="icon-circle"><svg viewBox="0 0 48 48"><path d="M12 37V27M24 37V18M36 37V10"/></svg></div>
-            <div><div class="kpi-label">CTR</div><div class="kpi-value">{{ fmtValor(dados.header.ctr, 'percentual') }}</div><div class="kpi-caption">Cliques ÷ impressões</div></div>
-          </div>
-          <div class="kpi-card">
-            <div class="icon-circle"><svg viewBox="0 0 48 48"><path d="M8 10h5l4 22h20l4-16H15"/><circle cx="20" cy="38" r="2.5"/><circle cx="33" cy="38" r="2.5"/></svg></div>
-            <div><div class="kpi-label">CPM</div><div class="kpi-value">{{ fmtValor(dados.header.cpm, 'moeda') }}</div><div class="kpi-caption">Custo por mil impressões</div></div>
-          </div>
-          <div class="kpi-card">
-            <div class="icon-circle"><svg viewBox="0 0 48 48"><path d="M4 24s7-14 20-14 20 14 20 14-7 14-20 14S4 24 4 24Z"/><circle cx="24" cy="24" r="6"/></svg></div>
-            <div><div class="kpi-label">Frequência</div><div class="kpi-value">{{ fmtValor(dados.header.frequencia) }}</div><div class="kpi-caption">Vezes que a mesma pessoa viu</div></div>
+            <div>
+              <div class="kpi-label">Saúde de Mídia</div>
+              <div class="kpi-group">
+                <div class="kpi-group-item"><div class="kpi-group-value">{{ fmtValor(dados.header.ctr, 'percentual') }}</div><div class="kpi-group-label">CTR</div></div>
+                <div class="kpi-group-item"><div class="kpi-group-value">{{ fmtValor(dados.header.cpm, 'moeda') }}</div><div class="kpi-group-label">CPM</div></div>
+                <div class="kpi-group-item"><div class="kpi-group-value">{{ fmtValor(dados.header.frequencia) }}</div><div class="kpi-group-label">Frequência</div></div>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -370,13 +369,20 @@ onMounted(() => carregar())
 .meta-label { font-size: 10px; letter-spacing: .32em; text-transform: uppercase; color: #7b7b73; margin-bottom: 8px; }
 .meta-value { font: 400 18px Georgia, serif; color: #173b39; overflow-wrap: anywhere; }
 .meta .accent::after { content: ""; display: block; width: 28px; height: 3px; background: var(--gold); margin-top: 15px; }
-.kpis { display: grid; grid-template-columns: repeat(4,1fr); gap: 14px; }
-.kpi-card { border: 1px solid var(--line); border-radius: 7px; padding: 18px 20px; display: grid; grid-template-columns: 86px 1fr; align-items: center; min-height: 148px; box-shadow: 0 1px 0 rgba(0,0,0,.025); }
+.kpis { display: grid; grid-template-columns: repeat(5,1fr); gap: 14px; }
+.kpi-card { border: 1px solid var(--line); border-radius: 7px; padding: 18px 20px; display: grid; grid-template-columns: 72px 1fr; align-items: center; min-height: 148px; box-shadow: 0 1px 0 rgba(0,0,0,.025); }
 .icon-circle { width: 72px; height: 72px; border-radius: 50%; background: var(--gold-soft); display: grid; place-items: center; color: var(--ink); }
 .icon-circle svg { width: 40px; height: 40px; stroke: currentColor; fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
 .kpi-label { font: 400 18px Georgia, serif; margin-bottom: 3px; overflow-wrap: anywhere; }
-.kpi-value { font: 700 clamp(27px,2.3vw,47px)/1 Georgia, serif; letter-spacing: .02em; overflow-wrap: anywhere; }
+.kpi-value { font: 700 clamp(24px,2vw,47px)/1 Georgia, serif; letter-spacing: .02em; overflow-wrap: anywhere; }
 .kpi-caption { margin-top: 12px; font-size: 10px; letter-spacing: .26em; text-transform: uppercase; color: #797b77; }
+.kpi-card--grupo { grid-template-columns: 40px 1fr; padding: 16px 14px; }
+.kpi-card--grupo .icon-circle { width: 40px; height: 40px; }
+.kpi-card--grupo .icon-circle svg { width: 22px; height: 22px; }
+.kpi-group { display: flex; gap: 8px; margin-top: 6px; flex-wrap: nowrap; }
+.kpi-group-item { min-width: 0; }
+.kpi-group-value { font: 700 14px Georgia, serif; line-height: 1.1; white-space: nowrap; }
+.kpi-group-label { margin-top: 3px; font-size: 8px; letter-spacing: .14em; text-transform: uppercase; color: #797b77; white-space: nowrap; }
 /* Grade 2×2 — cada painel com a mesma largura que os 3-em-linha tinham
    antes (metade da tela, não um quarto), pra caber Tráfego + Engajamento +
    Vendas + Leads sem espremer número/rótulo. `align-items: stretch`
