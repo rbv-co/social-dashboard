@@ -323,6 +323,27 @@ if (FOTOS) {
   await estreita.close()
 }
 
+// ── a página do roteiro NUM CELULAR DE VERDADE (sempre, com ou sem fotos) ───
+// ⚠️ A queixa do dono (23/09): no celular a tela de dentro ficava presa em
+// 390×844 — mais alta que a janela, o fim cortado e sem rolagem até ele. As
+// fotos de 390px acima abrem a Central SOZINHA e não viam isso; aqui é a
+// página que as pessoas abrem, em janelas de celular com a barra do navegador.
+console.log('\n• Página do roteiro no celular (a tela cabe na janela e rola até o fim)')
+for (const [w, h] of [[375, 560], [390, 664], [430, 740]]) {
+  const cel = await navegador.newPage({ viewport: { width: w, height: h }, isMobile: true, hasTouch: true })
+  vigiar(cel, `celular ${w}×${h}`)
+  await cel.goto(ROTEIRO)
+  await cel.waitForTimeout(1500)
+  const r = await cel.evaluate(() => {
+    const i = document.getElementById('central').getBoundingClientRect()
+    return { baixo: i.bottom, direita: i.right, alto: document.documentElement.scrollHeight, janela: innerHeight, largura: innerWidth }
+  })
+  if (r.baixo > r.janela + 1) falhar(`celular ${w}×${h}`, `a tela passa do fim da janela (${Math.round(r.baixo)} > ${r.janela}) — o fim fica cortado`)
+  if (r.direita > r.largura + 1) falhar(`celular ${w}×${h}`, `a tela passa da largura (${Math.round(r.direita)} > ${r.largura})`)
+  if (r.alto > r.janela + 1) falhar(`celular ${w}×${h}`, `a página em volta rola (${r.alto} > ${r.janela}) — a rolagem vai para ela, não para a tela`)
+  await cel.close()
+}
+
 await navegador.close()
 console.log('\n──────────────────────────────')
 console.log(`pedidos ao Supabase: ${paraSupabase} · pedidos para fora (API): ${paraFora} · aba do site da Vessel (combinado): ${saidasDePropósito}`)

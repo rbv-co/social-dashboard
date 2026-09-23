@@ -26,6 +26,9 @@
 }
 
 html.modo-demonstracao body { padding-top: var(--faixa-demo, 0px); }
+/* Dentro do aparelho, chegar ao fim da tela NÃO passa a rolagem para a página
+   do roteiro em volta (senão a página "puxava" a rolagem para ela). */
+html.modo-demonstracao { overscroll-behavior: contain; }
 html.modo-demonstracao .bt-barra { top: var(--faixa-demo, 0px); }
 html.modo-demonstracao .cv-modal-fundo { top: var(--faixa-demo, 0px); }
 /* O avatar da tela de início (`position: fixed` na moldura) ficava ATRÁS da

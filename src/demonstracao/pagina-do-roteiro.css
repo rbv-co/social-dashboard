@@ -270,6 +270,45 @@
 }
 .demo-acoes .btn { text-decoration: none; }
 
+/* ── computador: a página CABE na janela e não rola ─────────────────────────
+ * ⚠️ Antes a página era mais alta que a janela (o aparelho só cabia depois de
+ * rolar o topo para fora). Aí a rodinha/trackpad "grudava" na página: rolava a
+ * página inteira em vez da tela da demonstração, e o fim da tela ficava abaixo
+ * da janela, cortado. Agora: topo em uma faixa, palco com a altura que sobra,
+ * o aparelho encolhe para caber nela (`escalar()`) e só o roteiro rola por
+ * dentro. A página em si não tem o que rolar — toda rolagem vai para a tela. */
+@media (min-width: 901px) and (min-height: 520px) {
+  .demo {
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .demo-cabeca {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: nowrap;
+    gap: var(--sp-5);
+    padding: var(--sp-3) var(--sp-6);
+  }
+  .demo-cabeca-texto { flex: 1 1 auto; min-width: 0; }
+  .demo-modo { margin-top: 0; flex-shrink: 0; }
+  .demo-palco {
+    flex: 1;
+    min-height: 0;
+    grid-template-rows: minmax(0, 1fr);
+  }
+  .demo-aparelho-lugar { align-self: start; }
+  .demo-roteiro {
+    position: static;
+    align-self: stretch;
+    max-height: none;
+    min-height: 0;
+  }
+}
+
 /* ── celular de verdade: a Central na tela inteira, o roteiro recolhido ───── */
 @media (max-width: 900px) {
   .demo {
@@ -348,16 +387,30 @@
   }
   .demo-roteiro.aberto .demo-roteiro-corpo { display: block; }
   .demo-aparelho-lugar {
+    position: relative;
     flex: 1;
     width: 100%;
     height: auto;
     min-height: 0;
   }
+  /* ⚠️ O `[data-modo]` NOS SELETORES NÃO É ENFEITE: a moldura de computador
+     (`.demo-aparelho[data-modo="celular"] .demo-iframe { 390×844 }`) pesa mais
+     que `.demo-iframe` sozinho, e sem ele a tela de dentro ficava presa em
+     390×844 no celular de verdade — mais alta que a janela, o fim da tela
+     cortado e sem rolagem para chegar lá (queixa do dono, 23/09).
+     O aparelho vai `absolute` no lugar para os 100% de altura terem uma
+     altura DEFINIDA de onde partir (o Safari do iPhone não resolve 100% de um
+     item flex de altura automática). */
+  .demo-aparelho[data-modo] {
+    position: absolute;
+    inset: 0;
+    display: block;
+  }
   /* Só existe o modo celular aqui (o JS trava): a base do notebook nem monta. */
-  .demo-aparelho,
-  .demo-tela-moldura,
-  .demo-tela,
-  .demo-iframe {
+  .demo-aparelho[data-modo],
+  .demo-aparelho[data-modo] .demo-tela-moldura,
+  .demo-aparelho[data-modo] .demo-tela,
+  .demo-aparelho[data-modo] .demo-iframe {
     width: 100%;
     height: 100%;
     padding: 0;

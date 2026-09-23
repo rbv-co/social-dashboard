@@ -142,8 +142,16 @@ function escalar() {
   const largura = aparelho.offsetWidth
   const altura = aparelho.offsetHeight
   if (!largura || !altura) return
+  // A altura que sobra é a do PALCO (a página cabe na janela e não rola — ver
+  // "computador" no CSS). Janela muito baixa (< 520px): o CSS volta a deixar a
+  // página rolar, e aí vale a conta antiga (o topo pode sair da tela).
+  const palcoAlto = lugar.parentElement
+  const estiloAlto = getComputedStyle(palcoAlto)
+  const paginaPresa = getComputedStyle($('lugar-do-aparelho').closest('.demo')).overflowY === 'hidden'
   const topo = lugar.getBoundingClientRect().top + window.scrollY
-  const disponivel = window.innerHeight - Math.min(topo, window.innerHeight * 0.3) - 24
+  const disponivel = paginaPresa
+    ? palcoAlto.clientHeight - parseFloat(estiloAlto.paddingTop) - parseFloat(estiloAlto.paddingBottom)
+    : window.innerHeight - Math.min(topo, window.innerHeight * 0.3) - 24
   // A largura livre é a caixa de CONTEÚDO do palco (sem o padding dele) menos
   // a coluna do roteiro (medida de verdade, não um chute) e o vão entre as
   // duas colunas (`--sp-6`, 32px).
