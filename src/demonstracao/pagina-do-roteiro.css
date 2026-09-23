@@ -324,6 +324,7 @@
   .demo-modo-nota {
     display: block;
     flex-shrink: 0;
+    margin-top: 0; /* a regra geral dá 12px em cima: virava uma faixa vazia no topo */
     padding: var(--sp-2) var(--sp-4);
     background: var(--surface);
     border-bottom: 1px solid var(--border);
