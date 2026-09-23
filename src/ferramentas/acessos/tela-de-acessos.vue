@@ -3413,6 +3413,9 @@ const logoEscuroUrl = '/midia/LOGOTIPOBRENOBRANCO.png'
 .tela-acessos :deep(.id-cartao){border-left:4px solid var(--tom,var(--border));}
 .tela-acessos :deep(.id-selo[class*="id-tom-"]){background:color-mix(in srgb,var(--tom) 12%,var(--surface));border-color:color-mix(in srgb,var(--tom) 45%,var(--surface));color:color-mix(in srgb,var(--tom) 75%,var(--text));font-weight:600;}
 .tela-acessos :deep(.id-selo.id-tom-parada){background:var(--surface2);border-color:var(--border);color:var(--muted);}
+/* No escuro, a regra antiga `.ac-pill.ok` (cor do módulo) vencia a do selo e o
+   "Ativo" ficava verde-azulado com o filete verde. Esta a recoloca no tom. */
+[data-theme="dark"] .tela-acessos :deep(.id-selo[class*="id-tom-"]:not(.id-tom-parada)){color:color-mix(in srgb,var(--tom) 75%,var(--text));}
 /* o formulário: fundo tingido da ferramenta, o campo volta à superfície */
 .tela-acessos :deep(.ac-card.id-bloco-form){background:color-mix(in srgb,var(--modulo) 8%,var(--surface));border-color:color-mix(in srgb,var(--modulo) 38%,var(--surface));}
 .tela-acessos :deep(.id-bloco-form .ac-input), .tela-acessos :deep(.id-bloco-form .ac-select){background:var(--surface);}

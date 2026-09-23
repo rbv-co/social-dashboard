@@ -2529,4 +2529,10 @@ const logoEscuroUrl = '/midia/LOGOTIPOBRENOBRANCO.png'
 /* O formulário tingido: o corpo da ficha rola, e o fundo tinto vai junto; o
    topo e o pé continuam `--surface` para o título e os botões não boiarem. */
 .tela-patrimonio .pat-ficha-corpo.id-bloco-form{border:0;}
+/* Onda 2a (ajuste da revisão): o que tem papel de ABA/NAVEGAÇÃO segue a cor da
+   ferramenta, como as abas. "Selecionado" (modo seleção, cartão marcado) continua
+   no azul, que é o sinal de seleção aprovado na Onda 1. */
+.tela-patrimonio .pat-chip.ativo{background:var(--modulo);border-color:var(--modulo);color:var(--sobre-cor);}
+.tela-patrimonio .pat-trilha-item:not(.atual),
+.tela-patrimonio .pat-ver-todos{color:var(--modulo);}
 </style>
