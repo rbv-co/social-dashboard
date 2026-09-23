@@ -36,6 +36,22 @@ export function seloDoVeiculo(e) {
 }
 
 /**
+ * O tom do FILETE do cartão (Onda 2b da cor, 23/09/2026): o MESMO do selo, na
+ * régua `--situacao-*` da Central (classe `id-tom-<tom>`).
+ *
+ * Sai do selo, e não de uma regra própria, porque o filete e o selo moram no
+ * mesmo cartão: se discordarem, a pessoa não sabe em qual acreditar. Era o que
+ * acontecia antes — o filete dizia verde no carro FIXO (selo azul) e azul no
+ * carro NA RUA (selo laranja).
+ *   ok → viva (verde) · atencao → queda (laranja) · info → andamento (azul)
+ *   neutro → parada (cinza)
+ */
+const TOM_DO_SELO = { ok: 'viva', atencao: 'queda', info: 'andamento', neutro: 'parada' };
+export function tomDoCartao(e) {
+  return TOM_DO_SELO[seloDoVeiculo(e).tom] || 'parada';
+}
+
+/**
  * A ação principal do cartão — a única que vira botão largo.
  *
  * O padrão da casa manda UMA ação principal por bloco: "duas competindo é o

@@ -12,8 +12,13 @@
  *    deixar fechar devolveria o esconderijo. Ela nem parece clicável.
  *
  * A regra de QUANDO abrir mora em `gavetas.js`, testada; aqui é só o desenho. */
+import IconeDoBloco from '../../compartilhado/icone-do-bloco.vue'
+
 defineProps({
   titulo: { type: String, required: true },
+  // O ícone SVG pequeno do título (Onda 2b da cor, 23/09/2026), na cor da
+  // ferramenta. Opcional: sem ele a gaveta é exatamente a de antes.
+  icone: { type: String, default: '' },
   // O texto pequeno ao lado do título. Nulo = não se sabe, e aí não escreve
   // nada — nunca um "0" sobre dado que não carregou.
   estado: { type: String, default: null },
@@ -31,6 +36,7 @@ defineEmits(['alternar'])
     <!-- Travada: vira um cabeçalho comum, sem botão. Um botão que não faz nada
          é pior que nenhum botão pra quem já tem dificuldade. -->
     <div v-if="travadaAberta" class="gv-topo gv-topo-fixo">
+      <icone-do-bloco v-if="icone" :nome="icone" class="gv-icone" />
       <span class="gv-titulo">{{ titulo }}</span>
       <span class="gv-estado" v-if="estado">{{ estado }}</span>
     </div>
@@ -43,6 +49,7 @@ defineEmits(['alternar'])
                 stroke-linecap="round" stroke-linejoin="round" />
         </svg>
       </span>
+      <icone-do-bloco v-if="icone" :nome="icone" class="gv-icone" />
       <span class="gv-titulo">{{ titulo }}</span>
       <span class="gv-estado" v-if="estado">{{ estado }}</span>
     </button>
@@ -54,6 +61,8 @@ defineEmits(['alternar'])
 </template>
 
 <style scoped>
+/* A folha comum da cor (Onda 2b): aqui ela só traz o desenho do `.id-icone`. */
+@import '../../estilos/identidade-da-ferramenta.css';
 /* Estilo próprio, prefixado: componente com `<style scoped>` não alcança as
    classes `fr-` da tela grande. Só tokens, nunca hex — nem como valor de
    reserva dentro de `var()`. */
@@ -78,6 +87,9 @@ defineEmits(['alternar'])
 .gv-estado{flex:1 1 auto;min-width:0;text-align:right;font-family:var(--fonte-principal);
   font-size:max(9px, calc(11.5px * var(--escala-texto, 1)));color:var(--text);overflow-wrap:anywhere;}
 .gv-corpo{padding-bottom:6px;}
+/* O ícone leva a cor da ferramenta; o TÍTULO continua como era (cinza fechado,
+   texto aberto) — a cor é o sinal, o texto é para ler. */
+.gv-icone{color:var(--modulo);}
 @media(min-width:900px){
   .gv-topo{padding:12px 24px;}
 }

@@ -181,3 +181,27 @@ test('a linha não quebra com entrada vazia', () => {
   assert.equal(linhaDoCartao(null), '')
   assert.equal(linhaDoCartao({}), '')
 })
+
+test('o filete do cartão tem o MESMO tom do selo (Onda 2b da cor)', async () => {
+  const { tomDoCartao } = await import('./cartao-do-veiculo.js')
+  // Cada situação, e o tom `--situacao-*` que o filete pinta.
+  const casos = [
+    [carro(), 'viva'],                                                  // LIVRE, selo verde
+    [carro({ pessoa_id: 'p1', pessoa_nome: 'Héllen' }), 'andamento'],   // FIXO, selo azul
+    [carro({ reservada: true, reservada_por: 'Mariá' }), 'andamento'],  // RESERVADO, selo azul
+    [carro({ situacao: 'em_manutencao' }), 'queda'],                    // OFICINA, selo laranja
+    [carro({ situacao: 'inativo' }), 'parada'],                         // PARADO, selo cinza
+    [carro({ situacao: 'alienado' }), 'parada'],                        // FORA DA FROTA, cinza
+  ]
+  for (const [v, tom] of casos) assert.equal(tomDoCartao(estado(v)), tom, seloDoVeiculo(estado(v)).texto)
+  assert.equal(tomDoCartao(naRua(carro())), 'queda')                  // NA RUA, selo laranja
+  assert.equal(tomDoCartao(null), 'parada')
+})
+
+test('a tela liga o tom do filete no cartão do carro', async () => {
+  const { readFileSync } = await import('node:fs')
+  const tela = readFileSync(new URL('./tela-de-frota.vue', import.meta.url), 'utf8')
+  assert.match(tela, /class="fr-card fr-carro id-cartao"/)
+  assert.match(tela, /`id-tom-\$\{tomDoCartao\(l\)\}`/)
+  assert.match(tela, /import \{[^}]*tomDoCartao[^}]*\} from '\.\/cartao-do-veiculo\.js'/)
+})

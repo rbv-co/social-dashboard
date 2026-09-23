@@ -70,6 +70,9 @@ const COR_PERMITIDA = new Set([
   // Gestão Interna (Onda 2a, 23/09/2026): Patrimônio, a ponta do ícone dele no
   // menu (a Gestão Interna reusa #0f766e/#2dd4bf, já listados acima)
   '#954903', '#f78e43',
+  // identidade da Frota (Onda 2b): o anil, claro e escuro, e o degradê do
+  // ícone dela no menu da Gestão Interna
+  '#3730a3', '#a5b4fc', '#4f46e5',
   // medalha de ranking: ouro/prata/bronze são a coisa, não um estado
   '#b8860b', '#94a3b8', '#b87333', '#d4a017',
   // paleta de dado dos gráficos: cor por métrica, não por estado

@@ -110,6 +110,15 @@
        o botão cheio): Gestão Interna 4,90 · 5,47; Patrimônio 5,77 · 6,50. */
     --cor-gestao-interna:#0f766e;
     --cor-patrimonio:#954903;
+    /* FROTA (Onda 2b, 23/09/2026) — ANIL, "azul de estrada", escolhido pelo
+       dono depois de ver a 1ª versão em cinza-azulado (a cor do ícone antigo):
+       "ficou com MENOS cor do que antes". O anil é diferente do `--accent`
+       (#1D4ED8, azul do sistema = seleção) e do `--roxo` (#7c3aed, o robô).
+       O ícone do cartão da Frota no menu da Gestão Interna mudou junto.
+       Medido: `--sobre-cor` sobre o botão 9,93 · aba ativa sobre o fundo 9,30 ·
+       texto na tinta de 8% 8,66. ⚠️ A tinta de 8% derruba o laranja dos avisos
+       para 4,13 — por isso os formulários da Frota NÃO são tingidos. */
+    --cor-frota:#3730a3;
     /* A SITUAÇÃO DE UMA COISA (stylist, encontro, convidada) — as mesmas cinco
        cores nas três, para o olho aprender uma vez. Todas saem dos tokens de
        estado, nenhuma é hex: o tema escuro vem de graça.
@@ -183,6 +192,10 @@
        Interna 8,84 · 10,21; Patrimônio 7,10 · 8,06. */
     --cor-gestao-interna:#2dd4bf;
     --cor-patrimonio:#f78e43;
+    /* Frota no escuro: o anil claro. Medido: `--sobre-cor` sobre o botão
+       9,54 · aba ativa sobre o fundo 9,93 · ativa contra inativa 1,81.
+       É mais azulado que o `--roxo` do escuro (#a78bfa), que é violeta. */
+    --cor-frota:#a5b4fc;
     --sobre-cor:#12100b;
     /* TEXTO ACCENT EM CIMA DE --accent-light. O accent puro sobre o proprio
        tom aguado reprova no tema escuro (4,42). Este par ja vem medido. */
@@ -235,6 +248,7 @@
   /* GESTÃO INTERNA (Onda 2a): o menu e o Patrimônio, com o par escuro no token. */
   .tela-menu-gestao-interna{ --modulo:var(--cor-gestao-interna); }
   .tela-patrimonio{ --modulo:var(--cor-patrimonio); }
+  .tela-frota{ --modulo:var(--cor-frota); }
   /* COMERCIAL VESSEL: cada ferramenta com a cor do seu ícone no menu. O par
      do tema escuro já vem no token (ver --cor-stylist-circle no :root). */
   .tela-sty{ --modulo:var(--cor-stylist-circle); }
