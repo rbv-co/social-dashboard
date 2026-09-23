@@ -113,7 +113,7 @@ test('calcularDadosOpr: soma cada categoria certa (seguidores/trafego/engajament
   assert.equal(dados.trafego.visitas, 40);
   assert.equal(dados.engajamento.investimento, 200);
   assert.equal(dados.engajamento.curtidas, 30);
-  assert.equal(dados.engajamento.totalInteracoes, 40);
+  assert.equal(dados.engajamento.totalInteracoes, 80, 'usa post_engagement da Meta, não a soma de curtida+coment.+compart.+salv. (que seria 40)');
   assert.equal(dados.leadsEVendas.investimento, 100 + 30, 'leads + vendas somados');
   assert.equal(dados.leadsEVendas.leads, 5, 'cadastros (leads) + conversas de QUALQUER campanha');
   assert.equal(dados.leadsEVendas.leadsQuentes, null, 'sem fonte — Chatwoot só rastreia lista de espera');
