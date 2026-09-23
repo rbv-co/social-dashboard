@@ -1,0 +1,44 @@
+/* A FAIXA DA DEMONSTRAÇÃO — sempre visível, por cima de tudo, dentro do app.
+ *
+ * ⚠️ ELA MORA EM CIMA, E A CENTRAL DESCE PARA CABER EMBAIXO. Três coisas da
+ * Central grudam no topo da janela e ficariam escondidas atrás dela: a página
+ * (`body`), a barra de topo (`position: sticky; top: 0`) e o fundo dos modais
+ * (`position: fixed; inset: 0`). As três descem `--faixa-demo`, a altura
+ * MEDIDA da faixa (entrada-da-central.js). Só valem com `html.modo-demonstracao`,
+ * que só a demonstração liga — e o seletor com `html.` na frente vence o
+ * `scoped` das telas sem precisar de `!important`. */
+.faixa-demonstracao {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 2147483000;
+  padding: var(--sp-2) var(--sp-4);
+  background: color-mix(in srgb, var(--orange) 16%, var(--surface));
+  border-bottom: 1px solid color-mix(in srgb, var(--orange) 40%, var(--surface));
+  color: var(--text);
+  font-family: var(--fonte-principal);
+  font-size: var(--texto-corpo);
+  font-weight: 600;
+  line-height: 1.4;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+html.modo-demonstracao body { padding-top: var(--faixa-demo, 0px); }
+html.modo-demonstracao .bt-barra { top: var(--faixa-demo, 0px); }
+html.modo-demonstracao .cv-modal-fundo { top: var(--faixa-demo, 0px); }
+/* O fundo do modal ficou mais baixo: a caixa encolhe junto, senão passa do
+   fundo e o topo dela some atrás da faixa. */
+html.modo-demonstracao .cv-modal { max-height: min(88dvh, calc(100dvh - 24px - var(--faixa-demo, 0px))); }
+@media (max-width: 640px) {
+  html.modo-demonstracao .cv-modal { max-height: calc(100dvh - 24px - var(--faixa-demo, 0px)); }
+}
+
+.faixa-demonstracao-recusa {
+  margin: var(--sp-6) var(--sp-4);
+  color: var(--text);
+  font-family: var(--fonte-principal);
+  font-size: var(--texto-campo);
+  line-height: 1.5;
+}
