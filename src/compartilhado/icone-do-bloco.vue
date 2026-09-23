@@ -65,6 +65,13 @@
     <template v-else-if="nome === 'lista'">
       <path d="M9 6h11M9 12h11M9 18h11" /><path d="M4 6h.01M4 12h.01M4 18h.01" />
     </template>
+    <!-- Frota (Onda 2b): o aviso de problema e a chave da oficina. -->
+    <template v-else-if="nome === 'alerta'">
+      <path d="M12 3.5l9 16H3l9-16z" /><path d="M12 10v4" /><path d="M12 17h.01" />
+    </template>
+    <template v-else-if="nome === 'ferramenta'">
+      <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
+    </template>
   </svg>
 </template>
 
