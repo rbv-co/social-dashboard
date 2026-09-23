@@ -110,6 +110,17 @@
        o botão cheio): Gestão Interna 4,90 · 5,47; Patrimônio 5,77 · 6,50. */
     --cor-gestao-interna:#0f766e;
     --cor-patrimonio:#954903;
+    /* FROTA (Onda 2b, 23/09/2026) — o cinza-azulado do ícone dela no menu da
+       Gestão Interna (`tela-de-menu-gestao-interna.vue`, degradê #475569 →
+       #64748b), UM DEGRAU MAIS ESCURO no mesmo tom. A ponta #475569 passava
+       em tudo (7,58 no botão), mas a aba ativa ficava com a MESMA luz das
+       inativas (1,01 entre as duas, medido): a 1ª rodada de fotos mostrou a
+       aba ligada só pelo risco de baixo. Com #334155: `--sobre-cor` sobre o
+       botão 10,35 · aba ativa sobre o fundo 9,69 · ativa contra inativa 1,38.
+       ⚠️ NÃO é `--situacao-parada` (o cinza do carro parado): aquele só mora
+       no filete e no selo do cartão; este, no topo, nas abas, nos ícones de
+       título e na ação principal. */
+    --cor-frota:#334155;
     /* A SITUAÇÃO DE UMA COISA (stylist, encontro, convidada) — as mesmas cinco
        cores nas três, para o olho aprender uma vez. Todas saem dos tokens de
        estado, nenhuma é hex: o tema escuro vem de graça.
@@ -183,6 +194,13 @@
        Interna 8,84 · 10,21; Patrimônio 7,10 · 8,06. */
     --cor-gestao-interna:#2dd4bf;
     --cor-patrimonio:#f78e43;
+    /* Frota no escuro: a ponta clara do ícone (#64748b) dava 4,2 sobre o fundo
+       da página e reprovava. A 1ª tentativa (#94a3b8) passava (7,41 no botão),
+       mas na foto o botão principal cinza-médio LIA COMO DESLIGADO e a aba
+       ativa quase não se separava das outras (1,41). Subiu para o cinza-azulado
+       claro: `--sobre-cor` sobre o botão 12,80 · aba sobre o fundo 13,33 ·
+       ativa contra inativa 2,44 — o botão claro de app de motorista. */
+    --cor-frota:#cbd5e1;
     --sobre-cor:#12100b;
     /* TEXTO ACCENT EM CIMA DE --accent-light. O accent puro sobre o proprio
        tom aguado reprova no tema escuro (4,42). Este par ja vem medido. */
@@ -235,6 +253,7 @@
   /* GESTÃO INTERNA (Onda 2a): o menu e o Patrimônio, com o par escuro no token. */
   .tela-menu-gestao-interna{ --modulo:var(--cor-gestao-interna); }
   .tela-patrimonio{ --modulo:var(--cor-patrimonio); }
+  .tela-frota{ --modulo:var(--cor-frota); }
   /* COMERCIAL VESSEL: cada ferramenta com a cor do seu ícone no menu. O par
      do tema escuro já vem no token (ver --cor-stylist-circle no :root). */
   .tela-sty{ --modulo:var(--cor-stylist-circle); }
