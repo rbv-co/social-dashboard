@@ -82,6 +82,12 @@ export function mensagemDeCriar(situacao) {
       return 'Este WhatsApp não dá para usar. Confira o número (com DDD).'
     case 'praca_invalida':
       return 'Escolha uma praça da lista.'
+    case 'loja_invalida':
+      return 'Escolha uma loja da lista.'
+    case 'origem_invalida':
+      return 'Diga como a parceira chegou: indicação, pesquisa, evento ou veio sozinha.'
+    case 'prospeccao_no_futuro':
+      return 'A data da prospecção não pode ser depois de hoje.'
     case 'whatsapp_repetido':
       return 'Já existe uma parceira com este WhatsApp.'
     case 'sem_codigo_livre':
@@ -110,6 +116,20 @@ export function mensagemDeEditar(situacao) {
       return 'Já existe outra parceira com este WhatsApp.'
     case 'praca_invalida':
       return 'Escolha uma praça da lista.'
+    case 'loja_invalida':
+      return 'Escolha uma loja da lista.'
+    case 'origem_invalida':
+      return 'Escolha a origem do contato da lista.'
+    case 'prospeccao_no_futuro':
+      return 'A data da prospecção não pode ser depois de hoje.'
+    case 'estagio_invalido':
+      return 'Escolha um estágio da lista.'
+    // ⚠️ AS DUAS RECUSAS DO FUNIL NÃO SÃO "TENTE DE NOVO": tentar de novo dá a
+    // mesma resposta sempre, e a frase precisa dizer por quê.
+    case 'estagio_automatico':
+      return 'Este estágio o sistema marca sozinho, a partir dos encontros.'
+    case 'estagio_contradiz_encontro':
+      return 'Ela já tem encontro marcado: não volta para um estágio de antes dele.'
     default:
       return 'Não consegui salvar agora. Tente de novo em um instante.'
   }
@@ -145,11 +165,16 @@ export function rotuloDeDesativar(ativa) {
  * criar (`p_praca default null`) — diferente da Private Edit, onde a praça é
  * obrigatória porque vira parte do código do encontro.
  */
-export function problemasDaParceira({ nome, whatsapp } = {}) {
+export function problemasDaParceira({ nome, whatsapp, origem } = {}) {
   const problemas = []
   if (!nome || !String(nome).trim()) problemas.push('Escreva o nome da parceira.')
   if (!whatsapp || !String(whatsapp).replace(/\D/g, '').length) {
     problemas.push('Escreva o WhatsApp da parceira (com DDD).')
+  }
+  // ⚠️ T11: na Central a origem do contato é obrigatória — o banco recusa sem
+  // ela (`origem_invalida`), e pedir aqui evita a ida e volta.
+  if (origem !== undefined && !String(origem || '').trim()) {
+    problemas.push('Diga como ela chegou (origem do contato).')
   }
   return problemas
 }
