@@ -74,6 +74,11 @@ export function nomeDoArquivo(convidada, quando) {
 export const REGULAR = 'VesselVersatile'
 export const LEVE = 'VesselVersatileLight'
 export const MANUSCRITA = 'VesselAngeletta'
+// ⚠️ 23/09 — O BLOCO DESCEU (decisão do dono): com a frase em 860 sobrava uma
+// faixa vazia de ~300px até o logo (y 1174). Título e "Hosted by" ficam colados
+// à moldura de cima; nome → frase foram redistribuídos para o respiro acima do
+// nome e abaixo da frase ficarem parecidos (~170px). Conferido no PNG com nome
+// curto, nome de ~40 caracteres e local comprido.
 export const LINHAS_DO_CONVITE = [
   { campo: 'titulo',  fonte: REGULAR,    tamanho: 37.8,  base: 137.8, largura: 360 },
   { campo: 'hosted',  fonte: LEVE,       tamanho: 32.4,  base: 190.0, larguraMaxima: 860, tamanhoMinimo: 22 },
@@ -84,14 +89,14 @@ export const LINHAS_DO_CONVITE = [
   // dois nomes medidos precisam para caber nos 800px da moldura; nomes
   // curtos continuam no tamanho cheio (118,8px), o piso só entra quando
   // precisa.
-  { campo: 'nome',    fonte: MANUSCRITA, tamanho: 118.8, base: 380.0, tracking: 10.9, larguraMaxima: 800, tamanhoMinimo: 40 },
-  { campo: 'quando',  fonte: REGULAR,    tamanho: 43.2,  base: 500.0, tracking: 4.0, larguraMaxima: 860, tamanhoMinimo: 28 },
-  { campo: 'horario', fonte: REGULAR,    tamanho: 43.2,  base: 560.0, tracking: 4.0 },
-  { campo: 'marca',   fonte: REGULAR,    tamanho: 37.8,  base: 690.0, largura: 153 },
-  { campo: 'local',   fonte: LEVE,       tamanho: 37.8,  base: 735.0, larguraMaxima: 860, tamanhoMinimo: 22 },
-  { campo: 'frase',   fonte: LEVE,       tamanho: 32.4,  base: 860.0 },
+  { campo: 'nome',    fonte: MANUSCRITA, tamanho: 118.8, base: 450.0, tracking: 10.9, larguraMaxima: 800, tamanhoMinimo: 40 },
+  { campo: 'quando',  fonte: REGULAR,    tamanho: 43.2,  base: 590.0, tracking: 4.0, larguraMaxima: 860, tamanhoMinimo: 28 },
+  { campo: 'horario', fonte: REGULAR,    tamanho: 43.2,  base: 655.0, tracking: 4.0 },
+  { campo: 'marca',   fonte: REGULAR,    tamanho: 37.8,  base: 800.0, largura: 153 },
+  { campo: 'local',   fonte: LEVE,       tamanho: 37.8,  base: 847.0, larguraMaxima: 860, tamanhoMinimo: 22 },
+  { campo: 'frase',   fonte: LEVE,       tamanho: 32.4,  base: 980.0 },
 ]
-export const DIVISORIAS_DO_CONVITE = [{ meio: 625, largura: 120, espessura: 2.7 }]
+export const DIVISORIAS_DO_CONVITE = [{ meio: 720, largura: 120, espessura: 2.7 }]
 
 export function textosDoCartao({ convidada, stylist, quando, local }) {
   return {
