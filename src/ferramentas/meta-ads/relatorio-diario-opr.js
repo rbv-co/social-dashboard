@@ -4,7 +4,7 @@
 //
 // Nunca a mensagem/HTML pronta (isso é responsabilidade do template em
 // coletor/lib/template-opr.mjs) — só os NÚMEROS, testáveis por igualdade.
-import { custoPorLead, classificarLinkAnuncio } from './relatorio-por-hora.js';
+import { custoPorLead } from './relatorio-por-hora.js';
 
 // Palavras que tiram uma campanha do relatório INTEIRO, antes de qualquer
 // classificação — pedido do dono (21/09/2026): vaga de emprego, RH e atacado
@@ -35,6 +35,26 @@ export function tipoPorObjective(objective) {
   return OBJECTIVE_PARA_TIPO[objective] ?? 'outro';
 }
 
+// Campanha de seguidor não tem objective próprio na Meta — ela cresce
+// audiência usando Tráfego ou Engajamento como qualquer outra, só dá pra
+// separar pelo NOME. Mas só entra aqui quem JÁ passou pelo objective:
+// revisando as 75 campanhas históricas com "SEGUID" no nome (22/09/2026),
+// achamos campanha de Vendas/Leads que usa "SEGUIDORES" como rótulo de
+// PÚBLICO-ALVO ("[VENDA][ECOMMERCE][SEGUIDORES][COM INTERESSE]"), não como
+// objetivo — essas nunca chegam a ser testadas aqui, porque o objective
+// delas já não é Tráfego nem Engajamento.
+export function ehCampanhaDeSeguidores(nome) {
+  return nome.toUpperCase().includes('SEGUID');
+}
+
+// Tipo final da campanha: objective primeiro, "seguidores" só como recorte
+// de Tráfego/Engajamento por nome — nunca de Vendas/Leads.
+export function classificarCampanha(nome, objective) {
+  const tipo = tipoPorObjective(objective);
+  if ((tipo === 'trafego' || tipo === 'engajamento') && ehCampanhaDeSeguidores(nome)) return 'seguidores';
+  return tipo;
+}
+
 // Agrupa linhas de campaign_insights (period_days=1, já filtradas pro dia e
 // conta certos) em campanhas classificadas por objective — mesmo espírito de
 // agruparPorDiaEHora, mas pro insight DIÁRIO (spend/likes/comments/shares/
@@ -48,7 +68,7 @@ export function agruparCampanhasDoDia(linhas, nomesPorCampanha = {}, objectivesP
       return {
         campaignId: l.campaign_id,
         nome,
-        tipo: tipoPorObjective(objectivesPorCampanha[l.campaign_id]),
+        tipo: classificarCampanha(nome, objectivesPorCampanha[l.campaign_id]),
         gasto: Number(l.spend) || 0,
         likes: Number(l.likes) || 0,
         comments: Number(l.comments) || 0,
@@ -64,25 +84,6 @@ export function agruparCampanhasDoDia(linhas, nomesPorCampanha = {}, objectivesP
     .filter((c) => !ehRuidoDeCampanha(c.nome));
 }
 
-// Soma gasto/clique de um anúncio ao longo de TODAS as horas do dia
-// (linhas = ad_insights_hora do dia inteiro, uma por hora) e classifica
-// pelo link — pedido do dono (18/09/2026). Eixo TOTALMENTE separado da
-// classificação por objective acima (nunca mudou, nunca precisou mudar: já
-// era por destino de anúncio, não por nome/objective de campanha).
-export function agruparAnunciosDoDia(linhas, linksPorAnuncio = {}) {
-  const porAnuncio = new Map();
-  for (const l of linhas) {
-    const destinoLink = linksPorAnuncio[l.ad_id] ?? null;
-    const atual = porAnuncio.get(l.ad_id) ?? {
-      adId: l.ad_id, gasto: 0, cliques: 0, categoria: classificarLinkAnuncio(destinoLink),
-    };
-    atual.gasto += Number(l.gasto_hora) || 0;
-    atual.cliques += Number(l.cliques_hora) || 0;
-    porAnuncio.set(l.ad_id, atual);
-  }
-  return [...porAnuncio.values()];
-}
-
 function porTipo(campanhas, tipo) {
   return campanhas.filter((c) => c.tipo === tipo);
 }
@@ -92,22 +93,41 @@ function somar(campanhas, campo) {
 
 // Números prontos do relatório OPR — imagem do WhatsApp (coletor/gerar-opr-diario.mjs)
 // e tela (tela-de-relatorio-opr.vue) leem exatamente o mesmo formato, layout
-// 2×2 aprovado pelo dono em 21/09/2026 (Tráfego/Engajamento/Vendas/Leads).
+// 2×2 aprovado pelo dono em 21/09/2026 e ajustado em 22/09/2026: Seguidores
+// sai de dentro de Tráfego (tinha sumido o custo por seguidor), e Leads
+// junta com Vendas no mesmo painel (igual o antigo "Leads & Sales").
 //
 // Regra de custo (mesma do resto do projeto): nunca divide por contagem <= 0
 // nem por investimento <= 0 — cai pra `null`, nunca "R$ 0,00" inventado.
 // `seguidoresDoDia` pode ser `null` (nenhuma leitura de seguidor nesse dia
 // ainda) — é dado de CONTA, nunca dependeu de campanha nem de classificação.
-export function calcularDadosOpr(campanhasDoDia, seguidoresDoDia, anunciosDoDia = []) {
+export function calcularDadosOpr(campanhasDoDia, seguidoresDoDia) {
+  // "outro" continua fora de QUALQUER soma — `agruparCampanhasDoDia` só tira
+  // o ruído (vaga/atacado/rh/dre), "outro" (objective não mapeado) ainda
+  // aparece na lista pra quem quiser auditar, mas nunca entra em número
+  // nenhum do relatório, nem nas somas "de qualquer campanha" abaixo.
+  const campanhasValidas = campanhasDoDia.filter((c) => c.tipo !== 'outro');
+  const seguidoresCampanhas = porTipo(campanhasValidas, 'seguidores');
   const trafegoCampanhas = porTipo(campanhasDoDia, 'trafego');
   const engajamentoCampanhas = porTipo(campanhasDoDia, 'engajamento');
   const vendasCampanhas = porTipo(campanhasDoDia, 'vendas');
   const leadsCampanhas = porTipo(campanhasDoDia, 'leads');
 
+  const investimentoSeguidores = somar(seguidoresCampanhas, 'gasto');
   const investimentoTrafego = somar(trafegoCampanhas, 'gasto');
   const investimentoEngajamento = somar(engajamentoCampanhas, 'gasto');
   const investimentoVendas = somar(vendasCampanhas, 'gasto');
   const investimentoLeads = somar(leadsCampanhas, 'gasto');
+
+  // `novos`/`seguidoresDoDia` é dado de CONTA (delta do Instagram), nunca de
+  // campanha — por isso o custo por seguidor pode dar `null` mesmo com
+  // investimento > 0 (seguidor pode ter vindo de orgânico no dia).
+  const seguidores = {
+    investimento: investimentoSeguidores,
+    novos: seguidoresDoDia,
+    custoPorSeguidor: investimentoSeguidores > 0 && seguidoresDoDia > 0
+      ? custoPorLead(investimentoSeguidores, seguidoresDoDia) : null,
+  };
 
   const visitas = somar(trafegoCampanhas, 'visitas');
   const trafego = {
@@ -142,66 +162,60 @@ export function calcularDadosOpr(campanhasDoDia, seguidoresDoDia, anunciosDoDia 
   // (confirmado com o dono, 21/09/2026, olhando dado real: veio zero em toda
   // campanha ativa até aqui). Não é bug deste relatório, é ausência de fonte.
   const compras = somar(vendasCampanhas, 'compras');
-  const vendas = {
-    investimento: investimentoVendas,
-    compras,
-    custoPorCompra: investimentoVendas > 0 && compras > 0 ? custoPorLead(investimentoVendas, compras) : null,
-  };
 
-  // Leads soma dois canais que a Meta reporta separado (cadastros de
-  // formulário + conversas de WhatsApp) — não se sobrepõem: uma campanha
-  // otimiza pra um tipo de ação por vez.
-  const resultadoLeads = somar(leadsCampanhas, 'cadastros') + somar(leadsCampanhas, 'conversas');
-  const leads = {
-    investimento: investimentoLeads,
-    resultado: resultadoLeads,
+  // Leads & Vendas no mesmo painel (22/09/2026, igual o antigo "Leads &
+  // Sales"). `resultado` soma `conversas` de QUALQUER campanha, não só as de
+  // objective Leads — achado revisando 22/09: a maior campanha de WhatsApp
+  // do dia ("[LEADS LOJA][mixconversão]", 35 conversas reais) tem objective
+  // Tráfego, e o relatório mostrava Leads Gerados = 0 por só olhar o balde
+  // Leads. `cadastros` (formulário) continua só de campanha objective Leads,
+  // que é o único jeito de gerar esse tipo de ação. Custo de cada resultado
+  // continua sobre o investimento do PRÓPRIO balde (Leads/Vendas) — nunca o
+  // investimento combinado, que inventaria um custo sem lastro quando o
+  // resultado veio de uma campanha de outro objective (ex.: Tráfego).
+  const resultadoLeads = somar(leadsCampanhas, 'cadastros') + somar(campanhasValidas, 'conversas');
+  const investimentoLeadsEVendas = investimentoLeads + investimentoVendas;
+  const leadsEVendas = {
+    investimento: investimentoLeadsEVendas,
+    leads: resultadoLeads,
+    // Chatwoot só rastreia a lista de espera hoje, não qualificação de lead
+    // — sem fonte, `null` de propósito (mesmo espírito do "compras" acima).
+    leadsQuentes: null,
+    vendas: compras,
     custoPorLead: investimentoLeads > 0 && resultadoLeads > 0
       ? custoPorLead(investimentoLeads, resultadoLeads) : null,
-  };
-
-  // Sales/Leads por LINK do anúncio (18/09/2026) — eixo totalmente separado
-  // da classificação por objective acima: aqui é o destino do CRIATIVO do
-  // anúncio, não o objective da campanha. Intocado por esta reforma.
-  const salesAnuncios = anunciosDoDia.filter((a) => a.categoria === 'sales');
-  const leadsLinkAnuncios = anunciosDoDia.filter((a) => a.categoria === 'leads');
-  const investimentoSalesLink = somar(salesAnuncios, 'gasto');
-  const cliquesSalesLink = somar(salesAnuncios, 'cliques');
-  const investimentoLeadsLink = somar(leadsLinkAnuncios, 'gasto');
-  const cliquesLeadsLink = somar(leadsLinkAnuncios, 'cliques');
-
-  const salesLink = {
-    investimento: investimentoSalesLink,
-    cliques: cliquesSalesLink,
-    custoPorClique: investimentoSalesLink > 0 && cliquesSalesLink > 0
-      ? custoPorLead(investimentoSalesLink, cliquesSalesLink) : null,
-  };
-  const leadsLink = {
-    investimento: investimentoLeadsLink,
-    cliques: cliquesLeadsLink,
-    custoPorClique: investimentoLeadsLink > 0 && cliquesLeadsLink > 0
-      ? custoPorLead(investimentoLeadsLink, cliquesLeadsLink) : null,
+    custoPorVenda: investimentoVendas > 0 && compras > 0
+      ? custoPorLead(investimentoVendas, compras) : null,
   };
 
   const header = {
-    investimentoTotal: investimentoTrafego + investimentoEngajamento + investimentoVendas + investimentoLeads
-      + investimentoSalesLink + investimentoLeadsLink,
+    investimentoTotal: investimentoSeguidores + investimentoTrafego + investimentoEngajamento
+      + investimentoVendas + investimentoLeads,
     novosSeguidores: seguidoresDoDia,
-    engajamentos: somar(engajamentoCampanhas, 'postEngagement'),
+    // Soma de TODAS as campanhas, não só as de objective Engajamento (achado
+    // 22/09/2026: a legenda é "Interações totais", mas só contava a fatia de
+    // Engajamento — 3.173 de um real de 31.132 no dia validado).
+    engajamentos: somar(campanhasValidas, 'postEngagement'),
     leadsGerados: resultadoLeads,
   };
 
   // Media Mix: % do investimento total em cada fatia. `null` quando não
-  // houve investimento nenhum no dia (0/0 não é 0%, é "sem dado").
+  // houve investimento nenhum no dia (0/0 não é 0%, é "sem dado"). 4 fatias,
+  // batendo 1-pra-1 com os 4 painéis — sem eixo somado por cima (removido o
+  // salesLink/leadsLink de 18/09: existia pra pegar campanha AXIOM que a
+  // classificação por NOME não reconhecia; a classificação por OBJECTIVE já
+  // pega essas campanhas certo, então aquele eixo só duplicava o
+  // investimento — R$325 a mais no dia 22/09, por exemplo).
   const investimentoTotal = header.investimentoTotal;
   const pctDoTotal = (valor) => (investimentoTotal > 0 ? (valor / investimentoTotal) * 100 : null);
   const mix = {
+    seguidores: pctDoTotal(investimentoSeguidores),
     trafego: pctDoTotal(investimentoTrafego),
     engajamento: pctDoTotal(investimentoEngajamento),
-    vendas: pctDoTotal(investimentoVendas),
-    leads: pctDoTotal(investimentoLeads),
-    salesLink: pctDoTotal(investimentoSalesLink),
-    leadsLink: pctDoTotal(investimentoLeadsLink),
+    leadsEVendas: pctDoTotal(investimentoLeadsEVendas),
   };
 
-  return { header, trafego, engajamento, vendas, leads, salesLink, leadsLink, mix };
+  return {
+    header, seguidores, trafego, engajamento, leadsEVendas, mix,
+  };
 }

@@ -2,14 +2,14 @@
 // HTML autocontido (CSS inline, sem fonte/imagem externa) pro relatório OPR
 // diário — vira PNG via render-criativo.mjs::renderPNG. Layout original
 // aprovado pelo dono em 17/09/2026; reformado em 21/09/2026 pra classificar
-// campanha por OBJECTIVE da Meta (Tráfego/Engajamento/Vendas/Leads) em vez de
-// nome — 4 categorias reais, por isso os 3 painéis em linha viraram grade
-// 2×2 (cada painel mantém a mesma largura que tinha antes, agora em 2
-// linhas, em vez de espremer 4 colunas — ver docs/superpowers/specs, mockup
-// aprovado no companheiro visual).
+// campanha por OBJECTIVE da Meta em vez de nome; ajustado em 22/09/2026:
+// Seguidores volta a ser painel próprio (tinha sumido o custo por seguidor
+// dentro do balde genérico de Tráfego) e Leads junta com Vendas no mesmo
+// painel (igual o antigo "Leads & Sales") — a grade continua 2×2:
+// Seguidores/Tráfego/Engajamento/Leads&Vendas.
 //
-// `dados.mix` chega com uma fatia por categoria; nunca `null` inventado —
-// mesma regra de sempre.
+// `dados.mix` chega com uma fatia por categoria (4, batendo com os 4
+// painéis); nunca `null` inventado — mesma regra de sempre.
 export const DIM_OPR = { width: 1600, height: 900 };
 
 // Abrevia acima de mil/milhão (arredondado, 1 decimal) — pedido do dono
@@ -70,7 +70,7 @@ function painel(numero, icone, titulo, subtitulo, metricasTop, metricasBottom, n
 
 export function montarHtmlOpr(dados, meta) {
   const {
-    header, trafego, engajamento, vendas, leads, mix,
+    header, seguidores, trafego, engajamento, leadsEVendas, mix,
   } = dados;
   return `<!doctype html>
 <html lang="pt-BR">
@@ -174,14 +174,21 @@ export function montarHtmlOpr(dados, meta) {
     </section>
 
     <section class="sections">
-      ${painel('01', 'compass', 'Tráfego', 'Visitas geradas pela mídia paga', [
+      ${painel('01', 'users', 'Seguidores', 'Aquisição de audiência', [
+        metric('Investimento', fmtValor(seguidores.investimento, 'moeda')),
+        metric('Novos Seguidores', fmtValor(seguidores.novos)),
+      ], [
+        metric('Custo por Seguidor', fmtValor(seguidores.custoPorSeguidor, 'moeda')),
+      ], 'Mais pessoas. Mais relevância.')}
+
+      ${painel('02', 'compass', 'Tráfego', 'Visitas geradas pela mídia paga', [
         metric('Investimento', fmtValor(trafego.investimento, 'moeda')),
         metric('Visitas', fmtValor(trafego.visitas)),
       ], [
         metric('Custo por Visita', fmtValor(trafego.custoPorVisita, 'moeda')),
       ], 'Mais visitas. Mais chance de conversão.')}
 
-      ${painel('02', 'heart', 'Engajamento', 'Interações que fortalecem a marca', [
+      ${painel('03', 'heart', 'Engajamento', 'Interações que fortalecem a marca', [
         metric('Investimento', fmtValor(engajamento.investimento, 'moeda')),
         metric('Curtidas', fmtValor(engajamento.curtidas)),
         metric('Comentários', fmtValor(engajamento.comentarios)),
@@ -192,19 +199,15 @@ export function montarHtmlOpr(dados, meta) {
         metric('Custo Médio por Engajamento', fmtValor(engajamento.custoMedioPorEngajamento, 'moeda')),
       ], 'Conteúdo que conecta. Resultados que constroem valor.')}
 
-      ${painel('03', 'cart', 'Vendas', 'Conversão direta em compra', [
-        metric('Investimento', fmtValor(vendas.investimento, 'moeda')),
-        metric('Compras', fmtValor(vendas.compras)),
+      ${painel('04', 'funnel', 'Leads & Vendas', 'Do interesse ao faturamento', [
+        metric('Investimento', fmtValor(leadsEVendas.investimento, 'moeda')),
+        metric('Leads', fmtValor(leadsEVendas.leads)),
+        metric('Leads Quentes', fmtValor(leadsEVendas.leadsQuentes)),
+        metric('Vendas', fmtValor(leadsEVendas.vendas)),
       ], [
-        metric('Custo por Compra', fmtValor(vendas.custoPorCompra, 'moeda')),
+        metric('Custo por Lead', fmtValor(leadsEVendas.custoPorLead, 'moeda')),
+        metric('Custo por Venda', fmtValor(leadsEVendas.custoPorVenda, 'moeda')),
       ], 'Mais oportunidades. Mais receita para o negócio.')}
-
-      ${painel('04', 'funnel', 'Leads', 'Do interesse ao primeiro contato', [
-        metric('Investimento', fmtValor(leads.investimento, 'moeda')),
-        metric('Leads', fmtValor(leads.resultado)),
-      ], [
-        metric('Custo por Lead', fmtValor(leads.custoPorLead, 'moeda')),
-      ], 'Mais conversas. Mais oportunidades de negócio.')}
     </section>
 
     <footer class="footer">
@@ -213,10 +216,10 @@ export function montarHtmlOpr(dados, meta) {
         <div>
           <div class="mix-title">Media Mix</div>
           <div class="mix-sub">Distribuição do investimento</div>
+          ${mixRow('Seguidores', mix.seguidores)}
           ${mixRow('Tráfego', mix.trafego)}
           ${mixRow('Engajamento', mix.engajamento)}
-          ${mixRow('Vendas', mix.vendas)}
-          ${mixRow('Leads', mix.leads)}
+          ${mixRow('Leads & Vendas', mix.leadsEVendas)}
         </div>
         <div class="mix-side">Equilíbrio<br>para um crescimento<br>sustentável.
           <small>Dados hoje.<br>Mais amanhã.</small>
