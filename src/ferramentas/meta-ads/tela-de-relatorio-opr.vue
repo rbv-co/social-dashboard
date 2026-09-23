@@ -367,8 +367,14 @@ onMounted(() => carregar())
 .kpi-caption { margin-top: 12px; font-size: 10px; letter-spacing: .26em; text-transform: uppercase; color: #797b77; }
 /* Grade 2×2 — cada painel com a mesma largura que os 3-em-linha tinham
    antes (metade da tela, não um quarto), pra caber Tráfego + Engajamento +
-   Vendas + Leads sem espremer número/rótulo. */
-.sections { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: start; }
+   Vendas + Leads sem espremer número/rótulo. `align-items: stretch`
+   (padrão do grid, mas explícito aqui) — de propósito, e não `start`
+   (23/09/2026): desde que Seguidores ganhou curtida/comentário/compart./
+   salv., ele ficou mais alto que Tráfego na mesma linha, e com `start` os
+   dois painéis da linha ficavam de tamanho diferente. Esticando, o `.panel`
+   (flex column) e o `margin-top: auto` do `.panel-note` cuidam de empurrar
+   a nota pro rodapé sozinhos, sem sobrar buraco nem esconder nada. */
+.sections { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: stretch; }
 .panel { border: 1px solid var(--line); border-radius: 7px; padding: 12px 14px 10px; display: flex; flex-direction: column; min-width: 0; }
 .panel-head { display: grid; grid-template-columns: 76px 1fr; gap: 14px; align-items: center; padding: 2px 4px 14px; border-bottom: 1px solid var(--line); }
 .panel-num { font: 400 40px Georgia, serif; color: var(--gold); padding-right: 12px; border-right: 1px solid #8e8d86; }
