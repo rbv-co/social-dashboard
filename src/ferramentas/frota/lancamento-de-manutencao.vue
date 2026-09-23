@@ -260,6 +260,9 @@ function gravar() {
 .lm-pe{display:flex;gap:9px;justify-content:flex-end;padding:12px 15px;border-top:1px solid var(--border);}
 .lm-btn{min-height:44px;padding:11px 16px;border:1px solid var(--border);border-radius:10px;background:var(--surface);color:var(--text);font-family:var(--fonte-principal);font-size:max(9px, calc(13.5px * var(--escala-texto, 1)));font-weight:600;cursor:pointer;touch-action:manipulation;}
 .lm-btn.primario{background:var(--accent);border-color:var(--accent);color:var(--sobre-cor);}
+/* Onda 2b da cor: a ação principal na cor da Frota (`--modulo` chega herdado da
+   `.tela-frota`, onde este modal mora). `--sobre-cor` em cima: 10,35 · 12,80. */
+.lm-btn.primario{background:var(--modulo);border-color:var(--modulo);}
 .lm-btn:disabled{opacity:.6;cursor:default;}
 .lm-novo-item{align-self:flex-start;}
 @media(min-width:900px){

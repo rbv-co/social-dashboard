@@ -606,6 +606,10 @@ defineExpose({ validarEMontar })
   letter-spacing: .3px; cursor: pointer; transition: background .18s, opacity .18s;
 }
 .ck-gravar:hover:not(:disabled) { filter: brightness(1.08); }
+/* Onda 2b da cor: gravar é a ação principal do cartão, na cor da Frota
+   (`--modulo` herdado da `.tela-frota`). O "incompleto" logo abaixo continua
+   cinza — ele vence por vir depois. */
+.ck-gravar { background: var(--modulo); }
 /* Incompleto continua CLICÁVEL de propósito: tocar mostra o que falta, em vez
    de deixar a pessoa olhando um botão morto sem saber por quê. */
 .ck-gravar.incompleto { background: var(--surface2); color: var(--muted); }

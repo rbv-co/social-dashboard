@@ -41,6 +41,11 @@ defineEmits(['escolher'])
   background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--accent);
   border-radius:12px;font-family:var(--fonte-principal);}
 .brp-btn:hover{border-color:var(--accent);}
+/* Onda 2b da cor (23/09/2026): estes botões são NAVEGAÇÃO (abrem uma ficha ou
+   rolam até uma seção), então o filete segue a cor da ferramenta, como as abas.
+   O hover troca a borda inteira e apagaria o filete — por isso repete a cor. */
+.brp-btn,.brp-btn:hover{border-left-color:var(--modulo);}
+.brp-btn:hover{border-color:var(--modulo);}
 /* `overflow-wrap:anywhere` nos dois: o nome do carro vem do banco e pode ser
    comprido, e o padrão da casa é que texto nunca corta. */
 .brp-nome{font-size:max(9px, calc(13.5px * var(--escala-texto, 1)));font-weight:700;color:var(--text);line-height:1.25;overflow-wrap:anywhere;}
