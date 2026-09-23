@@ -1,0 +1,291 @@
+name: Publicar o site da Vessel
+
+# ⚠️ POR QUE O PUBLICADOR DO SITE MORA AQUI, E NÃO NO REPOSITÓRIO DO SITE.
+#
+# Medido em 23/09/2026: `rbv-co/vessel-brasil` tem o workflow
+# `publicar-o-site.yml` e ele está MORTO — 40 rodadas seguidas, nenhuma verde,
+# todas com a mesma resposta do GitHub:
+#
+#   "The job was not started because recent account payments have failed or
+#    your spending limit needs to be increased"
+#
+# A causa é que `vessel-brasil` é PRIVADO, e repositório privado gasta minutos
+# pagos de Actions. Este repositório aqui é PÚBLICO — minutos grátis, sem teto —
+# e no mesmo dia rodou dezenas de vezes sem um arranhão. Não é suposição: os
+# dois foram medidos lado a lado.
+#
+# ⚠️ E TORNAR O SITE PÚBLICO NÃO É SAÍDA: `catalogo/dados.json` está versionado
+# lá, com o PREÇO de cada bolsa no atacado. Abrir o repositório publicaria a
+# tabela — e o histórico do git guarda para sempre, mesmo apagando depois.
+#
+# ⚠️ O REPOSITÓRIO DO SITE NÃO CONSEGUE AVISAR NINGUÉM. A saída elegante seria
+# ele disparar um `repository_dispatch` quando recebe commit — só que isso seria
+# uma Action DELE, e as dele nem começam. Por isso este aqui VIGIA: espia o
+# `main` do site de dez em dez minutos e publica quando o commit mudou.
+#
+# ⚠️ ISTO NÃO CONSERTA A COBRANÇA. Ela continua de pé e continua valendo a pena
+# resolver — enquanto não for, TODA Action do repositório do site está parada,
+# não só esta. O que este arquivo faz é tirar a publicação do caminho dela.
+
+on:
+  schedule:
+    # De 10 em 10 minutos, no minuto 7 — desencontrado da hora cheia (medido
+    # neste repositório: agendar na hora cheia atrasa de 2 a 3 horas) e dos
+    # outros robôs, que moram nos minutos 0, 5 e 12.
+    - cron: '7,17,27,37,47,57 * * * *'
+  # ⚠️ O BOTÃO NÃO É "PUBLICAR À FORÇA". Ele roda exatamente a mesma vigia, com
+  # a mesma conferência de commit: serve para não esperar dez minutos quando se
+  # quer ver o robô trabalhar. Clicar nele com o site já em dia não publica nada.
+  workflow_dispatch:
+
+# Duas publicações ao mesmo tempo podem terminar fora de ordem e deixar no ar a
+# versão mais VELHA.
+#
+# ⚠️ E AQUI NÃO SE CANCELA A QUE ESTÁ RODANDO, ao contrário do workflow antigo.
+# Cancelar uma publicação no meio deixa o deploy pela metade e — pior — sem a
+# marca do commit, e aí a vigia da rodada seguinte acha que nada foi publicado e
+# publica de novo. Com a fila, a segunda espera e descobre que já está em dia.
+concurrency:
+  group: publicar-o-site-da-vessel
+  cancel-in-progress: false
+
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+
+    env:
+      REPO_DO_SITE: rbv-co/vessel-brasil
+      # ⚠️ TETO DE PUBLICAÇÕES POR DIA. O plano Hobby da Vercel permite 100, e
+      # esta vigia acorda 144 vezes por dia. Se um dia ela passar a achar que
+      # nunca publicou (marca do commit perdida, deploy que falha sempre), ela
+      # tentaria a cada dez minutos e queimaria a cota inteira — e aí ninguém
+      # mais publica nada, nem à mão. O teto é a rede embaixo disso.
+      TETO_DE_PUBLICACOES_POR_DIA: 40
+
+    steps:
+      - name: Conferir os segredos
+        # Falhar aqui, com o nome do que falta, é muito melhor que falhar no
+        # meio da publicação com "erro de autenticação" — que manda a pessoa
+        # procurar no lugar errado.
+        env:
+          TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          ORG: ${{ secrets.VERCEL_ORG_ID }}
+          PROJ: ${{ secrets.VERCEL_PROJECT_ID }}
+          PAT: ${{ secrets.PAT_DO_SITE }}
+        run: |
+          faltam=""
+          [ -z "$TOKEN" ] && faltam="$faltam VERCEL_TOKEN"
+          [ -z "$ORG" ]   && faltam="$faltam VERCEL_ORG_ID"
+          [ -z "$PROJ" ]  && faltam="$faltam VERCEL_PROJECT_ID"
+          [ -z "$PAT" ]   && faltam="$faltam PAT_DO_SITE"
+          if [ -n "$faltam" ]; then
+            echo "::error::Faltam estes segredos neste repositorio:$faltam"
+            echo "Crie em Settings -> Secrets and variables -> Actions."
+            exit 1
+          fi
+          echo "Os quatro segredos estao no lugar."
+
+      - name: O site mudou desde a última publicação?
+        id: vigia
+        env:
+          GH_TOKEN: ${{ secrets.PAT_DO_SITE }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          ORG: ${{ secrets.VERCEL_ORG_ID }}
+          PROJ: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          set -euo pipefail
+
+          # O commit que está no `main` do site, lido pela API (sem baixar o
+          # repositório inteiro só para descobrir um sha).
+          AGORA=$(gh api "repos/$REPO_DO_SITE/commits/main" --jq '.sha')
+
+          # ⚠️ ELE VIRA `ref:` DE UM CHECKOUT E ARGUMENTO DE LINHA DE COMANDO.
+          # Vem da API do GitHub, não de texto que alguém digita — mas conferir
+          # que é sha e nada mais custa uma linha, e é a diferença entre "não dá
+          # para injetar" e "não dá para injetar hoje".
+          case "$AGORA" in
+            *[!0-9a-f]* | "" ) echo "::error::resposta estranha no lugar do commit."; exit 1 ;;
+          esac
+          [ ${#AGORA} -eq 40 ] || { echo "::error::commit com tamanho errado."; exit 1; }
+          echo "commit no main do site: ${AGORA:0:7}"
+
+          # ⚠️ O QUE JÁ FOI PUBLICADO MORA NO PRÓPRIO DEPLOY, e não numa tabela
+          # nossa nem num arquivo commitado de volta. Estado guardado em dois
+          # lugares é estado que um dia discorda; e um arquivo commitado por robô
+          # vira commit novo, que acorda a vigia outra vez, para sempre.
+          #
+          # A marca é posta na hora de publicar (`--meta commit=<sha>`). Até
+          # 23/09/2026 os deploys subiam SEM metadado nenhum — dava para ver a
+          # hora de cada publicação e não dava para saber o que estava no ar.
+          API="https://api.vercel.com/v6/deployments?projectId=$PROJ&teamId=$ORG&target=production&state=READY&limit=1"
+          NO_AR=$(curl -sS --max-time 30 -H "Authorization: Bearer $VERCEL_TOKEN" "$API" \
+                  | jq -r '.deployments[0].meta.commit // ""')
+
+          if [ -z "$NO_AR" ]; then
+            # ⚠️ "NÃO SEI" NÃO É "PUBLIQUE". Na primeira rodada — e depois de
+            # toda publicação feita à mão por uma versão antiga do
+            # `publicar.sh` — não há marca nenhuma. Publicar por isso seria
+            # republicar o site a cada dez minutos até alguém notar.
+            #
+            # Então a primeira vez é de propósito manual: rode o workflow pelo
+            # botão UMA vez, ele publica, carimba o commit, e a partir daí a
+            # vigia se vira sozinha.
+            if [ "${{ github.event_name }}" != "workflow_dispatch" ]; then
+              echo "::warning::O deploy no ar nao tem a marca do commit. A vigia NAO publica as cegas."
+              echo "Rode este workflow pelo botao (Run workflow) uma vez para carimbar o que esta no ar."
+              echo "publicar=nao" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "sem marca no ar, e o botao foi apertado: publicando para carimbar."
+          elif [ "$NO_AR" = "$AGORA" ]; then
+            echo "em dia: ${AGORA:0:7} ja esta no ar."
+            echo "publicar=nao" >> "$GITHUB_OUTPUT"
+            exit 0
+          else
+            echo "no ar esta ${NO_AR:0:7} e o main esta em ${AGORA:0:7} — vou publicar."
+          fi
+
+          # ⚠️ A REDE EMBAIXO: quantas publicações já houve hoje?
+          MEIA_NOITE=$(date -u -d 'today 00:00' +%s000)
+          QUANTAS=$(curl -sS --max-time 30 -H "Authorization: Bearer $VERCEL_TOKEN" \
+            "https://api.vercel.com/v6/deployments?projectId=$PROJ&teamId=$ORG&target=production&limit=100&since=$MEIA_NOITE" \
+            | jq '.deployments | length')
+          echo "publicacoes de producao hoje: $QUANTAS (teto desta vigia: $TETO_DE_PUBLICACOES_POR_DIA)"
+          if [ "$QUANTAS" -ge "$TETO_DE_PUBLICACOES_POR_DIA" ]; then
+            echo "::error::$QUANTAS publicacoes hoje — passou do teto. NADA FOI PUBLICADO."
+            echo "Isto quase sempre quer dizer que a vigia entrou em laco: ou o deploy"
+            echo "esta falhando sempre, ou a marca do commit nao esta sendo gravada."
+            echo "O plano Hobby da Vercel corta em 100 por dia, e sem cota ninguem publica."
+            exit 1
+          fi
+
+          echo "publicar=sim" >> "$GITHUB_OUTPUT"
+          echo "commit=$AGORA" >> "$GITHUB_OUTPUT"
+
+      - name: Baixar o site
+        if: steps.vigia.outputs.publicar == 'sim'
+        uses: actions/checkout@v4
+        with:
+          repository: rbv-co/vessel-brasil
+          ref: ${{ steps.vigia.outputs.commit }}
+          token: ${{ secrets.PAT_DO_SITE }}
+
+      - uses: actions/setup-node@v4
+        if: steps.vigia.outputs.publicar == 'sim'
+        with:
+          node-version: '22'
+
+      - name: Conferir as travas do site
+        if: steps.vigia.outputs.publicar == 'sim'
+        # A suíte do site guarda coisas que não dá para republicar: dentro de
+        # bolsas JÁ VENDIDAS existem 157 etiquetas NFC gravadas com
+        # `vesselbrasil.com.br/verify/<codigo>`, costuradas no forro. Se aquele
+        # endereço para de responder, a prova de autenticidade delas morre.
+        #
+        # ⚠️ O LOG DESTE REPOSITÓRIO É PÚBLICO, e é por isso que aqui só sai o
+        # NOME do que falhou. Um teste que falha no node imprime `actual:` com o
+        # conteúdo do arquivo que ele leu — e o repositório do site é privado. O
+        # risco hoje é baixo (nenhum teste lê o conteúdo de `catalogo/`), mas um
+        # teste futuro que leia qualquer coisa privada despejaria tudo aqui, à
+        # vista de qualquer um. O detalhe se vê rodando `npm test` no site.
+        run: |
+          if ! npm test > /tmp/teste.log 2>&1; then
+            echo "::error::A suite do site falhou. NADA FOI PUBLICADO."
+            echo "Os testes que falharam (so o nome — o log daqui e publico):"
+            grep -E '^not ok |^✖ ' /tmp/teste.log | head -40 || true
+            echo
+            echo "Para ver o detalhe, rode 'npm test' dentro de vessel-brasil."
+            echo "Se o que falhou foi um teste do SELO: o conserto NAO e ajustar o teste."
+            exit 1
+          fi
+          grep -E '^# (tests|pass|fail)|^ℹ (tests|pass|fail)' /tmp/teste.log || true
+
+      - name: A página existe nesta árvore?
+        if: steps.vigia.outputs.publicar == 'sim'
+        # Em 12/09/2026 a /vesseluniverse caiu quatro vezes: a pasta existia só
+        # numa branch, e toda publicação feita de outro checkout subia um site
+        # sem ela — 404 com deploy verde. Cada nome aqui é uma página que já
+        # está no ar e tem gente com o link.
+        run: |
+          for pagina in verify universovessel vesseluniverse prevenda termos privacidade \
+                        sua-visita geradorappointmentcard private-appointment \
+                        beauty-sessions personal-atelier stylist-circle; do
+            if [ ! -f "$pagina/index.html" ]; then
+              echo "::error::falta $pagina/index.html — publicar daqui tiraria /$pagina do ar."
+              exit 1
+            fi
+          done
+          echo "as 12 paginas estao aqui."
+
+      - name: Apagar os dados de git da cópia
+        if: steps.vigia.outputs.publicar == 'sim'
+        # ⚠️ Rodando dentro do Actions, a CLI da Vercel DETECTA sozinha que está
+        # num repositório e anexa os dados dele ao deploy, mesmo sem ninguém
+        # pedir. O Vercel lê `githubCommitOrg: rbv-co` + repositório privado e
+        # marca o deploy como BLOCKED: a CLI fica pendurada em "Building…" por
+        # uma construção que nunca começa (1h25 na primeira vez, em 01/09/2026).
+        # Sem `.git`, não há dados de git a detectar.
+        run: rm -rf .git
+
+      - name: Publicar na Vercel
+        if: steps.vigia.outputs.publicar == 'sim'
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          # Por variável, e não interpolado direto no `run:` — é a regra da casa
+          # para tudo que vem de fora do arquivo, mesmo já validado acima.
+          COMMIT: ${{ steps.vigia.outputs.commit }}
+        # `--meta commit=<sha>` É O QUE FAZ A VIGIA FUNCIONAR: é a marca que a
+        # rodada seguinte lê para saber o que já está no ar. Sem ela, esta vigia
+        # republica o site a cada dez minutos.
+        #
+        # ⚠️ O NOME DA CHAVE É `commit`, e não `githubCommitSha`: as chaves com
+        # nome de git são justamente as que fazem a Vercel marcar o deploy como
+        # BLOCKED (repositório privado de organização no plano Hobby).
+        #
+        # `--archive=tgz` manda tudo num pacote só, e o `.vercelignore` do site
+        # continua sendo o ÚNICO lugar que decide o que não sobe.
+        # `< /dev/null` fecha a entrada: se a CLI perguntar algo, ela falha na
+        # hora em vez de esperar para sempre. A versão vai PRESA — `@latest`
+        # muda sozinha e um dia quebra num dia em que ninguém mexeu em nada.
+        run: |
+          npx --yes vercel@59 deploy --prod --yes --archive=tgz \
+            --meta "commit=$COMMIT" < /dev/null
+
+      - name: Conferir que o site respondeu
+        if: steps.vigia.outputs.publicar == 'sim'
+        # ⚠️ "Deploy Ready" NÃO É PÁGINA QUE ABRE: os quatro 404 de 12/09/2026
+        # vieram todos de publicação verde. Aqui não dá para abortar nada (já
+        # subiu) — o que este passo faz é não deixar passar calado.
+        run: |
+          sleep 15
+          falhou=0
+          conferir() {
+            codigo=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "$1")
+            # ⚠️ TRÊS RESULTADOS, NÃO DOIS. Além de "abriu" e "fora do ar",
+            # existe "a Vercel está desafiando este endereço": o anti-robô dela
+            # responde 403 para quem faz muitas chamadas, e um navegador de
+            # gente passa sem ver nada. Em 17/09/2026 isso fez a conferência
+            # gritar que o SELO estava fora do ar com o site de pé.
+            if [ "$codigo" = "403" ]; then
+              echo "::warning::$1 respondeu 403 — pode ser o anti-robo da Vercel, nao o site."
+            elif [ "$codigo" != "$2" ]; then
+              echo "::error::$1 respondeu $codigo, esperava $2"
+              falhou=1
+            else
+              echo "ok: $1 -> $codigo"
+            fi
+          }
+          conferir https://vesselbrasil.com.br/verify/K7M4X9QP2R 200
+          conferir https://vesselbrasil.com.br/vesseluniverse/ 200
+          conferir https://vesselbrasil.com.br/beauty-sessions/ 200
+          # ⚠️ A CAPA RESPONDE 307 DESDE 08/09/2026, e isso é o certo: a raiz
+          # manda para outro lugar. Esperar 200 aqui reprovaria publicação boa.
+          conferir https://vesselbrasil.com.br/ 307
+          [ "$falhou" = 0 ] || exit 1
+
+      - name: Nada a fazer
+        if: steps.vigia.outputs.publicar != 'sim'
+        run: echo "O site ja esta em dia. Nada foi publicado."
