@@ -33,7 +33,7 @@ export const CONSULTAS = {
   // ⚠️ AS COLUNAS PELO NOME, E NÃO `*`: a tabela guarda `senha_hash` e `ip_hash`,
   // e nada que não entra na planilha precisa sair do banco.
   listaDeEspera: { tabela: 'vessel_lista_espera',
-    colunas: 'nome,email,whatsapp,origem,criado_em,aceite_em,aceite_versao,bling_id,'
+    colunas: 'id,nome,email,whatsapp,origem,criado_em,aceite_em,aceite_versao,bling_id,'
       + 'objetivo,visita_data,visita_hora,visita_bolsa,visita_ocasiao,visita_atelier,'
       + 'visita_acompanhantes,visita_pedido' },
   pedidos: { tabela: 'vessel_pedidos', colunas: '*' },
@@ -112,6 +112,12 @@ const acompanhantes = (v) => (v === null || v === undefined ? ''
 
 const simNao = (v) => (v === true ? 'sim' : v === false ? 'não' : '');
 
+// Quem não comprou sai com "ainda não" e o resto VAZIO — zero pedidos e R$ 0
+// numa linha de quem nunca comprou somam certo, mas parecem compra de zero.
+const compraDoLead = (c) => (c
+  ? ['sim', c.primeira, c.pedidos, c.valor]
+  : ['ainda não', null, null, null]);
+
 // ⚠️ A JANELA DA VENDA É UMA ESCOLHA, E ELA APARECE NO NOME DA COLUNA. Do dia da
 // visita até 7 dias depois — a mesma régua da Central. Não existe no dado nenhum
 // campo dizendo "esta compra veio daquela visita"; o que existe é a mesma
@@ -172,6 +178,9 @@ const maisVelhoPrimeiro = (campo) => (a, b) =>
 // captação — a LP comum e a pré-venda, que se distinguem na coluna
 // "Como chegou". É por isso que o rótulo certo é "Landing page".
 //
+// ⚠️ E EM 23/09/2026 VIROU "Leads (landing page)", a pedido do dono: quem se
+// cadastrou ainda NÃO É CLIENTE, e a planilha passou a dizer se comprou.
+//
 // ⚠️ NOME DE ABA TEM TETO DE 31 LETRAS (regra do Excel, não nossa). O maior
 // daqui, "De onde veio e no que deu", tem 25. `nomeDeAba` corta o que passar e
 // numera repetido, então um nome longo demais não quebra o arquivo — ele
@@ -216,7 +225,7 @@ const INSTRUCOES = [
   'As colunas de dinheiro também somam.',
   '',
   bloco('O QUE TEM EM CADA ABA'),
-  'Landing page — quem se cadastrou pelo site, e o que ela pediu para a visita',
+  'Leads (landing page) — quem se cadastrou pelo site, o que pediu, e se já comprou',
   'Clientes — as pessoas da base, com cidade e Client Advisor',
   'Visitas às lojas — a visita inteira: quem veio, por onde chegou e o que comprou depois',
   'Vendas — os pedidos: quem vendeu, o que saiu, e o valor que entrou de verdade',
@@ -260,6 +269,17 @@ export function montarAbas(d) {
   // `vessel_pedidos.id` (a chave da NOSSA tabela), e não para o id do Bling —
   // conferido no banco antes de escrever, porque trocar os dois devolveria
   // peças de outro pedido sem erro nenhum.
+  // As compras de cada lead: só pedido atendido, somado por `lead_id`.
+  const comprasPorLead = new Map();
+  for (const p of (d.pedidos ?? []).filter(ehVenda)) {
+    if (p.lead_id == null) continue;
+    const c = comprasPorLead.get(String(p.lead_id)) ?? { primeira: null, pedidos: 0, valor: 0 };
+    c.pedidos++;
+    c.valor = Math.round((c.valor + (Number(p.receita_liquida) || 0)) * 100) / 100;
+    if (!c.primeira || String(p.data_da_venda) < c.primeira) c.primeira = String(p.data_da_venda);
+    comprasPorLead.set(String(p.lead_id), c);
+  }
+
   const pecasDoPedido = new Map();
   for (const i of (d.itensVendidos ?? [])) {
     const lista = pecasDoPedido.get(String(i.pedido_id)) ?? [];
@@ -304,7 +324,7 @@ export function montarAbas(d) {
       linhas: INSTRUCOES.map((l) => [l]),
     },
     {
-      nome: 'Landing page',
+      nome: 'Leads (landing page)',
       colunas: [
         { titulo: 'Nome', largura: 28 },
         { titulo: 'E-mail', largura: 30 },
@@ -322,6 +342,14 @@ export function montarAbas(d) {
         { titulo: 'Aceitou os termos em', tipo: 'instante', largura: 18 },
         { titulo: 'Versão do termo', largura: 15 },
         { titulo: 'Já está no Bling?', largura: 15 },
+        // ⚠️ LEAD NÃO É CLIENTE (23/09/2026). O `lead_id` é gravado no pedido
+        // por coletor/trazer-pedidos-do-bling.mjs (ficha → e-mail → telefone,
+        // só do dia do cadastro em diante). Cancelado não conta: `ehVenda`,
+        // o mesmo critério da aba Vendas.
+        { titulo: 'Comprou?', largura: 11 },
+        { titulo: '1ª compra em', tipo: 'dia', largura: 13 },
+        { titulo: 'Pedidos', tipo: 'numero', largura: 9 },
+        { titulo: 'Valor comprado', tipo: 'dinheiro', largura: 15 },
       ],
       linhas: [...d.listaDeEspera].sort(maisNovoPrimeiro('criado_em')).map((l) => [
         l.nome, l.email, l.whatsapp, l.criado_em, l.origem,
@@ -330,6 +358,7 @@ export function montarAbas(d) {
         simNao(l.visita_atelier), acompanhantes(l.visita_acompanhantes),
         l.visita_pedido, l.aceite_em, l.aceite_versao,
         l.bling_id ? 'sim' : 'ainda não',
+        ...compraDoLead(comprasPorLead.get(String(l.id))),
       ]),
     },
     {

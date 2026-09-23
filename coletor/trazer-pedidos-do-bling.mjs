@@ -40,6 +40,7 @@ import { aplicarValorCorrigido } from '../supabase/functions/_shared/valor-corri
 import { ajustesDeValor } from './lib/ajustes-de-valor.mjs';
 import { colunasExistem } from './lib/colunas-existem.mjs';
 import { contasDoItem } from './lib/preco-do-item.mjs';
+import { indiceDeLeads, leadDoPedido } from './lib/lead-do-pedido.mjs';
 
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://kounqtdoioootxqegkij.supabase.co';
 const BLING = 'https://api.bling.com.br/Api/v3';
@@ -86,6 +87,17 @@ try {
       + 'Gravando os pedidos SEM essas duas colunas por enquanto.\n');
   }
 
+  // Mesmo cuidado, para o casamento com o lead (db/migrations/
+  // 2026-09-23-pedido-sabe-de-qual-lead-veio.sql): sem as colunas, a venda
+  // entra do mesmo jeito e só o casamento com o lead fica para depois.
+  const temLead = await colunasExistem(
+    (sql, params) => cli.query(sql, params), 'vessel_pedidos', ['lead_id', 'casou_lead_por']);
+  if (!temLead) {
+    console.warn('\n⚠️  vessel_pedidos ainda não tem lead_id/casou_lead_por — '
+      + 'aplique db/migrations/2026-09-23-pedido-sabe-de-qual-lead-veio.sql. '
+      + 'Gravando os pedidos SEM o casamento com o lead por enquanto.\n');
+  }
+
   const token = await loginServico();
   const ate = new Date();
   const de = new Date(ate); de.setDate(de.getDate() - dias);
@@ -128,6 +140,16 @@ try {
   const porTelefone = new Map(pessoas.map((p) => [p.telefone, p.id]));
   console.log(`${pessoas.length} pessoas conhecidas (${porContato.size} já com ficha do Bling ligada)`);
 
+  // Os cadastros da LP. Os de teste ficam de fora — pela origem E pelo nome:
+  // o "TESTE LP VESSEL" (origem lp-vesselbrasil, comum) casou pelo telefone
+  // com o pedido 2600 de "Cliente Teste Treinamento" no ensaio de 23/09/2026.
+  // Seria a única conversão da LP, e era falsa.
+  const { rows: leads } = await cli.query(
+    `select id, whatsapp, email, criado_em, bling_id from vessel_lista_espera
+      where coalesce(origem, '') not ilike '%teste%' and nome not ilike '%teste%'`);
+  const idxLeads = indiceDeLeads(leads);
+  console.log(`${leads.length} leads da LP para cruzar`);
+
   // ── 3. o valor corrigido, pela MESMA regra das telas ───────────────────────
   const chave = process.env.SUPABASE_SERVICE_KEY;
   const ajustes = await ajustesDeValor(SUPABASE_URL, chave);
@@ -145,8 +167,29 @@ try {
   const notaPorPedido = new Map(notas.map((n) => [String(n.pedido_id), n]));
 
   // ── 5. cada pedido ─────────────────────────────────────────────────────────
-  const telefoneDoContato = new Map();   // cache da rodada: uma leitura por ficha
+  const fichaDoContato = new Map();   // cache da rodada: uma leitura por ficha
   let gravados = 0, orfaos = 0, porFicha = 0, porTel = 0, semTelefone = 0;
+  const leadPor = { ficha: 0, email: 0, telefone: 0 };
+
+  // Lê a ficha uma vez por rodada. Antes só se lia a de quem não casava pela
+  // ficha; o cruzamento com o lead precisa do telefone e do e-mail de TODAS.
+  const lerFicha = async (contatoId) => {
+    if (!fichaDoContato.has(contatoId)) {
+      await espera(380);                         // o Bling limita 3 por segundo
+      const r = await fetch(`${BLING}/contatos/${contatoId}`, {
+        headers: { Authorization: 'Bearer ' + tk.access_token, Accept: 'application/json' } });
+      const ficha = r.ok ? (await r.json())?.data || {} : {};
+      // ⚠️ OS DOIS CAMPOS. A ficha criada pela loja no PDV preenche
+      // `telefone`; a criada pelo nosso robô preenche `celular`. Ler só um
+      // perde metade — e perde calado.
+      fichaDoContato.set(contatoId, {
+        tel: telefoneCanonico(ficha.celular || ficha.telefone),
+        telefones: [telefoneCanonico(ficha.celular), telefoneCanonico(ficha.telefone)].filter(Boolean),
+        email: ficha.email || '',
+      });
+    }
+    return fichaDoContato.get(contatoId);
+  };
 
   for (const p of pedidos) {
     const detalhe = (await blingProxy(token, `pedidos/vendas/${p.id}`, {})).data || {};
@@ -157,17 +200,7 @@ try {
     let casouPor = pessoaId ? 'bling_contato' : null;
 
     if (!pessoaId && contatoId) {
-      if (!telefoneDoContato.has(contatoId)) {
-        await espera(380);                         // o Bling limita 3 por segundo
-        const r = await fetch(`${BLING}/contatos/${contatoId}`, {
-          headers: { Authorization: 'Bearer ' + tk.access_token, Accept: 'application/json' } });
-        const ficha = r.ok ? (await r.json())?.data || {} : {};
-        // ⚠️ OS DOIS CAMPOS. A ficha criada pela loja no PDV preenche
-        // `telefone`; a criada pelo nosso robô preenche `celular`. Ler só um
-        // perde metade — e perde calado.
-        telefoneDoContato.set(contatoId, telefoneCanonico(ficha.celular || ficha.telefone));
-      }
-      const tel = telefoneDoContato.get(contatoId);
+      const tel = (await lerFicha(contatoId)).tel;
       if (!tel) semTelefone++;
       else if (porTelefone.has(tel)) {
         pessoaId = porTelefone.get(tel);
@@ -183,6 +216,12 @@ try {
     }
 
     if (pessoaId) { casouPor === 'bling_contato' ? porFicha++ : porTel++; } else { orfaos++; }
+
+    // ── de qual lead veio ──
+    const lead = temLead && contatoId
+      ? leadDoPedido(idxLeads, { contatoId, ...(await lerFicha(contatoId)) }, String(p.data).slice(0, 10))
+      : null;
+    if (lead) leadPor[lead.por]++;
     if (ensaio) continue;
 
     // ⚠️ C5: as colunas de observações só entram na lista (e no valor) quando
@@ -209,10 +248,12 @@ try {
       p.total ?? null, corrigidoPorId.get(String(p.id)) ?? null,
       p.situacao?.id ?? ATENDIDO,
     ];
-    const colunas = temObservacoes ? [...colunasBase, 'observacoes', 'observacoes_internas'] : colunasBase;
-    const valores = temObservacoes
-      ? [...valoresBase, detalhe.observacoes || null, detalhe.observacoesInternas || null]
-      : valoresBase;
+    const colunas = [...colunasBase,
+      ...(temObservacoes ? ['observacoes', 'observacoes_internas'] : []),
+      ...(temLead ? ['lead_id', 'casou_lead_por'] : [])];
+    const valores = [...valoresBase,
+      ...(temObservacoes ? [detalhe.observacoes || null, detalhe.observacoesInternas || null] : []),
+      ...(temLead ? [lead?.leadId ?? null, lead?.por ?? null] : [])];
     const marcadores = colunas.map((_, i) => `$${i + 1}`).join(',');
 
     const setObservacoes = temObservacoes
@@ -225,6 +266,12 @@ try {
       // pessoa_id/casou_por já tratam abaixo.
       ? `, observacoes = coalesce(excluded.observacoes, vessel_pedidos.observacoes),
            observacoes_internas = coalesce(excluded.observacoes_internas, vessel_pedidos.observacoes_internas)`
+      : '';
+
+    // Mesma regra de pessoa_id: casamento com lead nunca se desfaz sozinho.
+    const setLead = temLead
+      ? `, lead_id = coalesce(excluded.lead_id, vessel_pedidos.lead_id),
+           casou_lead_por = coalesce(excluded.casou_lead_por, vessel_pedidos.casou_lead_por)`
       : '';
 
     const { rows: [linha] } = await cli.query(
@@ -244,7 +291,7 @@ try {
           total_produtos = excluded.total_produtos, desconto = excluded.desconto,
           outras_despesas = excluded.outras_despesas,
           total_do_bling = excluded.total_do_bling, total_corrigido = excluded.total_corrigido,
-          situacao_id = excluded.situacao_id${setObservacoes},
+          situacao_id = excluded.situacao_id${setObservacoes}${setLead},
           atualizado_em = now()
        returning id`,
       valores);
@@ -354,6 +401,9 @@ try {
   console.log(`  ÓRFÃOS              ${orfaos}  ${pedidos.length
     ? '(' + (orfaos / pedidos.length * 100).toFixed(0) + '% — compraram sem ter passado por nós)' : ''}`);
   console.log(`  ficha sem telefone  ${semTelefone}`);
+  console.log(`  VIERAM DE UM LEAD   ${leadPor.ficha + leadPor.email + leadPor.telefone}`
+    + `  (ficha ${leadPor.ficha} · e-mail ${leadPor.email} · telefone ${leadPor.telefone})`
+    + `${temLead ? '' : '  — colunas ainda não existem, nada gravado'}`);
 
   if (!ensaio) {
     const { rows: [t] } = await cli.query(
