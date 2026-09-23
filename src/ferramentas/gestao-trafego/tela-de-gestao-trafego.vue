@@ -6235,44 +6235,72 @@ Object.assign(window, {
 .tela-gestao-trafego :deep(.gt-obj-filtro[data-balde]::before){content:'';width:8px;height:8px;border-radius:50%;background:var(--obj);flex:0 0 auto;}
 .tela-gestao-trafego :deep(.gt-obj-filtro.ativo[data-balde]::before){box-shadow:0 0 0 2px var(--sobre-cor);}
 
-/* OS TRÊS NÍVEIS, TRÊS CARAS (campanha ≠ conjunto ≠ anúncio):
-   · CAMPANHA — filete grosso (4px) no azul do Meta, borda tingida, número dele;
-   · CONJUNTO — filete de 3px no verde-azulado, faixa tingida no topo, número dele;
-   · ANÚNCIO — filete de 3px na ameixa, sem faixa, número dele.
-   A árvore que liga o conjunto aos anúncios passa a ser do verde-azulado:
-   é a trilha DO CONJUNTO. */
-.tela-gestao-trafego :deep(.gt-camp-row){border-color:color-mix(in srgb,var(--modulo) 30%,var(--surface));border-left:4px solid var(--modulo);}
-.tela-gestao-trafego :deep(.gt-camp-num){color:var(--modulo);}
+/* OS TRÊS NÍVEIS, TRÊS CARAS (2ª rodada, 23/09/2026 — "de longe, pela cor"):
+   · CAMPANHA — no tom do OBJETIVO dela (mensagens petróleo, vendas bronze,
+     tráfego oliva, engajamento rosé, reconhecimento vinho, leads ameixa):
+     filete grosso (6px) à esquerda, a linha do título numa faixa tingida e o
+     número (01, 02…) numa pastilha cheia. O azul do Meta fica na ferramenta.
+   · CONJUNTO — superfície própria (`--surface`, dentro do painel `--surface2`
+     da campanha), faixa verde-azulada no topo e filete de 3px;
+   · ANÚNCIO — a superfície do outro lado (`--surface2` dentro do conjunto
+     `--surface`), filete FINO (2px) na ameixa e sem faixa.
+   A árvore que liga o conjunto aos anúncios é do verde-azulado: a trilha DO
+   CONJUNTO. */
+.tela-gestao-trafego :deep(.gt-camp-row){border-color:color-mix(in srgb,var(--obj,var(--modulo)) 35%,var(--surface));border-left:6px solid var(--obj,var(--modulo));}
+/* a faixa do título: SÓ a primeira linha (número, selo, nome, gasto) — é a
+   única sem texto laranja ou vermelho solto; o selo "Pausado" tem fundo próprio.
+   As margens negativas levam a tinta até a borda sem mover o conteúdo. */
+.tela-gestao-trafego :deep(.gt-camp-l1){margin:-15px -22px 0;padding:15px 22px 10px;
+  background:color-mix(in srgb,var(--obj,var(--modulo)) 12%,var(--surface));
+  border-bottom:1px solid color-mix(in srgb,var(--obj,var(--modulo)) 35%,var(--surface));}
+@media(max-width:768px){.tela-gestao-trafego :deep(.gt-camp-l1){margin:-13px -14px 0;padding:13px 14px 10px;}}
+.tela-gestao-trafego :deep(.gt-camp-l2){margin-top:var(--sp-3);}
+.tela-gestao-trafego :deep(.gt-camp-num){background:var(--obj,var(--modulo));color:var(--sobre-cor);border-radius:var(--radius-md);padding:2px 6px;}
 .tela-gestao-trafego :deep(.gt-camp-top:hover .gt-name),
-.tela-gestao-trafego :deep(.gt-camp-top:hover .gt-expand-hint){color:var(--modulo);}
+.tela-gestao-trafego :deep(.gt-camp-top:hover .gt-expand-hint){color:var(--text);}
 .tela-gestao-trafego :deep(.gt-camp-row-ads){border-top-color:color-mix(in srgb,var(--cor-gestao-interna) 40%,var(--surface));}
-.tela-gestao-trafego :deep(.gt-set-card){--bloco:var(--cor-gestao-interna);border-color:color-mix(in srgb,var(--cor-gestao-interna) 30%,var(--surface));border-left:3px solid var(--cor-gestao-interna);}
-.tela-gestao-trafego :deep(.gt-set-top){margin:-10px -12px 0;padding:10px 12px 8px;background:color-mix(in srgb,var(--cor-gestao-interna) 8%,var(--surface));border-bottom:1px solid color-mix(in srgb,var(--cor-gestao-interna) 30%,var(--surface));border-radius:8px 8px 0 0;}
+.tela-gestao-trafego :deep(.gt-set-card){--bloco:var(--cor-gestao-interna);background:var(--surface);border-color:color-mix(in srgb,var(--cor-gestao-interna) 35%,var(--surface));border-left:3px solid var(--cor-gestao-interna);}
+.tela-gestao-trafego :deep(.gt-set-top){margin:-10px -12px 0;padding:10px 12px 8px;background:color-mix(in srgb,var(--cor-gestao-interna) 12%,var(--surface));border-bottom:1px solid color-mix(in srgb,var(--cor-gestao-interna) 35%,var(--surface));border-radius:8px 8px 0 0;}
 .tela-gestao-trafego :deep(.gt-set-num){color:var(--cor-gestao-interna);opacity:1;}
 .tela-gestao-trafego :deep(.gt-set-top:hover .gt-expand-hint){color:var(--cor-gestao-interna);}
 .tela-gestao-trafego :deep(.gt-set-pane)::before{border-left-color:var(--cor-gestao-interna);opacity:.4;}
 .tela-gestao-trafego :deep(.gt-ad-card::before){border-left-color:var(--cor-gestao-interna);border-bottom-color:var(--cor-gestao-interna);opacity:.6;}
-.tela-gestao-trafego :deep(.gt-ad-card){border-left:3px solid var(--cor-private-edit);}
+.tela-gestao-trafego :deep(.gt-ad-card){background:var(--surface2);box-shadow:none;border-color:color-mix(in srgb,var(--cor-private-edit) 25%,var(--border));border-left:2px solid var(--cor-private-edit);}
 .tela-gestao-trafego :deep(.gt-ad-num){color:var(--cor-private-edit);opacity:1;}
 /* A SITUAÇÃO, só onde foge do normal — pausado (o mesmo laranja do selo
-   "Pausado" que a linha já mostra) e arquivado/encerrado (cinza). Ativo fica
-   com o tom do nível. `:has()` lê o selo que JÁ está na linha: nenhuma classe
-   nova no JavaScript, e o caminho com `>` não deixa o selo de um conjunto
-   pintar a campanha. */
-.tela-gestao-trafego :deep(.gt-camp-row:has(> .gt-camp-inner > .gt-camp-top > .gt-camp-l1 > .gt-status-badge.paused)){border-left-color:var(--situacao-queda);}
-.tela-gestao-trafego :deep(.gt-camp-row:has(> .gt-camp-inner > .gt-camp-top > .gt-camp-l1 > .gt-status-badge.inactive)){border-left-color:var(--situacao-parada);}
+   "Pausado" que a linha já mostra) e arquivado/encerrado (cinza). `:has()` lê
+   o selo que JÁ está na linha, e o caminho com `>` não deixa o selo de um
+   conjunto pintar a campanha. Na CAMPANHA a esquerda é do objetivo, então a
+   situação vira o filete de CIMA; no conjunto e no anúncio, o da esquerda. */
+.tela-gestao-trafego :deep(.gt-camp-row:has(> .gt-camp-inner > .gt-camp-top > .gt-camp-l1 > .gt-status-badge.paused)){border-top:3px solid var(--situacao-queda);}
+.tela-gestao-trafego :deep(.gt-camp-row:has(> .gt-camp-inner > .gt-camp-top > .gt-camp-l1 > .gt-status-badge.inactive)){border-top:3px solid var(--situacao-parada);}
 .tela-gestao-trafego :deep(.gt-set-card:has(> .gt-set-top > .gt-status-badge.paused)){border-left-color:var(--situacao-queda);}
 .tela-gestao-trafego :deep(.gt-set-card:has(> .gt-set-top > .gt-status-badge.inactive)){border-left-color:var(--situacao-parada);}
 .tela-gestao-trafego :deep(.gt-ad-card:has(> .gt-ad-top > .gt-status-badge.paused)){border-left-color:var(--situacao-queda);}
 .tela-gestao-trafego :deep(.gt-ad-card:has(> .gt-ad-top > .gt-status-badge.inactive)){border-left-color:var(--situacao-parada);}
-/* O OBJETIVO: o selo ganha a tinta e o filete do tom do objetivo (o texto
-   continua `--text`); cada número da campanha ganha um filete no tom do que
-   ele mede — os KPIs são escolhidos POR objetivo, então medem o objetivo. O
-   número segue `--text`, e a cor que já existia dentro dele (custo por ponto,
-   CTR) não muda. */
+/* O OBJETIVO no selo: tinta e filete do tom (o texto continua `--text`).
+   OS NÚMEROS viram PÍLULAS no tom do objetivo — os KPIs são escolhidos POR
+   objetivo, então medem o objetivo; o número segue `--text`. O custo por
+   ponto, a qualidade e o CTR do anúncio já trazem cor PRÓPRIA (verde, laranja,
+   vermelho): a pílula deles fica na superfície, só com a borda no tom, porque
+   laranja sobre tinta reprova. */
 .tela-gestao-trafego :deep(.gt-camp-row .ma-obj-chip){background:color-mix(in srgb,var(--obj,var(--muted)) 12%,var(--surface));color:var(--text);box-shadow:inset 3px 0 0 var(--obj,var(--muted));padding-left:8px;}
+.tela-gestao-trafego :deep(.gt-camp-row .gt-metrics){gap:var(--sp-2);}
 .tela-gestao-trafego :deep(.gt-camp-row .gt-metrics > .gt-kpi),
-.tela-gestao-trafego :deep(.gt-camp-row .gt-metrics > .gt-metric){border-left:3px solid var(--obj,var(--border));padding-left:6px;}
+.tela-gestao-trafego :deep(.gt-camp-row .gt-metrics > .gt-metric){border-radius:999px;padding:2px 10px;border:1px solid color-mix(in srgb,var(--obj,var(--modulo)) 35%,var(--surface));}
+.tela-gestao-trafego :deep(.gt-camp-row .gt-metrics > .gt-kpi){background:color-mix(in srgb,var(--obj,var(--modulo)) 10%,var(--surface));}
+.tela-gestao-trafego :deep(.gt-camp-row .gt-metrics > .gt-metric){background:var(--surface);}
+/* no celular as pílulas QUEBRAM em mais linhas, nunca saem do cartão: a
+   fileira de números ganha a largura inteira (debaixo do nome, no anúncio). */
+@media(max-width:640px){
+  .tela-gestao-trafego :deep(.gt-camp-l2 > .gt-metrics){flex:1 1 100%;min-width:0;}
+  .tela-gestao-trafego :deep(.gt-ad-top){flex-wrap:wrap;}
+  .tela-gestao-trafego :deep(.gt-ad-top > .gt-metrics){flex:1 1 100%;min-width:0;}
+}
+/* A BARRA DO TOPO da ferramenta: o filete de 3px da folha comum some embaixo
+   da faixa de controles, que é alta aqui. Mais grosso e com mais tinta, para
+   ser visto na foto inteira. O texto em cima continua `--text`/`--muted`. */
+.tela-gestao-trafego :deep(.bt-barra){border-bottom-width:6px;background:color-mix(in srgb,var(--modulo) 12%,var(--surface));}
 
 /* ── ABA FILA ───────────────────────────────────────────────────────────────
    O cabeçalho da fila é um bloco em BRONZE (a decisão de verba); cada item
