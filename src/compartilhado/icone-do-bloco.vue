@@ -1,7 +1,7 @@
 <template>
   <!-- ⚠️ ÍCONE É SVG, NUNCA EMOJI. A cor vem de `currentColor`: quem manda é o
        título onde ele mora (a cor da ferramenta, ou a do grupo do placar). -->
-  <svg class="cv-icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+  <svg class="id-icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
     <template v-if="nome === 'porta'">
       <path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5" />
       <path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5" />
@@ -38,12 +38,29 @@
     <template v-else-if="nome === 'editar'">
       <path d="M4 20h4L19 9l-4-4L4 16v4z" />
     </template>
+    <template v-else-if="nome === 'filtro'">
+      <path d="M4 6h16M7 12h10M10 18h4" />
+    </template>
+    <template v-else-if="nome === 'carrinho-mais'">
+      <circle cx="9" cy="20" r="1" /><circle cx="18" cy="20" r="1" /><path d="M2 3h3l2.6 12h11l2-8H6" /><path d="M13 7v5M10.5 9.5h5" />
+    </template>
+    <template v-else-if="nome === 'carrinho-menos'">
+      <circle cx="9" cy="20" r="1" /><circle cx="18" cy="20" r="1" /><path d="M2 3h3l2.6 12h11l2-8H6" /><path d="M10.5 9.5h5" />
+    </template>
+    <template v-else-if="nome === 'relogio'">
+      <circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" />
+    </template>
+    <template v-else-if="nome === 'lista'">
+      <path d="M9 6h11M9 12h11M9 18h11" /><path d="M4 6h.01M4 12h.01M4 18h.01" />
+    </template>
   </svg>
 </template>
 
 <script setup>
-/* O ÍCONE PEQUENO QUE MARCA O TIPO DE BLOCO no Stylist Circle e no Private
- * Edit (pedido do dono, 23/09/2026). O desenho e o tamanho vêm da classe
- * `.cv-icone` (estilo-comercial.css), que chega aqui pela raiz do componente. */
+/* O ÍCONE PEQUENO QUE MARCA O TIPO DE BLOCO (pedido do dono, 23/09/2026).
+ * Nasceu no Stylist Circle e no Private Edit e mudou-se para cá na Onda 0,
+ * para qualquer ferramenta usar. O desenho e o tamanho vêm da classe
+ * `.id-icone` (src/estilos/identidade-da-ferramenta.css), que chega aqui pela
+ * raiz do componente — por isso a tela que usa o ícone importa aquela folha. */
 defineProps({ nome: { type: String, required: true } })
 </script>

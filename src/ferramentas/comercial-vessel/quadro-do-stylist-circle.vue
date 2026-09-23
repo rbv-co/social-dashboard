@@ -1,6 +1,6 @@
 <template>
   <section class="cv-bloco">
-    <h2 class="cv-etiqueta"><icone-do-bloco nome="funil" />O funil</h2>
+    <h2 class="cv-etiqueta id-titulo"><icone-do-bloco nome="funil" />O funil</h2>
     <!-- ⚠️ NO CELULAR, UMA ETAPA POR VEZ: as etapas viram botões que quebram
          em linhas — nunca colunas que rolam para o lado (PADRAO, item 6). -->
     <div class="cv-quadro-etapas" role="tablist" aria-label="Etapas do funil">
@@ -17,7 +17,7 @@
         <h3 v-else class="cv-quadro-titulo">{{ rotuloDaColuna(k) }} · {{ colunas[k].length }}</h3>
         <p v-if="!colunas[k].length" class="cv-nota">Ninguém nesta etapa.</p>
         <article v-for="s in colunas[k]" :key="s.codigo" class="cv-quadro-cartao"
-                 :class="[k === 'saidas' ? `cv-tom-${seloDoEstagio(s.estagio).tom}` : '',
+                 :class="[k === 'saidas' ? `id-tom-${seloDoEstagio(s.estagio).tom}` : '',
                           { atrasada: prazoAtrasado(s.proxima_acao_em, hoje) }]">
           <button type="button" class="cv-quadro-nome" @click="$emit('abrir', s.codigo)">{{ s.nome }}</button>
           <p class="cv-sub"><span class="cv-codigo">{{ s.codigo }}</span>
@@ -54,7 +54,7 @@
  * banco. As regras moram em `crm-da-stylist-regras.js`, testadas. */
 import { ref, computed } from 'vue'
 import { ESTAGIOS_DA_STYLIST, LOJAS, seloDoEstagio } from './t11-regras.js'
-import IconeDoBloco from './icone-do-bloco.vue'
+import IconeDoBloco from '../../compartilhado/icone-do-bloco.vue'
 import { dataLegivel } from './enderecos-publicos.js'
 import {
   FLUXO_PRINCIPAL, colunasDoQuadro, proximaEtapaManual, reabrirPara, prazoAtrasado, ultimoContatoEscrito,
@@ -81,4 +81,5 @@ const saidasAbertas = ref(false)
 
 <style scoped>
 @import './estilo-comercial.css';
+@import '../../estilos/identidade-da-ferramenta.css';
 </style>

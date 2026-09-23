@@ -1,0 +1,113 @@
+/* A COR DE CADA FERRAMENTA E DE CADA BLOCO — a linguagem aprovada pelo dono
+ * no Stylist Circle e no Private Edit (23/09/2026: "o visual ficou com pouca
+ * cor, isso dificulta saber o que é cada card, cada bloco"), tirada da pasta
+ * do Comercial Vessel para servir a qualquer ferramenta da Central.
+ *
+ * COMO LIGAR NUMA TELA (só classe, nenhum comportamento muda):
+ *   1. na raiz da tela: `id-ferramenta` — e a tela precisa de um `--modulo`
+ *      (em estilos-globais.css, `.tela-x{ --modulo:var(--cor-x); }`);
+ *   2. importar este arquivo DENTRO do `<style scoped>` da tela e de cada
+ *      componente filho que usa as classes, DEPOIS das outras folhas:
+ *        @import '../../estilos/identidade-da-ferramenta.css';
+ *   3. marcar os pedaços com as classes abaixo.
+ *
+ * ⚠️ POR QUE IMPORTADO NO `scoped` E NÃO UMA VEZ NO `ponto-de-partida.js`:
+ * global, cada regra perderia o atributo `[data-v-…]` e EMPATARIA em
+ * especificidade com a folha da própria tela (`.bs-bloco[data-v]` contra
+ * `.id-ferramenta .id-bloco-form`). Empate decide pela ordem das folhas no
+ * pacote, e a folha da tela carrega DEPOIS da global — a cor sumiria calada
+ * nas telas que mais precisam dela. Dentro do `scoped`, o mesmo mecanismo que
+ * o PR #209 aprovou continua valendo, e a Onda 0 prova isso pixel a pixel.
+ *
+ * AS CLASSES (todas neutras — `id-` de identidade):
+ *   id-ferramenta     a raiz da tela
+ *   id-titulo         o título de um bloco: na cor da ferramenta, com ícone
+ *   id-subtitulo      o título pequeno DENTRO de um cartão: fica cinza, porque
+ *                     ali a cor já é o filete da situação
+ *   id-bloco-form     o bloco que é formulário: fundo levemente tingido
+ *   id-caixa-form     o formulário dentro de um cartão: a mesma tinta, numa caixa
+ *   id-bloco-leitura  "como ler": azul de informação, para não parecer dado
+ *   id-grupo          um grupo de números com filete (o --tom é de quem usa)
+ *   id-cartao         o cartão que tem SITUAÇÃO: filete na cor dela
+ *   id-selo           o selo da situação, pintado pelo mesmo tom
+ *   id-tom-<tom>      a situação: andamento, viva, confirmada, queda, faltou, parada
+ *   id-icone          o ícone SVG (src/compartilhado/icone-do-bloco.vue)
+ *
+ * AS TRÊS REGRAS QUE FAZEM A COR AJUDAR SEM VIRAR CARNAVAL:
+ *   1. A cor mora no FILETE, no ÍCONE e no TÍTULO PEQUENO. O texto de ler
+ *      continua `--text` — a cor é o sinal, o texto é para ler (PADRAO, item 2).
+ *   2. Fundo tingido só em formulário (8% da cor da ferramenta) e no "Como
+ *      ler" (8% de azul de informação). O resto continua `--surface`.
+ *   3. A cor de SITUAÇÃO é a mesma em toda a Central: tokens `--situacao-*`.
+ *
+ * ⚠️ SÓ TOKEN, NUNCA HEX (item 2 do PADRAO-DA-CENTRAL). */
+
+/* ── a barra do topo: filete e tinta da ferramenta; o título continua --text ── */
+.id-ferramenta :deep(.bt-barra) {
+  border-bottom: 3px solid var(--modulo);
+  background: color-mix(in srgb, var(--modulo) 8%, var(--surface));
+}
+
+/* ── o título de bloco e o ícone na cor da ferramenta ── */
+.id-ferramenta .id-titulo { color: var(--modulo); font-weight: 600; display: flex; align-items: center; gap: var(--sp-2); }
+.id-ferramenta .id-subtitulo { color: var(--muted); font-weight: 400; display: flex; align-items: center; gap: var(--sp-2); }
+.id-icone {
+  width: 16px; height: 16px; flex: 0 0 16px;
+  fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+}
+
+/* o botão principal na cor da ferramenta (como `.tela-acessos` faz com as
+   abas dela); o texto em cima é `--sobre-cor`, medido nos dois temas */
+.id-ferramenta .btn.btn-principal,
+.id-ferramenta .btn.btn-principal:hover { background: var(--modulo); border-color: var(--modulo); color: var(--sobre-cor); }
+
+/* ── formulário: fundo tingido da ferramenta; o campo volta à superfície ── */
+.id-ferramenta .id-bloco-form {
+  background: color-mix(in srgb, var(--modulo) 8%, var(--surface));
+  border-color: color-mix(in srgb, var(--modulo) 38%, var(--surface));
+}
+.id-ferramenta .id-caixa-form {
+  background: color-mix(in srgb, var(--modulo) 8%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--modulo) 38%, var(--surface));
+  border-radius: var(--radius-md);
+  padding: var(--sp-3);
+  margin-top: var(--sp-3);
+}
+.id-ferramenta .id-caixa-form > .id-titulo:first-child { margin-top: 0; }
+.id-ferramenta .id-bloco-form input:not([type="checkbox"]):not([type="radio"]),
+.id-ferramenta .id-bloco-form select,
+.id-ferramenta .id-bloco-form textarea,
+.id-ferramenta .id-caixa-form input:not([type="checkbox"]):not([type="radio"]),
+.id-ferramenta .id-caixa-form select,
+.id-ferramenta .id-caixa-form textarea { background: var(--surface); }
+
+/* ── "Como ler": azul de informação; o texto sobre a tinta é --text ── */
+.id-ferramenta .id-bloco-leitura {
+  background: color-mix(in srgb, var(--informacao) 8%, var(--surface));
+  border-color: color-mix(in srgb, var(--informacao) 38%, var(--surface));
+}
+.id-ferramenta .id-bloco-leitura .id-titulo { color: var(--accent-forte); }
+.id-ferramenta .id-bloco-leitura p { color: var(--text); }
+
+/* ── grupos de números: filete e título no tom do grupo ── */
+.id-grupo { --tom: var(--modulo); border-left: 3px solid var(--tom); padding-left: var(--sp-3); margin-top: var(--sp-5); }
+.id-grupo > :first-child { margin-top: 0; }
+.id-ferramenta .id-grupo > .id-titulo { color: var(--tom); }
+
+/* ── a situação: filete do cartão e selo ── */
+.id-tom-andamento  { --tom: var(--situacao-andamento); }
+.id-tom-viva       { --tom: var(--situacao-viva); }
+.id-tom-confirmada { --tom: var(--situacao-confirmada); }
+.id-tom-queda      { --tom: var(--situacao-queda); }
+.id-tom-faltou     { --tom: var(--situacao-faltou); }
+.id-tom-parada     { --tom: var(--situacao-parada); }
+.id-ferramenta .id-cartao { border-left: 4px solid var(--tom, var(--border)); }
+/* a proporção do `.selo` global (12% de fundo, 75/25 no texto) — já medida */
+.id-ferramenta .id-selo[class*="id-tom-"] {
+  background: color-mix(in srgb, var(--tom) 12%, var(--surface));
+  border-color: color-mix(in srgb, var(--tom) 45%, var(--surface));
+  color: color-mix(in srgb, var(--tom) 75%, var(--text));
+  font-weight: 600;
+}
+/* cinza não tem cor para misturar: o neutro do tema, como `.selo-neutro` */
+.id-ferramenta .id-selo.id-tom-parada { background: var(--surface2); border-color: var(--border); color: var(--muted); }

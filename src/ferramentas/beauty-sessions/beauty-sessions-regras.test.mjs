@@ -109,19 +109,28 @@ test('mensagemDeTemGente sem número vira zero, não quebra', () => {
 
 test('⚠️ arquivada não é encerrada — a arquivada vence mesmo se ativa=false', () => {
   assert.deepEqual(seloDaSessao({ arquivada: true, ativa: false }),
-    { texto: 'Arquivada', classe: 'bs-selo-fim' })
+    { texto: 'Arquivada', classe: 'bs-selo-fim', tom: 'parada' })
   assert.deepEqual(seloDaSessao({ arquivada: true, ativa: true }),
-    { texto: 'Arquivada', classe: 'bs-selo-fim' })
+    { texto: 'Arquivada', classe: 'bs-selo-fim', tom: 'parada' })
 })
 
 test('encerrada (não arquivada) é um selo diferente de arquivada', () => {
   assert.deepEqual(seloDaSessao({ arquivada: false, ativa: false }),
-    { texto: 'Encerrada', classe: 'bs-selo-fim' })
+    { texto: 'Encerrada', classe: 'bs-selo-fim', tom: 'parada' })
 })
 
 test('sessão aberta e não arquivada mostra "Aceitando"', () => {
   assert.deepEqual(seloDaSessao({ arquivada: false, ativa: true }),
-    { texto: 'Aceitando', classe: 'bs-selo-viva' })
+    { texto: 'Aceitando', classe: 'bs-selo-viva', tom: 'viva' })
+})
+
+test('FIAÇÃO: o tom de cada selo tem a classe na folha comum — senão o filete some calado', async () => {
+  const { readFileSync } = await import('node:fs')
+  const folha = readFileSync(new URL('../../estilos/identidade-da-ferramenta.css', import.meta.url), 'utf8')
+  for (const s of [{ arquivada: true }, { ativa: false }, { ativa: true }]) {
+    const { tom } = seloDaSessao(s)
+    assert.match(folha, new RegExp(`\\.id-tom-${tom}\\s*\\{`), `falta .id-tom-${tom}`)
+  }
 })
 
 test('rotuloDeArquivar é sempre o oposto do estado atual', () => {

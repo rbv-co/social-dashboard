@@ -1,6 +1,6 @@
 <!-- src/ferramentas/funil-carrinho/tela-de-funil-carrinho.vue -->
 <template>
-  <div class="fc-tela">
+  <div class="fc-tela id-ferramenta">
     <barra-de-topo :voltar="ROTULO_DO_PAI[paiDaTela('funil-carrinho')]"
                    titulo="Funil de Carrinho" @voltar="voltar" />
 
@@ -24,7 +24,7 @@
 
       <div v-show="aba === 'visao'" class="fc-grade">
         <section class="fc-cartao card-base">
-          <h2 class="fc-titulo-secao">Mais adicionados ao carrinho</h2>
+          <h2 class="fc-titulo-secao id-titulo"><icone-do-bloco nome="carrinho-mais" />Mais adicionados ao carrinho</h2>
           <p v-if="carregando" class="fc-carregando">Carregando…</p>
           <p v-else-if="!erro && !maisAdicionados.length" class="fc-vazio">Nenhum produto adicionado ao carrinho neste período.</p>
           <table v-else class="fc-tabela">
@@ -39,7 +39,7 @@
         </section>
 
         <section class="fc-cartao card-base">
-          <h2 class="fc-titulo-secao">Mais removidos do carrinho</h2>
+          <h2 class="fc-titulo-secao id-titulo"><icone-do-bloco nome="carrinho-menos" />Mais removidos do carrinho</h2>
           <p v-if="carregando" class="fc-carregando">Carregando…</p>
           <p v-else-if="!erro && !maisRemovidos.length" class="fc-vazio">Nenhum produto removido do carrinho neste período.</p>
           <table v-else class="fc-tabela">
@@ -54,7 +54,7 @@
         </section>
 
         <section class="fc-cartao fc-cartao-largo card-base">
-          <h2 class="fc-titulo-secao">Carrinhos abandonados antes do checkout</h2>
+          <h2 class="fc-titulo-secao id-titulo"><icone-do-bloco nome="relogio" />Carrinhos abandonados antes do checkout</h2>
           <p class="fc-explicacao">Teve produto adicionado, nunca chegou a iniciar o checkout, e ficou parado por mais de 30 minutos.</p>
           <p v-if="carregando" class="fc-carregando">Carregando…</p>
           <p v-else-if="!erro && !abandonados.length" class="fc-vazio">Nenhum carrinho abandonado neste período.</p>
@@ -72,7 +72,7 @@
 
       <div v-show="aba === 'registros'" class="fc-grade">
         <section class="fc-cartao fc-cartao-largo card-base">
-          <h2 class="fc-titulo-secao">Registros</h2>
+          <h2 class="fc-titulo-secao id-titulo"><icone-do-bloco nome="lista" />Registros</h2>
           <p class="fc-explicacao">Cada evento cru, mais recente primeiro.</p>
           <p v-if="carregando" class="fc-carregando">Carregando…</p>
           <p v-else-if="!erro && !registros.length" class="fc-vazio">Nenhum evento neste período.</p>
@@ -100,6 +100,7 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import BarraDeTopo from '../../compartilhado/barra-de-topo.vue'
+import IconeDoBloco from '../../compartilhado/icone-do-bloco.vue'
 import { sbClient } from '../../compartilhado/conectar-no-banco-de-dados.js'
 import { diasAtras } from '../../compartilhado/datas.js'
 import { rankearProdutos, ordenarAbandonados, foiCortado, LIMITE_CARRINHO } from './agregacoes-carrinho.js'
@@ -186,6 +187,7 @@ onMounted(carregar)
 </script>
 
 <style scoped>
+@import '../../estilos/identidade-da-ferramenta.css';
 .fc-tela { min-height: 100vh; background: var(--bg); }
 /* respiro lateral que cresce com a tela, igual às outras cinco telas da família — o piso de 16px é o --gutter de hoje, o celular não muda */
 .fc-body { padding: clamp(16px, 2.4vw, 40px); display: flex; flex-direction: column; gap: var(--sp-6); }
@@ -203,6 +205,13 @@ onMounted(carregar)
 .fc-grade { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-6); }
 .fc-cartao-largo { grid-column: 1 / -1; }
 .fc-titulo-secao { font-size: var(--texto-titulo); margin: 0 0 var(--sp-4); overflow-wrap: anywhere; }
+/* A COR DA FERRAMENTA NO TÍTULO (Onda 1, 23/09/2026): aqui o título do bloco
+   é grande (--texto-titulo), não a etiqueta pequena do Stylist Circle — pintado
+   inteiro de laranja, quatro deles gritavam na foto. A cor fica no ÍCONE, do
+   tamanho da letra; o texto continua --text, e a barra do topo e o botão
+   principal já dizem de que ferramenta é esta tela. */
+.id-ferramenta .fc-titulo-secao.id-titulo { color: var(--text); }
+.fc-titulo-secao .id-icone { color: var(--modulo); width: 20px; height: 20px; flex-basis: 20px; }
 .fc-explicacao { font-size: var(--texto-corpo); color: var(--muted); margin: 0 0 var(--sp-4); }
 .fc-carregando, .fc-vazio { font-size: var(--texto-corpo); color: var(--muted); }
 .fc-erro { font-size: var(--texto-campo); color: var(--red); }

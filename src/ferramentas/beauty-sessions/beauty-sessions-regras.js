@@ -139,10 +139,14 @@ export function mensagemDeTemGente(leituras) {
  * Encerrada aconteceu e continua contando; arquivada é o que não devia ter
  * ficado ali (duplicata, engano) e sai das contas e da lista por padrão.
  */
+/* O `tom` é a cor da situação no cartão e no selo (`id-tom-<tom>`), a mesma
+ * régua do Private Edit: aceitando é o que está valendo (verde); encerrada e
+ * arquivada saem de cena (cinza) — o que as separa é a palavra do selo, e a
+ * arquivada nem aparece na lista sem o filtro pedir. */
 export function seloDaSessao(s) {
-  if (s?.arquivada) return { texto: 'Arquivada', classe: 'bs-selo-fim' }
-  if (s?.ativa === false) return { texto: 'Encerrada', classe: 'bs-selo-fim' }
-  return { texto: 'Aceitando', classe: 'bs-selo-viva' }
+  if (s?.arquivada) return { texto: 'Arquivada', classe: 'bs-selo-fim', tom: 'parada' }
+  if (s?.ativa === false) return { texto: 'Encerrada', classe: 'bs-selo-fim', tom: 'parada' }
+  return { texto: 'Aceitando', classe: 'bs-selo-viva', tom: 'viva' }
 }
 
 /** O rótulo do botão de arquivar/desarquivar — o oposto do estado atual. */

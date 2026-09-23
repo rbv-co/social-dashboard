@@ -1,27 +1,27 @@
 <template>
   <div class="cv-barra">
     <label v-if="mostrar.includes('busca')" class="cv-barra-campo">
-      <span class="cv-etiqueta">Buscar</span>
+      <span class="cv-etiqueta id-subtitulo">Buscar</span>
       <input type="search" :value="modelValue.busca" :placeholder="placeholderBusca"
              @input="mudar('busca', $event.target.value)" />
     </label>
 
     <label v-if="mostrar.includes('periodo')" class="cv-barra-campo">
-      <span class="cv-etiqueta">Período</span>
+      <span class="cv-etiqueta id-subtitulo">Período</span>
       <select :value="String(modelValue.dias)" @change="mudarPeriodo($event.target.value)">
         <option v-for="p in PERIODOS" :key="String(p.dias)" :value="String(p.dias)">{{ p.rotulo }}</option>
       </select>
     </label>
 
     <label v-if="mostrar.includes('situacao')" class="cv-barra-campo">
-      <span class="cv-etiqueta">Situação</span>
+      <span class="cv-etiqueta id-subtitulo">Situação</span>
       <select :value="modelValue.situacao" @change="mudar('situacao', $event.target.value)">
         <option v-for="s in situacoes" :key="s.valor" :value="s.valor">{{ s.rotulo }}</option>
       </select>
     </label>
 
     <label v-if="mostrar.includes('loja')" class="cv-barra-campo">
-      <span class="cv-etiqueta">Loja</span>
+      <span class="cv-etiqueta id-subtitulo">Loja</span>
       <select :value="modelValue.loja" @change="mudar('loja', $event.target.value)">
         <option value="">Todas</option>
         <option v-for="(rotulo, chave) in lojas" :key="chave" :value="chave">{{ rotulo }}</option>
@@ -29,7 +29,7 @@
     </label>
 
     <label v-if="mostrar.includes('estagio')" class="cv-barra-campo">
-      <span class="cv-etiqueta">Estágio</span>
+      <span class="cv-etiqueta id-subtitulo">Estágio</span>
       <select :value="modelValue.estagio" @change="mudar('estagio', $event.target.value)">
         <option value="">Todos</option>
         <option v-for="(rotulo, chave) in estagios" :key="chave" :value="chave">{{ rotulo }}</option>
@@ -37,7 +37,7 @@
     </label>
 
     <label v-if="mostrar.includes('ordem')" class="cv-barra-campo">
-      <span class="cv-etiqueta">Ordem</span>
+      <span class="cv-etiqueta id-subtitulo">Ordem</span>
       <select :value="modelValue.ordem" @change="mudar('ordem', $event.target.value)">
         <option v-for="o in ordens" :key="o.valor" :value="o.valor">{{ o.rotulo }}</option>
       </select>
@@ -91,4 +91,5 @@ function mudarPeriodo(valor) {
 
 <style scoped>
 @import './estilo-comercial.css';
+@import '../../estilos/identidade-da-ferramenta.css';
 </style>

@@ -1,5 +1,5 @@
 <template>
-  <div class="tela-atendimentos">
+  <div class="tela-atendimentos id-ferramenta">
     <barra-de-topo :voltar="ROTULO_DO_PAI[paiDaTela('atendimentos')]"
                    titulo="Vessel — Private Appointment"
                    :subtitulo="subtitulo" @voltar="voltar" />
@@ -8,8 +8,8 @@
       <faixa-de-erro :erro="erro" @tentar-de-novo="carregar" />
 
       <!-- ── O QUE ESTOU OLHANDO ─────────────────────────────────────────── -->
-      <section class="atd-bloco">
-        <h2 class="atd-etiqueta">O que estou olhando</h2>
+      <section class="atd-bloco atd-caixa id-bloco-form">
+        <h2 class="atd-etiqueta id-titulo"><icone-do-bloco nome="filtro" />O que estou olhando</h2>
         <div class="atd-filtros">
           <label class="atd-campo" for="atd-periodo"><span>Período</span>
             <select id="atd-periodo" v-model="periodo" @change="carregar">
@@ -33,7 +33,7 @@
       <template v-else-if="!erro">
         <!-- ── A FAIXA DE CIMA ───────────────────────────────────────────── -->
         <section class="atd-bloco">
-          <h2 class="atd-etiqueta">Como está indo</h2>
+          <h2 class="atd-etiqueta id-titulo"><icone-do-bloco nome="placar" />Como está indo</h2>
           <div class="atd-numeros">
             <div class="atd-numero">
               <span class="atd-numero-valor">{{ resumo.naBase }}</span>
@@ -61,7 +61,7 @@
 
         <!-- ── A LISTA ───────────────────────────────────────────────────── -->
         <section class="atd-bloco">
-          <h2 class="atd-etiqueta">Os atendimentos</h2>
+          <h2 class="atd-etiqueta id-titulo"><icone-do-bloco nome="encontros" />Os atendimentos</h2>
 
           <p v-if="!linhas.length" class="atd-vazio">
             Nenhum atendimento neste período.
@@ -71,7 +71,8 @@
           <div v-for="grupo in grupos" :key="grupo.dia" class="atd-dia">
             <h3 class="atd-dia-titulo">{{ diaPorExtenso(grupo.dia) }}</h3>
 
-            <article v-for="a in grupo.itens" :key="a.id" class="card-base atd-linha">
+            <article v-for="a in grupo.itens" :key="a.id" class="card-base atd-linha id-cartao"
+                     :class="`id-tom-${tomDaSituacao(a.status)}`">
               <div class="atd-linha-quem">
                 <span class="atd-nome">{{ a.pessoa?.nome || 'sem nome' }}</span>
                 <a v-if="a.pessoa?.telefone" class="atd-fone"
@@ -87,7 +88,7 @@
               </div>
 
               <div class="atd-linha-situacao">
-                <span class="selo" :class="seloDaSituacao(a.status)">{{ rotuloDaSituacao(a.status) }}</span>
+                <span class="selo id-selo" :class="[seloDaSituacao(a.status), `id-tom-${tomDaSituacao(a.status)}`]">{{ rotuloDaSituacao(a.status) }}</span>
                 <span v-if="compraDe(a).total > 0" class="atd-comprou">
                   comprou {{ dinheiro(compraDe(a).total) }}
                 </span>
@@ -128,8 +129,8 @@
         <!-- ── O QUE ESTA TELA NÃO RESPONDE ──────────────────────────────── -->
         <!-- ⚠️ ESTE BLOCO É CONTEÚDO, NÃO RODAPÉ. Sem ele, alguém soma a coluna
              "comprou" e chama de faturamento do canal — e a régua some. -->
-        <section class="atd-bloco">
-          <h2 class="atd-etiqueta">Como ler o "comprou"</h2>
+        <section class="atd-bloco atd-caixa id-bloco-leitura">
+          <h2 class="atd-etiqueta id-titulo"><icone-do-bloco nome="leitura" />Como ler o "comprou"</h2>
           <p class="atd-nota">
             É o que <b>aquela cliente</b> comprou <b>do dia da visita até 7 dias
             depois</b>, em qualquer loja, pelo valor que <b>entrou no caixa</b>
@@ -168,6 +169,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import BarraDeTopo from '../../compartilhado/barra-de-topo.vue'
 import FaixaDeErro from '../../compartilhado/faixa-de-erro.vue'
+import IconeDoBloco from '../../compartilhado/icone-do-bloco.vue'
 import { estado, hasPermission } from '../../compartilhado/controle-de-login-e-usuario.js'
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../../compartilhado/conectar-no-banco-de-dados.js'
 import { classificarErro, ERRO_DE_REDE } from '../../compartilhado/classificar-erro.js'
@@ -223,6 +225,7 @@ const subtitulo = computed(() => {
 const nomeDaLoja = (k) => LOJAS[k] || k || '—'
 const rotuloDaSituacao = (s) => SITUACOES[s]?.rotulo || s
 const seloDaSituacao = (s) => SITUACOES[s]?.selo || 'selo-neutro'
+const tomDaSituacao = (s) => SITUACOES[s]?.tom || 'parada'
 const soDigitos = (t) => String(t || '').replace(/\D/g, '')
 const dinheiro = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 const compraDe = (a) => comprasDaVisita(a, pedidos.value)
@@ -354,7 +357,13 @@ onMounted(() => {
 
 <style scoped>
 @import '../comercial-vessel/estilo-comercial.css';
+@import '../../estilos/identidade-da-ferramenta.css';
 .tela-atendimentos{min-height:100vh;}
+/* O formulário de cima e o "como ler" ganham CAIXA (Onda 1 da cor, 23/09/2026):
+   a tinta precisa de uma borda para não parecer uma mancha na página. Os
+   outros dois blocos continuam soltos — os números e os cartões já são
+   caixas. */
+.atd-caixa{padding:var(--sp-4);background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);}
 .atd-body{padding-block:var(--sp-5);display:flex;flex-direction:column;gap:var(--sp-5);}
 .atd-carregando{color:var(--muted);font-family:var(--fonte-principal);font-size:var(--texto-corpo);padding:var(--sp-5) 0;}
 

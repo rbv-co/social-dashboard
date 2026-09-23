@@ -15,8 +15,8 @@
           <button v-if="podeEditar" type="button" class="btn" @click="$emit('corrigir', stylist.codigo)">Corrigir dados…</button>
         </div>
 
-        <div v-if="podeEditar" class="cv-caixa-form">
-          <h3 class="cv-etiqueta cv-etiqueta-interna"><icone-do-bloco nome="contato" />Registrar contato</h3>
+        <div v-if="podeEditar" class="id-caixa-form">
+          <h3 class="cv-etiqueta cv-etiqueta-interna id-titulo"><icone-do-bloco nome="contato" />Registrar contato</h3>
           <p class="cv-sub">Canal</p>
           <div class="cv-escolha">
             <button v-for="(rotulo, k) in CANAIS" :key="k" type="button" class="btn"
@@ -51,7 +51,7 @@
           </div>
         </div>
 
-        <h3 class="cv-etiqueta cv-etiqueta-interna">Histórico</h3>
+        <h3 class="cv-etiqueta cv-etiqueta-interna id-titulo">Histórico</h3>
         <p v-if="erroDoHistorico" class="cv-nota cv-nota-erro">{{ erroDoHistorico }}</p>
         <p v-else-if="carregando" class="cv-carregando">Carregando…</p>
         <p v-else-if="!historico.length" class="cv-vazio">Nenhum contato registrado ainda.</p>
@@ -76,7 +76,7 @@ import { ESTAGIOS_DA_STYLIST, telefoneLegivel } from './t11-regras.js'
 import { dataLegivel, dataHoraLegivel } from './enderecos-publicos.js'
 import { CANAIS, RESULTADOS } from './crm-da-stylist-regras.js'
 import { mensagemDeEditar } from './stylist-circle-regras.js'
-import IconeDoBloco from './icone-do-bloco.vue'
+import IconeDoBloco from '../../compartilhado/icone-do-bloco.vue'
 
 const props = defineProps({
   stylist: { type: Object, required: true },
@@ -147,4 +147,5 @@ onMounted(carregarHistorico)
 
 <style scoped>
 @import './estilo-comercial.css';
+@import '../../estilos/identidade-da-ferramenta.css';
 </style>
