@@ -1,5 +1,5 @@
 <template>
-  <div class="tela-patrimonio" :class="{ 'com-barra': modoSelecao && selecionados.size }">
+  <div class="tela-patrimonio id-ferramenta" :class="{ 'com-barra': modoSelecao && selecionados.size }">
     <!-- O "voltar" sobe UM nível da árvore; só na raiz é que ele sai do módulo.
          Assim o mesmo botão serve pra subir e pra sair, sem decorar dois.
 
@@ -168,7 +168,7 @@
 
         <!-- CELULAR e TABLET: cartões. É a única forma que funciona com uma mão. -->
         <div class="pat-cards" v-if="mostrarBens">
-          <button class="pat-card" :class="{ marcado: selecionados.has(bem.id) }"
+          <button class="pat-card id-cartao" :class="[{ marcado: selecionados.has(bem.id) }, `id-tom-${tomDaSituacao(bem.situacao)}`]"
                   v-for="bem in bensNaTela" :key="bem.id" @click="tocarNoBem(bem)">
             <div class="pat-card-topo">
               <span class="pat-check-caixa" v-if="modoSelecao">{{ selecionados.has(bem.id) ? '✓' : '' }}</span>
@@ -202,7 +202,8 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="bem in bensNaTela" :key="bem.id" :class="{ marcado: selecionados.has(bem.id) }" @click="tocarNoBem(bem)">
+              <tr v-for="bem in bensNaTela" :key="bem.id" class="pat-linha-tom"
+                  :class="[{ marcado: selecionados.has(bem.id) }, `id-tom-${tomDaSituacao(bem.situacao)}`]" @click="tocarNoBem(bem)">
                 <td v-if="modoSelecao"><span class="pat-check-caixa">{{ selecionados.has(bem.id) ? '✓' : '' }}</span></td>
                 <td>{{ bem.numero ?? '—' }}</td>
                 <td>{{ bem.nome }}<span class="pat-selo-novo" v-if="ehNovo(bem)">novo</span></td>
@@ -255,17 +256,17 @@
            nenhum — a pessoa teria que varrer 341 linhas procurando buraco. -->
       <template v-else-if="visao === 'etiquetas'">
         <div class="pat-kpis">
-          <div class="pat-kpi">
+          <div class="pat-kpi id-cartao pat-kpi-da-ferramenta">
             <span class="pat-kpi-lab">Próximo livre</span>
             <strong class="pat-kpi-val">{{ numeros.proximoLivre ?? '—' }}</strong>
             <span class="pat-kpi-fine">use este no próximo bem</span>
           </div>
-          <div class="pat-kpi">
+          <div class="pat-kpi id-cartao id-tom-parada">
             <span class="pat-kpi-lab">Em uso</span>
             <strong class="pat-kpi-val">{{ numeros.usados }}</strong>
             <span class="pat-kpi-fine">de 1 a {{ numeros.teto }}</span>
           </div>
-          <div class="pat-kpi">
+          <div class="pat-kpi id-cartao id-tom-viva">
             <span class="pat-kpi-lab">Disponíveis</span>
             <strong class="pat-kpi-val">{{ numeros.livres }}</strong>
             <span class="pat-kpi-fine" v-if="numeros.semNumero">{{ numeros.semNumero }} bem(ns) ainda sem etiqueta</span>
@@ -278,7 +279,7 @@
           libera mais 100 números para você continuar etiquetando.
         </div>
 
-        <div class="pat-secao-num">Disponíveis</div>
+        <div class="pat-secao-num id-titulo"><icone-do-bloco nome="etiqueta" />Disponíveis</div>
         <div class="pat-faixas">
           <span class="pat-faixa livre" v-for="f in numeros.faixasLivres" :key="'l' + f.de">{{ textoDaFaixa(f) }}</span>
           <span class="pat-faixa-vazio" v-if="!numeros.faixasLivres.length">
@@ -286,7 +287,7 @@
           </span>
         </div>
 
-        <div class="pat-secao-num">Já em uso</div>
+        <div class="pat-secao-num id-titulo"><icone-do-bloco nome="etiqueta" />Já em uso</div>
         <div class="pat-faixas">
           <span class="pat-faixa usada" v-for="f in numeros.faixasUsadas" :key="'u' + f.de">{{ textoDaFaixa(f) }}</span>
           <span class="pat-faixa-vazio" v-if="!numeros.faixasUsadas.length">Nenhuma etiqueta usada ainda.</span>
@@ -295,7 +296,7 @@
         <!-- Etiqueta acima do teto existe de verdade e não pode sumir do
              relatório só porque não cabe na régua. -->
         <template v-if="numeros.acimaDoTeto.length">
-          <div class="pat-secao-num">Fora da numeração atual</div>
+          <div class="pat-secao-num id-titulo"><icone-do-bloco nome="etiqueta" />Fora da numeração atual</div>
           <div class="pat-faixas">
             <span class="pat-faixa fora" v-for="f in numeros.acimaDoTeto" :key="'f' + f.de">{{ textoDaFaixa(f) }}</span>
           </div>
@@ -329,17 +330,17 @@
       <!-- RESUMO: onde está o dinheiro. É a aba Dinâmica da planilha, viva. -->
       <template v-else>
         <div class="pat-kpis">
-          <div class="pat-kpi">
+          <div class="pat-kpi id-cartao pat-kpi-da-ferramenta">
             <span class="pat-kpi-lab">Patrimônio total</span>
             <strong class="pat-kpi-val">{{ formatarValor(totais.totalCentavos) }}</strong>
             <span class="pat-kpi-fine">{{ totais.itens }} itens<template v-if="totais.semValor"> · {{ totais.semValor }} sem valor informado</template></span>
           </div>
-          <div class="pat-kpi">
+          <div class="pat-kpi id-cartao id-tom-viva">
             <span class="pat-kpi-lab">Em uso</span>
             <strong class="pat-kpi-val">{{ formatarValor(totais.emUsoCentavos) }}</strong>
             <span class="pat-kpi-fine">{{ totais.emUso }} itens</span>
           </div>
-          <div class="pat-kpi">
+          <div class="pat-kpi id-cartao id-tom-andamento">
             <span class="pat-kpi-lab">Em estoque</span>
             <strong class="pat-kpi-val">{{ formatarValor(totais.emEstoqueCentavos) }}</strong>
             <span class="pat-kpi-fine">{{ totais.emEstoque }} itens</span>
@@ -390,7 +391,7 @@
         </div>
         <PasseioGuiado v-model="passeioMassaAberto" :passos="PASSOS_MASSA" />
 
-        <div class="pat-ficha-corpo">
+        <div class="pat-ficha-corpo id-bloco-form">
           <p class="pat-tutorial-fixo">{{ TEXTOS.massaAberta }}</p>
           <div class="pat-ajuda-txt">{{ AJUDAS.massa }}</div>
 
@@ -510,7 +511,7 @@
         </div>
         <PasseioGuiado v-model="passeioBemAberto" :passos="PASSOS_BEM" />
 
-        <div class="pat-ficha-corpo">
+        <div class="pat-ficha-corpo id-bloco-form">
           <p class="pat-tutorial-fixo">{{ TEXTOS.bemAberto }}</p>
           <label class="pat-campo">
             <span>Nome do bem</span>
@@ -727,7 +728,7 @@
                ligar). A tabela é da Frota — ver e mexer aqui exige a mesma
                permissão que a tela da Frota já cobra, não uma nova. -->
           <div class="pat-frota" v-if="mostrarLigacaoFrota">
-            <h4>Situação na Frota</h4>
+            <h4 class="id-titulo"><icone-do-bloco nome="veiculo" />Situação na Frota</h4>
 
             <!-- Sem a feature "frota", a consulta volta vazia pela RLS —
                  dizer "não ligado" aqui seria inventar dado que a tela não
@@ -798,7 +799,7 @@
 
           <!-- Histórico de posse: só faz sentido em bem que já existe. -->
           <div class="pat-hist" v-if="!bemAberto.novo">
-            <h4>Histórico de posse</h4>
+            <h4 class="id-titulo"><icone-do-bloco nome="relogio" />Histórico de posse</h4>
             <div class="pat-hist-vazio" v-if="!historico.length">
               Ninguém pegou este bem ainda. Quando você colocar uma pessoa em "com quem está",
               a troca fica registrada aqui com a data.
@@ -827,7 +828,7 @@
           <button class="pat-btn-ajuda" @click="passeioListasAberto = true" title="Passeio pelos campos">?</button>
         </div>
         <PasseioGuiado v-model="passeioListasAberto" :passos="PASSOS_LISTAS" />
-        <div class="pat-ficha-corpo">
+        <div class="pat-ficha-corpo id-bloco-form">
           <p class="pat-tutorial-fixo">{{ TEXTOS.listasAbertas }}</p>
           <div class="pat-ajuda-txt">{{ AJUDAS.arvore }}</div>
 
@@ -903,7 +904,7 @@
                (notebook, mesa, carro), não onde ele está. Aninhar dentro de local
                obrigaria a recadastrar "Computadores" em cada sala. -->
           <div class="pat-lista-bloco">
-            <h4>Categorias</h4>
+            <h4 class="id-titulo"><icone-do-bloco nome="lista" />Categorias</h4>
             <p class="pat-listas-ajuda">O que o bem é. Não depende de onde ele está.</p>
             <div class="pat-lista-item" v-for="item in categorias" :key="item.id">
               <input class="pat-lista-nome" :value="item.nome"
@@ -936,10 +937,11 @@ import { hasPermission, estado } from '../../compartilhado/controle-de-login-e-u
 import { hojeLocal } from '../../compartilhado/datas.js'
 import { formatarValor, parsearValor, fecharEAbrirHistorico } from './patrimonio.js'
 import { textoLinhaHistorico, formatarDataBR } from './patrimonio-lista.js'
-import { SITUACOES, rotuloDaSituacao, classeDaSituacao, textoDoDono, avisoDeDonoVazio } from './rotulos-do-bem.js'
+import { SITUACOES, rotuloDaSituacao, classeDaSituacao, tomDaSituacao, textoDoDono, avisoDeDonoVazio } from './rotulos-do-bem.js'
 import { FILTRO_VAZIO, filtrarBens, resumoDaLista } from './filtro-de-bens.js'
 import { SEM_VALOR, agruparBens, bensDoCaminho, rotuloDoCaminho } from './arvore-de-bens.js'
 import PasseioGuiado from '../../compartilhado/passeio-guiado.vue'
+import IconeDoBloco from '../../compartilhado/icone-do-bloco.vue'
 import {
   PASSOS, TEXTOS, PASSOS_MASSA, PASSOS_BEM, PASSOS_LISTAS, AJUDAS, deveAbrirSozinho, marcarComoVisto,
 } from './tutorial.js'
@@ -2131,6 +2133,11 @@ const logoEscuroUrl = '/midia/LOGOTIPOBRENOBRANCO.png'
 </script>
 
 <style scoped>
+/* A COR DA FERRAMENTA E DE CADA BLOCO (Onda 2a, 23/09/2026) — a folha comum,
+   importada ANTES das regras desta tela. As regras daqui têm o prefixo
+   `.tela-patrimonio` e empatam com as da folha; nos pontos em que a cor
+   precisa vencer, o bloco "Onda 2a" no FIM deste <style> diz por quê. */
+@import '../../estilos/identidade-da-ferramenta.css';
 /* Celular-primeiro: o que está fora de media query É o celular.
    A tabela larga só aparece a partir de 1025px. */
 /* Fundo TRANSPARENTE: o #bg-shapes (degradê + ícones) fica fixo atrás de tudo
@@ -2490,5 +2497,42 @@ const logoEscuroUrl = '/midia/LOGOTIPOBRENOBRANCO.png'
   .tela-patrimonio .pat-tabela tbody tr:hover{background:var(--surface2);}
   .tela-patrimonio .pat-dir{text-align:right;}
   .tela-patrimonio .pat-ficha{max-width:560px;}
+  /* A linha da tabela ganha o filete da situação na PRIMEIRA célula (sombra
+     por dentro): borda em <tr> com border-collapse mexeria na largura de
+     todas as colunas. */
+  .tela-patrimonio .pat-tabela tbody tr.pat-linha-tom td:first-child{box-shadow:inset 3px 0 0 var(--tom,var(--border));}
 }
+
+/* ── Onda 2a: a cor da ferramenta (conhaque, `--cor-patrimonio`) ─────────────
+   Por último DE PROPÓSITO: as regras de cima têm a mesma força das da folha
+   comum (`.tela-patrimonio .x` contra `.id-ferramenta .x`), e empate decide
+   pela ordem. Sem este bloco, o cinza de `.pat-secao-num` e dos <h4> apagaria
+   a cor do título, e a ação principal continuaria no azul do sistema.
+   ⚠️ O laranja de "em manutenção" (`--situacao-queda`) NÃO é esta cor: ele só
+   aparece em filete e pílula de situação; a da ferramenta mora no topo, nos
+   títulos, nos ícones e na ação principal. */
+.tela-patrimonio .id-titulo{color:var(--modulo);}
+.tela-patrimonio .pat-btn.primario,
+.tela-patrimonio .pat-btn-novo{background:var(--modulo);border-color:var(--modulo);color:var(--sobre-cor);}
+/* O filete da situação: `.pat-card` e `.pat-kpi` redesenham a borda inteira
+   com a mesma força da folha, então a borda esquerda é repetida aqui. */
+.tela-patrimonio .id-cartao{border-left:4px solid var(--tom,var(--border));}
+.tela-patrimonio .pat-kpi-da-ferramenta{--tom:var(--modulo);}
+.tela-patrimonio .pat-grupo-ico:not(.orfao){color:var(--modulo);}
+/* Os VALORES em dinheiro ficam --text, não na cor: na 1ª rodada de fotos,
+   no escuro, o conhaque claro (#f78e43) em cada valor + cada barra + o "+"
+   gritava e competia com o laranja de "em manutenção". A cor fica na barra,
+   que é sinal; o número é para ler (regra 1 da folha comum). */
+.tela-patrimonio .pat-resumo-total,
+.tela-patrimonio .pat-rank-val{color:var(--text);}
+.tela-patrimonio .pat-rank-barra i{background:var(--modulo);}
+/* O formulário tingido: o corpo da ficha rola, e o fundo tinto vai junto; o
+   topo e o pé continuam `--surface` para o título e os botões não boiarem. */
+.tela-patrimonio .pat-ficha-corpo.id-bloco-form{border:0;}
+/* Onda 2a (ajuste da revisão): o que tem papel de ABA/NAVEGAÇÃO segue a cor da
+   ferramenta, como as abas. "Selecionado" (modo seleção, cartão marcado) continua
+   no azul, que é o sinal de seleção aprovado na Onda 1. */
+.tela-patrimonio .pat-chip.ativo{background:var(--modulo);border-color:var(--modulo);color:var(--sobre-cor);}
+.tela-patrimonio .pat-trilha-item:not(.atual),
+.tela-patrimonio .pat-ver-todos{color:var(--modulo);}
 </style>

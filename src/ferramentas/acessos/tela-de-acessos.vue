@@ -6,7 +6,7 @@
        (@click="voltar"). Os demais onclick="_acSetTab('...')" ficam como STRING literal
        (igual ao legado) porque são atributos HTML nativos, não bindings do Vue — por
        isso _acSetTab (e todo o cluster _ac*) é exposto em window mais abaixo. -->
-  <div id="acessos-screen" class="tela-acessos">
+  <div id="acessos-screen" class="tela-acessos id-ferramenta">
     <barra-de-topo voltar="Central" titulo="Colaboradores e Acessos"
                    subtitulo="Pessoas, contas e pastas — RBV Company" @voltar="voltar" />
 
@@ -45,13 +45,13 @@ import { parecidos, fraseDoParecido } from '../../compartilhado/ja-existe-alguem
 import { montarDetalhePastas } from './montar-textos-do-topo.js'
 import { decidirEstadoAcesso, mensagemEstadoVazio, agruparPorEscopo, corDeAvatar, inicialDe } from './acesso-da-pasta.js'
 import { montarEmailsDeSelecao } from './onedrive-escrita.js'
-import { contarAcessosOneDrive, resumoAcessosOneDrive, statusWorkdrive, campoPreenchido, resumoDaFicha, camposDaFicha, CAMPOS_DA_FICHA } from './ficha-do-colaborador.js'
+import { contarAcessosOneDrive, resumoAcessosOneDrive, statusWorkdrive, campoPreenchido, resumoDaFicha, camposDaFicha, CAMPOS_DA_FICHA, tomDoColaborador } from './ficha-do-colaborador.js'
 // Patrimônio: dinheiro em centavos (módulo já testado)
 import { formatarValor } from '../patrimonio/patrimonio.js'
 // Lógica pura da lista/consolidado de patrimônio (somar, formatar data)
 import { somarCentavos, formatarDataBR } from '../patrimonio/patrimonio-lista.js'
 // Rótulo/cor de cada situação real de patrimonio_bens (em_uso/em_estoque/em_manutencao/baixado)
-import { rotuloDaSituacao } from '../patrimonio/rotulos-do-bem.js'
+import { rotuloDaSituacao, tomDaSituacao } from '../patrimonio/rotulos-do-bem.js'
 // Auditoria (Tarefa 6): classificação pura do volume de acesso ao OneDrive (destaque de "muitas pastas")
 import { volumeDeAcesso } from './auditoria-volume.js'
 // Bens & Veículos na ficha (13/08/2026): a ficha passa a ler patrimonio_bens e
@@ -100,6 +100,19 @@ let _acSelSetor=null; // id do setor aberto (ou null, ou false para "sem setor")
 let _acSelOrg=null;
 let _acTab='geral';
 function _acEsc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+// O ÍCONE DE BLOCO (Onda 2a da cor): o mesmo desenho de
+// src/compartilhado/icone-do-bloco.vue, em TEXTO — esta tela monta o corpo por
+// innerHTML, e componente Vue não entra numa string. Se um desenho mudar lá,
+// muda aqui também. A cor vem de `currentColor` (o título onde ele mora).
+const _AC_ICONES={
+  contato:'<path d="M4 5h16v11H9l-5 4V5z"/>',
+  etiqueta:'<path d="M20.6 13.4l-7.2 7.2a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><path d="M7.5 7.5h.01"/>',
+  documento:'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/>',
+  porta:'<path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5"/><path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5"/>',
+  editar:'<path d="M4 20h4L19 9l-4-4L4 16v4z"/>',
+  lista:'<path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6h.01M4 12h.01M4 18h.01"/>',
+};
+function _acIcone(n){return '<svg class="id-icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false">'+(_AC_ICONES[n]||'')+'</svg>';}
 function _acLogo(k){
   if(k==='ms')return '<svg width="13" height="13" viewBox="0 0 24 24" style="vertical-align:-2px;margin-right:5px"><rect x="1" y="1" width="10" height="10" fill="#F25022"/><rect x="13" y="1" width="10" height="10" fill="#7FBA00"/><rect x="1" y="13" width="10" height="10" fill="#00A4EF"/><rect x="13" y="13" width="10" height="10" fill="#FFB900"/></svg>';
   if(k==='apple')return '<svg width="13" height="13" viewBox="0 0 24 24" style="vertical-align:-2px;margin-right:5px" fill="currentColor"><path d="M16.365 1.43c0 1.14-.42 2.2-1.12 2.98-.84.94-2.21 1.66-3.34 1.57-.14-1.1.43-2.27 1.1-3 .76-.83 2.13-1.46 3.36-1.55zM20.5 17.4c-.55 1.27-.82 1.84-1.53 2.96-.99 1.57-2.39 3.52-4.12 3.53-1.54.01-1.94-1-4.03-.99-2.09.01-2.53 1.01-4.07.99-1.73-.02-3.06-1.78-4.05-3.34-2.06-3.18-2.33-8.68-.13-11.6 1.07-1.45 2.76-2.37 4.31-2.37 1.58 0 2.57 1.01 3.88 1.01 1.27 0 2.04-1.01 3.87-1.01 1.38 0 2.84.75 3.88 2.05-3.41 1.87-2.86 6.74.49 8.24z"/></svg>';
@@ -1501,10 +1514,10 @@ async function _acRenderColaboradores(setorId){
   const corSetor=setor&&setor.cor?setor.cor:null;
   const dotSetor=corSetor?`<span style="display:inline-block;width:11px;height:11px;border-radius:999px;background:${_acEsc(corSetor)};margin-right:8px;vertical-align:-1px"></span>`:'';
   const rows=lista.map(c=>`
-    <div class="ac-row ac-person">
+    <div class="ac-row ac-person id-cartao id-tom-${tomDoColaborador(c.status)}">
       ${_acAvatar(c,46)}
       <div class="grow">
-        <div class="ac-person-name">${_acEsc(c.nome)} ${c.status==='desligado'?'<span class="ac-pill neutral">desligado</span>':'<span class="ac-pill ok">ativo</span>'}</div>
+        <div class="ac-person-name">${_acEsc(c.nome)} <span class="ac-pill ${c.status==='desligado'?'neutral':'ok'} id-selo id-tom-${tomDoColaborador(c.status)}">${c.status==='desligado'?'desligado':'ativo'}</span></div>
         ${c.cargo?`<div class="ac-kicker">${_acEsc(c.cargo)}</div>`:''}
         ${c.email_corporativo?`<div class="ac-person-email">${_acEsc(c.email_corporativo)}</div>`:''}
       </div>
@@ -1549,8 +1562,8 @@ function _acFormColaborador(id,setorIdPre){
   const curOrg=c.organizacao_id||(setorRow&&setorRow.organizacao_id)||'';
   const orgOpts=['<option value="">— Sem organização —</option>'].concat((_acData.organizacoes||[]).map(o=>`<option value="${o.id}" ${o.id===curOrg?'selected':''}>${_acEsc(o.nome)}</option>`)).join('');
   document.getElementById('ac-body').innerHTML=`
-    <div class="ac-card" style="max-width:700px">
-      <h3 style="margin-top:0">${id?'Editar colaborador':'Novo colaborador'}</h3>
+    <div class="ac-card id-bloco-form" style="max-width:700px">
+      <h3 class="id-titulo" style="margin-top:0">${_acIcone('editar')}${id?'Editar colaborador':'Novo colaborador'}</h3>
       <div class="ac-grid2">
         <label style="grid-column:1/-1">Nome completo<input class="ac-input" id="acc-nome" value="${_acEsc(c.nome||'')}"></label>
         <label>Cargo<input class="ac-input" id="acc-cargo" value="${_acEsc(c.cargo||'')}"></label>
@@ -1658,13 +1671,13 @@ function _acRenderFicha(id){
     <button class="ac-btn ghost" onclick="_acVoltarSel('pessoa')" style="margin-bottom:14px">← Voltar</button>
     <div class="ac-fx-ficha">
       <!-- COLUNA IDENTIDADE -->
-      <div class="ac-panel ac-fx-idcol">
+      <div class="ac-panel ac-fx-idcol id-cartao id-tom-${tomDoColaborador(c.status)}">
         <div class="ac-fx-hero">
           ${_acFichaAvatarGrande(c)}
           <div class="ac-fx-name">${_acEsc(c.nome)}</div>
           <div class="ac-fx-role">${roleParts.join(' · ')||'Sem cargo'}</div>
           <div class="ac-fx-pills">
-            <span class="ac-fx-stpill ${ativo?'on':''}"><span class="ac-hero-dot ${ativo?'on':'off'}"></span>${ativo?'Ativo':'Desligado'}</span>
+            <span class="ac-fx-stpill ${ativo?'on':''} id-selo id-tom-${tomDoColaborador(c.status)}"><span class="ac-hero-dot ${ativo?'on':'off'}"></span>${ativo?'Ativo':'Desligado'}</span>
             ${orgNome?`<span class="ac-fx-stpill">${_acEsc(orgNome)}</span>`:''}
           </div>
         </div>
@@ -1687,7 +1700,7 @@ function _acRenderFicha(id){
       <div class="ac-fx-data">
         <!-- Contatos & contas -->
         <div class="ac-panel">
-          <div class="ac-phead"><h2>Contatos &amp; contas</h2></div>
+          <div class="ac-phead"><h2 class="id-titulo">${_acIcone('contato')}Contatos &amp; contas</h2></div>
           <div class="ac-fx-fields">
             ${contatoCampos.map(cfg=>fld(cfg,logoDe[cfg.col]||'')).join('')}
           </div>
@@ -1698,7 +1711,7 @@ function _acRenderFicha(id){
              Patrimônio e na Frota, pra não ter dois lugares criando a mesma
              coisa e divergindo. -->
         <div class="ac-panel">
-          <div class="ac-phead"><h2>Bens &amp; Veículos</h2></div>
+          <div class="ac-phead"><h2 class="id-titulo">${_acIcone('etiqueta')}Bens &amp; Veículos</h2></div>
           <div id="ac-disp-wrap" class="ac-fx-wrap">
             <div class="ac-fx-empty">Carregando bens e veículos…</div>
           </div>
@@ -1706,7 +1719,7 @@ function _acRenderFicha(id){
 
         <!-- Termo de responsabilidade (GANCHO — o CRUD completo é a Tarefa 7) -->
         <div class="ac-panel">
-          <div class="ac-phead"><h2>Termo de responsabilidade</h2>
+          <div class="ac-phead"><h2 class="id-titulo">${_acIcone('documento')}Termo de responsabilidade</h2>
             <button class="ac-btn-mini" onclick="document.getElementById('ac-termo-file').click()">+ Enviar PDF</button>
             <input type="file" id="ac-termo-file" style="display:none" accept="application/pdf,image/*" onchange="_acUploadTermo('${c.id}',this.files[0])"></div>
           <div id="ac-termos-wrap" class="ac-fx-wrap">
@@ -1719,7 +1732,7 @@ function _acRenderFicha(id){
 
         <!-- Acessos desta pessoa (OneDrive ao vivo + WorkDrive por time) -->
         <div class="ac-panel">
-          <div class="ac-phead"><h2>Acessos desta pessoa</h2><span class="ac-cnt tnum" id="ac-fx-acc-cnt">…</span></div>
+          <div class="ac-phead"><h2 class="id-titulo">${_acIcone('porta')}Acessos desta pessoa</h2><span class="ac-cnt tnum" id="ac-fx-acc-cnt">…</span></div>
           <div class="ac-fx-accrows">
             <div class="ac-fx-accrow">
               <span class="ac-glyph ac-g-ms">M</span>
@@ -2102,9 +2115,9 @@ function _acBemRow(b){
   const local=(b.patrimonio_locais&&b.patrimonio_locais.nome)||null;
   const comodo=(b.patrimonio_comodos&&b.patrimonio_comodos.nome)||null;
   const onde=[local,comodo].filter(Boolean).join(' · ');
-  return `<div class="ac-pat-item">
+  return `<div class="ac-pat-item id-cartao id-tom-${tomDaSituacao(b.situacao)}">
     <div class="ac-pat-main">
-      <div class="ac-pat-top">${cat?'<span class="ac-chip">'+_acEsc(cat)+'</span>':''} <span class="ac-pill ${pilulaDaSituacaoDoBem(b.situacao)}">${_acEsc(rotuloDaSituacao(b.situacao))}</span></div>
+      <div class="ac-pat-top">${cat?'<span class="ac-chip">'+_acEsc(cat)+'</span>':''} <span class="ac-pill ${pilulaDaSituacaoDoBem(b.situacao)} id-selo id-tom-${tomDaSituacao(b.situacao)}">${_acEsc(rotuloDaSituacao(b.situacao))}</span></div>
       <div class="ac-pat-desc">${_acEsc(b.nome||'(sem nome)')}${b.marca?' · '+_acEsc(b.marca):''}</div>
       <div class="ac-pat-meta">
         ${b.numero!=null?'<span>Etiqueta nº '+_acEsc(b.numero)+'</span>':''}
@@ -2514,7 +2527,7 @@ async function _acRenderGeral() {
         <div class="ac-kpi-val tnum" id="ac-kpi-orgs">…</div>
         <div class="ac-kpi-fine" id="ac-kpi-orgs-fine">e seus setores</div></div>
     </div>
-    <div class="ac-section-h" style="margin-top:26px"><h3>Ir para</h3></div>
+    <div class="ac-section-h" style="margin-top:26px"><h3 class="id-titulo">${_acIcone('lista')}Ir para</h3></div>
     <div class="ac-geral-atalhos">
       <button class="ac-atalho" onclick="_acSetTab('org')">
         <span class="ac-atalho-ico org">
@@ -2623,6 +2636,12 @@ const logoEscuroUrl = '/midia/LOGOTIPOBRENOBRANCO.png'
 </script>
 
 <style scoped>
+/* A COR DA FERRAMENTA (Onda 2a, 23/09/2026): a folha comum dá o filete e a
+   tinta da barra do topo e a aba ativa na cor (`--cor-gestao-interna`, a mesma
+   verde-azulada de antes). O resto desta tela nasce por innerHTML, SEM o
+   atributo do `scoped`, e as regras da folha não o alcançam — por isso o bloco
+   "Onda 2a" no FIM deste <style> repete as poucas que a tela usa, em :deep. */
+@import '../../estilos/identidade-da-ferramenta.css';
 /* CSS "peeled" (movido, não copiado) de src/estilos/estilos-globais.css —
    as regras do bloco "Controle de Acessos" (linhas 907-1262 daquele arquivo,
    idênticas a legacy/index.html L931-1286) foram removidas de lá e movidas
@@ -3374,4 +3393,30 @@ const logoEscuroUrl = '/midia/LOGOTIPOBRENOBRANCO.png'
 .tela-acessos :deep(.ac-navbar){display:flex;justify-content:flex-start;gap:0;padding:10px 24px;border-bottom:1px solid var(--border)}
 .tela-acessos :deep(.ac-navbar .ac-tabs){margin-left:0;gap:8px}
   /* ===== /Controle de Acessos ===== */
+
+/* ── Onda 2a: a linguagem de cor por bloco, para o que nasce por innerHTML ────
+   As MESMAS regras de src/estilos/identidade-da-ferramenta.css (mesmas
+   proporções, mesmos tokens), só que em :deep — lá elas levam o atributo do
+   `scoped` e não chegam aqui. Por último de propósito: vencem as regras
+   antigas da tela (ex.: `.ac-pill.ok` com o verde cravado, 3,96 no claro). Se
+   a folha comum mudar, mude aqui junto. Nada de hex. */
+.tela-acessos :deep(.id-titulo){color:var(--modulo);font-weight:600;display:flex;align-items:center;gap:var(--sp-2);}
+.tela-acessos :deep(.ac-phead h2.id-titulo), .tela-acessos :deep(.ac-section-h h3.id-titulo), .tela-acessos :deep(.ac-card h3.id-titulo){color:var(--modulo);}
+/* o título do formulário encostava no primeiro rótulo (a regra antiga do
+   `.ac-card h3` não tem margem) — medido na foto a 375px */
+.tela-acessos :deep(.ac-card.id-bloco-form h3.id-titulo){margin-bottom:var(--sp-3);}
+.tela-acessos :deep(.id-icone){width:16px;height:16px;flex:0 0 16px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+.tela-acessos :deep(.id-tom-viva){--tom:var(--situacao-viva);}
+.tela-acessos :deep(.id-tom-andamento){--tom:var(--situacao-andamento);}
+.tela-acessos :deep(.id-tom-queda){--tom:var(--situacao-queda);}
+.tela-acessos :deep(.id-tom-parada){--tom:var(--situacao-parada);}
+.tela-acessos :deep(.id-cartao){border-left:4px solid var(--tom,var(--border));}
+.tela-acessos :deep(.id-selo[class*="id-tom-"]){background:color-mix(in srgb,var(--tom) 12%,var(--surface));border-color:color-mix(in srgb,var(--tom) 45%,var(--surface));color:color-mix(in srgb,var(--tom) 75%,var(--text));font-weight:600;}
+.tela-acessos :deep(.id-selo.id-tom-parada){background:var(--surface2);border-color:var(--border);color:var(--muted);}
+/* No escuro, a regra antiga `.ac-pill.ok` (cor do módulo) vencia a do selo e o
+   "Ativo" ficava verde-azulado com o filete verde. Esta a recoloca no tom. */
+[data-theme="dark"] .tela-acessos :deep(.id-selo[class*="id-tom-"]:not(.id-tom-parada)){color:color-mix(in srgb,var(--tom) 75%,var(--text));}
+/* o formulário: fundo tingido da ferramenta, o campo volta à superfície */
+.tela-acessos :deep(.ac-card.id-bloco-form){background:color-mix(in srgb,var(--modulo) 8%,var(--surface));border-color:color-mix(in srgb,var(--modulo) 38%,var(--surface));}
+.tela-acessos :deep(.id-bloco-form .ac-input), .tela-acessos :deep(.id-bloco-form .ac-select){background:var(--surface);}
 </style>

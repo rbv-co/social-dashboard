@@ -163,3 +163,12 @@ export function camposDaFicha(ativo) {
   return [...CONTATO, ...(ativo ? [] : SAIDA)]
     .map((col) => ({ col, ...CAMPOS_DA_FICHA[col] }));
 }
+
+// O TOM DA SITUAÇÃO de um colaborador (Onda 2a da cor, 23/09/2026): filete do
+// cartão e selo, na régua `--situacao-*` da Central inteira. Só existem dois
+// valores no banco (`acessos_pessoas.status`): ativo e desligado. Qualquer
+// outro — ou vazio — conta como ativo, porque é assim que a tela já trata:
+// ela só diz "desligado" quando o status é exatamente 'desligado'.
+export function tomDoColaborador(status) {
+  return status === 'desligado' ? 'parada' : 'viva'
+}
