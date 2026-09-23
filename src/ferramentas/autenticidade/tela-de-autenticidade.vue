@@ -1,5 +1,7 @@
 <template>
-  <div class="tela-autenticidade">
+  <!-- `id-ferramenta`: a cor da ferramenta (Onda 2c) — o verde-floresta de
+       `--cor-autenticidade`. Só classe; nenhum comportamento muda. -->
+  <div class="tela-autenticidade id-ferramenta">
     <barra-de-topo voltar="Gestão Interna" titulo="Autenticidade e Garantia" @voltar="voltar" />
 
     <!-- ── O MENU DE ABAS ───────────────────────────────────────────────
@@ -99,7 +101,10 @@
              abre, ele sobe para a primeira linha da grade (o `order:-1` do CSS)
              e a tela rola até ele. Sem o atributo, a rolagem não tem como achar
              o cartão certo entre seis iguais. -->
-        <div v-for="l in lotesVisiveis" :key="l.id" class="au-card" :data-lote="l.id">
+        <!-- O filete do cartão no tom do SELO do lote (`classeDoTom`, com teste):
+             os dois moram no mesmo cartão e não podem discordar. -->
+        <div v-for="l in lotesVisiveis" :key="l.id" class="au-card id-cartao"
+             :class="classeDoTom(marcaDoLote(l.id).selo)" :data-lote="l.id">
           <div class="au-card-topo">
             <span class="au-modelo">{{ l.modelo }}</span>
             <span class="au-progresso">{{ progressoDoLote(pecasDoLote(l.id)).texto }} gravadas</span>
@@ -725,7 +730,7 @@
                das duas colunas. Nome que diz o lugar errado é o que faz o
                próximo leitor procurar uma coluna que não existe. -->
           <div v-if="filaAoRedor.length > 1" class="au-bancada-fila">
-            <p class="au-fila-titulo">A fila deste lote</p>
+            <p class="au-fila-titulo id-titulo"><icone-do-bloco nome="lista" />A fila deste lote</p>
             <ul class="au-fila-lista">
               <li v-for="pf in filaAoRedor" :key="pf.codigo"
                   :class="['au-fila-item', { atual: pf.codigo === proxima.codigo }]">
@@ -1186,7 +1191,8 @@
           <span>Peça</span><span>Estado</span><span>Situação</span>
           <span>Endereço da etiqueta</span><span>Ações</span>
         </div>
-        <div v-for="pc in g.etiquetas" :key="pc.codigo" class="au-card">
+        <div v-for="pc in g.etiquetas" :key="pc.codigo" class="au-card id-cartao"
+             :class="classeDoTom(estadoDaPeca(pc).selo)">
           <div class="au-card-topo">
             <span class="au-modelo">{{ descricaoDaPeca(pc, loteDaPeca(pc.lote_id)) }}</span>
             <span class="selo" :class="estadoDaPeca(pc).selo">{{ estadoDaPeca(pc).rotulo }}</span>
@@ -1325,7 +1331,9 @@
         <div class="au-tabela-cab" aria-hidden="true">
           <span>Peça</span><span>Nº de série</span><span>Cartão</span><span>Prévia</span>
         </div>
-        <div v-for="ln in linhasDosCartoes" :key="ln.codigo" class="au-card">
+        <!-- O tom repete a MESMA escolha dos três selos logo abaixo. -->
+        <div v-for="ln in linhasDosCartoes" :key="ln.codigo" class="au-card id-cartao"
+             :class="classeDoTom(ln.jaTemCartao ? 'selo-ok' : !ln.podeGerar ? 'selo-atencao' : '')">
           <div class="au-card-topo">
             <!-- ⚠️ A MARCA É UM `checkbox` DE VERDADE, e não uma div clicável: é
                  o que o leitor de tela anuncia e o que o teclado alcança. -->
@@ -1705,7 +1713,8 @@
           <span>Peça</span><span>Código</span><span>E-mail</span>
           <span>Pediu em</span><span>Já enviamos</span><span>Estado</span>
         </div>
-        <div v-for="lb in linhasDosLembretes" :key="lb.id" class="au-card">
+        <div v-for="lb in linhasDosLembretes" :key="lb.id" class="au-card id-cartao"
+             :class="classeDoTom(seloDoEstadoDoLembrete(lb.estado))">
           <div class="au-card-topo">
             <span class="au-modelo">{{ lb.modelo || 'Peça sem lote conhecido'
               }}<template v-if="lb.cor"> · {{ lb.cor }}</template></span>
@@ -1742,7 +1751,7 @@
       </p>
 
       <template v-else>
-        <h2 class="au-secao" v-if="resumo.repetidas">Peças lidas de muitos aparelhos</h2>
+        <h2 class="au-secao id-titulo" v-if="resumo.repetidas"><icone-do-bloco nome="parceiras" />Peças lidas de muitos aparelhos</h2>
         <!-- Tabela no computador, cartão no celular: as três listas desta aba
              são de varredura, e coluna alinhada é o que deixa a linha estranha
              saltar aos olhos. -->
@@ -1762,7 +1771,7 @@
           </div>
         </div>
 
-        <h2 class="au-secao" v-if="resumo.invalidas">Códigos que não existem, tentados</h2>
+        <h2 class="au-secao id-titulo" v-if="resumo.invalidas"><icone-do-bloco nome="alerta" />Códigos que não existem, tentados</h2>
         <div class="au-lista au-tabela au-tabela-invalidas">
           <div class="au-tabela-cab" aria-hidden="true">
             <span>Código tentado</span><span>Tentativas</span><span>Última tentativa</span>
@@ -1782,7 +1791,7 @@
              sabendo que a bolsa extraviada apareceu, sem incomodar quem está
              com ela. -->
         <template v-if="resumo.baixadasLidas">
-          <h2 class="au-secao">Peças baixadas que foram lidas</h2>
+          <h2 class="au-secao id-titulo"><icone-do-bloco nome="etiqueta" />Peças baixadas que foram lidas</h2>
           <p class="au-instrucao">
             Estas peças estão baixadas e alguém encostou o celular nelas depois disso.
             Vale conferir onde a bolsa apareceu.
@@ -2168,6 +2177,9 @@ import { useRouter } from 'vue-router'
 import BarraDeTopo from '../../compartilhado/barra-de-topo.vue'
 import { sbClient } from '../../compartilhado/conectar-no-banco-de-dados.js'
 import { hasPermission } from '../../compartilhado/controle-de-login-e-usuario.js'
+import IconeDoBloco from '../../compartilhado/icone-do-bloco.vue'
+// O filete do cartão no tom do selo dele (Onda 2c).
+import { classeDoTom } from './tom-do-selo.js'
 import { adminToast } from '../../compartilhado/avisos.js'
 import { planilhaXlsx } from '../../compartilhado/planilha-xlsx.js'
 import {
@@ -4819,6 +4831,11 @@ onUnmounted(() => window.removeEventListener('message', ouvirAPrevia))
    Duas regras de mesma especificidade: ganha a última. Uma regra-base escrita
    depois do `@media` de celular o apaga em silêncio — sem erro, sem aviso, e só
    se vê no aparelho. Há três testes que travam esta ordem. */
+/* A COR DA FERRAMENTA E DE CADA BLOCO (Onda 2c, 23/09/2026) — a folha comum,
+   importada ANTES das regras desta tela. Sozinha ela pinta a barra do topo
+   (filete e tinta) e a aba ativa. As regras desta tela não usam `.btn`, então
+   o resto da cor mora no bloco "Onda 2c" no FIM deste <style>, que diz por quê. */
+@import '../../estilos/identidade-da-ferramenta.css';
 .tela-autenticidade{min-height:100vh;background:transparent;position:relative;z-index:1;padding-bottom:48px;}
 
 /* ── O MENU DE ABAS ────────────────────────────────────────────────────────
@@ -6359,6 +6376,82 @@ onUnmounted(() => window.removeEventListener('message', ouvirAPrevia))
   line-height:1.45; color:var(--text); overflow-wrap:anywhere;
 }
 
+/* ── Onda 2c: a cor da ferramenta (verde-floresta, `--cor-autenticidade`) ───
+   A régua desta tela é a do dono: "vários tamanhos de fonte, uma bosta,
+   confuso". A cor ORGANIZA — não entra tamanho de letra, texto, selo nem
+   linha nova, e nada muda de lugar (o filete é sombra por dentro, que não
+   mexe na medida do cartão).
+
+   O QUE MUDOU DE AZUL PARA A COR DA FERRAMENTA: o que era azul só de enfeite
+   ou de ação — botões, links, setas das gavetas, a moldura dos cartões, a
+   barra de progresso, a contagem. O QUE CONTINUA AZUL, porque o azul ali
+   QUER DIZER alguma coisa: o selo "por gravar"/"Agora" (andamento), o chip
+   de período ligado e o rádio do material (seleção), os anéis da bancada
+   esperando, e a ajuda de cada aba (informação).
+
+   Os prefixos `.tela-autenticidade` são de propósito: as regras desta tela
+   são `.au-x[data-v]` e as da folha comum `.id-ferramenta .x[data-v]`; aqui
+   cada regra ganha das duas sem depender da ordem.
+
+   Medido (claro · escuro): a cor sobre o cartão 8,12 · 9,48; sobre o fundo
+   cinza das peças 6,96 · 8,71; dentro da caixa laranja de confirmação 7,10 ·
+   8,38; `--sobre-cor` sobre o botão 8,12 · 9,63. */
+.tela-autenticidade .au-botao{border-color:var(--modulo);}
+.tela-autenticidade .au-botao:not(.secundario){background:var(--modulo);color:var(--sobre-cor);}
+/* ganha também de `.au-confirma .au-botao.secundario` (o `--accent-forte`
+   de lá existia porque o azul puro reprovava na tinta laranja; a floresta
+   passa: 7,10 · 8,38) */
+.tela-autenticidade .au-botao.secundario{color:var(--modulo);}
+.tela-autenticidade .au-link,
+.tela-autenticidade .au-bancada-menor,
+.tela-autenticidade .au-como-conferir summary,
+.tela-autenticidade .au-seta{color:var(--modulo);}
+/* AS CONTAGENS E DATAS do alto do cartão ("3 de 5 gravadas", "até
+   16/09/2028", "9 aparelhos") eram azuis e passam a `--text`, e NÃO à cor da
+   ferramenta. 2ª rodada de fotos: em verde, "3 de 5 gravadas" lia como
+   "tudo certo" (o verde de situação desta tela é "gravada"), e "9 aparelhos"
+   em verde dentro do cartão laranja de alerta dizia o contrário do alerta. O
+   número é para ler; a cor fica no filete (regra 1 da folha comum). */
+.tela-autenticidade .au-progresso,
+.tela-autenticidade .au-lote-conta{color:var(--text);}
+.tela-autenticidade .au-card{border-color:color-mix(in srgb,var(--modulo) 25%,var(--border));}
+.tela-autenticidade .au-card:hover{border-color:color-mix(in srgb,var(--modulo) 55%,var(--border));}
+.tela-autenticidade .au-card-topo{border-bottom-color:color-mix(in srgb,var(--modulo) 40%,var(--border));}
+.tela-autenticidade .au-barra-cheia{background:var(--modulo);}
+.tela-autenticidade .au-endereco{border-color:var(--modulo);}
+.tela-autenticidade .au-lote-os{background:color-mix(in srgb,var(--modulo) 12%,var(--surface));}
+
+/* O FILETE DA SITUAÇÃO, no tom do selo do cartão (`classeDoTom`, com teste).
+   A folha comum desenha o filete como BORDA de 4px; aqui ele é SOMBRA POR
+   DENTRO (como o `.au-card.alerta` já fazia na tabela), para o cartão não
+   engordar 3px e a linha da tabela não sair do alinhamento do cabeçalho. Por
+   isso a borda esquerda volta a 1px, e o hover repete o filete — sem isso a
+   sombra do hover o apagaria. */
+.tela-autenticidade .au-card.id-cartao{
+  border-left:1px solid color-mix(in srgb,var(--modulo) 25%,var(--border));
+  box-shadow:inset 4px 0 0 var(--tom,var(--border)),var(--shadow-sm);
+}
+.tela-autenticidade .au-card.id-cartao:hover{
+  border-left-color:color-mix(in srgb,var(--modulo) 55%,var(--border));
+  box-shadow:inset 4px 0 0 var(--tom,var(--border)),var(--shadow-md);
+}
+
+/* OS TÍTULOS DE BLOCO: o ícone na cor; o texto continua como era (a folha
+   comum o pintaria e o afinaria — título colorido repetido é o que carrega). */
+.tela-autenticidade .au-secao.id-titulo{color:var(--text);font-weight:700;}
+.tela-autenticidade .au-fila-titulo.id-titulo{color:var(--muted);font-weight:700;}
+.tela-autenticidade .id-titulo .id-icone{color:var(--modulo);}
+
+/* A AJUDA DA ABA em azul de informação, como o "Como ler" das outras telas:
+   é o que separa o texto que EXPLICA do que é dado. O texto segue `--muted`
+   (6,82 · 5,29 sobre a tinta). Só a caixa: a posição e o texto não mudam. */
+.tela-autenticidade .au-ajuda{
+  margin:var(--sp-3) 24px 0; padding:var(--sp-2) var(--sp-3);
+  background:color-mix(in srgb,var(--informacao) 8%,var(--surface));
+  border:1px solid color-mix(in srgb,var(--informacao) 38%,var(--surface));
+  border-radius:var(--radius-md);
+}
+
 /* ⚠️ NÃO ESCREVA REGRA NOVA ABAIXO DAQUI. O `@media` do celular é a ÚLTIMA coisa deste arquivo, e tem de continuar
    sendo: duas regras de mesma especificidade, ganha a última — uma regra-base
    escrita depois daqui apagaria o ajuste de celular em silêncio.
@@ -6394,6 +6487,8 @@ onUnmounted(() => window.removeEventListener('message', ouvirAPrevia))
      último ganha, e lá em cima estes ajustes seriam ignorados em silêncio. */
   .au-bancada{padding-left:16px; padding-right:16px;}
   .au-mais{margin-left:16px; margin-right:16px;}
+  /* a caixa azul da ajuda (Onda 2c) na margem de celular desta tela */
+  .tela-autenticidade .au-ajuda{margin-left:16px; margin-right:16px;}
   /* O ALTO DIVIDE UMA LINHA SÓ. O seletor de lote ocupa a largura, e o nome do
      jeito de gravar e o "?" ficam lado a lado embaixo dele: empilhados, os três
      comiam 140px do alto da tela — o lugar do número da peça. */
