@@ -95,6 +95,31 @@ export const CONFERENCIAS = [
       + 'isso nunca é revisitado — se tiver sido cancelado depois, ninguém vai saber. '
       + 'Para conferir tudo: rode o robô dos pedidos com uma janela maior.',
   },
+  {
+    chave: 'venda-sem-conferencia',
+    aba: 'Vendas',
+    titulo: 'Venda que aparece na tela e ninguém confere',
+    gravidade: SABER,
+    // ⚠️ ESTA CONFERÊNCIA É SOBRE O PRÓPRIO LOG, e nasceu em 22/09/2026 de uma
+    // medição: as conferências de venda olhavam R$ 160.861 dos R$ 1.061.751 que
+    // a Gestão à Vista mostra — 15%. Quatro canais inteiros, o maior deles o
+    // Institucional com R$ 74.948, nunca tinham sido conferidos uma vez.
+    //
+    // O motivo é simples e não é defeito de ninguém: o robô dos pedidos traz o
+    // DETALHE (cliente, vendedor, peças) só dos canais da Vessel, e desde
+    // 19/06/2026. Da venda dos outros canais a gente tem a nota — valor, canal
+    // e dia — e mais nada. Sem cliente não há "venda duplicada"; sem peça não
+    // há "venda sem item".
+    //
+    // ⚠️ POR QUE ISTO É UMA LINHA NO LOG, E NÃO UM SILÊNCIO. Aba de Vendas
+    // curta queria dizer "está tudo certo" e queria dizer "eu nem olhei esse
+    // canal" — e são coisas opostas. É o mesmo motivo pelo qual o Resumo lista
+    // as conferências que deram zero.
+    oQueFazer: 'Não é erro: é o alcance do log. Destes pedidos a gente só tem a nota '
+      + '(valor, canal e dia), então as conferências que precisam de cliente, vendedor '
+      + 'ou peça não chegam neles. Para cobrir um canal, o robô dos pedidos precisa '
+      + 'passar a trazer o detalhe dele.',
+  },
 
   // ── CATÁLOGO ──────────────────────────────────────────────────────────────
   {
