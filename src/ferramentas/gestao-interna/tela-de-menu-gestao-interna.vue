@@ -31,7 +31,7 @@
         </div>
 
         <div class="gimenu-card" v-if="podeFrota" @click="ir('frota')">
-          <div class="gimenu-card-icon" style="background:linear-gradient(135deg,#475569 0%,#64748b 100%)">
+          <div class="gimenu-card-icon" style="background:linear-gradient(135deg,#3730a3 0%,#4f46e5 100%)">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 17h14M5 17a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm14 0a2 2 0 1 0 4 0 2 2 0 0 0-4 0z"/><path d="M3 17V9l3-4h9l4 5v7"/></svg>
           </div>
           <div class="gimenu-card-title">Frota</div>
