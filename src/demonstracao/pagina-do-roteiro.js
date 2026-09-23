@@ -8,8 +8,8 @@ import '../estilos/estilos-globais.css'
 import './pagina-do-roteiro.css'
 import { PASSOS, ORIGEM_DOS_AVISOS, roteiroVazio, aplicarAviso, resumoDoRoteiro } from './roteiro.js'
 
-const ALTURA_DO_CELULAR = 868 // a tela de 390×844 mais a moldura de 12px em volta
-const LARGURA_DO_CELULAR = 414
+const CHAVE_DO_MODO = 'iamundi-demo-modo-aparelho'
+const mqCelularDeVerdade = window.matchMedia('(max-width: 900px)')
 const QUEM = { Ionara: 'selo-info', Gerente: 'selo-neutro', Sistema: 'selo-robo' }
 function marcaDeFeito() {
   const ns = 'http://www.w3.org/2000/svg'
@@ -70,6 +70,41 @@ window.addEventListener('message', (e) => {
   desenhar()
 })
 
+// ── celular ou notebook ───────────────────────────────────────────────────────
+// ⚠️ TROCAR O MODO NUNCA MEXE NO IFRAME: ele é um só, sempre no mesmo lugar do
+// DOM. Só o `data-modo` do aparelho muda (a moldura e o tamanho da tela vêm do
+// CSS a partir dele) — senão o banco de mentira reiniciava e o roteiro
+// marcado se perdia a cada clique no alternador.
+function lerModoGuardado() {
+  try { return localStorage.getItem(CHAVE_DO_MODO) === 'notebook' ? 'notebook' : 'celular' } catch { return 'celular' }
+}
+function guardarModo(modo) {
+  try { localStorage.setItem(CHAVE_DO_MODO, modo) } catch { /* modo privado */ }
+}
+let modoEscolhido = lerModoGuardado()
+// No aparelho de verdade a escolha não existe: sempre celular, mesmo com
+// "notebook" guardado de uma sessão de computador anterior.
+const modoEmUso = () => (mqCelularDeVerdade.matches ? 'celular' : modoEscolhido)
+
+function aplicarModo() {
+  const modo = modoEmUso()
+  $('aparelho').dataset.modo = modo
+  $('modo-celular').setAttribute('aria-pressed', String(modo === 'celular'))
+  $('modo-notebook').setAttribute('aria-pressed', String(modo === 'notebook'))
+  escalar()
+}
+$('modo-celular').addEventListener('click', () => {
+  modoEscolhido = 'celular'
+  guardarModo(modoEscolhido)
+  aplicarModo()
+})
+$('modo-notebook').addEventListener('click', () => {
+  modoEscolhido = 'notebook'
+  guardarModo(modoEscolhido)
+  aplicarModo()
+})
+mqCelularDeVerdade.addEventListener?.('change', aplicarModo)
+
 // ── recomeçar ────────────────────────────────────────────────────────────────
 $('recomecar').addEventListener('click', () => {
   roteiro = roteiroVazio()
@@ -90,19 +125,39 @@ $('alternar').addEventListener('click', () => {
   $('alternar').setAttribute('aria-expanded', String(aberto))
 })
 
-// ── o celular cabe na altura da janela ───────────────────────────────────────
+// ── o aparelho cabe na altura (e na largura, o notebook é bem mais largo) da
+// janela ──────────────────────────────────────────────────────────────────────
+// `offsetWidth`/`offsetHeight` do aparelho são o tamanho NATURAL (o `transform:
+// scale` é só visual, não mexe no layout) — por isso dá para medir sem
+// desfazer a escala anterior primeiro.
 function escalar() {
-  const lugar = $('lugar-do-celular')
-  if (window.matchMedia('(max-width: 900px)').matches) {
-    document.documentElement.style.removeProperty('--escala-do-celular')
+  const lugar = $('lugar-do-aparelho')
+  const aparelho = $('aparelho')
+  if (mqCelularDeVerdade.matches) {
+    aparelho.style.transform = ''
+    lugar.style.width = ''
+    lugar.style.height = ''
     return
   }
+  const largura = aparelho.offsetWidth
+  const altura = aparelho.offsetHeight
+  if (!largura || !altura) return
   const topo = lugar.getBoundingClientRect().top + window.scrollY
   const disponivel = window.innerHeight - Math.min(topo, window.innerHeight * 0.3) - 24
-  const escala = Math.max(0.5, Math.min(1, disponivel / ALTURA_DO_CELULAR, (lugar.parentElement.clientWidth * 0.6) / LARGURA_DO_CELULAR))
-  document.documentElement.style.setProperty('--escala-do-celular', escala.toFixed(3))
+  // A largura livre é a caixa de CONTEÚDO do palco (sem o padding dele) menos
+  // a coluna do roteiro (medida de verdade, não um chute) e o vão entre as
+  // duas colunas (`--sp-6`, 32px).
+  const palco = lugar.parentElement
+  const estiloPalco = getComputedStyle(palco)
+  const paddingPalco = parseFloat(estiloPalco.paddingLeft) + parseFloat(estiloPalco.paddingRight)
+  const colunaDoRoteiro = $('roteiro').getBoundingClientRect().width
+  const larguraLivre = palco.clientWidth - paddingPalco - colunaDoRoteiro - 32
+  const escala = Math.max(0.4, Math.min(1, disponivel / altura, larguraLivre / largura))
+  aparelho.style.transform = `scale(${escala})`
+  lugar.style.width = `${Math.round(largura * escala)}px`
+  lugar.style.height = `${Math.round(altura * escala)}px`
 }
 window.addEventListener('resize', escalar)
 
 desenhar()
-escalar()
+aplicarModo()
