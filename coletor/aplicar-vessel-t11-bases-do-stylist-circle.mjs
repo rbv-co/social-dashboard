@@ -38,11 +38,14 @@ const PORTAS = {
   vessel_placar_do_stylist_circle: 'vessel_placar_do_stylist_circle(date,date,integer)',
   vessel_stylist_registrar_contato: 'vessel_stylist_registrar_contato(text,text,text,text,text,date)',
   vessel_stylist_contatos: 'vessel_stylist_contatos(text)',
+  vessel_chave_da_convidada: 'vessel_chave_da_convidada(bigint)',
+  vessel_stylists_para_escolher: 'vessel_stylists_para_escolher()',
 }
 // O miolo: ninguém de fora chama.
 const MIOLO = [
   'vessel_vendas_dos_encontros(integer)',
   'vessel_stylist_seguir_os_encontros(bigint)',
+  'vessel_sortear_chave_de_convidada()',
 ]
 
 // ⚠️ A IMPRESSÃO DO QUE É DE VERDADE, campo a campo — não `count(*)`: mexer
@@ -102,6 +105,10 @@ try {
       `select has_function_privilege('authenticated', $1, 'EXECUTE') as aut,
               has_function_privilege('anon', $1, 'EXECUTE') as anon`, [`public.${f}`])
     conferir(pr.aut === false && pr.anon === false, `${f}: miolo fechado para todo mundo`, pr)
+  }
+  for (const f of ['vessel_convite_da_convidada(text,text)', 'vessel_rsvp_da_convidada(text,text,text,boolean,text,text)']) {
+    const pr = await uma(`select has_function_privilege('anon', $1, 'EXECUTE') as anon`, [`public.${f}`])
+    conferir(pr.anon === true, `${f}: a página pública entra`, pr)
   }
 
   await cli.query('savepoint prova')
@@ -247,6 +254,31 @@ try {
   sit = await situacoes()
   conferir(pres.ok && falta.ok && sit[ca.id] === 'presente' && sit[cb.id] === 'nao_compareceu',
     'a presença, marcada por quem só vê (a mesma porta da Central)', sit)
+  await falarComo(mexe)
+
+  console.log('\n── o convite de cada convidada')
+  const ch = await r(`public.vessel_chave_da_convidada($1)`, [ca.id])
+  const chaveA = (await uma(`select chave_convite from public.vessel_atendimentos where id = $1`, [ca.id])).chave_convite
+  conferir(ch.ok && /^[ABCDEFGHJKMNPQRSTVWXYZ23456789]{8}$/.test(ch.chave) && ch.chave === chaveA,
+    'a convidada nasce com chave própria, no alfabeto sem O/0/I/1', ch)
+  const chaveE = ch.chave_encontro
+  await falarComo(null)
+  const aberto = await r(`public.vessel_convite_da_convidada($1, $2)`, [chaveE, ch.chave])
+  const geral = await r(`public.vessel_convite_da_private_edit($1)`, [chaveE])
+  const errada = await r(`public.vessel_convite_da_convidada($1, 'ZZZZZZZZ')`, [chaveE])
+  conferir(aberto.primeiro_nome === 'Ana' && !('telefone' in aberto) && !('email' in aberto),
+    'com a chave dela: só o primeiro nome', aberto)
+  conferir(JSON.stringify(errada) === JSON.stringify(geral), 'chave errada = exatamente o convite geral', { errada, geral })
+  const cont = await uma(`select convite_aberturas, convite_aberto_em from public.vessel_atendimentos where id = $1`, [ca.id])
+  conferir(cont.convite_aberturas === 1 && cont.convite_aberto_em, 'a abertura foi contada', cont)
+  const semResp = await r(`public.vessel_rsvp_da_convidada($1, $2, 'talvez')`, [chaveE, ch.chave])
+  conferir(semResp.situacao === 'resposta_invalida', 'resposta fora das duas é recusada', semResp)
+  const alheia = await r(`public.vessel_rsvp_da_convidada($1, $2, 'sim')`, [chaveE, 'ZZZZZZZZ'])
+  conferir(alheia.situacao === 'convite_invalido', 'chave de convidada errada não grava', alheia)
+  await cli.query(`update public.vessel_atendimentos set rsvp = null where id = $1`, [cb.id])
+  const chB = await r(`public.vessel_rsvp_da_convidada($1, (select chave_convite from public.vessel_atendimentos where id = $2), 'sim')`, [chaveE, cb.id])
+  const rsvpB = await uma(`select rsvp from public.vessel_atendimentos where id = $1`, [cb.id])
+  conferir(chB.situacao === 'recebido' && rsvpB.rsvp === 'sim', 'a resposta cai na cadeira DELA', { chB, rsvpB })
   await falarComo(mexe)
 
   console.log('\n── a situação do encontro')

@@ -809,9 +809,9 @@ begin
           'private_edit', 'convite', replace(lower(v_e.codigo), '-', '_'));
 
   insert into public.vessel_atendimentos
-    (pessoa_id, loja, quando, status, origem_registro, evento_codigo, convidada_em)
+    (pessoa_id, loja, quando, status, origem_registro, evento_codigo, convidada_em, chave_convite)
   values (v_pessoa, v_e.loja, v_e.quando, 'solicitado', 'private-edit-convite',
-          v_e.codigo, now())
+          v_e.codigo, now(), public.vessel_sortear_chave_de_convidada())
   returning id into v_id;
 
   return json_build_object('ok', true, 'situacao', 'ok', 'id', v_id, 'pessoa_id', v_pessoa);
@@ -973,6 +973,8 @@ begin
         'status',      t.status,
         'convidada_em', t.convidada_em,
         'convite_enviado_em', t.convite_enviado_em,
+        'chave_convite', t.chave_convite, 'convite_aberto_em', t.convite_aberto_em,
+        'convite_aberturas', t.convite_aberturas,
         'respondeu_em', case when t.rsvp is not null then t.criado_em end,
         'presenca_em', t.presenca_em,
         'situacao',    public.vessel_situacao_do_convite(t.status, t.rsvp, t.convite_enviado_em,
@@ -1345,6 +1347,181 @@ begin
 end;
 $function$;
 
+-- ── 14. O CONVITE DE CADA CONVIDADA: o link só dela e o rastreio ────────────
+
+alter table public.vessel_atendimentos
+  add column if not exists chave_convite      text,
+  add column if not exists convite_aberto_em  timestamptz,
+  add column if not exists convite_aberturas  int not null default 0;
+create unique index if not exists vessel_atendimentos_chave_convite_idx
+  on public.vessel_atendimentos (chave_convite) where chave_convite is not null;
+
+-- ⚠️ O MESMO SORTEIO DA CHAVE DO ENCONTRO (`vessel_criar_private_edit`): 8
+-- letras, sem O/0/I/1, e byte acima de 240 descartado para não viciar.
+create or replace function public.vessel_sortear_chave_de_convidada()
+returns text
+language plpgsql
+volatile
+security definer
+set search_path to 'public'
+as $$
+declare
+  v_alfabeto text := 'ABCDEFGHJKMNPQRSTVWXYZ23456789';
+  v_teto int := 240;
+  v_chave text;
+  v_byte int;
+begin
+  loop
+    v_chave := '';
+    while length(v_chave) < 8 loop
+      v_byte := get_byte(extensions.gen_random_bytes(1), 0);
+      continue when v_byte >= v_teto;
+      v_chave := v_chave || substr(v_alfabeto, 1 + (v_byte % 30), 1);
+    end loop;
+    exit when not exists (select 1 from public.vessel_atendimentos where chave_convite = v_chave);
+  end loop;
+  return v_chave;
+end;
+$$;
+revoke all on function public.vessel_sortear_chave_de_convidada() from public, anon, authenticated;
+
+create or replace function public.vessel_chave_da_convidada(p_id bigint)
+returns json
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_t record;
+  v_chave text;
+begin
+  if not public.is_vessel_atendimentos() then
+    return json_build_object('ok', false, 'situacao', 'sem_permissao');
+  end if;
+  select t.id, t.chave_convite, e.chave as chave_encontro into v_t
+    from public.vessel_atendimentos t
+    join public.vessel_private_edits e on e.codigo = t.evento_codigo
+   where t.id = p_id;
+  if not found then return json_build_object('ok', false, 'situacao', 'nao_achei'); end if;
+  v_chave := v_t.chave_convite;
+  if v_chave is null then
+    v_chave := public.vessel_sortear_chave_de_convidada();
+    update public.vessel_atendimentos set chave_convite = v_chave where id = v_t.id and chave_convite is null;
+    select chave_convite into v_chave from public.vessel_atendimentos where id = v_t.id;
+  end if;
+  return json_build_object('ok', true, 'situacao', 'ok', 'chave', v_chave, 'chave_encontro', v_t.chave_encontro);
+end;
+$function$;
+
+-- ⚠️ A PÁGINA PÚBLICA. Chave de convidada errada ou de outro encontro devolve
+-- EXATAMENTE o convite geral — a mesma resposta de uma chave que não existe,
+-- para não dar a ninguém um jeito de descobrir chaves válidas.
+-- ⚠️ SÓ O PRIMEIRO NOME: o link pode ser repassado.
+create or replace function public.vessel_convite_da_convidada(p_chave text, p_convidada text)
+returns json
+language plpgsql
+volatile
+security definer
+set search_path to 'public'
+as $function$
+declare
+  -- ⚠️ `json`, NÃO `jsonb`, ENQUANTO NADA MUDA: `jsonb` reordena as chaves (não
+  -- guarda a ordem de inserção), e quem compara a resposta pelo texto (a
+  -- página, ou a prova) veria uma diferença que não existe. Só vira `jsonb`
+  -- no ponto em que de fato se mescla, mais abaixo.
+  v_geral json := public.vessel_convite_da_private_edit(p_chave);
+  v_t record;
+begin
+  if coalesce((v_geral ->> 'ok')::boolean, false) is not true then return v_geral; end if;
+  select t.id, t.rsvp, pe.nome into v_t
+    from public.vessel_atendimentos t
+    join public.vessel_private_edits e on e.codigo = t.evento_codigo
+    join public.vessel_pessoas pe on pe.id = t.pessoa_id
+   where e.chave = upper(nullif(trim(coalesce(p_chave, '')), ''))
+     and t.chave_convite = upper(nullif(trim(coalesce(p_convidada, '')), ''));
+  if not found then return v_geral; end if;
+  update public.vessel_atendimentos
+     set convite_aberto_em = coalesce(convite_aberto_em, now()),
+         convite_aberturas = convite_aberturas + 1
+   where id = v_t.id;
+  return (v_geral::jsonb || jsonb_build_object(
+    'primeiro_nome', split_part(trim(v_t.nome), ' ', 1),
+    'resposta', v_t.rsvp))::json;
+end;
+$function$;
+
+create or replace function public.vessel_rsvp_da_convidada(
+  p_chave text, p_convidada text, p_resposta text, p_aceite_marketing boolean default false,
+  p_aceite_versao text default null, p_armadilha text default null)
+returns json
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare v_t record;
+begin
+  if coalesce(trim(p_armadilha), '') <> '' then
+    return json_build_object('ok', true, 'situacao', 'recebido');
+  end if;
+  if p_resposta is null or p_resposta not in ('sim', 'falar-com-equipe') then
+    return json_build_object('ok', false, 'situacao', 'resposta_invalida');
+  end if;
+  select t.id, t.pessoa_id, t.teste into v_t
+    from public.vessel_atendimentos t
+    join public.vessel_private_edits e on e.codigo = t.evento_codigo
+   where e.chave = upper(nullif(trim(coalesce(p_chave, '')), ''))
+     and t.chave_convite = upper(nullif(trim(coalesce(p_convidada, '')), ''))
+     and e.ativa and not coalesce(e.arquivada, false)
+     and e.status not in ('cancelado', 'nao_realizado', 'realizado');
+  if not found then return json_build_object('ok', false, 'situacao', 'convite_invalido'); end if;
+
+  update public.vessel_atendimentos set rsvp = p_resposta, atualizado_em = now() where id = v_t.id;
+
+  -- A permissão de atendimento, como no RSVP geral — uma por hora no máximo,
+  -- para quem aperta o botão três vezes não virar três aceites.
+  -- ⚠️ `momento`, NÃO `criado_em`: `vessel_consentimentos` não tem
+  -- `criado_em` (conferido no banco antes de escrever esta linha).
+  if not exists (select 1 from public.vessel_consentimentos
+                  where pessoa_id = v_t.pessoa_id and finalidade = 'atendimento'
+                    and fonte = 'private-edit' and momento > now() - interval '1 hour') then
+    insert into public.vessel_consentimentos (pessoa_id, finalidade, canal, versao, fonte, teste)
+    values (v_t.pessoa_id, 'atendimento', 'whatsapp', nullif(trim(coalesce(p_aceite_versao, '')), ''),
+            'private-edit', v_t.teste);
+  end if;
+  if coalesce(p_aceite_marketing, false) then
+    insert into public.vessel_consentimentos (pessoa_id, finalidade, canal, versao, fonte, teste)
+    values (v_t.pessoa_id, 'marketing', 'whatsapp', nullif(trim(coalesce(p_aceite_versao, '')), ''),
+            'private-edit', v_t.teste);
+  end if;
+  return json_build_object('ok', true, 'situacao', 'recebido');
+end;
+$function$;
+
+create or replace function public.vessel_stylists_para_escolher()
+returns json
+language plpgsql
+stable
+security definer
+set search_path to 'public'
+as $function$
+declare v_saida json;
+begin
+  if not public.is_vessel_atendimentos() then
+    raise exception 'sem permissao' using errcode = '42501';
+  end if;
+  -- T11: `whatsapp` para o "Mandar para a stylist" do cartão da convidada. É o
+  -- mesmo dado que o rastreio já devolve, atrás do mesmo portão.
+  select coalesce(json_agg(json_build_object('codigo', s.codigo, 'nome', s.nome,
+                                             'cidade', s.cidade, 'whatsapp', s.whatsapp)
+                           order by s.codigo), '[]'::json)
+    into v_saida
+    from public.vessel_stylists s
+   where not coalesce(s.teste, false)
+     and coalesce(s.ativa, true);
+  return v_saida;
+end;
+$function$;
+
 -- ── 12. AS PORTAS ───────────────────────────────────────────────────────────
 
 -- ⚠️ `revoke ... from public` NÃO FECHA `anon`, e função nova em `public` nasce
@@ -1366,11 +1543,20 @@ begin
     'public.vessel_rastreio_dos_stylists(integer, boolean)',
     'public.vessel_placar_do_stylist_circle(date, date, integer)',
     'public.vessel_stylist_registrar_contato(text, text, text, text, text, date)',
-    'public.vessel_stylist_contatos(text)'
+    'public.vessel_stylist_contatos(text)',
+    'public.vessel_chave_da_convidada(bigint)',
+    'public.vessel_stylists_para_escolher()'
   ] loop
     execute format('revoke all on function %s from public, anon', f);
     execute format('grant execute on function %s to authenticated', f);
   end loop;
 end $$;
+
+-- ⚠️ AS DUAS PORTAS PÚBLICAS DO CONVITE INDIVIDUAL: ao contrário das de cima,
+-- estas são para a página do convite (sem sessão), não para a Central.
+revoke all on function public.vessel_convite_da_convidada(text, text) from public;
+revoke all on function public.vessel_rsvp_da_convidada(text, text, text, boolean, text, text) from public;
+grant execute on function public.vessel_convite_da_convidada(text, text) to anon, authenticated;
+grant execute on function public.vessel_rsvp_da_convidada(text, text, text, boolean, text, text) to anon, authenticated;
 
 notify pgrst, 'reload schema';
