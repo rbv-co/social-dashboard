@@ -117,3 +117,5 @@ entregas/
 # volta o vesselbrasil.com.br/frota abrindo o painel interno — que foi o
 # defeito que o dono pediu para eliminar. Por isso ela é ignorada aqui.
 /vessel-brasil/
+# A demonstração do Comercial Vessel (npm run build:demonstracao) — pasta gerada.
+dist-demonstracao
