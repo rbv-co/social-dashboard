@@ -1,7 +1,7 @@
 <template>
   <!-- ⚠️ ÍCONE É SVG, NUNCA EMOJI. A cor vem de `currentColor`: quem manda é o
        título onde ele mora (a cor da ferramenta, ou a do grupo do placar). -->
-  <svg class="cv-icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+  <svg class="id-icone" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
     <template v-if="nome === 'porta'">
       <path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5" />
       <path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5" />
@@ -42,8 +42,10 @@
 </template>
 
 <script setup>
-/* O ÍCONE PEQUENO QUE MARCA O TIPO DE BLOCO no Stylist Circle e no Private
- * Edit (pedido do dono, 23/09/2026). O desenho e o tamanho vêm da classe
- * `.cv-icone` (estilo-comercial.css), que chega aqui pela raiz do componente. */
+/* O ÍCONE PEQUENO QUE MARCA O TIPO DE BLOCO (pedido do dono, 23/09/2026).
+ * Nasceu no Stylist Circle e no Private Edit e mudou-se para cá na Onda 0,
+ * para qualquer ferramenta usar. O desenho e o tamanho vêm da classe
+ * `.id-icone` (src/estilos/identidade-da-ferramenta.css), que chega aqui pela
+ * raiz do componente — por isso a tela que usa o ícone importa aquela folha. */
 defineProps({ nome: { type: String, required: true } })
 </script>

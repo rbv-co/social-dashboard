@@ -85,6 +85,20 @@
        é ameixa, apagado de propósito, para não ler como automação. */
     --cor-stylist-circle:#1e5f74;
     --cor-private-edit:#6b4a7a;
+    /* AS OUTRAS TRÊS DO COMERCIAL VESSEL E A DO MENU (Onda 0, 23/09/2026) —
+       as do ícone de cada uma (`tela-de-menu-comercial-vessel.vue`; a do menu
+       é o cartão da home). No claro, a ponta ESCURA do degradê; no escuro, a
+       CLARA. Medido (título sobre a tinta de 8% da própria cor · branco sobre
+       o botão cheio): Private Appointment 5,10 · 5,68 — a ponta #9a6b3f dava
+       4,19 na tinta, reprovava, e desceu um degrau no mesmo tom; Beauty
+       Sessions 5,07 · 5,64; Funil de Carrinho 4,62 · 5,18; Comercial Vessel
+       6,97 · 7,89. ⚠️ O FUNIL É LARANJA porque o ícone dele é laranja (pedido
+       do dono: a MESMA cor do ícone) — não é `--orange` ("atenção"), e a tela
+       dele não tem situação para confundir as duas. */
+    --cor-private-appointment:#8a5d35;
+    --cor-beauty-sessions:#7a5c8a;
+    --cor-funil-carrinho:#c2410c;
+    --cor-comercial-vessel:#7a3f52;
     /* A SITUAÇÃO DE UMA COISA (stylist, encontro, convidada) — as mesmas cinco
        cores nas três, para o olho aprender uma vez. Todas saem dos tokens de
        estado, nenhuma é hex: o tema escuro vem de graça.
@@ -145,6 +159,14 @@
        mínimo). Medido no navegador: ver o :root. */
     --cor-stylist-circle:#3d9bb5;
     --cor-private-edit:#a98bbd;
+    /* Medido (título sobre a tinta de 8% · `--sobre-cor` sobre o botão):
+       Private Appointment 6,96 · 7,94; Beauty Sessions 6,73 · 7,66; Funil
+       5,76 · 6,41 — a ponta #ea580c dava 4,88 na tinta, perto demais do
+       mínimo, e subiu um degrau no mesmo tom; Comercial Vessel 4,91 · 5,44. */
+    --cor-private-appointment:#c3a36a;
+    --cor-beauty-sessions:#b89ac4;
+    --cor-funil-carrinho:#f0703a;
+    --cor-comercial-vessel:#c3708a;
     --sobre-cor:#12100b;
     /* TEXTO ACCENT EM CIMA DE --accent-light. O accent puro sobre o proprio
        tom aguado reprova no tema escuro (4,42). Este par ja vem medido. */

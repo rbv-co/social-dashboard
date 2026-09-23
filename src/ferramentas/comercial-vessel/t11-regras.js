@@ -49,7 +49,7 @@ export function estagiosDeEscolher(ativadaEm) {
 }
 
 /* ── A COR DA SITUAÇÃO (pedido do dono, 23/09/2026) ────────────────────────
- * Cada selo devolve também um `tom`, que a tela vira a classe `cv-tom-<tom>`
+ * Cada selo devolve também um `tom`, que a tela vira a classe `id-tom-<tom>`
  * (filete do cartão + cor do selo). Os tons são os mesmos nas três coisas —
  * stylist, encontro, convidada — e cada um é um token `--situacao-<tom>` em
  * estilos-globais.css:

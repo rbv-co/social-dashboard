@@ -286,10 +286,12 @@ test('cor: a convidada — cada situação com a cor do pedido do dono', () => {
 })
 
 test('FIAÇÃO: cada tom tem a classe no CSS e o token no tema — senão o filete some calado', () => {
-  const css = readFileSync(new URL('./estilo-comercial.css', import.meta.url), 'utf8')
+  // Onda 0 (23/09/2026): os tons moraram aqui e mudaram-se para a folha
+  // comum da Central, com o nome neutro `id-tom-*`.
+  const css = readFileSync(new URL('../../estilos/identidade-da-ferramenta.css', import.meta.url), 'utf8')
   const globais = readFileSync(new URL('../../estilos/estilos-globais.css', import.meta.url), 'utf8')
   for (const tom of TONS) {
-    assert.match(css, new RegExp(`\\.cv-tom-${tom}\\s*\\{[^}]*--tom:\\s*var\\(--situacao-${tom}\\)`), `falta .cv-tom-${tom}`)
+    assert.match(css, new RegExp(`\\.id-tom-${tom}\\s*\\{[^}]*--tom:\\s*var\\(--situacao-${tom}\\)`), `falta .id-tom-${tom}`)
     assert.match(globais, new RegExp(`--situacao-${tom}:`), `falta o token --situacao-${tom}`)
   }
 })

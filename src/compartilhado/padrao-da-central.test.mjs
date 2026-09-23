@@ -64,6 +64,9 @@ const COR_PERMITIDA = new Set([
   // Comercial Vessel: Stylist Circle e Private Edit, as cores do ícone de cada
   // um no menu (pedido do dono, 23/09/2026) — definidas SÓ como token no :root
   '#1e5f74', '#3d9bb5', '#6b4a7a', '#a98bbd',
+  // e as outras três do Comercial Vessel + a do menu (Onda 0, 23/09/2026):
+  // Private Appointment, Beauty Sessions, Funil de Carrinho, Comercial Vessel
+  '#8a5d35', '#c3a36a', '#7a5c8a', '#b89ac4', '#c2410c', '#f0703a', '#7a3f52', '#c3708a',
   // medalha de ranking: ouro/prata/bronze são a coisa, não um estado
   '#b8860b', '#94a3b8', '#b87333', '#d4a017',
   // paleta de dado dos gráficos: cor por métrica, não por estado

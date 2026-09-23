@@ -16,7 +16,7 @@
           <button type="button" class="btn" :class="{ ativa: quem === 'stylist' }" @click="escolher('stylist')">A stylist</button>
         </div>
 
-        <h3 class="cv-etiqueta cv-etiqueta-interna">A mensagem</h3>
+        <h3 class="cv-etiqueta cv-etiqueta-interna id-titulo">A mensagem</h3>
         <p class="cv-nota cv-nota-primeira cv-mensagem">{{ mensagem || '…' }}</p>
 
         <div class="cv-acoes">
@@ -152,6 +152,7 @@ onBeforeUnmount(() => { if (imagem.value) URL.revokeObjectURL(imagem.value) })
 
 <style scoped>
 @import './estilo-comercial.css';
+@import '../../estilos/identidade-da-ferramenta.css';
 .cv-cartao-previa { width: 100%; height: auto; border: 1px solid var(--border); border-radius: var(--radius-md); display: block; }
 .cv-mensagem { white-space: pre-wrap; overflow-wrap: anywhere; }
 </style>
