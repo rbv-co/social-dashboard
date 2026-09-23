@@ -3,11 +3,17 @@
 
 // Os quatro valores são os mesmos do CHECK de patrimonio_bens.situacao
 // (db/migrations/acessos/019_patrimonio_bens.sql). Mudar aqui exige mudar lá.
+//
+// `tom` é a cor da situação no filete do cartão (id-tom-<tom>, a mesma régua
+// `--situacao-*` da Central inteira — Onda 2a da cor, 23/09/2026). Cada tom é
+// o MESMO da pílula que já existia: verde em uso, azul em estoque, laranja em
+// manutenção, cinza baixado. Mudar um sem o outro faz o filete e a pílula do
+// mesmo cartão discordarem.
 export const SITUACOES = [
-  { valor: 'em_uso', rotulo: 'Em uso', classe: 'pat-pill-uso' },
-  { valor: 'em_estoque', rotulo: 'Em estoque', classe: 'pat-pill-estoque' },
-  { valor: 'em_manutencao', rotulo: 'Em manutenção', classe: 'pat-pill-manutencao' },
-  { valor: 'baixado', rotulo: 'Baixado', classe: 'pat-pill-baixado' },
+  { valor: 'em_uso', rotulo: 'Em uso', classe: 'pat-pill-uso', tom: 'viva' },
+  { valor: 'em_estoque', rotulo: 'Em estoque', classe: 'pat-pill-estoque', tom: 'andamento' },
+  { valor: 'em_manutencao', rotulo: 'Em manutenção', classe: 'pat-pill-manutencao', tom: 'queda' },
+  { valor: 'baixado', rotulo: 'Baixado', classe: 'pat-pill-baixado', tom: 'parada' },
 ]
 
 // Situação que não conhecemos devolve o próprio valor em vez de sumir: se um dia
@@ -21,6 +27,12 @@ export function rotuloDaSituacao(valor) {
 export function classeDaSituacao(valor) {
   const achou = SITUACOES.find((s) => s.valor === valor)
   return achou ? achou.classe : 'pat-pill-neutro'
+}
+
+// Situação que não conhecemos fica cinza, como a pílula neutra dela.
+export function tomDaSituacao(valor) {
+  const achou = SITUACOES.find((s) => s.valor === valor)
+  return achou ? achou.tom : 'parada'
 }
 
 // Quem está com o bem, nos três casos que o dado real produz:

@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  SITUACOES, rotuloDaSituacao, classeDaSituacao, textoDoDono,
+  SITUACOES, rotuloDaSituacao, classeDaSituacao, tomDaSituacao, textoDoDono,
   CATEGORIAS_PESSOAIS, avisoDeDonoVazio,
 } from './rotulos-do-bem.js'
 
@@ -115,4 +115,21 @@ test('categoria desconhecida ou vazia não avisa', () => {
 test('CATEGORIAS_PESSOAIS é a mesma lista que a regra de importação usou', () => {
   assert.deepEqual(CATEGORIAS_PESSOAIS,
     ['Computadores e Periféricos', 'Celulares e tablets', 'Veículos'])
+})
+
+test('o filete do cartão tem o mesmo tom da pílula da situação', () => {
+  assert.equal(tomDaSituacao('em_uso'), 'viva')          // pílula verde
+  assert.equal(tomDaSituacao('em_estoque'), 'andamento') // pílula azul
+  assert.equal(tomDaSituacao('em_manutencao'), 'queda')  // pílula laranja
+  assert.equal(tomDaSituacao('baixado'), 'parada')       // pílula cinza
+  assert.equal(tomDaSituacao('coisa_nova'), 'parada')    // neutra
+  assert.equal(tomDaSituacao(null), 'parada')
+})
+
+test('a tela liga o tom da situação no cartão e na linha da tabela', async () => {
+  const { readFileSync } = await import('node:fs')
+  const tela = readFileSync(new URL('./tela-de-patrimonio.vue', import.meta.url), 'utf8')
+  const ligacoes = tela.match(/id-tom-\$\{tomDaSituacao\(bem\.situacao\)\}/g) || []
+  assert.equal(ligacoes.length, 2, 'o cartão (celular) e a linha (computador)')
+  assert.match(tela, /tomDaSituacao[^\n]*from '\.\/rotulos-do-bem\.js'/)
 })
