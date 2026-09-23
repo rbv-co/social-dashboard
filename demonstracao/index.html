@@ -10,10 +10,13 @@
   <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
-  <!-- A PÁGINA QUE AS PESSOAS ABREM: o celular com a Central de verdade dentro
-       (o iframe abre `central.html`, que roda no banco de mentira) e, ao lado,
-       o roteiro que se marca sozinho. Tudo que é dinâmico vem de
-       `src/demonstracao/pagina-do-roteiro.js`. -->
+  <!-- A PÁGINA QUE AS PESSOAS ABREM: o aparelho desenhado (celular ou notebook,
+       à escolha) com a Central de verdade dentro (o iframe abre `central.html`,
+       que roda no banco de mentira) e, ao lado, o roteiro que se marca sozinho.
+       Tudo que é dinâmico vem de `src/demonstracao/pagina-do-roteiro.js`.
+       ⚠️ UM SÓ IFRAME, sempre: trocar celular↔notebook só muda o tamanho e a
+       moldura ao redor dele (CSS), nunca o recria — senão o banco de mentira
+       reiniciava e o roteiro perdia os passos marcados. -->
   <div class="demo">
     <header class="demo-cabeca">
       <div class="demo-cabeca-texto">
@@ -22,15 +25,26 @@
         <p class="demo-sub">As telas de verdade da Central, com um banco de exemplo dentro do navegador.
           Nada sai daqui e nada é salvo.</p>
       </div>
+      <div class="demo-modo" id="modo-aparelho" role="group" aria-label="Ver a demonstração em">
+        <button type="button" class="demo-modo-btn" id="modo-celular" aria-pressed="true">Celular</button>
+        <button type="button" class="demo-modo-btn" id="modo-notebook" aria-pressed="false">Notebook</button>
+      </div>
     </header>
+    <!-- Só aparece no aparelho de verdade (≤900px), onde o alternador some: o
+         `.demo-cabeca` inteiro fica escondido lá (nada mudou nisso), então a
+         nota mora FORA dele para poder avisar por que não há botão. -->
+    <p class="demo-modo-nota" id="modo-nota">No celular, a demonstração abre em tela cheia.</p>
 
     <main class="demo-palco">
-      <div class="demo-celular-lugar" id="lugar-do-celular">
-        <div class="demo-celular" id="celular">
-          <div class="demo-tela">
-            <iframe id="central" class="demo-iframe" src="central.html#/comercial-vessel"
-                    title="A Central no modo demonstração"></iframe>
+      <div class="demo-aparelho-lugar" id="lugar-do-aparelho">
+        <div class="demo-aparelho" id="aparelho" data-modo="celular">
+          <div class="demo-tela-moldura">
+            <div class="demo-tela">
+              <iframe id="central" class="demo-iframe" src="central.html#/comercial-vessel"
+                      title="A Central no modo demonstração"></iframe>
+            </div>
           </div>
+          <div class="demo-aparelho-base" aria-hidden="true"></div>
         </div>
       </div>
 
