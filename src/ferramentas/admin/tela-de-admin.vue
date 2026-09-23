@@ -17,7 +17,9 @@
        o lugar dele na árvore do DOM não muda o layout visual, e ficar dentro
        da árvore do componente é o que permite ao CSS :deep() (scoped)
        alcançá-lo. -->
-  <div class="tela-admin">
+  <!-- `id-ferramenta`: a cor da ferramenta (Onda 3) — o azul-marinho de
+       `--cor-administracao`. Só classe; nenhum comportamento muda. -->
+  <div class="tela-admin id-ferramenta">
     <barra-de-topo voltar="Central" titulo="Administração" @voltar="closeAdmin" />
     <div class="admin-layout">
       <nav class="admin-sidebar">
@@ -33,10 +35,10 @@
       <div class="admin-content">
         <!-- USUÁRIOS -->
         <div class="admin-section active" id="admin-section-users">
-          <div class="admin-section-title">Usuários &amp; Acessos</div>
+          <div class="admin-section-title id-titulo"><icone-do-bloco nome="parceiras" />Usuários &amp; Acessos</div>
           <div class="admin-section-sub">Gerencie quem tem acesso à Central de Inteligência</div>
           <div id="admin-stats-users" class="admin-stats"></div>
-          <span class="sg-label">Convidar novo usuário</span>
+          <span class="sg-label id-titulo"><icone-do-bloco nome="novo" />Convidar novo usuário</span>
           <div class="sg" style="padding:16px 20px;">
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px 16px;">
               <div>
@@ -99,34 +101,34 @@
                não na ficha do time: dos 14 canais do Bling só 3 têm time, e os
                11 sem time aparecem no seletor das dashboards do mesmo jeito. O
                time é atacado ou varejo pelo canal a que está amarrado. -->
-          <span class="sg-label">Canais de venda</span>
-          <div class="admin-section-sub">Cada grupo — <b>Atacado</b>, <b>Varejo</b>, ou outro que você criar — reúne os canais do Bling que são dele. Abra o grupo em <b>Escolher canais</b> e marque quais são; um canal só pode estar em um grupo. É esse grupo que separa o seletor das dashboards de venda e os times na lista de usuários. Canal que não está em grupo nenhum continua aparecendo, no fim.</div>
+          <span class="sg-label id-titulo"><icone-do-bloco nome="conjunto" />Canais de venda</span>
+          <div class="admin-section-sub adm-explica">Cada grupo — <b>Atacado</b>, <b>Varejo</b>, ou outro que você criar — reúne os canais do Bling que são dele. Abra o grupo em <b>Escolher canais</b> e marque quais são; um canal só pode estar em um grupo. É esse grupo que separa o seletor das dashboards de venda e os times na lista de usuários. Canal que não está em grupo nenhum continua aparecendo, no fim.</div>
           <div id="admin-canais-body"><div style="color:var(--muted);font-size:max(9px, calc(12px * var(--escala-texto, 1)))">Carregando...</div></div>
 
-          <span class="sg-label">Times de venda</span>
-          <div class="admin-section-sub">Lojas, canais e setores — e quem trabalha em cada um. É por aqui que uma loja nova entra no sistema. Em <b>Quem trabalha aqui</b> você vê e muda, por pessoa, o que ela enxerga de canal de venda e das outras ferramentas, libera o estoque e troca a senha dela.</div>
+          <span class="sg-label id-titulo"><icone-do-bloco nome="venda" />Times de venda</span>
+          <div class="admin-section-sub adm-explica">Lojas, canais e setores — e quem trabalha em cada um. É por aqui que uma loja nova entra no sistema. Em <b>Quem trabalha aqui</b> você vê e muda, por pessoa, o que ela enxerga de canal de venda e das outras ferramentas, libera o estoque e troca a senha dela.</div>
           <div id="admin-equipes-body"><div style="color:var(--muted);font-size:max(9px, calc(12px * var(--escala-texto, 1)))">Carregando...</div></div>
           <!-- Quem está num time de venda NÃO aparece aqui: a pessoa mora
                dentro do card da loja dela, logo acima. O rótulo diz isso, senão
                procurar a vendedora nesta lista e não achar parece defeito. -->
-          <span class="sg-label">Sem time de venda</span>
+          <span class="sg-label id-titulo"><icone-do-bloco nome="pessoa" />Sem time de venda</span>
           <div class="admin-section-sub">Quem está num time aparece dentro do card da loja dele, ali em cima.</div>
           <div id="admin-user-list"></div>
         </div>
         <!-- CONTAS -->
         <div class="admin-section" id="admin-section-accounts">
-          <div class="admin-section-title">Contas Conectadas</div>
+          <div class="admin-section-title id-titulo"><icone-do-bloco nome="porta" />Contas Conectadas</div>
           <div class="admin-section-sub">Perfis do Instagram vinculados à plataforma</div>
           <div id="admin-accounts-list"></div>
         </div>
         <!-- DADOS -->
         <div class="admin-section" id="admin-section-data">
-          <div class="admin-section-title">Dados &amp; Sincronização</div>
+          <div class="admin-section-title id-titulo"><icone-do-bloco nome="banco" />Dados &amp; Sincronização</div>
           <div class="admin-section-sub">Saúde do banco de dados e coleta de dados</div>
           <div id="admin-data-stats" class="admin-stats"></div>
-          <span class="sg-label">Última coleta por conta</span>
+          <span class="sg-label id-titulo"><icone-do-bloco nome="relogio" />Última coleta por conta</span>
           <div class="sg" id="admin-data-sync"></div>
-          <span class="sg-label">Ações de manutenção</span>
+          <span class="sg-label id-titulo"><icone-do-bloco nome="ferramenta" />Ações de manutenção</span>
           <div class="sg">
             <div class="sr clickable" style="justify-content:space-between" onclick="adminShowRefetchInfo()"><div class="sr-main"><div class="sr-label">Atualizar fotos de perfil</div><div class="sr-sub">Rebusca as fotos dos perfis via Meta API</div></div><span style="font-size:max(16px, calc(18px * var(--escala-texto, 1)))">↻</span></div>
             <div class="sr clickable" style="justify-content:space-between" onclick="adminShowColetorInfo()"><div class="sr-main"><div class="sr-label">Rodar coletor de dados</div><div class="sr-sub">Coleta métricas do Instagram para todos os perfis</div></div><span style="font-size:max(16px, calc(18px * var(--escala-texto, 1)))">⚡</span></div>
@@ -137,18 +139,18 @@
              a faixa de aviso em Dados abre esta seção por onclick, então
              loadAdminSaude() precisa ter onde desenhar o detalhamento. -->
         <div class="admin-section" id="admin-section-saude">
-          <div class="admin-section-title">Saúde dos dados</div>
+          <div class="admin-section-title id-titulo"><icone-do-bloco nome="lista" />Saúde dos dados</div>
           <div class="admin-section-sub">Verificação automática diária (23:30) — frescor, consistência e anomalias das métricas de todos os perfis.</div>
           <div id="admin-saude-body"><div style="color:var(--muted);font-size:max(9px, calc(12px * var(--escala-texto, 1)))">Carregando...</div></div>
         </div>
         <div class="admin-section" id="admin-section-metas">
-          <div class="admin-section-title">Metas de Vendas</div>
+          <div class="admin-section-title id-titulo"><icone-do-bloco nome="placar" />Metas de Vendas</div>
           <div class="admin-section-sub">Configure as metas mensais por canal e loja</div>
           <div id="admin-metas-body"><div style="color:var(--muted);font-size:max(9px, calc(12px * var(--escala-texto, 1)))">Carregando...</div></div>
         </div>
         <!-- SOLICITAÇÕES -->
         <div class="admin-section" id="admin-section-requests">
-          <div class="admin-section-title">Solicitações de Acesso</div>
+          <div class="admin-section-title id-titulo"><icone-do-bloco nome="contato" />Solicitações de Acesso</div>
           <div class="admin-section-sub">Usuários que solicitaram acesso à plataforma</div>
           <div id="admin-requests-body"><div style="color:var(--muted);font-size:max(9px, calc(12px * var(--escala-texto, 1)))">Carregando...</div></div>
         </div>
@@ -175,6 +177,7 @@
 
 <script setup>
 import { onMounted, onUnmounted } from 'vue'
+import IconeDoBloco from '../../compartilhado/icone-do-bloco.vue'
 import BarraDeTopo from '../../compartilhado/barra-de-topo.vue'
 import { useRouter } from 'vue-router'
 import { sbClient, SUPABASE_URL, SUPABASE_ANON_KEY } from '../../compartilhado/conectar-no-banco-de-dados.js'
@@ -1290,7 +1293,9 @@ function _eqDesenhar() {
     const meu = _eqMeuPapel(t.id)
     const posso = podeAdministrarTime(eu, meu)
     const canal = _eqCanais.find(c => String(c.loja_id) === String(t.canal_loja_id))
-    html += '<div style="border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin-bottom:10px;background:var(--surface);'
+    // O filete da situação do time (Onda 3): ativo = viva, inativo = parada —
+    // o mesmo "inativo" que o cartão já escreve. Só classe.
+    html += '<div class="adm-time id-cartao ' + (l.ativo ? 'id-tom-viva' : 'id-tom-parada') + '" style="border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin-bottom:10px;background:var(--surface);'
       + (l.ativo ? '' : 'opacity:.6;') + '">'
     html += '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;">'
     html += '<div style="font-weight:800;font-size:max(9px, calc(14px * var(--escala-texto, 1)));color:var(--text);">' + escHtml(l.nome)
@@ -1707,8 +1712,10 @@ function _eqLigar(body) {
 async function loadAdminSaude() {
   const body = document.getElementById('admin-saude-body'); if (!body) return
   const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
-  const BTNP = 'style="border:none;background:var(--accent);color:var(--sobre-cor);border-radius:9px;padding:10px 18px;font-size:max(9px, calc(12.5px * var(--escala-texto, 1)));font-weight:700;cursor:pointer;box-shadow:0 6px 16px -8px var(--accent);"'
-  const BTNS = 'style="border:1px solid var(--accent);color:var(--accent);background:transparent;border-radius:9px;padding:10px 14px;font-size:max(9px, calc(12px * var(--escala-texto, 1)));font-weight:600;cursor:pointer;"'
+  // Os dois botões na cor da ferramenta (Onda 3): `--modulo` no lugar do
+  // `--accent`, o resto igual. Texto sobre o botão: `--sobre-cor`.
+  const BTNP = 'style="border:none;background:var(--modulo);color:var(--sobre-cor);border-radius:9px;padding:10px 18px;font-size:max(9px, calc(12.5px * var(--escala-texto, 1)));font-weight:700;cursor:pointer;box-shadow:0 6px 16px -8px var(--modulo);"'
+  const BTNS = 'style="border:1px solid var(--modulo);color:var(--modulo);background:transparent;border-radius:9px;padding:10px 14px;font-size:max(9px, calc(12px * var(--escala-texto, 1)));font-weight:600;cursor:pointer;"'
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' })
   const ST = { ok: ['✅', 'var(--green)'], warn: ['⚠️', 'var(--orange)'], fail: ['❌', 'var(--red)'] }
   const PERIODS = [0, 1, 7, 14, 30, 99]
@@ -1757,11 +1764,12 @@ async function loadAdminSaude() {
   // saúde geral
   const totalFail = counts.fail + cov.filter(c => c.st === 'fail').length
   const totalWarn = counts.warn + cov.filter(c => c.st === 'warn').length
-  const overall = totalFail ? ['❌', 'var(--red)', totalFail + ' problema' + (totalFail > 1 ? 's' : '') + ' a corrigir'] : totalWarn ? ['⚠️', 'var(--orange)', totalWarn + ' aviso' + (totalWarn > 1 ? 's' : '')] : ['✅', 'var(--green)', 'Tudo saudável']
+  // o 4º item é o tom do filete do cabeçalho (Onda 3): a MESMA cor do texto dele
+  const overall = totalFail ? ['❌', 'var(--red)', totalFail + ' problema' + (totalFail > 1 ? 's' : '') + ' a corrigir', 'adm-tom-erro'] : totalWarn ? ['⚠️', 'var(--orange)', totalWarn + ' aviso' + (totalWarn > 1 ? 's' : ''), 'adm-tom-aviso'] : ['✅', 'var(--green)', 'Tudo saudável', 'adm-tom-ok']
   const card = (big, lbl, col) => '<div style="flex:1 1 130px;min-width:120px;background:var(--card,#fff);border:1px solid var(--border,#e5e7eb);border-radius:12px;padding:14px 16px;"><div style="font-size:max(16px, calc(26px * var(--escala-texto, 1)));font-weight:800;line-height:1;color:' + col + '">' + big + '</div><div style="font-size:max(9px, calc(10.5px * var(--escala-texto, 1)));letter-spacing:.5px;text-transform:uppercase;color:var(--muted);margin-top:6px">' + lbl + '</div></div>'
   // ── header ──
   let html = '<div style="display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:16px;">'
-  html += '<div style="display:flex;align-items:center;gap:12px;"><div style="font-size:max(16px, calc(30px * var(--escala-texto, 1)))">' + overall[0] + '</div><div><div style="font-size:max(16px, calc(17px * var(--escala-texto, 1)));font-weight:800;color:' + overall[1] + '">' + esc(overall[2]) + '</div><div style="font-size:max(9px, calc(11px * var(--escala-texto, 1)));color:var(--muted)">Coleta: <b>' + esc(collAt) + '</b> · Auditoria: <b>' + esc(auditAt) + '</b> · auto todo dia 23:30</div></div></div>'
+  html += '<div class="adm-saude-geral id-cartao ' + overall[3] + '" style="display:flex;align-items:center;gap:12px;"><div style="font-size:max(16px, calc(30px * var(--escala-texto, 1)))">' + overall[0] + '</div><div><div style="font-size:max(16px, calc(17px * var(--escala-texto, 1)));font-weight:800;color:' + overall[1] + '">' + esc(overall[2]) + '</div><div style="font-size:max(9px, calc(11px * var(--escala-texto, 1)));color:var(--muted)">Coleta: <b>' + esc(collAt) + '</b> · Auditoria: <b>' + esc(auditAt) + '</b> · auto todo dia 23:30</div></div></div>'
   html += '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn-fix" ' + BTNP + '>🔧 Rodar e corrigir agora</button><button class="btn-rev" ' + BTNS + '>↻ Só revalidar</button></div></div>'
   // ── stat cards ──
   html += '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px">'
@@ -3220,7 +3228,9 @@ function _criarLinhaPessoa(p, gaveta, currentEmail) {
   const canEdit = !isSuperAdmin || estado.is_superadmin // super-admin só é editável por outro super-admin
 
   const linha = document.createElement('div')
-  linha.className = 'usr-linha'
+  // O filete da situação (Onda 3): ativa = viva, desativada = parada (o
+  // cinza, junto do `opacity` que ela já tinha). Só classe.
+  linha.className = 'usr-linha id-cartao ' + (u.disabled ? 'id-tom-parada' : 'id-tom-viva')
   linha.dataset.uid = p.id
   if (u.disabled) linha.style.opacity = '.5'
 
@@ -3985,12 +3995,15 @@ async function loadAdminData() {
   })
   syncEl.innerHTML = ''
   syncResults.forEach(({ a, d }) => {
-    const row = mkEl('div', 'sr'); row.style.justifyContent = 'space-between'
+    // "Sem dados" (o laranja que a linha já tinha) ganha o filete de atenção.
+    // Conta COM coleta fica sem tom: a tela não diz quando uma coleta está
+    // atrasada, e pintar de verde uma de 30 dias atrás seria mentir.
+    const row = mkEl('div', d ? 'sr' : 'sr id-cartao adm-tom-aviso'); row.style.justifyContent = 'space-between'
     const m = mkEl('div', 'sr-main'); m.appendChild(mkEl('div', 'sr-label', a.name))
     if (d) { const ago = Math.floor((Date.now() - new Date(d.captured_at)) / (864e5)); const sub = mkEl('div', 'sr-sub', `Última coleta: ${d.captured_at} (${ago === 0 ? 'hoje' : ago === 1 ? 'ontem' : ago + 'd atrás'})`); m.appendChild(sub) }
     row.appendChild(m)
     const val = mkEl('span', 'sr-val')
-    if (d) { val.textContent = fmtN(d.followers_count) + ' seguidores'; val.style.color = d.followers_count > 0 ? 'var(--accent)' : 'var(--muted)' }
+    if (d) { val.textContent = fmtN(d.followers_count) + ' seguidores'; val.style.color = d.followers_count > 0 ? 'var(--text)' : 'var(--muted)' }
     else { val.textContent = 'Sem dados'; val.style.color = 'var(--orange)' }
     row.appendChild(val); syncEl.appendChild(row)
   })
@@ -4027,11 +4040,11 @@ async function loadAdminMetas() {
   ].join('') : null
 
   const html = [
-    '<div class="admin-section-sub" style="margin-bottom:20px">Importe uma planilha <strong>.xlsx</strong> (Excel) com as metas por canal. Baixe o template, preencha a meta de cada dia por canal e importe. Também aceita <em>.xls</em> e <em>.csv</em>.</div>',
+    '<div class="admin-section-sub adm-explica" style="margin-bottom:20px">Importe uma planilha <strong>.xlsx</strong> (Excel) com as metas por canal. Baixe o template, preencha a meta de cada dia por canal e importe. Também aceita <em>.xls</em> e <em>.csv</em>.</div>',
     '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:24px">',
     '<button class="admin-btn-sm btn" onclick="downloadMetasTemplate()">',
     '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Baixar template .xlsx</button>',
-    `<label class="admin-btn-sm" style="display:flex;align-items:center;gap:6px;padding:8px 16px;cursor:pointer;background:var(--accent);color:var(--sobre-cor);border-color:var(--accent)">`,
+    `<label class="admin-btn-sm" style="display:flex;align-items:center;gap:6px;padding:8px 16px;cursor:pointer;background:var(--modulo);color:var(--sobre-cor);border-color:var(--modulo)">`,
     '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>Importar planilha',
     `<input type="file" accept=".xlsx,.xls,.csv" id="metas-csv-input" style="display:none" onchange="importMetasCSV(this,${y},${m})"></label></div>`,
     '<div id="metas-import-msg" style="font-size:max(9px, calc(12px * var(--escala-texto, 1)));margin-bottom:16px;display:none"></div>',
@@ -4234,9 +4247,13 @@ async function loadAdminRequests() {
   if (!data.length) { body.innerHTML = '<div style="color:var(--muted);font-size:max(9px, calc(12px * var(--escala-texto, 1)));padding:16px 0">Nenhuma solicitação de acesso.</div>'; return }
   const statusLabel = { pending: 'Pendente', approved: 'Aprovado', denied: 'Negado' }
   const statusColor = { pending: 'var(--yellow)', approved: 'var(--green)', denied: 'var(--red)' }
+  // A COR DA SITUAÇÃO (Onda 3): o filete da linha e o selo no MESMO tom, dos
+  // `--situacao-*` da Central — pendente = andamento (ainda vai ser decidido),
+  // aprovado = viva, negado = queda ("recusou"). Só classe: o texto é o mesmo.
+  const statusTom = { pending: 'id-tom-andamento', approved: 'id-tom-viva', denied: 'id-tom-queda' }
   const wrap = document.createElement('div'); wrap.className = 'sg'
   data.forEach(r => {
-    const row = document.createElement('div'); row.className = 'sr'; row.style.cssText = 'justify-content:space-between;flex-wrap:wrap;gap:8px'; row.id = 'req-row-' + r.id
+    const row = document.createElement('div'); row.className = 'sr id-cartao ' + (statusTom[r.status] || ''); row.style.cssText = 'justify-content:space-between;flex-wrap:wrap;gap:8px'; row.id = 'req-row-' + r.id
     const main = document.createElement('div'); main.className = 'sr-main'
     const lbl = document.createElement('div'); lbl.className = 'sr-label'
     lbl.textContent = r.name || ''
@@ -4245,7 +4262,10 @@ async function loadAdminRequests() {
     const sub = document.createElement('div'); sub.className = 'sr-sub'; sub.textContent = (r.message || 'Sem mensagem') + ' · ' + new Date(r.created_at).toLocaleDateString('pt-BR')
     main.appendChild(lbl); main.appendChild(sub)
     const ctrl = document.createElement('div'); ctrl.style.cssText = 'display:flex;align-items:center;gap:8px;flex-shrink:0'
-    const badge = document.createElement('span'); badge.style.cssText = `font-size:max(9px, calc(10px * var(--escala-texto, 1)));font-weight:600;color:${statusColor[r.status] || 'var(--muted)'};letter-spacing:1px;text-transform:uppercase`; badge.textContent = statusLabel[r.status] || r.status
+    // o selo leva o tom pela classe (`id-selo`); a cor antiga fica no `style`
+    // só para situação desconhecida, que não tem tom
+    const badge = document.createElement('span'); if (statusTom[r.status]) badge.className = 'id-selo ' + statusTom[r.status]
+    badge.style.cssText = `font-size:max(9px, calc(10px * var(--escala-texto, 1)));font-weight:600;${statusTom[r.status] ? '' : 'color:' + (statusColor[r.status] || 'var(--muted)') + ';'}letter-spacing:1px;text-transform:uppercase`; badge.textContent = statusLabel[r.status] || r.status
     ctrl.appendChild(badge)
     if (r.status === 'pending') {
       const apv = document.createElement('button'); apv.className = 'admin-btn-sm'; apv.style.cssText = 'background:var(--green);color:var(--sobre-cor)'; apv.textContent = 'Aprovar'; apv.addEventListener('click', () => handleRequest(r.id, 'approved'))
@@ -4312,6 +4332,13 @@ Object.assign(window, {
 </script>
 
 <style scoped>
+/* A COR DA FERRAMENTA E DE CADA BLOCO (Onda 3, 23/09/2026) — a folha comum,
+   importada ANTES das regras desta tela (`@import` só vale no topo). Sozinha
+   ela pinta a barra do topo (filete e tinta) e o que o <template> desenha. O
+   que esta tela monta por JavaScript (innerHTML) não leva o atributo do
+   `scoped`, e por isso o resto mora no bloco "Onda 3" perto do fim deste
+   <style>, em `:deep()`, que diz por quê. */
+@import '../../estilos/identidade-da-ferramenta.css';
 /* ── CABEÇALHO DE GRUPO NOS TIMES (Peça 4, 20/08/2026) ─────────────────────
    Só aparece quando algum time tem grupo; sem configuração, a tela fica igual. */
 /* O CARD PAI (27/08/2026). O grupo era um TÍTULO solto acima dos cards de loja;
@@ -4776,6 +4803,92 @@ Object.assign(window, {
    `_filtrar` ter onde ler o termo. `admin-form-input` já dá o visual padrão
    (width:100%); aqui só limita a largura no desktop. */
 .tela-admin :deep(.usr-busca){max-width:280px;margin-bottom:10px;}
+
+/* ── Onda 3: a cor da ferramenta (azul-marinho, `--cor-administracao`) ─────
+   A régua: mais organizado, não mais carregado. A cor entra no topo, no item
+   ativo da barra lateral, na ação principal, no ícone dos títulos, no filete da
+   situação e nas explicações (azul de informação) — nenhum texto, selo, linha
+   ou tamanho de letra novo, e nada muda de lugar.
+
+   ⚠️ QUASE TUDO AQUI É `:deep()`. Esta tela é um porte do site antigo e monta
+   a maior parte do conteúdo por innerHTML/createElement: esses elementos não
+   levam o `data-v-…` do scoped, e as regras da folha comum (`.id-ferramenta
+   .x[data-v]`) não os alcançam. As classes são as MESMAS da folha comum
+   (`id-cartao`, `id-selo`, `id-tom-*`), só alcançadas por aqui.
+
+   O QUE CONTINUA NO AZUL DO SISTEMA, porque ali o azul quer dizer SELEÇÃO:
+   o filtro ligado, o degrau escolhido e a chave ligada no editor de
+   permissões, o foco dos campos e o selo de papel "admin".
+
+   NENHUM FORMULÁRIO TINGIDO: a tinta de 8% do marinho derruba o laranja dos
+   avisos para 4,11 (medido) — como na Frota e na Autenticidade. */
+
+/* O ITEM ATIVO DA BARRA LATERAL: tinta de 12% do marinho, texto na cor e um
+   filete por dentro (sombra, para não mexer na medida do item). Medido: 8,06
+   no claro, 5,22 no escuro; os inativos seguem `--text` sem fundo. */
+.tela-admin :deep(.admin-nav-item.active){
+  background:color-mix(in srgb,var(--modulo) 12%,var(--surface2));
+  color:var(--modulo); font-weight:600;
+  box-shadow:inset 3px 0 0 var(--modulo);
+}
+
+/* A AÇÃO PRINCIPAL na cor da ferramenta — também a dos botões montados por
+   JavaScript ("+ Criar grupo", "+ Novo time", "Salvar alterações"…).
+   `--sobre-cor` em cima: 11,50 no claro, 6,97 no escuro. */
+.tela-admin :deep(.btn.btn-principal),
+.tela-admin :deep(.btn.btn-principal:hover){background:var(--modulo);border-color:var(--modulo);color:var(--sobre-cor);}
+
+/* OS TÍTULOS: o ícone na cor; o texto continua como era (a folha comum o
+   pintaria — título em caixa alta colorido, repetido em cada bloco, grita). */
+.tela-admin .admin-section-title.id-titulo{color:var(--text);font-weight:500;gap:var(--sp-3);}
+.tela-admin .admin-section-title.id-titulo .id-icone{width:20px;height:20px;flex-basis:20px;}
+/* `.sg-label` nasce `display:block` numa regra `:deep()` desta tela, que empata
+   com a folha comum e vem depois dela — sem repetir o `flex` aqui, o ícone
+   colava no texto. */
+.tela-admin .sg-label.id-titulo{color:var(--muted);font-weight:400;display:flex;align-items:center;gap:var(--sp-2);}
+.tela-admin .id-titulo .id-icone{color:var(--modulo);}
+
+/* AS ABAS DA JANELA DE PERMISSÕES (navegação, não seleção): na cor. */
+.tela-admin :deep(.perm-abas button.on){color:var(--modulo);border-bottom-color:var(--modulo);}
+
+/* O NÚMERO NEUTRO fica em `--text`: em cor, "6 total" parece estado. */
+.tela-admin :deep(.admin-stat-val){color:var(--text);}
+/* o convite "tocar para abrir ›" do celular é caminho, não seleção */
+.tela-admin :deep(.usr-linha-info::after){color:var(--modulo);}
+
+/* AS EXPLICAÇÕES (como funcionam os grupos, os times, a planilha de metas) em
+   azul de informação, como o "Como ler" das outras telas. O texto segue
+   `--muted`. A margem de fora é a mesma de antes; só entra o recuo da caixa. */
+.tela-admin :deep(.admin-section-sub.adm-explica){
+  padding:var(--sp-2) var(--sp-3);
+  background:color-mix(in srgb,var(--informacao) 8%,var(--surface));
+  border:1px solid color-mix(in srgb,var(--informacao) 38%,var(--surface));
+  border-radius:var(--radius-md);
+}
+
+/* A SITUAÇÃO: o `--tom` de cada estado (os mesmos `--situacao-*` da Central)
+   e, onde o sentido é de saúde (ok/aviso/erro), os tokens de estado direto. */
+.tela-admin :deep(.id-tom-andamento){--tom:var(--situacao-andamento);}
+.tela-admin :deep(.id-tom-viva){--tom:var(--situacao-viva);}
+.tela-admin :deep(.id-tom-queda){--tom:var(--situacao-queda);}
+.tela-admin :deep(.id-tom-parada){--tom:var(--situacao-parada);}
+.tela-admin :deep(.adm-tom-ok){--tom:var(--green);}
+.tela-admin :deep(.adm-tom-aviso){--tom:var(--orange);}
+.tela-admin :deep(.adm-tom-erro){--tom:var(--red);}
+/* O FILETE é sombra por dentro, e não borda: as linhas desta tela já têm
+   borda de cima/baixo, e trocar a borda inteira apagaria o filete no hover. */
+.tela-admin :deep(.id-cartao){box-shadow:inset 3px 0 0 var(--tom,var(--border));}
+.tela-admin :deep(.sr.id-cartao){padding-left:calc(16px + var(--sp-1));}
+.tela-admin :deep(.usr-linha.id-cartao){padding-left:var(--sp-3);}
+.tela-admin :deep(.adm-time.id-cartao){box-shadow:inset 4px 0 0 var(--tom,var(--border));}
+.tela-admin :deep(.adm-saude-geral.id-cartao){padding-left:var(--sp-3);}
+/* O SELO da solicitação no tom da linha (a proporção do `.selo` global). */
+.tela-admin :deep(.id-selo[class*="id-tom-"]){
+  display:inline-flex;align-items:center;padding:3px 9px;border-radius:999px;
+  border:1px solid color-mix(in srgb,var(--tom) 45%,var(--surface));
+  background:color-mix(in srgb,var(--tom) 12%,var(--surface));
+  color:color-mix(in srgb,var(--tom) 75%,var(--text));
+}
 
 @media (max-width:640px){
   /* NO CELULAR A LINHA É COMPACTA. As quatro ações por pessoa (papel,
