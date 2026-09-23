@@ -70,8 +70,7 @@
               <span class="cv-selo id-selo" :class="`id-tom-${item.situacao.tom}`">{{ item.situacao.texto }}</span>
             </div>
             <qr-para-baixar class="mg-qr" :endereco="item.endereco" :legenda="item.legenda"
-                            :arquivo="item.arquivo"
-                            motivo-sem-endereco="Este encontro não tem chave de convite válida, então não há QR. Confira na tela Private Edit." />
+                            :arquivo="item.arquivo" :motivo-sem-endereco="item.motivoSemQr" />
           </li>
         </ul>
       </section>
@@ -118,7 +117,9 @@ const busca = ref(typeof route.query.busca === 'string' ? route.query.busca : ''
 const mostrarEncerrados = ref(route.query.todos === '1')
 
 /* Cada ação lê sozinha: { carregando, erro, itens }. */
-const grupos = reactive(Object.fromEntries(ACOES.map((a) => [a.chave, { carregando: true, erro: null, itens: [] }])))
+/* ⚠️ `pedido` conta as leituras: marcar e desmarcar o filtro depressa dispara
+ * duas, e a resposta VELHA pode chegar depois da nova — só a última escreve. */
+const grupos = reactive(Object.fromEntries(ACOES.map((a) => [a.chave, { carregando: true, erro: null, itens: [], pedido: 0 }])))
 
 const naTela = computed(() => Object.fromEntries(ACOES.map((a) => [a.chave,
   filtrarItens(grupos[a.chave].itens, { busca: busca.value, mostrarEncerrados: mostrarEncerrados.value })])))
@@ -169,6 +170,7 @@ function pedidoDa(chave) {
 
 async function carregarAcao(chave) {
   const g = grupos[chave]
+  const n = ++g.pedido
   g.carregando = true
   g.erro = null
   try {
@@ -179,12 +181,15 @@ async function carregarAcao(chave) {
       return
     }
     const [funcao, corpo] = pedidoDa(chave)
-    g.itens = itensDaAcao(chave, await chamar(funcao, corpo))
+    const linhas = await chamar(funcao, corpo)
+    if (n !== g.pedido) return            // chegou uma leitura mais nova: esta é descartada
+    g.itens = itensDaAcao(chave, linhas)
   } catch (e) {
+    if (n !== g.pedido) return
     g.itens = []
     g.erro = e?.classificado || { tipo: 'servidor', mensagem: 'Não consegui ler agora. Tente de novo.', acao: 'tentar' }
   } finally {
-    g.carregando = false
+    if (n === g.pedido) g.carregando = false
   }
 }
 

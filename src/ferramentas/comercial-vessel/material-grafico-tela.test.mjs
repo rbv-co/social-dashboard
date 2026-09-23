@@ -62,3 +62,19 @@ test('⚠️ a prévia fica sobre PAPEL (claro nos dois temas), nunca sobre a su
   const escuro = css.slice(css.indexOf('[data-theme="dark"]{'))
   assert.doesNotMatch(escuro.slice(0, escuro.indexOf('}')), /--papel/, 'o papel não pode escurecer no tema escuro')
 })
+
+test('⚠️ a frase de "sem QR" vem do item (de cada ação), não cravada no template', () => {
+  assert.match(TELA, /:motivo-sem-endereco="item\.motivoSemQr"/)
+  assert.doesNotMatch(TELA, /motivo-sem-endereco="Este encontro/)
+})
+
+test('⚠️ leituras que se sobrepõem: só a última escreve (contador por grupo)', () => {
+  assert.match(TELA, /const n = \+\+g\.pedido/)
+  assert.equal((TELA.match(/if \(n !== g\.pedido\) return/g) || []).length, 2, 'o sucesso e o erro têm de descartar a leitura velha')
+  assert.match(TELA, /if \(n === g\.pedido\) g\.carregando = false/)
+})
+
+test('o botão principal do QR muda no hover, e o :disabled fica com a regra global', () => {
+  assert.match(QR, /\.qrb \.btn\.btn-principal:hover:not\(:disabled\) \{/)
+  assert.doesNotMatch(QR, /btn-principal:disabled/)
+})

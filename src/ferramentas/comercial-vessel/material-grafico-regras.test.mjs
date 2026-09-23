@@ -83,6 +83,30 @@ test('Stylist: um QR por parceira, nome · código · cidade, arquivo pelo códi
   assert.deepEqual(itemDaStylist({ ...STY, ativa: false }).situacao, { texto: 'Desativada', tom: 'parada' })
 })
 
+test('⚠️ Private Edit cancelado, realizado ou não realizado NÃO é ativo, mesmo com ativa: true', () => {
+  /* O status muda sem `ativa` mudar, e o /pe/<chave> passa a recusar. Com a
+   * regra antiga (só ativa/arquivada) estes três apareciam por padrão com o
+   * selo "Aceitando" — um QR para uma porta fechada indo para a gráfica. */
+  for (const [status, texto, tom] of [['cancelado', 'Cancelado', 'queda'], ['realizado', 'Realizado', 'viva'],
+    ['nao_realizado', 'Não realizado', 'queda']]) {
+    const i = itemDoPrivateEdit({ ...PE, status, ativa: true })
+    assert.equal(i.ativo, false, status)
+    assert.deepEqual(i.situacao, { texto, tom }, status)
+    assert.equal(filtrarItens([i]).length, 0, `${status} apareceu na lista padrão`)
+  }
+  const agendado = itemDoPrivateEdit({ ...PE, status: 'agendado' })
+  assert.equal(agendado.ativo, true)
+  assert.deepEqual(agendado.situacao, { texto: 'Agendado', tom: 'andamento' })
+  assert.deepEqual(itemDoPrivateEdit({ ...PE, arquivada: true }).situacao, { texto: 'Arquivada', tom: 'parada' })
+})
+
+test('a frase de "sem QR" é a de cada ação, não a do Private Edit para todas', () => {
+  assert.match(itemDaBeauty({ ...BS, codigo: 'lixo' }).motivoSemQr, /sessão/)
+  assert.match(itemDoPrivateEdit({ ...PE, chave: null }).motivoSemQr, /chave de convite/)
+  assert.match(itemDaStylist({ ...STY, codigo: 'x' }).motivoSemQr, /parceira/)
+  assert.equal(itemDaBeauty({ ...BS, codigo: 'lixo' }).endereco, '')
+})
+
 test('o que é ATIVO: nem encerrado, nem arquivado, nem desativada', () => {
   assert.equal(itemDaBeauty({ ...BS, ativa: false }).ativo, false)
   assert.equal(itemDaBeauty({ ...BS, arquivada: true }).ativo, false)

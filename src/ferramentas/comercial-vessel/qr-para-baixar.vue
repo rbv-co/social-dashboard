@@ -178,11 +178,16 @@ async function copiar() {
    Gráfico (Beauty, Private Edit, Stylist); sem ele, a cor da ferramenta onde
    o componente mora (`--modulo`). O texto é `--sobre-cor`: os tokens das
    ações já vêm medidos com ele nos dois temas (estilos-globais.css). */
-.qrb .btn.btn-principal,
-.qrb .btn.btn-principal:hover {
+.qrb .btn.btn-principal {
   background: var(--cor-da-acao, var(--modulo));
   border-color: var(--cor-da-acao, var(--modulo));
   color: var(--sobre-cor);
+}
+/* o passar do mouse escurece um pouco a mesma cor (o :disabled fica com a
+   regra global dos botões) */
+.qrb .btn.btn-principal:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--cor-da-acao, var(--modulo)) 82%, var(--text));
+  border-color: color-mix(in srgb, var(--cor-da-acao, var(--modulo)) 82%, var(--text));
 }
 .qrb-acoes {
   display: flex;

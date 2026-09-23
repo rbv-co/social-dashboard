@@ -22,19 +22,23 @@
 import { enderecoDaMesa, dataLegivel, LOJAS } from '../beauty-sessions/contas-das-sessoes.js'
 import { seloDaSessao } from '../beauty-sessions/beauty-sessions-regras.js'
 import { enderecoDoConvite, enderecoDaStylist, dataHoraLegivel } from './enderecos-publicos.js'
-import { seloDoEncontro } from './private-edit-regras.js'
+import { encontroAceitaConvite } from './private-edit-regras.js'
+import { seloDoStatus } from './t11-regras.js'
 
 /** As três ações, na ordem do plano. `cor` é o token de identidade de cada uma. */
 export const ACOES = [
   { chave: 'beauty-session', titulo: 'Beauty Sessions', cor: '--cor-beauty-sessions', icone: 'conjunto',
     porItem: 'Um QR por sessão — o da mesa, o display do salão',
-    legenda: 'Prepare sua visita' },
+    legenda: 'Prepare sua visita',
+    motivoSemQr: 'Esta sessão não tem código válido, então não há QR. Confira na tela Beauty Sessions.' },
   { chave: 'private-edit', titulo: 'Private Edit', cor: '--cor-private-edit', icone: 'encontros',
     porItem: 'Um QR por encontro — o convite geral, impresso na peça do encontro',
-    legenda: 'Confirme sua presença' },
+    legenda: 'Confirme sua presença',
+    motivoSemQr: 'Este encontro não tem chave de convite válida, então não há QR. Confira na tela Private Edit.' },
   { chave: 'stylist-circle', titulo: 'Stylist Circle', cor: '--cor-stylist-circle', icone: 'parceiras',
     porItem: 'Um QR por parceira — o link permanente dela, que rastreia quem ela traz',
-    legenda: '' },
+    legenda: '',
+    motivoSemQr: 'Esta parceira não tem código STY válido, então não há QR. Confira na tela Stylist Circle.' },
 ]
 
 const acao = (chave) => ACOES.find((a) => a.chave === chave)
@@ -80,6 +84,7 @@ export function itemDaBeauty(s = {}) {
     codigo,
     endereco: enderecoDaMesa(codigo),
     legenda: acao('beauty-session').legenda,
+    motivoSemQr: acao('beauty-session').motivoSemQr,
     arquivo: { programa: 'beauty-session', praca: s.praca || codigo.slice(12, 15), data: quando,
       sequencia: sequenciaDoCodigo(codigo) },
     ativo: !s.arquivada && s.ativa !== false,
@@ -91,7 +96,6 @@ export function itemDaBeauty(s = {}) {
 
 export function itemDoPrivateEdit(e = {}) {
   const codigo = String(e.codigo || '').toUpperCase()
-  const selo = seloDoEncontro(e)
   return {
     acao: 'private-edit',
     chave: `pe-${codigo}`,
@@ -102,11 +106,15 @@ export function itemDoPrivateEdit(e = {}) {
     // `enderecoDoConvite`). Sem chave válida, sem QR — e a tela diz o porquê.
     endereco: enderecoDoConvite(e.chave),
     legenda: acao('private-edit').legenda,
+    motivoSemQr: acao('private-edit').motivoSemQr,
     arquivo: { programa: 'private-edit', praca: e.praca || codigo.slice(12, 15), data: diaEmSaoPaulo(e.quando),
       sequencia: sequenciaDoCodigo(codigo) },
-    ativo: !e.arquivada && e.ativa !== false,
-    // O tom segue a régua do Private Edit: aceitando = viva; o resto sai de cena.
-    situacao: { texto: selo.texto, tom: selo.texto === 'Aceitando' ? 'viva' : 'parada' },
+    // ⚠️ ATIVO É "ACEITA CONVITE", NÃO SÓ `ativa`: o status pode virar
+    // cancelado/realizado/não realizado com `ativa` ainda true, e aí o
+    // /pe/<chave> RECUSA — um QR desses na gráfica leva a uma porta fechada.
+    // A regra e o selo são os MESMOS da tela Private Edit, não uma cópia.
+    ativo: encontroAceitaConvite(e),
+    situacao: (({ texto, tom }) => ({ texto, tom }))(seloDoStatus(e)),
     ordem: String(e.quando || ''),
     busca: [codigo, e.anfitria, e.stylist, e.local, dataHoraLegivel(e.quando)],
   }
@@ -123,6 +131,7 @@ export function itemDaStylist(s = {}) {
     codigo,
     endereco: enderecoDaStylist(codigo),
     legenda: acao('stylist-circle').legenda,
+    motivoSemQr: acao('stylist-circle').motivoSemQr,
     arquivo: { programa: 'stylist-circle', codigo },
     ativo: ativa,
     situacao: ativa ? { texto: 'Ativa', tom: 'viva' } : { texto: 'Desativada', tom: 'parada' },
