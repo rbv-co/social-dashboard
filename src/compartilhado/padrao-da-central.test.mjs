@@ -67,6 +67,9 @@ const COR_PERMITIDA = new Set([
   // e as outras três do Comercial Vessel + a do menu (Onda 0, 23/09/2026):
   // Private Appointment, Beauty Sessions, Funil de Carrinho, Comercial Vessel
   '#8a5d35', '#c3a36a', '#7a5c8a', '#b89ac4', '#c2410c', '#f0703a', '#7a3f52', '#c3708a',
+  // Gestão Interna (Onda 2a, 23/09/2026): Patrimônio, a ponta do ícone dele no
+  // menu (a Gestão Interna reusa #0f766e/#2dd4bf, já listados acima)
+  '#954903', '#f78e43',
   // medalha de ranking: ouro/prata/bronze são a coisa, não um estado
   '#b8860b', '#94a3b8', '#b87333', '#d4a017',
   // paleta de dado dos gráficos: cor por métrica, não por estado

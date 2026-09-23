@@ -48,6 +48,11 @@
   background: color-mix(in srgb, var(--modulo) 8%, var(--surface));
 }
 
+/* ── as abas (`.abas`, a classe da Frota/Patrimônio/Acessos): a aba ativa na
+   cor da ferramenta em vez do azul do sistema. Medido sobre o fundo da página:
+   Gestão Interna 5,12 · Patrimônio 6,08 no claro; 10,63 · 8,39 no escuro. ── */
+.id-ferramenta .abas button.on { color: var(--modulo); border-bottom-color: var(--modulo); }
+
 /* ── o título de bloco e o ícone na cor da ferramenta ── */
 .id-ferramenta .id-titulo { color: var(--modulo); font-weight: 600; display: flex; align-items: center; gap: var(--sp-2); }
 .id-ferramenta .id-subtitulo { color: var(--muted); font-weight: 400; display: flex; align-items: center; gap: var(--sp-2); }

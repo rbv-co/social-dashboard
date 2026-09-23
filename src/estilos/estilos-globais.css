@@ -99,6 +99,17 @@
     --cor-beauty-sessions:#7a5c8a;
     --cor-funil-carrinho:#c2410c;
     --cor-comercial-vessel:#7a3f52;
+    /* AS CORES DA GESTÃO INTERNA (Onda 2a, 23/09/2026) — as do ícone de cada
+       uma (`tela-de-menu-gestao-interna.vue`; a da família é o cartão da home).
+       Gestão Interna = o verde-azulado de Colaboradores e Acessos: é a MESMA
+       cor que `.tela-acessos` já usava à parte (#0f766e / #2dd4bf), agora com
+       nome, e o menu e Acessos leem dela. Patrimônio = a ponta escura do
+       degradê do ícone dele (color-mix de --orange 78% com --text), cravada
+       como token: conhaque, não o laranja de "atenção".
+       Medido (título sobre a tinta de 8% da própria cor · `--sobre-cor` sobre
+       o botão cheio): Gestão Interna 4,90 · 5,47; Patrimônio 5,77 · 6,50. */
+    --cor-gestao-interna:#0f766e;
+    --cor-patrimonio:#954903;
     /* A SITUAÇÃO DE UMA COISA (stylist, encontro, convidada) — as mesmas cinco
        cores nas três, para o olho aprender uma vez. Todas saem dos tokens de
        estado, nenhuma é hex: o tema escuro vem de graça.
@@ -167,6 +178,11 @@
     --cor-beauty-sessions:#b89ac4;
     --cor-funil-carrinho:#f0703a;
     --cor-comercial-vessel:#c3708a;
+    /* Gestão Interna e Patrimônio no escuro: a ponta CLARA do mesmo ícone
+       (Patrimônio = --orange 78% com o --text do escuro). Medido: Gestão
+       Interna 8,84 · 10,21; Patrimônio 7,10 · 8,06. */
+    --cor-gestao-interna:#2dd4bf;
+    --cor-patrimonio:#f78e43;
     --sobre-cor:#12100b;
     /* TEXTO ACCENT EM CIMA DE --accent-light. O accent puro sobre o proprio
        tom aguado reprova no tema escuro (4,42). Este par ja vem medido. */
@@ -215,8 +231,10 @@
      foi ESCURECIDO de #0d9488 para #0f766e: o anterior, com texto branco em
      cima, dava 3,74 de contraste — abaixo do minimo de 4,5. As abas e os botoes
      da tela ja reprovavam, e manter seria preservar o defeito junto com a cor. */
-  .tela-acessos{ --modulo:#0f766e; }
-  [data-theme="dark"] .tela-acessos{ --modulo:#2dd4bf; }
+  .tela-acessos{ --modulo:var(--cor-gestao-interna); }
+  /* GESTÃO INTERNA (Onda 2a): o menu e o Patrimônio, com o par escuro no token. */
+  .tela-menu-gestao-interna{ --modulo:var(--cor-gestao-interna); }
+  .tela-patrimonio{ --modulo:var(--cor-patrimonio); }
   /* COMERCIAL VESSEL: cada ferramenta com a cor do seu ícone no menu. O par
      do tema escuro já vem no token (ver --cor-stylist-circle no :root). */
   .tela-sty{ --modulo:var(--cor-stylist-circle); }
