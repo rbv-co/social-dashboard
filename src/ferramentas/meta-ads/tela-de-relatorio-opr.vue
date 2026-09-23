@@ -59,14 +59,33 @@
           </div>
         </section>
 
-        <!-- Grade 2×2 — reforma de 21/09/2026: classificação por objective da
-             Meta (Tráfego/Engajamento/Vendas/Leads), em vez de nome. Mesmo
-             layout de coletor/lib/template-opr.mjs (imagem do WhatsApp) —
-             qualquer ajuste aqui precisa espelhar lá também. -->
+        <!-- Grade 2×2 — reforma de 21/09/2026 (objective da Meta em vez de
+             nome) ajustada em 22/09/2026: Seguidores volta a ser painel
+             próprio, Leads junta com Vendas. Mesmo layout de
+             coletor/lib/template-opr.mjs (imagem do WhatsApp) — qualquer
+             ajuste aqui precisa espelhar lá também. -->
         <section class="sections">
           <article class="panel">
             <div class="panel-head">
               <div class="panel-num">01</div>
+              <div><div class="panel-title">Seguidores</div><div class="panel-sub">Aquisição de audiência</div></div>
+            </div>
+            <div class="metric-grid panel-top">
+              <div class="metric"><div class="metric-label">Investimento</div><div class="metric-value">{{ fmtValor(dados.seguidores.investimento, 'moeda') }}</div></div>
+              <div class="metric"><div class="metric-label">Novos Seguidores</div><div class="metric-value">{{ fmtValor(dados.seguidores.novos) }}</div></div>
+            </div>
+            <div class="metric-grid panel-bottom">
+              <div class="metric"><div class="metric-label">Custo por Seguidor</div><div class="metric-value">{{ fmtValor(dados.seguidores.custoPorSeguidor, 'moeda') }}</div></div>
+            </div>
+            <div class="panel-note">
+              <div class="icon-circle"><svg viewBox="0 0 48 48"><circle cx="18" cy="17" r="5"/><circle cx="31" cy="18" r="4"/><path d="M8 36c0-7 4-11 10-11s10 4 10 11"/><path d="M27 27c1.4-.8 2.8-1 4-1 5 0 8 3.4 8 9"/></svg></div>
+              <div class="note-text">Mais pessoas. Mais relevância.</div>
+            </div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-head">
+              <div class="panel-num">02</div>
               <div><div class="panel-title">Tráfego</div><div class="panel-sub">Visitas geradas pela mídia paga</div></div>
             </div>
             <div class="metric-grid panel-top">
@@ -84,7 +103,7 @@
 
           <article class="panel">
             <div class="panel-head">
-              <div class="panel-num">02</div>
+              <div class="panel-num">03</div>
               <div><div class="panel-title">Engajamento</div><div class="panel-sub">Interações que fortalecem a marca</div></div>
             </div>
             <div class="metric-grid panel-top">
@@ -106,37 +125,22 @@
 
           <article class="panel">
             <div class="panel-head">
-              <div class="panel-num">03</div>
-              <div><div class="panel-title">Vendas</div><div class="panel-sub">Conversão direta em compra</div></div>
-            </div>
-            <div class="metric-grid panel-top">
-              <div class="metric"><div class="metric-label">Investimento</div><div class="metric-value">{{ fmtValor(dados.vendas.investimento, 'moeda') }}</div></div>
-              <div class="metric"><div class="metric-label">Compras</div><div class="metric-value">{{ fmtValor(dados.vendas.compras) }}</div></div>
-            </div>
-            <div class="metric-grid panel-bottom">
-              <div class="metric"><div class="metric-label">Custo por Compra</div><div class="metric-value">{{ fmtValor(dados.vendas.custoPorCompra, 'moeda') }}</div></div>
-            </div>
-            <div class="panel-note">
-              <div class="icon-circle"><svg viewBox="0 0 48 48"><path d="M8 10h5l4 22h20l4-16H15"/><circle cx="20" cy="38" r="2.5"/><circle cx="33" cy="38" r="2.5"/></svg></div>
-              <div class="note-text">Mais oportunidades. Mais receita para o negócio.</div>
-            </div>
-          </article>
-
-          <article class="panel">
-            <div class="panel-head">
               <div class="panel-num">04</div>
-              <div><div class="panel-title">Leads</div><div class="panel-sub">Do interesse ao primeiro contato</div></div>
+              <div><div class="panel-title">Leads & Vendas</div><div class="panel-sub">Do interesse ao faturamento</div></div>
             </div>
             <div class="metric-grid panel-top">
-              <div class="metric"><div class="metric-label">Investimento</div><div class="metric-value">{{ fmtValor(dados.leads.investimento, 'moeda') }}</div></div>
-              <div class="metric"><div class="metric-label">Leads</div><div class="metric-value">{{ fmtValor(dados.leads.resultado) }}</div></div>
+              <div class="metric"><div class="metric-label">Investimento</div><div class="metric-value">{{ fmtValor(dados.leadsEVendas.investimento, 'moeda') }}</div></div>
+              <div class="metric"><div class="metric-label">Leads</div><div class="metric-value">{{ fmtValor(dados.leadsEVendas.leads) }}</div></div>
+              <div class="metric"><div class="metric-label">Leads Quentes</div><div class="metric-value">{{ fmtValor(dados.leadsEVendas.leadsQuentes) }}</div></div>
+              <div class="metric"><div class="metric-label">Vendas</div><div class="metric-value">{{ fmtValor(dados.leadsEVendas.vendas) }}</div></div>
             </div>
             <div class="metric-grid panel-bottom">
-              <div class="metric"><div class="metric-label">Custo por Lead</div><div class="metric-value">{{ fmtValor(dados.leads.custoPorLead, 'moeda') }}</div></div>
+              <div class="metric"><div class="metric-label">Custo por Lead</div><div class="metric-value">{{ fmtValor(dados.leadsEVendas.custoPorLead, 'moeda') }}</div></div>
+              <div class="metric"><div class="metric-label">Custo por Venda</div><div class="metric-value">{{ fmtValor(dados.leadsEVendas.custoPorVenda, 'moeda') }}</div></div>
             </div>
             <div class="panel-note">
               <div class="icon-circle"><svg viewBox="0 0 48 48"><path d="M8 10h32L28 25v11l-8 4V25L8 10Z"/></svg></div>
-              <div class="note-text">Mais conversas. Mais oportunidades de negócio.</div>
+              <div class="note-text">Mais oportunidades. Mais receita para o negócio.</div>
             </div>
           </article>
         </section>
@@ -170,7 +174,7 @@ import BarraDeTopo from '../../compartilhado/barra-de-topo.vue'
 import FaixaDeErro from '../../compartilhado/faixa-de-erro.vue'
 import { sb } from '../../compartilhado/buscar-e-salvar-dados.js'
 import { deltaDeSeguidoresPorHora, seguidoresNoPeriodo } from './relatorio-por-hora.js'
-import { agruparCampanhasDoDia, agruparAnunciosDoDia, calcularDadosOpr } from './relatorio-diario-opr.js'
+import { agruparCampanhasDoDia, calcularDadosOpr } from './relatorio-diario-opr.js'
 
 const router = useRouter()
 function voltar() {
@@ -236,19 +240,16 @@ const periodoLabel = computed(() => (
     : `${formatarDiaBR(diaInicio.value)} — ${formatarDiaBR(diaFim.value)}`
 ))
 
-// Mesmas 4 fatias que a imagem mostra no rodapé (Media Mix) — antes esta
-// tela também mostrava Sales (Link)/Leads (Link) aqui, mas ficavam sem
-// equivalente na imagem; reforma de 21/09/2026 pediu as duas telas iguais,
-// então as duas mostram só as 4 categorias por objective. O dado de
-// salesLink/leadsLink continua calculado em `dados.value` (entra no
-// Investimento Total), só não ganha linha própria no Media Mix.
+// Mesmas 4 fatias que a imagem mostra no rodapé (Media Mix), batendo 1-pra-1
+// com os 4 painéis de cima — ajuste de 22/09/2026: Seguidores virou fatia
+// própria, e Leads/Vendas foram somados numa fatia só (mesmo painel).
 const mixLista = computed(() => {
   if (!dados.value) return []
   return [
+    { label: 'Seguidores', valor: dados.value.mix.seguidores },
     { label: 'Tráfego', valor: dados.value.mix.trafego },
     { label: 'Engajamento', valor: dados.value.mix.engajamento },
-    { label: 'Vendas', valor: dados.value.mix.vendas },
-    { label: 'Leads', valor: dados.value.mix.leads },
+    { label: 'Leads & Vendas', valor: dados.value.mix.leadsEVendas },
   ]
 })
 
@@ -284,33 +285,23 @@ async function carregar() {
   // período é escolhido na tela, não fixo em "ontem").
   const desdeSeguidores = new Date(new Date(`${inicio}T00:00:00-03:00`).getTime() - 48 * 3600 * 1000).toISOString()
 
-  const [campanhas, insights, leituras, ads, adInsights] = await Promise.all([
+  const [campanhas, insights, leituras] = await Promise.all([
     sb('campaigns?select=campaign_id,name,objective'),
     sb(`campaign_insights?select=campaign_id,spend,likes,comments,shares,saves,conversas,cadastros,compras,visitas,post_engagement&account_id=eq.${CONTA_VESSEL}&captured_at=gte.${inicio}&captured_at=lte.${fim}&period_days=eq.0`),
     sb(`followers_leituras?select=followers_count,lido_em,origem&account_id=eq.${CONTA_VESSEL}&lido_em=gte.${desdeSeguidores}&order=lido_em.asc`),
-    // Sales/Leads por link do anúncio (18/09/2026) — mesma fonte que
-    // coletor/gerar-opr-diario.mjs já usa, eixo separado da classificação
-    // por objective (entra só no Investimento Total, ver comentário de
-    // `mixLista` acima).
-    sb(`ads?select=ad_id,destino_link&account_id=eq.${CONTA_VESSEL}`),
-    sb(`ad_insights_hora?select=ad_id,gasto_hora,cliques_hora&account_id=eq.${CONTA_VESSEL}&dia=gte.${inicio}&dia=lte.${fim}`),
   ])
 
   if (campanhas.erro) { erro.value = campanhas.erro; carregando.value = false; return }
   if (insights.erro) { erro.value = insights.erro; carregando.value = false; return }
   if (leituras.erro) { erro.value = leituras.erro; carregando.value = false; return }
-  if (ads.erro) { erro.value = ads.erro; carregando.value = false; return }
-  if (adInsights.erro) { erro.value = adInsights.erro; carregando.value = false; return }
 
   const nomesPorCampanha = Object.fromEntries(campanhas.map((c) => [c.campaign_id, c.name]))
   const objectivesPorCampanha = Object.fromEntries(campanhas.map((c) => [c.campaign_id, c.objective]))
   const campanhasDoPeriodo = agruparCampanhasDoDia(insights, nomesPorCampanha, objectivesPorCampanha)
   const deltas = deltaDeSeguidoresPorHora(leituras)
   const seguidoresDoPeriodo = seguidoresNoPeriodo(deltas, inicio, fim)
-  const linksPorAnuncio = Object.fromEntries(ads.map((a) => [a.ad_id, a.destino_link]))
-  const anunciosDoPeriodo = agruparAnunciosDoDia(adInsights, linksPorAnuncio)
 
-  dados.value = calcularDadosOpr(campanhasDoPeriodo, seguidoresDoPeriodo, anunciosDoPeriodo)
+  dados.value = calcularDadosOpr(campanhasDoPeriodo, seguidoresDoPeriodo)
   carregando.value = false
 }
 
