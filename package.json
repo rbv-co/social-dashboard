@@ -5,9 +5,11 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:demonstracao": "vite build --config vite.demonstracao.config.js",
     "preview": "vite preview",
     "test": "node --test 'src/**/*.test.mjs' 'coletor/**/*.test.mjs' 'supabase/functions/**/*.test.mjs' 'db/**/*.test.mjs'",
-    "test:ci": "node --test 'src/**/*.test.mjs' 'coletor/lib/**/*.test.mjs' 'supabase/functions/**/*.test.mjs' 'db/**/*.test.mjs'"
+    "test:ci": "node --test 'src/**/*.test.mjs' 'coletor/lib/**/*.test.mjs' 'supabase/functions/**/*.test.mjs' 'db/**/*.test.mjs'",
+    "publicar:demonstracao": "npm run build:demonstracao && VERCEL_ORG_ID=team_sakEU555fxSEQexq6Bdz7Rlm VERCEL_PROJECT_ID=prj_IdyuA42osP7AF2y00O6Lt1OkaygY npx vercel deploy dist-demonstracao --prod --yes --global-config ~/.vercel-iamundi"
   },
   "dependencies": {
     "@zxing/library": "^0.23.0",

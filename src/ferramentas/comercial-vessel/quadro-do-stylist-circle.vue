@@ -1,23 +1,24 @@
 <template>
   <section class="cv-bloco">
-    <h2 class="cv-etiqueta">O funil</h2>
+    <h2 class="cv-etiqueta"><icone-do-bloco nome="funil" />O funil</h2>
     <!-- ⚠️ NO CELULAR, UMA ETAPA POR VEZ: as etapas viram botões que quebram
          em linhas — nunca colunas que rolam para o lado (PADRAO, item 6). -->
     <div class="cv-quadro-etapas" role="tablist" aria-label="Etapas do funil">
       <button v-for="k in COLUNAS" :key="k" type="button" role="tab"
-              class="btn cv-quadro-etapa" :class="{ ativa: etapaNoCelular === k }"
+              class="btn cv-quadro-etapa" :class="[`cv-fase-${k}`, { ativa: etapaNoCelular === k }]"
               :aria-selected="etapaNoCelular === k" @click="etapaNoCelular = k">
         {{ rotuloDaColuna(k) }} · {{ colunas[k].length }}</button>
     </div>
     <div class="cv-quadro">
       <div v-for="k in COLUNAS" :key="k" class="cv-quadro-coluna"
-           :class="{ 'no-celular': etapaNoCelular === k, recolhida: k === 'saidas' && !saidasAbertas }">
+           :class="[`cv-fase-${k}`, { 'no-celular': etapaNoCelular === k, recolhida: k === 'saidas' && !saidasAbertas }]">
         <button v-if="k === 'saidas'" type="button" class="cv-quadro-titulo cv-quadro-titulo-botao"
                 @click="saidasAbertas = !saidasAbertas">{{ rotuloDaColuna(k) }} · {{ colunas[k].length }}</button>
         <h3 v-else class="cv-quadro-titulo">{{ rotuloDaColuna(k) }} · {{ colunas[k].length }}</h3>
         <p v-if="!colunas[k].length" class="cv-nota">Ninguém nesta etapa.</p>
         <article v-for="s in colunas[k]" :key="s.codigo" class="cv-quadro-cartao"
-                 :class="{ atrasada: prazoAtrasado(s.proxima_acao_em, hoje) }">
+                 :class="[k === 'saidas' ? `cv-tom-${seloDoEstagio(s.estagio).tom}` : '',
+                          { atrasada: prazoAtrasado(s.proxima_acao_em, hoje) }]">
           <button type="button" class="cv-quadro-nome" @click="$emit('abrir', s.codigo)">{{ s.nome }}</button>
           <p class="cv-sub"><span class="cv-codigo">{{ s.codigo }}</span>
             <span v-if="s.cidade"> · {{ s.cidade }}</span><span v-if="s.loja"> · {{ LOJAS[s.loja] || s.loja }}</span></p>
@@ -52,7 +53,8 @@
  * por vez (celular). Não grava nada: emite `abrir` e `mover`, e a tela chama o
  * banco. As regras moram em `crm-da-stylist-regras.js`, testadas. */
 import { ref, computed } from 'vue'
-import { ESTAGIOS_DA_STYLIST, LOJAS } from './t11-regras.js'
+import { ESTAGIOS_DA_STYLIST, LOJAS, seloDoEstagio } from './t11-regras.js'
+import IconeDoBloco from './icone-do-bloco.vue'
 import { dataLegivel } from './enderecos-publicos.js'
 import {
   FLUXO_PRINCIPAL, colunasDoQuadro, proximaEtapaManual, reabrirPara, prazoAtrasado, ultimoContatoEscrito,

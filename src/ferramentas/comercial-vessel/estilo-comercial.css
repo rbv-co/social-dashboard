@@ -397,3 +397,128 @@
   .cv-modal-fundo { padding: 12px; }
   .cv-modal { max-width: none; max-height: calc(100dvh - 24px); }
 }
+
+/* ═══ A COR DE CADA BLOCO — pedido do dono em 23/09/2026 ═══════════════════
+ * "Ficou muito top, mas o visual ficou com pouca cor, isso dificulta saber o
+ * que é cada card, cada bloco."
+ *
+ * ⚠️ SÓ LIGA DENTRO DE `.cv-identidade` (a raiz do Stylist Circle e do Private
+ * Edit). Esta folha também é importada por Atendimentos e Beauty Sessions, e
+ * elas NÃO mudam com esta entrega.
+ *
+ * AS TRÊS REGRAS QUE FAZEM A COR AJUDAR SEM VIRAR CARNAVAL:
+ *   1. A cor mora no FILETE, no ÍCONE e no TÍTULO PEQUENO. O texto de ler
+ *      continua `--text` — a cor é o sinal, o texto é para ler (PADRAO, item 2).
+ *   2. Fundo tingido só em formulário (8% da cor da ferramenta) e no "Como
+ *      ler" (8% de azul de informação). O resto continua `--surface`.
+ *   3. A cor de SITUAÇÃO (stylist, encontro, convidada) é a mesma nas três:
+ *      tokens `--situacao-*` em estilos-globais.css. */
+
+/* ── a ferramenta: título de bloco e ícone na cor dela ── */
+.cv-identidade .cv-etiqueta { color: var(--modulo); font-weight: 600; display: flex; align-items: center; gap: var(--sp-2); }
+/* RODADA 2, depois de olhar as fotos: a cor fica no TÍTULO DO BLOCO. O rótulo
+   de campo da barra de lista e os subtítulos DENTRO de um cartão (o convite,
+   a situação, os encontros dela) voltam ao cinza — em cada cartão, a cor já é
+   o filete da situação; título colorido lá dentro virava carnaval. */
+.cv-identidade .cv-barra .cv-etiqueta,
+.cv-identidade .cv-cartao .cv-etiqueta-interna { color: var(--muted); font-weight: 400; }
+.cv-identidade .cv-cartao .cv-caixa-form .cv-etiqueta-interna { color: var(--modulo); font-weight: 600; }
+.cv-icone {
+  width: 16px; height: 16px; flex: 0 0 16px;
+  fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+}
+
+/* o botão principal na cor da ferramenta (como `.tela-acessos` faz com as
+   abas dela); o texto em cima é `--sobre-cor`, medido nos dois temas */
+.cv-identidade .btn.btn-principal,
+.cv-identidade .btn.btn-principal:hover { background: var(--modulo); border-color: var(--modulo); color: var(--sobre-cor); }
+.cv-identidade .cv-escolha .btn.ativa {
+  background: color-mix(in srgb, var(--modulo) 12%, var(--surface));
+  border-color: var(--modulo); color: var(--text); font-weight: 600;
+}
+
+/* ── formulário: fundo tingido da ferramenta ── */
+.cv-identidade .cv-bloco-form {
+  background: color-mix(in srgb, var(--modulo) 8%, var(--surface));
+  border-color: color-mix(in srgb, var(--modulo) 38%, var(--surface));
+}
+.cv-identidade .cv-bloco-form .cv-campo input,
+.cv-identidade .cv-bloco-form .cv-campo select { background: var(--surface); }
+/* formulário DENTRO de um cartão (corrigir, situação, incluir convidada):
+   a mesma tinta, numa caixa, para não parecer mais um pedaço do cartão */
+.cv-identidade .cv-caixa-form {
+  background: color-mix(in srgb, var(--modulo) 8%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--modulo) 38%, var(--surface));
+  border-radius: var(--radius-md);
+  padding: var(--sp-3);
+  margin-top: var(--sp-3);
+}
+.cv-identidade .cv-caixa-form > .cv-etiqueta-interna:first-child { margin-top: 0; }
+.cv-identidade .cv-caixa-form .cv-campo input,
+.cv-identidade .cv-caixa-form .cv-campo select { background: var(--surface); }
+
+/* ── "Como ler os números": azul de informação, para não parecer dado ── */
+.cv-identidade .cv-bloco-leitura {
+  background: color-mix(in srgb, var(--informacao) 8%, var(--surface));
+  border-color: color-mix(in srgb, var(--informacao) 38%, var(--surface));
+}
+.cv-identidade .cv-bloco-leitura .cv-etiqueta { color: var(--accent-forte); }
+.cv-identidade .cv-bloco-leitura .cv-nota { color: var(--text); }
+
+/* ── o placar: três grupos, cada um com a sua cor ── */
+.cv-grupo { --tom: var(--modulo); border-left: 3px solid var(--tom); padding-left: var(--sp-3); margin-top: var(--sp-5); }
+.cv-grupo > .cv-etiqueta-interna { margin-top: 0; }
+.cv-identidade .cv-grupo > .cv-etiqueta { color: var(--tom); }
+.cv-grupo-parceiras { --tom: var(--cor-stylist-circle); }
+.cv-grupo-encontros { --tom: var(--cor-private-edit); }
+.cv-grupo-venda { --tom: var(--green); }
+
+/* ── a situação: filete do cartão e selo ── */
+.cv-tom-andamento  { --tom: var(--situacao-andamento); }
+.cv-tom-viva       { --tom: var(--situacao-viva); }
+.cv-tom-confirmada { --tom: var(--situacao-confirmada); }
+.cv-tom-queda      { --tom: var(--situacao-queda); }
+.cv-tom-faltou     { --tom: var(--situacao-faltou); }
+.cv-tom-parada     { --tom: var(--situacao-parada); }
+.cv-identidade .cv-cartao { border-left: 4px solid var(--tom, var(--border)); }
+/* a proporção do `.selo` global (12% de fundo, 75/25 no texto) — já medida */
+.cv-identidade .cv-selo[class*="cv-tom-"] {
+  background: color-mix(in srgb, var(--tom) 12%, var(--surface));
+  border-color: color-mix(in srgb, var(--tom) 45%, var(--surface));
+  color: color-mix(in srgb, var(--tom) 75%, var(--text));
+  font-weight: 600;
+}
+/* cinza não tem cor para misturar: o neutro do tema, como `.selo-neutro` */
+.cv-identidade .cv-selo.cv-tom-parada { background: var(--surface2); border-color: var(--border); color: var(--muted); }
+
+/* ── o quadro por etapas: cor por fase, com degraus dentro de cada fase ── */
+.cv-fase-prospectado      { --fase: color-mix(in srgb, var(--fase-antes) 45%, var(--surface)); }
+.cv-fase-contatado        { --fase: color-mix(in srgb, var(--fase-antes) 62%, var(--surface)); }
+.cv-fase-interessado      { --fase: color-mix(in srgb, var(--fase-antes) 80%, var(--surface)); }
+.cv-fase-em_negociacao    { --fase: var(--fase-antes); }
+.cv-fase-ativado          { --fase: color-mix(in srgb, var(--fase-com-encontro) 65%, var(--surface)); }
+.cv-fase-evento_realizado { --fase: color-mix(in srgb, var(--fase-com-encontro) 82%, var(--surface)); }
+.cv-fase-recorrente       { --fase: var(--fase-com-encontro); }
+.cv-fase-saidas           { --fase: color-mix(in srgb, var(--fase-saida) 60%, var(--situacao-parada)); }
+.cv-identidade .cv-quadro-titulo {
+  color: var(--text); font-weight: 600;
+  border-top: 3px solid var(--fase, var(--border));
+  background: color-mix(in srgb, var(--fase, var(--border)) 10%, var(--surface));
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  padding: var(--sp-2);
+}
+.cv-identidade .cv-quadro-titulo-botao { width: 100%; }
+.cv-identidade .cv-quadro-cartao { border-left: 3px solid var(--fase, var(--border)); }
+/* nas saídas o filete é o da situação de cada uma (laranja ou cinza) */
+.cv-identidade .cv-quadro-cartao[class*="cv-tom-"] { border-left-color: var(--tom); }
+.cv-identidade .cv-quadro-cartao.atrasada { border-top-color: color-mix(in srgb, var(--orange) 38%, var(--surface));
+  border-right-color: color-mix(in srgb, var(--orange) 38%, var(--surface));
+  border-bottom-color: color-mix(in srgb, var(--orange) 38%, var(--surface)); }
+/* celular: cada botão de etapa leva a bolinha da fase; a ativa, a tinta dela */
+.cv-identidade .cv-quadro-etapa::before {
+  content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--fase, var(--border)); flex: 0 0 8px;
+}
+.cv-identidade .cv-quadro-etapa.ativa {
+  background: color-mix(in srgb, var(--fase, var(--accent)) 14%, var(--surface));
+  border-color: var(--fase, var(--accent)); color: var(--text); font-weight: 600;
+}

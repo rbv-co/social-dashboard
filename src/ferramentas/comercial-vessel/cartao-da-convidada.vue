@@ -20,10 +20,22 @@
         <p class="cv-nota cv-nota-primeira cv-mensagem">{{ mensagem || '…' }}</p>
 
         <div class="cv-acoes">
-          <a v-if="quem === 'equipe' && whatsDela && mensagem && !erro" class="btn btn-principal" :href="whatsDela" target="_blank"
-             rel="noopener noreferrer" @click="marcarEnviado">Enviar no WhatsApp dela</a>
-          <a v-if="quem === 'stylist' && whatsDaStylist && mensagem && !erro" class="btn btn-principal" :href="whatsDaStylist" target="_blank"
-             rel="noopener noreferrer" @click="marcarEnviado">Mandar para a stylist</a>
+          <template v-if="!EM_DEMONSTRACAO">
+            <a v-if="quem === 'equipe' && whatsDela && mensagem && !erro" class="btn btn-principal" :href="whatsDela" target="_blank"
+               rel="noopener noreferrer" @click="marcarEnviado">Enviar no WhatsApp dela</a>
+            <a v-if="quem === 'stylist' && whatsDaStylist && mensagem && !erro" class="btn btn-principal" :href="whatsDaStylist" target="_blank"
+               rel="noopener noreferrer" @click="marcarEnviado">Mandar para a stylist</a>
+          </template>
+          <!-- ⚠️ SÓ NA DEMONSTRAÇÃO (build:demonstracao): o WhatsApp não abre e
+               nada é marcado como enviado — nada saiu. A mensagem continua
+               visível e copiável logo acima. Fora da demonstração este bloco
+               nem existe. -->
+          <template v-else>
+            <button v-if="quem === 'equipe' && whatsDela && mensagem && !erro" type="button" class="btn"
+                    @click="avisoDaDemonstracao = AVISO_DA_DEMONSTRACAO">Enviar no WhatsApp dela</button>
+            <button v-if="quem === 'stylist' && whatsDaStylist && mensagem && !erro" type="button" class="btn"
+                    @click="avisoDaDemonstracao = AVISO_DA_DEMONSTRACAO">Mandar para a stylist</button>
+          </template>
           <button v-if="podeCompartilhar" type="button" class="btn" :disabled="!arquivo" @click="compartilhar">Compartilhar cartão</button>
           <!-- ⚠️ SÓ APARECE COM O ARQUIVO PRONTO: sem isso, o clique marcava
                "enviado" com um href vazio ou inexistente (nada baixava). -->
@@ -35,6 +47,7 @@
           Esta stylist não tem WhatsApp válido na Central — copie a mensagem e mande você.</p>
         <p v-else-if="quem === 'stylist'" class="cv-nota">A stylist recebe a mensagem pronta; o cartão, baixe e mande junto.</p>
         <p v-if="avisoDoEnvio" class="cv-nota cv-nota-erro">{{ avisoDoEnvio }}</p>
+        <p v-if="avisoDaDemonstracao" class="cv-nota cv-nota-aviso" role="status">{{ avisoDaDemonstracao }}</p>
       </div>
     </div>
   </div>
@@ -57,6 +70,12 @@ const props = defineProps({
   chamar: { type: Function, required: true },
 })
 const emit = defineEmits(['fechar', 'enviado'])
+
+// ⚠️ A DEMONSTRAÇÃO (src/demonstracao/) liga isto no build dela. Em produção a
+// variável não existe e a comparação dá `false`: os links de WhatsApp de sempre.
+const EM_DEMONSTRACAO = import.meta.env.VITE_DEMONSTRACAO === '1'
+const AVISO_DA_DEMONSTRACAO = 'Na demonstração o WhatsApp não é aberto. A mensagem está aqui em cima — dá para copiar.'
+const avisoDaDemonstracao = ref('')
 
 const CHAVE_DA_ESCOLHA = `pe-quem-envia:${props.encontro.codigo}`
 const lerEscolha = () => { try { return localStorage.getItem(CHAVE_DA_ESCOLHA) || 'equipe' } catch { return 'equipe' } }

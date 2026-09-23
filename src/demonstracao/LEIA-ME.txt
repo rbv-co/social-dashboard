@@ -1,0 +1,19 @@
+MODO DEMONSTRAÇÃO DO COMERCIAL VESSEL
+=====================================
+
+O que é: as telas de verdade do Stylist Circle e do Private Edit rodando com um
+"banco de mentira" dentro do navegador, num celular desenhado com o roteiro de
+passos ao lado. Nada sai para o banco de verdade; recarregar volta ao começo.
+
+Endereço: o projeto "vessel-demonstracao" da Vercel (separado da Central).
+
+Publicar:   npm run publicar:demonstracao
+  - monta a pasta dist-demonstracao e envia ELA para a Vercel;
+  - ⚠️ NÃO ligar esse projeto ao repositório pelo Git: a Vercel leria o
+    vercel.json da Central (que bloqueia o celular desenhado e manda tudo para
+    /index.html). O vercel.json certo é o de demonstracao/, que vai DENTRO da
+    pasta montada;
+  - o login da linha de comando fica em ~/.vercel-iamundi (conta brenoov), sem
+    trocar a conta global: npx vercel login --global-config ~/.vercel-iamundi
+
+A Central de verdade não carrega nada desta pasta: isolamento.test.mjs confere.

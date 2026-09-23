@@ -48,10 +48,32 @@ export function estagiosDeEscolher(ativadaEm) {
   return Object.keys(ESTAGIOS_DA_STYLIST).filter((k) => !ESTAGIOS_AUTOMATICOS.includes(k))
 }
 
+/* ── A COR DA SITUAÇÃO (pedido do dono, 23/09/2026) ────────────────────────
+ * Cada selo devolve também um `tom`, que a tela vira a classe `cv-tom-<tom>`
+ * (filete do cartão + cor do selo). Os tons são os mesmos nas três coisas —
+ * stylist, encontro, convidada — e cada um é um token `--situacao-<tom>` em
+ * estilos-globais.css:
+ *   andamento (azul) · viva (verde) · confirmada (verde-azulado) ·
+ *   queda (laranja) · faltou (vermelho suave) · parada (cinza).
+ * ⚠️ O TOM NÃO SUBSTITUI O TEXTO: a cor ajuda a achar, a palavra é que diz. */
+const TOM_DO_ESTAGIO = {
+  prospectado: 'andamento', contatado: 'andamento', interessado: 'andamento', em_negociacao: 'andamento',
+  ativado: 'viva', evento_realizado: 'viva', recorrente: 'viva',
+  sem_retorno: 'queda', nao_interessado: 'queda',
+  pausado: 'parada', inativo: 'parada',
+}
+
 export function seloDoEstagio(estagio) {
   const texto = ESTAGIOS_DA_STYLIST[estagio] || estagio || 'Sem estágio'
-  if (['ativado', 'evento_realizado', 'recorrente'].includes(estagio)) return { texto, classe: 'cv-selo-viva' }
-  return { texto, classe: 'cv-selo-fim' }
+  const tom = TOM_DO_ESTAGIO[estagio] || 'parada'
+  if (['ativado', 'evento_realizado', 'recorrente'].includes(estagio)) return { texto, classe: 'cv-selo-viva', tom }
+  return { texto, classe: 'cv-selo-fim', tom }
+}
+
+/** O tom do cartão da stylist: desativada é cinza, seja qual for o estágio. */
+export function tomDaStylist(s) {
+  if (s?.ativa === false) return 'parada'
+  return seloDoEstagio(s?.estagio).tom
 }
 
 export const ORIGENS_DE_CONTATO = {
@@ -85,11 +107,11 @@ export function precisaDeMotivo(status) {
  * dizer "Realizado" para uma duplicata arquivada contaria uma história falsa.
  */
 export function seloDoStatus(e) {
-  if (e?.arquivada) return { texto: 'Arquivada', classe: 'cv-selo-fim' }
+  if (e?.arquivada) return { texto: 'Arquivada', classe: 'cv-selo-fim', tom: 'parada' }
   const status = e?.status || 'agendado'
   const texto = STATUS_DO_ENCONTRO[status] || status
-  if (status === 'cancelado' || status === 'nao_realizado') return { texto, classe: 'cv-selo-fim' }
-  return { texto, classe: 'cv-selo-viva' }
+  if (status === 'cancelado' || status === 'nao_realizado') return { texto, classe: 'cv-selo-fim', tom: 'queda' }
+  return { texto, classe: 'cv-selo-viva', tom: status === 'realizado' ? 'viva' : 'andamento' }
 }
 
 export function mensagemDeSituacaoDoEncontro(situacao) {
@@ -117,10 +139,16 @@ export const SITUACOES_DO_CONVITE = {
   nao_compareceu: 'Confirmou e não compareceu',
 }
 
+const TOM_DO_CONVITE = {
+  convidada: 'parada', convite_enviado: 'andamento', confirmada: 'confirmada', presente: 'viva',
+  nao_respondeu: 'parada', recusou: 'queda', nao_compareceu: 'faltou',
+}
+
 export function seloDoConvite(situacao) {
   const texto = SITUACOES_DO_CONVITE[situacao] || situacao || '—'
-  if (situacao === 'presente' || situacao === 'confirmada') return { texto, classe: 'cv-selo-viva' }
-  return { texto, classe: 'cv-selo-fim' }
+  const tom = TOM_DO_CONVITE[situacao] || 'parada'
+  if (situacao === 'presente' || situacao === 'confirmada') return { texto, classe: 'cv-selo-viva', tom }
+  return { texto, classe: 'cv-selo-fim', tom }
 }
 
 /**

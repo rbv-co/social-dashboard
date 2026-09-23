@@ -1,4 +1,4 @@
-import { createRouter, createWebHistory } from 'vue-router'
+import { createRouter, createWebHistory, createWebHashHistory } from 'vue-router'
 import { estado, hasPermission } from './compartilhado/controle-de-login-e-usuario.js'
 import { podeEntrar } from './guarda-de-rotas.js'
 
@@ -53,8 +53,15 @@ const rotas = [
   { path: '/:pathMatch(.*)*', name: 'nao-encontrada', redirect: { name: 'inicio' } },
 ]
 
+// ⚠️ A DEMONSTRAÇÃO (src/demonstracao/, build próprio) guarda a tela depois do
+// "#": ela mora numa página só (`demonstracao/central.html`, dentro de um
+// iframe), e com o endereço comum um F5 em /stylist-circle pediria ao servidor
+// uma página que a demonstração não tem. Em produção `VITE_DEMONSTRACAO` não
+// existe e BASE_URL é '/': o mesmo `createWebHistory()` de sempre.
 export const roteador = createRouter({
-  history: createWebHistory(),
+  history: import.meta.env.VITE_DEMONSTRACAO === '1'
+    ? createWebHashHistory()
+    : createWebHistory(import.meta.env.BASE_URL),
   routes: rotas,
 })
 

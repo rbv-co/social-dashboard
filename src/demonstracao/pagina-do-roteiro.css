@@ -1,0 +1,270 @@
+/* A PÁGINA DO ROTEIRO — o celular desenhado e os passos ao lado.
+ *
+ * ⚠️ OS TOKENS SÃO OS DA CENTRAL (`estilos-globais.css`, importado junto), e o
+ * tema segue o do aparelho: `pagina-do-roteiro.js` põe `data-theme` a partir
+ * de `prefers-color-scheme`. Nada de cor cravada aqui.
+ *
+ * Duas formas:
+ *   · computador (> 900px): o celular de 390×844 no centro-esquerda, encolhido
+ *     para caber na altura da janela (`--escala-do-celular`), e o roteiro à
+ *     direita;
+ *   · celular (≤ 900px): a Central ocupa a tela, e o roteiro vira uma faixa
+ *     recolhível em cima ("Roteiro · 3 de 11 ✓"). */
+
+.demo {
+  min-height: 100dvh;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--fonte-principal);
+}
+
+.demo-cabeca {
+  padding: var(--sp-4) var(--sp-6);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+.demo-etiqueta {
+  font-size: var(--texto-etiqueta);
+  font-weight: 600;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.demo-titulo {
+  margin-top: var(--sp-1);
+  font-size: var(--texto-titulo);
+  font-weight: 600;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.demo-sub {
+  margin-top: var(--sp-1);
+  font-size: var(--texto-corpo);
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.demo-palco {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 460px);
+  gap: var(--sp-6);
+  padding: var(--sp-5) var(--sp-6);
+  align-items: start;
+}
+
+/* ── o celular desenhado ──────────────────────────────────────────────────── */
+/* O LUGAR tem o tamanho JÁ ENCOLHIDO: `transform: scale` não mexe no espaço
+   que a caixa ocupa, e sem isto o celular pequeno deixaria um buraco do
+   tamanho do grande. */
+.demo-celular-lugar {
+  justify-self: center;
+  width: calc(414px * var(--escala-do-celular, 1));
+  height: calc(868px * var(--escala-do-celular, 1));
+}
+.demo-celular {
+  width: 414px;
+  height: 868px;
+  padding: var(--sp-3);
+  border-radius: 56px;
+  background: color-mix(in srgb, var(--text) 86%, var(--bg));
+  box-shadow: var(--shadow-lg);
+  transform: scale(var(--escala-do-celular, 1));
+  transform-origin: top left;
+}
+.demo-tela {
+  width: 390px;
+  height: 844px;
+  border-radius: 44px;
+  overflow: hidden;
+  background: var(--bg);
+}
+.demo-iframe {
+  display: block;
+  width: 390px;
+  height: 844px;
+  border: 0;
+}
+
+/* ── o roteiro ────────────────────────────────────────────────────────────── */
+.demo-roteiro {
+  position: sticky;
+  top: var(--sp-5);
+  max-height: calc(100dvh - 2 * var(--sp-5));
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--card-radius);
+}
+.demo-roteiro-alternar { display: none; }
+.demo-roteiro-corpo { padding: var(--card-pad); }
+.demo-roteiro-cabeca {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-2);
+}
+.demo-resumo {
+  font-size: var(--texto-corpo);
+  font-weight: 600;
+  color: var(--text);
+}
+.demo-nota {
+  margin-top: var(--sp-3);
+  font-size: var(--texto-corpo);
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.demo-passos {
+  list-style: none;
+  margin-top: var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.demo-passo {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  gap: var(--sp-3);
+  align-items: start;
+  padding: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.demo-passo.agora {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--surface));
+  background: color-mix(in srgb, var(--accent) 6%, var(--surface));
+}
+.demo-passo.feito { background: color-mix(in srgb, var(--green) 7%, var(--surface)); }
+.demo-passo-marca {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-size: var(--texto-corpo);
+  font-weight: 600;
+  color: var(--muted);
+}
+.demo-passo.feito .demo-passo-marca {
+  border-color: color-mix(in srgb, var(--green) 45%, var(--surface));
+  color: color-mix(in srgb, var(--green) 75%, var(--text));
+}
+.demo-passo-titulo {
+  font-size: var(--texto-corpo);
+  font-weight: 600;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.demo-passo-titulo .selo { margin-right: var(--sp-1); vertical-align: 1px; }
+.demo-passo-onde {
+  margin-top: var(--sp-1);
+  font-size: var(--texto-corpo);
+  color: var(--muted);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.demo-passo-estado {
+  font-size: var(--texto-etiqueta);
+  font-weight: 600;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding-top: var(--sp-1);
+}
+.demo-passo.feito .demo-passo-estado { color: color-mix(in srgb, var(--green) 75%, var(--text)); }
+.demo-passo.agora .demo-passo-estado { color: var(--accent-forte); }
+
+.demo-acoes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-top: var(--sp-4);
+}
+.demo-acoes .btn { text-decoration: none; }
+
+/* ── celular de verdade: a Central na tela inteira, o roteiro recolhido ───── */
+@media (max-width: 900px) {
+  .demo {
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .demo-cabeca { display: none; }
+  .demo-palco {
+    position: relative;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    padding: 0;
+    gap: 0;
+    min-height: 0;
+  }
+  /* A faixa do roteiro vai para CIMA, antes do celular. */
+  .demo-roteiro {
+    order: -1;
+    position: relative;
+    top: auto;
+    max-height: none;
+    overflow: visible;
+    border: 0;
+    border-bottom: 1px solid var(--border);
+    border-radius: 0;
+    z-index: 5;
+  }
+  .demo-roteiro-alternar {
+    display: flex;
+    width: 100%;
+    min-height: 44px;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-2);
+    padding: 0 var(--sp-4);
+    border: 0;
+    background: var(--surface);
+    color: var(--text);
+    font-family: var(--fonte-principal);
+    font-size: var(--texto-corpo);
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .demo-seta { transition: transform .2s; flex-shrink: 0; }
+  .demo-roteiro.aberto .demo-seta { transform: rotate(180deg); }
+  /* Aberto, o roteiro desce POR CIMA da Central e rola por dentro. */
+  .demo-roteiro-corpo {
+    display: none;
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 100%;
+    max-height: min(75dvh, calc(100dvh - 60px));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    box-shadow: var(--shadow-md);
+  }
+  .demo-roteiro.aberto .demo-roteiro-corpo { display: block; }
+  .demo-celular-lugar {
+    flex: 1;
+    width: 100%;
+    height: auto;
+    min-height: 0;
+  }
+  .demo-celular,
+  .demo-tela,
+  .demo-iframe {
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    border-radius: 0;
+    box-shadow: none;
+    transform: none;
+    background: var(--bg);
+  }
+}
