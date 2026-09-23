@@ -590,14 +590,16 @@ try {
   if (!rastSem.some((s) => s.codigo === STY2))
     throw new Error('o rastreio perdeu quem esta ativa')
 
-  // ⚠️ E A LISTA DE ESCOLHER CONTINUA DEVOLVENDO EXATAMENTE TRES CHAVES. Ha
+  // ⚠️ E A LISTA DE ESCOLHER CONTINUA DEVOLVENDO EXATAMENTE QUATRO CHAVES. Ha
   // prova COMMITADA que quebra se a resposta crescer:
   // `coletor/aplicar-vessel-private-edit-pela-tela.mjs` compara
-  // `Object.keys(lista[0]).sort().join(',')` com 'cidade,codigo,nome'. Esta
-  // linha e a MESMA asercao, rodando aqui antes do commit para que o estrago
-  // nao chegue a ser publicado.
+  // `Object.keys(lista[0]).sort().join(',')` com 'cidade,codigo,nome,whatsapp'.
+  // Esta linha e a MESMA asercao, rodando aqui antes do commit para que o
+  // estrago nao chegue a ser publicado.
+  // ⚠️ GANHOU `whatsapp` NA T11 (2026-09-22-vessel-t11-bases-do-stylist-circle.sql):
+  // de propósito, para o cartão da convidada.
   const chaves = Object.keys(listaSem[0]).sort().join(',')
-  if (chaves !== 'cidade,codigo,nome')
+  if (chaves !== 'cidade,codigo,nome,whatsapp')
     throw new Error('a lista de stylists devolve alem do necessario: ' + chaves)
 
   // ⚠️ E O RASTREIO CONTINUA CONTANDO O QUE CONTAVA. As chaves de cada linha
@@ -730,7 +732,7 @@ try {
 
     console.log(`   diff verbatim: vessel_rastreio_dos_stylists ${diffs.vessel_rastreio_dos_stylists}`)
     console.log(`   diff verbatim: vessel_stylists_para_escolher ${diffs.vessel_stylists_para_escolher}`)
-    console.log(`   escolher devolve exatamente: cidade,codigo,nome`)
+    console.log(`   escolher devolve exatamente: cidade,codigo,nome,whatsapp`)
     console.log(`   intactos: ${agora.pedidos} pedidos, ${agora.itens} itens, ` +
                 `${agora.beauty_sessions.split('\n').length} Beauty Sessions, ` +
                 `${agora.stylists} stylists`)

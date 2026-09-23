@@ -165,8 +165,11 @@ try {
   // 6. a lista de stylists so devolve o necessario para preencher o campo
   const lista = (await uma(`select public.vessel_stylists_para_escolher() as r`)).r
   if (!Array.isArray(lista) || !lista.length) throw new Error('a lista de stylists veio vazia')
+  // ⚠️ GANHOU `whatsapp` NA T11 (2026-09-22-vessel-t11-bases-do-stylist-circle.sql):
+  // o cartão da convidada usa para "Mandar para a stylist". A trava de "só
+  // estas chaves" continua — só a lista esperada cresceu de propósito.
   const chaves = Object.keys(lista[0]).sort().join(',')
-  if (chaves !== 'cidade,codigo,nome')
+  if (chaves !== 'cidade,codigo,nome,whatsapp')
     throw new Error('a lista de stylists devolve alem do necessario: ' + chaves)
 
   // 7. encerrar e reabrir

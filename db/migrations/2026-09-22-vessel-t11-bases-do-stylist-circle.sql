@@ -1511,6 +1511,13 @@ begin
   end if;
   -- T11: `whatsapp` para o "Mandar para a stylist" do cartão da convidada. É o
   -- mesmo dado que o rastreio já devolve, atrás do mesmo portão.
+  -- ⚠️ A migration de 19/09 (`2026-09-19-vessel-stylist-mexer.sql`) tinha um
+  -- aviso dizendo que esta função "NAO PODE GANHAR UMA QUARTA" chave — a de
+  -- lá fica como está (é histórico, não se edita). A T11 GANHA a quarta
+  -- chave DE PROPÓSITO, e as duas provas que conferiam a lista fechada de três
+  -- chaves foram atualizadas para quatro:
+  -- `coletor/aplicar-vessel-private-edit-pela-tela.mjs` e
+  -- `coletor/aplicar-vessel-stylist-mexer.mjs` (a asserção e a mensagem).
   select coalesce(json_agg(json_build_object('codigo', s.codigo, 'nome', s.nome,
                                              'cidade', s.cidade, 'whatsapp', s.whatsapp)
                            order by s.codigo), '[]'::json)
