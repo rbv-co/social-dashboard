@@ -95,7 +95,9 @@
         </div>
         <!-- Meta Ads: Menu + Análise de Campanhas já migrados. -->
         <div class="home-card" id="home-card-meta" v-show="podeMeta" @click="ir('meta-ads')" @mouseenter="definirTemaFundo('meta')" @mouseleave="definirTemaFundo('default')">
-          <div class="home-card-icon" style="background:linear-gradient(135deg,#1877F2 0%,#0062E0 100%)">
+          <!-- O ícone do Meta Ads no azul da Gestão de Tráfego (Onda 4a): do token
+               claro (#0067c2) ao #1877F2 da marca. Branco sobre a ponta clara: 4,23. -->
+          <div class="home-card-icon" style="background:linear-gradient(135deg,#0067c2 0%,#1877F2 100%)">
             <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
           </div>
           <div class="home-card-text">

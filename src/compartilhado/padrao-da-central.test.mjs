@@ -86,6 +86,10 @@ const COR_PERMITIDA = new Set([
   // Administração (Onda 3, 23/09/2026): o azul-marinho, claro e escuro, e a
   // ponta clara do degradê do ícone dela no Início
   '#1e3a5f', '#78a0cc', '#2f5b8c',
+  // Gestão de Tráfego — Meta Ads (Onda 4a, 23/09/2026): o azul do Meta, claro
+  // e escuro (medidos). O degradê do ícone dela no Início e no menu do Meta Ads
+  // vai do token claro ao #1877f2 da marca, que já está na lista acima
+  '#0067c2', '#56b0ff',
   // o papel da prévia do QR (claro nos dois temas: é como sai impresso)
   '#e7e2d8',
   // a tinta do QR impresso (src/compartilhado/qr.js): cor de marca do
