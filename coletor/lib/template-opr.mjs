@@ -10,6 +10,13 @@
 //
 // `dados.mix` chega com uma fatia por categoria (4, batendo com os 4
 // painéis); nunca `null` inventado — mesma regra de sempre.
+//
+// 23/09/2026 — 3 KPIs de termômetro de mídia (CTR/CPM/Frequência), pedido
+// do dono: hoje é fase de investimento, sem ROAS/receita de propósito
+// (assumido, não falta); esses três são o que sobra pra saber se a mídia
+// tá saudável sem depender de venda. UM número só pro dia inteiro, não por
+// categoria — o OPR é feito pra ser rápido, granularidade fica pro
+// Gerenciador de Anúncios direto.
 export const DIM_OPR = { width: 1600, height: 900 };
 
 // Abrevia acima de mil/milhão (arredondado, 1 decimal) — pedido do dono
@@ -39,6 +46,7 @@ const ICONES = {
   bars: '<svg viewBox="0 0 48 48"><path d="M12 37V27M24 37V18M36 37V10"/></svg>',
   compass: '<svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="17"/><path d="M30 18l-4 10-10 4 4-10 10-4Z"/></svg>',
   cart: '<svg viewBox="0 0 48 48"><path d="M8 10h5l4 22h20l4-16H15"/><circle cx="20" cy="38" r="2.5"/><circle cx="33" cy="38" r="2.5"/></svg>',
+  eye: '<svg viewBox="0 0 48 48"><path d="M4 24s7-14 20-14 20 14 20 14-7 14-20 14S4 24 4 24Z"/><circle cx="24" cy="24" r="6"/></svg>',
 };
 
 function kpiCard(icone, label, valor, caption) {
@@ -171,6 +179,9 @@ export function montarHtmlOpr(dados, meta) {
       ${kpiCard('users', 'Novos Seguidores', fmtValor(header.novosSeguidores), '+ audiência qualificada')}
       ${kpiCard('heart', 'Engajamentos', fmtValor(header.engajamentos), 'Interações totais')}
       ${kpiCard('funnel', 'Leads Gerados', fmtValor(header.leadsGerados), 'Oportunidades de negócio')}
+      ${kpiCard('bars', 'CTR', fmtValor(header.ctr, 'percentual'), 'Cliques ÷ impressões')}
+      ${kpiCard('cart', 'CPM', fmtValor(header.cpm, 'moeda'), 'Custo por mil impressões')}
+      ${kpiCard('eye', 'Frequência', fmtValor(header.frequencia), 'Vezes que a mesma pessoa viu')}
     </section>
 
     <section class="sections">

@@ -52,6 +52,7 @@ test('agruparCampanhasDoDia: classifica pelo objective + nome (seguidores) e con
     {
       campaign_id: 'c1', spend: '100.50', likes: '10', comments: '2', shares: '1', saves: '3',
       conversas: '4', cadastros: '1', compras: '0', visitas: '9', post_engagement: '20',
+      impressions: '500', clicks: '15', reach: '300',
     },
     { campaign_id: 'c2', spend: '50', likes: null, comments: null, shares: null, saves: null, conversas: null, cadastros: null, compras: null, visitas: null, post_engagement: null },
   ];
@@ -62,6 +63,7 @@ test('agruparCampanhasDoDia: classifica pelo objective + nome (seguidores) e con
   assert.deepEqual(out[0], {
     campaignId: 'c1', nome: '[+ SEGUIDORES] Reels', tipo: 'seguidores',
     gasto: 100.5, likes: 10, comments: 2, shares: 1, saves: 3, conversas: 4, cadastros: 1, compras: 0, visitas: 9, postEngagement: 20,
+    impressoes: 500, cliques: 15, alcance: 300,
   });
   assert.equal(out[1].tipo, 'trafego');
   assert.equal(out[1].likes, 0, 'campo ausente vira 0, nunca null/NaN');
@@ -156,4 +158,38 @@ test('calcularDadosOpr: seguidoresDoDia null (sem leitura nenhuma) propaga null 
   const dados = calcularDadosOpr([], null);
   assert.equal(dados.header.novosSeguidores, null);
   assert.equal(dados.seguidores.novos, null);
+});
+
+test('calcularDadosOpr: CTR/CPM/Frequência somam TODAS as campanhas válidas do dia, um número só (não por categoria)', () => {
+  const campanhas = agruparCampanhasDoDia([
+    {
+      campaign_id: 'c1', spend: 100, impressions: 1000, clicks: 20, reach: 500,
+    },
+    {
+      campaign_id: 'c2', spend: 50, impressions: 500, clicks: 10, reach: 250,
+    },
+    // "outro" — nunca deve entrar na soma de impressoes/cliques/alcance
+    {
+      campaign_id: 'c3', spend: 999, impressions: 999999, clicks: 999, reach: 999,
+    },
+  ], {
+    c1: 'Trafego A', c2: 'Trafego B', c3: 'Outro (awareness)',
+  }, {
+    c1: 'OUTCOME_TRAFFIC', c2: 'OUTCOME_TRAFFIC', c3: 'OUTCOME_AWARENESS',
+  });
+
+  const dados = calcularDadosOpr(campanhas, 0);
+
+  // impressoes: 1000+500=1500 · cliques: 20+10=30 · alcance: 500+250=750
+  // investimentoTotal: 100+50=150
+  assert.equal(dados.header.ctr, (30 / 1500) * 100);
+  assert.equal(dados.header.cpm, (150 / 1500) * 1000);
+  assert.equal(dados.header.frequencia, 1500 / 750);
+});
+
+test('calcularDadosOpr: CTR/CPM/Frequência viram null sem impressão/alcance no dia, nunca dividem por zero', () => {
+  const dados = calcularDadosOpr([], 0);
+  assert.equal(dados.header.ctr, null);
+  assert.equal(dados.header.cpm, null);
+  assert.equal(dados.header.frequencia, null);
 });
