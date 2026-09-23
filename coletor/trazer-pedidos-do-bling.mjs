@@ -39,6 +39,7 @@ import { loginServico, blingProxy } from './lib/bling-comercial.mjs';
 import { aplicarValorCorrigido } from '../supabase/functions/_shared/valor-corrigido.js';
 import { ajustesDeValor } from './lib/ajustes-de-valor.mjs';
 import { colunasExistem } from './lib/colunas-existem.mjs';
+import { contasDoItem } from './lib/preco-do-item.mjs';
 
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://kounqtdoioootxqegkij.supabase.co';
 const BLING = 'https://api.bling.com.br/Api/v3';
@@ -252,28 +253,33 @@ try {
     // itens, e acrescentar deixaria os antigos ali para sempre.
     await cli.query('delete from vessel_pedido_itens where pedido_id = $1', [linha.id]);
     for (const it of detalhe.itens || []) {
-      // ⚠️ `it.desconto` DO BLING É PORCENTAGEM, NÃO REAIS. Medido em
-      // 17/09/2026: em 21 de 1.125 itens ele é MAIOR que o valor do próprio
-      // item — em reais isso seria pagar para a cliente levar. Subtraindo como
-      // dinheiro, um item de R$ 97,80 saía por R$ 0,80.
+      // ⚠️ `it.valor` DO BLING JÁ VEM COM O DESCONTO APLICADO, e `it.desconto`
+      // é a porcentagem que já foi usada — informativa, não uma conta a fazer.
+      // A regra, o porquê e a prova moram em `lib/preco-do-item.mjs`, com teste.
       //
-      // Por isso a coluna se chama `desconto_percentual` e o total vai JÁ
-      // CALCULADO: quem for somar receita não precisa saber da pegadinha.
-      const quantidade = Number(it.quantidade ?? 0);
-      const unitario = Number(it.valor ?? 0);
-      const percentual = Number(it.desconto ?? 0);
-      const totalDoItem = Math.round(quantidade * unitario * (1 - percentual / 100) * 100) / 100;
+      // Até 22/09/2026 esta linha descontava a porcentagem OUTRA VEZ, e isso
+      // inventava R$ 10.028,94 de desconto em 116 pedidos: a `receita_liquida`
+      // não batia com o Bling, nem com a nota, nem com a tela.
+      const { totalDoItem, precoDeTabela } = contasDoItem(it);
       await cli.query(
         `insert into vessel_pedido_itens
-           (pedido_id, sku, descricao, quantidade, valor_unitario, desconto_percentual, total_do_item)
-         values ($1,$2,$3,$4,$5,$6,$7)`,
+           (pedido_id, sku, descricao, quantidade, valor_unitario, desconto_percentual,
+            total_do_item, preco_de_tabela)
+         values ($1,$2,$3,$4,$5,$6,$7,$8)`,
         [linha.id, it.codigo || it.produto?.codigo || null, it.descricao || null,
-         it.quantidade ?? null, it.valor ?? null, it.desconto ?? null, totalDoItem]);
+         it.quantidade ?? null, it.valor ?? null, it.desconto ?? null,
+         totalDoItem, precoDeTabela]);
     }
     // ⚠️ A RECEITA LÍQUIDA É CALCULADA AQUI, depois dos itens, porque ela
-    // DEPENDE deles — e porque o `total` do Bling NÃO é esse número: ele não
-    // desconta o desconto do item e sai ~6% maior (medido: R$ 161.545 contra
-    // R$ 151.370 em 90 dias). Quem somasse a coluna errada erraria calado.
+    // DEPENDE deles: é a soma das peças menos o desconto do PEDIDO (o do
+    // cabeçalho, que existe de verdade e o Bling aplica).
+    //
+    // ⚠️ ESTE COMENTÁRIO DIZIA O CONTRÁRIO ATÉ 22/09/2026. Ele afirmava que o
+    // `total` do Bling "sai ~6% maior porque não desconta o desconto do item"
+    // (R$ 161.545 contra R$ 151.370 em 90 dias). Os 6% eram o defeito, não a
+    // correção: o Bling não desconta porque não há o que descontar — o desconto
+    // do item já está dentro do `valor`. Quem somava esta coluna somava R$ 10
+    // mil a menos que a nota fiscal. Ver `lib/preco-do-item.mjs`.
     //
     // Ajuste manual VENCE: quando a nota autorizada congelou o pedido errado, o
     // valor corrigido é o dinheiro de verdade.
