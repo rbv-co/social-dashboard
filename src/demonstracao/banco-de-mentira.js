@@ -608,15 +608,149 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
       const antes = t.status
       t.status = p_situacao
       t.presenca_em = p_situacao === 'realizado' ? (t.presenca_em || agoraIso()) : null
-      avisar('presenca_marcada', { id: t.id, situacao: p_situacao })
+      // ⚠️ SÓ A PRESENÇA DE CONVIDADA DE ENCONTRO AVISA O ROTEIRO (passo 8). A
+      // mesma função marca a visita do Private Appointment; marcar "Veio" lá
+      // não é o gesto do passo, e o roteiro não pode se marcar por ele.
+      if (t.evento_codigo) avisar('presenca_marcada', { id: t.id, situacao: p_situacao })
       return { ok: true, situacao: p_situacao, antes }
     },
+
+    // ════════════════════════════════════════════════════════════════════════
+    // BEAUTY SESSIONS — `2026-09-19-vessel-beauty-sessions-lista-devolve-
+    // arquivada.sql` (a conta), `2026-09-21-vessel-criar-exige-editar.sql`
+    // (criar), `2026-09-19-vessel-encerrar-exige-editar.sql` (encerrar) e
+    // `2026-09-19-vessel-beauty-session-mexer.sql` (editar, apagar, arquivar).
+    // ⚠️ As recusas têm o formato de cada função: criar e encerrar devolvem
+    // `erro` (frase pronta); editar, apagar e arquivar devolvem `situacao`.
+    // ════════════════════════════════════════════════════════════════════════
+    vessel_conta_das_beauty_sessions({ p_dias = 7, p_incluir_arquivadas = false } = {}) {
+      const dias = Math.max(Number(p_dias ?? 7) || 0, 0)
+      const incluir = p_incluir_arquivadas ?? false
+      const valendo = (t) => !t.teste
+      return b.sessoes
+        .filter((s) => incluir || !s.arquivada)
+        .map((s) => {
+          const gente = new Set(b.origens.filter((o) => o.evento_id === s.codigo).map((o) => o.pessoa_id))
+          const dela = b.atendimentos.filter((t) => valendo(t) && gente.has(t.pessoa_id))
+          const leituras = b.leiturasDasSessoes[s.codigo] || {}
+          // ⚠️ COMO O SQL: a receita NÃO filtra `situacao_id` (a de lá também
+          // não) — soma o pedido da pessoa da sessão que caiu na janela de uma
+          // visita REALIZADA dela.
+          const receita = b.pedidos.filter((p) => gente.has(p.pessoa_id) && b.atendimentos.some((t) => {
+            if (t.pessoa_id !== p.pessoa_id || t.teste || t.status !== 'realizado') return false
+            const d0 = diaEmSaoPaulo(t.quando || t.criado_em)
+            return p.data_do_pedido >= d0 && p.data_do_pedido <= somarDias(d0, dias)
+          })).reduce((a, p) => a + Number(p.receita_liquida ?? p.total_corrigido ?? 0), 0)
+          return {
+            codigo: s.codigo, quando: s.quando, praca: s.praca, loja: s.loja, parceiro: s.parceiro,
+            ativa: s.ativa, arquivada: !!s.arquivada,
+            leituras_mesa: Number(leituras.mesa || 0),
+            leituras_cartao: Number(leituras.cartao || 0),
+            pessoas: gente.size,
+            pedidos: dela.length,
+            confirmados: dela.filter((t) => ['confirmado', 'realizado', 'no_show'].includes(t.status)).length,
+            compareceram: dela.filter((t) => t.status === 'realizado').length,
+            receita,
+            janela_de_venda_em_dias: dias,
+          }
+        })
+        // `order by linha ->> 'quando' desc`: texto, e o nulo vem primeiro.
+        .sort((x, y) => {
+          if (x.quando === y.quando) return 0
+          if (x.quando == null) return -1
+          if (y.quando == null) return 1
+          return x.quando < y.quando ? 1 : -1
+        })
+    },
+
+    vessel_beauty_session_criar({ p_codigo, p_quando, p_praca, p_loja, p_parceiro = null } = {}) {
+      const codigo = maiusculo(p_codigo)
+      const praca = maiusculo(p_praca)
+      if (!codigo || !/^BS-\d{8}-[A-Z]{3}-[A-Z0-9]{1,4}$/.test(codigo)) {
+        return { ok: false, erro: 'O código precisa ter o formato BS-AAAAMMDD-PRACA-NUMERO, como BS-20260925-CPS-01.' }
+      }
+      if (!p_quando) return { ok: false, erro: 'Escolha a data da sessão.' }
+      const quando = String(p_quando).slice(0, 10)
+      const dataDoCodigo = codigo.slice(3, 11)
+      if (dataDoCodigo !== quando.replace(/-/g, '')) {
+        return { ok: false, erro: `A data do código (${dataDoCodigo}) não é a data da sessão (${quando.replace(/-/g, '')}). Uma das duas está errada.` }
+      }
+      if (!praca || !/^[A-Z]{3}$/.test(praca)) return { ok: false, erro: 'A praça tem três letras, como CPS.' }
+      if (codigo.slice(12, 15) !== praca) return { ok: false, erro: 'A praça do código não é a praça escolhida.' }
+      if (!p_loja || !LOJAS.includes(p_loja)) return { ok: false, erro: 'Escolha a loja.' }
+      if (b.sessoes.some((s) => s.codigo === codigo)) {
+        return { ok: false, erro: 'Já existe uma sessão com este código. Código não se reaproveita: a leitura '
+          + 'de dois eventos diferentes cairia na mesma linha do painel.' }
+      }
+      b.sessoes.push({ codigo, quando, praca, loja: p_loja, parceiro: limpo(p_parceiro), ativa: true, arquivada: false, criado_em: agoraIso() })
+      return { ok: true, codigo }
+    },
+
+    vessel_beauty_session_encerrar({ p_codigo, p_ativa = false } = {}) {
+      const codigo = maiusculo(p_codigo)
+      const s = b.sessoes.find((x) => x.codigo === codigo)
+      if (!s) return { ok: false, erro: 'Não achei esta sessão.' }
+      s.ativa = p_ativa ?? false
+      return { ok: true, codigo, ativa: s.ativa }
+    },
+
+    vessel_beauty_session_editar({ p_codigo, p_quando = null, p_loja = null } = {}) {
+      const codigo = maiusculo(p_codigo)
+      const s = b.sessoes.find((x) => x.codigo === codigo)
+      if (!s) return { ok: false, situacao: 'nao_achei' }
+      // Campo nulo = "não mexe neste". (A coluna `loja` do banco não tem CHECK
+      // de lista: o que a tela manda é sempre uma das três do `<select>`.)
+      if (p_quando) s.quando = String(p_quando).slice(0, 10)
+      if (p_loja) s.loja = p_loja
+      return { ok: true, situacao: 'ok', codigo }
+    },
+
+    vessel_beauty_session_apagar({ p_codigo } = {}) {
+      const codigo = maiusculo(p_codigo)
+      if (!b.sessoes.some((x) => x.codigo === codigo)) return { ok: false, situacao: 'nao_achei' }
+      // ⚠️ "TER GENTE" É LEITURA DO QR, DE QUALQUER PEÇA.
+      const l = b.leiturasDasSessoes[codigo] || {}
+      if (Number(l.mesa || 0) + Number(l.cartao || 0) > 0) return { ok: false, situacao: 'tem_gente' }
+      b.sessoes = b.sessoes.filter((x) => x.codigo !== codigo)
+      return { ok: true, situacao: 'ok', codigo }
+    },
+
+    vessel_beauty_session_arquivar({ p_codigo, p_arquivada = true } = {}) {
+      const codigo = maiusculo(p_codigo)
+      const s = b.sessoes.find((x) => x.codigo === codigo)
+      if (!s) return { ok: false, situacao: 'nao_achei' }
+      // ⚠️ ARQUIVAR NÃO É ENCERRAR: `ativa` não é tocada.
+      s.arquivada = p_arquivada ?? true
+      return { ok: true, situacao: 'ok', codigo, arquivada: s.arquivada }
+    },
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  // AS TABELAS QUE AS TELAS LEEM DIRETO (`GET /rest/v1/<tabela>?…`).
+  // ⚠️ SÓ AS DUAS DO PRIVATE APPOINTMENT, e com o filtro do PostgREST de
+  // verdade (`lerFiltros`): a lista do período precisa recortar como o banco
+  // recorta, senão a demonstração mostra uma agenda que a Central não mostraria.
+  // ════════════════════════════════════════════════════════════════════════
+  const tabelas = {
+    vessel_atendimentos: () => b.atendimentos.map((t) => ({ ...t, client_advisor: t.client_advisor ?? null,
+      convite_codigo: t.convite_codigo ?? null })),
+    vessel_pedidos: () => b.pedidos.map((p) => ({ numero: null, data_da_venda: null, total_corrigido: null, ...p })),
+  }
+  const embutidos = {
+    vessel_pessoas: (linha) => pessoaPorId(linha.pessoa_id),
   }
 
   return {
     /** O que o banco tem hoje — só para o teste olhar. */
     get estado() { return b },
     conhece: (nome) => Object.prototype.hasOwnProperty.call(funcoes, nome),
+    conheceTabela: (nome) => Object.prototype.hasOwnProperty.call(tabelas, nome),
+    /** `GET /rest/v1/<tabela>?<busca>` — filtra, ordena, limita e escolhe as
+     * colunas como o PostgREST. Tabela desconhecida devolve `undefined`. */
+    ler(tabela, busca) {
+      if (!Object.prototype.hasOwnProperty.call(tabelas, tabela)) return undefined
+      return copia(consultar(tabelas[tabela](), new URLSearchParams(busca || ''), embutidos))
+    },
     /** Chama a função como o PostgREST chamaria; devolve uma CÓPIA (JSON). */
     chamar(nome, corpo) {
       const f = funcoes[nome]
@@ -628,4 +762,129 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
       return copia(r)
     },
   }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// O PEDAÇO DO POSTGREST QUE AS TELAS USAM — filtro, `or`/`and`, ordem, limite
+// e `select` com tabela embutida. Não é o PostgREST inteiro: é o que as
+// leituras diretas do Comercial Vessel mandam hoje, lido do jeito dele.
+// ════════════════════════════════════════════════════════════════════════════
+const RESERVADOS = new Set(['select', 'order', 'limit', 'offset'])
+
+/** Separa por vírgula FORA de parênteses: `a,b(c,d),e` → ['a', 'b(c,d)', 'e']. */
+export function separarNoTopo(texto) {
+  const partes = []
+  let fundo = 0, atual = ''
+  for (const c of String(texto)) {
+    if (c === '(') fundo++
+    if (c === ')') fundo--
+    if (c === ',' && fundo === 0) { partes.push(atual); atual = '' } else atual += c
+  }
+  if (atual !== '') partes.push(atual)
+  return partes.map((p) => p.trim()).filter(Boolean)
+}
+
+/** Instante ou dia como número, para comparar. Sem fuso escrito, vale UTC —
+ * a sessão do banco da Supabase roda em UTC. */
+function comoInstante(v) {
+  const t = String(v)
+  if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return Date.parse(`${t}T00:00:00Z`)
+  if (/^\d{4}-\d{2}-\d{2}T[\d:.]+$/.test(t)) return Date.parse(`${t}Z`)
+  if (/^\d{4}-\d{2}-\d{2}T/.test(t)) return Date.parse(t)
+  return NaN
+}
+function comparar(a, b) {
+  const x = comoInstante(a), y = comoInstante(b)
+  if (!Number.isNaN(x) && !Number.isNaN(y)) return x - y
+  const na = Number(a), nb = Number(b)
+  if (a !== '' && b !== '' && !Number.isNaN(na) && !Number.isNaN(nb)) return na - nb
+  return String(a) < String(b) ? -1 : String(a) > String(b) ? 1 : 0
+}
+
+/** Uma condição `operador.valor` sobre o valor da coluna. */
+export function passaNaCondicao(valor, operacao) {
+  const i = operacao.indexOf('.')
+  const op = operacao.slice(0, i), alvo = operacao.slice(i + 1)
+  if (op === 'is') {
+    if (alvo === 'null') return valor == null
+    if (alvo === 'true') return valor === true
+    if (alvo === 'false') return valor === false
+    return false
+  }
+  // Em SQL, comparar com nulo não passa em nada.
+  if (valor == null) return false
+  if (op === 'eq') return comparar(valor, alvo) === 0
+  if (op === 'neq') return comparar(valor, alvo) !== 0
+  if (op === 'gt') return comparar(valor, alvo) > 0
+  if (op === 'gte') return comparar(valor, alvo) >= 0
+  if (op === 'lt') return comparar(valor, alvo) < 0
+  if (op === 'lte') return comparar(valor, alvo) <= 0
+  if (op === 'in') return separarNoTopo(alvo.replace(/^\(|\)$/g, '')).some((v) => comparar(valor, v) === 0)
+  throw new Error(`[demonstração] operador do PostgREST não previsto: ${op}`)
+}
+
+/** `or=(and(a.gte.1,a.lte.2),b.is.null)` — a árvore de `or`/`and`. */
+function passaNoGrupo(linha, tipo, miolo) {
+  const itens = separarNoTopo(miolo)
+  const passa = (item) => {
+    const m = /^(or|and)\((.*)\)$/.exec(item)
+    if (m) return passaNoGrupo(linha, m[1], m[2])
+    const i = item.indexOf('.')
+    return passaNaCondicao(linha[item.slice(0, i)], item.slice(i + 1))
+  }
+  return tipo === 'or' ? itens.some(passa) : itens.every(passa)
+}
+
+export function consultar(linhas, busca, embutidos = {}) {
+  let saida = linhas.filter((linha) => {
+    for (const [chave, valor] of busca.entries()) {
+      if (RESERVADOS.has(chave)) continue
+      if (chave === 'or' || chave === 'and') {
+        if (!passaNoGrupo(linha, chave, valor.replace(/^\(|\)$/g, ''))) return false
+      } else if (!passaNaCondicao(linha[chave], valor)) return false
+    }
+    return true
+  })
+  const ordem = busca.get('order')
+  if (ordem) {
+    const chaves = separarNoTopo(ordem).map((o) => {
+      const [coluna, ...mods] = o.split('.')
+      const desc = mods.includes('desc')
+      // Padrão do Postgres: nulo é o MAIOR — último no asc, primeiro no desc.
+      const nulosPrimeiro = mods.includes('nullsfirst') ? true : mods.includes('nullslast') ? false : desc
+      return { coluna, desc, nulosPrimeiro }
+    })
+    saida = [...saida].sort((x, y) => {
+      for (const { coluna, desc, nulosPrimeiro } of chaves) {
+        const a = x[coluna], b = y[coluna]
+        if (a == null && b == null) continue
+        if (a == null) return nulosPrimeiro ? -1 : 1
+        if (b == null) return nulosPrimeiro ? 1 : -1
+        const c = comparar(a, b)
+        if (c !== 0) return desc ? -c : c
+      }
+      return 0
+    })
+  }
+  const inicio = Number(busca.get('offset') || 0)
+  const limite = busca.has('limit') ? Number(busca.get('limit')) : Infinity
+  saida = saida.slice(inicio, inicio + limite)
+  const select = busca.get('select')
+  if (!select || select === '*') return saida
+  const campos = separarNoTopo(select)
+  return saida.map((linha) => {
+    const nova = {}
+    for (const campo of campos) {
+      const m = /^(?:([a-z_]+):)?([a-z_]+)\((.*)\)$/.exec(campo)
+      if (m) {
+        const [, apelido, tabela, dentro] = m
+        const alvo = embutidos[tabela] ? embutidos[tabela](linha) : null
+        if (!embutidos[tabela]) throw new Error(`[demonstração] tabela embutida não prevista: ${tabela}`)
+        const sub = separarNoTopo(dentro)
+        nova[apelido || tabela] = alvo
+          ? Object.fromEntries(sub.map((c) => [c, alvo[c] ?? null])) : null
+      } else nova[campo] = linha[campo] ?? null
+    }
+    return nova
+  })
 }

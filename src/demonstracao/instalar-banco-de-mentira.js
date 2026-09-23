@@ -102,12 +102,21 @@ export function instalarBancoDeMentira() {
       const funcao = caminho.slice('/rest/v1/rpc/'.length)
       const corpo = await lerCorpo(entrada, init)
       if (banco.conhece(funcao)) return resposta(banco.chamar(funcao, corpo))
-      return resposta(naoPrevisto(`RPC ${funcao}`, { ok: false, situacao: 'demonstracao' }))
+      // ⚠️ FUNÇÃO QUE A DEMONSTRAÇÃO NÃO CONHECE RESPONDE COMO O POSTGREST
+      // RESPONDE A FUNÇÃO QUE NÃO EXISTE: 404 com o erro dele. Antes voltava
+      // 200 com um objeto `{ ok: false }` — e a tela que espera LISTA (a das
+      // Beauty Sessions) guardava o objeto, quebrava ao filtrar e a Central
+      // ficava branca. Com o 404, cada tela mostra a faixa de erro dela.
+      naoPrevisto(`RPC ${funcao}`)
+      return resposta({ code: 'PGRST202', details: null, hint: null,
+        message: `Could not find the function public.${funcao} in the schema cache` }, 404)
     }
     if (caminho.startsWith('/rest/v1/')) {
       const tabela = caminho.slice('/rest/v1/'.length)
       if (metodo === 'GET' || metodo === 'HEAD') {
-        const linhas = tabela === 'profiles' ? PERFIL : naoPrevisto(`GET ${tabela}`, [])
+        const linhas = tabela === 'profiles' ? PERFIL
+          : banco.conheceTabela(tabela) ? banco.ler(tabela, u.search)
+            : naoPrevisto(`GET ${tabela}`, [])
         return resposta(linhas, 200, { 'Content-Range': `0-${Math.max(linhas.length - 1, 0)}/${linhas.length}` })
       }
       return resposta(naoPrevisto(`${metodo} ${tabela}`, []))

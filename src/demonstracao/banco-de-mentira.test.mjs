@@ -385,3 +385,127 @@ test('as respostas são cópias: mexer no que voltou não mexe no banco', () => 
   assert.equal(banco.conhece('funcao_que_nao_existe'), false)
   assert.equal(chamar('funcao_que_nao_existe', {}), undefined)
 })
+
+// ════════════════════════════════════════════════════════════════════════════
+// BEAUTY SESSIONS e PRIVATE APPOINTMENT (23/09/2026: "quando fui selecionar
+// local lá deu tela branca"). A função de conta não existia no banco de
+// mentira; a resposta de "não previsto" era um OBJETO, a tela esperava LISTA,
+// e o filtro dela quebrou a Central inteira. Aqui o formato é o do SQL.
+// ════════════════════════════════════════════════════════════════════════════
+const S1 = 'BS-20260914-CPS-01', S2 = 'BS-20260921-SBO-01', S3 = 'BS-20260929-CPS-02', S4 = 'BS-20260824-BSB-01'
+
+test('conta das Beauty Sessions: LISTA com as chaves do json_build_object do SQL, na ordem', () => {
+  const { chamar } = novoBanco()
+  const lista = chamar('vessel_conta_das_beauty_sessions', { p_dias: 7, p_incluir_arquivadas: false })
+  assert.ok(Array.isArray(lista), 'a tela faz .filter na resposta: tem de ser lista')
+  // `2026-09-19-vessel-beauty-sessions-lista-devolve-arquivada.sql`, linha a linha.
+  assert.deepEqual(Object.keys(lista[0]), ['codigo', 'quando', 'praca', 'loja', 'parceiro', 'ativa', 'arquivada',
+    'leituras_mesa', 'leituras_cartao', 'pessoas', 'pedidos', 'confirmados', 'compareceram', 'receita',
+    'janela_de_venda_em_dias'])
+  // `order by quando desc`, e a arquivada fica de fora por padrão.
+  assert.deepEqual(lista.map((s) => s.codigo), [S3, S2, S1])
+  const aurora = lista.find((s) => s.codigo === S1)
+  assert.deepEqual(aurora, { codigo: S1, quando: '2026-09-14', praca: 'CPS', loja: 'iguatemi',
+    parceiro: 'Salão Aurora (exemplo)', ativa: false, arquivada: false, leituras_mesa: 38, leituras_cartao: 6,
+    pessoas: 4, pedidos: 4, confirmados: 3, compareceram: 2,
+    // 3480 (visita em 17/09, compra no mesmo dia) + 1290 (visita 18/09, compra 21/09)
+    receita: 4770, janela_de_venda_em_dias: 7 })
+  const comArquivada = chamar('vessel_conta_das_beauty_sessions', { p_incluir_arquivadas: true })
+  assert.deepEqual(comArquivada.map((s) => s.codigo), [S3, S2, S1, S4])
+  assert.equal(comArquivada.find((s) => s.codigo === S4).arquivada, true)
+  // `p_dias` só mexe na janela da venda: com 0 dias, só a compra do próprio dia.
+  assert.equal(chamar('vessel_conta_das_beauty_sessions', { p_dias: 0 }).find((s) => s.codigo === S1).receita, 3480)
+})
+
+test('criar Beauty Session: as conferências e as frases de `vessel_beauty_session_criar`, na ordem', () => {
+  const { chamar } = novoBanco()
+  const ok = { p_codigo: 'bs-20261005-sbo-07', p_quando: '2026-10-05', p_praca: 'sbo', p_loja: 'tivoli', p_parceiro: '  ' }
+  assert.equal(chamar('vessel_beauty_session_criar', { ...ok, p_codigo: 'BS-2026-SBO-1' }).erro,
+    'O código precisa ter o formato BS-AAAAMMDD-PRACA-NUMERO, como BS-20260925-CPS-01.')
+  assert.deepEqual(chamar('vessel_beauty_session_criar', { ...ok, p_quando: null }), { ok: false, erro: 'Escolha a data da sessão.' })
+  assert.equal(chamar('vessel_beauty_session_criar', { ...ok, p_quando: '2026-10-06' }).erro,
+    'A data do código (20261005) não é a data da sessão (20261006). Uma das duas está errada.')
+  assert.equal(chamar('vessel_beauty_session_criar', { ...ok, p_praca: 'CPS' }).erro, 'A praça do código não é a praça escolhida.')
+  assert.equal(chamar('vessel_beauty_session_criar', { ...ok, p_loja: 'shopping' }).erro, 'Escolha a loja.')
+  assert.deepEqual(chamar('vessel_beauty_session_criar', ok), { ok: true, codigo: 'BS-20261005-SBO-07' })
+  assert.match(chamar('vessel_beauty_session_criar', ok).erro, /^Já existe uma sessão com este código/)
+  const nova = chamar('vessel_conta_das_beauty_sessions', {}).find((s) => s.codigo === 'BS-20261005-SBO-07')
+  assert.equal(nova.parceiro, null, 'parceiro em branco vira nulo')
+  assert.equal(nova.ativa, true)
+  assert.equal(nova.leituras_mesa, 0)
+})
+
+test('encerrar, editar, arquivar e apagar: cada uma no formato da sua função', () => {
+  const { chamar } = novoBanco()
+  // encerrar devolve `erro`/`ativa`; as outras três devolvem `situacao`.
+  assert.deepEqual(chamar('vessel_beauty_session_encerrar', { p_codigo: S2.toLowerCase(), p_ativa: false }), { ok: true, codigo: S2, ativa: false })
+  assert.deepEqual(chamar('vessel_beauty_session_encerrar', { p_codigo: 'BS-X' }), { ok: false, erro: 'Não achei esta sessão.' })
+  assert.deepEqual(chamar('vessel_beauty_session_editar', { p_codigo: S2, p_quando: null, p_loja: 'iguatemi' }), { ok: true, situacao: 'ok', codigo: S2 })
+  const editada = chamar('vessel_conta_das_beauty_sessions', {}).find((s) => s.codigo === S2)
+  assert.equal(editada.loja, 'iguatemi')
+  assert.equal(editada.quando, '2026-09-21', 'quando nulo não mexe')
+  assert.equal(editada.ativa, false)
+  assert.deepEqual(chamar('vessel_beauty_session_editar', { p_codigo: 'BS-X' }), { ok: false, situacao: 'nao_achei' })
+  // Arquivar não mexe em `ativa` e tira da lista padrão.
+  assert.deepEqual(chamar('vessel_beauty_session_arquivar', { p_codigo: S2, p_arquivada: true }), { ok: true, situacao: 'ok', codigo: S2, arquivada: true })
+  assert.equal(chamar('vessel_conta_das_beauty_sessions', {}).some((s) => s.codigo === S2), false)
+  assert.equal(chamar('vessel_conta_das_beauty_sessions', { p_incluir_arquivadas: true }).find((s) => s.codigo === S2).ativa, false)
+  assert.equal(chamar('vessel_beauty_session_arquivar', { p_codigo: S2, p_arquivada: null }).arquivada, true, 'nulo = arquivar')
+  // Sessão já LIDA não se apaga (qualquer peça conta); a sem leitura, sim.
+  assert.deepEqual(chamar('vessel_beauty_session_apagar', { p_codigo: S1 }), { ok: false, situacao: 'tem_gente' })
+  assert.deepEqual(chamar('vessel_beauty_session_apagar', { p_codigo: S3.toLowerCase() }), { ok: true, situacao: 'ok', codigo: S3 })
+  assert.deepEqual(chamar('vessel_beauty_session_apagar', { p_codigo: S3 }), { ok: false, situacao: 'nao_achei' })
+})
+
+test('Private Appointment: GET vessel_atendimentos com o filtro do período, a pessoa embutida e a ordem do PostgREST', () => {
+  const { banco } = novoBanco()
+  // A MESMA busca que tela-de-atendimentos.vue monta ("esta semana": 16/09 a 30/09).
+  const de = '2026-09-16', ate = '2026-09-30'
+  const busca = 'select=id,pessoa_id,loja,client_advisor,quando,status,convite_codigo,presenca_em,teste,criado_em,'
+    + 'pessoa:vessel_pessoas(id,nome,telefone)'
+    + `&or=(and(quando.gte.${de}T00:00:00,quando.lte.${ate}T23:59:59),and(quando.is.null,criado_em.gte.${de}T00:00:00,criado_em.lte.${ate}T23:59:59))`
+    + '&order=quando.desc.nullslast&limit=500'
+  const linhas = banco.ler('vessel_atendimentos', `?${busca}`)
+  assert.deepEqual(Object.keys(linhas[0]), ['id', 'pessoa_id', 'loja', 'client_advisor', 'quando', 'status',
+    'convite_codigo', 'presenca_em', 'teste', 'criado_em', 'pessoa'])
+  assert.deepEqual(Object.keys(linhas[0].pessoa), ['id', 'nome', 'telefone'])
+  // Dentro da janela: as 12 visitas + as 3 convidadas do encontro de 28/09
+  // (o encontro de 11/09 e o de 14/08 ficam de fora).
+  assert.equal(linhas.length, 15)
+  // `nullslast`: quem ainda não tem dia vem no fim; o resto do mais novo ao mais velho.
+  const semDia = linhas.filter((l) => l.quando == null)
+  assert.deepEqual(linhas.slice(-semDia.length), semDia)
+  const comDia = linhas.filter((l) => l.quando != null).map((l) => l.quando)
+  assert.deepEqual(comDia, [...comDia].sort().reverse())
+  assert.equal(linhas.find((l) => l.pessoa.nome === 'Laura Bastos (exemplo)').client_advisor, 'Carolina (exemplo)')
+  // "Hoje" só traz o que é de hoje.
+  const hoje = banco.ler('vessel_atendimentos', `?select=id,quando&or=(and(quando.gte.${HOJE}T00:00:00,quando.lte.${HOJE}T23:59:59),and(quando.is.null,criado_em.gte.${HOJE}T00:00:00,criado_em.lte.${HOJE}T23:59:59))`)
+  assert.equal(hoje.length, 1)
+  assert.equal(banco.ler('tabela_que_nao_existe', ''), undefined)
+})
+
+test('Private Appointment: GET vessel_pedidos só com situação 9, das pessoas pedidas, na janela', () => {
+  const { banco } = novoBanco()
+  const linhas = banco.ler('vessel_pedidos', '?situacao_id=eq.9&select=pessoa_id,numero,data_da_venda,data_do_pedido,receita_liquida,total_corrigido'
+    + '&pessoa_id=in.(2301,2302,2205,2309)&data_do_pedido=gte.2026-09-16&data_do_pedido=lte.2026-10-07&limit=1000')
+  assert.deepEqual(linhas.map((p) => p.pessoa_id).sort(), [2301, 2302, 2309], 'o pedido 12 (cancelado) da 2205 não vem')
+  assert.deepEqual(Object.keys(linhas[0]), ['pessoa_id', 'numero', 'data_da_venda', 'data_do_pedido', 'receita_liquida', 'total_corrigido'])
+})
+
+test('marcar a visita do Private Appointment grava, mas NÃO marca o passo 8 do roteiro', () => {
+  const { chamar, banco, avisos } = novoBanco()
+  const visita = banco.estado.atendimentos.find((t) => t.pessoa_id === 2307)
+  assert.deepEqual(chamar('vessel_situacao_do_atendimento', { p_id: visita.id, p_situacao: 'realizado' }), { ok: true, situacao: 'realizado', antes: 'confirmado' })
+  assert.equal(banco.estado.atendimentos.find((t) => t.id === visita.id).status, 'realizado')
+  assert.equal(avisos.filter((a) => a.evento === 'presenca_marcada').length, 0)
+  const convidada = banco.estado.atendimentos.find((t) => t.pessoa_id === 2210)
+  chamar('vessel_situacao_do_atendimento', { p_id: convidada.id, p_situacao: 'realizado' })
+  assert.equal(avisos.filter((a) => a.evento === 'presenca_marcada').length, 1, 'a convidada de encontro continua avisando')
+})
+
+test('as visitas novas não mexem nas contas do Stylist Circle', () => {
+  const { chamar } = novoBanco()
+  const marina = chamar('vessel_rastreio_dos_stylists', { p_dias: 14 }).find((s) => s.codigo === 'STY-0001')
+  assert.equal(marina.clientes, 10)
+  assert.equal(marina.pedidos, 10)
+})
