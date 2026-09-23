@@ -21,6 +21,10 @@ const rotas = [
   { path: '/private-edit', name: 'private-edit', component: () => import('./ferramentas/comercial-vessel/tela-de-private-edit.vue'), meta: { recurso: 'atendimentos' } },
   { path: '/stylist-circle', name: 'stylist-circle', component: () => import('./ferramentas/comercial-vessel/tela-de-stylist-circle.vue'), meta: { recurso: 'atendimentos' } },
   { path: '/beauty-sessions', name: 'beauty-sessions', component: () => import('./ferramentas/beauty-sessions/tela-de-beauty-sessions.vue'), meta: { recurso: 'atendimentos' } },
+  // Os QR de cada ação do Growth Plan (23/09/2026). Mesma chave das três telas
+  // de onde os QR vêm: as funções de conta que ele lê já gateiam em
+  // `is_vessel_atendimentos()`, e uma permissão nova nasceria desmarcada.
+  { path: '/material-grafico', name: 'material-grafico', component: () => import('./ferramentas/comercial-vessel/tela-de-material-grafico.vue'), meta: { recurso: 'atendimentos' } },
   { path: '/banco', name: 'banco', component: () => import('./ferramentas/banco/tela-de-banco.vue') },
   { path: '/vendas', name: 'vendas', component: () => import('./ferramentas/vendas/tela-de-menu-vendas.vue') },
   { path: '/gestao-vista', name: 'gestao-vista', component: () => import('./ferramentas/gestao-a-vista/tela-de-gestao-a-vista.vue') },

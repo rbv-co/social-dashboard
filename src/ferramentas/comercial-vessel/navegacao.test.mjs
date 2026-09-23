@@ -3,9 +3,9 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { PAI_DA_TELA, paiDaTela, ROTULO_DO_PAI } from './navegacao.js'
 
-test('as cinco telas da familia voltam para o menu do Comercial Vessel', () => {
+test('as seis telas da familia voltam para o menu do Comercial Vessel', () => {
   for (const tela of ['atendimentos', 'beauty-sessions', 'private-edit',
-                      'stylist-circle', 'funil-carrinho']) {
+                      'stylist-circle', 'funil-carrinho', 'material-grafico']) {
     assert.equal(paiDaTela(tela), 'comercial-vessel', `${tela} volta para o lugar errado`)
   }
 })
@@ -34,6 +34,7 @@ const TELAS = [
   'src/ferramentas/comercial-vessel/tela-de-private-edit.vue',
   'src/ferramentas/comercial-vessel/tela-de-stylist-circle.vue',
   'src/ferramentas/funil-carrinho/tela-de-funil-carrinho.vue',
+  'src/ferramentas/comercial-vessel/tela-de-material-grafico.vue',
 ]
 
 test('nenhuma tela da familia empurra para inicio na mao', () => {

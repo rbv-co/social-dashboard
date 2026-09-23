@@ -49,6 +49,17 @@
           <span class="cvmenu-card-enter">→</span>
         </div>
 
+        <!-- Os QR das três ações acima, para a gráfica. Mesma chave delas:
+             é delas que os QR vêm (ver a rota em mapa-de-enderecos.js). -->
+        <div class="cvmenu-card" v-if="podeAtendimentos" @click="ir('material-grafico')">
+          <div class="cvmenu-card-icon" style="background:linear-gradient(135deg,#556b2f 0%,#8a9a4b 100%)">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V3h12v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M7 14h10v7H7z"/></svg>
+          </div>
+          <div class="cvmenu-card-title">Material Gráfico</div>
+          <div class="cvmenu-card-desc">Os QR de cada ação do plano, sem fundo, em PNG e SVG, prontos para a gráfica.</div>
+          <span class="cvmenu-card-enter">→</span>
+        </div>
+
         <div class="cvmenu-card" v-if="podeCarrinho" @click="ir('funil-carrinho')">
           <div class="cvmenu-card-icon" style="background:linear-gradient(135deg,#ea580c 0%,#c2410c 100%)">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="20" r="1"/><circle cx="18" cy="20" r="1"/><path d="M1 1h4l2.7 12.4a2 2 0 0 0 2 1.6h8.6a2 2 0 0 0 2-1.6L23 6H6"/></svg>
