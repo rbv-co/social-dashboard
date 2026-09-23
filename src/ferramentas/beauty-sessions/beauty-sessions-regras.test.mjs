@@ -36,6 +36,8 @@ test('calcularConjunto soma sobre a lista que recebe, e só ela', () => {
   assert.equal(c.totalSessoes, 2)
   assert.equal(c.totalMesa, 14)
   assert.equal(c.totalCartao, 6)
+  // ⚠️ "Leram o QR" = mesa + cartão: a leitura do cartão antigo não some.
+  assert.equal(c.totalLeituras, 20)
   assert.equal(c.totalPessoas, 5)
   assert.equal(c.totalCompareceram, 3)
   assert.equal(c.totalReceita, 150)
@@ -59,6 +61,7 @@ test('calcularConjunto de lista vazia não quebra e não finge base', () => {
   const c = calcularConjunto([])
   assert.equal(c.totalSessoes, 0)
   assert.equal(c.totalMesa, 0)
+  assert.equal(c.totalLeituras, 0)
   assert.equal(c.conversao.temBase, false)
 })
 

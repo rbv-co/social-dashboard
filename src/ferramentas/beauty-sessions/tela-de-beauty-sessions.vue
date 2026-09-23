@@ -60,10 +60,11 @@
       <section v-if="!carregando && !erro && sessoes.length" class="bs-bloco bs-bloco-leitura id-bloco-leitura">
         <h2 class="bs-etiqueta id-titulo"><icone-do-bloco nome="leitura" />Como ler os números</h2>
         <p class="bs-nota bs-nota-primeira">
-          <b>Leram</b> é leitura, não pessoa: a mesma cliente abrindo duas vezes
-          conta duas. Quem vira gente com nome e WhatsApp é <b>Se identificaram</b>.
-          A <b>mesa</b> e o <b>cartão</b> contam separados de propósito — é essa
-          diferença que diz qual peça vale imprimir de novo.
+          <b>Leram o QR</b> é leitura, não pessoa: a mesma cliente abrindo duas
+          vezes conta duas. Quem vira gente com nome e WhatsApp é <b>Se
+          identificaram</b>. Cada sessão tem <b>um QR só, o da mesa</b> (o display
+          do salão); as leituras que o antigo QR do cartão já teve continuam
+          somadas aqui, para nenhuma sumir da conta.
         </p>
         <p class="bs-nota">
           <b>Encerrada</b> e <b>arquivada</b> são coisas diferentes. Encerrada
@@ -73,11 +74,11 @@
           precisar olhar para ela.
         </p>
         <p class="bs-nota">
-          O desenho do QR sai por
-          <code class="bs-codigo">node ferramentas/qrs-das-beauty-sessions.mjs</code>,
-          no repositório do site. Ele é gerado e <b>lido de volta por uma câmera</b>
-          antes de sair — material impresso não tem segunda chance, e uma tela não
-          consegue fazer essa conferência.
+          O QR de cada sessão se baixa aqui mesmo, sem fundo, em PNG e SVG — e
+          também no <b>Material Gráfico</b>, junto dos QR das outras ações. O
+          desenho é o mesmo do site e é <b>lido de volta por um leitor de QR</b> nos
+          testes do sistema; ainda assim, leia com o celular a prova impressa
+          antes de mandar rodar — material impresso não tem segunda chance.
         </p>
       </section>
 
@@ -103,12 +104,8 @@
               <span class="bs-numero-rotulo">Sessões</span>
             </div>
             <div class="bs-numero">
-              <span class="bs-numero-valor">{{ conjunto.totalMesa }}</span>
-              <span class="bs-numero-rotulo">Leram na mesa</span>
-            </div>
-            <div class="bs-numero">
-              <span class="bs-numero-valor">{{ conjunto.totalCartao }}</span>
-              <span class="bs-numero-rotulo">Leram o cartão</span>
+              <span class="bs-numero-valor">{{ conjunto.totalLeituras }}</span>
+              <span class="bs-numero-rotulo">Leram o QR</span>
             </div>
             <div class="bs-numero">
               <span class="bs-numero-valor">{{ conjunto.totalPessoas }}</span>
@@ -159,13 +156,11 @@
           </div>
 
           <div class="bs-numeros">
+            <!-- ⚠️ UM NÚMERO SÓ: mesa + cartão (resumoDaSessao().leituras). O
+                 cartão saiu em 23/09/2026, e o que ele já leu continua somado. -->
             <div class="bs-numero">
-              <span class="bs-numero-valor">{{ conta(s).mesa }}</span>
-              <span class="bs-numero-rotulo">Leram na mesa</span>
-            </div>
-            <div class="bs-numero">
-              <span class="bs-numero-valor">{{ conta(s).cartao }}</span>
-              <span class="bs-numero-rotulo">Leram o cartão</span>
+              <span class="bs-numero-valor">{{ conta(s).leituras }}</span>
+              <span class="bs-numero-rotulo">Leram o QR</span>
             </div>
             <div class="bs-numero">
               <span class="bs-numero-valor">{{ conta(s).pessoas }}</span>
@@ -202,29 +197,21 @@
             {{ janelaEscrita(s.janela_de_venda_em_dias) }}.
           </p>
 
-          <!-- ── OS DOIS ENDEREÇOS ──────────────────────────────────────── -->
-          <h3 class="bs-etiqueta bs-etiqueta-interna id-subtitulo">Os dois QR desta sessão</h3>
-          <div class="bs-link">
-            <div class="bs-link-texto">
-              <span class="bs-link-nome">Mesa — o display do salão</span>
-              <code class="bs-link-url">{{ enderecoDaMesa(s.codigo) }}</code>
-            </div>
-            <button class="btn" @click="copiar(enderecoDaMesa(s.codigo), s.codigo + '-mesa')">
-              {{ copiado === s.codigo + '-mesa' ? 'Copiado' : 'Copiar' }}</button>
-          </div>
-          <div class="bs-link">
-            <div class="bs-link-texto">
-              <span class="bs-link-nome">Cartão — o que a cliente leva na mão</span>
-              <code class="bs-link-url">{{ enderecoDoCartao(s.codigo) }}</code>
-            </div>
-            <button class="btn" @click="copiar(enderecoDoCartao(s.codigo), s.codigo + '-cartao')">
-              {{ copiado === s.codigo + '-cartao' ? 'Copiado' : 'Copiar' }}</button>
-          </div>
+          <!-- ── O QR DA SESSÃO (um só: o da mesa) ─────────────────────────
+               ⚠️ O MESMO componente do Material Gráfico, com o MESMO item
+               (`itemDaBeauty`): os dois lugares baixam o mesmo arquivo, com o
+               mesmo nome, para o mesmo link. -->
+          <h3 class="bs-etiqueta bs-etiqueta-interna id-subtitulo">O QR desta sessão — a mesa, o display do salão</h3>
+          <qr-para-baixar class="bs-qr" :endereco="itemDaBeauty(s).endereco"
+                          :legenda="itemDaBeauty(s).legenda" :arquivo="itemDaBeauty(s).arquivo" />
+          <router-link class="bs-atalho"
+                       :to="{ name: 'material-grafico', query: { busca: s.codigo, ...(s.ativa === false || s.arquivada ? { todos: '1' } : {}) } }">
+            Ver no Material Gráfico →</router-link>
 
           <!-- ── EDITAR (inline, sem modal) ───────────────────────────────
                ⚠️ SÓ "QUANDO" E "LOJA" — o `codigo` nunca entra aqui: ele está
-               dentro dos DOIS links já copiados acima (mesa e cartão), e os
-               dois estão IMPRESSOS. `vessel_beauty_session_editar` nem aceita
+               dentro do link do QR da mesa (e do antigo QR do cartão), e os
+               dois podem estar IMPRESSOS. `vessel_beauty_session_editar` nem aceita
                `p_codigo` de novo por acaso: a garantia é a ausência dele. -->
           <div v-if="podeExecutarAcao('editar', podeEditar) && editando === s.codigo" class="id-caixa-form">
             <h3 class="bs-etiqueta bs-etiqueta-interna id-titulo"><icone-do-bloco nome="editar" />Editar</h3>
@@ -238,8 +225,8 @@
                 </select></label>
             </div>
             <p class="bs-nota">
-              <b>Código nunca muda</b>: ele está nos dois QR já impressos — o do
-              display e o do cartão na mão da cliente.
+              <b>Código nunca muda</b>: ele está dentro do QR já impresso no
+              display do salão.
             </p>
             <p v-if="erroDeEditar === s.codigo" class="bs-nota bs-nota-erro">{{ mensagemEditar }}</p>
             <div class="bs-acoes">
@@ -333,10 +320,12 @@
  * responde 200 com lista VAZIA, e a tela diria "nenhuma sessão" para uma agenda
  * cheia. É o estrago do item 9 do PADRAO-DA-CENTRAL.
  *
- * ⚠️ O QR NÃO SAI DAQUI, E É DE PROPÓSITO. O comando que gera os QR no outro
- * repositório LÊ CADA UM DE VOLTA com uma câmera de verdade antes de entregar.
- * Uma tela não faz isso, e QR que a câmera não lê só se descobre com o material
- * já impresso.
+ * ⚠️ O QR AGORA SAI DAQUI (23/09/2026), UM SÓ POR SESSÃO — o da mesa. O
+ * dono decidiu tirar o do cartão ("concordo em ser só da mesa"). O desenho vem
+ * de `src/compartilhado/qr.js`, cópia do codificador do site com a mesma
+ * impressão digital, e `qr.test.mjs` LÊ CADA QR DE VOLTA com um leitor
+ * independente (zxing) — a conferência que antes só o comando do site fazia.
+ * O mesmo botão mora no Material Gráfico (`qr-para-baixar.vue`).
  *
  * ⚠️ O PERÍODO DA BARRA RECORTA A LISTA, NÃO O BANCO (R10/R17/R18). As duas
  * funções de conta do Comercial Vessel recebem `p_dias`, mas ele NUNCA filtra
@@ -367,9 +356,10 @@ import { estado, hasPermission } from '../../compartilhado/controle-de-login-e-u
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../../compartilhado/conectar-no-banco-de-dados.js'
 import { classificarErro } from '../../compartilhado/classificar-erro.js'
 import {
-  LOJAS, codigoSugerido, problemasDaSessao, enderecoDaMesa, enderecoDoCartao,
-  resumoDaSessao, dataLegivel,
+  LOJAS, codigoSugerido, problemasDaSessao, resumoDaSessao, dataLegivel,
 } from './contas-das-sessoes.js'
+import QrParaBaixar from '../comercial-vessel/qr-para-baixar.vue'
+import { itemDaBeauty } from '../comercial-vessel/material-grafico-regras.js'
 import {
   podeExecutarAcao, calcularConjunto, mensagemDeEditar, mensagemDeArquivar,
   mensagemDeApagar, mensagemDeTemGente, seloDaSessao, rotuloDeArquivar,
@@ -400,7 +390,6 @@ const erroAoCriar = ref('')
 const mexendo = ref(null)
 const erroAoMexer = ref(null)
 const confirmando = ref(null)
-const copiado = ref(null)
 
 const filtro = ref({ ...FILTRO_VAZIO })
 
@@ -658,17 +647,6 @@ async function apagar(s) {
   }
 }
 
-async function copiar(texto, marca) {
-  try {
-    await navigator.clipboard.writeText(texto)
-    copiado.value = marca
-    setTimeout(() => { if (copiado.value === marca) copiado.value = null }, 2000)
-  } catch {
-    // Sem permissão de área de transferência o endereço continua na tela para
-    // ser selecionado à mão — nada se perde.
-  }
-}
-
 onMounted(carregar)
 </script>
 
@@ -834,29 +812,19 @@ onMounted(carregar)
 .bs-nota-erro { color: var(--red); }
 .bs-nota-aviso { color: var(--orange, var(--red)); }
 
-.bs-link {
-  display: flex;
-  flex-wrap: wrap;
+.bs-qr { margin-top: var(--sp-2); }
+/* O atalho para o Material Gráfico: link de verdade (abre noutra aba se a
+   pessoa quiser), com 40px de alvo. */
+.bs-atalho {
+  display: inline-flex;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--sp-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: var(--sp-3);
+  min-height: 40px;
   margin-top: var(--sp-2);
-}
-.bs-link-texto { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1 1 14rem; }
-.bs-link-nome {
   font-family: var(--fonte-principal);
-  font-size: var(--texto-etiqueta);
-  color: var(--muted);
-}
-.bs-link-url {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: var(--texto-corpo);
-  color: var(--text);
-  /* endereço longo QUEBRA; some é que não pode */
-  overflow-wrap: anywhere;
+  color: var(--modulo);
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .bs-confirma {
