@@ -1110,6 +1110,13 @@ $function$;
 --
 -- O PERÍODO: cada número usa a sua data, e ela está escrita ao lado dele —
 --   · prospectadas → `prospectado_em`; ativadas → `ativada_em`;
+--   · taxa de ativação → DA MESMA TURMA: das prospectadas no período, quantas
+--     já ativaram (a qualquer tempo até o fim dele). ⚠️ Dividir "ativadas no
+--     período" por "prospectadas no período" misturava turmas: 2 ativadas que
+--     vinham de meses antes sobre 1 prospectada imprimia 200%.
+--   · show rate → presentes ÷ confirmadas SÓ DOS ENCONTROS QUE ACONTECERAM.
+--     ⚠️ Confirmada de encontro cancelado nunca pôde comparecer; contá-la no
+--     denominador puxava a taxa para baixo a cada cancelamento.
 --   · encontros, convidadas e vendas → o DIA DO ENCONTRO;
 --   · recorrentes → o dia do SEGUNDO encontro realizado dela;
 --   · taxa de repetição → acumulada até o fim do período (recorrentes ÷
@@ -1146,7 +1153,7 @@ begin
   ),
   ev_p as (select * from ev where dia between v_de and v_ate),
   conv as (
-    select t.id, t.pessoa_id, t.status, e.codigo,
+    select t.id, t.pessoa_id, t.status, e.codigo, e.status as status_do_encontro,
            public.vessel_situacao_do_convite(t.status, t.rsvp, t.convite_enviado_em,
                                              e.quando, e.status) as situacao
       from public.vessel_atendimentos t
@@ -1170,6 +1177,10 @@ begin
     'prospectadas', (select count(*)::int from sty where prospectado_em between v_de and v_ate),
     'ativadas', (select count(*)::int from sty
                   where (ativada_em at time zone 'America/Sao_Paulo')::date between v_de and v_ate),
+    -- O numerador da taxa de ativação: a mesma turma das `prospectadas`.
+    'prospectadas_ja_ativadas', (select count(*)::int from sty
+                  where prospectado_em between v_de and v_ate
+                    and (ativada_em at time zone 'America/Sao_Paulo')::date <= v_ate),
     -- ⚠️ "AGENDADO OU POSTERIOR" INCLUI O QUE FOI CANCELADO DEPOIS: ele chegou a
     -- ter data. Tirar os cancelados do denominador faria a taxa de realização
     -- subir justamente quando a operação cancela.
@@ -1180,6 +1191,11 @@ begin
     'convidadas', (select count(*)::int from conv),
     'confirmadas', (select count(*)::int from conv
                      where situacao in ('confirmada', 'presente', 'nao_compareceu')),
+    -- O denominador do show rate: as mesmas confirmadas, só onde o encontro
+    -- aconteceu.
+    'confirmadas_em_realizados', (select count(*)::int from conv
+                     where situacao in ('confirmada', 'presente', 'nao_compareceu')
+                       and status_do_encontro = 'realizado'),
     'presentes', (select count(*)::int from conv where status = 'realizado'),
     'recorrentes_no_periodo', (select count(*)::int from realizados
                                 where n = 2 and realizado_em between v_de and v_ate),
@@ -1417,6 +1433,15 @@ $function$;
 -- EXATAMENTE o convite geral — a mesma resposta de uma chave que não existe,
 -- para não dar a ninguém um jeito de descobrir chaves válidas.
 -- ⚠️ SÓ O PRIMEIRO NOME: o link pode ser repassado.
+-- ⚠️ ENCONTRO FECHADO NÃO CUMPRIMENTA NINGUÉM. Arquivado, cancelado, não
+-- realizado ou realizado: o link individual devolve EXATAMENTE o "não
+-- encontrado" do convite geral (o mesmo `json_build_object` de
+-- `vessel_convite_da_private_edit`), sem contar abertura. Antes, um encontro
+-- arquivado com `ativa` ainda ligada dizia "Olá, Ana" e a resposta dela
+-- quebrava em seguida com `convite_invalido` — a mesma trava de
+-- `vessel_rsvp_da_convidada`, que aqui passa a valer ANTES. E a conferência
+-- olha só a chave do ENCONTRO: não depende da chave da convidada, para não
+-- virar um jeito de testar chaves.
 create or replace function public.vessel_convite_da_convidada(p_chave text, p_convidada text)
 returns json
 language plpgsql
@@ -1429,9 +1454,16 @@ declare
   -- guarda a ordem de inserção), e quem compara a resposta pelo texto (a
   -- página, ou a prova) veria uma diferença que não existe. Só vira `jsonb`
   -- no ponto em que de fato se mescla, mais abaixo.
-  v_geral json := public.vessel_convite_da_private_edit(p_chave);
+  v_geral json;
   v_t record;
 begin
+  if exists (select 1 from public.vessel_private_edits e
+              where e.chave = upper(nullif(trim(coalesce(p_chave, '')), ''))
+                and (coalesce(e.arquivada, false)
+                     or e.status in ('cancelado', 'nao_realizado', 'realizado'))) then
+    return json_build_object('ok', false, 'situacao', 'nao_encontrado');
+  end if;
+  v_geral := public.vessel_convite_da_private_edit(p_chave);
   if coalesce((v_geral ->> 'ok')::boolean, false) is not true then return v_geral; end if;
   select t.id, t.rsvp, pe.nome into v_t
     from public.vessel_atendimentos t

@@ -36,12 +36,16 @@ export const ESTAGIOS_AUTOMATICOS = ['ativado', 'evento_realizado', 'recorrente'
 
 /**
  * O que o formulário de corrigir oferece. Quem já teve encontro (`ativada_em`)
- * não volta para antes dele: sobram só as saídas.
+ * não volta para antes dele, e das saídas sobram só "Pausado" e "Inativo".
+ * ⚠️ "Sem retorno" e "Não interessado" NÃO SE OFERECEM A QUEM JÁ ATIVOU: o
+ * gatilho do banco recalcula a etapa a partir dos encontros e devolve a
+ * stylist para ativado/realizado/recorrente, calado — a tela diria "gravado" e
+ * a escolha sumiria. (O "Reabrir" do quadro usa esse recálculo DE PROPÓSITO,
+ * via `reabrirPara`; aqui seria uma escolha que não fica.)
  */
 export function estagiosDeEscolher(ativadaEm) {
-  const antesDoEncontro = ['prospectado', 'contatado', 'interessado', 'em_negociacao']
-  return Object.keys(ESTAGIOS_DA_STYLIST).filter((k) =>
-    !ESTAGIOS_AUTOMATICOS.includes(k) && !(ativadaEm && antesDoEncontro.includes(k)))
+  if (ativadaEm) return ['pausado', 'inativo']
+  return Object.keys(ESTAGIOS_DA_STYLIST).filter((k) => !ESTAGIOS_AUTOMATICOS.includes(k))
 }
 
 export function seloDoEstagio(estagio) {
@@ -251,9 +255,14 @@ export function periodoDoPlacar(escolha, hoje = new Date()) {
 export function taxasDoPlacar(pl) {
   const n = (x) => Number(x) || 0
   return {
-    ativacao: proporcao(n(pl?.ativadas), n(pl?.prospectadas)),
+    // ⚠️ A MESMA TURMA EM CIMA E EMBAIXO: das prospectadas no período, quantas
+    // já ativaram. "Ativadas no período" (a contagem do cartão) é de outra
+    // turma e passava de 100%.
+    ativacao: proporcao(n(pl?.prospectadas_ja_ativadas), n(pl?.prospectadas)),
     realizacao: proporcao(n(pl?.encontros_realizados), n(pl?.encontros_agendados)),
-    showRate: proporcao(n(pl?.presentes), n(pl?.confirmadas)),
+    // ⚠️ Só confirmadas de encontro que ACONTECEU: a de encontro cancelado
+    // nunca pôde comparecer.
+    showRate: proporcao(n(pl?.presentes), n(pl?.confirmadas_em_realizados)),
     repeticao: proporcao(n(pl?.recorrentes_ate_o_fim), n(pl?.ativadas_ate_o_fim)),
     conversao: proporcao(n(pl?.compradoras), n(pl?.presentes)),
     ticket: razao(n(pl?.receita), n(pl?.vendas)),

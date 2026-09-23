@@ -52,7 +52,10 @@
             <div class="cv-numero">
               <span class="cv-numero-valor">{{ placar.ativadas }}</span>
               <span class="cv-numero-rotulo">Ativadas</span>
-              <span class="cv-numero-base">{{ taxaEscrita(taxas.ativacao) }} das prospectadas</span>
+              <!-- ⚠️ O NÚMERO GRANDE E A TAXA SÃO DE TURMAS DIFERENTES: o número
+                   é quem ativou no período (pela data da ativação); a taxa é
+                   das prospectadas no período, quantas já ativaram. -->
+              <span class="cv-numero-base">{{ taxaEscrita(taxas.ativacao) }} das prospectadas no período já ativaram</span>
               <span v-if="margemEscrita(taxas.ativacao)" class="cv-numero-margem">{{ margemEscrita(taxas.ativacao) }}</span>
             </div>
             <div class="cv-numero">
@@ -102,7 +105,7 @@
             <div class="cv-numero">
               <span class="cv-numero-valor">{{ placar.presentes }}</span>
               <span class="cv-numero-rotulo">Presentes</span>
-              <span class="cv-numero-base">{{ taxaEscrita(taxas.showRate) }} das confirmadas</span>
+              <span class="cv-numero-base">{{ taxaEscrita(taxas.showRate) }} das confirmadas em encontros que aconteceram</span>
               <span v-if="margemEscrita(taxas.showRate)" class="cv-numero-margem">{{ margemEscrita(taxas.showRate) }}</span>
             </div>
           </div>
@@ -162,6 +165,12 @@
             Cada número usa a sua data: <b>prospectadas</b> pela data da
             prospecção, <b>ativadas</b> pelo dia do primeiro encontro agendado, e
             <b>encontros, convidadas e venda</b> pelo dia do encontro.
+            A <b>taxa de ativação</b> olha uma turma só: das prospectadas no
+            período, quantas já ativaram — por isso ela não bate com a divisão
+            dos dois números grandes, e nunca passa de 100%. A taxa de
+            <b>presentes</b> conta só as confirmadas de encontros que
+            aconteceram: quem confirmou para um encontro cancelado nunca pôde
+            ir.
             <b>Agendados</b> inclui os que depois caíram — eles chegaram a ter
             data, e tirá-los faria a taxa de realização subir justamente quando
             a operação cancela.
@@ -385,12 +394,12 @@
                 <span v-if="s.responsavel"> · com {{ s.responsavel }}</span>
               </p>
             </div>
-            <!-- ⚠️ `estagio` é texto livre, sem validação no banco (comentário
-                 acima confirma) — então nada impede alguém de digitar
-                 "ativa" como ESTÁGIO no funil, que é uma coisa (onde ela está
-                 na jornada) totalmente diferente de "ativa" como SITUAÇÃO da
+            <!-- ⚠️ ESTÁGIO E SITUAÇÃO SÃO DUAS COISAS. Desde a T11 o `estagio`
+                 é uma lista fechada do banco (os onze do funil, CHECK na
+                 migration), e "Evento agendado e ativado" (onde ela está na
+                 jornada) não tem nada a ver com "ativa" como SITUAÇÃO da
                  parceria (ela continua com a gente). Quando as duas
-                 coincidem, as regras antigas imprimiam "Ativa" duas vezes
+                 coincidiam, as regras antigas imprimiam "Ativa" duas vezes
                  empilhado — lido na tela, parece bug de renderização
                  duplicada, não duas informações. A situação só é digna de um
                  selo à parte quando é a exceção: "Desativada". Continuar

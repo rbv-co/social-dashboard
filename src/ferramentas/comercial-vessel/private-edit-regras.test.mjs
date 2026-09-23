@@ -5,7 +5,7 @@ import {
   mensagemDeEditar, mensagemDeArquivar, mensagemDeTemGente, mensagemDeApagar,
   seloDoEncontro, rotuloDeArquivar, rsvpLegivel, confirmouLegivel,
   compareceuLegivel, comprouLegivel, paraCampoDatetimeLocal,
-  podeExecutarAcao, calcularConjunto,
+  podeExecutarAcao, calcularConjunto, encontroAceitaConvite,
 } from './private-edit-regras.js'
 
 const telaFonte = () => readFileSync(new URL('./tela-de-private-edit.vue', import.meta.url), 'utf8')
@@ -214,6 +214,42 @@ test('calcularConjunto: as taxas somam numerador e denominador do CONJUNTO, nao 
   assert.equal(c.resposta.valor, 0.2)
 })
 
+test('calcularConjunto: a presença soma só os encontros que ACONTECERAM', () => {
+  const LISTA = [
+    { status: 'realizado', confirmadas: 4, compareceram: 3 },
+    { status: 'cancelado', confirmadas: 6, compareceram: 0 },  // nunca pôde ir
+    { status: 'agendado', confirmadas: 5, compareceram: 0 },   // ainda não foi
+    { status: 'realizado', confirmadas: 2, compareceram: 2 },
+  ]
+  const c = calcularConjunto(LISTA)
+  // Com todos: 5 de 17. Só os realizados: 5 de 6.
+  assert.equal(c.presenca.x, 5)
+  assert.equal(c.presenca.n, 6)
+  // A contagem de encontros continua sendo a da lista inteira.
+  assert.equal(c.totalEncontros, 4)
+  // Nenhum realizado: sem base, e não 0%.
+  assert.equal(calcularConjunto([{ status: 'cancelado', confirmadas: 3, compareceram: 0 }]).presenca.temBase, false)
+})
+
+test('encontroAceitaConvite: só enquanto o link da convidada abre', () => {
+  assert.equal(encontroAceitaConvite({ status: 'agendado', ativa: true, arquivada: false }), true)
+  assert.equal(encontroAceitaConvite({ status: 'confirmado' }), true)
+  for (const st of ['cancelado', 'nao_realizado', 'realizado']) {
+    assert.equal(encontroAceitaConvite({ status: st, ativa: true }), false, st)
+  }
+  assert.equal(encontroAceitaConvite({ status: 'agendado', arquivada: true }), false)
+  assert.equal(encontroAceitaConvite({ status: 'agendado', ativa: false }), false)
+  assert.equal(encontroAceitaConvite(null), false)
+})
+
+test('FIACAO: o botão "Cartão e mensagem" mora dentro de encontroAceitaConvite(e)', () => {
+  const fonte = telaFonte()
+  const i = fonte.indexOf('>Cartão e mensagem</button>')
+  const abre = fonte.lastIndexOf('<button', i)
+  assert.ok(i > 0 && abre > 0)
+  assert.match(fonte.slice(abre, i), /v-if="encontroAceitaConvite\(e\)"/)
+})
+
 // ── guardas de FIAÇÃO no .vue (texto-fonte, não execução) ───────────────────
 //
 // ⚠️ POR QUE ISTO EXISTE, E POR QUE UM TESTE DE FUNÇÃO PURA NÃO BASTA: os dois
@@ -355,7 +391,7 @@ test('FIACAO: editar, arquivar e apagar vivem atrás do MESMO gate de editar (an
 
 test('T11: o comparecimento do conjunto é sobre quem CONFIRMOU, não sobre quem disse sim', () => {
   // Uma convidada confirmada por telefone (sem "sim" no convite) que veio.
-  const c = calcularConjunto([{ vagas: 8, responderam: 1, disseram_sim: 0, confirmadas: 1, compareceram: 1 }])
+  const c = calcularConjunto([{ status: 'realizado', vagas: 8, responderam: 1, disseram_sim: 0, confirmadas: 1, compareceram: 1 }])
   assert.equal(c.presenca.n, 1)
   assert.equal(c.presenca.valor, 1)
 })

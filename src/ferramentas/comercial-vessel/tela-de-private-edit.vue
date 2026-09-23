@@ -77,7 +77,9 @@
         </p>
         <p class="cv-nota">
           <b>Confirmadas</b> inclui quem confirmou e faltou — sem ela no
-          denominador, o comparecimento daria perto de 100% sempre.
+          denominador, o comparecimento daria perto de 100% sempre. No total de
+          cima, o comparecimento soma só os encontros que <b>aconteceram</b>:
+          quem confirmou para um encontro cancelado nunca pôde ir.
         </p>
         <p class="cv-nota">
           <b>Encerrada</b> e <b>arquivada</b> são coisas diferentes. Encerrada
@@ -119,7 +121,7 @@
             <div class="cv-numero">
               <span class="cv-numero-valor">{{ emPorcento(conjunto.presenca.valor) }}</span>
               <span class="cv-numero-rotulo">Foram, de quem confirmou</span>
-              <span class="cv-numero-base">{{ taxaEscrita(conjunto.presenca) }}</span>
+              <span class="cv-numero-base">{{ taxaEscrita(conjunto.presenca) }} · só encontros que aconteceram</span>
             </div>
           </div>
           <!-- ⚠️ A taxa do conjunto é a SOMA dos numeradores sobre a SOMA dos
@@ -389,7 +391,10 @@
                   <span class="cv-selo" :class="seloDoConvite(c.situacao).classe">{{ seloDoConvite(c.situacao).texto }}</span>
                 </div>
                 <div class="cv-acoes">
-                  <button type="button" class="btn" @click="cartaoAberto = { convidada: c, encontro: e }">Cartão e mensagem</button>
+                  <!-- ⚠️ Só enquanto o link dela abre: encontro fechado dá "não
+                       encontrado" na página, e o cartão mandaria um link morto. -->
+                  <button v-if="encontroAceitaConvite(e)" type="button" class="btn"
+                          @click="cartaoAberto = { convidada: c, encontro: e }">Cartão e mensagem</button>
                   <button v-for="g in gestosDaConvidada(c)" :key="g.gesto" class="btn"
                           :disabled="marcando === c.id" @click="marcar(e, c, g.gesto)">{{ g.rotulo }}</button>
                 </div>
@@ -465,6 +470,7 @@ import { filtrar, FILTRO_VAZIO, precisaDoBanco } from './filtros.js'
 import {
   mensagemDeEditar, mensagemDeArquivar, mensagemDeTemGente, mensagemDeApagar,
   rotuloDeArquivar, paraCampoDatetimeLocal, podeExecutarAcao, calcularConjunto,
+  encontroAceitaConvite,
 } from './private-edit-regras.js'
 import {
   STATUS_DO_ENCONTRO, precisaDeMotivo, seloDoStatus, mensagemDeSituacaoDoEncontro,

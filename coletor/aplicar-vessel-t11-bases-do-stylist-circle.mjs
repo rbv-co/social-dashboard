@@ -310,6 +310,15 @@ try {
   conferir(feito.ok && e1b.status === 'realizado' && e1b.realizado_em !== null && e1b.ativa === false
     && s.estagio === 'evento_realizado',
     'realizado: ganha a data, fecha o convite e a stylist vira "evento realizado"', { e1b, s })
+  await falarComo(null)
+  const naoAchado = await r(`public.vessel_convite_da_private_edit('NAOEXISTE-T11')`)
+  const abRealizado = await r(`public.vessel_convite_da_convidada($1, $2)`, [chaveE, ch.chave])
+  const contR = await uma(`select convite_aberturas from public.vessel_atendimentos where id = $1`, [ca.id])
+  conferir(JSON.stringify(abRealizado) === JSON.stringify(naoAchado) && JSON.stringify(naoAchado)
+      === JSON.stringify({ ok: false, situacao: 'nao_encontrado' }) && contR.convite_aberturas === 1,
+    'encontro realizado: o link DELA dá o mesmo "não encontrado" do geral, sem nome e sem contar abertura',
+    { abRealizado, naoAchado, contR })
+  await falarComo(mexe)
 
   const pe2 = await r(`public.vessel_criar_private_edit($1, now() - interval '1 hour', 'Loja', 'CPS', 'iguatemi', 10)`, [STY])
   const PE2 = pe2.codigo
@@ -351,8 +360,9 @@ try {
     '"Comprou" segue a mesma regra: sim no primeiro, — no segundo', { lista1, lista2 })
 
   const pl = await r(`public.vessel_placar_do_stylist_circle(null, null, 14)`)
-  const esperado = { prospectadas: 1, ativadas: 1, encontros_agendados: 2, encontros_realizados: 2,
-    convidadas: 3, confirmadas: 3, presentes: 2, recorrentes_no_periodo: 1, compradoras: 1, vendas: 1,
+  const esperado = { prospectadas: 1, ativadas: 1, prospectadas_ja_ativadas: 1,
+    encontros_agendados: 2, encontros_realizados: 2,
+    convidadas: 3, confirmadas: 3, confirmadas_em_realizados: 3, presentes: 2, recorrentes_no_periodo: 1, compradoras: 1, vendas: 1,
     stylists_com_contatos_ate_ativar: 1 }
   const bate = Object.entries(esperado).every(([k, v]) => pl[k] === v)
   conferir(bate && Number(pl.receita) === 1500 && Number(pl.pecas) === 2 && pl.por_stylist.length === 1
@@ -361,6 +371,20 @@ try {
   const pvazio = await r(`public.vessel_placar_do_stylist_circle(current_date + 30, current_date + 60, 14)`)
   conferir(pvazio.encontros_agendados === 0 && pvazio.prospectadas === 0 && Number(pvazio.receita) === 0,
     'um período sem nada devolve zeros, não erro', pvazio)
+
+  // ⚠️ A TAXA DE ATIVAÇÃO É DA MESMA TURMA. A stylist passa a ter sido
+  // prospectada 60 dias atrás (e ativou hoje): num período que começa ontem
+  // ela conta em "ativadas" mas NÃO no numerador da taxa — antes, 1 ativada
+  // sobre 0 prospectadas; com duas assim, 200%.
+  await cli.query(`update public.vessel_stylists set prospectado_em = current_date - 60 where codigo = $1`, [STY])
+  const plRecente = await r(`public.vessel_placar_do_stylist_circle(current_date - 1, null, 14)`)
+  const plAntigo = await r(`public.vessel_placar_do_stylist_circle(current_date - 90, current_date - 30, 14)`)
+  const plTudo = await r(`public.vessel_placar_do_stylist_circle(current_date - 90, null, 14)`)
+  conferir(plRecente.ativadas === 1 && plRecente.prospectadas === 0 && plRecente.prospectadas_ja_ativadas === 0
+    && plAntigo.prospectadas === 1 && plAntigo.ativadas === 0 && plAntigo.prospectadas_ja_ativadas === 0
+    && plTudo.prospectadas === 1 && plTudo.prospectadas_ja_ativadas === 1,
+    'ativação: das prospectadas no período, quantas já ativaram até o fim dele — nunca outra turma',
+    { plRecente, plAntigo, plTudo })
   const ra = (await r(`public.vessel_rastreio_dos_stylists(14, true)`)).find((x) => x.codigo === STY)
   conferir(ra.encontros_realizados === 2 && Number(ra.receita_dos_encontros) === 1500
     && ra.proxima_data_permitida !== null && ra.loja === 'iguatemi',
@@ -368,12 +392,44 @@ try {
 
   console.log('\n── o que cai não conta como feito')
   const pe3 = await r(`public.vessel_criar_private_edit($1, now() + interval '3 days', null, 'CPS', 'iguatemi', 7)`, [STY])
+  // A Bia confirma para o encontro que depois cai: ela nunca pôde comparecer.
+  const cb3 = await r(`public.vessel_convidar_para_encontro($1, 'Bia da Prova', $2)`, [pe3.codigo, FONE_B])
+  await r(`public.vessel_convite_marcar($1, 'sim')`, [cb3.id])
+  const chB3 = await r(`public.vessel_chave_da_convidada($1)`, [cb3.id])
   const canc = await r(`public.vessel_private_edit_situacao($1, 'cancelado', null, 'Chuva forte')`, [pe3.codigo])
   const pl2 = await r(`public.vessel_placar_do_stylist_circle(null, null, 14)`)
   conferir(canc.ok && pl2.encontros_agendados === 3 && pl2.encontros_realizados === 2 && pl2.encontros_cancelados === 1,
     'cancelado entra em "agendados" e não em "realizados"', pl2)
+  conferir(pl2.confirmadas === 4 && pl2.confirmadas_em_realizados === 3 && pl2.presentes === 2,
+    'show rate: a confirmada do encontro cancelado conta em "confirmadas", mas não no denominador', pl2)
+  await falarComo(null)
+  const abCancelado = await r(`public.vessel_convite_da_convidada($1, $2)`, [chB3.chave_encontro, chB3.chave])
+  const contC = await uma(`select convite_aberturas from public.vessel_atendimentos where id = $1`, [cb3.id])
+  conferir(JSON.stringify(abCancelado) === JSON.stringify(naoAchado) && contC.convite_aberturas === 0,
+    'encontro cancelado: o link DELA dá o mesmo "não encontrado", sem contar abertura', { abCancelado, contC })
+  await falarComo(mexe)
   const fechado = await r(`public.vessel_convidar_para_encontro($1, 'Cris', '5519990001104')`, [pe3.codigo])
   conferir(fechado.situacao === 'encontro_fechado', 'não se convida para encontro cancelado', fechado)
+
+  // ⚠️ O CASO QUE CUMPRIMENTAVA: arquivado com o convite AINDA aceitando
+  // respostas (`ativa` ligada). O geral já respondia; o individual dizia
+  // "Olá, Ana" e a resposta dela quebrava depois.
+  const pe4 = await r(`public.vessel_criar_private_edit($1, now() + interval '5 days', null, 'CPS', 'iguatemi', 7)`, [STY])
+  const ca4 = await r(`public.vessel_convidar_para_encontro($1, 'Ana da Prova', $2)`, [pe4.codigo, FONE_A])
+  const chA4 = await r(`public.vessel_chave_da_convidada($1)`, [ca4.id])
+  await falarComo(null)
+  const abAberto = await r(`public.vessel_convite_da_convidada($1, $2)`, [chA4.chave_encontro, chA4.chave])
+  await falarComo(mexe)
+  const arq = await r(`public.vessel_private_edit_arquivar($1, true)`, [pe4.codigo])
+  const e4 = await uma(`select ativa, arquivada from public.vessel_private_edits where codigo = $1`, [pe4.codigo])
+  await falarComo(null)
+  const abArquivado = await r(`public.vessel_convite_da_convidada($1, $2)`, [chA4.chave_encontro, chA4.chave])
+  const contA = await uma(`select convite_aberturas from public.vessel_atendimentos where id = $1`, [ca4.id])
+  conferir(abAberto.primeiro_nome === 'Ana' && arq.ok && e4.ativa === true && e4.arquivada === true
+      && JSON.stringify(abArquivado) === JSON.stringify(naoAchado) && contA.convite_aberturas === 1,
+    'encontro arquivado (convite ainda ligado): o link DELA dá o mesmo "não encontrado", e a abertura não sobe',
+    { abAberto, arq, e4, abArquivado, contA })
+  await falarComo(mexe)
 
   await cli.query('rollback to savepoint prova')
   const { n: contatosSobrando } = await uma(`select count(*)::int as n from public.vessel_stylist_contatos`)

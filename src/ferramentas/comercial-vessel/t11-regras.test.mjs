@@ -50,9 +50,11 @@ test('os três degraus automáticos nunca aparecem para escolher', () => {
   }
 })
 
-test('quem já teve encontro não volta para antes dele', () => {
+test('quem já teve encontro não volta para antes dele, e só pausa ou inativa', () => {
+  // "Sem retorno"/"Não interessado" o gatilho do banco desfaz calado para
+  // quem já ativou — oferecer seria um botão que não fica.
   const lista = estagiosDeEscolher('2026-09-22T12:00:00Z')
-  assert.deepEqual(lista, ['sem_retorno', 'nao_interessado', 'pausado', 'inativo'])
+  assert.deepEqual(lista, ['pausado', 'inativo'])
   assert.ok(estagiosDeEscolher(null).includes('contatado'))
 })
 
@@ -140,8 +142,9 @@ test('período: "este mês" vai até o ÚLTIMO dia, não até hoje', () => {
 })
 
 test('placar: taxas carregam de quantos saíram, e sem base não viram 0%', () => {
-  const t = taxasDoPlacar({ prospectadas: 10, ativadas: 3, encontros_agendados: 4, encontros_realizados: 3,
-    confirmadas: 9, presentes: 7, compradoras: 2, vendas: 3, receita: 4500, pecas: 5,
+  const t = taxasDoPlacar({ prospectadas: 10, ativadas: 5, prospectadas_ja_ativadas: 3,
+    encontros_agendados: 4, encontros_realizados: 3,
+    confirmadas: 12, confirmadas_em_realizados: 9, presentes: 7, compradoras: 2, vendas: 3, receita: 4500, pecas: 5,
     recorrentes_ate_o_fim: 1, ativadas_ate_o_fim: 3 })
   assert.equal(t.ativacao.x, 3); assert.equal(t.ativacao.n, 10)
   assert.equal(t.showRate.valor, 7 / 9)
@@ -149,6 +152,27 @@ test('placar: taxas carregam de quantos saíram, e sem base não viram 0%', () =
   assert.equal(t.pecasPorCliente.valor, 2.5)
   const vazio = taxasDoPlacar({})
   for (const v of Object.values(vazio)) assert.equal(v.temBase, false)
+})
+
+test('placar: a ativação é da MESMA turma — 2 ativadas antigas sobre 1 prospectada não viram 200%', () => {
+  const t = taxasDoPlacar({ prospectadas: 1, ativadas: 2, prospectadas_ja_ativadas: 0 })
+  assert.equal(t.ativacao.x, 0); assert.equal(t.ativacao.n, 1)
+  assert.ok(t.ativacao.valor <= 1)
+  const u = taxasDoPlacar({ prospectadas: 1, ativadas: 2, prospectadas_ja_ativadas: 1 })
+  assert.equal(u.ativacao.valor, 1)
+})
+
+test('placar: confirmada de encontro cancelado não puxa o show rate para baixo', () => {
+  // 10 confirmadas, 4 delas num encontro que caiu; das 6 que podiam ir, 6 foram.
+  const t = taxasDoPlacar({ confirmadas: 10, confirmadas_em_realizados: 6, presentes: 6 })
+  assert.equal(t.showRate.valor, 1); assert.equal(t.showRate.n, 6)
+})
+
+test('placar: os dois campos novos existem na função do banco', () => {
+  const i = MIGRATION.indexOf('function public.vessel_placar_do_stylist_circle')
+  const corpo = MIGRATION.slice(i, MIGRATION.indexOf('$function$;', i))
+  assert.match(corpo, /'prospectadas_ja_ativadas'/)
+  assert.match(corpo, /'confirmadas_em_realizados'/)
 })
 
 // ── a fiação: o `.vue` usa as regras, não reescreve ─────────────────────────

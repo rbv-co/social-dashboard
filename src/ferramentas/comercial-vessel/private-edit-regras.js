@@ -75,8 +75,24 @@ export function calcularConjunto(lista) {
     // ⚠️ T11: o denominador do comparecimento é quem CONFIRMOU (inclusive quem
     // confirmou e faltou), não quem disse "sim" no convite. Com a equipe
     // confirmando por telefone, "sim" deixou de ser a única porta.
-    presenca: proporcaoDoConjunto(l, 'compareceram', 'confirmadas'),
+    // ⚠️ E SÓ OS ENCONTROS QUE ACONTECERAM (`status === 'realizado'`), em cima
+    // e embaixo: confirmada de encontro cancelado ou ainda por vir nunca pôde
+    // comparecer, e contá-la puxava a taxa para baixo a cada cancelamento. O
+    // cartão de cada encontro continua mostrando a conta dele, como está.
+    presenca: proporcaoDoConjunto(l.filter((e) => e?.status === 'realizado'), 'compareceram', 'confirmadas'),
   }
+}
+
+/**
+ * O link da convidada ainda abre? A MESMA trava de `vessel_convite_da_convidada`
+ * e `vessel_rsvp_da_convidada` no banco: arquivado, cancelado, não realizado,
+ * realizado ou com o convite parado (`ativa === false`) dão "não encontrado".
+ * ⚠️ É isto que esconde o botão "Cartão e mensagem": mandar um cartão cujo
+ * link não abre é pior que não mandar nada.
+ */
+export function encontroAceitaConvite(e) {
+  if (!e || e.arquivada || e.ativa === false) return false
+  return !['cancelado', 'nao_realizado', 'realizado'].includes(e.status)
 }
 
 /** A frase de erro de `editar`, para cada `situacao` que a função devolve. */
