@@ -205,3 +205,19 @@ test('o editor de UM campo acha a config pela coluna', () => {
   assert.equal(CAMPOS_DA_FICHA.data_inicio_contrato.tipo, 'date')
   assert.equal(CAMPOS_DA_FICHA.email_outlook.tipo, 'email')
 })
+
+// --- tomDoColaborador (Onda 2a da cor) ---
+test('tomDoColaborador: ativo é verde (viva), desligado é cinza (parada)', async () => {
+  const { tomDoColaborador } = await import('./ficha-do-colaborador.js')
+  assert.equal(tomDoColaborador('ativo'), 'viva')
+  assert.equal(tomDoColaborador('desligado'), 'parada')
+  // mesma regra de texto da tela: só 'desligado' diz desligado
+  assert.equal(tomDoColaborador(null), 'viva')
+})
+
+test('a tela de Acessos liga o tom do colaborador na lista e na ficha', async () => {
+  const { readFileSync } = await import('node:fs')
+  const tela = readFileSync(new URL('./tela-de-acessos.vue', import.meta.url), 'utf8')
+  assert.ok((tela.match(/id-tom-\$\{tomDoColaborador\(c\.status\)\}/g) || []).length >= 3, 'cartão, selo da lista e ficha')
+  assert.match(tela, /tomDoColaborador[^\n]*from '\.\/ficha-do-colaborador\.js'/)
+})
