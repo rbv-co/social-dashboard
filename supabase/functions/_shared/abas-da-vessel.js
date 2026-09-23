@@ -38,7 +38,7 @@ export const CONSULTAS = {
       + 'visita_acompanhantes,visita_pedido' },
   pedidos: { tabela: 'vessel_pedidos', colunas: '*' },
   pessoas: { tabela: 'vessel_pessoas',
-    colunas: 'id,nome,telefone,email,cidade,consultora,bling_contato_id,criado_em' },
+    colunas: 'id,nome,telefone,email,cidade,instagram,consultora,bling_contato_id,criado_em' },
   atendimentos: { tabela: 'vessel_atendimentos', colunas: '*' },
   origens: { tabela: 'vessel_origens', colunas: '*' },
   conviteAberturas: { tabela: 'vessel_convite_aberturas',
@@ -341,11 +341,14 @@ export function montarAbas(d) {
         { titulo: 'WhatsApp', largura: 18 },
         { titulo: 'E-mail', largura: 30 },
         { titulo: 'Cidade', largura: 20 },
+        // ⚠️ MESMA POSIÇÃO DA ABA "Stylists" (depois da cidade), de propósito:
+        // quem lê as duas abas não precisa procurar a coluna em lugar diferente.
+        { titulo: 'Instagram', largura: 20 },
         { titulo: 'Client Advisor', largura: 20 },
         { titulo: 'Ficha no Bling', largura: 14 },
         { titulo: 'Entrou em', tipo: 'dia-de-instante', largura: 14 },
       ],
-      linhas: [...d.pessoas].sort(maisNovoPrimeiro('criado_em')).map((p) => [p.nome, p.telefone, p.email, p.cidade, p.consultora,
+      linhas: [...d.pessoas].sort(maisNovoPrimeiro('criado_em')).map((p) => [p.nome, p.telefone, p.email, p.cidade, p.instagram, p.consultora,
           p.bling_contato_id, p.criado_em]),
     },
     {
