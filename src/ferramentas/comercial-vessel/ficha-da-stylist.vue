@@ -15,8 +15,8 @@
           <button v-if="podeEditar" type="button" class="btn" @click="$emit('corrigir', stylist.codigo)">Corrigir dados…</button>
         </div>
 
-        <template v-if="podeEditar">
-          <h3 class="cv-etiqueta cv-etiqueta-interna">Registrar contato</h3>
+        <div v-if="podeEditar" class="cv-caixa-form">
+          <h3 class="cv-etiqueta cv-etiqueta-interna"><icone-do-bloco nome="contato" />Registrar contato</h3>
           <p class="cv-sub">Canal</p>
           <div class="cv-escolha">
             <button v-for="(rotulo, k) in CANAIS" :key="k" type="button" class="btn"
@@ -49,7 +49,7 @@
                 Mover para {{ ESTAGIOS_DA_STYLIST[sugestao] }}</button>
             </div>
           </div>
-        </template>
+        </div>
 
         <h3 class="cv-etiqueta cv-etiqueta-interna">Histórico</h3>
         <p v-if="erroDoHistorico" class="cv-nota cv-nota-erro">{{ erroDoHistorico }}</p>
@@ -76,6 +76,7 @@ import { ESTAGIOS_DA_STYLIST, telefoneLegivel } from './t11-regras.js'
 import { dataLegivel, dataHoraLegivel } from './enderecos-publicos.js'
 import { CANAIS, RESULTADOS } from './crm-da-stylist-regras.js'
 import { mensagemDeEditar } from './stylist-circle-regras.js'
+import IconeDoBloco from './icone-do-bloco.vue'
 
 const props = defineProps({
   stylist: { type: Object, required: true },

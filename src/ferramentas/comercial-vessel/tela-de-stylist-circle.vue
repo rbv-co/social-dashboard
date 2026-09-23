@@ -1,5 +1,5 @@
 <template>
-  <div class="tela-sty">
+  <div class="tela-sty cv-identidade">
     <barra-de-topo :voltar="ROTULO_DO_PAI[paiDaTela('stylist-circle')]"
                    titulo="Vessel — Stylist Circle"
                    :subtitulo="subtitulo" @voltar="voltar" />
@@ -9,7 +9,7 @@
 
       <!-- ── A PORTA DO PROGRAMA ────────────────────────────────────────── -->
       <section class="cv-bloco">
-        <h2 class="cv-etiqueta">A porta de entrada</h2>
+        <h2 class="cv-etiqueta"><icone-do-bloco nome="porta" />A porta de entrada</h2>
         <div class="cv-link">
           <div class="cv-link-texto">
             <span class="cv-link-nome">Onde a stylist se inscreve sozinha — uma vez, na vida</span>
@@ -32,7 +32,7 @@
       <section v-if="!erro" class="cv-bloco">
         <div class="cv-cabeca">
           <div class="cv-cabeca-texto">
-            <h2 class="cv-etiqueta">O placar do Stylist Circle</h2>
+            <h2 class="cv-etiqueta"><icone-do-bloco nome="placar" />O placar do Stylist Circle</h2>
           </div>
           <label class="cv-campo cv-campo-periodo" for="sty-periodo"><span>Período</span>
             <select id="sty-periodo" v-model="periodoDoPlacarEscolhido">
@@ -42,7 +42,8 @@
         <p v-if="erroDoPlacar" class="cv-nota cv-nota-erro">{{ erroDoPlacar }}</p>
         <div v-else-if="carregandoPlacar && !placar" class="cv-carregando">Carregando o placar…</div>
         <template v-else-if="placar">
-          <h3 class="cv-etiqueta cv-etiqueta-interna">As parceiras</h3>
+          <div class="cv-grupo cv-grupo-parceiras">
+          <h3 class="cv-etiqueta cv-etiqueta-interna"><icone-do-bloco nome="parceiras" />As parceiras</h3>
           <div class="cv-numeros cv-numeros-placar">
             <div class="cv-numero">
               <span class="cv-numero-valor">{{ placar.prospectadas }}</span>
@@ -80,8 +81,10 @@
                 ? `média de ${placar.stylists_com_contatos_ate_ativar} stylist(s)` : 'sem base ainda' }}</span>
             </div>
           </div>
+          </div>
 
-          <h3 class="cv-etiqueta cv-etiqueta-interna">Os encontros e as convidadas</h3>
+          <div class="cv-grupo cv-grupo-encontros">
+          <h3 class="cv-etiqueta cv-etiqueta-interna"><icone-do-bloco nome="encontros" />Os encontros e as convidadas</h3>
           <div class="cv-numeros cv-numeros-placar">
             <div class="cv-numero">
               <span class="cv-numero-valor">{{ placar.encontros_agendados }}</span>
@@ -109,8 +112,10 @@
               <span v-if="margemEscrita(taxas.showRate)" class="cv-numero-margem">{{ margemEscrita(taxas.showRate) }}</span>
             </div>
           </div>
+          </div>
 
-          <h3 class="cv-etiqueta cv-etiqueta-interna">A venda ({{ janelaEscrita(placar.janela_de_venda_em_dias) }})</h3>
+          <div class="cv-grupo cv-grupo-venda">
+          <h3 class="cv-etiqueta cv-etiqueta-interna"><icone-do-bloco nome="venda" />A venda ({{ janelaEscrita(placar.janela_de_venda_em_dias) }})</h3>
           <div class="cv-numeros cv-numeros-placar">
             <div class="cv-numero">
               <span class="cv-numero-valor">{{ emReais(placar.receita) }}</span>
@@ -143,6 +148,7 @@
               <span class="cv-numero-rotulo">Peças por compradora</span>
               <span class="cv-numero-base">{{ taxas.pecasPorCliente.temBase ? `${formatarPecas(taxas.pecasPorCliente.x)} peça(s) em ${taxas.pecasPorCliente.n}` : 'sem base ainda' }}</span>
             </div>
+          </div>
           </div>
 
           <template v-if="placar.por_stylist && placar.por_stylist.length">
@@ -186,8 +192,8 @@
       </section>
 
       <!-- ── CADASTRAR ──────────────────────────────────────────────────── -->
-      <section v-if="podeExecutarAcao('criar', podeEditar)" class="cv-bloco">
-        <h2 class="cv-etiqueta">Cadastrar parceira</h2>
+      <section v-if="podeExecutarAcao('criar', podeEditar)" class="cv-bloco cv-bloco-form">
+        <h2 class="cv-etiqueta"><icone-do-bloco nome="novo" />Cadastrar parceira</h2>
         <div class="cv-form">
           <label class="cv-campo" for="sty-nome"><span>Nome</span>
             <input id="sty-nome" type="text" maxlength="120" v-model="novo.nome"></label>
@@ -308,7 +314,7 @@
       <template v-if="vista === 'lista'">
         <!-- ── COMO LER ─────────────────────────────────────────────────── -->
         <section v-if="!carregando && !erro && stylists.length" class="cv-bloco cv-bloco-leitura">
-          <h2 class="cv-etiqueta">Como ler os números</h2>
+          <h2 class="cv-etiqueta"><icone-do-bloco nome="leitura" />Como ler os números</h2>
           <p class="cv-nota cv-nota-primeira">
             <b>Aberturas</b> é leitura do link, não pessoa: a mesma cliente abrindo
             duas vezes conta duas. <b>Clientes</b> é gente com nome e WhatsApp.
@@ -339,7 +345,7 @@
         <template v-if="!carregando && !erro">
         <!-- ── O CONJUNTO ───────────────────────────────────────────────── -->
         <section v-if="stylists.length" class="cv-bloco">
-          <h2 class="cv-etiqueta">Todas as stylists juntas</h2>
+          <h2 class="cv-etiqueta"><icone-do-bloco nome="conjunto" />Todas as stylists juntas</h2>
           <!-- ⚠️ O CONJUNTO É SOBRE O QUE ESTÁ NA TELA, NÃO SOBRE O QUE VEIO
                DO BANCO: se a pessoa filtrou por situação ou estágio, o total
                tem de acompanhar — reusar o total de antes do filtro é a tela
@@ -378,7 +384,7 @@
         </section>
 
         <!-- ── CADA STYLIST ─────────────────────────────────────────────── -->
-        <section v-for="s in stylistsNaTela" :key="s.codigo" class="cv-bloco">
+        <section v-for="s in stylistsNaTela" :key="s.codigo" class="cv-bloco cv-cartao" :class="`cv-tom-${tomDaStylist(s)}`">
           <div class="cv-cabeca">
             <div class="cv-cabeca-texto">
               <h2 class="cv-titulo">{{ s.nome || s.codigo }}</h2>
@@ -406,8 +412,8 @@
                  ativa é o normal, não precisa de selo — só o estágio aparece
                  sozinho nesse caso, sem duplicar a palavra. -->
             <div class="cv-selos">
-              <span v-if="s.ativa === false" class="cv-selo cv-selo-fim">Desativada</span>
-              <span class="cv-selo" :class="seloDoEstagio(s.estagio).classe">
+              <span v-if="s.ativa === false" class="cv-selo cv-selo-fim cv-tom-parada">Desativada</span>
+              <span class="cv-selo" :class="[seloDoEstagio(s.estagio).classe, `cv-tom-${seloDoEstagio(s.estagio).tom}`]">
                 {{ seloDoEstagio(s.estagio).texto }}</span>
             </div>
           </div>
@@ -494,8 +500,8 @@
                `origem_campanha` e `origem_utm` nem existem como parâmetro de
                `vessel_stylist_editar` — primeiro toque é primeiro toque, e
                reescrever faria a atribuição contar o mesmo canal duas vezes. -->
-          <template v-if="podeExecutarAcao('editar', podeEditar) && editando === s.codigo">
-            <h3 class="cv-etiqueta cv-etiqueta-interna">Corrigir</h3>
+          <div v-if="podeExecutarAcao('editar', podeEditar) && editando === s.codigo" class="cv-caixa-form">
+            <h3 class="cv-etiqueta cv-etiqueta-interna"><icone-do-bloco nome="editar" />Corrigir</h3>
             <div class="cv-form">
               <label class="cv-campo" :for="`ed-nome-${s.codigo}`"><span>Nome</span>
                 <input :id="`ed-nome-${s.codigo}`" type="text" maxlength="120" v-model="rascunho.nome"></label>
@@ -553,7 +559,7 @@
               <button class="btn btn-principal" :disabled="salvandoEdicao === s.codigo"
                       @click="salvarEdicao(s)">{{ salvandoEdicao === s.codigo ? 'Salvando…' : 'Salvar' }}</button>
             </div>
-          </template>
+          </div>
 
           <div class="cv-acoes">
             <template v-if="podeExecutarAcao('editar', podeEditar)">
@@ -652,6 +658,7 @@ import FaixaDeErro from '../../compartilhado/faixa-de-erro.vue'
 import BarraDeLista from './barra-de-lista.vue'
 import QuadroDoStylistCircle from './quadro-do-stylist-circle.vue'
 import FichaDaStylist from './ficha-da-stylist.vue'
+import IconeDoBloco from './icone-do-bloco.vue'
 import { estado, hasPermission } from '../../compartilhado/controle-de-login-e-usuario.js'
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../../compartilhado/conectar-no-banco-de-dados.js'
 import { classificarErro } from '../../compartilhado/classificar-erro.js'
@@ -667,7 +674,7 @@ import {
 } from './stylist-circle-regras.js'
 import { paiDaTela, ROTULO_DO_PAI } from './navegacao.js'
 import {
-  ESTAGIOS_DA_STYLIST, estagiosDeEscolher, seloDoEstagio, ORIGENS_DE_CONTATO, LOJAS,
+  ESTAGIOS_DA_STYLIST, estagiosDeEscolher, seloDoEstagio, tomDaStylist, ORIGENS_DE_CONTATO, LOJAS,
   PERIODOS_DO_PLACAR, periodoDoPlacar, taxasDoPlacar, legendaDaTaxa,
 } from './t11-regras.js'
 
@@ -1018,6 +1025,14 @@ onMounted(carregar)
 
 <style scoped>
 @import './estilo-comercial.css';
+
+/* A COR DA FERRAMENTA NA BARRA DE TOPO (pedido do dono, 23/09/2026). A barra
+   é compartilhada por toda a Central e NÃO muda para as outras telas: o
+   filete e a tinta vivem aqui, presos a `.tela-sty`. O título continua `--text`. */
+.tela-sty :deep(.bt-barra) {
+  border-bottom: 3px solid var(--modulo);
+  background: color-mix(in srgb, var(--modulo) 8%, var(--surface));
+}
 
 /* ⚠️ DUAS SELOS NO MESMO CARD (situação da parceira + estágio do funil) SÃO
    DUAS COISAS DIFERENTES: "ativa/desativada" é a parceria em si; "estágio" é

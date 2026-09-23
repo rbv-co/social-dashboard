@@ -1,5 +1,5 @@
 <template>
-  <div class="tela-pe">
+  <div class="tela-pe cv-identidade">
     <barra-de-topo :voltar="ROTULO_DO_PAI[paiDaTela('private-edit')]"
                    titulo="Vessel — Private Edit"
                    :subtitulo="subtitulo" @voltar="voltar" />
@@ -8,8 +8,8 @@
       <faixa-de-erro :erro="erro" @tentar-de-novo="carregar" />
 
       <!-- ── CRIAR ──────────────────────────────────────────────────────── -->
-      <section class="cv-bloco">
-        <h2 class="cv-etiqueta">Marcar um encontro</h2>
+      <section class="cv-bloco cv-bloco-form">
+        <h2 class="cv-etiqueta"><icone-do-bloco nome="novo" />Marcar um encontro</h2>
         <div class="cv-form">
           <label class="cv-campo cv-campo-largo" for="pe-stylist"><span>Anfitriã</span>
             <select id="pe-stylist" v-model="novo.stylist">
@@ -61,7 +61,7 @@
 
       <!-- ── COMO LER ───────────────────────────────────────────────────── -->
       <section v-if="!carregando && !erro && encontros.length" class="cv-bloco cv-bloco-leitura">
-        <h2 class="cv-etiqueta">Como ler os números</h2>
+        <h2 class="cv-etiqueta"><icone-do-bloco nome="leitura" />Como ler os números</h2>
         <p class="cv-nota cv-nota-primeira">
           Toda taxa aqui vem com <b>de quantos</b> ela saiu. Um encontro tem 7 a 10
           convidadas: <b>“67%” sobre 3 pessoas é uma pessoa</b>, não uma tendência —
@@ -95,7 +95,7 @@
       <template v-else-if="!erro">
         <!-- ── O CONJUNTO ───────────────────────────────────────────────── -->
         <section v-if="encontros.length" class="cv-bloco">
-          <h2 class="cv-etiqueta">Todos os encontros juntos</h2>
+          <h2 class="cv-etiqueta"><icone-do-bloco nome="conjunto" />Todos os encontros juntos</h2>
           <!-- ⚠️ O CONJUNTO É SOBRE O QUE ESTÁ NA TELA, NÃO SOBRE O QUE VEIO
                DO BANCO: se a pessoa filtrou por loja ou período, o total tem
                de acompanhar — reusar o total de antes do filtro é a tela
@@ -135,7 +135,7 @@
         </section>
 
         <!-- ── CADA ENCONTRO ────────────────────────────────────────────── -->
-        <section v-for="e in encontrosNaTela" :key="e.codigo" class="cv-bloco">
+        <section v-for="e in encontrosNaTela" :key="e.codigo" class="cv-bloco cv-cartao" :class="`cv-tom-${seloDoStatus(e).tom}`">
           <div class="cv-cabeca">
             <div class="cv-cabeca-texto">
               <h2 class="cv-titulo">{{ dataHoraLegivel(e.quando) }}</h2>
@@ -145,7 +145,7 @@
                 <span v-if="e.local"> · {{ e.local }}</span>
               </p>
             </div>
-            <span class="cv-selo" :class="seloDoStatus(e).classe">{{ seloDoStatus(e).texto }}</span>
+            <span class="cv-selo" :class="[seloDoStatus(e).classe, `cv-tom-${seloDoStatus(e).tom}`]">{{ seloDoStatus(e).texto }}</span>
           </div>
 
           <div class="cv-numeros">
@@ -236,8 +236,8 @@
           </template>
 
           <!-- ── EDITAR (inline, sem modal) ──────────────────────────────── -->
-          <template v-if="podeExecutarAcao('editar', podeEditar) && editando === e.codigo">
-            <h3 class="cv-etiqueta cv-etiqueta-interna">Editar</h3>
+          <div v-if="podeExecutarAcao('editar', podeEditar) && editando === e.codigo" class="cv-caixa-form">
+            <h3 class="cv-etiqueta cv-etiqueta-interna"><icone-do-bloco nome="editar" />Editar</h3>
             <div class="cv-form">
               <label class="cv-campo cv-campo-largo" :for="`ed-stylist-${e.codigo}`"><span>Anfitriã</span>
                 <select :id="`ed-stylist-${e.codigo}`" v-model="rascunho.stylist">
@@ -271,7 +271,7 @@
               <button class="btn btn-principal" :disabled="salvandoEdicao === e.codigo"
                       @click="salvarEdicao(e)">{{ salvandoEdicao === e.codigo ? 'Salvando…' : 'Salvar' }}</button>
             </div>
-          </template>
+          </div>
 
           <!-- ── APAGAR: tem_gente vira explicação, nunca erro vermelho ──── -->
           <template v-else-if="podeExecutarAcao('apagar', podeEditar) && bloqueioDeApagar[e.codigo]">
@@ -342,7 +342,8 @@
           <template v-if="convidadasAbertas === e.codigo">
             <h3 class="cv-etiqueta cv-etiqueta-interna">As convidadas</h3>
 
-            <template v-if="podeExecutarAcao('convidar', podeEditar) && e.status !== 'cancelado' && !e.arquivada">
+            <div v-if="podeExecutarAcao('convidar', podeEditar) && e.status !== 'cancelado' && !e.arquivada" class="cv-caixa-form">
+              <h4 class="cv-etiqueta cv-etiqueta-interna"><icone-do-bloco nome="novo" />Incluir convidada</h4>
               <div class="cv-form">
                 <label class="cv-campo" :for="`cv-nome-${e.codigo}`"><span>Nome completo</span>
                   <input :id="`cv-nome-${e.codigo}`" type="text" maxlength="120" v-model="convidarDe(e).nome"></label>
@@ -362,7 +363,7 @@
                 <button class="btn btn-principal" :disabled="convidando === e.codigo"
                         @click="convidar(e)">{{ convidando === e.codigo ? 'Incluindo…' : 'Incluir convidada' }}</button>
               </div>
-            </template>
+            </div>
 
             <div v-if="convidadasErro[e.codigo]" class="cv-nota cv-nota-erro">
               Deu erro ao buscar as convidadas. Tente de novo em um instante.
@@ -371,7 +372,7 @@
               Ninguém na lista deste encontro ainda.
             </p>
             <ul v-else-if="convidadas[e.codigo]" class="cv-convidadas">
-              <li v-for="c in convidadas[e.codigo]" :key="c.id" class="cv-convidada">
+              <li v-for="c in convidadas[e.codigo]" :key="c.id" class="cv-convidada cv-cartao" :class="`cv-tom-${seloDoConvite(c.situacao).tom}`">
                 <div class="cv-cabeca">
                   <div class="cv-cabeca-texto">
                     <p class="cv-convidada-nome">{{ c.nome }}</p>
@@ -388,7 +389,7 @@
                       ? `abriu o convite em ${dataHoraLegivel(c.convite_aberto_em)} (${c.convite_aberturas}×)`
                       : 'ainda não abriu o convite' }}</p>
                   </div>
-                  <span class="cv-selo" :class="seloDoConvite(c.situacao).classe">{{ seloDoConvite(c.situacao).texto }}</span>
+                  <span class="cv-selo" :class="[seloDoConvite(c.situacao).classe, `cv-tom-${seloDoConvite(c.situacao).tom}`]">{{ seloDoConvite(c.situacao).texto }}</span>
                 </div>
                 <div class="cv-acoes">
                   <!-- ⚠️ Só enquanto o link dela abre: encontro fechado dá "não
@@ -459,6 +460,7 @@ import BarraDeTopo from '../../compartilhado/barra-de-topo.vue'
 import FaixaDeErro from '../../compartilhado/faixa-de-erro.vue'
 import BarraDeLista from './barra-de-lista.vue'
 import CartaoDaConvidada from './cartao-da-convidada.vue'
+import IconeDoBloco from './icone-do-bloco.vue'
 import { estado, hasPermission } from '../../compartilhado/controle-de-login-e-usuario.js'
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../../compartilhado/conectar-no-banco-de-dados.js'
 import { classificarErro } from '../../compartilhado/classificar-erro.js'
@@ -949,4 +951,12 @@ onMounted(carregar)
 
 <style scoped>
 @import './estilo-comercial.css';
+
+/* A COR DA FERRAMENTA NA BARRA DE TOPO (pedido do dono, 23/09/2026). A barra
+   é compartilhada por toda a Central e NÃO muda para as outras telas: o
+   filete e a tinta vivem aqui, presos a `.tela-pe`. O título continua `--text`. */
+.tela-pe :deep(.bt-barra) {
+  border-bottom: 3px solid var(--modulo);
+  background: color-mix(in srgb, var(--modulo) 8%, var(--surface));
+}
 </style>
