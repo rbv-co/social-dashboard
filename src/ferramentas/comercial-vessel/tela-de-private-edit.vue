@@ -382,9 +382,9 @@
                       <span v-if="c.rsvp === 'falar-com-equipe'"> · pediu para falar com a equipe</span>
                       <span v-if="c.comprou"> · <b>comprou</b></span>
                     </p>
-                    <p class="cv-sub">{{ c.convite_aberto_em
+                    <p v-if="c.convite_aberto_em || c.convite_enviado_em" class="cv-sub">{{ c.convite_aberto_em
                       ? `abriu o convite em ${dataHoraLegivel(c.convite_aberto_em)} (${c.convite_aberturas}×)`
-                      : (c.convite_enviado_em ? 'ainda não abriu o convite' : '') }}</p>
+                      : 'ainda não abriu o convite' }}</p>
                   </div>
                   <span class="cv-selo" :class="seloDoConvite(c.situacao).classe">{{ seloDoConvite(c.situacao).texto }}</span>
                 </div>

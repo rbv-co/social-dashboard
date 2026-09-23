@@ -23,6 +23,11 @@ function carregarFontes() {
       await f.load()
       document.fonts.add(f)
     }))
+      // ⚠️ SEM ISSO, UMA FALHA DE REDE NA PRIMEIRA TENTATIVA (rede caiu, CDN
+      // fora do ar) DEIXAVA A PROMESSA REJEITADA GUARDADA PARA SEMPRE: toda
+      // tentativa seguinte de abrir o cartão falharia direto, mesmo com a
+      // rede de volta, até recarregar a página inteira.
+      .catch((e) => { fontesProntas = null; throw e })
   }
   return fontesProntas
 }

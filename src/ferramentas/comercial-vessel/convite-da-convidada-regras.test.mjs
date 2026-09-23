@@ -85,3 +85,34 @@ test('FIAÇÃO: o cartão usa as regras e marca "convite enviado" pelo banco', (
 test('FIAÇÃO: a lista de convidadas abre o cartão', () => {
   assert.match(ler('./tela-de-private-edit.vue'), /<cartao-da-convidada/)
 })
+
+// ── FIAÇÃO: correções da revisão — rodada 1 (Task 6) ────────────────────────
+test('FIAÇÃO: "Baixar cartão" só existe com o arquivo pronto (sem marcar sem PNG)', () => {
+  const c = ler('./cartao-da-convidada.vue')
+  assert.match(c, /v-else-if="imagem"[^>]*class="btn"[^>]*:download=/)
+  assert.doesNotMatch(c, /aria-disabled="!imagem"/, 'o link de baixar não pode existir desabilitado — precisa sumir')
+})
+test('FIAÇÃO: os botões de WhatsApp exigem mensagem pronta e não aparecem em erro', () => {
+  const c = ler('./cartao-da-convidada.vue')
+  assert.match(c, /quem === 'equipe' && whatsDela && mensagem && !erro/)
+  assert.match(c, /quem === 'stylist' && whatsDaStylist && mensagem && !erro/)
+})
+test('FIAÇÃO: stylist sem WhatsApp válido tem aviso próprio, não a nota genérica', () => {
+  assert.match(ler('./cartao-da-convidada.vue'),
+    /quem === 'stylist' && !whatsDaStylist[\s\S]{0,120}não tem WhatsApp válido/)
+})
+test('FIAÇÃO: toBlob nulo não vira arquivo fantasma', () => {
+  assert.match(ler('./cartao-da-convidada.vue'), /if \(!blob\) throw new Error\('png'\)/)
+})
+test('FIAÇÃO: compartilhar só engole o cancelamento (AbortError), avisa nas outras falhas', () => {
+  const c = ler('./cartao-da-convidada.vue')
+  assert.match(c, /AbortError/)
+  assert.match(c, /Não consegui abrir o compartilhamento/)
+})
+test('FIAÇÃO: a cache de fontes se reseta numa falha de carregamento', () => {
+  assert.match(ler('./desenhar-convite.js'), /\.catch\(\(e\) => \{ fontesProntas = null; throw e \}\)/)
+})
+test('FIAÇÃO: a linha de abertura do convite não aparece vazia', () => {
+  assert.match(ler('./tela-de-private-edit.vue'),
+    /v-if="c\.convite_aberto_em \|\| c\.convite_enviado_em"[^>]*class="cv-sub"/)
+})

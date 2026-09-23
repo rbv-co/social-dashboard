@@ -20,16 +20,20 @@
         <p class="cv-nota cv-nota-primeira cv-mensagem">{{ mensagem || '…' }}</p>
 
         <div class="cv-acoes">
-          <a v-if="quem === 'equipe' && whatsDela" class="btn btn-principal" :href="whatsDela" target="_blank"
+          <a v-if="quem === 'equipe' && whatsDela && mensagem && !erro" class="btn btn-principal" :href="whatsDela" target="_blank"
              rel="noopener noreferrer" @click="marcarEnviado">Enviar no WhatsApp dela</a>
-          <a v-if="quem === 'stylist' && whatsDaStylist" class="btn btn-principal" :href="whatsDaStylist" target="_blank"
+          <a v-if="quem === 'stylist' && whatsDaStylist && mensagem && !erro" class="btn btn-principal" :href="whatsDaStylist" target="_blank"
              rel="noopener noreferrer" @click="marcarEnviado">Mandar para a stylist</a>
           <button v-if="podeCompartilhar" type="button" class="btn" :disabled="!arquivo" @click="compartilhar">Compartilhar cartão</button>
-          <a v-else class="btn" :href="imagem || undefined" :download="nomeDoArquivo(convidada.nome, encontro.quando)"
-             :aria-disabled="!imagem" @click="marcarEnviado">Baixar cartão</a>
+          <!-- ⚠️ SÓ APARECE COM O ARQUIVO PRONTO: sem isso, o clique marcava
+               "enviado" com um href vazio ou inexistente (nada baixava). -->
+          <a v-else-if="imagem" class="btn" :href="imagem" :download="nomeDoArquivo(convidada.nome, encontro.quando)"
+             @click="marcarEnviado">Baixar cartão</a>
           <button type="button" class="btn" :disabled="!mensagem" @click="copiar">{{ copiado ? 'Copiada' : 'Copiar mensagem' }}</button>
         </div>
-        <p v-if="quem === 'stylist'" class="cv-nota">A stylist recebe a mensagem pronta; o cartão, baixe e mande junto.</p>
+        <p v-if="quem === 'stylist' && !whatsDaStylist" class="cv-nota cv-nota-aviso">
+          Esta stylist não tem WhatsApp válido na Central — copie a mensagem e mande você.</p>
+        <p v-else-if="quem === 'stylist'" class="cv-nota">A stylist recebe a mensagem pronta; o cartão, baixe e mande junto.</p>
         <p v-if="avisoDoEnvio" class="cv-nota cv-nota-erro">{{ avisoDoEnvio }}</p>
       </div>
     </div>
@@ -84,8 +88,17 @@ async function marcarEnviado() {
 }
 
 async function compartilhar() {
-  try { await navigator.share({ files: [arquivo.value] }); await marcarEnviado() }
-  catch { /* a pessoa desistiu do compartilhamento: nada a marcar */ }
+  avisoDoEnvio.value = ''
+  try {
+    await navigator.share({ files: [arquivo.value] })
+    await marcarEnviado()
+  } catch (e) {
+    // ⚠️ SÓ "desistiu" É SILENCIOSO: qualquer outra falha (sem apps de
+    // compartilhamento, erro do sistema) precisa avisar — senão parece que o
+    // cartão saiu e não saiu.
+    if (e?.name === 'AbortError') return
+    avisoDoEnvio.value = 'Não consegui abrir o compartilhamento. Baixe o cartão e mande pelo WhatsApp.'
+  }
 }
 
 async function copiar() {
@@ -108,6 +121,7 @@ onMounted(async () => {
       quando: props.encontro.quando, local: props.encontro.local,
     })
     const blob = await new Promise((ok) => tela.toBlob(ok, 'image/png'))
+    if (!blob) throw new Error('png')
     arquivo.value = new File([blob], nomeDoArquivo(props.convidada.nome, props.encontro.quando), { type: 'image/png' })
     imagem.value = URL.createObjectURL(blob)
   } catch {
