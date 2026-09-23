@@ -154,6 +154,21 @@
        ⚠️ A tinta de 8% derruba o laranja dos avisos para 4,11 — por isso os
        formulários desta tela NÃO são tingidos (como na Frota). */
     --cor-administracao:#1e3a5f;
+    /* GESTÃO DE TRÁFEGO — Meta Ads (Onda 4a, 23/09/2026) — o AZUL DO META
+       (decisão do dono), da família do #0866FF / #0064E0 da marca, escurecido
+       e puxado um pouco para o ciano até passar no fundo real: o #0866FF puro
+       dá 4,32 do título sobre a tinta de 8% e reprova. Tem de se distinguir do
+       `--accent` (#1D4ED8, SELEÇÃO e ação — o período e o filtro escolhidos
+       continuam nele), do marinho da Administração (#1e3a5f), do anil da Frota
+       (#3730a3) e do petróleo do Stylist Circle (#1e5f74). Distância de cor
+       medida (CIEDE2000): 10,5 do `--accent`, 18,1 do marinho, 19,9 do anil e
+       14,9 do petróleo. O `--accent` é o mais perto, e por isso a cor da
+       ferramenta NUNCA marca "selecionado": ela mora na faixa, na pastilha e
+       no filete dos blocos. Medido (título sobre a tinta de 8% · `--sobre-cor`
+       sobre o botão · aba ativa sobre o fundo): 5,04 · 5,65 · 5,28.
+       ⚠️ A tinta de 8% derruba o laranja dos avisos para 4,22 — por isso só o
+       CABEÇALHO dos blocos é tingido, nunca o corpo onde mora aviso. */
+    --cor-gestao-trafego:#0067c2;
     /* O PAPEL DA PRÉVIA DO QR — claro NOS DOIS TEMAS, de propósito: a prévia
        mostra o QR como ele sai impresso, com a tinta escura da marca. O
        quadriculado é o que diz "este arquivo não tem fundo". Não é redefinido
@@ -252,6 +267,12 @@
        `--accent` do escuro, 10,3 do anil claro (#a5b4fc, que é violeta) e
        12,7 do petróleo claro (#3d9bb5). */
     --cor-administracao:#78a0cc;
+    /* Gestão de Tráfego no escuro: o azul do Meta claro. Medido: título sobre
+       a tinta 7,17 · `--sobre-cor` sobre o botão 8,19 · aba ativa sobre o fundo
+       8,53. Distância (CIEDE2000): 16,9 do `--accent` do escuro (#4f7cff),
+       8,2 do marinho claro (#78a0cc), 14,3 do anil claro e 15,5 do petróleo
+       claro. */
+    --cor-gestao-trafego:#56b0ff;
     --sobre-cor:#12100b;
     /* TEXTO ACCENT EM CIMA DE --accent-light. O accent puro sobre o proprio
        tom aguado reprova no tema escuro (4,42). Este par ja vem medido. */
@@ -316,6 +337,8 @@
   .tela-material-grafico{ --modulo:var(--cor-material-grafico); }
   .tela-autenticidade{ --modulo:var(--cor-autenticidade); }
   .tela-admin{ --modulo:var(--cor-administracao); }
+  .tela-gestao-trafego{ --modulo:var(--cor-gestao-trafego); }
+  .tela-menu-meta-ads{ --modulo:var(--cor-gestao-trafego); }
 
 .wrapper{max-width:none;width:100%;margin:0;padding:16px 28px;box-sizing:border-box;position:relative;z-index:1;}
 

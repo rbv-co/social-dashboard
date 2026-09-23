@@ -7,6 +7,7 @@
 // PURO no mesmo sentido de painel-fila.js: monta innerHTML e liga listeners no
 // elemento recebido, sem ler `window`, sem rede.
 import { montarFunis, etapasDoFunil, porUnidade, quebraDeInteracoes } from './funil.js';
+import { pastilha } from './pastilha.js';
 
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const num = (v) => Number(v || 0).toLocaleString('pt-BR');
@@ -52,10 +53,10 @@ function blocoFunil(f) {
     : '<span class="gfn-tipo proporcao">o resultado não vem depois do clique — é uma proporção</span>';
 
   return `
-    <section class="gfn-bloco">
+    <section class="gfn-bloco" data-balde="${esc(f.balde || '')}">
       <header class="gfn-cab">
         <div>
-          <h3 class="gfn-tit">${esc(f.rotulo)}</h3>
+          <h3 class="gfn-tit">${pastilha('funil')}${esc(f.rotulo)}</h3>
           <span class="gfn-sub">${f.campanhas} campanha${f.campanhas > 1 ? 's' : ''} · ${reaisCurto(f.gasto)}${(() => {
           // "R$ 0,00 por interação" mente — abaixo de um centavo a leitura se
           // inverte pra "R$ 1 compra 512 interações" (ver porUnidade).
@@ -89,7 +90,7 @@ export function montarPainelFunil(alvo, opcoes) {
     <div class="gfn-caixa" role="dialog" aria-label="Funil das campanhas">
       <header class="gfn-topo">
         <div>
-          <h2 class="gfn-h2">Funil das campanhas${ajudaBtn('funil')}</h2>
+          <h2 class="gfn-h2">${pastilha('funil')}Funil das campanhas${ajudaBtn('funil')}</h2>
           <p class="gfn-h2-sub">${esc(o.contaNome || '')}${o.periodoRotulo ? ` · ${esc(o.periodoRotulo)}` : ''} · só o que está no ar agora</p>
         </div>
         <button class="gfn-x" data-gfn-fechar="1" aria-label="Fechar">✕</button>
