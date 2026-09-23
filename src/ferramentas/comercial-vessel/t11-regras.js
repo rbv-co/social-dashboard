@@ -8,7 +8,7 @@
  *
  * ⚠️ E MORAM FORA DO `.vue` PELO MOTIVO DE SEMPRE: `.vue` não roda na suíte.
  */
-import { proporcao, razao } from './estatistica.js'
+import { proporcao, razao, taxaEscrita } from './estatistica.js'
 
 // ── o funil da stylist ──────────────────────────────────────────────────────
 
@@ -261,8 +261,10 @@ export function taxasDoPlacar(pl) {
     ativacao: proporcao(n(pl?.prospectadas_ja_ativadas), n(pl?.prospectadas)),
     realizacao: proporcao(n(pl?.encontros_realizados), n(pl?.encontros_agendados)),
     // ⚠️ Só confirmadas de encontro que ACONTECEU: a de encontro cancelado
-    // nunca pôde comparecer.
-    showRate: proporcao(n(pl?.presentes), n(pl?.confirmadas_em_realizados)),
+    // nunca pôde comparecer. E o numerador com O MESMO filtro: a equipe marca
+    // "Veio" antes de fechar o encontro, e a presença de encontro ainda
+    // agendado em cima (sem a confirmada dela embaixo) passava de 100%.
+    showRate: proporcao(n(pl?.presentes_em_realizados), n(pl?.confirmadas_em_realizados)),
     repeticao: proporcao(n(pl?.recorrentes_ate_o_fim), n(pl?.ativadas_ate_o_fim)),
     conversao: proporcao(n(pl?.compradoras), n(pl?.presentes)),
     ticket: razao(n(pl?.receita), n(pl?.vendas)),
@@ -270,4 +272,19 @@ export function taxasDoPlacar(pl) {
     receitaPorEncontro: razao(n(pl?.receita), n(pl?.encontros_realizados)),
     pecasPorCliente: razao(n(pl?.pecas), n(pl?.compradoras)),
   }
+}
+
+/**
+ * A legenda embaixo de uma taxa do placar. Com base, a taxa e de quem ela é;
+ * sem base, o que falta — e não "sem base ainda das prospectadas…", que não
+ * se lê.
+ */
+const LEGENDAS_DAS_TAXAS = {
+  ativacao: { comBase: 'das prospectadas no período já ativaram', semBase: 'nenhuma prospectada no período' },
+  showRate: { comBase: 'das confirmadas em encontros realizados', semBase: 'nenhum encontro realizado no período' },
+}
+export function legendaDaTaxa(qual, taxa) {
+  const l = LEGENDAS_DAS_TAXAS[qual]
+  if (!l) return taxaEscrita(taxa)
+  return taxa?.temBase ? `${taxaEscrita(taxa)} ${l.comBase}` : l.semBase
 }

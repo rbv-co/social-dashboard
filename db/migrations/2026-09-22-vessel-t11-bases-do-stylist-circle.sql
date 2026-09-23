@@ -1114,7 +1114,8 @@ $function$;
 --     já ativaram (a qualquer tempo até o fim dele). ⚠️ Dividir "ativadas no
 --     período" por "prospectadas no período" misturava turmas: 2 ativadas que
 --     vinham de meses antes sobre 1 prospectada imprimia 200%.
---   · show rate → presentes ÷ confirmadas SÓ DOS ENCONTROS QUE ACONTECERAM.
+--   · show rate → presentes ÷ confirmadas, AS DUAS SÓ DOS ENCONTROS QUE
+--     ACONTECERAM (a presença marcada antes de fechar o encontro não conta).
 --     ⚠️ Confirmada de encontro cancelado nunca pôde comparecer; contá-la no
 --     denominador puxava a taxa para baixo a cada cancelamento.
 --   · encontros, convidadas e vendas → o DIA DO ENCONTRO;
@@ -1197,6 +1198,13 @@ begin
                      where situacao in ('confirmada', 'presente', 'nao_compareceu')
                        and status_do_encontro = 'realizado'),
     'presentes', (select count(*)::int from conv where status = 'realizado'),
+    -- O numerador do show rate: as presentes com o MESMO filtro do denominador.
+    -- ⚠️ A equipe marca "Veio" ANTES de fechar o encontro como realizado; contar
+    -- em cima a presença de encontro ainda agendado passava de 100%.
+    -- `presentes` (sem o filtro) segue sendo a base da conversão e da receita
+    -- por convidada.
+    'presentes_em_realizados', (select count(*)::int from conv
+                     where status = 'realizado' and status_do_encontro = 'realizado'),
     'recorrentes_no_periodo', (select count(*)::int from realizados
                                 where n = 2 and realizado_em between v_de and v_ate),
     'recorrentes_ate_o_fim', (select count(distinct stylist_id)::int from realizados

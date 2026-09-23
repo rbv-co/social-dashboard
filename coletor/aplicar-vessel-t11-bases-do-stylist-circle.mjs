@@ -266,6 +266,10 @@ try {
   await r(`public.vessel_convite_marcar($1, 'sim')`, [ca.id])
   sit = await situacoes()
   conferir(sit[ca.id] === 'confirmada', 'resposta "sim": confirmada', sit)
+  // ⚠️ O ENCONTRO 1 AINDA NÃO FOI FECHADO COMO REALIZADO: a equipe marca "Veio"
+  // antes. O placar de antes e o de depois da presença provam que ela entra em
+  // `presentes`, mas NÃO no numerador do show rate.
+  const plAntesDaPresenca = await r(`public.vessel_placar_do_stylist_circle(null, null, 14)`)
   await falarComo(soVe)
   const pres = await r(`public.vessel_situacao_do_atendimento($1, 'realizado')`, [ca.id])
   const falta = await r(`public.vessel_situacao_do_atendimento($1, 'no_show')`, [cb.id])
@@ -273,6 +277,14 @@ try {
   conferir(pres.ok && falta.ok && sit[ca.id] === 'presente' && sit[cb.id] === 'nao_compareceu',
     'a presença, marcada por quem só vê (a mesma porta da Central)', sit)
   await falarComo(mexe)
+  const plDepoisDaPresenca = await r(`public.vessel_placar_do_stylist_circle(null, null, 14)`)
+  const e1Agora = await uma(`select status from public.vessel_private_edits where codigo = $1`, [PE1])
+  conferir(e1Agora.status !== 'realizado'
+      && plDepoisDaPresenca.presentes === plAntesDaPresenca.presentes + 1
+      && plDepoisDaPresenca.presentes_em_realizados === plAntesDaPresenca.presentes_em_realizados
+      && plDepoisDaPresenca.confirmadas_em_realizados === plAntesDaPresenca.confirmadas_em_realizados,
+    'show rate: presença em encontro ainda agendado sobe `presentes`, mas não `presentes_em_realizados`',
+    { status: e1Agora.status, antes: plAntesDaPresenca, depois: plDepoisDaPresenca })
 
   console.log('\n── o convite de cada convidada')
   const ch = await r(`public.vessel_chave_da_convidada($1)`, [ca.id])
@@ -362,7 +374,7 @@ try {
   const pl = await r(`public.vessel_placar_do_stylist_circle(null, null, 14)`)
   const esperado = { prospectadas: 1, ativadas: 1, prospectadas_ja_ativadas: 1,
     encontros_agendados: 2, encontros_realizados: 2,
-    convidadas: 3, confirmadas: 3, confirmadas_em_realizados: 3, presentes: 2, recorrentes_no_periodo: 1, compradoras: 1, vendas: 1,
+    convidadas: 3, confirmadas: 3, confirmadas_em_realizados: 3, presentes: 2, presentes_em_realizados: 2, recorrentes_no_periodo: 1, compradoras: 1, vendas: 1,
     stylists_com_contatos_ate_ativar: 1 }
   const bate = Object.entries(esperado).every(([k, v]) => pl[k] === v)
   conferir(bate && Number(pl.receita) === 1500 && Number(pl.pecas) === 2 && pl.por_stylist.length === 1
@@ -400,7 +412,8 @@ try {
   const pl2 = await r(`public.vessel_placar_do_stylist_circle(null, null, 14)`)
   conferir(canc.ok && pl2.encontros_agendados === 3 && pl2.encontros_realizados === 2 && pl2.encontros_cancelados === 1,
     'cancelado entra em "agendados" e não em "realizados"', pl2)
-  conferir(pl2.confirmadas === 4 && pl2.confirmadas_em_realizados === 3 && pl2.presentes === 2,
+  conferir(pl2.confirmadas === 4 && pl2.confirmadas_em_realizados === 3 && pl2.presentes === 2
+      && pl2.presentes_em_realizados === 2,
     'show rate: a confirmada do encontro cancelado conta em "confirmadas", mas não no denominador', pl2)
   await falarComo(null)
   const abCancelado = await r(`public.vessel_convite_da_convidada($1, $2)`, [chB3.chave_encontro, chB3.chave])

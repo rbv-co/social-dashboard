@@ -6,7 +6,7 @@ import {
   ORIGENS_DE_CONTATO, STATUS_DO_ENCONTRO, precisaDeMotivo, seloDoStatus,
   mensagemDeSituacaoDoEncontro, SITUACOES_DO_CONVITE, seloDoConvite, gestosDaConvidada,
   problemasDaConvidada, mensagemDeConvidar, telefoneLegivel, avisoDos45Dias,
-  periodoDoPlacar, taxasDoPlacar, proximaDataPermitidaDaLista,
+  periodoDoPlacar, taxasDoPlacar, legendaDaTaxa, proximaDataPermitidaDaLista,
 } from './t11-regras.js'
 
 // ⚠️ AS LISTAS DA TELA TÊM DE SER AS LISTAS DO BANCO, letra por letra. Lidas
@@ -144,7 +144,7 @@ test('período: "este mês" vai até o ÚLTIMO dia, não até hoje', () => {
 test('placar: taxas carregam de quantos saíram, e sem base não viram 0%', () => {
   const t = taxasDoPlacar({ prospectadas: 10, ativadas: 5, prospectadas_ja_ativadas: 3,
     encontros_agendados: 4, encontros_realizados: 3,
-    confirmadas: 12, confirmadas_em_realizados: 9, presentes: 7, compradoras: 2, vendas: 3, receita: 4500, pecas: 5,
+    confirmadas: 12, confirmadas_em_realizados: 9, presentes: 8, presentes_em_realizados: 7, compradoras: 2, vendas: 3, receita: 4500, pecas: 5,
     recorrentes_ate_o_fim: 1, ativadas_ate_o_fim: 3 })
   assert.equal(t.ativacao.x, 3); assert.equal(t.ativacao.n, 10)
   assert.equal(t.showRate.valor, 7 / 9)
@@ -164,8 +164,43 @@ test('placar: a ativação é da MESMA turma — 2 ativadas antigas sobre 1 pros
 
 test('placar: confirmada de encontro cancelado não puxa o show rate para baixo', () => {
   // 10 confirmadas, 4 delas num encontro que caiu; das 6 que podiam ir, 6 foram.
-  const t = taxasDoPlacar({ confirmadas: 10, confirmadas_em_realizados: 6, presentes: 6 })
+  const t = taxasDoPlacar({ confirmadas: 10, confirmadas_em_realizados: 6, presentes: 6, presentes_em_realizados: 6 })
   assert.equal(t.showRate.valor, 1); assert.equal(t.showRate.n, 6)
+})
+
+test('placar: presença marcada em encontro AINDA AGENDADO não sobe o show rate (nem passa de 100%)', () => {
+  // 4 confirmadas em encontros realizados, 3 vieram. Num encontro ainda
+  // agendado a equipe já marcou 2 "Veio": `presentes` vira 5, a taxa não muda.
+  const antes = taxasDoPlacar({ confirmadas_em_realizados: 4, presentes: 3, presentes_em_realizados: 3 })
+  const depois = taxasDoPlacar({ confirmadas_em_realizados: 4, presentes: 5, presentes_em_realizados: 3 })
+  assert.equal(antes.showRate.valor, 3 / 4)
+  assert.equal(depois.showRate.valor, 3 / 4)
+  assert.equal(depois.showRate.x, 3)
+  // …mas a conversão e a receita por convidada seguem sobre TODAS as presentes.
+  const c = taxasDoPlacar({ confirmadas_em_realizados: 0, presentes: 2, presentes_em_realizados: 0, compradoras: 1, receita: 800 })
+  assert.equal(c.showRate.temBase, false)
+  assert.equal(c.conversao.n, 2)
+  assert.equal(c.receitaPorConvidada.n, 2)
+})
+
+test('placar: a legenda da taxa sem base diz o que falta, e não "sem base ainda das…"', () => {
+  const vazio = taxasDoPlacar({})
+  assert.equal(legendaDaTaxa('ativacao', vazio.ativacao), 'nenhuma prospectada no período')
+  assert.equal(legendaDaTaxa('showRate', vazio.showRate), 'nenhum encontro realizado no período')
+  const t = taxasDoPlacar({ prospectadas: 4, prospectadas_ja_ativadas: 1,
+    confirmadas_em_realizados: 5, presentes_em_realizados: 4 })
+  assert.equal(legendaDaTaxa('ativacao', t.ativacao), '25% (1 de 4) das prospectadas no período já ativaram')
+  assert.equal(legendaDaTaxa('showRate', t.showRate), '80% (4 de 5) das confirmadas em encontros realizados')
+  for (const qual of ['ativacao', 'showRate']) {
+    assert.doesNotMatch(legendaDaTaxa(qual, vazio[qual]), /sem base ainda/)
+  }
+})
+
+test('FIAÇÃO: as legendas de ativação e show rate saem de legendaDaTaxa', () => {
+  const tela = readFileSync(new URL('./tela-de-stylist-circle.vue', import.meta.url), 'utf8')
+  assert.match(tela, /legendaDaTaxa\('ativacao', taxas\.ativacao\)/)
+  assert.match(tela, /legendaDaTaxa\('showRate', taxas\.showRate\)/)
+  assert.doesNotMatch(tela, /das confirmadas em encontros que aconteceram/)
 })
 
 test('placar: os dois campos novos existem na função do banco', () => {
@@ -173,6 +208,7 @@ test('placar: os dois campos novos existem na função do banco', () => {
   const corpo = MIGRATION.slice(i, MIGRATION.indexOf('$function$;', i))
   assert.match(corpo, /'prospectadas_ja_ativadas'/)
   assert.match(corpo, /'confirmadas_em_realizados'/)
+  assert.match(corpo, /'presentes_em_realizados', \(select count\(\*\)::int from conv\s+where status = 'realizado' and status_do_encontro = 'realizado'\)/)
 })
 
 // ── a fiação: o `.vue` usa as regras, não reescreve ─────────────────────────

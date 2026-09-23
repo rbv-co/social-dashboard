@@ -55,7 +55,7 @@
               <!-- ⚠️ O NÚMERO GRANDE E A TAXA SÃO DE TURMAS DIFERENTES: o número
                    é quem ativou no período (pela data da ativação); a taxa é
                    das prospectadas no período, quantas já ativaram. -->
-              <span class="cv-numero-base">{{ taxaEscrita(taxas.ativacao) }} das prospectadas no período já ativaram</span>
+              <span class="cv-numero-base">{{ legendaDaTaxa('ativacao', taxas.ativacao) }}</span>
               <span v-if="margemEscrita(taxas.ativacao)" class="cv-numero-margem">{{ margemEscrita(taxas.ativacao) }}</span>
             </div>
             <div class="cv-numero">
@@ -105,7 +105,7 @@
             <div class="cv-numero">
               <span class="cv-numero-valor">{{ placar.presentes }}</span>
               <span class="cv-numero-rotulo">Presentes</span>
-              <span class="cv-numero-base">{{ taxaEscrita(taxas.showRate) }} das confirmadas em encontros que aconteceram</span>
+              <span class="cv-numero-base">{{ legendaDaTaxa('showRate', taxas.showRate) }}</span>
               <span v-if="margemEscrita(taxas.showRate)" class="cv-numero-margem">{{ margemEscrita(taxas.showRate) }}</span>
             </div>
           </div>
@@ -668,7 +668,7 @@ import {
 import { paiDaTela, ROTULO_DO_PAI } from './navegacao.js'
 import {
   ESTAGIOS_DA_STYLIST, estagiosDeEscolher, seloDoEstagio, ORIGENS_DE_CONTATO, LOJAS,
-  PERIODOS_DO_PLACAR, periodoDoPlacar, taxasDoPlacar,
+  PERIODOS_DO_PLACAR, periodoDoPlacar, taxasDoPlacar, legendaDaTaxa,
 } from './t11-regras.js'
 
 const router = useRouter()
