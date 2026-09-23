@@ -327,3 +327,63 @@
 @media (max-width: 40rem) {
   .cv-numeros-placar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+/* ── o quadro do Stylist Circle (T11) ─────────────────────────────────────── */
+.cv-vistas { margin: var(--sp-3) 0; }
+.cv-quadro-etapas { display: none; flex-wrap: wrap; gap: var(--sp-2); margin-bottom: var(--sp-3); }
+.cv-quadro-etapa.ativa { background: var(--accent-light); color: var(--accent-forte); border-color: var(--accent); }
+.cv-quadro { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: var(--sp-3); align-items: start; }
+.cv-quadro-coluna { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
+.cv-quadro-coluna.recolhida .cv-quadro-cartao, .cv-quadro-coluna.recolhida .cv-nota { display: none; }
+.cv-quadro-titulo {
+  font-family: var(--fonte-principal); font-size: var(--texto-etiqueta); letter-spacing: 1.5px;
+  text-transform: uppercase; color: var(--muted); margin: 0; overflow-wrap: anywhere;
+}
+.cv-quadro-titulo-botao { background: none; border: 0; padding: 0; text-align: left; cursor: pointer; min-height: 40px; }
+.cv-quadro-cartao {
+  border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface);
+  padding: var(--sp-3); display: flex; flex-direction: column; gap: var(--sp-1);
+}
+.cv-quadro-cartao.atrasada { border-color: color-mix(in srgb, var(--orange) 38%, var(--surface)); }
+.cv-quadro-nome {
+  background: none; border: 0; padding: 0; text-align: left; cursor: pointer; min-height: 40px;
+  font-family: var(--fonte-principal); font-size: var(--texto-campo); color: var(--text); overflow-wrap: anywhere;
+}
+.cv-quadro-acao {
+  margin: 0; padding: var(--sp-2); border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--orange) 10%, var(--surface)); color: var(--text);
+  font-family: var(--fonte-principal); font-size: var(--texto-corpo);
+}
+.cv-quadro-cartao:not(.atrasada) .cv-quadro-acao { background: var(--surface2); }
+@media (max-width: 1100px) and (min-width: 641px) { .cv-quadro { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (max-width: 640px) {
+  .cv-quadro-etapas { display: flex; }
+  .cv-quadro { grid-template-columns: 1fr; }
+  .cv-quadro-coluna { display: none; }
+  .cv-quadro-coluna.no-celular { display: flex; }
+  .cv-quadro-coluna.no-celular .cv-quadro-titulo { display: none; }
+  .cv-quadro-coluna.recolhida.no-celular .cv-quadro-cartao, .cv-quadro-coluna.recolhida.no-celular .cv-nota { display: flex; }
+}
+/* ── modais do Comercial Vessel (ficha da stylist, cartão da convidada) ── */
+.cv-modal-fundo {
+  position: fixed; inset: 0; z-index: 1200; background: rgba(0,0,0,.55); display: flex;
+  align-items: center; justify-content: center; padding: var(--sp-3); touch-action: none; overscroll-behavior: contain;
+}
+.cv-modal {
+  width: 100%; max-width: 420px; max-height: 88dvh; display: flex; flex-direction: column;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden;
+}
+.cv-modal-topo { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4); border-bottom: 1px solid var(--border); }
+.cv-modal-titulo { font-family: var(--fonte-principal); font-size: var(--texto-titulo); color: var(--text);
+  margin: 0; overflow-wrap: anywhere; }
+.cv-modal-fechar { min-width: 40px; min-height: 40px; }
+.cv-modal-corpo { padding: var(--sp-4); overflow-y: auto; touch-action: pan-y; overscroll-behavior: contain; }
+.cv-historico { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+.cv-historico li { border-left: 3px solid var(--border); padding-left: var(--sp-3); }
+.cv-escolha { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.cv-escolha .btn.ativa { background: var(--accent-light); color: var(--accent-forte); border-color: var(--accent); }
+@media (max-width: 640px) {
+  .cv-modal-fundo { padding: 12px; }
+  .cv-modal { max-width: none; max-height: calc(100dvh - 24px); }
+}

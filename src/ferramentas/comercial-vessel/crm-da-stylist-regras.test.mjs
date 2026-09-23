@@ -97,3 +97,24 @@ test('último contato escrito', () => {
   assert.equal(ultimoContatoEscrito('2026-09-21T20:00:00-03:00', agora), 'último contato ontem')
   assert.equal(ultimoContatoEscrito('2026-09-19T10:00:00-03:00', agora), 'último contato há 3 dias')
 })
+
+// ── FIAÇÃO — o quadro e a ficha (Task 3) ────────────────────────────────────
+const ler = (f) => readFileSync(new URL(f, import.meta.url), 'utf8')
+test('FIAÇÃO: o quadro usa colunasDoQuadro e só oferece avançar nas etapas manuais', () => {
+  const q = ler('./quadro-do-stylist-circle.vue')
+  assert.match(q, /colunasDoQuadro\(/)
+  assert.match(q, /proximaEtapaManual\(/)
+  assert.match(q, /v-if="podeEditar && proximaEtapaManual\(s\.estagio\)"/)
+})
+test('FIAÇÃO: a ficha registra pelo banco e só SUGERE a etapa', () => {
+  const f = ler('./ficha-da-stylist.vue')
+  assert.match(f, /vessel_stylist_registrar_contato/)
+  assert.match(f, /vessel_stylist_contatos/)
+  assert.match(f, /v-trava-rolagem/)
+  assert.doesNotMatch(f, /p_estagio:\s*r\.sugestao/, 'a sugestão não pode ser gravada sem o toque da Ionara')
+})
+test('FIAÇÃO: a tela tem as duas vistas e o quadro recebe a lista FILTRADA', () => {
+  const t = ler('./tela-de-stylist-circle.vue')
+  assert.match(t, /:stylists="stylistsNaTela"/)
+  assert.match(t, /vista === 'quadro'/)
+})

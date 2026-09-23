@@ -70,6 +70,12 @@
               <span class="cv-numero-rotulo">Intervalo entre encontros</span>
               <span class="cv-numero-base">{{ placar.intervalos ? `média de ${placar.intervalos} intervalo(s)` : 'sem base ainda' }}</span>
             </div>
+            <div class="cv-numero">
+              <span class="cv-numero-valor">{{ placar.contatos_ate_ativar ?? '—' }}</span>
+              <span class="cv-numero-rotulo">Contatos até ativar</span>
+              <span class="cv-numero-base">{{ placar.stylists_com_contatos_ate_ativar
+                ? `média de ${placar.stylists_com_contatos_ate_ativar} stylist(s)` : 'sem base ainda' }}</span>
+            </div>
           </div>
 
           <h3 class="cv-etiqueta cv-etiqueta-interna">Os encontros e as convidadas</h3>
@@ -263,39 +269,55 @@
                         { valor: 'aberturas', rotulo: 'Quem traz mais tráfego' },
                       ]" />
 
-      <!-- ── COMO LER ───────────────────────────────────────────────────── -->
-      <section v-if="!carregando && !erro && stylists.length" class="cv-bloco cv-bloco-leitura">
-        <h2 class="cv-etiqueta">Como ler os números</h2>
-        <p class="cv-nota cv-nota-primeira">
-          <b>Aberturas</b> é leitura do link, não pessoa: a mesma cliente abrindo
-          duas vezes conta duas. <b>Clientes</b> é gente com nome e WhatsApp.
-          A conta entre as duas é aproximada justamente por isso — e por isso ela
-          vem sempre com o número de quem a compõe.
-        </p>
-        <p class="cv-nota">
-          <b>Pedidos por cliente</b> não é percentual, e é de propósito: a mesma
-          cliente pode pedir visita duas vezes, então o número pode passar de 1.
-          Mostrar isso como “taxa de 140%” faria quem lê desconfiar da tela — com
-          razão.
-        </p>
-        <p class="cv-nota">
-          <b>Receita</b> é a compra das clientes da stylist na janela declarada ao
-          lado do valor. Não existe no dado nenhum campo dizendo “esta compra veio
-          desta stylist”: o que existe é a mesma pessoa comprando perto da visita
-          que ela trouxe.
-        </p>
-        <p class="cv-nota">
-          <b>Desativada</b> não é apagada: ela sai da lista de escolher (quem
-          marca um encontro não vê mais o código dela) e do topo desta tela, mas
-          as aberturas e os atendimentos que ela já trouxe continuam contando no
-          histórico. O filtro "Situação" traz ela de volta para quem precisar
-          olhar.
-        </p>
-      </section>
+      <!-- ── AS DUAS VISTAS (T11) — o quadro é a leitura padrão; a lista
+           inteira (placar por pessoa, corrigir, desativar) continua igual,
+           atrás da aba "Lista". A escolha fica no aparelho. -->
+      <div class="cv-escolha cv-vistas" role="tablist" aria-label="Vista">
+        <button type="button" role="tab" class="btn" :class="{ ativa: vista === 'quadro' }"
+                :aria-selected="vista === 'quadro'" @click="trocarVista('quadro')">Quadro</button>
+        <button type="button" role="tab" class="btn" :class="{ ativa: vista === 'lista' }"
+                :aria-selected="vista === 'lista'" @click="trocarVista('lista')">Lista</button>
+      </div>
+      <quadro-do-stylist-circle v-if="vista === 'quadro' && !carregando && !erro" :stylists="stylistsNaTela"
+                                :pode-editar="podeExecutarAcao('editar', podeEditar)" :hoje="hojeLocal"
+                                @abrir="fichaAberta = $event" @mover="mover" />
 
       <div v-if="carregando" class="cv-carregando">Carregando…</div>
 
-      <template v-else-if="!erro">
+      <!-- ⚠️ O QUE VEM AQUI SÓ APARECE NA VISTA "LISTA" — o carregando de cima
+           sobe para fora, porque ele vale para as duas vistas. -->
+      <template v-if="vista === 'lista'">
+        <!-- ── COMO LER ─────────────────────────────────────────────────── -->
+        <section v-if="!carregando && !erro && stylists.length" class="cv-bloco cv-bloco-leitura">
+          <h2 class="cv-etiqueta">Como ler os números</h2>
+          <p class="cv-nota cv-nota-primeira">
+            <b>Aberturas</b> é leitura do link, não pessoa: a mesma cliente abrindo
+            duas vezes conta duas. <b>Clientes</b> é gente com nome e WhatsApp.
+            A conta entre as duas é aproximada justamente por isso — e por isso ela
+            vem sempre com o número de quem a compõe.
+          </p>
+          <p class="cv-nota">
+            <b>Pedidos por cliente</b> não é percentual, e é de propósito: a mesma
+            cliente pode pedir visita duas vezes, então o número pode passar de 1.
+            Mostrar isso como “taxa de 140%” faria quem lê desconfiar da tela — com
+            razão.
+          </p>
+          <p class="cv-nota">
+            <b>Receita</b> é a compra das clientes da stylist na janela declarada ao
+            lado do valor. Não existe no dado nenhum campo dizendo “esta compra veio
+            desta stylist”: o que existe é a mesma pessoa comprando perto da visita
+            que ela trouxe.
+          </p>
+          <p class="cv-nota">
+            <b>Desativada</b> não é apagada: ela sai da lista de escolher (quem
+            marca um encontro não vê mais o código dela) e do topo desta tela, mas
+            as aberturas e os atendimentos que ela já trouxe continuam contando no
+            histórico. O filtro "Situação" traz ela de volta para quem precisar
+            olhar.
+          </p>
+        </section>
+
+        <template v-if="!carregando && !erro">
         <!-- ── O CONJUNTO ───────────────────────────────────────────────── -->
         <section v-if="stylists.length" class="cv-bloco">
           <h2 class="cv-etiqueta">Todas as stylists juntas</h2>
@@ -553,9 +575,13 @@
           Nenhuma stylist inscrita ainda. Ela entra pela porta de cima, ou
           cadastre a primeira no bloco acima.
         </p>
+        </template>
       </template>
     </div>
 
+    <ficha-da-stylist v-if="fichaAberta && stylistDaFicha" :stylist="stylistDaFicha"
+                      :pode-editar="podeExecutarAcao('editar', podeEditar)" :chamar="chamar"
+                      @fechar="fichaAberta = null" @mudou="carregar" @corrigir="corrigirDaFicha" />
   </div>
 </template>
 
@@ -604,6 +630,8 @@ import { useRouter } from 'vue-router'
 import BarraDeTopo from '../../compartilhado/barra-de-topo.vue'
 import FaixaDeErro from '../../compartilhado/faixa-de-erro.vue'
 import BarraDeLista from './barra-de-lista.vue'
+import QuadroDoStylistCircle from './quadro-do-stylist-circle.vue'
+import FichaDaStylist from './ficha-da-stylist.vue'
 import { estado, hasPermission } from '../../compartilhado/controle-de-login-e-usuario.js'
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../../compartilhado/conectar-no-banco-de-dados.js'
 import { classificarErro } from '../../compartilhado/classificar-erro.js'
@@ -741,6 +769,31 @@ async function carregarPlacar() {
   }
 }
 watch(periodoDoPlacarEscolhido, carregarPlacar)
+
+// ── as duas vistas (T11) — Quadro e Lista ─────────────────────────────────────
+// A vista escolhida fica no aparelho (conveniência, não dado).
+const lerVista = () => { try { return localStorage.getItem('sty-vista') || 'quadro' } catch { return 'quadro' } }
+const vista = ref(lerVista())
+function trocarVista(v) { vista.value = v; try { localStorage.setItem('sty-vista', v) } catch { /* modo privado */ } }
+
+const fichaAberta = ref(null)
+const stylistDaFicha = computed(() => stylists.value.find((s) => s.codigo === fichaAberta.value) || null)
+
+// ⚠️ `mover` usa `erro` (a faixa de erro da tela) só quando a gravação falha,
+// com a frase de `mensagemDeEditar` — nunca "tente de novo" para
+// `estagio_contradiz_encontro`.
+async function mover({ codigo, estagio }) {
+  const r = await chamar('vessel_stylist_editar', { p_codigo: codigo, p_estagio: estagio }).catch(() => null)
+  if (!r?.ok) { erro.value = { tipo: 'gravacao', acao: null, mensagem: mensagemDeEditar(r?.situacao || 'erro_de_rede') }; return }
+  await carregar()
+}
+
+function corrigirDaFicha(codigo) {
+  fichaAberta.value = null
+  trocarVista('lista')
+  const s = stylists.value.find((x) => x.codigo === codigo)
+  if (s) abrirEditar(s)
+}
 
 const doisDigitos = (n) => String(n).padStart(2, '0')
 const hojeLocal = (() => {
