@@ -77,7 +77,14 @@ export const MANUSCRITA = 'VesselAngeletta'
 export const LINHAS_DO_CONVITE = [
   { campo: 'titulo',  fonte: REGULAR,    tamanho: 37.8,  base: 137.8, largura: 360 },
   { campo: 'hosted',  fonte: LEVE,       tamanho: 32.4,  base: 190.0, larguraMaxima: 860, tamanhoMinimo: 22 },
-  { campo: 'nome',    fonte: MANUSCRITA, tamanho: 118.8, base: 380.0, tracking: 10.9, larguraMaxima: 800, tamanhoMinimo: 56 },
+  // ⚠️ Task 7: "Beatriz Montenegro Vasconcellos Siqueira" e "Maria Eduarda
+  // Albuquerque Vasconcellos" (nomes de teste, ~40 caracteres) estouravam a
+  // moldura do cartão — a régua encolhia só até 56px e parava, e nesse
+  // tamanho a tinta ainda passava de 800px. 40px é o menor tamanho que os
+  // dois nomes medidos precisam para caber nos 800px da moldura; nomes
+  // curtos continuam no tamanho cheio (118,8px), o piso só entra quando
+  // precisa.
+  { campo: 'nome',    fonte: MANUSCRITA, tamanho: 118.8, base: 380.0, tracking: 10.9, larguraMaxima: 800, tamanhoMinimo: 40 },
   { campo: 'quando',  fonte: REGULAR,    tamanho: 43.2,  base: 500.0, tracking: 4.0, larguraMaxima: 860, tamanhoMinimo: 28 },
   { campo: 'horario', fonte: REGULAR,    tamanho: 43.2,  base: 560.0, tracking: 4.0 },
   { campo: 'marca',   fonte: REGULAR,    tamanho: 37.8,  base: 690.0, largura: 153 },
