@@ -6,7 +6,7 @@
  *
  * Duas formas:
  *   · computador (> 900px): o alternador Celular | Notebook no topo escolhe a
- *     moldura — celular (390×844) ou notebook (1280×800) — sempre encolhida
+ *     moldura — celular (390×844) ou notebook (1100×700) — sempre encolhida
  *     para caber (`pagina-do-roteiro.js`, `escalar()`), com o roteiro à
  *     direita. É o MESMO iframe nos dois: só a moldura e o tamanho mudam;
  *   · celular de verdade (≤ 900px): sem escolha — a Central ocupa a tela, e o
@@ -139,13 +139,13 @@
 .demo-aparelho[data-modo="celular"] .demo-tela { border-radius: 44px; }
 
 /* Notebook: a mesma linguagem visual (moldura escura, cantos arredondados,
- * sombra), mas bisel fino e uma base/dobradiça embaixo — 1280×800 de tela. */
+ * sombra), mas bisel fino e uma base/dobradiça embaixo — 1100×700 de tela (letra legível mesmo encolhida). */
 .demo-aparelho[data-modo="notebook"] .demo-tela-moldura {
   padding: var(--sp-4) var(--sp-4) 22px;
   border-radius: 14px 14px 6px 6px;
 }
 .demo-aparelho[data-modo="notebook"] .demo-tela,
-.demo-aparelho[data-modo="notebook"] .demo-iframe { width: 1280px; height: 800px; }
+.demo-aparelho[data-modo="notebook"] .demo-iframe { width: 1100px; height: 700px; }
 .demo-aparelho[data-modo="notebook"] .demo-tela { border-radius: 4px; }
 .demo-aparelho[data-modo="notebook"] .demo-aparelho-base {
   display: block;
