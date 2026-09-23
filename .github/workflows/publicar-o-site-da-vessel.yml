@@ -65,29 +65,50 @@ jobs:
 
     steps:
       - name: Conferir os segredos
+        id: segredos
         # Falhar aqui, com o nome do que falta, é muito melhor que falhar no
         # meio da publicação com "erro de autenticação" — que manda a pessoa
         # procurar no lugar errado.
+        #
+        # ⚠️ MAS FALTAR CHAVE DA VERCEL NÃO PINTA ESTA RODADA DE VERMELHO, e a
+        # distinção custou caro para ser aprendida. Esta vigia acorda 144 vezes
+        # por dia: transformar "ainda não configurado" em falha encheria a aba
+        # de Actions de 144 X vermelhos diários. Foi assim que a parada por
+        # cobrança de 17/09/2026 ficou SEIS DIAS sem ninguém ver — o vermelho já
+        # era paisagem. Então enquanto falta chave ela fica DORMENTE: verde, com
+        # um aviso dizendo o que fazer, e sem publicar nada.
+        #
+        # O `PAT_DO_SITE` é outra coisa e ESSE derruba: sem ele a vigia não
+        # consegue nem olhar o repositório do site, e uma vigia que não enxerga
+        # não pode passar por vigia que não achou nada.
         env:
           TOKEN: ${{ secrets.VERCEL_TOKEN }}
           ORG: ${{ secrets.VERCEL_ORG_ID }}
           PROJ: ${{ secrets.VERCEL_PROJECT_ID }}
           PAT: ${{ secrets.PAT_DO_SITE }}
         run: |
+          if [ -z "$PAT" ]; then
+            echo "::error::Falta PAT_DO_SITE — sem ele eu nao consigo nem olhar o repositorio do site."
+            exit 1
+          fi
+
           faltam=""
           [ -z "$TOKEN" ] && faltam="$faltam VERCEL_TOKEN"
           [ -z "$ORG" ]   && faltam="$faltam VERCEL_ORG_ID"
           [ -z "$PROJ" ]  && faltam="$faltam VERCEL_PROJECT_ID"
-          [ -z "$PAT" ]   && faltam="$faltam PAT_DO_SITE"
           if [ -n "$faltam" ]; then
-            echo "::error::Faltam estes segredos neste repositorio:$faltam"
-            echo "Crie em Settings -> Secrets and variables -> Actions."
-            exit 1
+            echo "::warning::DORMENTE — faltam estes segredos:$faltam. Nada sera publicado."
+            echo "Grave em Settings -> Secrets and variables -> Actions."
+            echo "O token se cria em vercel.com -> Settings -> Tokens, no escopo do time."
+            echo "dormente=sim" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
           echo "Os quatro segredos estao no lugar."
+          echo "dormente=nao" >> "$GITHUB_OUTPUT"
 
       - name: O site mudou desde a última publicação?
         id: vigia
+        if: steps.segredos.outputs.dormente != 'sim'
         env:
           GH_TOKEN: ${{ secrets.PAT_DO_SITE }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
@@ -287,5 +308,10 @@ jobs:
           [ "$falhou" = 0 ] || exit 1
 
       - name: Nada a fazer
-        if: steps.vigia.outputs.publicar != 'sim'
-        run: echo "O site ja esta em dia. Nada foi publicado."
+        if: steps.segredos.outputs.dormente == 'sim' || steps.vigia.outputs.publicar != 'sim'
+        run: |
+          if [ "${{ steps.segredos.outputs.dormente }}" = "sim" ]; then
+            echo "Vigia DORMENTE: falta chave da Vercel. Nada foi publicado."
+          else
+            echo "O site ja esta em dia. Nada foi publicado."
+          fi
