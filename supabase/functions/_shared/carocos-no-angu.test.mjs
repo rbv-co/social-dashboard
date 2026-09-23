@@ -120,3 +120,44 @@ test('o robô parado avisa para conferir o teto antes de correr', () => {
   const c = CONFERENCIAS.find((x) => x.chave === 'robo-parado');
   assert.match(c.oQueFazer, /alarme falso/);
 });
+
+test('⚠️ a aba de detalhe vem do MAIS RECENTE para o mais antigo', async () => {
+  // Pedido do dono em 23/09/2026: "o log de caroços eu quero ele sempre já
+  // traga filtrado do mais recente para o mais antigo igual vc fez na base de
+  // clientes". Lá cada aba já sai ordenada; aqui saía na ordem em que o banco
+  // devolveu — e como a aba junta VÁRIAS conferências, o de hoje podia estar
+  // no meio da aba, embaixo de cem linhas de agosto.
+  const a = await aba('Vendas', {
+    'venda-sem-vendedor': [
+      { quem: 'agosto', quando: '2026-08-02', detalhe: 'pedido 1', valor: 1 },
+      { quem: 'hoje', quando: '2026-09-23', detalhe: 'pedido 2', valor: 2 },
+    ],
+    'venda-duplicada': [
+      { quem: 'julho', quando: '2026-07-10', detalhe: 'pedido 3', valor: 3 },
+      { quem: 'ontem', quando: '2026-09-22', detalhe: 'pedido 4', valor: 4 },
+    ],
+  });
+  const quando = a.linhas.map((l) => l[a.colunas.indexOf('Quando')]);
+  assert.deepEqual(quando, ['2026-09-23', '2026-09-22', '2026-08-02', '2026-07-10']);
+  // ⚠️ e a ordem vale ENTRE conferências, não só dentro de cada uma:
+  const quem = a.linhas.map((l) => l[a.colunas.indexOf('Quem ou qual')]);
+  assert.deepEqual(quem, ['hoje', 'ontem', 'agosto', 'julho']);
+});
+
+test('⚠️ o corte de 100 guarda as MAIS RECENTES, não as primeiras que vieram', async () => {
+  // Cortar antes de ordenar era o pior dos dois mundos: o dono via cem linhas
+  // velhas e o caroço de hoje era justamente o que ficava de fora.
+  const muitas = Array.from({ length: TETO_POR_CONFERENCIA + 44 }, (_, i) =>
+    ({ quem: `cliente ${i}`, quando: `2026-${String(1 + (i % 9)).padStart(2, '0')}-01`,
+       detalhe: `pedido ${i}`, valor: 10 }));
+  const a = await aba('Vendas', { 'venda-nunca-conferida': muitas });
+  const quando = a.linhas.slice(0, TETO_POR_CONFERENCIA)
+    .map((l) => l[a.colunas.indexOf('Quando')]);
+  assert.equal(quando[0], '2026-09-01');
+  assert.deepEqual([...quando].sort().reverse(), quando, 'a aba saiu fora de ordem');
+  // o que ficou de fora é o mais ANTIGO, e o aviso diz isso com essas palavras
+  const ultima = a.linhas[a.linhas.length - 1];
+  assert.match(ultima[a.colunas.indexOf('Quem ou qual')], /e mais 44/);
+  assert.match(ultima[a.colunas.indexOf('Detalhe')], /mais recentes/);
+  assert.match(ultima[a.colunas.indexOf('Detalhe')], /antigas/);
+});

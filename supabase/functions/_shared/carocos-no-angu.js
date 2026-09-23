@@ -24,6 +24,15 @@
 // Aqui ficou o que decide TEXTO e FORMA — nome, gravidade, o que fazer, a
 // ordem do Resumo — que é o que o teste em node alcança.
 //
+// ⚠️ A ORDEM DAS ABAS DE DETALHE É SEMPRE DO MAIS RECENTE PARA O MAIS ANTIGO,
+// e mora AQUI, não no `order by` de cada consulta. Pedido do dono em
+// 23/09/2026: "o log de caroços eu quero ele sempre já traga filtrado do mais
+// recente para o mais antigo igual vc fez na base de clientes". Na função do
+// banco cada conferência ordena do seu jeito (uma por valor, outra por
+// gravidade, uma sem `order by` nenhum) e a aba junta até sete delas — ordenar
+// aqui, depois de juntar, é o único lugar onde a aba INTEIRA fica em ordem.
+// Consertar consulta por consulta deixaria a próxima nascer torta de novo.
+//
 // Como acrescentar uma conferência: uma entrada aqui E a consulta na função do
 // banco, com a MESMA chave. O teste "toda conferência está bem formada" pega
 // campo faltando; a prova do aplicador pega chave que existe de um lado só.
@@ -217,6 +226,20 @@ const COLUNAS_DE_DETALHE = [
   { titulo: 'O que fazer', largura: 70 },
 ];
 
+/** Onde mora a data na linha de detalhe — a mesma ordem das colunas acima. */
+const COLUNA_QUANDO = 3;
+
+/**
+ * Do mais recente para o mais antigo, como nas abas da "Base de clientes".
+ *
+ * ⚠️ COMPARA TEXTO, e é de propósito: a função do banco devolve `quando` já em
+ * texto e quase sempre como `2026-09-23`, que ordena certo em ordem de letra.
+ * O que NÃO é data ordena de forma estável e vai para a frente — o `nunca` do
+ * robô que jamais deu certo é o caso real, e ele na frente está bom.
+ */
+const maisNovoPrimeiro = (campo) => (a, b) =>
+  String(b[campo] ?? '').localeCompare(String(a[campo] ?? ''));
+
 /**
  * Monta as abas do log.
  *
@@ -272,20 +295,37 @@ export function montarAbasDoLog(resultados, quando) {
   for (const nomeDaAba of ABAS) {
     const daAba = CONFERENCIAS.filter((c) => c.aba === nomeDaAba);
     const linhas = [];
+    const avisosDeCorte = [];
     for (const c of daAba) {
-      const todas = achados(c);
+      // ⚠️ ORDENA ANTES DE CORTAR. Com o corte antes da ordem, as 100 que o
+      // dono vê seriam as que o banco devolveu primeiro — e o caroço de hoje
+      // podia ser justamente um dos 144 que ficaram de fora.
+      const todas = [...achados(c)].sort(maisNovoPrimeiro('quando'));
       for (const r of todas.slice(0, TETO_POR_CONFERENCIA)) {
         linhas.push([c.titulo, c.gravidade, r.quem ?? '', r.quando ?? '',
           r.detalhe ?? '', r.valor ?? '', c.oQueFazer]);
       }
       if (todas.length > TETO_POR_CONFERENCIA) {
-        linhas.push([c.titulo, c.gravidade,
+        avisosDeCorte.push([c.titulo, c.gravidade,
           `… e mais ${todas.length - TETO_POR_CONFERENCIA}`, '',
-          `só as ${TETO_POR_CONFERENCIA} primeiras cabem aqui; o total está no Resumo`,
+          `cabem as ${TETO_POR_CONFERENCIA} mais recentes; as `
+          + `${todas.length - TETO_POR_CONFERENCIA} mais antigas ficaram de fora`
+          + ' e o total está no Resumo',
           '', c.oQueFazer]);
       }
     }
-    abas.push({ nome: nomeDaAba, colunas: COLUNAS_DE_DETALHE, linhas });
+    // ⚠️ A ABA INTEIRA DO MAIS RECENTE PARA O MAIS ANTIGO, e não cada
+    // conferência no seu bloco. Pedido do dono em 23/09/2026: "igual vc fez na
+    // base de clientes". Uma aba junta até sete conferências; ordenada só
+    // dentro de cada bloco, o caroço de hoje da sétima nasce embaixo de
+    // centenas de linhas velhas das outras seis. Quem quiser ver uma
+    // conferência de cada vez usa o filtro da coluna "O que parece errado".
+    linhas.sort(maisNovoPrimeiro(COLUNA_QUANDO));
+    // Os avisos de corte não têm data e vão para o fim — que é onde o leitor
+    // chega ao mais antigo, e é exatamente o que ficou de fora.
+    abas.push({
+      nome: nomeDaAba, colunas: COLUNAS_DE_DETALHE, linhas: [...linhas, ...avisosDeCorte],
+    });
   }
   return abas;
 }
