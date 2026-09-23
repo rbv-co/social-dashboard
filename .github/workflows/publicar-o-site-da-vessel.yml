@@ -140,8 +140,51 @@ jobs:
           # 23/09/2026 os deploys subiam SEM metadado nenhum — dava para ver a
           # hora de cada publicação e não dava para saber o que estava no ar.
           API="https://api.vercel.com/v6/deployments?projectId=$PROJ&teamId=$ORG&target=production&state=READY&limit=1"
-          NO_AR=$(curl -sS --max-time 30 -H "Authorization: Bearer $VERCEL_TOKEN" "$API" \
-                  | jq -r '.deployments[0].meta.commit // ""')
+
+          # ⚠️ A RESPOSTA DA VERCEL É CONFERIDA ANTES DE SER LIDA, e isto é
+          # conserto de um buraco meu, achado no mesmo dia em que este arquivo
+          # nasceu: sem a conferência, token VENCIDO responde 403, o `jq` devolve
+          # vazio, e a vigia lê isso como "nunca foi carimbado". Falha de
+          # autenticação virando silêncio — e no cron ela ficaria dormente para
+          # sempre, verdinha, sem ninguém entender por que o site parou de
+          # publicar sozinho.
+          #
+          # Token vazio e token vencido são coisas diferentes: o vazio o passo
+          # dos segredos pega (e deixa dormente, de propósito, porque é
+          # "ainda não configurado"). O vencido só aparece aqui, e é ERRO: já
+          # esteve configurado e parou de valer.
+          # ⚠️ A REDE QUE FALHA E OUTRA COISA DO TOKEN QUE NAO VALE, e por isso
+          # sao dois `if` e nao um: rede e coisa que passa sozinha na proxima
+          # rodada; token recusado nao passa sozinho nunca.
+          if ! RESPOSTA=$(curl -sS --max-time 30 -w '\n%{http_code}' \
+                          -H "Authorization: Bearer $VERCEL_TOKEN" "$API"); then
+            echo "::error::Nao consegui falar com a API da Vercel. Nao publico as cegas."
+            exit 1
+          fi
+          CODIGO=$(printf '%s' "$RESPOSTA" | tail -n1)
+          CORPO=$(printf '%s' "$RESPOSTA" | sed '$d')
+
+          if [ "$CODIGO" = "401" ] || [ "$CODIGO" = "403" ]; then
+            echo "::error::A Vercel recusou o VERCEL_TOKEN (HTTP $CODIGO)."
+            echo "O segredo existe, mas nao vale mais: vencido, revogado, ou com escopo errado."
+            echo "Crie outro em vercel.com -> Settings -> Tokens, no escopo do time,"
+            echo "e regrave em Settings -> Secrets and variables -> Actions."
+            exit 1
+          fi
+          if [ "$CODIGO" != "200" ]; then
+            echo "::error::A API da Vercel respondeu $CODIGO. Nao da para saber o que esta no ar."
+            echo "Nao publico as cegas — na proxima rodada eu tento de novo."
+            exit 1
+          fi
+          # ⚠️ E 200 COM CORPO ESTRANHO TAMBEM NAO PASSA: sem a lista de deploys,
+          # "sem marca" seria uma conclusao tirada de uma resposta que eu nao
+          # entendi.
+          if ! printf '%s' "$CORPO" | jq -e 'has("deployments")' >/dev/null 2>&1; then
+            echo "::error::A Vercel respondeu 200 sem a lista de deploys. Nao publico as cegas."
+            exit 1
+          fi
+
+          NO_AR=$(printf '%s' "$CORPO" | jq -r '.deployments[0].meta.commit // ""')
 
           if [ -z "$NO_AR" ]; then
             # ⚠️ "NÃO SEI" NÃO É "PUBLIQUE". Na primeira rodada — e depois de
