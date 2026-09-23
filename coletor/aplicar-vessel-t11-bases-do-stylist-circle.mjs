@@ -48,11 +48,33 @@ const MIOLO = [
   'vessel_sortear_chave_de_convidada()',
 ]
 
+const FONE_STY = '5519990001101'
+const FONE_A = '5519990001102'
+const FONE_B = '5519990001103'
+
 // ⚠️ A IMPRESSÃO DO QUE É DE VERDADE, campo a campo — não `count(*)`: mexer
-// num valor deixaria a contagem igual e a impressão diferente.
+// num valor deixaria a contagem igual e a impressão diferente. EXCETO em
+// `vessel_pedidos`/`vessel_pedido_itens`/`vessel_pessoas`: o robô do Bling
+// (`coletor/trazer-pedidos-do-bling.mjs`) grava nelas O TEMPO TODO, de fora
+// desta transação — pedido novo chega, `atualizado_em`/`conferido_no_bling_em`
+// mudam, os itens são refeitos a cada rodada, e `vessel_pessoas.bling_contato_id`
+// é preenchido quando estava nulo. Nada disso é esta migration (que nunca
+// escreve nessas três tabelas) nem a prova vazando — é o robô fazendo o
+// trabalho dele ao lado. Por isso a impressão delas vira CONTAGEM (que ainda
+// serve de alarme para o que a prova faz de verdade: criar e desfazer) mais
+// um marcador "sobrou teste?" (`bling_pedido_id` negativo, ou o telefone
+// sintético das convidadas de prova) que tem de ser ZERO sempre — este sim é
+// comparado a sério, embaixo.
 const IMPRESSAO = `
-  select (select md5(coalesce(string_agg(p::text, '|' order by p.id), '')) from public.vessel_pedidos p) as pedidos,
-         (select md5(coalesce(string_agg(x::text, '|' order by x.id), '')) from public.vessel_pessoas x) as pessoas,
+  select (select count(*) from public.vessel_pedidos)::int as pedidos,
+         (select count(*) from public.vessel_pedidos where bling_pedido_id < 0)::int as pedidos_de_prova,
+         (select count(*) from public.vessel_pedido_itens)::int as itens,
+         (select count(*) from public.vessel_pedido_itens i
+            join public.vessel_pedidos p on p.id = i.pedido_id
+           where p.bling_pedido_id < 0)::int as itens_de_prova,
+         (select count(*) from public.vessel_pessoas)::int as pessoas,
+         (select count(*) from public.vessel_pessoas
+           where telefone in ('${FONE_A}', '${FONE_B}'))::int as pessoas_de_prova,
          (select md5(coalesce(string_agg(t::text, '|' order by t.id), ''))
             from (select id, pessoa_id, loja, quando, status, rsvp, evento_codigo, presenca_em, teste
                     from public.vessel_atendimentos) t) as atendimentos,
@@ -60,10 +82,6 @@ const IMPRESSAO = `
          (select count(*) from public.vessel_stylists)::int as stylists,
          (select count(*) from public.vessel_private_edits)::int as private_edits,
          (select count(*) from public.vessel_beauty_sessions)::int as beauty_sessions`
-
-const FONE_STY = '5519990001101'
-const FONE_A = '5519990001102'
-const FONE_B = '5519990001103'
 
 const falhas = []
 const conferir = (ok, frase, detalhe) => {
@@ -361,8 +379,25 @@ try {
   const { n: contatosSobrando } = await uma(`select count(*)::int as n from public.vessel_stylist_contatos`)
   conferir(contatosSobrando === 0, 'a prova não deixou contato para trás', contatosSobrando)
   const depoisDaProva = await uma(IMPRESSAO)
-  conferir(JSON.stringify(depoisDaProva) === JSON.stringify(antes), 'a prova não deixou rastro nas tabelas reais',
-    { antes, depoisDaProva })
+
+  // ⚠️ OS TRÊS MARCADORES DE TESTE, SEMPRE CONFERIDOS A SÉRIO: nenhum
+  // pedido/item com `bling_pedido_id` negativo, nem convidada com o telefone
+  // sintético das duas de prova, pode sobrar em NENHUM dos dois instantes —
+  // isto sim prova o vazamento (ou a falta dele), imune ao robô do Bling.
+  for (const chave of ['pedidos_de_prova', 'itens_de_prova', 'pessoas_de_prova']) {
+    conferir(antes[chave] === 0 && depoisDaProva[chave] === 0,
+      `${chave}: nenhum resquício de teste, nem antes nem depois`,
+      { antes: antes[chave], depoisDaProva: depoisDaProva[chave] })
+  }
+  // O resto da impressão continua comparado à risca — SÓ `pedidos` e `itens`
+  // (as contagens cruas) saem da conta: o robô do Bling pode legitimamente
+  // fazer o total delas crescer ou balançar no meio da prova (pedido novo
+  // chegando, itens refeitos), e isso não é rastro nosso.
+  const { pedidos: _p1, itens: _i1, ...antesEstavel } = antes
+  const { pedidos: _p2, itens: _i2, ...depoisEstavel } = depoisDaProva
+  conferir(JSON.stringify(depoisEstavel) === JSON.stringify(antesEstavel),
+    'a prova não deixou rastro nas tabelas reais (fora do que o robô do Bling mexe por conta própria)',
+    { antes: antesEstavel, depoisDaProva: depoisEstavel })
 
   if (falhas.length) throw new Error(`${falhas.length} conferência(s) falharam`)
 
@@ -388,7 +423,14 @@ if (GRAVAR && !process.exitCode) {
   const agora = (await outra.query(IMPRESSAO)).rows[0]
   const reg = (await outra.query(`select 1 from public.schema_migrations where name = $1`, [ARQUIVO])).rowCount
   await outra.end()
-  if (JSON.stringify(agora) !== JSON.stringify(antes) || reg !== 1) {
+  // ⚠️ MESMA TOLERÂNCIA DE CIMA: `pedidos`/`itens` (contagem crua) saem da
+  // conta — o robô do Bling não para de gravar só porque a migration foi
+  // publicada. Quem prova o vazamento aqui também são os `..._de_prova`.
+  const semRastroDeTeste = ['pedidos_de_prova', 'itens_de_prova', 'pessoas_de_prova']
+    .every((chave) => antes[chave] === 0 && agora[chave] === 0)
+  const { pedidos: _p3, itens: _i3, ...antesEstavel2 } = antes
+  const { pedidos: _p4, itens: _i4, ...agoraEstavel } = agora
+  if (JSON.stringify(agoraEstavel) !== JSON.stringify(antesEstavel2) || !semRastroDeTeste || reg !== 1) {
     console.error('❌ depois do commit a impressão mudou ou o registro sumiu', { antes, agora, reg })
     process.exitCode = 1
   } else {
