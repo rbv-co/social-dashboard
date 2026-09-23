@@ -114,7 +114,7 @@ async function main() {
   try {
     const [campanhas, insights, leituras, contas] = await Promise.all([
       sbGet('/campaigns?select=campaign_id,name,objective'),
-      sbGet(`/campaign_insights?select=campaign_id,spend,likes,comments,shares,saves,conversas,cadastros,compras,visitas,post_engagement&account_id=eq.${CONTA_VESSEL}&captured_at=eq.${dia}&period_days=eq.0`),
+      sbGet(`/campaign_insights?select=campaign_id,spend,likes,comments,shares,saves,conversas,cadastros,compras,visitas,post_engagement,impressions,clicks,reach&account_id=eq.${CONTA_VESSEL}&captured_at=eq.${dia}&period_days=eq.0`),
       // 48h de folga: garante leitura ANTERIOR ao primeiro bucket de ontem, pra
       // deltaDeSeguidoresPorHora ter "anterior" pra comparar desde a primeira
       // hora do dia inteiro (não só a última hora, como no relatório por hora).

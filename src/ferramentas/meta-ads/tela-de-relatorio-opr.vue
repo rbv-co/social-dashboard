@@ -57,6 +57,18 @@
             <div class="icon-circle"><svg viewBox="0 0 48 48"><path d="M8 10h32L28 25v11l-8 4V25L8 10Z"/></svg></div>
             <div><div class="kpi-label">Leads Gerados</div><div class="kpi-value">{{ fmtValor(dados.header.leadsGerados) }}</div><div class="kpi-caption">Oportunidades de negócio</div></div>
           </div>
+          <div class="kpi-card">
+            <div class="icon-circle"><svg viewBox="0 0 48 48"><path d="M12 37V27M24 37V18M36 37V10"/></svg></div>
+            <div><div class="kpi-label">CTR</div><div class="kpi-value">{{ fmtValor(dados.header.ctr, 'percentual') }}</div><div class="kpi-caption">Cliques ÷ impressões</div></div>
+          </div>
+          <div class="kpi-card">
+            <div class="icon-circle"><svg viewBox="0 0 48 48"><path d="M8 10h5l4 22h20l4-16H15"/><circle cx="20" cy="38" r="2.5"/><circle cx="33" cy="38" r="2.5"/></svg></div>
+            <div><div class="kpi-label">CPM</div><div class="kpi-value">{{ fmtValor(dados.header.cpm, 'moeda') }}</div><div class="kpi-caption">Custo por mil impressões</div></div>
+          </div>
+          <div class="kpi-card">
+            <div class="icon-circle"><svg viewBox="0 0 48 48"><path d="M4 24s7-14 20-14 20 14 20 14-7 14-20 14S4 24 4 24Z"/><circle cx="24" cy="24" r="6"/></svg></div>
+            <div><div class="kpi-label">Frequência</div><div class="kpi-value">{{ fmtValor(dados.header.frequencia) }}</div><div class="kpi-caption">Vezes que a mesma pessoa viu</div></div>
+          </div>
         </section>
 
         <!-- Grade 2×2 — reforma de 21/09/2026 (objective da Meta em vez de
@@ -291,7 +303,7 @@ async function carregar() {
 
   const [campanhas, insights, leituras] = await Promise.all([
     sb('campaigns?select=campaign_id,name,objective'),
-    sb(`campaign_insights?select=campaign_id,spend,likes,comments,shares,saves,conversas,cadastros,compras,visitas,post_engagement&account_id=eq.${CONTA_VESSEL}&captured_at=gte.${inicio}&captured_at=lte.${fim}&period_days=eq.0`),
+    sb(`campaign_insights?select=campaign_id,spend,likes,comments,shares,saves,conversas,cadastros,compras,visitas,post_engagement,impressions,clicks,reach&account_id=eq.${CONTA_VESSEL}&captured_at=gte.${inicio}&captured_at=lte.${fim}&period_days=eq.0`),
     sb(`followers_leituras?select=followers_count,lido_em,origem&account_id=eq.${CONTA_VESSEL}&lido_em=gte.${desdeSeguidores}&order=lido_em.asc`),
   ])
 

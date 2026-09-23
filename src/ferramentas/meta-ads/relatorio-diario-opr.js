@@ -79,6 +79,12 @@ export function agruparCampanhasDoDia(linhas, nomesPorCampanha = {}, objectivesP
         compras: Number(l.compras) || 0,
         visitas: Number(l.visitas) || 0,
         postEngagement: Number(l.post_engagement) || 0,
+        // Termômetro de saúde de mídia (23/09/2026, pedido do dono): CTR,
+        // CPM e Frequência — dado que a Meta já manda de graça em toda
+        // consulta de insights, só nunca tinha sido exposto no relatório.
+        impressoes: Number(l.impressions) || 0,
+        cliques: Number(l.clicks) || 0,
+        alcance: Number(l.reach) || 0,
       };
     })
     .filter((c) => !ehRuidoDeCampanha(c.nome));
@@ -205,15 +211,33 @@ export function calcularDadosOpr(campanhasDoDia, seguidoresDoDia) {
       ? custoPorLead(investimentoVendas, compras) : null,
   };
 
+  const investimentoTotal = investimentoSeguidores + investimentoTrafego + investimentoEngajamento
+    + investimentoVendas + investimentoLeads;
+
+  // Termômetro de mídia (23/09/2026, pedido do dono): fase é de investimento,
+  // não de retorno — sem ROAS/receita de propósito. CTR/CPM/Frequência são o
+  // que sobra pra saber se a mídia tá saudável sem depender de venda. UM
+  // número só pro dia inteiro (não por categoria): o OPR é feito pra ser
+  // rápido, granularidade por categoria ou por campanha fica pra outra hora
+  // (ou pro Gerenciador de Anúncios direto).
+  const impressoesTotais = somar(campanhasValidas, 'impressoes');
+  const cliquesTotais = somar(campanhasValidas, 'cliques');
+  const alcanceTotal = somar(campanhasValidas, 'alcance');
+
   const header = {
-    investimentoTotal: investimentoSeguidores + investimentoTrafego + investimentoEngajamento
-      + investimentoVendas + investimentoLeads,
+    investimentoTotal,
     novosSeguidores: seguidoresDoDia,
     // Soma de TODAS as campanhas, não só as de objective Engajamento (achado
     // 22/09/2026: a legenda é "Interações totais", mas só contava a fatia de
     // Engajamento — 3.173 de um real de 31.132 no dia validado).
     engajamentos: somar(campanhasValidas, 'postEngagement'),
     leadsGerados: resultadoLeads,
+    ctr: impressoesTotais > 0 && cliquesTotais > 0
+      ? (cliquesTotais / impressoesTotais) * 100 : null,
+    cpm: impressoesTotais > 0 && investimentoTotal > 0
+      ? (investimentoTotal / impressoesTotais) * 1000 : null,
+    frequencia: alcanceTotal > 0 && impressoesTotais > 0
+      ? impressoesTotais / alcanceTotal : null,
   };
 
   // Media Mix: % do investimento total em cada fatia. `null` quando não
@@ -223,7 +247,6 @@ export function calcularDadosOpr(campanhasDoDia, seguidoresDoDia) {
   // classificação por NOME não reconhecia; a classificação por OBJECTIVE já
   // pega essas campanhas certo, então aquele eixo só duplicava o
   // investimento — R$325 a mais no dia 22/09, por exemplo).
-  const investimentoTotal = header.investimentoTotal;
   const pctDoTotal = (valor) => (investimentoTotal > 0 ? (valor / investimentoTotal) * 100 : null);
   const mix = {
     seguidores: pctDoTotal(investimentoSeguidores),

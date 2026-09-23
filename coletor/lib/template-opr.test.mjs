@@ -5,7 +5,9 @@ import { agruparCampanhasDoDia, calcularDadosOpr } from '../../src/ferramentas/m
 
 function dadosBase() {
   return {
-    header: { investimentoTotal: 480, novosSeguidores: 12, engajamentos: 80, leadsGerados: 5 },
+    header: {
+      investimentoTotal: 480, novosSeguidores: 12, engajamentos: 80, leadsGerados: 5, ctr: 2.1, cpm: 15.5, frequencia: 1.8,
+    },
     seguidores: {
       investimento: 50, novos: 12, curtidas: 20, comentarios: 1, compartilhamentos: 4, salvamentos: 2, custoPorSeguidor: 4.17,
     },
@@ -37,9 +39,21 @@ test('montarHtmlOpr: os 4 painéis (Seguidores/Tráfego/Engajamento/Leads & Vend
   assert.match(html, /Leads &amp; Vendas|Leads & Vendas/);
 });
 
+test('⚠️ montarHtmlOpr: CTR/CPM/Frequência aparecem como KPI único do dia (não por categoria)', () => {
+  const html = montarHtmlOpr(dadosBase(), { conta: 'Vessel Brasil', periodoLabel: '16/09/2026' });
+  assert.match(html, />CTR</);
+  assert.match(html, /2,1%/);
+  assert.match(html, />CPM</);
+  assert.match(html, /R\$\s?15,50/);
+  assert.match(html, />Frequência</);
+  assert.match(html, /1,8/);
+});
+
 test('montarHtmlOpr: valor null aparece como travessão, nunca "null" ou número inventado', () => {
   const dados = {
-    header: { investimentoTotal: 0, novosSeguidores: null, engajamentos: 0, leadsGerados: 0 },
+    header: {
+      investimentoTotal: 0, novosSeguidores: null, engajamentos: 0, leadsGerados: 0, ctr: null, cpm: null, frequencia: null,
+    },
     seguidores: {
       investimento: 0, novos: null, curtidas: 0, comentarios: 0, compartilhamentos: 0, salvamentos: 0, custoPorSeguidor: null,
     },
