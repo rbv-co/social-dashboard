@@ -6,7 +6,9 @@ import { agruparCampanhasDoDia, calcularDadosOpr } from '../../src/ferramentas/m
 function dadosBase() {
   return {
     header: { investimentoTotal: 480, novosSeguidores: 12, engajamentos: 80, leadsGerados: 5 },
-    seguidores: { investimento: 50, novos: 12, custoPorSeguidor: 4.17 },
+    seguidores: {
+      investimento: 50, novos: 12, curtidas: 20, comentarios: 1, compartilhamentos: 4, salvamentos: 2, custoPorSeguidor: 4.17,
+    },
     trafego: { investimento: 50, visitas: 40, custoPorVisita: 1.25 },
     engajamento: { investimento: 200, curtidas: 30, comentarios: 5, compartilhamentos: 2, salvamentos: 3, custoPorCurtida: 6.67, custoPorComentario: 40, custoPorCompartilhamento: 100, custoPorSalvamento: 66.67, totalInteracoes: 40, custoMedioPorEngajamento: 5 },
     leadsEVendas: {
@@ -38,7 +40,9 @@ test('montarHtmlOpr: os 4 painéis (Seguidores/Tráfego/Engajamento/Leads & Vend
 test('montarHtmlOpr: valor null aparece como travessão, nunca "null" ou número inventado', () => {
   const dados = {
     header: { investimentoTotal: 0, novosSeguidores: null, engajamentos: 0, leadsGerados: 0 },
-    seguidores: { investimento: 0, novos: null, custoPorSeguidor: null },
+    seguidores: {
+      investimento: 0, novos: null, curtidas: 0, comentarios: 0, compartilhamentos: 0, salvamentos: 0, custoPorSeguidor: null,
+    },
     trafego: { investimento: 0, visitas: 0, custoPorVisita: null },
     engajamento: { investimento: 0, curtidas: 0, comentarios: 0, compartilhamentos: 0, salvamentos: 0, custoPorCurtida: null, custoPorComentario: null, custoPorCompartilhamento: null, custoPorSalvamento: null, totalInteracoes: 0, custoMedioPorEngajamento: null },
     leadsEVendas: {

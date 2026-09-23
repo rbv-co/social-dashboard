@@ -177,6 +177,10 @@ export function montarHtmlOpr(dados, meta) {
       ${painel('01', 'users', 'Seguidores', 'Aquisição de audiência', [
         metric('Investimento', fmtValor(seguidores.investimento, 'moeda')),
         metric('Novos Seguidores', fmtValor(seguidores.novos)),
+        metric('Curtidas', fmtValor(seguidores.curtidas)),
+        metric('Comentários', fmtValor(seguidores.comentarios)),
+        metric('Compart.', fmtValor(seguidores.compartilhamentos)),
+        metric('Salvamentos', fmtValor(seguidores.salvamentos)),
       ], [
         metric('Custo por Seguidor', fmtValor(seguidores.custoPorSeguidor, 'moeda')),
       ], 'Mais pessoas. Mais relevância.')}
