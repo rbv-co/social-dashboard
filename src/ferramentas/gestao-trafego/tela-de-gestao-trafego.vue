@@ -18,7 +18,7 @@
        componente — são posicionados via position:fixed, então o lugar deles
        na árvore do DOM não muda o layout visual, e ficar dentro da árvore do
        componente é o que permite ao CSS :deep() (scoped) alcançá-los. -->
-  <div class="tela-gestao-trafego">
+  <div class="tela-gestao-trafego id-ferramenta">
     <!-- O SUBTITULO E CONTEUDO: diz de quem sao os numeros desta tela.
          Foi trocar isso por um titulo unico que fez a primeira versao
          desta barra ser revertida. -->
@@ -231,6 +231,9 @@ import { lerGastos, linhasDoModal, usoDoOrcamento } from './gastos-da-fila.js'
 // O funil das campanhas NO AR, um bloco por objetivo. Nem todo objetivo tem
 // funil de verdade — ver funil.js.
 import { montarPainelFunil } from './painel-funil.js'
+// A pastilha do bloco (Onda 4a): o ícone da casa numa pastilha do tom do bloco,
+// em HTML de texto porque esta tela monta quase tudo por innerHTML.
+import { pastilha } from './pastilha.js'
 import { LEITURA } from './funil.js'
 import { montarFila, distribuirEntreConjuntos, mesclarSaude, anexarCriativos, DIAS_DE_SILENCIO } from './fila.js'
 // A leitura de SAÚDE (fadiga de audiência, criativo que não conecta) — volta a
@@ -1701,7 +1704,7 @@ async function _gtOpenEditor(){
   const body=baldes.map(b=>{
     const sel=_gtMetricasDoBalde(b);
     const chks=catalogo.map(c=>`<label class="gt-cfg-chk"><input type="checkbox" data-balde="${_gtEsc(b)}" value="${_gtEsc(c.k)}" ${sel.includes(c.k)?'checked':''}> ${_gtEsc(c.label)}</label>`).join('');
-    return `<div class="gt-cfg-sec"><div class="gt-cfg-obj">${_gtEsc(b)}</div><div class="gt-cfg-grid">${chks}</div></div>`;
+    return `<div class="gt-cfg-sec" data-balde="${_gtEsc(b)}"><div class="gt-cfg-obj">${_gtEsc(b)}</div><div class="gt-cfg-grid">${chks}</div></div>`;
   }).join('');
   const bodyEl=document.getElementById('gt-cfg-body');
   if(bodyEl)bodyEl.innerHTML=body;
@@ -2211,6 +2214,8 @@ function _renderGtCampaigns(col,campaigns,insights,adInsights,adsets){
   const aiTag=document.createElement('div');
   aiTag.style.cssText='font-family:var(--fonte-principal);font-size:calc(9px*var(--gt-fs,1.3));font-weight:700;letter-spacing:.5px;padding:2px 7px;border-radius:20px;background:var(--accent-light);color:var(--accent-forte);text-transform:uppercase;';
   aiTag.textContent='✦ IA em tempo real';
+  // A pastilha da lista (Onda 4a): só o ícone, antes do título que já existia.
+  ttlWrap.insertAdjacentHTML('beforeend',pastilha('lista'));
   ttlWrap.appendChild(ttl);ttlWrap.appendChild(aiTag);
   const searchInp=document.createElement('input');
   searchInp.type='text';searchInp.placeholder='Buscar campanha…';
@@ -2273,6 +2278,9 @@ function _renderGtCampaigns(col,campaigns,insights,adInsights,adsets){
     const faz=(chave,rot,n)=>{
       const b=document.createElement('button');
       b.className='gt-obj-filtro'+(_gtFiltroObjetivo===chave?' ativo':'');
+      // O tom do objetivo (Onda 4a) — o mesmo do cartão da campanha e do funil.
+      // "Todos" não tem objetivo, e fica sem tom.
+      if(chave)b.dataset.balde=chave;
       b.innerHTML=`${_gtEsc(rot)}<span class="gt-obj-n">${n}</span>`;
       b.addEventListener('click',ev=>{ev.stopPropagation();_gtFiltroObjetivo=chave;_renderGtCampaigns(col,campaigns,insights,adInsights,adsets);});
       return b;
@@ -2379,6 +2387,11 @@ function _renderGtCampaigns(col,campaigns,insights,adInsights,adsets){
       // Mesma regra do robô: quem manda é o que a Meta afirma no conjunto, e vale
       // pra qualquer objetivo (ver baldeEfetivo em baldes.js).
       const temMensagem = ehDeWhatsapp(conjuntos);
+      // O TOM DO OBJETIVO (Onda 4a): o cartão carrega o objetivo que a Meta
+      // afirma — WhatsApp conta como mensagens, como no filtro lá em cima —, e a
+      // folha pinta o selo do objetivo e o filete dos números com ele. Só
+      // atributo: nada aqui decide coisa nenhuma.
+      row.dataset.balde = temMensagem ? 'mensagens' : (baldeCamp || 'padrao');
       // Selo de objetivo por interação (Fase 3): só campanha de engajamento que
       // NÃO seja de mensagem pode declarar qual interação está comprando —
       // mesmo recorte do custo por ponto logo abaixo.
@@ -2946,12 +2959,12 @@ function _gtConfirm(title,detailHtml,opts){
     if(!ov){ov=document.createElement('div');ov.id='gt-confirm-ov';ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px;padding-top:max(16px,env(safe-area-inset-top));padding-bottom:max(16px,env(safe-area-inset-bottom));padding-left:max(12px,env(safe-area-inset-left));padding-right:max(12px,env(safe-area-inset-right));touch-action:none;overscroll-behavior:contain;';document.body.appendChild(ov);}
     ov.innerHTML='';ov.style.display='flex';
     const box=document.createElement('div');
-    box.style.cssText='background:var(--surface,#fff);color:var(--text,#111);border-radius:14px;max-width:400px;width:100%;padding:24px;box-shadow:0 24px 60px rgba(0,0,0,.45);font-family:var(--fonte-principal);';
+    box.style.cssText='background:var(--surface,#fff);color:var(--text,#111);border-radius:14px;max-width:400px;width:100%;padding:24px;box-shadow:0 24px 60px rgba(0,0,0,.45);font-family:var(--fonte-principal);border-top:4px solid var(--cor-gestao-trafego);';
     box.innerHTML='<div style="font-size:calc(16px*var(--gt-fs,1.3));font-weight:800;margin-bottom:9px;">'+title+'</div><div style="font-size:calc(13px*var(--gt-fs,1.3));color:var(--muted,#666);line-height:1.55;margin-bottom:20px;">'+detailHtml+'</div>';
     const bar=document.createElement('div');bar.style.cssText='display:flex;gap:10px;justify-content:flex-end;';
     const close=v=>{ov.style.display='none';resolve(v);};
     if(!opts.okOnly){const c=document.createElement('button');c.textContent='Cancelar';c.style.cssText='padding:9px 16px;border-radius:8px;border:1px solid var(--border,#ddd);background:none;color:var(--text,#111);font-weight:600;font-size:calc(13px*var(--gt-fs,1.3));cursor:pointer;';c.onclick=()=>close(false);bar.appendChild(c);}
-    const ok=document.createElement('button');ok.textContent=opts.okLabel||(opts.okOnly?'Entendi':'Confirmar');ok.style.cssText='padding:9px 18px;border-radius:8px;border:none;background:'+(opts.danger?'var(--red)':'var(--accent)')+';color:var(--sobre-cor);font-weight:700;font-size:calc(13px*var(--gt-fs,1.3));cursor:pointer;';ok.onclick=()=>close(true);bar.appendChild(ok);
+    const ok=document.createElement('button');ok.textContent=opts.okLabel||(opts.okOnly?'Entendi':'Confirmar');ok.style.cssText='padding:9px 18px;border-radius:8px;border:none;background:'+(opts.danger?'var(--red)':'var(--cor-gestao-trafego)')+';color:var(--sobre-cor);font-weight:700;font-size:calc(13px*var(--gt-fs,1.3));cursor:pointer;';ok.onclick=()=>close(true);bar.appendChild(ok);
     box.appendChild(bar);ov.appendChild(box);
     ov.onclick=e=>{if(e.target===ov)close(false);};
   });
@@ -3272,7 +3285,11 @@ function _gtPubStatus(html,acoes){
 }
 
 // Tijolos do editor. Nomes curtos porque aparecem muitas vezes abaixo.
-function _gtPubTitulo(txt){const d=document.createElement('div');d.style.cssText='font-size:calc(12px*var(--gt-fs,1.3));font-weight:800;margin:16px 0 6px;';d.textContent=txt;return d;}
+// O TÍTULO DE CADA SEÇÃO DO EDITOR (Onda 4a): faixa com a tinta do tom da seção
+// e o filete dele; o texto continua `--text`. O editor mora no <body> (fora da
+// raiz da tela), por isso usa os tokens `--cor-*` do :root e não o `--modulo`.
+// Sem tom, é o azul do Meta da ferramenta.
+function _gtPubTitulo(txt,tom){const d=document.createElement('div');d.className='gt-pub-tit';const t=tom||'var(--cor-gestao-trafego)';d.style.cssText='font-size:calc(12px*var(--gt-fs,1.3));font-weight:800;margin:16px 0 6px;padding:6px 10px;border-radius:8px;border-left:4px solid '+t+';background:color-mix(in srgb,'+t+' 10%,var(--surface));color:var(--text);';d.textContent=txt;return d;}
 function _gtPubAjuda(txt){const d=document.createElement('div');d.style.cssText='font-size:calc(11px*var(--gt-fs,1.3));color:var(--muted,#666);margin:-3px 0 7px;line-height:1.45;';d.textContent=txt;return d;}
 function _gtPubLinha(){const d=document.createElement('div');d.style.cssText='display:flex;gap:6px;flex-wrap:wrap;align-items:center;';return d;}
 function _gtPubInput(valor,ph,largura){const i=document.createElement('input');i.value=valor==null?'':valor;i.placeholder=ph||'';i.style.cssText='padding:7px 9px;border-radius:7px;border:1px solid var(--border,#ddd);background:var(--surface,#fff);color:var(--text,#111);font-size:calc(12px*var(--gt-fs,1.3));'+(largura?'width:'+largura+';':'flex:1;min-width:120px;');return i;}
@@ -3383,7 +3400,7 @@ async function _gtPubLeituraDaIA(sugestao,rotulo){
 // o dono já disse que conta de porcentagem ele mesmo faz.
 function _gtPubSecaoSugestao(){
   const bloco=document.createElement('div');
-  bloco.appendChild(_gtPubTitulo('Sugerir pelo que já aconteceu aqui'));
+  bloco.appendChild(_gtPubTitulo('Sugerir pelo que já aconteceu aqui','var(--cor-material-grafico)'));
   bloco.appendChild(_gtPubAjuda('Olha os últimos 90 dias desta conta e mostra o que saiu mais barato — com o número ao lado.'));
 
   if(_gtPubSugerindo){
@@ -3615,7 +3632,7 @@ function _gtPubSecaoPublicosSalvos(){
   // mostrar, em vez de afirmar que a conta não tem público salvo.
   if(!lista||!lista.length)return bloco;
 
-  bloco.appendChild(_gtPubTitulo('Começar de um público salvo'));
+  bloco.appendChild(_gtPubTitulo('Começar de um público salvo','var(--cor-private-edit)'));
   bloco.appendChild(_gtPubAjuda('Traz tudo pronto: onde, idade, gênero, interesses e comportamentos. Depois você ajusta o que quiser.'));
 
   // BUSCA quando a lista é longa. Doze caixas iguais empilhadas não é lista, é
@@ -3709,7 +3726,7 @@ function _gtPubSecaoPublicosSalvos(){
 // O painel e o mapa sao os MESMOS do "Subir para a Meta" da Fabrica.
 function _gtPubSecaoLugar(){
   const cx=document.createElement('div');
-  cx.appendChild(_gtPubTitulo('Onde mostrar'));
+  cx.appendChild(_gtPubTitulo('Onde mostrar','var(--cor-stylist-circle)'));
   cx.appendChild(_gtPubAjuda('Escolha Brasil, Estado, Cidade ou Local. Cada um pode valer como a área inteira ou como um ponto com raio — e o mapa mostra onde cada escolha caiu. Clique no mapa para pôr um ponto: ele descobre sozinho em que rua caiu.'));
 
   // A LISTA DE LUGARES É UMA SÓ, e o painel e o mapa mexem NELA. As quatro
@@ -3787,7 +3804,7 @@ function _gtPubSecaoLugar(){
     }
   }
 
-  cx.appendChild(_gtPubTitulo('Onde NÃO mostrar'));
+  cx.appendChild(_gtPubTitulo('Onde NÃO mostrar','var(--cor-stylist-circle)'));
   const fora=_gtPubLinha();
   // O raio da cidade excluída vem da Meta e é preservado ao salvar; aparece
   // aqui (sem campo pra editar) porque excluir 25 km em volta de uma cidade é
@@ -3808,7 +3825,7 @@ function _gtPubSecaoLugar(){
 // Idade, gênero e interesses — os três que brigam com o Advantage+.
 function _gtPubSecaoPessoas(){
   const cx=document.createElement('div');
-  cx.appendChild(_gtPubTitulo('Idade'));
+  cx.appendChild(_gtPubTitulo('Idade','var(--cor-beauty-sessions)'));
   const li=_gtPubLinha();
   const de=_gtPubInput(_gtPub.idadeMin,'de','80px');de.type='number';de.min='13';de.max='65';de.dataset.gtpubId='idade-min';
   const ate=_gtPubInput(_gtPub.idadeMax,'até','80px');ate.type='number';ate.min='13';ate.max='65';ate.dataset.gtpubId='idade-max';
@@ -3840,7 +3857,7 @@ function _gtPubSecaoPessoas(){
   li.appendChild(de);const t=document.createElement('span');t.textContent='até';li.appendChild(t);li.appendChild(ate);
   cx.appendChild(li);
 
-  cx.appendChild(_gtPubTitulo('Gênero'));
+  cx.appendChild(_gtPubTitulo('Gênero','var(--cor-beauty-sessions)'));
   const lg=_gtPubLinha();
   const opcoes=[{v:[],r:'Todos'},{v:[1],r:'Homens'},{v:[2],r:'Mulheres'}];
   const atual=JSON.stringify(_gtPub.generos);
@@ -3852,7 +3869,7 @@ function _gtPubSecaoPessoas(){
   }
   cx.appendChild(lg);
 
-  cx.appendChild(_gtPubTitulo('Interesses'));
+  cx.appendChild(_gtPubTitulo('Interesses','var(--cor-beauty-sessions)'));
   const ci=_gtPubLinha();
   for(const i of _gtPub.interesses)
     ci.appendChild(_gtPubChip(i.name||i.id,()=>{_gtPub.interesses=_gtPub.interesses.filter(x=>x.id!==i.id);_gtPubRedesenha();}));
@@ -3924,7 +3941,7 @@ function _gtPubTamanho(n){
 // público valendo — e ela ia junto no salvamento assim mesmo.
 function _gtPubSecaoPublicos(){
   const cx=document.createElement('div');
-  cx.appendChild(_gtPubTitulo('Públicos salvos na conta'));
+  cx.appendChild(_gtPubTitulo('Públicos salvos na conta','var(--cor-private-appointment)'));
 
   const nomeDoSalvo=(id)=>{
     const achado=(_gtPubSalvos||[]).find(x=>String(x.id)===id);
@@ -3988,12 +4005,12 @@ function _gtPubSecaoExtras(){
   cx.appendChild(lb);
 
   if(_gtPubPresets===null){
-    cx.appendChild(_gtPubTitulo('Usar um público pronto'));
+    cx.appendChild(_gtPubTitulo('Usar um público pronto','var(--cor-private-edit)'));
     cx.appendChild(_gtPubAjuda('Não consegui carregar os públicos montados no Estúdio.'));
     return cx;
   }
   if(!_gtPubPresets.length)return cx;
-  cx.appendChild(_gtPubTitulo('Usar um público pronto do Estúdio'));
+  cx.appendChild(_gtPubTitulo('Usar um público pronto do Estúdio','var(--cor-private-edit)'));
   cx.appendChild(_gtPubAjuda('Escolher um preenche o editor inteiro. Você ainda vê o que mudou e confirma antes de salvar.'));
   const sel=document.createElement('select');
   sel.style.cssText='width:100%;padding:8px;border-radius:7px;border:1px solid var(--border,#ddd);background:var(--surface,#fff);color:var(--text,#111);font-size:calc(12px*var(--gt-fs,1.3));';
@@ -4032,7 +4049,7 @@ function _gtPublicoModal(nomeConjunto,rotuloDoBotao){
   return new Promise(resolve=>{
     const ov=_gtPubOverlay();ov.onclick=null;
     const box=document.createElement('div');
-    box.style.cssText='background:var(--surface,#fff);color:var(--text,#111);border-radius:14px;max-width:560px;width:100%;max-height:86vh;overflow-y:auto;padding:24px;box-shadow:0 24px 60px rgba(0,0,0,.45);font-family:var(--fonte-principal);';
+    box.style.cssText='background:var(--surface,#fff);color:var(--text,#111);border-radius:14px;max-width:560px;width:100%;max-height:86vh;overflow-y:auto;padding:24px;box-shadow:0 24px 60px rgba(0,0,0,.45);font-family:var(--fonte-principal);border-top:4px solid var(--cor-gestao-trafego);';
     const corpo=document.createElement('div');
     // ESPAÇO PARA A BARRA. Ela é `sticky` — o conteúdo passa POR BAIXO dela, e
     // sem esta folga a última linha da tela fica escondida atrás dos botões.
@@ -5275,6 +5292,13 @@ Object.assign(window, {
 </script>
 
 <style scoped>
+/* A COR DA FERRAMENTA E DE CADA BLOCO (Onda 4a, 23/09/2026) — a folha comum,
+   importada ANTES das regras desta tela (`@import` só vale no topo). Sozinha
+   ela pinta a barra do topo (filete e tinta) e o botão principal do
+   <template>. Quase tudo aqui é montado por JavaScript (innerHTML), que não
+   leva o atributo do `scoped`: o resto mora no bloco "Onda 4a" no fim deste
+   <style>, em `:deep()`. */
+@import '../../estilos/identidade-da-ferramenta.css';
 /* Porte das regras #gestao-trafego-screen/.gt-* (Gestão de Tráfego, legacy/
    index.html L2350-2477) + o conjunto "gv-topbar/gv-clock/gv-period-btns"
    compartilhado com Gestão à Vista/Análise de Campanhas (cada tela traz sua
@@ -6158,4 +6182,180 @@ Object.assign(window, {
 /* FAIXA DE CONTROLES — ver o comentario no template. */
 .tela-gestao-trafego :deep(.gv-controles){display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap;padding:0;background:transparent;}  /* mora DENTRO da barra: fundo, borda de baixo e respiro lateral sao dela */
 @media(max-width:640px){.tela-gestao-trafego :deep(.gv-controles){padding:8px 12px;flex-direction:column;align-items:stretch;gap:8px;}}
+
+/* ══ ONDA 4a (23/09/2026) — CADA BLOCO COM O SEU TOM ══════════════════════════
+   O pedido do dono, aprendido na Administração: não basta pintar o topo e a
+   aba — cada seção e cada cartão tem de ser um bloco claramente separado, com
+   o SEU tom. Aqui é tudo moldura em volta do que já existia: nada saiu do
+   lugar, nenhum texto novo, nenhum comportamento mudou.
+
+   AS TRÊS CORES QUE MORAM AQUI, E NÃO SE MISTURAM:
+   · `--modulo` — o azul do Meta da ferramenta: a barra do topo, a aba ativa,
+     a ação principal, a faixa da lista de campanhas e o cartão da CAMPANHA.
+   · `--bloco` — o tom de AGRUPAMENTO de cada seção (a fila, o farol, cada
+     seção da régua, o exemplo vivo), reusando os tokens já medidos das outras
+     ferramentas (ameixa, bronze, verde-azulado, rosé, petróleo, oliva, vinho).
+   · `--obj` — o tom do OBJETIVO da campanha (mensagens, tráfego, vendas…):
+     o mesmo no selo do cartão, no filtro, no funil e no editor de KPIs.
+   Nenhum deles é o azul de SELEÇÃO (`--accent`: o período, o filtro e o passo
+   escolhidos continuam nele) nem cor de situação. A situação (`--situacao-*`)
+   só aparece no filete de quem foge do normal: pausado e encerrado.
+   O TEXTO sobre qualquer tinta continua `--text`/`--muted`: a cor está na
+   faixa, na pastilha e no filete. Tinta só em CABEÇALHO — o corpo dos blocos
+   tem texto laranja (CTR, custo por ponto, aviso de gasto), e a tinta de 6%
+   já derruba o laranja do claro para 4,34. */
+
+/* ── os tons ── */
+.tela-gestao-trafego :deep([data-balde="mensagens"]){--obj:var(--cor-stylist-circle);}
+.tela-gestao-trafego :deep([data-balde="leads"]){--obj:var(--cor-private-edit);}
+.tela-gestao-trafego :deep([data-balde="vendas"]){--obj:var(--cor-private-appointment);}
+.tela-gestao-trafego :deep([data-balde="trafego"]){--obj:var(--cor-material-grafico);}
+.tela-gestao-trafego :deep([data-balde="engajamento"]){--obj:var(--cor-beauty-sessions);}
+.tela-gestao-trafego :deep([data-balde="reconhecimento"]){--obj:var(--cor-comercial-vessel);}
+.tela-gestao-trafego :deep([data-balde="padrao"]){--obj:var(--cor-gestao-interna);}
+
+/* ── a pastilha (pastilha.js): o ícone cheio no tom do bloco, traço em `--sobre-cor` ── */
+.tela-gestao-trafego :deep(.gt-pastilha){display:inline-flex;align-items:center;justify-content:center;flex:0 0 28px;width:28px;height:28px;border-radius:var(--radius-md);background:var(--bloco,var(--modulo));margin-right:var(--sp-2);vertical-align:middle;}
+.tela-gestao-trafego :deep(.gt-pastilha .id-icone){width:16px;height:16px;flex:0 0 16px;fill:none;stroke:var(--sobre-cor);stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+
+/* ── as abas e as ações da barra de abas: a ferramenta ── */
+.tela-gestao-trafego :deep(.pnd-aba.ativa){color:var(--modulo);border-bottom-color:var(--modulo);}
+.tela-gestao-trafego :deep(.pnd-aba-acao){color:var(--modulo);}
+.tela-gestao-trafego :deep(.pnd-aba-acao:hover){border-color:var(--modulo);}
+
+/* ── ABA CAMPANHAS ──────────────────────────────────────────────────────────
+   A faixa da lista (o total, o recolher, os filtros e a busca) é o cabeçalho
+   do bloco: tinta e filete da ferramenta, com a pastilha. */
+.tela-gestao-trafego :deep(.gt-camp-hdr){--bloco:var(--modulo);
+  background:color-mix(in srgb,var(--modulo) 8%,var(--surface));
+  border:1px solid color-mix(in srgb,var(--modulo) 35%,var(--surface));
+  border-left:4px solid var(--modulo);border-radius:var(--radius-lg);
+  padding:var(--sp-3) var(--sp-4);margin-bottom:var(--sp-3);}
+/* o ponto do objetivo em cada filtro; o escolhido continua no azul de seleção */
+.tela-gestao-trafego :deep(.gt-obj-filtro[data-balde]::before){content:'';width:8px;height:8px;border-radius:50%;background:var(--obj);flex:0 0 auto;}
+.tela-gestao-trafego :deep(.gt-obj-filtro.ativo[data-balde]::before){box-shadow:0 0 0 2px var(--sobre-cor);}
+
+/* OS TRÊS NÍVEIS, TRÊS CARAS (campanha ≠ conjunto ≠ anúncio):
+   · CAMPANHA — filete grosso (4px) no azul do Meta, borda tingida, número dele;
+   · CONJUNTO — filete de 3px no verde-azulado, faixa tingida no topo, número dele;
+   · ANÚNCIO — filete de 3px na ameixa, sem faixa, número dele.
+   A árvore que liga o conjunto aos anúncios passa a ser do verde-azulado:
+   é a trilha DO CONJUNTO. */
+.tela-gestao-trafego :deep(.gt-camp-row){border-color:color-mix(in srgb,var(--modulo) 30%,var(--surface));border-left:4px solid var(--modulo);}
+.tela-gestao-trafego :deep(.gt-camp-num){color:var(--modulo);}
+.tela-gestao-trafego :deep(.gt-camp-top:hover .gt-name),
+.tela-gestao-trafego :deep(.gt-camp-top:hover .gt-expand-hint){color:var(--modulo);}
+.tela-gestao-trafego :deep(.gt-camp-row-ads){border-top-color:color-mix(in srgb,var(--cor-gestao-interna) 40%,var(--surface));}
+.tela-gestao-trafego :deep(.gt-set-card){--bloco:var(--cor-gestao-interna);border-color:color-mix(in srgb,var(--cor-gestao-interna) 30%,var(--surface));border-left:3px solid var(--cor-gestao-interna);}
+.tela-gestao-trafego :deep(.gt-set-top){margin:-10px -12px 0;padding:10px 12px 8px;background:color-mix(in srgb,var(--cor-gestao-interna) 8%,var(--surface));border-bottom:1px solid color-mix(in srgb,var(--cor-gestao-interna) 30%,var(--surface));border-radius:8px 8px 0 0;}
+.tela-gestao-trafego :deep(.gt-set-num){color:var(--cor-gestao-interna);opacity:1;}
+.tela-gestao-trafego :deep(.gt-set-top:hover .gt-expand-hint){color:var(--cor-gestao-interna);}
+.tela-gestao-trafego :deep(.gt-set-pane)::before{border-left-color:var(--cor-gestao-interna);opacity:.4;}
+.tela-gestao-trafego :deep(.gt-ad-card::before){border-left-color:var(--cor-gestao-interna);border-bottom-color:var(--cor-gestao-interna);opacity:.6;}
+.tela-gestao-trafego :deep(.gt-ad-card){border-left:3px solid var(--cor-private-edit);}
+.tela-gestao-trafego :deep(.gt-ad-num){color:var(--cor-private-edit);opacity:1;}
+/* A SITUAÇÃO, só onde foge do normal — pausado (o mesmo laranja do selo
+   "Pausado" que a linha já mostra) e arquivado/encerrado (cinza). Ativo fica
+   com o tom do nível. `:has()` lê o selo que JÁ está na linha: nenhuma classe
+   nova no JavaScript, e o caminho com `>` não deixa o selo de um conjunto
+   pintar a campanha. */
+.tela-gestao-trafego :deep(.gt-camp-row:has(> .gt-camp-inner > .gt-camp-top > .gt-camp-l1 > .gt-status-badge.paused)){border-left-color:var(--situacao-queda);}
+.tela-gestao-trafego :deep(.gt-camp-row:has(> .gt-camp-inner > .gt-camp-top > .gt-camp-l1 > .gt-status-badge.inactive)){border-left-color:var(--situacao-parada);}
+.tela-gestao-trafego :deep(.gt-set-card:has(> .gt-set-top > .gt-status-badge.paused)){border-left-color:var(--situacao-queda);}
+.tela-gestao-trafego :deep(.gt-set-card:has(> .gt-set-top > .gt-status-badge.inactive)){border-left-color:var(--situacao-parada);}
+.tela-gestao-trafego :deep(.gt-ad-card:has(> .gt-ad-top > .gt-status-badge.paused)){border-left-color:var(--situacao-queda);}
+.tela-gestao-trafego :deep(.gt-ad-card:has(> .gt-ad-top > .gt-status-badge.inactive)){border-left-color:var(--situacao-parada);}
+/* O OBJETIVO: o selo ganha a tinta e o filete do tom do objetivo (o texto
+   continua `--text`); cada número da campanha ganha um filete no tom do que
+   ele mede — os KPIs são escolhidos POR objetivo, então medem o objetivo. O
+   número segue `--text`, e a cor que já existia dentro dele (custo por ponto,
+   CTR) não muda. */
+.tela-gestao-trafego :deep(.gt-camp-row .ma-obj-chip){background:color-mix(in srgb,var(--obj,var(--muted)) 12%,var(--surface));color:var(--text);box-shadow:inset 3px 0 0 var(--obj,var(--muted));padding-left:8px;}
+.tela-gestao-trafego :deep(.gt-camp-row .gt-metrics > .gt-kpi),
+.tela-gestao-trafego :deep(.gt-camp-row .gt-metrics > .gt-metric){border-left:3px solid var(--obj,var(--border));padding-left:6px;}
+
+/* ── ABA FILA ───────────────────────────────────────────────────────────────
+   O cabeçalho da fila é um bloco em BRONZE (a decisão de verba); cada item
+   continua com o filete da RECOMENDAÇÃO (verde subir · laranja baixar ·
+   vermelho pausar), que já tinha cor e significado — não mexe. O farol de
+   público ganha a faixa em PETRÓLEO; a borda esquerda dele continua sendo o
+   veredito (verde manter · amarelo ajustar). */
+.tela-gestao-trafego :deep(.gtf-cab){--bloco:var(--cor-private-appointment);
+  background:color-mix(in srgb,var(--bloco) 10%,var(--surface));
+  border:1px solid color-mix(in srgb,var(--bloco) 40%,var(--surface));
+  border-left:4px solid var(--bloco);border-radius:var(--radius-lg);
+  padding:var(--sp-3) var(--sp-4);margin-bottom:var(--sp-4);}
+.tela-gestao-trafego :deep(.gtf-tit){display:flex;align-items:center;flex-wrap:wrap;}
+.tela-gestao-trafego :deep(.gtf-cab .gtf-sub){color:var(--text);}
+.tela-gestao-trafego :deep(.gtf-outras){border-left-color:var(--cor-private-appointment);}
+.tela-gestao-trafego :deep(.gtf-lp){--bloco:var(--cor-stylist-circle);border-color:color-mix(in srgb,var(--bloco) 35%,var(--surface));}
+.tela-gestao-trafego :deep(.gtf-lp--ajustar){border-left-color:var(--yellow);}
+.tela-gestao-trafego :deep(.gtf-lp--manter){border-left-color:var(--green);}
+.tela-gestao-trafego :deep(.gtf-lp--neutro){border-left-color:var(--bloco);}
+.tela-gestao-trafego :deep(.gtf-lp-cab){margin:-16px -18px var(--sp-3);padding:var(--sp-2) 18px;align-items:center;
+  background:color-mix(in srgb,var(--bloco) 10%,var(--surface));
+  border-bottom:1px solid color-mix(in srgb,var(--bloco) 35%,var(--surface));border-radius:0 9px 0 0;}
+.tela-gestao-trafego :deep(.gtf-lp-tit){display:flex;align-items:center;}
+@media(max-width:640px){.tela-gestao-trafego :deep(.gtf-lp-cab){margin:-12px -13px var(--sp-3);padding:var(--sp-2) 13px;}}
+
+/* ── ABA A RÉGUA ────────────────────────────────────────────────────────────
+   "O que é esta aba" é leitura (o azul de informação, como em toda a casa).
+   Cada seção é um bloco com o SEU tom: Engajamento ponderado em ROSÉ (as
+   interações), Metas por resultado em OLIVA, Persona da marca em AMEIXA, e o
+   exemplo vivo ao lado em PETRÓLEO. Os cartões de dentro têm a cara da seção:
+   filete e faixa do título no tom dela. */
+.tela-gestao-trafego :deep(.pnd-intro){background:color-mix(in srgb,var(--informacao) 8%,var(--surface));border-color:color-mix(in srgb,var(--informacao) 38%,var(--surface));border-left-color:var(--informacao);}
+.tela-gestao-trafego :deep(.pnd-intro p){color:var(--text);}
+.tela-gestao-trafego :deep(.pnd-g-engaj){--bloco:var(--cor-beauty-sessions);}
+.tela-gestao-trafego :deep(.pnd-g-result){--bloco:var(--cor-material-grafico);}
+.tela-gestao-trafego :deep(.pnd-persona){--bloco:var(--cor-private-edit);}
+.tela-gestao-trafego :deep(.pnd-grupo){margin-bottom:var(--sp-6);}
+.tela-gestao-trafego :deep(.pnd-grupo:last-child){margin-bottom:0;}
+.tela-gestao-trafego :deep(.pnd-grupo-cab){
+  background:color-mix(in srgb,var(--bloco) 10%,var(--surface));
+  border:1px solid color-mix(in srgb,var(--bloco) 40%,var(--surface));
+  border-left:4px solid var(--bloco);border-radius:var(--radius-lg);
+  padding:var(--sp-3) var(--sp-4);margin-bottom:var(--sp-3);}
+.tela-gestao-trafego :deep(.pnd-grupo-cab .pnd-grupo-tit){margin:0;}
+.tela-gestao-trafego :deep(.pnd-grupo-cab .pnd-grupo-sub){margin:var(--sp-1) 0 0;color:var(--text);}
+.tela-gestao-trafego :deep(.pnd-grupo .pnd-bloco){border-color:color-mix(in srgb,var(--bloco) 35%,var(--surface));border-left:4px solid var(--bloco);}
+.tela-gestao-trafego :deep(.pnd-grupo .pnd-cab){margin:-16px -18px var(--sp-3);padding:var(--sp-2) 18px;
+  background:color-mix(in srgb,var(--bloco) 10%,var(--surface));
+  border-bottom:1px solid color-mix(in srgb,var(--bloco) 35%,var(--surface));border-radius:0 13px 0 0;}
+.tela-gestao-trafego :deep(.pnd-grupo .pnd-cab::before){background:var(--bloco);}
+/* a ação principal da aba: a ferramenta (o texto em cima é `--sobre-cor`) */
+.tela-gestao-trafego :deep(.pnd-salvar){background:var(--modulo);}
+/* o exemplo vivo */
+.tela-gestao-trafego :deep(.pnd-exemplo){--bloco:var(--cor-stylist-circle);}
+.tela-gestao-trafego :deep(.pnd-ex-cab){background:color-mix(in srgb,var(--bloco) 10%,var(--surface));
+  border:1px solid color-mix(in srgb,var(--bloco) 40%,var(--surface));border-left:4px solid var(--bloco);
+  border-radius:var(--radius-lg);padding:var(--sp-3) var(--sp-4);}
+.tela-gestao-trafego :deep(.pnd-ex-cab-tit){display:flex;align-items:center;color:var(--text);}
+.tela-gestao-trafego :deep(.pnd-ex-cab-sub){color:var(--text);}
+.tela-gestao-trafego :deep(.pnd-ex-bloco:not(.interacao)){border-color:color-mix(in srgb,var(--bloco) 40%,var(--surface));border-left:4px solid var(--bloco);}
+.tela-gestao-trafego :deep(.pnd-ex-bloco:not(.interacao) .pnd-ex-topo){background:color-mix(in srgb,var(--bloco) 8%,var(--surface));}
+.tela-gestao-trafego :deep(.pnd-ex-bloco:not(.interacao) .pnd-ex-rot){color:var(--bloco);}
+
+/* ── AS JANELAS ─────────────────────────────────────────────────────────────
+   O cabeçalho de toda janela da tela (KPIs, nova campanha/histórico, criativo)
+   e o do funil: tinta e filete da ferramenta. */
+.tela-gestao-trafego :deep(.gt-cfg-head),
+.tela-gestao-trafego :deep(.gfn-topo){--bloco:var(--modulo);background:color-mix(in srgb,var(--modulo) 8%,var(--surface));border-bottom-color:color-mix(in srgb,var(--modulo) 35%,var(--surface));box-shadow:inset 4px 0 0 var(--modulo);}
+.tela-gestao-trafego :deep(#gt-cfg-modal),
+.tela-gestao-trafego :deep(#gt-novo-modal),
+.tela-gestao-trafego :deep(#gt-cr-modal){overflow:hidden;}
+.tela-gestao-trafego :deep(.gfn-h2),
+.tela-gestao-trafego :deep(.gfn-tit){display:flex;align-items:center;flex-wrap:wrap;}
+/* cada funil é um objetivo: filete e faixa no tom dele; as BARRAS são a série
+   do gráfico e continuam como estavam */
+.tela-gestao-trafego :deep(.gfn-bloco){--bloco:var(--obj,var(--modulo));border-color:color-mix(in srgb,var(--bloco) 35%,var(--surface));border-left:4px solid var(--bloco);}
+.tela-gestao-trafego :deep(.gfn-cab){margin:-16px -18px var(--sp-2);padding:var(--sp-2) 18px;
+  background:color-mix(in srgb,var(--bloco) 10%,var(--surface));
+  border-bottom:1px solid color-mix(in srgb,var(--bloco) 35%,var(--surface));border-radius:0 11px 0 0;}
+.tela-gestao-trafego :deep(.gfn-cab .gfn-sub){color:var(--text);}
+/* o editor de KPIs: cada objetivo com o filete do tom dele; o título segue `--text` */
+.tela-gestao-trafego :deep(.gt-cfg-sec){border-left:3px solid var(--obj,var(--modulo));padding-left:var(--sp-3);}
+.tela-gestao-trafego :deep(.gt-cfg-obj){color:var(--text);}
+/* o assistente: a ação principal na ferramenta; o passo ATUAL continua no azul de seleção */
+.tela-gestao-trafego :deep(.gtw-b.primario){background:var(--modulo);}
 </style>

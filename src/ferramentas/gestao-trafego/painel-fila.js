@@ -6,6 +6,7 @@
 // Supabase. Quem busca dado e quem aplica na Meta é a tela — este arquivo
 // recebe os itens prontos e devolve as decisões por callback. Mesmo contrato de
 // painel-regua.js.
+import { pastilha } from './pastilha.js';
 import { opcoesDaLinha, frasePasso } from './acoes-da-fila.js';
 import { gastoDaLinha, usoDoOrcamento } from './gastos-da-fila.js';
 
@@ -336,7 +337,7 @@ function leituraDePublico(o) {
   return `
     <section class="gtf-lp ${selo}">
       <div class="gtf-lp-cab">
-        <h3 class="gtf-lp-tit">Leitura de público${conta}</h3>
+        <h3 class="gtf-lp-tit">${pastilha('parceiras')}Leitura de público${conta}</h3>
         <span class="gtf-lp-janela">últimos 90 dias${L.contando ? ` · contando ${esc(L.contando)}` : ''}</span>
       </div>
       <p class="gtf-lp-titulo2">${esc(L.titulo)}</p>
@@ -410,7 +411,7 @@ export function montarPainelFila(alvo, opcoes) {
   alvo.innerHTML = `
     <div class="gtf-cab">
       <div>
-        <h2 class="gtf-tit">Esperando sua decisão${ajudaBtn('fila')}</h2>
+        <h2 class="gtf-tit">${pastilha('relogio')}Esperando sua decisão${ajudaBtn('fila')}</h2>
         <p class="gtf-sub">${o.contaNome ? `${esc(o.contaNome)} · ` : ''}o robô propõe, você decide. Nada mexe no orçamento sem passar por aqui.</p>
       </div>
     </div>

@@ -28,6 +28,7 @@
 //
 // (A planilha lista sete pesos; só quatro existem por campanha no Meta Ads —
 // o porquê está em ponderada.js, onde os pesos são montados; não repetir aqui.)
+import { pastilha } from './pastilha.js';
 import { calcularPonderada, PESOS_PADRAO, LIMIARES_PADRAO } from './ponderada.js';
 import { metaDoBalde } from './regua.js';
 import { ALVOS, alvoDoBalde, avaliarAlvo } from './alvos.js';
@@ -122,15 +123,15 @@ function blocoPersona(o) {
   const nome = o.nomeConta || '';
   if (!o.contaId) {
     return `<div class="pnd-grupo pnd-persona">
-      <h2 class="pnd-grupo-tit">Persona da marca</h2>
-      <p class="pnd-grupo-sub">Escolha uma conta de anúncios lá em cima para escrever a persona dela.</p>
+      <div class="pnd-grupo-cab"><h2 class="pnd-grupo-tit">${pastilha('pessoa')}Persona da marca</h2>
+      <p class="pnd-grupo-sub">Escolha uma conta de anúncios lá em cima para escrever a persona dela.</p></div>
     </div>`;
   }
   const texto = typeof o.persona === 'string' ? o.persona : '';
   const r = resumoPersona(texto);
   return `<div class="pnd-grupo pnd-persona">
-    <h2 class="pnd-grupo-tit">Persona da marca${nome ? ` — ${esc(nome)}` : ''}</h2>
-    <p class="pnd-grupo-sub">Para quem esta marca vende, nas suas palavras. A IA lê isto antes de sugerir idade, lugar e interesses — e o que estiver escrito aqui vale mais do que o padrão que ela encontrar nos números.</p>
+    <div class="pnd-grupo-cab"><h2 class="pnd-grupo-tit">${pastilha('pessoa')}Persona da marca${nome ? ` — ${esc(nome)}` : ''}</h2>
+    <p class="pnd-grupo-sub">Para quem esta marca vende, nas suas palavras. A IA lê isto antes de sugerir idade, lugar e interesses — e o que estiver escrito aqui vale mais do que o padrão que ela encontrar nos números.</p></div>
     <p class="pnd-ajuda">Escreva como explicaria para uma pessoa nova na equipe: quem é, que idade tem de verdade, o que procura, e principalmente <b>o que NÃO combina</b> com a marca. É o "não combina" que impede a sugestão de idade que você vem corrigindo na mão.</p>
     <textarea class="pnd-persona-campo" id="pnd-persona" rows="10"
       data-conta-id="${esc(o.contaId)}"
@@ -267,9 +268,9 @@ export function montarPainelRegua(alvo, opcoes) {
       : `<div class="pnd-conta-tag pnd-conta-tag--vazio">Escolha uma conta de anúncios lá em cima para ver e editar as metas dela.</div>`}
     <div class="pnd-regua">
       <div>
-        <div class="pnd-grupo">
-          <h2 class="pnd-grupo-tit">Engajamento ponderado${nomeConta ? ` — ${esc(nomeConta)}` : ''}${ajudaBtn('ponto')}</h2>
-          <p class="pnd-grupo-sub">A leitura geral. Vale para toda campanha de engajamento até você declarar, no cartão dela, o que ela está comprando.</p>
+        <div class="pnd-grupo pnd-g-engaj">
+          <div class="pnd-grupo-cab"><h2 class="pnd-grupo-tit">${pastilha('contato')}Engajamento ponderado${nomeConta ? ` — ${esc(nomeConta)}` : ''}${ajudaBtn('ponto')}</h2>
+          <p class="pnd-grupo-sub">A leitura geral. Vale para toda campanha de engajamento até você declarar, no cartão dela, o que ela está comprando.</p></div>
           <div class="pnd-cards">
             <div class="pnd-bloco">
               <div class="pnd-cab"><h3 class="pnd-titulo">Quanto vale cada interação</h3>${ajudaBtn('pesos')}</div>
@@ -288,9 +289,9 @@ export function montarPainelRegua(alvo, opcoes) {
             </div>
           </div>
         </div>
-        <div class="pnd-grupo">
-          <h2 class="pnd-grupo-tit">Metas por resultado${nomeConta ? ` — ${esc(nomeConta)}` : ''}</h2>
-          <p class="pnd-grupo-sub">A leitura fina. Uma meta por tipo de campanha e os limiares que, a partir dela, decidem quando a cor muda.</p>
+        <div class="pnd-grupo pnd-g-result">
+          <div class="pnd-grupo-cab"><h2 class="pnd-grupo-tit">${pastilha('placar')}Metas por resultado${nomeConta ? ` — ${esc(nomeConta)}` : ''}</h2>
+          <p class="pnd-grupo-sub">A leitura fina. Uma meta por tipo de campanha e os limiares que, a partir dela, decidem quando a cor muda.</p></div>
           <div class="pnd-cards">
             <div class="pnd-bloco">
               <div class="pnd-cab"><h3 class="pnd-titulo">Quanto você aceita pagar por resultado</h3>${ajudaBtn('meta_resultado')}</div>
@@ -485,7 +486,7 @@ export function montarPainelRegua(alvo, opcoes) {
     const r = reguaDaTela();
     caixa.innerHTML = `
       <div class="pnd-ex-cab">
-        <div class="pnd-ex-cab-tit">Como fica na prática</div>
+        <div class="pnd-ex-cab-tit">${pastilha('leitura')}Como fica na prática</div>
         <div class="pnd-ex-cab-sub">Um exemplo real de cada tipo de campanha que você roda. Mexa nos campos ao lado e veja mudar.</div>
       </div>
       ${lista.map((ex) => blocoDeExemplo(ex, r)).join('')}`;
