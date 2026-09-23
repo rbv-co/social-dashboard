@@ -1,0 +1,97 @@
+name: Vigia do PDV
+
+# A SEGUNDA REDE DO ALARME DO PDV — mudada de casa em 23/09/2026.
+#
+# ⚠️ ELA MORA AQUI PORQUE NO LUGAR DELA ESTAVA MORTA. O original é
+# `rbv-co/pdv-frontend/.github/workflows/vigia.yml`, e ele NÃO RODA DESDE
+# 17/09/2026 18h12: o repositório é privado, gasta minuto pago de Actions, e a
+# cobrança da organização está bloqueada —
+#
+#   "The job was not started because recent account payments have failed or
+#    your spending limit needs to be increased"
+#
+# São CINCO repositórios privados parados pelo mesmo motivo (vessel,
+# chatwoot-lavessel, vessel-brasil, pdv-backend, pdv-frontend). Nos outros
+# quatro o que parou foi CI — chato. Aqui o que parou foi um ALARME, e por isso
+# este é o que mudou de casa primeiro.
+#
+# Este repositório é PÚBLICO: minuto grátis, sem cota, sem cobrança no caminho.
+#
+# ⚠️ E O QUE ESTE VIGIA VIGIA É JUSTAMENTE O SILÊNCIO. Copiando o original, que
+# explica melhor do que eu explicaria:
+#
+#   "o verificador que avisa no WhatsApp (`/root/monitor` na VPS) mora dentro da
+#    própria máquina que ele vigia. Se a VPS cair inteira, se o cron parar, ou se
+#    alguém apagar o script, ele não avisa nada — ele morre junto. E silêncio no
+#    grupo é indistinguível de 'está tudo bem', que é exatamente como o Reverb
+#    ficou dois dias fora e o CompreFace 46 horas."
+#
+# Ou seja: durante SEIS DIAS o PDV ficou com uma rede só, a de dentro — a que
+# morre junto com a máquina. Medido em 23/09 às 15h, na hora de escrever isto, a
+# casa estava de pé (loja em 200, batimento de 54 segundos). Não se perdeu nada;
+# perdeu-se a garantia de saber.
+#
+# ⚠️ NENHUM SEGREDO AQUI, e é o que torna a mudança segura num repositório de
+# log PÚBLICO: são dois `curl` em endereços que já respondem para qualquer um, e
+# o batimento devolve um número e nada mais.
+#
+# ⚠️ QUANDO A COBRANÇA FOR RESOLVIDA, os dois passam a rodar ao mesmo tempo.
+# Não faz mal — nenhum dos dois escreve nada, só olham —, mas aí vale escolher um
+# e apagar o outro, senão um dia alguém conserta o que não estava rodando.
+#
+# ⚠️ COMO ELE AVISA: quando um workflow agendado falha, o GitHub manda e-mail
+# para quem mexeu no arquivo por último. É o mesmo caminho do original, e é
+# fraco — se ninguém ler o e-mail, o alarme não chegou. Ligar isto ao painel de
+# Status da Central (`robos_esperados`/`robos_saude`), onde os outros treze
+# robôs já são vigiados, é a melhoria óbvia e está anotada.
+
+on:
+  schedule:
+    # De hora em hora, como o original. O minuto 22 está livre neste
+    # repositório (os outros crons moram em 0, 5, 7, 12, 23, 34, 40, 42, 52 e
+    # na série 7,17,27,37,47,57 do publicador do site).
+    #
+    # ⚠️ E NÃO É DE 5 EM 5 MINUTOS, de propósito. Quem precisa de granularidade
+    # fina é o verificador de dentro da VPS; este responde outra pergunta — "a
+    # casa toda caiu?" —, e para ela uma hora basta.
+    - cron: '22 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: vigia-do-pdv
+  cancel-in-progress: false
+
+jobs:
+  vigia:
+    name: a casa está de pé?
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: A loja responde?
+        run: curl -fsS -m 20 -o /dev/null https://pdv.rbvcompany.com/
+
+      - name: O verificador da VPS deu sinal na última hora?
+        run: |
+          batimento=$(curl -fsS -m 20 https://pdv.rbvcompany.com/vigia)
+
+          # ⚠️ RESPOSTA ILEGÍVEL É FALHA, NÃO ZERO. Se o endereço passar a
+          # devolver uma página de erro, um HTML ou vazio, a conta de idade
+          # daria um número qualquer — e um vigia que interpreta lixo como dado
+          # é pior que vigia nenhum, porque ele diz "está tudo bem".
+          case "$batimento" in
+            ''|*[!0-9]*)
+              echo "::error::O batimento voltou ilegivel: '$batimento'"
+              exit 1
+              ;;
+          esac
+
+          idade=$(( $(date +%s) - batimento ))
+          echo "ultimo batimento ha ${idade}s"
+
+          # O verificador carimba a cada 5 minutos. Uma hora de folga aceita
+          # reboot, deploy e rodada lenta sem acusar falso.
+          if [ "$idade" -gt 3600 ]; then
+            echo "::error::O verificador da VPS nao da sinal ha $((idade / 60)) minutos — a maquina ou o cron podem estar fora."
+            exit 1
+          fi
