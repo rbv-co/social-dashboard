@@ -23,7 +23,7 @@
         </div>
 
         <div class="cvmenu-card" v-if="podeAtendimentos" @click="ir('beauty-sessions')">
-          <div class="cvmenu-card-icon" style="background:linear-gradient(135deg,#7a5c8a 0%,#b89ac4 100%)">
+          <div class="cvmenu-card-icon" style="background:linear-gradient(135deg,#8a4a66 0%,#c77d9c 100%)">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM18 18h3v3h-3z"/></svg>
           </div>
           <div class="cvmenu-card-title">Beauty Sessions</div>

@@ -96,7 +96,12 @@
        do dono: a MESMA cor do ícone) — não é `--orange` ("atenção"), e a tela
        dele não tem situação para confundir as duas. */
     --cor-private-appointment:#8a5d35;
-    --cor-beauty-sessions:#7a5c8a;
+    /* BEAUTY SESSIONS EM ROSÉ (decisão do dono, 23/09/2026): o lilás de antes
+       (#7a5c8a / #b89ac4) ficava quase igual à ameixa do Private Edit, e o
+       Material Gráfico mostra os dois grupos lado a lado. Medido (título
+       sobre a tinta de 8% · `--sobre-cor` sobre o botão · título sobre o
+       fundo): 5,76 · 6,46 · 6,04. */
+    --cor-beauty-sessions:#8a4a66;
     --cor-funil-carrinho:#c2410c;
     --cor-comercial-vessel:#7a3f52;
     /* AS CORES DA GESTÃO INTERNA (Onda 2a, 23/09/2026) — as do ícone de cada
@@ -197,7 +202,9 @@
        5,76 · 6,41 — a ponta #ea580c dava 4,88 na tinta, perto demais do
        mínimo, e subiu um degrau no mesmo tom; Comercial Vessel 4,91 · 5,44. */
     --cor-private-appointment:#c3a36a;
-    --cor-beauty-sessions:#b89ac4;
+    /* Beauty em rosé no escuro. Medido: título sobre a tinta 7,30 ·
+       `--sobre-cor` sobre o botão 8,36 · sobre o fundo 8,70. */
+    --cor-beauty-sessions:#d99ab4;
     --cor-funil-carrinho:#f0703a;
     --cor-comercial-vessel:#c3708a;
     /* Gestão Interna e Patrimônio no escuro: a ponta CLARA do mesmo ícone

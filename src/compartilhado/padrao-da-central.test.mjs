@@ -66,7 +66,11 @@ const COR_PERMITIDA = new Set([
   '#1e5f74', '#3d9bb5', '#6b4a7a', '#a98bbd',
   // e as outras três do Comercial Vessel + a do menu (Onda 0, 23/09/2026):
   // Private Appointment, Beauty Sessions, Funil de Carrinho, Comercial Vessel
-  '#8a5d35', '#c3a36a', '#7a5c8a', '#b89ac4', '#c2410c', '#f0703a', '#7a3f52', '#c3708a',
+  '#8a5d35', '#c3a36a', '#c2410c', '#f0703a', '#7a3f52', '#c3708a',
+  // Beauty Sessions em ROSÉ (decisão do dono, 23/09/2026 — o lilás
+  // #7a5c8a/#b89ac4 ficava igual à ameixa do Private Edit): o token claro e
+  // escuro, e a ponta clara do degradê do ícone dela no menu
+  '#8a4a66', '#d99ab4', '#c77d9c',
   // Gestão Interna (Onda 2a, 23/09/2026): Patrimônio, a ponta do ícone dele no
   // menu (a Gestão Interna reusa #0f766e/#2dd4bf, já listados acima)
   '#954903', '#f78e43',
