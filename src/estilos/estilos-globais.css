@@ -221,6 +221,10 @@
      do tema escuro já vem no token (ver --cor-stylist-circle no :root). */
   .tela-sty{ --modulo:var(--cor-stylist-circle); }
   .tela-pe{ --modulo:var(--cor-private-edit); }
+  .tela-atendimentos{ --modulo:var(--cor-private-appointment); }
+  .tela-bs{ --modulo:var(--cor-beauty-sessions); }
+  .fc-tela{ --modulo:var(--cor-funil-carrinho); }
+  .tela-menu-comercial-vessel{ --modulo:var(--cor-comercial-vessel); }
 
 .wrapper{max-width:none;width:100%;margin:0;padding:16px 28px;box-sizing:border-box;position:relative;z-index:1;}
 

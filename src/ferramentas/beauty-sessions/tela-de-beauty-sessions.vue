@@ -1,5 +1,5 @@
 <template>
-  <div class="tela-bs">
+  <div class="tela-bs id-ferramenta">
     <barra-de-topo :voltar="ROTULO_DO_PAI[paiDaTela('beauty-sessions')]"
                    titulo="Vessel — Beauty Sessions"
                    :subtitulo="subtitulo" @voltar="voltar" />
@@ -8,8 +8,8 @@
       <faixa-de-erro :erro="erro" @tentar-de-novo="carregar" />
 
       <!-- ── CRIAR ──────────────────────────────────────────────────────── -->
-      <section class="bs-bloco">
-        <h2 class="bs-etiqueta">Criar uma sessão</h2>
+      <section class="bs-bloco id-bloco-form">
+        <h2 class="bs-etiqueta id-titulo"><icone-do-bloco nome="novo" />Criar uma sessão</h2>
         <div class="bs-form">
           <label class="bs-campo" for="bs-quando"><span>Quando</span>
             <input id="bs-quando" type="date" v-model="nova.quando" @change="sugerir"></label>
@@ -57,8 +57,8 @@
            de cada sessão — com três sessões na tela, o mesmo parágrafo aparecia
            três vezes e virava paisagem, que é exatamente o que o item 9 do
            padrão proíbe. Aviso que aparece sempre ninguém lê. -->
-      <section v-if="!carregando && !erro && sessoes.length" class="bs-bloco bs-bloco-leitura">
-        <h2 class="bs-etiqueta">Como ler os números</h2>
+      <section v-if="!carregando && !erro && sessoes.length" class="bs-bloco bs-bloco-leitura id-bloco-leitura">
+        <h2 class="bs-etiqueta id-titulo"><icone-do-bloco nome="leitura" />Como ler os números</h2>
         <p class="bs-nota bs-nota-primeira">
           <b>Leram</b> é leitura, não pessoa: a mesma cliente abrindo duas vezes
           conta duas. Quem vira gente com nome e WhatsApp é <b>Se identificaram</b>.
@@ -86,7 +86,7 @@
       <template v-else-if="!erro">
         <!-- ── O CONJUNTO ───────────────────────────────────────────────── -->
         <section v-if="sessoes.length" class="bs-bloco">
-          <h2 class="bs-etiqueta">Todas as sessões juntas</h2>
+          <h2 class="bs-etiqueta id-titulo"><icone-do-bloco nome="conjunto" />Todas as sessões juntas</h2>
           <!-- ⚠️ O CONJUNTO É SOBRE O QUE ESTÁ NA TELA, NÃO SOBRE O QUE VEIO
                DO BANCO: se a pessoa filtrou por loja ou período, o total tem
                de acompanhar — reusar o total de antes do filtro é a tela
@@ -144,7 +144,8 @@
         </section>
 
         <!-- ── AS SESSÕES ───────────────────────────────────────────────── -->
-        <section v-for="s in sessoesNaTela" :key="s.codigo" class="bs-bloco bs-sessao">
+        <section v-for="s in sessoesNaTela" :key="s.codigo" class="bs-bloco bs-sessao id-cartao"
+                 :class="`id-tom-${seloDaSessao(s).tom}`">
           <div class="bs-cabeca">
             <div class="bs-cabeca-texto">
               <h2 class="bs-titulo">{{ dataLegivel(s.quando) }} · {{ LOJAS[s.loja] || s.loja }}</h2>
@@ -154,7 +155,7 @@
                 <span v-else class="bs-sem-parceiro"> · sem salão informado</span>
               </p>
             </div>
-            <span class="bs-selo" :class="seloDaSessao(s).classe">{{ seloDaSessao(s).texto }}</span>
+            <span class="bs-selo id-selo" :class="[seloDaSessao(s).classe, `id-tom-${seloDaSessao(s).tom}`]">{{ seloDaSessao(s).texto }}</span>
           </div>
 
           <div class="bs-numeros">
@@ -202,7 +203,7 @@
           </p>
 
           <!-- ── OS DOIS ENDEREÇOS ──────────────────────────────────────── -->
-          <h3 class="bs-etiqueta bs-etiqueta-interna">Os dois QR desta sessão</h3>
+          <h3 class="bs-etiqueta bs-etiqueta-interna id-subtitulo">Os dois QR desta sessão</h3>
           <div class="bs-link">
             <div class="bs-link-texto">
               <span class="bs-link-nome">Mesa — o display do salão</span>
@@ -225,8 +226,8 @@
                dentro dos DOIS links já copiados acima (mesa e cartão), e os
                dois estão IMPRESSOS. `vessel_beauty_session_editar` nem aceita
                `p_codigo` de novo por acaso: a garantia é a ausência dele. -->
-          <template v-if="podeExecutarAcao('editar', podeEditar) && editando === s.codigo">
-            <h3 class="bs-etiqueta bs-etiqueta-interna">Editar</h3>
+          <div v-if="podeExecutarAcao('editar', podeEditar) && editando === s.codigo" class="id-caixa-form">
+            <h3 class="bs-etiqueta bs-etiqueta-interna id-titulo"><icone-do-bloco nome="editar" />Editar</h3>
             <div class="bs-form">
               <label class="bs-campo" :for="`ed-quando-${s.codigo}`"><span>Quando</span>
                 <input :id="`ed-quando-${s.codigo}`" type="date" v-model="rascunho.quando"></label>
@@ -246,7 +247,7 @@
               <button class="btn btn-principal" :disabled="salvandoEdicao === s.codigo"
                       @click="salvarEdicao(s)">{{ salvandoEdicao === s.codigo ? 'Salvando…' : 'Salvar' }}</button>
             </div>
-          </template>
+          </div>
 
           <!-- ── APAGAR: tem_gente vira explicação, nunca erro vermelho ──── -->
           <template v-else-if="podeExecutarAcao('apagar', podeEditar) && bloqueioDeApagar[s.codigo]">
@@ -361,6 +362,7 @@ import { useRouter } from 'vue-router'
 import BarraDeTopo from '../../compartilhado/barra-de-topo.vue'
 import FaixaDeErro from '../../compartilhado/faixa-de-erro.vue'
 import BarraDeLista from '../comercial-vessel/barra-de-lista.vue'
+import IconeDoBloco from '../../compartilhado/icone-do-bloco.vue'
 import { estado, hasPermission } from '../../compartilhado/controle-de-login-e-usuario.js'
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../../compartilhado/conectar-no-banco-de-dados.js'
 import { classificarErro } from '../../compartilhado/classificar-erro.js'
@@ -672,6 +674,7 @@ onMounted(carregar)
 
 <style scoped>
 @import '../comercial-vessel/estilo-comercial.css';
+@import '../../estilos/identidade-da-ferramenta.css';
 .bs-body { padding-bottom: var(--sp-6); }
 
 .bs-bloco {

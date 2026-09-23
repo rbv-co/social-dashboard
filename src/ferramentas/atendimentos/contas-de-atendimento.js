@@ -26,13 +26,24 @@ export const CONTAM_NA_TAXA = ['confirmado', 'realizado', 'no_show']
  * nenhuma, e nada quebrou — classe de CSS que não existe não dá erro, só deixa
  * de pintar. Só apareceu na foto da tela.
  */
+/*
+ * O `tom` é a cor da SITUAÇÃO no cartão (filete) e no selo — a mesma régua do
+ * Private Edit e do Stylist Circle (`--situacao-*` em estilos-globais.css,
+ * classe `id-tom-<tom>` em identidade-da-ferramenta.css):
+ *   pediu horário → andamento (azul: ainda vai acontecer)
+ *   confirmado    → confirmada (verde-azulado: disse sim, ainda não veio)
+ *   veio          → viva (verde)
+ *   não veio      → faltou (vermelho suave: confirmou e não veio)
+ *   cancelou      → queda (laranja: caiu)
+ *   remarcou      → parada (cinza: esta linha deu lugar a outra)
+ */
 export const SITUACOES = {
-  solicitado: { rotulo: 'Pediu horário', selo: 'selo-neutro' },
-  confirmado: { rotulo: 'Confirmado', selo: 'selo-info' },
-  realizado: { rotulo: 'Veio', selo: 'selo-ok' },
-  no_show: { rotulo: 'Não veio', selo: 'selo-erro' },
-  remarcado: { rotulo: 'Remarcou', selo: 'selo-neutro' },
-  cancelado: { rotulo: 'Cancelou', selo: 'selo-neutro' },
+  solicitado: { rotulo: 'Pediu horário', selo: 'selo-neutro', tom: 'andamento' },
+  confirmado: { rotulo: 'Confirmado', selo: 'selo-info', tom: 'confirmada' },
+  realizado: { rotulo: 'Veio', selo: 'selo-ok', tom: 'viva' },
+  no_show: { rotulo: 'Não veio', selo: 'selo-erro', tom: 'faltou' },
+  remarcado: { rotulo: 'Remarcou', selo: 'selo-neutro', tom: 'parada' },
+  cancelado: { rotulo: 'Cancelou', selo: 'selo-neutro', tom: 'queda' },
 }
 
 /** O selo do que é linha de ensaio — laranja: "cuidado, isto não é real". */

@@ -38,6 +38,21 @@
     <template v-else-if="nome === 'editar'">
       <path d="M4 20h4L19 9l-4-4L4 16v4z" />
     </template>
+    <template v-else-if="nome === 'filtro'">
+      <path d="M4 6h16M7 12h10M10 18h4" />
+    </template>
+    <template v-else-if="nome === 'carrinho-mais'">
+      <circle cx="9" cy="20" r="1" /><circle cx="18" cy="20" r="1" /><path d="M2 3h3l2.6 12h11l2-8H6" /><path d="M13 7v5M10.5 9.5h5" />
+    </template>
+    <template v-else-if="nome === 'carrinho-menos'">
+      <circle cx="9" cy="20" r="1" /><circle cx="18" cy="20" r="1" /><path d="M2 3h3l2.6 12h11l2-8H6" /><path d="M10.5 9.5h5" />
+    </template>
+    <template v-else-if="nome === 'relogio'">
+      <circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" />
+    </template>
+    <template v-else-if="nome === 'lista'">
+      <path d="M9 6h11M9 12h11M9 18h11" /><path d="M4 6h.01M4 12h.01M4 18h.01" />
+    </template>
   </svg>
 </template>
 

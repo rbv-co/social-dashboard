@@ -2,7 +2,7 @@
   <!-- Porta da família "Comercial Vessel". Tela pequena e estática: bindings
        @click do Vue, sem innerHTML e sem expor nada em window. Mesmo padrão de
        tela-de-menu-gestao-interna.vue. -->
-  <div class="tela-menu-comercial-vessel">
+  <div class="tela-menu-comercial-vessel id-ferramenta">
     <barra-de-topo :voltar="ROTULO_DO_PAI[paiDaTela('comercial-vessel')]"
                    titulo="Comercial Vessel" @voltar="voltar" />
 
@@ -115,6 +115,10 @@ function ir(nome) { router.push({ name: nome }) }
 </script>
 
 <style scoped>
+/* Só a BARRA DO TOPO ganha a cor do Comercial Vessel (a do cartão da home):
+   filete e tinta sutil. Os cartões já têm o ícone colorido de cada módulo —
+   e nada mais daqui usa as classes da folha. */
+@import '../../estilos/identidade-da-ferramenta.css';
 .cvmenu-body {
   width: 100%;
   padding: var(--sp-5) clamp(16px, 2.4vw, 40px) var(--sp-6);

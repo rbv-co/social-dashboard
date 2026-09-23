@@ -126,6 +126,19 @@ test('⚠️ toda classe de selo usada EXISTE na folha de estilos', async () => 
     assert.ok(folha.includes(`.${classe}`), `${classe} não existe em estilos-globais.css`)
 })
 
+test('FIAÇÃO: cada situação tem um tom, e o tom tem a classe na folha comum', async () => {
+  // Mesma armadilha do `selo-aviso`: `id-tom-x` que não existe não dá erro, o
+  // filete do cartão só deixa de aparecer.
+  const { readFileSync } = await import('node:fs')
+  const folha = readFileSync(new URL('../../estilos/identidade-da-ferramenta.css', import.meta.url), 'utf8')
+  for (const [k, s] of Object.entries(SITUACOES)) {
+    assert.ok(s.tom, `${k} sem tom`)
+    assert.match(folha, new RegExp(`\\.id-tom-${s.tom}\\s*\\{`), `falta .id-tom-${s.tom}`)
+  }
+  assert.equal(SITUACOES.no_show.tom, 'faltou')
+  assert.equal(SITUACOES.realizado.tom, 'viva')
+})
+
 test('a linha nunca oferece o que ela já é', () => {
   assert.deepEqual(marcacoesDe('realizado').map((m) => m.situacao), ['no_show', 'remarcado'])
   assert.deepEqual(marcacoesDe('no_show').map((m) => m.situacao), ['realizado', 'remarcado'])
