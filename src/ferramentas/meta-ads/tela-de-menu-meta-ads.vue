@@ -4,7 +4,7 @@
        tela-menu-vendas.vue: bindings @click do Vue, sem precisar expor nada em
        window. Root vira .tela-menu-meta-ads (sem display:none — quem controla a
        visibilidade agora é o vue-router). -->
-  <div class="tela-menu-meta-ads">
+  <div class="tela-menu-meta-ads id-ferramenta">
     <barra-de-topo voltar="Central" titulo="Meta Ads" @voltar="voltar">
       <template #acoes>
         <button class="bt-acao so-icone" :class="{ primario: visualizacao === 'grid' }" @click="definirVisualizacao('grid')" title="Cards">
@@ -39,7 +39,10 @@
           <span class="smenu-card-enter">→</span>
         </div>
         <div class="smenu-card" v-if="hasPermission('module:meta:gestor')" @click="ir('gestao-trafego')">
-          <div class="smenu-card-icon" style="background:linear-gradient(135deg,#7c3aed,#4f46e5)">
+          <!-- O azul do Meta da Gestão de Tráfego (Onda 4a): do token claro ao
+               #1877f2 da marca, cravado nos DOIS temas como os outros ícones (o
+               traço é branco). Branco sobre a ponta clara: 4,23 (ícone, ≥ 3). -->
+          <div class="smenu-card-icon" style="background:linear-gradient(135deg,#0067c2,#1877F2)">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
           </div>
           <div class="smenu-card-title">Gestão de Tráfego</div>
@@ -119,6 +122,9 @@ onMounted(() => {
 </script>
 
 <style scoped>
+/* A cor do Meta Ads (Onda 4a): a folha comum pinta SÓ a barra do topo (filete e
+   tinta do azul do Meta). Cada cartão já tem o tom do seu módulo no ícone. */
+@import '../../estilos/identidade-da-ferramenta.css';
 /* Porte das regras .smenu- (compartilhadas com tela-menu-vendas.vue — cada
    tela traz sua própria cópia, seguindo o padrão já estabelecido para essas
    classes reutilizadas pelo monólito legado: legacy L902-921, L1708-1715,
