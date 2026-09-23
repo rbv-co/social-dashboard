@@ -2,7 +2,7 @@
   <!-- Porta da família "Gestão Interna". Tela pequena e estática: bindings @click
        do Vue, sem innerHTML e sem expor nada em window. Mesmo padrão de
        tela-de-menu-vendas.vue. -->
-  <div class="tela-menu-gestao-interna">
+  <div class="tela-menu-gestao-interna id-ferramenta">
     <barra-de-topo voltar="Central" titulo="Gestão Interna" @voltar="voltar" />
 
     <div class="gimenu-body">
@@ -91,6 +91,11 @@ const logoEscuroUrl = '/midia/LOGOTIPOBRENOBRANCO.png'
 </script>
 
 <style scoped>
+/* Só a BARRA DO TOPO ganha a cor da Gestão Interna (a do cartão da home,
+   `--cor-gestao-interna`): filete e tinta sutil — como o menu do Comercial
+   Vessel. Os cartões já têm o ícone colorido de cada módulo e ficam como
+   estão; nada mais daqui usa as classes da folha. */
+@import '../../estilos/identidade-da-ferramenta.css';
 /* Fundo TRANSPARENTE de propósito: o #bg-shapes (degradê + ícones) fica fixo
    atrás de tudo justamente pra aparecer. Pintando uma cor sólida por cima, a
    camada terminava onde o conteúdo terminava e o fundo reaparecia embaixo —
