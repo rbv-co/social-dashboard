@@ -6683,25 +6683,24 @@ onMounted(async () => {
   .tela-frota .fr-fechar{width:34px;height:34px;}
 }
 
-/* ── Onda 2b: a cor da ferramenta (cinza-azulado, `--cor-frota`) ────────────
+/* ── Onda 2b: a cor da ferramenta (anil, `--cor-frota`) ─────────────────────
    Por último DE PROPÓSITO: as regras de cima têm a mesma força das da folha
    comum (`.tela-frota .x` contra `.id-ferramenta .x`), e empate decide pela
    ordem. A régua do dono para esta tela é "funcional, não carregado": a cor
    entra no topo, nas abas, no ícone dos títulos, na ação principal e no filete
    da situação — nenhum texto, selo ou linha novo, e nenhum fundo tingido
-   (ver o cabeçalho de `--cor-frota` e o relatório da Onda 2b: a tinta de 8%
-   deste cinza é quase o `--surface2`, e derrubaria o laranja dos avisos dos
-   formulários para 4,20).
+   (a tinta de 8% do anil derrubaria o laranja dos avisos dos formulários
+   para 4,13 — medido; ver o cabeçalho de `--cor-frota`).
 
    A AÇÃO PRINCIPAL na cor da ferramenta; o texto em cima segue `--sobre-cor`
-   (10,35 no claro, 12,80 no escuro). O que é SELEÇÃO (nível do tanque escolhido,
-   "como fica", filtro ligado) continua no azul, que é o sinal de seleção. */
+   (9,93 no claro, 9,54 no escuro). O que é SELEÇÃO (nível do tanque escolhido,
+   "como fica", filtro ligado) continua no azul do sistema. */
 .tela-frota .fr-btn.primario{background:var(--modulo);border-color:var(--modulo);color:var(--sobre-cor);}
 /* O ÍCONE do título na cor; o texto do título continua `--muted`, como era —
    título colorido em caixa alta, repetido em cada seção, é o que carrega. */
 .tela-frota .id-titulo .id-icone{color:var(--modulo);}
 /* Os grupos da ficha do veículo eram o azul do sistema; viram a cor da
-   ferramenta (medido sobre a ficha: 10,35 no claro, 12,60 no escuro). */
+   ferramenta (medido sobre a ficha: 9,93 no claro, 9,39 no escuro). */
 .tela-frota .fr-grupo{color:var(--modulo);}
 /* O FILETE DA SITUAÇÃO no cartão do carro, no mesmo tom do selo (tomDoCartao).
    Só a COR da borda: a espessura continua a de sempre (3px), para o cartão não
