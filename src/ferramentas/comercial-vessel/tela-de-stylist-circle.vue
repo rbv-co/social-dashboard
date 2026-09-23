@@ -278,8 +278,18 @@
         <button type="button" role="tab" class="btn" :class="{ ativa: vista === 'lista' }"
                 :aria-selected="vista === 'lista'" @click="trocarVista('lista')">Lista</button>
       </div>
+      <!-- ⚠️ A RECUSA DE MOVER FICA AQUI, PERTO DO QUADRO — não na faixa de
+           erro da tela (essa é só para falha de LEITURA). Some sozinha na
+           próxima gravação que der certo, ou no "Dispensar". -->
+      <template v-if="vista === 'quadro' && erroDoQuadro">
+        <p class="cv-nota cv-nota-erro">{{ erroDoQuadro }}</p>
+        <div class="cv-acoes">
+          <button type="button" class="btn" @click="erroDoQuadro = ''">Dispensar</button>
+        </div>
+      </template>
       <quadro-do-stylist-circle v-if="vista === 'quadro' && !carregando && !erro" :stylists="stylistsNaTela"
                                 :pode-editar="podeExecutarAcao('editar', podeEditar)" :hoje="hojeLocal"
+                                :movendo-codigo="movendoCodigo"
                                 @abrir="fichaAberta = $event" @mover="mover" />
 
       <div v-if="carregando" class="cv-carregando">Carregando…</div>
@@ -581,7 +591,8 @@
 
     <ficha-da-stylist v-if="fichaAberta && stylistDaFicha" :stylist="stylistDaFicha"
                       :pode-editar="podeExecutarAcao('editar', podeEditar)" :chamar="chamar"
-                      @fechar="fichaAberta = null" @mudou="carregar" @corrigir="corrigirDaFicha" />
+                      @fechar="fichaAberta = null" @mudou="carregar({ silencioso: true })"
+                      @corrigir="corrigirDaFicha" />
   </div>
 </template>
 
@@ -716,8 +727,13 @@ async function chamar(funcao, corpo) {
   return r.json()
 }
 
-async function carregar() {
-  carregando.value = true
+// ⚠️ `silencioso` (mesmo padrão de tela-de-private-edit.vue): depois de mover
+// uma stylist no quadro, a lista se atualiza SEM `carregando` ligar — senão o
+// quadro inteiro desmonta e remonta (ver `mover`, acima) e a pessoa perde o
+// lugar em que estava no celular.
+async function carregar(opcoes) {
+  const silencioso = opcoes?.silencioso === true
+  if (!silencioso) carregando.value = true
   erro.value = null
   try {
     if (!estado.currentSession?.access_token) {
@@ -735,7 +751,7 @@ async function carregar() {
   } catch (e) {
     erro.value = classificarErro(e)
   } finally {
-    carregando.value = false
+    if (!silencioso) carregando.value = false
   }
 }
 
@@ -779,13 +795,33 @@ function trocarVista(v) { vista.value = v; try { localStorage.setItem('sty-vista
 const fichaAberta = ref(null)
 const stylistDaFicha = computed(() => stylists.value.find((s) => s.codigo === fichaAberta.value) || null)
 
-// ⚠️ `mover` usa `erro` (a faixa de erro da tela) só quando a gravação falha,
-// com a frase de `mensagemDeEditar` — nunca "tente de novo" para
-// `estagio_contradiz_encontro`.
+// ⚠️ RODADA 1 DE REVISÃO (T11): a recusa de mover NÃO usa `erro` — `erro` é a
+// faixa que apaga o placar, o quadro e a lista inteiros, e uma recusa (ex.:
+// "ela já tem encontro marcado") não é motivo para sumir com a tela toda, e
+// `erro` nem tem retentativa (`acao: null`). A recusa mora perto do quadro,
+// em `erroDoQuadro`, com a frase de `mensagemDeEditar` — nunca "tente de novo"
+// para `estagio_contradiz_encontro`. `erro` continua só para falha de LEITURA.
+const erroDoQuadro = ref('')
+// ⚠️ GUARDA DE TOQUE DUPLO: sem isto, dois toques rápidos no mesmo botão
+// disparam duas gravações — a segunda pode chegar com o estágio já mudado
+// pela primeira e voltar com `estagio_contradiz_encontro`, confundindo quem
+// só queria mover uma vez. Também dá o aviso "Movendo…" no botão certo.
+const movendoCodigo = ref(null)
 async function mover({ codigo, estagio }) {
-  const r = await chamar('vessel_stylist_editar', { p_codigo: codigo, p_estagio: estagio }).catch(() => null)
-  if (!r?.ok) { erro.value = { tipo: 'gravacao', acao: null, mensagem: mensagemDeEditar(r?.situacao || 'erro_de_rede') }; return }
-  await carregar()
+  if (movendoCodigo.value) return
+  movendoCodigo.value = codigo
+  try {
+    const r = await chamar('vessel_stylist_editar', { p_codigo: codigo, p_estagio: estagio }).catch(() => null)
+    if (!r?.ok) { erroDoQuadro.value = mensagemDeEditar(r?.situacao || 'erro_de_rede'); return }
+    erroDoQuadro.value = ''
+    // ⚠️ SILENCIOSO: sem isto, `carregando` liga e desliga o quadro
+    // (`v-if … !carregando`), o componente REMONTA, e `etapaNoCelular` /
+    // `saidasAbertas` (estado interno dele) voltam do zero — no celular a
+    // pessoa é jogada de volta para outra etapa no meio do toque.
+    await carregar({ silencioso: true })
+  } finally {
+    movendoCodigo.value = null
+  }
 }
 
 function corrigirDaFicha(codigo) {

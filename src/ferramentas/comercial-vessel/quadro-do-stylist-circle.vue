@@ -28,11 +28,18 @@
           <p class="cv-sub">{{ ultimoContatoEscrito(s.ultimo_contato_em) }}</p>
           <div class="cv-acoes">
             <button v-if="podeEditar" type="button" class="btn" @click="$emit('abrir', s.codigo)">Registrar contato</button>
+            <!-- ⚠️ TOQUE DUPLO: enquanto ESTA stylist está sendo movida, o
+                 botão trava e avisa — a guarda de verdade mora na tela
+                 (`movendoCodigo`), aqui é só o desenho do aviso. -->
             <button v-if="podeEditar && proximaEtapaManual(s.estagio)" type="button" class="btn"
+                    :disabled="movendoCodigo === s.codigo"
                     @click="$emit('mover', { codigo: s.codigo, estagio: proximaEtapaManual(s.estagio) })">
-              Avançar para {{ ESTAGIOS_DA_STYLIST[proximaEtapaManual(s.estagio)] }}</button>
+              {{ movendoCodigo === s.codigo ? 'Movendo…'
+                : `Avançar para ${ESTAGIOS_DA_STYLIST[proximaEtapaManual(s.estagio)]}` }}</button>
             <button v-if="podeEditar && k === 'saidas'" type="button" class="btn"
-                    @click="$emit('mover', { codigo: s.codigo, estagio: reabrirPara(s.ativada_em) })">Reabrir</button>
+                    :disabled="movendoCodigo === s.codigo"
+                    @click="$emit('mover', { codigo: s.codigo, estagio: reabrirPara(s.ativada_em) })">
+              {{ movendoCodigo === s.codigo ? 'Movendo…' : 'Reabrir' }}</button>
           </div>
         </article>
       </div>
@@ -55,6 +62,10 @@ const props = defineProps({
   stylists: { type: Array, default: () => [] },
   podeEditar: { type: Boolean, default: false },
   hoje: { type: String, required: true },
+  // ⚠️ TOQUE DUPLO (rodada 1 de revisão): o código da stylist com uma
+  // gravação em andamento. A guarda de verdade mora na tela — aqui só
+  // desabilita o botão certo e troca o texto por "Movendo…".
+  movendoCodigo: { type: String, default: null },
 })
 defineEmits(['abrir', 'mover'])
 

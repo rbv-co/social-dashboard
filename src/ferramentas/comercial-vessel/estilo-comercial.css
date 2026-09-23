@@ -355,7 +355,17 @@
   font-family: var(--fonte-principal); font-size: var(--texto-corpo);
 }
 .cv-quadro-cartao:not(.atrasada) .cv-quadro-acao { background: var(--surface2); }
-@media (max-width: 1100px) and (min-width: 641px) { .cv-quadro { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+/* ⚠️ RODADA 1 DE REVISÃO: `.btn` global tem `white-space:nowrap` (item 3 do
+ * PADRAO — é assim que o botão comum não quebra em nenhuma tela da Central).
+ * Dentro de uma coluna do quadro (por volta de 120–170px) isso faz "Registrar
+ * contato" e "Avançar para Em negociação" transbordarem para a coluna vizinha.
+ * O escopo é só aqui, DENTRO do cartão — nunca mexer no `.btn` global. */
+.cv-quadro-cartao .btn { white-space: normal; height: auto; text-align: left; }
+/* ⚠️ 8 colunas só cabe em tela BEM larga: com 4, cada uma tem o dobro do
+ * espaço para o texto do botão quebrar em duas linhas em vez de transbordar.
+ * Era ≤1100px; a régua subiu para ≤1400px depois de medir a 1280 e 1366 (os
+ * dois notebooks mais comuns por aqui) com "Avançar para Em negociação". */
+@media (max-width: 1400px) and (min-width: 641px) { .cv-quadro { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 @media (max-width: 640px) {
   .cv-quadro-etapas { display: flex; }
   .cv-quadro { grid-template-columns: 1fr; }

@@ -75,6 +75,7 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { ESTAGIOS_DA_STYLIST, telefoneLegivel } from './t11-regras.js'
 import { dataLegivel, dataHoraLegivel } from './enderecos-publicos.js'
 import { CANAIS, RESULTADOS } from './crm-da-stylist-regras.js'
+import { mensagemDeEditar } from './stylist-circle-regras.js'
 
 const props = defineProps({
   stylist: { type: Object, required: true },
@@ -130,10 +131,13 @@ async function aceitarSugestao() {
   movendo.value = true
   try {
     const r = await props.chamar('vessel_stylist_editar', { p_codigo: props.stylist.codigo, p_estagio: sugestao.value })
-    if (!r?.ok) { erro.value = 'Não consegui mudar a etapa agora.'; return }
+    // ⚠️ RODADA 1 DE REVISÃO: frase ESPECÍFICA da recusa (ex.: "ela já tem
+    // encontro marcado"), não o genérico "não consegui" — é a mesma função
+    // do banco que o "Corrigir" usa, e a Ionara precisa saber POR QUE.
+    if (!r?.ok) { erro.value = mensagemDeEditar(r?.situacao || 'erro_de_rede'); return }
     sugestao.value = null
     emit('mudou')
-  } catch { erro.value = 'Não consegui mudar a etapa agora.' }
+  } catch { erro.value = mensagemDeEditar('erro_de_rede') }
   finally { movendo.value = false }
 }
 
