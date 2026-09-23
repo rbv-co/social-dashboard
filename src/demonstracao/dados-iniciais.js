@@ -129,5 +129,75 @@ export function dadosIniciais(agora = new Date()) {
   // Leituras do link de cada stylist (`vessel_stylist_aberturas`), só a conta.
   const aberturas = { 'STY-0001': 57, 'STY-0002': 4, 'STY-0003': 12 }
 
-  return { stylists, encontros, pessoas, atendimentos, origens, pedidos, contatos, aberturas }
+  // ── BEAUTY SESSIONS (`vessel_beauty_sessions`) ────────────────────────────
+  // Quatro, uma de cada jeito: a que já aconteceu e foi ENCERRADA (com leituras,
+  // gente identificada, visita e venda), a de anteontem ainda ABERTA, a que
+  // ainda vai acontecer (sem leitura nenhuma — é a única que dá para APAGAR) e
+  // uma ARQUIVADA (duplicata), que só aparece no filtro "Situação".
+  const S1 = `BS-${compacto(-9)}-CPS-01`, S2 = `BS-${compacto(-2)}-SBO-01`
+  const S3 = `BS-${compacto(6)}-CPS-02`, S4 = `BS-${compacto(-30)}-BSB-01`
+  const sessoes = [
+    { codigo: S1, quando: dia(-9), praca: 'CPS', loja: 'iguatemi', parceiro: 'Salão Aurora (exemplo)', ativa: false, arquivada: false, criado_em: em(-20, '10:00') },
+    { codigo: S2, quando: dia(-2), praca: 'SBO', loja: 'tivoli', parceiro: 'Studio Lírio (exemplo)', ativa: true, arquivada: false, criado_em: em(-12, '10:00') },
+    { codigo: S3, quando: dia(6), praca: 'CPS', loja: 'iguatemi', parceiro: null, ativa: true, arquivada: false, criado_em: em(-1, '17:00') },
+    { codigo: S4, quando: dia(-30), praca: 'BSB', loja: 'parkshopping', parceiro: 'Espaço Nuance (exemplo)', ativa: false, arquivada: true, criado_em: em(-40, '10:00') },
+  ]
+  // As leituras do QR (`vessel_sessao_aberturas`), só a conta por peça. O
+  // "cartão" é o QR antigo, que saiu em 23/09/2026 — o que ele já leu continua.
+  const leiturasDasSessoes = { [S1]: { mesa: 38, cartao: 6 }, [S2]: { mesa: 17, cartao: 0 } }
+
+  // ── PRIVATE APPOINTMENT (`vessel_atendimentos` sem encontro) ──────────────
+  // Quem veio das Beauty Sessions pedindo visita, e quem ganhou o Appointment
+  // Card na loja. Cada situação da agenda aparece pelo menos uma vez.
+  const maisPessoas = [
+    ['Laura Bastos (exemplo)', '5519970000301'], ['Mariana Teles (exemplo)', '5519970000302'],
+    ['Nathalia Vieira (exemplo)', '5519970000303'], ['Olívia Campos (exemplo)', '5519970000304'],
+    ['Priscila Antunes (exemplo)', '5519970000305'], ['Raquel Siqueira (exemplo)', '5519970000306'],
+    ['Sofia Almeida (exemplo)', '5519970000307'], ['Tatiana Moura (exemplo)', '5519970000308'],
+    ['Vanessa Pires (exemplo)', '5561970000309'], ['Yasmin Leal (exemplo)', '5519970000310'],
+    ['Clara Bento (exemplo)', '5519970000311'],
+  ].map(([nome, telefone], i) => ({ id: 2301 + i, nome, telefone, email: null }))
+
+  let idDaVisita = 301
+  const visita = (pessoaId, loja, quando, status, criadoEm, o = {}) => ({
+    id: idDaVisita++, pessoa_id: pessoaId, loja, client_advisor: null, quando, status, rsvp: null,
+    evento_codigo: null, convite_codigo: null, convidada_em: null, convite_enviado_em: null, chave_convite: null,
+    convite_aberto_em: null, convite_aberturas: 0, presenca_em: status === 'realizado' ? quando : null,
+    criado_em: criadoEm, teste: false, ...o,
+  })
+  const CAROLINA = { client_advisor: 'Carolina (exemplo)' }
+  const visitas = [
+    visita(2301, 'iguatemi', em(-6, '15:00'), 'realizado', em(-9, '16:00'), CAROLINA),
+    visita(2302, 'iguatemi', em(-5, '11:00'), 'realizado', em(-9, '16:20'), CAROLINA),
+    visita(2303, 'iguatemi', em(-4, '17:30'), 'no_show', em(-9, '17:05'), CAROLINA),
+    visita(2304, 'iguatemi', null, 'solicitado', em(-5, '10:00')),
+    visita(2305, 'tivoli', em(1, '14:00'), 'confirmado', em(-2, '18:00'), { client_advisor: 'Beatriz (exemplo)' }),
+    visita(2306, 'tivoli', null, 'solicitado', em(-1, '09:00')),
+    visita(2307, 'iguatemi', em(0, '16:00'), 'confirmado', em(-3, '12:00'), CAROLINA),
+    visita(2308, 'iguatemi', em(-1, '10:30'), 'realizado', em(-4, '12:00'), CAROLINA),
+    visita(2309, 'parkshopping', em(-2, '15:00'), 'realizado', em(-6, '11:00'), { client_advisor: 'Juliana (exemplo)' }),
+    visita(2310, 'iguatemi', em(-3, '19:00'), 'remarcado', em(-7, '15:00'), CAROLINA),
+    visita(2310, 'iguatemi', em(3, '19:00'), 'confirmado', em(-3, '19:30'), CAROLINA),
+    visita(2311, 'tivoli', em(2, '11:00'), 'cancelado', em(-2, '09:30'), { client_advisor: 'Beatriz (exemplo)' }),
+  ]
+  const origensDasVisitas = maisPessoas.map((p) => ({
+    pessoa_id: p.id,
+    canal: p.id <= 2306 ? 'beauty_session' : 'private_appointment',
+    evento_id: p.id <= 2304 ? S1 : p.id <= 2306 ? S2 : null,
+    stylist_id: null,
+  }))
+  const pedidosDasVisitas = [
+    { id: 9101, numero: 48210, pessoa_id: 2301, situacao_id: 9, data_do_pedido: dia(-6), data_da_venda: dia(-6), receita_liquida: 3480, pecas: 2 },
+    { id: 9102, numero: 48266, pessoa_id: 2302, situacao_id: 9, data_do_pedido: dia(-2), data_da_venda: dia(-2), receita_liquida: 1290, pecas: 1 },
+    { id: 9103, numero: 48301, pessoa_id: 2309, situacao_id: 9, data_do_pedido: dia(-1), data_da_venda: dia(-1), receita_liquida: 2150, pecas: 1 },
+  ]
+
+  return {
+    stylists, encontros,
+    pessoas: [...pessoas, ...maisPessoas],
+    atendimentos: [...atendimentos, ...visitas],
+    origens: [...origens, ...origensDasVisitas],
+    pedidos: [...pedidos, ...pedidosDasVisitas],
+    contatos, aberturas, sessoes, leiturasDasSessoes,
+  }
 }

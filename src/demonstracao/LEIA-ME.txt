@@ -1,9 +1,34 @@
 MODO DEMONSTRAÇÃO DO COMERCIAL VESSEL
 =====================================
 
-O que é: as telas de verdade do Stylist Circle e do Private Edit rodando com um
-"banco de mentira" dentro do navegador, num celular desenhado com o roteiro de
-passos ao lado. Nada sai para o banco de verdade; recarregar volta ao começo.
+O que é: as telas de verdade do Comercial Vessel rodando com um "banco de
+mentira" dentro do navegador, num celular (ou notebook) desenhado com o roteiro
+de passos ao lado. Nada sai para o banco de verdade; recarregar volta ao começo.
+
+O QUE FUNCIONA NA DEMONSTRAÇÃO (desde 23/09/2026 — todas as do menu):
+  · Private Appointment — a agenda de visitas com exemplos: quem pediu
+    horário, quem confirmou, quem veio, quem faltou, quem remarcou e cancelou,
+    e o "comprou" de quem veio. Os botões Veio / Não veio / Remarcou /
+    Cancelar funcionam.
+  · Beauty Sessions — quatro sessões de exemplo (uma encerrada com leituras e
+    venda, uma aberta, uma futura e uma arquivada). Criar sessão, escolher a
+    loja, encerrar, reabrir, editar, arquivar, apagar e baixar o QR funcionam.
+    (Era aqui a tela branca: ao escolher a loja a tela sumia.)
+  · Private Edit e Stylist Circle — como antes, com o roteiro de 11 passos.
+  · Material Gráfico — os QR das três ações, com busca, "mostrar encerrados"
+    e os botões de baixar PNG/SVG e copiar endereço.
+  · Appointment Card — continua abrindo o site da Vessel noutra aba (é uma
+    porta para fora, não uma tela da Central).
+  · O "voltar" leva ao menu e à tela de início da Central, que mostra só o
+    cartão do Comercial Vessel. Nada leva a tela branca.
+
+A CONFERÊNCIA DE TUDO ISSO (antes de publicar):
+  npm run build:demonstracao
+  npx vite preview --config vite.demonstracao.config.js --port 5265 --strictPort
+  node src/demonstracao/passeio-pelas-ferramentas.mjs
+  - abre cada ferramenta num Chrome, aperta os botões e escolhe cada opção;
+    reprova se aparecer erro, tela branca, pedido ao Supabase ou a qualquer
+    API de fora. Tem de terminar em "APROVADO".
 
 Endereço: o projeto "vessel-demonstracao" da Vercel (separado da Central).
 
