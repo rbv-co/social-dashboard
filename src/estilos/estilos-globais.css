@@ -142,6 +142,18 @@
        ⚠️ A tinta de 8% derruba o laranja dos avisos para 4,19 — por isso os
        formulários desta tela NÃO são tingidos (como na Frota). */
     --cor-autenticidade:#285a2b;
+    /* ADMINISTRAÇÃO (Onda 3, 23/09/2026) — AZUL-MARINHO, a ponta clara do
+       ícone que a Administração JÁ tinha no Início (#0f172a → #1e3a5f), agora
+       com nome. Tem de se distinguir de três azuis que já querem dizer outra
+       coisa: o `--accent` (#1D4ED8, SELEÇÃO e ação do sistema — "selecionado"
+       continua nele), o anil da Frota (#3730a3) e o azul-petróleo do Stylist
+       Circle (#1e5f74). Distância de cor medida (CIEDE2000): 16,2 do
+       `--accent`, 12,5 do anil e 16,8 do petróleo. Medido (título sobre a
+       tinta de 8% · `--sobre-cor` sobre o botão · item ativo da barra lateral
+       sobre a tinta de 12% dela): 9,99 · 11,50 · 8,06.
+       ⚠️ A tinta de 8% derruba o laranja dos avisos para 4,11 — por isso os
+       formulários desta tela NÃO são tingidos (como na Frota). */
+    --cor-administracao:#1e3a5f;
     /* O PAPEL DA PRÉVIA DO QR — claro NOS DOIS TEMAS, de propósito: a prévia
        mostra o QR como ele sai impresso, com a tinta escura da marca. O
        quadriculado é o que diz "este arquivo não tem fundo". Não é redefinido
@@ -234,6 +246,12 @@
        8,30 · `--sobre-cor` sobre o botão 9,63 · aba ativa sobre o fundo 10,03.
        Distância (CIEDE2000): 9,8 do `--green` do escuro e 9,5 do oliva. */
     --cor-autenticidade:#86c88a;
+    /* Administração no escuro: o marinho claro (aço). Medido: título sobre a
+       tinta 6,19 · `--sobre-cor` sobre o botão 6,97 · sobre o fundo 7,26 ·
+       item ativo da barra lateral 5,22. Distância (CIEDE2000): 11,3 do
+       `--accent` do escuro, 10,3 do anil claro (#a5b4fc, que é violeta) e
+       12,7 do petróleo claro (#3d9bb5). */
+    --cor-administracao:#78a0cc;
     --sobre-cor:#12100b;
     /* TEXTO ACCENT EM CIMA DE --accent-light. O accent puro sobre o proprio
        tom aguado reprova no tema escuro (4,42). Este par ja vem medido. */
@@ -297,6 +315,7 @@
   .tela-menu-comercial-vessel{ --modulo:var(--cor-comercial-vessel); }
   .tela-material-grafico{ --modulo:var(--cor-material-grafico); }
   .tela-autenticidade{ --modulo:var(--cor-autenticidade); }
+  .tela-admin{ --modulo:var(--cor-administracao); }
 
 .wrapper{max-width:none;width:100%;margin:0;padding:16px 28px;box-sizing:border-box;position:relative;z-index:1;}
 
@@ -795,7 +814,11 @@
   .sr-btn.danger:hover{background:var(--red);color:var(--sobre-cor);}
   .online-dot{width:8px;height:8px;border-radius:50%;background:var(--green);flex-shrink:0;}
   /* Admin card on home */
-  .card-admin .home-card-icon{background:linear-gradient(135deg,#0f172a 0%,#1e3a5f 100%);}
+  /* O ícone da Administração no marinho da ferramenta (Onda 3): a ponta escura é
+     o `--cor-administracao` do claro, cravado nos DOIS temas como os outros
+     ícones (o traço é branco; o token do escuro é claro e o apagaria). Branco
+     sobre a ponta clara: 7,01. */
+  .card-admin .home-card-icon{background:linear-gradient(135deg,#1e3a5f 0%,#2f5b8c 100%);}
   .card-admin{border-color:rgba(15,23,42,.1);}
   .card-admin:hover{border-color:#0f172a;box-shadow:0 10px 28px rgba(15,23,42,.15);}
 

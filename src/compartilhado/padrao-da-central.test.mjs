@@ -83,6 +83,9 @@ const COR_PERMITIDA = new Set([
   // Autenticidade e Garantia (Onda 2c, 23/09/2026): o verde-floresta, claro e
   // escuro, e a ponta clara do degradê do ícone dela no menu da Gestão Interna
   '#285a2b', '#86c88a', '#4d8a4f',
+  // Administração (Onda 3, 23/09/2026): o azul-marinho, claro e escuro, e a
+  // ponta clara do degradê do ícone dela no Início
+  '#1e3a5f', '#78a0cc', '#2f5b8c',
   // o papel da prévia do QR (claro nos dois temas: é como sai impresso)
   '#e7e2d8',
   // a tinta do QR impresso (src/compartilhado/qr.js): cor de marca do
