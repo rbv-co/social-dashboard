@@ -16,11 +16,12 @@
 // executa num navegador.
 import { ref, reactive, computed, onMounted, watch, nextTick } from 'vue'
 import BarraDeTopo from '../../compartilhado/barra-de-topo.vue'
+import IconeDoBloco from '../../compartilhado/icone-do-bloco.vue'
 import { useRouter } from 'vue-router'
 import { sbClient, SUPABASE_URL, SUPABASE_ANON_KEY } from '../../compartilhado/conectar-no-banco-de-dados.js'
 import { hasPermission, estado } from '../../compartilhado/controle-de-login-e-usuario.js'
 import { estadoDoVeiculo, ordenarEstados, rotuloDoTanque, NIVEIS_TANQUE, problemasDaDevolucao, problemasDoRegistroAvulso, ultimoHodometro } from './estado-do-veiculo.js'
-import { seloDoVeiculo, linhaDoCartao, acaoPrincipalDoVeiculo, cartaoCompacto } from './cartao-do-veiculo.js'
+import { seloDoVeiculo, tomDoCartao, linhaDoCartao, acaoPrincipalDoVeiculo, cartaoCompacto } from './cartao-do-veiculo.js'
 import { nomeDeQuemAgiu } from './nome-de-quem-agiu.js'
 import { montarArvore } from '../../compartilhado/arvore-de-locais.js'
 import { localCurto } from './onde-o-carro-fica.js'
@@ -3658,7 +3659,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="tela-frota">
+  <div class="tela-frota id-ferramenta">
     <barra-de-topo voltar="Gestão Interna" titulo="Frota" @voltar="voltar">
       <template #acoes>
         <button class="fr-btn-ajuda" @click="abrirPasseio" title="Como usar esta tela">?</button>
@@ -3744,7 +3745,7 @@ onMounted(async () => {
       <!-- Os outros carros que quem administra pode conferir. Não aparece pra
            quem só dirige: essa pessoa tem um carro e mais nada. -->
       <template v-if="ehGestorDaFrota && diaPedeChecklist && outrosParaConferir.length">
-        <h2 class="fr-secao">Outros carros sem checklist hoje</h2>
+        <h2 class="fr-secao id-titulo"><icone-do-bloco nome="lista" />Outros carros sem checklist hoje</h2>
         <p class="fr-aviso">
           Você administra a Frota, então pode preencher a ficha destes carros. Quem preencher
           fica registrado na ficha — preencha só o que você conferiu de verdade.
@@ -3763,7 +3764,7 @@ onMounted(async () => {
       </template>
 
       <template v-if="meuCarroFixo">
-        <h2 class="fr-secao">Seu carro</h2>
+        <h2 class="fr-secao id-titulo"><icone-do-bloco nome="veiculo" />Seu carro</h2>
         <!-- DENTRO DA `.fr-lista`, como todos os outros cartões desta tela.
              Ele estava solto, e por isso era o único que ia de ponta a ponta:
              no computador ficava um cartão de 1400px de largura ao lado de um
@@ -3798,7 +3799,7 @@ onMounted(async () => {
       </template>
 
       <template v-if="painel.comigo.length">
-        <h2 class="fr-secao">Com você agora</h2>
+        <h2 class="fr-secao id-titulo"><icone-do-bloco nome="pessoa" />Com você agora</h2>
         <div class="fr-lista">
           <div v-for="l in painel.comigo" :key="l.veiculo.id" class="fr-card rua">
             <div class="fr-card-topo">
@@ -3832,7 +3833,7 @@ onMounted(async () => {
 
       <!-- As reservas da pessoa: o que ela pediu e ainda não usou. -->
       <template v-if="minhasRequisicoes.length">
-        <h2 class="fr-secao">Seus pedidos</h2>
+        <h2 class="fr-secao id-titulo"><icone-do-bloco nome="encontros" />Seus pedidos</h2>
         <ul class="fr-pedidos">
           <li v-for="r in minhasRequisicoes" :key="r.id" class="fr-pedido">
             <div class="fr-pedido-topo">
@@ -3853,7 +3854,7 @@ onMounted(async () => {
         </ul>
       </template>
 
-      <h2 class="fr-secao" id="fr-ancora-livres">{{ painel.livres.length ? 'Livres para pegar' : 'Nenhum carro livre' }}</h2>
+      <h2 class="fr-secao id-titulo" id="fr-ancora-livres"><icone-do-bloco nome="veiculo" />{{ painel.livres.length ? 'Livres para pegar' : 'Nenhum carro livre' }}</h2>
       <p class="fr-aviso" v-if="!painel.livres.length">
         Todos estão na rua ou na oficina. Assim que alguém devolver, aparece aqui.
       </p>
@@ -3907,7 +3908,7 @@ onMounted(async () => {
       <!-- Os que estão com outras pessoas: sem botão, só pra ninguém achar que
            o carro sumiu da lista. -->
       <template v-if="painel.comOutros.length">
-        <h2 class="fr-secao">Na rua com outras pessoas</h2>
+        <h2 class="fr-secao id-titulo"><icone-do-bloco nome="parceiras" />Na rua com outras pessoas</h2>
         <ul class="fr-com-outros">
           <li v-for="l in painel.comOutros" :key="l.veiculo.id">
             <strong>{{ l.veiculo.nome }}</strong>
@@ -3939,7 +3940,7 @@ onMounted(async () => {
 
       <!-- FILA DE APROVAÇÃO, na área de Gestão. Só aparece pra quem aprova.
            Pedido do dono: logo abaixo dos botões, não no fim da tela. -->
-      <Gaveta v-if="gv('fila')" :titulo="gv('fila').titulo" :estado="gv('fila').estado"
+      <Gaveta v-if="gv('fila')" icone="relogio" :titulo="gv('fila').titulo" :estado="gv('fila').estado"
               :aberta="gv('fila').aberta" :travada-aberta="gv('fila').travadaAberta"
               id="gv-fila" @alternar="alternarGaveta('fila')">
 
@@ -3977,7 +3978,7 @@ onMounted(async () => {
            A fila acima é o que pede decisão HOJE; isto aqui é o que já
            aconteceu. As duas listas são separadas de propósito: juntar faria a
            decisão pendente se perder no meio do passado. -->
-      <Gaveta v-if="gv('historico')" :titulo="gv('historico').titulo" :estado="gv('historico').estado"
+      <Gaveta v-if="gv('historico')" icone="encontros" :titulo="gv('historico').titulo" :estado="gv('historico').estado"
               :aberta="gv('historico').aberta" :travada-aberta="gv('historico').travadaAberta"
               id="gv-historico" @alternar="alternarGaveta('historico')">
 
@@ -4185,7 +4186,7 @@ onMounted(async () => {
         </div>
       </Gaveta>
 
-      <Gaveta v-if="gv('cobranca')" :titulo="gv('cobranca').titulo" :estado="gv('cobranca').estado"
+      <Gaveta v-if="gv('cobranca')" icone="lista" :titulo="gv('cobranca').titulo" :estado="gv('cobranca').estado"
               :aberta="gv('cobranca').aberta" :travada-aberta="gv('cobranca').travadaAberta"
               id="gv-cobranca" data-ancora="fr-ancora-cobranca" @alternar="alternarGaveta('cobranca')">
       <p class="fr-aviso">{{ resumoDaCobranca(cobranca, hoje) }}</p>
@@ -4430,7 +4431,7 @@ onMounted(async () => {
            já usa: não nasce tela nova. -->
 
 
-      <Gaveta v-if="gv('problemas')" :titulo="gv('problemas').titulo" :estado="gv('problemas').estado"
+      <Gaveta v-if="gv('problemas')" icone="alerta" :titulo="gv('problemas').titulo" :estado="gv('problemas').estado"
               :aberta="gv('problemas').aberta" :travada-aberta="gv('problemas').travadaAberta"
               id="gv-problemas" @alternar="alternarGaveta('problemas')">
       <p class="fr-erro" v-if="falhaRespostas">
@@ -4465,7 +4466,7 @@ onMounted(async () => {
            dois minutos está esperando o relógio, não quebrada. -->
       </Gaveta>
 
-      <Gaveta v-if="gv('zoho')" :titulo="gv('zoho').titulo" :estado="gv('zoho').estado"
+      <Gaveta v-if="gv('zoho')" icone="documento" :titulo="gv('zoho').titulo" :estado="gv('zoho').estado"
               :aberta="gv('zoho').aberta" :travada-aberta="gv('zoho').travadaAberta"
               id="gv-zoho" @alternar="alternarGaveta('zoho')">
       <p class="fr-erro" v-if="copias.falhaLeitura">
@@ -4495,12 +4496,14 @@ onMounted(async () => {
 
       </Gaveta>
 
-      <Gaveta v-if="gv('veiculos')" :titulo="gv('veiculos').titulo" :estado="gv('veiculos').estado"
+      <Gaveta v-if="gv('veiculos')" icone="veiculo" :titulo="gv('veiculos').titulo" :estado="gv('veiculos').estado"
               :aberta="gv('veiculos').aberta" :travada-aberta="gv('veiculos').travadaAberta"
               id="gv-veiculos" @alternar="alternarGaveta('veiculos')">
       <div class="fr-lista" id="fr-ancora-veiculos">
-        <div v-for="l in linhas" :key="l.veiculo.id" class="fr-card fr-carro"
-             :class="{ rua: l.naRua, parado: l.veiculo.situacao !== 'ativo', compacto: cartaoCompacto(l) }">
+        <!-- O filete tem o tom do SELO (tomDoCartao, com teste): os dois moram
+             no mesmo cartão e não podem discordar. -->
+        <div v-for="l in linhas" :key="l.veiculo.id" class="fr-card fr-carro id-cartao"
+             :class="[{ rua: l.naRua, parado: l.veiculo.situacao !== 'ativo', compacto: cartaoCompacto(l) }, `id-tom-${tomDoCartao(l)}`]">
           <div class="fr-card-topo">
             <!-- Ícone em SVG, nunca emoji: está no padrão da casa. -->
             <span class="fr-carro-icone" aria-hidden="true">
@@ -4624,7 +4627,7 @@ onMounted(async () => {
 
     <!-- ÁREA REVISÕES: o que está vencendo, e o plano que o dono edita. -->
     <template v-if="area === 'revisoes' && !carregando && !falha">
-      <h2 class="fr-secao">Chegando a hora</h2>
+      <h2 class="fr-secao id-titulo"><icone-do-bloco nome="relogio" />Chegando a hora</h2>
       <p class="fr-aviso" v-if="!revisoesPorVeiculo.length">
         Nada vencendo agora. Quando algum carro chegar perto de uma troca, ele aparece aqui —
         o histórico completo de cada um fica na ficha dele, na aba Gestão.
@@ -4660,7 +4663,7 @@ onMounted(async () => {
         </div>
       </div>
 
-      <h2 class="fr-secao">Todos os carros, item por item</h2>
+      <h2 class="fr-secao id-titulo"><icone-do-bloco nome="lista" />Todos os carros, item por item</h2>
       <p class="fr-aviso" v-if="revisoesDeTodosOsCarros.length">
         Toque no carro para ver os {{ planoAtivo.length }} itens do plano — inclusive os que
         estão longe de vencer.
@@ -5036,7 +5039,7 @@ onMounted(async () => {
     </template>
 
     <template v-if="area === 'plano' && !carregando && !falha">
-      <h2 class="fr-secao" data-tour="fr-secao-plano">Plano de manutenção — o que a oficina troca, de quantos em quantos quilômetros</h2>
+      <h2 class="fr-secao id-titulo" data-tour="fr-secao-plano"><icone-do-bloco nome="ferramenta" />Plano de manutenção — o que a oficina troca, de quantos em quantos quilômetros</h2>
       <p class="fr-aviso">
         Estes números são os que geram os avisos da aba Revisões. Mude quando o mecânico mandar,
         e acrescente o que faltar.
@@ -5066,7 +5069,7 @@ onMounted(async () => {
         <button class="fr-btn primario" @click="abrirItem(null)">+ Acrescentar item</button>
       </div>
 
-      <h2 class="fr-secao">Checklist — o que o motorista confere sozinho, a cada dia</h2>
+      <h2 class="fr-secao id-titulo"><icone-do-bloco nome="lista" />Checklist — o que o motorista confere sozinho, a cada dia</h2>
       <p class="fr-aviso">
         A lista de itens, e os dias em que o semanal e o mensal caem. Mude do mesmo jeito que
         no plano acima, quando precisar.
@@ -5940,6 +5943,12 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+/* A COR DA FERRAMENTA E DE CADA BLOCO (Onda 2b, 23/09/2026) — a folha comum,
+   importada ANTES das regras desta tela. Ela já pinta, sozinha, a barra do
+   topo (filete e tinta) e a aba ativa. As regras daqui têm o prefixo
+   `.tela-frota` e empatam com as da folha; onde a cor precisa vencer, o bloco
+   "Onda 2b" no FIM deste <style> diz por quê. */
+@import '../../estilos/identidade-da-ferramenta.css';
 .tela-frota{min-height:100vh;display:flex;flex-direction:column;background:transparent;}
 .tela-frota .fr-topbar{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border);background:var(--surface);position:sticky;top:0;z-index:10;}
 .tela-frota .fr-topbar .rbv-logo{height:22px;width:auto;flex-shrink:0;}
@@ -6673,4 +6682,30 @@ onMounted(async () => {
      10px de gap entre eles. */
   .tela-frota .fr-fechar{width:34px;height:34px;}
 }
+
+/* ── Onda 2b: a cor da ferramenta (cinza-azulado, `--cor-frota`) ────────────
+   Por último DE PROPÓSITO: as regras de cima têm a mesma força das da folha
+   comum (`.tela-frota .x` contra `.id-ferramenta .x`), e empate decide pela
+   ordem. A régua do dono para esta tela é "funcional, não carregado": a cor
+   entra no topo, nas abas, no ícone dos títulos, na ação principal e no filete
+   da situação — nenhum texto, selo ou linha novo, e nenhum fundo tingido
+   (ver o cabeçalho de `--cor-frota` e o relatório da Onda 2b: a tinta de 8%
+   deste cinza é quase o `--surface2`, e derrubaria o laranja dos avisos dos
+   formulários para 4,20).
+
+   A AÇÃO PRINCIPAL na cor da ferramenta; o texto em cima segue `--sobre-cor`
+   (10,35 no claro, 12,80 no escuro). O que é SELEÇÃO (nível do tanque escolhido,
+   "como fica", filtro ligado) continua no azul, que é o sinal de seleção. */
+.tela-frota .fr-btn.primario{background:var(--modulo);border-color:var(--modulo);color:var(--sobre-cor);}
+/* O ÍCONE do título na cor; o texto do título continua `--muted`, como era —
+   título colorido em caixa alta, repetido em cada seção, é o que carrega. */
+.tela-frota .id-titulo .id-icone{color:var(--modulo);}
+/* Os grupos da ficha do veículo eram o azul do sistema; viram a cor da
+   ferramenta (medido sobre a ficha: 10,35 no claro, 12,60 no escuro). */
+.tela-frota .fr-grupo{color:var(--modulo);}
+/* O FILETE DA SITUAÇÃO no cartão do carro, no mesmo tom do selo (tomDoCartao).
+   Só a COR da borda: a espessura continua a de sempre (3px), para o cartão não
+   mudar de medida. Ganha de `.fr-card.rua` e `.fr-card.parado`, que pintavam
+   verde no FIXO e azul no NA RUA — discordando do selo ao lado. */
+.tela-frota .fr-carro.id-cartao{border-left-color:var(--tom,var(--border));}
 </style>
