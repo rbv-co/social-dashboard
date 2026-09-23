@@ -2,13 +2,15 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { inflateSync } from 'node:zlib'
-import {
-  BinaryBitmap, HybridBinarizer, QRCodeReader, RGBLuminanceSource, DecodeHintType,
-} from '@zxing/library'
+// O @zxing/library é CommonJS: no Node do GitHub a importação por nome falha
+// ("Named export 'BinaryBitmap' not found"); a importação padrão funciona em todos.
+import zxing from '@zxing/library'
 import {
   matrizDoQr, capacidade, versaoPara, bitsDeFormato, bitsDeVersao,
   svgDoQr, rasterDoQr, pngDoQr, nomeDoArquivoDoQr, corEmRgb, COR_DA_TINTA,
 } from './qr.js'
+
+const { BinaryBitmap, HybridBinarizer, QRCodeReader, RGBLuminanceSource, DecodeHintType } = zxing
 
 /* ⚠️ O QUE ESTE ARQUIVO PROVA
  *
