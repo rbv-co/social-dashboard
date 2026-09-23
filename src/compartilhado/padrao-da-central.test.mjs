@@ -80,6 +80,9 @@ const COR_PERMITIDA = new Set([
   // Material Gráfico (23/09/2026): o oliva, claro e escuro, e a ponta clara do
   // degradê do ícone dele no menu do Comercial Vessel
   '#556b2f', '#a3bf6b', '#8a9a4b',
+  // Autenticidade e Garantia (Onda 2c, 23/09/2026): o verde-floresta, claro e
+  // escuro, e a ponta clara do degradê do ícone dela no menu da Gestão Interna
+  '#285a2b', '#86c88a', '#4d8a4f',
   // o papel da prévia do QR (claro nos dois temas: é como sai impresso)
   '#e7e2d8',
   // a tinta do QR impresso (src/compartilhado/qr.js): cor de marca do

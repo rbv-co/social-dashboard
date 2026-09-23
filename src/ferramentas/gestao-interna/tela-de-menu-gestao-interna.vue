@@ -39,8 +39,11 @@
           <span class="gimenu-card-enter">→</span>
         </div>
 
+        <!-- O degradê da Autenticidade é o verde-floresta da tela dela
+             (`--cor-autenticidade`, Onda 2c): #3f6212→#65a30d antes, que era
+             quase o oliva do Material Gráfico. -->
         <div class="gimenu-card" v-if="podeAutenticidade" @click="ir('autenticidade')">
-          <div class="gimenu-card-icon" style="background:linear-gradient(135deg,#3f6212 0%,#65a30d 100%)">
+          <div class="gimenu-card-icon" style="background:linear-gradient(135deg,#285a2b 0%,#4d8a4f 100%)">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
           </div>
           <div class="gimenu-card-title">Autenticidade e Garantia</div>

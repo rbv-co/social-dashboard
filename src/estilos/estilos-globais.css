@@ -131,6 +131,17 @@
        Medido (título sobre a tinta de 8% · `--sobre-cor` sobre o botão ·
        título sobre o fundo): 5,33 · 5,95 · 5,57. */
     --cor-material-grafico:#556b2f;
+    /* AUTENTICIDADE E GARANTIA (Onda 2c, 23/09/2026) — VERDE-FLORESTA, o do
+       ícone dela no menu da Gestão Interna, escurecido e puxado para o verde
+       puro. NÃO é o `--green` (#1a6e45, esmeralda = "deu certo"), que esta
+       tela usa MUITO (peça gravada, lote encerrado): a floresta é mais escura
+       e mais amarela; nem o oliva do Material Gráfico (#556b2f), que é bem
+       mais amarelo. Distância de cor medida (CIEDE2000): 7,9 do `--green` e
+       10,3 do oliva. Medido (título sobre a tinta de 8% · `--sobre-cor` sobre
+       o botão · aba ativa sobre o fundo): 7,18 · 8,12 · 7,59.
+       ⚠️ A tinta de 8% derruba o laranja dos avisos para 4,19 — por isso os
+       formulários desta tela NÃO são tingidos (como na Frota). */
+    --cor-autenticidade:#285a2b;
     /* O PAPEL DA PRÉVIA DO QR — claro NOS DOIS TEMAS, de propósito: a prévia
        mostra o QR como ele sai impresso, com a tinta escura da marca. O
        quadriculado é o que diz "este arquivo não tem fundo". Não é redefinido
@@ -219,6 +230,10 @@
     /* Material Gráfico no escuro: o oliva claro. Medido: título sobre a tinta
        8,02 · `--sobre-cor` sobre o botão 9,25 · sobre o fundo 9,63. */
     --cor-material-grafico:#a3bf6b;
+    /* Autenticidade no escuro: a floresta clara. Medido: título sobre a tinta
+       8,30 · `--sobre-cor` sobre o botão 9,63 · aba ativa sobre o fundo 10,03.
+       Distância (CIEDE2000): 9,8 do `--green` do escuro e 9,5 do oliva. */
+    --cor-autenticidade:#86c88a;
     --sobre-cor:#12100b;
     /* TEXTO ACCENT EM CIMA DE --accent-light. O accent puro sobre o proprio
        tom aguado reprova no tema escuro (4,42). Este par ja vem medido. */
@@ -281,6 +296,7 @@
   .fc-tela{ --modulo:var(--cor-funil-carrinho); }
   .tela-menu-comercial-vessel{ --modulo:var(--cor-comercial-vessel); }
   .tela-material-grafico{ --modulo:var(--cor-material-grafico); }
+  .tela-autenticidade{ --modulo:var(--cor-autenticidade); }
 
 .wrapper{max-width:none;width:100%;margin:0;padding:16px 28px;box-sizing:border-box;position:relative;z-index:1;}
 
