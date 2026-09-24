@@ -12,78 +12,34 @@ import { proporcao, razao, taxaEscrita } from './estatistica.js'
 
 // ── o funil da stylist ──────────────────────────────────────────────────────
 
-/**
- * Os doze estágios: o fluxo principal e as saídas.
- * ⚠️ `identificada` (24/09/2026, decisão do dono) vem ANTES de Prospectado: é a
- * parceira mapeada que ninguém abordou ainda. Não tem data de prospecção, e por
- * isso o placar não a conta (ver `2026-09-24-vessel-stylist-etapa-identificada.sql`).
+/*
+ * ⚠️ DESDE 24/09/2026 O FUNIL É CONFIGURÁVEL: as etapas são linhas de
+ * `vessel_stylist_etapas` (a tela "Etapas do funil"), e nenhuma lista fechada
+ * de etapas mora mais no código. Cada stylist da lista chega com `etapa_id`,
+ * `etapa` (o nome), `etapa_tipo` ('funil' | 'saida') e `etapa_ordem`.
+ * As regras do quadro e da tela de etapas estão em `crm-da-stylist-regras.js`.
  */
-export const ESTAGIOS_DA_STYLIST = {
-  identificada: 'Identificada',
-  prospectado: 'Prospectado',
-  contatado: 'Contatado',
-  interessado: 'Interessado',
-  em_negociacao: 'Em negociação',
-  ativado: 'Evento agendado e ativado',
-  evento_realizado: 'Evento realizado',
-  recorrente: 'Recorrente',
-  sem_retorno: 'Sem retorno',
-  nao_interessado: 'Não interessado',
-  pausado: 'Pausado',
-  inativo: 'Inativo',
-}
-
-/**
- * ⚠️ OS TRÊS DO MEIO NÃO SE ESCOLHEM: saem dos encontros, pelo gatilho do
- * banco. Oferecê-los no formulário seria deixar digitar um indicador — e o
- * banco recusaria com `estagio_automatico` de qualquer jeito.
- */
-export const ESTAGIOS_AUTOMATICOS = ['ativado', 'evento_realizado', 'recorrente']
-
-/**
- * O que o formulário de corrigir oferece. Quem já teve encontro (`ativada_em`)
- * não volta para antes dele, e das saídas sobram só "Pausado" e "Inativo".
- * ⚠️ "Sem retorno" e "Não interessado" NÃO SE OFERECEM A QUEM JÁ ATIVOU: o
- * gatilho do banco recalcula a etapa a partir dos encontros e devolve a
- * stylist para ativado/realizado/recorrente, calado — a tela diria "gravado" e
- * a escolha sumiria. (O "Reabrir" do quadro usa esse recálculo DE PROPÓSITO,
- * via `reabrirPara`; aqui seria uma escolha que não fica.)
- */
-export function estagiosDeEscolher(ativadaEm) {
-  if (ativadaEm) return ['pausado', 'inativo']
-  // ⚠️ "Identificada" NÃO SE ESCOLHE: não se volta para ela (o banco recusa com
-  // `volta_para_identificada` — voltar apagaria a data da prospecção). Quem
-  // está nela vê "Manter: Identificada".
-  return Object.keys(ESTAGIOS_DA_STYLIST).filter((k) => !ESTAGIOS_AUTOMATICOS.includes(k) && k !== 'identificada')
-}
 
 /* ── A COR DA SITUAÇÃO (pedido do dono, 23/09/2026) ────────────────────────
  * Cada selo devolve também um `tom`, que a tela vira a classe `id-tom-<tom>`
- * (filete do cartão + cor do selo). Os tons são os mesmos nas três coisas —
+ * (filete do cartão + cor do selo). Os tons são os mesmos em toda a Central —
  * stylist, encontro, convidada — e cada um é um token `--situacao-<tom>` em
  * estilos-globais.css:
  *   andamento (azul) · viva (verde) · confirmada (verde-azulado) ·
  *   queda (laranja) · faltou (vermelho suave) · parada (cinza).
- * ⚠️ O TOM NÃO SUBSTITUI O TEXTO: a cor ajuda a achar, a palavra é que diz. */
-const TOM_DO_ESTAGIO = {
-  identificada: 'andamento',
-  prospectado: 'andamento', contatado: 'andamento', interessado: 'andamento', em_negociacao: 'andamento',
-  ativado: 'viva', evento_realizado: 'viva', recorrente: 'viva',
-  sem_retorno: 'queda', nao_interessado: 'queda',
-  pausado: 'parada', inativo: 'parada',
-}
-
-export function seloDoEstagio(estagio) {
-  const texto = ESTAGIOS_DA_STYLIST[estagio] || estagio || 'Sem estágio'
-  const tom = TOM_DO_ESTAGIO[estagio] || 'parada'
-  if (['ativado', 'evento_realizado', 'recorrente'].includes(estagio)) return { texto, classe: 'cv-selo-viva', tom }
+ * ⚠️ O TOM NÃO SUBSTITUI O TEXTO: a cor ajuda a achar, a palavra é que diz.
+ * Com etapas configuráveis, o tom sai do TIPO da etapa: funil é andamento,
+ * saída é queda. */
+export function seloDaEtapa(s) {
+  const texto = s?.etapa || 'Sem etapa'
+  const tom = s?.etapa_tipo === 'saida' ? 'queda' : s?.etapa_tipo === 'funil' ? 'andamento' : 'parada'
   return { texto, classe: 'cv-selo-fim', tom }
 }
 
-/** O tom do cartão da stylist: desativada é cinza, seja qual for o estágio. */
+/** O tom do cartão da stylist: desativada é cinza, seja qual for a etapa. */
 export function tomDaStylist(s) {
   if (s?.ativa === false) return 'parada'
-  return seloDoEstagio(s?.estagio).tom
+  return seloDaEtapa(s).tom
 }
 
 export const ORIGENS_DE_CONTATO = {

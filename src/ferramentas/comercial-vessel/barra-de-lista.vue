@@ -29,7 +29,7 @@
     </label>
 
     <label v-if="mostrar.includes('estagio')" class="cv-barra-campo">
-      <span class="cv-etiqueta id-subtitulo">Estágio</span>
+      <span class="cv-etiqueta id-subtitulo">Etapa</span>
       <select :value="modelValue.estagio" @change="mudar('estagio', $event.target.value)">
         <option value="">Todos</option>
         <option v-for="(rotulo, chave) in estagios" :key="chave" :value="chave">{{ rotulo }}</option>

@@ -68,10 +68,9 @@ export const ENDERECO_DO_CIRCLE = `${SITE}/stylist-circle/`
  */
 export const ENDERECO_DO_GERADOR_DE_CARTAO = `${SITE}/geradorappointmentcard/`
 
-// ⚠️ T11: o funil virou lista fechada no banco, e a lista (com os rótulos)
-// mora em `t11-regras.js`, testada contra o CHECK da migration. Este nome fica
-// para quem já importava daqui.
-export { ESTAGIOS_DA_STYLIST as ESTAGIOS } from './t11-regras.js'
+// ⚠️ 24/09/2026: o funil da stylist é CONFIGURÁVEL (`vessel_stylist_etapas`),
+// e nenhuma lista de etapas mora mais no código — o `ESTAGIOS` que ficava aqui
+// saiu junto com a lista fechada.
 
 /** dd/mm/aaaa sem passar por Date — fuso não muda o dia. */
 export function dataLegivel(iso) {

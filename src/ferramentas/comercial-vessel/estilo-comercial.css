@@ -338,7 +338,7 @@
 .cv-vistas { margin: var(--sp-3) 0; }
 .cv-quadro-etapas { display: none; flex-wrap: wrap; gap: var(--sp-2); margin-bottom: var(--sp-3); }
 .cv-quadro-etapa.ativa { background: var(--accent-light); color: var(--accent-forte); border-color: var(--accent); }
-.cv-quadro { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: var(--sp-3); align-items: start; }
+.cv-quadro { display: grid; grid-template-columns: repeat(var(--colunas, 7), minmax(0, 1fr)); gap: var(--sp-3); align-items: start; }
 .cv-quadro-coluna { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
 .cv-quadro-coluna.recolhida .cv-quadro-cartao, .cv-quadro-coluna.recolhida .cv-nota { display: none; }
 .cv-quadro-titulo {
@@ -428,15 +428,11 @@
 .id-grupo.cv-grupo-encontros { --tom: var(--cor-private-edit); }
 .id-grupo.cv-grupo-venda     { --tom: var(--green); }
 
-/* ── o quadro por etapas: cor por fase, com degraus dentro de cada fase ── */
-.cv-fase-identificada     { --fase: color-mix(in srgb, var(--fase-antes) 28%, var(--surface)); }
-.cv-fase-prospectado      { --fase: color-mix(in srgb, var(--fase-antes) 45%, var(--surface)); }
-.cv-fase-contatado        { --fase: color-mix(in srgb, var(--fase-antes) 62%, var(--surface)); }
-.cv-fase-interessado      { --fase: color-mix(in srgb, var(--fase-antes) 80%, var(--surface)); }
-.cv-fase-em_negociacao    { --fase: var(--fase-antes); }
-.cv-fase-ativado          { --fase: color-mix(in srgb, var(--fase-com-encontro) 65%, var(--surface)); }
-.cv-fase-evento_realizado { --fase: color-mix(in srgb, var(--fase-com-encontro) 82%, var(--surface)); }
-.cv-fase-recorrente       { --fase: var(--fase-com-encontro); }
+/* ── o quadro por etapas: um tom para o funil, outro para as saídas ──
+ * ⚠️ DESDE 24/09/2026 AS ETAPAS SÃO CONFIGURÁVEIS: não há mais uma cor por
+ * etapa (a lista muda pela tela "Etapas do funil"). O funil é um bloco só, com
+ * o tom da fase "antes do encontro"; as saídas, o delas. */
+.cv-fase-funil            { --fase: var(--fase-antes); }
 .cv-fase-saidas           { --fase: color-mix(in srgb, var(--fase-saida) 60%, var(--situacao-parada)); }
 .id-ferramenta .cv-quadro-titulo {
   color: var(--text); font-weight: 600;

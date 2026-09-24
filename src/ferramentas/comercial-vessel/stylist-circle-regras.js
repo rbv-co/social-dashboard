@@ -86,8 +86,6 @@ export function mensagemDeCriar(situacao) {
       return 'Escolha uma loja da lista.'
     case 'origem_invalida':
       return 'Diga como a parceira chegou: indicação, pesquisa, evento ou veio sozinha.'
-    case 'prospeccao_no_futuro':
-      return 'A data da prospecção não pode ser depois de hoje.'
     case 'whatsapp_repetido':
       return 'Já existe uma parceira com este WhatsApp.'
     // ⚠️ WHATSAPP OU INSTAGRAM (24/09/2026): a parceira pode entrar só com o perfil.
@@ -101,10 +99,6 @@ export function mensagemDeCriar(situacao) {
       return 'O Instagram ficou longo demais. Use só o @ ou o endereço.'
     case 'observacoes_longas':
       return 'As observações passaram de 2.000 caracteres. Resuma um pouco.'
-    case 'estagio_invalido':
-      return 'Uma parceira nova entra em Prospectado ou Identificada.'
-    case 'identificada_sem_prospeccao':
-      return 'Identificada ainda não tem data da prospecção — deixe a data vazia.'
     case 'sem_codigo_livre':
       return 'Não sobrou código livre agora. Tente de novo em um instante.'
     case 'codigo_em_disputa':
@@ -137,28 +131,16 @@ export function mensagemDeEditar(situacao) {
       return 'O Instagram ficou longo demais. Use só o @ ou o endereço.'
     case 'observacoes_longas':
       return 'As observações passaram de 2.000 caracteres. Resuma um pouco.'
-    // ⚠️ AS DUAS DA ETAPA "IDENTIFICADA" também dizem por quê — tentar de novo
-    // dá a mesma resposta.
-    case 'volta_para_identificada':
-      return 'Não dá para voltar para Identificada: ela perderia a data da prospecção. Use uma saída.'
-    case 'identificada_sem_prospeccao':
-      return 'Enquanto ela está Identificada, a data da prospecção fica vazia. Ela ganha a data quando avançar.'
     case 'praca_invalida':
       return 'Escolha uma praça da lista.'
     case 'loja_invalida':
       return 'Escolha uma loja da lista.'
     case 'origem_invalida':
       return 'Escolha a origem do contato da lista.'
-    case 'prospeccao_no_futuro':
-      return 'A data da prospecção não pode ser depois de hoje.'
-    case 'estagio_invalido':
-      return 'Escolha um estágio da lista.'
-    // ⚠️ AS DUAS RECUSAS DO FUNIL NÃO SÃO "TENTE DE NOVO": tentar de novo dá a
-    // mesma resposta sempre, e a frase precisa dizer por quê.
-    case 'estagio_automatico':
-      return 'Este estágio o sistema marca sozinho, a partir dos encontros.'
-    case 'estagio_contradiz_encontro':
-      return 'Ela já tem encontro marcado: não volta para um estágio de antes dele.'
+    // ⚠️ A ETAPA NÃO MUDA POR AQUI desde o funil configurável (24/09/2026):
+    // é na ficha ou no quadro. Só a Central antiga ainda manda `p_estagio`.
+    case 'etapa_pela_ficha':
+      return 'A etapa agora se muda na ficha ou no quadro.'
     default:
       return 'Não consegui salvar agora. Tente de novo em um instante.'
   }
