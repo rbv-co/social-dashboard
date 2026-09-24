@@ -6,7 +6,10 @@ import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
-const p = join(dirname(fileURLToPath(import.meta.url)), '..', '.env');   // coletor/.env
+// ⚠️ `COLETOR_ENV` aponta para um .env de OUTRA pasta sem copiá-lo — é assim que
+// um worktree usa o `coletor/.env` do checkout principal (que é gitignored e não
+// vem no worktree) sem espalhar cópias da credencial pela máquina.
+const p = process.env.COLETOR_ENV || join(dirname(fileURLToPath(import.meta.url)), '..', '.env');   // coletor/.env
 if (existsSync(p)) {
   for (const raw of readFileSync(p, 'utf8').split('\n')) {
     const line = raw.trim();
