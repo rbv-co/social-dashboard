@@ -25,6 +25,7 @@
 import { dadosIniciais, USUARIO_DA_DEMONSTRACAO } from './dados-iniciais.js'
 import { diaEmSaoPaulo, somarDias, diasEntre } from './tempo.js'
 import { sugestaoDeEtapa } from '../ferramentas/comercial-vessel/crm-da-stylist-regras.js'
+import { faixaDaNota } from '../ferramentas/comercial-vessel/qualificacao-regras.js'
 
 /** ⚠️ A MARCA QUE O BUILD DA CENTRAL NÃO PODE TER: o relatório da entrega
  * procura esta string em `dist/` (o build normal) — achá-la lá quer dizer que
@@ -97,6 +98,8 @@ const media1 = (lista) => (lista.length
 
 export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () => {}, dados } = {}) {
   const b = dados ? copia(dados) : dadosIniciais(agora())
+  // 24/09: dados de teste antigos não trazem as avaliações — começam sem nenhuma.
+  if (!Array.isArray(b.qualificacoes)) b.qualificacoes = []
   const hoje = () => diaEmSaoPaulo(agora())
   const agoraIso = () => agora().toISOString()
   const proximo = (lista) => Math.max(0, ...lista.map((x) => x.id)) + 1
@@ -158,6 +161,74 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
   }
 
   const situacaoDe = (t, e) => situacaoDoConvite(t.status, t.rsvp, t.convite_enviado_em, e.quando, e.status, agora())
+
+  // ── `vessel_numeros_do_stylist_circle`: o corpo do placar, recortável ──
+  // ⚠️ `stylistId` nulo = todas (o placar); um id = só ela (o scorecard). A
+  // venda continua indo para o PRIMEIRO encontro olhando TODOS os encontros, e
+  // só depois o recorte fica com a dela — a soma das fichas dá o placar.
+  function numerosDoCircle(p_de, p_ate, p_dias, stylistId) {
+    const de = p_de || '2000-01-01'
+    const ate = p_ate || '9999-12-31' // 'infinity'::date
+    const dentro = (d) => !!d && d >= de && d <= ate
+    const dias = Math.max(Number(p_dias ?? 14) || 0, 0)
+    const sty = b.stylists.filter((s) => !s.teste && (stylistId == null || s.id === stylistId))
+    const idsSty = new Set(sty.map((s) => s.id))
+    const diaAtiv = (s) => (s.ativada_em ? diaEmSaoPaulo(s.ativada_em) : null)
+    const ev = b.encontros.filter((e) => naoArquivado(e) && idsSty.has(e.stylist_id))
+      .map((e) => ({ ...e, dia: diaDoEncontro(e) }))
+    const evP = ev.filter((e) => dentro(e.dia))
+    const codigosP = new Set(evP.map((e) => e.codigo))
+    const conv = b.atendimentos.filter((t) => !t.teste && codigosP.has(t.evento_codigo)).map((t) => {
+      const e = evP.find((x) => x.codigo === t.evento_codigo)
+      return { ...t, status_do_encontro: e.status, situacao: situacaoDe(t, e) }
+    })
+    const vendas = vendasDosEncontros(dias).filter((v) => codigosP.has(v.evento_codigo))
+    // Cada encontro realizado com o número de ordem dele na vida da stylist.
+    const realizados = []
+    for (const s of sty) {
+      const dela = ev.filter((e) => e.stylist_id === s.id && e.status === 'realizado')
+        .sort((x, y) => (x.realizado_em === y.realizado_em ? x.id - y.id : (x.realizado_em < y.realizado_em ? -1 : 1)))
+      dela.forEach((e, i) => realizados.push({ stylist_id: s.id, realizado_em: e.realizado_em, n: i + 1,
+        intervalo: i ? diasEntre(dela[i - 1].realizado_em, e.realizado_em) : null }))
+    }
+    const confirmada = (c) => ['confirmada', 'presente', 'nao_compareceu'].includes(c.situacao)
+    const ativadasNoPeriodo = sty.filter((s) => dentro(diaAtiv(s)))
+    const intervalosNoPeriodo = realizados.filter((r) => r.intervalo != null && dentro(r.realizado_em))
+    return {
+      de: p_de, ate: p_ate, janela_de_venda_em_dias: dias,
+      prospectadas: sty.filter((s) => dentro(s.prospectado_em)).length,
+      ativadas: ativadasNoPeriodo.length,
+      prospectadas_ja_ativadas: sty.filter((s) => dentro(s.prospectado_em) && diaAtiv(s) && diaAtiv(s) <= ate).length,
+      encontros_agendados: evP.filter((e) => e.status !== 'em_planejamento').length,
+      encontros_realizados: evP.filter((e) => e.status === 'realizado').length,
+      encontros_cancelados: evP.filter((e) => ['cancelado', 'nao_realizado'].includes(e.status)).length,
+      convidadas: conv.length,
+      confirmadas: conv.filter(confirmada).length,
+      confirmadas_em_realizados: conv.filter((c) => confirmada(c) && c.status_do_encontro === 'realizado').length,
+      presentes: conv.filter((c) => c.status === 'realizado').length,
+      presentes_em_realizados: conv.filter((c) => c.status === 'realizado' && c.status_do_encontro === 'realizado').length,
+      recorrentes_no_periodo: realizados.filter((r) => r.n === 2 && dentro(r.realizado_em)).length,
+      recorrentes_ate_o_fim: new Set(realizados.filter((r) => r.n === 2 && r.realizado_em <= ate).map((r) => r.stylist_id)).size,
+      ativadas_ate_o_fim: sty.filter((s) => diaAtiv(s) && diaAtiv(s) <= ate).length,
+      intervalos: intervalosNoPeriodo.length,
+      intervalo_medio_em_dias: media1(intervalosNoPeriodo.map((r) => r.intervalo)),
+      contatos_ate_ativar: media1(ativadasNoPeriodo.map((s) =>
+        b.contatos.filter((c) => c.stylist_id === s.id && c.criado_em < s.ativada_em).length)),
+      stylists_com_contatos_ate_ativar: ativadasNoPeriodo.length,
+      compradoras: new Set(vendas.map((v) => v.pessoa_id)).size,
+      vendas: vendas.length,
+      pecas: vendas.reduce((a, v) => a + v.pecas, 0),
+      receita: vendas.reduce((a, v) => a + v.receita, 0),
+      por_stylist: sty.filter((s) => evP.some((e) => e.stylist_id === s.id))
+        .sort((x, y) => (x.codigo < y.codigo ? -1 : 1))
+        .map((s) => ({
+          codigo: s.codigo, nome: s.nome,
+          encontros_realizados: evP.filter((e) => e.stylist_id === s.id && e.status === 'realizado').length,
+          vendas: vendas.filter((v) => v.stylist_id === s.id).length,
+          receita: vendas.filter((v) => v.stylist_id === s.id).reduce((a, v) => a + v.receita, 0),
+        })),
+    }
+  }
 
   // ════════════════════════════════════════════════════════════════════════
   // AS FUNÇÕES — o nome é o do PostgREST (`/rest/v1/rpc/<nome>`).
@@ -259,68 +330,10 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
         })
     },
 
+    // ⚠️ 24/09: O PLACAR É PORTÃO + MIOLO, como no banco — o scorecard chama o
+    // MESMO `numerosDoCircle` recortado numa stylist (ver o bloco do fim).
     vessel_placar_do_stylist_circle({ p_de = null, p_ate = null, p_dias = 14 } = {}) {
-      const de = p_de || '2000-01-01'
-      const ate = p_ate || '9999-12-31' // 'infinity'::date
-      const dentro = (d) => !!d && d >= de && d <= ate
-      const dias = Math.max(Number(p_dias ?? 14) || 0, 0)
-      const sty = b.stylists.filter((s) => !s.teste)
-      const idsSty = new Set(sty.map((s) => s.id))
-      const diaAtiv = (s) => (s.ativada_em ? diaEmSaoPaulo(s.ativada_em) : null)
-      const ev = b.encontros.filter((e) => naoArquivado(e) && idsSty.has(e.stylist_id))
-        .map((e) => ({ ...e, dia: diaDoEncontro(e) }))
-      const evP = ev.filter((e) => dentro(e.dia))
-      const codigosP = new Set(evP.map((e) => e.codigo))
-      const conv = b.atendimentos.filter((t) => !t.teste && codigosP.has(t.evento_codigo)).map((t) => {
-        const e = evP.find((x) => x.codigo === t.evento_codigo)
-        return { ...t, status_do_encontro: e.status, situacao: situacaoDe(t, e) }
-      })
-      const vendas = vendasDosEncontros(dias).filter((v) => codigosP.has(v.evento_codigo))
-      // Cada encontro realizado com o número de ordem dele na vida da stylist.
-      const realizados = []
-      for (const s of sty) {
-        const dela = ev.filter((e) => e.stylist_id === s.id && e.status === 'realizado')
-          .sort((x, y) => (x.realizado_em === y.realizado_em ? x.id - y.id : (x.realizado_em < y.realizado_em ? -1 : 1)))
-        dela.forEach((e, i) => realizados.push({ stylist_id: s.id, realizado_em: e.realizado_em, n: i + 1,
-          intervalo: i ? diasEntre(dela[i - 1].realizado_em, e.realizado_em) : null }))
-      }
-      const confirmada = (c) => ['confirmada', 'presente', 'nao_compareceu'].includes(c.situacao)
-      const ativadasNoPeriodo = sty.filter((s) => dentro(diaAtiv(s)))
-      const intervalosNoPeriodo = realizados.filter((r) => r.intervalo != null && dentro(r.realizado_em))
-      return {
-        de: p_de, ate: p_ate, janela_de_venda_em_dias: dias,
-        prospectadas: sty.filter((s) => dentro(s.prospectado_em)).length,
-        ativadas: ativadasNoPeriodo.length,
-        prospectadas_ja_ativadas: sty.filter((s) => dentro(s.prospectado_em) && diaAtiv(s) && diaAtiv(s) <= ate).length,
-        encontros_agendados: evP.filter((e) => e.status !== 'em_planejamento').length,
-        encontros_realizados: evP.filter((e) => e.status === 'realizado').length,
-        encontros_cancelados: evP.filter((e) => ['cancelado', 'nao_realizado'].includes(e.status)).length,
-        convidadas: conv.length,
-        confirmadas: conv.filter(confirmada).length,
-        confirmadas_em_realizados: conv.filter((c) => confirmada(c) && c.status_do_encontro === 'realizado').length,
-        presentes: conv.filter((c) => c.status === 'realizado').length,
-        presentes_em_realizados: conv.filter((c) => c.status === 'realizado' && c.status_do_encontro === 'realizado').length,
-        recorrentes_no_periodo: realizados.filter((r) => r.n === 2 && dentro(r.realizado_em)).length,
-        recorrentes_ate_o_fim: new Set(realizados.filter((r) => r.n === 2 && r.realizado_em <= ate).map((r) => r.stylist_id)).size,
-        ativadas_ate_o_fim: sty.filter((s) => diaAtiv(s) && diaAtiv(s) <= ate).length,
-        intervalos: intervalosNoPeriodo.length,
-        intervalo_medio_em_dias: media1(intervalosNoPeriodo.map((r) => r.intervalo)),
-        contatos_ate_ativar: media1(ativadasNoPeriodo.map((s) =>
-          b.contatos.filter((c) => c.stylist_id === s.id && c.criado_em < s.ativada_em).length)),
-        stylists_com_contatos_ate_ativar: ativadasNoPeriodo.length,
-        compradoras: new Set(vendas.map((v) => v.pessoa_id)).size,
-        vendas: vendas.length,
-        pecas: vendas.reduce((a, v) => a + v.pecas, 0),
-        receita: vendas.reduce((a, v) => a + v.receita, 0),
-        por_stylist: sty.filter((s) => evP.some((e) => e.stylist_id === s.id))
-          .sort((x, y) => (x.codigo < y.codigo ? -1 : 1))
-          .map((s) => ({
-            codigo: s.codigo, nome: s.nome,
-            encontros_realizados: evP.filter((e) => e.stylist_id === s.id && e.status === 'realizado').length,
-            vendas: vendas.filter((v) => v.stylist_id === s.id).length,
-            receita: vendas.filter((v) => v.stylist_id === s.id).reduce((a, v) => a + v.receita, 0),
-          })),
-      }
+      return numerosDoCircle(p_de, p_ate, p_dias, null)
     },
 
     vessel_stylist_contatos({ p_codigo } = {}) {
@@ -613,6 +626,79 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
       // não é o gesto do passo, e o roteiro não pode se marcar por ele.
       if (t.evento_codigo) avisar('presenca_marcada', { id: t.id, situacao: p_situacao })
       return { ok: true, situacao: p_situacao, antes }
+    },
+
+    // ════════════════════════════════════════════════════════════════════════
+    // STYLIST CIRCLE — O SCORECARD E A NOTA DE QUALIFICAÇÃO (24/09/2026):
+    // `2026-09-24-vessel-stylist-scorecard-e-qualificacao.sql`. Bloco próprio,
+    // para o merge com as outras ondas da demonstração ser limpo.
+    // ════════════════════════════════════════════════════════════════════════
+    vessel_scorecard_da_stylist({ p_codigo, p_de = null, p_ate = null, p_dias = 14 } = {}) {
+      const s = stylistPorCodigo(maiusculo(p_codigo))
+      if (!s || s.teste) return { ok: false, situacao: 'nao_achei' }
+      const { por_stylist: _fora, ...num } = numerosDoCircle(p_de, p_ate, p_dias, s.id)
+      const ate = p_ate || '9999-12-31'
+      const dela = b.encontros.filter((e) => e.stylist_id === s.id && !e.teste && !e.arquivada)
+      const realizados = dela.filter((e) => e.status === 'realizado' && e.realizado_em && e.realizado_em <= ate)
+      const ultimo = realizados.map((e) => e.realizado_em).sort().pop() || null
+      const proximo = dela.filter((e) => ['agendado', 'confirmado', 'reagendado'].includes(e.status)
+        && new Date(e.quando).getTime() >= agora().getTime())
+        .sort((x, y) => (x.quando === y.quando ? x.id - y.id : (x.quando < y.quando ? -1 : 1)))[0] || null
+      const contatos = b.contatos.filter((c) => c.stylist_id === s.id)
+      // O marco de "ativou" não olha a etapa: `ativada_em`, ou o 1º encontro.
+      const ativou = s.ativada_em || dela.filter((e) => e.status !== 'em_planejamento').map((e) => e.quando).sort()[0] || null
+      return {
+        ...num, ok: true, situacao: 'ok', codigo: s.codigo, nome: s.nome, ativada_em: s.ativada_em,
+        realizados_desde_o_inicio: realizados.length,
+        recorrente: realizados.length >= 2,
+        ultimo_realizado_em: ultimo,
+        dias_desde_o_ultimo: ultimo ? diasEntre(ultimo, hoje()) : null,
+        proximo_encontro_em: proximo?.quando ?? null,
+        proximo_encontro_codigo: proximo?.codigo ?? null,
+        contatos: contatos.length,
+        contatos_antes_de_ativar: ativou ? contatos.filter((c) => c.criado_em < ativou).length : null,
+        contatos_sem_resposta_depois_de_ativar: ativou
+          ? contatos.filter((c) => c.resultado === 'sem_resposta' && c.criado_em >= ativou).length : null,
+      }
+    },
+
+    vessel_stylist_avaliar(a = {}) {
+      const s = stylistPorCodigo(maiusculo(a.p_codigo))
+      if (!s) return { ok: false, situacao: 'nao_achei' }
+      const niveis = ['p_carteira', 'p_portfolio', 'p_mobilizacao', 'p_acesso', 'p_confiabilidade'].map((k) => a[k])
+      if (niveis.some((n) => n == null || !Number.isInteger(Number(n)) || Number(n) < 1 || Number(n) > 5)) {
+        return { ok: false, situacao: 'nivel_invalido' }
+      }
+      const obs = limpo(a.p_observacao)
+      if (obs && obs.length > 280) return { ok: false, situacao: 'observacao_longa' }
+      const [carteira, portfolio, mobilizacao, acesso, confiabilidade] = niveis.map(Number)
+      // As colunas geradas do banco: 6·5·4·3·2 e a faixa pela mesma régua.
+      const nota = 6 * carteira + 5 * portfolio + 4 * mobilizacao + 3 * acesso + 2 * confiabilidade
+      const q = { id: proximo(b.qualificacoes), stylist_id: s.id, carteira, portfolio, mobilizacao, acesso, confiabilidade,
+        nota, faixa: faixaDaNota(nota), observacao: obs, avaliado_em: agoraIso(), avaliado_por_nome: USUARIO_DA_DEMONSTRACAO }
+      b.qualificacoes.push(q)
+      avisar('stylist_avaliada', { codigo: s.codigo, nota, faixa: q.faixa })
+      return { ok: true, situacao: 'ok', id: q.id, nota, faixa: q.faixa, avaliado_em: q.avaliado_em }
+    },
+
+    vessel_stylist_qualificacoes({ p_codigo } = {}) {
+      const s = stylistPorCodigo(maiusculo(p_codigo))
+      if (!s) return []
+      return b.qualificacoes.filter((q) => q.stylist_id === s.id)
+        .sort((x, y) => (x.avaliado_em === y.avaliado_em ? y.id - x.id : (x.avaliado_em < y.avaliado_em ? 1 : -1)))
+        .map((q) => ({ id: q.id, carteira: q.carteira, portfolio: q.portfolio, mobilizacao: q.mobilizacao,
+          acesso: q.acesso, confiabilidade: q.confiabilidade, nota: q.nota, faixa: q.faixa, observacao: q.observacao,
+          avaliado_em: q.avaliado_em, avaliado_por_nome: q.avaliado_por_nome }))
+    },
+
+    vessel_qualificacoes_vigentes() {
+      const saida = []
+      for (const s of b.stylists.filter((x) => !x.teste)) {
+        const q = b.qualificacoes.filter((x) => x.stylist_id === s.id)
+          .sort((x, y) => (x.avaliado_em === y.avaliado_em ? y.id - x.id : (x.avaliado_em < y.avaliado_em ? 1 : -1)))[0]
+        if (q) saida.push({ codigo: s.codigo, nota: q.nota, faixa: q.faixa, avaliado_em: q.avaliado_em })
+      }
+      return saida.sort((x, y) => (x.codigo < y.codigo ? -1 : 1))
     },
 
     // ════════════════════════════════════════════════════════════════════════

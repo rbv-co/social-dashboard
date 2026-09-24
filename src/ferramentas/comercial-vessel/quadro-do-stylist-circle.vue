@@ -19,6 +19,11 @@
         <article v-for="s in colunas[k]" :key="s.codigo" class="cv-quadro-cartao"
                  :class="[k === 'saidas' ? `id-tom-${seloDoEstagio(s.estagio).tom}` : '',
                           { atrasada: prazoAtrasado(s.proxima_acao_em, hoje) }]">
+          <!-- ⚠️ 24/09: BLOCO PRÓPRIO, no topo do cartão (para o merge com as
+               etapas configuráveis ser limpo): a faixa da nota — sempre com a palavra.
+               Não muda a coluna de ninguém: a nota não trava etapa nenhuma. -->
+          <p v-if="mostrarFaixa" class="cv-quadro-faixa">
+            <span class="cv-selo id-selo" :class="`id-tom-${seloDaFaixa(s).tom}`">{{ seloDaFaixa(s).texto }}</span></p>
           <button type="button" class="cv-quadro-nome" @click="$emit('abrir', s.codigo)">{{ s.nome }}</button>
           <p class="cv-sub"><span class="cv-codigo">{{ s.codigo }}</span>
             <span v-if="s.cidade"> · {{ s.cidade }}</span><span v-if="s.loja"> · {{ LOJAS[s.loja] || s.loja }}</span></p>
@@ -54,6 +59,7 @@
  * banco. As regras moram em `crm-da-stylist-regras.js`, testadas. */
 import { ref, computed } from 'vue'
 import { ESTAGIOS_DA_STYLIST, LOJAS, seloDoEstagio } from './t11-regras.js'
+import { seloDaFaixa } from './qualificacao-regras.js'
 import IconeDoBloco from '../../compartilhado/icone-do-bloco.vue'
 import { dataLegivel } from './enderecos-publicos.js'
 import {
@@ -68,11 +74,15 @@ const props = defineProps({
   // gravação em andamento. A guarda de verdade mora na tela — aqui só
   // desabilita o botão certo e troca o texto por "Movendo…".
   movendoCodigo: { type: String, default: null },
+  // 24/09: o selo da faixa só aparece se a leitura das notas deu certo, e a
+  // ordem "faixa" (a mesma da barra da lista) reordena DENTRO de cada coluna.
+  mostrarFaixa: { type: Boolean, default: false },
+  ordem: { type: String, default: null },
 })
 defineEmits(['abrir', 'mover'])
 
 const COLUNAS = [...FLUXO_PRINCIPAL, 'saidas']
-const colunas = computed(() => colunasDoQuadro(props.stylists, props.hoje))
+const colunas = computed(() => colunasDoQuadro(props.stylists, props.hoje, props.ordem))
 const rotuloDaColuna = (k) => (k === 'saidas' ? 'Saídas' : ESTAGIOS_DA_STYLIST[k])
 // No celular abre na primeira etapa que tem gente.
 const etapaNoCelular = ref(COLUNAS.find((k) => colunasDoQuadro(props.stylists, props.hoje)[k].length) || 'prospectado')

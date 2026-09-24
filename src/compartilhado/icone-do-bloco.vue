@@ -101,6 +101,20 @@
       <ellipse cx="12" cy="5" rx="9" ry="3" /><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" />
       <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
     </template>
+    <!-- Stylist Circle (24/09/2026): a nota de qualificação — a estrela de
+         avaliar, a medalha do bloco, o "aplicar" da sugestão e o "salvar". -->
+    <template v-else-if="nome === 'avaliar'">
+      <path d="M12 3l2.8 5.7 6.2.9-4.5 4.4 1.1 6.2L12 17.3 6.4 20.2l1.1-6.2L3 9.6l6.2-.9L12 3z" />
+    </template>
+    <template v-else-if="nome === 'medalha'">
+      <circle cx="12" cy="14" r="6" /><path d="M8.5 9.2L6 3h4l2 4 2-4h4l-2.5 6.2" /><path d="M12 12v4" />
+    </template>
+    <template v-else-if="nome === 'aplicar'">
+      <path d="M4 12.5l5 5L20 6.5" />
+    </template>
+    <template v-else-if="nome === 'salvar'">
+      <circle cx="12" cy="12" r="9" /><path d="M8 12.5l3 3 5-6" />
+    </template>
   </svg>
 </template>
 

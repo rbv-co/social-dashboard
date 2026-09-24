@@ -277,6 +277,22 @@ passo('Stylist Circle')
   await esperar(500)
   const fechar = pagina.getByRole('button', { name: /✕|Fechar/ })
   if (await fechar.count()) await clicar(fechar.first(), 'fechar a ficha')
+  // 24/09: o scorecard, a nota de qualificação e as metas.
+  const tela = await conferirTela()
+  if (!/Comparecimento/.test(tela) || !/meta: 70% ou mais/.test(tela)) falhar(onde, 'o placar não mostra a meta do comparecimento')
+  if (!/faixa de teste: 1 a 3/.test(tela)) falhar(onde, 'o placar não mostra a faixa de vendas por encontro')
+  if (!/Sem nota/i.test(tela) || !/Faixa A/i.test(tela)) falhar(onde, 'o quadro não mostra os selos da faixa')
+  await clicar(pagina.locator('.cv-quadro-nome', { hasText: 'Marina' }).first(), 'abrir a ficha da Marina')
+  await pagina.waitForSelector('.cv-scorecard .cv-numero', { timeout: 5000 }).catch(() => falhar(onde, 'o scorecard não abriu'))
+  if (!/Professional Fee estimado/.test(await conferirTela())) falhar(onde, 'o scorecard não mostra o Professional Fee')
+  if (!/vale reavaliar/.test(await conferirTela())) falhar(onde, 'a Marina teve encontro depois da nota e a ficha não avisou')
+  await pagina.selectOption('.cv-scorecard select', 'mes'); await esperar(400); await conferirTela()
+  await pagina.selectOption('.cv-scorecard select', 'tudo'); await esperar(400)
+  await clicar(pagina.locator('.cv-qualificacao .cv-botao-avaliar'), 'Reavaliar')
+  await clicar(pagina.locator('.cv-modal-avaliar .cv-sugestao .btn:not([disabled])').first(), 'aplicar uma sugestão')
+  await clicar(pagina.locator('.cv-modal-avaliar .btn-principal'), 'Salvar avaliação')
+  if (!/→.*→/.test(await pagina.locator('.cv-qualificacao-trilha').innerText().catch(() => ''))) falhar(onde, 'reavaliou e o histórico não cresceu')
+  await clicar(pagina.locator('.cv-modal-fechar').first(), 'fechar a ficha da Marina')
 }
 
 // ════════════════════════════════════════════════════════════════════════════

@@ -118,3 +118,18 @@ test('FIAÇÃO: a tela tem as duas vistas e o quadro recebe a lista FILTRADA', (
   assert.match(t, /:stylists="stylistsNaTela"/)
   assert.match(t, /vista === 'quadro'/)
 })
+
+// ── 24/09/2026: a nota de qualificação só muda a ORDEM dentro da coluna ────
+test('quadro com ordem "faixa": A antes de B antes de sem nota, na MESMA coluna', () => {
+  const l = [
+    { codigo: 'S1', nome: 'Xênia', estagio: 'prospectado', faixa: null },
+    { codigo: 'S2', nome: 'Yara', estagio: 'prospectado', faixa: 'B' },
+    { codigo: 'S3', nome: 'Zélia', estagio: 'prospectado', faixa: 'A' },
+    { codigo: 'S4', nome: 'Wanda', estagio: 'recorrente', faixa: 'C' },
+  ]
+  const porFaixa = colunasDoQuadro(l, '2026-09-24', 'faixa')
+  assert.deepEqual(porFaixa.prospectado.map((s) => s.codigo), ['S3', 'S2', 'S1'])
+  assert.deepEqual(porFaixa.recorrente.map((s) => s.codigo), ['S4'], 'a nota C não tira ninguém da coluna')
+  const semOrdem = colunasDoQuadro(l, '2026-09-24')
+  assert.deepEqual(semOrdem.prospectado.map((s) => s.nome), ['Xênia', 'Yara', 'Zélia'], 'a de sempre: pelo nome, sem prazo')
+})

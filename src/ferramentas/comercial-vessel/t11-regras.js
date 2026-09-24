@@ -299,6 +299,10 @@ export function taxasDoPlacar(pl) {
     receitaPorConvidada: razao(n(pl?.receita), n(pl?.presentes)),
     receitaPorEncontro: razao(n(pl?.receita), n(pl?.encontros_realizados)),
     pecasPorCliente: razao(n(pl?.pecas), n(pl?.compradoras)),
+    // ⚠️ 24/09: número novo, com a faixa de teste do plano (1 a 3 vendas por
+    // edição — `metaDeVendasPorEncontro`, qualificacao-regras.js). RAZÃO: a
+    // mesma edição pode ter 4 vendas, e isso não é 400%.
+    vendasPorEncontro: razao(n(pl?.vendas), n(pl?.encontros_realizados)),
   }
 }
 

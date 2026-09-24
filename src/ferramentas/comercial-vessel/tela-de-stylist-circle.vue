@@ -111,6 +111,14 @@
               <span class="cv-numero-base">{{ legendaDaTaxa('showRate', taxas.showRate) }}</span>
               <span v-if="margemEscrita(taxas.showRate)" class="cv-numero-margem">{{ margemEscrita(taxas.showRate) }}</span>
             </div>
+            <!-- ⚠️ 24/09: A META DO PLANO (show rate ≥ 70%), com a cor da casa E a
+                 palavra — `metaDoComparecimento`, qualificacao-regras.js. -->
+            <div class="cv-numero">
+              <span class="cv-numero-valor">{{ emPorcento(taxas.showRate.valor) }}</span>
+              <span class="cv-numero-rotulo">Comparecimento</span>
+              <span class="cv-numero-base">{{ taxas.showRate.temBase ? `${taxas.showRate.x} de ${taxas.showRate.n} confirmadas em realizados` : 'nenhum encontro realizado no período' }}</span>
+              <meta-do-numero :meta="metaDoComparecimento(taxas.showRate)" />
+            </div>
           </div>
           </div>
 
@@ -132,6 +140,14 @@
               <span class="cv-numero-valor">{{ taxas.ticket.temBase ? emReais(taxas.ticket.valor) : '—' }}</span>
               <span class="cv-numero-rotulo">Ticket médio</span>
               <span class="cv-numero-base">{{ taxas.ticket.temBase ? `sobre ${taxas.ticket.n} venda(s)` : 'sem base ainda' }}</span>
+            </div>
+            <!-- ⚠️ 24/09: NÚMERO NOVO, com a faixa de teste do plano (1 a 3 por
+                 edição, "sem tratar como previsão garantida"). -->
+            <div class="cv-numero">
+              <span class="cv-numero-valor">{{ vendasPorEncontroEscrito(taxas.vendasPorEncontro) }}</span>
+              <span class="cv-numero-rotulo">Vendas por encontro</span>
+              <span class="cv-numero-base">{{ taxas.vendasPorEncontro.temBase ? `${taxas.vendasPorEncontro.x} em ${taxas.vendasPorEncontro.n} realizado(s)` : 'nenhum encontro realizado no período' }}</span>
+              <meta-do-numero :meta="metaDeVendasPorEncontro(taxas.vendasPorEncontro)" />
             </div>
             <div class="cv-numero">
               <span class="cv-numero-valor">{{ taxas.receitaPorConvidada.temBase ? emReais(taxas.receitaPorConvidada.valor) : '—' }}</span>
@@ -180,6 +196,13 @@
             <b>Agendados</b> inclui os que depois caíram — eles chegaram a ter
             data, e tirá-los faria a taxa de realização subir justamente quando
             a operação cancela.
+          </p>
+          <p class="cv-nota">
+            <b>As metas são as do plano, fixas:</b> comparecimento de 70% ou
+            mais (verde; de 60% a 69% âmbar; abaixo, vermelho) e de 1 a 3
+            vendas por encontro como <b>faixa de teste</b> — acima de 3 é só
+            aviso, não previsão garantida. Sem encontro realizado, a meta fica
+            "sem base ainda", sem cor.
           </p>
           <p class="cv-nota">
             <b>A venda</b> é o pedido atendido no Bling de uma convidada que
@@ -282,6 +305,7 @@
                       :ordens="[
                         { valor: 'nome', rotulo: 'Nome' },
                         { valor: 'aberturas', rotulo: 'Quem traz mais tráfego' },
+                        { valor: 'faixa', rotulo: 'Faixa da nota (A primeiro)' },
                       ]" />
 
       <!-- ── AS DUAS VISTAS (T11) — o quadro é a leitura padrão; a lista
@@ -302,9 +326,14 @@
           <button type="button" class="btn" @click="erroDoQuadro = ''">Dispensar</button>
         </div>
       </template>
+      <!-- ⚠️ 24/09: A NOTA DA QUALIFICAÇÃO SÓ APARECE SE A LEITURA DELA DEU
+           CERTO. Com a leitura falhando, "Sem nota" em todo mundo seria uma
+           afirmação falsa: o selo some e o aviso diz por quê. -->
+      <p v-if="erroDasFaixas && !carregando && !erro" class="cv-nota cv-nota-erro">{{ erroDasFaixas }}</p>
       <quadro-do-stylist-circle v-if="vista === 'quadro' && !carregando && !erro" :stylists="stylistsNaTela"
                                 :pode-editar="podeExecutarAcao('editar', podeEditar)" :hoje="hojeLocal"
-                                :movendo-codigo="movendoCodigo"
+                                :movendo-codigo="movendoCodigo" :mostrar-faixa="vigentes !== null"
+                                :ordem="filtro.ordem"
                                 @abrir="fichaAberta = $event" @mover="mover" />
 
       <div v-if="carregando" class="cv-carregando">Carregando…</div>
@@ -415,6 +444,8 @@
               <span v-if="s.ativa === false" class="cv-selo id-selo cv-selo-fim id-tom-parada">Desativada</span>
               <span class="cv-selo id-selo" :class="[seloDoEstagio(s.estagio).classe, `id-tom-${seloDoEstagio(s.estagio).tom}`]">
                 {{ seloDoEstagio(s.estagio).texto }}</span>
+              <span v-if="vigentes !== null" class="cv-selo id-selo cv-selo-faixa" :class="`id-tom-${seloDaFaixa(s).tom}`">
+                {{ seloDaFaixa(s).texto }}</span>
             </div>
           </div>
 
@@ -658,6 +689,7 @@ import FaixaDeErro from '../../compartilhado/faixa-de-erro.vue'
 import BarraDeLista from './barra-de-lista.vue'
 import QuadroDoStylistCircle from './quadro-do-stylist-circle.vue'
 import FichaDaStylist from './ficha-da-stylist.vue'
+import MetaDoNumero from './meta-do-numero.vue'
 import IconeDoBloco from '../../compartilhado/icone-do-bloco.vue'
 import { estado, hasPermission } from '../../compartilhado/controle-de-login-e-usuario.js'
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../../compartilhado/conectar-no-banco-de-dados.js'
@@ -677,6 +709,9 @@ import {
   ESTAGIOS_DA_STYLIST, estagiosDeEscolher, seloDoEstagio, tomDaStylist, ORIGENS_DE_CONTATO, LOJAS,
   PERIODOS_DO_PLACAR, periodoDoPlacar, taxasDoPlacar, legendaDaTaxa,
 } from './t11-regras.js'
+import {
+  comFaixa, seloDaFaixa, metaDoComparecimento, metaDeVendasPorEncontro, vendasPorEncontroEscrito,
+} from './qualificacao-regras.js'
 
 const router = useRouter()
 function voltar() { router.push({ name: paiDaTela('stylist-circle') }) }
@@ -705,8 +740,12 @@ const filtro = ref({ ...FILTRO_VAZIO, situacao: 'abertas', ordem: 'nome' })
 // nome/cidade/código, estágio e ordem — tudo client-side, sobre `stylists`,
 // que só volta ao banco quando a situação exige desativada (ver o watch
 // abaixo). Sem período, sem loja: não existem nesta tela.
+// ⚠️ 24/09: cada stylist ganha a nota VIGENTE (`comFaixa`) antes do filtro —
+// é ela que a ordem "Faixa da nota" usa, e o selo do quadro e da lista.
+const vigentes = ref(null)
+const erroDasFaixas = ref('')
 const stylistsNaTela = computed(() =>
-  filtrar(stylists.value, filtro.value, { busca: ['nome', 'cidade', 'codigo'], estagio: 'estagio' }))
+  filtrar(comFaixa(stylists.value, vigentes.value), filtro.value, { busca: ['nome', 'cidade', 'codigo'], estagio: 'estagio' }))
 
 // ⚠️ MESMO CUIDADO DAS DUAS IRMÃS (Critical da rodada anterior nelas): o
 // conjunto tem de somar SEMPRE a lista filtrada, nunca a cheia.
@@ -764,6 +803,7 @@ async function carregar(opcoes) {
       { p_dias: P_DIAS, p_incluir_desativadas: incluirDesativadas })
     stylists.value = r || []
     carregarPlacar()
+    carregarFaixas()
   } catch (e) {
     erro.value = classificarErro(e)
   } finally {
@@ -801,6 +841,20 @@ async function carregarPlacar() {
   }
 }
 watch(periodoDoPlacarEscolhido, carregarPlacar)
+
+// ── a nota de qualificação vigente de cada uma (24/09) ──────────────────────
+// ⚠️ A FALHA NÃO VIRA "SEM NOTA": `vigentes` fica nulo, o selo some e a tela
+// diz que não conseguiu ler. Lista vazia só quando o banco disse vazia.
+async function carregarFaixas() {
+  erroDasFaixas.value = ''
+  try {
+    const r = await chamar('vessel_qualificacoes_vigentes', {})
+    vigentes.value = Array.isArray(r) ? r : []
+  } catch {
+    vigentes.value = null
+    erroDasFaixas.value = 'Não consegui ler as notas de qualificação agora — o selo da faixa volta quando a leitura voltar.'
+  }
+}
 
 // ── as duas vistas (T11) — Quadro e Lista ─────────────────────────────────────
 // A vista escolhida fica no aparelho (conveniência, não dado).

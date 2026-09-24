@@ -7,6 +7,8 @@
  * ⚠️ A SUGESTÃO NUNCA MUDA NADA: a tela oferece "Mover para X?" e a Ionara
  * decide (decisão do dono, 22/09/2026).
  */
+import { posicaoDaFaixa } from './qualificacao-regras.js'
+
 export const CANAIS = {
   whatsapp: 'WhatsApp', ligacao: 'Ligação', instagram: 'Instagram', email: 'E-mail', presencial: 'Presencial',
 }
@@ -48,21 +50,25 @@ export function prazoAtrasado(prazo, hoje) {
   return !!prazo && String(prazo).slice(0, 10) < String(hoje).slice(0, 10)
 }
 
-export function colunasDoQuadro(lista, hoje) {
+/** ⚠️ `ordem: 'faixa'` (24/09): dentro de cada coluna, A, B, C e sem nota
+ * primeiro — e só depois o prazo. Sem ela, a ordem de sempre (atrasada, prazo,
+ * nome). A nota NÃO muda a coluna de ninguém: só a ordem dentro dela. */
+export function colunasDoQuadro(lista, hoje, ordem = null) {
   const colunas = Object.fromEntries(FLUXO_PRINCIPAL.map((e) => [e, []]))
   colunas.saidas = []
   for (const s of Array.isArray(lista) ? lista : []) {
     const destino = SAIDAS.includes(s?.estagio) ? 'saidas' : (colunas[s?.estagio] ? s.estagio : 'prospectado')
     colunas[destino].push(s)
   }
-  const ordem = (a, b) => {
+  const porPrazo = (a, b) => {
     const aa = prazoAtrasado(a.proxima_acao_em, hoje), bb = prazoAtrasado(b.proxima_acao_em, hoje)
     if (aa !== bb) return aa ? -1 : 1
     const pa = a.proxima_acao_em || '9999', pb = b.proxima_acao_em || '9999'
     if (pa !== pb) return pa < pb ? -1 : 1
     return String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR')
   }
-  for (const k of Object.keys(colunas)) colunas[k].sort(ordem)
+  const porFaixa = (a, b) => (posicaoDaFaixa(a.faixa) - posicaoDaFaixa(b.faixa)) || porPrazo(a, b)
+  for (const k of Object.keys(colunas)) colunas[k].sort(ordem === 'faixa' ? porFaixa : porPrazo)
   return colunas
 }
 

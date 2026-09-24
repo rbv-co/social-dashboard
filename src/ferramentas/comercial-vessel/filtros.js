@@ -16,6 +16,8 @@
  * `proporcaoDoConjunto`. Reaproveitar o total que veio do banco depois de
  * filtrar é a tela mentindo com número certo.
  */
+import { posicaoDaFaixa } from './qualificacao-regras.js'
+
 export const PERIODOS = [
   { dias: 7,    rotulo: '7 dias' },
   { dias: 30,   rotulo: '30 dias' },
@@ -135,6 +137,12 @@ export function filtrar(lista, filtro, campos = {}) {
     'data-antiga': (a, b) => dataOrdenar(a) - dataOrdenar(b),
     'nome':        (a, b) => achatar(a.nome).localeCompare(achatar(b.nome)),
     'aberturas':   (a, b) => (b.aberturas || 0) - (a.aberturas || 0),
+    // Stylist Circle (24/09): a faixa da nota de qualificação — A, B, C e por
+    // último quem não tem nota; dentro da mesma faixa, a nota maior primeiro e
+    // depois o nome. A linha precisa ter vindo por `comFaixa` (qualificacao-regras.js).
+    'faixa':       (a, b) => (posicaoDaFaixa(a.faixa) - posicaoDaFaixa(b.faixa))
+                          || ((b.nota ?? -1) - (a.nota ?? -1))
+                          || achatar(a.nome).localeCompare(achatar(b.nome)),
   }
   return recortada.sort(ordens[f.ordem] || ordens['data-nova'])
 }

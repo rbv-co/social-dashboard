@@ -202,6 +202,71 @@ export function dadosIniciais(agora = new Date()) {
     { id: 9103, numero: 48301, pessoa_id: 2309, situacao_id: 9, data_do_pedido: dia(-1), data_da_venda: dia(-1), receita_liquida: 2150, pecas: 1 },
   ]
 
+
+  // ── STYLIST CIRCLE: O SCORECARD E A NOTA DE QUALIFICAÇÃO (24/09/2026) ──────
+  // Bloco próprio, para o merge com as outras ondas ser limpo. Uma SEGUNDA
+  // stylist com encontro realizado (a Luísa), para a ficha ter com quem
+  // comparar: um realizado há 25 dias (2 vieram, 1 faltou, 1 recusou; uma
+  // compra), um cancelado há 8, e um contato sem resposta depois de ativar —
+  // é disso que saem as sugestões de Mobilização, Confiabilidade e Carteira.
+  // E as avaliações: Marina B → A (e depois dela um encontro realizado, para o
+  // "vale reavaliar"), Luísa C, Renata B, e a Paula SEM NOTA.
+  stylists.push({
+    id: 4, codigo: 'STY-0004', nome: 'Luísa Andrade (exemplo)', whatsapp: '5519990000004',
+    cidade: 'Campinas', instagram: '@luisa.exemplo', atuacao: 'stylist', praca_preview: 'CPS',
+    loja: 'tivoli', origem_contato: 'evento', origem_canal: null, responsavel: 'Ionara',
+    prospectado_em: dia(-45), proxima_acao: 'Remarcar o encontro que caiu', proxima_acao_em: dia(4),
+    ativada_em: em(-40, '15:00'), estagio: 'evento_realizado', ativa: true, teste: false,
+  })
+  encontros.push(
+    {
+      id: 4, codigo: `PE-${compacto(-25)}-CPS-01`, chave: 'M3T8W2QA', stylist_id: 4, quando: em(-25, '19:00'),
+      local: 'Loja do Tivoli Shopping', praca: 'CPS', loja: 'tivoli', vagas: 8, ativa: false,
+      arquivada: false, status: 'realizado', realizado_em: dia(-25), motivo: null,
+      observacoes: 'Primeiro encontro dela.', teste: false,
+    },
+    {
+      id: 5, codigo: `PE-${compacto(-8)}-CPS-01`, chave: 'P6N4X9DE', stylist_id: 4, quando: em(-8, '19:00'),
+      local: 'Loja do Tivoli Shopping', praca: 'CPS', loja: 'tivoli', vagas: 8, ativa: false,
+      arquivada: false, status: 'cancelado', realizado_em: null, motivo: 'A stylist precisou viajar.',
+      observacoes: null, teste: false,
+    },
+  )
+  const E4 = encontros[3].codigo, q4 = encontros[3].quando
+  pessoas.push(...[
+    ['Lívia Borges (exemplo)', '5519980000111'], ['Marta Queiroz (exemplo)', '5519980000112'],
+    ['Noemi Torres (exemplo)', '5519980000113'], ['Olga Freitas (exemplo)', '5519980000114'],
+  ].map(([nome, telefone], i) => ({ id: 2211 + i, nome, telefone, email: null })))
+  const daLuisa = [
+    atendimento(2211, E4, q4, { status: 'realizado', rsvp: 'sim', convidada_em: em(-32, '10:00'), convite_enviado_em: em(-32, '10:05'), presenca_em: q4, criado_em: em(-32, '10:00'), chave_convite: 'LV2BR3GS' }),
+    atendimento(2212, E4, q4, { status: 'realizado', rsvp: 'sim', convidada_em: em(-32, '10:00'), convite_enviado_em: em(-32, '10:06'), presenca_em: q4, criado_em: em(-32, '10:00'), chave_convite: 'MQ4ZR5TX' }),
+    atendimento(2213, E4, q4, { status: 'no_show', rsvp: 'sim', convidada_em: em(-32, '10:00'), convite_enviado_em: em(-32, '10:07'), criado_em: em(-32, '10:00'), chave_convite: 'NT6WY7PA' }),
+    atendimento(2214, E4, q4, { rsvp: 'nao', convidada_em: em(-32, '10:00'), convite_enviado_em: em(-32, '10:08'), criado_em: em(-32, '10:00'), chave_convite: 'OF8KC9HD' }),
+  ]
+  atendimentos.push(...daLuisa)
+  origens.push(...daLuisa.map((t) => ({ pessoa_id: t.pessoa_id, canal: 'private_edit', evento_id: t.evento_codigo, stylist_id: 'STY-0004' })))
+  pedidos.push({ id: 9004, pessoa_id: 2211, situacao_id: 9, data_do_pedido: dia(-22), receita_liquida: 2400, pecas: 1 })
+  contatos.push(
+    { id: 6, stylist_id: 4, canal: 'whatsapp', resultado: 'conversou', nota: 'Conheceu a marca num evento da loja.', criado_em: em(-44, '10:00'), criado_por_nome: 'Ionara' },
+    { id: 7, stylist_id: 4, canal: 'presencial', resultado: 'marcou_encontro', nota: null, criado_em: em(-41, '17:00'), criado_por_nome: 'Ionara' },
+    { id: 8, stylist_id: 4, canal: 'whatsapp', resultado: 'sem_resposta', nota: 'Perguntei a nova data; não respondeu.', criado_em: em(-6, '11:00'), criado_por_nome: 'Ionara' },
+  )
+  aberturas['STY-0004'] = 9
+  // `vessel_stylist_qualificacoes` — a nota e a faixa são as colunas geradas do
+  // banco (6·carteira + 5·portfólio + 4·mobilização + 3·acesso + 2·confiabilidade).
+  const avaliacao = (id, stylistId, n, quando, observacao = null) => {
+    const [carteira, portfolio, mobilizacao, acesso, confiabilidade] = n
+    const nota = 6 * carteira + 5 * portfolio + 4 * mobilizacao + 3 * acesso + 2 * confiabilidade
+    return { id, stylist_id: stylistId, carteira, portfolio, mobilizacao, acesso, confiabilidade, nota,
+      faixa: nota >= 75 ? 'A' : nota >= 55 ? 'B' : 'C', observacao, avaliado_em: quando, avaliado_por_nome: 'Ionara' }
+  }
+  const qualificacoes = [
+    avaliacao(1, 1, [3, 4, 2, 4, 4], em(-60, '10:00'), 'Carteira boa, ainda não sabemos quantas ela reúne.'),
+    avaliacao(2, 1, [4, 4, 3, 4, 5], em(-30, '11:00'), 'Depois do primeiro encontro: trouxe gente que compra.'),
+    avaliacao(3, 4, [2, 3, 2, 3, 3], em(-20, '16:00')),
+    avaliacao(4, 3, [3, 4, 3, 4, 3], em(-1, '10:00'), 'Portfólio forte; falta o primeiro encontro.'),
+  ]
+
   return {
     stylists, encontros,
     pessoas: [...pessoas, ...maisPessoas],
@@ -209,5 +274,6 @@ export function dadosIniciais(agora = new Date()) {
     origens: [...origens, ...origensDasVisitas],
     pedidos: [...pedidos, ...pedidosDasVisitas],
     contatos, aberturas, sessoes, leiturasDasSessoes, cadastros,
+    qualificacoes,
   }
 }
