@@ -8,7 +8,9 @@
       <div class="cv-modal-corpo">
         <p class="cv-sub"><span class="cv-codigo">{{ stylist.codigo }}</span> · {{ ESTAGIOS_DA_STYLIST[stylist.estagio] }}
           <span v-if="stylist.cidade"> · {{ stylist.cidade }}</span></p>
-        <p class="cv-sub">{{ telefoneLegivel(stylist.whatsapp) }}<span v-if="stylist.instagram"> · {{ stylist.instagram }}</span></p>
+        <!-- ⚠️ WHATSAPP OU INSTAGRAM (24/09/2026): pode faltar um dos dois. -->
+        <p class="cv-sub">{{ [telefoneLegivel(stylist.whatsapp) || 'sem WhatsApp', stylist.instagram].filter(Boolean).join(' · ') }}</p>
+        <p v-if="stylist.observacoes" class="cv-nota cv-observacoes"><b>Observações:</b> {{ stylist.observacoes }}</p>
         <p v-if="stylist.proxima_acao" class="cv-nota cv-nota-aviso"><b>Próxima ação:</b> {{ stylist.proxima_acao }}
           <span v-if="stylist.proxima_acao_em"> — até {{ dataLegivel(stylist.proxima_acao_em) }}</span></p>
         <div class="cv-acoes">

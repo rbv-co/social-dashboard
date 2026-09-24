@@ -255,7 +255,12 @@
                    placeholder="Ex.: ligar para apresentar o Circle"></label>
           <label class="cv-campo" for="sty-proxima-em"><span>Até quando</span>
             <input id="sty-proxima-em" type="date" v-model="novo.proximaAcaoEm"></label>
+          <label class="cv-campo cv-campo-largo" for="sty-observacoes"><span>Observações</span>
+            <textarea id="sty-observacoes" maxlength="2000" v-model="novo.observacoes"
+                      placeholder="E-mail, site, o que se sabe dela e não tem campo"></textarea></label>
         </div>
+        <!-- ⚠️ WHATSAPP OU INSTAGRAM (24/09/2026): um dos dois basta. -->
+        <p class="cv-nota">Sem WhatsApp? O Instagram basta — escreva o @ ou o endereço do perfil.</p>
 
         <!-- ⚠️ O CÓDIGO NÃO EXISTE COMO CAMPO: quem gera é o banco, no formato
              STY-0000, e a resposta abaixo mostra o que ele criou. -->
@@ -569,13 +574,20 @@
               <label class="cv-campo" :for="`ed-responsavel-${s.codigo}`"><span>Responsável</span>
                 <input :id="`ed-responsavel-${s.codigo}`" type="text" maxlength="80" v-model="rascunho.responsavel"></label>
               <label class="cv-campo" :for="`ed-prospectado-${s.codigo}`"><span>Data da prospecção</span>
-                <input :id="`ed-prospectado-${s.codigo}`" type="date" :max="hojeLocal" v-model="rascunho.prospectadoEm"></label>
+                <!-- ⚠️ IDENTIFICADA NÃO TEM DATA DA PROSPECÇÃO: o banco recusa
+                     (`identificada_sem_prospeccao`). Campo travado, com o motivo. -->
+                <input :id="`ed-prospectado-${s.codigo}`" type="date" :max="hojeLocal" v-model="rascunho.prospectadoEm"
+                       :disabled="continuaIdentificada(s)"></label>
+              <p v-if="continuaIdentificada(s)" class="cv-nota cv-campo-largo">
+                Identificada ainda não tem data da prospecção: ela ganha a data do dia em que avançar.</p>
               <label class="cv-campo cv-campo-largo" :for="`ed-proxima-${s.codigo}`"><span>Próxima ação</span>
                 <input :id="`ed-proxima-${s.codigo}`" type="text" maxlength="120" v-model="rascunho.proximaAcao"
                        :disabled="rascunho.acaoFeita"></label>
               <label class="cv-campo" :for="`ed-proxima-em-${s.codigo}`"><span>Até quando</span>
                 <input :id="`ed-proxima-em-${s.codigo}`" type="date" v-model="rascunho.proximaAcaoEm"
                        :disabled="rascunho.acaoFeita"></label>
+              <label class="cv-campo cv-campo-largo" :for="`ed-observacoes-${s.codigo}`"><span>Observações</span>
+                <textarea :id="`ed-observacoes-${s.codigo}`" maxlength="2000" v-model="rascunho.observacoes"></textarea></label>
               <label v-if="s.proxima_acao" class="cv-marcar" :for="`ed-feita-${s.codigo}`">
                 <input :id="`ed-feita-${s.codigo}`" type="checkbox" v-model="rascunho.acaoFeita">
                 <span>A próxima ação foi feita — apagar</span></label>
@@ -920,7 +932,7 @@ const nomeDeQuemUsa = () => estado.user?.user_metadata?.name || estado.user?.ema
 const NOVA_VAZIA = () => ({
   nome: '', whatsapp: '', cidade: '', instagram: '', atuacao: '', praca: '',
   loja: '', comoChegou: '', responsavel: nomeDeQuemUsa(), prospectadoEm: hojeLocal,
-  proximaAcao: '', proximaAcaoEm: '',
+  proximaAcao: '', proximaAcaoEm: '', observacoes: '',
 })
 const novo = reactive(NOVA_VAZIA())
 const problemas = computed(() => problemasDaParceira({ ...novo, origem: novo.comoChegou }))
@@ -947,10 +959,11 @@ async function criar() {
       p_prospectado_em: novo.prospectadoEm || null,
       p_proxima_acao: novo.proximaAcao || null,
       p_proxima_acao_em: novo.proximaAcaoEm || null,
+      p_observacoes: novo.observacoes || null,
     })
     if (!r?.ok) {
       erroAoCriar.value = mensagemDeCriar(r?.situacao)
-        + (r?.situacao === 'whatsapp_repetido' && r?.codigo ? ` (${r.codigo})` : '')
+        + (['whatsapp_repetido', 'instagram_repetido'].includes(r?.situacao) && r?.codigo ? ` (${r.codigo})` : '')
       return
     }
     criado.value = r
@@ -968,8 +981,10 @@ const editando = ref(null)
 const rascunho = reactive({
   nome: '', whatsapp: '', cidade: '', instagram: '', atuacao: '', estagio: '', praca: '',
   loja: '', comoChegou: '', responsavel: '', prospectadoEm: '', proximaAcao: '', proximaAcaoEm: '',
-  acaoFeita: false,
+  observacoes: '', acaoFeita: false,
 })
+// Ela está identificada e o formulário não a tira de lá ("Manter").
+const continuaIdentificada = (s) => s.estagio === 'identificada' && !rascunho.estagio
 const salvandoEdicao = ref(null)
 const erroDeEditar = ref(null)
 const mensagemEditar = ref('')
@@ -995,6 +1010,7 @@ function abrirEditar(s) {
     prospectadoEm: s.prospectado_em || '',
     proximaAcao: s.proxima_acao || '',
     proximaAcaoEm: s.proxima_acao_em || '',
+    observacoes: s.observacoes || '',
     acaoFeita: false,
   })
 }
@@ -1020,10 +1036,13 @@ async function salvarEdicao(s) {
       p_loja: rascunho.loja || null,
       p_origem_contato: rascunho.comoChegou || null,
       p_responsavel: rascunho.responsavel || null,
-      p_prospectado_em: rascunho.prospectadoEm || null,
+      p_prospectado_em: continuaIdentificada(s) ? null : (rascunho.prospectadoEm || null),
       p_proxima_acao: rascunho.acaoFeita ? null : (rascunho.proximaAcao || null),
       p_proxima_acao_em: rascunho.acaoFeita ? null : (rascunho.proximaAcaoEm || null),
       p_sem_proxima_acao: rascunho.acaoFeita,
+      // ⚠️ STRING, NUNCA NULO: vazio apaga (a regra de `vessel_stylist_editar`,
+      // a mesma da irmã `vessel_private_edit_situacao`) — é o jeito de limpar.
+      p_observacoes: rascunho.observacoes ?? '',
     })
     if (!r?.ok) {
       erroDeEditar.value = s.codigo

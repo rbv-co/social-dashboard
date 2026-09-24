@@ -12,8 +12,14 @@ import { proporcao, razao, taxaEscrita } from './estatistica.js'
 
 // ── o funil da stylist ──────────────────────────────────────────────────────
 
-/** Os onze estágios, na ordem do documento: o fluxo principal e as saídas. */
+/**
+ * Os doze estágios: o fluxo principal e as saídas.
+ * ⚠️ `identificada` (24/09/2026, decisão do dono) vem ANTES de Prospectado: é a
+ * parceira mapeada que ninguém abordou ainda. Não tem data de prospecção, e por
+ * isso o placar não a conta (ver `2026-09-24-vessel-stylist-etapa-identificada.sql`).
+ */
 export const ESTAGIOS_DA_STYLIST = {
+  identificada: 'Identificada',
   prospectado: 'Prospectado',
   contatado: 'Contatado',
   interessado: 'Interessado',
@@ -45,7 +51,10 @@ export const ESTAGIOS_AUTOMATICOS = ['ativado', 'evento_realizado', 'recorrente'
  */
 export function estagiosDeEscolher(ativadaEm) {
   if (ativadaEm) return ['pausado', 'inativo']
-  return Object.keys(ESTAGIOS_DA_STYLIST).filter((k) => !ESTAGIOS_AUTOMATICOS.includes(k))
+  // ⚠️ "Identificada" NÃO SE ESCOLHE: não se volta para ela (o banco recusa com
+  // `volta_para_identificada` — voltar apagaria a data da prospecção). Quem
+  // está nela vê "Manter: Identificada".
+  return Object.keys(ESTAGIOS_DA_STYLIST).filter((k) => !ESTAGIOS_AUTOMATICOS.includes(k) && k !== 'identificada')
 }
 
 /* ── A COR DA SITUAÇÃO (pedido do dono, 23/09/2026) ────────────────────────
@@ -57,6 +66,7 @@ export function estagiosDeEscolher(ativadaEm) {
  *   queda (laranja) · faltou (vermelho suave) · parada (cinza).
  * ⚠️ O TOM NÃO SUBSTITUI O TEXTO: a cor ajuda a achar, a palavra é que diz. */
 const TOM_DO_ESTAGIO = {
+  identificada: 'andamento',
   prospectado: 'andamento', contatado: 'andamento', interessado: 'andamento', em_negociacao: 'andamento',
   ativado: 'viva', evento_realizado: 'viva', recorrente: 'viva',
   sem_retorno: 'queda', nao_interessado: 'queda',

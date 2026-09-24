@@ -16,12 +16,15 @@ export const RESULTADOS = {
   sem_resposta: 'Sem resposta', conversou: 'Conversou', interesse: 'Demonstrou interesse',
   proposta: 'Pediu proposta', marcou_encontro: 'Marcou encontro', recusou: 'Recusou',
 }
-export const FLUXO_PRINCIPAL = ['prospectado', 'contatado', 'interessado', 'em_negociacao',
+// ⚠️ `identificada` na frente (24/09/2026): a sugestão de etapa de uma
+// identificada é a mesma de uma prospectada, porque nenhum resultado sugere
+// uma das duas — o espelho de `vessel_stylist_sugestao_de_etapa`.
+export const FLUXO_PRINCIPAL = ['identificada', 'prospectado', 'contatado', 'interessado', 'em_negociacao',
   'ativado', 'evento_realizado', 'recorrente']
 export const SAIDAS = ['sem_retorno', 'nao_interessado', 'pausado', 'inativo']
 
 const SUGERE = { conversou: 'contatado', interesse: 'interessado', proposta: 'em_negociacao' }
-const MANUAL = { prospectado: 'contatado', contatado: 'interessado', interessado: 'em_negociacao' }
+const MANUAL = { identificada: 'prospectado', prospectado: 'contatado', contatado: 'interessado', interessado: 'em_negociacao' }
 
 export function sugestaoDeEtapa(resultado, estagio, ativadaEm) {
   if (estagio === 'pausado' || estagio === 'inativo') return null
@@ -44,6 +47,13 @@ export function proximaEtapaManual(estagio) {
  * faz o gatilho do banco recalcular a etapa a partir dos encontros. */
 export function reabrirPara(ativadaEm) {
   return ativadaEm ? 'sem_retorno' : 'prospectado'
+}
+
+/** O título da coluna do quadro: as etapas no singular, a coluna que junta
+ * gente no plural quando o singular soaria errado ("Identificadas · 63"). */
+const TITULO_DA_COLUNA = { identificada: 'Identificadas', saidas: 'Saídas' }
+export function tituloDaColuna(k, rotulos = {}) {
+  return TITULO_DA_COLUNA[k] || rotulos[k] || k
 }
 
 export function prazoAtrasado(prazo, hoje) {

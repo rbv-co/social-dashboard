@@ -44,7 +44,7 @@
   font-size: var(--texto-etiqueta);
   color: var(--muted);
 }
-.cv-campo input, .cv-campo select {
+.cv-campo input, .cv-campo select, .cv-campo textarea {
   font-family: var(--fonte-principal);
   font-size: var(--texto-campo);
   color: var(--text);
@@ -55,6 +55,9 @@
   min-height: 40px;
   width: 100%;
 }
+/* Texto de várias linhas (observações): cresce na vertical, nunca de lado. */
+.cv-observacoes { white-space: pre-line; overflow-wrap: anywhere; }
+.cv-campo textarea { min-height: 96px; resize: vertical; line-height: 1.45; }
 
 .cv-problemas {
   margin: var(--sp-3) 0 0;
@@ -426,6 +429,7 @@
 .id-grupo.cv-grupo-venda     { --tom: var(--green); }
 
 /* ── o quadro por etapas: cor por fase, com degraus dentro de cada fase ── */
+.cv-fase-identificada     { --fase: color-mix(in srgb, var(--fase-antes) 28%, var(--surface)); }
 .cv-fase-prospectado      { --fase: color-mix(in srgb, var(--fase-antes) 45%, var(--surface)); }
 .cv-fase-contatado        { --fase: color-mix(in srgb, var(--fase-antes) 62%, var(--surface)); }
 .cv-fase-interessado      { --fase: color-mix(in srgb, var(--fase-antes) 80%, var(--surface)); }
