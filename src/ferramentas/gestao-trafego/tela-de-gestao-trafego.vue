@@ -246,22 +246,9 @@ import { baldeDoObjetivo, ehDeWhatsapp, baldeEfetivo } from './baldes.js'
 // Catálogo de métricas (como ler `actions`/`action_values` e o custo por
 // resultado) — mesmo motivo de baldes.js: a tela e o robô precisam da mesma
 // resposta. Ver metricas.js.
-import { GT_METRIC_CATALOG, GT_BALDE_PADRAO,
-  _gtNum as metricasGtNum, _gtActionVal as metricasGtActionVal,
-  _gtActionValue as metricasGtActionValue, _gtPerGasto as metricasGtPerGasto,
+import { GT_METRIC_CATALOG, GT_BALDE_PADRAO, _gtNum, _gtActionVal, _gtActionValue, _gtPerGasto,
   _GT_PURCHASE, _GT_LEAD, _GT_VISIT, _GT_MSG, _GT_MSG_CONN, _GT_MSG_REPLY,
   _GT_ATC, _GT_IC, _GT_VIDEO, _GT_POSTENG, _GT_LPV } from './metricas.js'
-// O guarda de globais desta pasta (`imports.test.mjs`, teste "toda global _gt*
-// usada na tela está declarada nela") só reconhece nome nascido de
-// let/const/var/function — não sabe o que é `import`. Sem este eco ele acusa
-// os quatro abaixo como "usados mas nunca declarados", mesmo vindo de
-// metricas.js — por isso o apelido acima (sem o prefixo `_gt`, senão o próprio
-// apelido cairia na mesma acusação), pra não colidir com o nome de verdade
-// aqui embaixo.
-const _gtNum = metricasGtNum;
-const _gtActionVal = metricasGtActionVal;
-const _gtActionValue = metricasGtActionValue;
-const _gtPerGasto = metricasGtPerGasto;
 import { normalizarRegua, metaDoBalde, reguaDaConta, mesclarMetasDaConta } from './regua.js'
 import { quantidadesDoInsight, calcularPonderada } from './ponderada.js'
 // Alvo de cada tipo de campanha (custo por lead/conversa/venda/visita/mil

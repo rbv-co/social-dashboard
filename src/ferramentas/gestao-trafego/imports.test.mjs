@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
-import { guardarImports, scriptDoVue, semComentarios } from '../../compartilhado/guarda-de-imports.mjs'
+import { guardarImports, scriptDoVue, semComentarios, nomesImportados } from '../../compartilhado/guarda-de-imports.mjs'
 
 // TODO NOME DE MÓDULO USADO NUMA TELA DESTA PASTA PRECISA ESTAR IMPORTADO.
 //
@@ -143,6 +143,15 @@ test('toda global _gt* usada na tela está declarada nela', () => {
   for (const m of script.matchAll(/\b(?:let|const|var)\s+[^;\n]+/g)) {
     for (const n of m[0].matchAll(/[,(]\s*([\w$]+)\s*=/g)) declarados.add(n[1]);
   }
+  // Nome que chega por `import { nome } from './modulo.js'` nasce no arquivo
+  // do mesmo jeito que um `const` — é um vizinho puro dando a resposta, não a
+  // tela reinventando. Sem isto, importar QUALQUER `_gt*` de um módulo (como
+  // metricas.js) virava acusação falsa: o guarda não sabe ler `import`, só
+  // let/const/var/function (defeito real, 24/09/2026 — a extração de
+  // metricas.js quase ganhou um contorno por causa disto). `nomesImportados`
+  // já trata `nome as apelido` corretamente; é o mesmo motor do guarda de
+  // cima, só que lido pelo ângulo de "declarado" em vez de "importado".
+  for (const nome of nomesImportados(script)) declarados.add(nome);
 
   const usados = new Set();
   for (const m of script.matchAll(/(^|[^\w.$'"`])(_gt[\w$]*)/gm)) usados.add(m[2]);
@@ -160,6 +169,26 @@ test('o proprio teste de globais enxerga uma que falta', () => {
   const usados = new Set();
   for (const m of script.matchAll(/(^|[^\w.$'"`])(_gt[\w$]*)/gm)) usados.add(m[2]);
   assert.deepEqual([...usados].filter((n) => !declarados.has(n)), ['_gtB']);
+});
+
+// O DEFEITO REAL (24/09/2026): a extração do catálogo de métricas pra
+// metricas.js importou `_gtNum` direto (`import { _gtNum } from
+// './metricas.js'`) e o teste de cima acusou "usado mas nunca declarado" —
+// porque só sabia ler let/const/var/function, nunca `import`. Provando as
+// duas pontas: `_gtNum` vindo de import não pode voltar a ser falso positivo,
+// e `_gtB`, que não veio de lugar nenhum, precisa continuar sendo pego —
+// senão a correção de cima esvaziou o guarda em vez de consertá-lo.
+test('nome que chega por import não é falso positivo, e nome sem dono continua sendo pego', () => {
+  const script = "import { _gtNum } from './metricas.js'\nfunction f(){ _gtNum(1); _gtB(2); }";
+  const declarados = new Set();
+  for (const m of script.matchAll(/\b(?:let|const|var)\s+([\w$]+)/g)) declarados.add(m[1]);
+  for (const m of script.matchAll(/\bfunction\s+([\w$]+)/g)) declarados.add(m[1]);
+  for (const nome of nomesImportados(script)) declarados.add(nome);
+  const usados = new Set();
+  for (const m of script.matchAll(/(^|[^\w.$'"`])(_gt[\w$]*)/gm)) usados.add(m[2]);
+  const faltando = [...usados].filter((n) => !declarados.has(n)).sort();
+  assert.deepEqual(faltando, ['_gtB'],
+    '_gtNum veio de import e não podia ser acusado; _gtB não veio de lugar nenhum e tinha de continuar');
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
