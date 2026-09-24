@@ -20,7 +20,7 @@
 import { proporcaoDoConjunto } from './estatistica.js'
 
 /**
- * Quais ações exigem `hasPermission('atendimentos', 'editar')`.
+ * Quais ações exigem `hasPermission('atendimentos.stylist-circle', 'editar')`.
  *
  * ⚠️ "REATIVAR" ENTRA JUNTO COM "DESATIVAR": são o mesmo botão, chamando a
  * mesma função (`vessel_stylist_desativar`) com `p_ativa` trocado — não duas
@@ -75,7 +75,7 @@ export function mensagemDeCriar(situacao) {
     case 'ok':
       return ''
     case 'sem_permissao':
-      return 'Você não tem a permissão de Atendimentos para cadastrar parceira.'
+      return 'Você não tem a permissão de mexer no Stylist Circle para cadastrar parceira.'
     case 'sem_nome':
       return 'Escreva o nome da parceira.'
     case 'whatsapp_invalido':
@@ -116,7 +116,7 @@ export function mensagemDeEditar(situacao) {
     case 'ok':
       return ''
     case 'sem_permissao':
-      return 'Você não tem a permissão de Atendimentos para corrigir parceira.'
+      return 'Você não tem a permissão de mexer no Stylist Circle para corrigir parceira.'
     case 'nao_achei':
       return 'Não achei mais esta parceira — a lista pode ter mudado. Recarregue e tente de novo.'
     case 'whatsapp_invalido':
@@ -152,7 +152,7 @@ export function mensagemDeDesativar(situacao) {
     case 'ok':
       return ''
     case 'sem_permissao':
-      return 'Você não tem a permissão de Atendimentos para mexer nesta parceira.'
+      return 'Você não tem a permissão de mexer no Stylist Circle para mexer nesta parceira.'
     case 'nao_achei':
       return 'Não achei mais esta parceira — a lista pode ter mudado. Recarregue e tente de novo.'
     default:

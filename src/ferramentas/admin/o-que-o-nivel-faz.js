@@ -134,11 +134,51 @@ export const FRASES = {
     // marca a presença — ele chama `vessel_situacao_do_atendimento`, que CHECA
     // a permissão POR DENTRO, no banco: tirar o acesso aqui fecha a porta de
     // verdade, não só esconde o botão.
-    sem: 'Os atendimentos da Vessel não aparecem no menu dela.',
+    sem: 'O Private Appointment não aparece no menu do Comercial Vessel dela.',
     ver: 'Vê quem tem horário marcado, quem veio, a taxa de comparecimento e '
       + 'o que a cliente comprou depois da visita. Não marca nada.',
     mexer: 'Além de ver, marca que a cliente veio, não veio ou remarcou — é '
       + 'esse clique que alimenta a taxa de comparecimento.',
+  },
+  // ── As telas do Comercial Vessel que ganharam chave própria em 24/09/2026.
+  // A trava do banco é a da família (`is_vessel_atendimentos*`, que aceita
+  // 'atendimentos' ou 'atendimentos.<tela>'): "mexer" aqui chama funções que
+  // CONFEREM a ação editar por dentro — tirar o acesso fecha a porta de
+  // verdade. Ações conferidas em beauty-sessions-regras.js,
+  // private-edit-regras.js e stylist-circle-regras.js (ACOES_QUE_EXIGEM_EDITAR).
+  'atendimentos.beauty-sessions': {
+    sem: 'O Beauty Sessions não aparece no menu do Comercial Vessel dela.',
+    ver: 'Vê as sessões, quem leu o QR da mesa e quem virou lead. Não cria, '
+      + 'não encerra e não cadastra lead.',
+    mexer: 'Cria, corrige, encerra, reabre, arquiva e apaga sessão, e cadastra '
+      + 'lead na hora, pelo celular da equipe.',
+  },
+  'atendimentos.private-edit': {
+    sem: 'O Private Edit não aparece no menu do Comercial Vessel dela.',
+    ver: 'Vê os encontros das stylists, as convidadas e quem foi. Não marca, '
+      + 'não convida e não muda a situação do encontro.',
+    mexer: 'Marca, corrige, encerra, arquiva e apaga encontro, inclui '
+      + 'convidada e muda a situação do encontro.',
+  },
+  'atendimentos.stylist-circle': {
+    sem: 'O Stylist Circle não aparece no menu do Comercial Vessel dela.',
+    ver: 'Vê as parceiras, o quadro do funil, o tráfego e as vendas que cada '
+      + 'uma trouxe, o scorecard e a nota de qualificação. Não cadastra nem '
+      + 'move ninguém.',
+    mexer: 'Cadastra, corrige, desativa e move parceira no funil, registra '
+      + 'contato, avalia a qualificação e configura as etapas do funil.',
+  },
+  'atendimentos.material-grafico': {
+    sem: 'O Material Gráfico não aparece no menu do Comercial Vessel dela.',
+    ver: 'Vê e baixa os QR de cada ação (PNG e SVG) para a gráfica. É só '
+      + 'leitura: nada aqui se altera.',
+  },
+  'atendimentos.appointment-card': {
+    // É um <a> para o site da Vessel (enderecos-publicos.js): a chave só
+    // mostra ou esconde o cartão. O gerador em si é página pública.
+    sem: 'O cartão do Appointment Card não aparece no menu dela. (O gerador '
+      + 'mora no site da Vessel: quem tiver o endereço ainda abre.)',
+    ver: 'Vê o cartão que abre o gerador do Appointment Card no site da Vessel.',
   },
   'claude.status': {
     // mapa-de-enderecos.js:31 (rota gateada em 'ver'); dentro da tela não há

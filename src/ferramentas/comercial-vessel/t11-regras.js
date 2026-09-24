@@ -83,7 +83,7 @@ export function seloDoStatus(e) {
 export function mensagemDeSituacaoDoEncontro(situacao) {
   switch (situacao) {
     case 'ok': return ''
-    case 'sem_permissao': return 'Você não tem a permissão de Atendimentos para mudar a situação do encontro.'
+    case 'sem_permissao': return 'Você não tem a permissão de mexer no Private Edit para mudar a situação do encontro.'
     case 'nao_achei': return 'Não achei mais este encontro — a lista pode ter mudado. Recarregue e tente de novo.'
     case 'status_invalido': return 'Escolha uma situação da lista.'
     case 'sem_motivo': return 'Escreva o motivo. Encontro cancelado ou não realizado precisa dele.'
@@ -152,7 +152,7 @@ export function mensagemDeConvidar(situacao) {
   switch (situacao) {
     case 'ok': return ''
     case 'ja_estava': return 'Ela já estava neste encontro — é a mesma convidada, não uma segunda.'
-    case 'sem_permissao': return 'Você não tem a permissão de Atendimentos para incluir convidadas.'
+    case 'sem_permissao': return 'Você não tem a permissão de mexer no Private Edit para incluir convidadas.'
     case 'nao_achei': return 'Não achei mais este encontro — a lista pode ter mudado. Recarregue e tente de novo.'
     case 'encontro_fechado': return 'Este encontro foi cancelado ou arquivado: não recebe mais convidadas.'
     case 'sem_nome': return 'Escreva o nome da convidada.'
@@ -165,7 +165,7 @@ export function mensagemDeConvidar(situacao) {
 export function mensagemDeMarcar(situacao) {
   switch (situacao) {
     case 'ok': return ''
-    case 'sem_permissao': return 'Você não tem a permissão de Atendimentos para marcar isto.'
+    case 'sem_permissao': return 'Você não tem a permissão de mexer no Private Edit para marcar isto.'
     case 'nao_achei': return 'Não achei mais esta convidada — recarregue e tente de novo.'
     default: return 'Não consegui gravar agora. Tente de novo em um instante.'
   }

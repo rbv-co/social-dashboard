@@ -15,6 +15,7 @@
 import { criarBancoDeMentira, MARCA_DO_BANCO_DE_MENTIRA } from './banco-de-mentira.js'
 import { USUARIO_DA_DEMONSTRACAO } from './dados-iniciais.js'
 import { ORIGEM_DOS_AVISOS } from './roteiro.js'
+import { FERRAMENTAS } from '../compartilhado/catalogo-de-ferramentas.js'
 
 export const REF = 'kounqtdoioootxqegkij'
 export const CHAVE_DA_SESSAO = `sb-${REF}-auth-token`
@@ -30,9 +31,12 @@ const USUARIO = { id: UID, aud: 'authenticated', role: 'authenticated', email: E
   app_metadata: { provider: 'email' }, user_metadata: { name: USUARIO_DA_DEMONSTRACAO }, created_at: '2026-01-01T00:00:00Z' }
 const SESSAO = { access_token: CRACHA, token_type: 'bearer', expires_in: 31536000, expires_at: 4102444800,
   refresh_token: 'demonstracao', user: USUARIO }
-// ⚠️ O PERFIL DE QUEM USA O COMERCIAL VESSEL: ver e editar Atendimentos, e só.
-const PERFIL = [{ role: 'viewer', features: ['atendimentos'], avatar_url: null,
-  permissions: { atendimentos: ['ver', 'editar'] }, allowed_accounts: [], is_superadmin: false,
+// ⚠️ O PERFIL DE QUEM USA O COMERCIAL VESSEL: tudo da família 'atendimentos'
+// (desde 24/09/2026 cada tela tem a sua chave — sai do catálogo, para a
+// demonstração não perder um cartão quando nascer a próxima tela), e só.
+const DA_FAMILIA = FERRAMENTAS.filter((f) => f.key === 'atendimentos' || f.key.startsWith('atendimentos.'))
+const PERFIL = [{ role: 'viewer', features: ['atendimentos', ...DA_FAMILIA.map((f) => f.key).filter((k) => k !== 'atendimentos')], avatar_url: null,
+  permissions: Object.fromEntries(DA_FAMILIA.map((f) => [f.key, f.acoes.slice()])), allowed_accounts: [], is_superadmin: false,
   precisa_trocar_senha: false, escopo_por_equipe: false }]
 
 function resposta(corpo, status = 200, cabecalhos = {}) {

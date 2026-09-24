@@ -19,7 +19,7 @@ import { proporcao } from '../comercial-vessel/estatistica.js'
 
 /**
  * Quais ações cada sessão permite, dado só se a pessoa TEM a permissão de
- * editar (`hasPermission('atendimentos', 'editar')`).
+ * editar (`hasPermission('atendimentos.beauty-sessions', 'editar')`).
  *
  * "Ver quem foi"/leitura não existe nesta tela (Beauty Session não tem lista
  * de convidadas — só a contagem de leituras do QR), então esta lista cobre
@@ -81,7 +81,7 @@ export function mensagemDeEditar(situacao) {
     case 'ok':
       return ''
     case 'sem_permissao':
-      return 'Você não tem a permissão de Atendimentos para editar sessões.'
+      return 'Você não tem a permissão de mexer no Beauty Sessions para editar sessões.'
     case 'nao_achei':
       return 'Não achei mais esta sessão — a lista pode ter mudado. Recarregue e tente de novo.'
     default:
@@ -95,7 +95,7 @@ export function mensagemDeArquivar(situacao) {
     case 'ok':
       return ''
     case 'sem_permissao':
-      return 'Você não tem a permissão de Atendimentos para arquivar sessões.'
+      return 'Você não tem a permissão de mexer no Beauty Sessions para arquivar sessões.'
     case 'nao_achei':
       return 'Não achei mais esta sessão — a lista pode ter mudado. Recarregue e tente de novo.'
     default:
@@ -112,7 +112,7 @@ export function mensagemDeApagar(situacao) {
     case 'ok':
       return ''
     case 'sem_permissao':
-      return 'Você não tem a permissão de Atendimentos para apagar sessões.'
+      return 'Você não tem a permissão de mexer no Beauty Sessions para apagar sessões.'
     case 'nao_achei':
       return 'Não achei mais esta sessão — a lista pode ter mudado. Recarregue e tente de novo.'
     default:

@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
+import { ferramentaDaRota } from '../../compartilhado/catalogo-de-ferramentas.js'
 
 /* AS GUARDAS DO MENU DO COMERCIAL VESSEL — no estilo de
  * `../beauty-sessions/guardas-da-tela.test.mjs`: leem o `.vue` de verdade e
@@ -50,11 +51,13 @@ test('⚠️ o card do Appointment Card é um <a> que sai do sistema, não um <d
     'o card do Appointment Card precisa apontar para ENDERECO_DO_GERADOR_DE_CARTAO')
 })
 
-test('⚠️ o card do Appointment Card está atrás do MESMO porteiro que os outros módulos Vessel (podeAtendimentos), não sempre visível', () => {
+// 24/09/2026: cada cartão tem a SUA chave, lida do catálogo por podeAbrir().
+test('⚠️ o card do Appointment Card está atrás da chave DELE (podeAbrir), não sempre visível', () => {
   const tag = tagDeAberturaDoCard(ler())
-  assert.match(tag, /v-if="podeAtendimentos"/,
-    'o card do Appointment Card precisa estar atrás de v-if="podeAtendimentos" — sem isso, ' +
+  assert.match(tag, /v-if="podeAbrir\('appointment-card'\)"/,
+    'o card do Appointment Card precisa estar atrás de v-if="podeAbrir(\'appointment-card\')" — sem isso, ' +
     'alguém com só "carrinho" enxergaria um card que não devia')
+  assert.equal(ferramentaDaRota('appointment-card')?.key, 'atendimentos.appointment-card')
 })
 
 // ⚠️ Quem tem SÓ 'carrinho' tem de ver o Funil e NÃO ver o Appointment Card —
@@ -62,7 +65,7 @@ test('⚠️ o card do Appointment Card está atrás do MESMO porteiro que os ou
 // TEXTO da tela (os dois v-if certos, na tag certa), não só pela unidade de
 // hasPermission — hasPermission já está certa; o que falta provar é a
 // LIGAÇÃO com o template.
-test('⚠️ o Funil de Carrinho continua atrás de podeCarrinho, não de podeAtendimentos', () => {
+test('⚠️ o Funil de Carrinho continua atrás da chave carrinho, não de atendimentos', () => {
   const fonte = ler()
   const idxTituloFunil = fonte.indexOf('>Funil de Carrinho<')
   assert.ok(idxTituloFunil !== -1, 'o card do Funil de Carrinho precisa existir na tela')
@@ -70,8 +73,9 @@ test('⚠️ o Funil de Carrinho continua atrás de podeCarrinho, não de podeAt
   const idxDivFunil = antes.lastIndexOf('<div class="cvmenu-card"')
   const fimDaTag = fonte.indexOf('>', idxDivFunil)
   const tagFunil = fonte.slice(idxDivFunil, fimDaTag + 1)
-  assert.match(tagFunil, /v-if="podeCarrinho"/,
-    'o card do Funil de Carrinho precisa continuar atrás de podeCarrinho')
+  assert.match(tagFunil, /v-if="podeAbrir\('funil-carrinho'\)"/,
+    'o card do Funil de Carrinho precisa continuar atrás da rota dele')
+  assert.equal(ferramentaDaRota('funil-carrinho')?.key, 'carrinho')
 })
 
 // ── O MATERIAL GRÁFICO (23/09/2026) ─────────────────────────────────────────
@@ -79,20 +83,23 @@ test('⚠️ o Funil de Carrinho continua atrás de podeCarrinho, não de podeAt
 // o roteiro não conhece cai no "nao-encontrada" e volta para a Central calado;
 // uma rota com chave diferente da do card mostra o card para quem a rota
 // barra. Os três pontos são conferidos juntos: o card, o nome e a chave.
-test('⚠️ o card do Material Gráfico está atrás de podeAtendimentos e abre a rota material-grafico', () => {
+test('⚠️ o card do Material Gráfico está atrás da chave dele e abre a rota material-grafico', () => {
   const fonte = ler()
   const idxTitulo = fonte.indexOf('>Material Gráfico<')
   assert.ok(idxTitulo !== -1, 'o card "Material Gráfico" precisa existir no menu')
   const antes = fonte.slice(0, idxTitulo)
   const idxDiv = antes.lastIndexOf('<div class="cvmenu-card"')
   const tag = fonte.slice(idxDiv, fonte.indexOf('>', idxDiv) + 1)
-  assert.match(tag, /v-if="podeAtendimentos"/, 'o card precisa estar atrás de podeAtendimentos')
+  assert.match(tag, /v-if="podeAbrir\('material-grafico'\)"/, 'o card precisa estar atrás de podeAbrir(material-grafico)')
   assert.match(tag, /@click="ir\('material-grafico'\)"/, 'o card precisa abrir a rota material-grafico')
 
   const mapa = readFileSync(new URL('../../mapa-de-enderecos.js', import.meta.url), 'utf8')
   const linha = mapa.split('\n').find((l) => l.includes("name: 'material-grafico'"))
   assert.ok(linha, 'a rota material-grafico precisa existir em mapa-de-enderecos.js')
   assert.match(linha, /path: '\/material-grafico'/)
-  assert.match(linha, /recurso: 'atendimentos'/, 'a rota precisa da MESMA chave do card (atendimentos)')
+  // A chave da rota e a do card saem do MESMO lugar (o catálogo): não há
+  // mais `recurso:` escrito na rota para divergir.
+  assert.doesNotMatch(linha, /recurso:/, 'a rota voltou a declarar a própria chave — ela sai do catálogo')
+  assert.equal(ferramentaDaRota('material-grafico')?.key, 'atendimentos.material-grafico')
   assert.match(linha, /tela-de-material-grafico\.vue/)
 })

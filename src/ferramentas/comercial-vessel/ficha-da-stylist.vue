@@ -182,7 +182,7 @@ const versaoDoScorecard = ref(0)
 const faixa = ref(null)
 
 const MENSAGENS = {
-  sem_permissao: 'Você não tem a permissão de Atendimentos para registrar contato.',
+  sem_permissao: 'Você não tem a permissão de mexer no Stylist Circle para registrar contato.',
   nao_achei: 'Não achei mais esta parceira. Recarregue a página.',
   canal_invalido: 'Escolha o canal.', resultado_invalido: 'Escolha o resultado.',
   nota_longa: 'A nota passou de 500 caracteres.',

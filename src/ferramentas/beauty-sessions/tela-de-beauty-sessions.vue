@@ -499,7 +499,7 @@ function voltar() { router.push({ name: paiDaTela('beauty-sessions') }) }
 // no valor de sempre desta tela (era `p_dias: 7` cravado antes desta tarefa).
 const P_DIAS = 7
 
-const podeEditar = computed(() => hasPermission('atendimentos', 'editar'))
+const podeEditar = computed(() => hasPermission('atendimentos.beauty-sessions', 'editar'))
 
 const sessoes = ref([])
 const carregando = ref(true)

@@ -9,11 +9,22 @@
 //
 // Devolve `true` (pode entrar) ou o destino do redirecionamento (objeto de
 // rota do vue-router: { name }).
-export function podeEntrar(rota, temSessao, checarPermissao) {
+//
+// O `meta` de cada rota NÃO é escrito à mão em mapa-de-enderecos.js: vem de
+// `metaDaRota()` do catálogo (compartilhado/catalogo-de-ferramentas.js).
+//   meta.recurso    → a chave da ferramenta
+//   meta.qualquerDe → uma PORTA (menu): entra quem vê qualquer uma de dentro
+//   meta.superadmin → só super-admin (a Administração)
+//   meta.foraDoCatalogo → rota que ninguém registrou: fechada
+export function podeEntrar(rota, temSessao, checarPermissao, ehSuperadmin = false) {
   if (rota.name === 'login') return true
   if (!temSessao) return { name: 'login' }
   if (!rota.name) return { name: 'inicio' } // rota inexistente: Início, nunca tela branca
-  const recurso = rota.meta?.recurso
-  if (recurso && !checarPermissao(recurso)) return { name: 'inicio' }
+  const meta = rota.meta || {}
+  // Rota que o catálogo não conhece fica FECHADA, não aberta por omissão.
+  if (meta.foraDoCatalogo) return { name: 'inicio' }
+  if (meta.superadmin && !ehSuperadmin) return { name: 'inicio' }
+  if (meta.recurso && !checarPermissao(meta.recurso)) return { name: 'inicio' }
+  if (Array.isArray(meta.qualquerDe) && !meta.qualquerDe.some((k) => checarPermissao(k))) return { name: 'inicio' }
   return true
 }

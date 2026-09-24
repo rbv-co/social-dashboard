@@ -24,7 +24,7 @@ import { proporcaoDoConjunto } from './estatistica.js'
 
 /**
  * R13: quais ações cada encontro permite, dado só se a pessoa TEM a permissão
- * de editar (`hasPermission('atendimentos', 'editar')`).
+ * de editar (`hasPermission('atendimentos.private-edit', 'editar')`).
  *
  * ⚠️ "ENCERRAR" E "REABRIR" ENTRARAM NA LISTA: a migration
  * `2026-09-19-vessel-encerrar-exige-editar.sql` apertou
@@ -101,7 +101,7 @@ export function mensagemDeEditar(situacao) {
     case 'ok':
       return ''
     case 'sem_permissao':
-      return 'Você não tem a permissão de Atendimentos para editar encontros.'
+      return 'Você não tem a permissão de mexer no Private Edit para editar encontros.'
     case 'nao_achei':
       return 'Não achei mais este encontro — a lista pode ter mudado. Recarregue e tente de novo.'
     case 'stylist_nao_achei':
@@ -125,7 +125,7 @@ export function mensagemDeArquivar(situacao) {
     case 'ok':
       return ''
     case 'sem_permissao':
-      return 'Você não tem a permissão de Atendimentos para arquivar encontros.'
+      return 'Você não tem a permissão de mexer no Private Edit para arquivar encontros.'
     case 'nao_achei':
       return 'Não achei mais este encontro — a lista pode ter mudado. Recarregue e tente de novo.'
     default:
@@ -177,7 +177,7 @@ export function mensagemDeApagar(situacao) {
     case 'ok':
       return ''
     case 'sem_permissao':
-      return 'Você não tem a permissão de Atendimentos para apagar encontros.'
+      return 'Você não tem a permissão de mexer no Private Edit para apagar encontros.'
     case 'nao_achei':
       return 'Não achei mais este encontro — a lista pode ter mudado. Recarregue e tente de novo.'
     default:

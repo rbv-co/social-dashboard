@@ -132,7 +132,7 @@ export function recadoDoCadastro(r) {
     case 'nao_achei':
       return { tom: 'erro', texto: 'Não achei mais esta sessão — ela pode ter sido apagada. Recarregue a página.' }
     case 'sem_permissao':
-      return { tom: 'erro', texto: 'Você não tem a permissão de Atendimentos para cadastrar leads.' }
+      return { tom: 'erro', texto: 'Você não tem a permissão de mexer no Beauty Sessions para cadastrar leads.' }
     case 'sem_nome':
       return { tom: 'erro', texto: 'Escreva o nome dela.' }
     case 'whatsapp_invalido':
