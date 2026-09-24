@@ -248,7 +248,10 @@
 .cv-barra-campo input, .cv-barra-campo select {
   width: 100%;
   font-family: var(--fonte-principal);
-  font-size: var(--texto-corpo);
+  /* ⚠️ `--texto-campo` (16px), não `--texto-corpo`: campo abaixo de 16px faz o
+     iPhone dar zoom ao tocar (medido pelo dono, 24/09/2026). Vale para as três
+     barras do Comercial: Stylist Circle, Private Edit e Beauty Sessions. */
+  font-size: var(--texto-campo);
   color: var(--text);
   background: var(--bg);
   border: 1px solid var(--border);
