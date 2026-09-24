@@ -123,6 +123,12 @@ export function itemDoPrivateEdit(e = {}) {
 export function itemDaStylist(s = {}) {
   const codigo = String(s.codigo || '').toUpperCase()
   const ativa = s.ativa !== false
+  // ⚠️ SÓ A PARCEIRA ATIVADA TEM QR (pedido do dono, 25/09/2026): o link dela
+  // (/s/STY-…) é o que ela usa para trazer clientes — e isso só começa quando
+  // ela chega numa etapa que libera o Private Edit (hoje: "Ativada"). Antes
+  // disso ela ainda está no começo da jornada, e um QR dela na gráfica é cedo.
+  // A marca vem da MESMA função da tela Stylist Circle (`etapa_libera_private_edit`).
+  const liberada = s.etapa_libera_private_edit === true
   return {
     acao: 'stylist-circle',
     chave: `sty-${codigo}`,
@@ -133,8 +139,10 @@ export function itemDaStylist(s = {}) {
     legenda: acao('stylist-circle').legenda,
     motivoSemQr: acao('stylist-circle').motivoSemQr,
     arquivo: { programa: 'stylist-circle', codigo },
-    ativo: ativa,
-    situacao: ativa ? { texto: 'Ativa', tom: 'viva' } : { texto: 'Desativada', tom: 'parada' },
+    ativo: ativa && liberada,
+    situacao: !ativa ? { texto: 'Desativada', tom: 'parada' }
+      : liberada ? { texto: 'Ativada', tom: 'viva' }
+      : { texto: `Ainda não ativada${s.etapa ? ` · ${s.etapa}` : ''}`, tom: 'parada' },
     ordem: codigo,
     busca: [codigo, s.nome, s.cidade],
   }
@@ -184,7 +192,7 @@ const VAZIO = {
   'stylist-circle': {
     nada: 'Nenhuma parceira cadastrada ainda. Ela nasce na tela Stylist Circle.',
     busca: 'Nenhuma parceira com',
-    inativos: 'Nenhuma parceira ativa. Marque "Mostrar também encerrados e desativadas" para ver as outras.',
+    inativos: 'Nenhuma parceira ativada ainda. O QR dela aparece quando ela chega numa etapa que libera o Private Edit (hoje: Ativada), na tela Stylist Circle. Marque "Mostrar também encerrados e desativadas" para ver as outras.',
   },
 }
 
