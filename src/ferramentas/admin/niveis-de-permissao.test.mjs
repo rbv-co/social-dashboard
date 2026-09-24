@@ -6,9 +6,11 @@ import { degrausDoRecurso, degrauDoConjunto, acoesDoDegrau } from './niveis-de-p
 // PURO (compartilhado/catalogo-de-ferramentas.js), sem Vue nem Supabase. A
 // cópia à mão que existia aqui — e o teste que a vigiava — saíram: eram um
 // segundo catálogo, justamente o que envelhece.
-import { RECURSOS } from '../../compartilhado/catalogo-de-ferramentas.js'
+import { RECURSOS, FERRAMENTAS } from '../../compartilhado/catalogo-de-ferramentas.js'
 
-const acha = (k) => RECURSOS.find((r) => r.key === k)
+// Procura no catálogo INTEIRO: uma ferramenta desativada sai do editor, mas o
+// conjunto gravado dela no banco continua tendo de virar degrau.
+const acha = (k) => FERRAMENTAS.find((r) => r.key === k)
 const chaves = (r) => degrausDoRecurso(r).map((d) => d.chave)
 
 test('ferramenta que so deixa VER tem dois degraus', () => {

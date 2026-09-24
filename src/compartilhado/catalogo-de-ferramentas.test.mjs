@@ -21,7 +21,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
-  FERRAMENTAS, GRUPOS, PORTAS, RECURSOS, PERMISSION_TREE, ROTAS_SEM_CHAVE,
+  FERRAMENTAS, ATIVAS, DESATIVADAS, GRUPOS, PORTAS, RECURSOS, PERMISSION_TREE, ROTAS_SEM_CHAVE, APROVACOES,
   metaDaRota, ferramentaDaRota, chavesDaPorta, podeAbrirRota,
 } from './catalogo-de-ferramentas.js'
 import { agruparRecursos, ACOES_MATRIZ } from '../ferramentas/admin/agrupar-permissoes.js'
@@ -131,7 +131,8 @@ test('toda chave de hasPermission(...) no código tem linha no editor', () => {
   const blocoLegado = controle.slice(controle.indexOf('const _legado = {'), controle.indexOf('}', controle.indexOf('const _legado = {')))
   const legadas = new Set([...blocoLegado.matchAll(/'([^']+)':/g)].map((m) => m[1]))
   assert.ok(legadas.has('tool:social'), 'não consegui ler a ponte _legado')
-  const conhecidas = new Set([...RECURSOS.map((r) => r.key), ...legadas, 'sales', 'meta'])
+  // Desativada é conhecida (a tela antiga ainda pergunta por ela), só não aparece.
+  const conhecidas = new Set([...FERRAMENTAS.map((f) => f.key), ...legadas, 'sales', 'meta'])
   const achadas = []
   for (const arq of [...TELAS, ...arquivos(SRC, '.js')]) {
     if (arq.endsWith('.test.mjs')) continue
@@ -153,16 +154,16 @@ test('toda ferramenta do catálogo tem UMA linha no editor, no cartão certo', (
     assert.ok(!onde.has(r.key), `${r.key} aparece em dois cartões do editor`)
     onde.set(r.key, g.label)
   }
-  for (const f of FERRAMENTAS) {
+  for (const f of ATIVAS) {
     const esperado = GRUPOS.find((g) => g.key === f.grupo)?.label
     assert.ok(esperado, `${f.key} diz morar no grupo "${f.grupo}", que não existe em GRUPOS`)
     assert.equal(onde.get(f.key), esperado, `${f.key} tinha de estar no cartão "${esperado}" do editor`)
   }
-  assert.equal(onde.size, FERRAMENTAS.length)
+  assert.equal(onde.size, ATIVAS.length)
 })
 
 test('todo cartão do editor tem pelo menos uma ferramenta, e toda chave é única', () => {
-  for (const g of GRUPOS) assert.ok(FERRAMENTAS.some((f) => f.grupo === g.key), `o cartão "${g.label}" está vazio`)
+  for (const g of GRUPOS) assert.ok(ATIVAS.some((f) => f.grupo === g.key), `o cartão "${g.label}" está vazio`)
   const chaves = FERRAMENTAS.map((f) => f.key)
   assert.equal(new Set(chaves).size, chaves.length, 'chave repetida no catálogo')
 })
@@ -194,7 +195,7 @@ test('toda ferramenta tem caminho de clique a partir do Início', () => {
     }
     const portas = [...(f.rotas || []), ...(f.links || [])]
     assert.ok(portas.length, `${f.key} não tem rota, link nem dentroDe — é uma chave que não guarda nada`)
-    if (f.semCartao) continue // cartão desligado de propósito, com o motivo escrito no catálogo
+    if (f.desativada) continue // desligada de propósito, com o motivo escrito no catálogo
     if (!portas.some((r) => alcancaveis.has(r))) semCaminho.push(f.key)
   }
   assert.deepEqual(semCaminho, [],
@@ -249,4 +250,40 @@ test('cada tela do Comercial Vessel pede a SUA chave para mexer', () => {
     assert.match(ler('ferramentas', tela), new RegExp(`hasPermission\\('${chave.replace('.', '\\.')}', 'editar'\\)`), tela)
     assert.equal(ferramentaDaRota(ROTAS_DO_MAPA.find((r) => r.tela && r.tela.endsWith(tela))?.nome)?.key, chave, tela)
   }
+})
+
+// ── A ferramenta desativada (decisão do dono, 24/09/2026) ──────────────────
+
+test('ferramenta desativada some do editor, fecha a rota e não abre porta — e não é apagada', () => {
+  assert.ok(DESATIVADAS.length >= 1)
+  const naArvore = new Set(PERMISSION_TREE.flatMap((g) => [g.key, ...g.children.map((c) => c.key)]))
+  const noEditor = new Set(agruparRecursos(RECURSOS, PERMISSION_TREE).flatMap((g) => g.recursos.map((r) => r.key)))
+  for (const f of DESATIVADAS) {
+    assert.ok(typeof f.desativada === 'string' && f.desativada.length > 10, `${f.key}: diga POR QUE foi desativada`)
+    assert.ok(!noEditor.has(f.key), `${f.key} está desativada e ainda aparece no editor`)
+    assert.ok(!naArvore.has(f.key) || GRUPOS.some((g) => g.key === f.key), `${f.key} ainda está na árvore do editor`)
+    assert.ok(!(f.key in APROVACOES))
+    for (const r of [...(f.rotas || []), ...(f.links || [])]) {
+      assert.deepEqual(metaDaRota(r), { desativada: true }, `a rota ${r} de ${f.key} tinha de estar fechada`)
+      assert.equal(podeAbrirRota(r, () => true, true), false, `a rota ${r} abre para alguém`)
+    }
+    for (const p of PORTAS) assert.ok(!chavesDaPorta(p.rota).includes(f.key), `${f.key} ainda abre a porta ${p.rota}`)
+  }
+  // O caso concreto: a Análise de Campanhas.
+  const ac = FERRAMENTAS.find((f) => f.key === 'meta.campanha')
+  assert.ok(ac?.desativada, 'meta.campanha continua no catálogo, marcada como desativada')
+  assert.equal(podeAbrirRota('meta-ads', (k) => k === 'meta.campanha'), false,
+    'quem só tem a Análise de Campanhas não pode ver a porta do Meta Ads: lá dentro não haveria nada')
+})
+
+test('salvar a ficha no editor NÃO apaga a concessão de uma ferramenta desativada', async () => {
+  // O editor só mexe nas chaves das linhas que mostra; "Marcar tudo" também.
+  const { marcarTudo } = await import('../ferramentas/admin/agrupar-permissoes.js')
+  const antes = { 'meta.campanha': ['ver'], 'meta.gestor': ['ver'] }
+  const tudoDesligado = marcarTudo(antes, RECURSOS, false)
+  assert.deepEqual(tudoDesligado, { 'meta.campanha': ['ver'] })
+  const tudoLigado = marcarTudo(antes, RECURSOS, true)
+  assert.deepEqual(tudoLigado['meta.campanha'], ['ver'])
+  // E o que vai para features[] (lido pelas Edge Functions) continua levando a chave.
+  assert.ok(derivarFeatures(antes).includes('meta.campanha'))
 })

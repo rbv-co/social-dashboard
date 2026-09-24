@@ -76,19 +76,23 @@ export const GRUPOS = [
 //           ela vive (uma aba, um botão)
 // caixinha— chave de "pode ou não pode": o editor mostra UMA caixinha com
 //           este texto em vez da escada de níveis
-// semCartao— a tela existe mas nenhum cartão leva a ela, de propósito (o
-//           motivo vai escrito aqui; o teste de caminho de clique a pula)
+// desativada— a ferramenta foi desligada de propósito (o motivo vai escrito
+//           aqui): não aparece no editor, a rota fica fechada e ela não abre
+//           porta. A chave continua conhecida, para as concessões antigas
+//           sobreviverem e para ela poder voltar.
 export const FERRAMENTAS = [
   { key: 'social', label: 'Redes Sociais — Dashboard', acoes: ['ver'], grupo: 'social', rotas: ['redes-sociais'] },
   { key: 'social.relatorio', label: 'Redes Sociais — Relatório Interativo', acoes: ['ver', 'exportar'], grupo: 'social', rotas: ['redes-relatorio'] },
   { key: 'sales.gestao', label: 'Gestão à Vista', acoes: ['ver'], grupo: 'sales', rotas: ['gestao-vista'] },
   { key: 'sales.analise', label: 'Análise de Vendas', acoes: ['ver'], grupo: 'sales', rotas: ['analise-vendas-marca', 'analise-vendas'] },
-  // ⚠️ O CARTÃO DESTA ESTÁ DESLIGADO de propósito (v-if="false" em
-  // tela-de-menu-meta-ads.vue): o conteúdo mudou para a Gestão de Tráfego. A
-  // rota segue de pé para link salvo, e a chave segue concedida — por isso
-  // continua no editor.
+  // ⚠️ DESATIVADA (decisão do dono, 24/09/2026). O conteúdo mudou para a
+  // Gestão de Tráfego e o cartão já estava desligado (v-if="false" em
+  // tela-de-menu-meta-ads.vue). Desativada = SAI DO EDITOR, a rota fica
+  // FECHADA e ela não conta para abrir a porta do Meta Ads. As concessões já
+  // gravadas no banco (8 pessoas) NÃO foram apagadas: o editor preserva a
+  // chave ao salvar. Para voltar, basta tirar o `desativada`.
   { key: 'meta.campanha', label: 'Análise de Campanhas', acoes: ['ver'], grupo: 'meta', rotas: ['meta-campanhas'],
-    semCartao: 'aposentada: o conteúdo mora na Gestão de Tráfego; só o link salvo abre' },
+    desativada: 'o conteúdo mora na Gestão de Tráfego; o cartão foi desligado de propósito' },
   { key: 'meta.gestor', label: 'Gestão de Tráfego', acoes: ['ver', 'editar'], grupo: 'meta', rotas: ['gestao-trafego'] },
   { key: 'meta.fabrica', label: 'Fábrica de Anúncios', acoes: ['ver', 'editar'], grupo: 'meta', rotas: ['fabrica-estudio', 'fabrica-nova', 'fabrica-looks', 'fabrica-campanha'] },
   { key: 'meta.hora', label: 'Relatório por Hora', acoes: ['ver'], grupo: 'meta', rotas: ['meta-relatorio-hora'] },
@@ -169,20 +173,24 @@ export const ROTAS_DE_SUPERADMIN = ['admin']
 // ── Derivados (nunca escrever estas listas à mão em outro arquivo) ─────────
 
 // As linhas do editor. Mesmo formato de sempre: { key, label, acoes }.
-export const RECURSOS = FERRAMENTAS.map(({ key, label, acoes }) => ({ key, label, acoes: acoes.slice() }))
+// As ferramentas que valem hoje (as `desativada` ficam fora de tudo abaixo).
+export const ATIVAS = FERRAMENTAS.filter((f) => !f.desativada)
+export const DESATIVADAS = FERRAMENTAS.filter((f) => f.desativada)
+
+export const RECURSOS = ATIVAS.map(({ key, label, acoes }) => ({ key, label, acoes: acoes.slice() }))
 
 // Os cartões do editor, no formato que `agruparRecursos` já lê.
 export const PERMISSION_TREE = GRUPOS.map((g) => ({
   key: g.key,
   label: g.label,
-  children: FERRAMENTAS.filter((f) => f.grupo === g.key && f.key !== g.key).map(({ key, label }) => ({ key, label })),
+  children: ATIVAS.filter((f) => f.grupo === g.key && f.key !== g.key).map(({ key, label }) => ({ key, label })),
 }))
 
 // As chaves de "pode ou não pode" (uma caixinha no editor).
-export const APROVACOES = Object.fromEntries(FERRAMENTAS.filter((f) => f.caixinha).map((f) => [f.key, f.caixinha]))
+export const APROVACOES = Object.fromEntries(ATIVAS.filter((f) => f.caixinha).map((f) => [f.key, f.caixinha]))
 
 export function chavesDoGrupo(grupo) {
-  return FERRAMENTAS.filter((f) => f.grupo === grupo).map((f) => f.key)
+  return ATIVAS.filter((f) => f.grupo === grupo).map((f) => f.key)
 }
 
 // Quem abre uma porta: quem vê QUALQUER ferramenta de dentro que tenha tela
@@ -192,7 +200,7 @@ export function chavesDaPorta(rota) {
   const p = PORTAS.find((x) => x.rota === rota)
   if (!p) return null
   if (p.chaves) return p.chaves.slice()
-  return FERRAMENTAS.filter((f) => f.grupo === p.grupo && !f.dentroDe).map((f) => f.key)
+  return ATIVAS.filter((f) => f.grupo === p.grupo && !f.dentroDe).map((f) => f.key)
 }
 
 // A ferramenta que guarda uma rota (ou um link para fora).
@@ -204,6 +212,7 @@ export function ferramentaDaRota(nome) {
 // num destes casos — o teste reprova a que não cair.
 export function metaDaRota(nome) {
   const f = ferramentaDaRota(nome)
+  if (f?.desativada) return { desativada: true } // fechada para todo mundo
   if (f) return { recurso: f.key }
   const porta = chavesDaPorta(nome)
   if (porta) return { qualquerDe: porta }
@@ -217,7 +226,7 @@ export function metaDaRota(nome) {
 //   temPermissao(recurso, acao) → boolean   ehSuperadmin → boolean
 export function podeAbrirRota(nome, temPermissao, ehSuperadmin = false) {
   const meta = metaDaRota(nome)
-  if (!meta) return false // fora do catálogo: fechado, nunca aberto por omissão
+  if (!meta || meta.desativada) return false // fora do catálogo ou desativada: fechado
   if (meta.superadmin) return !!ehSuperadmin
   if (meta.recurso) return !!temPermissao(meta.recurso, 'ver')
   if (meta.qualquerDe) return meta.qualquerDe.some((k) => temPermissao(k, 'ver'))
