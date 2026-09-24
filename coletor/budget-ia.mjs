@@ -164,6 +164,17 @@ export function montarMensagens(camp, ins, ads, conjuntos, regua) {
       impressoes: num(a.impressions),
       alcance: num(a.reach),
       frequencia: num(a.frequency),
+      // O RESULTADO deste criativo, no balde DA CAMPANHA (descido pronto, nunca
+      // recalculado por anúncio — ver H1 do review de 2026-07-28). Sem isto o
+      // robô mandava pausar criativo de conversão olhando só CTR e frequência.
+      resultado: (alvo && alvo.resultado && GT_METRIC_CATALOG[alvo.resultado])
+        ? GT_METRIC_CATALOG[alvo.resultado].compute(a) : null,
+      // Desvio do brief: aqui usamos `custoAtualDaCampanha`, não `custoDoAlvo`
+      // puro. `custoDoAlvo` devolve null pra engajamento (o custo dele só sai
+      // do ponto ponderado); usar só ele deixaria todo anúncio de campanha de
+      // engajamento sem custo, e o modelo voltaria a julgar o criativo só por
+      // CTR exatamente nesse balde. Nos demais baldes as duas dão o mesmo valor.
+      custo_por_resultado: custoAtualDaCampanha(balde, a, regua),
     })),
   };
   const user =
@@ -232,7 +243,9 @@ import { emVeiculacao } from '../src/ferramentas/gestao-trafego/veiculacao.js';
 // robô calculava `pnd` (só existe em engajamento) e mandava `custo_atual_reais:
 // null` pros outros baldes, enquanto o system prompt mandava citar esse número
 // contra a meta — a régua chegava ao Opus sem o número que ela mede.
-import { custoDoAlvo } from '../src/ferramentas/gestao-trafego/metricas.js';
+// GT_METRIC_CATALOG: o compute() de cada métrica (leads, conversas, compras...) —
+// usado abaixo pra dar a cada ANÚNCIO o resultado no mercado da campanha dele.
+import { custoDoAlvo, GT_METRIC_CATALOG } from '../src/ferramentas/gestao-trafego/metricas.js';
 
 // A FONTE ÚNICA do custo atual de uma campanha: ponto ponderado em engajamento
 // (o único balde cujo resultado não é uma ação só — é ponderada.js quem sabe
@@ -410,7 +423,9 @@ async function main() {
       } catch (e) { console.log('  act_' + adAcc + ' falhou adsets no Graph: ' + e.message); }
       const conjuntosPorCamp = {};
       adsets.forEach((cj) => { (conjuntosPorCamp[cj.campaign_id] = conjuntosPorCamp[cj.campaign_id] || []).push(cj); });
-      const adFields = 'ad_id,ad_name,adset_name,campaign_id,spend,impressions,clicks,ctr,cpc,reach,frequency';
+      // actions/action_values entraram pra dar o RESULTADO de cada anúncio (leads,
+      // conversas, compras...) — mesmo GET de sempre, nenhuma chamada nova à API.
+      const adFields = 'ad_id,ad_name,adset_name,campaign_id,spend,impressions,clicks,ctr,cpc,reach,frequency,actions,action_values';
       let adIns = [], adObjs = [];
       try {
         adIns = (await graphGet(`/act_${adAcc}/insights`, { level: 'ad', fields: adFields, time_range: { since, until }, limit: 500 }, acc.access_token)).data || [];

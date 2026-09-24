@@ -292,3 +292,44 @@ test('campanha sem resultado na janela manda null, nunca zero', () => {
   assert.equal(d.regua.custo_atual_reais, null);
   assert.equal(d.regua.indice_contra_meta, null);
 });
+
+// ---------------------------------------------------------------------------
+// A CEGUEIRA DO ANÚNCIO (24/09/2026): o mapa de `dados.anuncios` só levava
+// gasto, CTR, CPC, impressões, alcance e frequência — nunca o RESULTADO. O
+// Opus decidia pausar criativo de campanha de conversão olhando só CTR.
+// (Reusa `montarMensagens` + `dadosDoPrompt(user)`, `INS_LEAD` e `REGUA_TESTE`
+// já definidos acima — nada de segunda versão desses três.)
+// ---------------------------------------------------------------------------
+
+test('cada anúncio leva o resultado dele, não só CTR', () => {
+  const camp = { id: '5', name: 'Captação', objective: 'OUTCOME_LEADS' };
+  const ads = [{
+    ad_id: 'a1', ad_name: 'Criativo A', spend: '200', ctr: '2', cpc: '1',
+    impressions: '10000', reach: '8000', frequency: '1.25',
+    actions: [{ action_type: 'lead', value: '10' }],
+  }, {
+    ad_id: 'a2', ad_name: 'Criativo B', spend: '300', ctr: '2.4', cpc: '1',
+    impressions: '12000', reach: '9000', frequency: '1.33',
+    actions: [],
+  }];
+  const { user } = montarMensagens(camp, INS_LEAD, ads, [], REGUA_TESTE);
+  const d = dadosDoPrompt(user);
+  assert.equal(d.anuncios[0].resultado, 10);
+  assert.equal(d.anuncios[0].custo_por_resultado, 20, '200 / 10 leads');
+  assert.equal(d.anuncios[1].resultado, null, 'sem lead na janela: null, não zero');
+  assert.equal(d.anuncios[1].custo_por_resultado, null,
+    'o criativo B tem CTR MAIOR e nenhum lead — é isso que o modelo precisa ver');
+});
+
+test('o balde usado no anúncio é o da CAMPANHA, nunca recalculado', () => {
+  // A Meta OMITE um action_type quando a contagem é zero: um anúncio de campanha
+  // de WhatsApp que não puxou conversa na janela fica idêntico a um de
+  // engajamento puro. Recalcular por anúncio classificaria no mercado errado.
+  const camp = { id: '6', name: 'Zap', objective: 'OUTCOME_ENGAGEMENT' };
+  const conjuntos = [{ id: 'c1', destination_type: 'WHATSAPP' }];
+  const ads = [{ ad_id: 'b1', ad_name: 'Sem conversa', spend: '150', actions: [] }];
+  const { user } = montarMensagens(camp, { spend: '150', actions: [] }, ads, conjuntos, REGUA_TESTE);
+  const d = dadosDoPrompt(user);
+  assert.equal(d.regua.tipo_de_campanha, 'mensagens', 'o conjunto diz WhatsApp');
+  assert.equal(d.anuncios[0].resultado, null);
+});
