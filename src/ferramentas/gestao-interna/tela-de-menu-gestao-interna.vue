@@ -12,7 +12,7 @@
       </div>
 
       <div class="gimenu-cards">
-        <div class="gimenu-card" v-if="podeAcessos" @click="ir('acessos')">
+        <div class="gimenu-card" v-if="podeAbrir('acessos')" @click="ir('acessos')">
           <div class="gimenu-card-icon" style="background:linear-gradient(135deg,#0f766e 0%,#0d9488 100%)">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
           </div>
@@ -21,7 +21,7 @@
           <span class="gimenu-card-enter">→</span>
         </div>
 
-        <div class="gimenu-card" v-if="podePatrimonio" @click="ir('patrimonio')">
+        <div class="gimenu-card" v-if="podeAbrir('patrimonio')" @click="ir('patrimonio')">
           <div class="gimenu-card-icon" style="background:linear-gradient(135deg,color-mix(in srgb,var(--orange) 78%,var(--text)) 0%,var(--orange) 100%)">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
           </div>
@@ -30,7 +30,7 @@
           <span class="gimenu-card-enter">→</span>
         </div>
 
-        <div class="gimenu-card" v-if="podeFrota" @click="ir('frota')">
+        <div class="gimenu-card" v-if="podeAbrir('frota')" @click="ir('frota')">
           <div class="gimenu-card-icon" style="background:linear-gradient(135deg,#3730a3 0%,#4f46e5 100%)">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 17h14M5 17a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm14 0a2 2 0 1 0 4 0 2 2 0 0 0-4 0z"/><path d="M3 17V9l3-4h9l4 5v7"/></svg>
           </div>
@@ -42,7 +42,7 @@
         <!-- O degradê da Autenticidade é o verde-floresta da tela dela
              (`--cor-autenticidade`, Onda 2c): #3f6212→#65a30d antes, que era
              quase o oliva do Material Gráfico. -->
-        <div class="gimenu-card" v-if="podeAutenticidade" @click="ir('autenticidade')">
+        <div class="gimenu-card" v-if="podeAbrir('autenticidade')" @click="ir('autenticidade')">
           <div class="gimenu-card-icon" style="background:linear-gradient(135deg,#285a2b 0%,#4d8a4f 100%)">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
           </div>
@@ -56,18 +56,16 @@
 </template>
 
 <script setup>
-import { computed, onMounted } from 'vue'
+import { onMounted } from 'vue'
 import BarraDeTopo from '../../compartilhado/barra-de-topo.vue'
 import { useRouter } from 'vue-router'
-import { hasPermission } from '../../compartilhado/controle-de-login-e-usuario.js'
+import { podeAbrir } from '../../compartilhado/controle-de-login-e-usuario.js'
 import { adminToast } from '../../compartilhado/avisos.js'
 
 const router = useRouter()
 
-const podeAcessos = computed(() => hasPermission('acessos', 'ver'))
-const podePatrimonio = computed(() => hasPermission('patrimonio', 'ver'))
-const podeFrota = computed(() => hasPermission('frota', 'ver'))
-const podeAutenticidade = computed(() => hasPermission('autenticidade', 'ver'))
+// Cada cartão pergunta `podeAbrir('<rota>')`, que lê o catálogo — a mesma
+// regra do roteador e do editor de permissões.
 
 function voltar() {
   router.push({ name: 'inicio' })
@@ -80,10 +78,8 @@ function ir(nome) {
 // O menu não tem permissão própria: quem não tem NENHUM submódulo não tem o que
 // fazer aqui e volta pra Central com aviso, em vez de encarar um menu vazio.
 onMounted(() => {
-  // Frota e Autenticidade também contam. Sem elas na conta, quem tivesse SÓ um
-  // desses dois era mandado de volta pra Central com "Sem acesso" — mesmo com o
-  // card dele visível bem ali. Era um defeito silencioso da Frota, herdado aqui.
-  if (!podeAcessos.value && !podePatrimonio.value && !podeFrota.value && !podeAutenticidade.value) {
+  // A mesma porta do Início: sem lista própria (a antiga esqueceu a Frota).
+  if (!podeAbrir('gestao-interna')) {
     adminToast('Sem acesso', false)
     router.push({ name: 'inicio' })
   }

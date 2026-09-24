@@ -460,6 +460,18 @@ motivo da saída.
 
 ## Parte B — Precisa programar
 
+### B13 · No banco, as telas do Comercial Vessel ainda se abrem umas às outras · *entrou em 24/09/2026*
+
+Desde 24/09 cada ferramenta do Comercial Vessel tem permissão própria (Private
+Appointment, Beauty Sessions, Private Edit, Stylist Circle, Material Gráfico,
+Appointment Card) e a **Central** respeita cada uma. Mas as ~40 funções do banco
+ainda conferem a permissão da **família** (`is_vessel_atendimentos()` /
+`_editar()`): quem tem só uma das telas consegue chamar as funções das outras
+**por fora da Central**. Pela tela, não. O dono concordou em deixar para uma
+próxima rodada. Conserto: cada função passa a conferir a chave da SUA tela
+(`catalogo-de-ferramentas.js` diz qual), com aplicador e prova por perfil.
+
+
 **Vazia desde 21/09/2026.** Os últimos itens daqui foram o **B12** (entrou e
 saiu no mesmo dia) e o **B9**. Também saíram nesta revisão o **B10** e o
 **B11** — os quatro estão na seção "O que saiu da lista em 21/09/2026", mais

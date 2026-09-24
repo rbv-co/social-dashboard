@@ -62,7 +62,7 @@
       </div>
       <div class="home-cards" :class="{ 'view-list': visualizacao === 'list' }" id="home-cards">
         <!-- Administração: rota já existe (src/ferramentas/admin/tela-de-admin.vue). -->
-        <div class="home-card card-admin" id="home-card-admin" v-show="ehAdmin" @click="ir('admin')" @mouseenter="definirTemaFundo('admin')" @mouseleave="definirTemaFundo('default')">
+        <div class="home-card card-admin" id="home-card-admin" v-show="podeAbrir('admin')" @click="ir('admin')" @mouseenter="definirTemaFundo('admin')" @mouseleave="definirTemaFundo('default')">
           <div class="home-card-icon">
             <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>
           </div>
@@ -72,7 +72,7 @@
           </div>
           <span class="home-card-enter">→</span>
         </div>
-        <div class="home-card" id="home-card-social" v-show="podeRedes" @click="irRedes" @mouseenter="definirTemaFundo('social')" @mouseleave="definirTemaFundo('default')">
+        <div class="home-card" id="home-card-social" v-show="podeAbrir('redes')" @click="irRedes" @mouseenter="definirTemaFundo('social')" @mouseleave="definirTemaFundo('default')">
           <div class="home-card-icon">
             <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
           </div>
@@ -83,7 +83,7 @@
           <span class="home-card-enter">→</span>
         </div>
         <!-- Dashboard de Vendas: Menu de Vendas + Gestão à Vista já migrados. -->
-        <div class="home-card" id="home-card-sales" v-show="podeVendas" @click="ir('vendas')" @mouseenter="definirTemaFundo('sales')" @mouseleave="definirTemaFundo('default')">
+        <div class="home-card" id="home-card-sales" v-show="podeAbrir('vendas')" @click="ir('vendas')" @mouseenter="definirTemaFundo('sales')" @mouseleave="definirTemaFundo('default')">
           <div class="home-card-icon" style="background:linear-gradient(135deg,color-mix(in srgb,var(--accent) 78%,var(--text)) 0%,var(--accent) 100%)">
             <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
           </div>
@@ -94,7 +94,7 @@
           <span class="home-card-enter">→</span>
         </div>
         <!-- Meta Ads: Menu + Análise de Campanhas já migrados. -->
-        <div class="home-card" id="home-card-meta" v-show="podeMeta" @click="ir('meta-ads')" @mouseenter="definirTemaFundo('meta')" @mouseleave="definirTemaFundo('default')">
+        <div class="home-card" id="home-card-meta" v-show="podeAbrir('meta-ads')" @click="ir('meta-ads')" @mouseenter="definirTemaFundo('meta')" @mouseleave="definirTemaFundo('default')">
           <!-- O ícone do Meta Ads no azul da Gestão de Tráfego (Onda 4a): do token
                claro (#0067c2) ao #1877F2 da marca. Branco sobre a ponta clara: 4,23. -->
           <div class="home-card-icon" style="background:linear-gradient(135deg,#0067c2 0%,#1877F2 100%)">
@@ -107,7 +107,7 @@
           <span class="home-card-enter">→</span>
         </div>
         <!-- Banco de Arquivos: rota ainda não existe. -->
-        <div class="home-card" id="home-card-banco" v-show="podeBanco" @click="ir('banco')">
+        <div class="home-card" id="home-card-banco" v-show="podeAbrir('banco')" @click="ir('banco')">
           <div class="home-card-icon" style="background:linear-gradient(135deg,#0f4c81 0%,var(--accent) 100%)">
             <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="8 17 12 21 16 17"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.88 18.09A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.29"/></svg>
           </div>
@@ -118,7 +118,7 @@
           <span class="home-card-enter">→</span>
         </div>
         <!-- Portal de Notícias: única ferramenta já migrada, navega de verdade. -->
-        <div class="home-card" id="home-card-noticias" v-show="podeNoticias" @click="ir('noticias')" @mouseenter="definirTemaFundo('default')" @mouseleave="definirTemaFundo('default')">
+        <div class="home-card" id="home-card-noticias" v-show="podeAbrir('noticias')" @click="ir('noticias')" @mouseenter="definirTemaFundo('default')" @mouseleave="definirTemaFundo('default')">
           <div class="home-card-icon" style="background:linear-gradient(135deg,#0f4c81 0%,var(--accent) 100%)">
             <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 22h16a2 2 0 0 0 2-2V4a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v16a2 2 0 0 1-2 2 2 2 0 0 1-2-2V9a1 1 0 0 1 1-1h2"/><path d="M18 14h-8"/><path d="M15 18h-5"/><path d="M10 6h8v4h-8z"/></svg>
           </div>
@@ -128,7 +128,7 @@
           </div>
           <span class="home-card-enter">→</span>
         </div>
-        <div class="home-card" id="home-card-gestor" v-show="podeGestor" @click="ir('gestao-comercial')" @mouseenter="definirTemaFundo('default')" @mouseleave="definirTemaFundo('default')">
+        <div class="home-card" id="home-card-gestor" v-show="podeAbrir('gestao-comercial')" @click="ir('gestao-comercial')" @mouseenter="definirTemaFundo('default')" @mouseleave="definirTemaFundo('default')">
           <div class="home-card-icon" style="background:linear-gradient(135deg,#0f4c81 0%,var(--accent) 100%)">
             <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M18.7 8l-5.1 5.2-2.8-2.7L7 14.3"/></svg>
           </div>
@@ -141,7 +141,7 @@
         <!-- Porta da família Gestão Interna: leva ao menu com Colaboradores e
              Acessos, Patrimônio e (futuramente) Frota. Aparece pra quem tem
              qualquer um dos submódulos. -->
-        <div class="home-card" id="home-card-gestao-interna" v-show="podeGestaoInterna" @click="ir('gestao-interna')">
+        <div class="home-card" id="home-card-gestao-interna" v-show="podeAbrir('gestao-interna')" @click="ir('gestao-interna')">
           <div class="home-card-icon" style="background:linear-gradient(135deg,#0f766e 0%,#0d9488 100%)">
             <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/><path d="M9 21v-6h6v6"/></svg>
           </div>
@@ -156,7 +156,7 @@
              Sessions e Funil de Carrinho), e a home crescia um por entrega.
              ⚠️ Cada módulo continua atrás da MESMA chave de antes, e os
              endereços diretos seguem valendo — link salvo não quebra. -->
-        <div class="home-card" id="home-card-comercial-vessel" v-show="podeComercialVessel" @click="ir('comercial-vessel')" @mouseenter="definirTemaFundo('default')" @mouseleave="definirTemaFundo('default')">
+        <div class="home-card" id="home-card-comercial-vessel" v-show="podeAbrir('comercial-vessel')" @click="ir('comercial-vessel')" @mouseenter="definirTemaFundo('default')" @mouseleave="definirTemaFundo('default')">
           <div class="home-card-icon" style="background:linear-gradient(135deg,#7a3f52 0%,#c3708a 100%)">
             <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h18v4H3z"/><path d="M5 7v13h14V7"/><path d="M9 11h6"/></svg>
           </div>
@@ -166,7 +166,7 @@
           </div>
           <span class="home-card-enter">→</span>
         </div>
-        <div class="home-card" id="home-card-claude-status" v-show="podeClaudeStatus" @click="ir('claude-status')" @mouseenter="definirTemaFundo('default')" @mouseleave="definirTemaFundo('default')">
+        <div class="home-card" id="home-card-claude-status" v-show="podeAbrir('claude-status')" @click="ir('claude-status')" @mouseenter="definirTemaFundo('default')" @mouseleave="definirTemaFundo('default')">
           <div class="home-card-icon" style="background:linear-gradient(135deg,#4f46e5 0%,#7c3aed 100%)">
             <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
           </div>
@@ -177,7 +177,7 @@
           <span class="home-card-enter">→</span>
         </div>
         <!-- Escritório 3D dos Agentes: rota ainda não existe. -->
-        <div v-if="podeEscritorio3D" class="home-card" id="home-card-hq3d" @click="abrirEscritorio3D" @mouseenter="definirTemaFundo('default')" @mouseleave="definirTemaFundo('default')">
+        <div v-if="podeAbrir('escritorio-3d')" class="home-card" id="home-card-hq3d" @click="abrirEscritorio3D" @mouseenter="definirTemaFundo('default')" @mouseleave="definirTemaFundo('default')">
           <div class="home-card-icon" style="background:linear-gradient(135deg,#0d9488 0%,#16a89a 100%)">
             <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V7l8-4v18"/><path d="M19 21V11l-6-4"/><line x1="9" y1="9" x2="9" y2="9.01"/><line x1="9" y1="13" x2="9" y2="13.01"/><line x1="9" y1="17" x2="9" y2="17.01"/></svg>
           </div>
@@ -200,66 +200,29 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { estado, hasPermission, carregarPerfil } from '../../compartilhado/controle-de-login-e-usuario.js'
-import { podeVerGestaoInterna } from '../gestao-interna/chaves-da-gestao-interna.js'
+import { estado, hasPermission, podeAbrir, carregarPerfil, RECURSOS } from '../../compartilhado/controle-de-login-e-usuario.js'
 
 const router = useRouter()
 
-// Card de Administração só aparece pra quem é admin (a rota /admin já existe).
+// OS CARTÕES DESTA TELA NÃO TÊM MAIS LISTA PRÓPRIA (24/09/2026). Cada um chama
+// `podeAbrir('<rota>')`, que lê o catálogo (compartilhado/catalogo-de-
+// ferramentas.js) — a MESMA regra da guarda do roteador. Antes cada cartão
+// tinha o seu OU escrito à mão, e eles envelheceram: o do Meta Ads ignorava a
+// Fábrica e os dois relatórios; a Gestão Interna esqueceu a Frota (19/08) e a
+// Autenticidade (01/09). Uma porta (Gestão Interna, Comercial Vessel, Vendas,
+// Meta Ads, Redes) abre para quem vê QUALQUER ferramenta de dentro.
 const ehAdmin = computed(() => estado.is_superadmin)
-// Cada card só aparece pra quem tem 'ver' no recurso (o de Admin é gateado por super-admin acima).
-// A Central de Conteúdo mora dentro de Redes Sociais, então quem só tem ela
-// precisa ver o card de Redes para chegar lá.
-const podeRedes = computed(() => hasPermission('social', 'ver') || hasPermission('social.relatorio', 'ver') || hasPermission('conteudo', 'ver'))
-const podeVendas = computed(() => hasPermission('sales.gestao', 'ver') || hasPermission('sales.analise', 'ver'))
-const podeMeta = computed(() => hasPermission('meta.campanha', 'ver') || hasPermission('meta.gestor', 'ver'))
-const podeBanco = computed(() => hasPermission('banco', 'ver'))
-const podeNoticias = computed(() => hasPermission('noticias', 'ver'))
-const podeGestor = computed(() => hasPermission('gestor', 'ver'))
-const podeAcessos = computed(() => hasPermission('acessos', 'ver'))
-const podePatrimonio = computed(() => hasPermission('patrimonio', 'ver'))
-const podeFrota = computed(() => hasPermission('frota', 'ver'))
-// Gestão Interna é uma PORTA (menu), não uma ferramenta: não tem permissão
-// própria. Aparece pra quem tem qualquer um dos submódulos, e o menu lá dentro
-// mostra só os que a pessoa pode ver.
-//
-// A FROTA FALTAVA AQUI, e a conta é esta (medida no banco em 19/08/2026): das 8
-// pessoas com a chave `frota`, CINCO não têm nem Colaboradores nem Patrimônio —
-// Gabriel Alves, Guilherme Cardoso, Humberto Mendonça, Jeremias Vieira e Raissa
-// Herculano. Elas abriam o aplicativo e liam "Você ainda não tem acesso a
-// nenhuma ferramenta", com a permissão da Frota concedida e funcionando: o menu
-// da Gestão Interna já mostrava o cartão da Frota (tela-de-menu-gestao-interna
-// .vue:33) e a tela abria normalmente. O que faltava era só a porta daqui, e
-// sem ela não existe caminho de clique nenhum até o checklist do dia — o ícone
-// instalado abre em `/`, que é esta tela.
-// A LISTA NÃO MORA MAIS AQUI. Ela envelheceu duas vezes — a Frota em 19/08 e a
-// Autenticidade em 01/09 — e as duas vezes o sintoma foi o mesmo: pessoa com a
-// permissão concedida lendo "você não tem acesso a nenhuma ferramenta".
-// Ver `gestao-interna/chaves-da-gestao-interna.js`.
-const podeGestaoInterna = computed(() => podeVerGestaoInterna(hasPermission))
-const podeClaudeStatus = computed(() => hasPermission('claude.status', 'ver'))
-const podeCarrinho = computed(() => hasPermission('carrinho', 'ver'))
-const podeAtendimentos = computed(() => hasPermission('atendimentos', 'ver'))
-// ⚠️ O CARTÃO APARECE SE QUALQUER MÓDULO DE DENTRO ESTIVER LIBERADO. Exigir as
-// duas chaves esconderia a porta de quem tem só uma, e a pessoa leria "não
-// tenho acesso" tendo acesso. Dentro do menu, cada módulo se esconde sozinho.
-const podeComercialVessel = computed(() => podeAtendimentos.value || podeCarrinho.value)
-// O 3D era o único cartão sem porteiro. Agora segue a mesma chave dos outros.
-const podeEscritorio3D = computed(() => hasPermission('escritorio3d', 'ver'))
 
-// Nenhuma ferramenta liberada? Sem isto, os 9 cards somem um a um e sobra a barra
+// Nenhuma ferramenta liberada? Sem isto, os cards somem um a um e sobra a barra
 // de topo numa página em branco — o usuário lê como "o sistema quebrou" e reporta
 // como bug. Aconteceu de verdade: gente sem permissão (e gente cujo perfil falhou
 // ao carregar) via a tela vazia e não tinha como saber que o problema era acesso.
+//
+// ⚠️ SAI DO CATÁLOGO INTEIRO, não de uma lista de cartões: a lista à mão que
+// morava aqui esqueceu a Frota e a Autenticidade, cada uma no seu mês. O teste
+// do catálogo garante que toda chave tem um caminho de clique a partir daqui.
 const semNenhumaFerramenta = computed(() =>
-  !ehAdmin.value && !podeRedes.value && !podeVendas.value && !podeMeta.value &&
-  !podeBanco.value && !podeNoticias.value && !podeGestor.value &&
-  !podeGestaoInterna.value && !podeClaudeStatus.value && !podeEscritorio3D.value &&
-  // ⚠️ TODA CHAVE NOVA ENTRA AQUI TAMBÉM. Faltando, quem tivesse SÓ esta
-  // permissão leria "você ainda não tem acesso a nenhuma ferramenta" com o
-  // cartão dela aparecendo na mesma tela. A Frota e a Autenticidade já pagaram
-  // esse defeito, cada uma no seu mês.
-  !podeAtendimentos.value && !podeCarrinho.value
+  !ehAdmin.value && !RECURSOS.some((r) => hasPermission(r.key, 'ver'))
 )
 
 // O perfil não carregou (rede, sessão expirada, servidor). É DIFERENTE de "não tem
@@ -299,18 +262,11 @@ function ir(nome) {
 // mostra (tela-de-menu-redes.vue). Se divergir, alguém é mandado direto para uma
 // ferramenta enquanto teria outras — ou vê um submenu de um item só.
 //
-// Cuidado com `ehAdmin`: aqui ele é `is_superadmin`, e no submenu é
-// `role === 'admin'`. Mesmo nome, definições diferentes. Usar o daqui faria um
-// admin não-superadmin (existem 5 hoje) perder o Relatório, porque o submenu
-// mostraria o card e este desvio o mandaria direto ao Dashboard.
+// O Relatório Interativo segue a CHAVE `social.relatorio` (a que o editor
+// mostra), igual ao cartão dele no submenu — até 24/09/2026 os dois olhavam o
+// `role`, e 13 pessoas tinham a chave concedida sem caminho até a tela.
 function irRedes() {
-  const ehAdminDoSubmenu = estado.role === 'admin' || estado.is_superadmin
-
-  const destinos = [
-    hasPermission('social', 'ver') ? 'redes-sociais' : null,
-    ehAdminDoSubmenu ? 'redes-relatorio' : null,
-    hasPermission('conteudo', 'ver') ? 'conteudo' : null,
-  ].filter(Boolean)
+  const destinos = ['redes-sociais', 'redes-relatorio', 'conteudo'].filter((r) => podeAbrir(r))
 
   router.push({ name: destinos.length > 1 ? 'redes' : (destinos[0] || 'inicio') })
 }

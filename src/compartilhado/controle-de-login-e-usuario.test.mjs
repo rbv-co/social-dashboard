@@ -130,10 +130,16 @@ test('a chave do módulo Vessel continua "atendimentos", e as duas ações conti
   const naArvore = PERMISSION_TREE.find((n) => n.key === 'atendimentos')
   assert.ok(naArvore, 'a chave "atendimentos" sumiu de PERMISSION_TREE')
 
-  // Os dois rótulos podem mudar de texto livremente, mas têm de continuar
-  // IGUAIS entre si — é o card e a linha da MESMA ferramenta na tela de
-  // permissões (ver o comentário em PERMISSION_TREE).
-  assert.equal(recurso.label, naArvore.label)
+  // 24/09/2026: o cartão do editor deixou de ser só o Private Appointment —
+  // virou o "Comercial Vessel", com uma linha por tela da família. A linha
+  // 'atendimentos' continua sendo o Private Appointment.
+  assert.equal(naArvore.label, 'Comercial Vessel')
+  assert.equal(recurso.label, 'Private Appointment')
+  const filhos = naArvore.children.map((c) => c.key)
+  for (const k of ['atendimentos.beauty-sessions', 'atendimentos.private-edit', 'atendimentos.stylist-circle',
+    'atendimentos.material-grafico', 'atendimentos.appointment-card', 'carrinho']) {
+    assert.ok(filhos.includes(k), `${k} tem de morar no cartão do Comercial Vessel`)
+  }
 })
 
 // Uma tentativa nova tem que apagar o erro da tentativa anterior.

@@ -13,7 +13,7 @@
       </div>
 
       <div class="cvmenu-cards">
-        <div class="cvmenu-card" v-if="podeAtendimentos" @click="ir('atendimentos')">
+        <div class="cvmenu-card" v-if="podeAbrir('atendimentos')" @click="ir('atendimentos')">
           <div class="cvmenu-card-icon" style="background:linear-gradient(135deg,#9a6b3f 0%,#c3a36a 100%)">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><path d="m9 16 2 2 4-4"/></svg>
           </div>
@@ -22,7 +22,7 @@
           <span class="cvmenu-card-enter">→</span>
         </div>
 
-        <div class="cvmenu-card" v-if="podeAtendimentos" @click="ir('beauty-sessions')">
+        <div class="cvmenu-card" v-if="podeAbrir('beauty-sessions')" @click="ir('beauty-sessions')">
           <div class="cvmenu-card-icon" style="background:linear-gradient(135deg,#8a4a66 0%,#c77d9c 100%)">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM18 18h3v3h-3z"/></svg>
           </div>
@@ -31,7 +31,7 @@
           <span class="cvmenu-card-enter">→</span>
         </div>
 
-        <div class="cvmenu-card" v-if="podeAtendimentos" @click="ir('private-edit')">
+        <div class="cvmenu-card" v-if="podeAbrir('private-edit')" @click="ir('private-edit')">
           <div class="cvmenu-card-icon" style="background:linear-gradient(135deg,#6b4a7a 0%,#9b7bb0 100%)">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2z"/><path d="m2 8 10 6 10-6"/></svg>
           </div>
@@ -40,7 +40,7 @@
           <span class="cvmenu-card-enter">→</span>
         </div>
 
-        <div class="cvmenu-card" v-if="podeAtendimentos" @click="ir('stylist-circle')">
+        <div class="cvmenu-card" v-if="podeAbrir('stylist-circle')" @click="ir('stylist-circle')">
           <div class="cvmenu-card-icon" style="background:linear-gradient(135deg,#1e5f74 0%,#3d9bb5 100%)">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3"/><path d="M5.5 21a6.5 6.5 0 0 1 13 0"/><circle cx="19" cy="6" r="2"/><circle cx="5" cy="6" r="2"/></svg>
           </div>
@@ -49,9 +49,8 @@
           <span class="cvmenu-card-enter">→</span>
         </div>
 
-        <!-- Os QR das três ações acima, para a gráfica. Mesma chave delas:
-             é delas que os QR vêm (ver a rota em mapa-de-enderecos.js). -->
-        <div class="cvmenu-card" v-if="podeAtendimentos" @click="ir('material-grafico')">
+        <!-- Os QR das três ações acima, para a gráfica. -->
+        <div class="cvmenu-card" v-if="podeAbrir('material-grafico')" @click="ir('material-grafico')">
           <div class="cvmenu-card-icon" style="background:linear-gradient(135deg,#556b2f 0%,#8a9a4b 100%)">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V3h12v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M7 14h10v7H7z"/></svg>
           </div>
@@ -60,7 +59,7 @@
           <span class="cvmenu-card-enter">→</span>
         </div>
 
-        <div class="cvmenu-card" v-if="podeCarrinho" @click="ir('funil-carrinho')">
+        <div class="cvmenu-card" v-if="podeAbrir('funil-carrinho')" @click="ir('funil-carrinho')">
           <div class="cvmenu-card-icon" style="background:linear-gradient(135deg,#ea580c 0%,#c2410c 100%)">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="20" r="1"/><circle cx="18" cy="20" r="1"/><path d="M1 1h4l2.7 12.4a2 2 0 0 0 2 1.6h8.6a2 2 0 0 0 2-1.6L23 6H6"/></svg>
           </div>
@@ -76,7 +75,7 @@
              aba, copiar o link e ver para onde vai antes de clicar.
              `rel="noopener noreferrer"` é obrigatório junto de target="_blank".
              A seta é ↗ (sai daqui), não → (outra tela da Central). -->
-        <a class="cvmenu-card" v-if="podeAtendimentos"
+        <a class="cvmenu-card" v-if="podeAbrir('appointment-card')"
            :href="ENDERECO_DO_GERADOR_DE_CARTAO" target="_blank" rel="noopener noreferrer">
           <div class="cvmenu-card-icon" style="background:linear-gradient(135deg,#8a6a3a 0%,#d4b483 100%)">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/></svg>
@@ -95,11 +94,14 @@
  * comercial da marca. Pedido do dono em 18/09/2026: elas estavam espalhadas em
  * três cartões soltos na Central, e a home crescia um cartão por entrega.
  *
- * ⚠️ AGRUPAR NÃO É MUDAR PERMISSÃO. Cada módulo continua atrás da MESMA chave
- * que tinha antes (`atendimentos` e `carrinho`), e os endereços diretos
- * continuam valendo — quem tinha um link salvo não perde nada. Uma chave nova
- * "comercial" nasceria DESMARCADA para todo mundo e tiraria, no dia da
- * entrega, o acesso de quem já trabalha com isso.
+ * ⚠️ CADA CARTÃO TEM A SUA CHAVE (24/09/2026). Até então os seis cartões da
+ * Vessel pegavam carona em `atendimentos` — e por isso Beauty Sessions,
+ * Private Edit, Stylist Circle, Material Gráfico e Appointment Card NÃO
+ * apareciam no editor de permissões. Agora cada cartão pergunta
+ * `podeAbrir('<rota>')`, que lê o catálogo (compartilhado/catalogo-de-
+ * ferramentas.js) — o mesmo lugar de onde o editor e o roteador leem. Quem já
+ * tinha `atendimentos` recebeu as chaves novas por uma pré-concessão ADITIVA
+ * (db/migrations/2026-09-24-permissoes-das-ferramentas-do-comercial-vessel.sql).
  *
  * ⚠️ O QUE FICOU DE FORA, E POR QUÊ:
  *   · Gestão Comercial — é multi-marca, não é só Vessel.
@@ -107,17 +109,14 @@
  *     atendimento; e já tem casa em Gestão Interna. Mover duas vezes o mesmo
  *     cartão é pior do que deixá-lo onde as pessoas já sabem achar.
  */
-import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import BarraDeTopo from '../../compartilhado/barra-de-topo.vue'
-import { hasPermission } from '../../compartilhado/controle-de-login-e-usuario.js'
+import { podeAbrir } from '../../compartilhado/controle-de-login-e-usuario.js'
 import { paiDaTela, ROTULO_DO_PAI } from './navegacao.js'
 import { ENDERECO_DO_GERADOR_DE_CARTAO } from './enderecos-publicos.js'
 
 const router = useRouter()
 
-const podeAtendimentos = computed(() => hasPermission('atendimentos', 'ver'))
-const podeCarrinho = computed(() => hasPermission('carrinho', 'ver'))
 
 // ⚠️ O menu é o pai da família: aqui SIM o voltar é 'inicio' na mão — é o
 // próprio paiDaTela('comercial-vessel') dizendo isso, não um atalho.

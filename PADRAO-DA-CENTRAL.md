@@ -385,6 +385,17 @@ continua sendo olho, e se mede a 375px num navegador de verdade.
 
 ---
 
+## 9¾. Ferramenta nova nasce no catálogo de permissões
+
+Toda tela, sub-tela, cartão de menu ou link para fora entra **primeiro** em
+`src/compartilhado/catalogo-de-ferramentas.js`, com a chave **própria** dela
+(nunca carona na chave de outra tela). É dali que o editor de permissões, a
+guarda das rotas e os cartões de menu leem — nenhum deles tem lista própria.
+Cartão de menu pergunta `podeAbrir('<rota>')`, nunca `hasPermission` à mão.
+O teste `catalogo-de-ferramentas.test.mjs` reprova rota, cartão ou chave fora
+do catálogo. Chave que é pedaço de uma que já existe vem com pré-concessão
+**aditiva** (migration + `coletor/aplicar-*.mjs`) para quem já tem a mãe.
+
 ## 10. Antes de dizer que acabou
 
 - [ ] `npm test` inteiro passando

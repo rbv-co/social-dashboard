@@ -16,6 +16,7 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { CHAVES_DA_GESTAO_INTERNA, podeVerGestaoInterna } from './chaves-da-gestao-interna.js'
+import { ferramentaDaRota, podeAbrirRota } from '../../compartilhado/catalogo-de-ferramentas.js'
 
 const aqui = dirname(fileURLToPath(import.meta.url))
 const menu = readFileSync(join(aqui, 'tela-de-menu-gestao-interna.vue'), 'utf8')
@@ -24,12 +25,15 @@ const inicio = readFileSync(join(aqui, '..', 'inicio', 'tela-de-inicio.vue'), 'u
 test('TODO cartão do menu tem a chave na lista da porta', () => {
   // Sem isto, ferramenta nova entra no menu e fica inalcançável para quem só
   // tem ela — que é exatamente quem foi contratado para usá-la.
-  const chavesDoMenu = [...menu.matchAll(/hasPermission\('([a-z0-9._-]+)'\s*,\s*'ver'\)/g)]
-    .map((m) => m[1])
-  assert.ok(chavesDoMenu.length >= 4, `o menu deveria ter 4+ cartões, achei ${chavesDoMenu.length}`)
-  for (const chave of chavesDoMenu) {
+  // Desde 24/09/2026 o cartão pergunta `podeAbrir('<rota>')`; a chave da rota
+  // sai do catálogo.
+  const rotasDoMenu = [...menu.matchAll(/podeAbrir\('([a-z0-9._-]+)'\)/g)].map((m) => m[1])
+    .filter((r) => r !== 'gestao-interna')
+  assert.ok(rotasDoMenu.length >= 4, `o menu deveria ter 4+ cartões, achei ${rotasDoMenu.length}`)
+  for (const rota of rotasDoMenu) {
+    const chave = ferramentaDaRota(rota)?.key
     assert.ok(CHAVES_DA_GESTAO_INTERNA.includes(chave),
-      `"${chave}" tem cartão no menu mas NÃO está em CHAVES_DA_GESTAO_INTERNA — `
+      `"${rota}" (${chave}) tem cartão no menu mas NÃO está em CHAVES_DA_GESTAO_INTERNA — `
       + 'quem tiver só essa chave vai ler "não tem acesso a nenhuma ferramenta"')
   }
 })
@@ -37,11 +41,18 @@ test('TODO cartão do menu tem a chave na lista da porta', () => {
 test('a porta do Início NÃO tem lista própria', () => {
   // A regressão que este teste pega: alguém volta a escrever a lista à mão na
   // tela de Início, e ela envelhece na próxima ferramenta.
-  assert.match(inicio, /podeVerGestaoInterna\(hasPermission\)/,
-    'a porta da Gestão Interna precisa vir de chaves-da-gestao-interna.js')
+  assert.match(inicio, /v-show="podeAbrir\('gestao-interna'\)"/,
+    'a porta da Gestão Interna precisa vir do catálogo (podeAbrir)')
   assert.doesNotMatch(inicio,
     /podeGestaoInterna\s*=\s*computed\(\(\)\s*=>\s*pode\w+\.value\s*\|\|/,
     'a porta voltou a ter lista própria — foi assim que a Frota e a Autenticidade sumiram')
+})
+
+test('a porta do Início e a do catálogo são a mesma', () => {
+  const temSo = (alvo) => (chave) => chave === alvo
+  for (const chave of CHAVES_DA_GESTAO_INTERNA) {
+    assert.equal(podeAbrirRota('gestao-interna', temSo(chave)), true, chave)
+  }
 })
 
 test('quem tem SÓ autenticidade enxerga a porta', () => {

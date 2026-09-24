@@ -209,6 +209,7 @@ import BarraDeTopo from '../../compartilhado/barra-de-topo.vue'
 import { useRouter } from 'vue-router'
 import { sbClient, SUPABASE_URL, SUPABASE_ANON_KEY } from '../../compartilhado/conectar-no-banco-de-dados.js'
 import { estado, PERMISSION_TREE, RECURSOS } from '../../compartilhado/controle-de-login-e-usuario.js'
+import { APROVACOES } from '../../compartilhado/catalogo-de-ferramentas.js'
 import { agruparRecursos, contarAcoes, estadoDaSelecao, marcarTudo } from './agrupar-permissoes.js'
 import { derivarFeatures } from '../../compartilhado/derivar-features.js'
 // A mensagem de acesso pronta pra colar no WhatsApp. Mora fora da tela
@@ -2593,10 +2594,8 @@ function _togglePerm(r, acao, on) {
 // o que elas realmente liberam — quem aprova requisição de veículo não está só
 // "vendo" a Frota. Por isso ganham uma caixinha única com o texto por extenso,
 // em vez de entrar na escada.
-const APROVACOES = {
-  'frota.aprovar': 'Pode aprovar requisição de veículo',
-  'conteudo.aprovar': 'Pode aprovar peças para publicar',
-}
+// As chaves de "pode ou não pode" (uma caixinha só) saem do catálogo — o
+// campo `caixinha` de cada ferramenta. Esta lista morava aqui, à mão.
 
 // Uma ferramenta = uma escolha. Os degraus vêm do catálogo (niveis-de-
 // permissao.js), então ferramenta que só deixa ver mostra dois botões, e

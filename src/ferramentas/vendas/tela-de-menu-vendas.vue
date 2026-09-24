@@ -21,7 +21,7 @@
         <p>Visualizações disponíveis para dados de vendas</p>
       </div>
       <div class="smenu-cards" :class="{ 'view-list': visualizacao === 'list' }">
-        <div class="smenu-card" v-if="hasPermission('module:sales:gestao-vista')" @click="ir('gestao-vista')">
+        <div class="smenu-card" v-if="podeAbrir('gestao-vista')" @click="ir('gestao-vista')">
           <div class="smenu-card-icon" style="background:linear-gradient(135deg,#0f4c81 0%,var(--accent) 100%)">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
           </div>
@@ -29,7 +29,7 @@
           <div class="smenu-card-desc">Painel dinâmico para TVs — ranking em tempo real, metas e evolução do mês para manter o time focado em vendas.</div>
           <span class="smenu-card-enter">→</span>
         </div>
-        <div class="smenu-card" v-if="hasPermission('module:sales:analise-vendas')" @click="ir('analise-vendas-marca')">
+        <div class="smenu-card" v-if="podeAbrir('analise-vendas-marca')" @click="ir('analise-vendas-marca')">
           <div class="smenu-card-icon" style="background:linear-gradient(135deg,#0f766e 0%,#0d9488 100%)">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
           </div>
@@ -46,7 +46,7 @@
 import { ref, onMounted } from 'vue'
 import BarraDeTopo from '../../compartilhado/barra-de-topo.vue'
 import { useRouter } from 'vue-router'
-import { hasPermission } from '../../compartilhado/controle-de-login-e-usuario.js'
+import { podeAbrir } from '../../compartilhado/controle-de-login-e-usuario.js'
 import { adminToast } from '../../compartilhado/avisos.js'
 
 const router = useRouter()
@@ -75,7 +75,7 @@ function definirVisualizacao(v) {
 }
 
 onMounted(() => {
-  if (!hasPermission('tool:sales')) {
+  if (!podeAbrir('vendas')) {
     adminToast('Sem acesso', false)
     router.push({ name: 'inicio' })
     return

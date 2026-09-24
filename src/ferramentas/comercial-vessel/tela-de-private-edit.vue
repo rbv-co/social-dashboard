@@ -492,7 +492,7 @@ const LOJAS = { iguatemi: 'Iguatemi', tivoli: 'Tivoli', parkshopping: 'ParkShopp
 // diferente em cada uma faria as duas se contradizerem na mesma tela.
 const P_DIAS = 14
 
-const podeEditar = computed(() => hasPermission('atendimentos', 'editar'))
+const podeEditar = computed(() => hasPermission('atendimentos.private-edit', 'editar'))
 
 const encontros = ref([])
 const stylists = ref([])

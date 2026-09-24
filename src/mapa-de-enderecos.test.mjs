@@ -58,3 +58,21 @@ test('a permissao checada e a declarada na rota', () => {
 test('rota inexistente com sessao vai pro inicio, nao da tela branca', () => {
   assert.deepEqual(podeEntrar({ name: undefined, meta: {} }, true, permiteTudo), { name: 'inicio' })
 })
+
+// ── 24/09/2026: portas, super-admin e rota fora do catálogo ─────────────────
+test('porta (menu) abre para quem ve QUALQUER ferramenta de dentro', () => {
+  const rota = { name: 'comercial-vessel', meta: { qualquerDe: ['atendimentos', 'carrinho'] } }
+  assert.equal(podeEntrar(rota, true, (k) => k === 'carrinho'), true)
+  assert.deepEqual(podeEntrar(rota, true, negaTudo), { name: 'inicio' })
+})
+
+test('rota de super-admin nao abre para quem so tem permissoes', () => {
+  const rota = { name: 'admin', meta: { superadmin: true } }
+  assert.deepEqual(podeEntrar(rota, true, permiteTudo, false), { name: 'inicio' })
+  assert.equal(podeEntrar(rota, true, permiteTudo, true), true)
+})
+
+test('rota que o catalogo nao conhece fica fechada, nunca aberta por omissao', () => {
+  const rota = { name: 'tela-nova', meta: { foraDoCatalogo: true } }
+  assert.deepEqual(podeEntrar(rota, true, permiteTudo, true), { name: 'inicio' })
+})

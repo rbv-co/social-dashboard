@@ -1,16 +1,17 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { RECURSOS as RECURSOS_REAIS } from '../../compartilhado/catalogo-de-ferramentas.js'
 import {
   ACOES_MATRIZ, ferramentaDaChave, agruparRecursos, estadoDaSelecao, marcarTudo,
 } from './agrupar-permissoes.js'
 
-// Importar o catálogo real NÃO dá: controle-de-login-e-usuario.js puxa Vue +
-// Supabase e explode em Node com "window is not defined". Então a cópia abaixo
-// existe só para os casos de teste — e o teste "a cópia deste teste ainda bate
-// com o catálogo real" (no fim do arquivo) lê o array direto do fonte e falha
-// se os dois divergirem. Sem esse guarda, a cópia seria um segundo catálogo
-// silenciosamente desatualizado.
+// A lista abaixo é um RETRATO FIXO para os casos de teste do agrupador (uma
+// fotografia do catálogo de agosto) — não uma cópia vigiada. O catálogo de
+// verdade é importado mais abaixo, direto do arquivo puro
+// (compartilhado/catalogo-de-ferramentas.js), e é contra ele que os testes de
+// "toda ação tem coluna" e do editor inteiro (catalogo-de-ferramentas.test.mjs)
+// rodam. Até 24/09/2026 este arquivo vigiava a própria cópia por regex — era um
+// segundo catálogo que precisava ser atualizado à mão a cada ferramenta.
 
 const RECURSOS = [
   { key: 'social', label: 'Redes Sociais — Dashboard', acoes: ['ver'] },
@@ -148,34 +149,7 @@ test('marcarTudo não muta a entrada e preserva chaves de fora da lista', () => 
   assert.deepEqual(p.banco, ['ver', 'criar', 'excluir'])
 })
 
-// Lê `export const RECURSOS = [...]` como TEXTO do fonte real e extrai as
-// chaves/ações por regex — é o jeito de conferir o catálogo de verdade sem
-// carregar a cadeia Vue/Supabase (que explodiria em Node). Sem eval de
-// propósito: o fonte é do repo, mas executar arquivo como código dentro do
-// teste é hábito ruim de qualquer forma.
-function catalogoReal() {
-  const fonte = readFileSync(new URL('../../compartilhado/controle-de-login-e-usuario.js', import.meta.url), 'utf8')
-  const ini = fonte.indexOf('export const RECURSOS = [')
-  assert.notEqual(ini, -1, 'não achei "export const RECURSOS = [" no fonte — renomearam?')
-  const fim = fonte.indexOf('\n]', ini)
-  assert.notEqual(fim, -1, 'não achei o fim do array RECURSOS')
-  const bloco = fonte.slice(ini, fim)
-  const itens = [...bloco.matchAll(/key:\s*'([^']+)'[\s\S]*?acoes:\s*\[([^\]]*)\]/g)]
-  assert.ok(itens.length > 0, 'não consegui extrair nenhum recurso do catálogo')
-  return itens.map((m) => ({
-    key: m[1],
-    acoes: [...m[2].matchAll(/'([^']+)'/g)].map((a) => a[1]),
-  }))
-}
-
-test('a cópia deste teste ainda bate com o catálogo real', () => {
-  const real = catalogoReal()
-  assert.deepEqual(
-    real.map((r) => ({ key: r.key, acoes: r.acoes })),
-    RECURSOS.map((r) => ({ key: r.key, acoes: r.acoes })),
-    'RECURSOS mudou em controle-de-login-e-usuario.js — atualize a cópia deste teste',
-  )
-})
+const catalogoReal = () => RECURSOS_REAIS
 
 test('toda ação do catálogo real tem coluna na matriz', () => {
   for (const r of catalogoReal()) {

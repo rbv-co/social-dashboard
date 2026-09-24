@@ -23,15 +23,17 @@
 //    — faltava caminho.
 //
 // A LIÇÃO: a porta e o menu não podem ser listas diferentes. Ferramenta nova
-// entra AQUI, uma vez, e os dois lados obedecem. Há teste que reprova cartão no
+// entra NO CATÁLOGO, uma vez, e os dois lados obedecem. Há teste que reprova cartão no
 // menu cuja chave não esteja nesta lista — porque o defeito é silencioso: a
 // ferramenta funciona, só não é alcançável, e quem a concedeu jura que concedeu.
-export const CHAVES_DA_GESTAO_INTERNA = [
-  'acessos',
-  'patrimonio',
-  'frota',
-  'autenticidade',
-]
+//
+// 24/09/2026: a lista deixou de ser escrita aqui também. Ela é o grupo
+// 'gestao-interna' do catálogo (compartilhado/catalogo-de-ferramentas.js), de
+// onde o editor de permissões, o roteador e os cartões leem. Este arquivo fica
+// com os mesmos nomes para quem já o importa.
+import { chavesDaPorta } from '../../compartilhado/catalogo-de-ferramentas.js'
+
+export const CHAVES_DA_GESTAO_INTERNA = chavesDaPorta('gestao-interna')
 
 // Quem vê a porta: quem puder ver QUALQUER submódulo. O menu de dentro é que
 // mostra só os que a pessoa pode — a porta é generosa de propósito, porque

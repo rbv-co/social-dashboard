@@ -32,6 +32,11 @@ const ASSUNTO = {
   // 'editar' aqui é marcar que a cliente veio, não veio ou remarcou — muda o
   // atendimento dela, então é poder e tem de aparecer na frase.
   atendimentos: 'Atendimentos',
+  // As telas do Comercial Vessel com chave própria (24/09/2026) contam como o
+  // mesmo assunto: é tudo atendimento da Vessel.
+  'atendimentos.beauty-sessions': 'Atendimentos',
+  'atendimentos.private-edit': 'Atendimentos',
+  'atendimentos.stylist-circle': 'Atendimentos',
 }
 
 // Exportado para o teste de guarda: toda ferramenta do catálogo que dá poder

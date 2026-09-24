@@ -737,7 +737,7 @@ const PRACAS = { CPS: 'Campinas', SAO: 'São Paulo', SBO: 'Santa Bárbara', BSB:
 // Antes era 7 aqui e 14 lá, e a mesma stylist tinha duas receitas.
 const P_DIAS = 14
 
-const podeEditar = computed(() => hasPermission('atendimentos', 'editar'))
+const podeEditar = computed(() => hasPermission('atendimentos.stylist-circle', 'editar'))
 
 const stylists = ref([])
 // ⚠️ 24/09: AS ETAPAS DO FUNIL vêm do banco (`vessel_stylist_etapas`), lidas

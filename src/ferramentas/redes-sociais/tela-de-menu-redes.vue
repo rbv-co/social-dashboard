@@ -16,7 +16,7 @@
              inofensivo — todo mundo que chegava aqui tinha `social`. Com a
              Central de Conteúdo aqui dentro, quem tem só ela passaria a ver um
              card para uma ferramenta que não pode abrir. -->
-        <div class="smenu-card" v-if="podeDashboard" @click="ir('redes-sociais')">
+        <div class="smenu-card" v-if="podeAbrir('redes-sociais')" @click="ir('redes-sociais')">
           <div class="smenu-card-icon" style="background:linear-gradient(135deg,#be185d 0%,#ec4899 100%)">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
           </div>
@@ -24,7 +24,7 @@
           <div class="smenu-card-desc">Métricas e KPIs do Instagram ao vivo — seguidores, engajamento, conteúdo e anúncios de todas as marcas.</div>
           <span class="smenu-card-enter">→</span>
         </div>
-        <div class="smenu-card" v-if="ehAdmin" @click="ir('redes-relatorio')">
+        <div class="smenu-card" v-if="podeAbrir('redes-relatorio')" @click="ir('redes-relatorio')">
           <div class="smenu-card-icon" style="background:linear-gradient(135deg,#0f766e 0%,#0d9488 100%)">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
           </div>
@@ -35,7 +35,7 @@
         <!-- Central de Conteúdo mora aqui, e não num card solto na Central: as
              duas primeiras MEDEM o que já aconteceu, esta PLANEJA o que vem.
              É a mesma área de trabalho. -->
-        <div class="smenu-card" v-if="podeConteudo" @click="ir('conteudo')">
+        <div class="smenu-card" v-if="podeAbrir('conteudo')" @click="ir('conteudo')">
           <div class="smenu-card-icon" style="background:linear-gradient(135deg,#4f46e5 0%,#7c3aed 100%)">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><circle cx="12" cy="16" r="2"/></svg>
           </div>
@@ -49,19 +49,19 @@
 </template>
 
 <script setup>
-import { computed, onMounted } from 'vue'
+import { onMounted } from 'vue'
 import BarraDeTopo from '../../compartilhado/barra-de-topo.vue'
 import { useRouter } from 'vue-router'
-import { estado, hasPermission } from '../../compartilhado/controle-de-login-e-usuario.js'
+import { podeAbrir } from '../../compartilhado/controle-de-login-e-usuario.js'
 import { adminToast } from '../../compartilhado/avisos.js'
 
 const router = useRouter()
 const logoClaroUrl = '/midia/LOGOTIPOBRENOPRETO.png'
 const logoEscuroUrl = '/midia/LOGOTIPOBRENOBRANCO.png'
 
-const ehAdmin = computed(() => estado.role === 'admin')
-const podeConteudo = computed(() => hasPermission('conteudo', 'ver'))
-const podeDashboard = computed(() => hasPermission('social', 'ver'))
+// Cada cartão pergunta `podeAbrir('<rota>')` (o catálogo). O do Relatório
+// Interativo obedecia a `role === 'admin'` até 24/09/2026 — não à chave
+// `social.relatorio`, que é a que o editor mostra e a que a tela confere.
 
 function voltar() { router.push({ name: 'inicio' }) }
 function ir(nome) { router.push({ name: nome }) }
@@ -71,7 +71,7 @@ onMounted(() => {
   // também precisa entrar. Com a guarda antiga (só `tool:social`) essa pessoa
   // era expulsa para o Início antes de ver o card — sem acesso a uma ferramenta
   // que ela tem permissão de usar.
-  if (!hasPermission('tool:social') && !hasPermission('conteudo', 'ver')) {
+  if (!podeAbrir('redes')) {
     adminToast('Sem acesso', false)
     router.push({ name: 'inicio' })
   }

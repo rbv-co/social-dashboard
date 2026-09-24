@@ -38,7 +38,7 @@
           <div class="smenu-card-desc">KPIs de performance, funil de conversão, CTR, CPC, CPM e breakdown completo por campanha e objetivo.</div>
           <span class="smenu-card-enter">→</span>
         </div>
-        <div class="smenu-card" v-if="hasPermission('module:meta:gestor')" @click="ir('gestao-trafego')">
+        <div class="smenu-card" v-if="podeAbrir('gestao-trafego')" @click="ir('gestao-trafego')">
           <!-- O azul do Meta da Gestão de Tráfego (Onda 4a): do token claro ao
                #1877f2 da marca, cravado nos DOIS temas como os outros ícones (o
                traço é branco). Branco sobre a ponta clara: 4,23 (ícone, ≥ 3). -->
@@ -49,7 +49,7 @@
           <div class="smenu-card-desc">Agente IA analisa campanhas e sugere ações: pausar, escalar, ajustar budget e testar criativos.</div>
           <span class="smenu-card-enter">→</span>
         </div>
-        <div class="smenu-card" v-if="hasPermission('module:meta:fabrica')" @click="ir('fabrica-estudio')">
+        <div class="smenu-card" v-if="podeAbrir('fabrica-estudio')" @click="ir('fabrica-estudio')">
           <div class="smenu-card-icon" style="background:linear-gradient(135deg,#0891b2,#4338ca)">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.4 7.2H22l-6 4.4 2.3 7.1L12 16.3 5.7 20.7 8 13.6l-6-4.4h7.6z"/></svg>
           </div>
@@ -57,7 +57,7 @@
           <div class="smenu-card-desc">Fluxo guiado em 4 passos: gerar, curar, subir e conferir os criativos de uma campanha.</div>
           <span class="smenu-card-enter">→</span>
         </div>
-        <div class="smenu-card" v-if="hasPermission('meta.hora')" @click="ir('meta-relatorio-hora')">
+        <div class="smenu-card" v-if="podeAbrir('meta-relatorio-hora')" @click="ir('meta-relatorio-hora')">
           <div class="smenu-card-icon" style="background:var(--orange)">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--sobre-cor)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
           </div>
@@ -65,7 +65,7 @@
           <div class="smenu-card-desc">Gasto, conversas iniciadas e custo por lead de cada campanha, hora a hora.</div>
           <span class="smenu-card-enter">→</span>
         </div>
-        <div class="smenu-card" v-if="hasPermission('meta.opr')" @click="ir('meta-relatorio-opr')">
+        <div class="smenu-card" v-if="podeAbrir('meta-relatorio-opr')" @click="ir('meta-relatorio-opr')">
           <div class="smenu-card-icon" style="background:var(--green)">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--sobre-cor)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M18 17V9M13 17V5M8 17v-4"/></svg>
           </div>
@@ -82,7 +82,7 @@
 import { ref, onMounted } from 'vue'
 import BarraDeTopo from '../../compartilhado/barra-de-topo.vue'
 import { useRouter } from 'vue-router'
-import { hasPermission } from '../../compartilhado/controle-de-login-e-usuario.js'
+import { podeAbrir } from '../../compartilhado/controle-de-login-e-usuario.js'
 import { adminToast } from '../../compartilhado/avisos.js'
 
 const router = useRouter()
@@ -113,7 +113,7 @@ function definirVisualizacao(v) {
 // Guarda de acesso (equivalente ao if(!hasPermission('tool:meta'))return; do
 // openMetaAds original).
 onMounted(() => {
-  if (!hasPermission('tool:meta')) {
+  if (!podeAbrir('meta-ads')) {
     adminToast('Sem acesso', false)
     router.push({ name: 'inicio' })
     return

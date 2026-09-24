@@ -31,7 +31,11 @@ const CONCEDIDAS_EM_PRODUCAO = [
 test('toda permissao concedida esta em RECURSOS, logo tem linha no editor', async () => {
   globalThis.window = { supabase: { createClient: () => ({}) } }
   const { RECURSOS } = await import('./controle-de-login-e-usuario.js')
-  const editaveis = new Set(RECURSOS.map((r) => r.key))
+  const { DESATIVADAS } = await import('./catalogo-de-ferramentas.js')
+  // EXCEÇÃO DECIDIDA PELO DONO (24/09/2026): ferramenta DESATIVADA sai do
+  // editor de propósito, e a concessão antiga fica guardada no banco. Ela não
+  // abre nada (a rota fica fechada), então não há o que revogar.
+  const editaveis = new Set([...RECURSOS.map((r) => r.key), ...DESATIVADAS.map((f) => f.key)])
   const invisiveis = CONCEDIDAS_EM_PRODUCAO.filter((k) => !editaveis.has(k))
   assert.deepEqual(invisiveis, [],
     'chave concedida fora de RECURSOS vale no sistema e nao aparece no editor: ninguem consegue revogar')

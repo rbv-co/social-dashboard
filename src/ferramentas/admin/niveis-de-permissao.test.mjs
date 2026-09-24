@@ -1,44 +1,16 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
 import { degrausDoRecurso, degrauDoConjunto, acoesDoDegrau } from './niveis-de-permissao.js'
 
-// Importar o catálogo real NÃO dá: controle-de-login-e-usuario.js puxa Vue +
-// Supabase e explode em Node com "window is not defined". Então a cópia abaixo
-// existe só para os casos de teste — e o teste "a cópia deste teste ainda bate
-// com o catálogo real" (no fim do arquivo) lê o array direto do fonte e falha
-// se os dois divergirem. Sem esse guarda, a cópia seria um segundo catálogo
-// silenciosamente desatualizado.
+// O catálogo real é importado direto: desde 24/09/2026 ele mora num arquivo
+// PURO (compartilhado/catalogo-de-ferramentas.js), sem Vue nem Supabase. A
+// cópia à mão que existia aqui — e o teste que a vigiava — saíram: eram um
+// segundo catálogo, justamente o que envelhece.
+import { RECURSOS, FERRAMENTAS } from '../../compartilhado/catalogo-de-ferramentas.js'
 
-const RECURSOS = [
-  { key: 'social', label: 'Redes Sociais — Dashboard', acoes: ['ver'] },
-  { key: 'social.relatorio', label: 'Redes Sociais — Relatório Interativo', acoes: ['ver', 'exportar'] },
-  { key: 'sales.gestao', label: 'Gestão à Vista', acoes: ['ver'] },
-  { key: 'sales.analise', label: 'Análise de Vendas', acoes: ['ver'] },
-  { key: 'meta.campanha', label: 'Análise de Campanhas', acoes: ['ver'] },
-  { key: 'meta.gestor', label: 'Gestão de Tráfego', acoes: ['ver', 'editar'] },
-  { key: 'meta.fabrica', label: 'Fábrica de Anúncios', acoes: ['ver', 'editar'] },
-  { key: 'meta.hora', label: 'Relatório por Hora', acoes: ['ver'] },
-  { key: 'meta.opr', label: 'Relatório OPR', acoes: ['ver'] },
-  { key: 'banco', label: 'Banco de Arquivos', acoes: ['ver', 'criar', 'excluir'] },
-  { key: 'acessos', label: 'Colaboradores e Acessos', acoes: ['ver', 'criar', 'editar', 'excluir'] },
-  { key: 'patrimonio', label: 'Patrimônio', acoes: ['ver', 'criar', 'editar', 'excluir'] },
-  { key: 'patrimonio.relatorios', label: 'Patrimônio — Relatórios', acoes: ['ver', 'exportar'] },
-  { key: 'frota', label: 'Frota', acoes: ['ver', 'criar', 'editar', 'excluir'] },
-  { key: 'frota.relatorios', label: 'Frota — Relatórios', acoes: ['ver', 'exportar'] },
-  { key: 'frota.aprovar', label: 'Aprovar requisição de veículo', acoes: ['ver'] },
-  { key: 'autenticidade', label: 'Autenticidade e Garantia', acoes: ['ver', 'criar', 'editar'] },
-  { key: 'noticias', label: 'Portal de Notícias', acoes: ['ver'] },
-  { key: 'gestor', label: 'Gestão Comercial (IA)', acoes: ['ver'] },
-  { key: 'gestor.relatorios', label: 'Relatórios Comerciais', acoes: ['ver', 'exportar'] },
-  { key: 'claude.status', label: 'Painel de Status da IA', acoes: ['ver'] },
-  { key: 'conteudo', label: 'Redes Sociais — Central de Conteúdo', acoes: ['ver', 'criar', 'editar', 'excluir'] },
-  { key: 'conteudo.aprovar', label: 'Redes Sociais — Aprovar peças', acoes: ['ver'] },
-  { key: 'atendimentos', label: 'Vessel — Atendimentos', acoes: ['ver', 'editar'] },
-  { key: 'carrinho', label: 'Funil de Carrinho', acoes: ['ver'] },
-]
-
-const acha = (k) => RECURSOS.find((r) => r.key === k)
+// Procura no catálogo INTEIRO: uma ferramenta desativada sai do editor, mas o
+// conjunto gravado dela no banco continua tendo de virar degrau.
+const acha = (k) => FERRAMENTAS.find((r) => r.key === k)
 const chaves = (r) => degrausDoRecurso(r).map((d) => d.chave)
 
 test('ferramenta que so deixa VER tem dois degraus', () => {
@@ -159,32 +131,4 @@ test('todo degrau de todo recurso so usa acao que existe no catalogo', () => {
       }
     }
   }
-})
-
-// ── Validador de cópia ────────────────────────────────────────────────────
-// Lê o catálogo real direto do arquivo, valida que a cópia não divergiu.
-// Se divergir, o teste falha e avisa que precisa atualizar a cópia deste teste.
-
-function catalogoReal() {
-  const fonte = readFileSync(new URL('../../compartilhado/controle-de-login-e-usuario.js', import.meta.url), 'utf8')
-  const ini = fonte.indexOf('export const RECURSOS = [')
-  assert.notEqual(ini, -1, 'não achei "export const RECURSOS = [" no fonte — renomearam?')
-  const fim = fonte.indexOf('\n]', ini)
-  assert.notEqual(fim, -1, 'não achei o fim do array RECURSOS')
-  const bloco = fonte.slice(ini, fim)
-  const itens = [...bloco.matchAll(/key:\s*'([^']+)'[\s\S]*?acoes:\s*\[([^\]]*)\]/g)]
-  assert.ok(itens.length > 0, 'não consegui extrair nenhum recurso do catálogo')
-  return itens.map((m) => ({
-    key: m[1],
-    acoes: [...m[2].matchAll(/'([^']+)'/g)].map((a) => a[1]),
-  }))
-}
-
-test('a cópia deste teste ainda bate com o catálogo real', () => {
-  const real = catalogoReal()
-  assert.deepEqual(
-    real.map((r) => ({ key: r.key, acoes: r.acoes })),
-    RECURSOS.map((r) => ({ key: r.key, acoes: r.acoes })),
-    'RECURSOS mudou em controle-de-login-e-usuario.js — atualize a cópia deste teste',
-  )
 })
