@@ -9,7 +9,7 @@ Mantém UMA planilha no Zoho WorkDrive sempre igual ao que está no sistema:
 São ONZE ABAS, nesta ordem:
 
   Instruções ............ como usar a planilha, em português
-  Landing page .......... quem se cadastrou pelo site (vesselbrasil.com.br)
+  Leads (landing page) .. quem se cadastrou pelo site, e se já comprou
   Clientes .............. as pessoas da base, com cidade e Client Advisor
   Visitas às lojas ...... a visita inteira: quem veio, por onde chegou, o que comprou
   Vendas ................ quem vendeu, o que saiu, desconto e o valor que entrou
