@@ -127,6 +127,44 @@ export function motivoDoHistorico(motivo) {
   return { cadastro: 'Cadastro', mudanca: 'Mudou de etapa', etapa_excluida: 'A etapa foi excluída' }[motivo] || motivo || ''
 }
 
+// ── o contato fácil (pedido do dono, 24/09/2026) ───────────────────────────
+/**
+ * O link de WhatsApp da parceira: `https://wa.me/<55 + DDD + número>`, SEM
+ * mensagem pronta. Aceita o canônico do banco ou o número digitado (10/11
+ * dígitos ganham o 55, como `vessel_telefone_canonico`). Número que não dá
+ * para usar → nulo, e a tela não mostra botão (um link quebrado é pior que
+ * nenhum).
+ */
+export function linkDoWhatsAppDaStylist(whatsapp) {
+  let d = String(whatsapp ?? '').replace(/\D/g, '')
+  if (d.length === 10 || d.length === 11) d = `55${d}`
+  return /^55\d{10,11}$/.test(d) ? `https://wa.me/${d}` : null
+}
+
+/** O perfil do Instagram, limpo: sem @, sem endereço, sem barra final. Nulo
+ * quando o texto não é um perfil (ex.: "Não localizado"). */
+export function perfilDoInstagram(instagram) {
+  const h = String(instagram ?? '').trim()
+    .replace(/^(https?:\/\/)?(www\.)?instagram\.com\//i, '').replace(/[/?#].*$/, '').replace(/^@/, '')
+  return /^[A-Za-z0-9._]{1,30}$/.test(h) ? h : null
+}
+
+/**
+ * O que o botão de contato fácil oferece: `principal` (WhatsApp se houver,
+ * senão Instagram) e `secundario` (o Instagram, quando há os dois). Nenhum
+ * dos dois → os dois nulos, e não aparece botão.
+ * ⚠️ TOCAR NO BOTÃO NÃO REGISTRA CONTATO: o registro continua manual.
+ */
+export function contatoFacil(s) {
+  const nome = String(s?.nome || '').trim() || 'a parceira'
+  const zap = linkDoWhatsAppDaStylist(s?.whatsapp)
+  const perfil = perfilDoInstagram(s?.instagram)
+  const insta = perfil ? { canal: 'instagram', rotulo: 'Instagram', href: `https://instagram.com/${perfil}`,
+    aria: `Abrir o Instagram de ${nome}` } : null
+  const whats = zap ? { canal: 'whatsapp', rotulo: 'WhatsApp', href: zap, aria: `Chamar ${nome} no WhatsApp` } : null
+  return { principal: whats || insta, secundario: whats ? insta : null }
+}
+
 const diaLocal = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate())
 export function ultimoContatoEscrito(iso, agora = new Date()) {
   if (!iso) return 'nenhum contato registrado'

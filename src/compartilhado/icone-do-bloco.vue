@@ -130,6 +130,15 @@
     <template v-else-if="nome === 'avancar'">
       <path d="M5 12h14" /><path d="M13 6l6 6-6 6" />
     </template>
+    <!-- O contato fácil (24/09/2026): o balão do WhatsApp e a câmera do
+         Instagram, no traço da casa (contorno, `currentColor`). -->
+    <template v-else-if="nome === 'whatsapp'">
+      <path d="M3.5 20.5l1.3-4.2A8.5 8.5 0 1 1 8 19.4l-4.5 1.1z" />
+      <path d="M9 8.6c.2-.5.5-.6.8-.6h.6c.2 0 .4.1.5.4l.7 1.6c.1.3 0 .5-.1.7l-.5.6c.6 1.1 1.5 2 2.6 2.6l.6-.5c.2-.2.5-.2.7-.1l1.6.7c.3.1.4.3.4.5v.6c0 .3-.1.6-.6.8-.6.3-1.6.4-3-.3a8.6 8.6 0 0 1-3.8-3.8c-.7-1.4-.6-2.4-.3-3z" />
+    </template>
+    <template v-else-if="nome === 'instagram'">
+      <rect x="3.5" y="3.5" width="17" height="17" rx="4.5" /><circle cx="12" cy="12" r="4" /><path d="M17.2 6.8h.01" />
+    </template>
   </svg>
 </template>
 

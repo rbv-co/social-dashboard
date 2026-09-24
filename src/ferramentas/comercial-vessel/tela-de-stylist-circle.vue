@@ -441,6 +441,8 @@
                 <span v-if="s.prospectado_em"> · prospectada em {{ dataLegivel(s.prospectado_em) }}</span>
                 <span v-if="s.responsavel"> · com {{ s.responsavel }}</span>
               </p>
+              <!-- 24/09: o contato fácil (abre o WhatsApp/Instagram; NÃO registra contato). -->
+              <div class="cv-acoes"><contato-facil :stylist="s" /></div>
             </div>
             <!-- ⚠️ ETAPA E SITUAÇÃO SÃO DUAS COISAS. A etapa é uma linha de
                  `vessel_stylist_etapas` (configurável desde 24/09/2026), e
@@ -700,6 +702,7 @@ import QuadroDoStylistCircle from './quadro-do-stylist-circle.vue'
 import FichaDaStylist from './ficha-da-stylist.vue'
 import MetaDoNumero from './meta-do-numero.vue'
 import EtapasDoFunil from './etapas-do-funil.vue'
+import ContatoFacil from './contato-facil.vue'
 import { etapasParaFiltrar, primeiraEtapa, mensagemDasEtapas } from './crm-da-stylist-regras.js'
 import IconeDoBloco from '../../compartilhado/icone-do-bloco.vue'
 import { estado, hasPermission } from '../../compartilhado/controle-de-login-e-usuario.js'

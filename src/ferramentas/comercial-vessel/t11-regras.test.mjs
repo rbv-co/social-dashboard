@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import {
-  ESTAGIOS_DA_STYLIST, ESTAGIOS_AUTOMATICOS, estagiosDeEscolher, seloDoEstagio,
+  seloDaEtapa,
   ORIGENS_DE_CONTATO, STATUS_DO_ENCONTRO, precisaDeMotivo, seloDoStatus,
   mensagemDeSituacaoDoEncontro, SITUACOES_DO_CONVITE, seloDoConvite, gestosDaConvidada,
   problemasDaConvidada, mensagemDeConvidar, telefoneLegivel, avisoDos45Dias,
@@ -20,9 +20,15 @@ const listaDoCheck = (nome) => {
   return [...trecho.matchAll(/'([a-z_]+)'/g)].map((m) => m[1])
 }
 
-test('o funil da tela é exatamente o CHECK do banco', () => {
-  assert.deepEqual(Object.keys(ESTAGIOS_DA_STYLIST).sort(),
-    listaDoCheck('vessel_stylists_estagio_valido').sort())
+// ⚠️ 24/09/2026: O FUNIL É CONFIGURÁVEL. A lista fechada de estágios saiu do
+// banco e do código; as etapas são linhas de `vessel_stylist_etapas`. O teste
+// que conferia a lista contra o CHECK virou este: o CHECK NÃO pode voltar.
+const FUNIL = readFileSync(new URL(
+  '../../../db/migrations/2026-09-24-vessel-stylist-funil-configuravel.sql', import.meta.url), 'utf8')
+test('o funil não é mais lista fechada: a migration tira a CHECK e a coluna estagio', () => {
+  assert.match(FUNIL, /drop constraint if exists vessel_stylists_estagio_valido/)
+  assert.match(FUNIL, /drop column estagio/)
+  assert.doesNotMatch(FUNIL, /add constraint vessel_stylists_estagio_valido/)
 })
 
 test('a situação do encontro é exatamente o CHECK do banco', () => {
@@ -43,26 +49,11 @@ test('a situação do convite cobre tudo o que o banco calcula', () => {
   for (const s of doBanco) assert.ok(SITUACOES_DO_CONVITE[s], `sem rótulo para ${s}`)
 })
 
-test('os três degraus automáticos nunca aparecem para escolher', () => {
-  for (const ativada of [null, '2026-09-22T12:00:00Z']) {
-    const lista = estagiosDeEscolher(ativada)
-    for (const a of ESTAGIOS_AUTOMATICOS) assert.ok(!lista.includes(a), `${a} apareceu`)
-  }
-})
-
-test('quem já teve encontro não volta para antes dele, e só pausa ou inativa', () => {
-  // "Sem retorno"/"Não interessado" o gatilho do banco desfaz calado para
-  // quem já ativou — oferecer seria um botão que não fica.
-  const lista = estagiosDeEscolher('2026-09-22T12:00:00Z')
-  assert.deepEqual(lista, ['pausado', 'inativo'])
-  assert.ok(estagiosDeEscolher(null).includes('contatado'))
-})
-
-test('selo do estágio: desconhecido não some, vira o próprio texto', () => {
-  assert.equal(seloDoEstagio('recorrente').classe, 'cv-selo-viva')
-  assert.equal(seloDoEstagio('pausado').classe, 'cv-selo-fim')
-  assert.equal(seloDoEstagio('xyz').texto, 'xyz')
-  assert.equal(seloDoEstagio(null).texto, 'Sem estágio')
+test('selo da etapa: o nome dela, e sem etapa não some', () => {
+  assert.deepEqual(seloDaEtapa({ etapa: 'Convidado', etapa_tipo: 'funil' }), { texto: 'Convidado', classe: 'cv-selo-fim', tom: 'andamento' })
+  assert.equal(seloDaEtapa({ etapa: 'Desclassificado', etapa_tipo: 'saida' }).tom, 'queda')
+  assert.equal(seloDaEtapa({}).texto, 'Sem etapa')
+  assert.equal(seloDaEtapa(null).tom, 'parada')
 })
 
 test('motivo só é exigido para cancelado e não realizado', () => {
@@ -216,9 +207,10 @@ test('placar: os dois campos novos existem na função do banco', () => {
 const TELA_STY = readFileSync(new URL('./tela-de-stylist-circle.vue', import.meta.url), 'utf8')
 const TELA_PE = readFileSync(new URL('./tela-de-private-edit.vue', import.meta.url), 'utf8')
 
-test('FIAÇÃO: o estágio é escolhido numa lista, não digitado', () => {
+test('FIAÇÃO: a etapa não se digita nem se corrige no formulário — é da ficha e do quadro', () => {
   assert.doesNotMatch(TELA_STY, /list="sty-estagios-sugeridos"/, 'o datalist de texto livre voltou')
-  assert.match(TELA_STY, /estagiosDeEscolher\(/)
+  assert.doesNotMatch(TELA_STY, /ed-estagio-/, 'o seletor de estágio voltou para o "Corrigir"')
+  assert.match(TELA_STY, /seloDaEtapa\(s\)/)
 })
 
 test('FIAÇÃO: o placar vem do banco e as taxas de taxasDoPlacar', () => {
@@ -242,9 +234,9 @@ test('FIAÇÃO: as duas telas medem a venda com a MESMA janela de 14 dias', () =
 // ── A COR DA SITUAÇÃO (23/09/2026) ─────────────────────────────────────────
 const TONS = ['andamento', 'viva', 'confirmada', 'queda', 'faltou', 'parada']
 
-test('cor: todo estágio, status e convite do banco tem um tom conhecido', () => {
-  for (const k of listaDoCheck('vessel_stylists_estagio_valido')) {
-    assert.ok(TONS.includes(seloDoEstagio(k).tom), `estágio ${k} sem tom`)
+test('cor: todo tipo de etapa, status e convite do banco tem um tom conhecido', () => {
+  for (const tipo of ['funil', 'saida', null]) {
+    assert.ok(TONS.includes(seloDaEtapa({ etapa: 'X', etapa_tipo: tipo }).tom), `etapa ${tipo} sem tom`)
   }
   for (const k of Object.keys(STATUS_DO_ENCONTRO)) {
     assert.ok(TONS.includes(seloDoStatus({ status: k }).tom), `status ${k} sem tom`)
@@ -252,22 +244,14 @@ test('cor: todo estágio, status e convite do banco tem um tom conhecido', () =>
   for (const k of Object.keys(SITUACOES_DO_CONVITE)) {
     assert.ok(TONS.includes(seloDoConvite(k).tom), `convite ${k} sem tom`)
   }
-  assert.equal(seloDoEstagio('xyz').tom, 'parada')
   assert.equal(seloDoConvite(null).tom, 'parada')
 })
 
-test('cor: a stylist pela fase — antes do encontro azul, com encontro verde, saída laranja, parada cinza', () => {
-  assert.equal(seloDoEstagio('prospectado').tom, 'andamento')
-  assert.equal(seloDoEstagio('em_negociacao').tom, 'andamento')
-  assert.equal(seloDoEstagio('ativado').tom, 'viva')
-  assert.equal(seloDoEstagio('recorrente').tom, 'viva')
-  assert.equal(seloDoEstagio('sem_retorno').tom, 'queda')
-  assert.equal(seloDoEstagio('nao_interessado').tom, 'queda')
-  assert.equal(seloDoEstagio('pausado').tom, 'parada')
-  assert.equal(seloDoEstagio('inativo').tom, 'parada')
-  // desativada é cinza mesmo recorrente: a parceria parou
-  assert.equal(tomDaStylist({ estagio: 'recorrente', ativa: false }), 'parada')
-  assert.equal(tomDaStylist({ estagio: 'recorrente', ativa: true }), 'viva')
+test('cor: a stylist pelo tipo da etapa — funil azul, saída laranja; desativada cinza (vence)', () => {
+  assert.equal(tomDaStylist({ etapa: 'Convidado', etapa_tipo: 'funil', ativa: true }), 'andamento')
+  assert.equal(tomDaStylist({ etapa: 'Desclassificado', etapa_tipo: 'saida', ativa: true }), 'queda')
+  // desativada é cinza em qualquer etapa: a parceria parou
+  assert.equal(tomDaStylist({ etapa: 'Convidado', etapa_tipo: 'funil', ativa: false }), 'parada')
 })
 
 test('cor: o encontro — realizado verde, marcado azul, caiu laranja, arquivada cinza (vence)', () => {

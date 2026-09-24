@@ -10,6 +10,8 @@
           <span v-if="stylist.cidade"> · {{ stylist.cidade }}</span></p>
         <!-- ⚠️ WHATSAPP OU INSTAGRAM (24/09/2026): pode faltar um dos dois. -->
         <p class="cv-sub">{{ [telefoneLegivel(stylist.whatsapp) || 'sem WhatsApp', stylist.instagram].filter(Boolean).join(' · ') }}</p>
+        <!-- 24/09: o contato fácil (abre o WhatsApp/Instagram; NÃO registra contato). -->
+        <div class="cv-acoes"><contato-facil :stylist="stylist" /></div>
         <p v-if="stylist.observacoes" class="cv-nota cv-observacoes"><b>Observações:</b> {{ stylist.observacoes }}</p>
 
         <!-- ── 24/09: A ETAPA (funil configurável) — bloco próprio, para o
@@ -25,7 +27,7 @@
                     @click="moverPara(proxima.id)"><icone-do-bloco nome="avancar" />{{ movendo ? 'Movendo…' : `Avançar para ${proxima.nome}` }}</button>
           </div>
           <div class="cv-form">
-            <label class="cv-campo" for="ficha-etapa"><span>Ou mover para</span>
+            <label class="cv-campo cv-campo-largo" for="ficha-etapa"><span>Ou mover para</span>
               <select id="ficha-etapa" v-model="etapaEscolhida">
                 <option value="">Escolha a etapa…</option>
                 <option v-for="e in etapasEmOrdem" :key="e.id" :value="String(e.id)" :disabled="e.id === stylist.etapa_id">
@@ -123,6 +125,7 @@ import {
   CANAIS, RESULTADOS, proximaEtapa, etapasDoFunil, etapasDeSaida, mensagemDasEtapas, motivoDoHistorico,
 } from './crm-da-stylist-regras.js'
 import IconeDoBloco from '../../compartilhado/icone-do-bloco.vue'
+import ContatoFacil from './contato-facil.vue'
 import ScorecardDaStylist from './scorecard-da-stylist.vue'
 import QualificacaoDaStylist from './qualificacao-da-stylist.vue'
 

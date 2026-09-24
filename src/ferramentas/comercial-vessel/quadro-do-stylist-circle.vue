@@ -35,6 +35,8 @@
             {{ s.proxima_acao }}<span v-if="s.proxima_acao_em"> — até {{ dataLegivel(s.proxima_acao_em) }}</span></p>
           <p class="cv-sub">{{ ultimoContatoEscrito(s.ultimo_contato_em) }}</p>
           <div class="cv-acoes">
+            <!-- 24/09: o contato fácil, só o ícone; o toque não abre a ficha. -->
+            <contato-facil :stylist="s" compacto />
             <button v-if="podeEditar" type="button" class="btn id-btn-editar" @click="$emit('abrir', s.codigo)">
               <icone-do-bloco nome="contato" />Registrar contato</button>
             <!-- ⚠️ TOQUE DUPLO: enquanto ESTA stylist está sendo movida, o
@@ -66,6 +68,7 @@ import { ref, computed, watch } from 'vue'
 import { LOJAS, seloDaEtapa } from './t11-regras.js'
 import { seloDaFaixa } from './qualificacao-regras.js'
 import IconeDoBloco from '../../compartilhado/icone-do-bloco.vue'
+import ContatoFacil from './contato-facil.vue'
 import { dataLegivel } from './enderecos-publicos.js'
 import {
   colunasDoQuadro, proximaEtapa, primeiraEtapa, prazoAtrasado, ultimoContatoEscrito,

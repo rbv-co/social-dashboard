@@ -182,6 +182,9 @@ const adicionar = () => gravar('vessel_stylist_etapa_criar',
 @import '../../estilos/identidade-da-ferramenta.css';
 
 .cv-modal-largo { max-width: 640px; }
+/* ⚠️ O MODAL É ESTREITO MESMO NO COMPUTADOR: a grade de três colunas do
+   formulário (que segue a largura da JANELA) cortava "Antes de Prospectado". */
+.cv-modal-largo .cv-form { grid-template-columns: 1fr; }
 .cv-etapas { list-style: none; margin: var(--sp-3) 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-3); }
 .cv-etapa {
   border: 1px solid var(--border); border-left: 3px solid var(--fase, var(--border));

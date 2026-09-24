@@ -61,7 +61,8 @@ export function dadosIniciais(agora = new Date()) {
       ativada_em: null, etapa_id: ETAPA.Prospectado, ativa: true, teste: false,
     },
     // Duas mapeadas que ninguém abordou ainda (a planilha de mapeamento): sem
-    // data da prospecção, uma só com o Instagram.
+    // data da prospecção, uma SÓ com o Instagram e a outra SÓ com o WhatsApp
+    // (o contato fácil mostra um botão para cada caso).
     {
       id: 5, codigo: 'STY-0005', nome: 'Luiza Amaral (exemplo)', whatsapp: null,
       cidade: 'Limeira', instagram: '@luiza.exemplo', atuacao: 'consultoria', praca_preview: null,
@@ -72,7 +73,7 @@ export function dadosIniciais(agora = new Date()) {
     },
     {
       id: 6, codigo: 'STY-0006', nome: 'Carol Bastos (exemplo)', whatsapp: '5519990000006',
-      cidade: 'Piracicaba', instagram: '@carol.exemplo', atuacao: 'stylist', praca_preview: null,
+      cidade: 'Piracicaba', instagram: null, atuacao: 'stylist', praca_preview: null,
       loja: null, origem_contato: 'pesquisa', origem_canal: null, responsavel: null,
       prospectado_em: null, proxima_acao: 'Conferir a carteira antes de abordar', proxima_acao_em: dia(4),
       observacoes: null, ativada_em: null, etapa_id: ETAPA['Classificação'], ativa: true, teste: false,

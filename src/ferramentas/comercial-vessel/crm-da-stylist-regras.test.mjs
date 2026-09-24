@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import {
   CANAIS, RESULTADOS, etapasDoFunil, etapasDeSaida, proximaEtapa, primeiraEtapa, etapasParaFiltrar,
   colunasDoQuadro, problemasDaEtapa, mensagemDasEtapas, motivoDoHistorico, prazoAtrasado, ultimoContatoEscrito,
+  linkDoWhatsAppDaStylist, perfilDoInstagram, contatoFacil,
 } from './crm-da-stylist-regras.js'
 
 const MIGRATION = readFileSync(new URL(
@@ -189,4 +190,44 @@ test('quadro com ordem "faixa": A antes de B antes de sem nota, na MESMA coluna'
   assert.deepEqual(col(porFaixa, 'Presença Confirmada').map((s) => s.codigo), ['S4'], 'a nota C não tira ninguém da coluna')
   const semOrdem = colunasDoQuadro(l, ETAPAS, '2026-09-24')
   assert.deepEqual(col(semOrdem, 'Prospectado').map((s) => s.nome), ['Xênia', 'Yara', 'Zélia'], 'a de sempre: pelo nome, sem prazo')
+})
+
+// ── o contato fácil (24/09/2026) ───────────────────────────────────────────
+test('contato fácil: o número vira wa.me com 55, só dígitos; número inválido não vira botão', () => {
+  assert.equal(linkDoWhatsAppDaStylist('5519997142040'), 'https://wa.me/5519997142040')
+  assert.equal(linkDoWhatsAppDaStylist('(19) 99714-2040'), 'https://wa.me/5519997142040')
+  assert.equal(linkDoWhatsAppDaStylist('+55 11 97320-1563'), 'https://wa.me/5511973201563')
+  assert.equal(linkDoWhatsAppDaStylist('7160-5926'), null)
+  assert.equal(linkDoWhatsAppDaStylist(null), null)
+  assert.equal(linkDoWhatsAppDaStylist('4419999990000'), null)
+})
+
+test('contato fácil: o Instagram sai limpo (sem @, sem endereço); texto que não é perfil não vira botão', () => {
+  assert.equal(perfilDoInstagram('@camiladiniz_consultoriademoda'), 'camiladiniz_consultoriademoda')
+  assert.equal(perfilDoInstagram('https://www.instagram.com/bc_consultoriadeimagem/?igsh=x'), 'bc_consultoriadeimagem')
+  assert.equal(perfilDoInstagram('instagram.com/ma.torrezan'), 'ma.torrezan')
+  assert.equal(perfilDoInstagram('Não localizado publicamente'), null)
+  assert.equal(perfilDoInstagram(''), null)
+})
+
+test('contato fácil: WhatsApp é o principal; Instagram ao lado; só Instagram vira o principal; nenhum, nada', () => {
+  const ambos = contatoFacil({ nome: 'Ana', whatsapp: '5519990000001', instagram: '@ana' })
+  assert.deepEqual(ambos.principal, { canal: 'whatsapp', rotulo: 'WhatsApp', href: 'https://wa.me/5519990000001', aria: 'Chamar Ana no WhatsApp' })
+  assert.deepEqual(ambos.secundario, { canal: 'instagram', rotulo: 'Instagram', href: 'https://instagram.com/ana', aria: 'Abrir o Instagram de Ana' })
+  const soInsta = contatoFacil({ nome: 'Bia', whatsapp: null, instagram: 'https://instagram.com/bia.x/' })
+  assert.equal(soInsta.principal.href, 'https://instagram.com/bia.x')
+  assert.equal(soInsta.secundario, null)
+  assert.equal(contatoFacil({ nome: 'Cris', whatsapp: '5519990000003' }).secundario, null)
+  assert.deepEqual(contatoFacil({ nome: 'Duda', whatsapp: '123', instagram: 'Não localizado' }), { principal: null, secundario: null })
+})
+
+test('FIAÇÃO: o contato fácil abre em aba nova, não propaga o clique e NÃO registra contato', () => {
+  const c = ler('./contato-facil.vue')
+  assert.equal((c.match(/target="_blank" rel="noopener noreferrer"/g) || []).length, 2)
+  assert.equal((c.match(/@click\.stop></g) || []).length, 2)
+  assert.doesNotMatch(c, /registrar_contato|chamar\(/, 'tocar no botão não pode gravar contato')
+  assert.match(c, /id-btn-principal/)
+  assert.match(ler('./quadro-do-stylist-circle.vue'), /<contato-facil :stylist="s" compacto \/>/)
+  assert.match(ler('./ficha-da-stylist.vue'), /<contato-facil :stylist="stylist" \/>/)
+  assert.match(ler('./tela-de-stylist-circle.vue'), /<contato-facil :stylist="s" \/>/)
 })
