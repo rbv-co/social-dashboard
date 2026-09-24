@@ -271,6 +271,52 @@ test('Beauty Sessions: o dia é puro e salão sem nome vira aviso', async () => 
   assert.equal(c('Interessadas'), '1', 'a mesma pessoa duas vezes conta uma');
 });
 
+test('Beauty Sessions: as interessadas separadas pelo QR e pela equipe, sem a ficha de teste', async () => {
+  const a = await aba('Beauty Sessions', {
+    beautySessions: [{ codigo: 'BS-1', quando: '2026-09-25', praca: 'CPS', loja: 'iguatemi',
+      parceiro: 'Salão', ativa: false }],
+    pessoas: [{ id: 1, nome: 'Rita' }, { id: 2, nome: 'Ana' }, { id: 3, nome: 'Bia' },
+      { id: 4, nome: 'Teste', teste: true }],
+    origens: [
+      { id: 1, pessoa_id: 1, evento_id: 'BS-1', utm_medium: 'offline_qr' },
+      { id: 2, pessoa_id: 2, evento_id: 'BS-1', utm_medium: 'offline_equipe' },
+      // ⚠️ A Ana leu o QR DEPOIS de a equipe cadastrá-la: continua da equipe
+      // (a primeira origem dela na sessão), e não conta duas vezes.
+      { id: 3, pessoa_id: 2, evento_id: 'BS-1', utm_medium: 'offline_qr' },
+      { id: 4, pessoa_id: 3, evento_id: 'BS-1', utm_medium: 'offline_equipe' },
+      { id: 5, pessoa_id: 4, evento_id: 'BS-1', utm_medium: 'offline_qr' },
+    ],
+  });
+  const c = (t) => a.linhas[0][a.colunas.indexOf(t)];
+  assert.equal(c('Interessadas'), '3', 'a ficha de teste não conta');
+  assert.equal(c('Pelo QR'), '1');
+  assert.equal(c('Pela equipe'), '2');
+  assert.equal(c('Ativa?'), 'não', 'encerrada continua na aba');
+});
+
+test('Visitas às lojas e Histórico de origem: a lead da equipe aparece como a do QR, com a marca dela', async () => {
+  const dados = {
+    pessoas: [{ id: 7, nome: 'Ana da Equipe', telefone: '5519990002402', criado_em: '2026-09-24T12:00:00+00:00' }],
+    atendimentos: [
+      { id: 1, pessoa_id: 7, loja: 'iguatemi', status: 'solicitado', origem_registro: 'beauty-session-equipe',
+        criado_em: '2026-09-24T12:00:00+00:00' },
+      { id: 2, pessoa_id: 7, loja: 'iguatemi', status: 'solicitado', origem_registro: 'beauty-session',
+        criado_em: '2026-09-20T12:00:00+00:00' }],
+    origens: [{ id: 1, pessoa_id: 7, canal: 'beauty_session', evento_id: 'BS-1', utm_source: 'beauty_session',
+      utm_medium: 'offline_equipe', utm_campaign: 'bs_1', momento: '2026-09-24T12:00:00+00:00' }],
+  };
+  const v = await aba('Visitas às lojas', dados);
+  const veio = v.colunas.indexOf('Este atendimento veio de');
+  assert.deepEqual(v.linhas.map((l) => l[veio]), ['Beauty Session · pela equipe', 'Beauty Session · QR']);
+  assert.equal(v.linhas[0][v.colunas.indexOf('Chegou por (1ª vez)')], 'Beauty Session');
+  assert.equal(v.linhas[0][v.colunas.indexOf('Encontro')], 'BS-1');
+  const h = await aba('Histórico de origem', dados);
+  assert.equal(h.linhas[0][h.colunas.indexOf('utm_medium')], 'offline_equipe');
+  assert.equal(h.linhas[0][h.colunas.indexOf('Evento')], 'BS-1');
+  const cl = await aba('Clientes', dados);
+  assert.equal(cl.linhas[0][0], 'Ana da Equipe');
+});
+
 test('pessoa apagada do banco não deixa nome de fantasma em aba nenhuma', async () => {
   // A venda aponta para uma pessoa que não existe mais (LGPD: ela pediu para
   // sair). A planilha não pode inventar nome nem estourar.

@@ -38,7 +38,9 @@ export const CONSULTAS = {
       + 'visita_acompanhantes,visita_pedido' },
   pedidos: { tabela: 'vessel_pedidos', colunas: '*' },
   pessoas: { tabela: 'vessel_pessoas',
-    colunas: 'id,nome,telefone,email,cidade,instagram,consultora,bling_contato_id,criado_em' },
+    // ⚠️ `teste` entra (24/09/2026) só para a aba Beauty Sessions não contar a
+    // ficha de teste em "Interessadas" — a mesma regra da Central.
+    colunas: 'id,nome,telefone,email,cidade,instagram,consultora,bling_contato_id,criado_em,teste' },
   atendimentos: { tabela: 'vessel_atendimentos', colunas: '*' },
   origens: { tabela: 'vessel_origens', colunas: '*' },
   conviteAberturas: { tabela: 'vessel_convite_aberturas',
@@ -74,6 +76,10 @@ const CANAL = {
   'lp-stylist-circle': 'Site · Stylist Circle',
   'private-edit': 'Private Edit',
   appointment_card: 'Cartão da loja',
+  // ⚠️ AS DUAS PORTAS DA BEAUTY SESSION (`vessel_atendimentos.origem_registro`):
+  // a página do QR e o cadastro feito pela equipe dentro da sessão (24/09/2026).
+  'beauty-session': 'Beauty Session · QR',
+  'beauty-session-equipe': 'Beauty Session · pela equipe',
 };
 const canal = (c) => CANAL[c] || c || '';
 
@@ -225,7 +231,7 @@ const INSTRUCOES = [
   'Convites abertos — quem abriu convite, pelo QR do cartão ou pelo link',
   'Stylists — cada stylist, com o link dela e quantas clientes trouxe',
   'Private Edits — cada encontro, com o link do convite e quem compareceu',
-  'Beauty Sessions — cada sessão, com o endereço do QR e o salão parceiro',
+  'Beauty Sessions — cada sessão, o QR, o salão e as interessadas pelo QR e pela equipe',
   '',
   bloco('PEDIDO CANCELADO SOME DAQUI SOZINHO'),
   'A aba Vendas mostra só pedido com situação "atendido" no Bling.',
@@ -285,12 +291,25 @@ export function montarAbas(d) {
     s.add(o.pessoa_id); trouxeClientes.set(o.stylist_id, s);
   }
 
-  const interessadasNoEvento = new Map();
-  for (const o of d.origens) {
-    if (!o.evento_id) continue;
-    const s = interessadasNoEvento.get(o.evento_id) || new Set();
-    s.add(o.pessoa_id); interessadasNoEvento.set(o.evento_id, s);
+  // ⚠️ A PORTA DE CADA INTERESSADA É A DA PRIMEIRA ORIGEM DELA NAQUELE EVENTO:
+  // `utm_medium = 'offline_equipe'` é o cadastro feito pela equipe dentro da
+  // sessão; qualquer outra é o QR. A Central decide pela linha de
+  // `vessel_beauty_session_cadastros` e dá o mesmo número: a equipe só consegue
+  // cadastrar quem AINDA NÃO se identificou na sessão, então a primeira origem
+  // de quem ela cadastrou é sempre a dela. Esta aba não lê aquela tabela de
+  // propósito — assim a planilha não quebra se a edge for publicada antes da
+  // migration.
+  // ⚠️ E A FICHA DE TESTE NÃO CONTA, como na Central desde 24/09/2026.
+  const ehFichaDeTeste = (id) => pessoaPorId.get(id)?.teste === true;
+  const portaNoEvento = new Map();   // evento -> Map(pessoa -> 'qr' | 'equipe')
+  for (const o of [...d.origens].sort((a, b) => a.id - b.id)) {
+    if (!o.evento_id || ehFichaDeTeste(o.pessoa_id)) continue;
+    const m = portaNoEvento.get(o.evento_id) || new Map();
+    if (!m.has(o.pessoa_id)) m.set(o.pessoa_id, o.utm_medium === 'offline_equipe' ? 'equipe' : 'qr');
+    portaNoEvento.set(o.evento_id, m);
   }
+  const interessadas = (evento, porta) => [...(portaNoEvento.get(evento)?.values() ?? [])]
+    .filter((p) => !porta || p === porta).length;
 
   return [
     {
@@ -580,6 +599,9 @@ export function montarAbas(d) {
         { titulo: 'Salão parceiro', largura: 26 },
         { titulo: 'O endereço do QR', largura: 40 },
         { titulo: 'Interessadas', tipo: 'numero', largura: 12 },
+        // ⚠️ AS DUAS PORTAS SOMAM "Interessadas", sempre.
+        { titulo: 'Pelo QR', tipo: 'numero', largura: 10 },
+        { titulo: 'Pela equipe', tipo: 'numero', largura: 12 },
         { titulo: 'Ativa?', largura: 8 },
       ],
       linhas: [...d.beautySessions].sort(maisVelhoPrimeiro('quando')).map((e) => [
@@ -588,7 +610,7 @@ export function montarAbas(d) {
           // do salão não dá para saber, depois, qual parceiro trouxe mais gente.
           e.parceiro || '⚠️ FALTA O NOME DO SALÃO',
           `https://vesselbrasil.com.br/bs/${e.codigo}`,
-          interessadasNoEvento.get(e.codigo)?.size || 0,
+          interessadas(e.codigo), interessadas(e.codigo, 'qr'), interessadas(e.codigo, 'equipe'),
           e.ativa ? 'sim' : 'não',
         ]),
     },
