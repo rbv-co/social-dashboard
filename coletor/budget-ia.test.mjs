@@ -271,11 +271,18 @@ test('campanha de VENDAS também leva o custo atual', () => {
 
 test('campanha de engajamento continua medida pelo ponto ponderado', () => {
   const camp = { id: '3', name: 'Engaja', objective: 'OUTCOME_ENGAGEMENT' };
-  const ins = { spend: '100', actions: [{ action_type: 'post_engagement', value: '500' }] };
+  // 'post_reaction' é curtida (peso 1, PESOS_PADRAO em ponderada.js) — 200
+  // curtidas viram 200 pontos; R$ 50 / 200 pontos = R$ 0,25 por ponto. Sem
+  // esta conta batida na régua, inverter `pnd.custoPorPonto` por
+  // `custoDoAlvo(...)` (que devolve null pra engajamento — ver metricas.js)
+  // não seria pego: os dois testes de cima (LEAD/VENDAS) passam do mesmo jeito
+  // com a mutação, porque não passam por este ramo.
+  const ins = { spend: '50', actions: [{ action_type: 'post_reaction', value: '200' }] };
   const { user } = montarMensagens(camp, ins, [], [], REGUA_TESTE);
   const d = dadosDoPrompt(user);
   assert.equal(d.regua.tipo_de_campanha, 'engajamento');
   assert.equal(d.regua.rotulo, 'Custo por ponto');
+  assert.equal(d.regua.custo_atual_reais, 0.25, 'custo por ponto = 50 / 200 pontos (200 curtidas × peso 1)');
 });
 
 test('campanha sem resultado na janela manda null, nunca zero', () => {
