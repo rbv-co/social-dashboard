@@ -453,7 +453,15 @@ async function main() {
         insAnt = (await graphGet(`/act_${adAcc}/insights`,
           { level: 'campaign', fields: insFields, time_range: { since: iniAnt, until: fimAnt }, limit: 500 },
           acc.access_token)).data || [];
-      } catch { insAnt = []; }
+      } catch (e) {
+        // Tolerado de propósito — perder a tendência é pior que derrubar a
+        // rodada inteira — mas NUNCA em silêncio: sem este log, a conta fica
+        // indistinguível de "não havia janela anterior mesmo", o modelo some
+        // com a tendência e ninguém descobre por quê (correção pedida na
+        // rodada 1, 24/09/2026).
+        console.log('  act_' + adAcc + ' falhou janela anterior no Graph: ' + e.message);
+        insAnt = [];
+      }
       const insAntByCamp = {};
       insAnt.forEach((i) => { insAntByCamp[i.campaign_id] = i; });
       // CONJUNTOS: em campanha ABO o orçamento mora aqui, não na campanha. Sem
@@ -517,7 +525,19 @@ async function main() {
         const ca = custoAtualDaCampanha(bal, ins, reguaDaContaAtual);
         const txtCusto = ca == null ? 'custo SEM DADO' : `custo R$ ${ca.toFixed(2)}`;
         const txtIdx = (ca != null && mt > 0) ? ` (${(ca / mt).toFixed(2)}× a meta)` : '';
-        console.log(`  [dry] ${camp.name || camp.id} — ${quem} · ${o.sigla || 'sem nível'} ${valor}${o.conjuntosSomados ? ` em ${o.conjuntosSomados} conj.` : ''}${extra} · ${bal} meta ${mt > 0 ? 'R$ ' + mt : 'NÃO DEFINIDA'} · ${txtCusto}${txtIdx}`);
+        // TENDÊNCIA no --dry (rodada de correção 1, 24/09/2026): sem isto não
+        // havia como conferir que a janela anterior está chegando de verdade
+        // sem rodar o modelo — e a rodada real gasta Opus e grava no banco.
+        // MESMA custoAtualDaCampanha do resto (não recalcular por fora foi
+        // justamente o defeito corrigido na tarefa anterior). Sem janela
+        // anterior OU sem custo anterior, não imprime nada a mais — "antes —"
+        // só poluiria a linha sem dizer nada de novo.
+        const insAnterior = insAntByCamp[camp.id];
+        const caAnt = insAnterior ? custoAtualDaCampanha(bal, insAnterior, reguaDaContaAtual) : null;
+        const txtTend = (ca != null && caAnt != null)
+          ? ` · antes R$ ${caAnt.toFixed(2)} ${ca > caAnt ? '▲' : (ca < caAnt ? '▼' : '=')}`
+          : '';
+        console.log(`  [dry] ${camp.name || camp.id} — ${quem} · ${o.sigla || 'sem nível'} ${valor}${o.conjuntosSomados ? ` em ${o.conjuntosSomados} conj.` : ''}${extra} · ${bal} meta ${mt > 0 ? 'R$ ' + mt : 'NÃO DEFINIDA'} · ${txtCusto}${txtIdx}${txtTend}`);
         continue;
       }
       let saida;
