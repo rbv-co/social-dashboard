@@ -91,7 +91,7 @@
  * (`src/compartilhado/qr.js`), e a leitura dele de volta está provada em
  * `qr.test.mjs` com um leitor independente (zxing). As regras de cada item
  * (título, arquivo, ativo) moram em `material-grafico-regras.js`, testadas. */
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import BarraDeTopo from '../../compartilhado/barra-de-topo.vue'
 import FaixaDeErro from '../../compartilhado/faixa-de-erro.vue'
@@ -200,6 +200,12 @@ function carregarTudo() { for (const a of ACOES) carregarAcao(a.chave) }
 watch(mostrarEncerrados, carregarTudo)
 
 onMounted(carregarTudo)
+// ⚠️ VOLTOU PARA A ABA, LÊ DE NOVO (25/09/2026): o dono apagou sessões na tela
+// Beauty Sessions, voltou para cá e ainda via os QR delas — a lista era a do
+// momento em que esta tela abriu. Agora, ao voltar a ficar visível, recarrega.
+function aoVoltar() { if (document.visibilityState === 'visible') carregarTudo() }
+onMounted(() => document.addEventListener('visibilitychange', aoVoltar))
+onBeforeUnmount(() => document.removeEventListener('visibilitychange', aoVoltar))
 </script>
 
 <style scoped>

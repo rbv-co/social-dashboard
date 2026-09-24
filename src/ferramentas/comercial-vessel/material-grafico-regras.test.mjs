@@ -11,7 +11,8 @@ const BS = { codigo: 'BS-20260925-CPS-01', quando: '2026-09-25', praca: 'CPS', l
   parceiro: 'Salão Aurora', ativa: true, arquivada: false }
 const PE = { codigo: 'PE-20260926-CPS-01', chave: 'K7Q2M9TX', quando: '2026-09-27T01:00:00Z',
   anfitria: 'Marina Castro', stylist: 'STY-0001', local: 'Loja do Iguatemi', praca: 'CPS', ativa: true, arquivada: false }
-const STY = { codigo: 'STY-0001', nome: 'Marina Castro', cidade: 'Campinas', ativa: true }
+const STY = { codigo: 'STY-0001', nome: 'Marina Castro', cidade: 'Campinas', ativa: true,
+  etapa: 'Ativada', etapa_libera_private_edit: true }
 
 test('as três ações do plano, na ordem, com a cor de cada uma e a legenda do plano', () => {
   assert.deepEqual(ACOES.map((a) => a.chave), ['beauty-session', 'private-edit', 'stylist-circle'])
@@ -114,7 +115,7 @@ test('o que é ATIVO: nem encerrado, nem arquivado, nem desativada', () => {
   assert.equal(itemDoPrivateEdit({ ...PE, arquivada: true }).ativo, false)
   assert.equal(itemDaStylist({ ...STY, ativa: false }).ativo, false)
   // `ativa` ausente conta como aberta (a regra de filtros.js)
-  assert.equal(itemDaStylist({ codigo: 'STY-0009', nome: 'X' }).ativo, true)
+  assert.equal(itemDaStylist({ codigo: 'STY-0009', nome: 'X' }).ativo, false) // sem a etapa que libera o Private Edit, não tem QR (25/09)
 })
 
 test('⚠️ por padrão só o ativo; o filtro traz os encerrados de volta', () => {
@@ -126,7 +127,7 @@ test('⚠️ por padrão só o ativo; o filtro traz os encerrados de volta', () 
 test('a busca ignora acento e maiúscula, e acha por código, nome, salão, anfitriã e cidade', () => {
   const b = itensDaAcao('beauty-session', [BS])
   const p = itensDaAcao('private-edit', [PE])
-  const s = itensDaAcao('stylist-circle', [STY, { codigo: 'STY-0002', nome: 'Âna Paula', cidade: 'São Paulo', ativa: true }])
+  const s = itensDaAcao('stylist-circle', [STY, { codigo: 'STY-0002', nome: 'Âna Paula', cidade: 'São Paulo', ativa: true, etapa: 'Ativada', etapa_libera_private_edit: true }])
   assert.equal(filtrarItens(b, { busca: 'aurora' }).length, 1)
   assert.equal(filtrarItens(b, { busca: 'bs-20260925' }).length, 1)
   assert.equal(filtrarItens(p, { busca: 'marina' }).length, 1)
@@ -156,4 +157,18 @@ test('a frase do vazio diz POR QUE está vazio — nada criado, busca ou só enc
 test('a sequência do código', () => {
   assert.equal(sequenciaDoCodigo('BS-20261016-CPS-AME'), 'AME')
   assert.equal(sequenciaDoCodigo('STY-0001'), '')
+})
+
+test('⚠️ só a parceira ATIVADA tem QR: antes da etapa que libera o Private Edit, fica fora (pedido do dono, 25/09)', () => {
+  const ainda = itemDaStylist({ codigo: 'STY-0009', nome: 'Luiza', cidade: 'Limeira', ativa: true,
+    etapa: 'Identificado', etapa_libera_private_edit: false })
+  assert.equal(ainda.ativo, false)
+  assert.equal(ainda.situacao.texto, 'Ainda não ativada · Identificado')
+  const semMarca = itemDaStylist({ codigo: 'STY-0010', nome: 'Ana', ativa: true })
+  assert.equal(semMarca.ativo, false, 'sem a marca da etapa, não é ativada')
+  assert.equal(itemDaStylist(STY).ativo, true)
+  assert.equal(itemDaStylist(STY).situacao.texto, 'Ativada')
+  assert.equal(itemDaStylist({ ...STY, ativa: false }).situacao.texto, 'Desativada')
+  assert.deepEqual(filtrarItens([itemDaStylist(STY), ainda]).map((i) => i.codigo), ['STY-0001'])
+  assert.match(fraseDoVazio('stylist-circle', { total: 3 }), /Nenhuma parceira ativada ainda/)
 })
