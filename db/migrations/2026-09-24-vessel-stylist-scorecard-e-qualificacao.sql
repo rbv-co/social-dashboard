@@ -182,6 +182,7 @@ declare
   v_real   int;
   v_prox_codigo text;
   v_prox_quando timestamptz;
+  v_ativou  timestamptz;
 begin
   if not public.is_vessel_atendimentos() then
     raise exception 'sem permissao' using errcode = '42501';
@@ -194,6 +195,14 @@ begin
   end if;
 
   v_num := public.vessel_numeros_do_stylist_circle(p_de, p_ate, p_dias, v_s.id)::jsonb;
+
+  -- ⚠️ O MARCO DE "ATIVOU" NÃO OLHA A ETAPA (as etapas vão virar configuráveis
+  -- e perder os movimentos automáticos): é `ativada_em` quando existe e, sem
+  -- ela, a data do primeiro encontro dela nos Private Edits.
+  v_ativou := coalesce(v_s.ativada_em,
+    (select min(e.quando) from public.vessel_private_edits e
+      where e.stylist_id = v_s.id and not coalesce(e.teste, false) and not coalesce(e.arquivada, false)
+        and e.status <> 'em_planejamento'));
 
   -- ⚠️ "RECORRENTE" E "DIAS DESDE O ÚLTIMO" NÃO SÃO DO PERÍODO: são o estado
   -- dela até o fim dele. Quem fez dois encontros em agosto continua
@@ -225,14 +234,14 @@ begin
     'contatos', (select count(*)::int from public.vessel_stylist_contatos c where c.stylist_id = v_s.id),
     -- A mesma régua de `contatos_ate_ativar` do placar, só que dela: os
     -- contatos registrados ANTES do primeiro encontro agendado.
-    'contatos_antes_de_ativar', case when v_s.ativada_em is null then null else
+    'contatos_antes_de_ativar', case when v_ativou is null then null else
       (select count(*)::int from public.vessel_stylist_contatos c
-        where c.stylist_id = v_s.id and c.criado_em < v_s.ativada_em) end,
+        where c.stylist_id = v_s.id and c.criado_em < v_ativou) end,
     -- Para a sugestão de Confiabilidade: parceira que já ativou e some.
-    'contatos_sem_resposta_depois_de_ativar', case when v_s.ativada_em is null then null else
+    'contatos_sem_resposta_depois_de_ativar', case when v_ativou is null then null else
       (select count(*)::int from public.vessel_stylist_contatos c
         where c.stylist_id = v_s.id and c.resultado = 'sem_resposta'
-          and c.criado_em >= v_s.ativada_em) end
+          and c.criado_em >= v_ativou) end
   ))::json;
 end;
 $function$;

@@ -453,3 +453,68 @@
   background: color-mix(in srgb, var(--fase, var(--accent)) 14%, var(--surface));
   border-color: var(--fase, var(--accent)); color: var(--text); font-weight: 600;
 }
+
+/* ═══ O SCORECARD E A QUALIFICAÇÃO DA STYLIST (24/09/2026) ══════════════════
+ * Bloco próprio, no fim da folha, para o merge com as outras ondas ser limpo.
+ * Cor: só tokens. A meta pinta pelo `--situacao-*` do selo da casa (`id-selo`
+ * + `id-tom-*`), sempre com a palavra junto. A SUGESTÃO do sistema usa
+ * `--roxo`, que na Central quer dizer "a automação falando" (PADRAO, item 2). */
+.cv-scorecard, .cv-qualificacao { margin-top: var(--sp-4); }
+.cv-numero-meta { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; margin-top: 4px; min-width: 0; }
+/* ⚠️ `.cv-selo` tem `nowrap`; numa coluna de 150px "UM POUCO ABAIXO DA META"
+   passaria da borda. Aqui ele quebra. */
+.cv-meta-selo { white-space: normal; overflow-wrap: anywhere; line-height: 1.4; }
+/* Data como número grande não cabe em meia coluna do celular: um degrau abaixo. */
+.cv-numero-valor-medio { font-size: var(--texto-titulo); line-height: 1.6; }
+.cv-numero-largo { grid-column: 1 / -1; }
+.cv-scorecard-linha { color: var(--text); }
+
+.cv-qualificacao-vigente { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
+.cv-qualificacao-vigente .cv-sub { margin: 0; }
+.cv-qualificacao-trilha { color: var(--text); }
+.cv-historico li.cv-historico-nota[class*="id-tom-"] { border-left-color: var(--tom); }
+.cv-quadro-faixa { margin: 0; }
+.cv-selo-faixa { align-self: flex-end; }
+
+/* ── a janela de avaliar ── */
+.cv-criterio {
+  border: 1px solid var(--border); border-radius: var(--radius-md);
+  padding: var(--sp-3); margin: var(--sp-3) 0 0; min-width: 0;
+}
+.cv-criterio-titulo {
+  font-family: var(--fonte-principal); font-size: var(--texto-campo); color: var(--text);
+  font-weight: 600; padding: 0 var(--sp-1); overflow-wrap: anywhere;
+}
+.cv-criterio > .cv-sub { margin-top: 0; }
+.cv-niveis { flex-direction: column; margin-top: var(--sp-2); }
+.cv-niveis .btn.cv-nivel {
+  width: 100%; justify-content: flex-start; text-align: left; white-space: normal; height: auto;
+  padding: var(--sp-2) var(--sp-3); gap: var(--sp-3);
+}
+.cv-nivel-numero {
+  font-family: var(--fonte-dados); font-size: var(--texto-titulo); line-height: 1;
+  min-width: 1.4em; text-align: center; color: var(--muted);
+}
+.cv-nivel.ativa .cv-nivel-numero { color: var(--text); }
+.cv-nivel-ancora { font-size: var(--texto-corpo); overflow-wrap: anywhere; }
+.cv-sugestao {
+  margin-top: var(--sp-2); padding: var(--sp-2) var(--sp-3); border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--roxo) 8%, var(--surface));
+  border-left: 3px solid var(--roxo);
+}
+.cv-sugestao .cv-nota { color: var(--text); }
+.cv-sugestao .cv-acoes { margin-top: var(--sp-2); }
+.cv-campo textarea {
+  font-family: var(--fonte-principal); font-size: var(--texto-campo); color: var(--text);
+  background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 10px 12px; min-height: 40px; width: 100%; resize: vertical;
+}
+.cv-avaliar-aviso { color: var(--text); }
+/* O pé da janela não rola: a nota ao vivo e o "Salvar" ficam sempre à vista. */
+.cv-modal-pe {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4); border-top: 1px solid var(--border); background: var(--surface);
+}
+.cv-modal-pe .cv-acoes { margin-top: 0; }
+.cv-avaliar-nota { margin: 0; }
+.cv-avaliar-selo { font-size: var(--texto-campo); padding: 6px 12px; }

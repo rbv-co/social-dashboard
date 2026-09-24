@@ -15,6 +15,15 @@
           <button v-if="podeEditar" type="button" class="btn" @click="$emit('corrigir', stylist.codigo)">Corrigir dados…</button>
         </div>
 
+        <!-- ── 24/09: o SCORECARD e a QUALIFICAÇÃO, abaixo dos dados e antes
+             dos contatos. O scorecard sobe a leitura "desde o início", que é
+             a base das sugestões e do aviso de reavaliar. -->
+        <scorecard-da-stylist :codigo="stylist.codigo" :chamar="chamar" :versao="versaoDoScorecard"
+                              @desde-o-inicio="desdeOInicio = $event" />
+        <qualificacao-da-stylist :codigo="stylist.codigo" :nome="stylist.nome" :chamar="chamar"
+                                 :pode-editar="podeEditar" :desde-o-inicio="desdeOInicio"
+                                 @mudou="$emit('mudou')" />
+
         <div v-if="podeEditar" class="id-caixa-form">
           <h3 class="cv-etiqueta cv-etiqueta-interna id-titulo"><icone-do-bloco nome="contato" />Registrar contato</h3>
           <p class="cv-sub">Canal</p>
@@ -51,7 +60,7 @@
           </div>
         </div>
 
-        <h3 class="cv-etiqueta cv-etiqueta-interna id-titulo">Histórico</h3>
+        <h3 class="cv-etiqueta cv-etiqueta-interna id-titulo">Histórico de contatos</h3>
         <p v-if="erroDoHistorico" class="cv-nota cv-nota-erro">{{ erroDoHistorico }}</p>
         <p v-else-if="carregando" class="cv-carregando">Carregando…</p>
         <p v-else-if="!historico.length" class="cv-vazio">Nenhum contato registrado ainda.</p>
@@ -68,7 +77,8 @@
 </template>
 
 <script setup>
-/* A FICHA DA STYLIST — registrar contato e ver o histórico.
+/* A FICHA DA STYLIST — o scorecard, a qualificação, registrar contato e ver
+ * o histórico.
  * ⚠️ Pendurada DENTRO da tela (o `v-if` do pai), nunca no `body`: o CSS é
  * `scoped` e um modal fora da raiz despenca sem estilo (PADRAO, item 4). */
 import { ref, reactive, computed, onMounted } from 'vue'
@@ -77,6 +87,8 @@ import { dataLegivel, dataHoraLegivel } from './enderecos-publicos.js'
 import { CANAIS, RESULTADOS } from './crm-da-stylist-regras.js'
 import { mensagemDeEditar } from './stylist-circle-regras.js'
 import IconeDoBloco from '../../compartilhado/icone-do-bloco.vue'
+import ScorecardDaStylist from './scorecard-da-stylist.vue'
+import QualificacaoDaStylist from './qualificacao-da-stylist.vue'
 
 const props = defineProps({
   stylist: { type: Object, required: true },
@@ -94,6 +106,9 @@ const gravando = ref(false)
 const erro = ref('')
 const sugestao = ref(null)
 const movendo = ref(false)
+// O scorecard "desde o início" (para as sugestões) e o gatilho de reler.
+const desdeOInicio = ref(null)
+const versaoDoScorecard = ref(0)
 
 const MENSAGENS = {
   sem_permissao: 'Você não tem a permissão de Atendimentos para registrar contato.',
@@ -122,6 +137,7 @@ async function registrar() {
     if (!r?.ok) { erro.value = MENSAGENS[r?.situacao] || 'Não consegui registrar agora. Tente de novo em um instante.'; return }
     Object.assign(novo, { canal: '', resultado: '', nota: '', proximaAcao: '', proximaAcaoEm: '' })
     sugestao.value = r.sugestao || null
+    versaoDoScorecard.value++
     await carregarHistorico()
     emit('mudou')
   } catch { erro.value = 'Não consegui falar com o banco agora. Tente de novo em um instante.' }

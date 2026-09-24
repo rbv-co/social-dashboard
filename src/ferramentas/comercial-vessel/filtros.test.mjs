@@ -156,3 +156,16 @@ test('precisaDoBanco pede recarregar só para "Só arquivadas" e "Todas, inclusi
   assert.equal(precisaDoBanco('encerradas'), false)
   assert.equal(precisaDoBanco('abertas_e_encerradas'), false)
 })
+
+// ── Stylist Circle (24/09/2026): ordenar pela faixa da nota ────────────────
+test('ordem "faixa": A, B, C e por último sem nota; dentro da faixa, a nota maior primeiro', () => {
+  const lista = [
+    { codigo: 'STY-1', nome: 'Carla', faixa: 'C', nota: 50 },
+    { codigo: 'STY-2', nome: 'Bia', faixa: null, nota: null },
+    { codigo: 'STY-3', nome: 'Ana', faixa: 'A', nota: 78 },
+    { codigo: 'STY-4', nome: 'Duda', faixa: 'A', nota: 90 },
+    { codigo: 'STY-5', nome: 'Eva', faixa: 'B', nota: 60 },
+  ]
+  const r = filtrar(lista, { ...FILTRO_VAZIO, dias: null, ordem: 'faixa' }, { busca: ['nome'] })
+  assert.deepEqual(r.map((s) => s.codigo), ['STY-4', 'STY-3', 'STY-5', 'STY-1', 'STY-2'])
+})
