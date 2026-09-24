@@ -370,18 +370,18 @@ onMounted(() => carregar())
 .meta-value { font: 400 18px Georgia, serif; color: #173b39; overflow-wrap: anywhere; }
 .meta .accent::after { content: ""; display: block; width: 28px; height: 3px; background: var(--gold); margin-top: 15px; }
 .kpis { display: grid; grid-template-columns: repeat(5,1fr); gap: 14px; }
-.kpi-card { border: 1px solid var(--line); border-radius: 7px; padding: 18px 20px; display: grid; grid-template-columns: 72px 1fr; align-items: center; min-height: 148px; box-shadow: 0 1px 0 rgba(0,0,0,.025); }
-.icon-circle { width: 72px; height: 72px; border-radius: 50%; background: var(--gold-soft); display: grid; place-items: center; color: var(--ink); }
-.icon-circle svg { width: 40px; height: 40px; stroke: currentColor; fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
-.kpi-label { font: 400 18px Georgia, serif; margin-bottom: 3px; overflow-wrap: anywhere; }
-.kpi-value { font: 700 clamp(24px,2vw,47px)/1 Georgia, serif; letter-spacing: .02em; overflow-wrap: anywhere; }
-.kpi-caption { margin-top: 12px; font-size: 10px; letter-spacing: .26em; text-transform: uppercase; color: #797b77; }
-.kpi-card--grupo { grid-template-columns: 40px 1fr; padding: 16px 14px; }
-.kpi-card--grupo .icon-circle { width: 40px; height: 40px; }
-.kpi-card--grupo .icon-circle svg { width: 22px; height: 22px; }
-.kpi-group { display: flex; gap: 8px; margin-top: 6px; flex-wrap: nowrap; }
+.kpi-card { border: 1px solid var(--line); border-radius: 7px; padding: 16px 16px; display: grid; grid-template-columns: 54px 1fr; align-items: center; min-height: 124px; box-shadow: 0 1px 0 rgba(0,0,0,.025); }
+.icon-circle { width: 54px; height: 54px; border-radius: 50%; background: var(--gold-soft); display: grid; place-items: center; color: var(--ink); }
+.icon-circle svg { width: 30px; height: 30px; stroke: currentColor; fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.kpi-label { font: 400 14px Georgia, serif; margin-bottom: 3px; overflow-wrap: anywhere; }
+.kpi-value { font: 700 clamp(18px,1.6vw,32px)/1.05 Georgia, serif; letter-spacing: .02em; white-space: nowrap; }
+.kpi-caption { margin-top: 9px; font-size: 9px; letter-spacing: .2em; text-transform: uppercase; color: #797b77; }
+.kpi-card--grupo { grid-template-columns: 38px 1fr; padding: 14px 14px; min-height: 104px; }
+.kpi-card--grupo .icon-circle { width: 38px; height: 38px; }
+.kpi-card--grupo .icon-circle svg { width: 20px; height: 20px; }
+.kpi-group { display: flex; justify-content: space-between; gap: 10px; margin-top: 7px; flex-wrap: nowrap; }
 .kpi-group-item { min-width: 0; }
-.kpi-group-value { font: 700 14px Georgia, serif; line-height: 1.1; white-space: nowrap; }
+.kpi-group-value { font: 700 15px Georgia, serif; line-height: 1.1; white-space: nowrap; }
 .kpi-group-label { margin-top: 3px; font-size: 8px; letter-spacing: .14em; text-transform: uppercase; color: #797b77; white-space: nowrap; }
 /* Grade 2×2 — cada painel com a mesma largura que os 3-em-linha tinham
    antes (metade da tela, não um quarto), pra caber Tráfego + Engajamento +
