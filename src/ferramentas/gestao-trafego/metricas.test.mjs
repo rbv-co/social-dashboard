@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { semComentarios } from '../../compartilhado/guarda-de-imports.mjs';
-import { GT_METRIC_CATALOG, GT_BALDE_PADRAO } from './metricas.js';
+import { GT_METRIC_CATALOG, GT_BALDE_PADRAO, custoDoAlvo } from './metricas.js';
 
 // Um insight com número redondo em cada métrica, pra conta errada aparecer.
 const INS = {
@@ -53,6 +53,37 @@ test('ação que a Meta omitiu vira null, nunca zero', () => {
 test('insight sem o array actions não derruba o cálculo', () => {
   assert.equal(GT_METRIC_CATALOG.leads.compute({ spend: '10' }), null);
   assert.equal(GT_METRIC_CATALOG.roas.compute({ spend: '10' }), null);
+});
+
+test('custoDoAlvo devolve o custo na unidade de cada tipo de campanha', () => {
+  assert.equal(custoDoAlvo('leads', INS), 25);            // custo por lead
+  assert.equal(custoDoAlvo('vendas', INS), 50);           // CAC
+  assert.equal(custoDoAlvo('trafego', INS), 2);           // custo por visita
+  assert.equal(custoDoAlvo('mensagens', INS), 10);        // custo por conversa
+  assert.equal(custoDoAlvo('reconhecimento', INS), 20);   // CPM
+});
+
+test('engajamento fica com a ponderada, não com o catálogo', () => {
+  assert.equal(custoDoAlvo('engajamento', INS), null,
+    'o custo de engajamento é o custo por ponto, e quem calcula é ponderada.js');
+});
+
+test('balde sem alvo não inventa número', () => {
+  assert.equal(custoDoAlvo('padrao', INS), null);
+  assert.equal(custoDoAlvo('balde-que-nao-existe', INS), null);
+  assert.equal(custoDoAlvo(undefined, INS), null);
+});
+
+test('sem resultado na janela o custo é null, nunca zero', () => {
+  const semNada = { spend: '900', actions: [] };
+  assert.equal(custoDoAlvo('leads', semNada), null,
+    'R$ 0,00 no prompt seria lido como "de graça" e viraria escalar');
+  assert.equal(custoDoAlvo('vendas', semNada), null);
+});
+
+test('gasto zero não vira custo zero', () => {
+  const semGasto = { spend: '0', actions: [{ action_type: 'lead', value: '5' }] };
+  assert.equal(custoDoAlvo('leads', semGasto), null);
 });
 
 test('todo balde aponta só para métricas que existem no catálogo', () => {

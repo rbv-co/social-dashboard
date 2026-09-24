@@ -1,3 +1,5 @@
+import { alvoDoBalde } from './alvos.js';
+
 // As MÉTRICAS do Meta Ads: como ler o array `actions` e quanto custou cada
 // resultado. PURO: sem rede, sem tela.
 //
@@ -77,3 +79,22 @@ export const GT_BALDE_PADRAO={
   leads:['leads','custo_lead','ctr','gasto'],
   padrao:['ctr','cpc','gasto','alcance'],
 };
+
+// O CUSTO POR RESULTADO deste tipo de campanha, na unidade dele (alvos.js diz
+// qual é: custo por lead, CAC, custo por visita, custo por conversa, CPM).
+//
+// Engajamento devolve null de propósito: o resultado dele é o PONTO ponderado,
+// e quem calcula isso é ponderada.js. Dois cálculos para o mesmo balde
+// acabariam discordando.
+//
+// Devolve null (e nunca 0) quando não há resultado ou não há gasto na janela:
+// um custo de R$ 0,00 escrito no prompt é lido pelo modelo como "de graça" e
+// vira recomendação de escalar.
+export function custoDoAlvo(balde, insight) {
+  const alvo = alvoDoBalde(balde);
+  if (!alvo || alvo.metrica === 'ponderada') return null;
+  const m = GT_METRIC_CATALOG[alvo.metrica];
+  if (!m) return null;
+  const v = m.compute(insight || {});
+  return (v != null && Number.isFinite(v) && v > 0) ? v : null;
+}
