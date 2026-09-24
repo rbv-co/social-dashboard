@@ -488,6 +488,13 @@
   font-family: var(--fonte-principal); font-size: var(--texto-campo); color: var(--text);
   font-weight: 600; padding: 0 var(--sp-1); overflow-wrap: anywhere;
 }
+/* ⚠️ O TÍTULO DO CRITÉRIO NÃO SENTA NA LINHA DA BORDA (24/09/2026, o dono:
+   "vi um texto em cima da linha de limite do card"). `<legend>` do navegador
+   fica EM CIMA da borda de cima do `<fieldset>`, cortando a linha — medido:
+   13px para fora da caixa. Com `float` + largura cheia ele volta para DENTRO do
+   cartão, como título comum; o `clear` abaixo segura o resto embaixo dele. */
+.cv-criterio > .cv-criterio-titulo { float: left; width: 100%; padding: 0; margin: 0 0 var(--sp-1); }
+.cv-criterio > .cv-criterio-titulo + * { clear: both; }
 .cv-criterio > .cv-sub { margin-top: 0; }
 .cv-niveis { flex-direction: column; margin-top: var(--sp-2); }
 .cv-niveis .btn.cv-nivel {
@@ -520,4 +527,155 @@
 }
 .cv-modal-pe .cv-acoes { margin-top: 0; }
 .cv-avaliar-nota { margin: 0; }
-.cv-avaliar-selo { font-size: var(--texto-campo); padding: 6px 12px; }
+/* inline-block: com `display:inline` o respiro de cima e de baixo vazava da linha (7px). */
+.cv-avaliar-selo { font-size: var(--texto-campo); padding: 6px 12px; display: inline-block; }
+
+/* ═══ A FICHA DA STYLIST — O LAYOUT (24/09/2026) ═══════════════════════════
+ * Pedido do dono: "a ficha do stylist ficou bonita, porém acho que está mal
+ * organizada, centralizada ... organizar os textos nos lugares corretos".
+ *
+ * ⚠️ É A EXCEÇÃO AO MODAL DE 420px (PADRAO, item 4), só para esta ficha:
+ *   · computador (≥900px): LARGA, com a faixa de cima parada e o corpo em duas
+ *     colunas — Relacionamento | Desempenho;
+ *   · 641–899px: larga, uma coluna;
+ *   · celular (≤640px): uma coluna, e só o NOME fica parado no topo — a faixa
+ *     (selos, telefone, atalhos) rola junto, para não comer meia tela.
+ * A ORDEM NO CELULAR é de prioridade, não a do código: etapa e próxima ação,
+ * depois o desempenho, depois os contatos e os históricos. As colunas viram
+ * `display: contents` e cada cartão leva o seu `order`.
+ *
+ * UM TOM POR BLOCO, pelo ASSUNTO (feedback do dono: cor só no topo "caprichou
+ * pouco"): etapa e histórico de etapas no tom da fase; registrar contato e
+ * histórico de contatos no tom da ferramenta; scorecard e qualificação cada um
+ * no seu. O tom mora no filete de cima, no ícone em pastilha e no título; o
+ * texto de ler continua `--text`. */
+.cv-modal.cv-ficha { max-width: min(1280px, 100%); max-height: 92dvh; }
+/* a faixa de cima: nome (no topo), selos, código, contato e atalhos */
+.cv-ficha-topo { border-bottom: 0; padding-bottom: 0; background: color-mix(in srgb, var(--modulo, var(--accent)) 8%, var(--surface)); }
+.cv-ficha-faixa {
+  display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-4) var(--sp-3);
+  background: color-mix(in srgb, var(--modulo, var(--accent)) 8%, var(--surface));
+  border-bottom: 3px solid var(--modulo, var(--accent));
+}
+.cv-ficha-quem { min-width: 0; flex: 1 1 16rem; }
+.cv-ficha-quem .cv-sub { margin-top: var(--sp-1); }
+.cv-ficha-selos { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-bottom: var(--sp-1); }
+/* ⚠️ `.cv-selo` tem `nowrap`: uma etapa de nome comprido passaria da borda. */
+.cv-ficha-selos .cv-selo { white-space: normal; overflow-wrap: anywhere; max-width: 100%; }
+.cv-ficha-atalhos { margin-top: 0; }
+
+/* o corpo e as duas colunas */
+.cv-ficha-corpo { padding: var(--sp-4); background: var(--bg); flex: 1 1 auto; min-height: 0; }
+.cv-ficha-observacoes {
+  margin: 0 0 var(--sp-4); padding: var(--sp-3); color: var(--text);
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md);
+}
+.cv-ficha-colunas { display: flex; flex-direction: column; gap: var(--sp-4); }
+.cv-ficha-coluna { display: contents; }
+.cv-ficha-etapa        { order: 1; }
+.cv-ficha-scorecard    { order: 2; }
+.cv-ficha-qualificacao { order: 3; }
+.cv-ficha-registrar    { order: 4; }
+.cv-ficha-contatos     { order: 5; }
+.cv-ficha-etapas       { order: 6; }
+@media (min-width: 900px) {
+  .cv-ficha-colunas { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); align-items: start; gap: var(--sp-5); }
+  .cv-ficha-coluna { display: flex; flex-direction: column; gap: var(--sp-4); min-width: 0; }
+}
+
+/* o cartão de cada bloco */
+.cv-ficha-cartao {
+  --tom-bloco: var(--border);
+  background: var(--surface);
+  border: 1px solid color-mix(in srgb, var(--tom-bloco) 30%, var(--border));
+  border-top: 3px solid var(--tom-bloco);
+  border-radius: var(--radius-md);
+  padding: var(--sp-4);
+  margin: 0; min-width: 0;
+}
+/* o formulário continua tingido (id-caixa-form), mas com o filete do bloco */
+.id-ferramenta .cv-ficha-cartao.id-caixa-form { padding: var(--sp-4); margin-top: 0; border-top: 3px solid var(--tom-bloco); }
+.cv-ficha-cartao.cv-ficha-tom-etapa   { --tom-bloco: var(--fase-antes); }
+.cv-ficha-cartao.cv-ficha-tom-contato { --tom-bloco: var(--modulo, var(--accent)); }
+.cv-ficha-cartao.cv-ficha-tom-placar  { --tom-bloco: var(--situacao-confirmada); }
+.cv-ficha-cartao.cv-ficha-tom-nota    { --tom-bloco: var(--cor-private-edit); }
+/* o título do cartão: na cor do bloco (proporção do selo, medida), ícone em pastilha */
+.id-ferramenta .cv-ficha-cartao > .id-titulo,
+.id-ferramenta .cv-ficha-cartao > .cv-cabeca .id-titulo {
+  color: color-mix(in srgb, var(--tom-bloco) 75%, var(--text)); margin: 0 0 var(--sp-3); min-height: 28px;
+}
+.id-ferramenta .cv-ficha-cartao > .id-titulo .id-icone,
+.id-ferramenta .cv-ficha-cartao > .cv-cabeca .id-titulo .id-icone {
+  box-sizing: content-box; padding: 5px; border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--tom-bloco) 14%, var(--surface));
+}
+/* rótulo em cima, valor embaixo — e tudo encostado à esquerda */
+.cv-ficha-cartao .cv-ficha-rotulo { margin: var(--sp-3) 0 var(--sp-2); }
+.cv-ficha-cartao > .id-titulo + .cv-ficha-rotulo { margin-top: 0; }
+.cv-ficha-cartao .cv-carregando, .cv-ficha-cartao .cv-vazio { text-align: left; padding: var(--sp-1) 0; margin: 0; }
+.cv-ficha-cartao .cv-historico li { padding-top: 2px; padding-bottom: 2px; }
+.cv-ficha-cartao .cv-historico li > :first-child { margin-top: 0; }
+
+/* a etapa: "Agora", a próxima ação em destaque, avançar, e o seletor com o
+   botão ao lado (o botão desce para a linha de baixo se não couber) */
+.cv-ficha-agora { margin-top: 0; }
+.cv-ficha-proxima {
+  color: var(--text); margin-top: var(--sp-3); padding: var(--sp-2) var(--sp-3);
+  background: color-mix(in srgb, var(--orange) 10%, var(--surface));
+  border-left: 3px solid var(--orange); border-radius: var(--radius-sm);
+  overflow-wrap: anywhere;
+}
+.cv-ficha-proxima:first-child { margin-top: 0; }
+.cv-ficha-mover { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--sp-2); margin-top: var(--sp-3); }
+.cv-ficha-mover .cv-campo { flex: 1 1 14rem; min-width: 0; }
+
+/* registrar contato: a nota inteira; a próxima ação e o "até quando" lado a lado */
+.cv-ficha-form { grid-template-columns: 1fr; margin-top: var(--sp-3); }
+@media (min-width: 40rem) {
+  .cv-ficha-form { grid-template-columns: minmax(0, 1fr) minmax(0, 11rem); }
+}
+
+/* o scorecard e a qualificação dentro do cartão */
+.cv-scorecard.cv-ficha-cartao, .cv-qualificacao.cv-ficha-cartao { margin-top: 0; }
+.cv-ficha-cartao > .cv-cabeca { align-items: flex-end; }
+.cv-ficha-cartao > .cv-cabeca .id-titulo { margin: 0; min-height: 40px; }
+.cv-ficha-cartao > .cv-cabeca .cv-campo-periodo { flex: 0 1 14rem; min-width: 0; }
+.cv-ficha-cartao .id-grupo:first-of-type { margin-top: var(--sp-4); }
+.cv-ficha-cartao .cv-numeros { margin-top: var(--sp-3); row-gap: var(--sp-4); }
+/* ⚠️ O NÚMERO NÃO QUEBRA NO MEIO: `overflow-wrap:anywhere` partia "R$ 1.234.568"
+   em "R$ 1.234.5" / "68". Aqui ele só quebra no espaço, e o tamanho acompanha
+   a largura da coluna (entre os degraus --texto-titulo e --texto-numero), para
+   caber "R$ 1.234.568" até na meia coluna do celular. */
+.cv-ficha-cartao .cv-numero { container-type: inline-size; }
+.cv-ficha-cartao .cv-numero-valor { overflow-wrap: normal; word-break: normal; }
+.cv-ficha-cartao .cv-numero-valor:not(.cv-numero-valor-medio) {
+  font-size: min(var(--texto-numero), max(var(--texto-titulo), 15cqi));
+}
+/* o rótulo EM CIMA do número (em todo o scorecard da ficha) */
+.cv-ficha-cartao .cv-numero-rotulo { order: -1; font-weight: 600; color: var(--text); }
+.cv-ficha-cartao .cv-numero-valor-medio { line-height: 1.1; }
+.cv-ficha-cartao .cv-numero-meta { order: 5; }
+.cv-ficha-cartao .cv-numero-margem { order: 4; }
+.cv-scorecard-linha {
+  list-style: none; margin: var(--sp-4) 0 0; padding: var(--sp-3);
+  display: flex; flex-direction: column; gap: var(--sp-1);
+  font-family: var(--fonte-principal); font-size: var(--texto-corpo); color: var(--text); line-height: 1.5;
+  background: var(--surface2); border-radius: var(--radius-sm); overflow-wrap: anywhere;
+}
+.cv-ficha-qualificacao .cv-qualificacao-vigente { margin-top: 0; }
+.cv-ficha-qualificacao .cv-nota-aviso {
+  color: var(--text); padding: var(--sp-2) var(--sp-3);
+  background: color-mix(in srgb, var(--orange) 10%, var(--surface));
+  border-left: 3px solid var(--orange); border-radius: var(--radius-sm);
+}
+
+/* celular: o modal é quem rola, e só a linha do nome fica parada no topo */
+@media (max-width: 640px) {
+  .cv-modal.cv-ficha { max-height: calc(100dvh - 24px); overflow-y: auto; touch-action: pan-y; overscroll-behavior: contain; }
+  .cv-ficha-topo { position: sticky; top: 0; z-index: 1; padding: var(--sp-2) var(--sp-3) var(--sp-2) var(--sp-4); }
+  .cv-ficha .cv-modal-titulo { font-size: var(--texto-campo); }
+  .cv-ficha-corpo { overflow: visible; flex: 0 0 auto; padding: var(--sp-3); }
+  .cv-ficha-cartao { padding: var(--sp-3); }
+  .id-ferramenta .cv-ficha-cartao.id-caixa-form { padding: var(--sp-3); }
+}

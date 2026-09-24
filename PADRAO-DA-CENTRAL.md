@@ -140,6 +140,10 @@ Regras que valem para os três:
 ## 4. Modal
 
 - **No computador:** largura máxima 420px, centralizado, altura máxima 88vh.
+- **Exceção — a ficha LARGA** (ficha da stylist, `.cv-modal.cv-ficha`): quando
+  o modal é a ficha inteira de uma pessoa, ele abre largo (até 1280px) e em
+  duas colunas a partir de 900px. Pedido do dono (24/09/2026): a coluna de
+  420px deixava a ficha "mal organizada, centralizada".
 - **No celular (≤640px): ocupa a tela com 12px de margem de cada lado.**
   `max-width:none` e `max-height:calc(100dvh - 24px)`.
 - **`dvh`, nunca `vh`**, em qualquer altura de tela cheia.
