@@ -105,7 +105,14 @@ export function instalarBancoDeMentira() {
     if (caminho.startsWith('/rest/v1/rpc/')) {
       const funcao = caminho.slice('/rest/v1/rpc/'.length)
       const corpo = await lerCorpo(entrada, init)
-      if (banco.conhece(funcao)) return resposta(banco.chamar(funcao, corpo))
+      if (banco.conhece(funcao)) {
+        // ⚠️ O `raise` do banco (ex.: período longo demais, 22023) volta como o
+        // PostgREST devolve: 400 com o código — a tela mostra o erro dela.
+        try { return resposta(banco.chamar(funcao, corpo)) } catch (e) {
+          if (e?.pg) return resposta(e.pg, 400)
+          throw e
+        }
+      }
       // ⚠️ FUNÇÃO QUE A DEMONSTRAÇÃO NÃO CONHECE RESPONDE COMO O POSTGREST
       // RESPONDE A FUNÇÃO QUE NÃO EXISTE: 404 com o erro dele. Antes voltava
       // 200 com um objeto `{ ok: false }` — e a tela que espera LISTA (a das

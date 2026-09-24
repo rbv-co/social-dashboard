@@ -31,3 +31,13 @@ export function diasEntre(a, b) {
 export function instanteEmSaoPaulo(dia, hora = '12:00') {
   return new Date(`${dia}T${hora}:00-03:00`).toISOString()
 }
+
+const HORA = new Intl.DateTimeFormat('en-GB', { timeZone: FUSO, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+
+/** 'HH:MM' da hora em São Paulo de um instante (o `to_char(... at time zone
+ * 'America/Sao_Paulo', 'HH24:MI')` do banco). */
+export function horaEmSaoPaulo(instante) {
+  const d = instante instanceof Date ? instante : new Date(instante)
+  if (Number.isNaN(d.getTime())) return null
+  return HORA.format(d)
+}

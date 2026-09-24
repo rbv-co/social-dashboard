@@ -27,6 +27,14 @@
               <option value="">Escolha…</option>
               <option v-for="(nome, sigla) in PRACAS" :key="sigla" :value="sigla">{{ nome }}</option>
             </select></label>
+          <!-- ⚠️ 25/09/2026: A LOJA NO CRIAR. Só a edição tinha o campo, e o
+               encontro novo nascia sem loja — a agenda e o aviso de sobreposto
+               comparam pela loja (sem ela, pela praça + lugar escrito). -->
+          <label class="cv-campo" for="pe-loja"><span>Loja</span>
+            <select id="pe-loja" v-model="novo.loja">
+              <option value="">Sem loja (outro lugar)</option>
+              <option v-for="(nome, chave) in LOJAS" :key="chave" :value="chave">{{ nome }}</option>
+            </select></label>
           <label class="cv-campo" for="pe-vagas"><span>Vagas</span>
             <input id="pe-vagas" type="number" min="7" max="10" v-model.number="novo.vagas"></label>
           <label class="cv-campo cv-campo-largo" for="pe-local"><span>Lugar</span>
@@ -55,6 +63,20 @@
         </div>
       </section>
 
+      <!-- ── LISTA | AGENDA (25/09/2026) ────────────────────────────────────
+           A agenda é o mês das lojas (Private Edit + Beauty Sessions + Private
+           Appointments), para bater agenda e ver encontro sobreposto. -->
+      <div class="cv-escolha cv-vistas pe-vistas" role="tablist" aria-label="Vista">
+        <button type="button" role="tab" class="btn" :class="{ ativa: vista === 'lista' }"
+                :aria-selected="vista === 'lista'" @click="vista = 'lista'"><icone-do-bloco nome="lista" />Lista</button>
+        <button type="button" role="tab" class="btn" :class="{ ativa: vista === 'agenda' }"
+                :aria-selected="vista === 'agenda'" @click="vista = 'agenda'"><icone-do-bloco nome="calendario" />Agenda</button>
+      </div>
+
+      <agenda-do-private-edit v-if="vista === 'agenda'" :chamar="chamar" :versao="versaoDaAgenda"
+                              @abrir="abrirDaAgenda" />
+
+      <template v-else>
       <!-- ── BUSCAR, FILTRAR, PERÍODO E ORDENAR ────────────────────────────
            ⚠️ A BARRA NUNCA VAI SOZINHA AO BANCO, salvo o caso de baixo
            (`precisaDoBanco`). Busca, situação (fora arquivada/todas), loja e
@@ -139,7 +161,7 @@
         </section>
 
         <!-- ── CADA ENCONTRO ────────────────────────────────────────────── -->
-        <section v-for="e in encontrosNaTela" :key="e.codigo" class="cv-bloco id-cartao" :class="`id-tom-${seloDoStatus(e).tom}`">
+        <section v-for="e in encontrosNaTela" :key="e.codigo" :id="`pe-cartao-${e.codigo}`" class="cv-bloco id-cartao" :class="`id-tom-${seloDoStatus(e).tom}`">
           <div class="cv-cabeca">
             <div class="cv-cabeca-texto">
               <h2 class="cv-titulo">{{ dataHoraLegivel(e.quando) }}</h2>
@@ -419,7 +441,14 @@
           Nenhum encontro marcado ainda. Marque o primeiro no bloco de cima.
         </p>
       </template>
+      </template>
     </div>
+
+    <!-- O AVISO DE ENCONTRO SOBREPOSTO: avisa e deixa confirmar (decisão do dono). -->
+    <aviso-de-sobreposicao v-if="aviso" :lista="aviso.lista" :contexto="aviso.contexto" :modo="aviso.modo"
+                           :encontro="aviso.modo === 'editar' ? aviso.encontro.codigo : ''"
+                           :gravando="gravandoAviso" :erro="erroDoAviso"
+                           @confirmar="confirmarAviso" @cancelar="aviso = null" />
 
     <cartao-da-convidada v-if="cartaoAberto" :convidada="cartaoAberto.convidada" :encontro="cartaoAberto.encontro"
                          :telefone-da-stylist="(stylists.find((s) => s.codigo === cartaoAberto.encontro.stylist) || {}).whatsapp || ''"
@@ -460,12 +489,15 @@
  * tela volta ao banco pedindo `p_incluir_arquivadas: true` — ver
  * `precisaDoBanco` em `filtros.js`.
  */
-import { ref, reactive, computed, onMounted, watch } from 'vue'
+import { ref, reactive, computed, onMounted, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import BarraDeTopo from '../../compartilhado/barra-de-topo.vue'
 import FaixaDeErro from '../../compartilhado/faixa-de-erro.vue'
 import BarraDeLista from './barra-de-lista.vue'
 import CartaoDaConvidada from './cartao-da-convidada.vue'
+import AgendaDoPrivateEdit from './agenda-do-private-edit.vue'
+import AvisoDeSobreposicao from './aviso-de-sobreposicao.vue'
+import { valoresQueFicam, mudouHoraOuLugar } from './agenda-regras.js'
 import IconeDoBloco from '../../compartilhado/icone-do-bloco.vue'
 import { estado, hasPermission } from '../../compartilhado/controle-de-login-e-usuario.js'
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../../compartilhado/conectar-no-banco-de-dados.js'
@@ -524,6 +556,10 @@ const copiado = ref(null)
 const cartaoAberto = ref(null)
 
 const filtro = ref({ ...FILTRO_VAZIO })
+// 25/09/2026: Lista | Agenda. A agenda relê quando `versaoDaAgenda` sobe (a
+// cada leitura da lista, que acontece depois de toda gravação desta tela).
+const vista = ref('lista')
+const versaoDaAgenda = ref(0)
 
 const novo = reactive({ stylist: '', quando: '', praca: '', loja: '', vagas: 8, local: '' })
 
@@ -614,6 +650,7 @@ async function carregar(opcoes) {
     encontros.value = lista || []
     stylists.value = quem || []
     etapas.value = et || []
+    versaoDaAgenda.value += 1
     // A escolhida saiu da base (mudou de etapa noutra aba): a escolha volta.
     if (novo.stylist && !liberadas.value.some((s) => s.codigo === novo.stylist)) novo.stylist = ''
     // O que está gravado mudou: os rascunhos de situação voltam ao banco.
@@ -655,22 +692,80 @@ async function criar() {
     // ⚠️ O campo datetime-local devolve hora LOCAL sem fuso. Mandar a string
     // crua faria o banco ler como UTC e o encontro nasceria 3 horas adiantado.
     const quandoISO = new Date(novo.quando).toISOString()
-    const r = await chamar('vessel_criar_private_edit', {
+    const corpo = {
       p_stylist: novo.stylist, p_quando: quandoISO,
       p_local: novo.local || null, p_praca: novo.praca,
       p_loja: novo.loja || null, p_vagas: novo.vagas, p_teste: false,
+    }
+    // ⚠️ 25/09/2026: ANTES DE GRAVAR, A PERGUNTA — já há Private Edit neste
+    // lugar em horário que se cruza? Se há, abre o aviso e só grava se a
+    // pessoa confirmar (decisão do dono: avisa e deixa confirmar).
+    const pergunta = await chamar('vessel_private_edit_sobreposicoes', {
+      p_quando: quandoISO, p_loja: corpo.p_loja, p_praca: corpo.p_praca, p_local: corpo.p_local,
     })
-    // A mensagem do banco vem para a tela: ela já explica em português qual
-    // conferência falhou.
-    if (!r?.ok) { erroAoCriar.value = mensagemDeCriar(r); return }
-    criado.value = r
-    novo.local = ''
-    await carregar()
+    if (pergunta?.sobrepoe?.length) {
+      abrirAviso({ modo: 'criar', corpo, lista: pergunta.sobrepoe, contexto: pergunta.contexto })
+      return
+    }
+    await gravarCriacao(corpo, false)
   } catch {
     erroAoCriar.value = 'Não consegui falar com o banco agora. Tente de novo em um instante.'
   } finally {
     criando.value = false
   }
+}
+
+/** Grava o encontro novo. `confirmar` = false confere de novo no banco (outra
+ * pessoa pode ter marcado entre a pergunta e o gravar); true = já confirmado. */
+async function gravarCriacao(corpo, confirmar) {
+  const r = await chamar('vessel_criar_private_edit', { ...corpo, p_confirmar_sobreposicao: confirmar })
+  if (r?.situacao === 'sobrepoe') {
+    abrirAviso({ modo: 'criar', corpo, lista: r.sobrepoe || [], contexto: r.contexto })
+    return
+  }
+  aviso.value = null
+  // A mensagem do banco vem para a tela: ela já explica em português qual
+  // conferência falhou.
+  if (!r?.ok) { erroAoCriar.value = mensagemDeCriar(r); return }
+  criado.value = r
+  novo.local = ''
+  await carregar()
+}
+
+// ── o aviso de encontro sobreposto (25/09/2026) ─────────────────────────────
+const aviso = ref(null)
+const gravandoAviso = ref(false)
+const erroDoAviso = ref('')
+function abrirAviso(a) {
+  erroDoAviso.value = ''
+  aviso.value = { ...a, contexto: Array.isArray(a.contexto) ? a.contexto : [] }
+}
+async function confirmarAviso() {
+  const a = aviso.value
+  if (!a) return
+  gravandoAviso.value = true
+  erroDoAviso.value = ''
+  try {
+    if (a.modo === 'editar') await gravarEdicao(a.encontro, a.corpo, true)
+    else await gravarCriacao(a.corpo, true)
+  } catch {
+    erroDoAviso.value = 'Não consegui falar com o banco agora. Nada foi gravado — tente de novo em um instante.'
+  } finally {
+    gravandoAviso.value = false
+  }
+}
+
+// ── da agenda para o encontro ────────────────────────────────────────────────
+// Clicar num Private Edit da agenda abre o cartão dele na lista (com o
+// formulário de editar aberto, para quem pode editar).
+async function abrirDaAgenda(codigo) {
+  vista.value = 'lista'
+  filtro.value = { ...FILTRO_VAZIO, dias: null, busca: codigo }
+  await nextTick()
+  const e = encontros.value.find((x) => x.codigo === codigo)
+  if (e && podeExecutarAcao('editar', podeEditar.value)) abrirEditar(e)
+  await nextTick()
+  document.getElementById(`pe-cartao-${codigo}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' })
 }
 
 async function encerrar(encontro, ativa) {
@@ -728,7 +823,7 @@ async function salvarEdicao(e) {
   erroDeEditar.value = null
   try {
     const quandoISO = rascunho.quando ? new Date(rascunho.quando).toISOString() : null
-    const r = await chamar('vessel_private_edit_editar', {
+    const corpo = {
       p_codigo: e.codigo,
       p_quando: quandoISO,
       p_local: rascunho.local || null,
@@ -736,20 +831,43 @@ async function salvarEdicao(e) {
       p_loja: rascunho.loja || null,
       p_vagas: rascunho.vagas || null,
       p_stylist: rascunho.stylist || null,
-    })
-    if (!r?.ok) {
-      erroDeEditar.value = e.codigo
-      mensagemEditar.value = mensagemDeEditar(r?.situacao)
-      return
     }
-    editando.value = null
-    await carregar()
+    // ⚠️ 25/09/2026: mudou o dia/hora ou o lugar? Então a pergunta, com o que
+    // VAI FICAR gravado (campo vazio = "não mexe", a regra do banco) e
+    // ignorando o próprio encontro.
+    const ficam = valoresQueFicam(e, rascunho, quandoISO)
+    if (mudouHoraOuLugar(e, ficam)) {
+      const pergunta = await chamar('vessel_private_edit_sobreposicoes', {
+        p_quando: ficam.quando, p_loja: ficam.loja, p_praca: ficam.praca, p_local: ficam.local, p_ignorar_codigo: e.codigo,
+      })
+      if (pergunta?.sobrepoe?.length) {
+        abrirAviso({ modo: 'editar', encontro: e, corpo, lista: pergunta.sobrepoe, contexto: pergunta.contexto })
+        return
+      }
+    }
+    await gravarEdicao(e, corpo, false)
   } catch {
     erroDeEditar.value = e.codigo
     mensagemEditar.value = mensagemDeEditar('erro_de_rede')
   } finally {
     salvandoEdicao.value = null
   }
+}
+
+async function gravarEdicao(e, corpo, confirmar) {
+  const r = await chamar('vessel_private_edit_editar', { ...corpo, p_confirmar_sobreposicao: confirmar })
+  if (r?.situacao === 'sobrepoe') {
+    abrirAviso({ modo: 'editar', encontro: e, corpo, lista: r.sobrepoe || [], contexto: r.contexto })
+    return
+  }
+  aviso.value = null
+  if (!r?.ok) {
+    erroDeEditar.value = e.codigo
+    mensagemEditar.value = mensagemDeEditar(r?.situacao)
+    return
+  }
+  editando.value = null
+  await carregar()
 }
 
 // ── arquivar / desarquivar ───────────────────────────────────────────────────
@@ -973,4 +1091,6 @@ onMounted(carregar)
 @import './estilo-comercial.css';
 @import '../../estilos/identidade-da-ferramenta.css';
 
+/* Lista | Agenda: o ícone ao lado do rótulo. */
+.pe-vistas .btn { display: inline-flex; align-items: center; gap: var(--sp-2); }
 </style>
