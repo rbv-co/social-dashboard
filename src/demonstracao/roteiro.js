@@ -14,10 +14,13 @@ export const PASSOS = [
     onde: 'Comercial Vessel → Stylist Circle → bloco "Cadastrar parceira": nome, WhatsApp e "Como ela chegou", depois "Cadastrar parceira".' },
   { id: 2, quem: 'Ionara', titulo: 'Abrir a ficha dela e registrar um contato',
     onde: 'No quadro, toque no nome dela (ou em "Registrar contato"): escolha o canal, o resultado "Conversou" e "Registrar contato".' },
-  { id: 3, quem: 'Ionara', titulo: 'Avançar a parceira de etapa',
-    onde: 'Na ficha, "Avançar para…" (ou escolha qualquer etapa em "Ou mover para") — ou no quadro, "Avançar para…". As etapas se configuram na engrenagem "Etapas do funil".' },
+  // ⚠️ 24/09/2026: SÓ QUEM ESTÁ NA ATIVADA PODE TER PRIVATE EDIT. O passo 3
+  // conta quando ela chega numa etapa que libera Private Edit — mover para
+  // qualquer outra não basta (o passo 4 seria recusado).
+  { id: 3, quem: 'Ionara', titulo: 'Ativar a parceira (mover para Ativada)',
+    onde: 'No quadro, arraste o cartão dela até a coluna "Ativada" (no computador) — ou, na ficha, "Ou mover para" → Ativada e "Mover". Só quem está na Ativada pode ter Private Edit. As etapas se configuram na engrenagem "Etapas do funil".' },
   { id: 4, quem: 'Ionara', titulo: 'Marcar um Private Edit com essa parceira',
-    onde: 'Comercial Vessel → Private Edit → "Marcar um encontro": escolha ela, o dia de HOJE, a praça, e "Criar encontro". A etapa dela não muda sozinha — quem move é você.' },
+    onde: 'Comercial Vessel → Private Edit → "Marcar um encontro": ela já aparece na lista (só aparecem as da Ativada). Escolha ela, o dia de HOJE, a praça, e "Criar encontro".' },
   { id: 5, quem: 'Ionara', titulo: 'Incluir duas convidadas',
     onde: 'No encontro novo, "Convidadas e presença": nome e WhatsApp, "Incluir convidada" — duas vezes.' },
   { id: 6, quem: 'Ionara', titulo: 'Gerar o cartão e a mensagem de uma convidada',
@@ -48,7 +51,7 @@ export function aplicarAviso(roteiro, evento, dados = {}) {
     case 'pronta': return roteiroVazio() // a Central recarregou: o banco voltou ao começo
     case 'stylist_criada': marcar(1); break
     case 'contato_registrado': marcar(2); break
-    case 'etapa_mudada': marcar(3); break
+    case 'etapa_mudada': if (dados.libera_private_edit) marcar(3); break
     case 'encontro_criado': marcar(4); break
     case 'convidada_incluida':
       r.convidadas = junta(r.convidadas, dados.id)

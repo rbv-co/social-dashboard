@@ -299,7 +299,13 @@ passo('Stylist Circle')
   // de etapa e mostra o histórico de etapas.
   const noQuadro = await pagina.locator('.cv-quadro-titulo').allInnerTexts()
   if (!/^Identificado · /i.test(noQuadro[0] || '')) falhar(onde, `a primeira coluna do quadro não é Identificado: ${noQuadro[0]}`)
-  if (!noQuadro.some((t) => /^Saídas · /i.test(t))) falhar(onde, 'o quadro não junta as saídas no fim')
+  // 24/09/2026: cada saída é a sua coluna, no fim (alvo do arrastar).
+  if (!/^Ativada · /i.test(noQuadro.at(-2) || '') || !/^Desclassificado · /i.test(noQuadro.at(-1) || '')) {
+    falhar(onde, `as saídas não são as duas últimas colunas (Ativada, Desclassificado): ${noQuadro.slice(-2)}`)
+  }
+  if (!/Motivo: Não conecta com a marca/.test(await pagina.locator('.cv-quadro-cartao', { hasText: 'Bianca Serra' }).innerText().catch(() => ''))) {
+    falhar(onde, 'o cartão da desclassificada não mostra o motivo')
+  }
   // O contato fácil no cartão: só confere o endereço (o toque abriria uma aba de fora).
   const contatos = async (nome) => pagina.locator('.cv-quadro-cartao', { hasText: nome }).first()
     .locator('.cv-contato a').evaluateAll((as) => as.map((a) => `${a.getAttribute('href')}|${a.getAttribute('target')}|${a.getAttribute('aria-label')}`))
@@ -333,6 +339,62 @@ passo('Stylist Circle')
   await esperar(400)
   if (!/Identificado → Qualificada/.test(await pagina.locator('.cv-modal-corpo').innerText())) falhar(onde, 'avançou e o histórico de etapas não mostrou')
   await clicar(pagina.locator('.cv-modal-fechar').first(), 'fechar a ficha da Luiza')
+
+  // ── 24/09/2026: ARRASTAR — para a Ativada (entra na base do Private Edit) e
+  // para o Desclassificado (pede o motivo; cancelar não move nada).
+  const cartao = (nome) => pagina.locator('.cv-quadro-cartao', { hasText: nome }).first()
+  const coluna = (etapa) => pagina.locator(`.cv-quadro-coluna[data-etapa="${etapa}"]`)
+  const colunaDe = async (nome) => cartao(nome).evaluate((el) => el.closest('.cv-quadro-coluna')?.dataset.etapa)
+  await cartao('Luiza').dragTo(coluna('Ativada'))
+  await esperar(600); await conferirTela()
+  if ((await colunaDe('Luiza')) !== 'Ativada') falhar(onde, `arrastar a Luiza para a Ativada não moveu: ${await colunaDe('Luiza')}`)
+  if (!/Luiza Amaral \(exemplo\) ativada — já aparece em Marcar um encontro do Private Edit/.test(await conferirTela())) {
+    falhar(onde, 'soltar na Ativada não deu o aviso de que ela entrou na base do Private Edit')
+  }
+  await cartao('Paula').dragTo(coluna('Desclassificado'))
+  await esperar(400)
+  const pop = pagina.locator('[role="dialog"][aria-label="Motivo: Desclassificado"]')
+  if (!(await pop.count())) falhar(onde, 'soltar no Desclassificado não abriu a escolha do motivo')
+  await clicar(pop.getByRole('button', { name: 'Cancelar' }).last(), 'cancelar o motivo')
+  if ((await colunaDe('Paula')) !== 'Convidado') falhar(onde, `cancelar o motivo moveu a Paula: ${await colunaDe('Paula')}`)
+  await cartao('Paula').dragTo(coluna('Desclassificado'))
+  await esperar(400)
+  await clicar(pop.getByRole('button', { name: 'Desclassificar' }), 'desclassificar sem motivo')
+  if (!/Escolha o motivo/.test(await pop.innerText().catch(() => ''))) falhar(onde, 'desclassificar sem motivo passou calado')
+  await clicar(pop.getByRole('radio', { name: 'Outro' }), 'motivo Outro')
+  await clicar(pop.getByRole('button', { name: 'Desclassificar' }), 'Outro sem nota')
+  if (!/pede uma nota/.test(await pop.innerText().catch(() => ''))) falhar(onde, '"Outro" sem nota passou calado')
+  await clicar(pop.getByRole('radio', { name: 'Desinteresse' }), 'motivo Desinteresse')
+  await clicar(pop.getByRole('button', { name: 'Desclassificar' }), 'desclassificar com motivo')
+  await esperar(500)
+  if ((await colunaDe('Paula')) !== 'Desclassificado') falhar(onde, `a Paula não foi para o Desclassificado: ${await colunaDe('Paula')}`)
+  if (!/Motivo: Desinteresse/.test(await cartao('Paula').innerText())) falhar(onde, 'o cartão da Paula não mostra o motivo')
+  const saidas = await pagina.locator('.cv-grupo-saidas').innerText().catch(() => '')
+  if (!/Saídas por motivo/i.test(saidas) || !/Desinteresse\s*1/.test(saidas)) falhar(onde, `o bloco "Saídas por motivo" não contou: ${saidas.slice(0, 200)}`)
+  // A ficha diz se ela pode ter Private Edit.
+  await clicar(pagina.locator('.cv-quadro-nome', { hasText: 'Luiza' }).first(), 'abrir a ficha da Luiza de novo')
+  if (!/Pode marcar Private Edit/.test(await pagina.locator('.cv-ficha-etapa').innerText())) falhar(onde, 'a ficha da Luiza na Ativada não diz que ela pode ter Private Edit')
+  await clicar(pagina.locator('.cv-modal-fechar').first(), 'fechar a ficha da Luiza')
+  await clicar(pagina.locator('.cv-quadro-nome', { hasText: 'Renata' }).first(), 'abrir a ficha da Renata')
+  if (!/Private Edit liberado ao chegar em: Ativada/.test(await pagina.locator('.cv-ficha-etapa').innerText())) falhar(onde, 'a ficha da Renata não diz onde o Private Edit libera')
+  await clicar(pagina.locator('.cv-modal-fechar').first(), 'fechar a ficha da Renata')
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+passo('Private Edit: quem foi para a Ativada aparece na hora; as outras não')
+{
+  await abrirPeloMenu('Private Edit')
+  const opcoes = await pagina.locator('#pe-stylist option').allInnerTexts()
+  if (!opcoes.some((t) => /Luiza Amaral/.test(t))) falhar(onde, `a Luiza (arrastada para a Ativada) não está em "Marcar um encontro": ${opcoes}`)
+  if (opcoes.some((t) => /Renata Lima|Paula Reis/.test(t))) falhar(onde, `parceira fora da Ativada no seletor: ${opcoes}`)
+  if (!/Só aparecem as parceiras em etapas que liberam Private Edit \(hoje: Ativada\)/.test(await conferirTela())) falhar(onde, 'a nota da base do Private Edit não apareceu')
+  const luiza = await pagina.locator('#pe-stylist option', { hasText: 'Luiza Amaral' }).getAttribute('value')
+  await pagina.selectOption('#pe-stylist', luiza)
+  const d = new Date(); d.setDate(d.getDate() + 3)
+  await pagina.fill('#pe-quando', `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}T19:00`)
+  await pagina.selectOption('#pe-praca', 'CPS')
+  await clicar(pagina.getByRole('button', { name: 'Criar encontro' }), 'criar o encontro com a Luiza')
+  if (!/criado\. O convite está na lista abaixo/.test(await conferirTela())) falhar(onde, 'o encontro com a Luiza (na Ativada) não foi criado')
 }
 
 // ════════════════════════════════════════════════════════════════════════════
