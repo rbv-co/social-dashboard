@@ -245,10 +245,10 @@ import { orcamentoEfetivoDaCampanha } from './orcamento-hierarquia.js'
 import { baldeDoObjetivo, ehDeWhatsapp, baldeEfetivo } from './baldes.js'
 // Catálogo de métricas (como ler `actions`/`action_values` e o custo por
 // resultado) — mesmo motivo de baldes.js: a tela e o robô precisam da mesma
-// resposta. Ver metricas.js.
-import { GT_METRIC_CATALOG, GT_BALDE_PADRAO, _gtNum, _gtActionVal, _gtActionValue, _gtPerGasto,
-  _GT_PURCHASE, _GT_LEAD, _GT_VISIT, _GT_MSG, _GT_MSG_CONN, _GT_MSG_REPLY,
-  _GT_ATC, _GT_IC, _GT_VIDEO, _GT_POSTENG, _GT_LPV } from './metricas.js'
+// resposta. Ver metricas.js. Os outros exports do módulo (_gtNum,
+// _gtActionVal, _GT_* etc.) ficam só nos leitores, dentro do próprio
+// catálogo — a tela não chama nenhum deles direto, só o robô vai usar.
+import { GT_METRIC_CATALOG, GT_BALDE_PADRAO } from './metricas.js'
 import { normalizarRegua, metaDoBalde, reguaDaConta, mesclarMetasDaConta } from './regua.js'
 import { quantidadesDoInsight, calcularPonderada } from './ponderada.js'
 // Alvo de cada tipo de campanha (custo por lead/conversa/venda/visita/mil
