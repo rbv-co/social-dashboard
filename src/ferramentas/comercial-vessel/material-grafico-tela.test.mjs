@@ -52,7 +52,11 @@ test('⚠️ o botão baixa o que a prévia mostra: os dois saem do mesmo svgDoQ
   assert.match(QR, /new Blob\(\[svg\.value\]/, 'o SVG baixado tem de ser o mesmo da prévia')
   assert.match(QR, /pngDoQr\(props\.endereco\)/)
   assert.doesNotMatch(QR, /v-html=/)
-  assert.match(QR, /class="btn btn-principal"[^>]*>\s*\{\{ gerandoPng \? 'Gerando…' : 'Baixar PNG' \}\}/)
+  // ⚠️ No Material Gráfico (sem `apoio`) o PNG continua sendo o principal; só o
+  // cartão da Beauty Session (24/09/2026) o põe no grupo de apoio, porque lá a
+  // principal é "Cadastrar lead".
+  assert.match(QR, /:class="apoio \? 'id-btn-suave' : 'btn-principal'"[^>]*>[\s\S]{0,80}\{\{ gerandoPng \? 'Gerando…' : 'Baixar PNG' \}\}/)
+  assert.match(QR, /apoio: \{ type: Boolean, default: false \}/, 'sem `apoio`, nada muda no Material Gráfico')
 })
 
 test('⚠️ a prévia fica sobre PAPEL (claro nos dois temas), nunca sobre a superfície do tema', () => {

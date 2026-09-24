@@ -25,7 +25,10 @@ import { proporcao } from '../comercial-vessel/estatistica.js'
  * de convidadas — só a contagem de leituras do QR), então esta lista cobre
  * as cinco ações que ESCREVEM na sessão.
  */
-export const ACOES_QUE_EXIGEM_EDITAR = ['encerrar', 'reabrir', 'editar', 'arquivar', 'apagar']
+// ⚠️ `cadastrar_lead` entrou em 24/09/2026: `vessel_beauty_session_cadastrar_lead`
+// usa a MESMA trava das outras (`is_vessel_atendimentos_editar()`). Ver a lista
+// das leads (`vessel_leads_da_beauty_session`) é leitura: trava de ver.
+export const ACOES_QUE_EXIGEM_EDITAR = ['encerrar', 'reabrir', 'editar', 'arquivar', 'apagar', 'cadastrar_lead']
 
 export function podeExecutarAcao(acao, podeEditar) {
   if (ACOES_QUE_EXIGEM_EDITAR.includes(acao)) return !!podeEditar
@@ -62,6 +65,10 @@ export function calcularConjunto(lista) {
     totalCartao: cartao,
     totalLeituras: mesa + cartao,
     totalPessoas: somar('pessoas'),
+    // As duas portas de "Se identificaram" (24/09/2026). `null` quando o banco
+    // ainda não as manda — a tela não inventa "0 pela equipe".
+    totalPessoasQr: l.length && l.every((x) => x?.pessoas_qr !== undefined) ? somar('pessoas_qr') : null,
+    totalPessoasEquipe: l.length && l.every((x) => x?.pessoas_equipe !== undefined) ? somar('pessoas_equipe') : null,
     totalCompareceram: somar('compareceram'),
     totalReceita: somar('receita'),
     conversao: proporcao(somar('pessoas'), mesa + cartao),
@@ -137,6 +144,22 @@ export function mensagemDeTemGente(leituras) {
   return `Esta sessão já teve ${n} ${plural} do QR. Apagar deixaria essas leituras `
     + 'sem sessão. Dá para encerrar (continua no histórico) ou arquivar (sai das '
     + 'contas e da lista).'
+}
+
+/**
+ * A frase que troca o botão de apagar quando a resposta é `tem_leads`
+ * (24/09/2026): a sessão não teve leitura do QR, mas já tem gente identificada
+ * — em geral cadastrada pela equipe. Como `tem_gente`, NÃO é erro.
+ *
+ * ⚠️ SEM NÚMERO, DE PROPÓSITO. A recusa do banco olha QUALQUER origem da
+ * sessão, inclusive a de ficha de teste, e o "Se identificaram" da tela não
+ * conta teste. Citar o número da tela aqui poderia dizer "0 leads" na mesma
+ * frase que recusa por haver lead — o gotcha do zero da tela irmã.
+ */
+export function mensagemDeTemLeads() {
+  return 'Esta sessão já tem lead identificada. Apagar deixaria essas pessoas sem a '
+    + 'sessão de onde vieram. Dá para encerrar (continua no histórico) ou arquivar '
+    + '(sai das contas e da lista).'
 }
 
 /**

@@ -400,14 +400,14 @@ test('conta das Beauty Sessions: LISTA com as chaves do json_build_object do SQL
   assert.ok(Array.isArray(lista), 'a tela faz .filter na resposta: tem de ser lista')
   // `2026-09-19-vessel-beauty-sessions-lista-devolve-arquivada.sql`, linha a linha.
   assert.deepEqual(Object.keys(lista[0]), ['codigo', 'quando', 'praca', 'loja', 'parceiro', 'ativa', 'arquivada',
-    'leituras_mesa', 'leituras_cartao', 'pessoas', 'pedidos', 'confirmados', 'compareceram', 'receita',
+    'leituras_mesa', 'leituras_cartao', 'pessoas', 'pessoas_qr', 'pessoas_equipe', 'pedidos', 'confirmados', 'compareceram', 'receita',
     'janela_de_venda_em_dias'])
   // `order by quando desc`, e a arquivada fica de fora por padrão.
   assert.deepEqual(lista.map((s) => s.codigo), [S3, S2, S1])
   const aurora = lista.find((s) => s.codigo === S1)
   assert.deepEqual(aurora, { codigo: S1, quando: '2026-09-14', praca: 'CPS', loja: 'iguatemi',
     parceiro: 'Salão Aurora (exemplo)', ativa: false, arquivada: false, leituras_mesa: 38, leituras_cartao: 6,
-    pessoas: 4, pedidos: 4, confirmados: 3, compareceram: 2,
+    pessoas: 4, pessoas_qr: 4, pessoas_equipe: 0, pedidos: 4, confirmados: 3, compareceram: 2,
     // 3480 (visita em 17/09, compra no mesmo dia) + 1290 (visita 18/09, compra 21/09)
     receita: 4770, janela_de_venda_em_dias: 7 })
   const comArquivada = chamar('vessel_conta_das_beauty_sessions', { p_incluir_arquivadas: true })
@@ -415,6 +415,49 @@ test('conta das Beauty Sessions: LISTA com as chaves do json_build_object do SQL
   assert.equal(comArquivada.find((s) => s.codigo === S4).arquivada, true)
   // `p_dias` só mexe na janela da venda: com 0 dias, só a compra do próprio dia.
   assert.equal(chamar('vessel_conta_das_beauty_sessions', { p_dias: 0 }).find((s) => s.codigo === S1).receita, 3480)
+})
+
+// ── o cadastro pela equipe (`2026-09-24-beauty-session-cadastro-pela-equipe.sql`) ──
+test('cadastrar lead: as conferências e as situações da função de verdade, na ordem', () => {
+  const { chamar } = novoBanco()
+  const ok = { p_codigo: S2, p_nome: 'Helena Prado (exemplo)', p_whatsapp: '5519988776655' }
+  assert.equal(chamar('vessel_beauty_session_cadastrar_lead', { ...ok, p_codigo: 'BS-20990101-CPS-XX' }).situacao, 'nao_achei')
+  assert.equal(chamar('vessel_beauty_session_cadastrar_lead', { ...ok, p_codigo: S4 }).situacao, 'sessao_arquivada')
+  assert.equal(chamar('vessel_beauty_session_cadastrar_lead', { ...ok, p_nome: ' x ' }).situacao, 'sem_nome')
+  assert.equal(chamar('vessel_beauty_session_cadastrar_lead', { ...ok, p_whatsapp: '9900' }).situacao, 'whatsapp_invalido')
+  assert.equal(chamar('vessel_beauty_session_cadastrar_lead', { ...ok, p_instagram: 'x'.repeat(121) }).situacao, 'instagram_longo')
+  assert.equal(chamar('vessel_beauty_session_cadastrar_lead', { ...ok, p_interesse: 'outra' }).situacao, 'interesse_invalido')
+  const r = chamar('vessel_beauty_session_cadastrar_lead', { ...ok, p_interesse: 'rever-uma-peca' })
+  assert.equal(r.ok, true)
+  assert.equal(r.ja_na_base, false)
+  const dup = chamar('vessel_beauty_session_cadastrar_lead', { ...ok, p_nome: 'Outra vez' })
+  assert.deepEqual([dup.ok, dup.situacao, dup.porta, dup.nome], [false, 'ja_estava', 'equipe', 'Helena Prado (exemplo)'])
+  // A Nathalia (2305) leu o QR do Studio Lírio: a equipe recebe o aviso "pelo QR".
+  assert.equal(chamar('vessel_beauty_session_cadastrar_lead', { ...ok, p_whatsapp: '5519970000305' }).porta, 'qr')
+  // Encerrada aceita (a Aurora, S1), e a pessoa que já estava na base é a mesma ficha.
+  const base = chamar('vessel_beauty_session_cadastrar_lead', { ...ok, p_codigo: S1, p_whatsapp: '5519970000307' })
+  assert.deepEqual([base.ok, base.ja_na_base, base.nome], [true, true, 'Sofia Almeida (exemplo)'])
+  const lirio = chamar('vessel_conta_das_beauty_sessions', {}).find((s) => s.codigo === S2)
+  assert.deepEqual([lirio.pessoas, lirio.pessoas_qr, lirio.pessoas_equipe], [3, 1, 2])
+})
+
+test('as leads da sessão: porta, quem cadastrou, foi à loja e comprou', () => {
+  const { chamar } = novoBanco()
+  const aurora = chamar('vessel_leads_da_beauty_session', { p_codigo: S1, p_dias: 7 })
+  assert.equal(aurora.length, 4)
+  assert.deepEqual(Object.keys(aurora[0]), ['pessoa_id', 'nome', 'telefone', 'instagram', 'porta', 'entrou_em',
+    'cadastrado_por_nome', 'foi_a_loja', 'comprou'])
+  const laura = aurora.find((l) => l.pessoa_id === 2301)
+  assert.deepEqual([laura.porta, laura.foi_a_loja, laura.comprou], ['qr', true, true])
+  const lirio = chamar('vessel_leads_da_beauty_session', { p_codigo: S2 })
+  const clara = lirio.find((l) => l.pessoa_id === 2306)
+  assert.deepEqual([clara.porta, clara.cadastrado_por_nome], ['equipe', 'Ionara (exemplo)'])
+})
+
+test('apagar sessão com lead e sem leitura: tem_leads', () => {
+  const { chamar, banco } = novoBanco()
+  banco.estado.origens.push({ pessoa_id: 2311, evento_id: S3 })
+  assert.equal(chamar('vessel_beauty_session_apagar', { p_codigo: S3 }).situacao, 'tem_leads')
 })
 
 test('criar Beauty Session: as conferências e as frases de `vessel_beauty_session_criar`, na ordem', () => {

@@ -21,11 +21,18 @@
       </template>
       <p v-else class="qrb-nota">{{ motivoSemEndereco }}</p>
 
+      <!-- ⚠️ `apoio` (24/09/2026): no cartão da Beauty Session a ação principal
+           é "Cadastrar lead" — um principal por bloco (item 3 do padrão) —, e os
+           três do QR viram o grupo de apoio, no tom suave da ferramenta, com
+           ícone. Sem `apoio` (o Material Gráfico) nada muda. -->
       <div v-if="endereco" class="qrb-acoes">
-        <button class="btn btn-principal" :disabled="gerandoPng" @click="baixarPng">
+        <button class="btn" :class="apoio ? 'id-btn-suave' : 'btn-principal'" :disabled="gerandoPng"
+                @click="baixarPng"><icone-do-bloco v-if="apoio" nome="baixar" />
           {{ gerandoPng ? 'Gerando…' : 'Baixar PNG' }}</button>
-        <button class="btn" @click="baixarSvg">Baixar SVG</button>
-        <button class="btn" @click="copiar">{{ copiado ? 'Copiado' : 'Copiar endereço' }}</button>
+        <button class="btn" :class="{ 'id-btn-suave': apoio }" @click="baixarSvg"><icone-do-bloco v-if="apoio" nome="baixar" />
+          Baixar SVG</button>
+        <button class="btn" :class="{ 'id-btn-suave': apoio }" @click="copiar"><icone-do-bloco v-if="apoio" nome="copiar" />
+          {{ copiado ? 'Copiado' : 'Copiar endereço' }}</button>
       </div>
       <p v-if="erro" class="qrb-nota qrb-erro" role="alert">{{ erro }}</p>
     </div>
@@ -41,6 +48,7 @@
  * entrando na página, nem mesmo o nosso. */
 import { computed, ref } from 'vue'
 import { svgDoQr, pngDoQr, nomeDoArquivoDoQr } from '../../compartilhado/qr.js'
+import IconeDoBloco from '../../compartilhado/icone-do-bloco.vue'
 
 const props = defineProps({
   endereco: { type: String, default: '' },
@@ -48,6 +56,9 @@ const props = defineProps({
   // { programa, praca, data | codigo, sequencia } — ver nomeDoArquivoDoQr
   arquivo: { type: Object, required: true },
   motivoSemEndereco: { type: String, default: 'Sem endereço válido, não há QR para baixar.' },
+  // Os três botões como grupo de APOIO (tom suave, com ícone), para quando a
+  // ação principal do bloco é outra — ver o comentário no template.
+  apoio: { type: Boolean, default: false },
 })
 
 const gerandoPng = ref(false)
@@ -105,6 +116,9 @@ async function copiar() {
 </script>
 
 <style scoped>
+/* os botões de `apoio` e o ícone vêm da folha de identidade (as classes
+   `id-btn-suave` e `id-icone`), que precisa estar DENTRO deste `scoped` */
+@import '../../estilos/identidade-da-ferramenta.css';
 .qrb {
   display: flex;
   flex-wrap: wrap;

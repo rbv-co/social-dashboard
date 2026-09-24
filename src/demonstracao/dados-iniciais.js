@@ -180,12 +180,22 @@ export function dadosIniciais(agora = new Date()) {
     visita(2310, 'iguatemi', em(3, '19:00'), 'confirmado', em(-3, '19:30'), CAROLINA),
     visita(2311, 'tivoli', em(2, '11:00'), 'cancelado', em(-2, '09:30'), { client_advisor: 'Beatriz (exemplo)' }),
   ]
+  // ⚠️ A RAQUEL SIQUEIRA (2306) FOI CADASTRADA PELA EQUIPE no Studio Lírio
+  // (24/09/2026): a origem dela leva `offline_equipe`, e a linha de
+  // `vessel_beauty_session_cadastros` (em `cadastros`, abaixo) diz quem foi.
+  // As outras leram o QR. É o que faz as duas portas aparecerem na demonstração.
+  const quandoEntrou = (id) => visitas.find((v) => v.pessoa_id === id)?.criado_em ?? em(-9, '16:00')
   const origensDasVisitas = maisPessoas.map((p) => ({
     pessoa_id: p.id,
+    momento: quandoEntrou(p.id),
     canal: p.id <= 2306 ? 'beauty_session' : 'private_appointment',
     evento_id: p.id <= 2304 ? S1 : p.id <= 2306 ? S2 : null,
     stylist_id: null,
+    utm_medium: p.id === 2306 ? 'offline_equipe' : p.id <= 2305 ? 'offline_qr' : null,
   }))
+  const cadastros = [
+    { codigo: S2, pessoa_id: 2306, cadastrado_por_nome: USUARIO_DA_DEMONSTRACAO, criado_em: quandoEntrou(2306) },
+  ]
   const pedidosDasVisitas = [
     { id: 9101, numero: 48210, pessoa_id: 2301, situacao_id: 9, data_do_pedido: dia(-6), data_da_venda: dia(-6), receita_liquida: 3480, pecas: 2 },
     { id: 9102, numero: 48266, pessoa_id: 2302, situacao_id: 9, data_do_pedido: dia(-2), data_da_venda: dia(-2), receita_liquida: 1290, pecas: 1 },
@@ -198,6 +208,6 @@ export function dadosIniciais(agora = new Date()) {
     atendimentos: [...atendimentos, ...visitas],
     origens: [...origens, ...origensDasVisitas],
     pedidos: [...pedidos, ...pedidosDasVisitas],
-    contatos, aberturas, sessoes, leiturasDasSessoes,
+    contatos, aberturas, sessoes, leiturasDasSessoes, cadastros,
   }
 }

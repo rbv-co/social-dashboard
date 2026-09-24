@@ -32,6 +32,8 @@
  *   id-selo           o selo da situação, pintado pelo mesmo tom
  *   id-tom-<tom>      a situação: andamento, viva, confirmada, queda, faltou, parada
  *   id-icone          o ícone SVG (src/compartilhado/icone-do-bloco.vue)
+ *   id-btn-<sentido>  o botão comum com o sentido na cor: ferramenta, suave,
+ *                     parar, valer, neutro (ver o bloco "botões com sentido")
  *
  * AS TRÊS REGRAS QUE FAZEM A COR AJUDAR SEM VIRAR CARNAVAL:
  *   1. A cor mora no FILETE, no ÍCONE e no TÍTULO PEQUENO. O texto de ler
@@ -116,3 +118,54 @@
 }
 /* cinza não tem cor para misturar: o neutro do tema, como `.selo-neutro` */
 .id-ferramenta .id-selo.id-tom-parada { background: var(--surface2); border-color: var(--border); color: var(--muted); }
+
+/* ── BOTÕES COM SENTIDO (24/09/2026) ─────────────────────────────────────────
+ * Pedido do dono, olhando o cartão das Beauty Sessions: "os botões de ação do
+ * card de cada sessão ficaram muito pobres, pode ser colorido também, mais
+ * evidente o 'encerrar', 'editar' etc.". Cinco quadrados de contorno cinza,
+ * iguais, não dizem qual é parar e qual é mexer.
+ *
+ * ⚠️ CONTINUAM SENDO `.btn` — o comum do item 3 do PADRÃO —, só ganham o tom:
+ * fundo de 10% da cor, borda de 50% e TEXTO na proporção 75/25 do `.selo`
+ * (75% da cor + 25% de `--text`), a mesma que já foi medida para passar de
+ * 4,5 nos dois temas. O `.btn-principal` e o `.btn-perigo` não mudam.
+ *
+ *   id-btn-ferramenta  mexer na coisa (Editar): o tom da ferramenta
+ *   id-btn-suave       o que é de apoio (baixar, copiar): o tom da ferramenta,
+ *                      mais fraco — contorno sim, fundo quase nada
+ *   id-btn-parar       interromper (Encerrar): a cor de "caiu/parou"
+ *   id-btn-valer       voltar a valer (Reabrir): a cor de "está valendo"
+ *   id-btn-neutro      guardar (Arquivar): sem cor, mas com contorno FIRME —
+ *                      não pode parecer desativado
+ * ────────────────────────────────────────────────────────────────────────── */
+.id-ferramenta .btn.id-btn-ferramenta { --tom-btn: var(--modulo); }
+.id-ferramenta .btn.id-btn-suave      { --tom-btn: var(--modulo); }
+.id-ferramenta .btn.id-btn-parar      { --tom-btn: var(--situacao-queda); }
+.id-ferramenta .btn.id-btn-valer      { --tom-btn: var(--situacao-viva); }
+.id-ferramenta .btn.id-btn-ferramenta,
+.id-ferramenta .btn.id-btn-parar,
+.id-ferramenta .btn.id-btn-valer {
+  background: color-mix(in srgb, var(--tom-btn) 10%, var(--surface));
+  border-color: color-mix(in srgb, var(--tom-btn) 50%, var(--surface));
+  color: color-mix(in srgb, var(--tom-btn) 75%, var(--text));
+  font-weight: 600;
+}
+.id-ferramenta .btn.id-btn-ferramenta:hover:not(:disabled),
+.id-ferramenta .btn.id-btn-parar:hover:not(:disabled),
+.id-ferramenta .btn.id-btn-valer:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--tom-btn) 18%, var(--surface));
+}
+.id-ferramenta .btn.id-btn-suave {
+  background: color-mix(in srgb, var(--tom-btn) 4%, var(--surface));
+  border-color: color-mix(in srgb, var(--tom-btn) 35%, var(--surface));
+  color: color-mix(in srgb, var(--tom-btn) 75%, var(--text));
+}
+.id-ferramenta .btn.id-btn-suave:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--tom-btn) 12%, var(--surface));
+}
+.id-ferramenta .btn.id-btn-neutro {
+  border-color: color-mix(in srgb, var(--text) 45%, var(--surface));
+  color: var(--text);
+}
+/* o ícone do botão acompanha o texto, e não encolhe quando o rótulo quebra */
+.id-ferramenta .btn .id-icone { flex: 0 0 16px; }
