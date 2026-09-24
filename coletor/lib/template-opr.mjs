@@ -16,7 +16,8 @@
 // (assumido, não falta); esses três são o que sobra pra saber se a mídia
 // tá saudável sem depender de venda. UM número só pro dia inteiro, não por
 // categoria — o OPR é feito pra ser rápido, granularidade fica pro
-// Gerenciador de Anúncios direto.
+// Gerenciador de Anúncios direto. Agrupados num cartão só ("Saúde de
+// Mídia") pra caber os 5 cartões do topo numa linha só, a pedido do dono.
 export const DIM_OPR = { width: 1600, height: 900 };
 
 // Abrevia acima de mil/milhão (arredondado, 1 decimal) — pedido do dono
@@ -51,6 +52,12 @@ const ICONES = {
 
 function kpiCard(icone, label, valor, caption) {
   return `<div class="kpi-card"><div class="icon-circle">${ICONES[icone]}</div><div><div class="kpi-label">${label}</div><div class="kpi-value">${valor}</div><div class="kpi-caption">${caption}</div></div></div>`;
+}
+// Cartão com mais de um número dentro (CTR/CPM/Frequência juntos) — mesma
+// anatomia do kpiCard, mas o valor único vira uma fileira de mini-métricas.
+function kpiCardMulti(icone, label, itens) {
+  const grupo = itens.map(([rotulo, valor]) => `<div class="kpi-group-item"><div class="kpi-group-value">${valor}</div><div class="kpi-group-label">${rotulo}</div></div>`).join('');
+  return `<div class="kpi-card kpi-card--grupo"><div class="icon-circle">${ICONES[icone]}</div><div><div class="kpi-label">${label}</div><div class="kpi-group">${grupo}</div></div></div>`;
 }
 function metric(label, valor, extra = '') {
   return `<div class="metric ${extra}"><div class="metric-label">${label}</div><div class="metric-value">${valor}</div></div>`;
@@ -114,13 +121,19 @@ export function montarHtmlOpr(dados, meta) {
   .meta-label{font-size:9px;letter-spacing:.28em;text-transform:uppercase;color:#7b7b73;margin-bottom:5px}
   .meta-value{font:400 15px Georgia, serif;color:#173b39}
   .meta .accent::after{content:"";display:block;width:24px;height:2px;background:var(--gold);margin-top:10px}
-  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
-  .kpi-card{border:1px solid var(--line);border-radius:7px;padding:12px 16px;display:grid;grid-template-columns:52px 1fr;align-items:center;min-height:96px;box-shadow:0 1px 0 rgba(0,0,0,.025)}
+  .kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}
+  .kpi-card{border:1px solid var(--line);border-radius:7px;padding:12px 14px;display:grid;grid-template-columns:44px 1fr;align-items:center;min-height:96px;box-shadow:0 1px 0 rgba(0,0,0,.025)}
   .icon-circle{width:46px;height:46px;border-radius:50%;background:var(--gold-soft);display:grid;place-items:center;color:var(--ink)}
   .icon-circle svg{width:26px;height:26px;stroke:currentColor;fill:none;stroke-width:2.3;stroke-linecap:round;stroke-linejoin:round}
   .kpi-label{font:400 13px Georgia,serif;margin-bottom:1px}
-  .kpi-value{font:700 clamp(20px,1.7vw,32px)/1 Georgia,serif;letter-spacing:.02em}
+  .kpi-value{font:700 clamp(18px,1.6vw,32px)/1 Georgia,serif;letter-spacing:.02em}
   .kpi-caption{margin-top:5px;font-size:9px;letter-spacing:.22em;text-transform:uppercase;color:#797b77}
+  .kpi-card--grupo .icon-circle{width:40px;height:40px}
+  .kpi-card--grupo .icon-circle svg{width:22px;height:22px}
+  .kpi-group{display:flex;gap:8px;margin-top:3px}
+  .kpi-group-item{min-width:0}
+  .kpi-group-value{font:700 15px Georgia,serif;line-height:1.1;white-space:nowrap}
+  .kpi-group-label{margin-top:2px;font-size:8px;letter-spacing:.14em;text-transform:uppercase;color:#797b77}
   /* Grade 2×2 — cada painel com a mesma largura que os 3-em-linha tinham
      antes (metade do relatório, não um quarto), pra caber Tráfego +
      Engajamento + Vendas + Leads sem espremer número/rótulo. Espaçamento
@@ -179,9 +192,11 @@ export function montarHtmlOpr(dados, meta) {
       ${kpiCard('users', 'Novos Seguidores', fmtValor(header.novosSeguidores), '+ audiência qualificada')}
       ${kpiCard('heart', 'Engajamentos', fmtValor(header.engajamentos), 'Interações totais')}
       ${kpiCard('funnel', 'Leads Gerados', fmtValor(header.leadsGerados), 'Oportunidades de negócio')}
-      ${kpiCard('bars', 'CTR', fmtValor(header.ctr, 'percentual'), 'Cliques ÷ impressões')}
-      ${kpiCard('cart', 'CPM', fmtValor(header.cpm, 'moeda'), 'Custo por mil impressões')}
-      ${kpiCard('eye', 'Frequência', fmtValor(header.frequencia), 'Vezes que a mesma pessoa viu')}
+      ${kpiCardMulti('bars', 'Saúde de Mídia', [
+        ['CTR', fmtValor(header.ctr, 'percentual')],
+        ['CPM', fmtValor(header.cpm, 'moeda')],
+        ['Frequência', fmtValor(header.frequencia)],
+      ])}
     </section>
 
     <section class="sections">
