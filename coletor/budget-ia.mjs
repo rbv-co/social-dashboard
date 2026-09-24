@@ -64,11 +64,15 @@ export function selecionarCampanhas(camps, insByCamp, modo, agoraMs) {
 }
 
 // Monta as mensagens (system + user) pro Opus: analisa a campanha E os anúncios dela.
-// `extra` é opcional (Tarefa 5, tendência e tempo no ar) — { insAnterior?, diasNoAr? }.
+// `extra` é opcional (Tarefa 5, tendência e tempo no ar) — { insAnterior?, diasNoAr?, diasJanela? }.
 // Parâmetro no FIM para não quebrar as chamadas de 5 argumentos já existentes.
 export function montarMensagens(camp, ins, ads, conjuntos, regua, extra) {
   const ex = extra || {};
   const diasNoAr = Number.isFinite(ex.diasNoAr) ? ex.diasNoAr : null;
+  // `diasJanela` é calculado no laço de main() (uma vez por conta, não por
+  // campanha) e chega aqui por `extra` porque `montarMensagens` é a função
+  // pura testada sem rede — não tem como ela recalcular `since`/`until` sozinha.
+  const diasJanela = Number.isFinite(ex.diasJanela) ? ex.diasJanela : null;
   // O orçamento REAL desta campanha. Em ABO ele mora nos conjuntos: ler só
   // `camp.daily_budget` devolvia nulo e o modelo calculava a sugestão em cima do
   // zero — foi assim que a "MODA & BOLSAS" (R$ 230/dia no ar) recebeu sugestão
@@ -81,11 +85,11 @@ export function montarMensagens(camp, ins, ads, conjuntos, regua, extra) {
   const alvo = alvoDoBalde(balde);
   const meta = regua ? metaDoBalde(regua, balde) : 0;
   // O CUSTO ATUAL de qualquer campanha, não só das de engajamento — calculado
-  // por custoAtualDaCampanha (fonte única compartilhada com o --dry, ver o
+  // por custoAtualDoAlvo (fonte única compartilhada com o --dry, ver o
   // comentário lá). Antes disto o robô mandava `meta_reais` preenchida e
   // `custo_atual_reais: null` em lead, venda, mensagem e tráfego — e o system
   // prompt mandava citar o número.
-  const custoAtual = custoAtualDaCampanha(balde, ins, regua);
+  const custoAtual = custoAtualDoAlvo(balde, ins, regua);
   const system =
     'Você é um gestor de tráfego pago sênior. Analise UMA campanha do Meta Ads E os anúncios dela, e recomende: ' +
     '(1) o orçamento diário ideal da CAMPANHA; (2) por ANÚNCIO, manter ou pausar o criativo. ' +
@@ -110,12 +114,31 @@ export function montarMensagens(camp, ins, ads, conjuntos, regua, extra) {
     // TENDÊNCIA e APRENDIZADO (Tarefa 5): antes o robô mandava uma janela só —
     // o modelo não tinha como dizer se a campanha estava melhorando ou piorando,
     // e "o que mudou desde ontem" é exatamente o que se olha às 8h da manhã.
-    'TENDÊNCIA: quando `janela_anterior` existir, compare com ela e diga o SENTIDO do movimento na justificativa ' +
-    '(ex.: "o custo por lead subiu de R$ 12 para R$ 25 em 7 dias"). Custo piorando é argumento contra escalar, mesmo abaixo da meta. ' +
+    'TENDÊNCIA: quando `janela_anterior` existir, compare com ela e diga o SENTIDO do movimento na justificativa, citando ' +
+    // O exemplo cravava "7 dias", mas a janela é since=hoje-7d até until=hoje —
+    // 8 dias INCLUSIVE. Um número fixo errado no prompt vira número errado na
+    // justificativa que o dono lê. `dias_da_janela` traz o valor real calculado
+    // pelo robô; o exemplo não crava mais dia nenhum.
+    'a quantidade de dias de `dias_da_janela` (ex.: "o custo por lead subiu de R$ 12 para R$ 25 em `dias_da_janela` dias"). ' +
+    'Custo piorando é argumento contra escalar, mesmo abaixo da meta. ' +
     'APRENDIZADO: com `em_aprendizado` true a campanha tem menos de 3 dias e a Meta ainda está aprendendo — ' +
-    'o veredito deve ser "manter", a menos que ela esteja gastando muito acima da meta. Mexer agora reinicia o aprendizado. ' +
+    'o veredito deve ser "manter", a menos que ela esteja gastando muito acima da meta OU gastando sem nenhum resultado. ' +
+    // A válvula de escape original só citava "acima da meta" — mas campanha nova
+    // sem NENHUM resultado tem `custo_atual_reais` nulo, e com nulo não dá pra
+    // comparar com meta nenhuma. Sobrava a ordem seca de manter, bem na campanha
+    // que mais precisa de intervenção: gasto relevante sem um resultado sequer é
+    // queima de dinheiro, não "esperar o aprendizado terminar".
+    'Gasto relevante sem UM resultado sequer é motivo para agir mesmo dentro do aprendizado, mesmo sem meta pra comparar. ' +
+    'Mexer agora reinicia o aprendizado. ' +
     'ANÚNCIOS: julgue cada criativo pelo `resultado` e `custo_por_resultado` dele, não só por CTR — ' +
-    'criativo com CTR alto e nenhum resultado é candidato a pausar, e CTR baixo com resultado barato NÃO é. ' +
+    // `resultado` nulo é a leitura NORMAL de engajamento (e do balde padrão,
+    // quando o objetivo é desconhecido): esses tipos não contam resultado por
+    // unidade, só custo por ponto/indicador. Sem esta ressalva o modelo lia
+    // esse null como "o criativo não produziu nada" e mandava pausar bons
+    // criativos de engajamento só por não terem `resultado` numérico.
+    '`resultado` nulo pode significar apenas que esse TIPO de campanha não conta resultado por unidade (é o caso de engajamento) — ' +
+    'não leia isso como "o criativo não produziu nada": quando `resultado` vier nulo, julgue o anúncio pelo `custo_por_resultado`. ' +
+    'Fora desses casos, criativo com CTR alto e nenhum resultado é candidato a pausar, e CTR baixo com resultado barato NÃO é. ' +
     'Quando `custo_atual_reais` vier nulo e houver meta, diga que esta campanha não registrou resultado na janela — nunca invente o número. ' +
     'Responda SOMENTE com um JSON válido, sem texto antes ou depois, no formato: ' +
     '{"budget_sugerido_centavos": <inteiro, centavos de R$/dia>, ' +
@@ -142,6 +165,10 @@ export function montarMensagens(camp, ins, ads, conjuntos, regua, extra) {
   const dados = {
     nome: camp.name || '',
     objetivo: camp.objective || '',
+    // Número REAL de dias da janela que gerou `gasto`/`ctr_pct`/etc. abaixo —
+    // o system prompt cita este campo em vez de cravar "7 dias" (a janela é
+    // since=hoje-7d até until=hoje, ou seja, 8 dias INCLUSIVE).
+    dias_da_janela: diasJanela,
     regua: {
       tipo_de_campanha: balde,
       rotulo: alvo ? alvo.rotulo : null,          // ex.: "Custo por ponto", "Custo por conversa iniciada"
@@ -183,12 +210,12 @@ export function montarMensagens(camp, ins, ads, conjuntos, regua, extra) {
       // robô mandava pausar criativo de conversão olhando só CTR e frequência.
       resultado: (alvo && alvo.resultado && GT_METRIC_CATALOG[alvo.resultado])
         ? GT_METRIC_CATALOG[alvo.resultado].compute(a) : null,
-      // Desvio do brief: aqui usamos `custoAtualDaCampanha`, não `custoDoAlvo`
-      // puro. `custoDoAlvo` devolve null pra engajamento (o custo dele só sai
-      // do ponto ponderado); usar só ele deixaria todo anúncio de campanha de
-      // engajamento sem custo, e o modelo voltaria a julgar o criativo só por
-      // CTR exatamente nesse balde. Nos demais baldes as duas dão o mesmo valor.
-      custo_por_resultado: custoAtualDaCampanha(balde, a, regua),
+      // Usamos `custoAtualDoAlvo`, não `custoDoAlvo` puro: `custoDoAlvo` devolve
+      // null pra engajamento (o custo dele só sai do ponto ponderado), e usar só
+      // ele deixaria todo anúncio de campanha de engajamento sem custo — o
+      // modelo voltaria a julgar o criativo só por CTR exatamente nesse balde.
+      // Nos demais baldes as duas funções dão o mesmo valor.
+      custo_por_resultado: custoAtualDoAlvo(balde, a, regua),
     })),
     dias_no_ar: diasNoAr,
     // Menos de 3 dias: a Meta ainda está na fase de aprendizado, e mexer no
@@ -197,13 +224,13 @@ export function montarMensagens(camp, ins, ads, conjuntos, regua, extra) {
     em_aprendizado: diasNoAr != null ? diasNoAr < 3 : false,
     janela_anterior: ex.insAnterior ? {
       gasto: num(ex.insAnterior.spend),
-      // Desvio do brief: aqui é `custoAtualDaCampanha`, não `pnd ? null :
-      // custoDoAlvo(...)` — `pnd` não existe mais neste escopo (uma tarefa
-      // anterior extraiu `custoAtualDaCampanha` como fonte única do custo).
-      // Bônus: como essa função já cobre engajamento com o ponto ponderado,
-      // a janela anterior de campanha de engajamento também ganha custo (e
-      // portanto tendência) em vez de ficar em null.
-      custo_do_alvo: custoAtualDaCampanha(balde, ex.insAnterior, regua),
+      // MESMO NOME de `regua.custo_atual_reais` acima, de propósito: é a mesma
+      // grandeza (calculada pela mesma `custoAtualDoAlvo`), só que na janela
+      // anterior — e é exatamente o par que o modelo precisa comparar pra dizer
+      // a tendência. Bônus: como a função já cobre engajamento com o ponto
+      // ponderado, a janela anterior de campanha de engajamento também ganha
+      // custo (e portanto tendência) em vez de ficar em null.
+      custo_atual_reais: custoAtualDoAlvo(balde, ex.insAnterior, regua),
       frequencia: num(ex.insAnterior.frequency),
       ctr_pct: num(ex.insAnterior.ctr),
     } : null,
@@ -256,6 +283,30 @@ export function parsearSaida(text) {
 
 function num(v) { const n = parseFloat(v); return Number.isFinite(n) ? n : null; }
 
+// A FONTE ÚNICA do custo atual de um ALVO — o nome é genérico de propósito:
+// este arquivo chama a mesma função com uma campanha, com um anúncio e com a
+// janela anterior, e as três leituras precisam vir da mesma conta. Ponto
+// ponderado em engajamento (o único balde cujo resultado não é uma ação só —
+// é ponderada.js quem sabe calculá-lo), custo por resultado nos demais
+// (custoDoAlvo). Usada tanto no prompt que vai pro Opus (montarMensagens)
+// quanto na linha de diagnóstico do --dry: os dois têm de concordar por
+// CONSTRUÇÃO, não por disciplina. Esta onda inteira nasceu de um cálculo
+// preso num lugar só (só engajamento tinha custo atual) — copiar esta mesma
+// conta em dois pontos do arquivo, mesmo que só entre `montarMensagens` e o
+// `--dry`, seria repetir o erro numa escala menor. Se a fórmula mudar, muda
+// aqui e os dois lugares acompanham.
+// Fica ACIMA da tarja de infra (rede) abaixo porque é pura e é alcançada
+// pelos testes via `montarMensagens` — só as chamadas de rede é que só
+// rodam dentro de main().
+export function custoAtualDoAlvo(balde, ins, regua) {
+  if (balde === 'engajamento' && regua) {
+    const meta = metaDoBalde(regua, balde);
+    const pnd = calcularPonderada(quantidadesDoInsight(ins) || {}, { pesos: regua.pesos, limiares: regua.limiares, meta });
+    return pnd.custoPorPonto;
+  }
+  return custoDoAlvo(balde, ins);
+}
+
 // ---------- infra (rede) — só roda no main(), não é importado nos testes ----------
 import { registrarExecucao } from './registrar-execucao.mjs';
 // Onde mora o orçamento (CBO na campanha x ABO nos conjuntos) e quanto ele soma
@@ -277,24 +328,6 @@ import { emVeiculacao } from '../src/ferramentas/gestao-trafego/veiculacao.js';
 // GT_METRIC_CATALOG: o compute() de cada métrica (leads, conversas, compras...) —
 // usado abaixo pra dar a cada ANÚNCIO o resultado no mercado da campanha dele.
 import { custoDoAlvo, GT_METRIC_CATALOG } from '../src/ferramentas/gestao-trafego/metricas.js';
-
-// A FONTE ÚNICA do custo atual de uma campanha: ponto ponderado em engajamento
-// (o único balde cujo resultado não é uma ação só — é ponderada.js quem sabe
-// calculá-lo), custo por resultado nos demais (custoDoAlvo). Usada tanto no
-// prompt que vai pro Opus (montarMensagens) quanto na linha de diagnóstico do
-// --dry: os dois têm de concordar por CONSTRUÇÃO, não por disciplina. Esta
-// onda inteira nasceu de um cálculo preso num lugar só (só engajamento tinha
-// custo atual) — copiar esta mesma conta em dois pontos do arquivo, mesmo que
-// só entre `montarMensagens` e o `--dry`, seria repetir o erro numa escala
-// menor. Se a fórmula mudar, muda aqui e os dois lugares acompanham.
-export function custoAtualDaCampanha(balde, ins, regua) {
-  if (balde === 'engajamento' && regua) {
-    const meta = metaDoBalde(regua, balde);
-    const pnd = calcularPonderada(quantidadesDoInsight(ins) || {}, { pesos: regua.pesos, limiares: regua.limiares, meta });
-    return pnd.custoPorPonto;
-  }
-  return custoDoAlvo(balde, ins);
-}
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY_TRAFEGO || process.env.ANTHROPIC_API_KEY_BUDGET || process.env.ANTHROPIC_API_KEY;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
@@ -506,8 +539,11 @@ async function main() {
       // "não presuma aprendizado" (ver em_aprendizado em montarMensagens).
       const criadoEm = camp.created_time ? new Date(camp.created_time).getTime() : null;
       const diasNoAr = criadoEm ? Math.floor((agoraMs - criadoEm) / 86400000) : null;
+      // `diasJanela` já foi calculado uma vez por conta (mesmo since/until pra
+      // toda campanha dela) — passa por `extra` pro prompt citar o número real
+      // em vez do "7 dias" cravado que a janela (8 dias inclusive) desmentia.
       const { system, user } = montarMensagens(camp, ins, adsAtivosPorCamp[camp.id] || [], conjuntosDaCamp, reguaDaContaAtual,
-        { insAnterior: insAntByCamp[camp.id], diasNoAr });
+        { insAnterior: insAntByCamp[camp.id], diasNoAr, diasJanela });
       if (DRY) {
         // Mostra o orçamento que o modelo VAI ver. É a forma barata de conferir,
         // sem gastar uma chamada, se a leitura de CBO/ABO está certa — foi
@@ -521,19 +557,19 @@ async function main() {
         // A MESMA função que montarMensagens usa por dentro, não uma cópia da
         // fórmula. O --dry é a ferramenta que a gente usa pra conferir se o
         // robô está enxergando certo — uma divergência aqui seria o
-        // diagnóstico mentindo sobre o próprio robô (ver custoAtualDaCampanha).
-        const ca = custoAtualDaCampanha(bal, ins, reguaDaContaAtual);
+        // diagnóstico mentindo sobre o próprio robô (ver custoAtualDoAlvo).
+        const ca = custoAtualDoAlvo(bal, ins, reguaDaContaAtual);
         const txtCusto = ca == null ? 'custo SEM DADO' : `custo R$ ${ca.toFixed(2)}`;
         const txtIdx = (ca != null && mt > 0) ? ` (${(ca / mt).toFixed(2)}× a meta)` : '';
         // TENDÊNCIA no --dry (rodada de correção 1, 24/09/2026): sem isto não
         // havia como conferir que a janela anterior está chegando de verdade
         // sem rodar o modelo — e a rodada real gasta Opus e grava no banco.
-        // MESMA custoAtualDaCampanha do resto (não recalcular por fora foi
+        // MESMA custoAtualDoAlvo do resto (não recalcular por fora foi
         // justamente o defeito corrigido na tarefa anterior). Sem janela
         // anterior OU sem custo anterior, não imprime nada a mais — "antes —"
         // só poluiria a linha sem dizer nada de novo.
         const insAnterior = insAntByCamp[camp.id];
-        const caAnt = insAnterior ? custoAtualDaCampanha(bal, insAnterior, reguaDaContaAtual) : null;
+        const caAnt = insAnterior ? custoAtualDoAlvo(bal, insAnterior, reguaDaContaAtual) : null;
         const txtTend = (ca != null && caAnt != null)
           ? ` · antes R$ ${caAnt.toFixed(2)} ${ca > caAnt ? '▲' : (ca < caAnt ? '▼' : '=')}`
           : '';

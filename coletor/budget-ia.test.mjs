@@ -371,7 +371,7 @@ test('a janela anterior entra no prompt para o modelo ver o sentido', () => {
   const camp = { id: '7', name: 'Captação', objective: 'OUTCOME_LEADS' };
   const anterior = { spend: '1000', actions: [{ action_type: 'lead', value: '80' }] };
   const d = dadosDoPrompt(camp, INS_LEAD, [], [], REGUA_TESTE, { insAnterior: anterior });
-  assert.equal(d.janela_anterior.custo_do_alvo, 12.5, '1000 / 80 na janela anterior');
+  assert.equal(d.janela_anterior.custo_atual_reais, 12.5, '1000 / 80 na janela anterior');
   assert.equal(d.regua.custo_atual_reais, 25, 'e 25 agora: o custo DOBROU');
   assert.equal(d.janela_anterior.gasto, 1000);
 });
@@ -397,17 +397,56 @@ test('montarMensagens sem o 6o argumento não quebra (compatibilidade)', () => {
   assert.equal(d.janela_anterior, null);
   assert.equal(d.dias_no_ar, null);
   assert.equal(d.em_aprendizado, false, 'sem dado de idade, não presume aprendizado');
+  assert.equal(d.dias_da_janela, null, 'sem o dado, não inventa um número de dias');
 });
 
 test('engajamento também ganha custo na janela anterior (ponto ponderado, não null)', () => {
-  // Desvio deliberado do brief original: ali `janela_anterior.custo_do_alvo`
-  // usava a variável `pnd` de `montarMensagens`, que não existe mais nesse
-  // escopo (Tarefa anterior extraiu `custoAtualDaCampanha`). Usar essa mesma
-  // função aqui é melhor que o brief: engajamento, que antes ficava sem custo
-  // atual, passa a ter tendência também.
+  // `janela_anterior.custo_atual_reais` usa a mesma função que calcula
+  // `regua.custo_atual_reais` — por isso os dois campos têm o MESMO NOME: são
+  // a mesma grandeza, e é o par que o modelo compara pra ver a tendência.
+  // Como essa função cobre engajamento com o ponto ponderado, a janela
+  // anterior de campanha de engajamento também ganha custo (antes ficava null).
   const camp = { id: '11', name: 'Engaja', objective: 'OUTCOME_ENGAGEMENT' };
   const ins = { spend: '50', actions: [{ action_type: 'post_reaction', value: '200' }] };
   const anterior = { spend: '100', actions: [{ action_type: 'post_reaction', value: '200' }] };
   const d = dadosDoPrompt(camp, ins, [], [], REGUA_TESTE, { insAnterior: anterior });
-  assert.equal(d.janela_anterior.custo_do_alvo, 0.5, '100 / 200 pontos na janela anterior');
+  assert.equal(d.janela_anterior.custo_atual_reais, 0.5, '100 / 200 pontos na janela anterior');
+});
+
+// ---------------------------------------------------------------------------
+// RODADA DE CORREÇÃO 1 (24/09/2026): três furos achados na leitura do prompt
+// pelo próprio dono.
+// ---------------------------------------------------------------------------
+
+test('M1: dias_da_janela vai no JSON e o prompt não crava mais "7 dias"', () => {
+  // A janela é since=hoje-7d até until=hoje: 8 dias INCLUSIVE, não 7. O exemplo
+  // do prompt cravava "7 dias" e a justificativa herdava o número errado.
+  const camp = { id: '12', name: 'Captação', objective: 'OUTCOME_LEADS' };
+  const { system, user } = montarMensagens(camp, INS_LEAD, [], [], REGUA_TESTE, { diasJanela: 8 });
+  const d = dadosDoPrompt(user);
+  assert.equal(d.dias_da_janela, 8);
+  assert.match(system, /dias_da_janela/, 'o prompt tem de citar o campo, não um número fixo');
+  assert.ok(!/em 7 dias/.test(system), 'não pode sobrar o "7 dias" cravado no exemplo');
+});
+
+test('IMPORTANTE 1: aprendizado tem válvula também para "sem nenhum resultado", não só "acima da meta"', () => {
+  // Campanha de 2 dias sem NENHUM resultado tem custo_atual_reais nulo — com
+  // nulo não dá pra dizer "acima da meta". Só essa válvula, o prompt mandava
+  // manter até campanha nova queimando dinheiro sem um lead sequer.
+  const camp = { id: '13', name: 'Nova queimando', objective: 'OUTCOME_LEADS' };
+  const { system } = montarMensagens(camp, { spend: '500', actions: [] }, [], [], REGUA_TESTE, { diasNoAr: 2 });
+  assert.match(system, /acima da meta OU gastando sem nenhum resultado/,
+    'a válvula de escape do aprendizado precisa cobrir também "sem resultado nenhum"');
+});
+
+test('IMPORTANTE 2: resultado nulo no anúncio não é lido como "não produziu nada"', () => {
+  // ALVOS.engajamento.resultado é null POR DEFINIÇÃO (alvos.js) — todo anúncio
+  // de campanha de engajamento chega com resultado: null, e a instrução antiga
+  // ("CTR alto e nenhum resultado é candidato a pausar") lia esse null como
+  // criativo ruim. O prompt agora manda julgar pelo custo_por_resultado.
+  const camp = { id: '14', name: 'Engaja', objective: 'OUTCOME_ENGAGEMENT' };
+  const { system } = montarMensagens(camp, {}, [], [], REGUA_TESTE);
+  assert.match(system, /não conta resultado por unidade/);
+  assert.match(system, /não leia isso como "o criativo não produziu nada"/);
+  assert.match(system, /julgue o anúncio pelo `custo_por_resultado`/);
 });

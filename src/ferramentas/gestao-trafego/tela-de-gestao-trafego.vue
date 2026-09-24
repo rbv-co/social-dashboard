@@ -245,9 +245,10 @@ import { orcamentoEfetivoDaCampanha } from './orcamento-hierarquia.js'
 import { baldeDoObjetivo, ehDeWhatsapp, baldeEfetivo } from './baldes.js'
 // Catálogo de métricas (como ler `actions`/`action_values` e o custo por
 // resultado) — mesmo motivo de baldes.js: a tela e o robô precisam da mesma
-// resposta. Ver metricas.js. Os outros exports do módulo (_gtNum,
-// _gtActionVal, _GT_* etc.) ficam só nos leitores, dentro do próprio
-// catálogo — a tela não chama nenhum deles direto, só o robô vai usar.
+// resposta. Ver metricas.js. O robô (coletor/budget-ia.mjs) importa também
+// `custoDoAlvo` daqui, além de `GT_METRIC_CATALOG`. Os demais exports do
+// módulo (_gtNum, _gtActionVal, _GT_* etc.) são detalhe interno do próprio
+// catálogo — nem a tela nem o robô os chamam direto.
 import { GT_METRIC_CATALOG, GT_BALDE_PADRAO } from './metricas.js'
 import { normalizarRegua, metaDoBalde, reguaDaConta, mesclarMetasDaConta } from './regua.js'
 import { quantidadesDoInsight, calcularPonderada } from './ponderada.js'
