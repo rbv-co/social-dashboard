@@ -243,6 +243,25 @@ import { orcamentoEfetivoDaCampanha } from './orcamento-hierarquia.js'
 // Objetivo -> balde e "e de WhatsApp?" moram num modulo so porque o ROBO precisa
 // da mesma resposta que a tela (ver baldes.js).
 import { baldeDoObjetivo, ehDeWhatsapp, baldeEfetivo } from './baldes.js'
+// Catálogo de métricas (como ler `actions`/`action_values` e o custo por
+// resultado) — mesmo motivo de baldes.js: a tela e o robô precisam da mesma
+// resposta. Ver metricas.js.
+import { GT_METRIC_CATALOG, GT_BALDE_PADRAO,
+  _gtNum as metricasGtNum, _gtActionVal as metricasGtActionVal,
+  _gtActionValue as metricasGtActionValue, _gtPerGasto as metricasGtPerGasto,
+  _GT_PURCHASE, _GT_LEAD, _GT_VISIT, _GT_MSG, _GT_MSG_CONN, _GT_MSG_REPLY,
+  _GT_ATC, _GT_IC, _GT_VIDEO, _GT_POSTENG, _GT_LPV } from './metricas.js'
+// O guarda de globais desta pasta (`imports.test.mjs`, teste "toda global _gt*
+// usada na tela está declarada nela") só reconhece nome nascido de
+// let/const/var/function — não sabe o que é `import`. Sem este eco ele acusa
+// os quatro abaixo como "usados mas nunca declarados", mesmo vindo de
+// metricas.js — por isso o apelido acima (sem o prefixo `_gt`, senão o próprio
+// apelido cairia na mesma acusação), pra não colidir com o nome de verdade
+// aqui embaixo.
+const _gtNum = metricasGtNum;
+const _gtActionVal = metricasGtActionVal;
+const _gtActionValue = metricasGtActionValue;
+const _gtPerGasto = metricasGtPerGasto;
 import { normalizarRegua, metaDoBalde, reguaDaConta, mesclarMetasDaConta } from './regua.js'
 import { quantidadesDoInsight, calcularPonderada } from './ponderada.js'
 // Alvo de cada tipo de campanha (custo por lead/conversa/venda/visita/mil
@@ -624,76 +643,6 @@ async function _initGestaoTrafego(){
   }
 }
 
-/* ── GT: CATÁLOGO DE MÉTRICAS POR OBJETIVO (legacy L7920-7966, verbatim) ── */
-function _gtNum(x){ const n=Number(x); return isFinite(n)?n:null; }
-function _gtActionVal(row, tipos){
-  const arr=row&&row.actions; if(!Array.isArray(arr))return null;
-  for(const t of tipos){ const a=arr.find(x=>x.action_type===t); if(a)return _gtNum(a.value); }
-  return null;
-}
-function _gtActionValue(row, tipos){
-  const arr=row&&row.action_values; if(!Array.isArray(arr))return null;
-  for(const t of tipos){ const a=arr.find(x=>x.action_type===t); if(a)return _gtNum(a.value); }
-  return null;
-}
-const _GT_PURCHASE=['purchase','omni_purchase','offsite_conversion.fb_pixel_purchase'];
-const _GT_LEAD=['lead','onsite_conversion.lead_grouped','offsite_conversion.fb_pixel_lead'];
-const _GT_VISIT=['landing_page_view','link_click'];
-// Mensagens (WhatsApp/Direct): action_types REAIS conferidos na API (La Vessel I, 2026-07).
-// "Conversas iniciadas" é o messaging_conversation_started_7d — o resultado principal das
-// campanhas de mensagem (WhatsApp). Os outros são etapas mais fundas da conversa.
-const _GT_MSG=['onsite_conversion.messaging_conversation_started_7d','onsite_conversion.messaging_conversation_started'];
-const _GT_MSG_CONN=['onsite_conversion.total_messaging_connection'];
-const _GT_MSG_REPLY=['onsite_conversion.messaging_first_reply'];
-const _GT_ATC=['add_to_cart','omni_add_to_cart','offsite_conversion.fb_pixel_add_to_cart'];
-const _GT_IC=['initiate_checkout','omni_initiated_checkout','offsite_conversion.fb_pixel_initiate_checkout'];
-const _GT_VIDEO=['video_view'];
-const _GT_POSTENG=['post_engagement'];
-const _GT_LPV=['landing_page_view'];
-const _gtPerGasto=(r,tipos)=>{ const n=_gtActionVal(r,tipos),s=_gtNum(r.spend); return n?s/n:null; };
-const GT_METRIC_CATALOG={
-  alcance:{label:'Alcance',fmt:'int',compute:r=>_gtNum(r.reach)},
-  impressoes:{label:'Impressões',fmt:'int',compute:r=>_gtNum(r.impressions)},
-  frequencia:{label:'Frequência',fmt:'dec',compute:r=>_gtNum(r.frequency)},
-  ctr:{label:'CTR',fmt:'pct',compute:r=>_gtNum(r.ctr)},
-  cpc:{label:'CPC',fmt:'money',compute:r=>_gtNum(r.cpc)},
-  cpm:{label:'CPM',fmt:'money',compute:r=>{const i=_gtNum(r.impressions),s=_gtNum(r.spend);return i?s/i*1000:null;}},
-  cliques:{label:'Cliques',fmt:'int',compute:r=>_gtNum(r.clicks)},
-  visitas:{label:'Visitas',fmt:'int',compute:r=>_gtActionVal(r,_GT_VISIT)},
-  custo_visita:{label:'Custo/Visita',fmt:'money',compute:r=>_gtPerGasto(r,_GT_VISIT)},
-  lpv:{label:'Visualizações da página',fmt:'int',compute:r=>_gtActionVal(r,_GT_LPV)},
-  compras:{label:'Compras',fmt:'int',compute:r=>_gtActionVal(r,_GT_PURCHASE)},
-  valor_conversao:{label:'Valor de conversão',fmt:'money',compute:r=>_gtActionValue(r,_GT_PURCHASE)},
-  roas:{label:'ROAS',fmt:'x',compute:r=>{const pr=r.purchase_roas&&r.purchase_roas[0]&&_gtNum(r.purchase_roas[0].value);if(pr!=null)return pr;const v=_gtActionValue(r,_GT_PURCHASE),s=_gtNum(r.spend);return (v!=null&&s)?v/s:null;}},
-  cac:{label:'CAC',fmt:'money',compute:r=>{const c=_gtActionVal(r,_GT_PURCHASE),s=_gtNum(r.spend);return c?s/c:null;}},
-  add_carrinho:{label:'Add. ao carrinho',fmt:'int',compute:r=>_gtActionVal(r,_GT_ATC)},
-  checkout:{label:'Checkout iniciado',fmt:'int',compute:r=>_gtActionVal(r,_GT_IC)},
-  gasto:{label:'Gasto',fmt:'money',compute:r=>_gtNum(r.spend)},
-  leads:{label:'Leads',fmt:'int',compute:r=>_gtActionVal(r,_GT_LEAD)},
-  custo_lead:{label:'Custo/Lead',fmt:'money',compute:r=>{const l=_gtActionVal(r,_GT_LEAD),s=_gtNum(r.spend);return l?s/l:null;}},
-  // --- Mensagens (WhatsApp/Direct) ---
-  conversas:{label:'Conversas iniciadas',fmt:'int',compute:r=>_gtActionVal(r,_GT_MSG)},
-  custo_conversa:{label:'Custo/Conversa',fmt:'money',compute:r=>_gtPerGasto(r,_GT_MSG)},
-  conexoes_msg:{label:'Conexões de mensagem',fmt:'int',compute:r=>_gtActionVal(r,_GT_MSG_CONN)},
-  primeira_resposta:{label:'1ª resposta',fmt:'int',compute:r=>_gtActionVal(r,_GT_MSG_REPLY)},
-  // --- Vídeo e engajamento ---
-  video_views:{label:'Views de vídeo',fmt:'int',compute:r=>_gtActionVal(r,_GT_VIDEO)},
-  engaj_pub:{label:'Engajamento da publicação',fmt:'int',compute:r=>_gtActionVal(r,_GT_POSTENG)},
-};
-const GT_BALDE_PADRAO={
-  // custo_visita é a métrica que DECIDE o veredito deste balde (ver alvos.js
-  // ALVOS.trafego) — precisa aparecer no cartão, senão o dono vê o selo mudar
-  // sem enxergar o número que o explica (I6 do review final, 2026-07-28).
-  trafego:['ctr','cpc','visitas','custo_visita','cpm'],
-  vendas:['roas','cac','valor_conversao','compras'],
-  reconhecimento:['alcance','cpm','frequencia','impressoes'],
-  // Conversas iniciadas primeiro: é o resultado principal das campanhas de WhatsApp (La Vessel I).
-  // Em campanha de engajamento sem mensagem, "conversas" aparece como "—" (sem ação de mensagem).
-  engajamento:['conversas','custo_conversa','ctr','gasto'],
-  mensagens:['conversas','custo_conversa','conexoes_msg','gasto'],
-  leads:['leads','custo_lead','ctr','gasto'],
-  padrao:['ctr','cpc','gasto','alcance'],
-};
 function _gtBalde(objective){ return baldeDoObjetivo(objective); }
 function _gtMetricValue(key,row){ const m=GT_METRIC_CATALOG[key]; return m?m.compute(row):null; }
 let _gtConfig={};
