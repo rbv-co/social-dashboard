@@ -1448,7 +1448,11 @@
            pedido lançado sem CPF: é a maioria dos casos honestos. Por isso
            nenhuma palavra desta caixa acusa quem está esperando. -->
       <section v-if="filaDeGarantias.length" class="au-fila-garantias">
-        <h2 class="au-fila-titulo">
+        <!-- 25/09/2026: o mesmo título de bloco das outras seções da tela
+             (`au-secao id-titulo`, com ícone). Com `au-fila-titulo` ele
+             colidia com o título da fila do modo bancada (mesma classe, regra
+             de etiqueta mais abaixo) e nascia colado à margem, sem ícone. -->
+        <h2 class="au-secao id-titulo"><icone-do-bloco nome="relogio" />
           {{ filaDeGarantias.length }}
           {{ filaDeGarantias.length === 1 ? 'registro esperando você' : 'registros esperando você' }}
         </h2>
