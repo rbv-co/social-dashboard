@@ -130,6 +130,13 @@
     <template v-else-if="nome === 'avancar'">
       <path d="M5 12h14" /><path d="M13 6l6 6-6 6" />
     </template>
+    <!-- A agenda do Private Edit (25/09/2026): o calendário e a volta. -->
+    <template v-else-if="nome === 'calendario'">
+      <rect x="3.5" y="5" width="17" height="15.5" rx="2" /><path d="M3.5 10h17" /><path d="M8 3v4" /><path d="M16 3v4" />
+    </template>
+    <template v-else-if="nome === 'voltar-seta'">
+      <path d="M19 12H5" /><path d="M11 6l-6 6 6 6" />
+    </template>
     <!-- O contato fácil (24/09/2026): o balão do WhatsApp e a câmera do
          Instagram, no traço da casa (contorno, `currentColor`). -->
     <template v-else-if="nome === 'whatsapp'">

@@ -22,7 +22,8 @@
  * `aoAvisar`, que quem instala liga ao `postMessage`.
  */
 import { dadosIniciais, USUARIO_DA_DEMONSTRACAO } from './dados-iniciais.js'
-import { diaEmSaoPaulo, somarDias, diasEntre } from './tempo.js'
+import { diaEmSaoPaulo, somarDias, diasEntre, horaEmSaoPaulo } from './tempo.js'
+import { DURACAO_DO_PRIVATE_EDIT_EM_HORAS } from '../ferramentas/comercial-vessel/agenda-regras.js'
 import { faixaDaNota } from '../ferramentas/comercial-vessel/qualificacao-regras.js'
 
 /** ⚠️ A MARCA QUE O BUILD DA CENTRAL NÃO PODE TER: o relatório da entrega
@@ -97,6 +98,14 @@ export function situacaoDoConvite(status, rsvp, enviadoEm, quandoDoEncontro, sta
 const media1 = (lista) => (lista.length
   ? Math.round((lista.reduce((a, b) => a + b, 0) / lista.length) * 10) / 10 : null)
 
+/** O `raise exception ... using errcode` do banco: quem instala responde como o
+ * PostgREST (400 com o `code`), em vez de 200 com uma resposta inventada. */
+export function erroDoBanco(code, message) {
+  const e = new Error(message)
+  e.pg = { code, message, details: null, hint: null }
+  return e
+}
+
 export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () => {}, dados } = {}) {
   const b = dados ? copia(dados) : dadosIniciais(agora())
   // 24/09: dados de teste antigos não trazem as avaliações — começam sem nenhuma.
@@ -114,6 +123,46 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
   const pessoaPorId = (id) => b.pessoas.find((p) => p.id === id) || null
   const diaDoEncontro = (e) => diaEmSaoPaulo(e.quando)
   const naoArquivado = (e) => !e.arquivada && !e.teste
+
+  // ── a agenda e o encontro sobreposto (`2026-09-25-vessel-agenda-do-private-
+  // edit.sql`): o lugar, quem se cruza com quem, e o que mais ocupa a loja ──
+  const DURACAO_MS = DURACAO_DO_PRIVATE_EDIT_EM_HORAS * 3600000
+  /** `vessel_lugar_do_encontro`: a loja; sem loja, praça + lugar escrito. */
+  const lugarDoEncontro = (loja, praca, local) => limpo(loja)?.toLowerCase()
+    || `praca:${String(praca ?? '').trim().toUpperCase()}|${String(local ?? '').trim().replace(/\s+/g, ' ').toLowerCase()}`
+  const contaNaAgenda = (e) => !e.teste && !e.arquivada && !['cancelado', 'nao_realizado'].includes(e.status || 'agendado')
+  const fimDo = (iso) => new Date(new Date(iso).getTime() + DURACAO_MS).toISOString()
+  /** `vessel_encontros_que_sobrepoem` — [a, a+4h) cruza [b, b+4h); encostar não. */
+  function sobrepoemCom(quando, lugar, ignorar) {
+    if (!quando) return []
+    const t = new Date(quando).getTime()
+    const fora = maiusculo(ignorar)
+    return b.encontros
+      .filter((e) => contaNaAgenda(e) && e.codigo !== fora && lugarDoEncontro(e.loja, e.praca, e.local) === lugar
+        && new Date(e.quando).getTime() < t + DURACAO_MS && t < new Date(e.quando).getTime() + DURACAO_MS)
+      .sort((x, y) => (x.quando === y.quando ? (x.codigo < y.codigo ? -1 : 1) : (x.quando < y.quando ? -1 : 1)))
+      .map((e) => {
+        const s = stylistPorId(e.stylist_id)
+        return { codigo: e.codigo, stylist: s?.codigo ?? null, anfitria: s?.nome ?? null, inicio: e.quando, fim: fimDo(e.quando),
+          dia: diaEmSaoPaulo(e.quando), hora: horaEmSaoPaulo(e.quando), hora_fim: horaEmSaoPaulo(fimDo(e.quando)),
+          loja: e.loja, praca: e.praca, local: e.local, status: e.status }
+      })
+  }
+  /** `vessel_contexto_da_loja` — a sessão do mesmo dia e a visita dentro da janela. */
+  function contextoDaLoja(quando, loja) {
+    const l = limpo(loja)?.toLowerCase()
+    if (!quando || !l) return []
+    const t = new Date(quando).getTime()
+    const sessoes = (b.sessoes || []).filter((x) => !x.arquivada && x.loja === l && x.quando === diaEmSaoPaulo(quando))
+      .map((x) => ({ tipo: 'beauty_session', codigo: x.codigo, dia: x.quando, hora: null, loja: x.loja, praca: x.praca,
+        parceiro: x.parceiro ?? null, client_advisor: null, status: null }))
+    const visitas = b.atendimentos.filter((v) => v.quando && !v.teste && !String(v.evento_codigo || '').startsWith('PE-')
+      && !['cancelado', 'remarcado'].includes(v.status) && v.loja === l
+      && new Date(v.quando).getTime() >= t && new Date(v.quando).getTime() < t + DURACAO_MS)
+      .map((v) => ({ tipo: 'private_appointment', codigo: null, dia: diaEmSaoPaulo(v.quando), hora: horaEmSaoPaulo(v.quando),
+        loja: v.loja, praca: null, parceiro: null, client_advisor: v.client_advisor ?? null, status: v.status }))
+    return [...sessoes, ...visitas].sort((x, y) => (x.dia + (x.hora || '')).localeCompare(y.dia + (y.hora || '')))
+  }
 
   // ── o gatilho dos encontros: `vessel_stylist_seguir_os_encontros` ────────
   // ⚠️ DESDE 24/09/2026 ELE NÃO MEXE NA ETAPA: só congela `ativada_em`.
@@ -428,6 +477,50 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
           }
         })
         .sort((x, y) => (x.quando === y.quando ? 0 : (x.quando < y.quando ? 1 : -1)))
+    },
+
+    // ── 25/09/2026: a agenda das lojas e a pergunta de antes de gravar ──────
+    // ⚠️ A MESMA FORMA DO BANCO: todo item com as 18 chaves (`CHAVES_DO_ITEM`),
+    // o dia e a hora no fuso de São Paulo, e o Private Appointment SEM o nome
+    // da cliente.
+    vessel_agenda_das_lojas({ p_de = null, p_ate = null, p_loja = null } = {}) {
+      const de = p_de || hoje()
+      const ate = p_ate || somarDias(p_de || hoje(), 41)
+      if (ate < de) throw erroDoBanco('22023', 'o fim vem antes do começo')
+      if (diasEntre(de, ate) > 190) throw erroDoBanco('22023', 'periodo longo demais (maximo 190 dias)')
+      const loja = limpo(p_loja)?.toLowerCase() ?? null
+      const dentro = (d) => d >= de && d <= ate
+      const vazio = { id: null, codigo: null, hora: null, hora_fim: null, inicio: null, fim: null, loja: null, praca: null,
+        local: null, lugar: null, stylist: null, anfitria: null, parceiro: null, client_advisor: null, status: null, sobrepoe: null }
+      const pes = b.encontros.filter((e) => contaNaAgenda(e) && dentro(diaDoEncontro(e)) && (!loja || e.loja === loja))
+        .map((e) => {
+          const s = stylistPorId(e.stylist_id)
+          const lugar = lugarDoEncontro(e.loja, e.praca, e.local)
+          return { ...vazio, tipo: 'private_edit', id: e.id, codigo: e.codigo, dia: diaDoEncontro(e), hora: horaEmSaoPaulo(e.quando),
+            hora_fim: horaEmSaoPaulo(fimDo(e.quando)), inicio: e.quando, fim: fimDo(e.quando), loja: e.loja, praca: e.praca,
+            local: e.local, lugar, stylist: s?.codigo ?? null, anfitria: s?.nome ?? null, status: e.status,
+            sobrepoe: sobrepoemCom(e.quando, lugar, e.codigo).map((o) => o.codigo) }
+        })
+      const bss = (b.sessoes || []).filter((x) => !x.arquivada && dentro(x.quando) && (!loja || x.loja === loja))
+        .map((x) => ({ ...vazio, tipo: 'beauty_session', codigo: x.codigo, dia: x.quando, loja: x.loja, praca: x.praca,
+          lugar: x.loja, parceiro: x.parceiro ?? null, status: x.ativa === false ? 'encerrada' : 'aberta' }))
+      const pas = b.atendimentos.filter((t) => t.quando && !t.teste && !String(t.evento_codigo || '').startsWith('PE-')
+        && !['cancelado', 'remarcado'].includes(t.status) && dentro(diaEmSaoPaulo(t.quando)) && (!loja || t.loja === loja))
+        .map((t) => ({ ...vazio, tipo: 'private_appointment', id: t.id, dia: diaEmSaoPaulo(t.quando), hora: horaEmSaoPaulo(t.quando),
+          inicio: t.quando, loja: t.loja, lugar: t.loja, client_advisor: t.client_advisor ?? null, status: t.status }))
+      const chave = (i) => [i.dia, i.hora ?? '', i.tipo, i.codigo ?? '']
+      return [...pes, ...bss, ...pas].sort((x, y) => {
+        const [a1, a2, a3, a4] = chave(x), [b1, b2, b3, b4] = chave(y)
+        return a1.localeCompare(b1) || (x.hora == null ? -1 : 0) - (y.hora == null ? -1 : 0) || a2.localeCompare(b2)
+          || a3.localeCompare(b3) || a4.localeCompare(b4)
+      })
+    },
+
+    vessel_private_edit_sobreposicoes({ p_quando = null, p_loja = null, p_ignorar_codigo = null, p_praca = null, p_local = null } = {}) {
+      const quando = p_quando ? new Date(p_quando).toISOString() : null
+      return { ok: true, duracao_em_horas: DURACAO_DO_PRIVATE_EDIT_EM_HORAS,
+        sobrepoe: sobrepoemCom(quando, lugarDoEncontro(p_loja, p_praca, p_local), p_ignorar_codigo),
+        contexto: contextoDaLoja(quando, p_loja) }
     },
 
     vessel_convidadas_do_encontro({ p_codigo, p_dias = 14 } = {}) {
@@ -798,6 +891,17 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
       if (vagas == null || !Number.isFinite(vagas) || vagas < 7 || vagas > 10) {
         return { ok: false, situacao: 'vagas_invalidas', erro: 'A capacidade planejada é de 7 a 10 convidadas.' }
       }
+      // ⚠️ 25/09/2026: o encontro sobreposto, só quando pedido (NULL = a Central
+      // de antes, sem conferência).
+      let sobrepoe = null
+      if (a.p_confirmar_sobreposicao != null) {
+        sobrepoe = sobrepoemCom(quando.toISOString(), lugarDoEncontro(a.p_loja, praca, a.p_local), null)
+        if (!a.p_confirmar_sobreposicao && sobrepoe.length) {
+          avisar('sobreposicao_avisada', { quantos: sobrepoe.length })
+          return { ok: false, situacao: 'sobrepoe', sobrepoe, contexto: contextoDaLoja(quando.toISOString(), a.p_loja),
+            erro: 'Já há Private Edit neste lugar neste horário. Confira e confirme para marcar mesmo assim.' }
+        }
+      }
       const dia = diaEmSaoPaulo(quando)
       // ⚠️ 24/09/2026 (`2026-09-24-vessel-codigo-do-encontro-sem-repetir.sql`): a
       // partir do número de sempre, o PRÓXIMO LIVRE — um encontro que mudou de
@@ -815,6 +919,7 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
       b.encontros.push(e)
       gatilhoDoEncontro(null, e)
       avisar('encontro_criado', { codigo, stylist: s.codigo })
+      if (a.p_confirmar_sobreposicao && sobrepoe?.length) return { ok: true, codigo, chave, sobrepoe }
       return { ok: true, codigo, chave }
     },
 
@@ -833,6 +938,18 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
         stylistId = s.id
       }
       if (a.p_vagas != null && (Number(a.p_vagas) < 7 || Number(a.p_vagas) > 10)) return { ok: false, situacao: 'vagas_invalidas' }
+      // ⚠️ 25/09/2026: só quando pedido, e só quando a hora ou o lugar mudam.
+      let sobrepoe = null
+      const novoQuando = a.p_quando ? new Date(a.p_quando).toISOString() : e.quando
+      const novoLugar = lugarDoEncontro(a.p_loja ?? e.loja, a.p_praca ?? e.praca, a.p_local ?? e.local)
+      if (a.p_confirmar_sobreposicao != null
+        && (+new Date(novoQuando) !== +new Date(e.quando) || novoLugar !== lugarDoEncontro(e.loja, e.praca, e.local))) {
+        sobrepoe = sobrepoemCom(novoQuando, novoLugar, codigo)
+        if (!a.p_confirmar_sobreposicao && sobrepoe.length) {
+          avisar('sobreposicao_avisada', { quantos: sobrepoe.length })
+          return { ok: false, situacao: 'sobrepoe', codigo, sobrepoe, contexto: contextoDaLoja(novoQuando, a.p_loja ?? e.loja) }
+        }
+      }
       const antes = { ...e }
       Object.assign(e, {
         quando: a.p_quando ? new Date(a.p_quando).toISOString() : e.quando,
@@ -841,6 +958,7 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
       })
       gatilhoDoEncontro(antes, e)
       avisar('encontro_editado', { codigo })
+      if (a.p_confirmar_sobreposicao && sobrepoe?.length) return { ok: true, situacao: 'ok', codigo, sobrepoe }
       return { ok: true, situacao: 'ok', codigo }
     },
 

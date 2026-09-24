@@ -323,7 +323,8 @@ test('o placar fecha com o estado — e muda quando o encontro é realizado', ()
   assert.equal(antes.prospectadas, 4)
   assert.equal(antes.ativadas, 2)
   assert.equal(antes.prospectadas_ja_ativadas, 2)
-  assert.equal(antes.encontros_agendados, 5)
+  // 25/09/2026: + o par que se sobrepõe no Iguatemi em 29/09 (Luísa 18h, Marina 20h30), da agenda.
+  assert.equal(antes.encontros_agendados, 7)
   assert.equal(antes.encontros_realizados, 3)
   assert.equal(antes.encontros_cancelados, 1)
   assert.equal(antes.convidadas, 14)
@@ -369,7 +370,7 @@ test('o placar fecha com o estado — e muda quando o encontro é realizado', ()
   const depois = tudo()
   assert.equal(depois.prospectadas, 5)
   assert.equal(depois.ativadas, 3)
-  assert.equal(depois.encontros_agendados, 6)
+  assert.equal(depois.encontros_agendados, 8) // antes.encontros_agendados + 1
   assert.equal(depois.encontros_realizados, 4)
   assert.equal(depois.convidadas, 16)
   assert.equal(depois.confirmadas_em_realizados, 12)
@@ -389,7 +390,7 @@ test('o placar recorta pelo período: cada número pela sua data', () => {
   const set = chamar('vessel_placar_do_stylist_circle', { p_de: '2026-09-01', p_ate: '2026-09-30' })
   assert.equal(set.prospectadas, 2) // Paula (03/09) e Renata (20/09); Marina é de julho
   assert.equal(set.ativadas, 0) // Marina ativou em julho
-  assert.equal(set.encontros_agendados, 3) // + o cancelado da Luísa (15/09)
+  assert.equal(set.encontros_agendados, 5) // + o cancelado da Luísa (15/09) + o par sobreposto de 29/09 (a agenda)
   assert.equal(set.encontros_realizados, 1)
   assert.equal(set.receita, 2890)
   assert.equal(set.recorrentes_no_periodo, 1, 'o 2º realizado dela foi em 11/09')
@@ -667,7 +668,9 @@ test('scorecard: os números de uma pessoa (próximo encontro, recorrente, dias 
   const luisa = chamar('vessel_scorecard_da_stylist', { p_codigo: 'STY-0004' })
   assert.equal(luisa.recorrente, false)
   assert.equal(luisa.encontros_cancelados, 1)
-  assert.equal(luisa.proximo_encontro_em, null, 'o cancelado não é "próximo encontro"')
+  // 25/09/2026: a Luísa ganhou o encontro de 29/09 (o par sobreposto da agenda).
+  // O cancelado (15/09) continua NÃO sendo o próximo: o próximo é o de 29/09.
+  assert.equal(luisa.proximo_encontro_codigo, 'PE-20260929-CPS-01', 'o cancelado não é "próximo encontro"')
   assert.equal(luisa.contatos_sem_resposta_depois_de_ativar, 1)
   assert.equal(luisa.presentes, 2)
   assert.equal(luisa.receita, 2400)
@@ -841,4 +844,74 @@ test('código do encontro sem repetir: o que mudou de dia não deixa o próximo 
   const dois = chamar('vessel_criar_private_edit', { p_stylist: NOVA, p_quando: quandoDaqui(10), p_praca: 'CPS', p_vagas: 8 })
   assert.equal(dois.ok, true)
   assert.equal(dois.codigo, um.codigo.slice(0, -2) + '02')
+})
+
+// ── 25/09/2026: a agenda do Private Edit e o encontro sobreposto ────────────
+// ⚠️ As regras de `2026-09-25-vessel-agenda-do-private-edit.sql`, provadas no
+// banco de verdade pelo aplicador; aqui, que o de mentira responde IGUAL.
+import { CHAVES_DO_ITEM } from '../ferramentas/comercial-vessel/agenda-regras.js'
+
+test('agenda: os três tipos com a forma do banco, o par sobreposto e a sessão do mesmo dia', () => {
+  const { chamar } = novoBanco()
+  const itens = chamar('vessel_agenda_das_lojas', { p_de: '2026-09-01', p_ate: '2026-09-30' })
+  assert.ok(itens.every((i) => JSON.stringify(Object.keys(i).sort()) === JSON.stringify([...CHAVES_DO_ITEM].sort())),
+    'todo item tem as 18 chaves do banco, nem uma a mais')
+  const tipos = new Set(itens.map((i) => i.tipo))
+  assert.deepEqual([...tipos].sort(), ['beauty_session', 'private_appointment', 'private_edit'])
+  const dia29 = itens.filter((i) => i.dia === '2026-09-29')
+  const [luisa, marina] = dia29.filter((i) => i.tipo === 'private_edit')
+  assert.equal(luisa.codigo, 'PE-20260929-CPS-01')
+  assert.equal(luisa.hora, '18:00')
+  assert.equal(luisa.hora_fim, '22:00')
+  assert.deepEqual(luisa.sobrepoe, ['PE-20260929-CPS-02'])
+  assert.deepEqual(marina.sobrepoe, ['PE-20260929-CPS-01'])
+  assert.ok(dia29.some((i) => i.tipo === 'beauty_session' && i.codigo === 'BS-20260929-CPS-02' && i.hora === null))
+  // O de 28/09 (19h) não cruza ninguém; o cancelado de 15/09 e o arquivado não entram.
+  assert.deepEqual(itens.find((i) => i.codigo === 'PE-20260928-CPS-01').sobrepoe, [])
+  assert.ok(!itens.some((i) => i.codigo === 'PE-20260915-CPS-01'), 'cancelado fora da agenda')
+  assert.ok(!itens.some((i) => i.tipo === 'private_appointment' && ['cancelado', 'remarcado'].includes(i.status)))
+  assert.ok(!itens.some((i) => i.tipo === 'private_appointment' && 'nome' in i))
+  assert.ok(!itens.some((i) => i.codigo === 'BS-20260824-BSB-01'), 'sessão arquivada fora')
+  assert.ok(chamar('vessel_agenda_das_lojas', { p_de: '2026-09-29', p_ate: '2026-09-29', p_loja: 'tivoli' }).every((i) => i.loja === 'tivoli'))
+})
+
+test('agenda: o encontro das 22h de São Paulo fica no dia dele (em UTC já é o seguinte)', () => {
+  const { chamar } = novoBanco()
+  ativar(chamar, 'STY-0004')
+  const r = chamar('vessel_criar_private_edit', { p_stylist: 'STY-0004', p_quando: quandoDaqui(10, '22:00'), p_praca: 'SBO',
+    p_loja: 'tivoli', p_vagas: 8, p_confirmar_sobreposicao: false })
+  assert.equal(r.ok, true)
+  const dia = somarDias(HOJE, 10)
+  assert.ok(chamar('vessel_agenda_das_lojas', { p_de: dia, p_ate: dia }).some((i) => i.codigo === r.codigo && i.hora === '22:00'))
+  assert.ok(!chamar('vessel_agenda_das_lojas', { p_de: somarDias(dia, 1), p_ate: somarDias(dia, 1) }).some((i) => i.codigo === r.codigo))
+  assert.throws(() => chamar('vessel_agenda_das_lojas', { p_de: dia, p_ate: somarDias(dia, 191) }), (e) => e.pg?.code === '22023')
+})
+
+test('sobreposto: pergunta, recusa sem confirmar, grava confirmando, e sem o parâmetro é o de antes', () => {
+  const { chamar, banco } = novoBanco()
+  const quando = quandoDaqui(6, '21:00') // cruza os dois de 29/09 no Iguatemi
+  const p = chamar('vessel_private_edit_sobreposicoes', { p_quando: quando, p_loja: 'iguatemi', p_praca: 'CPS' })
+  assert.deepEqual(p.sobrepoe.map((o) => o.codigo), ['PE-20260929-CPS-01', 'PE-20260929-CPS-02'])
+  assert.equal(p.sobrepoe[0].anfitria, 'Luísa Andrade (exemplo)')
+  assert.deepEqual(p.contexto.map((c) => c.tipo), ['beauty_session'])
+  const n = banco.estado.encontros.length
+  const corpo = { p_stylist: 'STY-0001', p_quando: quando, p_praca: 'CPS', p_loja: 'iguatemi', p_vagas: 8 }
+  const recusa = chamar('vessel_criar_private_edit', { ...corpo, p_confirmar_sobreposicao: false })
+  assert.equal(recusa.situacao, 'sobrepoe')
+  assert.equal(recusa.sobrepoe.length, 2)
+  assert.equal(banco.estado.encontros.length, n, 'nada gravado')
+  const ok = chamar('vessel_criar_private_edit', { ...corpo, p_confirmar_sobreposicao: true })
+  assert.equal(ok.ok, true)
+  assert.equal(ok.sobrepoe.length, 2)
+  const antigo = chamar('vessel_criar_private_edit', corpo)
+  assert.deepEqual(Object.keys(antigo).sort(), ['chave', 'codigo', 'ok'], 'sem o parâmetro: a resposta de antes')
+  // Encostar não é sobrepor: 22h do dia 29 começa quando o das 18h termina — mas cruza o das 20h30.
+  const encosta = chamar('vessel_private_edit_sobreposicoes', { p_quando: quandoDaqui(6, '14:00'), p_loja: 'iguatemi' })
+  assert.deepEqual(encosta.sobrepoe, [], '14h–18h encosta no das 18h: não sobrepõe')
+  // Editar: ignora a si mesmo; mexer só nas vagas não confere.
+  const ed = chamar('vessel_private_edit_editar', { p_codigo: 'PE-20260929-CPS-01', p_quando: quandoDaqui(6, '17:00'), p_confirmar_sobreposicao: false })
+  assert.equal(ed.situacao, 'sobrepoe')
+  assert.ok(!ed.sobrepoe.some((o) => o.codigo === 'PE-20260929-CPS-01'), 'o encontro não conflita consigo mesmo')
+  const vagas = chamar('vessel_private_edit_editar', { p_codigo: 'PE-20260929-CPS-01', p_vagas: 9, p_confirmar_sobreposicao: false })
+  assert.equal(vagas.ok, true)
 })

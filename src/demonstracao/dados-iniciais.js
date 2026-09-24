@@ -305,6 +305,23 @@ export function dadosIniciais(agora = new Date()) {
     },
   )
   const E4 = encontros[3].codigo, q4 = encontros[3].quando
+  // ── A AGENDA DO PRIVATE EDIT (25/09/2026): UM PAR QUE SE SOBREPÕE ──────────
+  // Daqui a 6 dias, no Iguatemi: a Luísa às 18h e a Marina às 20h30 — os dois
+  // encontros duram 4 horas e se cruzam das 20h30 às 22h. É o mesmo dia da
+  // Beauty Session S3 (Iguatemi), que aparece na agenda como contexto. Foram
+  // gravados antes do aviso existir (é o caso que a agenda existe para achar).
+  encontros.push(
+    {
+      id: 6, codigo: `PE-${compacto(6)}-CPS-01`, chave: 'T5W8Y3KB', stylist_id: 4, quando: em(6, '18:00'),
+      local: 'Loja do Iguatemi Campinas', praca: 'CPS', loja: 'iguatemi', vagas: 8, ativa: true,
+      arquivada: false, status: 'agendado', realizado_em: null, motivo: null, observacoes: null, teste: false,
+    },
+    {
+      id: 7, codigo: `PE-${compacto(6)}-CPS-02`, chave: 'Z9C4F7MH', stylist_id: 1, quando: em(6, '20:30'),
+      local: 'Loja do Iguatemi Campinas', praca: 'CPS', loja: 'iguatemi', vagas: 8, ativa: true,
+      arquivada: false, status: 'agendado', realizado_em: null, motivo: null, observacoes: null, teste: false,
+    },
+  )
   pessoas.push(...[
     ['Lívia Borges (exemplo)', '5519980000111'], ['Marta Queiroz (exemplo)', '5519980000112'],
     ['Noemi Torres (exemplo)', '5519980000113'], ['Olga Freitas (exemplo)', '5519980000114'],
