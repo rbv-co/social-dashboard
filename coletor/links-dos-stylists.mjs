@@ -71,10 +71,12 @@ const cli = new pg.Client({ connectionString: process.env.DATABASE_URL });
 await cli.connect();
 // ⚠️ `teste` FORA: as stylists de ensaio não recebem material impresso.
 const { rows } = await cli.query(
-  `select codigo, nome, cidade, estagio, praca_preview
-     from public.vessel_stylists
-    where not coalesce(teste, false)
-    order by codigo`);
+  // ⚠️ 24/09/2026: a etapa é uma linha de `vessel_stylist_etapas` (funil configurável).
+  `select s.codigo, s.nome, s.cidade, e.nome as etapa, s.praca_preview
+     from public.vessel_stylists s
+     join public.vessel_stylist_etapas e on e.id = s.etapa_id
+    where not coalesce(s.teste, false)
+    order by s.codigo`);
 await cli.end();
 
 if (!rows.length) {
@@ -91,7 +93,7 @@ if (comQR) mkdirSync(SAIDA, { recursive: true });
 let falhou = 0;
 for (const s of rows) {
   const link = linkDaStylist(s.codigo);
-  console.log(`${s.codigo}  ${s.nome}${s.cidade ? ' — ' + s.cidade : ''}  [${s.estagio}]`);
+  console.log(`${s.codigo}  ${s.nome}${s.cidade ? ' — ' + s.cidade : ''}  [${s.etapa}]`);
   console.log(`     ${link}`);
   if (!comQR) continue;
 

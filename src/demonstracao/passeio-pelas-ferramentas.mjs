@@ -293,6 +293,46 @@ passo('Stylist Circle')
   await clicar(pagina.locator('.cv-modal-avaliar .btn-principal'), 'Salvar avaliação')
   if (!/→.*→/.test(await pagina.locator('.cv-qualificacao-trilha').innerText().catch(() => ''))) falhar(onde, 'reavaliou e o histórico não cresceu')
   await clicar(pagina.locator('.cv-modal-fechar').first(), 'fechar a ficha da Marina')
+
+  // 24/09: O FUNIL CONFIGURÁVEL — as colunas vêm das etapas, a engrenagem abre
+  // "Etapas do funil" (adicionar, subir, excluir com destino), e a ficha avança
+  // de etapa e mostra o histórico de etapas.
+  const noQuadro = await pagina.locator('.cv-quadro-titulo').allInnerTexts()
+  if (!/^Identificado · /i.test(noQuadro[0] || '')) falhar(onde, `a primeira coluna do quadro não é Identificado: ${noQuadro[0]}`)
+  if (!noQuadro.some((t) => /^Saídas · /i.test(t))) falhar(onde, 'o quadro não junta as saídas no fim')
+  // O contato fácil no cartão: só confere o endereço (o toque abriria uma aba de fora).
+  const contatos = async (nome) => pagina.locator('.cv-quadro-cartao', { hasText: nome }).first()
+    .locator('.cv-contato a').evaluateAll((as) => as.map((a) => `${a.getAttribute('href')}|${a.getAttribute('target')}|${a.getAttribute('aria-label')}`))
+  const esperado = {
+    'Marina Castro': ['https://wa.me/5519990000001|_blank|Chamar Marina Castro (exemplo) no WhatsApp', 'https://instagram.com/marina.exemplo|_blank|Abrir o Instagram de Marina Castro (exemplo)'],
+    'Luiza Amaral': ['https://instagram.com/luiza.exemplo|_blank|Abrir o Instagram de Luiza Amaral (exemplo)'],
+    'Carol Bastos': ['https://wa.me/5519990000006|_blank|Chamar Carol Bastos (exemplo) no WhatsApp'],
+  }
+  for (const [nome, lista] of Object.entries(esperado)) {
+    const tem = await contatos(nome)
+    if (JSON.stringify(tem) !== JSON.stringify(lista)) falhar(onde, `contato fácil de ${nome}: ${JSON.stringify(tem)}`)
+  }
+  await clicar(pagina.getByRole('button', { name: 'Etapas do funil' }), 'engrenagem: Etapas do funil')
+  const modal = pagina.locator('[role="dialog"][aria-label="Etapas do funil"]')
+  if (!/Desclassificado/.test(await modal.innerText().catch(() => ''))) falhar(onde, 'a tela de etapas não abriu com as etapas')
+  await modal.locator('#etapa-nova-nome').fill('Qualificada')
+  await modal.locator('#etapa-nova-posicao').selectOption('3')
+  await clicar(modal.getByRole('button', { name: /Adicionar etapa/ }), 'adicionar a etapa Qualificada')
+  if (!/Qualificada/.test(await modal.innerText())) falhar(onde, 'a etapa nova não apareceu na lista')
+  await clicar(modal.getByRole('button', { name: 'Subir Qualificada' }), 'subir a Qualificada')
+  const classificacao = modal.locator('.cv-etapa', { hasText: 'Classificação' })
+  await clicar(classificacao.getByRole('button', { name: /Excluir…/ }), 'excluir Classificação…')
+  if (!/escolha para onde elas vão/.test(await classificacao.innerText())) falhar(onde, 'excluir com gente não pediu o destino')
+  await classificacao.locator('select').selectOption({ label: 'Identificado' })
+  await clicar(classificacao.getByRole('button', { name: /Excluir a etapa/ }), 'excluir movendo para Identificado')
+  if (await modal.locator('.cv-etapa', { hasText: 'Classificação' }).count()) falhar(onde, 'a etapa excluída continuou na lista')
+  await clicar(modal.locator('.cv-modal-fechar'), 'fechar Etapas do funil')
+  if (!(await pagina.locator('.cv-quadro-titulo', { hasText: 'Qualificada' }).count())) falhar(onde, 'a etapa nova não virou coluna do quadro')
+  await clicar(pagina.locator('.cv-quadro-nome', { hasText: 'Luiza' }).first(), 'abrir a ficha da Luiza')
+  await clicar(pagina.locator('.cv-ficha-etapa .btn-principal'), 'Avançar para a próxima etapa')
+  await esperar(400)
+  if (!/Identificado → Qualificada/.test(await pagina.locator('.cv-modal-corpo').innerText())) falhar(onde, 'avançou e o histórico de etapas não mostrou')
+  await clicar(pagina.locator('.cv-modal-fechar').first(), 'fechar a ficha da Luiza')
 }
 
 // ════════════════════════════════════════════════════════════════════════════

@@ -28,20 +28,29 @@ export function dadosIniciais(agora = new Date()) {
   const em = (n, hora) => instanteEmSaoPaulo(dia(n), hora)
   const compacto = (n) => dia(n).replace(/-/g, '')
 
+  // ⚠️ AS ETAPAS DO FUNIL (configuráveis desde 24/09/2026) — as mesmas sete que
+  // `2026-09-24-vessel-stylist-funil-configuravel.sql` semeia, na mesma ordem.
+  const etapas = [
+    ['Identificado', 'funil'], ['Classificação', 'funil'], ['Prospectado', 'funil', true], ['Convidado', 'funil'],
+    ['Confirmado', 'funil'], ['Presença Confirmada', 'funil'], ['Desclassificado', 'saida'],
+  ].map(([nome, tipo, marcada], i) => ({ id: i + 1, nome, ordem: i + 1, tipo, conta_como_prospectada: !!marcada,
+    ativa: true, alterado_por_nome: null, alterado_em: null }))
+  const ETAPA = Object.fromEntries(etapas.map((e) => [e.nome, e.id]))
+
   const stylists = [
     {
       id: 1, codigo: 'STY-0001', nome: 'Marina Castro (exemplo)', whatsapp: '5519990000001',
       cidade: 'Campinas', instagram: '@marina.exemplo', atuacao: 'stylist', praca_preview: 'CPS',
       loja: 'iguatemi', origem_contato: 'indicacao', origem_canal: null, responsavel: 'Ionara',
       prospectado_em: dia(-75), proxima_acao: 'Combinar a data do terceiro encontro', proxima_acao_em: dia(6),
-      ativada_em: em(-70, '10:00'), estagio: 'recorrente', ativa: true, teste: false,
+      ativada_em: em(-70, '10:00'), etapa_id: ETAPA['Presença Confirmada'], ativa: true, teste: false,
     },
     {
       id: 2, codigo: 'STY-0002', nome: 'Paula Reis (exemplo)', whatsapp: '5511990000002',
       cidade: 'São Paulo', instagram: '@paula.exemplo', atuacao: 'personal shopper', praca_preview: 'SAO',
       loja: null, origem_contato: 'pesquisa', origem_canal: null, responsavel: 'Ionara',
       prospectado_em: dia(-20), proxima_acao: 'Retornar sobre a proposta do encontro', proxima_acao_em: dia(-2),
-      ativada_em: null, estagio: 'em_negociacao', ativa: true, teste: false,
+      ativada_em: null, etapa_id: ETAPA.Convidado, ativa: true, teste: false,
     },
     {
       // Veio pela landing page do Circle: é a porta pública que carimba o canal.
@@ -49,9 +58,40 @@ export function dadosIniciais(agora = new Date()) {
       cidade: 'Campinas', instagram: '@renata.exemplo', atuacao: 'consultora de imagem', praca_preview: 'CPS',
       loja: 'tivoli', origem_contato: 'inbound', origem_canal: 'lp', responsavel: null,
       prospectado_em: dia(-3), proxima_acao: null, proxima_acao_em: null,
-      ativada_em: null, estagio: 'prospectado', ativa: true, teste: false,
+      ativada_em: null, etapa_id: ETAPA.Prospectado, ativa: true, teste: false,
+    },
+    // Duas mapeadas que ninguém abordou ainda (a planilha de mapeamento): sem
+    // data da prospecção, uma SÓ com o Instagram e a outra SÓ com o WhatsApp
+    // (o contato fácil mostra um botão para cada caso).
+    {
+      id: 5, codigo: 'STY-0005', nome: 'Luiza Amaral (exemplo)', whatsapp: null,
+      cidade: 'Limeira', instagram: '@luiza.exemplo', atuacao: 'consultoria', praca_preview: null,
+      loja: null, origem_contato: 'pesquisa', origem_canal: null, responsavel: null,
+      prospectado_em: null, proxima_acao: null, proxima_acao_em: null,
+      observacoes: 'Da planilha de mapeamento (exemplo). Tier B.',
+      ativada_em: null, etapa_id: ETAPA.Identificado, ativa: true, teste: false,
+    },
+    {
+      id: 6, codigo: 'STY-0006', nome: 'Carol Bastos (exemplo)', whatsapp: '5519990000006',
+      cidade: 'Piracicaba', instagram: null, atuacao: 'stylist', praca_preview: null,
+      loja: null, origem_contato: 'pesquisa', origem_canal: null, responsavel: null,
+      prospectado_em: null, proxima_acao: 'Conferir a carteira antes de abordar', proxima_acao_em: dia(4),
+      observacoes: null, ativada_em: null, etapa_id: ETAPA['Classificação'], ativa: true, teste: false,
     },
   ]
+  // O histórico de etapas de cada uma (a entrada, e para onde ela andou).
+  const historicoDeEtapas = []
+  const passou = (stylistId, de, para, n, motivo = 'mudanca') => historicoDeEtapas.push({
+    id: historicoDeEtapas.length + 1, stylist_id: stylistId, de_etapa_id: de ? ETAPA[de] : null,
+    para_etapa_id: ETAPA[para], motivo, por_nome: 'Ionara', em: em(n, '10:00') })
+  passou(1, null, 'Identificado', -80, 'cadastro'); passou(1, 'Identificado', 'Prospectado', -75)
+  passou(1, 'Prospectado', 'Convidado', -72); passou(1, 'Convidado', 'Confirmado', -71)
+  passou(1, 'Confirmado', 'Presença Confirmada', -40)
+  passou(2, null, 'Identificado', -25, 'cadastro'); passou(2, 'Identificado', 'Prospectado', -20)
+  passou(2, 'Prospectado', 'Convidado', -5)
+  passou(3, null, 'Identificado', -3, 'cadastro'); passou(3, 'Identificado', 'Prospectado', -3)
+  passou(5, null, 'Identificado', -1, 'cadastro')
+  passou(6, null, 'Identificado', -1, 'cadastro'); passou(6, 'Identificado', 'Classificação', 0)
 
   const encontros = [
     {
@@ -216,8 +256,11 @@ export function dadosIniciais(agora = new Date()) {
     cidade: 'Campinas', instagram: '@luisa.exemplo', atuacao: 'stylist', praca_preview: 'CPS',
     loja: 'tivoli', origem_contato: 'evento', origem_canal: null, responsavel: 'Ionara',
     prospectado_em: dia(-45), proxima_acao: 'Remarcar o encontro que caiu', proxima_acao_em: dia(4),
-    ativada_em: em(-40, '15:00'), estagio: 'evento_realizado', ativa: true, teste: false,
+    ativada_em: em(-40, '15:00'), etapa_id: ETAPA['Presença Confirmada'], ativa: true, teste: false,
   })
+  // O histórico de etapas dela (funil configurável, 24/09/2026).
+  passou(4, null, 'Identificado', -50, 'cadastro'); passou(4, 'Identificado', 'Prospectado', -45)
+  passou(4, 'Prospectado', 'Convidado', -41); passou(4, 'Convidado', 'Presença Confirmada', -25)
   encontros.push(
     {
       id: 4, codigo: `PE-${compacto(-25)}-CPS-01`, chave: 'M3T8W2QA', stylist_id: 4, quando: em(-25, '19:00'),
@@ -268,6 +311,7 @@ export function dadosIniciais(agora = new Date()) {
   ]
 
   return {
+    etapas, historicoDeEtapas, trilhaDeEtapas: [],
     stylists, encontros,
     pessoas: [...pessoas, ...maisPessoas],
     atendimentos: [...atendimentos, ...visitas],

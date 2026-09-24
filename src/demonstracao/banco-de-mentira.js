@@ -3,14 +3,13 @@
  *
  * ⚠️ AS REGRAS SÃO AS DO BANCO DE VERDADE, linha por linha. Cada função aqui é
  * a tradução de uma função de `db/migrations/2026-09-22-vessel-t11-bases-do-
- * stylist-circle.sql` (e das irmãs de 19/09 que ela não reescreveu): a mesma
+ * stylist-circle.sql` (e das irmãs de 19/09 que ela não reescreveu), com o
+ * funil configurável de `2026-09-24-vessel-stylist-funil-configuravel.sql`
+ * por cima (etapas, histórico de etapas, nenhum movimento automático): a mesma
  * ordem de conferência, a mesma `situacao` na recusa, o mesmo formato de
  * resposta. Uma demonstração que aceitasse o que o banco recusa ensinaria a
  * Ionara um sistema que não existe.
  *
- * ⚠️ E REUSA AS REGRAS JS QUE JÁ ESPELHAM O BANCO: a sugestão de etapa é
- * `sugestaoDeEtapa` (crm-da-stylist-regras.js), que o teste de lá já confere
- * contra o SQL. Uma segunda cópia aqui seria a terceira verdade.
  *
  * O que NÃO se traduziu, de propósito:
  *   · as travas de permissão (`is_vessel_atendimentos*`): na demonstração quem
@@ -24,7 +23,6 @@
  */
 import { dadosIniciais, USUARIO_DA_DEMONSTRACAO } from './dados-iniciais.js'
 import { diaEmSaoPaulo, somarDias, diasEntre } from './tempo.js'
-import { sugestaoDeEtapa } from '../ferramentas/comercial-vessel/crm-da-stylist-regras.js'
 import { faixaDaNota } from '../ferramentas/comercial-vessel/qualificacao-regras.js'
 
 /** ⚠️ A MARCA QUE O BUILD DA CENTRAL NÃO PODE TER: o relatório da entrega
@@ -33,10 +31,6 @@ import { faixaDaNota } from '../ferramentas/comercial-vessel/qualificacao-regras
 export const MARCA_DO_BANCO_DE_MENTIRA = 'banco-de-mentira'
 
 // ── as listas fechadas do banco (os CHECK da migration) ─────────────────────
-const ESTAGIOS = ['prospectado', 'contatado', 'interessado', 'em_negociacao',
-  'ativado', 'evento_realizado', 'recorrente', 'sem_retorno', 'nao_interessado', 'pausado', 'inativo']
-const ESTAGIOS_AUTOMATICOS = ['ativado', 'evento_realizado', 'recorrente']
-const ANTES_DO_ENCONTRO = ['prospectado', 'contatado', 'interessado', 'em_negociacao']
 const PRACAS = ['CPS', 'SAO', 'SBO', 'BSB']
 const LOJAS = ['iguatemi', 'tivoli', 'parkshopping']
 const ORIGENS = ['indicacao', 'pesquisa', 'evento', 'inbound']
@@ -61,6 +55,13 @@ export function telefoneCanonico(bruto) {
   if (d.length === 10 || d.length === 11) return `55${d}`
   if ((d.length === 12 || d.length === 13) && d.startsWith('55')) return d
   return null
+}
+
+/** `vessel_instagram_canonico` — o perfil em minúsculas, sem @ nem endereço, ou nulo. */
+export function instagramCanonico(bruto) {
+  const h = String(bruto ?? '').trim().toLowerCase()
+    .replace(/^(https?:\/\/)?(www\.)?instagram\.com\//, '').replace(/[/?#].*$/, '').replace(/^@/, '')
+  return /^[a-z0-9._]{1,30}$/.test(h) ? h : null
 }
 
 /** O sorteio da chave: 8 letras do alfabeto sem O/0/I/1, byte ≥ 240 descartado. */
@@ -112,20 +113,40 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
   const diaDoEncontro = (e) => diaEmSaoPaulo(e.quando)
   const naoArquivado = (e) => !e.arquivada && !e.teste
 
-  // ── o gatilho do funil: `vessel_stylist_seguir_os_encontros` ──────────────
+  // ── o gatilho dos encontros: `vessel_stylist_seguir_os_encontros` ────────
+  // ⚠️ DESDE 24/09/2026 ELE NÃO MEXE NA ETAPA: só congela `ativada_em`.
   function seguirOsEncontros(stylistId) {
     const s = stylistPorId(stylistId)
     if (!s) return
-    const dela = b.encontros.filter((e) => e.stylist_id === stylistId && !e.arquivada)
-    const realizados = dela.filter((e) => e.status === 'realizado').length
-    const marcados = dela.filter((e) => MARCADOS.includes(e.status)).length
-    const fase = realizados >= 2 ? 'recorrente' : realizados === 1 ? 'evento_realizado' : marcados >= 1 ? 'ativado' : null
-    // A ativação congela na primeira vez.
+    const marcados = b.encontros.filter((e) => e.stylist_id === stylistId && !e.arquivada && MARCADOS.includes(e.status)).length
     if (marcados >= 1 && !s.ativada_em) s.ativada_em = agoraIso()
-    // ⚠️ PAUSADO E INATIVO SÃO DECISÃO DE GENTE, e o gatilho não passa por cima.
-    if (s.estagio === 'pausado' || s.estagio === 'inativo') return
-    s.estagio = fase ?? (ESTAGIOS_AUTOMATICOS.includes(s.estagio) ? 'ativado' : s.estagio)
   }
+
+  // ── as etapas: `vessel_stylist_etapas` e os gatilhos da etapa ──────────────
+  const etapasAtivas = () => b.etapas.filter((e) => e.ativa !== false).sort((x, y) => x.ordem - y.ordem || x.id - y.id)
+  const etapaPorId = (id) => b.etapas.find((e) => e.id === id && e.ativa !== false) || null
+  const primeiraDoFunil = () => etapasAtivas().find((e) => e.tipo === 'funil') || null
+  /** `vessel_etapa_conta_como_prospectada`: a marcada, ou uma de funil depois dela. */
+  function contaComoProspectada(etapaId) {
+    const e = etapaPorId(etapaId)
+    const m = etapasAtivas().find((x) => x.conta_como_prospectada)
+    return !!(e && m && e.tipo === 'funil' && e.ordem >= m.ordem)
+  }
+  /** Os dois gatilhos de `vessel_stylists`: a data da prospecção e o histórico. */
+  function mudarDeEtapa(s, etapaId, motivo) {
+    const de = s.etapa_id ?? null
+    s.etapa_id = etapaId
+    if (!s.prospectado_em && contaComoProspectada(etapaId)) s.prospectado_em = hoje()
+    b.historicoDeEtapas.push({ id: proximo(b.historicoDeEtapas), stylist_id: s.id, de_etapa_id: de,
+      para_etapa_id: etapaId, motivo, por_nome: USUARIO_DA_DEMONSTRACAO, em: agoraIso() })
+  }
+  const renumerar = () => etapasAtivas().forEach((e, i) => { e.ordem = i + 1 })
+  function anotar(etapa, acao) {
+    b.trilhaDeEtapas.push({ id: proximo(b.trilhaDeEtapas), etapa_id: etapa.id, acao, por_nome: USUARIO_DA_DEMONSTRACAO, em: agoraIso() })
+    etapa.alterado_por_nome = USUARIO_DA_DEMONSTRACAO
+    etapa.alterado_em = agoraIso()
+  }
+  const nomeRepetido = (nome, menos) => etapasAtivas().some((e) => e.id !== menos && e.nome.trim().toLowerCase() === nome.toLowerCase())
   /** O `after insert or update or delete` de `vessel_private_edits`. */
   function gatilhoDoEncontro(antes, depois) {
     if (!antes && depois) return seguirOsEncontros(depois.stylist_id)
@@ -254,11 +275,15 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
             }))
             .reduce((a, p) => a + Number(p.receita_liquida ?? p.total_corrigido ?? 0), 0)
           return {
-            codigo: s.codigo, nome: s.nome, cidade: s.cidade, estagio: s.estagio, praca_preview: s.praca_preview,
+            codigo: s.codigo, nome: s.nome, cidade: s.cidade,
+            etapa_id: s.etapa_id, etapa: b.etapas.find((e) => e.id === s.etapa_id)?.nome ?? null,
+            etapa_tipo: b.etapas.find((e) => e.id === s.etapa_id)?.tipo ?? null,
+            etapa_ordem: b.etapas.find((e) => e.id === s.etapa_id)?.ordem ?? null,
+            praca_preview: s.praca_preview,
             ativa: s.ativa, whatsapp: s.whatsapp, instagram: s.instagram, atuacao: s.atuacao,
             loja: s.loja, origem_contato: s.origem_contato, responsavel: s.responsavel,
             prospectado_em: s.prospectado_em, proxima_acao: s.proxima_acao, proxima_acao_em: s.proxima_acao_em,
-            ativada_em: s.ativada_em,
+            observacoes: s.observacoes ?? null, ativada_em: s.ativada_em,
             encontros_realizados: ev.length,
             ultima_private_edit: ultima,
             proxima_data_permitida: ultima ? somarDias(ultima, 45) : null,
@@ -275,6 +300,23 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
           }
         })
         .sort((x, y) => (x.codigo < y.codigo ? -1 : 1))
+    },
+
+    vessel_stylist_etapas() {
+      return etapasAtivas().map((e) => ({
+        id: e.id, nome: e.nome, ordem: e.ordem, tipo: e.tipo, conta_como_prospectada: !!e.conta_como_prospectada,
+        stylists: b.stylists.filter((s) => s.etapa_id === e.id && !s.teste).length,
+        alterado_em: e.alterado_em ?? null, alterado_por_nome: e.alterado_por_nome ?? null,
+      }))
+    },
+
+    vessel_stylist_historico_de_etapas({ p_codigo } = {}) {
+      const s = stylistPorCodigo(maiusculo(p_codigo))
+      if (!s) return []
+      const nome = (id) => b.etapas.find((e) => e.id === id)?.nome ?? null
+      return b.historicoDeEtapas.filter((h) => h.stylist_id === s.id)
+        .sort((x, y) => (x.em === y.em ? y.id - x.id : (x.em < y.em ? 1 : -1)))
+        .map((h) => ({ id: h.id, de: nome(h.de_etapa_id), para: nome(h.para_etapa_id), motivo: h.motivo, por_nome: h.por_nome, em: h.em }))
     },
 
     vessel_stylists_para_escolher() {
@@ -356,16 +398,26 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
     // ── escritas: a stylist ───────────────────────────────────────────────
     vessel_stylist_criar(a = {}) {
       if (!limpo(a.p_nome)) return { ok: false, situacao: 'sem_nome' }
-      const fone = telefoneCanonico(a.p_whatsapp)
-      if (!fone) return { ok: false, situacao: 'whatsapp_invalido' }
+      // ⚠️ WHATSAPP OU INSTAGRAM: telefone escrito e inválido continua recusado.
+      let fone = null
+      if (limpo(a.p_whatsapp)) {
+        fone = telefoneCanonico(a.p_whatsapp)
+        if (!fone) return { ok: false, situacao: 'whatsapp_invalido' }
+      }
+      const insta = limpo(a.p_instagram), perfil = instagramCanonico(a.p_instagram), obs = limpo(a.p_observacoes)
+      if (insta && insta.length > 120) return { ok: false, situacao: 'instagram_longo' }
+      if (!fone && !insta) return { ok: false, situacao: 'sem_contato' }
+      if (!fone && !perfil) return { ok: false, situacao: 'instagram_invalido' }
+      if (obs && obs.length > 2000) return { ok: false, situacao: 'observacoes_longas' }
       const praca = maiusculo(a.p_praca), loja = minusculo(a.p_loja), origem = minusculo(a.p_origem_contato)
       if (praca && !PRACAS.includes(praca)) return { ok: false, situacao: 'praca_invalida' }
       if (loja && !LOJAS.includes(loja)) return { ok: false, situacao: 'loja_invalida' }
       // ⚠️ NA CENTRAL A ORIGEM É OBRIGATÓRIA.
       if (!origem || !ORIGENS.includes(origem)) return { ok: false, situacao: 'origem_invalida' }
-      if (a.p_prospectado_em && a.p_prospectado_em > hoje()) return { ok: false, situacao: 'prospeccao_no_futuro' }
-      const repetida = b.stylists.find((s) => s.whatsapp === fone)
+      const repetida = fone && b.stylists.find((s) => s.whatsapp === fone)
       if (repetida) return { ok: false, situacao: 'whatsapp_repetido', codigo: repetida.codigo }
+      const mesmoPerfil = perfil && b.stylists.find((s) => instagramCanonico(s.instagram) === perfil)
+      if (mesmoPerfil) return { ok: false, situacao: 'instagram_repetido', codigo: mesmoPerfil.codigo }
 
       let n = Math.max(0, ...b.stylists.map((s) => /^STY-(\d{4})$/.exec(s.codigo)).filter(Boolean).map((m) => Number(m[1])))
       let codigo = null
@@ -375,14 +427,17 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
         if (!stylistPorCodigo(c)) { codigo = c; break }
       }
       if (!codigo) return { ok: false, situacao: 'sem_codigo_livre' }
+      // ⚠️ `p_prospectado_em` é legado e ignorado: a data é da etapa marcada.
       const s = {
         id: proximo(b.stylists), codigo, nome: String(a.p_nome).trim(), whatsapp: fone,
-        cidade: limpo(a.p_cidade), instagram: limpo(a.p_instagram), atuacao: limpo(a.p_atuacao),
+        cidade: limpo(a.p_cidade), instagram: insta, atuacao: limpo(a.p_atuacao),
         praca_preview: praca, loja, origem_contato: origem, origem_canal: null, responsavel: limpo(a.p_responsavel),
-        prospectado_em: a.p_prospectado_em || hoje(), proxima_acao: limpo(a.p_proxima_acao),
-        proxima_acao_em: a.p_proxima_acao_em || null, ativada_em: null, estagio: 'prospectado', ativa: true, teste: false,
+        prospectado_em: null, proxima_acao: limpo(a.p_proxima_acao), observacoes: obs,
+        proxima_acao_em: a.p_proxima_acao_em || null, ativada_em: null, etapa_id: null, ativa: true, teste: false,
       }
       b.stylists.push(s)
+      // Cadastro novo entra na PRIMEIRA etapa de funil.
+      mudarDeEtapa(s, primeiraDoFunil()?.id ?? null, 'cadastro')
       avisar('stylist_criada', { codigo, nome: s.nome })
       return { ok: true, situacao: 'ok', codigo }
     },
@@ -391,46 +446,145 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
       const codigo = maiusculo(a.p_codigo)
       const s = stylistPorCodigo(codigo)
       if (!s) return { ok: false, situacao: 'nao_achei' }
+      // ⚠️ LEGADO: a etapa muda por `vessel_stylist_mover_de_etapa`.
+      if (limpo(a.p_estagio)) return { ok: false, situacao: 'etapa_pela_ficha' }
       let fone = null
       if (limpo(a.p_whatsapp)) {
         fone = telefoneCanonico(a.p_whatsapp)
         if (!fone) return { ok: false, situacao: 'whatsapp_invalido' }
         if (b.stylists.some((x) => x.whatsapp === fone && x.codigo !== codigo)) return { ok: false, situacao: 'whatsapp_repetido' }
       }
+      const insta = limpo(a.p_instagram), perfil = instagramCanonico(a.p_instagram)
+      if (insta) {
+        if (insta.length > 120) return { ok: false, situacao: 'instagram_longo' }
+        if (!(fone ?? s.whatsapp) && !perfil) return { ok: false, situacao: 'instagram_invalido' }
+        if (perfil && b.stylists.some((x) => x.codigo !== codigo && instagramCanonico(x.instagram) === perfil)) {
+          return { ok: false, situacao: 'instagram_repetido' }
+        }
+      }
+      if (a.p_observacoes != null && String(a.p_observacoes).trim().length > 2000) return { ok: false, situacao: 'observacoes_longas' }
       const praca = maiusculo(a.p_praca), loja = minusculo(a.p_loja), origem = minusculo(a.p_origem_contato)
-      const estagio = minusculo(a.p_estagio)
       if (praca && !PRACAS.includes(praca)) return { ok: false, situacao: 'praca_invalida' }
       if (loja && !LOJAS.includes(loja)) return { ok: false, situacao: 'loja_invalida' }
       if (origem && !ORIGENS.includes(origem)) return { ok: false, situacao: 'origem_invalida' }
-      if (a.p_prospectado_em && a.p_prospectado_em > hoje()) return { ok: false, situacao: 'prospeccao_no_futuro' }
-      if (estagio) {
-        // ⚠️ OS TRÊS DEGRAUS DO MEIO NÃO SE ESCOLHEM: saem dos encontros.
-        if (ESTAGIOS_AUTOMATICOS.includes(estagio)) return { ok: false, situacao: 'estagio_automatico' }
-        if (!ESTAGIOS.includes(estagio)) return { ok: false, situacao: 'estagio_invalido' }
-        // ⚠️ E QUEM JÁ TEVE ENCONTRO NÃO VOLTA PARA ANTES DELE.
-        if (s.ativada_em && ANTES_DO_ENCONTRO.includes(estagio)) return { ok: false, situacao: 'estagio_contradiz_encontro' }
-      }
-      const antes = s.estagio
       Object.assign(s, {
         nome: limpo(a.p_nome) ?? s.nome,
         whatsapp: fone ?? s.whatsapp,
         cidade: limpo(a.p_cidade) ?? s.cidade,
-        instagram: limpo(a.p_instagram) ?? s.instagram,
+        instagram: insta ?? s.instagram,
         atuacao: limpo(a.p_atuacao) ?? s.atuacao,
-        estagio: estagio ?? s.estagio,
         praca_preview: praca ?? s.praca_preview,
         loja: loja ?? s.loja,
         origem_contato: origem ?? s.origem_contato,
         responsavel: limpo(a.p_responsavel) ?? s.responsavel,
-        prospectado_em: a.p_prospectado_em || s.prospectado_em,
         proxima_acao: a.p_sem_proxima_acao ? null : (limpo(a.p_proxima_acao) ?? s.proxima_acao),
         proxima_acao_em: a.p_sem_proxima_acao ? null : (a.p_proxima_acao_em || s.proxima_acao_em),
+        // `observacoes`: nula não mexe, string vazia apaga.
+        observacoes: a.p_observacoes == null ? (s.observacoes ?? null) : limpo(a.p_observacoes),
       })
-      // ⚠️ SAIR DE "PAUSADO" DEVOLVE O FUNIL AO FATO.
-      seguirOsEncontros(s.id)
-      if (s.estagio !== antes) avisar('etapa_mudada', { codigo, de: antes, para: s.estagio })
-      else avisar('stylist_editada', { codigo })
+      avisar('stylist_editada', { codigo })
       return { ok: true, situacao: 'ok', codigo }
+    },
+
+    vessel_stylist_mover_de_etapa({ p_codigo, p_etapa_id } = {}) {
+      const codigo = maiusculo(p_codigo)
+      const s = stylistPorCodigo(codigo)
+      if (!s) return { ok: false, situacao: 'nao_achei' }
+      const e = etapaPorId(Number(p_etapa_id))
+      if (!e) return { ok: false, situacao: 'etapa_invalida' }
+      if (s.etapa_id === e.id) return { ok: true, situacao: 'sem_mudanca', codigo }
+      const de = b.etapas.find((x) => x.id === s.etapa_id)?.nome ?? null
+      mudarDeEtapa(s, e.id, 'mudanca')
+      avisar('etapa_mudada', { codigo, de, para: e.nome })
+      return { ok: true, situacao: 'ok', codigo, prospectado_em: s.prospectado_em }
+    },
+
+    // ── escritas: as etapas do funil ──────────────────────────────────────
+    vessel_stylist_etapa_criar({ p_nome, p_posicao = null, p_tipo = 'funil' } = {}) {
+      const nome = String(p_nome ?? '').trim(), tipo = String(p_tipo ?? 'funil').trim().toLowerCase()
+      if (!nome) return { ok: false, situacao: 'sem_nome' }
+      if (nome.length > 60) return { ok: false, situacao: 'nome_longo' }
+      if (!['funil', 'saida'].includes(tipo)) return { ok: false, situacao: 'tipo_invalido' }
+      if (nomeRepetido(nome)) return { ok: false, situacao: 'nome_repetido' }
+      const n = etapasAtivas().length
+      const pos = Math.min(Math.max(Number(p_posicao ?? n + 1) || n + 1, 1), n + 1)
+      for (const e of etapasAtivas()) if (e.ordem >= pos) e.ordem += 1
+      const e = { id: proximo(b.etapas), nome, ordem: pos, tipo, conta_como_prospectada: false, ativa: true }
+      b.etapas.push(e)
+      renumerar()
+      anotar(e, 'criar')
+      avisar('etapa_criada', { id: e.id, nome })
+      return { ok: true, situacao: 'ok', id: e.id }
+    },
+
+    vessel_stylist_etapa_renomear({ p_id, p_nome } = {}) {
+      const nome = String(p_nome ?? '').trim()
+      if (!nome) return { ok: false, situacao: 'sem_nome' }
+      if (nome.length > 60) return { ok: false, situacao: 'nome_longo' }
+      const e = etapaPorId(Number(p_id))
+      if (!e) return { ok: false, situacao: 'nao_achei' }
+      if (nomeRepetido(nome, e.id)) return { ok: false, situacao: 'nome_repetido' }
+      e.nome = nome
+      anotar(e, 'renomear')
+      return { ok: true, situacao: 'ok', id: e.id }
+    },
+
+    vessel_stylist_etapa_mover({ p_id, p_direcao } = {}) {
+      if (!['subir', 'descer'].includes(p_direcao)) return { ok: false, situacao: 'direcao_invalida' }
+      renumerar()
+      const e = etapaPorId(Number(p_id))
+      if (!e) return { ok: false, situacao: 'nao_achei' }
+      const viz = etapasAtivas().find((x) => x.ordem === e.ordem + (p_direcao === 'subir' ? -1 : 1))
+      if (!viz) return { ok: false, situacao: 'no_limite' }
+      ;[e.ordem, viz.ordem] = [viz.ordem, e.ordem]
+      anotar(e, 'reordenar')
+      return { ok: true, situacao: 'ok', id: e.id }
+    },
+
+    vessel_stylist_etapa_tipo({ p_id, p_tipo } = {}) {
+      const tipo = String(p_tipo ?? '').trim().toLowerCase()
+      if (!['funil', 'saida'].includes(tipo)) return { ok: false, situacao: 'tipo_invalido' }
+      const e = etapaPorId(Number(p_id))
+      if (!e) return { ok: false, situacao: 'nao_achei' }
+      if (e.tipo === tipo) return { ok: true, situacao: 'sem_mudanca', id: e.id }
+      if (tipo === 'saida') {
+        if (e.conta_como_prospectada) return { ok: false, situacao: 'etapa_marcada' }
+        if (etapasAtivas().filter((x) => x.tipo === 'funil').length <= 1) return { ok: false, situacao: 'ultima_do_funil' }
+      }
+      e.tipo = tipo
+      anotar(e, 'tipo')
+      return { ok: true, situacao: 'ok', id: e.id }
+    },
+
+    vessel_stylist_etapa_marcar_prospectada({ p_id } = {}) {
+      const e = etapaPorId(Number(p_id))
+      if (!e) return { ok: false, situacao: 'nao_achei' }
+      if (e.tipo !== 'funil') return { ok: false, situacao: 'saida_nao_conta' }
+      if (e.conta_como_prospectada) return { ok: true, situacao: 'sem_mudanca', id: e.id }
+      // ⚠️ AS DATAS JÁ GRAVADAS NÃO MUDAM: a marca só vale para quem chegar depois.
+      for (const x of b.etapas) x.conta_como_prospectada = false
+      e.conta_como_prospectada = true
+      anotar(e, 'marcar_prospectada')
+      return { ok: true, situacao: 'ok', id: e.id }
+    },
+
+    vessel_stylist_etapa_excluir({ p_id, p_destino = null } = {}) {
+      const e = etapaPorId(Number(p_id))
+      if (!e) return { ok: false, situacao: 'nao_achei' }
+      if (e.tipo === 'funil' && etapasAtivas().filter((x) => x.tipo === 'funil').length <= 1) return { ok: false, situacao: 'ultima_do_funil' }
+      if (e.conta_como_prospectada) return { ok: false, situacao: 'etapa_marcada' }
+      const nela = b.stylists.filter((s) => s.etapa_id === e.id)
+      if (nela.length) {
+        if (p_destino == null) return { ok: false, situacao: 'precisa_destino', stylists: nela.length }
+        const d = etapaPorId(Number(p_destino))
+        if (!d || d.id === e.id) return { ok: false, situacao: 'destino_invalido' }
+        for (const s of nela) mudarDeEtapa(s, d.id, 'etapa_excluida')
+      }
+      e.ativa = false
+      renumerar()
+      anotar(e, 'excluir')
+      avisar('etapa_excluida', { id: e.id, nome: e.nome, movidas: nela.length })
+      return { ok: true, situacao: 'ok', id: e.id, movidas: nela.length }
     },
 
     vessel_stylist_desativar({ p_codigo, p_ativa = false } = {}) {
@@ -454,9 +608,9 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
         criado_por_nome: USUARIO_DA_DEMONSTRACAO })
       // A próxima ação escrita aqui SUBSTITUI a de hoje; vazia, a de hoje fica.
       if (limpo(a.p_proxima_acao)) { s.proxima_acao = String(a.p_proxima_acao).trim(); s.proxima_acao_em = a.p_proxima_acao_em || null }
-      const sugestao = sugestaoDeEtapa(res, s.estagio, s.ativada_em)
-      avisar('contato_registrado', { codigo: s.codigo, canal, resultado: res, sugestao })
-      return { ok: true, situacao: 'ok', id, sugestao }
+      // ⚠️ SEM SUGESTÃO DE ETAPA (24/09/2026): contato não move ninguém.
+      avisar('contato_registrado', { codigo: s.codigo, canal, resultado: res })
+      return { ok: true, situacao: 'ok', id }
     },
 
     // ── escritas: o encontro ──────────────────────────────────────────────
@@ -483,9 +637,8 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
         local: limpo(a.p_local), praca, loja: a.p_loja ?? null, vagas, ativa: true, arquivada: false,
         status: 'agendado', realizado_em: null, motivo: null, observacoes: null, teste: !!a.p_teste }
       b.encontros.push(e)
-      const estagioAntes = s.estagio
       gatilhoDoEncontro(null, e)
-      avisar('encontro_criado', { codigo, stylist: s.codigo, estagio_antes: estagioAntes, estagio: s.estagio })
+      avisar('encontro_criado', { codigo, stylist: s.codigo })
       return { ok: true, codigo, chave }
     },
 
@@ -540,7 +693,7 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
       })
       gatilhoDoEncontro(antes, e)
       const s = stylistPorId(e.stylist_id)
-      avisar('encontro_situacao', { codigo, status, antes: antes.status, stylist: s?.codigo, estagio: s?.estagio })
+      avisar('encontro_situacao', { codigo, status, antes: antes.status, stylist: s?.codigo })
       return { ok: true, situacao: 'ok', codigo, status, antes: antes.status }
     },
 

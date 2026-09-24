@@ -139,6 +139,18 @@ test('problemasDaParceira: nome e whatsapp sao os dois obrigatorios no cliente',
   assert.equal(problemasDaParceira().length, 2)
 })
 
+test('problemasDaParceira: WhatsApp OU Instagram — só o Instagram basta (24/09/2026)', () => {
+  assert.deepEqual(problemasDaParceira({ nome: 'Ana', whatsapp: '', instagram: '@ana' }), [])
+  assert.deepEqual(problemasDaParceira({ nome: 'Ana', whatsapp: '19999998888', instagram: '' }), [])
+  const [p] = problemasDaParceira({ nome: 'Ana', whatsapp: '', instagram: '  ' })
+  assert.match(p, /WhatsApp .*ou o Instagram/)
+  assert.match(mensagemDeCriar('sem_contato'), /um dos dois basta/)
+  assert.match(mensagemDeCriar('instagram_invalido'), /perfil/)
+  assert.match(mensagemDeCriar('instagram_repetido'), /Instagram/)
+  assert.match(mensagemDeEditar('instagram_repetido'), /Instagram/)
+  assert.match(mensagemDeEditar('etapa_pela_ficha'), /ficha ou no quadro/)
+})
+
 test('problemasDaParceira: praça NÃO é exigida — é opcional em vessel_stylist_criar', () => {
   assert.deepEqual(problemasDaParceira({ nome: 'Ana', whatsapp: '19999998888', praca: '' }), [])
 })

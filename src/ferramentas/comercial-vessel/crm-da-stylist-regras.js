@@ -1,11 +1,15 @@
-/* AS REGRAS DO CRM DA STYLIST — o quadro por etapas e o histórico de contatos.
+/* AS REGRAS DO CRM DA STYLIST — o quadro por etapas, a tela "Etapas do funil"
+ * e o histórico de contatos.
  *
- * ⚠️ AS LISTAS SÃO ESPELHO DOS CHECK DE `vessel_stylist_contatos`, e a
- * sugestão de etapa é espelho de `vessel_stylist_sugestao_de_etapa`. O teste
- * lê a migration: se um lado mudar sozinho, a suíte reprova.
+ * ⚠️ DESDE 24/09/2026 O FUNIL É CONFIGURÁVEL (decisão do dono): as etapas são
+ * linhas de `vessel_stylist_etapas`, lidas por `vessel_stylist_etapas()`, cada
+ * uma com { id, nome, ordem, tipo: 'funil' | 'saida', conta_como_prospectada,
+ * stylists }. NADA MUDA DE ETAPA SOZINHO: nem encontro, nem contato. Quem muda
+ * é a pessoa, na ficha ou no quadro (`vessel_stylist_mover_de_etapa`).
  *
- * ⚠️ A SUGESTÃO NUNCA MUDA NADA: a tela oferece "Mover para X?" e a Ionara
- * decide (decisão do dono, 22/09/2026).
+ * ⚠️ AS LISTAS DE CANAL E RESULTADO SÃO ESPELHO DOS CHECK DE
+ * `vessel_stylist_contatos`. O teste lê a migration: se um lado mudar sozinho,
+ * a suíte reprova.
  */
 import { posicaoDaFaixa } from './qualificacao-regras.js'
 
@@ -16,49 +20,62 @@ export const RESULTADOS = {
   sem_resposta: 'Sem resposta', conversou: 'Conversou', interesse: 'Demonstrou interesse',
   proposta: 'Pediu proposta', marcou_encontro: 'Marcou encontro', recusou: 'Recusou',
 }
-export const FLUXO_PRINCIPAL = ['prospectado', 'contatado', 'interessado', 'em_negociacao',
-  'ativado', 'evento_realizado', 'recorrente']
-export const SAIDAS = ['sem_retorno', 'nao_interessado', 'pausado', 'inativo']
 
-const SUGERE = { conversou: 'contatado', interesse: 'interessado', proposta: 'em_negociacao' }
-const MANUAL = { prospectado: 'contatado', contatado: 'interessado', interessado: 'em_negociacao' }
+// ── as etapas ───────────────────────────────────────────────────────────────
+const porOrdem = (a, b) => (a.ordem - b.ordem) || (a.id - b.id)
 
-export function sugestaoDeEtapa(resultado, estagio, ativadaEm) {
-  if (estagio === 'pausado' || estagio === 'inativo') return null
-  if (resultado === 'recusou') return !ativadaEm && estagio !== 'nao_interessado' ? 'nao_interessado' : null
-  const alvo = SUGERE[resultado]
-  if (!alvo) return null
-  // Quem saiu por "sem retorno" ou "não interessado" e voltou a conversar
-  // volta ao funil — desde que ainda não tenha tido encontro.
-  if (estagio === 'sem_retorno' || estagio === 'nao_interessado') return ativadaEm ? null : alvo
-  const de = FLUXO_PRINCIPAL.indexOf(estagio)
-  const para = FLUXO_PRINCIPAL.indexOf(alvo)
-  return de >= 0 && para > de ? alvo : null
+/** As etapas de funil, na ordem. */
+export function etapasDoFunil(etapas) {
+  return (Array.isArray(etapas) ? etapas : []).filter((e) => e?.tipo === 'funil').sort(porOrdem)
 }
 
-export function proximaEtapaManual(estagio) {
-  return MANUAL[estagio] || null
+/** As saídas, na ordem. */
+export function etapasDeSaida(etapas) {
+  return (Array.isArray(etapas) ? etapas : []).filter((e) => e?.tipo === 'saida').sort(porOrdem)
 }
 
-/** Reabrir uma Saída. Quem já teve encontro volta pelo fato: "sem_retorno"
- * faz o gatilho do banco recalcular a etapa a partir dos encontros. */
-export function reabrirPara(ativadaEm) {
-  return ativadaEm ? 'sem_retorno' : 'prospectado'
+/** A próxima etapa de FUNIL depois da atual, pela ordem — ou nula (última, ou
+ * a atual é uma saída: de saída não se "avança", se escolhe). */
+export function proximaEtapa(etapas, etapaId) {
+  const todas = (Array.isArray(etapas) ? etapas : []).slice().sort(porOrdem)
+  const atual = todas.find((e) => e.id === etapaId)
+  if (!atual || atual.tipo !== 'funil') return null
+  return todas.find((e) => e.tipo === 'funil' && porOrdem(e, atual) > 0) || null
+}
+
+/** A primeira etapa de funil: onde entra quem é cadastrada. */
+export function primeiraEtapa(etapas) {
+  return etapasDoFunil(etapas)[0] || null
+}
+
+/** O mapa { "id": nome } que o filtro "Etapa" da barra usa (o valor do
+ * `<select>` é texto, por isso a chave também). Funil primeiro, saídas depois. */
+export function etapasParaFiltrar(etapas) {
+  return Object.fromEntries([...etapasDoFunil(etapas), ...etapasDeSaida(etapas)].map((e) => [String(e.id), e.nome]))
 }
 
 export function prazoAtrasado(prazo, hoje) {
   return !!prazo && String(prazo).slice(0, 10) < String(hoje).slice(0, 10)
 }
 
-/** ⚠️ `ordem: 'faixa'` (24/09): dentro de cada coluna, A, B, C e sem nota
- * primeiro — e só depois o prazo. Sem ela, a ordem de sempre (atrasada, prazo,
- * nome). A nota NÃO muda a coluna de ninguém: só a ordem dentro dela. */
-export function colunasDoQuadro(lista, hoje, ordem = null) {
-  const colunas = Object.fromEntries(FLUXO_PRINCIPAL.map((e) => [e, []]))
-  colunas.saidas = []
+/**
+ * O quadro: uma coluna por etapa de FUNIL, na ordem, e as saídas juntas numa
+ * coluna só, no fim. Devolve [{ chave, titulo, etapa, stylists }].
+ * ⚠️ Uma stylist com etapa que a lista de etapas não conhece (a lista mudou
+ * entre as duas leituras) cai na PRIMEIRA coluna, nunca some do quadro.
+ * ⚠️ `ordem: 'faixa'` (scorecard, 24/09): dentro de cada coluna, A, B, C e sem
+ * nota primeiro — e só depois o prazo. Sem ela, a ordem de sempre (atrasada,
+ * prazo, nome). A nota NÃO muda a coluna de ninguém: só a ordem dentro dela.
+ */
+export function colunasDoQuadro(lista, etapas, hoje, ordem = null) {
+  const funil = etapasDoFunil(etapas)
+  const saidas = new Set(etapasDeSaida(etapas).map((e) => e.id))
+  const colunas = funil.map((e) => ({ chave: String(e.id), titulo: e.nome, etapa: e, stylists: [] }))
+  const saida = { chave: 'saidas', titulo: 'Saídas', etapa: null, stylists: [] }
   for (const s of Array.isArray(lista) ? lista : []) {
-    const destino = SAIDAS.includes(s?.estagio) ? 'saidas' : (colunas[s?.estagio] ? s.estagio : 'prospectado')
-    colunas[destino].push(s)
+    if (saidas.has(s?.etapa_id)) { saida.stylists.push(s); continue }
+    const destino = colunas.find((c) => c.etapa.id === s?.etapa_id) || colunas[0]
+    if (destino) destino.stylists.push(s)
   }
   const porPrazo = (a, b) => {
     const aa = prazoAtrasado(a.proxima_acao_em, hoje), bb = prazoAtrasado(b.proxima_acao_em, hoje)
@@ -68,8 +85,84 @@ export function colunasDoQuadro(lista, hoje, ordem = null) {
     return String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR')
   }
   const porFaixa = (a, b) => (posicaoDaFaixa(a.faixa) - posicaoDaFaixa(b.faixa)) || porPrazo(a, b)
-  for (const k of Object.keys(colunas)) colunas[k].sort(ordem === 'faixa' ? porFaixa : porPrazo)
-  return colunas
+  const todas = [...colunas, saida]
+  for (const c of todas) c.stylists.sort(ordem === 'faixa' ? porFaixa : porPrazo)
+  return todas
+}
+
+/** O que está errado no nome de uma etapa, antes de ir ao banco (o banco
+ * confere de novo: nome repetido é dele). */
+export function problemasDaEtapa(nome) {
+  const t = String(nome ?? '').trim()
+  if (!t) return ['Escreva o nome da etapa.']
+  if (t.length > 60) return ['O nome da etapa passa de 60 letras. Encurte um pouco.']
+  return []
+}
+
+/** A frase de cada recusa das funções das etapas e de mover a stylist. */
+export function mensagemDasEtapas(situacao) {
+  switch (situacao) {
+    case 'ok': case 'sem_mudanca': return ''
+    case 'sem_permissao': return 'Você não tem a permissão de editar o Stylist Circle para mexer nas etapas.'
+    case 'sem_nome': return 'Escreva o nome da etapa.'
+    case 'nome_longo': return 'O nome da etapa passa de 60 letras. Encurte um pouco.'
+    case 'nome_repetido': return 'Já existe uma etapa com este nome.'
+    case 'tipo_invalido': return 'Escolha se a etapa é do funil ou uma saída.'
+    case 'nao_achei': return 'Não achei mais esta etapa — a lista pode ter mudado. Recarregue e tente de novo.'
+    case 'no_limite': return 'Ela já está na ponta da lista.'
+    case 'ultima_do_funil': return 'O funil precisa de pelo menos uma etapa. Esta é a última.'
+    case 'etapa_marcada':
+      return 'Esta é a etapa que conta como prospectada. Marque outra antes de excluí-la ou de torná-la saída.'
+    case 'saida_nao_conta': return 'Uma saída não pode contar como prospectada. Escolha uma etapa do funil.'
+    case 'precisa_destino': return 'Há parceiras nesta etapa. Escolha para onde elas vão antes de excluir.'
+    case 'destino_invalido': return 'Escolha outra etapa como destino.'
+    case 'etapa_invalida': return 'Esta etapa não existe mais. Recarregue e escolha de novo.'
+    case 'direcao_invalida': return 'Não consegui mover agora. Tente de novo em um instante.'
+    default: return 'Não consegui gravar agora. Tente de novo em um instante.'
+  }
+}
+
+/** O porquê de uma linha do histórico de etapas, em palavras. */
+export function motivoDoHistorico(motivo) {
+  return { cadastro: 'Cadastro', mudanca: 'Mudou de etapa', etapa_excluida: 'A etapa foi excluída' }[motivo] || motivo || ''
+}
+
+// ── o contato fácil (pedido do dono, 24/09/2026) ───────────────────────────
+/**
+ * O link de WhatsApp da parceira: `https://wa.me/<55 + DDD + número>`, SEM
+ * mensagem pronta. Aceita o canônico do banco ou o número digitado (10/11
+ * dígitos ganham o 55, como `vessel_telefone_canonico`). Número que não dá
+ * para usar → nulo, e a tela não mostra botão (um link quebrado é pior que
+ * nenhum).
+ */
+export function linkDoWhatsAppDaStylist(whatsapp) {
+  let d = String(whatsapp ?? '').replace(/\D/g, '')
+  if (d.length === 10 || d.length === 11) d = `55${d}`
+  return /^55\d{10,11}$/.test(d) ? `https://wa.me/${d}` : null
+}
+
+/** O perfil do Instagram, limpo: sem @, sem endereço, sem barra final. Nulo
+ * quando o texto não é um perfil (ex.: "Não localizado"). */
+export function perfilDoInstagram(instagram) {
+  const h = String(instagram ?? '').trim()
+    .replace(/^(https?:\/\/)?(www\.)?instagram\.com\//i, '').replace(/[/?#].*$/, '').replace(/^@/, '')
+  return /^[A-Za-z0-9._]{1,30}$/.test(h) ? h : null
+}
+
+/**
+ * O que o botão de contato fácil oferece: `principal` (WhatsApp se houver,
+ * senão Instagram) e `secundario` (o Instagram, quando há os dois). Nenhum
+ * dos dois → os dois nulos, e não aparece botão.
+ * ⚠️ TOCAR NO BOTÃO NÃO REGISTRA CONTATO: o registro continua manual.
+ */
+export function contatoFacil(s) {
+  const nome = String(s?.nome || '').trim() || 'a parceira'
+  const zap = linkDoWhatsAppDaStylist(s?.whatsapp)
+  const perfil = perfilDoInstagram(s?.instagram)
+  const insta = perfil ? { canal: 'instagram', rotulo: 'Instagram', href: `https://instagram.com/${perfil}`,
+    aria: `Abrir o Instagram de ${nome}` } : null
+  const whats = zap ? { canal: 'whatsapp', rotulo: 'WhatsApp', href: zap, aria: `Chamar ${nome} no WhatsApp` } : null
+  return { principal: whats || insta, secundario: whats ? insta : null }
 }
 
 const diaLocal = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate())

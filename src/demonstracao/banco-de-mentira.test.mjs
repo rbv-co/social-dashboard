@@ -5,7 +5,8 @@ import { dadosIniciais } from './dados-iniciais.js'
 import { somarDias } from './tempo.js'
 
 /* O BANCO DE MENTIRA TEM AS REGRAS DO DE VERDADE — cada teste aqui é uma regra
- * de `2026-09-22-vessel-t11-bases-do-stylist-circle.sql` que a demonstração não
+ * de `2026-09-22-vessel-t11-bases-do-stylist-circle.sql` (e do funil configurável
+ * de `2026-09-24-vessel-stylist-funil-configuravel.sql`) que a demonstração não
  * pode afrouxar. O relógio é cravado: "hoje" é 23/09/2026 às 15h em São Paulo. */
 const AGORA = new Date('2026-09-23T15:00:00-03:00')
 const HOJE = '2026-09-23'
@@ -14,6 +15,10 @@ function novoBanco() {
   const banco = criarBancoDeMentira({ agora: () => AGORA, aoAvisar: (evento, dados) => avisos.push({ evento, dados }) })
   return { banco, avisos, chamar: banco.chamar }
 }
+// ⚠️ Os dados de exemplo já têm STY-0001 a STY-0006: a parceira nova de cada
+// teste nasce STY-0007.
+const NOVA = 'STY-0007'
+const ETAPA = Object.fromEntries(dadosIniciais(AGORA).etapas.map((e) => [e.nome, e.id]))
 const PARCEIRA = { p_nome: 'Luana Teste (exemplo)', p_whatsapp: '(19) 98888-7777', p_origem_contato: 'indicacao' }
 const quandoDaqui = (dias, hora = '19:00') => new Date(`${somarDias(HOJE, dias)}T${hora}:00-03:00`).toISOString()
 
@@ -27,17 +32,23 @@ test('criar stylist sem origem é recusado (na Central a origem é obrigatória)
 test('criar stylist: código STY-000N sequencial e telefone 55+DDD', () => {
   const { chamar, banco, avisos } = novoBanco()
   const r = chamar('vessel_stylist_criar', PARCEIRA)
-  assert.deepEqual(r, { ok: true, situacao: 'ok', codigo: 'STY-0005' })
-  const s = banco.estado.stylists.find((x) => x.codigo === 'STY-0005')
+  assert.deepEqual(r, { ok: true, situacao: 'ok', codigo: NOVA })
+  const s = banco.estado.stylists.find((x) => x.codigo === NOVA)
   assert.equal(s.whatsapp, '5519988887777')
-  assert.equal(s.estagio, 'prospectado')
-  assert.equal(s.prospectado_em, HOJE)
+  // Entra na PRIMEIRA etapa de funil, sem data da prospecção (a data é da etapa marcada).
+  assert.equal(s.etapa_id, ETAPA.Identificado)
+  assert.equal(s.prospectado_em, null)
   assert.equal(chamar('vessel_stylist_criar', { ...PARCEIRA, p_whatsapp: '5519988887777' }).situacao, 'whatsapp_repetido')
   assert.equal(chamar('vessel_stylist_criar', { ...PARCEIRA, p_whatsapp: '9999' }).situacao, 'whatsapp_invalido')
   assert.equal(chamar('vessel_stylist_criar', { ...PARCEIRA, p_nome: '  ' }).situacao, 'sem_nome')
-  assert.equal(chamar('vessel_stylist_criar', { ...PARCEIRA, p_whatsapp: '19977776666', p_prospectado_em: '2026-09-24' }).situacao, 'prospeccao_no_futuro')
-  assert.equal(chamar('vessel_stylist_criar', { ...PARCEIRA, p_whatsapp: '19977776666' }).codigo, 'STY-0006')
-  assert.deepEqual(avisos.map((a) => a.evento), ['stylist_criada', 'stylist_criada'])
+  // Só com o Instagram também entra; sem nenhum dos dois, não.
+  assert.equal(chamar('vessel_stylist_criar', { ...PARCEIRA, p_whatsapp: null }).situacao, 'sem_contato')
+  assert.equal(chamar('vessel_stylist_criar', { ...PARCEIRA, p_whatsapp: null, p_instagram: 'Não localizado' }).situacao, 'instagram_invalido')
+  assert.equal(chamar('vessel_stylist_criar', { ...PARCEIRA, p_whatsapp: '19977776666' }).codigo, 'STY-0008')
+  const soInsta = chamar('vessel_stylist_criar', { ...PARCEIRA, p_nome: 'Só Insta (exemplo)', p_whatsapp: null, p_instagram: '@so.insta' })
+  assert.equal(soInsta.codigo, 'STY-0009')
+  assert.equal(chamar('vessel_stylist_criar', { ...PARCEIRA, p_whatsapp: null, p_instagram: 'instagram.com/SO.INSTA/' }).situacao, 'instagram_repetido')
+  assert.deepEqual(avisos.map((a) => a.evento), ['stylist_criada', 'stylist_criada', 'stylist_criada'])
 })
 
 test('telefone canônico: o mesmo de vessel_telefone_canonico', () => {
@@ -48,29 +59,73 @@ test('telefone canônico: o mesmo de vessel_telefone_canonico', () => {
   assert.equal(telefoneCanonico('4419999990000'), null)
 })
 
-test('estágio automático é recusado; e quem já teve encontro não volta para antes dele', () => {
-  const { chamar } = novoBanco()
+test('a etapa muda só por mover_de_etapa; a data da prospecção nasce na etapa marcada; tudo no histórico', () => {
+  const { chamar, banco, avisos } = novoBanco()
   chamar('vessel_stylist_criar', PARCEIRA)
-  for (const e of ['ativado', 'evento_realizado', 'recorrente']) {
-    assert.deepEqual(chamar('vessel_stylist_editar', { p_codigo: 'STY-0005', p_estagio: e }), { ok: false, situacao: 'estagio_automatico' })
-  }
-  assert.equal(chamar('vessel_stylist_editar', { p_codigo: 'STY-0005', p_estagio: 'qualquer' }).situacao, 'estagio_invalido')
-  // A Marina (STY-0001) já foi ativada.
-  assert.equal(chamar('vessel_stylist_editar', { p_codigo: 'STY-0001', p_estagio: 'contatado' }).situacao, 'estagio_contradiz_encontro')
-  assert.equal(chamar('vessel_stylist_editar', { p_codigo: 'STY-9999', p_estagio: 'contatado' }).situacao, 'nao_achei')
+  const s = () => banco.estado.stylists.find((x) => x.codigo === NOVA)
+  // A Central antiga ainda manda `p_estagio`: recusado, a etapa agora é pela ficha.
+  assert.equal(chamar('vessel_stylist_editar', { p_codigo: NOVA, p_estagio: 'contatado' }).situacao, 'etapa_pela_ficha')
+  assert.equal(chamar('vessel_stylist_mover_de_etapa', { p_codigo: NOVA, p_etapa_id: 999 }).situacao, 'etapa_invalida')
+  assert.equal(chamar('vessel_stylist_mover_de_etapa', { p_codigo: 'STY-9999', p_etapa_id: ETAPA.Convidado }).situacao, 'nao_achei')
+  chamar('vessel_stylist_mover_de_etapa', { p_codigo: NOVA, p_etapa_id: ETAPA['Classificação'] })
+  assert.equal(s().prospectado_em, null, 'antes da etapa marcada, sem data')
+  const r = chamar('vessel_stylist_mover_de_etapa', { p_codigo: NOVA, p_etapa_id: ETAPA.Convidado })
+  assert.deepEqual(r, { ok: true, situacao: 'ok', codigo: NOVA, prospectado_em: HOJE })
+  assert.equal(chamar('vessel_stylist_mover_de_etapa', { p_codigo: NOVA, p_etapa_id: ETAPA.Convidado }).situacao, 'sem_mudanca')
+  const h = chamar('vessel_stylist_historico_de_etapas', { p_codigo: NOVA })
+  assert.deepEqual(h.map((x) => [x.de, x.para, x.motivo]),
+    [['Classificação', 'Convidado', 'mudanca'], ['Identificado', 'Classificação', 'mudanca'], [null, 'Identificado', 'cadastro']])
+  assert.deepEqual(avisos.filter((a) => a.evento === 'etapa_mudada').map((a) => a.dados.para), ['Classificação', 'Convidado'])
 })
 
-test('pausado segura o gatilho; sair de pausado devolve o funil ao fato', () => {
+test('as etapas: criar, renomear, reordenar, saída, a marca e excluir com destino', () => {
+  const { chamar, banco } = novoBanco()
+  const nomes = () => chamar('vessel_stylist_etapas').map((e) => e.nome)
+  const nova = chamar('vessel_stylist_etapa_criar', { p_nome: ' Qualificada ', p_posicao: 3 })
+  assert.equal(nova.ok, true)
+  assert.deepEqual(nomes(), ['Identificado', 'Classificação', 'Qualificada', 'Prospectado', 'Convidado', 'Confirmado', 'Presença Confirmada', 'Desclassificado'])
+  assert.equal(chamar('vessel_stylist_etapa_criar', { p_nome: 'qualificada' }).situacao, 'nome_repetido')
+  assert.equal(chamar('vessel_stylist_etapa_renomear', { p_id: nova.id, p_nome: 'PROSPECTADO' }).situacao, 'nome_repetido')
+  assert.equal(chamar('vessel_stylist_etapa_mover', { p_id: ETAPA.Identificado, p_direcao: 'subir' }).situacao, 'no_limite')
+  chamar('vessel_stylist_etapa_mover', { p_id: nova.id, p_direcao: 'subir' })
+  assert.equal(nomes()[1], 'Qualificada')
+  assert.equal(chamar('vessel_stylist_etapa_tipo', { p_id: ETAPA.Prospectado, p_tipo: 'saida' }).situacao, 'etapa_marcada')
+  assert.equal(chamar('vessel_stylist_etapa_marcar_prospectada', { p_id: ETAPA.Desclassificado }).situacao, 'saida_nao_conta')
+  assert.equal(chamar('vessel_stylist_etapa_excluir', { p_id: ETAPA.Prospectado }).situacao, 'etapa_marcada')
+  // A Carol (exemplo) está em Classificação: excluir exige o destino, e move ela.
+  assert.deepEqual(chamar('vessel_stylist_etapa_excluir', { p_id: ETAPA['Classificação'] }), { ok: false, situacao: 'precisa_destino', stylists: 1 })
+  assert.equal(chamar('vessel_stylist_etapa_excluir', { p_id: ETAPA['Classificação'], p_destino: ETAPA['Classificação'] }).situacao, 'destino_invalido')
+  const exc = chamar('vessel_stylist_etapa_excluir', { p_id: ETAPA['Classificação'], p_destino: ETAPA.Identificado })
+  assert.deepEqual(exc, { ok: true, situacao: 'ok', id: ETAPA['Classificação'], movidas: 1 })
+  assert.equal(banco.estado.stylists.find((x) => x.codigo === 'STY-0006').etapa_id, ETAPA.Identificado)
+  assert.equal(chamar('vessel_stylist_historico_de_etapas', { p_codigo: 'STY-0006' })[0].motivo, 'etapa_excluida')
+  assert.deepEqual(chamar('vessel_stylist_etapas').map((e) => e.ordem), [1, 2, 3, 4, 5, 6, 7], 'a ordem fecha, sem buraco')
+  // A marca muda; as datas gravadas ficam.
+  const marinaAntes = banco.estado.stylists.find((x) => x.codigo === 'STY-0001').prospectado_em
+  assert.equal(chamar('vessel_stylist_etapa_marcar_prospectada', { p_id: nova.id }).ok, true)
+  assert.equal(chamar('vessel_stylist_etapas').filter((e) => e.conta_como_prospectada).length, 1)
+  assert.equal(banco.estado.stylists.find((x) => x.codigo === 'STY-0001').prospectado_em, marinaAntes)
+})
+
+test('a última etapa de funil não sai (nem excluída)', () => {
+  const { chamar } = novoBanco()
+  const funis = () => chamar('vessel_stylist_etapas').filter((e) => e.tipo === 'funil')
+  for (const e of funis()) {
+    if (e.conta_como_prospectada) continue
+    chamar('vessel_stylist_etapa_excluir', { p_id: e.id, p_destino: ETAPA.Prospectado })
+  }
+  assert.deepEqual(funis().map((e) => e.nome), ['Prospectado'])
+  assert.equal(chamar('vessel_stylist_etapa_excluir', { p_id: ETAPA.Prospectado, p_destino: ETAPA.Desclassificado }).situacao, 'ultima_do_funil')
+})
+
+test('nenhum movimento automático: encontro marcado ou arquivado não muda a etapa', () => {
   const { chamar, banco } = novoBanco()
   const marina = () => banco.estado.stylists.find((s) => s.codigo === 'STY-0001')
-  assert.equal(chamar('vessel_stylist_editar', { p_codigo: 'STY-0001', p_estagio: 'pausado' }).ok, true)
-  assert.equal(marina().estagio, 'pausado')
-  // Um encontro novo não passa por cima da decisão de gente.
-  chamar('vessel_criar_private_edit', { p_stylist: 'STY-0001', p_quando: quandoDaqui(20), p_praca: 'CPS', p_vagas: 8 })
-  assert.equal(marina().estagio, 'pausado')
-  // "Reabrir" (sem_retorno) faz o gatilho recalcular pelos encontros: dois realizados.
-  chamar('vessel_stylist_editar', { p_codigo: 'STY-0001', p_estagio: 'sem_retorno' })
-  assert.equal(marina().estagio, 'recorrente')
+  const antes = marina().etapa_id
+  const { codigo } = chamar('vessel_criar_private_edit', { p_stylist: 'STY-0001', p_quando: quandoDaqui(20), p_praca: 'CPS', p_vagas: 8 })
+  assert.equal(marina().etapa_id, antes)
+  chamar('vessel_private_edit_arquivar', { p_codigo: codigo, p_arquivada: true })
+  assert.equal(marina().etapa_id, antes)
 })
 
 test('p_sem_proxima_acao apaga a próxima ação; nulo não mexe', () => {
@@ -86,7 +141,7 @@ test('p_sem_proxima_acao apaga a próxima ação; nulo não mexe', () => {
 test('encontro com 6 vagas (ou 11) é recusado; praça é obrigatória', () => {
   const { chamar } = novoBanco()
   chamar('vessel_stylist_criar', PARCEIRA)
-  const base = { p_stylist: 'STY-0005', p_quando: quandoDaqui(3), p_praca: 'CPS', p_vagas: 8 }
+  const base = { p_stylist: NOVA, p_quando: quandoDaqui(3), p_praca: 'CPS', p_vagas: 8 }
   assert.equal(chamar('vessel_criar_private_edit', { ...base, p_vagas: 6 }).situacao, 'vagas_invalidas')
   assert.equal(chamar('vessel_criar_private_edit', { ...base, p_vagas: 11 }).situacao, 'vagas_invalidas')
   assert.equal(chamar('vessel_criar_private_edit', { ...base, p_praca: null }).situacao, 'praca_invalida')
@@ -95,51 +150,33 @@ test('encontro com 6 vagas (ou 11) é recusado; praça é obrigatória', () => {
   assert.equal(chamar('vessel_private_edit_editar', { p_codigo: `PE-20260926-CPS-01`, p_vagas: 6 }).situacao, 'nao_achei')
 })
 
-test('criar encontro ATIVA a stylist (gatilho), com código PE-AAAAMMDD-PRACA-NN e chave de 8 letras', () => {
+test('criar encontro ATIVA a stylist (ativada_em, não a etapa), com código PE-AAAAMMDD-PRACA-NN e chave de 8 letras', () => {
   const { chamar, banco, avisos } = novoBanco()
   chamar('vessel_stylist_criar', PARCEIRA)
-  const r = chamar('vessel_criar_private_edit', { p_stylist: 'STY-0005', p_quando: quandoDaqui(0, '10:00'), p_praca: 'cps', p_vagas: 8 })
+  const r = chamar('vessel_criar_private_edit', { p_stylist: NOVA, p_quando: quandoDaqui(0, '10:00'), p_praca: 'cps', p_vagas: 8 })
   assert.equal(r.ok, true)
   assert.equal(r.codigo, 'PE-20260923-CPS-01')
   assert.match(r.chave, /^[ABCDEFGHJKMNPQRSTVWXYZ23456789]{8}$/)
-  const s = banco.estado.stylists.find((x) => x.codigo === 'STY-0005')
-  assert.equal(s.estagio, 'ativado')
+  const s = banco.estado.stylists.find((x) => x.codigo === NOVA)
+  assert.equal(s.etapa_id, ETAPA.Identificado, 'a etapa não muda sozinha')
   assert.ok(s.ativada_em)
   // Segundo encontro na mesma praça e no mesmo dia: -02.
-  const r2 = chamar('vessel_criar_private_edit', { p_stylist: 'STY-0005', p_quando: quandoDaqui(0, '20:00'), p_praca: 'CPS', p_vagas: 8 })
+  const r2 = chamar('vessel_criar_private_edit', { p_stylist: NOVA, p_quando: quandoDaqui(0, '20:00'), p_praca: 'CPS', p_vagas: 8 })
   assert.equal(r2.codigo, 'PE-20260923-CPS-02')
   const aviso = avisos.find((a) => a.evento === 'encontro_criado')
-  assert.deepEqual(aviso.dados, { codigo: 'PE-20260923-CPS-01', stylist: 'STY-0005', estagio_antes: 'prospectado', estagio: 'ativado' })
+  assert.deepEqual(aviso.dados, { codigo: 'PE-20260923-CPS-01', stylist: NOVA })
 })
 
 test('a ativação congela: cancelar o único encontro não desfaz ativada_em', () => {
   const { chamar, banco } = novoBanco()
   chamar('vessel_stylist_criar', PARCEIRA)
-  const { codigo } = chamar('vessel_criar_private_edit', { p_stylist: 'STY-0005', p_quando: quandoDaqui(4), p_praca: 'CPS', p_vagas: 8 })
-  const s = banco.estado.stylists.find((x) => x.codigo === 'STY-0005')
+  const { codigo } = chamar('vessel_criar_private_edit', { p_stylist: NOVA, p_quando: quandoDaqui(4), p_praca: 'CPS', p_vagas: 8 })
+  const s = banco.estado.stylists.find((x) => x.codigo === NOVA)
   const ativada = s.ativada_em
   assert.equal(chamar('vessel_private_edit_situacao', { p_codigo: codigo, p_status: 'cancelado', p_motivo: 'chuva' }).ok, true)
   assert.equal(s.ativada_em, ativada)
-  assert.equal(s.estagio, 'ativado', 'cancelado conta como "chegou a ter data"')
-  // Arquivar o encontro tira do funil: sem encontro nenhum, o estágio automático volta a "ativado" (o fato mínimo).
   chamar('vessel_private_edit_arquivar', { p_codigo: codigo, p_arquivada: true })
-  assert.equal(s.estagio, 'ativado')
   assert.equal(s.ativada_em, ativada)
-})
-
-test('um realizado = evento realizado; dois realizados = recorrente', () => {
-  const { chamar, banco } = novoBanco()
-  chamar('vessel_stylist_criar', PARCEIRA)
-  const a = chamar('vessel_criar_private_edit', { p_stylist: 'STY-0005', p_quando: quandoDaqui(0, '09:00'), p_praca: 'CPS', p_vagas: 8 })
-  const b = chamar('vessel_criar_private_edit', { p_stylist: 'STY-0005', p_quando: quandoDaqui(0, '11:00'), p_praca: 'SAO', p_vagas: 8 })
-  const s = () => banco.estado.stylists.find((x) => x.codigo === 'STY-0005')
-  chamar('vessel_private_edit_situacao', { p_codigo: a.codigo, p_status: 'realizado', p_realizado_em: '2026-09-22' })
-  assert.equal(s().estagio, 'evento_realizado')
-  chamar('vessel_private_edit_situacao', { p_codigo: b.codigo, p_status: 'realizado', p_realizado_em: HOJE })
-  assert.equal(s().estagio, 'recorrente')
-  // Voltar um deles para agendado recalcula para baixo.
-  chamar('vessel_private_edit_situacao', { p_codigo: b.codigo, p_status: 'agendado' })
-  assert.equal(s().estagio, 'evento_realizado')
 })
 
 test('situação: cancelar sem motivo recusa; realizado no futuro recusa; fechar para o convite', () => {
@@ -166,7 +203,7 @@ test('situação: cancelar sem motivo recusa; realizado no futuro recusa; fechar
 test('convidar duas vezes a mesma pessoa = a mesma cadeira (ja_estava)', () => {
   const { chamar, avisos } = novoBanco()
   chamar('vessel_stylist_criar', PARCEIRA)
-  const { codigo } = chamar('vessel_criar_private_edit', { p_stylist: 'STY-0005', p_quando: quandoDaqui(2), p_praca: 'CPS', p_vagas: 8 })
+  const { codigo } = chamar('vessel_criar_private_edit', { p_stylist: NOVA, p_quando: quandoDaqui(2), p_praca: 'CPS', p_vagas: 8 })
   const a = chamar('vessel_convidar_para_encontro', { p_codigo: codigo, p_nome: 'Nina (exemplo)', p_whatsapp: '(19) 97777-1111' })
   assert.equal(a.ok, true)
   assert.equal(a.situacao, 'ok')
@@ -186,7 +223,7 @@ test('apagar encontro com gente é recusado (tem_gente); vazio apaga', () => {
   const comGente = banco.estado.encontros[2].codigo
   assert.equal(chamar('vessel_private_edit_apagar', { p_codigo: comGente }).situacao, 'tem_gente')
   chamar('vessel_stylist_criar', PARCEIRA)
-  const { codigo } = chamar('vessel_criar_private_edit', { p_stylist: 'STY-0005', p_quando: quandoDaqui(2), p_praca: 'CPS', p_vagas: 8 })
+  const { codigo } = chamar('vessel_criar_private_edit', { p_stylist: NOVA, p_quando: quandoDaqui(2), p_praca: 'CPS', p_vagas: 8 })
   assert.equal(chamar('vessel_private_edit_apagar', { p_codigo: codigo }).ok, true)
   assert.equal(banco.estado.encontros.some((e) => e.codigo === codigo), false)
 })
@@ -223,25 +260,18 @@ test('situação do convite: a ordem é a regra (presença vence tudo)', () => {
   assert.equal(situacaoDoConvite('solicitado', null, null, futuro, 'agendado', AGORA), 'convidada')
 })
 
-test('registrar contato devolve a sugestão pela mesma regra (sugestaoDeEtapa)', () => {
+test('registrar contato grava o histórico e NÃO sugere nem move etapa', () => {
   const { chamar, banco } = novoBanco()
   chamar('vessel_stylist_criar', PARCEIRA)
-  const r = chamar('vessel_stylist_registrar_contato', { p_codigo: 'STY-0005', p_canal: 'whatsapp', p_resultado: 'conversou' })
+  const r = chamar('vessel_stylist_registrar_contato', { p_codigo: NOVA, p_canal: 'whatsapp', p_resultado: 'conversou' })
   assert.equal(r.ok, true)
-  assert.equal(r.sugestao, 'contatado')
-  // A sugestão não muda nada sozinha.
-  assert.equal(banco.estado.stylists.find((s) => s.codigo === 'STY-0005').estagio, 'prospectado')
-  // Paula está em negociação: "interesse" é para trás, sem sugestão.
-  assert.equal(chamar('vessel_stylist_registrar_contato', { p_codigo: 'STY-0002', p_canal: 'ligacao', p_resultado: 'interesse' }).sugestao, null)
-  // Recusou antes de ter encontro: sugere "não interessado".
-  assert.equal(chamar('vessel_stylist_registrar_contato', { p_codigo: 'STY-0003', p_canal: 'email', p_resultado: 'recusou' }).sugestao, 'nao_interessado')
-  // Marina já ativou: recusou não sugere nada.
-  assert.equal(chamar('vessel_stylist_registrar_contato', { p_codigo: 'STY-0001', p_canal: 'email', p_resultado: 'recusou' }).sugestao, null)
-  assert.equal(chamar('vessel_stylist_registrar_contato', { p_codigo: 'STY-0005', p_canal: 'pombo', p_resultado: 'conversou' }).situacao, 'canal_invalido')
-  assert.equal(chamar('vessel_stylist_registrar_contato', { p_codigo: 'STY-0005', p_canal: 'email', p_resultado: 'x' }).situacao, 'resultado_invalido')
-  assert.equal(chamar('vessel_stylist_registrar_contato', { p_codigo: 'STY-0005', p_canal: 'email', p_resultado: 'conversou', p_nota: 'x'.repeat(501) }).situacao, 'nota_longa')
+  assert.equal('sugestao' in r, false)
+  assert.equal(banco.estado.stylists.find((s) => s.codigo === NOVA).etapa_id, ETAPA.Identificado)
+  assert.equal(chamar('vessel_stylist_registrar_contato', { p_codigo: NOVA, p_canal: 'pombo', p_resultado: 'conversou' }).situacao, 'canal_invalido')
+  assert.equal(chamar('vessel_stylist_registrar_contato', { p_codigo: NOVA, p_canal: 'email', p_resultado: 'x' }).situacao, 'resultado_invalido')
+  assert.equal(chamar('vessel_stylist_registrar_contato', { p_codigo: NOVA, p_canal: 'email', p_resultado: 'conversou', p_nota: 'x'.repeat(501) }).situacao, 'nota_longa')
   // O histórico: mais novo primeiro.
-  const h = chamar('vessel_stylist_contatos', { p_codigo: 'STY-0005' })
+  const h = chamar('vessel_stylist_contatos', { p_codigo: NOVA })
   assert.equal(h.length, 1)
   assert.equal(h[0].resultado, 'conversou')
   // Nova próxima ação substitui a de hoje.
@@ -309,9 +339,12 @@ test('o placar fecha com o estado — e muda quando o encontro é realizado', ()
     { codigo: 'STY-0004', nome: 'Luísa Andrade (exemplo)', encontros_realizados: 1, vendas: 1, receita: 2400 },
   ])
 
-  // O roteiro inteiro, pelas funções: parceira nova, encontro hoje, duas convidadas, presença, realizado.
+  // O roteiro inteiro, pelas funções: parceira nova, avançada até Prospectado,
+  // encontro hoje, duas convidadas, presença, realizado.
   chamar('vessel_stylist_criar', PARCEIRA)
-  const { codigo } = chamar('vessel_criar_private_edit', { p_stylist: 'STY-0005', p_quando: quandoDaqui(0, '10:00'), p_praca: 'CPS', p_vagas: 8 })
+  assert.equal(tudo().prospectadas, antes.prospectadas, 'em Identificado ela ainda não conta como prospectada')
+  chamar('vessel_stylist_mover_de_etapa', { p_codigo: NOVA, p_etapa_id: ETAPA.Prospectado })
+  const { codigo } = chamar('vessel_criar_private_edit', { p_stylist: NOVA, p_quando: quandoDaqui(0, '10:00'), p_praca: 'CPS', p_vagas: 8 })
   const a = chamar('vessel_convidar_para_encontro', { p_codigo: codigo, p_nome: 'Olga (exemplo)', p_whatsapp: '19966660001' })
   const b = chamar('vessel_convidar_para_encontro', { p_codigo: codigo, p_nome: 'Pietra (exemplo)', p_whatsapp: '19966660002' })
   chamar('vessel_convite_marcar', { p_id: a.id, p_marca: 'sim' })
@@ -329,9 +362,9 @@ test('o placar fecha com o estado — e muda quando o encontro é realizado', ()
   assert.equal(depois.presentes_em_realizados, 8)
   assert.equal(depois.contatos_ate_ativar, 1.7) // Marina 3, Luísa 2, a nova 0
   assert.equal(depois.por_stylist.length, 3)
-  // O rastreio concorda: ela está em "Evento realizado", com 1 realizado.
-  const nova = chamar('vessel_rastreio_dos_stylists', { p_dias: 14 }).find((s) => s.codigo === 'STY-0005')
-  assert.equal(nova.estagio, 'evento_realizado')
+  // O rastreio concorda: 1 realizado — e a etapa é a que a pessoa escolheu.
+  const nova = chamar('vessel_rastreio_dos_stylists', { p_dias: 14 }).find((s) => s.codigo === NOVA)
+  assert.equal(nova.etapa, 'Prospectado')
   assert.equal(nova.encontros_realizados, 1)
   assert.equal(nova.proxima_data_permitida, '2026-11-07')
 })

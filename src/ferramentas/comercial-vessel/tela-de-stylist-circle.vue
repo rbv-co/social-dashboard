@@ -2,7 +2,13 @@
   <div class="tela-sty id-ferramenta">
     <barra-de-topo :voltar="ROTULO_DO_PAI[paiDaTela('stylist-circle')]"
                    titulo="Vessel — Stylist Circle"
-                   :subtitulo="subtitulo" @voltar="voltar" />
+                   :subtitulo="subtitulo" @voltar="voltar">
+      <!-- ── 24/09: a engrenagem que abre "Etapas do funil" (funil configurável). -->
+      <template #acoes>
+        <button type="button" class="btn id-btn-editar" aria-label="Etapas do funil" @click="etapasAbertas = true">
+          <icone-do-bloco nome="engrenagem" /><span class="sty-rotulo-engrenagem">Etapas do funil</span></button>
+      </template>
+    </barra-de-topo>
 
     <div class="cv-largo cv-body">
       <faixa-de-erro :erro="erro" @tentar-de-novo="carregar" />
@@ -248,14 +254,21 @@
             </select></label>
           <label class="cv-campo" for="sty-responsavel"><span>Responsável</span>
             <input id="sty-responsavel" type="text" maxlength="80" v-model="novo.responsavel"></label>
-          <label class="cv-campo" for="sty-prospectado"><span>Data da prospecção</span>
-            <input id="sty-prospectado" type="date" :max="hojeLocal" v-model="novo.prospectadoEm"></label>
           <label class="cv-campo cv-campo-largo" for="sty-proxima"><span>Próxima ação</span>
             <input id="sty-proxima" type="text" maxlength="120" v-model="novo.proximaAcao"
                    placeholder="Ex.: ligar para apresentar o Circle"></label>
           <label class="cv-campo" for="sty-proxima-em"><span>Até quando</span>
             <input id="sty-proxima-em" type="date" v-model="novo.proximaAcaoEm"></label>
+          <label class="cv-campo cv-campo-largo" for="sty-observacoes"><span>Observações</span>
+            <textarea id="sty-observacoes" maxlength="2000" v-model="novo.observacoes"
+                      placeholder="E-mail, site, o que se sabe dela e não tem campo"></textarea></label>
         </div>
+        <!-- ⚠️ WHATSAPP OU INSTAGRAM (24/09/2026): um dos dois basta. -->
+        <p class="cv-nota">Sem WhatsApp? O Instagram basta — escreva o @ ou o endereço do perfil.</p>
+        <!-- ⚠️ 24/09: SEM DATA DA PROSPECÇÃO NO FORMULÁRIO — quem a põe é a
+             etapa marcada "conta como prospectada" (tela Etapas do funil). -->
+        <p class="cv-nota">Ela entra em <b>{{ primeiraEtapa(etapas)?.nome || 'a primeira etapa do funil' }}</b>.
+          A data da prospecção nasce sozinha, quando ela chegar na etapa que conta como prospectada.</p>
 
         <!-- ⚠️ O CÓDIGO NÃO EXISTE COMO CAMPO: quem gera é o banco, no formato
              STY-0000, e a resposta abaixo mostra o que ele criou. -->
@@ -294,7 +307,7 @@
            campos que o banco escondia: oferecer o que a tela não consegue
            entregar. Quando a função devolver uma data de cadastro de
            verdade, esta opção volta. -->
-      <barra-de-lista v-model="filtro" :estagios="ESTAGIOS"
+      <barra-de-lista v-model="filtro" :estagios="etapasParaFiltrar(etapas)"
                       :mostrar="['busca', 'situacao', 'estagio', 'ordem']"
                       placeholder-busca="nome, cidade ou código"
                       :situacoes="[
@@ -330,7 +343,7 @@
            CERTO. Com a leitura falhando, "Sem nota" em todo mundo seria uma
            afirmação falsa: o selo some e o aviso diz por quê. -->
       <p v-if="erroDasFaixas && !carregando && !erro" class="cv-nota cv-nota-erro">{{ erroDasFaixas }}</p>
-      <quadro-do-stylist-circle v-if="vista === 'quadro' && !carregando && !erro" :stylists="stylistsNaTela"
+      <quadro-do-stylist-circle v-if="vista === 'quadro' && !carregando && !erro" :stylists="stylistsNaTela" :etapas="etapas"
                                 :pode-editar="podeExecutarAcao('editar', podeEditar)" :hoje="hojeLocal"
                                 :movendo-codigo="movendoCodigo" :mostrar-faixa="vigentes !== null"
                                 :ordem="filtro.ordem"
@@ -428,11 +441,12 @@
                 <span v-if="s.prospectado_em"> · prospectada em {{ dataLegivel(s.prospectado_em) }}</span>
                 <span v-if="s.responsavel"> · com {{ s.responsavel }}</span>
               </p>
+              <!-- 24/09: o contato fácil (abre o WhatsApp/Instagram; NÃO registra contato). -->
+              <div class="cv-acoes"><contato-facil :stylist="s" /></div>
             </div>
-            <!-- ⚠️ ESTÁGIO E SITUAÇÃO SÃO DUAS COISAS. Desde a T11 o `estagio`
-                 é uma lista fechada do banco (os onze do funil, CHECK na
-                 migration), e "Evento agendado e ativado" (onde ela está na
-                 jornada) não tem nada a ver com "ativa" como SITUAÇÃO da
+            <!-- ⚠️ ETAPA E SITUAÇÃO SÃO DUAS COISAS. A etapa é uma linha de
+                 `vessel_stylist_etapas` (configurável desde 24/09/2026), e
+                 onde ela está na jornada não tem nada a ver com "ativa" como SITUAÇÃO da
                  parceria (ela continua com a gente). Quando as duas
                  coincidiam, as regras antigas imprimiam "Ativa" duas vezes
                  empilhado — lido na tela, parece bug de renderização
@@ -442,8 +456,8 @@
                  sozinho nesse caso, sem duplicar a palavra. -->
             <div class="cv-selos">
               <span v-if="s.ativa === false" class="cv-selo id-selo cv-selo-fim id-tom-parada">Desativada</span>
-              <span class="cv-selo id-selo" :class="[seloDoEstagio(s.estagio).classe, `id-tom-${seloDoEstagio(s.estagio).tom}`]">
-                {{ seloDoEstagio(s.estagio).texto }}</span>
+              <span class="cv-selo id-selo" :class="[seloDaEtapa(s).classe, `id-tom-${seloDaEtapa(s).tom}`]">
+                {{ seloDaEtapa(s).texto }}</span>
               <span v-if="vigentes !== null" class="cv-selo id-selo cv-selo-faixa" :class="`id-tom-${seloDaFaixa(s).tom}`">
                 {{ seloDaFaixa(s).texto }}</span>
             </div>
@@ -544,14 +558,8 @@
                 <input :id="`ed-instagram-${s.codigo}`" type="text" maxlength="60" v-model="rascunho.instagram"></label>
               <label class="cv-campo" :for="`ed-atuacao-${s.codigo}`"><span>Atuação</span>
                 <input :id="`ed-atuacao-${s.codigo}`" type="text" maxlength="60" v-model="rascunho.atuacao"></label>
-              <!-- ⚠️ LISTA, NÃO TEXTO LIVRE (T11). Os três degraus que saem dos
-                   encontros não aparecem: "Manter" é o jeito de não mexer. -->
-              <label class="cv-campo" :for="`ed-estagio-${s.codigo}`"><span>Estágio</span>
-                <select :id="`ed-estagio-${s.codigo}`" v-model="rascunho.estagio">
-                  <option value="">Manter: {{ seloDoEstagio(s.estagio).texto }}</option>
-                  <option v-for="k in estagiosDeEscolher(s.ativada_em)" :key="k" :value="k"
-                          :disabled="k === s.estagio">{{ ESTAGIOS_DA_STYLIST[k] }}</option>
-                </select></label>
+              <!-- ⚠️ A ETAPA NÃO SE CORRIGE AQUI (24/09/2026): é na ficha ou
+                   no quadro, e cada mudança fica no histórico de etapas. -->
               <label class="cv-campo" :for="`ed-praca-${s.codigo}`"><span>Praça</span>
                 <select :id="`ed-praca-${s.codigo}`" v-model="rascunho.praca">
                   <option value="">Escolha…</option>
@@ -568,14 +576,14 @@
                 </select></label>
               <label class="cv-campo" :for="`ed-responsavel-${s.codigo}`"><span>Responsável</span>
                 <input :id="`ed-responsavel-${s.codigo}`" type="text" maxlength="80" v-model="rascunho.responsavel"></label>
-              <label class="cv-campo" :for="`ed-prospectado-${s.codigo}`"><span>Data da prospecção</span>
-                <input :id="`ed-prospectado-${s.codigo}`" type="date" :max="hojeLocal" v-model="rascunho.prospectadoEm"></label>
               <label class="cv-campo cv-campo-largo" :for="`ed-proxima-${s.codigo}`"><span>Próxima ação</span>
                 <input :id="`ed-proxima-${s.codigo}`" type="text" maxlength="120" v-model="rascunho.proximaAcao"
                        :disabled="rascunho.acaoFeita"></label>
               <label class="cv-campo" :for="`ed-proxima-em-${s.codigo}`"><span>Até quando</span>
                 <input :id="`ed-proxima-em-${s.codigo}`" type="date" v-model="rascunho.proximaAcaoEm"
                        :disabled="rascunho.acaoFeita"></label>
+              <label class="cv-campo cv-campo-largo" :for="`ed-observacoes-${s.codigo}`"><span>Observações</span>
+                <textarea :id="`ed-observacoes-${s.codigo}`" maxlength="2000" v-model="rascunho.observacoes"></textarea></label>
               <label v-if="s.proxima_acao" class="cv-marcar" :for="`ed-feita-${s.codigo}`">
                 <input :id="`ed-feita-${s.codigo}`" type="checkbox" v-model="rascunho.acaoFeita">
                 <span>A próxima ação foi feita — apagar</span></label>
@@ -635,10 +643,13 @@
       </template>
     </div>
 
-    <ficha-da-stylist v-if="fichaAberta && stylistDaFicha" :stylist="stylistDaFicha"
+    <ficha-da-stylist v-if="fichaAberta && stylistDaFicha" :stylist="stylistDaFicha" :etapas="etapas"
                       :pode-editar="podeExecutarAcao('editar', podeEditar)" :chamar="chamar"
                       @fechar="fichaAberta = null" @mudou="carregar({ silencioso: true })"
                       @corrigir="corrigirDaFicha" />
+    <etapas-do-funil v-if="etapasAbertas" :etapas="etapas" :chamar="chamar"
+                     :pode-editar="podeExecutarAcao('editar', podeEditar)"
+                     @fechar="etapasAbertas = false" @mudou="carregar({ silencioso: true })" />
   </div>
 </template>
 
@@ -690,11 +701,14 @@ import BarraDeLista from './barra-de-lista.vue'
 import QuadroDoStylistCircle from './quadro-do-stylist-circle.vue'
 import FichaDaStylist from './ficha-da-stylist.vue'
 import MetaDoNumero from './meta-do-numero.vue'
+import EtapasDoFunil from './etapas-do-funil.vue'
+import ContatoFacil from './contato-facil.vue'
+import { etapasParaFiltrar, primeiraEtapa, mensagemDasEtapas } from './crm-da-stylist-regras.js'
 import IconeDoBloco from '../../compartilhado/icone-do-bloco.vue'
 import { estado, hasPermission } from '../../compartilhado/controle-de-login-e-usuario.js'
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../../compartilhado/conectar-no-banco-de-dados.js'
 import { classificarErro } from '../../compartilhado/classificar-erro.js'
-import { enderecoDaStylist, ENDERECO_DO_CIRCLE, ESTAGIOS, dataLegivel } from './enderecos-publicos.js'
+import { enderecoDaStylist, ENDERECO_DO_CIRCLE, dataLegivel } from './enderecos-publicos.js'
 import {
   proporcao, razao, razaoEscrita, taxaEscrita, margemEscrita,
   emPorcento, emReais, janelaEscrita,
@@ -706,7 +720,7 @@ import {
 } from './stylist-circle-regras.js'
 import { paiDaTela, ROTULO_DO_PAI } from './navegacao.js'
 import {
-  ESTAGIOS_DA_STYLIST, estagiosDeEscolher, seloDoEstagio, tomDaStylist, ORIGENS_DE_CONTATO, LOJAS,
+  seloDaEtapa, tomDaStylist, ORIGENS_DE_CONTATO, LOJAS,
   PERIODOS_DO_PLACAR, periodoDoPlacar, taxasDoPlacar, legendaDaTaxa,
 } from './t11-regras.js'
 import {
@@ -726,6 +740,10 @@ const P_DIAS = 14
 const podeEditar = computed(() => hasPermission('atendimentos', 'editar'))
 
 const stylists = ref([])
+// ⚠️ 24/09: AS ETAPAS DO FUNIL vêm do banco (`vessel_stylist_etapas`), lidas
+// junto com a lista — o quadro, o filtro e a ficha dependem delas.
+const etapas = ref([])
+const etapasAbertas = ref(false)
 const carregando = ref(true)
 const erro = ref(null)
 const copiado = ref(null)
@@ -745,7 +763,7 @@ const filtro = ref({ ...FILTRO_VAZIO, situacao: 'abertas', ordem: 'nome' })
 const vigentes = ref(null)
 const erroDasFaixas = ref('')
 const stylistsNaTela = computed(() =>
-  filtrar(comFaixa(stylists.value, vigentes.value), filtro.value, { busca: ['nome', 'cidade', 'codigo'], estagio: 'estagio' }))
+  filtrar(comFaixa(stylists.value, vigentes.value), filtro.value, { busca: ['nome', 'cidade', 'codigo'], estagio: 'etapa_chave' }))
 
 // ⚠️ MESMO CUIDADO DAS DUAS IRMÃS (Critical da rodada anterior nelas): o
 // conjunto tem de somar SEMPRE a lista filtrada, nunca a cheia.
@@ -799,9 +817,13 @@ async function carregar(opcoes) {
     // ⚠️ SÓ PEDE AS DESATIVADAS QUANDO A SITUAÇÃO PRECISA: a função de
     // rastreio já chega sem elas por padrão — ver `precisaDasDesativadas`.
     const incluirDesativadas = precisaDasDesativadas(filtro.value.situacao)
-    const r = await chamar('vessel_rastreio_dos_stylists',
-      { p_dias: P_DIAS, p_incluir_desativadas: incluirDesativadas })
-    stylists.value = r || []
+    const [r, et] = await Promise.all([
+      chamar('vessel_rastreio_dos_stylists', { p_dias: P_DIAS, p_incluir_desativadas: incluirDesativadas }),
+      chamar('vessel_stylist_etapas', {}),
+    ])
+    etapas.value = et || []
+    // `etapa_chave`: o id da etapa em texto, que é o valor do filtro "Etapa".
+    stylists.value = (r || []).map((s) => ({ ...s, etapa_chave: String(s.etapa_id) }))
     carregarPlacar()
     carregarFaixas()
   } catch (e) {
@@ -867,22 +889,21 @@ const stylistDaFicha = computed(() => stylists.value.find((s) => s.codigo === fi
 
 // ⚠️ RODADA 1 DE REVISÃO (T11): a recusa de mover NÃO usa `erro` — `erro` é a
 // faixa que apaga o placar, o quadro e a lista inteiros, e uma recusa (ex.:
-// "ela já tem encontro marcado") não é motivo para sumir com a tela toda, e
+// "esta etapa não existe mais") não é motivo para sumir com a tela toda, e
 // `erro` nem tem retentativa (`acao: null`). A recusa mora perto do quadro,
-// em `erroDoQuadro`, com a frase de `mensagemDeEditar` — nunca "tente de novo"
-// para `estagio_contradiz_encontro`. `erro` continua só para falha de LEITURA.
+// em `erroDoQuadro`, com a frase de `mensagemDasEtapas`. `erro` continua só
+// para falha de LEITURA.
 const erroDoQuadro = ref('')
 // ⚠️ GUARDA DE TOQUE DUPLO: sem isto, dois toques rápidos no mesmo botão
-// disparam duas gravações — a segunda pode chegar com o estágio já mudado
-// pela primeira e voltar com `estagio_contradiz_encontro`, confundindo quem
-// só queria mover uma vez. Também dá o aviso "Movendo…" no botão certo.
+// disparam duas gravações — a segunda moveria a parceira DUAS etapas para a
+// frente, contra a vontade de quem só queria mover uma vez. Também dá o aviso "Movendo…" no botão certo.
 const movendoCodigo = ref(null)
-async function mover({ codigo, estagio }) {
+async function mover({ codigo, etapaId }) {
   if (movendoCodigo.value) return
   movendoCodigo.value = codigo
   try {
-    const r = await chamar('vessel_stylist_editar', { p_codigo: codigo, p_estagio: estagio }).catch(() => null)
-    if (!r?.ok) { erroDoQuadro.value = mensagemDeEditar(r?.situacao || 'erro_de_rede'); return }
+    const r = await chamar('vessel_stylist_mover_de_etapa', { p_codigo: codigo, p_etapa_id: etapaId }).catch(() => null)
+    if (!r?.ok) { erroDoQuadro.value = mensagemDasEtapas(r?.situacao || 'erro_de_rede'); return }
     erroDoQuadro.value = ''
     // ⚠️ SILENCIOSO: sem isto, `carregando` liga e desliga o quadro
     // (`v-if … !carregando`), o componente REMONTA, e `etapaNoCelular` /
@@ -919,8 +940,8 @@ const formatarPecas = (n) => Number(n || 0).toLocaleString('pt-BR', { maximumFra
 const nomeDeQuemUsa = () => estado.user?.user_metadata?.name || estado.user?.email || ''
 const NOVA_VAZIA = () => ({
   nome: '', whatsapp: '', cidade: '', instagram: '', atuacao: '', praca: '',
-  loja: '', comoChegou: '', responsavel: nomeDeQuemUsa(), prospectadoEm: hojeLocal,
-  proximaAcao: '', proximaAcaoEm: '',
+  loja: '', comoChegou: '', responsavel: nomeDeQuemUsa(),
+  proximaAcao: '', proximaAcaoEm: '', observacoes: '',
 })
 const novo = reactive(NOVA_VAZIA())
 const problemas = computed(() => problemasDaParceira({ ...novo, origem: novo.comoChegou }))
@@ -944,13 +965,13 @@ async function criar() {
       p_loja: novo.loja || null,
       p_origem_contato: novo.comoChegou || null,
       p_responsavel: novo.responsavel || null,
-      p_prospectado_em: novo.prospectadoEm || null,
       p_proxima_acao: novo.proximaAcao || null,
       p_proxima_acao_em: novo.proximaAcaoEm || null,
+      p_observacoes: novo.observacoes || null,
     })
     if (!r?.ok) {
       erroAoCriar.value = mensagemDeCriar(r?.situacao)
-        + (r?.situacao === 'whatsapp_repetido' && r?.codigo ? ` (${r.codigo})` : '')
+        + (['whatsapp_repetido', 'instagram_repetido'].includes(r?.situacao) && r?.codigo ? ` (${r.codigo})` : '')
       return
     }
     criado.value = r
@@ -966,9 +987,9 @@ async function criar() {
 // ── corrigir (inline) ────────────────────────────────────────────────────────
 const editando = ref(null)
 const rascunho = reactive({
-  nome: '', whatsapp: '', cidade: '', instagram: '', atuacao: '', estagio: '', praca: '',
-  loja: '', comoChegou: '', responsavel: '', prospectadoEm: '', proximaAcao: '', proximaAcaoEm: '',
-  acaoFeita: false,
+  nome: '', whatsapp: '', cidade: '', instagram: '', atuacao: '', praca: '',
+  loja: '', comoChegou: '', responsavel: '', proximaAcao: '', proximaAcaoEm: '',
+  observacoes: '', acaoFeita: false,
 })
 const salvandoEdicao = ref(null)
 const erroDeEditar = ref(null)
@@ -984,17 +1005,13 @@ function abrirEditar(s) {
     cidade: s.cidade || '',
     instagram: s.instagram || '',
     atuacao: s.atuacao || '',
-    // ⚠️ VAZIO = "MANTER". O estágio atual pode ser um dos três automáticos,
-    // que não estão na lista — pré-selecioná-lo deixaria o campo em branco e
-    // pareceria que ela não tem estágio.
-    estagio: '',
     praca: s.praca_preview || '',
     loja: s.loja || '',
     comoChegou: s.origem_contato || 'inbound',
     responsavel: s.responsavel || '',
-    prospectadoEm: s.prospectado_em || '',
     proximaAcao: s.proxima_acao || '',
     proximaAcaoEm: s.proxima_acao_em || '',
+    observacoes: s.observacoes || '',
     acaoFeita: false,
   })
 }
@@ -1015,15 +1032,16 @@ async function salvarEdicao(s) {
       p_cidade: rascunho.cidade || null,
       p_instagram: rascunho.instagram || null,
       p_atuacao: rascunho.atuacao || null,
-      p_estagio: rascunho.estagio || null,
       p_praca: rascunho.praca || null,
       p_loja: rascunho.loja || null,
       p_origem_contato: rascunho.comoChegou || null,
       p_responsavel: rascunho.responsavel || null,
-      p_prospectado_em: rascunho.prospectadoEm || null,
       p_proxima_acao: rascunho.acaoFeita ? null : (rascunho.proximaAcao || null),
       p_proxima_acao_em: rascunho.acaoFeita ? null : (rascunho.proximaAcaoEm || null),
       p_sem_proxima_acao: rascunho.acaoFeita,
+      // ⚠️ STRING, NUNCA NULO: vazio apaga (a regra de `vessel_stylist_editar`,
+      // a mesma da irmã `vessel_private_edit_situacao`) — é o jeito de limpar.
+      p_observacoes: rascunho.observacoes ?? '',
     })
     if (!r?.ok) {
       erroDeEditar.value = s.codigo
@@ -1080,6 +1098,9 @@ onMounted(carregar)
 <style scoped>
 @import './estilo-comercial.css';
 @import '../../estilos/identidade-da-ferramenta.css';
+
+/* A engrenagem do topo: no celular fica só o ícone (o nome está no aria-label). */
+@media (max-width: 480px) { .sty-rotulo-engrenagem { display: none; } }
 
 /* ⚠️ DUAS SELOS NO MESMO CARD (situação da parceira + estágio do funil) SÃO
    DUAS COISAS DIFERENTES: "ativa/desativada" é a parceria em si; "estágio" é
