@@ -1,3 +1,33 @@
+FERRAMENTA: Base de Leads (24/09/2026)
+=======================================
+Tela SÓ DE LEITURA que junta, numa única linha do tempo, três eventos que já
+existiam cada um no seu canto e nunca tinham sido vistos juntos:
+- checkout_iniciado (carrinho_eventos — webhook nativo da Shopify, ver
+  src/ferramentas/funil-carrinho/LEIA-ME.txt);
+- cadastro no pop-up "Entre para o Universo Vessel" (vessel_lista_espera —
+  seção embutida no tema da loja, grava direto via RPC vessel_entrar_na_lista,
+  SEM atribuição de anúncio: não tem utm/fbc/fbp);
+- pedido de atendimento/visita (vessel_atendimentos, com vessel_pessoas pro
+  nome/telefone e vessel_origens pra atribuição utm/fbc — landing pages de
+  agendamento de showroom, ver módulo 10 do Growth Plan).
+
+NENHUM CAPTADOR NOVO: os três já gravam sozinhos. Esta tela só lê — mesmo
+espírito do Funil de Carrinho.
+
+Arquivos: base-de-leads.js (junta e ordena as três fontes, resume a origem) +
+teste ao lado + tela-de-base-de-leads.vue. Permissão: 'meta.leads' — chave
+PRÓPRIA, sem carona em 'carrinho' nem 'atendimentos', pra quem cuida de
+tráfego pago não precisar ganhar Funil de Carrinho nem Private Appointment só
+pra ver isto.
+
+⚠️ MIGRATION PENDENTE DE APLICAR (24/09/2026): db/migrations/
+2026-09-24-meta-ads-base-de-leads-leitura.sql cria a função is_vessel_leads()
+e as políticas de leitura aditivas (carrinho_eventos, vessel_lista_espera,
+vessel_atendimentos, vessel_pessoas, vessel_origens) que esta tela precisa
+pra funcionar de verdade. Sem ela aplicada (`node coletor/run-migrations.mjs`),
+a tela abre mas os dados do pop-up e a atribuição do pedido de atendimento
+vêm vazios pra quem não for admin/superadmin.
+
 FERRAMENTA: Meta Ads — Hub
 ==========================
 Tela pequena que aparece ao clicar em "Meta Ads" na Central. Mostra os módulos

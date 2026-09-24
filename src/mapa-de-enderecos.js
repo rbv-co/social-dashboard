@@ -37,6 +37,7 @@ const rotasSemMeta = [
   { path: '/gestao-trafego', name: 'gestao-trafego', component: () => import('./ferramentas/gestao-trafego/tela-de-gestao-trafego.vue') },
   { path: '/meta-relatorio-hora', name: 'meta-relatorio-hora', component: () => import('./ferramentas/meta-ads/tela-de-relatorio-por-hora.vue') },
   { path: '/meta-relatorio-opr', name: 'meta-relatorio-opr', component: () => import('./ferramentas/meta-ads/tela-de-relatorio-opr.vue') },
+  { path: '/meta-base-de-leads', name: 'meta-base-de-leads', component: () => import('./ferramentas/meta-ads/tela-de-base-de-leads.vue') },
   { path: '/fabrica-estudio', name: 'fabrica-estudio', component: () => import('./ferramentas/meta-ads/tela-de-fabrica-home.vue') },
   { path: '/fabrica-estudio/nova', name: 'fabrica-nova', component: () => import('./ferramentas/meta-ads/tela-de-fabrica-estudio.vue') },
   { path: '/fabrica-estudio/looks', name: 'fabrica-looks', component: () => import('./ferramentas/meta-ads/tela-de-fabrica-looks.vue') },

@@ -97,6 +97,11 @@ export const FERRAMENTAS = [
   { key: 'meta.fabrica', label: 'Fábrica de Anúncios', acoes: ['ver', 'editar'], grupo: 'meta', rotas: ['fabrica-estudio', 'fabrica-nova', 'fabrica-looks', 'fabrica-campanha'] },
   { key: 'meta.hora', label: 'Relatório por Hora', acoes: ['ver'], grupo: 'meta', rotas: ['meta-relatorio-hora'] },
   { key: 'meta.opr', label: 'Relatório OPR', acoes: ['ver'], grupo: 'meta', rotas: ['meta-relatorio-opr'] },
+  // Chave própria, sem carona em 'carrinho' nem em 'atendimentos': quem cuida
+  // de tráfego pago não precisa ganhar Funil de Carrinho nem Private
+  // Appointment só para ver a Base de Leads — ver
+  // db/migrations/2026-09-24-meta-ads-base-de-leads-leitura.sql (is_vessel_leads()).
+  { key: 'meta.leads', label: 'Base de Leads', acoes: ['ver'], grupo: 'meta', rotas: ['meta-base-de-leads'] },
   { key: 'banco', label: 'Banco de Arquivos', acoes: ['ver', 'criar', 'excluir'], grupo: 'banco', rotas: ['banco'] },
   { key: 'acessos', label: 'Colaboradores e Acessos', acoes: ['ver', 'criar', 'editar', 'excluir'], grupo: 'gestao-interna', rotas: ['acessos'] },
   { key: 'patrimonio', label: 'Patrimônio', acoes: ['ver', 'criar', 'editar', 'excluir'], grupo: 'gestao-interna', rotas: ['patrimonio'] },
