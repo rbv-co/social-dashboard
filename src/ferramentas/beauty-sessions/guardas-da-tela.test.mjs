@@ -171,7 +171,10 @@ test('⚠️ arquivar e apagar ficam no grupo do FIM, separados das ações da s
 test('⚠️ um principal só no cartão: "Cadastrar lead"; o QR entra como apoio', () => {
   const fonte = ler()
   assert.match(fonte, /<qr-para-baixar[^>]*\bapoio\b/, 'o QR do cartão tem de vir como grupo de apoio')
-  assert.match(fonte, /class="btn btn-principal"[^>]*\s*@click="alternarCadastro\(s\)"|class="btn btn-principal" :disabled="s\.arquivada"/)
+  assert.match(fonte, /class="btn btn-principal id-btn-principal" :disabled="s\.arquivada"/)
+  // um só principal no grupo da sessão (o "Cadastrar" do formulário é outro bloco)
+  const grupo = fonte.slice(fonte.indexOf('class="bs-acoes bs-acoes-sessao"'), fonte.indexOf('<p v-if="erroAoMexer'))
+  assert.equal((grupo.match(/btn-principal/g) || []).length, 2, 'btn-principal + id-btn-principal, num botão só')
 })
 
 test('⚠️ o cadastro trava contra duplo toque e mostra o erro do banco', () => {
@@ -203,4 +206,17 @@ test('⚠️ "Leram o QR" é UM número (mesa + cartão), nas sessões e no conj
   assert.match(fonte, /conta\(s\)\.leituras/, 'a sessão tem de mostrar resumoDaSessao().leituras (a soma)')
   assert.match(fonte, /conjunto\.totalLeituras/, 'o conjunto tem de mostrar totalLeituras (a soma)')
   assert.equal((fonte.match(/bs-numero-rotulo">Leram o QR</g) || []).length, 2, 'um "Leram o QR" na sessão e um no conjunto')
+})
+
+// ── O SISTEMA DE BOTÕES COM SENTIDO (para as outras ferramentas usarem) ─────
+test('⚠️ os sete sentidos existem na folha de identidade, pela variável, sem hex', () => {
+  const css = readFileSync(new URL('../../estilos/identidade-da-ferramenta.css', import.meta.url), 'utf8')
+  const bloco = css.slice(css.indexOf('BOTÕES COM SENTIDO (24/09/2026)'))
+  for (const c of ['principal', 'editar', 'apoio', 'parar', 'voltar', 'arquivar', 'perigo']) {
+    assert.match(bloco, new RegExp(`\\.btn\\.id-btn-${c}\\b`), `falta .id-btn-${c}`)
+  }
+  assert.doesNotMatch(bloco, /#[0-9a-f]{3,8}\b/i, 'cor cravada em hex no sistema de botões')
+  assert.match(bloco, /--tom-btn: var\(--tom-acao, var\(--modulo\)\)/, 'o tom tem de vir da ferramenta')
+  // ⚠️ nunca `--tom`: é a cor da SITUAÇÃO do cartão
+  assert.doesNotMatch(bloco, /var\(--tom\)/)
 })

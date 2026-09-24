@@ -1,3 +1,10 @@
+/* COMO USAR OS BOTÕES COM SENTIDO (resumo; o detalhe está no fim da folha):
+ *   <button class="btn id-btn-editar"><icone-do-bloco nome="editar" />Editar…</button>
+ *   classes: id-btn-principal (+ .btn-principal) · id-btn-editar · id-btn-apoio ·
+ *            id-btn-parar · id-btn-voltar · id-btn-arquivar · id-btn-perigo (+ .btn-perigo)
+ *   a cor vem da ferramenta (`--modulo`) ou de `--tom-acao`; parar/voltar/perigo
+ *   usam a cor da situação. Nunca hex. A tela precisa da raiz `id-ferramenta`. */
+
 /* A COR DE CADA FERRAMENTA E DE CADA BLOCO — a linguagem aprovada pelo dono
  * no Stylist Circle e no Private Edit (23/09/2026: "o visual ficou com pouca
  * cor, isso dificulta saber o que é cada card, cada bloco"), tirada da pasta
@@ -32,8 +39,9 @@
  *   id-selo           o selo da situação, pintado pelo mesmo tom
  *   id-tom-<tom>      a situação: andamento, viva, confirmada, queda, faltou, parada
  *   id-icone          o ícone SVG (src/compartilhado/icone-do-bloco.vue)
- *   id-btn-<sentido>  o botão comum com o sentido na cor: ferramenta, suave,
- *                     parar, valer, neutro (ver o bloco "botões com sentido")
+ *   id-btn-<sentido>  o botão com a cor do que ele FAZ: principal, editar,
+ *                     apoio, parar, voltar, arquivar, perigo (bloco "botões
+ *                     com sentido", no fim da folha)
  *
  * AS TRÊS REGRAS QUE FAZEM A COR AJUDAR SEM VIRAR CARNAVAL:
  *   1. A cor mora no FILETE, no ÍCONE e no TÍTULO PEQUENO. O texto de ler
@@ -122,50 +130,78 @@
 /* ── BOTÕES COM SENTIDO (24/09/2026) ─────────────────────────────────────────
  * Pedido do dono, olhando o cartão das Beauty Sessions: "os botões de ação do
  * card de cada sessão ficaram muito pobres, pode ser colorido também, mais
- * evidente o 'encerrar', 'editar' etc.". Cinco quadrados de contorno cinza,
- * iguais, não dizem qual é parar e qual é mexer.
+ * evidente o 'encerrar', 'editar' etc.". E depois: o mesmo visual em TODAS as
+ * ferramentas do Comercial Vessel. Por isso é um SISTEMA, e o tom é do
+ * SENTIDO do botão, nunca da tela: quem pinta é a variável, não um hex.
  *
- * ⚠️ CONTINUAM SENDO `.btn` — o comum do item 3 do PADRÃO —, só ganham o tom:
- * fundo de 10% da cor, borda de 50% e TEXTO na proporção 75/25 do `.selo`
- * (75% da cor + 25% de `--text`), a mesma que já foi medida para passar de
- * 4,5 nos dois temas. O `.btn-principal` e o `.btn-perigo` não mudam.
+ * ⚠️ CONTINUAM SENDO `.btn` (item 3 do PADRÃO). O tingido usa a proporção do
+ * `.selo`: fundo 10% da cor, borda 50%, TEXTO 75% da cor + 25% de `--text` —
+ * a mesma já medida para passar de 4,5 nos dois temas (medido de novo nas
+ * Beauty Sessions: o menor dos botões deu 5,1).
  *
- *   id-btn-ferramenta  mexer na coisa (Editar): o tom da ferramenta
- *   id-btn-suave       o que é de apoio (baixar, copiar): o tom da ferramenta,
- *                      mais fraco — contorno sim, fundo quase nada
- *   id-btn-parar       interromper (Encerrar): a cor de "caiu/parou"
- *   id-btn-valer       voltar a valer (Reabrir): a cor de "está valendo"
- *   id-btn-neutro      guardar (Arquivar): sem cor, mas com contorno FIRME —
- *                      não pode parecer desativado
+ * ⚠️ A VARIÁVEL É `--tom-acao`, E NÃO `--tom`. `--tom` já é a cor da SITUAÇÃO
+ * do cartão (`id-tom-viva` = verde): se o botão lesse `--tom`, o "Cadastrar"
+ * de um cartão "Aceitando" sairia verde. `--tom-acao` é opcional — sem ela,
+ * vale a cor da ferramenta (`--modulo`). O Material Gráfico, que mostra três
+ * ações numa tela só, pode pôr `--tom-acao: var(--cor-da-acao)` no grupo.
+ *
+ * AS CLASSES (sempre junto de `.btn`):
+ *   id-btn-principal  a ação que o bloco quer — cheio, no tom da ferramenta.
+ *                     Um por bloco. Use COM `.btn-principal`.
+ *   id-btn-editar     mexer na coisa (Editar, Ver a lista): tingido da ferramenta
+ *   id-btn-apoio      o que é de apoio (Baixar, Copiar): tom suave da ferramenta
+ *   id-btn-parar      interromper (Encerrar, Pausar): `--situacao-queda`
+ *   id-btn-voltar     voltar a valer (Reabrir, Reativar): `--situacao-viva`
+ *   id-btn-arquivar   guardar (Arquivar/Desarquivar): sem cor, contorno FIRME —
+ *                     não pode parecer desativado
+ *   id-btn-perigo     apagar, difícil de desfazer. Use COM `.btn-perigo`.
+ *
+ * O ÍCONE: `<icone-do-bloco nome="…" />` como PRIMEIRO filho do botão. Os
+ * nomes de cada sentido: lead-mais (principal), editar · lista (editar),
+ * baixar · copiar (apoio), parar, reabrir, arquivar, lixeira (perigo).
+ *
+ * AGRUPAR: ações da coisa juntas; apoio junto do que apoiam; arquivar e
+ * perigo NO FIM, separados por filete e respiro (ver `.bs-acoes-fim` nas
+ * Beauty Sessions), para não se clicar por engano.
  * ────────────────────────────────────────────────────────────────────────── */
-.id-ferramenta .btn.id-btn-ferramenta { --tom-btn: var(--modulo); }
-.id-ferramenta .btn.id-btn-suave      { --tom-btn: var(--modulo); }
+.id-ferramenta .btn[class*="id-btn-"] { --tom-btn: var(--tom-acao, var(--modulo)); }
 .id-ferramenta .btn.id-btn-parar      { --tom-btn: var(--situacao-queda); }
-.id-ferramenta .btn.id-btn-valer      { --tom-btn: var(--situacao-viva); }
-.id-ferramenta .btn.id-btn-ferramenta,
+.id-ferramenta .btn.id-btn-voltar     { --tom-btn: var(--situacao-viva); }
+
+.id-ferramenta .btn.id-btn-principal,
+.id-ferramenta .btn.id-btn-principal:hover:not(:disabled) {
+  background: var(--tom-btn); border-color: var(--tom-btn); color: var(--sobre-cor); font-weight: 600;
+}
+.id-ferramenta .btn.id-btn-editar,
 .id-ferramenta .btn.id-btn-parar,
-.id-ferramenta .btn.id-btn-valer {
+.id-ferramenta .btn.id-btn-voltar {
   background: color-mix(in srgb, var(--tom-btn) 10%, var(--surface));
   border-color: color-mix(in srgb, var(--tom-btn) 50%, var(--surface));
   color: color-mix(in srgb, var(--tom-btn) 75%, var(--text));
   font-weight: 600;
 }
-.id-ferramenta .btn.id-btn-ferramenta:hover:not(:disabled),
+.id-ferramenta .btn.id-btn-editar:hover:not(:disabled),
 .id-ferramenta .btn.id-btn-parar:hover:not(:disabled),
-.id-ferramenta .btn.id-btn-valer:hover:not(:disabled) {
+.id-ferramenta .btn.id-btn-voltar:hover:not(:disabled) {
   background: color-mix(in srgb, var(--tom-btn) 18%, var(--surface));
 }
-.id-ferramenta .btn.id-btn-suave {
+.id-ferramenta .btn.id-btn-apoio {
   background: color-mix(in srgb, var(--tom-btn) 4%, var(--surface));
   border-color: color-mix(in srgb, var(--tom-btn) 35%, var(--surface));
   color: color-mix(in srgb, var(--tom-btn) 75%, var(--text));
 }
-.id-ferramenta .btn.id-btn-suave:hover:not(:disabled) {
+.id-ferramenta .btn.id-btn-apoio:hover:not(:disabled) {
   background: color-mix(in srgb, var(--tom-btn) 12%, var(--surface));
 }
-.id-ferramenta .btn.id-btn-neutro {
+.id-ferramenta .btn.id-btn-arquivar {
   border-color: color-mix(in srgb, var(--text) 45%, var(--surface));
   color: var(--text);
+}
+/* o perigo é o da casa (`.btn-perigo`: borda e texto vermelhos); a classe só
+   marca o sentido e mantém o vermelho mesmo se outra regra da tela mexer */
+.id-ferramenta .btn.id-btn-perigo {
+  color: var(--red);
+  border-color: color-mix(in srgb, var(--red) 40%, var(--surface));
 }
 /* o ícone do botão acompanha o texto, e não encolhe quando o rótulo quebra */
 .id-ferramenta .btn .id-icone { flex: 0 0 16px; }

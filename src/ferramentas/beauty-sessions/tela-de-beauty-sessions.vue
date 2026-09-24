@@ -211,17 +211,17 @@
                engano. Os tons são de `identidade-da-ferramenta.css`. -->
           <div class="bs-acoes bs-acoes-sessao">
             <template v-if="podeExecutarAcao('cadastrar_lead', podeEditar)">
-              <button class="btn btn-principal" :disabled="s.arquivada"
+              <button class="btn btn-principal id-btn-principal" :disabled="s.arquivada"
                       :aria-expanded="cadastroAberto === s.codigo"
                       @click="alternarCadastro(s)"><icone-do-bloco nome="lead-mais" />Cadastrar lead</button>
             </template>
-            <button class="btn id-btn-ferramenta" :disabled="carregandoLeads === s.codigo"
+            <button class="btn id-btn-editar" :disabled="carregandoLeads === s.codigo"
                     :aria-expanded="leadsAbertas === s.codigo"
                     @click="alternarLeads(s)"><icone-do-bloco nome="lista" />{{ carregandoLeads === s.codigo ? 'Buscando…'
                       : (leadsAbertas === s.codigo ? 'Fechar as leads' : 'Leads desta sessão') }}</button>
 
             <template v-if="podeExecutarAcao('editar', podeEditar)">
-              <button v-if="editando !== s.codigo" class="btn id-btn-ferramenta"
+              <button v-if="editando !== s.codigo" class="btn id-btn-editar"
                       @click="abrirEditar(s)"><icone-do-bloco nome="editar" />Editar…</button>
             </template>
 
@@ -241,11 +241,11 @@
                   <span class="bs-confirma">Encerrar faz o QR parar de aceitar contato novo.
                     Os números ficam, e a equipe ainda pode cadastrar.</span>
                   <button class="btn" @click="confirmando = null">Deixar como está</button>
-                  <button class="btn btn-perigo" :disabled="mexendo === s.codigo"
+                  <button class="btn btn-perigo id-btn-perigo" :disabled="mexendo === s.codigo"
                           @click="encerrar(s, false)"><icone-do-bloco nome="parar" />Encerrar</button>
                 </template>
               </template>
-              <button v-else class="btn id-btn-valer" :disabled="mexendo === s.codigo"
+              <button v-else class="btn id-btn-voltar" :disabled="mexendo === s.codigo"
                       @click="encerrar(s, true)"><icone-do-bloco nome="reabrir" />Reabrir</button>
             </template>
           </div>
@@ -387,19 +387,19 @@
                NÃO fica solto na lista: pede um passo a mais. -->
           <div class="bs-acoes bs-acoes-fim">
             <template v-if="podeExecutarAcao('arquivar', podeEditar)">
-              <button class="btn id-btn-neutro" :disabled="arquivando === s.codigo"
+              <button class="btn id-btn-arquivar" :disabled="arquivando === s.codigo"
                       @click="alternarArquivar(s)"><icone-do-bloco nome="arquivar" />
                 {{ arquivando === s.codigo ? 'Gravando…' : rotuloDeArquivar(s.arquivada) }}
               </button>
             </template>
             <template v-if="podeExecutarAcao('apagar', podeEditar)">
               <template v-if="!bloqueioDeApagar[s.codigo]">
-                <button v-if="apagando !== s.codigo" class="btn btn-perigo"
+                <button v-if="apagando !== s.codigo" class="btn btn-perigo id-btn-perigo"
                         @click="apagando = s.codigo"><icone-do-bloco nome="lixeira" />Apagar…</button>
                 <template v-else>
                   <span class="bs-confirma">Apagar não pode ser desfeito.</span>
                   <button class="btn" @click="apagando = null">Deixar como está</button>
-                  <button class="btn btn-perigo" :disabled="mexendoApagar === s.codigo"
+                  <button class="btn btn-perigo id-btn-perigo" :disabled="mexendoApagar === s.codigo"
                           @click="apagar(s)"><icone-do-bloco nome="lixeira" />Apagar de vez</button>
                 </template>
               </template>

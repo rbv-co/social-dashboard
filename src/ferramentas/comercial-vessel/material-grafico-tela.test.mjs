@@ -55,7 +55,7 @@ test('⚠️ o botão baixa o que a prévia mostra: os dois saem do mesmo svgDoQ
   // ⚠️ No Material Gráfico (sem `apoio`) o PNG continua sendo o principal; só o
   // cartão da Beauty Session (24/09/2026) o põe no grupo de apoio, porque lá a
   // principal é "Cadastrar lead".
-  assert.match(QR, /:class="apoio \? 'id-btn-suave' : 'btn-principal'"[^>]*>[\s\S]{0,80}\{\{ gerandoPng \? 'Gerando…' : 'Baixar PNG' \}\}/)
+  assert.match(QR, /:class="apoio \? 'id-btn-apoio' : 'btn-principal'"[^>]*>[\s\S]{0,80}\{\{ gerandoPng \? 'Gerando…' : 'Baixar PNG' \}\}/)
   assert.match(QR, /apoio: \{ type: Boolean, default: false \}/, 'sem `apoio`, nada muda no Material Gráfico')
 })
 

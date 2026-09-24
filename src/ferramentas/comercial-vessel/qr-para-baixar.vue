@@ -26,12 +26,12 @@
            três do QR viram o grupo de apoio, no tom suave da ferramenta, com
            ícone. Sem `apoio` (o Material Gráfico) nada muda. -->
       <div v-if="endereco" class="qrb-acoes">
-        <button class="btn" :class="apoio ? 'id-btn-suave' : 'btn-principal'" :disabled="gerandoPng"
+        <button class="btn" :class="apoio ? 'id-btn-apoio' : 'btn-principal'" :disabled="gerandoPng"
                 @click="baixarPng"><icone-do-bloco v-if="apoio" nome="baixar" />
           {{ gerandoPng ? 'Gerando…' : 'Baixar PNG' }}</button>
-        <button class="btn" :class="{ 'id-btn-suave': apoio }" @click="baixarSvg"><icone-do-bloco v-if="apoio" nome="baixar" />
+        <button class="btn" :class="{ 'id-btn-apoio': apoio }" @click="baixarSvg"><icone-do-bloco v-if="apoio" nome="baixar" />
           Baixar SVG</button>
-        <button class="btn" :class="{ 'id-btn-suave': apoio }" @click="copiar"><icone-do-bloco v-if="apoio" nome="copiar" />
+        <button class="btn" :class="{ 'id-btn-apoio': apoio }" @click="copiar"><icone-do-bloco v-if="apoio" nome="copiar" />
           {{ copiado ? 'Copiado' : 'Copiar endereço' }}</button>
       </div>
       <p v-if="erro" class="qrb-nota qrb-erro" role="alert">{{ erro }}</p>
@@ -117,7 +117,7 @@ async function copiar() {
 
 <style scoped>
 /* os botões de `apoio` e o ícone vêm da folha de identidade (as classes
-   `id-btn-suave` e `id-icone`), que precisa estar DENTRO deste `scoped` */
+   `id-btn-apoio` e `id-icone`), que precisa estar DENTRO deste `scoped` */
 @import '../../estilos/identidade-da-ferramenta.css';
 .qrb {
   display: flex;
