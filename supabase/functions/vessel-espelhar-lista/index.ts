@@ -51,10 +51,9 @@
 //    nenhum de texto livre. O que existe é `codigo`, que está VAZIO em todos os
 //    contatos da conta — então dá para usar sem atropelar nada. Vai
 //    `LP-<data>-<id curto>`, único por pessoa, visível na lista do Bling.
-//    A etiqueta de verdade do Bling é `tiposContato`, e os 12 tipos que existem
-//    hoje (Cliente, Fornecedor, Vendedor…) não têm nenhum de lista de espera.
-//    Criar um tipo novo é escrita em dado real e é decisão do dono — quando ele
-//    criar, é só somar o id em TIPOS_DO_CADASTRO aqui embaixo.
+//    A etiqueta de verdade do Bling é `tiposContato`. Até 23/09/2026 não havia
+//    tipo de lista de espera e todo cadastro entrava como "Cliente"; nesse dia
+//    o dono criou o tipo "Lead" e os cadastros passaram a entrar com ele.
 //
 // 4. NENHUMA CREDENCIAL DO ZOHO ESCREVE EM PLANILHA. Nem a de `coletor/.env`
 //    (WorkDrive.files.ALL, WorkDrive.team.READ) nem a de `acessos_conexoes`
@@ -103,9 +102,11 @@ const CAMINHO = ['04. Vessel Brasil', '17. Marketing', 'Base de clientes'];
 const ARQUIVO = 'Base de clientes.xlsx';
 const TIPO_XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
-// As etiquetas que o contato recebe no Bling. Hoje só "Cliente", que é o que
-// existe. Quando o dono criar um tipo "Lista de espera (LP)", some o id aqui.
-const TIPOS_DO_CADASTRO = [{ id: 14580785954 }]; // Cliente
+// A etiqueta que o contato recebe no Bling: "Lead", NÃO "Cliente".
+// ⚠️ Quem se cadastrou na LP ainda não comprou. Até 23/09/2026 ia como
+// "Cliente" (14580785954) porque o tipo "Lead" não existia; 170 entraram assim.
+// Cliente vira cliente no Bling sozinha, com CPF, no dia do pedido.
+const TIPOS_DO_CADASTRO = [{ id: 14584907560 }]; // Lead
 
 const json = (corpo: unknown, status = 200) =>
   new Response(JSON.stringify(corpo), { status, headers: { 'Content-Type': 'application/json' } });
