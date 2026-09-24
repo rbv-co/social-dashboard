@@ -28,14 +28,28 @@ export function dadosIniciais(agora = new Date()) {
   const em = (n, hora) => instanteEmSaoPaulo(dia(n), hora)
   const compacto = (n) => dia(n).replace(/-/g, '')
 
-  // ⚠️ AS ETAPAS DO FUNIL (configuráveis desde 24/09/2026) — as mesmas sete que
-  // `2026-09-24-vessel-stylist-funil-configuravel.sql` semeia, na mesma ordem.
+  // ⚠️ AS ETAPAS DO FUNIL (configuráveis desde 24/09/2026) — as que a migration
+  // semeia, na mesma ordem, COM OS NOMES QUE O DONO JÁ USA EM PRODUÇÃO (lidos
+  // de `vessel_stylist_etapas` em 24/09/2026: "Confirmou Ida" e "Esteve
+  // Presente" eram "Confirmado" e "Presença Confirmada").
+  // ⚠️ 24/09/2026 (`2026-09-24-vessel-private-edit-so-com-stylist-liberada.sql`):
+  // + a saída "Ativada", ANTES do Desclassificado, a única que libera Private
+  // Edit. O id dela é o 8 (a ordem é a 7): os ids das sete de antes não mudam.
   const etapas = [
     ['Identificado', 'funil'], ['Classificação', 'funil'], ['Prospectado', 'funil', true], ['Convidado', 'funil'],
-    ['Confirmado', 'funil'], ['Presença Confirmada', 'funil'], ['Desclassificado', 'saida'],
+    ['Confirmou Ida', 'funil'], ['Esteve Presente', 'funil'], ['Desclassificado', 'saida'],
   ].map(([nome, tipo, marcada], i) => ({ id: i + 1, nome, ordem: i + 1, tipo, conta_como_prospectada: !!marcada,
-    ativa: true, alterado_por_nome: null, alterado_em: null }))
+    libera_private_edit: false, ativa: true, alterado_por_nome: null, alterado_em: null }))
+  etapas.find((e) => e.nome === 'Desclassificado').ordem = 8
+  etapas.push({ id: 8, nome: 'Ativada', ordem: 7, tipo: 'saida', conta_como_prospectada: false, libera_private_edit: true,
+    ativa: true, alterado_por_nome: null, alterado_em: null })
   const ETAPA = Object.fromEntries(etapas.map((e) => [e.nome, e.id]))
+  // Os nove motivos do Desclassificado, na ordem da migration; "Outro" pede nota.
+  const motivos = ['Desinteresse', 'Não conecta com a marca', 'Não retornou os contatos', 'Carteira fora do perfil',
+    'Portfólio / estética não alinhados', 'Fora da praça (logística)', 'Não aceitou as condições (Professional Fee)',
+    'Exclusividade com outra marca', 'Outro']
+    .map((nome, i) => ({ id: i + 1, etapa_id: ETAPA.Desclassificado, nome, ordem: i + 1, exige_nota: nome === 'Outro', ativo: true }))
+  const MOTIVO = Object.fromEntries(motivos.map((m) => [m.nome, m.id]))
 
   const stylists = [
     {
@@ -43,7 +57,8 @@ export function dadosIniciais(agora = new Date()) {
       cidade: 'Campinas', instagram: '@marina.exemplo', atuacao: 'stylist', praca_preview: 'CPS',
       loja: 'iguatemi', origem_contato: 'indicacao', origem_canal: null, responsavel: 'Ionara',
       prospectado_em: dia(-75), proxima_acao: 'Combinar a data do terceiro encontro', proxima_acao_em: dia(6),
-      ativada_em: em(-70, '10:00'), etapa_id: ETAPA['Presença Confirmada'], ativa: true, teste: false,
+      // ⚠️ 24/09/2026: a Marina está na Ativada (é a anfitriã dos encontros).
+      ativada_em: em(-70, '10:00'), etapa_id: ETAPA.Ativada, ativa: true, teste: false,
     },
     {
       id: 2, codigo: 'STY-0002', nome: 'Paula Reis (exemplo)', whatsapp: '5511990000002',
@@ -81,17 +96,31 @@ export function dadosIniciais(agora = new Date()) {
   ]
   // O histórico de etapas de cada uma (a entrada, e para onde ela andou).
   const historicoDeEtapas = []
-  const passou = (stylistId, de, para, n, motivo = 'mudanca') => historicoDeEtapas.push({
+  // ⚠️ `liberava_private_edit` é a FOTO da marca na chegada (a ativação sai dela).
+  const passou = (stylistId, de, para, n, motivo = 'mudanca', saida = {}) => historicoDeEtapas.push({
     id: historicoDeEtapas.length + 1, stylist_id: stylistId, de_etapa_id: de ? ETAPA[de] : null,
-    para_etapa_id: ETAPA[para], motivo, por_nome: 'Ionara', em: em(n, '10:00') })
+    para_etapa_id: ETAPA[para], motivo, por_nome: 'Ionara', em: em(n, para === 'Ativada' ? '09:00' : '10:00'),
+    motivo_id: saida.motivo ? MOTIVO[saida.motivo] : null, nota: saida.nota ?? null,
+    liberava_private_edit: !!etapas.find((e) => e.id === ETAPA[para])?.libera_private_edit })
   passou(1, null, 'Identificado', -80, 'cadastro'); passou(1, 'Identificado', 'Prospectado', -75)
-  passou(1, 'Prospectado', 'Convidado', -72); passou(1, 'Convidado', 'Confirmado', -71)
-  passou(1, 'Confirmado', 'Presença Confirmada', -40)
+  passou(1, 'Prospectado', 'Convidado', -72); passou(1, 'Convidado', 'Confirmou Ida', -71)
+  passou(1, 'Confirmou Ida', 'Ativada', -70)
   passou(2, null, 'Identificado', -25, 'cadastro'); passou(2, 'Identificado', 'Prospectado', -20)
   passou(2, 'Prospectado', 'Convidado', -5)
   passou(3, null, 'Identificado', -3, 'cadastro'); passou(3, 'Identificado', 'Prospectado', -3)
   passou(5, null, 'Identificado', -1, 'cadastro')
   passou(6, null, 'Identificado', -1, 'cadastro'); passou(6, 'Identificado', 'Classificação', 0)
+  // 24/09/2026: uma desclassificada, com o motivo e a nota (o bloco "Saídas por
+  // motivo" do placar e o cartão da coluna Desclassificado).
+  stylists.push({
+    id: 7, codigo: 'STY-0007', nome: 'Bianca Serra (exemplo)', whatsapp: '5519990000007',
+    cidade: 'Americana', instagram: '@bianca.exemplo', atuacao: 'stylist', praca_preview: null,
+    loja: null, origem_contato: 'pesquisa', origem_canal: null, responsavel: 'Ionara',
+    prospectado_em: null, proxima_acao: null, proxima_acao_em: null,
+    observacoes: null, ativada_em: null, etapa_id: ETAPA.Desclassificado, ativa: true, teste: false,
+  })
+  passou(7, null, 'Identificado', -30, 'cadastro')
+  passou(7, 'Identificado', 'Desclassificado', -10, 'mudanca', { motivo: 'Não conecta com a marca', nota: 'Estética muito diferente da marca.' })
 
   const encontros = [
     {
@@ -256,11 +285,11 @@ export function dadosIniciais(agora = new Date()) {
     cidade: 'Campinas', instagram: '@luisa.exemplo', atuacao: 'stylist', praca_preview: 'CPS',
     loja: 'tivoli', origem_contato: 'evento', origem_canal: null, responsavel: 'Ionara',
     prospectado_em: dia(-45), proxima_acao: 'Remarcar o encontro que caiu', proxima_acao_em: dia(4),
-    ativada_em: em(-40, '15:00'), etapa_id: ETAPA['Presença Confirmada'], ativa: true, teste: false,
+    ativada_em: em(-40, '15:00'), etapa_id: ETAPA['Esteve Presente'], ativa: true, teste: false,
   })
   // O histórico de etapas dela (funil configurável, 24/09/2026).
   passou(4, null, 'Identificado', -50, 'cadastro'); passou(4, 'Identificado', 'Prospectado', -45)
-  passou(4, 'Prospectado', 'Convidado', -41); passou(4, 'Convidado', 'Presença Confirmada', -25)
+  passou(4, 'Prospectado', 'Convidado', -41); passou(4, 'Convidado', 'Esteve Presente', -25)
   encontros.push(
     {
       id: 4, codigo: `PE-${compacto(-25)}-CPS-01`, chave: 'M3T8W2QA', stylist_id: 4, quando: em(-25, '19:00'),
@@ -311,7 +340,7 @@ export function dadosIniciais(agora = new Date()) {
   ]
 
   return {
-    etapas, historicoDeEtapas, trilhaDeEtapas: [],
+    etapas, historicoDeEtapas, trilhaDeEtapas: [], motivos,
     stylists, encontros,
     pessoas: [...pessoas, ...maisPessoas],
     atendimentos: [...atendimentos, ...visitas],

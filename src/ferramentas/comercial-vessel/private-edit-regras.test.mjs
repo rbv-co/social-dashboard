@@ -406,3 +406,32 @@ test('T11: a resposta é sobre as CONVIDADAS — convidar mais que as vagas não
   assert.equal(c.resposta.n, 9)
   assert.equal(c.resposta.valor, 1)
 })
+
+// ── 24/09/2026: a base do Private Edit (só as liberadas) ───────────────────
+import {
+  stylistsLiberadas, stylistsParaEditar, notaDaBaseDoPrivateEdit, vazioDaBaseDoPrivateEdit, mensagemDeCriar,
+} from './private-edit-regras.js'
+
+test('base do Private Edit: o seletor novo só tem as liberadas; o da edição mantém a anfitriã de hoje', () => {
+  const lista = [
+    { codigo: 'STY-0001', libera_private_edit: true }, { codigo: 'STY-0002', libera_private_edit: false }, { codigo: 'STY-0003' },
+  ]
+  assert.deepEqual(stylistsLiberadas(lista).map((s) => s.codigo), ['STY-0001'])
+  assert.deepEqual(stylistsParaEditar(lista, 'STY-0002').map((s) => s.codigo), ['STY-0001', 'STY-0002'])
+  assert.deepEqual(stylistsLiberadas(null), [])
+})
+
+test('base do Private Edit: a nota diz as etapas de hoje; sem nenhuma, diz como liberar', () => {
+  assert.equal(notaDaBaseDoPrivateEdit(['Ativada']), 'Só aparecem as parceiras em etapas que liberam Private Edit (hoje: Ativada).')
+  assert.match(notaDaBaseDoPrivateEdit(['Ativada', 'VIP']), /hoje: Ativada e VIP/)
+  assert.match(notaDaBaseDoPrivateEdit([]), /Nenhuma etapa libera Private Edit/)
+  assert.match(vazioDaBaseDoPrivateEdit(['Ativada']), /Nenhuma parceira está em Ativada ainda/)
+  assert.equal(vazioDaBaseDoPrivateEdit([]), '')
+})
+
+test('recusa de criar e de editar com stylist não liberada: frase em português', () => {
+  assert.equal(mensagemDeCriar({ situacao: 'stylist_nao_liberada', erro: 'Do banco.' }), 'Do banco.')
+  assert.match(mensagemDeCriar({ situacao: 'stylist_nao_liberada' }), /Ativada/)
+  assert.match(mensagemDeEditar('stylist_nao_liberada'), /anfitriã/)
+  assert.notEqual(mensagemDeEditar('stylist_nao_liberada'), mensagemDeEditar('algo_novo'))
+})

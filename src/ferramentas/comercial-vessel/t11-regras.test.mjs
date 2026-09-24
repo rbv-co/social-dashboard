@@ -7,6 +7,7 @@ import {
   mensagemDeSituacaoDoEncontro, SITUACOES_DO_CONVITE, seloDoConvite, gestosDaConvidada,
   problemasDaConvidada, mensagemDeConvidar, telefoneLegivel, avisoDos45Dias,
   periodoDoPlacar, taxasDoPlacar, legendaDaTaxa, proximaDataPermitidaDaLista, tomDaStylist,
+  sequenciaDoPlacar, taxaDoPasso,
 } from './t11-regras.js'
 
 // ⚠️ AS LISTAS DA TELA TÊM DE SER AS LISTAS DO BANCO, letra por letra. Lidas
@@ -187,9 +188,12 @@ test('placar: a legenda da taxa sem base diz o que falta, e não "sem base ainda
   }
 })
 
-test('FIAÇÃO: as legendas de ativação e show rate saem de legendaDaTaxa', () => {
+test('FIAÇÃO: a taxa de ativação sai da sequência (taxaDoPasso) e a de show rate de legendaDaTaxa', () => {
   const tela = readFileSync(new URL('./tela-de-stylist-circle.vue', import.meta.url), 'utf8')
-  assert.match(tela, /legendaDaTaxa\('ativacao', taxas\.ativacao\)/)
+  // 24/09/2026: a ativação é o 2º passo da sequência do placar, com a taxa da turma.
+  assert.match(tela, /v-for="p in sequencia"/)
+  assert.match(tela, /taxaDoPasso\(p\)/)
+  assert.match(tela, /sequenciaDoPlacar\(placar\.value\)/)
   assert.match(tela, /legendaDaTaxa\('showRate', taxas\.showRate\)/)
   assert.doesNotMatch(tela, /das confirmadas em encontros que aconteceram/)
 })
@@ -278,4 +282,26 @@ test('FIAÇÃO: cada tom tem a classe no CSS e o token no tema — senão o file
     assert.match(css, new RegExp(`\\.id-tom-${tom}\\s*\\{[^}]*--tom:\\s*var\\(--situacao-${tom}\\)`), `falta .id-tom-${tom}`)
     assert.match(globais, new RegExp(`--situacao-${tom}:`), `falta o token --situacao-${tom}`)
   }
+})
+
+// ── 24/09/2026: a ativação pela etapa e a sequência do placar ──────────────
+test('sequência do placar: os cinco passos, cada taxa sobre o passo de cima, da mesma turma', () => {
+  const pl = { prospectadas: 10, ativadas: 4, com_private_edit_agendado: 3, com_private_edit_realizado: 2, recorrentes_no_periodo: 1,
+    prospectadas_ja_ativadas: 4, prospectadas_com_private_edit_agendado: 3, prospectadas_com_private_edit_realizado: 2, prospectadas_recorrentes: 1 }
+  const seq = sequenciaDoPlacar(pl)
+  assert.deepEqual(seq.map((p) => p.rotulo), ['Prospectadas', 'Ativadas', 'Com Private Edit agendado', 'Com Private Edit realizado', 'Recorrentes'])
+  assert.deepEqual(seq.map((p) => p.valor), [10, 4, 3, 2, 1])
+  assert.equal(seq[0].taxa, null)
+  assert.deepEqual(seq.slice(1).map((p) => [p.taxa.x, p.taxa.n]), [[4, 10], [3, 4], [2, 3], [1, 2]])
+  assert.equal(taxaDoPasso(seq[1]), '40% (4 de 10) das prospectadas')
+  assert.equal(taxaDoPasso(seq[0]), 'pela data da prospecção')
+  const vazio = sequenciaDoPlacar({})
+  assert.match(taxaDoPasso(vazio[2]), /sem base na turma/)
+  assert.match(seq[1].base, /etapa que libera Private Edit/)
+  assert.match(seq[2].base, /primeiro encontro agendado/)
+})
+
+test('cor: a saída que libera Private Edit (Ativada) é viva; a outra saída continua queda', () => {
+  assert.equal(seloDaEtapa({ etapa: 'Ativada', etapa_tipo: 'saida', etapa_libera_private_edit: true }).tom, 'viva')
+  assert.equal(seloDaEtapa({ etapa: 'Desclassificado', etapa_tipo: 'saida', etapa_libera_private_edit: false }).tom, 'queda')
 })

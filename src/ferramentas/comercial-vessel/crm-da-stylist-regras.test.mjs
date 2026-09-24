@@ -5,6 +5,8 @@ import {
   CANAIS, RESULTADOS, etapasDoFunil, etapasDeSaida, proximaEtapa, primeiraEtapa, etapasParaFiltrar,
   colunasDoQuadro, problemasDaEtapa, mensagemDasEtapas, motivoDoHistorico, prazoAtrasado, ultimoContatoEscrito,
   linkDoWhatsAppDaStylist, perfilDoInstagram, contatoFacil,
+  destinoDoSoltar, etapasQueLiberam, nomesEmLista, privateEditDaStylist, avisoDeLiberada, motivosAtivos, pedeMotivo,
+  problemasDoMotivo, rotuloDeConfirmarSaida, etapaComMotivo, saidasPorMotivo, problemasDoNomeDoMotivo,
 } from './crm-da-stylist-regras.js'
 
 const MIGRATION = readFileSync(new URL(
@@ -71,7 +73,7 @@ test('o filtro "Etapa": chave em texto, funil primeiro e saídas no fim', () => 
   assert.deepEqual(Object.keys(etapasParaFiltrar(ETAPAS)), ['11', '12', '13', '14', '15', '16', '17'])
 })
 
-test('colunas: uma por etapa de funil, na ordem, e as saídas juntas no fim; atrasadas primeiro', () => {
+test('colunas: uma por etapa de funil, na ordem, e depois uma por SAÍDA (alvo do arrastar); atrasadas primeiro', () => {
   const c = colunasDoQuadro([
     { codigo: 'A', nome: 'Ana', etapa_id: 14, proxima_acao_em: '2026-09-30' },
     { codigo: 'B', nome: 'Bia', etapa_id: 14, proxima_acao_em: '2026-09-10' },
@@ -80,10 +82,14 @@ test('colunas: uma por etapa de funil, na ordem, e as saídas juntas no fim; atr
     { codigo: 'E', nome: 'Eva', etapa_id: 999 },
   ], ETAPAS, '2026-09-22')
   assert.deepEqual(c.map((x) => x.titulo),
-    ['Identificado', 'Classificação', 'Prospectado', 'Convidado', 'Confirmado', 'Presença Confirmada', 'Saídas'])
+    ['Identificado', 'Classificação', 'Prospectado', 'Convidado', 'Confirmado', 'Presença Confirmada', 'Desclassificado'])
+  assert.deepEqual(c.map((x) => x.saida), [false, false, false, false, false, false, true])
   const col = (t) => c.find((x) => x.titulo === t).stylists.map((s) => s.codigo)
   assert.deepEqual(col('Convidado'), ['B', 'A'])
-  assert.deepEqual(col('Saídas'), ['C'])
+  assert.deepEqual(col('Desclassificado'), ['C'])
+  // Com a Ativada: cada saída a sua coluna, na ordem, no fim.
+  const comAtivada = [...ETAPAS.map((e) => (e.id === 17 ? { ...e, ordem: 8 } : e)), { id: 19, nome: 'Ativada', ordem: 7, tipo: 'saida', libera_private_edit: true }]
+  assert.deepEqual(colunasDoQuadro([], comAtivada, '2026-09-22').slice(-2).map((x) => x.titulo), ['Ativada', 'Desclassificado'])
   assert.deepEqual(col('Presença Confirmada'), ['D'])
   assert.deepEqual(col('Identificado'), ['E'], 'etapa desconhecida cai na primeira coluna, nunca some')
   // Uma etapa nova aparece sozinha, no lugar da ordem dela.
@@ -230,4 +236,100 @@ test('FIAÇÃO: o contato fácil abre em aba nova, não propaga o clique e NÃO 
   assert.match(ler('./quadro-do-stylist-circle.vue'), /<contato-facil :stylist="s" compacto \/>/)
   assert.match(ler('./ficha-da-stylist.vue'), /<contato-facil :stylist="stylist" \/>/)
   assert.match(ler('./tela-de-stylist-circle.vue'), /<contato-facil :stylist="s" \/>/)
+})
+
+// ════════════════════════════════════════════════════════════════════════════
+// 24/09/2026 — Private Edit só com liberada, os motivos das saídas e o arrastar
+// (`2026-09-24-vessel-private-edit-so-com-stylist-liberada.sql`).
+// ════════════════════════════════════════════════════════════════════════════
+const LIBERADA = readFileSync(new URL(
+  '../../../db/migrations/2026-09-24-vessel-private-edit-so-com-stylist-liberada.sql', import.meta.url), 'utf8')
+const COM_ATIVADA = [
+  ...ETAPAS.map((e) => (e.id === 17 ? { ...e, ordem: 8, motivos: [
+    { id: 1, nome: 'Desinteresse', ordem: 1, ativo: true, exige_nota: false, stylists: 2 },
+    { id: 2, nome: 'Não conecta com a marca', ordem: 2, ativo: true, exige_nota: false, stylists: 0 },
+    { id: 9, nome: 'Outro', ordem: 3, ativo: true, exige_nota: true, stylists: 1 },
+    { id: 5, nome: 'Antigo', ordem: 4, ativo: false, exige_nota: false, stylists: 1 },
+  ], stylists: 5, stylists_sem_motivo: 1 } : { ...e, motivos: [], stylists: 0 })),
+  { id: 19, nome: 'Ativada', ordem: 7, tipo: 'saida', libera_private_edit: true, motivos: [], stylists: 2, stylists_sem_motivo: 2 },
+]
+
+test('soltar: na mesma coluna não faz nada; noutra, a etapa dela', () => {
+  assert.equal(destinoDoSoltar(14, { etapa: { id: 14 } }), null)
+  assert.equal(destinoDoSoltar(14, { etapa: { id: 19 } }), 19)
+  assert.equal(destinoDoSoltar(14, null), null)
+})
+
+test('Private Edit na ficha: pode / liberado ao chegar em (os nomes de hoje) / nenhuma etapa libera', () => {
+  assert.deepEqual(etapasQueLiberam(COM_ATIVADA).map((e) => e.nome), ['Ativada'])
+  assert.deepEqual(privateEditDaStylist({ etapa_id: 19 }, COM_ATIVADA), { pode: true, texto: 'Pode marcar Private Edit' })
+  assert.equal(privateEditDaStylist({ etapa_id: 11 }, COM_ATIVADA).texto, 'Private Edit liberado ao chegar em: Ativada')
+  const duas = COM_ATIVADA.map((e) => (e.id === 16 ? { ...e, libera_private_edit: true } : e))
+  assert.equal(privateEditDaStylist({ etapa_id: 11 }, duas).texto, 'Private Edit liberado ao chegar em: Presença Confirmada e Ativada')
+  assert.match(privateEditDaStylist({ etapa_id: 11 }, ETAPAS).texto, /Nenhuma etapa libera/)
+  assert.equal(nomesEmLista(['A', 'B', 'C']), 'A, B e C')
+  assert.equal(avisoDeLiberada('Marina', { nome: 'Ativada' }), 'Marina ativada — já aparece em Marcar um encontro do Private Edit.')
+  assert.match(avisoDeLiberada('Marina', { nome: 'VIP' }), /^Marina em VIP —/)
+})
+
+test('motivos: só os ativos, na ordem; saída sem motivo não pede; "Outro" pede nota', () => {
+  const des = COM_ATIVADA.find((e) => e.nome === 'Desclassificado')
+  const ativada = COM_ATIVADA.find((e) => e.nome === 'Ativada')
+  assert.deepEqual(motivosAtivos(des).map((m) => m.nome), ['Desinteresse', 'Não conecta com a marca', 'Outro'])
+  assert.equal(pedeMotivo(des), true)
+  assert.equal(pedeMotivo(ativada), false)
+  assert.equal(pedeMotivo(COM_ATIVADA[0]), false)
+  assert.deepEqual(problemasDoMotivo({ motivoId: '' }, des), ['Escolha o motivo.'])
+  assert.deepEqual(problemasDoMotivo({ motivoId: '5' }, des), ['Escolha o motivo.'], 'motivo desativado não vale')
+  assert.equal(problemasDoMotivo({ motivoId: '9', nota: '  ' }, des).length, 1)
+  assert.deepEqual(problemasDoMotivo({ motivoId: '9', nota: 'mudou de cidade' }, des), [])
+  assert.deepEqual(problemasDoMotivo({ motivoId: '1' }, des), [])
+  assert.deepEqual(problemasDoMotivo({}, ativada), [])
+  assert.equal(rotuloDeConfirmarSaida(des), 'Desclassificar')
+  assert.equal(rotuloDeConfirmarSaida({ nome: 'Pausada' }), 'Mover para Pausada')
+  assert.equal(etapaComMotivo({ etapa: 'Desclassificado', etapa_tipo: 'saida', saida_motivo: 'Não conecta com a marca' }),
+    'Desclassificado · Não conecta com a marca')
+  assert.equal(etapaComMotivo({ etapa: 'Convidado', etapa_tipo: 'funil', saida_motivo: 'x' }), 'Convidado')
+  assert.deepEqual(problemasDoNomeDoMotivo(' '), ['Escreva o motivo.'])
+  assert.equal(problemasDoNomeDoMotivo('x'.repeat(81)).length, 1)
+})
+
+test('saídas por motivo: quem está hoje, zeros escondidos, desativado marcado, e "sem motivo" só onde há lista', () => {
+  assert.deepEqual(saidasPorMotivo(COM_ATIVADA), [
+    { etapa: 'Ativada', total: 2, linhas: [] },
+    { etapa: 'Desclassificado', total: 5, linhas: [
+      { nome: 'Desinteresse', n: 2 }, { nome: 'Outro', n: 1 }, { nome: 'Antigo (fora de uso)', n: 1 },
+      { nome: 'Sem motivo registrado', n: 1 }] },
+  ])
+  assert.deepEqual(saidasPorMotivo(ETAPAS.map((e) => ({ ...e, stylists: 0 }))), [], 'ninguém em saída: o bloco some')
+})
+
+test('cada recusa nova do banco (motivos, marca) tem a sua frase', () => {
+  const doBanco = [...new Set([...LIBERADA.matchAll(/'situacao', '([a-z_]+)'/g), ...LIBERADA.matchAll(/return '([a-z_]+)';/g)].map((m) => m[1]))]
+  for (const s of ['motivo_obrigatorio', 'motivo_invalido', 'nota_obrigatoria', 'nota_longa', 'motivo_longo', 'so_saida']) {
+    assert.ok(doBanco.includes(s), `${s} não sai do banco`)
+    assert.notEqual(mensagemDasEtapas(s), mensagemDasEtapas('algo_novo'), `${s} caiu na frase genérica`)
+  }
+})
+
+test('FIAÇÃO: o quadro arrasta pela API nativa, só com mouse e quem edita, e emite o MESMO "mover" do botão', () => {
+  const q = ler('./quadro-do-stylist-circle.vue')
+  assert.match(q, /:draggable="podeArrastar/)
+  assert.match(q, /\(pointer: fine\)/)
+  assert.match(q, /@drop="soltar\(\$event, c\)"/)
+  assert.match(q, /emit\('mover', \{ codigo: a\.codigo, etapaId: destino \}\)/)
+  assert.match(q, /cv-quadro-alvo/)
+  const t = ler('./tela-de-stylist-circle.vue')
+  assert.match(t, /<escolha-do-motivo v-if="motivoPendente"/)
+  assert.match(t, /p_motivo_id: motivo\?\.motivoId \?\? null/)
+  const f = ler('./ficha-da-stylist.vue')
+  assert.match(f, /<escolha-do-motivo v-if="pedindoMotivo"/)
+  assert.match(f, /privateEdit\.texto/)
+  const e = ler('./etapas-do-funil.vue')
+  for (const fn of ['vessel_stylist_etapa_liberar_private_edit', 'vessel_stylist_motivo_criar', 'vessel_stylist_motivo_renomear',
+    'vessel_stylist_motivo_mover', 'vessel_stylist_motivo_ativar', 'vessel_stylist_motivo_exigir_nota']) {
+    assert.match(e, new RegExp(`'${fn}'`), `${fn} não está na tela de etapas`)
+  }
+  assert.match(e, /<escolha-do-motivo v-if="motivoDaExclusao"/)
+  assert.match(ler('./escolha-do-motivo.vue'), /v-trava-rolagem/)
 })

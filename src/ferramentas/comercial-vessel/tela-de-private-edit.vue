@@ -11,10 +11,12 @@
       <section class="cv-bloco id-bloco-form">
         <h2 class="cv-etiqueta id-titulo"><icone-do-bloco nome="novo" />Marcar um encontro</h2>
         <div class="cv-form">
+          <!-- ⚠️ 24/09/2026: SÓ AS LIBERADAS (a etapa dela libera Private Edit —
+               hoje, a Ativada). As outras nem aparecem: o banco recusaria. -->
           <label class="cv-campo cv-campo-largo" for="pe-stylist"><span>Anfitriã</span>
-            <select id="pe-stylist" v-model="novo.stylist">
-              <option value="">Escolha a stylist…</option>
-              <option v-for="s in stylists" :key="s.codigo" :value="s.codigo">
+            <select id="pe-stylist" v-model="novo.stylist" :disabled="!liberadas.length">
+              <option value="">{{ liberadas.length ? 'Escolha a stylist…' : 'Nenhuma parceira liberada' }}</option>
+              <option v-for="s in liberadas" :key="s.codigo" :value="s.codigo">
                 {{ s.codigo }} — {{ s.nome }}<span v-if="s.cidade"> · {{ s.cidade }}</span>
               </option>
             </select></label>
@@ -32,6 +34,8 @@
                    placeholder="Onde o encontro acontece"></label>
         </div>
 
+        <p class="cv-nota cv-nota-base-pe">{{ notaDaBase }}</p>
+        <p v-if="!carregando && !erro && !liberadas.length && vazioDaBase" class="cv-vazio cv-vazio-base-pe">{{ vazioDaBase }}</p>
         <p class="cv-nota">
           <b>Vagas</b> é a capacidade planejada: de 7 a 10 convidadas. A taxa de
           resposta é sobre quem foi convidada, e não sobre as vagas.
@@ -240,9 +244,11 @@
             <h3 class="cv-etiqueta cv-etiqueta-interna id-titulo"><icone-do-bloco nome="editar" />Editar</h3>
             <div class="cv-form">
               <label class="cv-campo cv-campo-largo" :for="`ed-stylist-${e.codigo}`"><span>Anfitriã</span>
+                <!-- A anfitriã de hoje fica na lista mesmo fora da Ativada
+                     (manter passa); trocar, só por uma liberada. -->
                 <select :id="`ed-stylist-${e.codigo}`" v-model="rascunho.stylist">
-                  <option v-for="s in stylists" :key="s.codigo" :value="s.codigo">
-                    {{ s.codigo }} — {{ s.nome }}</option>
+                  <option v-for="s in stylistsParaEditar(stylists, e.stylist)" :key="s.codigo" :value="s.codigo">
+                    {{ s.codigo }} — {{ s.nome }}{{ s.libera_private_edit ? '' : ' (anfitriã de hoje)' }}</option>
                 </select></label>
               <label class="cv-campo" :for="`ed-quando-${e.codigo}`"><span>Dia e hora</span>
                 <input :id="`ed-quando-${e.codigo}`" type="datetime-local" v-model="rascunho.quando"></label>
@@ -472,8 +478,10 @@ import { filtrar, FILTRO_VAZIO, precisaDoBanco } from './filtros.js'
 import {
   mensagemDeEditar, mensagemDeArquivar, mensagemDeTemGente, mensagemDeApagar,
   rotuloDeArquivar, paraCampoDatetimeLocal, podeExecutarAcao, calcularConjunto,
-  encontroAceitaConvite,
+  encontroAceitaConvite, stylistsLiberadas, stylistsParaEditar, notaDaBaseDoPrivateEdit,
+  vazioDaBaseDoPrivateEdit, mensagemDeCriar,
 } from './private-edit-regras.js'
+import { etapasQueLiberam } from './crm-da-stylist-regras.js'
 import {
   STATUS_DO_ENCONTRO, precisaDeMotivo, seloDoStatus, mensagemDeSituacaoDoEncontro,
   seloDoConvite, gestosDaConvidada, problemasDaConvidada, mensagemDeConvidar,
@@ -496,6 +504,14 @@ const podeEditar = computed(() => hasPermission('atendimentos.private-edit', 'ed
 
 const encontros = ref([])
 const stylists = ref([])
+// ⚠️ 24/09/2026: as etapas, para a nota dizer QUAIS liberam hoje (os nomes
+// mudam pela tela "Etapas do funil"). Lidas a cada carregar, sem cache: quem
+// acabou de ir para a Ativada aparece na hora.
+const etapas = ref([])
+const liberadas = computed(() => stylistsLiberadas(stylists.value))
+const nomesQueLiberam = computed(() => etapasQueLiberam(etapas.value).map((e) => e.nome))
+const notaDaBase = computed(() => notaDaBaseDoPrivateEdit(nomesQueLiberam.value))
+const vazioDaBase = computed(() => vazioDaBaseDoPrivateEdit(nomesQueLiberam.value))
 const carregando = ref(true)
 const erro = ref(null)
 const criando = ref(false)
@@ -589,13 +605,17 @@ async function carregar(opcoes) {
     // conta chega sem elas por padrão, e um array que nunca as recebeu não
     // passa a tê-las só porque o filtro de tela mudou — ver `filtros.js`.
     const incluirArquivadas = precisaDoBanco(filtro.value.situacao)
-    const [lista, quem] = await Promise.all([
+    const [lista, quem, et] = await Promise.all([
       chamar('vessel_conta_das_private_edits',
         { p_dias: P_DIAS, p_incluir_arquivadas: incluirArquivadas }),
       chamar('vessel_stylists_para_escolher', {}),
+      chamar('vessel_stylist_etapas', {}),
     ])
     encontros.value = lista || []
     stylists.value = quem || []
+    etapas.value = et || []
+    // A escolhida saiu da base (mudou de etapa noutra aba): a escolha volta.
+    if (novo.stylist && !liberadas.value.some((s) => s.codigo === novo.stylist)) novo.stylist = ''
     // O que está gravado mudou: os rascunhos de situação voltam ao banco.
     // ⚠️ NASCEM AQUI, e não durante o desenho: escrever em estado reativo no
     // meio do render faz o Vue redesenhar de novo.
@@ -642,7 +662,7 @@ async function criar() {
     })
     // A mensagem do banco vem para a tela: ela já explica em português qual
     // conferência falhou.
-    if (!r?.ok) { erroAoCriar.value = r?.erro || 'Não consegui criar agora.'; return }
+    if (!r?.ok) { erroAoCriar.value = mensagemDeCriar(r); return }
     criado.value = r
     novo.local = ''
     await carregar()

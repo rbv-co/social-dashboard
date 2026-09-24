@@ -101,6 +101,8 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
   const b = dados ? copia(dados) : dadosIniciais(agora())
   // 24/09: dados de teste antigos não trazem as avaliações — começam sem nenhuma.
   if (!Array.isArray(b.qualificacoes)) b.qualificacoes = []
+  // 24/09 (Private Edit só com liberada): dados antigos não trazem os motivos.
+  if (!Array.isArray(b.motivos)) b.motivos = []
   const hoje = () => diaEmSaoPaulo(agora())
   const agoraIso = () => agora().toISOString()
   const proximo = (lista) => Math.max(0, ...lista.map((x) => x.id)) + 1
@@ -132,13 +134,56 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
     const m = etapasAtivas().find((x) => x.conta_como_prospectada)
     return !!(e && m && e.tipo === 'funil' && e.ordem >= m.ordem)
   }
-  /** Os dois gatilhos de `vessel_stylists`: a data da prospecção e o histórico. */
-  function mudarDeEtapa(s, etapaId, motivo) {
+  /** Os dois gatilhos de `vessel_stylists`: a data da prospecção e o histórico.
+   * ⚠️ 24/09/2026: o histórico guarda o motivo da saída, a nota e a FOTO da
+   * marca "libera Private Edit" na hora da chegada (é dela que sai a ativação). */
+  function mudarDeEtapa(s, etapaId, motivo, saida = null) {
     const de = s.etapa_id ?? null
     s.etapa_id = etapaId
     if (!s.prospectado_em && contaComoProspectada(etapaId)) s.prospectado_em = hoje()
+    const e = etapaPorId(etapaId)
+    const naSaida = e?.tipo === 'saida'
+    const m = naSaida && saida?.motivoId != null ? b.motivos.find((x) => x.id === Number(saida.motivoId) && x.etapa_id === etapaId) : null
     b.historicoDeEtapas.push({ id: proximo(b.historicoDeEtapas), stylist_id: s.id, de_etapa_id: de,
-      para_etapa_id: etapaId, motivo, por_nome: USUARIO_DA_DEMONSTRACAO, em: agoraIso() })
+      para_etapa_id: etapaId, motivo, por_nome: USUARIO_DA_DEMONSTRACAO, em: agoraIso(),
+      motivo_id: m?.id ?? null, nota: naSaida ? limpo(saida?.nota) : null, liberava_private_edit: !!e?.libera_private_edit })
+  }
+  // ── os motivos das saídas e a ativação (24/09/2026) ─────────────────────
+  const motivosDe = (etapaId) => b.motivos.filter((m) => m.etapa_id === etapaId)
+  const motivosAtivosDe = (etapaId) => motivosDe(etapaId).filter((m) => m.ativo !== false)
+    .sort((x, y) => x.ordem - y.ordem || x.id - y.id)
+  /** `vessel_stylist_saida_atual`: a última linha do histórico dela. */
+  const saidaAtual = (s) => b.historicoDeEtapas.filter((h) => h.stylist_id === s.id).sort((x, y) => x.id - y.id).at(-1) || null
+  /** `vessel_stylist_ativada_em` — A definição, uma só: a primeira chegada numa
+   * etapa que liberava Private Edit; sem ela, o primeiro encontro agendado. */
+  function ativadaEm(s) {
+    const chegadas = b.historicoDeEtapas.filter((h) => h.stylist_id === s.id && h.liberava_private_edit).map((h) => h.em).sort()
+    return chegadas[0] || s.ativada_em || null
+  }
+  const porEncontroAntigo = (s) => !!s.ativada_em && !b.historicoDeEtapas.some((h) => h.stylist_id === s.id && h.liberava_private_edit)
+  /** `vessel_stylist_conferir_motivo`: nulo quando está certo, ou a recusa. */
+  function conferirMotivo(etapaId, motivoId, nota) {
+    const e = etapaPorId(etapaId)
+    if (!e) return 'etapa_invalida'
+    const n = limpo(nota)
+    if (n && n.length > 500) return 'nota_longa'
+    if (e.tipo !== 'saida') return null
+    const ativos = motivosAtivosDe(e.id)
+    if (!ativos.length) return motivoId != null ? 'motivo_invalido' : null
+    if (motivoId == null) return 'motivo_obrigatorio'
+    const m = ativos.find((x) => x.id === Number(motivoId))
+    if (!m) return 'motivo_invalido'
+    if (m.exige_nota && !n) return 'nota_obrigatoria'
+    return null
+  }
+  const liberam = () => etapasAtivas().filter((e) => e.libera_private_edit).map((e) => e.nome)
+  const liberada = (s) => !!etapaPorId(s?.etapa_id)?.libera_private_edit
+  const renumerarMotivos = (etapaId) => motivosAtivosDe(etapaId).forEach((m, i) => { m.ordem = i + 1 })
+  function anotarMotivo(m, acao) {
+    m.alterado_por_nome = USUARIO_DA_DEMONSTRACAO
+    m.alterado_em = agoraIso()
+    const e = b.etapas.find((x) => x.id === m.etapa_id)
+    if (e) anotar(e, acao)
   }
   const renumerar = () => etapasAtivas().forEach((e, i) => { e.ordem = i + 1 })
   function anotar(etapa, acao) {
@@ -194,7 +239,10 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
     const dias = Math.max(Number(p_dias ?? 14) || 0, 0)
     const sty = b.stylists.filter((s) => !s.teste && (stylistId == null || s.id === stylistId))
     const idsSty = new Set(sty.map((s) => s.id))
-    const diaAtiv = (s) => (s.ativada_em ? diaEmSaoPaulo(s.ativada_em) : null)
+    // ⚠️ 24/09/2026: a ATIVAÇÃO é `ativadaEm` (a etapa que libera Private
+    // Edit); o dia do primeiro encontro agendado é `diaAgendou` (o de antes).
+    const diaAtiv = (s) => { const a = ativadaEm(s); return a ? diaEmSaoPaulo(a) : null }
+    const diaAgendou = (s) => (s.ativada_em ? diaEmSaoPaulo(s.ativada_em) : null)
     const ev = b.encontros.filter((e) => naoArquivado(e) && idsSty.has(e.stylist_id))
       .map((e) => ({ ...e, dia: diaDoEncontro(e) }))
     const evP = ev.filter((e) => dentro(e.dia))
@@ -214,12 +262,25 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
     }
     const confirmada = (c) => ['confirmada', 'presente', 'nao_compareceu'].includes(c.situacao)
     const ativadasNoPeriodo = sty.filter((s) => dentro(diaAtiv(s)))
+    // A TURMA da prospecção, passo a passo (cada passo dentro do anterior).
+    const ateOFim = (d) => !!d && d <= ate
+    const turma = sty.filter((s) => dentro(s.prospectado_em)).map((s) => {
+      const ativou = ateOFim(diaAtiv(s)), agendou = ativou && ateOFim(diaAgendou(s))
+      const n = (k) => realizados.some((r) => r.stylist_id === s.id && r.n === k && r.realizado_em <= ate)
+      return { ativou, agendou, realizou: agendou && n(1), repetiu: agendou && n(2) }
+    })
     const intervalosNoPeriodo = realizados.filter((r) => r.intervalo != null && dentro(r.realizado_em))
     return {
       de: p_de, ate: p_ate, janela_de_venda_em_dias: dias,
       prospectadas: sty.filter((s) => dentro(s.prospectado_em)).length,
       ativadas: ativadasNoPeriodo.length,
-      prospectadas_ja_ativadas: sty.filter((s) => dentro(s.prospectado_em) && diaAtiv(s) && diaAtiv(s) <= ate).length,
+      prospectadas_ja_ativadas: turma.filter((t) => t.ativou).length,
+      com_private_edit_agendado: sty.filter((s) => dentro(diaAgendou(s))).length,
+      com_private_edit_realizado: new Set(realizados.filter((r) => r.n === 1 && dentro(r.realizado_em)).map((r) => r.stylist_id)).size,
+      prospectadas_com_private_edit_agendado: turma.filter((t) => t.agendou).length,
+      prospectadas_com_private_edit_realizado: turma.filter((t) => t.realizou).length,
+      prospectadas_recorrentes: turma.filter((t) => t.repetiu).length,
+      ativadas_por_encontro_antigo: sty.filter((s) => porEncontroAntigo(s) && dentro(diaAtiv(s))).length,
       encontros_agendados: evP.filter((e) => e.status !== 'em_planejamento').length,
       encontros_realizados: evP.filter((e) => e.status === 'realizado').length,
       encontros_cancelados: evP.filter((e) => ['cancelado', 'nao_realizado'].includes(e.status)).length,
@@ -234,7 +295,7 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
       intervalos: intervalosNoPeriodo.length,
       intervalo_medio_em_dias: media1(intervalosNoPeriodo.map((r) => r.intervalo)),
       contatos_ate_ativar: media1(ativadasNoPeriodo.map((s) =>
-        b.contatos.filter((c) => c.stylist_id === s.id && c.criado_em < s.ativada_em).length)),
+        b.contatos.filter((c) => c.stylist_id === s.id && c.criado_em < ativadaEm(s)).length)),
       stylists_com_contatos_ate_ativar: ativadasNoPeriodo.length,
       compradoras: new Set(vendas.map((v) => v.pessoa_id)).size,
       vendas: vendas.length,
@@ -279,11 +340,18 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
             etapa_id: s.etapa_id, etapa: b.etapas.find((e) => e.id === s.etapa_id)?.nome ?? null,
             etapa_tipo: b.etapas.find((e) => e.id === s.etapa_id)?.tipo ?? null,
             etapa_ordem: b.etapas.find((e) => e.id === s.etapa_id)?.ordem ?? null,
+            etapa_libera_private_edit: !!b.etapas.find((e) => e.id === s.etapa_id)?.libera_private_edit,
+            ...(() => {
+              const naSaida = b.etapas.find((e) => e.id === s.etapa_id)?.tipo === 'saida'
+              const h = naSaida ? saidaAtual(s) : null
+              return { saida_motivo_id: h?.motivo_id ?? null, saida_motivo: b.motivos.find((m) => m.id === h?.motivo_id)?.nome ?? null,
+                saida_nota: h?.nota ?? null }
+            })(),
             praca_preview: s.praca_preview,
             ativa: s.ativa, whatsapp: s.whatsapp, instagram: s.instagram, atuacao: s.atuacao,
             loja: s.loja, origem_contato: s.origem_contato, responsavel: s.responsavel,
             prospectado_em: s.prospectado_em, proxima_acao: s.proxima_acao, proxima_acao_em: s.proxima_acao_em,
-            observacoes: s.observacoes ?? null, ativada_em: s.ativada_em,
+            observacoes: s.observacoes ?? null, ativada_em: ativadaEm(s), private_edit_agendado_em: s.ativada_em ?? null,
             encontros_realizados: ev.length,
             ultima_private_edit: ultima,
             proxima_data_permitida: ultima ? somarDias(ultima, 45) : null,
@@ -305,7 +373,13 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
     vessel_stylist_etapas() {
       return etapasAtivas().map((e) => ({
         id: e.id, nome: e.nome, ordem: e.ordem, tipo: e.tipo, conta_como_prospectada: !!e.conta_como_prospectada,
+        libera_private_edit: !!e.libera_private_edit,
         stylists: b.stylists.filter((s) => s.etapa_id === e.id && !s.teste).length,
+        motivos: motivosDe(e.id).sort((x, y) => (Number(x.ativo === false) - Number(y.ativo === false)) || x.ordem - y.ordem || x.id - y.id)
+          .map((m) => ({ id: m.id, nome: m.nome, ordem: m.ordem, ativo: m.ativo !== false, exige_nota: !!m.exige_nota,
+            stylists: b.stylists.filter((s) => s.etapa_id === e.id && !s.teste && saidaAtual(s)?.motivo_id === m.id).length })),
+        stylists_sem_motivo: e.tipo === 'saida'
+          ? b.stylists.filter((s) => s.etapa_id === e.id && !s.teste && saidaAtual(s)?.motivo_id == null).length : null,
         alterado_em: e.alterado_em ?? null, alterado_por_nome: e.alterado_por_nome ?? null,
       }))
     },
@@ -316,13 +390,16 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
       const nome = (id) => b.etapas.find((e) => e.id === id)?.nome ?? null
       return b.historicoDeEtapas.filter((h) => h.stylist_id === s.id)
         .sort((x, y) => (x.em === y.em ? y.id - x.id : (x.em < y.em ? 1 : -1)))
-        .map((h) => ({ id: h.id, de: nome(h.de_etapa_id), para: nome(h.para_etapa_id), motivo: h.motivo, por_nome: h.por_nome, em: h.em }))
+        .map((h) => ({ id: h.id, de: nome(h.de_etapa_id), para: nome(h.para_etapa_id), motivo: h.motivo,
+          motivo_de_saida_id: h.motivo_id ?? null, motivo_de_saida: b.motivos.find((m) => m.id === h.motivo_id)?.nome ?? null,
+          nota: h.nota ?? null, por_nome: h.por_nome, em: h.em }))
     },
 
     vessel_stylists_para_escolher() {
       return b.stylists.filter((s) => !s.teste && s.ativa !== false)
         .sort((x, y) => (x.codigo < y.codigo ? -1 : 1))
-        .map((s) => ({ codigo: s.codigo, nome: s.nome, cidade: s.cidade, whatsapp: s.whatsapp }))
+        .map((s) => ({ codigo: s.codigo, nome: s.nome, cidade: s.cidade, whatsapp: s.whatsapp,
+          etapa: etapaPorId(s.etapa_id)?.nome ?? null, libera_private_edit: liberada(s) }))
     },
 
     vessel_conta_das_private_edits({ p_dias = 14, p_incluir_arquivadas = false } = {}) {
@@ -486,17 +563,97 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
       return { ok: true, situacao: 'ok', codigo }
     },
 
-    vessel_stylist_mover_de_etapa({ p_codigo, p_etapa_id } = {}) {
+    vessel_stylist_mover_de_etapa({ p_codigo, p_etapa_id, p_motivo_id = null, p_nota = null } = {}) {
       const codigo = maiusculo(p_codigo)
       const s = stylistPorCodigo(codigo)
       if (!s) return { ok: false, situacao: 'nao_achei' }
       const e = etapaPorId(Number(p_etapa_id))
       if (!e) return { ok: false, situacao: 'etapa_invalida' }
       if (s.etapa_id === e.id) return { ok: true, situacao: 'sem_mudanca', codigo }
+      // ⚠️ 24/09/2026: saída com motivos exige o motivo (e a nota, se ele pede).
+      const recusa = conferirMotivo(e.id, p_motivo_id, p_nota)
+      if (recusa) return { ok: false, situacao: recusa, etapa: e.nome }
       const de = b.etapas.find((x) => x.id === s.etapa_id)?.nome ?? null
-      mudarDeEtapa(s, e.id, 'mudanca')
-      avisar('etapa_mudada', { codigo, de, para: e.nome })
-      return { ok: true, situacao: 'ok', codigo, prospectado_em: s.prospectado_em }
+      mudarDeEtapa(s, e.id, 'mudanca', { motivoId: p_motivo_id, nota: p_nota })
+      avisar('etapa_mudada', { codigo, de, para: e.nome, libera_private_edit: !!e.libera_private_edit })
+      return { ok: true, situacao: 'ok', codigo, etapa: e.nome, libera_private_edit: !!e.libera_private_edit,
+        prospectado_em: s.prospectado_em }
+    },
+
+    // ── escritas: a marca "libera Private Edit" e os motivos (24/09/2026) ──
+    vessel_stylist_etapa_liberar_private_edit({ p_id, p_libera } = {}) {
+      if (p_libera == null) return { ok: false, situacao: 'sem_escolha' }
+      const e = etapaPorId(Number(p_id))
+      if (!e) return { ok: false, situacao: 'nao_achei' }
+      if (!!e.libera_private_edit === !!p_libera) return { ok: true, situacao: 'sem_mudanca', id: e.id }
+      e.libera_private_edit = !!p_libera
+      anotar(e, 'libera_private_edit')
+      return { ok: true, situacao: 'ok', id: e.id }
+    },
+
+    vessel_stylist_motivo_criar({ p_etapa_id, p_nome, p_exige_nota = false } = {}) {
+      const nome = String(p_nome ?? '').trim()
+      if (!nome) return { ok: false, situacao: 'sem_nome' }
+      if (nome.length > 80) return { ok: false, situacao: 'motivo_longo' }
+      const e = etapaPorId(Number(p_etapa_id))
+      if (!e) return { ok: false, situacao: 'nao_achei' }
+      if (e.tipo !== 'saida') return { ok: false, situacao: 'so_saida' }
+      if (motivosAtivosDe(e.id).some((m) => m.nome.trim().toLowerCase() === nome.toLowerCase())) return { ok: false, situacao: 'nome_repetido' }
+      const m = { id: proximo(b.motivos), etapa_id: e.id, nome, ordem: motivosAtivosDe(e.id).length + 1, exige_nota: !!p_exige_nota, ativo: true }
+      b.motivos.push(m)
+      anotarMotivo(m, 'motivo_criar')
+      return { ok: true, situacao: 'ok', id: m.id }
+    },
+
+    vessel_stylist_motivo_renomear({ p_id, p_nome } = {}) {
+      const nome = String(p_nome ?? '').trim()
+      if (!nome) return { ok: false, situacao: 'sem_nome' }
+      if (nome.length > 80) return { ok: false, situacao: 'motivo_longo' }
+      const m = b.motivos.find((x) => x.id === Number(p_id))
+      if (!m) return { ok: false, situacao: 'nao_achei' }
+      if (motivosAtivosDe(m.etapa_id).some((x) => x.id !== m.id && x.nome.trim().toLowerCase() === nome.toLowerCase())) {
+        return { ok: false, situacao: 'nome_repetido' }
+      }
+      m.nome = nome
+      anotarMotivo(m, 'motivo_renomear')
+      return { ok: true, situacao: 'ok', id: m.id }
+    },
+
+    vessel_stylist_motivo_mover({ p_id, p_direcao } = {}) {
+      if (!['subir', 'descer'].includes(p_direcao)) return { ok: false, situacao: 'direcao_invalida' }
+      const m = b.motivos.find((x) => x.id === Number(p_id) && x.ativo !== false)
+      if (!m) return { ok: false, situacao: 'nao_achei' }
+      renumerarMotivos(m.etapa_id)
+      const viz = motivosAtivosDe(m.etapa_id).find((x) => x.ordem === m.ordem + (p_direcao === 'subir' ? -1 : 1))
+      if (!viz) return { ok: false, situacao: 'no_limite' }
+      ;[m.ordem, viz.ordem] = [viz.ordem, m.ordem]
+      anotarMotivo(m, 'motivo_reordenar')
+      return { ok: true, situacao: 'ok', id: m.id }
+    },
+
+    vessel_stylist_motivo_ativar({ p_id, p_ativo } = {}) {
+      if (p_ativo == null) return { ok: false, situacao: 'sem_escolha' }
+      const m = b.motivos.find((x) => x.id === Number(p_id))
+      if (!m) return { ok: false, situacao: 'nao_achei' }
+      if ((m.ativo !== false) === !!p_ativo) return { ok: true, situacao: 'sem_mudanca', id: m.id }
+      if (p_ativo && motivosAtivosDe(m.etapa_id).some((x) => x.nome.trim().toLowerCase() === m.nome.trim().toLowerCase())) {
+        return { ok: false, situacao: 'nome_repetido' }
+      }
+      if (p_ativo) m.ordem = motivosAtivosDe(m.etapa_id).length + 1
+      m.ativo = !!p_ativo
+      renumerarMotivos(m.etapa_id)
+      anotarMotivo(m, 'motivo_ativar')
+      return { ok: true, situacao: 'ok', id: m.id }
+    },
+
+    vessel_stylist_motivo_exigir_nota({ p_id, p_exige } = {}) {
+      if (p_exige == null) return { ok: false, situacao: 'sem_escolha' }
+      const m = b.motivos.find((x) => x.id === Number(p_id))
+      if (!m) return { ok: false, situacao: 'nao_achei' }
+      if (!!m.exige_nota === !!p_exige) return { ok: true, situacao: 'sem_mudanca', id: m.id }
+      m.exige_nota = !!p_exige
+      anotarMotivo(m, 'motivo_exige_nota')
+      return { ok: true, situacao: 'ok', id: m.id }
     },
 
     // ── escritas: as etapas do funil ──────────────────────────────────────
@@ -568,7 +725,7 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
       return { ok: true, situacao: 'ok', id: e.id }
     },
 
-    vessel_stylist_etapa_excluir({ p_id, p_destino = null } = {}) {
+    vessel_stylist_etapa_excluir({ p_id, p_destino = null, p_motivo_id = null, p_nota = null } = {}) {
       const e = etapaPorId(Number(p_id))
       if (!e) return { ok: false, situacao: 'nao_achei' }
       if (e.tipo === 'funil' && etapasAtivas().filter((x) => x.tipo === 'funil').length <= 1) return { ok: false, situacao: 'ultima_do_funil' }
@@ -578,7 +735,9 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
         if (p_destino == null) return { ok: false, situacao: 'precisa_destino', stylists: nela.length }
         const d = etapaPorId(Number(p_destino))
         if (!d || d.id === e.id) return { ok: false, situacao: 'destino_invalido' }
-        for (const s of nela) mudarDeEtapa(s, d.id, 'etapa_excluida')
+        const recusa = conferirMotivo(d.id, p_motivo_id, p_nota)
+        if (recusa) return { ok: false, situacao: recusa, stylists: nela.length }
+        for (const s of nela) mudarDeEtapa(s, d.id, 'etapa_excluida', { motivoId: p_motivo_id, nota: p_nota })
       }
       e.ativa = false
       renumerar()
@@ -617,6 +776,16 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
     vessel_criar_private_edit(a = {}) {
       const s = stylistPorCodigo(maiusculo(a.p_stylist))
       if (!s) return { ok: false, situacao: 'stylist_nao_encontrada', erro: 'Não achei esta stylist. O código é o STY-0000 dela.' }
+      // ⚠️ 24/09/2026: SÓ QUEM ESTÁ NUMA ETAPA QUE LIBERA PRIVATE EDIT (a Ativada).
+      if (!liberada(s)) {
+        const nomes = liberam()
+        const etapa = etapaPorId(s.etapa_id)?.nome ?? null
+        avisar('recusa_nao_liberada', { codigo: s.codigo })
+        return { ok: false, situacao: 'stylist_nao_liberada', etapa, etapas_que_liberam: nomes.length ? nomes.join(', ') : null,
+          erro: `Esta parceira ainda não pode receber um Private Edit: ela está em "${etapa || 'sem etapa'}". `
+            + (nomes.length ? `Mova-a para ${nomes.join(', ')} no Stylist Circle antes de marcar o encontro.`
+              : 'Hoje nenhuma etapa libera Private Edit — marque uma em "Etapas do funil".') }
+      }
       if (!a.p_quando) return { ok: false, situacao: 'sem_data', erro: 'Escolha o dia e a hora do encontro.' }
       const quando = new Date(a.p_quando)
       if (quando.getTime() < agora().getTime() - 86400000) {
@@ -630,8 +799,15 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
         return { ok: false, situacao: 'vagas_invalidas', erro: 'A capacidade planejada é de 7 a 10 convidadas.' }
       }
       const dia = diaEmSaoPaulo(quando)
-      const seq = b.encontros.filter((e) => e.praca === praca && diaDoEncontro(e) === dia).length + 1
-      const codigo = `PE-${dia.replace(/-/g, '')}-${praca}-${String(seq).padStart(2, '0')}`
+      // ⚠️ 24/09/2026 (`2026-09-24-vessel-codigo-do-encontro-sem-repetir.sql`): a
+      // partir do número de sempre, o PRÓXIMO LIVRE — um encontro que mudou de
+      // dia não deixa o código dele ser repetido no dia de origem.
+      let seq = b.encontros.filter((e) => e.praca === praca && diaDoEncontro(e) === dia).length + 1
+      const codigoDo = (n) => `PE-${dia.replace(/-/g, '')}-${praca}-${String(n).padStart(2, '0')}`
+      const usado = (c) => b.encontros.some((e) => e.codigo === c) || b.atendimentos.some((t) => t.evento_codigo === c)
+        || b.origens.some((o) => o.evento_id === c)
+      while (usado(codigoDo(seq))) seq += 1
+      const codigo = codigoDo(seq)
       const chave = sortearChave((k) => b.encontros.some((e) => e.chave === k))
       const e = { id: proximo(b.encontros), codigo, chave, stylist_id: s.id, quando: quando.toISOString(),
         local: limpo(a.p_local), praca, loja: a.p_loja ?? null, vagas, ativa: true, arquivada: false,
@@ -650,6 +826,10 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
       if (a.p_stylist != null) {
         const s = stylistPorCodigo(a.p_stylist)
         if (!s) return { ok: false, situacao: 'stylist_nao_achei' }
+        // ⚠️ 24/09/2026: TROCAR só por uma liberada; manter a de hoje passa.
+        if (s.id !== e.stylist_id && !liberada(s)) {
+          return { ok: false, situacao: 'stylist_nao_liberada', etapas_que_liberam: liberam().join(', ') || null }
+        }
         stylistId = s.id
       }
       if (a.p_vagas != null && (Number(a.p_vagas) < 7 || Number(a.p_vagas) > 10)) return { ok: false, situacao: 'vagas_invalidas' }
@@ -798,10 +978,11 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
         && new Date(e.quando).getTime() >= agora().getTime())
         .sort((x, y) => (x.quando === y.quando ? x.id - y.id : (x.quando < y.quando ? -1 : 1)))[0] || null
       const contatos = b.contatos.filter((c) => c.stylist_id === s.id)
-      // O marco de "ativou" não olha a etapa: `ativada_em`, ou o 1º encontro.
-      const ativou = s.ativada_em || dela.filter((e) => e.status !== 'em_planejamento').map((e) => e.quando).sort()[0] || null
+      // ⚠️ 24/09/2026: a ativação é `ativadaEm` — a mesma do placar.
+      const ativou = ativadaEm(s)
       return {
-        ...num, ok: true, situacao: 'ok', codigo: s.codigo, nome: s.nome, ativada_em: s.ativada_em,
+        ...num, ok: true, situacao: 'ok', codigo: s.codigo, nome: s.nome, ativada_em: ativou,
+        private_edit_agendado_em: s.ativada_em ?? null, ativada_por_encontro_antigo: porEncontroAntigo(s),
         realizados_desde_o_inicio: realizados.length,
         recorrente: realizados.length >= 2,
         ultimo_realizado_em: ultimo,

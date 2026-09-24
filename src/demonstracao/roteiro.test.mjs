@@ -16,7 +16,7 @@ test('onze passos, cada um com quem faz e onde tocar', () => {
 
 test('o roteiro inteiro, na ordem, marca os onze', () => {
   const r = seguir([
-    ['stylist_criada'], ['contato_registrado'], ['etapa_mudada'], ['encontro_criado'],
+    ['stylist_criada'], ['contato_registrado'], ['etapa_mudada', { libera_private_edit: true }], ['encontro_criado'],
     ['convidada_incluida', { id: 201 }], ['convidada_incluida', { id: 202 }], ['cartao_gerado'],
     ['convite_marcado', { marca: 'enviado' }], ['convite_marcado', { marca: 'sim' }],
     ['presenca_marcada', { situacao: 'realizado' }], ['presenca_marcada', { situacao: 'no_show' }],
@@ -49,4 +49,9 @@ test('"pronta" (a Central recarregou) zera o roteiro; aviso desconhecido não me
   assert.equal(aplicarAviso(r, 'qualquer_coisa', {}), r)
   assert.deepEqual(aplicarAviso(r, 'pronta', {}).feitos, [])
   assert.deepEqual(r.feitos, [1, 2], 'não muta o de entrada')
+})
+
+test('passo 3 só quando ela chega numa etapa que libera Private Edit (a Ativada)', () => {
+  assert.deepEqual(seguir([['etapa_mudada', { para: 'Classificação', libera_private_edit: false }]]).feitos, [])
+  assert.deepEqual(seguir([['etapa_mudada', { para: 'Ativada', libera_private_edit: true }]]).feitos, [3])
 })

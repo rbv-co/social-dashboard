@@ -17,7 +17,7 @@
       <div class="cv-ficha-faixa">
         <div class="cv-ficha-quem">
           <div class="cv-ficha-selos">
-            <span class="cv-selo id-selo" :class="`id-tom-${stylist.etapa_tipo === 'saida' ? 'parada' : 'andamento'}`">{{ stylist.etapa || 'Sem etapa' }}</span>
+            <span class="cv-selo id-selo cv-selo-etapa" :class="`id-tom-${seloDaEtapa(stylist).tom}`">{{ etapaComMotivo(stylist) }}</span>
             <span v-if="faixa" class="cv-selo id-selo" :class="`id-tom-${faixa.tom}`">{{ faixa.texto }}</span>
           </div>
           <p class="cv-sub"><span class="cv-codigo">{{ stylist.codigo }}</span><span v-if="stylist.cidade"> · {{ stylist.cidade }}</span></p>
@@ -41,12 +41,17 @@
                  próxima etapa de funil pela ordem; o seletor vai para QUALQUER
                  uma. Nada muda de etapa sozinho. A próxima ação mora junto:
                  é o "o que fazer agora" da mesma pessoa. -->
-            <section v-if="podeEditar || stylist.proxima_acao" class="cv-ficha-cartao cv-ficha-etapa cv-ficha-tom-etapa">
-              <template v-if="podeEditar">
-                <h3 class="cv-etiqueta cv-etiqueta-interna id-titulo"><icone-do-bloco nome="funil" />Etapa</h3>
-                <p class="cv-sub cv-ficha-agora">Agora: <b>{{ stylist.etapa || 'Sem etapa' }}</b>
-                  <span v-if="stylist.prospectado_em"> · prospectada em {{ dataLegivel(stylist.prospectado_em) }}</span></p>
-              </template>
+            <section class="cv-ficha-cartao cv-ficha-etapa cv-ficha-tom-etapa">
+              <h3 class="cv-etiqueta cv-etiqueta-interna id-titulo"><icone-do-bloco nome="funil" />Etapa</h3>
+              <p class="cv-sub cv-ficha-agora">Agora: <b>{{ etapaComMotivo(stylist) }}</b>
+                <span v-if="stylist.prospectado_em"> · prospectada em {{ dataLegivel(stylist.prospectado_em) }}</span></p>
+              <p v-if="stylist.etapa_tipo === 'saida' && stylist.saida_nota" class="cv-sub">Nota da saída: {{ stylist.saida_nota }}</p>
+              <!-- ⚠️ 24/09/2026: SÓ QUEM ESTÁ NUMA ETAPA QUE LIBERA PRIVATE EDIT
+                   (hoje, a Ativada) pode ser anfitriã de um encontro novo. -->
+              <p class="cv-ficha-pe" :class="privateEdit.pode ? 'cv-ficha-pe-sim' : 'cv-ficha-pe-nao'">
+                <span class="cv-selo id-selo" :class="privateEdit.pode ? 'id-tom-viva' : 'id-tom-parada'">Private Edit</span>
+                {{ privateEdit.texto }}</p>
+              <p v-if="avisoDaEtapa" class="cv-nota cv-nota-ok" role="status">{{ avisoDaEtapa }}</p>
               <p v-if="stylist.proxima_acao" class="cv-nota cv-ficha-proxima"><b>Próxima ação:</b> {{ stylist.proxima_acao }}
                 <span v-if="stylist.proxima_acao_em"> — até {{ dataLegivel(stylist.proxima_acao_em) }}</span></p>
               <template v-if="podeEditar">
@@ -64,7 +69,7 @@
                   <button type="button" class="btn id-btn-editar" :disabled="!etapaEscolhida || movendo"
                           @click="moverPara(Number(etapaEscolhida))"><icone-do-bloco nome="funil" />Mover</button>
                 </div>
-                <p v-if="erroDaEtapa" class="cv-nota cv-nota-erro">{{ erroDaEtapa }}</p>
+                <p v-if="erroDaEtapa && !pedindoMotivo" class="cv-nota cv-nota-erro">{{ erroDaEtapa }}</p>
               </template>
             </section>
 
@@ -120,7 +125,9 @@
               <p v-else-if="!historicoDeEtapas.length" class="cv-vazio">Nenhuma mudança de etapa ainda.</p>
               <ul v-else class="cv-historico">
                 <li v-for="h in historicoDeEtapas" :key="h.id">
-                  <p class="cv-sub"><b>{{ h.de ? `${h.de} → ${h.para}` : `Entrou em ${h.para}` }}</b> · {{ motivoDoHistorico(h.motivo) }}</p>
+                  <p class="cv-sub"><b>{{ h.de ? `${h.de} → ${h.para}` : `Entrou em ${h.para}` }}</b><span
+                     v-if="h.motivo_de_saida"> · <b>{{ h.motivo_de_saida }}</b></span> · {{ motivoDoHistorico(h.motivo) }}</p>
+                  <p v-if="h.nota" class="cv-nota cv-nota-primeira">{{ h.nota }}</p>
                   <p class="cv-sub">{{ dataHoraLegivel(h.em) }}<span v-if="h.por_nome"> · {{ h.por_nome }}</span></p>
                 </li>
               </ul>
@@ -141,6 +148,11 @@
         </div>
       </div>
     </div>
+    <!-- 24/09/2026: o motivo da saída — o MESMO componente do arrastar no quadro. -->
+    <escolha-do-motivo v-if="pedindoMotivo" :etapa="pedindoMotivo" :nome="stylist.nome"
+                       :gravando="movendo" :erro="erroDaEtapa"
+                       @cancelar="pedindoMotivo = null; erroDaEtapa = ''"
+                       @confirmar="(m) => gravarMovimento(pedindoMotivo.id, m)" />
   </div>
 </template>
 
@@ -154,7 +166,10 @@ import { telefoneLegivel } from './t11-regras.js'
 import { dataLegivel, dataHoraLegivel } from './enderecos-publicos.js'
 import {
   CANAIS, RESULTADOS, proximaEtapa, etapasDoFunil, etapasDeSaida, mensagemDasEtapas, motivoDoHistorico,
+  etapaComMotivo, privateEditDaStylist, pedeMotivo, avisoDeLiberada,
 } from './crm-da-stylist-regras.js'
+import { seloDaEtapa } from './t11-regras.js'
+import EscolhaDoMotivo from './escolha-do-motivo.vue'
 import IconeDoBloco from '../../compartilhado/icone-do-bloco.vue'
 import ContatoFacil from './contato-facil.vue'
 import ScorecardDaStylist from './scorecard-da-stylist.vue'
@@ -233,14 +248,34 @@ async function carregarHistoricoDeEtapas() {
   finally { carregandoEtapas.value = false }
 }
 
-async function moverPara(etapaId) {
+// ⚠️ 24/09/2026: SAÍDA COM MOTIVOS abre a escolha do motivo antes de gravar
+// (o banco recusa sem ele); o resto grava direto, como antes.
+const pedindoMotivo = ref(null)
+const avisoDaEtapa = ref('')
+const privateEdit = computed(() => privateEditDaStylist(props.stylist, props.etapas))
+
+function moverPara(etapaId) {
   if (movendo.value || !etapaId) return
+  const destino = props.etapas.find((e) => e.id === etapaId)
+  erroDaEtapa.value = ''
+  avisoDaEtapa.value = ''
+  if (pedeMotivo(destino)) { pedindoMotivo.value = destino; return }
+  gravarMovimento(etapaId, null)
+}
+
+async function gravarMovimento(etapaId, motivo) {
+  if (movendo.value) return
   movendo.value = true
   erroDaEtapa.value = ''
   try {
-    const r = await props.chamar('vessel_stylist_mover_de_etapa', { p_codigo: props.stylist.codigo, p_etapa_id: etapaId })
+    const r = await props.chamar('vessel_stylist_mover_de_etapa', {
+      p_codigo: props.stylist.codigo, p_etapa_id: etapaId,
+      p_motivo_id: motivo?.motivoId ?? null, p_nota: motivo?.nota ?? null,
+    })
     if (!r?.ok) { erroDaEtapa.value = mensagemDasEtapas(r?.situacao); return }
     etapaEscolhida.value = ''
+    pedindoMotivo.value = null
+    if (r.libera_private_edit) avisoDaEtapa.value = avisoDeLiberada(props.stylist.nome, props.etapas.find((e) => e.id === etapaId))
     emit('mudou')
     await carregarHistoricoDeEtapas()
   } catch { erroDaEtapa.value = 'Não consegui falar com o banco agora. Tente de novo em um instante.' }
