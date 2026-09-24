@@ -217,9 +217,10 @@ function somarDias(iso, delta) {
 const hojeISO = hojeISOSaoPaulo()
 const ontemISO = somarDias(hojeISO, -1)
 
-const atalho = ref('ontem')
-const diaInicio = ref(ontemISO)
-const diaFim = ref(ontemISO)
+// Padrão "Hoje" (24/09/2026, pedido do dono) — antes abria em "Ontem".
+const atalho = ref('hoje')
+const diaInicio = ref(hojeISO)
+const diaFim = ref(hojeISO)
 const diaInicioInput = ref(diaInicio.value)
 const diaFimInput = ref(diaFim.value)
 
