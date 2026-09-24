@@ -6288,7 +6288,9 @@ onMounted(async () => {
    solto de tamanho próprio. */
 .tela-frota .fr-mini{appearance:none;border:1px solid var(--border);background:none;color:var(--muted);border-radius:9px;width:34px;height:34px;font-size:max(9px, calc(13px * var(--escala-texto, 1)));cursor:pointer;flex:0 0 auto;touch-action:manipulation;}
 .tela-frota .fr-mini:hover{border-color:var(--red,#c0392b);color:var(--red,#c0392b);}
-.tela-frota .fr-selo.espera{background:color-mix(in srgb,var(--orange,#d97706) 18%,transparent);color:var(--orange,#d97706);}
+/* 25/09/2026: o par da casa com o token de situação — o laranja puro sobre a
+   tinta de 18% dava 3,72 no claro. */
+.tela-frota .fr-selo.espera{background:color-mix(in srgb,var(--situacao-queda) 12%,var(--surface));color:color-mix(in srgb,var(--situacao-queda) 75%,var(--text));}
 .tela-frota .fr-selo.boa{background:color-mix(in srgb,var(--green,#16a34a) 18%,transparent);color:var(--green,#16a34a);}
 .tela-frota .fr-selo.ruim{background:color-mix(in srgb,var(--red,#c0392b) 16%,transparent);color:var(--red,#c0392b);}
 .tela-frota .fr-selo.neutra{background:color-mix(in srgb,var(--muted) 16%,transparent);color:var(--muted);}
