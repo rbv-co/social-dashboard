@@ -263,6 +263,10 @@ passo('Private Edit')
   const t = await abrirPeloMenu('Private Edit')
   if (!/Marina Castro \(exemplo\)/.test(t)) falhar(onde, 'os encontros de exemplo não apareceram')
   await mexerEmTodosOsSelects()
+  // ⚠️ 25/09/2026: o Private Edit abre na AGENDA (pedido do dono) — a busca é da lista.
+  if (!/Agenda das lojas/i.test(await conferirTela())) falhar(onde, 'o Private Edit não abriu na Agenda')
+  await clicar(pagina.getByRole('tab', { name: 'Lista' }), 'aba Lista')
+  await esperar()
   await pagina.locator('input[type="search"]').first().fill('CPS'); await esperar(); await conferirTela()
   await pagina.locator('input[type="search"]').first().fill(''); await esperar()
 }

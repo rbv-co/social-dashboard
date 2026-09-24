@@ -68,9 +68,9 @@
            Appointments), para bater agenda e ver encontro sobreposto. -->
       <div class="cv-escolha cv-vistas pe-vistas" role="tablist" aria-label="Vista">
         <button type="button" role="tab" class="btn" :class="{ ativa: vista === 'lista' }"
-                :aria-selected="vista === 'lista'" @click="vista = 'lista'"><icone-do-bloco nome="lista" />Lista</button>
+                :aria-selected="vista === 'lista'" @click="escolherVista('lista')"><icone-do-bloco nome="lista" />Lista</button>
         <button type="button" role="tab" class="btn" :class="{ ativa: vista === 'agenda' }"
-                :aria-selected="vista === 'agenda'" @click="vista = 'agenda'"><icone-do-bloco nome="calendario" />Agenda</button>
+                :aria-selected="vista === 'agenda'" @click="escolherVista('agenda')"><icone-do-bloco nome="calendario" />Agenda</button>
       </div>
 
       <agenda-do-private-edit v-if="vista === 'agenda'" :chamar="chamar" :versao="versaoDaAgenda"
@@ -558,7 +558,21 @@ const cartaoAberto = ref(null)
 const filtro = ref({ ...FILTRO_VAZIO })
 // 25/09/2026: Lista | Agenda. A agenda relê quando `versaoDaAgenda` sobe (a
 // cada leitura da lista, que acontece depois de toda gravação desta tela).
-const vista = ref('lista')
+// ⚠️ A AGENDA ABRE PRIMEIRO (pedido do dono, 25/09/2026: "não vi no Private
+// Edit… quero que mostre mesmo não tendo nada marcado"). Com a lista primeiro,
+// a agenda ficava escondida atrás de um botão — e sem encontros a tela parecia
+// não ter agenda nenhuma. A escolha da pessoa fica lembrada neste navegador.
+const CHAVE_DA_VISTA = 'iamundi-pe-vista'
+function vistaGuardada() {
+  try { return localStorage.getItem(CHAVE_DA_VISTA) === 'lista' ? 'lista' : 'agenda' } catch { return 'agenda' }
+}
+const vista = ref(vistaGuardada())
+// Só a escolha da PESSOA fica guardada — abrir um encontro pela agenda troca
+// para a lista sozinho e não deve virar a preferência dela.
+function escolherVista(v) {
+  vista.value = v
+  try { localStorage.setItem(CHAVE_DA_VISTA, v) } catch { /* sem armazenamento: só não lembra */ }
+}
 const versaoDaAgenda = ref(0)
 
 const novo = reactive({ stylist: '', quando: '', praca: '', loja: '', vagas: 8, local: '' })
