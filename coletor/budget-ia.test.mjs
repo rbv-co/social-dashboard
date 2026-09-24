@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { campanhaEmVeiculacao, montarMensagens, parsearSaida, diaDaSemanaBR, decidirEscopo, veiculouNaJanela, selecionarCampanhas } from './budget-ia.mjs';
+import { normalizarRegua } from '../src/ferramentas/gestao-trafego/regua.js';
 
 const AGORA = Date.parse('2026-07-02T12:00:00Z');
 
@@ -154,7 +155,14 @@ test('parsearSaida: sem anuncios = array vazio', () => {
 // ---------------------------------------------------------------------------
 // O `user` e "prosa + JSON + prosa": nao da pra JSON.parse do primeiro '{' ate
 // o fim. Pega da primeira chave ate a ultima.
-const dadosDoPrompt = (user) => JSON.parse(user.slice(user.indexOf('{'), user.lastIndexOf('}') + 1));
+function dadosDoPrompt(...args) {
+  // Uso antigo: dadosDoPrompt(user) — o `user` já veio de um montarMensagens
+  // chamado à parte (alguns testes olham `system` também e não iam ganhar nada
+  // repetindo a chamada aqui). Uso novo (Tarefa 5): dadosDoPrompt(camp, ins,
+  // ads, conjuntos, regua, extra) — chama montarMensagens por dentro.
+  const user = typeof args[0] === 'string' ? args[0] : montarMensagens(...args).user;
+  return JSON.parse(user.slice(user.indexOf('{'), user.lastIndexOf('}') + 1));
+}
 
 // ORCAMENTO REAL NO PROMPT (2026-07-29). O robo lia so `camp.daily_budget`; em
 // campanha ABO isso e nulo, entao o modelo recebia "sem orcamento" e calculava
@@ -229,4 +237,216 @@ test('o prompt PROIBE falar "do dono": quem le e a propria pessoa', () => {
   const { system } = montarMensagens({ name: 'C', objective: 'OUTCOME_TRAFFIC' }, {}, [], []);
   assert.match(system, /NUNCA "a meta do dono"/);
   assert.ok(!/compare com a meta DELE/.test(system), 'a propria instrucao nao pode usar a forma que proibe');
+});
+
+// ---------------------------------------------------------------------------
+// A CEGUEIRA (24/09/2026): o robô mandava ao Opus a META da conta e o custo
+// atual NULO em toda campanha que não fosse de engajamento, enquanto o system
+// prompt ordenava "cite esse número em reais e contra a meta".
+// A chave é `metas` — metaDoBalde lê `regua.metas[balde]` (regua.js:109).
+// `metas_resultado` NÃO existe: devolveria 0 e o índice viria null.
+// (Reusa o `dadosDoPrompt(user)` já definido acima — dois helpers com o mesmo
+// nome e assinaturas diferentes quebrariam o arquivo.)
+// ---------------------------------------------------------------------------
+//
+// A Tarefa 5 (tendência) precisava de um ajudante que chamasse `montarMensagens`
+// com os 6 argumentos e já devolvesse o JSON — o plano pedia um `dadosDoPrompt2`
+// separado. Em vez de duplicar (dois nomes quase iguais para a mesma ideia),
+// `dadosDoPrompt` virou variádico: string = comportamento de sempre (o `user`
+// já pronto); qualquer outra coisa = os argumentos de `montarMensagens`, que
+// ele chama por dentro. Nenhuma chamada antiga muda.
+const REGUA_TESTE = normalizarRegua({
+  metas: { leads: 15, vendas: 80, trafego: 1.5, mensagens: 10, reconhecimento: 25 },
+});
+
+const INS_LEAD = {
+  spend: '1000', impressions: '50000', clicks: '800', ctr: '1.6', cpc: '1.25',
+  reach: '25000', frequency: '2',
+  actions: [{ action_type: 'lead', value: '40' }],
+};
+
+test('campanha de LEAD leva o custo atual, não só a meta', () => {
+  const camp = { id: '1', name: 'Captação', objective: 'OUTCOME_LEADS' };
+  const { user } = montarMensagens(camp, INS_LEAD, [], [], REGUA_TESTE);
+  const d = dadosDoPrompt(user);
+  assert.equal(d.regua.custo_atual_reais, 25, 'custo por lead = 1000 / 40');
+  assert.ok(d.regua.meta_reais > 0, 'a meta precisa continuar indo junto');
+  assert.ok(Math.abs(d.regua.indice_contra_meta - 25 / 15) < 0.001,
+    'índice = custo ÷ meta; 1,0 é exatamente na meta');
+});
+
+test('campanha de VENDAS também leva o custo atual', () => {
+  const camp = { id: '2', name: 'Vendas', objective: 'OUTCOME_SALES' };
+  const ins = { spend: '1000', actions: [{ action_type: 'purchase', value: '20' }] };
+  const { user } = montarMensagens(camp, ins, [], [], REGUA_TESTE);
+  const d = dadosDoPrompt(user);
+  assert.equal(d.regua.custo_atual_reais, 50, 'CAC = 1000 / 20');
+});
+
+test('campanha de engajamento continua medida pelo ponto ponderado', () => {
+  const camp = { id: '3', name: 'Engaja', objective: 'OUTCOME_ENGAGEMENT' };
+  // 'post_reaction' é curtida (peso 1, PESOS_PADRAO em ponderada.js) — 200
+  // curtidas viram 200 pontos; R$ 50 / 200 pontos = R$ 0,25 por ponto. Sem
+  // esta conta batida na régua, inverter `pnd.custoPorPonto` por
+  // `custoDoAlvo(...)` (que devolve null pra engajamento — ver metricas.js)
+  // não seria pego: os dois testes de cima (LEAD/VENDAS) passam do mesmo jeito
+  // com a mutação, porque não passam por este ramo.
+  const ins = { spend: '50', actions: [{ action_type: 'post_reaction', value: '200' }] };
+  const { user } = montarMensagens(camp, ins, [], [], REGUA_TESTE);
+  const d = dadosDoPrompt(user);
+  assert.equal(d.regua.tipo_de_campanha, 'engajamento');
+  assert.equal(d.regua.rotulo, 'Custo por ponto');
+  assert.equal(d.regua.custo_atual_reais, 0.25, 'custo por ponto = 50 / 200 pontos (200 curtidas × peso 1)');
+});
+
+test('campanha sem resultado na janela manda null, nunca zero', () => {
+  const camp = { id: '4', name: 'Parada', objective: 'OUTCOME_LEADS' };
+  const { user } = montarMensagens(camp, { spend: '800', actions: [] }, [], [], REGUA_TESTE);
+  const d = dadosDoPrompt(user);
+  assert.equal(d.regua.custo_atual_reais, null);
+  assert.equal(d.regua.indice_contra_meta, null);
+});
+
+// ---------------------------------------------------------------------------
+// A CEGUEIRA DO ANÚNCIO (24/09/2026): o mapa de `dados.anuncios` só levava
+// gasto, CTR, CPC, impressões, alcance e frequência — nunca o RESULTADO. O
+// Opus decidia pausar criativo de campanha de conversão olhando só CTR.
+// (Reusa `montarMensagens` + `dadosDoPrompt(user)`, `INS_LEAD` e `REGUA_TESTE`
+// já definidos acima — nada de segunda versão desses três.)
+// ---------------------------------------------------------------------------
+
+test('cada anúncio leva o resultado dele, não só CTR', () => {
+  const camp = { id: '5', name: 'Captação', objective: 'OUTCOME_LEADS' };
+  const ads = [{
+    ad_id: 'a1', ad_name: 'Criativo A', spend: '200', ctr: '2', cpc: '1',
+    impressions: '10000', reach: '8000', frequency: '1.25',
+    actions: [{ action_type: 'lead', value: '10' }],
+  }, {
+    ad_id: 'a2', ad_name: 'Criativo B', spend: '300', ctr: '2.4', cpc: '1',
+    impressions: '12000', reach: '9000', frequency: '1.33',
+    actions: [],
+  }];
+  const { user } = montarMensagens(camp, INS_LEAD, ads, [], REGUA_TESTE);
+  const d = dadosDoPrompt(user);
+  assert.equal(d.anuncios[0].resultado, 10);
+  assert.equal(d.anuncios[0].custo_por_resultado, 20, '200 / 10 leads');
+  assert.equal(d.anuncios[1].resultado, null, 'sem lead na janela: null, não zero');
+  assert.equal(d.anuncios[1].custo_por_resultado, null,
+    'o criativo B tem CTR MAIOR e nenhum lead — é isso que o modelo precisa ver');
+});
+
+test('o balde usado no anúncio é o da CAMPANHA, nunca recalculado', () => {
+  // A Meta OMITE um action_type quando a contagem é zero: um anúncio de campanha
+  // de WhatsApp que não puxou conversa na janela fica idêntico a um de
+  // engajamento puro. Recalcular por anúncio classificaria no mercado errado.
+  //
+  // ARMADILHA (rodada de correção 1): com `actions: []` no anúncio, os dois
+  // caminhos convergem pra `resultado: null` — o certo (balde 'mensagens',
+  // sem conversa na janela) E o errado (balde recalculado por `camp.objective`
+  // = 'engajamento', cujo `alvo.resultado` é null POR DEFINIÇÃO em alvos.js,
+  // o único balde sem métrica de quantidade). Um teste que não distingue os
+  // dois passaria com o bug de volta. Por isso o anúncio abaixo tem uma
+  // conversa de verdade: só o balde 'mensagens' sabe ler `conversas`;
+  // 'engajamento' devolveria null de qualquer jeito.
+  const camp = { id: '6', name: 'Zap', objective: 'OUTCOME_ENGAGEMENT' };
+  const conjuntos = [{ id: 'c1', destination_type: 'WHATSAPP' }];
+  const ads = [{
+    ad_id: 'b1', ad_name: 'Puxou conversa', spend: '150',
+    actions: [{ action_type: 'onsite_conversion.messaging_conversation_started_7d', value: '3' }],
+  }];
+  const { user } = montarMensagens(camp, { spend: '150', actions: [] }, ads, conjuntos, REGUA_TESTE);
+  const d = dadosDoPrompt(user);
+  assert.equal(d.regua.tipo_de_campanha, 'mensagens', 'o conjunto diz WhatsApp');
+  assert.equal(d.anuncios[0].resultado, 3, 'balde mensagens lê conversas; engajamento não teria como');
+  assert.equal(d.anuncios[0].custo_por_resultado, 50, '150 / 3 conversas');
+});
+
+// ---------------------------------------------------------------------------
+// TENDÊNCIA E TEMPO NO AR (Tarefa 5, 24/09/2026): o robô mandava uma janela só
+// — o modelo não tinha como dizer se a campanha estava melhorando ou piorando,
+// e "o que mudou desde ontem" é exatamente o que se olha às 8h da manhã.
+// ---------------------------------------------------------------------------
+
+test('a janela anterior entra no prompt para o modelo ver o sentido', () => {
+  const camp = { id: '7', name: 'Captação', objective: 'OUTCOME_LEADS' };
+  const anterior = { spend: '1000', actions: [{ action_type: 'lead', value: '80' }] };
+  const d = dadosDoPrompt(camp, INS_LEAD, [], [], REGUA_TESTE, { insAnterior: anterior });
+  assert.equal(d.janela_anterior.custo_atual_reais, 12.5, '1000 / 80 na janela anterior');
+  assert.equal(d.regua.custo_atual_reais, 25, 'e 25 agora: o custo DOBROU');
+  assert.equal(d.janela_anterior.gasto, 1000);
+});
+
+test('sem janela anterior o campo é null e nada quebra', () => {
+  const camp = { id: '8', name: 'Nova', objective: 'OUTCOME_LEADS' };
+  const d = dadosDoPrompt(camp, INS_LEAD, [], [], REGUA_TESTE, {});
+  assert.equal(d.janela_anterior, null);
+});
+
+test('campanha recém-subida vai marcada como em aprendizado', () => {
+  const camp = { id: '9', name: 'Nova', objective: 'OUTCOME_LEADS' };
+  const d = dadosDoPrompt(camp, INS_LEAD, [], [], REGUA_TESTE, { diasNoAr: 2 });
+  assert.equal(d.dias_no_ar, 2);
+  assert.equal(d.em_aprendizado, true, 'menos de 3 dias: a Meta ainda está aprendendo');
+  const madura = dadosDoPrompt(camp, INS_LEAD, [], [], REGUA_TESTE, { diasNoAr: 30 });
+  assert.equal(madura.em_aprendizado, false);
+});
+
+test('montarMensagens sem o 6o argumento não quebra (compatibilidade)', () => {
+  const camp = { id: '10', name: 'Velha chamada', objective: 'OUTCOME_LEADS' };
+  const d = dadosDoPrompt(camp, INS_LEAD, [], [], REGUA_TESTE);
+  assert.equal(d.janela_anterior, null);
+  assert.equal(d.dias_no_ar, null);
+  assert.equal(d.em_aprendizado, false, 'sem dado de idade, não presume aprendizado');
+  assert.equal(d.dias_da_janela, null, 'sem o dado, não inventa um número de dias');
+});
+
+test('engajamento também ganha custo na janela anterior (ponto ponderado, não null)', () => {
+  // `janela_anterior.custo_atual_reais` usa a mesma função que calcula
+  // `regua.custo_atual_reais` — por isso os dois campos têm o MESMO NOME: são
+  // a mesma grandeza, e é o par que o modelo compara pra ver a tendência.
+  // Como essa função cobre engajamento com o ponto ponderado, a janela
+  // anterior de campanha de engajamento também ganha custo (antes ficava null).
+  const camp = { id: '11', name: 'Engaja', objective: 'OUTCOME_ENGAGEMENT' };
+  const ins = { spend: '50', actions: [{ action_type: 'post_reaction', value: '200' }] };
+  const anterior = { spend: '100', actions: [{ action_type: 'post_reaction', value: '200' }] };
+  const d = dadosDoPrompt(camp, ins, [], [], REGUA_TESTE, { insAnterior: anterior });
+  assert.equal(d.janela_anterior.custo_atual_reais, 0.5, '100 / 200 pontos na janela anterior');
+});
+
+// ---------------------------------------------------------------------------
+// RODADA DE CORREÇÃO 1 (24/09/2026): três furos achados na leitura do prompt
+// pelo próprio dono.
+// ---------------------------------------------------------------------------
+
+test('M1: dias_da_janela vai no JSON e o prompt não crava mais "7 dias"', () => {
+  // A janela é since=hoje-7d até until=hoje: 8 dias INCLUSIVE, não 7. O exemplo
+  // do prompt cravava "7 dias" e a justificativa herdava o número errado.
+  const camp = { id: '12', name: 'Captação', objective: 'OUTCOME_LEADS' };
+  const { system, user } = montarMensagens(camp, INS_LEAD, [], [], REGUA_TESTE, { diasJanela: 8 });
+  const d = dadosDoPrompt(user);
+  assert.equal(d.dias_da_janela, 8);
+  assert.match(system, /dias_da_janela/, 'o prompt tem de citar o campo, não um número fixo');
+  assert.ok(!/em 7 dias/.test(system), 'não pode sobrar o "7 dias" cravado no exemplo');
+});
+
+test('IMPORTANTE 1: aprendizado tem válvula também para "sem nenhum resultado", não só "acima da meta"', () => {
+  // Campanha de 2 dias sem NENHUM resultado tem custo_atual_reais nulo — com
+  // nulo não dá pra dizer "acima da meta". Só essa válvula, o prompt mandava
+  // manter até campanha nova queimando dinheiro sem um lead sequer.
+  const camp = { id: '13', name: 'Nova queimando', objective: 'OUTCOME_LEADS' };
+  const { system } = montarMensagens(camp, { spend: '500', actions: [] }, [], [], REGUA_TESTE, { diasNoAr: 2 });
+  assert.match(system, /acima da meta OU gastando sem nenhum resultado/,
+    'a válvula de escape do aprendizado precisa cobrir também "sem resultado nenhum"');
+});
+
+test('IMPORTANTE 2: resultado nulo no anúncio não é lido como "não produziu nada"', () => {
+  // ALVOS.engajamento.resultado é null POR DEFINIÇÃO (alvos.js) — todo anúncio
+  // de campanha de engajamento chega com resultado: null, e a instrução antiga
+  // ("CTR alto e nenhum resultado é candidato a pausar") lia esse null como
+  // criativo ruim. O prompt agora manda julgar pelo custo_por_resultado.
+  const camp = { id: '14', name: 'Engaja', objective: 'OUTCOME_ENGAGEMENT' };
+  const { system } = montarMensagens(camp, {}, [], [], REGUA_TESTE);
+  assert.match(system, /não conta resultado por unidade/);
+  assert.match(system, /não leia isso como "o criativo não produziu nada"/);
+  assert.match(system, /julgue o anúncio pelo `custo_por_resultado`/);
 });

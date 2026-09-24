@@ -59,6 +59,37 @@ export function baldeEfetivo(objective, conjuntos) {
   return balde;
 }
 
+// Campanha DE SEGUIDORES — a Meta não devolve NADA que identifique isso: não
+// há ação de "novo seguidor" por campanha (conferido na Graph API real,
+// 12/09/2026, ver db/migrations/2026-09-12-meta-ads-hora-cliques.sql e
+// .../2026-09-12-meta-ads-hora-visitas-perfil-da-conta.sql — nenhuma campanha
+// testada tinha essa ação). O NOME que o gestor de tráfego escreveu na Meta é
+// o único sinal que existe. Isto é MULETA até a Onda B (dar a estas campanhas
+// um alvo próprio, custo por seguidor estimado — ver
+// docs/superpowers/specs/2026-09-24-gt-analise-potente-design.md); aqui só
+// serve pra parar o robô de julgar por um custo que não mede seguidor nenhum.
+//
+// Os nomes reais NÃO seguem um padrão único — já apareceram, nas contas:
+//   [+SEGUIDORES] SeguidoresParceiros            (sem espaço)
+//   [+ SEGUIDORES] DETALHES | P3                 (com espaço)
+//   [SEGUIDORES][REMARKETING]                    (sem o "+")
+//   [400]_AXIOM_05_SEGUID_VESSEL-CAMPINAS        (abreviado, no meio do nome)
+// Um `startsWith('[+ SEGUIDORES]')` (o que relatorio-por-hora.js:36 faz, pra
+// outro fim) pegaria menos da metade destes. Por isso o critério aqui é
+// "contém SEGUID em qualquer posição", sem diferenciar maiúsculas/acentos —
+// cobre as quatro formas acima sem exigir prefixo fixo.
+//
+// NÃO confundir com campanha de VISITAS AO PERFIL (ex.:
+// "[300]_VESSEL_PERFIL_TOPO_VISITAS_ABO_260922_LOCALIZAÇÃO"): essa mede
+// visita mesmo, tem custo por resultado válido, e não deve cair aqui — o
+// nome dela não contém "SEGUID".
+export function ehDeSeguidores(nome) {
+  const normalizado = String(nome || '')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '') // tira acento, se algum dia aparecer um
+    .toUpperCase();
+  return normalizado.includes('SEGUID');
+}
+
 // O balde de um objetivo da FÁBRICA — recebe a linha inteira de
 // `fabrica_objetivos` (chave, rotulo, meta_objective, destination_type,
 // optimization_goal…).

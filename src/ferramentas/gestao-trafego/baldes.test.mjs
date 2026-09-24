@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { baldeDoObjetivo, ehDeWhatsapp, baldeEfetivo, baldeDoObjetivoDaFabrica } from './baldes.js';
+import { baldeDoObjetivo, ehDeWhatsapp, baldeEfetivo, baldeDoObjetivoDaFabrica, ehDeSeguidores } from './baldes.js';
 
 test('cada objetivo cai no seu balde', () => {
   assert.equal(baldeDoObjetivo('OUTCOME_TRAFFIC'), 'trafego');
@@ -102,4 +102,29 @@ test('linha ausente ou lixo cai em padrao, sem quebrar', () => {
   // sugestoes simplesmente nao aparece.
   for (const lixo of [null, undefined, {}, 'engajamento', 42, []])
     assert.equal(baldeDoObjetivoDaFabrica(lixo), 'padrao');
+});
+
+test('ehDeSeguidores pega as quatro formas reais, sem padrao unico', () => {
+  // Os quatro nomes que existem hoje nas contas — nenhum startsWith unico
+  // cobre todos (ver comentario em baldes.js).
+  assert.equal(ehDeSeguidores('[+SEGUIDORES] SeguidoresParceiros'), true, 'sem espaco');
+  assert.equal(ehDeSeguidores('[+ SEGUIDORES] DETALHES | P3'), true, 'com espaco');
+  assert.equal(ehDeSeguidores('[SEGUIDORES][REMARKETING]'), true, 'sem o +');
+  assert.equal(ehDeSeguidores('[400]_AXIOM_05_SEGUID_VESSEL-CAMPINAS'), true, 'abreviado no meio do nome');
+});
+
+test('ehDeSeguidores nao pega campanha de outro tipo por engano', () => {
+  assert.equal(ehDeSeguidores('[LEADS] MOTO OU PARCELA? | P3'), false);
+  // Visita ao perfil e outro produto: mede visita de verdade, custo por
+  // resultado valido — nao pode cair na muleta de seguidores so por estar
+  // perto do tema.
+  assert.equal(ehDeSeguidores('[300]_VESSEL_PERFIL_TOPO_VISITAS_ABO_260922_LOCALIZAÇÃO'), false);
+});
+
+test('ehDeSeguidores e case/acento-insensivel e nao quebra com lixo', () => {
+  assert.equal(ehDeSeguidores('[+ seguidores] minusculo'), true);
+  assert.equal(ehDeSeguidores(null), false);
+  assert.equal(ehDeSeguidores(undefined), false);
+  assert.equal(ehDeSeguidores(''), false);
+  assert.equal(ehDeSeguidores(42), false);
 });
