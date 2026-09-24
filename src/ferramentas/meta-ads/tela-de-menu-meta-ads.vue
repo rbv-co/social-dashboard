@@ -73,6 +73,14 @@
           <div class="smenu-card-desc">Dashboard executivo: growth, engagement e leads por período — o mesmo relatório que vai pro grupo, só que consultável a qualquer hora.</div>
           <span class="smenu-card-enter">→</span>
         </div>
+        <div class="smenu-card" v-if="podeAbrir('meta-base-de-leads')" @click="ir('meta-base-de-leads')">
+          <div class="smenu-card-icon" style="background:var(--accent)">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--sobre-cor)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="8" r="4"/><path d="M3 21c0-3.9 3.1-7 7-7 1.5 0 2.9.5 4 1.3"/><path d="M18 14v6M15 17h6"/></svg>
+          </div>
+          <div class="smenu-card-title">Base de Leads</div>
+          <div class="smenu-card-desc">Checkout iniciado, pop-up e pedido de atendimento — quando cada lead entrou, numa única linha do tempo.</div>
+          <span class="smenu-card-enter">→</span>
+        </div>
       </div>
     </div>
   </div>
