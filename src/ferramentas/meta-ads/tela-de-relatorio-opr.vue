@@ -376,13 +376,13 @@ onMounted(() => carregar())
 .kpi-label { font: 400 14px Georgia, serif; margin-bottom: 3px; overflow-wrap: anywhere; }
 .kpi-value { font: 700 clamp(18px,1.6vw,32px)/1.05 Georgia, serif; letter-spacing: .02em; white-space: nowrap; }
 .kpi-caption { margin-top: 9px; font-size: 9px; letter-spacing: .2em; text-transform: uppercase; color: #797b77; }
-.kpi-card--grupo { grid-template-columns: 38px 1fr; padding: 14px 14px; min-height: 104px; }
+.kpi-card--grupo { grid-template-columns: 38px 1fr; padding: 14px 14px; min-height: 104px; align-items: center; }
 .kpi-card--grupo .icon-circle { width: 38px; height: 38px; }
 .kpi-card--grupo .icon-circle svg { width: 20px; height: 20px; }
-.kpi-group { display: flex; justify-content: space-between; gap: 10px; margin-top: 7px; flex-wrap: nowrap; }
-.kpi-group-item { min-width: 0; }
-.kpi-group-value { font: 700 15px Georgia, serif; line-height: 1.1; white-space: nowrap; }
-.kpi-group-label { margin-top: 3px; font-size: 8px; letter-spacing: .14em; text-transform: uppercase; color: #797b77; white-space: nowrap; }
+.kpi-group { display: flex; flex-direction: column; gap: 3px; margin-top: 5px; }
+.kpi-group-item { display: flex; align-items: baseline; gap: 7px; min-width: 0; }
+.kpi-group-value { font: 700 15px Georgia, serif; line-height: 1.3; white-space: nowrap; }
+.kpi-group-label { font-size: 9px; letter-spacing: .14em; text-transform: uppercase; color: #797b77; white-space: nowrap; }
 /* Grade 2×2 — cada painel com a mesma largura que os 3-em-linha tinham
    antes (metade da tela, não um quarto), pra caber Tráfego + Engajamento +
    Vendas + Leads sem espremer número/rótulo. `align-items: stretch`
