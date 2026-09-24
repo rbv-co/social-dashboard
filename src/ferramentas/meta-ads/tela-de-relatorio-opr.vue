@@ -379,8 +379,8 @@ onMounted(() => carregar())
 .kpi-card--grupo { grid-template-columns: 40px 1fr; padding: 16px 14px; min-height: 108px; align-items: start; }
 .kpi-card--grupo .icon-circle { width: 40px; height: 40px; margin-top: 2px; }
 .kpi-card--grupo .icon-circle svg { width: 22px; height: 22px; }
-.kpi-group { display: flex; flex-direction: column; gap: 7px; margin-top: 9px; }
-.kpi-group-item { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.kpi-group { display: grid; grid-template-columns: max-content 1fr; column-gap: 10px; row-gap: 7px; margin-top: 9px; align-items: baseline; }
+.kpi-group-item { display: contents; }
 .kpi-group-value { font: 700 15px Georgia, serif; line-height: 1.3; white-space: nowrap; }
 .kpi-group-label { font-size: 9px; letter-spacing: .14em; text-transform: uppercase; color: #797b77; white-space: nowrap; }
 /* Grade 2×2 — cada painel com a mesma largura que os 3-em-linha tinham
