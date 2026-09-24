@@ -210,7 +210,8 @@ test('Stylists: o link dela, quantos abriram e quantas ela trouxe', async () => 
   const a = await aba('Stylists', {
     stylists: [{ id: 5, codigo: 'ANA', nome: 'Ana Stylist', whatsapp: '199',
       cidade: 'Campinas', instagram: '@ana', atuacao: 'personal-shopper',
-      estagio: 'ativa', praca_preview: 'CPS', criado_em: '2026-09-21T02:00:00+00:00' }],
+      etapa_id: 3, praca_preview: 'CPS', criado_em: '2026-09-21T02:00:00+00:00' }],
+    stylistEtapas: [{ id: 1, nome: 'Identificado' }, { id: 3, nome: 'Prospectado' }],
     stylistAberturas: [{ codigo: 'ANA' }, { codigo: 'ANA' }, { codigo: 'OUTRA' }],
     origens: [{ id: 1, pessoa_id: 1, stylist_id: 'ANA' },
       { id: 2, pessoa_id: 1, stylist_id: 'ANA' },
@@ -222,6 +223,8 @@ test('Stylists: o link dela, quantos abriram e quantas ela trouxe', async () => 
   // Duas PESSOAS distintas, e não três linhas de origem.
   assert.equal(c('Clientes que ela trouxe'), '2');
   assert.equal(c('Atuação'), 'Personal shopper');
+  // 24/09: o nome da etapa (funil configurável), não uma chave de texto.
+  assert.equal(c('Etapa'), 'Prospectado');
   assert.equal(c('Entrou em'), '20/09/2026');
 });
 

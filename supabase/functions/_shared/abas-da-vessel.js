@@ -46,6 +46,9 @@ export const CONSULTAS = {
   conviteAberturas: { tabela: 'vessel_convite_aberturas',
     colunas: 'momento,convite_codigo,praca,client_advisor,via' },
   stylists: { tabela: 'vessel_stylists', colunas: '*' },
+  // ⚠️ 24/09/2026: o funil é configurável — a etapa é uma linha desta tabela,
+  // e a aba mostra o NOME dela (a coluna `estagio` saiu do banco).
+  stylistEtapas: { tabela: 'vessel_stylist_etapas', colunas: 'id,nome' },
   stylistAberturas: { tabela: 'vessel_stylist_aberturas', colunas: 'codigo' },
   privateEdits: { tabela: 'vessel_private_edits', colunas: '*' },
   beautySessions: { tabela: 'vessel_beauty_sessions', colunas: '*' },
@@ -259,6 +262,7 @@ export function montarAbas(d) {
   const zapDaPessoa = (id) => pessoaPorId.get(id)?.telefone || '';
   const nomeDaLoja = new Map(d.lojasDoBling.map((l) => [String(l.loja_id), l.nome]));
   const nomeDaStylist = new Map(d.stylists.map((s) => [s.codigo, s.nome]));
+  const nomeDaEtapa = new Map((d.stylistEtapas || []).map((e) => [e.id, e.nome]));
   const nomeDoVendedor = new Map(
     (d.vendedores ?? []).map((v) => [String(v.bling_vendedor_id), v.nome]));
 
@@ -543,7 +547,7 @@ export function montarAbas(d) {
         { titulo: 'Cidade', largura: 20 },
         { titulo: 'Instagram', largura: 20 },
         { titulo: 'Atuação', largura: 22 },
-        { titulo: 'Estágio', largura: 16 },
+        { titulo: 'Etapa', largura: 20 },
         { titulo: 'Praça do Preview', largura: 18 },
         { titulo: 'O link dela', largura: 40 },
         { titulo: 'Abriram o link', tipo: 'numero', largura: 14 },
@@ -553,7 +557,7 @@ export function montarAbas(d) {
       linhas: [...d.stylists].sort(maisVelhoPrimeiro('codigo'))
         .filter(naoEhTeste).map((s) => [
         s.codigo, s.nome, s.whatsapp, s.cidade, s.instagram,
-        ATUACAO[s.atuacao] || s.atuacao || '', s.estagio, s.praca_preview,
+        ATUACAO[s.atuacao] || s.atuacao || '', nomeDaEtapa.get(s.etapa_id) || '', s.praca_preview,
         `https://vesselbrasil.com.br/s/${s.codigo}`,
         abriuOLink.get(s.codigo) || 0, trouxeClientes.get(s.codigo)?.size || 0,
         s.criado_em,

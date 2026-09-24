@@ -1,5 +1,5 @@
-// SOBE A PLANILHA DE MAPEAMENTO DE STYLISTS PARA O STYLIST CIRCLE, na etapa
-// "Prospectado" (a inicial do funil da T11).
+// SOBE A PLANILHA DE MAPEAMENTO DE STYLISTS PARA O STYLIST CIRCLE, na PRIMEIRA
+// etapa do funil ("Identificado", desde o funil configurável de 24/09/2026).
 //
 //   node coletor/importar-stylists-da-planilha.mjs <planilha.xlsx>                      → ensaio: grava tudo e DESFAZ
 //   node coletor/importar-stylists-da-planilha.mjs <planilha.xlsx> --gravar             → grava de verdade
@@ -7,7 +7,14 @@
 //
 // Pedido do dono em 24/09/2026: "tem uma planilha de mapeamento de stylist em
 // downloads, vc consegue subir todas elas na base, na etapa prospectado (etapa
-// inicial)? as que não tem whatsapp vc coloca o instagram".
+// inicial)? as que não tem whatsapp vc coloca o instagram". Corrigido por ele
+// no mesmo dia: a primeira etapa é "Identificados" — e o funil virou
+// configurável, com Identificado na frente de Prospectado.
+//
+// ⚠️ SEM DATA DA PROSPECÇÃO: ela nasce sozinha (gatilho do banco) no dia em
+// que a parceira chegar na etapa marcada "conta como prospectada". A data da
+// consolidação da planilha (16/09) vai só para a observação. Assim as 63 não
+// entram em "prospectadas" no placar só por estarem numa lista.
 //
 // ⚠️ ENTRA PELA MESMA PORTA DA CENTRAL: cada linha é uma chamada a
 // `vessel_stylist_criar`, com a trava de escrita LIGADA — um perfil de
@@ -183,10 +190,14 @@ const conferir = (ok, frase, detalhe) => {
 
 const assinatura = await uma(`select string_agg(p.oid::regprocedure::text, ' | ') as a from pg_proc p
   join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'vessel_stylist_criar'`)
-if (assinatura.a !== 'vessel_stylist_criar(text,text,text,text,text,text,text,text,text,date,text,date,text)') {
-  console.error('❌ a porta nova não está no banco (falta 2026-09-24-vessel-stylist-whatsapp-ou-instagram.sql):', assinatura.a)
+const { funil } = await uma(`select exists (select 1 from public.schema_migrations
+  where name = '2026-09-24-vessel-stylist-funil-configuravel.sql') as funil`)
+if (assinatura.a !== 'vessel_stylist_criar(text,text,text,text,text,text,text,text,text,date,text,date,text)' || !funil) {
+  console.error('❌ o banco ainda não tem o funil configurável (falta 2026-09-24-vessel-stylist-funil-configuravel.sql):', assinatura.a)
   await cli.end(); process.exit(1)
 }
+const { primeira } = await uma(`select nome as primeira from public.vessel_stylist_etapas
+  where ativa and tipo = 'funil' order by ordem, id limit 1`)
 
 const existentes = (await cli.query(`select codigo, nome, cidade, whatsapp, instagram from public.vessel_stylists`)).rows
 const antes = await uma(`select count(*)::int as n,
@@ -218,7 +229,7 @@ for (const p of plano) {
   entrar.push(p)
 }
 
-console.log(`\nPlanilha: ${linhas.length} linhas · prospecção em ${PROSPECTADO_BR} · na base antes: ${existentes.length}`)
+console.log(`\nPlanilha: ${linhas.length} linhas (consolidação de ${PROSPECTADO_BR}) · entram em "${primeira}" · na base antes: ${existentes.length}`)
 console.log(`Entram: ${entrar.length} (com WhatsApp: ${entrar.filter((p) => p.whatsapp).length} · só Instagram: ${entrar.filter((p) => !p.whatsapp).length}) · puladas: ${pular.length}`)
 
 let gravadas = []
@@ -228,9 +239,12 @@ try {
   // apagado antes do `commit`. Ninguém de fora chega a vê-lo.
   const operador = randomUUID()
   await cli.query(`insert into auth.users (id, email) values ($1, $2)`, [operador, `importar-planilha-${operador}@teste.invalido`])
-  await cli.query(`insert into public.profiles (id, email, features, permissions, is_superadmin)
-                   values ($1, $2, $3, $4::jsonb, false)`,
-    [operador, `importar-planilha-${operador}@teste.invalido`, ['atendimentos'], JSON.stringify({ atendimentos: ['ver', 'editar'] })])
+  // O nome é o que o histórico de etapas mostra em "quem" (a linha do
+  // histórico guarda o nome, e o perfil some no fim desta transação).
+  await cli.query(`insert into public.profiles (id, email, name, features, permissions, is_superadmin)
+                   values ($1, $2, $3, $4, $5::jsonb, false)`,
+    [operador, `importar-planilha-${operador}@teste.invalido`, `Importação da planilha de mapeamento (${HOJE_BR})`,
+      ['atendimentos'], JSON.stringify({ atendimentos: ['ver', 'editar'] })])
   await cli.query(`select set_config('request.jwt.claims', $1, true)`, [JSON.stringify({ sub: operador })])
 
   for (const p of entrar) {
@@ -238,8 +252,8 @@ try {
       `select public.vessel_stylist_criar(
          p_nome => $1, p_whatsapp => $2, p_cidade => $3, p_instagram => $4, p_atuacao => $5,
          p_praca => $6, p_loja => $7, p_origem_contato => 'pesquisa', p_responsavel => null,
-         p_prospectado_em => $8::date, p_observacoes => $9) as r`,
-      [p.nome, p.whatsapp, p.cidade, p.instagram, p.atuacao, p.praca, p.loja, PROSPECTADO_EM, p.observacoes])
+         p_observacoes => $8) as r`,
+      [p.nome, p.whatsapp, p.cidade, p.instagram, p.atuacao, p.praca, p.loja, p.observacoes])
     if (!r?.ok) { pular.push({ ...p, motivo: `o banco recusou: ${r?.situacao}${r?.codigo ? ` (${r.codigo})` : ''}` }); continue }
     gravadas.push({ ...p, codigo: r.codigo })
   }
@@ -252,18 +266,23 @@ try {
   const codigos = gravadas.map((g) => g.codigo)
   const chk = await uma(
     `select count(*)::int as n,
-            count(*) filter (where estagio = 'prospectado')::int as prospectadas,
+            count(*) filter (where e.nome = $3)::int as na_primeira,
             count(distinct codigo)::int as codigos,
             count(*) filter (where whatsapp is null and nullif(btrim(coalesce(instagram,'')),'') is null)::int as sem_contato,
             count(*) filter (where origem_contato = 'pesquisa' and observacoes like $2 || '%')::int as marcadas,
-            count(*) filter (where prospectado_em = $3::date)::int as na_data
-       from public.vessel_stylists where codigo = any($1)`, [codigos, MARCA, PROSPECTADO_EM])
+            count(*) filter (where s.prospectado_em is null)::int as sem_data,
+            (select count(*) from public.vessel_stylist_etapas_historico h
+              where h.stylist_id in (select id from public.vessel_stylists where codigo = any($1))
+                and h.motivo = 'cadastro')::int as historico
+       from public.vessel_stylists s join public.vessel_stylist_etapas e on e.id = s.etapa_id
+      where s.codigo = any($1)`, [codigos, MARCA, primeira])
   conferir(chk.n === entrar.length && gravadas.length === entrar.length, `gravadas = esperadas (${entrar.length})`, { chk, gravadas: gravadas.length })
-  conferir(chk.prospectadas === chk.n, 'todas em "Prospectado"', chk)
+  conferir(chk.na_primeira === chk.n, `todas em "${primeira}" (a primeira etapa do funil)`, chk)
   conferir(chk.codigos === chk.n && codigos.every((c) => /^STY-\d{4}$/.test(c)), 'códigos únicos no formato STY-0000', chk)
   conferir(chk.sem_contato === 0, 'nenhuma sem WhatsApp e sem Instagram', chk)
   conferir(chk.marcadas === chk.n, 'todas marcadas (origem "pesquisa" + observação da planilha)', chk)
-  conferir(chk.na_data === chk.n, `todas com a data da prospecção ${PROSPECTADO_BR}`, chk)
+  conferir(chk.sem_data === chk.n, 'nenhuma com data da prospecção (não contam como prospectadas no placar)', chk)
+  conferir(chk.historico === chk.n, 'cada uma com a entrada no histórico de etapas', chk)
   const { total } = await uma(`select count(*)::int as total from public.vessel_stylists`)
   conferir(total === antes.n + chk.n, 'a base cresceu exatamente o que entrou', { antes: antes.n, total })
   const { md5: md5Antigas } = await uma(`select md5(coalesce(string_agg(t::text, '|' order by t.id), '')) as md5
@@ -281,8 +300,8 @@ try {
   await cli.query(`select set_config('request.jwt.claims', $1, true)`, [JSON.stringify({ sub: leitor })])
   const { lista } = await uma(`select public.vessel_rastreio_dos_stylists(7, false) as lista`)
   const naLista = (lista || []).filter((x) => codigos.includes(x.codigo))
-  conferir(naLista.length === chk.n && naLista.every((x) => x.observacoes && x.estagio === 'prospectado'),
-    'a lista da Central mostra todas, em Prospectado, com a observação', naLista.length)
+  conferir(naLista.length === chk.n && naLista.every((x) => x.observacoes && x.etapa === primeira),
+    `a lista da Central mostra todas, em "${primeira}", com a observação`, naLista.length)
   const { placar } = await uma(`select public.vessel_placar_do_stylist_circle($1::date, current_date, 14) as placar`, [PROSPECTADO_EM])
   conferir(placar && typeof placar === 'object', 'o placar do Stylist Circle continua respondendo', placar)
   console.log(`    placar desde ${PROSPECTADO_BR}: ${JSON.stringify(placar).slice(0, 300)}`)
@@ -329,7 +348,7 @@ if (RELATORIO) {
     `- Linhas na planilha: ${linhas.length}`,
     `- ${GRAVAR ? 'Gravadas' : 'Entrariam'}: ${gravadas.length} (com WhatsApp: ${gravadas.filter((g) => g.whatsapp).length} · só Instagram: ${gravadas.filter((g) => !g.whatsapp).length})`,
     `- Puladas: ${pular.length}`,
-    `- Etapa: Prospectado · origem do contato: Pesquisa · data da prospecção: ${PROSPECTADO_BR} (consolidação da planilha)`,
+    `- Etapa: ${primeira} · origem do contato: Pesquisa · sem data da prospecção (nasce ao chegar na etapa marcada) · consolidação da planilha: ${PROSPECTADO_BR}`,
     '', '## Puladas', '',
     ...pular.map((p) => `- nº ${p.n} ${p.nome} (${p.cidade}) — ${p.motivo}`),
     '', `## ${GRAVAR ? 'Gravadas' : 'Entrariam'}`, '',
