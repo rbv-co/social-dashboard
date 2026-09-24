@@ -92,49 +92,97 @@ test('⚠️ R13: Encerrar E Reabrir vivem atrás do MESMO gate de editar que os
     '"Encerrar…" apareceu ANTES do gate de encerrar — está solto, sem trava')
 })
 
-test('⚠️ editar, arquivar e apagar vivem atrás do MESMO gate de editar (aninhamento, não só texto por perto)', () => {
+/**
+ * A PILHA de `<template ...>` ainda abertos num ponto do arquivo — a tag de
+ * abertura de cada um, do mais de fora para o mais de dentro.
+ *
+ * ⚠️ POR QUE PILHA E NÃO SALDO (24/09/2026): com os botões redistribuídos em
+ * grupos (pedido do dono, "mais evidentes"), cada ação passou a ter o próprio
+ * portão. O saldo de aberturas menos fechamentos PASSAVA com um botão FORA do
+ * portão dele, desde que outro `<template>` qualquer estivesse aberto no mesmo
+ * nível — medido nesta mesma entrega: a versão antiga deste teste continuou
+ * verde depois da reorganização por pura coincidência de contagem. A pilha diz
+ * QUAL portão envolve o botão, não só quantos.
+ */
+function templatesAbertosEm(fonte, idx) {
+  const pilha = []
+  const re = /<template\b[^>]*>|<\/template>/g
+  let m
+  while ((m = re.exec(fonte)) && m.index < idx) {
+    if (m[0].startsWith('</')) pilha.pop()
+    else pilha.push(m[0])
+  }
+  return pilha
+}
+
+const portao = (acao) => `<template v-if="podeExecutarAcao('${acao}', podeEditar)">`
+
+test('⚠️ cada botão que escreve mora DENTRO do portão da própria ação (pilha, não saldo)', () => {
   const fonte = ler()
-  const tagDoGate = `<template v-if="podeExecutarAcao('editar', podeEditar)">`
-  // ⚠️ é o SEGUNDO uso desta tag: o primeiro abre o formulário inline de
-  // editar (`editando === s.codigo`), o segundo é o bloco de ações.
-  const idxGate = fonte.lastIndexOf(tagDoGate)
-  assert.ok(idxGate !== -1, `a tela precisa ter a tag ${tagDoGate} no bloco de ações`)
-  const inicioDoConteudo = idxGate + tagDoGate.length
+  const casos = [
+    ['cadastrar_lead', '/>Cadastrar lead</button>'],
+    ['editar', '/>Editar…</button>'],
+    ['encerrar', '/>Encerrar…</button>'],
+    ['encerrar', '/>Reabrir</button>'],
+    ['arquivar', 'rotuloDeArquivar(s.arquivada)'],
+    ['apagar', '/>Apagar…</button>'],
+    ['apagar', '/>Apagar de vez</button>'],
+  ]
+  for (const [acao, marcador] of casos) {
+    const idx = fonte.indexOf(marcador)
+    assert.ok(idx !== -1, `não achei o botão "${marcador}" na tela`)
+    assert.equal(fonte.indexOf(marcador, idx + 1), -1, `o botão "${marcador}" aparece duas vezes`)
+    const pilha = templatesAbertosEm(fonte, idx)
+    assert.ok(pilha.includes(portao(acao)),
+      `"${marcador}" está FORA do portão ${portao(acao)} — pilha: ${JSON.stringify(pilha)}`)
+  }
+})
 
-  const idxEditar = fonte.indexOf('>Editar…<', inicioDoConteudo)
-  assert.ok(idxEditar !== -1, 'o botão "Editar…" precisa estar dentro do gate')
-  const idxArquivar = fonte.indexOf('rotuloDeArquivar(s.arquivada)', inicioDoConteudo)
-  assert.ok(idxArquivar !== -1, 'o botão de arquivar (rotuloDeArquivar) precisa estar dentro do gate')
-  const idxApagar = fonte.indexOf('>Apagar…<', inicioDoConteudo)
-  assert.ok(idxApagar !== -1, 'o botão "Apagar…" precisa estar dentro do gate')
+test('⚠️ a guarda da pilha pega o botão tirado de dentro do portão (prova por mutação)', () => {
+  const fonte = ler()
+  // Tira o "Apagar…" de dentro dos portões, colando-o logo depois do fecho do
+  // grupo do fim: é exatamente o defeito que a guarda existe para pegar.
+  const marcador = '/>Apagar…</button>'
+  const semOBotao = fonte.replace(/<button v-if="apagando !== s\.codigo"[^]*?\/>Apagar…<\/button>/, '')
+  const fimDoGrupo = semOBotao.indexOf('<p v-if="erroDeArquivar')
+  const mutante = semOBotao.slice(0, fimDoGrupo)
+    + '<button class="btn btn-perigo" @click="apagando = s.codigo"><icone-do-bloco nome="lixeira" />Apagar…</button>'
+    + semOBotao.slice(fimDoGrupo)
+  const idx = mutante.indexOf(marcador)
+  assert.ok(idx !== -1)
+  assert.ok(!templatesAbertosEm(mutante, idx).includes(portao('apagar')),
+    'a pilha deveria acusar o "Apagar…" fora do portão')
+})
 
-  // ⚠️ POR QUE CONTAR <template> EM VEZ DE UMA JANELA FIXA DE 900 CARACTERES
-  // (a versão anterior deste teste): uma janela fixa a partir do índice do
-  // gate PASSA mesmo quando o `</template>` que fecha o gate foi movido para
-  // ANTES do bloco de Apagar — o texto ">Apagar…<" continua caindo dentro da
-  // mesma janela de 900 caracteres, só que fora da proteção de verdade. É o
-  // MESMO defeito da tela irmã (R13/R21), disfarçado num botão diferente: o
-  // destrutivo, o que apaga uma sessão de vez. Só a conta de saldo de
-  // `<template>`/`</template>` pega — o saldo no ponto de "Apagar…" cai de 1
-  // (ainda dentro do gate de editar E do `<template v-if="!bloqueioDeApagar
-  // ...">` aninhado por dentro dele) para 0 (o gate já fechou cedo demais, e
-  // só o `bloqueioDeApagar` ficou de pé).
-  const saldoAteEditar = saldoDeTemplates(fonte, inicioDoConteudo, idxEditar)
-  assert.equal(saldoAteEditar, 0,
-    `o botão "Editar…" precisa estar no MESMO nível do gate (saldo 0) — saldo veio ${saldoAteEditar}`)
-  const saldoAteArquivar = saldoDeTemplates(fonte, inicioDoConteudo, idxArquivar)
-  assert.equal(saldoAteArquivar, 0,
-    `o botão de arquivar precisa estar no MESMO nível do gate (saldo 0) — saldo veio ${saldoAteArquivar}`)
-  const saldoAteApagar = saldoDeTemplates(fonte, inicioDoConteudo, idxApagar)
-  assert.equal(saldoAteApagar, 1,
-    'o botão "Apagar…" precisa estar dentro de mais um <template> aninhado (o de ' +
-    `!bloqueioDeApagar), ainda por dentro do gate de editar — saldo veio ${saldoAteApagar}`)
+test('⚠️ arquivar e apagar ficam no grupo do FIM, separados das ações da sessão', () => {
+  const fonte = ler()
+  const sessao = fonte.indexOf('class="bs-acoes bs-acoes-sessao"')
+  const fim = fonte.indexOf('class="bs-acoes bs-acoes-fim"')
+  assert.ok(sessao !== -1 && fim !== -1 && sessao < fim)
+  for (const m of ['/>Cadastrar lead</button>', '/>Editar…</button>', '/>Encerrar…</button>', '/>Reabrir</button>']) {
+    const i = fonte.indexOf(m)
+    assert.ok(i > sessao && i < fim, `"${m}" tem de estar no grupo da sessão`)
+  }
+  for (const m of ['rotuloDeArquivar(s.arquivada)', '/>Apagar…</button>']) {
+    assert.ok(fonte.indexOf(m) > fim, `"${m}" tem de estar no grupo do fim`)
+  }
+})
 
-  const antesDoGate = fonte.slice(0, idxGate)
-  assert.doesNotMatch(antesDoGate, />Editar…</,
-    '"Editar…" apareceu ANTES do gate de editar — está solto, sem trava')
-  assert.doesNotMatch(antesDoGate, />Apagar…</,
-    '"Apagar…" apareceu ANTES do gate de editar — está solto, sem trava')
+test('⚠️ um principal só no cartão: "Cadastrar lead"; o QR entra como apoio', () => {
+  const fonte = ler()
+  assert.match(fonte, /<qr-para-baixar[^>]*\bapoio\b/, 'o QR do cartão tem de vir como grupo de apoio')
+  assert.match(fonte, /class="btn btn-principal id-btn-principal" :disabled="s\.arquivada"/)
+  // um só principal no grupo da sessão (o "Cadastrar" do formulário é outro bloco)
+  const grupo = fonte.slice(fonte.indexOf('class="bs-acoes bs-acoes-sessao"'), fonte.indexOf('<p v-if="erroAoMexer'))
+  assert.equal((grupo.match(/btn-principal/g) || []).length, 2, 'btn-principal + id-btn-principal, num botão só')
+})
+
+test('⚠️ o cadastro trava contra duplo toque e mostra o erro do banco', () => {
+  const fonte = ler()
+  assert.match(fonte, /if \(cadastrando\.value\) return/, 'a função tem de recusar entrar duas vezes')
+  assert.match(fonte, /:disabled="cadastrando === s\.codigo"[^>]*\s*@click="cadastrar\(s\)"/, 'o botão tem de travar')
+  assert.match(fonte, /recadoDoCadastro\(resposta \|\| \{ ok: false, situacao: `o banco respondeu \$\{r\.status\}` \}\)/,
+    'resposta que não é 200 tem de virar recado com o código do banco')
 })
 
 // ── UM QR SÓ POR SESSÃO (23/09/2026) ────────────────────────────────────────
@@ -158,4 +206,17 @@ test('⚠️ "Leram o QR" é UM número (mesa + cartão), nas sessões e no conj
   assert.match(fonte, /conta\(s\)\.leituras/, 'a sessão tem de mostrar resumoDaSessao().leituras (a soma)')
   assert.match(fonte, /conjunto\.totalLeituras/, 'o conjunto tem de mostrar totalLeituras (a soma)')
   assert.equal((fonte.match(/bs-numero-rotulo">Leram o QR</g) || []).length, 2, 'um "Leram o QR" na sessão e um no conjunto')
+})
+
+// ── O SISTEMA DE BOTÕES COM SENTIDO (para as outras ferramentas usarem) ─────
+test('⚠️ os sete sentidos existem na folha de identidade, pela variável, sem hex', () => {
+  const css = readFileSync(new URL('../../estilos/identidade-da-ferramenta.css', import.meta.url), 'utf8')
+  const bloco = css.slice(css.indexOf('BOTÕES COM SENTIDO (24/09/2026)'))
+  for (const c of ['principal', 'editar', 'apoio', 'parar', 'voltar', 'arquivar', 'perigo']) {
+    assert.match(bloco, new RegExp(`\\.btn\\.id-btn-${c}\\b`), `falta .id-btn-${c}`)
+  }
+  assert.doesNotMatch(bloco, /#[0-9a-f]{3,8}\b/i, 'cor cravada em hex no sistema de botões')
+  assert.match(bloco, /--tom-btn: var\(--tom-acao, var\(--modulo\)\)/, 'o tom tem de vir da ferramenta')
+  // ⚠️ nunca `--tom`: é a cor da SITUAÇÃO do cartão
+  assert.doesNotMatch(bloco, /var\(--tom\)/)
 })

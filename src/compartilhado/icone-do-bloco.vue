@@ -65,6 +65,29 @@
     <template v-else-if="nome === 'lista'">
       <path d="M9 6h11M9 12h11M9 18h11" /><path d="M4 6h.01M4 12h.01M4 18h.01" />
     </template>
+    <!-- Beauty Sessions (24/09/2026): os botões do cartão da sessão, cada um
+         com o desenho do que faz. -->
+    <template v-else-if="nome === 'lead-mais'">
+      <circle cx="10" cy="8" r="4" /><path d="M3 21c0-3.9 3.1-7 7-7 1.5 0 2.9.5 4 1.3" /><path d="M18 14v6M15 17h6" />
+    </template>
+    <template v-else-if="nome === 'parar'">
+      <circle cx="12" cy="12" r="9" /><rect x="9" y="9" width="6" height="6" rx="1" />
+    </template>
+    <template v-else-if="nome === 'reabrir'">
+      <path d="M3 12a9 9 0 1 0 3-6.7" /><path d="M3 4v5h5" />
+    </template>
+    <template v-else-if="nome === 'arquivar'">
+      <rect x="3" y="4" width="18" height="5" rx="1" /><path d="M5 9v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9" /><path d="M10 13h4" />
+    </template>
+    <template v-else-if="nome === 'lixeira'">
+      <path d="M4 7h16" /><path d="M9 7V4h6v3" /><path d="M6 7l1 13h10l1-13" /><path d="M10 11v5M14 11v5" />
+    </template>
+    <template v-else-if="nome === 'baixar'">
+      <path d="M12 4v11" /><path d="M7 10l5 5 5-5" /><path d="M5 20h14" />
+    </template>
+    <template v-else-if="nome === 'copiar'">
+      <rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V5a1 1 0 0 1 1-1h10" />
+    </template>
     <!-- Frota (Onda 2b): o aviso de problema e a chave da oficina. -->
     <template v-else-if="nome === 'alerta'">
       <path d="M12 3.5l9 16H3l9-16z" /><path d="M12 10v4" /><path d="M12 17h.01" />

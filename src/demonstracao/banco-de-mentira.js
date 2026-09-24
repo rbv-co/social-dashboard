@@ -631,6 +631,10 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
         .filter((s) => incluir || !s.arquivada)
         .map((s) => {
           const gente = new Set(b.origens.filter((o) => o.evento_id === s.codigo).map((o) => o.pessoa_id))
+          // ⚠️ 24/09/2026: `pessoas` sem a ficha de teste, e as duas portas —
+          // da equipe é quem tem a linha em `cadastros`, o resto é QR.
+          const semTeste = [...gente].filter((id) => !pessoaPorId(id)?.teste)
+          const daEquipe = semTeste.filter((id) => (b.cadastros || []).some((c) => c.codigo === s.codigo && c.pessoa_id === id))
           const dela = b.atendimentos.filter((t) => valendo(t) && gente.has(t.pessoa_id))
           const leituras = b.leiturasDasSessoes[s.codigo] || {}
           // ⚠️ COMO O SQL: a receita NÃO filtra `situacao_id` (a de lá também
@@ -646,7 +650,9 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
             ativa: s.ativa, arquivada: !!s.arquivada,
             leituras_mesa: Number(leituras.mesa || 0),
             leituras_cartao: Number(leituras.cartao || 0),
-            pessoas: gente.size,
+            pessoas: semTeste.length,
+            pessoas_qr: semTeste.length - daEquipe.length,
+            pessoas_equipe: daEquipe.length,
             pedidos: dela.length,
             confirmados: dela.filter((t) => ['confirmado', 'realizado', 'no_show'].includes(t.status)).length,
             compareceram: dela.filter((t) => t.status === 'realizado').length,
@@ -711,8 +717,88 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
       // ⚠️ "TER GENTE" É LEITURA DO QR, DE QUALQUER PEÇA.
       const l = b.leiturasDasSessoes[codigo] || {}
       if (Number(l.mesa || 0) + Number(l.cartao || 0) > 0) return { ok: false, situacao: 'tem_gente' }
+      // ⚠️ 24/09/2026: e sessão com lead identificada também não (`tem_leads`).
+      if (b.origens.some((o) => o.evento_id === codigo)) return { ok: false, situacao: 'tem_leads' }
       b.sessoes = b.sessoes.filter((x) => x.codigo !== codigo)
       return { ok: true, situacao: 'ok', codigo }
+    },
+
+    // ── `2026-09-24-beauty-session-cadastro-pela-equipe.sql` ─────────────────
+    // A equipe cadastra a lead dentro da sessão, pelo mesmo miolo do QR. A
+    // MESMA ordem de conferência e as MESMAS situações da função de verdade.
+    vessel_beauty_session_cadastrar_lead({ p_codigo, p_nome, p_whatsapp, p_instagram = null, p_interesse = null } = {}) {
+      const s = b.sessoes.find((x) => x.codigo === maiusculo(p_codigo))
+      if (!s) return { ok: false, situacao: 'nao_achei' }
+      if (s.arquivada) return { ok: false, situacao: 'sessao_arquivada' }
+      const nome = String(p_nome ?? '').trim().replace(/\s+/g, ' ')
+      if (nome.length < 2) return { ok: false, situacao: 'sem_nome' }
+      const fone = telefoneCanonico(p_whatsapp)
+      if (!fone) return { ok: false, situacao: 'whatsapp_invalido' }
+      const insta = limpo(p_instagram)
+      if (insta && insta.length > 120) return { ok: false, situacao: 'instagram_longo' }
+      const interesse = limpo(p_interesse)
+      if (interesse && !['conhecer-a-loja', 'rever-uma-peca', 'personal-atelier'].includes(interesse)) {
+        return { ok: false, situacao: 'interesse_invalido' }
+      }
+      let pessoa = b.pessoas.find((p) => p.telefone === fone)
+      const naBase = !!pessoa
+      if (pessoa && b.origens.some((o) => o.pessoa_id === pessoa.id && o.evento_id === s.codigo)) {
+        const porta = (b.cadastros || []).some((c) => c.codigo === s.codigo && c.pessoa_id === pessoa.id) ? 'equipe' : 'qr'
+        return { ok: false, situacao: 'ja_estava', porta, pessoa_id: pessoa.id, nome: pessoa.nome }
+      }
+      // `vessel_anotar_interesse`: a ficha (só completa), a origem, o pedido de
+      // visita (janela de 30 min), e as permissões — que aqui não se guardam.
+      if (!pessoa) { pessoa = { id: proximo(b.pessoas), nome, telefone: fone, email: null, instagram: insta }; b.pessoas.push(pessoa) }
+      else if (insta) pessoa.instagram = insta
+      b.origens.push({ pessoa_id: pessoa.id, momento: agoraIso(), canal: 'beauty_session', evento_id: s.codigo,
+        stylist_id: null, utm_source: 'beauty_session', utm_medium: 'offline_equipe',
+        utm_campaign: s.codigo.toLowerCase().replace(/-/g, '_') })
+      const meiaHora = agora().getTime() - 30 * 60000
+      let t = b.atendimentos.find((x) => x.pessoa_id === pessoa.id && x.loja === s.loja && x.status === 'solicitado'
+        && new Date(x.criado_em).getTime() > meiaHora)
+      if (t) { if (interesse) t.interesse = interesse }
+      else {
+        t = { id: proximo(b.atendimentos), pessoa_id: pessoa.id, loja: s.loja, client_advisor: null, quando: null,
+          status: 'solicitado', rsvp: null, evento_codigo: null, convite_codigo: null, convidada_em: null,
+          convite_enviado_em: null, chave_convite: null, convite_aberto_em: null, convite_aberturas: 0,
+          presenca_em: null, criado_em: agoraIso(), teste: false, interesse, origem_registro: 'beauty-session-equipe' }
+        b.atendimentos.push(t)
+      }
+      if (!b.cadastros) b.cadastros = []
+      b.cadastros.push({ codigo: s.codigo, pessoa_id: pessoa.id, atendimento_id: t.id,
+        cadastrado_por_nome: USUARIO_DA_DEMONSTRACAO, criado_em: agoraIso() })
+      avisar('lead_cadastrada', { codigo: s.codigo, nome: pessoa.nome })
+      return { ok: true, situacao: 'ok', pessoa_id: pessoa.id, atendimento_id: t.id, ja_na_base: naBase, nome: pessoa.nome }
+    },
+
+    vessel_leads_da_beauty_session({ p_codigo, p_dias = 7 } = {}) {
+      const codigo = maiusculo(p_codigo)
+      const dias = Math.max(Number(p_dias ?? 7) || 0, 0)
+      const primeira = new Map()
+      for (const o of b.origens) {
+        if (o.evento_id !== codigo) continue
+        const m = o.momento ?? null
+        if (!primeira.has(o.pessoa_id) || (m && (!primeira.get(o.pessoa_id) || m < primeira.get(o.pessoa_id)))) primeira.set(o.pessoa_id, m)
+      }
+      const realizadas = (id) => b.atendimentos.filter((t) => t.pessoa_id === id && !t.teste && t.status === 'realizado')
+      return [...primeira.entries()]
+        .map(([id, entrou]) => ({ pe: pessoaPorId(id), entrou }))
+        .filter(({ pe }) => pe && !pe.teste)
+        .map(({ pe, entrou }) => {
+          const c = (b.cadastros || []).find((x) => x.codigo === codigo && x.pessoa_id === pe.id)
+          return {
+            pessoa_id: pe.id, nome: pe.nome, telefone: pe.telefone, instagram: pe.instagram ?? null,
+            porta: c ? 'equipe' : 'qr', entrou_em: entrou, cadastrado_por_nome: c?.cadastrado_por_nome ?? null,
+            foi_a_loja: realizadas(pe.id).length > 0,
+            comprou: b.pedidos.some((p) => p.pessoa_id === pe.id && realizadas(pe.id).some((t) => {
+              const d0 = diaEmSaoPaulo(t.quando || t.criado_em)
+              return p.data_do_pedido >= d0 && p.data_do_pedido <= somarDias(d0, dias)
+            })),
+          }
+        })
+        // `order by entrou_em desc, pessoa_id desc`
+        .sort((x, y) => (x.entrou_em === y.entrou_em ? y.pessoa_id - x.pessoa_id
+          : String(y.entrou_em ?? '') < String(x.entrou_em ?? '') ? -1 : 1))
     },
 
     vessel_beauty_session_arquivar({ p_codigo, p_arquivada = true } = {}) {

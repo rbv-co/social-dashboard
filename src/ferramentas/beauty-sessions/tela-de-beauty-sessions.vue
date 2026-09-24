@@ -62,7 +62,8 @@
         <p class="bs-nota bs-nota-primeira">
           <b>Leram o QR</b> é leitura, não pessoa: a mesma cliente abrindo duas
           vezes conta duas. Quem vira gente com nome e WhatsApp é <b>Se
-          identificaram</b>. Cada sessão tem <b>um QR só, o da mesa</b> (o display
+          identificaram</b> — pelo QR ou <b>pela equipe</b>, que cadastra a lead
+          ali mesmo, no cartão da sessão. Cada sessão tem <b>um QR só, o da mesa</b> (o display
           do salão); as leituras que o antigo QR do cartão já teve continuam
           somadas aqui, para nenhuma sumir da conta.
         </p>
@@ -110,6 +111,8 @@
             <div class="bs-numero">
               <span class="bs-numero-valor">{{ conjunto.totalPessoas }}</span>
               <span class="bs-numero-rotulo">Se identificaram</span>
+              <span v-if="conjunto.totalPessoasQr !== null" class="bs-numero-base">
+                {{ portasEscritas({ pessoas_qr: conjunto.totalPessoasQr, pessoas_equipe: conjunto.totalPessoasEquipe }) }}</span>
             </div>
             <div class="bs-numero">
               <span class="bs-numero-valor">{{ conjunto.totalCompareceram }}</span>
@@ -165,6 +168,9 @@
             <div class="bs-numero">
               <span class="bs-numero-valor">{{ conta(s).pessoas }}</span>
               <span class="bs-numero-rotulo">Se identificaram</span>
+              <!-- ⚠️ AS DUAS PORTAS (24/09/2026): o QR e o cadastro da equipe.
+                   Some se o banco ainda não as manda — ver `portasEscritas`. -->
+              <span v-if="portasEscritas(s)" class="bs-numero-base">{{ portasEscritas(s) }}</span>
             </div>
             <div class="bs-numero">
               <span class="bs-numero-valor">{{ conta(s).compareceram }}</span>
@@ -197,16 +203,59 @@
             {{ janelaEscrita(s.janela_de_venda_em_dias) }}.
           </p>
 
-          <!-- ── O QR DA SESSÃO (um só: o da mesa) ─────────────────────────
-               ⚠️ O MESMO componente do Material Gráfico, com o MESMO item
-               (`itemDaBeauty`): os dois lugares baixam o mesmo arquivo, com o
-               mesmo nome, para o mesmo link. -->
-          <h3 class="bs-etiqueta bs-etiqueta-interna id-subtitulo">O QR desta sessão — a mesa, o display do salão</h3>
-          <qr-para-baixar class="bs-qr" :endereco="itemDaBeauty(s).endereco"
-                          :legenda="itemDaBeauty(s).legenda" :arquivo="itemDaBeauty(s).arquivo" />
-          <router-link class="bs-atalho"
-                       :to="{ name: 'material-grafico', query: { busca: s.codigo, ...(s.ativa === false || s.arquivada ? { todos: '1' } : {}) } }">
-            Ver no Material Gráfico →</router-link>
+          <!-- ── AS AÇÕES DA SESSÃO (24/09/2026) ─────────────────────────────
+               Pedido do dono: botões "mais evidentes", cada um pelo sentido.
+               Aqui mora o que se faz COM a sessão: cadastrar lead (a principal
+               do cartão), ver as leads, editar, encerrar/reabrir. Arquivar e
+               apagar ficam no fim do cartão, separados, para não se clicar por
+               engano. Os tons são de `identidade-da-ferramenta.css`. -->
+          <div class="bs-acoes bs-acoes-sessao">
+            <template v-if="podeExecutarAcao('cadastrar_lead', podeEditar)">
+              <button class="btn btn-principal id-btn-principal" :disabled="s.arquivada"
+                      :aria-expanded="cadastroAberto === s.codigo"
+                      @click="alternarCadastro(s)"><icone-do-bloco nome="lead-mais" />Cadastrar lead</button>
+            </template>
+            <button class="btn id-btn-editar" :disabled="carregandoLeads === s.codigo"
+                    :aria-expanded="leadsAbertas === s.codigo"
+                    @click="alternarLeads(s)"><icone-do-bloco nome="lista" />{{ carregandoLeads === s.codigo ? 'Buscando…'
+                      : (leadsAbertas === s.codigo ? 'Fechar as leads' : 'Leads desta sessão') }}</button>
+
+            <template v-if="podeExecutarAcao('editar', podeEditar)">
+              <button v-if="editando !== s.codigo" class="btn id-btn-editar"
+                      @click="abrirEditar(s)"><icone-do-bloco nome="editar" />Editar…</button>
+            </template>
+
+            <!-- ⚠️ R13: Encerrar/Reabrir agora EXIGEM a mesma permissão de
+                 editar que Editar/Arquivar/Apagar já exigiam —
+                 `vessel_beauty_session_encerrar` passou a checar
+                 `is_vessel_atendimentos_editar()`
+                 (2026-09-19-vessel-encerrar-exige-editar.sql). A regra mora em
+                 `podeExecutarAcao` (beauty-sessions-regras.js), testada — não
+                 reescrita aqui como um `v-if` solto de novo, que foi
+                 exatamente o Critical que a tela irmã levou. -->
+            <template v-if="podeExecutarAcao('encerrar', podeEditar)">
+              <template v-if="s.ativa">
+                <button v-if="confirmando !== s.codigo" class="btn id-btn-parar"
+                        @click="confirmando = s.codigo"><icone-do-bloco nome="parar" />Encerrar…</button>
+                <template v-else>
+                  <span class="bs-confirma">Encerrar faz o QR parar de aceitar contato novo.
+                    Os números ficam, e a equipe ainda pode cadastrar.</span>
+                  <button class="btn" @click="confirmando = null">Deixar como está</button>
+                  <button class="btn btn-perigo id-btn-perigo" :disabled="mexendo === s.codigo"
+                          @click="encerrar(s, false)"><icone-do-bloco nome="parar" />Encerrar</button>
+                </template>
+              </template>
+              <button v-else class="btn id-btn-voltar" :disabled="mexendo === s.codigo"
+                      @click="encerrar(s, true)"><icone-do-bloco nome="reabrir" />Reabrir</button>
+            </template>
+          </div>
+          <p v-if="erroAoMexer === s.codigo" class="bs-nota bs-nota-erro">
+            Não consegui gravar agora. Tente de novo em um instante.
+          </p>
+          <!-- ⚠️ CAMPO QUE NÃO PODE GRAVAR FICA TRAVADO, COM O MOTIVO (item 9). -->
+          <p v-if="s.arquivada && podeExecutarAcao('cadastrar_lead', podeEditar)" class="bs-nota bs-recado bs-recado-aviso">
+            Sessão arquivada não recebe lead nova. Desarquive para cadastrar.
+          </p>
 
           <!-- ── EDITAR (inline, sem modal) ───────────────────────────────
                ⚠️ SÓ "QUANDO" E "LOJA" — o `codigo` nunca entra aqui: ele está
@@ -236,60 +285,126 @@
             </div>
           </div>
 
-          <!-- ── APAGAR: tem_gente vira explicação, nunca erro vermelho ──── -->
-          <template v-else-if="podeExecutarAcao('apagar', podeEditar) && bloqueioDeApagar[s.codigo]">
+          <!-- ── CADASTRAR LEAD (24/09/2026) ──────────────────────────────
+               ⚠️ O MESMO CAMINHO DA LEAD DO QR (`vessel_beauty_session_cadastrar_lead`
+               chama o miolo da página do QR): mesma ficha, base de clientes,
+               planilha e pedido de visita na loja da sessão. Os campos são os
+               do site, na mesma ordem — ver `cadastro-de-lead.js`. -->
+          <div v-if="podeExecutarAcao('cadastrar_lead', podeEditar) && cadastroAberto === s.codigo"
+               class="id-caixa-form bs-lead-form">
+            <h3 class="bs-etiqueta bs-etiqueta-interna id-titulo"><icone-do-bloco nome="lead-mais" />Cadastrar lead nesta sessão</h3>
+            <div class="bs-form">
+              <label class="bs-campo bs-campo-largo" :for="`bsl-nome-${s.codigo}`"><span>Nome</span>
+                <input :id="`bsl-nome-${s.codigo}`" type="text" maxlength="120" autocomplete="off"
+                       v-model="formDe(s).nome"></label>
+              <div class="bs-campo bs-campo-largo"><span>WhatsApp com DDD</span>
+                <div class="bs-fone">
+                  <span class="bs-fone-mais" aria-hidden="true">+</span>
+                  <input :id="`bsl-pais-${s.codigo}`" class="bs-fone-pais" type="tel" inputmode="numeric"
+                         maxlength="3" aria-label="Código do país" v-model="formDe(s).pais">
+                  <input :id="`bsl-ddd-${s.codigo}`" class="bs-fone-ddd" type="tel" inputmode="numeric"
+                         maxlength="2" placeholder="19" aria-label="DDD" v-model="formDe(s).ddd">
+                  <input :id="`bsl-numero-${s.codigo}`" class="bs-fone-numero" type="tel" inputmode="numeric"
+                         maxlength="10" placeholder="99999-9999" aria-label="Número do WhatsApp"
+                         v-model="formDe(s).numero">
+                </div>
+              </div>
+              <label class="bs-campo" :for="`bsl-insta-${s.codigo}`"><span>Instagram, se ela quiser</span>
+                <input :id="`bsl-insta-${s.codigo}`" type="text" maxlength="120" autocomplete="off"
+                       placeholder="@perfil" v-model="formDe(s).instagram"></label>
+              <label class="bs-campo" :for="`bsl-interesse-${s.codigo}`"><span>O que ela gostaria agora?</span>
+                <select :id="`bsl-interesse-${s.codigo}`" v-model="formDe(s).interesse">
+                  <option value="">Prefere contar na conversa</option>
+                  <option v-for="i in INTERESSES" :key="i.valor" :value="i.valor">{{ i.rotulo }}</option>
+                </select></label>
+            </div>
+            <!-- ⚠️ DECISÃO DO DONO: o cadastro pela equipe grava a autorização de
+                 marketing SEMPRE. A frase existe para a equipe perguntar antes. -->
+            <p class="bs-nota">
+              Ao cadastrar, fica registrado que <b>ela autorizou receber convites e
+              novidades da VESSEL pelo WhatsApp</b>. Confirme com ela antes.
+            </p>
+            <ul v-if="formDe(s).tocado && problemasDaLead(formDe(s)).length" class="bs-problemas">
+              <li v-for="p in problemasDaLead(formDe(s))" :key="p">{{ p }}</li>
+            </ul>
+            <p v-if="recadoDoCadastrar[s.codigo]" class="bs-nota bs-recado" role="status"
+               :class="`bs-recado-${recadoDoCadastrar[s.codigo].tom}`">{{ recadoDoCadastrar[s.codigo].texto }}</p>
+            <div class="bs-acoes">
+              <button class="btn" :disabled="cadastrando === s.codigo" @click="cadastroAberto = null">Fechar</button>
+              <button class="btn btn-principal" :disabled="cadastrando === s.codigo"
+                      @click="cadastrar(s)">{{ cadastrando === s.codigo ? 'Cadastrando…' : 'Cadastrar' }}</button>
+            </div>
+          </div>
+
+          <!-- ── AS LEADS DA SESSÃO (24/09/2026) ──────────────────────────
+               ⚠️ CARTÕES, NÃO TABELA: a equipe olha isto no celular, no salão.
+               ⚠️ ERRO DE LEITURA NÃO VIRA LISTA VAZIA (item 9 do padrão). -->
+          <template v-if="leadsAbertas === s.codigo">
+            <h3 class="bs-etiqueta bs-etiqueta-interna id-subtitulo">As leads desta sessão</h3>
+            <p v-if="leadsErro[s.codigo]" class="bs-nota bs-nota-erro">
+              Não consegui buscar as leads agora ({{ leadsErro[s.codigo] }}). Tente de novo em um instante.
+            </p>
+            <p v-else-if="leads[s.codigo] && !leads[s.codigo].length" class="bs-nota">
+              Ninguém se identificou nesta sessão ainda — nem pelo QR, nem pela equipe.
+            </p>
+            <ul v-else-if="leads[s.codigo]" class="bs-leads">
+              <li v-for="l in leads[s.codigo]" :key="l.pessoa_id" class="bs-lead id-cartao"
+                  :class="`id-tom-${portaDaLead(l).tom}`">
+                <div class="bs-cabeca">
+                  <div class="bs-cabeca-texto">
+                    <p class="bs-lead-nome">{{ l.nome }}</p>
+                    <p class="bs-sub">{{ telefoneLegivel(l.telefone) }}<span v-if="l.instagram"> · {{ l.instagram }}</span></p>
+                    <p class="bs-sub">
+                      Entrou em {{ dataHoraLegivel(l.entrou_em) }}
+                      · {{ l.foi_a_loja ? 'foi à loja' : 'ainda não foi à loja' }}<span v-if="l.comprou"> · <b>comprou</b></span>
+                    </p>
+                  </div>
+                  <span class="bs-selo id-selo" :class="`id-tom-${portaDaLead(l).tom}`">{{ portaDaLead(l).texto }}</span>
+                </div>
+              </li>
+            </ul>
+          </template>
+
+          <!-- ── O QR DA SESSÃO (um só: o da mesa) ─────────────────────────
+               ⚠️ O MESMO componente do Material Gráfico, com o MESMO item
+               (`itemDaBeauty`): os dois lugares baixam o mesmo arquivo, com o
+               mesmo nome, para o mesmo link. `apoio`: aqui os botões do QR são
+               o grupo de apoio — a principal do cartão é "Cadastrar lead". -->
+          <h3 class="bs-etiqueta bs-etiqueta-interna id-subtitulo">O QR desta sessão — a mesa, o display do salão</h3>
+          <qr-para-baixar class="bs-qr" :endereco="itemDaBeauty(s).endereco" apoio
+                          :legenda="itemDaBeauty(s).legenda" :arquivo="itemDaBeauty(s).arquivo" />
+          <router-link class="bs-atalho"
+                       :to="{ name: 'material-grafico', query: { busca: s.codigo, ...(s.ativa === false || s.arquivada ? { todos: '1' } : {}) } }">
+            Ver no Material Gráfico →</router-link>
+
+          <!-- ── APAGAR: tem_gente / tem_leads viram explicação, nunca erro ── -->
+          <template v-if="podeExecutarAcao('apagar', podeEditar) && bloqueioDeApagar[s.codigo]">
             <p class="bs-nota bs-nota-aviso">{{ bloqueioDeApagar[s.codigo] }}</p>
           </template>
 
-          <!-- ⚠️ Botão de perigo NÃO fica solto na lista: pede um passo a mais. -->
-          <div class="bs-acoes">
-            <!-- ⚠️ R13: Encerrar/Reabrir agora EXIGEM a mesma permissão de
-                 editar que Editar/Arquivar/Apagar já exigiam —
-                 `vessel_beauty_session_encerrar` passou a checar
-                 `is_vessel_atendimentos_editar()`
-                 (2026-09-19-vessel-encerrar-exige-editar.sql). A regra mora em
-                 `podeExecutarAcao` (beauty-sessions-regras.js), testada — não
-                 reescrita aqui como um `v-if` solto de novo, que foi
-                 exatamente o Critical que a tela irmã levou. -->
-            <template v-if="podeExecutarAcao('encerrar', podeEditar)">
-              <template v-if="s.ativa">
-                <button v-if="confirmando !== s.codigo" class="btn"
-                        @click="confirmando = s.codigo">Encerrar…</button>
-                <template v-else>
-                  <span class="bs-confirma">Encerrar faz o QR parar de aceitar contato novo.
-                    Os números ficam.</span>
-                  <button class="btn" @click="confirmando = null">Deixar como está</button>
-                  <button class="btn btn-perigo" :disabled="mexendo === s.codigo"
-                          @click="encerrar(s, false)">Encerrar</button>
-                </template>
-              </template>
-              <button v-else class="btn" :disabled="mexendo === s.codigo"
-                      @click="encerrar(s, true)">Reabrir</button>
-            </template>
-
-            <template v-if="podeExecutarAcao('editar', podeEditar)">
-              <button v-if="editando !== s.codigo" class="btn" @click="abrirEditar(s)">Editar…</button>
-
-              <button class="btn" :disabled="arquivando === s.codigo"
-                      @click="alternarArquivar(s)">
+          <!-- ⚠️ ARQUIVAR E APAGAR NO FIM, SEPARADOS, com respiro e um filete
+               em cima: são os dois que tiram a sessão de cena. Botão de perigo
+               NÃO fica solto na lista: pede um passo a mais. -->
+          <div class="bs-acoes bs-acoes-fim">
+            <template v-if="podeExecutarAcao('arquivar', podeEditar)">
+              <button class="btn id-btn-arquivar" :disabled="arquivando === s.codigo"
+                      @click="alternarArquivar(s)"><icone-do-bloco nome="arquivar" />
                 {{ arquivando === s.codigo ? 'Gravando…' : rotuloDeArquivar(s.arquivada) }}
               </button>
-
+            </template>
+            <template v-if="podeExecutarAcao('apagar', podeEditar)">
               <template v-if="!bloqueioDeApagar[s.codigo]">
-                <button v-if="apagando !== s.codigo" class="btn btn-perigo"
-                        @click="apagando = s.codigo">Apagar…</button>
+                <button v-if="apagando !== s.codigo" class="btn btn-perigo id-btn-perigo"
+                        @click="apagando = s.codigo"><icone-do-bloco nome="lixeira" />Apagar…</button>
                 <template v-else>
                   <span class="bs-confirma">Apagar não pode ser desfeito.</span>
                   <button class="btn" @click="apagando = null">Deixar como está</button>
-                  <button class="btn btn-perigo" :disabled="mexendoApagar === s.codigo"
-                          @click="apagar(s)">Apagar de vez</button>
+                  <button class="btn btn-perigo id-btn-perigo" :disabled="mexendoApagar === s.codigo"
+                          @click="apagar(s)"><icone-do-bloco nome="lixeira" />Apagar de vez</button>
                 </template>
               </template>
             </template>
           </div>
-          <p v-if="erroAoMexer === s.codigo" class="bs-nota bs-nota-erro">
-            Não consegui gravar agora. Tente de novo em um instante.
-          </p>
           <p v-if="erroDeArquivar === s.codigo" class="bs-nota bs-nota-erro">{{ mensagemArquivar }}</p>
           <p v-if="erroDeApagar === s.codigo" class="bs-nota bs-nota-erro">{{ mensagemApagar }}</p>
         </section>
@@ -362,8 +477,12 @@ import QrParaBaixar from '../comercial-vessel/qr-para-baixar.vue'
 import { itemDaBeauty } from '../comercial-vessel/material-grafico-regras.js'
 import {
   podeExecutarAcao, calcularConjunto, mensagemDeEditar, mensagemDeArquivar,
-  mensagemDeApagar, mensagemDeTemGente, seloDaSessao, rotuloDeArquivar,
+  mensagemDeApagar, mensagemDeTemGente, mensagemDeTemLeads, seloDaSessao, rotuloDeArquivar,
 } from './beauty-sessions-regras.js'
+import {
+  INTERESSES, FORMULARIO_VAZIO, problemasDaLead, corpoDoCadastro, recadoDoCadastro,
+  portaDaLead, portasEscritas, telefoneLegivel,
+} from './cadastro-de-lead.js'
 // ⚠️ AS CONTAS DE PROPORÇÃO SÃO AS DA FAMÍLIA, e não uma versão local: as três
 // telas do Comercial Vessel mostram taxa sobre base pequena, e a regra de
 // quando a base deixa de servir tem de ser a MESMA nas três.
@@ -450,8 +569,12 @@ async function chamar(funcao, corpo) {
   return r.json()
 }
 
-async function carregar() {
-  carregando.value = true
+// ⚠️ `silencioso`: depois de cadastrar uma lead, os números do cartão
+// precisam voltar do banco SEM a tela trocar tudo por "Carregando…" — o
+// formulário aberto sumiria da mão de quem está cadastrando a próxima.
+async function carregar(opcoes) {
+  const silencioso = opcoes?.silencioso === true
+  if (!silencioso) carregando.value = true
   erro.value = null
   try {
     // ⚠️ SEM SESSÃO NÃO SE TENTA LER: a resposta seria 200 com lista vazia, e a
@@ -630,10 +753,12 @@ async function apagar(s) {
       await carregar()
       return
     }
-    if (r?.situacao === 'tem_gente') {
+    if (r?.situacao === 'tem_gente' || r?.situacao === 'tem_leads') {
       // ⚠️ NÃO é erro vermelho: é a explicação de por que apagar está fora de
       // questão, com as duas saídas de verdade — ver beauty-sessions-regras.js.
-      bloqueioDeApagar[s.codigo] = mensagemDeTemGente(conta(s).leituras)
+      // `tem_leads` (24/09/2026): sem leitura, mas com gente identificada.
+      bloqueioDeApagar[s.codigo] = r.situacao === 'tem_gente'
+        ? mensagemDeTemGente(conta(s).leituras) : mensagemDeTemLeads()
       apagando.value = null
       return
     }
@@ -645,6 +770,97 @@ async function apagar(s) {
   } finally {
     mexendoApagar.value = null
   }
+}
+
+// ── cadastrar lead (24/09/2026) ─────────────────────────────────────────────
+const cadastroAberto = ref(null)
+const cadastrando = ref(null)
+const formularios = reactive({})
+const recadoDoCadastrar = reactive({})
+
+// ⚠️ O FORMULÁRIO NASCE AO ABRIR, não durante o desenho: escrever em estado
+// reativo no meio do render faz o Vue redesenhar de novo (a mesma nota da tela
+// irmã, Private Edit). Até lá, quem lê recebe o vazio congelado.
+function formDe(s) {
+  return formularios[s.codigo] || FORMULARIO_VAZIO
+}
+
+function alternarCadastro(s) {
+  if (cadastroAberto.value === s.codigo) { cadastroAberto.value = null; return }
+  if (!formularios[s.codigo]) formularios[s.codigo] = { ...FORMULARIO_VAZIO, tocado: false }
+  delete recadoDoCadastrar[s.codigo]
+  cadastroAberto.value = s.codigo
+}
+
+async function cadastrar(s) {
+  // ⚠️ TRAVA CONTRA DUPLO TOQUE: o botão fica travado E a função recusa entrar
+  // de novo — o botão travado sozinho não segura dois toques no mesmo quadro.
+  if (cadastrando.value) return
+  const f = formularios[s.codigo]
+  if (!f) return
+  f.tocado = true
+  delete recadoDoCadastrar[s.codigo]
+  if (problemasDaLead(f).length) return
+  cadastrando.value = s.codigo
+  try {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/vessel_beauty_session_cadastrar_lead`, {
+      method: 'POST', headers: cabecalho(), body: JSON.stringify(corpoDoCadastro(s.codigo, f)),
+    })
+    const resposta = r.ok ? await r.json().catch(() => null) : null
+    // ⚠️ O ERRO DO BANCO APARECE, NUNCA CALADO: resposta que não é 200 vira o
+    // código do banco na frase (`recadoDoCadastro` mostra a situação crua).
+    recadoDoCadastrar[s.codigo] = recadoDoCadastro(resposta || { ok: false, situacao: `o banco respondeu ${r.status}` })
+    if (resposta?.ok) {
+      // Os campos se esvaziam para a PRÓXIMA; o recado fica, com o nome.
+      formularios[s.codigo] = { ...FORMULARIO_VAZIO, tocado: false }
+      await carregar({ silencioso: true })
+      if (leadsAbertas.value === s.codigo) await buscarLeads(s)
+    }
+  } catch {
+    // ⚠️ Os campos FICAM: fazer a equipe digitar de novo por um erro nosso é
+    // perder o contato duas vezes.
+    recadoDoCadastrar[s.codigo] = recadoDoCadastro({ ok: false, situacao: 'erro_de_rede' })
+  } finally {
+    cadastrando.value = null
+  }
+}
+
+// ── as leads da sessão ──────────────────────────────────────────────────────
+const leadsAbertas = ref(null)
+const carregandoLeads = ref(null)
+const leads = reactive({})
+const leadsErro = reactive({})
+
+async function alternarLeads(s) {
+  if (leadsAbertas.value === s.codigo) { leadsAbertas.value = null; return }
+  leadsAbertas.value = s.codigo
+  await buscarLeads(s)
+}
+
+async function buscarLeads(s) {
+  carregandoLeads.value = s.codigo
+  delete leadsErro[s.codigo]
+  try {
+    // ⚠️ MESMA JANELA (P_DIAS) da conta do cartão: "comprou" na lista e a
+    // receita ao lado medem com a mesma régua.
+    const lista = await chamar('vessel_leads_da_beauty_session', { p_codigo: s.codigo, p_dias: P_DIAS })
+    if (!Array.isArray(lista)) throw new Error('a resposta não é uma lista')
+    leads[s.codigo] = lista
+  } catch (e) {
+    leads[s.codigo] = null
+    leadsErro[s.codigo] = e?.message || 'erro desconhecido'
+  } finally {
+    carregandoLeads.value = null
+  }
+}
+
+/** dd/mm às hh:mm, no fuso de São Paulo. */
+function dataHoraLegivel(iso) {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  return d.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit',
+    hour: '2-digit', minute: '2-digit' }).replace(', ', ' às ')
 }
 
 onMounted(carregar)
@@ -832,6 +1048,61 @@ onMounted(carregar)
   font-size: var(--texto-corpo);
   color: var(--muted);
   flex: 1 1 14rem;
+}
+
+/* ── as ações do cartão (24/09/2026) ─────────────────────────────────────
+   As da sessão logo depois dos números; arquivar e apagar no fim, separados
+   por um filete e um respiro — são os dois que tiram a sessão de cena. */
+.bs-acoes-sessao { margin-top: var(--sp-4); }
+.bs-acoes-fim {
+  margin-top: var(--sp-5);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--border);
+}
+
+/* ── cadastrar lead ────────────────────────────────────────────────────── */
+/* O WhatsApp em três pedaços, como na página do QR: +país, DDD e o número. */
+.bs-fone { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+.bs-fone-mais {
+  font-family: var(--fonte-principal);
+  font-size: var(--texto-campo);
+  color: var(--muted);
+}
+.bs-campo .bs-fone-pais { flex: 0 0 4.2rem; width: 4.2rem; }
+.bs-campo .bs-fone-ddd { flex: 0 0 3.8rem; width: 3.8rem; }
+.bs-campo .bs-fone-numero { flex: 1 1 auto; min-width: 0; }
+/* ⚠️ o texto do recado é `--text`: a cor é o sinal (a borda e a tinta), o texto
+   é para ler — item 2 do padrão. */
+.bs-recado {
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-left-width: 4px;
+  border-radius: var(--radius-sm);
+  padding: var(--sp-2) var(--sp-3);
+}
+.bs-recado-ok { background: color-mix(in srgb, var(--green) 10%, var(--surface)); border-color: color-mix(in srgb, var(--green) 45%, var(--surface)); }
+.bs-recado-aviso { background: color-mix(in srgb, var(--orange) 10%, var(--surface)); border-color: color-mix(in srgb, var(--orange) 45%, var(--surface)); }
+.bs-recado-erro { background: color-mix(in srgb, var(--red) 8%, var(--surface)); border-color: color-mix(in srgb, var(--red) 45%, var(--surface)); }
+
+/* ── a lista das leads: cartões, não tabela ────────────────────────────── */
+.bs-leads { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-2); }
+.bs-lead {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--sp-3);
+}
+.bs-lead .bs-sub { margin-top: 2px; }
+.bs-lead-nome {
+  font-family: var(--fonte-principal);
+  font-size: var(--texto-campo);
+  color: var(--text);
+  margin: 0;
+  /* nome comprido quebra; nunca corta (item 5 do padrão) */
+  overflow-wrap: anywhere;
+}
+@media (min-width: 64rem) {
+  .bs-leads { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 .bs-carregando, .bs-vazio {

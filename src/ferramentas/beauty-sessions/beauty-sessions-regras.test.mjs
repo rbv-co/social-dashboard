@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   ACOES_QUE_EXIGEM_EDITAR, podeExecutarAcao, calcularConjunto,
-  mensagemDeEditar, mensagemDeArquivar, mensagemDeApagar, mensagemDeTemGente,
+  mensagemDeEditar, mensagemDeArquivar, mensagemDeApagar, mensagemDeTemGente, mensagemDeTemLeads,
   seloDaSessao, rotuloDeArquivar,
 } from './beauty-sessions-regras.js'
 
@@ -15,9 +15,9 @@ test('⚠️ R13: encerrar e reabrir exigem editar, igual arquivar/apagar/editar
   }
 })
 
-test('as cinco ações de escrever estão na lista, nem uma a mais nem a menos', () => {
+test('as seis ações de escrever estão na lista, nem uma a mais nem a menos', () => {
   assert.deepEqual([...ACOES_QUE_EXIGEM_EDITAR].sort(),
-    ['apagar', 'arquivar', 'editar', 'encerrar', 'reabrir'].sort())
+    ['apagar', 'arquivar', 'cadastrar_lead', 'editar', 'encerrar', 'reabrir'].sort())
 })
 
 test('uma ação de leitura não pedida na lista não exige editar', () => {
@@ -139,4 +139,30 @@ test('FIAÇÃO: o tom de cada selo tem a classe na folha comum — senão o file
 test('rotuloDeArquivar é sempre o oposto do estado atual', () => {
   assert.equal(rotuloDeArquivar(false), 'Arquivar…')
   assert.equal(rotuloDeArquivar(true), 'Desarquivar')
+})
+
+// ── as duas portas (24/09/2026) ─────────────────────────────────────────────
+
+test('o conjunto soma as duas portas de "Se identificaram"', () => {
+  const c = calcularConjunto([
+    { pessoas: 3, pessoas_qr: 2, pessoas_equipe: 1 },
+    { pessoas: 5, pessoas_qr: 1, pessoas_equipe: 4 },
+  ])
+  assert.equal(c.totalPessoas, 8)
+  assert.equal(c.totalPessoasQr, 3)
+  assert.equal(c.totalPessoasEquipe, 5)
+})
+
+test('⚠️ banco sem as duas portas: o conjunto devolve nulo, não zero inventado', () => {
+  const c = calcularConjunto([{ pessoas: 3 }, { pessoas: 1, pessoas_qr: 1, pessoas_equipe: 0 }])
+  assert.equal(c.totalPessoasQr, null)
+  assert.equal(c.totalPessoasEquipe, null)
+  assert.equal(calcularConjunto([]).totalPessoasQr, null)
+})
+
+test('tem_leads explica sem citar número', () => {
+  const m = mensagemDeTemLeads()
+  assert.match(m, /encerrar/)
+  assert.match(m, /arquivar/)
+  assert.doesNotMatch(m, /\d/)
 })
