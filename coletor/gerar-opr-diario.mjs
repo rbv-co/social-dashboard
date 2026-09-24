@@ -112,7 +112,7 @@ async function main() {
   // nesse modo, nem em erro.
   let dados, html, mensagemLeads, mensagemSeguidores;
   try {
-    const [campanhas, insights, leituras, contas] = await Promise.all([
+    const [campanhas, insights, leituras, contas, eventosChatwoot] = await Promise.all([
       sbGet('/campaigns?select=campaign_id,name,objective'),
       sbGet(`/campaign_insights?select=campaign_id,spend,likes,comments,shares,saves,conversas,cadastros,compras,visitas,post_engagement,impressions,clicks,reach&account_id=eq.${CONTA_VESSEL}&captured_at=eq.${dia}&period_days=eq.0`),
       // 48h de folga: garante leitura ANTERIOR ao primeiro bucket de ontem, pra
@@ -120,6 +120,9 @@ async function main() {
       // hora do dia inteiro (não só a última hora, como no relatório por hora).
       sbGet(`/followers_leituras?select=followers_count,lido_em,origem&account_id=eq.${CONTA_VESSEL}&lido_em=gte.${new Date(Date.now() - 48 * 3600 * 1000).toISOString()}&order=lido_em.asc`),
       sbGet(`/accounts?select=instagram_id,access_token&id=eq.${CONTA_VESSEL}`),
+      // Leads/Leads Quentes de verdade (24/09/2026) — ver
+      // docs/superpowers/specs/2026-09-24-chatwoot-leads-design.md.
+      sbGet(`/chatwoot_eventos?select=tipo&dia_br=eq.${dia}`),
     ]);
 
     const nomesPorCampanha = Object.fromEntries(campanhas.map((c) => [c.campaign_id, c.name]));
@@ -138,7 +141,11 @@ async function main() {
     // --dry — dry é só preview, nunca escreve nada além do PNG local).
     if (!DRY) await salvarVisitasPerfilDoDia(REST, H, CONTA_VESSEL, dia, visitasPerfilDoDia);
 
-    dados = calcularDadosOpr(campanhasDoDia, seguidoresDoDia);
+    const leadsChatwoot = {
+      novo: eventosChatwoot.filter((e) => e.tipo === 'lead_novo').length,
+      quente: eventosChatwoot.filter((e) => e.tipo === 'lead_quente').length,
+    };
+    dados = calcularDadosOpr(campanhasDoDia, seguidoresDoDia, leadsChatwoot);
     html = montarHtmlOpr(dados, { conta: 'Vessel Brasil', periodoLabel: periodoLabel(dia) });
 
     // Mensagens de FECHAMENTO DO DIA (pedido do dono, 17/09/2026) — mandadas

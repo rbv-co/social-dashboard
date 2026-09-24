@@ -71,7 +71,7 @@ test('montarHtmlOpr: valor null aparece como travessão, nunca "null" ou número
   assert.match(html, /—/);
 });
 
-test('⚠️ montarHtmlOpr: Leads Quentes aparece como travessão (sem fonte — Chatwoot), Leads/Vendas aparecem com o valor real', () => {
+test('⚠️ montarHtmlOpr: Leads Quentes null vira travessão (nunca número inventado), Leads/Vendas aparecem com o valor real', () => {
   const dados = dadosBase();
   const html = montarHtmlOpr(dados, { conta: 'Vessel Brasil', periodoLabel: '16/09/2026' });
   assert.match(html, /Leads Quentes[\s\S]*?—/, 'sem número inventado pra Leads Quentes');
@@ -110,12 +110,12 @@ test('integração: agruparCampanhasDoDia -> calcularDadosOpr -> montarHtmlOpr, 
   const objectivesPorCampanha = { c1: 'OUTCOME_LEADS', c2: 'OUTCOME_TRAFFIC', c3: 'OUTCOME_ENGAGEMENT' };
 
   const campanhasDoDia = agruparCampanhasDoDia(linhas, nomesPorCampanha, objectivesPorCampanha);
-  const dados = calcularDadosOpr(campanhasDoDia, /* seguidoresDoDia */ 5);
+  const dados = calcularDadosOpr(campanhasDoDia, /* seguidoresDoDia */ 5, /* leadsChatwoot */ { novo: 4, quente: 1 });
 
   // Contas de cabeça, pra conferir que a agregação bateu antes de olhar o HTML:
-  // custoPorLead = 301 / 4 cadastros = 75.25 -> "R$ 75,25"
-  assert.equal(dados.leadsEVendas.custoPorLead, 75.25);
+  // custoPorLead = investimentoTotal(301+100+50=451) / 4 leads do Chatwoot = 112,75
+  assert.equal(dados.leadsEVendas.custoPorLead, 112.75);
 
   const html = montarHtmlOpr(dados, { conta: 'Vessel Brasil', periodoLabel: '16/09/2026' });
-  assert.match(html, /R\$\s?75,25/, 'custoPorLead calculado bate no HTML final, formatado em reais');
+  assert.match(html, /R\$\s?112,75/, 'custoPorLead calculado bate no HTML final, formatado em reais');
 });

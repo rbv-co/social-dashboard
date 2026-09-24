@@ -107,7 +107,18 @@ function somar(campanhas, campo) {
 // nem por investimento <= 0 — cai pra `null`, nunca "R$ 0,00" inventado.
 // `seguidoresDoDia` pode ser `null` (nenhuma leitura de seguidor nesse dia
 // ainda) — é dado de CONTA, nunca dependeu de campanha nem de classificação.
-export function calcularDadosOpr(campanhasDoDia, seguidoresDoDia) {
+// `leadsChatwoot` (24/09/2026): { novo, quente } — contagem do dia vinda de
+// `chatwoot_eventos`, alimentada pela Edge Function receber-webhook-chatwoot
+// (ver docs/superpowers/specs/2026-09-24-chatwoot-leads-design.md).
+// Segunda entrega daquele spec: agora TEM fonte pra "Leads Gerados"/"Leads
+// Quentes" que não seja a ação de "conversa iniciada" da própria Meta (que
+// mede o anúncio abrir uma conversa, não a conversa chegar de verdade na
+// caixa do Chatwoot — achado real, 22/09/2026: o maior gerador de conversa
+// do dia era campanha de Tráfego, não de Leads). Contagem "cega" quanto a
+// campanha, de propósito: um lead pode vir de qualquer tipo, e o OPR não
+// quebra número nenhum por campanha.
+export function calcularDadosOpr(campanhasDoDia, seguidoresDoDia, leadsChatwoot = {}) {
+  const { novo: leadsNovoDoDia = 0, quente: leadsQuenteDoDia = 0 } = leadsChatwoot;
   // "outro" continua fora de QUALQUER soma — `agruparCampanhasDoDia` só tira
   // o ruído (vaga/atacado/rh/dre), "outro" (objective não mapeado) ainda
   // aparece na lista pra quem quiser auditar, mas nunca entra em número
@@ -124,6 +135,8 @@ export function calcularDadosOpr(campanhasDoDia, seguidoresDoDia) {
   const investimentoEngajamento = somar(engajamentoCampanhas, 'gasto');
   const investimentoVendas = somar(vendasCampanhas, 'gasto');
   const investimentoLeads = somar(leadsCampanhas, 'gasto');
+  const investimentoTotal = investimentoSeguidores + investimentoTrafego + investimentoEngajamento
+    + investimentoVendas + investimentoLeads;
 
   // `novos`/`seguidoresDoDia` é dado de CONTA (delta do Instagram), nunca de
   // campanha — por isso o custo por seguidor pode dar `null` mesmo com
@@ -187,32 +200,24 @@ export function calcularDadosOpr(campanhasDoDia, seguidoresDoDia) {
   const compras = somar(vendasCampanhas, 'compras');
 
   // Leads & Vendas no mesmo painel (22/09/2026, igual o antigo "Leads &
-  // Sales"). `resultado` soma `conversas` de QUALQUER campanha, não só as de
-  // objective Leads — achado revisando 22/09: a maior campanha de WhatsApp
-  // do dia ("[LEADS LOJA][mixconversão]", 35 conversas reais) tem objective
-  // Tráfego, e o relatório mostrava Leads Gerados = 0 por só olhar o balde
-  // Leads. `cadastros` (formulário) continua só de campanha objective Leads,
-  // que é o único jeito de gerar esse tipo de ação. Custo de cada resultado
-  // continua sobre o investimento do PRÓPRIO balde (Leads/Vendas) — nunca o
-  // investimento combinado, que inventaria um custo sem lastro quando o
-  // resultado veio de uma campanha de outro objective (ex.: Tráfego).
-  const resultadoLeads = somar(leadsCampanhas, 'cadastros') + somar(campanhasValidas, 'conversas');
+  // Sales"). `leads`/`leadsQuentes` vêm do Chatwoot (24/09/2026, ver
+  // comentário de `leadsChatwoot` acima) — não mais de `conversas`/
+  // `cadastros` da Meta, que ficam gravados em `campanhasDoDia` só pra
+  // quem quiser auditar contra o dado antigo. Custo por Lead usa o
+  // investimento TOTAL do dia, não mais só o balde Leads: o lead pode vir
+  // de qualquer tipo de campanha (confirmado pelo dono, 24/09/2026), então
+  // não faz mais sentido isolar só o gasto de um objective.
   const investimentoLeadsEVendas = investimentoLeads + investimentoVendas;
   const leadsEVendas = {
     investimento: investimentoLeadsEVendas,
-    leads: resultadoLeads,
-    // Chatwoot só rastreia a lista de espera hoje, não qualificação de lead
-    // — sem fonte, `null` de propósito (mesmo espírito do "compras" acima).
-    leadsQuentes: null,
+    leads: leadsNovoDoDia,
+    leadsQuentes: leadsQuenteDoDia,
     vendas: compras,
-    custoPorLead: investimentoLeads > 0 && resultadoLeads > 0
-      ? custoPorLead(investimentoLeads, resultadoLeads) : null,
+    custoPorLead: investimentoTotal > 0 && leadsNovoDoDia > 0
+      ? custoPorLead(investimentoTotal, leadsNovoDoDia) : null,
     custoPorVenda: investimentoVendas > 0 && compras > 0
       ? custoPorLead(investimentoVendas, compras) : null,
   };
-
-  const investimentoTotal = investimentoSeguidores + investimentoTrafego + investimentoEngajamento
-    + investimentoVendas + investimentoLeads;
 
   // Termômetro de mídia (23/09/2026, pedido do dono): fase é de investimento,
   // não de retorno — sem ROAS/receita de propósito. CTR/CPM/Frequência são o
@@ -231,7 +236,7 @@ export function calcularDadosOpr(campanhasDoDia, seguidoresDoDia) {
     // 22/09/2026: a legenda é "Interações totais", mas só contava a fatia de
     // Engajamento — 3.173 de um real de 31.132 no dia validado).
     engajamentos: somar(campanhasValidas, 'postEngagement'),
-    leadsGerados: resultadoLeads,
+    leadsGerados: leadsNovoDoDia,
     ctr: impressoesTotais > 0 && cliquesTotais > 0
       ? (cliquesTotais / impressoesTotais) * 100 : null,
     cpm: impressoesTotais > 0 && investimentoTotal > 0

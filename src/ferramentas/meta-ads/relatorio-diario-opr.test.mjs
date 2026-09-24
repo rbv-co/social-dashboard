@@ -102,7 +102,7 @@ test('calcularDadosOpr: soma cada categoria certa (seguidores/trafego/engajament
     c0: 'OUTCOME_TRAFFIC', c1: 'OUTCOME_LEADS', c2: 'OUTCOME_ENGAGEMENT', c3: 'OUTCOME_TRAFFIC', c4: 'OUTCOME_SALES', c5: 'OUTCOME_AWARENESS',
   });
 
-  const dados = calcularDadosOpr(campanhas, 12);
+  const dados = calcularDadosOpr(campanhas, 12, { novo: 5, quente: 2 });
 
   assert.equal(dados.seguidores.investimento, 40);
   assert.equal(dados.seguidores.novos, 12);
@@ -116,11 +116,11 @@ test('calcularDadosOpr: soma cada categoria certa (seguidores/trafego/engajament
   assert.equal(dados.engajamento.investimento, 200);
   assert.equal(dados.engajamento.curtidas, 30);
   assert.equal(dados.engajamento.totalInteracoes, 80, 'usa post_engagement da Meta, não a soma de curtida+coment.+compart.+salv. (que seria 40)');
-  assert.equal(dados.leadsEVendas.investimento, 100 + 30, 'leads + vendas somados');
-  assert.equal(dados.leadsEVendas.leads, 5, 'cadastros (leads) + conversas de QUALQUER campanha');
-  assert.equal(dados.leadsEVendas.leadsQuentes, null, 'sem fonte — Chatwoot só rastreia lista de espera');
+  assert.equal(dados.leadsEVendas.investimento, 100 + 30, 'leads + vendas somados (gasto por objective, não muda com o Chatwoot)');
+  assert.equal(dados.leadsEVendas.leads, 5, 'vem do Chatwoot (leadsChatwoot.novo), não mais de cadastros/conversas da Meta');
+  assert.equal(dados.leadsEVendas.leadsQuentes, 2, 'vem do Chatwoot (leadsChatwoot.quente)');
   assert.equal(dados.leadsEVendas.vendas, 1);
-  assert.equal(dados.leadsEVendas.custoPorLead, 100 / 5, 'custo usa só o investimento de Leads, não o combinado');
+  assert.equal(dados.leadsEVendas.custoPorLead, 420 / 5, 'investimento TOTAL do dia, não só o balde Leads — o lead pode vir de qualquer campanha');
   assert.equal(dados.leadsEVendas.custoPorVenda, 30 / 1);
 
   assert.equal(dados.header.investimentoTotal, 40 + 50 + 200 + 30 + 100, 'soma seguidores+trafego+engajamento+vendas+leads, nunca a campanha "outro"');
@@ -131,15 +131,23 @@ test('calcularDadosOpr: soma cada categoria certa (seguidores/trafego/engajament
   assert.equal(dados.mix.trafego, 50 / 420 * 100);
 });
 
-test('⚠️ calcularDadosOpr: Leads soma conversas de campanha de QUALQUER objective, não só Leads — achado 22/09/2026', () => {
+test('⚠️ calcularDadosOpr: Leads Gerados/Quentes vêm do Chatwoot, não de conversas/cadastros da Meta — a campanha nem precisa ter nenhum', () => {
   const campanhas = agruparCampanhasDoDia([
-    { campaign_id: 'c1', spend: 500, conversas: 35 },
+    { campaign_id: 'c1', spend: 500, conversas: 35, cadastros: 10 },
   ], { c1: '[LEADS LOJA][mixconversão]' }, { c1: 'OUTCOME_TRAFFIC' });
 
-  const dados = calcularDadosOpr(campanhas, 0);
-  assert.equal(dados.header.leadsGerados, 35, 'conversa de campanha Tráfego conta como lead');
-  assert.equal(dados.leadsEVendas.investimento, 0, 'mas o investimento de Leads/Vendas fica 0 — a campanha é Tráfego');
-  assert.equal(dados.leadsEVendas.custoPorLead, null, 'sem investimento no balde Leads, custo não se inventa');
+  const dados = calcularDadosOpr(campanhas, 0, { novo: 7, quente: 3 });
+  assert.equal(dados.header.leadsGerados, 7, 'ignora completamente conversas/cadastros da Meta');
+  assert.equal(dados.leadsEVendas.leadsQuentes, 3);
+  assert.equal(dados.leadsEVendas.custoPorLead, 500 / 7, 'usa o investimento total do dia (a campanha é Tráfego, sem balde Leads)');
+});
+
+test('calcularDadosOpr: sem leadsChatwoot (parâmetro omitido) vira 0, não quebra — mesma regra de "compras" sem tracking', () => {
+  const dados = calcularDadosOpr([], 0);
+  assert.equal(dados.header.leadsGerados, 0);
+  assert.equal(dados.leadsEVendas.leads, 0);
+  assert.equal(dados.leadsEVendas.leadsQuentes, 0);
+  assert.equal(dados.leadsEVendas.custoPorLead, null, 'zero lead nunca inventa custo');
 });
 
 test('calcularDadosOpr: custo nunca nasce de contagem ou investimento <= 0', () => {

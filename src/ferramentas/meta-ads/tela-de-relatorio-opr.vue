@@ -300,23 +300,31 @@ async function carregar() {
   // período é escolhido na tela, não fixo em "ontem").
   const desdeSeguidores = new Date(new Date(`${inicio}T00:00:00-03:00`).getTime() - 48 * 3600 * 1000).toISOString()
 
-  const [campanhas, insights, leituras] = await Promise.all([
+  const [campanhas, insights, leituras, eventosChatwoot] = await Promise.all([
     sb('campaigns?select=campaign_id,name,objective'),
     sb(`campaign_insights?select=campaign_id,spend,likes,comments,shares,saves,conversas,cadastros,compras,visitas,post_engagement,impressions,clicks,reach&account_id=eq.${CONTA_VESSEL}&captured_at=gte.${inicio}&captured_at=lte.${fim}&period_days=eq.0`),
     sb(`followers_leituras?select=followers_count,lido_em,origem&account_id=eq.${CONTA_VESSEL}&lido_em=gte.${desdeSeguidores}&order=lido_em.asc`),
+    // Leads/Leads Quentes de verdade (24/09/2026) — ver
+    // docs/superpowers/specs/2026-09-24-chatwoot-leads-design.md.
+    sb(`chatwoot_eventos?select=tipo&dia_br=gte.${inicio}&dia_br=lte.${fim}`),
   ])
 
   if (campanhas.erro) { erro.value = campanhas.erro; carregando.value = false; return }
   if (insights.erro) { erro.value = insights.erro; carregando.value = false; return }
   if (leituras.erro) { erro.value = leituras.erro; carregando.value = false; return }
+  if (eventosChatwoot.erro) { erro.value = eventosChatwoot.erro; carregando.value = false; return }
 
   const nomesPorCampanha = Object.fromEntries(campanhas.map((c) => [c.campaign_id, c.name]))
   const objectivesPorCampanha = Object.fromEntries(campanhas.map((c) => [c.campaign_id, c.objective]))
   const campanhasDoPeriodo = agruparCampanhasDoDia(insights, nomesPorCampanha, objectivesPorCampanha)
   const deltas = deltaDeSeguidoresPorHora(leituras)
   const seguidoresDoPeriodo = seguidoresNoPeriodo(deltas, inicio, fim)
+  const leadsChatwoot = {
+    novo: eventosChatwoot.filter((e) => e.tipo === 'lead_novo').length,
+    quente: eventosChatwoot.filter((e) => e.tipo === 'lead_quente').length,
+  }
 
-  dados.value = calcularDadosOpr(campanhasDoPeriodo, seguidoresDoPeriodo)
+  dados.value = calcularDadosOpr(campanhasDoPeriodo, seguidoresDoPeriodo, leadsChatwoot)
   carregando.value = false
 }
 
