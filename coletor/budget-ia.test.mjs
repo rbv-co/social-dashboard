@@ -325,11 +325,24 @@ test('o balde usado no anúncio é o da CAMPANHA, nunca recalculado', () => {
   // A Meta OMITE um action_type quando a contagem é zero: um anúncio de campanha
   // de WhatsApp que não puxou conversa na janela fica idêntico a um de
   // engajamento puro. Recalcular por anúncio classificaria no mercado errado.
+  //
+  // ARMADILHA (rodada de correção 1): com `actions: []` no anúncio, os dois
+  // caminhos convergem pra `resultado: null` — o certo (balde 'mensagens',
+  // sem conversa na janela) E o errado (balde recalculado por `camp.objective`
+  // = 'engajamento', cujo `alvo.resultado` é null POR DEFINIÇÃO em alvos.js,
+  // o único balde sem métrica de quantidade). Um teste que não distingue os
+  // dois passaria com o bug de volta. Por isso o anúncio abaixo tem uma
+  // conversa de verdade: só o balde 'mensagens' sabe ler `conversas`;
+  // 'engajamento' devolveria null de qualquer jeito.
   const camp = { id: '6', name: 'Zap', objective: 'OUTCOME_ENGAGEMENT' };
   const conjuntos = [{ id: 'c1', destination_type: 'WHATSAPP' }];
-  const ads = [{ ad_id: 'b1', ad_name: 'Sem conversa', spend: '150', actions: [] }];
+  const ads = [{
+    ad_id: 'b1', ad_name: 'Puxou conversa', spend: '150',
+    actions: [{ action_type: 'onsite_conversion.messaging_conversation_started_7d', value: '3' }],
+  }];
   const { user } = montarMensagens(camp, { spend: '150', actions: [] }, ads, conjuntos, REGUA_TESTE);
   const d = dadosDoPrompt(user);
   assert.equal(d.regua.tipo_de_campanha, 'mensagens', 'o conjunto diz WhatsApp');
-  assert.equal(d.anuncios[0].resultado, null);
+  assert.equal(d.anuncios[0].resultado, 3, 'balde mensagens lê conversas; engajamento não teria como');
+  assert.equal(d.anuncios[0].custo_por_resultado, 50, '150 / 3 conversas');
 });
