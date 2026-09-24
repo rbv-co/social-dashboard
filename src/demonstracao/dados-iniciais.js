@@ -28,14 +28,16 @@ export function dadosIniciais(agora = new Date()) {
   const em = (n, hora) => instanteEmSaoPaulo(dia(n), hora)
   const compacto = (n) => dia(n).replace(/-/g, '')
 
-  // ⚠️ AS ETAPAS DO FUNIL (configuráveis desde 24/09/2026) — as mesmas sete que
-  // `2026-09-24-vessel-stylist-funil-configuravel.sql` semeia, na mesma ordem.
+  // ⚠️ AS ETAPAS DO FUNIL (configuráveis desde 24/09/2026) — as que a migration
+  // semeia, na mesma ordem, COM OS NOMES QUE O DONO JÁ USA EM PRODUÇÃO (lidos
+  // de `vessel_stylist_etapas` em 24/09/2026: "Confirmou Ida" e "Esteve
+  // Presente" eram "Confirmado" e "Presença Confirmada").
   // ⚠️ 24/09/2026 (`2026-09-24-vessel-private-edit-so-com-stylist-liberada.sql`):
   // + a saída "Ativada", ANTES do Desclassificado, a única que libera Private
   // Edit. O id dela é o 8 (a ordem é a 7): os ids das sete de antes não mudam.
   const etapas = [
     ['Identificado', 'funil'], ['Classificação', 'funil'], ['Prospectado', 'funil', true], ['Convidado', 'funil'],
-    ['Confirmado', 'funil'], ['Presença Confirmada', 'funil'], ['Desclassificado', 'saida'],
+    ['Confirmou Ida', 'funil'], ['Esteve Presente', 'funil'], ['Desclassificado', 'saida'],
   ].map(([nome, tipo, marcada], i) => ({ id: i + 1, nome, ordem: i + 1, tipo, conta_como_prospectada: !!marcada,
     libera_private_edit: false, ativa: true, alterado_por_nome: null, alterado_em: null }))
   etapas.find((e) => e.nome === 'Desclassificado').ordem = 8
@@ -101,8 +103,8 @@ export function dadosIniciais(agora = new Date()) {
     motivo_id: saida.motivo ? MOTIVO[saida.motivo] : null, nota: saida.nota ?? null,
     liberava_private_edit: !!etapas.find((e) => e.id === ETAPA[para])?.libera_private_edit })
   passou(1, null, 'Identificado', -80, 'cadastro'); passou(1, 'Identificado', 'Prospectado', -75)
-  passou(1, 'Prospectado', 'Convidado', -72); passou(1, 'Convidado', 'Confirmado', -71)
-  passou(1, 'Confirmado', 'Ativada', -70)
+  passou(1, 'Prospectado', 'Convidado', -72); passou(1, 'Convidado', 'Confirmou Ida', -71)
+  passou(1, 'Confirmou Ida', 'Ativada', -70)
   passou(2, null, 'Identificado', -25, 'cadastro'); passou(2, 'Identificado', 'Prospectado', -20)
   passou(2, 'Prospectado', 'Convidado', -5)
   passou(3, null, 'Identificado', -3, 'cadastro'); passou(3, 'Identificado', 'Prospectado', -3)
@@ -283,11 +285,11 @@ export function dadosIniciais(agora = new Date()) {
     cidade: 'Campinas', instagram: '@luisa.exemplo', atuacao: 'stylist', praca_preview: 'CPS',
     loja: 'tivoli', origem_contato: 'evento', origem_canal: null, responsavel: 'Ionara',
     prospectado_em: dia(-45), proxima_acao: 'Remarcar o encontro que caiu', proxima_acao_em: dia(4),
-    ativada_em: em(-40, '15:00'), etapa_id: ETAPA['Presença Confirmada'], ativa: true, teste: false,
+    ativada_em: em(-40, '15:00'), etapa_id: ETAPA['Esteve Presente'], ativa: true, teste: false,
   })
   // O histórico de etapas dela (funil configurável, 24/09/2026).
   passou(4, null, 'Identificado', -50, 'cadastro'); passou(4, 'Identificado', 'Prospectado', -45)
-  passou(4, 'Prospectado', 'Convidado', -41); passou(4, 'Convidado', 'Presença Confirmada', -25)
+  passou(4, 'Prospectado', 'Convidado', -41); passou(4, 'Convidado', 'Esteve Presente', -25)
   encontros.push(
     {
       id: 4, codigo: `PE-${compacto(-25)}-CPS-01`, chave: 'M3T8W2QA', stylist_id: 4, quando: em(-25, '19:00'),

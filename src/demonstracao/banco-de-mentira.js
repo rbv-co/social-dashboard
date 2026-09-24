@@ -799,8 +799,15 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
         return { ok: false, situacao: 'vagas_invalidas', erro: 'A capacidade planejada é de 7 a 10 convidadas.' }
       }
       const dia = diaEmSaoPaulo(quando)
-      const seq = b.encontros.filter((e) => e.praca === praca && diaDoEncontro(e) === dia).length + 1
-      const codigo = `PE-${dia.replace(/-/g, '')}-${praca}-${String(seq).padStart(2, '0')}`
+      // ⚠️ 24/09/2026 (`2026-09-24-vessel-codigo-do-encontro-sem-repetir.sql`): a
+      // partir do número de sempre, o PRÓXIMO LIVRE — um encontro que mudou de
+      // dia não deixa o código dele ser repetido no dia de origem.
+      let seq = b.encontros.filter((e) => e.praca === praca && diaDoEncontro(e) === dia).length + 1
+      const codigoDo = (n) => `PE-${dia.replace(/-/g, '')}-${praca}-${String(n).padStart(2, '0')}`
+      const usado = (c) => b.encontros.some((e) => e.codigo === c) || b.atendimentos.some((t) => t.evento_codigo === c)
+        || b.origens.some((o) => o.evento_id === c)
+      while (usado(codigoDo(seq))) seq += 1
+      const codigo = codigoDo(seq)
       const chave = sortearChave((k) => b.encontros.some((e) => e.chave === k))
       const e = { id: proximo(b.encontros), codigo, chave, stylist_id: s.id, quando: quando.toISOString(),
         local: limpo(a.p_local), praca, loja: a.p_loja ?? null, vagas, ativa: true, arquivada: false,

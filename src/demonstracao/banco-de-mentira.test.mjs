@@ -86,7 +86,7 @@ test('as etapas: criar, renomear, reordenar, saída, a marca e excluir com desti
   const nomes = () => chamar('vessel_stylist_etapas').map((e) => e.nome)
   const nova = chamar('vessel_stylist_etapa_criar', { p_nome: ' Qualificada ', p_posicao: 3 })
   assert.equal(nova.ok, true)
-  assert.deepEqual(nomes(), ['Identificado', 'Classificação', 'Qualificada', 'Prospectado', 'Convidado', 'Confirmado', 'Presença Confirmada', 'Ativada', 'Desclassificado'])
+  assert.deepEqual(nomes(), ['Identificado', 'Classificação', 'Qualificada', 'Prospectado', 'Convidado', 'Confirmou Ida', 'Esteve Presente', 'Ativada', 'Desclassificado'])
   assert.equal(chamar('vessel_stylist_etapa_criar', { p_nome: 'qualificada' }).situacao, 'nome_repetido')
   assert.equal(chamar('vessel_stylist_etapa_renomear', { p_id: nova.id, p_nome: 'PROSPECTADO' }).situacao, 'nome_repetido')
   assert.equal(chamar('vessel_stylist_etapa_mover', { p_id: ETAPA.Identificado, p_direcao: 'subir' }).situacao, 'no_limite')
@@ -830,4 +830,15 @@ test('ativação pela etapa: a chegada na Ativada; sem ela, o primeiro encontro 
   for (const [a, b] of [['prospectadas', 'prospectadas_ja_ativadas'], ['prospectadas_ja_ativadas', 'prospectadas_com_private_edit_agendado'],
     ['prospectadas_com_private_edit_agendado', 'prospectadas_com_private_edit_realizado'],
     ['prospectadas_com_private_edit_realizado', 'prospectadas_recorrentes']]) assert.ok(depois[b] <= depois[a], `${b} ≤ ${a}`)
+})
+
+test('código do encontro sem repetir: o que mudou de dia não deixa o próximo repetir o código dele', () => {
+  const { chamar } = novoBanco()
+  chamar('vessel_stylist_criar', PARCEIRA)
+  ativar(chamar, NOVA)
+  const um = chamar('vessel_criar_private_edit', { p_stylist: NOVA, p_quando: quandoDaqui(10), p_praca: 'CPS', p_vagas: 8 })
+  assert.equal(chamar('vessel_private_edit_editar', { p_codigo: um.codigo, p_quando: quandoDaqui(11) }).ok, true)
+  const dois = chamar('vessel_criar_private_edit', { p_stylist: NOVA, p_quando: quandoDaqui(10), p_praca: 'CPS', p_vagas: 8 })
+  assert.equal(dois.ok, true)
+  assert.equal(dois.codigo, um.codigo.slice(0, -2) + '02')
 })
