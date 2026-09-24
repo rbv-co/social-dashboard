@@ -90,6 +90,19 @@ export function montarMensagens(camp, ins, ads, conjuntos, regua, extra) {
   // `custo_atual_reais: null` em lead, venda, mensagem e tráfego — e o system
   // prompt mandava citar o número.
   const custoAtual = custoAtualDoAlvo(balde, ins, regua);
+  // MULETA TEMPORÁRIA (proteção da Onda A — a correção de verdade, dar a estas
+  // campanhas um alvo próprio de custo por seguidor, é a Onda B, ainda não
+  // implementada — ver docs/superpowers/specs/2026-09-24-gt-analise-potente-design.md).
+  // A Meta não atribui "novo seguidor" a uma campanha (conferido na Graph API
+  // real, 12/09/2026 — ver db/migrations/2026-09-12-meta-ads-hora-cliques.sql):
+  // então campanha de seguidores cai no balde de tráfego/engajamento e é medida
+  // por custo por VISITA — mas quem manda pro perfil do Instagram quase não
+  // registra visita. O gasto dividido por um número minúsculo vira um "custo"
+  // gigante (casos reais: R$ 247,45, 1455× a meta) que não mede o que a
+  // campanha entrega. Sem esta trava o modelo recebia esse número como se
+  // fosse verdade e recomendava pausar com convicção — um conselho ruim, com
+  // voz firme, em cima de uma medida que não existe.
+  const deSeguidores = ehDeSeguidores(camp.name);
   const system =
     'Você é um gestor de tráfego pago sênior. Analise UMA campanha do Meta Ads E os anúncios dela, e recomende: ' +
     '(1) o orçamento diário ideal da CAMPANHA; (2) por ANÚNCIO, manter ou pausar o criativo. ' +
@@ -111,6 +124,13 @@ export function montarMensagens(camp, ins, ads, conjuntos, regua, extra) {
     // outra pessoa (correção pedida por ele, 2026-07-29).
     'ESCREVA SEMPRE "a meta" ou "a meta desta conta" — NUNCA "a meta do dono", "o dono definiu" ou qualquer menção a "dono", "cliente" ou "gestor": quem lê o texto é a própria pessoa que definiu a meta. ' +
     'Quando `regua.meta_reais` for nulo, essa conta ainda não tem meta para este tipo de campanha: aí sim julgue pelos indicadores do objetivo, e diga que a meta não está definida. ' +
+    // MULETA TEMPORÁRIA de campanha de seguidores (ver comentário de
+    // `deSeguidores` acima). Sem esta instrução o modelo recebia
+    // `regua.meta_reais` e `regua.custo_atual_reais` nulos e podia inventar
+    // "sem meta definida" — a frase certa para OUTRA situação (conta que
+    // simplesmente não configurou meta), não para esta, onde a medida não
+    // existe e nunca vai existir por campanha nesta onda.
+    'Quando `regua.medida_indisponivel` vier preenchido, esta campanha é de SEGUIDORES: a Meta não atribui "novo seguidor" a uma campanha, então não existe custo por resultado confiável aqui — julgue SOMENTE pelos indicadores disponíveis (CTR, CPC, frequência, alcance, volume de anúncios), NUNCA recomende "pausar" ou "reduzir" alegando custo por resultado ou comparação com meta, e diga isso na justificativa (que a medida não existe para este tipo de campanha) em vez de fingir que mediu. ' +
     // TENDÊNCIA e APRENDIZADO (Tarefa 5): antes o robô mandava uma janela só —
     // o modelo não tinha como dizer se a campanha estava melhorando ou piorando,
     // e "o que mudou desde ontem" é exatamente o que se olha às 8h da manhã.
@@ -169,7 +189,19 @@ export function montarMensagens(camp, ins, ads, conjuntos, regua, extra) {
     // o system prompt cita este campo em vez de cravar "7 dias" (a janela é
     // since=hoje-7d até until=hoje, ou seja, 8 dias INCLUSIVE).
     dias_da_janela: diasJanela,
-    regua: {
+    regua: deSeguidores ? {
+      // Campanha de seguidores: os TRÊS campos de custo vão nulos de propósito
+      // (não só custo_atual_reais) — deixar `meta_reais` pendurada sem um custo
+      // pra comparar convida o modelo a inventar a comparação mesmo assim. O
+      // texto de `medida_indisponivel` é o que diz o PORQUÊ (ver system acima).
+      tipo_de_campanha: balde,
+      rotulo: alvo ? alvo.rotulo : null,
+      meta_reais: null,
+      custo_atual_reais: null,
+      indice_contra_meta: null,
+      pesos: regua ? regua.pesos : null,
+      medida_indisponivel: 'A Meta não atribui "novo seguidor" a uma campanha, então não há custo por resultado confiável para esta campanha — julgue pelos demais indicadores (CTR, CPC, frequência, alcance, volume).',
+    } : {
       tipo_de_campanha: balde,
       rotulo: alvo ? alvo.rotulo : null,          // ex.: "Custo por ponto", "Custo por conversa iniciada"
       meta_reais: meta > 0 ? meta : null,          // nulo = conta sem meta para este tipo
@@ -316,7 +348,7 @@ import { orcamentoEfetivoDaCampanha } from '../src/ferramentas/gestao-trafego/or
 // A RÉGUA. Sem isto o robô julgava por critério próprio (CTR, CPC,
 // frequência) enquanto a tela julgava pela meta que o dono definiu — dois juízes
 // discordando sobre a mesma campanha. Agora ele responde contra a MESMA régua.
-import { baldeEfetivo } from '../src/ferramentas/gestao-trafego/baldes.js';
+import { baldeEfetivo, ehDeSeguidores } from '../src/ferramentas/gestao-trafego/baldes.js';
 import { normalizarRegua, reguaDaConta, metaDoBalde } from '../src/ferramentas/gestao-trafego/regua.js';
 import { quantidadesDoInsight, calcularPonderada } from '../src/ferramentas/gestao-trafego/ponderada.js';
 import { alvoDoBalde } from '../src/ferramentas/gestao-trafego/alvos.js';
@@ -558,9 +590,13 @@ async function main() {
         // fórmula. O --dry é a ferramenta que a gente usa pra conferir se o
         // robô está enxergando certo — uma divergência aqui seria o
         // diagnóstico mentindo sobre o próprio robô (ver custoAtualDoAlvo).
-        const ca = custoAtualDoAlvo(bal, ins, reguaDaContaAtual);
-        const txtCusto = ca == null ? 'custo SEM DADO' : `custo R$ ${ca.toFixed(2)}`;
-        const txtIdx = (ca != null && mt > 0) ? ` (${(ca / mt).toFixed(2)}× a meta)` : '';
+        // Campanha de seguidores: NÃO imprime custo nenhum — imprimir "custo R$
+        // X" aqui seria a mesma mentira que este trabalho existe pra tirar do
+        // que vai pro modelo (ver ehDeSeguidores/deSeguidores em montarMensagens).
+        const ehSeguidoresDry = ehDeSeguidores(camp.name);
+        const ca = ehSeguidoresDry ? null : custoAtualDoAlvo(bal, ins, reguaDaContaAtual);
+        const txtCusto = ehSeguidoresDry ? 'medida indisponível (seguidores)' : (ca == null ? 'custo SEM DADO' : `custo R$ ${ca.toFixed(2)}`);
+        const txtIdx = (!ehSeguidoresDry && ca != null && mt > 0) ? ` (${(ca / mt).toFixed(2)}× a meta)` : '';
         // TENDÊNCIA no --dry (rodada de correção 1, 24/09/2026): sem isto não
         // havia como conferir que a janela anterior está chegando de verdade
         // sem rodar o modelo — e a rodada real gasta Opus e grava no banco.
