@@ -116,6 +116,14 @@
 
       <!-- Três leituras soltas, uma por linha (eram um parágrafo corrido). -->
       <ul class="cv-scorecard-linha">
+        <!-- ⚠️ 24/09/2026: A ATIVAÇÃO É DA ETAPA (a primeira chegada numa etapa
+             que libera Private Edit) — a mesma do placar. O primeiro encontro
+             agendado continua aqui, com o nome dele. -->
+        <li><b>Ativou em:</b>
+          {{ sc.ativada_em ? dataLegivel(diaDoInstante(sc.ativada_em)) : 'ainda não ativou' }}<span
+            v-if="sc.ativada_por_encontro_antigo"> (pelo primeiro encontro: é de antes da etapa Ativada)</span></li>
+        <li><b>1º Private Edit agendado em:</b>
+          {{ sc.private_edit_agendado_em ? dataLegivel(diaDoInstante(sc.private_edit_agendado_em)) : 'nenhum ainda' }}</li>
         <li><b>Recorrente: {{ sc.recorrente ? 'sim' : 'não' }}</b>
           ({{ sc.realizados_desde_o_inicio }} realizado(s) até o fim do período)</li>
         <li><b>Intervalo médio entre os encontros dela:</b>
@@ -127,7 +135,10 @@
         As mesmas regras do placar: a venda é o pedido atendido no Bling de uma
         convidada presente, até 14 dias depois do encontro; quem foi a dois
         encontros tem a compra contada no <b>primeiro</b> — mesmo que ele seja
-        de outra stylist. Por isso a soma das fichas dá o placar.
+        de outra stylist. Por isso a soma das fichas dá o placar. <b>Ativou</b>
+        é o dia em que ela chegou pela primeira vez numa etapa que libera
+        Private Edit (a Ativada); quem teve encontro antes dessa regra ativou no
+        primeiro encontro.
       </p>
     </template>
   </section>

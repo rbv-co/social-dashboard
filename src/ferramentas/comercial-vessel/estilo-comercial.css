@@ -679,3 +679,36 @@
   .cv-ficha-cartao { padding: var(--sp-3); }
   .id-ferramenta .cv-ficha-cartao.id-caixa-form { padding: var(--sp-3); }
 }
+
+/* ═══ PRIVATE EDIT SÓ COM LIBERADA, MOTIVOS DAS SAÍDAS E O ARRASTAR (24/09/2026)
+ * Bloco próprio, no fim da folha, para o merge com as outras ondas ser limpo. */
+/* A saída que libera Private Edit (a Ativada) é uma saída BOA: o tom é o de viva. */
+.cv-fase-libera { --fase: var(--situacao-viva); }
+.cv-quadro-titulo-tipo { font-weight: 400; color: var(--muted); }
+.cv-quadro-coluna { min-height: 96px; border-radius: var(--radius-md); }
+.cv-quadro-arrastavel { cursor: grab; }
+.cv-quadro-sendo-arrastado { opacity: .45; }
+/* Durante o arrasto, toda coluna mostra que recebe; a de baixo do cartão, forte. */
+.cv-quadro-arrastando .cv-quadro-coluna { outline: 2px dashed var(--border); outline-offset: 3px; }
+.cv-quadro-arrastando .cv-quadro-coluna.cv-quadro-alvo {
+  outline-color: var(--fase, var(--accent));
+  background: color-mix(in srgb, var(--fase, var(--accent)) 10%, var(--surface));
+}
+.cv-quadro-motivo { color: var(--text); overflow-wrap: anywhere; }
+@media (max-width: 640px) { .cv-quadro-dica { display: none; } }
+/* A linha da ficha: pode ou não ter Private Edit. */
+.cv-ficha-pe {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); margin: var(--sp-2) 0;
+  font-family: var(--fonte-principal); font-size: var(--texto-corpo); color: var(--text); overflow-wrap: anywhere;
+}
+.cv-selo-etapa { white-space: normal; overflow-wrap: anywhere; }
+/* O bloco "Saídas por motivo" do placar. */
+.id-grupo.cv-grupo-saidas { --tom: var(--situacao-queda); }
+.cv-saidas { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: var(--sp-3); }
+.cv-saida-titulo { margin: 0 0 var(--sp-1); color: var(--text); font-size: var(--texto-corpo); }
+.cv-saida-linhas { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.cv-saida-linhas li {
+  display: flex; justify-content: space-between; gap: var(--sp-2); font-size: var(--texto-corpo); color: var(--text);
+  border-bottom: 1px solid var(--border); padding: 4px 0; overflow-wrap: anywhere;
+}
+.cv-nota-base-pe { color: var(--text); }

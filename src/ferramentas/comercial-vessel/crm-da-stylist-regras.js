@@ -4,7 +4,8 @@
  * ⚠️ DESDE 24/09/2026 O FUNIL É CONFIGURÁVEL (decisão do dono): as etapas são
  * linhas de `vessel_stylist_etapas`, lidas por `vessel_stylist_etapas()`, cada
  * uma com { id, nome, ordem, tipo: 'funil' | 'saida', conta_como_prospectada,
- * stylists }. NADA MUDA DE ETAPA SOZINHO: nem encontro, nem contato. Quem muda
+ * libera_private_edit, stylists, motivos: [{ id, nome, ordem, ativo, exige_nota,
+ * stylists }], stylists_sem_motivo } (os dois últimos desde 24/09/2026). NADA MUDA DE ETAPA SOZINHO: nem encontro, nem contato. Quem muda
  * é a pessoa, na ficha ou no quadro (`vessel_stylist_mover_de_etapa`).
  *
  * ⚠️ AS LISTAS DE CANAL E RESULTADO SÃO ESPELHO DOS CHECK DE
@@ -59,8 +60,10 @@ export function prazoAtrasado(prazo, hoje) {
 }
 
 /**
- * O quadro: uma coluna por etapa de FUNIL, na ordem, e as saídas juntas numa
- * coluna só, no fim. Devolve [{ chave, titulo, etapa, stylists }].
+ * O quadro: uma coluna por etapa de FUNIL, na ordem, e depois UMA COLUNA POR
+ * SAÍDA, no fim (24/09/2026: o dono arrasta a parceira para a Ativada ou para
+ * o Desclassificado — cada saída precisa ser um alvo próprio). Devolve
+ * [{ chave, titulo, etapa, saida, stylists }].
  * ⚠️ Uma stylist com etapa que a lista de etapas não conhece (a lista mudou
  * entre as duas leituras) cai na PRIMEIRA coluna, nunca some do quadro.
  * ⚠️ `ordem: 'faixa'` (scorecard, 24/09): dentro de cada coluna, A, B, C e sem
@@ -68,12 +71,11 @@ export function prazoAtrasado(prazo, hoje) {
  * prazo, nome). A nota NÃO muda a coluna de ninguém: só a ordem dentro dela.
  */
 export function colunasDoQuadro(lista, etapas, hoje, ordem = null) {
-  const funil = etapasDoFunil(etapas)
-  const saidas = new Set(etapasDeSaida(etapas).map((e) => e.id))
-  const colunas = funil.map((e) => ({ chave: String(e.id), titulo: e.nome, etapa: e, stylists: [] }))
-  const saida = { chave: 'saidas', titulo: 'Saídas', etapa: null, stylists: [] }
+  const colunas = [
+    ...etapasDoFunil(etapas).map((e) => ({ chave: String(e.id), titulo: e.nome, etapa: e, saida: false, stylists: [] })),
+    ...etapasDeSaida(etapas).map((e) => ({ chave: String(e.id), titulo: e.nome, etapa: e, saida: true, stylists: [] })),
+  ]
   for (const s of Array.isArray(lista) ? lista : []) {
-    if (saidas.has(s?.etapa_id)) { saida.stylists.push(s); continue }
     const destino = colunas.find((c) => c.etapa.id === s?.etapa_id) || colunas[0]
     if (destino) destino.stylists.push(s)
   }
@@ -85,9 +87,109 @@ export function colunasDoQuadro(lista, etapas, hoje, ordem = null) {
     return String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR')
   }
   const porFaixa = (a, b) => (posicaoDaFaixa(a.faixa) - posicaoDaFaixa(b.faixa)) || porPrazo(a, b)
-  const todas = [...colunas, saida]
-  for (const c of todas) c.stylists.sort(ordem === 'faixa' ? porFaixa : porPrazo)
-  return todas
+  for (const c of colunas) c.stylists.sort(ordem === 'faixa' ? porFaixa : porPrazo)
+  return colunas
+}
+
+/** Soltar um cartão numa coluna: a etapa de destino, ou nulo quando é a mesma
+ * em que ela já está (soltar no mesmo lugar não faz nada). */
+export function destinoDoSoltar(etapaAtualId, coluna) {
+  const id = coluna?.etapa?.id
+  if (id == null || id === etapaAtualId) return null
+  return id
+}
+
+// ── Private Edit só com stylist liberada (24/09/2026) ─────────────────────
+/** As etapas que liberam Private Edit, na ordem (os nomes de hoje). */
+export function etapasQueLiberam(etapas) {
+  return [...etapasDoFunil(etapas), ...etapasDeSaida(etapas)].filter((e) => e.libera_private_edit)
+}
+
+/** "Ativada", "Ativada e Recorrente", "Ativada, Recorrente e VIP". */
+export function nomesEmLista(nomes) {
+  const l = (nomes || []).filter(Boolean)
+  if (l.length <= 1) return l[0] || ''
+  return `${l.slice(0, -1).join(', ')} e ${l.at(-1)}`
+}
+
+/** A linha da ficha: ela pode ser anfitriã de um Private Edit novo? */
+export function privateEditDaStylist(stylist, etapas) {
+  const liberam = etapasQueLiberam(etapas)
+  const aqui = liberam.some((e) => e.id === stylist?.etapa_id) || stylist?.etapa_libera_private_edit === true
+  if (aqui) return { pode: true, texto: 'Pode marcar Private Edit' }
+  if (!liberam.length) {
+    return { pode: false, texto: 'Nenhuma etapa libera Private Edit hoje — marque uma em "Etapas do funil".' }
+  }
+  return { pode: false, texto: `Private Edit liberado ao chegar em: ${nomesEmLista(liberam.map((e) => e.nome))}` }
+}
+
+/** O aviso curto depois de mover para uma etapa que libera Private Edit. */
+export function avisoDeLiberada(nome, etapa) {
+  const quem = String(nome || '').trim() || 'A parceira'
+  const onde = /^ativad/i.test(String(etapa?.nome || '')) ? `${quem} ativada` : `${quem} em ${etapa?.nome || 'uma etapa que libera'}`
+  return `${onde} — já aparece em Marcar um encontro do Private Edit.`
+}
+
+// ── os motivos das saídas (24/09/2026) ─────────────────────────────────────
+/** Os motivos ATIVOS de uma etapa, na ordem. */
+export function motivosAtivos(etapa) {
+  return (Array.isArray(etapa?.motivos) ? etapa.motivos : []).filter((m) => m.ativo !== false)
+    .sort((a, b) => (a.ordem - b.ordem) || (a.id - b.id))
+}
+
+/** Chegar nesta etapa pede um motivo? Só saída com motivo ativo. */
+export function pedeMotivo(etapa) {
+  return etapa?.tipo === 'saida' && motivosAtivos(etapa).length > 0
+}
+
+/** O que falta na escolha do motivo, antes de ir ao banco (ele confere de novo). */
+export function problemasDoMotivo(escolha, etapa) {
+  if (!pedeMotivo(etapa)) return []
+  const m = motivosAtivos(etapa).find((x) => String(x.id) === String(escolha?.motivoId ?? ''))
+  if (!m) return ['Escolha o motivo.']
+  const nota = String(escolha?.nota ?? '').trim()
+  if (nota.length > 500) return ['A nota passou de 500 letras. Encurte um pouco.']
+  if (m.exige_nota && !nota) return [`"${m.nome}" pede uma nota: escreva o motivo em poucas palavras.`]
+  return []
+}
+
+/** O botão que confirma a saída: "Desclassificar" no Desclassificado. */
+export function rotuloDeConfirmarSaida(etapa) {
+  return /^desclassificad/i.test(String(etapa?.nome || '')) ? 'Desclassificar' : `Mover para ${etapa?.nome || 'a saída'}`
+}
+
+/** "Desclassificado · Não conecta com a marca" (sem motivo, só a etapa). */
+export function etapaComMotivo(s) {
+  const etapa = s?.etapa || 'Sem etapa'
+  return s?.etapa_tipo === 'saida' && s?.saida_motivo ? `${etapa} · ${s.saida_motivo}` : etapa
+}
+
+/**
+ * O bloco "Saídas por motivo" do placar: quem está HOJE em cada saída, por
+ * motivo, com os zeros escondidos. Saída vazia não aparece; nenhuma saída
+ * com gente, lista vazia (e o bloco some).
+ */
+export function saidasPorMotivo(etapas) {
+  return etapasDeSaida(etapas)
+    .filter((e) => Number(e.stylists) > 0)
+    .map((e) => {
+      const linhas = (Array.isArray(e.motivos) ? e.motivos : [])
+        .filter((m) => Number(m.stylists) > 0)
+        .sort((a, b) => (Number(b.stylists) - Number(a.stylists)) || (a.ordem - b.ordem))
+        .map((m) => ({ nome: m.ativo === false ? `${m.nome} (fora de uso)` : m.nome, n: Number(m.stylists) }))
+      const semMotivo = Number(e.stylists_sem_motivo) || 0
+      // Saída sem lista de motivos (a Ativada) não tem "sem motivo": só o total.
+      if (semMotivo > 0 && (e.motivos || []).length) linhas.push({ nome: 'Sem motivo registrado', n: semMotivo })
+      return { etapa: e.nome, total: Number(e.stylists), linhas }
+    })
+}
+
+/** O que está errado no nome de um motivo, antes de ir ao banco. */
+export function problemasDoNomeDoMotivo(nome) {
+  const t = String(nome ?? '').trim()
+  if (!t) return ['Escreva o motivo.']
+  if (t.length > 80) return ['O motivo passa de 80 letras. Encurte um pouco.']
+  return []
 }
 
 /** O que está errado no nome de uma etapa, antes de ir ao banco (o banco
@@ -118,6 +220,14 @@ export function mensagemDasEtapas(situacao) {
     case 'destino_invalido': return 'Escolha outra etapa como destino.'
     case 'etapa_invalida': return 'Esta etapa não existe mais. Recarregue e escolha de novo.'
     case 'direcao_invalida': return 'Não consegui mover agora. Tente de novo em um instante.'
+    // 24/09/2026: os motivos das saídas e a marca de Private Edit.
+    case 'motivo_obrigatorio': return 'Esta saída pede um motivo. Escolha o motivo antes de mover.'
+    case 'motivo_invalido': return 'Este motivo não vale mais para esta saída — a lista pode ter mudado. Recarregue e escolha de novo.'
+    case 'nota_obrigatoria': return 'Este motivo pede uma nota: escreva em poucas palavras.'
+    case 'nota_longa': return 'A nota passou de 500 letras. Encurte um pouco.'
+    case 'motivo_longo': return 'O motivo passa de 80 letras. Encurte um pouco.'
+    case 'so_saida': return 'Motivo só existe em etapa de saída.'
+    case 'sem_escolha': return 'Não consegui gravar agora. Tente de novo em um instante.'
     default: return 'Não consegui gravar agora. Tente de novo em um instante.'
   }
 }

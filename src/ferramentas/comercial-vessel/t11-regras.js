@@ -32,7 +32,9 @@ import { proporcao, razao, taxaEscrita } from './estatistica.js'
  * saída é queda. */
 export function seloDaEtapa(s) {
   const texto = s?.etapa || 'Sem etapa'
-  const tom = s?.etapa_tipo === 'saida' ? 'queda' : s?.etapa_tipo === 'funil' ? 'andamento' : 'parada'
+  // 24/09/2026: a saída que libera Private Edit (a Ativada) é uma saída BOA.
+  const tom = s?.etapa_tipo === 'saida' ? (s?.etapa_libera_private_edit ? 'viva' : 'queda')
+    : s?.etapa_tipo === 'funil' ? 'andamento' : 'parada'
   return { texto, classe: 'cv-selo-fim', tom }
 }
 
@@ -253,6 +255,11 @@ export function taxasDoPlacar(pl) {
     // já ativaram. "Ativadas no período" (a contagem do cartão) é de outra
     // turma e passava de 100%.
     ativacao: proporcao(n(pl?.prospectadas_ja_ativadas), n(pl?.prospectadas)),
+    // ⚠️ 24/09/2026: A TURMA EM CINCO PASSOS — cada passo DENTRO do anterior
+    // (o banco garante), então cada taxa é sobre o passo de cima.
+    agendamento: proporcao(n(pl?.prospectadas_com_private_edit_agendado), n(pl?.prospectadas_ja_ativadas)),
+    realizacaoDaTurma: proporcao(n(pl?.prospectadas_com_private_edit_realizado), n(pl?.prospectadas_com_private_edit_agendado)),
+    recorrenciaDaTurma: proporcao(n(pl?.prospectadas_recorrentes), n(pl?.prospectadas_com_private_edit_realizado)),
     realizacao: proporcao(n(pl?.encontros_realizados), n(pl?.encontros_agendados)),
     // ⚠️ Só confirmadas de encontro que ACONTECEU: a de encontro cancelado
     // nunca pôde comparecer. E o numerador com O MESMO filtro: a equipe marca
@@ -270,6 +277,36 @@ export function taxasDoPlacar(pl) {
     // mesma edição pode ter 4 vendas, e isso não é 400%.
     vendasPorEncontro: razao(n(pl?.vendas), n(pl?.encontros_realizados)),
   }
+}
+
+/**
+ * A SEQUÊNCIA DO PLACAR (24/09/2026, "manter o sentido"): Prospectadas →
+ * Ativadas → Com Private Edit agendado → Com Private Edit realizado →
+ * Recorrentes. O número grande de cada passo é o do PERÍODO (pela data de cada
+ * um); a taxa embaixo é da TURMA — das prospectadas no período, quantas
+ * chegaram a este passo, sobre as que chegaram ao anterior. Mesma turma em cima
+ * e embaixo, como a taxa de ativação sempre foi.
+ */
+export function sequenciaDoPlacar(pl) {
+  const n = (x) => Number(x) || 0
+  const t = taxasDoPlacar(pl)
+  return [
+    { chave: 'prospectadas', rotulo: 'Prospectadas', valor: n(pl?.prospectadas), base: 'pela data da prospecção', taxa: null },
+    { chave: 'ativadas', rotulo: 'Ativadas', valor: n(pl?.ativadas), base: 'pela chegada na etapa que libera Private Edit',
+      taxa: t.ativacao, legenda: 'das prospectadas' },
+    { chave: 'agendado', rotulo: 'Com Private Edit agendado', valor: n(pl?.com_private_edit_agendado), base: 'pelo dia do primeiro encontro agendado',
+      taxa: t.agendamento, legenda: 'das ativadas da turma' },
+    { chave: 'realizado', rotulo: 'Com Private Edit realizado', valor: n(pl?.com_private_edit_realizado), base: 'pelo dia do primeiro realizado',
+      taxa: t.realizacaoDaTurma, legenda: 'das com encontro agendado' },
+    { chave: 'recorrentes', rotulo: 'Recorrentes', valor: n(pl?.recorrentes_no_periodo), base: '2º encontro realizado no período',
+      taxa: t.recorrenciaDaTurma, legenda: 'das com encontro realizado' },
+  ]
+}
+
+/** A taxa de um passo da sequência, escrita: "1 de 2 (50%) das ativadas da turma". */
+export function taxaDoPasso(passo) {
+  if (!passo?.taxa) return passo?.base || ''
+  return passo.taxa.temBase ? `${taxaEscrita(passo.taxa)} ${passo.legenda}` : `sem base na turma (${passo.legenda})`
 }
 
 /**

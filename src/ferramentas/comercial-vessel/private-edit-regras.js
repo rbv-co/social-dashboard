@@ -108,9 +108,58 @@ export function mensagemDeEditar(situacao) {
       return 'Não achei esta stylist. Confira o código — ele é o STY-0000 dela.'
     case 'vagas_invalidas':
       return 'As vagas (capacidade planejada) precisam ficar entre 7 e 10.'
+    // 24/09/2026: TROCAR a anfitriã só por uma liberada (manter a de hoje passa).
+    case 'stylist_nao_liberada':
+      return 'Esta parceira ainda não pode ser anfitriã: só quem está numa etapa que libera Private Edit (a Ativada). Mova-a no Stylist Circle, ou mantenha a anfitriã de antes.'
     default:
       return 'Não consegui salvar agora. Tente de novo em um instante.'
   }
+}
+
+// ── a base do Private Edit (24/09/2026) ─────────────────────────────────────
+/**
+ * O seletor de "Marcar um encontro": SÓ as parceiras em etapa que libera
+ * Private Edit (`libera_private_edit` de `vessel_stylists_para_escolher`). As
+ * outras não aparecem — o banco recusaria (`stylist_nao_liberada`).
+ */
+export function stylistsLiberadas(lista) {
+  return (Array.isArray(lista) ? lista : []).filter((s) => s?.libera_private_edit === true)
+}
+
+/**
+ * O seletor da EDIÇÃO: as liberadas e, sempre, a anfitriã de hoje do encontro
+ * (mesmo fora da Ativada — manter a de hoje o banco aceita; o encontro que já
+ * existe não se invalida).
+ */
+export function stylistsParaEditar(lista, codigoAtual) {
+  const todas = Array.isArray(lista) ? lista : []
+  return todas.filter((s) => s?.libera_private_edit === true || s?.codigo === codigoAtual)
+}
+
+/** A nota embaixo do seletor, com os nomes de HOJE das etapas que liberam. */
+export function notaDaBaseDoPrivateEdit(nomes) {
+  const l = (nomes || []).filter(Boolean)
+  if (!l.length) {
+    return 'Nenhuma etapa libera Private Edit hoje, então ninguém pode ser anfitriã. No Stylist Circle, em "Etapas do funil", ligue "Libera Private Edit" numa etapa (a Ativada) e mova a parceira para ela.'
+  }
+  const lista = l.length === 1 ? l[0] : `${l.slice(0, -1).join(', ')} e ${l.at(-1)}`
+  return `Só aparecem as parceiras em etapas que liberam Private Edit (hoje: ${lista}).`
+}
+
+/** Quando há etapa que libera mas nenhuma parceira nela. */
+export function vazioDaBaseDoPrivateEdit(nomes) {
+  const l = (nomes || []).filter(Boolean)
+  if (!l.length) return ''
+  return `Nenhuma parceira está em ${l.join(' ou ')} ainda. No Stylist Circle, mova a parceira para ${l[0]} (arraste o cartão ou use "Ou mover para" na ficha) e ela aparece aqui na hora.`
+}
+
+/** A frase da recusa de criar. O banco já manda o `erro` em português; sem ele, a nossa. */
+export function mensagemDeCriar(r) {
+  if (r?.erro) return r.erro
+  if (r?.situacao === 'stylist_nao_liberada') {
+    return 'Esta parceira ainda não pode receber um Private Edit: mova-a para a Ativada no Stylist Circle antes de marcar o encontro.'
+  }
+  return 'Não consegui criar agora.'
 }
 
 /**

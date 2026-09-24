@@ -50,30 +50,24 @@
         <template v-else-if="placar">
           <div class="id-grupo cv-grupo-parceiras">
           <h3 class="cv-etiqueta cv-etiqueta-interna id-titulo"><icone-do-bloco nome="parceiras" />As parceiras</h3>
+          <!-- ⚠️ 24/09/2026 ("manter o sentido"): A SEQUÊNCIA, cada passo com a
+               taxa da TURMA sobre o passo de cima — das prospectadas no
+               período, quantas chegaram a cada passo (`sequenciaDoPlacar`,
+               t11-regras.js). O número grande é o do período, pela data dele. -->
+          <div class="cv-numeros cv-numeros-placar cv-sequencia">
+            <div v-for="p in sequencia" :key="p.chave" class="cv-numero" :data-passo="p.chave">
+              <span class="cv-numero-valor">{{ p.valor }}</span>
+              <span class="cv-numero-rotulo">{{ p.rotulo }}</span>
+              <span class="cv-numero-base">{{ p.base }}</span>
+              <span v-if="p.taxa" class="cv-numero-base">{{ taxaDoPasso(p) }}</span>
+              <span v-if="p.taxa && margemEscrita(p.taxa)" class="cv-numero-margem">{{ margemEscrita(p.taxa) }}</span>
+            </div>
+          </div>
           <div class="cv-numeros cv-numeros-placar">
-            <div class="cv-numero">
-              <span class="cv-numero-valor">{{ placar.prospectadas }}</span>
-              <span class="cv-numero-rotulo">Prospectadas</span>
-              <span class="cv-numero-base">pela data da prospecção</span>
-            </div>
-            <div class="cv-numero">
-              <span class="cv-numero-valor">{{ placar.ativadas }}</span>
-              <span class="cv-numero-rotulo">Ativadas</span>
-              <!-- ⚠️ O NÚMERO GRANDE E A TAXA SÃO DE TURMAS DIFERENTES: o número
-                   é quem ativou no período (pela data da ativação); a taxa é
-                   das prospectadas no período, quantas já ativaram. -->
-              <span class="cv-numero-base">{{ legendaDaTaxa('ativacao', taxas.ativacao) }}</span>
-              <span v-if="margemEscrita(taxas.ativacao)" class="cv-numero-margem">{{ margemEscrita(taxas.ativacao) }}</span>
-            </div>
-            <div class="cv-numero">
-              <span class="cv-numero-valor">{{ placar.recorrentes_no_periodo }}</span>
-              <span class="cv-numero-rotulo">Ficaram recorrentes</span>
-              <span class="cv-numero-base">2º encontro realizado no período</span>
-            </div>
             <div class="cv-numero">
               <span class="cv-numero-valor">{{ emPorcento(taxas.repeticao.valor) }}</span>
               <span class="cv-numero-rotulo">Taxa de repetição</span>
-              <span class="cv-numero-base">{{ taxaEscrita(taxas.repeticao) }}, desde o início</span>
+              <span class="cv-numero-base">{{ taxaEscrita(taxas.repeticao) }}, das ativadas até o fim do período</span>
             </div>
             <div class="cv-numero">
               <span class="cv-numero-valor">{{ placar.intervalos ? `${formatarDias(placar.intervalo_medio_em_dias)}` : '—' }}</span>
@@ -87,6 +81,26 @@
                 ? `média de ${placar.stylists_com_contatos_ate_ativar} stylist(s)` : 'sem base ainda' }}</span>
             </div>
           </div>
+          <p v-if="placar.ativadas_por_encontro_antigo" class="cv-nota">
+            {{ placar.ativadas_por_encontro_antigo === 1 ? '1 das ativadas' : `${placar.ativadas_por_encontro_antigo} das ativadas` }}
+            no período conta pelo primeiro encontro: é da turma de antes da etapa
+            Ativada, que teve Private Edit sem nunca ter passado por ela.
+          </p>
+          </div>
+
+          <!-- ⚠️ 24/09/2026: QUEM ESTÁ HOJE EM CADA SAÍDA, POR MOTIVO. Não é do
+               período (é o retrato de hoje); zeros escondidos; sem ninguém em
+               saída, o bloco some. -->
+          <div v-if="saidas.length" class="id-grupo cv-grupo-saidas">
+            <h3 class="cv-etiqueta cv-etiqueta-interna id-titulo"><icone-do-bloco nome="funil" />Saídas por motivo</h3>
+            <div class="cv-saidas">
+              <div v-for="sd in saidas" :key="sd.etapa" class="cv-saida">
+                <p class="cv-saida-titulo"><b>{{ sd.etapa }}</b> · {{ sd.total === 1 ? '1 parceira' : `${sd.total} parceiras` }} hoje</p>
+                <ul v-if="sd.linhas.length" class="cv-saida-linhas">
+                  <li v-for="l in sd.linhas" :key="l.nome"><span>{{ l.nome }}</span><b>{{ l.n }}</b></li>
+                </ul>
+              </div>
+            </div>
           </div>
 
           <div class="id-grupo cv-grupo-encontros">
@@ -191,11 +205,18 @@
 
           <p class="cv-nota">
             Cada número usa a sua data: <b>prospectadas</b> pela data da
-            prospecção, <b>ativadas</b> pelo dia do primeiro encontro agendado, e
-            <b>encontros, convidadas e venda</b> pelo dia do encontro.
-            A <b>taxa de ativação</b> olha uma turma só: das prospectadas no
-            período, quantas já ativaram — por isso ela não bate com a divisão
-            dos dois números grandes, e nunca passa de 100%. A taxa de
+            prospecção; <b>ativadas</b> pelo dia em que a parceira chegou pela
+            primeira vez numa etapa que libera Private Edit (a Ativada) — quem
+            teve encontro antes dessa regra conta pelo primeiro encontro;
+            <b>com Private Edit agendado</b> pelo dia do primeiro encontro
+            agendado (era o "ativadas" de antes); <b>com Private Edit
+            realizado</b> pelo dia do primeiro realizado; e <b>encontros,
+            convidadas e venda</b> pelo dia do encontro — esses não dependem da
+            etapa de ninguém.
+            As taxas de baixo de cada passo olham uma turma só: das prospectadas
+            no período, quantas chegaram àquele passo, sobre as que chegaram ao
+            anterior — por isso elas não batem com a divisão dos números
+            grandes, e nunca passam de 100%. A taxa de
             <b>presentes</b> conta só as confirmadas de encontros que
             aconteceram: quem confirmou para um encontro cancelado nunca pôde
             ir.
@@ -343,6 +364,7 @@
            CERTO. Com a leitura falhando, "Sem nota" em todo mundo seria uma
            afirmação falsa: o selo some e o aviso diz por quê. -->
       <p v-if="erroDasFaixas && !carregando && !erro" class="cv-nota cv-nota-erro">{{ erroDasFaixas }}</p>
+      <p v-if="vista === 'quadro' && avisoDoQuadro" class="cv-nota cv-nota-ok" role="status">{{ avisoDoQuadro }}</p>
       <quadro-do-stylist-circle v-if="vista === 'quadro' && !carregando && !erro" :stylists="stylistsNaTela" :etapas="etapas"
                                 :pode-editar="podeExecutarAcao('editar', podeEditar)" :hoje="hojeLocal"
                                 :movendo-codigo="movendoCodigo" :mostrar-faixa="vigentes !== null"
@@ -474,6 +496,7 @@
               <span class="cv-numero-valor">{{ s.encontros_realizados || 0 }}</span>
               <span class="cv-numero-rotulo">Realizados</span>
               <span class="cv-numero-base">{{ s.ativada_em ? `ativada em ${dataLegivel(dataDoInstante(s.ativada_em))}` : 'ainda não ativada' }}</span>
+              <span v-if="s.private_edit_agendado_em" class="cv-numero-base">1º Private Edit agendado em {{ dataLegivel(dataDoInstante(s.private_edit_agendado_em)) }}</span>
             </div>
             <div class="cv-numero">
               <span class="cv-numero-valor">{{ s.ultima_private_edit ? dataLegivel(s.ultima_private_edit) : '—' }}</span>
@@ -647,6 +670,11 @@
                       :pode-editar="podeExecutarAcao('editar', podeEditar)" :chamar="chamar"
                       @fechar="fichaAberta = null" @mudou="carregar({ silencioso: true })"
                       @corrigir="corrigirDaFicha" />
+    <!-- 24/09/2026: soltar numa saída com motivos pergunta o motivo antes de gravar. -->
+    <escolha-do-motivo v-if="motivoPendente" :etapa="motivoPendente.etapa" :nome="motivoPendente.nome"
+                       :gravando="movendoCodigo === motivoPendente.codigo" :erro="erroDoMotivo"
+                       @cancelar="motivoPendente = null; erroDoMotivo = ''"
+                       @confirmar="(m) => gravarMovimento(motivoPendente.codigo, motivoPendente.etapa.id, m)" />
     <etapas-do-funil v-if="etapasAbertas" :etapas="etapas" :chamar="chamar"
                      :pode-editar="podeExecutarAcao('editar', podeEditar)"
                      @fechar="etapasAbertas = false" @mudou="carregar({ silencioso: true })" />
@@ -703,7 +731,10 @@ import FichaDaStylist from './ficha-da-stylist.vue'
 import MetaDoNumero from './meta-do-numero.vue'
 import EtapasDoFunil from './etapas-do-funil.vue'
 import ContatoFacil from './contato-facil.vue'
-import { etapasParaFiltrar, primeiraEtapa, mensagemDasEtapas } from './crm-da-stylist-regras.js'
+import EscolhaDoMotivo from './escolha-do-motivo.vue'
+import {
+  etapasParaFiltrar, primeiraEtapa, mensagemDasEtapas, pedeMotivo, avisoDeLiberada, saidasPorMotivo,
+} from './crm-da-stylist-regras.js'
 import IconeDoBloco from '../../compartilhado/icone-do-bloco.vue'
 import { estado, hasPermission } from '../../compartilhado/controle-de-login-e-usuario.js'
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../../compartilhado/conectar-no-banco-de-dados.js'
@@ -721,7 +752,7 @@ import {
 import { paiDaTela, ROTULO_DO_PAI } from './navegacao.js'
 import {
   seloDaEtapa, tomDaStylist, ORIGENS_DE_CONTATO, LOJAS,
-  PERIODOS_DO_PLACAR, periodoDoPlacar, taxasDoPlacar, legendaDaTaxa,
+  PERIODOS_DO_PLACAR, periodoDoPlacar, taxasDoPlacar, legendaDaTaxa, sequenciaDoPlacar, taxaDoPasso,
 } from './t11-regras.js'
 import {
   comFaixa, seloDaFaixa, metaDoComparecimento, metaDeVendasPorEncontro, vendasPorEncontroEscrito,
@@ -847,6 +878,9 @@ const placar = ref(null)
 const carregandoPlacar = ref(false)
 const erroDoPlacar = ref('')
 const taxas = computed(() => taxasDoPlacar(placar.value))
+const sequencia = computed(() => sequenciaDoPlacar(placar.value))
+// O retrato de hoje das saídas (sai das etapas, que já vêm com a contagem).
+const saidas = computed(() => saidasPorMotivo(etapas.value))
 
 async function carregarPlacar() {
   carregandoPlacar.value = true
@@ -898,13 +932,41 @@ const erroDoQuadro = ref('')
 // disparam duas gravações — a segunda moveria a parceira DUAS etapas para a
 // frente, contra a vontade de quem só queria mover uma vez. Também dá o aviso "Movendo…" no botão certo.
 const movendoCodigo = ref(null)
-async function mover({ codigo, etapaId }) {
+// ⚠️ 24/09/2026: o botão e o ARRASTAR chegam aqui igual. Saída com motivos
+// abre a escolha (a mesma da ficha); cancelar não move nada — o cartão nunca
+// saiu do lugar. Etapa que libera Private Edit dá o aviso curto.
+const motivoPendente = ref(null)
+const erroDoMotivo = ref('')
+const avisoDoQuadro = ref('')
+function mover({ codigo, etapaId }) {
+  if (movendoCodigo.value) return
+  const destino = etapas.value.find((e) => e.id === etapaId)
+  avisoDoQuadro.value = ''
+  if (pedeMotivo(destino)) {
+    erroDoMotivo.value = ''
+    motivoPendente.value = { codigo, etapa: destino, nome: stylists.value.find((s) => s.codigo === codigo)?.nome || '' }
+    return
+  }
+  return gravarMovimento(codigo, etapaId, null)
+}
+async function gravarMovimento(codigo, etapaId, motivo) {
   if (movendoCodigo.value) return
   movendoCodigo.value = codigo
   try {
-    const r = await chamar('vessel_stylist_mover_de_etapa', { p_codigo: codigo, p_etapa_id: etapaId }).catch(() => null)
-    if (!r?.ok) { erroDoQuadro.value = mensagemDasEtapas(r?.situacao || 'erro_de_rede'); return }
+    const r = await chamar('vessel_stylist_mover_de_etapa', {
+      p_codigo: codigo, p_etapa_id: etapaId, p_motivo_id: motivo?.motivoId ?? null, p_nota: motivo?.nota ?? null,
+    }).catch(() => null)
+    if (!r?.ok) {
+      const frase = mensagemDasEtapas(r?.situacao || 'erro_de_rede')
+      if (motivoPendente.value) erroDoMotivo.value = frase
+      else erroDoQuadro.value = frase
+      return
+    }
     erroDoQuadro.value = ''
+    motivoPendente.value = null
+    if (r.libera_private_edit) {
+      avisoDoQuadro.value = avisoDeLiberada(stylists.value.find((s) => s.codigo === codigo)?.nome, etapas.value.find((e) => e.id === etapaId))
+    }
     // ⚠️ SILENCIOSO: sem isto, `carregando` liga e desliga o quadro
     // (`v-if … !carregando`), o componente REMONTA, e `etapaNoCelular` /
     // `saidasAbertas` (estado interno dele) voltam do zero — no celular a
