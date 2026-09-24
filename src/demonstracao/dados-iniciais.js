@@ -121,6 +121,17 @@ export function dadosIniciais(agora = new Date()) {
   })
   passou(7, null, 'Identificado', -30, 'cadastro')
   passou(7, 'Identificado', 'Desclassificado', -10, 'mudanca', { motivo: 'Não conecta com a marca', nota: 'Estética muito diferente da marca.' })
+  // 24/09/2026: uma "sem contato ainda" (da planilha, sem WhatsApp e sem
+  // Instagram): o selo no cartão, na lista e na ficha, e nenhum botão de contato.
+  stylists.push({
+    id: 8, codigo: 'STY-0008', nome: 'Helena Prado (exemplo)', whatsapp: null,
+    cidade: 'Piracicaba', instagram: null, atuacao: 'outra', praca_preview: null,
+    loja: null, origem_contato: 'pesquisa', origem_canal: null, responsavel: null,
+    prospectado_em: null, proxima_acao: null, proxima_acao_em: null, sem_contato: true,
+    observacoes: 'Da planilha de mapeamento (exemplo). Sem contato ainda — alguém vai completar. Não localizado publicamente: WhatsApp/Telefone, Instagram, E-mail.',
+    ativada_em: null, etapa_id: ETAPA.Identificado, ativa: true, teste: false,
+  })
+  passou(8, null, 'Identificado', -1, 'cadastro')
 
   const encontros = [
     {

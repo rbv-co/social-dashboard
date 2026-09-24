@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs'
 import {
   podeExecutarAcao, calcularConjunto, precisaDasDesativadas,
   mensagemDeCriar, mensagemDeEditar, mensagemDeDesativar, rotuloDeDesativar,
-  problemasDaParceira,
+  problemasDaParceira, semContatoParaMandar, seloSemContato, SITUACAO_SEM_CONTATO, filtroDaBarra, soAsSemContato,
 } from './stylist-circle-regras.js'
 
 const telaFonte = () => readFileSync(new URL('./tela-de-stylist-circle.vue', import.meta.url), 'utf8')
@@ -299,4 +299,54 @@ test('FIACAO: codigo e origem NUNCA aparecem como campo do formulario de corrigi
   const trechoForm = fonte.slice(idxForm, fimForm)
   assert.doesNotMatch(trechoForm, /rascunho\.codigo/, 'código não pode ser campo do formulário')
   assert.doesNotMatch(trechoForm, /rascunho\.origem/, 'origem não pode ser campo do formulário')
+})
+
+// ── SEM CONTATO AINDA (24/09/2026, decisão do dono) ─────────────────────────
+
+test('problemasDaParceira: com "ainda sem contato" marcado, entra sem WhatsApp e sem Instagram', () => {
+  assert.deepEqual(problemasDaParceira({ nome: 'Ana', whatsapp: '', instagram: '', origem: 'pesquisa', semContato: true }), [])
+  assert.equal(problemasDaParceira({ nome: 'Ana', whatsapp: '', instagram: '', origem: 'pesquisa', semContato: false }).length, 1)
+  // A caixa não dispensa o nome nem a origem.
+  assert.equal(problemasDaParceira({ nome: '', whatsapp: '', instagram: '', origem: '', semContato: true }).length, 2)
+})
+
+test('semContatoParaMandar: só true com a caixa marcada E sem contato escrito', () => {
+  assert.equal(semContatoParaMandar({ semContato: true, whatsapp: '', instagram: '' }), true)
+  assert.equal(semContatoParaMandar({ semContato: true, whatsapp: '(19) 99999-0000', instagram: '' }), false)
+  assert.equal(semContatoParaMandar({ semContato: true, whatsapp: '', instagram: '@ana' }), false)
+  assert.equal(semContatoParaMandar({ semContato: false, whatsapp: '', instagram: '' }), false)
+  assert.equal(semContatoParaMandar(), false)
+})
+
+test('seloSemContato: selo com a palavra, só quando o banco diz sem_contato', () => {
+  assert.deepEqual(seloSemContato({ sem_contato: true }), { texto: 'Sem contato ainda', tom: 'queda' })
+  assert.equal(seloSemContato({ sem_contato: false }), null)
+  assert.equal(seloSemContato({}), null, 'banco antigo, sem a chave: nada de selo')
+  assert.match(mensagemDeEditar('sem_contato'), /WhatsApp|Instagram/)
+})
+
+test('filtro "Sem contato ainda": filtra como "Só ativas" e fica com as marcadas; não pede desativadas', () => {
+  const { base, soSemContato } = filtroDaBarra({ situacao: SITUACAO_SEM_CONTATO, busca: 'x' })
+  assert.equal(base.situacao, 'abertas')
+  assert.equal(base.busca, 'x')
+  assert.equal(soSemContato, true)
+  assert.equal(filtroDaBarra({ situacao: 'todas' }).soSemContato, false)
+  assert.equal(precisaDasDesativadas(SITUACAO_SEM_CONTATO), false)
+  const l = [{ codigo: 'A', sem_contato: true }, { codigo: 'B', sem_contato: false }, { codigo: 'C' }]
+  assert.deepEqual(soAsSemContato(l, true).map((x) => x.codigo), ['A'])
+  assert.equal(soAsSemContato(l, false).length, 3)
+})
+
+test('tela: a caixa "Ainda sem contato" está no cadastro e manda p_sem_contato pela regra testada', () => {
+  const t = telaFonte()
+  assert.match(t, /id="sty-sem-contato"[^>]*v-model="novo\.semContato"/)
+  assert.match(t, /Ainda sem contato — alguém vai completar/)
+  assert.match(t, /p_sem_contato: semContatoParaMandar\(novo\)/)
+  assert.match(t, /p_sem_contato: semContatoParaMandar\(rascunho\)/)
+  assert.match(t, /problemasDaParceira\(\{ \.\.\.novo, origem: novo\.comoChegou \}\)/, 'o problemas recebe a caixa (semContato vem em ...novo)')
+  assert.match(t, /valor: SITUACAO_SEM_CONTATO, rotulo: 'Sem contato ainda'/)
+  for (const arq of ['./tela-de-stylist-circle.vue', './quadro-do-stylist-circle.vue', './ficha-da-stylist.vue']) {
+    const f = readFileSync(new URL(arq, import.meta.url), 'utf8')
+    assert.match(f, /v-if="seloSemContato\((s|stylist)\)"/, `${arq}: o selo "Sem contato ainda"`)
+  }
 })

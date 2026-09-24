@@ -286,6 +286,12 @@
         </div>
         <!-- ⚠️ WHATSAPP OU INSTAGRAM (24/09/2026): um dos dois basta. -->
         <p class="cv-nota">Sem WhatsApp? O Instagram basta — escreva o @ ou o endereço do perfil.</p>
+        <!-- ⚠️ SEM CONTATO AINDA (24/09/2026, decisão do dono): com a caixa
+             marcada ela entra sem os dois, com o selo "Sem contato ainda", e
+             alguém completa depois. Escrever um contato desliga a marca. -->
+        <label class="cv-marcar" for="sty-sem-contato">
+          <input id="sty-sem-contato" type="checkbox" v-model="novo.semContato">
+          <span>Ainda sem contato — alguém vai completar</span></label>
         <!-- ⚠️ 24/09: SEM DATA DA PROSPECÇÃO NO FORMULÁRIO — quem a põe é a
              etapa marcada "conta como prospectada" (tela Etapas do funil). -->
         <p class="cv-nota">Ela entra em <b>{{ primeiraEtapa(etapas)?.nome || 'a primeira etapa do funil' }}</b>.
@@ -335,6 +341,7 @@
                         { valor: 'abertas', rotulo: 'Só ativas' },
                         { valor: 'encerradas', rotulo: 'Só desativadas' },
                         { valor: 'todas', rotulo: 'Todas' },
+                        { valor: SITUACAO_SEM_CONTATO, rotulo: 'Sem contato ainda' },
                       ]"
                       :ordens="[
                         { valor: 'nome', rotulo: 'Nome' },
@@ -478,6 +485,8 @@
                  sozinho nesse caso, sem duplicar a palavra. -->
             <div class="cv-selos">
               <span v-if="s.ativa === false" class="cv-selo id-selo cv-selo-fim id-tom-parada">Desativada</span>
+              <span v-if="seloSemContato(s)" class="cv-selo id-selo cv-selo-sem-contato" :class="`id-tom-${seloSemContato(s).tom}`">
+                {{ seloSemContato(s).texto }}</span>
               <span class="cv-selo id-selo" :class="[seloDaEtapa(s).classe, `id-tom-${seloDaEtapa(s).tom}`]">
                 {{ seloDaEtapa(s).texto }}</span>
               <span v-if="vigentes !== null" class="cv-selo id-selo cv-selo-faixa" :class="`id-tom-${seloDaFaixa(s).tom}`">
@@ -607,6 +616,11 @@
                        :disabled="rascunho.acaoFeita"></label>
               <label class="cv-campo cv-campo-largo" :for="`ed-observacoes-${s.codigo}`"><span>Observações</span>
                 <textarea :id="`ed-observacoes-${s.codigo}`" maxlength="2000" v-model="rascunho.observacoes"></textarea></label>
+              <!-- ⚠️ SEM CONTATO AINDA: escrever o WhatsApp ou o Instagram
+                   desliga a marca sozinho, no banco. -->
+              <label v-if="s.sem_contato || (!s.whatsapp && !s.instagram)" class="cv-marcar" :for="`ed-sem-contato-${s.codigo}`">
+                <input :id="`ed-sem-contato-${s.codigo}`" type="checkbox" v-model="rascunho.semContato">
+                <span>Ainda sem contato — alguém vai completar</span></label>
               <label v-if="s.proxima_acao" class="cv-marcar" :for="`ed-feita-${s.codigo}`">
                 <input :id="`ed-feita-${s.codigo}`" type="checkbox" v-model="rascunho.acaoFeita">
                 <span>A próxima ação foi feita — apagar</span></label>
@@ -748,6 +762,7 @@ import { filtrar, FILTRO_VAZIO } from './filtros.js'
 import {
   podeExecutarAcao, calcularConjunto, precisaDasDesativadas, problemasDaParceira,
   mensagemDeCriar, mensagemDeEditar, mensagemDeDesativar,
+  semContatoParaMandar, seloSemContato, SITUACAO_SEM_CONTATO, filtroDaBarra, soAsSemContato,
 } from './stylist-circle-regras.js'
 import { paiDaTela, ROTULO_DO_PAI } from './navegacao.js'
 import {
@@ -793,8 +808,13 @@ const filtro = ref({ ...FILTRO_VAZIO, situacao: 'abertas', ordem: 'nome' })
 // é ela que a ordem "Faixa da nota" usa, e o selo do quadro e da lista.
 const vigentes = ref(null)
 const erroDasFaixas = ref('')
-const stylistsNaTela = computed(() =>
-  filtrar(comFaixa(stylists.value, vigentes.value), filtro.value, { busca: ['nome', 'cidade', 'codigo'], estagio: 'etapa_chave' }))
+// ⚠️ 24/09: "Sem contato ainda" é uma opção da SITUAÇÃO (`filtroDaBarra`,
+// stylist-circle-regras.js): filtra como "Só ativas" e fica com as marcadas.
+const stylistsNaTela = computed(() => {
+  const { base, soSemContato } = filtroDaBarra(filtro.value)
+  return soAsSemContato(filtrar(comFaixa(stylists.value, vigentes.value), base,
+    { busca: ['nome', 'cidade', 'codigo'], estagio: 'etapa_chave' }), soSemContato)
+})
 
 // ⚠️ MESMO CUIDADO DAS DUAS IRMÃS (Critical da rodada anterior nelas): o
 // conjunto tem de somar SEMPRE a lista filtrada, nunca a cheia.
@@ -1003,7 +1023,7 @@ const nomeDeQuemUsa = () => estado.user?.user_metadata?.name || estado.user?.ema
 const NOVA_VAZIA = () => ({
   nome: '', whatsapp: '', cidade: '', instagram: '', atuacao: '', praca: '',
   loja: '', comoChegou: '', responsavel: nomeDeQuemUsa(),
-  proximaAcao: '', proximaAcaoEm: '', observacoes: '',
+  proximaAcao: '', proximaAcaoEm: '', observacoes: '', semContato: false,
 })
 const novo = reactive(NOVA_VAZIA())
 const problemas = computed(() => problemasDaParceira({ ...novo, origem: novo.comoChegou }))
@@ -1030,6 +1050,7 @@ async function criar() {
       p_proxima_acao: novo.proximaAcao || null,
       p_proxima_acao_em: novo.proximaAcaoEm || null,
       p_observacoes: novo.observacoes || null,
+      p_sem_contato: semContatoParaMandar(novo),
     })
     if (!r?.ok) {
       erroAoCriar.value = mensagemDeCriar(r?.situacao)
@@ -1051,7 +1072,7 @@ const editando = ref(null)
 const rascunho = reactive({
   nome: '', whatsapp: '', cidade: '', instagram: '', atuacao: '', praca: '',
   loja: '', comoChegou: '', responsavel: '', proximaAcao: '', proximaAcaoEm: '',
-  observacoes: '', acaoFeita: false,
+  observacoes: '', acaoFeita: false, semContato: false,
 })
 const salvandoEdicao = ref(null)
 const erroDeEditar = ref(null)
@@ -1075,6 +1096,7 @@ function abrirEditar(s) {
     proximaAcaoEm: s.proxima_acao_em || '',
     observacoes: s.observacoes || '',
     acaoFeita: false,
+    semContato: s.sem_contato === true,
   })
 }
 
@@ -1104,6 +1126,9 @@ async function salvarEdicao(s) {
       // ⚠️ STRING, NUNCA NULO: vazio apaga (a regra de `vessel_stylist_editar`,
       // a mesma da irmã `vessel_private_edit_situacao`) — é o jeito de limpar.
       p_observacoes: rascunho.observacoes ?? '',
+      // ⚠️ SÓ QUANDO A CAIXA APARECEU (ela não tem contato): nas outras fica
+      // de fora, e o banco não mexe na marca (nulo = não mexe).
+      ...((s.sem_contato || (!s.whatsapp && !s.instagram)) ? { p_sem_contato: semContatoParaMandar(rascunho) } : {}),
     })
     if (!r?.ok) {
       erroDeEditar.value = s.codigo

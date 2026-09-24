@@ -15,9 +15,10 @@ function novoBanco() {
   const banco = criarBancoDeMentira({ agora: () => AGORA, aoAvisar: (evento, dados) => avisos.push({ evento, dados }) })
   return { banco, avisos, chamar: banco.chamar }
 }
-// ⚠️ Os dados de exemplo já têm STY-0001 a STY-0007 (a 7, desclassificada com
-// motivo, desde 24/09/2026): a parceira nova de cada teste nasce STY-0008.
-const NOVA = 'STY-0008'
+// ⚠️ Os dados de exemplo já têm STY-0001 a STY-0008 (a 7, desclassificada com
+// motivo; a 8, "sem contato ainda", desde 24/09/2026): a parceira nova de cada
+// teste nasce STY-0009.
+const NOVA = 'STY-0009'
 const ETAPA = Object.fromEntries(dadosIniciais(AGORA).etapas.map((e) => [e.nome, e.id]))
 const PARCEIRA = { p_nome: 'Luana Teste (exemplo)', p_whatsapp: '(19) 98888-7777', p_origem_contato: 'indicacao' }
 // ⚠️ 24/09/2026: encontro novo só com parceira numa etapa que libera Private
@@ -47,11 +48,36 @@ test('criar stylist: código STY-000N sequencial e telefone 55+DDD', () => {
   // Só com o Instagram também entra; sem nenhum dos dois, não.
   assert.equal(chamar('vessel_stylist_criar', { ...PARCEIRA, p_whatsapp: null }).situacao, 'sem_contato')
   assert.equal(chamar('vessel_stylist_criar', { ...PARCEIRA, p_whatsapp: null, p_instagram: 'Não localizado' }).situacao, 'instagram_invalido')
-  assert.equal(chamar('vessel_stylist_criar', { ...PARCEIRA, p_whatsapp: '19977776666' }).codigo, 'STY-0009')
+  assert.equal(chamar('vessel_stylist_criar', { ...PARCEIRA, p_whatsapp: '19977776666' }).codigo, 'STY-0010')
   const soInsta = chamar('vessel_stylist_criar', { ...PARCEIRA, p_nome: 'Só Insta (exemplo)', p_whatsapp: null, p_instagram: '@so.insta' })
-  assert.equal(soInsta.codigo, 'STY-0010')
+  assert.equal(soInsta.codigo, 'STY-0011')
   assert.equal(chamar('vessel_stylist_criar', { ...PARCEIRA, p_whatsapp: null, p_instagram: 'instagram.com/SO.INSTA/' }).situacao, 'instagram_repetido')
   assert.deepEqual(avisos.map((a) => a.evento), ['stylist_criada', 'stylist_criada', 'stylist_criada'])
+})
+
+test('sem contato ainda (24/09/2026): só com a caixa, a marca some quando o contato chega', () => {
+  const { chamar, banco } = novoBanco()
+  // O exemplo da demonstração: sem os dois, com a marca, e a lista devolve.
+  const lista = chamar('vessel_rastreio_dos_stylists', { p_dias: 14, p_incluir_desativadas: false })
+  assert.equal(lista.find((x) => x.codigo === 'STY-0008').sem_contato, true)
+  assert.equal(lista.find((x) => x.codigo === 'STY-0001').sem_contato, false)
+  // A Central antiga (sem p_sem_contato) continua recusando sem os dois.
+  const semNada = { ...PARCEIRA, p_nome: 'Sem Nada (exemplo)', p_whatsapp: null }
+  assert.equal(chamar('vessel_stylist_criar', semNada).situacao, 'sem_contato')
+  const r = chamar('vessel_stylist_criar', { ...semNada, p_sem_contato: true })
+  assert.equal(r.ok, true)
+  const s = banco.estado.stylists.find((x) => x.codigo === r.codigo)
+  assert.equal(s.sem_contato, true)
+  assert.equal(s.etapa_id, ETAPA.Identificado)
+  // Caixa marcada com Instagram escrito errado: recusa o Instagram.
+  assert.equal(chamar('vessel_stylist_criar', { ...semNada, p_instagram: 'não sei', p_sem_contato: true }).situacao, 'instagram_invalido')
+  // Corrigir sem mexer na marca (corpo antigo) mantém; desmarcar sem contato é recusado.
+  assert.equal(chamar('vessel_stylist_editar', { p_codigo: r.codigo, p_cidade: 'Limeira' }).ok, true)
+  assert.equal(s.sem_contato, true)
+  assert.equal(chamar('vessel_stylist_editar', { p_codigo: r.codigo, p_sem_contato: false }).situacao, 'sem_contato')
+  // O contato chega: a marca desliga, mesmo com a caixa ainda marcada.
+  assert.equal(chamar('vessel_stylist_editar', { p_codigo: r.codigo, p_instagram: '@chegou.exemplo', p_sem_contato: true }).ok, true)
+  assert.equal(s.sem_contato, false)
 })
 
 test('telefone canônico: o mesmo de vessel_telefone_canonico', () => {
