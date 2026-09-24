@@ -4,6 +4,8 @@
 //   node coletor/importar-stylists-da-planilha.mjs <planilha.xlsx>                      → ensaio: grava tudo e DESFAZ
 //   node coletor/importar-stylists-da-planilha.mjs <planilha.xlsx> --gravar             → grava de verdade
 //   … --relatorio <pasta>   → escreve a prévia (CSV) e o resumo (Markdown) nessa pasta
+//   … --incluir-sem-contato → também sobe quem não tem WhatsApp NEM Instagram, marcada
+//                             "sem contato ainda" (`sem_contato = true`)
 //
 // Pedido do dono em 24/09/2026: "tem uma planilha de mapeamento de stylist em
 // downloads, vc consegue subir todas elas na base, na etapa prospectado (etapa
@@ -28,6 +30,13 @@
 // metodologia (a aba "Metodologia"). Vão só para `observacoes`, como texto,
 // com o aviso escrito do lado. Nada disto escreve em tabela de qualificação.
 //
+// ⚠️ SEM CONTATO AINDA (decisão do dono, 24/09/2026): as linhas sem WhatsApp
+// e sem Instagram ficavam de fora. Com `--incluir-sem-contato` elas entram
+// pela MESMA porta, com `p_sem_contato => true` (precisa de
+// `2026-09-24-vessel-stylist-sem-contato.sql`), para a Ionara completar. O que
+// a planilha dizia do contato ("Não localizado publicamente", Facebook, handle
+// não confirmado) vai para as observações. Sem a opção, continuam puladas.
+//
 // ⚠️ IDEMPOTENTE: quem já está na base (mesmo WhatsApp canônico, mesmo perfil
 // de Instagram, ou mesmo nome+cidade) é pulada com o motivo. Rodar de novo
 // depois do `--gravar` insere ZERO.
@@ -50,8 +59,9 @@ const args = process.argv.slice(2)
 const GRAVAR = args.includes('--gravar')
 const iRel = args.indexOf('--relatorio')
 const RELATORIO = iRel >= 0 ? args[iRel + 1] : null
-const PLANILHA = args.find((a, i) => !a.startsWith('--') && i !== iRel + 1)
-if (!PLANILHA) { console.error('uso: node coletor/importar-stylists-da-planilha.mjs <planilha.xlsx> [--gravar] [--relatorio <pasta>]'); process.exit(1) }
+const INCLUIR_SEM_CONTATO = args.includes('--incluir-sem-contato')
+const PLANILHA = args.find((a, i) => !a.startsWith('--') && (iRel < 0 || i !== iRel + 1))
+if (!PLANILHA) { console.error('uso: node coletor/importar-stylists-da-planilha.mjs <planilha.xlsx> [--gravar] [--incluir-sem-contato] [--relatorio <pasta>]'); process.exit(1) }
 if (!process.env.DATABASE_URL) { console.error('❌ sem DATABASE_URL'); process.exit(1) }
 
 const HOJE_BR = '24/09/2026'
@@ -87,6 +97,7 @@ const PROSPECTADO_EM = mData && MESES[mData[2].toLowerCase()]
 const PROSPECTADO_BR = PROSPECTADO_EM.split('-').reverse().join('/')
 
 // ── as regras de cada campo ─────────────────────────────────────────────────
+const naoLocalizado = (v) => /^\s*n[ãa]o localizado/i.test(String(v ?? ''))
 const vazio = (v) => v == null || /^\s*(—|-|n[ãa]o localizado.*|)\s*$/i.test(String(v))
 const texto = (v) => (vazio(v) ? null : String(v).trim())
 
@@ -141,6 +152,14 @@ function observacoesDaLinha(l, { whatsapp, instagram }) {
     `Segmento: ${l.Segmento}${texto(l.Categoria) ? ` · ${l.Categoria}` : ''}`,
   ]
   const add = (rotulo, v) => { const t = texto(v); if (t) partes.push(`${rotulo}: ${t}`) }
+  // ⚠️ SEM CONTATO AINDA: o "Não localizado publicamente" da planilha é
+  // informação (a pesquisa procurou e não achou), não célula vazia.
+  if (!whatsapp && !instagram) {
+    const campos = [['WhatsApp/Telefone', l['WhatsApp / Telefone']], ['Instagram', l.Instagram],
+      ['E-mail', l['E-mail']], ['Site/contato', l['Site / Link de contato']]]
+      .filter(([, v]) => naoLocalizado(v)).map(([k]) => k)
+    partes.push(`Sem contato ainda — alguém vai completar.${campos.length ? ` Não localizado publicamente: ${campos.join(', ')}.` : ''}`)
+  }
   add('Serviços', l['Serviços declarados'])
   add('Público', l['Público declarado'])
   add('Seguidores', l.Seguidores)
@@ -192,8 +211,16 @@ const assinatura = await uma(`select string_agg(p.oid::regprocedure::text, ' | '
   join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'vessel_stylist_criar'`)
 const { funil } = await uma(`select exists (select 1 from public.schema_migrations
   where name = '2026-09-24-vessel-stylist-funil-configuravel.sql') as funil`)
-if (assinatura.a !== 'vessel_stylist_criar(text,text,text,text,text,text,text,text,text,date,text,date,text)' || !funil) {
+// ⚠️ A porta de "sem contato ainda" (`p_sem_contato`, 2026-09-24-vessel-stylist-sem-contato.sql)
+// acrescenta um boolean no fim; sem ela, só a porta antiga.
+const PORTA_ANTIGA = 'vessel_stylist_criar(text,text,text,text,text,text,text,text,text,date,text,date,text)'
+const PORTA_NOVA = 'vessel_stylist_criar(text,text,text,text,text,text,text,text,text,date,text,date,text,boolean)'
+if (![PORTA_ANTIGA, PORTA_NOVA].includes(assinatura.a) || !funil) {
   console.error('❌ o banco ainda não tem o funil configurável (falta 2026-09-24-vessel-stylist-funil-configuravel.sql):', assinatura.a)
+  await cli.end(); process.exit(1)
+}
+if (INCLUIR_SEM_CONTATO && assinatura.a !== PORTA_NOVA) {
+  console.error('❌ --incluir-sem-contato precisa de 2026-09-24-vessel-stylist-sem-contato.sql (a porta com p_sem_contato):', assinatura.a)
   await cli.end(); process.exit(1)
 }
 const { primeira } = await uma(`select nome as primeira from public.vessel_stylist_etapas
@@ -217,7 +244,7 @@ for (const p of plano) {
   const chaveNome = `${normalNome(p.nome)}|${normalNome(p.cidade)}`
   let motivo = null
   if (!p.nome) motivo = 'sem nome'
-  else if (!p.whatsapp && !p.instagram) motivo = 'sem WhatsApp e sem Instagram'
+  else if (!p.whatsapp && !p.instagram && !INCLUIR_SEM_CONTATO) motivo = 'sem WhatsApp e sem Instagram'
   else if (p.whatsapp && vistos.fone.has(p.whatsapp)) motivo = `WhatsApp repetido (${vistos.fone.get(p.whatsapp)})`
   else if (p.instagram && vistos.ig.has(perfil(p.instagram))) motivo = `Instagram repetido (${vistos.ig.get(perfil(p.instagram))})`
   else if (vistos.nome.has(chaveNome)) motivo = `mesmo nome e cidade (${vistos.nome.get(chaveNome)})`
@@ -230,7 +257,8 @@ for (const p of plano) {
 }
 
 console.log(`\nPlanilha: ${linhas.length} linhas (consolidação de ${PROSPECTADO_BR}) · entram em "${primeira}" · na base antes: ${existentes.length}`)
-console.log(`Entram: ${entrar.length} (com WhatsApp: ${entrar.filter((p) => p.whatsapp).length} · só Instagram: ${entrar.filter((p) => !p.whatsapp).length}) · puladas: ${pular.length}`)
+const semContato = (p) => !p.whatsapp && !p.instagram
+console.log(`Entram: ${entrar.length} (com WhatsApp: ${entrar.filter((p) => p.whatsapp).length} · só Instagram: ${entrar.filter((p) => !p.whatsapp && p.instagram).length} · sem contato ainda: ${entrar.filter(semContato).length}) · puladas: ${pular.length}`)
 
 let gravadas = []
 await cli.query('begin')
@@ -252,7 +280,7 @@ try {
       `select public.vessel_stylist_criar(
          p_nome => $1, p_whatsapp => $2, p_cidade => $3, p_instagram => $4, p_atuacao => $5,
          p_praca => $6, p_loja => $7, p_origem_contato => 'pesquisa', p_responsavel => null,
-         p_observacoes => $8) as r`,
+         p_observacoes => $8${semContato(p) ? ', p_sem_contato => true' : ''}) as r`,
       [p.nome, p.whatsapp, p.cidade, p.instagram, p.atuacao, p.praca, p.loja, p.observacoes])
     if (!r?.ok) { pular.push({ ...p, motivo: `o banco recusou: ${r?.situacao}${r?.codigo ? ` (${r.codigo})` : ''}` }); continue }
     gravadas.push({ ...p, codigo: r.codigo })
@@ -269,6 +297,7 @@ try {
             count(*) filter (where e.nome = $3)::int as na_primeira,
             count(distinct codigo)::int as codigos,
             count(*) filter (where whatsapp is null and nullif(btrim(coalesce(instagram,'')),'') is null)::int as sem_contato,
+            count(*) filter (where s.sem_contato)::int as marca_sem_contato,
             count(*) filter (where origem_contato = 'pesquisa' and observacoes like $2 || '%')::int as marcadas,
             count(*) filter (where s.prospectado_em is null)::int as sem_data,
             (select count(*) from public.vessel_stylist_etapas_historico h
@@ -279,7 +308,10 @@ try {
   conferir(chk.n === entrar.length && gravadas.length === entrar.length, `gravadas = esperadas (${entrar.length})`, { chk, gravadas: gravadas.length })
   conferir(chk.na_primeira === chk.n, `todas em "${primeira}" (a primeira etapa do funil)`, chk)
   conferir(chk.codigos === chk.n && codigos.every((c) => /^STY-\d{4}$/.test(c)), 'códigos únicos no formato STY-0000', chk)
-  conferir(chk.sem_contato === 0, 'nenhuma sem WhatsApp e sem Instagram', chk)
+  const esperadasSem = entrar.filter(semContato).length
+  conferir(chk.sem_contato === esperadasSem && chk.marca_sem_contato === esperadasSem,
+    INCLUIR_SEM_CONTATO ? `sem contato: exatamente as ${esperadasSem} esperadas, todas com a marca "sem contato ainda"`
+      : 'nenhuma sem WhatsApp e sem Instagram', chk)
   conferir(chk.marcadas === chk.n, 'todas marcadas (origem "pesquisa" + observação da planilha)', chk)
   conferir(chk.sem_data === chk.n, 'nenhuma com data da prospecção (não contam como prospectadas no placar)', chk)
   conferir(chk.historico === chk.n, 'cada uma com a entrada no histórico de etapas', chk)
@@ -300,7 +332,8 @@ try {
   await cli.query(`select set_config('request.jwt.claims', $1, true)`, [JSON.stringify({ sub: leitor })])
   const { lista } = await uma(`select public.vessel_rastreio_dos_stylists(7, false) as lista`)
   const naLista = (lista || []).filter((x) => codigos.includes(x.codigo))
-  conferir(naLista.length === chk.n && naLista.every((x) => x.observacoes && x.etapa === primeira),
+  conferir(naLista.length === chk.n && naLista.every((x) => x.observacoes && x.etapa === primeira
+      && (x.sem_contato ?? false) === (!x.whatsapp && !x.instagram)),
     `a lista da Central mostra todas, em "${primeira}", com a observação`, naLista.length)
   const { placar } = await uma(`select public.vessel_placar_do_stylist_circle($1::date, current_date, 14) as placar`, [PROSPECTADO_EM])
   conferir(placar && typeof placar === 'object', 'o placar do Stylist Circle continua respondendo', placar)
@@ -328,7 +361,7 @@ try {
 // ── a prévia ────────────────────────────────────────────────────────────────
 console.log('\n── entram')
 for (const g of gravadas) {
-  console.log(`  ${g.codigo ?? '—'} · nº ${g.n} ${g.tier} · ${g.nome} · ${g.cidade} · ${g.whatsapp ?? '(sem WhatsApp)'} · ${g.instagram ?? '(sem Instagram)'} · ${g.atuacao} · ${g.praca ?? '-'}/${g.loja ?? '-'}`)
+  console.log(`  ${g.codigo ?? '—'} · nº ${g.n} ${g.tier} · ${g.nome} · ${g.cidade} · ${g.whatsapp ?? '(sem WhatsApp)'} · ${g.instagram ?? '(sem Instagram)'} · ${g.atuacao} · ${g.praca ?? '-'}/${g.loja ?? '-'}${semContato(g) ? ' · SEM CONTATO AINDA' : ''}`)
 }
 console.log('\n── puladas')
 for (const p of pular) console.log(`  nº ${p.n} · ${p.nome} · ${p.cidade} → ${p.motivo}  [tel: ${p.fonteFone ?? ''} | ig: ${p.fonteIg ?? ''}]`)
