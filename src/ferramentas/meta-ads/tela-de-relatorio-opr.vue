@@ -376,8 +376,8 @@ onMounted(() => carregar())
 .kpi-label { font: 400 14px Georgia, serif; margin-bottom: 3px; overflow-wrap: anywhere; }
 .kpi-value { font: 700 clamp(18px,1.6vw,32px)/1.05 Georgia, serif; letter-spacing: .02em; white-space: nowrap; }
 .kpi-caption { margin-top: 9px; font-size: 9px; letter-spacing: .2em; text-transform: uppercase; color: #797b77; }
-.kpi-card--grupo { grid-template-columns: 40px 1fr; padding: 16px 14px; min-height: 108px; align-items: start; }
-.kpi-card--grupo .icon-circle { width: 40px; height: 40px; margin-top: 2px; }
+.kpi-card--grupo { grid-template-columns: 40px 1fr; column-gap: 14px; padding: 16px 14px; min-height: 108px; align-items: center; }
+.kpi-card--grupo .icon-circle { width: 40px; height: 40px; }
 .kpi-card--grupo .icon-circle svg { width: 22px; height: 22px; }
 .kpi-group { display: grid; grid-template-columns: max-content 1fr; column-gap: 10px; row-gap: 7px; margin-top: 9px; align-items: baseline; }
 .kpi-group-item { display: contents; }
