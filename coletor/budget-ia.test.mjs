@@ -155,7 +155,14 @@ test('parsearSaida: sem anuncios = array vazio', () => {
 // ---------------------------------------------------------------------------
 // O `user` e "prosa + JSON + prosa": nao da pra JSON.parse do primeiro '{' ate
 // o fim. Pega da primeira chave ate a ultima.
-const dadosDoPrompt = (user) => JSON.parse(user.slice(user.indexOf('{'), user.lastIndexOf('}') + 1));
+function dadosDoPrompt(...args) {
+  // Uso antigo: dadosDoPrompt(user) — o `user` já veio de um montarMensagens
+  // chamado à parte (alguns testes olham `system` também e não iam ganhar nada
+  // repetindo a chamada aqui). Uso novo (Tarefa 5): dadosDoPrompt(camp, ins,
+  // ads, conjuntos, regua, extra) — chama montarMensagens por dentro.
+  const user = typeof args[0] === 'string' ? args[0] : montarMensagens(...args).user;
+  return JSON.parse(user.slice(user.indexOf('{'), user.lastIndexOf('}') + 1));
+}
 
 // ORCAMENTO REAL NO PROMPT (2026-07-29). O robo lia so `camp.daily_budget`; em
 // campanha ABO isso e nulo, entao o modelo recebia "sem orcamento" e calculava
@@ -241,6 +248,13 @@ test('o prompt PROIBE falar "do dono": quem le e a propria pessoa', () => {
 // (Reusa o `dadosDoPrompt(user)` já definido acima — dois helpers com o mesmo
 // nome e assinaturas diferentes quebrariam o arquivo.)
 // ---------------------------------------------------------------------------
+//
+// A Tarefa 5 (tendência) precisava de um ajudante que chamasse `montarMensagens`
+// com os 6 argumentos e já devolvesse o JSON — o plano pedia um `dadosDoPrompt2`
+// separado. Em vez de duplicar (dois nomes quase iguais para a mesma ideia),
+// `dadosDoPrompt` virou variádico: string = comportamento de sempre (o `user`
+// já pronto); qualquer outra coisa = os argumentos de `montarMensagens`, que
+// ele chama por dentro. Nenhuma chamada antiga muda.
 const REGUA_TESTE = normalizarRegua({
   metas: { leads: 15, vendas: 80, trafego: 1.5, mensagens: 10, reconhecimento: 25 },
 });
@@ -345,4 +359,55 @@ test('o balde usado no anúncio é o da CAMPANHA, nunca recalculado', () => {
   assert.equal(d.regua.tipo_de_campanha, 'mensagens', 'o conjunto diz WhatsApp');
   assert.equal(d.anuncios[0].resultado, 3, 'balde mensagens lê conversas; engajamento não teria como');
   assert.equal(d.anuncios[0].custo_por_resultado, 50, '150 / 3 conversas');
+});
+
+// ---------------------------------------------------------------------------
+// TENDÊNCIA E TEMPO NO AR (Tarefa 5, 24/09/2026): o robô mandava uma janela só
+// — o modelo não tinha como dizer se a campanha estava melhorando ou piorando,
+// e "o que mudou desde ontem" é exatamente o que se olha às 8h da manhã.
+// ---------------------------------------------------------------------------
+
+test('a janela anterior entra no prompt para o modelo ver o sentido', () => {
+  const camp = { id: '7', name: 'Captação', objective: 'OUTCOME_LEADS' };
+  const anterior = { spend: '1000', actions: [{ action_type: 'lead', value: '80' }] };
+  const d = dadosDoPrompt(camp, INS_LEAD, [], [], REGUA_TESTE, { insAnterior: anterior });
+  assert.equal(d.janela_anterior.custo_do_alvo, 12.5, '1000 / 80 na janela anterior');
+  assert.equal(d.regua.custo_atual_reais, 25, 'e 25 agora: o custo DOBROU');
+  assert.equal(d.janela_anterior.gasto, 1000);
+});
+
+test('sem janela anterior o campo é null e nada quebra', () => {
+  const camp = { id: '8', name: 'Nova', objective: 'OUTCOME_LEADS' };
+  const d = dadosDoPrompt(camp, INS_LEAD, [], [], REGUA_TESTE, {});
+  assert.equal(d.janela_anterior, null);
+});
+
+test('campanha recém-subida vai marcada como em aprendizado', () => {
+  const camp = { id: '9', name: 'Nova', objective: 'OUTCOME_LEADS' };
+  const d = dadosDoPrompt(camp, INS_LEAD, [], [], REGUA_TESTE, { diasNoAr: 2 });
+  assert.equal(d.dias_no_ar, 2);
+  assert.equal(d.em_aprendizado, true, 'menos de 3 dias: a Meta ainda está aprendendo');
+  const madura = dadosDoPrompt(camp, INS_LEAD, [], [], REGUA_TESTE, { diasNoAr: 30 });
+  assert.equal(madura.em_aprendizado, false);
+});
+
+test('montarMensagens sem o 6o argumento não quebra (compatibilidade)', () => {
+  const camp = { id: '10', name: 'Velha chamada', objective: 'OUTCOME_LEADS' };
+  const d = dadosDoPrompt(camp, INS_LEAD, [], [], REGUA_TESTE);
+  assert.equal(d.janela_anterior, null);
+  assert.equal(d.dias_no_ar, null);
+  assert.equal(d.em_aprendizado, false, 'sem dado de idade, não presume aprendizado');
+});
+
+test('engajamento também ganha custo na janela anterior (ponto ponderado, não null)', () => {
+  // Desvio deliberado do brief original: ali `janela_anterior.custo_do_alvo`
+  // usava a variável `pnd` de `montarMensagens`, que não existe mais nesse
+  // escopo (Tarefa anterior extraiu `custoAtualDaCampanha`). Usar essa mesma
+  // função aqui é melhor que o brief: engajamento, que antes ficava sem custo
+  // atual, passa a ter tendência também.
+  const camp = { id: '11', name: 'Engaja', objective: 'OUTCOME_ENGAGEMENT' };
+  const ins = { spend: '50', actions: [{ action_type: 'post_reaction', value: '200' }] };
+  const anterior = { spend: '100', actions: [{ action_type: 'post_reaction', value: '200' }] };
+  const d = dadosDoPrompt(camp, ins, [], [], REGUA_TESTE, { insAnterior: anterior });
+  assert.equal(d.janela_anterior.custo_do_alvo, 0.5, '100 / 200 pontos na janela anterior');
 });
