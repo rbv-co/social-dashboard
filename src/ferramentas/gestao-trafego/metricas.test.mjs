@@ -36,9 +36,19 @@ test('o catálogo calcula o que a tela sempre calculou', () => {
   assert.equal(calc('valor_conversao'), 5000);
   assert.equal(calc('roas'), 5);                 // 5000 / 1000, sem purchase_roas
   assert.equal(calc('engaj_pub'), 2000);
+  assert.equal(calc('custo_engajamento'), 0.5); // 1000 / 2000
   assert.equal(calc('alcance'), 25000);
   assert.equal(calc('frequencia'), 2);
   assert.equal(calc('gasto'), 1000);
+});
+
+test('custo por engajamento é o gasto dividido pelo engajamento bruto', () => {
+  assert.equal(GT_METRIC_CATALOG.custo_engajamento.compute(INS), 0.5); // 1000 / 2000
+});
+
+test('sem engajamento na janela o custo é null, nunca zero', () => {
+  assert.equal(GT_METRIC_CATALOG.custo_engajamento.compute({ spend: '300', actions: [] }), null,
+    'R$ 0,00 por engajamento seria lido pelo modelo como "de graça"');
 });
 
 test('ação que a Meta omitiu vira null, nunca zero', () => {

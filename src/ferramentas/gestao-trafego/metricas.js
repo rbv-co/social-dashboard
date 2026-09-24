@@ -64,6 +64,14 @@ export const GT_METRIC_CATALOG={
   // --- Vídeo e engajamento ---
   video_views:{label:'Views de vídeo',fmt:'int',compute:r=>_gtActionVal(r,_GT_VIDEO)},
   engaj_pub:{label:'Engajamento da publicação',fmt:'int',compute:r=>_gtActionVal(r,_GT_POSTENG)},
+  // O custo do engajamento BRUTO — o que a Meta conta como post_engagement, sem
+  // pesar interação por valor. Substituiu o custo por ponto como régua de
+  // engajamento em 24/09/2026: medindo campanhas reais, a [FLUXO SHOPPING] da
+  // Vessel tinha 11.323 engajamentos e só 44 pontos ponderados, porque quase
+  // nada do que a Meta conta ali é curtida/comentário/salvamento/compartilhamento.
+  // As duas réguas não medem a mesma coisa em unidades diferentes — medem coisas
+  // diferentes. Ver docs/superpowers/specs/2026-09-24-gt-onda-b-design.md.
+  custo_engajamento:{label:'Custo por engajamento',fmt:'money',compute:r=>_gtPerGasto(r,_GT_POSTENG)},
 };
 export const GT_BALDE_PADRAO={
   // custo_visita é a métrica que DECIDE o veredito deste balde (ver alvos.js
