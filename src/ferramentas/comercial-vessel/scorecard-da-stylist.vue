@@ -114,14 +114,15 @@
         </div>
       </div>
 
-      <p class="cv-nota cv-scorecard-linha">
-        <b>Recorrente: {{ sc.recorrente ? 'sim' : 'não' }}</b>
-        ({{ sc.realizados_desde_o_inicio }} realizado(s) até o fim do período)
-        · <b>Intervalo médio entre os encontros dela:</b>
-        {{ sc.intervalos ? `${formatarDias(sc.intervalo_medio_em_dias)} (${sc.intervalos} intervalo(s))` : 'sem base ainda' }}
-        · <b>Contatos até ativar:</b>
-        {{ sc.contatos_antes_de_ativar === null || sc.contatos_antes_de_ativar === undefined ? 'ainda não ativou' : sc.contatos_antes_de_ativar }}
-      </p>
+      <!-- Três leituras soltas, uma por linha (eram um parágrafo corrido). -->
+      <ul class="cv-scorecard-linha">
+        <li><b>Recorrente: {{ sc.recorrente ? 'sim' : 'não' }}</b>
+          ({{ sc.realizados_desde_o_inicio }} realizado(s) até o fim do período)</li>
+        <li><b>Intervalo médio entre os encontros dela:</b>
+          {{ sc.intervalos ? `${formatarDias(sc.intervalo_medio_em_dias)} (${sc.intervalos} intervalo(s))` : 'sem base ainda' }}</li>
+        <li><b>Contatos até ativar:</b>
+          {{ sc.contatos_antes_de_ativar === null || sc.contatos_antes_de_ativar === undefined ? 'ainda não ativou' : sc.contatos_antes_de_ativar }}</li>
+      </ul>
       <p class="cv-nota">
         As mesmas regras do placar: a venda é o pedido atendido no Bling de uma
         convidada presente, até 14 dias depois do encontro; quem foi a dois

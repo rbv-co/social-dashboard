@@ -53,7 +53,7 @@
  *
  * ⚠️ QUEM SÓ VÊ LÊ TUDO, MAS NÃO VÊ O BOTÃO: a trava de mexer é a mesma do CRM
  * (`is_vessel_atendimentos_editar`), e o banco recusa de qualquer jeito. */
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import IconeDoBloco from '../../compartilhado/icone-do-bloco.vue'
 import AvaliarAStylist from './avaliar-a-stylist.vue'
 import { dataLegivel } from './enderecos-publicos.js'
@@ -69,7 +69,8 @@ const props = defineProps({
   // O scorecard "desde o início" (vem do bloco de cima): sugestões e o aviso.
   desdeOInicio: { type: Object, default: null },
 })
-const emit = defineEmits(['mudou'])
+// `faixa`: o selo vigente sobe para a faixa de cima da ficha (só desenho).
+const emit = defineEmits(['mudou', 'faixa'])
 
 const lista = ref([])
 const carregando = ref(true)
@@ -107,6 +108,7 @@ function diaDoInstante(iso) {
   return `${d.getFullYear()}-${doisDigitos(d.getMonth() + 1)}-${doisDigitos(d.getDate())}`
 }
 
+watch([selo, carregando, erro], () => emit('faixa', carregando.value || erro.value ? null : selo.value))
 onMounted(carregar)
 </script>
 
