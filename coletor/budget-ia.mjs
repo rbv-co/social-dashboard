@@ -82,6 +82,10 @@ export function montarMensagens(camp, ins, ads, conjuntos, regua) {
   const pnd = (balde === 'engajamento' && regua)
     ? calcularPonderada(quantidadesDoInsight(ins) || {}, { pesos: regua.pesos, limiares: regua.limiares, meta })
     : null;
+  // O CUSTO ATUAL de qualquer campanha, não só das de engajamento. Antes disto
+  // o robô mandava `meta_reais` preenchida e `custo_atual_reais: null` em lead,
+  // venda, mensagem e tráfego — e o system prompt mandava citar o número.
+  const custoAtual = pnd ? pnd.custoPorPonto : custoDoAlvo(balde, ins);
   const system =
     'Você é um gestor de tráfego pago sênior. Analise UMA campanha do Meta Ads E os anúncios dela, e recomende: ' +
     '(1) o orçamento diário ideal da CAMPANHA; (2) por ANÚNCIO, manter ou pausar o criativo. ' +
@@ -132,8 +136,8 @@ export function montarMensagens(camp, ins, ads, conjuntos, regua) {
       tipo_de_campanha: balde,
       rotulo: alvo ? alvo.rotulo : null,          // ex.: "Custo por ponto", "Custo por conversa iniciada"
       meta_reais: meta > 0 ? meta : null,          // nulo = conta sem meta para este tipo
-      custo_atual_reais: pnd ? pnd.custoPorPonto : null,
-      indice_contra_meta: pnd ? pnd.indice : null, // 1,0 = exatamente na meta
+      custo_atual_reais: custoAtual,
+      indice_contra_meta: (custoAtual != null && meta > 0) ? custoAtual / meta : null,
       pesos: regua ? regua.pesos : null,
     },
     orcamento: {
@@ -228,6 +232,11 @@ import { normalizarRegua, reguaDaConta, metaDoBalde } from '../src/ferramentas/g
 import { quantidadesDoInsight, calcularPonderada } from '../src/ferramentas/gestao-trafego/ponderada.js';
 import { alvoDoBalde } from '../src/ferramentas/gestao-trafego/alvos.js';
 import { emVeiculacao } from '../src/ferramentas/gestao-trafego/veiculacao.js';
+// O custo atual de lead, venda, tráfego, mensagem e reconhecimento. Sem isto o
+// robô calculava `pnd` (só existe em engajamento) e mandava `custo_atual_reais:
+// null` pros outros baldes, enquanto o system prompt mandava citar esse número
+// contra a meta — a régua chegava ao Opus sem o número que ela mede.
+import { custoDoAlvo } from '../src/ferramentas/gestao-trafego/metricas.js';
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY_TRAFEGO || process.env.ANTHROPIC_API_KEY_BUDGET || process.env.ANTHROPIC_API_KEY;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://kounqtdoioootxqegkij.supabase.co';
@@ -417,7 +426,16 @@ async function main() {
         const bal = baldeEfetivo(camp.objective, conjuntosDaCamp);
         const mt = metaDoBalde(reguaDaContaAtual, bal);
         const quem = contaDoPainel ? contaDoPainel.name : '??';
-        console.log(`  [dry] ${camp.name || camp.id} — ${quem} · ${o.sigla || 'sem nível'} ${valor}${o.conjuntosSomados ? ` em ${o.conjuntosSomados} conj.` : ''}${extra} · ${bal} meta ${mt > 0 ? 'R$ ' + mt : 'NÃO DEFINIDA'}`);
+        // O MESMO cálculo de custo atual que montarMensagens faz por dentro —
+        // repetido aqui só pra imprimir na tela, pra provar contra a conta real
+        // sem gastar Opus e sem gravar nada (o `--dry` não chama o modelo).
+        const pndDry = (bal === 'engajamento' && reguaDaContaAtual)
+          ? calcularPonderada(quantidadesDoInsight(ins) || {}, { pesos: reguaDaContaAtual.pesos, limiares: reguaDaContaAtual.limiares, meta: mt })
+          : null;
+        const ca = pndDry ? pndDry.custoPorPonto : custoDoAlvo(bal, ins);
+        const txtCusto = ca == null ? 'custo SEM DADO' : `custo R$ ${ca.toFixed(2)}`;
+        const txtIdx = (ca != null && mt > 0) ? ` (${(ca / mt).toFixed(2)}× a meta)` : '';
+        console.log(`  [dry] ${camp.name || camp.id} — ${quem} · ${o.sigla || 'sem nível'} ${valor}${o.conjuntosSomados ? ` em ${o.conjuntosSomados} conj.` : ''}${extra} · ${bal} meta ${mt > 0 ? 'R$ ' + mt : 'NÃO DEFINIDA'} · ${txtCusto}${txtIdx}`);
         continue;
       }
       let saida;

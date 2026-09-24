@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { campanhaEmVeiculacao, montarMensagens, parsearSaida, diaDaSemanaBR, decidirEscopo, veiculouNaJanela, selecionarCampanhas } from './budget-ia.mjs';
+import { normalizarRegua } from '../src/ferramentas/gestao-trafego/regua.js';
 
 const AGORA = Date.parse('2026-07-02T12:00:00Z');
 
@@ -229,4 +230,58 @@ test('o prompt PROIBE falar "do dono": quem le e a propria pessoa', () => {
   const { system } = montarMensagens({ name: 'C', objective: 'OUTCOME_TRAFFIC' }, {}, [], []);
   assert.match(system, /NUNCA "a meta do dono"/);
   assert.ok(!/compare com a meta DELE/.test(system), 'a propria instrucao nao pode usar a forma que proibe');
+});
+
+// ---------------------------------------------------------------------------
+// A CEGUEIRA (24/09/2026): o robô mandava ao Opus a META da conta e o custo
+// atual NULO em toda campanha que não fosse de engajamento, enquanto o system
+// prompt ordenava "cite esse número em reais e contra a meta".
+// A chave é `metas` — metaDoBalde lê `regua.metas[balde]` (regua.js:109).
+// `metas_resultado` NÃO existe: devolveria 0 e o índice viria null.
+// (Reusa o `dadosDoPrompt(user)` já definido acima — dois helpers com o mesmo
+// nome e assinaturas diferentes quebrariam o arquivo.)
+// ---------------------------------------------------------------------------
+const REGUA_TESTE = normalizarRegua({
+  metas: { leads: 15, vendas: 80, trafego: 1.5, mensagens: 10, reconhecimento: 25 },
+});
+
+const INS_LEAD = {
+  spend: '1000', impressions: '50000', clicks: '800', ctr: '1.6', cpc: '1.25',
+  reach: '25000', frequency: '2',
+  actions: [{ action_type: 'lead', value: '40' }],
+};
+
+test('campanha de LEAD leva o custo atual, não só a meta', () => {
+  const camp = { id: '1', name: 'Captação', objective: 'OUTCOME_LEADS' };
+  const { user } = montarMensagens(camp, INS_LEAD, [], [], REGUA_TESTE);
+  const d = dadosDoPrompt(user);
+  assert.equal(d.regua.custo_atual_reais, 25, 'custo por lead = 1000 / 40');
+  assert.ok(d.regua.meta_reais > 0, 'a meta precisa continuar indo junto');
+  assert.ok(Math.abs(d.regua.indice_contra_meta - 25 / 15) < 0.001,
+    'índice = custo ÷ meta; 1,0 é exatamente na meta');
+});
+
+test('campanha de VENDAS também leva o custo atual', () => {
+  const camp = { id: '2', name: 'Vendas', objective: 'OUTCOME_SALES' };
+  const ins = { spend: '1000', actions: [{ action_type: 'purchase', value: '20' }] };
+  const { user } = montarMensagens(camp, ins, [], [], REGUA_TESTE);
+  const d = dadosDoPrompt(user);
+  assert.equal(d.regua.custo_atual_reais, 50, 'CAC = 1000 / 20');
+});
+
+test('campanha de engajamento continua medida pelo ponto ponderado', () => {
+  const camp = { id: '3', name: 'Engaja', objective: 'OUTCOME_ENGAGEMENT' };
+  const ins = { spend: '100', actions: [{ action_type: 'post_engagement', value: '500' }] };
+  const { user } = montarMensagens(camp, ins, [], [], REGUA_TESTE);
+  const d = dadosDoPrompt(user);
+  assert.equal(d.regua.tipo_de_campanha, 'engajamento');
+  assert.equal(d.regua.rotulo, 'Custo por ponto');
+});
+
+test('campanha sem resultado na janela manda null, nunca zero', () => {
+  const camp = { id: '4', name: 'Parada', objective: 'OUTCOME_LEADS' };
+  const { user } = montarMensagens(camp, { spend: '800', actions: [] }, [], [], REGUA_TESTE);
+  const d = dadosDoPrompt(user);
+  assert.equal(d.regua.custo_atual_reais, null);
+  assert.equal(d.regua.indice_contra_meta, null);
 });
