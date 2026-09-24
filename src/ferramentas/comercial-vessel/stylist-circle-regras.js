@@ -127,6 +127,9 @@ export function mensagemDeEditar(situacao) {
       return 'Sem WhatsApp, o Instagram precisa ser um perfil: @perfil ou o endereço dele.'
     case 'instagram_repetido':
       return 'Já existe outra parceira com este Instagram.'
+    // ⚠️ SEM CONTATO AINDA (24/09/2026): desmarcar a caixa sem dar um contato.
+    case 'sem_contato':
+      return 'Para tirar o "ainda sem contato", escreva o WhatsApp (com DDD) ou o Instagram dela.'
     case 'instagram_longo':
       return 'O Instagram ficou longo demais. Use só o @ ou o endereço.'
     case 'observacoes_longas':
@@ -177,7 +180,7 @@ export function rotuloDeDesativar(ativa) {
  * criar (`p_praca default null`) — diferente da Private Edit, onde a praça é
  * obrigatória porque vira parte do código do encontro.
  */
-export function problemasDaParceira({ nome, whatsapp, instagram, origem } = {}) {
+export function problemasDaParceira({ nome, whatsapp, instagram, origem, semContato } = {}) {
   const problemas = []
   if (!nome || !String(nome).trim()) problemas.push('Escreva o nome da parceira.')
   // ⚠️ WHATSAPP OU INSTAGRAM (24/09/2026, pedido do dono): um dos dois basta.
@@ -185,7 +188,9 @@ export function problemasDaParceira({ nome, whatsapp, instagram, origem } = {}) 
   // perfil de verdade (`instagram_invalido`).
   const temFone = !!whatsapp && String(whatsapp).replace(/\D/g, '').length > 0
   const temInsta = !!instagram && String(instagram).trim().length > 0
-  if (!temFone && !temInsta) {
+  // ⚠️ SEM CONTATO AINDA (24/09/2026, decisão do dono): com a caixa marcada ela
+  // entra sem os dois, e alguém completa depois — o banco grava a marca.
+  if (!temFone && !temInsta && !semContato) {
     problemas.push('Escreva o WhatsApp (com DDD) ou o Instagram da parceira — um dos dois basta.')
   }
   // ⚠️ T11: na Central a origem do contato é obrigatória — o banco recusa sem
@@ -194,4 +199,43 @@ export function problemasDaParceira({ nome, whatsapp, instagram, origem } = {}) 
     problemas.push('Diga como ela chegou (origem do contato).')
   }
   return problemas
+}
+
+/**
+ * O que a tela manda em `p_sem_contato`: só `true` quando a caixa está marcada
+ * E não há nenhum contato escrito. Com contato, o contato vence (o banco
+ * desliga a marca de qualquer jeito — aqui só não se manda um sinal contrário).
+ * ⚠️ `vessel_stylist_criar` e `_editar` ganharam este parâmetro em
+ * `2026-09-24-vessel-stylist-sem-contato.sql`; a Central antiga não o manda.
+ */
+export function semContatoParaMandar({ whatsapp, instagram, semContato } = {}) {
+  const temFone = !!whatsapp && String(whatsapp).replace(/\D/g, '').length > 0
+  const temInsta = !!instagram && String(instagram).trim().length > 0
+  return !!semContato && !temFone && !temInsta
+}
+
+/**
+ * O selo "Sem contato ainda" — no cartão do quadro, na lista e na ficha.
+ * Nulo quando ela tem contato (ou quando o banco ainda não devolve a marca).
+ * Tom de atenção (`queda`, o laranja de situação da casa) e sempre com a palavra.
+ */
+export function seloSemContato(s) {
+  return s?.sem_contato === true ? { texto: 'Sem contato ainda', tom: 'queda' } : null
+}
+
+/**
+ * O filtro "Sem contato ainda" mora na SITUAÇÃO da barra (a barra já tem o
+ * campo; não se cria um segundo). `filtrar()` de `filtros.js` não conhece este
+ * valor, então a tela filtra a base como "Só ativas" e depois fica só com as
+ * marcadas. As desativadas não entram: elas nem vêm do banco nesta situação.
+ */
+export const SITUACAO_SEM_CONTATO = 'sem-contato'
+export function filtroDaBarra(filtro) {
+  const f = filtro || {}
+  const so = f.situacao === SITUACAO_SEM_CONTATO
+  return { base: so ? { ...f, situacao: 'abertas' } : f, soSemContato: so }
+}
+export function soAsSemContato(lista, soSemContato) {
+  const l = Array.isArray(lista) ? lista : []
+  return soSemContato ? l.filter((s) => s?.sem_contato === true) : l
 }

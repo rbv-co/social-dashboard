@@ -400,7 +400,8 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
             ativa: s.ativa, whatsapp: s.whatsapp, instagram: s.instagram, atuacao: s.atuacao,
             loja: s.loja, origem_contato: s.origem_contato, responsavel: s.responsavel,
             prospectado_em: s.prospectado_em, proxima_acao: s.proxima_acao, proxima_acao_em: s.proxima_acao_em,
-            observacoes: s.observacoes ?? null, ativada_em: ativadaEm(s), private_edit_agendado_em: s.ativada_em ?? null,
+            observacoes: s.observacoes ?? null, sem_contato: s.sem_contato === true,
+            ativada_em: ativadaEm(s), private_edit_agendado_em: s.ativada_em ?? null,
             encontros_realizados: ev.length,
             ultima_private_edit: ultima,
             proxima_data_permitida: ultima ? somarDias(ultima, 45) : null,
@@ -576,8 +577,10 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
       }
       const insta = limpo(a.p_instagram), perfil = instagramCanonico(a.p_instagram), obs = limpo(a.p_observacoes)
       if (insta && insta.length > 120) return { ok: false, situacao: 'instagram_longo' }
-      if (!fone && !insta) return { ok: false, situacao: 'sem_contato' }
-      if (!fone && !perfil) return { ok: false, situacao: 'instagram_invalido' }
+      // ⚠️ SEM CONTATO AINDA (2026-09-24-vessel-stylist-sem-contato.sql): só com a caixa marcada.
+      const semContato = a.p_sem_contato === true && !fone && !insta
+      if (!fone && !insta && !semContato) return { ok: false, situacao: 'sem_contato' }
+      if (!fone && insta && !perfil) return { ok: false, situacao: 'instagram_invalido' }
       if (obs && obs.length > 2000) return { ok: false, situacao: 'observacoes_longas' }
       const praca = maiusculo(a.p_praca), loja = minusculo(a.p_loja), origem = minusculo(a.p_origem_contato)
       if (praca && !PRACAS.includes(praca)) return { ok: false, situacao: 'praca_invalida' }
@@ -602,7 +605,7 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
         id: proximo(b.stylists), codigo, nome: String(a.p_nome).trim(), whatsapp: fone,
         cidade: limpo(a.p_cidade), instagram: insta, atuacao: limpo(a.p_atuacao),
         praca_preview: praca, loja, origem_contato: origem, origem_canal: null, responsavel: limpo(a.p_responsavel),
-        prospectado_em: null, proxima_acao: limpo(a.p_proxima_acao), observacoes: obs,
+        prospectado_em: null, proxima_acao: limpo(a.p_proxima_acao), observacoes: obs, sem_contato: semContato,
         proxima_acao_em: a.p_proxima_acao_em || null, ativada_em: null, etapa_id: null, ativa: true, teste: false,
       }
       b.stylists.push(s)
@@ -632,12 +635,17 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
           return { ok: false, situacao: 'instagram_repetido' }
         }
       }
+      // ⚠️ SEM CONTATO AINDA: nulo não mexe; desmarcar sem contato é recusado;
+      // ganhar um contato desliga a marca.
+      const comContato = !!(fone ?? s.whatsapp) || !!(insta ?? limpo(s.instagram))
+      if (a.p_sem_contato === false && !comContato) return { ok: false, situacao: 'sem_contato' }
       if (a.p_observacoes != null && String(a.p_observacoes).trim().length > 2000) return { ok: false, situacao: 'observacoes_longas' }
       const praca = maiusculo(a.p_praca), loja = minusculo(a.p_loja), origem = minusculo(a.p_origem_contato)
       if (praca && !PRACAS.includes(praca)) return { ok: false, situacao: 'praca_invalida' }
       if (loja && !LOJAS.includes(loja)) return { ok: false, situacao: 'loja_invalida' }
       if (origem && !ORIGENS.includes(origem)) return { ok: false, situacao: 'origem_invalida' }
       Object.assign(s, {
+        sem_contato: comContato ? false : (a.p_sem_contato ?? s.sem_contato ?? false),
         nome: limpo(a.p_nome) ?? s.nome,
         whatsapp: fone ?? s.whatsapp,
         cidade: limpo(a.p_cidade) ?? s.cidade,

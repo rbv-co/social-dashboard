@@ -19,10 +19,12 @@
           <div class="cv-ficha-selos">
             <span class="cv-selo id-selo cv-selo-etapa" :class="`id-tom-${seloDaEtapa(stylist).tom}`">{{ etapaComMotivo(stylist) }}</span>
             <span v-if="faixa" class="cv-selo id-selo" :class="`id-tom-${faixa.tom}`">{{ faixa.texto }}</span>
+            <span v-if="seloSemContato(stylist)" class="cv-selo id-selo cv-selo-sem-contato" :class="`id-tom-${seloSemContato(stylist).tom}`">{{ seloSemContato(stylist).texto }}</span>
           </div>
           <p class="cv-sub"><span class="cv-codigo">{{ stylist.codigo }}</span><span v-if="stylist.cidade"> · {{ stylist.cidade }}</span></p>
           <!-- ⚠️ WHATSAPP OU INSTAGRAM (24/09/2026): pode faltar um dos dois. -->
-          <p class="cv-sub">{{ [telefoneLegivel(stylist.whatsapp) || 'sem WhatsApp', stylist.instagram].filter(Boolean).join(' · ') }}</p>
+          <p v-if="!seloSemContato(stylist)" class="cv-sub">{{ [telefoneLegivel(stylist.whatsapp) || 'sem WhatsApp', stylist.instagram].filter(Boolean).join(' · ') }}</p>
+          <p v-else class="cv-sub">Sem WhatsApp e sem Instagram por enquanto — alguém vai completar.</p>
         </div>
         <!-- 24/09: o contato fácil (abre o WhatsApp/Instagram; NÃO registra contato). -->
         <div class="cv-acoes cv-ficha-atalhos">
@@ -169,6 +171,7 @@ import {
   etapaComMotivo, privateEditDaStylist, pedeMotivo, avisoDeLiberada,
 } from './crm-da-stylist-regras.js'
 import { seloDaEtapa } from './t11-regras.js'
+import { seloSemContato } from './stylist-circle-regras.js'
 import EscolhaDoMotivo from './escolha-do-motivo.vue'
 import IconeDoBloco from '../../compartilhado/icone-do-bloco.vue'
 import ContatoFacil from './contato-facil.vue'

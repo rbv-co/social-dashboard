@@ -36,6 +36,10 @@
           <p v-if="mostrarFaixa" class="cv-quadro-faixa">
             <span class="cv-selo id-selo" :class="`id-tom-${seloDaFaixa(s).tom}`">{{ seloDaFaixa(s).texto }}</span></p>
           <button type="button" class="cv-quadro-nome" @click="$emit('abrir', s.codigo)">{{ s.nome }}</button>
+          <!-- ⚠️ 24/09/2026: "Sem contato ainda" — sem os botões de contato
+               (o contato fácil some sozinho sem WhatsApp e sem Instagram). -->
+          <p v-if="seloSemContato(s)" class="cv-quadro-faixa">
+            <span class="cv-selo id-selo cv-selo-sem-contato" :class="`id-tom-${seloSemContato(s).tom}`">{{ seloSemContato(s).texto }}</span></p>
           <p class="cv-sub"><span class="cv-codigo">{{ s.codigo }}</span>
             <span v-if="s.cidade"> · {{ s.cidade }}</span><span v-if="s.loja"> · {{ LOJAS[s.loja] || s.loja }}</span></p>
           <!-- 24/09/2026: o motivo da saída, no cartão da coluna dela. -->
@@ -85,6 +89,7 @@
 import { ref, computed, watch } from 'vue'
 import { LOJAS, seloDaEtapa } from './t11-regras.js'
 import { seloDaFaixa } from './qualificacao-regras.js'
+import { seloSemContato } from './stylist-circle-regras.js'
 import IconeDoBloco from '../../compartilhado/icone-do-bloco.vue'
 import ContatoFacil from './contato-facil.vue'
 import { dataLegivel } from './enderecos-publicos.js'
