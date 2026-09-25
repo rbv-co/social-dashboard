@@ -2265,12 +2265,12 @@ function _renderGtCampaigns(col,campaigns,insights,adInsights,adsets){
       const badgeLbl=encerrada?'Concluído':(status==='ACTIVE'?'Ativo':status==='PAUSED'?'Pausado':status==='ARCHIVED'?'Arquivado':'Inativo');
       badge.className=`gt-status-badge ${badgeCls}`;badge.textContent=badgeLbl;
       const nm=document.createElement('div');nm.className='gt-name';nm.title=ins.campaign_name||'';nm.textContent=ins.campaign_name||'—';
-      const chips=document.createElement('div');chips.style.cssText='display:flex;align-items:center;gap:8px;flex-shrink:0;';
+      const chips=document.createElement('div');chips.className='gt-camp-chips';
       // Selo de ONDE fica o orçamento — em português, com a sigla entre parênteses.
       const selo=nivelOrc.sigla
         ?`<span class="gt-nivel-chip ${nivelOrc.sigla==='CBO'?'cbo':'abo'}" title="${_gtEsc(nivelOrc.explicacao)}">${nivelOrc.sigla==='CBO'?'Orçamento na campanha (CBO)':'Orçamento nos conjuntos (ABO)'}</span>`
         :'';
-      chips.innerHTML=`<span class="ma-obj-chip" style="font-size:calc(9px*var(--gt-fs,1.3));">${_maObjLabel(ins.objective)}</span>${selo}${daily?`<span style="font-family:var(--fonte-principal);font-size:calc(10px*var(--gt-fs,1.3));font-weight:600;color:var(--muted);">${_maFmtR(daily)}/dia</span>`:''}`;
+      chips.innerHTML=`<span class="ma-obj-chip" style="font-size:calc(9px*var(--gt-fs,1.3));">${_maObjLabel(ins.objective)}</span>${selo}${daily?`<span class="gt-camp-diaria">${_maFmtR(daily)}/dia</span>`:''}`;
       // KPIs por objetivo (balde da campanha — ver GT_METRIC_CATALOG/_gtBalde)
       const metrics=document.createElement('div');metrics.className='gt-metrics';
       metrics.innerHTML=_gtKpisHtml(Object.assign({},ins,{objective:kpiObjective}));
@@ -3349,7 +3349,7 @@ function _gtPubSecaoSugestao(){
     b.type='button';
     b.textContent='Ver o que os números dizem';
     b.style.cssText='padding:8px 14px;border-radius:8px;cursor:pointer;border:1px solid var(--accent,#6366f1);'
-      +'background:transparent;color:var(--accent,#6366f1);font-weight:700;'
+      +'background:transparent;color:var(--accent-forte);font-weight:700;'
       +'font-family:var(--fonte-principal);font-size:calc(11px*var(--gt-fs,1.3));';
     b.onclick=_gtPubBuscarSugestao;
     bloco.appendChild(b);
@@ -3509,7 +3509,7 @@ function _gtPubBotaoAplicar(rotulo,aoClicar){
   const b=document.createElement('button');
   b.type='button';b.textContent=rotulo;
   b.style.cssText='padding:7px 12px;border-radius:999px;cursor:pointer;border:1px solid var(--accent,#6366f1);'
-    +'background:var(--accent,#6366f1);color:#fff;font-weight:700;'
+    +'background:var(--accent,#6366f1);color:var(--sobre-cor);font-weight:700;'
     +'font-family:var(--fonte-principal);font-size:calc(10.5px*var(--gt-fs,1.3));';
   b.onclick=(e)=>{if(e&&e.preventDefault)e.preventDefault();aoClicar();};
   return b;
@@ -3611,7 +3611,7 @@ function _gtPubSecaoPublicosSalvos(){
     if(escolhido){
       const selo=document.createElement('span');
       selo.style.cssText='flex:none;padding:2px 9px;border-radius:999px;background:var(--accent,#6366f1);'
-        +'color:#fff;font-weight:700;font-size:calc(9px*var(--gt-fs,1.3));';
+        +'color:var(--sobre-cor);font-weight:700;font-size:calc(9px*var(--gt-fs,1.3));';
       selo.textContent='✓ aplicado';
       topo.appendChild(selo);
     }
@@ -3800,7 +3800,8 @@ function _gtPubSecaoPessoas(){
   const atual=JSON.stringify(_gtPub.generos);
   for(const o of opcoes){
     const b=document.createElement('button');b.textContent=o.r;b.className='gt-btn-dup';
-    if(JSON.stringify(o.v)===atual)b.style.borderColor='var(--accent,#6366f1)',b.style.color='var(--accent,#6366f1)';
+    // o escolhido: borda no accent e texto em `--accent-forte` (o accent puro dava 3,23 no escuro)
+    if(JSON.stringify(o.v)===atual)b.style.borderColor='var(--accent,#6366f1)',b.style.color='var(--accent-forte)';
     b.onclick=ev=>{ev.stopPropagation();_gtPub.generos=[...o.v];_gtPubRedesenha();};
     lg.appendChild(b);
   }
@@ -4058,7 +4059,7 @@ function _gtPublicoModal(nomeConjunto,rotuloDoBotao){
         corpo.appendChild(d);
       }
       bSalvar.disabled=!!trava;
-      bSalvar.style.cssText='padding:9px 18px;border-radius:8px;border:none;background:var(--accent,#6366f1);color:#fff;font-weight:700;font-size:calc(13px*var(--gt-fs,1.3));cursor:'+(trava?'not-allowed':'pointer')+';opacity:'+(trava?'.5':'1')+';';
+      bSalvar.style.cssText='padding:9px 18px;border-radius:8px;border:none;background:var(--accent,#6366f1);color:var(--sobre-cor);font-weight:700;font-size:calc(13px*var(--gt-fs,1.3));cursor:'+(trava?'not-allowed':'pointer')+';opacity:'+(trava?'.5':'1')+';';
 
       // Devolve a rolagem e o foco depois do corpo inteiro estar montado —
       // nunca antes: focar/setar scrollTop num controle que ainda não existe
@@ -5408,9 +5409,12 @@ Object.assign(window, {
    o que deixa o nome longo truncar em vez de empurrar os botoes pra fora. */
 .tela-gestao-trafego :deep(.gtf-linha){display:flex;align-items:center;gap:14px;}
 .tela-gestao-trafego :deep(.gtf-selo){flex:0 0 auto;font-family:var(--fonte-principal);font-size:calc(9px*var(--gt-fs,1.3));font-weight:700;padding:4px 10px;border-radius:999px;white-space:nowrap;background:color-mix(in srgb,var(--muted) 16%,transparent);color:var(--text);}
-.tela-gestao-trafego :deep(.gtf-item.positivo .gtf-selo){background:color-mix(in srgb,var(--green) 18%,transparent);color:var(--green);}
-.tela-gestao-trafego :deep(.gtf-item.reduzir .gtf-selo){background:color-mix(in srgb,var(--orange) 18%,transparent);color:var(--orange);}
-.tela-gestao-trafego :deep(.gtf-item.pausar .gtf-selo){background:color-mix(in srgb,var(--red) 18%,transparent);color:var(--red);}
+/* 25/09/2026: o par da casa (`.id-selo`): tinta de 12% sobre a superfície e
+   o texto em 75% do tom + `--text`. O tom puro sobre a tinta de 18% dava 3,72
+   ("Baixar orçamento", claro) e 4,23 ("Pausar campanha", escuro). */
+.tela-gestao-trafego :deep(.gtf-item.positivo .gtf-selo){background:color-mix(in srgb,var(--green) 12%,var(--surface));color:color-mix(in srgb,var(--green) 75%,var(--text));}
+.tela-gestao-trafego :deep(.gtf-item.reduzir .gtf-selo){background:color-mix(in srgb,var(--orange) 12%,var(--surface));color:color-mix(in srgb,var(--orange) 75%,var(--text));}
+.tela-gestao-trafego :deep(.gtf-item.pausar .gtf-selo){background:color-mix(in srgb,var(--red) 12%,var(--surface));color:color-mix(in srgb,var(--red) 75%,var(--text));}
 .tela-gestao-trafego :deep(.gtf-ident){flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:2px;}
 .tela-gestao-trafego :deep(.gtf-nome){font-family:var(--fonte-principal);font-size:calc(11.5px*var(--gt-fs,1.3));font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .tela-gestao-trafego :deep(.gtf-conta){font-family:var(--fonte-principal);font-size:calc(9px*var(--gt-fs,1.3));color:var(--muted);}
@@ -5751,6 +5755,12 @@ Object.assign(window, {
 .tela-gestao-trafego :deep(.gt-camp-num){font-family:var(--fonte-dados);font-size:calc(14px*var(--gt-fs,1.3));font-weight:600;color:var(--accent);min-width:24px;text-align:center;flex-shrink:0;font-variant-numeric:tabular-nums;letter-spacing:.5px;}
 .tela-gestao-trafego :deep(.gt-ad-num){font-family:var(--fonte-dados);font-size:calc(11px*var(--gt-fs,1.3));font-weight:600;color:var(--accent);opacity:.85;flex-shrink:0;font-variant-numeric:tabular-nums;letter-spacing:.3px;}
 .tela-gestao-trafego :deep(.gt-camp-l2){display:flex;align-items:center;gap:14px;margin-top:7px;flex-wrap:wrap;}
+/* A linha de selos da campanha (objetivo · onde fica o orçamento · diária).
+   Era `style` solto com `flex-shrink:0` e sem quebra: a 375px o valor da
+   diária passava da borda do cartão e saía cortado ("R$80,00/di…"). Dinheiro
+   não se corta — no celular a linha quebra (regra do celular mais abaixo). */
+.tela-gestao-trafego :deep(.gt-camp-chips){display:flex;align-items:center;gap:8px;flex-shrink:0;}
+.tela-gestao-trafego :deep(.gt-camp-diaria){font-family:var(--fonte-principal);font-size:calc(10px*var(--gt-fs,1.3));font-weight:600;color:var(--muted);white-space:nowrap;}
 .tela-gestao-trafego :deep(.gt-camp-exp){margin-left:auto;display:flex;align-items:center;gap:6px;flex-shrink:0;}
 .tela-gestao-trafego :deep(.gt-camp-row-ads){padding:0 18px 14px 22px;display:none;flex-direction:column;gap:0;background:var(--surface2);border-top:1px solid var(--border);position:relative;overflow:hidden;}
 .tela-gestao-trafego :deep(.gt-camp-row-ads.open){display:flex;}
@@ -5873,6 +5883,17 @@ Object.assign(window, {
   font-size:calc(12px*var(--gt-fs,1.3));cursor:pointer;white-space:nowrap;
 }
 .tela-gestao-trafego :deep(.gt-btn-dup:hover){background:var(--surface-2,rgba(0,0,0,.05));}
+/* 25/09/2026: o EDITOR DE PÚBLICO é pendurado no <body> (#gt-pub-ov), fora de
+   `.tela-gestao-trafego` — as duas regras de cima não chegavam lá, e os botões
+   dele (gênero, "Buscar") saíam com o cinza claro do navegador. No escuro, o
+   "Mulheres" escolhido dava 3,23 sobre esse cinza. Mesma regra, alcançando o
+   editor. */
+:global(#gt-pub-ov .gt-btn-dup){
+  padding:6px 11px;border-radius:7px;border:1px solid var(--border,#ddd);
+  background:transparent;color:var(--text,#111);font-weight:600;
+  font-size:calc(12px*var(--gt-fs,1.3));cursor:pointer;white-space:nowrap;
+}
+:global(#gt-pub-ov .gt-btn-dup:hover){background:var(--surface-2,rgba(0,0,0,.05));}
 /* ===== Redesign direção A ===== */
 /* Edição manual de orçamento (sempre disponível) */
 .tela-gestao-trafego :deep(.gt-budget-edit){display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;font-family:var(--fonte-principal);font-size:calc(11px*var(--gt-fs,1.3));color:var(--muted);}
@@ -6231,6 +6252,7 @@ Object.assign(window, {
    fileira de números ganha a largura inteira (debaixo do nome, no anúncio). */
 @media(max-width:640px){
   .tela-gestao-trafego :deep(.gt-camp-l2 > .gt-metrics){flex:1 1 100%;min-width:0;}
+  .tela-gestao-trafego :deep(.gt-camp-l2 > .gt-camp-chips){flex:1 1 100%;flex-wrap:wrap;min-width:0;}
   .tela-gestao-trafego :deep(.gt-ad-top){flex-wrap:wrap;}
   .tela-gestao-trafego :deep(.gt-ad-top > .gt-metrics){flex:1 1 100%;min-width:0;}
 }

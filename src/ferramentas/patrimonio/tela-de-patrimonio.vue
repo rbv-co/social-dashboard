@@ -2307,6 +2307,14 @@ const logoEscuroUrl = '/midia/LOGOTIPOBRENOBRANCO.png'
 .tela-patrimonio .pat-pill-uso{background:color-mix(in srgb,var(--green) 12%,var(--surface));color:color-mix(in srgb,var(--green) 75%,var(--text));}
 .tela-patrimonio .pat-pill-estoque{background:color-mix(in srgb,var(--accent) 12%,var(--surface));color:color-mix(in srgb,var(--accent) 75%,var(--text));}
 .tela-patrimonio .pat-pill-manutencao{background:color-mix(in srgb,var(--orange) 12%,var(--surface));color:color-mix(in srgb,var(--orange) 75%,var(--text));}
+/* 25/09/2026, pedido do dono: no ESCURO a cor do módulo (conhaque #f78e43) e o
+   laranja de "em manutenção" viravam a mesma cor — a faixa do topo, os títulos
+   e a pílula liam como uma coisa só. No escuro a manutenção vai para
+   `--situacao-faltou` (o vermelho suave da régua), na pílula E no filete do
+   cartão, para os dois continuarem concordando (ver rotulos-do-bem.js). O
+   claro não muda: lá o conhaque (#954903) já se separa do laranja. */
+[data-theme="dark"] .tela-patrimonio .pat-pill-manutencao{background:color-mix(in srgb,var(--situacao-faltou) 12%,var(--surface));color:color-mix(in srgb,var(--situacao-faltou) 75%,var(--text));}
+[data-theme="dark"] .tela-patrimonio .id-tom-queda{--tom:var(--situacao-faltou);}
 .tela-patrimonio .pat-pill-baixado{background:var(--surface2);color:var(--muted);}
 .tela-patrimonio .pat-pill-neutro{background:var(--surface2);color:var(--muted);}
 
