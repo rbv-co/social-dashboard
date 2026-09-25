@@ -257,6 +257,31 @@ export function periodoDoPlacar(escolha, hoje = new Date()) {
  */
 export function taxasDoPlacar(pl) {
   const n = (x) => Number(x) || 0
+  // ⚠️ 25/09/2026 (Task 7): O PLACAR DA EDIÇÃO NÃO TRAZ RECEITA — a chave
+  // `receita` nem existe na resposta (o panorama de compras está congelado,
+  // decisão do dono). SEM ESTE GUARDA, `receitaPorConvidada`/
+  // `receitaPorEncontro` dariam "R$ 0" de VERDADE: o denominador delas
+  // (`presentes`, `encontros_realizados`) já vem preenchido nessa resposta —
+  // só o numerador (`receita`) que falta —, e `razao(0, n>0)` tem base. Um
+  // "R$ 0" fabricado é mentira, não silêncio (PADRAO-DA-CENTRAL.md, item 9).
+  // A CHAVE PRESENTE (mesmo com valor 0, como em `vessel_scorecard_da_stylist`,
+  // que o scorecard-da-stylist.vue usa) continua dando base normalmente — é
+  // só a AUSÊNCIA da chave que zera as três razões de dinheiro.
+  const temReceita = !!pl && Object.prototype.hasOwnProperty.call(pl, 'receita')
+  const semReceita = { temBase: false, n: 0, x: 0, valor: null }
+  // ⚠️ 25/09/2026 (Task 7): DUAS FONTES, O MESMO SENTIDO, NOMES DIFERENTES.
+  // `vessel_placar_do_stylist_circle` (mensal) manda `prospectadas_com_
+  // private_edit_agendado/realizado` e `prospectadas_recorrentes` — a turma
+  // NESTES campos já vem filtrada por quem também ativou. `vessel_placar_
+  // da_edicao` manda só `com_private_edit_agendado`/`com_private_edit_
+  // realizado`/`recorrentes_no_periodo`, sem o prefixo — mas como a resposta
+  // JÁ é só da turma da edição (`sty`, seção 11 da migration), o número é o
+  // MESMO que o "prospectadas_" contaria. Preferir o nome prefixado (existe
+  // → usa) e cair no sem prefixo (o da edição) é o que faz as taxas da
+  // sequência funcionarem nas duas fontes, sem reescrever a conta.
+  const agendadoDaTurma = pl?.prospectadas_com_private_edit_agendado ?? pl?.com_private_edit_agendado
+  const realizadoDaTurma = pl?.prospectadas_com_private_edit_realizado ?? pl?.com_private_edit_realizado
+  const recorrentesDaTurma = pl?.prospectadas_recorrentes ?? pl?.recorrentes_no_periodo
   return {
     // ⚠️ A MESMA TURMA EM CIMA E EMBAIXO: das prospectadas no período, quantas
     // já ativaram. "Ativadas no período" (a contagem do cartão) é de outra
@@ -264,9 +289,9 @@ export function taxasDoPlacar(pl) {
     ativacao: proporcao(n(pl?.prospectadas_ja_ativadas), n(pl?.prospectadas)),
     // ⚠️ 24/09/2026: A TURMA EM CINCO PASSOS — cada passo DENTRO do anterior
     // (o banco garante), então cada taxa é sobre o passo de cima.
-    agendamento: proporcao(n(pl?.prospectadas_com_private_edit_agendado), n(pl?.prospectadas_ja_ativadas)),
-    realizacaoDaTurma: proporcao(n(pl?.prospectadas_com_private_edit_realizado), n(pl?.prospectadas_com_private_edit_agendado)),
-    recorrenciaDaTurma: proporcao(n(pl?.prospectadas_recorrentes), n(pl?.prospectadas_com_private_edit_realizado)),
+    agendamento: proporcao(n(agendadoDaTurma), n(pl?.prospectadas_ja_ativadas)),
+    realizacaoDaTurma: proporcao(n(realizadoDaTurma), n(agendadoDaTurma)),
+    recorrenciaDaTurma: proporcao(n(recorrentesDaTurma), n(realizadoDaTurma)),
     realizacao: proporcao(n(pl?.encontros_realizados), n(pl?.encontros_agendados)),
     // ⚠️ Só confirmadas de encontro que ACONTECEU: a de encontro cancelado
     // nunca pôde comparecer. E o numerador com O MESMO filtro: a equipe marca
@@ -275,9 +300,9 @@ export function taxasDoPlacar(pl) {
     showRate: proporcao(n(pl?.presentes_em_realizados), n(pl?.confirmadas_em_realizados)),
     repeticao: proporcao(n(pl?.recorrentes_ate_o_fim), n(pl?.ativadas_ate_o_fim)),
     conversao: proporcao(n(pl?.compradoras), n(pl?.presentes)),
-    ticket: razao(n(pl?.receita), n(pl?.vendas)),
-    receitaPorConvidada: razao(n(pl?.receita), n(pl?.presentes)),
-    receitaPorEncontro: razao(n(pl?.receita), n(pl?.encontros_realizados)),
+    ticket: temReceita ? razao(n(pl?.receita), n(pl?.vendas)) : semReceita,
+    receitaPorConvidada: temReceita ? razao(n(pl?.receita), n(pl?.presentes)) : semReceita,
+    receitaPorEncontro: temReceita ? razao(n(pl?.receita), n(pl?.encontros_realizados)) : semReceita,
     pecasPorCliente: razao(n(pl?.pecas), n(pl?.compradoras)),
     // ⚠️ 24/09: número novo, com a faixa de teste do plano (1 a 3 vendas por
     // edição — `metaDeVendasPorEncontro`, qualificacao-regras.js). RAZÃO: a
