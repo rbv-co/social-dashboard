@@ -224,7 +224,7 @@ export function montarPainelRegua(alvo, opcoes) {
   // este arquivo de volta) ou reimplementar aqui o HTML do botão. Sem o
   // parâmetro (ex.: chamada de teste), vira no-op — nunca quebra o painel.
   const ajudaBtn = typeof o.ajudaBtn === 'function' ? o.ajudaBtn : () => '';
-  // O que a conta PAGA HOJE por engajamento, medido — mostrado ao lado da meta
+  // O que a conta PAGA por engajamento, medido — mostrado ao lado da meta
   // nova (Seção 2), pra ela ser definida contra o real, e não no escuro. Puro:
   // este módulo não fala com o banco, então o número vem de quem chama. Sem
   // ele (ou inválido), NÃO mostra nada — nunca um traço solto nem um zero
@@ -233,6 +233,14 @@ export function montarPainelRegua(alvo, opcoes) {
     const v = Number(o.custoEngajamentoPraticado);
     return Number.isFinite(v) && v >= 0 ? v : null;
   })();
+  // NÃO é "hoje": o valor acima soma sobre o período que estiver selecionado
+  // no filtro do topo da tela (HOJE/7D/30D/.../ATÉ AGORA), e "até agora" pode
+  // ser um mês inteiro. Defeito real (rodada 1 de revisão, 24/09/2026):
+  // rotular como "hoje" um número que na verdade é de ~24 dias fez a tela
+  // mentir sobre a régua mais sensível que ela tem. Por isso o rótulo do
+  // período é OBRIGATÓRIO junto do valor: quem chama sem ele ainda vê o
+  // número, mas com uma frase honesta em vez de "hoje" chutado.
+  const custoEngajamentoPraticadoPeriodo = String(o.custoEngajamentoPraticadoPeriodo || '').trim();
 
   const linhasPeso = Object.keys(PESOS_PADRAO).map((k) =>
     `<tr><td>${ROTULO_PESO[k]}</td><td>${campo('pnd-peso-' + k, regua.pesos[k], '1', editavel)}</td></tr>`).join('');
@@ -274,10 +282,13 @@ export function montarPainelRegua(alvo, opcoes) {
     const temMeta = regua.metas[chave] != null;
     const valor = temMeta ? regua.metas[chave] : '';
     const nota = temMeta ? '' : '<div class="pnd-alvo-vazio">ainda sem histórico — defina quando começar a rodar esse tipo</div>';
-    // "O que você paga hoje", só quando quem chamou souber dizer (por enquanto
-    // só engajamento, que acabou de trocar de régua) — ver custoEngajamentoPraticado.
+    // "O que você paga", só quando quem chamou souber dizer (por enquanto só
+    // engajamento, que acabou de trocar de régua) — ver custoEngajamentoPraticado
+    // acima. O período vai SEMPRE junto do número, nunca "hoje" cravado: sem
+    // ele, cai no honesto "no período selecionado" em vez de inventar uma
+    // janela que não foi medida.
     const praticado = (b === 'engajamento' && custoEngajamentoPraticado != null)
-      ? `<div class="pnd-limiar-prev">você paga ${reais(custoEngajamentoPraticado)} hoje</div>` : '';
+      ? `<div class="pnd-limiar-prev">você paga ${reais(custoEngajamentoPraticado)} por engajamento — ${esc(custoEngajamentoPraticadoPeriodo || 'no período selecionado')}</div>` : '';
     return `<tr>
       <td><div class="pnd-alvo-nome">${esc(ROTULO_BALDE[b] || b)}</div><div class="pnd-alvo-ajuda">${esc(ROTULO_LINHA_SECAO2[b])} — ${esc(a.ajuda)}</div>${nota}</td>
       <td>${campo('pnd-meta-' + chave, valor, '0.01', editavel, a.unidade)}${praticado}</td>

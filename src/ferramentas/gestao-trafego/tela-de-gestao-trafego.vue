@@ -258,6 +258,9 @@ import { normalizarRegua, metaDoBalde, reguaDaConta, mesclarMetasDaConta } from 
 // veredito do cartão (ver comentário perto dos chips removidos, mais abaixo).
 // Ela continua existindo em ponderada.js pra quem for religá-la em alvos.js.
 import { quantidadesDoInsight } from './ponderada.js'
+// Custo por engajamento praticado pela conta aberta — puro e testado, ver o
+// cabeçalho do arquivo (acréscimo ao brief da Tarefa 4 da Onda B, 24/09/2026).
+import { custoEngajamentoPraticado } from './custo-praticado.js'
 // Alvo de cada tipo de campanha (custo por lead/conversa/venda/visita/mil
 // pessoas, ou por ponto no caso de engajamento) — ver alvos.js.
 import { alvoDoBalde, avaliarAlvo } from './alvos.js'
@@ -1636,32 +1639,21 @@ function _gtExemplosParaRegua() {
   return exemplos;
 }
 
-// O QUE A CONTA PAGA HOJE por engajamento, medido pelos dados que a tela JÁ
-// carregou em memória — sem chamada nova à Meta (acréscimo ao brief da Tarefa
-// 4, 24/09/2026). Alimenta o painel da régua (opcoes.custoEngajamentoPraticado
-// em painel-regua.js), pro dono definir a meta nova de custo por engajamento
-// contra o real, e não no escuro — que é justamente o que esse campo existe
-// pra evitar.
+// O QUE A CONTA PAGA por engajamento — cálculo PURO e testado em
+// custo-praticado.js (extraído de dentro do .vue na rodada 1 de revisão:
+// os dois defeitos achados ali, seguidores entrando na soma e o rótulo
+// mentiroso de "hoje", são exatamente o tipo de erro que teste de unidade
+// prova sem abrir a tela). Aqui só entrega os dois arrays que a tela já tem
+// em memória — nunca uma chamada nova à Meta.
 //
-// Soma gasto e engajamento de TODA campanha de engajamento da conta (mesmo
-// recorte usado no cartão e em _gtExemplosParaRegua: exclui campanha de
-// mensagem, que vende conversa, não curtida/comentário/salvamento) e só então
-// divide — nunca a média das médias por campanha, que pesaria igual uma
-// campanha de R$ 10 e uma de R$ 10.000.
-//
-// Sem gasto ou sem engajamento no total: devolve null. O padrão da casa
-// (item 9, "a tela nunca mente") proíbe zero inventado ou traço solto — e
-// painel-regua.js já trata a ausência não mostrando a linha "você paga hoje".
+// NÃO é "de hoje": soma sobre `_gtInsights`, que é a janela do FILTRO DE
+// PERÍODO ativo no topo da tela (HOJE/7D/30D/.../ATÉ AGORA — padrão "até
+// agora", ~24 dias em 24/09). Por isso quem MONTA o painel (mais abaixo) tem
+// de mandar junto o rótulo do período ativo (`_gtPeriodoRotulo()`, a mesma
+// função que o funil já usa pelo mesmo motivo) — o texto final, que nunca
+// pode chutar "hoje", mora em painel-regua.js.
 function _gtCustoEngajamentoPraticado() {
-  let gastoTotal = 0, engajTotal = 0;
-  for (const linha of _gtInsights) {
-    if (_gtBalde(linha.objective) !== 'engajamento') continue;
-    const conjuntosDaLinha = (_gtAdsets || []).filter(x => String(x.campaign_id || '') === String(linha.campaign_id || ''));
-    if (ehDeWhatsapp(conjuntosDaLinha)) continue;
-    gastoTotal += Number(GT_METRIC_CATALOG.gasto.compute(linha)) || 0;
-    engajTotal += Number(GT_METRIC_CATALOG.engaj_pub.compute(linha)) || 0;
-  }
-  return (gastoTotal > 0 && engajTotal > 0) ? gastoTotal / engajTotal : null;
+  return custoEngajamentoPraticado(_gtInsights, _gtAdsets);
 }
 
 function _gtCloseEditor(){
@@ -2635,11 +2627,18 @@ function _gtTrocarAba(nome) {
       // deixa gravar um valor que pode não ser o real (ver C3 do review final).
       carregouOk: _gtReguaCarregada,
       exemplos: _gtExemplosParaRegua(),
-      // O QUE A CONTA PAGA HOJE por engajamento (ver _gtCustoEngajamentoPraticado
+      // O QUE A CONTA PAGA por engajamento (ver _gtCustoEngajamentoPraticado
       // acima) — pro dono definir a meta nova contra o real. Sem o spread
       // condicional, `null` viraria `Number(null) === 0` dentro do painel e
-      // mostraria "você paga R$ 0,00 hoje", um zero que ninguém mediu.
-      ...(custoEngPraticado != null ? { custoEngajamentoPraticado: custoEngPraticado } : {}),
+      // mostraria "você paga R$ 0,00", um zero que ninguém mediu. O período
+      // vai JUNTO do valor, nunca separado: são a mesma medição, e o painel
+      // precisa dizer de que janela o número é — `_gtPeriodoRotulo()` é a
+      // mesma função que o funil já usa pra não deixar "288 conversas" (ou,
+      // aqui, "você paga R$ 0,20") boiando sem dizer se é de hoje ou de 30 dias.
+      ...(custoEngPraticado != null ? {
+        custoEngajamentoPraticado: custoEngPraticado,
+        custoEngajamentoPraticadoPeriodo: _gtPeriodoRotulo(),
+      } : {}),
       // PERSONA DA MARCA: quem esta conta atende. A IA de sugestao de publico le
       // isto antes dos numeros -- sem ela, a idade sugerida saia de quem CLICOU.
       contaId: (_gtCurAcc && _gtCurAcc.id) || '',

@@ -226,15 +226,34 @@ test('o preview da Seção 2 usa a meta NOVA de engajamento (pela chave), não a
     `preview tem que usar a meta NOVA (0,32 × 0,8 = R$ 0,26), não a antiga (0,013 × 0,8 = R$ 0,01) — veio "${texto}"`);
 });
 
-test('mostra o que a conta paga hoje por engajamento quando quem chama informa', () => {
+test('mostra o que a conta paga por engajamento, com o período que quem chama informou', () => {
   comDomFalso(() => {
     const alvo = alvoFalso();
-    montarPainelRegua(alvo, { ...OPCOES_BASE, regua: normalizarRegua({}), custoEngajamentoPraticado: 0.32 });
-    assert.match(alvo.innerHTML, /você paga R\$ 0,32 hoje/);
+    montarPainelRegua(alvo, {
+      ...OPCOES_BASE, regua: normalizarRegua({}),
+      custoEngajamentoPraticado: 0.32,
+      custoEngajamentoPraticadoPeriodo: '30d',
+    });
+    assert.match(alvo.innerHTML, /você paga R\$ 0,32 por engajamento — 30d/);
   });
 });
 
-test('sem o praticado de hoje, não mostra traço nem zero inventado', () => {
+// Defeito real da rodada 1 de revisão (24/09/2026): o texto dizia "hoje" mesmo
+// quando o número somava o filtro "até agora" (~24 dias) — a régua mais
+// sensível da tela sendo definida contra um rótulo mentiroso. Sem o período,
+// o texto tem que confessar que não sabe a janela, nunca inventar "hoje".
+test('sem o período informado, cai no texto honesto — nunca inventa "hoje"', () => {
+  comDomFalso(() => {
+    const alvo = alvoFalso();
+    montarPainelRegua(alvo, { ...OPCOES_BASE, regua: normalizarRegua({}), custoEngajamentoPraticado: 0.32 });
+    assert.match(alvo.innerHTML, /você paga R\$ 0,32 por engajamento — no período selecionado/);
+    // "hoje" cravado logo depois do valor é exatamente o que a rodada 1 de
+    // revisão pegou sendo chutado sem período — não pode voltar.
+    assert.doesNotMatch(alvo.innerHTML, /você paga[^<]*hoje/, 'sem período, o texto não pode chutar "hoje" logo depois do valor praticado');
+  });
+});
+
+test('sem o praticado, não mostra traço nem zero inventado', () => {
   comDomFalso(() => {
     const alvo = alvoFalso();
     montarPainelRegua(alvo, { ...OPCOES_BASE, regua: normalizarRegua({}) });
