@@ -52,13 +52,16 @@ const BALDES_ANTIGOS = ['engajamento', 'mensagens', 'trafego', 'vendas', 'leads'
 // cópia local (I2, rodada de correção 2: ver o comentário grande mais abaixo,
 // no teste "todo balde antigo segue banido", sobre por que uma cópia local
 // tornava a "documentação executável" uma promessa falsa).
-const PERMITIDOS_ALVO_DO_BALDE = new Set(['mercado', 'mercadoCj']);
+const PERMITIDOS_ALVO_DO_BALDE = new Set(['mercado', 'mercadoCj', 'mercadoDosAnuncios']);
 // 'mercado'/'mercadoCj' são os mercados de mercados.js (cartão da campanha e
-// linha do conjunto); 'objDeclarado'/'declAd' são as INTERAÇÕES declaradas
-// (Fase 3) — o atalho de metaDoBalde que resolve por essas chaves é LEGÍTIMO
-// (não estão em ALVOS, ver regua.js) e não pode ser removido da função; esta
-// trava é no CHAMADOR.
-const PERMITIDOS_META_DO_BALDE = new Set(['mercado', 'mercadoCj', 'objDeclarado', 'declAd']);
+// linha do conjunto); 'mercadoDosAnuncios' é o mesmo mercado, descido pronto
+// pro CARTÃO DO ANÚNCIO (Onda C, Tarefa 5, Passo 3 — `mercadoDoGrupoDeAnuncios`
+// em mercados.js: o da campanha, ou o do CONJUNTO quando ela é MISTA, nunca
+// recalculado por anúncio); 'objDeclarado'/'declAd' são as INTERAÇÕES
+// declaradas (Fase 3) — o atalho de metaDoBalde que resolve por essas chaves
+// é LEGÍTIMO (não estão em ALVOS, ver regua.js) e não pode ser removido da
+// função; esta trava é no CHAMADOR.
+const PERMITIDOS_META_DO_BALDE = new Set(['mercado', 'mercadoCj', 'mercadoDosAnuncios', 'objDeclarado', 'declAd']);
 
 // ⚠️ LIMITE HONESTO DESTA TRAVA (I1-b, rodada de correção 2, 25/09/2026): a
 // lista branca é checada pelo NOME da variável no ponto de chamada, NÃO pela

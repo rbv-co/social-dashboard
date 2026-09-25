@@ -275,7 +275,7 @@ import { alvoDoBalde, avaliarAlvo } from './alvos.js'
 // `metaDoBalde` (acima) hoje só têm alvo para as chaves de MERCADOS, nunca
 // mais para nome de balde antigo ('engajamento','mensagens'...) — ver o
 // cabeçalho de mercados.js e alvos.js para o porquê.
-import { mercadoDaCampanha, mercadoDoConjunto, gastoPorMercado, comObjetivoHerdado } from './mercados.js'
+import { mercadoDaCampanha, mercadoDoConjunto, gastoPorMercado, comObjetivoHerdado, mercadoDoGrupoDeAnuncios } from './mercados.js'
 // Fase 3 — objetivo por interação: o dono DECLARA, campanha a campanha (ou
 // anúncio a anúncio) de engajamento, qual interação aquilo está comprando
 // (curtida/comentário/salvamento/compartilhamento). Sem declarar, nada muda —
@@ -2838,7 +2838,7 @@ function _renderGtCampaigns(col,campaigns,insights,adInsights,adsets){
       // `baldeCamp` (lá em cima) já sai de kpiObjective, que tem o valor de
       // reserva do insight quando camp.objective vem vazio.
       const baldeDaCampanha=temMensagem?'mensagens':baldeCamp;
-      adsPane.__gtRender=()=>_renderGtConjuntos(adsPane,hier,camp,conjuntos,nivelOrc,i+1,temMensagem,baldeDaCampanha,campanhaMista);
+      adsPane.__gtRender=()=>_renderGtConjuntos(adsPane,hier,camp,conjuntos,nivelOrc,i+1,temMensagem,baldeDaCampanha,campanhaMista,mercado);
       top.addEventListener('click',()=>{
         const isOpen=adsPane.classList.toggle('open');
         chev.classList.toggle('open',isOpen);
@@ -3029,7 +3029,7 @@ async function _gtVerCriativo(adId,accId,nome){
 // Camada do meio: campanha → CONJUNTOS DE ANÚNCIOS → anúncios.
 // É aqui que se edita o orçamento quando a campanha é ABO (orçamento no
 // conjunto). hier vem do módulo puro (montarHierarquia).
-function _renderGtConjuntos(pane,hier,camp,conjuntos,nivelOrc,campNum,temMensagemCampanha,baldeDaCampanha,campanhaMista){
+function _renderGtConjuntos(pane,hier,camp,conjuntos,nivelOrc,campNum,temMensagemCampanha,baldeDaCampanha,campanhaMista,mercado){
   const lbl=document.createElement('div');lbl.className='gt-ads-section-lbl';
   lbl.textContent=`Conjuntos de anúncios (${hier.length})`;
   pane.appendChild(lbl);
@@ -3159,9 +3159,16 @@ function _renderGtConjuntos(pane,hier,camp,conjuntos,nivelOrc,campNum,temMensage
       if(bPub)barraCj.appendChild(bPub);
       card.appendChild(barraCj);
     }
+    // O MERCADO DOS ANÚNCIOS DESTE CONJUNTO (Onda C, Tarefa 5, Passo 3): desce
+    // pronto pra cada anúncio — o da CAMPANHA, ou o do PRÓPRIO conjunto quando
+    // ela é MISTA (mesma regra do robô, coletor/budget-ia.mjs, commit
+    // 2b420ab — ver mercadoDoGrupoDeAnuncios em mercados.js). Calculado UMA VEZ
+    // por conjunto (todo anúncio de `g.anuncios` pertence ao MESMO `cj`), não
+    // por anúncio.
+    const mercadoDosAnuncios=mercadoDoGrupoDeAnuncios(mercado,cj,g.id);
     // Anúncios do conjunto.
     const adsPane=document.createElement('div');adsPane.className='gt-set-pane';
-    adsPane.__gtRender=()=>_renderGtAds(adsPane,g.anuncios,null,null,num,temMensagemCampanha);
+    adsPane.__gtRender=()=>_renderGtAds(adsPane,g.anuncios,null,null,num,temMensagemCampanha,mercadoDosAnuncios);
     top.addEventListener('click',e=>{
       e.stopPropagation(); // não deixa fechar a campanha inteira ao clicar no conjunto
       const isOpen=adsPane.classList.toggle('open');
@@ -3173,7 +3180,7 @@ function _renderGtConjuntos(pane,hier,camp,conjuntos,nivelOrc,campNum,temMensage
     pane.appendChild(card);
   });
 }
-function _renderGtAds(pane,ads,allInsights,allAdInsights,campNum,temMensagemCampanha){
+function _renderGtAds(pane,ads,allInsights,allAdInsights,campNum,temMensagemCampanha,mercadoDosAnuncios){
   const lbl=document.createElement('div');lbl.className='gt-ads-section-lbl';lbl.textContent=`Anúncios (${ads.length})`;pane.appendChild(lbl);
   if(!ads.length){const empty=document.createElement('div');empty.style.cssText='font-family:var(--fonte-principal);font-size:calc(11px*var(--gt-fs,1.3));color:var(--muted);padding:6px 0 6px 20px;';empty.textContent='Nenhum anúncio com gasto neste período';pane.appendChild(empty);return;}
   const sorted=[...ads].sort((a,b)=>parseFloat(b.spend||0)-parseFloat(a.spend||0));
@@ -3208,6 +3215,50 @@ function _renderGtAds(pane,ads,allInsights,allAdInsights,campNum,temMensagemCamp
     if (seloObjAd) nameWrap.appendChild(seloObjAd);
     const metrics=document.createElement('div');metrics.className='gt-metrics';
     metrics.innerHTML=`<div class="gt-metric">CTR <span style="color:${ctrColor}">${_maFmtPct(ctr)}</span></div><div class="gt-metric" style="font-family:var(--fonte-principal);font-size:calc(13px*var(--gt-fs,1.3));font-weight:700;"><span>${_maFmtR(spend)}</span></div>`;
+    // O KPI PRINCIPAL DO MERCADO no ANÚNCIO (Onda C, Tarefa 5, Passo 3):
+    // pedido do dono, 25/09 — "eu não vejo as kpis no card dos anúncios
+    // também, sinto falta disso". `mercadoDosAnuncios` já chega PRONTO de
+    // `_renderGtConjuntos` (mercadoDoGrupoDeAnuncios em mercados.js): o da
+    // CAMPANHA, ou o do CONJUNTO quando ela é MISTA — nunca recalculado aqui
+    // por anúncio (a Meta omite o action_type inteiro quando a contagem é
+    // zero; ver o mesmo cuidado no robô, coletor/budget-ia.mjs, commit
+    // 2b420ab). NÃO herda o resto da régua de apoio (decisão do dono,
+    // 25/09/2026): uma campanha pode ter uma dúzia de anúncios na tela, e
+    // repetir a régua inteira em cada um desfaz o que se ganhou tirando o
+    // excesso do cartão da campanha — só o KPI principal + a quantidade.
+    const alvoDoAnuncio = mercadoDosAnuncios ? alvoDoBalde(mercadoDosAnuncios) : null;
+    if (alvoDoAnuncio) {
+      const custoDoAnuncio = custoDoAlvo(mercadoDosAnuncios, ad);
+      if (custoDoAnuncio != null) {
+        const reguaConta = _gtReguaAtiva();
+        const metaDoAnuncio = metaDoBalde(reguaConta, mercadoDosAnuncios);
+        // Sem meta para o mercado: o número aparece SEM COR — não julga (regra
+        // desta ferramenta desde a Onda A). `avaliarAlvo` já devolve 'sem-dados'
+        // quando `meta` não é > 0, e o mapa de cor abaixo cai em `--muted`
+        // exatamente nesse caso — mesma trava do cartão da campanha/conjunto.
+        const avalAnuncio = avaliarAlvo({ custo: custoDoAnuncio, meta: metaDoAnuncio, limiares: reguaConta.limiares_resultado });
+        const corAnuncio = avalAnuncio.faixa==='escalar-forte'||avalAnuncio.faixa==='dentro-da-meta'?'var(--green)'
+          :avalAnuncio.faixa==='manter'?'var(--orange)':avalAnuncio.faixa==='otimizar'?'var(--red)':'var(--muted)';
+        const kpiMercadoEl=document.createElement('div');
+        kpiMercadoEl.className='gt-metric';
+        kpiMercadoEl.title=metaDoAnuncio>0?`Sua meta é ${_maFmtR(metaDoAnuncio)}`:'Esta conta ainda não tem meta definida para este mercado.';
+        kpiMercadoEl.innerHTML=`${_gtEsc(alvoDoAnuncio.rotulo)} <span style="color:${corAnuncio}">${_maFmtR(custoDoAnuncio)}</span>`;
+        metrics.appendChild(kpiMercadoEl);
+        // A QUANTIDADE do resultado, ao lado do custo (pedido do dono, junto
+        // do KPI). Zero vira NULL aqui de propósito — nunca aparece "0": a
+        // Meta OMITE o action_type inteiro quando a contagem é zero, e um
+        // zero de verdade ficaria indistinguível de "não temos esse dado".
+        let qtdResultado = alvoDoAnuncio.resultado ? _gtMetricValue(alvoDoAnuncio.resultado, ad) : null;
+        if (qtdResultado === 0) qtdResultado = null;
+        if (qtdResultado != null) {
+          const metricaResultado = GT_METRIC_CATALOG[alvoDoAnuncio.resultado];
+          const qtdEl=document.createElement('div');
+          qtdEl.className='gt-metric';
+          qtdEl.innerHTML=`${_gtEsc(metricaResultado?.label||'')} <span>${_gtFmt(qtdResultado, metricaResultado?.fmt)}</span>`;
+          metrics.appendChild(qtdEl);
+        }
+      }
+    }
     // Declarada a interação no anúncio, o custo dela aparece aqui com a cor da
     // faixa — senão declarar no anúncio não faria nada visível.
     const declAd=_gtObjetivoInteracao[String(ad.ad_id)];
@@ -6515,6 +6566,15 @@ Object.assign(window, {
   .tela-gestao-trafego :deep(.gt-name){flex:1 1 100%;white-space:normal;overflow-wrap:anywhere;text-overflow:clip;}
   .tela-gestao-trafego :deep(.gt-set-exp){order:4;margin-left:auto;}
   .tela-gestao-trafego :deep(.gt-ad-card){margin-left:10px;}
+  /* NOME DO ANÚNCIO nunca corta (PADRAO-DA-CENTRAL item 5) — mesmo defeito e
+     mesmo conserto do nome da campanha/conjunto, acima: o CSS de desktop
+     (.gt-ad-nm) tem `text-overflow:ellipsis;white-space:nowrap`, e sem
+     override aqui um nome de criativo comprido cortava a 375px. Aqui não
+     precisa de `order`: `.gt-ad-name` já vem ANTES de `.gt-metrics` no DOM
+     (top.appendChild(...nameWrap, metrics)), então só a largura cheia já
+     empurra o nome pra própria linha, sem reordenar nada. */
+  .tela-gestao-trafego :deep(.gt-ad-name){flex:1 1 100%;}
+  .tela-gestao-trafego :deep(.gt-ad-nm){white-space:normal;overflow-wrap:anywhere;text-overflow:clip;}
   /* No estreito a árvore não cabe: some com as DUAS peças da guia (o L do anúncio
      e o trilho do conjunto). Esconder só uma deixaria a linha vertical solta. */
   .tela-gestao-trafego :deep(.gt-ad-card::before){display:none;}
