@@ -591,7 +591,7 @@ import {
 import { paiDaTela, ROTULO_DO_PAI } from './navegacao.js'
 import { seloDaEtapa, tomDaStylist, ORIGENS_DE_CONTATO, LOJAS } from './t11-regras.js'
 import { comFaixa, seloDaFaixa } from './qualificacao-regras.js'
-import { pendenciasDePraca } from './praca-regras.js'
+import { pendenciasDePraca, achatarCidade } from './praca-regras.js'
 
 const router = useRouter()
 function voltar() { router.push({ name: paiDaTela('stylist-circle') }) }
@@ -684,7 +684,18 @@ async function carregarPracasAbertas() {
 // o aviso quando há o que dizer. Sobre `stylists`, que já respeita o recorte
 // de praça escolhido (com uma praça escolhida, todas as linhas têm
 // `praca_id`, e a contagem já vem zero sozinha).
-const pendenciaDePraca = computed(() => pendenciasDePraca(stylists.value))
+// ⚠️ REVISÃO FINAL (MENOR 4): o 2º parâmetro (`mapaDeCidades`) FALTAVA. Sem
+// ele, `pracaDaCidade` devolve nulo para TODA cidade, e `cidadesSemPraca`
+// listava como "cidade sem praça" até cidade que ESTÁ cadastrada — o aviso
+// mandava o dono cadastrar Limeira quando Limeira já estava lá, e a ação
+// sugerida não resolvia nada. O mapa sai do próprio cadastro que a tela já
+// leu (`vessel_pracas_listar`, que traz as cidades de cada praça), pela MESMA
+// chave achatada do banco — nunca uma lista à parte.
+const mapaDeCidades = computed(() => pracas.value.flatMap((p) => (p.cidades || []).map((c) => ({
+  cidade_chave: achatarCidade(c.cidade), praca_id: p.id, sigla: p.sigla, nome: p.nome,
+  loja_destino: p.loja_destino ?? null,
+}))))
+const pendenciaDePraca = computed(() => pendenciasDePraca(stylists.value, mapaDeCidades.value))
 
 const stylists = ref([])
 // ⚠️ 24/09: AS ETAPAS DO FUNIL vêm do banco (`vessel_stylist_etapas`), lidas

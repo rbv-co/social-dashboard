@@ -98,10 +98,18 @@
             <label class="cv-campo" for="ed-nova-termina"><span>Termina em (opcional)</span>
               <input id="ed-nova-termina" type="date" v-model="novaEdicao.terminaEm"></label>
           </div>
+          <!-- ⚠️ REVISÃO FINAL (MENOR 5): o botão ficava travado sem "Começa em"
+               e NADA escrevia o motivo — botão cinza sem explicação é a tela
+               fazendo o dono adivinhar. A tela de Praças já faz certo, com
+               `.cv-problemas`; é a mesma classe e o mesmo lugar (antes das
+               ações, depois dos campos). -->
+          <ul v-if="problemasNovaEdicao.length" class="cv-problemas">
+            <li v-for="p in problemasNovaEdicao" :key="p">{{ p }}</li>
+          </ul>
           <p v-if="erroNova" class="cv-nota cv-nota-erro">{{ erroNova }}</p>
           <div class="cv-acoes">
             <button type="button" class="btn id-btn-principal btn-principal"
-                    :disabled="gravando || !novaEdicao.comecaEm" @click="criarEdicao">
+                    :disabled="gravando || problemasNovaEdicao.length > 0" @click="criarEdicao">
               <icone-do-bloco nome="novo" />{{ gravando ? 'Gravando…' : 'Criar edição' }}</button>
           </div>
         </div>
@@ -327,8 +335,20 @@ async function encerrar(e) {
 // ── criar edição ─────────────────────────────────────────────────────────
 const novaEdicao = reactive({ nome: '', comecaEm: '', terminaEm: '' })
 const erroNova = ref('')
+// ⚠️ REVISÃO FINAL (MENOR 5): o motivo ESCRITO, nunca só o botão cinza. A
+// segunda regra é a mesma que o banco aplica (`data_invalida`, em
+// `vessel_edicao_criar`): dizer antes de tentar poupa uma ida ao banco para
+// receber a mesma recusa.
+const problemasNovaEdicao = computed(() => {
+  const probs = []
+  if (!novaEdicao.comecaEm) probs.push('Escolha o dia em que a edição começa.')
+  if (novaEdicao.terminaEm && novaEdicao.comecaEm && novaEdicao.terminaEm < novaEdicao.comecaEm) {
+    probs.push('O fim não pode ser antes do começo.')
+  }
+  return probs
+})
 async function criarEdicao() {
-  if (gravando.value || !novaEdicao.comecaEm) return
+  if (gravando.value || problemasNovaEdicao.value.length) return
   gravando.value = true
   erroNova.value = ''
   try {

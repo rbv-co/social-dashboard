@@ -36,6 +36,12 @@
             </div>
 
             <p v-if="erroDaPraca(p.id)" class="cv-nota cv-nota-erro">{{ erroDaPraca(p.id) }}</p>
+            <!-- ⚠️ REVISÃO FINAL (IMPORTANTE 6): vincular uma cidade ADOTA as
+                 stylists daquela cidade que estavam sem praça. Movimento em
+                 dado de gente nunca é calado: o número aparece aqui, e o zero
+                 também (senão "não fez nada" e "não tinha ninguém" viram a
+                 mesma tela muda). -->
+            <p v-if="avisoDaPraca(p.id)" class="cv-nota cv-nota-ok">{{ avisoDaPraca(p.id) }}</p>
 
             <!-- ── editar a praça (nome, loja, ativa) ─────────────────────── -->
             <template v-if="podeEditar && editando === p.id">
@@ -182,6 +188,8 @@ function mensagemPraca(r) {
 // erro por cartão de praça, para o defeito de uma não atrapalhar as outras
 const errosPorPraca = reactive({})
 const erroDaPraca = (id) => errosPorPraca[id] || ''
+const avisosPorPraca = reactive({})
+const avisoDaPraca = (id) => avisosPorPraca[id] || ''
 
 async function chamar(funcao, corpo) {
   const { data, error } = await sbClient.rpc(funcao, corpo || {})
@@ -218,6 +226,17 @@ async function salvarEdicaoDaPraca(p) {
 }
 
 // ── cidades ──────────────────────────────────────────────────────────────
+// ⚠️ REVISÃO FINAL (IMPORTANTE 6): o banco devolve `adotadas` — quantas
+// stylists daquela cidade estavam SEM PRAÇA e passaram a ser desta. A frase
+// diz o número, inclusive quando é zero: o dono precisa saber se a pendência
+// "N sem praça" andou ou não.
+function fraseDaAdocao(cidade, adotadas) {
+  const n = Number(adotadas) || 0
+  if (!n) return `Cidade ${cidade} vinculada. Nenhuma stylist sem praça nessa cidade para adotar.`
+  return n === 1
+    ? `Cidade ${cidade} vinculada. 1 stylist que estava sem praça passou a ser desta praça.`
+    : `Cidade ${cidade} vinculada. ${n} stylists que estavam sem praça passaram a ser desta praça.`
+}
 const novaCidade = reactive({})
 async function vincularCidade(p) {
   const cidade = (novaCidade[p.id] || '').trim()
@@ -229,6 +248,7 @@ async function vincularCidade(p) {
     // ⚠️ `ja_vinculada` é SUCESSO (a cidade já estava nesta MESMA praça) —
     // só `cidade_em_outra_praca` e as demais são recusa de verdade.
     if (!r?.ok) { errosPorPraca[p.id] = mensagemPraca(r); return }
+    avisosPorPraca[p.id] = fraseDaAdocao(cidade, r?.adotadas)
     novaCidade[p.id] = ''
     await carregar()
   } catch {

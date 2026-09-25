@@ -139,6 +139,19 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
     const s = maiusculo(sigla)
     return s ? b.pracas.find((p) => p.sigla === s && p.ativa !== false) || null : null
   }
+  /** `vessel_praca_id_da_cidade` (revisão final, IMPORTANTE 4): a praça SAI DA
+   * CIDADE quando ninguém escolheu a praça — a MESMA conta achatada do
+   * backfill da migration e do front (`achatarCidade`). Cidade que NÃO CASA
+   * devolve nulo: pendência à vista, nunca um chute ("Limeira / Piracicaba"
+   * é esse caso, de propósito). Praça desativada também não serve. */
+  const pracaIdDaCidade = (cidade) => {
+    const chave = achatarCidade(cidade)
+    if (!chave) return null
+    const c = b.pracaCidades.find((x) => x.cidade_chave === chave)
+    if (!c) return null
+    const p = pracaPorId(c.praca_id)
+    return p && p.ativa !== false ? p.id : null
+  }
   const edicaoPorId = (id) => (id == null ? null : b.edicoes.find((e) => e.id === Number(id)) || null)
   /** TASK 11 (25/09/2026, commit 9eff666): "edição = a rodada daquela praça"
    * — o vínculo é AUTOMÁTICO. Vincula a stylist à edição ABERTA da praça
@@ -151,7 +164,20 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
     if (!s || s.teste || s.ativa === false) return
     const ed = b.edicoes.find((e) => e.praca_id === pracaId && e.situacao === 'aberta')
     if (!ed) return
-    if (b.naEdicao.some((n) => n.stylist_id === stylistId && n.edicao_id === ed.id)) return
+    // ⚠️ REVISÃO FINAL (CRÍTICO 1) — o caso do RETORNO, espelhando o
+    // `on conflict … do update set saiu_em = null, etapa_ao_sair = null` do
+    // banco de verdade. Dois cliques na ficha: a stylist está em LIM·Ed1 →
+    // troca para CPS (o vínculo de LIM fecha) → percebe o engano e VOLTA para
+    // LIM. Aqui havia um `return` quando já existia QUALQUER linha com a
+    // edição — inclusive a FECHADA —, e ela ficava com `praca_id = LIM` e
+    // NENHUM vínculo aberto: sumia de todo placar e continuava na lista.
+    // Só edição ABERTA chega aqui, então nada de congelado é reaberto.
+    const jaTem = b.naEdicao.find((n) => n.stylist_id === stylistId && n.edicao_id === ed.id)
+    if (jaTem) {
+      jaTem.saiu_em = null
+      jaTem.etapa_ao_sair = null
+      return
+    }
     b.naEdicao.push({ id: proximo(b.naEdicao), stylist_id: stylistId, edicao_id: ed.id,
       entrou_em: agoraIso(), saiu_em: null, etapa_ao_sair: null })
   }
@@ -654,6 +680,11 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
         const p = pracaAtivaPorSigla(praca)
         if (!p) return { ok: false, situacao: 'praca_invalida' }
         pracaId = p.id
+      } else {
+        // ⚠️ REVISÃO FINAL (IMPORTANTE 4): sem praça escolhida, a praça sai
+        // da CIDADE — como no banco de verdade. `praca_preview` NÃO é
+        // inventado a partir disso: ele guarda o que a pessoa escreveu.
+        pracaId = pracaIdDaCidade(a.p_cidade)
       }
       if (loja && !LOJAS.includes(loja)) return { ok: false, situacao: 'loja_invalida' }
       // ⚠️ NA CENTRAL A ORIGEM É OBRIGATÓRIA.
@@ -1323,10 +1354,28 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
         const donoPraca = pracaPorId(dono.praca_id)
         return { ok: false, situacao: 'cidade_em_outra_praca', praca_id: dono.praca_id, praca_nome: donoPraca?.nome ?? null }
       }
-      if (dono) return { ok: true, situacao: 'ja_vinculada', id: dono.id }
-      const id = proximo(b.pracaCidades)
-      b.pracaCidades.push({ id, praca_id: p.id, cidade, cidade_chave: chave })
-      return { ok: true, situacao: 'ok', id }
+      let id, situacao
+      if (dono) {
+        id = dono.id; situacao = 'ja_vinculada'
+      } else {
+        id = proximo(b.pracaCidades)
+        b.pracaCidades.push({ id, praca_id: p.id, cidade, cidade_chave: chave })
+        situacao = 'ok'
+      }
+      // ⚠️ REVISÃO FINAL (IMPORTANTE 6): A ADOÇÃO. Vincular a cidade passa a
+      // mover as stylists DAQUELA CIDADE que estão SEM PRAÇA — sem isso a
+      // pendência "N stylists sem praça" da barra não se resolvia por tela
+      // nenhuma. Ninguém TROCA de praça por aqui; só quem está sem. Rodar de
+      // novo com a cidade já vinculada também adota, de propósito.
+      let adotadas = 0
+      for (const st of b.stylists) {
+        if (st.praca_id != null || st.teste) continue
+        if (achatarCidade(st.cidade) !== chave) continue
+        st.praca_id = p.id
+        vincularNaEdicaoAbertaDaPraca(st.id, p.id)
+        adotadas++
+      }
+      return { ok: true, situacao, id, adotadas }
     },
 
     vessel_praca_cidade_desvincular({ p_id } = {}) {
@@ -1362,20 +1411,30 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
         .map((e) => {
           const p = pracaPorId(e.praca_id)
           const membros = b.naEdicao.filter((n) => n.edicao_id === e.id)
-          // ⚠️ SEM filtrar por `saiu_em`: é isto que CONGELA o número de uma
-          // edição encerrada (a mesma regra do banco de verdade).
+          // ⚠️ REVISÃO FINAL (IMPORTANTE 1): O MESMO CRITÉRIO DO PLACAR — os
+          // dois números aparecem JUNTOS na tela (o bloco "praças com edição
+          // aberta" do placar mostra este `stylists` ao lado do placar da
+          // mesma edição). Edição ABERTA conta quem está dentro AGORA;
+          // ENCERRADA conta a turma CONGELADA. `teste` e `ativa` filtrados
+          // dos dois lados, como o `sty` do placar.
           const stylistsQtd = membros.filter((n) => {
-            const s = stylistPorId(n.stylist_id); return s && !s.teste
+            if (e.situacao !== 'encerrada' && n.saiu_em) return false
+            const s = stylistPorId(n.stylist_id)
+            return !!s && !s.teste && s.ativa !== false
           }).length
           // ⚠️ quantas SERIAM levadas se a edição fosse encerrada agora — o
           // MESMO critério de `vessel_edicao_encerrar`: vínculo ainda ativo
-          // (`saiu_em` nulo) e a stylist NÃO ativou (`ativada_em`, a coluna
-          // CRUA — não a `ativadaEm()` pela etapa: é essa a conta que o
-          // encerramento usa para escolher quem vai).
+          // (`saiu_em` nulo) e a stylist ainda NÃO ATIVOU.
+          // ⚠️ REVISÃO FINAL (MENOR 3): "ativada" é `ativadaEm()` — A
+          // DEFINIÇÃO CANÔNICA (a mesma do placar), nunca mais a coluna crua
+          // `ativada_em`, que desde 24/09/2026 quer dizer outra coisa
+          // ("primeiro Private Edit agendado"). A tela de Edições dizia "N não
+          // ativaram" por uma conta e o placar ao lado dizia "ativadas" por
+          // outra.
           const naoAtivadas = membros.filter((n) => {
             if (n.saiu_em) return false
             const s = stylistPorId(n.stylist_id)
-            return !!s && !s.teste && !s.ativada_em
+            return !!s && !s.teste && !ativadaEm(s)
           }).length
           return { id: e.id, praca_id: e.praca_id, praca_nome: p?.nome ?? null, numero: e.numero,
             nome: e.nome ?? null, comeca_em: e.comeca_em, termina_em: e.termina_em ?? null, situacao: e.situacao,
@@ -1430,9 +1489,9 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
       return { ok: true, situacao: 'ok', incluidas }
     },
 
-    // encerrar uma edição: congela quem estava nela; quem NÃO ativou (pela
-    // coluna crua `ativada_em`) pode ir para uma edição de destino — quem
-    // ativou fica com o vínculo fechado e não vai.
+    // encerrar uma edição: congela quem estava nela; quem NÃO ativou (por
+    // `ativadaEm()`, a definição canônica) pode ir para uma edição de
+    // destino — quem ativou fica com o vínculo fechado e não vai.
     vessel_edicao_encerrar({ p_id, p_levar_para } = {}) {
       const e = edicaoPorId(p_id)
       if (!e) return { ok: false, situacao: 'nao_achei' }
@@ -1459,7 +1518,12 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
         if (s?.teste) continue
         n.saiu_em = agora_
         n.etapa_ao_sair = s?.etapa_id ?? null
-        if (destino && s && !s.ativada_em) {
+        // ⚠️ REVISÃO FINAL (MENOR 3): quem "não ativou" é quem `ativadaEm()`
+        // diz que não ativou — A DEFINIÇÃO CANÔNICA, a mesma de `nao_ativadas`
+        // e do placar. A canônica já inclui a coluna crua como último recurso,
+        // então quem é levada só pode DIMINUIR: ninguém que a conta antiga
+        // deixava ficar passa a ser levada.
+        if (destino && s && !ativadaEm(s)) {
           const jaTem = b.naEdicao.some((x) => x.stylist_id === s.id && x.edicao_id === destino.id)
           if (!jaTem) {
             b.naEdicao.push({ id: proximo(b.naEdicao), stylist_id: s.id, edicao_id: destino.id, entrou_em: agora_, saiu_em: null, etapa_ao_sair: null })
@@ -1482,19 +1546,40 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
       if (b.naEdicao.some((n) => n.stylist_id === s.id && n.edicao_id === e.id && !n.saiu_em)) {
         return { ok: true, situacao: 'sem_mudanca' }
       }
+      // ⚠️ REVISÃO FINAL (CRÍTICO 1, irmão): a conferência acima só olha o
+      // vínculo ABERTO — quem JÁ SAIU desta edição tem uma linha FECHADA, e no
+      // banco de verdade o insert estourava `23505` cru na unique. Reabrir é
+      // o que a tela pediu; a edição encerrada já foi barrada lá em cima.
+      const fechado = b.naEdicao.find((n) => n.stylist_id === s.id && n.edicao_id === e.id)
+      if (fechado) {
+        fechado.saiu_em = null
+        fechado.etapa_ao_sair = null
+        return { ok: true, situacao: 'ok' }
+      }
       b.naEdicao.push({ id: proximo(b.naEdicao), stylist_id: s.id, edicao_id: e.id, entrou_em: agoraIso(), saiu_em: null, etapa_ao_sair: null })
       return { ok: true, situacao: 'ok' }
     },
 
-    // o placar da edição — congela sobre `vessel_stylist_na_edicao`, TODAS as
-    // linhas (sem filtrar por `saiu_em`): é isso que congela o placar de uma
-    // edição encerrada. SEM RECEITA NENHUMA (decisão do dono): o panorama de
-    // compras está congelado, e zero na tela mentiria.
+    // o placar da edição — edição ABERTA conta quem está dentro AGORA;
+    // ENCERRADA conta a turma congelada (todas as linhas, que o encerramento
+    // fechou no mesmo instante). O MESMO critério de `vessel_edicoes_listar`,
+    // aqui e no banco de verdade. SEM RECEITA NENHUMA (decisão do dono): o
+    // panorama de compras está congelado, e zero na tela mentiria.
     vessel_placar_da_edicao({ p_edicao_id } = {}) {
       const e = edicaoPorId(p_edicao_id)
       if (!e) throw erroDoBanco('P0002', 'edicao nao encontrada')
       const ate = e.termina_em || '9999-12-31'
-      const turmaIds = new Set(b.naEdicao.filter((n) => n.edicao_id === e.id).map((n) => n.stylist_id))
+      // ⚠️ REVISÃO FINAL (IMPORTANTE 2): O MESMO CRITÉRIO DO BANCO, letra por
+      // letra (`turma_ids` de `vessel_placar_da_edicao`): edição ABERTA conta
+      // quem está dentro AGORA (`saiu_em` nulo); ENCERRADA conta a turma
+      // CONGELADA (todas as linhas). Sem o filtro, a DEMO mostrava o defeito
+      // que o banco já não tem: mudar a praça fazia a stylist contar em DUAS
+      // edições abertas (o mock FECHA o vínculo, mas o placar dele ignorava).
+      // A demo é o portão — ela e o banco não podem discordar no número
+      // central do trabalho.
+      const turmaIds = new Set(b.naEdicao
+        .filter((n) => n.edicao_id === e.id && (e.situacao === 'encerrada' || !n.saiu_em))
+        .map((n) => n.stylist_id))
       const sty = b.stylists.filter((s) => turmaIds.has(s.id) && !s.teste && s.ativa !== false)
         .map((s) => ({ ...s, ativou: ativadaEm(s) }))
       // os encontros são da PRAÇA da edição, na janela dela — não dependem de

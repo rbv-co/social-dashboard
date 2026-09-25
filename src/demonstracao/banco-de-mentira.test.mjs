@@ -1059,12 +1059,48 @@ test('vessel_praca_cidade_vincular/desvincular: a chave é achatarCidade, e cida
   assert.deepEqual(dup, { ok: false, situacao: 'cidade_em_outra_praca', praca_id: cps, praca_nome: 'Campinas' })
   const ok = chamar('vessel_praca_cidade_vincular', { p_praca_id: lim, p_cidade: ' Rio Claro ' })
   assert.equal(ok.ok, true)
-  assert.deepEqual(chamar('vessel_praca_cidade_vincular', { p_praca_id: lim, p_cidade: 'rio claro' }), { ok: true, situacao: 'ja_vinculada', id: ok.id })
+  // ⚠️ REVISÃO FINAL (IMPORTANTE 6): a resposta ganhou `adotadas` — quantas
+  // stylists daquela cidade estavam SEM PRAÇA e passaram a ser desta. Aqui é
+  // zero (ninguém do cenário é de Rio Claro), e o zero também volta escrito.
+  assert.equal(ok.adotadas, 0)
+  assert.deepEqual(chamar('vessel_praca_cidade_vincular', { p_praca_id: lim, p_cidade: 'rio claro' }), { ok: true, situacao: 'ja_vinculada', id: ok.id, adotadas: 0 })
   assert.deepEqual(chamar('vessel_pracas_listar').find((p) => p.sigla === 'LIM').cidades.map((c) => c.cidade).sort(),
     ['Limeira', 'Rio Claro'])
   assert.equal(chamar('vessel_praca_cidade_desvincular', { p_id: 999999 }).situacao, 'nao_achei')
   assert.equal(chamar('vessel_praca_cidade_desvincular', { p_id: ok.id }).ok, true)
   assert.equal(chamar('vessel_pracas_listar').find((p) => p.sigla === 'LIM').cidades.length, 1)
+})
+
+// ── REVISÃO FINAL (IMPORTANTE 6) ──────────────────────────────
+// A pendência "stylist sem praça" não se resolvia por tela nenhuma: o backfill
+// roda uma vez e `vessel_stylist_definir_praca` não tem chamador. Agora
+// vincular a cidade ADOTA quem está sem praça naquela cidade — e a demo tem de
+// mostrar a mesma coisa que o banco.
+test('vessel_praca_cidade_vincular: ADOTA as stylists daquela cidade que estão sem praça (IMPORTANTE 6)', () => {
+  const { chamar, banco } = novoBanco()
+  const lim = chamar('vessel_pracas_listar').find((p) => p.sigla === 'LIM').id
+  // A "Limeira / Piracicaba" do cenário é exatamente a pendência: cidade
+  // composta que não casa com nenhuma cadastrada, e por isso ela está SEM PRAÇA.
+  const orfa = banco.estado.stylists.find((s) => s.cidade === 'Limeira / Piracicaba')
+  assert.equal(orfa.praca_id, null, 'pré-condição: ela começa sem praça')
+  const edicaoAbertaLim = chamar('vessel_edicoes_listar', { p_praca_id: lim }).find((e) => e.situacao === 'aberta')
+
+  const r = chamar('vessel_praca_cidade_vincular', { p_praca_id: lim, p_cidade: 'Limeira / Piracicaba' })
+  assert.equal(r.ok, true)
+  assert.equal(r.adotadas, 1, 'a resposta diz quantas foram adotadas, para a tela escrever')
+  assert.equal(banco.estado.stylists.find((s) => s.id === orfa.id).praca_id, lim)
+  // e ela JÁ entra na edição ABERTA da praça — a adoção resolve a pendência
+  // inteira, não só metade.
+  assert.ok(banco.estado.naEdicao.some((n) => n.stylist_id === orfa.id && n.edicao_id === edicaoAbertaLim.id && !n.saiu_em))
+
+  // quem JÁ TEM praça não é arrastada: vincular "Campinas" a uma praça nova
+  // seria trocar a praça de 27 pessoas, e a adoção só preenche buraco.
+  const deCampinas = banco.estado.stylists.filter((s) => s.cidade === 'Campinas' && !s.teste)
+  assert.ok(deCampinas.length > 0)
+  const pracasAntes = deCampinas.map((s) => s.praca_id)
+  const r2 = chamar('vessel_praca_cidade_vincular', { p_praca_id: lim, p_cidade: 'Campinas' })
+  assert.equal(r2.situacao, 'cidade_em_outra_praca', 'cidade de outra praça continua sendo recusada, antes de adotar nada')
+  assert.deepEqual(deCampinas.map((s) => s.praca_id), pracasAntes)
 })
 
 test('vessel_stylist_definir_praca: recusa praça inválida, aceita nulo (tira a praça); TASK 11 vincula à edição aberta', () => {
@@ -1188,6 +1224,73 @@ test('vessel_edicao_incluir_stylist: recusa edição encerrada; incluir de novo 
   assert.equal(chamar('vessel_edicao_incluir_stylist', { p_codigo: 'STY-0006', p_edicao_id: edicao1.id }).situacao, 'edicao_encerrada')
 })
 
+// ══ REVISÃO FINAL — I2: A DEMO NÃO PODE DISCORDAR DO BANCO ═════════════
+// O banco de mentira FECHAVA o vínculo ao mudar de praça, mas o placar dele
+// contava TODAS as linhas — então na demo a mesma stylist contava em DUAS
+// edições abertas, que é exatamente o Crítico que o banco de verdade já não
+// tem. A demo é o portão: o número central do trabalho tem de ser o mesmo.
+test('I2: mudar de praça tira a stylist do placar da edição de origem (e só dela)', () => {
+  const { chamar } = novoBanco()
+  const lim = chamar('vessel_pracas_listar').find((p) => p.sigla === 'LIM').id
+  const cps = chamar('vessel_pracas_listar').find((p) => p.sigla === 'CPS').id
+  const edLim = chamar('vessel_edicoes_listar', { p_praca_id: lim }).find((e) => e.situacao === 'aberta')
+  const edCps = chamar('vessel_edicoes_listar', { p_praca_id: cps }).find((e) => e.situacao === 'aberta')
+  const antesLim = chamar('vessel_placar_da_edicao', { p_edicao_id: edLim.id }).prospectadas
+  const antesCps = chamar('vessel_placar_da_edicao', { p_edicao_id: edCps.id }).prospectadas
+
+  // uma de Limeira muda para Campinas
+  const daLim = chamar('vessel_rastreio_dos_stylists', { p_praca_id: lim })[0]
+  assert.equal(chamar('vessel_stylist_editar', { p_codigo: daLim.codigo, p_praca: 'CPS' }).ok, true)
+
+  const depoisLim = chamar('vessel_placar_da_edicao', { p_edicao_id: edLim.id }).prospectadas
+  const depoisCps = chamar('vessel_placar_da_edicao', { p_edicao_id: edCps.id }).prospectadas
+  assert.equal(depoisLim, antesLim - 1, 'o placar da edição de origem PERDE a pessoa')
+  assert.equal(depoisCps, antesCps + 1, 'e o de destino ganha — uma aberta só, nunca duas')
+
+  // ⚠️ IMPORTANTE 1: os DOIS números que a tela mostra juntos têm de bater.
+  const listadaLim = chamar('vessel_edicoes_listar', { p_praca_id: lim }).find((e) => e.id === edLim.id)
+  const listadaCps = chamar('vessel_edicoes_listar', { p_praca_id: cps }).find((e) => e.id === edCps.id)
+  assert.equal(listadaLim.stylists, depoisLim, 'edicoes_listar.stylists = placar.prospectadas (origem)')
+  assert.equal(listadaCps.stylists, depoisCps, 'edicoes_listar.stylists = placar.prospectadas (destino)')
+})
+
+test('I2 + C1: VOLTAR para a praça de origem devolve a stylist ao placar (o vínculo fechado é REABERTO)', () => {
+  const { chamar, banco } = novoBanco()
+  const lim = chamar('vessel_pracas_listar').find((p) => p.sigla === 'LIM').id
+  const edLim = chamar('vessel_edicoes_listar', { p_praca_id: lim }).find((e) => e.situacao === 'aberta')
+  const antes = chamar('vessel_placar_da_edicao', { p_edicao_id: edLim.id }).prospectadas
+  const daLim = chamar('vessel_rastreio_dos_stylists', { p_praca_id: lim })[0]
+  const id = banco.estado.stylists.find((s) => s.codigo === daLim.codigo).id
+
+  // dois cliques na ficha: sai para CPS e VOLTA para LIM
+  chamar('vessel_stylist_editar', { p_codigo: daLim.codigo, p_praca: 'CPS' })
+  chamar('vessel_stylist_editar', { p_codigo: daLim.codigo, p_praca: 'LIM' })
+
+  const linhas = banco.estado.naEdicao.filter((n) => n.stylist_id === id && n.edicao_id === edLim.id)
+  assert.equal(linhas.length, 1, 'reabriu a linha, não duplicou')
+  assert.equal(linhas[0].saiu_em, null, 'e ela está ABERTA de novo — com `do nothing` ela ficava fechada para sempre')
+  assert.equal(linhas[0].etapa_ao_sair, null)
+  assert.equal(chamar('vessel_placar_da_edicao', { p_edicao_id: edLim.id }).prospectadas, antes,
+    'o placar volta a contá-la — era zero a mais, calado, e a lista embaixo continuava mostrando')
+})
+
+test('I2 + C1 (irmão): incluir quem JÁ SAIU da edição reabre o vínculo, sem duplicar', () => {
+  const { chamar, banco } = novoBanco()
+  const lim = chamar('vessel_pracas_listar').find((p) => p.sigla === 'LIM').id
+  const edLim = chamar('vessel_edicoes_listar', { p_praca_id: lim }).find((e) => e.situacao === 'aberta')
+  const daLim = chamar('vessel_rastreio_dos_stylists', { p_praca_id: lim })[0]
+  const id = banco.estado.stylists.find((s) => s.codigo === daLim.codigo).id
+  // ela sai de LIM (muda para CPS): o vínculo de LIM fica FECHADO, com LIM aberta
+  chamar('vessel_stylist_editar', { p_codigo: daLim.codigo, p_praca: 'CPS' })
+  assert.ok(banco.estado.naEdicao.find((n) => n.stylist_id === id && n.edicao_id === edLim.id).saiu_em)
+
+  assert.deepEqual(chamar('vessel_edicao_incluir_stylist', { p_codigo: daLim.codigo, p_edicao_id: edLim.id }),
+    { ok: true, situacao: 'ok' })
+  const linhas = banco.estado.naEdicao.filter((n) => n.stylist_id === id && n.edicao_id === edLim.id)
+  assert.equal(linhas.length, 1)
+  assert.equal(linhas[0].saiu_em, null)
+})
+
 test('vessel_placar_da_edicao: edição que não existe dá erro cru (P0002); SEM receita/vendas/compradoras/pecas nenhuma', () => {
   const { chamar } = novoBanco()
   assert.throws(() => chamar('vessel_placar_da_edicao', { p_edicao_id: 999999 }), (e) => e.pg?.code === 'P0002')
@@ -1196,8 +1299,9 @@ test('vessel_placar_da_edicao: edição que não existe dá erro cru (P0002); SE
   const placar = chamar('vessel_placar_da_edicao', { p_edicao_id: edicao1.id })
   // RODADA 1 DE CONSERTO (MENOR 3): trava o CONJUNTO inteiro de chaves — as
   // 20 do `json_build_object` final de `vessel_placar_da_edicao`
-  // (db/migrations/2026-09-25-vessel-praca-e-edicao.sql, seção 15, a versão
-  // que ganhou intervalo/contatos_ate_ativar de volta) —, não só as cinco
+  // (db/migrations/2026-09-25-vessel-praca-e-edicao.sql, seção 11 — a
+  // seção 15 era uma cópia idêntica e foi apagada na revisão final,
+  // MENOR 1) —, não só as cinco
   // proibidas: pega chave nova E chave que sumiu.
   assert.deepEqual(Object.keys(placar).sort(), [
     'edicao', 'etapas', 'prospectadas', 'prospectadas_ja_ativadas', 'ativadas',
