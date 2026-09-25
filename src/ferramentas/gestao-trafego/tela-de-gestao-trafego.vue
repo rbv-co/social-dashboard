@@ -2467,19 +2467,23 @@ function _renderGtCampaigns(col,campaigns,insights,adInsights,adsets){
       // engajamento sem declaração passou a ser o custo por engajamento bruto,
       // calculado como qualquer outro balde logo abaixo (ver ALVOS.engajamento
       // em alvos.js).
-      // CORREÇÃO (revisão final da Onda B, 25/09/2026): "religar é trocar duas
-      // linhas em alvos.js, nada neste arquivo precisa mudar de volta" era
-      // promessa falsa. `custoAlvo` acima vem de `_gtMetricValue(alvo.metrica,
-      // ins)`, que lê `GT_METRIC_CATALOG[alvo.metrica]` — sem entrada
-      // `'ponderada'` nesse catálogo, um simples troca de `metrica` em
-      // alvos.js faz este cartão mostrar `custoAlvo: null`, não o custo por
-      // ponto de volta. E os chips "Custo/ponto"/"Qualidade" FORAM removidos
-      // DESTE arquivo (não só escondidos) — precisariam voltar a ser
-      // desenhados aqui, não só reativados em outro lugar. Um interruptor de
-      // verdade (que cubra `_gtMetricValue`/o cartão, `custoDoAlvo` e
-      // `custoAtualDoAlvo`) está planejado para a onda seguinte. Tirar em vez
-      // de deixar como informação: um número que não decide nada, ao lado do
-      // que decide, já produziu contradição visual rejeitada duas vezes nesta
+      // CORREÇÃO (revisão final da Onda B, correção 2, 25/09/2026): "religar é
+      // trocar duas linhas em alvos.js, nada neste arquivo precisa mudar de
+      // volta" era promessa falsa. `custoAlvo` acima vem de
+      // `_gtMetricValue(alvo.metrica, ins)`, que lê
+      // `GT_METRIC_CATALOG[alvo.metrica]` — sem entrada `'ponderada'` nesse
+      // catálogo, uma simples troca de `metrica` em alvos.js faz este cartão
+      // mostrar `custoAlvo: null`, não o custo por ponto de volta. E os chips
+      // "Custo/ponto"/"Qualidade" FORAM removidos DESTE arquivo (não só
+      // escondidos) — precisariam voltar a ser desenhados aqui. São DOIS
+      // lugares reais: este cartão (`_gtMetricValue` + os chips) e
+      // `custoDoAlvo` em metricas.js (mesma guarda, mesmo problema).
+      // `custoAtualDoAlvo` (budget-ia.mjs) não é um terceiro lugar — ele só
+      // chama `custoDoAlvo`, então corrigido lá ele acompanha sozinho. Um
+      // interruptor de verdade para os dois lugares reais está planejado
+      // para a onda seguinte. Tirar em vez de deixar como informação: um
+      // número que não decide nada, ao lado do que decide, já produziu
+      // contradição visual rejeitada duas vezes nesta
       // tela (C2 e M4 do review de 2026-07-28) — "dentro da meta" no veredito
       // com o chip do ponto do
       // lado pintado de vermelho.
@@ -2554,8 +2558,8 @@ function _renderGtCampaigns(col,campaigns,insights,adInsights,adsets){
       // ponderada.js) — só não é mais mostrada nem consultada no cartão. Quem
       // quiser os pontos e o custo por ponto de uma campanha específica acha
       // em ponderada.js: calcularPonderada(quantidadesDoInsight(ins), {...}).
-      // CORREÇÃO (revisão final da Onda B, 25/09/2026): "religar como
-      // veredito é trocar duas linhas em alvos.js" era promessa falsa (ver o
+      // CORREÇÃO (revisão final da Onda B, correção 2, 25/09/2026): "religar
+      // como veredito é trocar duas linhas em alvos.js" era promessa falsa (ver o
       // comentário completo logo acima, em `reguaAtiva`/`custoAlvo`) — sem
       // entrada `'ponderada'` em `GT_METRIC_CATALOG`, essa troca sozinha só
       // zera o custo mostrado, não traz o ponto de volta; os chips desta

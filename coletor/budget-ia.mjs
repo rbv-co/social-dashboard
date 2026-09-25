@@ -392,15 +392,18 @@ export function custoAtualDoAlvo(balde, ins, regua, interacaoDeclarada) {
   // PAUSA, não apagada: `ponderada.js` continua intacto, e as duas metas
   // (`metas.engajamento` a antiga, `metas.engajamento_bruto` a nova)
   // coexistem sem se sobrescreverem.
-  // CORREÇÃO (revisão final da Onda B, 25/09/2026): "trocar duas linhas em
-  // alvos.js" era promessa falsa. Como o ramo saiu, não foi desviado, religar
-  // só em alvos.js faz `custoDoAlvo` (o `else` abaixo) devolver `null` para
-  // toda campanha de engajamento sem interação declarada — o robô mandaria
-  // custo nulo ao modelo em vez do custo por ponto de volta. Um revert de
-  // verdade precisa desviar esta função (e a leitura do cartão em
-  // tela-de-gestao-trafego.vue) para `calcularPonderada` de novo. Um
-  // interruptor de verdade para os dois pontos está planejado para a onda
-  // seguinte.
+  // CORREÇÃO (revisão final da Onda B, correção 2, 25/09/2026): "trocar duas
+  // linhas em alvos.js" era promessa falsa. Como o ramo saiu, não foi
+  // desviado, religar só em alvos.js faz `custoDoAlvo` (o `else` abaixo)
+  // devolver `null` para toda campanha de engajamento sem interação
+  // declarada — o robô mandaria custo nulo ao modelo em vez do custo por
+  // ponto de volta. Um revert de verdade precisa desviar `custoDoAlvo`
+  // (metricas.js) e a leitura do cartão (tela-de-gestao-trafego.vue) para
+  // `calcularPonderada` de novo — são DOIS lugares reais, e nenhum dos dois é
+  // esta função: `custoAtualDoAlvo` só CHAMA `custoDoAlvo` no `else` abaixo,
+  // então corrigido lá ela acompanha sozinha, sem precisar de edição própria.
+  // Um interruptor de verdade para os dois lugares reais está planejado para
+  // a onda seguinte.
   // OBJETIVO DECLARADO (Tarefa 5): a declaração do dono VENCE a régua do
   // balde — quando ele disse, campanha a campanha, qual interação ela compra,
   // é essa interação que decide o custo, não o padrão do objetivo.

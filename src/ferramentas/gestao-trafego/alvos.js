@@ -35,19 +35,22 @@ export const ALVOS = {
     // sobrescreverem (a antiga em `metas.engajamento`, a nova em
     // `metas.engajamento_bruto`) e a meta em R$/ponto sobrevivendo ao salvar
     // na tela da régua.
-    // CORREÇÃO (revisão final da Onda B, 25/09/2026): trocar só `metrica`
-    // para `'ponderada'` aqui e apagar `chaveMeta` NÃO religa nada sozinho —
-    // "duas linhas" era promessa falsa. `custoDoAlvo` (metricas.js) tem uma
-    // guarda explícita que devolve `null` para `metrica === 'ponderada'` (o
-    // ramo que chamava `calcularPonderada` foi REMOVIDO de lá, não desviado);
-    // `custoAtualDoAlvo` (budget-ia.mjs) segue a mesma fonte; e o cartão
-    // (tela-de-gestao-trafego.vue) não sabe ler `'ponderada'` no catálogo de
-    // métricas — o veredito de toda campanha de engajamento sairia com custo
-    // NULO, não com o ponto de volta. Os limiares das duas seções da régua
+    // CORREÇÃO (revisão final da Onda B, correção 2, 25/09/2026): trocar só
+    // `metrica` para `'ponderada'` aqui e apagar `chaveMeta` NÃO religa nada
+    // sozinho — "duas linhas" era promessa falsa. `custoDoAlvo` (metricas.js)
+    // tem uma guarda explícita que devolve `null` para `metrica === 'ponderada'`
+    // (o ramo que chamava `calcularPonderada` foi REMOVIDO de lá, não
+    // desviado), e o cartão (tela-de-gestao-trafego.vue) não sabe ler
+    // `'ponderada'` no catálogo de métricas — o veredito de toda campanha de
+    // engajamento sairia com custo NULO, não com o ponto de volta. São DOIS
+    // lugares reais a corrigir: `custoDoAlvo` (metricas.js) e a leitura do
+    // cartão (mais os chips "Custo/ponto"/"Qualidade", removidos de lá, que
+    // precisariam voltar). `custoAtualDoAlvo` (budget-ia.mjs) NÃO é um
+    // terceiro lugar — ele só chama `custoDoAlvo`, então corrigido lá ele
+    // acompanha sem edição própria. Os limiares das duas seções da régua
     // (Seção 1 = ponto, Seção 2 = resultado) também se misturariam se o
     // caminho de leitura não for redesenhado junto. Um interruptor de
-    // verdade — que troque `custoDoAlvo`, `custoAtualDoAlvo` e a leitura do
-    // cartão nos três lugares ao mesmo tempo — está planejado para a onda
+    // verdade — para os dois lugares reais — está planejado para a onda
     // seguinte; até lá, isto aqui é só a metade que fica pronta, não o
     // caminho de volta inteiro.
     metrica: 'custo_engajamento', resultado: 'engaj_pub', chaveMeta: 'engajamento_bruto',
