@@ -59,6 +59,18 @@ test('unificarEventos: junta e ordena os três tipos, mais recente primeiro', ()
   assert.equal(linhas[2].quem, '—')
 })
 
+test('unificarEventos: pop-up com clique_meta grava a atribuição (25/09/2026, o pop-up passou a mandar fbc/utm)', () => {
+  const linhas = unificarEventos({
+    popups: [{ criado_em: '2026-09-25T10:00:00Z', nome: 'Carla', email: 'carla@ex.com', clique_meta: 'fb.1.123.abc', utm_campaign: 'promo' }],
+  })
+  assert.equal(linhas[0].origem, 'Meta Ads · promo')
+})
+
+test('unificarEventos: pop-up sem nenhum campo de rastreio continua direto/orgânico', () => {
+  const linhas = unificarEventos({ popups: [{ criado_em: '2026-09-25T10:00:00Z', nome: 'Bia', email: 'bia@ex.com' }] })
+  assert.equal(linhas[0].origem, 'Direto/orgânico')
+})
+
 test('unificarEventos: atendimento sem pessoa correspondente não quebra', () => {
   const linhas = unificarEventos({ atendimentos: [{ pessoa_id: 999, criado_em: '2026-09-24T10:00:00Z' }] })
   assert.equal(linhas[0].quem, '—')
