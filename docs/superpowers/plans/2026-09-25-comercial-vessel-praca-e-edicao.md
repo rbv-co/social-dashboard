@@ -19,6 +19,7 @@
 - **Sem movimento automático de etapa** (decisão de 24/09): etapa só muda quando alguém move.
 - **Praça nasce como cadastro**: CPS (loja `iguatemi`), SAO, SBO, BSB, **LIM (Limeira)** e **PIR (Piracicaba)** — as duas últimas com `loja_destino` **nula**, à vista como pendência na tela.
 - **`npm test` inteiro verde e `npm run build` sem erro** ao fim de cada tarefa.
+- **Trava por tela em toda função nova**: `public.vessel_pode('<chave>', 'ver'|'editar')`, nunca `is_vessel_atendimentos*`.
 - Ferramenta/sub-tela nova entra **primeiro** em `src/compartilhado/catalogo-de-ferramentas.js`, com chave própria e pré-concessão aditiva por migration.
 
 ---
@@ -426,7 +427,7 @@ git commit -m "feat(db): tabelas de praca e edicao do stylist circle (ensaio ver
 
 - [ ] **Step 1: Escrever as funções**
 
-Todas `language plpgsql`, `security definer`, `set search_path to 'public'`. Leitura pede `is_vessel_atendimentos()`, escrita pede `is_vessel_atendimentos_editar()` e devolve `{"ok":false,"situacao":"sem_permissao"}` — **nunca** `raise` numa função de escrita (a tela precisa do motivo escrito).
+Todas `language plpgsql`, `security definer`, `set search_path to 'public'`. ⚠️ **A trava é POR TELA, não da família** (migration `2026-09-25-vessel-permissao-por-tela-no-banco.sql`, já na `main`): leitura pede `public.vessel_pode('atendimentos.stylist-circle', 'ver')`, escrita pede `public.vessel_pode('atendimentos.stylist-circle', 'editar')`. A família (`is_vessel_atendimentos*`) aceita QUALQUER tela e reprova no lembrete `db/permissao-por-tela-no-banco.test.mjs`. A escrita devolve `{"ok":false,"situacao":"sem_permissao"}` — **nunca** `raise` numa função de escrita (a tela precisa do motivo escrito).
 
 Regras que precisam estar no banco, não só na tela:
 - `vessel_praca_criar`: sigla em maiúscula, 3 letras, única → `situacao: 'sigla_repetida'`.

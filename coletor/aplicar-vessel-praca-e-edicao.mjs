@@ -258,18 +258,28 @@ try {
     [id ? JSON.stringify({ sub: id, role: 'authenticated' }) : ''])
   // Chamada ISOLADA: savepoint próprio, desfeita na volta — para o que TEM de
   // ser recusado (nada pode sobrar mesmo que a trava falhe).
-  const chamarIsolada = async (expr, params = []) => {
+  //
+  // ⚠️ RODADA 1 DE CONSERTO (IMPORTANTE 3): `depoisFn`, quando passado, é
+  // medido AQUI — ainda DENTRO do savepoint, ANTES do rollback. Medir depois
+  // do rollback (como a primeira versão fazia) compara sempre contra o MESMO
+  // estado de antes, porque o rollback já desfez qualquer coisa que a chamada
+  // tenha gravado — a conferência de "nada foi gravado" passaria mesmo com a
+  // trava quebrada (é tautológica). Medindo antes do rollback, uma trava
+  // quebrada que deixasse a escrita passar aparece de verdade.
+  const chamarIsolada = async (expr, params = [], depoisFn = null) => {
     await cli.query('savepoint chamada_isolada')
     await cli.query('set local role authenticated')
+    let resultado
     try {
-      const v = await r(expr, params)
-      return { v }
+      resultado = { v: await r(expr, params) }
     } catch (e) {
-      return { e }
+      resultado = { e }
     } finally {
       await cli.query('reset role')
-      await cli.query('rollback to savepoint chamada_isolada')
     }
+    const depois = depoisFn ? await depoisFn() : undefined
+    await cli.query('rollback to savepoint chamada_isolada')
+    return { ...resultado, depois }
   }
   // Chamada que GRAVA — monta a esteira (praça → cidade → edição → abrir →
   // incluir), que precisa persistir de um passo para o outro dentro do
@@ -320,7 +330,7 @@ try {
     conferir(x.v?.ok === true && x.v?.situacao === 'ok', 'edicao_abrir: abre a edição 1', x.v ?? x.e?.message)
 
     const sty1 = await uma(`insert into public.vessel_stylists (codigo, nome, whatsapp, teste)
-       values ('STY-PROVA-EDICAO4-1', 'Prova Edição4 Um', '5519990004001', true) returning id`)
+       values ('STY-PROVA-EDICAO4-1', 'Prova Edição4 Um', '5519990004001', true) returning id, etapa_id`)
     x = await chamarGravando(`public.vessel_edicao_incluir_stylist(p_codigo => $1, p_edicao_id => $2)`,
       ['STY-PROVA-EDICAO4-1', edicaoA1])
     conferir(x.v?.ok === true && x.v?.situacao === 'ok', 'edicao_incluir_stylist: inclui a stylist na edição aberta', x.v ?? x.e?.message)
@@ -328,35 +338,124 @@ try {
       [edicaoA1, sty1.id])
     conferir(vinculoGravado === 1, 'e o vínculo REALMENTE foi gravado (não só a resposta ok)', vinculoGravado)
 
-    console.log("\n  · 2) quem SÓ TEM 'ver' — as nove funções de escrita têm de barrar, e nada grava")
-    await falarComo(idVer)
-    const antesDaBarra = await uma(`select
-        (select count(*) from public.vessel_pracas)::int as pracas,
-        (select count(*) from public.vessel_praca_cidades)::int as cidades,
-        (select count(*) from public.vessel_stylist_circle_edicoes)::int as edicoes,
-        (select count(*) from public.vessel_stylist_na_edicao)::int as na_edicao`)
-    const chamadasDeEscrita = [
-      ['praca_criar', `public.vessel_praca_criar(p_sigla => $1, p_nome => $2, p_loja_destino => $3)`, ['ZZZ', 'Zona Zeta', null]],
-      ['praca_editar', `public.vessel_praca_editar(p_id => $1, p_nome => $2, p_loja_destino => $3, p_ativa => $4)`, [pracaA, 'Outro nome', null, true]],
-      ['praca_cidade_vincular', `public.vessel_praca_cidade_vincular(p_praca_id => $1, p_cidade => $2)`, [pracaA, 'Outra Cidade Qualquer']],
-      ['praca_cidade_desvincular', `public.vessel_praca_cidade_desvincular(p_id => $1)`, [cidadeA]],
-      ['stylist_definir_praca', `public.vessel_stylist_definir_praca(p_codigo => $1, p_praca_id => $2)`, ['STY-PROVA-EDICAO4-1', pracaA]],
-      ['edicao_criar', `public.vessel_edicao_criar(p_praca_id => $1, p_nome => $2, p_comeca_em => $3, p_termina_em => null)`, [pracaA, 'Edição fantasma', hoje]],
-      ['edicao_abrir', `public.vessel_edicao_abrir(p_id => $1)`, [edicaoA1]],
-      ['edicao_encerrar', `public.vessel_edicao_encerrar(p_id => $1, p_levar_para => $2)`, [edicaoA1, null]],
-      ['edicao_incluir_stylist', `public.vessel_edicao_incluir_stylist(p_codigo => $1, p_edicao_id => $2)`, ['STY-PROVA-EDICAO4-1', edicaoA1]],
-    ]
-    for (const [nome, expr, params] of chamadasDeEscrita) {
-      const { v, e } = await chamarIsolada(expr, params)
-      conferir(!e && v?.ok === false && v?.situacao === 'sem_permissao', `${nome}: quem só tem 'ver' toma sem_permissao`, e?.message ?? v)
+    // Criada já aqui, ainda 'planejada' — serve de alvo tanto do teste de
+    // permissão (passo 2, abrir sem poder) quanto do `ja_tem_aberta` (passo 4).
+    x = await chamarGravando(`public.vessel_edicao_criar(p_praca_id => $1, p_nome => $2, p_comeca_em => $3, p_termina_em => null)`,
+      [pracaA, 'Edição 2', hoje])
+    conferir(x.v?.ok === true && x.v?.numero === 2, 'edicao_criar: edição 2 da praça A (numero = 2)', x.v ?? x.e?.message)
+    const edicaoA2 = x.v?.id
+
+    console.log('\n  · 1b) MENOR 7: as outras três (editar, desvincular, definir_praca) também têm de PASSAR')
+    // Num savepoint próprio, desfeito no fim — prova que passa, sem deixar
+    // rastro para as provas seguintes (a praça A e a stylist 1 continuam como
+    // a prova 3 e a prova 2 esperam).
+    await cli.query('savepoint prova_menor7')
+    try {
+      x = await chamarGravando(`public.vessel_praca_editar(p_id => $1, p_nome => $2, p_loja_destino => $3, p_ativa => $4)`,
+        [pracaA, 'Praça de Prova A (editada)', 'loja-prova-a-2', true])
+      conferir(x.v?.ok === true && x.v?.situacao === 'ok', 'praca_editar: quem edita consegue editar a praça A', x.v ?? x.e?.message)
+      const pracaAEditada = await uma(`select nome, loja_destino from public.vessel_pracas where id = $1`, [pracaA])
+      conferir(pracaAEditada?.nome === 'Praça de Prova A (editada)' && pracaAEditada?.loja_destino === 'loja-prova-a-2',
+        'e a edição REALMENTE foi gravada', pracaAEditada)
+
+      // MENOR 5: loja_destino nula PRESERVA (nunca apaga) — mesma semântica
+      // de `ativa` nulo, que já preserva.
+      x = await chamarGravando(`public.vessel_praca_editar(p_id => $1, p_nome => $2, p_loja_destino => $3, p_ativa => $4)`,
+        [pracaA, 'Praça de Prova A (nome só)', null, true])
+      conferir(x.v?.ok === true && x.v?.situacao === 'ok', 'praca_editar: MENOR 5 — chamada com loja_destino nulo', x.v ?? x.e?.message)
+      const pracaAApósNulo = await uma(`select nome, loja_destino from public.vessel_pracas where id = $1`, [pracaA])
+      conferir(pracaAApósNulo?.nome === 'Praça de Prova A (nome só)' && pracaAApósNulo?.loja_destino === 'loja-prova-a-2',
+        'MENOR 5: loja_destino nula PRESERVA a loja gravada (não apaga)', pracaAApósNulo)
+
+      x = await chamarGravando(`public.vessel_stylist_definir_praca(p_codigo => $1, p_praca_id => $2)`, ['STY-PROVA-EDICAO4-1', pracaA])
+      conferir(x.v?.ok === true && x.v?.situacao === 'ok', 'stylist_definir_praca: quem edita consegue definir a praça da stylist', x.v ?? x.e?.message)
+      // ⚠️ `praca_id` é `bigint`: o driver devolve como STRING (evita perder
+      // precisão) — `::int` aqui, contra o `pracaA` que veio de JSON (Number).
+      const styComPraca = await r(`(select praca_id::int from public.vessel_stylists where id = $1)`, [sty1.id])
+      conferir(styComPraca === pracaA, 'e a stylist REALMENTE ficou com a praça A', styComPraca)
+
+      // uma cidade DESCARTÁVEL só para provar que desvincular funciona — a
+      // cidadeA "de verdade" segue vinculada, porque a prova 3 (colisão) precisa dela.
+      const descartavel = await chamarGravando(`public.vessel_praca_cidade_vincular(p_praca_id => $1, p_cidade => $2)`,
+        [pracaA, 'Cidade Descartável de Prova'])
+      x = await chamarGravando(`public.vessel_praca_cidade_desvincular(p_id => $1)`, [descartavel.v?.id])
+      conferir(x.v?.ok === true && x.v?.situacao === 'ok', 'praca_cidade_desvincular: quem edita consegue desvincular', x.v ?? x.e?.message)
+      const existeAindaDescartavel = await r(`(select exists(select 1 from public.vessel_praca_cidades where id = $1))`, [descartavel.v?.id])
+      conferir(existeAindaDescartavel === false, 'e a cidade descartável REALMENTE sumiu', existeAindaDescartavel)
+    } finally {
+      await cli.query('rollback to savepoint prova_menor7')
     }
-    const depoisDaBarra = await uma(`select
-        (select count(*) from public.vessel_pracas)::int as pracas,
-        (select count(*) from public.vessel_praca_cidades)::int as cidades,
-        (select count(*) from public.vessel_stylist_circle_edicoes)::int as edicoes,
-        (select count(*) from public.vessel_stylist_na_edicao)::int as na_edicao`)
-    conferir(JSON.stringify(antesDaBarra) === JSON.stringify(depoisDaBarra),
-      "nada foi gravado pelas nove tentativas de quem só tem 'ver'", { antesDaBarra, depoisDaBarra })
+
+    console.log("\n  · 2) quem SÓ TEM 'ver' — as nove funções de escrita têm de barrar, e NADA grava (medido DENTRO do savepoint, antes do rollback)")
+    await falarComo(idVer)
+    // Uma medida ESPECÍFICA por função (não só "a contagem total das 4
+    // tabelas"): cada uma mede exatamente o que aquela escrita mudaria — uma
+    // troca (`update`) não muda contagem nenhuma, só o conteúdo da linha.
+    const chamadasDeEscrita = [
+      ['praca_criar', `public.vessel_praca_criar(p_sigla => $1, p_nome => $2, p_loja_destino => $3)`, ['ZZZ', 'Zona Zeta', null],
+        () => r(`(select count(*)::int from public.vessel_pracas where sigla = 'ZZZ')`)],
+      ['praca_editar', `public.vessel_praca_editar(p_id => $1, p_nome => $2, p_loja_destino => $3, p_ativa => $4)`, [pracaA, 'Nome Roubado', null, true],
+        () => uma(`select nome, loja_destino from public.vessel_pracas where id = $1`, [pracaA])],
+      ['praca_cidade_vincular', `public.vessel_praca_cidade_vincular(p_praca_id => $1, p_cidade => $2)`, [pracaA, 'Outra Cidade Qualquer'],
+        () => r(`(select count(*)::int from public.vessel_praca_cidades where praca_id = $1)`, [pracaA])],
+      ['praca_cidade_desvincular', `public.vessel_praca_cidade_desvincular(p_id => $1)`, [cidadeA],
+        () => r(`(select exists(select 1 from public.vessel_praca_cidades where id = $1))`, [cidadeA])],
+      ['stylist_definir_praca', `public.vessel_stylist_definir_praca(p_codigo => $1, p_praca_id => $2)`, ['STY-PROVA-EDICAO4-1', pracaA],
+        () => r(`(select praca_id from public.vessel_stylists where id = $1)`, [sty1.id])],
+      ['edicao_criar', `public.vessel_edicao_criar(p_praca_id => $1, p_nome => $2, p_comeca_em => $3, p_termina_em => null)`, [pracaA, 'Edição fantasma', hoje],
+        () => r(`(select count(*)::int from public.vessel_stylist_circle_edicoes where praca_id = $1)`, [pracaA])],
+      ['edicao_abrir', `public.vessel_edicao_abrir(p_id => $1)`, [edicaoA2],
+        () => r(`(select situacao from public.vessel_stylist_circle_edicoes where id = $1)`, [edicaoA2])],
+      ['edicao_encerrar', `public.vessel_edicao_encerrar(p_id => $1, p_levar_para => $2)`, [edicaoA1, null],
+        () => r(`(select situacao from public.vessel_stylist_circle_edicoes where id = $1)`, [edicaoA1])],
+      ['edicao_incluir_stylist', `public.vessel_edicao_incluir_stylist(p_codigo => $1, p_edicao_id => $2)`, ['STY-PROVA-EDICAO4-1', edicaoA2],
+        () => r(`(select exists(select 1 from public.vessel_stylist_na_edicao where stylist_id = $1 and edicao_id = $2))`, [sty1.id, edicaoA2])],
+    ]
+    for (const [nome, expr, params, medir] of chamadasDeEscrita) {
+      const antes = await medir()
+      const { v, e, depois } = await chamarIsolada(expr, params, medir)
+      conferir(!e && v?.ok === false && v?.situacao === 'sem_permissao', `${nome}: quem só tem 'ver' toma sem_permissao`, e?.message ?? v)
+      conferir(JSON.stringify(antes) === JSON.stringify(depois),
+        `${nome}: nada mudou de verdade (medido DENTRO do savepoint, antes do rollback)`, { antes, depois })
+    }
+
+    console.log('\n  · 2b) a medida DENTRO do savepoint tem dente — mutação de propósito em praca_cidade_desvincular')
+    // ⚠️ A MESMA técnica do passo 5: se eu tirar o portão de
+    // `vessel_praca_cidade_desvincular`, quem só tem 'ver' apaga a cidade DE
+    // VERDADE — e é isso que a medida "antes/depois DENTRO do savepoint" (o
+    // conserto do IMPORTANTE 3) tem de pegar. A versão antiga (medindo depois
+    // do rollback) NUNCA pegaria isto: o rollback já teria desfeito o apagão
+    // antes da medida rodar.
+    await cli.query('savepoint prova_mutacao_ver')
+    const funcaoBoaDesvincular = (await uma(
+      `select pg_get_functiondef('public.vessel_praca_cidade_desvincular(bigint)'::regprocedure) as def`)).def
+    const trechoDoPortao = /if not public\.vessel_pode\('atendimentos\.stylist-circle', 'editar'\) then[\s\S]*?end if;\n/
+    if (!trechoDoPortao.test(funcaoBoaDesvincular)) throw new Error('a mutação não achou o portão de vessel_praca_cidade_desvincular')
+    await cli.query(funcaoBoaDesvincular.replace(trechoDoPortao, ''))
+    const existiaAntesDaMutacao = await r(`(select exists(select 1 from public.vessel_praca_cidades where id = $1))`, [cidadeA])
+    await cli.query('set local role authenticated')
+    try {
+      await r(`public.vessel_praca_cidade_desvincular(p_id => $1)`, [cidadeA])
+    } finally {
+      await cli.query('reset role')
+    }
+    // medido AINDA DENTRO do savepoint da mutação, antes de desfazer.
+    const existeDepoisDaMutacao = await r(`(select exists(select 1 from public.vessel_praca_cidades where id = $1))`, [cidadeA])
+    const apagouSemPortao = existiaAntesDaMutacao === true && existeDepoisDaMutacao === false
+    console.log(`    ${apagouSemPortao ? '✗' : '✓'} SEM o portão: quem só tem 'ver' ${apagouSemPortao ? 'CONSEGUIU apagar a cidade — a medida dentro do savepoint pegou isso' : 'não conseguiu apagar (inesperado)'} → existia antes=${existiaAntesDaMutacao}, existe depois=${existeDepoisDaMutacao}`)
+    conferir(apagouSemPortao === true,
+      "MUTAÇÃO: sem o `if not vessel_pode(...)`, quem só tem 'ver' apaga a cidade de verdade — prova que medir DENTRO do savepoint tem dente (medir DEPOIS do rollback nunca pegaria isto)",
+      { existiaAntesDaMutacao, existeDepoisDaMutacao })
+    // Desfaz a mutação (restaura a função) E o apagão.
+    await cli.query('rollback to savepoint prova_mutacao_ver')
+
+    const existeAntesDeVerdade = await r(`(select exists(select 1 from public.vessel_praca_cidades where id = $1))`, [cidadeA])
+    x = await chamarIsolada(`public.vessel_praca_cidade_desvincular(p_id => $1)`, [cidadeA],
+      () => r(`(select exists(select 1 from public.vessel_praca_cidades where id = $1))`, [cidadeA]))
+    const continuouExistindo = existeAntesDeVerdade === true && x.depois === true
+    console.log(`    ${continuouExistindo ? '✓' : '✗'} COM o portão (restaurado): quem só tem 'ver' ${continuouExistindo ? 'NÃO conseguiu apagar, como tem de ser' : 'apagou — bug!'} → ${JSON.stringify(x.v ?? x.e?.message)}`)
+    conferir(x.v?.ok === false && x.v?.situacao === 'sem_permissao', 'praca_cidade_desvincular: com o portão restaurado, sem_permissao de novo', x.v ?? x.e?.message)
+    conferir(continuouExistindo === true, 'e a cidade continua lá (medido dentro do savepoint) — a trava restaurada barra de verdade', { existeAntesDeVerdade, depois: x.depois })
 
     console.log('\n  · 3) cidade já vinculada a outra praça')
     await falarComo(idEditar)
@@ -365,27 +464,32 @@ try {
     const pracaB = x.v?.id
     const cidadesBAntes = await r(`(select count(*)::int from public.vessel_praca_cidades where praca_id = $1)`, [pracaB])
     // mesma CHAVE achatada (caixa e espaço diferentes) — já é da praça A
-    x = await chamarIsolada(`public.vessel_praca_cidade_vincular(p_praca_id => $1, p_cidade => $2)`, [pracaB, '  CIDADE   de Prova A  '])
-    conferir(x.v?.ok === false && x.v?.situacao === 'cidade_em_outra_praca' && x.v?.praca_id === pracaA && x.v?.praca_nome === 'Praça de Prova A',
-      'praca_cidade_vincular: cidade de outra praça devolve cidade_em_outra_praca com o nome dela', x.v ?? x.e?.message)
-    const cidadesBDepois = await r(`(select count(*)::int from public.vessel_praca_cidades where praca_id = $1)`, [pracaB])
-    conferir(cidadesBAntes === 0 && cidadesBDepois === 0, 'nada foi gravado para a praça B', { cidadesBAntes, cidadesBDepois })
+    x = await chamarIsolada(`public.vessel_praca_cidade_vincular(p_praca_id => $1, p_cidade => $2)`, [pracaB, '  CIDADE   de Prova A  '],
+      () => r(`(select count(*)::int from public.vessel_praca_cidades where praca_id = $1)`, [pracaB]))
+    conferir(x.v?.ok === false && x.v?.situacao === 'cidade_em_outra_praca' && x.v?.praca_id === pracaA,
+      'praca_cidade_vincular: cidade de outra praça devolve cidade_em_outra_praca, com a praça A', x.v ?? x.e?.message)
+    conferir(cidadesBAntes === 0 && x.depois === 0, 'nada foi gravado para a praça B (medido dentro do savepoint)', { cidadesBAntes, depois: x.depois })
 
     console.log('\n  · 4) segunda edição aberta na mesma praça')
-    x = await chamarGravando(`public.vessel_edicao_criar(p_praca_id => $1, p_nome => $2, p_comeca_em => $3, p_termina_em => null)`,
-      [pracaA, 'Edição 2', hoje])
-    conferir(x.v?.ok === true && x.v?.numero === 2, 'edicao_criar: edição 2 da praça A (numero = 2)', x.v ?? x.e?.message)
-    const edicaoA2 = x.v?.id
-    x = await chamarIsolada(`public.vessel_edicao_abrir(p_id => $1)`, [edicaoA2])
+    x = await chamarIsolada(`public.vessel_edicao_abrir(p_id => $1)`, [edicaoA2],
+      () => r(`(select situacao from public.vessel_stylist_circle_edicoes where id = $1)`, [edicaoA2]))
     conferir(x.v?.ok === false && x.v?.situacao === 'ja_tem_aberta', 'edicao_abrir: a segunda edição da mesma praça recusa com ja_tem_aberta', x.v ?? x.e?.message)
-    const situacaoA2 = await r(`(select situacao from public.vessel_stylist_circle_edicoes where id = $1)`, [edicaoA2])
-    conferir(situacaoA2 === 'planejada', 'a edição 2 continua planejada — nada foi gravado', situacaoA2)
+    conferir(x.depois === 'planejada', 'a edição 2 continua planejada — nada foi gravado (medido dentro do savepoint)', x.depois)
 
-    console.log('\n  · 5) incluir stylist em edição encerrada — E a prova de que a trava FAZ FALTA (quebrando de propósito)')
+    console.log('\n  · 5) CRÍTICO 1: o placar NÃO ZERA ao encerrar — e a prova de que edicao_encerrada FAZ FALTA (quebrando de propósito)')
+    const listaAntes = await chamarGravando(`public.vessel_edicoes_listar(p_praca_id => $1)`, [pracaA])
+    const stylistsAntesDeEncerrar = listaAntes.v?.find((e) => e.id === edicaoA1)?.stylists
+
     x = await chamarGravando(`public.vessel_edicao_encerrar(p_id => $1, p_levar_para => $2)`, [edicaoA1, null])
     conferir(x.v?.ok === true && x.v?.situacao === 'ok', 'edicao_encerrar: encerra a edição 1 (sem destino — ninguém ativou)', x.v ?? x.e?.message)
     const situacaoA1 = await r(`(select situacao from public.vessel_stylist_circle_edicoes where id = $1)`, [edicaoA1])
     conferir(situacaoA1 === 'encerrada', 'a edição 1 está encerrada', situacaoA1)
+
+    const listaDepois = await chamarGravando(`public.vessel_edicoes_listar(p_praca_id => $1)`, [pracaA])
+    const stylistsDepoisDeEncerrar = listaDepois.v?.find((e) => e.id === edicaoA1)?.stylists
+    conferir(stylistsAntesDeEncerrar === 1 && stylistsDepoisDeEncerrar === stylistsAntesDeEncerrar,
+      'CRÍTICO 1: vessel_edicoes_listar — o placar (stylists) da edição 1 é o MESMO número antes e depois de encerrar (não zera)',
+      { stylistsAntesDeEncerrar, stylistsDepoisDeEncerrar })
 
     const sty2 = await uma(`insert into public.vessel_stylists (codigo, nome, whatsapp, teste)
        values ('STY-PROVA-EDICAO4-2', 'Prova Edição4 Dois', '5519990004002', true) returning id`)
@@ -410,19 +514,79 @@ try {
     await cli.query('rollback to savepoint prova_mutacao')
 
     x = await chamarIsolada(`public.vessel_edicao_incluir_stylist(p_codigo => $1, p_edicao_id => $2)`,
-      ['STY-PROVA-EDICAO4-2', edicaoA1])
+      ['STY-PROVA-EDICAO4-2', edicaoA1],
+      () => r(`(select count(*)::int from public.vessel_stylist_na_edicao where edicao_id = $1 and stylist_id = $2)`, [edicaoA1, sty2.id]))
     const recusouComATrava = x.v?.ok === false && x.v?.situacao === 'edicao_encerrada'
     console.log(`    ${recusouComATrava ? '✓' : '✗'} COM a trava (restaurada): incluir numa edição encerrada ${recusouComATrava ? 'recusou, como tem de ser' : 'PASSOU — bug!'} → ${JSON.stringify(x.v ?? x.e?.message)}`)
     conferir(recusouComATrava === true, 'COM a trava restaurada: edicao_incluir_stylist recusa com edicao_encerrada', x.v ?? x.e?.message)
-    const naEdicaoSty2 = await r(`(select count(*)::int from public.vessel_stylist_na_edicao where edicao_id = $1 and stylist_id = $2)`, [edicaoA1, sty2.id])
-    conferir(naEdicaoSty2 === 0, 'nada ficou gravado para a stylist 2 na edição 1 encerrada', naEdicaoSty2)
+    conferir(x.depois === 0, 'nada ficou gravado para a stylist 2 na edição 1 encerrada (medido dentro do savepoint)', x.depois)
 
     console.log('\n  · 6) sigla repetida')
     const comPVAAntes = await r(`(select count(*)::int from public.vessel_pracas where sigla = 'PVA')`)
-    x = await chamarIsolada(`public.vessel_praca_criar(p_sigla => $1, p_nome => $2, p_loja_destino => $3)`, ['pva', 'Outra Praça Qualquer', null])
+    x = await chamarIsolada(`public.vessel_praca_criar(p_sigla => $1, p_nome => $2, p_loja_destino => $3)`, ['pva', 'Outra Praça Qualquer', null],
+      () => r(`(select count(*)::int from public.vessel_pracas where sigla = 'PVA')`))
     conferir(x.v?.ok === false && x.v?.situacao === 'sigla_repetida', 'praca_criar: sigla repetida (mesmo em minúscula) devolve sigla_repetida', x.v ?? x.e?.message)
-    const comPVADepois = await r(`(select count(*)::int from public.vessel_pracas where sigla = 'PVA')`)
-    conferir(comPVAAntes === 1 && comPVADepois === 1, 'nenhuma segunda PVA foi gravada', { comPVAAntes, comPVADepois })
+    conferir(comPVAAntes === 1 && x.depois === 1, 'nenhuma segunda PVA foi gravada (medido dentro do savepoint)', { comPVAAntes, depois: x.depois })
+
+    console.log('\n  · 7) IMPORTANTE 4: p_levar_para — quem NÃO ativou vai, quem ativou fica, com etapa_ao_sair e levadas certos')
+    x = await chamarGravando(`public.vessel_praca_criar(p_sigla => $1, p_nome => $2, p_loja_destino => $3)`, ['PVC', 'Praça de Prova C', null])
+    conferir(x.v?.ok === true, 'praca_criar: praça C para o teste de levar_para', x.v ?? x.e?.message)
+    const pracaC = x.v?.id
+    x = await chamarGravando(`public.vessel_edicao_criar(p_praca_id => $1, p_nome => $2, p_comeca_em => $3, p_termina_em => null)`, [pracaC, 'Origem', hoje])
+    const edicaoOrigem = x.v?.id
+    x = await chamarGravando(`public.vessel_edicao_abrir(p_id => $1)`, [edicaoOrigem])
+    conferir(x.v?.ok === true, 'edicao_abrir: abre a edição origem da praça C', x.v ?? x.e?.message)
+    x = await chamarGravando(`public.vessel_edicao_criar(p_praca_id => $1, p_nome => $2, p_comeca_em => $3, p_termina_em => null)`, [pracaC, 'Destino', hoje])
+    const edicaoDestino = x.v?.id
+
+    const naoAtivada = await uma(`insert into public.vessel_stylists (codigo, nome, whatsapp, teste)
+       values ('STY-PROVA-LEVAR-NAOATIVOU', 'Prova Não Ativou', '5519990004003', true) returning id, etapa_id`)
+    const ativada = await uma(`insert into public.vessel_stylists (codigo, nome, whatsapp, teste, ativada_em)
+       values ('STY-PROVA-LEVAR-ATIVOU', 'Prova Ativou', '5519990004004', true, now()) returning id, etapa_id`)
+
+    x = await chamarGravando(`public.vessel_edicao_incluir_stylist(p_codigo => $1, p_edicao_id => $2)`, ['STY-PROVA-LEVAR-NAOATIVOU', edicaoOrigem])
+    conferir(x.v?.ok === true, 'inclui a não-ativada na edição origem', x.v ?? x.e?.message)
+    x = await chamarGravando(`public.vessel_edicao_incluir_stylist(p_codigo => $1, p_edicao_id => $2)`, ['STY-PROVA-LEVAR-ATIVOU', edicaoOrigem])
+    conferir(x.v?.ok === true, 'inclui a ativada na edição origem', x.v ?? x.e?.message)
+
+    x = await chamarGravando(`public.vessel_edicao_encerrar(p_id => $1, p_levar_para => $2)`, [edicaoOrigem, edicaoDestino])
+    conferir(x.v?.ok === true && x.v?.situacao === 'ok' && x.v?.levadas === 1,
+      '(d) levadas bate com o número real — só 1 (a que não ativou)', x.v ?? x.e?.message)
+
+    const vinculoOrigemNaoAtivada = await uma(`select saiu_em, etapa_ao_sair from public.vessel_stylist_na_edicao
+       where edicao_id = $1 and stylist_id = $2`, [edicaoOrigem, naoAtivada.id])
+    conferir(vinculoOrigemNaoAtivada?.saiu_em != null && vinculoOrigemNaoAtivada?.etapa_ao_sair === naoAtivada.etapa_id,
+      '(c) etapa_ao_sair guarda a etapa em que a não-ativada estava, no vínculo fechado da origem', { vinculoOrigemNaoAtivada, esperado: naoAtivada.etapa_id })
+
+    const vinculoDestinoNaoAtivada = await uma(`select entrou_em, saiu_em from public.vessel_stylist_na_edicao
+       where edicao_id = $1 and stylist_id = $2`, [edicaoDestino, naoAtivada.id])
+    conferir(vinculoDestinoNaoAtivada?.entrou_em != null && vinculoDestinoNaoAtivada?.saiu_em === null,
+      '(a) a não-ativada FOI LEVADA e está ativa na edição de destino', vinculoDestinoNaoAtivada)
+
+    const vinculoOrigemAtivada = await uma(`select saiu_em, etapa_ao_sair from public.vessel_stylist_na_edicao
+       where edicao_id = $1 and stylist_id = $2`, [edicaoOrigem, ativada.id])
+    conferir(vinculoOrigemAtivada?.saiu_em != null && vinculoOrigemAtivada?.etapa_ao_sair === ativada.etapa_id,
+      '(b/c) a ativada tem o vínculo de origem fechado, com etapa_ao_sair certo', { vinculoOrigemAtivada, esperado: ativada.etapa_id })
+    const vinculoDestinoAtivada = await r(`(select exists(select 1 from public.vessel_stylist_na_edicao where edicao_id = $1 and stylist_id = $2))`,
+      [edicaoDestino, ativada.id])
+    conferir(vinculoDestinoAtivada === false, '(b) a ativada NÃO foi levada — não existe vínculo dela na edição de destino', vinculoDestinoAtivada)
+
+    console.log('\n  · 8) MENOR 6: p_levar_para de OUTRA praça é recusado (destino_de_outra_praca)')
+    x = await chamarGravando(`public.vessel_praca_criar(p_sigla => $1, p_nome => $2, p_loja_destino => $3)`, ['PVD', 'Praça de Prova D', null])
+    const pracaD = x.v?.id
+    x = await chamarGravando(`public.vessel_edicao_criar(p_praca_id => $1, p_nome => $2, p_comeca_em => $3, p_termina_em => null)`, [pracaD, 'Origem D', hoje])
+    const edicaoOrigemD = x.v?.id
+    x = await chamarGravando(`public.vessel_edicao_abrir(p_id => $1)`, [edicaoOrigemD])
+    conferir(x.v?.ok === true, 'edicao_abrir: abre a edição origem da praça D', x.v ?? x.e?.message)
+
+    const situacaoOrigemDAntes = await r(`(select situacao from public.vessel_stylist_circle_edicoes where id = $1)`, [edicaoOrigemD])
+    // edicaoDestino é da praça C, não da praça D — destino errado de propósito.
+    x = await chamarIsolada(`public.vessel_edicao_encerrar(p_id => $1, p_levar_para => $2)`, [edicaoOrigemD, edicaoDestino],
+      () => r(`(select situacao from public.vessel_stylist_circle_edicoes where id = $1)`, [edicaoOrigemD]))
+    conferir(x.v?.ok === false && x.v?.situacao === 'destino_de_outra_praca',
+      'edicao_encerrar: MENOR 6 — levar para edição de outra praça é recusado', x.v ?? x.e?.message)
+    conferir(situacaoOrigemDAntes === x.depois, 'a edição de origem NÃO foi encerrada — nada mudou (medido dentro do savepoint)',
+      { situacaoOrigemDAntes, depois: x.depois })
   } finally {
     await falarComo(null)
     await cli.query('rollback to savepoint prova_funcoes')

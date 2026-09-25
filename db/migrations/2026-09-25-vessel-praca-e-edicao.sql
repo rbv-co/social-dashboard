@@ -296,8 +296,12 @@ begin
   if v_nome is null then
     return json_build_object('ok', false, 'situacao', 'sem_nome');
   end if;
+  -- ⚠️ RODADA 1 DE CONSERTO: `loja_destino` e `ativa` usam a MESMA semântica de
+  -- nulo — PRESERVA o que já estava (a tela manda um salvamento parcial e não
+  -- pode apagar a loja de tabela sem querer). Limpar a loja é outra ação, que
+  -- ainda não existe.
   update public.vessel_pracas
-     set nome = v_nome, loja_destino = v_loja, ativa = coalesce(p_ativa, ativa)
+     set nome = v_nome, loja_destino = coalesce(v_loja, loja_destino), ativa = coalesce(p_ativa, ativa)
    where id = p_id;
   return json_build_object('ok', true, 'situacao', 'ok');
 end;
@@ -413,8 +417,20 @@ begin
     select json_agg(json_build_object(
              'id', e.id, 'praca_id', e.praca_id, 'praca_nome', p.nome, 'numero', e.numero,
              'nome', e.nome, 'comeca_em', e.comeca_em, 'termina_em', e.termina_em, 'situacao', e.situacao,
+             -- ⚠️ RODADA 1 DE CONSERTO (CRÍTICO 1): SEM filtrar por `saiu_em`.
+             -- `vessel_edicao_encerrar` fecha (`saiu_em`) TODOS os vínculos da
+             -- edição no mesmo instante em que ela vira 'encerrada' — nenhum
+             -- membro é acrescentado ou removido depois disso (o congelamento
+             -- é exatamente esse: quem esteve, esteve). Filtrar por
+             -- `saiu_em is null` aqui faria toda edição encerrada aparecer
+             -- com zero stylists, para sempre — o oposto do que o cabeçalho
+             -- desta migration promete ("o placar da edição encerrada
+             -- continua contando a linha antiga"). Enquanto a edição está
+             -- planejada/aberta ninguém tem `saiu_em` ainda, então a conta
+             -- coincide com "quem está nela agora"; depois de encerrada, ela
+             -- vira "quem esteve nela" — o mesmo número, para sempre.
              'stylists', (select count(*)::int from public.vessel_stylist_na_edicao n
-                           where n.edicao_id = e.id and n.saiu_em is null))
+                           where n.edicao_id = e.id))
            order by p.ordem, e.numero desc)
       from public.vessel_stylist_circle_edicoes e join public.vessel_pracas p on p.id = e.praca_id
      where p_praca_id is null or e.praca_id = p_praca_id), '[]'::json);
@@ -526,6 +542,12 @@ begin
     if v_destino.situacao = 'encerrada' then
       return json_build_object('ok', false, 'situacao', 'edicao_encerrada');
     end if;
+    -- ⚠️ RODADA 1 DE CONSERTO (MENOR 6): NÃO SE LEVA PARA OUTRA PRAÇA — praça
+    -- é o assunto desta tarefa; sem esta trava daria para levar quem não
+    -- ativou em Limeira para uma edição de Campinas.
+    if v_destino.praca_id <> v_ed.praca_id then
+      return json_build_object('ok', false, 'situacao', 'destino_de_outra_praca');
+    end if;
   end if;
 
   update public.vessel_stylist_circle_edicoes set situacao = 'encerrada' where id = p_id;
@@ -542,9 +564,18 @@ begin
      where n.stylist_id = s.id and n.edicao_id = p_id and n.saiu_em is null
     returning n.stylist_id, s.ativada_em
   )
+  -- ⚠️ RODADA 1 DE CONSERTO (CRÍTICO 2): `on conflict ... do nothing` — a
+  -- stylist pode já ter um vínculo (fechado ou não) na edição de destino
+  -- (ex.: foi incluída nas duas edições antes de a primeira ser encerrada).
+  -- Sem isto, a unique `(stylist_id, edicao_id)` estourava 23505 CRU (a tela
+  -- recebe erro sem motivo escrito) e — pior — como um erro dentro do bloco
+  -- aborta a transação INTEIRA nesta base, o encerramento nem chegava a
+  -- congelar ninguém. `get diagnostics` conta só quem foi REALMENTE inserida
+  -- (a que deu conflito não entra em `levadas`).
   insert into public.vessel_stylist_na_edicao (stylist_id, edicao_id)
   select f.stylist_id, p_levar_para from fechados f
-   where f.ativada_em is null and p_levar_para is not null;
+   where f.ativada_em is null and p_levar_para is not null
+  on conflict (stylist_id, edicao_id) do nothing;
   get diagnostics v_levadas = row_count;
 
   return json_build_object('ok', true, 'situacao', 'ok', 'levadas', v_levadas);

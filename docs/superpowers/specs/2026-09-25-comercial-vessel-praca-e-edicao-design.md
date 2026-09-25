@@ -96,6 +96,7 @@ Sem isso, a próxima mudança no placar encosta na tela inteira.
 - **Painel 3 (panorama comprou / não comprou): congelado por decisão do dono.**
 - O que o destrava é **o casamento venda ↔ pessoa** (0 de 481 pedidos). Enquanto não existir,
   qualquer painel de compra nasce mentindo com número certo.
+- As funções novas travam **por tela** (`vessel_pode('atendimentos.stylist-circle', …)`), nunca pela família — a `main` trocou isso em 25/09 e há teste-lembrete.
 - Nada de movimento automático de etapa: continua valendo a decisão de 24/09 (a etapa só muda
   quando alguém move).
 
