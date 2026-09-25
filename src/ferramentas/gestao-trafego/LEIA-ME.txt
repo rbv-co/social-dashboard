@@ -94,45 +94,56 @@ da Análise de Campanhas):
 
 Para mexer só nesta tela, edite apenas esta pasta.
 
-MÉTRICA PONDERADA (desde 2026-07-28)
-=====================================
-Em vez de contar interações no bruto, a ferramenta converte cada uma em PONTOS
-conforme o valor dela. Curtir vale 1; salvar vale 30. A ideia: quem salva um post
-demonstra muito mais interesse do que quem curte, e a conta precisa refletir isso.
+MÉTRICA PONDERADA — EM PAUSA DESDE 2026-09-24
+==============================================
+Até 24/09/2026, engajamento era julgado assim: em vez de contar interações no
+bruto, a ferramenta convertia cada uma em PONTOS conforme o valor dela (curtir
+vale 1, salvar vale 30 — a ideia era que quem salva um post demonstra muito
+mais interesse do que quem curte) e comparava o CUSTO POR PONTO (gasto ÷
+pontos) com a meta da aba "A régua".
 
-Com os pontos, sai o CUSTO POR PONTO (gasto ÷ pontos). Comparado com a meta que o
-dono define na aba "A régua", ele acende o semáforo.
+MEDINDO CAMPANHAS REAIS, O PONTO QUEBROU. A "[FLUXO SHOPPING]" da Vessel teve
+11.323 engajamentos e só 44 pontos ponderados — quase nada do que a Meta conta
+ali é curtida, comentário, salvamento ou compartilhamento (as quatro únicas
+interações que o ponto pesa; o resto é clique e outras ações que a Meta soma
+em "engajamento da publicação" e o ponto ignora por completo). Julgada por
+ponto ela saiu catastrófica — 662× a meta, recebeu "reduzir" numa rodada real
+de 24/09 —; julgada por engajamento pareceria ótima. E NÃO HÁ CONVERSÃO entre
+as duas réguas: a razão pontos/engajamento foi de 0 a 0,56 nas campanhas
+medidas. Não são a mesma coisa em unidades diferentes — são coisas diferentes.
+
+POR ISSO, DESDE 24/09/2026: sem o dono declarar uma interação (ver "OBJETIVO
+POR INTERAÇÃO" mais abaixo), campanha de engajamento é julgada pelo CUSTO POR
+ENGAJAMENTO BRUTO — gasto ÷ todo engajamento que a Meta conta na publicação,
+sem pesar por tipo. A meta desse número mora na aba "A régua", na seção
+"Metas por resultado" — ver "A RÉGUA FICA NA ABA 'A RÉGUA'" a seguir.
+
+A PONDERADA FOI DESLIGADA, NÃO APAGADA. ponderada.js, os pesos e a meta antiga
+em R$/PONTO continuam guardados e intactos, exatamente como estavam. O que
+mudou foi só QUEM CONSULTA: nem o cartão, nem o robô semanal, julgam mais por
+ponto por padrão. Ela continua valendo — de verdade, decidindo o veredito —
+só quando o dono DECLARA, no cartão daquela campanha, qual interação
+específica ela está comprando.
+
+CUIDADO COM UMA PROMESSA FÁCIL: religar a ponderada como padrão NÃO é trocar
+duas linhas. O trecho que calculava o custo por ponto foi REMOVIDO — não
+desviado — do caminho que monta o cartão e do caminho que o robô usa; hoje,
+só trocar a métrica de volta em alvos.js faz o robô mandar custo nulo e o
+cartão ficar sem custo nenhum, e não traz o ponto de volta. Um interruptor de
+verdade, que troque os três lugares (o cartão, o robô e a leitura da régua) ao
+mesmo tempo, está planejado para a onda seguinte — até lá, isto aqui é a
+metade que ficou pronta, não o caminho de volta inteiro.
 
 Arquivos:
-- ponderada.js .... a conta (pontos, custo por ponto, qualidade, semáforo). Puro.
+- ponderada.js .... a conta (pontos, custo por ponto, qualidade, semáforo).
+  Puro. Continua intacto — só não é mais chamado no caminho padrão.
 - regua.js ........ lê a régua do banco sem deixar a tela quebrar. Puro.
 - painel-regua.js . a aba onde o dono edita pesos, metas e limiares.
-Os três primeiros têm teste ao lado (.test.mjs) e rodam com `npm test`.
-
-O VEREDITO É UM SÓ, decidido nesta ordem (não existem dois selos disputando):
-  1. Saúde manda pausar OU reduzir -> vale a saúde, por mais barato que a
-     ponderada esteja mostrando. Frequência alta (audiência saturada) vira
-     'reduzir', e preço baixo por ponto não conserta isso — por isso a
-     ponderada nunca pode transformar essa campanha num "escalar" verde.
-  2. Saúde ok (nem pausar, nem reduzir) e há análise do Opus -> vale o Opus.
-  3. Saúde ok e sem Opus -> vale a ponderada.
-  4. Ponderada sem faixa aproveitável (ex.: volume baixo demais) e há uma
-     leitura de saúde com veredito -> vale a saúde, com a explicação dela
-     (é o caso de campanha de baixo gasto: a ponderada não tem dado suficiente,
-     mas a saúde ainda sabe dizer algo específico).
-Se nenhuma dessas quatro situações se aplicar, o cartão fica sem-dados.
-
-O custo por ponto aparece SEMPRE, independente de quem deu o veredito: ele é
-informação, não decisão. Já o orçamento sugerido ("Aplicar R$ X/dia") só aparece
-quando quem decidiu o cartão foi a IA semanal (Opus) — só ela tem um número
-próprio pra sugerir. Em TODOS os outros casos (ponderada decidindo, ou a leitura
-de saúde vetando com 'pausar'/'reduzir'), não existe botão de aplicar valor: o
-dono edita o orçamento manualmente (botão "✎ editar" no orçamento da campanha/
-conjunto) — porque inventar um número aqui seria pior do que não sugerir nada.
+Os três têm teste ao lado (.test.mjs) e rodam com `npm test`.
 
 MÉTRICAS LÍQUIDAS: quando a Meta oferece a versão líquida (que já desconta quem
-descurtiu ou dessalvou), ela vence a bruta. Líquida valendo ZERO é zero mesmo —
-não cai pra bruta.
+descurtiu ou dessalvou), ela vence a bruta dentro da conta da ponderada.
+Líquida valendo ZERO é zero mesmo — não cai pra bruta.
 
 A RÉGUA FICA NA ABA "A RÉGUA"
 -----------------------------
@@ -146,17 +157,28 @@ semáforo invertido na cabeça.
 
 CADA OBJETIVO, SUA UNIDADE
 Campanha de lead é medida pelo custo por lead. De WhatsApp, pelo custo por
-conversa. De venda, pelo custo por venda. De tráfego, pelo custo por visita. De
-reconhecimento, pelo custo por mil impressões. Engajamento é o único diferente:
-não compra uma ação só, mas PONTOS — curtir vale 1, salvar vale 30. Ou seja,
-a métrica ponderada não é um sistema à parte — é simplesmente o resultado que o
-balde de engajamento compra.
+conversa iniciada — que a tela chama de "Custo por lead" (ver "MENSAGEM VIROU
+'CUSTO POR LEAD'" mais abaixo). De venda, pelo custo por venda. De tráfego,
+pelo custo por visita. De reconhecimento, pelo custo por mil impressões. De
+engajamento, pelo CUSTO POR ENGAJAMENTO BRUTO — gasto dividido por todo
+engajamento que a Meta conta na publicação, sem pesar por tipo (ver "MÉTRICA
+PONDERADA — EM PAUSA" acima). Todas seguem a mesma regra, custo por resultado,
+menor é melhor — a métrica ponderada (pontos) só entra na conta quando o dono
+DECLARA, no cartão, uma interação específica (ver "OBJETIVO POR INTERAÇÃO"
+mais abaixo).
 
 QUAL CAMPANHA TEM META AGORA
-Temos meta de verdade pra três tipos de campanha (valores medidos de 90 dias):
-  • Engajamento: R$ 0,15 por ponto
+Temos meta de verdade pra dois tipos de campanha (valores medidos de 90 dias):
   • Tráfego:     R$ 0,25 por visita
-  • Mensagens:   R$ 20,00 por conversa
+  • Mensagens:   R$ 20,00 por conversa (rótulo "Custo por lead" na tela)
+
+Engajamento TINHA uma meta pronta — R$ 0,15 por ponto —, mas essa é a meta
+ANTIGA, na unidade que ficou em pausa. A régua trocou de unidade em
+24/09/2026 e AINDA NÃO TEM uma meta calibrada em custo por engajamento bruto:
+até o dono definir uma na aba "A régua", campanha de engajamento aparece só
+com o número, SEM COR — sem julgar. A régua mostra, ao lado do campo, quanto
+a conta já paga hoje por engajamento (com a janela de datas escrita ao lado),
+pra essa meta nova ser definida contra o real, não no escuro.
 
 Leads, Vendas e Reconhecimento NÃO têm meta preenchida — não porque esqueçamos,
 mas porque em 90 dias não houve UM lead registrado, UMA compra, nem UMA campanha
@@ -167,21 +189,28 @@ decidiu aleatoriamente. Quando começar a rodar esse tipo de campanha, a régua
 aparece vazia e é só preencher.
 
 OS NÚMEROS VIERAM DE MEDIR DE VERDADE
-R$ 0,15, R$ 0,25 e R$ 20,00 não são números sagrados. São o custo que você já
-paga hoje (um pouco abaixo da média, pra régua dizer "melhor que agora"). Ajuste
-aqui na aba sempre que achar que o seu custo real mudou — a régua é uma
-ferramenta, não uma lei.
+R$ 0,25 e R$ 20,00 não são números sagrados. São o custo que você já paga hoje
+(um pouco abaixo da média, pra régua dizer "melhor que agora"). Ajuste aqui na
+aba sempre que achar que o seu custo real mudou — a régua é uma ferramenta,
+não uma lei. A meta nova de engajamento vai precisar do mesmo cuidado assim
+que for definida pela primeira vez.
 
 A ABA TEM DUAS SEÇÕES, CADA UMA COM SUA PRÓPRIA META E SEU PRÓPRIO LIMIAR
-(desde 2026-07-28, revisando a divisão anterior): a régua espelha a aba Config
-da planilha de origem (metrica_ponderada.xlsx), que tem PESOS POR MÉTRICA,
-METAS DE CUSTO POR OBJETIVO e LIMIARES DE DECISÃO.
-  • Seção 1, "Engajamento ponderado": os pesos, o custo por objetivo (as
-    quatro interações MAIS o "engajamento ponderado" — cinco linhas) e os
-    limiares que decidem a cor a partir DESSA meta (coluna `limiares`).
+(desde 2026-07-28; a Seção 1 encolheu em 24/09/2026, com a pausa da ponderada
+— ver acima): a régua espelha a aba Config da planilha de origem
+(metrica_ponderada.xlsx), que tem PESOS POR MÉTRICA, METAS DE CUSTO POR
+OBJETIVO e LIMIARES DE DECISÃO.
+  • Seção 1, "Engajamento ponderado": os pesos e as quatro metas por
+    interação (curtida, comentário, salvamento, compartilhamento), com os
+    limiares que decidem a cor a partir DELAS (coluna `limiares`) — só valem
+    quando o dono DECLARA, no cartão da campanha, qual interação ela compra.
+    A meta antiga de "engajamento ponderado" (R$ por ponto) não tem mais
+    campo aqui, mas continua guardada por baixo — a seção mostra um aviso de
+    pausa no topo, explicando isso.
   • Seção 2, "Metas por resultado": a meta de reconhecimento, tráfego,
-    mensagens, leads e vendas, e os limiares que decidem a cor a partir
-    DESSAS metas (coluna `limiares_resultado`).
+    mensagens, leads, vendas e (desde 24/09/2026) engajamento — a meta NOVA,
+    em custo por engajamento bruto, mora aqui agora —, e os limiares que
+    decidem a cor a partir DESSAS metas (coluna `limiares_resultado`).
 A REGRA: quem é dono da meta é dono do limiar. É por isso que existem DOIS
 conjuntos de limiar, não um só — o dono pode querer "escalar forte" em 0,8×
 pra engajamento e 0,9× pra vendas, sem que ajustar um mexa no outro.
@@ -263,33 +292,42 @@ OBJETIVO POR INTERAÇÃO (desde 2026-07-28)
 ==========================================
 PESO E PREÇO SÃO DUAS COISAS DIFERENTES
 Peso é o quanto uma interação VALE (curtida vale 1 ponto, salvamento vale 30 —
-é a régua de "quanto vale cada interação", explicada acima). Preço é o quanto
-ela CUSTA de verdade pra você comprar. As duas coisas não andam juntas: um
-salvamento vale 30 vezes mais que uma curtida, mas CUSTA muito mais que 30
-vezes uma curtida — medido nas suas campanhas reais, salvamento custou umas 400
-vezes mais caro. Por isso cada interação tem a SUA PRÓPRIA meta de custo (aba
-"A régua", Seção 1, bloco "Quanto você aceita pagar") — comparar
-tudo pelo ponto ponderado é, na prática, sempre premiar quem compra curtida,
-porque curtida é 83% do volume.
+é a régua de "quanto vale cada interação", explicada acima, que hoje só entra
+na conta quando há interação declarada). Preço é o quanto ela CUSTA de verdade
+pra você comprar. As duas coisas não andam juntas: um salvamento vale 30 vezes
+mais que uma curtida, mas CUSTA muito mais que 30 vezes uma curtida — medido
+nas suas campanhas reais, salvamento custou umas 400 vezes mais caro. Por isso
+cada interação tem a SUA PRÓPRIA meta de custo (aba "A régua", Seção 1, bloco
+"Quanto você aceita pagar") — julgar tudo pelo engajamento bruto (o padrão sem
+declaração, desde 24/09/2026) é, na prática, sempre premiar quem compra
+curtida, porque curtida é a grande maioria do volume e ali conta igual a um
+salvamento.
 
 O DONO DECLARA, NO CARTÃO, O QUE AQUELA CAMPANHA (OU ANÚNCIO) ESTÁ COMPRANDO
 Numa campanha de engajamento (que não seja de WhatsApp — essa já tem o
-resultado dela, que é conversa), aparece um selo "Objetivo: ponderado" no
+resultado dela, que é conversa), aparece um selo "Objetivo: engajamento" no
 cabeçalho. Clicando nele, você escolhe qual das quatro interações — curtida,
 comentário, salvamento ou compartilhamento — essa campanha (ou aquele anúncio
 específico) está de fato comprando. O mesmo selo existe em cada anúncio.
 
 DECLARAR MUDA O JULGAMENTO; NÃO DECLARAR NÃO MUDA NADA
-Sem declarar, tudo continua exatamente como sempre foi: julgado pelo ponto
-ponderado, com a meta de "R$ por ponto" da aba "A régua". Declarando, o
-veredito daquele cartão passa a ser o CUSTO DA INTERAÇÃO DECLARADA contra a
-meta daquela interação (ex.: campanha declarada "Salvamento" é julgada pelo
-custo por salvamento, contra a meta de salvamento) — não mais pelo ponto. O
-chip "Custo/ponto" continua aparecendo como referência, mas fica com cor
-NEUTRA numa campanha declarada: ele não é mais quem decide o veredito daquele
-cartão, então parar de pintar verde/vermelho por ele evita uma contradição
-visual (selo dizendo "dentro da meta" do lado de um número pintado de
-vermelho por um critério que o cartão já não usa).
+Sem declarar (desde 24/09/2026), a campanha é julgada pelo CUSTO POR
+ENGAJAMENTO BRUTO — gasto dividido por todo engajamento que a Meta conta na
+publicação, sem distinguir tipo — contra a meta de engajamento da aba "A
+régua" (Seção 2, "Metas por resultado"). Declarando, o veredito daquele
+cartão passa a ser o CUSTO DA INTERAÇÃO DECLARADA contra a meta daquela
+interação específica (ex.: campanha declarada "Salvamento" é julgada pelo
+custo por salvamento, contra a meta de salvamento da Seção 1) — não mais pelo
+engajamento bruto. O selo do cabeçalho muda de nome junto: sem declarar, diz
+"Objetivo: engajamento"; declarando, mostra o nome da interação escolhida.
+
+O ROBÔ CONCORDA COM A TELA (desde 24/09/2026). Antes, o robô semanal — que
+escreve a justificativa que aparece na Fila — julgava toda campanha de
+engajamento pela régua do balde inteiro, mesmo quando o dono já tinha
+declarado uma interação específica no cartão: a tela e o robô discordavam
+sobre a MESMA campanha, e era o robô quem escrevia a frase que o dono lia.
+Agora o robô lê a mesma declaração e passa a medir e justificar pelo mesmo
+mercado que a tela já mostrava.
 
 OS NÚMEROS MEDIDOS (13 campanhas, 90 dias)
   • Curtida:          R$ 0,12
@@ -299,6 +337,50 @@ OS NÚMEROS MEDIDOS (13 campanhas, 90 dias)
     total, mas foi o que deu pra medir)
 É essa diferença de mercado — de centavos a mais de cem reais pela mesma
 "interação" — que a declaração existe pra proteger.
+
+MENSAGEM VIROU "CUSTO POR LEAD" (desde 2026-09-24)
+====================================================
+Campanha de mensagem/WhatsApp aparece na tela, e na justificativa que o robô
+escreve, como "Custo por lead" — não mais "Custo por conversa". A CONTA não
+mudou: continua sendo a conversa iniciada no WhatsApp
+(messaging_conversation_started), decisão de 2026-07-29. Só o nome que o dono
+lê mudou, porque pra ele quem abre conversa no WhatsApp já é lead. Não
+confunda com o balde "Leads" (cadastro que a Meta registra como lead de
+verdade): os dois aparecem como "Custo por lead" na tela hoje, mas são baldes
+diferentes, cada um com sua própria meta e seu próprio número.
+
+CUSTO POR SEGUIDOR DA CONTA (desde 2026-09-24)
+================================================
+Campanha de seguidores (o nome contém "SEGUID" em alguma forma — já vimos
+"[+SEGUIDORES] SeguidoresParceiros", "[SEGUIDORES][REMARKETING]",
+"[400]_AXIOM_05_SEGUID_VESSEL-CAMPINAS" e outras variações) NUNCA tem custo
+por resultado NA CAMPANHA. Conferido na Graph API real em 12/09/2026: a Meta
+não devolve nenhuma ação de "novo seguidor" por campanha — o que existe é só
+o total de seguidores DA CONTA, por dia. Ratear esse total por campanha (por
+exemplo, pelo clique de cada uma) foi tentado e descartado: a
+"AXIOM_05_SEGUID_VESSEL-CAMPINAS" gastou R$ 726 com 1 clique em 7 dias, e o
+rateio cospe "R$ 2.624,88 por seguidor" — um número pior que nenhum. Por isso
+essa campanha continua aparecendo como "medida indisponível": o robô julga
+só pelos indicadores que existem de verdade (CTR, CPC, frequência, alcance,
+volume de anúncios) e nunca recomenda pausar ou reduzir alegando um custo por
+resultado que não existe.
+
+O QUE NASCEU: um custo por seguidor, mas SEMPRE DA CONTA INTEIRA, nunca de uma
+campanha isolada — o gasto de TODAS as campanhas de seguidores da conta,
+dividido pelo ganho de seguidores da conta, no mesmo período. Aparece como um
+selo ao lado do título da lista de campanhas ("≈ R$ X,XX/seguidor (conta,
+DD/MM–DD/MM)"), sempre com a janela de datas escrita, e só quando a conta tem
+campanha de seguidores em veiculação agora e o ganho no período é confiável
+(abaixo de 10 seguidores ganhos no período, o número nem aparece — amostra
+pequena demais pra sustentar uma régua). Passe o mouse no selo e ele avisa,
+com todas as letras, que o número é uma ESTIMATIVA: inclui seguidor orgânico
+(não há como separar o que veio da campanha do que veio sozinho) e não é o
+custo de nenhuma campanha isolada. A conta ter perdido seguidor no período
+(saldo negativo) também não vira número — dividir um gasto por um ganho
+negativo não produz custo nenhum.
+
+Arquivo: seguidores.js (a conta, PURO) — com teste ao lado, roda com
+`npm test`.
 
 QUEM VÊ OS ANÚNCIOS: BOTÃO "👥 Público" (desde 2026-07-31)
 ============================================================
