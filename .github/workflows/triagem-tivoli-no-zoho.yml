@@ -1,8 +1,9 @@
 name: Triagem Tivoli Vendedora (a planilha do RH)
 
 # A CADA 2 HORAS, das 08h às 20h em Campinas (11h–23h UTC): puxa os cadastros
-# do formulário da vaga de Consultor de Vendas do Tivoli e sobe
-# "Triagem Tivoli Vendedora.xlsx" no Zoho, em 04. Vessel Brasil / 10. RH-DP.
+# da página vesselbrasil.com.br/vaga-tivoli (tabela vessel_candidaturas) e sobe
+# "Triagem Tivoli Vendedora.xlsx" no Zoho, em 04. Vessel Brasil / 10. RH-DP,
+# junto com os currículos anexados (pasta "Triagem Tivoli - Currículos").
 #
 # ⚠️ O minuto quebrado (23) evita a hora cheia, que neste repositório atrasa
 # de 2 a 3 horas.
