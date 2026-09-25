@@ -510,6 +510,34 @@ test('custoAtualDoAlvo: chamada de 3 argumentos (sem interação) continua funci
   assert.equal(custoAtualDoAlvo('engajamento', ins, normalizarRegua(null)), 0.25);
 });
 
+test('TRAVA: a janela anterior usa a MESMA interação declarada, não o balde padrão', () => {
+  // Rodada de correção 1 (24/09/2026): se alguém remover o 4º argumento de
+  // `custoAtualDoAlvo` na chamada da janela anterior (dentro de
+  // `montarMensagens`, no campo `janela_anterior.custo_atual_reais`), a
+  // tendência passaria a comparar "hoje por salvamento" com "ontem por
+  // engajamento" — duas grandezas diferentes, sem nada quebrar e nenhum outro
+  // teste reclamar — e o modelo escreveria uma frase de tendência confiante
+  // em cima de números de mercados diferentes.
+  // Fixture: a mesma interação (salvamentos) nas duas janelas, com volumes
+  // BEM diferentes do que dá o cálculo por engajamento bruto, para o "por
+  // salvamento" e o "por engajamento" não coincidirem por acidente:
+  //   por salvamento (correto):     60 / 20  = 3
+  //   por engajamento (regressão):  60 / 500 = 0.12
+  const camp = { id: '23', name: 'Engaja', objective: 'OUTCOME_ENGAGEMENT' };
+  const ins = { spend: '100', actions: [
+    { action_type: 'post_engagement', value: '1000' },
+    { action_type: 'onsite_conversion.post_save', value: '25' },
+  ] };
+  const anterior = { spend: '60', actions: [
+    { action_type: 'post_engagement', value: '500' },
+    { action_type: 'onsite_conversion.post_save', value: '20' },
+  ] };
+  const regua = normalizarRegua({ metas: { salvamentos: 2 } });
+  const d = dadosDoPrompt(camp, ins, [], [], regua, { insAnterior: anterior, interacaoDeclarada: 'salvamentos' });
+  assert.equal(d.janela_anterior.custo_atual_reais, 3,
+    'custo por SALVAMENTO na janela anterior (60/20) — não por engajamento (60/500=0.12)');
+});
+
 test('custoAtualDoAlvo: quantidade zero na interação declarada devolve null, nunca 0', () => {
   // R$ 0,00 no prompt é lido como "de graça" e vira "escalar" — a mesma
   // guarda de custoDaInteracao (ausência ou zero de verdade) tem de valer
