@@ -248,7 +248,7 @@ export function montarMensagens(camp, ins, ads, conjuntos, regua, extra) {
       custo_por_seguidor_da_conta_reais: custoSeguidorConta,
     } : {
       tipo_de_campanha: balde,
-      rotulo: rotuloAlvo,          // ex.: "Custo por ponto", "Custo por conversa iniciada", ou "Custo por salvamento" se declarado
+      rotulo: rotuloAlvo,          // ex.: "Custo por engajamento", "Custo por lead", ou "Custo por salvamento" se declarado
       meta_reais: meta > 0 ? meta : null,          // nulo = conta sem meta para este tipo (ou para a interação declarada)
       custo_atual_reais: custoAtual,
       indice_contra_meta: (custoAtual != null && meta > 0) ? custoAtual / meta : null,
@@ -282,16 +282,30 @@ export function montarMensagens(camp, ins, ads, conjuntos, regua, extra) {
       impressoes: num(a.impressions),
       alcance: num(a.reach),
       frequencia: num(a.frequency),
-      // O RESULTADO deste criativo, no balde DA CAMPANHA (descido pronto, nunca
-      // recalculado por anúncio — ver H1 do review de 2026-07-28). Sem isto o
-      // robô mandava pausar criativo de conversão olhando só CTR e frequência.
-      resultado: (alvo && alvo.resultado && GT_METRIC_CATALOG[alvo.resultado])
-        ? GT_METRIC_CATALOG[alvo.resultado].compute(a) : null,
+      // O RESULTADO deste criativo, no MESMO MERCADO da campanha (descido
+      // pronto, nunca recalculado por anúncio — ver H1 do review de
+      // 2026-07-28). Sem isto o robô mandava pausar criativo de conversão
+      // olhando só CTR e frequência.
+      // CRÍTICO 1 (revisão final da Onda B, 25/09/2026): com interação
+      // declarada, a quantidade tem de ser a DAQUELA interação neste anúncio
+      // (`quantidadesDoInsight`, a MESMA leitura que a ponderada usa) — nunca
+      // `engaj_pub` (engajamento bruto). Sem isto o nível da campanha julgava
+      // num mercado (ex.: salvamento, R$ 48) e o nível do anúncio julgava
+      // noutro (engajamento bruto, R$ 0,12) — 400× de diferença — e todo
+      // criativo aparecia centenas de vezes "abaixo da meta" sem nunca ter
+      // sido medido no mercado certo (ver interacoes.js).
+      resultado: interacaoDeclarada
+        ? quantidadesDoInsight(a)[interacaoDeclarada]
+        : ((alvo && alvo.resultado && GT_METRIC_CATALOG[alvo.resultado])
+          ? GT_METRIC_CATALOG[alvo.resultado].compute(a) : null),
       // Usamos `custoAtualDoAlvo` (e não `custoDoAlvo` direto) para todo balde,
       // inclusive engajamento, sempre concordar com o valor usado no --dry e
       // deixar a porta aberta para a Tarefa 5 (override de objetivo
-      // declarado) sem precisar trocar chamada por chamada depois.
-      custo_por_resultado: custoAtualDoAlvo(balde, a, regua),
+      // declarado) sem precisar trocar chamada por chamada depois. Passa
+      // `interacaoDeclarada` aqui também (CRÍTICO 1 acima) — sem ela, o
+      // anúncio caía sempre no `custoDoAlvo` do balde, discordando do mercado
+      // já trocado no nível da campanha três linhas acima em `regua`.
+      custo_por_resultado: custoAtualDoAlvo(balde, a, regua, interacaoDeclarada),
     })),
     dias_no_ar: diasNoAr,
     // Menos de 3 dias: a Meta ainda está na fase de aprendizado, e mexer no
@@ -374,8 +388,19 @@ function num(v) { const n = parseFloat(v); return Number.isFinite(n) ? n : null;
 export function custoAtualDoAlvo(balde, ins, regua, interacaoDeclarada) {
   // Engajamento não é mais caso especial: desde 24/09/2026 ele tem métrica no
   // catálogo (custo_engajamento) como qualquer outro balde. O ramo que chamava
-  // calcularPonderada saiu daqui — a ponderada está em PAUSA, não apagada, e
-  // religar é trocar duas linhas em alvos.js.
+  // calcularPonderada foi REMOVIDO daqui (não desviado) — a ponderada está em
+  // PAUSA, não apagada: `ponderada.js` continua intacto, e as duas metas
+  // (`metas.engajamento` a antiga, `metas.engajamento_bruto` a nova)
+  // coexistem sem se sobrescreverem.
+  // CORREÇÃO (revisão final da Onda B, 25/09/2026): "trocar duas linhas em
+  // alvos.js" era promessa falsa. Como o ramo saiu, não foi desviado, religar
+  // só em alvos.js faz `custoDoAlvo` (o `else` abaixo) devolver `null` para
+  // toda campanha de engajamento sem interação declarada — o robô mandaria
+  // custo nulo ao modelo em vez do custo por ponto de volta. Um revert de
+  // verdade precisa desviar esta função (e a leitura do cartão em
+  // tela-de-gestao-trafego.vue) para `calcularPonderada` de novo. Um
+  // interruptor de verdade para os dois pontos está planejado para a onda
+  // seguinte.
   // OBJETIVO DECLARADO (Tarefa 5): a declaração do dono VENCE a régua do
   // balde — quando ele disse, campanha a campanha, qual interação ela compra,
   // é essa interação que decide o custo, não o padrão do objetivo.

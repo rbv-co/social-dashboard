@@ -547,6 +547,36 @@ test('custoAtualDoAlvo: quantidade zero na interação declarada devolve null, n
   assert.equal(c, null, 'sem nenhum salvamento na janela, não pode virar custo zero nem o de engajamento');
 });
 
+test('TRAVA: com interação declarada, o ANÚNCIO vem no mesmo mercado da CAMPANHA', () => {
+  // CRÍTICO 1 da revisão final (25/09/2026): se alguém remover o 4º argumento
+  // de `custoAtualDoAlvo` na chamada de `custo_por_resultado` do anúncio
+  // (dentro de `montarMensagens`, no map de `dados.anuncios`), ou trocar de
+  // volta `resultado` para `GT_METRIC_CATALOG[alvo.resultado].compute(a)`
+  // sem checar `interacaoDeclarada` antes, o nível da CAMPANHA passa a julgar
+  // num mercado (aqui, salvamento) enquanto o nível do ANÚNCIO continua no
+  // engajamento bruto — dois juízes discordando da mesma campanha, e é o
+  // anúncio quem o modelo lê pra decidir "manter" ou "pausar" o criativo.
+  // Fixture: volumes bem diferentes entre os dois mercados, de propósito, pra
+  // "por salvamento" e "por engajamento bruto" não coincidirem por acidente:
+  //   por salvamento (correto):        50 / 10  = 5
+  //   por engajamento bruto (regressão): 50 / 500 = 0,1
+  const camp = { id: '25', name: 'Engaja', objective: 'OUTCOME_ENGAGEMENT' };
+  const ins = { spend: '100', actions: [
+    { action_type: 'post_engagement', value: '1000' },
+    { action_type: 'onsite_conversion.post_save', value: '25' },
+  ] };
+  const ads = [{ ad_id: 'ad1', spend: '50', actions: [
+    { action_type: 'post_engagement', value: '500' },
+    { action_type: 'onsite_conversion.post_save', value: '10' },
+  ] }];
+  const regua = normalizarRegua({ metas: { salvamentos: 2 } });
+  const d = dadosDoPrompt(camp, ins, ads, [], regua, { interacaoDeclarada: 'salvamentos' });
+  assert.equal(d.anuncios[0].resultado, 10,
+    'resultado do anúncio tem de ser a QUANTIDADE de salvamentos dele, não os 500 engajamentos brutos');
+  assert.equal(d.anuncios[0].custo_por_resultado, 5,
+    'custo por SALVAMENTO do anúncio (50/10) — não por engajamento bruto (50/500=0,1)');
+});
+
 // ---------------------------------------------------------------------------
 // TAREFA 6 (Onda B) — custo por seguidor DA CONTA no prompt de campanha de
 // seguidores. Nunca existiu teste pra este trecho antes (a muleta da Onda A
