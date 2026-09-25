@@ -97,6 +97,30 @@ async function clicar(alvo, rotulo) {
 }
 const botao = (nome, dentro = pagina) => dentro.getByRole('button', { name: nome })
 
+/** Arrasta um cartão até uma coluna do quadro (drag-and-drop HTML5 nativo).
+ * ⚠️ `locator.dragTo()` do Playwright não solta o cartão aqui: o Chrome de
+ * canal (`channel: 'chrome'`) não completa a sequência de eventos nativa que
+ * o componente espera (`dragstart` → `dragenter`/`dragover` → `drop`), e o
+ * cartão fica onde estava, sem erro nenhum — silencioso. Confirmado com um
+ * script à parte: o MESMO drag, disparando os `DragEvent` na mão com um
+ * `DataTransfer`, move o cartão igual ao gesto de verdade na tela. */
+async function arrastar(origemLoc, destinoLoc, rotulo) {
+  const origem = await origemLoc.elementHandle()
+  const destino = await destinoLoc.elementHandle()
+  if (!origem || !destino) { falhar(onde, `arrastar: não achei origem ou destino (${rotulo})`); return }
+  await pagina.evaluate(([o, d]) => {
+    const dt = new DataTransfer()
+    const disparar = (el, tipo) => el.dispatchEvent(new DragEvent(tipo, { bubbles: true, cancelable: true, dataTransfer: dt }))
+    disparar(o, 'dragstart')
+    disparar(d, 'dragenter')
+    disparar(d, 'dragover')
+    disparar(d, 'drop')
+    disparar(o, 'dragend')
+  }, [origem, destino])
+  await esperar()
+  await conferirTela()
+}
+
 /** Passa por TODAS as opções de TODO <select> visível e volta à primeira. */
 async function mexerEmTodosOsSelects() {
   const selects = pagina.locator('select:visible')
@@ -280,18 +304,43 @@ passo('Private Edit: a rota está fechada (sem a permissão, some no Início)')
 // ════════════════════════════════════════════════════════════════════════════
 passo('Stylist Circle')
 {
+  // ⚠️ 25/09/2026: "Paula Reis" e "Bianca Serra" saíram do cenário no
+  // commit 87c1776 (outra tarefa — o cenário voltou a ser exatamente as 63
+  // stylists reais). Os alvos abaixo trocaram; o que cada bloco PROVA
+  // continua o mesmo (ver o relatório da task 12).
   const t = await abrirPeloMenu('Stylist Circle')
-  if (!/Paula Reis \(exemplo\)/.test(t)) falhar(onde, 'as parceiras de exemplo não apareceram')
+  if (!/Marina Castro \(exemplo\)/.test(t)) falhar(onde, 'as parceiras de exemplo não apareceram')
   await mexerEmTodosOsSelects()
-  await clicar(pagina.getByText('Paula Reis (exemplo)').first(), 'abrir a ficha da Paula')
+  await clicar(pagina.getByText('Marina Castro (exemplo)').first(), 'abrir a ficha da Marina')
   await esperar(500)
   const fechar = pagina.getByRole('button', { name: /✕|Fechar/ })
   if (await fechar.count()) await clicar(fechar.first(), 'fechar a ficha')
+  // ⚠️ 25/09/2026 (Task 7/9/11, outra tarefa): o placar agora é POR EDIÇÃO —
+  // "Escolha uma praça na barra acima para ver o placar" sem isso não mostra
+  // NADA (nem "Comparecimento" nem a meta). Escolher a edição de Campinas
+  // pelo atalho da lista ("Campinas · iguatemi — Edição 1 · N stylists")
+  // antes de conferir o placar.
+  await clicar(pagina.locator('.pd-abertas-linha', { hasText: 'Campinas' }), 'escolher a Edição 1 de Campinas no placar')
+  await esperar(500)
   // 24/09: o scorecard, a nota de qualificação e as metas.
   const tela = await conferirTela()
   if (!/Comparecimento/.test(tela) || !/meta: 70% ou mais/.test(tela)) falhar(onde, 'o placar não mostra a meta do comparecimento')
-  if (!/faixa de teste: 1 a 3/.test(tela)) falhar(onde, 'o placar não mostra a faixa de vendas por encontro')
+  // ⚠️ 25/09/2026 (Task 7, outra tarefa): era "faixa de teste: 1 a 3" (a meta
+  // de vendas por encontro) — esse número saiu do placar por edição de
+  // propósito: `vessel_placar_da_edicao` não traz receita/vendas nenhuma
+  // ("decisão do dono": o panorama de compras fica congelado numa edição
+  // encerrada, e mostrar zero mentiria). O placar hoje EXPLICA isso, em vez
+  // de mostrar a meta — é essa explicação que a conferência prova agora.
+  if (!/Sem receita nenhuma aqui/.test(tela)) falhar(onde, 'o placar não explica a ausência de receita')
   if (!/Sem nota/i.test(tela) || !/Faixa A/i.test(tela)) falhar(onde, 'o quadro não mostra os selos da faixa')
+  // ⚠️ Volta para "Todas as praças": o resto do bloco (Luiza, Gislaine e
+  // Letícia são de Limeira; Carol é de Piracicaba) precisa do quadro
+  // INTEIRO — a barra também recorta o quadro, não só o placar (Task 7).
+  // O rótulo "Praça" também existe no bloco "Cadastrar parceira", mais
+  // abaixo — por isso o seletor pela barra (`.pe-barra`, o primeiro <select>
+  // dela é sempre a Praça, o segundo a Edição), não por rótulo.
+  await pagina.locator('.pe-barra select').first().selectOption('')
+  await esperar(500)
   await clicar(pagina.locator('.cv-quadro-nome', { hasText: 'Marina' }).first(), 'abrir a ficha da Marina')
   await pagina.waitForSelector('.cv-scorecard .cv-numero', { timeout: 5000 }).catch(() => falhar(onde, 'o scorecard não abriu'))
   if (!/Professional Fee estimado/.test(await conferirTela())) falhar(onde, 'o scorecard não mostra o Professional Fee')
@@ -313,7 +362,11 @@ passo('Stylist Circle')
   if (!/^Ativada · /i.test(noQuadro.at(-2) || '') || !/^Desclassificado · /i.test(noQuadro.at(-1) || '')) {
     falhar(onde, `as saídas não são as duas últimas colunas (Ativada, Desclassificado): ${noQuadro.slice(-2)}`)
   }
-  if (!/Motivo: Não conecta com a marca/.test(await pagina.locator('.cv-quadro-cartao', { hasText: 'Bianca Serra' }).innerText().catch(() => ''))) {
+  // ⚠️ 25/09/2026: era a Bianca Serra (saiu do cenário, 87c1776). A Letícia
+  // Farias (Limeira) já nasce Desclassificada com motivo no cenário de
+  // praça-e-edição — prova a mesma coisa: o cartão de quem SAIU de propósito
+  // (não na sessão) mostra o motivo.
+  if (!/Motivo: Fora da praça \(logística\)/.test(await pagina.locator('.cv-quadro-cartao', { hasText: 'Letícia Farias' }).innerText().catch(() => ''))) {
     falhar(onde, 'o cartão da desclassificada não mostra o motivo')
   }
   // O contato fácil no cartão: só confere o endereço (o toque abriria uma aba de fora).
@@ -355,19 +408,23 @@ passo('Stylist Circle')
   const cartao = (nome) => pagina.locator('.cv-quadro-cartao', { hasText: nome }).first()
   const coluna = (etapa) => pagina.locator(`.cv-quadro-coluna[data-etapa="${etapa}"]`)
   const colunaDe = async (nome) => cartao(nome).evaluate((el) => el.closest('.cv-quadro-coluna')?.dataset.etapa)
-  await cartao('Luiza').dragTo(coluna('Ativada'))
+  await arrastar(cartao('Luiza'), coluna('Ativada'), 'Luiza → Ativada')
   await esperar(600); await conferirTela()
   if ((await colunaDe('Luiza')) !== 'Ativada') falhar(onde, `arrastar a Luiza para a Ativada não moveu: ${await colunaDe('Luiza')}`)
   if (!/Luiza Amaral \(exemplo\) ativada — já aparece em Marcar um encontro do Private Edit/.test(await conferirTela())) {
     falhar(onde, 'soltar na Ativada não deu o aviso de que ela entrou na base do Private Edit')
   }
-  await cartao('Paula').dragTo(coluna('Desclassificado'))
+  // ⚠️ 25/09/2026: era a Paula Reis (saiu do cenário, 87c1776). A Gislaine
+  // Prado (Limeira) prova a mesma coisa — está hoje em "Convidado" (uma
+  // etapa de funil comum, não uma saída), então o cancelar-e-confirmar do
+  // motivo se testa do mesmo jeito.
+  await arrastar(cartao('Gislaine'), coluna('Desclassificado'), 'Gislaine → Desclassificado (1ª vez)')
   await esperar(400)
   const pop = pagina.locator('[role="dialog"][aria-label="Motivo: Desclassificado"]')
   if (!(await pop.count())) falhar(onde, 'soltar no Desclassificado não abriu a escolha do motivo')
   await clicar(pop.getByRole('button', { name: 'Cancelar' }).last(), 'cancelar o motivo')
-  if ((await colunaDe('Paula')) !== 'Convidado') falhar(onde, `cancelar o motivo moveu a Paula: ${await colunaDe('Paula')}`)
-  await cartao('Paula').dragTo(coluna('Desclassificado'))
+  if ((await colunaDe('Gislaine')) !== 'Convidado') falhar(onde, `cancelar o motivo moveu a Gislaine: ${await colunaDe('Gislaine')}`)
+  await arrastar(cartao('Gislaine'), coluna('Desclassificado'), 'Gislaine → Desclassificado (2ª vez)')
   await esperar(400)
   await clicar(pop.getByRole('button', { name: 'Desclassificar' }), 'desclassificar sem motivo')
   if (!/Escolha o motivo/.test(await pop.innerText().catch(() => ''))) falhar(onde, 'desclassificar sem motivo passou calado')
@@ -377,8 +434,8 @@ passo('Stylist Circle')
   await clicar(pop.getByRole('radio', { name: 'Desinteresse' }), 'motivo Desinteresse')
   await clicar(pop.getByRole('button', { name: 'Desclassificar' }), 'desclassificar com motivo')
   await esperar(500)
-  if ((await colunaDe('Paula')) !== 'Desclassificado') falhar(onde, `a Paula não foi para o Desclassificado: ${await colunaDe('Paula')}`)
-  if (!/Motivo: Desinteresse/.test(await cartao('Paula').innerText())) falhar(onde, 'o cartão da Paula não mostra o motivo')
+  if ((await colunaDe('Gislaine')) !== 'Desclassificado') falhar(onde, `a Gislaine não foi para o Desclassificado: ${await colunaDe('Gislaine')}`)
+  if (!/Motivo: Desinteresse/.test(await cartao('Gislaine').innerText())) falhar(onde, 'o cartão da Gislaine não mostra o motivo')
   const saidas = await pagina.locator('.cv-grupo-saidas').innerText().catch(() => '')
   if (!/Saídas por motivo/i.test(saidas) || !/Desinteresse\s*1/.test(saidas)) falhar(onde, `o bloco "Saídas por motivo" não contou: ${saidas.slice(0, 200)}`)
   // A ficha diz se ela pode ter Private Edit.
