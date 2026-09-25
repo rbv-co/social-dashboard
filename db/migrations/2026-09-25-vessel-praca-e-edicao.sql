@@ -560,12 +560,26 @@ begin
   -- cabeçalho da migration). Quem NÃO ativou (`ativada_em is null`) e tem
   -- destino abre um vínculo novo lá; quem ativou fica com o vínculo fechado
   -- e NÃO é levada.
+  -- ⚠️ TASK 6 RODADA 2 DE CONSERTO (I3 incompleto): `and not coalesce(s.teste,
+  -- false)` — o MESMO critério de `nao_ativadas` (vessel_edicoes_listar,
+  -- seção 14.2). Sem isto, uma stylist de teste não-ativada na edição contava
+  -- como "não vai" para `nao_ativadas` (que já filtrava) mas era LEVADA de
+  -- verdade aqui (que não filtrava) — a tela prometia N e o banco levava N+1,
+  -- calado. Critério único, o de fora: stylist de teste não conta e não é
+  -- levada — nem no congelamento, nem na inclusão no destino.
+  -- ⚠️ EFEITO COLATERAL ACEITO (decisão do dono, Rodada 3): o vínculo de uma
+  -- stylist de teste que estava na edição na hora do encerramento fica com
+  -- `saiu_em` nulo PARA SEMPRE — a função simplesmente não a toca, nem para
+  -- fechar nem para levar. Não aparece em nenhuma conta da tela (`stylists`/
+  -- `nao_ativadas` já filtram teste) — é o preço do critério único "stylist
+  -- de teste não conta e não é levada".
   with fechados as (
     update public.vessel_stylist_na_edicao n
        set saiu_em = now(), etapa_ao_sair = s.etapa_id
       from public.vessel_stylists s
      where n.stylist_id = s.id and n.edicao_id = p_id and n.saiu_em is null
-    returning n.stylist_id, s.ativada_em
+       and not coalesce(s.teste, false)
+    returning n.stylist_id, s.ativada_em, s.teste
   )
   -- ⚠️ RODADA 1 DE CONSERTO (CRÍTICO 2): `on conflict ... do nothing` — a
   -- stylist pode já ter um vínculo (fechado ou não) na edição de destino
@@ -575,9 +589,14 @@ begin
   -- aborta a transação INTEIRA nesta base, o encerramento nem chegava a
   -- congelar ninguém. `get diagnostics` conta só quem foi REALMENTE inserida
   -- (a que deu conflito não entra em `levadas`).
+  -- ⚠️ TASK 6 RODADA 2 DE CONSERTO: `not coalesce(f.teste, false)` de novo
+  -- aqui — `fechados` já filtra teste (acima), então esta linha nunca
+  -- deveria ter nada a barrar; é defesa em profundidade (o pedido explícito
+  -- da revisão), não decoração: se um dia o filtro de `fechados` for
+  -- afrouxado sem querer, este é quem segura.
   insert into public.vessel_stylist_na_edicao (stylist_id, edicao_id)
   select f.stylist_id, p_levar_para from fechados f
-   where f.ativada_em is null and p_levar_para is not null
+   where f.ativada_em is null and p_levar_para is not null and not coalesce(f.teste, false)
   on conflict (stylist_id, edicao_id) do nothing;
   get diagnostics v_levadas = row_count;
 
@@ -2009,6 +2028,12 @@ begin
   -- verdade aqui (que não filtrava) — a tela prometia N e o banco levava N+1,
   -- calado. Critério único, o de fora: stylist de teste não conta e não é
   -- levada — nem no congelamento, nem na inclusão no destino.
+  -- ⚠️ EFEITO COLATERAL ACEITO (decisão do dono, Rodada 3): o vínculo de uma
+  -- stylist de teste que estava na edição na hora do encerramento fica com
+  -- `saiu_em` nulo PARA SEMPRE — a função simplesmente não a toca, nem para
+  -- fechar nem para levar. Não aparece em nenhuma conta da tela (`stylists`/
+  -- `nao_ativadas` já filtram teste) — é o preço do critério único "stylist
+  -- de teste não conta e não é levada".
   with fechados as (
     update public.vessel_stylist_na_edicao n
        set saiu_em = now(), etapa_ao_sair = s.etapa_id

@@ -1015,14 +1015,35 @@ try {
     x = await chamarGravando(`public.vessel_edicao_abrir(p_id => $1)`, [edicaoOrigemFRestaurada])
     x = await chamarGravando(`public.vessel_edicao_criar(p_praca_id => $1, p_nome => $2, p_comeca_em => $3, p_termina_em => null)`, [pracaFRestaurada, 'Destino F', hoje])
     const edicaoDestinoFRestaurada = x.v?.id
-    await uma(`insert into public.vessel_stylists (codigo, nome, whatsapp, teste)
-       values ('STY-PROVA-CONFLITO-RESTAURADA', 'Prova Conflito Restaurada', '5519990004007', true)`)
+    // ⚠️ TASK 6 RODADA 3 DE CONSERTO: `teste = false` — com `true` (como
+    // estava) o filtro novo de `vessel_edicao_encerrar` (Rodada 2) exclui
+    // esta stylist de `fechados` por INTEIRO, e o caminho que este bloco
+    // existe para provar (o `on conflict` restaurado NÃO estourando no
+    // cenário real de conflito) nunca é percorrido — a conferência
+    // `restaurouSemErro` passava VAZIA (nada aconteceu, `ok:true` por não
+    // fazer nada). Com `false`, a stylist entra em `fechados` de verdade.
+    const stConflitoRestaurada = await uma(`insert into public.vessel_stylists (codigo, nome, whatsapp, teste)
+       values ('STY-PROVA-CONFLITO-RESTAURADA', 'Prova Conflito Restaurada', '5519990004007', false) returning id`)
     x = await chamarGravando(`public.vessel_edicao_incluir_stylist(p_codigo => $1, p_edicao_id => $2)`, ['STY-PROVA-CONFLITO-RESTAURADA', edicaoOrigemFRestaurada])
     x = await chamarGravando(`public.vessel_edicao_incluir_stylist(p_codigo => $1, p_edicao_id => $2)`, ['STY-PROVA-CONFLITO-RESTAURADA', edicaoDestinoFRestaurada])
     x = await chamarGravando(`public.vessel_edicao_encerrar(p_id => $1, p_levar_para => $2)`, [edicaoOrigemFRestaurada, edicaoDestinoFRestaurada])
     const restaurouSemErro = !x.e && x.v?.ok === true
     console.log(`    ${restaurouSemErro ? '✓' : '✗'} COM o \`on conflict\` (restaurado): o mesmo cenário ${restaurouSemErro ? 'não estourou, como tem de ser' : 'quebrou — bug!'} → ${JSON.stringify(x.v ?? x.e?.message)}`)
     conferir(restaurouSemErro === true, 'COM o `on conflict` restaurado: edicao_encerrar não estoura no mesmo cenário de conflito', x.v ?? x.e?.message)
+    // ⚠️ RODADA 3: prova de que o caminho foi REALMENTE percorrido (não uma
+    // passagem vazia) — `levadas` continua 0 aqui DE PROPÓSITO (ela já
+    // estava no destino, o `on conflict` barra a segunda linha — a mesma
+    // regra do passo 9), mas o vínculo de ORIGEM tem de estar FECHADO
+    // (`saiu_em` preenchido): só acontece se `fechados` processou a stylist
+    // de verdade, e só é possível com `teste = false`.
+    conferir(x.v?.levadas === 0, 'e `levadas` é 0 — ela já estava no destino, não conflito duplicado (mesma regra do passo 9)', x.v)
+    const origemFRestauradaFechada = await r(`(select saiu_em is not null from public.vessel_stylist_na_edicao where stylist_id = $1 and edicao_id = $2)`,
+      [stConflitoRestaurada.id, edicaoOrigemFRestaurada])
+    conferir(origemFRestauradaFechada === true,
+      'e o vínculo de ORIGEM foi REALMENTE fechado (prova que `fechados` processou a stylist — o caminho não passou vazio)', origemFRestauradaFechada)
+    const linhasNoDestinoFRestaurada = await r(`(select count(*)::int from public.vessel_stylist_na_edicao where stylist_id = $1 and edicao_id = $2)`,
+      [stConflitoRestaurada.id, edicaoDestinoFRestaurada])
+    conferir(linhasNoDestinoFRestaurada === 1, 'e continua com UMA linha só na edição de destino (sem duplicar)', linhasNoDestinoFRestaurada)
 
     console.log('\n  · 10) TASK 5: vessel_rastreio_dos_stylists — assinatura nova (sem fantasma) e recorte por praça/edição')
     // Chamada como o PostgREST FAZ: parâmetros por NOME. Só os dois de
