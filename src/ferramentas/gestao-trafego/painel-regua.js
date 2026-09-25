@@ -448,9 +448,21 @@ export function montarPainelRegua(alvo, opcoes) {
   // NENHUMA preenchida na seção, não existe número pra multiplicar; melhor
   // mostrar só o multiplicador cru do que inventar um valor (regra da casa:
   // nunca inventar número).
+  //
+  // LÊ PELA CHAVE DO ALVO (`metaDoBalde`, a MESMA resolução de `regua.js`),
+  // NUNCA `r.metas[b]` cru — defeito real (revisão da Tarefa 3, 24/09/2026):
+  // como `engajamento` é o primeiro balde de `ALVOS`, e toda conta que já
+  // rodou a ponderada tem `metas.engajamento` (a meta ANTIGA, R$/ponto)
+  // salva, ler pelo nome cru do balde pegava sempre essa meta velha como
+  // base do preview — mesmo com a meta NOVA (`engajamento_bruto`) preenchida.
+  // O rótulo saía certo ("por engajamento") e o número saía calculado contra
+  // a unidade errada: uma tela que mente com toda a confiança de uma que diz
+  // a verdade. `metaDoBalde` é exatamente a função que já existe pra não
+  // duplicar essa resolução (ver reguaDaTela, mais acima, que grava do lado
+  // oposto pela mesma chave).
   function primeiroAlvoComMeta(r) {
     for (const b of BALDES_SECAO2) {
-      const v = Number(r.metas && r.metas[b]);
+      const v = metaDoBalde(r, b);
       if (Number.isFinite(v) && v > 0) return { balde: b, meta: v };
     }
     return null;

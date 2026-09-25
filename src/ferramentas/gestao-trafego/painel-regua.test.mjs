@@ -185,6 +185,47 @@ test('salva a meta nova na chave do alvo (engajamento_bruto), nunca na do balde'
     'a meta antiga (custo por ponto) não pode ser sobrescrita nem apagada ao salvar a régua');
 });
 
+// ── Correção 1 (revisão, 24/09/2026): a LEITURA do preview ficou para trás ──
+//
+// A gravação (reguaDaTela) já lê pela CHAVE do alvo (teste acima). Mas
+// `primeiroAlvoComMeta` (usado pelo preview dos limiares da Seção 2) lia
+// `r.metas[balde]` cru — e como `engajamento` é o PRIMEIRO balde da ordem de
+// ALVOS, e toda conta que já rodou a ponderada tem `metas.engajamento` (a
+// meta ANTIGA, R$/ponto) salva, o preview pegava sempre essa meta velha como
+// base, mesmo com a meta NOVA (`engajamento_bruto`) preenchida. Rótulo certo,
+// número calculado contra a unidade errada — a tela mentia com confiança.
+//
+// O harness normal (`comDomFalso`) devolve `getElementById` sempre nulo, e
+// `pintarLimiaresSecao2` só escreve quando acha o elemento — por isso este
+// teste monta um DOM falso PRÓPRIO, com um elemento de verdade só para os
+// ids do preview, e chama `montarPainelRegua` com `editavel:false`: assim
+// `reguaDaTela()` devolve `regua` (o objeto de opções) sem passar por
+// `document.getElementById`, e o que sobra pra conferir é exatamente a
+// leitura de `primeiroAlvoComMeta`.
+test('o preview da Seção 2 usa a meta NOVA de engajamento (pela chave), não a antiga', () => {
+  const antes = globalThis.document;
+  const mapa = new Map();
+  for (const k of ['escalarForte', 'dentroMeta', 'manter']) {
+    mapa.set('pnd-limiar-res-prev-' + k, { textContent: '' });
+  }
+  globalThis.document = { getElementById: (id) => mapa.get(id) || null };
+  try {
+    const alvo = alvoFalso();
+    montarPainelRegua(alvo, {
+      ...OPCOES_BASE,
+      editavel: false,
+      // X (antiga) ≠ Y (nova) de propósito — se o preview usar a chave errada,
+      // o teste pega o número da meta errada, não só um "algo apareceu".
+      regua: normalizarRegua({ metas: { engajamento: 0.013, engajamento_bruto: 0.32 } }),
+    });
+  } finally {
+    globalThis.document = antes;
+  }
+  const texto = mapa.get('pnd-limiar-res-prev-escalarForte').textContent;
+  assert.match(texto, /R\$ 0,26/,
+    `preview tem que usar a meta NOVA (0,32 × 0,8 = R$ 0,26), não a antiga (0,013 × 0,8 = R$ 0,01) — veio "${texto}"`);
+});
+
 test('mostra o que a conta paga hoje por engajamento quando quem chama informa', () => {
   comDomFalso(() => {
     const alvo = alvoFalso();
