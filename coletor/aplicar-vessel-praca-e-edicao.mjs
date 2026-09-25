@@ -118,9 +118,14 @@ try {
     conferir(col?.data_type === 'bigint' && col?.is_nullable === 'YES', `${tabela}.${coluna}: bigint, aceita nulo`, col)
   }
 
-  console.log('\n── MENOR 5: os três índices (o cascade de na_edicao varria sem índice)')
+  // ⚠️ REVISÃO FINAL (MENOR 7): são QUATRO, não três — faltava
+  // `vessel_private_edits.praca_id`, criado na seção 5 da migration porque
+  // `ev`, no placar da edição, filtra os encontros por ele. Índice que o
+  // aplicador não confere é índice que some sem ninguém notar.
+  console.log('\n── MENOR 5 + 7: os quatro índices (o cascade de na_edicao varria sem índice)')
   for (const [tabela, coluna] of [
-    ['vessel_praca_cidades', 'praca_id'], ['vessel_stylist_na_edicao', 'edicao_id'], ['vessel_stylists', 'praca_id'],
+    ['vessel_praca_cidades', 'praca_id'], ['vessel_stylist_na_edicao', 'edicao_id'],
+    ['vessel_stylists', 'praca_id'], ['vessel_private_edits', 'praca_id'],
   ]) {
     const existe = await r(`exists (
       select 1 from pg_index i
@@ -754,6 +759,126 @@ try {
       'CRÍTICO 1: o placar de O1 (origem, ainda aberta) PERDE a pessoa — não conta mais em duas edições abertas ao mesmo tempo', placarO1Depois.v?.prospectadas)
     const placarP1Depois = await chamarGravando(`public.vessel_placar_da_edicao(p_edicao_id => $1)`, [edicaoP1])
     conferir(placarP1Depois.v?.prospectadas === 1, 'e o placar de P1 (destino) passa a contar 1 — a pessoa está só numa aberta agora', placarP1Depois.v?.prospectadas)
+
+    // ── REVISÃO FINAL — CRÍTICO 1: O RETORNO ─────────────────────────
+    // Dois cliques na ficha, o caminho real: ela sai de O para P e VOLTA para
+    // O. O insert de volta colide com a linha FECHADA de O1 — com `do
+    // nothing` era descartado, e ela ficava com `praca_id = PVO` e NENHUM
+    // vínculo aberto: sumia de todo placar e continuava na lista de baixo.
+    console.log('\n  · 1d-ter) REVISÃO FINAL (CRÍTICO 1): sair e VOLTAR para a mesma praça deixa o vínculo ABERTO e o placar volta a contá-la')
+    x = await chamarGravando(`public.vessel_stylist_editar(p_codigo => $1, p_praca => $2)`, [codigoCritico1, 'PVO'])
+    conferir(x.v?.ok === true, 'stylist_editar: VOLTA a praça para O (a mesma de onde ela saiu)', x.v ?? x.e?.message)
+
+    const vinculoO1NaVolta = await uma(`select saiu_em, etapa_ao_sair from public.vessel_stylist_na_edicao where stylist_id = $1 and edicao_id = $2`,
+      [stCritico1Id, edicaoO1])
+    conferir(vinculoO1NaVolta?.saiu_em === null && vinculoO1NaVolta?.etapa_ao_sair === null,
+      'CRÍTICO 1: o vínculo em O1 volta a ficar ABERTO (saiu_em e etapa_ao_sair de novo nulos) — a linha fechada foi REABERTA, não descartada', vinculoO1NaVolta)
+    const linhasO1NaVolta = await r(`(select count(*)::int from public.vessel_stylist_na_edicao where stylist_id = $1 and edicao_id = $2)`,
+      [stCritico1Id, edicaoO1])
+    conferir(linhasO1NaVolta === 1, 'e continua UMA linha só (reabriu, não duplicou)', linhasO1NaVolta)
+
+    const placarO1NaVolta = await chamarGravando(`public.vessel_placar_da_edicao(p_edicao_id => $1)`, [edicaoO1])
+    conferir(placarO1NaVolta.v?.prospectadas === 1,
+      'CRÍTICO 1: o placar de O1 VOLTA a contá-la (1) — era zero, calado, e a lista de baixo continuava mostrando', placarO1NaVolta.v?.prospectadas)
+    const placarP1NaVolta = await chamarGravando(`public.vessel_placar_da_edicao(p_edicao_id => $1)`, [edicaoP1])
+    conferir(placarP1NaVolta.v?.prospectadas === 0, 'e o placar de P1 devolve a pessoa — uma aberta só, sempre', placarP1NaVolta.v?.prospectadas)
+
+    // ⚠️ IMPORTANTE 1 (revisão final): a MESMA edição contada pelos DOIS
+    // números que a tela mostra juntos — `vessel_edicoes_listar.stylists` e
+    // `vessel_placar_da_edicao.prospectadas`. Medido com uma stylist que
+    // MUDOU DE PRAÇA, que é exatamente o caso em que eles divergiam.
+    const listarDepoisDaVolta = await chamarGravando(`public.vessel_edicoes_listar(p_praca_id => $1)`, [pracaP])
+    const edP1Listada = (listarDepoisDaVolta.v ?? []).find((e) => e.id === edicaoP1)
+    conferir(edP1Listada?.stylists === placarP1NaVolta.v?.prospectadas && edP1Listada?.stylists === 0,
+      'IMPORTANTE 1: edicoes_listar.stylists e placar.prospectadas contam IGUAL a edição P1, aberta, de quem saiu dela (0 e 0)',
+      { listar: edP1Listada?.stylists, placar: placarP1NaVolta.v?.prospectadas })
+    const listarO = await chamarGravando(`public.vessel_edicoes_listar(p_praca_id => $1)`, [pracaO])
+    const edO1Listada = (listarO.v ?? []).find((e) => e.id === edicaoO1)
+    conferir(edO1Listada?.stylists === placarO1NaVolta.v?.prospectadas && edO1Listada?.stylists === 1,
+      'IMPORTANTE 1: e contam IGUAL a edição O1, aberta, de quem voltou para ela (1 e 1)',
+      { listar: edO1Listada?.stylists, placar: placarO1NaVolta.v?.prospectadas })
+
+    console.log('\n    · MUTAÇÃO: voltando o `on conflict ... do nothing`, o retorno à praça de origem some do placar de novo — reprova')
+    await cli.query('savepoint prova_mutacao_retorno')
+    try {
+      const funcaoBoaSincronizar = (await uma(
+        `select pg_get_functiondef('public.vessel_stylist_sincronizar_edicao(bigint,bigint,boolean)'::regprocedure) as def`)).def
+      const trechoDoDoUpdate = /on conflict \(stylist_id, edicao_id\) do update set saiu_em = null, etapa_ao_sair = null;/
+      if (!trechoDoDoUpdate.test(funcaoBoaSincronizar)) {
+        throw new Error('a mutação não achou o `do update` de vessel_stylist_sincronizar_edicao — o texto da função mudou')
+      }
+      await cli.query(funcaoBoaSincronizar.replace(trechoDoDoUpdate, 'on conflict (stylist_id, edicao_id) do nothing;'))
+
+      // o MESMO caminho de dois cliques, agora com a função mutada
+      await chamarGravando(`public.vessel_stylist_editar(p_codigo => $1, p_praca => $2)`, [codigoCritico1, 'PVP'])
+      await chamarGravando(`public.vessel_stylist_editar(p_codigo => $1, p_praca => $2)`, [codigoCritico1, 'PVO'])
+      const vinculoMutado = await uma(`select saiu_em from public.vessel_stylist_na_edicao where stylist_id = $1 and edicao_id = $2`,
+        [stCritico1Id, edicaoO1])
+      const placarMutadoRetorno = await chamarGravando(`public.vessel_placar_da_edicao(p_edicao_id => $1)`, [edicaoO1])
+      // ⚠️ `::int`: sem o cast o pg devolve bigint como TEXTO ("31"), e a
+      // comparação estrita contra o número reprovaria por tipo, não por defeito.
+      const pracaGravadaMutada = await r(`(select praca_id::int from public.vessel_stylists where id = $1)`, [stCritico1Id])
+      const reprovouRetorno = vinculoMutado?.saiu_em != null && placarMutadoRetorno.v?.prospectadas === 0 && pracaGravadaMutada === pracaO
+      console.log(`      ${reprovouRetorno ? '✗' : '✓'} SEM o \`do update\`: a stylist ${reprovouRetorno ? `ficou com praca_id = PVO e NENHUM vínculo aberto — placar de O1 = ${placarMutadoRetorno.v?.prospectadas}, o defeito calado voltou` : 'não reproduziu o defeito (inesperado)'}`)
+      conferir(reprovouRetorno === true,
+        'MUTAÇÃO: com `on conflict ... do nothing`, voltar para a praça de origem deixa a stylist com praca_id certo e ZERO vínculo aberto — prova que o `do update` não é decoração',
+        { vinculoMutado, prospectadas: placarMutadoRetorno.v?.prospectadas, pracaGravadaMutada })
+    } finally {
+      await cli.query('rollback to savepoint prova_mutacao_retorno')
+    }
+
+    // ── CRÍTICO 1, o irmão: incluir quem JÁ SAIU daquela edição ───────────
+    console.log('\n  · 1d-quater) REVISÃO FINAL (CRÍTICO 1, irmão): incluir quem JÁ SAIU da edição não estoura 23505 — reabre o vínculo')
+    await cli.query('savepoint prova_incluir_quem_saiu')
+    try {
+      // deixa o vínculo de O1 FECHADO de novo (ela vai para P), com O1 ainda aberta
+      await chamarGravando(`public.vessel_stylist_editar(p_codigo => $1, p_praca => $2)`, [codigoCritico1, 'PVP'])
+      const fechadoAntesDeIncluir = await r(`(select saiu_em is not null from public.vessel_stylist_na_edicao where stylist_id = $1 and edicao_id = $2)`,
+        [stCritico1Id, edicaoO1])
+      conferir(fechadoAntesDeIncluir === true, 'pré-condição: o vínculo dela em O1 está FECHADO e O1 continua aberta', fechadoAntesDeIncluir)
+
+      x = await chamarGravando(`public.vessel_edicao_incluir_stylist(p_codigo => $1, p_edicao_id => $2)`, [codigoCritico1, edicaoO1])
+      conferir(!x.e, 'edicao_incluir_stylist: a chamada NÃO estourou (nenhum erro cru de banco)', x.e?.message)
+      conferir(x.v?.ok === true && x.v?.situacao === 'ok', 'e devolveu ok:true — a inclusão de quem já saiu é aceita', x.v)
+      const vinculoReaberto = await uma(`select saiu_em, etapa_ao_sair from public.vessel_stylist_na_edicao where stylist_id = $1 and edicao_id = $2`,
+        [stCritico1Id, edicaoO1])
+      conferir(vinculoReaberto?.saiu_em === null && vinculoReaberto?.etapa_ao_sair === null,
+        'e o vínculo foi REABERTO (saiu_em e etapa_ao_sair nulos), não duplicado', vinculoReaberto)
+
+      console.log('\n    · MUTAÇÃO: sem o `on conflict` em vessel_edicao_incluir_stylist, o MESMO caminho estoura 23505 cru — reprova')
+      await cli.query('savepoint prova_mutacao_incluir')
+      let erroCruIncluir, semErroIncluir
+      try {
+        const funcaoBoaIncluir = (await uma(
+          `select pg_get_functiondef('public.vessel_edicao_incluir_stylist(text,bigint)'::regprocedure) as def`)).def
+        const trechoIncluir = /\n\s*on conflict \(stylist_id, edicao_id\) do update set saiu_em = null, etapa_ao_sair = null;/
+        if (!trechoIncluir.test(funcaoBoaIncluir)) {
+          throw new Error('a mutação não achou o `on conflict` de vessel_edicao_incluir_stylist — o texto da função mudou')
+        }
+        await cli.query(funcaoBoaIncluir.replace(trechoIncluir, ';'))
+        // fecha o vínculo de novo, para o mesmo cenário
+        await chamarGravando(`public.vessel_stylist_editar(p_codigo => $1, p_praca => $2)`, [codigoCritico1, 'PVP'])
+        // ⚠️ savepoint próprio: um 23505 de verdade aborta a transação até o rollback.
+        await cli.query('savepoint chamada_mutada_incluir')
+        try {
+          await cli.query('set local role authenticated')
+          semErroIncluir = await r(`public.vessel_edicao_incluir_stylist(p_codigo => $1, p_edicao_id => $2)`, [codigoCritico1, edicaoO1])
+        } catch (e) {
+          erroCruIncluir = e
+        } finally {
+          await cli.query('rollback to savepoint chamada_mutada_incluir')
+        }
+      } finally {
+        await cli.query('rollback to savepoint prova_mutacao_incluir')
+      }
+      const estourouIncluir = erroCruIncluir?.code === '23505'
+      console.log(`      ${estourouIncluir ? '✗' : '✓'} SEM o \`on conflict\`: incluir quem já saiu ${estourouIncluir ? 'ESTOUROU 23505 cru — e nesta base isso derruba a transação INTEIRA' : 'não estourou (inesperado)'}`)
+      conferir(estourouIncluir === true,
+        'MUTAÇÃO: sem `on conflict ... do update`, incluir quem já saiu estoura 23505 cru — prova que a cláusula é o guarda de regressão do irmão do Crítico 1',
+        erroCruIncluir ? { code: erroCruIncluir.code, message: erroCruIncluir.message } : semErroIncluir)
+    } finally {
+      await cli.query('rollback to savepoint prova_incluir_quem_saiu')
+    }
 
     // (b) origem ENCERRADA: nada nela muda quando a stylist troca de praça.
     x = await chamarGravando(`public.vessel_praca_criar(p_sigla => $1, p_nome => $2, p_loja_destino => $3)`, ['PVQ', 'Praça de Prova Q (origem encerrada)', null])
@@ -1423,6 +1548,26 @@ try {
     const styPirDepoisDeTentativas = await uma(`select praca_id::int as praca_id from public.vessel_stylists where codigo = $1`, [codigoStyPir])
     conferir(styPirDepoisDeTentativas?.praca_id === pracaPir.id, 'e a praça da stylist PIR NÃO mudou com as duas tentativas recusadas', styPirDepoisDeTentativas)
 
+    // ⚠️ T5 (revisão final): até aqui `praca_id` só era provado ESCRITO em 2
+    // das 4 portas (`vessel_stylist_criar` e `vessel_criar_private_edit`).
+    // Provar que a porta RECUSA a praça errada não prova que ela GRAVA a
+    // certa — uma função que validasse e esquecesse de gravar passaria em
+    // todas as conferências acima. Aqui, o caminho FELIZ de
+    // `vessel_stylist_editar`, num savepoint próprio (a stylist PIR tem de
+    // continuar em PIR para o recorte do passo 10b).
+    await cli.query('savepoint prova_t5_editar_grava')
+    try {
+      const antesDeMover = await r(`(select praca_id::int from public.vessel_stylists where codigo = $1)`, [codigoStyPir])
+      x = await chamarGravando(`public.vessel_stylist_editar(p_codigo => $1, p_praca => $2)`, [codigoStyPir, 'LIM'])
+      conferir(x.v?.ok === true, 'T5: vessel_stylist_editar move a stylist PIR para LIM pela porta real', x.v ?? x.e?.message)
+      const depoisDeMover = await uma(`select praca_id::int as praca_id, praca_preview from public.vessel_stylists where codigo = $1`, [codigoStyPir])
+      conferir(depoisDeMover?.praca_id === pracaLim.id && depoisDeMover?.praca_preview === 'LIM',
+        'T5: `praca_id` (e o texto `praca_preview` junto) foram REALMENTE GRAVADOS por vessel_stylist_editar — medido na tabela, não na resposta',
+        { antesDeMover, depoisDeMover, esperado: pracaLim.id })
+    } finally {
+      await cli.query('rollback to savepoint prova_t5_editar_grava')
+    }
+
     // setup para o encontro real: mover a stylist de Limeira para a etapa que
     // libera Private Edit (a mesma trava de sempre — nada disto é do conserto
     // desta rodada, é pré-requisito para poder criar o encontro).
@@ -1508,6 +1653,11 @@ try {
     conferir(!x.e && x.v?.ok === true && x.v?.situacao === 'recebido',
       'vessel_pedido_do_stylist (como anon): a inscrição pública na praça U é aceita', x.v ?? x.e?.message)
     const stPublicaId = await r(`(select id from public.vessel_stylists where whatsapp = $1)`, [fonePublico])
+    // ⚠️ T5 (revisão final): a 4ª porta também tem de provar que GRAVA
+    // `praca_id`, não só que recusa sigla inválida.
+    const pracaDaPublica = await uma(`select praca_id::int as praca_id, praca_preview from public.vessel_stylists where whatsapp = $1`, [fonePublico])
+    conferir(pracaDaPublica?.praca_id === pracaU && pracaDaPublica?.praca_preview === 'PVU',
+      'T5: vessel_pedido_do_stylist GRAVOU `praca_id` (e `praca_preview`) — medido na tabela', { pracaDaPublica, esperado: pracaU })
     const vinculoPublicoU1 = await r(`(select count(*)::int from public.vessel_stylist_na_edicao
       where stylist_id = $1 and edicao_id = $2 and saiu_em is null)`, [stPublicaId, edicaoU1])
     conferir(vinculoPublicoU1 === 1,
@@ -1555,6 +1705,176 @@ try {
         { ok: y.v?.ok, id: idMutado, vinculos: vinculosMutado })
     } finally {
       await cli.query('rollback to savepoint prova_mutacao_pedido_publico')
+    }
+
+    // ══ REVISÃO FINAL — IMPORTANTE 4: A PRAÇA SAI DA CIDADE ═════════════
+    // Tudo num savepoint próprio: as stylists daqui não podem entrar nas
+    // contagens de Limeira/Piracicaba do passo 10b.
+    console.log('\n  · 10a-ter) REVISÃO FINAL (IMPORTANTE 4): sem praça escolhida, a praça sai da CIDADE — e cidade que não casa continua sem praça')
+    await cli.query('savepoint prova_praca_da_cidade')
+    try {
+      // (a) pela porta da equipe: cidade "Limeira", sem `p_praca`.
+      x = await chamarGravando(`public.vessel_stylist_criar(p_nome => $1, p_whatsapp => $2, p_cidade => $3, p_origem_contato => $4)`,
+        ['Prova Praça Pela Cidade', '5519990006380', '  liMEIra ', 'indicacao'])
+      conferir(x.v?.ok === true, 'vessel_stylist_criar: cadastra SEM praça, só com a cidade "  liMEIra "', x.v ?? x.e?.message)
+      const porCidade = await uma(`select praca_id::int as praca_id, praca_preview from public.vessel_stylists where codigo = $1`, [x.v?.codigo])
+      conferir(porCidade?.praca_id === pracaLim.id,
+        'IMPORTANTE 4: nasceu com `praca_id` de LIMEIRA, deduzido da cidade (a MESMA conta achatada do backfill da seção 8)',
+        { porCidade, esperado: pracaLim.id })
+      conferir(porCidade?.praca_preview === null,
+        'e `praca_preview` continua NULO — a praça deduzida não inventa texto que a pessoa não escreveu', porCidade)
+
+      // (b) a cidade que NÃO CASA continua sem praça — pendência à vista,
+      // nunca um chute. É exatamente a "Limeira / Piracicaba" das 63.
+      x = await chamarGravando(`public.vessel_stylist_criar(p_nome => $1, p_whatsapp => $2, p_cidade => $3, p_origem_contato => $4)`,
+        ['Prova Cidade Que Não Casa', '5519990006381', 'Limeira / Piracicaba', 'indicacao'])
+      conferir(x.v?.ok === true, 'vessel_stylist_criar: cadastra com a cidade composta "Limeira / Piracicaba"', x.v ?? x.e?.message)
+      const semCasar = await r(`(select praca_id from public.vessel_stylists where codigo = $1)`, [x.v?.codigo])
+      conferir(semCasar === null,
+        'IMPORTANTE 4: cidade que não casa continua SEM PRAÇA (pendência à vista) — nunca um chute de qual das duas seria', semCasar)
+
+      // (c) e sem cidade nenhuma também não inventa nada.
+      x = await chamarGravando(`public.vessel_stylist_criar(p_nome => $1, p_whatsapp => $2, p_origem_contato => $3)`,
+        ['Prova Sem Cidade', '5519990006382', 'indicacao'])
+      const semCidade = await r(`(select praca_id from public.vessel_stylists where codigo = $1)`, [x.v?.codigo])
+      conferir(semCidade === null, 'e quem nem cidade tem nasce sem praça, como sempre', semCidade)
+
+      // (d) A PORTA PÚBLICA — o caso que motivou o conserto: a landing page
+      // pergunta a CIDADE, nunca a praça. Com uma edição ABERTA em PIR, a
+      // inscrição tem de entrar nela na hora.
+      x = await chamarGravando(`public.vessel_edicao_criar(p_praca_id => $1, p_nome => $2, p_comeca_em => $3, p_termina_em => null)`,
+        [pracaPir.id, 'Edição PIR (prova da cidade)', hoje])
+      const edicaoPirDaCidade = x.v?.id
+      await chamarGravando(`public.vessel_edicao_abrir(p_id => $1)`, [edicaoPirDaCidade])
+
+      const fonePorCidade = '5519990006383'
+      x = await chamarComoAnon(`public.vessel_pedido_do_stylist(p_nome => $1, p_whatsapp => $2, p_cidade => $3, p_teste => $4)`,
+        ['Prova LP Sem Praça', fonePorCidade, 'Piracicaba', false])
+      conferir(!x.e && x.v?.ok === true, 'vessel_pedido_do_stylist (como anon): inscrição SEM praça, só com a cidade "Piracicaba"', x.v ?? x.e?.message)
+      const lpPorCidade = await uma(`select id, praca_id::int as praca_id from public.vessel_stylists where whatsapp = $1`, [fonePorCidade])
+      conferir(lpPorCidade?.praca_id === pracaPir.id,
+        'IMPORTANTE 4: a inscrição pela LANDING PAGE nasce com a praça de PIRACICABA, deduzida da cidade', { lpPorCidade, esperado: pracaPir.id })
+      const vinculoLpPorCidade = await r(`(select count(*)::int from public.vessel_stylist_na_edicao
+        where stylist_id = $1 and edicao_id = $2 and saiu_em is null)`, [lpPorCidade?.id, edicaoPirDaCidade])
+      conferir(vinculoLpPorCidade === 1,
+        'e ENTRA na edição aberta da praça — sem isto ela nascia fora de toda edição e de todo placar, calada', vinculoLpPorCidade)
+
+      // (e) a deduzida PREENCHE, nunca MOVE: a mesma pessoa volta dizendo
+      // outra cidade e a praça dela NÃO muda (mover alguém de loja de destino
+      // por um campo de formulário público seria mudança calada em dado de
+      // gente).
+      x = await chamarComoAnon(`public.vessel_pedido_do_stylist(p_nome => $1, p_whatsapp => $2, p_cidade => $3, p_teste => $4)`,
+        ['Prova LP Sem Praça', fonePorCidade, 'Limeira', false])
+      const lpDepoisDeVoltar = await r(`(select praca_id::int from public.vessel_stylists where whatsapp = $1)`, [fonePorCidade])
+      conferir(lpDepoisDeVoltar === pracaPir.id,
+        'IMPORTANTE 4: quem VOLTA dizendo outra cidade NÃO é movida — a praça deduzida só preenche quem está sem praça',
+        { lpDepoisDeVoltar, esperado: pracaPir.id })
+
+      // MUTAÇÃO: sem a dedução, a inscrição pública volta a nascer sem praça
+      // e fora de tudo — reprova.
+      console.log('\n    · MUTAÇÃO: fazendo vessel_praca_id_da_cidade devolver sempre nulo, a inscrição pela LP volta a nascer sem praça — reprova')
+      await cli.query('savepoint prova_mutacao_praca_da_cidade')
+      try {
+        await cli.query(`create or replace function public.vessel_praca_id_da_cidade(p_cidade text)
+          returns bigint language sql stable set search_path to 'public' as $mut$ select null::bigint $mut$`)
+        const foneMutadoCidade = '5519990006384'
+        const y = await chamarComoAnon(`public.vessel_pedido_do_stylist(p_nome => $1, p_whatsapp => $2, p_cidade => $3, p_teste => $4)`,
+          ['Prova LP Mutada', foneMutadoCidade, 'Piracicaba', false])
+        const mutada = await uma(`select id, praca_id::int as praca_id from public.vessel_stylists where whatsapp = $1`, [foneMutadoCidade])
+        const vinculosMutadaCidade = await r(`(select count(*)::int from public.vessel_stylist_na_edicao where stylist_id = $1)`, [mutada?.id])
+        const reprovouCidade = y.v?.ok === true && mutada?.praca_id === null && vinculosMutadaCidade === 0
+        console.log(`      ${reprovouCidade ? '✗' : '✓'} SEM a dedução: a inscrição gravou a stylist com praca_id=${mutada?.praca_id} e ${vinculosMutadaCidade} vínculo(s) — ${reprovouCidade ? 'fora de toda edição, calada (o defeito do IMPORTANTE 4)' : 'inesperado'}`)
+        conferir(reprovouCidade === true,
+          'MUTAÇÃO: sem `vessel_praca_id_da_cidade`, a inscrição pela landing page nasce SEM PRAÇA e fora de toda edição — prova que a dedução não é decoração',
+          { ok: y.v?.ok, praca_id: mutada?.praca_id, vinculos: vinculosMutadaCidade })
+      } finally {
+        await cli.query('rollback to savepoint prova_mutacao_praca_da_cidade')
+      }
+    } finally {
+      await cli.query('rollback to savepoint prova_praca_da_cidade')
+    }
+
+    // ══ REVISÃO FINAL — IMPORTANTE 6: VINCULAR A CIDADE ADOTA QUEM ESTÁ SEM PRAÇA ═
+    console.log('\n  · 10a-quater) REVISÃO FINAL (IMPORTANTE 6): vincular uma cidade à praça ADOTA as stylists daquela cidade que estão sem praça')
+    await cli.query('savepoint prova_adocao')
+    try {
+      x = await chamarGravando(`public.vessel_praca_criar(p_sigla => $1, p_nome => $2, p_loja_destino => $3)`, ['PVW', 'Praça de Prova W (adoção)', null])
+      const pracaW = x.v?.id
+      x = await chamarGravando(`public.vessel_edicao_criar(p_praca_id => $1, p_nome => $2, p_comeca_em => $3, p_termina_em => null)`, [pracaW, 'Edição W1', hoje])
+      const edicaoW1 = x.v?.id
+      await chamarGravando(`public.vessel_edicao_abrir(p_id => $1)`, [edicaoW1])
+
+      // três da MESMA cidade, escrita de três jeitos sujos (o achatamento tem
+      // de casar os três), sem praça nenhuma — é a pendência real da tela.
+      const semPracaA = await uma(`insert into public.vessel_stylists (codigo, nome, whatsapp, cidade, teste)
+         values ('STY-PROVA-ADOCAO-A', 'Prova Adoção A', '5519990006390', 'Vila Adoção', false) returning id`)
+      const semPracaB = await uma(`insert into public.vessel_stylists (codigo, nome, whatsapp, cidade, teste)
+         values ('STY-PROVA-ADOCAO-B', 'Prova Adoção B', '5519990006391', '  vila   adocao ', false) returning id`)
+      // esta é de TESTE: não pode ser adotada nem contada (critério único da casa)
+      const testeDaCidade = await uma(`insert into public.vessel_stylists (codigo, nome, whatsapp, cidade, teste)
+         values ('STY-PROVA-ADOCAO-T', 'Prova Adoção Teste', '5519990006392', 'Vila Adocao', true) returning id`)
+      // e esta JÁ TEM praça: vincular a cidade NÃO pode arrastá-la
+      const jaTemPraca = await uma(`insert into public.vessel_stylists (codigo, nome, whatsapp, cidade, praca_id, teste)
+         values ('STY-PROVA-ADOCAO-J', 'Prova Adoção Já Tem', '5519990006393', 'Vila Adocao', $1, false) returning id`, [pracaLim.id])
+
+      x = await chamarGravando(`public.vessel_praca_cidade_vincular(p_praca_id => $1, p_cidade => $2)`, [pracaW, 'Vila Adoção'])
+      conferir(x.v?.ok === true && x.v?.situacao === 'ok', 'praca_cidade_vincular: vincula "Vila Adoção" à praça W', x.v ?? x.e?.message)
+      conferir(x.v?.adotadas === 2,
+        'IMPORTANTE 6: a resposta diz `adotadas = 2` — as duas sem praça daquela cidade (a de teste e a que já tinha praça ficam de fora)', x.v)
+
+      const pracaDeA = await r(`(select praca_id::int from public.vessel_stylists where id = $1)`, [semPracaA.id])
+      const pracaDeB = await r(`(select praca_id::int from public.vessel_stylists where id = $1)`, [semPracaB.id])
+      conferir(pracaDeA === pracaW && pracaDeB === pracaW,
+        'e as duas passaram a ser da praça W DE VERDADE — medido na tabela, inclusive a que escreveu a cidade suja ("  vila   adocao ")',
+        { pracaDeA, pracaDeB, esperado: pracaW })
+      const pracaDaTeste = await r(`(select praca_id from public.vessel_stylists where id = $1)`, [testeDaCidade.id])
+      conferir(pracaDaTeste === null, 'a stylist de TESTE da mesma cidade NÃO foi adotada', pracaDaTeste)
+      const pracaDaQueJaTinha = await r(`(select praca_id::int from public.vessel_stylists where id = $1)`, [jaTemPraca.id])
+      conferir(pracaDaQueJaTinha === pracaLim.id,
+        'e quem JÁ TINHA praça NÃO foi arrastada — a adoção só preenche buraco, nunca troca de praça', pracaDaQueJaTinha)
+
+      const naEdicaoW1 = await r(`(select count(*)::int from public.vessel_stylist_na_edicao
+        where edicao_id = $1 and saiu_em is null and stylist_id = any($2::bigint[]))`, [edicaoW1, [semPracaA.id, semPracaB.id]])
+      conferir(naEdicaoW1 === 2,
+        'e as duas adotadas JÁ ENTRAM na edição ABERTA da praça — a adoção resolve a pendência INTEIRA, não só metade', naEdicaoW1)
+      const placarW1 = await chamarGravando(`public.vessel_placar_da_edicao(p_edicao_id => $1)`, [edicaoW1])
+      conferir(placarW1.v?.prospectadas === 2, 'e o placar de W1 passa a contar as duas', placarW1.v?.prospectadas)
+
+      // apertar de novo com a cidade JÁ vinculada continua adotando (é o
+      // botão que o dono aperta quando a pendência reaparece)
+      const semPracaC = await uma(`insert into public.vessel_stylists (codigo, nome, whatsapp, cidade, teste)
+         values ('STY-PROVA-ADOCAO-C', 'Prova Adoção C', '5519990006385', 'VILA ADOÇÃO', false) returning id`)
+      x = await chamarGravando(`public.vessel_praca_cidade_vincular(p_praca_id => $1, p_cidade => $2)`, [pracaW, 'Vila Adocao'])
+      conferir(x.v?.ok === true && x.v?.situacao === 'ja_vinculada' && x.v?.adotadas === 1,
+        'IMPORTANTE 6: com a cidade JÁ vinculada, a ação continua adotando quem chegou depois (`ja_vinculada`, adotadas = 1)', x.v)
+      const pracaDeC = await r(`(select praca_id::int from public.vessel_stylists where id = $1)`, [semPracaC.id])
+      conferir(pracaDeC === pracaW, 'e a stylist nova daquela cidade também virou da praça W', pracaDeC)
+
+      // MUTAÇÃO: sem o laço da adoção, vincular a cidade volta a não mover
+      // ninguém — a pendência continuaria eterna.
+      console.log('\n    · MUTAÇÃO: sem o laço da adoção, vincular a cidade não move ninguém — reprova')
+      await cli.query('savepoint prova_mutacao_adocao')
+      try {
+        const defVincular = (await uma(
+          `select pg_get_functiondef('public.vessel_praca_cidade_vincular(bigint,text)'::regprocedure) as def`)).def
+        const trechoDoLaco = /for v_stylist in[\s\S]*?end loop;/
+        if (!trechoDoLaco.test(defVincular)) throw new Error('a mutação não achou o laço da adoção — o texto da função mudou')
+        await cli.query(defVincular.replace(trechoDoLaco, 'v_adotadas := 0;'))
+
+        const orfaMutada = await uma(`insert into public.vessel_stylists (codigo, nome, whatsapp, cidade, teste)
+           values ('STY-PROVA-ADOCAO-MUT', 'Prova Adoção Mutada', '5519990006386', 'Vila Adoção', false) returning id`)
+        const y = await chamarGravando(`public.vessel_praca_cidade_vincular(p_praca_id => $1, p_cidade => $2)`, [pracaW, 'Vila Adocao'])
+        const pracaDaOrfa = await r(`(select praca_id from public.vessel_stylists where id = $1)`, [orfaMutada.id])
+        const reprovouAdocao = y.v?.ok === true && y.v?.adotadas === 0 && pracaDaOrfa === null
+        console.log(`      ${reprovouAdocao ? '✗' : '✓'} SEM o laço: adotadas=${y.v?.adotadas} e a stylist continuou com praca_id=${pracaDaOrfa} — ${reprovouAdocao ? 'a pendência "sem praça" continua eterna (o defeito do IMPORTANTE 6)' : 'inesperado'}`)
+        conferir(reprovouAdocao === true,
+          'MUTAÇÃO: sem o laço, vincular a cidade cria só a linha do cadastro e não move ninguém — prova que a adoção não é decoração',
+          { adotadas: y.v?.adotadas, praca_id: pracaDaOrfa })
+      } finally {
+        await cli.query('rollback to savepoint prova_mutacao_adocao')
+      }
+    } finally {
+      await cli.query('rollback to savepoint prova_adocao')
     }
 
     console.log('\n  · 10b) o recorte por praça e por edição, com as praças DE VERDADE')
@@ -1951,6 +2271,58 @@ try {
   conferir(JSON.stringify(depoisDaProva) === JSON.stringify(antes), 'as provas não deixaram rastro nos dados de antes (stylists/private_edits/etapas)', { antes, depoisDaProva })
   const semProva = await uma(`select count(*)::int as n from public.vessel_stylists where codigo like 'STY-PROVA-%'`)
   conferir(semProva.n === 0, 'nenhuma stylist de prova sobrou', semProva)
+
+  // ══ O INVARIANTE DO ARQUIVO (revisão final) ═══════════════════════
+  // As funções recriadas na seção 14 são cópia LETRA POR LETRA das da seção 9,
+  // diferindo SÓ na linha do `vessel_pode`. Isto não é estilo: é o que faz um
+  // conserto feito numa cópia valer na outra. Já escapou uma divergência
+  // silenciosa por aqui, e ler as duas a olho não pega.
+  //
+  // ⚠️ O DIFF É SOBRE O TEXTO DO ARQUIVO (a variável `sql`, lida do disco lá
+  // no topo) — nunca sobre `pg_get_functiondef`, que só mostra a ÚLTIMA
+  // versão e portanto NUNCA acusaria as duas cópias divergindo.
+  console.log('\n── o invariante do arquivo: seção 14 = seção 9, trocando SÓ a linha do vessel_pode')
+  {
+    const definicoes = new Map()
+    const achar = /^create or replace function (public\.\w+)\([\s\S]*?^\$\$;$/gm
+    for (const m of sql.matchAll(achar)) {
+      if (!definicoes.has(m[1])) definicoes.set(m[1], [])
+      definicoes.get(m[1]).push(m[0])
+    }
+    let pares = 0
+    for (const [nome, defs] of [...definicoes].sort()) {
+      if (defs.length === 1) continue
+      conferir(defs.length === 2, `${nome}: nasce no máximo DUAS vezes no arquivo (seção 9 e seção 14)`, defs.length)
+      if (defs.length !== 2) continue
+      // ⚠️ A GUARDA OCUPA UM NÚMERO DIFERENTE DE LINHAS nos dois lados (a da
+      // seção 14 é um OU de até quatro chaves), então comparar linha a linha
+      // acusaria o arquivo inteiro como diferente a partir dali — um alarme
+      // falso que esconderia a divergência de verdade. A guarda sai dos dois
+      // lados, virando um marcador Único, e o que SOBRA tem de ser idêntico
+      // byte a byte. A guarda é sempre o primeiro `if not … then` do corpo.
+      const GUARDA = /^\s*if not [\s\S]*? then$/m
+      const [a, b] = defs
+      const guardaA = (a.match(GUARDA) || [''])[0]
+      const guardaB = (b.match(GUARDA) || [''])[0]
+      conferir(guardaA.includes('vessel_pode') && guardaB.includes('vessel_pode'),
+        `${nome}: o primeiro \`if not … then\` das duas cópias é mesmo a trava de permissão`, { guardaA, guardaB })
+      const restoA = a.replace(GUARDA, '  <<TRAVA>>')
+      const restoB = b.replace(GUARDA, '  <<TRAVA>>')
+      const linhasA = restoA.split('\n'), linhasB = restoB.split('\n')
+      const diferentes = []
+      for (let i = 0; i < Math.max(linhasA.length, linhasB.length); i++) {
+        if (linhasA[i] !== linhasB[i]) diferentes.push({ n: i + 1, a: linhasA[i], b: linhasB[i] })
+      }
+      conferir(restoA === restoB,
+        `${nome}: tirando a trava, as duas cópias são idênticas letra por letra (${diferentes.length} linha(s) fora)`,
+        diferentes.slice(0, 6))
+      conferir(guardaA !== guardaB, `${nome}: e a trava É a diferença (a seção 14 recortou a chave de verdade)`, guardaA)
+      pares++
+    }
+    conferir(pares === 10, `os 10 pares de função da seção 9/14 foram conferidos por diff de verdade (conferidos: ${pares})`, pares)
+    const placares = (sql.match(/create or replace function public\.vessel_placar_da_edicao\(/g) || []).length
+    conferir(placares === 1, 'MENOR 1: vessel_placar_da_edicao nasce UMA vez só no arquivo (a cópia da antiga seção 15 foi apagada)', placares)
+  }
 
   if (falhas.length) throw new Error(`${falhas.length} conferência(s) falharam`)
   if (GRAVAR) {
