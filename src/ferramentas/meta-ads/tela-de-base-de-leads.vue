@@ -49,7 +49,7 @@
 
       <section class="bl-cartao card-base">
         <h2 class="bl-titulo-secao id-titulo"><icone-do-bloco nome="lista" />Registros</h2>
-        <p class="bl-explicacao">Cada evento, mais recente primeiro. O pop-up ainda não sabe de qual anúncio a pessoa veio — só o checkout e o pedido de atendimento têm essa atribuição.</p>
+        <p class="bl-explicacao">Cada evento, mais recente primeiro, com a origem (Meta Ads, Google Ads, UTM ou direto/orgânico) quando identificada.</p>
         <p v-if="carregando" class="bl-carregando">Carregando…</p>
         <p v-else-if="!erro && !linhas.length" class="bl-vazio">Nenhum lead neste período.</p>
         <div v-else class="bl-tabela-scroll"><table class="bl-tabela">
@@ -110,7 +110,7 @@ async function carregar() {
       .select('criado_em,session_id,utm_source,utm_medium,utm_campaign,gclid,referrer,fbp,fbc')
       .eq('tipo', 'checkout_iniciado').gte('criado_em', desde).limit(LIMITE_LEADS),
     sbClient.from('vessel_lista_espera')
-      .select('criado_em,nome,email,whatsapp').gte('criado_em', desde).limit(LIMITE_LEADS),
+      .select('criado_em,nome,email,whatsapp,utm_source,utm_medium,utm_campaign,clique_meta').gte('criado_em', desde).limit(LIMITE_LEADS),
     sbClient.from('vessel_atendimentos')
       .select('pessoa_id,criado_em').gte('criado_em', desde).limit(LIMITE_LEADS),
   ])
