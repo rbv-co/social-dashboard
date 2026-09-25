@@ -154,7 +154,7 @@ test('conversa e lead não aparecem como duas linhas "Custo por lead" indistingu
     // Rodada de correção 1 (25/09/2026): esta prova só checava que as duas
     // ocorrências eram DIFERENTES entre si — passava com QUALQUER texto
     // distinto, inclusive lixo. Foi assim que "Custo por lead — lead" (o
-    // fallback cru de ROTULO_BALDE, sem entrada pra `lead`) atravessou a
+    // fallback cru de ROTULO_MERCADO, sem entrada pra `lead`) atravessou a
     // suíte inteira sem um teste acusar. Agora a prova é o TEXTO esperado,
     // não só a diferença.
     const ocorrencias = alvo.innerHTML.match(/Custo por lead[^<]*/g) || [];

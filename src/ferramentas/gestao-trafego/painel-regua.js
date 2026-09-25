@@ -75,7 +75,7 @@ const ROTULO_PESO = {
 // que vai DEPOIS do "—" numa colisão (ou o nome da linha, ou o título do
 // exemplo): português que signifique algo pra quem não conhece o nome da
 // chave no código.
-const ROTULO_BALDE = {
+const ROTULO_MERCADO = {
   conversa: 'conversa no WhatsApp', lead: 'cadastro', perfil: 'visita ao perfil',
   video: 'vídeo', post: 'engajamento no post', site_venda: 'venda no site',
   site_trafego: 'tráfego para o site', reconhecimento: 'alcance',
@@ -105,7 +105,7 @@ const inteiro = (v) => Number(v || 0).toLocaleString('pt-BR');
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 // `formato` é a unidade que mora DENTRO da caixa do campo — vem direto de
-// ALVOS[balde].unidade ('R$' hoje, pra toda meta) na linha de meta; peso e
+// ALVOS[mercado].unidade ('R$' hoje, pra toda meta) na linha de meta; peso e
 // limiar não têm unidade (são números puros), então chamam sem este argumento.
 // Sem ela o número fica solto e o rótulo precisa carregar a unidade, o que
 // alongava a linha.
@@ -121,18 +121,18 @@ function campo(id, valor, passo, editavel, formato) {
   return `<span class="pnd-campo">${pre}<input class="pnd-input" id="${esc(id)}" type="number" min="0" step="${passo}" value="${esc(valor)}"></span>`;
 }
 
-// Baldes da Seção 2: TODO ALVO (ATUALIZAÇÃO 24/09/2026 — antes era todo ALVO
+// Mercados da Seção 2: TODO ALVO (ATUALIZAÇÃO 24/09/2026 — antes era todo ALVO
 // MENOS engajamento; agora engajamento entrou aqui também, porque passou a
 // ser julgado por RESULTADO, custo por engajamento bruto, não mais pelo ponto
 // ponderado). Mantém a ORDEM de ALVOS — é a mesma ordem usada pra achar o
 // primeiro com meta salva, no preview dos limiares da Seção 2.
-const BALDES_SECAO2 = Object.keys(ALVOS);
+const MERCADOS_SECAO2 = Object.keys(ALVOS);
 
 // Tira o "Custo por " do rótulo do alvo pra virar sufixo do preview ("por
 // conversa iniciada", "por lead"...) — nunca um texto novo, só o que ALVOS já
 // diz encurtado pra caber ao lado do valor em reais.
-function sufixoDoAlvo(balde) {
-  const rotulo = (ALVOS[balde] && ALVOS[balde].rotulo) || '';
+function sufixoDoAlvo(mercado) {
+  const rotulo = (ALVOS[mercado] && ALVOS[mercado].rotulo) || '';
   return rotulo.replace(/^Custo por\s*/i, 'por ');
 }
 
@@ -146,28 +146,28 @@ function sufixoDoAlvo(balde) {
 // desambiguar, ele digitaria a meta na linha errada sem ter como perceber (as
 // duas leem "Custo por lead"). NÃO mexe em ALVOS[...].rotulo (o cartão
 // continua igual): a mudança fica só na montagem desta linha, juntando o
-// nome do balde (ROTULO_BALDE, que já é único por construção) só quando há
-// colisão de verdade — os demais rótulos, que já são únicos, saem sem sufixo
-// nenhum.
+// nome do mercado (ROTULO_MERCADO, que já é único por construção) só quando
+// há colisão de verdade — os demais rótulos, que já são únicos, saem sem
+// sufixo nenhum.
 //
-// ⚠️ ROTULO_BALDE precisa ter uma entrada para TODO mercado de ALVOS — se
+// ⚠️ ROTULO_MERCADO precisa ter uma entrada para TODO mercado de ALVOS — se
 // faltar uma, o `|| b` cai no nome cru da chave (foi exatamente isso que
 // produziu "Custo por lead — lead" na rodada de correção 1: `lead` não
-// existia neste mapa ainda). Ver o comentário de ROTULO_BALDE.
-function rotuloDaLinha(baldes) {
+// existia neste mapa ainda). Ver o comentário de ROTULO_MERCADO.
+function rotuloDaLinha(mercados) {
   const contagem = {};
-  for (const b of baldes) {
+  for (const b of mercados) {
     const r = ALVOS[b].rotulo;
     contagem[r] = (contagem[r] || 0) + 1;
   }
   const mapa = {};
-  for (const b of baldes) {
+  for (const b of mercados) {
     const a = ALVOS[b];
-    mapa[b] = contagem[a.rotulo] > 1 ? `${a.rotulo} — ${ROTULO_BALDE[b] || b}` : a.rotulo;
+    mapa[b] = contagem[a.rotulo] > 1 ? `${a.rotulo} — ${ROTULO_MERCADO[b] || b}` : a.rotulo;
   }
   return mapa;
 }
-const ROTULO_LINHA_SECAO2 = rotuloDaLinha(BALDES_SECAO2);
+const ROTULO_LINHA_SECAO2 = rotuloDaLinha(MERCADOS_SECAO2);
 
 // A PERSONA DA MARCA — quem a conta atende, escrito pelo dono.
 //
@@ -299,7 +299,7 @@ export function montarPainelRegua(alvo, opcoes) {
   // em regua.js — só diverge do nome do balde em engajamento, cuja meta nova
   // mora em `engajamento_bruto` pra não sobrescrever a antiga (`engajamento`,
   // que só a Seção 1 ainda lê — ver pintarLimiaresSecao1 abaixo).
-  const linhasMeta = BALDES_SECAO2.map((b) => {
+  const linhasMeta = MERCADOS_SECAO2.map((b) => {
     const a = ALVOS[b];
     const chave = a.chaveMeta || b;
     const temMeta = regua.metas[chave] != null;
@@ -313,7 +313,7 @@ export function montarPainelRegua(alvo, opcoes) {
     const praticado = (b === 'engajamento' && custoEngajamentoPraticado != null)
       ? `<div class="pnd-limiar-prev">você paga ${reais(custoEngajamentoPraticado)} por engajamento — ${esc(custoEngajamentoPraticadoPeriodo || 'no período selecionado')}</div>` : '';
     return `<tr>
-      <td><div class="pnd-alvo-nome">${esc(ROTULO_BALDE[b] || b)}</div><div class="pnd-alvo-ajuda">${esc(ROTULO_LINHA_SECAO2[b])} — ${esc(a.ajuda)}</div>${nota}</td>
+      <td><div class="pnd-alvo-nome">${esc(ROTULO_MERCADO[b] || b)}</div><div class="pnd-alvo-ajuda">${esc(ROTULO_LINHA_SECAO2[b])} — ${esc(a.ajuda)}</div>${nota}</td>
       <td>${campo('pnd-meta-' + chave, valor, '0.01', editavel, a.unidade)}${praticado}</td>
     </tr>`;
   }).join('');
@@ -409,7 +409,7 @@ export function montarPainelRegua(alvo, opcoes) {
     // Se o dono apagar um campo sem querer, o valor volta pro que a régua JÁ TINHA
     // (não pro padrão de fábrica) — senão um peso 50 customizado vira 30 no silêncio.
     for (const k of Object.keys(PESOS_PADRAO)) pesos[k] = ler('pnd-peso-' + k, regua.pesos[k]);
-    // Percorre ALVOS (não ROTULO_BALDE nem regua.metas) — é a MESMA lista que
+    // Percorre ALVOS (não ROTULO_MERCADO nem regua.metas) — é a MESMA lista que
     // desenhou as linhas de meta, todas na Seção 2 agora (24/09/2026). Um
     // balde fora de ALVOS não tem <input> na tela: 'pnd-meta-<chave>' não
     // existe no DOM, `ler` devolve o padrão 0, e a linha abaixo não grava a
@@ -495,9 +495,9 @@ export function montarPainelRegua(alvo, opcoes) {
   // duplicar essa resolução (ver reguaDaTela, mais acima, que grava do lado
   // oposto pela mesma chave).
   function primeiroAlvoComMeta(r) {
-    for (const b of BALDES_SECAO2) {
+    for (const b of MERCADOS_SECAO2) {
       const v = metaDoBalde(r, b);
-      if (Number.isFinite(v) && v > 0) return { balde: b, meta: v };
+      if (Number.isFinite(v) && v > 0) return { mercado: b, meta: v };
     }
     return null;
   }
@@ -517,7 +517,7 @@ export function montarPainelRegua(alvo, opcoes) {
       const multValido = Number.isFinite(mult) && mult > 0;
       if (!multValido) { el.textContent = 'defina o multiplicador'; continue; }
       if (!base) { el.textContent = `× ${mult.toLocaleString('pt-BR')}`; continue; }
-      el.textContent = `× ${mult.toLocaleString('pt-BR')} = ${reais(mult * base.meta)} ${sufixoDoAlvo(base.balde)}`;
+      el.textContent = `× ${mult.toLocaleString('pt-BR')} = ${reais(mult * base.meta)} ${sufixoDoAlvo(base.mercado)}`;
     }
   }
 
@@ -555,7 +555,7 @@ export function montarPainelRegua(alvo, opcoes) {
     const aval = avaliarAlvo({ custo, meta, limiares: limiaresDoExemplo });
     const faixa = FAIXA[aval.faixa] || FAIXA['sem-dados'];
     const rotulo = ex.rotulo || (alvoObj ? alvoObj.rotulo : 'Custo por resultado');
-    const titulo = ex.titulo || ROTULO_BALDE[chave] || chave;
+    const titulo = ex.titulo || ROTULO_MERCADO[chave] || chave;
     // Detalhe: engajamento mostra a quebra das interações (que muda ao vivo com os
     // pesos); os demais mostram a quantidade do resultado que compraram.
     const detalhe = ehPonderada
