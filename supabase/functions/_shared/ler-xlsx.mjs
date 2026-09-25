@@ -9,13 +9,16 @@
 // Excel chama de data. É com ele que o teste do gerador e a prova ao vivo
 // conferem célula por célula.
 //
-// Ele NÃO é um leitor de xlsx de mercado: entende só o que o nosso gerador
-// escreve (texto embutido, número, e data pelo formato da coluna). Arquivo de
-// fora, com `sharedStrings`, não é assunto dele.
-// ⚠️ `.mjs` e não `.js`: este é o único destes arquivos que NÃO roda na edge.
-// Ele usa `Buffer` e `node:zlib`, que são do node, e serve só para os testes e
-// para a prova ao vivo lerem de volta o que o gerador escreveu.
+// Ele NÃO é um leitor de xlsx de mercado, mas desde 25/09/2026 entende também
+// arquivo salvo pelo Excel/Zoho (textos compartilhados, atributos fora de
+// ordem) — ver `ler-xlsx-de-fora.test.mjs`.
+// ⚠️ DESDE 25/09/2026 ELE RODA TAMBÉM NA EDGE (`vessel-triagem-da-vaga`, que
+// relê a planilha do RH para não apagar o que o RH editou). Por isso o `Buffer`
+// vem de `node:buffer` em vez do escopo global: o Deno não tem `Buffer` global,
+// e sem o import a edge cairia no primeiro uso. `node:zlib` existe no runtime
+// da Supabase — medido em produção em 21/09/2026 (ver `planilha-xlsx.js`).
 import { inflateRawSync } from 'node:zlib';
+import { Buffer } from 'node:buffer';
 
 /** Nome do arquivo interno → texto. Lê pelo índice central, como manda o zip. */
 export function arquivosDoXlsx(bytes) {
