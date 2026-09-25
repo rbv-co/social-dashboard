@@ -375,6 +375,7 @@ Seis destas regras não dependem mais de você lembrar delas — `npm test` repr
 | Tamanho de texto sai da escala (tela de Autenticidade) | `escala-de-texto.test.mjs` |
 | Diretiva usada está registrada | `diretiva-usada-esta-registrada.test.mjs` |
 | Todo `.vue` compila | `todo-vue-compila.test.mjs` |
+| Função nova do Comercial Vessel não usa a trava da família (lembrete) | `db/permissao-por-tela-no-banco.test.mjs` |
 
 **Precisa de uma exceção?** Adicione no teste, com o motivo escrito ao lado —
 como já estão lá marca de terceiro, identidade de módulo, medalha de ranking e
@@ -395,6 +396,21 @@ Cartão de menu pergunta `podeAbrir('<rota>')`, nunca `hasPermission` à mão.
 O teste `catalogo-de-ferramentas.test.mjs` reprova rota, cartão ou chave fora
 do catálogo. Chave que é pedaço de uma que já existe vem com pré-concessão
 **aditiva** (migration + `coletor/aplicar-*.mjs`) para quem já tem a mãe.
+
+**E no banco, a função confere a chave DA SUA tela** (B13, 25/09/2026). Função
+`security definer` de uma tela só do Comercial Vessel começa por
+`if not public.vessel_pode('<chave da tela>', 'ver'|'editar') then` — nunca pela
+trava da família (`is_vessel_atendimentos()` / `_editar()`), que aceita qualquer
+tela: com ela, quem tinha só o Material Gráfico lia o histórico de contato das
+parceiras chamando o banco por fora da Central. Função chamada por duas telas
+aceita as duas (`vessel_pode(a) or vessel_pode(b)`), com o porquê escrito na
+migration. `ver` para ler, `editar` para gravar. Tela nova do Comercial Vessel
+que chama o banco também entra na lista fechada de `vessel_pode` (numa migration
+nova que recria a função). O teste `db/permissao-por-tela-no-banco.test.mjs`
+reprova migration nova com a família sem o marcador `-- familia: <motivo>` — é
+**lembrete** de texto; o portão de verdade é o `if` dentro de cada função, e a
+prova é chamar a função com um perfil de mentira de cada tela (ver
+`coletor/aplicar-vessel-permissao-por-tela-no-banco.mjs`).
 
 ## 10. Antes de dizer que acabou
 

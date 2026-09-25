@@ -141,10 +141,11 @@ export const FRASES = {
       + 'esse clique que alimenta a taxa de comparecimento.',
   },
   // ── As telas do Comercial Vessel que ganharam chave própria em 24/09/2026.
-  // A trava do banco é a da família (`is_vessel_atendimentos*`, que aceita
-  // 'atendimentos' ou 'atendimentos.<tela>'): "mexer" aqui chama funções que
-  // CONFEREM a ação editar por dentro — tirar o acesso fecha a porta de
-  // verdade. Ações conferidas em beauty-sessions-regras.js,
+  // No banco, cada função confere a chave DA SUA tela (`vessel_pode(tela,
+  // nível)`, B13 — db/migrations/2026-09-25-vessel-permissao-por-tela-no-banco.sql;
+  // antes dele, a trava era a da família `is_vessel_atendimentos*`): "mexer"
+  // aqui chama funções que CONFEREM a ação editar por dentro — tirar o acesso
+  // fecha a porta de verdade. Ações conferidas em beauty-sessions-regras.js,
   // private-edit-regras.js e stylist-circle-regras.js (ACOES_QUE_EXIGEM_EDITAR).
   'atendimentos.beauty-sessions': {
     sem: 'O Beauty Sessions não aparece no menu do Comercial Vessel dela.',

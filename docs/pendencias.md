@@ -460,17 +460,46 @@ motivo da saída.
 
 ## Parte B — Precisa programar
 
-### B13 · No banco, as telas do Comercial Vessel ainda se abrem umas às outras · *entrou em 24/09/2026*
+### B13 · No banco, as telas do Comercial Vessel ainda se abrem umas às outras · *entrou em 24/09/2026 · conserto pronto em 25/09/2026, falta GRAVAR*
 
 Desde 24/09 cada ferramenta do Comercial Vessel tem permissão própria (Private
 Appointment, Beauty Sessions, Private Edit, Stylist Circle, Material Gráfico,
-Appointment Card) e a **Central** respeita cada uma. Mas as ~40 funções do banco
-ainda conferem a permissão da **família** (`is_vessel_atendimentos()` /
-`_editar()`): quem tem só uma das telas consegue chamar as funções das outras
-**por fora da Central**. Pela tela, não. O dono concordou em deixar para uma
-próxima rodada. Conserto: cada função passa a conferir a chave da SUA tela
-(`catalogo-de-ferramentas.js` diz qual), com aplicador e prova por perfil.
+Appointment Card) e a **Central** respeita cada uma. Mas as funções do banco
+conferiam a permissão da **família** (`is_vessel_atendimentos()` / `_editar()`):
+quem tinha só uma das telas chamava as funções das outras **por fora da
+Central** (ex.: só Material Gráfico lia o histórico de contato das parceiras;
+só Beauty Sessions com "mexer" criava Private Edit).
 
+**Conserto pronto, ensaio limpo em 25/09/2026** —
+`db/migrations/2026-09-25-vessel-permissao-por-tela-no-banco.sql` +
+`coletor/aplicar-vessel-permissao-por-tela-no-banco.mjs`. Trava nova
+`vessel_pode(tela, nível)` (lê `permissions`, o mesmo campo da Central;
+super-admin sempre; conta desativada nunca). **49 funções** trocam a família
+pela chave da sua tela, no mesmo nível de hoje; **5 políticas** de leitura
+(private_edits, sessao_aberturas, stylist_aberturas, convite_aberturas,
+client_advisors) passam a pedir a chave da tela. Compartilhadas: as três listas
+dos QR aceitam também o Material Gráfico; as etapas do funil, Stylist Circle ou
+Private Edit; a porta da presença, Private Appointment ou Private Edit. Conferido
+com os 24 perfis reais: **ninguém perde nem ganha nada que usa pela Central**.
+**Falta o dono mandar gravar** (`--gravar`).
+
+**Três decisões que ficaram com o dono:**
+- **A base comum** (`vessel_pessoas`, `vessel_atendimentos`, `vessel_pedidos`,
+  `vessel_pedido_itens`) continua legível por **qualquer** tela do Comercial
+  Vessel. Medido: hoje só o Private Appointment lê essas tabelas direto. Fechar
+  nele é uma linha por tabela — mas quem tem só Material Gráfico ainda consegue
+  ler nome e telefone das clientes por fora da Central.
+- **`vessel_rastreio_dos_stylists`** (lista das parceiras) devolve WhatsApp e
+  Instagram também para o Material Gráfico, que não os mostra. Recortar é mexer
+  na resposta da função.
+- **`vessel_situacao_do_atendimento`** (marcar veio/não veio) GRAVA pedindo só
+  "ver" — foi mantido, porque a regra era não apertar nada além da separação
+  por tela.
+
+⚠️ Achado no caminho: há **8 contas de prova** (`prova-*@teste.invalido`) em
+`auth.users`/`profiles` de produção, com chaves do Comercial Vessel. Vieram de
+aplicadores de 24–25/09 que criaram os perfis de prova fora do savepoint e
+gravaram. Não foram apagadas (não se mexe em dado sem o dono).
 
 **Vazia desde 21/09/2026.** Os últimos itens daqui foram o **B12** (entrou e
 saiu no mesmo dia) e o **B9**. Também saíram nesta revisão o **B10** e o
