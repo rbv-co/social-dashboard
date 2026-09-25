@@ -144,6 +144,13 @@ export const FERRAMENTAS = [
   { key: 'atendimentos.stylist-circle', label: 'Stylist Circle', acoes: ['ver', 'editar'], grupo: 'atendimentos', rotas: ['stylist-circle'] },
   { key: 'atendimentos.material-grafico', label: 'Material Gráfico', acoes: ['ver'], grupo: 'atendimentos', rotas: ['material-grafico'] },
   { key: 'atendimentos.appointment-card', label: 'Appointment Card', acoes: ['ver'], grupo: 'atendimentos', links: ['appointment-card'] },
+  // Praça e Edição do Stylist Circle (25/09/2026, Task 6): chave PRÓPRIA desde
+  // o nascimento — nasceram como recorte de 'atendimentos.stylist-circle' (a
+  // trava do banco, db/migrations/2026-09-25-vessel-praca-e-edicao.sql seção
+  // 14, dava as funções de cadastro só a ela) e ganham a chave própria já
+  // nesta entrega, com pré-concessão ADITIVA para quem já tinha a mãe.
+  { key: 'atendimentos.pracas', label: 'Praças', acoes: ['ver', 'editar'], grupo: 'atendimentos', rotas: ['pracas'] },
+  { key: 'atendimentos.edicoes', label: 'Edições', acoes: ['ver', 'editar'], grupo: 'atendimentos', rotas: ['edicoes'] },
   // O Funil de Carrinho mora no menu do Comercial Vessel: o editor o mostra
   // no mesmo cartão. A chave continua 'carrinho' (nunca renomear).
   { key: 'carrinho', label: 'Funil de Carrinho', acoes: ['ver'], grupo: 'atendimentos', rotas: ['funil-carrinho'] },

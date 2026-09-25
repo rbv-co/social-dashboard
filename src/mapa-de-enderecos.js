@@ -24,6 +24,10 @@ const rotasSemMeta = [
   // editor. A trava do banco (`is_vessel_atendimentos*`) aceita o prefixo.
   { path: '/private-edit', name: 'private-edit', component: () => import('./ferramentas/comercial-vessel/tela-de-private-edit.vue') },
   { path: '/stylist-circle', name: 'stylist-circle', component: () => import('./ferramentas/comercial-vessel/tela-de-stylist-circle.vue') },
+  // Praça e Edição (25/09/2026): cadastro recortado de 'atendimentos.stylist-circle' —
+  // chave própria desde o nascimento (Task 6).
+  { path: '/pracas', name: 'pracas', component: () => import('./ferramentas/comercial-vessel/tela-de-pracas.vue') },
+  { path: '/edicoes', name: 'edicoes', component: () => import('./ferramentas/comercial-vessel/tela-de-edicoes.vue') },
   { path: '/beauty-sessions', name: 'beauty-sessions', component: () => import('./ferramentas/beauty-sessions/tela-de-beauty-sessions.vue') },
   // Os QR de cada ação do Growth Plan (23/09/2026).
   { path: '/material-grafico', name: 'material-grafico', component: () => import('./ferramentas/comercial-vessel/tela-de-material-grafico.vue') },

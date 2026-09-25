@@ -49,6 +49,26 @@
           <span class="cvmenu-card-enter">→</span>
         </div>
 
+        <!-- Praça e Edição (25/09/2026): o cadastro por trás do Stylist
+             Circle — chave própria desde o nascimento (Task 6). -->
+        <div class="cvmenu-card" v-if="podeAbrir('pracas')" @click="ir('pracas')">
+          <div class="cvmenu-card-icon" style="background:linear-gradient(135deg,#1e5f74 0%,#7fb8cc 100%)">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>
+          </div>
+          <div class="cvmenu-card-title">Praças</div>
+          <div class="cvmenu-card-desc">Sigla, nome, a loja que atende e as cidades de cada praça do Stylist Circle.</div>
+          <span class="cvmenu-card-enter">→</span>
+        </div>
+
+        <div class="cvmenu-card" v-if="podeAbrir('edicoes')" @click="ir('edicoes')">
+          <div class="cvmenu-card-icon" style="background:linear-gradient(135deg,#1e5f74 0%,#3d9bb5 100%)">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></svg>
+          </div>
+          <div class="cvmenu-card-title">Edições</div>
+          <div class="cvmenu-card-desc">As rodadas de cada praça: criar, abrir e encerrar, levando quem não ativou.</div>
+          <span class="cvmenu-card-enter">→</span>
+        </div>
+
         <!-- Os QR das três ações acima, para a gráfica. -->
         <div class="cvmenu-card" v-if="podeAbrir('material-grafico')" @click="ir('material-grafico')">
           <div class="cvmenu-card-icon" style="background:linear-gradient(135deg,#556b2f 0%,#8a9a4b 100%)">

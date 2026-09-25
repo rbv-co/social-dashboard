@@ -305,10 +305,20 @@ try {
     // ⚠️ RODADA 1 DE CONSERTO: idEditar ganha também `atendimentos.private-edit`
     // — precisa para chamar `vessel_criar_private_edit` (uma das 4 portas do
     // conserto do CRÍTICO) pelas provas novas do passo 10/11.
+    // ⚠️ TASK 6: idEditar ganha TAMBÉM `atendimentos.pracas`/`atendimentos.
+    // edicoes` — é exatamente a pré-concessão ADITIVA da migration (seção 14):
+    // quem já tinha `atendimentos.stylist-circle` (editar) recebe as duas
+    // chaves novas no mesmo nível. Sem isto, a esteira inteira (passos 1, 1b,
+    // 3-11, que já provam a REGRA DE NEGÓCIO de praça/edição) pararia de
+    // funcionar só por causa do recorte de chave — o passo 1c, abaixo, é quem
+    // prova o recorte em si, com perfis PRÓPRIOS.
     await cli.query(`insert into public.profiles (id, email, name, features, permissions, is_superadmin, disabled) values
         ($1, $2, 'Prova — Stylist Circle (editar)', array['atendimentos.stylist-circle','atendimentos.private-edit','atendimentos'], $3::jsonb, false, false),
         ($4, $5, 'Prova — Stylist Circle (ver)',    array['atendimentos.stylist-circle','atendimentos'], $6::jsonb, false, false)`,
-      [idEditar, emailEditar, JSON.stringify({ 'atendimentos.stylist-circle': ['ver', 'editar'], 'atendimentos.private-edit': ['ver', 'editar'] }),
+      [idEditar, emailEditar, JSON.stringify({
+        'atendimentos.stylist-circle': ['ver', 'editar'], 'atendimentos.private-edit': ['ver', 'editar'],
+        'atendimentos.pracas': ['ver', 'editar'], 'atendimentos.edicoes': ['ver', 'editar'],
+      }),
        idVer, emailVer, JSON.stringify({ 'atendimentos.stylist-circle': ['ver'] })])
     const hoje = await r(`current_date::text`)
 
@@ -389,6 +399,113 @@ try {
       await cli.query('rollback to savepoint prova_menor7')
     }
 
+    console.log('\n  · 1c) TASK 6 — O RECORTE DE CHAVE: quem TEM atendimentos.pracas/edicoes consegue SEM stylist-circle; quem só tem stylist-circle (sem a chave recortada) é recusado')
+    // Num savepoint próprio, desfeito no fim — os mesmos três perfis de
+    // mentira do passo 1/2 continuam servindo o resto do arquivo sem que esta
+    // praça/edição de prova ('PVR') sobre para as contagens finais.
+    await cli.query('savepoint prova_recorte_de_chave')
+    try {
+      const idSoRecorte = randomUUID(), idSoStylistCircle = randomUUID(), idSoPrivateEdit = randomUUID()
+      const emailSoRecorte = `prova-praca-so-recorte-${idSoRecorte}@teste.invalido`
+      const emailSoStylistCircle = `prova-praca-so-sty-${idSoStylistCircle}@teste.invalido`
+      const emailSoPrivateEdit = `prova-praca-so-pe-${idSoPrivateEdit}@teste.invalido`
+      await cli.query(`insert into auth.users (id, email) values ($1, $2), ($3, $4), ($5, $6)`,
+        [idSoRecorte, emailSoRecorte, idSoStylistCircle, emailSoStylistCircle, idSoPrivateEdit, emailSoPrivateEdit])
+      await cli.query(`insert into public.profiles (id, email, name, features, permissions, is_superadmin, disabled) values
+          ($1, $2, 'Prova — SÓ Praças/Edições (Task 6)',    array['atendimentos.pracas','atendimentos.edicoes'], $3::jsonb, false, false),
+          ($4, $5, 'Prova — SÓ Stylist Circle (sem recorte)', array['atendimentos.stylist-circle'], $6::jsonb, false, false),
+          ($7, $8, 'Prova — SÓ Private Edit (ver)',          array['atendimentos.private-edit'], $9::jsonb, false, false)`,
+        [idSoRecorte, emailSoRecorte, JSON.stringify({ 'atendimentos.pracas': ['ver', 'editar'], 'atendimentos.edicoes': ['ver', 'editar'] }),
+         idSoStylistCircle, emailSoStylistCircle, JSON.stringify({ 'atendimentos.stylist-circle': ['ver', 'editar'] }),
+         idSoPrivateEdit, emailSoPrivateEdit, JSON.stringify({ 'atendimentos.private-edit': ['ver'] })])
+
+      // (a) quem TEM atendimentos.pracas/atendimentos.edicoes, SEM NENHUM
+      // stylist-circle, consegue a esteira INTEIRA de cadastro — prova que o
+      // recorte não é decoração: a chave nova sozinha já basta.
+      await falarComo(idSoRecorte)
+      let x = await chamarGravando(`public.vessel_praca_criar(p_sigla => $1, p_nome => $2, p_loja_destino => $3)`, ['PVR', 'Praça de Prova do Recorte', null])
+      conferir(x.v?.ok === true && x.v?.situacao === 'ok', 'praca_criar: quem só tem atendimentos.pracas (sem stylist-circle) CONSEGUE criar', x.v ?? x.e?.message)
+      const pracaR = x.v?.id
+
+      x = await chamarGravando(`public.vessel_praca_editar(p_id => $1, p_nome => $2, p_loja_destino => $3, p_ativa => $4)`,
+        [pracaR, 'Praça de Prova do Recorte (editada)', 'loja-recorte', true])
+      conferir(x.v?.ok === true && x.v?.situacao === 'ok', 'praca_editar: idem, consegue editar', x.v ?? x.e?.message)
+
+      x = await chamarGravando(`public.vessel_praca_cidade_vincular(p_praca_id => $1, p_cidade => $2)`, [pracaR, 'Cidade de Prova do Recorte'])
+      conferir(x.v?.ok === true && x.v?.situacao === 'ok', 'praca_cidade_vincular: idem, consegue vincular', x.v ?? x.e?.message)
+      const cidadeR = x.v?.id
+
+      x = await chamarGravando(`public.vessel_praca_cidade_desvincular(p_id => $1)`, [cidadeR])
+      conferir(x.v?.ok === true && x.v?.situacao === 'ok', 'praca_cidade_desvincular: idem, consegue desvincular', x.v ?? x.e?.message)
+
+      x = await chamarGravando(`public.vessel_edicao_criar(p_praca_id => $1, p_nome => $2, p_comeca_em => $3, p_termina_em => null)`,
+        [pracaR, 'Edição de Prova do Recorte', hoje])
+      conferir(x.v?.ok === true && x.v?.numero === 1, 'edicao_criar: idem, consegue criar a edição 1', x.v ?? x.e?.message)
+      const edicaoR = x.v?.id
+
+      x = await chamarGravando(`public.vessel_edicao_abrir(p_id => $1)`, [edicaoR])
+      conferir(x.v?.ok === true && x.v?.situacao === 'ok', 'edicao_abrir: idem, consegue abrir', x.v ?? x.e?.message)
+
+      x = await chamarGravando(`public.vessel_edicao_encerrar(p_id => $1, p_levar_para => $2)`, [edicaoR, null])
+      conferir(x.v?.ok === true && x.v?.situacao === 'ok', 'edicao_encerrar: idem, consegue encerrar', x.v ?? x.e?.message)
+
+      // a leitura também funciona sem NENHUM stylist-circle
+      x = await chamarGravando(`public.vessel_pracas_listar()`, [])
+      conferir(!x.e && Array.isArray(x.v), 'pracas_listar: quem só tem atendimentos.pracas (ver) consegue listar', x.e?.message)
+      x = await chamarGravando(`public.vessel_edicoes_listar(p_praca_id => $1)`, [pracaR])
+      conferir(!x.e && Array.isArray(x.v), 'edicoes_listar: idem, consegue listar', x.e?.message)
+
+      // uma segunda edição, ABERTA, só para a prova (d) abaixo (a primeira já
+      // está encerrada).
+      x = await chamarGravando(`public.vessel_edicao_criar(p_praca_id => $1, p_nome => $2, p_comeca_em => $3, p_termina_em => null)`,
+        [pracaR, 'Edição de Prova do Recorte 2', hoje])
+      const edicaoR2 = x.v?.id
+      await chamarGravando(`public.vessel_edicao_abrir(p_id => $1)`, [edicaoR2])
+      await cli.query(`insert into public.vessel_stylists (codigo, nome, whatsapp, teste)
+         values ('STY-PROVA-RECORTE-1', 'Prova Recorte Um', '5519990004098', true) returning id`)
+
+      // (b) quem SÓ TEM atendimentos.stylist-circle (editar) — SEM as chaves
+      // recortadas — é RECUSADO nas seis funções de cadastro que agora pedem
+      // a chave própria (o cerne da mudança desta tarefa: stylist-circle
+      // sozinho deixou de bastar).
+      await falarComo(idSoStylistCircle)
+      const chamadasRecortadas = [
+        ['praca_criar', `public.vessel_praca_criar(p_sigla => $1, p_nome => $2, p_loja_destino => $3)`, ['ZZQ', 'Zona Q', null]],
+        ['praca_editar', `public.vessel_praca_editar(p_id => $1, p_nome => $2, p_loja_destino => $3, p_ativa => $4)`, [pracaR, 'Roubado', null, true]],
+        ['praca_cidade_vincular', `public.vessel_praca_cidade_vincular(p_praca_id => $1, p_cidade => $2)`, [pracaR, 'Cidade Roubada']],
+        ['edicao_criar', `public.vessel_edicao_criar(p_praca_id => $1, p_nome => $2, p_comeca_em => $3, p_termina_em => null)`, [pracaR, 'Edição Roubada', hoje]],
+        ['edicao_abrir', `public.vessel_edicao_abrir(p_id => $1)`, [edicaoR]],
+        ['edicao_encerrar', `public.vessel_edicao_encerrar(p_id => $1, p_levar_para => $2)`, [edicaoR2, null]],
+      ]
+      for (const [nome, expr, params] of chamadasRecortadas) {
+        const { v, e } = await chamarIsolada(expr, params)
+        conferir(!e && v?.ok === false && v?.situacao === 'sem_permissao',
+          `${nome}: quem só tem atendimentos.stylist-circle (sem a chave recortada) toma sem_permissao — stylist-circle sozinho não basta mais`, e?.message ?? v)
+      }
+
+      // (c) mas a LEITURA continua aberta a quem só tem stylist-circle (o OR
+      // do brief: "as duas telas grandes precisam da lista para os seletores
+      // delas").
+      x = await chamarGravando(`public.vessel_pracas_listar()`, [])
+      conferir(!x.e && Array.isArray(x.v), 'pracas_listar: quem só tem atendimentos.stylist-circle (ver) AINDA consegue listar (OR mantido)', x.e?.message)
+
+      // (d) vessel_edicao_incluir_stylist é a ÚNICA função de cadastro com o
+      // OR explícito no brief ("editar em atendimentos.edicoes OU
+      // atendimentos.stylist-circle") — quem só tem stylist-circle (editar)
+      // continua incluindo direto pelo quadro.
+      x = await chamarGravando(`public.vessel_edicao_incluir_stylist(p_codigo => $1, p_edicao_id => $2)`, ['STY-PROVA-RECORTE-1', edicaoR2])
+      conferir(x.v?.ok === true && x.v?.situacao === 'ok',
+        'edicao_incluir_stylist: quem só tem atendimentos.stylist-circle (editar) AINDA consegue incluir (OR mantido de propósito)', x.v ?? x.e?.message)
+
+      // (e) leitura por quem só tem atendimentos.private-edit (ver) — a outra
+      // tela grande do OR.
+      await falarComo(idSoPrivateEdit)
+      x = await chamarGravando(`public.vessel_pracas_listar()`, [])
+      conferir(!x.e && Array.isArray(x.v), 'pracas_listar: quem só tem atendimentos.private-edit (ver) consegue listar (para o seletor dela)', x.e?.message)
+    } finally {
+      await cli.query('rollback to savepoint prova_recorte_de_chave')
+    }
+
     console.log("\n  · 2) quem SÓ TEM 'ver' — as nove funções de escrita têm de barrar, e NADA grava (medido DENTRO do savepoint, antes do rollback)")
     await falarComo(idVer)
     // Uma medida ESPECÍFICA por função (não só "a contagem total das 4
@@ -432,7 +549,10 @@ try {
     await cli.query('savepoint prova_mutacao_ver')
     const funcaoBoaDesvincular = (await uma(
       `select pg_get_functiondef('public.vessel_praca_cidade_desvincular(bigint)'::regprocedure) as def`)).def
-    const trechoDoPortao = /if not public\.vessel_pode\('atendimentos\.stylist-circle', 'editar'\) then[\s\S]*?end if;\n/
+    // ⚠️ TASK 6: a trava de `vessel_praca_cidade_desvincular` recortou de
+    // 'atendimentos.stylist-circle' para 'atendimentos.pracas' (migration,
+    // seção 14) — o regex segue a MESMA chave que a função confere hoje.
+    const trechoDoPortao = /if not public\.vessel_pode\('atendimentos\.pracas', 'editar'\) then[\s\S]*?end if;\n/
     if (!trechoDoPortao.test(funcaoBoaDesvincular)) throw new Error('a mutação não achou o portão de vessel_praca_cidade_desvincular')
     await cli.query(funcaoBoaDesvincular.replace(trechoDoPortao, ''))
     const existiaAntesDaMutacao = await r(`(select exists(select 1 from public.vessel_praca_cidades where id = $1))`, [cidadeA])

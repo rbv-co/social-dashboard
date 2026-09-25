@@ -1591,4 +1591,512 @@ begin
   end loop;
 end $$;
 
+-- ── 14. RECORTE DE CHAVE: atendimentos.pracas / atendimentos.edicoes (Task 6) ──
+--
+-- Decisão do dono (task-6-brief.md, 25/09/2026): Praça e Edição ganham chave
+-- PRÓPRIA no catálogo (src/compartilhado/catalogo-de-ferramentas.js) — até
+-- aqui as 11 funções de cadastro (seção 9) conferiam 'atendimentos.stylist-
+-- circle', decisão PROVISÓRIA da Task 4, documentada e assumida no relatório
+-- dela ("se uma tarefa futura recortar essas chaves, ela precisa lembrar da
+-- pré-concessão aditiva"). PADRAO-DA-CENTRAL.md, item 9¾: "Chave que é pedaço
+-- de uma que já existe vem com pré-concessão ADITIVA (migration + coletor/
+-- aplicar-*.mjs) para quem já tem a mãe" e "Nunca dar de graça a quem não
+-- tinha a mãe" — só quem já tinha 'atendimentos.stylist-circle' recebe as
+-- duas chaves novas, no MESMO nível (ver, ou ver+editar).
+--
+-- Os corpos abaixo são os de hoje (Task 4/5, com as rodadas de conserto,
+-- íntegros — `create or replace` guarda os grants, mesma assinatura de
+-- sempre), trocando SÓ a expressão `vessel_pode(...)` de cada função — nada
+-- mais muda:
+--
+--   vessel_pracas_listar / vessel_edicoes_listar → 'ver' em QUALQUER de
+--     atendimentos.pracas, atendimentos.edicoes, atendimentos.stylist-circle,
+--     atendimentos.private-edit — as duas telas GRANDES (Stylist Circle e
+--     Private Edit) continuam precisando da lista para os seletores delas.
+--   vessel_praca_criar / _editar / _cidade_vincular / _cidade_desvincular →
+--     'editar' em atendimentos.pracas.
+--   vessel_edicao_criar / _abrir / _encerrar → 'editar' em atendimentos.edicoes.
+--   vessel_edicao_incluir_stylist → 'editar' em atendimentos.edicoes OU
+--     atendimentos.stylist-circle (o quadro do Stylist Circle inclui direto).
+--   vessel_stylist_definir_praca e vessel_placar_da_edicao NÃO mudam: seguem
+--     em atendimentos.stylist-circle — pedido explícito do brief desta tarefa.
+
+-- ── 14.1 a lista fechada de vessel_pode ganha as duas chaves ────────────────
+create or replace function public.vessel_pode(p_ferramenta text, p_nivel text)
+returns boolean
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+begin
+  -- A LISTA FECHADA: as chaves do Comercial Vessel no catálogo que têm tela
+  -- chamando o banco, e os dois níveis que o catálogo oferece a elas.
+  if p_ferramenta is null or p_ferramenta not in (
+       'atendimentos', 'atendimentos.beauty-sessions', 'atendimentos.private-edit',
+       'atendimentos.stylist-circle', 'atendimentos.material-grafico',
+       'atendimentos.pracas', 'atendimentos.edicoes') then
+    raise exception 'vessel_pode: ferramenta desconhecida (%)', p_ferramenta using errcode = '22023';
+  end if;
+  if p_nivel is null or p_nivel not in ('ver', 'editar') then
+    raise exception 'vessel_pode: nivel desconhecido (%)', p_nivel using errcode = '22023';
+  end if;
+  if p_ferramenta = 'atendimentos.material-grafico' and p_nivel <> 'ver' then
+    raise exception 'vessel_pode: o Material Grafico so tem ver' using errcode = '22023';
+  end if;
+  -- ⚠️ A ARMADILHA DO NULO: o `coalesce` envolve a subconsulta INTEIRA.
+  return public.conta_ativa() and coalesce(
+    (select coalesce(p.is_superadmin, false)
+         or (jsonb_typeof(p.permissions) = 'object'
+             and jsonb_typeof(p.permissions -> p_ferramenta) = 'array'
+             and (p.permissions -> p_ferramenta) ? 'ver'
+             and (p_nivel = 'ver' or (p.permissions -> p_ferramenta) ? p_nivel))
+       from public.profiles p where p.id = auth.uid()),
+    false);
+end;
+$$;
+
+comment on function public.vessel_pode(text, text) is
+  'B13 + Task 6 (25/09/2026): quem pode VER/EDITAR uma tela do Comercial Vessel — permissions[ferramenta] (o mesmo campo que a Central le), super-admin sempre, conta desativada nunca. Toda funcao nova de UMA tela confere a chave dela por aqui (PADRAO-DA-CENTRAL.md).';
+
+-- ── 14.2 as 10 funções de cadastro: a trava aprende a chave recortada ───────
+
+-- listar as praças — ver em QUALQUER das quatro telas que precisam da lista
+create or replace function public.vessel_pracas_listar()
+returns json
+language plpgsql
+stable
+security definer
+set search_path to 'public'
+as $$
+begin
+  if not (public.vessel_pode('atendimentos.pracas', 'ver')
+       or public.vessel_pode('atendimentos.edicoes', 'ver')
+       or public.vessel_pode('atendimentos.stylist-circle', 'ver')
+       or public.vessel_pode('atendimentos.private-edit', 'ver')) then
+    raise exception 'sem permissao' using errcode = '42501';
+  end if;
+  return coalesce((
+    select json_agg(json_build_object(
+             'id', p.id, 'sigla', p.sigla, 'nome', p.nome, 'loja_destino', p.loja_destino,
+             'ativa', p.ativa,
+             'cidades', coalesce((select json_agg(json_build_object('id', c.id, 'cidade', c.cidade) order by c.cidade)
+                          from public.vessel_praca_cidades c where c.praca_id = p.id), '[]'::json),
+             'stylists', (select count(*)::int from public.vessel_stylists s
+                           where s.praca_id = p.id and not coalesce(s.teste, false)))
+           order by p.ordem, p.id)
+      from public.vessel_pracas p), '[]'::json);
+end;
+$$;
+
+-- cadastrar uma praça nova: sigla maiúscula de 3 letras, única
+create or replace function public.vessel_praca_criar(p_sigla text, p_nome text, p_loja_destino text)
+returns json
+language plpgsql
+security definer
+set search_path to 'public'
+as $$
+declare
+  v_sigla text := upper(nullif(trim(coalesce(p_sigla, '')), ''));
+  v_nome  text := nullif(trim(coalesce(p_nome, '')), '');
+  v_loja  text := nullif(trim(coalesce(p_loja_destino, '')), '');
+  v_ordem int;
+  v_id    bigint;
+begin
+  if not public.vessel_pode('atendimentos.pracas', 'editar') then
+    return json_build_object('ok', false, 'situacao', 'sem_permissao');
+  end if;
+  if v_nome is null then
+    return json_build_object('ok', false, 'situacao', 'sem_nome');
+  end if;
+  if v_sigla is null or v_sigla !~ '^[A-Z]{3}$' then
+    return json_build_object('ok', false, 'situacao', 'sigla_invalida');
+  end if;
+  -- ⚠️ É ESTA CONFERÊNCIA QUE PROTEGE A `unique` DA TABELA: sem ela o defeito
+  -- apareceria como erro cru de banco (23505), não como `situacao` na tela.
+  if exists (select 1 from public.vessel_pracas where sigla = v_sigla) then
+    return json_build_object('ok', false, 'situacao', 'sigla_repetida');
+  end if;
+  select coalesce(max(ordem), 0) + 1 into v_ordem from public.vessel_pracas;
+  insert into public.vessel_pracas (sigla, nome, loja_destino, ordem)
+  values (v_sigla, v_nome, v_loja, v_ordem)
+  returning id into v_id;
+  return json_build_object('ok', true, 'situacao', 'ok', 'id', v_id);
+end;
+$$;
+
+-- editar nome, loja de destino e ativa — sigla é imutável (não entra aqui)
+create or replace function public.vessel_praca_editar(p_id bigint, p_nome text, p_loja_destino text, p_ativa boolean)
+returns json
+language plpgsql
+security definer
+set search_path to 'public'
+as $$
+declare
+  v_nome text := nullif(trim(coalesce(p_nome, '')), '');
+  v_loja text := nullif(trim(coalesce(p_loja_destino, '')), '');
+begin
+  if not public.vessel_pode('atendimentos.pracas', 'editar') then
+    return json_build_object('ok', false, 'situacao', 'sem_permissao');
+  end if;
+  if not exists (select 1 from public.vessel_pracas where id = p_id) then
+    return json_build_object('ok', false, 'situacao', 'nao_achei');
+  end if;
+  if v_nome is null then
+    return json_build_object('ok', false, 'situacao', 'sem_nome');
+  end if;
+  -- ⚠️ RODADA 1 DE CONSERTO: `loja_destino` e `ativa` usam a MESMA semântica de
+  -- nulo — PRESERVA o que já estava (a tela manda um salvamento parcial e não
+  -- pode apagar a loja de tabela sem querer). Limpar a loja é outra ação, que
+  -- ainda não existe.
+  update public.vessel_pracas
+     set nome = v_nome, loja_destino = coalesce(v_loja, loja_destino), ativa = coalesce(p_ativa, ativa)
+   where id = p_id;
+  return json_build_object('ok', true, 'situacao', 'ok');
+end;
+$$;
+
+-- vincular uma cidade a uma praça — a chave SEMPRE por vessel_achatar_cidade
+create or replace function public.vessel_praca_cidade_vincular(p_praca_id bigint, p_cidade text)
+returns json
+language plpgsql
+security definer
+set search_path to 'public'
+as $$
+declare
+  v_cidade text := nullif(trim(coalesce(p_cidade, '')), '');
+  v_chave  text;
+  v_dono   record;
+  v_id     bigint;
+begin
+  if not public.vessel_pode('atendimentos.pracas', 'editar') then
+    return json_build_object('ok', false, 'situacao', 'sem_permissao');
+  end if;
+  if not exists (select 1 from public.vessel_pracas where id = p_praca_id) then
+    return json_build_object('ok', false, 'situacao', 'praca_invalida');
+  end if;
+  if v_cidade is null then
+    return json_build_object('ok', false, 'situacao', 'sem_cidade');
+  end if;
+  -- ⚠️ A MESMA CONTA DO FRONT (achatarCidade em praca-regras.js) — nunca a
+  -- chave digitada à mão (ver o cabeçalho desta migration).
+  v_chave := public.vessel_achatar_cidade(v_cidade);
+  if v_chave = '' then
+    return json_build_object('ok', false, 'situacao', 'sem_cidade');
+  end if;
+
+  select c.id, c.praca_id, p.nome as praca_nome
+    into v_dono
+    from public.vessel_praca_cidades c join public.vessel_pracas p on p.id = c.praca_id
+   where c.cidade_chave = v_chave;
+
+  if v_dono.id is not null and v_dono.praca_id <> p_praca_id then
+    return json_build_object('ok', false, 'situacao', 'cidade_em_outra_praca',
+      'praca_id', v_dono.praca_id, 'praca_nome', v_dono.praca_nome);
+  end if;
+  if v_dono.id is not null then
+    return json_build_object('ok', true, 'situacao', 'ja_vinculada', 'id', v_dono.id);
+  end if;
+
+  insert into public.vessel_praca_cidades (praca_id, cidade, cidade_chave)
+  values (p_praca_id, v_cidade, v_chave)
+  returning id into v_id;
+  return json_build_object('ok', true, 'situacao', 'ok', 'id', v_id);
+end;
+$$;
+
+-- desvincular uma cidade
+create or replace function public.vessel_praca_cidade_desvincular(p_id bigint)
+returns json
+language plpgsql
+security definer
+set search_path to 'public'
+as $$
+begin
+  if not public.vessel_pode('atendimentos.pracas', 'editar') then
+    return json_build_object('ok', false, 'situacao', 'sem_permissao');
+  end if;
+  if not exists (select 1 from public.vessel_praca_cidades where id = p_id) then
+    return json_build_object('ok', false, 'situacao', 'nao_achei');
+  end if;
+  delete from public.vessel_praca_cidades where id = p_id;
+  return json_build_object('ok', true, 'situacao', 'ok');
+end;
+$$;
+
+-- as edições de uma praça (ou de todas, com p_praca_id nulo) — ver em
+-- QUALQUER das quatro telas que precisam da lista (mesma regra de
+-- vessel_pracas_listar, acima)
+create or replace function public.vessel_edicoes_listar(p_praca_id bigint)
+returns json
+language plpgsql
+stable
+security definer
+set search_path to 'public'
+as $$
+begin
+  if not (public.vessel_pode('atendimentos.pracas', 'ver')
+       or public.vessel_pode('atendimentos.edicoes', 'ver')
+       or public.vessel_pode('atendimentos.stylist-circle', 'ver')
+       or public.vessel_pode('atendimentos.private-edit', 'ver')) then
+    raise exception 'sem permissao' using errcode = '42501';
+  end if;
+  return coalesce((
+    select json_agg(json_build_object(
+             'id', e.id, 'praca_id', e.praca_id, 'praca_nome', p.nome, 'numero', e.numero,
+             'nome', e.nome, 'comeca_em', e.comeca_em, 'termina_em', e.termina_em, 'situacao', e.situacao,
+             -- ⚠️ RODADA 1 DE CONSERTO (CRÍTICO 1): SEM filtrar por `saiu_em`.
+             -- `vessel_edicao_encerrar` fecha (`saiu_em`) TODOS os vínculos da
+             -- edição no mesmo instante em que ela vira 'encerrada' — nenhum
+             -- membro é acrescentado ou removido depois disso (o congelamento
+             -- é exatamente esse: quem esteve, esteve). Filtrar por
+             -- `saiu_em is null` aqui faria toda edição encerrada aparecer
+             -- com zero stylists, para sempre — o oposto do que o cabeçalho
+             -- desta migration promete ("o placar da edição encerrada
+             -- continua contando a linha antiga"). Enquanto a edição está
+             -- planejada/aberta ninguém tem `saiu_em` ainda, então a conta
+             -- coincide com "quem está nela agora"; depois de encerrada, ela
+             -- vira "quem esteve nela" — o mesmo número, para sempre.
+             'stylists', (select count(*)::int from public.vessel_stylist_na_edicao n
+                           where n.edicao_id = e.id))
+           order by p.ordem, e.numero desc)
+      from public.vessel_stylist_circle_edicoes e join public.vessel_pracas p on p.id = e.praca_id
+     where p_praca_id is null or e.praca_id = p_praca_id), '[]'::json);
+end;
+$$;
+
+-- criar a próxima edição da praça — numero = maior da praça + 1
+create or replace function public.vessel_edicao_criar(p_praca_id bigint, p_nome text, p_comeca_em date, p_termina_em date)
+returns json
+language plpgsql
+security definer
+set search_path to 'public'
+as $$
+declare
+  v_nome   text := nullif(trim(coalesce(p_nome, '')), '');
+  v_numero int;
+  v_id     bigint;
+begin
+  if not public.vessel_pode('atendimentos.edicoes', 'editar') then
+    return json_build_object('ok', false, 'situacao', 'sem_permissao');
+  end if;
+  if not exists (select 1 from public.vessel_pracas where id = p_praca_id) then
+    return json_build_object('ok', false, 'situacao', 'praca_invalida');
+  end if;
+  if p_comeca_em is null then
+    return json_build_object('ok', false, 'situacao', 'sem_data');
+  end if;
+  if p_termina_em is not null and p_termina_em < p_comeca_em then
+    return json_build_object('ok', false, 'situacao', 'data_invalida');
+  end if;
+
+  -- ⚠️ FILA POR PRAÇA: sem o advisory lock, duas chamadas ao mesmo tempo
+  -- calculariam o mesmo "maior + 1" e colidiriam no `unique (praca_id, numero)`.
+  perform pg_advisory_xact_lock(hashtext('vessel_stylist_circle_edicoes:' || p_praca_id::text));
+  select coalesce(max(numero), 0) + 1 into v_numero
+    from public.vessel_stylist_circle_edicoes where praca_id = p_praca_id;
+
+  insert into public.vessel_stylist_circle_edicoes (praca_id, numero, nome, comeca_em, termina_em)
+  values (p_praca_id, v_numero, v_nome, p_comeca_em, p_termina_em)
+  returning id into v_id;
+
+  return json_build_object('ok', true, 'situacao', 'ok', 'id', v_id, 'numero', v_numero);
+end;
+$$;
+
+-- abrir uma edição — só uma aberta por praça, e encerrada não reabre
+create or replace function public.vessel_edicao_abrir(p_id bigint)
+returns json
+language plpgsql
+security definer
+set search_path to 'public'
+as $$
+declare
+  v_ed public.vessel_stylist_circle_edicoes%rowtype;
+begin
+  if not public.vessel_pode('atendimentos.edicoes', 'editar') then
+    return json_build_object('ok', false, 'situacao', 'sem_permissao');
+  end if;
+  select * into v_ed from public.vessel_stylist_circle_edicoes where id = p_id;
+  if v_ed.id is null then
+    return json_build_object('ok', false, 'situacao', 'nao_achei');
+  end if;
+  if v_ed.situacao = 'encerrada' then
+    return json_build_object('ok', false, 'situacao', 'edicao_encerrada');
+  end if;
+  if v_ed.situacao = 'aberta' then
+    return json_build_object('ok', true, 'situacao', 'sem_mudanca');
+  end if;
+  if exists (select 1 from public.vessel_stylist_circle_edicoes
+              where praca_id = v_ed.praca_id and situacao = 'aberta' and id <> p_id) then
+    return json_build_object('ok', false, 'situacao', 'ja_tem_aberta');
+  end if;
+  update public.vessel_stylist_circle_edicoes set situacao = 'aberta' where id = p_id;
+  return json_build_object('ok', true, 'situacao', 'ok');
+end;
+$$;
+
+-- encerrar uma edição: congela quem estava nela; quem NÃO ativou pode ir para
+-- uma edição de destino — quem ativou fica com o vínculo fechado e não vai.
+create or replace function public.vessel_edicao_encerrar(p_id bigint, p_levar_para bigint)
+returns json
+language plpgsql
+security definer
+set search_path to 'public'
+as $$
+declare
+  v_ed      public.vessel_stylist_circle_edicoes%rowtype;
+  v_destino public.vessel_stylist_circle_edicoes%rowtype;
+  v_levadas int := 0;
+begin
+  if not public.vessel_pode('atendimentos.edicoes', 'editar') then
+    return json_build_object('ok', false, 'situacao', 'sem_permissao');
+  end if;
+  select * into v_ed from public.vessel_stylist_circle_edicoes where id = p_id;
+  if v_ed.id is null then
+    return json_build_object('ok', false, 'situacao', 'nao_achei');
+  end if;
+  if v_ed.situacao = 'encerrada' then
+    return json_build_object('ok', false, 'situacao', 'edicao_encerrada');
+  end if;
+
+  if p_levar_para is not null then
+    select * into v_destino from public.vessel_stylist_circle_edicoes where id = p_levar_para;
+    if v_destino.id is null then
+      return json_build_object('ok', false, 'situacao', 'destino_invalido');
+    end if;
+    -- ⚠️ NÃO SE LEVA PARA UM DESTINO CONGELADO — a mesma trava de
+    -- `vessel_edicao_incluir_stylist`, só que aplicada aqui de propósito.
+    if v_destino.situacao = 'encerrada' then
+      return json_build_object('ok', false, 'situacao', 'edicao_encerrada');
+    end if;
+    -- ⚠️ RODADA 1 DE CONSERTO (MENOR 6): NÃO SE LEVA PARA OUTRA PRAÇA — praça
+    -- é o assunto desta tarefa; sem esta trava daria para levar quem não
+    -- ativou em Limeira para uma edição de Campinas.
+    if v_destino.praca_id <> v_ed.praca_id then
+      return json_build_object('ok', false, 'situacao', 'destino_de_outra_praca');
+    end if;
+  end if;
+
+  update public.vessel_stylist_circle_edicoes set situacao = 'encerrada' where id = p_id;
+
+  -- ⚠️ O CONGELAMENTO: fecha (`saiu_em`/`etapa_ao_sair`) TODOS os vínculos
+  -- ativos desta edição — depois disto nada muda o que ela conta (ver o
+  -- cabeçalho da migration). Quem NÃO ativou (`ativada_em is null`) e tem
+  -- destino abre um vínculo novo lá; quem ativou fica com o vínculo fechado
+  -- e NÃO é levada.
+  with fechados as (
+    update public.vessel_stylist_na_edicao n
+       set saiu_em = now(), etapa_ao_sair = s.etapa_id
+      from public.vessel_stylists s
+     where n.stylist_id = s.id and n.edicao_id = p_id and n.saiu_em is null
+    returning n.stylist_id, s.ativada_em
+  )
+  -- ⚠️ RODADA 1 DE CONSERTO (CRÍTICO 2): `on conflict ... do nothing` — a
+  -- stylist pode já ter um vínculo (fechado ou não) na edição de destino
+  -- (ex.: foi incluída nas duas edições antes de a primeira ser encerrada).
+  -- Sem isto, a unique `(stylist_id, edicao_id)` estourava 23505 CRU (a tela
+  -- recebe erro sem motivo escrito) e — pior — como um erro dentro do bloco
+  -- aborta a transação INTEIRA nesta base, o encerramento nem chegava a
+  -- congelar ninguém. `get diagnostics` conta só quem foi REALMENTE inserida
+  -- (a que deu conflito não entra em `levadas`).
+  insert into public.vessel_stylist_na_edicao (stylist_id, edicao_id)
+  select f.stylist_id, p_levar_para from fechados f
+   where f.ativada_em is null and p_levar_para is not null
+  on conflict (stylist_id, edicao_id) do nothing;
+  get diagnostics v_levadas = row_count;
+
+  return json_build_object('ok', true, 'situacao', 'ok', 'levadas', v_levadas);
+end;
+$$;
+
+-- incluir uma stylist na edição — recusa se a edição já encerrou. 'editar' em
+-- atendimentos.edicoes OU atendimentos.stylist-circle (o quadro do Stylist
+-- Circle inclui direto).
+create or replace function public.vessel_edicao_incluir_stylist(p_codigo text, p_edicao_id bigint)
+returns json
+language plpgsql
+security definer
+set search_path to 'public'
+as $$
+declare
+  v_codigo     text := upper(nullif(trim(coalesce(p_codigo, '')), ''));
+  v_stylist_id bigint;
+  v_ed         public.vessel_stylist_circle_edicoes%rowtype;
+begin
+  if not (public.vessel_pode('atendimentos.edicoes', 'editar')
+       or public.vessel_pode('atendimentos.stylist-circle', 'editar')) then
+    return json_build_object('ok', false, 'situacao', 'sem_permissao');
+  end if;
+  select id into v_stylist_id from public.vessel_stylists where codigo = v_codigo;
+  if v_stylist_id is null then
+    return json_build_object('ok', false, 'situacao', 'nao_achei');
+  end if;
+  select * into v_ed from public.vessel_stylist_circle_edicoes where id = p_edicao_id;
+  if v_ed.id is null then
+    return json_build_object('ok', false, 'situacao', 'edicao_invalida');
+  end if;
+  -- ⚠️ É ESTA TRAVA QUE IMPEDE O PASSADO DE MUDAR: edição encerrada está
+  -- congelada, nada entra nela depois (ver o cabeçalho da migration).
+  if v_ed.situacao = 'encerrada' then
+    return json_build_object('ok', false, 'situacao', 'edicao_encerrada');
+  end if;
+  if exists (select 1 from public.vessel_stylist_na_edicao
+              where stylist_id = v_stylist_id and edicao_id = p_edicao_id and saiu_em is null) then
+    return json_build_object('ok', true, 'situacao', 'sem_mudanca');
+  end if;
+  insert into public.vessel_stylist_na_edicao (stylist_id, edicao_id) values (v_stylist_id, p_edicao_id);
+  return json_build_object('ok', true, 'situacao', 'ok');
+end;
+$$;
+
+-- ── 14.3 pré-concessão aditiva ───────────────────────────────────────────────
+-- `oferece` = as ações que cada chave nova tem no catálogo. A pessoa recebe a
+-- interseção com o que ela já tem em 'atendimentos.stylist-circle' — nunca de
+-- graça a quem não tinha a mãe.
+create temporary table if not exists _chaves_novas_praca_edicao (chave text primary key, oferece text[]) on commit drop;
+insert into _chaves_novas_praca_edicao values
+  ('atendimentos.pracas',  array['ver', 'editar']),
+  ('atendimentos.edicoes', array['ver', 'editar'])
+on conflict (chave) do nothing;
+
+-- O que dar a partir de um mapa de permissões: só as chaves que ele AINDA não
+-- tem, com as ações de 'atendimentos.stylist-circle' que cada uma oferece.
+-- Vazio se o mapa não tem 'atendimentos.stylist-circle' com 'ver'.
+create or replace function pg_temp.o_que_acrescentar_praca_edicao(p jsonb)
+returns jsonb
+language sql
+as $$
+  select coalesce(jsonb_object_agg(n.chave, (
+           select jsonb_agg(a order by array_position(n.oferece, a))
+             from jsonb_array_elements_text(p -> 'atendimentos.stylist-circle') a
+            where a = any(n.oferece))), '{}'::jsonb)
+    from _chaves_novas_praca_edicao n
+   where jsonb_typeof(p) = 'object'
+     and jsonb_typeof(p -> 'atendimentos.stylist-circle') = 'array'
+     and (p -> 'atendimentos.stylist-circle') ? 'ver'
+     and not (p ? n.chave);
+$$;
+
+-- 14.3a. As pessoas.
+update public.profiles p
+   set permissions = p.permissions || pg_temp.o_que_acrescentar_praca_edicao(p.permissions)
+ where not coalesce(p.is_superadmin, false)
+   and not coalesce(p.disabled, false)
+   and pg_temp.o_que_acrescentar_praca_edicao(p.permissions) <> '{}'::jsonb;
+
+-- 14.3b. Quem tem 'atendimentos.stylist-circle' por EXCEÇÃO ao perfil: a
+-- exceção leva junto, senão a próxima regravação do perfil tiraria as chaves
+-- novas.
+update public.profiles p
+   set permissions_excecao = p.permissions_excecao || pg_temp.o_que_acrescentar_praca_edicao(p.permissions_excecao)
+ where not coalesce(p.is_superadmin, false)
+   and not coalesce(p.disabled, false)
+   and pg_temp.o_que_acrescentar_praca_edicao(p.permissions_excecao) <> '{}'::jsonb;
+
+-- 14.3c. Os perfis de acesso que dão 'atendimentos.stylist-circle'.
+update public.acessos_perfis ap
+   set permissions = ap.permissions || pg_temp.o_que_acrescentar_praca_edicao(ap.permissions)
+ where pg_temp.o_que_acrescentar_praca_edicao(ap.permissions) <> '{}'::jsonb;
+
 notify pgrst, 'reload schema';
