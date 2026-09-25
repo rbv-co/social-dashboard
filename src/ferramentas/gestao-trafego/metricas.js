@@ -148,12 +148,29 @@ export const GT_BALDE_PADRAO={
 // Ausência de anúncio (conjunto sem gasto na janela) devolve spend '0' e
 // actions vazio — `_gtActionVal`/`_gtPerGasto` já leem isso como null, nunca
 // como zero. PURO.
+//
+// I4 (rodada de correção 2, 25/09/2026): também soma `impressions`. Faltava —
+// só `spend` e `actions` eram somados —, e o mercado `reconhecimento` mede por
+// CPM (`GT_METRIC_CATALOG.cpm`, ver alvos.js: `metrica: 'cpm'`), que só existe
+// dividindo gasto por IMPRESSÃO, não por nenhuma `action`. Um conjunto de
+// alcance dentro de uma campanha MISTA ficava sem KPI nenhum, em silêncio:
+// `cpm.compute` lia `r.impressions` como `undefined`, `_gtNum` devolvia `NaN`
+// (não passa em `isFinite`), então `null` — a régua ficava muda exatamente
+// para o mercado que só tem essa métrica, furando a regra de "cada conjunto
+// mostra a própria régua" e divergindo do robô, que usa insight de adset REAL
+// (com `impressions` de verdade) e por isso sempre tem o número.
+// Os demais mercados usam métrica por `action` (`custo_conversa`,
+// `custo_visita`, `custo_lead`, `custo_view`, `custo_engajamento`, `cac`,
+// `custo_visita_perfil`) — nenhum precisa de outro campo bruto do anúncio além
+// de `spend`/`actions`; `reconhecimento`/`cpm` era o único buraco.
 export function insightDoConjunto(anuncios) {
   const lista = Array.isArray(anuncios) ? anuncios : [];
   let spend = 0;
+  let impressions = 0;
   const porTipo = new Map();
   for (const a of lista) {
     spend += Number(a && a.spend) || 0;
+    impressions += Number(a && a.impressions) || 0;
     for (const ac of ((a && Array.isArray(a.actions)) ? a.actions : [])) {
       const tipo = ac && ac.action_type;
       if (!tipo) continue;
@@ -161,7 +178,7 @@ export function insightDoConjunto(anuncios) {
     }
   }
   const actions = [...porTipo.entries()].map(([action_type, value]) => ({ action_type, value: String(value) }));
-  return { spend: String(spend), actions };
+  return { spend: String(spend), impressions: String(impressions), actions };
 }
 
 export function custoDoAlvo(balde, insight) {

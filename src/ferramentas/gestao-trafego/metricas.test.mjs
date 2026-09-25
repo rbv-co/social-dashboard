@@ -235,3 +235,25 @@ test('insightDoConjunto tolera anúncio sem actions (campanha nunca gerou nenhum
   assert.equal(ins.spend, '20');
   assert.deepEqual(ins.actions, []);
 });
+
+// I4 (rodada de correção 2): sem somar `impressions`, o mercado `reconhecimento`
+// (métrica CPM, ver ALVOS.reconhecimento em alvos.js) ficava sem KPI nenhum,
+// em silêncio, no conjunto de uma campanha MISTA — CPM não existe sem
+// impressão, e nenhuma `action` supre isso.
+test('insightDoConjunto soma impressions — sem isto o mercado reconhecimento (CPM) fica mudo', () => {
+  const anuncios = [
+    { spend: '100', impressions: '4000', actions: [] },
+    { spend: '50', impressions: '1000', actions: [] },
+  ];
+  const ins = insightDoConjunto(anuncios);
+  assert.equal(ins.impressions, '5000');
+  // Usável direto pelo catálogo, como o robô usa o insight real do adset.
+  assert.equal(GT_METRIC_CATALOG.cpm.compute(ins), (150 / 5000) * 1000);
+});
+
+test('insightDoConjunto sem anúncio ou sem impressions: CPM nunca vira 0, sempre null', () => {
+  assert.equal(GT_METRIC_CATALOG.cpm.compute(insightDoConjunto([])), null);
+  // Anúncio existe (tem gasto) mas a Meta não mandou impressions nesta janela —
+  // mesma regra: ausência de resultado é null, nunca custo de graça (R$ 0,00).
+  assert.equal(GT_METRIC_CATALOG.cpm.compute(insightDoConjunto([{ spend: '20' }])), null);
+});

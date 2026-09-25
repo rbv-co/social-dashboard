@@ -48,27 +48,108 @@ const CORPO = semComentarios(SCRIPT_BRUTO);
 // alvo — incluído aqui só para documentar que ele também está fora.
 const BALDES_ANTIGOS = ['engajamento', 'mensagens', 'trafego', 'vendas', 'leads', 'reconhecimento', 'padrao'];
 
-// Extrai o argumento pedido (por índice) de toda chamada `nomeFuncao(...)` no
-// corpo. Funciona porque, no código real desta tela, os argumentos passados a
-// alvoDoBalde/metaDoBalde são sempre identificadores simples (uma variável) ou
-// um literal já esvaziado por semComentarios — nunca uma chamada aninhada
-// (o próprio código foi ajustado nesta tarefa para não passar `_gtReguaAtiva()`
-// direto por causa disso: ver `reguaAtiva` em _renderGtConjuntos).
+// ÚNICA fonte da lista branca — TODOS os testes abaixo leem DAQUI, nunca uma
+// cópia local (I2, rodada de correção 2: ver o comentário grande mais abaixo,
+// no teste "todo balde antigo segue banido", sobre por que uma cópia local
+// tornava a "documentação executável" uma promessa falsa).
+const PERMITIDOS_ALVO_DO_BALDE = new Set(['mercado', 'mercadoCj']);
+// 'mercado'/'mercadoCj' são os mercados de mercados.js (cartão da campanha e
+// linha do conjunto); 'objDeclarado'/'declAd' são as INTERAÇÕES declaradas
+// (Fase 3) — o atalho de metaDoBalde que resolve por essas chaves é LEGÍTIMO
+// (não estão em ALVOS, ver regua.js) e não pode ser removido da função; esta
+// trava é no CHAMADOR.
+const PERMITIDOS_META_DO_BALDE = new Set(['mercado', 'mercadoCj', 'objDeclarado', 'declAd']);
+
+// ⚠️ LIMITE HONESTO DESTA TRAVA (I1-b, rodada de correção 2, 25/09/2026): a
+// lista branca é checada pelo NOME da variável no ponto de chamada, NÃO pela
+// PROCEDÊNCIA do valor que ela carrega. Isto passaria limpo, hoje, sem
+// acusação nenhuma:
+//
+//     const mercado = temMensagem ? 'mensagens' : baldeCamp; // balde antigo!
+//     metaDoBalde(reguaAtiva, mercado);
+//
+// Bastou batizar a variável de "mercado" para a trava aprovar um valor que na
+// verdade veio do balde antigo (`baldeCamp`). Regex sobre texto não enxerga de
+// onde uma variável foi atribuída — fechar esse buraco por completo pediria
+// análise de fluxo de dados, que este arquivo não faz. O que ESTA trava
+// garante: nenhuma chamada usa, DIRETAMENTE no argumento, um literal de balde
+// antigo ou uma variável de outro nome fora da lista branca. O que ela NÃO
+// garante: que a variável chamada "mercado"/"mercadoCj"/"objDeclarado"/
+// "declAd" de fato contém um mercado, e não um balde disfarçado atrás do
+// nome certo. Uma trava com a fronteira escrita é útil; uma que parece total
+// e não é, engana — daí este comentário existir.
+
+// Extrai TODAS as chamadas de `nomeFuncao(...)` no corpo, respeitando
+// parênteses ANINHADOS (ex.: `metaDoBalde(_gtReguaAtiva(), baldeCamp)`).
+//
+// I1(a) (rodada de correção 2, 25/09/2026): a versão anterior usava um regex
+// raso, `\bnome\s*\(([^()]*)\)`, que simplesmente NÃO CASA quando há um
+// parêntese dentro dos argumentos — a chamada inteira sumia da extração: 0
+// chamadas, 0 violações, em silêncio. Provado contra o código real desta
+// tela: `metaDoBalde(_gtReguaAtiva(), baldeCamp)` e
+// `alvoDoBalde(_gtBalde(ins.objective))` davam as duas 0 chamadas extraídas
+// com o regex antigo. Quem escreveu a versão antiga percebeu o buraco e, em
+// vez de consertar a EXTRAÇÃO, mudou o CÓDIGO DE PRODUÇÃO para nunca passar
+// uma chamada aninhada a estas duas funções — o que inverte a relação: o
+// teste parou de medir o código e passou a moldá-lo. Esta versão faz o
+// caminho certo: conta parênteses caractere por caractere, então uma chamada
+// aninhada não escapa mais da extração (nem por isso a trava fica dispensada
+// de continuar existindo — ver a prova por mutação "(nested)" abaixo).
+//
+// Devolve `{ chamadas, totalOcorrencias }`. `totalOcorrencias` conta toda
+// abertura `nomeFuncao(` no arquivo, por um caminho independente de onde o
+// parêntese fecha; `chamadas.length` só cresce quando o parêntese da chamada
+// FECHA dentro do arquivo (profundidade volta a 0). Código válido sempre
+// fecha — se as duas contagens divergirem é a própria extração perdendo
+// chamada, e os testes abaixo comparam as duas e FALHAM dizendo quantas
+// foram perdidas, em vez de passar limpo como o regex antigo passava.
 function extrairArgumentos(corpo, nomeFuncao) {
+  const reOcorrencia = new RegExp(`\\b${nomeFuncao}\\s*\\(`, 'g');
+  const ocorrencias = [...corpo.matchAll(reOcorrencia)];
   const chamadas = [];
-  const re = new RegExp(`\\b${nomeFuncao}\\s*\\(([^()]*)\\)`, 'g');
-  let m;
-  while ((m = re.exec(corpo))) {
-    chamadas.push(m[1].split(',').map((s) => s.trim()));
+  for (const m of ocorrencias) {
+    let profundidade = 1; // o '(' da própria ocorrência já abriu um nível
+    let i = m.index + m[0].length;
+    while (i < corpo.length && profundidade > 0) {
+      if (corpo[i] === '(') profundidade++;
+      else if (corpo[i] === ')') profundidade--;
+      i++;
+    }
+    if (profundidade !== 0) continue; // não fechou dentro do arquivo — não conta como extraída
+    const args = corpo.slice(m.index + m[0].length, i - 1);
+    chamadas.push(dividirArgumentosDoTopo(args));
   }
-  return chamadas;
+  return { chamadas, totalOcorrencias: ocorrencias.length };
+}
+
+// Divide a lista de argumentos por vírgula só no nível 0 de parênteses — uma
+// vírgula dentro de um argumento aninhado, como em `_gtBalde(a, b)`, não pode
+// quebrar a lista de fora em 3 pedaços em vez de 1.
+function dividirArgumentosDoTopo(args) {
+  if (args.trim() === '') return [];
+  const partes = [];
+  let atual = '';
+  let profundidade = 0;
+  for (const ch of args) {
+    if (ch === '(') profundidade++;
+    else if (ch === ')') profundidade--;
+    if (ch === ',' && profundidade === 0) {
+      partes.push(atual.trim());
+      atual = '';
+    } else {
+      atual += ch;
+    }
+  }
+  partes.push(atual.trim());
+  return partes;
 }
 
 test('alvoDoBalde só recebe MERCADO — nenhum balde antigo indexa ALVOS', () => {
-  const chamadas = extrairArgumentos(CORPO, 'alvoDoBalde');
+  const { chamadas, totalOcorrencias } = extrairArgumentos(CORPO, 'alvoDoBalde');
   assert.ok(chamadas.length > 0, 'a tela não chama mais alvoDoBalde — atualize/remova este teste');
-  const permitidos = new Set(['mercado', 'mercadoCj']);
-  const violacoes = chamadas.map((args) => args[0]).filter((a) => !permitidos.has(a));
+  assert.equal(chamadas.length, totalOcorrencias,
+    `a extração perdeu ${totalOcorrencias - chamadas.length} chamada(s) de alvoDoBalde (parêntese não fechou dentro do arquivo?) — não dá para confiar na lista de violações abaixo`);
+  const violacoes = chamadas.map((args) => args[0]).filter((a) => !PERMITIDOS_ALVO_DO_BALDE.has(a));
   assert.deepEqual(violacoes, [],
     `alvoDoBalde recebeu argumento fora da lista branca de mercado: ${violacoes.join(', ')}`);
   // Nenhum balde antigo pode aparecer, nem como literal esvaziado (string vazia).
@@ -76,15 +157,11 @@ test('alvoDoBalde só recebe MERCADO — nenhum balde antigo indexa ALVOS', () =
 });
 
 test('metaDoBalde só recebe MERCADO ou interação declarada — nunca balde antigo', () => {
-  const chamadas = extrairArgumentos(CORPO, 'metaDoBalde');
+  const { chamadas, totalOcorrencias } = extrairArgumentos(CORPO, 'metaDoBalde');
   assert.ok(chamadas.length > 0, 'a tela não chama mais metaDoBalde — atualize/remova este teste');
-  // 'mercado'/'mercadoCj' são os mercados de mercados.js (cartão da campanha e
-  // linha do conjunto); 'objDeclarado'/'declAd' são as INTERAÇÕES declaradas
-  // (Fase 3) — o atalho de metaDoBalde que resolve por essas chaves é
-  // LEGÍTIMO (não estão em ALVOS, ver regua.js) e não pode ser removido da
-  // função; esta trava é no CHAMADOR.
-  const permitidos = new Set(['mercado', 'mercadoCj', 'objDeclarado', 'declAd']);
-  const violacoes = chamadas.map((args) => args[1]).filter((a) => !permitidos.has(a));
+  assert.equal(chamadas.length, totalOcorrencias,
+    `a extração perdeu ${totalOcorrencias - chamadas.length} chamada(s) de metaDoBalde (parêntese não fechou dentro do arquivo?) — não dá para confiar na lista de violações abaixo`);
+  const violacoes = chamadas.map((args) => args[1]).filter((a) => !PERMITIDOS_META_DO_BALDE.has(a));
   assert.deepEqual(violacoes, [],
     `metaDoBalde recebeu 2º argumento fora da lista branca: ${violacoes.join(', ')}`);
 });
@@ -94,17 +171,52 @@ test('prova por mutação: um balde antigo, mesmo como literal escondido num com
   // `metaDoBalde(reguaAtiva, temMensagem ? 'mensagens' : baldeCamp)`.
   const trechoOriginal = "metaDoBalde(reguaAtiva, temMensagem ? 'mensagens' : baldeCamp);";
   const corpoMutado = semComentarios(trechoOriginal);
-  const chamadas = extrairArgumentos(corpoMutado, 'metaDoBalde');
+  const { chamadas } = extrairArgumentos(corpoMutado, 'metaDoBalde');
   assert.equal(chamadas.length, 1);
-  const permitidos = new Set(['mercado', 'mercadoCj', 'objDeclarado', 'declAd']);
-  assert.ok(!permitidos.has(chamadas[0][1]),
+  assert.ok(!PERMITIDOS_META_DO_BALDE.has(chamadas[0][1]),
     `a extração deveria ter rejeitado "${chamadas[0][1]}" (o defeito original) — a trava não pegaria mais`);
 });
 
+test('prova por mutação (nested): parêntese aninhado no argumento não escapa mais da extração — I1(a)', () => {
+  // Reproduz o buraco (a) do I1: com o regex antigo (`[^()]*`), isto dava 0
+  // chamadas extraídas e 0 violações — em silêncio. `baldeCamp` aqui é o
+  // 2º argumento de verdade (depois de `_gtReguaAtiva()`), e não está na
+  // lista branca.
+  const trecho = 'metaDoBalde(_gtReguaAtiva(), baldeCamp);';
+  const corpoMutado = semComentarios(trecho);
+  const { chamadas, totalOcorrencias } = extrairArgumentos(corpoMutado, 'metaDoBalde');
+  assert.equal(totalOcorrencias, 1, 'deveria ter visto 1 ocorrência de "metaDoBalde("');
+  assert.equal(chamadas.length, 1, 'a extração perdeu a chamada com parêntese aninhado — o buraco (a) do I1 voltou');
+  assert.equal(chamadas[0][1], 'baldeCamp', `argumento extraído errado: ${JSON.stringify(chamadas[0])}`);
+  assert.ok(!PERMITIDOS_META_DO_BALDE.has(chamadas[0][1]),
+    `a extração deveria ter rejeitado "${chamadas[0][1]}" (balde antigo por trás de uma chamada aninhada) — a trava não pegaria mais`);
+});
+
 test('todo balde antigo (índice de ALVOS) segue banido, nome por nome, para quem ler só este teste', () => {
-  // Documentação executável: se algum dia um destes nomes voltar a ser
-  // ACEITO pela lista branca acima (alguém "generaliza" o Set sem pensar),
-  // este teste falha e aponta exatamente qual.
-  const permitidos = new Set(['mercado', 'mercadoCj', 'objDeclarado', 'declAd']);
-  for (const balde of BALDES_ANTIGOS) assert.ok(!permitidos.has(balde), `"${balde}" não pode nunca entrar na lista branca`);
+  // Documentação executável — DE VERDADE (I2, rodada de correção 2,
+  // 25/09/2026): lê os MESMOS Sets (`PERMITIDOS_ALVO_DO_BALDE`,
+  // `PERMITIDOS_META_DO_BALDE`) que os dois testes de cima usam para validar
+  // a tela, em vez de uma cópia local.
+  //
+  // O DEFEITO QUE ISTO CORRIGE: a versão anterior redeclarava seu próprio
+  // `permitidos` AQUI DENTRO, um terceiro Set igual (de olho) aos dois de
+  // cima, mas sem nenhum vínculo com eles. O comentário prometia que o teste
+  // "falha se algum dia um destes nomes voltar a ser aceito pela lista branca
+  // acima" — falso: editar o Set real (o de cima) não move a cópia local
+  // nenhuma linha; o teste continuaria verde mesmo com a trava de verdade
+  // desarmada. Esse é o SEXTO teste desta série com essa mesma forma: a
+  // asserção descreve a intenção, mas os dados do teste não vêm do mesmo
+  // lugar que o código real usa.
+  //
+  // PROVA POR MUTAÇÃO feita manualmente para esta correção (não fica no
+  // código — mutação de verdade se desfaz): acrescentei 'engajamento' a
+  // `PERMITIDOS_META_DO_BALDE` (a lista real, no topo deste arquivo), rodei
+  // `npm test`, e ESTE teste falhou junto com o de "metaDoBalde só recebe
+  // MERCADO..." — apontando exatamente "engajamento" como o nome que não
+  // podia estar ali. Removida a mutação, os dois voltaram a passar. Resultado
+  // e mensagem de erro exatos: ver o relatório desta tarefa.
+  for (const balde of BALDES_ANTIGOS) {
+    assert.ok(!PERMITIDOS_META_DO_BALDE.has(balde), `"${balde}" não pode nunca entrar na lista branca de metaDoBalde`);
+    assert.ok(!PERMITIDOS_ALVO_DO_BALDE.has(balde), `"${balde}" não pode nunca entrar na lista branca de alvoDoBalde`);
+  }
 });
