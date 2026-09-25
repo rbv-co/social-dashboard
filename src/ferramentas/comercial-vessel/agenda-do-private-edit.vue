@@ -62,9 +62,9 @@
             </div>
             <button v-for="i in doDia(dia)" :key="chaveDoItem(i)" type="button"
                     class="ag-chip" :class="[TIPOS[i.tipo]?.classe, { 'ag-chip-sobrepoe': sobrepoe(i) }]"
-                    :title="linhaDoItem(i)" @click="abrir(i)">
+                    :title="linhaDoItem(i, pracas)" @click="abrir(i)">
               <span class="ag-chip-hora">{{ i.hora || 'dia todo' }}</span>
-              <span class="ag-chip-texto">{{ quemDoItem(i) }} · {{ nomeDoLugar(i) }}</span>
+              <span class="ag-chip-texto">{{ quemDoItem(i) }} · {{ nomeDoLugar(i, pracas) }}</span>
               <span v-if="sobrepoe(i)" class="ag-chip-alerta"><icone-do-bloco nome="alerta" />sobrepõe</span>
             </button>
           </div>
@@ -87,7 +87,7 @@
                   class="ag-chip ag-chip-largo" :class="[TIPOS[i.tipo]?.classe, { 'ag-chip-sobrepoe': sobrepoe(i) }]"
                   @click="abrir(i)">
             <span class="ag-chip-tipo">{{ TIPOS[i.tipo]?.rotulo }} · {{ horarioDoItem(i) }}</span>
-            <span class="ag-chip-texto">{{ quemDoItem(i) }} · {{ nomeDoLugar(i) }}</span>
+            <span class="ag-chip-texto">{{ quemDoItem(i) }} · {{ nomeDoLugar(i, pracas) }}</span>
             <span v-if="sobrepoe(i)" class="ag-chip-alerta"><icone-do-bloco nome="alerta" />sobrepõe {{ i.sobrepoe.join(', ') }}</span>
           </button>
         </section>
@@ -108,7 +108,7 @@
         </div>
         <div class="cv-modal-corpo">
           <dl class="ag-detalhes">
-            <template v-for="[k, v] in detalhesDoItem(aberto)" :key="k">
+            <template v-for="[k, v] in detalhesDoItem(aberto, pracas)" :key="k">
               <dt>{{ k }}</dt><dd>{{ v }}</dd>
             </template>
           </dl>
@@ -148,6 +148,9 @@ const props = defineProps({
   chamar: { type: Function, required: true },
   // Sobe a cada gravação na tela (criar, editar, arquivar…): a agenda relê.
   versao: { type: Number, default: 0 },
+  // ⚠️ 25/09/2026 (Task 8): o cadastro de praças (`vessel_pracas_listar`), para
+  // `nomeDoLugar` escrever o NOME dela — nunca mais uma lista escrita aqui.
+  pracas: { type: Array, default: () => [] },
 })
 const emit = defineEmits(['abrir'])
 
@@ -192,7 +195,7 @@ async function carregar() {
     if (meu !== pedido) return // chegou a resposta de um mês que já saiu da tela
     if (!Array.isArray(r)) throw new Error('a resposta não veio no formato esperado')
     itens.value = r
-    for (const l of lugaresDaAgenda(r)) lugaresVistos.set(l.chave, l.rotulo)
+    for (const l of lugaresDaAgenda(r, props.pracas)) lugaresVistos.set(l.chave, l.rotulo)
   } catch (e) {
     if (meu !== pedido) return
     itens.value = []

@@ -25,7 +25,7 @@
           <label class="cv-campo" for="pe-praca"><span>Praça</span>
             <select id="pe-praca" v-model="novo.praca">
               <option value="">Escolha…</option>
-              <option v-for="(nome, sigla) in PRACAS" :key="sigla" :value="sigla">{{ nome }}</option>
+              <option v-for="p in pracasAtivas" :key="p.id" :value="p.sigla">{{ rotuloDaPraca(p) }}</option>
             </select></label>
           <!-- ⚠️ 25/09/2026: A LOJA NO CRIAR. Só a edição tinha o campo, e o
                encontro novo nascia sem loja — a agenda e o aviso de sobreposto
@@ -63,6 +63,14 @@
         </div>
       </section>
 
+      <!-- ── A BARRA "PRAÇA · EDIÇÃO" (25/09/2026, Task 8) ──────────────────
+           A MESMA da tela irmã (Stylist Circle, Task 7) — recorta a lista
+           abaixo (a Agenda tem o mês inteiro dela, e não usa este recorte). -->
+      <barra-de-praca-e-edicao v-model:praca="pracaEscolhidaId" v-model:edicao="edicaoEscolhidaId"
+                               :pracas="pracas" :edicoes="edicoesDaPraca" />
+      <p v-if="erroDasPracas" class="cv-nota cv-nota-erro">{{ erroDasPracas }}</p>
+      <p v-if="erroDasEdicoesDaPraca" class="cv-nota cv-nota-erro">{{ erroDasEdicoesDaPraca }}</p>
+
       <!-- ── LISTA | AGENDA (25/09/2026) ────────────────────────────────────
            A agenda é o mês das lojas (Private Edit + Beauty Sessions + Private
            Appointments), para bater agenda e ver encontro sobreposto. -->
@@ -73,7 +81,7 @@
                 :aria-selected="vista === 'agenda'" @click="escolherVista('agenda')"><icone-do-bloco nome="calendario" />Agenda</button>
       </div>
 
-      <agenda-do-private-edit v-if="vista === 'agenda'" :chamar="chamar" :versao="versaoDaAgenda"
+      <agenda-do-private-edit v-if="vista === 'agenda'" :chamar="chamar" :versao="versaoDaAgenda" :pracas="pracas"
                               @abrir="abrirDaAgenda" />
 
       <template v-else>
@@ -95,13 +103,6 @@
           escreve a faixa em que a taxa real pode estar.
         </p>
         <p class="cv-nota">
-          <b>Receita</b> é a compra das convidadas na janela declarada ao lado do
-          valor. Não existe no dado nenhum campo dizendo “esta compra veio deste
-          encontro” — o que existe é a mesma pessoa comprando perto da visita.
-          Só conta pedido atendido no Bling, e quem foi a dois encontros tem a
-          compra contada no <b>primeiro</b>, uma vez só.
-        </p>
-        <p class="cv-nota">
           <b>Confirmadas</b> inclui quem confirmou e faltou — sem ela no
           denominador, o comparecimento daria perto de 100% sempre. No total de
           cima, o comparecimento soma só os encontros que <b>aconteceram</b>:
@@ -109,10 +110,19 @@
         </p>
         <p class="cv-nota">
           <b>Encerrada</b> e <b>arquivada</b> são coisas diferentes. Encerrada
-          aconteceu e continua contando na receita e nos números. Arquivada é o
+          aconteceu e continua contando nos números. Arquivada é o
           que não devia ter ficado ali — duplicata, engano — e por isso sai das
           contas e da lista por padrão; o filtro "Situação" traz de volta quem
           precisar olhar para ela.
+        </p>
+        <!-- ⚠️ 25/09/2026 (Task 8): SEM RECEITA NENHUMA NESTA TELA — o painel
+             de compras está CONGELADO por decisão do dono: nenhum dos 481
+             pedidos está ligado a uma pessoa, e um zero aqui pareceria
+             fracasso comercial quando é furo de base (PADRAO, item 9: mostrar
+             zero seria mentir). -->
+        <p class="cv-nota">
+          <b>Sem receita nenhuma aqui:</b> o panorama de compras está
+          congelado, e mostrar zero seria mentir.
         </p>
       </section>
 
@@ -170,6 +180,11 @@
                 <span v-if="e.anfitria || e.stylist"> · {{ e.anfitria || e.stylist }}</span>
                 <span v-if="e.local"> · {{ e.local }}</span>
               </p>
+              <!-- ⚠️ 25/09/2026 (Task 8): A EDIÇÃO DO ENCONTRO — a da praça dele
+                   cuja janela contém o dia (`edicaoDoEncontro`, edicao-regras.js).
+                   Fora de qualquer janela: "fora de edição", VISÍVEL, nunca
+                   escondido (PADRAO, item 9 — a tela nunca mente). -->
+              <p v-if="rotuloDaEdicaoDoEncontro(e)" class="cv-sub">{{ rotuloDaEdicaoDoEncontro(e) }}</p>
             </div>
             <span class="cv-selo id-selo" :class="[seloDoStatus(e).classe, `id-tom-${seloDoStatus(e).tom}`]">{{ seloDoStatus(e).texto }}</span>
           </div>
@@ -198,11 +213,6 @@
               <span class="cv-numero-base">{{ taxaEscrita(taxaPresenca(e)) }} de quem confirmou</span>
               <span v-if="margemEscrita(taxaPresenca(e))" class="cv-numero-margem">
                 {{ margemEscrita(taxaPresenca(e)) }}</span>
-            </div>
-            <div class="cv-numero">
-              <span class="cv-numero-valor">{{ emReais(e.receita) }}</span>
-              <span class="cv-numero-rotulo">Receita</span>
-              <span class="cv-numero-base">{{ janelaEscrita(e.janela_de_venda_em_dias) }}</span>
             </div>
           </div>
 
@@ -277,7 +287,7 @@
               <label class="cv-campo" :for="`ed-praca-${e.codigo}`"><span>Praça</span>
                 <select :id="`ed-praca-${e.codigo}`" v-model="rascunho.praca">
                   <option value="">Escolha…</option>
-                  <option v-for="(nome, sigla) in PRACAS" :key="sigla" :value="sigla">{{ nome }}</option>
+                  <option v-for="p in pracasAtivas" :key="p.id" :value="p.sigla">{{ rotuloDaPraca(p) }}</option>
                 </select></label>
               <label class="cv-campo" :for="`ed-loja-${e.codigo}`"><span>Loja</span>
                 <select :id="`ed-loja-${e.codigo}`" v-model="rascunho.loja">
@@ -447,7 +457,7 @@
     <!-- O AVISO DE ENCONTRO SOBREPOSTO: avisa e deixa confirmar (decisão do dono). -->
     <aviso-de-sobreposicao v-if="aviso" :lista="aviso.lista" :contexto="aviso.contexto" :modo="aviso.modo"
                            :encontro="aviso.modo === 'editar' ? aviso.encontro.codigo : ''"
-                           :gravando="gravandoAviso" :erro="erroDoAviso"
+                           :gravando="gravandoAviso" :erro="erroDoAviso" :pracas="pracas"
                            @confirmar="confirmarAviso" @cancelar="aviso = null" />
 
     <cartao-da-convidada v-if="cartaoAberto" :convidada="cartaoAberto.convidada" :encontro="cartaoAberto.encontro"
@@ -497,7 +507,10 @@ import BarraDeLista from './barra-de-lista.vue'
 import CartaoDaConvidada from './cartao-da-convidada.vue'
 import AgendaDoPrivateEdit from './agenda-do-private-edit.vue'
 import AvisoDeSobreposicao from './aviso-de-sobreposicao.vue'
+import BarraDePracaEEdicao from './barra-de-praca-e-edicao.vue'
 import { valoresQueFicam, mudouHoraOuLugar } from './agenda-regras.js'
+import { rotuloDaPraca } from './praca-regras.js'
+import { edicaoDoEncontro, rotuloDaEdicao } from './edicao-regras.js'
 import IconeDoBloco from '../../compartilhado/icone-do-bloco.vue'
 import { estado, hasPermission } from '../../compartilhado/controle-de-login-e-usuario.js'
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../../compartilhado/conectar-no-banco-de-dados.js'
@@ -524,17 +537,112 @@ import { paiDaTela, ROTULO_DO_PAI } from './navegacao.js'
 const router = useRouter()
 function voltar() { router.push({ name: paiDaTela('private-edit') }) }
 
-const PRACAS = { CPS: 'Campinas', SAO: 'São Paulo', SBO: 'Santa Bárbara', BSB: 'Brasília' }
+// ⚠️ 25/09/2026 (Task 8): A LISTA `PRACAS` CRAVADA SAIU DAQUI — as quatro
+// siglas fixas de antes faziam ninguém marcar Private Edit em Limeira ou
+// Piracicaba pela tela. Agora é `pracas` (abaixo), lida do cadastro de
+// verdade (`vessel_pracas_listar`) — a MESMA porta que a barra usa.
 const LOJAS = { iguatemi: 'Iguatemi', tivoli: 'Tivoli', parkshopping: 'ParkShopping' }
 
-// ⚠️ A MESMA JANELA PARA AS DUAS CHAMADAS (R14): a receita do topo e a coluna
-// "Comprou" da lista de convidadas medem com a MESMA régua. Um número
-// diferente em cada uma faria as duas se contradizerem na mesma tela.
+// ⚠️ A MESMA JANELA PARA AS DUAS CHAMADAS (R14): o "comprou" da lista de
+// convidadas e a receita que o banco calcula por trás (sem coluna própria
+// nesta tela — ver "SEM RECEITA NENHUMA", mais abaixo) medem com a MESMA
+// régua. Um número diferente em cada uma faria as duas se contradizerem.
 const P_DIAS = 14
 
 const podeEditar = computed(() => hasPermission('atendimentos.private-edit', 'editar'))
 
+// ── PRAÇA · EDIÇÃO (25/09/2026, Task 8) — a MESMA barra da tela irmã ────────
+// (Stylist Circle, Task 7): reusada, não recriada. `null` nos dois é "todas
+// as praças, sem edição escolhida" — o comportamento de sempre. Trocar de
+// praça já chega com a edição limpa (a própria barra emite os dois).
+const pracas = ref([])
+const erroDasPracas = ref('')
+const pracaEscolhidaId = ref(null)
+const edicaoEscolhidaId = ref(null)
+const edicoesDaPraca = ref([])
+const erroDasEdicoesDaPraca = ref('')
+// ⚠️ TODAS as edições, de TODAS as praças — não só da escolhida: é o que
+// `edicaoDoEncontro` precisa para dizer a edição de CADA cartão (ela pode
+// estar fora do recorte da barra, e mesmo assim aparecer na lista quando
+// nenhuma praça está escolhida). `edicoesDaPraca` (acima) é só para o
+// <select> da barra, que já vem recortado por praça.
+const todasEdicoes = ref([])
+const erroDasTodasEdicoes = ref('')
+// Só ativas: escolher uma praça sem loja/edição ainda não trava nada — mas
+// marcar um encontro numa praça DESATIVADA o banco recusaria na hora.
+const pracasAtivas = computed(() => pracas.value.filter((p) => p.ativa !== false))
+
+async function carregarPracas() {
+  erroDasPracas.value = ''
+  try {
+    pracas.value = await chamar('vessel_pracas_listar', {}) || []
+  } catch {
+    pracas.value = []
+    erroDasPracas.value = 'Não consegui ler o cadastro de praças agora. Tente de novo em um instante.'
+  }
+}
+
+async function carregarEdicoesDaPraca() {
+  erroDasEdicoesDaPraca.value = ''
+  if (!pracaEscolhidaId.value) { edicoesDaPraca.value = []; return }
+  try {
+    edicoesDaPraca.value = await chamar('vessel_edicoes_listar', { p_praca_id: pracaEscolhidaId.value }) || []
+  } catch {
+    // ⚠️ A tela nunca mente (PADRAO, item 9): sem isto, o select ficaria só
+    // com "Todas as edições desta praça" e pareceria que a praça não tem
+    // edição nenhuma, quando na verdade a leitura falhou.
+    edicoesDaPraca.value = []
+    erroDasEdicoesDaPraca.value = 'Não consegui ler as edições desta praça agora. Tente de novo em um instante.'
+  }
+}
+watch(pracaEscolhidaId, carregarEdicoesDaPraca, { immediate: true })
+
+async function carregarTodasEdicoes() {
+  erroDasTodasEdicoes.value = ''
+  try {
+    todasEdicoes.value = await chamar('vessel_edicoes_listar', { p_praca_id: null }) || []
+  } catch {
+    todasEdicoes.value = []
+    erroDasTodasEdicoes.value = 'Não consegui ler as edições agora.'
+  }
+}
+
+// A praça de CADA encontro (o campo `praca` que volta é a SIGLA, não o id —
+// `vessel_conta_das_private_edits` não devolve `praca_id`): resolve pelo
+// cadastro já lido. Sigla que o cadastro não conhece devolve nulo (não
+// inventa um id), e `edicaoDoEncontro` já lida com `praca_id` nulo (some).
+function pracaIdDoEncontro(e) {
+  const achou = pracas.value.find((p) => p.sigla === e?.praca)
+  return achou ? achou.id : null
+}
+function edicaoDoEncontroNaTela(e) {
+  return edicaoDoEncontro({ praca_id: pracaIdDoEncontro(e), quando: e?.quando }, todasEdicoes.value)
+}
+// ⚠️ Enquanto o cadastro/as edições não terminaram de carregar (nem deram
+// erro), NÃO escreve "fora de edição" — seria uma leitura ainda incompleta
+// se passando por resposta. Só mostra depois que as duas leituras terminam
+// (com sucesso OU com erro — daí a leitura já acabou, mesmo que tenha falhado).
+const infoDaEdicaoPronta = computed(() => (pracas.value.length > 0 || !!erroDasPracas.value)
+  && (todasEdicoes.value.length > 0 || !!erroDasTodasEdicoes.value))
+function rotuloDaEdicaoDoEncontro(e) {
+  if (!infoDaEdicaoPronta.value) return ''
+  const ed = edicaoDoEncontroNaTela(e)
+  return ed ? rotuloDaEdicao(ed) : 'fora de edição'
+}
+
 const encontros = ref([])
+// ⚠️ A BARRA RECORTA A LISTA — SÓ CLIENT-SIDE (R do controlador): diferente da
+// tela irmã, `vessel_conta_das_private_edits` não tem `p_praca_id`/
+// `p_edicao_id` (não devolve `praca_id` nenhum) — o recorte é sobre o que já
+// veio, pela sigla resolvida acima e pela MESMA edição que o cartão mostra.
+const encontrosRecortados = computed(() => {
+  if (!pracaEscolhidaId.value) return encontros.value
+  return encontros.value.filter((e) => {
+    if (pracaIdDoEncontro(e) !== pracaEscolhidaId.value) return false
+    if (!edicaoEscolhidaId.value) return true
+    return edicaoDoEncontroNaTela(e)?.id === edicaoEscolhidaId.value
+  })
+})
 const stylists = ref([])
 // ⚠️ 24/09/2026: as etapas, para a nota dizer QUAIS liberam hoje (os nomes
 // mudam pela tela "Etapas do funil"). Lidas a cada carregar, sem cache: quem
@@ -577,14 +685,18 @@ const versaoDaAgenda = ref(0)
 
 const novo = reactive({ stylist: '', quando: '', praca: '', loja: '', vagas: 8, local: '' })
 
-const problemas = computed(() => problemasDoEncontro(novo))
+// ⚠️ A PRAÇA VEM DO CADASTRO (Task 8): sem `siglasValidas`, a conferência
+// barraria só "escolheu alguma praça" — aqui ela manda as siglas ATIVAS de
+// hoje, para não deixar passar uma praça desativada que o banco recusaria.
+const problemas = computed(() => problemasDoEncontro(novo, pracasAtivas.value.map((p) => p.sigla)))
 
 // ⚠️ O FILTRO E O TOTAL AGEM SOBRE O QUE ESTÁ NA TELA (R do bloco "Todos os
 // encontros juntos"): busca por código/anfitriã, situação, loja e ordem — tudo
-// client-side, sobre `encontros`, que só volta ao banco quando a situação
-// exige arquivada (ver o watch abaixo).
+// client-side, sobre `encontrosRecortados` (a barra Praça · Edição já
+// recortou), que só volta ao banco quando a situação exige arquivada (ver o
+// watch abaixo).
 const encontrosNaTela = computed(() =>
-  filtrar(encontros.value, filtro.value, { busca: ['codigo', 'anfitria', 'stylist'], loja: 'loja' }))
+  filtrar(encontrosRecortados.value, filtro.value, { busca: ['codigo', 'anfitria', 'stylist'], loja: 'loja' }))
 
 // ⚠️ CRITICAL DA RODADA ANTERIOR: `totalVagas` somava sobre `encontros.value`
 // (a lista CHEIA) enquanto a contagem ao lado já seguia o filtro — "3
@@ -1098,7 +1210,7 @@ async function copiar(texto, marca) {
   } catch { /* o endereço segue na tela para ser selecionado à mão */ }
 }
 
-onMounted(carregar)
+onMounted(() => { carregar(); carregarPracas(); carregarTodasEdicoes() })
 </script>
 
 <style scoped>

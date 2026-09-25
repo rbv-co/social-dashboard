@@ -31,7 +31,6 @@ export const CHAVES_DO_ITEM = ['tipo', 'id', 'codigo', 'dia', 'hora', 'hora_fim'
   'lugar', 'stylist', 'anfitria', 'parceiro', 'client_advisor', 'status', 'sobrepoe']
 
 export const LOJAS = { iguatemi: 'Iguatemi', tivoli: 'Tivoli', parkshopping: 'ParkShopping' }
-export const PRACAS = { CPS: 'Campinas', SAO: 'São Paulo', SBO: 'Santa Bárbara', BSB: 'Brasília' }
 const MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro',
   'outubro', 'novembro', 'dezembro']
 export const DIAS_DA_SEMANA = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb']
@@ -161,20 +160,37 @@ export function agruparPorDia(itens) {
 /** A chave do filtro "Loja" de um item: a loja; sem loja, o lugar do banco. */
 export const chaveDoLugar = (i) => i?.loja || i?.lugar || ''
 
-/** O nome do lugar para gente ler. */
-export function nomeDoLugar(i) {
+/**
+ * O nome de uma praça pelo CADASTRO (`pracas`, a resposta de
+ * `vessel_pracas_listar` — array com `sigla`/`nome`), nunca mais uma lista
+ * escrita no código.
+ *
+ * ⚠️ 25/09/2026 (Task 8): SIGLA QUE NÃO ESTÁ NO CADASTRO PASSADO (ou nenhum
+ * cadastro passado) APARECE PELA PRÓPRIA SIGLA, NUNCA EM BRANCO — a tela nunca
+ * mente (PADRAO, item 9): um lugar que existe sumir do texto pareceria "sem
+ * lugar nenhum" para quem lê.
+ */
+export function nomeDaPraca(sigla, pracas) {
+  const s = String(sigla || '').trim()
+  if (!s) return ''
+  const achou = (Array.isArray(pracas) ? pracas : []).find((p) => p?.sigla === s)
+  return achou?.nome || s
+}
+
+/** O nome do lugar para gente ler. `pracas` é o cadastro (ver `nomeDaPraca`). */
+export function nomeDoLugar(i, pracas) {
   if (!i) return ''
   if (i.loja) return LOJAS[i.loja] || i.loja
-  const praca = PRACAS[i.praca] || i.praca || ''
+  const praca = nomeDaPraca(i.praca, pracas)
   return [praca, i.local].filter(Boolean).join(' · ') || 'Sem lugar'
 }
 
 /** As opções do filtro "Loja", tiradas do que veio (nenhuma lista cravada). */
-export function lugaresDaAgenda(itens) {
+export function lugaresDaAgenda(itens, pracas) {
   const vistos = new Map()
   for (const i of Array.isArray(itens) ? itens : []) {
     const chave = chaveDoLugar(i)
-    if (chave && !vistos.has(chave)) vistos.set(chave, nomeDoLugar(i))
+    if (chave && !vistos.has(chave)) vistos.set(chave, nomeDoLugar(i, pracas))
   }
   return [...vistos].map(([chave, rotulo]) => ({ chave, rotulo }))
     .sort((a, b) => a.rotulo.localeCompare(b.rotulo, 'pt-BR'))
@@ -195,12 +211,12 @@ export function diaTemSobreposicao(lista) {
 }
 
 /** A linha do chip: "19:00 · Marina Castro · Iguatemi". */
-export function linhaDoItem(i) {
+export function linhaDoItem(i, pracas) {
   if (!i) return ''
   const quem = i.tipo === 'private_edit' ? (i.anfitria || i.stylist || i.codigo)
     : i.tipo === 'beauty_session' ? `Beauty Session${i.parceiro ? ` — ${i.parceiro}` : ''}`
       : `Private Appointment${i.client_advisor ? ` — ${i.client_advisor}` : ''}`
-  return [i.hora || 'o dia todo', quem, nomeDoLugar(i)].filter(Boolean).join(' · ')
+  return [i.hora || 'o dia todo', quem, nomeDoLugar(i, pracas)].filter(Boolean).join(' · ')
 }
 
 /** "19:00–23:00" do encontro; a visita só tem o começo; a sessão é o dia todo. */
@@ -217,9 +233,9 @@ const STATUS_LEGIVEL = {
 export const statusLegivel = (s) => STATUS_LEGIVEL[s] || s || ''
 
 /** As linhas do quadrinho de leitura (Beauty Session e Private Appointment). */
-export function detalhesDoItem(i) {
+export function detalhesDoItem(i, pracas) {
   if (!i) return []
-  const l = [['Quando', `${dataCurta(i.dia)} · ${horarioDoItem(i)}`], ['Loja', nomeDoLugar(i)]]
+  const l = [['Quando', `${dataCurta(i.dia)} · ${horarioDoItem(i)}`], ['Loja', nomeDoLugar(i, pracas)]]
   if (i.tipo === 'beauty_session') {
     l.push(['Parceiro', i.parceiro || 'Ainda sem o nome confirmado'])
     if (i.codigo) l.push(['Código', i.codigo])
@@ -238,19 +254,19 @@ export function dataCurta(dia) {
 
 // ── o aviso antes de gravar ──────────────────────────────────────────────────
 /** A linha de cada encontro que cruza: código, anfitriã, loja e o horário. */
-export function linhaDoConflito(o) {
+export function linhaDoConflito(o, pracas) {
   if (!o) return ''
   const quem = o.anfitria || o.stylist || ''
-  return [o.codigo, quem, nomeDoLugar(o), `${dataCurta(o.dia)} ${o.hora}–${o.hora_fim}`].filter(Boolean).join(' · ')
+  return [o.codigo, quem, nomeDoLugar(o, pracas), `${dataCurta(o.dia)} ${o.hora}–${o.hora_fim}`].filter(Boolean).join(' · ')
 }
 
 /** A nota do que mais ocupa a loja (NÃO é conflito). */
-export function linhaDoContexto(c) {
+export function linhaDoContexto(c, pracas) {
   if (!c) return ''
   if (c.tipo === 'beauty_session') {
-    return `Beauty Session${c.parceiro ? ` — ${c.parceiro}` : ''} no mesmo dia (${nomeDoLugar(c)})`
+    return `Beauty Session${c.parceiro ? ` — ${c.parceiro}` : ''} no mesmo dia (${nomeDoLugar(c, pracas)})`
   }
-  return `Private Appointment às ${c.hora}${c.client_advisor ? ` com ${c.client_advisor}` : ''} (${nomeDoLugar(c)})`
+  return `Private Appointment às ${c.hora}${c.client_advisor ? ` com ${c.client_advisor}` : ''} (${nomeDoLugar(c, pracas)})`
 }
 
 /**

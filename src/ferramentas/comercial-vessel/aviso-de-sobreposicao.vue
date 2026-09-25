@@ -12,12 +12,12 @@
           (cada um ocupa {{ DURACAO_DO_PRIVATE_EDIT_EM_HORAS }} horas a partir do início):
         </p>
         <ul class="ag-aviso-lista">
-          <li v-for="o in lista" :key="o.codigo" class="ag-aviso-conflito">{{ linhaDoConflito(o) }}</li>
+          <li v-for="o in lista" :key="o.codigo" class="ag-aviso-conflito">{{ linhaDoConflito(o, pracas) }}</li>
         </ul>
         <template v-if="contexto.length">
           <h3 class="cv-etiqueta cv-etiqueta-interna id-subtitulo">Também na loja nesse horário (não é conflito)</h3>
           <ul class="ag-aviso-lista ag-aviso-contexto">
-            <li v-for="(c, n) in contexto" :key="n" :class="c.tipo === 'beauty_session' ? 'ag-bs' : 'ag-pa'">{{ linhaDoContexto(c) }}</li>
+            <li v-for="(c, n) in contexto" :key="n" :class="c.tipo === 'beauty_session' ? 'ag-bs' : 'ag-pa'">{{ linhaDoContexto(c, pracas) }}</li>
           </ul>
         </template>
         <p class="ag-aviso-pergunta">{{ modo === 'editar' ? 'Salvar mesmo assim?' : 'Marcar mesmo assim?' }}</p>
@@ -56,6 +56,9 @@ const props = defineProps({
   encontro: { type: String, default: '' },        // o código, ao editar
   gravando: { type: Boolean, default: false },
   erro: { type: String, default: '' },
+  // ⚠️ 25/09/2026 (Task 8): o cadastro de praças, para `linhaDoConflito` e
+  // `linhaDoContexto` escreverem o NOME da praça — nunca mais lista cravada.
+  pracas: { type: Array, default: () => [] },
 })
 const emit = defineEmits(['confirmar', 'cancelar'])
 
