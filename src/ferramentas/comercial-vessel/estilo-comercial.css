@@ -58,6 +58,25 @@
 /* Texto de várias linhas (observações): cresce na vertical, nunca de lado. */
 .cv-observacoes { white-space: pre-line; overflow-wrap: anywhere; }
 .cv-campo textarea { min-height: 96px; resize: vertical; line-height: 1.45; }
+/* ⚠️ RODADA 1 DE CONSERTO (Task 8, IMPORTANTE 4): o MESMO conserto de
+ * `.cv-barra-campo select` (Task 7, Rodada 2), aqui embaixo — `min-height`
+ * sozinho não basta para o `<select>` no WEBKIT (o único motor do iPhone):
+ * medido em 26px no formulário "Marcar um encontro" (`#pe-stylist`,
+ * `#pe-praca`, `#pe-loja`) e no seletor de Situação de CADA cartão
+ * (`#sit-status-*`) — todos `.cv-campo select`. `appearance:none` tira a
+ * pele nativa do sistema, que é o que faz o WebKit ignorar a caixa; a seta
+ * é desenhada em CSS puro, com `currentColor`, nunca hex.
+ */
+.cv-campo select {
+  appearance: none; -webkit-appearance: none; -moz-appearance: none;
+  padding-right: 34px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: calc(100% - 18px) 52%, calc(100% - 13px) 52%;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
 
 .cv-problemas {
   margin: var(--sp-3) 0 0;

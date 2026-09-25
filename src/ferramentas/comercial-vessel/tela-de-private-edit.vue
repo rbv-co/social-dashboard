@@ -22,9 +22,12 @@
             </select></label>
           <label class="cv-campo" for="pe-quando"><span>Dia e hora</span>
             <input id="pe-quando" type="datetime-local" v-model="novo.quando"></label>
+          <!-- ⚠️ RODADA 1 DE CONSERTO (IMPORTANTE 5): o motivo mora NO CAMPO
+               travado (o mesmo padrão do seletor "Anfitriã", logo acima) —
+               não só na mensagem solta perto da barra, longe daqui. -->
           <label class="cv-campo" for="pe-praca"><span>Praça</span>
-            <select id="pe-praca" v-model="novo.praca">
-              <option value="">Escolha…</option>
+            <select id="pe-praca" v-model="novo.praca" :disabled="!pracasAtivas.length">
+              <option value="">{{ placeholderDePraca }}</option>
               <option v-for="p in pracasAtivas" :key="p.id" :value="p.sigla">{{ rotuloDaPraca(p) }}</option>
             </select></label>
           <!-- ⚠️ 25/09/2026: A LOJA NO CRIAR. Só a edição tinha o campo, e o
@@ -70,6 +73,10 @@
                                :pracas="pracas" :edicoes="edicoesDaPraca" />
       <p v-if="erroDasPracas" class="cv-nota cv-nota-erro">{{ erroDasPracas }}</p>
       <p v-if="erroDasEdicoesDaPraca" class="cv-nota cv-nota-erro">{{ erroDasEdicoesDaPraca }}</p>
+      <!-- RODADA 1 DE CONSERTO (CRÍTICO 2): a mensagem existia no roteiro,
+           mas nunca era desenhada aqui — a falha de vessel_edicoes_listar(null)
+           era muda, e a linha de cada cartão virava "fora de edição" pelo erro. -->
+      <p v-if="erroDasTodasEdicoes" class="cv-nota cv-nota-erro">{{ erroDasTodasEdicoes }}</p>
 
       <!-- ── LISTA | AGENDA (25/09/2026) ────────────────────────────────────
            A agenda é o mês das lojas (Private Edit + Beauty Sessions + Private
@@ -443,9 +450,14 @@
           </template>
         </section>
 
+        <!-- ⚠️ RODADA 1 DE CONSERTO (MENOR 7): a frase só falava dos botões da
+             barra-de-lista — com a barra Praça · Edição zerando a lista (uma
+             praça/edição escolhida sem encontro nenhum dentro), o vazio
+             apontava para o filtro errado. -->
         <p v-if="!encontrosNaTela.length && encontros.length" class="cv-vazio">
-          Nenhum encontro passa neste filtro. Experimente "Todas, inclusive
-          arquivadas" ou um período maior.
+          Nenhum encontro passa neste filtro.
+          <template v-if="pracaEscolhidaId">Experimente escolher "Todas as praças" na barra Praça · Edição, acima.</template>
+          <template v-else>Experimente "Todas, inclusive arquivadas" ou um período maior.</template>
         </p>
         <p v-if="!encontros.length" class="cv-vazio">
           Nenhum encontro marcado ainda. Marque o primeiro no bloco de cima.
@@ -516,9 +528,11 @@ import { estado, hasPermission } from '../../compartilhado/controle-de-login-e-u
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../../compartilhado/conectar-no-banco-de-dados.js'
 import { classificarErro } from '../../compartilhado/classificar-erro.js'
 import { enderecoDoConvite, dataHoraLegivel, dataLegivel, problemasDoEncontro } from './enderecos-publicos.js'
-import {
-  proporcao, taxaEscrita, margemEscrita, emPorcento, emReais, janelaEscrita,
-} from './estatistica.js'
+// ⚠️ RODADA 1 DE CONSERTO (MENOR 6): `emReais`/`janelaEscrita` ficaram sem uso
+// depois que a receita saiu do cartão e do "Como ler" — a receita continua
+// existindo na resposta do banco (compartilhada com o Material Gráfico), só
+// não é mais desenhada aqui.
+import { proporcao, taxaEscrita, margemEscrita, emPorcento } from './estatistica.js'
 import { filtrar, FILTRO_VAZIO, precisaDoBanco } from './filtros.js'
 import {
   mensagemDeEditar, mensagemDeArquivar, mensagemDeTemGente, mensagemDeApagar,
@@ -557,6 +571,16 @@ const podeEditar = computed(() => hasPermission('atendimentos.private-edit', 'ed
 // praça já chega com a edição limpa (a própria barra emite os dois).
 const pracas = ref([])
 const erroDasPracas = ref('')
+// ⚠️ RODADA 1 DE CONSERTO (CRÍTICO 1): "carregou" É UM RELÓGIO PRÓPRIO, NUNCA
+// `lista.length > 0`. A tabela de edições NASCE VAZIA (a migration não semeia
+// nenhuma; a primeira só existe quando alguém criar pela tela) — no dia 1 em
+// produção, `todasEdicoes.value.length > 0` nunca vira verdade, e a leitura
+// que deu certo (voltou `[]` de propósito) ficava presa em "ainda carregando"
+// para sempre: a linha de edição some de todos os cartões, sempre. Estes dois
+// `ref` marcam O FIM DA TENTATIVA (sucesso OU erro — os dois `finally`,
+// abaixo) e nunca o tamanho do que voltou.
+const pracasProntas = ref(false)
+const todasEdicoesProntas = ref(false)
 const pracaEscolhidaId = ref(null)
 const edicaoEscolhidaId = ref(null)
 const edicoesDaPraca = ref([])
@@ -571,6 +595,18 @@ const erroDasTodasEdicoes = ref('')
 // Só ativas: escolher uma praça sem loja/edição ainda não trava nada — mas
 // marcar um encontro numa praça DESATIVADA o banco recusaria na hora.
 const pracasAtivas = computed(() => pracas.value.filter((p) => p.ativa !== false))
+// ⚠️ RODADA 1 DE CONSERTO (IMPORTANTE 5): o "Escolha…" fixo não dizia por que
+// o campo estava travado quando a leitura ainda não tinha voltado, ou tinha
+// falhado, ou (caso raro) o cadastro não tem praça ativa nenhuma — as três
+// causas de `pracasAtivas` vazio. `problemasDoEncontro` já bloqueia o botão
+// "Criar encontro" nesse caso; o motivo escrito é o que falta (PADRAO,
+// item 9), no mesmo padrão do seletor "Anfitriã" (`liberadas.length`).
+const placeholderDePraca = computed(() => {
+  if (!pracasProntas.value) return 'Carregando praças…'
+  if (erroDasPracas.value) return 'Não consegui ler as praças agora'
+  if (!pracasAtivas.value.length) return 'Nenhuma praça ativa no cadastro'
+  return 'Escolha…'
+})
 
 async function carregarPracas() {
   erroDasPracas.value = ''
@@ -579,6 +615,8 @@ async function carregarPracas() {
   } catch {
     pracas.value = []
     erroDasPracas.value = 'Não consegui ler o cadastro de praças agora. Tente de novo em um instante.'
+  } finally {
+    pracasProntas.value = true
   }
 }
 
@@ -603,7 +641,9 @@ async function carregarTodasEdicoes() {
     todasEdicoes.value = await chamar('vessel_edicoes_listar', { p_praca_id: null }) || []
   } catch {
     todasEdicoes.value = []
-    erroDasTodasEdicoes.value = 'Não consegui ler as edições agora.'
+    erroDasTodasEdicoes.value = 'Não consegui ler as edições agora — a edição de cada encontro fica sem aparecer até a leitura voltar.'
+  } finally {
+    todasEdicoesProntas.value = true
   }
 }
 
@@ -618,14 +658,23 @@ function pracaIdDoEncontro(e) {
 function edicaoDoEncontroNaTela(e) {
   return edicaoDoEncontro({ praca_id: pracaIdDoEncontro(e), quando: e?.quando }, todasEdicoes.value)
 }
-// ⚠️ Enquanto o cadastro/as edições não terminaram de carregar (nem deram
-// erro), NÃO escreve "fora de edição" — seria uma leitura ainda incompleta
-// se passando por resposta. Só mostra depois que as duas leituras terminam
-// (com sucesso OU com erro — daí a leitura já acabou, mesmo que tenha falhado).
-const infoDaEdicaoPronta = computed(() => (pracas.value.length > 0 || !!erroDasPracas.value)
-  && (todasEdicoes.value.length > 0 || !!erroDasTodasEdicoes.value))
+// ⚠️ Enquanto o cadastro/as edições não terminaram de carregar, NÃO escreve
+// "fora de edição" — seria uma leitura ainda incompleta se passando por
+// resposta. "Terminou" é `pracasProntas`/`todasEdicoesProntas` (acima) — o
+// FIM da tentativa, nunca o tamanho da resposta (RODADA 1, CRÍTICO 1: a
+// tabela de edições nasce vazia, e "lista vazia" É a resposta certa no dia 1).
+const infoDaEdicaoPronta = computed(() => pracasProntas.value && todasEdicoesProntas.value)
+// ⚠️ RODADA 1 DE CONSERTO (CRÍTICO 2): LEITURA QUE FALHOU NÃO VIRA "FORA DE
+// EDIÇÃO" — antes, `erroDasPracas`/`erroDasTodasEdicoes` setados contavam
+// como "terminou" (o `||` de antes), e a tela afirmava "fora de edição" em
+// TODO encontro por causa do ERRO, sem uma palavra de aviso — a mentira mais
+// cara que uma tela conta (PADRAO, item 9). O aviso mora perto da barra
+// (`erroDasPracas`/`erroDasTodasEdicoes`, desenhados no template); aqui só
+// resta CALAR a linha — nunca afirmar uma edição (ou a falta dela) que a
+// leitura não provou.
 function rotuloDaEdicaoDoEncontro(e) {
   if (!infoDaEdicaoPronta.value) return ''
+  if (erroDasPracas.value || erroDasTodasEdicoes.value) return ''
   const ed = edicaoDoEncontroNaTela(e)
   return ed ? rotuloDaEdicao(ed) : 'fora de edição'
 }

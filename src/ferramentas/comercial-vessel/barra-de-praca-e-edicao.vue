@@ -1,13 +1,13 @@
 <template>
   <div class="cv-barra pe-barra">
-    <label class="cv-barra-campo" for="pe-praca"><span>Praça</span>
-      <select id="pe-praca" :value="praca ?? ''" @change="mudarPraca($event.target.value)">
+    <label class="cv-barra-campo" :for="idPraca"><span>Praça</span>
+      <select :id="idPraca" :value="praca ?? ''" @change="mudarPraca($event.target.value)">
         <option value="">Todas as praças</option>
         <option v-for="p in pracas" :key="p.id" :value="String(p.id)">{{ rotuloDaPraca(p) }}</option>
       </select></label>
 
-    <label class="cv-barra-campo" for="pe-edicao"><span>Edição</span>
-      <select id="pe-edicao" :value="edicao ?? ''" :disabled="!praca" @change="mudarEdicao($event.target.value)">
+    <label class="cv-barra-campo" :for="idEdicao"><span>Edição</span>
+      <select :id="idEdicao" :value="edicao ?? ''" :disabled="!praca" @change="mudarEdicao($event.target.value)">
         <option value="">{{ praca ? 'Todas as edições desta praça' : 'Escolha uma praça primeiro' }}</option>
         <option v-for="e in edicoes" :key="e.id" :value="String(e.id)">
           {{ rotuloCurtoDaEdicao(e) }} — {{ SITUACOES_DA_EDICAO[e.situacao] || e.situacao }}</option>
@@ -38,9 +38,21 @@
  * pendência para mostrar. `semPraca` é a CONTAGEM (a tela calcula com
  * `pendenciasDePraca`, praca-regras.js); esta barra só decide se mostra.
  */
+import { useId } from 'vue'
 import { useRouter } from 'vue-router'
 import { rotuloDaPraca } from './praca-regras.js'
 import { rotuloCurtoDaEdicao, SITUACOES_DA_EDICAO } from './edicao-regras.js'
+
+// ⚠️ RODADA 1 DE CONSERTO (IMPORTANTE 3): id FIXO ("pe-praca"/"pe-edicao") num
+// componente REUSADO por duas telas é o defeito — a tela do Private Edit já
+// tinha o seu PRÓPRIO campo "Praça" com esse mesmo id, e dois elementos com o
+// mesmo id na mesma página é HTML inválido: o `<label for="pe-praca">` desta
+// barra passava a apontar para o select ERRADO (o de fora), não o de dentro
+// dela. `useId()` (Vue 3.5) gera um id único por instância do componente —
+// nunca colide, nem entre esta barra e ela mesma se um dia aparecer duas
+// vezes na mesma tela.
+const idPraca = useId()
+const idEdicao = useId()
 
 const props = defineProps({
   praca: { type: [Number, String], default: null },
