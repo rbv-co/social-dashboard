@@ -53,7 +53,7 @@
         <p v-if="carregando" class="bl-carregando">Carregando…</p>
         <p v-else-if="!erro && !linhas.length" class="bl-vazio">Nenhum lead neste período.</p>
         <div v-else class="bl-tabela-scroll"><table class="bl-tabela">
-          <thead><tr><th>Data/hora</th><th>Tipo</th><th>Quem</th><th>Contato</th><th>Origem</th></tr></thead>
+          <thead><tr><th>Data/hora</th><th>Tipo</th><th>Quem</th><th>Contato</th><th>Origem</th><th>FBC</th></tr></thead>
           <tbody>
             <tr v-for="(l, i) in linhas" :key="i">
               <td>{{ formatarData(l.criado_em) }}</td>
@@ -61,6 +61,7 @@
               <td>{{ l.quem }}</td>
               <td>{{ l.contato }}</td>
               <td>{{ l.origem }}</td>
+              <td>{{ l.fbc || '—' }}</td>
             </tr>
           </tbody>
         </table></div>
@@ -174,7 +175,7 @@ onMounted(carregar)
 .bl-contador-total .bl-contador-numero { color: var(--modulo); }
 
 .bl-tabela-scroll { overflow-x: auto; }
-.bl-tabela-scroll .bl-tabela { min-width: 720px; }
+.bl-tabela-scroll .bl-tabela { min-width: 860px; }
 .bl-tabela { width: 100%; border-collapse: collapse; font-size: var(--texto-corpo); }
 .bl-tabela th, .bl-tabela td { text-align: left; padding: var(--sp-2) var(--sp-3); border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
 .bl-tabela th { color: var(--muted); font-size: var(--texto-etiqueta); text-transform: uppercase; letter-spacing: 1.5px; }
