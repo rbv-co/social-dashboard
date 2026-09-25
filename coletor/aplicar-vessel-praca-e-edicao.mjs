@@ -11,12 +11,25 @@
 // Esta migration (Task 3) só cria as tabelas e migra os dados de hoje —
 // nenhuma função de negócio nasce aqui (isso é Task 4 e 5, no mesmo arquivo).
 // Por isso não há RPC para provar como gente: as provas conferem estrutura
-// (RLS, grants, constraints) e o resultado da carga e da migração dos dados.
+// (RLS, grants, constraints, índices) e o resultado da carga e da migração
+// dos dados.
 //
+// ⚠️ RODADA 1 DE CONSERTO (revisão de 25/09/2026):
+//   · a prova do backfill NUNCA reroda um UPDATE redigitado à mão — ela
+//     insere dado sujo e reaplica a própria variável `sql` (lida do arquivo
+//     em disco), que é idempotente (`if not exists` / `on conflict do
+//     nothing` / `where praca_id is null`). Se o UPDATE do .sql quebrar, a
+//     prova quebra junto — nunca passaria verde com o backfill errado.
+//   · a chave da cidade não é mais comparada contra um mapa digitado à mão:
+//     é comparada contra o `achatarCidade` do PRÓPRIO FRONT
+//     (`src/ferramentas/comercial-vessel/praca-regras.js`), chamado ao vivo.
+//   · RLS/grants filtram por `schema = 'public'` (um homônimo em outro schema
+//     não engana mais a prova).
 // DATABASE_URL: coletor/.env OU o ambiente (`node --env-file=<.env> …`).
 import './lib/carregar-env.mjs'
 import { readFileSync } from 'node:fs'
 import pg from 'pg'
+import { achatarCidade } from '../src/ferramentas/comercial-vessel/praca-regras.js'
 
 const ARQUIVO = '2026-09-25-vessel-praca-e-edicao.sql'
 const args = process.argv.slice(2)
@@ -35,10 +48,6 @@ const PRACAS_ESPERADAS = [
   ['LIM', 'Limeira', null, 5],
   ['PIR', 'Piracicaba', null, 6],
 ]
-const CIDADES_ESPERADAS = {
-  CPS: 'campinas', SAO: 'sao paulo', SBO: 'santa barbara',
-  BSB: 'brasilia', LIM: 'limeira', PIR: 'piracicaba',
-}
 
 const IMPRESSAO = `
   select (select count(*) from public.vessel_stylists)::int as stylists,
@@ -63,6 +72,15 @@ const todas = async (s, a = []) => (await cli.query(s, a)).rows
 const r = async (s, a = []) => (await uma(`select ${s} as r`, a)).r
 const registrada = async (nome) =>
   (await uma(`select exists (select 1 from public.schema_migrations where name = $1) as ok`, [nome])).ok
+// ⚠️ MENOR 4: sempre filtrado por `public` — um homônimo em outro schema não
+// pode fazer a prova ler a linha errada.
+const estruturaDaTabela = (tabela) => uma(`
+  select c.relrowsecurity as rls,
+      (select count(*) from pg_policies where schemaname = 'public' and tablename = $1)::int as politicas,
+      (select count(*) from information_schema.role_table_grants
+        where table_schema = 'public' and table_name = $1 and grantee in ('anon', 'authenticated'))::int as grants
+    from pg_class c join pg_namespace n on n.oid = c.relnamespace
+   where n.nspname = 'public' and c.relname = $1`, [tabela])
 
 // ── as travas de antes ──────────────────────────────────────────────────────
 if (await registrada(ARQUIVO)) { console.error(`❌ ${ARQUIVO} já está registrada. Nada a fazer.`); process.exit(1) }
@@ -82,18 +100,10 @@ try {
   await cli.query(`insert into public.schema_migrations (name, observacao) values ($1, $2)`,
     [ARQUIVO, 'Aplicada e registrada na mesma transacao por coletor/aplicar-vessel-praca-e-edicao.mjs'])
 
-  console.log('\n── as tabelas: RLS ligada, sem política, sem grant a anon/authenticated (igual à irmã)')
-  const irma = await uma(`select c.relrowsecurity as rls,
-      (select count(*) from pg_policies where tablename = $1)::int as politicas,
-      (select count(*) from information_schema.role_table_grants
-        where table_name = $1 and grantee in ('anon', 'authenticated'))::int as grants
-      from pg_class c where c.relname = $1`, [IRMA])
+  console.log('\n── as tabelas: RLS ligada, sem política, sem grant a anon/authenticated (igual à irmã), só em public')
+  const irma = await estruturaDaTabela(IRMA)
   for (const t of TABELAS_NOVAS) {
-    const x = await uma(`select c.relrowsecurity as rls,
-        (select count(*) from pg_policies where tablename = $1)::int as politicas,
-        (select count(*) from information_schema.role_table_grants
-          where table_name = $1 and grantee in ('anon', 'authenticated'))::int as grants
-        from pg_class c where c.relname = $1`, [t])
+    const x = await estruturaDaTabela(t)
     conferir(JSON.stringify(x) === JSON.stringify(irma), `${t}: igual à irmã ${IRMA} (RLS, 0 políticas, 0 grants)`, { x, irma })
   }
 
@@ -104,6 +114,19 @@ try {
     conferir(col?.data_type === 'bigint' && col?.is_nullable === 'YES', `${tabela}.${coluna}: bigint, aceita nulo`, col)
   }
 
+  console.log('\n── MENOR 5: os três índices (o cascade de na_edicao varria sem índice)')
+  for (const [tabela, coluna] of [
+    ['vessel_praca_cidades', 'praca_id'], ['vessel_stylist_na_edicao', 'edicao_id'], ['vessel_stylists', 'praca_id'],
+  ]) {
+    const existe = await r(`exists (
+      select 1 from pg_index i
+        join pg_class t on t.oid = i.indrelid
+        join pg_namespace n on n.oid = t.relnamespace
+        join pg_attribute a on a.attrelid = t.oid and a.attnum = any(i.indkey)
+       where n.nspname = 'public' and t.relname = $1 and a.attname = $2)`, [tabela, coluna])
+    conferir(existe === true, `índice em ${tabela}.${coluna}`, existe)
+  }
+
   console.log('\n── as praças: a carga inicial')
   const pracas = await todas(`select sigla, nome, loja_destino, ordem, ativa from public.vessel_pracas order by ordem`)
   conferir(pracas.length === 6 && pracas.every((p, i) =>
@@ -111,23 +134,30 @@ try {
     p.loja_destino === PRACAS_ESPERADAS[i][2] && p.ordem === PRACAS_ESPERADAS[i][3] && p.ativa === true),
     'as 6 praças, na ordem, com a loja de destino certa (só Campinas tem)', pracas)
 
-  console.log('\n── as cidades de cada praça')
+  console.log('\n── MENOR 1: as cidades de cada praça — a chave bate com o front, não com um mapa digitado à mão')
   const cidades = await todas(`select p.sigla, c.cidade, c.cidade_chave from public.vessel_praca_cidades c
      join public.vessel_pracas p on p.id = c.praca_id order by p.ordem`)
-  conferir(cidades.length === 6 && cidades.every((c) => c.cidade_chave === CIDADES_ESPERADAS[c.sigla]),
-    'as 6 cidades, cada uma com a chave certa (sem acento, minúscula)', cidades)
+  conferir(cidades.length === 6 && cidades.every((c) => c.cidade_chave === achatarCidade(c.cidade)),
+    'as 6 cidades, cada cidade_chave = achatarCidade(cidade) do front (src/ferramentas/comercial-vessel/praca-regras.js)', cidades)
 
-  console.log('\n── vessel_achatar_cidade: immutable, sem portão, mesma conta do front')
-  const def = await uma(`select provolatile, prosecdef from pg_proc where proname = 'vessel_achatar_cidade'`)
+  console.log('\n── MENOR 2 e 3: vessel_achatar_cidade — immutable, com search_path, sem portão, mesma conta do front')
+  const def = await uma(`select provolatile, prosecdef, proconfig from pg_proc where proname = 'vessel_achatar_cidade'`)
   conferir(def?.provolatile === 'i' && def?.prosecdef === false, 'immutable, sem security definer (não precisa de portão)', def)
-  const casos = [
-    ['Campinas', 'campinas'], ['  Campinas  ', 'campinas'], ['CAMPINAS', 'campinas'],
-    ['São Paulo', 'sao paulo'], ['Santa Bárbara', 'santa barbara'], ['Brasília', 'brasilia'],
-    ['Limeira / Piracicaba', 'limeira / piracicaba'], [null, ''],
+  conferir(Array.isArray(def?.proconfig) && def.proconfig.includes('search_path=public'),
+    'proconfig fixa o search_path (tirar o `set search_path` não pode passar verde)', def?.proconfig)
+  // A comparação é sempre AO VIVO contra o front — nunca um literal esperado
+  // digitado à mão duas vezes (o mesmo erro dos dois lados não passa mais).
+  const casosDeAchatar = [
+    'Campinas', '  Campinas  ', 'CAMPINAS', 'São Paulo', 'Santa Bárbara', 'Brasília',
+    'Limeira / Piracicaba', null,
+    'São Paulo',            // NFD: "a" + til combinante (~), como o macOS cola
+    '\tCampinas\n',               // tab e quebra de linha nas pontas
+    ' São Paulo ',      // NBSP (espaço "invisível") nas pontas
   ]
-  for (const [entrada, esperado] of casos) {
+  for (const entrada of casosDeAchatar) {
+    const esperado = achatarCidade(entrada)
     const saida = await r(`public.vessel_achatar_cidade($1)`, [entrada])
-    conferir(saida === esperado, `achatar(${JSON.stringify(entrada)}) = ${JSON.stringify(esperado)}`, saida)
+    conferir(saida === esperado, `achatar(${JSON.stringify(entrada)}) bate com o front (${JSON.stringify(esperado)})`, { saida, esperado })
   }
 
   console.log('\n── a migração dos dados existentes (63 stylists não-teste)')
@@ -141,28 +171,40 @@ try {
      where not coalesce(teste, false) and praca_id is null`)
   conferir(semPraca?.cidade === 'Limeira / Piracicaba', 'a única sem praça é exatamente a "Limeira / Piracicaba"', semPraca)
 
-  console.log('\n── vessel_private_edits: a mesma migração, provada com dado de mentira (a tabela real está vazia hoje)')
-  await cli.query('savepoint prova_backfill')
+  console.log('\n── IMPORTANTE 1 e 2: dado SUJO, migrado pelo UPDATE REAL do .sql (nunca uma cópia redigitada)')
+  // ⚠️ Isto NÃO reroda um UPDATE retiplado à mão: reroda a própria variável
+  // `sql`, lida do arquivo em disco lá no topo deste script. Se o UPDATE do
+  // .sql for quebrado de propósito, é ESTA prova que reprova — não uma cópia
+  // que poderia ficar de bem com o arquivo mesmo com o arquivo quebrado.
+  // O arquivo é idempotente (`if not exists` / `on conflict do nothing` /
+  // `where praca_id is null`): rerodar não duplica nada e só alcança as duas
+  // linhas sujas novas, inseridas ANTES desta segunda aplicação.
+  await cli.query('savepoint prova_dado_sujo')
   try {
+    const sao = (await uma(`select id from public.vessel_pracas where sigla = 'SAO'`)).id
     const cps = (await uma(`select id from public.vessel_pracas where sigla = 'CPS'`)).id
-    const stFake = await uma(`insert into public.vessel_stylists (codigo, nome, whatsapp, teste)
-       values ('STY-PROVA-PRACA', 'Prova Praça', '5519990009999', true) returning id`)
-    const peFake = await uma(`insert into public.vessel_private_edits (codigo, chave, stylist_id, quando, praca, teste)
-       values ('CA-PROVA-PRACA', 'ca-prova-praca', $1, now() + interval '1 day', '  cps  ', true) returning id`, [stFake.id])
-    // A mesma conta do passo 7 da migration: upper+trim contra a sigla.
-    await cli.query(`update public.vessel_private_edits e set praca_id = p.id
-       from public.vessel_pracas p where e.praca_id is null and upper(trim(coalesce(e.praca, ''))) = p.sigla`)
-    const depois = await uma(`select praca_id from public.vessel_private_edits where id = $1`, [peFake.id])
-    conferir(depois?.praca_id === cps, 'private_edit com praca "  cps  " casa com CPS (upper+trim, sem diferença de espaço/caixa)', { depois, cps })
+    const stSuja = await uma(`insert into public.vessel_stylists (codigo, nome, whatsapp, cidade, teste)
+       values ('STY-PROVA-SUJA', 'Prova Cidade Suja', '5519990007777', '  sÃo   PAULO ', true) returning id`)
+    const peSuja = await uma(`insert into public.vessel_private_edits (codigo, chave, stylist_id, quando, praca, teste)
+       values ('CA-PROVA-PRACA', 'ca-prova-praca', $1, now() + interval '1 day', '  cps  ', true) returning id`, [stSuja.id])
+
+    await cli.query(sql)
+
+    const stDepois = await uma(`select praca_id from public.vessel_stylists where id = $1`, [stSuja.id])
+    conferir(stDepois?.praca_id === sao,
+      'IMPORTANTE 2 — stylist com cidade suja ("  sÃo   PAULO ") casa com SAO pelo UPDATE real do .sql', stDepois)
+    const peDepois = await uma(`select praca_id from public.vessel_private_edits where id = $1`, [peSuja.id])
+    conferir(peDepois?.praca_id === cps,
+      'IMPORTANTE 1 — private_edit com praca suja ("  cps  ") casa com CPS pelo UPDATE real do .sql (não uma cópia)', peDepois)
   } finally {
-    await cli.query('rollback to savepoint prova_backfill')
+    await cli.query('rollback to savepoint prova_dado_sujo')
   }
 
   console.log('\n── constraints das tabelas novas')
-  const falhaEsperada = async (savepoint, sql, params, codigoEsperado, frase) => {
+  const falhaEsperada = async (savepoint, sqlTexto, params, codigoEsperado, frase) => {
     await cli.query(`savepoint ${savepoint}`)
     try {
-      await cli.query(sql, params)
+      await cli.query(sqlTexto, params)
       conferir(false, frase, 'passou')
     } catch (e) {
       conferir(e.code === codigoEsperado, frase, e.message)
