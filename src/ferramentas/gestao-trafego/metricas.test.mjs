@@ -73,9 +73,14 @@ test('custoDoAlvo devolve o custo na unidade de cada tipo de campanha', () => {
   assert.equal(custoDoAlvo('reconhecimento', INS), 20);   // CPM
 });
 
-test('engajamento fica com a ponderada, não com o catálogo', () => {
-  assert.equal(custoDoAlvo('engajamento', INS), null,
-    'o custo de engajamento é o custo por ponto, e quem calcula é ponderada.js');
+test('engajamento passa a ter custo pelo catálogo (troca de régua, 24/09/2026)', () => {
+  // ATUALIZADO 24/09/2026: engajamento saiu do PONTO PONDERADO (ponderada.js) e
+  // passou a usar `custo_engajamento` do catálogo, como qualquer outro balde —
+  // a guarda que fazia `custoDoAlvo` devolver null pra engajamento não vale
+  // mais (ver alvos.js e ALVOS.engajamento.metrica). 1000 gasto / 2000
+  // engajamentos = 0,5.
+  assert.equal(custoDoAlvo('engajamento', INS), 0.5,
+    'engajamento agora tem custo pelo catálogo (custo_engajamento), igual aos demais baldes');
 });
 
 test('balde sem alvo não inventa número', () => {

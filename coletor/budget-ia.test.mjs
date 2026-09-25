@@ -283,20 +283,24 @@ test('campanha de VENDAS também leva o custo atual', () => {
   assert.equal(d.regua.custo_atual_reais, 50, 'CAC = 1000 / 20');
 });
 
-test('campanha de engajamento continua medida pelo ponto ponderado', () => {
+test('campanha de engajamento passa a ser medida por engajamento bruto (rodada de correção 1, 24/09/2026)', () => {
+  // ATUALIZADO 24/09/2026: este teste documentava o PONTO PONDERADO como
+  // régua de engajamento. A troca de régua (ver alvos.js, ALVOS.engajamento)
+  // tirou o robô do ponto e pôs no `post_engagement` bruto que a Meta conta —
+  // e `custoAtualDoAlvo` (coletor/budget-ia.mjs) perdeu o ramo que chamava
+  // `calcularPonderada`: hoje ele só repassa pra `custoDoAlvo`, igual aos
+  // demais baldes. Deixar o ramo e a régua discordando faria o robô julgar
+  // engajamento por uma régua e a tela por outra.
   const camp = { id: '3', name: 'Engaja', objective: 'OUTCOME_ENGAGEMENT' };
-  // 'post_reaction' é curtida (peso 1, PESOS_PADRAO em ponderada.js) — 200
-  // curtidas viram 200 pontos; R$ 50 / 200 pontos = R$ 0,25 por ponto. Sem
-  // esta conta batida na régua, inverter `pnd.custoPorPonto` por
-  // `custoDoAlvo(...)` (que devolve null pra engajamento — ver metricas.js)
-  // não seria pego: os dois testes de cima (LEAD/VENDAS) passam do mesmo jeito
-  // com a mutação, porque não passam por este ramo.
-  const ins = { spend: '50', actions: [{ action_type: 'post_reaction', value: '200' }] };
+  // 'post_engagement' é o que a Meta conta como engajamento bruto (sem pesar
+  // por tipo de interação, ao contrário da ponderada) — R$ 50 / 200
+  // engajamentos = R$ 0,25 por engajamento.
+  const ins = { spend: '50', actions: [{ action_type: 'post_engagement', value: '200' }] };
   const { user } = montarMensagens(camp, ins, [], [], REGUA_TESTE);
   const d = dadosDoPrompt(user);
   assert.equal(d.regua.tipo_de_campanha, 'engajamento');
-  assert.equal(d.regua.rotulo, 'Custo por ponto');
-  assert.equal(d.regua.custo_atual_reais, 0.25, 'custo por ponto = 50 / 200 pontos (200 curtidas × peso 1)');
+  assert.equal(d.regua.rotulo, 'Custo por engajamento');
+  assert.equal(d.regua.custo_atual_reais, 0.25, 'custo por engajamento = 50 / 200 engajamentos');
 });
 
 test('campanha sem resultado na janela manda null, nunca zero', () => {
@@ -400,17 +404,19 @@ test('montarMensagens sem o 6o argumento não quebra (compatibilidade)', () => {
   assert.equal(d.dias_da_janela, null, 'sem o dado, não inventa um número de dias');
 });
 
-test('engajamento também ganha custo na janela anterior (ponto ponderado, não null)', () => {
+test('engajamento também ganha custo na janela anterior (engajamento bruto, não null)', () => {
   // `janela_anterior.custo_atual_reais` usa a mesma função que calcula
   // `regua.custo_atual_reais` — por isso os dois campos têm o MESMO NOME: são
   // a mesma grandeza, e é o par que o modelo compara pra ver a tendência.
-  // Como essa função cobre engajamento com o ponto ponderado, a janela
-  // anterior de campanha de engajamento também ganha custo (antes ficava null).
+  // ATUALIZADO 24/09/2026: a grandeza deixou de ser o ponto ponderado e passou
+  // a ser `custo_engajamento` (post_engagement bruto) — ver troca de régua em
+  // alvos.js. A janela anterior de campanha de engajamento continua ganhando
+  // custo (em vez de ficar em null), só que por essa métrica nova.
   const camp = { id: '11', name: 'Engaja', objective: 'OUTCOME_ENGAGEMENT' };
-  const ins = { spend: '50', actions: [{ action_type: 'post_reaction', value: '200' }] };
-  const anterior = { spend: '100', actions: [{ action_type: 'post_reaction', value: '200' }] };
+  const ins = { spend: '50', actions: [{ action_type: 'post_engagement', value: '200' }] };
+  const anterior = { spend: '100', actions: [{ action_type: 'post_engagement', value: '200' }] };
   const d = dadosDoPrompt(camp, ins, [], [], REGUA_TESTE, { insAnterior: anterior });
-  assert.equal(d.janela_anterior.custo_atual_reais, 0.5, '100 / 200 pontos na janela anterior');
+  assert.equal(d.janela_anterior.custo_atual_reais, 0.5, '100 / 200 engajamentos na janela anterior');
 });
 
 // ---------------------------------------------------------------------------

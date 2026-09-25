@@ -242,11 +242,10 @@ export function montarMensagens(camp, ins, ads, conjuntos, regua, extra) {
       // robô mandava pausar criativo de conversão olhando só CTR e frequência.
       resultado: (alvo && alvo.resultado && GT_METRIC_CATALOG[alvo.resultado])
         ? GT_METRIC_CATALOG[alvo.resultado].compute(a) : null,
-      // Usamos `custoAtualDoAlvo`, não `custoDoAlvo` puro: `custoDoAlvo` devolve
-      // null pra engajamento (o custo dele só sai do ponto ponderado), e usar só
-      // ele deixaria todo anúncio de campanha de engajamento sem custo — o
-      // modelo voltaria a julgar o criativo só por CTR exatamente nesse balde.
-      // Nos demais baldes as duas funções dão o mesmo valor.
+      // Usamos `custoAtualDoAlvo` (e não `custoDoAlvo` direto) para todo balde,
+      // inclusive engajamento, sempre concordar com o valor usado no --dry e
+      // deixar a porta aberta para a Tarefa 5 (override de objetivo
+      // declarado) sem precisar trocar chamada por chamada depois.
       custo_por_resultado: custoAtualDoAlvo(balde, a, regua),
     })),
     dias_no_ar: diasNoAr,
@@ -259,9 +258,7 @@ export function montarMensagens(camp, ins, ads, conjuntos, regua, extra) {
       // MESMO NOME de `regua.custo_atual_reais` acima, de propósito: é a mesma
       // grandeza (calculada pela mesma `custoAtualDoAlvo`), só que na janela
       // anterior — e é exatamente o par que o modelo precisa comparar pra dizer
-      // a tendência. Bônus: como a função já cobre engajamento com o ponto
-      // ponderado, a janela anterior de campanha de engajamento também ganha
-      // custo (e portanto tendência) em vez de ficar em null.
+      // a tendência.
       custo_atual_reais: custoAtualDoAlvo(balde, ex.insAnterior, regua),
       frequencia: num(ex.insAnterior.frequency),
       ctr_pct: num(ex.insAnterior.ctr),
@@ -317,25 +314,24 @@ function num(v) { const n = parseFloat(v); return Number.isFinite(n) ? n : null;
 
 // A FONTE ÚNICA do custo atual de um ALVO — o nome é genérico de propósito:
 // este arquivo chama a mesma função com uma campanha, com um anúncio e com a
-// janela anterior, e as três leituras precisam vir da mesma conta. Ponto
-// ponderado em engajamento (o único balde cujo resultado não é uma ação só —
-// é ponderada.js quem sabe calculá-lo), custo por resultado nos demais
-// (custoDoAlvo). Usada tanto no prompt que vai pro Opus (montarMensagens)
-// quanto na linha de diagnóstico do --dry: os dois têm de concordar por
-// CONSTRUÇÃO, não por disciplina. Esta onda inteira nasceu de um cálculo
-// preso num lugar só (só engajamento tinha custo atual) — copiar esta mesma
-// conta em dois pontos do arquivo, mesmo que só entre `montarMensagens` e o
-// `--dry`, seria repetir o erro numa escala menor. Se a fórmula mudar, muda
-// aqui e os dois lugares acompanham.
+// janela anterior, e as três leituras precisam vir da mesma conta. Usada tanto
+// no prompt que vai pro Opus (montarMensagens) quanto na linha de diagnóstico
+// do --dry: os dois têm de concordar por CONSTRUÇÃO, não por disciplina. Esta
+// onda inteira nasceu de um cálculo preso num lugar só (só engajamento tinha
+// custo atual) — copiar esta mesma conta em dois pontos do arquivo, mesmo que
+// só entre `montarMensagens` e o `--dry`, seria repetir o erro numa escala
+// menor. Se a fórmula mudar, muda aqui e os dois lugares acompanham.
 // Fica ACIMA da tarja de infra (rede) abaixo porque é pura e é alcançada
 // pelos testes via `montarMensagens` — só as chamadas de rede é que só
 // rodam dentro de main().
 export function custoAtualDoAlvo(balde, ins, regua) {
-  if (balde === 'engajamento' && regua) {
-    const meta = metaDoBalde(regua, balde);
-    const pnd = calcularPonderada(quantidadesDoInsight(ins) || {}, { pesos: regua.pesos, limiares: regua.limiares, meta });
-    return pnd.custoPorPonto;
-  }
+  // Engajamento não é mais caso especial: desde 24/09/2026 ele tem métrica no
+  // catálogo (custo_engajamento) como qualquer outro balde. O ramo que chamava
+  // calcularPonderada saiu daqui — a ponderada está em PAUSA, não apagada, e
+  // religar é trocar duas linhas em alvos.js.
+  // `regua` fica sem uso NESTA função por enquanto — mantido no parâmetro
+  // porque a Tarefa 5 volta a precisar dele para o override de objetivo
+  // declarado (interacaoDeclarada, ainda não implementado aqui).
   return custoDoAlvo(balde, ins);
 }
 
@@ -350,13 +346,10 @@ import { orcamentoEfetivoDaCampanha } from '../src/ferramentas/gestao-trafego/or
 // discordando sobre a mesma campanha. Agora ele responde contra a MESMA régua.
 import { baldeEfetivo, ehDeSeguidores } from '../src/ferramentas/gestao-trafego/baldes.js';
 import { normalizarRegua, reguaDaConta, metaDoBalde } from '../src/ferramentas/gestao-trafego/regua.js';
-import { quantidadesDoInsight, calcularPonderada } from '../src/ferramentas/gestao-trafego/ponderada.js';
 import { alvoDoBalde } from '../src/ferramentas/gestao-trafego/alvos.js';
 import { emVeiculacao } from '../src/ferramentas/gestao-trafego/veiculacao.js';
-// O custo atual de lead, venda, tráfego, mensagem e reconhecimento. Sem isto o
-// robô calculava `pnd` (só existe em engajamento) e mandava `custo_atual_reais:
-// null` pros outros baldes, enquanto o system prompt mandava citar esse número
-// contra a meta — a régua chegava ao Opus sem o número que ela mede.
+// O custo atual de TODO balde, engajamento incluído desde a troca de régua de
+// 24/09/2026 (ver custoAtualDoAlvo acima e ALVOS.engajamento em alvos.js).
 // GT_METRIC_CATALOG: o compute() de cada métrica (leads, conversas, compras...) —
 // usado abaixo pra dar a cada ANÚNCIO o resultado no mercado da campanha dele.
 import { custoDoAlvo, GT_METRIC_CATALOG } from '../src/ferramentas/gestao-trafego/metricas.js';
