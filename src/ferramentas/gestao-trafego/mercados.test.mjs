@@ -1,6 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mercadoDoConjunto, mercadoDaCampanha, MERCADOS } from './mercados.js';
+import {
+  mercadoDoConjunto, mercadoDaCampanha, MERCADOS,
+  MERCADO_POR_DESTINO, DESTINOS_QUE_EXIGEM_DESEMPATE,
+} from './mercados.js';
 
 // As combinações REAIS, medidas em 25/09/2026 nas 6 contas de produção — não
 // inventadas (ver docs/superpowers/plans/2026-09-25-gt-onda-c.md, seção "As
@@ -54,13 +57,35 @@ test('site sem pixel de conversão: UNDEFINED com LANDING_PAGE_VIEWS — a otimi
   assert.equal(mercadoDoConjunto({ destination_type: 'UNDEFINED', optimization_goal: 'LANDING_PAGE_VIEWS' }), 'site_trafego');
 });
 
-test('o OBJETIVO declarado não decide o mercado', () => {
-  // A mesma campanha de OUTCOME_ENGAGEMENT vira mercados diferentes conforme o
-  // destino. É a razão de existir deste módulo: na Motoeasy "engajamento" é
-  // conversa de WhatsApp; na Mantova é visita ao perfil.
-  assert.equal(mercadoDaCampanha([{ destination_type: 'WHATSAPP', optimization_goal: 'CONVERSATIONS' }]), 'conversa');
-  assert.equal(mercadoDaCampanha([{ destination_type: 'INSTAGRAM_PROFILE', optimization_goal: 'PROFILE_AND_PAGE_ENGAGEMENT' }]), 'perfil');
-  assert.equal(mercadoDaCampanha([{ destination_type: 'ON_VIDEO', optimization_goal: 'THRUPLAY' }]), 'video');
+// A trava de verdade contra "o objetivo volta a decidir": as TRÊS linhas da
+// fixture com o MESMO par destino/otimização (WHATSAPP + CONVERSATIONS) e
+// OBJETIVO diferente em cada uma. O campo `objective` está DENTRO do objeto de
+// teste de propósito — se `mercadoDoConjunto` alguma hora passar a ler
+// `conjunto.objective`, estes três casos divergem e um destes testes quebra.
+// A versão anterior (rodada de correção 2, 25/09/2026) nunca passava
+// `objective` nos dados, então não distinguia "ignora certo" de "nunca
+// recebeu essa entrada" — continuaria verde mesmo se alguém reintroduzisse a
+// leitura do objetivo.
+test('fixture: OUTCOME_ENGAGEMENT + WHATSAPP + CONVERSATIONS → conversa', () => {
+  assert.equal(mercadoDaCampanha([{ objective: 'OUTCOME_ENGAGEMENT', destination_type: 'WHATSAPP', optimization_goal: 'CONVERSATIONS' }]), 'conversa');
+});
+
+test('fixture: OUTCOME_LEADS + WHATSAPP + CONVERSATIONS → conversa — mesmo par, objetivo diferente', () => {
+  assert.equal(mercadoDaCampanha([{ objective: 'OUTCOME_LEADS', destination_type: 'WHATSAPP', optimization_goal: 'CONVERSATIONS' }]), 'conversa');
+});
+
+test('fixture: OUTCOME_SALES + WHATSAPP + CONVERSATIONS → conversa — os três objetivos convergem no mesmo mercado', () => {
+  assert.equal(mercadoDaCampanha([{ objective: 'OUTCOME_SALES', destination_type: 'WHATSAPP', optimization_goal: 'CONVERSATIONS' }]), 'conversa');
+});
+
+test('o mesmo objetivo declarado (OUTCOME_ENGAGEMENT) vira mercados diferentes conforme o destino', () => {
+  // É a razão de existir deste módulo: na Motoeasy "engajamento" é conversa de
+  // WhatsApp; na Mantova é visita ao perfil; no [FLUXO SHOPPING] da Vessel é
+  // vídeo. Ilustrativo (destino já varia entre os três casos) — a trava real
+  // contra a leitura do objetivo é o bloco acima, com destino FIXO.
+  assert.equal(mercadoDaCampanha([{ objective: 'OUTCOME_ENGAGEMENT', destination_type: 'WHATSAPP', optimization_goal: 'CONVERSATIONS' }]), 'conversa');
+  assert.equal(mercadoDaCampanha([{ objective: 'OUTCOME_ENGAGEMENT', destination_type: 'INSTAGRAM_PROFILE', optimization_goal: 'PROFILE_AND_PAGE_ENGAGEMENT' }]), 'perfil');
+  assert.equal(mercadoDaCampanha([{ objective: 'OUTCOME_ENGAGEMENT', destination_type: 'ON_VIDEO', optimization_goal: 'THRUPLAY' }]), 'video');
 });
 
 test('sem conjunto, ou sinal irreconhecível, devolve desconhecido — nunca chuta', () => {
@@ -100,4 +125,18 @@ test('MERCADOS lista os mercados válidos — sem misto e sem desconhecido', () 
   assert.ok(MERCADOS.includes('site_trafego'));
   assert.ok(!MERCADOS.includes('misto'));
   assert.ok(!MERCADOS.includes('desconhecido'));
+});
+
+test('trava de consistência: nenhum destino que exige desempate decide sozinho ao mesmo tempo', () => {
+  // Antes (rodada de correção 1) isto era um `throw` na carga do módulo — pego
+  // por mutação (reintroduzir `WEBSITE: 'site_venda'` derrubava a IMPORTAÇÃO
+  // inteira, não só um teste). Movido para cá na rodada de correção 2: mesma
+  // cobertura de regressão, sem o risco de uma violação futura derrubar
+  // qualquer tela que importe mercados.js transitivamente.
+  for (const destino of DESTINOS_QUE_EXIGEM_DESEMPATE) {
+    assert.ok(
+      !(destino in MERCADO_POR_DESTINO),
+      `${destino} não pode estar em MERCADO_POR_DESTINO e em DESTINOS_QUE_EXIGEM_DESEMPATE ao mesmo tempo`,
+    );
+  }
 });

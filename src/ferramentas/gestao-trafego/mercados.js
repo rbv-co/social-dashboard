@@ -28,7 +28,14 @@ export const MERCADOS = ['conversa', 'perfil', 'video', 'post', 'site_venda', 's
 // esta onda existe pra matar: o `[FLUXO SHOPPING]` levou "reduzir" e o
 // `[SEGUIDORES][REMARKETING]` saiu a 1455× da meta, os dois por régua de
 // mercado errado.
-const MERCADO_POR_DESTINO = {
+//
+// Exportado (além da API pública do brief) só para a trava de consistência
+// abaixo viver como TESTE, e não como `throw` na carga do módulo — um `throw`
+// aqui dentro derrubaria a IMPORTAÇÃO inteira quando a invariante quebrasse, e
+// com ela qualquer tela que importe isto transitivamente, em vez de falhar só
+// na suíte (rodada de correção 2, 25/09/2026). A checagem em si mora em
+// mercados.test.mjs ("trava de consistência").
+export const MERCADO_POR_DESTINO = {
   WHATSAPP: 'conversa',
   INSTAGRAM_PROFILE: 'perfil',
   INSTAGRAM_PROFILE_AND_FACEBOOK_PAGE: 'perfil',
@@ -46,17 +53,7 @@ const MERCADO_POR_DESTINO = {
 //   UNDEFINED — a Meta manda isso pra tráfego de site sem pixel de conversão;
 //               não é ausência de destino, é o próprio destino dizendo "não
 //               especifiquei" — mesma ambiguidade do WEBSITE.
-const DESTINOS_QUE_EXIGEM_DESEMPATE = new Set(['WEBSITE', 'UNDEFINED']);
-
-// Trava de consistência: um destino não pode estar nas duas listas ao mesmo
-// tempo — se decide sozinho, não exige desempate, e vice-versa. Roda uma vez
-// na carga do módulo; se alguém duplicar um destino nas duas listas no futuro,
-// a suíte quebra na hora, em vez de o bug aparecer só na conta de produção.
-for (const destino of DESTINOS_QUE_EXIGEM_DESEMPATE) {
-  if (MERCADO_POR_DESTINO[destino]) {
-    throw new Error(`mercados.js: ${destino} está em MERCADO_POR_DESTINO e em DESTINOS_QUE_EXIGEM_DESEMPATE ao mesmo tempo`);
-  }
-}
+export const DESTINOS_QUE_EXIGEM_DESEMPATE = new Set(['WEBSITE', 'UNDEFINED']);
 
 // OTIMIZAÇÃO só é consultada quando o destino não decidiu sozinho — é o
 // desempate dos `DESTINOS_QUE_EXIGEM_DESEMPATE`, e também a última tentativa
@@ -82,11 +79,10 @@ const MERCADO_POR_OTIMIZACAO = {
 // dizer "não sei medir esta" do que julgar pela régua errada.
 export function mercadoDoConjunto(conjunto) {
   const destino = String((conjunto && conjunto.destination_type) || '').toUpperCase();
-  const porDestino = MERCADO_POR_DESTINO[destino];
-  if (porDestino) return porDestino;
+  if (destino in MERCADO_POR_DESTINO) return MERCADO_POR_DESTINO[destino];
 
   const otimizacao = String((conjunto && conjunto.optimization_goal) || '').toUpperCase();
-  return MERCADO_POR_OTIMIZACAO[otimizacao] || 'desconhecido';
+  return otimizacao in MERCADO_POR_OTIMIZACAO ? MERCADO_POR_OTIMIZACAO[otimizacao] : 'desconhecido';
 }
 
 // O mercado de uma CAMPANHA: o conjunto dos mercados dos seus conjuntos, MENOS
