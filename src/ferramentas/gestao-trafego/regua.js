@@ -2,6 +2,7 @@
 // sumiu, veio pela metade ou com texto no lugar de número — aqui tudo vira número
 // válido, caindo no padrão campo a campo. PURO: sem rede, sem tela.
 import { PESOS_PADRAO, LIMIARES_PADRAO } from './ponderada.js';
+import { ALVOS } from './alvos.js';
 
 // Número positivo e finito; qualquer outra coisa devolve o padrão daquele campo.
 function positivoOu(valor, padrao) {
@@ -107,6 +108,12 @@ export function mesclarMetasDaConta(regua, contaId, metas) {
 // SEMPRE devolve um número: texto é coercido, valores inválidos devolvem 0.
 export function metaDoBalde(regua, balde) {
   const m = (regua && regua.metas) || {};
-  if (m[balde] > 0) return Number(m[balde]);
+  // A CHAVE da meta nem sempre é o nome do balde: engajamento guarda a meta nova
+  // (R$ por engajamento) em `engajamento_bruto`, para a antiga (R$ por ponto)
+  // continuar existindo em `engajamento` sem ser sobrescrita — é o que permite
+  // religar a ponderada sem ter perdido o número que o dono calibrou.
+  const alvo = ALVOS[balde];
+  const chave = (alvo && alvo.chaveMeta) || balde;
+  if (m[chave] > 0) return Number(m[chave]);
   return 0;
 }

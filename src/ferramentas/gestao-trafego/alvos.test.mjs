@@ -8,7 +8,34 @@ test('cada tipo de campanha tem alvo na unidade dele', () => {
   assert.equal(ALVOS.vendas.metrica, 'cac');
   assert.equal(ALVOS.trafego.metrica, 'custo_visita');
   assert.equal(ALVOS.reconhecimento.metrica, 'cpm');
-  assert.equal(ALVOS.engajamento.metrica, 'ponderada', 'engajamento usa a métrica ponderada');
+  // ATUALIZADO 24/09/2026: engajamento saiu da métrica ponderada e passou para
+  // engajamento bruto (ver teste dedicado abaixo). Este assert documentava o
+  // comportamento ANTERIOR — a régua mudou de propósito, não é bug.
+  assert.equal(ALVOS.engajamento.metrica, 'custo_engajamento', 'engajamento usa a métrica de engajamento bruto');
+});
+
+test('engajamento passa a ser medido por engajamento bruto, não por ponto', () => {
+  // TROCA DE RÉGUA (24/09/2026, decisão do dono depois da medição): a
+  // [FLUXO SHOPPING] da Vessel tinha 11.323 engajamentos e 44 pontos —
+  // julgada por ponto parecia catastrófica (662x a meta), por engajamento
+  // pareceria ótima. Não há fator de conversão entre as duas (a razão
+  // pontos/engajamento foi de 0 a 0,56 nas campanhas medidas), então a
+  // ferramenta escolhe UMA das duas, e o dono escolheu engajamento bruto.
+  assert.equal(ALVOS.engajamento.metrica, 'custo_engajamento');
+  assert.equal(ALVOS.engajamento.resultado, 'engaj_pub',
+    'sem quantidade, todo anúncio de engajamento chega ao robô sem resultado');
+});
+
+test('a meta nova mora numa chave própria, para a do ponto sobreviver', () => {
+  assert.equal(ALVOS.engajamento.chaveMeta, 'engajamento_bruto',
+    'a meta antiga (R$/ponto) fica em metas.engajamento, intacta, para a pausa ser reversível');
+});
+
+test('quem não declara chaveMeta usa o próprio nome do balde', () => {
+  for (const [balde, a] of Object.entries(ALVOS)) {
+    if (balde === 'engajamento') continue;
+    assert.equal(a.chaveMeta ?? balde, balde, balde + ' não deveria ter chave de meta própria');
+  }
 });
 
 test('todo alvo tem rótulo e unidade em português para a tela', () => {
