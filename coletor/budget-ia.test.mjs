@@ -661,6 +661,61 @@ test('o prompt manda usar o custo por seguidor da conta só como CONTEXTO, nunca
 });
 
 // ---------------------------------------------------------------------------
+// APOSENTADORIA DA MULETA PARA MERCADO "perfil" (25/09/2026, Onda C, rodada de
+// correção 1). A muleta nasceu porque `_GT_VISIT` lia `landing_page_view` como
+// resíduo antes de `link_click` — no [SEGUIDORES][REMARKETING] da Raíssa isso
+// dava R$ 247,45 (1455× a meta). A Tarefa 2 corrigiu a CAUSA (`_GT_VISIT_PERFIL
+// = ['link_click']`, sem fallback): a mesma campanha, pelo mercado `perfil`,
+// dá ~R$ 0,09 — a KPI de verdade que o dono pediu pra ver. A muleta agora só
+// dispara quando o mercado NÃO é `perfil` (ver `semMedidaDeSeguidor`).
+// ---------------------------------------------------------------------------
+
+test('campanha de seguidores cujo mercado é "perfil" NÃO recebe medida_indisponivel — julga pelo custo real', () => {
+  const camp = { id: '40', name: '[SEGUIDORES][REMARKETING]', objective: 'OUTCOME_TRAFFIC' };
+  const conjuntos = [{ destination_type: 'INSTAGRAM_PROFILE', optimization_goal: 'PROFILE_VISIT' }];
+  // Números do caso real (ver metricas.js): 283.84 / 3203 cliques ≈ 0,0886.
+  const ins = { spend: '283.84', actions: [{ action_type: 'link_click', value: '3203' }] };
+  const d = dadosDoPrompt(camp, ins, [], conjuntos, REGUA_TESTE, {});
+  assert.equal(d.regua.mercado, 'perfil');
+  assert.equal(d.regua.medida_indisponivel, undefined, 'perfil tem KPI real — a muleta não entra mais aqui');
+  assert.ok(Math.abs(d.regua.custo_atual_reais - 0.0886) < 0.001, 'custo por visita ao perfil de verdade, não mais indisponível');
+});
+
+test('campanha de seguidores em "perfil" leva o custo por visita E o contexto da conta, lado a lado', () => {
+  // As DUAS metades da decisão do dono de 25/09: "custo por visita ao perfil
+  // (julgamento) + seguidor da conta (contexto)", nunca uma escondendo a outra.
+  const camp = { id: '41', name: '[+ SEGUIDORES] Vessel', objective: 'OUTCOME_TRAFFIC' };
+  const conjuntos = [{ destination_type: 'INSTAGRAM_PROFILE', optimization_goal: 'PROFILE_VISIT' }];
+  const ins = { spend: '100', actions: [{ action_type: 'link_click', value: '20' }] };
+  const d = dadosDoPrompt(camp, ins, [], conjuntos, REGUA_TESTE, {
+    diasJanela: 7,
+    custoPorSeguidorConta: { valor: 1.6, confiavel: true, porque: 'x' },
+  });
+  assert.equal(d.regua.mercado, 'perfil');
+  assert.equal(d.regua.custo_atual_reais, 5, '100 / 20 visitas ao perfil — o julgamento');
+  assert.equal(d.regua.custo_por_seguidor_da_conta_reais, 1.6, 'o contexto da conta continua indo junto');
+});
+
+test('campanha de seguidores SEM mercado perfil continua com a muleta (mercado desconhecido, sem sinal de conjunto)', () => {
+  // O caso que a muleta ainda protege: sem destino/otimização reconhecidos, a
+  // ferramenta não tem como medir nada — nem `perfil` nem qualquer outro.
+  const camp = { id: '42', name: '[+ SEGUIDORES] Sem sinal', objective: 'OUTCOME_TRAFFIC' };
+  const d = dadosDoPrompt(camp, { spend: '500', actions: [] }, [], [], REGUA_TESTE, {});
+  assert.equal(d.regua.mercado, 'desconhecido');
+  assert.match(d.regua.medida_indisponivel, /não atribui/);
+  assert.equal(d.regua.custo_atual_reais, null);
+});
+
+test('o prompt instrui o modelo a JULGAR a campanha de seguidores em "perfil" pelo custo real, não a chamar de indisponível', () => {
+  const camp = { id: '43', name: '[+ SEGUIDORES] Vessel', objective: 'OUTCOME_TRAFFIC' };
+  const conjuntos = [{ destination_type: 'INSTAGRAM_PROFILE', optimization_goal: 'PROFILE_VISIT' }];
+  const { system } = montarMensagens(camp, {}, [], conjuntos, REGUA_TESTE);
+  assert.match(system, /regua\.mercado.*vier "perfil"/);
+  assert.match(system, /JULGUE por ele/i);
+  assert.match(system, /NUNCA diga que a medida está indisponível/);
+});
+
+// ---------------------------------------------------------------------------
 // ONDA C, TAREFA 3 (25/09/2026): o robô julga por MERCADO — o que a campanha
 // COMPRA de verdade, segundo os CONJUNTOS (ver mercados.js) — não mais pelo
 // objetivo declarado (`baldeEfetivo` saiu do caminho do veredito). Medido em

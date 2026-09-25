@@ -131,19 +131,34 @@ export function montarMensagens(camp, ins, ads, conjuntos, regua, extra) {
   // "Custo por engajamento" quando há declaração — senão o número muda de
   // mercado mas o nome ao lado dele continua mentindo qual é esse mercado.
   const rotuloAlvo = interacaoDeclarada ? INTERACOES[interacaoDeclarada].rotuloCusto : (alvo ? alvo.rotulo : null);
-  // MULETA TEMPORÁRIA (proteção da Onda A — a correção de verdade, dar a estas
-  // campanhas um alvo próprio de custo por seguidor, é a Onda B, ainda não
-  // implementada — ver docs/superpowers/specs/2026-09-24-gt-analise-potente-design.md).
-  // A Meta não atribui "novo seguidor" a uma campanha (conferido na Graph API
-  // real, 12/09/2026 — ver db/migrations/2026-09-12-meta-ads-hora-cliques.sql):
-  // então campanha de seguidores cai no balde de tráfego/engajamento e é medida
-  // por custo por VISITA — mas quem manda pro perfil do Instagram quase não
-  // registra visita. O gasto dividido por um número minúsculo vira um "custo"
-  // gigante (casos reais: R$ 247,45, 1455× a meta) que não mede o que a
-  // campanha entrega. Sem esta trava o modelo recebia esse número como se
-  // fosse verdade e recomendava pausar com convicção — um conselho ruim, com
-  // voz firme, em cima de uma medida que não existe.
+  // MULETA DE SEGUIDORES — APOSENTADA PARA O MERCADO `perfil` (25/09/2026,
+  // Onda C, rodada de correção 1). Nasceu na Onda A por um motivo real:
+  // campanha de seguidores caía no balde de tráfego/engajamento e era medida
+  // por custo por VISITA usando `_GT_VISIT` (que tentava `landing_page_view`
+  // antes de `link_click`) — no `[SEGUIDORES][REMARKETING]` da Raíssa isso deu
+  // `landing_page_view=1` (resíduo) contra `link_click=3203`, e o "custo"
+  // saiu R$ 247,45 (1455× a meta), com o modelo recomendando pausar com
+  // convicção em cima de uma medida que não existia.
+  //
+  // A CAUSA foi corrigida na Tarefa 2 (`_GT_VISIT_PERFIL = ['link_click']`,
+  // sem fallback pro resíduo — ver metricas.js): a mesma campanha, medida
+  // pelo mercado `perfil`, dá ~R$ 0,09 — um número real, que é exatamente o
+  // KPI que o dono pediu em 25/09 pra aparecer no card ("custo por visita ao
+  // perfil é a KPI principal dessas campanhas"). Continuar escondendo esse
+  // número atrás de "medida indisponível" estaria escondendo do dono
+  // justamente o que ele pediu pra ver — por isso a muleta NÃO dispara mais
+  // quando `mercado === 'perfil'` (ver `semMedidaDeSeguidor` abaixo).
+  //
+  // `ehDeSeguidores` continua viva: ainda decide QUAIS campanhas entram na
+  // soma de gasto do custo por seguidor DA CONTA (ver `custoSeguidorConta`
+  // logo abaixo e o laço de `main()`) — o que muda é só ela deixar de
+  // SUPRIMIR o custo por visita ao perfil da campanha.
   const deSeguidores = ehDeSeguidores(camp.name);
+  // Só dispara a muleta (sem meta, sem custo, "medida_indisponivel") quando o
+  // mercado NÃO é `perfil` — awareness/tráfego/etc. sem sinal nenhum de
+  // conjunto continuam sem medida nenhuma pra esta campanha nomeada de
+  // seguidores, porque aí não existe KPI de verdade pra mostrar.
+  const semMedidaDeSeguidor = deSeguidores && mercado !== 'perfil';
   // CUSTO POR SEGUIDOR DA CONTA (Tarefa 6, Onda B): só existe pra campanha de
   // seguidores, e é sempre da CONTA INTEIRA — nunca desta campanha (a Meta não
   // atribui seguidor a campanha nenhuma, ver seguidores.js). `extra` traz o
@@ -189,18 +204,30 @@ export function montarMensagens(camp, ins, ads, conjuntos, regua, extra) {
     // número sem significado (curtida contra venda não tem razão nenhuma),
     // então esta campanha NUNCA leva `custo_atual_reais` de campanha.
     'Quando `regua.mercado` vier "misto", esta campanha tem CONJUNTOS que compram mercados diferentes ao mesmo tempo (ex.: um de conversa por WhatsApp e um de venda por site) — por isso não há `custo_atual_reais` de campanha. Julgue cada conjunto separadamente usando `regua.por_conjunto` (mercado, gasto, resultado e custo_atual_reais de cada um, contra a meta daquele mercado quando houver) e escreva a justificativa mercado a mercado — NUNCA some gasto ou resultado entre mercados diferentes, e NUNCA invente uma média única para a campanha inteira. ' +
-    // MULETA TEMPORÁRIA de campanha de seguidores (ver comentário de
-    // `deSeguidores` acima). Sem esta instrução o modelo recebia
-    // `regua.meta_reais` e `regua.custo_atual_reais` nulos e podia inventar
-    // "sem meta definida" — a frase certa para OUTRA situação (conta que
-    // simplesmente não configurou meta), não para esta, onde a medida não
-    // existe e nunca vai existir por campanha nesta onda.
-    'Quando `regua.medida_indisponivel` vier preenchido, esta campanha é de SEGUIDORES: a Meta não atribui "novo seguidor" a uma campanha, então não existe custo por resultado confiável aqui — julgue SOMENTE pelos indicadores disponíveis (CTR, CPC, frequência, alcance, volume de anúncios), NUNCA recomende "pausar" ou "reduzir" alegando custo por resultado ou comparação com meta, e diga isso na justificativa (que a medida não existe para este tipo de campanha) em vez de fingir que mediu. ' +
+    // MULETA de campanha de seguidores (ver comentário de `deSeguidores`
+    // acima) — hoje só dispara quando o mercado NÃO é `perfil` (awareness,
+    // tráfego etc. sem sinal de conjunto nenhum). Sem esta instrução o modelo
+    // recebia `regua.meta_reais` e `regua.custo_atual_reais` nulos e podia
+    // inventar "sem meta definida" — a frase certa para OUTRA situação (conta
+    // que simplesmente não configurou meta), não para esta, onde a medida não
+    // existe mesmo.
+    'Quando `regua.medida_indisponivel` vier preenchido, esta campanha é de SEGUIDORES sem mercado reconhecido: a Meta não atribui "novo seguidor" a uma campanha, então não existe custo por resultado confiável aqui — julgue SOMENTE pelos indicadores disponíveis (CTR, CPC, frequência, alcance, volume de anúncios), NUNCA recomende "pausar" ou "reduzir" alegando custo por resultado ou comparação com meta, e diga isso na justificativa (que a medida não existe para este tipo de campanha) em vez de fingir que mediu. ' +
+    // APOSENTADORIA DA MULETA PARA "perfil" (25/09/2026, Onda C, rodada de
+    // correção 1): campanha de seguidores cujo mercado É `perfil` (destino/
+    // otimização do conjunto apontam pra lá) agora chega aqui com
+    // `regua.custo_atual_reais` preenchido de verdade (custo por visita ao
+    // perfil, via `link_click` — ver metricas.js) — é a KPI que o dono pediu
+    // pra ver no card. JULGUE por ela normalmente, como em qualquer outro
+    // mercado.
+    'Quando esta campanha for de SEGUIDORES mas `regua.mercado` vier "perfil", `regua.custo_atual_reais` É o custo por visita ao perfil de verdade desta campanha — julgue por ele contra `regua.meta_reais` como em qualquer outro mercado, NUNCA diga que a medida está indisponível. ' +
     // TAREFA 6 (Onda B): quando vier preenchido, `regua.custo_por_seguidor_da_conta_reais`
     // é só CONTEXTO — nunca o custo desta campanha, porque é da conta inteira
     // (soma de TODAS as campanhas de seguidores, dividida pelo ganho de
-    // seguidores DA CONTA, orgânico incluso, sem como separar).
-    'Se `regua.custo_por_seguidor_da_conta_reais` vier preenchido, use-o SÓ como contexto da conta ao comentar esta campanha de seguidores — NUNCA como custo desta campanha específica — e diga na justificativa que é uma estimativa da conta inteira (inclui seguidor orgânico), nunca desta campanha isolada. Se vier nulo, não mencione custo por seguidor nenhum: significa que a conta não tem dado confiável para essa estimativa agora. ' +
+    // seguidores DA CONTA, orgânico incluso, sem como separar). Vale tanto
+    // quando a medida da campanha está indisponível quanto quando ela é
+    // `perfil` com custo real: o número da conta NUNCA substitui nem se soma
+    // ao custo desta campanha específica.
+    'Se `regua.custo_por_seguidor_da_conta_reais` vier preenchido, use-o SÓ como contexto da conta ao comentar esta campanha de seguidores — NUNCA como custo desta campanha específica, mesmo quando `regua.custo_atual_reais` (custo por visita ao perfil) também vier preenchido — e diga na justificativa que é uma estimativa da conta inteira (inclui seguidor orgânico), nunca desta campanha isolada. Se vier nulo, não mencione custo por seguidor nenhum: significa que a conta não tem dado confiável para essa estimativa agora. ' +
     // TENDÊNCIA e APRENDIZADO (Tarefa 5): antes o robô mandava uma janela só —
     // o modelo não tinha como dizer se a campanha estava melhorando ou piorando,
     // e "o que mudou desde ontem" é exatamente o que se olha às 8h da manhã.
@@ -264,14 +291,13 @@ export function montarMensagens(camp, ins, ads, conjuntos, regua, extra) {
     // o system prompt cita este campo em vez de cravar "7 dias" (a janela é
     // since=hoje-7d até until=hoje, ou seja, 8 dias INCLUSIVE).
     dias_da_janela: diasJanela,
-    regua: deSeguidores ? {
-      // Campanha de seguidores: os TRÊS campos de custo vão nulos de propósito
-      // (não só custo_atual_reais) — deixar `meta_reais` pendurada sem um custo
-      // pra comparar convida o modelo a inventar a comparação mesmo assim. O
-      // texto de `medida_indisponivel` é o que diz o PORQUÊ (ver system acima).
-      // `mercado` aqui é só INFORMATIVO (a muleta de seguidores vence
-      // qualquer mercado que os conjuntos afirmem) — nunca decide nada neste
-      // ramo.
+    regua: semMedidaDeSeguidor ? {
+      // Campanha de seguidores SEM mercado `perfil` (a muleta continua viva
+      // só pra este caso, ver `semMedidaDeSeguidor` acima): os TRÊS campos de
+      // custo vão nulos de propósito (não só custo_atual_reais) — deixar
+      // `meta_reais` pendurada sem um custo pra comparar convida o modelo a
+      // inventar a comparação mesmo assim. O texto de `medida_indisponivel` é
+      // o que diz o PORQUÊ (ver system acima).
       mercado,
       rotulo: alvo ? alvo.rotulo : null,
       meta_reais: null,
@@ -324,6 +350,15 @@ export function montarMensagens(camp, ins, ads, conjuntos, regua, extra) {
       custo_atual_reais: custoAtual,
       indice_contra_meta: (custoAtual != null && meta > 0) ? custoAtual / meta : null,
       pesos: regua ? regua.pesos : null,
+      // CONTEXTO DA CONTA (Onda C, rodada de correção 1, 25/09/2026): só entra
+      // quando a campanha É de seguidores (`deSeguidores`) — o que, por
+      // construção deste `else`, só acontece quando o mercado é `perfil` (ver
+      // `semMedidaDeSeguidor` acima). É a outra metade da decisão do dono de
+      // 25/09: "custo por visita ao perfil (o julgamento) + seguidor da conta
+      // (o contexto) lado a lado" — nunca um substituindo o outro. Fora deste
+      // caso a chave nem aparece (ver teste "campanha que NÃO é de seguidores
+      // nunca leva custo_por_seguidor_da_conta_reais").
+      ...(deSeguidores ? { custo_por_seguidor_da_conta_reais: custoSeguidorConta } : {}),
     },
     orcamento: {
       reais: orc.reais,
@@ -866,27 +901,38 @@ async function main() {
         // fórmula. O --dry é a ferramenta que a gente usa pra conferir se o
         // robô está enxergando certo — uma divergência aqui seria o
         // diagnóstico mentindo sobre o próprio robô (ver custoAtualDoAlvo).
-        // Campanha de seguidores: NÃO imprime custo nenhum — imprimir "custo R$
-        // X" aqui seria a mesma mentira que este trabalho existe pra tirar do
-        // que vai pro modelo (ver ehDeSeguidores/deSeguidores em montarMensagens).
+        // Campanha de seguidores SEM mercado `perfil`: NÃO imprime custo
+        // nenhum — imprimir "custo R$ X" aqui seria a mesma mentira que este
+        // trabalho existe pra tirar do que vai pro modelo (ver
+        // ehDeSeguidores/deSeguidores em montarMensagens). APOSENTADO pra
+        // mercado `perfil` (25/09/2026, rodada de correção 1): a campanha
+        // agora entra no `custoAtualDoAlvo` normal, igual qualquer outro
+        // mercado — só o CONTEXTO da conta (`txtSeguidorConta` abaixo)
+        // continua ligado ao nome, não ao mercado.
         const ehSeguidoresDry = ehDeSeguidores(camp.name);
+        const semMedidaDeSeguidorDry = ehSeguidoresDry && mercadoDry !== 'perfil';
         // MISTA (Onda C): sem interação declarada, campanha mista não tem
         // custo ÚNICO de campanha — mesma regra que montarMensagens aplica no
         // ramo `por_conjunto` (ver dados.regua ali).
         const ehMistaDry = mercadoDry === 'misto' && !interDry;
-        const ca = (ehSeguidoresDry || ehMistaDry) ? null : custoAtualDoAlvo(mercadoDry, ins, reguaDaContaAtual, interDry);
-        const txtCusto = ehSeguidoresDry ? 'medida indisponível (seguidores)'
+        const ca = (semMedidaDeSeguidorDry || ehMistaDry) ? null : custoAtualDoAlvo(mercadoDry, ins, reguaDaContaAtual, interDry);
+        const txtCusto = semMedidaDeSeguidorDry ? 'medida indisponível (seguidores)'
           : ehMistaDry ? `misto (${conjuntosDaCamp.length} conj. — julgado por conjunto, sem custo de campanha)`
           : (ca == null ? 'custo SEM DADO' : `custo R$ ${ca.toFixed(2)}`);
         // TAREFA 6 (Onda B): o número de CONTEXTO da conta, só pra conferir no
         // --dry que a conta certa está sendo lida — nunca aparece como custo
         // DESTA campanha (por isso separado de txtCusto, nunca somado a ele).
+        // Continua ligado a `ehSeguidoresDry` (o NOME), não a `semMedidaDeSeguidorDry`:
+        // o contexto da conta vale tanto quando a medida da campanha está
+        // indisponível quanto quando ela é `perfil` com custo real — as duas
+        // metades da decisão do dono de 25/09 (custo por visita + seguidor da
+        // conta, lado a lado).
         const txtSeguidorConta = ehSeguidoresDry
           ? (custoPorSeguidorContaAtual && custoPorSeguidorContaAtual.confiavel && custoPorSeguidorContaAtual.valor != null
             ? ` · conta: R$ ${custoPorSeguidorContaAtual.valor.toFixed(2)}/seguidor em ${diasJanela}d (estimativa da conta, orgânico incluso)`
             : ` · conta: sem estimativa confiável de custo por seguidor${custoPorSeguidorContaAtual ? ' (' + custoPorSeguidorContaAtual.porque + ')' : ''}`)
           : '';
-        const txtIdx = (!ehSeguidoresDry && !ehMistaDry && ca != null && mt > 0) ? ` (${(ca / mt).toFixed(2)}× a meta)` : '';
+        const txtIdx = (!semMedidaDeSeguidorDry && !ehMistaDry && ca != null && mt > 0) ? ` (${(ca / mt).toFixed(2)}× a meta)` : '';
         // Rótulo do mercado impresso na linha: "conversa" de sempre, ou
         // "conversa → salvamentos" quando declarado — é o que a prova seca
         // (Passo 5 da Tarefa 3/5) confere a olho nu.
@@ -899,7 +945,7 @@ async function main() {
         // anterior OU sem custo anterior, não imprime nada a mais — "antes —"
         // só poluiria a linha sem dizer nada de novo.
         const insAnterior = insAntByCamp[camp.id];
-        const caAnt = (insAnterior && !ehMistaDry) ? custoAtualDoAlvo(mercadoDry, insAnterior, reguaDaContaAtual, interDry) : null;
+        const caAnt = (insAnterior && !ehMistaDry && !semMedidaDeSeguidorDry) ? custoAtualDoAlvo(mercadoDry, insAnterior, reguaDaContaAtual, interDry) : null;
         const txtTend = (ca != null && caAnt != null)
           ? ` · antes R$ ${caAnt.toFixed(2)} ${ca > caAnt ? '▲' : (ca < caAnt ? '▼' : '=')}`
           : '';
