@@ -811,6 +811,53 @@ test('campanha MISTA ([LEADS LOJA][mixconversão]): sem custo de campanha, com q
   assert.equal(porSite.meta_reais, 80, 'chaveMeta vendas da REGUA_TESTE');
 });
 
+// ---------------------------------------------------------------------------
+// ACHADO DA REVISÃO (Onda C, Tarefa 5, Passo 2, rodada de correção): antes
+// desta correção, TODO anúncio de campanha mista saía com `resultado` e
+// `custo_por_resultado` NULOS — mesmo pertencendo a um conjunto de mercado
+// único e bem identificado — porque o mercado usado para o anúncio era o da
+// CAMPANHA ('misto', sem entrada em ALVOS). A TELA já quebra por conjunto; o
+// robô mandando null para todos os anúncios divergia dela. Este teste prova
+// que cada anúncio agora usa o mercado do PRÓPRIO conjunto (via `adset_id`).
+// ---------------------------------------------------------------------------
+test('campanha mista: cada anúncio leva o mercado do CONJUNTO dele, não o "misto" da campanha', () => {
+  const camp = { id: '34', name: '[LEADS LOJA][mixconversão]', objective: 'OUTCOME_SALES' };
+  const conjuntos = [
+    { id: 'cj_zap', destination_type: 'WHATSAPP', optimization_goal: 'CONVERSATIONS', spend: '300',
+      actions: [{ action_type: 'onsite_conversion.messaging_conversation_started_7d', value: '10' }] },
+    { id: 'cj_site', destination_type: 'UNDEFINED', optimization_goal: 'OFFSITE_CONVERSIONS', spend: '700',
+      actions: [{ action_type: 'purchase', value: '5' }] },
+  ];
+  const ads = [
+    { ad_id: 'a_zap', ad_name: 'Anúncio do WhatsApp', adset_id: 'cj_zap', spend: '150',
+      actions: [{ action_type: 'onsite_conversion.messaging_conversation_started_7d', value: '5' }] },
+    { ad_id: 'a_site', ad_name: 'Anúncio do site', adset_id: 'cj_site', spend: '350',
+      actions: [{ action_type: 'purchase', value: '2' }] },
+  ];
+  const d = dadosDoPrompt(camp, { spend: '1000' }, ads, conjuntos, REGUA_TESTE, {});
+  assert.equal(d.regua.mercado, 'misto');
+  const zap = d.anuncios.find((a) => a.ad_id === 'a_zap');
+  const site = d.anuncios.find((a) => a.ad_id === 'a_site');
+  assert.equal(zap.resultado, 5, 'conjunto do WhatsApp: conversas, não null');
+  assert.equal(zap.custo_por_resultado, 30, '150 / 5 conversas');
+  assert.equal(site.resultado, 2, 'conjunto do site: compras, não null');
+  assert.equal(site.custo_por_resultado, 175, '350 / 2 compras');
+});
+
+test('campanha mista: anúncio sem adset_id reconhecível fica sem resultado, nunca inventa', () => {
+  const camp = { id: '34', name: '[LEADS LOJA][mixconversão]', objective: 'OUTCOME_SALES' };
+  const conjuntos = [
+    { id: 'cj_zap', destination_type: 'WHATSAPP', optimization_goal: 'CONVERSATIONS', spend: '300',
+      actions: [{ action_type: 'onsite_conversion.messaging_conversation_started_7d', value: '10' }] },
+    { id: 'cj_site', destination_type: 'UNDEFINED', optimization_goal: 'OFFSITE_CONVERSIONS', spend: '700',
+      actions: [{ action_type: 'purchase', value: '5' }] },
+  ];
+  const ads = [{ ad_id: 'orfao', ad_name: 'Sem conjunto conhecido', spend: '10', actions: [] }];
+  const d = dadosDoPrompt(camp, { spend: '1000' }, ads, conjuntos, REGUA_TESTE, {});
+  assert.equal(d.anuncios[0].resultado, null);
+  assert.equal(d.anuncios[0].custo_por_resultado, null);
+});
+
 test('o prompt instrui o modelo a julgar campanha mista conjunto a conjunto, sem inventar média', () => {
   const camp = { id: '34', name: '[LEADS LOJA][mixconversão]', objective: 'OUTCOME_SALES' };
   const conjuntos = [

@@ -374,29 +374,58 @@ export function montarMensagens(camp, ins, ads, conjuntos, regua, extra) {
     roas: Array.isArray(ins.purchase_roas) && ins.purchase_roas[0] ? num(ins.purchase_roas[0].value) : null,
     acoes: ins.actions || null,
     valores_acao: ins.action_values || null,
-    anuncios: (ads || []).map((a) => ({
-      ad_id: a.ad_id || a.id || '',
-      nome: a.ad_name || a.adset_name || '',
-      gasto: num(a.spend),
-      ctr_pct: num(a.ctr),
-      cpc: num(a.cpc),
-      impressoes: num(a.impressions),
-      alcance: num(a.reach),
-      frequencia: num(a.frequency),
-      // O RESULTADO deste criativo, no MERCADO DA CAMPANHA (descido pronto,
-      // nunca recalculado por anúncio — ver H1 do review de 2026-07-28, e o
-      // cuidado equivalente desta onda em mercados.js: a Meta OMITE um action
-      // type inteiro quando a contagem é zero, então recalcular por anúncio
-      // classificaria errado). Sem isto o robô mandava pausar criativo de
-      // conversão olhando só CTR e frequência.
-      resultado: (alvo && alvo.resultado && GT_METRIC_CATALOG[alvo.resultado])
-        ? GT_METRIC_CATALOG[alvo.resultado].compute(a) : null,
-      // Usamos `custoAtualDoAlvo` (e não `custoDoAlvo` direto) para todo
-      // mercado, inclusive engajamento, sempre concordar com o valor usado no
-      // --dry e deixar a porta aberta para a Tarefa 5 (override de objetivo
-      // declarado) sem precisar trocar chamada por chamada depois.
-      custo_por_resultado: custoAtualDoAlvo(mercado, a, regua),
-    })),
+    // MAPA DE CONJUNTO POR ID (Onda C, Tarefa 5, Passo 2, rodada de correção):
+    // só serve para achar o CONJUNTO de cada anúncio quando a campanha é
+    // MISTA (ver `mercadoDoAnuncio` abaixo) — `conjuntosPuros` já é a mesma
+    // lista com objetivo herdado usada para decidir `mercado` acima, então
+    // nunca diverge dela.
+    anuncios: (() => {
+      const conjuntoPorId = {};
+      (conjuntosPuros || []).forEach((cj) => { if (cj && cj.id != null) conjuntoPorId[String(cj.id)] = cj; });
+      return (ads || []).map((a) => {
+        // O MERCADO DESTE ANÚNCIO (Onda C, Tarefa 5, Passo 2): o da CAMPANHA,
+        // descido pronto — NUNCA recalculado por anúncio (ver H1 do review de
+        // 2026-07-28: a Meta OMITE um action_type inteiro quando a contagem é
+        // zero, então um anúncio de campanha de WhatsApp sem conversa nesta
+        // janela ficaria idêntico a um de engajamento puro).
+        //
+        // EXCEÇÃO — campanha MISTA (achado da revisão, rodada de correção):
+        // antes desta correção, TODO anúncio de campanha mista recebia
+        // `resultado`/`custo_por_resultado` NULOS, porque `alvo` (calculado
+        // lá em cima a partir de `mercado==='misto'`) não existe em ALVOS —
+        // mesmo o anúncio pertencendo a um conjunto de mercado único e bem
+        // identificado. A TELA já quebra por conjunto (ver mercadoDoGrupo em
+        // tela-de-gestao-trafego.vue); o robô mandando null para todos
+        // divergia dela — exatamente o defeito que esta onda existe pra
+        // matar. A mesma condição da tela (`mercado === 'misto'`, sem olhar
+        // `interacaoDeclarada`: a declaração é assunto do CUSTO DA CAMPANHA,
+        // nunca decidiu o mercado do anúncio).
+        const mercadoDoAnuncio = mercado === 'misto'
+          ? mercadoDoConjunto(conjuntoPorId[String(a.adset_id)] || {})
+          : mercado;
+        const alvoDoAnuncio = alvoDoBalde(mercadoDoAnuncio);
+        return {
+          ad_id: a.ad_id || a.id || '',
+          nome: a.ad_name || a.adset_name || '',
+          gasto: num(a.spend),
+          ctr_pct: num(a.ctr),
+          cpc: num(a.cpc),
+          impressoes: num(a.impressions),
+          alcance: num(a.reach),
+          frequencia: num(a.frequency),
+          // O RESULTADO deste criativo, no mercado do anúncio (ver acima).
+          // Sem isto o robô mandava pausar criativo de conversão olhando só
+          // CTR e frequência.
+          resultado: (alvoDoAnuncio && alvoDoAnuncio.resultado && GT_METRIC_CATALOG[alvoDoAnuncio.resultado])
+            ? GT_METRIC_CATALOG[alvoDoAnuncio.resultado].compute(a) : null,
+          // Usamos `custoAtualDoAlvo` (e não `custoDoAlvo` direto) para todo
+          // mercado, inclusive engajamento, sempre concordar com o valor usado no
+          // --dry e deixar a porta aberta para a Tarefa 5 (override de objetivo
+          // declarado) sem precisar trocar chamada por chamada depois.
+          custo_por_resultado: custoAtualDoAlvo(mercadoDoAnuncio, a, regua),
+        };
+      });
+    })(),
     dias_no_ar: diasNoAr,
     // Menos de 3 dias: a Meta ainda está na fase de aprendizado, e mexer no
     // orçamento reinicia essa fase. O prompt manda não mexer em quem está
@@ -848,7 +877,12 @@ async function main() {
       adsets.forEach((cj) => { (conjuntosPorCamp[cj.campaign_id] = conjuntosPorCamp[cj.campaign_id] || []).push(cj); });
       // actions/action_values entraram pra dar o RESULTADO de cada anúncio (leads,
       // conversas, compras...) — mesmo GET de sempre, nenhuma chamada nova à API.
-      const adFields = 'ad_id,ad_name,adset_name,campaign_id,spend,impressions,clicks,ctr,cpc,reach,frequency,actions,action_values';
+      // adset_id entrou na rodada de correção da Tarefa 5, Passo 2: é o que
+      // permite achar o CONJUNTO de cada anúncio numa campanha MISTA (ver
+      // `mercadoDoAnuncio` em montarMensagens) — sem ele, todo anúncio de
+      // campanha mista ficava preso ao mercado 'misto' (sem alvo, sem
+      // resultado), mesmo pertencendo a um conjunto de mercado único.
+      const adFields = 'ad_id,ad_name,adset_id,adset_name,campaign_id,spend,impressions,clicks,ctr,cpc,reach,frequency,actions,action_values';
       let adIns = [], adObjs = [];
       try {
         adIns = (await graphGet(`/act_${adAcc}/insights`, { level: 'ad', fields: adFields, time_range: { since, until }, limit: 500 }, acc.access_token)).data || [];
