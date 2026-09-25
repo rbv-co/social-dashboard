@@ -441,8 +441,25 @@ begin
              -- planejada/aberta ninguém tem `saiu_em` ainda, então a conta
              -- coincide com "quem está nela agora"; depois de encerrada, ela
              -- vira "quem esteve nela" — o mesmo número, para sempre.
+             -- ⚠️ TASK 6 RODADA 1 DE CONSERTO (IMPORTANTE 3): filtra `teste`,
+             -- pelo MESMO critério de `vessel_pracas_listar` (acima) — antes
+             -- os dois contavam diferente (um filtrava, o outro não).
              'stylists', (select count(*)::int from public.vessel_stylist_na_edicao n
-                           where n.edicao_id = e.id))
+                           join public.vessel_stylists s on s.id = n.stylist_id
+                           where n.edicao_id = e.id and not coalesce(s.teste, false)),
+             -- ⚠️ TASK 6 RODADA 1 DE CONSERTO (IMPORTANTE 3): quantas SERIAM
+             -- levadas se a edição fosse encerrada agora — o MESMO critério
+             -- de `vessel_edicao_encerrar` (vínculo ainda ativo, `saiu_em is
+             -- null`, da stylist que `ativada_em is null`). Numa edição já
+             -- encerrada dá sempre 0 (o congelamento já fechou todos os
+             -- vínculos) — não é um teto, é o número real. A tela usa este
+             -- campo para dizer "N serão levadas" ANTES de confirmar, em vez
+             -- de "até N" (o total da edição, que mentia numa edição madura
+             -- onde quase todas já ativaram).
+             'nao_ativadas', (select count(*)::int from public.vessel_stylist_na_edicao n
+                           join public.vessel_stylists s on s.id = n.stylist_id
+                           where n.edicao_id = e.id and n.saiu_em is null
+                             and s.ativada_em is null and not coalesce(s.teste, false)))
            order by p.ordem, e.numero desc)
       from public.vessel_stylist_circle_edicoes e join public.vessel_pracas p on p.id = e.praca_id
      where p_praca_id is null or e.praca_id = p_praca_id), '[]'::json);
@@ -929,6 +946,10 @@ begin
       from public.vessel_stylists s
      where s.id in (select stylist_id from turma_ids)
        and not coalesce(s.teste, false)
+       -- ⚠️ RODADA 1 DE CONSERTO (IMPORTANTE 5): o mesmo tratamento de
+       -- `teste`, agora para `ativa` — sem isto uma stylist desativada conta
+       -- no placar e some do quadro/lista, e os dois deixam de fechar.
+       and coalesce(s.ativa, true)
   ),
   -- os encontros são da PRAÇA da edição, na janela dela — não dependem de
   -- quem está na turma (um encontro é da praça e da data, não da stylist).
@@ -951,7 +972,11 @@ begin
   -- cada stylist desta edição, dentro da janela dela.
   realizados as (
     select e.stylist_id, e.realizado_em,
-           row_number() over (partition by e.stylist_id order by e.realizado_em, e.id) as n
+           row_number() over (partition by e.stylist_id order by e.realizado_em, e.id) as n,
+           -- ⚠️ RODADA 1 DE CONSERTO (IMPORTANTE 4): o `lag()` que faltava —
+           -- a MESMA conta de `vessel_numeros_do_stylist_circle`.
+           e.realizado_em - lag(e.realizado_em) over (partition by e.stylist_id
+                                                      order by e.realizado_em, e.id) as intervalo
       from ev e
      where e.status = 'realizado' and e.stylist_id in (select stylist_id from turma_ids)
   ),
@@ -990,7 +1015,22 @@ begin
                        and status_do_encontro = 'realizado'),
     'presentes', (select count(*)::int from conv where status = 'realizado'),
     'presentes_em_realizados', (select count(*)::int from conv
-                     where status = 'realizado' and status_do_encontro = 'realizado')
+                     where status = 'realizado' and status_do_encontro = 'realizado'),
+    -- ⚠️ RODADA 1 DE CONSERTO (IMPORTANTE 4): os dois números que voltam.
+    -- `intervalos`/`intervalo_medio_em_dias` — sobre TODOS os realizados da
+    -- praça na janela da edição (não filtra pela turma congelada: um
+    -- encontro é da praça e da data, a mesma regra de `ev`/`conv` acima).
+    'intervalos', (select count(*)::int from realizados where intervalo is not null),
+    'intervalo_medio_em_dias', (select round(avg(intervalo)::numeric, 1) from realizados
+                                 where intervalo is not null),
+    -- `contatos_ate_ativar`/`stylists_com_contatos_ate_ativar` — sobre a
+    -- turma (`sty`) que já ativou, pela MESMA ativação que o resto desta
+    -- função usa (`sty.ativou`, não a coluna crua).
+    'contatos_ate_ativar', (select round(avg(n)::numeric, 1) from (
+        select (select count(*) from public.vessel_stylist_contatos c
+                 where c.stylist_id = s.id and c.criado_em < s.ativou) as n
+          from sty s where s.ativou is not null) x),
+    'stylists_com_contatos_ate_ativar', (select count(*)::int from sty s where s.ativou is not null)
   ) into v_saida;
 
   return v_saida;
@@ -2362,20 +2402,30 @@ begin
   if v_ed.id is null then
     raise exception 'edicao nao encontrada' using errcode = 'P0002';
   end if;
+  -- ⚠️ SEM FIM ESCOLHIDO, A JANELA NÃO TEM FIM — a mesma regra de
+  -- `vessel_numeros_do_stylist_circle` para `p_ate` nulo.
   v_ate := coalesce(v_ed.termina_em, 'infinity'::date);
 
   with
+  -- ⚠️ O CONGELAMENTO mora AQUI: numa edição ENCERRADA, todas as linhas dela
+  -- contam, sem filtrar por `saiu_em` — o placar não zera ao encerrar.
+  -- Trocar este `where` por `1=1` é a mutação que o aplicador prova
+  -- reprovar — sem ele, Limeira contaria stylist de Campinas.
+  --
   -- ⚠️ RODADA 1 DE CONSERTO (CRÍTICO 1): numa edição ainda ABERTA, uma linha
   -- com `saiu_em` preenchido é gente que MUDOU DE PRAÇA (ver
-  -- `vessel_stylist_sincronizar_edicao`) — não pode continuar contando na
-  -- edição de origem enquanto essa segue aberta. Numa edição ENCERRADA o
-  -- congelamento de sempre vale: conta todo mundo, sem filtrar por
-  -- `saiu_em` (o placar não zera ao encerrar).
+  -- `vessel_stylist_sincronizar_edicao`) — ela não pode continuar contando
+  -- na edição de origem enquanto essa segue aberta, senão conta em DUAS
+  -- edições abertas ao mesmo tempo. Só em `encerrada` o congelamento vale.
   turma_ids as (
     select distinct n.stylist_id from public.vessel_stylist_na_edicao n
      where n.edicao_id = p_edicao_id
        and (v_ed.situacao = 'encerrada' or n.saiu_em is null)
   ),
+  -- ⚠️ RODADA 1 DE CONSERTO (MENOR 1): filtra `teste` igual às irmãs
+  -- (`vessel_rastreio_dos_stylists`, `vessel_numeros_do_stylist_circle`) —
+  -- sem isto uma stylist de teste entraria no placar e sumiria da lista
+  -- embaixo, e o funil não fecharia com a lista.
   sty as (
     select s.*, public.vessel_stylist_ativada_em(s.id) as ativou
       from public.vessel_stylists s
@@ -2386,6 +2436,8 @@ begin
        -- no placar e some do quadro/lista, e os dois deixam de fechar.
        and coalesce(s.ativa, true)
   ),
+  -- os encontros são da PRAÇA da edição, na janela dela — não dependem de
+  -- quem está na turma (um encontro é da praça e da data, não da stylist).
   ev as (
     select e.*
       from public.vessel_private_edits e
@@ -2401,6 +2453,8 @@ begin
       join ev e on e.codigo = t.evento_codigo
      where not coalesce(t.teste, false)
   ),
+  -- os realizados DA TURMA (para as taxas): o 1º e o 2º encontro realizado de
+  -- cada stylist desta edição, dentro da janela dela.
   realizados as (
     select e.stylist_id, e.realizado_em,
            row_number() over (partition by e.stylist_id order by e.realizado_em, e.id) as n,
@@ -2411,6 +2465,8 @@ begin
       from ev e
      where e.status = 'realizado' and e.stylist_id in (select stylist_id from turma_ids)
   ),
+  -- a turma, passo a passo — cada passo DENTRO do anterior: a MESMA turma em
+  -- cima e embaixo das taxas de t11-regras.js (taxasDoPlacar).
   turma as (
     select s.id,
            (s.ativou is not null) as ativou,

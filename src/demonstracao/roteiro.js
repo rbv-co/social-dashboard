@@ -9,36 +9,32 @@
  */
 export const ORIGEM_DOS_AVISOS = 'demonstracao-vessel'
 
+// ⚠️ 25/09/2026 (Task 12): o roteiro passou a contar SÓ a jornada do Stylist
+// Circle — identificar → conversar/classificar → prospectar → ativar. O
+// Private Edit saiu de vista (o dono pediu a demo enxuta na PRIMEIRA das três
+// soluções); os passos de marcar encontro, convidar e fechar presença saíram
+// junto. Placar por edição e cadastro de Praças/Edições ficaram de fora — o
+// banco de mentira ainda não avisa (`aoAvisar`) nenhum gesto de
+// vessel_placar_da_edicao/vessel_praca_criar/vessel_edicao_criar/
+// vessel_edicao_abrir, e passo sem gesto que o marque não entra aqui.
 export const PASSOS = [
   { id: 1, quem: 'Ionara', titulo: 'Cadastrar uma parceira nova',
     onde: 'Comercial Vessel → Stylist Circle → bloco "Cadastrar parceira": nome, WhatsApp e "Como ela chegou", depois "Cadastrar parceira".' },
   { id: 2, quem: 'Ionara', titulo: 'Abrir a ficha dela e registrar um contato',
     onde: 'No quadro, toque no nome dela (ou em "Registrar contato"): escolha o canal, o resultado "Conversou" e "Registrar contato".' },
-  // ⚠️ 24/09/2026: SÓ QUEM ESTÁ NA ATIVADA PODE TER PRIVATE EDIT. O passo 3
+  { id: 3, quem: 'Ionara', titulo: 'Classificar a parceira (mover para Classificação)',
+    onde: 'No quadro, arraste o cartão dela até a coluna "Classificação" — ou, na ficha, "Ou mover para" → Classificação e "Mover".' },
+  { id: 4, quem: 'Ionara', titulo: 'Prospectar a parceira (mover para Prospectado)',
+    onde: 'No quadro, arraste o cartão dela até a coluna "Prospectado" — ou, na ficha, "Ou mover para" → Prospectado e "Mover".' },
+  // ⚠️ 24/09/2026: SÓ QUEM ESTÁ NA ATIVADA PODE TER PRIVATE EDIT. Este passo
   // conta quando ela chega numa etapa que libera Private Edit — mover para
-  // qualquer outra não basta (o passo 4 seria recusado).
-  { id: 3, quem: 'Ionara', titulo: 'Ativar a parceira (mover para Ativada)',
-    onde: 'No quadro, arraste o cartão dela até a coluna "Ativada" (no computador) — ou, na ficha, "Ou mover para" → Ativada e "Mover". Só quem está na Ativada pode ter Private Edit. As etapas se configuram na engrenagem "Etapas do funil".' },
-  { id: 4, quem: 'Ionara', titulo: 'Marcar um Private Edit com essa parceira',
-    onde: 'Comercial Vessel → Private Edit → "Marcar um encontro": ela já aparece na lista (só aparecem as da Ativada). Escolha ela, o dia de HOJE, a praça, e "Criar encontro".' },
-  { id: 5, quem: 'Ionara', titulo: 'Incluir duas convidadas',
-    onde: 'No encontro novo, "Convidadas e presença": nome e WhatsApp, "Incluir convidada" — duas vezes.' },
-  { id: 6, quem: 'Ionara', titulo: 'Gerar o cartão e a mensagem de uma convidada',
-    onde: 'No cartão da convidada, "Cartão e mensagem".' },
-  { id: 7, quem: 'Ionara', titulo: 'Marcar "Convite enviado" e "Confirmou"',
-    onde: 'Nos botões do cartão da convidada, na lista do encontro.' },
-  { id: 8, quem: 'Gerente', titulo: 'No dia, marcar "Veio" e "Não veio"',
-    onde: 'Uma convidada "Veio", a outra "Não veio".' },
-  { id: 9, quem: 'Gerente', titulo: 'Fechar o encontro como Realizado',
-    onde: 'Em "A situação" do encontro: "Realizado", a data de hoje, e "Gravar situação".' },
-  { id: 10, quem: 'Sistema', titulo: 'Ver o placar do Stylist Circle mudar',
-    onde: 'Volte ao Stylist Circle: o placar recalcula sozinho — Realizados e Presentes sobem.' },
-  { id: 11, quem: 'Ionara', titulo: 'Tentar cancelar um encontro sem motivo e ver o aviso',
-    onde: 'Em qualquer encontro, Situação "Cancelado", deixe o motivo em branco e "Gravar situação".' },
+  // qualquer outra não basta.
+  { id: 5, quem: 'Ionara', titulo: 'Ativar a parceira (mover para Ativada)',
+    onde: 'No quadro, arraste o cartão dela até a coluna "Ativada" (no computador) — ou, na ficha, "Ou mover para" → Ativada e "Mover". As etapas se configuram na engrenagem "Etapas do funil".' },
 ]
 
 export function roteiroVazio() {
-  return { feitos: [], convidadas: [], marcas: [], presencas: [] }
+  return { feitos: [] }
 }
 
 const junta = (lista, valor) => (lista.includes(valor) ? lista : [...lista, valor])
@@ -51,26 +47,11 @@ export function aplicarAviso(roteiro, evento, dados = {}) {
     case 'pronta': return roteiroVazio() // a Central recarregou: o banco voltou ao começo
     case 'stylist_criada': marcar(1); break
     case 'contato_registrado': marcar(2); break
-    case 'etapa_mudada': if (dados.libera_private_edit) marcar(3); break
-    case 'encontro_criado': marcar(4); break
-    case 'convidada_incluida':
-      r.convidadas = junta(r.convidadas, dados.id)
-      if (r.convidadas.length >= 2) marcar(5)
+    case 'etapa_mudada':
+      if (dados.para === 'Classificação') marcar(3)
+      else if (dados.para === 'Prospectado') marcar(4)
+      else if (dados.libera_private_edit) marcar(5)
       break
-    case 'cartao_gerado': marcar(6); break
-    case 'convite_marcado':
-      r.marcas = junta(r.marcas, dados.marca)
-      if (r.marcas.includes('enviado') && r.marcas.includes('sim')) marcar(7)
-      break
-    case 'presenca_marcada':
-      r.presencas = junta(r.presencas, dados.situacao)
-      if (r.presencas.includes('realizado') && r.presencas.includes('no_show')) marcar(8)
-      break
-    case 'encontro_situacao': if (dados.status === 'realizado') marcar(9); break
-    // ⚠️ SÓ DEPOIS DO PASSO 9: ler o placar antes de fechar o encontro não é
-    // "ver o placar mudar".
-    case 'placar_lido': if (r.feitos.includes(9)) marcar(10); break
-    case 'recusa_sem_motivo': marcar(11); break
     default: return roteiro
   }
   r.feitos.sort((a, b) => a - b)

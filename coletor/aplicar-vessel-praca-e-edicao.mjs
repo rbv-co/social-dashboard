@@ -1471,6 +1471,92 @@ try {
     const semGravarPedido = await r(`(select count(*)::int from public.vessel_stylists where whatsapp in ('5519990006397','5519990006396'))`)
     conferir(semGravarPedido === 0, 'e nenhuma das duas tentativas recusadas em vessel_pedido_do_stylist gravou stylist nenhuma', semGravarPedido)
 
+    // ── IMPORTANTE 2 (Rodada 1 de conserto): a porta PÚBLICA também vincula ──
+    // Quem se inscreve pela landing page NO MEIO de uma rodada tem de entrar
+    // no placar dela na hora. Antes deste conserto `vessel_pedido_do_stylist`
+    // fazia `insert` próprio em `vessel_stylists` com `praca_id` e parava aí:
+    // a parceira ficava fora do placar da edição aberta, calada, até alguém
+    // abrir a PRÓXIMA edição.
+    console.log('\n  · 10a-bis) IMPORTANTE 2: vessel_pedido_do_stylist (a porta PÚBLICA) vincula à edição ABERTA da praça — e, para quem volta mudando de praça, fecha o vínculo antigo')
+    // ⚠️ PRÉ-CONDIÇÃO: a porta tem um teto MUDO por hora (40 stylists criadas
+    // na última hora → devolve `recebido` sem gravar nada). Com o teto
+    // estourado esta prova viraria um falso verde silencioso, então ele é
+    // conferido antes, com nome.
+    const criadasNaUltimaHora = await r(`(select count(*)::int from public.vessel_stylists where criado_em > now() - interval '1 hour')`)
+    conferir(criadasNaUltimaHora < 40,
+      'pré-condição: o teto mudo por hora de vessel_pedido_do_stylist (40) NÃO está estourado — senão a porta devolveria `recebido` sem gravar e a prova abaixo seria um falso verde',
+      criadasNaUltimaHora)
+
+    x = await chamarGravando(`public.vessel_praca_criar(p_sigla => $1, p_nome => $2, p_loja_destino => $3)`, ['PVU', 'Praça de Prova U (inscrição pública)', null])
+    const pracaU = x.v?.id
+    x = await chamarGravando(`public.vessel_edicao_criar(p_praca_id => $1, p_nome => $2, p_comeca_em => $3, p_termina_em => null)`, [pracaU, 'Edição U1', hoje])
+    const edicaoU1 = x.v?.id
+    await chamarGravando(`public.vessel_edicao_abrir(p_id => $1)`, [edicaoU1])
+    x = await chamarGravando(`public.vessel_praca_criar(p_sigla => $1, p_nome => $2, p_loja_destino => $3)`, ['PVV', 'Praça de Prova V (a praça nova de quem volta)', null])
+    const pracaV = x.v?.id
+    x = await chamarGravando(`public.vessel_edicao_criar(p_praca_id => $1, p_nome => $2, p_comeca_em => $3, p_termina_em => null)`, [pracaV, 'Edição V1', hoje])
+    const edicaoV1 = x.v?.id
+    await chamarGravando(`public.vessel_edicao_abrir(p_id => $1)`, [edicaoV1])
+
+    // (a) inscrição NOVA no meio da rodada: entra em U1 na hora.
+    const fonePublico = '5519990006395'
+    x = await chamarComoAnon(`public.vessel_pedido_do_stylist(p_nome => $1, p_whatsapp => $2, p_praca => $3, p_teste => $4)`,
+      ['Prova Pedido Público U', fonePublico, 'PVU', false])
+    // ⚠️ esta porta responde SEMPRE `recebido` (nunca conta à visitante o que
+    // aconteceu do outro lado) — por isso o `ok` dela não prova nada sozinho:
+    // quem prova é a contagem de vínculos logo abaixo.
+    conferir(!x.e && x.v?.ok === true && x.v?.situacao === 'recebido',
+      'vessel_pedido_do_stylist (como anon): a inscrição pública na praça U é aceita', x.v ?? x.e?.message)
+    const stPublicaId = await r(`(select id from public.vessel_stylists where whatsapp = $1)`, [fonePublico])
+    const vinculoPublicoU1 = await r(`(select count(*)::int from public.vessel_stylist_na_edicao
+      where stylist_id = $1 and edicao_id = $2 and saiu_em is null)`, [stPublicaId, edicaoU1])
+    conferir(vinculoPublicoU1 === 1,
+      'IMPORTANTE 2: quem se inscreve PELA LANDING PAGE no meio da rodada já entra na edição ABERTA da praça — sem isto ficava fora do placar dela, calada',
+      vinculoPublicoU1)
+    const placarU1 = await chamarGravando(`public.vessel_placar_da_edicao(p_edicao_id => $1)`, [edicaoU1])
+    conferir(placarU1.v?.prospectadas === 1,
+      'e o placar de U1 conta essa inscrição — a parceira aparece no número que o cliente olha, não só na tabela', placarU1.v?.prospectadas)
+
+    // (b) ela VOLTA e informa outra praça: o vínculo em U1 (aberta) fecha, e
+    // o de V1 abre — o mesmo CRÍTICO 1, agora pela porta pública.
+    x = await chamarComoAnon(`public.vessel_pedido_do_stylist(p_nome => $1, p_whatsapp => $2, p_praca => $3, p_teste => $4)`,
+      ['Prova Pedido Público U', fonePublico, 'PVV', false])
+    conferir(!x.e && x.v?.ok === true, 'vessel_pedido_do_stylist: a MESMA pessoa volta pela landing page informando a praça V', x.v ?? x.e?.message)
+    const vinculoPublicoU1Depois = await uma(`select saiu_em from public.vessel_stylist_na_edicao where stylist_id = $1 and edicao_id = $2`, [stPublicaId, edicaoU1])
+    conferir(vinculoPublicoU1Depois?.saiu_em != null,
+      'CRÍTICO 1 pela porta pública: quem volta e muda de praça tem o vínculo de U1 (ainda ABERTA) FECHADO — não conta em duas edições abertas ao mesmo tempo',
+      vinculoPublicoU1Depois)
+    const vinculoPublicoV1 = await r(`(select count(*)::int from public.vessel_stylist_na_edicao
+      where stylist_id = $1 and edicao_id = $2 and saiu_em is null)`, [stPublicaId, edicaoV1])
+    conferir(vinculoPublicoV1 === 1, 'e ela passa a contar na edição aberta da praça V — uma aberta só', vinculoPublicoV1)
+
+    // MUTAÇÃO DE PROPÓSITO: tirando a chamada de `vessel_stylist_sincronizar_edicao`
+    // de `vessel_pedido_do_stylist`, a inscrição pública volta a nascer FORA
+    // da edição aberta — é exatamente o defeito que o IMPORTANTE 2 elimina.
+    console.log('\n    · MUTAÇÃO: sem a chamada a vessel_stylist_sincronizar_edicao em vessel_pedido_do_stylist, a inscrição pública volta a ficar fora do placar — reprova')
+    await cli.query('savepoint prova_mutacao_pedido_publico')
+    try {
+      const defPedido = (await uma(`select pg_get_functiondef(p.oid) as def from pg_proc p
+         join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'public' and p.proname = 'vessel_pedido_do_stylist'`)).def
+      const trechoSincronizar = /\n\s*perform public\.vessel_stylist_sincronizar_edicao\(v_id, v_praca_id, not v_era_nova\);\n/
+      if (!trechoSincronizar.test(defPedido)) throw new Error('a mutação não achou a chamada a vessel_stylist_sincronizar_edicao em vessel_pedido_do_stylist — o texto da função mudou')
+      await cli.query(defPedido.replace(trechoSincronizar, '\n'))
+
+      const foneMutado = '5519990006394'
+      const y = await chamarComoAnon(`public.vessel_pedido_do_stylist(p_nome => $1, p_whatsapp => $2, p_praca => $3, p_teste => $4)`,
+        ['Prova Pedido Público Mutado', foneMutado, 'PVU', false])
+      const idMutado = await r(`(select id from public.vessel_stylists where whatsapp = $1)`, [foneMutado])
+      const vinculosMutado = await r(`(select count(*)::int from public.vessel_stylist_na_edicao where stylist_id = $1)`, [idMutado])
+      const reprovouPedido = y.v?.ok === true && idMutado != null && vinculosMutado === 0
+      console.log(`      ${reprovouPedido ? '✗' : '✓'} SEM a sincronização: a inscrição pública gravou a stylist mas ficou com ${vinculosMutado} vínculo(s) — ${reprovouPedido ? 'FORA do placar da rodada, calada (o defeito do IMPORTANTE 2)' : 'inesperado'}`)
+      conferir(reprovouPedido === true,
+        'MUTAÇÃO: sem a chamada a vessel_stylist_sincronizar_edicao, quem se inscreve pela porta pública nasce FORA da edição aberta — prova que a linha nova não é decoração',
+        { ok: y.v?.ok, id: idMutado, vinculos: vinculosMutado })
+    } finally {
+      await cli.query('rollback to savepoint prova_mutacao_pedido_publico')
+    }
+
     console.log('\n  · 10b) o recorte por praça e por edição, com as praças DE VERDADE')
     x = await chamarGravando(`public.vessel_edicao_criar(p_praca_id => $1, p_nome => $2, p_comeca_em => $3, p_termina_em => null)`, [pracaLim.id, 'Edição LIM 1 (prova)', hoje])
     conferir(x.v?.ok === true, 'edicao_criar: edição 1 de Limeira', x.v ?? x.e?.message)

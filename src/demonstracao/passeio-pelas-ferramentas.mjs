@@ -129,9 +129,16 @@ await pagina.goto(CENTRAL)
 await pagina.waitForSelector('.cvmenu-card')
 await esperar(600)
 const menu = await conferirTela()
-for (const t of ['Private Appointment', 'Beauty Sessions', 'Private Edit', 'Stylist Circle', 'Material Gráfico', 'Appointment Card']) {
+for (const t of ['Private Appointment', 'Beauty Sessions', 'Stylist Circle', 'Material Gráfico', 'Appointment Card']) {
   if (!menu.includes(t)) falhar(onde, `o menu não mostra "${t}"`)
 }
+// ⚠️ 25/09/2026 (Task 12): o Private Edit saiu da demo (é a segunda das três
+// soluções; a demo mostra só a primeira, o Stylist Circle) — tirado do perfil
+// de mentira, não do catálogo de verdade. Confere as DUAS pontas: sem cartão
+// no menu, e a rota fechada (a guarda manda para o Início) se alguém tentar
+// pelo endereço direto.
+if (menu.includes('Private Edit')) falhar(onde, 'o Private Edit ainda aparece no menu — devia ter saído da demo')
+if (await pagina.locator('.cvmenu-card', { hasText: 'Private Edit' }).count()) falhar(onde, 'ainda existe um cartão "Private Edit" no menu')
 passo('Appointment Card (abre o site noutra aba, a demonstração continua)')
 {
   const [aba] = await Promise.all([
@@ -258,17 +265,16 @@ passo('Material Gráfico')
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-passo('Private Edit')
+// ⚠️ 25/09/2026 (Task 12): o Private Edit não abre mais nesta demo — sem a
+// permissão, a guarda de rota (`podeEntrar`) manda para o Início. Confere que
+// é exatamente isso que acontece, em vez de supor.
+passo('Private Edit: a rota está fechada (sem a permissão, some no Início)')
 {
-  const t = await abrirPeloMenu('Private Edit')
-  if (!/Marina Castro \(exemplo\)/.test(t)) falhar(onde, 'os encontros de exemplo não apareceram')
-  await mexerEmTodosOsSelects()
-  // ⚠️ 25/09/2026: o Private Edit abre na AGENDA (pedido do dono) — a busca é da lista.
-  if (!/Agenda das lojas/i.test(await conferirTela())) falhar(onde, 'o Private Edit não abriu na Agenda')
-  await clicar(pagina.getByRole('tab', { name: 'Lista' }), 'aba Lista')
-  await esperar()
-  await pagina.locator('input[type="search"]').first().fill('CPS'); await esperar(); await conferirTela()
-  await pagina.locator('input[type="search"]').first().fill(''); await esperar()
+  await pagina.goto(`${CENTRAL}#/private-edit`)
+  await esperar(600)
+  const t = await conferirTela()
+  if (/Marina Castro \(exemplo\)|Agenda das lojas/i.test(t)) falhar(onde, 'o endereço direto ainda abriu o Private Edit')
+  if (!/Inteligência RBV/i.test(t)) falhar(onde, 'fechar o Private Edit não caiu no Início')
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -385,89 +391,6 @@ passo('Stylist Circle')
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-passo('Private Edit: quem foi para a Ativada aparece na hora; as outras não')
-{
-  await abrirPeloMenu('Private Edit')
-  const opcoes = await pagina.locator('#pe-stylist option').allInnerTexts()
-  if (!opcoes.some((t) => /Luiza Amaral/.test(t))) falhar(onde, `a Luiza (arrastada para a Ativada) não está em "Marcar um encontro": ${opcoes}`)
-  if (opcoes.some((t) => /Renata Lima|Paula Reis/.test(t))) falhar(onde, `parceira fora da Ativada no seletor: ${opcoes}`)
-  if (!/Só aparecem as parceiras em etapas que liberam Private Edit \(hoje: Ativada\)/.test(await conferirTela())) falhar(onde, 'a nota da base do Private Edit não apareceu')
-  const luiza = await pagina.locator('#pe-stylist option', { hasText: 'Luiza Amaral' }).getAttribute('value')
-  await pagina.selectOption('#pe-stylist', luiza)
-  const d = new Date(); d.setDate(d.getDate() + 3)
-  await pagina.fill('#pe-quando', `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}T19:00`)
-  await pagina.selectOption('#pe-praca', 'CPS')
-  await clicar(pagina.getByRole('button', { name: 'Criar encontro' }), 'criar o encontro com a Luiza')
-  if (!/criado\. O convite está na lista abaixo/.test(await conferirTela())) falhar(onde, 'o encontro com a Luiza (na Ativada) não foi criado')
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-// 25/09/2026: A AGENDA DO PRIVATE EDIT — o mês, o par que se sobrepõe, o
-// quadrinho de leitura, o clique que abre o encontro e o aviso de sobreposto.
-passo('Private Edit: a agenda, o par sobreposto e o aviso antes de gravar')
-{
-  await abrirPeloMenu('Private Edit')
-  await clicar(pagina.getByRole('tab', { name: 'Agenda' }), 'aba Agenda')
-  await pagina.waitForSelector('.ag-grade .ag-chip', { timeout: 5000 }).catch(() => falhar(onde, 'a grade da agenda não mostrou nenhum compromisso'))
-  // O par de exemplo é daqui a 6 dias: pode cair no mês seguinte.
-  if (!(await pagina.locator('.ag-grade .ag-chip-sobrepoe').count())) await clicar(pagina.getByRole('button', { name: 'Próximo mês' }), 'próximo mês')
-  if ((await pagina.locator('.ag-grade .ag-chip-sobrepoe').count()) < 2) falhar(onde, 'a agenda não marcou o par que se sobrepõe no Iguatemi')
-  if (!(await pagina.locator('.ag-grade .ag-dia-sobrepoe .ag-selo-sobrepoe').count())) falhar(onde, 'o dia do par não ganhou o selo "sobrepõe"')
-  if (!/Private Edit\(s\) se sobrepõem/.test(await conferirTela())) falhar(onde, 'o aviso do mês não contou os sobrepostos')
-  if (!(await pagina.locator('.ag-grade .ag-chip.ag-bs').count())) falhar(onde, 'a Beauty Session do mesmo dia não apareceu na agenda')
-  await mexerEmTodosOsSelects()
-  await pagina.check('#ag-so-pe'); await esperar()
-  if (await pagina.locator('.ag-grade .ag-chip.ag-bs').count()) falhar(onde, '"Só Private Edits" deixou a Beauty Session na grade')
-  await pagina.uncheck('#ag-so-pe'); await esperar(); await conferirTela()
-  await clicar(pagina.locator('.ag-grade .ag-chip.ag-bs').first(), 'abrir a Beauty Session')
-  if (!/Só leitura aqui/.test(await pagina.locator('.ag-quadrinho').innerText().catch(() => ''))) falhar(onde, 'o quadrinho de leitura da sessão não abriu')
-  await clicar(pagina.locator('.ag-quadrinho').getByRole('button', { name: 'Fechar' }), 'fechar o quadrinho')
-  const pa = pagina.locator('.ag-grade .ag-chip.ag-pa')
-  if (await pa.count()) {
-    await clicar(pa.first(), 'abrir um Private Appointment')
-    // As clientes de exemplo do Private Appointment: nenhuma pode aparecer aqui.
-    if (/Laura|Mariana|Nathalia|Olívia|Priscila|Raquel|Sofia|Tatiana|Vanessa|Yasmin|Clara/.test(await pagina.locator('.ag-quadrinho').innerText().catch(() => ''))) {
-      falhar(onde, 'o quadrinho da visita mostrou o nome da cliente')
-    }
-    await pagina.keyboard.press('Escape'); await esperar()
-    if (await pagina.locator('.ag-quadrinho').count()) falhar(onde, 'Esc não fechou o quadrinho')
-  }
-  const codigoDoPar = (await pagina.locator('.ag-grade .ag-chip-sobrepoe').first().getAttribute('title')) || ''
-  await clicar(pagina.locator('.ag-grade .ag-chip-sobrepoe').first(), 'abrir o encontro sobreposto pela agenda')
-  if (!(await pagina.locator('.id-cartao[id^="pe-cartao-"]').count()) || !(await pagina.locator('.id-caixa-form').count())) {
-    falhar(onde, `clicar no encontro da agenda não abriu o cartão com a edição (${codigoDoPar})`)
-  }
-
-  // O aviso: marcar a Marina às 21h do mesmo dia, no Iguatemi (cruza os dois).
-  const d = new Date(); d.setDate(d.getDate() + 6)
-  await pagina.selectOption('#pe-stylist', 'STY-0001')
-  await pagina.fill('#pe-quando', `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}T21:00`)
-  await pagina.selectOption('#pe-praca', 'CPS')
-  await pagina.selectOption('#pe-loja', 'iguatemi')
-  await clicar(pagina.getByRole('button', { name: 'Criar encontro' }), 'criar um encontro que se sobrepõe')
-  const dialogo = pagina.getByRole('alertdialog')
-  const texto = await dialogo.innerText().catch(() => '')
-  if (!/Horário já ocupado/.test(texto) || !/Marcar mesmo assim\?/.test(texto)) falhar(onde, 'o aviso de sobreposto não abriu')
-  if ((texto.match(/PE-\d{8}-CPS-0\d/g) || []).length < 2) falhar(onde, `o aviso não disse com quais encontros cruza: ${texto.slice(0, 200)}`)
-  if (!/Beauty Session/.test(texto)) falhar(onde, 'o aviso não trouxe a nota da Beauty Session do mesmo dia')
-  await clicar(dialogo.getByRole('button', { name: 'Voltar e mudar o horário' }), 'voltar sem gravar')
-  if (await pagina.getByRole('alertdialog').count()) falhar(onde, 'voltar não fechou o aviso')
-  if (/criado\. O convite está na lista abaixo/.test(await conferirTela())) falhar(onde, 'voltar do aviso gravou o encontro')
-  await clicar(pagina.getByRole('button', { name: 'Criar encontro' }), 'criar de novo')
-  await clicar(pagina.getByRole('alertdialog').getByRole('button', { name: 'Marcar mesmo assim' }), 'marcar mesmo assim')
-  if (!/criado\. O convite está na lista abaixo/.test(await conferirTela())) falhar(onde, 'confirmar o aviso não criou o encontro')
-
-  // No celular: a lista dia a dia, sem rolar de lado.
-  await pagina.setViewportSize({ width: 375, height: 812 })
-  await clicar(pagina.getByRole('tab', { name: 'Agenda' }), 'aba Agenda no celular')
-  await pagina.waitForSelector('.ag-lista .ag-chip', { timeout: 5000 }).catch(() => falhar(onde, 'a lista do celular não mostrou nada'))
-  if (await pagina.locator('.ag-grade').isVisible()) falhar(onde, 'no celular a grade de 7 colunas continuou na tela')
-  const larga = await pagina.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
-  if (larga > 0) falhar(onde, `a agenda no celular rola de lado (${larga}px)`)
-  await pagina.setViewportSize({ width: 1440, height: 900 })
-}
-
-// ════════════════════════════════════════════════════════════════════════════
 passo('Voltar: módulo → Comercial Vessel → Central → Comercial Vessel')
 {
   await clicar(pagina.getByRole('button', { name: /Comercial Vessel/ }).first(), 'voltar ao Comercial Vessel')
@@ -488,7 +411,7 @@ passo('Página do roteiro: Celular | Notebook')
   await roteiro.goto(ROTEIRO)
   await roteiro.waitForTimeout(2500)
   const passos = await roteiro.locator('#passos > li').count()
-  if (passos < 11) falhar(onde, `o roteiro mostrou ${passos} passos (eram 11)`)
+  if (passos < 5) falhar(onde, `o roteiro mostrou ${passos} passos (eram 5)`)
   for (const modo of ['notebook', 'celular']) {
     await roteiro.click(`#modo-${modo}`)
     await roteiro.waitForTimeout(600)
@@ -505,7 +428,7 @@ if (FOTOS) {
   passo(`Fotos em ${FOTOS}`)
   const MODULOS = [
     ['menu', 'comercial-vessel'], ['private-appointment', 'atendimentos'], ['beauty-sessions', 'beauty-sessions'],
-    ['private-edit', 'private-edit'], ['stylist-circle', 'stylist-circle'], ['material-grafico', 'material-grafico'],
+    ['stylist-circle', 'stylist-circle'], ['material-grafico', 'material-grafico'],
   ]
   const roteiro = await contexto.newPage()
   vigiar(roteiro, 'roteiro')
