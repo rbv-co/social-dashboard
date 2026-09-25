@@ -20,6 +20,16 @@ export function linkDaConvidada(chaveEncontro, chaveConvidada) {
   return FORMATO_DA_CHAVE.test(a) && FORMATO_DA_CHAVE.test(b) ? `${RAIZ}/${a}/${b}` : ''
 }
 
+/* O MESMO LINK, PARA A EQUIPE CONFERIR ("Ver o convite dela", no cartão).
+ * `?equipe=1` é o marcador que a página repassa ao banco (`p_equipe`): a equipe
+ * vê exatamente o que a convidada vê, mas a abertura NÃO entra na conta de
+ * "abriu o convite" (2026-09-25-vessel-convite-da-convidada-teto-e-abertura-
+ * da-equipe.sql). ⚠️ NUNCA vai na mensagem: o link da mensagem é o de cima. */
+export function linkDaConvidadaParaEquipe(chaveEncontro, chaveConvidada) {
+  const link = linkDaConvidada(chaveEncontro, chaveConvidada)
+  return link ? `${link}?equipe=1` : ''
+}
+
 export function dataPorExtenso(iso) {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return ''
