@@ -10,22 +10,36 @@
 export const ORIGEM_DOS_AVISOS = 'demonstracao-vessel'
 
 // ⚠️ 25/09/2026 (Task 12): o roteiro passou a contar SÓ a jornada do Stylist
-// Circle — identificar → conversar/classificar → prospectar → ativar. O
-// Private Edit saiu de vista (o dono pediu a demo enxuta na PRIMEIRA das três
-// soluções); os passos de marcar encontro, convidar e fechar presença saíram
-// junto. Placar por edição e cadastro de Praças/Edições ficaram de fora — o
-// banco de mentira ainda não avisa (`aoAvisar`) nenhum gesto de
+// Circle — cadastrar → conversar → mover pelo funil → ativar. O Private Edit
+// saiu de vista (o dono pediu a demo enxuta na PRIMEIRA das três soluções);
+// os passos de marcar encontro, convidar e fechar presença saíram junto.
+// Placar por edição e cadastro de Praças/Edições ficaram de fora — o banco de
+// mentira ainda não avisa (`aoAvisar`) nenhum gesto de
 // vessel_placar_da_edicao/vessel_praca_criar/vessel_edicao_criar/
 // vessel_edicao_abrir, e passo sem gesto que o marque não entra aqui.
+// ⚠️ 25/09/2026 (Task 13): O FUNIL DA DEMONSTRAÇÃO TROCOU (pedido direto do
+// dono). O de hoje (Identificado → Classificação → Prospectado → Convidado →
+// Confirmou Ida → Esteve Presente) virou "Stylist levantado → Validado →
+// Conversa → Confirmado → Presença" — cinco etapas, as duas saídas de sempre
+// (Ativada e Desclassificado). Os passos 3 e 4 abaixo mudaram de alvo: era
+// "mover para Classificação" e "mover para Prospectado", agora é "mover para
+// Validado" e "mover para Conversa" (a nova marcada como prospectada — ver
+// `dados-iniciais.js`). ⚠️ É SÓ NESTA DEMONSTRAÇÃO: o funil de verdade é
+// cadastro em `vessel_stylist_etapas`, o dono muda pela tela "Etapas do
+// funil", sem código.
 export const PASSOS = [
+  // ⚠️ O nome "Stylist levantado" é só a etapa; a explicação do dono ("vem da
+  // nossa pesquisa ou do cadastro da LP") não cabe no cabeçalho da coluna do
+  // quadro (que é tela de verdade, fora do alcance desta demo) — por isso
+  // mora aqui, no primeiro passo do roteiro guiado.
   { id: 1, quem: 'Ionara', titulo: 'Cadastrar uma parceira nova',
-    onde: 'Comercial Vessel → Stylist Circle → bloco "Cadastrar parceira": nome, WhatsApp e "Como ela chegou", depois "Cadastrar parceira".' },
+    onde: 'Comercial Vessel → Stylist Circle → bloco "Cadastrar parceira": nome, WhatsApp e "Como ela chegou", depois "Cadastrar parceira". Ela entra na coluna "Stylist levantado" — vem da nossa pesquisa ou do cadastro da LP.' },
   { id: 2, quem: 'Ionara', titulo: 'Abrir a ficha dela e registrar um contato',
     onde: 'No quadro, toque no nome dela (ou em "Registrar contato"): escolha o canal, o resultado "Conversou" e "Registrar contato".' },
-  { id: 3, quem: 'Ionara', titulo: 'Classificar a parceira (mover para Classificação)',
-    onde: 'No quadro, arraste o cartão dela até a coluna "Classificação" — ou, na ficha, "Ou mover para" → Classificação e "Mover".' },
-  { id: 4, quem: 'Ionara', titulo: 'Prospectar a parceira (mover para Prospectado)',
-    onde: 'No quadro, arraste o cartão dela até a coluna "Prospectado" — ou, na ficha, "Ou mover para" → Prospectado e "Mover".' },
+  { id: 3, quem: 'Ionara', titulo: 'Validar a parceira (mover para Validado)',
+    onde: 'No quadro, arraste o cartão dela até a coluna "Validado" — ou, na ficha, "Ou mover para" → Validado e "Mover".' },
+  { id: 4, quem: 'Ionara', titulo: 'Mover a parceira para Conversa',
+    onde: 'No quadro, arraste o cartão dela até a coluna "Conversa" — ou, na ficha, "Ou mover para" → Conversa e "Mover".' },
   // ⚠️ 24/09/2026: SÓ QUEM ESTÁ NA ATIVADA PODE TER PRIVATE EDIT. Este passo
   // conta quando ela chega numa etapa que libera Private Edit — mover para
   // qualquer outra não basta.
@@ -48,8 +62,8 @@ export function aplicarAviso(roteiro, evento, dados = {}) {
     case 'stylist_criada': marcar(1); break
     case 'contato_registrado': marcar(2); break
     case 'etapa_mudada':
-      if (dados.para === 'Classificação') marcar(3)
-      else if (dados.para === 'Prospectado') marcar(4)
+      if (dados.para === 'Validado') marcar(3)
+      else if (dados.para === 'Conversa') marcar(4)
       else if (dados.libera_private_edit) marcar(5)
       break
     default: return roteiro

@@ -58,20 +58,43 @@ export function dadosIniciais(agora = new Date()) {
     { id: 6, praca_id: PRACA.PIR, cidade: 'Piracicaba' },
   ].map((c) => ({ ...c, cidade_chave: achatarCidade(c.cidade) }))
 
-  // ⚠️ AS ETAPAS DO FUNIL (configuráveis desde 24/09/2026) — as que a migration
-  // semeia, na mesma ordem, COM OS NOMES QUE O DONO JÁ USA EM PRODUÇÃO (lidos
-  // de `vessel_stylist_etapas` em 24/09/2026: "Confirmou Ida" e "Esteve
-  // Presente" eram "Confirmado" e "Presença Confirmada").
+  // ⚠️ AS ETAPAS DO FUNIL (configuráveis desde 24/09/2026) — 25/09/2026 (TASK
+  // 13, pedido direto do dono, "agora"): TROCA DE FUNIL NESTA DEMONSTRAÇÃO.
+  // O de hoje (Identificado → Classificação → Prospectado → Convidado →
+  // Confirmou Ida → Esteve Presente, seis etapas) vira CINCO: "Stylist
+  // levantado → Validado → Conversa → Confirmado → Presença". As duas saídas
+  // continuam (Ativada — a única que libera Private Edit — e Desclassificado).
+  // A CONVERSA é a que conta como prospectada (`conta_como_prospectada`),
+  // decisão do dono — não mais o antigo "Prospectado".
+  // ⚠️ O antigo "Convidado" não vira etapa própria: seis nomes de antes viram
+  // cinco, e "Confirmado" (de "Confirmou Ida") absorve o que era "Convidado" —
+  // quem estava lá passa a contar como "Confirmado" (ver mais abaixo, no bloco
+  // das sete stylists de Limeira que davam diversidade de etapa: a Gislaine,
+  // que estava em "Convidado", e a Ingrid, que estava em "Confirmou Ida",
+  // ficam as duas em "Confirmado" — a diversidade perde uma caixa exclusiva,
+  // mas o placar continua tendo caixa de zero em Campinas — ver o cabeçalho
+  // do arquivo).
+  // ⚠️ SOBRE O NOME DA PRIMEIRA: o dono escreveu "Stylist levantado (nossa
+  // pesquisa ou cadastro LP)". A coluna do quadro (`quadro-do-stylist-circle.vue`
+  // — tela de VERDADE, fora do alcance desta demo) só tem espaço para "Nome ·
+  // N", sem legenda por coluna: nome comprido demais quebra a leitura do
+  // cabeçalho. Decisão: o NOME da etapa é só "Stylist levantado", e a
+  // explicação vai como nota no primeiro passo do roteiro guiado
+  // (`roteiro.js`, PASSOS[0].onde) — é o lugar que sobrou para explicar sem
+  // mexer na tela de verdade.
+  // ⚠️ É SÓ NESTA DEMONSTRAÇÃO. O funil do sistema de verdade é CADASTRO
+  // (`vessel_stylist_etapas`): o dono muda pela tela "Etapas do funil", sem
+  // código — nada disto é migration nem aplicador.
   // ⚠️ 24/09/2026 (`2026-09-24-vessel-private-edit-so-com-stylist-liberada.sql`):
-  // + a saída "Ativada", ANTES do Desclassificado, a única que libera Private
-  // Edit. O id dela é o 8 (a ordem é a 7): os ids das sete de antes não mudam.
+  // a saída "Ativada", ANTES do Desclassificado, é a única que libera Private
+  // Edit. O id dela é o 7 (a ordem é a 6): os ids das seis de antes não mudam.
   const etapas = [
-    ['Identificado', 'funil'], ['Classificação', 'funil'], ['Prospectado', 'funil', true], ['Convidado', 'funil'],
-    ['Confirmou Ida', 'funil'], ['Esteve Presente', 'funil'], ['Desclassificado', 'saida'],
+    ['Stylist levantado', 'funil'], ['Validado', 'funil'], ['Conversa', 'funil', true], ['Confirmado', 'funil'],
+    ['Presença', 'funil'], ['Desclassificado', 'saida'],
   ].map(([nome, tipo, marcada], i) => ({ id: i + 1, nome, ordem: i + 1, tipo, conta_como_prospectada: !!marcada,
     libera_private_edit: false, ativa: true, alterado_por_nome: null, alterado_em: null }))
-  etapas.find((e) => e.nome === 'Desclassificado').ordem = 8
-  etapas.push({ id: 8, nome: 'Ativada', ordem: 7, tipo: 'saida', conta_como_prospectada: false, libera_private_edit: true,
+  etapas.find((e) => e.nome === 'Desclassificado').ordem = 7
+  etapas.push({ id: 7, nome: 'Ativada', ordem: 6, tipo: 'saida', conta_como_prospectada: false, libera_private_edit: true,
     ativa: true, alterado_por_nome: null, alterado_em: null })
   const ETAPA = Object.fromEntries(etapas.map((e) => [e.nome, e.id]))
   // Os nove motivos do Desclassificado, na ordem da migration; "Outro" pede nota.
@@ -106,7 +129,7 @@ export function dadosIniciais(agora = new Date()) {
       cidade: 'Campinas', instagram: '@renata.exemplo', atuacao: 'consultora de imagem', praca_preview: 'CPS', praca_id: PRACA.CPS,
       loja: 'tivoli', origem_contato: 'inbound', origem_canal: 'lp', responsavel: null,
       prospectado_em: dia(-3), proxima_acao: null, proxima_acao_em: null,
-      ativada_em: null, etapa_id: ETAPA.Prospectado, ativa: true, teste: false,
+      ativada_em: null, etapa_id: ETAPA.Conversa, ativa: true, teste: false,
     },
     // Duas mapeadas que ninguém abordou ainda (a planilha de mapeamento): sem
     // data da prospecção, uma SÓ com o Instagram e a outra SÓ com o WhatsApp
@@ -117,14 +140,14 @@ export function dadosIniciais(agora = new Date()) {
       loja: null, origem_contato: 'pesquisa', origem_canal: null, responsavel: null,
       prospectado_em: null, proxima_acao: null, proxima_acao_em: null,
       observacoes: 'Da planilha de mapeamento (exemplo). Tier B.',
-      ativada_em: null, etapa_id: ETAPA.Identificado, ativa: true, teste: false,
+      ativada_em: null, etapa_id: ETAPA['Stylist levantado'], ativa: true, teste: false,
     },
     {
       id: 6, codigo: 'STY-0006', nome: 'Carol Bastos (exemplo)', whatsapp: '5519990000006',
       cidade: 'Piracicaba', instagram: null, atuacao: 'stylist', praca_preview: null, praca_id: PRACA.PIR,
       loja: null, origem_contato: 'pesquisa', origem_canal: null, responsavel: null,
       prospectado_em: null, proxima_acao: 'Conferir a carteira antes de abordar', proxima_acao_em: dia(4),
-      observacoes: null, ativada_em: null, etapa_id: ETAPA['Classificação'], ativa: true, teste: false,
+      observacoes: null, ativada_em: null, etapa_id: ETAPA.Validado, ativa: true, teste: false,
     },
   ]
   // O histórico de etapas de cada uma (a entrada, e para onde ela andou).
@@ -135,12 +158,11 @@ export function dadosIniciais(agora = new Date()) {
     para_etapa_id: ETAPA[para], motivo, por_nome: 'Ionara', em: em(n, para === 'Ativada' ? '09:00' : '10:00'),
     motivo_id: saida.motivo ? MOTIVO[saida.motivo] : null, nota: saida.nota ?? null,
     liberava_private_edit: !!etapas.find((e) => e.id === ETAPA[para])?.libera_private_edit })
-  passou(1, null, 'Identificado', -80, 'cadastro'); passou(1, 'Identificado', 'Prospectado', -75)
-  passou(1, 'Prospectado', 'Convidado', -72); passou(1, 'Convidado', 'Confirmou Ida', -71)
-  passou(1, 'Confirmou Ida', 'Ativada', -70)
-  passou(3, null, 'Identificado', -3, 'cadastro'); passou(3, 'Identificado', 'Prospectado', -3)
-  passou(5, null, 'Identificado', -1, 'cadastro')
-  passou(6, null, 'Identificado', -1, 'cadastro'); passou(6, 'Identificado', 'Classificação', 0)
+  passou(1, null, 'Stylist levantado', -80, 'cadastro'); passou(1, 'Stylist levantado', 'Conversa', -75)
+  passou(1, 'Conversa', 'Confirmado', -72); passou(1, 'Confirmado', 'Ativada', -70)
+  passou(3, null, 'Stylist levantado', -3, 'cadastro'); passou(3, 'Stylist levantado', 'Conversa', -3)
+  passou(5, null, 'Stylist levantado', -1, 'cadastro')
+  passou(6, null, 'Stylist levantado', -1, 'cadastro'); passou(6, 'Stylist levantado', 'Validado', 0)
   // 24/09/2026: uma "sem contato ainda" (da planilha, sem WhatsApp e sem
   // Instagram): o selo no cartão, na lista e na ficha, e nenhum botão de contato.
   stylists.push({
@@ -149,9 +171,9 @@ export function dadosIniciais(agora = new Date()) {
     loja: null, origem_contato: 'pesquisa', origem_canal: null, responsavel: null,
     prospectado_em: null, proxima_acao: null, proxima_acao_em: null, sem_contato: true,
     observacoes: 'Da planilha de mapeamento (exemplo). Sem contato ainda — alguém vai completar. Não localizado publicamente: WhatsApp/Telefone, Instagram, E-mail.',
-    ativada_em: null, etapa_id: ETAPA.Identificado, ativa: true, teste: false,
+    ativada_em: null, etapa_id: ETAPA['Stylist levantado'], ativa: true, teste: false,
   })
-  passou(8, null, 'Identificado', -1, 'cadastro')
+  passou(8, null, 'Stylist levantado', -1, 'cadastro')
 
   const encontros = [
     {
@@ -314,11 +336,11 @@ export function dadosIniciais(agora = new Date()) {
     cidade: 'Campinas', instagram: '@luisa.exemplo', atuacao: 'stylist', praca_preview: 'CPS', praca_id: PRACA.CPS,
     loja: 'tivoli', origem_contato: 'evento', origem_canal: null, responsavel: 'Ionara',
     prospectado_em: dia(-45), proxima_acao: 'Remarcar o encontro que caiu', proxima_acao_em: dia(4),
-    ativada_em: em(-40, '15:00'), etapa_id: ETAPA['Esteve Presente'], ativa: true, teste: false,
+    ativada_em: em(-40, '15:00'), etapa_id: ETAPA['Presença'], ativa: true, teste: false,
   })
   // O histórico de etapas dela (funil configurável, 24/09/2026).
-  passou(4, null, 'Identificado', -50, 'cadastro'); passou(4, 'Identificado', 'Prospectado', -45)
-  passou(4, 'Prospectado', 'Convidado', -41); passou(4, 'Convidado', 'Esteve Presente', -25)
+  passou(4, null, 'Stylist levantado', -50, 'cadastro'); passou(4, 'Stylist levantado', 'Conversa', -45)
+  passou(4, 'Conversa', 'Confirmado', -41); passou(4, 'Confirmado', 'Presença', -25)
   encontros.push(
     {
       id: 4, codigo: `PE-${compacto(-25)}-CPS-01`, chave: 'M3T8W2QA', stylist_id: 4, quando: em(-25, '19:00'),
@@ -389,9 +411,9 @@ export function dadosIniciais(agora = new Date()) {
   // (Campinas já tem 3 nomeadas — Marina, Renata, Luísa —, faltam 24;
   // Limeira já tem 1 — Luiza —, faltam 17; Piracicaba já tem 2 — Carol,
   // Helena —, faltam 15; e a "Limeira / Piracicaba" nasce aqui, a única.)
-  // Nomes GERADOS para as "frias" (Identificado, sem prospecção ainda — não
-  // contam em NENHUMA conta do placar, só ocupam espaço no cadastro, como a
-  // maioria de uma base de verdade ocupa): todas "(exemplo)", sem contato de
+  // Nomes GERADOS para as "frias" (Stylist levantado, sem prospecção ainda —
+  // não contam em NENHUMA conta do placar, só ocupam espaço no cadastro, como
+  // a maioria de uma base de verdade ocupa): todas "(exemplo)", sem contato de
   // verdade. As de LIMEIRA que ganham etapa e data (abaixo) são as que dão
   // ao placar da edição o que mostrar.
   const NOMES_FRIOS = ['Ana', 'Beatriz', 'Camila', 'Daniela', 'Eduarda', 'Fabiana', 'Gabriela', 'Helena', 'Isabela',
@@ -412,7 +434,7 @@ export function dadosIniciais(agora = new Date()) {
       loja: null, origem_contato: 'pesquisa', origem_canal: null, responsavel: null,
       prospectado_em: null, proxima_acao: null, proxima_acao_em: null,
       observacoes: 'Da planilha de mapeamento (exemplo).',
-      ativada_em: null, etapa_id: ETAPA.Identificado, ativa: true, teste: false,
+      ativada_em: null, etapa_id: ETAPA['Stylist levantado'], ativa: true, teste: false,
     }
   }
   const campinasFrias = Array.from({ length: 24 }, () => stylistFria('Campinas', PRACA.CPS))
@@ -429,7 +451,7 @@ export function dadosIniciais(agora = new Date()) {
     praca_preview: null, praca_id: null, loja: null, origem_contato: 'pesquisa', origem_canal: null, responsavel: null,
     prospectado_em: null, proxima_acao: null, proxima_acao_em: null,
     observacoes: 'Da planilha de mapeamento (exemplo). Cidade composta — não casa com nenhuma praça cadastrada.',
-    ativada_em: null, etapa_id: ETAPA.Identificado, ativa: true, teste: false,
+    ativada_em: null, etapa_id: ETAPA['Stylist levantado'], ativa: true, teste: false,
   }
 
   // ── LIMEIRA: as sete que dão diversidade de etapa ao placar da Edição 1 ───
@@ -446,33 +468,39 @@ export function dadosIniciais(agora = new Date()) {
     for (const [de, para, n, ...resto] of historico(id)) passou(id, de, para, n, ...resto)
     return id
   }
-  stylistLimeira('Débora Nunes', 'Classificação', () => [
-    [null, 'Identificado', -10, 'cadastro'], ['Identificado', 'Classificação', -5],
+  // ⚠️ 25/09/2026 (Task 13, funil novo): a Gislaine estava em "Convidado" e a
+  // Ingrid em "Confirmou Ida" — as duas etapas de antes que "Confirmado"
+  // absorveu. Ficam as duas em "Confirmado" (ver o cabeçalho do arquivo): a
+  // diversidade perde uma caixa exclusiva, mas o placar de Campinas continua
+  // tendo caixa de zero (Validado, Confirmado e Desclassificado não têm
+  // ninguém lá — só Identificado/Stylist levantado, Conversa, Presença e
+  // Ativada têm gente).
+  stylistLimeira('Débora Nunes', 'Validado', () => [
+    [null, 'Stylist levantado', -10, 'cadastro'], ['Stylist levantado', 'Validado', -5],
   ])
-  stylistLimeira('Fernanda Rios', 'Prospectado', () => [
-    [null, 'Identificado', -25, 'cadastro'], ['Identificado', 'Classificação', -22], ['Classificação', 'Prospectado', -20],
+  stylistLimeira('Fernanda Rios', 'Conversa', () => [
+    [null, 'Stylist levantado', -25, 'cadastro'], ['Stylist levantado', 'Validado', -22], ['Validado', 'Conversa', -20],
   ], { prospectado_em: dia(-20) })
-  stylistLimeira('Gislaine Prado', 'Convidado', () => [
-    [null, 'Identificado', -24, 'cadastro'], ['Identificado', 'Prospectado', -18], ['Prospectado', 'Convidado', -15],
+  stylistLimeira('Gislaine Prado', 'Confirmado', () => [
+    [null, 'Stylist levantado', -24, 'cadastro'], ['Stylist levantado', 'Conversa', -18], ['Conversa', 'Confirmado', -15],
   ], { prospectado_em: dia(-18) })
-  stylistLimeira('Ingrid Souto', 'Confirmou Ida', () => [
-    [null, 'Identificado', -20, 'cadastro'], ['Identificado', 'Prospectado', -16], ['Prospectado', 'Convidado', -13],
-    ['Convidado', 'Confirmou Ida', -10],
+  stylistLimeira('Ingrid Souto', 'Confirmado', () => [
+    [null, 'Stylist levantado', -20, 'cadastro'], ['Stylist levantado', 'Conversa', -16], ['Conversa', 'Confirmado', -10],
   ], { prospectado_em: dia(-16) })
-  stylistLimeira('Joana Vilela', 'Esteve Presente', () => [
-    [null, 'Identificado', -18, 'cadastro'], ['Identificado', 'Prospectado', -14], ['Prospectado', 'Convidado', -11],
-    ['Convidado', 'Confirmou Ida', -8], ['Confirmou Ida', 'Esteve Presente', -5],
+  stylistLimeira('Joana Vilela', 'Presença', () => [
+    [null, 'Stylist levantado', -18, 'cadastro'], ['Stylist levantado', 'Conversa', -14], ['Conversa', 'Confirmado', -8],
+    ['Confirmado', 'Presença', -5],
   ], { prospectado_em: dia(-14) })
   // ⚠️ A ATIVADA da turma: um encontro ANTES da edição começar (fora da
   // janela — a tela mostra "fora de edição", e o placar não conta) e outro
   // DENTRO dela (agendado) — o par que prova o recorte por data do placar.
   const idKaren = stylistLimeira('Karen Duarte', 'Ativada', () => [
-    [null, 'Identificado', -60, 'cadastro'], ['Identificado', 'Prospectado', -55], ['Prospectado', 'Convidado', -52],
-    ['Convidado', 'Confirmou Ida', -51], ['Confirmou Ida', 'Ativada', -50],
+    [null, 'Stylist levantado', -60, 'cadastro'], ['Stylist levantado', 'Conversa', -55], ['Conversa', 'Confirmado', -52],
+    ['Confirmado', 'Ativada', -50],
   ], { prospectado_em: dia(-55), ativada_em: em(-50, '09:00') })
   stylistLimeira('Letícia Farias', 'Desclassificado', () => [
-    [null, 'Identificado', -12, 'cadastro'], ['Identificado', 'Classificação', -8],
-    ['Classificação', 'Desclassificado', -3, 'mudanca', { motivo: 'Fora da praça (logística)' }],
+    [null, 'Stylist levantado', -12, 'cadastro'], ['Stylist levantado', 'Validado', -8],
+    ['Validado', 'Desclassificado', -3, 'mudanca', { motivo: 'Fora da praça (logística)' }],
   ])
 
   const karen = limeiraDiversas.find((s) => s.id === idKaren)

@@ -357,7 +357,7 @@ passo('Stylist Circle')
   // "Etapas do funil" (adicionar, subir, excluir com destino), e a ficha avança
   // de etapa e mostra o histórico de etapas.
   const noQuadro = await pagina.locator('.cv-quadro-titulo').allInnerTexts()
-  if (!/^Identificado · /i.test(noQuadro[0] || '')) falhar(onde, `a primeira coluna do quadro não é Identificado: ${noQuadro[0]}`)
+  if (!/^Stylist levantado · /i.test(noQuadro[0] || '')) falhar(onde, `a primeira coluna do quadro não é Stylist levantado: ${noQuadro[0]}`)
   // 24/09/2026: cada saída é a sua coluna, no fim (alvo do arrastar).
   if (!/^Ativada · /i.test(noQuadro.at(-2) || '') || !/^Desclassificado · /i.test(noQuadro.at(-1) || '')) {
     falhar(onde, `as saídas não são as duas últimas colunas (Ativada, Desclassificado): ${noQuadro.slice(-2)}`)
@@ -389,18 +389,18 @@ passo('Stylist Circle')
   await clicar(modal.getByRole('button', { name: /Adicionar etapa/ }), 'adicionar a etapa Qualificada')
   if (!/Qualificada/.test(await modal.innerText())) falhar(onde, 'a etapa nova não apareceu na lista')
   await clicar(modal.getByRole('button', { name: 'Subir Qualificada' }), 'subir a Qualificada')
-  const classificacao = modal.locator('.cv-etapa', { hasText: 'Classificação' })
-  await clicar(classificacao.getByRole('button', { name: /Excluir…/ }), 'excluir Classificação…')
-  if (!/escolha para onde elas vão/.test(await classificacao.innerText())) falhar(onde, 'excluir com gente não pediu o destino')
-  await classificacao.locator('select').selectOption({ label: 'Identificado' })
-  await clicar(classificacao.getByRole('button', { name: /Excluir a etapa/ }), 'excluir movendo para Identificado')
-  if (await modal.locator('.cv-etapa', { hasText: 'Classificação' }).count()) falhar(onde, 'a etapa excluída continuou na lista')
+  const validado = modal.locator('.cv-etapa', { hasText: 'Validado' })
+  await clicar(validado.getByRole('button', { name: /Excluir…/ }), 'excluir Validado…')
+  if (!/escolha para onde elas vão/.test(await validado.innerText())) falhar(onde, 'excluir com gente não pediu o destino')
+  await validado.locator('select').selectOption({ label: 'Stylist levantado' })
+  await clicar(validado.getByRole('button', { name: /Excluir a etapa/ }), 'excluir movendo para Stylist levantado')
+  if (await modal.locator('.cv-etapa', { hasText: 'Validado' }).count()) falhar(onde, 'a etapa excluída continuou na lista')
   await clicar(modal.locator('.cv-modal-fechar'), 'fechar Etapas do funil')
   if (!(await pagina.locator('.cv-quadro-titulo', { hasText: 'Qualificada' }).count())) falhar(onde, 'a etapa nova não virou coluna do quadro')
   await clicar(pagina.locator('.cv-quadro-nome', { hasText: 'Luiza' }).first(), 'abrir a ficha da Luiza')
   await clicar(pagina.locator('.cv-ficha-etapa .btn-principal'), 'Avançar para a próxima etapa')
   await esperar(400)
-  if (!/Identificado → Qualificada/.test(await pagina.locator('.cv-modal-corpo').innerText())) falhar(onde, 'avançou e o histórico de etapas não mostrou')
+  if (!/Stylist levantado → Qualificada/.test(await pagina.locator('.cv-modal-corpo').innerText())) falhar(onde, 'avançou e o histórico de etapas não mostrou')
   await clicar(pagina.locator('.cv-modal-fechar').first(), 'fechar a ficha da Luiza')
 
   // ── 24/09/2026: ARRASTAR — para a Ativada (entra na base do Private Edit) e
@@ -415,15 +415,16 @@ passo('Stylist Circle')
     falhar(onde, 'soltar na Ativada não deu o aviso de que ela entrou na base do Private Edit')
   }
   // ⚠️ 25/09/2026: era a Paula Reis (saiu do cenário, 87c1776). A Gislaine
-  // Prado (Limeira) prova a mesma coisa — está hoje em "Convidado" (uma
-  // etapa de funil comum, não uma saída), então o cancelar-e-confirmar do
-  // motivo se testa do mesmo jeito.
+  // Prado (Limeira) prova a mesma coisa — está hoje em "Confirmado" (uma
+  // etapa de funil comum, não uma saída — o funil novo da Task 13 absorveu
+  // o antigo "Convidado" dela em "Confirmado"), então o cancelar-e-confirmar
+  // do motivo se testa do mesmo jeito.
   await arrastar(cartao('Gislaine'), coluna('Desclassificado'), 'Gislaine → Desclassificado (1ª vez)')
   await esperar(400)
   const pop = pagina.locator('[role="dialog"][aria-label="Motivo: Desclassificado"]')
   if (!(await pop.count())) falhar(onde, 'soltar no Desclassificado não abriu a escolha do motivo')
   await clicar(pop.getByRole('button', { name: 'Cancelar' }).last(), 'cancelar o motivo')
-  if ((await colunaDe('Gislaine')) !== 'Convidado') falhar(onde, `cancelar o motivo moveu a Gislaine: ${await colunaDe('Gislaine')}`)
+  if ((await colunaDe('Gislaine')) !== 'Confirmado') falhar(onde, `cancelar o motivo moveu a Gislaine: ${await colunaDe('Gislaine')}`)
   await arrastar(cartao('Gislaine'), coluna('Desclassificado'), 'Gislaine → Desclassificado (2ª vez)')
   await esperar(400)
   await clicar(pop.getByRole('button', { name: 'Desclassificar' }), 'desclassificar sem motivo')

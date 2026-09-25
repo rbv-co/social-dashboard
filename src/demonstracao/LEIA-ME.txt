@@ -25,13 +25,21 @@ O QUE FUNCIONA NA DEMONSTRAÇÃO (desde 23/09/2026 — o resto do menu):
     loja, encerrar, reabrir, editar, arquivar, apagar e baixar o QR funcionam.
     (Era aqui a tela branca: ao escolher a loja a tela sumia.)
   · Stylist Circle — com o roteiro de 5 passos (25/09/2026, Task 12): a
-    jornada de uma parceira nova até ser ATIVADA — identificar (cadastrar) →
-    conversar (registrar contato) → classificar → prospectar → ativar. Fora
-    do roteiro, vale abrir Praças e Edições (25/09/2026, Task 9): o cenário
-    já tem Limeira com a Edição 1 aberta (e a pendência de "loja a definir"),
-    Campinas com a dela, e a "Limeira / Piracicaba" sem praça — é para
-    explorar livre, não passo marcado do roteiro (o banco de mentira ainda
-    não avisa esses gestos).
+    jornada de uma parceira nova até ser ATIVADA — cadastrar (entra em
+    "Stylist levantado") → conversar (registrar contato) → validar → mover
+    para "Conversa" → ativar. Fora do roteiro, vale abrir Praças e Edições
+    (25/09/2026, Task 9): o cenário já tem Limeira com a Edição 1 aberta (e a
+    pendência de "loja a definir"), Campinas com a dela, e a "Limeira /
+    Piracicaba" sem praça — é para explorar livre, não passo marcado do
+    roteiro (o banco de mentira ainda não avisa esses gestos).
+    ⚠️ 25/09/2026 (Task 13, pedido direto do dono) — O FUNIL DO QUADRO
+    TROCOU: o de hoje (Identificado → Classificação → Prospectado →
+    Convidado → Confirmou Ida → Esteve Presente) virou "Stylist levantado →
+    Validado → Conversa → Confirmado → Presença" (as duas saídas, Ativada e
+    Desclassificado, continuam as mesmas; "Conversa" é a etapa que conta como
+    prospectada agora). É SÓ NESTA DEMONSTRAÇÃO — o funil de verdade é
+    cadastro em `vessel_stylist_etapas`, o dono muda pela tela "Etapas do
+    funil", sem código; nada disto mexeu em migration nem em aplicador.
   · Material Gráfico — os QR das três ações, com busca, "mostrar encerrados"
     e os botões de baixar PNG/SVG e copiar endereço.
   · Appointment Card — continua abrindo o site da Vessel noutra aba (é uma

@@ -14,25 +14,25 @@ test('cinco passos, cada um com quem faz e onde tocar', () => {
   }
 })
 
-test('o roteiro inteiro, na ordem, marca os cinco: identificar → conversar → classificar → prospectar → ativar', () => {
+test('o roteiro inteiro, na ordem, marca os cinco: cadastrar → conversar → validar → mover para Conversa → ativar', () => {
   const r = seguir([
     ['stylist_criada'], ['contato_registrado'],
-    ['etapa_mudada', { para: 'Classificação', libera_private_edit: false }],
-    ['etapa_mudada', { para: 'Prospectado', libera_private_edit: false }],
+    ['etapa_mudada', { para: 'Validado', libera_private_edit: false }],
+    ['etapa_mudada', { para: 'Conversa', libera_private_edit: false }],
     ['etapa_mudada', { para: 'Ativada', libera_private_edit: true }],
   ])
   assert.deepEqual(r.feitos, [1, 2, 3, 4, 5])
   assert.equal(resumoDoRoteiro(r), 'Roteiro · 5 de 5 ✓')
 })
 
-test('passo 3 só quando ela chega em Classificação; passo 4 só em Prospectado', () => {
-  assert.deepEqual(seguir([['etapa_mudada', { para: 'Convidado', libera_private_edit: false }]]).feitos, [])
-  assert.deepEqual(seguir([['etapa_mudada', { para: 'Classificação', libera_private_edit: false }]]).feitos, [3])
-  assert.deepEqual(seguir([['etapa_mudada', { para: 'Prospectado', libera_private_edit: false }]]).feitos, [4])
+test('passo 3 só quando ela chega em Validado; passo 4 só em Conversa', () => {
+  assert.deepEqual(seguir([['etapa_mudada', { para: 'Confirmado', libera_private_edit: false }]]).feitos, [])
+  assert.deepEqual(seguir([['etapa_mudada', { para: 'Validado', libera_private_edit: false }]]).feitos, [3])
+  assert.deepEqual(seguir([['etapa_mudada', { para: 'Conversa', libera_private_edit: false }]]).feitos, [4])
 })
 
 test('passo 5 só quando ela chega numa etapa que libera Private Edit (a Ativada)', () => {
-  assert.deepEqual(seguir([['etapa_mudada', { para: 'Convidado', libera_private_edit: false }]]).feitos, [])
+  assert.deepEqual(seguir([['etapa_mudada', { para: 'Confirmado', libera_private_edit: false }]]).feitos, [])
   assert.deepEqual(seguir([['etapa_mudada', { para: 'Ativada', libera_private_edit: true }]]).feitos, [5])
 })
 

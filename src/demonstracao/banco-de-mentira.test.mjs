@@ -43,7 +43,7 @@ test('criar stylist: código STY-000N sequencial e telefone 55+DDD', () => {
   const s = banco.estado.stylists.find((x) => x.codigo === NOVA)
   assert.equal(s.whatsapp, '5519988887777')
   // Entra na PRIMEIRA etapa de funil, sem data da prospecção (a data é da etapa marcada).
-  assert.equal(s.etapa_id, ETAPA.Identificado)
+  assert.equal(s.etapa_id, ETAPA['Stylist levantado'])
   assert.equal(s.prospectado_em, null)
   assert.equal(chamar('vessel_stylist_criar', { ...PARCEIRA, p_whatsapp: '5519988887777' }).situacao, 'whatsapp_repetido')
   assert.equal(chamar('vessel_stylist_criar', { ...PARCEIRA, p_whatsapp: '9999' }).situacao, 'whatsapp_invalido')
@@ -71,7 +71,7 @@ test('sem contato ainda (24/09/2026): só com a caixa, a marca some quando o con
   assert.equal(r.ok, true)
   const s = banco.estado.stylists.find((x) => x.codigo === r.codigo)
   assert.equal(s.sem_contato, true)
-  assert.equal(s.etapa_id, ETAPA.Identificado)
+  assert.equal(s.etapa_id, ETAPA['Stylist levantado'])
   // Caixa marcada com Instagram escrito errado: recusa o Instagram.
   assert.equal(chamar('vessel_stylist_criar', { ...semNada, p_instagram: 'não sei', p_sem_contato: true }).situacao, 'instagram_invalido')
   // Corrigir sem mexer na marca (corpo antigo) mantém; desmarcar sem contato é recusado.
@@ -98,16 +98,16 @@ test('a etapa muda só por mover_de_etapa; a data da prospecção nasce na etapa
   // A Central antiga ainda manda `p_estagio`: recusado, a etapa agora é pela ficha.
   assert.equal(chamar('vessel_stylist_editar', { p_codigo: NOVA, p_estagio: 'contatado' }).situacao, 'etapa_pela_ficha')
   assert.equal(chamar('vessel_stylist_mover_de_etapa', { p_codigo: NOVA, p_etapa_id: 999 }).situacao, 'etapa_invalida')
-  assert.equal(chamar('vessel_stylist_mover_de_etapa', { p_codigo: 'STY-9999', p_etapa_id: ETAPA.Convidado }).situacao, 'nao_achei')
-  chamar('vessel_stylist_mover_de_etapa', { p_codigo: NOVA, p_etapa_id: ETAPA['Classificação'] })
+  assert.equal(chamar('vessel_stylist_mover_de_etapa', { p_codigo: 'STY-9999', p_etapa_id: ETAPA.Confirmado }).situacao, 'nao_achei')
+  chamar('vessel_stylist_mover_de_etapa', { p_codigo: NOVA, p_etapa_id: ETAPA.Validado })
   assert.equal(s().prospectado_em, null, 'antes da etapa marcada, sem data')
-  const r = chamar('vessel_stylist_mover_de_etapa', { p_codigo: NOVA, p_etapa_id: ETAPA.Convidado })
-  assert.deepEqual(r, { ok: true, situacao: 'ok', codigo: NOVA, etapa: 'Convidado', libera_private_edit: false, prospectado_em: HOJE })
-  assert.equal(chamar('vessel_stylist_mover_de_etapa', { p_codigo: NOVA, p_etapa_id: ETAPA.Convidado }).situacao, 'sem_mudanca')
+  const r = chamar('vessel_stylist_mover_de_etapa', { p_codigo: NOVA, p_etapa_id: ETAPA.Confirmado })
+  assert.deepEqual(r, { ok: true, situacao: 'ok', codigo: NOVA, etapa: 'Confirmado', libera_private_edit: false, prospectado_em: HOJE })
+  assert.equal(chamar('vessel_stylist_mover_de_etapa', { p_codigo: NOVA, p_etapa_id: ETAPA.Confirmado }).situacao, 'sem_mudanca')
   const h = chamar('vessel_stylist_historico_de_etapas', { p_codigo: NOVA })
   assert.deepEqual(h.map((x) => [x.de, x.para, x.motivo]),
-    [['Classificação', 'Convidado', 'mudanca'], ['Identificado', 'Classificação', 'mudanca'], [null, 'Identificado', 'cadastro']])
-  assert.deepEqual(avisos.filter((a) => a.evento === 'etapa_mudada').map((a) => a.dados.para), ['Classificação', 'Convidado'])
+    [['Validado', 'Confirmado', 'mudanca'], ['Stylist levantado', 'Validado', 'mudanca'], [null, 'Stylist levantado', 'cadastro']])
+  assert.deepEqual(avisos.filter((a) => a.evento === 'etapa_mudada').map((a) => a.dados.para), ['Validado', 'Confirmado'])
 })
 
 test('as etapas: criar, renomear, reordenar, saída, a marca e excluir com destino', () => {
@@ -115,25 +115,25 @@ test('as etapas: criar, renomear, reordenar, saída, a marca e excluir com desti
   const nomes = () => chamar('vessel_stylist_etapas').map((e) => e.nome)
   const nova = chamar('vessel_stylist_etapa_criar', { p_nome: ' Qualificada ', p_posicao: 3 })
   assert.equal(nova.ok, true)
-  assert.deepEqual(nomes(), ['Identificado', 'Classificação', 'Qualificada', 'Prospectado', 'Convidado', 'Confirmou Ida', 'Esteve Presente', 'Ativada', 'Desclassificado'])
+  assert.deepEqual(nomes(), ['Stylist levantado', 'Validado', 'Qualificada', 'Conversa', 'Confirmado', 'Presença', 'Ativada', 'Desclassificado'])
   assert.equal(chamar('vessel_stylist_etapa_criar', { p_nome: 'qualificada' }).situacao, 'nome_repetido')
-  assert.equal(chamar('vessel_stylist_etapa_renomear', { p_id: nova.id, p_nome: 'PROSPECTADO' }).situacao, 'nome_repetido')
-  assert.equal(chamar('vessel_stylist_etapa_mover', { p_id: ETAPA.Identificado, p_direcao: 'subir' }).situacao, 'no_limite')
+  assert.equal(chamar('vessel_stylist_etapa_renomear', { p_id: nova.id, p_nome: 'CONVERSA' }).situacao, 'nome_repetido')
+  assert.equal(chamar('vessel_stylist_etapa_mover', { p_id: ETAPA['Stylist levantado'], p_direcao: 'subir' }).situacao, 'no_limite')
   chamar('vessel_stylist_etapa_mover', { p_id: nova.id, p_direcao: 'subir' })
   assert.equal(nomes()[1], 'Qualificada')
-  assert.equal(chamar('vessel_stylist_etapa_tipo', { p_id: ETAPA.Prospectado, p_tipo: 'saida' }).situacao, 'etapa_marcada')
+  assert.equal(chamar('vessel_stylist_etapa_tipo', { p_id: ETAPA.Conversa, p_tipo: 'saida' }).situacao, 'etapa_marcada')
   assert.equal(chamar('vessel_stylist_etapa_marcar_prospectada', { p_id: ETAPA.Desclassificado }).situacao, 'saida_nao_conta')
-  assert.equal(chamar('vessel_stylist_etapa_excluir', { p_id: ETAPA.Prospectado }).situacao, 'etapa_marcada')
+  assert.equal(chamar('vessel_stylist_etapa_excluir', { p_id: ETAPA.Conversa }).situacao, 'etapa_marcada')
   // A Carol (exemplo) e a Débora Nunes (exemplo, do cenário de Limeira) estão
-  // em Classificação: excluir exige o destino, e move as duas.
-  assert.deepEqual(chamar('vessel_stylist_etapa_excluir', { p_id: ETAPA['Classificação'] }), { ok: false, situacao: 'precisa_destino', stylists: 2 })
-  assert.equal(chamar('vessel_stylist_etapa_excluir', { p_id: ETAPA['Classificação'], p_destino: ETAPA['Classificação'] }).situacao, 'destino_invalido')
-  const exc = chamar('vessel_stylist_etapa_excluir', { p_id: ETAPA['Classificação'], p_destino: ETAPA.Identificado })
-  assert.deepEqual(exc, { ok: true, situacao: 'ok', id: ETAPA['Classificação'], movidas: 2 })
-  assert.equal(banco.estado.stylists.find((x) => x.codigo === 'STY-0006').etapa_id, ETAPA.Identificado)
-  assert.equal(banco.estado.stylists.find((x) => x.codigo === 'STY-0059').etapa_id, ETAPA.Identificado)
+  // em Validado: excluir exige o destino, e move as duas.
+  assert.deepEqual(chamar('vessel_stylist_etapa_excluir', { p_id: ETAPA.Validado }), { ok: false, situacao: 'precisa_destino', stylists: 2 })
+  assert.equal(chamar('vessel_stylist_etapa_excluir', { p_id: ETAPA.Validado, p_destino: ETAPA.Validado }).situacao, 'destino_invalido')
+  const exc = chamar('vessel_stylist_etapa_excluir', { p_id: ETAPA.Validado, p_destino: ETAPA['Stylist levantado'] })
+  assert.deepEqual(exc, { ok: true, situacao: 'ok', id: ETAPA.Validado, movidas: 2 })
+  assert.equal(banco.estado.stylists.find((x) => x.codigo === 'STY-0006').etapa_id, ETAPA['Stylist levantado'])
+  assert.equal(banco.estado.stylists.find((x) => x.codigo === 'STY-0059').etapa_id, ETAPA['Stylist levantado'])
   assert.equal(chamar('vessel_stylist_historico_de_etapas', { p_codigo: 'STY-0006' })[0].motivo, 'etapa_excluida')
-  assert.deepEqual(chamar('vessel_stylist_etapas').map((e) => e.ordem), [1, 2, 3, 4, 5, 6, 7, 8], 'a ordem fecha, sem buraco')
+  assert.deepEqual(chamar('vessel_stylist_etapas').map((e) => e.ordem), [1, 2, 3, 4, 5, 6, 7], 'a ordem fecha, sem buraco')
   // A marca muda; as datas gravadas ficam.
   const marinaAntes = banco.estado.stylists.find((x) => x.codigo === 'STY-0001').prospectado_em
   assert.equal(chamar('vessel_stylist_etapa_marcar_prospectada', { p_id: nova.id }).ok, true)
@@ -146,10 +146,10 @@ test('a última etapa de funil não sai (nem excluída)', () => {
   const funis = () => chamar('vessel_stylist_etapas').filter((e) => e.tipo === 'funil')
   for (const e of funis()) {
     if (e.conta_como_prospectada) continue
-    chamar('vessel_stylist_etapa_excluir', { p_id: e.id, p_destino: ETAPA.Prospectado })
+    chamar('vessel_stylist_etapa_excluir', { p_id: e.id, p_destino: ETAPA.Conversa })
   }
-  assert.deepEqual(funis().map((e) => e.nome), ['Prospectado'])
-  assert.equal(chamar('vessel_stylist_etapa_excluir', { p_id: ETAPA.Prospectado, p_destino: ETAPA.Desclassificado }).situacao, 'ultima_do_funil')
+  assert.deepEqual(funis().map((e) => e.nome), ['Conversa'])
+  assert.equal(chamar('vessel_stylist_etapa_excluir', { p_id: ETAPA.Conversa, p_destino: ETAPA.Desclassificado }).situacao, 'ultima_do_funil')
 })
 
 test('nenhum movimento automático: encontro marcado ou arquivado não muda a etapa', () => {
@@ -307,7 +307,7 @@ test('registrar contato grava o histórico e NÃO sugere nem move etapa', () => 
   const r = chamar('vessel_stylist_registrar_contato', { p_codigo: NOVA, p_canal: 'whatsapp', p_resultado: 'conversou' })
   assert.equal(r.ok, true)
   assert.equal('sugestao' in r, false)
-  assert.equal(banco.estado.stylists.find((s) => s.codigo === NOVA).etapa_id, ETAPA.Identificado)
+  assert.equal(banco.estado.stylists.find((s) => s.codigo === NOVA).etapa_id, ETAPA['Stylist levantado'])
   assert.equal(chamar('vessel_stylist_registrar_contato', { p_codigo: NOVA, p_canal: 'pombo', p_resultado: 'conversou' }).situacao, 'canal_invalido')
   assert.equal(chamar('vessel_stylist_registrar_contato', { p_codigo: NOVA, p_canal: 'email', p_resultado: 'x' }).situacao, 'resultado_invalido')
   assert.equal(chamar('vessel_stylist_registrar_contato', { p_codigo: NOVA, p_canal: 'email', p_resultado: 'conversou', p_nota: 'x'.repeat(501) }).situacao, 'nota_longa')
@@ -390,15 +390,15 @@ test('o placar fecha com o estado — e muda quando o encontro é realizado', ()
     { codigo: 'STY-0064', nome: 'Karen Duarte (exemplo)', encontros_realizados: 1, vendas: 0, receita: 0 },
   ])
 
-  // O roteiro inteiro, pelas funções: parceira nova, avançada até Prospectado,
+  // O roteiro inteiro, pelas funções: parceira nova, avançada até Conversa,
   // encontro hoje, duas convidadas, presença, realizado.
   chamar('vessel_stylist_criar', PARCEIRA)
-  assert.equal(tudo().prospectadas, antes.prospectadas, 'em Identificado ela ainda não conta como prospectada')
-  chamar('vessel_stylist_mover_de_etapa', { p_codigo: NOVA, p_etapa_id: ETAPA.Prospectado })
+  assert.equal(tudo().prospectadas, antes.prospectadas, 'em Stylist levantado ela ainda não conta como prospectada')
+  chamar('vessel_stylist_mover_de_etapa', { p_codigo: NOVA, p_etapa_id: ETAPA.Conversa })
   // 24/09/2026: e só na Ativada ela pode receber o encontro (e é aí que ativa).
   assert.equal(chamar('vessel_criar_private_edit', { p_stylist: NOVA, p_quando: quandoDaqui(0, '10:00'), p_praca: 'CPS', p_vagas: 8 }).situacao,
     'stylist_nao_liberada')
-  assert.equal(tudo().ativadas, antes.ativadas, 'em Prospectado ela ainda não ativou')
+  assert.equal(tudo().ativadas, antes.ativadas, 'em Conversa ela ainda não ativou')
   ativar(chamar, NOVA)
   assert.equal(tudo().ativadas, antes.ativadas + 1, 'chegou na Ativada: ativou, antes de qualquer encontro')
   const { codigo } = chamar('vessel_criar_private_edit', { p_stylist: NOVA, p_quando: quandoDaqui(0, '10:00'), p_praca: 'CPS', p_vagas: 8 })
@@ -771,13 +771,13 @@ test('as avaliações de exemplo: Marina B → A, Luísa C, Renata B, e mais nin
 const MIG_LIBERADA = readFileSync(new URL(
   '../../db/migrations/2026-09-24-vessel-private-edit-so-com-stylist-liberada.sql', import.meta.url), 'utf8')
 
-test('Private Edit só com liberada: Identificado recusa; na Ativada cria; saindo, o encontro fica e o novo recusa', () => {
+test('Private Edit só com liberada: Stylist levantado recusa; na Ativada cria; saindo, o encontro fica e o novo recusa', () => {
   const { chamar, banco } = novoBanco()
   chamar('vessel_stylist_criar', PARCEIRA)
   const base = { p_stylist: NOVA, p_praca: 'CPS', p_vagas: 8 }
   const r = chamar('vessel_criar_private_edit', { ...base, p_quando: quandoDaqui(3) })
   assert.equal(r.situacao, 'stylist_nao_liberada')
-  assert.match(r.erro, /Identificado/)
+  assert.match(r.erro, /Stylist levantado/)
   assert.match(r.erro, /Ativada/)
   assert.equal(chamar('vessel_stylists_para_escolher').find((s) => s.codigo === NOVA).libera_private_edit, false)
   const mv = ativar(chamar, NOVA)
@@ -786,7 +786,7 @@ test('Private Edit só com liberada: Identificado recusa; na Ativada cria; saind
   const ok = chamar('vessel_criar_private_edit', { ...base, p_quando: quandoDaqui(3) })
   assert.equal(ok.ok, true)
   const antes = JSON.stringify(banco.estado.encontros.find((e) => e.codigo === ok.codigo))
-  chamar('vessel_stylist_mover_de_etapa', { p_codigo: NOVA, p_etapa_id: ETAPA.Identificado })
+  chamar('vessel_stylist_mover_de_etapa', { p_codigo: NOVA, p_etapa_id: ETAPA['Stylist levantado'] })
   assert.equal(JSON.stringify(banco.estado.encontros.find((e) => e.codigo === ok.codigo)), antes, 'o encontro que já existe fica intacto')
   assert.equal(chamar('vessel_criar_private_edit', { ...base, p_quando: quandoDaqui(5) }).situacao, 'stylist_nao_liberada')
   assert.equal(chamar('vessel_private_edit_editar', { p_codigo: ok.codigo, p_stylist: NOVA, p_local: 'Outro lugar' }).ok, true, 'manter a anfitriã passa')
@@ -796,8 +796,8 @@ test('Private Edit só com liberada: Identificado recusa; na Ativada cria; saind
   const nenhuma = chamar('vessel_criar_private_edit', { p_stylist: 'STY-0001', p_praca: 'CPS', p_vagas: 8, p_quando: quandoDaqui(7) })
   assert.equal(nenhuma.situacao, 'stylist_nao_liberada')
   assert.match(nenhuma.erro, /nenhuma etapa libera/)
-  assert.equal(chamar('vessel_stylist_etapa_liberar_private_edit', { p_id: ETAPA.Identificado, p_libera: true }).ok, true)
-  assert.equal(chamar('vessel_criar_private_edit', { ...base, p_quando: quandoDaqui(9) }).ok, true, 'marcou Identificado: ela já pode')
+  assert.equal(chamar('vessel_stylist_etapa_liberar_private_edit', { p_id: ETAPA['Stylist levantado'], p_libera: true }).ok, true)
+  assert.equal(chamar('vessel_criar_private_edit', { ...base, p_quando: quandoDaqui(9) }).ok, true, 'marcou Stylist levantado: ela já pode')
 })
 
 test('motivos: saída com motivos exige o motivo (e a nota no "Outro"); vai para o histórico; desativado some da escolha mas fica', () => {
@@ -833,10 +833,10 @@ test('motivos: saída com motivos exige o motivo (e a nota no "Outro"); vai para
   assert.equal(linha().saida_motivo, 'Não conecta com a marca')
   // A Ativada não tem motivos: não pede nenhum. E voltar ao funil tira o motivo.
   assert.equal(ativar(chamar, NOVA).ok, true)
-  chamar('vessel_stylist_mover_de_etapa', { p_codigo: NOVA, p_etapa_id: ETAPA.Identificado })
+  chamar('vessel_stylist_mover_de_etapa', { p_codigo: NOVA, p_etapa_id: ETAPA['Stylist levantado'] })
   assert.equal(linha().saida_motivo, null)
   // Mexer nos motivos.
-  assert.equal(chamar('vessel_stylist_motivo_criar', { p_etapa_id: ETAPA.Identificado, p_nome: 'X' }).situacao, 'so_saida')
+  assert.equal(chamar('vessel_stylist_motivo_criar', { p_etapa_id: ETAPA['Stylist levantado'], p_nome: 'X' }).situacao, 'so_saida')
   assert.equal(chamar('vessel_stylist_motivo_criar', { p_etapa_id: ETAPA.Desclassificado, p_nome: ' desinteresse ' }).situacao, 'nome_repetido')
   const novo = chamar('vessel_stylist_motivo_criar', { p_etapa_id: ETAPA.Desclassificado, p_nome: 'Mudou de área', p_exige_nota: true })
   assert.equal(novo.ok, true)
@@ -849,8 +849,8 @@ test('motivos: saída com motivos exige o motivo (e a nota no "Outro"); vai para
 test('excluir etapa com destino numa saída com motivos pede o motivo, e ele vai para o histórico de todas', () => {
   const { chamar } = novoBanco()
   const motivo = chamar('vessel_stylist_etapas').find((e) => e.nome === 'Desclassificado').motivos[0].id
-  assert.equal(chamar('vessel_stylist_etapa_excluir', { p_id: ETAPA['Classificação'], p_destino: ETAPA.Desclassificado }).situacao, 'motivo_obrigatorio')
-  assert.equal(chamar('vessel_stylist_etapa_excluir', { p_id: ETAPA['Classificação'], p_destino: ETAPA.Desclassificado, p_motivo_id: motivo }).ok, true)
+  assert.equal(chamar('vessel_stylist_etapa_excluir', { p_id: ETAPA.Validado, p_destino: ETAPA.Desclassificado }).situacao, 'motivo_obrigatorio')
+  assert.equal(chamar('vessel_stylist_etapa_excluir', { p_id: ETAPA.Validado, p_destino: ETAPA.Desclassificado, p_motivo_id: motivo }).ok, true)
   const h = chamar('vessel_stylist_historico_de_etapas', { p_codigo: 'STY-0006' })[0]
   assert.deepEqual([h.para, h.motivo, h.motivo_de_saida], ['Desclassificado', 'etapa_excluida', 'Desinteresse'])
 })
@@ -1212,7 +1212,7 @@ test('vessel_placar_da_edicao: edição que não existe dá erro cru (P0002); SE
   // A turma inteira de Limeira, com a diversidade de etapa (para o placar por
   // etapa ter o que mostrar) — inclusive as de zero, todas as etapas ativas.
   assert.deepEqual(placar.etapas.map((e) => e.nome),
-    ['Identificado', 'Classificação', 'Prospectado', 'Convidado', 'Confirmou Ida', 'Esteve Presente', 'Ativada', 'Desclassificado'])
+    ['Stylist levantado', 'Validado', 'Conversa', 'Confirmado', 'Presença', 'Ativada', 'Desclassificado'])
   assert.equal(placar.etapas.reduce((a, e) => a + e.stylists, 0), 18)
   // O par de encontros da Karen: um antes da edição (fora da janela — não
   // conta aqui, mas continua na tabela) e um dentro (agendado).
