@@ -17,6 +17,9 @@ const INS = {
     { action_type: 'post_engagement', value: '2000' },
     { action_type: 'onsite_conversion.messaging_conversation_started_7d', value: '100' },
     { action_type: 'purchase', value: '20' },
+    // Acrescentado 25/09/2026 (Onda C): view de vídeo, pro mercado `video`
+    // (custo_view) ter o que calcular neste mesmo insight redondo.
+    { action_type: 'video_view', value: '400' },
   ],
   action_values: [{ action_type: 'purchase', value: '5000' }],
 };
@@ -46,6 +49,20 @@ test('custo por engajamento é o gasto dividido pelo engajamento bruto', () => {
   assert.equal(GT_METRIC_CATALOG.custo_engajamento.compute(INS), 0.5); // 1000 / 2000
 });
 
+test('campanha de perfil mede pelo clique, não pelo resíduo de landing_page_view', () => {
+  // O BUG (achado em 25/09): _GT_VISIT é ['landing_page_view','link_click'] e
+  // _gtActionVal devolve o PRIMEIRO que existir. No [SEGUIDORES][REMARKETING] da
+  // Raíssa, landing_page_view=1 (resíduo) e link_click=3203 — o custo por visita
+  // saía R$ 247,45 (1455× a meta) em vez de R$ 0,09. Não era falta de dado: era
+  // a ordem da lista.
+  const ins = { spend: '283.84', actions: [
+    { action_type: 'landing_page_view', value: '1' },
+    { action_type: 'link_click', value: '3203' },
+  ] };
+  const v = GT_METRIC_CATALOG.custo_visita_perfil.compute(ins);
+  assert.ok(Math.abs(v - 0.0886) < 0.001, `esperava ~R$ 0,09 por clique, veio ${v}`);
+});
+
 test('sem engajamento na janela o custo é null, nunca zero', () => {
   assert.equal(GT_METRIC_CATALOG.custo_engajamento.compute({ spend: '300', actions: [] }), null,
     'R$ 0,00 por engajamento seria lido pelo modelo como "de graça"');
@@ -65,40 +82,51 @@ test('insight sem o array actions não derruba o cálculo', () => {
   assert.equal(GT_METRIC_CATALOG.roas.compute({ spend: '10' }), null);
 });
 
-test('custoDoAlvo devolve o custo na unidade de cada tipo de campanha', () => {
-  assert.equal(custoDoAlvo('leads', INS), 25);            // custo por lead
-  assert.equal(custoDoAlvo('vendas', INS), 50);           // CAC
-  assert.equal(custoDoAlvo('trafego', INS), 2);           // custo por visita
-  assert.equal(custoDoAlvo('mensagens', INS), 10);        // custo por conversa
-  assert.equal(custoDoAlvo('reconhecimento', INS), 20);   // CPM
+// REINDEXADO POR MERCADO em 25/09/2026 (Onda C, Tarefa 2). Os testes abaixo
+// chamavam `custoDoAlvo` com nome de BALDE ('leads', 'vendas', 'trafego',
+// 'mensagens', 'reconhecimento', 'engajamento') — o índice antigo, por
+// objetivo declarado. Agora `custoDoAlvo` recebe MERCADO (ver mercados.js e
+// o cabeçalho de alvos.js); os nomes mudaram, reescritos aqui, não
+// "consertados" pra continuar aceitando o nome velho.
+test('custoDoAlvo devolve o custo na unidade de cada mercado', () => {
+  assert.equal(custoDoAlvo('site_venda', INS), 50);        // CAC
+  assert.equal(custoDoAlvo('site_trafego', INS), 2);       // custo por visita (landing_page_view=500)
+  assert.equal(custoDoAlvo('conversa', INS), 10);          // custo por conversa (lead do WhatsApp)
+  assert.equal(custoDoAlvo('perfil', INS), 1.25);          // custo por visita ao perfil, 1000/800 cliques
+  assert.equal(custoDoAlvo('video', INS), 2.5);            // custo por view, 1000/400
+  assert.equal(custoDoAlvo('post', INS), 0.5);             // custo por engajamento, 1000/2000
 });
 
-test('engajamento passa a ter custo pelo catálogo (troca de régua, 24/09/2026)', () => {
-  // ATUALIZADO 24/09/2026: engajamento saiu do PONTO PONDERADO (ponderada.js) e
-  // passou a usar `custo_engajamento` do catálogo, como qualquer outro balde —
-  // a guarda que fazia `custoDoAlvo` devolver null pra engajamento não vale
-  // mais (ver alvos.js e ALVOS.engajamento.metrica). 1000 gasto / 2000
-  // engajamentos = 0,5.
-  assert.equal(custoDoAlvo('engajamento', INS), 0.5,
-    'engajamento agora tem custo pelo catálogo (custo_engajamento), igual aos demais baldes');
+test('mercado sem sinal em mercados.js (reconhecimento, leads-formulário) fica sem alvo', () => {
+  // 'reconhecimento' (awareness/CPM) e 'leads' (LEAD_GENERATION) eram baldes
+  // com alvo antes desta onda. A tabela de mercados de mercados.js (Tarefa 1
+  // da Onda C) não emite sinal pra nenhum dos dois ainda — não é bug desta
+  // tarefa, é fronteira: sem mercado, sem alvo, sem veredito inventado.
+  assert.equal(custoDoAlvo('reconhecimento', INS), null);
+  assert.equal(custoDoAlvo('leads', INS), null);
 });
 
-test('balde sem alvo não inventa número', () => {
+test('mercado sem alvo (desconhecido, misto) não inventa número', () => {
+  assert.equal(custoDoAlvo('desconhecido', INS), null);
+  assert.equal(custoDoAlvo('misto', INS), null);
   assert.equal(custoDoAlvo('padrao', INS), null);
-  assert.equal(custoDoAlvo('balde-que-nao-existe', INS), null);
+  assert.equal(custoDoAlvo('mercado-que-nao-existe', INS), null);
   assert.equal(custoDoAlvo(undefined, INS), null);
 });
 
 test('sem resultado na janela o custo é null, nunca zero', () => {
   const semNada = { spend: '900', actions: [] };
-  assert.equal(custoDoAlvo('leads', semNada), null,
+  assert.equal(custoDoAlvo('conversa', semNada), null,
     'R$ 0,00 no prompt seria lido como "de graça" e viraria escalar');
-  assert.equal(custoDoAlvo('vendas', semNada), null);
+  assert.equal(custoDoAlvo('site_venda', semNada), null);
 });
 
 test('gasto zero não vira custo zero', () => {
-  const semGasto = { spend: '0', actions: [{ action_type: 'lead', value: '5' }] };
-  assert.equal(custoDoAlvo('leads', semGasto), null);
+  // Trocado de 'leads' (sem alvo desde a reindexação por mercado, 25/09/2026)
+  // para 'site_venda', que tem alvo de verdade (cac) — senão o teste passaria
+  // só porque o mercado não existe, e não porque a guarda de gasto zero funciona.
+  const semGasto = { spend: '0', actions: [{ action_type: 'purchase', value: '5' }] };
+  assert.equal(custoDoAlvo('site_venda', semGasto), null);
 });
 
 test('todo balde aponta só para métricas que existem no catálogo', () => {

@@ -2,54 +2,107 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ALVOS, alvoDoBalde, avaliarAlvo } from './alvos.js';
 
-test('cada tipo de campanha tem alvo na unidade dele', () => {
-  assert.equal(ALVOS.leads.metrica, 'custo_lead');
-  assert.equal(ALVOS.mensagens.metrica, 'custo_conversa');
-  assert.equal(ALVOS.vendas.metrica, 'cac');
-  assert.equal(ALVOS.trafego.metrica, 'custo_visita');
-  assert.equal(ALVOS.reconhecimento.metrica, 'cpm');
-  // ATUALIZADO 24/09/2026: engajamento saiu da métrica ponderada e passou para
-  // engajamento bruto (ver teste dedicado abaixo). Este assert documentava o
-  // comportamento ANTERIOR — a régua mudou de propósito, não é bug.
-  assert.equal(ALVOS.engajamento.metrica, 'custo_engajamento', 'engajamento usa a métrica de engajamento bruto');
+// REINDEXADO POR MERCADO em 25/09/2026 (Onda C, Tarefa 2). Os testes abaixo
+// que citavam ALVOS.leads/.mensagens/.trafego/.vendas/.reconhecimento/
+// .engajamento documentavam o índice ANTIGO (por balde = objetivo declarado).
+// A medição de 25/09 mostrou que o objetivo mente sobre o que a campanha
+// compra (ver mercados.js) — a régua passou a ser indexada por MERCADO, e
+// esses testes foram reescritos para o índice novo, não "consertados" para o
+// código velho continuar passando. Ver o cabeçalho de alvos.js para a
+// correspondência completa balde -> mercado e o porquê de cada `chaveMeta`.
+
+test('cada mercado tem alvo na unidade dele', () => {
+  assert.equal(ALVOS.conversa.metrica, 'custo_conversa');
+  assert.equal(ALVOS.perfil.metrica, 'custo_visita_perfil');
+  assert.equal(ALVOS.video.metrica, 'custo_view');
+  assert.equal(ALVOS.post.metrica, 'custo_engajamento');
+  assert.equal(ALVOS.site_venda.metrica, 'cac');
+  assert.equal(ALVOS.site_trafego.metrica, 'custo_visita');
 });
 
-test('engajamento passa a ser medido por engajamento bruto, não por ponto', () => {
-  // TROCA DE RÉGUA (24/09/2026, decisão do dono depois da medição): a
-  // [FLUXO SHOPPING] da Vessel tinha 11.323 engajamentos e 44 pontos —
-  // julgada por ponto parecia catastrófica (662x a meta), por engajamento
-  // pareceria ótima. Não há fator de conversão entre as duas (a razão
-  // pontos/engajamento foi de 0 a 0,56 nas campanhas medidas), então a
-  // ferramenta escolhe UMA das duas, e o dono escolheu engajamento bruto.
-  assert.equal(ALVOS.engajamento.metrica, 'custo_engajamento');
-  assert.equal(ALVOS.engajamento.resultado, 'engaj_pub',
-    'sem quantidade, todo anúncio de engajamento chega ao robô sem resultado');
+test('desconhecido e misto não têm alvo — mercados.js os declara de propósito fora de MERCADOS', () => {
+  // Não são mercados, são vereditos sobre AUSÊNCIA ou MULTIPLICIDADE de
+  // mercado (ver mercados.js). Sem alvo, eles não recebem veredito de custo.
+  assert.equal(alvoDoBalde('desconhecido'), null);
+  assert.equal(alvoDoBalde('misto'), null);
 });
 
-test('a meta nova mora numa chave própria, para a do ponto sobreviver', () => {
-  assert.equal(ALVOS.engajamento.chaveMeta, 'engajamento_bruto',
-    'a meta antiga (R$/ponto) fica em metas.engajamento, intacta, para a pausa ser reversível');
+test('ALVOS só tem as chaves de MERCADOS — nem uma a mais, nem uma a menos', () => {
+  assert.deepEqual(Object.keys(ALVOS).sort(), [
+    'conversa', 'perfil', 'post', 'site_trafego', 'site_venda', 'video',
+  ].sort());
 });
 
-test('quem não declara chaveMeta usa o próprio nome do balde', () => {
-  for (const [balde, a] of Object.entries(ALVOS)) {
-    if (balde === 'engajamento') continue;
-    assert.equal(a.chaveMeta ?? balde, balde, balde + ' não deveria ter chave de meta própria');
-  }
+test('perfil mede pelo clique, nasce sem meta antiga pra herdar (mercado novo, 25/09/2026)', () => {
+  assert.equal(ALVOS.perfil.resultado, 'visitas_perfil');
+  assert.equal(ALVOS.perfil.chaveMeta, undefined,
+    'perfil não existia como mercado antes desta onda — não há meta antiga pra herdar');
+});
+
+test('video mede por view, nasce sem meta antiga pra herdar (mercado novo, 25/09/2026)', () => {
+  assert.equal(ALVOS.video.resultado, 'video_views');
+  assert.equal(ALVOS.video.chaveMeta, undefined,
+    'video não existia como mercado antes desta onda — não há meta antiga pra herdar');
+});
+
+test('post é o mais parecido com o antigo balde de engajamento, mas NÃO herda a meta dele', () => {
+  // O antigo 'engajamento' misturava, por objetivo declarado, campanhas que
+  // hoje são 'perfil' e 'video' — a meta `engajamento_bruto` foi calibrada
+  // nessa mistura. Trazê-la para 'post' aplicaria um número calibrado para
+  // outra coisa (spec 2026-09-25, seção 7, risco 3: "toda meta nova começa
+  // vazia"). Por isso `post` lê a própria chave (`metas.post`), que hoje não
+  // existe em nenhuma conta.
+  assert.equal(ALVOS.post.resultado, 'engaj_pub');
+  assert.equal(ALVOS.post.chaveMeta, undefined);
+});
+
+test('três mercados preservam a meta que o dono já calibrou, por chaveMeta', () => {
+  // A prova de que reindexar não perdeu meta nenhuma: cada um destes mercados
+  // é a MESMA coisa que o dono já vinha medindo com outro nome de balde, e a
+  // chave antiga continua sendo a que `chaveMeta` aponta.
+  assert.equal(ALVOS.conversa.chaveMeta, 'mensagens',
+    'conversa é o antigo balde de WhatsApp/Direct — a meta dele mora em metas.mensagens');
+  assert.equal(ALVOS.site_venda.chaveMeta, 'vendas',
+    'site_venda é o antigo balde de venda — a meta dele mora em metas.vendas');
+  assert.equal(ALVOS.site_trafego.chaveMeta, 'trafego',
+    'site_trafego é o antigo balde de tráfego — a meta dele mora em metas.trafego');
+});
+
+test('a meta antiga é encontrada pela chave nova — prova de que o dono não perde o que calibrou', () => {
+  // Simula o objeto `regua.metas` como ele está salvo HOJE no banco, com as
+  // chaves de balde de antes desta onda — e prova que `chaveMeta` acha cada
+  // uma a partir do MERCADO novo, sem o dono precisar recalibrar nada.
+  const metasSalvasHoje = { mensagens: 12, vendas: 45, trafego: 3.5 };
+  const chave = (mercado) => ALVOS[mercado].chaveMeta || mercado;
+  assert.equal(metasSalvasHoje[chave('conversa')], 12);
+  assert.equal(metasSalvasHoje[chave('site_venda')], 45);
+  assert.equal(metasSalvasHoje[chave('site_trafego')], 3.5);
 });
 
 test('todo alvo tem rótulo e unidade em português para a tela', () => {
-  for (const [balde, a] of Object.entries(ALVOS)) {
-    assert.ok(a.rotulo && a.rotulo.length > 3, balde + ' sem rótulo');
-    assert.ok(a.unidade, balde + ' sem unidade');
-    assert.ok(a.ajuda && a.ajuda.length > 10, balde + ' sem explicação');
+  for (const [mercado, a] of Object.entries(ALVOS)) {
+    assert.ok(a.rotulo && a.rotulo.length > 3, mercado + ' sem rótulo');
+    assert.ok(a.unidade, mercado + ' sem unidade');
+    assert.ok(a.ajuda && a.ajuda.length > 10, mercado + ' sem explicação');
   }
 });
 
-test('alvoDoBalde devolve null para balde sem alvo (nao inventa)', () => {
-  assert.equal(alvoDoBalde('padrao'), null);
-  assert.equal(alvoDoBalde('balde-que-nao-existe'), null);
+test('alvoDoBalde devolve null para mercado sem alvo (nao inventa)', () => {
+  assert.equal(alvoDoBalde('desconhecido'), null);
+  assert.equal(alvoDoBalde('misto'), null);
+  assert.equal(alvoDoBalde('mercado-que-nao-existe'), null);
   assert.equal(alvoDoBalde(undefined), null);
+});
+
+test('baldes de antes desta onda não indexam mais ALVOS direto', () => {
+  // Documenta a troca (25/09/2026): estes nomes eram chave de ALVOS antes da
+  // Onda C. 'reconhecimento' e 'leads' ficam sem mercado correspondente por
+  // enquanto (ver o bloco grande no topo de alvos.js) — não é esquecimento,
+  // é a fronteira exata desta tarefa: mercados.js (Tarefa 1) não emite sinal
+  // pra awareness nem pra LEAD_GENERATION ainda.
+  for (const antigo of ['engajamento', 'trafego', 'mensagens', 'leads', 'vendas', 'reconhecimento']) {
+    assert.equal(alvoDoBalde(antigo), null, antigo + ' não é mais chave direta de ALVOS');
+  }
 });
 
 test('avaliarAlvo compara custo com meta e devolve a faixa', () => {
