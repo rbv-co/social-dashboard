@@ -199,6 +199,100 @@ test('salva a meta nova na chave do alvo (engajamento_bruto), nunca na do balde'
     'a meta antiga (custo por ponto) não pode ser sobrescrita nem apagada ao salvar a régua');
 });
 
+// ── O INTERRUPTOR DA PONDERADA (Onda C, Tarefa 4, 25/09/2026) ───────────────
+//
+// O dono pediu, literalmente: "quando eu digo desativar, ela some da aba
+// campanhas e fica 'desligada' em A régua — eu posso ativar depois". Aqui:
+// o controle aparece, o padrão é desligada com a Seção 1 esmaecida (não
+// escondida), e salvar em QUALQUER posição preserva as DUAS metas antigas
+// (ver regua.test.mjs para a prova do lado puro — `ponderadaLigada`/
+// `metaDoBalde`). O estado lido é sempre `ponderadaLigada` (regua.js); nunca
+// uma segunda forma de saber se está ligada.
+
+test('o interruptor aparece desligado por padrão, com a Seção 1 esmaecida (não sumida)', () => {
+  comDomFalso(() => {
+    const alvo = alvoFalso();
+    montarPainelRegua(alvo, { ...OPCOES_BASE, regua: normalizarRegua({}) });
+    const saida = alvo.innerHTML;
+    assert.ok(saida.includes('id="pnd-ponderada-liga"'), 'faltou o controle do interruptor');
+    assert.ok(!/id="pnd-ponderada-liga"[^>]*checked/.test(saida), 'padrão é desligada — não pode nascer marcado');
+    assert.ok(saida.includes('id="pnd-secao1-cards" class="pnd-cards pnd-secao-esmaecida"')
+      || /class="pnd-cards pnd-secao-esmaecida"[^>]*id="pnd-secao1-cards"/.test(saida),
+      'desligada, os campos da Seção 1 têm que ficar esmaecidos');
+    // Esmaecido, não sumido: os campos continuam no HTML, só com a classe.
+    assert.ok(saida.includes('pnd-peso-curtidas'), 'os pesos não podem sumir quando a ponderada está desligada');
+  });
+});
+
+test('interruptor ligado: aparece marcado, sem esmaecer a Seção 1, e o rótulo diz Ativa', () => {
+  comDomFalso(() => {
+    const alvo = alvoFalso();
+    montarPainelRegua(alvo, {
+      ...OPCOES_BASE,
+      regua: normalizarRegua({ limiares: { ponderada_ligada: true } }),
+    });
+    const saida = alvo.innerHTML;
+    assert.match(saida, /id="pnd-ponderada-liga"[^>]*checked/, 'ligada, o checkbox tem que nascer marcado');
+    assert.ok(!/pnd-secao-esmaecida/.test(saida), 'ligada, a Seção 1 não pode ficar esmaecida');
+    assert.ok(saida.includes('>Ativa<'), 'faltou o rótulo "Ativa"');
+  });
+});
+
+test('salvar com o interruptor DESLIGADO grava ponderada_ligada:false e preserva as DUAS metas antigas', () => {
+  const antes = globalThis.document;
+  const mapa = new Map();
+  mapa.set('pnd-meta-engajamento_bruto', { value: '0.32' }); // dono não mexeu — é o valor que já estava salvo
+  mapa.set('pnd-ponderada-liga', { checked: false, addEventListener() {} });
+  let clique = null;
+  mapa.set('pnd-salvar', { addEventListener: (ev, fn) => { if (ev === 'click') clique = fn; } });
+  globalThis.document = { getElementById: (id) => mapa.get(id) || null };
+  let capturado = null;
+  try {
+    const alvo = alvoFalso();
+    montarPainelRegua(alvo, {
+      ...OPCOES_BASE,
+      regua: normalizarRegua({ metas: { engajamento: 0.013, engajamento_bruto: 0.32 } }),
+      aoSalvar: (r) => { capturado = r; },
+    });
+    assert.ok(typeof clique === 'function', 'o botão de salvar não ligou o listener');
+    clique();
+  } finally {
+    globalThis.document = antes;
+  }
+  assert.equal(capturado.limiares.ponderada_ligada, false, 'desligado tem que gravar false explicitamente');
+  assert.equal(capturado.metas.engajamento, 0.013, 'a meta ANTIGA (ponto) sobrevive desligado');
+  assert.equal(capturado.metas.engajamento_bruto, 0.32, 'a meta NOVA (bruto) sobrevive desligado, mesmo sem editar agora');
+});
+
+test('salvar com o interruptor LIGADO grava ponderada_ligada:true e preserva as DUAS metas antigas', () => {
+  const antes = globalThis.document;
+  const mapa = new Map();
+  // Ligado, a linha de 'post' na Seção 2 virou o campo da meta ANTIGA
+  // (ver `chave` em linhasMeta/reguaDaTela) — é este id que existe no DOM.
+  mapa.set('pnd-meta-engajamento', { value: '0.02' });
+  mapa.set('pnd-ponderada-liga', { checked: true, addEventListener() {} });
+  let clique = null;
+  mapa.set('pnd-salvar', { addEventListener: (ev, fn) => { if (ev === 'click') clique = fn; } });
+  globalThis.document = { getElementById: (id) => mapa.get(id) || null };
+  let capturado = null;
+  try {
+    const alvo = alvoFalso();
+    montarPainelRegua(alvo, {
+      ...OPCOES_BASE,
+      regua: normalizarRegua({ limiares: { ponderada_ligada: true }, metas: { engajamento: 0.013, engajamento_bruto: 0.32 } }),
+      aoSalvar: (r) => { capturado = r; },
+    });
+    assert.ok(typeof clique === 'function', 'o botão de salvar não ligou o listener');
+    clique();
+  } finally {
+    globalThis.document = antes;
+  }
+  assert.equal(capturado.limiares.ponderada_ligada, true, 'ligado tem que gravar true');
+  assert.equal(capturado.metas.engajamento, 0.02, 'o valor editado no campo (agora dono da meta antiga) tem que ser gravado');
+  assert.equal(capturado.metas.engajamento_bruto, 0.32,
+    'a meta NOVA (bruto) tem que sobreviver mesmo sem campo na tela nesta montagem — senão ligar apaga a meta nova');
+});
+
 // ── Correção 1 (revisão, 24/09/2026): a LEITURA do preview ficou para trás ──
 //
 // A gravação (reguaDaTela) já lê pela CHAVE do alvo (teste acima). Mas

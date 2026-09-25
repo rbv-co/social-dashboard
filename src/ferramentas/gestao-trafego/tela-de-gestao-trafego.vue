@@ -5409,6 +5409,20 @@ Object.assign(window, {
 .tela-gestao-trafego :deep(.pnd-grupo:last-child){margin-bottom:0;}
 .tela-gestao-trafego :deep(.pnd-grupo-tit){display:flex;align-items:center;gap:6px;font-family:var(--fonte-principal);font-size:calc(13px*var(--gt-fs,1.3));font-weight:800;color:var(--text);margin:0 0 4px;}
 .tela-gestao-trafego :deep(.pnd-tabela td:first-child){min-width:11ch;}
+/* O INTERRUPTOR DA PONDERADA (Onda C, Tarefa 4, 25/09/2026, ver
+   painel-regua.js). `.perm-toggle` é o componente global (estilos-globais.css)
+   reaproveitado do modal de permissões — mesmo desenho, sem reinventar cor
+   nem tamanho de trilho. A área de toque cresce pelo PADDING do rótulo (item
+   6 do padrão: 40px de alvo SEM engordar o desenho), não pelo trilho, que
+   continua 36×20 no computador e no celular igual. */
+.tela-gestao-trafego :deep(.pnd-interruptor-linha){display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:2px 0 12px;}
+.tela-gestao-trafego :deep(.pnd-interruptor){display:flex;align-items:center;gap:8px;cursor:pointer;padding:10px 0;min-height:40px;}
+.tela-gestao-trafego :deep(.pnd-interruptor-rotulo){font-family:var(--fonte-principal);font-size:calc(11px*var(--gt-fs,1.3));font-weight:800;letter-spacing:.6px;text-transform:uppercase;color:var(--text);}
+.tela-gestao-trafego :deep(.pnd-interruptor-explicacao){flex:1 1 260px;}
+/* DESLIGADA (padrão): esmaece — NUNCA some. Quem abre a aba precisa ver que
+   os campos existem, que estão em pausa, e que nada foi apagado (regra da
+   casa, item 9: a tela nunca mente). */
+.tela-gestao-trafego :deep(.pnd-secao-esmaecida){opacity:.5;}
 /* ── FILTRO POR OBJETIVO (lista de campanhas) ─────────────────────────────── */
 .tela-gestao-trafego :deep(.gt-obj-filtros){display:flex;flex-wrap:wrap;gap:6px;padding:10px 14px;border-bottom:1px solid var(--border);}
 .tela-gestao-trafego :deep(.gt-obj-filtro){display:inline-flex;align-items:center;gap:6px;font-family:var(--fonte-principal);font-size:calc(10px*var(--gt-fs,1.3));padding:5px 11px;border-radius:999px;cursor:pointer;background:var(--surface2);border:1px solid var(--border);color:var(--muted);transition:all .12s ease;}
