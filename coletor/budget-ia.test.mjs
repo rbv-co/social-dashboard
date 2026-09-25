@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { campanhaEmVeiculacao, montarMensagens, parsearSaida, diaDaSemanaBR, decidirEscopo, veiculouNaJanela, selecionarCampanhas } from './budget-ia.mjs';
+import { campanhaEmVeiculacao, montarMensagens, parsearSaida, diaDaSemanaBR, decidirEscopo, veiculouNaJanela, selecionarCampanhas, custoAtualDoAlvo } from './budget-ia.mjs';
 import { normalizarRegua } from '../src/ferramentas/gestao-trafego/regua.js';
 
 const AGORA = Date.parse('2026-07-02T12:00:00Z');
@@ -465,4 +465,56 @@ test('IMPORTANTE 2: resultado nulo no anúncio não é lido como "não produziu 
   assert.match(system, /não conta resultado por unidade/);
   assert.match(system, /não leia isso como "o criativo não produziu nada"/);
   assert.match(system, /julgue o anúncio pelo `custo_por_resultado`/);
+});
+
+// ---------------------------------------------------------------------------
+// TAREFA 5 (24/09/2026): objetivo declarado por interação. A TELA já julga
+// campanha declarada pelo custo da interação (curtida/comentário/salvamento/
+// compartilhamento); o robô ainda julgava pela régua do balde — os dois
+// discordavam na mesma campanha, e é o robô quem escreve a justificativa que
+// o dono lê na Fila. `metaDoBalde` já aceita a interação como "balde" (ela
+// não está em ALVOS, então cai na chave literal — ver regua.js:109).
+// ---------------------------------------------------------------------------
+
+test('campanha com interação declarada é julgada por ela, não pelo balde', () => {
+  const camp = { id: '20', name: 'Engaja', objective: 'OUTCOME_ENGAGEMENT' };
+  const ins = { spend: '100', actions: [
+    { action_type: 'post_engagement', value: '1000' },
+    { action_type: 'onsite_conversion.post_save', value: '25' },
+  ] };
+  const regua = normalizarRegua({ metas: { engajamento_bruto: 0.05, salvamentos: 2 } });
+  const d = dadosDoPrompt(camp, ins, [], [], regua, { interacaoDeclarada: 'salvamentos' });
+  assert.equal(d.regua.custo_atual_reais, 4, 'custo por salvamento = 100 / 25');
+  assert.equal(d.regua.meta_reais, 2, 'a meta da interação declarada, não a do balde');
+  assert.ok(/salvamento/i.test(d.regua.rotulo));
+});
+
+test('sem declaração, engajamento segue pelo custo por engajamento', () => {
+  const camp = { id: '21', name: 'Engaja', objective: 'OUTCOME_ENGAGEMENT' };
+  const ins = { spend: '100', actions: [{ action_type: 'post_engagement', value: '1000' }] };
+  const regua = normalizarRegua({ metas: { engajamento_bruto: 0.05 } });
+  const d = dadosDoPrompt(camp, ins, [], [], regua, {});
+  assert.equal(d.regua.custo_atual_reais, 0.1, '100 / 1000 engajamentos');
+});
+
+test('declaração inválida é ignorada, não derruba a análise', () => {
+  const camp = { id: '22', name: 'Engaja', objective: 'OUTCOME_ENGAGEMENT' };
+  const ins = { spend: '100', actions: [{ action_type: 'post_engagement', value: '1000' }] };
+  const regua = normalizarRegua({ metas: { engajamento_bruto: 0.05 } });
+  const d = dadosDoPrompt(camp, ins, [], [], regua, { interacaoDeclarada: 'xpto' });
+  assert.equal(d.regua.custo_atual_reais, 0.1, 'cai de volta no custo por engajamento');
+});
+
+test('custoAtualDoAlvo: chamada de 3 argumentos (sem interação) continua funcionando', () => {
+  const ins = { spend: '50', actions: [{ action_type: 'post_engagement', value: '200' }] };
+  assert.equal(custoAtualDoAlvo('engajamento', ins, normalizarRegua(null)), 0.25);
+});
+
+test('custoAtualDoAlvo: quantidade zero na interação declarada devolve null, nunca 0', () => {
+  // R$ 0,00 no prompt é lido como "de graça" e vira "escalar" — a mesma
+  // guarda de custoDaInteracao (ausência ou zero de verdade) tem de valer
+  // também passando pelo override do robô.
+  const ins = { spend: '100', actions: [{ action_type: 'post_engagement', value: '1000' }] };
+  const c = custoAtualDoAlvo('engajamento', ins, normalizarRegua(null), 'salvamentos');
+  assert.equal(c, null, 'sem nenhum salvamento na janela, não pode virar custo zero nem o de engajamento');
 });

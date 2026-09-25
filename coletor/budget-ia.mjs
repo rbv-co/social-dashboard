@@ -68,6 +68,17 @@ export function selecionarCampanhas(camps, insByCamp, modo, agoraMs) {
 // Parâmetro no FIM para não quebrar as chamadas de 5 argumentos já existentes.
 export function montarMensagens(camp, ins, ads, conjuntos, regua, extra) {
   const ex = extra || {};
+  // OBJETIVO DECLARADO (Tarefa 5): o dono pode dizer, campanha a campanha, qual
+  // interação ela está comprando — e essa declaração VENCE a régua do balde:
+  // quem disse o que a campanha compra sabe mais que o padrão do objetivo. A
+  // TELA já julga assim (ver tela-de-gestao-trafego.vue); o robô ficava para
+  // trás e escrevia, na mesma campanha, uma justificativa que discordava do
+  // que a tela mostrava. `interacaoValida` é a MESMA guarda que a tela usa: o
+  // `CHECK` da tabela `gt_objetivo_interacao` é a única coisa que impede hoje
+  // um valor fora das quatro interações de chegar aqui, e linha antiga ou
+  // edição direta no banco pode escapar dele — inválida cai no comportamento
+  // de sempre, nunca derruba a análise desta campanha.
+  const interacaoDeclarada = interacaoValida(ex.interacaoDeclarada) ? ex.interacaoDeclarada : null;
   const diasNoAr = Number.isFinite(ex.diasNoAr) ? ex.diasNoAr : null;
   // `diasJanela` é calculado no laço de main() (uma vez por conta, não por
   // campanha) e chega aqui por `extra` porque `montarMensagens` é a função
@@ -83,13 +94,21 @@ export function montarMensagens(camp, ins, ads, conjuntos, regua, extra) {
   // o ponto de engajamento custa R$ 0,013 na Vessel e R$ 0,372 na Breno Vale.
   const balde = baldeEfetivo(camp.objective, conjuntos || []);
   const alvo = alvoDoBalde(balde);
-  const meta = regua ? metaDoBalde(regua, balde) : 0;
+  // Havendo declaração válida, a META também troca de mercado: a meta DAQUELA
+  // interação (regua.metas[interacao], lida por metaDoBalde — que não exige
+  // que a chave exista em ALVOS, ver regua.js:109), não a meta do balde.
+  const meta = !regua ? 0 : metaDoBalde(regua, interacaoDeclarada || balde);
   // O CUSTO ATUAL de qualquer campanha, não só das de engajamento — calculado
   // por custoAtualDoAlvo (fonte única compartilhada com o --dry, ver o
   // comentário lá). Antes disto o robô mandava `meta_reais` preenchida e
   // `custo_atual_reais: null` em lead, venda, mensagem e tráfego — e o system
-  // prompt mandava citar o número.
-  const custoAtual = custoAtualDoAlvo(balde, ins, regua);
+  // prompt mandava citar o número. Agora passa também a interação declarada
+  // (Tarefa 5): sem ela, comportamento de sempre.
+  const custoAtual = custoAtualDoAlvo(balde, ins, regua, interacaoDeclarada);
+  // O RÓTULO que o modelo lê muda junto: "Custo por salvamento" em vez de
+  // "Custo por engajamento" quando há declaração — senão o número muda de
+  // mercado mas o nome ao lado dele continua mentindo qual é esse mercado.
+  const rotuloAlvo = interacaoDeclarada ? INTERACOES[interacaoDeclarada].rotuloCusto : (alvo ? alvo.rotulo : null);
   // MULETA TEMPORÁRIA (proteção da Onda A — a correção de verdade, dar a estas
   // campanhas um alvo próprio de custo por seguidor, é a Onda B, ainda não
   // implementada — ver docs/superpowers/specs/2026-09-24-gt-analise-potente-design.md).
@@ -208,8 +227,8 @@ export function montarMensagens(camp, ins, ads, conjuntos, regua, extra) {
       medida_indisponivel: 'A Meta não atribui "novo seguidor" a uma campanha, então não há custo por resultado confiável para esta campanha — julgue pelos demais indicadores (CTR, CPC, frequência, alcance, volume).',
     } : {
       tipo_de_campanha: balde,
-      rotulo: alvo ? alvo.rotulo : null,          // ex.: "Custo por ponto", "Custo por conversa iniciada"
-      meta_reais: meta > 0 ? meta : null,          // nulo = conta sem meta para este tipo
+      rotulo: rotuloAlvo,          // ex.: "Custo por ponto", "Custo por conversa iniciada", ou "Custo por salvamento" se declarado
+      meta_reais: meta > 0 ? meta : null,          // nulo = conta sem meta para este tipo (ou para a interação declarada)
       custo_atual_reais: custoAtual,
       indice_contra_meta: (custoAtual != null && meta > 0) ? custoAtual / meta : null,
       pesos: regua ? regua.pesos : null,
@@ -263,8 +282,10 @@ export function montarMensagens(camp, ins, ads, conjuntos, regua, extra) {
       // MESMO NOME de `regua.custo_atual_reais` acima, de propósito: é a mesma
       // grandeza (calculada pela mesma `custoAtualDoAlvo`), só que na janela
       // anterior — e é exatamente o par que o modelo precisa comparar pra dizer
-      // a tendência.
-      custo_atual_reais: custoAtualDoAlvo(balde, ex.insAnterior, regua),
+      // a tendência. Passa a MESMA interação declarada de cima: comparar
+      // "hoje por salvamento" com "ontem por engajamento" não é tendência, é
+      // dois números de mercados diferentes fingindo ser o mesmo par.
+      custo_atual_reais: custoAtualDoAlvo(balde, ex.insAnterior, regua, interacaoDeclarada),
       frequencia: num(ex.insAnterior.frequency),
       ctr_pct: num(ex.insAnterior.ctr),
     } : null,
@@ -329,14 +350,30 @@ function num(v) { const n = parseFloat(v); return Number.isFinite(n) ? n : null;
 // Fica ACIMA da tarja de infra (rede) abaixo porque é pura e é alcançada
 // pelos testes via `montarMensagens` — só as chamadas de rede é que só
 // rodam dentro de main().
-export function custoAtualDoAlvo(balde, ins, regua) {
+export function custoAtualDoAlvo(balde, ins, regua, interacaoDeclarada) {
   // Engajamento não é mais caso especial: desde 24/09/2026 ele tem métrica no
   // catálogo (custo_engajamento) como qualquer outro balde. O ramo que chamava
   // calcularPonderada saiu daqui — a ponderada está em PAUSA, não apagada, e
   // religar é trocar duas linhas em alvos.js.
-  // `regua` fica sem uso NESTA função por enquanto — mantido no parâmetro
-  // porque a Tarefa 5 volta a precisar dele para o override de objetivo
-  // declarado (interacaoDeclarada, ainda não implementado aqui).
+  // OBJETIVO DECLARADO (Tarefa 5): a declaração do dono VENCE a régua do
+  // balde — quando ele disse, campanha a campanha, qual interação ela compra,
+  // é essa interação que decide o custo, não o padrão do objetivo.
+  // `interacaoValida` é a MESMA guarda que a tela usa (interacoes.js): o
+  // `CHECK` da tabela é a única coisa que impede hoje um valor fora das
+  // quatro interações de chegar aqui, e linha antiga ou edição direta no
+  // banco pode escapar — inválida cai no `custoDoAlvo` de sempre, nunca
+  // derruba a análise. `custoDaInteracao` já nunca inventa R$ 0,00 (quantidade
+  // zero devolve null — R$ 0,00 no prompt é lido como "de graça" e vira
+  // "escalar"), então não há nada a "estragar" repassando pra ela.
+  // `regua` continua sem uso NESTA função — a meta (regua.metas) é assunto de
+  // `montarMensagens`/`metaDoBalde`, não do custo atual em si; mantido no
+  // parâmetro pelos chamadores existentes (montarMensagens passa a régua
+  // inteira pros três usos: meta, custo atual e a interação, e trocar a
+  // ordem/assinatura por causa de um parâmetro não usado aqui quebraria as
+  // outras chamadas sem necessidade).
+  if (interacaoValida(interacaoDeclarada)) {
+    return custoDaInteracao(quantidadesDoInsight(ins), interacaoDeclarada);
+  }
   return custoDoAlvo(balde, ins);
 }
 
@@ -358,6 +395,14 @@ import { emVeiculacao } from '../src/ferramentas/gestao-trafego/veiculacao.js';
 // GT_METRIC_CATALOG: o compute() de cada métrica (leads, conversas, compras...) —
 // usado abaixo pra dar a cada ANÚNCIO o resultado no mercado da campanha dele.
 import { custoDoAlvo, GT_METRIC_CATALOG } from '../src/ferramentas/gestao-trafego/metricas.js';
+// OBJETIVO DECLARADO por interação (Tarefa 5): a mesma dupla que a tela usa
+// para julgar campanha declarada pelo mercado da interação, não do balde.
+import { interacaoValida, custoDaInteracao, INTERACOES } from '../src/ferramentas/gestao-trafego/interacoes.js';
+// Converte o insight bruto do Meta nas quatro quantidades (curtida, comentário,
+// salvamento, compartilhamento) que `custoDaInteracao` divide — a MESMA leitura
+// que a ponderada usa, então uma campanha declarada não pode discordar de como
+// a tela conta a mesma interação.
+import { quantidadesDoInsight } from '../src/ferramentas/gestao-trafego/ponderada.js';
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY_TRAFEGO || process.env.ANTHROPIC_API_KEY_BUDGET || process.env.ANTHROPIC_API_KEY;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
@@ -472,6 +517,10 @@ async function main() {
   let total = 0, gravadas = 0, puladas = 0;
 
   const seenAdAcc = new Set();
+  // OBJETIVO DECLARADO por interação (Tarefa 5): cache por conta do PAINEL —
+  // "uma vez por conta", não uma vez por conta de anúncios, para o caso (raro,
+  // mas possível) de mais de uma ad account cair na mesma conta do painel.
+  const objetivoPorContaCache = new Map();
   // effective_status pedido ao Graph em cada modo. No campo `campaigns` os valores
   // possíveis são ACTIVE/PAUSED/DELETED/ARCHIVED/IN_PROCESS/WITH_ISSUES.
   const STATUS_ATIVAS = ['ACTIVE'];
@@ -494,6 +543,38 @@ async function main() {
       // De QUEM é esta conta de anúncios — é isso que diz qual meta da régua vale.
       const contaDoPainel = contaPorAdAccount.get(adAcc) || null;
       const reguaDaContaAtual = reguaDaConta(reguaBruta, contaDoPainel && contaDoPainel.id);
+      // MAPA campaign_id → interação declarada, lido de `gt_objetivo_interacao`
+      // (mesma tabela e mesmas colunas que a TELA lê — ver _gtCarregarObjetivos
+      // em tela-de-gestao-trafego.vue). A tabela TEM linhas reais desde julho de
+      // 2026: sem este mapa, a tela julga a campanha pela interação declarada e
+      // o robô continua julgando pela régua do balde — os dois discordando na
+      // mesma campanha, e é o robô quem escreve a justificativa que o dono lê.
+      // Uma falha aqui NUNCA derruba a rodada (mesmo padrão dos catches
+      // vizinhos — régua, adsets, janela anterior): sem a tabela, toda campanha
+      // cai no comportamento de sempre. Mas o catch AVISA: calado, a declaração
+      // do dono some da análise sem ninguém perceber.
+      let objetivoPorCampanha = {};
+      if (contaDoPainel && contaDoPainel.id) {
+        if (objetivoPorContaCache.has(contaDoPainel.id)) {
+          objetivoPorCampanha = objetivoPorContaCache.get(contaDoPainel.id);
+        } else {
+          try {
+            const linhas = await sbGet(
+              `/gt_objetivo_interacao?select=alvo_id,interacao&conta_id=eq.${contaDoPainel.id}&nivel=eq.campanha`);
+            (linhas || []).forEach((l) => { objetivoPorCampanha[String(l.alvo_id)] = l.interacao; });
+            // Visível na prova seca (--dry) e na rodada real: sem este log não
+            // dava pra confirmar, olhando a saída, que a leitura achou as
+            // declarações de verdade — só que "não deu erro".
+            if (Object.keys(objetivoPorCampanha).length) {
+              console.log(`  conta ${contaDoPainel.name}: ${Object.keys(objetivoPorCampanha).length} campanha(s) com objetivo declarado por interação.`);
+            }
+          } catch (e) {
+            console.log('  conta ' + contaDoPainel.id + ' falhou ao ler objetivo por interação, seguindo pela régua do balde: ' + e.message);
+            objetivoPorCampanha = {};
+          }
+          objetivoPorContaCache.set(contaDoPainel.id, objetivoPorCampanha);
+        }
+      }
       let camps, insights;
       try {
         // No modo amplo pedimos também as pausadas/com-problema — a peneira do que
@@ -569,11 +650,15 @@ async function main() {
       // "não presuma aprendizado" (ver em_aprendizado em montarMensagens).
       const criadoEm = camp.created_time ? new Date(camp.created_time).getTime() : null;
       const diasNoAr = criadoEm ? Math.floor((agoraMs - criadoEm) / 86400000) : null;
+      // Objetivo declarado DESTA campanha (Tarefa 5) — `undefined` quando o
+      // dono não declarou nada, e `montarMensagens`/`custoAtualDoAlvo` tratam
+      // isso (e qualquer valor inválido) como "sem declaração".
+      const interacaoDeclarada = objetivoPorCampanha[String(camp.id)];
       // `diasJanela` já foi calculado uma vez por conta (mesmo since/until pra
       // toda campanha dela) — passa por `extra` pro prompt citar o número real
       // em vez do "7 dias" cravado que a janela (8 dias inclusive) desmentia.
       const { system, user } = montarMensagens(camp, ins, adsAtivosPorCamp[camp.id] || [], conjuntosDaCamp, reguaDaContaAtual,
-        { insAnterior: insAntByCamp[camp.id], diasNoAr, diasJanela });
+        { insAnterior: insAntByCamp[camp.id], diasNoAr, diasJanela, interacaoDeclarada });
       if (DRY) {
         // Mostra o orçamento que o modelo VAI ver. É a forma barata de conferir,
         // sem gastar uma chamada, se a leitura de CBO/ABO está certa — foi
@@ -582,7 +667,12 @@ async function main() {
         const valor = o.centavos != null ? 'R$ ' + (o.centavos / 100).toFixed(2) : 'NÃO LIDO';
         const extra = o.conjuntosIgnorados ? ` (+${o.conjuntosIgnorados} conj. pausado ignorado)` : '';
         const bal = baldeEfetivo(camp.objective, conjuntosDaCamp);
-        const mt = metaDoBalde(reguaDaContaAtual, bal);
+        // OBJETIVO DECLARADO (Tarefa 5): valida de novo aqui (mesma guarda que
+        // custoAtualDoAlvo aplica por dentro) só para poder MOSTRAR no --dry
+        // qual mercado está julgando esta campanha — sem isto a prova seca não
+        // teria como confirmar visualmente que a declaração pegou.
+        const interDry = interacaoValida(interacaoDeclarada) ? interacaoDeclarada : null;
+        const mt = metaDoBalde(reguaDaContaAtual, interDry || bal);
         const quem = contaDoPainel ? contaDoPainel.name : '??';
         // A MESMA função que montarMensagens usa por dentro, não uma cópia da
         // fórmula. O --dry é a ferramenta que a gente usa pra conferir se o
@@ -592,9 +682,13 @@ async function main() {
         // X" aqui seria a mesma mentira que este trabalho existe pra tirar do
         // que vai pro modelo (ver ehDeSeguidores/deSeguidores em montarMensagens).
         const ehSeguidoresDry = ehDeSeguidores(camp.name);
-        const ca = ehSeguidoresDry ? null : custoAtualDoAlvo(bal, ins, reguaDaContaAtual);
+        const ca = ehSeguidoresDry ? null : custoAtualDoAlvo(bal, ins, reguaDaContaAtual, interDry);
         const txtCusto = ehSeguidoresDry ? 'medida indisponível (seguidores)' : (ca == null ? 'custo SEM DADO' : `custo R$ ${ca.toFixed(2)}`);
         const txtIdx = (!ehSeguidoresDry && ca != null && mt > 0) ? ` (${(ca / mt).toFixed(2)}× a meta)` : '';
+        // Rótulo do mercado impresso na linha: "engajamento" de sempre, ou
+        // "engajamento → salvamentos" quando declarado — é o que a prova seca
+        // (Passo 5 da Tarefa 5) confere a olho nu.
+        const balTxt = interDry ? `${bal} → ${interDry}` : bal;
         // TENDÊNCIA no --dry (rodada de correção 1, 24/09/2026): sem isto não
         // havia como conferir que a janela anterior está chegando de verdade
         // sem rodar o modelo — e a rodada real gasta Opus e grava no banco.
@@ -603,11 +697,11 @@ async function main() {
         // anterior OU sem custo anterior, não imprime nada a mais — "antes —"
         // só poluiria a linha sem dizer nada de novo.
         const insAnterior = insAntByCamp[camp.id];
-        const caAnt = insAnterior ? custoAtualDoAlvo(bal, insAnterior, reguaDaContaAtual) : null;
+        const caAnt = insAnterior ? custoAtualDoAlvo(bal, insAnterior, reguaDaContaAtual, interDry) : null;
         const txtTend = (ca != null && caAnt != null)
           ? ` · antes R$ ${caAnt.toFixed(2)} ${ca > caAnt ? '▲' : (ca < caAnt ? '▼' : '=')}`
           : '';
-        console.log(`  [dry] ${camp.name || camp.id} — ${quem} · ${o.sigla || 'sem nível'} ${valor}${o.conjuntosSomados ? ` em ${o.conjuntosSomados} conj.` : ''}${extra} · ${bal} meta ${mt > 0 ? 'R$ ' + mt : 'NÃO DEFINIDA'} · ${txtCusto}${txtIdx}${txtTend}`);
+        console.log(`  [dry] ${camp.name || camp.id} — ${quem} · ${o.sigla || 'sem nível'} ${valor}${o.conjuntosSomados ? ` em ${o.conjuntosSomados} conj.` : ''}${extra} · ${balTxt} meta ${mt > 0 ? 'R$ ' + mt : 'NÃO DEFINIDA'} · ${txtCusto}${txtIdx}${txtTend}`);
         continue;
       }
       let saida;
