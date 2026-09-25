@@ -265,9 +265,23 @@ const INS_LEAD = {
   actions: [{ action_type: 'lead', value: '40' }],
 };
 
+// CONJUNTOS DE FIXTURE (Onda C, Tarefa 3, 25/09/2026): desde que `baldeEfetivo`
+// saiu do caminho do veredito, quem decide o mercado é `mercadoDaCampanha`, que
+// olha o CONJUNTO — não basta mais `camp.objective` sozinho. Estes conjuntos
+// simulam o que a Meta afirma em cada mercado usado pelos testes abaixo.
+// `objective` não precisa vir aqui: `montarMensagens` herda o de `camp` (ver
+// `comObjetivoHerdado` em budget-ia.mjs) — é o que desempata OFFSITE_CONVERSIONS
+// entre 'lead' e 'site_venda' conforme o objetivo declarado da campanha.
+const CONJ_OFFSITE = [{ id: 'cj1', destination_type: 'UNDEFINED', optimization_goal: 'OFFSITE_CONVERSIONS' }];
+const CONJ_POST = [{ id: 'cj1', optimization_goal: 'POST_ENGAGEMENT' }];
+
 test('campanha de LEAD leva o custo atual, não só a meta', () => {
   const camp = { id: '1', name: 'Captação', objective: 'OUTCOME_LEADS' };
-  const { user } = montarMensagens(camp, INS_LEAD, [], [], REGUA_TESTE);
+  // ATUALIZADO 25/09/2026 (Onda C, Tarefa 3): antes bastava `objective:
+  // OUTCOME_LEADS` com conjuntos=[] para cair no balde 'leads'. Hoje quem
+  // decide é o CONJUNTO (destino UNDEFINED + otimização OFFSITE_CONVERSIONS),
+  // com o objetivo como desempate — ver mercados.js.
+  const { user } = montarMensagens(camp, INS_LEAD, [], CONJ_OFFSITE, REGUA_TESTE);
   const d = dadosDoPrompt(user);
   assert.equal(d.regua.custo_atual_reais, 25, 'custo por lead = 1000 / 40');
   assert.ok(d.regua.meta_reais > 0, 'a meta precisa continuar indo junto');
@@ -278,8 +292,13 @@ test('campanha de LEAD leva o custo atual, não só a meta', () => {
 test('campanha de VENDAS também leva o custo atual', () => {
   const camp = { id: '2', name: 'Vendas', objective: 'OUTCOME_SALES' };
   const ins = { spend: '1000', actions: [{ action_type: 'purchase', value: '20' }] };
-  const { user } = montarMensagens(camp, ins, [], [], REGUA_TESTE);
+  // ATUALIZADO 25/09/2026 (Onda C, Tarefa 3): mesmo conjunto OFFSITE_CONVERSIONS
+  // de cima — o objetivo (OUTCOME_SALES, herdado da campanha) é quem desempata
+  // para 'site_venda' em vez de 'lead' (ver MERCADO_POR_OTIMIZACAO_E_OBJETIVO
+  // em mercados.js).
+  const { user } = montarMensagens(camp, ins, [], CONJ_OFFSITE, REGUA_TESTE);
   const d = dadosDoPrompt(user);
+  assert.equal(d.regua.mercado, 'site_venda');
   assert.equal(d.regua.custo_atual_reais, 50, 'CAC = 1000 / 20');
 });
 
@@ -291,22 +310,35 @@ test('campanha de engajamento passa a ser medida por engajamento bruto (rodada d
   // `calcularPonderada`: hoje ele só repassa pra `custoDoAlvo`, igual aos
   // demais baldes. Deixar o ramo e a régua discordando faria o robô julgar
   // engajamento por uma régua e a tela por outra.
+  //
+  // ATUALIZADO 25/09/2026 (Onda C, Tarefa 3): `baldeEfetivo`/'engajamento'
+  // saíram do caminho do veredito. O balde 'engajamento' nem existe mais em
+  // ALVOS (ver alvos.js) — o mercado equivalente (post_engagement bruto,
+  // otimização POST_ENGAGEMENT) agora se chama 'post', e é o CONJUNTO
+  // (`CONJ_POST`), não o objetivo declarado, que decide isso.
   const camp = { id: '3', name: 'Engaja', objective: 'OUTCOME_ENGAGEMENT' };
   // 'post_engagement' é o que a Meta conta como engajamento bruto (sem pesar
   // por tipo de interação, ao contrário da ponderada) — R$ 50 / 200
   // engajamentos = R$ 0,25 por engajamento.
   const ins = { spend: '50', actions: [{ action_type: 'post_engagement', value: '200' }] };
-  const { user } = montarMensagens(camp, ins, [], [], REGUA_TESTE);
+  const { user } = montarMensagens(camp, ins, [], CONJ_POST, REGUA_TESTE);
   const d = dadosDoPrompt(user);
-  assert.equal(d.regua.tipo_de_campanha, 'engajamento');
+  assert.equal(d.regua.mercado, 'post');
   assert.equal(d.regua.rotulo, 'Custo por engajamento');
   assert.equal(d.regua.custo_atual_reais, 0.25, 'custo por engajamento = 50 / 200 engajamentos');
 });
 
 test('campanha sem resultado na janela manda null, nunca zero', () => {
   const camp = { id: '4', name: 'Parada', objective: 'OUTCOME_LEADS' };
-  const { user } = montarMensagens(camp, { spend: '800', actions: [] }, [], [], REGUA_TESTE);
+  // ATUALIZADO 25/09/2026 (Onda C, Tarefa 3): com conjuntos=[] a campanha caía
+  // em 'desconhecido' e o null saía pela ausência de mercado, não pela
+  // ausência de resultado — o que este teste quer provar. Com `CONJ_OFFSITE`
+  // (mercado 'lead' real, via o objetivo OUTCOME_LEADS) o null agora vem de
+  // `_gtPerGasto` (zero lead na janela), que é o comportamento que importa
+  // proteger (ver restrição "quantidade zero devolve null" no topo do arquivo).
+  const { user } = montarMensagens(camp, { spend: '800', actions: [] }, [], CONJ_OFFSITE, REGUA_TESTE);
   const d = dadosDoPrompt(user);
+  assert.equal(d.regua.mercado, 'lead');
   assert.equal(d.regua.custo_atual_reais, null);
   assert.equal(d.regua.indice_contra_meta, null);
 });
@@ -330,7 +362,11 @@ test('cada anúncio leva o resultado dele, não só CTR', () => {
     impressions: '12000', reach: '9000', frequency: '1.33',
     actions: [],
   }];
-  const { user } = montarMensagens(camp, INS_LEAD, ads, [], REGUA_TESTE);
+  // ATUALIZADO 25/09/2026 (Onda C, Tarefa 3): `CONJ_OFFSITE` no lugar de `[]`
+  // — sem conjunto a campanha caía em 'desconhecido' e todo `resultado`/
+  // `custo_por_resultado` sairia null por FALTA DE MERCADO, não pelo motivo
+  // que este teste quer provar (lead ausente na janela do anúncio B).
+  const { user } = montarMensagens(camp, INS_LEAD, ads, CONJ_OFFSITE, REGUA_TESTE);
   const d = dadosDoPrompt(user);
   assert.equal(d.anuncios[0].resultado, 10);
   assert.equal(d.anuncios[0].custo_por_resultado, 20, '200 / 10 leads');
@@ -339,17 +375,18 @@ test('cada anúncio leva o resultado dele, não só CTR', () => {
     'o criativo B tem CTR MAIOR e nenhum lead — é isso que o modelo precisa ver');
 });
 
-test('o balde usado no anúncio é o da CAMPANHA, nunca recalculado', () => {
+test('o mercado usado no anúncio é o da CAMPANHA, nunca recalculado', () => {
   // A Meta OMITE um action_type quando a contagem é zero: um anúncio de campanha
   // de WhatsApp que não puxou conversa na janela fica idêntico a um de
   // engajamento puro. Recalcular por anúncio classificaria no mercado errado.
   //
   // ARMADILHA (rodada de correção 1): com `actions: []` no anúncio, os dois
-  // caminhos convergem pra `resultado: null` — o certo (balde 'mensagens',
-  // sem conversa na janela) E o errado (balde recalculado por `camp.objective`
-  // = 'engajamento'). Um teste que não distingue os dois passaria com o bug
-  // de volta. Por isso o anúncio abaixo tem uma conversa de verdade: só o
-  // balde 'mensagens' sabe ler `conversas` a partir dela.
+  // caminhos convergem pra `resultado: null` — o certo (mercado 'conversa',
+  // sem conversa na janela) E o errado (mercado recalculado por
+  // `camp.objective` = engajamento/'post'). Um teste que não distingue os
+  // dois passaria com o bug de volta. Por isso o anúncio abaixo tem uma
+  // conversa de verdade: só o mercado 'conversa' sabe ler `conversas` a
+  // partir dela.
   //
   // ATUALIZADO 24/09/2026: desde a troca de régua, `alvo.resultado` de
   // engajamento NÃO é mais null por definição (é `'engaj_pub'`, ver alvos.js)
@@ -357,6 +394,13 @@ test('o balde usado no anúncio é o da CAMPANHA, nunca recalculado', () => {
   // sempre: a métrica de engajamento lê o action_type `post_engagement`, e
   // esta conversa de WhatsApp não é esse tipo de ação (é
   // `onsite_conversion.messaging_conversation_started_7d`).
+  //
+  // ATUALIZADO 25/09/2026 (Onda C, Tarefa 3): `baldeEfetivo` saiu do caminho
+  // do veredito — quem decide o mercado da campanha (e, por descida, do
+  // anúncio) é `mercadoDaCampanha`. O conjunto WHATSAPP decide sozinho pelo
+  // DESTINO (nem precisa de `optimization_goal`, ver MERCADO_POR_DESTINO em
+  // mercados.js), e o mercado se chama 'conversa' agora, não mais 'mensagens'
+  // (que sobrevive só como `chaveMeta`, ver alvos.js).
   const camp = { id: '6', name: 'Zap', objective: 'OUTCOME_ENGAGEMENT' };
   const conjuntos = [{ id: 'c1', destination_type: 'WHATSAPP' }];
   const ads = [{
@@ -365,8 +409,8 @@ test('o balde usado no anúncio é o da CAMPANHA, nunca recalculado', () => {
   }];
   const { user } = montarMensagens(camp, { spend: '150', actions: [] }, ads, conjuntos, REGUA_TESTE);
   const d = dadosDoPrompt(user);
-  assert.equal(d.regua.tipo_de_campanha, 'mensagens', 'o conjunto diz WhatsApp');
-  assert.equal(d.anuncios[0].resultado, 3, 'balde mensagens lê conversas; engajamento não teria como');
+  assert.equal(d.regua.mercado, 'conversa', 'o conjunto diz WhatsApp');
+  assert.equal(d.anuncios[0].resultado, 3, 'mercado conversa lê conversas; post não teria como');
   assert.equal(d.anuncios[0].custo_por_resultado, 50, '150 / 3 conversas');
 });
 
@@ -379,7 +423,11 @@ test('o balde usado no anúncio é o da CAMPANHA, nunca recalculado', () => {
 test('a janela anterior entra no prompt para o modelo ver o sentido', () => {
   const camp = { id: '7', name: 'Captação', objective: 'OUTCOME_LEADS' };
   const anterior = { spend: '1000', actions: [{ action_type: 'lead', value: '80' }] };
-  const d = dadosDoPrompt(camp, INS_LEAD, [], [], REGUA_TESTE, { insAnterior: anterior });
+  // ATUALIZADO 25/09/2026 (Onda C, Tarefa 3): `CONJ_OFFSITE` no lugar de `[]`
+  // — sem conjunto, mercado 'desconhecido' zera os DOIS custos (atual e da
+  // janela anterior) pela ausência de mercado, não pela tendência que este
+  // teste quer provar.
+  const d = dadosDoPrompt(camp, INS_LEAD, [], CONJ_OFFSITE, REGUA_TESTE, { insAnterior: anterior });
   assert.equal(d.janela_anterior.custo_atual_reais, 12.5, '1000 / 80 na janela anterior');
   assert.equal(d.regua.custo_atual_reais, 25, 'e 25 agora: o custo DOBROU');
   assert.equal(d.janela_anterior.gasto, 1000);
@@ -417,10 +465,14 @@ test('engajamento também ganha custo na janela anterior (engajamento bruto, nã
   // a ser `custo_engajamento` (post_engagement bruto) — ver troca de régua em
   // alvos.js. A janela anterior de campanha de engajamento continua ganhando
   // custo (em vez de ficar em null), só que por essa métrica nova.
+  //
+  // ATUALIZADO 25/09/2026 (Onda C, Tarefa 3): `CONJ_POST` no lugar de `[]` —
+  // hoje quem decide o mercado é o conjunto, e o mercado equivalente ao antigo
+  // balde 'engajamento' se chama 'post' (ver mercados.js/alvos.js).
   const camp = { id: '11', name: 'Engaja', objective: 'OUTCOME_ENGAGEMENT' };
   const ins = { spend: '50', actions: [{ action_type: 'post_engagement', value: '200' }] };
   const anterior = { spend: '100', actions: [{ action_type: 'post_engagement', value: '200' }] };
-  const d = dadosDoPrompt(camp, ins, [], [], REGUA_TESTE, { insAnterior: anterior });
+  const d = dadosDoPrompt(camp, ins, [], CONJ_POST, REGUA_TESTE, { insAnterior: anterior });
   assert.equal(d.janela_anterior.custo_atual_reais, 0.5, '100 / 200 engajamentos na janela anterior');
 });
 
@@ -493,7 +545,11 @@ test('sem declaração, engajamento segue pelo custo por engajamento', () => {
   const camp = { id: '21', name: 'Engaja', objective: 'OUTCOME_ENGAGEMENT' };
   const ins = { spend: '100', actions: [{ action_type: 'post_engagement', value: '1000' }] };
   const regua = normalizarRegua({ metas: { engajamento_bruto: 0.05 } });
-  const d = dadosDoPrompt(camp, ins, [], [], regua, {});
+  // ATUALIZADO 25/09/2026 (Onda C, Tarefa 3): `CONJ_POST` no lugar de `[]` —
+  // sem conjunto, o mercado cai em 'desconhecido' e o custo por engajamento
+  // some por falta de mercado, não pela ausência de declaração que este teste
+  // quer provar.
+  const d = dadosDoPrompt(camp, ins, [], CONJ_POST, regua, {});
   assert.equal(d.regua.custo_atual_reais, 0.1, '100 / 1000 engajamentos');
 });
 
@@ -501,13 +557,19 @@ test('declaração inválida é ignorada, não derruba a análise', () => {
   const camp = { id: '22', name: 'Engaja', objective: 'OUTCOME_ENGAGEMENT' };
   const ins = { spend: '100', actions: [{ action_type: 'post_engagement', value: '1000' }] };
   const regua = normalizarRegua({ metas: { engajamento_bruto: 0.05 } });
-  const d = dadosDoPrompt(camp, ins, [], [], regua, { interacaoDeclarada: 'xpto' });
+  // ATUALIZADO 25/09/2026 (Onda C, Tarefa 3): mesmo motivo do teste acima.
+  const d = dadosDoPrompt(camp, ins, [], CONJ_POST, regua, { interacaoDeclarada: 'xpto' });
   assert.equal(d.regua.custo_atual_reais, 0.1, 'cai de volta no custo por engajamento');
 });
 
 test('custoAtualDoAlvo: chamada de 3 argumentos (sem interação) continua funcionando', () => {
   const ins = { spend: '50', actions: [{ action_type: 'post_engagement', value: '200' }] };
-  assert.equal(custoAtualDoAlvo('engajamento', ins, normalizarRegua(null)), 0.25);
+  // ATUALIZADO 25/09/2026 (Onda C, Tarefa 3): 'engajamento' não é mais chave de
+  // ALVOS (reindexado por mercado) — o equivalente hoje é 'post' (post_engagement
+  // bruto, ver alvos.js/mercados.js). `custoAtualDoAlvo` recebe a chave de
+  // `ALVOS` diretamente aqui (chamada de baixo nível, sem passar por
+  // `mercadoDaCampanha`), então o teste precisa passar um mercado REAL.
+  assert.equal(custoAtualDoAlvo('post', ins, normalizarRegua(null)), 0.25);
 });
 
 test('TRAVA: a janela anterior usa a MESMA interação declarada, não o balde padrão', () => {
@@ -596,4 +658,128 @@ test('o prompt manda usar o custo por seguidor da conta só como CONTEXTO, nunca
   assert.match(system, /custo_por_seguidor_da_conta_reais/);
   assert.match(system, /SÓ como contexto/);
   assert.match(system, /NUNCA como custo desta campanha/);
+});
+
+// ---------------------------------------------------------------------------
+// ONDA C, TAREFA 3 (25/09/2026): o robô julga por MERCADO — o que a campanha
+// COMPRA de verdade, segundo os CONJUNTOS (ver mercados.js) — não mais pelo
+// objetivo declarado (`baldeEfetivo` saiu do caminho do veredito). Medido em
+// produção em 25/09: Motoeasy (OUTCOME_ENGAGEMENT + WhatsApp) é conversa;
+// Mantova (mesmo objetivo + perfil) é visita ao perfil; o [FLUXO SHOPPING] da
+// Vessel (mesmo objetivo + ON_VIDEO/THRUPLAY) é view. Três mercados, um
+// rótulo de objetivo — é a razão de existir desta tarefa.
+// ---------------------------------------------------------------------------
+
+test('Motoeasy: OUTCOME_ENGAGEMENT + conjunto de WhatsApp vira mercado "conversa"', () => {
+  const camp = { id: '30', name: '[IA] Motoeasy', objective: 'OUTCOME_ENGAGEMENT' };
+  const conjuntos = [{ destination_type: 'WHATSAPP', optimization_goal: 'CONVERSATIONS' }];
+  const ins = { spend: '100', actions: [{ action_type: 'onsite_conversion.messaging_conversation_started_7d', value: '10' }] };
+  const d = dadosDoPrompt(camp, ins, [], conjuntos, REGUA_TESTE, {});
+  assert.equal(d.regua.mercado, 'conversa');
+  // ALVOS.conversa.rotulo é "Custo por lead" de propósito (ver alvos.js) —
+  // não é erro de digitação, é o nome que o dono já calibrou para este mercado.
+  assert.equal(d.regua.rotulo, 'Custo por lead');
+  assert.equal(d.regua.custo_atual_reais, 10, '100 / 10 conversas');
+  // O objetivo DECLARADO continua indo pro registro histórico, mesmo o mercado
+  // sendo outra coisa — é o campo que o robô grava em gt_budget_analises.
+  assert.equal(d.objetivo, 'OUTCOME_ENGAGEMENT');
+});
+
+test('Mantova: mesmo objetivo (OUTCOME_ENGAGEMENT) + conjunto de perfil vira mercado "perfil"', () => {
+  const camp = { id: '31', name: '[IA] Mantova', objective: 'OUTCOME_ENGAGEMENT' };
+  const conjuntos = [{ destination_type: 'INSTAGRAM_PROFILE', optimization_goal: 'PROFILE_VISIT' }];
+  // Mercado `perfil` lê `link_click` (ver _GT_VISIT_PERFIL em metricas.js — a
+  // correção da Raíssa: NUNCA landing_page_view, que aparece como resíduo).
+  const ins = { spend: '100', actions: [{ action_type: 'link_click', value: '20' }] };
+  const d = dadosDoPrompt(camp, ins, [], conjuntos, REGUA_TESTE, {});
+  assert.equal(d.regua.mercado, 'perfil');
+  assert.equal(d.regua.rotulo, 'Custo por visita ao perfil');
+  assert.equal(d.regua.custo_atual_reais, 5, '100 / 20 visitas ao perfil');
+});
+
+test('[FLUXO SHOPPING]: mesmo objetivo (OUTCOME_ENGAGEMENT) + ON_VIDEO/THRUPLAY vira mercado "video"', () => {
+  const camp = { id: '32', name: '[FLUXO SHOPPING]', objective: 'OUTCOME_ENGAGEMENT' };
+  const conjuntos = [{ destination_type: 'ON_VIDEO', optimization_goal: 'THRUPLAY' }];
+  const ins = { spend: '50', actions: [{ action_type: 'video_view', value: '500' }] };
+  const d = dadosDoPrompt(camp, ins, [], conjuntos, REGUA_TESTE, {});
+  assert.equal(d.regua.mercado, 'video');
+  assert.equal(d.regua.rotulo, 'Custo por view');
+  assert.equal(d.regua.custo_atual_reais, 0.1, '50 / 500 views — antes isto virava "reduzir" medido como engajamento');
+});
+
+test('mercado DESCONHECIDO: sem alvo, sem meta, sem custo — nunca inventa', () => {
+  const camp = { id: '33', name: 'Sinal novo da Meta', objective: 'OUTCOME_TRAFFIC' };
+  const conjuntos = [{ destination_type: 'XPTO', optimization_goal: 'XPTO' }];
+  const d = dadosDoPrompt(camp, { spend: '900', actions: [] }, [], conjuntos, REGUA_TESTE, {});
+  assert.equal(d.regua.mercado, 'desconhecido');
+  assert.equal(d.regua.rotulo, null);
+  assert.equal(d.regua.meta_reais, null);
+  assert.equal(d.regua.custo_atual_reais, null);
+  assert.equal(d.regua.indice_contra_meta, null);
+});
+
+test('o prompt instrui o modelo a julgar mercado desconhecido só pelos indicadores, nunca inventar', () => {
+  const camp = { id: '33', name: 'Sinal novo da Meta', objective: 'OUTCOME_TRAFFIC' };
+  const { system } = montarMensagens(camp, {}, [], [], REGUA_TESTE);
+  assert.match(system, /regua\.mercado.*"desconhecido"/);
+  assert.match(system, /não foi possível identificar o que esta campanha compra/);
+  assert.match(system, /nunca invente um custo por resultado/);
+});
+
+test('campanha MISTA ([LEADS LOJA][mixconversão]): sem custo de campanha, com quebra por conjunto', () => {
+  // O caso real: um conjunto de WhatsApp (conversa) e um de site (venda, via
+  // pixel OFFSITE_CONVERSIONS + objetivo OUTCOME_SALES) na MESMA campanha, ao
+  // mesmo tempo — ver mercadoDaCampanha em mercados.js.
+  const camp = { id: '34', name: '[LEADS LOJA][mixconversão]', objective: 'OUTCOME_SALES' };
+  const conjuntos = [
+    { id: 'cj_zap', destination_type: 'WHATSAPP', optimization_goal: 'CONVERSATIONS', spend: '300',
+      actions: [{ action_type: 'onsite_conversion.messaging_conversation_started_7d', value: '10' }] },
+    { id: 'cj_site', destination_type: 'UNDEFINED', optimization_goal: 'OFFSITE_CONVERSIONS', spend: '700',
+      actions: [{ action_type: 'purchase', value: '5' }] },
+  ];
+  const d = dadosDoPrompt(camp, { spend: '1000' }, [], conjuntos, REGUA_TESTE, {});
+  assert.equal(d.regua.mercado, 'misto');
+  // NUNCA soma gasto/resultado de mercados diferentes num custo de campanha.
+  assert.equal(d.regua.custo_atual_reais, null);
+  assert.equal(d.regua.meta_reais, null);
+  assert.equal(d.regua.indice_contra_meta, null);
+  assert.equal(d.regua.por_conjunto.length, 2);
+  const porZap = d.regua.por_conjunto.find((c) => c.mercado === 'conversa');
+  const porSite = d.regua.por_conjunto.find((c) => c.mercado === 'site_venda');
+  assert.equal(porZap.gasto, 300);
+  assert.equal(porZap.resultado, 10);
+  assert.equal(porZap.custo_atual_reais, 30, '300 / 10 conversas');
+  assert.equal(porZap.meta_reais, 10, 'chaveMeta mensagens da REGUA_TESTE');
+  assert.equal(porSite.gasto, 700);
+  assert.equal(porSite.resultado, 5);
+  assert.equal(porSite.custo_atual_reais, 140, '700 / 5 compras');
+  assert.equal(porSite.meta_reais, 80, 'chaveMeta vendas da REGUA_TESTE');
+});
+
+test('o prompt instrui o modelo a julgar campanha mista conjunto a conjunto, sem inventar média', () => {
+  const camp = { id: '34', name: '[LEADS LOJA][mixconversão]', objective: 'OUTCOME_SALES' };
+  const conjuntos = [
+    { destination_type: 'WHATSAPP', optimization_goal: 'CONVERSATIONS' },
+    { destination_type: 'UNDEFINED', optimization_goal: 'OFFSITE_CONVERSIONS' },
+  ];
+  const { system } = montarMensagens(camp, {}, [], conjuntos, REGUA_TESTE);
+  assert.match(system, /regua\.mercado.*"misto"/);
+  assert.match(system, /regua\.por_conjunto/);
+  assert.match(system, /NUNCA some gasto ou resultado entre mercados diferentes/);
+  assert.match(system, /NUNCA invente uma média única/);
+});
+
+test('campanha mista com interação DECLARADA é julgada por ela, não pela quebra por conjunto', () => {
+  // Uma declaração manual do dono (Tarefa 5) vence a mistura — mesma
+  // precedência que já valia para mercado simples.
+  const camp = { id: '35', name: '[LEADS LOJA][mixconversão]', objective: 'OUTCOME_SALES' };
+  const conjuntos = [
+    { destination_type: 'WHATSAPP', optimization_goal: 'CONVERSATIONS' },
+    { destination_type: 'UNDEFINED', optimization_goal: 'OFFSITE_CONVERSIONS' },
+  ];
+  const regua = normalizarRegua({ metas: { salvamentos: 2 } });
+  const ins = { spend: '100', actions: [{ action_type: 'onsite_conversion.post_save', value: '25' }] };
+  const d = dadosDoPrompt(camp, ins, [], conjuntos, regua, { interacaoDeclarada: 'salvamentos' });
+  assert.equal(d.regua.por_conjunto, undefined, 'com declaração, nem monta a quebra por conjunto');
+  assert.equal(d.regua.custo_atual_reais, 4, '100 / 25 salvamentos, a declaração venceu a mistura');
 });
