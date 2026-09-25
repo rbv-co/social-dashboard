@@ -209,10 +209,14 @@ from public.vessel_pracas p where e.praca_id is null and upper(trim(coalesce(e.p
 -- `is_vessel_atendimentos()` / `_editar()` (a trava da família aceita
 -- QUALQUER tela — é exatamente o buraco que o B13 fechou). Praça e Edição
 -- hoje são parte da tela Stylist Circle (`atendimentos.stylist-circle`, já na
--- lista fechada de `vessel_pode` e no catálogo com `ver`+`editar`); uma tarefa
--- futura recorta chaves próprias (`atendimentos.pracas`, `atendimentos.
--- edicoes`) com pré-concessão para quem já tem esta — até lá, quem tem
--- Stylist Circle tem isto também, de propósito.
+-- lista fechada de `vessel_pode` e no catálogo com `ver`+`editar`).
+-- ⚠️ REVISÃO FINAL (MENOR 2): este bloco prometia que "uma tarefa futura
+-- recorta chaves próprias" — A SEÇÃO 14 DESTE MESMO ARQUIVO JÁ RECORTOU
+-- (`atendimentos.pracas` e `atendimentos.edicoes`, com a pré-concessão
+-- aditiva para quem já tinha a mãe). O que vale no fim da migration é a
+-- seção 14; estas definições aqui são a Task 4 preservada ÍNTEGRA, para que
+-- a ÚNICA diferença entre as duas cópias seja a linha do `vessel_pode` — o
+-- invariante que o aplicador confere por diff.
 --
 -- ⚠️ Escrita NUNCA `raise`: devolve sempre `{"ok":false,"situacao":"..."}`
 -- (a tela precisa do motivo escrito). Leitura pode `raise exception` — quem
@@ -322,6 +326,10 @@ declare
   v_chave  text;
   v_dono   record;
   v_id     bigint;
+  -- ⚠️ REVISÃO FINAL (IMPORTANTE 6): a ADOÇÃO — ver o bloco no fim.
+  v_situacao text;
+  v_stylist  bigint;
+  v_adotadas int := 0;
 begin
   if not public.vessel_pode('atendimentos.stylist-circle', 'editar') then
     return json_build_object('ok', false, 'situacao', 'sem_permissao');
@@ -349,13 +357,53 @@ begin
       'praca_id', v_dono.praca_id, 'praca_nome', v_dono.praca_nome);
   end if;
   if v_dono.id is not null then
-    return json_build_object('ok', true, 'situacao', 'ja_vinculada', 'id', v_dono.id);
+    v_id := v_dono.id;
+    v_situacao := 'ja_vinculada';
+  else
+    insert into public.vessel_praca_cidades (praca_id, cidade, cidade_chave)
+    values (p_praca_id, v_cidade, v_chave)
+    returning id into v_id;
+    v_situacao := 'ok';
   end if;
 
-  insert into public.vessel_praca_cidades (praca_id, cidade, cidade_chave)
-  values (p_praca_id, v_cidade, v_chave)
-  returning id into v_id;
-  return json_build_object('ok', true, 'situacao', 'ok', 'id', v_id);
+  -- ⚠️ REVISÃO FINAL (IMPORTANTE 6): A ADOÇÃO. Até aqui vincular a cidade
+  -- criava SÓ a linha do cadastro e não movia ninguém — a pendência "N
+  -- stylists sem praça", que a barra mostra nas duas telas grandes, NÃO SE
+  -- RESOLVIA pelo cadastro de Praças. O backfill da seção 8 roda uma vez só,
+  -- e `vessel_stylist_definir_praca` não tem chamador em tela nenhuma: quem
+  -- estava sem praça ficava sem praça para sempre, e a única saída era abrir
+  -- a ficha de uma em uma.
+  --
+  -- O critério é O MAIS ESTREITO QUE RESOLVE: só quem está SEM PRAÇA
+  -- (`praca_id is null`) e cuja cidade casa com A CIDADE QUE ACABOU DE SER
+  -- VINCULADA, pela MESMA chave achatada (`vessel_achatar_cidade`) do resto
+  -- do arquivo. Ninguém TROCA de praça por aqui — vincular "Campinas" à
+  -- praça X não arrasta quem já está em CPS. Stylist de teste fica de fora,
+  -- pelo critério único da casa.
+  --
+  -- Rodar de novo com a cidade JÁ vinculada (`ja_vinculada`) também adota —
+  -- é de propósito: é o botão que o dono aperta quando a pendência reaparece,
+  -- e uma ação que "não faz nada da segunda vez" seria uma pegadinha.
+  --
+  -- ⚠️ `adotadas` VOLTA NA RESPOSTA: número que a tela escreve ("3 stylists
+  -- de Limeira passaram a ser desta praça"). Movimento calado em dado de
+  -- gente é o que esta migration inteira existe para acabar.
+  for v_stylist in
+    select s.id from public.vessel_stylists s
+     where s.praca_id is null
+       and not coalesce(s.teste, false)
+       and public.vessel_achatar_cidade(s.cidade) = v_chave
+  loop
+    update public.vessel_stylists set praca_id = p_praca_id, atualizado_em = now() where id = v_stylist;
+    -- e entra na edição ABERTA da praça, pela MESMA função das outras portas.
+    -- `p_fechar_antigo` fica `false`: quem estava SEM praça não tem vínculo
+    -- "da praça antiga" para fechar — e uma inclusão feita à mão numa edição
+    -- qualquer não pode ser desfeita por um cadastro de cidade.
+    perform public.vessel_stylist_sincronizar_edicao(v_stylist, p_praca_id, false);
+    v_adotadas := v_adotadas + 1;
+  end loop;
+
+  return json_build_object('ok', true, 'situacao', v_situacao, 'id', v_id, 'adotadas', v_adotadas);
 end;
 $$;
 
@@ -429,37 +477,61 @@ begin
     select json_agg(json_build_object(
              'id', e.id, 'praca_id', e.praca_id, 'praca_nome', p.nome, 'numero', e.numero,
              'nome', e.nome, 'comeca_em', e.comeca_em, 'termina_em', e.termina_em, 'situacao', e.situacao,
-             -- ⚠️ RODADA 1 DE CONSERTO (CRÍTICO 1): SEM filtrar por `saiu_em`.
-             -- `vessel_edicao_encerrar` fecha (`saiu_em`) TODOS os vínculos da
-             -- edição no mesmo instante em que ela vira 'encerrada' — nenhum
-             -- membro é acrescentado ou removido depois disso (o congelamento
-             -- é exatamente esse: quem esteve, esteve). Filtrar por
-             -- `saiu_em is null` aqui faria toda edição encerrada aparecer
-             -- com zero stylists, para sempre — o oposto do que o cabeçalho
-             -- desta migration promete ("o placar da edição encerrada
-             -- continua contando a linha antiga"). Enquanto a edição está
-             -- planejada/aberta ninguém tem `saiu_em` ainda, então a conta
-             -- coincide com "quem está nela agora"; depois de encerrada, ela
-             -- vira "quem esteve nela" — o mesmo número, para sempre.
-             -- ⚠️ TASK 6 RODADA 1 DE CONSERTO (IMPORTANTE 3): filtra `teste`,
-             -- pelo MESMO critério de `vessel_pracas_listar` (acima) — antes
-             -- os dois contavam diferente (um filtrava, o outro não).
+             -- ⚠️ REVISÃO FINAL (IMPORTANTE 1): O MESMO CRITÉRIO DO PLACAR,
+             -- letra por letra — `turma_ids` + `sty` de `vessel_placar_da_
+             -- edicao`. Os DOIS números aparecem JUNTOS na tela (o bloco
+             -- "praças com edição aberta" de `placar-do-stylist-circle.vue`
+             -- mostra `edicao.stylists` ao lado do placar da mesma edição):
+             -- dois jeitos de contar a MESMA edição é o defeito clássico de
+             -- "dois lugares para a mesma verdade".
+             --
+             --   edição ABERTA/planejada → quem está dentro AGORA
+             --                              (`saiu_em is null`);
+             --   edição ENCERRADA        → a turma CONGELADA (todas as
+             --                              linhas, que o encerramento fechou
+             --                              no mesmo instante).
+             --
+             -- ⚠️ O COMENTÁRIO ANTIGO AQUI MENTIA: dizia "enquanto a edição
+             -- está planejada/aberta ninguém tem `saiu_em` ainda". Deixou de
+             -- ser verdade quando `vessel_stylist_sincronizar_edicao` passou
+             -- a FECHAR o vínculo de quem muda de praça com a edição de
+             -- origem ainda aberta — a partir daí esta conta inchava com
+             -- quem já tinha saído, e o placar ao lado (que filtra) dizia
+             -- outro número.
+             -- ⚠️ TASK 6 RODADA 1 DE CONSERTO (IMPORTANTE 3): `teste` — e a
+             -- REVISÃO FINAL acrescentou `ativa`, pelo mesmo motivo: o placar
+             -- filtra os dois (`sty`), e quem está lado a lado tem de contar
+             -- igual.
              'stylists', (select count(*)::int from public.vessel_stylist_na_edicao n
                            join public.vessel_stylists s on s.id = n.stylist_id
-                           where n.edicao_id = e.id and not coalesce(s.teste, false)),
+                           where n.edicao_id = e.id and not coalesce(s.teste, false)
+                             and coalesce(s.ativa, true)
+                             and (e.situacao = 'encerrada' or n.saiu_em is null)),
              -- ⚠️ TASK 6 RODADA 1 DE CONSERTO (IMPORTANTE 3): quantas SERIAM
              -- levadas se a edição fosse encerrada agora — o MESMO critério
              -- de `vessel_edicao_encerrar` (vínculo ainda ativo, `saiu_em is
-             -- null`, da stylist que `ativada_em is null`). Numa edição já
+             -- null`, da stylist que ainda não ativou). Numa edição já
              -- encerrada dá sempre 0 (o congelamento já fechou todos os
              -- vínculos) — não é um teto, é o número real. A tela usa este
              -- campo para dizer "N serão levadas" ANTES de confirmar, em vez
              -- de "até N" (o total da edição, que mentia numa edição madura
              -- onde quase todas já ativaram).
+             -- ⚠️ REVISÃO FINAL (MENOR 3): "ativada" passa a ser
+             -- `vessel_stylist_ativada_em()` — A DEFINIÇÃO CANÔNICA da casa
+             -- (a primeira chegada numa etapa que liberava Private Edit;
+             -- sem ela, o primeiro Private Edit agendado). Convivião até
+             -- aqui com a coluna CRUA `vessel_stylists.ativada_em`, que
+             -- desde 24/09/2026 NEM é mais a ativação (é "Private Edit
+             -- agendado"): a tela de Edições dizia "N não ativaram" por uma
+             -- conta e o placar ao lado dizia "ativadas" por outra. Um
+             -- critério só, e é o mesmo de `vessel_edicao_encerrar` — as
+             -- duas contas têm de andar juntas para a tela não prometer N e
+             -- o banco levar outro número.
              'nao_ativadas', (select count(*)::int from public.vessel_stylist_na_edicao n
                            join public.vessel_stylists s on s.id = n.stylist_id
                            where n.edicao_id = e.id and n.saiu_em is null
-                             and s.ativada_em is null and not coalesce(s.teste, false)))
+                             and public.vessel_stylist_ativada_em(s.id) is null
+                             and not coalesce(s.teste, false)))
            order by p.ordem, e.numero desc)
       from public.vessel_stylist_circle_edicoes e join public.vessel_pracas p on p.id = e.praca_id
      where p_praca_id is null or e.praca_id = p_praca_id), '[]'::json);
@@ -620,13 +692,21 @@ begin
   -- fechar nem para levar. Não aparece em nenhuma conta da tela (`stylists`/
   -- `nao_ativadas` já filtram teste) — é o preço do critério único "stylist
   -- de teste não conta e não é levada".
+  -- ⚠️ REVISÃO FINAL (MENOR 3): quem "não ativou" é quem
+  -- `vessel_stylist_ativada_em()` diz que não ativou — A DEFINIÇÃO
+  -- CANÔNICA (a mesma de `vessel_placar_da_edicao` e de `nao_ativadas` em
+  -- `vessel_edicoes_listar`), nunca mais a coluna crua `s.ativada_em`, que
+  -- desde 24/09/2026 quer dizer outra coisa ("primeiro Private Edit
+  -- agendado"). A canônica é um `coalesce` que JÁ INCLUI a coluna crua como
+  -- último recurso, então o conjunto de quem é levada só pode DIMINUIR:
+  -- ninguém que a conta antiga deixava ficar passa a ser levada.
   with fechados as (
     update public.vessel_stylist_na_edicao n
        set saiu_em = now(), etapa_ao_sair = s.etapa_id
       from public.vessel_stylists s
      where n.stylist_id = s.id and n.edicao_id = p_id and n.saiu_em is null
        and not coalesce(s.teste, false)
-    returning n.stylist_id, s.ativada_em, s.teste
+    returning n.stylist_id, public.vessel_stylist_ativada_em(s.id) as ativou, s.teste
   )
   -- ⚠️ RODADA 1 DE CONSERTO (CRÍTICO 2): `on conflict ... do nothing` — a
   -- stylist pode já ter um vínculo (fechado ou não) na edição de destino
@@ -643,7 +723,7 @@ begin
   -- afrouxado sem querer, este é quem segura.
   insert into public.vessel_stylist_na_edicao (stylist_id, edicao_id)
   select f.stylist_id, p_levar_para from fechados f
-   where f.ativada_em is null and p_levar_para is not null and not coalesce(f.teste, false)
+   where f.ativou is null and p_levar_para is not null and not coalesce(f.teste, false)
   on conflict (stylist_id, edicao_id) do nothing;
   get diagnostics v_levadas = row_count;
 
@@ -683,7 +763,17 @@ begin
               where stylist_id = v_stylist_id and edicao_id = p_edicao_id and saiu_em is null) then
     return json_build_object('ok', true, 'situacao', 'sem_mudanca');
   end if;
-  insert into public.vessel_stylist_na_edicao (stylist_id, edicao_id) values (v_stylist_id, p_edicao_id);
+  -- ⚠️ REVISÃO FINAL (CRÍTICO 1, irmão do `do update` de
+  -- `vessel_stylist_sincronizar_edicao`): a conferência acima só olha
+  -- `saiu_em is null`, então incluir quem JÁ SAIU desta edição (mudou de
+  -- praça, ou foi levada para a seguinte e voltou) chegava aqui e estourava
+  -- `23505` CRU na unique `(stylist_id, edicao_id)` — e nesta base um erro
+  -- assim derruba a transação INTEIRA (a mesma lição do Crítico 2 em
+  -- `vessel_edicao_encerrar`). Reabrir a linha é exatamente o que a tela
+  -- pediu ("inclua esta stylist"), e a edição encerrada já foi barrada lá
+  -- em cima — nada de congelado é reaberto por aqui.
+  insert into public.vessel_stylist_na_edicao (stylist_id, edicao_id) values (v_stylist_id, p_edicao_id)
+  on conflict (stylist_id, edicao_id) do update set saiu_em = null, etapa_ao_sair = null;
   return json_build_object('ok', true, 'situacao', 'ok');
 end;
 $$;
@@ -873,13 +963,33 @@ $function$;
 drop function if exists public.vessel_rastreio_dos_stylists(integer, boolean);
 
 -- ── 11. o placar da edição (Task 5) ──────────────────────────────────────────
--- ⚠️ CONTA SOBRE AS STYLISTS LIGADAS À EDIÇÃO por `vessel_stylist_na_edicao` —
--- TODAS as linhas, sem filtrar por `saiu_em` (a MESMA regra de
--- `vessel_edicoes_listar`, seção 9): é isso que CONGELA o placar de uma
--- edição encerrada. A tarefa anterior já teve um defeito Crítico exatamente
--- aqui (a conta da tela zerava a edição encerrada) — o aplicador prova que
--- este placar não repete o erro, e que o `where` desta CTE não é decoração
--- (mutação: trocar por `1=1` faz Limeira contar stylist de Campinas).
+-- ⚠️ ESTA FUNÇÃO É DEFINIDA UMA VEZ SÓ, AQUI (REVISÃO FINAL, MENOR 1). Até a
+-- revisão ela nascia duas vezes no mesmo arquivo — aqui e numa "seção 15" no
+-- fim —, com o corpo IDÊNTICO letra por letra. Cópia que só existe para
+-- divergir depois: já divergiu uma vez (os números do IMPORTANTE 4 entraram
+-- numa e não na outra). O que aquela seção explicava está incorporado abaixo.
+--
+-- ⚠️ CONTA SOBRE AS STYLISTS LIGADAS À EDIÇÃO por `vessel_stylist_na_edicao`,
+-- pelo MESMO critério de `vessel_edicoes_listar.stylists` (seções 9 e 14.2):
+-- edição ABERTA conta quem está dentro AGORA (`saiu_em is null`); edição
+-- ENCERRADA conta a turma CONGELADA (todas as linhas, que o encerramento
+-- fechou no mesmo instante). A tarefa anterior já teve um defeito Crítico
+-- exatamente aqui (a conta da tela zerava a edição encerrada) — o aplicador
+-- prova que este placar não repete o erro, e que o `where` desta CTE não é
+-- decoração (mutação: trocar por `1=1` faz Limeira contar stylist de Campinas).
+--
+-- ⚠️ OS DOIS NÚMEROS DAS TAXAS (intervalo médio entre encontros e contatos até
+-- ativar) são os mesmos do placar MENSAL (`vessel_numeros_do_stylist_circle`):
+-- a edição TEM janela (`comeca_em` … `coalesce(termina_em, 'infinity')`), então
+-- a CTE `realizados` traz `row_number()` E `lag()`. "Contatos até ativar" usa
+-- `sty.ativou` (a MESMA `vessel_stylist_ativada_em()` de "ativadas") — NUNCA a
+-- coluna crua `vessel_stylists.ativada_em`, senão dois números do MESMO placar
+-- falariam de duas "ativações" diferentes.
+--
+-- ⚠️ `sty` filtra `teste` E `ativa`: uma stylist desativada que está na edição
+-- não pode contar aqui e sumir do quadro e da lista (`vessel_rastreio_dos_
+-- stylists` filtra `ativa` por padrão) — o placar é exatamente o que se compara
+-- coluna a coluna com o quadro, e os dois têm de fechar.
 --
 -- As ETAPAS contam a etapa ATUAL da stylist ("quem está nela hoje" — o funil
 -- é vivo, mesmo depois da edição encerrar; encerrar uma edição não move
@@ -1070,6 +1180,37 @@ $$;
 -- migration do código do encontro) — não é porta própria.
 revoke all on function public.vessel_praca_id_ativa(text) from public, anon, authenticated;
 
+-- ⚠️ REVISÃO FINAL (IMPORTANTE 4): A PRAÇA SAI DA CIDADE quando ninguém
+-- escolheu a praça. A seção 8 faz EXATAMENTE esta conta uma vez, no backfill
+-- — mas só uma vez, e só para quem já existia. Quem se inscrevia pela landing
+-- page sem praça (o formulário público não pergunta) nascia com `praca_id`
+-- nulo: fora de toda edição, fora de todo placar, sem erro nenhum aparecendo.
+-- Hoje isso ainda não morde (nenhuma das 63 veio da LP, medido em
+-- 25/09/2026), e é exatamente por isso que se conserta agora: é para o
+-- programa crescer.
+--
+-- A conta é A MESMA da seção 8 e a MESMA do front (`vessel_achatar_cidade` ⇔
+-- `achatarCidade`): a chave achatada da cidade contra `vessel_praca_cidades`.
+-- Cidade que NÃO CASA continua devolvendo NULO — pendência à vista na tela,
+-- nunca um chute de qual praça seria ("Limeira / Piracicaba" é esse caso, de
+-- propósito). Praça DESATIVADA também não serve, pelo mesmo critério de
+-- `vessel_praca_id_ativa`.
+create or replace function public.vessel_praca_id_da_cidade(p_cidade text)
+returns bigint
+language sql
+stable
+set search_path to 'public'
+as $$
+  select c.praca_id
+    from public.vessel_praca_cidades c
+    join public.vessel_pracas p on p.id = c.praca_id
+   where p.ativa
+     and c.cidade_chave = public.vessel_achatar_cidade(p_cidade)
+     and public.vessel_achatar_cidade(p_cidade) <> '';
+$$;
+-- ⚠️ SEM GRANT A `authenticated`: mesmo padrão de `vessel_praca_id_ativa`.
+revoke all on function public.vessel_praca_id_da_cidade(text) from public, anon, authenticated;
+
 -- ⚠️ TASK 11 RODADA 1 DE CONSERTO — MENOR (b): as QUATRO portas que gravam a
 -- praça de uma stylist (`vessel_stylist_criar`, `vessel_stylist_definir_praca`,
 -- `vessel_stylist_editar`, `vessel_pedido_do_stylist`) tinham o MESMO critério
@@ -1113,8 +1254,19 @@ begin
   -- vincula à edição ABERTA da praça nova, se houver — sempre com o MESMO
   -- critério de elegibilidade (ativa, não-teste), mesmo quando quem chama
   -- (`vessel_stylist_criar`) sabe que a stylist recém-criada já satisfaz os
-  -- dois por construção: um critério só, nunca reescrito. `on conflict do
-  -- nothing`: quem já tinha vínculo não duplica.
+  -- dois por construção: um critério só, nunca reescrito.
+  --
+  -- ⚠️ REVISÃO FINAL (CRÍTICO 1) — `do update`, NUNCA `do nothing`: o caso do
+  -- RETORNO. Dois cliques na ficha: a stylist está em LIM·Ed1 (aberta) →
+  -- troca para CPS (o vínculo de LIM fecha com `saiu_em`, abre um em CPS) →
+  -- percebe o engano e VOLTA para LIM. O insert de LIM colide com a linha
+  -- FECHADA, e com `do nothing` era DESCARTADO: ela ficava com
+  -- `praca_id = LIM` e NENHUM vínculo aberto — o placar não a contava e a
+  -- lista embaixo continuava mostrando, calado. Reabrir a linha (`saiu_em`/
+  -- `etapa_ao_sair` de volta a nulo) é o conserto: o `select` acima só
+  -- alcança edição `aberta`, então nada de encerrado é reaberto por aqui.
+  -- Quem já tinha o vínculo ABERTO não muda de nada (os dois campos já são
+  -- nulos) e continua sem duplicar.
   insert into public.vessel_stylist_na_edicao (stylist_id, edicao_id)
   select p_stylist_id, ed.id
     from public.vessel_stylist_circle_edicoes ed
@@ -1122,7 +1274,7 @@ begin
      and exists (select 1 from public.vessel_stylists s
                   where s.id = p_stylist_id and coalesce(s.ativa, true) and not coalesce(s.teste, false))
    limit 1
-  on conflict (stylist_id, edicao_id) do nothing;
+  on conflict (stylist_id, edicao_id) do update set saiu_em = null, etapa_ao_sair = null;
 end;
 $$;
 -- ⚠️ SEM GRANT A `authenticated`: mesmo padrão de `vessel_praca_id_ativa`,
@@ -1351,11 +1503,19 @@ begin
   -- ⚠️ RODADA 1 DE CONSERTO (CRÍTICO): consulta ao cadastro, não lista
   -- fechada — sem isto, ninguém cadastrava stylist de Limeira nem de
   -- Piracicaba pela tela.
+  --
+  -- ⚠️ REVISÃO FINAL (IMPORTANTE 4): sem praça escolhida, a praça SAI DA
+  -- CIDADE (`vessel_praca_id_da_cidade`, seção 12) — a MESMA conta do
+  -- backfill da seção 8. Cidade que não casa continua sem praça: pendência à
+  -- vista, nunca chute. `praca_preview` NÃO é inventado a partir disso — ele
+  -- guarda o que a pessoa escreveu, e quem manda de verdade é `praca_id`.
   if v_praca is not null then
     v_praca_id := public.vessel_praca_id_ativa(v_praca);
     if v_praca_id is null then
       return json_build_object('ok', false, 'situacao', 'praca_invalida');
     end if;
+  else
+    v_praca_id := public.vessel_praca_id_da_cidade(p_cidade);
   end if;
   if v_loja is not null and v_loja not in ('iguatemi', 'tivoli', 'parkshopping') then
     return json_build_object('ok', false, 'situacao', 'loja_invalida');
@@ -1599,6 +1759,10 @@ declare
   v_volta    int;
   v_indice   text;
   v_praca_id bigint;
+  -- ⚠️ REVISÃO FINAL (IMPORTANTE 4): a praça DEDUZIDA da cidade, separada da
+  -- escolhida de propósito — a deduzida só PREENCHE buraco, nunca troca a
+  -- praça de quem já tem uma (ver o `coalesce` de três pernas no update).
+  v_praca_da_cidade bigint;
   v_era_nova boolean;
 begin
   if coalesce(trim(p_armadilha), '') <> '' then
@@ -1625,11 +1789,18 @@ begin
   -- ⚠️ RODADA 1 DE CONSERTO (CRÍTICO): consulta ao cadastro, não lista
   -- fechada — sem isto, uma stylist de Limeira/Piracicaba não conseguia se
   -- inscrever pela landing page com a própria praça.
+  --
+  -- ⚠️ REVISÃO FINAL (IMPORTANTE 4): o formulário PÚBLICO não pergunta a
+  -- praça — pergunta a CIDADE. Sem derivar, toda inscrição pela landing page
+  -- nascia com `praca_id` nulo: fora de toda edição, fora de todo placar,
+  -- calada. `v_praca_da_cidade` é a MESMA conta do backfill da seção 8.
   if nullif(trim(coalesce(p_praca, '')), '') is not null then
     v_praca_id := public.vessel_praca_id_ativa(p_praca);
     if v_praca_id is null then
       return json_build_object('ok', false, 'situacao', 'praca_invalida');
     end if;
+  else
+    v_praca_da_cidade := public.vessel_praca_id_da_cidade(p_cidade);
   end if;
   if length(trim(coalesce(p_instagram, ''))) > 120 then
     return json_build_object('ok', false, 'situacao', 'instagram_longo');
@@ -1688,7 +1859,9 @@ begin
                 nullif(trim(coalesce(p_cidade, '')), ''), nullif(trim(coalesce(p_instagram, '')), ''),
                 nullif(trim(coalesce(p_atuacao, '')), ''), nullif(trim(coalesce(p_quer_sessao, '')), ''),
                 nullif(trim(coalesce(p_convidadas, '')), ''), upper(nullif(trim(coalesce(p_praca, '')), '')),
-                v_praca_id,
+                -- ⚠️ REVISÃO FINAL (IMPORTANTE 4): quem NASCE aqui não tem
+                -- praça nenhuma, então a deduzida da cidade entra direto.
+                coalesce(v_praca_id, v_praca_da_cidade),
                 p_teste,
                 coalesce(nullif(trim(p_origem ->> 'canal'), ''), 'lp-stylist-circle'),
                 nullif(trim(p_origem ->> 'utm_campaign'), ''),
@@ -1722,7 +1895,13 @@ begin
            convidadas = coalesce(nullif(trim(coalesce(p_convidadas, '')), ''), convidadas),
            praca_preview = coalesce(upper(nullif(trim(coalesce(p_praca, '')), '')), praca_preview),
            -- ⚠️ RODADA 1 DE CONSERTO: `praca_id` junto — só muda quando `p_praca` veio.
-           praca_id = coalesce(v_praca_id, praca_id),
+           -- ⚠️ REVISÃO FINAL (IMPORTANTE 4): a praça DEDUZIDA da cidade é a
+           -- ÚLTIMA perna do `coalesce` — ela só PREENCHE quem está sem praça,
+           -- nunca MOVE quem já tem uma. Mover alguém de praça por um campo de
+           -- formulário público (a pessoa corrige a grafia da cidade e troca
+           -- de loja de destino sem ninguém ver) seria justamente o tipo de
+           -- mudança calada que este trabalho existe para matar.
+           praca_id = coalesce(v_praca_id, praca_id, v_praca_da_cidade),
            atualizado_em = now()
      where id = v_id;
   end if;
@@ -1735,6 +1914,12 @@ begin
   -- (mesma regra de `vessel_stylist_criar`); quem VOLTOU e mudou de praça
   -- (o ramo `else`, acima) passa pela mesma trava do CRÍTICO 1 — fecha o
   -- vínculo aberto da praça antiga antes de abrir o da nova.
+  -- ⚠️ REVISÃO FINAL (IMPORTANTE 4): a praça EFETIVA é a que FICOU GRAVADA
+  -- na linha — lida de volta, nunca deduzida de novo aqui. Com a praça vindo
+  -- da cidade, `v_praca_id` sozinho seria nulo e a sincronização não faria
+  -- nada: a inscrição continuaria fora da edição aberta, que é o defeito que
+  -- o IMPORTANTE 2 (rodada anterior) fechou por outra porta.
+  select s.praca_id into v_praca_id from public.vessel_stylists s where s.id = v_id;
   perform public.vessel_stylist_sincronizar_edicao(v_id, v_praca_id, not v_era_nova);
 
   -- As permissões, separadas por finalidade — a de atendimento sempre, a de
@@ -1808,6 +1993,17 @@ end $$;
 --     atendimentos.stylist-circle (o quadro do Stylist Circle inclui direto).
 --   vessel_stylist_definir_praca e vessel_placar_da_edicao NÃO mudam: seguem
 --     em atendimentos.stylist-circle — pedido explícito do brief desta tarefa.
+--     ⚠️ REVISÃO FINAL (MENOR 1): "não mudam" quer dizer que elas NÃO SÃO
+--     RECRIADAS — cada uma nasce UMA vez só no arquivo, na seção 9 e na
+--     seção 11. Até a revisão o arquivo desmentia isso: havia uma "seção 15"
+--     no fim recriando `vessel_placar_da_edicao` com o corpo IDÊNTICO ao da
+--     seção 11. A cópia foi apagada e o que ela explicava foi para o
+--     cabeçalho da seção 11.
+--
+-- ⚠️ O INVARIANTE DO ARQUIVO: cada uma das 10 funções abaixo é cópia LETRA
+-- POR LETRA da irmã dela na seção 9, diferindo SÓ na linha do `vessel_pode`.
+-- O aplicador confere isso por diff de verdade (extrai as duas definições e
+-- compara), e é por isso que qualquer conserto aqui vale para AS DUAS cópias.
 
 -- ── 14.1 a lista fechada de vessel_pode ganha as duas chaves ────────────────
 create or replace function public.vessel_pode(p_ferramenta text, p_nivel text)
@@ -1956,6 +2152,10 @@ declare
   v_chave  text;
   v_dono   record;
   v_id     bigint;
+  -- ⚠️ REVISÃO FINAL (IMPORTANTE 6): a ADOÇÃO — ver o bloco no fim.
+  v_situacao text;
+  v_stylist  bigint;
+  v_adotadas int := 0;
 begin
   if not public.vessel_pode('atendimentos.pracas', 'editar') then
     return json_build_object('ok', false, 'situacao', 'sem_permissao');
@@ -1983,13 +2183,53 @@ begin
       'praca_id', v_dono.praca_id, 'praca_nome', v_dono.praca_nome);
   end if;
   if v_dono.id is not null then
-    return json_build_object('ok', true, 'situacao', 'ja_vinculada', 'id', v_dono.id);
+    v_id := v_dono.id;
+    v_situacao := 'ja_vinculada';
+  else
+    insert into public.vessel_praca_cidades (praca_id, cidade, cidade_chave)
+    values (p_praca_id, v_cidade, v_chave)
+    returning id into v_id;
+    v_situacao := 'ok';
   end if;
 
-  insert into public.vessel_praca_cidades (praca_id, cidade, cidade_chave)
-  values (p_praca_id, v_cidade, v_chave)
-  returning id into v_id;
-  return json_build_object('ok', true, 'situacao', 'ok', 'id', v_id);
+  -- ⚠️ REVISÃO FINAL (IMPORTANTE 6): A ADOÇÃO. Até aqui vincular a cidade
+  -- criava SÓ a linha do cadastro e não movia ninguém — a pendência "N
+  -- stylists sem praça", que a barra mostra nas duas telas grandes, NÃO SE
+  -- RESOLVIA pelo cadastro de Praças. O backfill da seção 8 roda uma vez só,
+  -- e `vessel_stylist_definir_praca` não tem chamador em tela nenhuma: quem
+  -- estava sem praça ficava sem praça para sempre, e a única saída era abrir
+  -- a ficha de uma em uma.
+  --
+  -- O critério é O MAIS ESTREITO QUE RESOLVE: só quem está SEM PRAÇA
+  -- (`praca_id is null`) e cuja cidade casa com A CIDADE QUE ACABOU DE SER
+  -- VINCULADA, pela MESMA chave achatada (`vessel_achatar_cidade`) do resto
+  -- do arquivo. Ninguém TROCA de praça por aqui — vincular "Campinas" à
+  -- praça X não arrasta quem já está em CPS. Stylist de teste fica de fora,
+  -- pelo critério único da casa.
+  --
+  -- Rodar de novo com a cidade JÁ vinculada (`ja_vinculada`) também adota —
+  -- é de propósito: é o botão que o dono aperta quando a pendência reaparece,
+  -- e uma ação que "não faz nada da segunda vez" seria uma pegadinha.
+  --
+  -- ⚠️ `adotadas` VOLTA NA RESPOSTA: número que a tela escreve ("3 stylists
+  -- de Limeira passaram a ser desta praça"). Movimento calado em dado de
+  -- gente é o que esta migration inteira existe para acabar.
+  for v_stylist in
+    select s.id from public.vessel_stylists s
+     where s.praca_id is null
+       and not coalesce(s.teste, false)
+       and public.vessel_achatar_cidade(s.cidade) = v_chave
+  loop
+    update public.vessel_stylists set praca_id = p_praca_id, atualizado_em = now() where id = v_stylist;
+    -- e entra na edição ABERTA da praça, pela MESMA função das outras portas.
+    -- `p_fechar_antigo` fica `false`: quem estava SEM praça não tem vínculo
+    -- "da praça antiga" para fechar — e uma inclusão feita à mão numa edição
+    -- qualquer não pode ser desfeita por um cadastro de cidade.
+    perform public.vessel_stylist_sincronizar_edicao(v_stylist, p_praca_id, false);
+    v_adotadas := v_adotadas + 1;
+  end loop;
+
+  return json_build_object('ok', true, 'situacao', v_situacao, 'id', v_id, 'adotadas', v_adotadas);
 end;
 $$;
 
@@ -2033,37 +2273,61 @@ begin
     select json_agg(json_build_object(
              'id', e.id, 'praca_id', e.praca_id, 'praca_nome', p.nome, 'numero', e.numero,
              'nome', e.nome, 'comeca_em', e.comeca_em, 'termina_em', e.termina_em, 'situacao', e.situacao,
-             -- ⚠️ RODADA 1 DE CONSERTO (CRÍTICO 1): SEM filtrar por `saiu_em`.
-             -- `vessel_edicao_encerrar` fecha (`saiu_em`) TODOS os vínculos da
-             -- edição no mesmo instante em que ela vira 'encerrada' — nenhum
-             -- membro é acrescentado ou removido depois disso (o congelamento
-             -- é exatamente esse: quem esteve, esteve). Filtrar por
-             -- `saiu_em is null` aqui faria toda edição encerrada aparecer
-             -- com zero stylists, para sempre — o oposto do que o cabeçalho
-             -- desta migration promete ("o placar da edição encerrada
-             -- continua contando a linha antiga"). Enquanto a edição está
-             -- planejada/aberta ninguém tem `saiu_em` ainda, então a conta
-             -- coincide com "quem está nela agora"; depois de encerrada, ela
-             -- vira "quem esteve nela" — o mesmo número, para sempre.
-             -- ⚠️ TASK 6 RODADA 1 DE CONSERTO (IMPORTANTE 3): filtra `teste`,
-             -- pelo MESMO critério de `vessel_pracas_listar` (acima) — antes
-             -- os dois contavam diferente (um filtrava, o outro não).
+             -- ⚠️ REVISÃO FINAL (IMPORTANTE 1): O MESMO CRITÉRIO DO PLACAR,
+             -- letra por letra — `turma_ids` + `sty` de `vessel_placar_da_
+             -- edicao`. Os DOIS números aparecem JUNTOS na tela (o bloco
+             -- "praças com edição aberta" de `placar-do-stylist-circle.vue`
+             -- mostra `edicao.stylists` ao lado do placar da mesma edição):
+             -- dois jeitos de contar a MESMA edição é o defeito clássico de
+             -- "dois lugares para a mesma verdade".
+             --
+             --   edição ABERTA/planejada → quem está dentro AGORA
+             --                              (`saiu_em is null`);
+             --   edição ENCERRADA        → a turma CONGELADA (todas as
+             --                              linhas, que o encerramento fechou
+             --                              no mesmo instante).
+             --
+             -- ⚠️ O COMENTÁRIO ANTIGO AQUI MENTIA: dizia "enquanto a edição
+             -- está planejada/aberta ninguém tem `saiu_em` ainda". Deixou de
+             -- ser verdade quando `vessel_stylist_sincronizar_edicao` passou
+             -- a FECHAR o vínculo de quem muda de praça com a edição de
+             -- origem ainda aberta — a partir daí esta conta inchava com
+             -- quem já tinha saído, e o placar ao lado (que filtra) dizia
+             -- outro número.
+             -- ⚠️ TASK 6 RODADA 1 DE CONSERTO (IMPORTANTE 3): `teste` — e a
+             -- REVISÃO FINAL acrescentou `ativa`, pelo mesmo motivo: o placar
+             -- filtra os dois (`sty`), e quem está lado a lado tem de contar
+             -- igual.
              'stylists', (select count(*)::int from public.vessel_stylist_na_edicao n
                            join public.vessel_stylists s on s.id = n.stylist_id
-                           where n.edicao_id = e.id and not coalesce(s.teste, false)),
+                           where n.edicao_id = e.id and not coalesce(s.teste, false)
+                             and coalesce(s.ativa, true)
+                             and (e.situacao = 'encerrada' or n.saiu_em is null)),
              -- ⚠️ TASK 6 RODADA 1 DE CONSERTO (IMPORTANTE 3): quantas SERIAM
              -- levadas se a edição fosse encerrada agora — o MESMO critério
              -- de `vessel_edicao_encerrar` (vínculo ainda ativo, `saiu_em is
-             -- null`, da stylist que `ativada_em is null`). Numa edição já
+             -- null`, da stylist que ainda não ativou). Numa edição já
              -- encerrada dá sempre 0 (o congelamento já fechou todos os
              -- vínculos) — não é um teto, é o número real. A tela usa este
              -- campo para dizer "N serão levadas" ANTES de confirmar, em vez
              -- de "até N" (o total da edição, que mentia numa edição madura
              -- onde quase todas já ativaram).
+             -- ⚠️ REVISÃO FINAL (MENOR 3): "ativada" passa a ser
+             -- `vessel_stylist_ativada_em()` — A DEFINIÇÃO CANÔNICA da casa
+             -- (a primeira chegada numa etapa que liberava Private Edit;
+             -- sem ela, o primeiro Private Edit agendado). Convivião até
+             -- aqui com a coluna CRUA `vessel_stylists.ativada_em`, que
+             -- desde 24/09/2026 NEM é mais a ativação (é "Private Edit
+             -- agendado"): a tela de Edições dizia "N não ativaram" por uma
+             -- conta e o placar ao lado dizia "ativadas" por outra. Um
+             -- critério só, e é o mesmo de `vessel_edicao_encerrar` — as
+             -- duas contas têm de andar juntas para a tela não prometer N e
+             -- o banco levar outro número.
              'nao_ativadas', (select count(*)::int from public.vessel_stylist_na_edicao n
                            join public.vessel_stylists s on s.id = n.stylist_id
                            where n.edicao_id = e.id and n.saiu_em is null
-                             and s.ativada_em is null and not coalesce(s.teste, false)))
+                             and public.vessel_stylist_ativada_em(s.id) is null
+                             and not coalesce(s.teste, false)))
            order by p.ordem, e.numero desc)
       from public.vessel_stylist_circle_edicoes e join public.vessel_pracas p on p.id = e.praca_id
      where p_praca_id is null or e.praca_id = p_praca_id), '[]'::json);
@@ -2224,13 +2488,21 @@ begin
   -- fechar nem para levar. Não aparece em nenhuma conta da tela (`stylists`/
   -- `nao_ativadas` já filtram teste) — é o preço do critério único "stylist
   -- de teste não conta e não é levada".
+  -- ⚠️ REVISÃO FINAL (MENOR 3): quem "não ativou" é quem
+  -- `vessel_stylist_ativada_em()` diz que não ativou — A DEFINIÇÃO
+  -- CANÔNICA (a mesma de `vessel_placar_da_edicao` e de `nao_ativadas` em
+  -- `vessel_edicoes_listar`), nunca mais a coluna crua `s.ativada_em`, que
+  -- desde 24/09/2026 quer dizer outra coisa ("primeiro Private Edit
+  -- agendado"). A canônica é um `coalesce` que JÁ INCLUI a coluna crua como
+  -- último recurso, então o conjunto de quem é levada só pode DIMINUIR:
+  -- ninguém que a conta antiga deixava ficar passa a ser levada.
   with fechados as (
     update public.vessel_stylist_na_edicao n
        set saiu_em = now(), etapa_ao_sair = s.etapa_id
       from public.vessel_stylists s
      where n.stylist_id = s.id and n.edicao_id = p_id and n.saiu_em is null
        and not coalesce(s.teste, false)
-    returning n.stylist_id, s.ativada_em, s.teste
+    returning n.stylist_id, public.vessel_stylist_ativada_em(s.id) as ativou, s.teste
   )
   -- ⚠️ RODADA 1 DE CONSERTO (CRÍTICO 2): `on conflict ... do nothing` — a
   -- stylist pode já ter um vínculo (fechado ou não) na edição de destino
@@ -2247,7 +2519,7 @@ begin
   -- afrouxado sem querer, este é quem segura.
   insert into public.vessel_stylist_na_edicao (stylist_id, edicao_id)
   select f.stylist_id, p_levar_para from fechados f
-   where f.ativada_em is null and p_levar_para is not null and not coalesce(f.teste, false)
+   where f.ativou is null and p_levar_para is not null and not coalesce(f.teste, false)
   on conflict (stylist_id, edicao_id) do nothing;
   get diagnostics v_levadas = row_count;
 
@@ -2290,7 +2562,17 @@ begin
               where stylist_id = v_stylist_id and edicao_id = p_edicao_id and saiu_em is null) then
     return json_build_object('ok', true, 'situacao', 'sem_mudanca');
   end if;
-  insert into public.vessel_stylist_na_edicao (stylist_id, edicao_id) values (v_stylist_id, p_edicao_id);
+  -- ⚠️ REVISÃO FINAL (CRÍTICO 1, irmão do `do update` de
+  -- `vessel_stylist_sincronizar_edicao`): a conferência acima só olha
+  -- `saiu_em is null`, então incluir quem JÁ SAIU desta edição (mudou de
+  -- praça, ou foi levada para a seguinte e voltou) chegava aqui e estourava
+  -- `23505` CRU na unique `(stylist_id, edicao_id)` — e nesta base um erro
+  -- assim derruba a transação INTEIRA (a mesma lição do Crítico 2 em
+  -- `vessel_edicao_encerrar`). Reabrir a linha é exatamente o que a tela
+  -- pediu ("inclua esta stylist"), e a edição encerrada já foi barrada lá
+  -- em cima — nada de congelado é reaberto por aqui.
+  insert into public.vessel_stylist_na_edicao (stylist_id, edicao_id) values (v_stylist_id, p_edicao_id)
+  on conflict (stylist_id, edicao_id) do update set saiu_em = null, etapa_ao_sair = null;
   return json_build_object('ok', true, 'situacao', 'ok');
 end;
 $$;
@@ -2352,174 +2634,5 @@ update public.profiles p
 update public.acessos_perfis ap
    set permissions = ap.permissions || pg_temp.o_que_acrescentar_praca_edicao(ap.permissions)
  where pg_temp.o_que_acrescentar_praca_edicao(ap.permissions) <> '{}'::jsonb;
-
--- ── 15. RODADA 1 DE CONSERTO (Task 7 — revisão de qualidade) ──────────────────
---
--- IMPORTANTE 4: dois números que o placar MENSAL sempre teve (intervalo médio
--- entre encontros e contatos até ativar) tinham ficado de fora do placar da
--- EDIÇÃO, com a justificativa (errada) de que "a edição não tem conceito de
--- período". A edição TEM janela (`comeca_em` … `coalesce(termina_em,
--- 'infinity')`), e a CTE `realizados` já usava `row_number()` — faltava só o
--- `lag()`, que `vessel_numeros_do_stylist_circle` (o placar mensal e o
--- scorecard, 2026-09-24-vessel-stylist-scorecard-e-qualificacao.sql) já tem.
---
--- ⚠️ "Contatos até ativar" usa `sty.ativou` (a MESMA `vessel_stylist_
--- ativada_em()` que "ativadas"/"prospectadas_ja_ativadas" desta função já
--- usam) — NÃO a coluna crua `vessel_stylists.ativada_em` que o placar mensal
--- usa nesse número específico. As duas raramente divergem (a coluna crua é
--- só o "primeiro Private Edit agendado", que a função com histórico de etapa
--- também enxerga como fallback), mas usar a coluna crua AQUI faria dois
--- números do MESMO placar falarem de duas "ativações" diferentes — pior do
--- que não bater com o placar mensal.
---
--- IMPORTANTE 5: a CTE `sty` filtrava `teste` mas não `ativa` — uma stylist
--- DESATIVADA que está na edição entrava em `prospectadas` e nas etapas, e não
--- aparecia no quadro nem na lista (`vessel_rastreio_dos_stylists` filtra
--- `ativa` por padrão). O bloco novo do placar é exatamente o que se compara
--- coluna a coluna com o quadro — os dois têm de fechar. Acrescentado
--- `and coalesce(s.ativa, true)`, o MESMO tratamento que já existia para
--- `teste`.
---
--- ⚠️ NENHUMA outra conta muda: mesma turma, mesmas etapas, mesmos encontros —
--- só os dois campos novos e o filtro de `ativa`.
-create or replace function public.vessel_placar_da_edicao(p_edicao_id bigint)
-returns json
-language plpgsql
-stable
-security definer
-set search_path to 'public'
-as $function$
-declare
-  v_ed    public.vessel_stylist_circle_edicoes%rowtype;
-  v_ate   date;
-  v_saida json;
-begin
-  if not public.vessel_pode('atendimentos.stylist-circle', 'ver') then
-    raise exception 'sem permissao' using errcode = '42501';
-  end if;
-
-  select * into v_ed from public.vessel_stylist_circle_edicoes where id = p_edicao_id;
-  if v_ed.id is null then
-    raise exception 'edicao nao encontrada' using errcode = 'P0002';
-  end if;
-  -- ⚠️ SEM FIM ESCOLHIDO, A JANELA NÃO TEM FIM — a mesma regra de
-  -- `vessel_numeros_do_stylist_circle` para `p_ate` nulo.
-  v_ate := coalesce(v_ed.termina_em, 'infinity'::date);
-
-  with
-  -- ⚠️ O CONGELAMENTO mora AQUI: numa edição ENCERRADA, todas as linhas dela
-  -- contam, sem filtrar por `saiu_em` — o placar não zera ao encerrar.
-  -- Trocar este `where` por `1=1` é a mutação que o aplicador prova
-  -- reprovar — sem ele, Limeira contaria stylist de Campinas.
-  --
-  -- ⚠️ RODADA 1 DE CONSERTO (CRÍTICO 1): numa edição ainda ABERTA, uma linha
-  -- com `saiu_em` preenchido é gente que MUDOU DE PRAÇA (ver
-  -- `vessel_stylist_sincronizar_edicao`) — ela não pode continuar contando
-  -- na edição de origem enquanto essa segue aberta, senão conta em DUAS
-  -- edições abertas ao mesmo tempo. Só em `encerrada` o congelamento vale.
-  turma_ids as (
-    select distinct n.stylist_id from public.vessel_stylist_na_edicao n
-     where n.edicao_id = p_edicao_id
-       and (v_ed.situacao = 'encerrada' or n.saiu_em is null)
-  ),
-  -- ⚠️ RODADA 1 DE CONSERTO (MENOR 1): filtra `teste` igual às irmãs
-  -- (`vessel_rastreio_dos_stylists`, `vessel_numeros_do_stylist_circle`) —
-  -- sem isto uma stylist de teste entraria no placar e sumiria da lista
-  -- embaixo, e o funil não fecharia com a lista.
-  sty as (
-    select s.*, public.vessel_stylist_ativada_em(s.id) as ativou
-      from public.vessel_stylists s
-     where s.id in (select stylist_id from turma_ids)
-       and not coalesce(s.teste, false)
-       -- ⚠️ RODADA 1 DE CONSERTO (IMPORTANTE 5): o mesmo tratamento de
-       -- `teste`, agora para `ativa` — sem isto uma stylist desativada conta
-       -- no placar e some do quadro/lista, e os dois deixam de fechar.
-       and coalesce(s.ativa, true)
-  ),
-  -- os encontros são da PRAÇA da edição, na janela dela — não dependem de
-  -- quem está na turma (um encontro é da praça e da data, não da stylist).
-  ev as (
-    select e.*
-      from public.vessel_private_edits e
-     where not coalesce(e.teste, false) and not coalesce(e.arquivada, false)
-       and e.praca_id = v_ed.praca_id
-       and (e.quando at time zone 'America/Sao_Paulo')::date between v_ed.comeca_em and v_ate
-  ),
-  conv as (
-    select t.id, t.pessoa_id, t.status, e.codigo, e.status as status_do_encontro,
-           public.vessel_situacao_do_convite(t.status, t.rsvp, t.convite_enviado_em,
-                                             e.quando, e.status) as situacao
-      from public.vessel_atendimentos t
-      join ev e on e.codigo = t.evento_codigo
-     where not coalesce(t.teste, false)
-  ),
-  -- os realizados DA TURMA (para as taxas): o 1º e o 2º encontro realizado de
-  -- cada stylist desta edição, dentro da janela dela.
-  realizados as (
-    select e.stylist_id, e.realizado_em,
-           row_number() over (partition by e.stylist_id order by e.realizado_em, e.id) as n,
-           -- ⚠️ RODADA 1 DE CONSERTO (IMPORTANTE 4): o `lag()` que faltava —
-           -- a MESMA conta de `vessel_numeros_do_stylist_circle`.
-           e.realizado_em - lag(e.realizado_em) over (partition by e.stylist_id
-                                                      order by e.realizado_em, e.id) as intervalo
-      from ev e
-     where e.status = 'realizado' and e.stylist_id in (select stylist_id from turma_ids)
-  ),
-  -- a turma, passo a passo — cada passo DENTRO do anterior: a MESMA turma em
-  -- cima e embaixo das taxas de t11-regras.js (taxasDoPlacar).
-  turma as (
-    select s.id,
-           (s.ativou is not null) as ativou,
-           exists (select 1 from ev e where e.stylist_id = s.id and e.status <> 'em_planejamento') as agendou,
-           exists (select 1 from realizados r where r.stylist_id = s.id and r.n = 1) as realizou
-      from sty s
-  )
-  select json_build_object(
-    'edicao', json_build_object(
-      'id', v_ed.id, 'praca_id', v_ed.praca_id, 'numero', v_ed.numero, 'nome', v_ed.nome,
-      'comeca_em', v_ed.comeca_em, 'termina_em', v_ed.termina_em, 'situacao', v_ed.situacao),
-    'etapas', (select coalesce(json_agg(json_build_object(
-                 'id', et.id, 'nome', et.nome, 'ordem', et.ordem, 'tipo', et.tipo,
-                 'stylists', (select count(*)::int from sty s where s.etapa_id = et.id))
-               order by et.ordem), '[]'::json)
-               from public.vessel_stylist_etapas et where et.ativa),
-    'prospectadas', (select count(*)::int from sty),
-    'prospectadas_ja_ativadas', (select count(*)::int from turma where ativou),
-    'ativadas', (select count(*)::int from turma where ativou),
-    'com_private_edit_agendado', (select count(*)::int from turma where agendou),
-    'com_private_edit_realizado', (select count(*)::int from turma where realizou),
-    'recorrentes_no_periodo', (select count(*)::int from realizados where n = 2),
-    'encontros_agendados', (select count(*)::int from ev where status <> 'em_planejamento'),
-    'encontros_realizados', (select count(*)::int from ev where status = 'realizado'),
-    'encontros_cancelados', (select count(*)::int from ev where status in ('cancelado', 'nao_realizado')),
-    'convidadas', (select count(*)::int from conv),
-    'confirmadas', (select count(*)::int from conv
-                     where situacao in ('confirmada', 'presente', 'nao_compareceu')),
-    'confirmadas_em_realizados', (select count(*)::int from conv
-                     where situacao in ('confirmada', 'presente', 'nao_compareceu')
-                       and status_do_encontro = 'realizado'),
-    'presentes', (select count(*)::int from conv where status = 'realizado'),
-    'presentes_em_realizados', (select count(*)::int from conv
-                     where status = 'realizado' and status_do_encontro = 'realizado'),
-    -- ⚠️ RODADA 1 DE CONSERTO (IMPORTANTE 4): os dois números que voltam.
-    -- `intervalos`/`intervalo_medio_em_dias` — sobre TODOS os realizados da
-    -- praça na janela da edição (não filtra pela turma congelada: um
-    -- encontro é da praça e da data, a mesma regra de `ev`/`conv` acima).
-    'intervalos', (select count(*)::int from realizados where intervalo is not null),
-    'intervalo_medio_em_dias', (select round(avg(intervalo)::numeric, 1) from realizados
-                                 where intervalo is not null),
-    -- `contatos_ate_ativar`/`stylists_com_contatos_ate_ativar` — sobre a
-    -- turma (`sty`) que já ativou, pela MESMA ativação que o resto desta
-    -- função usa (`sty.ativou`, não a coluna crua).
-    'contatos_ate_ativar', (select round(avg(n)::numeric, 1) from (
-        select (select count(*) from public.vessel_stylist_contatos c
-                 where c.stylist_id = s.id and c.criado_em < s.ativou) as n
-          from sty s where s.ativou is not null) x),
-    'stylists_com_contatos_ate_ativar', (select count(*)::int from sty s where s.ativou is not null)
-  ) into v_saida;
-
-  return v_saida;
-end;
-$function$;
 
 notify pgrst, 'reload schema';
