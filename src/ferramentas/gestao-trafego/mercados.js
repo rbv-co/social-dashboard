@@ -20,24 +20,49 @@ export const MERCADOS = ['conversa', 'perfil', 'video', 'post', 'site_venda', 's
 // VISIT_INSTAGRAM_PROFILE) são o mesmo mercado, então basta o destino: não
 // precisa saber QUAL otimização o gestor escolheu pra saber que é perfil.
 //
-// `UNDEFINED` (destino nulo/genérico que a Meta devolve pra tráfego de site sem
-// pixel de conversão) fica de fora deste mapa DE PROPÓSITO: sozinho ele não
-// diz nada, e é exatamente o caso em que a otimização precisa desempatar.
+// `WEBSITE` e `UNDEFINED` NÃO entram aqui — ver `DESTINOS_QUE_EXIGEM_DESEMPATE`
+// logo abaixo. Já apareceram nesta lista e voltaram (rodada de correção
+// 25/09/2026): `WEBSITE` estava cravado como `site_venda`, e uma campanha
+// `WEBSITE` + `LANDING_PAGE_VIEWS` — tráfego para site, caso comuníssimo —
+// virava `site_venda` e era julgada por CAC. É a mesma classe de defeito que
+// esta onda existe pra matar: o `[FLUXO SHOPPING]` levou "reduzir" e o
+// `[SEGUIDORES][REMARKETING]` saiu a 1455× da meta, os dois por régua de
+// mercado errado.
 const MERCADO_POR_DESTINO = {
   WHATSAPP: 'conversa',
   INSTAGRAM_PROFILE: 'perfil',
   INSTAGRAM_PROFILE_AND_FACEBOOK_PAGE: 'perfil',
   ON_VIDEO: 'video',
   ON_POST: 'post',
-  WEBSITE: 'site_venda',
 };
 
-// OTIMIZAÇÃO só é consultada quando o destino não decidiu — é o desempate, não
-// um segundo voto. `LANDING_PAGE_VIEWS` é o caso que abre este mapa: é o único
-// sinal que diferencia tráfego de site (sem pixel de conversão) de venda de
-// site (com `OFFSITE_CONVERSIONS`), porque o destino das duas é `UNDEFINED`
-// numa e `WEBSITE` na outra — mas se algum dia a Meta mandar `UNDEFINED` com
-// `OFFSITE_CONVERSIONS`, cai aqui como site_venda, coerente com o que ela mede.
+// Destinos que O NOME NÃO BASTA — a família é "site", mas só a otimização diz
+// se é venda ou tráfego. Fica como DADO, ao lado do mapa acima, pra quem
+// acrescentar um destino novo ver os dois casos que existem (decide sozinho
+// vs. exige desempate) em vez de descobrir isso lendo a função.
+//
+//   WEBSITE   — pode vir com OFFSITE_CONVERSIONS (venda) ou LANDING_PAGE_VIEWS
+//               /LINK_CLICKS (tráfego). O destino é o mesmo nos dois casos.
+//   UNDEFINED — a Meta manda isso pra tráfego de site sem pixel de conversão;
+//               não é ausência de destino, é o próprio destino dizendo "não
+//               especifiquei" — mesma ambiguidade do WEBSITE.
+const DESTINOS_QUE_EXIGEM_DESEMPATE = new Set(['WEBSITE', 'UNDEFINED']);
+
+// Trava de consistência: um destino não pode estar nas duas listas ao mesmo
+// tempo — se decide sozinho, não exige desempate, e vice-versa. Roda uma vez
+// na carga do módulo; se alguém duplicar um destino nas duas listas no futuro,
+// a suíte quebra na hora, em vez de o bug aparecer só na conta de produção.
+for (const destino of DESTINOS_QUE_EXIGEM_DESEMPATE) {
+  if (MERCADO_POR_DESTINO[destino]) {
+    throw new Error(`mercados.js: ${destino} está em MERCADO_POR_DESTINO e em DESTINOS_QUE_EXIGEM_DESEMPATE ao mesmo tempo`);
+  }
+}
+
+// OTIMIZAÇÃO só é consultada quando o destino não decidiu sozinho — é o
+// desempate dos `DESTINOS_QUE_EXIGEM_DESEMPATE`, e também a última tentativa
+// pra um destino que este módulo ainda não conhece. Sinal que não bate aqui
+// também é 'desconhecido' — nunca cai de volta no mapa de destino nem chuta
+// por proximidade de nome.
 const MERCADO_POR_OTIMIZACAO = {
   CONVERSATIONS: 'conversa',
   PROFILE_AND_PAGE_ENGAGEMENT: 'perfil',
@@ -47,11 +72,14 @@ const MERCADO_POR_OTIMIZACAO = {
   POST_ENGAGEMENT: 'post',
   OFFSITE_CONVERSIONS: 'site_venda',
   LANDING_PAGE_VIEWS: 'site_trafego',
+  LINK_CLICKS: 'site_trafego',
 };
 
 // O mercado de UM conjunto: destino primeiro, otimização como desempate. Sinal
 // que não bate em nenhuma das duas tabelas devolve 'desconhecido' — nunca
-// chuta por proximidade de nome nem por objetivo declarado.
+// chuta por proximidade de nome nem por objetivo declarado. Isso vale também
+// para `WEBSITE` com uma otimização que este módulo não reconhece: melhor
+// dizer "não sei medir esta" do que julgar pela régua errada.
 export function mercadoDoConjunto(conjunto) {
   const destino = String((conjunto && conjunto.destination_type) || '').toUpperCase();
   const porDestino = MERCADO_POR_DESTINO[destino];

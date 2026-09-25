@@ -35,6 +35,19 @@ test('site com venda: WEBSITE com OFFSITE_CONVERSIONS', () => {
   assert.equal(mercadoDoConjunto({ destination_type: 'WEBSITE', optimization_goal: 'OFFSITE_CONVERSIONS' }), 'site_venda');
 });
 
+test('WEBSITE não decide sozinho — rodada de correção 25/09/2026', () => {
+  // O BUG: WEBSITE estava cravado como 'site_venda' no mapa de destino, então
+  // uma campanha de TRÁFEGO para site (destino WEBSITE, otimização
+  // LANDING_PAGE_VIEWS — caso comuníssimo) virava 'site_venda' e era julgada
+  // por CAC. É a mesma classe de defeito que esta onda existe pra matar.
+  assert.equal(mercadoDoConjunto({ destination_type: 'WEBSITE', optimization_goal: 'LANDING_PAGE_VIEWS' }), 'site_trafego');
+  assert.equal(mercadoDoConjunto({ destination_type: 'WEBSITE', optimization_goal: 'LINK_CLICKS' }), 'site_trafego');
+});
+
+test('WEBSITE com otimização que este módulo não reconhece devolve desconhecido — nunca chuta', () => {
+  assert.equal(mercadoDoConjunto({ destination_type: 'WEBSITE', optimization_goal: 'ALGO_NOVO_DA_META' }), 'desconhecido');
+});
+
 test('site sem pixel de conversão: UNDEFINED com LANDING_PAGE_VIEWS — a otimização desempata', () => {
   // Aqui o destino (UNDEFINED) não decide nada sozinho — é o caso que existe
   // a otimização como desempate.
