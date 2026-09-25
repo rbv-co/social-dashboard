@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { rotuloDaEdicao, edicaoDoEncontro, placarPorEtapa } from './edicao-regras.js'
+import { rotuloDaEdicao, rotuloCurtoDaEdicao, edicaoDoEncontro, placarPorEtapa } from './edicao-regras.js'
 
 const EDICOES = [
   { id: 10, praca_id: 2, praca_nome: 'Limeira', numero: 1, comeca_em: '2026-09-01', termina_em: '2026-09-30', situacao: 'encerrada' },
@@ -10,6 +10,14 @@ const EDICOES = [
 
 test('o rótulo diz praça e número', () => {
   assert.equal(rotuloDaEdicao(EDICOES[0]), 'Limeira · Edição 1')
+})
+
+// ── Rodada 1 de conserto (Task 7, MENOR 6): o rótulo curto, sem repetir a
+// praça — para um select ou uma lista que já a mostra do lado de fora. ─────
+test('o rótulo curto não repete a praça, e leva o nome quando ela tem', () => {
+  assert.equal(rotuloCurtoDaEdicao(EDICOES[2]), 'Edição 1')
+  assert.equal(rotuloCurtoDaEdicao({ numero: 3, nome: 'Verão' }), 'Edição 3 — Verão')
+  assert.equal(rotuloCurtoDaEdicao(null), 'Edição ?')
 })
 
 test('o encontro cai na edição DA PRAÇA DELE cuja janela contém o dia', () => {

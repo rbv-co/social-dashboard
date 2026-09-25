@@ -267,8 +267,10 @@ export function taxasDoPlacar(pl) {
   // A CHAVE PRESENTE (mesmo com valor 0, como em `vessel_scorecard_da_stylist`,
   // que o scorecard-da-stylist.vue usa) continua dando base normalmente — é
   // só a AUSÊNCIA da chave que zera as três razões de dinheiro.
-  const temReceita = !!pl && Object.prototype.hasOwnProperty.call(pl, 'receita')
-  const semReceita = { temBase: false, n: 0, x: 0, valor: null }
+  const temChave = (chave) => !!pl && Object.prototype.hasOwnProperty.call(pl, chave)
+  const semBase = { temBase: false, n: 0, x: 0, valor: null }
+  const temReceita = temChave('receita')
+  const semReceita = semBase
   // ⚠️ 25/09/2026 (Task 7): DUAS FONTES, O MESMO SENTIDO, NOMES DIFERENTES.
   // `vessel_placar_do_stylist_circle` (mensal) manda `prospectadas_com_
   // private_edit_agendado/realizado` e `prospectadas_recorrentes` — a turma
@@ -279,6 +281,15 @@ export function taxasDoPlacar(pl) {
   // MESMO que o "prospectadas_" contaria. Preferir o nome prefixado (existe
   // → usa) e cair no sem prefixo (o da edição) é o que faz as taxas da
   // sequência funcionarem nas duas fontes, sem reescrever a conta.
+  // ⚠️ RODADA 1 DE CONSERTO (MENOR 9): o MESMO CRITÉRIO da receita —
+  // `hasOwnProperty`, não `??` sozinho. Com `??`, se ALGUM DIA nenhuma das
+  // duas chaves existir, o numerador vira 0 e a taxa mostraria "0% (0 de N)"
+  // COM base — a mesma "falha que vira número" que a guarda da receita
+  // evita. `temAgendado`/`temRealizado`/`temRecorrentes` dizem se PELO MENOS
+  // UMA das duas chaves está presente; só aí a razão é calculada.
+  const temAgendado = temChave('prospectadas_com_private_edit_agendado') || temChave('com_private_edit_agendado')
+  const temRealizado = temChave('prospectadas_com_private_edit_realizado') || temChave('com_private_edit_realizado')
+  const temRecorrentes = temChave('prospectadas_recorrentes') || temChave('recorrentes_no_periodo')
   const agendadoDaTurma = pl?.prospectadas_com_private_edit_agendado ?? pl?.com_private_edit_agendado
   const realizadoDaTurma = pl?.prospectadas_com_private_edit_realizado ?? pl?.com_private_edit_realizado
   const recorrentesDaTurma = pl?.prospectadas_recorrentes ?? pl?.recorrentes_no_periodo
@@ -289,9 +300,9 @@ export function taxasDoPlacar(pl) {
     ativacao: proporcao(n(pl?.prospectadas_ja_ativadas), n(pl?.prospectadas)),
     // ⚠️ 24/09/2026: A TURMA EM CINCO PASSOS — cada passo DENTRO do anterior
     // (o banco garante), então cada taxa é sobre o passo de cima.
-    agendamento: proporcao(n(agendadoDaTurma), n(pl?.prospectadas_ja_ativadas)),
-    realizacaoDaTurma: proporcao(n(realizadoDaTurma), n(agendadoDaTurma)),
-    recorrenciaDaTurma: proporcao(n(recorrentesDaTurma), n(realizadoDaTurma)),
+    agendamento: temAgendado ? proporcao(n(agendadoDaTurma), n(pl?.prospectadas_ja_ativadas)) : semBase,
+    realizacaoDaTurma: (temRealizado && temAgendado) ? proporcao(n(realizadoDaTurma), n(agendadoDaTurma)) : semBase,
+    recorrenciaDaTurma: (temRecorrentes && temRealizado) ? proporcao(n(recorrentesDaTurma), n(realizadoDaTurma)) : semBase,
     realizacao: proporcao(n(pl?.encontros_realizados), n(pl?.encontros_agendados)),
     // ⚠️ Só confirmadas de encontro que ACONTECEU: a de encontro cancelado
     // nunca pôde comparecer. E o numerador com O MESMO filtro: a equipe marca

@@ -2163,4 +2163,150 @@ update public.acessos_perfis ap
    set permissions = ap.permissions || pg_temp.o_que_acrescentar_praca_edicao(ap.permissions)
  where pg_temp.o_que_acrescentar_praca_edicao(ap.permissions) <> '{}'::jsonb;
 
+-- ── 15. RODADA 1 DE CONSERTO (Task 7 — revisão de qualidade) ──────────────────
+--
+-- IMPORTANTE 4: dois números que o placar MENSAL sempre teve (intervalo médio
+-- entre encontros e contatos até ativar) tinham ficado de fora do placar da
+-- EDIÇÃO, com a justificativa (errada) de que "a edição não tem conceito de
+-- período". A edição TEM janela (`comeca_em` … `coalesce(termina_em,
+-- 'infinity')`), e a CTE `realizados` já usava `row_number()` — faltava só o
+-- `lag()`, que `vessel_numeros_do_stylist_circle` (o placar mensal e o
+-- scorecard, 2026-09-24-vessel-stylist-scorecard-e-qualificacao.sql) já tem.
+--
+-- ⚠️ "Contatos até ativar" usa `sty.ativou` (a MESMA `vessel_stylist_
+-- ativada_em()` que "ativadas"/"prospectadas_ja_ativadas" desta função já
+-- usam) — NÃO a coluna crua `vessel_stylists.ativada_em` que o placar mensal
+-- usa nesse número específico. As duas raramente divergem (a coluna crua é
+-- só o "primeiro Private Edit agendado", que a função com histórico de etapa
+-- também enxerga como fallback), mas usar a coluna crua AQUI faria dois
+-- números do MESMO placar falarem de duas "ativações" diferentes — pior do
+-- que não bater com o placar mensal.
+--
+-- IMPORTANTE 5: a CTE `sty` filtrava `teste` mas não `ativa` — uma stylist
+-- DESATIVADA que está na edição entrava em `prospectadas` e nas etapas, e não
+-- aparecia no quadro nem na lista (`vessel_rastreio_dos_stylists` filtra
+-- `ativa` por padrão). O bloco novo do placar é exatamente o que se compara
+-- coluna a coluna com o quadro — os dois têm de fechar. Acrescentado
+-- `and coalesce(s.ativa, true)`, o MESMO tratamento que já existia para
+-- `teste`.
+--
+-- ⚠️ NENHUMA outra conta muda: mesma turma, mesmas etapas, mesmos encontros —
+-- só os dois campos novos e o filtro de `ativa`.
+create or replace function public.vessel_placar_da_edicao(p_edicao_id bigint)
+returns json
+language plpgsql
+stable
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_ed    public.vessel_stylist_circle_edicoes%rowtype;
+  v_ate   date;
+  v_saida json;
+begin
+  if not public.vessel_pode('atendimentos.stylist-circle', 'ver') then
+    raise exception 'sem permissao' using errcode = '42501';
+  end if;
+
+  select * into v_ed from public.vessel_stylist_circle_edicoes where id = p_edicao_id;
+  if v_ed.id is null then
+    raise exception 'edicao nao encontrada' using errcode = 'P0002';
+  end if;
+  v_ate := coalesce(v_ed.termina_em, 'infinity'::date);
+
+  with
+  turma_ids as (
+    select distinct n.stylist_id from public.vessel_stylist_na_edicao n
+     where n.edicao_id = p_edicao_id
+  ),
+  sty as (
+    select s.*, public.vessel_stylist_ativada_em(s.id) as ativou
+      from public.vessel_stylists s
+     where s.id in (select stylist_id from turma_ids)
+       and not coalesce(s.teste, false)
+       -- ⚠️ RODADA 1 DE CONSERTO (IMPORTANTE 5): o mesmo tratamento de
+       -- `teste`, agora para `ativa` — sem isto uma stylist desativada conta
+       -- no placar e some do quadro/lista, e os dois deixam de fechar.
+       and coalesce(s.ativa, true)
+  ),
+  ev as (
+    select e.*
+      from public.vessel_private_edits e
+     where not coalesce(e.teste, false) and not coalesce(e.arquivada, false)
+       and e.praca_id = v_ed.praca_id
+       and (e.quando at time zone 'America/Sao_Paulo')::date between v_ed.comeca_em and v_ate
+  ),
+  conv as (
+    select t.id, t.pessoa_id, t.status, e.codigo, e.status as status_do_encontro,
+           public.vessel_situacao_do_convite(t.status, t.rsvp, t.convite_enviado_em,
+                                             e.quando, e.status) as situacao
+      from public.vessel_atendimentos t
+      join ev e on e.codigo = t.evento_codigo
+     where not coalesce(t.teste, false)
+  ),
+  realizados as (
+    select e.stylist_id, e.realizado_em,
+           row_number() over (partition by e.stylist_id order by e.realizado_em, e.id) as n,
+           -- ⚠️ RODADA 1 DE CONSERTO (IMPORTANTE 4): o `lag()` que faltava —
+           -- a MESMA conta de `vessel_numeros_do_stylist_circle`.
+           e.realizado_em - lag(e.realizado_em) over (partition by e.stylist_id
+                                                      order by e.realizado_em, e.id) as intervalo
+      from ev e
+     where e.status = 'realizado' and e.stylist_id in (select stylist_id from turma_ids)
+  ),
+  turma as (
+    select s.id,
+           (s.ativou is not null) as ativou,
+           exists (select 1 from ev e where e.stylist_id = s.id and e.status <> 'em_planejamento') as agendou,
+           exists (select 1 from realizados r where r.stylist_id = s.id and r.n = 1) as realizou
+      from sty s
+  )
+  select json_build_object(
+    'edicao', json_build_object(
+      'id', v_ed.id, 'praca_id', v_ed.praca_id, 'numero', v_ed.numero, 'nome', v_ed.nome,
+      'comeca_em', v_ed.comeca_em, 'termina_em', v_ed.termina_em, 'situacao', v_ed.situacao),
+    'etapas', (select coalesce(json_agg(json_build_object(
+                 'id', et.id, 'nome', et.nome, 'ordem', et.ordem, 'tipo', et.tipo,
+                 'stylists', (select count(*)::int from sty s where s.etapa_id = et.id))
+               order by et.ordem), '[]'::json)
+               from public.vessel_stylist_etapas et where et.ativa),
+    'prospectadas', (select count(*)::int from sty),
+    'prospectadas_ja_ativadas', (select count(*)::int from turma where ativou),
+    'ativadas', (select count(*)::int from turma where ativou),
+    'com_private_edit_agendado', (select count(*)::int from turma where agendou),
+    'com_private_edit_realizado', (select count(*)::int from turma where realizou),
+    'recorrentes_no_periodo', (select count(*)::int from realizados where n = 2),
+    'encontros_agendados', (select count(*)::int from ev where status <> 'em_planejamento'),
+    'encontros_realizados', (select count(*)::int from ev where status = 'realizado'),
+    'encontros_cancelados', (select count(*)::int from ev where status in ('cancelado', 'nao_realizado')),
+    'convidadas', (select count(*)::int from conv),
+    'confirmadas', (select count(*)::int from conv
+                     where situacao in ('confirmada', 'presente', 'nao_compareceu')),
+    'confirmadas_em_realizados', (select count(*)::int from conv
+                     where situacao in ('confirmada', 'presente', 'nao_compareceu')
+                       and status_do_encontro = 'realizado'),
+    'presentes', (select count(*)::int from conv where status = 'realizado'),
+    'presentes_em_realizados', (select count(*)::int from conv
+                     where status = 'realizado' and status_do_encontro = 'realizado'),
+    -- ⚠️ RODADA 1 DE CONSERTO (IMPORTANTE 4): os dois números que voltam.
+    -- `intervalos`/`intervalo_medio_em_dias` — sobre TODOS os realizados da
+    -- praça na janela da edição (não filtra pela turma congelada: um
+    -- encontro é da praça e da data, a mesma regra de `ev`/`conv` acima).
+    'intervalos', (select count(*)::int from realizados where intervalo is not null),
+    'intervalo_medio_em_dias', (select round(avg(intervalo)::numeric, 1) from realizados
+                                 where intervalo is not null),
+    -- `contatos_ate_ativar`/`stylists_com_contatos_ate_ativar` — sobre a
+    -- turma (`sty`) que já ativou, pela MESMA ativação que o resto desta
+    -- função usa (`sty.ativou`, não a coluna crua).
+    'contatos_ate_ativar', (select round(avg(n)::numeric, 1) from (
+        select (select count(*) from public.vessel_stylist_contatos c
+                 where c.stylist_id = s.id and c.criado_em < s.ativou) as n
+          from sty s where s.ativou is not null) x),
+    'stylists_com_contatos_ate_ativar', (select count(*)::int from sty s where s.ativou is not null)
+  ) into v_saida;
+
+  return v_saida;
+end;
+$function$;
+
 notify pgrst, 'reload schema';

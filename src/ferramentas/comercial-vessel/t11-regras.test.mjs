@@ -278,6 +278,21 @@ test('sequência do placar: a resposta DA EDIÇÃO (sem receita) continua com os
   assert.deepEqual(seq.slice(1).map((p) => p.taxa.temBase), [true, true, true, true])
 })
 
+// ── Rodada 1 de conserto (MENOR 9): sem NENHUMA das duas fontes, a taxa da
+// turma não pode virar "0% (0 de N)" COM base — é a mesma "falha que vira
+// número" que a guarda da receita evita, e tem de usar o mesmo critério. ───
+test('placar: sem nenhuma das duas fontes do passo do meio, a taxa da turma fica sem base — nunca 0% fabricado', () => {
+  const t = taxasDoPlacar({ prospectadas: 5, prospectadas_ja_ativadas: 3 })
+  assert.equal(t.agendamento.temBase, false)
+  assert.equal(t.agendamento.valor, null)
+  assert.equal(t.realizacaoDaTurma.temBase, false)
+  assert.equal(t.recorrenciaDaTurma.temBase, false)
+  // com a chave (mesmo 0), a régua de sempre volta a valer.
+  const u = taxasDoPlacar({ prospectadas: 5, prospectadas_ja_ativadas: 3, com_private_edit_agendado: 0 })
+  assert.equal(u.agendamento.temBase, true)
+  assert.equal(u.agendamento.valor, 0)
+})
+
 // ── a fiação: o `.vue` usa as regras, não reescreve ─────────────────────────
 
 const TELA_STY = readFileSync(new URL('./tela-de-stylist-circle.vue', import.meta.url), 'utf8')

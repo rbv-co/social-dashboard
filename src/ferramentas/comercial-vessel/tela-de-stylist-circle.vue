@@ -36,6 +36,7 @@
       <barra-de-praca-e-edicao v-model:praca="pracaEscolhidaId" v-model:edicao="edicaoEscolhidaId"
                                :pracas="pracas" :edicoes="edicoesDaPraca" :sem-praca="pendenciaDePraca.semPraca.length" />
       <p v-if="erroDasPracas" class="cv-nota cv-nota-erro">{{ erroDasPracas }}</p>
+      <p v-if="erroDasEdicoesDaPraca" class="cv-nota cv-nota-erro">{{ erroDasEdicoesDaPraca }}</p>
 
       <!-- ── O PLACAR DA EDIÇÃO (T11 → Task 7) ─────────────────────────────
            ⚠️ NENHUM NÚMERO DAQUI SE DIGITA — sai de `vessel_placar_da_edicao`,
@@ -616,6 +617,7 @@ const erroDasPracas = ref('')
 const pracaEscolhidaId = ref(null)
 const edicaoEscolhidaId = ref(null)
 const edicoesDaPraca = ref([])
+const erroDasEdicoesDaPraca = ref('')
 
 async function carregarPracas() {
   erroDasPracas.value = ''
@@ -629,19 +631,26 @@ async function carregarPracas() {
 }
 
 async function carregarEdicoesDaPraca() {
+  erroDasEdicoesDaPraca.value = ''
   if (!pracaEscolhidaId.value) { edicoesDaPraca.value = []; return }
   try {
     edicoesDaPraca.value = await chamar('vessel_edicoes_listar', { p_praca_id: pracaEscolhidaId.value }) || []
   } catch {
+    // ⚠️ RODADA 1 DE CONSERTO (CRÍTICO 1): antes o catch só esvaziava a
+    // lista, calado — o select ficava só com "Todas as edições desta praça"
+    // e quem olhava concluía "esta praça não tem edição". A tela nunca mente
+    // (PADRAO, item 9): a falha de leitura escreve a própria mensagem.
     edicoesDaPraca.value = []
+    erroDasEdicoesDaPraca.value = 'Não consegui ler as edições desta praça agora. Tente de novo em um instante.'
   }
 }
 watch(pracaEscolhidaId, carregarEdicoesDaPraca, { immediate: true })
 
 // ⚠️ DECISÃO 1 DO DONO: sem edição escolhida, o placar mostra uma linha por
-// praça com edição ABERTA (nunca soma edição de praça diferente). N+1
-// chamadas (uma por praça) — aceitável aqui: são poucas praças, e só roda
-// quando não há edição escolhida.
+// praça com edição ABERTA (nunca soma edição de praça diferente).
+// ⚠️ RODADA 1 DE CONSERTO (MENOR 8): UMA chamada só — `vessel_edicoes_listar`
+// com `p_praca_id` nulo já devolve TODAS as edições, ordenadas por praça —
+// nada de uma chamada por praça (o N+1 de antes).
 const pracasAbertas = ref([])
 const carregandoPracasAbertas = ref(false)
 const erroPracasAbertas = ref('')
@@ -650,10 +659,18 @@ async function carregarPracasAbertas() {
   carregandoPracasAbertas.value = true
   erroPracasAbertas.value = ''
   try {
-    const listas = await Promise.all(
-      pracas.value.map((p) => chamar('vessel_edicoes_listar', { p_praca_id: p.id })))
-    pracasAbertas.value = pracas.value
-      .map((p, i) => ({ praca: p, edicao: (listas[i] || []).find((e) => e.situacao === 'aberta') || null }))
+    const todas = await chamar('vessel_edicoes_listar', { p_praca_id: null }) || []
+    const abertas = todas.filter((e) => e.situacao === 'aberta')
+    // ⚠️ RODADA 1 DE CONSERTO (IMPORTANTE 2): a barra recorta O PLACAR
+    // também, não só o quadro e a lista — com uma praça JÁ ESCOLHIDA (mas
+    // ainda sem edição), esta lista mostra só a praça escolhida. Antes ela
+    // sempre mostrava TODAS as praças, e clicar em outra trocava a barra de
+    // volta calado.
+    const pracasParaMostrar = pracaEscolhidaId.value
+      ? pracas.value.filter((p) => p.id === pracaEscolhidaId.value)
+      : pracas.value
+    pracasAbertas.value = pracasParaMostrar
+      .map((p) => ({ praca: p, edicao: abertas.find((e) => e.praca_id === p.id) || null }))
       .filter((x) => x.edicao)
   } catch {
     pracasAbertas.value = []
@@ -808,7 +825,13 @@ async function carregarPlacar() {
     carregandoPlacar.value = false
   }
 }
-watch(edicaoEscolhidaId, (id) => {
+// ⚠️ RODADA 1 DE CONSERTO (IMPORTANTE 2): observa OS DOIS — trocar de praça
+// sem edição escolhida também precisa recarregar `pracasAbertas` (recortada
+// pela praça nova), e antes só `edicaoEscolhidaId` disparava. Como a barra
+// muda praça e edição no mesmo instante (a edição volta a nulo), um watcher
+// só em `edicaoEscolhidaId` não via a troca de praça quando a edição já
+// estava nula dos dois lados.
+watch([pracaEscolhidaId, edicaoEscolhidaId], ([, id]) => {
   placar.value = null
   if (id) carregarPlacar()
   else carregarPracasAbertas()

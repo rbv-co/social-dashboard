@@ -10,7 +10,7 @@
       <select id="pe-edicao" :value="edicao ?? ''" :disabled="!praca" @change="mudarEdicao($event.target.value)">
         <option value="">{{ praca ? 'Todas as edições desta praça' : 'Escolha uma praça primeiro' }}</option>
         <option v-for="e in edicoes" :key="e.id" :value="String(e.id)">
-          {{ rotuloDaEdicao(e) }} — {{ SITUACOES_DA_EDICAO[e.situacao] || e.situacao }}</option>
+          {{ rotuloCurtoDaEdicao(e) }} — {{ SITUACOES_DA_EDICAO[e.situacao] || e.situacao }}</option>
       </select></label>
 
     <!-- ⚠️ SÓ APARECE QUANDO HÁ O QUE DIZER (PADRAO, item 9): sem ninguém sem
@@ -40,7 +40,7 @@
  */
 import { useRouter } from 'vue-router'
 import { rotuloDaPraca } from './praca-regras.js'
-import { rotuloDaEdicao, SITUACOES_DA_EDICAO } from './edicao-regras.js'
+import { rotuloCurtoDaEdicao, SITUACOES_DA_EDICAO } from './edicao-regras.js'
 
 const props = defineProps({
   praca: { type: [Number, String], default: null },

@@ -25,7 +25,7 @@
         <li v-for="pa in pracasAbertas" :key="pa.praca.id">
           <button type="button" class="btn pd-abertas-linha" @click="$emit('escolher', { pracaId: pa.praca.id, edicaoId: pa.edicao.id })">
             <span class="pd-abertas-nome">{{ rotuloDaPraca(pa.praca) }}</span>
-            <span class="cv-sub">{{ rotuloDaEdicao(pa.edicao) }} · {{ quantasStylists(pa.edicao.stylists) }}</span>
+            <span class="cv-sub">{{ rotuloCurtoDaEdicao(pa.edicao) }} · {{ quantasStylists(pa.edicao.stylists) }}</span>
           </button>
         </li>
       </ul>
@@ -61,6 +61,27 @@
             <span class="cv-numero-base">{{ p.base }}</span>
             <span v-if="p.taxa" class="cv-numero-base">{{ taxaDoPasso(p) }}</span>
             <span v-if="p.taxa && margemEscrita(p.taxa)" class="cv-numero-margem">{{ margemEscrita(p.taxa) }}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ⚠️ RODADA 1 DE CONSERTO (IMPORTANTE 4): voltaram — a edição TEM
+           janela, e as duas contas são exatamente as de
+           `vessel_numeros_do_stylist_circle` (o placar mensal e o
+           scorecard), só sem o corte de período. -->
+      <div class="id-grupo cv-grupo-encontros pd-menor">
+        <h3 class="cv-etiqueta cv-etiqueta-interna id-titulo"><icone-do-bloco nome="relogio" />Cadência</h3>
+        <div class="cv-numeros cv-numeros-placar">
+          <div class="cv-numero">
+            <span class="cv-numero-valor">{{ placar.intervalos ? `${formatarDias(placar.intervalo_medio_em_dias)}` : '—' }}</span>
+            <span class="cv-numero-rotulo">Intervalo entre encontros</span>
+            <span class="cv-numero-base">{{ placar.intervalos ? `média de ${placar.intervalos} intervalo(s)` : 'sem base ainda' }}</span>
+          </div>
+          <div class="cv-numero">
+            <span class="cv-numero-valor">{{ placar.contatos_ate_ativar ?? '—' }}</span>
+            <span class="cv-numero-rotulo">Contatos até ativar</span>
+            <span class="cv-numero-base">{{ placar.stylists_com_contatos_ate_ativar
+              ? `média de ${placar.stylists_com_contatos_ate_ativar} stylist(s)` : 'sem base ainda' }}</span>
           </div>
         </div>
       </div>
@@ -148,11 +169,12 @@
  * uma tela que ficasse "sem base ainda" para sempre em seis campos seria
  * pior do que a tela simplesmente não perguntar.
  *
- * ⚠️ O QUE FICOU PARA TRÁS (e por quê, não é esquecimento — ver o relatório
- * da tarefa para a lista item a item): a taxa de repetição "até o fim do
- * período", o intervalo médio entre encontros e "contatos até ativar" não
- * têm mais campo nenhum na resposta — eram contas de PERÍODO corrido
- * (`vessel_placar_do_stylist_circle`), e a edição não tem esse conceito.
+ * ⚠️ O ÚNICO QUE FICOU PARA TRÁS (rodada 1 de conserto trouxe intervalo e
+ * contatos até ativar de volta — ver `Cadência`, abaixo): a taxa de
+ * repetição "até o fim do período". Ela não tem mais campo na resposta
+ * porque o passo "Recorrentes" da sequência já cobre o assunto, com outro
+ * denominador (das que chegaram a "com Private Edit realizado", não das
+ * "ativadas até o fim") — decisão registrada no relatório da tarefa.
  *
  * ⚠️ SEM PRAÇA/EDIÇÃO ESCOLHIDA (decisão 1 do dono): o placar NUNCA soma
  * edição de praça diferente. Mostra uma linha por praça com edição aberta —
@@ -163,7 +185,7 @@ import { computed } from 'vue'
 import IconeDoBloco from '../../compartilhado/icone-do-bloco.vue'
 import MetaDoNumero from './meta-do-numero.vue'
 import { rotuloDaPraca } from './praca-regras.js'
-import { rotuloDaEdicao, SITUACOES_DA_EDICAO } from './edicao-regras.js'
+import { rotuloCurtoDaEdicao, SITUACOES_DA_EDICAO } from './edicao-regras.js'
 import { taxasDoPlacar, sequenciaDoPlacar, taxaDoPasso, legendaDaTaxa } from './t11-regras.js'
 import { taxaEscrita, margemEscrita, emPorcento } from './estatistica.js'
 import { metaDoComparecimento } from './qualificacao-regras.js'
@@ -183,6 +205,9 @@ const taxas = computed(() => taxasDoPlacar(props.placar))
 const sequencia = computed(() => sequenciaDoPlacar(props.placar))
 
 const quantasStylists = (n) => (n === 1 ? '1 stylist' : `${n || 0} stylists`)
+// ⚠️ RODADA 1 DE CONSERTO (IMPORTANTE 4): a mesma escrita do placar mensal
+// (tela-de-stylist-circle.vue, antes da extração) para o intervalo médio.
+const formatarDias = (n) => `${Number(n).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} dias`
 function corDaSituacao(s) {
   if (s === 'aberta') return 'selo-ok'
   if (s === 'encerrada') return 'selo-neutro'
@@ -200,7 +225,7 @@ function corDaSituacao(s) {
 
 .pd-abertas { list-style: none; margin: var(--sp-3) 0 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
 .pd-abertas-linha {
-  width: 100%; display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+  width: 100%; display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-1);
   text-align: left; min-height: 40px; padding: var(--sp-2) var(--sp-3);
 }
 .pd-abertas-nome { font-family: var(--fonte-principal); font-size: var(--texto-campo); color: var(--text); overflow-wrap: anywhere; }

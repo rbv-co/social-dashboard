@@ -1233,10 +1233,16 @@ try {
     conferir(x.v?.ok === true, '(a) vessel_criar_private_edit: cria o 1º encontro PELA PORTA REAL, praça LIM', x.v ?? x.e?.message)
     const encontro1Codigo = x.v?.codigo
 
+    // ⚠️ RODADA 1 DE CONSERTO (IMPORTANTE 4): os dois números que voltaram —
+    // `intervalos`/`intervalo_medio_em_dias` e `contatos_ate_ativar`/
+    // `stylists_com_contatos_ate_ativar` — entram no contrato. Esquecer de
+    // atualizar esta lista faria a MENOR 2 (conjunto exato de chaves, logo
+    // abaixo) reprovar sozinha — é o próprio guarda avisando.
     const CHAVES_DO_CONTRATO = ['edicao', 'etapas', 'prospectadas', 'prospectadas_ja_ativadas', 'ativadas',
       'com_private_edit_agendado', 'com_private_edit_realizado', 'recorrentes_no_periodo',
       'encontros_agendados', 'encontros_realizados', 'encontros_cancelados', 'convidadas', 'confirmadas',
-      'presentes', 'confirmadas_em_realizados', 'presentes_em_realizados']
+      'presentes', 'confirmadas_em_realizados', 'presentes_em_realizados',
+      'intervalos', 'intervalo_medio_em_dias', 'contatos_ate_ativar', 'stylists_com_contatos_ate_ativar']
 
     const placarAntes = await chamarGravando(`public.vessel_placar_da_edicao(p_edicao_id => $1)`, [edicaoLim1])
     conferir(!placarAntes.e, 'vessel_placar_da_edicao: chama sem erro para a edição 1 de Limeira (aberta)', placarAntes.e?.message)
@@ -1351,6 +1357,7 @@ try {
     x = await chamarGravando(`public.vessel_criar_private_edit(p_stylist => $1, p_quando => $2, p_praca => $3, p_vagas => 8, p_teste => false)`,
       [codigoStyLim, new Date(Date.now() + 2 * 3600 * 1000), 'LIM'])
     conferir(x.v?.ok === true && x.v?.codigo !== encontro1Codigo, 'COM praca_id (restaurado): cria um 2º encontro real, código diferente do 1º', x.v ?? x.e?.message)
+    const encontro2Codigo = x.v?.codigo
     const placarComDois = await chamarGravando(`public.vessel_placar_da_edicao(p_edicao_id => $1)`, [edicaoLim1])
     console.log(`      ${placarComDois.v?.encontros_agendados === 2 ? '✓' : '✗'} COM praca_id (restaurado): encontros_agendados sobe para ${placarComDois.v?.encontros_agendados} (era para ser 2)`)
     conferir(placarComDois.v?.encontros_agendados === 2, 'COM o `praca_id` restaurado: o 2º encontro real ENTRA no placar — encontros_agendados = 2', placarComDois.v?.encontros_agendados)
@@ -1368,6 +1375,106 @@ try {
     conferir(placarAntesDeEncerrar.v?.edicao?.situacao === 'aberta' && placarDepois.v?.edicao?.situacao === 'encerrada',
       'e a situação REALMENTE mudou (a chamada de depois não é um eco em cache da de antes)',
       { antes: placarAntesDeEncerrar.v?.edicao?.situacao, depois: placarDepois.v?.edicao?.situacao })
+
+    console.log('\n  · 11b) RODADA 1 DE CONSERTO (IMPORTANTE 4): intervalo médio entre encontros e contatos até ativar voltam ao placar')
+    // ⚠️ DEPOIS do congelamento (acima) de propósito: marcar os dois encontros
+    // como realizados MUDA o placar, e a prova do CRÍTICO logo acima compara
+    // "antes"/"depois de encerrar" byte a byte — fazer isto antes derrubaria
+    // aquela prova por um motivo que não é dela.
+    const hojeMenos = (n) => { const d = new Date(`${hoje}T00:00:00Z`); d.setUTCDate(d.getUTCDate() - n); return d.toISOString().slice(0, 10) }
+    x = await chamarGravando(`public.vessel_private_edit_situacao(p_codigo => $1, p_status => 'realizado', p_realizado_em => $2)`,
+      [encontro1Codigo, hojeMenos(6)])
+    conferir(x.v?.ok === true, 'private_edit_situacao: marca o 1º encontro como realizado, 6 dias atrás', x.v ?? x.e?.message)
+    x = await chamarGravando(`public.vessel_private_edit_situacao(p_codigo => $1, p_status => 'realizado', p_realizado_em => $2)`,
+      [encontro2Codigo, hojeMenos(2)])
+    conferir(x.v?.ok === true, 'private_edit_situacao: marca o 2º encontro como realizado, 2 dias atrás — intervalo de 4 dias entre os dois', x.v ?? x.e?.message)
+
+    // Dois contatos ANTES de ativar (contam) e um DEPOIS (não conta).
+    const ativouEm = await r(`(select public.vessel_stylist_ativada_em($1))`, [styLim.id])
+    conferir(ativouEm !== null, 'a stylist de Limeira está ativada (senão a prova de contatos não tem o que medir)', ativouEm)
+    await cli.query(
+      `insert into public.vessel_stylist_contatos (stylist_id, canal, resultado, criado_em) values
+         ($1, 'whatsapp', 'conversou', $2::timestamptz - interval '3 days'),
+         ($1, 'ligacao', 'interesse', $2::timestamptz - interval '1 day'),
+         ($1, 'whatsapp', 'marcou_encontro', $2::timestamptz + interval '1 day')`,
+      [styLim.id, ativouEm])
+
+    const placarComOsDoisNumeros = await chamarGravando(`public.vessel_placar_da_edicao(p_edicao_id => $1)`, [edicaoLim1])
+    conferir(!placarComOsDoisNumeros.e, 'vessel_placar_da_edicao: continua respondendo com os dois encontros realizados', placarComOsDoisNumeros.e?.message)
+    conferir(placarComOsDoisNumeros.v?.intervalos === 1,
+      'intervalos: 1 (o segundo realizado tem um primeiro antes dele, na mesma stylist)', placarComOsDoisNumeros.v?.intervalos)
+    conferir(placarComOsDoisNumeros.v?.intervalo_medio_em_dias === 4,
+      'intervalo_medio_em_dias: exatamente 4 (6 dias atrás → 2 dias atrás)', placarComOsDoisNumeros.v?.intervalo_medio_em_dias)
+    conferir(placarComOsDoisNumeros.v?.stylists_com_contatos_ate_ativar === 1,
+      'stylists_com_contatos_ate_ativar: 1 (só a de Limeira está ativada nesta turma — a de teste não entra, MENOR 1)',
+      placarComOsDoisNumeros.v?.stylists_com_contatos_ate_ativar)
+    conferir(placarComOsDoisNumeros.v?.contatos_ate_ativar === 2,
+      'contatos_ate_ativar: 2 (só os DOIS contatos ANTES de ativar contam — o de depois fica de fora)',
+      placarComOsDoisNumeros.v?.contatos_ate_ativar)
+
+    console.log('\n    · MUTAÇÃO: sem o `lag()` no `realizados`, `intervalos`/`intervalo_medio_em_dias` têm de voltar a zero/nulo — reprova')
+    await cli.query('savepoint prova_mutacao_intervalo')
+    try {
+      const funcaoBoaIntervalo = (await uma(
+        `select pg_get_functiondef('public.vessel_placar_da_edicao(bigint)'::regprocedure) as def`)).def
+      // ⚠️ TOLERANTE A REFORMATAÇÃO: `pg_get_functiondef` reindenta o corpo —
+      // não se pode contar com a formatação exata do arquivo-fonte (a
+      // diferença de `\s+` das outras mutações desta prova já mostra isso).
+      const trechoLag = /e\.realizado_em\s*-\s*lag\(e\.realizado_em\)\s*over\s*\(partition by e\.stylist_id\s*order by e\.realizado_em,\s*e\.id\)\s*as\s*intervalo/
+      if (!trechoLag.test(funcaoBoaIntervalo)) throw new Error('a mutação não achou a expressão do `lag()` em vessel_placar_da_edicao — o texto da função mudou')
+      // `date - date` dá INTEIRO em Postgres (não `interval`) — o `null` da
+      // mutação precisa do MESMO tipo, senão `avg(intervalo)::numeric` (mais
+      // abaixo na função) quebra com erro de cast em vez de devolver 0/nulo.
+      const semLag = funcaoBoaIntervalo.replace(trechoLag, 'null::integer as intervalo')
+      await cli.query(semLag)
+      const placarSemLag = await chamarGravando(`public.vessel_placar_da_edicao(p_edicao_id => $1)`, [edicaoLim1])
+      const reprovouIntervalo = placarSemLag.v?.intervalos === 0 && placarSemLag.v?.intervalo_medio_em_dias === null
+      console.log(`      ${reprovouIntervalo ? '✗' : '✓'} SEM o \`lag()\`: intervalos=${placarSemLag.v?.intervalos}, intervalo_medio_em_dias=${placarSemLag.v?.intervalo_medio_em_dias} (era para os dois números somem)`)
+      conferir(reprovouIntervalo === true,
+        'MUTAÇÃO: sem o `lag()`, `intervalos`/`intervalo_medio_em_dias` somem — prova que o guarda de regressão é o `lag()`, não decoração',
+        { intervalos: placarSemLag.v?.intervalos, intervalo_medio_em_dias: placarSemLag.v?.intervalo_medio_em_dias })
+    } finally {
+      await cli.query('rollback to savepoint prova_mutacao_intervalo')
+    }
+
+    console.log('\n  · 11c) RODADA 1 DE CONSERTO (IMPORTANTE 5): stylist DESATIVADA na turma some do placar, do mesmo jeito que some do quadro')
+    x = await chamarGravando(`public.vessel_stylist_desativar(p_codigo => $1, p_ativa => false)`, [codigoStyLim])
+    conferir(x.v?.ok === true, 'stylist_desativar: desativa a stylist de Limeira (ainda na turma da edição)', x.v ?? x.e?.message)
+    const rastreioSemDesativada = await chamarGravando(
+      `public.vessel_rastreio_dos_stylists(p_dias => 7, p_incluir_desativadas => false, p_praca_id => null, p_edicao_id => $1)`, [edicaoLim1])
+    const sumiuDoRastreio = Array.isArray(rastreioSemDesativada.v) && !rastreioSemDesativada.v.some((s) => s.codigo === codigoStyLim)
+    conferir(sumiuDoRastreio === true,
+      'vessel_rastreio_dos_stylists (o quadro/lista, sem pedir desativadas): a stylist desativada some — o comportamento de sempre', rastreioSemDesativada.v)
+    const placarComDesativada = await chamarGravando(`public.vessel_placar_da_edicao(p_edicao_id => $1)`, [edicaoLim1])
+    conferir(placarComDesativada.v?.prospectadas === 0,
+      'IMPORTANTE 5: com o mesmo filtro `ativa`, o placar TAMBÉM fica sem ela — prospectadas cai de 1 para 0, fechando com o quadro (que já ficou vazio)',
+      placarComDesativada.v?.prospectadas)
+    const somaEtapasComDesativada = (placarComDesativada.v?.etapas ?? []).reduce((n, e) => n + (e.stylists || 0), 0)
+    conferir(somaEtapasComDesativada === 0, 'e a soma das etapas do placar também cai a zero — os dois lados fecham', placarComDesativada.v?.etapas)
+    x = await chamarGravando(`public.vessel_stylist_desativar(p_codigo => $1, p_ativa => true)`, [codigoStyLim])
+    conferir(x.v?.ok === true, 'stylist_desativar: reativa (deixando o resto da prova como estava)', x.v ?? x.e?.message)
+
+    console.log('\n    · MUTAÇÃO: tirar `and coalesce(s.ativa, true)` da CTE `sty` tem de fazer a desativada voltar a contar — reprova')
+    x = await chamarGravando(`public.vessel_stylist_desativar(p_codigo => $1, p_ativa => false)`, [codigoStyLim])
+    conferir(x.v?.ok === true, 'desativa de novo, para a mutação ter o que mostrar', x.v ?? x.e?.message)
+    await cli.query('savepoint prova_mutacao_ativa')
+    try {
+      const funcaoBoaAtiva = (await uma(
+        `select pg_get_functiondef('public.vessel_placar_da_edicao(bigint)'::regprocedure) as def`)).def
+      const trechoAtiva = /\s*and\s+coalesce\(s\.ativa,\s*true\)/
+      if (!trechoAtiva.test(funcaoBoaAtiva)) throw new Error('a mutação não achou o filtro de `ativa` em vessel_placar_da_edicao — o texto da função mudou')
+      await cli.query(funcaoBoaAtiva.replace(trechoAtiva, ''))
+      const placarMutadoAtiva = await chamarGravando(`public.vessel_placar_da_edicao(p_edicao_id => $1)`, [edicaoLim1])
+      const reprovouAtiva = placarMutadoAtiva.v?.prospectadas === 1
+      console.log(`      ${reprovouAtiva ? '✗' : '✓'} SEM o filtro de \`ativa\`: prospectadas=${placarMutadoAtiva.v?.prospectadas} (era para a desativada ${reprovouAtiva ? 'voltar a contar — o defeito original' : 'continuar de fora (inesperado)'})`)
+      conferir(reprovouAtiva === true,
+        'MUTAÇÃO: sem `and coalesce(s.ativa, true)`, a stylist desativada volta a contar no placar — prova que o filtro não é decoração',
+        { prospectadas: placarMutadoAtiva.v?.prospectadas })
+    } finally {
+      await cli.query('rollback to savepoint prova_mutacao_ativa')
+    }
+    x = await chamarGravando(`public.vessel_stylist_desativar(p_codigo => $1, p_ativa => true)`, [codigoStyLim])
+    conferir(x.v?.ok === true, 'stylist_desativar: reativa de novo, depois da mutação desfeita', x.v ?? x.e?.message)
   } finally {
     await falarComo(null)
     await cli.query('rollback to savepoint prova_funcoes')

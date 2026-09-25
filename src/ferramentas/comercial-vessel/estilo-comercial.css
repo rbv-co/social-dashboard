@@ -260,6 +260,11 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 8px 10px;
+  /* ⚠️ RODADA 1 DE CONSERTO (IMPORTANTE 3, Task 7): sem isto o campo (com
+     este padding + esta fonte) media ~37-39px — abaixo do alvo de toque
+     mínimo do item 6 do PADRÃO. Vale para as três barras que usam esta
+     classe (a de lista e a nova de Praça · Edição). */
+  min-height: 40px;
 }
 
 /* ⚠️ AVISO NÃO É ERRO: cor diferente de `.cv-nota-erro`, para "isto não é uma

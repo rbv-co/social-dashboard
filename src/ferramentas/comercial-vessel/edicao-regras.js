@@ -14,6 +14,15 @@ export const SITUACOES_DA_EDICAO = { planejada: 'Planejada', aberta: 'Aberta', e
 
 export const rotuloDaEdicao = (e) => `${e?.praca_nome ?? ''} · Edição ${e?.numero ?? '?'}`
 
+/**
+ * O MESMO rótulo, SEM a praça — para quando o contexto já diz qual é (um
+ * select já recortado por praça, uma lista embaixo do nome da praça). Repetir
+ * a praça nesses dois lugares foi achado na Rodada 1 de conserto da Task 7:
+ * "Campinas · Vessel Campinas" e "Campinas · Edição 2" dentro de um select que
+ * já só tem edição de Campinas.
+ */
+export const rotuloCurtoDaEdicao = (e) => `Edição ${e?.numero ?? '?'}${e?.nome ? ` — ${e.nome}` : ''}`
+
 const dia = (q) => (q ? String(q).slice(0, 10) : '')
 
 export function edicaoDoEncontro(encontro, edicoes) {
