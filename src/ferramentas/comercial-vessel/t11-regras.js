@@ -125,7 +125,14 @@ export function seloDoConvite(situacao) {
  * depois de enviado; "Veio" e "Não veio" aparecem sempre, porque a gerente
  * pode ter de corrigir.
  */
-export function gestosDaConvidada(c) {
+// ⚠️ VEIO / NÃO VEIO SÓ COM 'EDITAR' (decisão do dono, 25/09/2026): a presença
+// passa por `vessel_situacao_do_atendimento`, que desde a migration
+// 2026-09-25-zz-vessel-permissao-por-tela-apertos.sql exige EDITAR (Private Appointment ou
+// Private Edit). Quem só vê não recebe os dois botões — senão o clique daria
+// "sem permissão". Os gestos do CONVITE (enviado/confirmou/recusou) continuam
+// com ver (`vessel_convite_marcar`). Sem o segundo argumento, NÃO oferece a
+// presença: esquecer de passar esconde o botão, nunca mostra um que falha.
+export function gestosDaConvidada(c, { podeMarcarPresenca = false } = {}) {
   const g = []
   if (!c?.convite_enviado_em && !c?.rsvp && !['realizado', 'no_show'].includes(c?.status)) {
     g.push({ gesto: 'enviado', rotulo: 'Convite enviado' })
@@ -134,8 +141,8 @@ export function gestosDaConvidada(c) {
     if (c?.rsvp !== 'sim') g.push({ gesto: 'sim', rotulo: 'Confirmou' })
     if (c?.rsvp !== 'nao') g.push({ gesto: 'nao', rotulo: 'Recusou' })
   }
-  if (c?.status !== 'realizado') g.push({ gesto: 'realizado', rotulo: 'Veio' })
-  if (c?.status !== 'no_show') g.push({ gesto: 'no_show', rotulo: 'Não veio' })
+  if (podeMarcarPresenca && c?.status !== 'realizado') g.push({ gesto: 'realizado', rotulo: 'Veio' })
+  if (podeMarcarPresenca && c?.status !== 'no_show') g.push({ gesto: 'no_show', rotulo: 'Não veio' })
   return g
 }
 

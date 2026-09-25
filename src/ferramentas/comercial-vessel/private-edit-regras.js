@@ -40,8 +40,9 @@ import { proporcaoDoConjunto } from './estatistica.js'
  */
 export const ACOES_QUE_EXIGEM_EDITAR = ['encerrar', 'reabrir', 'editar', 'arquivar', 'apagar',
   // T11: mudar a situação do encontro e incluir convidada também mexem. Marcar
-  // o convite e a presença NÃO entram: passam pela trava de ver, a mesma de
-  // `vessel_situacao_do_atendimento` na Central de Atendimentos.
+  // o convite NÃO entra: passa pela trava de ver (`vessel_convite_marcar`). A
+  // PRESENÇA (veio/não veio) exige editar desde 25/09/2026 — quem esconde os
+  // dois botões é `gestosDaConvidada(c, { podeMarcarPresenca })`, em t11-regras.js.
   'situacao', 'convidar']
 
 export function podeExecutarAcao(acao, podeEditar) {

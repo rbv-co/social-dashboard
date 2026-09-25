@@ -18,6 +18,7 @@
 //
 // DATABASE_URL: coletor/.env OU o ambiente (`node --env-file=<.env> …`).
 import './lib/carregar-env.mjs'
+import { contasDeProva } from './lib/contas-de-prova.mjs'
 import { readFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import pg from 'pg'
@@ -102,13 +103,8 @@ console.log(`impressão de hoje: ${antes.private_edits} encontros, ${antes.sesso
 
 await cli.query('begin')
 try {
-  const perfil = async (features, permissions, nome) => {
-    const id = randomUUID(), email = `prova-pe-agenda-${id}@teste.invalido`
-    await cli.query(`insert into auth.users (id, email) values ($1, $2)`, [id, email])
-    await cli.query(`insert into public.profiles (id, email, name, features, permissions, is_superadmin)
-                     values ($1, $2, $3, $4, $5::jsonb, false)`, [id, email, nome, features, JSON.stringify(permissions)])
-    return id
-  }
+  const provas = contasDeProva(cli)
+  const perfil = (features, permissions, nome) => provas.criar('prova-pe-agenda', { name: nome, features, permissions })
   const falarComo = async (id) => cli.query(`select set_config('request.jwt.claims', $1, true)`,
     [id === null ? '' : JSON.stringify({ sub: id })])
   // A chave da TELA (`atendimentos.private-edit`); o banco ainda confere a da
@@ -387,6 +383,8 @@ try {
 
   if (falhas.length) throw new Error(`${falhas.length} conferência(s) falharam`)
   if (GRAVAR) {
+    // ⚠️ As contas de prova NÃO vão para produção (ver coletor/lib/contas-de-prova.mjs).
+    await provas.apagarEConferir()
     const fim = await cli.query('commit')
     if (fim.command !== 'COMMIT') throw new Error(`o commit voltou ${fim.command}`)
     console.log(`\n✅ ${ARQUIVO} aplicada e registrada.`)

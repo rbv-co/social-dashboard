@@ -16,6 +16,7 @@
 // PostgREST faz com o corpo JSON da página. A assinatura de
 // `vessel_convite_da_convidada` muda (2 → 3), e é isso que a prova cobre.
 import './lib/carregar-env.mjs'
+import { contasDeProva } from './lib/contas-de-prova.mjs'
 import { readFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import pg from 'pg'
@@ -58,13 +59,8 @@ console.log(`hoje: ${antes.atendimentos} atendimento(s), ${antes.encontros} enco
 await cli.query('begin')
 try {
   // ── quem fala: a equipe (Atendimentos), alguém da Central SEM Atendimentos, e a página (anon)
-  const pessoa = async (rotulo, features, permissions) => {
-    const id = randomUUID(), email = `prova-convite-${rotulo}-${id}@teste.invalido`
-    await cli.query(`insert into auth.users (id, email) values ($1, $2)`, [id, email])
-    await cli.query(`insert into public.profiles (id, email, name, features, permissions, is_superadmin)
-      values ($1, $2, $3, $4, $5::jsonb, false)`, [id, email, `Prova ${rotulo}`, features, JSON.stringify(permissions)])
-    return id
-  }
+  const provas = contasDeProva(cli)
+  const pessoa = (rotulo, features, permissions) => provas.criar(`prova-convite-${rotulo}`, { name: `Prova ${rotulo}`, features, permissions })
   const equipe = await pessoa('equipe', ['atendimentos'], { atendimentos: ['ver', 'editar'] })
   const outra = await pessoa('outra', ['patrimonio'], { patrimonio: ['ver'] })
   const falarComo = (id) => cli.query(`select set_config('request.jwt.claims', $1, true)`,
@@ -212,6 +208,8 @@ try {
 
   if (falhas.length) throw new Error(`${falhas.length} conferência(s) falharam`)
   if (GRAVAR) {
+    // ⚠️ As contas de prova NÃO vão para produção (ver coletor/lib/contas-de-prova.mjs).
+    await provas.apagarEConferir()
     const fim = await cli.query('commit')
     if (fim.command !== 'COMMIT') throw new Error(`o commit voltou ${fim.command}`)
     console.log(`\n✅ ${ARQUIVO} aplicada e registrada.`)

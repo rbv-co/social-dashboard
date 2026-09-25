@@ -460,17 +460,56 @@ motivo da saída.
 
 ## Parte B — Precisa programar
 
-### B13 · No banco, as telas do Comercial Vessel ainda se abrem umas às outras · *entrou em 24/09/2026*
+### B13 · No banco, as telas do Comercial Vessel ainda se abrem umas às outras · *entrou em 24/09/2026 · 1ª rodada GRAVADA em 25/09/2026; 2ª rodada pronta, falta GRAVAR*
 
-Desde 24/09 cada ferramenta do Comercial Vessel tem permissão própria (Private
-Appointment, Beauty Sessions, Private Edit, Stylist Circle, Material Gráfico,
-Appointment Card) e a **Central** respeita cada uma. Mas as ~40 funções do banco
-ainda conferem a permissão da **família** (`is_vessel_atendimentos()` /
-`_editar()`): quem tem só uma das telas consegue chamar as funções das outras
-**por fora da Central**. Pela tela, não. O dono concordou em deixar para uma
-próxima rodada. Conserto: cada função passa a conferir a chave da SUA tela
-(`catalogo-de-ferramentas.js` diz qual), com aplicador e prova por perfil.
+Desde 24/09 cada ferramenta do Comercial Vessel tem permissão própria e a
+**Central** respeita cada uma. Mas as funções do banco conferiam a permissão da
+**família** (`is_vessel_atendimentos()` / `_editar()`): quem tinha só uma tela
+chamava as funções das outras **por fora da Central**.
 
+**1ª rodada — gravada em 25/09/2026**
+(`db/migrations/2026-09-25-vessel-permissao-por-tela-no-banco.sql`): trava
+`vessel_pode(tela, nível)`; 49 funções e 5 políticas passaram a conferir a chave
+da sua tela. Conferido com os 24 perfis reais: ninguém perdeu nada.
+
+**2ª rodada — as decisões do dono, ensaio limpo, falta GRAVAR**
+(`db/migrations/2026-09-25-zz-vessel-permissao-por-tela-apertos.sql` +
+`coletor/aplicar-vessel-permissao-por-tela-apertos.mjs --gravar`):
+- clientes, visitas, vendas e itens: leitura direta só com **Private
+  Appointment**. Conferido: é a única tela que lê essas tabelas direto (a Base
+  de Leads do Meta Ads tem política própria e não muda);
+- **Veio / Não veio** exige "editar". A tela do Private Appointment já só
+  mostrava os botões com editar; a do Private Edit passou a esconder os dois
+  para quem só vê (esta entrega — publicar a Central junto com o `--gravar`);
+- a **lista das parceiras** entrega a quem só tem o Material Gráfico só código,
+  nome, cidade, se está ativa e a etapa — sem WhatsApp, Instagram, observações.
+
+**Contas de prova (25/09/2026):** os 8 perfis `prova-*@teste.invalido` foram
+apagados de `profiles` (`coletor/apagar-contas-de-prova.mjs --gravar`). As 8
+linhas de `auth.users` **ficaram**: a API de admin do Auth não as enxerga (os
+aplicadores inseriram só `id` e `email`, sem `instance_id`) e responde "não
+encontrado"; tirá-las exige um DELETE direto em `auth.users`, que a regra
+proíbe sem o dono. Sem perfil e sem senha, não entram na Central nem passam em
+trava nenhuma. **Decisão do dono:** autorizar o DELETE direto dessas 8 linhas,
+ou deixá-las.
+
+### B14 · `vessel_marcar_presenca` marca presença sem login · *entrou em 25/09/2026*
+
+A função `vessel_marcar_presenca(p_codigo, p_veio, p_teste)` é executável por
+**anon** (a chave pública do site) e **não confere quem chama**. Com o código do
+convite de uma visita (`convite_codigo`), ela grava em `vessel_atendimentos`:
+`status` = "realizado" ou "no_show", carimba ou apaga `presenca_em`, e ainda
+reescreve a coluna `teste`. Código que não existe responde `{ok:true}` calado.
+
+**Risco:** quem tiver (ou adivinhar) um código de convite muda a presença da
+cliente — e com isso a taxa de comparecimento do Private Appointment —, ou
+marca uma visita real como teste, tirando-a das contas. O código viaja no link
+do convite da cliente. Não há teto de tentativas.
+
+**O que fazer (decisão do dono, 25/09/2026: anotar, NÃO mexer agora):**
+descobrir quem a chama (a página do check-in? o Appointment Card?) antes de
+fechar; se for uma página pública, trocar por uma porta que peça algo além do
+código e não aceite `p_teste` de fora. Relacionado ao B13.
 
 **Vazia desde 21/09/2026.** Os últimos itens daqui foram o **B12** (entrou e
 saiu no mesmo dia) e o **B9**. Também saíram nesta revisão o **B10** e o
