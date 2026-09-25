@@ -50,9 +50,19 @@
         </div>
 
         <!-- Praça e Edição (25/09/2026): o cadastro por trás do Stylist
-             Circle — chave própria desde o nascimento (Task 6). -->
+             Circle — chave própria desde o nascimento (Task 6).
+             ⚠️ RODADA 1 DE CONSERTO: as duas cores abaixo NÃO são escolhidas no
+             olho — são os tokens `--cor-comercial-vessel` (#7a3f52 claro /
+             #c3708a escuro, estilos-globais.css) e `--cor-beauty-sessions`
+             (#8a4a66 / #d99ab4), os dois já medidos e documentados nas ondas
+             anteriores. A 1ª versão usava `#7fb8cc` — hex inventado, sem par
+             no repositório — e a 2ª repetia o degradê do Stylist Circle,
+             deixando dois cartões vizinhos com o ícone idêntico. Nenhum dos
+             dois tokens escolhidos é usado por um cartão VIZINHO deste menu:
+             Praças fica entre Stylist Circle (teal) e Edições; Edições fica
+             entre Praças (vinho) e Material Gráfico (oliva). -->
         <div class="cvmenu-card" v-if="podeAbrir('pracas')" @click="ir('pracas')">
-          <div class="cvmenu-card-icon" style="background:linear-gradient(135deg,#1e5f74 0%,#7fb8cc 100%)">
+          <div class="cvmenu-card-icon" style="background:linear-gradient(135deg,#7a3f52 0%,#c3708a 100%)">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>
           </div>
           <div class="cvmenu-card-title">Praças</div>
@@ -61,7 +71,7 @@
         </div>
 
         <div class="cvmenu-card" v-if="podeAbrir('edicoes')" @click="ir('edicoes')">
-          <div class="cvmenu-card-icon" style="background:linear-gradient(135deg,#1e5f74 0%,#3d9bb5 100%)">
+          <div class="cvmenu-card-icon" style="background:linear-gradient(135deg,#8a4a66 0%,#d99ab4 100%)">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></svg>
           </div>
           <div class="cvmenu-card-title">Edições</div>

@@ -289,22 +289,34 @@ async function criarPraca() {
 .pr-sigla { font-weight: 700; color: var(--modulo); }
 .pr-nome {
   font-family: var(--fonte-principal); font-size: var(--texto-campo); color: var(--text);
-  margin: 2px 0 0; overflow-wrap: anywhere;
+  margin: var(--sp-1) 0 0; overflow-wrap: anywhere;
 }
 
 .pr-cidades-grupo { margin-top: var(--sp-4); }
 .pr-cidades { list-style: none; margin: var(--sp-2) 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+/* ⚠️ RODADA 1 DE CONSERTO (medida refeita, item 6 do PADRAO): o alvo de 40px
+   do botão de remover (abaixo) é mais alto que o chip em si — com `gap:
+   var(--sp-2)` (8px) entre as DUAS linhas quando as cidades quebram, a folga
+   real entre os alvos vizinhos de linhas diferentes media só ~2px (medido com
+   `getBoundingClientRect` nos dois cantos, elementFromPoint). Só a linha
+   (`row-gap`) precisa crescer — o espaço ENTRE chips da MESMA linha
+   (`column-gap`) já tem folga de sobra e não muda. */
+@media (max-width: 640px) {
+  .pr-cidades { row-gap: var(--sp-6); }
+}
 .pr-cidade {
-  display: inline-flex; align-items: center; gap: 6px;
+  /* ⚠️ RODADA 1 DE CONSERTO (MENOR 5): espaçamento só da escala (PADRAO, item
+     7) — nada de `6px`/`4px 6px 4px 12px` digitado à mão. */
+  display: inline-flex; align-items: center; gap: var(--sp-1);
   background: var(--surface2); border: 1px solid var(--border); border-radius: 999px;
-  padding: 4px 6px 4px 12px; font-family: var(--fonte-principal); font-size: var(--texto-corpo); color: var(--text);
+  padding: var(--sp-1) var(--sp-2) var(--sp-1) var(--sp-3); font-family: var(--fonte-principal); font-size: var(--texto-corpo); color: var(--text);
   max-width: 100%; overflow-wrap: anywhere;
 }
 /* ⚠️ ALVO DE 40px SEM ENGORDAR O CHIP (PADRAO, item 6): a área do dedo cresce
    pelo ::after, o desenho (o "×" pequeno) fica do mesmo tamanho. */
 .pr-cidade-remover {
   position: relative; border: 0; background: none; color: var(--muted); cursor: pointer;
-  font-size: var(--texto-campo); line-height: 1; padding: 2px; border-radius: 50%;
+  font-size: var(--texto-campo); line-height: 1; padding: var(--sp-1); border-radius: 50%;
 }
 .pr-cidade-remover:hover { color: var(--red); }
 @media (max-width: 640px) {

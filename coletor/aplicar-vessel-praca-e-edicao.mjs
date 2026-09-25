@@ -204,6 +204,87 @@ try {
     await cli.query('rollback to savepoint prova_dado_sujo')
   }
 
+  console.log('\n── TASK 6 RODADA 1 DE CONSERTO (IMPORTANTE 2): a pré-concessão aditiva é PROVADA, não só calculada')
+  // ⚠️ Antes desta rodada, o aplicador só ESCREVIA as duas chaves à mão nos
+  // perfis de mentira das provas de função (passo 1c) — nunca exercitava a
+  // seção 14.3 da migration (o `update` que faz a pré-concessão de verdade).
+  // Se o cálculo de "o que acrescentar" errasse, o ensaio continuaria verde e
+  // no dia da aplicação real a equipe inteira perderia as duas telas, calada.
+  //
+  // A MESMA técnica de "IMPORTANTE 1 e 2" logo acima: insere perfis de
+  // mentira ANTES de reaplicar a variável `sql` (idempotente — `create or
+  // replace`/`on conflict do nothing`/`where ainda não tem a chave`), e
+  // confere o resultado DEPOIS. Três perfis: só 'ver' em stylist-circle, 'ver'
+  // + 'editar', e um SEM stylist-circle nenhum (só outra chave da família).
+  await cli.query('savepoint prova_pre_concessao')
+  try {
+    const idPcVer = randomUUID(), idPcEditar = randomUUID(), idPcSemMae = randomUUID()
+    const emailPcVer = `prova-pre-concessao-ver-${idPcVer}@teste.invalido`
+    const emailPcEditar = `prova-pre-concessao-editar-${idPcEditar}@teste.invalido`
+    const emailPcSemMae = `prova-pre-concessao-sem-mae-${idPcSemMae}@teste.invalido`
+    await cli.query(`insert into auth.users (id, email) values ($1, $2), ($3, $4), ($5, $6)`,
+      [idPcVer, emailPcVer, idPcEditar, emailPcEditar, idPcSemMae, emailPcSemMae])
+    await cli.query(`insert into public.profiles (id, email, name, features, permissions, is_superadmin, disabled) values
+        ($1, $2, 'Prova — pré-concessão, só ver',    array['atendimentos.stylist-circle'], $3::jsonb, false, false),
+        ($4, $5, 'Prova — pré-concessão, editar',    array['atendimentos.stylist-circle'], $6::jsonb, false, false),
+        ($7, $8, 'Prova — pré-concessão, sem a mãe', array['atendimentos.private-edit'], $9::jsonb, false, false)`,
+      [idPcVer, emailPcVer, JSON.stringify({ 'atendimentos.stylist-circle': ['ver'] }),
+       idPcEditar, emailPcEditar, JSON.stringify({ 'atendimentos.stylist-circle': ['ver', 'editar'] }),
+       idPcSemMae, emailPcSemMae, JSON.stringify({ 'atendimentos.private-edit': ['ver', 'editar'] })])
+
+    const lerPerfil = (id) => uma(`select permissions, features from public.profiles where id = $1`, [id])
+
+    // ── mutação de propósito: quebra a condição de "quem tem a mãe" — se o
+    // cálculo faz falta de verdade, com ele quebrado NINGUÉM ganha nada.
+    const trechoDaCondicao = `and (p -> 'atendimentos.stylist-circle') ? 'ver'`
+    const ocorrencias = sql.split(trechoDaCondicao).length - 1
+    if (ocorrencias !== 1) throw new Error(`esperava 1 ocorrência de "${trechoDaCondicao}" em sql, achei ${ocorrencias} — o texto da migration mudou`)
+    const sqlQuebrado = sql.replace(trechoDaCondicao, `and (p -> 'atendimentos.stylist-circle') ? 'ver-quebrado-de-proposito'`)
+
+    await cli.query('savepoint prova_pre_concessao_mutacao')
+    await cli.query(sqlQuebrado)
+    const verQuebrado = await lerPerfil(idPcVer)
+    const editarQuebrado = await lerPerfil(idPcEditar)
+    const ninguemGanhouComTravaQuebrada = !('atendimentos.pracas' in (verQuebrado.permissions || {}))
+      && !('atendimentos.pracas' in (editarQuebrado.permissions || {}))
+    console.log(`    ${ninguemGanhouComTravaQuebrada ? '✗' : '✓'} SEM o cálculo certo: os dois perfis que deveriam ganhar as chaves novas continuam sem elas — é exatamente "a equipe inteira perde as duas telas, calada" → ver=${JSON.stringify(verQuebrado.permissions)}, editar=${JSON.stringify(editarQuebrado.permissions)}`)
+    conferir(ninguemGanhouComTravaQuebrada === true,
+      'MUTAÇÃO: com a condição de "quem tem a mãe" quebrada, a pré-concessão não roda para ninguém — prova que o cálculo faz falta de verdade',
+      { verQuebrado: verQuebrado.permissions, editarQuebrado: editarQuebrado.permissions })
+    await cli.query('rollback to savepoint prova_pre_concessao_mutacao')
+
+    // ── com o cálculo restaurado (o `sql` de verdade, sem a mutação)
+    await cli.query(sql)
+    const verDepois = await lerPerfil(idPcVer)
+    const editarDepois = await lerPerfil(idPcEditar)
+    const semMaeDepois = await lerPerfil(idPcSemMae)
+    console.log(`    ✓ COM o cálculo restaurado: ver=${JSON.stringify(verDepois.permissions)}, editar=${JSON.stringify(editarDepois.permissions)}, sem-mãe=${JSON.stringify(semMaeDepois.permissions)}`)
+
+    conferir(
+      JSON.stringify(verDepois.permissions?.['atendimentos.pracas']) === JSON.stringify(['ver'])
+      && JSON.stringify(verDepois.permissions?.['atendimentos.edicoes']) === JSON.stringify(['ver']),
+      'COM a pré-concessão restaurada: quem tinha SÓ "ver" em stylist-circle ganha as duas chaves novas em "ver" — nunca mais larga do que já tinha',
+      verDepois.permissions)
+    conferir(
+      JSON.stringify(editarDepois.permissions?.['atendimentos.pracas']) === JSON.stringify(['ver', 'editar'])
+      && JSON.stringify(editarDepois.permissions?.['atendimentos.edicoes']) === JSON.stringify(['ver', 'editar']),
+      'COM a pré-concessão restaurada: quem tinha "ver"+"editar" em stylist-circle ganha as duas chaves novas em "ver"+"editar"',
+      editarDepois.permissions)
+    conferir(
+      !('atendimentos.pracas' in (semMaeDepois.permissions || {})) && !('atendimentos.edicoes' in (semMaeDepois.permissions || {}))
+      && JSON.stringify(semMaeDepois.permissions?.['atendimentos.private-edit']) === JSON.stringify(['ver', 'editar']),
+      'quem NÃO tinha atendimentos.stylist-circle (só private-edit, intacto) continua SEM as chaves novas — nunca de graça a quem não tinha a mãe',
+      semMaeDepois.permissions)
+    // MENOR 1: features[] acompanha permissions{} (o precedente de 24/09/2026).
+    conferir(
+      (verDepois.features || []).includes('atendimentos.pracas') && (verDepois.features || []).includes('atendimentos.edicoes')
+      && (editarDepois.features || []).includes('atendimentos.pracas') && (editarDepois.features || []).includes('atendimentos.edicoes'),
+      'MENOR 1: features[] acompanha permissions{} (mesmo precedente de 24/09/2026) — as Edge Functions também enxergam a chave nova',
+      { verFeatures: verDepois.features, editarFeatures: editarDepois.features })
+  } finally {
+    await cli.query('rollback to savepoint prova_pre_concessao')
+  }
+
   console.log('\n── constraints das tabelas novas')
   const falhaEsperada = async (savepoint, sqlTexto, params, codigoEsperado, frase) => {
     await cli.query(`savepoint ${savepoint}`)
@@ -342,8 +423,13 @@ try {
     x = await chamarGravando(`public.vessel_edicao_abrir(p_id => $1)`, [edicaoA1])
     conferir(x.v?.ok === true && x.v?.situacao === 'ok', 'edicao_abrir: abre a edição 1', x.v ?? x.e?.message)
 
+    // ⚠️ TASK 6 RODADA 1 DE CONSERTO (IMPORTANTE 3): `teste = false` de
+    // propósito — `vessel_edicoes_listar.stylists` agora filtra `teste`
+    // (mesmo critério de `vessel_pracas_listar`), e o passo 5 (CRÍTICO 1,
+    // abaixo) precisa que esta stylist CONTE. Fica dentro do savepoint
+    // `prova_funcoes`, desfeito por inteiro no fim — não vaza para dados reais.
     const sty1 = await uma(`insert into public.vessel_stylists (codigo, nome, whatsapp, teste)
-       values ('STY-PROVA-EDICAO4-1', 'Prova Edição4 Um', '5519990004001', true) returning id, etapa_id`)
+       values ('STY-PROVA-EDICAO4-1', 'Prova Edição4 Um', '5519990004001', false) returning id, etapa_id`)
     x = await chamarGravando(`public.vessel_edicao_incluir_stylist(p_codigo => $1, p_edicao_id => $2)`,
       ['STY-PROVA-EDICAO4-1', edicaoA1])
     conferir(x.v?.ok === true && x.v?.situacao === 'ok', 'edicao_incluir_stylist: inclui a stylist na edição aberta', x.v ?? x.e?.message)
@@ -438,6 +524,12 @@ try {
       x = await chamarGravando(`public.vessel_praca_cidade_desvincular(p_id => $1)`, [cidadeR])
       conferir(x.v?.ok === true && x.v?.situacao === 'ok', 'praca_cidade_desvincular: idem, consegue desvincular', x.v ?? x.e?.message)
 
+      // ⚠️ RODADA 1 DE CONSERTO (MENOR 4): uma SEGUNDA cidade, que fica
+      // vinculada (a primeira já foi desvinculada acima, para provar o lado
+      // "consegue") — esta é o alvo da recusa em (b), abaixo.
+      x = await chamarGravando(`public.vessel_praca_cidade_vincular(p_praca_id => $1, p_cidade => $2)`, [pracaR, 'Cidade de Prova do Recorte (para a recusa)'])
+      const cidadeRParaRecusa = x.v?.id
+
       x = await chamarGravando(`public.vessel_edicao_criar(p_praca_id => $1, p_nome => $2, p_comeca_em => $3, p_termina_em => null)`,
         [pracaR, 'Edição de Prova do Recorte', hoje])
       conferir(x.v?.ok === true && x.v?.numero === 1, 'edicao_criar: idem, consegue criar a edição 1', x.v ?? x.e?.message)
@@ -473,6 +565,7 @@ try {
         ['praca_criar', `public.vessel_praca_criar(p_sigla => $1, p_nome => $2, p_loja_destino => $3)`, ['ZZQ', 'Zona Q', null]],
         ['praca_editar', `public.vessel_praca_editar(p_id => $1, p_nome => $2, p_loja_destino => $3, p_ativa => $4)`, [pracaR, 'Roubado', null, true]],
         ['praca_cidade_vincular', `public.vessel_praca_cidade_vincular(p_praca_id => $1, p_cidade => $2)`, [pracaR, 'Cidade Roubada']],
+        ['praca_cidade_desvincular', `public.vessel_praca_cidade_desvincular(p_id => $1)`, [cidadeRParaRecusa]],
         ['edicao_criar', `public.vessel_edicao_criar(p_praca_id => $1, p_nome => $2, p_comeca_em => $3, p_termina_em => null)`, [pracaR, 'Edição Roubada', hoje]],
         ['edicao_abrir', `public.vessel_edicao_abrir(p_id => $1)`, [edicaoR]],
         ['edicao_encerrar', `public.vessel_edicao_encerrar(p_id => $1, p_levar_para => $2)`, [edicaoR2, null]],

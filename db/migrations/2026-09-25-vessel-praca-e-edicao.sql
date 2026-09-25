@@ -1857,8 +1857,25 @@ begin
              -- planejada/aberta ninguém tem `saiu_em` ainda, então a conta
              -- coincide com "quem está nela agora"; depois de encerrada, ela
              -- vira "quem esteve nela" — o mesmo número, para sempre.
+             -- ⚠️ TASK 6 RODADA 1 DE CONSERTO (IMPORTANTE 3): filtra `teste`,
+             -- pelo MESMO critério de `vessel_pracas_listar` (acima) — antes
+             -- os dois contavam diferente (um filtrava, o outro não).
              'stylists', (select count(*)::int from public.vessel_stylist_na_edicao n
-                           where n.edicao_id = e.id))
+                           join public.vessel_stylists s on s.id = n.stylist_id
+                           where n.edicao_id = e.id and not coalesce(s.teste, false)),
+             -- ⚠️ TASK 6 RODADA 1 DE CONSERTO (IMPORTANTE 3): quantas SERIAM
+             -- levadas se a edição fosse encerrada agora — o MESMO critério
+             -- de `vessel_edicao_encerrar` (vínculo ainda ativo, `saiu_em is
+             -- null`, da stylist que `ativada_em is null`). Numa edição já
+             -- encerrada dá sempre 0 (o congelamento já fechou todos os
+             -- vínculos) — não é um teto, é o número real. A tela usa este
+             -- campo para dizer "N serão levadas" ANTES de confirmar, em vez
+             -- de "até N" (o total da edição, que mentia numa edição madura
+             -- onde quase todas já ativaram).
+             'nao_ativadas', (select count(*)::int from public.vessel_stylist_na_edicao n
+                           join public.vessel_stylists s on s.id = n.stylist_id
+                           where n.edicao_id = e.id and n.saiu_em is null
+                             and s.ativada_em is null and not coalesce(s.teste, false)))
            order by p.ordem, e.numero desc)
       from public.vessel_stylist_circle_edicoes e join public.vessel_pracas p on p.id = e.praca_id
      where p_praca_id is null or e.praca_id = p_praca_id), '[]'::json);
@@ -2079,8 +2096,17 @@ as $$
 $$;
 
 -- 14.3a. As pessoas.
+-- ⚠️ TASK 6 RODADA 1 DE CONSERTO (MENOR 1): `features` acompanha, igual ao
+-- precedente de 24/09/2026 (2026-09-24-permissoes-das-ferramentas-do-
+-- comercial-vessel.sql, passo 2a) — sem isto, `derivar-features.js` (as Edge
+-- Functions que leem `features[]`) nunca saberia da chave nova, mesmo com
+-- `permissions{}` correto.
 update public.profiles p
-   set permissions = p.permissions || pg_temp.o_que_acrescentar_praca_edicao(p.permissions)
+   set permissions = p.permissions || pg_temp.o_que_acrescentar_praca_edicao(p.permissions),
+       features = coalesce(p.features, '{}'::text[]) || array(
+         select k from jsonb_object_keys(pg_temp.o_que_acrescentar_praca_edicao(p.permissions)) k
+          where not (k = any(coalesce(p.features, '{}'::text[])))
+          order by k)
  where not coalesce(p.is_superadmin, false)
    and not coalesce(p.disabled, false)
    and pg_temp.o_que_acrescentar_praca_edicao(p.permissions) <> '{}'::jsonb;

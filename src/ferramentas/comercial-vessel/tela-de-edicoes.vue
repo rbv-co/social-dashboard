@@ -27,6 +27,7 @@
       <!-- ── AS EDIÇÕES DA PRAÇA ESCOLHIDA ───────────────────────────────── -->
       <section v-if="pracaSelecionadaId" class="cv-bloco">
         <h2 class="cv-etiqueta id-titulo"><icone-do-bloco nome="calendario" />Edições</h2>
+        <p v-if="!podeEditar" class="cv-nota cv-nota-primeira">Você pode ver as edições. Para mexer, precisa da permissão de editar.</p>
         <faixa-de-erro :erro="erroEdicoes" @tentar-de-novo="carregarEdicoes" />
 
         <div v-if="carregandoEdicoes" class="cv-carregando">Carregando…</div>
@@ -55,15 +56,12 @@
             </div>
 
             <!-- ⚠️ ANTES DE CONFIRMAR: pergunta o destino de quem não ativou e
-                 diz quantas serão levadas (o total de hoje é o teto — só quem
-                 NÃO ativou vai; quem já ativou fica com o vínculo fechado
-                 aqui). O número exato só o banco sabe depois de encerrar; o
-                 aplicador prova essa regra em coletor/aplicar-vessel-praca-e-edicao.mjs. -->
+                 diz QUANTAS serão levadas — o número REAL (`nao_ativadas`,
+                 vessel_edicoes_listar seção 14), não um teto: o critério é o
+                 MESMO de `vessel_edicao_encerrar` (quem ainda não ativou). -->
             <div v-if="encerrando === e.id" class="id-caixa-form">
               <p class="cv-nota cv-nota-aviso cv-nota-primeira">
-                Esta edição tem {{ quantasStylists(e.stylists) }}. Ao encerrar, quem ainda <b>não ativou</b>
-                pode ir para a edição escolhida abaixo (até {{ e.stylists || 0 }}) — quem já ativou fica com o
-                vínculo fechado aqui, e não vai.
+                {{ fraseDeQuantasVao(e) }} Quem já ativou fica com o vínculo fechado aqui, e não vai.
               </p>
               <label class="cv-campo" :for="`ed-destino-${e.id}`"><span>Levar quem não ativou para</span>
                 <select :id="`ed-destino-${e.id}`" v-model="destino">
@@ -77,10 +75,10 @@
               </div>
             </div>
 
-            <p v-if="levadasDaEdicao(e.id) !== null" class="cv-nota cv-nota-ok">
-              {{ levadasDaEdicao(e.id) === 1 ? '1 parceira foi levada' : `${levadasDaEdicao(e.id)} parceiras foram levadas` }}
-              para a edição escolhida.
-            </p>
+            <!-- ⚠️ RODADA 1 DE CONSERTO (MENOR 3): a frase depende de ter
+                 havido destino escolhido — "N foram levadas PARA X" não pode
+                 aparecer quando ninguém escolheu X. -->
+            <p v-if="resultadoDoEncerramento[e.id]" class="cv-nota cv-nota-ok">{{ fraseDoResultado(resultadoDoEncerramento[e.id]) }}</p>
           </li>
         </ul>
 
@@ -180,7 +178,10 @@ const erroEdicoes = ref(null)
 const gravando = ref(false)
 
 async function carregarEdicoes() {
-  if (!pracaSelecionadaId.value) { edicoes.value = []; return }
+  // ⚠️ RODADA 1 DE CONSERTO (MENOR 6): sem isto, `carregandoEdicoes` ficava
+  // travado em `true` (o valor inicial do ref) quando não havia praça
+  // escolhida — a tela mostrava "Carregando…" para sempre.
+  if (!pracaSelecionadaId.value) { edicoes.value = []; carregandoEdicoes.value = false; return }
   carregandoEdicoes.value = true
   erroEdicoes.value = null
   try {
@@ -197,6 +198,16 @@ async function carregarEdicoes() {
 watch(pracaSelecionadaId, carregarEdicoes, { immediate: true })
 
 const quantasStylists = (n) => (n === 1 ? '1 stylist' : `${n || 0} stylists`)
+// ⚠️ RODADA 1 DE CONSERTO (IMPORTANTE 3): `nao_ativadas` é o número REAL de
+// quem seria levada — não um teto. `e.stylists` (o total) é outra coisa
+// (quantas estão na edição, ativadas ou não).
+function fraseDeQuantasVao(e) {
+  const n = e.nao_ativadas || 0
+  if (n === 0) return 'Ninguém nesta edição precisa ser levada — todas já ativaram.'
+  return n === 1
+    ? '1 parceira ainda não ativou e será levada para a edição escolhida abaixo.'
+    : `${n} parceiras ainda não ativaram e serão levadas para a edição escolhida abaixo.`
+}
 const dia = (d) => (d ? new Date(`${d}T00:00:00`).toLocaleDateString('pt-BR') : '')
 function janelaEscrita(e) {
   if (!e.comeca_em) return 'sem data'
@@ -228,9 +239,17 @@ function mensagemEdicao(r) {
 // erro por edição, para o defeito de uma não atrapalhar as outras
 const errosPorEdicao = reactive({})
 const erroDaEdicao = (id) => errosPorEdicao[id] || ''
-// quantas foram levadas ao encerrar, por edição (null = ainda não encerrou agora)
-const levadasPorEdicao = reactive({})
-const levadasDaEdicao = (id) => (id in levadasPorEdicao ? levadasPorEdicao[id] : null)
+// o resultado do encerramento, por edição — { levadas, destinoNome } — para
+// escrever a frase certa nos três casos (ninguém escolhido, escolhido mas
+// ninguém precisava ir, escolhido e foi gente de verdade).
+const resultadoDoEncerramento = reactive({})
+function fraseDoResultado({ levadas, destinoNome }) {
+  if (!destinoNome) return 'Edição encerrada. Nenhuma edição de destino foi escolhida — ninguém foi levada.'
+  if (levadas === 0) return `Edição encerrada. Ninguém precisou ser levada para ${destinoNome} — todas já tinham ativado.`
+  return levadas === 1
+    ? `Edição encerrada. 1 parceira foi levada para ${destinoNome}.`
+    : `Edição encerrada. ${levadas} parceiras foram levadas para ${destinoNome}.`
+}
 
 async function abrir(e) {
   if (gravando.value) return
@@ -255,9 +274,12 @@ async function encerrar(e) {
   gravando.value = true
   errosPorEdicao[e.id] = ''
   try {
+    // ⚠️ O nome do destino é lido ANTES de gravar (para a frase) — depois de
+    // `carregarEdicoes()` a lista pode ter mudado de ordem/situação.
+    const destinoEscolhido = destino.value ? edicoes.value.find((d) => String(d.id) === destino.value) : null
     const r = await chamar('vessel_edicao_encerrar', { p_id: e.id, p_levar_para: destino.value ? Number(destino.value) : null })
     if (!r?.ok) { errosPorEdicao[e.id] = mensagemEdicao(r); return }
-    levadasPorEdicao[e.id] = r.levadas ?? 0
+    resultadoDoEncerramento[e.id] = { levadas: r.levadas ?? 0, destinoNome: destinoEscolhido ? rotuloDaEdicao(destinoEscolhido) : null }
     encerrando.value = null
     await carregarEdicoes()
   } catch {
