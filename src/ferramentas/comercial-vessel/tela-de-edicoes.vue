@@ -79,6 +79,11 @@
                  havido destino escolhido — "N foram levadas PARA X" não pode
                  aparecer quando ninguém escolheu X. -->
             <p v-if="resultadoDoEncerramento[e.id]" class="cv-nota cv-nota-ok">{{ fraseDoResultado(resultadoDoEncerramento[e.id]) }}</p>
+
+            <!-- ⚠️ TASK 11: abrir vincula a turma da praça automaticamente
+                 (banco, vessel_edicao_abrir) — o número NUNCA fica mudo: se
+                 zero, diz que a praça não tem ninguém elegível ainda. -->
+            <p v-if="resultadoDaAbertura[e.id] !== undefined" class="cv-nota cv-nota-ok">{{ fraseDaAbertura(resultadoDaAbertura[e.id]) }}</p>
           </li>
         </ul>
 
@@ -251,6 +256,15 @@ function fraseDoResultado({ levadas, destinoNome }) {
     : `Edição encerrada. ${levadas} parceiras foram levadas para ${destinoNome}.`
 }
 
+// ⚠️ TASK 11: o resultado de abrir, por edição — quantas parceiras entraram
+// (o banco já vincula a turma inteira da praça ao abrir). `undefined` =
+// ainda não abriu nesta sessão; `0` é um valor real (mostra o motivo).
+const resultadoDaAbertura = reactive({})
+function fraseDaAbertura(n) {
+  if (n > 0) return n === 1 ? '1 parceira entrou na edição.' : `${n} parceiras entraram na edição.`
+  return 'Nenhuma parceira entrou — esta praça ainda não tem nenhuma parceira ativa (fora as de teste) para vincular.'
+}
+
 async function abrir(e) {
   if (gravando.value) return
   gravando.value = true
@@ -258,6 +272,9 @@ async function abrir(e) {
   try {
     const r = await chamar('vessel_edicao_abrir', { p_id: e.id })
     if (!r?.ok) { errosPorEdicao[e.id] = mensagemEdicao(r); return }
+    // ⚠️ só mostra a frase numa transição REAL (situacao 'ok') — 'sem_mudanca'
+    // (a edição já estava aberta) não vinculou ninguém novo agora.
+    if (r.situacao === 'ok') resultadoDaAbertura[e.id] = r.incluidas ?? 0
     await carregarEdicoes()
   } catch {
     errosPorEdicao[e.id] = 'Não consegui falar com o banco agora. Tente de novo em um instante.'

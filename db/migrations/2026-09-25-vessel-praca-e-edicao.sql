@@ -400,6 +400,23 @@ begin
     return json_build_object('ok', false, 'situacao', 'praca_invalida');
   end if;
   update public.vessel_stylists set praca_id = p_praca_id, atualizado_em = now() where id = v_id;
+
+  -- ⚠️ TASK 11: definir a praça vincula à edição ABERTA da praça nova (se
+  -- houver) — mesmo critério de elegibilidade de `vessel_edicao_abrir`
+  -- (ativa, não-teste). `on conflict do nothing`: quem já tinha vínculo não
+  -- duplica. Tirar a praça (`p_praca_id` nulo) NÃO desfaz vínculo nenhum — o
+  -- histórico é o que congela a edição anterior, não esta função.
+  if p_praca_id is not null then
+    insert into public.vessel_stylist_na_edicao (stylist_id, edicao_id)
+    select v_id, ed.id
+      from public.vessel_stylist_circle_edicoes ed
+     where ed.praca_id = p_praca_id and ed.situacao = 'aberta'
+       and exists (select 1 from public.vessel_stylists s
+                    where s.id = v_id and coalesce(s.ativa, true) and not coalesce(s.teste, false))
+     limit 1
+    on conflict (stylist_id, edicao_id) do nothing;
+  end if;
+
   return json_build_object('ok', true, 'situacao', 'ok', 'codigo', v_codigo);
 end;
 $$;
@@ -487,7 +504,8 @@ security definer
 set search_path to 'public'
 as $$
 declare
-  v_ed public.vessel_stylist_circle_edicoes%rowtype;
+  v_ed        public.vessel_stylist_circle_edicoes%rowtype;
+  v_incluidas int := 0;
 begin
   if not public.vessel_pode('atendimentos.stylist-circle', 'editar') then
     return json_build_object('ok', false, 'situacao', 'sem_permissao');
@@ -500,14 +518,34 @@ begin
     return json_build_object('ok', false, 'situacao', 'edicao_encerrada');
   end if;
   if v_ed.situacao = 'aberta' then
-    return json_build_object('ok', true, 'situacao', 'sem_mudanca');
+    return json_build_object('ok', true, 'situacao', 'sem_mudanca', 'incluidas', 0);
   end if;
   if exists (select 1 from public.vessel_stylist_circle_edicoes
               where praca_id = v_ed.praca_id and situacao = 'aberta' and id <> p_id) then
     return json_build_object('ok', false, 'situacao', 'ja_tem_aberta');
   end if;
   update public.vessel_stylist_circle_edicoes set situacao = 'aberta' where id = p_id;
-  return json_build_object('ok', true, 'situacao', 'ok');
+
+  -- ⚠️ TASK 11: "edição = a rodada daquela praça" (decisão do dono) — o
+  -- vínculo é AUTOMÁTICO, não uma escolha manual um a um. Ao abrir, toda
+  -- stylist ATIVA e NÃO-teste da praça que ainda não tem NENHUMA linha com
+  -- esta edição entra nela — sem isto o placar por edição nascia zerado para
+  -- sempre (nenhuma tela chamava `vessel_edicao_incluir_stylist`), calado.
+  -- `not exists` na CHAVE INTEIRA (não só `saiu_em is null`): uma stylist
+  -- incluída à mão (`vessel_edicao_incluir_stylist`) ANTES de abrir a edição
+  -- (a 'planejada' aceita incluir) não pode virar linha duplicada aqui.
+  insert into public.vessel_stylist_na_edicao (stylist_id, edicao_id)
+  select s.id, p_id
+    from public.vessel_stylists s
+   where s.praca_id = v_ed.praca_id
+     and coalesce(s.ativa, true)
+     and not coalesce(s.teste, false)
+     and not exists (select 1 from public.vessel_stylist_na_edicao n
+                       where n.stylist_id = s.id and n.edicao_id = p_id)
+  on conflict (stylist_id, edicao_id) do nothing;
+  get diagnostics v_incluidas = row_count;
+
+  return json_build_object('ok', true, 'situacao', 'ok', 'incluidas', v_incluidas);
 end;
 $$;
 
@@ -1172,6 +1210,7 @@ declare
   v_loja    text := lower(nullif(trim(coalesce(p_loja, '')), ''));
   v_origem  text := lower(nullif(trim(coalesce(p_origem_contato, '')), ''));
   v_codigo  text;
+  v_id      bigint;
   v_n       int;
   v_volta   int;
   v_indice  text;
@@ -1281,7 +1320,21 @@ begin
          nullif(trim(coalesce(p_proxima_acao, '')), ''),
          p_proxima_acao_em,
          v_obs,
-         v_sem and v_fone is null and v_insta is null);
+         v_sem and v_fone is null and v_insta is null)
+      returning id into v_id;
+
+      -- ⚠️ TASK 11: nasce vinculada à edição ABERTA da praça, se houver — a
+      -- stylist criada por esta porta nasce sempre `ativa` (padrão da coluna)
+      -- e nunca `teste` (não é parâmetro aqui), então não precisa reconferir
+      -- os dois; só precisa existir uma edição aberta na praça. Sem edição
+      -- aberta (ou sem praça), nasce sem vínculo — e isso não é erro.
+      if v_praca_id is not null then
+        insert into public.vessel_stylist_na_edicao (stylist_id, edicao_id)
+        select v_id, ed.id from public.vessel_stylist_circle_edicoes ed
+         where ed.praca_id = v_praca_id and ed.situacao = 'aberta'
+         limit 1
+        on conflict (stylist_id, edicao_id) do nothing;
+      end if;
 
       return json_build_object('ok', true, 'situacao', 'ok', 'codigo', v_codigo);
 
@@ -1417,6 +1470,24 @@ begin
                                 else coalesce(p_sem_contato, s.sem_contato) end,
          atualizado_em   = now()
    where s.codigo = v_codigo;
+
+  -- ⚠️ TASK 11: quando a praça MUDA (`p_praca` veio e resolveu uma
+  -- `v_praca_id`), vincula à edição ABERTA da praça nova, se houver — mesmo
+  -- critério de elegibilidade de `vessel_edicao_abrir` (ativa, não-teste).
+  -- ⚠️ NÃO desfaz o vínculo da praça ANTIGA de propósito: o histórico é o que
+  -- congela a edição anterior (se um dia ela encerrar, o congelamento decide
+  -- o destino de quem ficou lá — não esta função, que só cuida de quem entra
+  -- daqui pra frente). `on conflict do nothing`: quem já tinha vínculo não duplica.
+  if v_praca_id is not null then
+    insert into public.vessel_stylist_na_edicao (stylist_id, edicao_id)
+    select s.id, ed.id
+      from public.vessel_stylists s, public.vessel_stylist_circle_edicoes ed
+     where s.codigo = v_codigo
+       and ed.praca_id = v_praca_id and ed.situacao = 'aberta'
+       and coalesce(s.ativa, true) and not coalesce(s.teste, false)
+     limit 1
+    on conflict (stylist_id, edicao_id) do nothing;
+  end if;
 
   return json_build_object('ok', true, 'situacao', 'ok', 'codigo', v_codigo);
 end;
@@ -1948,7 +2019,8 @@ security definer
 set search_path to 'public'
 as $$
 declare
-  v_ed public.vessel_stylist_circle_edicoes%rowtype;
+  v_ed        public.vessel_stylist_circle_edicoes%rowtype;
+  v_incluidas int := 0;
 begin
   if not public.vessel_pode('atendimentos.edicoes', 'editar') then
     return json_build_object('ok', false, 'situacao', 'sem_permissao');
@@ -1961,14 +2033,34 @@ begin
     return json_build_object('ok', false, 'situacao', 'edicao_encerrada');
   end if;
   if v_ed.situacao = 'aberta' then
-    return json_build_object('ok', true, 'situacao', 'sem_mudanca');
+    return json_build_object('ok', true, 'situacao', 'sem_mudanca', 'incluidas', 0);
   end if;
   if exists (select 1 from public.vessel_stylist_circle_edicoes
               where praca_id = v_ed.praca_id and situacao = 'aberta' and id <> p_id) then
     return json_build_object('ok', false, 'situacao', 'ja_tem_aberta');
   end if;
   update public.vessel_stylist_circle_edicoes set situacao = 'aberta' where id = p_id;
-  return json_build_object('ok', true, 'situacao', 'ok');
+
+  -- ⚠️ TASK 11: "edição = a rodada daquela praça" (decisão do dono) — o
+  -- vínculo é AUTOMÁTICO, não uma escolha manual um a um. Ao abrir, toda
+  -- stylist ATIVA e NÃO-teste da praça que ainda não tem NENHUMA linha com
+  -- esta edição entra nela — sem isto o placar por edição nascia zerado para
+  -- sempre (nenhuma tela chamava `vessel_edicao_incluir_stylist`), calado.
+  -- `not exists` na CHAVE INTEIRA (não só `saiu_em is null`): uma stylist
+  -- incluída à mão (`vessel_edicao_incluir_stylist`) ANTES de abrir a edição
+  -- (a 'planejada' aceita incluir) não pode virar linha duplicada aqui.
+  insert into public.vessel_stylist_na_edicao (stylist_id, edicao_id)
+  select s.id, p_id
+    from public.vessel_stylists s
+   where s.praca_id = v_ed.praca_id
+     and coalesce(s.ativa, true)
+     and not coalesce(s.teste, false)
+     and not exists (select 1 from public.vessel_stylist_na_edicao n
+                       where n.stylist_id = s.id and n.edicao_id = p_id)
+  on conflict (stylist_id, edicao_id) do nothing;
+  get diagnostics v_incluidas = row_count;
+
+  return json_build_object('ok', true, 'situacao', 'ok', 'incluidas', v_incluidas);
 end;
 $$;
 

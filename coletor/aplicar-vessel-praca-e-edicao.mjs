@@ -599,6 +599,181 @@ try {
       await cli.query('rollback to savepoint prova_recorte_de_chave')
     }
 
+    console.log('\n  · 1d) TASK 11 — abrir/criar/definir praça vinculam a turma automaticamente (o placar não nasce mais zerado)')
+    // ⚠️ O BURACO: nenhuma tela chamava `vessel_edicao_incluir_stylist` nem
+    // `vessel_stylist_definir_praca` — o placar por edição nascia zerado para
+    // sempre, sem erro nenhum. Decisão do dono: "edição = a rodada daquela
+    // praça", o vínculo é AUTOMÁTICO. Este bloco prova os quatro caminhos que
+    // agora vinculam (abrir, criar, definir_praca, editar mudando a praça) e
+    // o que NUNCA pode acontecer (desativada, teste, duplicata, encerrada).
+    await falarComo(idEditar)
+
+    // ── praça J: a turma que "abrir" tem de incluir ──────────────────────────
+    x = await chamarGravando(`public.vessel_praca_criar(p_sigla => $1, p_nome => $2, p_loja_destino => $3)`, ['PVJ', 'Praça de Prova J', null])
+    conferir(x.v?.ok === true, 'praca_criar: praça J (a turma que "abrir" tem de incluir)', x.v ?? x.e?.message)
+    const pracaJ = x.v?.id
+    x = await chamarGravando(`public.vessel_praca_criar(p_sigla => $1, p_nome => $2, p_loja_destino => $3)`, ['PVK', 'Praça de Prova K (outra)', null])
+    const pracaK = x.v?.id
+    x = await chamarGravando(`public.vessel_edicao_criar(p_praca_id => $1, p_nome => $2, p_comeca_em => $3, p_termina_em => null)`, [pracaJ, 'Edição J1', hoje])
+    const edicaoJ1 = x.v?.id
+
+    // as fixtures direto na tabela (mesmo padrão do resto do arquivo) —
+    // ativa/teste variados, para provar quem entra e quem NÃO entra.
+    await uma(`insert into public.vessel_stylists (codigo, nome, whatsapp, teste, ativa, praca_id)
+       values ('STY-PROVA-T11-A', 'Prova T11 A', '5519990005001', false, true, $1)`, [pracaJ])
+    await uma(`insert into public.vessel_stylists (codigo, nome, whatsapp, teste, ativa, praca_id)
+       values ('STY-PROVA-T11-B', 'Prova T11 B', '5519990005002', false, true, $1)`, [pracaJ])
+    await uma(`insert into public.vessel_stylists (codigo, nome, whatsapp, teste, ativa, praca_id)
+       values ('STY-PROVA-T11-C', 'Prova T11 C', '5519990005003', false, true, $1)`, [pracaJ])
+    await uma(`insert into public.vessel_stylists (codigo, nome, whatsapp, teste, ativa, praca_id)
+       values ('STY-PROVA-T11-DESATIVADA', 'Prova T11 Desativada', '5519990005004', false, false, $1)`, [pracaJ])
+    await uma(`insert into public.vessel_stylists (codigo, nome, whatsapp, teste, ativa, praca_id)
+       values ('STY-PROVA-T11-TESTE', 'Prova T11 Teste', '5519990005005', true, true, $1)`, [pracaJ])
+    await uma(`insert into public.vessel_stylists (codigo, nome, whatsapp, teste, ativa, praca_id)
+       values ('STY-PROVA-T11-JATEM', 'Prova T11 Já Tem Vínculo', '5519990005006', false, true, $1)`, [pracaJ])
+    await uma(`insert into public.vessel_stylists (codigo, nome, whatsapp, teste, ativa, praca_id)
+       values ('STY-PROVA-T11-OUTRAPRACA', 'Prova T11 Outra Praça', '5519990005007', false, true, $1)`, [pracaK])
+
+    // já vinculada ANTES de abrir (a 'planejada' aceita incluir à mão) — não
+    // pode virar linha duplicada quando "abrir" processar a turma inteira.
+    x = await chamarGravando(`public.vessel_edicao_incluir_stylist(p_codigo => $1, p_edicao_id => $2)`, ['STY-PROVA-T11-JATEM', edicaoJ1])
+    conferir(x.v?.ok === true, 'edicao_incluir_stylist: a stylist "já tem" entra à mão, antes de abrir', x.v ?? x.e?.message)
+
+    x = await chamarGravando(`public.vessel_edicao_abrir(p_id => $1)`, [edicaoJ1])
+    conferir(x.v?.ok === true && x.v?.situacao === 'ok' && x.v?.incluidas === 3,
+      'edicao_abrir: incluidas=3 — A, B e C (a desativada, a de teste, a já-vinculada e a de outra praça NÃO contam)', x.v ?? x.e?.message)
+
+    const vinculadosJ1 = await todas(`select s.codigo from public.vessel_stylist_na_edicao n
+       join public.vessel_stylists s on s.id = n.stylist_id
+      where n.edicao_id = $1 and n.saiu_em is null order by s.codigo`, [edicaoJ1])
+    const codigosVinculadosJ1 = vinculadosJ1.map((l) => l.codigo).sort()
+    conferir(JSON.stringify(codigosVinculadosJ1) === JSON.stringify(['STY-PROVA-T11-A', 'STY-PROVA-T11-B', 'STY-PROVA-T11-C', 'STY-PROVA-T11-JATEM']),
+      'só A, B, C e a já-vinculada estão em J1 — a desativada, a de teste e a de outra praça ficaram de fora', codigosVinculadosJ1)
+
+    // a PROVA QUE FECHA O ASSUNTO: o placar nasce com gente, não zerado.
+    let placar = await chamarGravando(`public.vessel_placar_da_edicao(p_edicao_id => $1)`, [edicaoJ1])
+    conferir(placar.v?.prospectadas === 4, 'vessel_placar_da_edicao: prospectadas=4 — o placar NASCE COM GENTE (A+B+C+já-vinculada), não zerado para sempre', placar.v)
+    const somaDasEtapasJ1 = (placar.v?.etapas || []).reduce((soma, et) => soma + (et.stylists || 0), 0)
+    conferir(somaDasEtapasJ1 === 4, 'e a soma das etapas do placar bate com a turma (4) — distribuída de verdade pelas etapas, não um número solto', { etapas: placar.v?.etapas, soma: somaDasEtapasJ1 })
+
+    // ── criar stylist: com edição aberta (vincula) e sem edição aberta (não vincula, não é erro) ──
+    x = await chamarGravando(`public.vessel_praca_criar(p_sigla => $1, p_nome => $2, p_loja_destino => $3)`, ['PVL', 'Praça de Prova L', null])
+    const pracaL = x.v?.id
+    x = await chamarGravando(`public.vessel_edicao_criar(p_praca_id => $1, p_nome => $2, p_comeca_em => $3, p_termina_em => null)`, [pracaL, 'Edição L1', hoje])
+    const edicaoL1 = x.v?.id
+    x = await chamarGravando(`public.vessel_edicao_abrir(p_id => $1)`, [edicaoL1])
+    conferir(x.v?.ok === true && x.v?.incluidas === 0, 'edicao_abrir: praça L nasce sem ninguém — incluidas=0 (praça vazia ainda, não é erro)', x.v ?? x.e?.message)
+
+    x = await chamarGravando(`public.vessel_stylist_criar(p_nome => $1, p_whatsapp => $2, p_praca => $3, p_origem_contato => $4)`,
+      ['Prova T11 Criada Com Edição Aberta', '5519990005008', 'PVL', 'indicacao'])
+    conferir(x.v?.ok === true, 'stylist_criar: nasce na praça L (que tem edição aberta)', x.v ?? x.e?.message)
+    const codigoCriadaComAberta = x.v?.codigo
+    const vinculoCriadaComAberta = await r(`(select exists(select 1 from public.vessel_stylist_na_edicao n
+       join public.vessel_stylists s on s.id = n.stylist_id where s.codigo = $1 and n.edicao_id = $2 and n.saiu_em is null))`,
+      [codigoCriadaComAberta, edicaoL1])
+    conferir(vinculoCriadaComAberta === true, 'e já nasce vinculada à edição aberta de L, sem chamar mais nada', vinculoCriadaComAberta)
+
+    x = await chamarGravando(`public.vessel_praca_criar(p_sigla => $1, p_nome => $2, p_loja_destino => $3)`, ['PVM', 'Praça de Prova M (sem edição aberta)', null])
+    const pracaM = x.v?.id
+    await chamarGravando(`public.vessel_edicao_criar(p_praca_id => $1, p_nome => $2, p_comeca_em => $3, p_termina_em => null)`, [pracaM, 'Edição M1 (planejada)', hoje])
+    // ⚠️ de propósito NÃO abro a edição M1 — a praça M fica sem edição aberta.
+
+    x = await chamarGravando(`public.vessel_stylist_criar(p_nome => $1, p_whatsapp => $2, p_praca => $3, p_origem_contato => $4)`,
+      ['Prova T11 Criada Sem Edição Aberta', '5519990005009', 'PVM', 'indicacao'])
+    conferir(x.v?.ok === true, 'stylist_criar: nasce na praça M (SEM edição aberta) — e isso não é erro', x.v ?? x.e?.message)
+    const codigoCriadaSemAberta = x.v?.codigo
+    const semVinculoNenhum = await r(`(select count(*)::int from public.vessel_stylist_na_edicao n
+       join public.vessel_stylists s on s.id = n.stylist_id where s.codigo = $1)`, [codigoCriadaSemAberta])
+    conferir(semVinculoNenhum === 0, 'e nasce SEM vínculo nenhum (nenhuma edição aberta para entrar)', semVinculoNenhum)
+
+    // ── definir/mudar praça vincula à edição aberta da praça nova ────────────
+    const styParaDefinir = await uma(`insert into public.vessel_stylists (codigo, nome, whatsapp, teste)
+       values ('STY-PROVA-T11-DEFINIR', 'Prova T11 Definir Praça', '5519990005010', false) returning id`)
+    x = await chamarGravando(`public.vessel_stylist_definir_praca(p_codigo => $1, p_praca_id => $2)`, ['STY-PROVA-T11-DEFINIR', pracaL])
+    conferir(x.v?.ok === true, 'stylist_definir_praca: define a praça L (que tem edição aberta)', x.v ?? x.e?.message)
+    const vinculoDefinirPraca = await r(`(select exists(select 1 from public.vessel_stylist_na_edicao where stylist_id = $1 and edicao_id = $2 and saiu_em is null))`,
+      [styParaDefinir.id, edicaoL1])
+    conferir(vinculoDefinirPraca === true, 'e fica vinculada à edição aberta de L', vinculoDefinirPraca)
+
+    const styParaEditar = await uma(`insert into public.vessel_stylists (codigo, nome, whatsapp, teste)
+       values ('STY-PROVA-T11-EDITAR', 'Prova T11 Editar Praça', '5519990005011', false) returning id`)
+    x = await chamarGravando(`public.vessel_stylist_editar(p_codigo => $1, p_praca => $2)`, ['STY-PROVA-T11-EDITAR', 'PVL'])
+    conferir(x.v?.ok === true, 'stylist_editar: muda a praça para L (que tem edição aberta)', x.v ?? x.e?.message)
+    const vinculoEditarPraca = await r(`(select exists(select 1 from public.vessel_stylist_na_edicao where stylist_id = $1 and edicao_id = $2 and saiu_em is null))`,
+      [styParaEditar.id, edicaoL1])
+    conferir(vinculoEditarPraca === true, 'e fica vinculada à edição aberta de L', vinculoEditarPraca)
+
+    // idempotência: chamar de novo (mesma praça) não duplica o vínculo.
+    await chamarGravando(`public.vessel_stylist_definir_praca(p_codigo => $1, p_praca_id => $2)`, ['STY-PROVA-T11-DEFINIR', pracaL])
+    const linhasDefinirDeNovo = await r(`(select count(*)::int from public.vessel_stylist_na_edicao where stylist_id = $1 and edicao_id = $2)`,
+      [styParaDefinir.id, edicaoL1])
+    conferir(linhasDefinirDeNovo === 1, 'definir a MESMA praça de novo não duplica o vínculo (on conflict do nothing)', linhasDefinirDeNovo)
+
+    // ── edição encerrada continua intocada em todos esses caminhos ───────────
+    x = await chamarGravando(`public.vessel_edicao_encerrar(p_id => $1, p_levar_para => $2)`, [edicaoJ1, null])
+    conferir(x.v?.ok === true, 'edicao_encerrar: encerra J1 (a praça J fica sem edição aberta)', x.v ?? x.e?.message)
+    const linhasJ1Antes = await r(`(select count(*)::int from public.vessel_stylist_na_edicao where edicao_id = $1)`, [edicaoJ1])
+
+    x = await chamarGravando(`public.vessel_stylist_criar(p_nome => $1, p_whatsapp => $2, p_praca => $3, p_origem_contato => $4)`,
+      ['Prova T11 Criada Com J Encerrada', '5519990005012', 'PVJ', 'indicacao'])
+    conferir(x.v?.ok === true, 'stylist_criar: nasce na praça J (a única edição dela está ENCERRADA) — não é erro', x.v ?? x.e?.message)
+    const codigoComJEncerrada = x.v?.codigo
+    const semVinculoComJEncerrada = await r(`(select count(*)::int from public.vessel_stylist_na_edicao n
+       join public.vessel_stylists s on s.id = n.stylist_id where s.codigo = $1)`, [codigoComJEncerrada])
+    conferir(semVinculoComJEncerrada === 0, 'e nasce sem vínculo nenhum — edição encerrada NÃO aceita gente nova', semVinculoComJEncerrada)
+
+    const styParaDefinirJEncerrada = await uma(`insert into public.vessel_stylists (codigo, nome, whatsapp, teste)
+       values ('STY-PROVA-T11-DEFINIR-J-ENCERRADA', 'Prova T11 Definir com J Encerrada', '5519990005013', false) returning id`)
+    await chamarGravando(`public.vessel_stylist_definir_praca(p_codigo => $1, p_praca_id => $2)`, ['STY-PROVA-T11-DEFINIR-J-ENCERRADA', pracaJ])
+    const semVinculoDefinirJEncerrada = await r(`(select count(*)::int from public.vessel_stylist_na_edicao where stylist_id = $1)`, [styParaDefinirJEncerrada.id])
+    conferir(semVinculoDefinirJEncerrada === 0, 'definir a praça J (só tem edição encerrada) também não vincula ninguém', semVinculoDefinirJEncerrada)
+
+    const linhasJ1Depois = await r(`(select count(*)::int from public.vessel_stylist_na_edicao where edicao_id = $1)`, [edicaoJ1])
+    conferir(linhasJ1Depois === linhasJ1Antes, 'e a CONTAGEM de vínculos de J1 (encerrada) não mudou nem um pouco com nada disso',
+      { antes: linhasJ1Antes, depois: linhasJ1Depois })
+
+    console.log('\n  · 1e) mutação de propósito: tirando a inclusão automática de vessel_edicao_abrir, o placar nasce ZERADO — a divergência que este achado existia para eliminar')
+    await cli.query('savepoint prova_mutacao_turma')
+    try {
+      const funcaoBoaAbrir = (await uma(`select pg_get_functiondef('public.vessel_edicao_abrir(bigint)'::regprocedure) as def`)).def
+      const trechoInclusao = /insert into public\.vessel_stylist_na_edicao \(stylist_id, edicao_id\)\s*select s\.id, p_id[\s\S]*?get diagnostics v_incluidas = row_count;\n/
+      if (!trechoInclusao.test(funcaoBoaAbrir)) throw new Error('a mutação não achou o trecho da inclusão automática em vessel_edicao_abrir — o texto da função mudou')
+      const funcaoQuebrada = funcaoBoaAbrir.replace(trechoInclusao, '')
+      await cli.query(funcaoQuebrada)
+
+      x = await chamarGravando(`public.vessel_praca_criar(p_sigla => $1, p_nome => $2, p_loja_destino => $3)`, ['PVN', 'Praça de Prova N (mutada)', null])
+      const pracaN = x.v?.id
+      await uma(`insert into public.vessel_stylists (codigo, nome, whatsapp, teste, ativa, praca_id)
+         values ('STY-PROVA-T11-N', 'Prova T11 N', '5519990005014', false, true, $1)`, [pracaN])
+      x = await chamarGravando(`public.vessel_edicao_criar(p_praca_id => $1, p_nome => $2, p_comeca_em => $3, p_termina_em => null)`, [pracaN, 'Edição N1', hoje])
+      const edicaoN1 = x.v?.id
+      x = await chamarGravando(`public.vessel_edicao_abrir(p_id => $1)`, [edicaoN1])
+      const incluidasQuebrada = x.v?.incluidas
+      const placarN1 = await chamarGravando(`public.vessel_placar_da_edicao(p_edicao_id => $1)`, [edicaoN1])
+      const zerou = incluidasQuebrada === 0 && placarN1.v?.prospectadas === 0
+      console.log(`    ${zerou ? '✗' : '✓'} SEM a inclusão automática: incluidas=${incluidasQuebrada}, placar.prospectadas=${placarN1.v?.prospectadas} ${zerou ? '— ZEROU, é o defeito que este achado existia para eliminar' : '(inesperado)'}`)
+      conferir(zerou === true,
+        'MUTAÇÃO: sem a inclusão automática em vessel_edicao_abrir, a praça N tem 1 stylist elegível mas o placar nasce ZERADO — a divergência exata do buraco estrutural',
+        { incluidasQuebrada, prospectadas: placarN1.v?.prospectadas })
+    } finally {
+      await cli.query('rollback to savepoint prova_mutacao_turma')
+    }
+
+    // com a função REAL (inclusão automática restaurada), o MESMO tipo de cenário não zera.
+    x = await chamarGravando(`public.vessel_praca_criar(p_sigla => $1, p_nome => $2, p_loja_destino => $3)`, ['PVN', 'Praça de Prova N (restaurada)', null])
+    const pracaNR = x.v?.id
+    await uma(`insert into public.vessel_stylists (codigo, nome, whatsapp, teste, ativa, praca_id)
+       values ('STY-PROVA-T11-NR', 'Prova T11 N Restaurada', '5519990005015', false, true, $1)`, [pracaNR])
+    x = await chamarGravando(`public.vessel_edicao_criar(p_praca_id => $1, p_nome => $2, p_comeca_em => $3, p_termina_em => null)`, [pracaNR, 'Edição NR1', hoje])
+    const edicaoNR1 = x.v?.id
+    x = await chamarGravando(`public.vessel_edicao_abrir(p_id => $1)`, [edicaoNR1])
+    const incluidasRestaurada = x.v?.incluidas
+    const placarNR1 = await chamarGravando(`public.vessel_placar_da_edicao(p_edicao_id => $1)`, [edicaoNR1])
+    const restaurouCerto = incluidasRestaurada === 1 && placarNR1.v?.prospectadas === 1
+    console.log(`    ${restaurouCerto ? '✓' : '✗'} COM a inclusão automática (restaurada): incluidas=${incluidasRestaurada}, placar.prospectadas=${placarNR1.v?.prospectadas} ${restaurouCerto ? '— bate certo' : '— ZEROU, bug de volta!'}`)
+    conferir(restaurouCerto === true, 'COM a inclusão automática restaurada: o placar da praça N nasce com 1 (não mais zero)',
+      { incluidasRestaurada, prospectadas: placarNR1.v?.prospectadas })
+
     console.log("\n  · 2) quem SÓ TEM 'ver' — as nove funções de escrita têm de barrar, e NADA grava (medido DENTRO do savepoint, antes do rollback)")
     await falarComo(idVer)
     // Uma medida ESPECÍFICA por função (não só "a contagem total das 4
@@ -1175,6 +1350,15 @@ try {
     const edicaoLim1 = x.v?.id
     x = await chamarGravando(`public.vessel_edicao_abrir(p_id => $1)`, [edicaoLim1])
     conferir(x.v?.ok === true, 'edicao_abrir: abre a edição 1 de Limeira', x.v ?? x.e?.message)
+    // ⚠️ TASK 11: abrir agora vincula a turma REAL inteira da praça (todas as
+    // stylists ativas e não-teste de Limeira — não é mais só quem a prova
+    // inclui à mão). As provas de placar abaixo (seção 11/11b/11c) não podem
+    // mais esperar números fixos tipo "1" — o baseline é ESTE número, medido
+    // agora, e todo o resto compara por DELTA contra ele (robusto a quantas
+    // stylists reais Limeira tiver no dia em que o ensaio rodar).
+    const prospectadasBaseLim = x.v?.incluidas
+    conferir(Number.isInteger(prospectadasBaseLim) && prospectadasBaseLim > 0,
+      'TASK 11: abrir a edição de Limeira incluiu a turma real (incluidas > 0) — é o baseline das provas de placar abaixo', prospectadasBaseLim)
     x = await chamarGravando(`public.vessel_edicao_criar(p_praca_id => $1, p_nome => $2, p_comeca_em => $3, p_termina_em => null)`, [pracaLim.id, 'Edição LIM 2 (prova)', hoje])
     conferir(x.v?.ok === true, 'edicao_criar: edição 2 de Limeira (destino do levar_para)', x.v ?? x.e?.message)
     const edicaoLim2 = x.v?.id
@@ -1255,15 +1439,19 @@ try {
       'MENOR 2: o CONJUNTO de chaves da resposta é EXATAMENTE o do contrato (nenhuma falta, nenhuma sobra — `receita_total` ou qualquer chave nova também reprovaria aqui)',
       { chavesRecebidas, chavesEsperadas })
 
-    conferir(placarAntes.v?.prospectadas === 1,
-      'prospectadas: só a stylist de Limeira (MENOR 1: a de TESTE, mesma edição, não conta — a turma é por vessel_stylist_na_edicao, filtrada por teste, não por data)', placarAntes.v)
+    // ⚠️ TASK 11: `prospectadas` é a TURMA REAL da praça, não mais "só a
+    // stylist que a prova incluiu à mão" — o baseline (`prospectadasBaseLim`,
+    // medido no 10b, logo depois de abrir) é o número certo agora. A de TESTE
+    // (MENOR 1) continua de fora, seja qual for o baseline.
+    conferir(placarAntes.v?.prospectadas === prospectadasBaseLim,
+      'prospectadas: a turma real de Limeira (baseline do TASK 11 — a de TESTE, MENOR 1, não conta)', { prospectadas: placarAntes.v?.prospectadas, prospectadasBaseLim })
     conferir(placarAntes.v?.encontros_agendados === 1, '(a) encontros_agendados: o encontro criado pela porta real EM LIM aparece nos números', placarAntes.v)
 
     const totalEtapasAtivas = await r(`(select count(*)::int from public.vessel_stylist_etapas where ativa)`)
     conferir(placarAntes.v?.etapas?.length === totalEtapasAtivas,
       'etapas: TODAS as etapas ativas aparecem (nenhum número fixo no código) — inclusive as de zero', { esperado: totalEtapasAtivas, recebido: placarAntes.v?.etapas?.length })
     const somaEtapas = (placarAntes.v?.etapas ?? []).reduce((n, e) => n + (e.stylists || 0), 0)
-    conferir(somaEtapas === 1, 'a soma das etapas bate com a única stylist da turma (a de teste não entra)', placarAntes.v?.etapas)
+    conferir(somaEtapas === prospectadasBaseLim, 'a soma das etapas bate com a turma real (a de teste não entra)', { somaEtapas, prospectadasBaseLim })
 
     console.log('\n    · edição inexistente levanta (não devolve silêncio)')
     {
@@ -1316,8 +1504,8 @@ try {
 
     // COM o recorte restaurado, o mesmo cenário volta a dar 1 — a prova tem dente nos dois sentidos.
     const placarRestaurado = await chamarGravando(`public.vessel_placar_da_edicao(p_edicao_id => $1)`, [edicaoLim1])
-    console.log(`      ${placarRestaurado.v?.prospectadas === 1 ? '✓' : '✗'} COM o recorte (restaurado): prospectadas volta a ${placarRestaurado.v?.prospectadas} (era para ser 1)`)
-    conferir(placarRestaurado.v?.prospectadas === 1, 'COM o `where` restaurado: o placar de Limeira volta a contar só a stylist de Limeira', placarRestaurado.v?.prospectadas)
+    console.log(`      ${placarRestaurado.v?.prospectadas === prospectadasBaseLim ? '✓' : '✗'} COM o recorte (restaurado): prospectadas volta a ${placarRestaurado.v?.prospectadas} (era para ser ${prospectadasBaseLim})`)
+    conferir(placarRestaurado.v?.prospectadas === prospectadasBaseLim, 'COM o `where` restaurado: o placar de Limeira volta a contar só a turma real dela', { prospectadas: placarRestaurado.v?.prospectadas, prospectadasBaseLim })
 
     console.log('\n    · MUTAÇÃO (a) — o CRÍTICO original: tirar `praca_id` de vessel_criar_private_edit, mostrar a conferência REPROVANDO, restaurar e mostrar o ✓')
     await cli.query('savepoint prova_mutacao_praca_id_do_encontro')
@@ -1389,6 +1577,16 @@ try {
       [encontro2Codigo, hojeMenos(2)])
     conferir(x.v?.ok === true, 'private_edit_situacao: marca o 2º encontro como realizado, 2 dias atrás — intervalo de 4 dias entre os dois', x.v ?? x.e?.message)
 
+    // ⚠️ TASK 11: `stylists_com_contatos_ate_ativar`/`contatos_ate_ativar` são
+    // somas sobre a TURMA INTEIRA — com a turma real de Limeira (não mais só
+    // a stylist da prova), outras stylists reais podem já contribuir para
+    // esses dois números. Mede o BASELINE agora (antes de inserir os contatos
+    // de prova) e compara por DELTA — a única coisa que esta prova pode
+    // garantir é o que ELA ACRESCENTA, não um total absoluto.
+    const placarAntesDosContatos = await chamarGravando(`public.vessel_placar_da_edicao(p_edicao_id => $1)`, [edicaoLim1])
+    const stylistsComContatosBase = placarAntesDosContatos.v?.stylists_com_contatos_ate_ativar
+    const contatosAteAtivarBase = placarAntesDosContatos.v?.contatos_ate_ativar
+
     // Dois contatos ANTES de ativar (contam) e um DEPOIS (não conta).
     const ativouEm = await r(`(select public.vessel_stylist_ativada_em($1))`, [styLim.id])
     conferir(ativouEm !== null, 'a stylist de Limeira está ativada (senão a prova de contatos não tem o que medir)', ativouEm)
@@ -1405,12 +1603,21 @@ try {
       'intervalos: 1 (o segundo realizado tem um primeiro antes dele, na mesma stylist)', placarComOsDoisNumeros.v?.intervalos)
     conferir(placarComOsDoisNumeros.v?.intervalo_medio_em_dias === 4,
       'intervalo_medio_em_dias: exatamente 4 (6 dias atrás → 2 dias atrás)', placarComOsDoisNumeros.v?.intervalo_medio_em_dias)
-    conferir(placarComOsDoisNumeros.v?.stylists_com_contatos_ate_ativar === 1,
-      'stylists_com_contatos_ate_ativar: 1 (só a de Limeira está ativada nesta turma — a de teste não entra, MENOR 1)',
-      placarComOsDoisNumeros.v?.stylists_com_contatos_ate_ativar)
-    conferir(placarComOsDoisNumeros.v?.contatos_ate_ativar === 2,
-      'contatos_ate_ativar: 2 (só os DOIS contatos ANTES de ativar contam — o de depois fica de fora)',
-      placarComOsDoisNumeros.v?.contatos_ate_ativar)
+    // ⚠️ TASK 11 — leitura correta do campo (não é "quem TEM contato"; é o
+    // DIVISOR da média: quantas estão ATIVADAS na turma, ver a query da
+    // função). Inserir contatos não ativa ninguém — não muda.
+    conferir(placarComOsDoisNumeros.v?.stylists_com_contatos_ate_ativar === stylistsComContatosBase,
+      'stylists_com_contatos_ate_ativar: NÃO muda ao inserir contatos — é quem está ATIVADA na turma (o divisor da média), e isso não muda',
+      { antes: stylistsComContatosBase, depois: placarComOsDoisNumeros.v?.stylists_com_contatos_ate_ativar })
+    // ⚠️ `contatos_ate_ativar` é MÉDIA, não soma — o "+2" só é exato porque a
+    // de Limeira é a ÚNICA ativada nesta turma agora (confirmado acima:
+    // stylistsComContatosBase === 1), então a média = o `n` dela mesma.
+    conferir(stylistsComContatosBase === 1,
+      'pré-condição da conta abaixo: a de Limeira é a ÚNICA stylist ativada na turma agora (com mais de uma ativada a média deixaria de ser um delta simples)',
+      stylistsComContatosBase)
+    conferir(placarComOsDoisNumeros.v?.contatos_ate_ativar === contatosAteAtivarBase + 2,
+      'contatos_ate_ativar: sobe exatamente 2 (só os DOIS contatos ANTES de ativar contam — o de depois fica de fora)',
+      { antes: contatosAteAtivarBase, depois: placarComOsDoisNumeros.v?.contatos_ate_ativar })
 
     console.log('\n    · MUTAÇÃO: sem o `lag()` no `realizados`, `intervalos`/`intervalo_medio_em_dias` têm de voltar a zero/nulo — reprova')
     await cli.query('savepoint prova_mutacao_intervalo')
@@ -1446,11 +1653,13 @@ try {
     conferir(sumiuDoRastreio === true,
       'vessel_rastreio_dos_stylists (o quadro/lista, sem pedir desativadas): a stylist desativada some — o comportamento de sempre', rastreioSemDesativada.v)
     const placarComDesativada = await chamarGravando(`public.vessel_placar_da_edicao(p_edicao_id => $1)`, [edicaoLim1])
-    conferir(placarComDesativada.v?.prospectadas === 0,
-      'IMPORTANTE 5: com o mesmo filtro `ativa`, o placar TAMBÉM fica sem ela — prospectadas cai de 1 para 0, fechando com o quadro (que já ficou vazio)',
-      placarComDesativada.v?.prospectadas)
+    // ⚠️ TASK 11: com a turma real de Limeira, "cai a zero" não vale mais —
+    // cai em UM (só a de Limeira sai; o resto da turma real continua).
+    conferir(placarComDesativada.v?.prospectadas === prospectadasBaseLim - 1,
+      'IMPORTANTE 5: com o mesmo filtro `ativa`, o placar TAMBÉM fica sem ela — prospectadas cai em exatamente 1 (o resto da turma real continua)',
+      { prospectadas: placarComDesativada.v?.prospectadas, esperado: prospectadasBaseLim - 1 })
     const somaEtapasComDesativada = (placarComDesativada.v?.etapas ?? []).reduce((n, e) => n + (e.stylists || 0), 0)
-    conferir(somaEtapasComDesativada === 0, 'e a soma das etapas do placar também cai a zero — os dois lados fecham', placarComDesativada.v?.etapas)
+    conferir(somaEtapasComDesativada === prospectadasBaseLim - 1, 'e a soma das etapas do placar acompanha — os dois lados fecham', { somaEtapasComDesativada, esperado: prospectadasBaseLim - 1 })
     x = await chamarGravando(`public.vessel_stylist_desativar(p_codigo => $1, p_ativa => true)`, [codigoStyLim])
     conferir(x.v?.ok === true, 'stylist_desativar: reativa (deixando o resto da prova como estava)', x.v ?? x.e?.message)
 
@@ -1465,11 +1674,15 @@ try {
       if (!trechoAtiva.test(funcaoBoaAtiva)) throw new Error('a mutação não achou o filtro de `ativa` em vessel_placar_da_edicao — o texto da função mudou')
       await cli.query(funcaoBoaAtiva.replace(trechoAtiva, ''))
       const placarMutadoAtiva = await chamarGravando(`public.vessel_placar_da_edicao(p_edicao_id => $1)`, [edicaoLim1])
-      const reprovouAtiva = placarMutadoAtiva.v?.prospectadas === 1
+      // ⚠️ TASK 11: sem o filtro, TODA a turma_ids original conta de novo —
+      // volta a bater com o baseline (a desativada é a única cujo `ativa`
+      // mudou DEPOIS de ela já estar em turma_ids; o resto da turma real
+      // nunca deixou de ser ativa).
+      const reprovouAtiva = placarMutadoAtiva.v?.prospectadas === prospectadasBaseLim
       console.log(`      ${reprovouAtiva ? '✗' : '✓'} SEM o filtro de \`ativa\`: prospectadas=${placarMutadoAtiva.v?.prospectadas} (era para a desativada ${reprovouAtiva ? 'voltar a contar — o defeito original' : 'continuar de fora (inesperado)'})`)
       conferir(reprovouAtiva === true,
         'MUTAÇÃO: sem `and coalesce(s.ativa, true)`, a stylist desativada volta a contar no placar — prova que o filtro não é decoração',
-        { prospectadas: placarMutadoAtiva.v?.prospectadas })
+        { prospectadas: placarMutadoAtiva.v?.prospectadas, prospectadasBaseLim })
     } finally {
       await cli.query('rollback to savepoint prova_mutacao_ativa')
     }
