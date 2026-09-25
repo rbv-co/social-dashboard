@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { semComentarios } from '../../compartilhado/guarda-de-imports.mjs';
-import { GT_METRIC_CATALOG, GT_BALDE_PADRAO, custoDoAlvo } from './metricas.js';
+import { GT_METRIC_CATALOG, GT_BALDE_PADRAO, custoDoAlvo, insightDoConjunto } from './metricas.js';
 
 // Um insight com número redondo em cada métrica, pra conta errada aparecer.
 const INS = {
@@ -205,4 +205,33 @@ test('a tela só importa de metricas.js o que o módulo exporta e o que ela usa'
   const semUso = importados.filter((nome) => !new RegExp(`\\b${nome}\\b`).test(corpo));
   assert.deepEqual(semUso, [],
     `a tela importa ${semUso.join(', ')} de metricas.js e nunca usa — import morto`);
+});
+
+// insightDoConjunto — Onda C, Tarefa 5 (KPI de cada conjunto na campanha MISTA).
+test('insightDoConjunto soma gasto e actions dos anúncios do conjunto', () => {
+  const anuncios = [
+    { spend: '100', actions: [{ action_type: 'link_click', value: '30' }] },
+    { spend: '50', actions: [{ action_type: 'link_click', value: '10' }, { action_type: 'lead', value: '2' }] },
+  ];
+  const ins = insightDoConjunto(anuncios);
+  assert.equal(ins.spend, '150');
+  const porTipo = Object.fromEntries(ins.actions.map((a) => [a.action_type, a.value]));
+  assert.equal(porTipo.link_click, '40');
+  assert.equal(porTipo.lead, '2');
+  // Usável direto pelo catálogo, como qualquer insight de verdade.
+  assert.equal(GT_METRIC_CATALOG.custo_visita_perfil.compute(ins), 150 / 40);
+});
+
+test('insightDoConjunto de conjunto sem anúncio (gasto zero na janela) nunca inventa resultado', () => {
+  const ins = insightDoConjunto([]);
+  assert.equal(ins.spend, '0');
+  assert.deepEqual(ins.actions, []);
+  // Ausência de clique é null, nunca 0 — regra "quantidade zero devolve null".
+  assert.equal(GT_METRIC_CATALOG.custo_visita_perfil.compute(ins), null);
+});
+
+test('insightDoConjunto tolera anúncio sem actions (campanha nunca gerou nenhuma ação na janela)', () => {
+  const ins = insightDoConjunto([{ spend: '20' }]);
+  assert.equal(ins.spend, '20');
+  assert.deepEqual(ins.actions, []);
 });

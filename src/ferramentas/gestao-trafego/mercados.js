@@ -160,6 +160,30 @@ export function mercadoDoConjunto(conjunto) {
 // produz um custo por unidade que não representa nada (o caso real é a
 // [LEADS LOJA][mixconversão] da Vessel: um conjunto de WhatsApp e um de site
 // na mesma campanha, ao mesmo tempo).
+// GASTO POR MERCADO dentro de UMA campanha — para o CABEÇALHO da campanha
+// MISTA (Onda C, Tarefa 5): "mostra quais mercados ela mistura e o gasto de
+// cada um", sem um custo único (decisão do dono, 25/09/2026 — o caso real é a
+// [LEADS LOJA][mixconversão] da Vessel). Recebe os GRUPOS já montados por
+// `montarHierarquia` (orcamento-hierarquia.js): cada grupo é um conjunto de
+// anúncios, com `.conjunto` (o adset cru, com destination_type/
+// optimization_goal) e `.gasto` (soma do gasto dos anúncios do grupo — a MESMA
+// fonte que o cartão já usa para o gasto de cada conjunto, não um cálculo
+// novo). Um grupo sem `.conjunto` (o `_sem_conjunto` que `montarHierarquia`
+// inventa para não perder anúncio órfão) cai em 'desconhecido' — mesma regra
+// de `mercadoDoConjunto` para um sinal ausente, nunca apaga os outros grupos.
+// PURO: sem rede, sem tela.
+export function gastoPorMercado(grupos) {
+  const porMercado = new Map();
+  for (const g of grupos || []) {
+    const mercado = mercadoDoConjunto((g && g.conjunto) || {});
+    const gasto = Number(g && g.gasto) || 0;
+    porMercado.set(mercado, (porMercado.get(mercado) || 0) + gasto);
+  }
+  return [...porMercado.entries()]
+    .map(([mercado, gasto]) => ({ mercado, gasto }))
+    .sort((a, b) => b.gasto - a.gasto);
+}
+
 export function mercadoDaCampanha(conjuntos) {
   // Campanha SEM conjunto (`conjuntos` vazio ou ausente) cai em 'desconhecido'
   // — e isso está CERTO, não é bug nem lacuna de coleta. São 186 campanhas nas

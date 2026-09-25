@@ -75,7 +75,11 @@ const ROTULO_PESO = {
 // que vai DEPOIS do "—" numa colisão (ou o nome da linha, ou o título do
 // exemplo): português que signifique algo pra quem não conhece o nome da
 // chave no código.
-const ROTULO_MERCADO = {
+// EXPORTADO (Onda C, Tarefa 5): o cartão da campanha (tela-de-gestao-trafego.vue)
+// precisa do MESMO nome em português pro chip de mercado — duplicar o mapa lá
+// seria a mesma classe de defeito que produziu "Custo por lead — lead" aqui:
+// duas fontes que podem divergir. Fonte única.
+export const ROTULO_MERCADO = {
   conversa: 'conversa no WhatsApp', lead: 'cadastro', perfil: 'visita ao perfil',
   video: 'vídeo', post: 'engajamento no post', site_venda: 'venda no site',
   site_trafego: 'tráfego para o site', reconhecimento: 'alcance',

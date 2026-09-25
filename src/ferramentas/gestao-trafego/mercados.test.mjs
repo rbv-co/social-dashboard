@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  mercadoDoConjunto, mercadoDaCampanha, MERCADOS,
+  mercadoDoConjunto, mercadoDaCampanha, gastoPorMercado, MERCADOS,
   MERCADO_POR_DESTINO, DESTINOS_QUE_EXIGEM_DESEMPATE,
 } from './mercados.js';
 
@@ -195,4 +195,40 @@ test('trava de consistência: nenhum destino que exige desempate decide sozinho 
       `${destino} não pode estar em MERCADO_POR_DESTINO e em DESTINOS_QUE_EXIGEM_DESEMPATE ao mesmo tempo`,
     );
   }
+});
+
+// gastoPorMercado — Onda C, Tarefa 5 (cartão da campanha MISTA).
+test('gastoPorMercado soma o gasto de cada conjunto pelo MERCADO dele — caso real [LEADS LOJA][mixconversão]', () => {
+  const grupos = [
+    { id: 'cj1', gasto: 120, conjunto: { destination_type: 'WHATSAPP', optimization_goal: 'CONVERSATIONS' } },
+    { id: 'cj2', gasto: 340, conjunto: { destination_type: 'UNDEFINED', optimization_goal: 'LANDING_PAGE_VIEWS' } },
+  ];
+  assert.deepEqual(gastoPorMercado(grupos), [
+    { mercado: 'site_trafego', gasto: 340 },
+    { mercado: 'conversa', gasto: 120 },
+  ]);
+});
+
+test('gastoPorMercado junta DOIS conjuntos do MESMO mercado num só total', () => {
+  const grupos = [
+    { id: 'cj1', gasto: 100, conjunto: { destination_type: 'WHATSAPP', optimization_goal: 'CONVERSATIONS' } },
+    { id: 'cj2', gasto: 50, conjunto: { destination_type: 'WHATSAPP', optimization_goal: 'CONVERSATIONS' } },
+  ];
+  assert.deepEqual(gastoPorMercado(grupos), [{ mercado: 'conversa', gasto: 150 }]);
+});
+
+test('gastoPorMercado: grupo sem conjunto (anúncio órfão, "_sem_conjunto") vira desconhecido, sem apagar os outros', () => {
+  const grupos = [
+    { id: '_sem_conjunto', gasto: 10, conjunto: null },
+    { id: 'cj1', gasto: 90, conjunto: { destination_type: 'ON_VIDEO', optimization_goal: 'THRUPLAY' } },
+  ];
+  assert.deepEqual(gastoPorMercado(grupos), [
+    { mercado: 'video', gasto: 90 },
+    { mercado: 'desconhecido', gasto: 10 },
+  ]);
+});
+
+test('gastoPorMercado de lista vazia é lista vazia, nunca erro', () => {
+  assert.deepEqual(gastoPorMercado([]), []);
+  assert.deepEqual(gastoPorMercado(undefined), []);
 });

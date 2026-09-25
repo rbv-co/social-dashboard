@@ -138,6 +138,32 @@ export const GT_BALDE_PADRAO={
 // Devolve null (e nunca 0) quando não há resultado ou não há gasto na janela:
 // um custo de R$ 0,00 escrito no prompt é lido pelo modelo como "de graça" e
 // vira recomendação de escalar.
+// Um "insight" SINTÉTICO de CONJUNTO, juntando gasto e `actions` dos ANÚNCIOS
+// que pertencem a ele — para o KPI de CADA conjunto na campanha MISTA (Onda C,
+// Tarefa 5, ver mercados.js seção 2.1). O robô (coletor/budget-ia.mjs) busca
+// insight por adset direto na Graph API (`level: 'adset'`); a tela não faz
+// essa chamada extra: ela já tem os anúncios do conjunto (vindos de
+// montarHierarquia, com `actions`/`spend` de cada anúncio), e somar por dentro
+// chega ao MESMO número sem gastar mais uma chamada à Meta por conta, por dia.
+// Ausência de anúncio (conjunto sem gasto na janela) devolve spend '0' e
+// actions vazio — `_gtActionVal`/`_gtPerGasto` já leem isso como null, nunca
+// como zero. PURO.
+export function insightDoConjunto(anuncios) {
+  const lista = Array.isArray(anuncios) ? anuncios : [];
+  let spend = 0;
+  const porTipo = new Map();
+  for (const a of lista) {
+    spend += Number(a && a.spend) || 0;
+    for (const ac of ((a && Array.isArray(a.actions)) ? a.actions : [])) {
+      const tipo = ac && ac.action_type;
+      if (!tipo) continue;
+      porTipo.set(tipo, (porTipo.get(tipo) || 0) + (Number(ac.value) || 0));
+    }
+  }
+  const actions = [...porTipo.entries()].map(([action_type, value]) => ({ action_type, value: String(value) }));
+  return { spend: String(spend), actions };
+}
+
 export function custoDoAlvo(balde, insight) {
   const alvo = alvoDoBalde(balde);
   if (!alvo || alvo.metrica === 'ponderada') return null;
