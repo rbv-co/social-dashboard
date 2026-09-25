@@ -142,17 +142,31 @@ test('a Seção 1 avisa que a ponderada está em pausa', () => {
   });
 });
 
-test('mensagens e leads não aparecem como duas linhas "Custo por lead" indistinguíveis', () => {
+test('conversa e lead não aparecem como duas linhas "Custo por lead" indistinguíveis', () => {
   comDomFalso(() => {
     const alvo = alvoFalso();
     montarPainelRegua(alvo, { ...OPCOES_BASE, regua: normalizarRegua({}) });
-    // As duas usam o MESMO ALVOS[...].rotulo (decisão do dono, 24/09/2026: quem
-    // abre conversa no WhatsApp também é "lead"). A régua lista um balde por
-    // linha — sem desambiguar aqui, o dono digitaria a meta na linha errada
-    // sem ter como perceber. Prova por MUTAÇÃO: as duas ocorrências de "Custo
-    // por lead" no HTML têm que vir acompanhadas de um texto que as distingue.
+    // Os mercados `conversa` e `lead` usam o MESMO ALVOS[...].rotulo (decisão
+    // do dono, 24/09/2026: quem abre conversa no WhatsApp também é "lead"). A
+    // régua lista um mercado por linha — sem desambiguar aqui, o dono
+    // digitaria a meta na linha errada sem ter como perceber.
+    //
+    // Rodada de correção 1 (25/09/2026): esta prova só checava que as duas
+    // ocorrências eram DIFERENTES entre si — passava com QUALQUER texto
+    // distinto, inclusive lixo. Foi assim que "Custo por lead — lead" (o
+    // fallback cru de ROTULO_BALDE, sem entrada pra `lead`) atravessou a
+    // suíte inteira sem um teste acusar. Agora a prova é o TEXTO esperado,
+    // não só a diferença.
     const ocorrencias = alvo.innerHTML.match(/Custo por lead[^<]*/g) || [];
     assert.ok(ocorrencias.length >= 2, 'o cenário do teste perdeu uma das duas linhas');
+    assert.ok(
+      ocorrencias.some((o) => o.startsWith('Custo por lead — conversa no WhatsApp')),
+      `faltou a linha de "conversa" com o sufixo certo — veio: ${JSON.stringify(ocorrencias)}`,
+    );
+    assert.ok(
+      ocorrencias.some((o) => o.startsWith('Custo por lead — cadastro')),
+      `faltou a linha de "lead" com o sufixo certo (não "— lead") — veio: ${JSON.stringify(ocorrencias)}`,
+    );
     assert.notEqual(ocorrencias[0], ocorrencias[1],
       'as duas linhas "Custo por lead" são idênticas — o dono não tem como saber qual é qual');
   });

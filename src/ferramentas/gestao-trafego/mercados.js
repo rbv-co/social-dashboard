@@ -125,6 +125,17 @@ export function mercadoDoConjunto(conjunto) {
   // falha de cobertura: é a ferramenta reconhecendo que não dá para saber o
   // mercado quando quem decide o que perseguir é o algoritmo da Meta, não o
   // gestor. Medido em 4 conjuntos reais (rodada de correção 3, 25/09/2026).
+  //
+  // ⚠️ GUARDA PREVENTIVA, não código morto: hoje `AUTOMATIC_OBJECTIVE` também
+  // não está em `MERCADO_POR_OTIMIZACAO`, então o `if` de baixo (linha
+  // seguinte) já devolveria 'desconhecido' sozinho — provado por mutação
+  // (revisão da rodada de correção 1): apagar esta linha não derruba teste
+  // nenhum HOJE. Ela fica mesmo assim para travar o dia em que alguém
+  // acrescentar `AUTOMATIC_OBJECTIVE` ao mapa de otimização (por exemplo, por
+  // engano ao copiar uma linha vizinha, ou achando que "documenta melhor" lá)
+  // — SEM esta linha, aquele acréscimo futuro faria a Meta decidindo sozinha
+  // virar silenciosamente um mercado de verdade, o exato bug que esta
+  // rodada existe pra evitar.
   if (otimizacao === 'AUTOMATIC_OBJECTIVE') return 'desconhecido';
 
   if (!(otimizacao in MERCADO_POR_OTIMIZACAO)) return 'desconhecido';

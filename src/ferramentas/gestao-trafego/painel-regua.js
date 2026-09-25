@@ -61,9 +61,24 @@ const ROTULO_PESO = {
   curtidas: 'Curtida', comentarios: 'Comentário',
   salvamentos: 'Salvamento', compartilhamentos: 'Compartilhamento',
 };
+// ATUALIZADO na rodada de correção 1 da Onda C, Tarefa 1 (25/09/2026): este
+// mapa tinha ficado com os nomes dos BALDES antigos (`engajamento`, `trafego`,
+// `mensagens`, `leads`, `vendas`) desde antes do reindex por MERCADO — nenhuma
+// dessas chaves bate com `Object.keys(ALVOS)` hoje (`conversa`, `perfil`,
+// `video`, `post`, `site_venda`, `site_trafego`, `lead`, `reconhecimento`), e
+// o `|| b` de todo uso deste mapa (`rotuloDaLinha`, `pnd-alvo-nome`, título do
+// exemplo) vinha caindo sempre no fallback — a tela mostrava o nome CRU do
+// mercado. O defeito ficou visível quando `lead` (Tarefa 1) passou a usar o
+// MESMO rótulo de `conversa` ("Custo por lead"): a desambiguação por colisão
+// (`rotuloDaLinha`) sufixou com o fallback cru e produziu "Custo por lead —
+// lead" na régua — a tela onde o dono calibra a meta. Os valores aqui são o
+// que vai DEPOIS do "—" numa colisão (ou o nome da linha, ou o título do
+// exemplo): português que signifique algo pra quem não conhece o nome da
+// chave no código.
 const ROTULO_BALDE = {
-  engajamento: 'Engajamento', trafego: 'Tráfego', reconhecimento: 'Reconhecimento',
-  mensagens: 'Mensagens', leads: 'Leads', vendas: 'Vendas',
+  conversa: 'conversa no WhatsApp', lead: 'cadastro', perfil: 'visita ao perfil',
+  video: 'vídeo', post: 'engajamento no post', site_venda: 'venda no site',
+  site_trafego: 'tráfego para o site', reconhecimento: 'alcance',
 };
 // Voltaram a ser editáveis (decisão do dono, 2026-07-28): a tela mostra onde a cor
 // muda e ele quer poder mover isso. Cada campo é um MULTIPLICADOR da meta que a
@@ -121,16 +136,24 @@ function sufixoDoAlvo(balde) {
   return rotulo.replace(/^Custo por\s*/i, 'por ');
 }
 
-// DESAMBIGUAÇÃO DE RÓTULO REPETIDO (24/09/2026): "mensagens" e "leads" usam o
-// MESMO rótulo — "Custo por lead" — desde que o dono decidiu chamar conversa
-// de WhatsApp aberta de lead (ver o comentário de `mensagens` em alvos.js).
-// No CARTÃO da campanha isso é exatamente o que ele quer ler. Mas aqui, na
-// régua, as duas viram DUAS LINHAS VIZINHAS na mesma tabela — sem desambiguar,
-// ele digitaria a meta na linha errada sem ter como perceber (as duas leem
-// "Custo por lead"). NÃO mexe em ALVOS[...].rotulo (o cartão continua igual):
-// a mudança fica só na montagem desta linha, juntando o nome do balde
-// (ROTULO_BALDE, que já é único por construção) só quando há colisão de
-// verdade — os demais rótulos, que já são únicos, saem sem sufixo nenhum.
+// DESAMBIGUAÇÃO DE RÓTULO REPETIDO (24/09/2026, atualizado 25/09/2026 quando
+// o mercado `lead` nasceu): os mercados `conversa` e `lead` usam o MESMO
+// rótulo — "Custo por lead" — desde que o dono decidiu chamar conversa de
+// WhatsApp aberta de lead (ver o comentário de `conversa` em alvos.js) e
+// `lead` (cadastro/formulário, Onda C Tarefa 1) nasceu com o mesmo nome de
+// resultado. No CARTÃO da campanha isso é exatamente o que ele quer ler. Mas
+// aqui, na régua, as duas viram DUAS LINHAS VIZINHAS na mesma tabela — sem
+// desambiguar, ele digitaria a meta na linha errada sem ter como perceber (as
+// duas leem "Custo por lead"). NÃO mexe em ALVOS[...].rotulo (o cartão
+// continua igual): a mudança fica só na montagem desta linha, juntando o
+// nome do balde (ROTULO_BALDE, que já é único por construção) só quando há
+// colisão de verdade — os demais rótulos, que já são únicos, saem sem sufixo
+// nenhum.
+//
+// ⚠️ ROTULO_BALDE precisa ter uma entrada para TODO mercado de ALVOS — se
+// faltar uma, o `|| b` cai no nome cru da chave (foi exatamente isso que
+// produziu "Custo por lead — lead" na rodada de correção 1: `lead` não
+// existia neste mapa ainda). Ver o comentário de ROTULO_BALDE.
 function rotuloDaLinha(baldes) {
   const contagem = {};
   for (const b of baldes) {
