@@ -242,6 +242,7 @@ import { lerSaude, categoriaDoObjetivo, contradiz } from './saude.js'
 // "Está rodando?" NÃO é effective_status === 'ACTIVE': a Meta mantém ACTIVE em
 // campanha que já chegou ao fim do período. Ver veiculacao.js.
 import { emVeiculacao } from './veiculacao.js'
+import { campanhasAguardandoEntrega } from './sem-gasto.js'
 import { orcamentoEfetivoDaCampanha } from './orcamento-hierarquia.js'
 // Objetivo -> balde e "e de WhatsApp?" moram num modulo so porque o ROBO precisa
 // da mesma resposta que a tela (ver baldes.js).
@@ -2122,6 +2123,11 @@ function _gtSeloObjetivoEl(alvoId,nivel,elegivel){
   return chip;
 }
 function _renderGtCampaigns(col,campaigns,insights,adInsights,adsets){
+  // Campanha ATIVA sem gasto no período não vem do /insights (spend > 0) e
+  // sumia da lista — ver sem-gasto.js. Entra zerada, com o selo "Aguardando
+  // entrega". Só quando o período chega a hoje ('1d' é ontem).
+  const periodoChegaAHoje=_gtPreset!=='1d'&&_gtPreset!=='lastmonth';
+  insights=[...insights,...campanhasAguardandoEntrega(campaigns,insights,Date.now(),periodoChegaAHoje)];
   const campMap={};campaigns.forEach(c=>campMap[c.id]=c);
   const adByCamp={};adInsights.forEach(a=>{if(!adByCamp[a.campaign_id])adByCamp[a.campaign_id]=[];adByCamp[a.campaign_id].push(a);});
   // Conjuntos por campanha — é o que permite saber se o orçamento é da
@@ -2261,9 +2267,12 @@ function _renderGtCampaigns(col,campaigns,insights,adInsights,adsets){
       const top=document.createElement('div');top.className='gt-camp-top';
       // Status badge
       const badge=document.createElement('div');
-      const badgeCls=encerrada?'inactive':(status==='ACTIVE'?'active':status==='PAUSED'?'paused':'inactive');
-      const badgeLbl=encerrada?'Concluído':(status==='ACTIVE'?'Ativo':status==='PAUSED'?'Pausado':status==='ARCHIVED'?'Arquivado':'Inativo');
+      const badgeCls=encerrada?'inactive':ins.aguardandoEntrega?'aguardando':(status==='ACTIVE'?'active':status==='PAUSED'?'paused':'inactive');
+      const badgeLbl=encerrada?'Concluído':ins.aguardandoEntrega?'Aguardando':(status==='ACTIVE'?'Ativo':status==='PAUSED'?'Pausado':status==='ARCHIVED'?'Arquivado':'Inativo');
       badge.className=`gt-status-badge ${badgeCls}`;badge.textContent=badgeLbl;
+      // Rótulo curto de propósito: a 375px o selo longo espremia o nome da
+      // campanha até sobrar uma letra. A explicação inteira fica na dica.
+      if(ins.aguardandoEntrega)badge.title='Ativa, mas ainda sem gasto neste período: esperando a Meta começar a entregar.';
       const nm=document.createElement('div');nm.className='gt-name';nm.title=ins.campaign_name||'';nm.textContent=ins.campaign_name||'—';
       const chips=document.createElement('div');chips.className='gt-camp-chips';
       // Selo de ONDE fica o orçamento — em português, com a sigla entre parênteses.
@@ -5838,6 +5847,10 @@ Object.assign(window, {
 .tela-gestao-trafego :deep(.gt-status-badge.paused){background:color-mix(in srgb,var(--orange) 12%,var(--surface));color:color-mix(in srgb,var(--orange) 75%,var(--text));}
 .tela-gestao-trafego :deep(.gt-status-badge.paused::before){content:'';display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--orange);flex-shrink:0;}
 .tela-gestao-trafego :deep(.gt-status-badge.inactive){background:var(--surface2);color:var(--muted);}
+/* Ativa mas ainda sem gasto no período (sem-gasto.js): nem "rodando" (verde que
+   pulsa) nem "parada" — está esperando a Meta começar a entregar. */
+.tela-gestao-trafego :deep(.gt-status-badge.aguardando){background:color-mix(in srgb,var(--accent) 12%,var(--surface));color:var(--text);}
+.tela-gestao-trafego :deep(.gt-status-badge.aguardando::before){content:'';display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--accent);flex-shrink:0;}
 .tela-gestao-trafego :deep(.gt-status-badge.inactive::before){content:'';display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--muted);flex-shrink:0;}
 .tela-gestao-trafego :deep(.gt-chevron){flex-shrink:0;transition:transform .2s;color:var(--muted);opacity:.55;}
 .tela-gestao-trafego :deep(.gt-chevron.open){transform:rotate(90deg);}
