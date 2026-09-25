@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   mercadoDoConjunto, mercadoDaCampanha, gastoPorMercado, comObjetivoHerdado, MERCADOS,
-  MERCADO_POR_DESTINO, DESTINOS_QUE_EXIGEM_DESEMPATE,
+  MERCADO_POR_DESTINO, DESTINOS_QUE_EXIGEM_DESEMPATE, mercadoDoGrupoDeAnuncios,
 } from './mercados.js';
 
 // As combinações REAIS, medidas em 25/09/2026 nas 6 contas de produção — não
@@ -271,4 +271,34 @@ test('comObjetivoHerdado de lista vazia/ausente é lista vazia, nunca erro', () 
 test('sem herdar o objetivo, OFFSITE_CONVERSIONS cai sempre em site_venda — é ISSO que a tela fazia errado', () => {
   const conjuntoCru = { id: 'cj1', destination_type: 'WEBSITE', optimization_goal: 'OFFSITE_CONVERSIONS' };
   assert.equal(mercadoDoConjunto(conjuntoCru), 'site_venda');
+});
+
+// mercadoDoGrupoDeAnuncios — Onda C, Tarefa 5, Passo 3 (card do anúncio ganha
+// o KPI do mercado). MESMA regra do robô (coletor/budget-ia.mjs, commit
+// 2b420ab, função `mercadoDoAnuncio` dentro de `montarMensagens`): tela e
+// robô NUNCA podem divergir sobre isso — é o defeito que esta onda inteira
+// existe pra matar.
+
+test('mercadoDoGrupoDeAnuncios: campanha de mercado único desce o PRÓPRIO mercado, sem olhar o conjunto', () => {
+  // Mesmo passando um conjunto de mercado DIFERENTE (perfil), quem manda é o
+  // mercado da campanha — a exceção só existe para 'misto'.
+  const conjuntoDePerfil = { destination_type: 'INSTAGRAM_PROFILE' };
+  assert.equal(mercadoDoGrupoDeAnuncios('conversa', conjuntoDePerfil, 'cj1'), 'conversa');
+});
+
+test('mercadoDoGrupoDeAnuncios: campanha MISTA usa o mercado do CONJUNTO do anúncio', () => {
+  const conjuntoDeVideo = { destination_type: 'ON_VIDEO' };
+  assert.equal(mercadoDoGrupoDeAnuncios('misto', conjuntoDeVideo, 'cj1'), 'video');
+  const conjuntoDeWhatsapp = { destination_type: 'WHATSAPP' };
+  assert.equal(mercadoDoGrupoDeAnuncios('misto', conjuntoDeWhatsapp, 'cj2'), 'conversa');
+});
+
+test('mercadoDoGrupoDeAnuncios: campanha MISTA sem conjunto reconhecível (grupo "_sem_conjunto") NUNCA inventa — devolve null', () => {
+  assert.equal(mercadoDoGrupoDeAnuncios('misto', null, '_sem_conjunto'), null);
+  assert.equal(mercadoDoGrupoDeAnuncios('misto', { destination_type: 'ON_VIDEO' }, '_sem_conjunto'), null);
+});
+
+test('mercadoDoGrupoDeAnuncios: campanha "desconhecida" ou de mercado único sem conjunto ainda desce o mercado da campanha', () => {
+  assert.equal(mercadoDoGrupoDeAnuncios('desconhecido', null, '_sem_conjunto'), 'desconhecido');
+  assert.equal(mercadoDoGrupoDeAnuncios('lead', null, 'cj1'), 'lead');
 });

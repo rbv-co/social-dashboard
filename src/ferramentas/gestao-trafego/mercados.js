@@ -210,6 +210,31 @@ export function gastoPorMercado(grupos) {
     .sort((a, b) => b.gasto - a.gasto);
 }
 
+// O MERCADO de um GRUPO DE ANÚNCIOS (um conjunto, com os anúncios dele) DENTRO
+// de uma campanha — Onda C, Tarefa 5, Passo 3 (25/09/2026): o card do ANÚNCIO
+// ganha o KPI do mercado, pedido do dono ("eu não vejo as kpis no card dos
+// anúncios também, sinto falta disso").
+//
+// Regra igual à do robô (`coletor/budget-ia.mjs`, commit 2b420ab): o mercado
+// do anúncio é o da CAMPANHA, descido pronto — NUNCA recalculado por anúncio
+// (a Meta OMITE o action_type inteiro quando a contagem é zero, então um
+// anúncio de campanha de WhatsApp sem conversa na janela ficaria idêntico a
+// um de engajamento puro). EXCEÇÃO — campanha MISTA: cada anúncio segue o
+// mercado do CONJUNTO dele, mesma condição (`mercadoDaCampanha === 'misto'`)
+// que a tela já usa pra decidir a quebra por conjunto (ver `gastoPorMercado`
+// e o KPI por conjunto em tela-de-gestao-trafego.vue).
+//
+// `idDoGrupo === '_sem_conjunto'` é o grupo INVENTADO por montarHierarquia
+// pra não sumir com anúncio cujo adset_id não veio na lista — não existe
+// conjunto de verdade pra consultar, então NUNCA INVENTA mercado: devolve
+// null, mesmo comportamento do robô quando o adset_id não é reconhecível.
+// PURO: sem rede, sem tela.
+export function mercadoDoGrupoDeAnuncios(mercadoCampanha, conjunto, idDoGrupo) {
+  if (mercadoCampanha !== 'misto') return mercadoCampanha;
+  if (!conjunto || idDoGrupo === '_sem_conjunto') return null;
+  return mercadoDoConjunto(conjunto);
+}
+
 export function mercadoDaCampanha(conjuntos) {
   // Campanha SEM conjunto (`conjuntos` vazio ou ausente) cai em 'desconhecido'
   // — e isso está CERTO, não é bug nem lacuna de coleta. São 186 campanhas nas
