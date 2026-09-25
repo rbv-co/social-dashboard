@@ -36,6 +36,7 @@
 //      Stylist Circle, super-admin, desativado… — e pelo anon.
 //
 // DATABASE_URL: coletor/.env OU o ambiente (`node --env-file=<.env> …`).
+// contas-de-prova: nascem DENTRO dos savepoints `antes` e `prova` (criarPerfis) e morrem com eles; a IMPRESSAO confere o número de contas.
 import './lib/carregar-env.mjs'
 import { readFileSync } from 'node:fs'
 import { randomUUID, createHash } from 'node:crypto'

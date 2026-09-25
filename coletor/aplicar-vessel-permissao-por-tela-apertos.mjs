@@ -13,6 +13,7 @@
 // Ver PADRAO-DA-CENTRAL.md, "Aplicador de migration".
 //
 // DATABASE_URL: coletor/.env OU o ambiente (`node --env-file=<.env> …`).
+// contas-de-prova: nascem DENTRO do savepoint `prova` e morrem com ele; a IMPRESSAO confere o número de contas.
 import './lib/carregar-env.mjs'
 import { readFileSync } from 'node:fs'
 import { randomUUID, createHash } from 'node:crypto'
