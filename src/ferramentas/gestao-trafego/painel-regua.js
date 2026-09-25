@@ -249,7 +249,7 @@ export function montarPainelRegua(alvo, opcoes) {
   // Só serve pra campanha/anúncio de engajamento em que o dono DECLARAR, no
   // cartão dela, qual interação está comprando (ver o selo de objetivo no
   // cartão, tela-de-gestao-trafego.vue) — sem declaração nada muda, continua
-  // no ponto ponderado.
+  // julgada pelo custo por engajamento (bruto), na Seção 2.
   const linhasInteracao = Object.keys(INTERACOES).map((k) => {
     const it = INTERACOES[k];
     const temMeta = regua.metas[k] != null;
@@ -295,8 +295,12 @@ export function montarPainelRegua(alvo, opcoes) {
     </tr>`;
   }).join('');
 
-  // Limiares da SEÇÃO 1 (`limiares`): multiplicam a meta de engajamento (custo
-  // por ponto, o mesmo campo 'pnd-meta-engajamento' logo acima nesta seção).
+  // Limiares da SEÇÃO 1 (`limiares`): multiplicam a meta ANTIGA de engajamento
+  // (custo por ponto, `regua.metas.engajamento`). CORREÇÃO (varredura de
+  // comentários, 25/09/2026): não existe mais campo 'pnd-meta-engajamento'
+  // NESTA tela para editar esse valor — a linha saiu em 24/09/2026 (ver
+  // pintarLimiaresSecao1 abaixo, "sem campo nesta tela desde a pausa"); o
+  // número vem congelado do que já estava salvo no banco.
   const linhasLimiar1 = Object.keys(LIMIARES_PADRAO).map((k) =>
     `<tr><td>${esc(ROTULO_LIMIAR[k])}</td><td>${campo('pnd-limiar-eng-' + k, regua.limiares[k], '0.05', editavel)}<div class="pnd-limiar-prev" id="pnd-limiar-eng-prev-${k}"></div></td></tr>`).join('');
   // Limiares da SEÇÃO 2 (`limiares_resultado`): multiplicam a meta de

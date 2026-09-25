@@ -268,12 +268,13 @@ import { quantidadesDoInsight } from './ponderada.js'
 // cabeçalho do arquivo (acréscimo ao brief da Tarefa 4 da Onda B, 24/09/2026).
 import { custoEngajamentoPraticado } from './custo-praticado.js'
 // Alvo de cada tipo de campanha (custo por lead/conversa/venda/visita/mil
-// pessoas, ou por ponto no caso de engajamento) — ver alvos.js.
+// pessoas, ou por engajamento no caso de engajamento) — ver alvos.js.
 import { alvoDoBalde, avaliarAlvo } from './alvos.js'
 // Fase 3 — objetivo por interação: o dono DECLARA, campanha a campanha (ou
 // anúncio a anúncio) de engajamento, qual interação aquilo está comprando
 // (curtida/comentário/salvamento/compartilhamento). Sem declarar, nada muda —
-// continua no ponto ponderado, exatamente como hoje. Ver interacoes.js.
+// continua julgada pelo custo por engajamento (bruto), exatamente como hoje.
+// Ver interacoes.js.
 import { INTERACOES, custoDaInteracao, interacaoValida } from './interacoes.js'
 // Glossário da ferramenta (botões "?" de ajuda contextual) — ver ajuda.js pro
 // porquê disto existir. PURO: só dicionário titulo/texto, sem tela nem rede.
@@ -679,9 +680,10 @@ async function _gtCarregarObjetivos(){
     // NUNCA apagar o mapa em silêncio (M3 do review, 2026-07-28): se a leitura
     // falhar, o mapa anterior (as declarações que já sabíamos ser verdade)
     // fica exatamente como estava — é o que impede uma campanha DECLARADA de
-    // voltar sozinha a ser julgada pelo ponto ponderado só porque um recarregar
-    // deu erro de rede/sessão. O detalhe técnico vai pro console; o selo (ver
-    // _gtSeloObjetivoEl) trata a incerteza pra quem só usa esta variável.
+    // voltar sozinha a ser julgada pelo custo por engajamento (bruto) só
+    // porque um recarregar deu erro de rede/sessão. O detalhe técnico vai pro
+    // console; o selo (ver _gtSeloObjetivoEl) trata a incerteza pra quem só
+    // usa esta variável.
     console.error('[GT] falha ao carregar as declarações de objetivo por interação:', linhas.erro);
   }
   _gtObjetivoInteracaoCarregada=ok;
@@ -2094,9 +2096,10 @@ function _gtWireBudgetControls(el,ins,camp,permCamp){
 }
 // ── Selo de OBJETIVO POR INTERAÇÃO (Fase 3) ─────────────────────────────────
 // Só aparece em campanha/anúncio de engajamento que NÃO seja de mensagem (o
-// mesmo recorte do custo por ponto: WhatsApp já tem o resultado dele — conversa
-// — e não faz sentido perguntar qual interação ele compra). Sem declaração,
-// selo neutro "Objetivo: engajamento"; declarado, mostra o rótulo da interação.
+// mesmo recorte do custo por engajamento: WhatsApp já tem o resultado dele —
+// conversa — e não faz sentido perguntar qual interação ele compra). Sem
+// declaração, selo neutro "Objetivo: engajamento"; declarado, mostra o rótulo
+// da interação.
 // Clicar abre um menu com as quatro interações + "Voltar ao engajamento" — mesma
 // linguagem visual do chip CBO/ABO (gt-nivel-chip), só que clicável.
 let _gtMenuObjAberto=null;
