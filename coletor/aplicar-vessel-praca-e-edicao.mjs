@@ -755,10 +755,15 @@ try {
     x = await chamarGravando(`public.vessel_edicao_criar(p_praca_id => $1, p_nome => $2, p_comeca_em => $3, p_termina_em => null)`, [pracaC, 'Destino', hoje])
     const edicaoDestino = x.v?.id
 
+    // ⚠️ TASK 6 RODADA 2 DE CONSERTO: `teste = false` — antes eram `true`, e
+    // `vessel_edicao_encerrar` agora filtra `teste` (a correção do I3
+    // incompleto, abaixo): com `true` esta stylist deixaria de ser fechada/
+    // levada, e `levadas` viraria 0 em vez de 1 — a prova de baixo achou isso
+    // rodando (não deduzindo), exatamente como pedido.
     const naoAtivada = await uma(`insert into public.vessel_stylists (codigo, nome, whatsapp, teste)
-       values ('STY-PROVA-LEVAR-NAOATIVOU', 'Prova Não Ativou', '5519990004003', true) returning id, etapa_id`)
+       values ('STY-PROVA-LEVAR-NAOATIVOU', 'Prova Não Ativou', '5519990004003', false) returning id, etapa_id`)
     const ativada = await uma(`insert into public.vessel_stylists (codigo, nome, whatsapp, teste, ativada_em)
-       values ('STY-PROVA-LEVAR-ATIVOU', 'Prova Ativou', '5519990004004', true, now()) returning id, etapa_id`)
+       values ('STY-PROVA-LEVAR-ATIVOU', 'Prova Ativou', '5519990004004', false, now()) returning id, etapa_id`)
 
     x = await chamarGravando(`public.vessel_edicao_incluir_stylist(p_codigo => $1, p_edicao_id => $2)`, ['STY-PROVA-LEVAR-NAOATIVOU', edicaoOrigem])
     conferir(x.v?.ok === true, 'inclui a não-ativada na edição origem', x.v ?? x.e?.message)
@@ -804,6 +809,114 @@ try {
     conferir(situacaoOrigemDAntes === x.depois, 'a edição de origem NÃO foi encerrada — nada mudou (medido dentro do savepoint)',
       { situacaoOrigemDAntes, depois: x.depois })
 
+    console.log('\n  · 8c) TASK 6 RODADA 2 — I3 INCOMPLETO: stylist de teste não conta em nao_ativadas E não é levada por vessel_edicao_encerrar (o mesmo critério nos dois lados)')
+    x = await chamarGravando(`public.vessel_praca_criar(p_sigla => $1, p_nome => $2, p_loja_destino => $3)`, ['PVG', 'Praça de Prova G', null])
+    conferir(x.v?.ok === true, 'praca_criar: praça G para o teste do I3 incompleto', x.v ?? x.e?.message)
+    const pracaG = x.v?.id
+    x = await chamarGravando(`public.vessel_edicao_criar(p_praca_id => $1, p_nome => $2, p_comeca_em => $3, p_termina_em => null)`, [pracaG, 'Origem G', hoje])
+    const edicaoOrigemG = x.v?.id
+    x = await chamarGravando(`public.vessel_edicao_abrir(p_id => $1)`, [edicaoOrigemG])
+    conferir(x.v?.ok === true, 'edicao_abrir: abre a edição origem da praça G', x.v ?? x.e?.message)
+    x = await chamarGravando(`public.vessel_edicao_criar(p_praca_id => $1, p_nome => $2, p_comeca_em => $3, p_termina_em => null)`, [pracaG, 'Destino G', hoje])
+    const edicaoDestinoG = x.v?.id
+
+    const stTesteG = await uma(`insert into public.vessel_stylists (codigo, nome, whatsapp, teste)
+       values ('STY-PROVA-I3-TESTE', 'Prova I3 Teste', '5519990004009', true) returning id`)
+    const stRealG = await uma(`insert into public.vessel_stylists (codigo, nome, whatsapp, teste)
+       values ('STY-PROVA-I3-REAL', 'Prova I3 Real', '5519990004010', false) returning id`)
+
+    x = await chamarGravando(`public.vessel_edicao_incluir_stylist(p_codigo => $1, p_edicao_id => $2)`, ['STY-PROVA-I3-TESTE', edicaoOrigemG])
+    conferir(x.v?.ok === true, 'inclui a stylist de TESTE (não ativada) na edição origem G', x.v ?? x.e?.message)
+    x = await chamarGravando(`public.vessel_edicao_incluir_stylist(p_codigo => $1, p_edicao_id => $2)`, ['STY-PROVA-I3-REAL', edicaoOrigemG])
+    conferir(x.v?.ok === true, 'inclui a stylist REAL (não ativada) na edição origem G', x.v ?? x.e?.message)
+
+    // (1) nao_ativadas conta só a REAL — a de teste não entra (nem em stylists).
+    const listaG = await chamarGravando(`public.vessel_edicoes_listar(p_praca_id => $1)`, [pracaG])
+    const edicaoGListada = listaG.v?.find((e) => e.id === edicaoOrigemG)
+    conferir(edicaoGListada?.nao_ativadas === 1 && edicaoGListada?.stylists === 1,
+      'vessel_edicoes_listar: nao_ativadas=1 e stylists=1 — a stylist de TESTE não conta em nenhum dos dois', edicaoGListada)
+
+    // (2) encerrar: levadas tem de bater com o nao_ativadas que a tela já mostrou — 1, não 2.
+    x = await chamarGravando(`public.vessel_edicao_encerrar(p_id => $1, p_levar_para => $2)`, [edicaoOrigemG, edicaoDestinoG])
+    conferir(x.v?.ok === true && x.v?.levadas === 1,
+      'edicao_encerrar: levadas=1 — bate com o nao_ativadas que a tela mostrou ANTES de confirmar (não 2)', x.v ?? x.e?.message)
+
+    // (3) a REAL foi levada; a de TESTE não apareceu no destino.
+    const realNoDestino = await r(`(select exists(select 1 from public.vessel_stylist_na_edicao where edicao_id = $1 and stylist_id = $2 and saiu_em is null))`,
+      [edicaoDestinoG, stRealG.id])
+    conferir(realNoDestino === true, 'a stylist REAL está ativa na edição de destino (foi levada)', realNoDestino)
+    const testeNoDestino = await r(`(select exists(select 1 from public.vessel_stylist_na_edicao where edicao_id = $1 and stylist_id = $2))`,
+      [edicaoDestinoG, stTesteG.id])
+    conferir(testeNoDestino === false, 'a stylist de TESTE NÃO foi levada — nenhum vínculo dela na edição de destino', testeNoDestino)
+
+    console.log('\n  · 8d) mutação de propósito: tirando o filtro de teste de vessel_edicao_encerrar, a stylist de teste TAMBÉM é levada — a divergência exata que a revisão descreveu')
+    await cli.query('savepoint prova_mutacao_teste_i3')
+    try {
+      const funcaoBoaEncerrarI3 = (await uma(
+        `select pg_get_functiondef('public.vessel_edicao_encerrar(bigint,bigint)'::regprocedure) as def`)).def
+      const trechoFechados = `n.saiu_em is null\n       and not coalesce(s.teste, false)`
+      const trechoInsert = `and p_levar_para is not null and not coalesce(f.teste, false)`
+      if (!funcaoBoaEncerrarI3.includes(trechoFechados)) throw new Error('a mutação não achou o trecho do filtro de teste em `fechados`')
+      if (!funcaoBoaEncerrarI3.includes(trechoInsert)) throw new Error('a mutação não achou o trecho do filtro de teste no insert')
+      const funcaoQuebradaI3 = funcaoBoaEncerrarI3
+        .replace(trechoFechados, 'n.saiu_em is null')
+        .replace(trechoInsert, 'and p_levar_para is not null')
+      await cli.query(funcaoQuebradaI3)
+
+      x = await chamarGravando(`public.vessel_praca_criar(p_sigla => $1, p_nome => $2, p_loja_destino => $3)`, ['PVH', 'Praça de Prova H (mutada)', null])
+      const pracaH = x.v?.id
+      x = await chamarGravando(`public.vessel_edicao_criar(p_praca_id => $1, p_nome => $2, p_comeca_em => $3, p_termina_em => null)`, [pracaH, 'Origem H', hoje])
+      const edicaoOrigemH = x.v?.id
+      x = await chamarGravando(`public.vessel_edicao_abrir(p_id => $1)`, [edicaoOrigemH])
+      x = await chamarGravando(`public.vessel_edicao_criar(p_praca_id => $1, p_nome => $2, p_comeca_em => $3, p_termina_em => null)`, [pracaH, 'Destino H', hoje])
+      const edicaoDestinoH = x.v?.id
+      await uma(`insert into public.vessel_stylists (codigo, nome, whatsapp, teste)
+         values ('STY-PROVA-I3-TESTE-MUT', 'Prova I3 Teste Mutação', '5519990004011', true)`)
+      await uma(`insert into public.vessel_stylists (codigo, nome, whatsapp, teste)
+         values ('STY-PROVA-I3-REAL-MUT', 'Prova I3 Real Mutação', '5519990004012', false)`)
+      await chamarGravando(`public.vessel_edicao_incluir_stylist(p_codigo => $1, p_edicao_id => $2)`, ['STY-PROVA-I3-TESTE-MUT', edicaoOrigemH])
+      await chamarGravando(`public.vessel_edicao_incluir_stylist(p_codigo => $1, p_edicao_id => $2)`, ['STY-PROVA-I3-REAL-MUT', edicaoOrigemH])
+
+      // `vessel_edicoes_listar` NÃO foi mutada aqui — só `vessel_edicao_encerrar`.
+      // Por isso `nao_ativadas` continua dizendo o número certo (1): é exatamente
+      // a divergência que a revisão descreveu — a TELA promete 1, o BANCO leva 2.
+      const listaHAntes = await chamarGravando(`public.vessel_edicoes_listar(p_praca_id => $1)`, [pracaH])
+      const naoAtivadasPrometido = listaHAntes.v?.find((e) => e.id === edicaoOrigemH)?.nao_ativadas
+
+      x = await chamarGravando(`public.vessel_edicao_encerrar(p_id => $1, p_levar_para => $2)`, [edicaoOrigemH, edicaoDestinoH])
+      const divergiu = naoAtivadasPrometido === 1 && x.v?.levadas === 2
+      console.log(`    ${divergiu ? '✗' : '✓'} SEM o filtro de teste: a tela prometeu ${naoAtivadasPrometido} e o banco levou ${x.v?.levadas} ${divergiu ? '— DIVERGIU, é o bug que a revisão pediu para eliminar' : '(inesperado)'}`)
+      conferir(divergiu === true,
+        'MUTAÇÃO: sem o filtro de teste em vessel_edicao_encerrar, a stylist de teste TAMBÉM é levada — nao_ativadas prometeu 1, o banco levou 2 (a divergência que a revisão descreveu)',
+        { naoAtivadasPrometido, levadas: x.v?.levadas })
+    } finally {
+      // Desfaz a mutação (restaura a função) E toda a praça/edições/stylists da demonstração.
+      await cli.query('rollback to savepoint prova_mutacao_teste_i3')
+    }
+
+    // com a função REAL (filtro de teste restaurado), o MESMO tipo de cenário não diverge mais.
+    x = await chamarGravando(`public.vessel_praca_criar(p_sigla => $1, p_nome => $2, p_loja_destino => $3)`, ['PVH', 'Praça de Prova H (restaurada)', null])
+    const pracaHR = x.v?.id
+    x = await chamarGravando(`public.vessel_edicao_criar(p_praca_id => $1, p_nome => $2, p_comeca_em => $3, p_termina_em => null)`, [pracaHR, 'Origem H', hoje])
+    const edicaoOrigemHR = x.v?.id
+    x = await chamarGravando(`public.vessel_edicao_abrir(p_id => $1)`, [edicaoOrigemHR])
+    x = await chamarGravando(`public.vessel_edicao_criar(p_praca_id => $1, p_nome => $2, p_comeca_em => $3, p_termina_em => null)`, [pracaHR, 'Destino H', hoje])
+    const edicaoDestinoHR = x.v?.id
+    await uma(`insert into public.vessel_stylists (codigo, nome, whatsapp, teste)
+       values ('STY-PROVA-I3-TESTE-RESTAURADA', 'Prova I3 Teste Restaurada', '5519990004013', true)`)
+    await uma(`insert into public.vessel_stylists (codigo, nome, whatsapp, teste)
+       values ('STY-PROVA-I3-REAL-RESTAURADA', 'Prova I3 Real Restaurada', '5519990004014', false)`)
+    await chamarGravando(`public.vessel_edicao_incluir_stylist(p_codigo => $1, p_edicao_id => $2)`, ['STY-PROVA-I3-TESTE-RESTAURADA', edicaoOrigemHR])
+    await chamarGravando(`public.vessel_edicao_incluir_stylist(p_codigo => $1, p_edicao_id => $2)`, ['STY-PROVA-I3-REAL-RESTAURADA', edicaoOrigemHR])
+    const listaHRAntes = await chamarGravando(`public.vessel_edicoes_listar(p_praca_id => $1)`, [pracaHR])
+    const naoAtivadasHR = listaHRAntes.v?.find((e) => e.id === edicaoOrigemHR)?.nao_ativadas
+    x = await chamarGravando(`public.vessel_edicao_encerrar(p_id => $1, p_levar_para => $2)`, [edicaoOrigemHR, edicaoDestinoHR])
+    const bateCertoRestaurado = naoAtivadasHR === 1 && x.v?.levadas === 1
+    console.log(`    ${bateCertoRestaurado ? '✓' : '✗'} COM o filtro restaurado: a tela prometeu ${naoAtivadasHR} e o banco levou ${x.v?.levadas} ${bateCertoRestaurado ? '— bate certo' : '— DIVERGIU, bug de volta!'}`)
+    conferir(bateCertoRestaurado === true,
+      'COM o filtro de teste restaurado: nao_ativadas e levadas batem (1 e 1) — a stylist de teste não conta nem é levada',
+      { naoAtivadasHR, levadas: x.v?.levadas })
+
     console.log("\n  · 9) CRÍTICO 2 — GUARDA DE REGRESSÃO: mesma stylist nas duas edições, encerrar com levar_para não estoura 23505")
     // O cenário exato que fazia a unique (stylist_id, edicao_id) estourar: a
     // stylist é incluída na edição de ORIGEM e, à parte, também na de
@@ -820,8 +933,12 @@ try {
     x = await chamarGravando(`public.vessel_edicao_criar(p_praca_id => $1, p_nome => $2, p_comeca_em => $3, p_termina_em => null)`, [pracaE, 'Destino E', hoje])
     const edicaoDestinoE = x.v?.id
 
+    // ⚠️ TASK 6 RODADA 2 DE CONSERTO: `teste = false` — pelo mesmo motivo do
+    // passo 7, acima: `teste = true` faria `vessel_edicao_encerrar` (com o
+    // filtro novo) nem tentar levar/fechar esta stylist, e o cenário de
+    // conflito que este passo existe para provar nunca aconteceria.
     const stConflito = await uma(`insert into public.vessel_stylists (codigo, nome, whatsapp, teste)
-       values ('STY-PROVA-CONFLITO', 'Prova Conflito Levar', '5519990004005', true) returning id`)
+       values ('STY-PROVA-CONFLITO', 'Prova Conflito Levar', '5519990004005', false) returning id`)
 
     // 1) a MESMA stylist nas duas edições da mesma praça — a planejada aceita.
     x = await chamarGravando(`public.vessel_edicao_incluir_stylist(p_codigo => $1, p_edicao_id => $2)`, ['STY-PROVA-CONFLITO', edicaoOrigemE])
@@ -861,8 +978,9 @@ try {
       x = await chamarGravando(`public.vessel_edicao_abrir(p_id => $1)`, [edicaoOrigemF])
       x = await chamarGravando(`public.vessel_edicao_criar(p_praca_id => $1, p_nome => $2, p_comeca_em => $3, p_termina_em => null)`, [pracaF, 'Destino F', hoje])
       const edicaoDestinoF = x.v?.id
+      // ⚠️ TASK 6 RODADA 2 DE CONSERTO: `teste = false`, mesmo motivo.
       await uma(`insert into public.vessel_stylists (codigo, nome, whatsapp, teste)
-         values ('STY-PROVA-CONFLITO-MUT', 'Prova Conflito Mutação', '5519990004006', true)`)
+         values ('STY-PROVA-CONFLITO-MUT', 'Prova Conflito Mutação', '5519990004006', false)`)
       x = await chamarGravando(`public.vessel_edicao_incluir_stylist(p_codigo => $1, p_edicao_id => $2)`, ['STY-PROVA-CONFLITO-MUT', edicaoOrigemF])
       x = await chamarGravando(`public.vessel_edicao_incluir_stylist(p_codigo => $1, p_edicao_id => $2)`, ['STY-PROVA-CONFLITO-MUT', edicaoDestinoF])
 
