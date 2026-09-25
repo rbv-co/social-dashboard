@@ -45,7 +45,10 @@ export function arquivosDoXlsx(bytes) {
 
     const nomeLocal = buf.readUInt16LE(ondeComeca + 26);
     const extraLocal = buf.readUInt16LE(ondeComeca + 28);
-    const comprimido = buf.readUInt32LE(ondeComeca + 18);
+    // ⚠️ O TAMANHO VEM DO ÍNDICE CENTRAL, não do cabeçalho local: quem grava o
+    // zip "em fluxo" (Excel, Zoho) põe 0 no local e o tamanho de verdade só
+    // depois dos dados — lido do local, todo arquivo sairia vazio.
+    const comprimido = buf.readUInt32LE(p + 20);
     const inicio = ondeComeca + 30 + nomeLocal + extraLocal;
     const pedaco = buf.subarray(inicio, inicio + comprimido);
     dentro.set(nome, (metodo === 0 ? pedaco : inflateRawSync(pedaco)).toString('utf8'));
@@ -58,6 +61,11 @@ export function arquivosDoXlsx(bytes) {
 const desxml = (s) => String(s)
   .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
   .replace(/&quot;/g, '"').replace(/&apos;/g, "'")
+  // ⚠️ Letra acentuada pode vir como CÓDIGO (`&#231;` = ç): o openpyxl e o
+  // Excel às vezes gravam assim, e sem esta linha "Observações" não casava
+  // com "Observações" — a coluna do RH sumia da leitura.
+  .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCodePoint(parseInt(h, 16)))
+  .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(Number(d)))
   .replace(/&amp;/g, '&');
 
 // A volta da conta do Excel: número → 'DD/MM/AAAA' ou 'DD/MM/AAAA HH:MM'.
@@ -89,25 +97,68 @@ function formatoPorEstilo(estilosXml) {
  * As abas, com cada célula já como o Excel a mostraria.
  * Devolve `[{ nome, colunas, linhas }]` — `linhas` sem o cabeçalho.
  */
+// ⚠️ ARQUIVO DE FORA (25/09/2026). Até aqui o leitor só entendia o formato
+// exato do NOSSO gerador. O Excel, o Zoho e o openpyxl escrevem o mesmo xlsx de
+// outro jeito — atributo `name` depois de outros, aba guardada num sheetN.xml
+// que não é a ordem dela, texto em `sharedStrings`, atributos da célula em
+// outra ordem — e o leitor devolvia ZERO abas, sem erro. Ver
+// `ler-xlsx-de-fora.test.mjs`.
+const atributo = (tag, nome) => {
+  const m = new RegExp(`\\s${nome}="([^"]*)"`).exec(tag);
+  return m ? m[1] : undefined;
+};
+
+/** Todo o texto de um `<si>`/`<is>`, juntando os pedaços (`<r><t>`). */
+const textoDe = (xml) => desxml([...String(xml || '').matchAll(/<t(?:\s[^>]*)?>([\s\S]*?)<\/t>/g)]
+  .map((m) => m[1]).join(''));
+
+/** Caminho no zip de cada `r:id` do livro, pelo `workbook.xml.rels`. */
+function alvosDoLivro(rels) {
+  const m = new Map();
+  for (const r of String(rels || '').matchAll(/<Relationship\b[^>]*>/g)) {
+    const id = atributo(r[0], 'Id');
+    let alvo = atributo(r[0], 'Target');
+    if (!id || !alvo) continue;
+    alvo = alvo.startsWith('/') ? alvo.slice(1) : `xl/${alvo}`;
+    m.set(id, alvo);
+  }
+  return m;
+}
+
 export function abasDoXlsx(bytes) {
   const dentro = arquivosDoXlsx(bytes);
   const formatos = formatoPorEstilo(dentro.get('xl/styles.xml'));
   const livro = dentro.get('xl/workbook.xml') || '';
-  const nomes = [...livro.matchAll(/<sheet name="([^"]*)"/g)].map((m) => desxml(m[1]));
+  const alvos = alvosDoLivro(dentro.get('xl/_rels/workbook.xml.rels'));
+  const compartilhados = [...String(dentro.get('xl/sharedStrings.xml') || '')
+    .matchAll(/<si>([\s\S]*?)<\/si>/g)].map((m) => textoDe(m[1]));
+  const abas = [...livro.matchAll(/<sheet\b[^>]*>/g)].map((m) => ({
+    nome: desxml(atributo(m[0], 'name') ?? ''),
+    rid: atributo(m[0], 'r:id'),
+  }));
 
-  return nomes.map((nome, i) => {
-    const folha = dentro.get(`xl/worksheets/sheet${i + 1}.xml`) || '';
+  return abas.map(({ nome, rid }, i) => {
+    // O arquivo da aba sai do índice do livro; sem índice, vale a ordem (o
+    // nosso gerador sempre grava sheet1, sheet2... na ordem das abas).
+    const folha = dentro.get(alvos.get(rid)) ?? dentro.get(`xl/worksheets/sheet${i + 1}.xml`) ?? '';
     const linhas = [];
     for (const m of folha.matchAll(/<row r="(\d+)"[^>]*>([\s\S]*?)<\/row>/g)) {
       const numero = Number(m[1]);
       const celulas = [];
-      for (const c of m[2].matchAll(/<c r="([A-Z]+)(\d+)"(?:\s+s="(\d+)")?(?:\s+t="([^"]*)")?\s*(?:\/>|>([\s\S]*?)<\/c>)/g)) {
-        const coluna = c[1].split('').reduce((a, l) => a * 26 + (l.charCodeAt(0) - 64), 0);
-        const estilo = c[3];
-        const miolo = c[5] ?? '';
+      for (const c of m[2].matchAll(/<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
+        const ref = /^([A-Z]+)\d+$/.exec(atributo(c[1], 'r') || '');
+        if (!ref) continue;
+        const coluna = ref[1].split('').reduce((a, l) => a * 26 + (l.charCodeAt(0) - 64), 0);
+        const estilo = atributo(c[1], 's');
+        const tipo = atributo(c[1], 't');
+        const miolo = c[2] ?? '';
         let valor = '';
-        if (c[4] === 'inlineStr') {
-          valor = desxml((/<t[^>]*>([\s\S]*?)<\/t>/.exec(miolo) || [, ''])[1]);
+        if (tipo === 'inlineStr') {
+          valor = textoDe(miolo);
+        } else if (tipo === 's') {
+          valor = compartilhados[Number((/<v>([\s\S]*?)<\/v>/.exec(miolo) || [, ''])[1])] ?? '';
+        } else if (tipo === 'str') {
+          valor = desxml((/<v>([\s\S]*?)<\/v>/.exec(miolo) || [, ''])[1]);
         } else {
           const cru = (/<v>([\s\S]*?)<\/v>/.exec(miolo) || [, ''])[1];
           const formato = formatos[Number(estilo ?? 0)];

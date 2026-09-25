@@ -1,0 +1,48 @@
+name: Triagem Tivoli Vendedora (a planilha do RH)
+
+# A CADA 2 HORAS, das 08h às 20h em Campinas (11h–23h UTC): puxa os cadastros
+# da página vesselbrasil.com.br/vaga-tivoli (tabela vessel_candidaturas) e sobe
+# "Triagem Tivoli Vendedora.xlsx" no Zoho, em 04. Vessel Brasil / 10. RH-DP,
+# junto com os currículos anexados (pasta "Triagem Tivoli - Currículos").
+#
+# ⚠️ O minuto quebrado (23) evita a hora cheia, que neste repositório atrasa
+# de 2 a 3 horas.
+# ⚠️ Quando a vaga fechar, DESLIGAR este arquivo: sem cadastro novo ele só
+# gasta minuto de Action.
+on:
+  schedule:
+    - cron: '23 11-23/2 * * *'
+  workflow_dispatch:
+    inputs:
+      ensaio:
+        description: 'Só montar e mostrar, sem enviar? (qualquer texto = sim)'
+        required: false
+        default: ''
+
+concurrency:
+  group: triagem-tivoli-no-zoho
+  cancel-in-progress: false
+
+jobs:
+  montar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - name: Instalar as dependências do coletor
+        working-directory: coletor
+        run: npm ci
+      - name: Montar e subir a planilha
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          ENSAIO: ${{ github.event.inputs.ensaio }}
+        run: |
+          if [ -n "$ENSAIO" ]; then
+            node coletor/triagem-tivoli-no-zoho.mjs --ensaio
+          else
+            node coletor/triagem-tivoli-no-zoho.mjs
+          fi
