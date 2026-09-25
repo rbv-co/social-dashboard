@@ -28,29 +28,33 @@
 // veredito de custo (`alvoDoBalde` devolve null pra eles, como pra qualquer
 // chave que não exista aqui).
 //
-// ⚠️ DOIS BALDES ANTIGOS FICAM SEM MERCADO CORRESPONDENTE nesta troca, e é
-// preciso que quem ler saiba disso ANTES de estranhar campanha sem veredito:
-//   'reconhecimento' (CPM/alcance, objetivo de awareness) — a tabela de
-//     mercados da spec (seção 2) não prevê um mercado para isto; nenhuma
-//     combinação destino/otimização de awareness está em `mercados.js`. Uma
-//     campanha de reconhecimento vira `mercadoDaCampanha` = 'desconhecido' e
-//     fica sem cor até uma onda futura lhe dar mercado.
-//   'leads' (LEAD_GENERATION, cadastro fora do WhatsApp) — a spec PREVÊ um
-//     mercado `lead_form` (seção 2 da tabela), mas `mercados.js` (Onda C,
-//     Tarefa 1) não implementa esse sinal — não está em `MERCADO_POR_DESTINO`
-//     nem em `MERCADO_POR_OTIMIZACAO`, nem em `MERCADOS`. Enquanto isso não
-//     for acrescentado lá, campanha de formulário de lead também cai em
-//     'desconhecido'. A meta que o dono já calibrou (`metas.leads`) continua
-//     salva no banco — só fica INALCANÇÁVEL por este caminho até o sinal
-//     nascer em mercados.js. Ver task-2-report.md desta onda.
+// ATUALIZAÇÃO (rodada de correção 3, 25/09/2026): os dois baldes antigos que
+// ficaram sem mercado correspondente na primeira versão desta troca GANHARAM
+// mercado nesta rodada, quando a medição foi ampliada para campanhas
+// pausadas/arquivadas (ver mercados.js):
+//   'reconhecimento' (CPM/alcance, objetivo de awareness) — agora é o mercado
+//     `reconhecimento` (destino UNDEFINED + otimização REACH). O dono já tem
+//     meta calibrada com este nome (`metas.reconhecimento`) do balde antigo, e
+//     é o MESMO resultado (CPM de campanha de alcance) — por isso declara
+//     `chaveMeta: 'reconhecimento'` mesmo sendo igual ao nome do mercado: é
+//     documentar a herança, não deixar ao acaso o nome bater sozinho.
+//   'leads' (LEAD_GENERATION / pixel de conversão com objetivo de lead) —
+//     agora é o mercado `lead` (singular; otimização OFFSITE_CONVERSIONS +
+//     objetivo OUTCOME_LEADS). O dono já tem meta calibrada como `metas.leads`
+//     (plural) do balde antigo — mesmo resultado (custo por lead) com nome de
+//     chave diferente do mercado novo, por isso `chaveMeta: 'leads'`.
 //
 // A CHAVE DA META (`chaveMeta`) nem sempre é o nome do mercado — é o mecanismo
 // que sobrevive a esta troca de índice, para o dono não perder o que já
-// calibrou. Três mercados são a MESMA coisa que ele já vinha medindo com outro
-// nome, e usam `chaveMeta` para continuar lendo a meta salva:
-//   conversa      -> chaveMeta 'mensagens'  (era o balde de WhatsApp/Direct)
-//   site_venda    -> chaveMeta 'vendas'     (era o balde de venda)
-//   site_trafego  -> chaveMeta 'trafego'    (era o balde de tráfego de site)
+// calibrou. Cinco mercados são a MESMA coisa que ele já vinha medindo com
+// outro nome, e usam `chaveMeta` para continuar lendo a meta salva:
+//   conversa       -> chaveMeta 'mensagens'      (era o balde de WhatsApp/Direct)
+//   site_venda     -> chaveMeta 'vendas'         (era o balde de venda)
+//   site_trafego   -> chaveMeta 'trafego'        (era o balde de tráfego de site)
+//   lead           -> chaveMeta 'leads'          (era o balde de formulário/cadastro)
+//   reconhecimento -> chaveMeta 'reconhecimento' (era o balde de CPM/alcance —
+//                      mesmo nome, declarado explicitamente mesmo assim, pra
+//                      não depender de coincidência de string)
 // Os outros três mercados (`perfil`, `video`, `post`) NÃO declaram `chaveMeta`
 // — leem a meta pelo próprio nome (`metas.perfil`, `metas.video`,
 // `metas.post`), que hoje não existe em nenhuma conta, de propósito:
@@ -137,14 +141,40 @@ export const ALVOS = {
     rotulo: 'Custo por visita', unidade: 'R$',
     ajuda: 'Quanto você aceita pagar por cada pessoa que realmente chegou no destino.',
   },
+
+  // NASCE NESTA RODADA (correção 3, 25/09/2026), junto com o sinal em
+  // mercados.js (UNDEFINED + OFFSITE_CONVERSIONS + objective OUTCOME_LEADS).
+  // Preserva a meta que o dono já calibrou como 'leads' (balde antigo).
+  lead: {
+    metrica: 'custo_lead', resultado: 'leads', chaveMeta: 'leads',
+    rotulo: 'Custo por lead', unidade: 'R$',
+    ajuda: 'Quanto você aceita pagar por cada lead (cadastro/formulário) que a Meta conta via pixel de conversão. É diferente de venda mesmo usando o mesmo tipo de otimização — só o objetivo declarado diferencia (ver mercados.js).',
+  },
+
+  // NASCE NESTA RODADA, junto com o sinal em mercados.js (otimização REACH).
+  // Mede por CPM porque o que esta campanha COMPRA é impressão/alcance, não
+  // uma ação — CAC ou custo por clique não fariam sentido aqui. É a única
+  // exceção à regra "toda meta é custo por RESULTADO discreto" (ver topo do
+  // arquivo): CPM já é, por definição, custo a cada mil impressões, então
+  // continua "menor é melhor" e cabe no mesmo semáforo sem régua invertida.
+  // Preserva a meta que o dono já calibrou como 'reconhecimento' (balde antigo).
+  reconhecimento: {
+    metrica: 'cpm', resultado: 'impressoes', chaveMeta: 'reconhecimento',
+    rotulo: 'Custo por mil impressões (CPM)', unidade: 'R$',
+    ajuda: 'Quanto você aceita pagar a cada mil impressões. É a régua de campanha de alcance/reconhecimento: o que ela compra é exposição, não uma ação específica.',
+  },
 };
 
 // Sem alvo definido devolve null — e null faz o veredito cair na leitura de
 // saúde daquele mercado (ou em 'sem-dados'), que é melhor do que inventar um
 // alvo qualquer. Cobre 'desconhecido' e 'misto' (nunca têm entrada aqui, de
 // propósito) e qualquer chave que não exista — inclusive os nomes de balde de
-// antes desta troca ('engajamento', 'leads', 'reconhecimento', 'mensagens',
-// 'trafego', 'vendas'): nenhum deles indexa mais `ALVOS` diretamente.
+// antes desta troca que NÃO batem com um mercado atual ('engajamento',
+// 'mensagens', 'trafego', 'vendas', 'leads' no plural): nenhum deles indexa
+// `ALVOS` diretamente. ⚠️ 'reconhecimento' é EXCEÇÃO: o mercado novo tem o
+// mesmo nome do balde antigo, então `alvoDoBalde('reconhecimento')` agora
+// ACHA alvo — não confundir com os outros nomes de balde desta lista, que
+// continuam batendo em null.
 export function alvoDoBalde(balde) {
   return (balde && ALVOS[balde]) || null;
 }

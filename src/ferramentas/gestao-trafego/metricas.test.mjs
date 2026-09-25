@@ -97,12 +97,17 @@ test('custoDoAlvo devolve o custo na unidade de cada mercado', () => {
   assert.equal(custoDoAlvo('post', INS), 0.5);             // custo por engajamento, 1000/2000
 });
 
-test('mercado sem sinal em mercados.js (reconhecimento, leads-formulário) fica sem alvo', () => {
-  // 'reconhecimento' (awareness/CPM) e 'leads' (LEAD_GENERATION) eram baldes
-  // com alvo antes desta onda. A tabela de mercados de mercados.js (Tarefa 1
-  // da Onda C) não emite sinal pra nenhum dos dois ainda — não é bug desta
-  // tarefa, é fronteira: sem mercado, sem alvo, sem veredito inventado.
-  assert.equal(custoDoAlvo('reconhecimento', INS), null);
+test('reconhecimento e lead ganharam sinal em mercados.js (rodada de correção 3, 25/09/2026) e agora têm alvo', () => {
+  // Até a rodada anterior, 'reconhecimento' (awareness/CPM) e 'leads'
+  // (LEAD_GENERATION) eram baldes com alvo sem sinal correspondente em
+  // mercados.js — ficavam sem veredito. A medição ampliada (campanhas
+  // pausadas/arquivadas) trouxe os dois sinais reais, e alvos.js ganhou
+  // `reconhecimento` e `lead` (singular) nesta rodada.
+  assert.equal(custoDoAlvo('reconhecimento', INS), 20);   // CPM: 1000/50000*1000
+  assert.equal(custoDoAlvo('lead', INS), 25);              // custo por lead: 1000/40
+});
+
+test('"leads" no plural (nome do balde antigo) continua sem indexar ALVOS — o mercado novo é "lead", singular', () => {
   assert.equal(custoDoAlvo('leads', INS), null);
 });
 

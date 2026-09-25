@@ -127,6 +127,62 @@ test('MERCADOS lista os mercados válidos — sem misto e sem desconhecido', () 
   assert.ok(!MERCADOS.includes('desconhecido'));
 });
 
+// Rodada de correção 3 (25/09/2026): a medição foi ampliada para campanhas
+// pausadas/arquivadas nas 6 contas, e apareceram sinais reais que a fixture
+// original (só campanhas ativas) não cobria. Contagem de conjuntos:
+//   2  OUTCOME_AWARENESS  dest=UNDEFINED  goal=REACH
+//   5  OUTCOME_LEADS      dest=UNDEFINED  goal=OFFSITE_CONVERSIONS
+//  19  LINK_CLICKS        dest=UNDEFINED  goal=VISIT_INSTAGRAM_PROFILE
+//   4  LINK_CLICKS        dest=UNDEFINED  goal=AUTOMATIC_OBJECTIVE
+
+test('lead: OUTCOME_LEADS + OFFSITE_CONVERSIONS não é venda — é a quarta vez que a régua de um mercado cai sobre outro', () => {
+  // O BUG (achado na medição ampliada): OFFSITE_CONVERSIONS caía sempre em
+  // site_venda, então uma campanha que compra LEAD por pixel era julgada por
+  // CAC (custo de aquisição de VENDA). Aqui o destino (UNDEFINED) não decide
+  // e a otimização (OFFSITE_CONVERSIONS) é ambígua por natureza — só o
+  // OBJETIVO diz se a conversão é venda ou lead.
+  assert.equal(mercadoDoConjunto({ destination_type: 'UNDEFINED', optimization_goal: 'OFFSITE_CONVERSIONS', objective: 'OUTCOME_LEADS' }), 'lead');
+});
+
+test('OFFSITE_CONVERSIONS com OUTCOME_SALES continua site_venda — o outro lado da mesma ambiguidade', () => {
+  assert.equal(mercadoDoConjunto({ destination_type: 'UNDEFINED', optimization_goal: 'OFFSITE_CONVERSIONS', objective: 'OUTCOME_SALES' }), 'site_venda');
+});
+
+test('OFFSITE_CONVERSIONS sem objetivo declarado (ou com um que não é venda/lead) preserva o comportamento medido antes desta rodada: site_venda', () => {
+  // O caso real que já era testado e não pode regredir: WEBSITE +
+  // OFFSITE_CONVERSIONS, sem nenhum `objective` no conjunto de teste.
+  assert.equal(mercadoDoConjunto({ destination_type: 'WEBSITE', optimization_goal: 'OFFSITE_CONVERSIONS' }), 'site_venda');
+  assert.equal(mercadoDoConjunto({ destination_type: 'UNDEFINED', optimization_goal: 'OFFSITE_CONVERSIONS', objective: 'OUTCOME_TRAFFIC' }), 'site_venda');
+});
+
+test('reconhecimento: OUTCOME_AWARENESS + REACH compra alcance, mede por CPM', () => {
+  assert.equal(mercadoDoConjunto({ destination_type: 'UNDEFINED', optimization_goal: 'REACH', objective: 'OUTCOME_AWARENESS' }), 'reconhecimento');
+});
+
+test('vizinho que NÃO muda: OUTCOME_AWARENESS + THRUPLAY continua vídeo — o produto comprado é a view, não o alcance', () => {
+  // Mesmo objetivo (OUTCOME_AWARENESS) do caso acima, otimização diferente. A
+  // campanha serve a uma estratégia de awareness, mas o que ela COMPRA é
+  // view — não misturar com reconhecimento só porque o objetivo é parecido.
+  assert.equal(mercadoDoConjunto({ destination_type: 'ON_VIDEO', optimization_goal: 'THRUPLAY', objective: 'OUTCOME_AWARENESS' }), 'video');
+});
+
+test('perfil sem destino declarado: UNDEFINED + VISIT_INSTAGRAM_PROFILE (19 conjuntos medidos)', () => {
+  // O objetivo aqui (LINK_CLICKS) é um objetivo antigo de tráfego — irrelevante
+  // pra esta decisão, porque a otimização já é inequívoca sozinha.
+  assert.equal(mercadoDoConjunto({ destination_type: 'UNDEFINED', optimization_goal: 'VISIT_INSTAGRAM_PROFILE', objective: 'LINK_CLICKS' }), 'perfil');
+});
+
+test('AUTOMATIC_OBJECTIVE (Advantage+) é desconhecido de propósito — quem escolhe o que otimizar é o algoritmo da Meta, não o gestor', () => {
+  // NÃO é falha de cobertura: é a ferramenta reconhecendo que não dá para
+  // saber o mercado quando a própria Meta decide sozinha o que perseguir.
+  assert.equal(mercadoDoConjunto({ destination_type: 'UNDEFINED', optimization_goal: 'AUTOMATIC_OBJECTIVE', objective: 'LINK_CLICKS' }), 'desconhecido');
+});
+
+test('MERCADOS ganha lead e reconhecimento nesta rodada', () => {
+  assert.ok(MERCADOS.includes('lead'));
+  assert.ok(MERCADOS.includes('reconhecimento'));
+});
+
 test('trava de consistência: nenhum destino que exige desempate decide sozinho ao mesmo tempo', () => {
   // Antes (rodada de correção 1) isto era um `throw` na carga do módulo — pego
   // por mutação (reintroduzir `WEBSITE: 'site_venda'` derrubava a IMPORTAÇÃO

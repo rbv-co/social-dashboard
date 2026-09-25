@@ -18,6 +18,8 @@ test('cada mercado tem alvo na unidade dele', () => {
   assert.equal(ALVOS.post.metrica, 'custo_engajamento');
   assert.equal(ALVOS.site_venda.metrica, 'cac');
   assert.equal(ALVOS.site_trafego.metrica, 'custo_visita');
+  assert.equal(ALVOS.lead.metrica, 'custo_lead');
+  assert.equal(ALVOS.reconhecimento.metrica, 'cpm');
 });
 
 test('desconhecido e misto não têm alvo — mercados.js os declara de propósito fora de MERCADOS', () => {
@@ -28,8 +30,10 @@ test('desconhecido e misto não têm alvo — mercados.js os declara de propósi
 });
 
 test('ALVOS só tem as chaves de MERCADOS — nem uma a mais, nem uma a menos', () => {
+  // Rodada de correção 3 (25/09/2026): 'lead' e 'reconhecimento' entraram em
+  // MERCADOS (mercados.js) e ganham alvo aqui na mesma rodada.
   assert.deepEqual(Object.keys(ALVOS).sort(), [
-    'conversa', 'perfil', 'post', 'site_trafego', 'site_venda', 'video',
+    'conversa', 'perfil', 'post', 'site_trafego', 'site_venda', 'video', 'lead', 'reconhecimento',
   ].sort());
 });
 
@@ -56,7 +60,7 @@ test('post é o mais parecido com o antigo balde de engajamento, mas NÃO herda 
   assert.equal(ALVOS.post.chaveMeta, undefined);
 });
 
-test('três mercados preservam a meta que o dono já calibrou, por chaveMeta', () => {
+test('cinco mercados preservam a meta que o dono já calibrou, por chaveMeta', () => {
   // A prova de que reindexar não perdeu meta nenhuma: cada um destes mercados
   // é a MESMA coisa que o dono já vinha medindo com outro nome de balde, e a
   // chave antiga continua sendo a que `chaveMeta` aponta.
@@ -66,17 +70,25 @@ test('três mercados preservam a meta que o dono já calibrou, por chaveMeta', (
     'site_venda é o antigo balde de venda — a meta dele mora em metas.vendas');
   assert.equal(ALVOS.site_trafego.chaveMeta, 'trafego',
     'site_trafego é o antigo balde de tráfego — a meta dele mora em metas.trafego');
+  // Entraram na rodada de correção 3 (25/09/2026), junto com o sinal novo em
+  // mercados.js:
+  assert.equal(ALVOS.lead.chaveMeta, 'leads',
+    'lead é o antigo balde de formulário/cadastro (plural) — a meta dele mora em metas.leads');
+  assert.equal(ALVOS.reconhecimento.chaveMeta, 'reconhecimento',
+    'reconhecimento tem o mesmo nome do balde antigo — chaveMeta declarado explicitamente mesmo assim');
 });
 
 test('a meta antiga é encontrada pela chave nova — prova de que o dono não perde o que calibrou', () => {
   // Simula o objeto `regua.metas` como ele está salvo HOJE no banco, com as
   // chaves de balde de antes desta onda — e prova que `chaveMeta` acha cada
   // uma a partir do MERCADO novo, sem o dono precisar recalibrar nada.
-  const metasSalvasHoje = { mensagens: 12, vendas: 45, trafego: 3.5 };
+  const metasSalvasHoje = { mensagens: 12, vendas: 45, trafego: 3.5, leads: 22, reconhecimento: 8 };
   const chave = (mercado) => ALVOS[mercado].chaveMeta || mercado;
   assert.equal(metasSalvasHoje[chave('conversa')], 12);
   assert.equal(metasSalvasHoje[chave('site_venda')], 45);
   assert.equal(metasSalvasHoje[chave('site_trafego')], 3.5);
+  assert.equal(metasSalvasHoje[chave('lead')], 22);
+  assert.equal(metasSalvasHoje[chave('reconhecimento')], 8);
 });
 
 test('todo alvo tem rótulo e unidade em português para a tela', () => {
@@ -96,13 +108,19 @@ test('alvoDoBalde devolve null para mercado sem alvo (nao inventa)', () => {
 
 test('baldes de antes desta onda não indexam mais ALVOS direto', () => {
   // Documenta a troca (25/09/2026): estes nomes eram chave de ALVOS antes da
-  // Onda C. 'reconhecimento' e 'leads' ficam sem mercado correspondente por
-  // enquanto (ver o bloco grande no topo de alvos.js) — não é esquecimento,
-  // é a fronteira exata desta tarefa: mercados.js (Tarefa 1) não emite sinal
-  // pra awareness nem pra LEAD_GENERATION ainda.
-  for (const antigo of ['engajamento', 'trafego', 'mensagens', 'leads', 'vendas', 'reconhecimento']) {
+  // Onda C, e continuam SEM bater direto — a chave nova que existe agora é o
+  // MERCADO ('lead', singular), não o balde antigo ('leads', plural).
+  for (const antigo of ['engajamento', 'trafego', 'mensagens', 'leads', 'vendas']) {
     assert.equal(alvoDoBalde(antigo), null, antigo + ' não é mais chave direta de ALVOS');
   }
+});
+
+test('reconhecimento é EXCEÇÃO: o mercado novo tem o mesmo nome do balde antigo, então indexa ALVOS direto', () => {
+  // Rodada de correção 3 (25/09/2026): diferente dos baldes do teste acima,
+  // 'reconhecimento' virou mercado com o MESMO nome do balde que já existia —
+  // não confundir com esquecimento de exclusão da lista anterior.
+  assert.notEqual(alvoDoBalde('reconhecimento'), null);
+  assert.equal(alvoDoBalde('reconhecimento').metrica, 'cpm');
 });
 
 test('avaliarAlvo compara custo com meta e devolve a faixa', () => {
