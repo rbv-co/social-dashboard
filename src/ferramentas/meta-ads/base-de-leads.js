@@ -55,6 +55,7 @@ function linhaDeCheckout(e) {
     quem: '—', // anônimo: a Shopify não manda nome/e-mail no webhook de checkout iniciado
     contato: e.session_id ? `sessão ${e.session_id.slice(0, 8)}…` : '—',
     origem: resumoDeOrigem(e),
+    fbc: e.fbc || null,
   }
 }
 
@@ -69,6 +70,7 @@ function linhaDePopUp(c) {
       utm_source: c.utm_source, utm_medium: c.utm_medium, utm_campaign: c.utm_campaign,
       fbc: c.clique_meta,
     }),
+    fbc: c.clique_meta || null,
   }
 }
 
@@ -90,6 +92,7 @@ function linhaDeAtendimento(a, pessoasPorId, origens) {
       utm_source: origem.utm_source, utm_medium: origem.utm_medium, utm_campaign: origem.utm_campaign,
       fbc: origem.clique_meta,
     }),
+    fbc: origem?.clique_meta || null,
   }
 }
 
