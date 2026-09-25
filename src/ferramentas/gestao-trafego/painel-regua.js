@@ -28,6 +28,19 @@
 //
 // (A planilha lista sete pesos; só quatro existem por campanha no Meta Ads —
 // o porquê está em ponderada.js, onde os pesos são montados; não repetir aqui.)
+//
+// ATUALIZAÇÃO 24/09/2026 — a ponderada foi PAUSADA (decisão do dono, ver o
+// bloco de `engajamento` em alvos.js): o veredito de campanha de engajamento
+// SEM interação declarada não usa mais o ponto ponderado, e sim o custo por
+// engajamento bruto. A linha de meta de engajamento saiu da Seção 1 e foi
+// para a Seção 2 (chave `engajamento_bruto`, ver ALVOS.engajamento.chaveMeta).
+// A Seção 1 CONTINUA na tela — pesos, meta antiga (`metas.engajamento`) e
+// limiares intactos — porque campanha com INTERAÇÃO DECLARADA (curtida,
+// comentário, salvamento, compartilhamento) ainda é julgada por eles; só o
+// ponto ponderado composto (a leitura "no geral", sem declaração) parou de
+// decidir. Por isso o aviso no topo da Seção 1 (ver `avisoPausa` abaixo) fala
+// em "por padrão" — a seção não virou decoração, só deixou de ser a REGRA
+// geral.
 import { pastilha } from './pastilha.js';
 import { calcularPonderada, PESOS_PADRAO, LIMIARES_PADRAO } from './ponderada.js';
 import { metaDoBalde } from './regua.js';
@@ -93,11 +106,12 @@ function campo(id, valor, passo, editavel, formato) {
   return `<span class="pnd-campo">${pre}<input class="pnd-input" id="${esc(id)}" type="number" min="0" step="${passo}" value="${esc(valor)}"></span>`;
 }
 
-// Baldes da Seção 2: todo ALVO menos engajamento, que virou da Seção 1 por
-// inteiro (pesos + custo por objetivo + limiares). Mantém a ORDEM de ALVOS
-// (reconhecimento, trafego, mensagens, leads, vendas) — é a mesma ordem usada
-// pra achar o primeiro com meta salva, no preview dos limiares da Seção 2.
-const BALDES_SECAO2 = Object.keys(ALVOS).filter((b) => b !== 'engajamento');
+// Baldes da Seção 2: TODO ALVO (ATUALIZAÇÃO 24/09/2026 — antes era todo ALVO
+// MENOS engajamento; agora engajamento entrou aqui também, porque passou a
+// ser julgado por RESULTADO, custo por engajamento bruto, não mais pelo ponto
+// ponderado). Mantém a ORDEM de ALVOS — é a mesma ordem usada pra achar o
+// primeiro com meta salva, no preview dos limiares da Seção 2.
+const BALDES_SECAO2 = Object.keys(ALVOS);
 
 // Tira o "Custo por " do rótulo do alvo pra virar sufixo do preview ("por
 // conversa iniciada", "por lead"...) — nunca um texto novo, só o que ALVOS já
@@ -106,6 +120,31 @@ function sufixoDoAlvo(balde) {
   const rotulo = (ALVOS[balde] && ALVOS[balde].rotulo) || '';
   return rotulo.replace(/^Custo por\s*/i, 'por ');
 }
+
+// DESAMBIGUAÇÃO DE RÓTULO REPETIDO (24/09/2026): "mensagens" e "leads" usam o
+// MESMO rótulo — "Custo por lead" — desde que o dono decidiu chamar conversa
+// de WhatsApp aberta de lead (ver o comentário de `mensagens` em alvos.js).
+// No CARTÃO da campanha isso é exatamente o que ele quer ler. Mas aqui, na
+// régua, as duas viram DUAS LINHAS VIZINHAS na mesma tabela — sem desambiguar,
+// ele digitaria a meta na linha errada sem ter como perceber (as duas leem
+// "Custo por lead"). NÃO mexe em ALVOS[...].rotulo (o cartão continua igual):
+// a mudança fica só na montagem desta linha, juntando o nome do balde
+// (ROTULO_BALDE, que já é único por construção) só quando há colisão de
+// verdade — os demais rótulos, que já são únicos, saem sem sufixo nenhum.
+function rotuloDaLinha(baldes) {
+  const contagem = {};
+  for (const b of baldes) {
+    const r = ALVOS[b].rotulo;
+    contagem[r] = (contagem[r] || 0) + 1;
+  }
+  const mapa = {};
+  for (const b of baldes) {
+    const a = ALVOS[b];
+    mapa[b] = contagem[a.rotulo] > 1 ? `${a.rotulo} — ${ROTULO_BALDE[b] || b}` : a.rotulo;
+  }
+  return mapa;
+}
+const ROTULO_LINHA_SECAO2 = rotuloDaLinha(BALDES_SECAO2);
 
 // A PERSONA DA MARCA — quem a conta atende, escrito pelo dono.
 //
@@ -185,6 +224,15 @@ export function montarPainelRegua(alvo, opcoes) {
   // este arquivo de volta) ou reimplementar aqui o HTML do botão. Sem o
   // parâmetro (ex.: chamada de teste), vira no-op — nunca quebra o painel.
   const ajudaBtn = typeof o.ajudaBtn === 'function' ? o.ajudaBtn : () => '';
+  // O que a conta PAGA HOJE por engajamento, medido — mostrado ao lado da meta
+  // nova (Seção 2), pra ela ser definida contra o real, e não no escuro. Puro:
+  // este módulo não fala com o banco, então o número vem de quem chama. Sem
+  // ele (ou inválido), NÃO mostra nada — nunca um traço solto nem um zero
+  // inventado (regra da casa, item 9 do padrão: a tela nunca mente).
+  const custoEngajamentoPraticado = (() => {
+    const v = Number(o.custoEngajamentoPraticado);
+    return Number.isFinite(v) && v >= 0 ? v : null;
+  })();
 
   const linhasPeso = Object.keys(PESOS_PADRAO).map((k) =>
     `<tr><td>${ROTULO_PESO[k]}</td><td>${campo('pnd-peso-' + k, regua.pesos[k], '1', editavel)}</td></tr>`).join('');
@@ -204,36 +252,35 @@ export function montarPainelRegua(alvo, opcoes) {
     </tr>`;
   }).join('');
 
-  // A linha do "engajamento ponderado" (custo por PONTO) — a 5ª linha do bloco
-  // de custo da Seção 1, ao lado das quatro interações. Mesmo desenho de linha
-  // que ALVOS já usa pras demais metas (nome + ajuda + nota de "sem histórico"
-  // quando não há meta salva ainda).
-  const linhaMetaEngajamento = (() => {
-    const b = 'engajamento';
-    const a = ALVOS[b];
-    const temMeta = regua.metas[b] != null;
-    const valor = temMeta ? regua.metas[b] : '';
-    const nota = temMeta ? '' : '<div class="pnd-alvo-vazio">ainda sem histórico — defina quando começar a rodar esse tipo</div>';
-    return `<tr>
-      <td><div class="pnd-alvo-nome">${esc(ROTULO_BALDE[b] || b)} ponderado</div><div class="pnd-alvo-ajuda">${esc(a.rotulo)} — ${esc(a.ajuda)}</div>${nota}</td>
-      <td>${campo('pnd-meta-' + b, valor, '0.01', editavel, a.unidade)}</td>
-    </tr>`;
-  })();
-  const linhasCustoSecao1 = linhaMetaEngajamento + linhasInteracao;
+  // A linha de "engajamento ponderado" (custo por PONTO) SAIU daqui (24/09/2026):
+  // ela virou a meta nova de custo por engajamento, na Seção 2 (ver
+  // ROTULO_LINHA_SECAO2/linhasMeta abaixo) — não é mais "mundo do ponto". A
+  // tabela de custo da Seção 1 fica só com as quatro interações, que continuam
+  // valendo para toda campanha que o dono DECLARAR (ver o aviso de pausa
+  // logo acima desta seção, na montagem do HTML).
+  const linhasCustoSecao1 = linhasInteracao;
 
-  // Uma linha por objetivo da SEÇÃO 2 (reconhecimento, tráfego, mensagens,
-  // leads, vendas — tudo que não é engajamento), cada uma na unidade do
-  // resultado dele (ver alvos.js). Objetivo sem meta salva mostra o campo
-  // VAZIO com uma nota — nunca um número de exemplo: campo vazio é honesto,
-  // número inventado não.
+  // Uma linha por objetivo da SEÇÃO 2 — reconhecimento, tráfego, mensagens,
+  // leads, vendas e (24/09/2026) engajamento, cada uma na unidade do resultado
+  // dele (ver alvos.js). Objetivo sem meta salva mostra o campo VAZIO com uma
+  // nota — nunca um número de exemplo: campo vazio é honesto, número inventado
+  // não. A CHAVE da meta (`a.chaveMeta || b`) é a mesma usada por `metaDoBalde`
+  // em regua.js — só diverge do nome do balde em engajamento, cuja meta nova
+  // mora em `engajamento_bruto` pra não sobrescrever a antiga (`engajamento`,
+  // que só a Seção 1 ainda lê — ver pintarLimiaresSecao1 abaixo).
   const linhasMeta = BALDES_SECAO2.map((b) => {
     const a = ALVOS[b];
-    const temMeta = regua.metas[b] != null;
-    const valor = temMeta ? regua.metas[b] : '';
+    const chave = a.chaveMeta || b;
+    const temMeta = regua.metas[chave] != null;
+    const valor = temMeta ? regua.metas[chave] : '';
     const nota = temMeta ? '' : '<div class="pnd-alvo-vazio">ainda sem histórico — defina quando começar a rodar esse tipo</div>';
+    // "O que você paga hoje", só quando quem chamou souber dizer (por enquanto
+    // só engajamento, que acabou de trocar de régua) — ver custoEngajamentoPraticado.
+    const praticado = (b === 'engajamento' && custoEngajamentoPraticado != null)
+      ? `<div class="pnd-limiar-prev">você paga ${reais(custoEngajamentoPraticado)} hoje</div>` : '';
     return `<tr>
-      <td><div class="pnd-alvo-nome">${esc(ROTULO_BALDE[b] || b)}</div><div class="pnd-alvo-ajuda">${esc(a.rotulo)} — ${esc(a.ajuda)}</div>${nota}</td>
-      <td>${campo('pnd-meta-' + b, valor, '0.01', editavel, a.unidade)}</td>
+      <td><div class="pnd-alvo-nome">${esc(ROTULO_BALDE[b] || b)}</div><div class="pnd-alvo-ajuda">${esc(ROTULO_LINHA_SECAO2[b])} — ${esc(a.ajuda)}</div>${nota}</td>
+      <td>${campo('pnd-meta-' + chave, valor, '0.01', editavel, a.unidade)}${praticado}</td>
     </tr>`;
   }).join('');
 
@@ -258,7 +305,7 @@ export function montarPainelRegua(alvo, opcoes) {
         <div class="pnd-intro-corpo">
       <p>Aqui você diz <b>quanto aceita pagar por cada resultado</b>. É esse número que faz o cartão da campanha acender verde, amarelo ou vermelho lá na aba Campanhas.</p>
       <p>Existem duas formas de ler o preço. A <b>ponderada</b> é a leitura geral: soma curtida, comentário, salvamento e compartilhamento, cada um valendo o que você decidir, numa nota só. Ela responde "essa campanha comprou engajamento caro ou barato, no geral?". O <b>resultado</b> é a leitura fina: custo por lead, por conversa, por venda, por visita, por mil impressões — responde exatamente o que aquele tipo de campanha comprou.</p>
-      <p>Qual das duas vale para uma campanha? Você decide lá em Campanhas, declarando no cartão dela o que ela está comprando. Sem declarar, ela é julgada pela ponderada. Declarando um resultado, vale o custo daquele resultado. Declarando uma interação — curtida, comentário, salvamento ou compartilhamento —, vale o custo daquela interação, que você define logo abaixo.</p>
+      <p>Qual das duas vale para uma campanha? Você decide lá em Campanhas, declarando no cartão dela o que ela está comprando. <b>A ponderada está em pausa desde 24/09/2026</b> (ver aviso na seção dela, abaixo): sem declarar, uma campanha de engajamento é julgada pelo custo por engajamento, na Seção "Metas por resultado". Declarando uma interação — curtida, comentário, salvamento ou compartilhamento —, vale o custo daquela interação, que você define na Seção "Engajamento ponderado".</p>
       <p>Peso e meta respondem perguntas diferentes: o <b>peso</b> diz quanto aquilo vale pra você, a <b>meta</b> diz quanto você aceita pagar por aquilo. Por isso, quando você declara uma interação, o peso não entra na conta — quem decide é só a meta.</p>
       <p>Cada seção abaixo tem sua PRÓPRIA meta e seu PRÓPRIO limiar de cor: "escalar forte" pode valer 0,8× numa e 0,9× na outra, sem uma mexer na outra.</p>
       <p><b>As metas são de cada cliente, separadamente.</b> Um mesmo resultado custa preços muito diferentes de uma conta pra outra, então uma meta só valendo pra todas diria mais sobre de quem é a conta do que sobre a campanha ir bem. Os pesos e as cores, esses valem pra todo mundo: peso é o quanto uma interação <i>vale</i>, não o quanto ela <i>custa</i>.</p>
@@ -270,21 +317,22 @@ export function montarPainelRegua(alvo, opcoes) {
       <div>
         <div class="pnd-grupo pnd-g-engaj">
           <div class="pnd-grupo-cab"><h2 class="pnd-grupo-tit">${pastilha('contato')}Engajamento ponderado${nomeConta ? ` — ${esc(nomeConta)}` : ''}${ajudaBtn('ponto')}</h2>
-          <p class="pnd-grupo-sub">A leitura geral. Vale para toda campanha de engajamento até você declarar, no cartão dela, o que ela está comprando.</p></div>
+          <p class="pnd-grupo-sub">A leitura geral. Vale para campanha de engajamento só quando você declarar, no cartão dela, qual interação ela está comprando.</p>
+          <div class="pnd-conta-tag pnd-conta-tag--vazio">Em pausa desde 24/09/2026: por padrão, o veredito de engajamento passou a ser <b>custo por engajamento</b>, editado em "Metas por resultado" (Seção 2, abaixo). <b>Nada foi apagado</b> — pesos, meta antiga e limiares desta seção continuam aqui, intocados, e só voltam a decidir o veredito quando você declarar, no cartão da campanha, que ela compra uma curtida, comentário, salvamento ou compartilhamento específico.</div></div>
           <div class="pnd-cards">
             <div class="pnd-bloco">
               <div class="pnd-cab"><h3 class="pnd-titulo">Quanto vale cada interação</h3>${ajudaBtn('pesos')}</div>
-              <p class="pnd-ajuda">Uma curtida vale 1 ponto. Um salvamento vale 30 — é como dizer que salvar equivale a 30 curtidas.</p>
+              <p class="pnd-ajuda">Uma curtida vale 1 ponto. Um salvamento vale 30 — é como dizer que salvar equivale a 30 curtidas. Só importa quando a campanha tem interação declarada (ver aviso acima).</p>
               <table class="pnd-tabela"><tbody>${linhasPeso}</tbody></table>
             </div>
             <div class="pnd-bloco">
               <div class="pnd-cab"><h3 class="pnd-titulo">Quanto você aceita pagar</h3>${ajudaBtn('meta_interacao')}</div>
-              <p class="pnd-ajuda">O ponderado vale enquanto você não declarar nada. Declarando, no cartão da campanha, qual interação ela está comprando, vale o preço daquela interação — mercados diferentes: hoje uma curtida sai por R$ 0,12 e um salvamento por R$ 48.</p>
+              <p class="pnd-ajuda">Vale só quando você declara, no cartão da campanha, qual interação ela está comprando — aí o preço é o daquela interação, mercados diferentes: hoje uma curtida sai por R$ 0,12 e um salvamento por R$ 48. Sem declarar, o veredito é o custo por engajamento, na Seção 2.</p>
               <table class="pnd-tabela"><tbody>${linhasCustoSecao1}</tbody></table>
             </div>
             <div class="pnd-bloco">
               <div class="pnd-cab"><h3 class="pnd-titulo">Quando cada cor acende</h3>${ajudaBtn('cores')}</div>
-              <p class="pnd-ajuda">Multiplicadores da meta de engajamento (custo por ponto, na tabela ao lado). Cada um mostra em reais o que vira, pra você não fazer a conta de cabeça.</p>
+              <p class="pnd-ajuda">Multiplicadores da meta de cada interação declarada. O valor em reais abaixo de cada um usa a meta antiga de custo por ponto (congelada — sem campo nesta tela desde a pausa), pro dia de religar a ponderada.</p>
               <table class="pnd-tabela"><tbody>${linhasLimiar1}</tbody></table>
             </div>
           </div>
@@ -328,14 +376,31 @@ export function montarPainelRegua(alvo, opcoes) {
     // (não pro padrão de fábrica) — senão um peso 50 customizado vira 30 no silêncio.
     for (const k of Object.keys(PESOS_PADRAO)) pesos[k] = ler('pnd-peso-' + k, regua.pesos[k]);
     // Percorre ALVOS (não ROTULO_BALDE nem regua.metas) — é a MESMA lista que
-    // desenhou as linhas de meta (engajamento na Seção 1, os demais na Seção
-    // 2), então leitura e escrita nunca divergem. Um balde fora de ALVOS não
-    // tem <input> na tela: 'pnd-meta-<balde>' não existe no DOM, `ler` devolve
-    // o padrão 0, e a linha abaixo não grava a chave. Resultado: salvar a
-    // régua também limpa qualquer meta antiga guardada por engano num balde
-    // sem alvo — o que é o comportamento certo, essas metas nunca deveriam
-    // existir (ver M do review final, 2026-07-28).
-    for (const b of Object.keys(ALVOS)) { const v = ler('pnd-meta-' + b, 0); if (v > 0) metas[b] = v; }
+    // desenhou as linhas de meta, todas na Seção 2 agora (24/09/2026). Um
+    // balde fora de ALVOS não tem <input> na tela: 'pnd-meta-<chave>' não
+    // existe no DOM, `ler` devolve o padrão 0, e a linha abaixo não grava a
+    // chave. Resultado: salvar a régua também limpa qualquer meta antiga
+    // guardada por engano num balde sem alvo — o que é o comportamento certo,
+    // essas metas nunca deveriam existir (ver M do review final, 2026-07-28).
+    //
+    // GRAVA NA CHAVE DO ALVO (`a.chaveMeta || balde`), NUNCA no nome do balde
+    // cru: é a MESMA regra que `metaDoBalde` (regua.js) usa pra LER. Sem isto,
+    // o campo 'pnd-meta-engajamento_bruto' (que o dono preencheu) gravaria em
+    // `metas.engajamento` — apagando a meta ANTIGA do ponto (que tem que
+    // sobreviver intacta, pra pausa da ponderada ser reversível) — e a meta
+    // NOVA cairia numa chave que ninguém lê, parecendo "não salvou".
+    for (const b of Object.keys(ALVOS)) {
+      const chave = (ALVOS[b] && ALVOS[b].chaveMeta) || b;
+      const v = ler('pnd-meta-' + chave, 0);
+      if (v > 0) metas[chave] = v;
+    }
+    // A META ANTIGA da ponderada (`metas.engajamento`, R$ por PONTO) não tem
+    // mais campo nesta tela — a Seção 1 virou aviso (ver o topo dela). Sem
+    // copiar ela aqui, salvar a régua a APAGARIA em silêncio, porque este
+    // objeto nasce vazio e só recebe o que tem <input> na tela agora. Ela
+    // PASSA por fora do laço acima, intocada, até o dia de religar a
+    // ponderada (ver o comentário no topo do arquivo e em alvos.js).
+    if (regua.metas && regua.metas.engajamento != null) metas.engajamento = regua.metas.engajamento;
     // Mesma lógica, agora para as METAS POR INTERAÇÃO (Task 3): percorre
     // INTERACOES (a MESMA lista que desenhou linhasInteracao), gravando na
     // MESMA `metas` — balde ('engajamento'...) e interação ('curtidas'...)
@@ -354,10 +419,14 @@ export function montarPainelRegua(alvo, opcoes) {
     return { pesos, metas, limiares, limiares_resultado };
   }
 
-  // Converte cada limiar da SEÇÃO 1 em reais, ao vivo, contra a meta de
-  // engajamento (custo por ponto — o mesmo campo 'pnd-meta-engajamento' que
-  // está ao lado, na tabela de custo desta mesma seção). Sem isso, um
-  // multiplicador ("0,8") é abstrato demais pra decidir onde mover o corte.
+  // Converte cada limiar da SEÇÃO 1 em reais, ao vivo, contra a meta ANTIGA de
+  // engajamento (`metas.engajamento`, R$ por ponto). DE PROPÓSITO continua
+  // lendo a chave crua `engajamento` (NÃO `metaDoBalde`, que devolveria a meta
+  // NOVA via `chaveMeta` — outra régua, outra unidade): 24/09/2026, a linha
+  // que editava esse campo saiu da tela (virou aviso), mas o valor sobrevive
+  // em `regua.metas.engajamento` (ver reguaDaTela) e este preview continua
+  // mostrando o que os multiplicadores da ponderada significam, pro dia de
+  // religar ela. Trocar para a chave nova quebraria essa memória.
   function pintarLimiaresSecao1(r) {
     const metaEng = Number(r.metas && r.metas.engajamento) || 0;
     for (const k of Object.keys(LIMIARES_PADRAO)) {
@@ -411,20 +480,29 @@ export function montarPainelRegua(alvo, opcoes) {
   // campanha vai ser julgado, não só o tipo da mais cara.
   function blocoDeExemplo(ex, r) {
     // Dois tipos de exemplo, porque a régua tem dois tipos de meta:
-    //  - 'objetivo'  -> meta do balde (custo por lead, conversa, venda, visita…)
+    //  - 'objetivo'  -> meta do balde (custo por lead, conversa, venda, visita,
+    //    engajamento…) — `metaDoBalde` já resolve pela CHAVE certa (ver
+    //    regua.js), então engajamento aqui já lê `engajamento_bruto`.
     //  - 'interacao' -> meta por curtida/comentário/salvamento/compartilhamento
-    // A chave de cada um é a MESMA usada em `metas`, então metaDoBalde serve pros
-    // dois sem função nova. Só o caso da ponderada (engajamento) recalcula ao vivo
-    // com os pesos que o dono está editando agora; nos demais o custo já veio pronto.
     const chave = ex.chave || ex.balde;
     const meta = metaDoBalde(r, chave);
     const alvoObj = ex.tipo === 'interacao' ? null : alvoDoBalde(chave);
+    // CONFERIDO EM 24/09/2026 (a métrica de engajamento trocou de seção): esta
+    // linha continua fazendo exatamente o que promete. Antes, só `engajamento`
+    // tinha `metrica === 'ponderada'`; hoje NENHUM alvo tem mais essa métrica
+    // (engajamento virou 'custo_engajamento', ver alvos.js) — então `ehPonderada`
+    // dá sempre `false`, e é isso que se quer: o exemplo de engajamento passa a
+    // usar `ex.custo` (o custo por engajamento já calculado por quem chamou,
+    // linha abaixo) em vez de recalcular pontos ao vivo. O exemplo de
+    // INTERAÇÃO DECLARADA (curtida/comentário/salvamento/compartilhamento)
+    // não depende desta variável — ele cai no `|| ex.tipo === 'interacao'`
+    // logo abaixo, que continua igual: aquele mercado não foi pausado.
     const ehPonderada = !!alvoObj && alvoObj.metrica === 'ponderada';
-    // QUAL CONJUNTO DE LIMIAR: bucket engajamento (ponderada) e qualquer
-    // interação declarada são a Seção 1 (`limiares`); todo o resto — os
-    // objetivos de resultado da Seção 2 — usa `limiares_resultado`. Mesma
-    // regra do veredito real em tela-de-gestao-trafego.vue: quem é dono da
-    // meta é dono do limiar.
+    // QUAL CONJUNTO DE LIMIAR: interação declarada é Seção 1 (`limiares`);
+    // todo o resto — os objetivos de resultado da Seção 2, engajamento
+    // (24/09/2026) incluído — usa `limiares_resultado`. Mesma regra do
+    // veredito real em tela-de-gestao-trafego.vue: quem é dono da meta é dono
+    // do limiar.
     const limiaresDoExemplo = (ehPonderada || ex.tipo === 'interacao') ? r.limiares : r.limiares_resultado;
     const c = calcularPonderada(ex.quantidades, { pesos: r.pesos, limiares: limiaresDoExemplo, meta: ehPonderada ? meta : 0 });
     const custo = ehPonderada ? c.custoPorPonto : (ex.custo != null ? ex.custo : null);

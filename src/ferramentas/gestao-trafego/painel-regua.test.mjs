@@ -115,6 +115,92 @@ test('os campos de peso saem desenhados — era o uso que estourava', () => {
   });
 });
 
+// ── Tarefa 3 (24/09/2026): engajamento troca de régua e a Seção 1 avisa a pausa ──
+//
+// A ponderada foi DESLIGADA (não apagada): engajamento passou a ser julgado
+// por custo por engajamento bruto, com meta própria na Seção 2. A meta antiga
+// (R$ por ponto) continua existindo em `metas.engajamento`, só sem campo na
+// tela — e não pode ser sobrescrita nem apagada ao salvar.
+
+test('a meta de engajamento passa a ser editada na Seção 2, em R$ por engajamento', () => {
+  comDomFalso(() => {
+    const alvo = alvoFalso();
+    montarPainelRegua(alvo, { ...OPCOES_BASE, regua: normalizarRegua({}) });
+    const saida = alvo.innerHTML;
+    assert.ok(saida.includes('pnd-meta-engajamento_bruto'),
+      'sem este campo o dono não tem onde definir a meta nova, e engajamento fica sem cor para sempre');
+    assert.ok(/Custo por engajamento/.test(saida));
+  });
+});
+
+test('a Seção 1 avisa que a ponderada está em pausa', () => {
+  comDomFalso(() => {
+    const alvo = alvoFalso();
+    montarPainelRegua(alvo, { ...OPCOES_BASE, regua: normalizarRegua({}) });
+    assert.ok(/em pausa/i.test(alvo.innerHTML),
+      'sem o aviso, o dono edita pesos e metas do ponto que não afetam mais nenhum veredito');
+  });
+});
+
+test('mensagens e leads não aparecem como duas linhas "Custo por lead" indistinguíveis', () => {
+  comDomFalso(() => {
+    const alvo = alvoFalso();
+    montarPainelRegua(alvo, { ...OPCOES_BASE, regua: normalizarRegua({}) });
+    // As duas usam o MESMO ALVOS[...].rotulo (decisão do dono, 24/09/2026: quem
+    // abre conversa no WhatsApp também é "lead"). A régua lista um balde por
+    // linha — sem desambiguar aqui, o dono digitaria a meta na linha errada
+    // sem ter como perceber. Prova por MUTAÇÃO: as duas ocorrências de "Custo
+    // por lead" no HTML têm que vir acompanhadas de um texto que as distingue.
+    const ocorrencias = alvo.innerHTML.match(/Custo por lead[^<]*/g) || [];
+    assert.ok(ocorrencias.length >= 2, 'o cenário do teste perdeu uma das duas linhas');
+    assert.notEqual(ocorrencias[0], ocorrencias[1],
+      'as duas linhas "Custo por lead" são idênticas — o dono não tem como saber qual é qual');
+  });
+});
+
+test('salva a meta nova na chave do alvo (engajamento_bruto), nunca na do balde', () => {
+  const antes = globalThis.document;
+  const mapa = new Map();
+  mapa.set('pnd-meta-engajamento_bruto', { value: '2.5' });
+  let clique = null;
+  mapa.set('pnd-salvar', { addEventListener: (ev, fn) => { if (ev === 'click') clique = fn; } });
+  globalThis.document = { getElementById: (id) => mapa.get(id) || null };
+  let capturado = null;
+  try {
+    const alvo = alvoFalso();
+    montarPainelRegua(alvo, {
+      ...OPCOES_BASE,
+      // Meta ANTIGA (ponto) já salva — tem que sobreviver ao save intocada.
+      regua: normalizarRegua({ metas: { engajamento: 0.013 } }),
+      aoSalvar: (r) => { capturado = r; },
+    });
+    assert.ok(typeof clique === 'function', 'o botão de salvar não ligou o listener');
+    clique();
+  } finally {
+    globalThis.document = antes;
+  }
+  assert.equal(capturado.metas.engajamento_bruto, 2.5,
+    'o valor digitado no campo novo tem que cair na CHAVE do alvo, não no nome do balde');
+  assert.equal(capturado.metas.engajamento, 0.013,
+    'a meta antiga (custo por ponto) não pode ser sobrescrita nem apagada ao salvar a régua');
+});
+
+test('mostra o que a conta paga hoje por engajamento quando quem chama informa', () => {
+  comDomFalso(() => {
+    const alvo = alvoFalso();
+    montarPainelRegua(alvo, { ...OPCOES_BASE, regua: normalizarRegua({}), custoEngajamentoPraticado: 0.32 });
+    assert.match(alvo.innerHTML, /você paga R\$ 0,32 hoje/);
+  });
+});
+
+test('sem o praticado de hoje, não mostra traço nem zero inventado', () => {
+  comDomFalso(() => {
+    const alvo = alvoFalso();
+    montarPainelRegua(alvo, { ...OPCOES_BASE, regua: normalizarRegua({}) });
+    assert.ok(!/você paga/.test(alvo.innerHTML), 'sem o dado, a tela não pode inventar um valor praticado');
+  });
+});
+
 test('o bloco da persona aparece quando há conta escolhida', () => {
   comDomFalso(() => {
     const alvo = alvoFalso();
