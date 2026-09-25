@@ -1,7 +1,7 @@
 // A TRIAGEM DA VAGA DO TIVOLI — transforma as linhas de `vessel_candidaturas`
 // nas abas da planilha "Triagem Tivoli Vendedora.xlsx" (04. Vessel Brasil /
-// 10. RH-DP). Aqui só se monta; buscar e enviar mora em
-// `coletor/triagem-tivoli-no-zoho.mjs`.
+// 10. RH-DP). Aqui só se monta — puro, roda no node (teste) e na edge
+// `vessel-triagem-da-vaga`, que busca, envia e roda a cada minuto.
 //
 // ⚠️ DE ONDE VEM: a página `vesselbrasil.com.br/vaga-tivoli`, e NÃO o
 // formulário do Meta. O cadastro feito dentro do Instagram fica no Meta, e ler
@@ -72,7 +72,7 @@ export function nomeDoCurriculo(c) {
 const COMO_USAR = [
   { texto: 'TRIAGEM TIVOLI — VENDEDORA', secao: true },
   'Cada linha da aba "Candidatos" é uma pessoa que se candidatou à vaga de Consultor de Vendas do Tivoli Shopping pela página vesselbrasil.com.br/vaga-tivoli (o destino do anúncio).',
-  'A planilha se atualiza sozinha, a cada 2 horas das 8h às 20h. Mais novo em cima.',
+  'A planilha se atualiza sozinha: em até 1 minuto depois de cada candidatura nova. Mais novo em cima.',
   '',
   { texto: 'O QUE O RH PODE MEXER', secao: true },
   'Tudo. O robô nunca reescreve uma linha que já está aqui: corrigir nome, mudar telefone, anotar, reordenar, criar coluna ou aba — fica como você deixou.',

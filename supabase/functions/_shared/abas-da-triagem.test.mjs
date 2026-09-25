@@ -1,10 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { montarXlsx } from '../../supabase/functions/_shared/planilha-xlsx.js';
-import { abasDoXlsx } from '../../supabase/functions/_shared/ler-xlsx.mjs';
+import { montarXlsx } from './planilha-xlsx.js';
+import { abasDoXlsx } from './ler-xlsx.mjs';
 import {
   montarAbasDaTriagem, triagem, telefoneLegivel, veioPor, nomeDoCurriculo, chegouEm,
-} from './abas-da-triagem.mjs';
+} from './abas-da-triagem.js';
 
 const ANA = {
   id: '11111111-aaaa-4aaa-8aaa-000000000001', criado_em: '2026-09-25T20:00:00+00:00',
