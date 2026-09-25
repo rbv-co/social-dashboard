@@ -689,6 +689,172 @@ try {
     const restaurouSemErro = !x.e && x.v?.ok === true
     console.log(`    ${restaurouSemErro ? '✓' : '✗'} COM o \`on conflict\` (restaurado): o mesmo cenário ${restaurouSemErro ? 'não estourou, como tem de ser' : 'quebrou — bug!'} → ${JSON.stringify(x.v ?? x.e?.message)}`)
     conferir(restaurouSemErro === true, 'COM o `on conflict` restaurado: edicao_encerrar não estoura no mesmo cenário de conflito', x.v ?? x.e?.message)
+
+    console.log('\n  · 10) TASK 5: vessel_rastreio_dos_stylists — assinatura nova (sem fantasma) e recorte por praça/edição')
+    // Chamada como o PostgREST FAZ: parâmetros por NOME. Só os dois de
+    // sempre — exatamente o que tela-de-stylist-circle.vue e
+    // tela-de-material-grafico.vue mandam hoje.
+    const chamadaAntiga = await chamarGravando(
+      `public.vessel_rastreio_dos_stylists(p_dias => $1, p_incluir_desativadas => $2)`, [7, true])
+    conferir(!chamadaAntiga.e && Array.isArray(chamadaAntiga.v),
+      'a chamada com SÓ os 2 parâmetros de sempre (por nome) continua respondendo depois do drop — a Central não quebra', chamadaAntiga.e?.message ?? 'ok')
+
+    const assinaturas = await todas(`select p.pronargs from pg_proc p
+       where p.proname = 'vessel_rastreio_dos_stylists' and p.pronamespace = 'public'::regnamespace`)
+    conferir(assinaturas.length === 1 && assinaturas[0].pronargs === 4,
+      'só existe UMA vessel_rastreio_dos_stylists no catálogo, com 4 parâmetros — a de 2 foi dropada, sem fantasma para o PostgREST escolher entre duas', assinaturas)
+
+    x = await chamarGravando(`public.vessel_praca_criar(p_sigla => $1, p_nome => $2, p_loja_destino => $3)`, ['PVL', 'Praça de Prova L (Task 5)', null])
+    conferir(x.v?.ok === true, 'praca_criar: praça L (Limeira) para o recorte da lista', x.v ?? x.e?.message)
+    const pracaL = x.v?.id
+    x = await chamarGravando(`public.vessel_praca_criar(p_sigla => $1, p_nome => $2, p_loja_destino => $3)`, ['PVM', 'Praça de Prova M (Task 5)', null])
+    conferir(x.v?.ok === true, 'praca_criar: praça M (Campinas) para o recorte da lista', x.v ?? x.e?.message)
+    const pracaM = x.v?.id
+    x = await chamarGravando(`public.vessel_edicao_criar(p_praca_id => $1, p_nome => $2, p_comeca_em => $3, p_termina_em => null)`, [pracaL, 'Edição L1', hoje])
+    const edicaoL1 = x.v?.id
+    x = await chamarGravando(`public.vessel_edicao_abrir(p_id => $1)`, [edicaoL1])
+    conferir(x.v?.ok === true, 'edicao_abrir: abre a edição L1', x.v ?? x.e?.message)
+    x = await chamarGravando(`public.vessel_edicao_criar(p_praca_id => $1, p_nome => $2, p_comeca_em => $3, p_termina_em => null)`, [pracaL, 'Edição L2', hoje])
+    const edicaoL2 = x.v?.id
+    x = await chamarGravando(`public.vessel_edicao_criar(p_praca_id => $1, p_nome => $2, p_comeca_em => $3, p_termina_em => null)`, [pracaM, 'Edição M1', hoje])
+    const edicaoM1 = x.v?.id
+    x = await chamarGravando(`public.vessel_edicao_abrir(p_id => $1)`, [edicaoM1])
+    conferir(x.v?.ok === true, 'edicao_abrir: abre a edição M1', x.v ?? x.e?.message)
+
+    // ⚠️ teste=FALSE de propósito: `vessel_rastreio_dos_stylists` filtra
+    // `not coalesce(s.teste, false)` — com teste=true a stylist nunca
+    // apareceria na lista, e a prova do recorte passaria vazia por um motivo
+    // errado. Tudo isto está dentro do savepoint `prova_funcoes` e é desfeito
+    // no fim — não vaza para os dados reais.
+    const styL1 = await uma(`insert into public.vessel_stylists (codigo, nome, whatsapp, praca_id, teste)
+       values ('STY-PROVA-PLACAR-L1', 'Prova Placar L1', '5519990005101', $1, false) returning id, etapa_id`, [pracaL])
+    const styM1 = await uma(`insert into public.vessel_stylists (codigo, nome, whatsapp, praca_id, teste)
+       values ('STY-PROVA-PLACAR-M1', 'Prova Placar M1', '5519990005102', $1, false) returning id, etapa_id`, [pracaM])
+    x = await chamarGravando(`public.vessel_edicao_incluir_stylist(p_codigo => $1, p_edicao_id => $2)`, ['STY-PROVA-PLACAR-L1', edicaoL1])
+    conferir(x.v?.ok === true, 'edicao_incluir_stylist: L1 na edição L1', x.v ?? x.e?.message)
+    x = await chamarGravando(`public.vessel_edicao_incluir_stylist(p_codigo => $1, p_edicao_id => $2)`, ['STY-PROVA-PLACAR-M1', edicaoM1])
+    conferir(x.v?.ok === true, 'edicao_incluir_stylist: M1 na edição M1', x.v ?? x.e?.message)
+
+    const chamadaPorPraca = await chamarGravando(`public.vessel_rastreio_dos_stylists(p_dias => 7, p_incluir_desativadas => true, p_praca_id => $1, p_edicao_id => null)`, [pracaL])
+    const listaPorPraca = chamadaPorPraca.v
+    conferir(Array.isArray(listaPorPraca) && listaPorPraca.some((s) => s.codigo === 'STY-PROVA-PLACAR-L1') && !listaPorPraca.some((s) => s.codigo === 'STY-PROVA-PLACAR-M1'),
+      'p_praca_id => L: a lista traz a stylist de Limeira e NÃO traz a de Campinas', listaPorPraca?.map((s) => s.codigo))
+    const l1naLista = listaPorPraca.find((s) => s.codigo === 'STY-PROVA-PLACAR-L1')
+    conferir(l1naLista?.praca_id === pracaL && l1naLista?.praca_sigla === 'PVL' && l1naLista?.edicao_id === edicaoL1,
+      'a linha vem com praca_id/praca_sigla/edicao_id certos (os campos novos da Task 5)', l1naLista)
+
+    const chamadaPorEdicao = await chamarGravando(`public.vessel_rastreio_dos_stylists(p_dias => 7, p_incluir_desativadas => true, p_praca_id => null, p_edicao_id => $1)`, [edicaoM1])
+    const listaPorEdicao = chamadaPorEdicao.v
+    conferir(Array.isArray(listaPorEdicao) && listaPorEdicao.length === 1 && listaPorEdicao[0].codigo === 'STY-PROVA-PLACAR-M1',
+      'p_edicao_id => M1: a lista traz SÓ quem está na edição M1', listaPorEdicao?.map((s) => s.codigo))
+
+    console.log('\n  · 10b) sem_permissao em vessel_rastreio_dos_stylists também levanta (função de LEITURA — raise, não {ok:false})')
+    {
+      await cli.query('savepoint prova_rastreio_sem_permissao')
+      await falarComo(null)
+      await cli.query('set local role authenticated')
+      let erro
+      try { await r(`public.vessel_rastreio_dos_stylists(p_dias => $1, p_incluir_desativadas => $2)`, [7, false]) } catch (e) { erro = e }
+      await cli.query('rollback to savepoint prova_rastreio_sem_permissao')
+      conferir(erro?.code === '42501', 'vessel_rastreio_dos_stylists: sem nenhuma permissão de tela, levanta 42501', erro?.message)
+      await falarComo(idEditar)
+    }
+
+    console.log('\n  · 11) TASK 5: vessel_placar_da_edicao — não zera ao encerrar, o recorte reprova sob mutação, sem receita')
+    // dois encontros da praça L: um DENTRO da janela de L1 (comeca_em = hoje,
+    // sem termina_em) e um FORA (30 dias atrás) — o de fora não pode contar.
+    // ⚠️ teste=FALSE de propósito, pelo MESMO motivo dos stylists acima: `ev`
+    // filtra `not coalesce(e.teste, false)`.
+    const peLDentro = await uma(`insert into public.vessel_private_edits (codigo, chave, stylist_id, quando, praca_id, status, teste)
+       values ('PE-PROVA-PLACAR-L-DENTRO', 'pe-prova-placar-l-dentro', $1, now(), $2, 'agendado', false) returning id`, [styL1.id, pracaL])
+    const peLFora = await uma(`insert into public.vessel_private_edits (codigo, chave, stylist_id, quando, praca_id, status, teste)
+       values ('PE-PROVA-PLACAR-L-FORA', 'pe-prova-placar-l-fora', $1, now() - interval '30 days', $2, 'agendado', false) returning id`, [styL1.id, pracaL])
+    // um encontro de Campinas na mesma data — não pode aparecer no placar de L1.
+    const peMDentro = await uma(`insert into public.vessel_private_edits (codigo, chave, stylist_id, quando, praca_id, status, teste)
+       values ('PE-PROVA-PLACAR-M-DENTRO', 'pe-prova-placar-m-dentro', $1, now(), $2, 'agendado', false) returning id`, [styM1.id, pracaM])
+
+    const CHAVES_DO_CONTRATO = ['edicao', 'etapas', 'prospectadas', 'prospectadas_ja_ativadas', 'ativadas',
+      'com_private_edit_agendado', 'com_private_edit_realizado', 'recorrentes_no_periodo',
+      'encontros_agendados', 'encontros_realizados', 'encontros_cancelados', 'convidadas', 'confirmadas',
+      'presentes', 'confirmadas_em_realizados', 'presentes_em_realizados']
+    const CHAVES_PROIBIDAS = ['receita', 'vendas', 'compradoras', 'ticket', 'pecas']
+
+    const placarAntes = await chamarGravando(`public.vessel_placar_da_edicao(p_edicao_id => $1)`, [edicaoL1])
+    conferir(!placarAntes.e, 'vessel_placar_da_edicao: chama sem erro para a edição L1 (aberta)', placarAntes.e?.message)
+    conferir(CHAVES_DO_CONTRATO.every((k) => k in (placarAntes.v ?? {})), 'a resposta tem todas as chaves do contrato do brief', Object.keys(placarAntes.v ?? {}))
+    conferir(CHAVES_PROIBIDAS.every((k) => !(k in (placarAntes.v ?? {}))),
+      'MUTAÇÃO-PROVA: nenhuma chave de receita/vendas/compradoras/ticket/pecas na resposta — reprovaria se alguma aparecesse', Object.keys(placarAntes.v ?? {}))
+    conferir(placarAntes.v?.prospectadas === 1, 'prospectadas: só a stylist L1 (a turma é por vessel_stylist_na_edicao, não por data)', placarAntes.v)
+    conferir(placarAntes.v?.encontros_agendados === 1, 'encontros_agendados: só o encontro DENTRO da janela conta (o de fora e o de Campinas ficam fora)', placarAntes.v)
+
+    const totalEtapasAtivas = await r(`(select count(*)::int from public.vessel_stylist_etapas where ativa)`)
+    conferir(placarAntes.v?.etapas?.length === totalEtapasAtivas,
+      'etapas: TODAS as etapas ativas aparecem (nenhum número fixo no código) — inclusive as de zero', { esperado: totalEtapasAtivas, recebido: placarAntes.v?.etapas?.length })
+    const somaEtapas = (placarAntes.v?.etapas ?? []).reduce((n, e) => n + (e.stylists || 0), 0)
+    conferir(somaEtapas === 1, 'a soma das etapas bate com a única stylist da turma — a etapa dela aparece com 1, as outras com 0', placarAntes.v?.etapas)
+
+    const existePeForaAntes = await r(`(select exists(select 1 from public.vessel_private_edits where id = $1))`, [peLFora.id])
+    conferir(existePeForaAntes === true, 'o encontro fora da janela CONTINUA existindo na tabela — só fica fora desta conta, não some', existePeForaAntes)
+
+    console.log('\n    · edição inexistente levanta (não devolve silêncio)')
+    {
+      await cli.query('savepoint prova_placar_invalido')
+      let erro
+      try { await r(`public.vessel_placar_da_edicao(p_edicao_id => $1)`, [-1]) } catch (e) { erro = e }
+      await cli.query('rollback to savepoint prova_placar_invalido')
+      conferir(erro?.code === 'P0002', 'vessel_placar_da_edicao: edição inexistente levanta P0002', erro?.message)
+    }
+
+    console.log('\n    · sem_permissao em vessel_placar_da_edicao (função de LEITURA — raise)')
+    {
+      await cli.query('savepoint prova_placar_sem_permissao')
+      await falarComo(null)
+      await cli.query('set local role authenticated')
+      let erro
+      try { await r(`public.vessel_placar_da_edicao(p_edicao_id => $1)`, [edicaoL1]) } catch (e) { erro = e }
+      await cli.query('rollback to savepoint prova_placar_sem_permissao')
+      conferir(erro?.code === '42501', 'vessel_placar_da_edicao: sem nenhuma permissão de tela, levanta 42501', erro?.message)
+      await falarComo(idEditar)
+    }
+
+    console.log('\n    · MUTAÇÃO DO RECORTE: trocar `where n.edicao_id = p_edicao_id` por `1=1` tem de REPROVAR')
+    await cli.query('savepoint prova_mutacao_recorte')
+    try {
+      const funcaoBoaPlacar = (await uma(
+        `select pg_get_functiondef('public.vessel_placar_da_edicao(bigint)'::regprocedure) as def`)).def
+      const trechoDoRecorte = /where n\.edicao_id = p_edicao_id\n/
+      if (!trechoDoRecorte.test(funcaoBoaPlacar)) throw new Error('a mutação não achou o `where` do recorte em vessel_placar_da_edicao — o texto da função mudou')
+      await cli.query(funcaoBoaPlacar.replace(trechoDoRecorte, 'where 1=1\n'))
+
+      const totalDistintoGlobal = await r(`(select count(distinct stylist_id)::int from public.vessel_stylist_na_edicao)`)
+      const placarMutado = await chamarGravando(`public.vessel_placar_da_edicao(p_edicao_id => $1)`, [edicaoL1])
+      const reprovou = !placarMutado.e && placarMutado.v?.prospectadas === totalDistintoGlobal && placarMutado.v?.prospectadas > placarAntes.v?.prospectadas
+      console.log(`      ${reprovou ? '✗' : '✓'} SEM o recorte (\`1=1\`): o placar de Limeira ${reprovou ? `passou a contar ${placarMutado.v?.prospectadas} stylists de TODAS as praças (Campinas incluída) — era para contar só 1` : 'não mudou (inesperado)'} → prospectadas=${placarMutado.v?.prospectadas}`)
+      conferir(reprovou === true,
+        'MUTAÇÃO: sem o `where n.edicao_id = p_edicao_id`, o placar de Limeira conta stylist de Campinas (e de toda praça) — prova que o recorte não é decoração',
+        { prospectadas: placarMutado.v?.prospectadas, esperadoComBug: totalDistintoGlobal, correto: placarAntes.v?.prospectadas })
+    } finally {
+      // Desfaz a mutação (restaura a função de verdade).
+      await cli.query('rollback to savepoint prova_mutacao_recorte')
+    }
+
+    // COM o recorte restaurado, o mesmo cenário volta a dar 1 — a prova tem dente nos dois sentidos.
+    const placarRestaurado = await chamarGravando(`public.vessel_placar_da_edicao(p_edicao_id => $1)`, [edicaoL1])
+    console.log(`      ${placarRestaurado.v?.prospectadas === 1 ? '✓' : '✗'} COM o recorte (restaurado): prospectadas volta a ${placarRestaurado.v?.prospectadas} (era para ser 1)`)
+    conferir(placarRestaurado.v?.prospectadas === 1, 'COM o `where` restaurado: o placar de Limeira volta a contar só a stylist de Limeira', placarRestaurado.v?.prospectadas)
+
+    console.log('\n    · CONGELAMENTO: encerrar L1 levando as sobras para L2 — o placar de L1 não muda')
+    x = await chamarGravando(`public.vessel_edicao_encerrar(p_id => $1, p_levar_para => $2)`, [edicaoL1, edicaoL2])
+    conferir(x.v?.ok === true, 'edicao_encerrar: encerra L1 levando para L2', x.v ?? x.e?.message)
+    const placarDepois = await chamarGravando(`public.vessel_placar_da_edicao(p_edicao_id => $1)`, [edicaoL1])
+    conferir(!placarDepois.e, 'vessel_placar_da_edicao: continua respondendo depois de encerrada', placarDepois.e?.message)
+    const semSituacao = (pl) => JSON.stringify({ ...pl, edicao: pl?.edicao ? { ...pl.edicao, situacao: undefined } : pl?.edicao })
+    conferir(semSituacao(placarAntes.v) === semSituacao(placarDepois.v),
+      'CRÍTICO (guarda de regressão): o placar da edição 1 é IDÊNTICO antes e depois de encerrar (só `edicao.situacao` muda, de "aberta" para "encerrada") — não zera',
+      { antes: placarAntes.v, depois: placarDepois.v })
+    conferir(placarAntes.v?.edicao?.situacao === 'aberta' && placarDepois.v?.edicao?.situacao === 'encerrada',
+      'e a situação REALMENTE mudou (a chamada de depois não é um eco em cache da de antes)',
+      { antes: placarAntes.v?.edicao?.situacao, depois: placarDepois.v?.edicao?.situacao })
   } finally {
     await falarComo(null)
     await cli.query('rollback to savepoint prova_funcoes')

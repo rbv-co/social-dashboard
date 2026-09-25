@@ -619,7 +619,316 @@ begin
 end;
 $$;
 
--- ── 10. as portas ────────────────────────────────────────────────────────────
+-- ── 10. vessel_rastreio_dos_stylists ganha o recorte por praça e edição (Task 5) ──
+-- ⚠️ `create or replace` NÃO troca a assinatura: ele cria uma SEGUNDA função, e
+-- o PostgREST passa a ter duas com o mesmo nome — a ordem certa é: 1) criar a
+-- versão nova (4 parâmetros, os 2 últimos com `default null`, para que quem
+-- chama com só os 2 de sempre, POR NOME — exatamente como o PostgREST faz —
+-- continue caindo nesta função); 2) `drop` da assinatura antiga (2 parâmetros)
+-- NA MESMA migration, senão sobra fantasma e o PostgREST fica em dúvida entre
+-- as duas; 3) os grants refeitos na assinatura NOVA (o `drop` já leva os da
+-- antiga junto).
+-- ⚠️ A CENTRAL QUE ESTÁ NO AR HOJE chama só com `p_dias`/`p_incluir_desativadas`
+-- — tanto `tela-de-stylist-circle.vue` quanto `tela-de-material-grafico.vue`.
+-- O aplicador prova essa chamada de dois parâmetros continua respondendo
+-- depois do drop (senão o Material Gráfico abre vazio e ninguém descobre).
+-- O CORPO é o mesmo de sempre (`pg_get_functiondef` de 25/09/2026, depois do
+-- B13), só ganhando: os dois parâmetros novos, o `left join` com a praça e a
+-- edição atual, e o recorte no `where` — nada do resto muda.
+create or replace function public.vessel_rastreio_dos_stylists(
+  p_dias integer default 7, p_incluir_desativadas boolean default false,
+  p_praca_id bigint default null, p_edicao_id bigint default null)
+returns json
+language plpgsql
+stable
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_dias int := greatest(coalesce(p_dias, 7), 0);
+  v_saida json;
+begin
+  if not (public.vessel_pode('atendimentos.stylist-circle', 'ver') or public.vessel_pode('atendimentos.material-grafico', 'ver')) then
+    raise exception 'sem permissao' using errcode = '42501';
+  end if;
+
+  with vendas as (select * from public.vessel_vendas_dos_encontros(v_dias))
+  select coalesce(json_agg(linha order by linha ->> 'codigo'), '[]'::json)
+    into v_saida
+    from (
+      select json_build_object(
+        'codigo', s.codigo,
+        'nome', s.nome,
+        'cidade', s.cidade,
+        -- ⚠️ 24/09/2026: a etapa é uma linha de `vessel_stylist_etapas`.
+        'etapa_id', s.etapa_id,
+        'etapa', et.nome,
+        'etapa_tipo', et.tipo,
+        'etapa_ordem', et.ordem,
+        -- ⚠️ 24/09/2026 (Private Edit só com liberada, e os motivos de saída).
+        'etapa_libera_private_edit', et.libera_private_edit,
+        'saida_motivo_id', case when et.tipo = 'saida' then sa.motivo_id end,
+        'saida_motivo', case when et.tipo = 'saida' then ms.nome end,
+        'saida_nota', case when et.tipo = 'saida' then sa.nota end,
+        'praca_preview', s.praca_preview,
+        -- ⚠️ TASK 5: a praça de CADASTRO da stylist (não mais o texto solto
+        -- de `praca_preview`, que continua só como histórico do que a
+        -- stylist escreveu). `loja_destino` é a loja que atende a praça —
+        -- pode ser de outra cidade (Piracicaba → Campinas).
+        'praca_id', pc.id,
+        'praca_sigla', pc.sigla,
+        'praca_nome', pc.nome,
+        'loja_destino', pc.loja_destino,
+        -- a edição em que ela está ATIVA agora (saiu_em is null) — nula se
+        -- não estiver em nenhuma edição aberta/planejada no momento.
+        'edicao_id', ed_atual.edicao_id,
+        'ativa', s.ativa,
+        'whatsapp', s.whatsapp,
+        'instagram', s.instagram,
+        'atuacao', s.atuacao,
+        -- T11: a ficha operacional.
+        'loja', s.loja,
+        'origem_contato', s.origem_contato,
+        'responsavel', s.responsavel,
+        'prospectado_em', s.prospectado_em,
+        'proxima_acao', s.proxima_acao,
+        'proxima_acao_em', s.proxima_acao_em,
+        'observacoes', s.observacoes,
+        -- ⚠️ 24/09/2026: "sem contato ainda" — alguém vai completar.
+        'sem_contato', s.sem_contato,
+        -- ⚠️ 24/09/2026: a ativação é a da etapa (a mesma função do placar); o
+        -- primeiro Private Edit agendado continua, com o nome dele.
+        'ativada_em', public.vessel_stylist_ativada_em(s.id),
+        'private_edit_agendado_em', s.ativada_em,
+        'encontros_realizados', ee.realizados,
+        'ultima_private_edit', ee.ultima,
+        'proxima_data_permitida', ee.ultima + 45,
+        'receita_dos_encontros', (select coalesce(sum(v.receita), 0) from vendas v
+                                   where v.stylist_id = s.id),
+        'contatos', (select count(*)::int from public.vessel_stylist_contatos c where c.stylist_id = s.id),
+        'ultimo_contato_em', (select max(c.criado_em) from public.vessel_stylist_contatos c where c.stylist_id = s.id),
+        'aberturas', (select count(*)::int from public.vessel_stylist_aberturas a
+                       where a.codigo = s.codigo),
+        'clientes', (select count(distinct o.pessoa_id)::int
+                       from public.vessel_origens o where o.stylist_id = s.codigo),
+        'pedidos', (select count(*)::int from public.vessel_atendimentos t
+                     where not coalesce(t.teste, false)
+                       and exists (select 1 from public.vessel_origens o
+                                    where o.stylist_id = s.codigo
+                                      and o.pessoa_id = t.pessoa_id)),
+        'confirmados', (select count(*)::int from public.vessel_atendimentos t
+                         where not coalesce(t.teste, false)
+                           and t.status in ('confirmado', 'realizado', 'no_show')
+                           and exists (select 1 from public.vessel_origens o
+                                        where o.stylist_id = s.codigo
+                                          and o.pessoa_id = t.pessoa_id)),
+        'compareceram', (select count(*)::int from public.vessel_atendimentos t
+                          where not coalesce(t.teste, false) and t.status = 'realizado'
+                            and exists (select 1 from public.vessel_origens o
+                                         where o.stylist_id = s.codigo
+                                           and o.pessoa_id = t.pessoa_id)),
+        'receita', (select coalesce(sum(coalesce(p.receita_liquida, p.total_corrigido, 0)), 0)
+                      from public.vessel_pedidos p
+                     where p.situacao_id = 9
+                       and exists (select 1 from public.vessel_origens o
+                                    where o.stylist_id = s.codigo and o.pessoa_id = p.pessoa_id)
+                       and exists (select 1 from public.vessel_atendimentos t
+                                    where t.pessoa_id = p.pessoa_id
+                                      and not coalesce(t.teste, false)
+                                      and t.status = 'realizado'
+                                      and p.data_do_pedido
+                                            between (coalesce(t.quando, t.criado_em)
+                                                      at time zone 'America/Sao_Paulo')::date
+                                                and (coalesce(t.quando, t.criado_em)
+                                                      at time zone 'America/Sao_Paulo')::date
+                                                    + v_dias)),
+        'janela_de_venda_em_dias', v_dias
+      ) as linha
+      from public.vessel_stylists s
+      join public.vessel_stylist_etapas et on et.id = s.etapa_id
+      left join public.vessel_pracas pc on pc.id = s.praca_id
+      left join lateral (
+        select n.edicao_id from public.vessel_stylist_na_edicao n
+         where n.stylist_id = s.id and n.saiu_em is null
+         order by n.entrou_em desc limit 1
+      ) ed_atual on true
+      left join lateral public.vessel_stylist_saida_atual(s.id) sa on true
+      left join public.vessel_stylist_motivos_de_saida ms on ms.id = sa.motivo_id
+      cross join lateral (
+        select count(*) filter (where e.status = 'realizado')::int as realizados,
+               max(e.realizado_em) filter (where e.status = 'realizado') as ultima
+          from public.vessel_private_edits e
+         where e.stylist_id = s.id and not coalesce(e.teste, false)
+           and not coalesce(e.arquivada, false)
+      ) ee
+      where not coalesce(s.teste, false)
+        and (coalesce(p_incluir_desativadas, false) or coalesce(s.ativa, true))
+        -- ⚠️ TASK 5: o recorte por praça e por edição — nulo passa tudo
+        -- (nenhum recorte é o comportamento de hoje, preservado).
+        and (p_praca_id is null or s.praca_id = p_praca_id)
+        and (p_edicao_id is null or exists (
+              select 1 from public.vessel_stylist_na_edicao n
+               where n.stylist_id = s.id and n.edicao_id = p_edicao_id))
+    ) as linhas;
+
+  -- ⚠️ QUEM NÃO TEM O STYLIST CIRCLE (hoje: só o Material Gráfico, que é só
+  -- leitura e mostra os QR) recebe SÓ o que o QR precisa: código, nome,
+  -- cidade, se está ativa e a etapa (nome + a marca de que libera o Private
+  -- Edit — é ela que decide se o QR aparece). WhatsApp, Instagram,
+  -- observações, responsável, próxima ação e os números NÃO saem daqui para
+  -- ele. Lista do que o Material Gráfico lê: itemDaStylist(), em
+  -- src/ferramentas/comercial-vessel/material-grafico-regras.js. A ordem é a mesma.
+  if not public.vessel_pode('atendimentos.stylist-circle', 'ver') then
+    select coalesce(json_agg(json_build_object(
+             'codigo', x.l -> 'codigo',
+             'nome', x.l -> 'nome',
+             'cidade', x.l -> 'cidade',
+             'ativa', x.l -> 'ativa',
+             'etapa', x.l -> 'etapa',
+             'etapa_libera_private_edit', x.l -> 'etapa_libera_private_edit') order by x.n), '[]'::json)
+      into v_saida
+      from json_array_elements(v_saida) with ordinality as x(l, n);
+  end if;
+
+  return v_saida;
+end;
+$function$;
+
+-- ⚠️ O DROP TEM DE ESTAR NA MESMA MIGRATION DO CREATE ACIMA — senão o
+-- PostgREST fica com duas funções `vessel_rastreio_dos_stylists` (a de 2 e a
+-- de 4 parâmetros) e não sabe qual escolher para uma chamada por nome.
+drop function if exists public.vessel_rastreio_dos_stylists(integer, boolean);
+
+-- ── 11. o placar da edição (Task 5) ──────────────────────────────────────────
+-- ⚠️ CONTA SOBRE AS STYLISTS LIGADAS À EDIÇÃO por `vessel_stylist_na_edicao` —
+-- TODAS as linhas, sem filtrar por `saiu_em` (a MESMA regra de
+-- `vessel_edicoes_listar`, seção 9): é isso que CONGELA o placar de uma
+-- edição encerrada. A tarefa anterior já teve um defeito Crítico exatamente
+-- aqui (a conta da tela zerava a edição encerrada) — o aplicador prova que
+-- este placar não repete o erro, e que o `where` desta CTE não é decoração
+-- (mutação: trocar por `1=1` faz Limeira contar stylist de Campinas).
+--
+-- As ETAPAS contam a etapa ATUAL da stylist ("quem está nela hoje" — o funil
+-- é vivo, mesmo depois da edição encerrar; encerrar uma edição não move
+-- ninguém de etapa). TODAS as etapas ativas aparecem, na ordem — inclusive as
+-- de zero — porque o número de etapas não é fixo no código (hoje são 8; se
+-- alguém cadastrar uma nona, este placar cresce sozinho).
+--
+-- Os ENCONTROS são os `vessel_private_edits` da PRAÇA da edição cujo `quando`
+-- cai na janela dela (`comeca_em` até `termina_em`, ou sem fim enquanto ela
+-- não tem data de término) — pela PRAÇA E DATA, não pelos membros da turma:
+-- um encontro fora da janela de qualquer edição não some da tabela, só fica
+-- fora desta conta.
+--
+-- ⚠️ SEM RECEITA: nada de `receita`/`vendas`/`compradoras`/`ticket` — o
+-- panorama de compras está congelado (decisão do dono: 0 de 481 pedidos
+-- ligados a pessoa) e zero na tela mente. O aplicador reprova se qualquer
+-- uma dessas chaves aparecer na resposta.
+create or replace function public.vessel_placar_da_edicao(p_edicao_id bigint)
+returns json
+language plpgsql
+stable
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_ed    public.vessel_stylist_circle_edicoes%rowtype;
+  v_ate   date;
+  v_saida json;
+begin
+  if not public.vessel_pode('atendimentos.stylist-circle', 'ver') then
+    raise exception 'sem permissao' using errcode = '42501';
+  end if;
+
+  select * into v_ed from public.vessel_stylist_circle_edicoes where id = p_edicao_id;
+  if v_ed.id is null then
+    raise exception 'edicao nao encontrada' using errcode = 'P0002';
+  end if;
+  -- ⚠️ SEM FIM ESCOLHIDO, A JANELA NÃO TEM FIM — a mesma regra de
+  -- `vessel_numeros_do_stylist_circle` para `p_ate` nulo.
+  v_ate := coalesce(v_ed.termina_em, 'infinity'::date);
+
+  with
+  -- ⚠️ O CONGELAMENTO mora AQUI: todas as linhas desta edição, sem filtrar
+  -- por `saiu_em`. Trocar este `where` por `1=1` é a mutação que o aplicador
+  -- prova reprovar — sem ele, Limeira contaria stylist de Campinas.
+  turma_ids as (
+    select distinct n.stylist_id from public.vessel_stylist_na_edicao n
+     where n.edicao_id = p_edicao_id
+  ),
+  sty as (
+    select s.*, public.vessel_stylist_ativada_em(s.id) as ativou
+      from public.vessel_stylists s
+     where s.id in (select stylist_id from turma_ids)
+  ),
+  -- os encontros são da PRAÇA da edição, na janela dela — não dependem de
+  -- quem está na turma (um encontro é da praça e da data, não da stylist).
+  ev as (
+    select e.*
+      from public.vessel_private_edits e
+     where not coalesce(e.teste, false) and not coalesce(e.arquivada, false)
+       and e.praca_id = v_ed.praca_id
+       and (e.quando at time zone 'America/Sao_Paulo')::date between v_ed.comeca_em and v_ate
+  ),
+  conv as (
+    select t.id, t.pessoa_id, t.status, e.codigo, e.status as status_do_encontro,
+           public.vessel_situacao_do_convite(t.status, t.rsvp, t.convite_enviado_em,
+                                             e.quando, e.status) as situacao
+      from public.vessel_atendimentos t
+      join ev e on e.codigo = t.evento_codigo
+     where not coalesce(t.teste, false)
+  ),
+  -- os realizados DA TURMA (para as taxas): o 1º e o 2º encontro realizado de
+  -- cada stylist desta edição, dentro da janela dela.
+  realizados as (
+    select e.stylist_id, e.realizado_em,
+           row_number() over (partition by e.stylist_id order by e.realizado_em, e.id) as n
+      from ev e
+     where e.status = 'realizado' and e.stylist_id in (select stylist_id from turma_ids)
+  ),
+  -- a turma, passo a passo — cada passo DENTRO do anterior: a MESMA turma em
+  -- cima e embaixo das taxas de t11-regras.js (taxasDoPlacar).
+  turma as (
+    select s.id,
+           (s.ativou is not null) as ativou,
+           exists (select 1 from ev e where e.stylist_id = s.id and e.status <> 'em_planejamento') as agendou,
+           exists (select 1 from realizados r where r.stylist_id = s.id and r.n = 1) as realizou
+      from sty s
+  )
+  select json_build_object(
+    'edicao', json_build_object(
+      'id', v_ed.id, 'praca_id', v_ed.praca_id, 'numero', v_ed.numero, 'nome', v_ed.nome,
+      'comeca_em', v_ed.comeca_em, 'termina_em', v_ed.termina_em, 'situacao', v_ed.situacao),
+    'etapas', (select coalesce(json_agg(json_build_object(
+                 'id', et.id, 'nome', et.nome, 'ordem', et.ordem, 'tipo', et.tipo,
+                 'stylists', (select count(*)::int from sty s where s.etapa_id = et.id))
+               order by et.ordem), '[]'::json)
+               from public.vessel_stylist_etapas et where et.ativa),
+    'prospectadas', (select count(*)::int from sty),
+    'prospectadas_ja_ativadas', (select count(*)::int from turma where ativou),
+    'ativadas', (select count(*)::int from turma where ativou),
+    'com_private_edit_agendado', (select count(*)::int from turma where agendou),
+    'com_private_edit_realizado', (select count(*)::int from turma where realizou),
+    'recorrentes_no_periodo', (select count(*)::int from realizados where n = 2),
+    'encontros_agendados', (select count(*)::int from ev where status <> 'em_planejamento'),
+    'encontros_realizados', (select count(*)::int from ev where status = 'realizado'),
+    'encontros_cancelados', (select count(*)::int from ev where status in ('cancelado', 'nao_realizado')),
+    'convidadas', (select count(*)::int from conv),
+    'confirmadas', (select count(*)::int from conv
+                     where situacao in ('confirmada', 'presente', 'nao_compareceu')),
+    'confirmadas_em_realizados', (select count(*)::int from conv
+                     where situacao in ('confirmada', 'presente', 'nao_compareceu')
+                       and status_do_encontro = 'realizado'),
+    'presentes', (select count(*)::int from conv where status = 'realizado'),
+    'presentes_em_realizados', (select count(*)::int from conv
+                     where status = 'realizado' and status_do_encontro = 'realizado')
+  ) into v_saida;
+
+  return v_saida;
+end;
+$function$;
+
+-- ── 12. as portas ────────────────────────────────────────────────────────────
 do $$
 declare f text;
 begin
@@ -634,7 +943,9 @@ begin
     'public.vessel_edicao_criar(bigint, text, date, date)',
     'public.vessel_edicao_abrir(bigint)',
     'public.vessel_edicao_encerrar(bigint, bigint)',
-    'public.vessel_edicao_incluir_stylist(text, bigint)'
+    'public.vessel_edicao_incluir_stylist(text, bigint)',
+    'public.vessel_rastreio_dos_stylists(integer, boolean, bigint, bigint)',
+    'public.vessel_placar_da_edicao(bigint)'
   ] loop
     execute format('revoke all on function %s from public, anon', f);
     execute format('grant execute on function %s to authenticated', f);
