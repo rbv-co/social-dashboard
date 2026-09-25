@@ -122,6 +122,17 @@ export function montarMensagens(camp, ins, ads, conjuntos, regua, extra) {
   // fosse verdade e recomendava pausar com convicção — um conselho ruim, com
   // voz firme, em cima de uma medida que não existe.
   const deSeguidores = ehDeSeguidores(camp.name);
+  // CUSTO POR SEGUIDOR DA CONTA (Tarefa 6, Onda B): só existe pra campanha de
+  // seguidores, e é sempre da CONTA INTEIRA — nunca desta campanha (a Meta não
+  // atribui seguidor a campanha nenhuma, ver seguidores.js). `extra` traz o
+  // objeto já calculado por main() (gasto das campanhas de seguidores ÷ ganho
+  // de seguidores da conta na mesma janela) porque montarMensagens é pura e
+  // não tem como buscar followers_leituras sozinha. Sem dado, ou com amostra
+  // pequena (`confiavel:false`), NÃO entra no prompt — mesma regra da tela:
+  // number pouco confiável na mão do modelo é pior que nenhum.
+  const custoSeguidorConta = deSeguidores && ex.custoPorSeguidorConta
+    && ex.custoPorSeguidorConta.confiavel && ex.custoPorSeguidorConta.valor != null
+    ? ex.custoPorSeguidorConta.valor : null;
   const system =
     'Você é um gestor de tráfego pago sênior. Analise UMA campanha do Meta Ads E os anúncios dela, e recomende: ' +
     '(1) o orçamento diário ideal da CAMPANHA; (2) por ANÚNCIO, manter ou pausar o criativo. ' +
@@ -150,6 +161,11 @@ export function montarMensagens(camp, ins, ads, conjuntos, regua, extra) {
     // simplesmente não configurou meta), não para esta, onde a medida não
     // existe e nunca vai existir por campanha nesta onda.
     'Quando `regua.medida_indisponivel` vier preenchido, esta campanha é de SEGUIDORES: a Meta não atribui "novo seguidor" a uma campanha, então não existe custo por resultado confiável aqui — julgue SOMENTE pelos indicadores disponíveis (CTR, CPC, frequência, alcance, volume de anúncios), NUNCA recomende "pausar" ou "reduzir" alegando custo por resultado ou comparação com meta, e diga isso na justificativa (que a medida não existe para este tipo de campanha) em vez de fingir que mediu. ' +
+    // TAREFA 6 (Onda B): quando vier preenchido, `regua.custo_por_seguidor_da_conta_reais`
+    // é só CONTEXTO — nunca o custo desta campanha, porque é da conta inteira
+    // (soma de TODAS as campanhas de seguidores, dividida pelo ganho de
+    // seguidores DA CONTA, orgânico incluso, sem como separar).
+    'Se `regua.custo_por_seguidor_da_conta_reais` vier preenchido, use-o SÓ como contexto da conta ao comentar esta campanha de seguidores — NUNCA como custo desta campanha específica — e diga na justificativa que é uma estimativa da conta inteira (inclui seguidor orgânico), nunca desta campanha isolada. Se vier nulo, não mencione custo por seguidor nenhum: significa que a conta não tem dado confiável para essa estimativa agora. ' +
     // TENDÊNCIA e APRENDIZADO (Tarefa 5): antes o robô mandava uma janela só —
     // o modelo não tinha como dizer se a campanha estava melhorando ou piorando,
     // e "o que mudou desde ontem" é exatamente o que se olha às 8h da manhã.
@@ -225,6 +241,11 @@ export function montarMensagens(camp, ins, ads, conjuntos, regua, extra) {
       indice_contra_meta: null,
       pesos: regua ? regua.pesos : null,
       medida_indisponivel: 'A Meta não atribui "novo seguidor" a uma campanha, então não há custo por resultado confiável para esta campanha — julgue pelos demais indicadores (CTR, CPC, frequência, alcance, volume).',
+      // Estimativa DA CONTA INTEIRA (Tarefa 6), nunca desta campanha — null
+      // quando não há dado ou a amostra de seguidores ganhos é pequena demais
+      // (ver AMOSTRA_MINIMA_DE_SEGUIDORES em seguidores.js). `dias_da_janela`
+      // acima já diz a janela a que esse número se refere.
+      custo_por_seguidor_da_conta_reais: custoSeguidorConta,
     } : {
       tipo_de_campanha: balde,
       rotulo: rotuloAlvo,          // ex.: "Custo por ponto", "Custo por conversa iniciada", ou "Custo por salvamento" se declarado
@@ -403,6 +424,14 @@ import { interacaoValida, custoDaInteracao, INTERACOES } from '../src/ferramenta
 // que a ponderada usa, então uma campanha declarada não pode discordar de como
 // a tela conta a mesma interação.
 import { quantidadesDoInsight } from '../src/ferramentas/gestao-trafego/ponderada.js';
+// TAREFA 6 (Onda B): custo por seguidor da CONTA (nunca de campanha) — módulo
+// puro, mesmo critério (`ehDeSeguidores`) e mesma régua de amostra mínima que
+// a tela usa, pra não haver dois números diferentes pro mesmo dado.
+import { custoPorSeguidorDaConta } from '../src/ferramentas/gestao-trafego/seguidores.js';
+// Mesmo par que o relatório por hora/OPR usa pra transformar leituras cruas de
+// `followers_leituras` num delta por bucket, e depois somar um período —
+// reaproveitado aqui em vez de reescrever a conta de seguidor pela terceira vez.
+import { deltaDeSeguidoresPorHora, seguidoresNoPeriodo } from '../src/ferramentas/meta-ads/relatorio-por-hora.js';
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY_TRAFEGO || process.env.ANTHROPIC_API_KEY_BUDGET || process.env.ANTHROPIC_API_KEY;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
@@ -521,6 +550,17 @@ async function main() {
   // "uma vez por conta", não uma vez por conta de anúncios, para o caso (raro,
   // mas possível) de mais de uma ad account cair na mesma conta do painel.
   const objetivoPorContaCache = new Map();
+  // CUSTO POR SEGUIDOR DA CONTA (Tarefa 6): cache por conta do PAINEL, mesmo
+  // espírito do cache de objetivo acima — o ganho de seguidores é da conta
+  // inteira, não muda entre campanhas nem entre ad accounts do mesmo cliente.
+  const seguidoresGanhosPorContaCache = new Map();
+  // Buffer ANTES de `since`: `deltaDeSeguidoresPorHora` marca a PRIMEIRA
+  // leitura da série com delta nulo (não tem "anterior" pra comparar) — sem
+  // pedir alguns dias a mais antes da janela, o primeiro dia de `since..until`
+  // ficaria com delta nulo mesmo tendo leitura, e a soma do período sairia
+  // menor do que o ganho de verdade. 3 dias de folga cobre até uma falha do
+  // coletor por 2 dias seguidos.
+  const sinceComBuffer = new Date(new Date(since) - 3 * 86400000).toISOString().slice(0, 10);
   // effective_status pedido ao Graph em cada modo. No campo `campaigns` os valores
   // possíveis são ACTIVE/PAUSED/DELETED/ARCHIVED/IN_PROCESS/WITH_ISSUES.
   const STATUS_ATIVAS = ['ACTIVE'];
@@ -586,6 +626,43 @@ async function main() {
       } catch (e) { console.log('  act_' + adAcc + ' falhou no Graph: ' + e.message); continue; }
       const insByCamp = {};
       insights.forEach((i) => { insByCamp[i.campaign_id] = i; });
+      // CUSTO POR SEGUIDOR DA CONTA (Tarefa 6) — calculado uma vez por ad
+      // account (o gasto é SÓ das campanhas de seguidores DESTA ad account,
+      // mesmo critério `ehDeSeguidores` que a tela usa) contra o ganho de
+      // seguidores da CONTA DO PAINEL (cacheado, não muda por ad account).
+      // Vale null quando não há campanha de seguidores nesta ad account —
+      // sem gasto de seguidor, não há o que estimar.
+      let custoPorSeguidorContaAtual = null;
+      const nomePorCampanhaId = {};
+      camps.forEach((c) => { nomePorCampanhaId[c.id] = c.name || ''; });
+      const gastoDeSeguidoresContaAtual = insights
+        .filter((i) => ehDeSeguidores(nomePorCampanhaId[i.campaign_id] || ''))
+        .reduce((s, i) => s + (parseFloat(i.spend) || 0), 0);
+      if (gastoDeSeguidoresContaAtual > 0 && contaDoPainel && contaDoPainel.id) {
+        let seguidoresGanhosContaAtual;
+        if (seguidoresGanhosPorContaCache.has(contaDoPainel.id)) {
+          seguidoresGanhosContaAtual = seguidoresGanhosPorContaCache.get(contaDoPainel.id);
+        } else {
+          try {
+            const leituras = await sbGet(
+              `/followers_leituras?select=followers_count,lido_em,origem&account_id=eq.${contaDoPainel.id}&lido_em=gte.${sinceComBuffer}&order=lido_em.asc`);
+            const deltas = deltaDeSeguidoresPorHora(leituras || []);
+            seguidoresGanhosContaAtual = seguidoresNoPeriodo(deltas, since, until);
+          } catch (e) {
+            // Mesmo padrão dos catches vizinhos (régua, adsets, objetivo): uma
+            // falha aqui NUNCA derruba a rodada — a campanha de seguidores só
+            // fica sem o número de contexto, e o prompt já trata isso como
+            // "não mencione custo por seguidor".
+            console.log('  conta ' + contaDoPainel.id + ' falhou ao ler seguidores da conta: ' + e.message);
+            seguidoresGanhosContaAtual = null;
+          }
+          seguidoresGanhosPorContaCache.set(contaDoPainel.id, seguidoresGanhosContaAtual);
+        }
+        custoPorSeguidorContaAtual = custoPorSeguidorDaConta({
+          gastoDeSeguidores: gastoDeSeguidoresContaAtual,
+          seguidoresGanhos: seguidoresGanhosContaAtual,
+        });
+      }
       // A janela ANTERIOR, de mesma duração, para o modelo dizer o SENTIDO do
       // movimento ("o custo por lead subiu de R$ 12 para R$ 25 em 7 dias").
       // Mesmos campos, mesma conta: uma chamada a mais por conta, na rodada das 8h.
@@ -658,7 +735,7 @@ async function main() {
       // toda campanha dela) — passa por `extra` pro prompt citar o número real
       // em vez do "7 dias" cravado que a janela (8 dias inclusive) desmentia.
       const { system, user } = montarMensagens(camp, ins, adsAtivosPorCamp[camp.id] || [], conjuntosDaCamp, reguaDaContaAtual,
-        { insAnterior: insAntByCamp[camp.id], diasNoAr, diasJanela, interacaoDeclarada });
+        { insAnterior: insAntByCamp[camp.id], diasNoAr, diasJanela, interacaoDeclarada, custoPorSeguidorConta: custoPorSeguidorContaAtual });
       if (DRY) {
         // Mostra o orçamento que o modelo VAI ver. É a forma barata de conferir,
         // sem gastar uma chamada, se a leitura de CBO/ABO está certa — foi
@@ -684,6 +761,14 @@ async function main() {
         const ehSeguidoresDry = ehDeSeguidores(camp.name);
         const ca = ehSeguidoresDry ? null : custoAtualDoAlvo(bal, ins, reguaDaContaAtual, interDry);
         const txtCusto = ehSeguidoresDry ? 'medida indisponível (seguidores)' : (ca == null ? 'custo SEM DADO' : `custo R$ ${ca.toFixed(2)}`);
+        // TAREFA 6 (Onda B): o número de CONTEXTO da conta, só pra conferir no
+        // --dry que a conta certa está sendo lida — nunca aparece como custo
+        // DESTA campanha (por isso separado de txtCusto, nunca somado a ele).
+        const txtSeguidorConta = ehSeguidoresDry
+          ? (custoPorSeguidorContaAtual && custoPorSeguidorContaAtual.confiavel && custoPorSeguidorContaAtual.valor != null
+            ? ` · conta: R$ ${custoPorSeguidorContaAtual.valor.toFixed(2)}/seguidor em ${diasJanela}d (estimativa da conta, orgânico incluso)`
+            : ` · conta: sem estimativa confiável de custo por seguidor${custoPorSeguidorContaAtual ? ' (' + custoPorSeguidorContaAtual.porque + ')' : ''}`)
+          : '';
         const txtIdx = (!ehSeguidoresDry && ca != null && mt > 0) ? ` (${(ca / mt).toFixed(2)}× a meta)` : '';
         // Rótulo do mercado impresso na linha: "engajamento" de sempre, ou
         // "engajamento → salvamentos" quando declarado — é o que a prova seca
@@ -701,7 +786,7 @@ async function main() {
         const txtTend = (ca != null && caAnt != null)
           ? ` · antes R$ ${caAnt.toFixed(2)} ${ca > caAnt ? '▲' : (ca < caAnt ? '▼' : '=')}`
           : '';
-        console.log(`  [dry] ${camp.name || camp.id} — ${quem} · ${o.sigla || 'sem nível'} ${valor}${o.conjuntosSomados ? ` em ${o.conjuntosSomados} conj.` : ''}${extra} · ${balTxt} meta ${mt > 0 ? 'R$ ' + mt : 'NÃO DEFINIDA'} · ${txtCusto}${txtIdx}${txtTend}`);
+        console.log(`  [dry] ${camp.name || camp.id} — ${quem} · ${o.sigla || 'sem nível'} ${valor}${o.conjuntosSomados ? ` em ${o.conjuntosSomados} conj.` : ''}${extra} · ${balTxt} meta ${mt > 0 ? 'R$ ' + mt : 'NÃO DEFINIDA'} · ${txtCusto}${txtIdx}${txtTend}${txtSeguidorConta}`);
         continue;
       }
       let saida;

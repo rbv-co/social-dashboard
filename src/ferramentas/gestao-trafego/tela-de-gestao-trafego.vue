@@ -245,7 +245,13 @@ import { emVeiculacao } from './veiculacao.js'
 import { orcamentoEfetivoDaCampanha } from './orcamento-hierarquia.js'
 // Objetivo -> balde e "e de WhatsApp?" moram num modulo so porque o ROBO precisa
 // da mesma resposta que a tela (ver baldes.js).
-import { baldeDoObjetivo, ehDeWhatsapp, baldeEfetivo } from './baldes.js'
+import { baldeDoObjetivo, ehDeWhatsapp, baldeEfetivo, ehDeSeguidores } from './baldes.js'
+// Custo por seguidor DA CONTA (Tarefa 6, Onda B) — módulo puro, mesmo critério
+// que o robô usa (ehDeSeguidores), pra tela e robô nunca discordarem do número.
+import { custoPorSeguidorDaConta } from './seguidores.js'
+// Mesmo par que o Relatório por Hora/OPR usa pra transformar leitura crua de
+// `followers_leituras` em delta por bucket e depois somar um período.
+import { deltaDeSeguidoresPorHora, seguidoresNoPeriodo } from '../meta-ads/relatorio-por-hora.js'
 // Catálogo de métricas (como ler `actions`/`action_values` e o custo por
 // resultado) — mesmo motivo de baldes.js: a tela e o robô precisam da mesma
 // resposta. Ver metricas.js. O robô (coletor/budget-ia.mjs) importa também
@@ -435,6 +441,12 @@ let _gtCampaigns=[];
 let _gtInsights=[];
 let _gtAdInsights=[];
 let _gtAdsets=[];        // conjuntos de anúncios da conta (Graph /adsets), com o orçamento de cada um
+// Custo por seguidor DA CONTA (Tarefa 6, Onda B) — recalculado em loadGtData()
+// junto com o resto, e lido pelo cabeçalho em _renderGtCampaigns. `null`
+// quando a conta não tem campanha de seguidores em veiculação, ou quando não
+// há dado (ou dado pouco confiável) pra estimar — nesses casos o cabeçalho
+// não mostra número nenhum (ver custoPorSeguidorDaConta em seguidores.js).
+let _gtCustoSeguidorConta=null;
 let _gtRecolhido=false;  // botão "recolher/expandir tudo": estado padrão dos painéis ao (re)desenhar
 let _gtStatusFilter='all';
 let _gtAbaAtiva='campanhas';
@@ -671,6 +683,42 @@ async function _gtCarregarObjetivos(){
   }
   _gtObjetivoInteracaoCarregada=ok;
 }
+// CUSTO POR SEGUIDOR DA CONTA (Tarefa 6, Onda B) — só calcula quando a conta
+// tem campanha de seguidores EM VEICULAÇÃO agora (mesma régua de "ativa" que
+// o resto da tela usa, `emVeiculacao`). Sem isso não há o que mostrar: o
+// cabeçalho não é o lugar de um número sobre uma campanha pausada há meses.
+//
+// Fica em `_gtCustoSeguidorConta` (módulo), lido pelo cabeçalho em
+// _renderGtCampaigns — igual ao padrão de _gtObjetivoInteracao.
+async function _gtCarregarCustoSeguidorConta(acc,campaigns,insights,since,until){
+  _gtCustoSeguidorConta=null;
+  const temSeguidoresAtiva=(campaigns||[]).some(c=>ehDeSeguidores(c.name)&&emVeiculacao(c,Date.now()));
+  if(!temSeguidoresAtiva||!acc?.id)return;
+  const campMap={};(campaigns||[]).forEach(c=>campMap[c.id]=c);
+  const gastoDeSeguidores=(insights||[])
+    .filter(ins=>ehDeSeguidores((campMap[ins.campaign_id]&&campMap[ins.campaign_id].name)||ins.campaign_name||''))
+    .reduce((s,ins)=>s+(parseFloat(ins.spend)||0),0);
+  if(!(gastoDeSeguidores>0))return;
+  // Buffer de 3 dias ANTES de `since`: a primeira leitura da série fica com
+  // delta nulo (sem "anterior" pra comparar) — sem folga, o primeiro dia da
+  // janela escolhida ficaria sem delta mesmo tendo leitura (mesmo raciocínio
+  // de coletor/budget-ia.mjs, mesma conta, mesmo cálculo). Meio-dia BRT como
+  // âncora (mesmo truque de datas.js) pra somar/subtrair dias sem escorregar
+  // por causa de horário de verão.
+  const _bufD=new Date(`${since}T12:00:00-03:00`);_bufD.setDate(_bufD.getDate()-3);
+  const sinceComBuffer=_bufD.toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'});
+  const leituras=await sb(`followers_leituras?select=followers_count,lido_em,origem&account_id=eq.${encodeURIComponent(acc.id)}&lido_em=gte.${sinceComBuffer}&order=lido_em.asc`);
+  if(leituras.erro){
+    console.error('[GT] falha ao carregar seguidores da conta para o custo por seguidor:',leituras.erro);
+    return;
+  }
+  const deltas=deltaDeSeguidoresPorHora(leituras);
+  const seguidoresGanhos=seguidoresNoPeriodo(deltas,since,until);
+  _gtCustoSeguidorConta={
+    ...custoPorSeguidorDaConta({gastoDeSeguidores,seguidoresGanhos}),
+    since,until,
+  };
+}
 // Grava (ou apaga, se interacao=null/undefined) a declaração de UMA campanha ou
 // UM anúncio. Escrita autenticada por sbClient (RLS: admin OU feature
 // 'meta.gestor', igual à régua) — nunca por sb(), que é só leitura.
@@ -704,10 +752,13 @@ async function _gtSalvarObjetivo(alvoId,nivel,interacao){
     // B1 do review (2026-07-28): zero linhas SEM erro no APAGAR também acontece
     // quando a linha já não existia — o menu sempre oferece "Voltar ao
     // ponderado", inclusive pra um alvo sem declaração nenhuma, e apagar o que
-    // não existe devolve zero linhas do mesmo jeito, sem erro nenhum. Como
-    // gt_objetivo_interacao está vazia hoje, TODO clique em "Voltar ao
-    // ponderado" caía aqui e mentia "sem permissão" pro dono — inclusive num
-    // segundo clique logo depois de um reverter normal. Só o apagar é ambíguo
+    // não existe devolve zero linhas do mesmo jeito, sem erro nenhum. A tabela
+    // gt_objetivo_interacao TEM declarações reais (desde julho/agosto de
+    // 2026) — a ambiguidade é POR ALVO: um alvo que nunca foi declarado (ou
+    // que já foi revertido antes) também devolve zero linhas ao apagar, e sem
+    // esta desambiguação todo clique em "Voltar ao ponderado" NESSE alvo caía
+    // aqui e mentia "sem permissão" pro dono — inclusive num segundo clique
+    // logo depois de um reverter normal. Só o apagar é ambíguo
     // assim: um upsert bem-sucedido sempre devolve a linha, e uma negação de
     // upsert já caiu no `error` 42501 lá em cima — por isso só desambiguamos
     // quando `interacao` for o apagar (falsy).
@@ -1751,6 +1802,12 @@ async function loadGtData(){
     const adStatusMap={};adObjs.forEach(a=>{adStatusMap[a.id]=a.effective_status||'';});
     adInsights.forEach(a=>{a.effective_status=adStatusMap[a.ad_id]||'';});
     _gtCampaigns=campaigns;_gtInsights=insights;_gtAdInsights=adInsights;_gtAdsets=adsets;
+    // Tarefa 6 (Onda B): mesmo padrão sequencial de _gtCarregarRegua/
+    // _gtCarregarObjetivos logo acima — calcula ANTES de desenhar, pra o
+    // cabeçalho já nascer certo (sem re-render depois, sem corrida com quem
+    // já esteja mexendo na lista). Uma falha aqui não derruba a tela: fica
+    // sem o selo (ver catch dentro da própria função).
+    await _gtCarregarCustoSeguidorConta(acc,campaigns,insights,since,until).catch(e=>console.error('[GT] falha ao calcular custo por seguidor da conta:',e));
     _gtLastLoadTime=new Date();updateGtUpdateStatus();
     if(_gtStatusTimer)clearInterval(_gtStatusTimer);
     _gtStatusTimer=setInterval(updateGtUpdateStatus,60000);
@@ -2173,7 +2230,11 @@ function _renderGtCampaigns(col,campaigns,insights,adInsights,adsets){
     : todas;
   const card=document.createElement('div');card.className='gt-camp-card';
   const hdr=document.createElement('div');hdr.className='gt-camp-hdr';
-  const ttlWrap=document.createElement('div');ttlWrap.style.cssText='display:flex;align-items:center;gap:10px;';
+  // flex-wrap+min-width:0 (Tarefa 6): sem isto, o selo novo de custo por
+  // seguidor (mais largo que os outros) empurrava a linha pra além da tela no
+  // celular — o flex item não encolhe por padrão (min-width:auto), e o texto
+  // ficava CORTADO pela borda do cartão, não visível nem com quebra de linha.
+  const ttlWrap=document.createElement('div');ttlWrap.style.cssText='display:flex;align-items:center;gap:10px;flex-wrap:wrap;min-width:0;';
   const ttl=document.createElement('div');ttl.style.cssText='font-family:var(--fonte-principal);font-size:calc(12px*var(--gt-fs,1.3));font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--text);';
   ttl.textContent=sorted.length+' Campanhas';
   const aiTag=document.createElement('div');
@@ -2182,6 +2243,23 @@ function _renderGtCampaigns(col,campaigns,insights,adInsights,adsets){
   // A pastilha da lista (Onda 4a): só o ícone, antes do título que já existia.
   ttlWrap.insertAdjacentHTML('beforeend',pastilha('lista'));
   ttlWrap.appendChild(ttl);ttlWrap.appendChild(aiTag);
+  // CUSTO POR SEGUIDOR DA CONTA (Tarefa 6, Onda B) — só aparece com dado
+  // CONFIÁVEL (nunca traço, nunca zero: sem confiança, o selo nem existe). A
+  // janela mostrada vem dos MESMOS since/until usados na conta — nunca um
+  // texto solto que possa discordar da conta de verdade (foi exatamente esse
+  // descompasso, "hoje" mostrando quase um mês, que deu retrabalho antes
+  // nesta onda).
+  if(_gtCustoSeguidorConta&&_gtCustoSeguidorConta.confiavel&&_gtCustoSeguidorConta.valor!=null){
+    const fmtDia=(iso)=>{const[a,m,d]=iso.split('-');return `${d}/${m}`;};
+    const jan=_gtCustoSeguidorConta.since===_gtCustoSeguidorConta.until
+      ?fmtDia(_gtCustoSeguidorConta.since)
+      :`${fmtDia(_gtCustoSeguidorConta.since)}–${fmtDia(_gtCustoSeguidorConta.until)}`;
+    const seloSeguidor=document.createElement('div');
+    seloSeguidor.className='selo selo-info';
+    seloSeguidor.textContent=`≈ R$ ${_gtCustoSeguidorConta.valor.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}/seguidor (conta, ${jan})`;
+    seloSeguidor.title='Estimativa da CONTA INTEIRA no período '+jan+' — inclui seguidor orgânico (não há como separar) e NÃO é o custo de nenhuma campanha isolada: gasto de todas as campanhas de seguidores dividido pelo ganho de seguidores da conta.';
+    ttlWrap.appendChild(seloSeguidor);
+  }
   const searchInp=document.createElement('input');
   searchInp.type='text';searchInp.placeholder='Buscar campanha…';
   searchInp.style.cssText='padding:6px 10px;border:1px solid var(--border);border-radius:7px;background:var(--surface2);color:var(--text);font-family:var(--fonte-principal);font-size:calc(11px*var(--gt-fs,1.3));outline:none;width:180px;transition:border-color .15s;';

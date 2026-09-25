@@ -546,3 +546,54 @@ test('custoAtualDoAlvo: quantidade zero na interação declarada devolve null, n
   const c = custoAtualDoAlvo('engajamento', ins, normalizarRegua(null), 'salvamentos');
   assert.equal(c, null, 'sem nenhum salvamento na janela, não pode virar custo zero nem o de engajamento');
 });
+
+// ---------------------------------------------------------------------------
+// TAREFA 6 (Onda B) — custo por seguidor DA CONTA no prompt de campanha de
+// seguidores. Nunca existiu teste pra este trecho antes (a muleta da Onda A
+// só tinha `medida_indisponivel` fixo) — cobrindo agora que ele ganha o
+// número de contexto.
+// ---------------------------------------------------------------------------
+
+test('campanha de seguidores confiável leva o custo por seguidor DA CONTA como contexto', () => {
+  const camp = { id: '9', name: '[+ SEGUIDORES] Vessel', objective: 'OUTCOME_TRAFFIC' };
+  const ins = { spend: '500', clicks: '1', impressions: '10000', ctr: '0.01', reach: '9000', frequency: '3' };
+  const d = dadosDoPrompt(camp, ins, [], [], REGUA_TESTE, {
+    diasJanela: 7,
+    custoPorSeguidorConta: { valor: 1.6, confiavel: true, porque: 'x' },
+  });
+  assert.equal(d.regua.custo_por_seguidor_da_conta_reais, 1.6);
+  assert.match(d.regua.medida_indisponivel, /não atribui/);
+});
+
+test('campanha de seguidores SEM dado confiável não leva número nenhum de contexto (null, não zero)', () => {
+  const camp = { id: '9', name: '[+ SEGUIDORES] Vessel', objective: 'OUTCOME_TRAFFIC' };
+  const ins = { spend: '500', clicks: '1', impressions: '10000' };
+  const semDado = dadosDoPrompt(camp, ins, [], [], REGUA_TESTE, { diasJanela: 7 });
+  assert.equal(semDado.regua.custo_por_seguidor_da_conta_reais, null);
+
+  const poucoConfiavel = dadosDoPrompt(camp, ins, [], [], REGUA_TESTE, {
+    diasJanela: 7,
+    custoPorSeguidorConta: { valor: 200, confiavel: false, porque: 'amostra pequena' },
+  });
+  assert.equal(poucoConfiavel.regua.custo_por_seguidor_da_conta_reais, null,
+    'confiavel:false nunca chega no prompt como número — amostra pequena não é "quase certo"');
+});
+
+test('campanha que NÃO é de seguidores nunca leva custo_por_seguidor_da_conta_reais, mesmo que extra venha preenchido', () => {
+  const camp = { id: '9', name: 'Captação de Vendas', objective: 'OUTCOME_SALES' };
+  const d = dadosDoPrompt(camp, INS_LEAD, [], [], REGUA_TESTE, {
+    custoPorSeguidorConta: { valor: 1.6, confiavel: true, porque: 'x' },
+  });
+  assert.equal(d.regua.custo_por_seguidor_da_conta_reais, undefined,
+    'campanha comum não usa o ramo de seguidores do regua — o campo nem existe');
+});
+
+test('o prompt manda usar o custo por seguidor da conta só como CONTEXTO, nunca como custo da campanha', () => {
+  const camp = { id: '9', name: '[+ SEGUIDORES] Vessel', objective: 'OUTCOME_TRAFFIC' };
+  const { system } = montarMensagens(camp, {}, [], [], REGUA_TESTE, {
+    custoPorSeguidorConta: { valor: 1.6, confiavel: true, porque: 'x' },
+  });
+  assert.match(system, /custo_por_seguidor_da_conta_reais/);
+  assert.match(system, /SÓ como contexto/);
+  assert.match(system, /NUNCA como custo desta campanha/);
+});
