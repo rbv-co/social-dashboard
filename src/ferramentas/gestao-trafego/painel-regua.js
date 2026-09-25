@@ -448,9 +448,14 @@ export function montarPainelRegua(alvo, opcoes) {
         ? `× ${mult.toLocaleString('pt-BR')} = ${reais(mult * metaEng)}`
         // Curto de proposito: este aviso divide a linha com o rotulo ('Manter e
         // observar ate'), e um texto longo aqui espremia o rotulo em tres linhas.
-        // Some quando a conta nao tem meta salva — o caso normal de cliente novo,
-        // que passou a ser frequente com a meta por conta (2026-07-29).
-        : 'defina a meta acima';
+        // Some quando a conta nao tem meta antiga salva — o caso normal de
+        // conta que nunca rodou a ponderada (ex.: Mantova, sem histórico).
+        // CORREÇÃO (revisão final da Onda B, 25/09/2026): dizia "defina a
+        // meta acima", mas o campo que editava `metas.engajamento` (R$ por
+        // ponto) saiu desta tela em 24/09/2026 — ver o comentário 3 linhas
+        // acima ("sem campo nesta tela desde a pausa"). Mandar "definir" um
+        // campo que não existe mais era instrução impossível de seguir.
+        : 'sem meta antiga salva';
     }
   }
 

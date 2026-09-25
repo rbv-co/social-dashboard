@@ -100,17 +100,28 @@ export const AJUDA = {
       <p>Isso evita o pior caso: o cartão dizer "escalar" e o botão, na prática, cortar a verba.</p>`,
   },
 
+  // CORREÇÃO (revisão final da Onda B, 25/09/2026): esta entrada dizia "em vez
+  // do ponto misturado" e "continua no ponto ponderado" — falso desde
+  // 24/09/2026. Sem declaração, a campanha é julgada pelo custo por
+  // engajamento (bruto), não pelo ponto ponderado (em pausa — ver
+  // ALVOS.engajamento em alvos.js). O exemplo numérico também trocou: usava
+  // meta em R$/ponto, que não é mais o padrão sem declaração.
   objetivo_declarado: {
     titulo: 'Declarar o que a campanha está comprando',
     texto: `<p>A Meta não diz qual interação você quer. O mesmo anúncio pode ter sido feito para colecionar salvamento ou para puxar comentário — só você sabe.</p>
-      <p>Declarando aqui, a campanha passa a ser julgada pelo <b>custo daquela interação</b>, contra a meta dela, em vez do ponto misturado.</p>
-      <p>Faz diferença real. Sua campanha Topo Funil aparece <b>vermelha</b> pelo ponto (R$ 0,28 contra meta de R$ 0,15) e ficaria <b>verde</b> pelo salvamento (R$ 18,72 contra meta de R$ 45). É a mesma campanha; muda só a régua.</p>
-      <p>Não declarar não muda nada — continua no ponto ponderado.</p>`,
+      <p>Declarando aqui, a campanha passa a ser julgada pelo <b>custo daquela interação</b>, contra a meta dela, em vez do engajamento bruto (todas as interações somadas e valendo o mesmo).</p>
+      <p>Faz diferença real. Sua campanha Topo Funil aparece <b>vermelha</b> pelo engajamento (R$ 0,28 contra meta de R$ 0,15) e ficaria <b>verde</b> pelo salvamento (R$ 18,72 contra meta de R$ 45). É a mesma campanha; muda só a régua.</p>
+      <p>Não declarar não muda nada — continua julgada pelo custo por engajamento (bruto).</p>`,
   },
 
+  // A CHAVE continua `custo_conversa` (é a chave da métrica no catálogo,
+  // GT_METRIC_CATALOG — ver metricas.js), mas o TÍTULO mudou: o dono chama de
+  // LEAD a conversa iniciada (decisão de 24/09/2026, ver alvos.js —
+  // ALVOS.mensagens.rotulo já é 'Custo por lead'). Título desatualizado
+  // ('Custo por conversa') corrigido na revisão final da Onda B, 25/09/2026.
   custo_conversa: {
-    titulo: 'Custo por conversa',
-    texto: `<p>Quanto custou cada conversa de WhatsApp iniciada: o gasto da campanha dividido pelas conversas.</p>
+    titulo: 'Custo por lead',
+    texto: `<p>Quanto custou cada conversa de WhatsApp iniciada: o gasto da campanha dividido pelas conversas. Aqui você chama de LEAD a conversa iniciada (quem abre conversa no WhatsApp já é lead) — é por isso que a tela mostra "Custo por lead".</p>
       <p>É o resultado que essa campanha compra — por isso ela é julgada por aqui, e não por curtida.</p>
       <p>Referência sua: R$ 26,95 por conversa na média das contas, com R$ 95.745 investidos em 90 dias. É de longe seu maior gasto.</p>`,
   },

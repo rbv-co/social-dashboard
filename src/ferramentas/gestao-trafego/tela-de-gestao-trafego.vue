@@ -459,12 +459,15 @@ let _gtAbaAtiva='campanhas';
 let _gtSelecao=new Map();
 // Objetivo por interação (Fase 3): mapa alvo_id (campanha OU anúncio) ->
 // interação declarada ('curtidas'|'comentarios'|'salvamentos'|'compartilhamentos').
-// Sem entrada = não declarou = continua no ponto ponderado. Carregado uma vez
-// por loadGtData() (ver _gtCarregarObjetivos), igual à régua e ao Opus IA.
+// Sem entrada = não declarou = continua julgada pelo custo por engajamento
+// (bruto) — não mais pelo ponto ponderado, em pausa desde 24/09/2026 (ver
+// ALVOS.engajamento em alvos.js; correção da revisão final da Onda B,
+// 25/09/2026). Carregado uma vez por loadGtData() (ver _gtCarregarObjetivos),
+// igual à régua e ao Opus IA.
 let _gtObjetivoInteracao={};
 // Fail-CLOSED (M3 do review, 2026-07-28), mesmo padrão de _gtReguaCarregada:
 // só fica true depois de uma leitura que REALMENTE deu certo. Enquanto for
-// false, um alvo AUSENTE do mapa não pode virar "Objetivo: ponderado" com
+// false, um alvo AUSENTE do mapa não pode virar "Objetivo: engajamento" com
 // confiança — pode ser que exista uma declaração real no banco que esta
 // leitura, ao falhar, não trouxe. Ver _gtCarregarObjetivos e _gtSeloObjetivoEl.
 let _gtObjetivoInteracaoCarregada=false;
@@ -744,7 +747,7 @@ async function _gtSalvarObjetivo(alvoId,nivel,interacao){
   }
   // H2(b) do review: o PostgREST devolve 200/204 com ZERO linhas e SEM `error`
   // quando a RLS filtra a linha da resposta — pra ele é indistinguível de "deu
-  // certo". Sem checar isto, um apagar ("Voltar ao ponderado") sem permissão
+  // certo". Sem checar isto, um apagar ("Voltar ao engajamento") sem permissão
   // real parecia ter funcionado: a tela apagava a declaração local, não avisava
   // nada, e ela reaparecia sozinha no próximo loadGtData() (porque no banco
   // continuava lá). `.select()` acima é o que permite enxergar essa diferença.
@@ -756,7 +759,7 @@ async function _gtSalvarObjetivo(alvoId,nivel,interacao){
     // gt_objetivo_interacao TEM declarações reais (desde julho/agosto de
     // 2026) — a ambiguidade é POR ALVO: um alvo que nunca foi declarado (ou
     // que já foi revertido antes) também devolve zero linhas ao apagar, e sem
-    // esta desambiguação todo clique em "Voltar ao ponderado" NESSE alvo caía
+    // esta desambiguação todo clique em "Voltar ao engajamento" NESSE alvo caía
     // aqui e mentia "sem permissão" pro dono — inclusive num segundo clique
     // logo depois de um reverter normal. Só o apagar é ambíguo
     // assim: um upsert bem-sucedido sempre devolve a linha, e uma negação de
@@ -792,7 +795,10 @@ async function _gtSalvarObjetivo(alvoId,nivel,interacao){
     adminToast('Objetivo definido: '+(INTERACOES[interacao]?.rotulo||interacao)+'.');
   }else{
     delete _gtObjetivoInteracao[String(alvoId)];
-    adminToast('Objetivo voltou a ser o ponto ponderado.');
+    // CORREÇÃO (revisão final da Onda B, 25/09/2026): dizia "voltou a ser o
+    // ponto ponderado" — apagada a declaração, a campanha volta ao custo por
+    // engajamento (bruto), não ao ponto ponderado (em pausa desde 24/09/2026).
+    adminToast('Objetivo voltou a ser o custo por engajamento.');
   }
   // M6 do review: nada mudou do lado da Meta — a declaração é estado local
   // (banco próprio, gt_objetivo_interacao). Recarregar a conta inteira via
@@ -2090,8 +2096,8 @@ function _gtWireBudgetControls(el,ins,camp,permCamp){
 // Só aparece em campanha/anúncio de engajamento que NÃO seja de mensagem (o
 // mesmo recorte do custo por ponto: WhatsApp já tem o resultado dele — conversa
 // — e não faz sentido perguntar qual interação ele compra). Sem declaração,
-// selo neutro "Objetivo: ponderado"; declarado, mostra o rótulo da interação.
-// Clicar abre um menu com as quatro interações + "Voltar ao ponderado" — mesma
+// selo neutro "Objetivo: engajamento"; declarado, mostra o rótulo da interação.
+// Clicar abre um menu com as quatro interações + "Voltar ao engajamento" — mesma
 // linguagem visual do chip CBO/ABO (gt-nivel-chip), só que clicável.
 let _gtMenuObjAberto=null;
 let _gtMenuObjFechar=null; // limpeza dos listeners (clicar fora/Esc/rolar) do menu aberto agora
@@ -2108,7 +2114,7 @@ function _gtPosicionarMenuObjetivo(menu,chip){
   const margem=8; // respiro mínimo até a borda da tela
   // B3 do review (2026-07-28): sem clamp, perto da borda direita de um celular
   // o menu nascia com left = chip.left e boa parte da largura vazava pra fora
-  // da viewport — inclusive "Voltar ao ponderado", a única forma de desfazer.
+  // da viewport — inclusive "Voltar ao engajamento", a única forma de desfazer.
   // Clampa o left pra sempre caber inteiro na tela, com uma margem mínima; o
   // flip pra cima quando não sobra espaço embaixo (abaixo) continua igual.
   const maxLeft=window.innerWidth-largura-margem;
@@ -2127,7 +2133,7 @@ function _gtAbrirMenuObjetivo(chip,alvoId,nivel){
   // ancestrais (.gt-camp-row, .gt-camp-row-ads) têm overflow:hidden pra conter
   // o scroll da lista, e um menu position:absolute ali dentro fica CORTADO —
   // tanto numa linha de campanha recolhida quanto no ÚLTIMO anúncio de cada
-  // campanha, exatamente onde mora "Voltar ao ponderado" (a opção de baixo).
+  // campanha, exatamente onde mora "Voltar ao engajamento" (a opção de baixo).
   // A saída é pendurar na RAIZ da tela (mesmo truque já usado pela barra de
   // seleção em massa, ver _gtPintarBarraSelecao) com position:fixed e
   // coordenadas calculadas do próprio selo — assim nenhum overflow:hidden de
@@ -2138,7 +2144,11 @@ function _gtAbrirMenuObjetivo(chip,alvoId,nivel){
   menu.addEventListener('click',e=>e.stopPropagation());
   const linhas=Object.keys(INTERACOES).map(k=>
     `<button type="button" class="pnd-obj-opt" data-int="${_gtEsc(k)}">${_gtEsc(INTERACOES[k].rotulo)}</button>`).join('');
-  menu.innerHTML=linhas+`<button type="button" class="pnd-obj-opt pnd-obj-limpar" data-int="">Voltar ao ponderado</button>`;
+  // CORREÇÃO (revisão final da Onda B, 25/09/2026): dizia "Voltar ao
+  // ponderado" — apagar a declaração NÃO devolve ao ponto ponderado desde
+  // 24/09/2026, devolve ao custo por engajamento (bruto), o mesmo texto do
+  // selo sem declaração (ver _gtSeloObjetivoEl acima).
+  menu.innerHTML=linhas+`<button type="button" class="pnd-obj-opt pnd-obj-limpar" data-int="">Voltar ao engajamento</button>`;
   menu.querySelectorAll('.pnd-obj-opt').forEach(btn=>{
     btn.addEventListener('click',e=>{
       e.stopPropagation();
@@ -2193,9 +2203,13 @@ function _gtSeloObjetivoEl(alvoId,nivel,elegivel){
   const podeEditar=hasPermission('meta.gestor','editar');
   const chip=document.createElement('span');
   chip.className='pnd-obj-chip'+(decl?' declarado':'')+(podeEditar?'':' readonly');
+  // CORREÇÃO (revisão final da Onda B, 25/09/2026): dizia "Objetivo:
+  // ponderado" — mentira desde 24/09/2026. Sem declaração, a campanha é
+  // julgada pelo custo por engajamento (bruto), não mais pelo ponto
+  // ponderado (ver ALVOS.engajamento em alvos.js e o veredito acima).
   chip.textContent=decl
     ?('Objetivo: '+(INTERACOES[decl]?.rotulo||decl))
-    :desconhecido?'Objetivo: indisponível':'Objetivo: ponderado';
+    :desconhecido?'Objetivo: indisponível':'Objetivo: engajamento';
   if(desconhecido){
     chip.title='Não consegui confirmar as declarações agora — recarregue antes de decidir por este selo.';
   }else if(podeEditar){
@@ -2452,12 +2466,22 @@ function _renderGtCampaigns(col,campaigns,insights,adInsights,adsets){
       // calcularPonderada (ponderada.js) seguem intactos. O veredito de
       // engajamento sem declaração passou a ser o custo por engajamento bruto,
       // calculado como qualquer outro balde logo abaixo (ver ALVOS.engajamento
-      // em alvos.js). Religar a ponderada é trocar duas linhas em alvos.js
-      // (`metrica: 'ponderada'` e remover `chaveMeta`) — nada neste arquivo
-      // precisa mudar de volta. Tirar em vez de deixar como informação: um
-      // número que não decide nada, ao lado do que decide, já produziu
-      // contradição visual rejeitada duas vezes nesta tela (C2 e M4 do review
-      // de 2026-07-28) — "dentro da meta" no veredito com o chip do ponto do
+      // em alvos.js).
+      // CORREÇÃO (revisão final da Onda B, 25/09/2026): "religar é trocar duas
+      // linhas em alvos.js, nada neste arquivo precisa mudar de volta" era
+      // promessa falsa. `custoAlvo` acima vem de `_gtMetricValue(alvo.metrica,
+      // ins)`, que lê `GT_METRIC_CATALOG[alvo.metrica]` — sem entrada
+      // `'ponderada'` nesse catálogo, um simples troca de `metrica` em
+      // alvos.js faz este cartão mostrar `custoAlvo: null`, não o custo por
+      // ponto de volta. E os chips "Custo/ponto"/"Qualidade" FORAM removidos
+      // DESTE arquivo (não só escondidos) — precisariam voltar a ser
+      // desenhados aqui, não só reativados em outro lugar. Um interruptor de
+      // verdade (que cubra `_gtMetricValue`/o cartão, `custoDoAlvo` e
+      // `custoAtualDoAlvo`) está planejado para a onda seguinte. Tirar em vez
+      // de deixar como informação: um número que não decide nada, ao lado do
+      // que decide, já produziu contradição visual rejeitada duas vezes nesta
+      // tela (C2 e M4 do review de 2026-07-28) — "dentro da meta" no veredito
+      // com o chip do ponto do
       // lado pintado de vermelho.
 
       // ALVO DO OBJETIVO: cada tipo de campanha é medido pelo resultado que ele
@@ -2530,8 +2554,15 @@ function _renderGtCampaigns(col,campaigns,insights,adInsights,adsets){
       // ponderada.js) — só não é mais mostrada nem consultada no cartão. Quem
       // quiser os pontos e o custo por ponto de uma campanha específica acha
       // em ponderada.js: calcularPonderada(quantidadesDoInsight(ins), {...}).
-      // Religar como veredito é trocar duas linhas em alvos.js (ver o bloco de
-      // `engajamento` lá: `metrica: 'ponderada'` e remover `chaveMeta`).
+      // CORREÇÃO (revisão final da Onda B, 25/09/2026): "religar como
+      // veredito é trocar duas linhas em alvos.js" era promessa falsa (ver o
+      // comentário completo logo acima, em `reguaAtiva`/`custoAlvo`) — sem
+      // entrada `'ponderada'` em `GT_METRIC_CATALOG`, essa troca sozinha só
+      // zera o custo mostrado, não traz o ponto de volta; os chips desta
+      // seção também precisariam ser redesenhados aqui. O que ESTÁ garantido:
+      // `ponderada.js` intacto e as duas metas (`metas.engajamento` e
+      // `metas.engajamento_bruto`) coexistindo. Um interruptor de verdade está
+      // planejado para a onda seguinte.
       // 1) TODO JULGAMENTO MORA NA FILA (decisão do dono, 2026-07-29). O cartão
       // aqui é a leitura da campanha: números e orçamento. Antes tinha uma faixa
       // de recomendação com botões "Aplicar R$ X/dia" e "Pausar campanha" que
@@ -5894,7 +5925,7 @@ Object.assign(window, {
    (_gtAbrirMenuObjetivo) bem no clique, com left/top/bottom calculados de
    chip.getBoundingClientRect(). Isso tira o menu de dentro de qualquer
    ancestral com overflow:hidden (.gt-camp-row, .gt-camp-row-ads) — que antes
-   cortava a parte de baixo do menu (incluindo "Voltar ao ponderado") sempre
+   cortava a parte de baixo do menu (incluindo "Voltar ao engajamento") sempre
    que o selo estava perto do fim de uma linha recolhida ou do último anúncio
    de uma campanha. */
 .tela-gestao-trafego :deep(.pnd-obj-menu){position:fixed;min-width:170px;background:var(--surface);border:1px solid var(--border);border-radius:9px;box-shadow:0 8px 24px rgba(0,0,0,.18);z-index:1000;overflow:hidden;display:flex;flex-direction:column;cursor:default;}

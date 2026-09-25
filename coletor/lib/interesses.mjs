@@ -17,7 +17,7 @@ export const OBJETIVOS = Object.keys(ALVOS);
 
 // O nome do objetivo em português, para o pedido e para a tela.
 // NÃO existe no projeto um mapa balde → nome: `alvos.js` guarda o rótulo da
-// MÉTRICA de cada balde ('Custo por ponto'), e `baldes.js` traduz o objetivo da
+// MÉTRICA de cada balde ('Custo por engajamento'), e `baldes.js` traduz o objetivo da
 // Meta para a chave do balde. Este mapa preenche essa lacuna, e há teste
 // garantindo que ele cobre exatamente OBJETIVOS — nem a mais, nem a menos.
 export const NOME_DO_OBJETIVO = {
@@ -177,8 +177,10 @@ export function montarPedido({ marca, lojas, objetivo } = {}) {
   const segmento = limpo(marca && marca.segmento);
 
   // ATENÇÃO: `ALVOS[x].rotulo` é o rótulo da MÉTRICA, não do objetivo —
-  // engajamento tem rotulo 'Custo por ponto'. Dizer à IA "Objetivo da campanha:
-  // Custo por ponto" seria absurdo. Por isso o nome do objetivo vem daqui, e o
+  // engajamento tem rotulo 'Custo por engajamento' (era 'Custo por ponto'
+  // antes da troca de régua de 24/09/2026 — ver ALVOS.engajamento em
+  // alvos.js). Dizer à IA "Objetivo da campanha: Custo por engajamento" seria
+  // absurdo do mesmo jeito. Por isso o nome do objetivo vem daqui, e o
   // `ajuda` de ALVOS entra só como contexto extra do que se está medindo.
   // Fallback: se a chave não está no mapa (divergência com ALVOS), usa a chave
   // mesmo. Nunca vira "undefined" no pedido.

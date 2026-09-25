@@ -95,11 +95,18 @@ export const GT_BALDE_PADRAO={
 // A guarda `alvo.metrica === 'ponderada'` não dispara mais no caminho normal
 // — desde a troca de régua de 24/09/2026, engajamento usa `custo_engajamento`
 // como qualquer outro balde (ver ALVOS.engajamento em alvos.js). Ela continua
-// aqui de propósito: é o que garante que, SE alguém religar a ponderada
-// (trocando `metrica` de volta para `'ponderada'` em alvos.js), esta função
-// volta a devolver null pra engajamento em vez de tentar calcular um custo
-// que não existe no catálogo — sem essa guarda, religar a ponderada exigiria
-// mexer aqui também.
+// aqui só para NÃO QUEBRAR: `GT_METRIC_CATALOG` nunca teve (e não tem) uma
+// entrada `'ponderada'`, então sem a guarda `GT_METRIC_CATALOG[alvo.metrica]`
+// daria `undefined` e o `.compute` seguinte estouraria.
+// CORREÇÃO (revisão final da Onda B, 25/09/2026): isto NÃO é "religar pronto".
+// Trocar `metrica` de volta para `'ponderada'` em alvos.js faz esta função
+// devolver `null` — a guarda barra o crash, mas não calcula coisa nenhuma no
+// lugar. O custo por ponto de verdade mora só em `calcularPonderada`
+// (ponderada.js), que este arquivo nunca chamou; um revert de verdade precisa
+// desviar para lá aqui, e fazer o mesmo em `custoAtualDoAlvo` (budget-ia.mjs)
+// e na leitura do cartão (tela-de-gestao-trafego.vue) — os três juntos, não
+// só esta chave. Um interruptor de verdade para os três pontos está
+// planejado para a onda seguinte.
 //
 // Devolve null (e nunca 0) quando não há resultado ou não há gasto na janela:
 // um custo de R$ 0,00 escrito no prompt é lido pelo modelo como "de graça" e

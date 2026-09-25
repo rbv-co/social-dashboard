@@ -29,10 +29,27 @@ export const ALVOS = {
     // há fator de conversão: a razão pontos/engajamento foi de 0 a 0,56 nas
     // campanhas medidas.
     //
-    // A ponderada NÃO foi apagada — só deixou de ser consultada. Para voltar
-    // atrás bastam estas duas linhas: `metrica: 'ponderada'` e remover
-    // `chaveMeta`. Por isso a meta antiga fica em `metas.engajamento` e a nova
-    // em `metas.engajamento_bruto`, sem se sobrescreverem.
+    // A ponderada NÃO foi apagada — só deixou de ser consultada. O que ESTÁ
+    // garantido e provado hoje: `ponderada.js` intacto (pesos, colunas do
+    // banco, `calcularPonderada`), as duas metas coexistindo sem se
+    // sobrescreverem (a antiga em `metas.engajamento`, a nova em
+    // `metas.engajamento_bruto`) e a meta em R$/ponto sobrevivendo ao salvar
+    // na tela da régua.
+    // CORREÇÃO (revisão final da Onda B, 25/09/2026): trocar só `metrica`
+    // para `'ponderada'` aqui e apagar `chaveMeta` NÃO religa nada sozinho —
+    // "duas linhas" era promessa falsa. `custoDoAlvo` (metricas.js) tem uma
+    // guarda explícita que devolve `null` para `metrica === 'ponderada'` (o
+    // ramo que chamava `calcularPonderada` foi REMOVIDO de lá, não desviado);
+    // `custoAtualDoAlvo` (budget-ia.mjs) segue a mesma fonte; e o cartão
+    // (tela-de-gestao-trafego.vue) não sabe ler `'ponderada'` no catálogo de
+    // métricas — o veredito de toda campanha de engajamento sairia com custo
+    // NULO, não com o ponto de volta. Os limiares das duas seções da régua
+    // (Seção 1 = ponto, Seção 2 = resultado) também se misturariam se o
+    // caminho de leitura não for redesenhado junto. Um interruptor de
+    // verdade — que troque `custoDoAlvo`, `custoAtualDoAlvo` e a leitura do
+    // cartão nos três lugares ao mesmo tempo — está planejado para a onda
+    // seguinte; até lá, isto aqui é só a metade que fica pronta, não o
+    // caminho de volta inteiro.
     metrica: 'custo_engajamento', resultado: 'engaj_pub', chaveMeta: 'engajamento_bruto',
     rotulo: 'Custo por engajamento', unidade: 'R$',
     ajuda: 'Quanto você aceita pagar por cada engajamento que a Meta conta na publicação (curtida, comentário, compartilhamento, clique, salvamento e afins, todos valendo o mesmo).',
