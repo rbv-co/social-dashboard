@@ -59,11 +59,32 @@ test('unificarEventos: junta e ordena os três tipos, mais recente primeiro', ()
   assert.equal(linhas[2].quem, '—')
 })
 
-test('unificarEventos: pop-up com clique_meta grava a atribuição (25/09/2026, o pop-up passou a mandar fbc/utm)', () => {
+test('unificarEventos: pop-up com clique_meta grava a atribuição e o fbc cru (25/09/2026, o pop-up passou a mandar fbc/utm)', () => {
   const linhas = unificarEventos({
     popups: [{ criado_em: '2026-09-25T10:00:00Z', nome: 'Carla', email: 'carla@ex.com', clique_meta: 'fb.1.123.abc', utm_campaign: 'promo' }],
   })
   assert.equal(linhas[0].origem, 'Meta Ads · promo')
+  assert.equal(linhas[0].fbc, 'fb.1.123.abc')
+})
+
+test('unificarEventos: sem fbc em nenhuma fonte, a coluna vem null', () => {
+  const linhas = unificarEventos({
+    checkouts: [{ criado_em: '2026-09-25T09:00:00Z' }],
+    popups: [{ criado_em: '2026-09-25T10:00:00Z', nome: 'Bia' }],
+    atendimentos: [{ pessoa_id: 1, criado_em: '2026-09-25T11:00:00Z' }],
+    pessoas: [{ id: 1, nome: 'Rita' }],
+    origens: [],
+  })
+  assert.deepEqual(linhas.map((l) => l.fbc), [null, null, null])
+})
+
+test('unificarEventos: atendimento herda o fbc cru da origem mais próxima', () => {
+  const linhas = unificarEventos({
+    atendimentos: [{ pessoa_id: 1, criado_em: '2026-09-25T10:00:00Z' }],
+    pessoas: [{ id: 1, nome: 'Bia' }],
+    origens: [{ pessoa_id: 1, momento: '2026-09-25T10:00:01Z', clique_meta: 'fb.1.999.zzz' }],
+  })
+  assert.equal(linhas[0].fbc, 'fb.1.999.zzz')
 })
 
 test('unificarEventos: pop-up sem nenhum campo de rastreio continua direto/orgânico', () => {
