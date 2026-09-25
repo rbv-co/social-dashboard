@@ -302,10 +302,13 @@ try {
     const emailVer = `prova-praca-ver-${idVer}@teste.invalido`
     await cli.query(`insert into auth.users (id, email) values ($1, $2), ($3, $4)`,
       [idEditar, emailEditar, idVer, emailVer])
+    // ⚠️ RODADA 1 DE CONSERTO: idEditar ganha também `atendimentos.private-edit`
+    // — precisa para chamar `vessel_criar_private_edit` (uma das 4 portas do
+    // conserto do CRÍTICO) pelas provas novas do passo 10/11.
     await cli.query(`insert into public.profiles (id, email, name, features, permissions, is_superadmin, disabled) values
-        ($1, $2, 'Prova — Stylist Circle (editar)', array['atendimentos.stylist-circle','atendimentos'], $3::jsonb, false, false),
+        ($1, $2, 'Prova — Stylist Circle (editar)', array['atendimentos.stylist-circle','atendimentos.private-edit','atendimentos'], $3::jsonb, false, false),
         ($4, $5, 'Prova — Stylist Circle (ver)',    array['atendimentos.stylist-circle','atendimentos'], $6::jsonb, false, false)`,
-      [idEditar, emailEditar, JSON.stringify({ 'atendimentos.stylist-circle': ['ver', 'editar'] }),
+      [idEditar, emailEditar, JSON.stringify({ 'atendimentos.stylist-circle': ['ver', 'editar'], 'atendimentos.private-edit': ['ver', 'editar'] }),
        idVer, emailVer, JSON.stringify({ 'atendimentos.stylist-circle': ['ver'] })])
     const hoje = await r(`current_date::text`)
 
@@ -704,51 +707,161 @@ try {
     conferir(assinaturas.length === 1 && assinaturas[0].pronargs === 4,
       'só existe UMA vessel_rastreio_dos_stylists no catálogo, com 4 parâmetros — a de 2 foi dropada, sem fantasma para o PostgREST escolher entre duas', assinaturas)
 
-    x = await chamarGravando(`public.vessel_praca_criar(p_sigla => $1, p_nome => $2, p_loja_destino => $3)`, ['PVL', 'Praça de Prova L (Task 5)', null])
-    conferir(x.v?.ok === true, 'praca_criar: praça L (Limeira) para o recorte da lista', x.v ?? x.e?.message)
-    const pracaL = x.v?.id
-    x = await chamarGravando(`public.vessel_praca_criar(p_sigla => $1, p_nome => $2, p_loja_destino => $3)`, ['PVM', 'Praça de Prova M (Task 5)', null])
-    conferir(x.v?.ok === true, 'praca_criar: praça M (Campinas) para o recorte da lista', x.v ?? x.e?.message)
-    const pracaM = x.v?.id
-    x = await chamarGravando(`public.vessel_edicao_criar(p_praca_id => $1, p_nome => $2, p_comeca_em => $3, p_termina_em => null)`, [pracaL, 'Edição L1', hoje])
-    const edicaoL1 = x.v?.id
-    x = await chamarGravando(`public.vessel_edicao_abrir(p_id => $1)`, [edicaoL1])
-    conferir(x.v?.ok === true, 'edicao_abrir: abre a edição L1', x.v ?? x.e?.message)
-    x = await chamarGravando(`public.vessel_edicao_criar(p_praca_id => $1, p_nome => $2, p_comeca_em => $3, p_termina_em => null)`, [pracaL, 'Edição L2', hoje])
-    const edicaoL2 = x.v?.id
-    x = await chamarGravando(`public.vessel_edicao_criar(p_praca_id => $1, p_nome => $2, p_comeca_em => $3, p_termina_em => null)`, [pracaM, 'Edição M1', hoje])
-    const edicaoM1 = x.v?.id
-    x = await chamarGravando(`public.vessel_edicao_abrir(p_id => $1)`, [edicaoM1])
-    conferir(x.v?.ok === true, 'edicao_abrir: abre a edição M1', x.v ?? x.e?.message)
+    console.log('\n  · 10a) RODADA 1 DE CONSERTO — CRÍTICO: a praça deixa de ser lista fechada, provado pelas 4 PORTAS DE VERDADE')
+    // ⚠️ Nada de praça fabricada: LIM (Limeira) e PIR (Piracicaba) são as
+    // praças DE VERDADE da carga inicial (seção 7) — o exemplo do trabalho
+    // inteiro. Antes do conserto, NINGUÉM conseguia cadastrar stylist nem
+    // marcar encontro nelas pela tela (a lista fechada só tinha CPS/SAO/SBO/BSB).
+    // ⚠️ `id` é `bigint`: o driver devolve como STRING nas consultas cruas
+    // (evita perder precisão) — `::int` aqui, contra os ids que vêm de JSON
+    // (Number), como os campos `praca_id`/`edicao_atual_id` do rastreio.
+    const pracaLim = await uma(`select id::int as id from public.vessel_pracas where sigla = 'LIM'`)
+    const pracaPir = await uma(`select id::int as id from public.vessel_pracas where sigla = 'PIR'`)
 
-    // ⚠️ teste=FALSE de propósito: `vessel_rastreio_dos_stylists` filtra
-    // `not coalesce(s.teste, false)` — com teste=true a stylist nunca
-    // apareceria na lista, e a prova do recorte passaria vazia por um motivo
-    // errado. Tudo isto está dentro do savepoint `prova_funcoes` e é desfeito
-    // no fim — não vaza para os dados reais.
-    const styL1 = await uma(`insert into public.vessel_stylists (codigo, nome, whatsapp, praca_id, teste)
-       values ('STY-PROVA-PLACAR-L1', 'Prova Placar L1', '5519990005101', $1, false) returning id, etapa_id`, [pracaL])
-    const styM1 = await uma(`insert into public.vessel_stylists (codigo, nome, whatsapp, praca_id, teste)
-       values ('STY-PROVA-PLACAR-M1', 'Prova Placar M1', '5519990005102', $1, false) returning id, etapa_id`, [pracaM])
-    x = await chamarGravando(`public.vessel_edicao_incluir_stylist(p_codigo => $1, p_edicao_id => $2)`, ['STY-PROVA-PLACAR-L1', edicaoL1])
-    conferir(x.v?.ok === true, 'edicao_incluir_stylist: L1 na edição L1', x.v ?? x.e?.message)
-    x = await chamarGravando(`public.vessel_edicao_incluir_stylist(p_codigo => $1, p_edicao_id => $2)`, ['STY-PROVA-PLACAR-M1', edicaoM1])
-    conferir(x.v?.ok === true, 'edicao_incluir_stylist: M1 na edição M1', x.v ?? x.e?.message)
+    // (b) stylist criada PELA PORTA REAL (vessel_stylist_criar), na praça
+    // PIR — nasce com praca_id preenchido (não só o texto praca_preview).
+    x = await chamarGravando(`public.vessel_stylist_criar(p_nome => $1, p_whatsapp => $2, p_praca => $3, p_origem_contato => $4)`,
+      ['Prova Rodada1 PIR', '5519990006302', 'PIR', 'indicacao'])
+    conferir(x.v?.ok === true && x.v?.situacao === 'ok', 'vessel_stylist_criar: cadastra PELA PORTA REAL com praça PIR (Piracicaba)', x.v ?? x.e?.message)
+    const codigoStyPir = x.v?.codigo
+    const styPir = await uma(`select id, praca_id::int as praca_id from public.vessel_stylists where codigo = $1`, [codigoStyPir])
+    conferir(styPir?.praca_id === pracaPir.id,
+      '(b) a stylist de Piracicaba nasceu com praca_id preenchido — antes do conserto isto era impossível (Piracicaba nem entrava na lista fechada)', styPir)
 
-    const chamadaPorPraca = await chamarGravando(`public.vessel_rastreio_dos_stylists(p_dias => 7, p_incluir_desativadas => true, p_praca_id => $1, p_edicao_id => null)`, [pracaL])
+    // a mesma porta real, para a stylist de Limeira que vira a turma do placar.
+    x = await chamarGravando(`public.vessel_stylist_criar(p_nome => $1, p_whatsapp => $2, p_praca => $3, p_origem_contato => $4)`,
+      ['Prova Rodada1 LIM', '5519990006301', 'LIM', 'indicacao'])
+    conferir(x.v?.ok === true && x.v?.situacao === 'ok', 'vessel_stylist_criar: cadastra PELA PORTA REAL com praça LIM (Limeira)', x.v ?? x.e?.message)
+    const codigoStyLim = x.v?.codigo
+    const styLim = await uma(`select id, praca_id::int as praca_id from public.vessel_stylists where codigo = $1`, [codigoStyLim])
+    conferir(styLim?.praca_id === pracaLim.id, 'a stylist de Limeira também nasceu com praca_id preenchido', styLim)
+
+    // (c) sigla que NÃO EXISTE no cadastro — recusada com motivo escrito, sem estourar.
+    const antesZzz = await r(`(select count(*)::int from public.vessel_stylists where whatsapp = $1)`, ['5519990006399'])
+    x = await chamarGravando(`public.vessel_stylist_criar(p_nome => $1, p_whatsapp => $2, p_praca => $3, p_origem_contato => $4)`,
+      ['Prova Sigla Inexistente', '5519990006399', 'ZZZ', 'indicacao'])
+    conferir(!x.e && x.v?.ok === false && x.v?.situacao === 'praca_invalida',
+      '(c) vessel_stylist_criar: sigla ZZZ (não cadastrada) é recusada com situacao=praca_invalida, sem estourar erro cru de banco', x.v ?? x.e?.message)
+    const depoisZzz = await r(`(select count(*)::int from public.vessel_stylists where whatsapp = $1)`, ['5519990006399'])
+    conferir(antesZzz === 0 && depoisZzz === 0, 'e nada foi gravado (medido pela contagem real, não só pela resposta)', { antesZzz, depoisZzz })
+
+    // (d) praça que EXISTE mas está `ativa = false` — também recusada.
+    x = await chamarGravando(`public.vessel_praca_criar(p_sigla => $1, p_nome => $2, p_loja_destino => $3)`, ['PVI', 'Praça de Prova Inativa', null])
+    conferir(x.v?.ok === true, 'praca_criar: praça de prova PVI, para virar inativa', x.v ?? x.e?.message)
+    const pracaInativaId = x.v?.id
+    x = await chamarGravando(`public.vessel_praca_editar(p_id => $1, p_nome => $2, p_loja_destino => $3, p_ativa => $4)`,
+      [pracaInativaId, 'Praça de Prova Inativa', null, false])
+    conferir(x.v?.ok === true, 'praca_editar: desativa a praça de prova (PVI)', x.v ?? x.e?.message)
+    const antesPvi = await r(`(select count(*)::int from public.vessel_stylists where whatsapp = $1)`, ['5519990006398'])
+    x = await chamarGravando(`public.vessel_stylist_criar(p_nome => $1, p_whatsapp => $2, p_praca => $3, p_origem_contato => $4)`,
+      ['Prova Praça Inativa', '5519990006398', 'PVI', 'indicacao'])
+    conferir(!x.e && x.v?.ok === false && x.v?.situacao === 'praca_invalida',
+      '(d) vessel_stylist_criar: praça PVI existe mas está `ativa = false` — também recusada com praca_invalida', x.v ?? x.e?.message)
+    const depoisPvi = await r(`(select count(*)::int from public.vessel_stylists where whatsapp = $1)`, ['5519990006398'])
+    conferir(antesPvi === 0 && depoisPvi === 0, 'e nada foi gravado (medido pela contagem real)', { antesPvi, depoisPvi })
+
+    // A MESMA trava em vessel_stylist_editar (a 3ª das quatro portas) — sigla
+    // inexistente e praça inativa, sobre a stylist que acabamos de criar.
+    x = await chamarGravando(`public.vessel_stylist_editar(p_codigo => $1, p_praca => $2)`, [codigoStyPir, 'ZZZ'])
+    conferir(!x.e && x.v?.ok === false && x.v?.situacao === 'praca_invalida', 'vessel_stylist_editar: sigla ZZZ também é recusada com praca_invalida', x.v ?? x.e?.message)
+    x = await chamarGravando(`public.vessel_stylist_editar(p_codigo => $1, p_praca => $2)`, [codigoStyPir, 'PVI'])
+    conferir(!x.e && x.v?.ok === false && x.v?.situacao === 'praca_invalida', 'vessel_stylist_editar: praça PVI (inativa) também é recusada com praca_invalida', x.v ?? x.e?.message)
+    const styPirDepoisDeTentativas = await uma(`select praca_id::int as praca_id from public.vessel_stylists where codigo = $1`, [codigoStyPir])
+    conferir(styPirDepoisDeTentativas?.praca_id === pracaPir.id, 'e a praça da stylist PIR NÃO mudou com as duas tentativas recusadas', styPirDepoisDeTentativas)
+
+    // setup para o encontro real: mover a stylist de Limeira para a etapa que
+    // libera Private Edit (a mesma trava de sempre — nada disto é do conserto
+    // desta rodada, é pré-requisito para poder criar o encontro).
+    const [etapaLibera] = await todas(`select id from public.vessel_stylist_etapas where libera_private_edit and ativa order by id limit 1`)
+    if (!etapaLibera) throw new Error('nenhuma etapa libera_private_edit ativa — não dá para provar o encontro real')
+    const [motivoLibera] = await todas(`select id from public.vessel_stylist_motivos_de_saida where etapa_id = $1 and ativo order by id limit 1`, [etapaLibera.id])
+    x = await chamarGravando(`public.vessel_stylist_mover_de_etapa(p_codigo => $1, p_etapa_id => $2, p_motivo_id => $3)`,
+      [codigoStyLim, etapaLibera.id, motivoLibera?.id ?? null])
+    conferir(x.v?.ok === true, 'vessel_stylist_mover_de_etapa: move a stylist de Limeira para a etapa que libera Private Edit (setup)', x.v ?? x.e?.message)
+
+    // a MESMA trava, agora em vessel_criar_private_edit (a 4ª porta) — sigla
+    // inexistente e praça inativa, sem gravar nada.
+    const antesEncontrosLim1 = await r(`(select count(*)::int from public.vessel_private_edits where stylist_id = $1)`, [styLim.id])
+    x = await chamarGravando(`public.vessel_criar_private_edit(p_stylist => $1, p_quando => $2, p_praca => $3)`,
+      [codigoStyLim, new Date(Date.now() + 3600 * 1000), 'ZZZ'])
+    conferir(!x.e && x.v?.ok === false && x.v?.situacao === 'praca_invalida', 'vessel_criar_private_edit: sigla ZZZ também é recusada com praca_invalida', x.v ?? x.e?.message)
+    x = await chamarGravando(`public.vessel_criar_private_edit(p_stylist => $1, p_quando => $2, p_praca => $3)`,
+      [codigoStyLim, new Date(Date.now() + 3600 * 1000), 'PVI'])
+    conferir(!x.e && x.v?.ok === false && x.v?.situacao === 'praca_invalida', 'vessel_criar_private_edit: praça PVI (inativa) também é recusada com praca_invalida', x.v ?? x.e?.message)
+    const depoisEncontrosLim1 = await r(`(select count(*)::int from public.vessel_private_edits where stylist_id = $1)`, [styLim.id])
+    conferir(antesEncontrosLim1 === 0 && depoisEncontrosLim1 === 0, 'e nenhum encontro foi gravado com as duas praças recusadas', { antesEncontrosLim1, depoisEncontrosLim1 })
+
+    // a 4ª porta: vessel_pedido_do_stylist — a inscrição PÚBLICA da landing
+    // page. ⚠️ É PORTA DE `anon`, NÃO de `authenticated` (medido em
+    // information_schema.role_routine_grants: só anon/service_role/postgres
+    // têm EXECUTE) — chamando como authenticated (o resto do arquivo) ela
+    // devolveria 42501 CRU do PostgreSQL, não um `situacao` — e o erro cru
+    // aborta a transação, o que já pegou esta prova na primeira rodada.
+    // A MESMA trava do praca_invalida, simulada como o visitante público.
+    const chamarComoAnon = async (expr, params = []) => {
+      await cli.query('set local role anon')
+      try {
+        return { v: await r(expr, params) }
+      } catch (e) {
+        return { e }
+      } finally {
+        await cli.query('reset role')
+      }
+    }
+    x = await chamarComoAnon(`public.vessel_pedido_do_stylist(p_nome => $1, p_whatsapp => $2, p_praca => $3, p_teste => $4)`,
+      ['Prova Pedido ZZZ', '5519990006397', 'ZZZ', true])
+    conferir(!x.e && x.v?.ok === false && x.v?.situacao === 'praca_invalida', 'vessel_pedido_do_stylist (como anon): sigla ZZZ também é recusada com praca_invalida', x.v ?? x.e?.message)
+    x = await chamarComoAnon(`public.vessel_pedido_do_stylist(p_nome => $1, p_whatsapp => $2, p_praca => $3, p_teste => $4)`,
+      ['Prova Pedido PVI', '5519990006396', 'PVI', true])
+    conferir(!x.e && x.v?.ok === false && x.v?.situacao === 'praca_invalida', 'vessel_pedido_do_stylist (como anon): praça PVI (inativa) também é recusada com praca_invalida', x.v ?? x.e?.message)
+    const semGravarPedido = await r(`(select count(*)::int from public.vessel_stylists where whatsapp in ('5519990006397','5519990006396'))`)
+    conferir(semGravarPedido === 0, 'e nenhuma das duas tentativas recusadas em vessel_pedido_do_stylist gravou stylist nenhuma', semGravarPedido)
+
+    console.log('\n  · 10b) o recorte por praça e por edição, com as praças DE VERDADE')
+    x = await chamarGravando(`public.vessel_edicao_criar(p_praca_id => $1, p_nome => $2, p_comeca_em => $3, p_termina_em => null)`, [pracaLim.id, 'Edição LIM 1 (prova)', hoje])
+    conferir(x.v?.ok === true, 'edicao_criar: edição 1 de Limeira', x.v ?? x.e?.message)
+    const edicaoLim1 = x.v?.id
+    x = await chamarGravando(`public.vessel_edicao_abrir(p_id => $1)`, [edicaoLim1])
+    conferir(x.v?.ok === true, 'edicao_abrir: abre a edição 1 de Limeira', x.v ?? x.e?.message)
+    x = await chamarGravando(`public.vessel_edicao_criar(p_praca_id => $1, p_nome => $2, p_comeca_em => $3, p_termina_em => null)`, [pracaLim.id, 'Edição LIM 2 (prova)', hoje])
+    conferir(x.v?.ok === true, 'edicao_criar: edição 2 de Limeira (destino do levar_para)', x.v ?? x.e?.message)
+    const edicaoLim2 = x.v?.id
+    x = await chamarGravando(`public.vessel_edicao_incluir_stylist(p_codigo => $1, p_edicao_id => $2)`, [codigoStyLim, edicaoLim1])
+    conferir(x.v?.ok === true, 'edicao_incluir_stylist: a stylist de Limeira entra na edição 1', x.v ?? x.e?.message)
+
+    // uma edição de Piracicaba, com a stylist de PIR dentro — é ela que a
+    // mutação do recorte (abaixo) tem de "vazar" para o placar de Limeira.
+    x = await chamarGravando(`public.vessel_edicao_criar(p_praca_id => $1, p_nome => $2, p_comeca_em => $3, p_termina_em => null)`, [pracaPir.id, 'Edição PIR 1 (prova)', hoje])
+    conferir(x.v?.ok === true, 'edicao_criar: edição 1 de Piracicaba', x.v ?? x.e?.message)
+    const edicaoPir1 = x.v?.id
+    x = await chamarGravando(`public.vessel_edicao_abrir(p_id => $1)`, [edicaoPir1])
+    conferir(x.v?.ok === true, 'edicao_abrir: abre a edição 1 de Piracicaba', x.v ?? x.e?.message)
+    x = await chamarGravando(`public.vessel_edicao_incluir_stylist(p_codigo => $1, p_edicao_id => $2)`, [codigoStyPir, edicaoPir1])
+    conferir(x.v?.ok === true, 'edicao_incluir_stylist: a stylist de Piracicaba entra na edição 1 dela', x.v ?? x.e?.message)
+
+    // MENOR 1, com dente: uma stylist de TESTE incluída na MESMA edição não
+    // pode contar no placar — `sty` (seção 11) filtra `not coalesce(teste,
+    // false)`, igual às irmãs `vessel_rastreio_dos_stylists`/
+    // `vessel_numeros_do_stylist_circle`.
+    const styTeste = await uma(`insert into public.vessel_stylists (codigo, nome, whatsapp, praca_id, teste)
+       values ('STY-PROVA-PLACAR-TESTE', 'Prova Placar Teste', '5519990006303', $1, true) returning id`, [pracaLim.id])
+    x = await chamarGravando(`public.vessel_edicao_incluir_stylist(p_codigo => $1, p_edicao_id => $2)`, ['STY-PROVA-PLACAR-TESTE', edicaoLim1])
+    conferir(x.v?.ok === true, 'edicao_incluir_stylist: MENOR 1 — uma stylist de TESTE também entra na edição 1 (para provar o filtro no placar)', x.v ?? x.e?.message)
+
+    const chamadaPorPraca = await chamarGravando(`public.vessel_rastreio_dos_stylists(p_dias => 7, p_incluir_desativadas => true, p_praca_id => $1, p_edicao_id => null)`, [pracaLim.id])
     const listaPorPraca = chamadaPorPraca.v
-    conferir(Array.isArray(listaPorPraca) && listaPorPraca.some((s) => s.codigo === 'STY-PROVA-PLACAR-L1') && !listaPorPraca.some((s) => s.codigo === 'STY-PROVA-PLACAR-M1'),
-      'p_praca_id => L: a lista traz a stylist de Limeira e NÃO traz a de Campinas', listaPorPraca?.map((s) => s.codigo))
-    const l1naLista = listaPorPraca.find((s) => s.codigo === 'STY-PROVA-PLACAR-L1')
-    conferir(l1naLista?.praca_id === pracaL && l1naLista?.praca_sigla === 'PVL' && l1naLista?.edicao_id === edicaoL1,
-      'a linha vem com praca_id/praca_sigla/edicao_id certos (os campos novos da Task 5)', l1naLista)
+    conferir(Array.isArray(listaPorPraca) && listaPorPraca.some((s) => s.codigo === codigoStyLim) && !listaPorPraca.some((s) => s.codigo === codigoStyPir),
+      'p_praca_id => LIM: a lista traz a stylist de Limeira e NÃO traz a de Piracicaba', listaPorPraca?.map((s) => s.codigo))
+    const limNaLista = listaPorPraca.find((s) => s.codigo === codigoStyLim)
+    conferir(limNaLista?.praca_id === pracaLim.id && limNaLista?.praca_sigla === 'LIM' && limNaLista?.edicao_atual_id === edicaoLim1,
+      'MENOR 4: a linha vem com praca_id/praca_sigla/`edicao_atual_id` certos (renomeado de `edicao_id` — não se confunde com o parâmetro p_edicao_id)', limNaLista)
 
-    const chamadaPorEdicao = await chamarGravando(`public.vessel_rastreio_dos_stylists(p_dias => 7, p_incluir_desativadas => true, p_praca_id => null, p_edicao_id => $1)`, [edicaoM1])
+    const chamadaPorEdicao = await chamarGravando(`public.vessel_rastreio_dos_stylists(p_dias => 7, p_incluir_desativadas => true, p_praca_id => null, p_edicao_id => $1)`, [edicaoLim1])
     const listaPorEdicao = chamadaPorEdicao.v
-    conferir(Array.isArray(listaPorEdicao) && listaPorEdicao.length === 1 && listaPorEdicao[0].codigo === 'STY-PROVA-PLACAR-M1',
-      'p_edicao_id => M1: a lista traz SÓ quem está na edição M1', listaPorEdicao?.map((s) => s.codigo))
+    conferir(Array.isArray(listaPorEdicao) && listaPorEdicao.some((s) => s.codigo === codigoStyLim) && !listaPorEdicao.some((s) => s.codigo === codigoStyPir),
+      'p_edicao_id => Edição LIM 1: a lista traz quem está na edição (a de Piracicaba, fora dela, não aparece)', listaPorEdicao?.map((s) => s.codigo))
 
-    console.log('\n  · 10b) sem_permissao em vessel_rastreio_dos_stylists também levanta (função de LEITURA — raise, não {ok:false})')
+    console.log('\n  · 10c) sem_permissao em vessel_rastreio_dos_stylists também levanta (função de LEITURA — raise, não {ok:false})')
     {
       await cli.query('savepoint prova_rastreio_sem_permissao')
       await falarComo(null)
@@ -761,40 +874,38 @@ try {
     }
 
     console.log('\n  · 11) TASK 5: vessel_placar_da_edicao — não zera ao encerrar, o recorte reprova sob mutação, sem receita')
-    // dois encontros da praça L: um DENTRO da janela de L1 (comeca_em = hoje,
-    // sem termina_em) e um FORA (30 dias atrás) — o de fora não pode contar.
-    // ⚠️ teste=FALSE de propósito, pelo MESMO motivo dos stylists acima: `ev`
-    // filtra `not coalesce(e.teste, false)`.
-    const peLDentro = await uma(`insert into public.vessel_private_edits (codigo, chave, stylist_id, quando, praca_id, status, teste)
-       values ('PE-PROVA-PLACAR-L-DENTRO', 'pe-prova-placar-l-dentro', $1, now(), $2, 'agendado', false) returning id`, [styL1.id, pracaL])
-    const peLFora = await uma(`insert into public.vessel_private_edits (codigo, chave, stylist_id, quando, praca_id, status, teste)
-       values ('PE-PROVA-PLACAR-L-FORA', 'pe-prova-placar-l-fora', $1, now() - interval '30 days', $2, 'agendado', false) returning id`, [styL1.id, pracaL])
-    // um encontro de Campinas na mesma data — não pode aparecer no placar de L1.
-    const peMDentro = await uma(`insert into public.vessel_private_edits (codigo, chave, stylist_id, quando, praca_id, status, teste)
-       values ('PE-PROVA-PLACAR-M-DENTRO', 'pe-prova-placar-m-dentro', $1, now(), $2, 'agendado', false) returning id`, [styM1.id, pracaM])
+    // (a) O ENCONTRO REAL: criado PELA PORTA (vessel_criar_private_edit), na
+    // praça LIM, dentro da janela da edição 1 — tem de aparecer nos números.
+    x = await chamarGravando(`public.vessel_criar_private_edit(p_stylist => $1, p_quando => $2, p_praca => $3, p_vagas => 8, p_teste => false)`,
+      [codigoStyLim, new Date(Date.now() + 3600 * 1000), 'LIM'])
+    conferir(x.v?.ok === true, '(a) vessel_criar_private_edit: cria o 1º encontro PELA PORTA REAL, praça LIM', x.v ?? x.e?.message)
+    const encontro1Codigo = x.v?.codigo
 
     const CHAVES_DO_CONTRATO = ['edicao', 'etapas', 'prospectadas', 'prospectadas_ja_ativadas', 'ativadas',
       'com_private_edit_agendado', 'com_private_edit_realizado', 'recorrentes_no_periodo',
       'encontros_agendados', 'encontros_realizados', 'encontros_cancelados', 'convidadas', 'confirmadas',
       'presentes', 'confirmadas_em_realizados', 'presentes_em_realizados']
-    const CHAVES_PROIBIDAS = ['receita', 'vendas', 'compradoras', 'ticket', 'pecas']
 
-    const placarAntes = await chamarGravando(`public.vessel_placar_da_edicao(p_edicao_id => $1)`, [edicaoL1])
-    conferir(!placarAntes.e, 'vessel_placar_da_edicao: chama sem erro para a edição L1 (aberta)', placarAntes.e?.message)
-    conferir(CHAVES_DO_CONTRATO.every((k) => k in (placarAntes.v ?? {})), 'a resposta tem todas as chaves do contrato do brief', Object.keys(placarAntes.v ?? {}))
-    conferir(CHAVES_PROIBIDAS.every((k) => !(k in (placarAntes.v ?? {}))),
-      'MUTAÇÃO-PROVA: nenhuma chave de receita/vendas/compradoras/ticket/pecas na resposta — reprovaria se alguma aparecesse', Object.keys(placarAntes.v ?? {}))
-    conferir(placarAntes.v?.prospectadas === 1, 'prospectadas: só a stylist L1 (a turma é por vessel_stylist_na_edicao, não por data)', placarAntes.v)
-    conferir(placarAntes.v?.encontros_agendados === 1, 'encontros_agendados: só o encontro DENTRO da janela conta (o de fora e o de Campinas ficam fora)', placarAntes.v)
+    const placarAntes = await chamarGravando(`public.vessel_placar_da_edicao(p_edicao_id => $1)`, [edicaoLim1])
+    conferir(!placarAntes.e, 'vessel_placar_da_edicao: chama sem erro para a edição 1 de Limeira (aberta)', placarAntes.e?.message)
+
+    // MENOR 2: igualdade do CONJUNTO de chaves — não uma lista de 5 nomes
+    // proibidos (que `receita_total`/`ticket_medio` passariam por baixo).
+    const chavesRecebidas = Object.keys(placarAntes.v ?? {}).sort()
+    const chavesEsperadas = [...CHAVES_DO_CONTRATO].sort()
+    conferir(JSON.stringify(chavesRecebidas) === JSON.stringify(chavesEsperadas),
+      'MENOR 2: o CONJUNTO de chaves da resposta é EXATAMENTE o do contrato (nenhuma falta, nenhuma sobra — `receita_total` ou qualquer chave nova também reprovaria aqui)',
+      { chavesRecebidas, chavesEsperadas })
+
+    conferir(placarAntes.v?.prospectadas === 1,
+      'prospectadas: só a stylist de Limeira (MENOR 1: a de TESTE, mesma edição, não conta — a turma é por vessel_stylist_na_edicao, filtrada por teste, não por data)', placarAntes.v)
+    conferir(placarAntes.v?.encontros_agendados === 1, '(a) encontros_agendados: o encontro criado pela porta real EM LIM aparece nos números', placarAntes.v)
 
     const totalEtapasAtivas = await r(`(select count(*)::int from public.vessel_stylist_etapas where ativa)`)
     conferir(placarAntes.v?.etapas?.length === totalEtapasAtivas,
       'etapas: TODAS as etapas ativas aparecem (nenhum número fixo no código) — inclusive as de zero', { esperado: totalEtapasAtivas, recebido: placarAntes.v?.etapas?.length })
     const somaEtapas = (placarAntes.v?.etapas ?? []).reduce((n, e) => n + (e.stylists || 0), 0)
-    conferir(somaEtapas === 1, 'a soma das etapas bate com a única stylist da turma — a etapa dela aparece com 1, as outras com 0', placarAntes.v?.etapas)
-
-    const existePeForaAntes = await r(`(select exists(select 1 from public.vessel_private_edits where id = $1))`, [peLFora.id])
-    conferir(existePeForaAntes === true, 'o encontro fora da janela CONTINUA existindo na tabela — só fica fora desta conta, não some', existePeForaAntes)
+    conferir(somaEtapas === 1, 'a soma das etapas bate com a única stylist da turma (a de teste não entra)', placarAntes.v?.etapas)
 
     console.log('\n    · edição inexistente levanta (não devolve silêncio)')
     {
@@ -811,13 +922,13 @@ try {
       await falarComo(null)
       await cli.query('set local role authenticated')
       let erro
-      try { await r(`public.vessel_placar_da_edicao(p_edicao_id => $1)`, [edicaoL1]) } catch (e) { erro = e }
+      try { await r(`public.vessel_placar_da_edicao(p_edicao_id => $1)`, [edicaoLim1]) } catch (e) { erro = e }
       await cli.query('rollback to savepoint prova_placar_sem_permissao')
       conferir(erro?.code === '42501', 'vessel_placar_da_edicao: sem nenhuma permissão de tela, levanta 42501', erro?.message)
       await falarComo(idEditar)
     }
 
-    console.log('\n    · MUTAÇÃO DO RECORTE: trocar `where n.edicao_id = p_edicao_id` por `1=1` tem de REPROVAR')
+    console.log('\n    · MUTAÇÃO DO RECORTE (edição): trocar `where n.edicao_id = p_edicao_id` por `1=1` tem de REPROVAR')
     await cli.query('savepoint prova_mutacao_recorte')
     try {
       const funcaoBoaPlacar = (await uma(
@@ -826,35 +937,85 @@ try {
       if (!trechoDoRecorte.test(funcaoBoaPlacar)) throw new Error('a mutação não achou o `where` do recorte em vessel_placar_da_edicao — o texto da função mudou')
       await cli.query(funcaoBoaPlacar.replace(trechoDoRecorte, 'where 1=1\n'))
 
-      const totalDistintoGlobal = await r(`(select count(distinct stylist_id)::int from public.vessel_stylist_na_edicao)`)
-      const placarMutado = await chamarGravando(`public.vessel_placar_da_edicao(p_edicao_id => $1)`, [edicaoL1])
-      const reprovou = !placarMutado.e && placarMutado.v?.prospectadas === totalDistintoGlobal && placarMutado.v?.prospectadas > placarAntes.v?.prospectadas
-      console.log(`      ${reprovou ? '✗' : '✓'} SEM o recorte (\`1=1\`): o placar de Limeira ${reprovou ? `passou a contar ${placarMutado.v?.prospectadas} stylists de TODAS as praças (Campinas incluída) — era para contar só 1` : 'não mudou (inesperado)'} → prospectadas=${placarMutado.v?.prospectadas}`)
+      // ⚠️ O total "global" para comparar tem de passar pelo MESMO filtro de
+      // `teste` que `sty` aplica (MENOR 1) — senão os vários fixtures de
+      // teste=true das provas anteriores (que a mutação também alcançaria,
+      // mas que o filtro de teste já barra) inflariam a expectativa e a
+      // conferência nunca bateria com o número real.
+      const totalTesteFalseGlobal = await r(`(select count(distinct n.stylist_id)::int
+         from public.vessel_stylist_na_edicao n join public.vessel_stylists s on s.id = n.stylist_id
+        where not coalesce(s.teste, false))`)
+      const placarMutado = await chamarGravando(`public.vessel_placar_da_edicao(p_edicao_id => $1)`, [edicaoLim1])
+      const reprovou = !placarMutado.e && placarMutado.v?.prospectadas === totalTesteFalseGlobal && placarMutado.v?.prospectadas > placarAntes.v?.prospectadas
+      console.log(`      ${reprovou ? '✗' : '✓'} SEM o recorte (\`1=1\`): o placar de Limeira ${reprovou ? `passou a contar ${placarMutado.v?.prospectadas} stylists (a de Piracicaba incluída) — era para contar só 1` : 'não mudou (inesperado)'} → prospectadas=${placarMutado.v?.prospectadas}`)
       conferir(reprovou === true,
-        'MUTAÇÃO: sem o `where n.edicao_id = p_edicao_id`, o placar de Limeira conta stylist de Campinas (e de toda praça) — prova que o recorte não é decoração',
-        { prospectadas: placarMutado.v?.prospectadas, esperadoComBug: totalDistintoGlobal, correto: placarAntes.v?.prospectadas })
+        'MUTAÇÃO: sem o `where n.edicao_id = p_edicao_id`, o placar de Limeira conta a stylist de Piracicaba (de qualquer edição) — prova que o recorte não é decoração',
+        { prospectadas: placarMutado.v?.prospectadas, esperadoComBug: totalTesteFalseGlobal, correto: placarAntes.v?.prospectadas })
     } finally {
       // Desfaz a mutação (restaura a função de verdade).
       await cli.query('rollback to savepoint prova_mutacao_recorte')
     }
 
     // COM o recorte restaurado, o mesmo cenário volta a dar 1 — a prova tem dente nos dois sentidos.
-    const placarRestaurado = await chamarGravando(`public.vessel_placar_da_edicao(p_edicao_id => $1)`, [edicaoL1])
+    const placarRestaurado = await chamarGravando(`public.vessel_placar_da_edicao(p_edicao_id => $1)`, [edicaoLim1])
     console.log(`      ${placarRestaurado.v?.prospectadas === 1 ? '✓' : '✗'} COM o recorte (restaurado): prospectadas volta a ${placarRestaurado.v?.prospectadas} (era para ser 1)`)
     conferir(placarRestaurado.v?.prospectadas === 1, 'COM o `where` restaurado: o placar de Limeira volta a contar só a stylist de Limeira', placarRestaurado.v?.prospectadas)
 
-    console.log('\n    · CONGELAMENTO: encerrar L1 levando as sobras para L2 — o placar de L1 não muda')
-    x = await chamarGravando(`public.vessel_edicao_encerrar(p_id => $1, p_levar_para => $2)`, [edicaoL1, edicaoL2])
-    conferir(x.v?.ok === true, 'edicao_encerrar: encerra L1 levando para L2', x.v ?? x.e?.message)
-    const placarDepois = await chamarGravando(`public.vessel_placar_da_edicao(p_edicao_id => $1)`, [edicaoL1])
+    console.log('\n    · MUTAÇÃO (a) — o CRÍTICO original: tirar `praca_id` de vessel_criar_private_edit, mostrar a conferência REPROVANDO, restaurar e mostrar o ✓')
+    await cli.query('savepoint prova_mutacao_praca_id_do_encontro')
+    try {
+      const assinaturaCriarPE = 'public.vessel_criar_private_edit(text,timestamp with time zone,text,text,text,integer,boolean,boolean)'
+      const funcaoBoaCriarPE = (await uma(
+        `select pg_get_functiondef($1::regprocedure) as def`, [assinaturaCriarPE])).def
+      const trechoColunas = `(codigo, chave, stylist_id, quando, local, praca, praca_id, loja, vagas, teste)`
+      const trechoValores = `nullif(trim(coalesce(p_local, '')), ''), v_praca, v_praca_id, p_loja, p_vagas, p_teste);`
+      if (!funcaoBoaCriarPE.includes(trechoColunas)) throw new Error('a mutação não achou a lista de colunas do insert em vessel_criar_private_edit — o texto da função mudou')
+      if (!funcaoBoaCriarPE.includes(trechoValores)) throw new Error('a mutação não achou a lista de valores do insert em vessel_criar_private_edit — o texto da função mudou')
+      const funcaoMutada = funcaoBoaCriarPE
+        .replace(trechoColunas, `(codigo, chave, stylist_id, quando, local, praca, loja, vagas, teste)`)
+        .replace(trechoValores, `nullif(trim(coalesce(p_local, '')), ''), v_praca, p_loja, p_vagas, p_teste);`)
+      await cli.query(funcaoMutada)
+
+      // um 2º encontro real, MESMA stylist/praça/janela — pela porta MUTADA
+      // (sem gravar praca_id, o bug original).
+      const semPracaId = await chamarGravando(`public.vessel_criar_private_edit(p_stylist => $1, p_quando => $2, p_praca => $3, p_vagas => 8, p_teste => false)`,
+        [codigoStyLim, new Date(Date.now() + 2 * 3600 * 1000), 'LIM'])
+      conferir(semPracaId.v?.ok === true, 'SEM praca_id: o 2º encontro é criado normalmente (a mutação não trava a criação, só cala o dado)', semPracaId.v ?? semPracaId.e?.message)
+
+      const praca_idDoEncontro2 = await r(`(select praca_id from public.vessel_private_edits where codigo = $1)`, [semPracaId.v?.codigo])
+      const totalRealDeEncontros = await r(`(select count(*)::int from public.vessel_private_edits where stylist_id = $1 and not coalesce(teste,false) and not coalesce(arquivada,false))`, [styLim.id])
+      const placarComBug = await chamarGravando(`public.vessel_placar_da_edicao(p_edicao_id => $1)`, [edicaoLim1])
+      const reprovouA = praca_idDoEncontro2 === null && totalRealDeEncontros === 2 && placarComBug.v?.encontros_agendados === 1
+      console.log(`      ${reprovouA ? '✗' : '✓'} SEM \`praca_id\`: ${reprovouA ? `2 encontros existem DE VERDADE na tabela (stylist ${codigoStyLim}), mas o placar continua contando só ${placarComBug.v?.encontros_agendados} — o bug original (calado) voltou` : 'não reproduziu o bug (inesperado)'}`)
+      conferir(reprovouA === true,
+        'MUTAÇÃO (a): sem gravar `praca_id` no insert de vessel_criar_private_edit, o 2º encontro nasce de verdade mas some do placar — prova que a coluna é o guarda de regressão do CRÍTICO original',
+        { praca_idDoEncontro2, totalRealDeEncontros, encontros_agendados_no_placar: placarComBug.v?.encontros_agendados })
+    } finally {
+      // Desfaz a mutação (restaura a função) E o 2º encontro que ela gravou.
+      await cli.query('rollback to savepoint prova_mutacao_praca_id_do_encontro')
+    }
+
+    // COM a função restaurada, um novo encontro real (o 2º de verdade) ENTRA no placar.
+    x = await chamarGravando(`public.vessel_criar_private_edit(p_stylist => $1, p_quando => $2, p_praca => $3, p_vagas => 8, p_teste => false)`,
+      [codigoStyLim, new Date(Date.now() + 2 * 3600 * 1000), 'LIM'])
+    conferir(x.v?.ok === true && x.v?.codigo !== encontro1Codigo, 'COM praca_id (restaurado): cria um 2º encontro real, código diferente do 1º', x.v ?? x.e?.message)
+    const placarComDois = await chamarGravando(`public.vessel_placar_da_edicao(p_edicao_id => $1)`, [edicaoLim1])
+    console.log(`      ${placarComDois.v?.encontros_agendados === 2 ? '✓' : '✗'} COM praca_id (restaurado): encontros_agendados sobe para ${placarComDois.v?.encontros_agendados} (era para ser 2)`)
+    conferir(placarComDois.v?.encontros_agendados === 2, 'COM o `praca_id` restaurado: o 2º encontro real ENTRA no placar — encontros_agendados = 2', placarComDois.v?.encontros_agendados)
+
+    console.log('\n    · CONGELAMENTO: encerrar a edição 1 de Limeira levando as sobras para a 2 — o placar da 1 não muda')
+    const placarAntesDeEncerrar = placarComDois
+    x = await chamarGravando(`public.vessel_edicao_encerrar(p_id => $1, p_levar_para => $2)`, [edicaoLim1, edicaoLim2])
+    conferir(x.v?.ok === true, 'edicao_encerrar: encerra a edição 1 de Limeira levando para a 2', x.v ?? x.e?.message)
+    const placarDepois = await chamarGravando(`public.vessel_placar_da_edicao(p_edicao_id => $1)`, [edicaoLim1])
     conferir(!placarDepois.e, 'vessel_placar_da_edicao: continua respondendo depois de encerrada', placarDepois.e?.message)
     const semSituacao = (pl) => JSON.stringify({ ...pl, edicao: pl?.edicao ? { ...pl.edicao, situacao: undefined } : pl?.edicao })
-    conferir(semSituacao(placarAntes.v) === semSituacao(placarDepois.v),
+    conferir(semSituacao(placarAntesDeEncerrar.v) === semSituacao(placarDepois.v),
       'CRÍTICO (guarda de regressão): o placar da edição 1 é IDÊNTICO antes e depois de encerrar (só `edicao.situacao` muda, de "aberta" para "encerrada") — não zera',
-      { antes: placarAntes.v, depois: placarDepois.v })
-    conferir(placarAntes.v?.edicao?.situacao === 'aberta' && placarDepois.v?.edicao?.situacao === 'encerrada',
+      { antes: placarAntesDeEncerrar.v, depois: placarDepois.v })
+    conferir(placarAntesDeEncerrar.v?.edicao?.situacao === 'aberta' && placarDepois.v?.edicao?.situacao === 'encerrada',
       'e a situação REALMENTE mudou (a chamada de depois não é um eco em cache da de antes)',
-      { antes: placarAntes.v?.edicao?.situacao, depois: placarDepois.v?.edicao?.situacao })
+      { antes: placarAntesDeEncerrar.v?.edicao?.situacao, depois: placarDepois.v?.edicao?.situacao })
   } finally {
     await falarComo(null)
     await cli.query('rollback to savepoint prova_funcoes')

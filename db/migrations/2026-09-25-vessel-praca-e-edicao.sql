@@ -135,6 +135,9 @@ create index if not exists vessel_stylist_na_edicao_edicao_idx on public.vessel_
 alter table public.vessel_stylists      add column if not exists praca_id bigint references public.vessel_pracas(id);
 alter table public.vessel_private_edits add column if not exists praca_id bigint references public.vessel_pracas(id);
 create index if not exists vessel_stylists_praca_idx on public.vessel_stylists (praca_id);
+-- ⚠️ RODADA 1 DE CONSERTO (MENOR 3): faltava — `ev`, no placar da edição
+-- (seção 11), filtra `vessel_private_edits` por `praca_id`.
+create index if not exists vessel_private_edits_praca_idx on public.vessel_private_edits (praca_id);
 
 -- ── 6. achatar cidade (mesma conta do front) ─────────────────────────────────
 -- a praça de cada stylist sai da CIDADE dela; quem não casa fica nula e vira
@@ -679,9 +682,13 @@ begin
         'praca_sigla', pc.sigla,
         'praca_nome', pc.nome,
         'loja_destino', pc.loja_destino,
-        -- a edição em que ela está ATIVA agora (saiu_em is null) — nula se
-        -- não estiver em nenhuma edição aberta/planejada no momento.
-        'edicao_id', ed_atual.edicao_id,
+        -- ⚠️ RODADA 1 DE CONSERTO (MENOR 4): `edicao_atual_id`, não
+        -- `edicao_id` — ao lado de um PARÂMETRO `p_edicao_id` que quer dizer
+        -- outra coisa (o recorte do filtro), o nome igual seria lido errado
+        -- por quem construir a tela. É a edição em que ela está ATIVA agora
+        -- (saiu_em is null) — nula se não estiver em nenhuma edição
+        -- aberta/planejada no momento.
+        'edicao_atual_id', ed_atual.edicao_id,
         'ativa', s.ativa,
         'whatsapp', s.whatsapp,
         'instagram', s.instagram,
@@ -856,10 +863,15 @@ begin
     select distinct n.stylist_id from public.vessel_stylist_na_edicao n
      where n.edicao_id = p_edicao_id
   ),
+  -- ⚠️ RODADA 1 DE CONSERTO (MENOR 1): filtra `teste` igual às irmãs
+  -- (`vessel_rastreio_dos_stylists`, `vessel_numeros_do_stylist_circle`) —
+  -- sem isto uma stylist de teste entraria no placar e sumiria da lista
+  -- embaixo, e o funil não fecharia com a lista.
   sty as (
     select s.*, public.vessel_stylist_ativada_em(s.id) as ativou
       from public.vessel_stylists s
      where s.id in (select stylist_id from turma_ids)
+       and not coalesce(s.teste, false)
   ),
   -- os encontros são da PRAÇA da edição, na janela dela — não dependem de
   -- quem está na turma (um encontro é da praça e da data, não da stylist).
@@ -928,7 +940,634 @@ begin
 end;
 $function$;
 
--- ── 12. as portas ────────────────────────────────────────────────────────────
+-- ── 12. RODADA 1 DE CONSERTO: a praça deixa de ser lista fechada no código ───
+-- A revisão achou (e a medição em `pg_proc` confirmou) que QUATRO portas
+-- ainda cravavam `('CPS','SAO','SBO','BSB')` no código:
+-- `vessel_criar_private_edit`, `vessel_stylist_criar`, `vessel_stylist_editar`
+-- e `vessel_pedido_do_stylist`. Consequência prática: pela tela, ninguém
+-- consegue cadastrar uma stylist nem marcar um encontro em Limeira ou
+-- Piracicaba — as 36 stylists de lá entraram por migration, não pela tela; e
+-- são exatamente o exemplo deste trabalho inteiro. Pior: `vessel_criar_
+-- private_edit` nunca gravava `praca_id` — só o texto —, então todo Private
+-- Edit novo nascia fora do `ev` do placar da edição (seção 11): os números de
+-- encontro ficavam zerados para sempre, sem erro nenhum aparecendo.
+--
+-- O CONSERTO, nas quatro: a validação vira uma CONSULTA ao cadastro
+-- (`vessel_pracas`, sigla + `ativa`) — nunca mais uma lista escrita no
+-- código, que é justamente o que este trabalho existe para matar. Recusa com
+-- `situacao => 'praca_invalida'` (NUNCA `CHECK`: constraint estourando
+-- derruba a transação INTEIRA nesta base — a mesma lição da seção 9). E, onde
+-- a tabela tem a coluna, grava `praca_id` JUNTO com o texto — o texto
+-- continua sendo gravado para a Central que está no ar não quebrar.
+create or replace function public.vessel_praca_id_ativa(p_sigla text)
+returns bigint
+language sql
+stable
+set search_path to 'public'
+as $$
+  select id from public.vessel_pracas
+   where sigla = upper(nullif(trim(coalesce(p_sigla, '')), '')) and ativa;
+$$;
+-- ⚠️ SEM GRANT A `authenticated`: só é chamada de DENTRO de outra função
+-- `security definer` (o mesmo padrão de `vessel_codigo_de_evento_usado`, na
+-- migration do código do encontro) — não é porta própria.
+revoke all on function public.vessel_praca_id_ativa(text) from public, anon, authenticated;
+
+-- vessel_criar_private_edit — o corpo é o de hoje (pg_get_functiondef,
+-- 25/09/2026, pós-B13), só trocando a lista fechada pela consulta ao
+-- cadastro e gravando `praca_id` no insert. `create or replace` guarda os
+-- grants de hoje (mesma assinatura, 8 parâmetros).
+create or replace function public.vessel_criar_private_edit(p_stylist text, p_quando timestamp with time zone, p_local text DEFAULT NULL::text, p_praca text DEFAULT NULL::text, p_loja text DEFAULT NULL::text, p_vagas integer DEFAULT 8, p_teste boolean DEFAULT false, p_confirmar_sobreposicao boolean DEFAULT NULL::boolean)
+ RETURNS json
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_alfabeto text := 'ABCDEFGHJKMNPQRSTVWXYZ23456789';
+  v_tam      int  := length(v_alfabeto);          -- 30
+  -- O maior múltiplo de 30 que cabe em 256: 240. Byte de 240 para cima é
+  -- descartado, e é isso que tira o viés.
+  v_teto     int  := 256 - (256 % v_tam);
+  v_stylist  bigint;
+  v_etapa    public.vessel_stylist_etapas%rowtype;
+  v_liberam  text;
+  v_praca    text := upper(nullif(trim(coalesce(p_praca, '')), ''));
+  v_praca_id bigint;
+  v_codigo   text;
+  v_chave    text;
+  v_seq      int;
+  v_byte     int;
+  v_prefixo  text;
+  v_volta    int;
+  v_indice   text;
+  v_sobrepoe json;
+begin
+  if not public.vessel_pode('atendimentos.private-edit', 'editar') then
+    return json_build_object('ok', false, 'situacao', 'sem_permissao',
+      'erro', 'Você não tem a permissão de Atendimentos para criar um encontro.');
+  end if;
+
+  select id into v_stylist from public.vessel_stylists
+   where codigo = upper(nullif(trim(coalesce(p_stylist, '')), ''));
+  if v_stylist is null then
+    return json_build_object('ok', false, 'situacao', 'stylist_nao_encontrada',
+      'erro', 'Não achei esta stylist. O código é o STY-0000 dela.');
+  end if;
+  -- ⚠️ 24/09/2026: SÓ QUEM ESTÁ NUMA ETAPA QUE LIBERA PRIVATE EDIT (a Ativada).
+  select e.* into v_etapa from public.vessel_stylists s
+    join public.vessel_stylist_etapas e on e.id = s.etapa_id
+   where s.id = v_stylist;
+  if not coalesce(v_etapa.libera_private_edit, false) then
+    v_liberam := public.vessel_etapas_que_liberam_private_edit();
+    return json_build_object('ok', false, 'situacao', 'stylist_nao_liberada',
+      'etapa', v_etapa.nome, 'etapas_que_liberam', v_liberam,
+      'erro', 'Esta parceira ainda não pode receber um Private Edit: ela está em "'
+              || coalesce(v_etapa.nome, 'sem etapa') || '". '
+              || case when v_liberam is null
+                      then 'Hoje nenhuma etapa libera Private Edit — marque uma em "Etapas do funil".'
+                      else 'Mova-a para ' || v_liberam || ' no Stylist Circle antes de marcar o encontro.' end);
+  end if;
+  if p_quando is null then
+    return json_build_object('ok', false, 'situacao', 'sem_data',
+      'erro', 'Escolha o dia e a hora do encontro.');
+  end if;
+  if p_quando < now() - interval '1 day' then
+    return json_build_object('ok', false, 'situacao', 'data_no_passado',
+      'erro', 'Esta data já passou. O convite nasceria vencido.');
+  end if;
+  -- ⚠️ RODADA 1 DE CONSERTO (CRÍTICO): a lista fechada `('CPS','SAO','SBO',
+  -- 'BSB')` virou consulta a `vessel_pracas` — sigla existe e está `ativa`.
+  -- Sem isto, ninguém marcava encontro em Limeira nem em Piracicaba pela tela.
+  if v_praca is null then
+    return json_build_object('ok', false, 'situacao', 'praca_invalida',
+      'erro', 'Escolha uma praça.');
+  end if;
+  v_praca_id := public.vessel_praca_id_ativa(v_praca);
+  if v_praca_id is null then
+    return json_build_object('ok', false, 'situacao', 'praca_invalida',
+      'erro', 'Esta praça não existe ou está desativada no cadastro.');
+  end if;
+  if p_loja is not null and p_loja not in ('iguatemi', 'tivoli', 'parkshopping') then
+    return json_build_object('ok', false, 'situacao', 'loja_invalida',
+      'erro', 'Escolha uma loja válida.');
+  end if;
+  -- ⚠️ T11: CAPACIDADE PLANEJADA DE 7 A 10 (decisão 4 do dono). É a cadeira
+  -- que a loja prepara, e não trava ninguém na porta do convite.
+  if p_vagas is null or p_vagas < 7 or p_vagas > 10 then
+    return json_build_object('ok', false, 'situacao', 'vagas_invalidas',
+      'erro', 'A capacidade planejada é de 7 a 10 convidadas.');
+  end if;
+
+  -- ⚠️ 24/09/2026 (o código sem repetir): o número do dia NÃO é mais só
+  -- "quantos há + 1". Um encontro que mudou de dia deixava o número dele livre
+  -- no dia de origem, e o próximo criado lá repetia o código (erro de chave
+  -- duplicada). Agora: a FILA (trava por dia e praça, até o fim da transação —
+  -- duas criações ao mesmo tempo esperam uma pela outra) e, a partir do número
+  -- de sempre, o PRÓXIMO LIVRE — livre em todo lugar onde um código de encontro
+  -- aparece (`vessel_codigo_de_evento_usado`), inclusive de encontro apagado
+  -- que deixou rastro. O cinto: `unique_violation` na inserção avança e tenta
+  -- de novo. Códigos que já existem não mudam.
+  v_prefixo := 'PE-' || to_char(p_quando at time zone 'America/Sao_Paulo', 'YYYYMMDD') || '-' || v_praca || '-';
+  perform pg_advisory_xact_lock(hashtext('vessel.codigo_do_encontro:' || v_prefixo)::bigint);
+
+  -- ⚠️ 25/09/2026: O ENCONTRO SOBREPOSTO. Depois da fila (duas criações no
+  -- mesmo dia e praça já esperam uma pela outra, e a segunda enxerga a
+  -- primeira), e só quando a tela PEDE (`p_confirmar_sobreposicao` não nulo).
+  -- NULL = a Central de antes: nada muda para ela.
+  if p_confirmar_sobreposicao is not null then
+    v_sobrepoe := public.vessel_encontros_que_sobrepoem(
+                    p_quando, public.vessel_lugar_do_encontro(p_loja, v_praca, p_local), null);
+    if not p_confirmar_sobreposicao and json_array_length(v_sobrepoe) > 0 then
+      return json_build_object('ok', false, 'situacao', 'sobrepoe',
+        'sobrepoe', v_sobrepoe, 'contexto', public.vessel_contexto_da_loja(p_quando, p_loja),
+        'erro', 'Já há Private Edit neste lugar neste horário. Confira e confirme para marcar mesmo assim.');
+    end if;
+  end if;
+
+  select count(*) + 1 into v_seq from public.vessel_private_edits
+   where praca = v_praca
+     and (quando at time zone 'America/Sao_Paulo')::date
+         = (p_quando at time zone 'America/Sao_Paulo')::date;
+
+  for v_volta in 1..5 loop
+    loop
+      v_codigo := v_prefixo || lpad(v_seq::text, 2, '0');
+      exit when not public.vessel_codigo_de_evento_usado(v_codigo);
+      v_seq := v_seq + 1;
+    end loop;
+
+    loop
+      v_chave := '';
+      while length(v_chave) < 8 loop
+        v_byte := get_byte(extensions.gen_random_bytes(1), 0);
+        continue when v_byte >= v_teto;      -- descarta e sorteia outro
+        v_chave := v_chave || substr(v_alfabeto, 1 + (v_byte % v_tam), 1);
+      end loop;
+      exit when not exists (select 1 from public.vessel_private_edits where chave = v_chave);
+    end loop;
+
+    begin
+      -- ⚠️ RODADA 1 DE CONSERTO: `praca_id` grava JUNTO com `praca` (o texto
+      -- continua para a Central de hoje não quebrar) — é este dado que faltava
+      -- para `ev`, no placar da edição, enxergar o encontro.
+      insert into public.vessel_private_edits
+        (codigo, chave, stylist_id, quando, local, praca, praca_id, loja, vagas, teste)
+      values (v_codigo, v_chave, v_stylist, p_quando,
+              nullif(trim(coalesce(p_local, '')), ''), v_praca, v_praca_id, p_loja, p_vagas, p_teste);
+      if p_confirmar_sobreposicao and json_array_length(v_sobrepoe) > 0 then
+        return json_build_object('ok', true, 'codigo', v_codigo, 'chave', v_chave, 'sobrepoe', v_sobrepoe);
+      end if;
+      return json_build_object('ok', true, 'codigo', v_codigo, 'chave', v_chave);
+    exception when unique_violation then
+      get stacked diagnostics v_indice = constraint_name;
+      if v_indice = 'vessel_private_edits_codigo_idx' then
+        v_seq := v_seq + 1;                  -- alguém pegou este número: o próximo
+      elsif v_indice is distinct from 'vessel_private_edits_chave_idx' then
+        raise;                               -- outra coisa: não é para engolir
+      end if;                                -- a chave: sorteia outra na volta
+    end;
+  end loop;
+
+  return json_build_object('ok', false, 'situacao', 'codigo_em_disputa',
+    'erro', 'Não consegui dar um código ao encontro agora. Tente de novo em um instante.');
+end;
+$function$;
+
+-- vessel_stylist_criar — mesma troca: lista fechada -> consulta ao cadastro,
+-- e `praca_id` grava junto com `praca_preview`. Aqui a praça é OPCIONAL (like
+-- hoje): nula não é erro, só some do cadastro.
+create or replace function public.vessel_stylist_criar(p_nome text, p_whatsapp text, p_cidade text DEFAULT NULL::text, p_instagram text DEFAULT NULL::text, p_atuacao text DEFAULT NULL::text, p_praca text DEFAULT NULL::text, p_loja text DEFAULT NULL::text, p_origem_contato text DEFAULT NULL::text, p_responsavel text DEFAULT NULL::text, p_prospectado_em date DEFAULT NULL::date, p_proxima_acao text DEFAULT NULL::text, p_proxima_acao_em date DEFAULT NULL::date, p_observacoes text DEFAULT NULL::text, p_sem_contato boolean DEFAULT false)
+ RETURNS json
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_fone    text;
+  v_insta   text := nullif(trim(coalesce(p_instagram, '')), '');
+  v_perfil  text := public.vessel_instagram_canonico(p_instagram);
+  v_obs     text := nullif(trim(coalesce(p_observacoes, '')), '');
+  v_praca   text := upper(nullif(trim(coalesce(p_praca, '')), ''));
+  v_praca_id bigint;
+  v_loja    text := lower(nullif(trim(coalesce(p_loja, '')), ''));
+  v_origem  text := lower(nullif(trim(coalesce(p_origem_contato, '')), ''));
+  v_codigo  text;
+  v_n       int;
+  v_volta   int;
+  v_indice  text;
+  v_outra   text;
+  -- ⚠️ SEM CONTATO AINDA: só vale quando não veio NENHUM contato.
+  v_sem     boolean := coalesce(p_sem_contato, false);
+begin
+  if not public.vessel_pode('atendimentos.stylist-circle', 'editar') then
+    return json_build_object('ok', false, 'situacao', 'sem_permissao');
+  end if;
+
+  if nullif(trim(coalesce(p_nome, '')), '') is null then
+    return json_build_object('ok', false, 'situacao', 'sem_nome');
+  end if;
+
+  -- ⚠️ WHATSAPP OU INSTAGRAM (ver `2026-09-24-vessel-stylist-whatsapp-ou-instagram.sql`).
+  if nullif(trim(coalesce(p_whatsapp, '')), '') is not null then
+    v_fone := public.vessel_telefone_canonico(p_whatsapp);
+    if v_fone is null then
+      return json_build_object('ok', false, 'situacao', 'whatsapp_invalido');
+    end if;
+  end if;
+  if length(coalesce(v_insta, '')) > 120 then
+    return json_build_object('ok', false, 'situacao', 'instagram_longo');
+  end if;
+  -- ⚠️ SEM CONTATO AINDA: só quem MARCOU a caixa entra sem os dois. A Central
+  -- antiga não manda `p_sem_contato` (padrão false) e continua recusando igual.
+  if v_fone is null and v_insta is null and not v_sem then
+    return json_build_object('ok', false, 'situacao', 'sem_contato');
+  end if;
+  -- Instagram ESCRITO sem WhatsApp continua tendo de ser um perfil de verdade.
+  if v_fone is null and v_insta is not null and v_perfil is null then
+    return json_build_object('ok', false, 'situacao', 'instagram_invalido');
+  end if;
+  if v_obs is not null and length(v_obs) > 2000 then
+    return json_build_object('ok', false, 'situacao', 'observacoes_longas');
+  end if;
+
+  -- ⚠️ RODADA 1 DE CONSERTO (CRÍTICO): consulta ao cadastro, não lista
+  -- fechada — sem isto, ninguém cadastrava stylist de Limeira nem de
+  -- Piracicaba pela tela.
+  if v_praca is not null then
+    v_praca_id := public.vessel_praca_id_ativa(v_praca);
+    if v_praca_id is null then
+      return json_build_object('ok', false, 'situacao', 'praca_invalida');
+    end if;
+  end if;
+  if v_loja is not null and v_loja not in ('iguatemi', 'tivoli', 'parkshopping') then
+    return json_build_object('ok', false, 'situacao', 'loja_invalida');
+  end if;
+  if v_origem is null or v_origem not in ('indicacao', 'pesquisa', 'evento', 'inbound') then
+    return json_build_object('ok', false, 'situacao', 'origem_invalida');
+  end if;
+
+  if v_fone is not null and exists (select 1 from public.vessel_stylists where whatsapp = v_fone) then
+    return json_build_object('ok', false, 'situacao', 'whatsapp_repetido',
+      'codigo', (select s.codigo from public.vessel_stylists s where s.whatsapp = v_fone));
+  end if;
+  if v_perfil is not null then
+    select s.codigo into v_outra from public.vessel_stylists s
+     where public.vessel_instagram_canonico(s.instagram) = v_perfil
+     order by s.id limit 1;
+    if v_outra is not null then
+      return json_build_object('ok', false, 'situacao', 'instagram_repetido', 'codigo', v_outra);
+    end if;
+  end if;
+
+  -- ⚠️ A TRAVA DE FILA E O CINTO, sem mudança desde 19/09.
+  perform pg_advisory_xact_lock(hashtext('public.vessel_stylists.codigo')::bigint);
+
+  for v_volta in 1..3 loop
+    select coalesce(max((substring(s.codigo from '^STY-([0-9]{4})$'))::int), 0)
+      into v_n
+      from public.vessel_stylists s
+     where s.codigo ~ '^STY-[0-9]{4}$';
+
+    v_codigo := null;
+    for i in 1..10000 loop
+      v_n := v_n + 1;
+      if v_n > 9999 then
+        v_n := 0;
+      end if;
+      v_codigo := 'STY-' || lpad(v_n::text, 4, '0');
+      exit when not exists (select 1 from public.vessel_stylists s where s.codigo = v_codigo);
+      v_codigo := null;
+    end loop;
+
+    if v_codigo is null then
+      return json_build_object('ok', false, 'situacao', 'sem_codigo_livre');
+    end if;
+
+    begin
+      -- ⚠️ SEM `etapa_id` E SEM `prospectado_em`: o gatilho põe a primeira
+      -- etapa de funil e a data segue a regra da etapa marcada.
+      -- ⚠️ RODADA 1 DE CONSERTO: `praca_id` grava junto com `praca_preview`.
+      insert into public.vessel_stylists
+        (codigo, nome, whatsapp, cidade, instagram, atuacao, praca_preview, praca_id,
+         loja, origem_contato, responsavel, proxima_acao, proxima_acao_em, observacoes,
+         sem_contato)
+      values
+        (v_codigo, trim(p_nome), v_fone,
+         nullif(trim(coalesce(p_cidade, '')), ''),
+         v_insta,
+         nullif(trim(coalesce(p_atuacao, '')), ''),
+         v_praca, v_praca_id, v_loja, v_origem,
+         nullif(trim(coalesce(p_responsavel, '')), ''),
+         nullif(trim(coalesce(p_proxima_acao, '')), ''),
+         p_proxima_acao_em,
+         v_obs,
+         v_sem and v_fone is null and v_insta is null);
+
+      return json_build_object('ok', true, 'situacao', 'ok', 'codigo', v_codigo);
+
+    exception when unique_violation then
+      get stacked diagnostics v_indice = constraint_name;
+
+      if v_indice = 'vessel_stylists_whatsapp_idx' then
+        return json_build_object('ok', false, 'situacao', 'whatsapp_repetido');
+      end if;
+
+      if v_indice is distinct from 'vessel_stylists_codigo_idx' then
+        return json_build_object('ok', false, 'situacao', 'conflito_no_cadastro',
+                                 'onde', v_indice);
+      end if;
+    end;
+  end loop;
+
+  return json_build_object('ok', false, 'situacao', 'codigo_em_disputa');
+end;
+$function$;
+
+-- vessel_stylist_editar — mesma troca; `praca_id` só muda quando `p_praca`
+-- veio (o mesmo NULO-não-mexe de sempre, igual `praca_preview`).
+create or replace function public.vessel_stylist_editar(p_codigo text, p_nome text DEFAULT NULL::text, p_whatsapp text DEFAULT NULL::text, p_cidade text DEFAULT NULL::text, p_instagram text DEFAULT NULL::text, p_atuacao text DEFAULT NULL::text, p_estagio text DEFAULT NULL::text, p_praca text DEFAULT NULL::text, p_loja text DEFAULT NULL::text, p_origem_contato text DEFAULT NULL::text, p_responsavel text DEFAULT NULL::text, p_prospectado_em date DEFAULT NULL::date, p_proxima_acao text DEFAULT NULL::text, p_proxima_acao_em date DEFAULT NULL::date, p_sem_proxima_acao boolean DEFAULT false, p_observacoes text DEFAULT NULL::text, p_sem_contato boolean DEFAULT NULL::boolean)
+ RETURNS json
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_codigo  text := upper(nullif(trim(coalesce(p_codigo, '')), ''));
+  v_fone    text;
+  v_insta   text := nullif(trim(coalesce(p_instagram, '')), '');
+  v_perfil  text := public.vessel_instagram_canonico(p_instagram);
+  v_praca   text := upper(nullif(trim(coalesce(p_praca, '')), ''));
+  v_praca_id bigint;
+  v_loja    text := lower(nullif(trim(coalesce(p_loja, '')), ''));
+  v_origem  text := lower(nullif(trim(coalesce(p_origem_contato, '')), ''));
+  v_fone_atual text;
+  v_insta_atual text;
+  v_com_contato boolean;
+begin
+  if not public.vessel_pode('atendimentos.stylist-circle', 'editar') then
+    return json_build_object('ok', false, 'situacao', 'sem_permissao');
+  end if;
+
+  select s.whatsapp, nullif(btrim(coalesce(s.instagram, '')), '') into v_fone_atual, v_insta_atual
+    from public.vessel_stylists s where s.codigo = v_codigo;
+  if not found then
+    return json_build_object('ok', false, 'situacao', 'nao_achei');
+  end if;
+
+  if nullif(trim(coalesce(p_estagio, '')), '') is not null then
+    return json_build_object('ok', false, 'situacao', 'etapa_pela_ficha');
+  end if;
+
+  if nullif(trim(coalesce(p_whatsapp, '')), '') is not null then
+    v_fone := public.vessel_telefone_canonico(p_whatsapp);
+    if v_fone is null then
+      return json_build_object('ok', false, 'situacao', 'whatsapp_invalido');
+    end if;
+    if exists (select 1 from public.vessel_stylists s
+                where s.whatsapp = v_fone and s.codigo <> v_codigo) then
+      return json_build_object('ok', false, 'situacao', 'whatsapp_repetido');
+    end if;
+  end if;
+
+  if v_insta is not null then
+    if length(v_insta) > 120 then
+      return json_build_object('ok', false, 'situacao', 'instagram_longo');
+    end if;
+    if coalesce(v_fone, v_fone_atual) is null and v_perfil is null then
+      return json_build_object('ok', false, 'situacao', 'instagram_invalido');
+    end if;
+    if v_perfil is not null and exists (
+         select 1 from public.vessel_stylists s
+          where public.vessel_instagram_canonico(s.instagram) = v_perfil
+            and s.codigo <> v_codigo) then
+      return json_build_object('ok', false, 'situacao', 'instagram_repetido');
+    end if;
+  end if;
+
+  -- ⚠️ SEM CONTATO AINDA. NULO = NÃO MEXE (a Central antiga não manda).
+  -- Desmarcar sem dar um contato é recusado: a parceira ficaria sem WhatsApp,
+  -- sem Instagram e sem a marca — o que a tabela não aceita. Ganhar um
+  -- contato DESLIGA a marca sozinho (aqui e no gatilho da tabela).
+  v_com_contato := coalesce(v_fone, v_fone_atual) is not null or coalesce(v_insta, v_insta_atual) is not null;
+  if p_sem_contato is not null and not p_sem_contato and not v_com_contato then
+    return json_build_object('ok', false, 'situacao', 'sem_contato');
+  end if;
+
+  if p_observacoes is not null and length(trim(p_observacoes)) > 2000 then
+    return json_build_object('ok', false, 'situacao', 'observacoes_longas');
+  end if;
+
+  -- ⚠️ RODADA 1 DE CONSERTO (CRÍTICO): consulta ao cadastro, não lista
+  -- fechada — sem isto, ninguém movia stylist para Limeira nem Piracicaba
+  -- pela tela depois de cadastrada.
+  if v_praca is not null then
+    v_praca_id := public.vessel_praca_id_ativa(v_praca);
+    if v_praca_id is null then
+      return json_build_object('ok', false, 'situacao', 'praca_invalida');
+    end if;
+  end if;
+  if v_loja is not null and v_loja not in ('iguatemi', 'tivoli', 'parkshopping') then
+    return json_build_object('ok', false, 'situacao', 'loja_invalida');
+  end if;
+  if v_origem is not null and v_origem not in ('indicacao', 'pesquisa', 'evento', 'inbound') then
+    return json_build_object('ok', false, 'situacao', 'origem_invalida');
+  end if;
+
+  update public.vessel_stylists s
+     set nome            = coalesce(nullif(trim(coalesce(p_nome, '')), ''), s.nome),
+         whatsapp        = coalesce(v_fone, s.whatsapp),
+         cidade          = coalesce(nullif(trim(coalesce(p_cidade, '')), ''), s.cidade),
+         instagram       = coalesce(v_insta, s.instagram),
+         atuacao         = coalesce(nullif(trim(coalesce(p_atuacao, '')), ''), s.atuacao),
+         praca_preview   = coalesce(v_praca, s.praca_preview),
+         -- ⚠️ RODADA 1 DE CONSERTO: `praca_id` junto — só muda quando `p_praca`
+         -- veio (o mesmo NULO-não-mexe de `praca_preview`, acima).
+         praca_id        = coalesce(v_praca_id, s.praca_id),
+         loja            = coalesce(v_loja, s.loja),
+         origem_contato  = coalesce(v_origem, s.origem_contato),
+         responsavel     = coalesce(nullif(trim(coalesce(p_responsavel, '')), ''), s.responsavel),
+         proxima_acao    = case when coalesce(p_sem_proxima_acao, false) then null
+                                else coalesce(nullif(trim(coalesce(p_proxima_acao, '')), ''),
+                                              s.proxima_acao) end,
+         proxima_acao_em = case when coalesce(p_sem_proxima_acao, false) then null
+                                else coalesce(p_proxima_acao_em, s.proxima_acao_em) end,
+         observacoes     = case when p_observacoes is null then s.observacoes
+                                else nullif(trim(p_observacoes), '') end,
+         sem_contato     = case when v_com_contato then false
+                                else coalesce(p_sem_contato, s.sem_contato) end,
+         atualizado_em   = now()
+   where s.codigo = v_codigo;
+
+  return json_build_object('ok', true, 'situacao', 'ok', 'codigo', v_codigo);
+end;
+$function$;
+
+-- vessel_pedido_do_stylist — a inscrição PÚBLICA da página do Stylist Circle
+-- (porta de `anon`, sem `vessel_pode`, de propósito — é o formulário
+-- público). Mesma troca: lista fechada -> consulta ao cadastro; `praca_id`
+-- grava junto com `praca_preview`, no insert E no update.
+create or replace function public.vessel_pedido_do_stylist(p_nome text, p_whatsapp text, p_cidade text DEFAULT NULL::text, p_instagram text DEFAULT NULL::text, p_atuacao text DEFAULT NULL::text, p_quer_sessao text DEFAULT NULL::text, p_convidadas text DEFAULT NULL::text, p_praca text DEFAULT NULL::text, p_aceite_marketing boolean DEFAULT false, p_aceite_versao text DEFAULT NULL::text, p_origem jsonb DEFAULT NULL::jsonb, p_armadilha text DEFAULT NULL::text, p_teste boolean DEFAULT false)
+ RETURNS json
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_ip       text := public.vessel_hash_de_origem();
+  v_fone     text;
+  v_recentes int;
+  v_id       bigint;
+  v_codigo   text;
+  v_n        int;
+  v_volta    int;
+  v_indice   text;
+  v_praca_id bigint;
+begin
+  if coalesce(trim(p_armadilha), '') <> '' then
+    return json_build_object('ok', true, 'situacao', 'recebido');
+  end if;
+
+  v_fone := public.vessel_telefone_canonico(p_whatsapp);
+  if coalesce(trim(p_nome), '') = '' or v_fone is null then
+    return json_build_object('ok', false, 'situacao', 'invalido',
+      'erro', 'Confira seu nome e o WhatsApp com DDD.');
+  end if;
+  if nullif(trim(coalesce(p_atuacao, '')), '') is not null
+     and p_atuacao not in ('stylist', 'personal-shopper', 'consultoria', 'outra') then
+    return json_build_object('ok', false, 'situacao', 'atuacao_invalida');
+  end if;
+  if nullif(trim(coalesce(p_quer_sessao, '')), '') is not null
+     and p_quer_sessao not in ('sim', 'entender') then
+    return json_build_object('ok', false, 'situacao', 'sessao_invalida');
+  end if;
+  if nullif(trim(coalesce(p_convidadas, '')), '') is not null
+     and p_convidadas not in ('ate-4', '5-8', 'mais-de-8') then
+    return json_build_object('ok', false, 'situacao', 'convidadas_invalido');
+  end if;
+  -- ⚠️ RODADA 1 DE CONSERTO (CRÍTICO): consulta ao cadastro, não lista
+  -- fechada — sem isto, uma stylist de Limeira/Piracicaba não conseguia se
+  -- inscrever pela landing page com a própria praça.
+  if nullif(trim(coalesce(p_praca, '')), '') is not null then
+    v_praca_id := public.vessel_praca_id_ativa(p_praca);
+    if v_praca_id is null then
+      return json_build_object('ok', false, 'situacao', 'praca_invalida');
+    end if;
+  end if;
+  if length(trim(coalesce(p_instagram, ''))) > 120 then
+    return json_build_object('ok', false, 'situacao', 'instagram_longo');
+  end if;
+
+  -- Teto por IP, mudo: quem apanha não pode saber.
+  select count(*) into v_recentes from public.vessel_stylists
+   where criado_em > now() - interval '1 hour';
+  if v_recentes >= 40 then
+    return json_build_object('ok', true, 'situacao', 'recebido');
+  end if;
+
+  select id, codigo into v_id, v_codigo from public.vessel_stylists where whatsapp = v_fone;
+
+  if v_id is null then
+    -- ⚠️ O CÓDIGO NUNCA MUDA depois de dado: ele vai para dentro de links de
+    -- rastreio que a stylist já mandou para as clientes dela.
+    --
+    -- ⚠️ 25/09/2026 (o código sem repetir): era "quantas stylists há + 1". Uma
+    -- stylist apagada deixa a conta menor que o maior número dado, e a próxima
+    -- inscrição recebia um STY que JÁ EXISTE — a inscrição da página quebrava
+    -- com chave duplicada (`vessel_stylists_codigo_idx`). Agora é a MESMA regra
+    -- de `vessel_stylist_criar` (a do cadastro pela equipe, desde 19/09): a
+    -- FILA com a MESMA trava (as duas portas esperam uma pela outra), o MAIOR
+    -- número já dado + 1, pulando o que já existir, e o CINTO (`unique_violation`
+    -- no código avança e tenta de novo). Códigos que já existem não mudam.
+    perform pg_advisory_xact_lock(hashtext('public.vessel_stylists.codigo')::bigint);
+    for v_volta in 1..3 loop
+      select coalesce(max((substring(s.codigo from '^STY-([0-9]{4})$'))::int), 0)
+        into v_n
+        from public.vessel_stylists s
+       where s.codigo ~ '^STY-[0-9]{4}$';
+
+      v_codigo := null;
+      for i in 1..10000 loop
+        v_n := v_n + 1;
+        if v_n > 9999 then
+          v_n := 0;
+        end if;
+        v_codigo := 'STY-' || lpad(v_n::text, 4, '0');
+        exit when not exists (select 1 from public.vessel_stylists s where s.codigo = v_codigo);
+        v_codigo := null;
+      end loop;
+      if v_codigo is null then
+        -- Sem número livre: a pessoa não pode ver erro nem saber por quê.
+        return json_build_object('ok', true, 'situacao', 'recebido');
+      end if;
+
+      begin
+        -- ⚠️ RODADA 1 DE CONSERTO: `praca_id` grava junto com `praca_preview`.
+        insert into public.vessel_stylists
+          (codigo, nome, whatsapp, cidade, instagram, atuacao, quer_sessao, convidadas,
+           praca_preview, praca_id, teste, origem_canal, origem_campanha, origem_utm)
+        values (v_codigo, trim(p_nome), v_fone,
+                nullif(trim(coalesce(p_cidade, '')), ''), nullif(trim(coalesce(p_instagram, '')), ''),
+                nullif(trim(coalesce(p_atuacao, '')), ''), nullif(trim(coalesce(p_quer_sessao, '')), ''),
+                nullif(trim(coalesce(p_convidadas, '')), ''), upper(nullif(trim(coalesce(p_praca, '')), '')),
+                v_praca_id,
+                p_teste,
+                coalesce(nullif(trim(p_origem ->> 'canal'), ''), 'lp-stylist-circle'),
+                nullif(trim(p_origem ->> 'utm_campaign'), ''),
+                p_origem)
+        on conflict (whatsapp) do nothing
+        returning id into v_id;
+        exit;
+      exception when unique_violation then
+        get stacked diagnostics v_indice = constraint_name;
+        if v_indice is distinct from 'vessel_stylists_codigo_idx' then
+          raise;                               -- outra coisa: não é para engolir
+        end if;                                -- o código: conta de novo na volta
+        v_id := null;
+      end;
+    end loop;
+    if v_id is null then
+      select id, codigo into v_id, v_codigo from public.vessel_stylists where whatsapp = v_fone;
+    end if;
+    if v_id is null then
+      -- as três voltas perderam a disputa do código: responde calmo, sem gravar
+      return json_build_object('ok', true, 'situacao', 'recebido');
+    end if;
+  else
+    -- Ela voltou e contou mais: o que chega agora vale, o que não veio fica.
+    update public.vessel_stylists
+       set nome = coalesce(nullif(trim(coalesce(p_nome, '')), ''), nome),
+           cidade = coalesce(nullif(trim(coalesce(p_cidade, '')), ''), cidade),
+           instagram = coalesce(nullif(trim(coalesce(p_instagram, '')), ''), instagram),
+           atuacao = coalesce(nullif(trim(coalesce(p_atuacao, '')), ''), atuacao),
+           quer_sessao = coalesce(nullif(trim(coalesce(p_quer_sessao, '')), ''), quer_sessao),
+           convidadas = coalesce(nullif(trim(coalesce(p_convidadas, '')), ''), convidadas),
+           praca_preview = coalesce(upper(nullif(trim(coalesce(p_praca, '')), '')), praca_preview),
+           -- ⚠️ RODADA 1 DE CONSERTO: `praca_id` junto — só muda quando `p_praca` veio.
+           praca_id = coalesce(v_praca_id, praca_id),
+           atualizado_em = now()
+     where id = v_id;
+  end if;
+
+  -- As permissões, separadas por finalidade — a de atendimento sempre, a de
+  -- marketing só se ela marcou.
+  insert into public.vessel_consentimentos (stylist_id, finalidade, canal, versao, fonte, teste)
+  values (v_id, 'atendimento', 'whatsapp', nullif(trim(coalesce(p_aceite_versao, '')), ''),
+          'lp-stylist-circle', p_teste);
+  if coalesce(p_aceite_marketing, false) then
+    insert into public.vessel_consentimentos (stylist_id, finalidade, canal, versao, fonte, teste)
+    values (v_id, 'marketing', 'whatsapp', nullif(trim(coalesce(p_aceite_versao, '')), ''),
+            'lp-stylist-circle', p_teste);
+  end if;
+
+  -- ⚠️ O CÓDIGO NÃO VOLTA PARA A PÁGINA. Ele é identificador interno de
+  -- rastreio; devolvê-lo ao navegador o transformaria em coisa pública, e o
+  -- módulo 10 quer o contrário.
+  return json_build_object('ok', true, 'situacao', 'recebido');
+end;
+$function$;
+
+-- ── 13. as portas ────────────────────────────────────────────────────────────
 do $$
 declare f text;
 begin
