@@ -1,5 +1,5 @@
 // APLICA, REGISTRA e PROVA: o convite individual do Private Edit ganha teto de
-// respostas (10/h por convidada e por endereço) e a abertura feita pela equipe
+// respostas (10/h por convidada, 60/h por endereço) e a abertura feita pela equipe
 // deixa de contar.
 //
 //   node --env-file=<coletor/.env> coletor/aplicar-vessel-convite-da-convidada-teto-e-abertura-da-equipe.mjs            → ensaio: prova tudo e DESFAZ
@@ -158,15 +158,22 @@ try {
     const consDepois = Number((await uma(`select count(*)::int n from public.vessel_consentimentos where pessoa_id = (select pessoa_id from public.vessel_atendimentos where id = $1)`, [m.a])).n)
     conferir(igual(onze, { ok: true, situacao: 'recebido' }) && (await linha(m.a)).rsvp === 'falar-com-equipe' && consDepois === consAntes,
       'a 11ª da mesma convidada: responde "recebido" com calma e NÃO grava (resposta e permissões iguais)', { onze, linha: await linha(m.a), consAntes, consDepois })
-    // o teto por endereço: a Bia, do MESMO endereço, também é segurada; de outro endereço, passa
+    // o teto por endereço é 60/h (dono, 25/09: várias convidadas respondem pelo Wi-Fi da loja):
+    // a Bia, do MESMO endereço, com 10 na hora ainda GRAVA; com 60 na hora, é segurada.
     const doMesmo = await responder(m.chB, 'sim')
-    conferir(igual(doMesmo, { ok: true, situacao: 'recebido' }) && (await linha(m.b)).rsvp === null,
-      'outra convidada vinda do MESMO endereço (já com 10 na hora): "recebido" e não grava', await linha(m.b))
+    conferir(doMesmo.situacao === 'recebido' && (await linha(m.b)).rsvp === 'sim',
+      'outra convidada do MESMO endereço com só 10 na hora: grava (o teto por endereço é 60)', await linha(m.b))
+    const ip = (await uma(`select ip_hash from public.vessel_rsvp_tentativas where atendimento_id = $1 limit 1`, [m.a])).ip_hash
+    await cli.query(`insert into public.vessel_rsvp_tentativas (atendimento_id, ip_hash, momento)
+                     select $1, $2, now() from generate_series(1, 49)`, [m.a, ip])
+    const noTeto = await responder(m.chB, 'falar-com-equipe')
+    conferir(igual(noTeto, { ok: true, situacao: 'recebido' }) && (await linha(m.b)).rsvp === 'sim',
+      'com 60 vindas do mesmo endereço na hora: "recebido" e NÃO grava', await linha(m.b))
     await deOnde('198.51.100.20')
-    const deOutro = await responder(m.chB, 'sim')
-    conferir(deOutro.situacao === 'recebido' && (await linha(m.b)).rsvp === 'sim', 'a mesma convidada de OUTRO endereço: grava', await linha(m.b))
+    const deOutro = await responder(m.chB, 'falar-com-equipe')
+    conferir(deOutro.situacao === 'recebido' && (await linha(m.b)).rsvp === 'falar-com-equipe', 'a mesma convidada de OUTRO endereço: grava', await linha(m.b))
     const n = Number((await uma(`select count(*)::int n from public.vessel_rsvp_tentativas where atendimento_id in ($1, $2)`, [m.a, m.b])).n)
-    conferir(n === 11, `só as tentativas que gravaram ficam anotadas (${n}; as seguradas não enchem a tabela)`, n)
+    conferir(n === 61, `só as tentativas que gravaram ficam anotadas (${n} = 10 + 1 + 49 de preparo + 1; as seguradas não enchem a tabela)`, n)
     const errado = await comoPagina(`public.vessel_rsvp_da_convidada(p_chave => $1, p_convidada => 'ZZZZZZZZ', p_resposta => 'sim')`, [m.chA.chave_encontro])
     const invalida = await responder(m.chB, 'talvez')
     const robo = await comoPagina(`public.vessel_rsvp_da_convidada(p_chave => $1, p_convidada => $2, p_resposta => 'sim', p_armadilha => 'x')`, [m.chB.chave_encontro, m.chB.chave])

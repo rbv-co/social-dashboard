@@ -6,7 +6,7 @@
 -- `2026-09-22-vessel-t11-bases-do-stylist-circle.sql`):
 --
 -- (a) `vessel_rsvp_da_convidada` ganha TETO: 10 respostas por convidada por
---     hora e 10 por endereço (hash do IP) por hora. Passou, responde o mesmo
+--     hora e 60 por endereço (hash do IP) por hora — 60, não 10: no dia do encontro várias convidadas respondem pelo Wi-Fi da loja (dono, 25/09). Passou, responde o mesmo
 --     "recebido" e não grava. As tentativas moram em `vessel_rsvp_tentativas`
 --     (nova, fechada: só a função escreve e lê; ninguém de fora, nem a Central).
 --     A MESMA assinatura: a página do site não muda.
@@ -72,7 +72,7 @@ begin
 
   -- ⚠️ 25/09/2026: O TETO DE TENTATIVAS, no estilo das portas públicas da
   -- Beauty Session: passou de 10 respostas na última hora para ESTA convidada,
-  -- ou de 10 vindas do mesmo endereço (o hash do IP), responde o mesmo
+  -- ou de 60 vindas do mesmo endereço (o hash do IP), responde o mesmo
   -- "recebido" de sempre e NÃO grava nada — quem apanha não pode saber. Um
   -- robô com o link não reescreve a resposta dela sem fim, nem enche
   -- `vessel_consentimentos`. Só conta tentativa com convite válido: link
@@ -80,7 +80,7 @@ begin
   if (select count(*) from public.vessel_rsvp_tentativas
        where atendimento_id = v_t.id and momento > now() - interval '1 hour') >= 10
      or (select count(*) from public.vessel_rsvp_tentativas
-          where ip_hash = v_ip and momento > now() - interval '1 hour') >= 10 then
+          where ip_hash = v_ip and momento > now() - interval '1 hour') >= 60 then
     return json_build_object('ok', true, 'situacao', 'recebido');
   end if;
   insert into public.vessel_rsvp_tentativas (atendimento_id, ip_hash, teste)
