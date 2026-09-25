@@ -90,13 +90,16 @@ export function dadosIniciais(agora = new Date()) {
       // ⚠️ 24/09/2026: a Marina está na Ativada (é a anfitriã dos encontros).
       ativada_em: em(-70, '10:00'), etapa_id: ETAPA.Ativada, ativa: true, teste: false,
     },
-    {
-      id: 2, codigo: 'STY-0002', nome: 'Paula Reis (exemplo)', whatsapp: '5511990000002',
-      cidade: 'São Paulo', instagram: '@paula.exemplo', atuacao: 'personal shopper', praca_preview: 'SAO', praca_id: PRACA.SAO,
-      loja: null, origem_contato: 'pesquisa', origem_canal: null, responsavel: 'Ionara',
-      prospectado_em: dia(-20), proxima_acao: 'Retornar sobre a proposta do encontro', proxima_acao_em: dia(-2),
-      ativada_em: null, etapa_id: ETAPA.Convidado, ativa: true, teste: false,
-    },
+    // ⚠️ RODADA 1 DE CONSERTO (25/09/2026, Task 9): a Paula Reis (São Paulo)
+    // e a Bianca Serra (Americana) SAÍRAM — as duas eram de antes desta
+    // tarefa, e as cidades delas não fazem parte do cenário das "quatro
+    // cidades" da migration. Deixadas, elas mentiam de dois jeitos: a praça
+    // SAO aparecia com 1 stylist quando a base real tem 0, e a pendência
+    // "sem praça" (que existe para mostrar SÓ o caso "Limeira / Piracicaba")
+    // aparecia com DOIS nomes. Nenhuma das duas era usada pelo roteiro
+    // guiado (`roteiro.js` — conferido, não deduzido): a jornada dele cria a
+    // própria parceira nova, do zero. O exemplo "desclassificada com motivo"
+    // que a Bianca dava continua coberto pela Letícia Farias (Limeira).
     {
       // Veio pela landing page do Circle: é a porta pública que carimba o canal.
       id: 3, codigo: 'STY-0003', nome: 'Renata Lima (exemplo)', whatsapp: '5519990000003',
@@ -135,22 +138,9 @@ export function dadosIniciais(agora = new Date()) {
   passou(1, null, 'Identificado', -80, 'cadastro'); passou(1, 'Identificado', 'Prospectado', -75)
   passou(1, 'Prospectado', 'Convidado', -72); passou(1, 'Convidado', 'Confirmou Ida', -71)
   passou(1, 'Confirmou Ida', 'Ativada', -70)
-  passou(2, null, 'Identificado', -25, 'cadastro'); passou(2, 'Identificado', 'Prospectado', -20)
-  passou(2, 'Prospectado', 'Convidado', -5)
   passou(3, null, 'Identificado', -3, 'cadastro'); passou(3, 'Identificado', 'Prospectado', -3)
   passou(5, null, 'Identificado', -1, 'cadastro')
   passou(6, null, 'Identificado', -1, 'cadastro'); passou(6, 'Identificado', 'Classificação', 0)
-  // 24/09/2026: uma desclassificada, com o motivo e a nota (o bloco "Saídas por
-  // motivo" do placar e o cartão da coluna Desclassificado).
-  stylists.push({
-    id: 7, codigo: 'STY-0007', nome: 'Bianca Serra (exemplo)', whatsapp: '5519990000007',
-    cidade: 'Americana', instagram: '@bianca.exemplo', atuacao: 'stylist', praca_preview: null, praca_id: null,
-    loja: null, origem_contato: 'pesquisa', origem_canal: null, responsavel: 'Ionara',
-    prospectado_em: null, proxima_acao: null, proxima_acao_em: null,
-    observacoes: null, ativada_em: null, etapa_id: ETAPA.Desclassificado, ativa: true, teste: false,
-  })
-  passou(7, null, 'Identificado', -30, 'cadastro')
-  passou(7, 'Identificado', 'Desclassificado', -10, 'mudanca', { motivo: 'Não conecta com a marca', nota: 'Estética muito diferente da marca.' })
   // 24/09/2026: uma "sem contato ainda" (da planilha, sem WhatsApp e sem
   // Instagram): o selo no cartão, na lista e na ficha, e nenhum botão de contato.
   stylists.push({
@@ -232,12 +222,10 @@ export function dadosIniciais(agora = new Date()) {
     { id: 1, stylist_id: 1, canal: 'instagram', resultado: 'sem_resposta', nota: 'Mandei direct apresentando o Circle.', criado_em: em(-74, '09:00'), criado_por_nome: 'Ionara' },
     { id: 2, stylist_id: 1, canal: 'whatsapp', resultado: 'interesse', nota: 'Gostou da ideia, pediu o material.', criado_em: em(-72, '14:00'), criado_por_nome: 'Ionara' },
     { id: 3, stylist_id: 1, canal: 'ligacao', resultado: 'marcou_encontro', nota: null, criado_em: em(-71, '11:00'), criado_por_nome: 'Ionara' },
-    { id: 4, stylist_id: 2, canal: 'whatsapp', resultado: 'conversou', nota: 'Atende clientes nos Jardins.', criado_em: em(-18, '10:30'), criado_por_nome: 'Ionara' },
-    { id: 5, stylist_id: 2, canal: 'presencial', resultado: 'proposta', nota: 'Pediu a proposta por escrito.', criado_em: em(-9, '16:00'), criado_por_nome: 'Ionara' },
   ]
 
   // Leituras do link de cada stylist (`vessel_stylist_aberturas`), só a conta.
-  const aberturas = { 'STY-0001': 57, 'STY-0002': 4, 'STY-0003': 12 }
+  const aberturas = { 'STY-0001': 57, 'STY-0003': 12 }
 
   // ── BEAUTY SESSIONS (`vessel_beauty_sessions`) ────────────────────────────
   // Quatro, uma de cada jeito: a que já aconteceu e foi ENCERRADA (com leituras,

@@ -15,6 +15,10 @@ O QUE FUNCIONA NA DEMONSTRAÇÃO (desde 23/09/2026 — todas as do menu):
     loja, encerrar, reabrir, editar, arquivar, apagar e baixar o QR funcionam.
     (Era aqui a tela branca: ao escolher a loja a tela sumia.)
   · Private Edit e Stylist Circle — como antes, com o roteiro de 11 passos.
+    Depois dos 11, vale abrir Praças e Edições (25/09/2026, Task 9): o
+    cenário já tem Limeira com a Edição 1 aberta (e a pendência de "loja a
+    definir"), Campinas com a dela, e a "Limeira / Piracicaba" sem praça —
+    não é passo do roteiro, é para explorar livre.
   · Material Gráfico — os QR das três ações, com busca, "mostrar encerrados"
     e os botões de baixar PNG/SVG e copiar endereço.
   · Appointment Card — continua abrindo o site da Vessel noutra aba (é uma
