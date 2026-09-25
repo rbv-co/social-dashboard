@@ -107,6 +107,28 @@ const MERCADO_POR_OTIMIZACAO_E_OBJETIVO = {
   },
 };
 
+// HERDA O OBJETIVO DA CAMPANHA para cada conjunto que ainda não tiver o seu
+// próprio (rodada de correção 1 da Onda C, Tarefa 5 — achado C1 da revisão,
+// 25/09/2026). A Graph API só devolve `objective` no nível da CAMPANHA — o
+// conjunto não tem esse campo —, mas `mercadoDoConjunto` o usa como ÚLTIMO
+// desempate (`OFFSITE_CONVERSIONS`: lead x venda, ver
+// MERCADO_POR_OTIMIZACAO_E_OBJETIVO acima). Sem herdar, esse desempate nunca
+// dispara vindo de um conjunto puro do Graph, e a tela e o robô podem julgar
+// a MESMA campanha por mercados diferentes — a classe de defeito que esta
+// onda inteira existe pra matar.
+//
+// NASCEU no robô (`coletor/budget-ia.mjs`, função `comObjetivoHerdado`) e foi
+// MOVIDA pra cá nesta rodada de correção: robô e tela importam a MESMA
+// função agora, em vez de duas cópias que podiam divergir entre si (foi
+// exatamente essa divergência — a tela nunca herdava nada — que a revisão
+// encontrou). Se o conjunto já vier com `objective` próprio (a Graph não faz
+// isso hoje, mas não custa não sobrescrever), ele é respeitado como está.
+// PURO: sem rede, sem tela.
+export function comObjetivoHerdado(campanha, conjuntos) {
+  const objetivo = campanha && campanha.objective;
+  return (conjuntos || []).map((cj) => ((cj && cj.objective) ? cj : { ...(cj || {}), objective: objetivo }));
+}
+
 // O mercado de UM conjunto: destino primeiro, otimização como desempate,
 // objetivo como último recurso só para as poucas otimizações ambíguas por
 // natureza (ver `MERCADO_POR_OTIMIZACAO_E_OBJETIVO` acima). Sinal que não bate
@@ -114,6 +136,10 @@ const MERCADO_POR_OTIMIZACAO_E_OBJETIVO = {
 // de nome. Isso vale também para `WEBSITE` com uma otimização que este módulo
 // não reconhece: melhor dizer "não sei medir esta" do que julgar pela régua
 // errada.
+//
+// ⚠️ Quem chama esta função (ou `mercadoDaCampanha`) com conjuntos crus do
+// Graph precisa passar por `comObjetivoHerdado` ANTES — senão o desempate por
+// objetivo (acima) nunca dispara. Ver o achado C1 da revisão da Tarefa 5.
 export function mercadoDoConjunto(conjunto) {
   const destino = String((conjunto && conjunto.destination_type) || '').toUpperCase();
   if (destino in MERCADO_POR_DESTINO) return MERCADO_POR_DESTINO[destino];

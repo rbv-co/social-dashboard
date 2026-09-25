@@ -63,19 +63,14 @@ export function selecionarCampanhas(camps, insByCamp, modo, agoraMs) {
     || (modo === 'amplo' && veiculouNaJanela(ins[c.id])));
 }
 
-// Anexa o OBJETIVO DECLARADO da campanha em cada conjunto que ainda não tiver
-// o seu próprio (Onda C, Tarefa 3). A Graph API só devolve `objective` no
-// nível da CAMPANHA — o conjunto não tem esse campo — mas `mercadoDoConjunto`
-// o usa como ÚLTIMO desempate (OFFSITE_CONVERSIONS: lead x venda, ver
-// MERCADO_POR_OTIMIZACAO_E_OBJETIVO em mercados.js). Sem herdar aqui, esse
-// desempate nunca dispararia vindo de um conjunto puro do Graph. Compartilhada
-// entre `montarMensagens` (pura) e o `--dry` em main() para os dois lerem o
-// mesmo mercado — divergir aqui seria o defeito que esta onda existe pra matar
-// (ver H1 do review de 2026-07-28, citado em vários pontos deste arquivo).
-function comObjetivoHerdado(camp, conjuntos) {
-  const objetivo = camp && camp.objective;
-  return (conjuntos || []).map((cj) => ((cj && cj.objective) ? cj : { ...(cj || {}), objective: objetivo }));
-}
+// `comObjetivoHerdado` MUDOU DE CASA na rodada de correção 1 da Onda C,
+// Tarefa 5 (achado C1 da revisão, 25/09/2026): vivia só aqui, como cópia
+// própria do robô, e a TELA nunca herdava objetivo nenhum — o desempate de
+// OFFSITE_CONVERSIONS (lead x venda) simplesmente não disparava vindo do
+// `.vue`, e a mesma campanha podia sair `site_venda` na tela e `lead` no
+// robô. Agora mora em mercados.js (PURA, testada), importada pelos dois
+// lados — nunca mais duas cópias que podem divergir. Ver o comentário
+// completo lá.
 
 // Monta as mensagens (system + user) pro Opus: analisa a campanha E os anúncios dela.
 // `extra` é opcional (Tarefa 5, tendência e tempo no ar) — { insAnterior?, diasNoAr?, diasJanela? }.
@@ -536,7 +531,7 @@ import { emVeiculacao } from '../src/ferramentas/gestao-trafego/veiculacao.js';
 // Motoeasy, Mantova e o [FLUXO SHOPPING] da Vessel tinham o MESMO objetivo
 // declarado (OUTCOME_ENGAGEMENT) e compravam três coisas diferentes (conversa
 // de WhatsApp, visita ao perfil, view de vídeo).
-import { mercadoDaCampanha, mercadoDoConjunto } from '../src/ferramentas/gestao-trafego/mercados.js';
+import { mercadoDaCampanha, mercadoDoConjunto, comObjetivoHerdado } from '../src/ferramentas/gestao-trafego/mercados.js';
 // O custo atual de TODO balde, engajamento incluído desde a troca de régua de
 // 24/09/2026 (ver custoAtualDoAlvo acima e ALVOS.engajamento em alvos.js).
 // GT_METRIC_CATALOG: o compute() de cada métrica (leads, conversas, compras...) —

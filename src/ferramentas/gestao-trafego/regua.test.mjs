@@ -260,3 +260,31 @@ test('desligar de novo volta a ler a meta nova — nenhuma das duas se apaga ao 
   assert.equal(ligada.metas.engajamento_bruto, 0.32, 'a nova sobrevive nos dois estados');
   assert.equal(desligada.metas.engajamento_bruto, 0.32, 'a nova sobrevive nos dois estados');
 });
+
+// ACHADO na verificação da Tarefa 5 (rodada de correção 1, 25/09/2026):
+// reguaDaConta não copiava `ponderada_ligada` — o caminho REAL da tela
+// (_gtReguaAtiva -> reguaDaConta) sempre via `undefined`, então
+// `ponderadaLigada(reguaAtiva)` era SEMPRE false em produção, não importa o
+// que estivesse salvo. O interruptor da Tarefa 4 nunca tinha efeito nenhum
+// pelo caminho de verdade — só nos testes que chamam metaDoBalde direto em
+// cima do normalizarRegua, sem passar por reguaDaConta.
+test('reguaDaConta leva o interruptor da ponderada junto — é GERAL, como pesos e limiares', () => {
+  const ligada = normalizarRegua({
+    limiares: { ponderada_ligada: true },
+    metas_por_conta: { vessel: { engajamento: 0.013, engajamento_bruto: 0.32 } },
+  });
+  const porConta = reguaDaConta(ligada, 'vessel');
+  assert.equal(ponderadaLigada(porConta), true,
+    'sem este campo, o interruptor nunca dispararia pelo caminho real da tela (_gtReguaAtiva)');
+  // A PROVA que importa: `metaDoBalde('post')` só lê a meta ANTIGA
+  // (0.013, R$/ponto) em vez da NOVA (0.32, R$/engajamento) quando o
+  // interruptor sobrevive à passagem por reguaDaConta — antes deste
+  // conserto, `porConta.ponderada_ligada` era `undefined` e este teste
+  // devolvia 0.32 mesmo com a régua real dizendo "ligada".
+  assert.equal(metaDoBalde(porConta, 'post'), 0.013);
+});
+
+test('reguaDaConta com o interruptor DESLIGADO continua desligado, não como default silencioso', () => {
+  const desligada = normalizarRegua({ limiares: { ponderada_ligada: false } });
+  assert.equal(ponderadaLigada(reguaDaConta(desligada, 'x')), false);
+});

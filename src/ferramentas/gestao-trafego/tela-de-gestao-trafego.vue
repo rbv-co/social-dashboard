@@ -259,7 +259,7 @@ import { deltaDeSeguidoresPorHora, seguidoresNoPeriodo } from '../meta-ads/relat
 // módulo (_gtNum, _gtActionVal, _GT_* etc.) são detalhe interno do próprio
 // catálogo — nem a tela nem o robô os chamam direto.
 import { GT_METRIC_CATALOG, GT_BALDE_PADRAO, insightDoConjunto, custoDoAlvo } from './metricas.js'
-import { normalizarRegua, metaDoBalde, reguaDaConta, mesclarMetasDaConta } from './regua.js'
+import { normalizarRegua, metaDoBalde, reguaDaConta, mesclarMetasDaConta, ponderadaLigada } from './regua.js'
 // calcularPonderada saiu daqui em 24/09/2026: a ponderada não decide mais o
 // veredito do cartão (ver comentário perto dos chips removidos, mais abaixo).
 // Ela continua existindo em ponderada.js pra quem for religá-la em alvos.js.
@@ -275,7 +275,7 @@ import { alvoDoBalde, avaliarAlvo } from './alvos.js'
 // `metaDoBalde` (acima) hoje só têm alvo para as chaves de MERCADOS, nunca
 // mais para nome de balde antigo ('engajamento','mensagens'...) — ver o
 // cabeçalho de mercados.js e alvos.js para o porquê.
-import { mercadoDaCampanha, mercadoDoConjunto, gastoPorMercado } from './mercados.js'
+import { mercadoDaCampanha, mercadoDoConjunto, gastoPorMercado, comObjetivoHerdado } from './mercados.js'
 // Fase 3 — objetivo por interação: o dono DECLARA, campanha a campanha (ou
 // anúncio a anúncio) de engajamento, qual interação aquilo está comprando
 // (curtida/comentário/salvamento/compartilhamento). Sem declarar, nada muda —
@@ -1633,10 +1633,19 @@ async function _gtSalvarRegua(nova, botao) {
 function _gtExemplosParaRegua() {
   const porMercado = {};
   const porInteracao = {};
+  // Para HERDAR o objetivo da campanha nos conjuntos (correção C1, rodada de
+  // correção 1) — ver o comentário completo em comObjetivoHerdado
+  // (mercados.js). Sem isto, o desempate de OFFSITE_CONVERSIONS (lead x
+  // venda) nunca disparava aqui e o exemplo vivo podia ensinar a conta errada.
+  const campMapExemplo = {};
+  (_gtCampaigns || []).forEach((c) => { campMapExemplo[c.id] = c; });
   for (const linha of _gtInsights) {
     // Mesmo criterio do cartao: quem diz o que a campanha COMPRA e o CONJUNTO
     // (mercadoDaCampanha), nao o objetivo declarado (ver mercados.js).
-    const conjuntosDaLinha = (_gtAdsets||[]).filter(x => String(x.campaign_id||'') === String(linha.campaign_id||''));
+    const conjuntosDaLinha = comObjetivoHerdado(
+      campMapExemplo[linha.campaign_id],
+      (_gtAdsets||[]).filter(x => String(x.campaign_id||'') === String(linha.campaign_id||'')),
+    );
     const mercado = mercadoDaCampanha(conjuntosDaLinha);
     // 'misto' e 'desconhecido' não têm alvo (alvoDoBalde devolve null pros
     // dois, de propósito) — a campanha simplesmente não vira exemplo, o que é
@@ -2392,21 +2401,44 @@ function _renderGtCampaigns(col,campaigns,insights,adInsights,adsets){
       const daily=camp?.daily_budget?parseFloat(camp.daily_budget)/100:null;
       const ads=adByCamp[ins.campaign_id]||[];
       // Onde mora o orçamento desta campanha? (módulo puro, testado)
-      const conjuntos=setsByCamp[String(ins.campaign_id)]||[];
+      // HERDA O OBJETIVO DA CAMPANHA (correção C1, rodada de correção 1,
+      // 25/09/2026): a Graph só devolve `objective` na CAMPANHA — o conjunto
+      // cru (`setsByCamp`) nunca tem esse campo —, mas `mercadoDoConjunto` usa
+      // objetivo como ÚLTIMO desempate (OFFSITE_CONVERSIONS: lead x venda).
+      // Sem herdar, esse desempate nunca disparava vindo da tela, e a MESMA
+      // campanha podia sair `site_venda` aqui e `lead` no robô — comparando
+      // custo por venda (meta ~R$180) contra custo por lead (meta ~R$12). A
+      // função é a MESMA do robô (comObjetivoHerdado, movida para
+      // mercados.js nesta rodada) — nunca duas cópias.
+      const conjuntos=comObjetivoHerdado(camp,setsByCamp[String(ins.campaign_id)]||[]);
       const nivelOrc=detectarNivelOrcamento(camp,conjuntos);
       const hier=montarHierarquia(conjuntos,ads);
       const kpiObjective=ins.objective||camp?.objective||'';
       // O MERCADO DA CAMPANHA (Onda C, Tarefa 5): o que ela COMPRA segundo o
-      // que a Meta afirma nos CONJUNTOS (`conjuntos`, já com destination_type/
-      // optimization_goal) — não o objetivo declarado. O chip de objetivo
-      // (`ma-obj-chip`, abaixo) continua como INFORMAÇÃO; quem decide o KPI e
-      // a cor a partir daqui é o mercado. 'misto' quando os conjuntos desta
-      // campanha compram mercados DIFERENTES ao mesmo tempo (decisão do dono,
-      // 25/09/2026 — o caso real é a [LEADS LOJA][mixconversão] da Vessel):
-      // nenhum custo único, o cabeçalho quebra o GASTO por mercado
-      // (gastoPorMercado, logo abaixo) e cada conjunto ganha a própria régua
-      // dentro do card já expandido (ver _renderGtConjuntos).
-      const mercado=mercadoDaCampanha(conjuntos);
+      // que a Meta afirma nos CONJUNTOS — não o objetivo declarado. O chip de
+      // objetivo (`ma-obj-chip`, abaixo) continua como INFORMAÇÃO; quem
+      // decide o KPI e a cor a partir daqui é o mercado. 'misto' quando os
+      // conjuntos desta campanha compram mercados DIFERENTES ao mesmo tempo
+      // (decisão do dono, 25/09/2026 — o caso real é a [LEADS LOJA]
+      // [mixconversão] da Vessel): nenhum custo único, o cabeçalho quebra o
+      // GASTO por mercado (gastoPorMercado, logo abaixo) e cada conjunto
+      // ganha a própria régua dentro do card já expandido (ver
+      // _renderGtConjuntos).
+      //
+      // USA OS CONJUNTOS VIVOS DE `hier`, NÃO A LISTA CRUA (correção C2,
+      // rodada de correção 1): `conjuntos` inclui adset ARQUIVADO e sem gasto
+      // nenhum (pedido com `effective_status` ACTIVE,PAUSED,ARCHIVED, lá em
+      // `loadGtData`); `hier` já derruba esse peso morto (mesmo filtro
+      // `vivo` de `montarHierarquia`, orcamento-hierarquia.js). Usar listas
+      // diferentes nos dois cálculos produzia uma contradição visível: um
+      // adset arquivado e zero gasto virava o SEGUNDO mercado que fazia
+      // `mercadoDaCampanha` devolver 'misto' — cabeçalho "Mercados: mistos" —
+      // enquanto `gastoPorMercado(hier)` e as linhas de conjunto (que também
+      // leem de `hier`) só desenhavam UM mercado, sem o adset que causou a
+      // mistura aparecer em lugar nenhum. Mesma lista para as três coisas que
+      // o cartão mostra: o mercado, a quebra por mercado e os conjuntos.
+      const conjuntosVivos=hier.map((g)=>g.conjunto).filter(Boolean);
+      const mercado=mercadoDaCampanha(conjuntosVivos);
       const campanhaMista=mercado==='misto';
       const row=document.createElement('div');row.className='gt-camp-row';
       const inner=document.createElement('div');inner.className='gt-camp-inner';
@@ -2429,18 +2461,15 @@ function _renderGtCampaigns(col,campaigns,insights,adInsights,adsets){
       // aba "A régua" usa — duas listas de nome que podiam divergir já
       // produziram "Custo por lead — lead" na tela da régua (Onda C, Tarefa 1).
       const chipMercadoHtml=campanhaMista
-        ?`<span class="ma-obj-chip" title="Os conjuntos desta campanha compram mercados diferentes ao mesmo tempo (ver o gasto de cada um abaixo) — somar produziria um custo sem significado, então esta campanha não tem KPI único.">Mercados: mistos</span>`
+        ?`<span class="ma-obj-chip" title="Os conjuntos desta campanha compram mercados diferentes ao mesmo tempo (ver o gasto de cada um abaixo) — somar produziria um custo sem significado. Se você declarou qual interação esta campanha compra, o KPI abaixo vem dela, não da soma dos mercados.">Mercados: mistos</span>`
         :`<span class="ma-obj-chip" title="O que esta campanha COMPRA, segundo o que a Meta afirma nos conjuntos dela — não o objetivo declarado. É o mercado que decide o KPI e a cor abaixo.">Mercado: ${_gtEsc(mercado==='desconhecido'?'não identificado':(ROTULO_MERCADO[mercado]||mercado))}</span>`;
       chips.innerHTML=`${chipMercadoHtml}<span class="ma-obj-chip" style="font-size:calc(9px*var(--gt-fs,1.3));">${_maObjLabel(ins.objective)}</span>${selo}${daily?`<span style="font-family:var(--fonte-principal);font-size:calc(10px*var(--gt-fs,1.3));font-weight:600;color:var(--muted);">${_maFmtR(daily)}/dia</span>`:''}`;
-      // KPIs: MISTA mostra o GASTO de cada mercado que ela mistura (sem custo
-      // único, ver o comentário de `mercado` acima); as demais mostram a
-      // régua de apoio do balde do objetivo declarado (CTR, cliques...) — o
-      // KPI PRINCIPAL do mercado (custo x meta, colorido) é prepended mais
-      // abaixo, depois de calculado (ver "O KPI PRINCIPAL DO MERCADO").
+      // KPIs: o conteúdo definitivo só é decidido mais abaixo ("O KPI
+      // PRINCIPAL DO MERCADO"), depois de saber se há interação DECLARADA
+      // (que vence a mistura — correção I3, rodada de correção 1) e se é
+      // campanha de seguidores sem medida confiável (correção I5). `metrics`
+      // nasce vazio aqui só para já existir no lugar certo do layout.
       const metrics=document.createElement('div');metrics.className='gt-metrics';
-      metrics.innerHTML=campanhaMista
-        ?gastoPorMercado(hier).map(({mercado:m,gasto:g})=>`<div class="gt-kpi"><span class="gt-kpi-lbl">${_gtEsc(m==='desconhecido'?'não identificado':(ROTULO_MERCADO[m]||m))}</span><span class="gt-kpi-val">${_maFmtR(g)}</span></div>`).join('')
-        :_gtKpisHtml(Object.assign({},ins,{objective:kpiObjective}));
       const spendEl=document.createElement('div');spendEl.className='gt-spend';spendEl.textContent=_maFmtR(spend);
       const adCount=ads.length;
       const setCount=hier.length;
@@ -2494,12 +2523,22 @@ function _renderGtCampaigns(col,campaigns,insights,adInsights,adsets){
       // atributo: nada aqui decide coisa nenhuma.
       row.dataset.balde = temMensagem ? 'mensagens' : (baldeCamp || 'padrao');
       // Selo de objetivo por interação (Fase 3): só campanha de engajamento que
-      // NÃO seja de mensagem pode declarar qual interação está comprando. Uma
-      // campanha MISTA (Onda C) também fica de fora: declarar "curtida" ou
-      // "salvamento" pressupõe UM mercado de engajamento — numa mistura de
-      // conjuntos de mercados diferentes essa declaração não tem a quem se
-      // referir (a régua já quebrou por conjunto, ver `campanhaMista` acima).
-      const elegivelSeloObj = !campanhaMista && baldeCamp === 'engajamento' && !temMensagem;
+      // NÃO seja de mensagem pode declarar qual interação está comprando.
+      //
+      // CORREÇÃO I3 (rodada de correção 1, 25/09/2026): esta linha chegou a
+      // excluir campanha MISTA (`!campanhaMista &&`), mas isso divergia do
+      // ROBÔ — que faz a declaração VENCER a mistura
+      // (`mercado === 'misto' && !interacaoDeclarada` em budget-ia.mjs: só
+      // trata como mista quando NÃO há declaração). Com a tela bloqueando o
+      // selo, uma declaração salva ANTES de a campanha virar mista continuava
+      // governando o robô sem o dono ver nem poder desfazer pela tela — e o
+      // card do ANÚNCIO nem tinha esse corte, então a mesma campanha
+      // bloqueava a declaração em cima e permitia embaixo. Removido: a
+      // elegibilidade aqui é a MESMA de sempre (engajamento declarado, sem
+      // mensagem), mista ou não — e o bloco "ALVO DO MERCADO" abaixo já faz a
+      // declaração vencer a mistura (`objDeclarado` sobrescreve `custoAlvo`/
+      // `metaAlvo`/`rotuloAlvo` mesmo quando `campanhaMista`).
+      const elegivelSeloObj = baldeCamp === 'engajamento' && !temMensagem;
       const seloObjEl = _gtSeloObjetivoEl(ins.campaign_id, 'campanha', elegivelSeloObj);
       if (seloObjEl) {
         chips.appendChild(seloObjEl);
@@ -2519,24 +2558,40 @@ function _renderGtCampaigns(col,campaigns,insights,adInsights,adsets){
       // régua (Seção 1, `ponderadaLigada` em regua.js) estiver desligado.
       // ⚠️ LIGAR O INTERRUPTOR HOJE troca só a META consultada por
       // `metaDoBalde` (volta a ler `metas.engajamento`, em R$/ponto) — o CUSTO
-      // comparado aqui e os limiares usados (`usaLimiaresDeEngajamento`
-      // abaixo) ainda não voltam a ser os do ponto ponderado. Isso é a Tarefa
-      // T4b (pendente, ver progress.md da Onda C: "o interruptor restaura de
-      // verdade") — até ela existir, ligar troca a meta mas não o cálculo, e é
-      // por isso que o painel da régua avisa isso na Seção 1 em vez de
-      // prometer mais do que faz. Tirar o veredito daqui em vez de deixar como
-      // informação: um número que não decide nada, ao lado do que decide, já
-      // produziu contradição visual rejeitada duas vezes nesta tela (C2 e M4
-      // do review de 2026-07-28) — "dentro da meta" no veredito com o chip do
-      // ponto do lado pintado de vermelho.
+      // comparado aqui continua sendo `custo_engajamento` (R$ por
+      // engajamento, ver ALVOS.post): unidades DIFERENTES, o mesmo erro de
+      // 7,5× que esta onda inteira existe pra matar (achado I6 da revisão,
+      // rodada de correção 1) — só que agora VISÍVEL, porque antes deste
+      // conserto o bloco do KPI nem renderizava nada. Isso é a Tarefa T4b
+      // (pendente, ver progress.md da Onda C: "o interruptor restaura de
+      // verdade") — até ela trocar também o CÁLCULO, `ponderadaAtrapalha`
+      // (abaixo) tira a cor e o veredito deste caso específico: melhor
+      // mostrar o número sem julgar do que julgar comparando grandezas
+      // incompatíveis.
+      //
+      // CAMPANHA DE SEGUIDORES FORA DO MERCADO 'perfil' (correção I5, rodada
+      // de correção 1): a Meta NÃO atribui "novo seguidor" a uma campanha —
+      // só à CONTA inteira (ver seguidores.js). Só existe medida REAL de
+      // resultado por campanha quando o CONJUNTO afirma que o produto é
+      // visita ao perfil (mercado 'perfil'). O robô já recusa julgar por
+      // custo neste caso (`semMedidaDeSeguidor` em budget-ia.mjs); a tela
+      // pintava um KPI colorido do mesmo jeito que qualquer outro mercado —
+      // mesma campanha, dois vereditos. `ehDeSeguidores` lê o NOME da
+      // campanha, MESMO critério do robô (`camp.name`, não `ins.campaign_name`).
+      const deSeguidores = ehDeSeguidores((camp && camp.name) || ins.campaign_name || '');
+      const semMedidaDeSeguidor = deSeguidores && mercado !== 'perfil';
 
       // O ALVO DO MERCADO (Onda C, Tarefa 5): cada MERCADO é medido pelo
       // resultado que ele compra (lead, conversa, venda, visita, visita ao
       // perfil, view, engajamento, mil impressões — ver ALVOS em alvos.js).
       // 'desconhecido' e 'misto' não têm entrada em ALVOS (alvoDoBalde
-      // devolve null pros dois, de propósito): campanha MISTA não recebe
-      // custo único (`mercado` calculado lá em cima) e campanha sem mercado
-      // reconhecível não tem veredito de custo, só os indicadores brutos.
+      // devolve null pros dois, de propósito): campanha MISTA sem interação
+      // DECLARADA não recebe custo único (`mercado` calculado lá em cima) e
+      // campanha sem mercado reconhecível não tem veredito de custo, só os
+      // indicadores brutos. Com interação declarada (mais abaixo), a
+      // declaração VENCE a mistura — `alvo` continua null aqui, mas
+      // `custoAlvo`/`rotuloAlvo` são substituídos, e é por isso que a
+      // renderização final usa `custoAlvo != null`, não `alvo`, como gatilho.
       const alvo = campanhaMista ? null : alvoDoBalde(mercado);
       // A META É PEDIDA PELO MERCADO — NUNCA por nome de balde antigo. Esta é
       // a TRAVA obrigatória da Tarefa 5 (ver o teste "nenhum caminho da tela
@@ -2563,9 +2618,10 @@ function _renderGtCampaigns(col,campaigns,insights,adInsights,adsets){
       // campanha, qual interação ela compra, o veredito passa a julgar por
       // ELA — custo da interação declarada (custoDaInteracao, que NUNCA
       // inventa número: quantidade zero devolve null, não R$ 0,00) contra a
-      // meta DAQUELA interação (metaDoBalde) — em vez do mercado. Sem
-      // declaração (_gtObjetivoInteracao vazio para este id — inclusive
-      // sempre, para campanha MISTA ou de mensagem, ver `elegivelSeloObj`
+      // meta DAQUELA interação (metaDoBalde) — em vez do mercado. Vale
+      // INCLUSIVE quando `campanhaMista` (correção I3): a declaração vence a
+      // mistura, mesma regra do robô. Sem declaração (_gtObjetivoInteracao
+      // vazio para este id, ou campanha de mensagem — ver `elegivelSeloObj`
       // acima), objDeclarado é null e nada muda: segue com o alvo/meta/custo
       // do MERCADO, calculados acima.
       const objDeclaradoBruto = elegivelSeloObj ? _gtObjetivoInteracao[String(ins.campaign_id)] : null;
@@ -2591,16 +2647,68 @@ function _renderGtCampaigns(col,campaigns,insights,adInsights,adsets){
       // 2026-07-28) segue de pé: quem é dono da META é dono do LIMIAR.
       const usaLimiaresDeEngajamento = !!objDeclarado;
       const aval = avaliarAlvo({ custo: custoAlvo, meta: metaAlvo, limiares: usaLimiaresDeEngajamento ? reguaAtiva.limiares : reguaAtiva.limiares_resultado });
+      // A PONDERADA LIGADA ATRAPALHA O MERCADO 'post' (correção I6, rodada de
+      // correção 1): com o interruptor ligado, `metaAlvo` (acima) já veio de
+      // `metas.engajamento` (R$ por PONTO), mas `custoAlvo` continua sendo
+      // `custo_engajamento` (R$ por ENGAJAMENTO, ver ALVOS.post) — a Tarefa
+      // T4b (pendente) é quem trocaria o CÁLCULO também. Não se aplica com
+      // interação DECLARADA: aí o mundo é outro (curtida/comentário/
+      // salvamento/compartilhamento, Seção 1 dos dois lados, unidades
+      // batendo).
+      const ponderadaAtrapalha = !objDeclarado && mercado === 'post' && ponderadaLigada(reguaAtiva);
+
+      // A REGRA DE APOIO (CTR, cliques...) E A QUEBRA POR MERCADO são
+      // decididas AQUI, agora que já sabemos se há interação DECLARADA e se é
+      // campanha de seguidores sem medida (correção I3/I5, rodada de
+      // correção 1) — mesma PRECEDÊNCIA do robô (budget-ia.mjs, `dados.regua`):
+      // 1) sem medida de seguidor vence tudo; 2) mista SEM declaração mostra a
+      // mistura; 3) qualquer outro caso (mercado único, ou mista COM
+      // declaração — a declaração venceu) é "normal".
+      const mostrarQuebraPorMercado = campanhaMista && !objDeclarado && !semMedidaDeSeguidor;
+      metrics.innerHTML = mostrarQuebraPorMercado
+        ? gastoPorMercado(hier).map(({ mercado: m, gasto: g }) => `<div class="gt-kpi"><span class="gt-kpi-lbl">${_gtEsc(m==='desconhecido'?'não identificado':(ROTULO_MERCADO[m]||m))}</span><span class="gt-kpi-val">${_maFmtR(g)}</span></div>`).join('')
+        : _gtKpisHtml(Object.assign({}, ins, { objective: kpiObjective }));
 
       // O KPI PRINCIPAL DO MERCADO (Onda C, Tarefa 5): "o cartão passa a
       // mostrar o mercado da campanha... e o KPI daquele mercado" — este é
-      // ESSE KPI, prepended na frente da régua de apoio (CTR, cliques... já
-      // desenhada em `metrics` lá em cima) porque é ele quem decide, não mais
-      // um número na lista. Sem alvo (mercado 'desconhecido', ou campanha
-      // MISTA — que não tem custo único) nada é acrescentado aqui: inventar
-      // um número seria pior que não mostrar nenhum ("a tela nunca mente",
-      // PADRAO-DA-CENTRAL).
-      if (alvo && custoAlvo != null) {
+      // ESSE KPI, prepended na frente da régua de apoio porque é ele quem
+      // decide, não mais um número na lista. O gatilho é `custoAlvo != null`
+      // — NUNCA `alvo` sozinho (correção I3): `alvo` fica `null` em toda
+      // campanha mista, mas uma interação DECLARADA ainda pode preencher
+      // `custoAlvo`/`rotuloAlvo` mesmo assim, e o KPI tem de aparecer.
+      if (semMedidaDeSeguidor) {
+        // CAMPANHA DE SEGUIDORES FORA DO MERCADO 'perfil' (correção I5): sem
+        // cor, sem veredito de custo — mesma recusa do robô. O número (se
+        // houver) aparece mudo, e o texto CURTO fica visível no próprio
+        // texto do badge, não só no `title` (tela de toque não tem mouse —
+        // lição de painel-regua.js/`AVISO_LIGADA_INCOMPLETA`).
+        const avisoEl=document.createElement('div');
+        avisoEl.className='gt-metric';
+        avisoEl.title='A Meta não atribui "novo seguidor" a uma campanha — só à conta inteira. Sem medida confiável por campanha aqui, então não julgamos por custo.';
+        avisoEl.innerHTML='Medida indisponível <span style="color:var(--muted)">(seguidores)</span>';
+        metrics.insertBefore(avisoEl, metrics.firstChild);
+        // Contexto da CONTA sempre aparece pra campanha de seguidores,
+        // mercado 'perfil' ou não (mesma regra do robô: `deSeguidores ?
+        // {custo_por_seguidor_da_conta_reais...} : {}` não depende do mercado).
+        const seloSeguidorHtml=_gtSeloCustoSeguidorContaHtml();
+        if (seloSeguidorHtml) {
+          const wrap=document.createElement('span');wrap.innerHTML=seloSeguidorHtml;
+          if (wrap.firstElementChild) metrics.insertBefore(wrap.firstElementChild, avisoEl.nextSibling);
+        }
+      } else if (ponderadaAtrapalha) {
+        // A PONDERADA LIGADA COMPARA UNIDADES DIFERENTES no mercado `post`
+        // (correção I6): `custoAlvo` é R$ por ENGAJAMENTO (ALVOS.post nunca
+        // muda a métrica) mas `metaAlvo` virou R$ por PONTO (`metaDoBalde`
+        // troca a chave quando `ponderadaLigada`) — o mesmo erro de 7,5× que
+        // esta onda existe pra matar. Enquanto a Tarefa T4b (que trocaria o
+        // CÁLCULO também) não existir: mostra o número, SEM cor e SEM
+        // veredito — melhor não julgar do que julgar errado.
+        const el=document.createElement('div');
+        el.className='gt-metric';
+        el.title='A régua ponderada está LIGADA (Seção 1), mas o cálculo do custo por engajamento ainda não foi trocado para o ponto ponderado (falta a Tarefa T4b) — comparar as duas unidades daria um veredito errado.';
+        el.innerHTML=`${_gtEsc(rotuloAlvo.rotulo)} <span style="color:var(--muted)">${custoAlvo==null?'—':_maFmtR(custoAlvo)}</span> <span style="color:var(--orange)">sem veredito (unidade diferente)</span>`;
+        metrics.insertBefore(el, metrics.firstChild);
+      } else if (custoAlvo != null) {
         const corAlvo = aval.faixa==='escalar-forte'||aval.faixa==='dentro-da-meta'?'var(--green)'
           :aval.faixa==='manter'?'var(--orange)':aval.faixa==='otimizar'?'var(--red)':'var(--muted)';
         const kpiAlvoEl=document.createElement('div');
@@ -2977,7 +3085,18 @@ function _renderGtConjuntos(pane,hier,camp,conjuntos,nivelOrc,campNum,temMensage
         // trava do cartão da campanha (ver o comentário grande de `metaAlvo`,
         // acima em _renderGtCampaigns).
         const metaCj=metaDoBalde(reguaAtiva,mercadoCj);
-        if(custoCj!=null){
+        // I6 (rodada de correção 1): MESMO problema do cartão — com a
+        // ponderada ligada, o mercado 'post' compara custo por engajamento
+        // (o cálculo nunca mudou) contra meta em R$/ponto. Sem cor, sem
+        // veredito, aqui também.
+        const ponderadaAtrapalhaCj=mercadoCj==='post'&&ponderadaLigada(reguaAtiva);
+        if(ponderadaAtrapalhaCj&&custoCj!=null){
+          const kpiCjEl=document.createElement('div');
+          kpiCjEl.className='gt-metric';
+          kpiCjEl.title='A régua ponderada está LIGADA, mas o cálculo do custo por engajamento ainda não foi trocado para o ponto ponderado (falta a Tarefa T4b) — sem veredito, unidades diferentes.';
+          kpiCjEl.innerHTML=`${_gtEsc(alvoCj.rotulo)} <span style="color:var(--muted)">${_maFmtR(custoCj)}</span> <span style="color:var(--orange)">sem veredito</span>`;
+          top.appendChild(kpiCjEl);
+        } else if(!ponderadaAtrapalhaCj&&custoCj!=null){
           const avalCj=avaliarAlvo({custo:custoCj,meta:metaCj,limiares:reguaAtiva.limiares_resultado});
           const corCj=avalCj.faixa==='escalar-forte'||avalCj.faixa==='dentro-da-meta'?'var(--green)'
             :avalCj.faixa==='manter'?'var(--orange)':avalCj.faixa==='otimizar'?'var(--red)':'var(--muted)';

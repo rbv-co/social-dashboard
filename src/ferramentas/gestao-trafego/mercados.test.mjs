@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  mercadoDoConjunto, mercadoDaCampanha, gastoPorMercado, MERCADOS,
+  mercadoDoConjunto, mercadoDaCampanha, gastoPorMercado, comObjetivoHerdado, MERCADOS,
   MERCADO_POR_DESTINO, DESTINOS_QUE_EXIGEM_DESEMPATE,
 } from './mercados.js';
 
@@ -231,4 +231,44 @@ test('gastoPorMercado: grupo sem conjunto (anúncio órfão, "_sem_conjunto") vi
 test('gastoPorMercado de lista vazia é lista vazia, nunca erro', () => {
   assert.deepEqual(gastoPorMercado([]), []);
   assert.deepEqual(gastoPorMercado(undefined), []);
+});
+
+// comObjetivoHerdado — rodada de correção 1 (achado C1): a Graph só devolve
+// `objective` na campanha; sem herdar, o desempate de OFFSITE_CONVERSIONS
+// (lead x venda) nunca dispara vindo de um conjunto puro do Graph.
+test('comObjetivoHerdado copia o objective da campanha pro conjunto que não tem o seu', () => {
+  const camp = { id: 'c1', objective: 'OUTCOME_LEADS' };
+  const conjuntos = [{ id: 'cj1', destination_type: 'WEBSITE', optimization_goal: 'OFFSITE_CONVERSIONS' }];
+  const [cj] = comObjetivoHerdado(camp, conjuntos);
+  assert.equal(cj.objective, 'OUTCOME_LEADS');
+  assert.equal(mercadoDoConjunto(cj), 'lead');
+});
+
+test('comObjetivoHerdado NUNCA sobrescreve um objective que o conjunto já tinha', () => {
+  const camp = { id: 'c1', objective: 'OUTCOME_LEADS' };
+  const conjuntos = [{ id: 'cj1', objective: 'OUTCOME_SALES', destination_type: 'WEBSITE', optimization_goal: 'OFFSITE_CONVERSIONS' }];
+  const [cj] = comObjetivoHerdado(camp, conjuntos);
+  assert.equal(cj.objective, 'OUTCOME_SALES');
+  assert.equal(mercadoDoConjunto(cj), 'site_venda');
+});
+
+test('comObjetivoHerdado sem campanha (objective ausente) não quebra — conjunto fica sem objective', () => {
+  const conjuntos = [{ id: 'cj1', destination_type: 'WEBSITE', optimization_goal: 'OFFSITE_CONVERSIONS' }];
+  const [cj] = comObjetivoHerdado(null, conjuntos);
+  assert.equal(cj.objective, null); // `campanha && campanha.objective` sem campanha dá null, não undefined
+  assert.equal(mercadoDoConjunto(cj), 'site_venda'); // desempate sem objetivo preserva o comportamento medido
+});
+
+test('comObjetivoHerdado de lista vazia/ausente é lista vazia, nunca erro', () => {
+  assert.deepEqual(comObjetivoHerdado({ objective: 'X' }, []), []);
+  assert.deepEqual(comObjetivoHerdado({ objective: 'X' }, undefined), []);
+});
+
+// gastoPorMercado e o desempate por objetivo, juntos — prova end-to-end do
+// que faltava: um conjunto WEBSITE/OFFSITE_CONVERSIONS SEM objective próprio
+// entra como 'site_venda' (comportamento de sempre) e só vira 'lead' quando
+// alguém herda o objetivo da campanha antes de chamar.
+test('sem herdar o objetivo, OFFSITE_CONVERSIONS cai sempre em site_venda — é ISSO que a tela fazia errado', () => {
+  const conjuntoCru = { id: 'cj1', destination_type: 'WEBSITE', optimization_goal: 'OFFSITE_CONVERSIONS' };
+  assert.equal(mercadoDoConjunto(conjuntoCru), 'site_venda');
 });

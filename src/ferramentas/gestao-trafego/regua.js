@@ -100,6 +100,18 @@ export function ponderadaLigada(regua) {
 // — julgaria a Mantova pelo preço que a Raíssa paga.
 //
 // Sem conta selecionada, mesma coisa: em branco. PURO.
+//
+// ⚠️ `ponderada_ligada` (Tarefa 4 da Onda C) é GERAL como `pesos`/`limiares` —
+// não muda de conta pra conta, é uma escolha da ferramenta inteira — e por
+// isso tem de ser copiado aqui do MESMO jeito. Faltava (achado durante a
+// verificação da Tarefa 5, rodada de correção 1, 25/09/2026): `_gtReguaAtiva()`
+// (tela-de-gestao-trafego.vue) sempre passa pelo `reguaDaConta`, então
+// `ponderadaLigada(reguaAtiva)` dava SEMPRE `false` em produção, não importa o
+// que estivesse salvo — o interruptor da Tarefa 4 nunca tinha efeito nenhum
+// pelo caminho real (só nos testes que chamam `metaDoBalde` direto em cima do
+// `normalizarRegua`, sem passar por `reguaDaConta`). Sem este campo, a
+// correção I6 (mercado `post` sem cor/veredito quando a ponderada está ligada)
+// também nunca dispararia. PURO.
 export function reguaDaConta(regua, contaId) {
   const r = regua || {};
   const porConta = r.metas_por_conta || {};
@@ -107,6 +119,7 @@ export function reguaDaConta(regua, contaId) {
     pesos: r.pesos,
     limiares: r.limiares,
     limiares_resultado: r.limiares_resultado,
+    ponderada_ligada: r.ponderada_ligada === true,
     metas: (contaId && porConta[contaId]) ? porConta[contaId] : {},
     metas_por_conta: porConta,
   };
