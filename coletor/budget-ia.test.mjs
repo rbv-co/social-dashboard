@@ -347,11 +347,16 @@ test('o balde usado no anúncio é o da CAMPANHA, nunca recalculado', () => {
   // ARMADILHA (rodada de correção 1): com `actions: []` no anúncio, os dois
   // caminhos convergem pra `resultado: null` — o certo (balde 'mensagens',
   // sem conversa na janela) E o errado (balde recalculado por `camp.objective`
-  // = 'engajamento', cujo `alvo.resultado` é null POR DEFINIÇÃO em alvos.js,
-  // o único balde sem métrica de quantidade). Um teste que não distingue os
-  // dois passaria com o bug de volta. Por isso o anúncio abaixo tem uma
-  // conversa de verdade: só o balde 'mensagens' sabe ler `conversas`;
-  // 'engajamento' devolveria null de qualquer jeito.
+  // = 'engajamento'). Um teste que não distingue os dois passaria com o bug
+  // de volta. Por isso o anúncio abaixo tem uma conversa de verdade: só o
+  // balde 'mensagens' sabe ler `conversas` a partir dela.
+  //
+  // ATUALIZADO 24/09/2026: desde a troca de régua, `alvo.resultado` de
+  // engajamento NÃO é mais null por definição (é `'engaj_pub'`, ver alvos.js)
+  // — o `resultado` do anúncio errado continua null aqui pela razão de
+  // sempre: a métrica de engajamento lê o action_type `post_engagement`, e
+  // esta conversa de WhatsApp não é esse tipo de ação (é
+  // `onsite_conversion.messaging_conversation_started_7d`).
   const camp = { id: '6', name: 'Zap', objective: 'OUTCOME_ENGAGEMENT' };
   const conjuntos = [{ id: 'c1', destination_type: 'WHATSAPP' }];
   const ads = [{
@@ -446,10 +451,15 @@ test('IMPORTANTE 1: aprendizado tem válvula também para "sem nenhum resultado"
 });
 
 test('IMPORTANTE 2: resultado nulo no anúncio não é lido como "não produziu nada"', () => {
-  // ALVOS.engajamento.resultado é null POR DEFINIÇÃO (alvos.js) — todo anúncio
-  // de campanha de engajamento chega com resultado: null, e a instrução antiga
+  // ATUALIZADO 24/09/2026: este teste nasceu quando ALVOS.engajamento.resultado
+  // era null POR DEFINIÇÃO — não é mais verdade (é 'engaj_pub', ver alvos.js).
+  // Quem hoje chega sem `resultado` (nem `custo_por_resultado`) é o balde
+  // 'padrao': campanha cujo objetivo a ferramenta não reconhece e que por
+  // isso não tem alvo nenhum em alvos.js (ver baldes.js). A instrução antiga
   // ("CTR alto e nenhum resultado é candidato a pausar") lia esse null como
-  // criativo ruim. O prompt agora manda julgar pelo custo_por_resultado.
+  // criativo ruim. O prompt manda julgar pelo custo_por_resultado — este
+  // teste só confere que a instrução (texto estático do prompt) continua lá;
+  // não depende de qual balde é usado abaixo.
   const camp = { id: '14', name: 'Engaja', objective: 'OUTCOME_ENGAGEMENT' };
   const { system } = montarMensagens(camp, {}, [], [], REGUA_TESTE);
   assert.match(system, /não conta resultado por unidade/);

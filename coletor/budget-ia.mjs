@@ -151,13 +151,18 @@ export function montarMensagens(camp, ins, ads, conjuntos, regua, extra) {
     'Gasto relevante sem UM resultado sequer é motivo para agir mesmo dentro do aprendizado, mesmo sem meta pra comparar. ' +
     'Mexer agora reinicia o aprendizado. ' +
     'ANÚNCIOS: julgue cada criativo pelo `resultado` e `custo_por_resultado` dele, não só por CTR — ' +
-    // `resultado` nulo é a leitura NORMAL de engajamento (e do balde padrão,
-    // quando o objetivo é desconhecido): esses tipos não contam resultado por
-    // unidade, só custo por ponto/indicador. Sem esta ressalva o modelo lia
-    // esse null como "o criativo não produziu nada" e mandava pausar bons
-    // criativos de engajamento só por não terem `resultado` numérico.
-    '`resultado` nulo pode significar apenas que esse TIPO de campanha não conta resultado por unidade (é o caso de engajamento) — ' +
-    'não leia isso como "o criativo não produziu nada": quando `resultado` vier nulo, julgue o anúncio pelo `custo_por_resultado`. ' +
+    // ATUALIZADO 24/09/2026: engajamento tinha `resultado` null POR DEFINIÇÃO
+    // (era o único balde sem métrica de quantidade). Não é mais verdade — a
+    // troca de régua deu a ele `resultado: 'engaj_pub'`, um número real na
+    // maioria dos anúncios (ver ALVOS.engajamento em alvos.js). Quem continua
+    // caindo sem `resultado` (e sem `custo_por_resultado`) é o balde 'padrao'
+    // — campanha cujo `objective`/`optimization_goal` a ferramenta não
+    // reconhece (ver baldes.js) e que por isso não tem alvo nenhum em
+    // alvos.js. Sem esta ressalva o modelo lia esse null como "o criativo não
+    // produziu nada" e mandava pausar bons criativos só por não terem
+    // `resultado` numérico.
+    '`resultado` nulo pode significar apenas que esse TIPO de campanha (objetivo não reconhecido pela ferramenta, balde "padrao") não conta resultado por unidade — ' +
+    'não leia isso como "o criativo não produziu nada": quando `resultado` vier nulo, julgue o anúncio pelo `custo_por_resultado`; se os dois vierem nulos, julgue pelos indicadores do anúncio e diga na justificativa que não havia resultado medido. ' +
     'Fora desses casos, criativo com CTR alto e nenhum resultado é candidato a pausar, e CTR baixo com resultado barato NÃO é. ' +
     'Quando `custo_atual_reais` vier nulo e houver meta, diga que esta campanha não registrou resultado na janela — nunca invente o número. ' +
     'Responda SOMENTE com um JSON válido, sem texto antes ou depois, no formato: ' +

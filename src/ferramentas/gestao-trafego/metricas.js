@@ -89,11 +89,17 @@ export const GT_BALDE_PADRAO={
 };
 
 // O CUSTO POR RESULTADO deste tipo de campanha, na unidade dele (alvos.js diz
-// qual é: custo por lead, CAC, custo por visita, custo por conversa, CPM).
+// qual é: custo por lead, CAC, custo por visita, custo por conversa, CPM,
+// custo por engajamento).
 //
-// Engajamento devolve null de propósito: o resultado dele é o PONTO ponderado,
-// e quem calcula isso é ponderada.js. Dois cálculos para o mesmo balde
-// acabariam discordando.
+// A guarda `alvo.metrica === 'ponderada'` não dispara mais no caminho normal
+// — desde a troca de régua de 24/09/2026, engajamento usa `custo_engajamento`
+// como qualquer outro balde (ver ALVOS.engajamento em alvos.js). Ela continua
+// aqui de propósito: é o que garante que, SE alguém religar a ponderada
+// (trocando `metrica` de volta para `'ponderada'` em alvos.js), esta função
+// volta a devolver null pra engajamento em vez de tentar calcular um custo
+// que não existe no catálogo — sem essa guarda, religar a ponderada exigiria
+// mexer aqui também.
 //
 // Devolve null (e nunca 0) quando não há resultado ou não há gasto na janela:
 // um custo de R$ 0,00 escrito no prompt é lido pelo modelo como "de graça" e
