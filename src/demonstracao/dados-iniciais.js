@@ -19,6 +19,7 @@
  * respostas o banco de mentira monta a partir daqui, como o SQL monta.
  */
 import { diaEmSaoPaulo, somarDias, instanteEmSaoPaulo } from './tempo.js'
+import { achatarCidade } from '../ferramentas/comercial-vessel/praca-regras.js'
 
 export const USUARIO_DA_DEMONSTRACAO = 'Ionara (exemplo)'
 
@@ -27,6 +28,35 @@ export function dadosIniciais(agora = new Date()) {
   const dia = (n) => somarDias(hoje, n)
   const em = (n, hora) => instanteEmSaoPaulo(dia(n), hora)
   const compacto = (n) => dia(n).replace(/-/g, '')
+
+  // ── PRAÇA E EDIÇÃO (25/09/2026, Task 9) — o cenário de VERDADE ────────────
+  // Medido no cabeçalho da migration `2026-09-25-vessel-praca-e-edicao.sql`:
+  // 63 stylists não-teste nas quatro cidades (27 Campinas, 18 Limeira, 17
+  // Piracicaba, 1 "Limeira / Piracicaba" que fica SEM PRAÇA de propósito — a
+  // pendência à vista, não um chute de qual das duas é a certa). Só Campinas
+  // tem loja de destino definida (iguatemi); Limeira e Piracicaba nascem
+  // "loja a definir" — pendência do dono, não desta demonstração.
+  const pracas = [
+    { id: 1, sigla: 'CPS', nome: 'Campinas', loja_destino: 'iguatemi', ordem: 1, ativa: true },
+    { id: 2, sigla: 'SAO', nome: 'São Paulo', loja_destino: null, ordem: 2, ativa: true },
+    { id: 3, sigla: 'SBO', nome: 'Santa Bárbara', loja_destino: null, ordem: 3, ativa: true },
+    { id: 4, sigla: 'BSB', nome: 'Brasília', loja_destino: null, ordem: 4, ativa: true },
+    { id: 5, sigla: 'LIM', nome: 'Limeira', loja_destino: null, ordem: 5, ativa: true },
+    { id: 6, sigla: 'PIR', nome: 'Piracicaba', loja_destino: null, ordem: 6, ativa: true },
+  ]
+  const PRACA = Object.fromEntries(pracas.map((p) => [p.sigla, p.id]))
+  // ⚠️ `cidade_chave` sai de `achatarCidade` — NUNCA digitada à mão: é a
+  // MESMA conta que `vessel_praca_cidade_vincular` usa para achar duplicata
+  // (a mesma razão da migration, seção 7: as duas pontas nascem da mesma
+  // conta e não podem divergir uma da outra).
+  const pracaCidades = [
+    { id: 1, praca_id: PRACA.CPS, cidade: 'Campinas' },
+    { id: 2, praca_id: PRACA.SAO, cidade: 'São Paulo' },
+    { id: 3, praca_id: PRACA.SBO, cidade: 'Santa Bárbara' },
+    { id: 4, praca_id: PRACA.BSB, cidade: 'Brasília' },
+    { id: 5, praca_id: PRACA.LIM, cidade: 'Limeira' },
+    { id: 6, praca_id: PRACA.PIR, cidade: 'Piracicaba' },
+  ].map((c) => ({ ...c, cidade_chave: achatarCidade(c.cidade) }))
 
   // ⚠️ AS ETAPAS DO FUNIL (configuráveis desde 24/09/2026) — as que a migration
   // semeia, na mesma ordem, COM OS NOMES QUE O DONO JÁ USA EM PRODUÇÃO (lidos
@@ -54,7 +84,7 @@ export function dadosIniciais(agora = new Date()) {
   const stylists = [
     {
       id: 1, codigo: 'STY-0001', nome: 'Marina Castro (exemplo)', whatsapp: '5519990000001',
-      cidade: 'Campinas', instagram: '@marina.exemplo', atuacao: 'stylist', praca_preview: 'CPS',
+      cidade: 'Campinas', instagram: '@marina.exemplo', atuacao: 'stylist', praca_preview: 'CPS', praca_id: PRACA.CPS,
       loja: 'iguatemi', origem_contato: 'indicacao', origem_canal: null, responsavel: 'Ionara',
       prospectado_em: dia(-75), proxima_acao: 'Combinar a data do terceiro encontro', proxima_acao_em: dia(6),
       // ⚠️ 24/09/2026: a Marina está na Ativada (é a anfitriã dos encontros).
@@ -62,7 +92,7 @@ export function dadosIniciais(agora = new Date()) {
     },
     {
       id: 2, codigo: 'STY-0002', nome: 'Paula Reis (exemplo)', whatsapp: '5511990000002',
-      cidade: 'São Paulo', instagram: '@paula.exemplo', atuacao: 'personal shopper', praca_preview: 'SAO',
+      cidade: 'São Paulo', instagram: '@paula.exemplo', atuacao: 'personal shopper', praca_preview: 'SAO', praca_id: PRACA.SAO,
       loja: null, origem_contato: 'pesquisa', origem_canal: null, responsavel: 'Ionara',
       prospectado_em: dia(-20), proxima_acao: 'Retornar sobre a proposta do encontro', proxima_acao_em: dia(-2),
       ativada_em: null, etapa_id: ETAPA.Convidado, ativa: true, teste: false,
@@ -70,7 +100,7 @@ export function dadosIniciais(agora = new Date()) {
     {
       // Veio pela landing page do Circle: é a porta pública que carimba o canal.
       id: 3, codigo: 'STY-0003', nome: 'Renata Lima (exemplo)', whatsapp: '5519990000003',
-      cidade: 'Campinas', instagram: '@renata.exemplo', atuacao: 'consultora de imagem', praca_preview: 'CPS',
+      cidade: 'Campinas', instagram: '@renata.exemplo', atuacao: 'consultora de imagem', praca_preview: 'CPS', praca_id: PRACA.CPS,
       loja: 'tivoli', origem_contato: 'inbound', origem_canal: 'lp', responsavel: null,
       prospectado_em: dia(-3), proxima_acao: null, proxima_acao_em: null,
       ativada_em: null, etapa_id: ETAPA.Prospectado, ativa: true, teste: false,
@@ -80,7 +110,7 @@ export function dadosIniciais(agora = new Date()) {
     // (o contato fácil mostra um botão para cada caso).
     {
       id: 5, codigo: 'STY-0005', nome: 'Luiza Amaral (exemplo)', whatsapp: null,
-      cidade: 'Limeira', instagram: '@luiza.exemplo', atuacao: 'consultoria', praca_preview: null,
+      cidade: 'Limeira', instagram: '@luiza.exemplo', atuacao: 'consultoria', praca_preview: null, praca_id: PRACA.LIM,
       loja: null, origem_contato: 'pesquisa', origem_canal: null, responsavel: null,
       prospectado_em: null, proxima_acao: null, proxima_acao_em: null,
       observacoes: 'Da planilha de mapeamento (exemplo). Tier B.',
@@ -88,7 +118,7 @@ export function dadosIniciais(agora = new Date()) {
     },
     {
       id: 6, codigo: 'STY-0006', nome: 'Carol Bastos (exemplo)', whatsapp: '5519990000006',
-      cidade: 'Piracicaba', instagram: null, atuacao: 'stylist', praca_preview: null,
+      cidade: 'Piracicaba', instagram: null, atuacao: 'stylist', praca_preview: null, praca_id: PRACA.PIR,
       loja: null, origem_contato: 'pesquisa', origem_canal: null, responsavel: null,
       prospectado_em: null, proxima_acao: 'Conferir a carteira antes de abordar', proxima_acao_em: dia(4),
       observacoes: null, ativada_em: null, etapa_id: ETAPA['Classificação'], ativa: true, teste: false,
@@ -114,7 +144,7 @@ export function dadosIniciais(agora = new Date()) {
   // motivo" do placar e o cartão da coluna Desclassificado).
   stylists.push({
     id: 7, codigo: 'STY-0007', nome: 'Bianca Serra (exemplo)', whatsapp: '5519990000007',
-    cidade: 'Americana', instagram: '@bianca.exemplo', atuacao: 'stylist', praca_preview: null,
+    cidade: 'Americana', instagram: '@bianca.exemplo', atuacao: 'stylist', praca_preview: null, praca_id: null,
     loja: null, origem_contato: 'pesquisa', origem_canal: null, responsavel: 'Ionara',
     prospectado_em: null, proxima_acao: null, proxima_acao_em: null,
     observacoes: null, ativada_em: null, etapa_id: ETAPA.Desclassificado, ativa: true, teste: false,
@@ -125,7 +155,7 @@ export function dadosIniciais(agora = new Date()) {
   // Instagram): o selo no cartão, na lista e na ficha, e nenhum botão de contato.
   stylists.push({
     id: 8, codigo: 'STY-0008', nome: 'Helena Prado (exemplo)', whatsapp: null,
-    cidade: 'Piracicaba', instagram: null, atuacao: 'outra', praca_preview: null,
+    cidade: 'Piracicaba', instagram: null, atuacao: 'outra', praca_preview: null, praca_id: PRACA.PIR,
     loja: null, origem_contato: 'pesquisa', origem_canal: null, responsavel: null,
     prospectado_em: null, proxima_acao: null, proxima_acao_em: null, sem_contato: true,
     observacoes: 'Da planilha de mapeamento (exemplo). Sem contato ainda — alguém vai completar. Não localizado publicamente: WhatsApp/Telefone, Instagram, E-mail.',
@@ -136,19 +166,19 @@ export function dadosIniciais(agora = new Date()) {
   const encontros = [
     {
       id: 1, codigo: `PE-${compacto(-40)}-CPS-01`, chave: 'H3N8P4WZ', stylist_id: 1, quando: em(-40, '19:00'),
-      local: 'Casa da Marina (exemplo)', praca: 'CPS', loja: 'iguatemi', vagas: 8, ativa: false,
+      local: 'Casa da Marina (exemplo)', praca: 'CPS', praca_id: PRACA.CPS, loja: 'iguatemi', vagas: 8, ativa: false,
       arquivada: false, status: 'realizado', realizado_em: dia(-40), motivo: null,
       observacoes: 'Primeiro encontro dela.', teste: false,
     },
     {
       id: 2, codigo: `PE-${compacto(-12)}-CPS-01`, chave: 'K7Q2M9TX', stylist_id: 1, quando: em(-12, '19:30'),
-      local: 'Loja do Iguatemi Campinas', praca: 'CPS', loja: 'iguatemi', vagas: 10, ativa: false,
+      local: 'Loja do Iguatemi Campinas', praca: 'CPS', praca_id: PRACA.CPS, loja: 'iguatemi', vagas: 10, ativa: false,
       arquivada: false, status: 'realizado', realizado_em: dia(-12), motivo: null,
       observacoes: 'Espumante e a coleção nova.', teste: false,
     },
     {
       id: 3, codigo: `PE-${compacto(5)}-CPS-01`, chave: 'R4V8B2NC', stylist_id: 1, quando: em(5, '19:00'),
-      local: 'Loja do Iguatemi Campinas', praca: 'CPS', loja: 'iguatemi', vagas: 9, ativa: true,
+      local: 'Loja do Iguatemi Campinas', praca: 'CPS', praca_id: PRACA.CPS, loja: 'iguatemi', vagas: 9, ativa: true,
       arquivada: false, status: 'agendado', realizado_em: null, motivo: null, observacoes: null, teste: false,
     },
   ]
@@ -293,7 +323,7 @@ export function dadosIniciais(agora = new Date()) {
   // "vale reavaliar"), Luísa C, Renata B, e a Paula SEM NOTA.
   stylists.push({
     id: 4, codigo: 'STY-0004', nome: 'Luísa Andrade (exemplo)', whatsapp: '5519990000004',
-    cidade: 'Campinas', instagram: '@luisa.exemplo', atuacao: 'stylist', praca_preview: 'CPS',
+    cidade: 'Campinas', instagram: '@luisa.exemplo', atuacao: 'stylist', praca_preview: 'CPS', praca_id: PRACA.CPS,
     loja: 'tivoli', origem_contato: 'evento', origem_canal: null, responsavel: 'Ionara',
     prospectado_em: dia(-45), proxima_acao: 'Remarcar o encontro que caiu', proxima_acao_em: dia(4),
     ativada_em: em(-40, '15:00'), etapa_id: ETAPA['Esteve Presente'], ativa: true, teste: false,
@@ -304,13 +334,13 @@ export function dadosIniciais(agora = new Date()) {
   encontros.push(
     {
       id: 4, codigo: `PE-${compacto(-25)}-CPS-01`, chave: 'M3T8W2QA', stylist_id: 4, quando: em(-25, '19:00'),
-      local: 'Loja do Tivoli Shopping', praca: 'CPS', loja: 'tivoli', vagas: 8, ativa: false,
+      local: 'Loja do Tivoli Shopping', praca: 'CPS', praca_id: PRACA.CPS, loja: 'tivoli', vagas: 8, ativa: false,
       arquivada: false, status: 'realizado', realizado_em: dia(-25), motivo: null,
       observacoes: 'Primeiro encontro dela.', teste: false,
     },
     {
       id: 5, codigo: `PE-${compacto(-8)}-CPS-01`, chave: 'P6N4X9DE', stylist_id: 4, quando: em(-8, '19:00'),
-      local: 'Loja do Tivoli Shopping', praca: 'CPS', loja: 'tivoli', vagas: 8, ativa: false,
+      local: 'Loja do Tivoli Shopping', praca: 'CPS', praca_id: PRACA.CPS, loja: 'tivoli', vagas: 8, ativa: false,
       arquivada: false, status: 'cancelado', realizado_em: null, motivo: 'A stylist precisou viajar.',
       observacoes: null, teste: false,
     },
@@ -324,12 +354,12 @@ export function dadosIniciais(agora = new Date()) {
   encontros.push(
     {
       id: 6, codigo: `PE-${compacto(6)}-CPS-01`, chave: 'T5W8Y3KB', stylist_id: 4, quando: em(6, '18:00'),
-      local: 'Loja do Iguatemi Campinas', praca: 'CPS', loja: 'iguatemi', vagas: 8, ativa: true,
+      local: 'Loja do Iguatemi Campinas', praca: 'CPS', praca_id: PRACA.CPS, loja: 'iguatemi', vagas: 8, ativa: true,
       arquivada: false, status: 'agendado', realizado_em: null, motivo: null, observacoes: null, teste: false,
     },
     {
       id: 7, codigo: `PE-${compacto(6)}-CPS-02`, chave: 'Z9C4F7MH', stylist_id: 1, quando: em(6, '20:30'),
-      local: 'Loja do Iguatemi Campinas', praca: 'CPS', loja: 'iguatemi', vagas: 8, ativa: true,
+      local: 'Loja do Iguatemi Campinas', praca: 'CPS', praca_id: PRACA.CPS, loja: 'iguatemi', vagas: 8, ativa: true,
       arquivada: false, status: 'agendado', realizado_em: null, motivo: null, observacoes: null, teste: false,
     },
   )
@@ -367,6 +397,136 @@ export function dadosIniciais(agora = new Date()) {
     avaliacao(4, 3, [3, 4, 3, 4, 3], em(-1, '10:00'), 'Portfólio forte; falta o primeiro encontro.'),
   ]
 
+  // ── O RESTO DO CENÁRIO DE PRAÇA E EDIÇÃO: as 57 que faltam para os 63 ─────
+  // (Campinas já tem 3 nomeadas — Marina, Renata, Luísa —, faltam 24;
+  // Limeira já tem 1 — Luiza —, faltam 17; Piracicaba já tem 2 — Carol,
+  // Helena —, faltam 15; e a "Limeira / Piracicaba" nasce aqui, a única.)
+  // Nomes GERADOS para as "frias" (Identificado, sem prospecção ainda — não
+  // contam em NENHUMA conta do placar, só ocupam espaço no cadastro, como a
+  // maioria de uma base de verdade ocupa): todas "(exemplo)", sem contato de
+  // verdade. As de LIMEIRA que ganham etapa e data (abaixo) são as que dão
+  // ao placar da edição o que mostrar.
+  const NOMES_FRIOS = ['Ana', 'Beatriz', 'Camila', 'Daniela', 'Eduarda', 'Fabiana', 'Gabriela', 'Helena', 'Isabela',
+    'Joana', 'Karina', 'Larissa', 'Mariana', 'Natália', 'Otávia', 'Patrícia', 'Quitéria', 'Raquel', 'Sabrina',
+    'Tatiane', 'Úrsula', 'Valentina', 'Wanda', 'Ximena', 'Yara', 'Zélia', 'Amanda', 'Bruna']
+  const SOBRENOMES_FRIOS = ['Alves', 'Barros', 'Cardoso', 'Dias', 'Esteves', 'Ferraz', 'Gouveia', 'Henriques',
+    'Ibrahim', 'Junqueira', 'Kalil', 'Lacerda', 'Macedo', 'Nogueira', 'Oliveira', 'Pereira', 'Quadros', 'Ramalho',
+    'Siqueira', 'Teles', 'Ubaldo', 'Vasques', 'Wagner', 'Xavier', 'Yoshida', 'Zanetti']
+  const foneFrio = (id) => `551990${String(id).padStart(6, '0')}`
+  let proximoIdNovo = 9
+  function stylistFria(cidade, pracaId) {
+    const id = proximoIdNovo++
+    const nome = NOMES_FRIOS[id % NOMES_FRIOS.length]
+    const sobrenome = SOBRENOMES_FRIOS[Math.floor(id / NOMES_FRIOS.length) % SOBRENOMES_FRIOS.length]
+    return {
+      id, codigo: `STY-${String(id).padStart(4, '0')}`, nome: `${nome} ${sobrenome} (exemplo)`,
+      whatsapp: foneFrio(id), cidade, instagram: null, atuacao: 'stylist', praca_preview: null, praca_id: pracaId,
+      loja: null, origem_contato: 'pesquisa', origem_canal: null, responsavel: null,
+      prospectado_em: null, proxima_acao: null, proxima_acao_em: null,
+      observacoes: 'Da planilha de mapeamento (exemplo).',
+      ativada_em: null, etapa_id: ETAPA.Identificado, ativa: true, teste: false,
+    }
+  }
+  const campinasFrias = Array.from({ length: 24 }, () => stylistFria('Campinas', PRACA.CPS))
+  const piracicabaFrias = Array.from({ length: 15 }, () => stylistFria('Piracicaba', PRACA.PIR))
+  const limeiraFrias = Array.from({ length: 10 }, () => stylistFria('Limeira', PRACA.LIM))
+
+  // A "Limeira / Piracicaba": texto COMPOSTO, não casa com nenhuma cidade
+  // cadastrada — fica SEM PRAÇA de propósito (a pendência à vista na tela,
+  // não um chute de qual das duas é a certa).
+  const idCombo = proximoIdNovo++
+  const stylistCombo = {
+    id: idCombo, codigo: `STY-${String(idCombo).padStart(4, '0')}`, nome: 'Micheline Borba (exemplo)',
+    whatsapp: foneFrio(idCombo), cidade: 'Limeira / Piracicaba', instagram: null, atuacao: 'stylist',
+    praca_preview: null, praca_id: null, loja: null, origem_contato: 'pesquisa', origem_canal: null, responsavel: null,
+    prospectado_em: null, proxima_acao: null, proxima_acao_em: null,
+    observacoes: 'Da planilha de mapeamento (exemplo). Cidade composta — não casa com nenhuma praça cadastrada.',
+    ativada_em: null, etapa_id: ETAPA.Identificado, ativa: true, teste: false,
+  }
+
+  // ── LIMEIRA: as sete que dão diversidade de etapa ao placar da Edição 1 ───
+  const limeiraDiversas = []
+  function stylistLimeira(nome, etapaNome, historico, extra = {}) {
+    const id = proximoIdNovo++
+    limeiraDiversas.push({
+      id, codigo: `STY-${String(id).padStart(4, '0')}`, nome: `${nome} (exemplo)`,
+      whatsapp: foneFrio(id), cidade: 'Limeira', instagram: null, atuacao: 'stylist', praca_preview: null,
+      praca_id: PRACA.LIM, loja: null, origem_contato: 'pesquisa', origem_canal: null, responsavel: 'Ionara',
+      prospectado_em: null, proxima_acao: null, proxima_acao_em: null, observacoes: null,
+      ativada_em: null, etapa_id: ETAPA[etapaNome], ativa: true, teste: false, ...extra,
+    })
+    for (const [de, para, n, ...resto] of historico(id)) passou(id, de, para, n, ...resto)
+    return id
+  }
+  stylistLimeira('Débora Nunes', 'Classificação', () => [
+    [null, 'Identificado', -10, 'cadastro'], ['Identificado', 'Classificação', -5],
+  ])
+  stylistLimeira('Fernanda Rios', 'Prospectado', () => [
+    [null, 'Identificado', -25, 'cadastro'], ['Identificado', 'Classificação', -22], ['Classificação', 'Prospectado', -20],
+  ], { prospectado_em: dia(-20) })
+  stylistLimeira('Gislaine Prado', 'Convidado', () => [
+    [null, 'Identificado', -24, 'cadastro'], ['Identificado', 'Prospectado', -18], ['Prospectado', 'Convidado', -15],
+  ], { prospectado_em: dia(-18) })
+  stylistLimeira('Ingrid Souto', 'Confirmou Ida', () => [
+    [null, 'Identificado', -20, 'cadastro'], ['Identificado', 'Prospectado', -16], ['Prospectado', 'Convidado', -13],
+    ['Convidado', 'Confirmou Ida', -10],
+  ], { prospectado_em: dia(-16) })
+  stylistLimeira('Joana Vilela', 'Esteve Presente', () => [
+    [null, 'Identificado', -18, 'cadastro'], ['Identificado', 'Prospectado', -14], ['Prospectado', 'Convidado', -11],
+    ['Convidado', 'Confirmou Ida', -8], ['Confirmou Ida', 'Esteve Presente', -5],
+  ], { prospectado_em: dia(-14) })
+  // ⚠️ A ATIVADA da turma: um encontro ANTES da edição começar (fora da
+  // janela — a tela mostra "fora de edição", e o placar não conta) e outro
+  // DENTRO dela (agendado) — o par que prova o recorte por data do placar.
+  const idKaren = stylistLimeira('Karen Duarte', 'Ativada', () => [
+    [null, 'Identificado', -60, 'cadastro'], ['Identificado', 'Prospectado', -55], ['Prospectado', 'Convidado', -52],
+    ['Convidado', 'Confirmou Ida', -51], ['Confirmou Ida', 'Ativada', -50],
+  ], { prospectado_em: dia(-55), ativada_em: em(-50, '09:00') })
+  stylistLimeira('Letícia Farias', 'Desclassificado', () => [
+    [null, 'Identificado', -12, 'cadastro'], ['Identificado', 'Classificação', -8],
+    ['Classificação', 'Desclassificado', -3, 'mudanca', { motivo: 'Fora da praça (logística)' }],
+  ])
+
+  const karen = limeiraDiversas.find((s) => s.id === idKaren)
+  encontros.push(
+    // ⚠️ FORA DA EDIÇÃO 1 (começa em dia(-30)): este é de antes — continua na
+    // tabela (nada some), só fica fora do placar desta edição.
+    {
+      id: 8, codigo: `PE-${compacto(-45)}-LIM-01`, chave: 'LIM4A5X8', stylist_id: karen.id, quando: em(-45, '19:00'),
+      local: 'Espaço parceiro em Limeira (exemplo)', praca: 'LIM', praca_id: PRACA.LIM, loja: null, vagas: 8,
+      ativa: false, arquivada: false, status: 'realizado', realizado_em: dia(-45), motivo: null,
+      observacoes: 'Encontro de antes da Edição 1 — fora da janela dela.', teste: false,
+    },
+    // ⚠️ DENTRO DA EDIÇÃO 1: agendado, ainda por acontecer.
+    {
+      id: 9, codigo: `PE-${compacto(4)}-LIM-01`, chave: 'LIM4B7Y2', stylist_id: karen.id, quando: em(4, '19:00'),
+      local: 'Espaço parceiro em Limeira (exemplo)', praca: 'LIM', praca_id: PRACA.LIM, loja: null, vagas: 8,
+      ativa: true, arquivada: false, status: 'agendado', realizado_em: null, motivo: null, observacoes: null, teste: false,
+    },
+  )
+
+  stylists.push(...campinasFrias, ...piracicabaFrias, ...limeiraFrias, stylistCombo, ...limeiraDiversas)
+
+  // ── AS EDIÇÕES: Limeira com a Edição 1 ABERTA; Campinas com a sua própria ──
+  const edicoes = [
+    { id: 1, praca_id: PRACA.CPS, numero: 1, nome: null, comeca_em: dia(-90), termina_em: null, situacao: 'aberta' },
+    { id: 2, praca_id: PRACA.LIM, numero: 1, nome: null, comeca_em: dia(-30), termina_em: null, situacao: 'aberta' },
+  ]
+  // Quem está em cada edição hoje (`vessel_stylist_na_edicao`) — Campinas
+  // leva as suas (as 3 nomeadas + as 24 frias) e Limeira leva as suas (a
+  // Luiza + as 10 frias + as 7 que dão a diversidade de etapa).
+  let idVinculo = 1
+  const vincular = (stylistId, edicaoId, entrouEm) => ({
+    id: idVinculo++, stylist_id: stylistId, edicao_id: edicaoId, entrou_em: entrouEm, saiu_em: null, etapa_ao_sair: null,
+  })
+  const naEdicao = [
+    vincular(1, 1, em(-80, '09:00')), vincular(3, 1, em(-3, '09:00')), vincular(4, 1, em(-50, '09:00')),
+    ...campinasFrias.map((s) => vincular(s.id, 1, em(-80, '09:00'))),
+    vincular(5, 2, em(-1, '09:00')),
+    ...limeiraFrias.map((s) => vincular(s.id, 2, em(-25, '09:00'))),
+    ...limeiraDiversas.map((s) => vincular(s.id, 2, em(-25, '09:00'))),
+  ]
+
   return {
     etapas, historicoDeEtapas, trilhaDeEtapas: [], motivos,
     stylists, encontros,
@@ -376,5 +536,6 @@ export function dadosIniciais(agora = new Date()) {
     pedidos: [...pedidos, ...pedidosDasVisitas],
     contatos, aberturas, sessoes, leiturasDasSessoes, cadastros,
     qualificacoes,
+    pracas, pracaCidades, edicoes, naEdicao,
   }
 }
