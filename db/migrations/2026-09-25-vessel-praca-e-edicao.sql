@@ -401,21 +401,13 @@ begin
   end if;
   update public.vessel_stylists set praca_id = p_praca_id, atualizado_em = now() where id = v_id;
 
-  -- ⚠️ TASK 11: definir a praça vincula à edição ABERTA da praça nova (se
-  -- houver) — mesmo critério de elegibilidade de `vessel_edicao_abrir`
-  -- (ativa, não-teste). `on conflict do nothing`: quem já tinha vínculo não
-  -- duplica. Tirar a praça (`p_praca_id` nulo) NÃO desfaz vínculo nenhum — o
-  -- histórico é o que congela a edição anterior, não esta função.
-  if p_praca_id is not null then
-    insert into public.vessel_stylist_na_edicao (stylist_id, edicao_id)
-    select v_id, ed.id
-      from public.vessel_stylist_circle_edicoes ed
-     where ed.praca_id = p_praca_id and ed.situacao = 'aberta'
-       and exists (select 1 from public.vessel_stylists s
-                    where s.id = v_id and coalesce(s.ativa, true) and not coalesce(s.teste, false))
-     limit 1
-    on conflict (stylist_id, edicao_id) do nothing;
-  end if;
+  -- ⚠️ TASK 11 RODADA 1 DE CONSERTO (CRÍTICO 1): `p_fechar_antigo => true` —
+  -- se ela já estava numa edição ABERTA de outra praça, fecha esse vínculo
+  -- antes de abrir o novo (senão contaria em duas edições abertas ao mesmo
+  -- tempo). Tirar a praça (`p_praca_id` nulo) continua NÃO desfazendo
+  -- vínculo nenhum — `vessel_stylist_sincronizar_edicao` nem chega a olhar
+  -- vínculo com `p_praca_id` nulo.
+  perform public.vessel_stylist_sincronizar_edicao(v_id, p_praca_id, true);
 
   return json_build_object('ok', true, 'situacao', 'ok', 'codigo', v_codigo);
 end;
@@ -913,12 +905,20 @@ begin
   v_ate := coalesce(v_ed.termina_em, 'infinity'::date);
 
   with
-  -- ⚠️ O CONGELAMENTO mora AQUI: todas as linhas desta edição, sem filtrar
-  -- por `saiu_em`. Trocar este `where` por `1=1` é a mutação que o aplicador
-  -- prova reprovar — sem ele, Limeira contaria stylist de Campinas.
+  -- ⚠️ O CONGELAMENTO mora AQUI: numa edição ENCERRADA, todas as linhas dela
+  -- contam, sem filtrar por `saiu_em` — o placar não zera ao encerrar.
+  -- Trocar este `where` por `1=1` é a mutação que o aplicador prova
+  -- reprovar — sem ele, Limeira contaria stylist de Campinas.
+  --
+  -- ⚠️ RODADA 1 DE CONSERTO (CRÍTICO 1): numa edição ainda ABERTA, uma linha
+  -- com `saiu_em` preenchido é gente que MUDOU DE PRAÇA (ver
+  -- `vessel_stylist_sincronizar_edicao`) — ela não pode continuar contando
+  -- na edição de origem enquanto essa segue aberta, senão conta em DUAS
+  -- edições abertas ao mesmo tempo. Só em `encerrada` o congelamento vale.
   turma_ids as (
     select distinct n.stylist_id from public.vessel_stylist_na_edicao n
      where n.edicao_id = p_edicao_id
+       and (v_ed.situacao = 'encerrada' or n.saiu_em is null)
   ),
   -- ⚠️ RODADA 1 DE CONSERTO (MENOR 1): filtra `teste` igual às irmãs
   -- (`vessel_rastreio_dos_stylists`, `vessel_numeros_do_stylist_circle`) —
@@ -1029,6 +1029,65 @@ $$;
 -- `security definer` (o mesmo padrão de `vessel_codigo_de_evento_usado`, na
 -- migration do código do encontro) — não é porta própria.
 revoke all on function public.vessel_praca_id_ativa(text) from public, anon, authenticated;
+
+-- ⚠️ TASK 11 RODADA 1 DE CONSERTO — MENOR (b): as QUATRO portas que gravam a
+-- praça de uma stylist (`vessel_stylist_criar`, `vessel_stylist_definir_praca`,
+-- `vessel_stylist_editar`, `vessel_pedido_do_stylist`) tinham o MESMO critério
+-- de "vincular à edição aberta" escrito em 3 formatos diferentes — e uma
+-- delas (`vessel_pedido_do_stylist`, a porta PÚBLICA) nem tinha o bloco
+-- (IMPORTANTE 2). Uma função só, chamada pelas quatro.
+--
+-- ⚠️ CRÍTICO 1: quando a stylist JÁ estava numa edição ABERTA de OUTRA praça
+-- (mudou de cidade, por exemplo) e `p_fechar_antigo` é `true`, fecha esse
+-- vínculo (`saiu_em = now()`) ANTES de abrir o novo — sem isto ela contava
+-- na MESMA hora em DUAS edições abertas (o placar de uma E o de outra, os
+-- dois "de verdade"), e a soma das praças passava a dar mais gente do que
+-- existe. Edição ENCERRADA nunca é tocada aqui: o histórico é quem congela
+-- (`vessel_edicao_encerrar`), não esta sincronização — só existe algo a
+-- "fechar por mudança de praça" numa edição que ainda está aberta; a
+-- encerrada já fechou tudo sozinha na hora de encerrar.
+-- `p_fechar_antigo` é `false` por padrão (quem está NASCENDO —
+-- `vessel_stylist_criar`, e o ramo de inscrição nova de
+-- `vessel_pedido_do_stylist` — não tem vínculo antigo nenhum para fechar).
+create or replace function public.vessel_stylist_sincronizar_edicao(
+  p_stylist_id bigint, p_praca_id bigint, p_fechar_antigo boolean default false)
+returns void
+language plpgsql
+security definer
+set search_path to 'public'
+as $$
+begin
+  if p_praca_id is null then
+    return;
+  end if;
+
+  if p_fechar_antigo then
+    update public.vessel_stylist_na_edicao n
+       set saiu_em = now(), etapa_ao_sair = s.etapa_id
+      from public.vessel_stylist_circle_edicoes ed, public.vessel_stylists s
+     where n.edicao_id = ed.id and n.stylist_id = s.id
+       and n.stylist_id = p_stylist_id and n.saiu_em is null
+       and ed.situacao = 'aberta' and ed.praca_id <> p_praca_id;
+  end if;
+
+  -- vincula à edição ABERTA da praça nova, se houver — sempre com o MESMO
+  -- critério de elegibilidade (ativa, não-teste), mesmo quando quem chama
+  -- (`vessel_stylist_criar`) sabe que a stylist recém-criada já satisfaz os
+  -- dois por construção: um critério só, nunca reescrito. `on conflict do
+  -- nothing`: quem já tinha vínculo não duplica.
+  insert into public.vessel_stylist_na_edicao (stylist_id, edicao_id)
+  select p_stylist_id, ed.id
+    from public.vessel_stylist_circle_edicoes ed
+   where ed.praca_id = p_praca_id and ed.situacao = 'aberta'
+     and exists (select 1 from public.vessel_stylists s
+                  where s.id = p_stylist_id and coalesce(s.ativa, true) and not coalesce(s.teste, false))
+   limit 1
+  on conflict (stylist_id, edicao_id) do nothing;
+end;
+$$;
+-- ⚠️ SEM GRANT A `authenticated`: mesmo padrão de `vessel_praca_id_ativa`,
+-- acima — só é chamada de DENTRO de outra função `security definer`.
+revoke all on function public.vessel_stylist_sincronizar_edicao(bigint, bigint, boolean) from public, anon, authenticated;
 
 -- vessel_criar_private_edit — o corpo é o de hoje (pg_get_functiondef,
 -- 25/09/2026, pós-B13), só trocando a lista fechada pela consulta ao
@@ -1323,18 +1382,13 @@ begin
          v_sem and v_fone is null and v_insta is null)
       returning id into v_id;
 
-      -- ⚠️ TASK 11: nasce vinculada à edição ABERTA da praça, se houver — a
-      -- stylist criada por esta porta nasce sempre `ativa` (padrão da coluna)
-      -- e nunca `teste` (não é parâmetro aqui), então não precisa reconferir
-      -- os dois; só precisa existir uma edição aberta na praça. Sem edição
-      -- aberta (ou sem praça), nasce sem vínculo — e isso não é erro.
-      if v_praca_id is not null then
-        insert into public.vessel_stylist_na_edicao (stylist_id, edicao_id)
-        select v_id, ed.id from public.vessel_stylist_circle_edicoes ed
-         where ed.praca_id = v_praca_id and ed.situacao = 'aberta'
-         limit 1
-        on conflict (stylist_id, edicao_id) do nothing;
-      end if;
+      -- ⚠️ TASK 11 RODADA 1 DE CONSERTO (MENOR b): nasce vinculada à edição
+      -- ABERTA da praça, se houver — pela MESMA função que as outras três
+      -- portas usam (`vessel_stylist_sincronizar_edicao`), um critério só.
+      -- `p_fechar_antigo` fica `false` (o padrão): quem está NASCENDO não
+      -- tem vínculo antigo para fechar. Sem edição aberta (ou sem praça),
+      -- nasce sem vínculo — e isso não é erro.
+      perform public.vessel_stylist_sincronizar_edicao(v_id, v_praca_id);
 
       return json_build_object('ok', true, 'situacao', 'ok', 'codigo', v_codigo);
 
@@ -1366,6 +1420,7 @@ create or replace function public.vessel_stylist_editar(p_codigo text, p_nome te
 AS $function$
 declare
   v_codigo  text := upper(nullif(trim(coalesce(p_codigo, '')), ''));
+  v_id      bigint;
   v_fone    text;
   v_insta   text := nullif(trim(coalesce(p_instagram, '')), '');
   v_perfil  text := public.vessel_instagram_canonico(p_instagram);
@@ -1381,7 +1436,7 @@ begin
     return json_build_object('ok', false, 'situacao', 'sem_permissao');
   end if;
 
-  select s.whatsapp, nullif(btrim(coalesce(s.instagram, '')), '') into v_fone_atual, v_insta_atual
+  select s.id, s.whatsapp, nullif(btrim(coalesce(s.instagram, '')), '') into v_id, v_fone_atual, v_insta_atual
     from public.vessel_stylists s where s.codigo = v_codigo;
   if not found then
     return json_build_object('ok', false, 'situacao', 'nao_achei');
@@ -1471,23 +1526,14 @@ begin
          atualizado_em   = now()
    where s.codigo = v_codigo;
 
-  -- ⚠️ TASK 11: quando a praça MUDA (`p_praca` veio e resolveu uma
-  -- `v_praca_id`), vincula à edição ABERTA da praça nova, se houver — mesmo
-  -- critério de elegibilidade de `vessel_edicao_abrir` (ativa, não-teste).
-  -- ⚠️ NÃO desfaz o vínculo da praça ANTIGA de propósito: o histórico é o que
-  -- congela a edição anterior (se um dia ela encerrar, o congelamento decide
-  -- o destino de quem ficou lá — não esta função, que só cuida de quem entra
-  -- daqui pra frente). `on conflict do nothing`: quem já tinha vínculo não duplica.
-  if v_praca_id is not null then
-    insert into public.vessel_stylist_na_edicao (stylist_id, edicao_id)
-    select s.id, ed.id
-      from public.vessel_stylists s, public.vessel_stylist_circle_edicoes ed
-     where s.codigo = v_codigo
-       and ed.praca_id = v_praca_id and ed.situacao = 'aberta'
-       and coalesce(s.ativa, true) and not coalesce(s.teste, false)
-     limit 1
-    on conflict (stylist_id, edicao_id) do nothing;
-  end if;
+  -- ⚠️ TASK 11 RODADA 1 DE CONSERTO (CRÍTICO 1): quando a praça MUDA
+  -- (`p_praca` veio e resolveu uma `v_praca_id`), `p_fechar_antigo => true`
+  -- fecha o vínculo ABERTO que ela tinha numa edição ABERTA de outra praça
+  -- ANTES de abrir o novo — sem isto ela contaria em duas edições abertas ao
+  -- mesmo tempo. Edição ENCERRADA nunca é tocada (o histórico é quem
+  -- congela). `vessel_stylist_sincronizar_edicao` cuida do resto (mesmo
+  -- critério de elegibilidade das outras portas, `on conflict do nothing`).
+  perform public.vessel_stylist_sincronizar_edicao(v_id, v_praca_id, true);
 
   return json_build_object('ok', true, 'situacao', 'ok', 'codigo', v_codigo);
 end;
@@ -1513,6 +1559,7 @@ declare
   v_volta    int;
   v_indice   text;
   v_praca_id bigint;
+  v_era_nova boolean;
 begin
   if coalesce(trim(p_armadilha), '') <> '' then
     return json_build_object('ok', true, 'situacao', 'recebido');
@@ -1556,6 +1603,7 @@ begin
   end if;
 
   select id, codigo into v_id, v_codigo from public.vessel_stylists where whatsapp = v_fone;
+  v_era_nova := v_id is null;
 
   if v_id is null then
     -- ⚠️ O CÓDIGO NUNCA MUDA depois de dado: ele vai para dentro de links de
@@ -1638,6 +1686,16 @@ begin
            atualizado_em = now()
      where id = v_id;
   end if;
+
+  -- ⚠️ TASK 11 RODADA 1 DE CONSERTO (IMPORTANTE 2) — a porta PÚBLICA (a
+  -- landing page do Stylist Circle) não vinculava à edição aberta: quem se
+  -- inscrevia no meio de uma rodada ficava fora do placar dela, calado, até
+  -- alguém abrir a próxima edição. `p_fechar_antigo => not v_era_nova`: quem
+  -- está se inscrevendo PELA PRIMEIRA VEZ não tem vínculo antigo para fechar
+  -- (mesma regra de `vessel_stylist_criar`); quem VOLTOU e mudou de praça
+  -- (o ramo `else`, acima) passa pela mesma trava do CRÍTICO 1 — fecha o
+  -- vínculo aberto da praça antiga antes de abrir o da nova.
+  perform public.vessel_stylist_sincronizar_edicao(v_id, v_praca_id, not v_era_nova);
 
   -- As permissões, separadas por finalidade — a de atendimento sempre, a de
   -- marketing só se ela marcou.
@@ -2307,9 +2365,16 @@ begin
   v_ate := coalesce(v_ed.termina_em, 'infinity'::date);
 
   with
+  -- ⚠️ RODADA 1 DE CONSERTO (CRÍTICO 1): numa edição ainda ABERTA, uma linha
+  -- com `saiu_em` preenchido é gente que MUDOU DE PRAÇA (ver
+  -- `vessel_stylist_sincronizar_edicao`) — não pode continuar contando na
+  -- edição de origem enquanto essa segue aberta. Numa edição ENCERRADA o
+  -- congelamento de sempre vale: conta todo mundo, sem filtrar por
+  -- `saiu_em` (o placar não zera ao encerrar).
   turma_ids as (
     select distinct n.stylist_id from public.vessel_stylist_na_edicao n
      where n.edicao_id = p_edicao_id
+       and (v_ed.situacao = 'encerrada' or n.saiu_em is null)
   ),
   sty as (
     select s.*, public.vessel_stylist_ativada_em(s.id) as ativou

@@ -182,7 +182,34 @@ const carregandoEdicoes = ref(true)
 const erroEdicoes = ref(null)
 const gravando = ref(false)
 
+// ⚠️ Os três ficam declarados AQUI (antes do `watch(..., {immediate:true})`
+// mais abaixo, que já chama `carregarEdicoes` de forma síncrona) — de
+// propósito: `limparResultadosPorEdicao` os referencia, e uma `const`
+// declarada só depois estouraria "Cannot access before initialization" na
+// primeira chamada, que acontece ainda durante o `setup()`.
+// erro por edição, para o defeito de uma não atrapalhar as outras
+const errosPorEdicao = reactive({})
+// o resultado do encerramento, por edição — { levadas, destinoNome } — para
+// escrever a frase certa nos três casos (ninguém escolhido, escolhido mas
+// ninguém precisava ir, escolhido e foi gente de verdade).
+const resultadoDoEncerramento = reactive({})
+// ⚠️ TASK 11: o resultado de abrir, por edição — quantas parceiras entraram
+// (o banco já vincula a turma inteira da praça ao abrir). `undefined` =
+// ainda não abriu nesta sessão; `0` é um valor real (mostra o motivo).
+const resultadoDaAbertura = reactive({})
+
+// ⚠️ RODADA 1 DE CONSERTO (MENOR c): limpa os resultados por edição (erro,
+// "N entraram", "N foram levadas") — sem isto, trocar de praça (ou só
+// recarregar) deixava a frase de uma edição de OUTRA praça pendurada na
+// tela, porque as chaves são por `id` de edição e nunca eram apagadas.
+function limparResultadosPorEdicao() {
+  for (const k of Object.keys(errosPorEdicao)) delete errosPorEdicao[k]
+  for (const k of Object.keys(resultadoDoEncerramento)) delete resultadoDoEncerramento[k]
+  for (const k of Object.keys(resultadoDaAbertura)) delete resultadoDaAbertura[k]
+}
+
 async function carregarEdicoes() {
+  limparResultadosPorEdicao()
   // ⚠️ RODADA 1 DE CONSERTO (MENOR 6): sem isto, `carregandoEdicoes` ficava
   // travado em `true` (o valor inicial do ref) quando não havia praça
   // escolhida — a tela mostrava "Carregando…" para sempre.
@@ -242,12 +269,7 @@ function mensagemEdicao(r) {
 }
 
 // erro por edição, para o defeito de uma não atrapalhar as outras
-const errosPorEdicao = reactive({})
 const erroDaEdicao = (id) => errosPorEdicao[id] || ''
-// o resultado do encerramento, por edição — { levadas, destinoNome } — para
-// escrever a frase certa nos três casos (ninguém escolhido, escolhido mas
-// ninguém precisava ir, escolhido e foi gente de verdade).
-const resultadoDoEncerramento = reactive({})
 function fraseDoResultado({ levadas, destinoNome }) {
   if (!destinoNome) return 'Edição encerrada. Nenhuma edição de destino foi escolhida — ninguém foi levada.'
   if (levadas === 0) return `Edição encerrada. Ninguém precisou ser levada para ${destinoNome} — todas já tinham ativado.`
@@ -256,10 +278,6 @@ function fraseDoResultado({ levadas, destinoNome }) {
     : `Edição encerrada. ${levadas} parceiras foram levadas para ${destinoNome}.`
 }
 
-// ⚠️ TASK 11: o resultado de abrir, por edição — quantas parceiras entraram
-// (o banco já vincula a turma inteira da praça ao abrir). `undefined` =
-// ainda não abriu nesta sessão; `0` é um valor real (mostra o motivo).
-const resultadoDaAbertura = reactive({})
 function fraseDaAbertura(n) {
   if (n > 0) return n === 1 ? '1 parceira entrou na edição.' : `${n} parceiras entraram na edição.`
   return 'Nenhuma parceira entrou — esta praça ainda não tem nenhuma parceira ativa (fora as de teste) para vincular.'
