@@ -84,6 +84,15 @@
               ? `média de ${placar.stylists_com_contatos_ate_ativar} stylist(s)` : 'sem base ainda' }}</span>
           </div>
         </div>
+        <!-- ⚠️ RODADA 2 DE CONSERTO: legenda em português de gente — sem ela,
+             quem compara este número com o do placar mensal da MESMA
+             stylist pode achar que um dos dois está quebrado. -->
+        <p class="cv-nota">
+          "Ativou" aqui é o dia em que ela chegou pela primeira vez numa etapa
+          que libera Private Edit — o mesmo critério das etapas do funil, lá
+          em cima. Pode não bater com o mesmo número do placar mensal, que
+          conta por uma data mais antiga (o primeiro Private Edit agendado).
+        </p>
       </div>
 
       <div class="id-grupo cv-grupo-encontros pd-menor">

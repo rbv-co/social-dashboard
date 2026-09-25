@@ -263,8 +263,27 @@
   /* ⚠️ RODADA 1 DE CONSERTO (IMPORTANTE 3, Task 7): sem isto o campo (com
      este padding + esta fonte) media ~37-39px — abaixo do alvo de toque
      mínimo do item 6 do PADRÃO. Vale para as três barras que usam esta
-     classe (a de lista e a nova de Praça · Edição). */
+     classe (a de lista, a de Praça · Edição e a do Private Edit). */
   min-height: 40px;
+}
+/* ⚠️ RODADA 2 DE CONSERTO (Task 7): `min-height` sozinho NÃO BASTA para o
+   `<select>` — medido nos dois motores: no Chrome os 40px valem; no WEBKIT
+   (Safari, e é o único motor que existe no iPhone — Chrome do iPhone TAMBÉM
+   é WebKit por baixo) a aparência NATIVA do controle ignora a altura da
+   caixa e ele fica em 23px. `appearance:none` tira a pele nativa do sistema
+   — só assim o WebKit passa a respeitar o `min-height`. A seta é desenhada
+   em CSS puro (o mesmo truque de `.ctd-marca`, conteudo/estilos-conteudo.css)
+   com `currentColor`, nunca hex — e cresce com `padding-right` para não
+   ficar embaixo do texto selecionado. */
+.cv-barra-campo select {
+  appearance: none; -webkit-appearance: none; -moz-appearance: none;
+  padding-right: 34px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: calc(100% - 18px) 52%, calc(100% - 13px) 52%;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
 }
 
 /* ⚠️ AVISO NÃO É ERRO: cor diferente de `.cv-nota-erro`, para "isto não é uma
