@@ -587,6 +587,108 @@ try {
       'edicao_encerrar: MENOR 6 — levar para edição de outra praça é recusado', x.v ?? x.e?.message)
     conferir(situacaoOrigemDAntes === x.depois, 'a edição de origem NÃO foi encerrada — nada mudou (medido dentro do savepoint)',
       { situacaoOrigemDAntes, depois: x.depois })
+
+    console.log("\n  · 9) CRÍTICO 2 — GUARDA DE REGRESSÃO: mesma stylist nas duas edições, encerrar com levar_para não estoura 23505")
+    // O cenário exato que fazia a unique (stylist_id, edicao_id) estourar: a
+    // stylist é incluída na edição de ORIGEM e, à parte, também na de
+    // DESTINO — a 'planejada' aceita incluir, só a 'encerrada' recusa. Ao
+    // encerrar a origem levando para o destino, o insert de "quem não ativou"
+    // bateria de frente com a linha que ela já tem lá.
+    x = await chamarGravando(`public.vessel_praca_criar(p_sigla => $1, p_nome => $2, p_loja_destino => $3)`, ['PVE', 'Praça de Prova E', null])
+    conferir(x.v?.ok === true, 'praca_criar: praça E para o teste de conflito do levar_para', x.v ?? x.e?.message)
+    const pracaE = x.v?.id
+    x = await chamarGravando(`public.vessel_edicao_criar(p_praca_id => $1, p_nome => $2, p_comeca_em => $3, p_termina_em => null)`, [pracaE, 'Origem E', hoje])
+    const edicaoOrigemE = x.v?.id
+    x = await chamarGravando(`public.vessel_edicao_abrir(p_id => $1)`, [edicaoOrigemE])
+    conferir(x.v?.ok === true, 'edicao_abrir: abre a edição origem da praça E', x.v ?? x.e?.message)
+    x = await chamarGravando(`public.vessel_edicao_criar(p_praca_id => $1, p_nome => $2, p_comeca_em => $3, p_termina_em => null)`, [pracaE, 'Destino E', hoje])
+    const edicaoDestinoE = x.v?.id
+
+    const stConflito = await uma(`insert into public.vessel_stylists (codigo, nome, whatsapp, teste)
+       values ('STY-PROVA-CONFLITO', 'Prova Conflito Levar', '5519990004005', true) returning id`)
+
+    // 1) a MESMA stylist nas duas edições da mesma praça — a planejada aceita.
+    x = await chamarGravando(`public.vessel_edicao_incluir_stylist(p_codigo => $1, p_edicao_id => $2)`, ['STY-PROVA-CONFLITO', edicaoOrigemE])
+    conferir(x.v?.ok === true, '1) inclui a stylist na edição origem E', x.v ?? x.e?.message)
+    x = await chamarGravando(`public.vessel_edicao_incluir_stylist(p_codigo => $1, p_edicao_id => $2)`, ['STY-PROVA-CONFLITO', edicaoDestinoE])
+    conferir(x.v?.ok === true, '1) inclui a MESMA stylist na edição destino E (planejada aceita)', x.v ?? x.e?.message)
+
+    // 2) encerra a origem levando para o destino onde ela JÁ está.
+    x = await chamarGravando(`public.vessel_edicao_encerrar(p_id => $1, p_levar_para => $2)`, [edicaoOrigemE, edicaoDestinoE])
+    // 3) não estourou, ok:true, e levadas conta certo (ela já estava lá — não conta de novo).
+    conferir(!x.e, '3) edicao_encerrar: a chamada NÃO estourou (sem erro cru de banco)', x.e?.message)
+    conferir(x.v?.ok === true && x.v?.situacao === 'ok', '3) edicao_encerrar: devolveu ok:true mesmo com a stylist já na edição de destino', x.v)
+    conferir(x.v?.levadas === 0, '3) levadas bate com o número REAL — 0, porque ela já estava no destino (não conta duas vezes)', x.v)
+
+    // 4) continua com UMA linha só na edição de destino (sem duplicar).
+    const linhasNoDestinoE = await r(`(select count(*)::int from public.vessel_stylist_na_edicao where stylist_id = $1 and edicao_id = $2)`,
+      [stConflito.id, edicaoDestinoE])
+    conferir(linhasNoDestinoE === 1, '4) a stylist continua com UMA linha só na edição de destino', linhasNoDestinoE)
+    // e o vínculo de ORIGEM foi mesmo fechado (congelado), apesar do conflito no destino.
+    const origemEFechada = await r(`(select saiu_em is not null from public.vessel_stylist_na_edicao where stylist_id = $1 and edicao_id = $2)`,
+      [stConflito.id, edicaoOrigemE])
+    conferir(origemEFechada === true, 'e o vínculo de ORIGEM continua fechado mesmo com o conflito no destino', origemEFechada)
+
+    console.log('\n  · 9b) mutação de propósito: tirando o `on conflict`, o MESMO cenário estoura 23505 cru')
+    await cli.query('savepoint prova_mutacao_conflito')
+    try {
+      const funcaoBoaEncerrar = (await uma(
+        `select pg_get_functiondef('public.vessel_edicao_encerrar(bigint,bigint)'::regprocedure) as def`)).def
+      const trechoDoOnConflict = /\n\s*on conflict \(stylist_id, edicao_id\) do nothing;/
+      if (!trechoDoOnConflict.test(funcaoBoaEncerrar)) throw new Error('a mutação não achou o `on conflict` de vessel_edicao_encerrar — o texto da função mudou')
+      await cli.query(funcaoBoaEncerrar.replace(trechoDoOnConflict, ';'))
+
+      x = await chamarGravando(`public.vessel_praca_criar(p_sigla => $1, p_nome => $2, p_loja_destino => $3)`, ['PVF', 'Praça de Prova F (mutada)', null])
+      const pracaF = x.v?.id
+      x = await chamarGravando(`public.vessel_edicao_criar(p_praca_id => $1, p_nome => $2, p_comeca_em => $3, p_termina_em => null)`, [pracaF, 'Origem F', hoje])
+      const edicaoOrigemF = x.v?.id
+      x = await chamarGravando(`public.vessel_edicao_abrir(p_id => $1)`, [edicaoOrigemF])
+      x = await chamarGravando(`public.vessel_edicao_criar(p_praca_id => $1, p_nome => $2, p_comeca_em => $3, p_termina_em => null)`, [pracaF, 'Destino F', hoje])
+      const edicaoDestinoF = x.v?.id
+      await uma(`insert into public.vessel_stylists (codigo, nome, whatsapp, teste)
+         values ('STY-PROVA-CONFLITO-MUT', 'Prova Conflito Mutação', '5519990004006', true)`)
+      x = await chamarGravando(`public.vessel_edicao_incluir_stylist(p_codigo => $1, p_edicao_id => $2)`, ['STY-PROVA-CONFLITO-MUT', edicaoOrigemF])
+      x = await chamarGravando(`public.vessel_edicao_incluir_stylist(p_codigo => $1, p_edicao_id => $2)`, ['STY-PROVA-CONFLITO-MUT', edicaoDestinoF])
+
+      // ⚠️ Esta chamada pode estourar 23505 DE VERDADE — savepoint próprio,
+      // porque um erro de banco aborta a transação até o rollback (não dá
+      // para seguir chamando nada — nem `reset role` — sem desfazer antes).
+      await cli.query('savepoint chamada_mutada')
+      let erroCru, semErro
+      try {
+        await cli.query('set local role authenticated')
+        semErro = await r(`public.vessel_edicao_encerrar(p_id => $1, p_levar_para => $2)`, [edicaoOrigemF, edicaoDestinoF])
+      } catch (e) {
+        erroCru = e
+      } finally {
+        await cli.query('rollback to savepoint chamada_mutada')
+      }
+      const estourou23505 = erroCru?.code === '23505'
+      console.log(`    ${estourou23505 ? '✗' : '✓'} SEM o \`on conflict\`: encerrar com a stylist já no destino ${estourou23505 ? 'ESTOUROU 23505 cru — era para não estourar; a cláusula faz falta de verdade' : 'não estourou (inesperado)'} → ${JSON.stringify(erroCru ? { code: erroCru.code, message: erroCru.message } : semErro)}`)
+      conferir(estourou23505 === true,
+        'MUTAÇÃO: sem `on conflict (stylist_id, edicao_id) do nothing`, o MESMO cenário estoura 23505 cru — prova que a cláusula é o guarda de regressão do Crítico 2 (sem ela, o erro cru volta pela mesma porta)',
+        erroCru ? { code: erroCru.code, message: erroCru.message } : semErro)
+    } finally {
+      // Desfaz a mutação (restaura a função) E toda a praça/edições/stylist da demonstração.
+      await cli.query('rollback to savepoint prova_mutacao_conflito')
+    }
+
+    // com a função REAL (on conflict restaurado), o MESMO tipo de cenário não estoura.
+    x = await chamarGravando(`public.vessel_praca_criar(p_sigla => $1, p_nome => $2, p_loja_destino => $3)`, ['PVF', 'Praça de Prova F (restaurada)', null])
+    const pracaFRestaurada = x.v?.id
+    x = await chamarGravando(`public.vessel_edicao_criar(p_praca_id => $1, p_nome => $2, p_comeca_em => $3, p_termina_em => null)`, [pracaFRestaurada, 'Origem F', hoje])
+    const edicaoOrigemFRestaurada = x.v?.id
+    x = await chamarGravando(`public.vessel_edicao_abrir(p_id => $1)`, [edicaoOrigemFRestaurada])
+    x = await chamarGravando(`public.vessel_edicao_criar(p_praca_id => $1, p_nome => $2, p_comeca_em => $3, p_termina_em => null)`, [pracaFRestaurada, 'Destino F', hoje])
+    const edicaoDestinoFRestaurada = x.v?.id
+    await uma(`insert into public.vessel_stylists (codigo, nome, whatsapp, teste)
+       values ('STY-PROVA-CONFLITO-RESTAURADA', 'Prova Conflito Restaurada', '5519990004007', true)`)
+    x = await chamarGravando(`public.vessel_edicao_incluir_stylist(p_codigo => $1, p_edicao_id => $2)`, ['STY-PROVA-CONFLITO-RESTAURADA', edicaoOrigemFRestaurada])
+    x = await chamarGravando(`public.vessel_edicao_incluir_stylist(p_codigo => $1, p_edicao_id => $2)`, ['STY-PROVA-CONFLITO-RESTAURADA', edicaoDestinoFRestaurada])
+    x = await chamarGravando(`public.vessel_edicao_encerrar(p_id => $1, p_levar_para => $2)`, [edicaoOrigemFRestaurada, edicaoDestinoFRestaurada])
+    const restaurouSemErro = !x.e && x.v?.ok === true
+    console.log(`    ${restaurouSemErro ? '✓' : '✗'} COM o \`on conflict\` (restaurado): o mesmo cenário ${restaurouSemErro ? 'não estourou, como tem de ser' : 'quebrou — bug!'} → ${JSON.stringify(x.v ?? x.e?.message)}`)
+    conferir(restaurouSemErro === true, 'COM o `on conflict` restaurado: edicao_encerrar não estoura no mesmo cenário de conflito', x.v ?? x.e?.message)
   } finally {
     await falarComo(null)
     await cli.query('rollback to savepoint prova_funcoes')
