@@ -106,10 +106,36 @@ const FAIXA = {
 // no texto desligado de propósito — é o que `painel-regua.test.mjs` confere
 // (`/em pausa/i`) desde a Tarefa 3, e continua sendo verdade: desligada É a
 // pausa da ponderada.
+//
+// CORRIGIDO na Rodada 1 de revisão (25/09/2026): o texto de "ligada" dizia
+// "o mercado de post volta a ser julgado pelo engajamento ponderado, como
+// antes da pausa" — falso. O que este interruptor faz HOJE, de ponta a
+// ponta: guarda o booleano (`ponderada_ligada`, ver regua.js) e troca qual
+// CHAVE `metaDoBalde('post', ...)` consulta (`engajamento` vs.
+// `engajamento_bruto`, ver `chave` acima). NADA MAIS muda ao ligar: o CUSTO
+// comparado continua vindo de `custo_engajamento` (`alvos.js`, fixo, não lê
+// o interruptor) e a COR continua decidida pelos `limiares_resultado` da
+// Seção 2 (`usaLimiaresDeEngajamento` em tela-de-gestao-trafego.vue depende
+// só de haver interação DECLARADA no cartão, nunca deste interruptor) — o
+// ramo que comparava pelo ponto ponderado foi removido de
+// `coletor/budget-ia.mjs`. Comparar um custo NÃO ponderado contra uma meta em
+// R$/PONTO é a mesma mistura de unidade que produziu o "662× a meta" que
+// `alvos.js` cita como o motivo de toda esta separação — por isso o texto de
+// "ligada" tem que deixar isto claro, e por isso existe o aviso visível
+// (`pnd-ponderada-aviso-incompleto`, abaixo) enquanto isto não for
+// implementado. A restauração completa (custo por ponto e os limiares desta
+// seção decidindo o veredito de novo) é tarefa própria — mexe em `alvos.js`,
+// nesta tela e no robô ao mesmo tempo — e ainda NÃO FOI FEITA.
 const TEXTO_INTERRUPTOR = {
   desligada: 'Desligada — em pausa desde 24/09/2026: o mercado de post é julgado pelo custo por engajamento (Seção 2, abaixo). Nada aqui foi apagado.',
-  ligada: 'Ativa: o mercado de post volta a ser julgado pelo engajamento ponderado (R$ por ponto) desta seção, como antes da pausa.',
+  ligada: 'Ativa: guarda a escolha e passa a consultar a meta antiga (R$ por ponto) desta seção — o cálculo do custo e a cor de "post" ainda não voltaram a usar o engajamento ponderado (ver aviso abaixo).',
 };
+// O AVISO PERSISTENTE de quando LIGADA (Rodada 1 de revisão, 25/09/2026):
+// NÃO É TOOLTIP — esta casa já aprendeu que tela de toque não tem mouse pra
+// passar por cima de nada (ver PADRAO-DA-CENTRAL.md). Fica visível o tempo
+// todo que o interruptor estiver ligado, na PRÓPRIA Seção 1, pra quem ligou
+// não sair achando que restaurou o julgamento ponderado inteiro.
+const AVISO_LIGADA_INCOMPLETA = 'Atenção: esta escolha ainda é parcial. O CÁLCULO do custo de "post" continua sendo o custo por engajamento bruto, e a COR do veredito continua vindo dos limiares da Seção 2 — nenhum dos dois lê este interruptor ainda. A restauração completa (o custo por ponto e os limiares desta seção decidindo de novo) é uma tarefa à parte, ainda não feita.';
 const reais = (v) => v == null ? '—' : 'R$ ' + Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const inteiro = (v) => Number(v || 0).toLocaleString('pt-BR');
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -392,6 +418,7 @@ export function montarPainelRegua(alvo, opcoes) {
             </label>
             <p class="pnd-ajuda pnd-interruptor-explicacao" id="pnd-ponderada-explicacao">${esc(TEXTO_INTERRUPTOR[ligada ? 'ligada' : 'desligada'])}</p>
           </div>
+          <div class="pnd-conta-tag pnd-conta-tag--vazio" id="pnd-ponderada-aviso-incompleto"${ligada ? '' : ' hidden'}>${esc(AVISO_LIGADA_INCOMPLETA)}</div>
           <div class="pnd-cards${ligada ? '' : ' pnd-secao-esmaecida'}" id="pnd-secao1-cards">
             <div class="pnd-bloco">
               <div class="pnd-cab"><h3 class="pnd-titulo">Quanto vale cada interação</h3>${ajudaBtn('pesos')}</div>
@@ -708,18 +735,18 @@ export function montarPainelRegua(alvo, opcoes) {
     // banco não foi confirmada — dupla trava contra salvar em cima de dado errado.
     if (botao && podeSalvar) botao.addEventListener('click', () => o.aoSalvar && o.aoSalvar(reguaDaTela(), botao));
 
-    // O INTERRUPTOR (Tarefa 4). SÓ DUAS COISAS mudam AO VIVO, sem recarregar:
-    // o rótulo/explicação e o esmaecimento da Seção 1. O CAMPO de meta que o
-    // mercado 'post' usa (ver `chave`, em `linhasMeta`/`reguaDaTela` acima)
-    // NÃO troca aqui — ele foi desenhado uma vez, na montagem do painel, pela
-    // `ligada` de então. NÃO É "trocar duas linhas" (o brief desta tarefa
-    // avisa que essa frase já apareceu falsa numa onda anterior e custou uma
-    // rodada própria): pra trocar o campo de verdade seria preciso reler o
-    // valor salvo, redesenhar a linha de 'post' inteira e religar os
-    // listeners dela — mais do que este handler faz. O jeito HONESTO de
-    // trocar o campo é salvar (o clique em Salvar já lê o estado atual do
-    // checkbox — ver `reguaDaTela`, acima) e deixar quem chama remontar o
-    // painel com a régua nova.
+    // O INTERRUPTOR (Tarefa 4). TRÊS COISAS mudam AO VIVO, sem recarregar: o
+    // rótulo/explicação, o esmaecimento da Seção 1 e o AVISO de escolha
+    // parcial (Rodada 1 de revisão, 25/09/2026 — ver `AVISO_LIGADA_INCOMPLETA`
+    // acima). O CAMPO de meta que o mercado 'post' usa (ver `chave`, em
+    // `linhasMeta`/`reguaDaTela` acima) NÃO troca aqui — ele foi desenhado uma
+    // vez, na montagem do painel, pela `ligada` de então. NÃO É "trocar duas
+    // linhas": pra trocar o campo de verdade seria preciso reler o valor
+    // salvo, redesenhar a linha de 'post' inteira e religar os listeners
+    // dela — mais do que este handler faz. O jeito HONESTO de trocar o campo
+    // é salvar (o clique em Salvar já lê o estado atual do checkbox — ver
+    // `reguaDaTela`, acima) e deixar quem chama remontar o painel com a
+    // régua nova.
     const chkLigada = document.getElementById('pnd-ponderada-liga');
     if (chkLigada) {
       chkLigada.addEventListener('change', () => {
@@ -730,6 +757,11 @@ export function montarPainelRegua(alvo, opcoes) {
         if (explicacaoEl) explicacaoEl.textContent = TEXTO_INTERRUPTOR[agora ? 'ligada' : 'desligada'];
         const cards = document.getElementById('pnd-secao1-cards');
         if (cards) cards.classList.toggle('pnd-secao-esmaecida', !agora);
+        // Aviso persistente (não tooltip) enquanto o cálculo e a cor de
+        // 'post' não lerem de fato este interruptor — sem ele, o dono liga
+        // achando que restaurou o julgamento ponderado inteiro.
+        const avisoEl = document.getElementById('pnd-ponderada-aviso-incompleto');
+        if (avisoEl) avisoEl.hidden = !agora;
       });
     }
   }

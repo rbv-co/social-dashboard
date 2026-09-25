@@ -238,6 +238,64 @@ test('interruptor ligado: aparece marcado, sem esmaecer a Seção 1, e o rótulo
   });
 });
 
+// ── Rodada 1 de revisão (25/09/2026): o texto prometia mais do que o código
+// faz ───────────────────────────────────────────────────────────────────────
+//
+// A revisão rastreou os três lugares que decidem o veredito de 'post'
+// (alvos.js, tela-de-gestao-trafego.vue, coletor/budget-ia.mjs) e NENHUM lê
+// este interruptor para o CÁLCULO do custo nem para a COR — só `metaDoBalde`
+// muda de chave. O texto anterior dizia "o mercado de post volta a ser
+// julgado pelo engajamento ponderado... como antes da pausa", que é falso:
+// o custo comparado continua não-ponderado e a cor continua vindo dos
+// limiares da Seção 2. Comparar as duas grandezas é a MESMA mistura de
+// unidade que produziu o "662× a meta" (ver alvos.js) — por isso o texto
+// tem que dizer a verdade, e por isso existe o aviso visível abaixo.
+
+test('o texto de "ligada" NÃO promete que o julgamento ponderado voltou — só que a meta consultada trocou', () => {
+  comDomFalso(() => {
+    const alvo = alvoFalso();
+    montarPainelRegua(alvo, {
+      ...OPCOES_BASE,
+      regua: normalizarRegua({ limiares: { ponderada_ligada: true } }),
+    });
+    const saida = alvo.innerHTML;
+    // A frase antiga, exata, que a Rodada 1 apontou como falsa — não pode voltar.
+    assert.ok(!/volta a ser julgado pelo engajamento ponderado/.test(saida),
+      'esta frase promete um julgamento que nenhum dos três lugares que decidem o veredito de post ainda faz');
+    // O texto tem que admitir, sem abrir o código, que falta a restauração.
+    assert.match(saida, /cálculo do custo.{0,40}cor.{0,80}ainda não/i,
+      'o texto tem que dizer, explicitamente, que o cálculo e a cor ainda não usam o engajamento ponderado');
+  });
+});
+
+test('ligado, aparece um AVISO VISÍVEL (não tooltip) dizendo que a escolha é parcial', () => {
+  comDomFalso(() => {
+    const alvo = alvoFalso();
+    montarPainelRegua(alvo, {
+      ...OPCOES_BASE,
+      regua: normalizarRegua({ limiares: { ponderada_ligada: true } }),
+    });
+    const saida = alvo.innerHTML;
+    assert.ok(saida.includes('id="pnd-ponderada-aviso-incompleto"'), 'faltou o elemento do aviso');
+    assert.ok(!/id="pnd-ponderada-aviso-incompleto"[^>]*hidden/.test(saida),
+      'ligado, o aviso tem que estar VISÍVEL — sem `hidden`');
+    assert.ok(!/title="/.test(saida.match(/id="pnd-ponderada-aviso-incompleto"[^>]*>/)[0] || ''),
+      'não pode ser um tooltip (atributo title) — tela de toque não passa o mouse por cima de nada');
+    assert.match(saida, /restauração completa.{0,160}(ainda não|não foi feita)/i,
+      'o aviso tem que deixar claro que a restauração completa ainda não existe');
+  });
+});
+
+test('desligado (padrão), o aviso de escolha parcial fica ESCONDIDO — não haveria o que avisar', () => {
+  comDomFalso(() => {
+    const alvo = alvoFalso();
+    montarPainelRegua(alvo, { ...OPCOES_BASE, regua: normalizarRegua({}) });
+    const saida = alvo.innerHTML;
+    assert.match(saida, /id="pnd-ponderada-aviso-incompleto"[^>]*hidden/,
+      'desligado, o aviso não pode aparecer — não existe escolha parcial pra avisar');
+  });
+});
+
 test('salvar com o interruptor DESLIGADO grava ponderada_ligada:false e preserva as DUAS metas antigas', () => {
   const antes = globalThis.document;
   const mapa = new Map();

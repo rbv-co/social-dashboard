@@ -483,8 +483,16 @@ function num(v) { const n = parseFloat(v); return Number.isFinite(n) ? n : null;
 export function custoAtualDoAlvo(balde, ins, regua, interacaoDeclarada) {
   // Engajamento não é mais caso especial: desde 24/09/2026 ele tem métrica no
   // catálogo (custo_engajamento) como qualquer outro balde. O ramo que chamava
-  // calcularPonderada saiu daqui — a ponderada está em PAUSA, não apagada, e
-  // religar é trocar duas linhas em alvos.js.
+  // calcularPonderada saiu daqui — a ponderada está em PAUSA, não apagada.
+  // CORRIGIDO na Rodada 1 de revisão da Tarefa 4/Onda C (25/09/2026): esta
+  // linha dizia "religar é trocar duas linhas em alvos.js", e isso é falso —
+  // a mesma promessa vazia que o interruptor da Seção 1 (painel-regua.js)
+  // teve no texto antes desta correção. Religar de verdade exige TROCAR O
+  // RAMO REMOVIDO AQUI de volta (não só duas linhas em alvos.js), além da
+  // tela (usaLimiaresDeEngajamento em tela-de-gestao-trafego.vue) voltar a
+  // usar os limiares da Seção 1 para 'post' — nenhuma das duas mudou nesta
+  // tarefa. Ver o comentário de `ligada`/`AVISO_LIGADA_INCOMPLETA` em
+  // painel-regua.js para o que falta.
   // OBJETIVO DECLARADO (Tarefa 5): a declaração do dono VENCE a régua do
   // balde — quando ele disse, campanha a campanha, qual interação ela compra,
   // é essa interação que decide o custo, não o padrão do objetivo.
