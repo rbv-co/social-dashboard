@@ -83,18 +83,36 @@
     <!-- Casca de abas: só mostra/esconde painel via _gtTrocarAba, nunca
          remonta a lista de campanhas (remontar chamaria a Meta de novo). -->
     <div class="pnd-abas" role="tablist">
-      <button class="pnd-aba ativa" id="pnd-aba-campanhas" role="tab" onclick="_gtTrocarAba('campanhas')">Campanhas</button>
+      <!-- O SELO DE CONTAGEM (pnd-camp-n) so aparece no CELULAR (CSS abaixo) -
+           e o que sobra do titulo "N Campanhas" quando ele some do cabecalho
+           da lista no celular (Onda C, topo do celular). No computador o
+           titulo continua mostrando o numero por extenso; o selo aqui ficaria
+           redundante e some. _renderGtCampaigns() escreve o numero nele. -->
+      <button class="pnd-aba ativa" id="pnd-aba-campanhas" role="tab" onclick="_gtTrocarAba('campanhas')">Campanhas<span class="pnd-aba-contagem" id="pnd-camp-n"></span></button>
       <button class="pnd-aba" id="pnd-aba-fila" role="tab" onclick="_gtTrocarAba('fila')">Fila<span class="pnd-aba-n" id="pnd-fila-n" hidden></span></button>
       <button class="pnd-aba" id="pnd-aba-regua" role="tab" onclick="_gtTrocarAba('regua')">A régua</button>
       <!-- Criar campanha do zero. Fica na barra de abas por ser a única ação da
            tela que NÃO é sobre uma campanha que já existe — pendurá-la num card
            seria dizer que ela depende de um. Só aparece para quem pode editar;
-           quem só olha não vê botão que não pode usar. -->
-      <button class="pnd-aba-acao" id="gt-btn-nova" role="button" hidden onclick="_gtNovoAbrir()">+ Nova campanha</button>
+           quem só olha não vê botão que não pode usar.
+           NO CELULAR (Onda C, topo do celular) o texto vira SÓ ícone — o rótulo
+           por extenso ("+ Nova campanha") empurrava este botão pra própria
+           linha inteira, sozinho (117px medidos só nesta barra). O texto
+           continua existindo para leitor de tela via aria-label/title; o
+           padrão que proíbe corte de rótulo é sobre TEXTO VISÍVEL, e aqui não
+           sobra rótulo cortado — ele nunca aparece truncado, some inteiro. -->
+      <button class="pnd-aba-acao" id="gt-btn-nova" role="button" hidden onclick="_gtNovoAbrir()" aria-label="Nova campanha" title="Nova campanha">
+        <svg class="pnd-aba-acao-ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        <span class="pnd-aba-acao-txt">Nova campanha</span>
+      </button>
       <!-- O HISTÓRICO fica colado no "+ Nova campanha" porque é a mesma
            conversa: o que foi começado aqui. Mesmo gate (`hidden` some junto),
-           porque quem não pode criar não tem o que ver nesta lista. -->
-      <button class="pnd-aba-acao" id="gt-btn-hist" role="button" hidden onclick="_gtHistAbrir()">Histórico</button>
+           porque quem não pode criar não tem o que ver nesta lista. Mesmo
+           tratamento de ícone no celular, mesmo motivo. -->
+      <button class="pnd-aba-acao" id="gt-btn-hist" role="button" hidden onclick="_gtHistAbrir()" aria-label="Histórico" title="Histórico">
+        <svg class="pnd-aba-acao-ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 15"/></svg>
+        <span class="pnd-aba-acao-txt">Histórico</span>
+      </button>
     </div>
 
     <!-- #gt-painel-campanhas é "display:contents" (ver <style> abaixo): ele só
@@ -454,6 +472,7 @@ let _gtAdsets=[];        // conjuntos de anúncios da conta (Graph /adsets), com
 // não mostra número nenhum (ver custoPorSeguidorDaConta em seguidores.js).
 let _gtCustoSeguidorConta=null;
 let _gtRecolhido=false;  // botão "recolher/expandir tudo": estado padrão dos painéis ao (re)desenhar
+let _gtFiltrosAbertos=false;  // painel de filtro/busca do celular (Onda C): fechado por padrão a cada (re)desenho
 let _gtStatusFilter='all';
 let _gtAbaAtiva='campanhas';
 // Seleção múltipla para PAUSAR EM MASSA. Mora FORA do render de propósito: a
@@ -2288,8 +2307,16 @@ function _renderGtCampaigns(col,campaigns,insights,adInsights,adsets){
   // celular — o flex item não encolhe por padrão (min-width:auto), e o texto
   // ficava CORTADO pela borda do cartão, não visível nem com quebra de linha.
   const ttlWrap=document.createElement('div');ttlWrap.style.cssText='display:flex;align-items:center;gap:10px;flex-wrap:wrap;min-width:0;';
-  const ttl=document.createElement('div');ttl.style.cssText='font-family:var(--fonte-principal);font-size:calc(12px*var(--gt-fs,1.3));font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--text);';
+  // className (Onda C, topo do celular): o CSS some com este título no
+  // celular — a contagem passa a morar no selo da aba "Campanhas"
+  // (#pnd-camp-n, logo abaixo), pra não repetir o mesmo número duas vezes.
+  const ttl=document.createElement('div');ttl.className='gt-camp-titulo-n';ttl.style.cssText='font-family:var(--fonte-principal);font-size:calc(12px*var(--gt-fs,1.3));font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--text);';
   ttl.textContent=sorted.length+' Campanhas';
+  // O MESMO número vai pro selo da aba (só aparece no celular, via CSS).
+  {
+    const campN=document.getElementById('pnd-camp-n');
+    if(campN)campN.textContent=String(sorted.length);
+  }
   const aiTag=document.createElement('div');
   aiTag.style.cssText='font-family:var(--fonte-principal);font-size:calc(9px*var(--gt-fs,1.3));font-weight:700;letter-spacing:.5px;padding:2px 7px;border-radius:20px;background:var(--accent-light);color:var(--accent-forte);text-transform:uppercase;';
   aiTag.textContent='✦ IA em tempo real';
@@ -2335,6 +2362,37 @@ function _renderGtCampaigns(col,campaigns,insights,adInsights,adsets){
     });
     filterBtns[fd.v]=fb;filterWrap.appendChild(fb);
   });
+  // PAINEL DE FILTRO E BUSCA (Onda C, topo do celular): busca + os três
+  // filtros pesavam 155px de cabeçalho no celular — sozinhos ocupavam duas
+  // linhas cheias, empilhados. `filterWrap` e `searchInp` continuam sendo os
+  // MESMOS elementos de sempre (mesma lógica, mesmos listeners); só ganham
+  // um envelope que no celular fica fechado por padrão atrás de um botão de
+  // funil, e no computador não muda nada — o CSS só esconde/abre no celular.
+  const filtrosPanel=document.createElement('div');
+  filtrosPanel.className='gt-camp-filtros-painel';
+  filtrosPanel.appendChild(filterWrap);
+  filtrosPanel.appendChild(searchInp);
+  const filtroToggleBtn=document.createElement('button');
+  filtroToggleBtn.type='button';
+  filtroToggleBtn.className='gt-camp-filtro-toggle';
+  filtroToggleBtn.setAttribute('aria-label','Filtrar e buscar campanhas');
+  filtroToggleBtn.title='Filtrar e buscar campanhas';
+  filtroToggleBtn.innerHTML='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="6" x2="20" y2="6"/><line x1="7" y1="12" x2="17" y2="12"/><line x1="10" y1="18" x2="14" y2="18"/></svg>';
+  // _gtFiltrosAbertos é lembrado entre redesenhos, mesmo padrão de
+  // _gtRecolhido — senão o painel fecharia sozinho a cada ↻ ou troca de aba.
+  const atualizaFiltroToggle=()=>{
+    // "ativo" pinta o botão quando HÁ algo filtrando (mesmo com o painel
+    // fechado) — é o jeito de o dedo saber que a lista não mostra tudo sem
+    // precisar abrir o painel pra conferir.
+    filtroToggleBtn.classList.toggle('ativo',_gtStatusFilter!=='all'||!!searchInp.value);
+    filtrosPanel.classList.toggle('aberta',_gtFiltrosAbertos);
+  };
+  atualizaFiltroToggle();
+  filtroToggleBtn.addEventListener('click',()=>{_gtFiltrosAbertos=!_gtFiltrosAbertos;atualizaFiltroToggle();});
+  // Some junto aos listeners que JÁ existem (não troca nenhum): só atualiza
+  // a pintura do botão quando o filtro ou a busca mudam.
+  filterDefs.forEach(fd=>filterBtns[fd.v].addEventListener('click',atualizaFiltroToggle));
+  searchInp.addEventListener('input',atualizaFiltroToggle);
   // Recolher/expandir TUDO (conjuntos e anúncios de todas as campanhas).
   // _gtRecolhido é lembrado entre redesenhos: quem recolheu tudo não vê
   // tudo abrir de novo a cada ↻ ou troca de filtro.
@@ -2359,7 +2417,7 @@ function _renderGtCampaigns(col,campaigns,insights,adInsights,adsets){
     card.querySelectorAll('.gt-chevron,.gt-set-chevron').forEach(c=>c.classList.toggle('open',!_gtRecolhido));
   });
   const hdrRight=document.createElement('div');hdrRight.style.cssText='display:flex;align-items:center;gap:8px;flex-wrap:wrap;';
-  hdrRight.appendChild(collapseBtn);hdrRight.appendChild(filterWrap);hdrRight.appendChild(searchInp);
+  hdrRight.appendChild(collapseBtn);hdrRight.appendChild(filtroToggleBtn);hdrRight.appendChild(filtrosPanel);
   hdr.appendChild(ttlWrap);hdr.appendChild(hdrRight);
   card.appendChild(hdr);
   // Barra de objetivos: só aparece quando há mais de um na conta — com um só,
@@ -5836,6 +5894,15 @@ Object.assign(window, {
    inteira. Em grade de cartoes, 8 sugestoes viravam 8 caixas altas e a decisao
    ficava espalhada; em lista o olho desce por uma coluna so de "de -> para". */
 .tela-gestao-trafego :deep(.pnd-aba-n){display:inline-flex;align-items:center;justify-content:center;min-width:17px;height:17px;padding:0 5px;margin-left:6px;border-radius:9px;background:var(--red);color:var(--sobre-cor);font-family:var(--fonte-dados);font-size:calc(8.5px*var(--gt-fs,1.3));font-weight:700;line-height:1;}
+/* SELO DE CONTAGEM da aba Campanhas (Onda C, topo do celular): neutro
+   (--surface2/--muted), não vermelho como o .pnd-aba-n da Fila — aquele é
+   aviso de pendência, este é só a contagem normal da lista. Só existe no
+   celular (regra dentro do @media abaixo); no computador o título "N
+   Campanhas" já mostra o número por extenso, e mostrar duas vezes seria
+   "aviso que vira paisagem" (item 9). `:empty` cobre o instante antes do
+   primeiro _renderGtCampaigns() escrever o número. */
+.tela-gestao-trafego :deep(.pnd-aba-contagem){display:none;}
+.tela-gestao-trafego :deep(.pnd-aba-contagem:empty){display:none;}
 .tela-gestao-trafego :deep(.gtf-cab){display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin:0 0 14px;}
 .tela-gestao-trafego :deep(.gtf-tit){font-family:var(--fonte-principal);font-size:calc(15px*var(--gt-fs,1.3));font-weight:700;color:var(--text);margin:0;}
 .tela-gestao-trafego :deep(.gtf-sub){font-family:var(--fonte-principal);font-size:calc(10.5px*var(--gt-fs,1.3));color:var(--muted);margin:4px 0 0;line-height:1.5;}
@@ -6276,6 +6343,36 @@ Object.assign(window, {
 /* Botão recolher/expandir tudo */
 .tela-gestao-trafego :deep(.gt-collapse-all){font-family:var(--fonte-principal);font-size:calc(10px*var(--gt-fs,1.3));font-weight:600;letter-spacing:.3px;padding:4px 10px;border-radius:5px;border:1px solid var(--border);background:none;color:var(--muted);cursor:pointer;white-space:nowrap;flex-shrink:0;transition:all .15s;}
 .tela-gestao-trafego :deep(.gt-collapse-all:hover){border-color:var(--accent);color:var(--accent);}
+/* PAINEL DE FILTRO/BUSCA DA LISTA (Onda C, topo do celular). No computador
+   isto é invisível: o painel sempre aparece (mesmo lugar de sempre, busca +
+   3 filtros lado a lado) e o botão de funil nem existe (display:none base).
+   Só o @media(max-width:640px) abaixo muda o comportamento. */
+.tela-gestao-trafego :deep(.gt-camp-filtros-painel){display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.tela-gestao-trafego :deep(.gt-camp-filtro-toggle){display:none;}
+/* Some com "N Campanhas" só no celular (ver .pnd-aba-contagem, que ganha o
+   mesmo número na aba) — no computador o título continua do jeito que era. */
+@media(max-width:640px){
+  .tela-gestao-trafego :deep(.gt-camp-titulo-n){display:none;}
+  .tela-gestao-trafego :deep(.gt-camp-hdr .gt-pastilha){display:none;}
+  .tela-gestao-trafego :deep(.pnd-aba-contagem:not(:empty)){display:inline-flex;align-items:center;justify-content:center;min-width:17px;height:17px;padding:0 5px;margin-left:6px;border-radius:9px;background:var(--surface2);color:var(--muted);font-family:var(--fonte-dados);font-size:calc(8.5px*var(--gt-fs,1.3));font-weight:700;line-height:1;}
+  /* CABEÇALHO DA LISTA (155px medidos -> alvo ~45px): busca + os 3 filtros
+     (Todas/Ativas/Inativas) ficam ESCONDIDOS atrás de um botão de funil, em
+     vez de empilhados abaixo do título. O "recolher tudo" continua igual,
+     do lado do funil — os dois cabem numa linha só. */
+  .tela-gestao-trafego :deep(.gt-camp-hdr){padding:2px 4px 8px;gap:8px;}
+  .tela-gestao-trafego :deep(.gt-camp-filtro-toggle){display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;padding:0;border-radius:7px;border:1px solid var(--border);background:none;color:var(--muted);position:relative;flex-shrink:0;transition:border-color .15s,color .15s;}
+  .tela-gestao-trafego :deep(.gt-camp-filtro-toggle.ativo){border-color:var(--accent);color:var(--accent);}
+  /* ALVO DE TOQUE 40px sem engordar o botão — mesma receita de sempre nesta
+     tela (crescer a ÁREA, não o desenho); aqui pode crescer nos 4 lados
+     porque não tem vizinho horizontal colado (é o último item da linha). */
+  .tela-gestao-trafego :deep(.gt-camp-filtro-toggle)::after{content:'';position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:40px;height:40px;}
+  /* Painel FECHADO por padrão (_gtFiltrosAbertos=false): some da tela até o
+     dedo tocar no funil. Quando abre, cai pra LINHA PRÓPRIA (flex-basis:100%)
+     com os filtros numa fileira e a busca embaixo (a busca já tem
+     `width:100%!important` da regra .gt-camp-hdr input, mais abaixo). */
+  .tela-gestao-trafego :deep(.gt-camp-filtros-painel){display:none;flex-basis:100%;flex-direction:column;align-items:stretch;gap:8px;order:5;}
+  .tela-gestao-trafego :deep(.gt-camp-filtros-painel.aberta){display:flex;}
+}
 /* Aviso de "não dá pra editar aqui" (ex.: é ABO, edite no conjunto) */
 .tela-gestao-trafego :deep(.gt-be-nota){font-size:calc(10.5px*var(--gt-fs,1.3));color:var(--muted);opacity:.9;line-height:1.5;}
 .tela-gestao-trafego :deep(.gt-ad-card){border-radius:8px;background:var(--surface);border:1px solid var(--border);padding:11px 14px;display:flex;flex-direction:column;gap:6px;margin-left:20px;margin-bottom:7px;box-shadow:0 2px 8px rgba(0,0,0,.07);position:relative;}
@@ -6479,7 +6576,8 @@ Object.assign(window, {
    atrás. Já foi `--bg` (virava bloco preto no tema escuro) e depois
    `--surface2` (virava cinza no claro); transparente não tem nenhum dos dois
    problemas. */
-.tela-gestao-trafego :deep(.pnd-aba-acao){appearance:none;margin-left:auto;margin-bottom:-1px;padding:7px 15px;align-self:center;border:1px solid var(--border);border-radius:8px;background:var(--surface2,var(--surface));color:var(--accent);font-family:var(--fonte-principal);font-size:calc(11px*var(--gt-fs,1.3));font-weight:700;letter-spacing:1px;text-transform:uppercase;cursor:pointer;transition:border-color .15s ease,color .15s ease;}
+.tela-gestao-trafego :deep(.pnd-aba-acao){appearance:none;display:inline-flex;align-items:center;gap:6px;margin-left:auto;margin-bottom:-1px;padding:7px 15px;align-self:center;border:1px solid var(--border);border-radius:8px;background:var(--surface2,var(--surface));color:var(--accent);font-family:var(--fonte-principal);font-size:calc(11px*var(--gt-fs,1.3));font-weight:700;letter-spacing:1px;text-transform:uppercase;cursor:pointer;transition:border-color .15s ease,color .15s ease;}
+.tela-gestao-trafego :deep(.pnd-aba-acao-ic){flex-shrink:0;}
 /* Os dois botoes de acao andam JUNTOS na direita. Antes cada um tinha o seu
    `margin-left:auto` e o navegador reparte a sobra entre todas as margens
    automaticas: metade antes de "Nova campanha", metade antes de "Historico"
@@ -6520,7 +6618,26 @@ Object.assign(window, {
      `100vw x 100dvh`: virava uma tela dentro da tela, sem borda, e nao dava pra
      ver que era uma janela que fecha. 14px de folga de cada lado. */
   .tela-gestao-trafego :deep(#gt-novo-modal){width:calc(100vw - 28px);max-width:none;max-height:calc(100dvh - 56px);border-radius:14px;}
-  .tela-gestao-trafego :deep(.pnd-aba-acao){margin-left:0;flex:1 1 100%;margin-top:6px;}
+  /* ONDA C, TOPO DO CELULAR (25/09/2026): antes cada botão de ação virava
+     LINHA CHEIA SOZINHO (`flex:1 1 100%`) — medido: 117px só nesta barra,
+     porque "+ Nova campanha" e "Histórico" tomavam uma linha inteira CADA
+     um. Agora ficam na MESMA linha das abas, só com o ícone — o rótulo por
+     extenso continua existindo (aria-label/title já no template), só não
+     fica visível no celular. */
+  .tela-gestao-trafego :deep(.pnd-aba-acao){padding:8px;border-radius:7px;position:relative;}
+  .tela-gestao-trafego :deep(.pnd-aba-acao-txt){display:none;}
+  /* ALVO DE TOQUE (padrão item 6, "cresce a área, não o desenho"): o botão
+     visual encolheu pra caber na linha; o dedo continua precisando de 40px.
+     Só cresce em ALTURA (left:0;right:0, nunca mais largo que o próprio
+     botão) — encostado no vizinho (o outro ícone, a 4px de gap), crescer
+     também em largura ia cobrir o vizinho e tirar o toque dele (o aviso
+     que o próprio padrão faz). Mesma receita do `.bt-voltar` desta barra. */
+  .tela-gestao-trafego :deep(.pnd-aba-acao)::after{content:'';position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);height:40px;}
+  /* As três abas de verdade (Campanhas/Fila/A régua) mediram 37px de altura
+     no celular — abaixo do piso de 40px, não causado por esta tarefa, mas já
+     que a linha está sendo mexida, ganham a mesma folga invisível. */
+  .tela-gestao-trafego :deep(.pnd-aba){position:relative;}
+  .tela-gestao-trafego :deep(.pnd-aba)::after{content:'';position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);height:40px;}
 }
 .tela-gestao-trafego :deep(.gt-cfg-body){padding:16px 20px;overflow-y:auto;flex:1;}
 .tela-gestao-trafego :deep(.gt-cfg-sec){margin-bottom:18px;}
@@ -6750,6 +6867,41 @@ Object.assign(window, {
    da faixa de controles, que é alta aqui. Mais grosso e com mais tinta, para
    ser visto na foto inteira. O texto em cima continua `--text`/`--muted`. */
 .tela-gestao-trafego :deep(.bt-barra){border-bottom-width:6px;background:color-mix(in srgb,var(--modulo) 12%,var(--surface));}
+
+/* ══ ONDA C - TOPO DO CELULAR (25/09/2026) ═════════════════════════════════
+   Medido antes: 336px do topo da tela ate o primeiro .gt-camp-card a 375px,
+   e mais 155px de cabecalho da lista ate a primeira campanha de verdade
+   (docs em .superpowers/sdd/2026-09-25-gt-onda-c/medicao-topo-celular.md).
+   O pedido do dono: cortar agressivo, mas o SELETOR DE CONTA fica do jeito
+   que esta - ele troca de conta o tempo todo, e navegacao principal, nao
+   pode encolher nem sumir.
+
+   O SUBTITULO SOME SO AQUI, SO NO CELULAR. Isto NAO mexe no componente
+   `barra-de-topo.vue`: as outras ~34 telas continuam mostrando o subtitulo
+   (a razao dele existir esta documentada la - uma versao que tirava isso foi
+   revertida pelo dono, "no celular fica informacao escondida"). Aqui e
+   diferente: e o proprio dono, POR ESCRITO, pedindo o corte so nesta tela -
+   "Meta Ads - Inteligencia RBV" e menos vital que sobrar espaco pro que
+   importa (conta, periodo, campanhas). Por isso o `:deep()` mira so dentro
+   de `.tela-gestao-trafego`, e nao no `.bt-sub` da regra base. */
+@media(max-width:640px){
+  .tela-gestao-trafego :deep(.bt-sub){display:none;}
+  /* Respiro entre a barra do topo e a de abas: era 14px (gap:14px do
+     .bt-barra quando ele quebra em duas linhas no celular) - ganho de graça,
+     nao tira nada de vista. */
+  .tela-gestao-trafego :deep(.bt-barra){gap:8px;}
+  /* Os tres blocos empilhados dentro da faixa de controles (Funil/KPIs,
+     conta, periodo) respiravam 8px em CADA padding e CADA vao - 4 unidades
+     de 8px = 32px so de respiro. Aperta pra metade (--sp-1): o seletor de
+     conta continua com os mesmos 40px de altura, so o AR ao redor dele
+     encolhe. */
+  .tela-gestao-trafego :deep(.gv-controles){padding:4px 12px;gap:4px;}
+  /* Vao entre a barra de abas e o cartao de campanhas: era 16px de
+     margin-bottom + 12px de padding-top do .gt-body = 28px so de respiro
+     entre dois blocos que ja tem borda/cor separando um do outro. */
+  .tela-gestao-trafego :deep(.pnd-abas){margin-bottom:8px;}
+  .tela-gestao-trafego :deep(.gt-body){padding-top:8px;}
+}
 
 /* ── ABA FILA ───────────────────────────────────────────────────────────────
    O cabeçalho da fila é um bloco em BRONZE (a decisão de verba); cada item
