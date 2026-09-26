@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { campanhaEmVeiculacao, montarMensagens, parsearSaida, diaDaSemanaBR, decidirEscopo, veiculouNaJanela, selecionarCampanhas } from './budget-ia.mjs';
+import { campanhaEmVeiculacao, montarMensagens, parsearSaida, diaDaSemanaBR, decidirEscopo, veiculouNaJanela, selecionarCampanhas, custoAtualDoAlvo } from './budget-ia.mjs';
 import { normalizarRegua } from '../src/ferramentas/gestao-trafego/regua.js';
 
 const AGORA = Date.parse('2026-07-02T12:00:00Z');
@@ -283,20 +283,24 @@ test('campanha de VENDAS também leva o custo atual', () => {
   assert.equal(d.regua.custo_atual_reais, 50, 'CAC = 1000 / 20');
 });
 
-test('campanha de engajamento continua medida pelo ponto ponderado', () => {
+test('campanha de engajamento passa a ser medida por engajamento bruto (rodada de correção 1, 24/09/2026)', () => {
+  // ATUALIZADO 24/09/2026: este teste documentava o PONTO PONDERADO como
+  // régua de engajamento. A troca de régua (ver alvos.js, ALVOS.engajamento)
+  // tirou o robô do ponto e pôs no `post_engagement` bruto que a Meta conta —
+  // e `custoAtualDoAlvo` (coletor/budget-ia.mjs) perdeu o ramo que chamava
+  // `calcularPonderada`: hoje ele só repassa pra `custoDoAlvo`, igual aos
+  // demais baldes. Deixar o ramo e a régua discordando faria o robô julgar
+  // engajamento por uma régua e a tela por outra.
   const camp = { id: '3', name: 'Engaja', objective: 'OUTCOME_ENGAGEMENT' };
-  // 'post_reaction' é curtida (peso 1, PESOS_PADRAO em ponderada.js) — 200
-  // curtidas viram 200 pontos; R$ 50 / 200 pontos = R$ 0,25 por ponto. Sem
-  // esta conta batida na régua, inverter `pnd.custoPorPonto` por
-  // `custoDoAlvo(...)` (que devolve null pra engajamento — ver metricas.js)
-  // não seria pego: os dois testes de cima (LEAD/VENDAS) passam do mesmo jeito
-  // com a mutação, porque não passam por este ramo.
-  const ins = { spend: '50', actions: [{ action_type: 'post_reaction', value: '200' }] };
+  // 'post_engagement' é o que a Meta conta como engajamento bruto (sem pesar
+  // por tipo de interação, ao contrário da ponderada) — R$ 50 / 200
+  // engajamentos = R$ 0,25 por engajamento.
+  const ins = { spend: '50', actions: [{ action_type: 'post_engagement', value: '200' }] };
   const { user } = montarMensagens(camp, ins, [], [], REGUA_TESTE);
   const d = dadosDoPrompt(user);
   assert.equal(d.regua.tipo_de_campanha, 'engajamento');
-  assert.equal(d.regua.rotulo, 'Custo por ponto');
-  assert.equal(d.regua.custo_atual_reais, 0.25, 'custo por ponto = 50 / 200 pontos (200 curtidas × peso 1)');
+  assert.equal(d.regua.rotulo, 'Custo por engajamento');
+  assert.equal(d.regua.custo_atual_reais, 0.25, 'custo por engajamento = 50 / 200 engajamentos');
 });
 
 test('campanha sem resultado na janela manda null, nunca zero', () => {
@@ -343,11 +347,16 @@ test('o balde usado no anúncio é o da CAMPANHA, nunca recalculado', () => {
   // ARMADILHA (rodada de correção 1): com `actions: []` no anúncio, os dois
   // caminhos convergem pra `resultado: null` — o certo (balde 'mensagens',
   // sem conversa na janela) E o errado (balde recalculado por `camp.objective`
-  // = 'engajamento', cujo `alvo.resultado` é null POR DEFINIÇÃO em alvos.js,
-  // o único balde sem métrica de quantidade). Um teste que não distingue os
-  // dois passaria com o bug de volta. Por isso o anúncio abaixo tem uma
-  // conversa de verdade: só o balde 'mensagens' sabe ler `conversas`;
-  // 'engajamento' devolveria null de qualquer jeito.
+  // = 'engajamento'). Um teste que não distingue os dois passaria com o bug
+  // de volta. Por isso o anúncio abaixo tem uma conversa de verdade: só o
+  // balde 'mensagens' sabe ler `conversas` a partir dela.
+  //
+  // ATUALIZADO 24/09/2026: desde a troca de régua, `alvo.resultado` de
+  // engajamento NÃO é mais null por definição (é `'engaj_pub'`, ver alvos.js)
+  // — o `resultado` do anúncio errado continua null aqui pela razão de
+  // sempre: a métrica de engajamento lê o action_type `post_engagement`, e
+  // esta conversa de WhatsApp não é esse tipo de ação (é
+  // `onsite_conversion.messaging_conversation_started_7d`).
   const camp = { id: '6', name: 'Zap', objective: 'OUTCOME_ENGAGEMENT' };
   const conjuntos = [{ id: 'c1', destination_type: 'WHATSAPP' }];
   const ads = [{
@@ -400,17 +409,19 @@ test('montarMensagens sem o 6o argumento não quebra (compatibilidade)', () => {
   assert.equal(d.dias_da_janela, null, 'sem o dado, não inventa um número de dias');
 });
 
-test('engajamento também ganha custo na janela anterior (ponto ponderado, não null)', () => {
+test('engajamento também ganha custo na janela anterior (engajamento bruto, não null)', () => {
   // `janela_anterior.custo_atual_reais` usa a mesma função que calcula
   // `regua.custo_atual_reais` — por isso os dois campos têm o MESMO NOME: são
   // a mesma grandeza, e é o par que o modelo compara pra ver a tendência.
-  // Como essa função cobre engajamento com o ponto ponderado, a janela
-  // anterior de campanha de engajamento também ganha custo (antes ficava null).
+  // ATUALIZADO 24/09/2026: a grandeza deixou de ser o ponto ponderado e passou
+  // a ser `custo_engajamento` (post_engagement bruto) — ver troca de régua em
+  // alvos.js. A janela anterior de campanha de engajamento continua ganhando
+  // custo (em vez de ficar em null), só que por essa métrica nova.
   const camp = { id: '11', name: 'Engaja', objective: 'OUTCOME_ENGAGEMENT' };
-  const ins = { spend: '50', actions: [{ action_type: 'post_reaction', value: '200' }] };
-  const anterior = { spend: '100', actions: [{ action_type: 'post_reaction', value: '200' }] };
+  const ins = { spend: '50', actions: [{ action_type: 'post_engagement', value: '200' }] };
+  const anterior = { spend: '100', actions: [{ action_type: 'post_engagement', value: '200' }] };
   const d = dadosDoPrompt(camp, ins, [], [], REGUA_TESTE, { insAnterior: anterior });
-  assert.equal(d.janela_anterior.custo_atual_reais, 0.5, '100 / 200 pontos na janela anterior');
+  assert.equal(d.janela_anterior.custo_atual_reais, 0.5, '100 / 200 engajamentos na janela anterior');
 });
 
 // ---------------------------------------------------------------------------
@@ -440,13 +451,179 @@ test('IMPORTANTE 1: aprendizado tem válvula também para "sem nenhum resultado"
 });
 
 test('IMPORTANTE 2: resultado nulo no anúncio não é lido como "não produziu nada"', () => {
-  // ALVOS.engajamento.resultado é null POR DEFINIÇÃO (alvos.js) — todo anúncio
-  // de campanha de engajamento chega com resultado: null, e a instrução antiga
+  // ATUALIZADO 24/09/2026: este teste nasceu quando ALVOS.engajamento.resultado
+  // era null POR DEFINIÇÃO — não é mais verdade (é 'engaj_pub', ver alvos.js).
+  // Quem hoje chega sem `resultado` (nem `custo_por_resultado`) é o balde
+  // 'padrao': campanha cujo objetivo a ferramenta não reconhece e que por
+  // isso não tem alvo nenhum em alvos.js (ver baldes.js). A instrução antiga
   // ("CTR alto e nenhum resultado é candidato a pausar") lia esse null como
-  // criativo ruim. O prompt agora manda julgar pelo custo_por_resultado.
+  // criativo ruim. O prompt manda julgar pelo custo_por_resultado — este
+  // teste só confere que a instrução (texto estático do prompt) continua lá;
+  // não depende de qual balde é usado abaixo.
   const camp = { id: '14', name: 'Engaja', objective: 'OUTCOME_ENGAGEMENT' };
   const { system } = montarMensagens(camp, {}, [], [], REGUA_TESTE);
   assert.match(system, /não conta resultado por unidade/);
   assert.match(system, /não leia isso como "o criativo não produziu nada"/);
   assert.match(system, /julgue o anúncio pelo `custo_por_resultado`/);
+});
+
+// ---------------------------------------------------------------------------
+// TAREFA 5 (24/09/2026): objetivo declarado por interação. A TELA já julga
+// campanha declarada pelo custo da interação (curtida/comentário/salvamento/
+// compartilhamento); o robô ainda julgava pela régua do balde — os dois
+// discordavam na mesma campanha, e é o robô quem escreve a justificativa que
+// o dono lê na Fila. `metaDoBalde` já aceita a interação como "balde" (ela
+// não está em ALVOS, então cai na chave literal — ver regua.js:109).
+// ---------------------------------------------------------------------------
+
+test('campanha com interação declarada é julgada por ela, não pelo balde', () => {
+  const camp = { id: '20', name: 'Engaja', objective: 'OUTCOME_ENGAGEMENT' };
+  const ins = { spend: '100', actions: [
+    { action_type: 'post_engagement', value: '1000' },
+    { action_type: 'onsite_conversion.post_save', value: '25' },
+  ] };
+  const regua = normalizarRegua({ metas: { engajamento_bruto: 0.05, salvamentos: 2 } });
+  const d = dadosDoPrompt(camp, ins, [], [], regua, { interacaoDeclarada: 'salvamentos' });
+  assert.equal(d.regua.custo_atual_reais, 4, 'custo por salvamento = 100 / 25');
+  assert.equal(d.regua.meta_reais, 2, 'a meta da interação declarada, não a do balde');
+  assert.ok(/salvamento/i.test(d.regua.rotulo));
+});
+
+test('sem declaração, engajamento segue pelo custo por engajamento', () => {
+  const camp = { id: '21', name: 'Engaja', objective: 'OUTCOME_ENGAGEMENT' };
+  const ins = { spend: '100', actions: [{ action_type: 'post_engagement', value: '1000' }] };
+  const regua = normalizarRegua({ metas: { engajamento_bruto: 0.05 } });
+  const d = dadosDoPrompt(camp, ins, [], [], regua, {});
+  assert.equal(d.regua.custo_atual_reais, 0.1, '100 / 1000 engajamentos');
+});
+
+test('declaração inválida é ignorada, não derruba a análise', () => {
+  const camp = { id: '22', name: 'Engaja', objective: 'OUTCOME_ENGAGEMENT' };
+  const ins = { spend: '100', actions: [{ action_type: 'post_engagement', value: '1000' }] };
+  const regua = normalizarRegua({ metas: { engajamento_bruto: 0.05 } });
+  const d = dadosDoPrompt(camp, ins, [], [], regua, { interacaoDeclarada: 'xpto' });
+  assert.equal(d.regua.custo_atual_reais, 0.1, 'cai de volta no custo por engajamento');
+});
+
+test('custoAtualDoAlvo: chamada de 3 argumentos (sem interação) continua funcionando', () => {
+  const ins = { spend: '50', actions: [{ action_type: 'post_engagement', value: '200' }] };
+  assert.equal(custoAtualDoAlvo('engajamento', ins, normalizarRegua(null)), 0.25);
+});
+
+test('TRAVA: a janela anterior usa a MESMA interação declarada, não o balde padrão', () => {
+  // Rodada de correção 1 (24/09/2026): se alguém remover o 4º argumento de
+  // `custoAtualDoAlvo` na chamada da janela anterior (dentro de
+  // `montarMensagens`, no campo `janela_anterior.custo_atual_reais`), a
+  // tendência passaria a comparar "hoje por salvamento" com "ontem por
+  // engajamento" — duas grandezas diferentes, sem nada quebrar e nenhum outro
+  // teste reclamar — e o modelo escreveria uma frase de tendência confiante
+  // em cima de números de mercados diferentes.
+  // Fixture: a mesma interação (salvamentos) nas duas janelas, com volumes
+  // BEM diferentes do que dá o cálculo por engajamento bruto, para o "por
+  // salvamento" e o "por engajamento" não coincidirem por acidente:
+  //   por salvamento (correto):     60 / 20  = 3
+  //   por engajamento (regressão):  60 / 500 = 0.12
+  const camp = { id: '23', name: 'Engaja', objective: 'OUTCOME_ENGAGEMENT' };
+  const ins = { spend: '100', actions: [
+    { action_type: 'post_engagement', value: '1000' },
+    { action_type: 'onsite_conversion.post_save', value: '25' },
+  ] };
+  const anterior = { spend: '60', actions: [
+    { action_type: 'post_engagement', value: '500' },
+    { action_type: 'onsite_conversion.post_save', value: '20' },
+  ] };
+  const regua = normalizarRegua({ metas: { salvamentos: 2 } });
+  const d = dadosDoPrompt(camp, ins, [], [], regua, { insAnterior: anterior, interacaoDeclarada: 'salvamentos' });
+  assert.equal(d.janela_anterior.custo_atual_reais, 3,
+    'custo por SALVAMENTO na janela anterior (60/20) — não por engajamento (60/500=0.12)');
+});
+
+test('custoAtualDoAlvo: quantidade zero na interação declarada devolve null, nunca 0', () => {
+  // R$ 0,00 no prompt é lido como "de graça" e vira "escalar" — a mesma
+  // guarda de custoDaInteracao (ausência ou zero de verdade) tem de valer
+  // também passando pelo override do robô.
+  const ins = { spend: '100', actions: [{ action_type: 'post_engagement', value: '1000' }] };
+  const c = custoAtualDoAlvo('engajamento', ins, normalizarRegua(null), 'salvamentos');
+  assert.equal(c, null, 'sem nenhum salvamento na janela, não pode virar custo zero nem o de engajamento');
+});
+
+test('TRAVA: com interação declarada, o ANÚNCIO vem no mesmo mercado da CAMPANHA', () => {
+  // CRÍTICO 1 da revisão final (25/09/2026): se alguém remover o 4º argumento
+  // de `custoAtualDoAlvo` na chamada de `custo_por_resultado` do anúncio
+  // (dentro de `montarMensagens`, no map de `dados.anuncios`), ou trocar de
+  // volta `resultado` para `GT_METRIC_CATALOG[alvo.resultado].compute(a)`
+  // sem checar `interacaoDeclarada` antes, o nível da CAMPANHA passa a julgar
+  // num mercado (aqui, salvamento) enquanto o nível do ANÚNCIO continua no
+  // engajamento bruto — dois juízes discordando da mesma campanha, e é o
+  // anúncio quem o modelo lê pra decidir "manter" ou "pausar" o criativo.
+  // Fixture: volumes bem diferentes entre os dois mercados, de propósito, pra
+  // "por salvamento" e "por engajamento bruto" não coincidirem por acidente:
+  //   por salvamento (correto):        50 / 10  = 5
+  //   por engajamento bruto (regressão): 50 / 500 = 0,1
+  const camp = { id: '25', name: 'Engaja', objective: 'OUTCOME_ENGAGEMENT' };
+  const ins = { spend: '100', actions: [
+    { action_type: 'post_engagement', value: '1000' },
+    { action_type: 'onsite_conversion.post_save', value: '25' },
+  ] };
+  const ads = [{ ad_id: 'ad1', spend: '50', actions: [
+    { action_type: 'post_engagement', value: '500' },
+    { action_type: 'onsite_conversion.post_save', value: '10' },
+  ] }];
+  const regua = normalizarRegua({ metas: { salvamentos: 2 } });
+  const d = dadosDoPrompt(camp, ins, ads, [], regua, { interacaoDeclarada: 'salvamentos' });
+  assert.equal(d.anuncios[0].resultado, 10,
+    'resultado do anúncio tem de ser a QUANTIDADE de salvamentos dele, não os 500 engajamentos brutos');
+  assert.equal(d.anuncios[0].custo_por_resultado, 5,
+    'custo por SALVAMENTO do anúncio (50/10) — não por engajamento bruto (50/500=0,1)');
+});
+
+// ---------------------------------------------------------------------------
+// TAREFA 6 (Onda B) — custo por seguidor DA CONTA no prompt de campanha de
+// seguidores. Nunca existiu teste pra este trecho antes (a muleta da Onda A
+// só tinha `medida_indisponivel` fixo) — cobrindo agora que ele ganha o
+// número de contexto.
+// ---------------------------------------------------------------------------
+
+test('campanha de seguidores confiável leva o custo por seguidor DA CONTA como contexto', () => {
+  const camp = { id: '9', name: '[+ SEGUIDORES] Vessel', objective: 'OUTCOME_TRAFFIC' };
+  const ins = { spend: '500', clicks: '1', impressions: '10000', ctr: '0.01', reach: '9000', frequency: '3' };
+  const d = dadosDoPrompt(camp, ins, [], [], REGUA_TESTE, {
+    diasJanela: 7,
+    custoPorSeguidorConta: { valor: 1.6, confiavel: true, porque: 'x' },
+  });
+  assert.equal(d.regua.custo_por_seguidor_da_conta_reais, 1.6);
+  assert.match(d.regua.medida_indisponivel, /não atribui/);
+});
+
+test('campanha de seguidores SEM dado confiável não leva número nenhum de contexto (null, não zero)', () => {
+  const camp = { id: '9', name: '[+ SEGUIDORES] Vessel', objective: 'OUTCOME_TRAFFIC' };
+  const ins = { spend: '500', clicks: '1', impressions: '10000' };
+  const semDado = dadosDoPrompt(camp, ins, [], [], REGUA_TESTE, { diasJanela: 7 });
+  assert.equal(semDado.regua.custo_por_seguidor_da_conta_reais, null);
+
+  const poucoConfiavel = dadosDoPrompt(camp, ins, [], [], REGUA_TESTE, {
+    diasJanela: 7,
+    custoPorSeguidorConta: { valor: 200, confiavel: false, porque: 'amostra pequena' },
+  });
+  assert.equal(poucoConfiavel.regua.custo_por_seguidor_da_conta_reais, null,
+    'confiavel:false nunca chega no prompt como número — amostra pequena não é "quase certo"');
+});
+
+test('campanha que NÃO é de seguidores nunca leva custo_por_seguidor_da_conta_reais, mesmo que extra venha preenchido', () => {
+  const camp = { id: '9', name: 'Captação de Vendas', objective: 'OUTCOME_SALES' };
+  const d = dadosDoPrompt(camp, INS_LEAD, [], [], REGUA_TESTE, {
+    custoPorSeguidorConta: { valor: 1.6, confiavel: true, porque: 'x' },
+  });
+  assert.equal(d.regua.custo_por_seguidor_da_conta_reais, undefined,
+    'campanha comum não usa o ramo de seguidores do regua — o campo nem existe');
+});
+
+test('o prompt manda usar o custo por seguidor da conta só como CONTEXTO, nunca como custo da campanha', () => {
+  const camp = { id: '9', name: '[+ SEGUIDORES] Vessel', objective: 'OUTCOME_TRAFFIC' };
+  const { system } = montarMensagens(camp, {}, [], [], REGUA_TESTE, {
+    custoPorSeguidorConta: { valor: 1.6, confiavel: true, porque: 'x' },
+  });
+  assert.match(system, /custo_por_seguidor_da_conta_reais/);
+  assert.match(system, /SÓ como contexto/);
+  assert.match(system, /NUNCA como custo desta campanha/);
 });

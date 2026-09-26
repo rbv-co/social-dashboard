@@ -44,7 +44,10 @@ test('valor invalido (texto, negativo, NaN) cai no padrao daquele campo', () => 
 });
 
 test('metaDoBalde devolve a meta do PROPRIO balde, nunca a de outro', () => {
-  const r = normalizarRegua({ metas: { engajamento: 0.15, trafego: 0.25 } });
+  // ATUALIZADO 24/09/2026: engajamento lê pela chave `engajamento_bruto` (ver
+  // testes dedicados à troca de régua, abaixo) — aqui o que importa é só que
+  // ele não pega emprestada a meta de trafego, nem o contrário.
+  const r = normalizarRegua({ metas: { engajamento_bruto: 0.15, trafego: 0.25 } });
   assert.equal(metaDoBalde(r, 'engajamento'), 0.15);
   assert.equal(metaDoBalde(r, 'trafego'), 0.25);
   assert.equal(metaDoBalde(r, 'balde-que-nao-existe'), 0, 'balde sem meta propria devolve 0, nunca empresta de outro');
@@ -62,7 +65,9 @@ test('nao existe mais reserva em "padrao": cada balde tem sua propria unidade (I
 });
 
 test('metaDoBalde coerce string da meta solicitada pra number', () => {
-  const r = { metas: { engajamento: '5' } };
+  // engajamento lê por `engajamento_bruto` desde 24/09/2026 (chaveMeta) — a
+  // chave do fixture mudou, o que o teste prova (coerção de tipo) não.
+  const r = { metas: { engajamento_bruto: '5' } };
   const resultado = metaDoBalde(r, 'engajamento');
   assert.equal(typeof resultado, 'number', 'deve ser number, não string');
   assert.equal(resultado, 5, 'deve coercir "5" pro número 5');
@@ -76,7 +81,8 @@ test('metaDoBalde NAO usa "padrao" quando a meta solicitada nao existe (devolve 
 });
 
 test('metaDoBalde passa numero real direto e devolve como number', () => {
-  const r = { metas: { engajamento: 7.5 } };
+  // idem: chave `engajamento_bruto` desde a troca de régua de 24/09/2026.
+  const r = { metas: { engajamento_bruto: 7.5 } };
   const resultado = metaDoBalde(r, 'engajamento');
   assert.equal(typeof resultado, 'number', 'deve ser number');
   assert.equal(resultado, 7.5, 'deve preservar o valor');
@@ -119,7 +125,10 @@ test('sem conta selecionada tambem fica em branco (nunca julga por engano)', () 
 test('a meta unica LEGADA nao vaza mais para o veredito de nenhuma conta', () => {
   // Antes de 2026-07-29 este campo governava as cinco contas. Ele continua
   // sendo guardado (historico), mas nao pode mais decidir cor nenhuma.
-  const r = normalizarRegua({ metas: { engajamento: 0.15 }, metas_por_conta: { 'vessel': { engajamento: 0.012 } } });
+  // ATUALIZADO 24/09/2026: a meta da CONTA para engajamento também passou a
+  // usar a chave `engajamento_bruto` (a antiga, por ponto, é a que fica em
+  // `metas.engajamento` — ver troca de régua em alvos.js).
+  const r = normalizarRegua({ metas: { engajamento: 0.15 }, metas_por_conta: { 'vessel': { engajamento_bruto: 0.012 } } });
   assert.equal(r.metas.engajamento, 0.15, 'segue guardado');
   assert.equal(metaDoBalde(reguaDaConta(r, 'vessel'), 'engajamento'), 0.012, 'quem manda e a meta da conta');
   assert.equal(metaDoBalde(reguaDaConta(r, 'outra'), 'engajamento'), 0, 'e a legada NAO serve de reserva');
@@ -164,4 +173,28 @@ test('mesclar devolve copia — nao muta a regua carregada do banco', () => {
   const r = normalizarRegua({ metas_por_conta: { 'vessel': { engajamento: 0.012 } } });
   mesclarMetasDaConta(r, 'vessel', { engajamento: 99 });
   assert.equal(r.metas_por_conta.vessel.engajamento, 0.012, 'o objeto original segue intacto');
+});
+
+// ---------------------------------------------------------------------------
+// TROCA DE RÉGUA DO ENGAJAMENTO (24/09/2026, ver alvos.js). metaDoBalde passa a
+// resolver a CHAVE da meta pelo alvo (chaveMeta), não mais pelo nome do balde
+// direto — só para engajamento, que agora lê `engajamento_bruto` em vez de
+// `engajamento`, para a meta antiga (R$/ponto) sobreviver intacta.
+// ---------------------------------------------------------------------------
+
+test('metaDoBalde lê engajamento pela chave nova, não pela do ponto', () => {
+  const r = normalizarRegua({ metas: { engajamento: 0.012, engajamento_bruto: 0.05 } });
+  assert.equal(metaDoBalde(r, 'engajamento'), 0.05, 'vale a meta em R$/engajamento');
+});
+
+test('a meta antiga do ponto continua guardada, intacta', () => {
+  const r = normalizarRegua({ metas: { engajamento: 0.012, engajamento_bruto: 0.05 } });
+  assert.equal(r.metas.engajamento, 0.012,
+    'apagar isto tornaria a pausa da ponderada irreversível');
+});
+
+test('sem a meta nova, engajamento não é julgado pela meta do ponto', () => {
+  const r = normalizarRegua({ metas: { engajamento: 0.012 } });
+  assert.equal(metaDoBalde(r, 'engajamento'), 0,
+    'meta 0 devolve faixa sem-dados: número sem cor, que é o combinado');
 });

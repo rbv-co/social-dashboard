@@ -246,7 +246,13 @@ import { campanhasAguardandoEntrega } from './sem-gasto.js'
 import { orcamentoEfetivoDaCampanha } from './orcamento-hierarquia.js'
 // Objetivo -> balde e "e de WhatsApp?" moram num modulo so porque o ROBO precisa
 // da mesma resposta que a tela (ver baldes.js).
-import { baldeDoObjetivo, ehDeWhatsapp, baldeEfetivo } from './baldes.js'
+import { baldeDoObjetivo, ehDeWhatsapp, baldeEfetivo, ehDeSeguidores } from './baldes.js'
+// Custo por seguidor DA CONTA (Tarefa 6, Onda B) — módulo puro, mesmo critério
+// que o robô usa (ehDeSeguidores), pra tela e robô nunca discordarem do número.
+import { custoPorSeguidorDaConta } from './seguidores.js'
+// Mesmo par que o Relatório por Hora/OPR usa pra transformar leitura crua de
+// `followers_leituras` em delta por bucket e depois somar um período.
+import { deltaDeSeguidoresPorHora, seguidoresNoPeriodo } from '../meta-ads/relatorio-por-hora.js'
 // Catálogo de métricas (como ler `actions`/`action_values` e o custo por
 // resultado) — mesmo motivo de baldes.js: a tela e o robô precisam da mesma
 // resposta. Ver metricas.js. O robô (coletor/budget-ia.mjs) importa também
@@ -255,14 +261,21 @@ import { baldeDoObjetivo, ehDeWhatsapp, baldeEfetivo } from './baldes.js'
 // catálogo — nem a tela nem o robô os chamam direto.
 import { GT_METRIC_CATALOG, GT_BALDE_PADRAO } from './metricas.js'
 import { normalizarRegua, metaDoBalde, reguaDaConta, mesclarMetasDaConta } from './regua.js'
-import { quantidadesDoInsight, calcularPonderada } from './ponderada.js'
+// calcularPonderada saiu daqui em 24/09/2026: a ponderada não decide mais o
+// veredito do cartão (ver comentário perto dos chips removidos, mais abaixo).
+// Ela continua existindo em ponderada.js pra quem for religá-la em alvos.js.
+import { quantidadesDoInsight } from './ponderada.js'
+// Custo por engajamento praticado pela conta aberta — puro e testado, ver o
+// cabeçalho do arquivo (acréscimo ao brief da Tarefa 4 da Onda B, 24/09/2026).
+import { custoEngajamentoPraticado } from './custo-praticado.js'
 // Alvo de cada tipo de campanha (custo por lead/conversa/venda/visita/mil
-// pessoas, ou por ponto no caso de engajamento) — ver alvos.js.
+// pessoas, ou por engajamento no caso de engajamento) — ver alvos.js.
 import { alvoDoBalde, avaliarAlvo } from './alvos.js'
 // Fase 3 — objetivo por interação: o dono DECLARA, campanha a campanha (ou
 // anúncio a anúncio) de engajamento, qual interação aquilo está comprando
 // (curtida/comentário/salvamento/compartilhamento). Sem declarar, nada muda —
-// continua no ponto ponderado, exatamente como hoje. Ver interacoes.js.
+// continua julgada pelo custo por engajamento (bruto), exatamente como hoje.
+// Ver interacoes.js.
 import { INTERACOES, custoDaInteracao, interacaoValida } from './interacoes.js'
 // Glossário da ferramenta (botões "?" de ajuda contextual) — ver ajuda.js pro
 // porquê disto existir. PURO: só dicionário titulo/texto, sem tela nem rede.
@@ -430,6 +443,12 @@ let _gtCampaigns=[];
 let _gtInsights=[];
 let _gtAdInsights=[];
 let _gtAdsets=[];        // conjuntos de anúncios da conta (Graph /adsets), com o orçamento de cada um
+// Custo por seguidor DA CONTA (Tarefa 6, Onda B) — recalculado em loadGtData()
+// junto com o resto, e lido pelo cabeçalho em _renderGtCampaigns. `null`
+// quando a conta não tem campanha de seguidores em veiculação, ou quando não
+// há dado (ou dado pouco confiável) pra estimar — nesses casos o cabeçalho
+// não mostra número nenhum (ver custoPorSeguidorDaConta em seguidores.js).
+let _gtCustoSeguidorConta=null;
 let _gtRecolhido=false;  // botão "recolher/expandir tudo": estado padrão dos painéis ao (re)desenhar
 let _gtStatusFilter='all';
 let _gtAbaAtiva='campanhas';
@@ -442,12 +461,15 @@ let _gtAbaAtiva='campanhas';
 let _gtSelecao=new Map();
 // Objetivo por interação (Fase 3): mapa alvo_id (campanha OU anúncio) ->
 // interação declarada ('curtidas'|'comentarios'|'salvamentos'|'compartilhamentos').
-// Sem entrada = não declarou = continua no ponto ponderado. Carregado uma vez
-// por loadGtData() (ver _gtCarregarObjetivos), igual à régua e ao Opus IA.
+// Sem entrada = não declarou = continua julgada pelo custo por engajamento
+// (bruto) — não mais pelo ponto ponderado, em pausa desde 24/09/2026 (ver
+// ALVOS.engajamento em alvos.js; correção da revisão final da Onda B,
+// 25/09/2026). Carregado uma vez por loadGtData() (ver _gtCarregarObjetivos),
+// igual à régua e ao Opus IA.
 let _gtObjetivoInteracao={};
 // Fail-CLOSED (M3 do review, 2026-07-28), mesmo padrão de _gtReguaCarregada:
 // só fica true depois de uma leitura que REALMENTE deu certo. Enquanto for
-// false, um alvo AUSENTE do mapa não pode virar "Objetivo: ponderado" com
+// false, um alvo AUSENTE do mapa não pode virar "Objetivo: engajamento" com
 // confiança — pode ser que exista uma declaração real no banco que esta
 // leitura, ao falhar, não trouxe. Ver _gtCarregarObjetivos e _gtSeloObjetivoEl.
 let _gtObjetivoInteracaoCarregada=false;
@@ -659,12 +681,49 @@ async function _gtCarregarObjetivos(){
     // NUNCA apagar o mapa em silêncio (M3 do review, 2026-07-28): se a leitura
     // falhar, o mapa anterior (as declarações que já sabíamos ser verdade)
     // fica exatamente como estava — é o que impede uma campanha DECLARADA de
-    // voltar sozinha a ser julgada pelo ponto ponderado só porque um recarregar
-    // deu erro de rede/sessão. O detalhe técnico vai pro console; o selo (ver
-    // _gtSeloObjetivoEl) trata a incerteza pra quem só usa esta variável.
+    // voltar sozinha a ser julgada pelo custo por engajamento (bruto) só
+    // porque um recarregar deu erro de rede/sessão. O detalhe técnico vai pro
+    // console; o selo (ver _gtSeloObjetivoEl) trata a incerteza pra quem só
+    // usa esta variável.
     console.error('[GT] falha ao carregar as declarações de objetivo por interação:', linhas.erro);
   }
   _gtObjetivoInteracaoCarregada=ok;
+}
+// CUSTO POR SEGUIDOR DA CONTA (Tarefa 6, Onda B) — só calcula quando a conta
+// tem campanha de seguidores EM VEICULAÇÃO agora (mesma régua de "ativa" que
+// o resto da tela usa, `emVeiculacao`). Sem isso não há o que mostrar: o
+// cabeçalho não é o lugar de um número sobre uma campanha pausada há meses.
+//
+// Fica em `_gtCustoSeguidorConta` (módulo), lido pelo cabeçalho em
+// _renderGtCampaigns — igual ao padrão de _gtObjetivoInteracao.
+async function _gtCarregarCustoSeguidorConta(acc,campaigns,insights,since,until){
+  _gtCustoSeguidorConta=null;
+  const temSeguidoresAtiva=(campaigns||[]).some(c=>ehDeSeguidores(c.name)&&emVeiculacao(c,Date.now()));
+  if(!temSeguidoresAtiva||!acc?.id)return;
+  const campMap={};(campaigns||[]).forEach(c=>campMap[c.id]=c);
+  const gastoDeSeguidores=(insights||[])
+    .filter(ins=>ehDeSeguidores((campMap[ins.campaign_id]&&campMap[ins.campaign_id].name)||ins.campaign_name||''))
+    .reduce((s,ins)=>s+(parseFloat(ins.spend)||0),0);
+  if(!(gastoDeSeguidores>0))return;
+  // Buffer de 3 dias ANTES de `since`: a primeira leitura da série fica com
+  // delta nulo (sem "anterior" pra comparar) — sem folga, o primeiro dia da
+  // janela escolhida ficaria sem delta mesmo tendo leitura (mesmo raciocínio
+  // de coletor/budget-ia.mjs, mesma conta, mesmo cálculo). Meio-dia BRT como
+  // âncora (mesmo truque de datas.js) pra somar/subtrair dias sem escorregar
+  // por causa de horário de verão.
+  const _bufD=new Date(`${since}T12:00:00-03:00`);_bufD.setDate(_bufD.getDate()-3);
+  const sinceComBuffer=_bufD.toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'});
+  const leituras=await sb(`followers_leituras?select=followers_count,lido_em,origem&account_id=eq.${encodeURIComponent(acc.id)}&lido_em=gte.${sinceComBuffer}&order=lido_em.asc`);
+  if(leituras.erro){
+    console.error('[GT] falha ao carregar seguidores da conta para o custo por seguidor:',leituras.erro);
+    return;
+  }
+  const deltas=deltaDeSeguidoresPorHora(leituras);
+  const seguidoresGanhos=seguidoresNoPeriodo(deltas,since,until);
+  _gtCustoSeguidorConta={
+    ...custoPorSeguidorDaConta({gastoDeSeguidores,seguidoresGanhos}),
+    since,until,
+  };
 }
 // Grava (ou apaga, se interacao=null/undefined) a declaração de UMA campanha ou
 // UM anúncio. Escrita autenticada por sbClient (RLS: admin OU feature
@@ -691,7 +750,7 @@ async function _gtSalvarObjetivo(alvoId,nivel,interacao){
   }
   // H2(b) do review: o PostgREST devolve 200/204 com ZERO linhas e SEM `error`
   // quando a RLS filtra a linha da resposta — pra ele é indistinguível de "deu
-  // certo". Sem checar isto, um apagar ("Voltar ao ponderado") sem permissão
+  // certo". Sem checar isto, um apagar ("Voltar ao engajamento") sem permissão
   // real parecia ter funcionado: a tela apagava a declaração local, não avisava
   // nada, e ela reaparecia sozinha no próximo loadGtData() (porque no banco
   // continuava lá). `.select()` acima é o que permite enxergar essa diferença.
@@ -699,10 +758,13 @@ async function _gtSalvarObjetivo(alvoId,nivel,interacao){
     // B1 do review (2026-07-28): zero linhas SEM erro no APAGAR também acontece
     // quando a linha já não existia — o menu sempre oferece "Voltar ao
     // ponderado", inclusive pra um alvo sem declaração nenhuma, e apagar o que
-    // não existe devolve zero linhas do mesmo jeito, sem erro nenhum. Como
-    // gt_objetivo_interacao está vazia hoje, TODO clique em "Voltar ao
-    // ponderado" caía aqui e mentia "sem permissão" pro dono — inclusive num
-    // segundo clique logo depois de um reverter normal. Só o apagar é ambíguo
+    // não existe devolve zero linhas do mesmo jeito, sem erro nenhum. A tabela
+    // gt_objetivo_interacao TEM declarações reais (desde julho/agosto de
+    // 2026) — a ambiguidade é POR ALVO: um alvo que nunca foi declarado (ou
+    // que já foi revertido antes) também devolve zero linhas ao apagar, e sem
+    // esta desambiguação todo clique em "Voltar ao engajamento" NESSE alvo caía
+    // aqui e mentia "sem permissão" pro dono — inclusive num segundo clique
+    // logo depois de um reverter normal. Só o apagar é ambíguo
     // assim: um upsert bem-sucedido sempre devolve a linha, e uma negação de
     // upsert já caiu no `error` 42501 lá em cima — por isso só desambiguamos
     // quando `interacao` for o apagar (falsy).
@@ -736,7 +798,10 @@ async function _gtSalvarObjetivo(alvoId,nivel,interacao){
     adminToast('Objetivo definido: '+(INTERACOES[interacao]?.rotulo||interacao)+'.');
   }else{
     delete _gtObjetivoInteracao[String(alvoId)];
-    adminToast('Objetivo voltou a ser o ponto ponderado.');
+    // CORREÇÃO (revisão final da Onda B, 25/09/2026): dizia "voltou a ser o
+    // ponto ponderado" — apagada a declaração, a campanha volta ao custo por
+    // engajamento (bruto), não ao ponto ponderado (em pausa desde 24/09/2026).
+    adminToast('Objetivo voltou a ser o custo por engajamento.');
   }
   // M6 do review: nada mudou do lado da Meta — a declaração é estado local
   // (banco próprio, gt_objetivo_interacao). Recarregar a conta inteira via
@@ -1598,9 +1663,14 @@ function _gtExemplosParaRegua() {
       nome: linha.campaign_name || 'sua campanha',
       balde,
       quantidades: quantidadesDoInsight(linha),
-      // Custo pronto p/ todo balde que NÃO é a ponderada — o painel recalcula ao
-      // vivo só o caso 'ponderada' (engajamento), a partir de `quantidades`.
-      custo: alvo.metrica !== 'ponderada' ? _gtMetricValue(alvo.metrica, linha) : null,
+      // Custo pronto para todo balde — inclusive engajamento, que desde
+      // 24/09/2026 tem métrica própria no catálogo (custo_engajamento) como
+      // qualquer outro (ver ALVOS.engajamento em alvos.js). Antes disso
+      // `alvo.metrica === 'ponderada'` desviava engajamento para um recálculo
+      // ao vivo em painel-regua.js; a condição nunca mais é falsa para nenhum
+      // balde, então o desvio saiu — se a ponderada for religada em alvos.js,
+      // `ehPonderada` em painel-regua.js volta a valer e recalcula de novo.
+      custo: _gtMetricValue(alvo.metrica, linha),
       detalhe: alvo.resultado
         ? [{ rotulo: GT_METRIC_CATALOG[alvo.resultado]?.label || alvo.resultado,
              valor: _gtMetricValue(alvo.resultado, linha) }]
@@ -1627,6 +1697,23 @@ function _gtExemplosParaRegua() {
     return Number(b.quantidades.gasto || 0) - Number(a.quantidades.gasto || 0);
   });
   return exemplos;
+}
+
+// O QUE A CONTA PAGA por engajamento — cálculo PURO e testado em
+// custo-praticado.js (extraído de dentro do .vue na rodada 1 de revisão:
+// os dois defeitos achados ali, seguidores entrando na soma e o rótulo
+// mentiroso de "hoje", são exatamente o tipo de erro que teste de unidade
+// prova sem abrir a tela). Aqui só entrega os dois arrays que a tela já tem
+// em memória — nunca uma chamada nova à Meta.
+//
+// NÃO é "de hoje": soma sobre `_gtInsights`, que é a janela do FILTRO DE
+// PERÍODO ativo no topo da tela (HOJE/7D/30D/.../ATÉ AGORA — padrão "até
+// agora", ~24 dias em 24/09). Por isso quem MONTA o painel (mais abaixo) tem
+// de mandar junto o rótulo do período ativo (`_gtPeriodoRotulo()`, a mesma
+// função que o funil já usa pelo mesmo motivo) — o texto final, que nunca
+// pode chutar "hoje", mora em painel-regua.js.
+function _gtCustoEngajamentoPraticado() {
+  return custoEngajamentoPraticado(_gtInsights, _gtAdsets);
 }
 
 function _gtCloseEditor(){
@@ -1724,6 +1811,12 @@ async function loadGtData(){
     const adStatusMap={};adObjs.forEach(a=>{adStatusMap[a.id]=a.effective_status||'';});
     adInsights.forEach(a=>{a.effective_status=adStatusMap[a.ad_id]||'';});
     _gtCampaigns=campaigns;_gtInsights=insights;_gtAdInsights=adInsights;_gtAdsets=adsets;
+    // Tarefa 6 (Onda B): mesmo padrão sequencial de _gtCarregarRegua/
+    // _gtCarregarObjetivos logo acima — calcula ANTES de desenhar, pra o
+    // cabeçalho já nascer certo (sem re-render depois, sem corrida com quem
+    // já esteja mexendo na lista). Uma falha aqui não derruba a tela: fica
+    // sem o selo (ver catch dentro da própria função).
+    await _gtCarregarCustoSeguidorConta(acc,campaigns,insights,since,until).catch(e=>console.error('[GT] falha ao calcular custo por seguidor da conta:',e));
     _gtLastLoadTime=new Date();updateGtUpdateStatus();
     if(_gtStatusTimer)clearInterval(_gtStatusTimer);
     _gtStatusTimer=setInterval(updateGtUpdateStatus,60000);
@@ -2004,10 +2097,11 @@ function _gtWireBudgetControls(el,ins,camp,permCamp){
 }
 // ── Selo de OBJETIVO POR INTERAÇÃO (Fase 3) ─────────────────────────────────
 // Só aparece em campanha/anúncio de engajamento que NÃO seja de mensagem (o
-// mesmo recorte do custo por ponto: WhatsApp já tem o resultado dele — conversa
-// — e não faz sentido perguntar qual interação ele compra). Sem declaração,
-// selo neutro "Objetivo: ponderado"; declarado, mostra o rótulo da interação.
-// Clicar abre um menu com as quatro interações + "Voltar ao ponderado" — mesma
+// mesmo recorte do custo por engajamento: WhatsApp já tem o resultado dele —
+// conversa — e não faz sentido perguntar qual interação ele compra). Sem
+// declaração, selo neutro "Objetivo: engajamento"; declarado, mostra o rótulo
+// da interação.
+// Clicar abre um menu com as quatro interações + "Voltar ao engajamento" — mesma
 // linguagem visual do chip CBO/ABO (gt-nivel-chip), só que clicável.
 let _gtMenuObjAberto=null;
 let _gtMenuObjFechar=null; // limpeza dos listeners (clicar fora/Esc/rolar) do menu aberto agora
@@ -2024,7 +2118,7 @@ function _gtPosicionarMenuObjetivo(menu,chip){
   const margem=8; // respiro mínimo até a borda da tela
   // B3 do review (2026-07-28): sem clamp, perto da borda direita de um celular
   // o menu nascia com left = chip.left e boa parte da largura vazava pra fora
-  // da viewport — inclusive "Voltar ao ponderado", a única forma de desfazer.
+  // da viewport — inclusive "Voltar ao engajamento", a única forma de desfazer.
   // Clampa o left pra sempre caber inteiro na tela, com uma margem mínima; o
   // flip pra cima quando não sobra espaço embaixo (abaixo) continua igual.
   const maxLeft=window.innerWidth-largura-margem;
@@ -2043,7 +2137,7 @@ function _gtAbrirMenuObjetivo(chip,alvoId,nivel){
   // ancestrais (.gt-camp-row, .gt-camp-row-ads) têm overflow:hidden pra conter
   // o scroll da lista, e um menu position:absolute ali dentro fica CORTADO —
   // tanto numa linha de campanha recolhida quanto no ÚLTIMO anúncio de cada
-  // campanha, exatamente onde mora "Voltar ao ponderado" (a opção de baixo).
+  // campanha, exatamente onde mora "Voltar ao engajamento" (a opção de baixo).
   // A saída é pendurar na RAIZ da tela (mesmo truque já usado pela barra de
   // seleção em massa, ver _gtPintarBarraSelecao) com position:fixed e
   // coordenadas calculadas do próprio selo — assim nenhum overflow:hidden de
@@ -2054,7 +2148,11 @@ function _gtAbrirMenuObjetivo(chip,alvoId,nivel){
   menu.addEventListener('click',e=>e.stopPropagation());
   const linhas=Object.keys(INTERACOES).map(k=>
     `<button type="button" class="pnd-obj-opt" data-int="${_gtEsc(k)}">${_gtEsc(INTERACOES[k].rotulo)}</button>`).join('');
-  menu.innerHTML=linhas+`<button type="button" class="pnd-obj-opt pnd-obj-limpar" data-int="">Voltar ao ponderado</button>`;
+  // CORREÇÃO (revisão final da Onda B, 25/09/2026): dizia "Voltar ao
+  // ponderado" — apagar a declaração NÃO devolve ao ponto ponderado desde
+  // 24/09/2026, devolve ao custo por engajamento (bruto), o mesmo texto do
+  // selo sem declaração (ver _gtSeloObjetivoEl acima).
+  menu.innerHTML=linhas+`<button type="button" class="pnd-obj-opt pnd-obj-limpar" data-int="">Voltar ao engajamento</button>`;
   menu.querySelectorAll('.pnd-obj-opt').forEach(btn=>{
     btn.addEventListener('click',e=>{
       e.stopPropagation();
@@ -2109,9 +2207,13 @@ function _gtSeloObjetivoEl(alvoId,nivel,elegivel){
   const podeEditar=hasPermission('meta.gestor','editar');
   const chip=document.createElement('span');
   chip.className='pnd-obj-chip'+(decl?' declarado':'')+(podeEditar?'':' readonly');
+  // CORREÇÃO (revisão final da Onda B, 25/09/2026): dizia "Objetivo:
+  // ponderado" — mentira desde 24/09/2026. Sem declaração, a campanha é
+  // julgada pelo custo por engajamento (bruto), não mais pelo ponto
+  // ponderado (ver ALVOS.engajamento em alvos.js e o veredito acima).
   chip.textContent=decl
     ?('Objetivo: '+(INTERACOES[decl]?.rotulo||decl))
-    :desconhecido?'Objetivo: indisponível':'Objetivo: ponderado';
+    :desconhecido?'Objetivo: indisponível':'Objetivo: engajamento';
   if(desconhecido){
     chip.title='Não consegui confirmar as declarações agora — recarregue antes de decidir por este selo.';
   }else if(podeEditar){
@@ -2151,7 +2253,11 @@ function _renderGtCampaigns(col,campaigns,insights,adInsights,adsets){
     : todas;
   const card=document.createElement('div');card.className='gt-camp-card';
   const hdr=document.createElement('div');hdr.className='gt-camp-hdr';
-  const ttlWrap=document.createElement('div');ttlWrap.style.cssText='display:flex;align-items:center;gap:10px;';
+  // flex-wrap+min-width:0 (Tarefa 6): sem isto, o selo novo de custo por
+  // seguidor (mais largo que os outros) empurrava a linha pra além da tela no
+  // celular — o flex item não encolhe por padrão (min-width:auto), e o texto
+  // ficava CORTADO pela borda do cartão, não visível nem com quebra de linha.
+  const ttlWrap=document.createElement('div');ttlWrap.style.cssText='display:flex;align-items:center;gap:10px;flex-wrap:wrap;min-width:0;';
   const ttl=document.createElement('div');ttl.style.cssText='font-family:var(--fonte-principal);font-size:calc(12px*var(--gt-fs,1.3));font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--text);';
   ttl.textContent=sorted.length+' Campanhas';
   const aiTag=document.createElement('div');
@@ -2160,6 +2266,23 @@ function _renderGtCampaigns(col,campaigns,insights,adInsights,adsets){
   // A pastilha da lista (Onda 4a): só o ícone, antes do título que já existia.
   ttlWrap.insertAdjacentHTML('beforeend',pastilha('lista'));
   ttlWrap.appendChild(ttl);ttlWrap.appendChild(aiTag);
+  // CUSTO POR SEGUIDOR DA CONTA (Tarefa 6, Onda B) — só aparece com dado
+  // CONFIÁVEL (nunca traço, nunca zero: sem confiança, o selo nem existe). A
+  // janela mostrada vem dos MESMOS since/until usados na conta — nunca um
+  // texto solto que possa discordar da conta de verdade (foi exatamente esse
+  // descompasso, "hoje" mostrando quase um mês, que deu retrabalho antes
+  // nesta onda).
+  if(_gtCustoSeguidorConta&&_gtCustoSeguidorConta.confiavel&&_gtCustoSeguidorConta.valor!=null){
+    const fmtDia=(iso)=>{const[a,m,d]=iso.split('-');return `${d}/${m}`;};
+    const jan=_gtCustoSeguidorConta.since===_gtCustoSeguidorConta.until
+      ?fmtDia(_gtCustoSeguidorConta.since)
+      :`${fmtDia(_gtCustoSeguidorConta.since)}–${fmtDia(_gtCustoSeguidorConta.until)}`;
+    const seloSeguidor=document.createElement('div');
+    seloSeguidor.className='selo selo-info';
+    seloSeguidor.textContent=`≈ R$ ${_gtCustoSeguidorConta.valor.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}/seguidor (conta, ${jan})`;
+    seloSeguidor.title='Estimativa da CONTA INTEIRA no período '+jan+' — inclui seguidor orgânico (não há como separar) e NÃO é o custo de nenhuma campanha isolada: gasto de todas as campanhas de seguidores dividido pelo ganho de seguidores da conta.';
+    ttlWrap.appendChild(seloSeguidor);
+  }
   const searchInp=document.createElement('input');
   searchInp.type='text';searchInp.placeholder='Buscar campanha…';
   searchInp.style.cssText='padding:6px 10px;border:1px solid var(--border);border-radius:7px;background:var(--surface2);color:var(--text);font-family:var(--fonte-principal);font-size:calc(11px*var(--gt-fs,1.3));outline:none;width:180px;transition:border-color .15s;';
@@ -2303,30 +2426,27 @@ function _renderGtCampaigns(col,campaigns,insights,adInsights,adsets){
       const exp=document.createElement('div');exp.className='gt-camp-exp';exp.appendChild(hint);exp.appendChild(chev);
       l2.appendChild(chips);l2.appendChild(metrics);l2.appendChild(exp);
       top.appendChild(l1);top.appendChild(l2);
-      // PONDERADA: pontos e custo por ponto desta campanha, com a régua do dono.
-      const qtdsPnd = quantidadesDoInsight(ins);
+      // Quantidades desta campanha (curtida, comentário, salvamento,
+      // compartilhamento e gasto) — usadas pelo OBJETIVO DECLARADO logo abaixo
+      // (custoDaInteracao). A ponderada que também consumia isto para tirar
+      // pontos e custo por ponto foi DESLIGADA em 24/09/2026 — ver o aviso de
+      // pausa mais abaixo, antes do ALVO DO OBJETIVO.
+      const qtdsCampanha = quantidadesDoInsight(ins);
       const baldeCamp = _gtBalde(kpiObjective);
-      // Campanha de MENSAGEM (WhatsApp/Direct) nunca pode ter o veredito decidido
-      // pela ponderada, mesmo caindo no balde 'engajamento': no setup moderno da
+      // Campanha de MENSAGEM (WhatsApp/Direct) nunca pode ser julgada como
+      // engajamento, mesmo caindo no balde 'engajamento': no setup moderno da
       // Meta, WhatsApp chega como objetivo OUTCOME_ENGAGEMENT (ver GT_OBJETIVO_BALDE),
-      // então herdaria a meta de engajamento — mas o que essa campanha VENDE é
-      // conversa, não curtida/comentário/salvamento. Medindo campanhas reais, o
-      // custo por ponto delas ficou entre R$ 2,97 e R$ 7,21 — pintaria de vermelho
-      // campanhas que estão indo bem no que de fato prometem, só porque engajamento
-      // não é o que compram. Mesma classe de defeito já corrigida pra vendas/leads
-      // (ver comentário na migration 20260728_ponderada_config.sql): a correção
-      // aqui é tratar como "sem meta" (meta=0) qualquer campanha de ENGAJAMENTO
-      // com ação de mensagem — calcularPonderada devolve faixa 'sem-dados' e
-      // o julgamento cai pra saúde/objetivo, sem mexer em
-      // no formato dos campos. O custo por ponto continua calculado e aparecendo
-      // no cartão (custoPorPonto não depende da meta) — só o VEREDITO deixa de
-      // ser guiado por ele.
-      // O `&& baldeCamp==='engajamento'` é o que restringe este desvio ao caso
-      // real (WhatsApp chegando como engajamento): uma campanha de LEAD ou de
-      // TRÁFEGO que também dispara uma ação de mensagem (ex.: roteia pro
-      // WhatsApp) já tem o alvo certo do seu PRÓPRIO balde — sem essa restrição,
-      // esse desvio sequestrava um alvo correto que o dono acabou de ganhar
-      // (I5 do review final, 2026-07-28).
+      // então herdaria o alvo de engajamento — mas o que essa campanha VENDE é
+      // conversa, não curtida/comentário/salvamento/engajamento bruto. A
+      // correção (ver ALVO DO OBJETIVO, abaixo): campanha com ação de mensagem
+      // sempre usa o alvo de 'mensagens' (custo por conversa), mesmo entrando
+      // pelo balde de engajamento.
+      // O `&& baldeCamp==='engajamento'` nos usos abaixo é o que restringe este
+      // desvio ao caso real (WhatsApp chegando como engajamento): uma campanha
+      // de LEAD ou de TRÁFEGO que também dispara uma ação de mensagem (ex.:
+      // roteia pro WhatsApp) já tem o alvo certo do seu PRÓPRIO balde — sem
+      // essa restrição, esse desvio sequestrava um alvo correto que o dono
+      // acabou de ganhar (I5 do review final, 2026-07-28).
       // A campanha e de WhatsApp? Vem do CONJUNTO (o que a Meta afirma), nao do
       // resultado. Inferir por "tem acao de mensagem" classificava no mercado
       // errado toda campanha que pegava uma conversa de tabela — ver _gtEhDeWhatsapp.
@@ -2339,8 +2459,7 @@ function _renderGtCampaigns(col,campaigns,insights,adInsights,adsets){
       // atributo: nada aqui decide coisa nenhuma.
       row.dataset.balde = temMensagem ? 'mensagens' : (baldeCamp || 'padrao');
       // Selo de objetivo por interação (Fase 3): só campanha de engajamento que
-      // NÃO seja de mensagem pode declarar qual interação está comprando —
-      // mesmo recorte do custo por ponto logo abaixo.
+      // NÃO seja de mensagem pode declarar qual interação está comprando.
       const elegivelSeloObj = baldeCamp === 'engajamento' && !temMensagem;
       const seloObjEl = _gtSeloObjetivoEl(ins.campaign_id, 'campanha', elegivelSeloObj);
       if (seloObjEl) {
@@ -2349,32 +2468,50 @@ function _renderGtCampaigns(col,campaigns,insights,adInsights,adsets){
         objHelpWrap.innerHTML = _gtAjudaBtn('objetivo_declarado');
         if (objHelpWrap.firstElementChild) chips.appendChild(objHelpWrap.firstElementChild);
       }
-      // O índice "custo por ponto" só existe pra engajamento — é o único balde
-      // cujo resultado É o ponto da ponderada. Fora dele, dividir R$/ponto por
-      // uma meta de outra unidade (R$/visita, R$/lead...) seria comparar
-      // maçã com laranja: o chip pintava verde/vermelho contradizendo o
-      // veredito do mesmo cartão (C2 do review final, 2026-07-28). meta=0 aqui
-      // faz calcularPonderada devolver faixa 'sem-dados' (cor neutra), mas o
-      // custo por ponto em si continua calculado e aparecendo — é informação,
-      // não veredito.
       // A régua DA CONTA aberta, nunca a linha crua do banco: as cinco contas
       // moram no mesmo registro e cada uma tem sua meta (ver _gtReguaAtiva).
       const reguaAtiva = _gtReguaAtiva();
-      const metaPnd = (baldeCamp === 'engajamento' && !temMensagem) ? metaDoBalde(reguaAtiva, 'engajamento') : 0;
-      const pnd = calcularPonderada(qtdsPnd, { pesos: reguaAtiva.pesos, limiares: reguaAtiva.limiares, meta: metaPnd });
+      // A PONDERADA (custo por ponto e qualidade — os chips "Custo/ponto" e
+      // "Qualidade" que moravam aqui) está em PAUSA desde 24/09/2026, decisão
+      // do dono depois da medição: NÃO foi apagada, só deixou de ser
+      // consultada no veredito — pesos, limiares, colunas do banco e
+      // calcularPonderada (ponderada.js) seguem intactos. O veredito de
+      // engajamento sem declaração passou a ser o custo por engajamento bruto,
+      // calculado como qualquer outro balde logo abaixo (ver ALVOS.engajamento
+      // em alvos.js).
+      // CORREÇÃO (revisão final da Onda B, correção 2, 25/09/2026): "religar é
+      // trocar duas linhas em alvos.js, nada neste arquivo precisa mudar de
+      // volta" era promessa falsa. `custoAlvo` acima vem de
+      // `_gtMetricValue(alvo.metrica, ins)`, que lê
+      // `GT_METRIC_CATALOG[alvo.metrica]` — sem entrada `'ponderada'` nesse
+      // catálogo, uma simples troca de `metrica` em alvos.js faz este cartão
+      // mostrar `custoAlvo: null`, não o custo por ponto de volta. E os chips
+      // "Custo/ponto"/"Qualidade" FORAM removidos DESTE arquivo (não só
+      // escondidos) — precisariam voltar a ser desenhados aqui. São DOIS
+      // lugares reais: este cartão (`_gtMetricValue` + os chips) e
+      // `custoDoAlvo` em metricas.js (mesma guarda, mesmo problema).
+      // `custoAtualDoAlvo` (budget-ia.mjs) não é um terceiro lugar — ele só
+      // chama `custoDoAlvo`, então corrigido lá ele acompanha sozinho. Um
+      // interruptor de verdade para os dois lugares reais está planejado
+      // para a onda seguinte. Tirar em vez de deixar como informação: um
+      // número que não decide nada, ao lado do que decide, já produziu
+      // contradição visual rejeitada duas vezes nesta
+      // tela (C2 e M4 do review de 2026-07-28) — "dentro da meta" no veredito
+      // com o chip do ponto do
+      // lado pintado de vermelho.
 
       // ALVO DO OBJETIVO: cada tipo de campanha é medido pelo resultado que ele
-      // compra (lead, conversa, venda, visita, mil impressões) — e engajamento
-      // pelo ponto da ponderada. A conta de cada um já existe no catálogo
-      // (GT_METRIC_CATALOG). Campanha com resultado de mensagem entra como
-      // 'mensagens' mesmo chegando com objetivo de engajamento — mesma correção
-      // de sempre (ver comentário de temMensagem acima), só que agora em vez de
-      // simplesmente cair fora da conta, ela ganha o alvo certo: custo por conversa.
+      // compra (lead, conversa, venda, visita, mil impressões, engajamento
+      // bruto). A conta de cada um já existe no catálogo (GT_METRIC_CATALOG) —
+      // engajamento não é mais caso especial, desde 24/09/2026 tem métrica no
+      // catálogo (custo_engajamento) como qualquer outro balde. Campanha com
+      // resultado de mensagem entra como 'mensagens' mesmo chegando com
+      // objetivo de engajamento — mesma correção de sempre (ver comentário de
+      // temMensagem acima), só que agora em vez de simplesmente cair fora da
+      // conta, ela ganha o alvo certo: custo por conversa.
       const alvo = temMensagem ? alvoDoBalde('mensagens') : alvoDoBalde(baldeCamp);
       let metaAlvo = metaDoBalde(reguaAtiva, temMensagem ? 'mensagens' : baldeCamp);
-      let custoAlvo = !alvo ? null
-        : alvo.metrica === 'ponderada' ? pnd.custoPorPonto
-        : _gtMetricValue(alvo.metrica, ins);
+      let custoAlvo = !alvo ? null : _gtMetricValue(alvo.metrica, ins);
       let rotuloAlvo = alvo;
       // OBJETIVO DECLARADO (Fase 3, Task 4): se o dono declarou, NESTA
       // campanha, qual interação ela compra, o veredito passa a julgar por
@@ -2392,18 +2529,21 @@ function _renderGtCampaigns(col,campaigns,insights,adInsights,adsets){
       // campanhas. O caminho do anúncio (mais abaixo) já tinha esse cuidado.
       const objDeclarado = interacaoValida(objDeclaradoBruto) ? objDeclaradoBruto : null;
       if (objDeclarado) {
-        custoAlvo = custoDaInteracao(qtdsPnd, objDeclarado);
+        custoAlvo = custoDaInteracao(qtdsCampanha, objDeclarado);
         metaAlvo = metaDoBalde(reguaAtiva, objDeclarado);
         rotuloAlvo = { rotulo: INTERACOES[objDeclarado].rotuloCusto };
       }
-      // QUAL CONJUNTO DE LIMIAR decide a cor: bucket engajamento (ponderada,
-      // sem declaração) e qualquer interação declarada são "mundo do ponto" —
-      // usam `limiares` (Seção 1 da régua). Todo o resto (reconhecimento,
-      // tráfego, mensagens — inclusive por desvio de WhatsApp — leads,
-      // vendas) é "mundo do resultado" — usa `limiares_resultado` (Seção 2).
-      // Regra da régua (dois conjuntos, 2026-07-28): quem é dono da META é
-      // dono do LIMIAR.
-      const usaLimiaresDeEngajamento = (alvo && alvo.metrica === 'ponderada') || !!objDeclarado;
+      // QUAL CONJUNTO DE LIMIAR decide a cor: engajamento SEM declaração saiu do
+      // mundo do ponto e entrou no mundo do resultado em 24/09/2026 (usa
+      // `limiares_resultado`, Seção 2, junto de reconhecimento, tráfego,
+      // mensagens, leads e vendas) — é o mesmo custo por engajamento bruto,
+      // calculado como qualquer outro balde. Só a interação DECLARADA continua
+      // no "mundo do ponto" (`limiares`, Seção 1): o que ela mede é uma
+      // interação isolada, não um resultado de negócio, e a meta que a régua
+      // guarda pra ela (metas de curtida/comentário/salvamento/compartilhamento)
+      // é dessa Seção. Regra da régua (dois conjuntos, 2026-07-28) segue de pé:
+      // quem é dono da META é dono do LIMIAR.
+      const usaLimiaresDeEngajamento = !!objDeclarado;
       const aval = avaliarAlvo({ custo: custoAlvo, meta: metaAlvo, limiares: usaLimiaresDeEngajamento ? reguaAtiva.limiares : reguaAtiva.limiares_resultado });
 
       // A PENDÊNCIA DA SAÚDE FECHOU (2026-08-03). Ela mora na Fila: `mesclarSaude`
@@ -2420,38 +2560,25 @@ function _renderGtCampaigns(col,campaigns,insights,adInsights,adsets){
       // O cartão ficou com o que ele sabe dizer sem julgar: os números.
       // A leitura de saúde (saude.js) e a análise do robô continuam existindo —
       // a fila é que as consome agora.
-      // Custo por ponto aparece SEMPRE, independente de quem deu o veredito:
-      // é informação, não decisão.
-      if (pnd.custoPorPonto != null) {
-        // M4 do review (2026-07-28): campanha DECLARADA não pode mais ser
-        // pintada pelo ranking do ponto — é exatamente o ranking que esta fase
-        // considera errado pra ela. Sem isto, o cartão podia mostrar "Dentro da
-        // meta" no veredito (julgado pela interação declarada) com este chip
-        // do lado pintado de VERMELHO pelo ponto — uma contradição visual do
-        // mesmo tipo já rejeitada num review anterior (C2). O chip continua
-        // visível como referência (ainda é informação real), só deixa de
-        // afirmar um julgamento que o cartão não segue mais.
-        const cor = objDeclarado ? 'var(--muted)'
-          : pnd.faixa === 'escalar-forte' || pnd.faixa === 'dentro-da-meta' ? 'var(--green)'
-          : pnd.faixa === 'manter' ? 'var(--orange)' : pnd.faixa === 'otimizar' ? 'var(--red)' : 'var(--muted)';
-        const extra = document.createElement('div');
-        extra.className = 'gt-metric';
-        extra.title = objDeclarado
-          ? `${_maFmt(pnd.pontos, 0)} pontos · cada interação vale ${_maFmt(pnd.qualidade, 1)} · cor neutra porque esta campanha foi declarada e é julgada por ${INTERACOES[objDeclarado].rotulo.toLowerCase()}, não por ponto`
-          : `${_maFmt(pnd.pontos, 0)} pontos · cada interação vale ${_maFmt(pnd.qualidade, 1)}`;
-        extra.innerHTML = `Custo/ponto${_gtAjudaBtn('custo_por_ponto')} <span style="color:${cor}">${_maFmtR(pnd.custoPorPonto)}</span>`;
-        metrics.appendChild(extra);
-        // "Qualidade" só existia até aqui escondida dentro do title (tooltip) do
-        // chip acima — nunca virava um número que o dono via sem passar o mouse.
-        // Vira seu próprio chip, mesmo padrão, só pra dar rosto a essa métrica e
-        // ao botão que a explica (ajuda.js: qualidade).
-        if (pnd.qualidade != null) {
-          const qualEl = document.createElement('div');
-          qualEl.className = 'gt-metric';
-          qualEl.innerHTML = `Qualidade${_gtAjudaBtn('qualidade')} <span>${_maFmt(pnd.qualidade, 1)}</span>`;
-          metrics.appendChild(qualEl);
-        }
-      }
+      // Os chips "Custo/ponto" e "Qualidade" (a ponderada) saíram daqui em
+      // 24/09/2026. Não é limpeza de visual: um número que não decide nada, ao
+      // lado do que decide, já produziu contradição visual rejeitada duas
+      // vezes nesta tela (C2 e M4 do review de 2026-07-28) — o dono via
+      // "Dentro da meta" no veredito e o chip do ponto do lado pintado de
+      // vermelho, julgando a mesma campanha por outra régua. A ponderada
+      // continua viva (pesos, colunas do banco, calcularPonderada em
+      // ponderada.js) — só não é mais mostrada nem consultada no cartão. Quem
+      // quiser os pontos e o custo por ponto de uma campanha específica acha
+      // em ponderada.js: calcularPonderada(quantidadesDoInsight(ins), {...}).
+      // CORREÇÃO (revisão final da Onda B, correção 2, 25/09/2026): "religar
+      // como veredito é trocar duas linhas em alvos.js" era promessa falsa (ver o
+      // comentário completo logo acima, em `reguaAtiva`/`custoAlvo`) — sem
+      // entrada `'ponderada'` em `GT_METRIC_CATALOG`, essa troca sozinha só
+      // zera o custo mostrado, não traz o ponto de volta; os chips desta
+      // seção também precisariam ser redesenhados aqui. O que ESTÁ garantido:
+      // `ponderada.js` intacto e as duas metas (`metas.engajamento` e
+      // `metas.engajamento_bruto`) coexistindo. Um interruptor de verdade está
+      // planejado para a onda seguinte.
       // 1) TODO JULGAMENTO MORA NA FILA (decisão do dono, 2026-07-29). O cartão
       // aqui é a leitura da campanha: números e orçamento. Antes tinha uma faixa
       // de recomendação com botões "Aplicar R$ X/dia" e "Pausar campanha" que
@@ -2601,6 +2728,10 @@ function _gtTrocarAba(nome) {
   }
   if (nome === 'regua') {
     const alvo = document.getElementById('gt-painel-regua');
+    // Calculado ANTES do objeto de opções porque o painel (item 9 do padrão,
+    // "a tela nunca mente") não pode receber nem null nem 0: a chave some do
+    // objeto quando não há dado suficiente, em vez de virar um zero inventado.
+    const custoEngPraticado = _gtCustoEngajamentoPraticado();
     if (alvo) montarPainelRegua(alvo, {
       // A régua DA CONTA aberta — é o que o dono edita. Passar `_gtRegua` cru
       // mostraria a meta antiga, única, que não governa mais nada.
@@ -2621,6 +2752,18 @@ function _gtTrocarAba(nome) {
       // deixa gravar um valor que pode não ser o real (ver C3 do review final).
       carregouOk: _gtReguaCarregada,
       exemplos: _gtExemplosParaRegua(),
+      // O QUE A CONTA PAGA por engajamento (ver _gtCustoEngajamentoPraticado
+      // acima) — pro dono definir a meta nova contra o real. Sem o spread
+      // condicional, `null` viraria `Number(null) === 0` dentro do painel e
+      // mostraria "você paga R$ 0,00", um zero que ninguém mediu. O período
+      // vai JUNTO do valor, nunca separado: são a mesma medição, e o painel
+      // precisa dizer de que janela o número é — `_gtPeriodoRotulo()` é a
+      // mesma função que o funil já usa pra não deixar "288 conversas" (ou,
+      // aqui, "você paga R$ 0,20") boiando sem dizer se é de hoje ou de 30 dias.
+      ...(custoEngPraticado != null ? {
+        custoEngajamentoPraticado: custoEngPraticado,
+        custoEngajamentoPraticadoPeriodo: _gtPeriodoRotulo(),
+      } : {}),
       // PERSONA DA MARCA: quem esta conta atende. A IA de sugestao de publico le
       // isto antes dos numeros -- sem ela, a idade sugerida saia de quem CLICOU.
       contaId: (_gtCurAcc && _gtCurAcc.id) || '',
@@ -5808,7 +5951,7 @@ Object.assign(window, {
    (_gtAbrirMenuObjetivo) bem no clique, com left/top/bottom calculados de
    chip.getBoundingClientRect(). Isso tira o menu de dentro de qualquer
    ancestral com overflow:hidden (.gt-camp-row, .gt-camp-row-ads) — que antes
-   cortava a parte de baixo do menu (incluindo "Voltar ao ponderado") sempre
+   cortava a parte de baixo do menu (incluindo "Voltar ao engajamento") sempre
    que o selo estava perto do fim de uma linha recolhida ou do último anúncio
    de uma campanha. */
 .tela-gestao-trafego :deep(.pnd-obj-menu){position:fixed;min-width:170px;background:var(--surface);border:1px solid var(--border);border-radius:9px;box-shadow:0 8px 24px rgba(0,0,0,.18);z-index:1000;overflow:hidden;display:flex;flex-direction:column;cursor:default;}

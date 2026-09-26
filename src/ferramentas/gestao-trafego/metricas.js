@@ -58,12 +58,28 @@ export const GT_METRIC_CATALOG={
   custo_lead:{label:'Custo/Lead',fmt:'money',compute:r=>{const l=_gtActionVal(r,_GT_LEAD),s=_gtNum(r.spend);return l?s/l:null;}},
   // --- Mensagens (WhatsApp/Direct) ---
   conversas:{label:'Conversas iniciadas',fmt:'int',compute:r=>_gtActionVal(r,_GT_MSG)},
-  custo_conversa:{label:'Custo/Conversa',fmt:'money',compute:r=>_gtPerGasto(r,_GT_MSG)},
+  // Rótulo alinhado com ALVOS.mensagens.rotulo (decisão do dono, 24/09/2026:
+  // conversa iniciada no WhatsApp/Direct É lead pra ele). Era 'Custo/Conversa'
+  // — corrigido na rodada de correção 2 (25/09/2026) porque o texto de ajuda
+  // (`custo_conversa` em ajuda.js) afirmava "a tela mostra Custo por lead" e
+  // isso era falso enquanto este label dizia outra coisa. Nunca aparece na
+  // mesma lista de KPIs que `custo_lead` (ver GT_BALDE_PADRAO logo abaixo:
+  // 'engajamento'/'mensagens' usam esta chave, 'leads' usa a outra) — os dois
+  // rótulos iguais não colidem no mesmo cartão.
+  custo_conversa:{label:'Custo/Lead',fmt:'money',compute:r=>_gtPerGasto(r,_GT_MSG)},
   conexoes_msg:{label:'Conexões de mensagem',fmt:'int',compute:r=>_gtActionVal(r,_GT_MSG_CONN)},
   primeira_resposta:{label:'1ª resposta',fmt:'int',compute:r=>_gtActionVal(r,_GT_MSG_REPLY)},
   // --- Vídeo e engajamento ---
   video_views:{label:'Views de vídeo',fmt:'int',compute:r=>_gtActionVal(r,_GT_VIDEO)},
   engaj_pub:{label:'Engajamento da publicação',fmt:'int',compute:r=>_gtActionVal(r,_GT_POSTENG)},
+  // O custo do engajamento BRUTO — o que a Meta conta como post_engagement, sem
+  // pesar interação por valor. Substituiu o custo por ponto como régua de
+  // engajamento em 24/09/2026: medindo campanhas reais, a [FLUXO SHOPPING] da
+  // Vessel tinha 11.323 engajamentos e só 44 pontos ponderados, porque quase
+  // nada do que a Meta conta ali é curtida/comentário/salvamento/compartilhamento.
+  // As duas réguas não medem a mesma coisa em unidades diferentes — medem coisas
+  // diferentes. Ver docs/superpowers/specs/2026-09-24-gt-onda-b-design.md.
+  custo_engajamento:{label:'Custo por engajamento',fmt:'money',compute:r=>_gtPerGasto(r,_GT_POSTENG)},
 };
 export const GT_BALDE_PADRAO={
   // custo_visita é a métrica que DECIDE o veredito deste balde (ver alvos.js
@@ -81,11 +97,30 @@ export const GT_BALDE_PADRAO={
 };
 
 // O CUSTO POR RESULTADO deste tipo de campanha, na unidade dele (alvos.js diz
-// qual é: custo por lead, CAC, custo por visita, custo por conversa, CPM).
+// qual é: custo por lead, CAC, custo por visita, custo por conversa, CPM,
+// custo por engajamento).
 //
-// Engajamento devolve null de propósito: o resultado dele é o PONTO ponderado,
-// e quem calcula isso é ponderada.js. Dois cálculos para o mesmo balde
-// acabariam discordando.
+// A guarda `alvo.metrica === 'ponderada'` não dispara mais no caminho normal
+// — desde a troca de régua de 24/09/2026, engajamento usa `custo_engajamento`
+// como qualquer outro balde (ver ALVOS.engajamento em alvos.js). Ela continua
+// aqui só para NÃO QUEBRAR: `GT_METRIC_CATALOG` nunca teve (e não tem) uma
+// entrada `'ponderada'`, então sem a guarda `GT_METRIC_CATALOG[alvo.metrica]`
+// daria `undefined` e o `.compute` seguinte estouraria.
+// CORREÇÃO (revisão final da Onda B, correção 2, 25/09/2026): isto NÃO é
+// "religar pronto". Trocar `metrica` de volta para `'ponderada'` em alvos.js
+// faz esta função devolver `null` — a guarda barra o crash, mas não calcula
+// coisa nenhuma no lugar. O custo por ponto de verdade mora só em
+// `calcularPonderada` (ponderada.js), que este arquivo nunca chamou; um
+// revert de verdade precisa desviar para lá AQUI. São DOIS lugares no total
+// (contados de verdade, não por arquivo tocado): este `custoDoAlvo` e a
+// leitura do cartão em tela-de-gestao-trafego.vue (mesmo problema — lê o
+// mesmo catálogo sem entrada 'ponderada' — mais os chips "Custo/ponto" e
+// "Qualidade", removidos de lá, que precisariam voltar a ser desenhados).
+// `custoAtualDoAlvo` (budget-ia.mjs) NÃO é um terceiro lugar: ele só chama
+// esta função (`return custoDoAlvo(balde, ins)` no caminho sem interação
+// declarada) — corrigido aqui, ele acompanha sem precisar de nenhuma edição
+// própria. Um interruptor de verdade para os dois lugares reais está
+// planejado para a onda seguinte.
 //
 // Devolve null (e nunca 0) quando não há resultado ou não há gasto na janela:
 // um custo de R$ 0,00 escrito no prompt é lido pelo modelo como "de graça" e

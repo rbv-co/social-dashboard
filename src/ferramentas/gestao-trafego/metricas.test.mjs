@@ -36,9 +36,19 @@ test('o catálogo calcula o que a tela sempre calculou', () => {
   assert.equal(calc('valor_conversao'), 5000);
   assert.equal(calc('roas'), 5);                 // 5000 / 1000, sem purchase_roas
   assert.equal(calc('engaj_pub'), 2000);
+  assert.equal(calc('custo_engajamento'), 0.5); // 1000 / 2000
   assert.equal(calc('alcance'), 25000);
   assert.equal(calc('frequencia'), 2);
   assert.equal(calc('gasto'), 1000);
+});
+
+test('custo por engajamento é o gasto dividido pelo engajamento bruto', () => {
+  assert.equal(GT_METRIC_CATALOG.custo_engajamento.compute(INS), 0.5); // 1000 / 2000
+});
+
+test('sem engajamento na janela o custo é null, nunca zero', () => {
+  assert.equal(GT_METRIC_CATALOG.custo_engajamento.compute({ spend: '300', actions: [] }), null,
+    'R$ 0,00 por engajamento seria lido pelo modelo como "de graça"');
 });
 
 test('ação que a Meta omitiu vira null, nunca zero', () => {
@@ -63,9 +73,14 @@ test('custoDoAlvo devolve o custo na unidade de cada tipo de campanha', () => {
   assert.equal(custoDoAlvo('reconhecimento', INS), 20);   // CPM
 });
 
-test('engajamento fica com a ponderada, não com o catálogo', () => {
-  assert.equal(custoDoAlvo('engajamento', INS), null,
-    'o custo de engajamento é o custo por ponto, e quem calcula é ponderada.js');
+test('engajamento passa a ter custo pelo catálogo (troca de régua, 24/09/2026)', () => {
+  // ATUALIZADO 24/09/2026: engajamento saiu do PONTO PONDERADO (ponderada.js) e
+  // passou a usar `custo_engajamento` do catálogo, como qualquer outro balde —
+  // a guarda que fazia `custoDoAlvo` devolver null pra engajamento não vale
+  // mais (ver alvos.js e ALVOS.engajamento.metrica). 1000 gasto / 2000
+  // engajamentos = 0,5.
+  assert.equal(custoDoAlvo('engajamento', INS), 0.5,
+    'engajamento agora tem custo pelo catálogo (custo_engajamento), igual aos demais baldes');
 });
 
 test('balde sem alvo não inventa número', () => {

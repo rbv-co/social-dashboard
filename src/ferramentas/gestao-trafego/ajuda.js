@@ -45,20 +45,33 @@ export const AJUDA = {
       <p><b>Atenção — peso não é preço.</b> Você diz que um salvamento vale 30 curtidas; o mercado cobra cerca de <b>400</b> por ele (R$ 48 contra R$ 0,12). Por isso existe também a meta por interação: peso é o quanto vale para você, preço é o que a Meta cobra.</p>`,
   },
 
+  // CORREÇÃO (rodada de correção 2, 25/09/2026): esta entrada é aberta por um
+  // botão "?" ATIVO na tela da régua ("Metas por resultado", Seção 2) e
+  // dizia "Engajamento é a exceção — não compra uma ação só, então é medido
+  // por ponto" — a regra que este branch derrubou em 24/09/2026. Desde então
+  // engajamento entra na Seção 2 como qualquer outro balde (ver
+  // BALDES_SECAO2 = Object.keys(ALVOS) em painel-regua.js), medido pelo
+  // engajamento bruto.
   meta_resultado: {
     titulo: 'Quanto você aceita pagar por resultado',
     texto: `<p><b>É o número que faz o cartão acender verde, amarelo ou vermelho.</b></p>
-      <p>Cada tipo de campanha é medido pelo resultado que ele realmente compra: campanha de lead pelo custo por lead, de WhatsApp pelo custo por conversa, de venda pelo custo por venda. Engajamento é a exceção — não compra uma ação só, então é medido por ponto.</p>
+      <p>Cada tipo de campanha é medido pelo resultado que ele realmente compra: campanha de lead pelo custo por lead, de WhatsApp pelo custo por lead, de venda pelo custo por venda, de engajamento pelo custo por engajamento (curtida, comentário, salvamento, compartilhamento e afins, todos somados e valendo o mesmo).</p>
+      <p>Uma campanha de engajamento só sai desta régua quando você <b>declarar, no cartão dela</b>, que compra uma interação específica — aí a meta que vale é a de "Quanto você aceita pagar por cada interação" (Seção 1, ao lado).</p>
       <p>Todas as metas são "menor é melhor". Usamos custo por venda em vez de ROAS de propósito: ROAS é o contrário (maior é melhor) e obrigaria você a manter duas réguas na cabeça.</p>
       <p><b>Campo vazio é de propósito:</b> se sua conta ainda não produz aquele resultado, meta ali seria número inventado. Sem meta, a campanha é julgada pelas regras de saúde do objetivo dela.</p>`,
   },
 
+  // CORREÇÃO (rodada de correção 2, 25/09/2026): mesmo botão "?" ATIVO
+  // (painel-regua.js, Seção 1 — "Quanto você aceita pagar") dizia "Sem
+  // declarar, ela continua sendo medida pelo ponto" — falso desde
+  // 24/09/2026. Sem declarar, a campanha é medida pelo custo por engajamento
+  // (bruto), na Seção 2 (ver meta_resultado acima), não pelo ponto.
   meta_interacao: {
     titulo: 'Quanto você aceita pagar por cada interação',
     texto: `<p>Cada interação é um <b>mercado com preço próprio</b>. Medido nas suas campanhas, em 90 dias:</p>
       <p>curtida <b>R$ 0,12</b> · compartilhamento <b>R$ 13 a 21</b> · salvamento <b>R$ 48 a 51</b> · comentário <b>R$ 128 a 172</b>.</p>
       <p>Um salvamento custa cerca de 400 curtidas. Um comentário, 1.300.</p>
-      <p>Estas metas só valem para campanha de engajamento em que você <b>declarar, no cartão dela</b>, qual interação ela está comprando. Sem declarar, ela continua sendo medida pelo ponto.</p>`,
+      <p>Estas metas só valem para campanha de engajamento em que você <b>declarar, no cartão dela</b>, qual interação ela está comprando. Sem declarar, ela é medida pelo custo por engajamento (bruto), na Seção 2.</p>`,
   },
 
   cores: {
@@ -100,17 +113,36 @@ export const AJUDA = {
       <p>Isso evita o pior caso: o cartão dizer "escalar" e o botão, na prática, cortar a verba.</p>`,
   },
 
+  // CORREÇÃO (revisão final da Onda B, 25/09/2026): esta entrada dizia "em vez
+  // do ponto misturado" e "continua no ponto ponderado" — falso desde
+  // 24/09/2026. Sem declaração, a campanha é julgada pelo custo por
+  // engajamento (bruto), não pelo ponto ponderado (em pausa — ver
+  // ALVOS.engajamento em alvos.js). O exemplo numérico também trocou: usava
+  // meta em R$/ponto, que não é mais o padrão sem declaração.
   objetivo_declarado: {
     titulo: 'Declarar o que a campanha está comprando',
     texto: `<p>A Meta não diz qual interação você quer. O mesmo anúncio pode ter sido feito para colecionar salvamento ou para puxar comentário — só você sabe.</p>
-      <p>Declarando aqui, a campanha passa a ser julgada pelo <b>custo daquela interação</b>, contra a meta dela, em vez do ponto misturado.</p>
-      <p>Faz diferença real. Sua campanha Topo Funil aparece <b>vermelha</b> pelo ponto (R$ 0,28 contra meta de R$ 0,15) e ficaria <b>verde</b> pelo salvamento (R$ 18,72 contra meta de R$ 45). É a mesma campanha; muda só a régua.</p>
-      <p>Não declarar não muda nada — continua no ponto ponderado.</p>`,
+      <p>Declarando aqui, a campanha passa a ser julgada pelo <b>custo daquela interação</b>, contra a meta dela, em vez do engajamento bruto (todas as interações somadas e valendo o mesmo).</p>
+      <p>Faz diferença real. Sua campanha Topo Funil aparece <b>vermelha</b> pelo engajamento (R$ 0,28 contra meta de R$ 0,15) e ficaria <b>verde</b> pelo salvamento (R$ 18,72 contra meta de R$ 45). É a mesma campanha; muda só a régua.</p>
+      <p>Não declarar não muda nada — continua julgada pelo custo por engajamento (bruto).</p>`,
   },
 
+  // A CHAVE continua `custo_conversa` (é a chave da métrica no catálogo,
+  // GT_METRIC_CATALOG — ver metricas.js), mas o TÍTULO mudou: o dono chama de
+  // LEAD a conversa iniciada (decisão de 24/09/2026, ver alvos.js —
+  // ALVOS.mensagens.rotulo já é 'Custo por lead'). Título desatualizado
+  // ('Custo por conversa') corrigido na revisão final da Onda B, 25/09/2026.
+  // CORREÇÃO (rodada de correção 2, 25/09/2026): a correção acima trocou o
+  // TÍTULO do tooltip, mas o CORPO passou a afirmar "é por isso que a tela
+  // mostra 'Custo por lead'" quando o rótulo ao lado do botão "?" — que vem
+  // de `GT_METRIC_CATALOG.custo_conversa.label` (metricas.js), não deste
+  // arquivo — continuava 'Custo/Conversa'. Texto e tela discordavam. Corrigido
+  // alinhando o LABEL do catálogo para 'Custo/Lead' (metricas.js) em vez de
+  // enfraquecer o texto: é a mesma conta com o mesmo nome em toda a tela
+  // agora, não duas contas com nomes diferentes.
   custo_conversa: {
-    titulo: 'Custo por conversa',
-    texto: `<p>Quanto custou cada conversa de WhatsApp iniciada: o gasto da campanha dividido pelas conversas.</p>
+    titulo: 'Custo por lead',
+    texto: `<p>Quanto custou cada conversa de WhatsApp iniciada: o gasto da campanha dividido pelas conversas. Aqui você chama de LEAD a conversa iniciada (quem abre conversa no WhatsApp já é lead) — é por isso que a tela mostra "Custo/Lead" ao lado deste botão.</p>
       <p>É o resultado que essa campanha compra — por isso ela é julgada por aqui, e não por curtida.</p>
       <p>Referência sua: R$ 26,95 por conversa na média das contas, com R$ 95.745 investidos em 90 dias. É de longe seu maior gasto.</p>`,
   },
