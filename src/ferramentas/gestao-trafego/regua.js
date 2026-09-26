@@ -61,7 +61,32 @@ export function normalizarRegua(linha) {
     // volte a usar este campo direto: ele é a meta de outra conta.
     metas: metasValidas(l.metas),
     metas_por_conta: porConta,
+    // O INTERRUPTOR DA PONDERADA (Tarefa 4 da Onda C, 25/09/2026). SEM COLUNA
+    // NOVA no banco (a tarefa proíbe migration): o booleano viaja dentro do
+    // MESMO jsonb de `limiares` — a Seção 1 ("Engajamento ponderado") é dona
+    // dos dois, e é exatamente o campo que a tela grava de volta a cada save
+    // (ver painel-regua.js `reguaDaTela`/`gt_ponderada_config.limiares` em
+    // tela-de-gestao-trafego.vue). `completar()` acima ignora esta chave — não
+    // é um dos três multiplicadores — por isso ela é lida À PARTE, direto da
+    // linha crua, e devolvida como campo PRÓPRIO, nunca dentro do objeto
+    // `limiares` já normalizado (misturaria booleano com multiplicador).
+    // Padrão DESLIGADA (decisão do dono, 24/09/2026: "quando eu digo desativar,
+    // ela some da aba campanhas e fica 'desligada' em A régua") — qualquer
+    // valor que não seja o booleano `true` cai em desligada, inclusive linha
+    // antiga sem esta chave.
+    ponderada_ligada: (l.limiares && l.limiares.ponderada_ligada) === true,
   };
+}
+
+// FONTE ÚNICA do estado do interruptor — tela (painel-regua.js) e robô (quem
+// julga a campanha) leem DAQUI, nunca cada um por conta própria. Foi
+// divergência assim, entre lugares que deviam concordar, que produziu os
+// piores defeitos desta ferramenta (ex.: o "662× a meta" da [FLUXO SHOPPING],
+// 24/09/2026, quando um vídeo foi julgado pela régua errada). Devolve SEMPRE
+// um booleano — mesmo pra um objeto cru vindo direto do banco, uma linha
+// antiga sem a chave, ou um objeto de teste incompleto — nunca `undefined`.
+export function ponderadaLigada(regua) {
+  return !!(regua && regua.ponderada_ligada === true);
 }
 
 // A régua COMO ELA VALE para uma conta: os pesos e os limiares são gerais (peso
@@ -75,6 +100,18 @@ export function normalizarRegua(linha) {
 // — julgaria a Mantova pelo preço que a Raíssa paga.
 //
 // Sem conta selecionada, mesma coisa: em branco. PURO.
+//
+// ⚠️ `ponderada_ligada` (Tarefa 4 da Onda C) é GERAL como `pesos`/`limiares` —
+// não muda de conta pra conta, é uma escolha da ferramenta inteira — e por
+// isso tem de ser copiado aqui do MESMO jeito. Faltava (achado durante a
+// verificação da Tarefa 5, rodada de correção 1, 25/09/2026): `_gtReguaAtiva()`
+// (tela-de-gestao-trafego.vue) sempre passa pelo `reguaDaConta`, então
+// `ponderadaLigada(reguaAtiva)` dava SEMPRE `false` em produção, não importa o
+// que estivesse salvo — o interruptor da Tarefa 4 nunca tinha efeito nenhum
+// pelo caminho real (só nos testes que chamam `metaDoBalde` direto em cima do
+// `normalizarRegua`, sem passar por `reguaDaConta`). Sem este campo, a
+// correção I6 (mercado `post` sem cor/veredito quando a ponderada está ligada)
+// também nunca dispararia. PURO.
 export function reguaDaConta(regua, contaId) {
   const r = regua || {};
   const porConta = r.metas_por_conta || {};
@@ -82,6 +119,7 @@ export function reguaDaConta(regua, contaId) {
     pesos: r.pesos,
     limiares: r.limiares,
     limiares_resultado: r.limiares_resultado,
+    ponderada_ligada: r.ponderada_ligada === true,
     metas: (contaId && porConta[contaId]) ? porConta[contaId] : {},
     metas_por_conta: porConta,
   };
@@ -113,7 +151,20 @@ export function metaDoBalde(regua, balde) {
   // continuar existindo em `engajamento` sem ser sobrescrita — é o que permite
   // religar a ponderada sem ter perdido o número que o dono calibrou.
   const alvo = ALVOS[balde];
-  const chave = (alvo && alvo.chaveMeta) || balde;
+  let chave = (alvo && alvo.chaveMeta) || balde;
+  // O MERCADO 'post' é quem herdou o antigo balde de engajamento no reindex de
+  // 25/09/2026 (ver alvos.js). `alvos.js` não declara `chaveMeta` pra ele DE
+  // PROPÓSITO — dado estático não pode saber a posição de um interruptor, que é
+  // ESTADO, e mora na régua (`ponderadaLigada`, acima), não no catálogo de
+  // alvos. Por padrão (interruptor desligado) ele lê a meta NOVA, em R$ por
+  // engajamento bruto. Ligando o interruptor da Seção 1 (Tarefa 4,
+  // painel-regua.js), ele volta a ler a meta ANTIGA, em R$ por ponto — a mesma
+  // que ficou congelada em `metas.engajamento` desde a pausa e nunca foi
+  // apagada (ver o teste dedicado, abaixo). ⚠️ Isto troca só a META consultada;
+  // não recalcula o CUSTO pelo ponto ponderado — essa parte (o `custoAlvo` de
+  // tela-de-gestao-trafego.vue) fica fora do escopo desta tarefa, restrita a
+  // este arquivo e a painel-regua.js.
+  if (balde === 'post') chave = ponderadaLigada(regua) ? 'engajamento' : 'engajamento_bruto';
   if (m[chave] > 0) return Number(m[chave]);
   return 0;
 }

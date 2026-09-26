@@ -43,7 +43,7 @@
 // geral.
 import { pastilha } from './pastilha.js';
 import { calcularPonderada, PESOS_PADRAO, LIMIARES_PADRAO } from './ponderada.js';
-import { metaDoBalde } from './regua.js';
+import { metaDoBalde, ponderadaLigada } from './regua.js';
 import { ALVOS, alvoDoBalde, avaliarAlvo } from './alvos.js';
 // Metas por interação (Fase 3): ALVOS e INTERACOES são DUAS listas que gravam na
 // MESMA regua.metas — os baldes são 'engajamento/trafego/...' e as interações são
@@ -61,9 +61,28 @@ const ROTULO_PESO = {
   curtidas: 'Curtida', comentarios: 'Comentário',
   salvamentos: 'Salvamento', compartilhamentos: 'Compartilhamento',
 };
-const ROTULO_BALDE = {
-  engajamento: 'Engajamento', trafego: 'Tráfego', reconhecimento: 'Reconhecimento',
-  mensagens: 'Mensagens', leads: 'Leads', vendas: 'Vendas',
+// ATUALIZADO na rodada de correção 1 da Onda C, Tarefa 1 (25/09/2026): este
+// mapa tinha ficado com os nomes dos BALDES antigos (`engajamento`, `trafego`,
+// `mensagens`, `leads`, `vendas`) desde antes do reindex por MERCADO — nenhuma
+// dessas chaves bate com `Object.keys(ALVOS)` hoje (`conversa`, `perfil`,
+// `video`, `post`, `site_venda`, `site_trafego`, `lead`, `reconhecimento`), e
+// o `|| b` de todo uso deste mapa (`rotuloDaLinha`, `pnd-alvo-nome`, título do
+// exemplo) vinha caindo sempre no fallback — a tela mostrava o nome CRU do
+// mercado. O defeito ficou visível quando `lead` (Tarefa 1) passou a usar o
+// MESMO rótulo de `conversa` ("Custo por lead"): a desambiguação por colisão
+// (`rotuloDaLinha`) sufixou com o fallback cru e produziu "Custo por lead —
+// lead" na régua — a tela onde o dono calibra a meta. Os valores aqui são o
+// que vai DEPOIS do "—" numa colisão (ou o nome da linha, ou o título do
+// exemplo): português que signifique algo pra quem não conhece o nome da
+// chave no código.
+// EXPORTADO (Onda C, Tarefa 5): o cartão da campanha (tela-de-gestao-trafego.vue)
+// precisa do MESMO nome em português pro chip de mercado — duplicar o mapa lá
+// seria a mesma classe de defeito que produziu "Custo por lead — lead" aqui:
+// duas fontes que podem divergir. Fonte única.
+export const ROTULO_MERCADO = {
+  conversa: 'conversa no WhatsApp', lead: 'cadastro', perfil: 'visita ao perfil',
+  video: 'vídeo', post: 'engajamento no post', site_venda: 'venda no site',
+  site_trafego: 'tráfego para o site', reconhecimento: 'alcance',
 };
 // Voltaram a ser editáveis (decisão do dono, 2026-07-28): a tela mostra onde a cor
 // muda e ele quer poder mover isso. Cada campo é um MULTIPLICADOR da meta que a
@@ -85,12 +104,48 @@ const FAIXA = {
   'otimizar': { texto: 'Otimizar ou pausar', cor: 'ruim' },
   'sem-dados': { texto: 'Sem dados suficientes', cor: 'neutro' },
 };
+// A EXPLICAÇÃO DE UMA LINHA do interruptor (Tarefa 4, 25/09/2026, pedido do
+// dono: "quando eu digo desativar, ela some da aba campanhas e fica
+// 'desligada' em A régua — eu posso ativar depois"). Mantém a palavra "pausa"
+// no texto desligado de propósito — é o que `painel-regua.test.mjs` confere
+// (`/em pausa/i`) desde a Tarefa 3, e continua sendo verdade: desligada É a
+// pausa da ponderada.
+//
+// CORRIGIDO na Rodada 1 de revisão (25/09/2026): o texto de "ligada" dizia
+// "o mercado de post volta a ser julgado pelo engajamento ponderado, como
+// antes da pausa" — falso. O que este interruptor faz HOJE, de ponta a
+// ponta: guarda o booleano (`ponderada_ligada`, ver regua.js) e troca qual
+// CHAVE `metaDoBalde('post', ...)` consulta (`engajamento` vs.
+// `engajamento_bruto`, ver `chave` acima). NADA MAIS muda ao ligar: o CUSTO
+// comparado continua vindo de `custo_engajamento` (`alvos.js`, fixo, não lê
+// o interruptor) e a COR continua decidida pelos `limiares_resultado` da
+// Seção 2 (`usaLimiaresDeEngajamento` em tela-de-gestao-trafego.vue depende
+// só de haver interação DECLARADA no cartão, nunca deste interruptor) — o
+// ramo que comparava pelo ponto ponderado foi removido de
+// `coletor/budget-ia.mjs`. Comparar um custo NÃO ponderado contra uma meta em
+// R$/PONTO é a mesma mistura de unidade que produziu o "662× a meta" que
+// `alvos.js` cita como o motivo de toda esta separação — por isso o texto de
+// "ligada" tem que deixar isto claro, e por isso existe o aviso visível
+// (`pnd-ponderada-aviso-incompleto`, abaixo) enquanto isto não for
+// implementado. A restauração completa (custo por ponto e os limiares desta
+// seção decidindo o veredito de novo) é tarefa própria — mexe em `alvos.js`,
+// nesta tela e no robô ao mesmo tempo — e ainda NÃO FOI FEITA.
+const TEXTO_INTERRUPTOR = {
+  desligada: 'Desligada — em pausa desde 24/09/2026: o mercado de post é julgado pelo custo por engajamento (Seção 2, abaixo). Nada aqui foi apagado.',
+  ligada: 'Ativa: guarda a escolha e passa a consultar a meta antiga (R$ por ponto) desta seção — o cálculo do custo e a cor de "post" ainda não voltaram a usar o engajamento ponderado (ver aviso abaixo).',
+};
+// O AVISO PERSISTENTE de quando LIGADA (Rodada 1 de revisão, 25/09/2026):
+// NÃO É TOOLTIP — esta casa já aprendeu que tela de toque não tem mouse pra
+// passar por cima de nada (ver PADRAO-DA-CENTRAL.md). Fica visível o tempo
+// todo que o interruptor estiver ligado, na PRÓPRIA Seção 1, pra quem ligou
+// não sair achando que restaurou o julgamento ponderado inteiro.
+const AVISO_LIGADA_INCOMPLETA = 'Atenção: esta escolha ainda é parcial. O CÁLCULO do custo de "post" continua sendo o custo por engajamento bruto, e a COR do veredito continua vindo dos limiares da Seção 2 — nenhum dos dois lê este interruptor ainda. A restauração completa (o custo por ponto e os limiares desta seção decidindo de novo) é uma tarefa à parte, ainda não feita.';
 const reais = (v) => v == null ? '—' : 'R$ ' + Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const inteiro = (v) => Number(v || 0).toLocaleString('pt-BR');
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 // `formato` é a unidade que mora DENTRO da caixa do campo — vem direto de
-// ALVOS[balde].unidade ('R$' hoje, pra toda meta) na linha de meta; peso e
+// ALVOS[mercado].unidade ('R$' hoje, pra toda meta) na linha de meta; peso e
 // limiar não têm unidade (são números puros), então chamam sem este argumento.
 // Sem ela o número fica solto e o rótulo precisa carregar a unidade, o que
 // alongava a linha.
@@ -106,45 +161,53 @@ function campo(id, valor, passo, editavel, formato) {
   return `<span class="pnd-campo">${pre}<input class="pnd-input" id="${esc(id)}" type="number" min="0" step="${passo}" value="${esc(valor)}"></span>`;
 }
 
-// Baldes da Seção 2: TODO ALVO (ATUALIZAÇÃO 24/09/2026 — antes era todo ALVO
+// Mercados da Seção 2: TODO ALVO (ATUALIZAÇÃO 24/09/2026 — antes era todo ALVO
 // MENOS engajamento; agora engajamento entrou aqui também, porque passou a
 // ser julgado por RESULTADO, custo por engajamento bruto, não mais pelo ponto
 // ponderado). Mantém a ORDEM de ALVOS — é a mesma ordem usada pra achar o
 // primeiro com meta salva, no preview dos limiares da Seção 2.
-const BALDES_SECAO2 = Object.keys(ALVOS);
+const MERCADOS_SECAO2 = Object.keys(ALVOS);
 
 // Tira o "Custo por " do rótulo do alvo pra virar sufixo do preview ("por
 // conversa iniciada", "por lead"...) — nunca um texto novo, só o que ALVOS já
 // diz encurtado pra caber ao lado do valor em reais.
-function sufixoDoAlvo(balde) {
-  const rotulo = (ALVOS[balde] && ALVOS[balde].rotulo) || '';
+function sufixoDoAlvo(mercado) {
+  const rotulo = (ALVOS[mercado] && ALVOS[mercado].rotulo) || '';
   return rotulo.replace(/^Custo por\s*/i, 'por ');
 }
 
-// DESAMBIGUAÇÃO DE RÓTULO REPETIDO (24/09/2026): "mensagens" e "leads" usam o
-// MESMO rótulo — "Custo por lead" — desde que o dono decidiu chamar conversa
-// de WhatsApp aberta de lead (ver o comentário de `mensagens` em alvos.js).
-// No CARTÃO da campanha isso é exatamente o que ele quer ler. Mas aqui, na
-// régua, as duas viram DUAS LINHAS VIZINHAS na mesma tabela — sem desambiguar,
-// ele digitaria a meta na linha errada sem ter como perceber (as duas leem
-// "Custo por lead"). NÃO mexe em ALVOS[...].rotulo (o cartão continua igual):
-// a mudança fica só na montagem desta linha, juntando o nome do balde
-// (ROTULO_BALDE, que já é único por construção) só quando há colisão de
-// verdade — os demais rótulos, que já são únicos, saem sem sufixo nenhum.
-function rotuloDaLinha(baldes) {
+// DESAMBIGUAÇÃO DE RÓTULO REPETIDO (24/09/2026, atualizado 25/09/2026 quando
+// o mercado `lead` nasceu): os mercados `conversa` e `lead` usam o MESMO
+// rótulo — "Custo por lead" — desde que o dono decidiu chamar conversa de
+// WhatsApp aberta de lead (ver o comentário de `conversa` em alvos.js) e
+// `lead` (cadastro/formulário, Onda C Tarefa 1) nasceu com o mesmo nome de
+// resultado. No CARTÃO da campanha isso é exatamente o que ele quer ler. Mas
+// aqui, na régua, as duas viram DUAS LINHAS VIZINHAS na mesma tabela — sem
+// desambiguar, ele digitaria a meta na linha errada sem ter como perceber (as
+// duas leem "Custo por lead"). NÃO mexe em ALVOS[...].rotulo (o cartão
+// continua igual): a mudança fica só na montagem desta linha, juntando o
+// nome do mercado (ROTULO_MERCADO, que já é único por construção) só quando
+// há colisão de verdade — os demais rótulos, que já são únicos, saem sem
+// sufixo nenhum.
+//
+// ⚠️ ROTULO_MERCADO precisa ter uma entrada para TODO mercado de ALVOS — se
+// faltar uma, o `|| b` cai no nome cru da chave (foi exatamente isso que
+// produziu "Custo por lead — lead" na rodada de correção 1: `lead` não
+// existia neste mapa ainda). Ver o comentário de ROTULO_MERCADO.
+function rotuloDaLinha(mercados) {
   const contagem = {};
-  for (const b of baldes) {
+  for (const b of mercados) {
     const r = ALVOS[b].rotulo;
     contagem[r] = (contagem[r] || 0) + 1;
   }
   const mapa = {};
-  for (const b of baldes) {
+  for (const b of mercados) {
     const a = ALVOS[b];
-    mapa[b] = contagem[a.rotulo] > 1 ? `${a.rotulo} — ${ROTULO_BALDE[b] || b}` : a.rotulo;
+    mapa[b] = contagem[a.rotulo] > 1 ? `${a.rotulo} — ${ROTULO_MERCADO[b] || b}` : a.rotulo;
   }
   return mapa;
 }
-const ROTULO_LINHA_SECAO2 = rotuloDaLinha(BALDES_SECAO2);
+const ROTULO_LINHA_SECAO2 = rotuloDaLinha(MERCADOS_SECAO2);
 
 // A PERSONA DA MARCA — quem a conta atende, escrito pelo dono.
 //
@@ -242,6 +305,17 @@ export function montarPainelRegua(alvo, opcoes) {
   // número, mas com uma frase honesta em vez de "hoje" chutado.
   const custoEngajamentoPraticadoPeriodo = String(o.custoEngajamentoPraticadoPeriodo || '').trim();
 
+  // O INTERRUPTOR DA PONDERADA (Onda C, Tarefa 4, 25/09/2026). Lido da MESMA
+  // fonte única que `regua.js` define (`ponderadaLigada`) — nunca duas formas
+  // de saber se está ligada. `ligada` aqui é o estado NO MOMENTO EM QUE O
+  // PAINEL MONTOU: decide QUAL CHAVE de meta o mercado 'post' usa nesta
+  // renderização (`linhasMeta`/`reguaDaTela`, abaixo) e o texto/esmaecimento
+  // iniciais da Seção 1. Trocar o interruptor na tela sem salvar NÃO troca o
+  // campo de meta (ver o listener do checkbox, mais abaixo, e o comentário
+  // dele) — só o rótulo, a explicação e o esmaecimento mudam ao vivo; a
+  // chave de meta só passa a valer depois de Salvar e o painel remontar.
+  const ligada = ponderadaLigada(regua);
+
   const linhasPeso = Object.keys(PESOS_PADRAO).map((k) =>
     `<tr><td>${ROTULO_PESO[k]}</td><td>${campo('pnd-peso-' + k, regua.pesos[k], '1', editavel)}</td></tr>`).join('');
 
@@ -276,21 +350,30 @@ export function montarPainelRegua(alvo, opcoes) {
   // em regua.js — só diverge do nome do balde em engajamento, cuja meta nova
   // mora em `engajamento_bruto` pra não sobrescrever a antiga (`engajamento`,
   // que só a Seção 1 ainda lê — ver pintarLimiaresSecao1 abaixo).
-  const linhasMeta = BALDES_SECAO2.map((b) => {
+  const linhasMeta = MERCADOS_SECAO2.map((b) => {
     const a = ALVOS[b];
-    const chave = a.chaveMeta || b;
+    // O mercado 'post' não declara `chaveMeta` em alvos.js DE PROPÓSITO — a
+    // chave depende do INTERRUPTOR (Tarefa 4), que é ESTADO, não dado
+    // estático (ver o comentário de 'post' em alvos.js e de `ligada` acima).
+    // Espelha a MESMA resolução de `metaDoBalde` (regua.js): ligada usa a
+    // meta ANTIGA por ponto ('engajamento'), desligada (padrão) usa a NOVA
+    // por engajamento bruto ('engajamento_bruto').
+    const chave = (b === 'post') ? (ligada ? 'engajamento' : 'engajamento_bruto') : (a.chaveMeta || b);
     const temMeta = regua.metas[chave] != null;
     const valor = temMeta ? regua.metas[chave] : '';
     const nota = temMeta ? '' : '<div class="pnd-alvo-vazio">ainda sem histórico — defina quando começar a rodar esse tipo</div>';
     // "O que você paga", só quando quem chamou souber dizer (por enquanto só
-    // engajamento, que acabou de trocar de régua) — ver custoEngajamentoPraticado
-    // acima. O período vai SEMPRE junto do número, nunca "hoje" cravado: sem
-    // ele, cai no honesto "no período selecionado" em vez de inventar uma
-    // janela que não foi medida.
-    const praticado = (b === 'engajamento' && custoEngajamentoPraticado != null)
+    // o mercado 'post', que acabou de trocar de régua) — ver
+    // custoEngajamentoPraticado acima. ATUALIZADO 25/09/2026 (Onda C, reindex
+    // de ALVOS por MERCADO): o balde chamava-se 'engajamento'; virou o
+    // mercado 'post' — o texto ("por engajamento") não mudou porque o mercado
+    // continua sendo engajamento, só o índice trocou. O período vai SEMPRE
+    // junto do número, nunca "hoje" cravado: sem ele, cai no honesto "no
+    // período selecionado" em vez de inventar uma janela que não foi medida.
+    const praticado = (b === 'post' && custoEngajamentoPraticado != null)
       ? `<div class="pnd-limiar-prev">você paga ${reais(custoEngajamentoPraticado)} por engajamento — ${esc(custoEngajamentoPraticadoPeriodo || 'no período selecionado')}</div>` : '';
     return `<tr>
-      <td><div class="pnd-alvo-nome">${esc(ROTULO_BALDE[b] || b)}</div><div class="pnd-alvo-ajuda">${esc(ROTULO_LINHA_SECAO2[b])} — ${esc(a.ajuda)}</div>${nota}</td>
+      <td><div class="pnd-alvo-nome">${esc(ROTULO_MERCADO[b] || b)}</div><div class="pnd-alvo-ajuda">${esc(ROTULO_LINHA_SECAO2[b])} — ${esc(a.ajuda)}</div>${nota}</td>
       <td>${campo('pnd-meta-' + chave, valor, '0.01', editavel, a.unidade)}${praticado}</td>
     </tr>`;
   }).join('');
@@ -333,8 +416,18 @@ export function montarPainelRegua(alvo, opcoes) {
         <div class="pnd-grupo pnd-g-engaj">
           <div class="pnd-grupo-cab"><h2 class="pnd-grupo-tit">${pastilha('contato')}Engajamento ponderado${nomeConta ? ` — ${esc(nomeConta)}` : ''}${ajudaBtn('ponto')}</h2>
           <p class="pnd-grupo-sub">A leitura geral. Vale para campanha de engajamento só quando você declarar, no cartão dela, qual interação ela está comprando.</p>
-          <div class="pnd-conta-tag pnd-conta-tag--vazio">Em pausa desde 24/09/2026: por padrão, o veredito de engajamento passou a ser <b>custo por engajamento</b>, editado em "Metas por resultado" (Seção 2, abaixo). <b>Nada foi apagado</b> — pesos, meta antiga e limiares desta seção continuam aqui, intocados, e só voltam a decidir o veredito quando você declarar, no cartão da campanha, que ela compra uma curtida, comentário, salvamento ou compartilhamento específico.</div></div>
-          <div class="pnd-cards">
+          <div class="pnd-interruptor-linha">
+            <label class="pnd-interruptor" for="pnd-ponderada-liga">
+              <span class="perm-toggle">
+                <input type="checkbox" id="pnd-ponderada-liga" ${ligada ? 'checked' : ''} ${editavel ? '' : 'disabled'}>
+                <span class="perm-toggle-track"></span>
+              </span>
+              <span class="pnd-interruptor-rotulo" id="pnd-ponderada-rotulo">${ligada ? 'Ativa' : 'Desligada'}</span>
+            </label>
+            <p class="pnd-ajuda pnd-interruptor-explicacao" id="pnd-ponderada-explicacao">${esc(TEXTO_INTERRUPTOR[ligada ? 'ligada' : 'desligada'])}</p>
+          </div>
+          <div class="pnd-conta-tag pnd-conta-tag--vazio" id="pnd-ponderada-aviso-incompleto"${ligada ? '' : ' hidden'}>${esc(AVISO_LIGADA_INCOMPLETA)}</div>
+          <div class="pnd-cards${ligada ? '' : ' pnd-secao-esmaecida'}" id="pnd-secao1-cards">
             <div class="pnd-bloco">
               <div class="pnd-cab"><h3 class="pnd-titulo">Quanto vale cada interação</h3>${ajudaBtn('pesos')}</div>
               <p class="pnd-ajuda">Uma curtida vale 1 ponto. Um salvamento vale 30 — é como dizer que salvar equivale a 30 curtidas. Só importa quando a campanha tem interação declarada (ver aviso acima).</p>
@@ -347,7 +440,7 @@ export function montarPainelRegua(alvo, opcoes) {
             </div>
             <div class="pnd-bloco">
               <div class="pnd-cab"><h3 class="pnd-titulo">Quando cada cor acende</h3>${ajudaBtn('cores')}</div>
-              <p class="pnd-ajuda">Multiplicadores da meta de cada interação declarada. O valor em reais abaixo de cada um usa a meta antiga de custo por ponto (congelada — sem campo nesta tela desde a pausa), pro dia de religar a ponderada.</p>
+              <p class="pnd-ajuda">Multiplicadores da meta de cada interação declarada. O valor em reais abaixo de cada um usa a meta antiga de custo por ponto — a mesma que o interruptor acima liga e desliga.</p>
               <table class="pnd-tabela"><tbody>${linhasLimiar1}</tbody></table>
             </div>
           </div>
@@ -390,7 +483,7 @@ export function montarPainelRegua(alvo, opcoes) {
     // Se o dono apagar um campo sem querer, o valor volta pro que a régua JÁ TINHA
     // (não pro padrão de fábrica) — senão um peso 50 customizado vira 30 no silêncio.
     for (const k of Object.keys(PESOS_PADRAO)) pesos[k] = ler('pnd-peso-' + k, regua.pesos[k]);
-    // Percorre ALVOS (não ROTULO_BALDE nem regua.metas) — é a MESMA lista que
+    // Percorre ALVOS (não ROTULO_MERCADO nem regua.metas) — é a MESMA lista que
     // desenhou as linhas de meta, todas na Seção 2 agora (24/09/2026). Um
     // balde fora de ALVOS não tem <input> na tela: 'pnd-meta-<chave>' não
     // existe no DOM, `ler` devolve o padrão 0, e a linha abaixo não grava a
@@ -405,17 +498,35 @@ export function montarPainelRegua(alvo, opcoes) {
     // sobreviver intacta, pra pausa da ponderada ser reversível) — e a meta
     // NOVA cairia numa chave que ninguém lê, parecendo "não salvou".
     for (const b of Object.keys(ALVOS)) {
-      const chave = (ALVOS[b] && ALVOS[b].chaveMeta) || b;
+      const a = ALVOS[b];
+      // 'post' segue a MESMA resolução usada para desenhar `linhasMeta`
+      // (acima) — tem que ler o campo que FOI DESENHADO na tela, e os dois
+      // lados (desenhar e ler) usam a mesma `ligada` (estado do momento em
+      // que o painel montou), senão leitura e escrita divergiriam.
+      const chave = (b === 'post') ? (ligada ? 'engajamento' : 'engajamento_bruto') : (a.chaveMeta || b);
       const v = ler('pnd-meta-' + chave, 0);
       if (v > 0) metas[chave] = v;
     }
-    // A META ANTIGA da ponderada (`metas.engajamento`, R$ por PONTO) não tem
-    // mais campo nesta tela — a Seção 1 virou aviso (ver o topo dela). Sem
-    // copiar ela aqui, salvar a régua a APAGARIA em silêncio, porque este
-    // objeto nasce vazio e só recebe o que tem <input> na tela agora. Ela
-    // PASSA por fora do laço acima, intocada, até o dia de religar a
-    // ponderada (ver o comentário no topo do arquivo e em alvos.js).
-    if (regua.metas && regua.metas.engajamento != null) metas.engajamento = regua.metas.engajamento;
+    // A META ANTIGA da ponderada (`metas.engajamento`, R$ por PONTO) só tem
+    // campo <input> NESTA TELA quando o interruptor está LIGADO — nesse caso
+    // a própria linha de 'post' na Seção 2 vira o campo dela (ver `chave`, no
+    // laço acima), e o laço JÁ leu o que o dono digitou: copiar de novo aqui
+    // apagaria a edição dele, sobrescrevendo com o valor antigo do banco.
+    // DESLIGADA (padrão), a Seção 1 é só aviso, sem campo — sem copiar aqui,
+    // salvar a régua apagaria a meta antiga em silêncio, porque este objeto
+    // nasce vazio e só recebe o que tem <input> na tela agora. ATUALIZADO
+    // 25/09/2026 (Tarefa 4 da Onda C): antes desta tarefa o interruptor não
+    // existia e esta cópia era incondicional (a Seção 1 nunca tinha campo
+    // editável pra ela); agora precisa respeitar `ligada`, senão ligar o
+    // interruptor e editar a meta nova linha vira uma escrita que não pega.
+    if (!ligada && regua.metas && regua.metas.engajamento != null) metas.engajamento = regua.metas.engajamento;
+    // ESPELHO da linha acima, para o OUTRO lado do interruptor: LIGADA, é a
+    // meta NOVA (`engajamento_bruto`, R$ por engajamento bruto) que fica SEM
+    // campo nesta montagem — a linha de 'post' na Seção 2 virou o campo da
+    // meta ANTIGA (ver `chave`, no laço acima). Sem preservar aqui, ligar o
+    // interruptor e salvar apagaria a meta nova em silêncio — exatamente o
+    // mesmo defeito que a linha de cima evita, do lado oposto.
+    if (ligada && regua.metas && regua.metas.engajamento_bruto != null) metas.engajamento_bruto = regua.metas.engajamento_bruto;
     // Mesma lógica, agora para as METAS POR INTERAÇÃO (Task 3): percorre
     // INTERACOES (a MESMA lista que desenhou linhasInteracao), gravando na
     // MESMA `metas` — balde ('engajamento'...) e interação ('curtidas'...)
@@ -431,6 +542,16 @@ export function montarPainelRegua(alvo, opcoes) {
     // lista, senão salvar apaga o que estava fora da tela.
     for (const k of Object.keys(LIMIARES_PADRAO)) limiares[k] = ler('pnd-limiar-eng-' + k, regua.limiares[k]);
     for (const k of Object.keys(LIMIARES_PADRAO)) limiares_resultado[k] = ler('pnd-limiar-res-' + k, regua.limiares_resultado[k]);
+    // O ESTADO DO INTERRUPTOR (Tarefa 4, 25/09/2026) viaja DENTRO do mesmo
+    // `limiares` que os multiplicadores acima — é a decisão de `regua.js`
+    // (sem coluna nova no banco: `normalizarRegua` lê esta mesma chave de
+    // dentro de `l.limiares`). Lido AO VIVO do checkbox, nunca de `ligada`
+    // (que é o estado de QUANDO O PAINEL MONTOU): é o clique em Salvar que
+    // precisa carregar o que o dono acabou de marcar, senão apertar Salvar
+    // nunca mudaria o interruptor. Sem o elemento (DOM de teste, ou tela
+    // ainda sem essa versão), cai no que já estava — nunca desliga sozinho.
+    const chkLigada = document.getElementById('pnd-ponderada-liga');
+    limiares.ponderada_ligada = chkLigada ? !!chkLigada.checked : ligada;
     return { pesos, metas, limiares, limiares_resultado };
   }
 
@@ -481,9 +602,9 @@ export function montarPainelRegua(alvo, opcoes) {
   // duplicar essa resolução (ver reguaDaTela, mais acima, que grava do lado
   // oposto pela mesma chave).
   function primeiroAlvoComMeta(r) {
-    for (const b of BALDES_SECAO2) {
+    for (const b of MERCADOS_SECAO2) {
       const v = metaDoBalde(r, b);
-      if (Number.isFinite(v) && v > 0) return { balde: b, meta: v };
+      if (Number.isFinite(v) && v > 0) return { mercado: b, meta: v };
     }
     return null;
   }
@@ -503,7 +624,7 @@ export function montarPainelRegua(alvo, opcoes) {
       const multValido = Number.isFinite(mult) && mult > 0;
       if (!multValido) { el.textContent = 'defina o multiplicador'; continue; }
       if (!base) { el.textContent = `× ${mult.toLocaleString('pt-BR')}`; continue; }
-      el.textContent = `× ${mult.toLocaleString('pt-BR')} = ${reais(mult * base.meta)} ${sufixoDoAlvo(base.balde)}`;
+      el.textContent = `× ${mult.toLocaleString('pt-BR')} = ${reais(mult * base.meta)} ${sufixoDoAlvo(base.mercado)}`;
     }
   }
 
@@ -541,7 +662,7 @@ export function montarPainelRegua(alvo, opcoes) {
     const aval = avaliarAlvo({ custo, meta, limiares: limiaresDoExemplo });
     const faixa = FAIXA[aval.faixa] || FAIXA['sem-dados'];
     const rotulo = ex.rotulo || (alvoObj ? alvoObj.rotulo : 'Custo por resultado');
-    const titulo = ex.titulo || ROTULO_BALDE[chave] || chave;
+    const titulo = ex.titulo || ROTULO_MERCADO[chave] || chave;
     // Detalhe: engajamento mostra a quebra das interações (que muda ao vivo com os
     // pesos); os demais mostram a quantidade do resultado que compraram.
     const detalhe = ehPonderada
@@ -626,6 +747,36 @@ export function montarPainelRegua(alvo, opcoes) {
     // Além do atributo `disabled` no HTML, nem liga o listener quando a leitura do
     // banco não foi confirmada — dupla trava contra salvar em cima de dado errado.
     if (botao && podeSalvar) botao.addEventListener('click', () => o.aoSalvar && o.aoSalvar(reguaDaTela(), botao));
+
+    // O INTERRUPTOR (Tarefa 4). TRÊS COISAS mudam AO VIVO, sem recarregar: o
+    // rótulo/explicação, o esmaecimento da Seção 1 e o AVISO de escolha
+    // parcial (Rodada 1 de revisão, 25/09/2026 — ver `AVISO_LIGADA_INCOMPLETA`
+    // acima). O CAMPO de meta que o mercado 'post' usa (ver `chave`, em
+    // `linhasMeta`/`reguaDaTela` acima) NÃO troca aqui — ele foi desenhado uma
+    // vez, na montagem do painel, pela `ligada` de então. NÃO É "trocar duas
+    // linhas": pra trocar o campo de verdade seria preciso reler o valor
+    // salvo, redesenhar a linha de 'post' inteira e religar os listeners
+    // dela — mais do que este handler faz. O jeito HONESTO de trocar o campo
+    // é salvar (o clique em Salvar já lê o estado atual do checkbox — ver
+    // `reguaDaTela`, acima) e deixar quem chama remontar o painel com a
+    // régua nova.
+    const chkLigada = document.getElementById('pnd-ponderada-liga');
+    if (chkLigada) {
+      chkLigada.addEventListener('change', () => {
+        const agora = chkLigada.checked;
+        const rotuloEl = document.getElementById('pnd-ponderada-rotulo');
+        if (rotuloEl) rotuloEl.textContent = agora ? 'Ativa' : 'Desligada';
+        const explicacaoEl = document.getElementById('pnd-ponderada-explicacao');
+        if (explicacaoEl) explicacaoEl.textContent = TEXTO_INTERRUPTOR[agora ? 'ligada' : 'desligada'];
+        const cards = document.getElementById('pnd-secao1-cards');
+        if (cards) cards.classList.toggle('pnd-secao-esmaecida', !agora);
+        // Aviso persistente (não tooltip) enquanto o cálculo e a cor de
+        // 'post' não lerem de fato este interruptor — sem ele, o dono liga
+        // achando que restaurou o julgamento ponderado inteiro.
+        const avisoEl = document.getElementById('pnd-ponderada-aviso-incompleto');
+        if (avisoEl) avisoEl.hidden = !agora;
+      });
+    }
   }
 
   // PERSONA: FORA do `if (editavel)` acima de propósito. Quem manda aqui é

@@ -142,17 +142,31 @@ test('a Seção 1 avisa que a ponderada está em pausa', () => {
   });
 });
 
-test('mensagens e leads não aparecem como duas linhas "Custo por lead" indistinguíveis', () => {
+test('conversa e lead não aparecem como duas linhas "Custo por lead" indistinguíveis', () => {
   comDomFalso(() => {
     const alvo = alvoFalso();
     montarPainelRegua(alvo, { ...OPCOES_BASE, regua: normalizarRegua({}) });
-    // As duas usam o MESMO ALVOS[...].rotulo (decisão do dono, 24/09/2026: quem
-    // abre conversa no WhatsApp também é "lead"). A régua lista um balde por
-    // linha — sem desambiguar aqui, o dono digitaria a meta na linha errada
-    // sem ter como perceber. Prova por MUTAÇÃO: as duas ocorrências de "Custo
-    // por lead" no HTML têm que vir acompanhadas de um texto que as distingue.
+    // Os mercados `conversa` e `lead` usam o MESMO ALVOS[...].rotulo (decisão
+    // do dono, 24/09/2026: quem abre conversa no WhatsApp também é "lead"). A
+    // régua lista um mercado por linha — sem desambiguar aqui, o dono
+    // digitaria a meta na linha errada sem ter como perceber.
+    //
+    // Rodada de correção 1 (25/09/2026): esta prova só checava que as duas
+    // ocorrências eram DIFERENTES entre si — passava com QUALQUER texto
+    // distinto, inclusive lixo. Foi assim que "Custo por lead — lead" (o
+    // fallback cru de ROTULO_MERCADO, sem entrada pra `lead`) atravessou a
+    // suíte inteira sem um teste acusar. Agora a prova é o TEXTO esperado,
+    // não só a diferença.
     const ocorrencias = alvo.innerHTML.match(/Custo por lead[^<]*/g) || [];
     assert.ok(ocorrencias.length >= 2, 'o cenário do teste perdeu uma das duas linhas');
+    assert.ok(
+      ocorrencias.some((o) => o.startsWith('Custo por lead — conversa no WhatsApp')),
+      `faltou a linha de "conversa" com o sufixo certo — veio: ${JSON.stringify(ocorrencias)}`,
+    );
+    assert.ok(
+      ocorrencias.some((o) => o.startsWith('Custo por lead — cadastro')),
+      `faltou a linha de "lead" com o sufixo certo (não "— lead") — veio: ${JSON.stringify(ocorrencias)}`,
+    );
     assert.notEqual(ocorrencias[0], ocorrencias[1],
       'as duas linhas "Custo por lead" são idênticas — o dono não tem como saber qual é qual');
   });
@@ -183,6 +197,158 @@ test('salva a meta nova na chave do alvo (engajamento_bruto), nunca na do balde'
     'o valor digitado no campo novo tem que cair na CHAVE do alvo, não no nome do balde');
   assert.equal(capturado.metas.engajamento, 0.013,
     'a meta antiga (custo por ponto) não pode ser sobrescrita nem apagada ao salvar a régua');
+});
+
+// ── O INTERRUPTOR DA PONDERADA (Onda C, Tarefa 4, 25/09/2026) ───────────────
+//
+// O dono pediu, literalmente: "quando eu digo desativar, ela some da aba
+// campanhas e fica 'desligada' em A régua — eu posso ativar depois". Aqui:
+// o controle aparece, o padrão é desligada com a Seção 1 esmaecida (não
+// escondida), e salvar em QUALQUER posição preserva as DUAS metas antigas
+// (ver regua.test.mjs para a prova do lado puro — `ponderadaLigada`/
+// `metaDoBalde`). O estado lido é sempre `ponderadaLigada` (regua.js); nunca
+// uma segunda forma de saber se está ligada.
+
+test('o interruptor aparece desligado por padrão, com a Seção 1 esmaecida (não sumida)', () => {
+  comDomFalso(() => {
+    const alvo = alvoFalso();
+    montarPainelRegua(alvo, { ...OPCOES_BASE, regua: normalizarRegua({}) });
+    const saida = alvo.innerHTML;
+    assert.ok(saida.includes('id="pnd-ponderada-liga"'), 'faltou o controle do interruptor');
+    assert.ok(!/id="pnd-ponderada-liga"[^>]*checked/.test(saida), 'padrão é desligada — não pode nascer marcado');
+    assert.ok(saida.includes('id="pnd-secao1-cards" class="pnd-cards pnd-secao-esmaecida"')
+      || /class="pnd-cards pnd-secao-esmaecida"[^>]*id="pnd-secao1-cards"/.test(saida),
+      'desligada, os campos da Seção 1 têm que ficar esmaecidos');
+    // Esmaecido, não sumido: os campos continuam no HTML, só com a classe.
+    assert.ok(saida.includes('pnd-peso-curtidas'), 'os pesos não podem sumir quando a ponderada está desligada');
+  });
+});
+
+test('interruptor ligado: aparece marcado, sem esmaecer a Seção 1, e o rótulo diz Ativa', () => {
+  comDomFalso(() => {
+    const alvo = alvoFalso();
+    montarPainelRegua(alvo, {
+      ...OPCOES_BASE,
+      regua: normalizarRegua({ limiares: { ponderada_ligada: true } }),
+    });
+    const saida = alvo.innerHTML;
+    assert.match(saida, /id="pnd-ponderada-liga"[^>]*checked/, 'ligada, o checkbox tem que nascer marcado');
+    assert.ok(!/pnd-secao-esmaecida/.test(saida), 'ligada, a Seção 1 não pode ficar esmaecida');
+    assert.ok(saida.includes('>Ativa<'), 'faltou o rótulo "Ativa"');
+  });
+});
+
+// ── Rodada 1 de revisão (25/09/2026): o texto prometia mais do que o código
+// faz ───────────────────────────────────────────────────────────────────────
+//
+// A revisão rastreou os três lugares que decidem o veredito de 'post'
+// (alvos.js, tela-de-gestao-trafego.vue, coletor/budget-ia.mjs) e NENHUM lê
+// este interruptor para o CÁLCULO do custo nem para a COR — só `metaDoBalde`
+// muda de chave. O texto anterior dizia "o mercado de post volta a ser
+// julgado pelo engajamento ponderado... como antes da pausa", que é falso:
+// o custo comparado continua não-ponderado e a cor continua vindo dos
+// limiares da Seção 2. Comparar as duas grandezas é a MESMA mistura de
+// unidade que produziu o "662× a meta" (ver alvos.js) — por isso o texto
+// tem que dizer a verdade, e por isso existe o aviso visível abaixo.
+
+test('o texto de "ligada" NÃO promete que o julgamento ponderado voltou — só que a meta consultada trocou', () => {
+  comDomFalso(() => {
+    const alvo = alvoFalso();
+    montarPainelRegua(alvo, {
+      ...OPCOES_BASE,
+      regua: normalizarRegua({ limiares: { ponderada_ligada: true } }),
+    });
+    const saida = alvo.innerHTML;
+    // A frase antiga, exata, que a Rodada 1 apontou como falsa — não pode voltar.
+    assert.ok(!/volta a ser julgado pelo engajamento ponderado/.test(saida),
+      'esta frase promete um julgamento que nenhum dos três lugares que decidem o veredito de post ainda faz');
+    // O texto tem que admitir, sem abrir o código, que falta a restauração.
+    assert.match(saida, /cálculo do custo.{0,40}cor.{0,80}ainda não/i,
+      'o texto tem que dizer, explicitamente, que o cálculo e a cor ainda não usam o engajamento ponderado');
+  });
+});
+
+test('ligado, aparece um AVISO VISÍVEL (não tooltip) dizendo que a escolha é parcial', () => {
+  comDomFalso(() => {
+    const alvo = alvoFalso();
+    montarPainelRegua(alvo, {
+      ...OPCOES_BASE,
+      regua: normalizarRegua({ limiares: { ponderada_ligada: true } }),
+    });
+    const saida = alvo.innerHTML;
+    assert.ok(saida.includes('id="pnd-ponderada-aviso-incompleto"'), 'faltou o elemento do aviso');
+    assert.ok(!/id="pnd-ponderada-aviso-incompleto"[^>]*hidden/.test(saida),
+      'ligado, o aviso tem que estar VISÍVEL — sem `hidden`');
+    assert.ok(!/title="/.test(saida.match(/id="pnd-ponderada-aviso-incompleto"[^>]*>/)[0] || ''),
+      'não pode ser um tooltip (atributo title) — tela de toque não passa o mouse por cima de nada');
+    assert.match(saida, /restauração completa.{0,160}(ainda não|não foi feita)/i,
+      'o aviso tem que deixar claro que a restauração completa ainda não existe');
+  });
+});
+
+test('desligado (padrão), o aviso de escolha parcial fica ESCONDIDO — não haveria o que avisar', () => {
+  comDomFalso(() => {
+    const alvo = alvoFalso();
+    montarPainelRegua(alvo, { ...OPCOES_BASE, regua: normalizarRegua({}) });
+    const saida = alvo.innerHTML;
+    assert.match(saida, /id="pnd-ponderada-aviso-incompleto"[^>]*hidden/,
+      'desligado, o aviso não pode aparecer — não existe escolha parcial pra avisar');
+  });
+});
+
+test('salvar com o interruptor DESLIGADO grava ponderada_ligada:false e preserva as DUAS metas antigas', () => {
+  const antes = globalThis.document;
+  const mapa = new Map();
+  mapa.set('pnd-meta-engajamento_bruto', { value: '0.32' }); // dono não mexeu — é o valor que já estava salvo
+  mapa.set('pnd-ponderada-liga', { checked: false, addEventListener() {} });
+  let clique = null;
+  mapa.set('pnd-salvar', { addEventListener: (ev, fn) => { if (ev === 'click') clique = fn; } });
+  globalThis.document = { getElementById: (id) => mapa.get(id) || null };
+  let capturado = null;
+  try {
+    const alvo = alvoFalso();
+    montarPainelRegua(alvo, {
+      ...OPCOES_BASE,
+      regua: normalizarRegua({ metas: { engajamento: 0.013, engajamento_bruto: 0.32 } }),
+      aoSalvar: (r) => { capturado = r; },
+    });
+    assert.ok(typeof clique === 'function', 'o botão de salvar não ligou o listener');
+    clique();
+  } finally {
+    globalThis.document = antes;
+  }
+  assert.equal(capturado.limiares.ponderada_ligada, false, 'desligado tem que gravar false explicitamente');
+  assert.equal(capturado.metas.engajamento, 0.013, 'a meta ANTIGA (ponto) sobrevive desligado');
+  assert.equal(capturado.metas.engajamento_bruto, 0.32, 'a meta NOVA (bruto) sobrevive desligado, mesmo sem editar agora');
+});
+
+test('salvar com o interruptor LIGADO grava ponderada_ligada:true e preserva as DUAS metas antigas', () => {
+  const antes = globalThis.document;
+  const mapa = new Map();
+  // Ligado, a linha de 'post' na Seção 2 virou o campo da meta ANTIGA
+  // (ver `chave` em linhasMeta/reguaDaTela) — é este id que existe no DOM.
+  mapa.set('pnd-meta-engajamento', { value: '0.02' });
+  mapa.set('pnd-ponderada-liga', { checked: true, addEventListener() {} });
+  let clique = null;
+  mapa.set('pnd-salvar', { addEventListener: (ev, fn) => { if (ev === 'click') clique = fn; } });
+  globalThis.document = { getElementById: (id) => mapa.get(id) || null };
+  let capturado = null;
+  try {
+    const alvo = alvoFalso();
+    montarPainelRegua(alvo, {
+      ...OPCOES_BASE,
+      regua: normalizarRegua({ limiares: { ponderada_ligada: true }, metas: { engajamento: 0.013, engajamento_bruto: 0.32 } }),
+      aoSalvar: (r) => { capturado = r; },
+    });
+    assert.ok(typeof clique === 'function', 'o botão de salvar não ligou o listener');
+    clique();
+  } finally {
+    globalThis.document = antes;
+  }
+  assert.equal(capturado.limiares.ponderada_ligada, true, 'ligado tem que gravar true');
+  assert.equal(capturado.metas.engajamento, 0.02, 'o valor editado no campo (agora dono da meta antiga) tem que ser gravado');
+  assert.equal(capturado.metas.engajamento_bruto, 0.32,
+    'a meta NOVA (bruto) tem que sobreviver mesmo sem campo na tela nesta montagem — senão ligar apaga a meta nova');
 });
 
 // ── Correção 1 (revisão, 24/09/2026): a LEITURA do preview ficou para trás ──

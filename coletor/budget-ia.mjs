@@ -63,6 +63,15 @@ export function selecionarCampanhas(camps, insByCamp, modo, agoraMs) {
     || (modo === 'amplo' && veiculouNaJanela(ins[c.id])));
 }
 
+// `comObjetivoHerdado` MUDOU DE CASA na rodada de correção 1 da Onda C,
+// Tarefa 5 (achado C1 da revisão, 25/09/2026): vivia só aqui, como cópia
+// própria do robô, e a TELA nunca herdava objetivo nenhum — o desempate de
+// OFFSITE_CONVERSIONS (lead x venda) simplesmente não disparava vindo do
+// `.vue`, e a mesma campanha podia sair `site_venda` na tela e `lead` no
+// robô. Agora mora em mercados.js (PURA, testada), importada pelos dois
+// lados — nunca mais duas cópias que podem divergir. Ver o comentário
+// completo lá.
+
 // Monta as mensagens (system + user) pro Opus: analisa a campanha E os anúncios dela.
 // `extra` é opcional (Tarefa 5, tendência e tempo no ar) — { insAnterior?, diasNoAr?, diasJanela? }.
 // Parâmetro no FIM para não quebrar as chamadas de 5 argumentos já existentes.
@@ -89,39 +98,62 @@ export function montarMensagens(camp, ins, ads, conjuntos, regua, extra) {
   // zero — foi assim que a "MODA & BOLSAS" (R$ 230/dia no ar) recebeu sugestão
   // de R$ 200 rotulada "escalar", um corte vestido de aumento.
   const orc = orcamentoEfetivoDaCampanha(camp, conjuntos || []);
-  // A meta desta CONTA para o tipo desta campanha. `regua` já vem resolvida pela
-  // conta certa (reguaDaConta) — cada cliente pratica um preço muito diferente:
-  // o ponto de engajamento custa R$ 0,013 na Vessel e R$ 0,372 na Breno Vale.
-  const balde = baldeEfetivo(camp.objective, conjuntos || []);
-  const alvo = alvoDoBalde(balde);
+  // O MERCADO da campanha (Onda C, Tarefa 3): o que ela COMPRA de verdade,
+  // segundo os CONJUNTOS — `baldeEfetivo` (objetivo declarado) SAIU do
+  // caminho do veredito. É a correção do "[FLUXO SHOPPING]" (ON_VIDEO,
+  // objetivo OUTCOME_ENGAGEMENT) que levou "reduzir" medido como engajamento
+  // quando o que ele compra é view — ver mercados.js.
+  //
+  // `mercadoDoConjunto` usa `conjunto.objective` como ÚLTIMO desempate
+  // (OFFSITE_CONVERSIONS: lead x venda — ver MERCADO_POR_OTIMIZACAO_E_OBJETIVO
+  // em mercados.js), mas a Graph API só devolve `objective` no nível da
+  // CAMPANHA, nunca no conjunto. `comObjetivoHerdado` cobre isso (ver acima).
+  const conjuntosPuros = comObjetivoHerdado(camp, conjuntos);
+  const mercado = mercadoDaCampanha(conjuntosPuros);
+  const alvo = alvoDoBalde(mercado);
   // Havendo declaração válida, a META também troca de mercado: a meta DAQUELA
   // interação (regua.metas[interacao], lida por metaDoBalde — que não exige
-  // que a chave exista em ALVOS, ver regua.js:109), não a meta do balde.
-  const meta = !regua ? 0 : metaDoBalde(regua, interacaoDeclarada || balde);
+  // que a chave exista em ALVOS, ver regua.js:109), não a meta do mercado.
+  const meta = !regua ? 0 : metaDoBalde(regua, interacaoDeclarada || mercado);
   // O CUSTO ATUAL de qualquer campanha, não só das de engajamento — calculado
   // por custoAtualDoAlvo (fonte única compartilhada com o --dry, ver o
   // comentário lá). Antes disto o robô mandava `meta_reais` preenchida e
   // `custo_atual_reais: null` em lead, venda, mensagem e tráfego — e o system
   // prompt mandava citar o número. Agora passa também a interação declarada
   // (Tarefa 5): sem ela, comportamento de sempre.
-  const custoAtual = custoAtualDoAlvo(balde, ins, regua, interacaoDeclarada);
+  const custoAtual = custoAtualDoAlvo(mercado, ins, regua, interacaoDeclarada);
   // O RÓTULO que o modelo lê muda junto: "Custo por salvamento" em vez de
   // "Custo por engajamento" quando há declaração — senão o número muda de
   // mercado mas o nome ao lado dele continua mentindo qual é esse mercado.
   const rotuloAlvo = interacaoDeclarada ? INTERACOES[interacaoDeclarada].rotuloCusto : (alvo ? alvo.rotulo : null);
-  // MULETA TEMPORÁRIA (proteção da Onda A — a correção de verdade, dar a estas
-  // campanhas um alvo próprio de custo por seguidor, é a Onda B, ainda não
-  // implementada — ver docs/superpowers/specs/2026-09-24-gt-analise-potente-design.md).
-  // A Meta não atribui "novo seguidor" a uma campanha (conferido na Graph API
-  // real, 12/09/2026 — ver db/migrations/2026-09-12-meta-ads-hora-cliques.sql):
-  // então campanha de seguidores cai no balde de tráfego/engajamento e é medida
-  // por custo por VISITA — mas quem manda pro perfil do Instagram quase não
-  // registra visita. O gasto dividido por um número minúsculo vira um "custo"
-  // gigante (casos reais: R$ 247,45, 1455× a meta) que não mede o que a
-  // campanha entrega. Sem esta trava o modelo recebia esse número como se
-  // fosse verdade e recomendava pausar com convicção — um conselho ruim, com
-  // voz firme, em cima de uma medida que não existe.
+  // MULETA DE SEGUIDORES — APOSENTADA PARA O MERCADO `perfil` (25/09/2026,
+  // Onda C, rodada de correção 1). Nasceu na Onda A por um motivo real:
+  // campanha de seguidores caía no balde de tráfego/engajamento e era medida
+  // por custo por VISITA usando `_GT_VISIT` (que tentava `landing_page_view`
+  // antes de `link_click`) — no `[SEGUIDORES][REMARKETING]` da Raíssa isso deu
+  // `landing_page_view=1` (resíduo) contra `link_click=3203`, e o "custo"
+  // saiu R$ 247,45 (1455× a meta), com o modelo recomendando pausar com
+  // convicção em cima de uma medida que não existia.
+  //
+  // A CAUSA foi corrigida na Tarefa 2 (`_GT_VISIT_PERFIL = ['link_click']`,
+  // sem fallback pro resíduo — ver metricas.js): a mesma campanha, medida
+  // pelo mercado `perfil`, dá ~R$ 0,09 — um número real, que é exatamente o
+  // KPI que o dono pediu em 25/09 pra aparecer no card ("custo por visita ao
+  // perfil é a KPI principal dessas campanhas"). Continuar escondendo esse
+  // número atrás de "medida indisponível" estaria escondendo do dono
+  // justamente o que ele pediu pra ver — por isso a muleta NÃO dispara mais
+  // quando `mercado === 'perfil'` (ver `semMedidaDeSeguidor` abaixo).
+  //
+  // `ehDeSeguidores` continua viva: ainda decide QUAIS campanhas entram na
+  // soma de gasto do custo por seguidor DA CONTA (ver `custoSeguidorConta`
+  // logo abaixo e o laço de `main()`) — o que muda é só ela deixar de
+  // SUPRIMIR o custo por visita ao perfil da campanha.
   const deSeguidores = ehDeSeguidores(camp.name);
+  // Só dispara a muleta (sem meta, sem custo, "medida_indisponivel") quando o
+  // mercado NÃO é `perfil` — awareness/tráfego/etc. sem sinal nenhum de
+  // conjunto continuam sem medida nenhuma pra esta campanha nomeada de
+  // seguidores, porque aí não existe KPI de verdade pra mostrar.
+  const semMedidaDeSeguidor = deSeguidores && mercado !== 'perfil';
   // CUSTO POR SEGUIDOR DA CONTA (Tarefa 6, Onda B): só existe pra campanha de
   // seguidores, e é sempre da CONTA INTEIRA — nunca desta campanha (a Meta não
   // atribui seguidor a campanha nenhuma, ver seguidores.js). `extra` traz o
@@ -154,18 +186,43 @@ export function montarMensagens(camp, ins, ads, conjuntos, regua, extra) {
     // outra pessoa (correção pedida por ele, 2026-07-29).
     'ESCREVA SEMPRE "a meta" ou "a meta desta conta" — NUNCA "a meta do dono", "o dono definiu" ou qualquer menção a "dono", "cliente" ou "gestor": quem lê o texto é a própria pessoa que definiu a meta. ' +
     'Quando `regua.meta_reais` for nulo, essa conta ainda não tem meta para este tipo de campanha: aí sim julgue pelos indicadores do objetivo, e diga que a meta não está definida. ' +
-    // MULETA TEMPORÁRIA de campanha de seguidores (ver comentário de
-    // `deSeguidores` acima). Sem esta instrução o modelo recebia
-    // `regua.meta_reais` e `regua.custo_atual_reais` nulos e podia inventar
-    // "sem meta definida" — a frase certa para OUTRA situação (conta que
-    // simplesmente não configurou meta), não para esta, onde a medida não
-    // existe e nunca vai existir por campanha nesta onda.
-    'Quando `regua.medida_indisponivel` vier preenchido, esta campanha é de SEGUIDORES: a Meta não atribui "novo seguidor" a uma campanha, então não existe custo por resultado confiável aqui — julgue SOMENTE pelos indicadores disponíveis (CTR, CPC, frequência, alcance, volume de anúncios), NUNCA recomende "pausar" ou "reduzir" alegando custo por resultado ou comparação com meta, e diga isso na justificativa (que a medida não existe para este tipo de campanha) em vez de fingir que mediu. ' +
+    // MERCADO DESCONHECIDO (Onda C, Tarefa 3): diferente de "meta não
+    // definida" (regua.meta_reais nulo com mercado conhecido) — aqui a
+    // ferramenta não conseguiu identificar NENHUM mercado a partir dos
+    // conjuntos (sinal que mercados.js não reconhece, ou conjunto ausente).
+    // Sem esta distinção o modelo confundia as duas frases e podia inventar
+    // "meta não definida" para uma campanha que não tem nem mercado julgado.
+    'Quando `regua.mercado` vier "desconhecido", não foi possível identificar o que esta campanha compra a partir dos conjuntos dela: não existe meta nem custo por resultado nenhum aqui — julgue SOMENTE pelos indicadores (CTR, CPC, frequência, alcance, volume de anúncios) e diga na justificativa que não havia medida de mercado disponível para esta campanha, nunca invente um custo por resultado. ' +
+    // CAMPANHA MISTA (Onda C, Tarefa 3): o caso real é a [LEADS LOJA]
+    // [mixconversão] da Vessel, com um conjunto de WhatsApp e um de site ao
+    // mesmo tempo — somar gasto e resultado de mercados diferentes produz um
+    // número sem significado (curtida contra venda não tem razão nenhuma),
+    // então esta campanha NUNCA leva `custo_atual_reais` de campanha.
+    'Quando `regua.mercado` vier "misto", esta campanha tem CONJUNTOS que compram mercados diferentes ao mesmo tempo (ex.: um de conversa por WhatsApp e um de venda por site) — por isso não há `custo_atual_reais` de campanha. Julgue cada conjunto separadamente usando `regua.por_conjunto` (mercado, gasto, resultado e custo_atual_reais de cada um, contra a meta daquele mercado quando houver) e escreva a justificativa mercado a mercado — NUNCA some gasto ou resultado entre mercados diferentes, e NUNCA invente uma média única para a campanha inteira. ' +
+    // MULETA de campanha de seguidores (ver comentário de `deSeguidores`
+    // acima) — hoje só dispara quando o mercado NÃO é `perfil` (awareness,
+    // tráfego etc. sem sinal de conjunto nenhum). Sem esta instrução o modelo
+    // recebia `regua.meta_reais` e `regua.custo_atual_reais` nulos e podia
+    // inventar "sem meta definida" — a frase certa para OUTRA situação (conta
+    // que simplesmente não configurou meta), não para esta, onde a medida não
+    // existe mesmo.
+    'Quando `regua.medida_indisponivel` vier preenchido, esta campanha é de SEGUIDORES sem mercado reconhecido: a Meta não atribui "novo seguidor" a uma campanha, então não existe custo por resultado confiável aqui — julgue SOMENTE pelos indicadores disponíveis (CTR, CPC, frequência, alcance, volume de anúncios), NUNCA recomende "pausar" ou "reduzir" alegando custo por resultado ou comparação com meta, e diga isso na justificativa (que a medida não existe para este tipo de campanha) em vez de fingir que mediu. ' +
+    // APOSENTADORIA DA MULETA PARA "perfil" (25/09/2026, Onda C, rodada de
+    // correção 1): campanha de seguidores cujo mercado É `perfil` (destino/
+    // otimização do conjunto apontam pra lá) agora chega aqui com
+    // `regua.custo_atual_reais` preenchido de verdade (custo por visita ao
+    // perfil, via `link_click` — ver metricas.js) — é a KPI que o dono pediu
+    // pra ver no card. JULGUE por ela normalmente, como em qualquer outro
+    // mercado.
+    'Quando esta campanha for de SEGUIDORES mas `regua.mercado` vier "perfil", `regua.custo_atual_reais` É o custo por visita ao perfil de verdade desta campanha — julgue por ele contra `regua.meta_reais` como em qualquer outro mercado, NUNCA diga que a medida está indisponível. ' +
     // TAREFA 6 (Onda B): quando vier preenchido, `regua.custo_por_seguidor_da_conta_reais`
     // é só CONTEXTO — nunca o custo desta campanha, porque é da conta inteira
     // (soma de TODAS as campanhas de seguidores, dividida pelo ganho de
-    // seguidores DA CONTA, orgânico incluso, sem como separar).
-    'Se `regua.custo_por_seguidor_da_conta_reais` vier preenchido, use-o SÓ como contexto da conta ao comentar esta campanha de seguidores — NUNCA como custo desta campanha específica — e diga na justificativa que é uma estimativa da conta inteira (inclui seguidor orgânico), nunca desta campanha isolada. Se vier nulo, não mencione custo por seguidor nenhum: significa que a conta não tem dado confiável para essa estimativa agora. ' +
+    // seguidores DA CONTA, orgânico incluso, sem como separar). Vale tanto
+    // quando a medida da campanha está indisponível quanto quando ela é
+    // `perfil` com custo real: o número da conta NUNCA substitui nem se soma
+    // ao custo desta campanha específica.
+    'Se `regua.custo_por_seguidor_da_conta_reais` vier preenchido, use-o SÓ como contexto da conta ao comentar esta campanha de seguidores — NUNCA como custo desta campanha específica, mesmo quando `regua.custo_atual_reais` (custo por visita ao perfil) também vier preenchido — e diga na justificativa que é uma estimativa da conta inteira (inclui seguidor orgânico), nunca desta campanha isolada. Se vier nulo, não mencione custo por seguidor nenhum: significa que a conta não tem dado confiável para essa estimativa agora. ' +
     // TENDÊNCIA e APRENDIZADO (Tarefa 5): antes o robô mandava uma janela só —
     // o modelo não tinha como dizer se a campanha estava melhorando ou piorando,
     // e "o que mudou desde ontem" é exatamente o que se olha às 8h da manhã.
@@ -229,12 +286,14 @@ export function montarMensagens(camp, ins, ads, conjuntos, regua, extra) {
     // o system prompt cita este campo em vez de cravar "7 dias" (a janela é
     // since=hoje-7d até until=hoje, ou seja, 8 dias INCLUSIVE).
     dias_da_janela: diasJanela,
-    regua: deSeguidores ? {
-      // Campanha de seguidores: os TRÊS campos de custo vão nulos de propósito
-      // (não só custo_atual_reais) — deixar `meta_reais` pendurada sem um custo
-      // pra comparar convida o modelo a inventar a comparação mesmo assim. O
-      // texto de `medida_indisponivel` é o que diz o PORQUÊ (ver system acima).
-      tipo_de_campanha: balde,
+    regua: semMedidaDeSeguidor ? {
+      // Campanha de seguidores SEM mercado `perfil` (a muleta continua viva
+      // só pra este caso, ver `semMedidaDeSeguidor` acima): os TRÊS campos de
+      // custo vão nulos de propósito (não só custo_atual_reais) — deixar
+      // `meta_reais` pendurada sem um custo pra comparar convida o modelo a
+      // inventar a comparação mesmo assim. O texto de `medida_indisponivel` é
+      // o que diz o PORQUÊ (ver system acima).
+      mercado,
       rotulo: alvo ? alvo.rotulo : null,
       meta_reais: null,
       custo_atual_reais: null,
@@ -246,13 +305,55 @@ export function montarMensagens(camp, ins, ads, conjuntos, regua, extra) {
       // (ver AMOSTRA_MINIMA_DE_SEGUIDORES em seguidores.js). `dias_da_janela`
       // acima já diz a janela a que esse número se refere.
       custo_por_seguidor_da_conta_reais: custoSeguidorConta,
+    // CAMPANHA MISTA (Onda C, Tarefa 3): dois (ou mais) mercados VIVOS na
+    // mesma campanha ao mesmo tempo — ver mercadoDaCampanha em mercados.js.
+    // Uma declaração manual do dono (interacaoDeclarada) VENCE a mistura: se
+    // ele já disse qual interação esta campanha compra, julgar por ela é mais
+    // confiável do que quebrar por conjunto (mesma precedência que já valia
+    // para o mercado simples).
+    } : (mercado === 'misto' && !interacaoDeclarada) ? {
+      mercado: 'misto',
+      rotulo: null,
+      // Somar gasto e resultado de mercados diferentes produz um custo por
+      // unidade que não representa nada (curtida contra venda não tem razão
+      // de ser) — por isso esta campanha NUNCA leva meta/custo DE CAMPANHA,
+      // só a quebra por conjunto abaixo.
+      meta_reais: null,
+      custo_atual_reais: null,
+      indice_contra_meta: null,
+      pesos: regua ? regua.pesos : null,
+      por_conjunto: conjuntosPuros.map((cj) => {
+        const mercadoCj = mercadoDoConjunto(cj);
+        const alvoCj = alvoDoBalde(mercadoCj);
+        const metaCj = regua ? metaDoBalde(regua, mercadoCj) : 0;
+        return {
+          mercado: mercadoCj,
+          rotulo: alvoCj ? alvoCj.rotulo : null,
+          gasto: num(cj.spend),
+          resultado: (alvoCj && alvoCj.resultado && GT_METRIC_CATALOG[alvoCj.resultado])
+            ? GT_METRIC_CATALOG[alvoCj.resultado].compute(cj) : null,
+          // MESMA custoDoAlvo do resto (nunca inventa 0 — ver restrição no
+          // topo do arquivo: quantidade zero devolve null).
+          custo_atual_reais: custoDoAlvo(mercadoCj, cj),
+          meta_reais: metaCj > 0 ? metaCj : null,
+        };
+      }),
     } : {
-      tipo_de_campanha: balde,
-      rotulo: rotuloAlvo,          // ex.: "Custo por engajamento", "Custo por lead", ou "Custo por salvamento" se declarado
+      mercado,
+      rotulo: rotuloAlvo,          // ex.: "Custo por ponto", "Custo por conversa iniciada", ou "Custo por salvamento" se declarado
       meta_reais: meta > 0 ? meta : null,          // nulo = conta sem meta para este tipo (ou para a interação declarada)
       custo_atual_reais: custoAtual,
       indice_contra_meta: (custoAtual != null && meta > 0) ? custoAtual / meta : null,
       pesos: regua ? regua.pesos : null,
+      // CONTEXTO DA CONTA (Onda C, rodada de correção 1, 25/09/2026): só entra
+      // quando a campanha É de seguidores (`deSeguidores`) — o que, por
+      // construção deste `else`, só acontece quando o mercado é `perfil` (ver
+      // `semMedidaDeSeguidor` acima). É a outra metade da decisão do dono de
+      // 25/09: "custo por visita ao perfil (o julgamento) + seguidor da conta
+      // (o contexto) lado a lado" — nunca um substituindo o outro. Fora deste
+      // caso a chave nem aparece (ver teste "campanha que NÃO é de seguidores
+      // nunca leva custo_por_seguidor_da_conta_reais").
+      ...(deSeguidores ? { custo_por_seguidor_da_conta_reais: custoSeguidorConta } : {}),
     },
     orcamento: {
       reais: orc.reais,
@@ -273,40 +374,78 @@ export function montarMensagens(camp, ins, ads, conjuntos, regua, extra) {
     roas: Array.isArray(ins.purchase_roas) && ins.purchase_roas[0] ? num(ins.purchase_roas[0].value) : null,
     acoes: ins.actions || null,
     valores_acao: ins.action_values || null,
-    anuncios: (ads || []).map((a) => ({
-      ad_id: a.ad_id || a.id || '',
-      nome: a.ad_name || a.adset_name || '',
-      gasto: num(a.spend),
-      ctr_pct: num(a.ctr),
-      cpc: num(a.cpc),
-      impressoes: num(a.impressions),
-      alcance: num(a.reach),
-      frequencia: num(a.frequency),
-      // O RESULTADO deste criativo, no MESMO MERCADO da campanha (descido
-      // pronto, nunca recalculado por anúncio — ver H1 do review de
-      // 2026-07-28). Sem isto o robô mandava pausar criativo de conversão
-      // olhando só CTR e frequência.
-      // CRÍTICO 1 (revisão final da Onda B, 25/09/2026): com interação
-      // declarada, a quantidade tem de ser a DAQUELA interação neste anúncio
-      // (`quantidadesDoInsight`, a MESMA leitura que a ponderada usa) — nunca
-      // `engaj_pub` (engajamento bruto). Sem isto o nível da campanha julgava
-      // num mercado (ex.: salvamento, R$ 48) e o nível do anúncio julgava
-      // noutro (engajamento bruto, R$ 0,12) — 400× de diferença — e todo
-      // criativo aparecia centenas de vezes "abaixo da meta" sem nunca ter
-      // sido medido no mercado certo (ver interacoes.js).
-      resultado: interacaoDeclarada
-        ? quantidadesDoInsight(a)[interacaoDeclarada]
-        : ((alvo && alvo.resultado && GT_METRIC_CATALOG[alvo.resultado])
-          ? GT_METRIC_CATALOG[alvo.resultado].compute(a) : null),
-      // Usamos `custoAtualDoAlvo` (e não `custoDoAlvo` direto) para todo balde,
-      // inclusive engajamento, sempre concordar com o valor usado no --dry e
-      // deixar a porta aberta para a Tarefa 5 (override de objetivo
-      // declarado) sem precisar trocar chamada por chamada depois. Passa
-      // `interacaoDeclarada` aqui também (CRÍTICO 1 acima) — sem ela, o
-      // anúncio caía sempre no `custoDoAlvo` do balde, discordando do mercado
-      // já trocado no nível da campanha três linhas acima em `regua`.
-      custo_por_resultado: custoAtualDoAlvo(balde, a, regua, interacaoDeclarada),
-    })),
+    // MAPA DE CONJUNTO POR ID (Onda C, Tarefa 5, Passo 2, rodada de correção):
+    // só serve para achar o CONJUNTO de cada anúncio quando a campanha é
+    // MISTA (ver `mercadoDoAnuncio` abaixo) — `conjuntosPuros` já é a mesma
+    // lista com objetivo herdado usada para decidir `mercado` acima, então
+    // nunca diverge dela.
+    anuncios: (() => {
+      const conjuntoPorId = {};
+      (conjuntosPuros || []).forEach((cj) => { if (cj && cj.id != null) conjuntoPorId[String(cj.id)] = cj; });
+      return (ads || []).map((a) => {
+        // O MERCADO DESTE ANÚNCIO (Onda C, Tarefa 5, Passo 2): o da CAMPANHA,
+        // descido pronto — NUNCA recalculado por anúncio (ver H1 do review de
+        // 2026-07-28: a Meta OMITE um action_type inteiro quando a contagem é
+        // zero, então um anúncio de campanha de WhatsApp sem conversa nesta
+        // janela ficaria idêntico a um de engajamento puro).
+        //
+        // EXCEÇÃO — campanha MISTA (achado da revisão, rodada de correção):
+        // antes desta correção, TODO anúncio de campanha mista recebia
+        // `resultado`/`custo_por_resultado` NULOS, porque `alvo` (calculado
+        // lá em cima a partir de `mercado==='misto'`) não existe em ALVOS —
+        // mesmo o anúncio pertencendo a um conjunto de mercado único e bem
+        // identificado. A TELA já quebra por conjunto (ver
+        // `mercadoDoGrupoDeAnuncios` em mercados.js e o uso dela em
+        // `_renderGtConjuntos`, tela-de-gestao-trafego.vue); o robô mandando
+        // null para todos divergia dela — exatamente o defeito que esta onda
+        // existe pra matar.
+        //
+        // UMA FONTE SÓ (rodada de correção 1, Tarefa 5b): antes desta
+        // correção o robô tinha a MESMA regra reescrita à mão aqui
+        // (`mercadoDoConjunto` chamado à mão com o conjunto achado por
+        // `adset_id`, caindo num objeto vazio quando não achava), e a cópia já tinha
+        // divergido da tela — sem `adset_id` reconhecível, a tela devolve
+        // `null` ("não sei"), mas `mercadoDoConjunto({})` aqui devolvia
+        // `'desconhecido'` (um MERCADO de verdade, sem entrada em `ALVOS`
+        // hoje só por coincidência). O resultado batia por acidente — bastava
+        // `ALVOS` ganhar uma chave `'desconhecido'` um dia para a divergência
+        // aparecer. `mercadoDoGrupoDeAnuncios` é a MESMA função que a tela
+        // chama: sem `idDoGrupo` (o robô não tem grupo `'_sem_conjunto'`
+        // inventado, só anúncio com/sem `adset_id` reconhecido), o `!conjunto`
+        // dela já cobre os dois jeitos de "não achei o conjunto" — undefined
+        // (não passamos mais o `|| {}`) e ausência de grupo.
+        const mercadoDoAnuncio = mercadoDoGrupoDeAnuncios(mercado, conjuntoPorId[String(a.adset_id)]);
+        const alvoDoAnuncio = alvoDoBalde(mercadoDoAnuncio);
+        return {
+          ad_id: a.ad_id || a.id || '',
+          nome: a.ad_name || a.adset_name || '',
+          gasto: num(a.spend),
+          ctr_pct: num(a.ctr),
+          cpc: num(a.cpc),
+          impressoes: num(a.impressions),
+          alcance: num(a.reach),
+          frequencia: num(a.frequency),
+          // O RESULTADO deste criativo, no mercado do anúncio (ver acima).
+          // Sem isto o robô mandava pausar criativo de conversão olhando só
+          // CTR e frequência.
+          // A DECLARAÇÃO DO DONO VENCE (correção C1 da revisão final da Onda B,
+          // preservada no merge de 26/09): com interação declarada, o anúncio é
+          // medido NO MESMO MERCADO da campanha — curtida contra salvamento é
+          // 400× (R$ 0,12 vs R$ 48), e medir os dois níveis em mercados
+          // diferentes fazia todo criativo parecer ótimo. Sem declaração, vale
+          // o mercado do anúncio (o do conjunto, quando a campanha é mista).
+          resultado: interacaoDeclarada
+            ? quantidadesDoInsight(a)[interacaoDeclarada]
+            : ((alvoDoAnuncio && alvoDoAnuncio.resultado && GT_METRIC_CATALOG[alvoDoAnuncio.resultado])
+            ? GT_METRIC_CATALOG[alvoDoAnuncio.resultado].compute(a) : null),
+          // Usamos `custoAtualDoAlvo` (e não `custoDoAlvo` direto) para todo
+          // mercado, inclusive engajamento, sempre concordar com o valor usado no
+          // --dry e deixar a porta aberta para a Tarefa 5 (override de objetivo
+          // declarado) sem precisar trocar chamada por chamada depois.
+          custo_por_resultado: custoAtualDoAlvo(mercadoDoAnuncio, a, regua, interacaoDeclarada),
+        };
+      });
+    })(),
     dias_no_ar: diasNoAr,
     // Menos de 3 dias: a Meta ainda está na fase de aprendizado, e mexer no
     // orçamento reinicia essa fase. O prompt manda não mexer em quem está
@@ -320,7 +459,7 @@ export function montarMensagens(camp, ins, ads, conjuntos, regua, extra) {
       // a tendência. Passa a MESMA interação declarada de cima: comparar
       // "hoje por salvamento" com "ontem por engajamento" não é tendência, é
       // dois números de mercados diferentes fingindo ser o mesmo par.
-      custo_atual_reais: custoAtualDoAlvo(balde, ex.insAnterior, regua, interacaoDeclarada),
+      custo_atual_reais: custoAtualDoAlvo(mercado, ex.insAnterior, regua, interacaoDeclarada),
       frequencia: num(ex.insAnterior.frequency),
       ctr_pct: num(ex.insAnterior.ctr),
     } : null,
@@ -388,22 +527,16 @@ function num(v) { const n = parseFloat(v); return Number.isFinite(n) ? n : null;
 export function custoAtualDoAlvo(balde, ins, regua, interacaoDeclarada) {
   // Engajamento não é mais caso especial: desde 24/09/2026 ele tem métrica no
   // catálogo (custo_engajamento) como qualquer outro balde. O ramo que chamava
-  // calcularPonderada foi REMOVIDO daqui (não desviado) — a ponderada está em
-  // PAUSA, não apagada: `ponderada.js` continua intacto, e as duas metas
-  // (`metas.engajamento` a antiga, `metas.engajamento_bruto` a nova)
-  // coexistem sem se sobrescreverem.
-  // CORREÇÃO (revisão final da Onda B, correção 2, 25/09/2026): "trocar duas
-  // linhas em alvos.js" era promessa falsa. Como o ramo saiu, não foi
-  // desviado, religar só em alvos.js faz `custoDoAlvo` (o `else` abaixo)
-  // devolver `null` para toda campanha de engajamento sem interação
-  // declarada — o robô mandaria custo nulo ao modelo em vez do custo por
-  // ponto de volta. Um revert de verdade precisa desviar `custoDoAlvo`
-  // (metricas.js) e a leitura do cartão (tela-de-gestao-trafego.vue) para
-  // `calcularPonderada` de novo — são DOIS lugares reais, e nenhum dos dois é
-  // esta função: `custoAtualDoAlvo` só CHAMA `custoDoAlvo` no `else` abaixo,
-  // então corrigido lá ela acompanha sozinha, sem precisar de edição própria.
-  // Um interruptor de verdade para os dois lugares reais está planejado para
-  // a onda seguinte.
+  // calcularPonderada saiu daqui — a ponderada está em PAUSA, não apagada.
+  // CORRIGIDO na Rodada 1 de revisão da Tarefa 4/Onda C (25/09/2026): esta
+  // linha dizia "religar é trocar duas linhas em alvos.js", e isso é falso —
+  // a mesma promessa vazia que o interruptor da Seção 1 (painel-regua.js)
+  // teve no texto antes desta correção. Religar de verdade exige TROCAR O
+  // RAMO REMOVIDO AQUI de volta (não só duas linhas em alvos.js), além da
+  // tela (usaLimiaresDeEngajamento em tela-de-gestao-trafego.vue) voltar a
+  // usar os limiares da Seção 1 para 'post' — nenhuma das duas mudou nesta
+  // tarefa. Ver o comentário de `ligada`/`AVISO_LIGADA_INCOMPLETA` em
+  // painel-regua.js para o que falta.
   // OBJETIVO DECLARADO (Tarefa 5): a declaração do dono VENCE a régua do
   // balde — quando ele disse, campanha a campanha, qual interação ela compra,
   // é essa interação que decide o custo, não o padrão do objetivo.
@@ -435,10 +568,19 @@ import { orcamentoEfetivoDaCampanha } from '../src/ferramentas/gestao-trafego/or
 // A RÉGUA. Sem isto o robô julgava por critério próprio (CTR, CPC,
 // frequência) enquanto a tela julgava pela meta que o dono definiu — dois juízes
 // discordando sobre a mesma campanha. Agora ele responde contra a MESMA régua.
-import { baldeEfetivo, ehDeSeguidores } from '../src/ferramentas/gestao-trafego/baldes.js';
+// `baldeEfetivo` SAIU do caminho do veredito nesta onda (Onda C, Tarefa 3) —
+// quem decide o mercado agora é `mercadoDaCampanha`, logo abaixo. `ehDeSeguidores`
+// continua aqui: é a muleta de seguidores, ortogonal ao mercado.
+import { ehDeSeguidores } from '../src/ferramentas/gestao-trafego/baldes.js';
 import { normalizarRegua, reguaDaConta, metaDoBalde } from '../src/ferramentas/gestao-trafego/regua.js';
 import { alvoDoBalde } from '../src/ferramentas/gestao-trafego/alvos.js';
 import { emVeiculacao } from '../src/ferramentas/gestao-trafego/veiculacao.js';
+// O MERCADO da campanha (Onda C): o que ela COMPRA de verdade, segundo os
+// CONJUNTOS — não mais o objetivo declarado. Ver mercados.js para o porquê:
+// Motoeasy, Mantova e o [FLUXO SHOPPING] da Vessel tinham o MESMO objetivo
+// declarado (OUTCOME_ENGAGEMENT) e compravam três coisas diferentes (conversa
+// de WhatsApp, visita ao perfil, view de vídeo).
+import { mercadoDaCampanha, mercadoDoConjunto, comObjetivoHerdado, mercadoDoGrupoDeAnuncios } from '../src/ferramentas/gestao-trafego/mercados.js';
 // O custo atual de TODO balde, engajamento incluído desde a troca de régua de
 // 24/09/2026 (ver custoAtualDoAlvo acima e ALVOS.engajamento em alvos.js).
 // GT_METRIC_CATALOG: o compute() de cada métrica (leads, conversas, compras...) —
@@ -726,11 +868,41 @@ async function main() {
         // Pedro · WhatsApp" caía em R$ 0,012 por ponto em vez de R$ 7,70 por conversa.
         adsets = (await graphGet(`/act_${adAcc}/adsets`, { fields: 'id,campaign_id,daily_budget,lifetime_budget,effective_status,destination_type,optimization_goal', limit: 500 }, acc.access_token)).data || [];
       } catch (e) { console.log('  act_' + adAcc + ' falhou adsets no Graph: ' + e.message); }
+      // INSIGHTS POR CONJUNTO (Onda C, Tarefa 3): só usados quando a campanha
+      // sai MISTA (dois mercados vivos ao mesmo tempo, ver mercadoDaCampanha
+      // em mercados.js) — é o gasto e o KPI de CADA conjunto que o modelo
+      // recebe pra julgar mercado a mercado, em vez de somar mercados
+      // diferentes numa média sem significado (caso real: [LEADS LOJA]
+      // [mixconversão] da Vessel, WhatsApp + site na mesma campanha). Uma
+      // falha aqui NUNCA derruba a rodada — mesmo padrão dos catches vizinhos
+      // (régua, ads, janela anterior): a campanha mista só fica sem a quebra
+      // por conjunto, e cai em "sem-dados" nela, nunca inventa custo.
+      const adsetFields = 'adset_id,campaign_id,spend,impressions,clicks,ctr,cpc,reach,frequency,actions,action_values';
+      let adsetIns = [];
+      try {
+        adsetIns = (await graphGet(`/act_${adAcc}/insights`, { level: 'adset', fields: adsetFields, time_range: { since, until }, limit: 500 }, acc.access_token)).data || [];
+      } catch (e) { console.log('  act_' + adAcc + ' falhou insights por conjunto no Graph: ' + e.message); }
+      const insPorAdset = {};
+      adsetIns.forEach((i) => { insPorAdset[i.adset_id] = i; });
+      // O conjunto ganha os campos de INSIGHT (spend/actions/action_values) por
+      // cima da CONFIGURAÇÃO já lida acima (destination_type/optimization_goal)
+      // — mesmo objeto, sem sobrescrever o que já tinha. Sem insight nesta
+      // janela (conjunto pausado, ou zero gasto), os campos ficam ausentes:
+      // `custoDoAlvo`/`_gtPerGasto` já leem ausência como null, nunca como zero.
+      adsets.forEach((cj) => {
+        const ins = insPorAdset[cj.id];
+        if (ins) { cj.spend = ins.spend; cj.actions = ins.actions; cj.action_values = ins.action_values; }
+      });
       const conjuntosPorCamp = {};
       adsets.forEach((cj) => { (conjuntosPorCamp[cj.campaign_id] = conjuntosPorCamp[cj.campaign_id] || []).push(cj); });
       // actions/action_values entraram pra dar o RESULTADO de cada anúncio (leads,
       // conversas, compras...) — mesmo GET de sempre, nenhuma chamada nova à API.
-      const adFields = 'ad_id,ad_name,adset_name,campaign_id,spend,impressions,clicks,ctr,cpc,reach,frequency,actions,action_values';
+      // adset_id entrou na rodada de correção da Tarefa 5, Passo 2: é o que
+      // permite achar o CONJUNTO de cada anúncio numa campanha MISTA (ver
+      // `mercadoDoAnuncio` em montarMensagens) — sem ele, todo anúncio de
+      // campanha mista ficava preso ao mercado 'misto' (sem alvo, sem
+      // resultado), mesmo pertencendo a um conjunto de mercado único.
+      const adFields = 'ad_id,ad_name,adset_id,adset_name,campaign_id,spend,impressions,clicks,ctr,cpc,reach,frequency,actions,action_values';
       let adIns = [], adObjs = [];
       try {
         adIns = (await graphGet(`/act_${adAcc}/insights`, { level: 'ad', fields: adFields, time_range: { since, until }, limit: 500 }, acc.access_token)).data || [];
@@ -771,37 +943,57 @@ async function main() {
         const o = orcamentoEfetivoDaCampanha(camp, conjuntosDaCamp);
         const valor = o.centavos != null ? 'R$ ' + (o.centavos / 100).toFixed(2) : 'NÃO LIDO';
         const extra = o.conjuntosIgnorados ? ` (+${o.conjuntosIgnorados} conj. pausado ignorado)` : '';
-        const bal = baldeEfetivo(camp.objective, conjuntosDaCamp);
+        // MESMO mercado que montarMensagens calcula por dentro, não uma cópia
+        // da fórmula (Onda C, Tarefa 3) — uma divergência aqui seria o
+        // diagnóstico mentindo sobre o que o robô realmente vai julgar.
+        const mercadoDry = mercadoDaCampanha(comObjetivoHerdado(camp, conjuntosDaCamp));
         // OBJETIVO DECLARADO (Tarefa 5): valida de novo aqui (mesma guarda que
         // custoAtualDoAlvo aplica por dentro) só para poder MOSTRAR no --dry
         // qual mercado está julgando esta campanha — sem isto a prova seca não
         // teria como confirmar visualmente que a declaração pegou.
         const interDry = interacaoValida(interacaoDeclarada) ? interacaoDeclarada : null;
-        const mt = metaDoBalde(reguaDaContaAtual, interDry || bal);
+        const mt = metaDoBalde(reguaDaContaAtual, interDry || mercadoDry);
         const quem = contaDoPainel ? contaDoPainel.name : '??';
         // A MESMA função que montarMensagens usa por dentro, não uma cópia da
         // fórmula. O --dry é a ferramenta que a gente usa pra conferir se o
         // robô está enxergando certo — uma divergência aqui seria o
         // diagnóstico mentindo sobre o próprio robô (ver custoAtualDoAlvo).
-        // Campanha de seguidores: NÃO imprime custo nenhum — imprimir "custo R$
-        // X" aqui seria a mesma mentira que este trabalho existe pra tirar do
-        // que vai pro modelo (ver ehDeSeguidores/deSeguidores em montarMensagens).
+        // Campanha de seguidores SEM mercado `perfil`: NÃO imprime custo
+        // nenhum — imprimir "custo R$ X" aqui seria a mesma mentira que este
+        // trabalho existe pra tirar do que vai pro modelo (ver
+        // ehDeSeguidores/deSeguidores em montarMensagens). APOSENTADO pra
+        // mercado `perfil` (25/09/2026, rodada de correção 1): a campanha
+        // agora entra no `custoAtualDoAlvo` normal, igual qualquer outro
+        // mercado — só o CONTEXTO da conta (`txtSeguidorConta` abaixo)
+        // continua ligado ao nome, não ao mercado.
         const ehSeguidoresDry = ehDeSeguidores(camp.name);
-        const ca = ehSeguidoresDry ? null : custoAtualDoAlvo(bal, ins, reguaDaContaAtual, interDry);
-        const txtCusto = ehSeguidoresDry ? 'medida indisponível (seguidores)' : (ca == null ? 'custo SEM DADO' : `custo R$ ${ca.toFixed(2)}`);
+        const semMedidaDeSeguidorDry = ehSeguidoresDry && mercadoDry !== 'perfil';
+        // MISTA (Onda C): sem interação declarada, campanha mista não tem
+        // custo ÚNICO de campanha — mesma regra que montarMensagens aplica no
+        // ramo `por_conjunto` (ver dados.regua ali).
+        const ehMistaDry = mercadoDry === 'misto' && !interDry;
+        const ca = (semMedidaDeSeguidorDry || ehMistaDry) ? null : custoAtualDoAlvo(mercadoDry, ins, reguaDaContaAtual, interDry);
+        const txtCusto = semMedidaDeSeguidorDry ? 'medida indisponível (seguidores)'
+          : ehMistaDry ? `misto (${conjuntosDaCamp.length} conj. — julgado por conjunto, sem custo de campanha)`
+          : (ca == null ? 'custo SEM DADO' : `custo R$ ${ca.toFixed(2)}`);
         // TAREFA 6 (Onda B): o número de CONTEXTO da conta, só pra conferir no
         // --dry que a conta certa está sendo lida — nunca aparece como custo
         // DESTA campanha (por isso separado de txtCusto, nunca somado a ele).
+        // Continua ligado a `ehSeguidoresDry` (o NOME), não a `semMedidaDeSeguidorDry`:
+        // o contexto da conta vale tanto quando a medida da campanha está
+        // indisponível quanto quando ela é `perfil` com custo real — as duas
+        // metades da decisão do dono de 25/09 (custo por visita + seguidor da
+        // conta, lado a lado).
         const txtSeguidorConta = ehSeguidoresDry
           ? (custoPorSeguidorContaAtual && custoPorSeguidorContaAtual.confiavel && custoPorSeguidorContaAtual.valor != null
             ? ` · conta: R$ ${custoPorSeguidorContaAtual.valor.toFixed(2)}/seguidor em ${diasJanela}d (estimativa da conta, orgânico incluso)`
             : ` · conta: sem estimativa confiável de custo por seguidor${custoPorSeguidorContaAtual ? ' (' + custoPorSeguidorContaAtual.porque + ')' : ''}`)
           : '';
-        const txtIdx = (!ehSeguidoresDry && ca != null && mt > 0) ? ` (${(ca / mt).toFixed(2)}× a meta)` : '';
-        // Rótulo do mercado impresso na linha: "engajamento" de sempre, ou
-        // "engajamento → salvamentos" quando declarado — é o que a prova seca
-        // (Passo 5 da Tarefa 5) confere a olho nu.
-        const balTxt = interDry ? `${bal} → ${interDry}` : bal;
+        const txtIdx = (!semMedidaDeSeguidorDry && !ehMistaDry && ca != null && mt > 0) ? ` (${(ca / mt).toFixed(2)}× a meta)` : '';
+        // Rótulo do mercado impresso na linha: "conversa" de sempre, ou
+        // "conversa → salvamentos" quando declarado — é o que a prova seca
+        // (Passo 5 da Tarefa 3/5) confere a olho nu.
+        const balTxt = interDry ? `${mercadoDry} → ${interDry}` : mercadoDry;
         // TENDÊNCIA no --dry (rodada de correção 1, 24/09/2026): sem isto não
         // havia como conferir que a janela anterior está chegando de verdade
         // sem rodar o modelo — e a rodada real gasta Opus e grava no banco.
@@ -810,7 +1002,7 @@ async function main() {
         // anterior OU sem custo anterior, não imprime nada a mais — "antes —"
         // só poluiria a linha sem dizer nada de novo.
         const insAnterior = insAntByCamp[camp.id];
-        const caAnt = insAnterior ? custoAtualDoAlvo(bal, insAnterior, reguaDaContaAtual, interDry) : null;
+        const caAnt = (insAnterior && !ehMistaDry && !semMedidaDeSeguidorDry) ? custoAtualDoAlvo(mercadoDry, insAnterior, reguaDaContaAtual, interDry) : null;
         const txtTend = (ca != null && caAnt != null)
           ? ` · antes R$ ${caAnt.toFixed(2)} ${ca > caAnt ? '▲' : (ca < caAnt ? '▼' : '=')}`
           : '';

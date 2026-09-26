@@ -83,18 +83,36 @@
     <!-- Casca de abas: só mostra/esconde painel via _gtTrocarAba, nunca
          remonta a lista de campanhas (remontar chamaria a Meta de novo). -->
     <div class="pnd-abas" role="tablist">
-      <button class="pnd-aba ativa" id="pnd-aba-campanhas" role="tab" onclick="_gtTrocarAba('campanhas')">Campanhas</button>
+      <!-- O SELO DE CONTAGEM (pnd-camp-n) so aparece no CELULAR (CSS abaixo) -
+           e o que sobra do titulo "N Campanhas" quando ele some do cabecalho
+           da lista no celular (Onda C, topo do celular). No computador o
+           titulo continua mostrando o numero por extenso; o selo aqui ficaria
+           redundante e some. _renderGtCampaigns() escreve o numero nele. -->
+      <button class="pnd-aba ativa" id="pnd-aba-campanhas" role="tab" onclick="_gtTrocarAba('campanhas')">Campanhas<span class="pnd-aba-contagem" id="pnd-camp-n"></span></button>
       <button class="pnd-aba" id="pnd-aba-fila" role="tab" onclick="_gtTrocarAba('fila')">Fila<span class="pnd-aba-n" id="pnd-fila-n" hidden></span></button>
       <button class="pnd-aba" id="pnd-aba-regua" role="tab" onclick="_gtTrocarAba('regua')">A régua</button>
       <!-- Criar campanha do zero. Fica na barra de abas por ser a única ação da
            tela que NÃO é sobre uma campanha que já existe — pendurá-la num card
            seria dizer que ela depende de um. Só aparece para quem pode editar;
-           quem só olha não vê botão que não pode usar. -->
-      <button class="pnd-aba-acao" id="gt-btn-nova" role="button" hidden onclick="_gtNovoAbrir()">+ Nova campanha</button>
+           quem só olha não vê botão que não pode usar.
+           NO CELULAR (Onda C, topo do celular) o texto vira SÓ ícone — o rótulo
+           por extenso ("+ Nova campanha") empurrava este botão pra própria
+           linha inteira, sozinho (117px medidos só nesta barra). O texto
+           continua existindo para leitor de tela via aria-label/title; o
+           padrão que proíbe corte de rótulo é sobre TEXTO VISÍVEL, e aqui não
+           sobra rótulo cortado — ele nunca aparece truncado, some inteiro. -->
+      <button class="pnd-aba-acao" id="gt-btn-nova" role="button" hidden onclick="_gtNovoAbrir()" aria-label="Nova campanha" title="Nova campanha">
+        <svg class="pnd-aba-acao-ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        <span class="pnd-aba-acao-txt">Nova campanha</span>
+      </button>
       <!-- O HISTÓRICO fica colado no "+ Nova campanha" porque é a mesma
            conversa: o que foi começado aqui. Mesmo gate (`hidden` some junto),
-           porque quem não pode criar não tem o que ver nesta lista. -->
-      <button class="pnd-aba-acao" id="gt-btn-hist" role="button" hidden onclick="_gtHistAbrir()">Histórico</button>
+           porque quem não pode criar não tem o que ver nesta lista. Mesmo
+           tratamento de ícone no celular, mesmo motivo. -->
+      <button class="pnd-aba-acao" id="gt-btn-hist" role="button" hidden onclick="_gtHistAbrir()" aria-label="Histórico" title="Histórico">
+        <svg class="pnd-aba-acao-ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 15"/></svg>
+        <span class="pnd-aba-acao-txt">Histórico</span>
+      </button>
     </div>
 
     <!-- #gt-painel-campanhas é "display:contents" (ver <style> abaixo): ele só
@@ -197,7 +215,7 @@ import { montarSecaoPosicionamentos } from './posicionamentos.js'
 import { montarFaixaDeSugestoes } from './sugestoes-de-interesse.js'
 // Aba "A régua" (métrica ponderada): painel puro + os módulos que leem/normalizam
 // a régua vinda do banco (ver painel-regua.js, ponderada.js, regua.js).
-import { montarPainelRegua } from './painel-regua.js'
+import { montarPainelRegua, ROTULO_MERCADO } from './painel-regua.js'
 // A FILA: o que o robô propôs e ainda espera decisão. As regras (o que entra, o
 // silêncio de 7 dias, a repartição por conjunto) moram em fila.js, puro e
 // testado; painel-fila.js só monta a tela.
@@ -259,8 +277,8 @@ import { deltaDeSeguidoresPorHora, seguidoresNoPeriodo } from '../meta-ads/relat
 // `custoDoAlvo` daqui, além de `GT_METRIC_CATALOG`. Os demais exports do
 // módulo (_gtNum, _gtActionVal, _GT_* etc.) são detalhe interno do próprio
 // catálogo — nem a tela nem o robô os chamam direto.
-import { GT_METRIC_CATALOG, GT_BALDE_PADRAO } from './metricas.js'
-import { normalizarRegua, metaDoBalde, reguaDaConta, mesclarMetasDaConta } from './regua.js'
+import { GT_METRIC_CATALOG, GT_BALDE_PADRAO, insightDoConjunto, custoDoAlvo } from './metricas.js'
+import { normalizarRegua, metaDoBalde, reguaDaConta, mesclarMetasDaConta, ponderadaLigada } from './regua.js'
 // calcularPonderada saiu daqui em 24/09/2026: a ponderada não decide mais o
 // veredito do cartão (ver comentário perto dos chips removidos, mais abaixo).
 // Ela continua existindo em ponderada.js pra quem for religá-la em alvos.js.
@@ -271,6 +289,12 @@ import { custoEngajamentoPraticado } from './custo-praticado.js'
 // Alvo de cada tipo de campanha (custo por lead/conversa/venda/visita/mil
 // pessoas, ou por engajamento no caso de engajamento) — ver alvos.js.
 import { alvoDoBalde, avaliarAlvo } from './alvos.js'
+// O MERCADO da campanha (Onda C, Tarefa 5): o que ela COMPRA, segundo o que a
+// Meta afirma nos CONJUNTOS — não o objetivo declarado. `alvoDoBalde`/
+// `metaDoBalde` (acima) hoje só têm alvo para as chaves de MERCADOS, nunca
+// mais para nome de balde antigo ('engajamento','mensagens'...) — ver o
+// cabeçalho de mercados.js e alvos.js para o porquê.
+import { mercadoDaCampanha, mercadoDoConjunto, gastoPorMercado, comObjetivoHerdado, mercadoDoGrupoDeAnuncios } from './mercados.js'
 // Fase 3 — objetivo por interação: o dono DECLARA, campanha a campanha (ou
 // anúncio a anúncio) de engajamento, qual interação aquilo está comprando
 // (curtida/comentário/salvamento/compartilhamento). Sem declarar, nada muda —
@@ -450,6 +474,7 @@ let _gtAdsets=[];        // conjuntos de anúncios da conta (Graph /adsets), com
 // não mostra número nenhum (ver custoPorSeguidorDaConta em seguidores.js).
 let _gtCustoSeguidorConta=null;
 let _gtRecolhido=false;  // botão "recolher/expandir tudo": estado padrão dos painéis ao (re)desenhar
+let _gtFiltrosAbertos=false;  // painel de filtro/busca do celular (Onda C): fechado por padrão a cada (re)desenho
 let _gtStatusFilter='all';
 let _gtAbaAtiva='campanhas';
 // Seleção múltipla para PAUSAR EM MASSA. Mora FORA do render de propósito: a
@@ -548,7 +573,12 @@ function _buildGtDropdown(){
     item.style.cssText='padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;transition:background .12s;';
     item.addEventListener('mouseenter',()=>item.style.background='var(--surface2)');
     item.addEventListener('mouseleave',()=>item.style.background='');
-    item.innerHTML=`<span style="font-family:var(--fonte-principal);font-size:calc(11px*var(--gt-fs,1.3));color:var(--muted);min-width:18px;">${idx+1}</span><div style="flex:1;min-width:0;"><div style="font-family:var(--fonte-principal);font-size:calc(12px*var(--gt-fs,1.3));font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${a.display_name||a.name||'Conta '+idx}</div><div style="font-family:var(--fonte-principal);font-size:calc(10px*var(--gt-fs,1.3));color:var(--muted);">${_maFmt(a.monthSpend||0,0)} gastos / mês</div></div><div style="font-family:var(--fonte-principal);font-size:calc(13px*var(--gt-fs,1.3));font-weight:700;color:${balColor};flex-shrink:0;">${balTxt}</div>`;
+    // NOME DA CONTA nunca corta (PADRAO-DA-CENTRAL item 5, Onda C - topo do
+    // celular): era `overflow:hidden;text-overflow:ellipsis;white-space:
+    // nowrap`. O `<div>` que envolve o nome já tem `flex:1;min-width:0`, que é
+    // o que deixa o texto encolher até precisar quebrar em vez de ser
+    // espremido a 0px quando só se tira o ellipsis.
+    item.innerHTML=`<span style="font-family:var(--fonte-principal);font-size:calc(11px*var(--gt-fs,1.3));color:var(--muted);min-width:18px;">${idx+1}</span><div style="flex:1;min-width:0;"><div style="font-family:var(--fonte-principal);font-size:calc(12px*var(--gt-fs,1.3));font-weight:600;color:var(--text);overflow-wrap:anywhere;">${a.display_name||a.name||'Conta '+idx}</div><div style="font-family:var(--fonte-principal);font-size:calc(10px*var(--gt-fs,1.3));color:var(--muted);">${_maFmt(a.monthSpend||0,0)} gastos / mês</div></div><div style="font-family:var(--fonte-principal);font-size:calc(13px*var(--gt-fs,1.3));font-weight:700;color:${balColor};flex-shrink:0;">${balTxt}</div>`;
     item.addEventListener('click',e=>{e.stopPropagation();_gtCurAcc=a;const nm=document.getElementById('gt-acc-name');if(nm)nm.textContent=a.display_name||a.name||'—';_gtPickerOpen=false;const d=document.getElementById('gt-acc-dropdown');if(d)d.style.display='none';loadGtData();});
     drop.appendChild(item);
   });
@@ -1617,34 +1647,58 @@ async function _gtSalvarRegua(nova, botao) {
 
 // Campanha de maior gasto na tela, usada como exemplo vivo da aba da régua.
 // Precisa escolher o MESMO alvo que o cartão da campanha escolheria (ver bloco
-// "ALVO DO OBJETIVO" acima) — inclusive o desvio de campanha-de-mensagem —
-// senão o exemplo vivo ensina a conta errada pro dono (C1 do review final,
-// 2026-07-28: nesta conta, a campanha de maior gasto é de WhatsApp).
-// UM exemplo por OBJETIVO que a conta realmente roda — não só a campanha de maior
+// "O ALVO DO MERCADO" em _renderGtCampaigns) — senão o exemplo vivo ensina a
+// conta errada pro dono (C1 do review final, 2026-07-28: nesta conta, a
+// campanha de maior gasto é de WhatsApp).
+// UM exemplo por MERCADO que a conta realmente roda — não só a campanha de maior
 // gasto. O dono pediu isso depois de olhar a régua: ele precisa ver como cada tipo
-// de campanha será julgado, não só o tipo da campanha mais cara. De cada balde vai
-// a campanha de MAIOR GASTO, que é a mais representativa do dinheiro dele.
+// de campanha será julgado, não só o tipo da campanha mais cara. De cada mercado
+// vai a campanha de MAIOR GASTO, que é a mais representativa do dinheiro dele.
+//
+// REINDEXADO POR MERCADO (Onda C, Tarefa 5): até aqui esta função escolhia por
+// BALDE (`_gtBalde`/objetivo declarado, com o mesmo desvio de mensagem do
+// cartão) e indexava `alvoDoBalde`/`metaDoBalde` por esse balde — a MESMA
+// classe de defeito descrita no brief desta tarefa para o cartão (ALVOS agora
+// é por mercado; nome de balde antigo não bate mais e cai no atalho de
+// `metaDoBalde`, ver o comentário grande de `metaAlvo` em
+// _renderGtCampaigns). `painel-regua.js` (blocoDeExemplo) já esperava mercado
+// — lê `ROTULO_MERCADO[chave]` — só esta função ainda mandava balde.
 function _gtExemplosParaRegua() {
-  const porBalde = {};
+  const porMercado = {};
   const porInteracao = {};
+  // Para HERDAR o objetivo da campanha nos conjuntos (correção C1, rodada de
+  // correção 1) — ver o comentário completo em comObjetivoHerdado
+  // (mercados.js). Sem isto, o desempate de OFFSITE_CONVERSIONS (lead x
+  // venda) nunca disparava aqui e o exemplo vivo podia ensinar a conta errada.
+  const campMapExemplo = {};
+  (_gtCampaigns || []).forEach((c) => { campMapExemplo[c.id] = c; });
   for (const linha of _gtInsights) {
-    const baldeBruto = _gtBalde(linha.objective);
-    // Mesmo criterio do cartao: quem diz se e WhatsApp e o CONJUNTO, nao a acao.
-    const conjuntosDaLinha = (_gtAdsets||[]).filter(x => String(x.campaign_id||'') === String(linha.campaign_id||''));
-    // Destino WhatsApp vale pra QUALQUER objetivo (ver baldeEfetivo em baldes.js):
-    // campanha de 'leads' que compra conversa e medida por conversa.
-    const temMensagem = ehDeWhatsapp(conjuntosDaLinha);
-    const balde = temMensagem ? 'mensagens' : baldeBruto;
-    if (alvoDoBalde(balde)) {
-      const atual = porBalde[balde];
-      if (!atual || Number(linha.spend || 0) > Number(atual.spend || 0)) porBalde[balde] = linha;
+    // Mesmo criterio do cartao: quem diz o que a campanha COMPRA e o CONJUNTO
+    // (mercadoDaCampanha), nao o objetivo declarado (ver mercados.js).
+    const conjuntosDaLinha = comObjetivoHerdado(
+      campMapExemplo[linha.campaign_id],
+      (_gtAdsets||[]).filter(x => String(x.campaign_id||'') === String(linha.campaign_id||'')),
+    );
+    const mercado = mercadoDaCampanha(conjuntosDaLinha);
+    // 'misto' e 'desconhecido' não têm alvo (alvoDoBalde devolve null pros
+    // dois, de propósito) — a campanha simplesmente não vira exemplo, o que é
+    // mais correto do que forçar uma régua que não existe pra ela.
+    if (alvoDoBalde(mercado)) {
+      const atual = porMercado[mercado];
+      if (!atual || Number(linha.spend || 0) > Number(atual.spend || 0)) porMercado[mercado] = linha;
     }
     // Exemplo POR INTERAÇÃO: a régua tem meta por curtida/comentário/salvamento/
     // compartilhamento, então cada uma dessas metas também precisa do seu "como
     // fica na prática" — senão o dono digita um número sem ver o efeito.
-    // Escolhe a campanha com MAIS daquela interação (a mais representativa dela),
-    // e só entre campanhas de engajamento, que é onde a declaração vale.
-    if (balde === 'engajamento') {
+    // Escolhe a campanha com MAIS daquela interação (a mais representativa dela).
+    // Elegibilidade é a MESMA do selo do cartão (ver `elegivelSeloObj` em
+    // _renderGtCampaigns): balde do OBJETIVO DECLARADO igual a 'engajamento' e
+    // campanha que não é de mensagem — de propósito NÃO é `mercado === 'post'`
+    // (a interação declarada é uma feature à parte da Fase 3, que continua
+    // amarrada ao balde antigo por decisão de produto, não ao mercado novo).
+    const baldeBruto = _gtBalde(linha.objective);
+    const temMensagem = ehDeWhatsapp(conjuntosDaLinha);
+    if (baldeBruto === 'engajamento' && !temMensagem) {
       const q = quantidadesDoInsight(linha);
       for (const chave of Object.keys(INTERACOES)) {
         if (!(q[chave] > 0)) continue;                       // zero não vira exemplo
@@ -1654,22 +1708,23 @@ function _gtExemplosParaRegua() {
     }
   }
   const exemplos = [];
-  for (const [balde, linha] of Object.entries(porBalde)) {
-    const alvo = alvoDoBalde(balde);
+  for (const [mercado, linha] of Object.entries(porMercado)) {
+    const alvo = alvoDoBalde(mercado);
     exemplos.push({
       tipo: 'objetivo',
-      chave: balde,
+      chave: mercado,
       rotulo: alvo.rotulo,
       nome: linha.campaign_name || 'sua campanha',
-      balde,
+      balde: mercado,
       quantidades: quantidadesDoInsight(linha),
-      // Custo pronto para todo balde — inclusive engajamento, que desde
-      // 24/09/2026 tem métrica própria no catálogo (custo_engajamento) como
-      // qualquer outro (ver ALVOS.engajamento em alvos.js). Antes disso
+      // Custo pronto para todo mercado — inclusive 'post' (o mais parecido
+      // com o antigo balde de engajamento), que tem métrica própria no
+      // catálogo (custo_engajamento, ver ALVOS.post em alvos.js). Antes disso
       // `alvo.metrica === 'ponderada'` desviava engajamento para um recálculo
       // ao vivo em painel-regua.js; a condição nunca mais é falsa para nenhum
-      // balde, então o desvio saiu — se a ponderada for religada em alvos.js,
-      // `ehPonderada` em painel-regua.js volta a valer e recalcula de novo.
+      // mercado, então o desvio saiu — se a ponderada for religada de verdade
+      // (Tarefa T4b, pendente), `ehPonderada` em painel-regua.js volta a
+      // valer e recalcula de novo.
       custo: _gtMetricValue(alvo.metrica, linha),
       detalhe: alvo.resultado
         ? [{ rotulo: GT_METRIC_CATALOG[alvo.resultado]?.label || alvo.resultado,
@@ -1684,7 +1739,7 @@ function _gtExemplosParaRegua() {
       rotulo: INTERACOES[chave].rotuloCusto,
       titulo: INTERACOES[chave].rotulo,
       nome: linha.campaign_name || 'sua campanha',
-      balde: 'engajamento',
+      balde: 'post',
       quantidades: q,
       custo: custoDaInteracao(q, chave),
       detalhe: [{ rotulo: INTERACOES[chave].rotulo, valor: qtd }],
@@ -2224,6 +2279,35 @@ function _gtSeloObjetivoEl(alvoId,nivel,elegivel){
   if(podeEditar)chip.addEventListener('click',e=>{e.stopPropagation();_gtAbrirMenuObjetivo(chip,alvoId,nivel);});
   return chip;
 }
+// SELO do custo por seguidor DA CONTA (Tarefa 6, Onda B), em HTML pronto —
+// FONTE ÚNICA usada no cabeçalho da lista (sempre que a conta tem campanha de
+// seguidores em veiculação) e, desde a Tarefa 5 (Onda C), também DENTRO do
+// cartão de cada campanha de mercado 'perfil' — como CONTEXTO ao lado do
+// custo por visita ao perfil de VERDADE daquela campanha, nunca o
+// substituindo (a Meta não atribui seguidor a uma campanha, só à conta
+// inteira — ver seguidores.js). Só devolve algo com dado CONFIÁVEL (nunca
+// traço, nunca zero: sem confiança, o selo nem existe); string vazia quando
+// não há o que mostrar, pra quem chama decidir se anexa ou não.
+// Dados crus por trás do selo (Onda C, rodada 2): separado do HTML pronto
+// porque o cabeçalho da lista, no celular, precisa do AVISO por extenso pra
+// abrir num toque — não dá pra tirar o texto de dentro de um `title`. As duas
+// outras chamadas (dentro do cartão da campanha) continuam usando o HTML
+// pronto, com `title`, sem mudança nenhuma.
+function _gtCustoSeguidorContaDados(){
+  if(!(_gtCustoSeguidorConta&&_gtCustoSeguidorConta.confiavel&&_gtCustoSeguidorConta.valor!=null))return null;
+  const fmtDia=(iso)=>{const[a,m,d]=iso.split('-');return `${d}/${m}`;};
+  const jan=_gtCustoSeguidorConta.since===_gtCustoSeguidorConta.until
+    ?fmtDia(_gtCustoSeguidorConta.since)
+    :`${fmtDia(_gtCustoSeguidorConta.since)}–${fmtDia(_gtCustoSeguidorConta.until)}`;
+  const valorFmt=_gtCustoSeguidorConta.valor.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const aviso=`Estimativa da CONTA INTEIRA no período ${jan} — inclui seguidor orgânico (não há como separar) e NÃO é o custo de nenhuma campanha isolada: gasto de todas as campanhas de seguidores dividido pelo ganho de seguidores da conta.`;
+  return { jan, valorFmt, aviso, texto:`≈ R$ ${valorFmt}/seguidor (conta, ${jan})` };
+}
+function _gtSeloCustoSeguidorContaHtml(){
+  const d=_gtCustoSeguidorContaDados();
+  if(!d)return '';
+  return `<span class="selo selo-info" title="${d.aviso}">${d.texto}</span>`;
+}
 function _renderGtCampaigns(col,campaigns,insights,adInsights,adsets){
   // Campanha ATIVA sem gasto no período não vem do /insights (spend > 0) e
   // sumia da lista — ver sem-gasto.js. Entra zerada, com o selo "Aguardando
@@ -2258,11 +2342,35 @@ function _renderGtCampaigns(col,campaigns,insights,adInsights,adsets){
   // celular — o flex item não encolhe por padrão (min-width:auto), e o texto
   // ficava CORTADO pela borda do cartão, não visível nem com quebra de linha.
   const ttlWrap=document.createElement('div');ttlWrap.style.cssText='display:flex;align-items:center;gap:10px;flex-wrap:wrap;min-width:0;';
-  const ttl=document.createElement('div');ttl.style.cssText='font-family:var(--fonte-principal);font-size:calc(12px*var(--gt-fs,1.3));font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--text);';
+  // className (Onda C, topo do celular): o CSS some com este título no
+  // celular — a contagem passa a morar no selo da aba "Campanhas"
+  // (#pnd-camp-n, logo abaixo), pra não repetir o mesmo número duas vezes.
+  const ttl=document.createElement('div');ttl.className='gt-camp-titulo-n';ttl.style.cssText='font-family:var(--fonte-principal);font-size:calc(12px*var(--gt-fs,1.3));font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--text);';
   ttl.textContent=sorted.length+' Campanhas';
-  const aiTag=document.createElement('div');
+  // O MESMO número vai pro selo da aba (só aparece no celular, via CSS).
+  {
+    const campN=document.getElementById('pnd-camp-n');
+    if(campN)campN.textContent=String(sorted.length);
+  }
+  // OS DOIS SELOS VIRAM ÍCONE COM TOQUE NO CELULAR (Onda C, rodada 2, pedido
+  // do dono). No computador o texto continua por extenso, do jeito que
+  // sempre foi (CSS só troca a exibição abaixo de 640px) — o botão é o MESMO
+  // elemento nos dois tamanhos, só o que fica visível dentro dele muda.
+  // SEM `title`: tela de toque não tem hover (mesma lição já registrada em
+  // painel-fila.js) — a explicação inteira mora no modal que abre no clique/
+  // toque (`_gtConfirm`, o mesmo modal do botão "?" desta ferramenta),
+  // nunca só num atributo que só o mouse alcança.
+  const aiTag=document.createElement('button');
+  aiTag.type='button';
+  aiTag.className='gt-selo-toque';
+  aiTag.setAttribute('aria-label','IA em tempo real — o que isso quer dizer');
   aiTag.style.cssText='font-family:var(--fonte-principal);font-size:calc(9px*var(--gt-fs,1.3));font-weight:700;letter-spacing:.5px;padding:2px 7px;border-radius:20px;background:var(--accent-light);color:var(--accent-forte);text-transform:uppercase;';
-  aiTag.textContent='✦ IA em tempo real';
+  aiTag.innerHTML='<span class="gt-selo-toque-ic" aria-hidden="true">✦</span><span class="gt-selo-toque-txt">IA em tempo real</span>';
+  aiTag.addEventListener('click',()=>_gtConfirm(
+    'IA em tempo real',
+    'Os números desta lista são recalculados a cada atualização, direto da Meta Ads — não é uma foto salva de antes. As sugestões de ação da IA (subir orçamento, pausar, manter) ficam na aba Fila; aqui é só o retrato ao vivo da conta.',
+    {okOnly:true}
+  ));
   // A pastilha da lista (Onda 4a): só o ícone, antes do título que já existia.
   ttlWrap.insertAdjacentHTML('beforeend',pastilha('lista'));
   ttlWrap.appendChild(ttl);ttlWrap.appendChild(aiTag);
@@ -2272,16 +2380,24 @@ function _renderGtCampaigns(col,campaigns,insights,adInsights,adsets){
   // texto solto que possa discordar da conta de verdade (foi exatamente esse
   // descompasso, "hoje" mostrando quase um mês, que deu retrabalho antes
   // nesta onda).
-  if(_gtCustoSeguidorConta&&_gtCustoSeguidorConta.confiavel&&_gtCustoSeguidorConta.valor!=null){
-    const fmtDia=(iso)=>{const[a,m,d]=iso.split('-');return `${d}/${m}`;};
-    const jan=_gtCustoSeguidorConta.since===_gtCustoSeguidorConta.until
-      ?fmtDia(_gtCustoSeguidorConta.since)
-      :`${fmtDia(_gtCustoSeguidorConta.since)}–${fmtDia(_gtCustoSeguidorConta.until)}`;
-    const seloSeguidor=document.createElement('div');
-    seloSeguidor.className='selo selo-info';
-    seloSeguidor.textContent=`≈ R$ ${_gtCustoSeguidorConta.valor.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}/seguidor (conta, ${jan})`;
-    seloSeguidor.title='Estimativa da CONTA INTEIRA no período '+jan+' — inclui seguidor orgânico (não há como separar) e NÃO é o custo de nenhuma campanha isolada: gasto de todas as campanhas de seguidores dividido pelo ganho de seguidores da conta.';
-    ttlWrap.appendChild(seloSeguidor);
+  {
+    const d=_gtCustoSeguidorContaDados();
+    if(d){
+      const btn=document.createElement('button');
+      btn.type='button';
+      btn.className='gt-selo-toque selo selo-info';
+      btn.setAttribute('aria-label','Custo por seguidor da conta — o que este número significa');
+      // O ícone reaproveita o "≈" que já abre o texto — o mesmo sinal de
+      // estimativa, só que agora também é o alvo de toque.
+      btn.innerHTML='<span class="gt-selo-toque-ic" aria-hidden="true">≈</span>'
+        +`<span class="gt-selo-toque-txt">${_gtEsc(d.texto)}</span>`;
+      // O AVISO (estimativa da conta inteira, inclui orgânico, a janela) vai
+      // INTEIRO pro modal — é o mesmo texto que morava no `title`, agora
+      // acessível no toque. Nunca pode sumir: é o que evita confundir
+      // estimativa com medida de campanha.
+      btn.addEventListener('click',()=>_gtConfirm('Custo por seguidor (conta)', d.aviso, {okOnly:true}));
+      ttlWrap.appendChild(btn);
+    }
   }
   const searchInp=document.createElement('input');
   searchInp.type='text';searchInp.placeholder='Buscar campanha…';
@@ -2309,6 +2425,37 @@ function _renderGtCampaigns(col,campaigns,insights,adInsights,adsets){
     });
     filterBtns[fd.v]=fb;filterWrap.appendChild(fb);
   });
+  // PAINEL DE FILTRO E BUSCA (Onda C, topo do celular): busca + os três
+  // filtros pesavam 155px de cabeçalho no celular — sozinhos ocupavam duas
+  // linhas cheias, empilhados. `filterWrap` e `searchInp` continuam sendo os
+  // MESMOS elementos de sempre (mesma lógica, mesmos listeners); só ganham
+  // um envelope que no celular fica fechado por padrão atrás de um botão de
+  // funil, e no computador não muda nada — o CSS só esconde/abre no celular.
+  const filtrosPanel=document.createElement('div');
+  filtrosPanel.className='gt-camp-filtros-painel';
+  filtrosPanel.appendChild(filterWrap);
+  filtrosPanel.appendChild(searchInp);
+  const filtroToggleBtn=document.createElement('button');
+  filtroToggleBtn.type='button';
+  filtroToggleBtn.className='gt-camp-filtro-toggle';
+  filtroToggleBtn.setAttribute('aria-label','Filtrar e buscar campanhas');
+  filtroToggleBtn.title='Filtrar e buscar campanhas';
+  filtroToggleBtn.innerHTML='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="6" x2="20" y2="6"/><line x1="7" y1="12" x2="17" y2="12"/><line x1="10" y1="18" x2="14" y2="18"/></svg>';
+  // _gtFiltrosAbertos é lembrado entre redesenhos, mesmo padrão de
+  // _gtRecolhido — senão o painel fecharia sozinho a cada ↻ ou troca de aba.
+  const atualizaFiltroToggle=()=>{
+    // "ativo" pinta o botão quando HÁ algo filtrando (mesmo com o painel
+    // fechado) — é o jeito de o dedo saber que a lista não mostra tudo sem
+    // precisar abrir o painel pra conferir.
+    filtroToggleBtn.classList.toggle('ativo',_gtStatusFilter!=='all'||!!searchInp.value);
+    filtrosPanel.classList.toggle('aberta',_gtFiltrosAbertos);
+  };
+  atualizaFiltroToggle();
+  filtroToggleBtn.addEventListener('click',()=>{_gtFiltrosAbertos=!_gtFiltrosAbertos;atualizaFiltroToggle();});
+  // Some junto aos listeners que JÁ existem (não troca nenhum): só atualiza
+  // a pintura do botão quando o filtro ou a busca mudam.
+  filterDefs.forEach(fd=>filterBtns[fd.v].addEventListener('click',atualizaFiltroToggle));
+  searchInp.addEventListener('input',atualizaFiltroToggle);
   // Recolher/expandir TUDO (conjuntos e anúncios de todas as campanhas).
   // _gtRecolhido é lembrado entre redesenhos: quem recolheu tudo não vê
   // tudo abrir de novo a cada ↻ ou troca de filtro.
@@ -2333,7 +2480,7 @@ function _renderGtCampaigns(col,campaigns,insights,adInsights,adsets){
     card.querySelectorAll('.gt-chevron,.gt-set-chevron').forEach(c=>c.classList.toggle('open',!_gtRecolhido));
   });
   const hdrRight=document.createElement('div');hdrRight.style.cssText='display:flex;align-items:center;gap:8px;flex-wrap:wrap;';
-  hdrRight.appendChild(collapseBtn);hdrRight.appendChild(filterWrap);hdrRight.appendChild(searchInp);
+  hdrRight.appendChild(collapseBtn);hdrRight.appendChild(filtroToggleBtn);hdrRight.appendChild(filtrosPanel);
   hdr.appendChild(ttlWrap);hdr.appendChild(hdrRight);
   card.appendChild(hdr);
   // Barra de objetivos: só aparece quando há mais de um na conta — com um só,
@@ -2358,6 +2505,19 @@ function _renderGtCampaigns(col,campaigns,insights,adInsights,adsets){
     // mesma linha que só apareciam quando a lista era montada.
     for(const o of objs) barra.appendChild(faz(o,_gtRotuloObjetivo(o),contagem[o]));
     card.appendChild(barra);
+    // A TIRA ROLA NO CELULAR (rodada 2): o chip ATIVO precisa estar visível
+    // quando ela abre — sem isto, filtrar por um objetivo no fim da lista
+    // (ex.: "Vendas") deixava o chip escolhido fora da área visível, sem
+    // pista de qual filtro estava ligado. Só mexe quando HÁ filtro (o
+    // "Todos" é sempre o primeiro chip, já visível sem rolar nada).
+    // requestAnimationFrame espera o layout de verdade (larguras reais)
+    // antes de calcular pra onde rolar.
+    if(_gtFiltroObjetivo){
+      requestAnimationFrame(()=>{
+        const ativo=barra.querySelector('.gt-obj-filtro.ativo');
+        if(ativo)ativo.scrollIntoView({inline:'center',block:'nearest'});
+      });
+    }
   }
   const list=document.createElement('div');list.className='gt-camp-list';card.appendChild(list);
   const tok=_gtCurAcc?.id;
@@ -2380,10 +2540,45 @@ function _renderGtCampaigns(col,campaigns,insights,adInsights,adsets){
       const daily=camp?.daily_budget?parseFloat(camp.daily_budget)/100:null;
       const ads=adByCamp[ins.campaign_id]||[];
       // Onde mora o orçamento desta campanha? (módulo puro, testado)
-      const conjuntos=setsByCamp[String(ins.campaign_id)]||[];
+      // HERDA O OBJETIVO DA CAMPANHA (correção C1, rodada de correção 1,
+      // 25/09/2026): a Graph só devolve `objective` na CAMPANHA — o conjunto
+      // cru (`setsByCamp`) nunca tem esse campo —, mas `mercadoDoConjunto` usa
+      // objetivo como ÚLTIMO desempate (OFFSITE_CONVERSIONS: lead x venda).
+      // Sem herdar, esse desempate nunca disparava vindo da tela, e a MESMA
+      // campanha podia sair `site_venda` aqui e `lead` no robô — comparando
+      // custo por venda (meta ~R$180) contra custo por lead (meta ~R$12). A
+      // função é a MESMA do robô (comObjetivoHerdado, movida para
+      // mercados.js nesta rodada) — nunca duas cópias.
+      const conjuntos=comObjetivoHerdado(camp,setsByCamp[String(ins.campaign_id)]||[]);
       const nivelOrc=detectarNivelOrcamento(camp,conjuntos);
       const hier=montarHierarquia(conjuntos,ads);
       const kpiObjective=ins.objective||camp?.objective||'';
+      // O MERCADO DA CAMPANHA (Onda C, Tarefa 5): o que ela COMPRA segundo o
+      // que a Meta afirma nos CONJUNTOS — não o objetivo declarado. O chip de
+      // objetivo (`ma-obj-chip`, abaixo) continua como INFORMAÇÃO; quem
+      // decide o KPI e a cor a partir daqui é o mercado. 'misto' quando os
+      // conjuntos desta campanha compram mercados DIFERENTES ao mesmo tempo
+      // (decisão do dono, 25/09/2026 — o caso real é a [LEADS LOJA]
+      // [mixconversão] da Vessel): nenhum custo único, o cabeçalho quebra o
+      // GASTO por mercado (gastoPorMercado, logo abaixo) e cada conjunto
+      // ganha a própria régua dentro do card já expandido (ver
+      // _renderGtConjuntos).
+      //
+      // USA OS CONJUNTOS VIVOS DE `hier`, NÃO A LISTA CRUA (correção C2,
+      // rodada de correção 1): `conjuntos` inclui adset ARQUIVADO e sem gasto
+      // nenhum (pedido com `effective_status` ACTIVE,PAUSED,ARCHIVED, lá em
+      // `loadGtData`); `hier` já derruba esse peso morto (mesmo filtro
+      // `vivo` de `montarHierarquia`, orcamento-hierarquia.js). Usar listas
+      // diferentes nos dois cálculos produzia uma contradição visível: um
+      // adset arquivado e zero gasto virava o SEGUNDO mercado que fazia
+      // `mercadoDaCampanha` devolver 'misto' — cabeçalho "Mercados: mistos" —
+      // enquanto `gastoPorMercado(hier)` e as linhas de conjunto (que também
+      // leem de `hier`) só desenhavam UM mercado, sem o adset que causou a
+      // mistura aparecer em lugar nenhum. Mesma lista para as três coisas que
+      // o cartão mostra: o mercado, a quebra por mercado e os conjuntos.
+      const conjuntosVivos=hier.map((g)=>g.conjunto).filter(Boolean);
+      const mercado=mercadoDaCampanha(conjuntosVivos);
+      const campanhaMista=mercado==='misto';
       const row=document.createElement('div');row.className='gt-camp-row';
       const inner=document.createElement('div');inner.className='gt-camp-inner';
       // Top line
@@ -2402,10 +2597,21 @@ function _renderGtCampaigns(col,campaigns,insights,adInsights,adsets){
       const selo=nivelOrc.sigla
         ?`<span class="gt-nivel-chip ${nivelOrc.sigla==='CBO'?'cbo':'abo'}" title="${_gtEsc(nivelOrc.explicacao)}">${nivelOrc.sigla==='CBO'?'Orçamento na campanha (CBO)':'Orçamento nos conjuntos (ABO)'}</span>`
         :'';
-      chips.innerHTML=`<span class="ma-obj-chip" style="font-size:calc(9px*var(--gt-fs,1.3));">${_maObjLabel(ins.objective)}</span>${selo}${daily?`<span class="gt-camp-diaria">${_maFmtR(daily)}/dia</span>`:''}`;
-      // KPIs por objetivo (balde da campanha — ver GT_METRIC_CATALOG/_gtBalde)
+      // CHIP DO MERCADO (Onda C, Tarefa 5): vem ANTES do chip de objetivo —
+      // "o que decide vem antes do que depende" (PADRAO-DA-CENTRAL). Rótulo em
+      // português sai de ROTULO_MERCADO (painel-regua.js), a MESMA fonte que a
+      // aba "A régua" usa — duas listas de nome que podiam divergir já
+      // produziram "Custo por lead — lead" na tela da régua (Onda C, Tarefa 1).
+      const chipMercadoHtml=campanhaMista
+        ?`<span class="ma-obj-chip" title="Os conjuntos desta campanha compram mercados diferentes ao mesmo tempo (ver o gasto de cada um abaixo) — somar produziria um custo sem significado. Se você declarou qual interação esta campanha compra, o KPI abaixo vem dela, não da soma dos mercados.">Mercados: mistos</span>`
+        :`<span class="ma-obj-chip" title="O que esta campanha COMPRA, segundo o que a Meta afirma nos conjuntos dela — não o objetivo declarado. É o mercado que decide o KPI e a cor abaixo.">Mercado: ${_gtEsc(mercado==='desconhecido'?'não identificado':(ROTULO_MERCADO[mercado]||mercado))}</span>`;
+      chips.innerHTML=`${chipMercadoHtml}<span class="ma-obj-chip" style="font-size:calc(9px*var(--gt-fs,1.3));">${_maObjLabel(ins.objective)}</span>${selo}${daily?`<span class="gt-camp-diaria">${_maFmtR(daily)}/dia</span>`:''}`;
+      // KPIs: o conteúdo definitivo só é decidido mais abaixo ("O KPI
+      // PRINCIPAL DO MERCADO"), depois de saber se há interação DECLARADA
+      // (que vence a mistura — correção I3, rodada de correção 1) e se é
+      // campanha de seguidores sem medida confiável (correção I5). `metrics`
+      // nasce vazio aqui só para já existir no lugar certo do layout.
       const metrics=document.createElement('div');metrics.className='gt-metrics';
-      metrics.innerHTML=_gtKpisHtml(Object.assign({},ins,{objective:kpiObjective}));
       const spendEl=document.createElement('div');spendEl.className='gt-spend';spendEl.textContent=_maFmtR(spend);
       const adCount=ads.length;
       const setCount=hier.length;
@@ -2460,6 +2666,20 @@ function _renderGtCampaigns(col,campaigns,insights,adInsights,adsets){
       row.dataset.balde = temMensagem ? 'mensagens' : (baldeCamp || 'padrao');
       // Selo de objetivo por interação (Fase 3): só campanha de engajamento que
       // NÃO seja de mensagem pode declarar qual interação está comprando.
+      //
+      // CORREÇÃO I3 (rodada de correção 1, 25/09/2026): esta linha chegou a
+      // excluir campanha MISTA (`!campanhaMista &&`), mas isso divergia do
+      // ROBÔ — que faz a declaração VENCER a mistura
+      // (`mercado === 'misto' && !interacaoDeclarada` em budget-ia.mjs: só
+      // trata como mista quando NÃO há declaração). Com a tela bloqueando o
+      // selo, uma declaração salva ANTES de a campanha virar mista continuava
+      // governando o robô sem o dono ver nem poder desfazer pela tela — e o
+      // card do ANÚNCIO nem tinha esse corte, então a mesma campanha
+      // bloqueava a declaração em cima e permitia embaixo. Removido: a
+      // elegibilidade aqui é a MESMA de sempre (engajamento declarado, sem
+      // mensagem), mista ou não — e o bloco "ALVO DO MERCADO" abaixo já faz a
+      // declaração vencer a mistura (`objDeclarado` sobrescreve `custoAlvo`/
+      // `metaAlvo`/`rotuloAlvo` mesmo quando `campanhaMista`).
       const elegivelSeloObj = baldeCamp === 'engajamento' && !temMensagem;
       const seloObjEl = _gtSeloObjetivoEl(ins.campaign_id, 'campanha', elegivelSeloObj);
       if (seloObjEl) {
@@ -2471,56 +2691,81 @@ function _renderGtCampaigns(col,campaigns,insights,adInsights,adsets){
       // A régua DA CONTA aberta, nunca a linha crua do banco: as cinco contas
       // moram no mesmo registro e cada uma tem sua meta (ver _gtReguaAtiva).
       const reguaAtiva = _gtReguaAtiva();
-      // A PONDERADA (custo por ponto e qualidade — os chips "Custo/ponto" e
-      // "Qualidade" que moravam aqui) está em PAUSA desde 24/09/2026, decisão
-      // do dono depois da medição: NÃO foi apagada, só deixou de ser
-      // consultada no veredito — pesos, limiares, colunas do banco e
-      // calcularPonderada (ponderada.js) seguem intactos. O veredito de
-      // engajamento sem declaração passou a ser o custo por engajamento bruto,
-      // calculado como qualquer outro balde logo abaixo (ver ALVOS.engajamento
-      // em alvos.js).
-      // CORREÇÃO (revisão final da Onda B, correção 2, 25/09/2026): "religar é
-      // trocar duas linhas em alvos.js, nada neste arquivo precisa mudar de
-      // volta" era promessa falsa. `custoAlvo` acima vem de
-      // `_gtMetricValue(alvo.metrica, ins)`, que lê
-      // `GT_METRIC_CATALOG[alvo.metrica]` — sem entrada `'ponderada'` nesse
-      // catálogo, uma simples troca de `metrica` em alvos.js faz este cartão
-      // mostrar `custoAlvo: null`, não o custo por ponto de volta. E os chips
-      // "Custo/ponto"/"Qualidade" FORAM removidos DESTE arquivo (não só
-      // escondidos) — precisariam voltar a ser desenhados aqui. São DOIS
-      // lugares reais: este cartão (`_gtMetricValue` + os chips) e
-      // `custoDoAlvo` em metricas.js (mesma guarda, mesmo problema).
-      // `custoAtualDoAlvo` (budget-ia.mjs) não é um terceiro lugar — ele só
-      // chama `custoDoAlvo`, então corrigido lá ele acompanha sozinho. Um
-      // interruptor de verdade para os dois lugares reais está planejado
-      // para a onda seguinte. Tirar em vez de deixar como informação: um
-      // número que não decide nada, ao lado do que decide, já produziu
-      // contradição visual rejeitada duas vezes nesta
-      // tela (C2 e M4 do review de 2026-07-28) — "dentro da meta" no veredito
-      // com o chip do ponto do
-      // lado pintado de vermelho.
+      // A PONDERADA (custo por ponto e qualidade) está em PAUSA desde
+      // 24/09/2026 para o veredito "no geral" — decisão do dono depois da
+      // medição: NÃO foi apagada, pesos/limiares/colunas do banco e
+      // calcularPonderada (ponderada.js) seguem intactos. O mercado `post` (o
+      // mais parecido com o antigo balde de engajamento) mede por
+      // `custo_engajamento` (ALVOS.post em alvos.js) enquanto o interruptor da
+      // régua (Seção 1, `ponderadaLigada` em regua.js) estiver desligado.
+      // ⚠️ LIGAR O INTERRUPTOR HOJE troca só a META consultada por
+      // `metaDoBalde` (volta a ler `metas.engajamento`, em R$/ponto) — o CUSTO
+      // comparado aqui continua sendo `custo_engajamento` (R$ por
+      // engajamento, ver ALVOS.post): unidades DIFERENTES, o mesmo erro de
+      // 7,5× que esta onda inteira existe pra matar (achado I6 da revisão,
+      // rodada de correção 1) — só que agora VISÍVEL, porque antes deste
+      // conserto o bloco do KPI nem renderizava nada. Isso é a Tarefa T4b
+      // (pendente, ver progress.md da Onda C: "o interruptor restaura de
+      // verdade") — até ela trocar também o CÁLCULO, `ponderadaAtrapalha`
+      // (abaixo) tira a cor e o veredito deste caso específico: melhor
+      // mostrar o número sem julgar do que julgar comparando grandezas
+      // incompatíveis.
+      //
+      // CAMPANHA DE SEGUIDORES FORA DO MERCADO 'perfil' (correção I5, rodada
+      // de correção 1): a Meta NÃO atribui "novo seguidor" a uma campanha —
+      // só à CONTA inteira (ver seguidores.js). Só existe medida REAL de
+      // resultado por campanha quando o CONJUNTO afirma que o produto é
+      // visita ao perfil (mercado 'perfil'). O robô já recusa julgar por
+      // custo neste caso (`semMedidaDeSeguidor` em budget-ia.mjs); a tela
+      // pintava um KPI colorido do mesmo jeito que qualquer outro mercado —
+      // mesma campanha, dois vereditos. `ehDeSeguidores` lê o NOME da
+      // campanha, MESMO critério do robô (`camp.name`, não `ins.campaign_name`).
+      const deSeguidores = ehDeSeguidores((camp && camp.name) || ins.campaign_name || '');
+      const semMedidaDeSeguidor = deSeguidores && mercado !== 'perfil';
 
-      // ALVO DO OBJETIVO: cada tipo de campanha é medido pelo resultado que ele
-      // compra (lead, conversa, venda, visita, mil impressões, engajamento
-      // bruto). A conta de cada um já existe no catálogo (GT_METRIC_CATALOG) —
-      // engajamento não é mais caso especial, desde 24/09/2026 tem métrica no
-      // catálogo (custo_engajamento) como qualquer outro balde. Campanha com
-      // resultado de mensagem entra como 'mensagens' mesmo chegando com
-      // objetivo de engajamento — mesma correção de sempre (ver comentário de
-      // temMensagem acima), só que agora em vez de simplesmente cair fora da
-      // conta, ela ganha o alvo certo: custo por conversa.
-      const alvo = temMensagem ? alvoDoBalde('mensagens') : alvoDoBalde(baldeCamp);
-      let metaAlvo = metaDoBalde(reguaAtiva, temMensagem ? 'mensagens' : baldeCamp);
+      // O ALVO DO MERCADO (Onda C, Tarefa 5): cada MERCADO é medido pelo
+      // resultado que ele compra (lead, conversa, venda, visita, visita ao
+      // perfil, view, engajamento, mil impressões — ver ALVOS em alvos.js).
+      // 'desconhecido' e 'misto' não têm entrada em ALVOS (alvoDoBalde
+      // devolve null pros dois, de propósito): campanha MISTA sem interação
+      // DECLARADA não recebe custo único (`mercado` calculado lá em cima) e
+      // campanha sem mercado reconhecível não tem veredito de custo, só os
+      // indicadores brutos. Com interação declarada (mais abaixo), a
+      // declaração VENCE a mistura — `alvo` continua null aqui, mas
+      // `custoAlvo`/`rotuloAlvo` são substituídos, e é por isso que a
+      // renderização final usa `custoAlvo != null`, não `alvo`, como gatilho.
+      const alvo = campanhaMista ? null : alvoDoBalde(mercado);
+      // A META É PEDIDA PELO MERCADO — NUNCA por nome de balde antigo. Esta é
+      // a TRAVA obrigatória da Tarefa 5 (ver o teste "nenhum caminho da tela
+      // pede meta por nome de balde antigo", em metaDoBalde-trava-de-mercado
+      // .test.mjs): `metaDoBalde` resolve a chave por
+      // `ALVOS[balde].chaveMeta || balde` — indexar com um balde velho
+      // ('engajamento','mensagens','trafego','vendas','leads',
+      // 'reconhecimento') não bate mais em ALVOS (reindexado por mercado, ver
+      // alvos.js) e cai nesse atalho `|| balde`, que por coincidência de nome
+      // ACERTA em alguns mercados e ERRA feio no de engajamento — comparava
+      // custo por engajamento (R$ 0,09) contra a meta antiga em R$/ponto
+      // (R$ 0,012), 7,5× errado com cara de certo (achado registrado no plano
+      // da Onda C, 25/09/2026 — era exatamente este `.vue:2473` da versão
+      // anterior). Passar o MERCADO fecha este caminho para o cartão: as
+      // únicas chaves que continuam usando o atalho DE PROPÓSITO são as
+      // INTERAÇÕES declaradas (objDeclarado, abaixo) — curtida/comentário/
+      // salvamento/compartilhamento não têm (nem precisam ter) entrada em
+      // ALVOS, e o atalho não pode ser removido de metaDoBalde por causa
+      // delas (ver regua.js).
+      let metaAlvo = campanhaMista ? 0 : metaDoBalde(reguaAtiva, mercado);
       let custoAlvo = !alvo ? null : _gtMetricValue(alvo.metrica, ins);
       let rotuloAlvo = alvo;
       // OBJETIVO DECLARADO (Fase 3, Task 4): se o dono declarou, NESTA
       // campanha, qual interação ela compra, o veredito passa a julgar por
-      // ESSE mercado — custo da interação declarada (custoDaInteracao, que
-      // NUNCA inventa número: quantidade zero devolve null, não R$ 0,00)
-      // contra a meta DAQUELA interação (metaDoBalde) — em vez do ponto
-      // ponderado, que é 83% curtida em volume. Sem declaração
-      // (_gtObjetivoInteracao vazio para este id), objDeclarado é null e nada
-      // muda: segue com o alvo/meta/custo de sempre, calculados acima.
+      // ELA — custo da interação declarada (custoDaInteracao, que NUNCA
+      // inventa número: quantidade zero devolve null, não R$ 0,00) contra a
+      // meta DAQUELA interação (metaDoBalde) — em vez do mercado. Vale
+      // INCLUSIVE quando `campanhaMista` (correção I3): a declaração vence a
+      // mistura, mesma regra do robô. Sem declaração (_gtObjetivoInteracao
+      // vazio para este id, ou campanha de mensagem — ver `elegivelSeloObj`
+      // acima), objDeclarado é null e nada muda: segue com o alvo/meta/custo
+      // do MERCADO, calculados acima.
       const objDeclaradoBruto = elegivelSeloObj ? _gtObjetivoInteracao[String(ins.campaign_id)] : null;
       // Guarda (L7 do review, 2026-07-28): o CHECK constraint da tabela é a
       // única coisa que impede um valor fora das 4 interações de chegar aqui —
@@ -2533,18 +2778,101 @@ function _renderGtCampaigns(col,campaigns,insights,adInsights,adsets){
         metaAlvo = metaDoBalde(reguaAtiva, objDeclarado);
         rotuloAlvo = { rotulo: INTERACOES[objDeclarado].rotuloCusto };
       }
-      // QUAL CONJUNTO DE LIMIAR decide a cor: engajamento SEM declaração saiu do
-      // mundo do ponto e entrou no mundo do resultado em 24/09/2026 (usa
-      // `limiares_resultado`, Seção 2, junto de reconhecimento, tráfego,
-      // mensagens, leads e vendas) — é o mesmo custo por engajamento bruto,
-      // calculado como qualquer outro balde. Só a interação DECLARADA continua
-      // no "mundo do ponto" (`limiares`, Seção 1): o que ela mede é uma
-      // interação isolada, não um resultado de negócio, e a meta que a régua
-      // guarda pra ela (metas de curtida/comentário/salvamento/compartilhamento)
-      // é dessa Seção. Regra da régua (dois conjuntos, 2026-07-28) segue de pé:
-      // quem é dono da META é dono do LIMIAR.
+      // QUAL CONJUNTO DE LIMIAR decide a cor: mercado SEM interação declarada
+      // usa `limiares_resultado` (Seção 2) — custo por RESULTADO, o mesmo
+      // "mundo" que vale pra qualquer mercado (lead, conversa, venda, visita,
+      // visita ao perfil, view, engajamento, mil impressões). Só a interação
+      // DECLARADA continua no "mundo do ponto" (`limiares`, Seção 1): o que
+      // ela mede é uma interação isolada, não um resultado de negócio, e a
+      // meta que a régua guarda pra ela (curtida/comentário/salvamento/
+      // compartilhamento) é dessa Seção. Regra da régua (dois conjuntos,
+      // 2026-07-28) segue de pé: quem é dono da META é dono do LIMIAR.
       const usaLimiaresDeEngajamento = !!objDeclarado;
       const aval = avaliarAlvo({ custo: custoAlvo, meta: metaAlvo, limiares: usaLimiaresDeEngajamento ? reguaAtiva.limiares : reguaAtiva.limiares_resultado });
+      // A PONDERADA LIGADA ATRAPALHA O MERCADO 'post' (correção I6, rodada de
+      // correção 1): com o interruptor ligado, `metaAlvo` (acima) já veio de
+      // `metas.engajamento` (R$ por PONTO), mas `custoAlvo` continua sendo
+      // `custo_engajamento` (R$ por ENGAJAMENTO, ver ALVOS.post) — a Tarefa
+      // T4b (pendente) é quem trocaria o CÁLCULO também. Não se aplica com
+      // interação DECLARADA: aí o mundo é outro (curtida/comentário/
+      // salvamento/compartilhamento, Seção 1 dos dois lados, unidades
+      // batendo).
+      const ponderadaAtrapalha = !objDeclarado && mercado === 'post' && ponderadaLigada(reguaAtiva);
+
+      // A REGRA DE APOIO (CTR, cliques...) E A QUEBRA POR MERCADO são
+      // decididas AQUI, agora que já sabemos se há interação DECLARADA e se é
+      // campanha de seguidores sem medida (correção I3/I5, rodada de
+      // correção 1) — mesma PRECEDÊNCIA do robô (budget-ia.mjs, `dados.regua`):
+      // 1) sem medida de seguidor vence tudo; 2) mista SEM declaração mostra a
+      // mistura; 3) qualquer outro caso (mercado único, ou mista COM
+      // declaração — a declaração venceu) é "normal".
+      const mostrarQuebraPorMercado = campanhaMista && !objDeclarado && !semMedidaDeSeguidor;
+      metrics.innerHTML = mostrarQuebraPorMercado
+        ? gastoPorMercado(hier).map(({ mercado: m, gasto: g }) => `<div class="gt-kpi"><span class="gt-kpi-lbl">${_gtEsc(m==='desconhecido'?'não identificado':(ROTULO_MERCADO[m]||m))}</span><span class="gt-kpi-val">${_maFmtR(g)}</span></div>`).join('')
+        : _gtKpisHtml(Object.assign({}, ins, { objective: kpiObjective }));
+
+      // O KPI PRINCIPAL DO MERCADO (Onda C, Tarefa 5): "o cartão passa a
+      // mostrar o mercado da campanha... e o KPI daquele mercado" — este é
+      // ESSE KPI, prepended na frente da régua de apoio porque é ele quem
+      // decide, não mais um número na lista. O gatilho é `custoAlvo != null`
+      // — NUNCA `alvo` sozinho (correção I3): `alvo` fica `null` em toda
+      // campanha mista, mas uma interação DECLARADA ainda pode preencher
+      // `custoAlvo`/`rotuloAlvo` mesmo assim, e o KPI tem de aparecer.
+      if (semMedidaDeSeguidor) {
+        // CAMPANHA DE SEGUIDORES FORA DO MERCADO 'perfil' (correção I5): sem
+        // cor, sem veredito de custo — mesma recusa do robô. O número (se
+        // houver) aparece mudo, e o texto CURTO fica visível no próprio
+        // texto do badge, não só no `title` (tela de toque não tem mouse —
+        // lição de painel-regua.js/`AVISO_LIGADA_INCOMPLETA`).
+        const avisoEl=document.createElement('div');
+        avisoEl.className='gt-metric';
+        avisoEl.title='A Meta não atribui "novo seguidor" a uma campanha — só à conta inteira. Sem medida confiável por campanha aqui, então não julgamos por custo.';
+        avisoEl.innerHTML='Medida indisponível <span style="color:var(--muted)">(seguidores)</span>';
+        metrics.insertBefore(avisoEl, metrics.firstChild);
+        // Contexto da CONTA sempre aparece pra campanha de seguidores,
+        // mercado 'perfil' ou não (mesma regra do robô: `deSeguidores ?
+        // {custo_por_seguidor_da_conta_reais...} : {}` não depende do mercado).
+        const seloSeguidorHtml=_gtSeloCustoSeguidorContaHtml();
+        if (seloSeguidorHtml) {
+          const wrap=document.createElement('span');wrap.innerHTML=seloSeguidorHtml;
+          if (wrap.firstElementChild) metrics.insertBefore(wrap.firstElementChild, avisoEl.nextSibling);
+        }
+      } else if (ponderadaAtrapalha) {
+        // A PONDERADA LIGADA COMPARA UNIDADES DIFERENTES no mercado `post`
+        // (correção I6): `custoAlvo` é R$ por ENGAJAMENTO (ALVOS.post nunca
+        // muda a métrica) mas `metaAlvo` virou R$ por PONTO (`metaDoBalde`
+        // troca a chave quando `ponderadaLigada`) — o mesmo erro de 7,5× que
+        // esta onda existe pra matar. Enquanto a Tarefa T4b (que trocaria o
+        // CÁLCULO também) não existir: mostra o número, SEM cor e SEM
+        // veredito — melhor não julgar do que julgar errado.
+        const el=document.createElement('div');
+        el.className='gt-metric';
+        el.title='A régua ponderada está LIGADA (Seção 1), mas o cálculo do custo por engajamento ainda não foi trocado para o ponto ponderado (falta a Tarefa T4b) — comparar as duas unidades daria um veredito errado.';
+        el.innerHTML=`${_gtEsc(rotuloAlvo.rotulo)} <span style="color:var(--muted)">${custoAlvo==null?'—':_maFmtR(custoAlvo)}</span> <span style="color:var(--orange)">sem veredito (unidade diferente)</span>`;
+        metrics.insertBefore(el, metrics.firstChild);
+      } else if (custoAlvo != null) {
+        const corAlvo = aval.faixa==='escalar-forte'||aval.faixa==='dentro-da-meta'?'var(--green)'
+          :aval.faixa==='manter'?'var(--orange)':aval.faixa==='otimizar'?'var(--red)':'var(--muted)';
+        const kpiAlvoEl=document.createElement('div');
+        kpiAlvoEl.className='gt-metric';
+        kpiAlvoEl.title=metaAlvo>0?`Sua meta é ${_maFmtR(metaAlvo)}`:'Esta conta ainda não tem meta definida para este mercado.';
+        kpiAlvoEl.innerHTML=`${_gtEsc(rotuloAlvo.rotulo)} <span style="color:${corAlvo}">${_maFmtR(custoAlvo)}</span>`;
+        metrics.insertBefore(kpiAlvoEl, metrics.firstChild);
+        // CAMPANHA DE PERFIL (Onda C, Tarefa 5): a marca "medida indisponível"
+        // SAI daqui — o custo por visita ao perfil (badge acima) é medida
+        // REAL, por campanha (ver alvos.js ALVOS.perfil). Ao lado, como
+        // CONTEXTO (nunca substituindo o KPI acima): o custo por seguidor DA
+        // CONTA (Onda B), sempre marcado como estimativa e com a janela
+        // declarada — a Meta não atribui seguidor a uma campanha isolada, só
+        // à conta inteira (ver seguidores.js).
+        if (mercado==='perfil') {
+          const seloSeguidorHtml=_gtSeloCustoSeguidorContaHtml();
+          if (seloSeguidorHtml) {
+            const wrap=document.createElement('span');wrap.innerHTML=seloSeguidorHtml;
+            if (wrap.firstElementChild) metrics.insertBefore(wrap.firstElementChild, kpiAlvoEl.nextSibling);
+          }
+        }
+      }
 
       // A PENDÊNCIA DA SAÚDE FECHOU (2026-08-03). Ela mora na Fila: `mesclarSaude`
       // gruda o alerta na linha que o robô propôs, marca quando os dois se
@@ -2555,17 +2883,23 @@ function _renderGtCampaigns(col,campaigns,insights,adInsights,adsets){
       // e `veredito.js` foram apagados: eram o julgamento do tempo em que ele
       // morava no cartão, e ninguém os chamava havia semanas.
 
-      // O VEREDITO SAIU DAQUI. Quem decide o que fazer com a campanha é a aba
-      // Fila, que junta saúde, robô e régua num lugar só e registra a decisão.
-      // O cartão ficou com o que ele sabe dizer sem julgar: os números.
-      // A leitura de saúde (saude.js) e a análise do robô continuam existindo —
-      // a fila é que as consome agora.
+      // O VEREDITO (recomendação com botão "Aplicar"/"Pausar") SAIU DAQUI em
+      // 2026-07-29 e CONTINUA fora: quem decide o que FAZER com a campanha é
+      // a aba Fila, que junta saúde, robô e régua num lugar só e registra a
+      // decisão. A leitura de saúde (saude.js) e a análise do robô continuam
+      // existindo — a fila é que as consome agora.
+      // O QUE VOLTOU (Onda C, Tarefa 5, 25/09/2026): o KPI DO MERCADO — custo
+      // contra meta, com a cor da faixa (bloco "O KPI PRINCIPAL DO MERCADO",
+      // logo acima) — pedido explícito do dono ("mostra o mercado... e o KPI
+      // daquele mercado"). NÃO é o veredito de volta: não tem botão de ação
+      // nem recomendação, só o número que decide a régua daquele mercado — a
+      // decisão do que fazer continua só na Fila.
       // Os chips "Custo/ponto" e "Qualidade" (a ponderada) saíram daqui em
-      // 24/09/2026. Não é limpeza de visual: um número que não decide nada, ao
-      // lado do que decide, já produziu contradição visual rejeitada duas
-      // vezes nesta tela (C2 e M4 do review de 2026-07-28) — o dono via
-      // "Dentro da meta" no veredito e o chip do ponto do lado pintado de
-      // vermelho, julgando a mesma campanha por outra régua. A ponderada
+      // 24/09/2026 e continuam fora. A ponderada só volta a decidir o CUSTO
+      // aqui quando a Tarefa T4b (pendente, ver progress.md da Onda C) trocar
+      // o cálculo do mercado `post` pelo ponto ponderado de verdade — hoje
+      // ligar o interruptor da régua (Tarefa 4) troca só a META consultada
+      // (ver o comentário de `usaLimiaresDeEngajamento`, acima). A ponderada
       // continua viva (pesos, colunas do banco, calcularPonderada em
       // ponderada.js) — só não é mais mostrada nem consultada no cartão. Quem
       // quiser os pontos e o custo por ponto de uma campanha específica acha
@@ -2577,8 +2911,9 @@ function _renderGtCampaigns(col,campaigns,insights,adInsights,adsets){
       // zera o custo mostrado, não traz o ponto de volta; os chips desta
       // seção também precisariam ser redesenhados aqui. O que ESTÁ garantido:
       // `ponderada.js` intacto e as duas metas (`metas.engajamento` e
-      // `metas.engajamento_bruto`) coexistindo. Um interruptor de verdade está
-      // planejado para a onda seguinte.
+      // `metas.engajamento_bruto`) coexistindo. O interruptor JÁ EXISTE (Seção 1 da régua,
+      // `ponderadaLigada` em regua.js) — o que falta é ele trocar também o
+      // CÁLCULO e os limiares, que é a T4b, pendente.
       // 1) TODO JULGAMENTO MORA NA FILA (decisão do dono, 2026-07-29). O cartão
       // aqui é a leitura da campanha: números e orçamento. Antes tinha uma faixa
       // de recomendação com botões "Aplicar R$ X/dia" e "Pausar campanha" que
@@ -2654,7 +2989,7 @@ function _renderGtCampaigns(col,campaigns,insights,adInsights,adsets){
       // `baldeCamp` (lá em cima) já sai de kpiObjective, que tem o valor de
       // reserva do insight quando camp.objective vem vazio.
       const baldeDaCampanha=temMensagem?'mensagens':baldeCamp;
-      adsPane.__gtRender=()=>_renderGtConjuntos(adsPane,hier,camp,conjuntos,nivelOrc,i+1,temMensagem,baldeDaCampanha);
+      adsPane.__gtRender=()=>_renderGtConjuntos(adsPane,hier,camp,conjuntos,nivelOrc,i+1,temMensagem,baldeDaCampanha,campanhaMista,mercado);
       top.addEventListener('click',()=>{
         const isOpen=adsPane.classList.toggle('open');
         chev.classList.toggle('open',isOpen);
@@ -2845,7 +3180,7 @@ async function _gtVerCriativo(adId,accId,nome){
 // Camada do meio: campanha → CONJUNTOS DE ANÚNCIOS → anúncios.
 // É aqui que se edita o orçamento quando a campanha é ABO (orçamento no
 // conjunto). hier vem do módulo puro (montarHierarquia).
-function _renderGtConjuntos(pane,hier,camp,conjuntos,nivelOrc,campNum,temMensagemCampanha,baldeDaCampanha){
+function _renderGtConjuntos(pane,hier,camp,conjuntos,nivelOrc,campNum,temMensagemCampanha,baldeDaCampanha,campanhaMista,mercado){
   const lbl=document.createElement('div');lbl.className='gt-ads-section-lbl';
   lbl.textContent=`Conjuntos de anúncios (${hier.length})`;
   pane.appendChild(lbl);
@@ -2854,6 +3189,9 @@ function _renderGtConjuntos(pane,hier,camp,conjuntos,nivelOrc,campNum,temMensage
     empty.textContent='Nenhum conjunto de anúncios com gasto neste período';
     pane.appendChild(empty);return;
   }
+  // A régua DA CONTA aberta — uma vez só pro painel inteiro, não por conjunto
+  // (a régua não muda de um conjunto para o outro da mesma campanha).
+  const reguaAtiva=_gtReguaAtiva();
   // Explica por que os conjuntos não têm campo de orçamento (CBO ou
   // desconhecido). Sendo ABO cada conjunto já mostra o seu, e o cabeçalho da
   // campanha já apontou pra cá — a nota aqui seria repetição.
@@ -2876,11 +3214,56 @@ function _renderGtConjuntos(pane,hier,camp,conjuntos,nivelOrc,campNum,temMensage
     const nmEl=document.createElement('div');nmEl.className='gt-set-nm';
     nmEl.textContent=g.nome||'—';nmEl.title=g.nome||'';
     const gastoEl=document.createElement('div');gastoEl.className='gt-set-spend';gastoEl.textContent=_maFmtR(g.gasto);
+    top.appendChild(numEl);top.appendChild(badge);top.appendChild(nmEl);top.appendChild(gastoEl);
+    // O MERCADO E O KPI DO CONJUNTO (Onda C, Tarefa 5, Passo 2): campanha
+    // MISTA não recebe custo único (ver `campanhaMista` no cartão da
+    // campanha) — cada conjunto exibe a própria régua na linha dele, que é
+    // onde o card já expande. Só entra em campanha mista: numa campanha de
+    // mercado único o KPI já apareceu, uma vez, no cabeçalho da campanha —
+    // repetir em CADA conjunto seria a mesma régua N vezes.
+    if(campanhaMista&&g.id!=='_sem_conjunto'){
+      const mercadoCj=mercadoDoConjunto(cj||{});
+      const alvoCj=alvoDoBalde(mercadoCj);
+      if(alvoCj){
+        // A tela não busca insight por CONJUNTO à parte na Meta (o robô busca,
+        // ver coletor/budget-ia.mjs) — soma o gasto e as `actions` dos
+        // anúncios que já estão em `g.anuncios` (montarHierarquia), o mesmo
+        // número sem uma chamada a mais à Graph API (ver insightDoConjunto em
+        // metricas.js).
+        const insCj=insightDoConjunto(g.anuncios);
+        const custoCj=custoDoAlvo(mercadoCj,insCj);
+        // A META É PEDIDA PELO MERCADO — nunca por nome de balde antigo, MESMA
+        // trava do cartão da campanha (ver o comentário grande de `metaAlvo`,
+        // acima em _renderGtCampaigns).
+        const metaCj=metaDoBalde(reguaAtiva,mercadoCj);
+        // I6 (rodada de correção 1): MESMO problema do cartão — com a
+        // ponderada ligada, o mercado 'post' compara custo por engajamento
+        // (o cálculo nunca mudou) contra meta em R$/ponto. Sem cor, sem
+        // veredito, aqui também.
+        const ponderadaAtrapalhaCj=mercadoCj==='post'&&ponderadaLigada(reguaAtiva);
+        if(ponderadaAtrapalhaCj&&custoCj!=null){
+          const kpiCjEl=document.createElement('div');
+          kpiCjEl.className='gt-metric';
+          kpiCjEl.title='A régua ponderada está LIGADA, mas o cálculo do custo por engajamento ainda não foi trocado para o ponto ponderado (falta a Tarefa T4b) — sem veredito, unidades diferentes.';
+          kpiCjEl.innerHTML=`${_gtEsc(alvoCj.rotulo)} <span style="color:var(--muted)">${_maFmtR(custoCj)}</span> <span style="color:var(--orange)">sem veredito</span>`;
+          top.appendChild(kpiCjEl);
+        } else if(!ponderadaAtrapalhaCj&&custoCj!=null){
+          const avalCj=avaliarAlvo({custo:custoCj,meta:metaCj,limiares:reguaAtiva.limiares_resultado});
+          const corCj=avalCj.faixa==='escalar-forte'||avalCj.faixa==='dentro-da-meta'?'var(--green)'
+            :avalCj.faixa==='manter'?'var(--orange)':avalCj.faixa==='otimizar'?'var(--red)':'var(--muted)';
+          const kpiCjEl=document.createElement('div');
+          kpiCjEl.className='gt-metric';
+          kpiCjEl.title=`Mercado: ${_gtEsc(mercadoCj==='desconhecido'?'não identificado':(ROTULO_MERCADO[mercadoCj]||mercadoCj))}`+(metaCj>0?` · sua meta é ${_maFmtR(metaCj)}`:'');
+          kpiCjEl.innerHTML=`${_gtEsc(alvoCj.rotulo)} <span style="color:${corCj}">${_maFmtR(custoCj)}</span>`;
+          top.appendChild(kpiCjEl);
+        }
+      }
+    }
     const qtd=document.createElement('span');qtd.className='gt-expand-hint';
     qtd.textContent=g.anuncios.length?`${g.anuncios.length} anúncio${g.anuncios.length!==1?'s':''}  ▾`:'sem anúncios';
     const chev=document.createElement('svg');chev.setAttribute('class','gt-set-chevron');chev.setAttribute('width','11');chev.setAttribute('height','11');chev.setAttribute('viewBox','0 0 24 24');chev.setAttribute('fill','none');chev.setAttribute('stroke','currentColor');chev.setAttribute('stroke-width','2.5');chev.setAttribute('stroke-linecap','round');chev.setAttribute('stroke-linejoin','round');chev.innerHTML='<polyline points="9 18 15 12 9 6"/>';
     const exp=document.createElement('div');exp.className='gt-set-exp';exp.appendChild(qtd);exp.appendChild(chev);
-    top.appendChild(numEl);top.appendChild(badge);top.appendChild(nmEl);top.appendChild(gastoEl);top.appendChild(exp);
+    top.appendChild(exp);
     card.appendChild(top);
     // Orçamento DO CONJUNTO — editável só quando é ABO (o módulo puro decide).
     // Só desenha a linha se este conjunto TEM orçamento próprio. Sendo CBO,
@@ -2927,9 +3310,16 @@ function _renderGtConjuntos(pane,hier,camp,conjuntos,nivelOrc,campNum,temMensage
       if(bPub)barraCj.appendChild(bPub);
       card.appendChild(barraCj);
     }
+    // O MERCADO DOS ANÚNCIOS DESTE CONJUNTO (Onda C, Tarefa 5, Passo 3): desce
+    // pronto pra cada anúncio — o da CAMPANHA, ou o do PRÓPRIO conjunto quando
+    // ela é MISTA (mesma regra do robô, coletor/budget-ia.mjs, commit
+    // 2b420ab — ver mercadoDoGrupoDeAnuncios em mercados.js). Calculado UMA VEZ
+    // por conjunto (todo anúncio de `g.anuncios` pertence ao MESMO `cj`), não
+    // por anúncio.
+    const mercadoDosAnuncios=mercadoDoGrupoDeAnuncios(mercado,cj,g.id);
     // Anúncios do conjunto.
     const adsPane=document.createElement('div');adsPane.className='gt-set-pane';
-    adsPane.__gtRender=()=>_renderGtAds(adsPane,g.anuncios,null,null,num,temMensagemCampanha);
+    adsPane.__gtRender=()=>_renderGtAds(adsPane,g.anuncios,null,null,num,temMensagemCampanha,mercadoDosAnuncios);
     top.addEventListener('click',e=>{
       e.stopPropagation(); // não deixa fechar a campanha inteira ao clicar no conjunto
       const isOpen=adsPane.classList.toggle('open');
@@ -2941,7 +3331,7 @@ function _renderGtConjuntos(pane,hier,camp,conjuntos,nivelOrc,campNum,temMensage
     pane.appendChild(card);
   });
 }
-function _renderGtAds(pane,ads,allInsights,allAdInsights,campNum,temMensagemCampanha){
+function _renderGtAds(pane,ads,allInsights,allAdInsights,campNum,temMensagemCampanha,mercadoDosAnuncios){
   const lbl=document.createElement('div');lbl.className='gt-ads-section-lbl';lbl.textContent=`Anúncios (${ads.length})`;pane.appendChild(lbl);
   if(!ads.length){const empty=document.createElement('div');empty.style.cssText='font-family:var(--fonte-principal);font-size:calc(11px*var(--gt-fs,1.3));color:var(--muted);padding:6px 0 6px 20px;';empty.textContent='Nenhum anúncio com gasto neste período';pane.appendChild(empty);return;}
   const sorted=[...ads].sort((a,b)=>parseFloat(b.spend||0)-parseFloat(a.spend||0));
@@ -2976,6 +3366,50 @@ function _renderGtAds(pane,ads,allInsights,allAdInsights,campNum,temMensagemCamp
     if (seloObjAd) nameWrap.appendChild(seloObjAd);
     const metrics=document.createElement('div');metrics.className='gt-metrics';
     metrics.innerHTML=`<div class="gt-metric">CTR <span style="color:${ctrColor}">${_maFmtPct(ctr)}</span></div><div class="gt-metric" style="font-family:var(--fonte-principal);font-size:calc(13px*var(--gt-fs,1.3));font-weight:700;"><span>${_maFmtR(spend)}</span></div>`;
+    // O KPI PRINCIPAL DO MERCADO no ANÚNCIO (Onda C, Tarefa 5, Passo 3):
+    // pedido do dono, 25/09 — "eu não vejo as kpis no card dos anúncios
+    // também, sinto falta disso". `mercadoDosAnuncios` já chega PRONTO de
+    // `_renderGtConjuntos` (mercadoDoGrupoDeAnuncios em mercados.js): o da
+    // CAMPANHA, ou o do CONJUNTO quando ela é MISTA — nunca recalculado aqui
+    // por anúncio (a Meta omite o action_type inteiro quando a contagem é
+    // zero; ver o mesmo cuidado no robô, coletor/budget-ia.mjs, commit
+    // 2b420ab). NÃO herda o resto da régua de apoio (decisão do dono,
+    // 25/09/2026): uma campanha pode ter uma dúzia de anúncios na tela, e
+    // repetir a régua inteira em cada um desfaz o que se ganhou tirando o
+    // excesso do cartão da campanha — só o KPI principal + a quantidade.
+    const alvoDoAnuncio = mercadoDosAnuncios ? alvoDoBalde(mercadoDosAnuncios) : null;
+    if (alvoDoAnuncio) {
+      const custoDoAnuncio = custoDoAlvo(mercadoDosAnuncios, ad);
+      if (custoDoAnuncio != null) {
+        const reguaConta = _gtReguaAtiva();
+        const metaDoAnuncio = metaDoBalde(reguaConta, mercadoDosAnuncios);
+        // Sem meta para o mercado: o número aparece SEM COR — não julga (regra
+        // desta ferramenta desde a Onda A). `avaliarAlvo` já devolve 'sem-dados'
+        // quando `meta` não é > 0, e o mapa de cor abaixo cai em `--muted`
+        // exatamente nesse caso — mesma trava do cartão da campanha/conjunto.
+        const avalAnuncio = avaliarAlvo({ custo: custoDoAnuncio, meta: metaDoAnuncio, limiares: reguaConta.limiares_resultado });
+        const corAnuncio = avalAnuncio.faixa==='escalar-forte'||avalAnuncio.faixa==='dentro-da-meta'?'var(--green)'
+          :avalAnuncio.faixa==='manter'?'var(--orange)':avalAnuncio.faixa==='otimizar'?'var(--red)':'var(--muted)';
+        const kpiMercadoEl=document.createElement('div');
+        kpiMercadoEl.className='gt-metric';
+        kpiMercadoEl.title=metaDoAnuncio>0?`Sua meta é ${_maFmtR(metaDoAnuncio)}`:'Esta conta ainda não tem meta definida para este mercado.';
+        kpiMercadoEl.innerHTML=`${_gtEsc(alvoDoAnuncio.rotulo)} <span style="color:${corAnuncio}">${_maFmtR(custoDoAnuncio)}</span>`;
+        metrics.appendChild(kpiMercadoEl);
+        // A QUANTIDADE do resultado, ao lado do custo (pedido do dono, junto
+        // do KPI). Zero vira NULL aqui de propósito — nunca aparece "0": a
+        // Meta OMITE o action_type inteiro quando a contagem é zero, e um
+        // zero de verdade ficaria indistinguível de "não temos esse dado".
+        let qtdResultado = alvoDoAnuncio.resultado ? _gtMetricValue(alvoDoAnuncio.resultado, ad) : null;
+        if (qtdResultado === 0) qtdResultado = null;
+        if (qtdResultado != null) {
+          const metricaResultado = GT_METRIC_CATALOG[alvoDoAnuncio.resultado];
+          const qtdEl=document.createElement('div');
+          qtdEl.className='gt-metric';
+          qtdEl.innerHTML=`${_gtEsc(metricaResultado?.label||'')} <span>${_gtFmt(qtdResultado, metricaResultado?.fmt)}</span>`;
+          metrics.appendChild(qtdEl);
+        }
+      }
+    }
     // Declarada a interação no anúncio, o custo dela aparece aqui com a cor da
     // faixa — senão declarar no anúncio não faria nada visível.
     const declAd=_gtObjetivoInteracao[String(ad.ad_id)];
@@ -5457,12 +5891,46 @@ Object.assign(window, {
 .tela-gestao-trafego :deep(.pnd-grupo:last-child){margin-bottom:0;}
 .tela-gestao-trafego :deep(.pnd-grupo-tit){display:flex;align-items:center;gap:6px;font-family:var(--fonte-principal);font-size:calc(13px*var(--gt-fs,1.3));font-weight:800;color:var(--text);margin:0 0 4px;}
 .tela-gestao-trafego :deep(.pnd-tabela td:first-child){min-width:11ch;}
+/* O INTERRUPTOR DA PONDERADA (Onda C, Tarefa 4, 25/09/2026, ver
+   painel-regua.js). `.perm-toggle` é o componente global (estilos-globais.css)
+   reaproveitado do modal de permissões — mesmo desenho, sem reinventar cor
+   nem tamanho de trilho. A área de toque cresce pelo PADDING do rótulo (item
+   6 do padrão: 40px de alvo SEM engordar o desenho), não pelo trilho, que
+   continua 36×20 no computador e no celular igual. */
+.tela-gestao-trafego :deep(.pnd-interruptor-linha){display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:2px 0 12px;}
+.tela-gestao-trafego :deep(.pnd-interruptor){display:flex;align-items:center;gap:8px;cursor:pointer;padding:10px 0;min-height:40px;}
+.tela-gestao-trafego :deep(.pnd-interruptor-rotulo){font-family:var(--fonte-principal);font-size:calc(11px*var(--gt-fs,1.3));font-weight:800;letter-spacing:.6px;text-transform:uppercase;color:var(--text);}
+.tela-gestao-trafego :deep(.pnd-interruptor-explicacao){flex:1 1 260px;}
+/* DESLIGADA (padrão): esmaece — NUNCA some. Quem abre a aba precisa ver que
+   os campos existem, que estão em pausa, e que nada foi apagado (regra da
+   casa, item 9: a tela nunca mente). */
+.tela-gestao-trafego :deep(.pnd-secao-esmaecida){opacity:.5;}
 /* ── FILTRO POR OBJETIVO (lista de campanhas) ─────────────────────────────── */
 .tela-gestao-trafego :deep(.gt-obj-filtros){display:flex;flex-wrap:wrap;gap:6px;padding:10px 14px;border-bottom:1px solid var(--border);}
 .tela-gestao-trafego :deep(.gt-obj-filtro){display:inline-flex;align-items:center;gap:6px;font-family:var(--fonte-principal);font-size:calc(10px*var(--gt-fs,1.3));padding:5px 11px;border-radius:999px;cursor:pointer;background:var(--surface2);border:1px solid var(--border);color:var(--muted);transition:all .12s ease;}
 .tela-gestao-trafego :deep(.gt-obj-filtro:hover){color:var(--text);border-color:var(--muted);}
 .tela-gestao-trafego :deep(.gt-obj-filtro.ativo){background:var(--accent);color:var(--sobre-cor);border-color:var(--accent);font-weight:600;}
 .tela-gestao-trafego :deep(.gt-obj-n){font-family:var(--fonte-dados);font-size:calc(8.5px*var(--gt-fs,1.3));opacity:.65;}
+/* TIRA QUE ROLA NO CELULAR (Onda C, rodada 2, pedido do dono): antes
+   `flex-wrap:wrap` deixava os chips em 2-3 linhas (76px medidos) — o dono
+   quer continuar vendo os mercados de relance, então em vez de esconder
+   atrás de um botão (como fizemos com busca/filtros de status), esta barra
+   vira UMA LINHA que rola de lado. A rolagem é DENTRO da tira
+   (`overflow-x:auto` só aqui) — a PÁGINA continua sem rolagem horizontal,
+   que é o que o padrão exige (item 6); `_renderGtCampaigns` rola até o chip
+   ativo depois de montar a tira (scrollIntoView), pra ele nunca ficar fora
+   da área visível quando o filtro já vem escolhido. */
+@media(max-width:640px){
+  .tela-gestao-trafego :deep(.gt-obj-filtros){flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;padding:6px 14px;gap:6px;scrollbar-width:none;}
+  .tela-gestao-trafego :deep(.gt-obj-filtros)::-webkit-scrollbar{display:none;}
+  .tela-gestao-trafego :deep(.gt-obj-filtro){flex-shrink:0;padding:4px 10px;position:relative;}
+  /* ALVO DE TOQUE, só pra CIMA (medido: 0px de vão entre esta tira e a
+     primeira campanha — crescer pra baixo, como nos outros lugares desta
+     tarefa, ia cair em cima da linha da campanha e abrir/fechar ela sem
+     querer. Pra cima há 12px de vão até o cabeçalho — `bottom:0` ancora a
+     área no PÉ do chip, e ela só cresce pra cima, dentro desse vão). */
+  .tela-gestao-trafego :deep(.gt-obj-filtro)::after{content:'';position:absolute;left:0;right:0;bottom:0;height:32px;}
+}
 
 /* ── MODAL DO FUNIL ───────────────────────────────────────────────────────── */
 .tela-gestao-trafego :deep(#gt-modal-funil){position:fixed;inset:0;height:100dvh;z-index:1000;display:flex;align-items:center;justify-content:center;padding:24px;}
@@ -5535,6 +6003,15 @@ Object.assign(window, {
    inteira. Em grade de cartoes, 8 sugestoes viravam 8 caixas altas e a decisao
    ficava espalhada; em lista o olho desce por uma coluna so de "de -> para". */
 .tela-gestao-trafego :deep(.pnd-aba-n){display:inline-flex;align-items:center;justify-content:center;min-width:17px;height:17px;padding:0 5px;margin-left:6px;border-radius:9px;background:var(--red);color:var(--sobre-cor);font-family:var(--fonte-dados);font-size:calc(8.5px*var(--gt-fs,1.3));font-weight:700;line-height:1;}
+/* SELO DE CONTAGEM da aba Campanhas (Onda C, topo do celular): neutro
+   (--surface2/--muted), não vermelho como o .pnd-aba-n da Fila — aquele é
+   aviso de pendência, este é só a contagem normal da lista. Só existe no
+   celular (regra dentro do @media abaixo); no computador o título "N
+   Campanhas" já mostra o número por extenso, e mostrar duas vezes seria
+   "aviso que vira paisagem" (item 9). `:empty` cobre o instante antes do
+   primeiro _renderGtCampaigns() escrever o número. */
+.tela-gestao-trafego :deep(.pnd-aba-contagem){display:none;}
+.tela-gestao-trafego :deep(.pnd-aba-contagem:empty){display:none;}
 .tela-gestao-trafego :deep(.gtf-cab){display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin:0 0 14px;}
 .tela-gestao-trafego :deep(.gtf-tit){font-family:var(--fonte-principal);font-size:calc(15px*var(--gt-fs,1.3));font-weight:700;color:var(--text);margin:0;}
 .tela-gestao-trafego :deep(.gtf-sub){font-family:var(--fonte-principal);font-size:calc(10.5px*var(--gt-fs,1.3));color:var(--muted);margin:4px 0 0;line-height:1.5;}
@@ -5568,7 +6045,12 @@ Object.assign(window, {
 .tela-gestao-trafego :deep(.gtf-item.reduzir .gtf-selo){background:color-mix(in srgb,var(--orange) 12%,var(--surface));color:color-mix(in srgb,var(--orange) 75%,var(--text));}
 .tela-gestao-trafego :deep(.gtf-item.pausar .gtf-selo){background:color-mix(in srgb,var(--red) 12%,var(--surface));color:color-mix(in srgb,var(--red) 75%,var(--text));}
 .tela-gestao-trafego :deep(.gtf-ident){flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:2px;}
-.tela-gestao-trafego :deep(.gtf-nome){font-family:var(--fonte-principal);font-size:calc(11.5px*var(--gt-fs,1.3));font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+/* NOME DA CAMPANHA (fila) nunca corta (PADRAO-DA-CENTRAL item 5, Onda C -
+   topo do celular): era `white-space:nowrap;overflow:hidden;text-overflow:
+   ellipsis`, a mesma dupla que apagava nome comprido em qualquer largura. O
+   pai `.gtf-ident` já tem `min-width:0` — sem isso, tirar só o ellipsis
+   deixaria o nome ser espremido a 0px em vez de quebrar. */
+.tela-gestao-trafego :deep(.gtf-nome){font-family:var(--fonte-principal);font-size:calc(11.5px*var(--gt-fs,1.3));font-weight:700;color:var(--text);overflow-wrap:anywhere;}
 .tela-gestao-trafego :deep(.gtf-conta){font-family:var(--fonte-principal);font-size:calc(9px*var(--gt-fs,1.3));color:var(--muted);}
 .tela-gestao-trafego :deep(.gtf-valores){flex:0 0 auto;display:flex;align-items:baseline;gap:7px;font-family:var(--fonte-dados);white-space:nowrap;}
 .tela-gestao-trafego :deep(.gtf-de){font-size:calc(10.5px*var(--gt-fs,1.3));color:var(--muted);text-decoration:line-through;}
@@ -5902,7 +6384,12 @@ Object.assign(window, {
 .tela-gestao-trafego :deep(.gt-camp-top){display:flex;flex-direction:column;gap:0;cursor:pointer;user-select:none;border-radius:8px;padding:7px 8px;margin:-5px -8px;transition:background .12s;}
 .tela-gestao-trafego :deep(.gt-camp-top:hover){background:var(--surface2);}
 .tela-gestao-trafego :deep(.gt-camp-top:hover .gt-name){color:var(--accent);}
-.tela-gestao-trafego :deep(.gt-camp-l1){display:flex;align-items:center;gap:10px;}
+/* flex-wrap:wrap ACRESCENTADO na base (rodada de correção 1 desta tarefa) —
+   MESMA razão do `.gt-ad-top`/`.gt-set-top` acima: esta linha pode ter selo de
+   status + nome + chip de nível de orçamento + chip de mercado + chip de
+   objetivo ao mesmo tempo, e sem wrap o nome (flex:1;min-width:0) é quem
+   cede o espaço primeiro. Só age quando falta espaço; não muda telas largas. */
+.tela-gestao-trafego :deep(.gt-camp-l1){display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
 .tela-gestao-trafego :deep(.gt-camp-l1 .gt-spend){margin-left:auto;}
 .tela-gestao-trafego :deep(.gt-camp-num){font-family:var(--fonte-dados);font-size:calc(14px*var(--gt-fs,1.3));font-weight:600;color:var(--accent);min-width:24px;text-align:center;flex-shrink:0;font-variant-numeric:tabular-nums;letter-spacing:.5px;}
 .tela-gestao-trafego :deep(.gt-ad-num){font-family:var(--fonte-dados);font-size:calc(11px*var(--gt-fs,1.3));font-weight:600;color:var(--accent);opacity:.85;flex-shrink:0;font-variant-numeric:tabular-nums;letter-spacing:.3px;}
@@ -5919,9 +6406,22 @@ Object.assign(window, {
 .tela-gestao-trafego :deep(.gt-ads-section-lbl){font-family:var(--fonte-principal);font-size:calc(9px*var(--gt-fs,1.3));font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);padding:10px 0 6px 20px;opacity:.7;}
 /* ── Conjuntos de anúncios (camada entre a campanha e os anúncios) ── */
 .tela-gestao-trafego :deep(.gt-set-card){border-radius:9px;background:var(--surface);border:1px solid var(--border);padding:10px 12px;display:flex;flex-direction:column;gap:6px;margin-left:8px;margin-bottom:9px;box-shadow:0 2px 10px rgba(0,0,0,.06);}
-.tela-gestao-trafego :deep(.gt-set-top){display:flex;align-items:center;gap:9px;cursor:pointer;min-width:0;}
+/* flex-wrap:wrap ACRESCENTADO na base (rodada de correção 1 desta tarefa) —
+   MESMA razão do `.gt-ad-top` (ver comentário lá): numa campanha MISTA este
+   cabeçalho ganha um chip de KPI a mais (`kpiCjEl`), e sem wrap o nome do
+   conjunto pode ser espremido a 0px do mesmo jeito, só que com dado real
+   diferente. Só age quando falta espaço; não muda telas largas. */
+.tela-gestao-trafego :deep(.gt-set-top){display:flex;align-items:center;gap:9px;cursor:pointer;min-width:0;flex-wrap:wrap;}
 .tela-gestao-trafego :deep(.gt-set-num){font-family:var(--fonte-dados);font-size:calc(11px*var(--gt-fs,1.3));font-weight:600;color:var(--accent);opacity:.85;flex-shrink:0;font-variant-numeric:tabular-nums;letter-spacing:.3px;}
-.tela-gestao-trafego :deep(.gt-set-nm){flex:1;min-width:0;font-family:var(--fonte-principal);font-size:calc(11.5px*var(--gt-fs,1.3));font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+/* NOME DO CONJUNTO nunca corta (PADRAO-DA-CENTRAL item 5, rodada de correção
+   1 desta tarefa): o `ellipsis` estava só no override de celular — entre
+   641px e o próximo breakpoint (notebook com janela estreita, split-screen,
+   tablet deitado) o nome CORTAVA, porque a regra BASE (aqui) ainda tinha
+   `text-overflow:ellipsis;white-space:nowrap`. `overflow-wrap:anywhere` na
+   base cobre TODA largura, sem depender de media query nenhuma; o override
+   de celular (mais abaixo) continua existindo só para forçar a linha
+   PRÓPRIA (`flex-basis:100%`), que é layout, não corte de texto. */
+.tela-gestao-trafego :deep(.gt-set-nm){flex:1;min-width:0;font-family:var(--fonte-principal);font-size:calc(11.5px*var(--gt-fs,1.3));font-weight:600;color:var(--text);overflow-wrap:anywhere;}
 .tela-gestao-trafego :deep(.gt-set-spend){font-family:var(--fonte-dados);font-size:calc(13px*var(--gt-fs,1.3));font-weight:700;color:var(--text);flex-shrink:0;font-variant-numeric:tabular-nums;}
 .tela-gestao-trafego :deep(.gt-set-exp){display:flex;align-items:center;gap:5px;flex-shrink:0;}
 .tela-gestao-trafego :deep(.gt-set-top:hover .gt-expand-hint){opacity:1;color:var(--accent);}
@@ -5961,6 +6461,60 @@ Object.assign(window, {
 /* Botão recolher/expandir tudo */
 .tela-gestao-trafego :deep(.gt-collapse-all){font-family:var(--fonte-principal);font-size:calc(10px*var(--gt-fs,1.3));font-weight:600;letter-spacing:.3px;padding:4px 10px;border-radius:5px;border:1px solid var(--border);background:none;color:var(--muted);cursor:pointer;white-space:nowrap;flex-shrink:0;transition:all .15s;}
 .tela-gestao-trafego :deep(.gt-collapse-all:hover){border-color:var(--accent);color:var(--accent);}
+/* PAINEL DE FILTRO/BUSCA DA LISTA (Onda C, topo do celular). No computador
+   isto é invisível: o painel sempre aparece (mesmo lugar de sempre, busca +
+   3 filtros lado a lado) e o botão de funil nem existe (display:none base).
+   Só o @media(max-width:640px) abaixo muda o comportamento. */
+.tela-gestao-trafego :deep(.gt-camp-filtros-painel){display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.tela-gestao-trafego :deep(.gt-camp-filtro-toggle){display:none;}
+/* OS DOIS SELOS COM TOQUE (Onda C, rodada 2): "IA em tempo real" e o custo
+   por seguidor viram BOTÃO (eram `<div>`/`<span>`), pra caber ícone com
+   toque sem perder o texto — reset do botão nativo, o `.selo`/estilo inline
+   de cada um continua cuidando de cor/padding/formato como sempre. */
+.tela-gestao-trafego :deep(.gt-selo-toque){appearance:none;border:none;cursor:pointer;font:inherit;}
+.tela-gestao-trafego :deep(.gt-selo-toque-ic){display:none;}
+/* Some com "N Campanhas" só no celular (ver .pnd-aba-contagem, que ganha o
+   mesmo número na aba) — no computador o título continua do jeito que era. */
+@media(max-width:640px){
+  .tela-gestao-trafego :deep(.gt-camp-titulo-n){display:none;}
+  .tela-gestao-trafego :deep(.gt-camp-hdr .gt-pastilha){display:none;}
+  /* NO CELULAR o texto por extenso vira só o ícone (pedido do dono, rodada
+     2): "✦ IA em tempo real" e "≈ R$X/seguidor (conta, dd/mm–dd/mm)" juntos
+     passavam de 350px de largura e quebravam em 2 linhas dentro do
+     cabeçalho (44px medidos). O texto continua inteiro no modal que abre no
+     toque (`_gtConfirm`, ver o `addEventListener('click', ...)` de cada um
+     em _renderGtCampaigns) — nada de `title`, tela de toque não tem hover. */
+  .tela-gestao-trafego :deep(.gt-selo-toque-txt){display:none;}
+  .tela-gestao-trafego :deep(.gt-selo-toque-ic){display:inline;}
+  .tela-gestao-trafego :deep(.gt-selo-toque){padding:4px 8px !important;position:relative;}
+  /* ALVO DE TOQUE 40px, só em ALTURA (left:0;right:0) — os dois selos ficam
+     lado a lado com pouco vão entre si; crescer também na largura ia fazer
+     o alvo de um cobrir o do outro (o mesmo cuidado da barra de abas). */
+  .tela-gestao-trafego :deep(.gt-selo-toque)::after{content:'';position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);height:40px;}
+  /* POSITION:ABSOLUTE, não inline (achado ao medir): "Campanhas" sozinho já
+     enche exatamente a largura mínima da aba (89px de texto em 89px de
+     caixa) — o selo inline forçava uma QUEBRA DE LINHA (a aba ia de 37px pra
+     50px de altura só por causa do número). Como selo no canto, não disputa
+     largura com o texto; `.pnd-aba` já é `position:relative` (ver abaixo). */
+  .tela-gestao-trafego :deep(.pnd-aba-contagem:not(:empty)){display:inline-flex;align-items:center;justify-content:center;position:absolute;top:2px;right:2px;min-width:15px;height:15px;padding:0 4px;border-radius:8px;background:var(--surface2);color:var(--muted);font-family:var(--fonte-dados);font-size:calc(8px*var(--gt-fs,1.3));font-weight:700;line-height:1;}
+  /* CABEÇALHO DA LISTA (155px medidos -> alvo ~45px): busca + os 3 filtros
+     (Todas/Ativas/Inativas) ficam ESCONDIDOS atrás de um botão de funil, em
+     vez de empilhados abaixo do título. O "recolher tudo" continua igual,
+     do lado do funil — os dois cabem numa linha só. */
+  .tela-gestao-trafego :deep(.gt-camp-hdr){padding:2px 4px 8px;gap:8px;}
+  .tela-gestao-trafego :deep(.gt-camp-filtro-toggle){display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;padding:0;border-radius:7px;border:1px solid var(--border);background:none;color:var(--muted);position:relative;flex-shrink:0;transition:border-color .15s,color .15s;}
+  .tela-gestao-trafego :deep(.gt-camp-filtro-toggle.ativo){border-color:var(--accent);color:var(--accent);}
+  /* ALVO DE TOQUE 40px sem engordar o botão — mesma receita de sempre nesta
+     tela (crescer a ÁREA, não o desenho); aqui pode crescer nos 4 lados
+     porque não tem vizinho horizontal colado (é o último item da linha). */
+  .tela-gestao-trafego :deep(.gt-camp-filtro-toggle)::after{content:'';position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:40px;height:40px;}
+  /* Painel FECHADO por padrão (_gtFiltrosAbertos=false): some da tela até o
+     dedo tocar no funil. Quando abre, cai pra LINHA PRÓPRIA (flex-basis:100%)
+     com os filtros numa fileira e a busca embaixo (a busca já tem
+     `width:100%!important` da regra .gt-camp-hdr input, mais abaixo). */
+  .tela-gestao-trafego :deep(.gt-camp-filtros-painel){display:none;flex-basis:100%;flex-direction:column;align-items:stretch;gap:8px;order:5;}
+  .tela-gestao-trafego :deep(.gt-camp-filtros-painel.aberta){display:flex;}
+}
 /* Aviso de "não dá pra editar aqui" (ex.: é ABO, edite no conjunto) */
 .tela-gestao-trafego :deep(.gt-be-nota){font-size:calc(10.5px*var(--gt-fs,1.3));color:var(--muted);opacity:.9;line-height:1.5;}
 .tela-gestao-trafego :deep(.gt-ad-card){border-radius:8px;background:var(--surface);border:1px solid var(--border);padding:11px 14px;display:flex;flex-direction:column;gap:6px;margin-left:20px;margin-bottom:7px;box-shadow:0 2px 8px rgba(0,0,0,.07);position:relative;}
@@ -5982,7 +6536,16 @@ Object.assign(window, {
 .tela-gestao-trafego :deep(.gt-set-pane){position:relative;}
 .tela-gestao-trafego :deep(.gt-set-pane)::before{content:'';position:absolute;left:12px;top:0;bottom:18px;border-left:2px solid var(--accent);opacity:.28;pointer-events:none;}
 .tela-gestao-trafego :deep(.gt-ad-card::before){content:'';position:absolute;left:-8px;top:-9px;width:9px;height:24px;border-left:2px solid var(--accent);border-bottom:2px solid var(--accent);border-bottom-left-radius:9px;opacity:.55;pointer-events:none;}
-.tela-gestao-trafego :deep(.gt-ad-top){display:flex;align-items:center;gap:8px;}
+/* flex-wrap:wrap ACRESCENTADO na base (rodada de correção 1 desta tarefa):
+   sem isto, `.gt-metrics` (flex-shrink:0, para nunca espremer os números) e
+   `.gt-ad-name` (min-width:0, para poder quebrar) disputam a MESMA linha, e
+   quem perde é o nome — medido a 800px com um anúncio de verdade: nome
+   espremido a 0px de largura (pior que cortar: fica INVISÍVEL, nem elipse
+   sobra). Com `flex-wrap:wrap`, a métrica (que não quer diminuir) desce
+   pra própria linha quando não cabe, e o nome fica com a largura da linha de
+   cima — sem mudar nada em telas largas o bastante pra caber tudo numa linha
+   só (o wrap só age quando falta espaço de verdade). */
+.tela-gestao-trafego :deep(.gt-ad-top){display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
 /* Status badge — replaces dot */
 .tela-gestao-trafego :deep(.gt-status-badge){display:inline-flex;align-items:center;gap:4px;font-family:var(--fonte-principal);font-size:calc(9px*var(--gt-fs,1.3));font-weight:700;letter-spacing:.4px;padding:2px 8px;border-radius:20px;flex-shrink:0;text-transform:uppercase;}
 .tela-gestao-trafego :deep(.gt-status-badge.active){background:color-mix(in srgb,var(--green) 12%,var(--surface));color:color-mix(in srgb,var(--green) 75%,var(--text));}
@@ -5999,7 +6562,11 @@ Object.assign(window, {
 .tela-gestao-trafego :deep(.gt-chevron.open){transform:rotate(90deg);}
 .tela-gestao-trafego :deep(.gt-expand-hint){font-family:var(--fonte-principal);font-size:calc(9px*var(--gt-fs,1.3));color:var(--muted);opacity:.7;white-space:nowrap;flex-shrink:0;transition:opacity .12s;}
 .tela-gestao-trafego :deep(.gt-camp-top:hover .gt-expand-hint){opacity:1;color:var(--accent);}
-.tela-gestao-trafego :deep(.gt-name){flex:1;min-width:0;font-family:var(--fonte-principal);font-size:calc(12px*var(--gt-fs,1.3));font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;transition:color .12s;}
+/* NOME DA CAMPANHA nunca corta (PADRAO-DA-CENTRAL item 5, rodada de correção
+   1 desta tarefa) — MESMO conserto do `.gt-set-nm` acima, pela MESMA razão:
+   o `ellipsis` da regra base cortava o nome em qualquer largura entre 641px
+   e o breakpoint seguinte, e só o celular tinha override. */
+.tela-gestao-trafego :deep(.gt-name){flex:1;min-width:0;font-family:var(--fonte-principal);font-size:calc(12px*var(--gt-fs,1.3));font-weight:600;color:var(--text);overflow-wrap:anywhere;transition:color .12s;}
 .tela-gestao-trafego :deep(.gt-metrics){display:flex;align-items:center;gap:14px;flex-wrap:wrap;flex-shrink:0;}
 .tela-gestao-trafego :deep(.gt-metric){font-family:var(--fonte-principal);font-size:calc(10px*var(--gt-fs,1.3));color:var(--muted);white-space:nowrap;}
 .tela-gestao-trafego :deep(.gt-metric span){font-weight:700;color:var(--text);}
@@ -6061,7 +6628,11 @@ Object.assign(window, {
 .tela-gestao-trafego :deep(.gt-be-box input){width:82px;padding:5px 7px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-family:var(--fonte-principal);font-size:calc(11px*var(--gt-fs,1.3));}
 /* Pílula de veredito do anúncio + nome/porquê */
 .tela-gestao-trafego :deep(.gt-ad-name){flex:1;min-width:0;}
-.tela-gestao-trafego :deep(.gt-ad-nm){font-family:var(--fonte-principal);font-size:calc(11px*var(--gt-fs,1.3));font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+/* NOME DO ANÚNCIO nunca corta (PADRAO-DA-CENTRAL item 5, rodada de correção 1
+   desta tarefa) — MESMO conserto de `.gt-name`/`.gt-set-nm` acima. Esta tarefa
+   tinha corrigido só o override de celular; a regra BASE (aqui) ainda cortava
+   entre 641px e o breakpoint seguinte. */
+.tela-gestao-trafego :deep(.gt-ad-nm){font-family:var(--fonte-principal);font-size:calc(11px*var(--gt-fs,1.3));font-weight:600;color:var(--text);overflow-wrap:anywhere;}
 .tela-gestao-trafego :deep(.gt-ad-sub){font-family:var(--fonte-principal);font-size:calc(10px*var(--gt-fs,1.3));color:var(--muted);}
 /* Auto button */
 .tela-gestao-trafego :deep(.gt-auto-btn){display:flex;align-items:center;gap:6px;padding:5px 14px;border-radius:7px;font-family:var(--fonte-principal);font-size:calc(11px*var(--gt-fs,1.3));font-weight:700;cursor:pointer;border:1px solid var(--border);background:none;color:var(--muted);letter-spacing:.3px;transition:all .2s;white-space:nowrap;position:relative;}
@@ -6162,7 +6733,8 @@ Object.assign(window, {
    atrás. Já foi `--bg` (virava bloco preto no tema escuro) e depois
    `--surface2` (virava cinza no claro); transparente não tem nenhum dos dois
    problemas. */
-.tela-gestao-trafego :deep(.pnd-aba-acao){appearance:none;margin-left:auto;margin-bottom:-1px;padding:7px 15px;align-self:center;border:1px solid var(--border);border-radius:8px;background:var(--surface2,var(--surface));color:var(--accent);font-family:var(--fonte-principal);font-size:calc(11px*var(--gt-fs,1.3));font-weight:700;letter-spacing:1px;text-transform:uppercase;cursor:pointer;transition:border-color .15s ease,color .15s ease;}
+.tela-gestao-trafego :deep(.pnd-aba-acao){appearance:none;display:inline-flex;align-items:center;gap:6px;margin-left:auto;margin-bottom:-1px;padding:7px 15px;align-self:center;border:1px solid var(--border);border-radius:8px;background:var(--surface2,var(--surface));color:var(--accent);font-family:var(--fonte-principal);font-size:calc(11px*var(--gt-fs,1.3));font-weight:700;letter-spacing:1px;text-transform:uppercase;cursor:pointer;transition:border-color .15s ease,color .15s ease;}
+.tela-gestao-trafego :deep(.pnd-aba-acao-ic){flex-shrink:0;}
 /* Os dois botoes de acao andam JUNTOS na direita. Antes cada um tinha o seu
    `margin-left:auto` e o navegador reparte a sobra entre todas as margens
    automaticas: metade antes de "Nova campanha", metade antes de "Historico"
@@ -6203,7 +6775,30 @@ Object.assign(window, {
      `100vw x 100dvh`: virava uma tela dentro da tela, sem borda, e nao dava pra
      ver que era uma janela que fecha. 14px de folga de cada lado. */
   .tela-gestao-trafego :deep(#gt-novo-modal){width:calc(100vw - 28px);max-width:none;max-height:calc(100dvh - 56px);border-radius:14px;}
-  .tela-gestao-trafego :deep(.pnd-aba-acao){margin-left:0;flex:1 1 100%;margin-top:6px;}
+  /* ONDA C, TOPO DO CELULAR (25/09/2026): antes cada botão de ação virava
+     LINHA CHEIA SOZINHO (`flex:1 1 100%`) — medido: 117px só nesta barra,
+     porque "+ Nova campanha" e "Histórico" tomavam uma linha inteira CADA
+     um. Agora ficam na MESMA linha das abas, só com o ícone — o rótulo por
+     extenso continua existindo (aria-label/title já no template), só não
+     fica visível no celular. */
+  .tela-gestao-trafego :deep(.pnd-aba-acao){padding:8px;border-radius:7px;position:relative;}
+  .tela-gestao-trafego :deep(.pnd-aba-acao-txt){display:none;}
+  /* ALVO DE TOQUE (padrão item 6, "cresce a área, não o desenho"): o botão
+     visual encolheu pra caber na linha; o dedo continua precisando de 40px.
+     Só cresce em ALTURA (left:0;right:0, nunca mais largo que o próprio
+     botão) — encostado no vizinho (o outro ícone, a 4px de gap), crescer
+     também em largura ia cobrir o vizinho e tirar o toque dele (o aviso
+     que o próprio padrão faz). Mesma receita do `.bt-voltar` desta barra. */
+  .tela-gestao-trafego :deep(.pnd-aba-acao)::after{content:'';position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);height:40px;}
+  /* As três abas de verdade (Campanhas/Fila/A régua) mediram 37px de altura
+     no celular — abaixo do piso de 40px, não causado por esta tarefa, mas já
+     que a linha está sendo mexida, ganham a mesma folga invisível.
+     44px, não 40: medido com `elementFromPoint` na rodada 1, os 40px exatos
+     erravam por <1px bem na borda (arredondamento de subpixel do próprio
+     navegador, não colisão com vizinho) — 4px de sobra absorve essa margem
+     sem custar nada (não muda o desenho, só a área invisível de toque). */
+  .tela-gestao-trafego :deep(.pnd-aba){position:relative;}
+  .tela-gestao-trafego :deep(.pnd-aba)::after{content:'';position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);height:44px;}
 }
 .tela-gestao-trafego :deep(.gt-cfg-body){padding:16px 20px;overflow-y:auto;flex:1;}
 .tela-gestao-trafego :deep(.gt-cfg-sec){margin-bottom:18px;}
@@ -6273,13 +6868,31 @@ Object.assign(window, {
   .tela-gestao-trafego :deep(.gt-action-row .gt-act-btn){flex:1 1 auto;}
   /* nada dentro do card pode empurrar a largura pra fora */
   .tela-gestao-trafego :deep(.gt-camp-inner),.tela-gestao-trafego :deep(.gt-camp-row){max-width:100%;overflow-x:clip;}
+  /* Nome da campanha quebra em vez de cortar — precisa de flex-wrap no pai
+     pra o flex-basis:100% do .gt-name (abaixo) forçar a própria linha. */
+  .tela-gestao-trafego :deep(.gt-camp-l1){flex-wrap:wrap;row-gap:4px;}
   /* Conjuntos no celular: cabeçalho quebra em 2 linhas em vez de estourar a tela */
   .tela-gestao-trafego :deep(.gt-camp-row-ads){padding:0 10px 12px 10px;}
   .tela-gestao-trafego :deep(.gt-set-card){margin-left:0;max-width:100%;overflow-x:clip;}
   .tela-gestao-trafego :deep(.gt-set-top){flex-wrap:wrap;gap:6px;}
-  .tela-gestao-trafego :deep(.gt-set-nm){flex:1 1 100%;order:3;white-space:normal;}
+  /* O NÃO-CORTA (overflow-wrap:anywhere, sem nowrap/ellipsis) já vem da regra
+     BASE de `.gt-set-nm` (rodada de correção 1 desta tarefa — antes só este
+     override de celular tinha o conserto, e a regra base cortava de 641px
+     até o próximo breakpoint). Aqui no celular só falta a LARGURA CHEIA:
+     `flex-basis:100%` empurra o nome pra própria linha, com `order:3` porque
+     `.gt-set-top` tem outros irmãos (número, badge, gasto) que ficam ANTES
+     dele na primeira linha. */
+  .tela-gestao-trafego :deep(.gt-set-nm){flex:1 1 100%;order:3;}
+  /* MESMA razão do `.gt-set-nm` acima, pro nome da campanha: só a largura
+     cheia falta aqui — o não-corta já é da base de `.gt-name`. */
+  .tela-gestao-trafego :deep(.gt-name){flex:1 1 100%;}
   .tela-gestao-trafego :deep(.gt-set-exp){order:4;margin-left:auto;}
   .tela-gestao-trafego :deep(.gt-ad-card){margin-left:10px;}
+  /* MESMA razão dos dois acima, pro nome do anúncio: o não-corta já é da base
+     de `.gt-ad-nm`. Aqui não precisa de `order`: `.gt-ad-name` já vem ANTES
+     de `.gt-metrics` no DOM (top.appendChild(...nameWrap, metrics)), então só
+     a largura cheia já empurra o nome pra própria linha, sem reordenar nada. */
+  .tela-gestao-trafego :deep(.gt-ad-name){flex:1 1 100%;}
   /* No estreito a árvore não cabe: some com as DUAS peças da guia (o L do anúncio
      e o trilho do conjunto). Esconder só uma deixaria a linha vertical solta. */
   .tela-gestao-trafego :deep(.gt-ad-card::before){display:none;}
@@ -6416,6 +7029,41 @@ Object.assign(window, {
    da faixa de controles, que é alta aqui. Mais grosso e com mais tinta, para
    ser visto na foto inteira. O texto em cima continua `--text`/`--muted`. */
 .tela-gestao-trafego :deep(.bt-barra){border-bottom-width:6px;background:color-mix(in srgb,var(--modulo) 12%,var(--surface));}
+
+/* ══ ONDA C - TOPO DO CELULAR (25/09/2026) ═════════════════════════════════
+   Medido antes: 336px do topo da tela ate o primeiro .gt-camp-card a 375px,
+   e mais 155px de cabecalho da lista ate a primeira campanha de verdade
+   (docs em .superpowers/sdd/2026-09-25-gt-onda-c/medicao-topo-celular.md).
+   O pedido do dono: cortar agressivo, mas o SELETOR DE CONTA fica do jeito
+   que esta - ele troca de conta o tempo todo, e navegacao principal, nao
+   pode encolher nem sumir.
+
+   O SUBTITULO SOME SO AQUI, SO NO CELULAR. Isto NAO mexe no componente
+   `barra-de-topo.vue`: as outras ~34 telas continuam mostrando o subtitulo
+   (a razao dele existir esta documentada la - uma versao que tirava isso foi
+   revertida pelo dono, "no celular fica informacao escondida"). Aqui e
+   diferente: e o proprio dono, POR ESCRITO, pedindo o corte so nesta tela -
+   "Meta Ads - Inteligencia RBV" e menos vital que sobrar espaco pro que
+   importa (conta, periodo, campanhas). Por isso o `:deep()` mira so dentro
+   de `.tela-gestao-trafego`, e nao no `.bt-sub` da regra base. */
+@media(max-width:640px){
+  .tela-gestao-trafego :deep(.bt-sub){display:none;}
+  /* Respiro entre a barra do topo e a de abas: era 14px (gap:14px do
+     .bt-barra quando ele quebra em duas linhas no celular) - ganho de graça,
+     nao tira nada de vista. */
+  .tela-gestao-trafego :deep(.bt-barra){gap:8px;}
+  /* Os tres blocos empilhados dentro da faixa de controles (Funil/KPIs,
+     conta, periodo) respiravam 8px em CADA padding e CADA vao - 4 unidades
+     de 8px = 32px so de respiro. Aperta pra metade (--sp-1): o seletor de
+     conta continua com os mesmos 40px de altura, so o AR ao redor dele
+     encolhe. */
+  .tela-gestao-trafego :deep(.gv-controles){padding:4px 12px;gap:4px;}
+  /* Vao entre a barra de abas e o cartao de campanhas: era 16px de
+     margin-bottom + 12px de padding-top do .gt-body = 28px so de respiro
+     entre dois blocos que ja tem borda/cor separando um do outro. */
+  .tela-gestao-trafego :deep(.pnd-abas){margin-bottom:8px;}
+  .tela-gestao-trafego :deep(.gt-body){padding-top:8px;}
+}
 
 /* ── ABA FILA ───────────────────────────────────────────────────────────────
    O cabeçalho da fila é um bloco em BRONZE (a decisão de verba); cada item

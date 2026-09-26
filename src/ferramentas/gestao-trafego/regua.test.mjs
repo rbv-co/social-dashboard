@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizarRegua, metaDoBalde, reguaDaConta, mesclarMetasDaConta } from './regua.js';
+import { normalizarRegua, metaDoBalde, reguaDaConta, mesclarMetasDaConta, ponderadaLigada } from './regua.js';
 import { PESOS_PADRAO, LIMIARES_PADRAO } from './ponderada.js';
 
 test('linha vazia ou nula cai inteira no padrao', () => {
@@ -44,12 +44,15 @@ test('valor invalido (texto, negativo, NaN) cai no padrao daquele campo', () => 
 });
 
 test('metaDoBalde devolve a meta do PROPRIO balde, nunca a de outro', () => {
-  // ATUALIZADO 24/09/2026: engajamento lê pela chave `engajamento_bruto` (ver
-  // testes dedicados à troca de régua, abaixo) — aqui o que importa é só que
-  // ele não pega emprestada a meta de trafego, nem o contrário.
+  // ATUALIZADO 25/09/2026 (Onda C, reindex de ALVOS por MERCADO — ver
+  // alvos.js): este teste ficou vermelho quando 'engajamento' e 'trafego'
+  // deixaram de ser chave de ALVOS (viraram 'post' e 'site_trafego'). Índice
+  // trocado, não lógica: o que o teste prova continua valendo — 'post' não
+  // pega emprestada a meta de 'site_trafego', nem o contrário. 'post' lê por
+  // 'engajamento_bruto' com o interruptor desligado (padrão, Tarefa 4).
   const r = normalizarRegua({ metas: { engajamento_bruto: 0.15, trafego: 0.25 } });
-  assert.equal(metaDoBalde(r, 'engajamento'), 0.15);
-  assert.equal(metaDoBalde(r, 'trafego'), 0.25);
+  assert.equal(metaDoBalde(r, 'post'), 0.15);
+  assert.equal(metaDoBalde(r, 'site_trafego'), 0.25);
   assert.equal(metaDoBalde(r, 'balde-que-nao-existe'), 0, 'balde sem meta propria devolve 0, nunca empresta de outro');
 });
 
@@ -65,10 +68,12 @@ test('nao existe mais reserva em "padrao": cada balde tem sua propria unidade (I
 });
 
 test('metaDoBalde coerce string da meta solicitada pra number', () => {
-  // engajamento lê por `engajamento_bruto` desde 24/09/2026 (chaveMeta) — a
-  // chave do fixture mudou, o que o teste prova (coerção de tipo) não.
+  // ATUALIZADO 25/09/2026: balde 'engajamento' virou mercado 'post' no reindex
+  // (ver alvos.js) — a chave do balde no fixture mudou, o que o teste prova
+  // (coerção de tipo) não. `r` cru (sem passar por normalizarRegua) prova de
+  // quebra que `ponderadaLigada` não derruba nada quando a chave nem existe.
   const r = { metas: { engajamento_bruto: '5' } };
-  const resultado = metaDoBalde(r, 'engajamento');
+  const resultado = metaDoBalde(r, 'post');
   assert.equal(typeof resultado, 'number', 'deve ser number, não string');
   assert.equal(resultado, 5, 'deve coercir "5" pro número 5');
 });
@@ -81,9 +86,9 @@ test('metaDoBalde NAO usa "padrao" quando a meta solicitada nao existe (devolve 
 });
 
 test('metaDoBalde passa numero real direto e devolve como number', () => {
-  // idem: chave `engajamento_bruto` desde a troca de régua de 24/09/2026.
+  // ATUALIZADO 25/09/2026: idem ao teste acima — 'engajamento' virou 'post'.
   const r = { metas: { engajamento_bruto: 7.5 } };
-  const resultado = metaDoBalde(r, 'engajamento');
+  const resultado = metaDoBalde(r, 'post');
   assert.equal(typeof resultado, 'number', 'deve ser number');
   assert.equal(resultado, 7.5, 'deve preservar o valor');
 });
@@ -125,13 +130,14 @@ test('sem conta selecionada tambem fica em branco (nunca julga por engano)', () 
 test('a meta unica LEGADA nao vaza mais para o veredito de nenhuma conta', () => {
   // Antes de 2026-07-29 este campo governava as cinco contas. Ele continua
   // sendo guardado (historico), mas nao pode mais decidir cor nenhuma.
-  // ATUALIZADO 24/09/2026: a meta da CONTA para engajamento também passou a
-  // usar a chave `engajamento_bruto` (a antiga, por ponto, é a que fica em
-  // `metas.engajamento` — ver troca de régua em alvos.js).
+  // ATUALIZADO 25/09/2026: 'engajamento' era o BALDE; virou o mercado 'post'
+  // no reindex de ALVOS (ver alvos.js) — só o índice de `metaDoBalde` mudou, o
+  // campo do fixture (`metas.engajamento`, a meta antiga por ponto) continua
+  // com o MESMO nome porque é uma chave de META, não de balde/mercado.
   const r = normalizarRegua({ metas: { engajamento: 0.15 }, metas_por_conta: { 'vessel': { engajamento_bruto: 0.012 } } });
   assert.equal(r.metas.engajamento, 0.15, 'segue guardado');
-  assert.equal(metaDoBalde(reguaDaConta(r, 'vessel'), 'engajamento'), 0.012, 'quem manda e a meta da conta');
-  assert.equal(metaDoBalde(reguaDaConta(r, 'outra'), 'engajamento'), 0, 'e a legada NAO serve de reserva');
+  assert.equal(metaDoBalde(reguaDaConta(r, 'vessel'), 'post'), 0.012, 'quem manda e a meta da conta');
+  assert.equal(metaDoBalde(reguaDaConta(r, 'outra'), 'post'), 0, 'e a legada NAO serve de reserva');
 });
 
 test('pesos e limiares continuam GERAIS — peso e valor, nao preco', () => {
@@ -180,11 +186,17 @@ test('mesclar devolve copia — nao muta a regua carregada do banco', () => {
 // resolver a CHAVE da meta pelo alvo (chaveMeta), não mais pelo nome do balde
 // direto — só para engajamento, que agora lê `engajamento_bruto` em vez de
 // `engajamento`, para a meta antiga (R$/ponto) sobreviver intacta.
+//
+// ATUALIZADO 25/09/2026 (Onda C, Tarefa 4): balde 'engajamento' virou o
+// mercado 'post' no reindex de ALVOS — trocado nos três testes abaixo, índice
+// só, a lógica que eles provam não mudou. Esta seção ganhou também os testes
+// do INTERRUPTOR (ponderadaLigada): por padrão ele está desligado, e é essa a
+// razão de 'post' ler `engajamento_bruto` aqui embaixo.
 // ---------------------------------------------------------------------------
 
 test('metaDoBalde lê engajamento pela chave nova, não pela do ponto', () => {
   const r = normalizarRegua({ metas: { engajamento: 0.012, engajamento_bruto: 0.05 } });
-  assert.equal(metaDoBalde(r, 'engajamento'), 0.05, 'vale a meta em R$/engajamento');
+  assert.equal(metaDoBalde(r, 'post'), 0.05, 'vale a meta em R$/engajamento');
 });
 
 test('a meta antiga do ponto continua guardada, intacta', () => {
@@ -195,6 +207,84 @@ test('a meta antiga do ponto continua guardada, intacta', () => {
 
 test('sem a meta nova, engajamento não é julgado pela meta do ponto', () => {
   const r = normalizarRegua({ metas: { engajamento: 0.012 } });
-  assert.equal(metaDoBalde(r, 'engajamento'), 0,
+  assert.equal(metaDoBalde(r, 'post'), 0,
     'meta 0 devolve faixa sem-dados: número sem cor, que é o combinado');
+});
+
+// ---------------------------------------------------------------------------
+// O INTERRUPTOR DA PONDERADA (Onda C, Tarefa 4, 25/09/2026). `ponderadaLigada`
+// é a FONTE ÚNICA — tela e robô leem daqui. Padrão DESLIGADA (decisão do dono,
+// 24/09/2026). Ligar troca qual meta `metaDoBalde('post', ...)` consulta: da
+// NOVA (R$/engajamento) pra ANTIGA (R$/ponto), sem apagar nenhuma das duas.
+// ---------------------------------------------------------------------------
+
+test('ponderadaLigada devolve false para regua vazia, nula ou sem a chave — nunca quebra', () => {
+  assert.equal(ponderadaLigada(null), false);
+  assert.equal(ponderadaLigada(undefined), false);
+  assert.equal(ponderadaLigada({}), false);
+  assert.equal(ponderadaLigada(normalizarRegua(null)), false, 'padrao de fabrica e desligada');
+  assert.equal(ponderadaLigada(normalizarRegua({})), false);
+});
+
+test('ponderadaLigada so devolve true para o booleano true — texto, 1 ou outro lixo nao ligam', () => {
+  assert.equal(ponderadaLigada({ ponderada_ligada: 'true' }), false, 'string nao e booleano');
+  assert.equal(ponderadaLigada({ ponderada_ligada: 1 }), false, 'numero nao e booleano');
+  assert.equal(ponderadaLigada({ ponderada_ligada: true }), true);
+});
+
+test('normalizarRegua le o interruptor de dentro de `limiares` (sem coluna nova no banco) e o devolve como campo PROPRIO', () => {
+  const desligada = normalizarRegua({ limiares: { escalarForte: 0.7 } });
+  assert.equal(desligada.ponderada_ligada, false, 'linha sem a chave cai no padrao: desligada');
+  assert.equal(desligada.limiares.ponderada_ligada, undefined,
+    'o booleano NUNCA fica dentro do objeto de limiares normalizado — misturaria com multiplicador');
+  const ligada = normalizarRegua({ limiares: { escalarForte: 0.7, ponderada_ligada: true } });
+  assert.equal(ligada.ponderada_ligada, true);
+  assert.equal(ligada.limiares.escalarForte, 0.7, 'ligar o interruptor nao mexe nos multiplicadores da mesma secao');
+});
+
+test('ligar o interruptor troca a meta que metaDoBalde(post) consulta, sem apagar a outra', () => {
+  const r = normalizarRegua({ limiares: { ponderada_ligada: true }, metas: { engajamento: 0.013, engajamento_bruto: 0.32 } });
+  assert.equal(ponderadaLigada(r), true);
+  assert.equal(metaDoBalde(r, 'post'), 0.013, 'ligada, post volta a ler a meta ANTIGA (R$/ponto)');
+  assert.equal(r.metas.engajamento_bruto, 0.32, 'a meta NOVA continua guardada, so deixa de ser consultada');
+});
+
+test('desligar de novo volta a ler a meta nova — nenhuma das duas se apaga ao trocar o interruptor', () => {
+  const base = { metas: { engajamento: 0.013, engajamento_bruto: 0.32 } };
+  const ligada = normalizarRegua({ ...base, limiares: { ponderada_ligada: true } });
+  const desligada = normalizarRegua({ ...base, limiares: { ponderada_ligada: false } });
+  assert.equal(metaDoBalde(ligada, 'post'), 0.013);
+  assert.equal(metaDoBalde(desligada, 'post'), 0.32);
+  assert.equal(ligada.metas.engajamento, 0.013, 'a antiga sobrevive nos dois estados');
+  assert.equal(desligada.metas.engajamento, 0.013, 'a antiga sobrevive nos dois estados');
+  assert.equal(ligada.metas.engajamento_bruto, 0.32, 'a nova sobrevive nos dois estados');
+  assert.equal(desligada.metas.engajamento_bruto, 0.32, 'a nova sobrevive nos dois estados');
+});
+
+// ACHADO na verificação da Tarefa 5 (rodada de correção 1, 25/09/2026):
+// reguaDaConta não copiava `ponderada_ligada` — o caminho REAL da tela
+// (_gtReguaAtiva -> reguaDaConta) sempre via `undefined`, então
+// `ponderadaLigada(reguaAtiva)` era SEMPRE false em produção, não importa o
+// que estivesse salvo. O interruptor da Tarefa 4 nunca tinha efeito nenhum
+// pelo caminho de verdade — só nos testes que chamam metaDoBalde direto em
+// cima do normalizarRegua, sem passar por reguaDaConta.
+test('reguaDaConta leva o interruptor da ponderada junto — é GERAL, como pesos e limiares', () => {
+  const ligada = normalizarRegua({
+    limiares: { ponderada_ligada: true },
+    metas_por_conta: { vessel: { engajamento: 0.013, engajamento_bruto: 0.32 } },
+  });
+  const porConta = reguaDaConta(ligada, 'vessel');
+  assert.equal(ponderadaLigada(porConta), true,
+    'sem este campo, o interruptor nunca dispararia pelo caminho real da tela (_gtReguaAtiva)');
+  // A PROVA que importa: `metaDoBalde('post')` só lê a meta ANTIGA
+  // (0.013, R$/ponto) em vez da NOVA (0.32, R$/engajamento) quando o
+  // interruptor sobrevive à passagem por reguaDaConta — antes deste
+  // conserto, `porConta.ponderada_ligada` era `undefined` e este teste
+  // devolvia 0.32 mesmo com a régua real dizendo "ligada".
+  assert.equal(metaDoBalde(porConta, 'post'), 0.013);
+});
+
+test('reguaDaConta com o interruptor DESLIGADO continua desligado, não como default silencioso', () => {
+  const desligada = normalizarRegua({ limiares: { ponderada_ligada: false } });
+  assert.equal(ponderadaLigada(reguaDaConta(desligada, 'x')), false);
 });
