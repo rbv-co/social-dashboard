@@ -61,3 +61,13 @@ test('o codigo continua unico por pessoa', () => {
  * pela planilha e voltando na celula — esta em `_shared/abas-da-vessel.test.mjs`,
  * no teste "Landing page: a origem de cada LP chega na planilha".
  * Este comentario e um LEMBRETE de onde procurar, nao um teste. */
+
+/* ⚠️ QUEM SE CADASTROU NÃO É CLIENTE. Até 23/09/2026 todo cadastro entrava no
+ * Bling com o tipo "Cliente" (14580785954), porque o tipo "Lead" não existia.
+ * O dono criou "Lead" (14584907560) e decidiu: continua subindo, mas como lead. */
+test('o cadastro entra no Bling como Lead, e nunca como Cliente', () => {
+  const linha = FONTE.split('\n').find((l) => l.startsWith('const TIPOS_DO_CADASTRO'));
+  const ids = [...linha.matchAll(/id:\s*(\d+)/g)].map((m) => m[1]);
+  assert.deepEqual(ids, ['14584907560']);
+  assert.match(FONTE, /tiposContato: TIPOS_DO_CADASTRO/);
+});

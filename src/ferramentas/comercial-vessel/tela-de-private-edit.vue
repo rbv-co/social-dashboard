@@ -424,7 +424,7 @@
                        encontrado" na página, e o cartão mandaria um link morto. -->
                   <button v-if="encontroAceitaConvite(e)" type="button" class="btn"
                           @click="cartaoAberto = { convidada: c, encontro: e }">Cartão e mensagem</button>
-                  <button v-for="g in gestosDaConvidada(c)" :key="g.gesto" class="btn"
+                  <button v-for="g in gestosDaConvidada(c, { podeMarcarPresenca: podeEditar })" :key="g.gesto" class="btn"
                           :disabled="marcando === c.id" @click="marcar(e, c, g.gesto)">{{ g.rotulo }}</button>
                 </div>
                 <p v-if="erroDeMarcar[c.id]" class="cv-nota cv-nota-erro">{{ erroDeMarcar[c.id] }}</p>

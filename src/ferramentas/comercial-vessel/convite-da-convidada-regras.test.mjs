@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  primeiroNome, linkDaConvidada, dataPorExtenso, horarioCurto, mensagemDoConvite,
+  primeiroNome, linkDaConvidada, linkDaConvidadaParaEquipe, dataPorExtenso, horarioCurto, mensagemDoConvite,
   linkDoWhatsApp, nomeDoArquivo, textosDoCartao, LINHAS_DO_CONVITE,
 } from './convite-da-convidada-regras.js'
 
@@ -15,6 +15,13 @@ test('link só com as duas chaves no formato', () => {
   assert.equal(linkDaConvidada('k7q2m9tx', 'H3N8P4WZ'), 'https://vesselbrasil.com.br/pe/K7Q2M9TX/H3N8P4WZ')
   assert.equal(linkDaConvidada('K7Q2M9TX', 'O0I1ABCD'), '')
   assert.equal(linkDaConvidada('', 'H3N8P4WZ'), '')
+})
+test('o link da equipe é o mesmo com o marcador, e a mensagem não o leva', () => {
+  assert.equal(linkDaConvidadaParaEquipe('k7q2m9tx', 'H3N8P4WZ'), 'https://vesselbrasil.com.br/pe/K7Q2M9TX/H3N8P4WZ?equipe=1')
+  assert.equal(linkDaConvidadaParaEquipe('K7Q2M9TX', 'O0I1ABCD'), '')
+  const m = mensagemDoConvite({ quem: 'equipe', convidada: 'Beatriz', stylist: 'Ana', quando: QUANDO,
+    local: 'Loja', link: linkDaConvidada('K7Q2M9TX', 'H3N8P4WZ') })
+  assert.doesNotMatch(m, /equipe=1/)
 })
 test('data e hora no fuso de São Paulo, não em UTC', () => {
   assert.equal(dataPorExtenso(QUANDO), 'sábado, 10 de outubro')

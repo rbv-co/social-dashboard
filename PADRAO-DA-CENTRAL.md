@@ -375,6 +375,8 @@ Seis destas regras não dependem mais de você lembrar delas — `npm test` repr
 | Tamanho de texto sai da escala (tela de Autenticidade) | `escala-de-texto.test.mjs` |
 | Diretiva usada está registrada | `diretiva-usada-esta-registrada.test.mjs` |
 | Todo `.vue` compila | `todo-vue-compila.test.mjs` |
+| Função nova do Comercial Vessel não usa a trava da família (lembrete) | `db/permissao-por-tela-no-banco.test.mjs` |
+| Aplicador novo não deixa conta de prova chegar ao COMMIT (lembrete) | `coletor/contas-de-prova-nao-vao-para-producao.test.mjs` |
 
 **Precisa de uma exceção?** Adicione no teste, com o motivo escrito ao lado —
 como já estão lá marca de terceiro, identidade de módulo, medalha de ranking e
@@ -395,6 +397,46 @@ Cartão de menu pergunta `podeAbrir('<rota>')`, nunca `hasPermission` à mão.
 O teste `catalogo-de-ferramentas.test.mjs` reprova rota, cartão ou chave fora
 do catálogo. Chave que é pedaço de uma que já existe vem com pré-concessão
 **aditiva** (migration + `coletor/aplicar-*.mjs`) para quem já tem a mãe.
+
+**E no banco, a função confere a chave DA SUA tela** (B13, 25/09/2026). Função
+`security definer` de uma tela só do Comercial Vessel começa por
+`if not public.vessel_pode('<chave da tela>', 'ver'|'editar') then` — nunca pela
+trava da família (`is_vessel_atendimentos()` / `_editar()`), que aceita qualquer
+tela: com ela, quem tinha só o Material Gráfico lia o histórico de contato das
+parceiras chamando o banco por fora da Central. Função chamada por duas telas
+aceita as duas (`vessel_pode(a) or vessel_pode(b)`), com o porquê escrito na
+migration. `ver` para ler, `editar` para gravar. Tela nova do Comercial Vessel
+que chama o banco também entra na lista fechada de `vessel_pode` (numa migration
+nova que recria a função). O teste `db/permissao-por-tela-no-banco.test.mjs`
+reprova migration nova com a família sem o marcador `-- familia: <motivo>` — é
+**lembrete** de texto; o portão de verdade é o `if` dentro de cada função, e a
+prova é chamar a função com um perfil de mentira de cada tela (ver
+`coletor/aplicar-vessel-permissao-por-tela-no-banco.mjs`).
+
+## 9⅞. Aplicador de migration: conta de prova não vai para produção
+
+Aplicador (`coletor/aplicar-*.mjs`) que fala como gente de verdade cria perfis
+de mentira (`…@teste.invalido`). Em 24–25/09/2026 quatro aplicadores os criaram
+logo depois do `begin`, **fora** do savepoint da prova: o ensaio desfazia tudo,
+o `--gravar` fazia COMMIT — e 8 contas com chaves do Comercial Vessel ficaram em
+produção. Pior: criadas só com `id` e `email`, a API de admin do Auth nem as
+enxerga, e tirá-las depois exige escrever direto em `auth.users`.
+
+- **De preferência, a conta nasce DENTRO do savepoint da prova** e morre com ele.
+  Declare no topo do aplicador: `// contas-de-prova: <em qual savepoint>`.
+- Quando ela precisa viver fora (vários savepoints usam a mesma), crie por
+  `contasDeProva(cli)` (`coletor/lib/contas-de-prova.mjs`) e chame
+  `await provas.apagarEConferir()` **logo antes do `commit`** — é o `finally` da
+  transação: no caminho do erro o ROLLBACK já leva a conta; no do COMMIT, quem a
+  leva é essa chamada, que confere que não sobrou nenhuma e, se sobrar, lança
+  (e o COMMIT não acontece).
+- **E o aplicador confere no fim** que o número de contas (`auth.users`) é o
+  mesmo de antes — na impressão de antes/depois.
+
+O teste `coletor/contas-de-prova-nao-vao-para-producao.test.mjs` reprova
+aplicador novo que cria conta sem uma das duas saídas. É **lembrete** de texto;
+a prova de verdade é a impressão do próprio aplicador e, em produção,
+`select count(*) from public.profiles where email like '%@teste.invalido'` = 0.
 
 ## 10. Antes de dizer que acabou
 

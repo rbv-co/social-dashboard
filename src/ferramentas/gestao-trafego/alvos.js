@@ -122,6 +122,15 @@ export const ALVOS = {
   // mesmo conjunto de campanhas (ver o bloco grande no topo do arquivo): o
   // antigo incluía, sem o dono saber, campanhas que hoje são 'perfil' e
   // 'video'. Por isso a meta antiga (`engajamento_bruto`) não é herdada aqui.
+  // ⚠️ RELIGAR A PONDERADA NÃO É "TROCAR DUAS LINHAS" AQUI (correção da revisão
+  // final da Onda B, 25/09/2026, mantida na Onda C): trocar `metrica` para
+  // 'ponderada' no mercado `post` e apagar a chave de meta NÃO religa nada
+  // sozinho. `custoDoAlvo` (metricas.js) tem guarda explícita devolvendo `null`
+  // para `metrica === 'ponderada'` — o ramo que chamava `calcularPonderada` foi
+  // REMOVIDO de lá, não desviado — e o cartão não sabe ler 'ponderada' no
+  // catálogo de métricas. O interruptor da régua (Seção 1, `ponderadaLigada` em
+  // regua.js) JÁ EXISTE e guarda a escolha; o que falta é ele trocar também o
+  // CÁLCULO e os limiares — é a T4b, pendente.
   post: {
     metrica: 'custo_engajamento', resultado: 'engaj_pub',
     rotulo: 'Custo por engajamento', unidade: 'R$',

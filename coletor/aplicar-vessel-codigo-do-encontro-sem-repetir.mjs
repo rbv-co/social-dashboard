@@ -18,6 +18,7 @@
 // da FILA (a trava por dia e praça aparece em `pg_locks` depois de criar) e a
 // do CINTO (um código tomado por fora da conta é pulado, não repetido).
 import './lib/carregar-env.mjs'
+import { contasDeProva } from './lib/contas-de-prova.mjs'
 import { readFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import pg from 'pg'
@@ -67,10 +68,8 @@ try {
     console.log(`\n(ensaio) aplicando ${ANTES_DESTA} dentro da transação, antes desta`)
     await cli.query(ler(ANTES_DESTA))
   }
-  const id = randomUUID(), email = `prova-codigo-${id}@teste.invalido`
-  await cli.query(`insert into auth.users (id, email) values ($1, $2)`, [id, email])
-  await cli.query(`insert into public.profiles (id, email, name, features, permissions, is_superadmin)
-    values ($1, $2, 'Prova Código', $3, $4::jsonb, false)`, [id, email, ['atendimentos'], JSON.stringify({ atendimentos: ['ver', 'editar'] })])
+  const provas = contasDeProva(cli)
+  const id = await provas.criar('prova-codigo', { name: 'Prova Código', features: ['atendimentos'], permissions: { atendimentos: ['ver', 'editar'] } })
   await cli.query(`select set_config('request.jwt.claims', $1, true)`, [JSON.stringify({ sub: id })])
   const ativada = Number((await uma(`select id from public.vessel_stylist_etapas where ativa and libera_private_edit order by ordem limit 1`)).id)
   const dia = (n) => r(`to_char((now() at time zone 'America/Sao_Paulo')::date + $1::int, 'YYYYMMDD')`, [n])
@@ -145,6 +144,8 @@ try {
 
   if (falhas.length) throw new Error(`${falhas.length} conferência(s) falharam`)
   if (GRAVAR) {
+    // ⚠️ As contas de prova NÃO vão para produção (ver coletor/lib/contas-de-prova.mjs).
+    await provas.apagarEConferir()
     const fim = await cli.query('commit')
     if (fim.command !== 'COMMIT') throw new Error(`o commit voltou ${fim.command}`)
     console.log(`\n✅ ${ARQUIVO} aplicada e registrada.`)

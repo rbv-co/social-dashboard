@@ -79,7 +79,15 @@ export const GT_METRIC_CATALOG={
   custo_lead:{label:'Custo/Lead',fmt:'money',compute:r=>{const l=_gtActionVal(r,_GT_LEAD),s=_gtNum(r.spend);return l?s/l:null;}},
   // --- Mensagens (WhatsApp/Direct) ---
   conversas:{label:'Conversas iniciadas',fmt:'int',compute:r=>_gtActionVal(r,_GT_MSG)},
-  custo_conversa:{label:'Custo/Conversa',fmt:'money',compute:r=>_gtPerGasto(r,_GT_MSG)},
+  // Rótulo alinhado com ALVOS.mensagens.rotulo (decisão do dono, 24/09/2026:
+  // conversa iniciada no WhatsApp/Direct É lead pra ele). Era 'Custo/Conversa'
+  // — corrigido na rodada de correção 2 (25/09/2026) porque o texto de ajuda
+  // (`custo_conversa` em ajuda.js) afirmava "a tela mostra Custo por lead" e
+  // isso era falso enquanto este label dizia outra coisa. Nunca aparece na
+  // mesma lista de KPIs que `custo_lead` (ver GT_BALDE_PADRAO logo abaixo:
+  // 'engajamento'/'mensagens' usam esta chave, 'leads' usa a outra) — os dois
+  // rótulos iguais não colidem no mesmo cartão.
+  custo_conversa:{label:'Custo/Lead',fmt:'money',compute:r=>_gtPerGasto(r,_GT_MSG)},
   conexoes_msg:{label:'Conexões de mensagem',fmt:'int',compute:r=>_gtActionVal(r,_GT_MSG_CONN)},
   primeira_resposta:{label:'1ª resposta',fmt:'int',compute:r=>_gtActionVal(r,_GT_MSG_REPLY)},
   // --- Vídeo e engajamento ---
@@ -121,19 +129,34 @@ export const GT_BALDE_PADRAO={
 // enquanto código antigo não migrou (Onda C, ver alvos.js), um nome de balde
 // legado, que simplesmente não bate em `ALVOS` e devolve null (nunca inventa).
 //
-// REINDEXADO POR MERCADO em 25/09/2026 (Onda C): o parâmetro se chama `balde`
-// por compatibilidade de leitura com quem ainda chama assim, mas o valor que
-// importa é a CHAVE de `ALVOS`, que agora é mercado, não objetivo declarado.
+// REINDEXADO POR MERCADO em 25/09/2026 (Onda C): o parâmetro ainda se chama
+// `balde` por compatibilidade com quem chama assim, mas o valor que importa é
+// a CHAVE de `ALVOS`, que agora é mercado — o que o conjunto afirma —, não o
+// objetivo declarado.
 //
-// A guarda `alvo.metrica === 'ponderada'` não dispara em NENHUM mercado hoje
+// A guarda `alvo.metrica === 'ponderada'` não dispara mais no caminho normal
 // — desde a troca de régua de 24/09/2026, o mercado `post` (o mais parecido
-// com o antigo balde de engajamento) usa `custo_engajamento` do catálogo,
-// como qualquer outro mercado (ver ALVOS.post em alvos.js). Ela continua
-// aqui de propósito: é o que garante que, SE o interruptor da Tarefa 4
-// religar a ponderada para `post` (trocando `metrica` para `'ponderada'` em
-// alvos.js), esta função volta a devolver null em vez de tentar calcular um
-// custo que não existe no catálogo — sem essa guarda, religar a ponderada
-// exigiria mexer aqui também.
+// com o antigo balde de engajamento) usa `custo_engajamento` como qualquer
+// outro mercado (ver ALVOS.post em alvos.js). Ela continua
+// aqui só para NÃO QUEBRAR: `GT_METRIC_CATALOG` nunca teve (e não tem) uma
+// entrada `'ponderada'`, então sem a guarda `GT_METRIC_CATALOG[alvo.metrica]`
+// daria `undefined` e o `.compute` seguinte estouraria.
+// CORREÇÃO (revisão final da Onda B, correção 2, 25/09/2026): isto NÃO é
+// "religar pronto". Trocar `metrica` de volta para `'ponderada'` em alvos.js
+// faz esta função devolver `null` — a guarda barra o crash, mas não calcula
+// coisa nenhuma no lugar. O custo por ponto de verdade mora só em
+// `calcularPonderada` (ponderada.js), que este arquivo nunca chamou; um
+// revert de verdade precisa desviar para lá AQUI. São DOIS lugares no total
+// (contados de verdade, não por arquivo tocado): este `custoDoAlvo` e a
+// leitura do cartão em tela-de-gestao-trafego.vue (mesmo problema — lê o
+// mesmo catálogo sem entrada 'ponderada' — mais os chips "Custo/ponto" e
+// "Qualidade", removidos de lá, que precisariam voltar a ser desenhados).
+// `custoAtualDoAlvo` (budget-ia.mjs) NÃO é um terceiro lugar: ele só chama
+// esta função (`return custoDoAlvo(balde, ins)` no caminho sem interação
+// declarada) — corrigido aqui, ele acompanha sem precisar de nenhuma edição
+// própria. O interruptor JÁ EXISTE (Seção 1 da régua,
+// `ponderadaLigada` em regua.js) e guarda a escolha; o que falta é ele trocar
+// também o CÁLCULO nesses dois lugares — é a T4b, pendente.
 //
 // Devolve null (e nunca 0) quando não há resultado ou não há gasto na janela:
 // um custo de R$ 0,00 escrito no prompt é lido pelo modelo como "de graça" e

@@ -42,6 +42,10 @@
           <a v-else-if="imagem" class="btn" :href="imagem" :download="nomeDoArquivo(convidada.nome, encontro.quando)"
              @click="marcarEnviado">Baixar cartão</a>
           <button type="button" class="btn" :disabled="!mensagem" @click="copiar">{{ copiado ? 'Copiada' : 'Copiar mensagem' }}</button>
+          <!-- Conferir o convite como ela vê. NÃO marca "enviado" e, com o
+               marcador `?equipe=1`, não conta como abertura dela. -->
+          <a v-if="linkDaEquipe && !EM_DEMONSTRACAO && !erro" class="btn" :href="linkDaEquipe" target="_blank"
+             rel="noopener noreferrer">Ver o convite dela</a>
         </div>
         <p v-if="quem === 'stylist' && !whatsDaStylist" class="cv-nota cv-nota-aviso">
           Esta stylist não tem WhatsApp válido na Central — copie a mensagem e mande você.</p>
@@ -59,7 +63,7 @@
  * marcação falhar, o envio já saiu: a tela avisa em vez de fingir que marcou. */
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import {
-  primeiroNome, linkDaConvidada, mensagemDoConvite, linkDoWhatsApp, nomeDoArquivo,
+  primeiroNome, linkDaConvidada, linkDaConvidadaParaEquipe, mensagemDoConvite, linkDoWhatsApp, nomeDoArquivo,
 } from './convite-da-convidada-regras.js'
 import { desenharConvite } from './desenhar-convite.js'
 
@@ -83,6 +87,9 @@ const quem = ref(lerEscolha())
 function escolher(q) { quem.value = q; try { localStorage.setItem(CHAVE_DA_ESCOLHA, q) } catch { /* modo privado */ } }
 
 const link = ref('')
+// "Ver o convite dela": o mesmo link com o marcador da equipe — abrir para
+// conferir não conta como abertura dela. Nunca vai na mensagem.
+const linkDaEquipe = ref('')
 const imagem = ref('')
 const arquivo = ref(null)
 const erro = ref('')
@@ -135,6 +142,7 @@ onMounted(async () => {
     if (!c?.ok) throw new Error('chave')
     link.value = linkDaConvidada(c.chave_encontro, c.chave)
     if (!link.value) throw new Error('link')
+    linkDaEquipe.value = linkDaConvidadaParaEquipe(c.chave_encontro, c.chave)
     const tela = await desenharConvite({
       convidada: props.convidada.nome, stylist: props.encontro.anfitria,
       quando: props.encontro.quando, local: props.encontro.local,

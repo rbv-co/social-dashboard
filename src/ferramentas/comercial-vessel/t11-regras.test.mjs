@@ -78,13 +78,27 @@ test('cada recusa da situação do encontro tem a sua frase', () => {
 })
 
 test('gestos da convidada: nunca oferece o que já está marcado', () => {
-  const nova = gestosDaConvidada({ status: 'solicitado' }).map((g) => g.gesto)
+  const mexe = { podeMarcarPresenca: true }
+  const nova = gestosDaConvidada({ status: 'solicitado' }, mexe).map((g) => g.gesto)
   assert.deepEqual(nova, ['enviado', 'sim', 'nao', 'realizado', 'no_show'])
-  const enviada = gestosDaConvidada({ status: 'solicitado', convite_enviado_em: 'x' }).map((g) => g.gesto)
+  const enviada = gestosDaConvidada({ status: 'solicitado', convite_enviado_em: 'x' }, mexe).map((g) => g.gesto)
   assert.ok(!enviada.includes('enviado'))
-  const veio = gestosDaConvidada({ status: 'realizado', rsvp: 'sim' }).map((g) => g.gesto)
+  const veio = gestosDaConvidada({ status: 'realizado', rsvp: 'sim' }, mexe).map((g) => g.gesto)
   // ⚠️ Quem veio ainda pode ser corrigida para "não veio" — engano da gerente.
   assert.deepEqual(veio, ['no_show'])
+})
+
+test('gestos da convidada: Veio/Não veio só para quem pode EDITAR (o banco exige editar desde 25/09/2026)', () => {
+  const soVe = gestosDaConvidada({ status: 'solicitado' }, { podeMarcarPresenca: false }).map((g) => g.gesto)
+  assert.deepEqual(soVe, ['enviado', 'sim', 'nao'])
+  // Esquecer o argumento esconde a presença — nunca mostra um botão que o banco recusaria.
+  assert.deepEqual(gestosDaConvidada({ status: 'solicitado' }).map((g) => g.gesto), ['enviado', 'sim', 'nao'])
+  assert.deepEqual(gestosDaConvidada({ status: 'realizado', rsvp: 'sim' }), [])
+})
+
+test('a tela do Private Edit passa a permissão de editar para os gestos da convidada', () => {
+  const tela = readFileSync(new URL('./tela-de-private-edit.vue', import.meta.url), 'utf8')
+  assert.match(tela, /gestosDaConvidada\(c, \{ podeMarcarPresenca: podeEditar \}\)/)
 })
 
 test('convidada: nome e WhatsApp com DDD obrigatórios; e-mail só se escrito', () => {

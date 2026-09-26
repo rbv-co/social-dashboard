@@ -135,6 +135,7 @@ import { montarLinhas, posicionarLinhas, alturaComum } from './velocimetro-gv.js
 import { agruparCanais, estadoDoGrupo, alternarGrupo } from '../../compartilhado/grupo-do-canal.js'
 import { aplicarDataDaVenda } from '../../compartilhado/data-da-venda.js'
 import { buscarAjustesDeValor, aplicarValorCorrigido } from '../../compartilhado/valor-corrigido.js'
+import { buscarAjustesDeVendedor, aplicarVendedorCorrigido } from '../../compartilhado/vendedor-corrigido.js'
 // Quando a recarga de 5 minutos deve acontecer — e quando é só desperdício.
 import { decidirNoTique, decidirAoVoltar } from '../../compartilhado/recarga-automatica.js'
 // A PORTA DO BLING E O QUE FAZER QUANDO ELE NÃO RESPONDE. Mesmo módulo da
@@ -232,7 +233,9 @@ async function _gvBuildSkuSlide(pedidos,pedidosPrev){
       const vid=det?.vendedor?.id;
       if(vid){
         const isNew=!window._gvPedidoVendorMap[p.id];
-        window._gvPedidoVendorMap[p.id]=vid;
+        // Pedido com ajuste manual (bling_pedido_ajuste_vendedor) não recebe de
+        // volta o vendedor errado do Bling.
+        if(!window._gvVendedorAjustadoIds?.has(String(p.id)))window._gvPedidoVendorMap[p.id]=vid;
         // A LOJA VAI JUNTO. O Bling sempre mandou `loja.id` no pedido e esta
         // linha jogava fora — e sem ela não há como saber de qual loja é cada
         // vendedora, que é o que o time de venda precisa saber.
@@ -658,10 +661,17 @@ async function loadGestaoVistaData(period){
     // Promise.all das duas janelas de data-da-venda, em vez de esperar as
     // duas terminarem primeiro (code review, 12/09/2026; mesma correção já
     // feita em tela-de-analise-vendas.vue).
-    const [ajuste,ajustePrev,ajustesDeValor]=await Promise.all([
+    // E O VENDEDOR QUE O BLING CONGELOU ERRADO. Mesmo caso do valor acima, só
+    // que no campo vendedor: a nota fiscal saiu com o vendedor certo mas o
+    // pedido no Bling ficou com outro, e não dá mais para editar o pedido. As
+    // linhas de `bling_pedido_ajuste_vendedor` dizem quem de fato vendeu. Ver
+    // src/compartilhado/vendedor-corrigido.js. Também não depende do que o
+    // Bling devolveu — por isso entra no mesmo Promise.all.
+    const [ajuste,ajustePrev,ajustesDeValor,ajustesDeVendedor]=await Promise.all([
       aplicarDataDaVenda(sbClient,pedidosBrutos,di,df),
       aplicarDataDaVenda(sbClient,pedidosPrevBrutos,diPrev,dfPrev),
       buscarAjustesDeValor(sbClient),
+      buscarAjustesDeVendedor(sbClient),
     ]);
     if(myLoad!==_gvLoadId)return;
     // `let`, e não `const`: o recorte por time (mais abaixo) reatribui os dois.
@@ -749,6 +759,13 @@ async function loadGestaoVistaData(period){
     ]);
     vendRows.forEach(r=>{window._gvVendedoresCache[r.vendor_id]={nome:r.nome,loja:''};});
     pedVRows.forEach(r=>{window._gvPedidoVendorMap[r.pedido_id]=r.vendor_id;});
+    // O ajuste manual vence o cache do Bling. Ver src/compartilhado/vendedor-corrigido.js.
+    // `_gvVendedorAjustadoIds` é o que impede o enriquecimento em background
+    // (mais abaixo, _gvBuildSkuSlide) de reescrever a correção por cima poucos
+    // segundos depois, com o vendedor errado vindo direto do Bling.
+    const{mapa:_gvMapaVendorCorrigido,corrigidosIds:_gvVendedorAjustadoIds}=aplicarVendedorCorrigido(window._gvPedidoVendorMap,ajustesDeVendedor);
+    window._gvPedidoVendorMap=_gvMapaVendorCorrigido;
+    window._gvVendedorAjustadoIds=_gvVendedorAjustadoIds;
     if(myLoad!==_gvLoadId)return;
     // Renderiza imediatamente com o cache do Supabase — fetches pendentes vão para background
     const vendedoresMap={};
@@ -1574,6 +1591,7 @@ onMounted(() => {
   window._gvTickerSlides = null
   window._gvVendedoresCache = {}
   window._gvPedidoVendorMap = {}
+  window._gvVendedorAjustadoIds = new Set()
   window._gvRenderCtx = null
   _gvCanaisSel = new Set()
   _gvEstoqueCache = null

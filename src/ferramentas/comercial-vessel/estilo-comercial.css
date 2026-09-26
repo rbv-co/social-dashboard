@@ -478,6 +478,9 @@
 .cv-historico li.cv-historico-nota[class*="id-tom-"] { border-left-color: var(--tom); }
 .cv-quadro-faixa { margin: 0; }
 .cv-selo-faixa { align-self: flex-end; }
+/* ⚠️ 24/09/2026: "SEM CONTATO AINDA" numa coluna de 150px do quadro passava da
+   borda (fotografado a 1440). `.cv-selo` tem `nowrap`; este quebra. */
+.cv-selo-sem-contato { display: inline-block; max-width: 100%; white-space: normal; overflow-wrap: anywhere; line-height: 1.4; }
 
 /* ── a janela de avaliar ── */
 .cv-criterio {

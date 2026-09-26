@@ -323,7 +323,7 @@ export function montarPainelRegua(alvo, opcoes) {
   // Só serve pra campanha/anúncio de engajamento em que o dono DECLARAR, no
   // cartão dela, qual interação está comprando (ver o selo de objetivo no
   // cartão, tela-de-gestao-trafego.vue) — sem declaração nada muda, continua
-  // no ponto ponderado.
+  // julgada pelo custo por engajamento (bruto), na Seção 2.
   const linhasInteracao = Object.keys(INTERACOES).map((k) => {
     const it = INTERACOES[k];
     const temMeta = regua.metas[k] != null;
@@ -378,8 +378,12 @@ export function montarPainelRegua(alvo, opcoes) {
     </tr>`;
   }).join('');
 
-  // Limiares da SEÇÃO 1 (`limiares`): multiplicam a meta de engajamento (custo
-  // por ponto, o mesmo campo 'pnd-meta-engajamento' logo acima nesta seção).
+  // Limiares da SEÇÃO 1 (`limiares`): multiplicam a meta ANTIGA de engajamento
+  // (custo por ponto, `regua.metas.engajamento`). CORREÇÃO (varredura de
+  // comentários, 25/09/2026): não existe mais campo 'pnd-meta-engajamento'
+  // NESTA tela para editar esse valor — a linha saiu em 24/09/2026 (ver
+  // pintarLimiaresSecao1 abaixo, "sem campo nesta tela desde a pausa"); o
+  // número vem congelado do que já estava salvo no banco.
   const linhasLimiar1 = Object.keys(LIMIARES_PADRAO).map((k) =>
     `<tr><td>${esc(ROTULO_LIMIAR[k])}</td><td>${campo('pnd-limiar-eng-' + k, regua.limiares[k], '0.05', editavel)}<div class="pnd-limiar-prev" id="pnd-limiar-eng-prev-${k}"></div></td></tr>`).join('');
   // Limiares da SEÇÃO 2 (`limiares_resultado`): multiplicam a meta de
@@ -569,9 +573,14 @@ export function montarPainelRegua(alvo, opcoes) {
         ? `× ${mult.toLocaleString('pt-BR')} = ${reais(mult * metaEng)}`
         // Curto de proposito: este aviso divide a linha com o rotulo ('Manter e
         // observar ate'), e um texto longo aqui espremia o rotulo em tres linhas.
-        // Some quando a conta nao tem meta salva — o caso normal de cliente novo,
-        // que passou a ser frequente com a meta por conta (2026-07-29).
-        : 'defina a meta acima';
+        // Some quando a conta nao tem meta antiga salva — o caso normal de
+        // conta que nunca rodou a ponderada (ex.: Mantova, sem histórico).
+        // CORREÇÃO (revisão final da Onda B, 25/09/2026): dizia "defina a
+        // meta acima", mas o campo que editava `metas.engajamento` (R$ por
+        // ponto) saiu desta tela em 24/09/2026 — ver o comentário 3 linhas
+        // acima ("sem campo nesta tela desde a pausa"). Mandar "definir" um
+        // campo que não existe mais era instrução impossível de seguir.
+        : 'sem meta antiga salva';
     }
   }
 

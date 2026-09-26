@@ -260,6 +260,7 @@ import { lerSaude, categoriaDoObjetivo, contradiz } from './saude.js'
 // "Está rodando?" NÃO é effective_status === 'ACTIVE': a Meta mantém ACTIVE em
 // campanha que já chegou ao fim do período. Ver veiculacao.js.
 import { emVeiculacao } from './veiculacao.js'
+import { campanhasAguardandoEntrega } from './sem-gasto.js'
 import { orcamentoEfetivoDaCampanha } from './orcamento-hierarquia.js'
 // Objetivo -> balde e "e de WhatsApp?" moram num modulo so porque o ROBO precisa
 // da mesma resposta que a tela (ver baldes.js).
@@ -286,7 +287,7 @@ import { quantidadesDoInsight } from './ponderada.js'
 // cabeçalho do arquivo (acréscimo ao brief da Tarefa 4 da Onda B, 24/09/2026).
 import { custoEngajamentoPraticado } from './custo-praticado.js'
 // Alvo de cada tipo de campanha (custo por lead/conversa/venda/visita/mil
-// pessoas, ou por ponto no caso de engajamento) — ver alvos.js.
+// pessoas, ou por engajamento no caso de engajamento) — ver alvos.js.
 import { alvoDoBalde, avaliarAlvo } from './alvos.js'
 // O MERCADO da campanha (Onda C, Tarefa 5): o que ela COMPRA, segundo o que a
 // Meta afirma nos CONJUNTOS — não o objetivo declarado. `alvoDoBalde`/
@@ -297,7 +298,8 @@ import { mercadoDaCampanha, mercadoDoConjunto, gastoPorMercado, comObjetivoHerda
 // Fase 3 — objetivo por interação: o dono DECLARA, campanha a campanha (ou
 // anúncio a anúncio) de engajamento, qual interação aquilo está comprando
 // (curtida/comentário/salvamento/compartilhamento). Sem declarar, nada muda —
-// continua no ponto ponderado, exatamente como hoje. Ver interacoes.js.
+// continua julgada pelo custo por engajamento (bruto), exatamente como hoje.
+// Ver interacoes.js.
 import { INTERACOES, custoDaInteracao, interacaoValida } from './interacoes.js'
 // Glossário da ferramenta (botões "?" de ajuda contextual) — ver ajuda.js pro
 // porquê disto existir. PURO: só dicionário titulo/texto, sem tela nem rede.
@@ -484,12 +486,15 @@ let _gtAbaAtiva='campanhas';
 let _gtSelecao=new Map();
 // Objetivo por interação (Fase 3): mapa alvo_id (campanha OU anúncio) ->
 // interação declarada ('curtidas'|'comentarios'|'salvamentos'|'compartilhamentos').
-// Sem entrada = não declarou = continua no ponto ponderado. Carregado uma vez
-// por loadGtData() (ver _gtCarregarObjetivos), igual à régua e ao Opus IA.
+// Sem entrada = não declarou = continua julgada pelo custo por engajamento
+// (bruto) — não mais pelo ponto ponderado, em pausa desde 24/09/2026 (ver
+// ALVOS.engajamento em alvos.js; correção da revisão final da Onda B,
+// 25/09/2026). Carregado uma vez por loadGtData() (ver _gtCarregarObjetivos),
+// igual à régua e ao Opus IA.
 let _gtObjetivoInteracao={};
 // Fail-CLOSED (M3 do review, 2026-07-28), mesmo padrão de _gtReguaCarregada:
 // só fica true depois de uma leitura que REALMENTE deu certo. Enquanto for
-// false, um alvo AUSENTE do mapa não pode virar "Objetivo: ponderado" com
+// false, um alvo AUSENTE do mapa não pode virar "Objetivo: engajamento" com
 // confiança — pode ser que exista uma declaração real no banco que esta
 // leitura, ao falhar, não trouxe. Ver _gtCarregarObjetivos e _gtSeloObjetivoEl.
 let _gtObjetivoInteracaoCarregada=false;
@@ -706,9 +711,10 @@ async function _gtCarregarObjetivos(){
     // NUNCA apagar o mapa em silêncio (M3 do review, 2026-07-28): se a leitura
     // falhar, o mapa anterior (as declarações que já sabíamos ser verdade)
     // fica exatamente como estava — é o que impede uma campanha DECLARADA de
-    // voltar sozinha a ser julgada pelo ponto ponderado só porque um recarregar
-    // deu erro de rede/sessão. O detalhe técnico vai pro console; o selo (ver
-    // _gtSeloObjetivoEl) trata a incerteza pra quem só usa esta variável.
+    // voltar sozinha a ser julgada pelo custo por engajamento (bruto) só
+    // porque um recarregar deu erro de rede/sessão. O detalhe técnico vai pro
+    // console; o selo (ver _gtSeloObjetivoEl) trata a incerteza pra quem só
+    // usa esta variável.
     console.error('[GT] falha ao carregar as declarações de objetivo por interação:', linhas.erro);
   }
   _gtObjetivoInteracaoCarregada=ok;
@@ -774,7 +780,7 @@ async function _gtSalvarObjetivo(alvoId,nivel,interacao){
   }
   // H2(b) do review: o PostgREST devolve 200/204 com ZERO linhas e SEM `error`
   // quando a RLS filtra a linha da resposta — pra ele é indistinguível de "deu
-  // certo". Sem checar isto, um apagar ("Voltar ao ponderado") sem permissão
+  // certo". Sem checar isto, um apagar ("Voltar ao engajamento") sem permissão
   // real parecia ter funcionado: a tela apagava a declaração local, não avisava
   // nada, e ela reaparecia sozinha no próximo loadGtData() (porque no banco
   // continuava lá). `.select()` acima é o que permite enxergar essa diferença.
@@ -786,7 +792,7 @@ async function _gtSalvarObjetivo(alvoId,nivel,interacao){
     // gt_objetivo_interacao TEM declarações reais (desde julho/agosto de
     // 2026) — a ambiguidade é POR ALVO: um alvo que nunca foi declarado (ou
     // que já foi revertido antes) também devolve zero linhas ao apagar, e sem
-    // esta desambiguação todo clique em "Voltar ao ponderado" NESSE alvo caía
+    // esta desambiguação todo clique em "Voltar ao engajamento" NESSE alvo caía
     // aqui e mentia "sem permissão" pro dono — inclusive num segundo clique
     // logo depois de um reverter normal. Só o apagar é ambíguo
     // assim: um upsert bem-sucedido sempre devolve a linha, e uma negação de
@@ -822,7 +828,10 @@ async function _gtSalvarObjetivo(alvoId,nivel,interacao){
     adminToast('Objetivo definido: '+(INTERACOES[interacao]?.rotulo||interacao)+'.');
   }else{
     delete _gtObjetivoInteracao[String(alvoId)];
-    adminToast('Objetivo voltou a ser o ponto ponderado.');
+    // CORREÇÃO (revisão final da Onda B, 25/09/2026): dizia "voltou a ser o
+    // ponto ponderado" — apagada a declaração, a campanha volta ao custo por
+    // engajamento (bruto), não ao ponto ponderado (em pausa desde 24/09/2026).
+    adminToast('Objetivo voltou a ser o custo por engajamento.');
   }
   // M6 do review: nada mudou do lado da Meta — a declaração é estado local
   // (banco próprio, gt_objetivo_interacao). Recarregar a conta inteira via
@@ -2143,10 +2152,11 @@ function _gtWireBudgetControls(el,ins,camp,permCamp){
 }
 // ── Selo de OBJETIVO POR INTERAÇÃO (Fase 3) ─────────────────────────────────
 // Só aparece em campanha/anúncio de engajamento que NÃO seja de mensagem (o
-// mesmo recorte do custo por ponto: WhatsApp já tem o resultado dele — conversa
-// — e não faz sentido perguntar qual interação ele compra). Sem declaração,
-// selo neutro "Objetivo: ponderado"; declarado, mostra o rótulo da interação.
-// Clicar abre um menu com as quatro interações + "Voltar ao ponderado" — mesma
+// mesmo recorte do custo por engajamento: WhatsApp já tem o resultado dele —
+// conversa — e não faz sentido perguntar qual interação ele compra). Sem
+// declaração, selo neutro "Objetivo: engajamento"; declarado, mostra o rótulo
+// da interação.
+// Clicar abre um menu com as quatro interações + "Voltar ao engajamento" — mesma
 // linguagem visual do chip CBO/ABO (gt-nivel-chip), só que clicável.
 let _gtMenuObjAberto=null;
 let _gtMenuObjFechar=null; // limpeza dos listeners (clicar fora/Esc/rolar) do menu aberto agora
@@ -2163,7 +2173,7 @@ function _gtPosicionarMenuObjetivo(menu,chip){
   const margem=8; // respiro mínimo até a borda da tela
   // B3 do review (2026-07-28): sem clamp, perto da borda direita de um celular
   // o menu nascia com left = chip.left e boa parte da largura vazava pra fora
-  // da viewport — inclusive "Voltar ao ponderado", a única forma de desfazer.
+  // da viewport — inclusive "Voltar ao engajamento", a única forma de desfazer.
   // Clampa o left pra sempre caber inteiro na tela, com uma margem mínima; o
   // flip pra cima quando não sobra espaço embaixo (abaixo) continua igual.
   const maxLeft=window.innerWidth-largura-margem;
@@ -2182,7 +2192,7 @@ function _gtAbrirMenuObjetivo(chip,alvoId,nivel){
   // ancestrais (.gt-camp-row, .gt-camp-row-ads) têm overflow:hidden pra conter
   // o scroll da lista, e um menu position:absolute ali dentro fica CORTADO —
   // tanto numa linha de campanha recolhida quanto no ÚLTIMO anúncio de cada
-  // campanha, exatamente onde mora "Voltar ao ponderado" (a opção de baixo).
+  // campanha, exatamente onde mora "Voltar ao engajamento" (a opção de baixo).
   // A saída é pendurar na RAIZ da tela (mesmo truque já usado pela barra de
   // seleção em massa, ver _gtPintarBarraSelecao) com position:fixed e
   // coordenadas calculadas do próprio selo — assim nenhum overflow:hidden de
@@ -2193,7 +2203,11 @@ function _gtAbrirMenuObjetivo(chip,alvoId,nivel){
   menu.addEventListener('click',e=>e.stopPropagation());
   const linhas=Object.keys(INTERACOES).map(k=>
     `<button type="button" class="pnd-obj-opt" data-int="${_gtEsc(k)}">${_gtEsc(INTERACOES[k].rotulo)}</button>`).join('');
-  menu.innerHTML=linhas+`<button type="button" class="pnd-obj-opt pnd-obj-limpar" data-int="">Voltar ao ponderado</button>`;
+  // CORREÇÃO (revisão final da Onda B, 25/09/2026): dizia "Voltar ao
+  // ponderado" — apagar a declaração NÃO devolve ao ponto ponderado desde
+  // 24/09/2026, devolve ao custo por engajamento (bruto), o mesmo texto do
+  // selo sem declaração (ver _gtSeloObjetivoEl acima).
+  menu.innerHTML=linhas+`<button type="button" class="pnd-obj-opt pnd-obj-limpar" data-int="">Voltar ao engajamento</button>`;
   menu.querySelectorAll('.pnd-obj-opt').forEach(btn=>{
     btn.addEventListener('click',e=>{
       e.stopPropagation();
@@ -2248,9 +2262,13 @@ function _gtSeloObjetivoEl(alvoId,nivel,elegivel){
   const podeEditar=hasPermission('meta.gestor','editar');
   const chip=document.createElement('span');
   chip.className='pnd-obj-chip'+(decl?' declarado':'')+(podeEditar?'':' readonly');
+  // CORREÇÃO (revisão final da Onda B, 25/09/2026): dizia "Objetivo:
+  // ponderado" — mentira desde 24/09/2026. Sem declaração, a campanha é
+  // julgada pelo custo por engajamento (bruto), não mais pelo ponto
+  // ponderado (ver ALVOS.engajamento em alvos.js e o veredito acima).
   chip.textContent=decl
     ?('Objetivo: '+(INTERACOES[decl]?.rotulo||decl))
-    :desconhecido?'Objetivo: indisponível':'Objetivo: ponderado';
+    :desconhecido?'Objetivo: indisponível':'Objetivo: engajamento';
   if(desconhecido){
     chip.title='Não consegui confirmar as declarações agora — recarregue antes de decidir por este selo.';
   }else if(podeEditar){
@@ -2291,6 +2309,11 @@ function _gtSeloCustoSeguidorContaHtml(){
   return `<span class="selo selo-info" title="${d.aviso}">${d.texto}</span>`;
 }
 function _renderGtCampaigns(col,campaigns,insights,adInsights,adsets){
+  // Campanha ATIVA sem gasto no período não vem do /insights (spend > 0) e
+  // sumia da lista — ver sem-gasto.js. Entra zerada, com o selo "Aguardando
+  // entrega". Só quando o período chega a hoje ('1d' é ontem).
+  const periodoChegaAHoje=_gtPreset!=='1d'&&_gtPreset!=='lastmonth';
+  insights=[...insights,...campanhasAguardandoEntrega(campaigns,insights,Date.now(),periodoChegaAHoje)];
   const campMap={};campaigns.forEach(c=>campMap[c.id]=c);
   const adByCamp={};adInsights.forEach(a=>{if(!adByCamp[a.campaign_id])adByCamp[a.campaign_id]=[];adByCamp[a.campaign_id].push(a);});
   // Conjuntos por campanha — é o que permite saber se o orçamento é da
@@ -2562,11 +2585,14 @@ function _renderGtCampaigns(col,campaigns,insights,adInsights,adsets){
       const top=document.createElement('div');top.className='gt-camp-top';
       // Status badge
       const badge=document.createElement('div');
-      const badgeCls=encerrada?'inactive':(status==='ACTIVE'?'active':status==='PAUSED'?'paused':'inactive');
-      const badgeLbl=encerrada?'Concluído':(status==='ACTIVE'?'Ativo':status==='PAUSED'?'Pausado':status==='ARCHIVED'?'Arquivado':'Inativo');
+      const badgeCls=encerrada?'inactive':ins.aguardandoEntrega?'aguardando':(status==='ACTIVE'?'active':status==='PAUSED'?'paused':'inactive');
+      const badgeLbl=encerrada?'Concluído':ins.aguardandoEntrega?'Aguardando':(status==='ACTIVE'?'Ativo':status==='PAUSED'?'Pausado':status==='ARCHIVED'?'Arquivado':'Inativo');
       badge.className=`gt-status-badge ${badgeCls}`;badge.textContent=badgeLbl;
+      // Rótulo curto de propósito: a 375px o selo longo espremia o nome da
+      // campanha até sobrar uma letra. A explicação inteira fica na dica.
+      if(ins.aguardandoEntrega)badge.title='Ativa, mas ainda sem gasto neste período: esperando a Meta começar a entregar.';
       const nm=document.createElement('div');nm.className='gt-name';nm.title=ins.campaign_name||'';nm.textContent=ins.campaign_name||'—';
-      const chips=document.createElement('div');chips.style.cssText='display:flex;align-items:center;gap:8px;flex-shrink:0;';
+      const chips=document.createElement('div');chips.className='gt-camp-chips';
       // Selo de ONDE fica o orçamento — em português, com a sigla entre parênteses.
       const selo=nivelOrc.sigla
         ?`<span class="gt-nivel-chip ${nivelOrc.sigla==='CBO'?'cbo':'abo'}" title="${_gtEsc(nivelOrc.explicacao)}">${nivelOrc.sigla==='CBO'?'Orçamento na campanha (CBO)':'Orçamento nos conjuntos (ABO)'}</span>`
@@ -2579,7 +2605,7 @@ function _renderGtCampaigns(col,campaigns,insights,adInsights,adsets){
       const chipMercadoHtml=campanhaMista
         ?`<span class="ma-obj-chip" title="Os conjuntos desta campanha compram mercados diferentes ao mesmo tempo (ver o gasto de cada um abaixo) — somar produziria um custo sem significado. Se você declarou qual interação esta campanha compra, o KPI abaixo vem dela, não da soma dos mercados.">Mercados: mistos</span>`
         :`<span class="ma-obj-chip" title="O que esta campanha COMPRA, segundo o que a Meta afirma nos conjuntos dela — não o objetivo declarado. É o mercado que decide o KPI e a cor abaixo.">Mercado: ${_gtEsc(mercado==='desconhecido'?'não identificado':(ROTULO_MERCADO[mercado]||mercado))}</span>`;
-      chips.innerHTML=`${chipMercadoHtml}<span class="ma-obj-chip" style="font-size:calc(9px*var(--gt-fs,1.3));">${_maObjLabel(ins.objective)}</span>${selo}${daily?`<span style="font-family:var(--fonte-principal);font-size:calc(10px*var(--gt-fs,1.3));font-weight:600;color:var(--muted);">${_maFmtR(daily)}/dia</span>`:''}`;
+      chips.innerHTML=`${chipMercadoHtml}<span class="ma-obj-chip" style="font-size:calc(9px*var(--gt-fs,1.3));">${_maObjLabel(ins.objective)}</span>${selo}${daily?`<span class="gt-camp-diaria">${_maFmtR(daily)}/dia</span>`:''}`;
       // KPIs: o conteúdo definitivo só é decidido mais abaixo ("O KPI
       // PRINCIPAL DO MERCADO"), depois de saber se há interação DECLARADA
       // (que vence a mistura — correção I3, rodada de correção 1) e se é
@@ -2875,12 +2901,21 @@ function _renderGtCampaigns(col,campaigns,insights,adInsights,adsets){
       // ligar o interruptor da régua (Tarefa 4) troca só a META consultada
       // (ver o comentário de `usaLimiaresDeEngajamento`, acima). A ponderada
       // continua viva (pesos, colunas do banco, calcularPonderada em
-      // ponderada.js). Quem quiser os pontos e o custo por ponto de uma
-      // campanha específica acha em ponderada.js:
-      // calcularPonderada(quantidadesDoInsight(ins), {...}).
-      // 1) TODO JULGAMENTO (o que FAZER — pausar, escalar) MORA NA FILA
-      // (decisão do dono, 2026-07-29). O cartão aqui é a leitura da campanha:
-      // números e orçamento. Antes tinha uma faixa
+      // ponderada.js) — só não é mais mostrada nem consultada no cartão. Quem
+      // quiser os pontos e o custo por ponto de uma campanha específica acha
+      // em ponderada.js: calcularPonderada(quantidadesDoInsight(ins), {...}).
+      // CORREÇÃO (revisão final da Onda B, correção 2, 25/09/2026): "religar
+      // como veredito é trocar duas linhas em alvos.js" era promessa falsa (ver o
+      // comentário completo logo acima, em `reguaAtiva`/`custoAlvo`) — sem
+      // entrada `'ponderada'` em `GT_METRIC_CATALOG`, essa troca sozinha só
+      // zera o custo mostrado, não traz o ponto de volta; os chips desta
+      // seção também precisariam ser redesenhados aqui. O que ESTÁ garantido:
+      // `ponderada.js` intacto e as duas metas (`metas.engajamento` e
+      // `metas.engajamento_bruto`) coexistindo. O interruptor JÁ EXISTE (Seção 1 da régua,
+      // `ponderadaLigada` em regua.js) — o que falta é ele trocar também o
+      // CÁLCULO e os limiares, que é a T4b, pendente.
+      // 1) TODO JULGAMENTO MORA NA FILA (decisão do dono, 2026-07-29). O cartão
+      // aqui é a leitura da campanha: números e orçamento. Antes tinha uma faixa
       // de recomendação com botões "Aplicar R$ X/dia" e "Pausar campanha" que
       // mexiam na Meta na hora — com a fila existindo, isso virava um SEGUNDO
       // caminho pra verba, e o que passa por ele não vira registro de decisão.
@@ -3900,7 +3935,7 @@ function _gtPubSecaoSugestao(){
     b.type='button';
     b.textContent='Ver o que os números dizem';
     b.style.cssText='padding:8px 14px;border-radius:8px;cursor:pointer;border:1px solid var(--accent,#6366f1);'
-      +'background:transparent;color:var(--accent,#6366f1);font-weight:700;'
+      +'background:transparent;color:var(--accent-forte);font-weight:700;'
       +'font-family:var(--fonte-principal);font-size:calc(11px*var(--gt-fs,1.3));';
     b.onclick=_gtPubBuscarSugestao;
     bloco.appendChild(b);
@@ -4060,7 +4095,7 @@ function _gtPubBotaoAplicar(rotulo,aoClicar){
   const b=document.createElement('button');
   b.type='button';b.textContent=rotulo;
   b.style.cssText='padding:7px 12px;border-radius:999px;cursor:pointer;border:1px solid var(--accent,#6366f1);'
-    +'background:var(--accent,#6366f1);color:#fff;font-weight:700;'
+    +'background:var(--accent,#6366f1);color:var(--sobre-cor);font-weight:700;'
     +'font-family:var(--fonte-principal);font-size:calc(10.5px*var(--gt-fs,1.3));';
   b.onclick=(e)=>{if(e&&e.preventDefault)e.preventDefault();aoClicar();};
   return b;
@@ -4162,7 +4197,7 @@ function _gtPubSecaoPublicosSalvos(){
     if(escolhido){
       const selo=document.createElement('span');
       selo.style.cssText='flex:none;padding:2px 9px;border-radius:999px;background:var(--accent,#6366f1);'
-        +'color:#fff;font-weight:700;font-size:calc(9px*var(--gt-fs,1.3));';
+        +'color:var(--sobre-cor);font-weight:700;font-size:calc(9px*var(--gt-fs,1.3));';
       selo.textContent='✓ aplicado';
       topo.appendChild(selo);
     }
@@ -4351,7 +4386,8 @@ function _gtPubSecaoPessoas(){
   const atual=JSON.stringify(_gtPub.generos);
   for(const o of opcoes){
     const b=document.createElement('button');b.textContent=o.r;b.className='gt-btn-dup';
-    if(JSON.stringify(o.v)===atual)b.style.borderColor='var(--accent,#6366f1)',b.style.color='var(--accent,#6366f1)';
+    // o escolhido: borda no accent e texto em `--accent-forte` (o accent puro dava 3,23 no escuro)
+    if(JSON.stringify(o.v)===atual)b.style.borderColor='var(--accent,#6366f1)',b.style.color='var(--accent-forte)';
     b.onclick=ev=>{ev.stopPropagation();_gtPub.generos=[...o.v];_gtPubRedesenha();};
     lg.appendChild(b);
   }
@@ -4609,7 +4645,7 @@ function _gtPublicoModal(nomeConjunto,rotuloDoBotao){
         corpo.appendChild(d);
       }
       bSalvar.disabled=!!trava;
-      bSalvar.style.cssText='padding:9px 18px;border-radius:8px;border:none;background:var(--accent,#6366f1);color:#fff;font-weight:700;font-size:calc(13px*var(--gt-fs,1.3));cursor:'+(trava?'not-allowed':'pointer')+';opacity:'+(trava?'.5':'1')+';';
+      bSalvar.style.cssText='padding:9px 18px;border-radius:8px;border:none;background:var(--accent,#6366f1);color:var(--sobre-cor);font-weight:700;font-size:calc(13px*var(--gt-fs,1.3));cursor:'+(trava?'not-allowed':'pointer')+';opacity:'+(trava?'.5':'1')+';';
 
       // Devolve a rolagem e o foco depois do corpo inteiro estar montado —
       // nunca antes: focar/setar scrollTop num controle que ainda não existe
@@ -6002,9 +6038,12 @@ Object.assign(window, {
    o que deixa o nome longo truncar em vez de empurrar os botoes pra fora. */
 .tela-gestao-trafego :deep(.gtf-linha){display:flex;align-items:center;gap:14px;}
 .tela-gestao-trafego :deep(.gtf-selo){flex:0 0 auto;font-family:var(--fonte-principal);font-size:calc(9px*var(--gt-fs,1.3));font-weight:700;padding:4px 10px;border-radius:999px;white-space:nowrap;background:color-mix(in srgb,var(--muted) 16%,transparent);color:var(--text);}
-.tela-gestao-trafego :deep(.gtf-item.positivo .gtf-selo){background:color-mix(in srgb,var(--green) 18%,transparent);color:var(--green);}
-.tela-gestao-trafego :deep(.gtf-item.reduzir .gtf-selo){background:color-mix(in srgb,var(--orange) 18%,transparent);color:var(--orange);}
-.tela-gestao-trafego :deep(.gtf-item.pausar .gtf-selo){background:color-mix(in srgb,var(--red) 18%,transparent);color:var(--red);}
+/* 25/09/2026: o par da casa (`.id-selo`): tinta de 12% sobre a superfície e
+   o texto em 75% do tom + `--text`. O tom puro sobre a tinta de 18% dava 3,72
+   ("Baixar orçamento", claro) e 4,23 ("Pausar campanha", escuro). */
+.tela-gestao-trafego :deep(.gtf-item.positivo .gtf-selo){background:color-mix(in srgb,var(--green) 12%,var(--surface));color:color-mix(in srgb,var(--green) 75%,var(--text));}
+.tela-gestao-trafego :deep(.gtf-item.reduzir .gtf-selo){background:color-mix(in srgb,var(--orange) 12%,var(--surface));color:color-mix(in srgb,var(--orange) 75%,var(--text));}
+.tela-gestao-trafego :deep(.gtf-item.pausar .gtf-selo){background:color-mix(in srgb,var(--red) 12%,var(--surface));color:color-mix(in srgb,var(--red) 75%,var(--text));}
 .tela-gestao-trafego :deep(.gtf-ident){flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:2px;}
 /* NOME DA CAMPANHA (fila) nunca corta (PADRAO-DA-CENTRAL item 5, Onda C -
    topo do celular): era `white-space:nowrap;overflow:hidden;text-overflow:
@@ -6355,6 +6394,12 @@ Object.assign(window, {
 .tela-gestao-trafego :deep(.gt-camp-num){font-family:var(--fonte-dados);font-size:calc(14px*var(--gt-fs,1.3));font-weight:600;color:var(--accent);min-width:24px;text-align:center;flex-shrink:0;font-variant-numeric:tabular-nums;letter-spacing:.5px;}
 .tela-gestao-trafego :deep(.gt-ad-num){font-family:var(--fonte-dados);font-size:calc(11px*var(--gt-fs,1.3));font-weight:600;color:var(--accent);opacity:.85;flex-shrink:0;font-variant-numeric:tabular-nums;letter-spacing:.3px;}
 .tela-gestao-trafego :deep(.gt-camp-l2){display:flex;align-items:center;gap:14px;margin-top:7px;flex-wrap:wrap;}
+/* A linha de selos da campanha (objetivo · onde fica o orçamento · diária).
+   Era `style` solto com `flex-shrink:0` e sem quebra: a 375px o valor da
+   diária passava da borda do cartão e saía cortado ("R$80,00/di…"). Dinheiro
+   não se corta — no celular a linha quebra (regra do celular mais abaixo). */
+.tela-gestao-trafego :deep(.gt-camp-chips){display:flex;align-items:center;gap:8px;flex-shrink:0;}
+.tela-gestao-trafego :deep(.gt-camp-diaria){font-family:var(--fonte-principal);font-size:calc(10px*var(--gt-fs,1.3));font-weight:600;color:var(--muted);white-space:nowrap;}
 .tela-gestao-trafego :deep(.gt-camp-exp){margin-left:auto;display:flex;align-items:center;gap:6px;flex-shrink:0;}
 .tela-gestao-trafego :deep(.gt-camp-row-ads){padding:0 18px 14px 22px;display:none;flex-direction:column;gap:0;background:var(--surface2);border-top:1px solid var(--border);position:relative;overflow:hidden;}
 .tela-gestao-trafego :deep(.gt-camp-row-ads.open){display:flex;}
@@ -6406,7 +6451,7 @@ Object.assign(window, {
    (_gtAbrirMenuObjetivo) bem no clique, com left/top/bottom calculados de
    chip.getBoundingClientRect(). Isso tira o menu de dentro de qualquer
    ancestral com overflow:hidden (.gt-camp-row, .gt-camp-row-ads) — que antes
-   cortava a parte de baixo do menu (incluindo "Voltar ao ponderado") sempre
+   cortava a parte de baixo do menu (incluindo "Voltar ao engajamento") sempre
    que o selo estava perto do fim de uma linha recolhida ou do último anúncio
    de uma campanha. */
 .tela-gestao-trafego :deep(.pnd-obj-menu){position:fixed;min-width:170px;background:var(--surface);border:1px solid var(--border);border-radius:9px;box-shadow:0 8px 24px rgba(0,0,0,.18);z-index:1000;overflow:hidden;display:flex;flex-direction:column;cursor:default;}
@@ -6508,6 +6553,10 @@ Object.assign(window, {
 .tela-gestao-trafego :deep(.gt-status-badge.paused){background:color-mix(in srgb,var(--orange) 12%,var(--surface));color:color-mix(in srgb,var(--orange) 75%,var(--text));}
 .tela-gestao-trafego :deep(.gt-status-badge.paused::before){content:'';display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--orange);flex-shrink:0;}
 .tela-gestao-trafego :deep(.gt-status-badge.inactive){background:var(--surface2);color:var(--muted);}
+/* Ativa mas ainda sem gasto no período (sem-gasto.js): nem "rodando" (verde que
+   pulsa) nem "parada" — está esperando a Meta começar a entregar. */
+.tela-gestao-trafego :deep(.gt-status-badge.aguardando){background:color-mix(in srgb,var(--accent) 12%,var(--surface));color:var(--text);}
+.tela-gestao-trafego :deep(.gt-status-badge.aguardando::before){content:'';display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--accent);flex-shrink:0;}
 .tela-gestao-trafego :deep(.gt-status-badge.inactive::before){content:'';display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--muted);flex-shrink:0;}
 .tela-gestao-trafego :deep(.gt-chevron){flex-shrink:0;transition:transform .2s;color:var(--muted);opacity:.55;}
 .tela-gestao-trafego :deep(.gt-chevron.open){transform:rotate(90deg);}
@@ -6557,6 +6606,17 @@ Object.assign(window, {
   font-size:calc(12px*var(--gt-fs,1.3));cursor:pointer;white-space:nowrap;
 }
 .tela-gestao-trafego :deep(.gt-btn-dup:hover){background:var(--surface-2,rgba(0,0,0,.05));}
+/* 25/09/2026: o EDITOR DE PÚBLICO é pendurado no <body> (#gt-pub-ov), fora de
+   `.tela-gestao-trafego` — as duas regras de cima não chegavam lá, e os botões
+   dele (gênero, "Buscar") saíam com o cinza claro do navegador. No escuro, o
+   "Mulheres" escolhido dava 3,23 sobre esse cinza. Mesma regra, alcançando o
+   editor. */
+:global(#gt-pub-ov .gt-btn-dup){
+  padding:6px 11px;border-radius:7px;border:1px solid var(--border,#ddd);
+  background:transparent;color:var(--text,#111);font-weight:600;
+  font-size:calc(12px*var(--gt-fs,1.3));cursor:pointer;white-space:nowrap;
+}
+:global(#gt-pub-ov .gt-btn-dup:hover){background:var(--surface-2,rgba(0,0,0,.05));}
 /* ===== Redesign direção A ===== */
 /* Edição manual de orçamento (sempre disponível) */
 .tela-gestao-trafego :deep(.gt-budget-edit){display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;font-family:var(--fonte-principal);font-size:calc(11px*var(--gt-fs,1.3));color:var(--muted);}
@@ -6961,6 +7021,7 @@ Object.assign(window, {
    fileira de números ganha a largura inteira (debaixo do nome, no anúncio). */
 @media(max-width:640px){
   .tela-gestao-trafego :deep(.gt-camp-l2 > .gt-metrics){flex:1 1 100%;min-width:0;}
+  .tela-gestao-trafego :deep(.gt-camp-l2 > .gt-camp-chips){flex:1 1 100%;flex-wrap:wrap;min-width:0;}
   .tela-gestao-trafego :deep(.gt-ad-top){flex-wrap:wrap;}
   .tela-gestao-trafego :deep(.gt-ad-top > .gt-metrics){flex:1 1 100%;min-width:0;}
 }

@@ -29,7 +29,7 @@ const PESSOA = { id: 1, nome: 'Marisa Carvalho', telefone: '+5511948670004',
 // explicação primeiro, depois as pessoas, depois o que elas fizeram, depois a
 // análise, e por último os programas da marca.
 const ORDEM_DAS_ABAS = [
-  'Instruções', 'Landing page', 'Clientes', 'Visitas às lojas', 'Vendas', 'Garantias',
+  'Instruções', 'Leads (landing page)', 'Clientes', 'Visitas às lojas', 'Vendas', 'Garantias',
   'Histórico de origem', 'Convites abertos', 'Stylists', 'Private Edits',
   'Beauty Sessions'];
 
@@ -47,7 +47,7 @@ test('nenhuma consulta pede `*` na tabela da lista de espera (tem senha e IP lá
 });
 
 test('Landing page: a hora é do Brasil e os rótulos são de gente', async () => {
-  const a = await aba('Landing page', {
+  const a = await aba('Leads (landing page)', {
     listaDeEspera: [{
       nome: 'Marisa Carvalho', email: 'marisa@exemplo.com', whatsapp: '+5511948670004',
       origem: 'lp-vesselbrasil', criado_em: '2026-09-21T02:11:23.050085+00:00',
@@ -69,7 +69,7 @@ test('Landing page: a hora é do Brasil e os rótulos são de gente', async () =
 });
 
 test('Landing page: escolha nova no formulário aparece, em vez de sumir', async () => {
-  const a = await aba('Landing page', {
+  const a = await aba('Leads (landing page)', {
     listaDeEspera: [{ nome: 'x', visita_bolsa: 'clutch-que-nao-existia', criado_em: '2026-09-21T12:00:00Z' }],
   });
   assert.equal(a.linhas[0][a.colunas.indexOf('Peça')], 'clutch-que-nao-existia');
@@ -341,7 +341,7 @@ test('⚠️ a ordem das linhas não depende da ordem que o banco devolveu', asy
     { nome: 'Meio', criado_em: '2026-09-10T12:00:00Z' },
   ];
   const daOrdem = async (ordem) => {
-    const a = await aba('Landing page', { listaDeEspera: ordem });
+    const a = await aba('Leads (landing page)', { listaDeEspera: ordem });
     return a.linhas.map((l) => l[0]);
   };
   const esperado = ['Nova', 'Meio', 'Velha'];
@@ -372,7 +372,7 @@ test('Landing page: a origem de cada LP chega na planilha', async () => {
   // aponta. No Bling as LPs se separam por um prefixo no `codigo` (LP, PV); na
   // planilha se separam por esta coluna. Perder a coluna numa faxina deixaria as
   // duas captações misturadas, e ninguém saberia qual página trouxe quem.
-  const a = await aba('Landing page', {
+  const a = await aba('Leads (landing page)', {
     listaDeEspera: [
       { nome: 'Da pré-venda', origem: 'pre-venda', criado_em: '2026-09-21T12:00:00Z' },
       { nome: 'Da LP comum', origem: 'lp-vesselbrasil', criado_em: '2026-09-20T12:00:00Z' },
@@ -625,4 +625,36 @@ test('as instruções avisam que pedido cancelado sai sozinho', async () => {
   const texto = (await instrucoes()).join('\n');
   assert.match(texto, /cancelado/i);
   assert.match(texto, /Gestão à Vista/);
+});
+
+/* ⚠️ LEAD NÃO É CLIENTE (23/09/2026). A aba se chamava "Landing page" e não
+ * dizia se aquela gente comprou. Agora diz, pelo `lead_id` que o robô de
+ * pedidos grava (regra em coletor/lib/lead-do-pedido.mjs). Pedido cancelado
+ * NÃO conta — é o mesmo critério da aba Vendas. */
+test('Leads: quem comprou aparece com a 1ª compra, os pedidos e o valor', async () => {
+  const a = await aba('Leads (landing page)', {
+    listaDeEspera: [
+      { id: 1, nome: 'Comprou', criado_em: '2026-09-10T12:00:00Z' },
+      { id: 2, nome: 'Não comprou', criado_em: '2026-09-11T12:00:00Z' },
+    ],
+    pedidos: [
+      { id: 10, lead_id: 1, situacao_id: 9, data_da_venda: '2026-09-15', receita_liquida: '449.90' },
+      { id: 11, lead_id: 1, situacao_id: 9, data_da_venda: '2026-09-12', receita_liquida: '200.10' },
+      { id: 12, lead_id: 1, situacao_id: 12, data_da_venda: '2026-09-11', receita_liquida: '999.00' },
+      { id: 13, lead_id: 2, situacao_id: 12, data_da_venda: '2026-09-13', receita_liquida: '50.00' },
+    ],
+  });
+  const linha = (nome) => a.linhas.find((l) => l[a.colunas.indexOf('Nome')] === nome);
+  const c = (nome, t) => linha(nome)[a.colunas.indexOf(t)];
+  assert.equal(c('Comprou', 'Comprou?'), 'sim');
+  assert.equal(c('Comprou', '1ª compra em'), '12/09/2026');
+  assert.equal(c('Comprou', 'Pedidos'), '2');
+  assert.equal(c('Comprou', 'Valor comprado'), '650');
+  // só pedido cancelado = não comprou
+  assert.equal(c('Não comprou', 'Comprou?'), 'ainda não');
+  assert.equal(c('Não comprou', 'Valor comprado') ?? '', '');
+});
+
+test('Leads: a consulta traz o id, senão não há como ligar ao pedido', () => {
+  assert.match(CONSULTAS.listaDeEspera.colunas, /(^|,)id,/);
 });

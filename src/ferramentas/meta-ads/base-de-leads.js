@@ -6,10 +6,11 @@
 // vessel_origens) — numa única linha do tempo. Sem rede aqui — a tela busca,
 // isto agrega. Ver db/migrations/2026-09-24-meta-ads-base-de-leads-leitura.sql.
 //
-// ⚠️ O POP-UP NÃO TEM ATRIBUIÇÃO DE ANÚNCIO (sem utm/fbc/fbp em
-// vessel_lista_espera) — decisão de v1, dono confirmado: mostrar mesmo assim,
-// só sem saber de qual campanha veio. O checkout e o pedido de atendimento
-// têm atribuição completa.
+// ⚠️ ATRIBUIÇÃO DO POP-UP (25/09/2026): até aqui o pop-up "Entre para o
+// Universo Vessel" não mandava utm/fbc — v1 mostrava a origem dele sempre como
+// "—", decisão do dono. Corrigido no mesmo dia (o script colado no tema da
+// Shopify passou a mandar `p_rastreio`, gravado em
+// vessel_lista_espera.clique_meta/utm_*) — agora os três tipos têm atribuição.
 
 // Sem `.limit()` explícito, o PostgREST corta em 1000 linhas por padrão, sem
 // erro — mesmo cuidado de agregacoes-carrinho.js (LIMITE_CARRINHO).
@@ -54,17 +55,22 @@ function linhaDeCheckout(e) {
     quem: '—', // anônimo: a Shopify não manda nome/e-mail no webhook de checkout iniciado
     contato: e.session_id ? `sessão ${e.session_id.slice(0, 8)}…` : '—',
     origem: resumoDeOrigem(e),
+    fbc: e.fbc || null,
   }
 }
 
-/** Cadastro no pop-up (vessel_lista_espera) → linha unificada. Sem atribuição, de propósito (ver cabeçalho). */
+/** Cadastro no pop-up (vessel_lista_espera) → linha unificada. */
 function linhaDePopUp(c) {
   return {
     tipo: 'pop_up',
     criado_em: c.criado_em,
     quem: c.nome || '—',
     contato: c.email || c.whatsapp || '—',
-    origem: '—',
+    origem: resumoDeOrigem({
+      utm_source: c.utm_source, utm_medium: c.utm_medium, utm_campaign: c.utm_campaign,
+      fbc: c.clique_meta,
+    }),
+    fbc: c.clique_meta || null,
   }
 }
 
@@ -86,6 +92,7 @@ function linhaDeAtendimento(a, pessoasPorId, origens) {
       utm_source: origem.utm_source, utm_medium: origem.utm_medium, utm_campaign: origem.utm_campaign,
       fbc: origem.clique_meta,
     }),
+    fbc: origem?.clique_meta || null,
   }
 }
 

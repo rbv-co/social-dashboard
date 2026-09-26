@@ -428,13 +428,21 @@ export function montarMensagens(camp, ins, ads, conjuntos, regua, extra) {
           // O RESULTADO deste criativo, no mercado do anúncio (ver acima).
           // Sem isto o robô mandava pausar criativo de conversão olhando só
           // CTR e frequência.
-          resultado: (alvoDoAnuncio && alvoDoAnuncio.resultado && GT_METRIC_CATALOG[alvoDoAnuncio.resultado])
-            ? GT_METRIC_CATALOG[alvoDoAnuncio.resultado].compute(a) : null,
+          // A DECLARAÇÃO DO DONO VENCE (correção C1 da revisão final da Onda B,
+          // preservada no merge de 26/09): com interação declarada, o anúncio é
+          // medido NO MESMO MERCADO da campanha — curtida contra salvamento é
+          // 400× (R$ 0,12 vs R$ 48), e medir os dois níveis em mercados
+          // diferentes fazia todo criativo parecer ótimo. Sem declaração, vale
+          // o mercado do anúncio (o do conjunto, quando a campanha é mista).
+          resultado: interacaoDeclarada
+            ? quantidadesDoInsight(a)[interacaoDeclarada]
+            : ((alvoDoAnuncio && alvoDoAnuncio.resultado && GT_METRIC_CATALOG[alvoDoAnuncio.resultado])
+            ? GT_METRIC_CATALOG[alvoDoAnuncio.resultado].compute(a) : null),
           // Usamos `custoAtualDoAlvo` (e não `custoDoAlvo` direto) para todo
           // mercado, inclusive engajamento, sempre concordar com o valor usado no
           // --dry e deixar a porta aberta para a Tarefa 5 (override de objetivo
           // declarado) sem precisar trocar chamada por chamada depois.
-          custo_por_resultado: custoAtualDoAlvo(mercadoDoAnuncio, a, regua),
+          custo_por_resultado: custoAtualDoAlvo(mercadoDoAnuncio, a, regua, interacaoDeclarada),
         };
       });
     })(),
