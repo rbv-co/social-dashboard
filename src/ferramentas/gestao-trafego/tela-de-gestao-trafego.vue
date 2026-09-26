@@ -6195,7 +6195,12 @@ Object.assign(window, {
 .tela-gestao-trafego :deep(.gt-camp-top){display:flex;flex-direction:column;gap:0;cursor:pointer;user-select:none;border-radius:8px;padding:7px 8px;margin:-5px -8px;transition:background .12s;}
 .tela-gestao-trafego :deep(.gt-camp-top:hover){background:var(--surface2);}
 .tela-gestao-trafego :deep(.gt-camp-top:hover .gt-name){color:var(--accent);}
-.tela-gestao-trafego :deep(.gt-camp-l1){display:flex;align-items:center;gap:10px;}
+/* flex-wrap:wrap ACRESCENTADO na base (rodada de correção 1 desta tarefa) —
+   MESMA razão do `.gt-ad-top`/`.gt-set-top` acima: esta linha pode ter selo de
+   status + nome + chip de nível de orçamento + chip de mercado + chip de
+   objetivo ao mesmo tempo, e sem wrap o nome (flex:1;min-width:0) é quem
+   cede o espaço primeiro. Só age quando falta espaço; não muda telas largas. */
+.tela-gestao-trafego :deep(.gt-camp-l1){display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
 .tela-gestao-trafego :deep(.gt-camp-l1 .gt-spend){margin-left:auto;}
 .tela-gestao-trafego :deep(.gt-camp-num){font-family:var(--fonte-dados);font-size:calc(14px*var(--gt-fs,1.3));font-weight:600;color:var(--accent);min-width:24px;text-align:center;flex-shrink:0;font-variant-numeric:tabular-nums;letter-spacing:.5px;}
 .tela-gestao-trafego :deep(.gt-ad-num){font-family:var(--fonte-dados);font-size:calc(11px*var(--gt-fs,1.3));font-weight:600;color:var(--accent);opacity:.85;flex-shrink:0;font-variant-numeric:tabular-nums;letter-spacing:.3px;}
@@ -6206,9 +6211,22 @@ Object.assign(window, {
 .tela-gestao-trafego :deep(.gt-ads-section-lbl){font-family:var(--fonte-principal);font-size:calc(9px*var(--gt-fs,1.3));font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);padding:10px 0 6px 20px;opacity:.7;}
 /* ── Conjuntos de anúncios (camada entre a campanha e os anúncios) ── */
 .tela-gestao-trafego :deep(.gt-set-card){border-radius:9px;background:var(--surface);border:1px solid var(--border);padding:10px 12px;display:flex;flex-direction:column;gap:6px;margin-left:8px;margin-bottom:9px;box-shadow:0 2px 10px rgba(0,0,0,.06);}
-.tela-gestao-trafego :deep(.gt-set-top){display:flex;align-items:center;gap:9px;cursor:pointer;min-width:0;}
+/* flex-wrap:wrap ACRESCENTADO na base (rodada de correção 1 desta tarefa) —
+   MESMA razão do `.gt-ad-top` (ver comentário lá): numa campanha MISTA este
+   cabeçalho ganha um chip de KPI a mais (`kpiCjEl`), e sem wrap o nome do
+   conjunto pode ser espremido a 0px do mesmo jeito, só que com dado real
+   diferente. Só age quando falta espaço; não muda telas largas. */
+.tela-gestao-trafego :deep(.gt-set-top){display:flex;align-items:center;gap:9px;cursor:pointer;min-width:0;flex-wrap:wrap;}
 .tela-gestao-trafego :deep(.gt-set-num){font-family:var(--fonte-dados);font-size:calc(11px*var(--gt-fs,1.3));font-weight:600;color:var(--accent);opacity:.85;flex-shrink:0;font-variant-numeric:tabular-nums;letter-spacing:.3px;}
-.tela-gestao-trafego :deep(.gt-set-nm){flex:1;min-width:0;font-family:var(--fonte-principal);font-size:calc(11.5px*var(--gt-fs,1.3));font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+/* NOME DO CONJUNTO nunca corta (PADRAO-DA-CENTRAL item 5, rodada de correção
+   1 desta tarefa): o `ellipsis` estava só no override de celular — entre
+   641px e o próximo breakpoint (notebook com janela estreita, split-screen,
+   tablet deitado) o nome CORTAVA, porque a regra BASE (aqui) ainda tinha
+   `text-overflow:ellipsis;white-space:nowrap`. `overflow-wrap:anywhere` na
+   base cobre TODA largura, sem depender de media query nenhuma; o override
+   de celular (mais abaixo) continua existindo só para forçar a linha
+   PRÓPRIA (`flex-basis:100%`), que é layout, não corte de texto. */
+.tela-gestao-trafego :deep(.gt-set-nm){flex:1;min-width:0;font-family:var(--fonte-principal);font-size:calc(11.5px*var(--gt-fs,1.3));font-weight:600;color:var(--text);overflow-wrap:anywhere;}
 .tela-gestao-trafego :deep(.gt-set-spend){font-family:var(--fonte-dados);font-size:calc(13px*var(--gt-fs,1.3));font-weight:700;color:var(--text);flex-shrink:0;font-variant-numeric:tabular-nums;}
 .tela-gestao-trafego :deep(.gt-set-exp){display:flex;align-items:center;gap:5px;flex-shrink:0;}
 .tela-gestao-trafego :deep(.gt-set-top:hover .gt-expand-hint){opacity:1;color:var(--accent);}
@@ -6269,7 +6287,16 @@ Object.assign(window, {
 .tela-gestao-trafego :deep(.gt-set-pane){position:relative;}
 .tela-gestao-trafego :deep(.gt-set-pane)::before{content:'';position:absolute;left:12px;top:0;bottom:18px;border-left:2px solid var(--accent);opacity:.28;pointer-events:none;}
 .tela-gestao-trafego :deep(.gt-ad-card::before){content:'';position:absolute;left:-8px;top:-9px;width:9px;height:24px;border-left:2px solid var(--accent);border-bottom:2px solid var(--accent);border-bottom-left-radius:9px;opacity:.55;pointer-events:none;}
-.tela-gestao-trafego :deep(.gt-ad-top){display:flex;align-items:center;gap:8px;}
+/* flex-wrap:wrap ACRESCENTADO na base (rodada de correção 1 desta tarefa):
+   sem isto, `.gt-metrics` (flex-shrink:0, para nunca espremer os números) e
+   `.gt-ad-name` (min-width:0, para poder quebrar) disputam a MESMA linha, e
+   quem perde é o nome — medido a 800px com um anúncio de verdade: nome
+   espremido a 0px de largura (pior que cortar: fica INVISÍVEL, nem elipse
+   sobra). Com `flex-wrap:wrap`, a métrica (que não quer diminuir) desce
+   pra própria linha quando não cabe, e o nome fica com a largura da linha de
+   cima — sem mudar nada em telas largas o bastante pra caber tudo numa linha
+   só (o wrap só age quando falta espaço de verdade). */
+.tela-gestao-trafego :deep(.gt-ad-top){display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
 /* Status badge — replaces dot */
 .tela-gestao-trafego :deep(.gt-status-badge){display:inline-flex;align-items:center;gap:4px;font-family:var(--fonte-principal);font-size:calc(9px*var(--gt-fs,1.3));font-weight:700;letter-spacing:.4px;padding:2px 8px;border-radius:20px;flex-shrink:0;text-transform:uppercase;}
 .tela-gestao-trafego :deep(.gt-status-badge.active){background:color-mix(in srgb,var(--green) 12%,var(--surface));color:color-mix(in srgb,var(--green) 75%,var(--text));}
@@ -6282,7 +6309,11 @@ Object.assign(window, {
 .tela-gestao-trafego :deep(.gt-chevron.open){transform:rotate(90deg);}
 .tela-gestao-trafego :deep(.gt-expand-hint){font-family:var(--fonte-principal);font-size:calc(9px*var(--gt-fs,1.3));color:var(--muted);opacity:.7;white-space:nowrap;flex-shrink:0;transition:opacity .12s;}
 .tela-gestao-trafego :deep(.gt-camp-top:hover .gt-expand-hint){opacity:1;color:var(--accent);}
-.tela-gestao-trafego :deep(.gt-name){flex:1;min-width:0;font-family:var(--fonte-principal);font-size:calc(12px*var(--gt-fs,1.3));font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;transition:color .12s;}
+/* NOME DA CAMPANHA nunca corta (PADRAO-DA-CENTRAL item 5, rodada de correção
+   1 desta tarefa) — MESMO conserto do `.gt-set-nm` acima, pela MESMA razão:
+   o `ellipsis` da regra base cortava o nome em qualquer largura entre 641px
+   e o breakpoint seguinte, e só o celular tinha override. */
+.tela-gestao-trafego :deep(.gt-name){flex:1;min-width:0;font-family:var(--fonte-principal);font-size:calc(12px*var(--gt-fs,1.3));font-weight:600;color:var(--text);overflow-wrap:anywhere;transition:color .12s;}
 .tela-gestao-trafego :deep(.gt-metrics){display:flex;align-items:center;gap:14px;flex-wrap:wrap;flex-shrink:0;}
 .tela-gestao-trafego :deep(.gt-metric){font-family:var(--fonte-principal);font-size:calc(10px*var(--gt-fs,1.3));color:var(--muted);white-space:nowrap;}
 .tela-gestao-trafego :deep(.gt-metric span){font-weight:700;color:var(--text);}
@@ -6333,7 +6364,11 @@ Object.assign(window, {
 .tela-gestao-trafego :deep(.gt-be-box input){width:82px;padding:5px 7px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-family:var(--fonte-principal);font-size:calc(11px*var(--gt-fs,1.3));}
 /* Pílula de veredito do anúncio + nome/porquê */
 .tela-gestao-trafego :deep(.gt-ad-name){flex:1;min-width:0;}
-.tela-gestao-trafego :deep(.gt-ad-nm){font-family:var(--fonte-principal);font-size:calc(11px*var(--gt-fs,1.3));font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+/* NOME DO ANÚNCIO nunca corta (PADRAO-DA-CENTRAL item 5, rodada de correção 1
+   desta tarefa) — MESMO conserto de `.gt-name`/`.gt-set-nm` acima. Esta tarefa
+   tinha corrigido só o override de celular; a regra BASE (aqui) ainda cortava
+   entre 641px e o breakpoint seguinte. */
+.tela-gestao-trafego :deep(.gt-ad-nm){font-family:var(--fonte-principal);font-size:calc(11px*var(--gt-fs,1.3));font-weight:600;color:var(--text);overflow-wrap:anywhere;}
 .tela-gestao-trafego :deep(.gt-ad-sub){font-family:var(--fonte-principal);font-size:calc(10px*var(--gt-fs,1.3));color:var(--muted);}
 /* Auto button */
 .tela-gestao-trafego :deep(.gt-auto-btn){display:flex;align-items:center;gap:6px;padding:5px 14px;border-radius:7px;font-family:var(--fonte-principal);font-size:calc(11px*var(--gt-fs,1.3));font-weight:700;cursor:pointer;border:1px solid var(--border);background:none;color:var(--muted);letter-spacing:.3px;transition:all .2s;white-space:nowrap;position:relative;}
@@ -6552,29 +6587,24 @@ Object.assign(window, {
   .tela-gestao-trafego :deep(.gt-camp-row-ads){padding:0 10px 12px 10px;}
   .tela-gestao-trafego :deep(.gt-set-card){margin-left:0;max-width:100%;overflow-x:clip;}
   .tela-gestao-trafego :deep(.gt-set-top){flex-wrap:wrap;gap:6px;}
-  /* overflow-wrap:anywhere ACRESCENTADO nesta tarefa: `white-space:normal`
-     sozinho só quebra em ESPAÇO — um nome de conjunto sem espaço nenhum
-     (ex.: "IguatemiCampinasSeguidores[testeparavalidar]") continuava cortando
-     mesmo com esta regra, medido a 375px. */
-  .tela-gestao-trafego :deep(.gt-set-nm){flex:1 1 100%;order:3;white-space:normal;overflow-wrap:anywhere;}
-  /* NOME DA CAMPANHA nunca corta (PADRAO-DA-CENTRAL item 5) — medido a 375px
-     nesta tarefa: "[LEADS LOJA][mixconversão]" e outros nomes reais ficavam
-     com `scrollWidth` maior que `clientWidth` (elipse do CSS de desktop,
-     .gt-name, sem override nenhum no celular até aqui — só o irmão do
-     conjunto, .gt-set-nm, tinha). Mesmo truque: `flex-basis:100%` força a
-     própria linha, e o nome quebra em vez de cortar. */
-  .tela-gestao-trafego :deep(.gt-name){flex:1 1 100%;white-space:normal;overflow-wrap:anywhere;text-overflow:clip;}
+  /* O NÃO-CORTA (overflow-wrap:anywhere, sem nowrap/ellipsis) já vem da regra
+     BASE de `.gt-set-nm` (rodada de correção 1 desta tarefa — antes só este
+     override de celular tinha o conserto, e a regra base cortava de 641px
+     até o próximo breakpoint). Aqui no celular só falta a LARGURA CHEIA:
+     `flex-basis:100%` empurra o nome pra própria linha, com `order:3` porque
+     `.gt-set-top` tem outros irmãos (número, badge, gasto) que ficam ANTES
+     dele na primeira linha. */
+  .tela-gestao-trafego :deep(.gt-set-nm){flex:1 1 100%;order:3;}
+  /* MESMA razão do `.gt-set-nm` acima, pro nome da campanha: só a largura
+     cheia falta aqui — o não-corta já é da base de `.gt-name`. */
+  .tela-gestao-trafego :deep(.gt-name){flex:1 1 100%;}
   .tela-gestao-trafego :deep(.gt-set-exp){order:4;margin-left:auto;}
   .tela-gestao-trafego :deep(.gt-ad-card){margin-left:10px;}
-  /* NOME DO ANÚNCIO nunca corta (PADRAO-DA-CENTRAL item 5) — mesmo defeito e
-     mesmo conserto do nome da campanha/conjunto, acima: o CSS de desktop
-     (.gt-ad-nm) tem `text-overflow:ellipsis;white-space:nowrap`, e sem
-     override aqui um nome de criativo comprido cortava a 375px. Aqui não
-     precisa de `order`: `.gt-ad-name` já vem ANTES de `.gt-metrics` no DOM
-     (top.appendChild(...nameWrap, metrics)), então só a largura cheia já
-     empurra o nome pra própria linha, sem reordenar nada. */
+  /* MESMA razão dos dois acima, pro nome do anúncio: o não-corta já é da base
+     de `.gt-ad-nm`. Aqui não precisa de `order`: `.gt-ad-name` já vem ANTES
+     de `.gt-metrics` no DOM (top.appendChild(...nameWrap, metrics)), então só
+     a largura cheia já empurra o nome pra própria linha, sem reordenar nada. */
   .tela-gestao-trafego :deep(.gt-ad-name){flex:1 1 100%;}
-  .tela-gestao-trafego :deep(.gt-ad-nm){white-space:normal;overflow-wrap:anywhere;text-overflow:clip;}
   /* No estreito a árvore não cabe: some com as DUAS peças da guia (o L do anúncio
      e o trilho do conjunto). Esconder só uma deixaria a linha vertical solta. */
   .tela-gestao-trafego :deep(.gt-ad-card::before){display:none;}
