@@ -6354,7 +6354,12 @@ Object.assign(window, {
 @media(max-width:640px){
   .tela-gestao-trafego :deep(.gt-camp-titulo-n){display:none;}
   .tela-gestao-trafego :deep(.gt-camp-hdr .gt-pastilha){display:none;}
-  .tela-gestao-trafego :deep(.pnd-aba-contagem:not(:empty)){display:inline-flex;align-items:center;justify-content:center;min-width:17px;height:17px;padding:0 5px;margin-left:6px;border-radius:9px;background:var(--surface2);color:var(--muted);font-family:var(--fonte-dados);font-size:calc(8.5px*var(--gt-fs,1.3));font-weight:700;line-height:1;}
+  /* POSITION:ABSOLUTE, não inline (achado ao medir): "Campanhas" sozinho já
+     enche exatamente a largura mínima da aba (89px de texto em 89px de
+     caixa) — o selo inline forçava uma QUEBRA DE LINHA (a aba ia de 37px pra
+     50px de altura só por causa do número). Como selo no canto, não disputa
+     largura com o texto; `.pnd-aba` já é `position:relative` (ver abaixo). */
+  .tela-gestao-trafego :deep(.pnd-aba-contagem:not(:empty)){display:inline-flex;align-items:center;justify-content:center;position:absolute;top:2px;right:2px;min-width:15px;height:15px;padding:0 4px;border-radius:8px;background:var(--surface2);color:var(--muted);font-family:var(--fonte-dados);font-size:calc(8px*var(--gt-fs,1.3));font-weight:700;line-height:1;}
   /* CABEÇALHO DA LISTA (155px medidos -> alvo ~45px): busca + os 3 filtros
      (Todas/Ativas/Inativas) ficam ESCONDIDOS atrás de um botão de funil, em
      vez de empilhados abaixo do título. O "recolher tudo" continua igual,
