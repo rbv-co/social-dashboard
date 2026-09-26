@@ -394,15 +394,27 @@ export function montarMensagens(camp, ins, ads, conjuntos, regua, extra) {
         // `resultado`/`custo_por_resultado` NULOS, porque `alvo` (calculado
         // lá em cima a partir de `mercado==='misto'`) não existe em ALVOS —
         // mesmo o anúncio pertencendo a um conjunto de mercado único e bem
-        // identificado. A TELA já quebra por conjunto (ver mercadoDoGrupo em
-        // tela-de-gestao-trafego.vue); o robô mandando null para todos
-        // divergia dela — exatamente o defeito que esta onda existe pra
-        // matar. A mesma condição da tela (`mercado === 'misto'`, sem olhar
-        // `interacaoDeclarada`: a declaração é assunto do CUSTO DA CAMPANHA,
-        // nunca decidiu o mercado do anúncio).
-        const mercadoDoAnuncio = mercado === 'misto'
-          ? mercadoDoConjunto(conjuntoPorId[String(a.adset_id)] || {})
-          : mercado;
+        // identificado. A TELA já quebra por conjunto (ver
+        // `mercadoDoGrupoDeAnuncios` em mercados.js e o uso dela em
+        // `_renderGtConjuntos`, tela-de-gestao-trafego.vue); o robô mandando
+        // null para todos divergia dela — exatamente o defeito que esta onda
+        // existe pra matar.
+        //
+        // UMA FONTE SÓ (rodada de correção 1, Tarefa 5b): antes desta
+        // correção o robô tinha a MESMA regra reescrita à mão aqui
+        // (`mercadoDoConjunto` chamado à mão com o conjunto achado por
+        // `adset_id`, caindo num objeto vazio quando não achava), e a cópia já tinha
+        // divergido da tela — sem `adset_id` reconhecível, a tela devolve
+        // `null` ("não sei"), mas `mercadoDoConjunto({})` aqui devolvia
+        // `'desconhecido'` (um MERCADO de verdade, sem entrada em `ALVOS`
+        // hoje só por coincidência). O resultado batia por acidente — bastava
+        // `ALVOS` ganhar uma chave `'desconhecido'` um dia para a divergência
+        // aparecer. `mercadoDoGrupoDeAnuncios` é a MESMA função que a tela
+        // chama: sem `idDoGrupo` (o robô não tem grupo `'_sem_conjunto'`
+        // inventado, só anúncio com/sem `adset_id` reconhecido), o `!conjunto`
+        // dela já cobre os dois jeitos de "não achei o conjunto" — undefined
+        // (não passamos mais o `|| {}`) e ausência de grupo.
+        const mercadoDoAnuncio = mercadoDoGrupoDeAnuncios(mercado, conjuntoPorId[String(a.adset_id)]);
         const alvoDoAnuncio = alvoDoBalde(mercadoDoAnuncio);
         return {
           ad_id: a.ad_id || a.id || '',
@@ -560,7 +572,7 @@ import { emVeiculacao } from '../src/ferramentas/gestao-trafego/veiculacao.js';
 // Motoeasy, Mantova e o [FLUXO SHOPPING] da Vessel tinham o MESMO objetivo
 // declarado (OUTCOME_ENGAGEMENT) e compravam três coisas diferentes (conversa
 // de WhatsApp, visita ao perfil, view de vídeo).
-import { mercadoDaCampanha, mercadoDoConjunto, comObjetivoHerdado } from '../src/ferramentas/gestao-trafego/mercados.js';
+import { mercadoDaCampanha, mercadoDoConjunto, comObjetivoHerdado, mercadoDoGrupoDeAnuncios } from '../src/ferramentas/gestao-trafego/mercados.js';
 // O custo atual de TODO balde, engajamento incluído desde a troca de régua de
 // 24/09/2026 (ver custoAtualDoAlvo acima e ALVOS.engajamento em alvos.js).
 // GT_METRIC_CATALOG: o compute() de cada métrica (leads, conversas, compras...) —

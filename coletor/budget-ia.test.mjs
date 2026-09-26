@@ -885,3 +885,32 @@ test('campanha mista com interação DECLARADA é julgada por ela, não pela que
   assert.equal(d.regua.por_conjunto, undefined, 'com declaração, nem monta a quebra por conjunto');
   assert.equal(d.regua.custo_atual_reais, 4, '100 / 25 salvamentos, a declaração venceu a mistura');
 });
+
+// ---------------------------------------------------------------------------
+// TRAVA — UMA FONTE SÓ (rodada de correção 1, Onda C, Tarefa 5b). A revisão
+// achou que a regra "mercado do anúncio em campanha mista" tinha DUAS
+// implementações independentes (esta aqui e `mercadoDoGrupoDeAnuncios` em
+// mercados.js), já divergentes por acidente: sem `adset_id` reconhecível, a
+// tela devolvia `null` ("não sei") e esta função devolvia `mercadoDoConjunto({})`
+// = `'desconhecido'` (um mercado de verdade). Batiam hoje só porque `ALVOS`
+// não tem chave `'desconhecido'` — bastaria ganhar uma para a divergência
+// aparecer no que o modelo recebe. A prova por comportamento (o teste "sem
+// adset_id reconhecível", acima) não pegaria uma reintrodução da cópia à mão
+// se ela ainda desse `null` no resultado final por outro motivo — por isso
+// esta trava lê o CÓDIGO-FONTE e garante que só existe UM lugar calculando
+// isso: a chamada de `mercadoDoGrupoDeAnuncios`.
+// ---------------------------------------------------------------------------
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
+test('UMA FONTE SÓ: o robô importa e USA mercadoDoGrupoDeAnuncios, não reescreve a regra à mão', () => {
+  const fonte = readFileSync(fileURLToPath(new URL('./budget-ia.mjs', import.meta.url)), 'utf8');
+  assert.match(fonte, /import\s*\{[^}]*\bmercadoDoGrupoDeAnuncios\b[^}]*\}\s*from\s*['"][^'"]*mercados\.js['"]/,
+    'budget-ia.mjs precisa importar mercadoDoGrupoDeAnuncios de mercados.js');
+  assert.match(fonte, /mercadoDoGrupoDeAnuncios\(/, 'e precisa CHAMAR a função importada, não só importar');
+  // O defeito original, palavra por palavra: a cópia à mão que caía em
+  // `mercadoDoConjunto({})` = 'desconhecido' para anúncio sem adset_id
+  // reconhecível, em vez do `null` que mercadoDoGrupoDeAnuncios devolve.
+  assert.ok(!fonte.includes('mercadoDoConjunto(conjuntoPorId'),
+    'a regra do mercado do anúncio não pode mais ser calculada à mão aqui — isso é o que mercadoDoGrupoDeAnuncios faz');
+});
