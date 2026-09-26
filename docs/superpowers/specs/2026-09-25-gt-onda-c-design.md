@@ -127,6 +127,32 @@ robô — os dois não podem discordar sobre isso.
 - A marca "medida indisponível" **sai** das campanhas de perfil: elas passam a ter medida de
   verdade. O que continua não existindo é seguidor por campanha, e isso o texto diz.
 
+### 2.3 O card do ANÚNCIO ganha o KPI do mercado
+
+Pedido do dono, 25/09: *"eu não vejo as kpis no card dos anúncios também, sinto falta disso"*.
+
+Hoje o anúncio mostra **só CTR e gasto** (`tela-de-gestao-trafego.vue:2931`), enquanto a
+campanha mostra os KPIs do mercado. E o robô **já recebe** `resultado` e
+`custo_por_resultado` por anúncio desde a Onda A — a informação existe, calculada, e a tela
+nunca mostrou.
+
+O anúncio passa a exibir, além de CTR e gasto:
+- o **KPI principal do mercado da campanha** (custo por lead, por visita ao perfil, por view…),
+  com a **cor** contra a meta daquele mercado;
+- a **quantidade** do resultado.
+
+**Não** herda as métricas de apoio: decisão do dono em 25/09, e pela mesma razão que abriu
+este trabalho — uma campanha pode ter uma dúzia de anúncios na tela, e repetir a régua
+inteira em cada um desfaz o que se ganhou tirando o excesso do cartão.
+
+O mercado do anúncio é o **da campanha**, descido pronto — nunca recalculado por anúncio.
+A Meta omite um action type inteiro quando a contagem é zero, então um anúncio de campanha de
+WhatsApp que não puxou conversa na janela fica idêntico a um de engajamento puro (H1 do review
+de 2026-07-28, e a mesma regra que a Onda A já aplica no robô).
+
+Em campanha **mista**, o anúncio segue o mercado do **conjunto** dele, que é o que a quebra
+por conjunto (2.1) torna possível.
+
 ## 5. O que NÃO muda
 
 - A decisão de 2026-07-29 (o conjunto manda, não o objetivo declarado) — esta onda a
