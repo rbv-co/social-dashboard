@@ -2270,13 +2270,25 @@ function _gtSeloObjetivoEl(alvoId,nivel,elegivel){
 // inteira — ver seguidores.js). Só devolve algo com dado CONFIÁVEL (nunca
 // traço, nunca zero: sem confiança, o selo nem existe); string vazia quando
 // não há o que mostrar, pra quem chama decidir se anexa ou não.
-function _gtSeloCustoSeguidorContaHtml(){
-  if(!(_gtCustoSeguidorConta&&_gtCustoSeguidorConta.confiavel&&_gtCustoSeguidorConta.valor!=null))return '';
+// Dados crus por trás do selo (Onda C, rodada 2): separado do HTML pronto
+// porque o cabeçalho da lista, no celular, precisa do AVISO por extenso pra
+// abrir num toque — não dá pra tirar o texto de dentro de um `title`. As duas
+// outras chamadas (dentro do cartão da campanha) continuam usando o HTML
+// pronto, com `title`, sem mudança nenhuma.
+function _gtCustoSeguidorContaDados(){
+  if(!(_gtCustoSeguidorConta&&_gtCustoSeguidorConta.confiavel&&_gtCustoSeguidorConta.valor!=null))return null;
   const fmtDia=(iso)=>{const[a,m,d]=iso.split('-');return `${d}/${m}`;};
   const jan=_gtCustoSeguidorConta.since===_gtCustoSeguidorConta.until
     ?fmtDia(_gtCustoSeguidorConta.since)
     :`${fmtDia(_gtCustoSeguidorConta.since)}–${fmtDia(_gtCustoSeguidorConta.until)}`;
-  return `<span class="selo selo-info" title="Estimativa da CONTA INTEIRA no período ${jan} — inclui seguidor orgânico (não há como separar) e NÃO é o custo de nenhuma campanha isolada: gasto de todas as campanhas de seguidores dividido pelo ganho de seguidores da conta.">≈ R$ ${_gtCustoSeguidorConta.valor.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}/seguidor (conta, ${jan})</span>`;
+  const valorFmt=_gtCustoSeguidorConta.valor.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const aviso=`Estimativa da CONTA INTEIRA no período ${jan} — inclui seguidor orgânico (não há como separar) e NÃO é o custo de nenhuma campanha isolada: gasto de todas as campanhas de seguidores dividido pelo ganho de seguidores da conta.`;
+  return { jan, valorFmt, aviso, texto:`≈ R$ ${valorFmt}/seguidor (conta, ${jan})` };
+}
+function _gtSeloCustoSeguidorContaHtml(){
+  const d=_gtCustoSeguidorContaDados();
+  if(!d)return '';
+  return `<span class="selo selo-info" title="${d.aviso}">${d.texto}</span>`;
 }
 function _renderGtCampaigns(col,campaigns,insights,adInsights,adsets){
   const campMap={};campaigns.forEach(c=>campMap[c.id]=c);
@@ -2317,9 +2329,25 @@ function _renderGtCampaigns(col,campaigns,insights,adInsights,adsets){
     const campN=document.getElementById('pnd-camp-n');
     if(campN)campN.textContent=String(sorted.length);
   }
-  const aiTag=document.createElement('div');
+  // OS DOIS SELOS VIRAM ÍCONE COM TOQUE NO CELULAR (Onda C, rodada 2, pedido
+  // do dono). No computador o texto continua por extenso, do jeito que
+  // sempre foi (CSS só troca a exibição abaixo de 640px) — o botão é o MESMO
+  // elemento nos dois tamanhos, só o que fica visível dentro dele muda.
+  // SEM `title`: tela de toque não tem hover (mesma lição já registrada em
+  // painel-fila.js) — a explicação inteira mora no modal que abre no clique/
+  // toque (`_gtConfirm`, o mesmo modal do botão "?" desta ferramenta),
+  // nunca só num atributo que só o mouse alcança.
+  const aiTag=document.createElement('button');
+  aiTag.type='button';
+  aiTag.className='gt-selo-toque';
+  aiTag.setAttribute('aria-label','IA em tempo real — o que isso quer dizer');
   aiTag.style.cssText='font-family:var(--fonte-principal);font-size:calc(9px*var(--gt-fs,1.3));font-weight:700;letter-spacing:.5px;padding:2px 7px;border-radius:20px;background:var(--accent-light);color:var(--accent-forte);text-transform:uppercase;';
-  aiTag.textContent='✦ IA em tempo real';
+  aiTag.innerHTML='<span class="gt-selo-toque-ic" aria-hidden="true">✦</span><span class="gt-selo-toque-txt">IA em tempo real</span>';
+  aiTag.addEventListener('click',()=>_gtConfirm(
+    'IA em tempo real',
+    'Os números desta lista são recalculados a cada atualização, direto da Meta Ads — não é uma foto salva de antes. As sugestões de ação da IA (subir orçamento, pausar, manter) ficam na aba Fila; aqui é só o retrato ao vivo da conta.',
+    {okOnly:true}
+  ));
   // A pastilha da lista (Onda 4a): só o ícone, antes do título que já existia.
   ttlWrap.insertAdjacentHTML('beforeend',pastilha('lista'));
   ttlWrap.appendChild(ttl);ttlWrap.appendChild(aiTag);
@@ -2330,10 +2358,22 @@ function _renderGtCampaigns(col,campaigns,insights,adInsights,adsets){
   // descompasso, "hoje" mostrando quase um mês, que deu retrabalho antes
   // nesta onda).
   {
-    const seloSeguidorHtml=_gtSeloCustoSeguidorContaHtml();
-    if(seloSeguidorHtml){
-      const wrap=document.createElement('span');wrap.innerHTML=seloSeguidorHtml;
-      if(wrap.firstElementChild)ttlWrap.appendChild(wrap.firstElementChild);
+    const d=_gtCustoSeguidorContaDados();
+    if(d){
+      const btn=document.createElement('button');
+      btn.type='button';
+      btn.className='gt-selo-toque selo selo-info';
+      btn.setAttribute('aria-label','Custo por seguidor da conta — o que este número significa');
+      // O ícone reaproveita o "≈" que já abre o texto — o mesmo sinal de
+      // estimativa, só que agora também é o alvo de toque.
+      btn.innerHTML='<span class="gt-selo-toque-ic" aria-hidden="true">≈</span>'
+        +`<span class="gt-selo-toque-txt">${_gtEsc(d.texto)}</span>`;
+      // O AVISO (estimativa da conta inteira, inclui orgânico, a janela) vai
+      // INTEIRO pro modal — é o mesmo texto que morava no `title`, agora
+      // acessível no toque. Nunca pode sumir: é o que evita confundir
+      // estimativa com medida de campanha.
+      btn.addEventListener('click',()=>_gtConfirm('Custo por seguidor (conta)', d.aviso, {okOnly:true}));
+      ttlWrap.appendChild(btn);
     }
   }
   const searchInp=document.createElement('input');
@@ -2442,6 +2482,19 @@ function _renderGtCampaigns(col,campaigns,insights,adInsights,adsets){
     // mesma linha que só apareciam quando a lista era montada.
     for(const o of objs) barra.appendChild(faz(o,_gtRotuloObjetivo(o),contagem[o]));
     card.appendChild(barra);
+    // A TIRA ROLA NO CELULAR (rodada 2): o chip ATIVO precisa estar visível
+    // quando ela abre — sem isto, filtrar por um objetivo no fim da lista
+    // (ex.: "Vendas") deixava o chip escolhido fora da área visível, sem
+    // pista de qual filtro estava ligado. Só mexe quando HÁ filtro (o
+    // "Todos" é sempre o primeiro chip, já visível sem rolar nada).
+    // requestAnimationFrame espera o layout de verdade (larguras reais)
+    // antes de calcular pra onde rolar.
+    if(_gtFiltroObjetivo){
+      requestAnimationFrame(()=>{
+        const ativo=barra.querySelector('.gt-obj-filtro.ativo');
+        if(ativo)ativo.scrollIntoView({inline:'center',block:'nearest'});
+      });
+    }
   }
   const list=document.createElement('div');list.className='gt-camp-list';card.appendChild(list);
   const tok=_gtCurAcc?.id;
@@ -5822,6 +5875,26 @@ Object.assign(window, {
 .tela-gestao-trafego :deep(.gt-obj-filtro:hover){color:var(--text);border-color:var(--muted);}
 .tela-gestao-trafego :deep(.gt-obj-filtro.ativo){background:var(--accent);color:var(--sobre-cor);border-color:var(--accent);font-weight:600;}
 .tela-gestao-trafego :deep(.gt-obj-n){font-family:var(--fonte-dados);font-size:calc(8.5px*var(--gt-fs,1.3));opacity:.65;}
+/* TIRA QUE ROLA NO CELULAR (Onda C, rodada 2, pedido do dono): antes
+   `flex-wrap:wrap` deixava os chips em 2-3 linhas (76px medidos) — o dono
+   quer continuar vendo os mercados de relance, então em vez de esconder
+   atrás de um botão (como fizemos com busca/filtros de status), esta barra
+   vira UMA LINHA que rola de lado. A rolagem é DENTRO da tira
+   (`overflow-x:auto` só aqui) — a PÁGINA continua sem rolagem horizontal,
+   que é o que o padrão exige (item 6); `_renderGtCampaigns` rola até o chip
+   ativo depois de montar a tira (scrollIntoView), pra ele nunca ficar fora
+   da área visível quando o filtro já vem escolhido. */
+@media(max-width:640px){
+  .tela-gestao-trafego :deep(.gt-obj-filtros){flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;padding:6px 14px;gap:6px;scrollbar-width:none;}
+  .tela-gestao-trafego :deep(.gt-obj-filtros)::-webkit-scrollbar{display:none;}
+  .tela-gestao-trafego :deep(.gt-obj-filtro){flex-shrink:0;padding:4px 10px;position:relative;}
+  /* ALVO DE TOQUE, só pra CIMA (medido: 0px de vão entre esta tira e a
+     primeira campanha — crescer pra baixo, como nos outros lugares desta
+     tarefa, ia cair em cima da linha da campanha e abrir/fechar ela sem
+     querer. Pra cima há 12px de vão até o cabeçalho — `bottom:0` ancora a
+     área no PÉ do chip, e ela só cresce pra cima, dentro desse vão). */
+  .tela-gestao-trafego :deep(.gt-obj-filtro)::after{content:'';position:absolute;left:0;right:0;bottom:0;height:32px;}
+}
 
 /* ── MODAL DO FUNIL ───────────────────────────────────────────────────────── */
 .tela-gestao-trafego :deep(#gt-modal-funil){position:fixed;inset:0;height:100dvh;z-index:1000;display:flex;align-items:center;justify-content:center;padding:24px;}
@@ -6349,11 +6422,30 @@ Object.assign(window, {
    Só o @media(max-width:640px) abaixo muda o comportamento. */
 .tela-gestao-trafego :deep(.gt-camp-filtros-painel){display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
 .tela-gestao-trafego :deep(.gt-camp-filtro-toggle){display:none;}
+/* OS DOIS SELOS COM TOQUE (Onda C, rodada 2): "IA em tempo real" e o custo
+   por seguidor viram BOTÃO (eram `<div>`/`<span>`), pra caber ícone com
+   toque sem perder o texto — reset do botão nativo, o `.selo`/estilo inline
+   de cada um continua cuidando de cor/padding/formato como sempre. */
+.tela-gestao-trafego :deep(.gt-selo-toque){appearance:none;border:none;cursor:pointer;font:inherit;}
+.tela-gestao-trafego :deep(.gt-selo-toque-ic){display:none;}
 /* Some com "N Campanhas" só no celular (ver .pnd-aba-contagem, que ganha o
    mesmo número na aba) — no computador o título continua do jeito que era. */
 @media(max-width:640px){
   .tela-gestao-trafego :deep(.gt-camp-titulo-n){display:none;}
   .tela-gestao-trafego :deep(.gt-camp-hdr .gt-pastilha){display:none;}
+  /* NO CELULAR o texto por extenso vira só o ícone (pedido do dono, rodada
+     2): "✦ IA em tempo real" e "≈ R$X/seguidor (conta, dd/mm–dd/mm)" juntos
+     passavam de 350px de largura e quebravam em 2 linhas dentro do
+     cabeçalho (44px medidos). O texto continua inteiro no modal que abre no
+     toque (`_gtConfirm`, ver o `addEventListener('click', ...)` de cada um
+     em _renderGtCampaigns) — nada de `title`, tela de toque não tem hover. */
+  .tela-gestao-trafego :deep(.gt-selo-toque-txt){display:none;}
+  .tela-gestao-trafego :deep(.gt-selo-toque-ic){display:inline;}
+  .tela-gestao-trafego :deep(.gt-selo-toque){padding:4px 8px !important;position:relative;}
+  /* ALVO DE TOQUE 40px, só em ALTURA (left:0;right:0) — os dois selos ficam
+     lado a lado com pouco vão entre si; crescer também na largura ia fazer
+     o alvo de um cobrir o do outro (o mesmo cuidado da barra de abas). */
+  .tela-gestao-trafego :deep(.gt-selo-toque)::after{content:'';position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);height:40px;}
   /* POSITION:ABSOLUTE, não inline (achado ao medir): "Campanhas" sozinho já
      enche exatamente a largura mínima da aba (89px de texto em 89px de
      caixa) — o selo inline forçava uma QUEBRA DE LINHA (a aba ia de 37px pra
@@ -6640,9 +6732,13 @@ Object.assign(window, {
   .tela-gestao-trafego :deep(.pnd-aba-acao)::after{content:'';position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);height:40px;}
   /* As três abas de verdade (Campanhas/Fila/A régua) mediram 37px de altura
      no celular — abaixo do piso de 40px, não causado por esta tarefa, mas já
-     que a linha está sendo mexida, ganham a mesma folga invisível. */
+     que a linha está sendo mexida, ganham a mesma folga invisível.
+     44px, não 40: medido com `elementFromPoint` na rodada 1, os 40px exatos
+     erravam por <1px bem na borda (arredondamento de subpixel do próprio
+     navegador, não colisão com vizinho) — 4px de sobra absorve essa margem
+     sem custar nada (não muda o desenho, só a área invisível de toque). */
   .tela-gestao-trafego :deep(.pnd-aba){position:relative;}
-  .tela-gestao-trafego :deep(.pnd-aba)::after{content:'';position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);height:40px;}
+  .tela-gestao-trafego :deep(.pnd-aba)::after{content:'';position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);height:44px;}
 }
 .tela-gestao-trafego :deep(.gt-cfg-body){padding:16px 20px;overflow-y:auto;flex:1;}
 .tela-gestao-trafego :deep(.gt-cfg-sec){margin-bottom:18px;}
