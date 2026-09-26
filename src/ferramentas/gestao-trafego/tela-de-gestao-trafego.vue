@@ -549,7 +549,12 @@ function _buildGtDropdown(){
     item.style.cssText='padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;transition:background .12s;';
     item.addEventListener('mouseenter',()=>item.style.background='var(--surface2)');
     item.addEventListener('mouseleave',()=>item.style.background='');
-    item.innerHTML=`<span style="font-family:var(--fonte-principal);font-size:calc(11px*var(--gt-fs,1.3));color:var(--muted);min-width:18px;">${idx+1}</span><div style="flex:1;min-width:0;"><div style="font-family:var(--fonte-principal);font-size:calc(12px*var(--gt-fs,1.3));font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${a.display_name||a.name||'Conta '+idx}</div><div style="font-family:var(--fonte-principal);font-size:calc(10px*var(--gt-fs,1.3));color:var(--muted);">${_maFmt(a.monthSpend||0,0)} gastos / mês</div></div><div style="font-family:var(--fonte-principal);font-size:calc(13px*var(--gt-fs,1.3));font-weight:700;color:${balColor};flex-shrink:0;">${balTxt}</div>`;
+    // NOME DA CONTA nunca corta (PADRAO-DA-CENTRAL item 5, Onda C - topo do
+    // celular): era `overflow:hidden;text-overflow:ellipsis;white-space:
+    // nowrap`. O `<div>` que envolve o nome já tem `flex:1;min-width:0`, que é
+    // o que deixa o texto encolher até precisar quebrar em vez de ser
+    // espremido a 0px quando só se tira o ellipsis.
+    item.innerHTML=`<span style="font-family:var(--fonte-principal);font-size:calc(11px*var(--gt-fs,1.3));color:var(--muted);min-width:18px;">${idx+1}</span><div style="flex:1;min-width:0;"><div style="font-family:var(--fonte-principal);font-size:calc(12px*var(--gt-fs,1.3));font-weight:600;color:var(--text);overflow-wrap:anywhere;">${a.display_name||a.name||'Conta '+idx}</div><div style="font-family:var(--fonte-principal);font-size:calc(10px*var(--gt-fs,1.3));color:var(--muted);">${_maFmt(a.monthSpend||0,0)} gastos / mês</div></div><div style="font-family:var(--fonte-principal);font-size:calc(13px*var(--gt-fs,1.3));font-weight:700;color:${balColor};flex-shrink:0;">${balTxt}</div>`;
     item.addEventListener('click',e=>{e.stopPropagation();_gtCurAcc=a;const nm=document.getElementById('gt-acc-name');if(nm)nm.textContent=a.display_name||a.name||'—';_gtPickerOpen=false;const d=document.getElementById('gt-acc-dropdown');if(d)d.style.display='none';loadGtData();});
     drop.appendChild(item);
   });
@@ -5861,7 +5866,12 @@ Object.assign(window, {
 .tela-gestao-trafego :deep(.gtf-item.reduzir .gtf-selo){background:color-mix(in srgb,var(--orange) 18%,transparent);color:var(--orange);}
 .tela-gestao-trafego :deep(.gtf-item.pausar .gtf-selo){background:color-mix(in srgb,var(--red) 18%,transparent);color:var(--red);}
 .tela-gestao-trafego :deep(.gtf-ident){flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:2px;}
-.tela-gestao-trafego :deep(.gtf-nome){font-family:var(--fonte-principal);font-size:calc(11.5px*var(--gt-fs,1.3));font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+/* NOME DA CAMPANHA (fila) nunca corta (PADRAO-DA-CENTRAL item 5, Onda C -
+   topo do celular): era `white-space:nowrap;overflow:hidden;text-overflow:
+   ellipsis`, a mesma dupla que apagava nome comprido em qualquer largura. O
+   pai `.gtf-ident` já tem `min-width:0` — sem isso, tirar só o ellipsis
+   deixaria o nome ser espremido a 0px em vez de quebrar. */
+.tela-gestao-trafego :deep(.gtf-nome){font-family:var(--fonte-principal);font-size:calc(11.5px*var(--gt-fs,1.3));font-weight:700;color:var(--text);overflow-wrap:anywhere;}
 .tela-gestao-trafego :deep(.gtf-conta){font-family:var(--fonte-principal);font-size:calc(9px*var(--gt-fs,1.3));color:var(--muted);}
 .tela-gestao-trafego :deep(.gtf-valores){flex:0 0 auto;display:flex;align-items:baseline;gap:7px;font-family:var(--fonte-dados);white-space:nowrap;}
 .tela-gestao-trafego :deep(.gtf-de){font-size:calc(10.5px*var(--gt-fs,1.3));color:var(--muted);text-decoration:line-through;}
