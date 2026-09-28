@@ -80,9 +80,13 @@ returns bigint language sql stable security definer set search_path = public as 
    order by n.presente_em, n.edicao_id limit 1
 $$;
 
--- a mesma regra para todas as stylists de uma vez (tela do Private Edit)
+-- a mesma regra para todas as stylists de uma vez (tela do Private Edit e
+-- ficha da stylist). ⚠️ + `codigo` (Task 4): as listas que as telas já leem
+-- (os encontros de `vessel_conta_das_private_edits`, as stylists de
+-- `vessel_rastreio_dos_stylists`) trazem o CÓDIGO da stylist, nunca o id —
+-- sem ele a tela não teria como casar a origem com o encontro.
 create or replace function public.vessel_eventos_de_origem()
-returns table (stylist_id bigint, edicao_id bigint)
+returns table (stylist_id bigint, codigo text, edicao_id bigint)
 language plpgsql
 stable
 security definer
@@ -95,9 +99,10 @@ begin
     raise exception 'sem permissao' using errcode = '42501';
   end if;
   return query
-    select p.sid, public.vessel_evento_de_origem(p.sid)
+    select p.sid, s.codigo::text, public.vessel_evento_de_origem(p.sid)
       from (select distinct n.stylist_id as sid from public.vessel_stylist_na_edicao n
-             where n.presente_em is not null) p;
+             where n.presente_em is not null) p
+      join public.vessel_stylists s on s.id = p.sid;
 end;
 $$;
 

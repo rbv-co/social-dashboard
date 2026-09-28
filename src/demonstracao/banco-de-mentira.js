@@ -1655,7 +1655,8 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
     },
     vessel_eventos_de_origem() {
       const ids = [...new Set(b.naEdicao.filter((n) => n.presente_em).map((n) => n.stylist_id))].sort((a, c) => a - c)
-      return ids.map((id) => ({ stylist_id: id, edicao_id: eventoDeOrigemDoStylist(id) }))
+      // + `codigo` (Task 4): as telas casam a origem pelo CÓDIGO da stylist.
+      return ids.map((id) => ({ stylist_id: id, codigo: stylistPorId(id)?.codigo ?? null, edicao_id: eventoDeOrigemDoStylist(id) }))
     },
 
     // O PLACAR DO EVENTO. `funil`/`indisponiveis`/`meta` saem de

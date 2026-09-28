@@ -48,6 +48,13 @@
               <p class="cv-sub cv-ficha-agora">Agora: <b>{{ etapaComMotivo(stylist) }}</b>
                 <span v-if="stylist.prospectado_em"> · prospectada em {{ dataLegivel(stylist.prospectado_em) }}</span></p>
               <p v-if="stylist.etapa_tipo === 'saida' && stylist.saida_nota" class="cv-sub">Nota da saída: {{ stylist.saida_nota }}</p>
+              <!-- ⚠️ 28/09/2026 (edição = evento): DE QUE EVENTO ELA VEIO — a
+                   edição da 1ª presença (`vessel_eventos_de_origem`, a mesma
+                   regra do placar e do Private Edit). Leitura que falhou diz
+                   que falhou; nunca vira "Ainda sem evento". -->
+              <p v-if="erroDaOrigem" class="cv-nota cv-nota-erro">{{ erroDaOrigem }}</p>
+              <p v-else-if="origemPronta" class="cv-sub"><b>{{ fraseDaOrigem(edicaoDeOrigem) }}</b></p>
+              <p v-if="notaDaVolta(historicoDeEtapas)" class="cv-sub">{{ notaDaVolta(historicoDeEtapas) }}</p>
               <!-- ⚠️ 24/09/2026: SÓ QUEM ESTÁ NUMA ETAPA QUE LIBERA PRIVATE EDIT
                    (hoje, a Ativada) pode ser anfitriã de um encontro novo. -->
               <p class="cv-ficha-pe" :class="privateEdit.pode ? 'cv-ficha-pe-sim' : 'cv-ficha-pe-nao'">
@@ -172,6 +179,7 @@ import {
 } from './crm-da-stylist-regras.js'
 import { seloDaEtapa } from './t11-regras.js'
 import { seloSemContato } from './stylist-circle-regras.js'
+import { fraseDaOrigem, notaDaVolta } from './edicao-regras.js'
 import EscolhaDoMotivo from './escolha-do-motivo.vue'
 import IconeDoBloco from '../../compartilhado/icone-do-bloco.vue'
 import ContatoFacil from './contato-facil.vue'
@@ -280,12 +288,33 @@ async function gravarMovimento(etapaId, motivo) {
     pedindoMotivo.value = null
     if (r.libera_private_edit) avisoDaEtapa.value = avisoDeLiberada(props.stylist.nome, props.etapas.find((e) => e.id === etapaId))
     emit('mudou')
-    await carregarHistoricoDeEtapas()
+    await Promise.all([carregarHistoricoDeEtapas(), carregarOrigem()])
   } catch { erroDaEtapa.value = 'Não consegui falar com o banco agora. Tente de novo em um instante.' }
   finally { movendo.value = false }
 }
 
+// ── o evento de origem (28/09/2026) ─────────────────────────────────────────
+const edicaoDeOrigem = ref(null)
+const origemPronta = ref(false)
+const erroDaOrigem = ref('')
+async function carregarOrigem() {
+  origemPronta.value = false
+  erroDaOrigem.value = ''
+  try {
+    const [origens, edicoes] = await Promise.all([
+      props.chamar('vessel_eventos_de_origem', {}),
+      props.chamar('vessel_edicoes_listar', { p_praca_id: null }),
+    ])
+    const id = (origens || []).find((o) => o.codigo === props.stylist.codigo)?.edicao_id ?? null
+    edicaoDeOrigem.value = id == null ? null : ((edicoes || []).find((e) => e.id === id) || null)
+    // A origem existe mas a edição não veio na lista: não afirmar "sem evento".
+    if (id != null && !edicaoDeOrigem.value) { erroDaOrigem.value = 'Não consegui ler o evento dela agora.'; return }
+    origemPronta.value = true
+  } catch { erroDaOrigem.value = 'Não consegui ler o evento dela agora. Tente de novo em um instante.' }
+}
+
 onMounted(carregarHistoricoDeEtapas)
+onMounted(carregarOrigem)
 onMounted(carregarHistorico)
 </script>
 
