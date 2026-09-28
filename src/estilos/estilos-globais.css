@@ -337,6 +337,7 @@
   .tela-atendimentos{ --modulo:var(--cor-private-appointment); }
   .tela-bs{ --modulo:var(--cor-beauty-sessions); }
   .fc-tela{ --modulo:var(--cor-funil-carrinho); }
+  .ac-tela{ --modulo:var(--cor-funil-carrinho); }  /* mesma família do Funil: token já medido nos dois temas */
   .tela-menu-comercial-vessel{ --modulo:var(--cor-comercial-vessel); }
   .tela-material-grafico{ --modulo:var(--cor-material-grafico); }
   .tela-autenticidade{ --modulo:var(--cor-autenticidade); }

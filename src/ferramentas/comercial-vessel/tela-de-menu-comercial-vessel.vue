@@ -98,6 +98,15 @@
           <span class="cvmenu-card-enter">→</span>
         </div>
 
+        <div class="cvmenu-card" v-if="podeAbrir('abandono-carrinho')" @click="ir('abandono-carrinho')">
+          <div class="cvmenu-card-icon" style="background:linear-gradient(135deg,#ea580c 0%,#c2410c 100%)">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>
+          </div>
+          <div class="cvmenu-card-title">Checkouts Abandonados</div>
+          <div class="cvmenu-card-desc">Quem informou o contato no checkout e parou há 10 minutos: a fila do WhatsApp de recuperação.</div>
+          <span class="cvmenu-card-enter">→</span>
+        </div>
+
         <!-- ⚠️ PORTA, NÃO TELA: o gerador do Appointment Card mora no OUTRO
              repositório (vesselbrasil.com.br), fora daqui — ver o comentário em
              ENDERECO_DO_GERADOR_DE_CARTAO. Por isso é <a> de verdade, não

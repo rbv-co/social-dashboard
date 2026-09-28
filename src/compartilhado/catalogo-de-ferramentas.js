@@ -159,6 +159,9 @@ export const FERRAMENTAS = [
   // O Funil de Carrinho mora no menu do Comercial Vessel: o editor o mostra
   // no mesmo cartão. A chave continua 'carrinho' (nunca renomear).
   { key: 'carrinho', label: 'Funil de Carrinho', acoes: ['ver'], grupo: 'atendimentos', rotas: ['funil-carrinho'] },
+  // Chave PRÓPRIA (não pega carona em 'carrinho'): esta tela mostra e-mail e telefone
+  // de clientes, o Funil não. Nasce concedida a ninguém; super-admin passa sempre.
+  { key: 'abandono-carrinho', label: 'Checkouts Abandonados', acoes: ['ver'], grupo: 'atendimentos', rotas: ['abandono-carrinho'] },
 ]
 
 // ── As portas (menus) ──────────────────────────────────────────────────────
