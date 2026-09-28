@@ -65,6 +65,8 @@
                     :title="linhaDoItem(i, pracas)" @click="abrir(i)">
               <span class="ag-chip-hora">{{ i.hora || 'dia todo' }}</span>
               <span class="ag-chip-texto">{{ quemDoItem(i) }} · {{ nomeDoLugar(i, pracas) }}</span>
+              <span v-if="leituraDoCard(i, leiturasDoCard)" class="ag-chip-leitura"
+                    :title="leituraDoCard(i, leiturasDoCard).detalhe">{{ leituraDoCard(i, leiturasDoCard).texto }}</span>
               <span v-if="sobrepoe(i)" class="ag-chip-alerta"><icone-do-bloco nome="alerta" />sobrepõe</span>
             </button>
           </div>
@@ -88,6 +90,8 @@
                   @click="abrir(i)">
             <span class="ag-chip-tipo">{{ TIPOS[i.tipo]?.rotulo }} · {{ horarioDoItem(i) }}</span>
             <span class="ag-chip-texto">{{ quemDoItem(i) }} · {{ nomeDoLugar(i, pracas) }}</span>
+            <span v-if="leituraDoCard(i, leiturasDoCard)" class="ag-chip-leitura"
+                  :title="leituraDoCard(i, leiturasDoCard).detalhe">{{ leituraDoCard(i, leiturasDoCard).texto }}</span>
             <span v-if="sobrepoe(i)" class="ag-chip-alerta"><icone-do-bloco nome="alerta" />sobrepõe {{ i.sobrepoe.join(', ') }}</span>
           </button>
         </section>
@@ -141,7 +145,7 @@ import {
   DURACAO_DO_PRIVATE_EDIT_EM_HORAS, TIPOS, DIAS_DA_SEMANA, hojeEmSaoPaulo, mesDoDia, outroMes, nomeDoMes,
   gradeDoMes, periodoParaPedir, ehMesDeHoje, diasDaLista, rotuloDaJanelaDaLista, diaPorExtenso, agruparPorDia,
   lugaresDaAgenda, filtrarAgenda, sobrepoe, diaTemSobreposicao, linhaDoItem, horarioDoItem, detalhesDoItem,
-  nomeDoLugar, FILTRO_DA_AGENDA,
+  nomeDoLugar, FILTRO_DA_AGENDA, leituraDoCard,
 } from './agenda-regras.js'
 
 const props = defineProps({
@@ -151,6 +155,11 @@ const props = defineProps({
   // ⚠️ 25/09/2026 (Task 8): o cadastro de praças (`vessel_pracas_listar`), para
   // `nomeDoLugar` escrever o NOME dela — nunca mais uma lista escrita aqui.
   pracas: { type: Array, default: () => [] },
+  // 28/09/2026: as leituras do QR do Private Edit Card, por código do encontro
+  // (`mapaDeLeiturasDoCard` da resposta de `vessel_conta_das_private_edits`).
+  // A agenda NÃO relê a conta: quem já tem a lista é a tela. Encontro fora do
+  // mapa (banco antigo, sem o campo) não ganha a linha — nunca um "0" inventado.
+  leiturasDoCard: { type: Map, default: () => new Map() },
 })
 const emit = defineEmits(['abrir'])
 
@@ -327,6 +336,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', noTeclado))
 .ag-chip-hora { font-weight: 600; font-variant-numeric: tabular-nums; }
 .ag-chip-texto, .ag-chip-tipo { overflow-wrap: anywhere; }
 .ag-chip:not(.ag-pe) .ag-chip-texto { font-weight: 400; }
+/* o QR do cartão: texto de ler (`--text`), sem o negrito do nome */
+.ag-chip-leitura { font-weight: 400; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .ag-vazio-grade { padding-bottom: 0; }
 
 /* ── a lista do celular ── */

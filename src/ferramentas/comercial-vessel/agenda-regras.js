@@ -295,3 +295,39 @@ export function mudouHoraOuLugar(encontro, ficam) {
 
 /** O que mostrar quando o banco devolve `sobrepoe` sem a pergunta antes (a corrida). */
 export const MENSAGEM_DE_SOBREPOE = 'Já há Private Edit neste lugar neste horário. Confira e confirme para marcar mesmo assim.'
+
+// ── o QR do Private Edit Card (28/09/2026) ───────────────────────────────────
+/**
+ * As leituras do QR do cartão, por código do encontro, a partir da resposta de
+ * `vessel_conta_das_private_edits` (`leitoras_do_card` = pessoas distintas,
+ * `leituras_do_card` = leituras no total).
+ *
+ * ⚠️ SEM O CAMPO, NADA — NUNCA "0" INVENTADO. Banco antigo (antes da migration
+ * `2026-09-29-vessel-card-da-stylist.sql`) não devolve as chaves; o encontro
+ * fica fora do mapa e a agenda não mostra a linha. Zero só quando o banco
+ * disse zero.
+ */
+export function mapaDeLeiturasDoCard(encontros) {
+  const mapa = new Map()
+  for (const e of Array.isArray(encontros) ? encontros : []) {
+    const pessoas = e?.leitoras_do_card
+    const total = e?.leituras_do_card
+    if (!e?.codigo || !Number.isInteger(pessoas) || !Number.isInteger(total)) continue
+    mapa.set(e.codigo, { pessoas, total })
+  }
+  return mapa
+}
+
+const plural = (n, um, varios) => `${n} ${n === 1 ? um : varios}`
+
+/** A linha "Leram o QR do cartão: N" de um Private Edit da agenda (N = pessoas
+ * distintas), com o total no detalhe; `null` quando não há o que dizer. */
+export function leituraDoCard(i, mapa) {
+  if (i?.tipo !== 'private_edit' || !i.codigo || !mapa?.get) return null
+  const l = mapa.get(i.codigo)
+  if (!l) return null
+  return {
+    texto: `Leram o QR do cartão: ${l.pessoas}`,
+    detalhe: `${plural(l.pessoas, 'pessoa leu', 'pessoas leram')} o QR do cartão (${plural(l.total, 'leitura', 'leituras')} no total)`,
+  }
+}
