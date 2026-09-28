@@ -35,11 +35,12 @@ O QUE FUNCIONA NA DEMONSTRAÇÃO (desde 23/09/2026 — o resto do menu):
     ⚠️ 25/09/2026 (Task 13, pedido direto do dono) — O FUNIL DO QUADRO
     TROCOU: o de hoje (Identificado → Classificação → Prospectado →
     Convidado → Confirmou Ida → Esteve Presente) virou "Stylist levantado →
-    Validado → Conversa → Confirmado → Presença" (as duas saídas, Ativada e
-    Desclassificado, continuam as mesmas; "Conversa" é a etapa que conta como
-    prospectada agora). É SÓ NESTA DEMONSTRAÇÃO — o funil de verdade é
-    cadastro em `vessel_stylist_etapas`, o dono muda pela tela "Etapas do
-    funil", sem código; nada disto mexeu em migration nem em aplicador.
+    Validado → Conversa → Convidado → Confirmado → Presença" (as duas
+    saídas, Ativada e Desclassificado, continuam as mesmas; "Conversa" é a
+    etapa que conta como prospectada). 28/09/2026: o "Convidado" ficou
+    (opção C do dono) e PRODUÇÃO ganhou os mesmos nomes pela migration
+    `2026-09-28-vessel-stylist-funil-nomes-novos.sql` — demo e Central
+    mostram o mesmo funil.
   · Material Gráfico — os QR das três ações, com busca, "mostrar encerrados"
     e os botões de baixar PNG/SVG e copiar endereço.
   · Appointment Card — continua abrindo o site da Vessel noutra aba (é uma
