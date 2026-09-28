@@ -39,8 +39,11 @@ const SESSAO = { access_token: CRACHA, token_type: 'bearer', expires_in: 3153600
 // dono, não por defeito, e volta quando for a vez dele. Tirar a chave daqui
 // já basta: o menu (`podeAbrir`) e a guarda de rota leem este perfil, sem
 // mexer numa linha da Central de verdade.
+// ⚠️ 28/09/2026: o Private Edit Card (a porta do gerador do convite do
+// Private Edit) sai JUNTO — é do Private Edit, e a demo ainda não chegou nele.
+const FORA_DA_DEMO = ['atendimentos.private-edit', 'atendimentos.private-edit-card']
 const DA_FAMILIA = FERRAMENTAS.filter((f) => (f.key === 'atendimentos' || f.key.startsWith('atendimentos.'))
-  && f.key !== 'atendimentos.private-edit')
+  && !FORA_DA_DEMO.includes(f.key))
 const PERFIL = [{ role: 'viewer', features: ['atendimentos', ...DA_FAMILIA.map((f) => f.key).filter((k) => k !== 'atendimentos')], avatar_url: null,
   permissions: Object.fromEntries(DA_FAMILIA.map((f) => [f.key, f.acoes.slice()])), allowed_accounts: [], is_superadmin: false,
   precisa_trocar_senha: false, escopo_por_equipe: false }]

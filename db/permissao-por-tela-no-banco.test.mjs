@@ -62,9 +62,11 @@ test('toda chave pedida a vessel_pode existe no catálogo, com o nível que ela 
 })
 
 test('a lista fechada de vessel_pode conhece todas as chaves do Comercial Vessel que chamam o banco', () => {
-  // O Appointment Card é um link para o site: não chama nenhuma função daqui.
+  // O Appointment Card e o Private Edit Card são links para o site: não chamam
+  // nenhuma função daqui (e por isso ficam FORA da lista fechada).
+  const SO_LINK = ['atendimentos.appointment-card', 'atendimentos.private-edit-card']
   const esperadas = FERRAMENTAS.filter((f) => f.grupo === 'atendimentos' && (f.key === 'atendimentos' || f.key.startsWith('atendimentos.'))
-    && f.key !== 'atendimentos.appointment-card').map((f) => f.key).sort()
+    && !SO_LINK.includes(f.key)).map((f) => f.key).sort()
   // A ÚLTIMA migration que (re)cria vessel_pode é a que vale.
   const ultima = migrations.filter((f) => f >= DESDE && /function public\.vessel_pode\(/.test(texto(f))).pop()
   const m = ultima && texto(ultima).match(/p_ferramenta not in \(([^)]*)\)/)

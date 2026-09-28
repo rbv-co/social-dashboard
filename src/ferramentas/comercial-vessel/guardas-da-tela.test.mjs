@@ -60,6 +60,37 @@ test('⚠️ o card do Appointment Card está atrás da chave DELE (podeAbrir), 
   assert.equal(ferramentaDaRota('appointment-card')?.key, 'atendimentos.appointment-card')
 })
 
+// ── O PRIVATE EDIT CARD (28/09/2026) — o gêmeo do Appointment Card ────────
+// As MESMAS três guardas, para o mesmo defeito: virar <div @click>, perder o
+// target/rel, apontar para o gerador errado ou ficar sem a chave dele.
+function tagDoPrivateEditCard(fonte) {
+  const idxTitulo = fonte.indexOf('>Private Edit Card<')
+  assert.ok(idxTitulo !== -1, 'o card "Private Edit Card" precisa existir na tela')
+  const antes = fonte.slice(0, idxTitulo)
+  const idxA = antes.lastIndexOf('<a ')
+  const idxDiv = antes.lastIndexOf('<div class="cvmenu-card"')
+  assert.ok(idxA !== -1 && idxA > idxDiv,
+    'a tag mais próxima antes do título "Private Edit Card" não é um <a> — a porta virou clique de sistema')
+  return fonte.slice(idxA, fonte.indexOf('>', idxA) + 1)
+}
+
+test('⚠️ o card do Private Edit Card é um <a> que sai do sistema e abre o gerador DELE', () => {
+  const tag = tagDoPrivateEditCard(ler())
+  assert.doesNotMatch(tag, /@click/, 'o card do Private Edit Card não pode ter @click')
+  assert.match(tag, /target="_blank"/, 'falta target="_blank" no card do Private Edit Card')
+  assert.match(tag, /rel="noopener noreferrer"/,
+    'falta rel="noopener noreferrer" — obrigatório junto de target="_blank"')
+  assert.match(tag, /:href="ENDERECO_DO_GERADOR_DO_PRIVATE_EDIT_CARD"/,
+    'o card do Private Edit Card precisa apontar para ENDERECO_DO_GERADOR_DO_PRIVATE_EDIT_CARD, não para o do Appointment Card')
+})
+
+test('⚠️ o card do Private Edit Card está atrás da chave DELE, não da do Appointment Card nem da do Private Edit', () => {
+  const tag = tagDoPrivateEditCard(ler())
+  assert.match(tag, /v-if="podeAbrir\('private-edit-card'\)"/,
+    'o card do Private Edit Card precisa estar atrás de v-if="podeAbrir(\'private-edit-card\')"')
+  assert.equal(ferramentaDaRota('private-edit-card')?.key, 'atendimentos.private-edit-card')
+})
+
 // ⚠️ Quem tem SÓ 'carrinho' tem de ver o Funil e NÃO ver o Appointment Card —
 // é o par de casos que a regra do dono pediu por extenso. Conferido aqui pelo
 // TEXTO da tela (os dois v-if certos, na tag certa), não só pela unidade de

@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import {
   FORMATO_STYLIST, FORMATO_ENCONTRO, FORMATO_DA_CHAVE, ENDERECO_DO_CIRCLE,
-  ENDERECO_DO_GERADOR_DE_CARTAO, SITE,
+  ENDERECO_DO_GERADOR_DE_CARTAO, ENDERECO_DO_GERADOR_DO_PRIVATE_EDIT_CARD, SITE,
   enderecoDaStylist, enderecoDoConvite, dataLegivel, dataHoraLegivel,
   problemasDoEncontro,
 } from './enderecos-publicos.js'
@@ -47,6 +47,22 @@ test('o gerador do Appointment Card mora no site da Vessel', () => {
 test('a porta não promete preenchimento que o gerador não sabe ler', () => {
   assert.ok(!ENDERECO_DO_GERADOR_DE_CARTAO.includes('?'),
     'a porta do cartão não leva parâmetro: o gerador ignora e a pessoa acha que preencheu')
+})
+
+// ⚠️ O GÊMEO (28/09/2026): o gerador do Private Edit Card, as mesmas regras.
+test('o gerador do Private Edit Card mora no site da Vessel', () => {
+  assert.equal(ENDERECO_DO_GERADOR_DO_PRIVATE_EDIT_CARD, `${SITE}/geradorprivateeditcard/`)
+})
+
+test('a porta do Private Edit Card também não promete preenchimento', () => {
+  assert.ok(!ENDERECO_DO_GERADOR_DO_PRIVATE_EDIT_CARD.includes('?'),
+    'a porta do cartão não leva parâmetro: o gerador ignora e a pessoa acha que preencheu')
+})
+
+test('⚠️ as duas portas não se confundem: cada cartão abre o SEU gerador', () => {
+  assert.notEqual(ENDERECO_DO_GERADOR_DO_PRIVATE_EDIT_CARD, ENDERECO_DO_GERADOR_DE_CARTAO)
+  // e o gerador não é a página do convite de um encontro (/pe/<chave>)
+  assert.ok(!ENDERECO_DO_GERADOR_DO_PRIVATE_EDIT_CARD.startsWith(`${SITE}/pe/`))
 })
 
 /* ── A TRAVA CONTRA A MESMA VERDADE EM DOIS LUGARES ──────────────────────── */

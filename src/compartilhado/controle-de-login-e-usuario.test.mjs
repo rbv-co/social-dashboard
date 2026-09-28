@@ -137,7 +137,7 @@ test('a chave do módulo Vessel continua "atendimentos", e as duas ações conti
   assert.equal(recurso.label, 'Private Appointment')
   const filhos = naArvore.children.map((c) => c.key)
   for (const k of ['atendimentos.beauty-sessions', 'atendimentos.private-edit', 'atendimentos.stylist-circle',
-    'atendimentos.material-grafico', 'atendimentos.appointment-card', 'carrinho']) {
+    'atendimentos.material-grafico', 'atendimentos.appointment-card', 'atendimentos.private-edit-card', 'carrinho']) {
     assert.ok(filhos.includes(k), `${k} tem de morar no cartão do Comercial Vessel`)
   }
 })

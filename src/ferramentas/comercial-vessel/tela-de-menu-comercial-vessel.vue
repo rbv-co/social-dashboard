@@ -114,6 +114,24 @@
           <div class="cvmenu-card-desc">Desenha o cartão do agendamento no celular da Client Advisor. Abre o gerador no site da Vessel.</div>
           <span class="cvmenu-card-enter">↗</span>
         </a>
+
+        <!-- ⚠️ O GÊMEO DO DE CIMA (28/09/2026): outra PORTA para o site, pelas
+             mesmas razões — ver ENDERECO_DO_GERADOR_DO_PRIVATE_EDIT_CARD.
+             A cor é a AMEIXA do Private Edit (os tokens --cor-private-edit
+             claro #6b4a7a e escuro #a98bbd), de propósito: UM TOM POR
+             ASSUNTO — este cartão é do Private Edit, e o dourado do
+             Appointment Card o faria ler como Private Appointment. O ícone é
+             outro (cartão com QR), para não repetir o envelope do Private
+             Edit. -->
+        <a class="cvmenu-card" v-if="podeAbrir('private-edit-card')"
+           :href="ENDERECO_DO_GERADOR_DO_PRIVATE_EDIT_CARD" target="_blank" rel="noopener noreferrer">
+          <div class="cvmenu-card-icon" style="background:linear-gradient(135deg,#6b4a7a 0%,#a98bbd 100%)">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M6 10h5M6 14h3"/><rect x="14" y="9" width="4" height="4"/><path d="M14 15.5h4"/></svg>
+          </div>
+          <div class="cvmenu-card-title">Private Edit Card</div>
+          <div class="cvmenu-card-desc">Desenha o convite do encontro, com o QR que leva a convidada ao WhatsApp da loja. Abre o gerador no site da Vessel.</div>
+          <span class="cvmenu-card-enter">↗</span>
+        </a>
       </div>
     </div>
   </div>
@@ -143,7 +161,7 @@ import { useRouter } from 'vue-router'
 import BarraDeTopo from '../../compartilhado/barra-de-topo.vue'
 import { podeAbrir } from '../../compartilhado/controle-de-login-e-usuario.js'
 import { paiDaTela, ROTULO_DO_PAI } from './navegacao.js'
-import { ENDERECO_DO_GERADOR_DE_CARTAO } from './enderecos-publicos.js'
+import { ENDERECO_DO_GERADOR_DE_CARTAO, ENDERECO_DO_GERADOR_DO_PRIVATE_EDIT_CARD } from './enderecos-publicos.js'
 
 const router = useRouter()
 
@@ -192,9 +210,9 @@ function ir(nome) { router.push({ name: nome }) }
   padding: var(--sp-4);
   cursor: pointer;
   transition: border-color .15s ease, transform .12s ease;
-  /* ⚠️ O card do Appointment Card é um <a>, não um <div> — sem isto ele
-     nasceria sublinhado e azul, como qualquer link, em vez de igual aos
-     outros cinco cards. */
+  /* ⚠️ Os cards do Appointment Card e do Private Edit Card são <a>, não
+     <div> — sem isto eles nasceriam sublinhados e azuis, como qualquer link,
+     em vez de iguais aos outros cards. */
   text-decoration: none;
   color: inherit;
   display: block;
