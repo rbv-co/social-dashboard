@@ -290,7 +290,7 @@
                chama o miolo da página do QR): mesma ficha, base de clientes,
                planilha e pedido de visita na loja da sessão. Os campos são os
                do site, na mesma ordem — ver `cadastro-de-lead.js` —, mais o
-               e-mail (28/09/2026), que a página do QR ainda não pede. -->
+               e-mail (28/09/2026), que a página do QR também pede (vessel-brasil PR #19). -->
           <div v-if="podeExecutarAcao('cadastrar_lead', podeEditar) && cadastroAberto === s.codigo"
                class="id-caixa-form bs-lead-form">
             <h3 class="bs-etiqueta bs-etiqueta-interna id-titulo"><icone-do-bloco nome="lead-mais" />Cadastrar lead nesta sessão</h3>
