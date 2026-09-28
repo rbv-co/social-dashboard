@@ -290,4 +290,5 @@ Expected: todas as provas ✅, "ENSAIO — nada gravado". **NÃO rodar `--gravar
 - [ ] **Step 2:** `node coletor/aplicar-vessel-edicao-e-o-evento.mjs --gravar` → gravado e registrado.
 - [ ] **Step 3:** PR da branch `docs/edicao-e-evento` → merge na main; deploy da Central conforme memória `project_iamundi_deploy` (sem edge function nova neste trabalho).
 - [ ] **Step 4:** Conferir: Edição 1 com turma de 10 e as marcas com as datas do histórico; contagem por etapa idêntica à de antes; placar lido como o usuário do dono; Central em produção abrindo as 3 telas (Playwright com respostas de mentira, como no PR #265).
-- [ ] **Step 5:** Remover o worktree; atualizar a memória `project_vessel_t11_bases_stylist_circle`.
+- [ ] **Step 5 (pedido do dono, 28/09):** listar, só leitura, toda stylist em Desclassificado que esteve na turma da Edição 1 (id 46) ou foi desclassificada a partir de 28/09, com código, nome, motivo atual, quem moveu e quando (`vessel_stylist_etapas_historico`). Entregar a lista ao dono em múltipla escolha, para ele dizer quais foram por indisponibilidade na data. Só depois de ele responder, trocar o motivo delas para "Indisponível na data" pela função do sistema.
+- [ ] **Step 6:** Remover o worktree; atualizar a memória `project_vessel_t11_bases_stylist_circle`.
