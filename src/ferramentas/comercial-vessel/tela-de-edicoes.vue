@@ -337,12 +337,17 @@ function corDaSituacao(s) {
   return 'selo-info' // planejada
 }
 
-function mensagemEdicao(r) {
+// `comCodigo`: só Incluir/Tirar recebem um CÓDIGO digitado — só ali "confira
+// o código" faz sentido (abrir/encerrar/criar não têm código nenhum).
+function mensagemEdicao(r, { comCodigo = false } = {}) {
   const s = r?.situacao
   if (s === 'sem_permissao') return 'Você não tem permissão para mexer nas Edições.'
   if (s === 'praca_invalida') return 'Praça inválida.'
   if (s === 'sem_data') return 'Escolha a data do evento.'
-  if (s === 'nao_achei') return 'Não achei — pode ter sido removida por outra pessoa. Confira o código.'
+  if (s === 'nao_achei') {
+    return comCodigo ? 'Não achei stylist com esse código. Confira o código.'
+      : 'Não achei — pode ter sido removida por outra pessoa. Recarregue a página.'
+  }
   if (s === 'edicao_encerrada') return 'Essa edição já está encerrada: não aceita convidada nova.'
   if (s === 'ja_tem_aberta') return 'Esta praça já tem uma edição aberta — encerre-a antes de abrir outra.'
   if (s === 'edicao_invalida') return 'Edição inválida.'
@@ -477,9 +482,12 @@ async function carregarStylistsParaIncluir() {
   stylistsLidas = true
   try {
     stylistsParaIncluir.value = await chamar('vessel_rastreio_dos_stylists', { p_dias: 7 }) || []
-  } catch {
+    erroDasStylists.value = ''
+  } catch (e) {
     stylistsLidas = false
-    erroDasStylists.value = 'Não consegui ler a lista de stylists — digite o código dela (STY-…).'
+    erroDasStylists.value = e?.code === '42501'
+      ? 'Para ver a lista de stylists, falta a permissão de ver o Stylist Circle — digite o código dela (STY-…).'
+      : 'Não consegui ler a lista de stylists — digite o código dela (STY-…).'
   }
 }
 watch(escolhidaId, carregarStylistsParaIncluir, { immediate: true })
@@ -496,7 +504,7 @@ async function incluir(e) {
   avisoDaTurma.value = ''
   try {
     const r = await chamar('vessel_edicao_incluir_stylist', { p_codigo: codigo, p_edicao_id: e.id })
-    if (!r?.ok) { erroDaTurmaAcao.value = mensagemEdicao(r); return }
+    if (!r?.ok) { erroDaTurmaAcao.value = mensagemEdicao(r, { comCodigo: true }); return }
     codigoParaIncluir.value = ''
     avisoDaTurma.value = r.situacao === 'sem_mudanca' ? `${codigo} já estava na turma.` : `${codigo} entrou na turma como convidada.`
     await Promise.all([carregarEvento(), carregarEdicoes({ manterResultados: true })])
@@ -514,7 +522,7 @@ async function tirar(e, l) {
   avisoDaTurma.value = ''
   try {
     const r = await chamar('vessel_edicao_tirar_stylist', { p_codigo: l.codigo, p_edicao_id: e.id })
-    if (!r?.ok) { erroDaTurmaAcao.value = mensagemEdicao(r); return }
+    if (!r?.ok) { erroDaTurmaAcao.value = mensagemEdicao(r, { comCodigo: true }); return }
     tirando.value = null
     avisoDaTurma.value = `${l.nome} saiu da turma.`
     await Promise.all([carregarEvento(), carregarEdicoes({ manterResultados: true })])

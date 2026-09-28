@@ -54,7 +54,7 @@
                    que falhou; nunca vira "Ainda sem evento". -->
               <p v-if="erroDaOrigem" class="cv-nota cv-nota-erro">{{ erroDaOrigem }}</p>
               <p v-else-if="origemPronta" class="cv-sub"><b>{{ fraseDaOrigem(edicaoDeOrigem) }}</b></p>
-              <p v-if="notaDaVolta(historicoDeEtapas)" class="cv-sub">{{ notaDaVolta(historicoDeEtapas) }}</p>
+              <p v-if="notaDaVoltaAgora" class="cv-sub">{{ notaDaVoltaAgora }}</p>
               <!-- ⚠️ 24/09/2026: SÓ QUEM ESTÁ NUMA ETAPA QUE LIBERA PRIVATE EDIT
                    (hoje, a Ativada) pode ser anfitriã de um encontro novo. -->
               <p class="cv-ficha-pe" :class="privateEdit.pode ? 'cv-ficha-pe-sim' : 'cv-ficha-pe-nao'">
@@ -179,7 +179,7 @@ import {
 } from './crm-da-stylist-regras.js'
 import { seloDaEtapa } from './t11-regras.js'
 import { seloSemContato } from './stylist-circle-regras.js'
-import { fraseDaOrigem, notaDaVolta } from './edicao-regras.js'
+import { fraseDaOrigem, notaDaVoltaSeAindaConvidada } from './edicao-regras.js'
 import EscolhaDoMotivo from './escolha-do-motivo.vue'
 import IconeDoBloco from '../../compartilhado/icone-do-bloco.vue'
 import ContatoFacil from './contato-facil.vue'
@@ -292,6 +292,11 @@ async function gravarMovimento(etapaId, motivo) {
   } catch { erroDaEtapa.value = 'Não consegui falar com o banco agora. Tente de novo em um instante.' }
   finally { movendo.value = false }
 }
+
+// A volta do "Indisponível na data" é NOTÍCIA só enquanto ela está em
+// Convidado; depois que avança, é história (fica no histórico de etapas).
+const notaDaVoltaAgora = computed(() => notaDaVoltaSeAindaConvidada(historicoDeEtapas.value,
+  props.etapas.find((e) => e.id === props.stylist.etapa_id)?.nome ?? props.stylist.etapa))
 
 // ── o evento de origem (28/09/2026) ─────────────────────────────────────────
 const edicaoDeOrigem = ref(null)

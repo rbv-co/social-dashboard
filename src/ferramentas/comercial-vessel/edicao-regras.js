@@ -159,3 +159,10 @@ export function notaDaVolta(historico) {
   voltas.sort((a, b) => String(b.em).localeCompare(String(a.em)))
   return voltas[0]?.nota ?? ''
 }
+
+/* A MESMA nota, só enquanto ela ainda está em CONVIDADO (a etapa para onde a
+ * volta a levou): depois que avança, a volta é história, não notícia. */
+export function notaDaVoltaSeAindaConvidada(historico, nomeDaEtapaAtual) {
+  const convidada = String(nomeDaEtapaAtual ?? '').trim().toLowerCase() === 'convidado'
+  return convidada ? notaDaVolta(historico) : ''
+}

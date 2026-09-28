@@ -119,13 +119,13 @@ provas.p4 = (ctx) => desfeito(async () => {
   await cli.query(`insert into public.vessel_private_edits (codigo, chave, stylist_id, quando, praca, praca_id, status, realizado_em)
      values ('PE-PROVA-EVT-1', 'provaevt1', $1, now() - interval '2 days', 'CPS', $2, 'realizado', current_date - 2)`, [s.id, ctx.cps])
   const origem = (await uma('select public.vessel_evento_de_origem($1)::int o', [s.id])).o
-  const lista = (await comoDono(() => todas('select stylist_id::int, edicao_id::int from public.vessel_eventos_de_origem() where stylist_id = $1', [s.id])))
+  const lista = (await comoDono(() => todas('select stylist_id::int, codigo, edicao_id::int from public.vessel_eventos_de_origem() where stylist_id = $1', [s.id])))
   const depoisA = await funilDoPlacar(EDICAO_1)
   const B = await funilDoPlacar(b.id)
   const igualA = await mesmoFunil(EDICAO_1); const igualB = await mesmoFunil(b.id)
   return [[!!lb?.presente_em, '4. presente também na B (linha nova na B)', lb],
     [origem === EDICAO_1, '4. evento de origem = A (a 1ª presença)', { origem, a: EDICAO_1, b: b.id }],
-    [lista.length === 1 && lista[0].edicao_id === EDICAO_1, '4. vessel_eventos_de_origem diz o mesmo', lista],
+    [lista.length === 1 && lista[0].edicao_id === EDICAO_1 && lista[0].codigo === s.codigo, '4. vessel_eventos_de_origem diz o mesmo (e traz o código)', lista],
     [passo(depoisA, 'fizeram') === passo(antesA, 'fizeram') + 1 && passo(depoisA, 'agendaram') === passo(antesA, 'agendaram') + 1,
       '4. o Private Edit realizado conta na A', { antes: antesA.passos, depois: depoisA.passos }],
     [passo(B, 'presentes') === 1 && passo(B, 'agendaram') === 0 && passo(B, 'fizeram') === 0 && B.p.encontros_realizados === 0,
@@ -223,6 +223,9 @@ const MUTACOES = [
 let registradasAntes = null
 try {
   await cli.query('begin isolation level repeatable read')
+  // ⚠️ o ensaio segura ACCESS EXCLUSIVE em produção (create or replace, alter):
+  // se alguém já está na tabela, desiste em 5s em vez de travar a Central.
+  await cli.query("set local lock_timeout = '5s'")
   const FOTO = `select (select md5(coalesce(string_agg(id || ':' || etapa_id, ',' order by id), '')) from public.vessel_stylists) f,
     (select json_object_agg(et.nome, (select count(*) from public.vessel_stylists s where s.etapa_id = et.id)) from public.vessel_stylist_etapas et) c,
     (select count(*)::int from public.schema_migrations) m`
@@ -249,6 +252,8 @@ try {
        or exists (select 1 from public.vessel_stylist_etapas e where e.id = s.etapa_id and e.tipo = 'funil' and e.ordem >= (select ordem from conv)))
      order by 1`, [EDICAO_1]))
   const turmaAntes = (await uma('select count(*)::int n from public.vessel_stylist_na_edicao where edicao_id = $1', [EDICAO_1])).n
+  const codigosAntes = await todas(`select n.stylist_id::int id, s.codigo from public.vessel_stylist_na_edicao n
+     join public.vessel_stylists s on s.id = n.stylist_id where n.edicao_id = $1 order by s.codigo`, [EDICAO_1])
   console.log(`Edição 1: ${turmaAntes} na turma hoje; ${deveFicar.length} já foram convidadas (ficam).`)
 
   await cli.query(sql)
@@ -287,6 +292,9 @@ try {
   const ficou = await todas(`select stylist_id::int id, convidada_em, confirmou_em, presente_em from public.vessel_stylist_na_edicao where edicao_id = $1 order by 1`, [EDICAO_1])
   conferir(JSON.stringify(ficou.map((l) => l.id)) === JSON.stringify(deveFicar.map((l) => l.id)),
     `a turma fica só com as já convidadas: ${ficou.length} (saíram ${turmaAntes - ficou.length})`, { ficou: ficou.map((l) => l.id), deveFicar: deveFicar.map((l) => l.id) })
+  const ficouIds = new Set(ficou.map((l) => l.id))
+  console.log(`  ficam (${ficouIds.size}):`, codigosAntes.filter((c) => ficouIds.has(c.id)).map((c) => c.codigo).join(', '))
+  console.log(`  saem (${codigosAntes.length - ficouIds.size}):`, codigosAntes.filter((c) => !ficouIds.has(c.id)).map((c) => c.codigo).join(', '))
   if (ficou.length !== 10) console.log(`  ⚠️  o brief esperava 10 em 28/09; hoje são ${ficou.length}`)
   const tempo = (x) => (x ? new Date(x).getTime() : null)
   const datas = ficou.every((l) => { const d = deveFicar.find((x) => x.id === l.id); return d && tempo(l.convidada_em) === tempo(d.conv) && tempo(l.confirmou_em) === tempo(d.conf) && !l.presente_em })

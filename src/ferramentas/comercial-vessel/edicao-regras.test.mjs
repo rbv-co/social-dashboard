@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { rotuloDaEdicao, rotuloCurtoDaEdicao, placarPorEtapa,
   eventoDeOrigem, rotuloDoEncontro, funilDoEvento,
-  fraseDaOrigem, marcasDaLinha, metaDoEvento, notaDaVolta } from './edicao-regras.js'
+  fraseDaOrigem, marcasDaLinha, metaDoEvento, notaDaVolta, notaDaVoltaSeAindaConvidada } from './edicao-regras.js'
 
 const EDICOES = [
   { id: 10, praca_id: 2, praca_nome: 'Limeira', numero: 1, comeca_em: '2026-09-01', termina_em: '2026-09-30', situacao: 'encerrada' },
@@ -135,4 +135,11 @@ test('a nota da volta: a MAIS RECENTE "Voltou: indisponível…" do histórico d
   assert.equal(notaDaVolta(h), 'Voltou: indisponível na Edição 2 · Campinas')
   assert.equal(notaDaVolta([{ em: 'x', nota: null }]), '')
   assert.equal(notaDaVolta(null), '')
+})
+
+test('a volta é notícia só enquanto ela está em Convidado', () => {
+  const h = [{ em: '2026-11-01T12:00:00Z', nota: 'Voltou: indisponível na Edição 1 · Campinas' }]
+  assert.equal(notaDaVoltaSeAindaConvidada(h, ' Convidado '), 'Voltou: indisponível na Edição 1 · Campinas')
+  assert.equal(notaDaVoltaSeAindaConvidada(h, 'Confirmado'), '')
+  assert.equal(notaDaVoltaSeAindaConvidada(h, null), '')
 })
