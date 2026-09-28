@@ -180,6 +180,15 @@ export function dadosIniciais(agora = new Date()) {
   ]
   const [E1, E2, E3] = encontros.map((e) => e.codigo)
 
+  // 28/09/2026: as leituras do QR do Private Edit Card (`vessel_private_edit_card_leituras`).
+  // O encontro de 12 dias atrás: 11 leituras de 7 pessoas; o de daqui a 5 dias:
+  // 4 de 3 (o cartão já foi para as convidadas). O primeiro, sem nenhuma — é de
+  // antes do cartão, e o banco diz 0.
+  const leiturasDoCard = [
+    ...[1, 1, 2, 3, 3, 3, 4, 5, 6, 7, 7].map((p, i) => ({ private_edit_id: 2, momento: em(-14 + (i % 3), '1' + (i % 10) + ':00'), ip_hash: `demo-leitora-${p}` })),
+    ...[8, 8, 9, 10].map((p, i) => ({ private_edit_id: 3, momento: em(-1, `1${i + 2}:00`), ip_hash: `demo-leitora-${p}` })),
+  ]
+
   const pessoas = [
     ['Ana Souza (exemplo)', '5519980000101'], ['Beatriz Nogueira (exemplo)', '5519980000102'],
     ['Carla Mendes (exemplo)', '5519980000103'], ['Débora Faria (exemplo)', '5519980000104'],
@@ -531,7 +540,7 @@ export function dadosIniciais(agora = new Date()) {
     atendimentos: [...atendimentos, ...visitas],
     origens: [...origens, ...origensDasVisitas],
     pedidos: [...pedidos, ...pedidosDasVisitas],
-    contatos, aberturas, sessoes, leiturasDasSessoes, cadastros,
+    contatos, aberturas, sessoes, leiturasDasSessoes, cadastros, leiturasDoCard, consultasDoCard: [],
     qualificacoes,
     pracas, pracaCidades, edicoes, naEdicao,
   }

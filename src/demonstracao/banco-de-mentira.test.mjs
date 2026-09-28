@@ -1438,3 +1438,40 @@ test('o cenário: 63 stylists não-teste em quatro cidades — 27 Campinas, 18 L
   assert.ok(combo, 'a "Limeira / Piracicaba" existe')
   assert.equal(combo.praca_id, null, 'cidade composta: fica sem praça de propósito — a pendência')
 })
+
+// ── 28/09/2026: o Private Edit Card (`2026-09-29-vessel-card-da-stylist.sql`) ──
+test('card da stylist: WhatsApp/nome completo acham; parcial, e-mail e desconhecida não; 31ª consulta é devagar', () => {
+  const { chamar } = novoBanco()
+  const r = chamar('vessel_card_da_stylist', { p_quem: '(19) 99000-0001' })
+  assert.equal(r.ok, true)
+  assert.deepEqual(r.stylist, { codigo: 'STY-0001', nome: 'Marina Castro (exemplo)' })
+  // os dois primeiros dela já foram realizados: não vêm; o resto, pela data
+  assert.ok(r.encontros.every((e) => Object.keys(e).join() === 'chave,codigo,quando,loja,praca'))
+  assert.ok(!r.encontros.some((e) => ['H3N8P4WZ', 'K7Q2M9TX'].includes(e.chave)))
+  assert.equal(r.encontros[0].chave, 'R4V8B2NC')
+  assert.deepEqual(r.encontros.map((e) => e.quando), r.encontros.map((e) => e.quando).sort())
+  assert.equal(chamar('vessel_card_da_stylist', { p_quem: '  MARINA   castro (exemplo) ' }).ok, true)
+  for (const [quem, situacao] of [['Marina', 'nao_achei'], ['marina@exemplo.com', 'nao_achei'], ['', 'vazio'], ['Ninguém Assim', 'nao_achei']]) {
+    assert.deepEqual(chamar('vessel_card_da_stylist', { p_quem: quem }), { ok: false, situacao }, quem)
+  }
+  const sem = chamar('vessel_card_da_stylist', { p_quem: 'Helena Prado (exemplo)' })
+  assert.deepEqual(sem, { ok: false, situacao: 'sem_encontro', stylist: { codigo: 'STY-0008', nome: 'Helena Prado (exemplo)' } })
+  let ultima
+  for (let i = 0; i < 31; i++) ultima = chamar('vessel_card_da_stylist', { p_quem: 'Marina Castro (exemplo)', p_origem: 'outra' })
+  assert.deepEqual(ultima, { ok: false, situacao: 'devagar' })
+})
+
+test('leitura do card: anota uma vez a cada 10 min por pessoa; chave ruim não anota; a conta devolve leituras e leitoras', () => {
+  const { chamar } = novoBanco()
+  const linha = () => chamar('vessel_conta_das_private_edits', {}).find((e) => e.chave === 'R4V8B2NC')
+  assert.deepEqual([linha().leituras_do_card, linha().leitoras_do_card], [4, 3])
+  const r = chamar('vessel_leitura_do_card', { p_chave: 'r4v8b2nc', p_origem: 'nova' })
+  assert.deepEqual(Object.keys(r), ['ok', 'codigo', 'anfitria', 'quando', 'loja', 'praca'])
+  assert.equal(r.anfitria, 'Marina Castro (exemplo)')
+  chamar('vessel_leitura_do_card', { p_chave: 'R4V8B2NC', p_origem: 'nova' })
+  assert.deepEqual([linha().leituras_do_card, linha().leitoras_do_card], [5, 4])
+  assert.deepEqual(chamar('vessel_leitura_do_card', { p_chave: 'AAAAAAAA' }), { ok: false, situacao: 'nao_achei' })
+  assert.equal(linha().leituras_do_card, 5)
+  const primeiro = chamar('vessel_conta_das_private_edits', {}).find((e) => e.chave === 'H3N8P4WZ')
+  assert.deepEqual([primeiro.leituras_do_card, primeiro.leitoras_do_card], [0, 0])
+})

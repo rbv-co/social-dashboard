@@ -179,3 +179,25 @@ test('editar: o que vale é o que vai ficar gravado (campo vazio = "não mexe"),
   assert.equal(mudouHoraOuLugar(semLoja, valoresQueFicam(semLoja, { local: '  hotel   x ' }, null)), false,
     'sem loja, o lugar compara como o banco: sem maiúscula nem espaço a mais')
 })
+
+test('QR do cartão: pessoas distintas na linha, o total no detalhe; sem o campo, nada (nunca "0" inventado)', async () => {
+  const { mapaDeLeiturasDoCard, leituraDoCard } = await import('./agenda-regras.js')
+  const mapa = mapaDeLeiturasDoCard([
+    { codigo: 'PE-1', leituras_do_card: 7, leitoras_do_card: 4 },
+    { codigo: 'PE-2', leituras_do_card: 0, leitoras_do_card: 0 },
+    { codigo: 'PE-3', leituras_do_card: 1, leitoras_do_card: 1 },
+    { codigo: 'PE-VELHO' }, // banco antigo: sem as chaves
+    { codigo: 'PE-NULO', leituras_do_card: null, leitoras_do_card: null },
+  ])
+  assert.deepEqual([...mapa.keys()], ['PE-1', 'PE-2', 'PE-3'])
+  const pe = (codigo) => ({ tipo: 'private_edit', codigo })
+  assert.deepEqual(leituraDoCard(pe('PE-1'), mapa),
+    { texto: 'Leram o QR do cartão: 4', detalhe: '4 pessoas leram o QR do cartão (7 leituras no total)' })
+  assert.equal(leituraDoCard(pe('PE-2'), mapa).texto, 'Leram o QR do cartão: 0', 'zero que o banco disse aparece')
+  assert.equal(leituraDoCard(pe('PE-3'), mapa).detalhe, '1 pessoa leu o QR do cartão (1 leitura no total)')
+  assert.equal(leituraDoCard(pe('PE-VELHO'), mapa), null)
+  assert.equal(leituraDoCard(pe('PE-NULO'), mapa), null)
+  assert.equal(leituraDoCard({ tipo: 'beauty_session', codigo: 'PE-1' }, mapa), null, 'só Private Edit')
+  assert.equal(leituraDoCard(pe('PE-1'), undefined), null)
+  assert.equal(mapaDeLeiturasDoCard(null).size, 0)
+})

@@ -89,7 +89,7 @@
       </div>
 
       <agenda-do-private-edit v-if="vista === 'agenda'" :chamar="chamar" :versao="versaoDaAgenda" :pracas="pracas"
-                              @abrir="abrirDaAgenda" />
+                              :leituras-do-card="leiturasDoCard" @abrir="abrirDaAgenda" />
 
       <template v-else>
       <!-- ── BUSCAR, FILTRAR, PERÍODO E ORDENAR ────────────────────────────
@@ -520,7 +520,7 @@ import CartaoDaConvidada from './cartao-da-convidada.vue'
 import AgendaDoPrivateEdit from './agenda-do-private-edit.vue'
 import AvisoDeSobreposicao from './aviso-de-sobreposicao.vue'
 import BarraDePracaEEdicao from './barra-de-praca-e-edicao.vue'
-import { valoresQueFicam, mudouHoraOuLugar } from './agenda-regras.js'
+import { valoresQueFicam, mudouHoraOuLugar, mapaDeLeiturasDoCard } from './agenda-regras.js'
 import { rotuloDaPraca } from './praca-regras.js'
 import { edicaoDoEncontro, rotuloDaEdicao } from './edicao-regras.js'
 import IconeDoBloco from '../../compartilhado/icone-do-bloco.vue'
@@ -680,6 +680,9 @@ function rotuloDaEdicaoDoEncontro(e) {
 }
 
 const encontros = ref([])
+// 28/09/2026: as leituras do QR do Private Edit Card, para a agenda (ver
+// `mapaDeLeiturasDoCard`: sem o campo no banco, o encontro fica fora do mapa).
+const leiturasDoCard = computed(() => mapaDeLeiturasDoCard(encontros.value))
 // ⚠️ A BARRA RECORTA A LISTA — SÓ CLIENT-SIDE (R do controlador): diferente da
 // tela irmã, `vessel_conta_das_private_edits` não tem `p_praca_id`/
 // `p_edicao_id` (não devolve `praca_id` nenhum) — o recorte é sobre o que já

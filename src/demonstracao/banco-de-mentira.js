@@ -350,6 +350,7 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
     return saida
   }
 
+  const leiturasDoCardDe = (e) => (b.leiturasDoCard || []).filter((l) => l.private_edit_id === e.id)
   const situacaoDe = (t, e) => situacaoDoConvite(t.status, t.rsvp, t.convite_enviado_em, e.quando, e.status, agora())
 
   // ── `vessel_numeros_do_stylist_circle`: o corpo do placar, recortável ──
@@ -566,9 +567,61 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
             receita: dele.reduce((a, v) => a + v.receita, 0),
             vendas: dele.length,
             janela_de_venda_em_dias: dias,
+            // 28/09/2026: o QR do Private Edit Card (linhas e origens distintas).
+            leituras_do_card: leiturasDoCardDe(e).length,
+            leitoras_do_card: new Set(leiturasDoCardDe(e).map((l) => l.ip_hash)).size,
           }
         })
         .sort((x, y) => (x.quando === y.quando ? 0 : (x.quando < y.quando ? 1 : -1)))
+    },
+
+    // ── 28/09/2026: o Private Edit Card do site (`2026-09-29-vessel-card-da-stylist.sql`) ──
+    // ⚠️ A Central não chama estas duas (quem chama é o gerador do site); estão
+    // aqui para a demonstração responder o mesmo contrato. Sem IP no navegador:
+    // toda chamada vem da MESMA origem (`p_origem`, só da demo, para o teste).
+    vessel_card_da_stylist({ p_quem = null, p_origem = 'demo' } = {}) {
+      const quem = String(p_quem ?? '').trim()
+      if (!quem) return { ok: false, situacao: 'vazio' }
+      const agoraMs = agora().getTime()
+      b.consultasDoCard = (b.consultasDoCard || []).filter((c) => new Date(c.momento).getTime() >= agoraMs - 86400000)
+      const recentes = b.consultasDoCard.filter((c) => c.ip_hash === p_origem && new Date(c.momento).getTime() > agoraMs - 3600000)
+      if (recentes.length >= 30) return { ok: false, situacao: 'devagar' }
+      b.consultasDoCard.push({ ip_hash: p_origem, momento: agoraIso() })
+      if (quem.length > 200) return { ok: false, situacao: 'nao_achei' }
+      const valem = b.stylists.filter((s) => s.ativa !== false && !s.teste)
+      const fone = telefoneCanonico(quem)
+      let achadas
+      if (fone) achadas = valem.filter((s) => telefoneCanonico(s.whatsapp) === fone)
+      else if (quem.includes('@')) return { ok: false, situacao: 'nao_achei' } // stylist ainda não tem e-mail
+      else achadas = valem.filter((s) => achatarCidade(s.nome) === achatarCidade(quem))
+      if (achadas.length > 1) return { ok: false, situacao: 'varias' }
+      const s = achadas[0]
+      if (!s) return { ok: false, situacao: 'nao_achei' }
+      const stylist = { codigo: s.codigo, nome: s.nome }
+      const encontros = b.encontros
+        .filter((e) => e.stylist_id === s.id && e.ativa !== false && !e.arquivada && !e.teste
+          && !['cancelado', 'realizado', 'nao_realizado'].includes(e.status || 'agendado')
+          && new Date(e.quando).getTime() >= agoraMs - 12 * 3600000)
+        .sort((x, y) => (x.quando === y.quando ? (x.codigo < y.codigo ? -1 : 1) : (x.quando < y.quando ? -1 : 1)))
+        .map((e) => ({ chave: e.chave, codigo: e.codigo, quando: e.quando, loja: e.loja ?? null, praca: e.praca ?? null }))
+      if (!encontros.length) return { ok: false, situacao: 'sem_encontro', stylist }
+      return { ok: true, stylist, encontros }
+    },
+
+    vessel_leitura_do_card({ p_chave = null, p_origem = 'demo' } = {}) {
+      const chave = String(p_chave ?? '').trim().toUpperCase()
+      const e = b.encontros.find((x) => x.chave === chave && !x.arquivada)
+      if (!e) return { ok: false, situacao: 'nao_achei' }
+      if (!e.teste) {
+        b.leiturasDoCard = b.leiturasDoCard || []
+        const dezMin = agora().getTime() - 10 * 60000
+        if (!b.leiturasDoCard.some((l) => l.private_edit_id === e.id && l.ip_hash === p_origem
+          && new Date(l.momento).getTime() > dezMin)) {
+          b.leiturasDoCard.push({ private_edit_id: e.id, momento: agoraIso(), ip_hash: p_origem })
+        }
+      }
+      return { ok: true, codigo: e.codigo, anfitria: stylistPorId(e.stylist_id)?.nome ?? null, quando: e.quando,
+        loja: e.loja ?? null, praca: e.praca ?? null }
     },
 
     // ── 25/09/2026: a agenda das lojas e a pergunta de antes de gravar ──────
