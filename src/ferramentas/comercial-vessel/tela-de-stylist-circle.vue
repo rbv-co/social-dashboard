@@ -31,214 +31,37 @@
         </p>
       </section>
 
-      <!-- ── O PLACAR (T11) ─────────────────────────────────────────────────
-           ⚠️ NENHUM NÚMERO DAQUI SE DIGITA: sai das três bases e dos pedidos,
-           por `vessel_placar_do_stylist_circle`. E TODA TAXA VEM COM DE
-           QUANTOS ELA SAIU — `taxasDoPlacar` (t11-regras.js, testada). -->
-      <section v-if="!erro" class="cv-bloco">
-        <div class="cv-cabeca">
-          <div class="cv-cabeca-texto">
-            <h2 class="cv-etiqueta id-titulo"><icone-do-bloco nome="placar" />O placar do Stylist Circle</h2>
+      <!-- ── A BARRA "PRAÇA · EDIÇÃO" (Task 7) ────────────────────────────
+           Fica acima de tudo: recorta o placar, o quadro e a lista de baixo. -->
+      <barra-de-praca-e-edicao v-model:praca="pracaEscolhidaId" v-model:edicao="edicaoEscolhidaId"
+                               :pracas="pracas" :edicoes="edicoesDaPraca" :sem-praca="pendenciaDePraca.semPraca.length" />
+      <p v-if="erroDasPracas" class="cv-nota cv-nota-erro">{{ erroDasPracas }}</p>
+      <p v-if="erroDasEdicoesDaPraca" class="cv-nota cv-nota-erro">{{ erroDasEdicoesDaPraca }}</p>
+
+      <!-- ── O PLACAR DA EDIÇÃO (T11 → Task 7) ─────────────────────────────
+           ⚠️ NENHUM NÚMERO DAQUI SE DIGITA — sai de `vessel_placar_da_edicao`,
+           e TODA TAXA VEM COM DE QUANTOS ELA SAIU (`taxasDoPlacar`, testada). -->
+      <placar-do-stylist-circle v-if="!erro" :edicao-id="edicaoEscolhidaId" :placar="placar"
+                                :carregando="carregandoPlacar" :erro="erroDoPlacar"
+                                :pracas-abertas="pracasAbertas" :carregando-pracas-abertas="carregandoPracasAbertas"
+                                :erro-pracas-abertas="erroPracasAbertas"
+                                @escolher="({ pracaId, edicaoId }) => { pracaEscolhidaId = pracaId; edicaoEscolhidaId = edicaoId }" />
+
+      <!-- ⚠️ 24/09/2026: QUEM ESTÁ HOJE EM CADA SAÍDA, POR MOTIVO. Não é da
+           edição (é o retrato de hoje, de TODAS as stylists da tela); zeros
+           escondidos; sem ninguém em saída, o bloco some. -->
+      <section v-if="!erro && saidas.length" class="cv-bloco">
+        <div class="id-grupo cv-grupo-saidas">
+          <h3 class="cv-etiqueta id-titulo"><icone-do-bloco nome="funil" />Saídas por motivo</h3>
+          <div class="cv-saidas">
+            <div v-for="sd in saidas" :key="sd.etapa" class="cv-saida">
+              <p class="cv-saida-titulo"><b>{{ sd.etapa }}</b> · {{ sd.total === 1 ? '1 parceira' : `${sd.total} parceiras` }} hoje</p>
+              <ul v-if="sd.linhas.length" class="cv-saida-linhas">
+                <li v-for="l in sd.linhas" :key="l.nome"><span>{{ l.nome }}</span><b>{{ l.n }}</b></li>
+              </ul>
+            </div>
           </div>
-          <label class="cv-campo cv-campo-periodo" for="sty-periodo"><span>Período</span>
-            <select id="sty-periodo" v-model="periodoDoPlacarEscolhido">
-              <option v-for="(rotulo, chave) in PERIODOS_DO_PLACAR" :key="chave" :value="chave">{{ rotulo }}</option>
-            </select></label>
         </div>
-        <p v-if="erroDoPlacar" class="cv-nota cv-nota-erro">{{ erroDoPlacar }}</p>
-        <div v-else-if="carregandoPlacar && !placar" class="cv-carregando">Carregando o placar…</div>
-        <template v-else-if="placar">
-          <div class="id-grupo cv-grupo-parceiras">
-          <h3 class="cv-etiqueta cv-etiqueta-interna id-titulo"><icone-do-bloco nome="parceiras" />As parceiras</h3>
-          <!-- ⚠️ 24/09/2026 ("manter o sentido"): A SEQUÊNCIA, cada passo com a
-               taxa da TURMA sobre o passo de cima — das prospectadas no
-               período, quantas chegaram a cada passo (`sequenciaDoPlacar`,
-               t11-regras.js). O número grande é o do período, pela data dele. -->
-          <div class="cv-numeros cv-numeros-placar cv-sequencia">
-            <div v-for="p in sequencia" :key="p.chave" class="cv-numero" :data-passo="p.chave">
-              <span class="cv-numero-valor">{{ p.valor }}</span>
-              <span class="cv-numero-rotulo">{{ p.rotulo }}</span>
-              <span class="cv-numero-base">{{ p.base }}</span>
-              <span v-if="p.taxa" class="cv-numero-base">{{ taxaDoPasso(p) }}</span>
-              <span v-if="p.taxa && margemEscrita(p.taxa)" class="cv-numero-margem">{{ margemEscrita(p.taxa) }}</span>
-            </div>
-          </div>
-          <div class="cv-numeros cv-numeros-placar">
-            <div class="cv-numero">
-              <span class="cv-numero-valor">{{ emPorcento(taxas.repeticao.valor) }}</span>
-              <span class="cv-numero-rotulo">Taxa de repetição</span>
-              <span class="cv-numero-base">{{ taxaEscrita(taxas.repeticao) }}, das ativadas até o fim do período</span>
-            </div>
-            <div class="cv-numero">
-              <span class="cv-numero-valor">{{ placar.intervalos ? `${formatarDias(placar.intervalo_medio_em_dias)}` : '—' }}</span>
-              <span class="cv-numero-rotulo">Intervalo entre encontros</span>
-              <span class="cv-numero-base">{{ placar.intervalos ? `média de ${placar.intervalos} intervalo(s)` : 'sem base ainda' }}</span>
-            </div>
-            <div class="cv-numero">
-              <span class="cv-numero-valor">{{ placar.contatos_ate_ativar ?? '—' }}</span>
-              <span class="cv-numero-rotulo">Contatos até ativar</span>
-              <span class="cv-numero-base">{{ placar.stylists_com_contatos_ate_ativar
-                ? `média de ${placar.stylists_com_contatos_ate_ativar} stylist(s)` : 'sem base ainda' }}</span>
-            </div>
-          </div>
-          <p v-if="placar.ativadas_por_encontro_antigo" class="cv-nota">
-            {{ placar.ativadas_por_encontro_antigo === 1 ? '1 das ativadas' : `${placar.ativadas_por_encontro_antigo} das ativadas` }}
-            no período conta pelo primeiro encontro: é da turma de antes da etapa
-            Ativada, que teve Private Edit sem nunca ter passado por ela.
-          </p>
-          </div>
-
-          <!-- ⚠️ 24/09/2026: QUEM ESTÁ HOJE EM CADA SAÍDA, POR MOTIVO. Não é do
-               período (é o retrato de hoje); zeros escondidos; sem ninguém em
-               saída, o bloco some. -->
-          <div v-if="saidas.length" class="id-grupo cv-grupo-saidas">
-            <h3 class="cv-etiqueta cv-etiqueta-interna id-titulo"><icone-do-bloco nome="funil" />Saídas por motivo</h3>
-            <div class="cv-saidas">
-              <div v-for="sd in saidas" :key="sd.etapa" class="cv-saida">
-                <p class="cv-saida-titulo"><b>{{ sd.etapa }}</b> · {{ sd.total === 1 ? '1 parceira' : `${sd.total} parceiras` }} hoje</p>
-                <ul v-if="sd.linhas.length" class="cv-saida-linhas">
-                  <li v-for="l in sd.linhas" :key="l.nome"><span>{{ l.nome }}</span><b>{{ l.n }}</b></li>
-                </ul>
-              </div>
-            </div>
-          </div>
-
-          <div class="id-grupo cv-grupo-encontros">
-          <h3 class="cv-etiqueta cv-etiqueta-interna id-titulo"><icone-do-bloco nome="encontros" />Os encontros e as convidadas</h3>
-          <div class="cv-numeros cv-numeros-placar">
-            <div class="cv-numero">
-              <span class="cv-numero-valor">{{ placar.encontros_agendados }}</span>
-              <span class="cv-numero-rotulo">Encontros agendados</span>
-              <span class="cv-numero-base">{{ placar.encontros_cancelados }} cancelado(s) ou não realizado(s)</span>
-            </div>
-            <div class="cv-numero">
-              <span class="cv-numero-valor">{{ placar.encontros_realizados }}</span>
-              <span class="cv-numero-rotulo">Realizados</span>
-              <span class="cv-numero-base">{{ taxaEscrita(taxas.realizacao) }} dos agendados</span>
-            </div>
-            <div class="cv-numero">
-              <span class="cv-numero-valor">{{ placar.convidadas }}</span>
-              <span class="cv-numero-rotulo">Convidadas</span>
-            </div>
-            <div class="cv-numero">
-              <span class="cv-numero-valor">{{ placar.confirmadas }}</span>
-              <span class="cv-numero-rotulo">Confirmadas</span>
-              <span class="cv-numero-base">inclui quem confirmou e faltou</span>
-            </div>
-            <div class="cv-numero">
-              <span class="cv-numero-valor">{{ placar.presentes }}</span>
-              <span class="cv-numero-rotulo">Presentes</span>
-              <span class="cv-numero-base">{{ legendaDaTaxa('showRate', taxas.showRate) }}</span>
-              <span v-if="margemEscrita(taxas.showRate)" class="cv-numero-margem">{{ margemEscrita(taxas.showRate) }}</span>
-            </div>
-            <!-- ⚠️ 24/09: A META DO PLANO (show rate ≥ 70%), com a cor da casa E a
-                 palavra — `metaDoComparecimento`, qualificacao-regras.js. -->
-            <div class="cv-numero">
-              <span class="cv-numero-valor">{{ emPorcento(taxas.showRate.valor) }}</span>
-              <span class="cv-numero-rotulo">Comparecimento</span>
-              <span class="cv-numero-base">{{ taxas.showRate.temBase ? `${taxas.showRate.x} de ${taxas.showRate.n} confirmadas em realizados` : 'nenhum encontro realizado no período' }}</span>
-              <meta-do-numero :meta="metaDoComparecimento(taxas.showRate)" />
-            </div>
-          </div>
-          </div>
-
-          <div class="id-grupo cv-grupo-venda">
-          <h3 class="cv-etiqueta cv-etiqueta-interna id-titulo"><icone-do-bloco nome="venda" />A venda ({{ janelaEscrita(placar.janela_de_venda_em_dias) }})</h3>
-          <div class="cv-numeros cv-numeros-placar">
-            <div class="cv-numero">
-              <span class="cv-numero-valor">{{ emReais(placar.receita) }}</span>
-              <span class="cv-numero-rotulo">Receita atribuída</span>
-              <span class="cv-numero-base">{{ placar.vendas }} venda(s) · {{ formatarPecas(placar.pecas) }} peça(s)</span>
-            </div>
-            <div class="cv-numero">
-              <span class="cv-numero-valor">{{ placar.compradoras }}</span>
-              <span class="cv-numero-rotulo">Compradoras</span>
-              <span class="cv-numero-base">{{ taxaEscrita(taxas.conversao) }} das presentes</span>
-              <span v-if="margemEscrita(taxas.conversao)" class="cv-numero-margem">{{ margemEscrita(taxas.conversao) }}</span>
-            </div>
-            <div class="cv-numero">
-              <span class="cv-numero-valor">{{ taxas.ticket.temBase ? emReais(taxas.ticket.valor) : '—' }}</span>
-              <span class="cv-numero-rotulo">Ticket médio</span>
-              <span class="cv-numero-base">{{ taxas.ticket.temBase ? `sobre ${taxas.ticket.n} venda(s)` : 'sem base ainda' }}</span>
-            </div>
-            <!-- ⚠️ 24/09: NÚMERO NOVO, com a faixa de teste do plano (1 a 3 por
-                 edição, "sem tratar como previsão garantida"). -->
-            <div class="cv-numero">
-              <span class="cv-numero-valor">{{ vendasPorEncontroEscrito(taxas.vendasPorEncontro) }}</span>
-              <span class="cv-numero-rotulo">Vendas por encontro</span>
-              <span class="cv-numero-base">{{ taxas.vendasPorEncontro.temBase ? `${taxas.vendasPorEncontro.x} em ${taxas.vendasPorEncontro.n} realizado(s)` : 'nenhum encontro realizado no período' }}</span>
-              <meta-do-numero :meta="metaDeVendasPorEncontro(taxas.vendasPorEncontro)" />
-            </div>
-            <div class="cv-numero">
-              <span class="cv-numero-valor">{{ taxas.receitaPorConvidada.temBase ? emReais(taxas.receitaPorConvidada.valor) : '—' }}</span>
-              <span class="cv-numero-rotulo">Receita por presente</span>
-              <span class="cv-numero-base">{{ taxas.receitaPorConvidada.temBase ? `sobre ${taxas.receitaPorConvidada.n} presente(s)` : 'sem base ainda' }}</span>
-            </div>
-            <div class="cv-numero">
-              <span class="cv-numero-valor">{{ taxas.receitaPorEncontro.temBase ? emReais(taxas.receitaPorEncontro.valor) : '—' }}</span>
-              <span class="cv-numero-rotulo">Receita por encontro</span>
-              <span class="cv-numero-base">{{ taxas.receitaPorEncontro.temBase ? `sobre ${taxas.receitaPorEncontro.n} realizado(s)` : 'sem base ainda' }}</span>
-            </div>
-            <div class="cv-numero">
-              <span class="cv-numero-valor">{{ razaoEscrita(taxas.pecasPorCliente).split(' (')[0] }}</span>
-              <span class="cv-numero-rotulo">Peças por compradora</span>
-              <span class="cv-numero-base">{{ taxas.pecasPorCliente.temBase ? `${formatarPecas(taxas.pecasPorCliente.x)} peça(s) em ${taxas.pecasPorCliente.n}` : 'sem base ainda' }}</span>
-            </div>
-          </div>
-          </div>
-
-          <template v-if="placar.por_stylist && placar.por_stylist.length">
-            <h3 class="cv-etiqueta cv-etiqueta-interna id-titulo">Receita por stylist</h3>
-            <!-- ⚠️ LISTA, NÃO TABELA: medido a 375px, a coluna do nome empurrava
-                 as outras três para fora da tela. -->
-            <ul class="cv-convidadas">
-              <li v-for="p in placar.por_stylist" :key="p.codigo" class="cv-convidada">
-                <p class="cv-convidada-nome">{{ p.nome }}</p>
-                <p class="cv-sub">
-                  <span class="cv-codigo">{{ p.codigo }}</span>
-                  · {{ p.encontros_realizados }} realizado(s) · {{ p.vendas }} venda(s) ·
-                  <b>{{ emReais(p.receita) }}</b>
-                </p>
-              </li>
-            </ul>
-          </template>
-
-          <p class="cv-nota">
-            Cada número usa a sua data: <b>prospectadas</b> pela data da
-            prospecção; <b>ativadas</b> pelo dia em que a parceira chegou pela
-            primeira vez numa etapa que libera Private Edit (a Ativada) — quem
-            teve encontro antes dessa regra conta pelo primeiro encontro;
-            <b>com Private Edit agendado</b> pelo dia do primeiro encontro
-            agendado (era o "ativadas" de antes); <b>com Private Edit
-            realizado</b> pelo dia do primeiro realizado; e <b>encontros,
-            convidadas e venda</b> pelo dia do encontro — esses não dependem da
-            etapa de ninguém.
-            As taxas de baixo de cada passo olham uma turma só: das prospectadas
-            no período, quantas chegaram àquele passo, sobre as que chegaram ao
-            anterior — por isso elas não batem com a divisão dos números
-            grandes, e nunca passam de 100%. A taxa de
-            <b>presentes</b> conta só as confirmadas de encontros que
-            aconteceram: quem confirmou para um encontro cancelado nunca pôde
-            ir.
-            <b>Agendados</b> inclui os que depois caíram — eles chegaram a ter
-            data, e tirá-los faria a taxa de realização subir justamente quando
-            a operação cancela.
-          </p>
-          <p class="cv-nota">
-            <b>As metas são as do plano, fixas:</b> comparecimento de 70% ou
-            mais (verde; de 60% a 69% âmbar; abaixo, vermelho) e de 1 a 3
-            vendas por encontro como <b>faixa de teste</b> — acima de 3 é só
-            aviso, não previsão garantida. Sem encontro realizado, a meta fica
-            "sem base ainda", sem cor.
-          </p>
-          <p class="cv-nota">
-            <b>A venda</b> é o pedido atendido no Bling de uma convidada que
-            <b>esteve presente</b>, até 14 dias depois do encontro. Quem foi a
-            dois encontros tem a compra contada no <b>primeiro</b>, uma vez só.
-            A cliente é reconhecida pelo WhatsApp do convite, na conferência de
-            pedidos de toda madrugada.
-          </p>
-        </template>
       </section>
 
       <!-- ── CADASTRAR ──────────────────────────────────────────────────── -->
@@ -261,7 +84,7 @@
           <label class="cv-campo" for="sty-praca"><span>Praça</span>
             <select id="sty-praca" v-model="novo.praca">
               <option value="">Escolha…</option>
-              <option v-for="(nome, sigla) in PRACAS" :key="sigla" :value="sigla">{{ nome }}</option>
+              <option v-for="p in pracas" :key="p.id" :value="p.sigla">{{ p.nome }}</option>
             </select></label>
           <label class="cv-campo" for="sty-loja"><span>Loja relacionada</span>
             <select id="sty-loja" v-model="novo.loja">
@@ -595,7 +418,7 @@
               <label class="cv-campo" :for="`ed-praca-${s.codigo}`"><span>Praça</span>
                 <select :id="`ed-praca-${s.codigo}`" v-model="rascunho.praca">
                   <option value="">Escolha…</option>
-                  <option v-for="(nome, sigla) in PRACAS" :key="sigla" :value="sigla">{{ nome }}</option>
+                  <option v-for="p in pracas" :key="p.id" :value="p.sigla">{{ p.nome }}</option>
                 </select></label>
               <label class="cv-campo" :for="`ed-loja-${s.codigo}`"><span>Loja relacionada</span>
                 <select :id="`ed-loja-${s.codigo}`" v-model="rascunho.loja">
@@ -742,10 +565,11 @@ import FaixaDeErro from '../../compartilhado/faixa-de-erro.vue'
 import BarraDeLista from './barra-de-lista.vue'
 import QuadroDoStylistCircle from './quadro-do-stylist-circle.vue'
 import FichaDaStylist from './ficha-da-stylist.vue'
-import MetaDoNumero from './meta-do-numero.vue'
 import EtapasDoFunil from './etapas-do-funil.vue'
 import ContatoFacil from './contato-facil.vue'
 import EscolhaDoMotivo from './escolha-do-motivo.vue'
+import BarraDePracaEEdicao from './barra-de-praca-e-edicao.vue'
+import PlacarDoStylistCircle from './placar-do-stylist-circle.vue'
 import {
   etapasParaFiltrar, primeiraEtapa, mensagemDasEtapas, pedeMotivo, avisoDeLiberada, saidasPorMotivo,
 } from './crm-da-stylist-regras.js'
@@ -765,18 +589,17 @@ import {
   semContatoParaMandar, seloSemContato, SITUACAO_SEM_CONTATO, filtroDaBarra, soAsSemContato,
 } from './stylist-circle-regras.js'
 import { paiDaTela, ROTULO_DO_PAI } from './navegacao.js'
-import {
-  seloDaEtapa, tomDaStylist, ORIGENS_DE_CONTATO, LOJAS,
-  PERIODOS_DO_PLACAR, periodoDoPlacar, taxasDoPlacar, legendaDaTaxa, sequenciaDoPlacar, taxaDoPasso,
-} from './t11-regras.js'
-import {
-  comFaixa, seloDaFaixa, metaDoComparecimento, metaDeVendasPorEncontro, vendasPorEncontroEscrito,
-} from './qualificacao-regras.js'
+import { seloDaEtapa, tomDaStylist, ORIGENS_DE_CONTATO, LOJAS } from './t11-regras.js'
+import { comFaixa, seloDaFaixa } from './qualificacao-regras.js'
+import { pendenciasDePraca, achatarCidade } from './praca-regras.js'
 
 const router = useRouter()
 function voltar() { router.push({ name: paiDaTela('stylist-circle') }) }
 
-const PRACAS = { CPS: 'Campinas', SAO: 'São Paulo', SBO: 'Santa Bárbara', BSB: 'Brasília' }
+// ⚠️ 25/09/2026 (Task 7): A LISTA DE PRAÇAS CRAVADA NO CÓDIGO SAIU DAQUI —
+// as quatro siglas fixas de antes faziam ninguém cadastrar stylist de
+// Limeira ou Piracicaba pela tela. Agora é `pracas` (abaixo), lida do
+// cadastro de verdade (`vessel_pracas_listar`).
 
 // ⚠️ A JANELA DE ATRIBUIÇÃO DE VENDA — não é o período da barra (que nem
 // existe nesta tela). T11: D0 a D+14, a MESMA do Private Edit e do placar.
@@ -784,6 +607,95 @@ const PRACAS = { CPS: 'Campinas', SAO: 'São Paulo', SBO: 'Santa Bárbara', BSB:
 const P_DIAS = 14
 
 const podeEditar = computed(() => hasPermission('atendimentos.stylist-circle', 'editar'))
+
+// ── PRAÇA · EDIÇÃO (Task 7) — a barra manda ─────────────────────────────────
+// `null` nos dois é "todas as praças, sem edição escolhida" — o comportamento
+// de sempre. Trocar de praça já chega com a edição limpa (a própria barra
+// emite os dois: ver barra-de-praca-e-edicao.vue).
+const pracas = ref([])
+const erroDasPracas = ref('')
+const pracaEscolhidaId = ref(null)
+const edicaoEscolhidaId = ref(null)
+const edicoesDaPraca = ref([])
+const erroDasEdicoesDaPraca = ref('')
+
+async function carregarPracas() {
+  erroDasPracas.value = ''
+  try {
+    pracas.value = await chamar('vessel_pracas_listar', {}) || []
+  } catch {
+    pracas.value = []
+    erroDasPracas.value = 'Não consegui ler o cadastro de praças agora. Tente de novo em um instante.'
+  }
+  carregarPracasAbertas()
+}
+
+async function carregarEdicoesDaPraca() {
+  erroDasEdicoesDaPraca.value = ''
+  if (!pracaEscolhidaId.value) { edicoesDaPraca.value = []; return }
+  try {
+    edicoesDaPraca.value = await chamar('vessel_edicoes_listar', { p_praca_id: pracaEscolhidaId.value }) || []
+  } catch {
+    // ⚠️ RODADA 1 DE CONSERTO (CRÍTICO 1): antes o catch só esvaziava a
+    // lista, calado — o select ficava só com "Todas as edições desta praça"
+    // e quem olhava concluía "esta praça não tem edição". A tela nunca mente
+    // (PADRAO, item 9): a falha de leitura escreve a própria mensagem.
+    edicoesDaPraca.value = []
+    erroDasEdicoesDaPraca.value = 'Não consegui ler as edições desta praça agora. Tente de novo em um instante.'
+  }
+}
+watch(pracaEscolhidaId, carregarEdicoesDaPraca, { immediate: true })
+
+// ⚠️ DECISÃO 1 DO DONO: sem edição escolhida, o placar mostra uma linha por
+// praça com edição ABERTA (nunca soma edição de praça diferente).
+// ⚠️ RODADA 1 DE CONSERTO (MENOR 8): UMA chamada só — `vessel_edicoes_listar`
+// com `p_praca_id` nulo já devolve TODAS as edições, ordenadas por praça —
+// nada de uma chamada por praça (o N+1 de antes).
+const pracasAbertas = ref([])
+const carregandoPracasAbertas = ref(false)
+const erroPracasAbertas = ref('')
+async function carregarPracasAbertas() {
+  if (edicaoEscolhidaId.value || !pracas.value.length) { pracasAbertas.value = []; return }
+  carregandoPracasAbertas.value = true
+  erroPracasAbertas.value = ''
+  try {
+    const todas = await chamar('vessel_edicoes_listar', { p_praca_id: null }) || []
+    const abertas = todas.filter((e) => e.situacao === 'aberta')
+    // ⚠️ RODADA 1 DE CONSERTO (IMPORTANTE 2): a barra recorta O PLACAR
+    // também, não só o quadro e a lista — com uma praça JÁ ESCOLHIDA (mas
+    // ainda sem edição), esta lista mostra só a praça escolhida. Antes ela
+    // sempre mostrava TODAS as praças, e clicar em outra trocava a barra de
+    // volta calado.
+    const pracasParaMostrar = pracaEscolhidaId.value
+      ? pracas.value.filter((p) => p.id === pracaEscolhidaId.value)
+      : pracas.value
+    pracasAbertas.value = pracasParaMostrar
+      .map((p) => ({ praca: p, edicao: abertas.find((e) => e.praca_id === p.id) || null }))
+      .filter((x) => x.edicao)
+  } catch {
+    pracasAbertas.value = []
+    erroPracasAbertas.value = 'Não consegui ler as edições abertas agora. Tente de novo em um instante.'
+  } finally {
+    carregandoPracasAbertas.value = false
+  }
+}
+
+// ⚠️ DECISÃO 5 DO DONO: quantas stylists estão sem praça — a barra só mostra
+// o aviso quando há o que dizer. Sobre `stylists`, que já respeita o recorte
+// de praça escolhido (com uma praça escolhida, todas as linhas têm
+// `praca_id`, e a contagem já vem zero sozinha).
+// ⚠️ REVISÃO FINAL (MENOR 4): o 2º parâmetro (`mapaDeCidades`) FALTAVA. Sem
+// ele, `pracaDaCidade` devolve nulo para TODA cidade, e `cidadesSemPraca`
+// listava como "cidade sem praça" até cidade que ESTÁ cadastrada — o aviso
+// mandava o dono cadastrar Limeira quando Limeira já estava lá, e a ação
+// sugerida não resolvia nada. O mapa sai do próprio cadastro que a tela já
+// leu (`vessel_pracas_listar`, que traz as cidades de cada praça), pela MESMA
+// chave achatada do banco — nunca uma lista à parte.
+const mapaDeCidades = computed(() => pracas.value.flatMap((p) => (p.cidades || []).map((c) => ({
+  cidade_chave: achatarCidade(c.cidade), praca_id: p.id, sigla: p.sigla, nome: p.nome,
+  loja_destino: p.loja_destino ?? null,
+}))))
+const pendenciaDePraca = computed(() => pendenciasDePraca(stylists.value, mapaDeCidades.value))
 
 const stylists = ref([])
 // ⚠️ 24/09: AS ETAPAS DO FUNIL vêm do banco (`vessel_stylist_etapas`), lidas
@@ -868,14 +780,18 @@ async function carregar(opcoes) {
     // ⚠️ SÓ PEDE AS DESATIVADAS QUANDO A SITUAÇÃO PRECISA: a função de
     // rastreio já chega sem elas por padrão — ver `precisaDasDesativadas`.
     const incluirDesativadas = precisaDasDesativadas(filtro.value.situacao)
+    // ⚠️ TASK 7: A BARRA RECORTA A LISTA — `p_praca_id`/`p_edicao_id` nulos
+    // (nenhuma escolhida) é o comportamento de sempre: tudo aparece.
     const [r, et] = await Promise.all([
-      chamar('vessel_rastreio_dos_stylists', { p_dias: P_DIAS, p_incluir_desativadas: incluirDesativadas }),
+      chamar('vessel_rastreio_dos_stylists', {
+        p_dias: P_DIAS, p_incluir_desativadas: incluirDesativadas,
+        p_praca_id: pracaEscolhidaId.value, p_edicao_id: edicaoEscolhidaId.value,
+      }),
       chamar('vessel_stylist_etapas', {}),
     ])
     etapas.value = et || []
     // `etapa_chave`: o id da etapa em texto, que é o valor do filtro "Etapa".
     stylists.value = (r || []).map((s) => ({ ...s, etapa_chave: String(s.etapa_id) }))
-    carregarPlacar()
     carregarFaixas()
   } catch (e) {
     erro.value = classificarErro(e)
@@ -884,30 +800,34 @@ async function carregar(opcoes) {
   }
 }
 
-// ⚠️ O ÚNICO GATILHO DE VOLTAR AO BANCO É A SITUAÇÃO PEDIR DESATIVADA — nunca
-// busca, estágio ou ordem: esses três filtram o que já está em memória.
+// ⚠️ OS GATILHOS DE VOLTAR AO BANCO: a situação pedir desativada, ou a barra
+// Praça · Edição mudar — busca, estágio e ordem continuam só filtrando o que
+// já está em memória.
 watch(() => precisaDasDesativadas(filtro.value.situacao), (precisaAgora, precisavaAntes) => {
   if (precisaAgora !== precisavaAntes) carregar()
 })
+watch([pracaEscolhidaId, edicaoEscolhidaId], () => carregar())
 
-// ── o placar (T11) ───────────────────────────────────────────────────────────
+// O retrato de hoje das saídas (sai das etapas, que já vêm com a contagem) —
+// não é da edição, é de TODAS as stylists da tela (ver o comentário no template).
+const saidas = computed(() => saidasPorMotivo(etapas.value))
+
+// ── o placar DA EDIÇÃO (T11 → Task 7) ───────────────────────────────────────
 // ⚠️ ERRO DO PLACAR NÃO DERRUBA A LISTA, e a lista não derruba o placar: são
 // duas leituras, e cada uma mostra o próprio erro no próprio bloco.
-const periodoDoPlacarEscolhido = ref('mes')
+// ⚠️ O placar é SEMPRE de uma edição (decisão 1 do dono) — sem
+// `edicaoEscolhidaId`, não há o que buscar: `placar-do-stylist-circle.vue`
+// mostra a lista de praças com edição aberta (`pracasAbertas`, abaixo).
 const placar = ref(null)
 const carregandoPlacar = ref(false)
 const erroDoPlacar = ref('')
-const taxas = computed(() => taxasDoPlacar(placar.value))
-const sequencia = computed(() => sequenciaDoPlacar(placar.value))
-// O retrato de hoje das saídas (sai das etapas, que já vêm com a contagem).
-const saidas = computed(() => saidasPorMotivo(etapas.value))
 
 async function carregarPlacar() {
+  if (!edicaoEscolhidaId.value) { placar.value = null; erroDoPlacar.value = ''; return }
   carregandoPlacar.value = true
   erroDoPlacar.value = ''
   try {
-    const { p_de, p_ate } = periodoDoPlacar(periodoDoPlacarEscolhido.value)
-    placar.value = await chamar('vessel_placar_do_stylist_circle', { p_de, p_ate, p_dias: P_DIAS })
+    placar.value = await chamar('vessel_placar_da_edicao', { p_edicao_id: edicaoEscolhidaId.value })
   } catch {
     // ⚠️ Nunca zeros no lugar do erro: um placar zerado é uma afirmação.
     placar.value = null
@@ -916,7 +836,17 @@ async function carregarPlacar() {
     carregandoPlacar.value = false
   }
 }
-watch(periodoDoPlacarEscolhido, carregarPlacar)
+// ⚠️ RODADA 1 DE CONSERTO (IMPORTANTE 2): observa OS DOIS — trocar de praça
+// sem edição escolhida também precisa recarregar `pracasAbertas` (recortada
+// pela praça nova), e antes só `edicaoEscolhidaId` disparava. Como a barra
+// muda praça e edição no mesmo instante (a edição volta a nulo), um watcher
+// só em `edicaoEscolhidaId` não via a troca de praça quando a edição já
+// estava nula dos dois lados.
+watch([pracaEscolhidaId, edicaoEscolhidaId], ([, id]) => {
+  placar.value = null
+  if (id) carregarPlacar()
+  else carregarPracasAbertas()
+})
 
 // ── a nota de qualificação vigente de cada uma (24/09) ──────────────────────
 // ⚠️ A FALHA NÃO VIRA "SEM NOTA": `vigentes` fica nulo, o selo some e a tela
@@ -1015,9 +945,6 @@ function dataDoInstante(iso) {
   if (Number.isNaN(d.getTime())) return ''
   return `${d.getFullYear()}-${doisDigitos(d.getMonth() + 1)}-${doisDigitos(d.getDate())}`
 }
-const formatarDias = (n) => `${Number(n).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} dias`
-const formatarPecas = (n) => Number(n || 0).toLocaleString('pt-BR', { maximumFractionDigits: 0 })
-
 // ── cadastrar ────────────────────────────────────────────────────────────────
 const nomeDeQuemUsa = () => estado.user?.user_metadata?.name || estado.user?.email || ''
 const NOVA_VAZIA = () => ({
@@ -1179,7 +1106,7 @@ async function copiar(texto, marca) {
   } catch { /* o endereço segue na tela para ser selecionado à mão */ }
 }
 
-onMounted(carregar)
+onMounted(() => { carregar(); carregarPracas() })
 </script>
 
 <style scoped>

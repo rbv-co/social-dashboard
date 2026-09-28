@@ -37,6 +37,10 @@ const ASSUNTO = {
   'atendimentos.beauty-sessions': 'Atendimentos',
   'atendimentos.private-edit': 'Atendimentos',
   'atendimentos.stylist-circle': 'Atendimentos',
+  // Praça e Edição (25/09/2026, Task 6): recorte de 'atendimentos.stylist-circle' —
+  // mesmo assunto, é o mesmo cadastro do Stylist Circle.
+  'atendimentos.pracas': 'Atendimentos',
+  'atendimentos.edicoes': 'Atendimentos',
 }
 
 // Exportado para o teste de guarda: toda ferramenta do catálogo que dá poder

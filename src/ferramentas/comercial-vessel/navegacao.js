@@ -15,6 +15,8 @@ export const PAI_DA_TELA = {
   'private-edit': 'comercial-vessel',
   'stylist-circle': 'comercial-vessel',
   'material-grafico': 'comercial-vessel',
+  'pracas': 'comercial-vessel',
+  'edicoes': 'comercial-vessel',
   'funil-carrinho': 'comercial-vessel',
   'comercial-vessel': 'inicio',
 }

@@ -33,8 +33,14 @@ const SESSAO = { access_token: CRACHA, token_type: 'bearer', expires_in: 3153600
   refresh_token: 'demonstracao', user: USUARIO }
 // ⚠️ O PERFIL DE QUEM USA O COMERCIAL VESSEL: tudo da família 'atendimentos'
 // (desde 24/09/2026 cada tela tem a sua chave — sai do catálogo, para a
-// demonstração não perder um cartão quando nascer a próxima tela), e só.
-const DA_FAMILIA = FERRAMENTAS.filter((f) => f.key === 'atendimentos' || f.key.startsWith('atendimentos.'))
+// demonstração não perder um cartão quando nascer a próxima tela), MENOS o
+// Private Edit — 25/09/2026: a demo agora mostra só a primeira das três
+// soluções (Stylist Circle); o Private Edit sai de vista por decisão do
+// dono, não por defeito, e volta quando for a vez dele. Tirar a chave daqui
+// já basta: o menu (`podeAbrir`) e a guarda de rota leem este perfil, sem
+// mexer numa linha da Central de verdade.
+const DA_FAMILIA = FERRAMENTAS.filter((f) => (f.key === 'atendimentos' || f.key.startsWith('atendimentos.'))
+  && f.key !== 'atendimentos.private-edit')
 const PERFIL = [{ role: 'viewer', features: ['atendimentos', ...DA_FAMILIA.map((f) => f.key).filter((k) => k !== 'atendimentos')], avatar_url: null,
   permissions: Object.fromEntries(DA_FAMILIA.map((f) => [f.key, f.acoes.slice()])), allowed_accounts: [], is_superadmin: false,
   precisa_trocar_senha: false, escopo_por_equipe: false }]
