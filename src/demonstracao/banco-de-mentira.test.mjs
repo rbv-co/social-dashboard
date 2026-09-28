@@ -520,6 +520,31 @@ test('cadastrar lead: as conferências e as situações da função de verdade, 
   assert.deepEqual([lirio.pessoas, lirio.pessoas_qr, lirio.pessoas_equipe], [3, 1, 2])
 })
 
+// ── o e-mail (`2026-09-28-zzz-vessel-beauty-session-pede-email.sql`) ──
+test('cadastrar lead: e-mail escrito e inválido recusa; válido entra limpo, e na duplicata só se faltava', () => {
+  const { chamar, banco } = novoBanco()
+  const ok = { p_codigo: S2, p_nome: 'Helena Prado (exemplo)', p_whatsapp: '5519988776655' }
+  const pessoa = (fone) => banco.estado.pessoas.find((p) => p.telefone === fone)
+  // A MESMA ordem do banco: o e-mail é conferido depois do WhatsApp.
+  assert.equal(chamar('vessel_beauty_session_cadastrar_lead', { ...ok, p_whatsapp: '9900', p_email: 'x' }).situacao, 'whatsapp_invalido')
+  for (const ruim of ['sem-arroba', 'a@b.c', 'ana@prova', 'ana maria@prova.com']) {
+    assert.equal(chamar('vessel_beauty_session_cadastrar_lead', { ...ok, p_email: ruim }).situacao, 'email_invalido', ruim)
+  }
+  assert.equal(pessoa('5519988776655'), undefined, 'recusa não cria ficha')
+  assert.equal(chamar('vessel_beauty_session_cadastrar_lead', { ...ok, p_email: '  Helena@Prova.COM ' }).ok, true)
+  assert.equal(pessoa('5519988776655').email, 'helena@prova.com')
+  // Já estava: o e-mail que ela JÁ TEM não é trocado…
+  chamar('vessel_beauty_session_cadastrar_lead', { ...ok, p_email: 'outro@prova.com' })
+  assert.equal(pessoa('5519988776655').email, 'helena@prova.com')
+  // …mas quem estava sem e-mail ganha o deste cadastro, mesmo como `ja_estava`.
+  const semEmail = { ...ok, p_whatsapp: '5519977001122' }
+  chamar('vessel_beauty_session_cadastrar_lead', semEmail)
+  assert.equal(pessoa('5519977001122').email, null)
+  const dup = chamar('vessel_beauty_session_cadastrar_lead', { ...semEmail, p_email: 'nova@prova.com' })
+  assert.equal(dup.situacao, 'ja_estava')
+  assert.equal(pessoa('5519977001122').email, 'nova@prova.com')
+})
+
 test('as leads da sessão: porta, quem cadastrou, foi à loja e comprou', () => {
   const { chamar } = novoBanco()
   const aurora = chamar('vessel_leads_da_beauty_session', { p_codigo: S1, p_dias: 7 })

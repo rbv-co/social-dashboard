@@ -3,17 +3,39 @@ import assert from 'node:assert/strict'
 import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import {
-  INTERESSES, INSTAGRAM_MAXIMO, nomeLimpo, whatsappCanonico, telefoneLegivel,
+  INTERESSES, INSTAGRAM_MAXIMO, FORMULARIO_VAZIO, nomeLimpo, whatsappCanonico, telefoneLegivel, emailCanonico,
   problemasDaLead, corpoDoCadastro, recadoDoCadastro, portaDaLead, portasEscritas,
 } from './cadastro-de-lead.js'
 
-const BOM = { nome: 'Ana da Prova', pais: '55', ddd: '19', numero: '99000-2402', instagram: '', interesse: '' }
+const BOM = { nome: 'Ana da Prova', pais: '55', ddd: '19', numero: '99000-2402', email: 'ana@prova.com.br', instagram: '', interesse: '' }
 
-test('só nome e WhatsApp são obrigatórios', () => {
+test('nome, WhatsApp e e-mail são obrigatórios (e-mail desde 28/09/2026)', () => {
   assert.deepEqual(problemasDaLead(BOM), [])
   assert.equal(problemasDaLead({ ...BOM, nome: ' A ' }).length, 1)
   assert.equal(problemasDaLead({ ...BOM, ddd: '', numero: '9900' }).length, 1)
   assert.deepEqual(problemasDaLead({ ...BOM, interesse: 'personal-atelier', instagram: '@ana' }), [])
+  // ⚠️ sem e-mail o RD Station recusa o contato: a tela não deixa passar.
+  assert.match(problemasDaLead({ ...BOM, email: '   ' })[0], /e-mail dela/)
+  assert.match(problemasDaLead({ ...BOM, email: 'ana.prova.com' })[0], /Confira o e-mail/)
+  assert.equal(FORMULARIO_VAZIO.email, '')
+  assert.ok(problemasDaLead(FORMULARIO_VAZIO).some((p) => /e-mail/.test(p)))
+})
+
+test('o e-mail segue a MESMA regra do banco (`vessel_email_canonico`)', () => {
+  assert.equal(emailCanonico('  Ana@Prova.COM.br '), 'ana@prova.com.br')
+  assert.equal(emailCanonico('a@b.co'), 'a@b.co')                  // 6 caracteres: o piso
+  assert.equal(emailCanonico('a@b.c'), null)                        // 5, e final de 1 letra
+  assert.equal(emailCanonico('ana@prova.c'), null)                  // final precisa de 2
+  assert.equal(emailCanonico('ana@prova'), null)                    // sem ponto depois do @
+  assert.equal(emailCanonico('ana@@prova.com'), null)
+  assert.equal(emailCanonico('ana maria@prova.com'), null)          // espaço no meio
+  assert.equal(emailCanonico('sem-arroba.com'), null)
+  assert.equal(emailCanonico(''), null)
+  assert.equal(emailCanonico(null), null)
+  const teto = `${'a'.repeat(244)}@prova.com`                       // 254: o teto
+  assert.equal(teto.length, 254)
+  assert.equal(emailCanonico(teto), teto)
+  assert.equal(emailCanonico(`a${teto}`), null)
 })
 
 test('número de fora do Brasil é avisado antes (o banco só guarda +55)', () => {
@@ -29,7 +51,12 @@ test('Instagram até 120, e interesse só das três opções', () => {
 test('o corpo vai com o telefone canônico, nome limpo e vazio como nulo', () => {
   assert.deepEqual(corpoDoCadastro('BS-1', { ...BOM, nome: '  Ana   da  Prova ' }), {
     p_codigo: 'BS-1', p_nome: 'Ana da Prova', p_whatsapp: '5519990002402', p_instagram: null, p_interesse: null,
+    p_email: 'ana@prova.com.br',
   })
+  assert.equal(corpoDoCadastro('BS-1', { ...BOM, email: '  Ana@Prova.COM.br ' }).p_email, 'ana@prova.com.br')
+  // escrito e inválido vai como está, para o banco responder `email_invalido`.
+  assert.equal(corpoDoCadastro('BS-1', { ...BOM, email: ' sem-arroba ' }).p_email, 'sem-arroba')
+  assert.equal(corpoDoCadastro('BS-1', { ...BOM, email: '' }).p_email, null)
   assert.equal(corpoDoCadastro('BS-1', { ...BOM, ddd: '', numero: '+55 19 99000-2402' }).p_whatsapp, '5519990002402')
 })
 
@@ -46,6 +73,9 @@ test('o recado: sucesso (nova e da base), duplicata é AVISO, arquivada é erro'
   assert.match(dup.texto, /Rita já se identificou nesta sessão pelo QR\. Nada foi duplicado/)
   assert.match(recadoDoCadastro({ ok: false, situacao: 'ja_estava', porta: 'equipe' }).texto, /pela equipe/)
   assert.equal(recadoDoCadastro({ ok: false, situacao: 'sessao_arquivada' }).tom, 'erro')
+  const email = recadoDoCadastro({ ok: false, situacao: 'email_invalido' })
+  assert.equal(email.tom, 'erro')
+  assert.match(email.texto, /e-mail/)
   // ⚠️ situação que ninguém previu não vira silêncio: aparece com o nome dela.
   assert.match(recadoDoCadastro({ ok: false, situacao: 'coisa_nova' }).texto, /coisa_nova/)
   assert.equal(recadoDoCadastro(null).tom, 'erro')

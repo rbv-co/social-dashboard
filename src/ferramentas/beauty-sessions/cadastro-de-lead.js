@@ -64,14 +64,30 @@ export function telefoneLegivel(canonico) {
   return so ? `+${so}` : String(canonico ?? '')
 }
 
+/**
+ * `vessel_email_canonico` do banco (`2026-09-28-zzz-vessel-beauty-session-pede-email.sql`):
+ * `lower(trim(x))`, de 6 a 254 caracteres, e casa com
+ * `^[^@\s]+@[^@\s]+\.[^@\s]{2,}$`. Devolve o e-mail limpo ou `null`.
+ * ⚠️ Mesma regra, linha a linha: tela mais frouxa que o banco deixa a equipe
+ * apertar e tomar `email_invalido`; mais dura, recusa e-mail que o banco aceita.
+ */
+export function emailCanonico(texto) {
+  const e = String(texto ?? '').trim().toLowerCase()
+  if (e.length < 6 || e.length > 254) return null
+  return /^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test(e) ? e : null
+}
+
 export const FORMULARIO_VAZIO = Object.freeze({
-  nome: '', pais: '55', ddd: '', numero: '', instagram: '', interesse: '',
+  nome: '', pais: '55', ddd: '', numero: '', email: '', instagram: '', interesse: '',
 })
 
 /**
  * O que está errado, em frases que a equipe entende. Lista vazia = pode enviar.
  *
- * ⚠️ SÓ NOME E WHATSAPP SÃO OBRIGATÓRIOS, como na página do QR.
+ * ⚠️ NOME, WHATSAPP E E-MAIL SÃO OBRIGATÓRIOS. O e-mail entrou em 28/09/2026,
+ * por decisão do dono: o cadastro vai sozinho ao RD Station Marketing, e a
+ * conta de lá recusa contato sem e-mail. No banco ele segue opcional (a porta
+ * do QR ainda não pede) — quem exige é esta tela.
  *
  * ⚠️ NÚMERO DE FORA DO BRASIL É AVISADO AQUI, e não só recusado lá dentro: o
  * banco guarda só `55` + DDD + número (`vessel_telefone_canonico`), e a página
@@ -86,6 +102,11 @@ export function problemasDaLead(f = {}) {
     problemas.push('Por enquanto só dá para cadastrar WhatsApp do Brasil (+55).')
   } else if (!whatsappCanonico(`${f.ddd ?? ''}${f.numero ?? ''}`, pais)) {
     problemas.push('Confira o WhatsApp: DDD com 2 números e o número com 8 ou 9.')
+  }
+  if (!String(f.email ?? '').trim()) {
+    problemas.push('Escreva o e-mail dela — sem e-mail o cadastro não chega ao RD Station.')
+  } else if (!emailCanonico(f.email)) {
+    problemas.push('Confira o e-mail: falta o @ ou o final (como nome@gmail.com).')
   }
   if (String(f.instagram ?? '').trim().length > INSTAGRAM_MAXIMO) {
     problemas.push('O Instagram ficou longo demais. Use só o @ ou o endereço.')
@@ -105,6 +126,9 @@ export function corpoDoCadastro(codigo, f = {}) {
     p_whatsapp: whatsappCanonico(digitado, f.pais) || digitado,
     p_instagram: String(f.instagram ?? '').trim() || null,
     p_interesse: f.interesse || null,
+    // ⚠️ Vazio vai nulo, e escrito-mas-inválido vai como está: quem decide é o
+    // banco, e ele responde `email_invalido` em vez de engolir calado.
+    p_email: emailCanonico(f.email) || String(f.email ?? '').trim() || null,
   }
 }
 
@@ -126,7 +150,8 @@ export function recadoDoCadastro(r) {
   switch (r?.situacao) {
     case 'ja_estava':
       return { tom: 'aviso', texto: `${r.nome || 'Ela'} já se identificou nesta sessão `
-        + `${r.porta === 'equipe' ? 'pela equipe' : 'pelo QR'}. Nada foi duplicado.` }
+        + `${r.porta === 'equipe' ? 'pela equipe' : 'pelo QR'}. Nada foi duplicado — e, se a ficha dela `
+        + 'ainda não tinha e-mail, o deste cadastro entrou nela.' }
     case 'sessao_arquivada':
       return { tom: 'erro', texto: 'Esta sessão está arquivada e não recebe lead nova. Desarquive para cadastrar.' }
     case 'nao_achei':
@@ -137,6 +162,8 @@ export function recadoDoCadastro(r) {
       return { tom: 'erro', texto: 'Escreva o nome dela.' }
     case 'whatsapp_invalido':
       return { tom: 'erro', texto: 'O banco não aceitou este WhatsApp. Confira o DDD e o número.' }
+    case 'email_invalido':
+      return { tom: 'erro', texto: 'O banco não aceitou este e-mail. Confira o @ e o final (como nome@gmail.com).' }
     case 'instagram_longo':
       return { tom: 'erro', texto: 'O Instagram ficou longo demais. Use só o @ ou o endereço.' }
     case 'interesse_invalido':

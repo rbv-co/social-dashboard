@@ -289,7 +289,8 @@
                ⚠️ O MESMO CAMINHO DA LEAD DO QR (`vessel_beauty_session_cadastrar_lead`
                chama o miolo da página do QR): mesma ficha, base de clientes,
                planilha e pedido de visita na loja da sessão. Os campos são os
-               do site, na mesma ordem — ver `cadastro-de-lead.js`. -->
+               do site, na mesma ordem — ver `cadastro-de-lead.js` —, mais o
+               e-mail (28/09/2026), que a página do QR ainda não pede. -->
           <div v-if="podeExecutarAcao('cadastrar_lead', podeEditar) && cadastroAberto === s.codigo"
                class="id-caixa-form bs-lead-form">
             <h3 class="bs-etiqueta bs-etiqueta-interna id-titulo"><icone-do-bloco nome="lead-mais" />Cadastrar lead nesta sessão</h3>
@@ -309,6 +310,12 @@
                          v-model="formDe(s).numero">
                 </div>
               </div>
+              <!-- ⚠️ E-MAIL OBRIGATÓRIO (decisão do dono, 28/09/2026): o cadastro
+                   vai sozinho ao RD Station, que recusa contato sem e-mail. -->
+              <label class="bs-campo bs-campo-largo" :for="`bsl-email-${s.codigo}`"><span>E-mail</span>
+                <input :id="`bsl-email-${s.codigo}`" type="email" inputmode="email" autocomplete="email"
+                       autocapitalize="off" spellcheck="false" maxlength="254"
+                       placeholder="nome@exemplo.com" v-model="formDe(s).email"></label>
               <label class="bs-campo" :for="`bsl-insta-${s.codigo}`"><span>Instagram, se ela quiser</span>
                 <input :id="`bsl-insta-${s.codigo}`" type="text" maxlength="120" autocomplete="off"
                        placeholder="@perfil" v-model="formDe(s).instagram"></label>
