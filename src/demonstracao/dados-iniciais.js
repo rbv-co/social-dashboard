@@ -471,8 +471,9 @@ export function dadosIniciais(agora = new Date()) {
     ['Confirmado', 'Presença', -5],
   ], { prospectado_em: dia(-14) })
   // ⚠️ A ATIVADA da turma: um encontro ANTES da edição começar (fora da
-  // janela — a tela mostra "fora de edição", e o placar não conta) e outro
-  // DENTRO dela (agendado) — o par que prova o recorte por data do placar.
+  // janela — a tela do Private Edit mostra "fora de edição") e outro DENTRO
+  // dela (agendado). Desde 28/09 os DOIS contam no placar da edição (turma de
+  // entrada: a data não corta o que a stylist da turma faz).
   const idKaren = stylistLimeira('Karen Duarte', 'Ativada', () => [
     [null, 'Stylist levantado', -60, 'cadastro'], ['Stylist levantado', 'Conversa', -55], ['Conversa', 'Confirmado', -52],
     ['Confirmado', 'Ativada', -50],
@@ -484,8 +485,9 @@ export function dadosIniciais(agora = new Date()) {
 
   const karen = limeiraDiversas.find((s) => s.id === idKaren)
   encontros.push(
-    // ⚠️ FORA DA EDIÇÃO 1 (começa em dia(-30)): este é de antes — continua na
-    // tabela (nada some), só fica fora do placar desta edição.
+    // ANTES de a Edição 1 começar (dia(-30)). ⚠️ 28/09/2026 — EDIÇÃO = TURMA
+    // DE ENTRADA: conta no placar mesmo assim, porque é da Karen, da turma.
+    // (A tela do Private Edit continua rotulando o encontro pela data.)
     {
       id: 8, codigo: `PE-${compacto(-45)}-LIM-01`, chave: 'LIM4A5X8', stylist_id: karen.id, quando: em(-45, '19:00'),
       local: 'Espaço parceiro em Limeira (exemplo)', praca: 'LIM', praca_id: PRACA.LIM, loja: null, vagas: 8,
