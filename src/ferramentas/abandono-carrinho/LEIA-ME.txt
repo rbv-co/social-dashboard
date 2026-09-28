@@ -1,0 +1,62 @@
+CHECKOUTS ABANDONADOS
+=====================
+
+O que é: a fila de quem começou o checkout na loja (Shopify), informou e-mail ou
+telefone e não comprou. É o que alimenta o WhatsApp de recuperação. A tela mostra
+a fila em três colunas: AGUARDANDO (com contagem regressiva), FILA DE ENVIO e
+COMPRARAM.
+
+A REGRA (a mesma do Shopify, "Recovering abandoned checkouts")
+--------------------------------------------------------------
+- Só entra checkout com e-mail OU telefone. Sem os dois o Shopify também não
+  trata como abandono.
+- Cada novo evento do checkout (checkouts/update) ZERA o relógio de 10 minutos.
+- 10 minutos sem evento e sem pedido -> vai para a FILA DE ENVIO.
+- Pedido com o mesmo checkout (orders/create, campo checkout_token) -> COMPROU.
+- Pedido que chega DEPOIS de o checkout ir para a fila de envio -> COMPROU e fica
+  marcado "comprou depois" (quem manda a mensagem deve conferir o status antes de
+  enviar).
+- Update que chega depois de o checkout sair de "aguardando" NÃO o traz de volta.
+
+COMO O DADO CHEGA
+-----------------
+Shopify --webhook--> edge `receber-webhook-abandono` --rpc--> tabela `checkout_abandono`
+                                                   pg_cron a cada minuto -> `mover_abandonados_para_fila(10)`
+
+- Regra pura: supabase/functions/_shared/abandono-de-checkout.js (com teste).
+- Tabela, funções e cron: db/migrations/2026-09-29-abandono-de-checkout.sql.
+- Tela: lê `checkout_abandono` e recarrega a cada 15s. A contagem regressiva é
+  desenhada no navegador; quem MOVE para a fila é o banco.
+- Os 10 minutos existem em DOIS lugares: `mover_abandonados_para_fila(10)` no
+  banco e MINUTOS_ATE_ABANDONO em regras-do-abandono.js. Mudou um, mude o outro.
+
+⚠️ DADO PESSOAL
+---------------
+Esta tabela guarda e-mail, telefone e nome de cliente. O receptor antigo
+(`receber-webhook-checkout`) descarta isso de propósito e guarda só o cart_token.
+Aqui é o contrário, por decisão do dono (28/09/2026), porque sem o telefone não
+há mensagem. Por isso a permissão é PRÓPRIA (`abandono-carrinho`, não a do
+Funil de Carrinho) e nasce concedida a ninguém. Não junte as duas edges.
+
+PARA COLOCAR NO AR (nada disto foi feito ainda — só o código está no repositório)
+--------------------------------------------------------------------------------
+1. Aplicar a migration:
+     node coletor/run-migrations.mjs --dry     # confere o que está pendente
+     node coletor/run-migrations.mjs
+2. Publicar a edge (siga o CLAUDE.md: partir do origin/main, ver o que está no ar):
+     npx supabase functions deploy receber-webhook-abandono \
+       --project-ref kounqtdoioootxqegkij --no-verify-jwt
+   Testar: um POST com assinatura errada deve devolver 401 {"error":"nao_autorizado"}
+   (503 BOOT_ERROR = a função quebrou ao subir).
+3. Segredo: a edge usa SHOPIFY_WEBHOOK_SECRET, o mesmo do receber-webhook-checkout.
+   ⚠️ Confirmar que serve: o segredo de um webhook criado pela API (com o app)
+   pode ser DIFERENTE do de um webhook criado no admin da loja. Se a assinatura
+   falhar com 401 mesmo com o corpo certo, é isto.
+4. Cadastrar os três webhooks apontando para
+   https://kounqtdoioootxqegkij.supabase.co/functions/v1/receber-webhook-abandono :
+     checkouts/create, checkouts/update, orders/create
+   (checkouts/* só pela API/app; no admin da loja só aparecem os de pedido.)
+5. Dar a permissão `abandono-carrinho` a quem for ver a tela.
+
+Teste ao vivo: abra o checkout na loja, preencha o e-mail e saia. A linha deve
+aparecer em AGUARDANDO e, 10 minutos depois, em FILA DE ENVIO.

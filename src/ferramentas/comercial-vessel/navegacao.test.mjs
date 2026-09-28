@@ -34,6 +34,7 @@ const TELAS = [
   'src/ferramentas/comercial-vessel/tela-de-private-edit.vue',
   'src/ferramentas/comercial-vessel/tela-de-stylist-circle.vue',
   'src/ferramentas/funil-carrinho/tela-de-funil-carrinho.vue',
+  'src/ferramentas/abandono-carrinho/tela-de-abandono-carrinho.vue',
   'src/ferramentas/comercial-vessel/tela-de-material-grafico.vue',
 ]
 

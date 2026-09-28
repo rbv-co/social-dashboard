@@ -228,7 +228,10 @@ test('toda tela do Comercial Vessel tem chave que a trava do banco reconhece', (
     '2026-09-24-permissoes-das-ferramentas-do-comercial-vessel.sql'), 'utf8')
   assert.match(sql, /function public\.is_vessel_atendimentos\(\)[\s\S]*'atendimentos\.'/)
   assert.match(sql, /function public\.is_vessel_atendimentos_editar\(\)[\s\S]*'atendimentos\.'/)
-  const daFamilia = FERRAMENTAS.filter((f) => f.grupo === 'atendimentos' && f.key !== 'carrinho')
+  // Fora da trava 'atendimentos.*' de propósito: moram no menu do Comercial Vessel, mas
+  // a RLS das tabelas delas lê a chave PRÓPRIA em features[] ('carrinho', 'abandono-carrinho').
+  const COM_CHAVE_PROPRIA = ['carrinho', 'abandono-carrinho']
+  const daFamilia = FERRAMENTAS.filter((f) => f.grupo === 'atendimentos' && !COM_CHAVE_PROPRIA.includes(f.key))
   assert.ok(daFamilia.length >= 6)
   for (const f of daFamilia) {
     assert.ok(f.key === 'atendimentos' || f.key.startsWith('atendimentos.'), `${f.key} não tem o prefixo da trava`)

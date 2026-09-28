@@ -58,6 +58,7 @@ const rotasSemMeta = [
   // direto pelo link da notificação, sem passar pela lista.
   { path: '/conteudo/peca/:id', name: 'conteudo-peca', component: () => import('./ferramentas/conteudo/tela-de-peca.vue'), props: true },
   { path: '/funil-carrinho', name: 'funil-carrinho', component: () => import('./ferramentas/funil-carrinho/tela-de-funil-carrinho.vue') },
+  { path: '/abandono-carrinho', name: 'abandono-carrinho', component: () => import('./ferramentas/abandono-carrinho/tela-de-abandono-carrinho.vue') },
   // Catch-all — precisa ser a ÚLTIMA rota. Sem ela, uma URL/bookmark que não
   // existe mais dá tela branca (o vercel.json reescreve tudo pra index.html,
   // mas o vue-router não acha rota nenhuma pra montar).
