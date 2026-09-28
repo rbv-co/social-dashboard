@@ -21,7 +21,10 @@ placar (PR #270) contava pela TURMA — as duas telas se contradiziam.
 4. Stylist em dois eventos: os Private Edits dela contam **no evento em que
    ela esteve presente pela 1ª vez** — nada conta duas vezes.
 5. Caminho A: a edição É o evento (não uma camada de rodada + eventos).
-6. Antes de produção, a **demo** (vessel-demonstracao.vercel.app) é publicada
+6. **Indisponível na data** (pedido do dono, 28/09): "quando movo ela pra
+   saída tem a justificativa de indisponível na data, e quando abrir outra
+   turma/edição ela já volta."
+7. Antes de produção, a **demo** (vessel-demonstracao.vercel.app) é publicada
    com o fluxo novo e o dono aprova.
 
 ## Parte 1 — o que é a edição, como se entra e avança
@@ -55,6 +58,23 @@ placar (PR #270) contava pela TURMA — as duas telas se contradiziam.
   veio. Colunas ficam (sem uso) para não quebrar leitura antiga; a função de
   sincronizar deixa de mexer em turma.
 
+### Indisponível na data — sai e volta na próxima edição
+
+- `vessel_stylist_motivos_de_saida` ganha a coluna
+  `volta_na_proxima_edicao boolean not null default false` e o motivo novo
+  **"Indisponível na data"** (na saída Desclassificado) com ela `true`.
+- Mover para a saída com um motivo `volta_na_proxima_edicao` marca, na linha
+  dela na edição ABERTA da praça, `indisponivel_em` (timestamptz). Sem linha
+  em edição aberta: nada é marcado, mas ela volta do mesmo jeito (abaixo).
+- **Voltar**: quando `vessel_edicao_abrir` abre uma edição de uma praça, toda
+  stylist ativa dessa praça que está numa saída com o ÚLTIMO motivo
+  `volta_na_proxima_edicao` é movida para a etapa **Convidado** (pelo mesmo
+  movimento de etapa, registrado no histórico com a nota "Voltou: indisponível
+  na Edição N") e ganha a linha na turma nova com `convidada_em` = agora.
+  (Suposição anotada: volta em Convidado; se o dono preferir Conversa, troca-se
+  a etapa de destino, nada mais.)
+- Ficha: "Voltou: indisponível na Edição 1 · Campinas".
+
 ## Parte 2 — placar e atribuição
 
 - **Evento de origem da stylist** = a edição com o MENOR `presente_em` dela
@@ -73,6 +93,8 @@ placar (PR #270) contava pela TURMA — as duas telas se contradiziam.
   (verde se bateu, âmbar se não; "—" se presentes = 0, nunca 0%).
 - **Clientes convidadas** (bloco `conv` de hoje): os atendimentos dos Private
   Edits que pertencem a esta edição (stylist com origem nesta edição).
+- **Indisponíveis na data**: contadas à parte ("indisponíveis na data: N");
+  seguem dentro de "convidadas", fora de presentes, e não pesam na meta.
 - **"Sem evento"**: Private Edit de stylist sem nenhum `presente_em`. Conta na
   ficha e nos números gerais do Stylist Circle; não entra em placar de edição.
 - Receita continua fora (nenhuma venda ligada a pessoa).
