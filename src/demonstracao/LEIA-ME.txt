@@ -5,7 +5,17 @@ O que é: as telas de verdade do Comercial Vessel rodando com um "banco de
 mentira" dentro do navegador, num celular (ou notebook) desenhado com o roteiro
 de passos ao lado. Nada sai para o banco de verdade; recarregar volta ao começo.
 
-O QUE FUNCIONA NA DEMONSTRAÇÃO (desde 23/09/2026 — todas as do menu):
+⚠️ 25/09/2026 (Task 12) — O PRIVATE EDIT SAIU DA DEMONSTRAÇÃO. O dono contou
+que são TRÊS soluções distintas e pediu para apresentá-las uma de cada vez:
+"primeiro um painel só do Stylist Circle, depois um do Private Edition,
+depois o panorama". Esta demonstração é a da PRIMEIRA. O Private Edit não
+está quebrado nem foi removido do sistema — só saiu do PERFIL DE MENTIRA
+desta demo (`instalar-banco-de-mentira.js`), então o cartão some do menu e o
+endereço direto (#/private-edit) cai no Início, sem uma linha mexida na
+Central de verdade. Ele volta a aparecer aqui quando for a vez dele (é só
+tirar a exclusão de `DA_FAMILIA`, no mesmo arquivo).
+
+O QUE FUNCIONA NA DEMONSTRAÇÃO (desde 23/09/2026 — o resto do menu):
   · Private Appointment — a agenda de visitas com exemplos: quem pediu
     horário, quem confirmou, quem veio, quem faltou, quem remarcou e cancelou,
     e o "comprou" de quem veio. Os botões Veio / Não veio / Remarcou /
@@ -14,7 +24,22 @@ O QUE FUNCIONA NA DEMONSTRAÇÃO (desde 23/09/2026 — todas as do menu):
     venda, uma aberta, uma futura e uma arquivada). Criar sessão, escolher a
     loja, encerrar, reabrir, editar, arquivar, apagar e baixar o QR funcionam.
     (Era aqui a tela branca: ao escolher a loja a tela sumia.)
-  · Private Edit e Stylist Circle — como antes, com o roteiro de 11 passos.
+  · Stylist Circle — com o roteiro de 5 passos (25/09/2026, Task 12): a
+    jornada de uma parceira nova até ser ATIVADA — cadastrar (entra em
+    "Stylist levantado") → conversar (registrar contato) → validar → mover
+    para "Conversa" → ativar. Fora do roteiro, vale abrir Praças e Edições
+    (25/09/2026, Task 9): o cenário já tem Limeira com a Edição 1 aberta (e a
+    pendência de "loja a definir"), Campinas com a dela, e a "Limeira /
+    Piracicaba" sem praça — é para explorar livre, não passo marcado do
+    roteiro (o banco de mentira ainda não avisa esses gestos).
+    ⚠️ 25/09/2026 (Task 13, pedido direto do dono) — O FUNIL DO QUADRO
+    TROCOU: o de hoje (Identificado → Classificação → Prospectado →
+    Convidado → Confirmou Ida → Esteve Presente) virou "Stylist levantado →
+    Validado → Conversa → Confirmado → Presença" (as duas saídas, Ativada e
+    Desclassificado, continuam as mesmas; "Conversa" é a etapa que conta como
+    prospectada agora). É SÓ NESTA DEMONSTRAÇÃO — o funil de verdade é
+    cadastro em `vessel_stylist_etapas`, o dono muda pela tela "Etapas do
+    funil", sem código; nada disto mexeu em migration nem em aplicador.
   · Material Gráfico — os QR das três ações, com busca, "mostrar encerrados"
     e os botões de baixar PNG/SVG e copiar endereço.
   · Appointment Card — continua abrindo o site da Vessel noutra aba (é uma

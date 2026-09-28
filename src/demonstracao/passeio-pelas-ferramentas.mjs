@@ -97,6 +97,30 @@ async function clicar(alvo, rotulo) {
 }
 const botao = (nome, dentro = pagina) => dentro.getByRole('button', { name: nome })
 
+/** Arrasta um cartão até uma coluna do quadro (drag-and-drop HTML5 nativo).
+ * ⚠️ `locator.dragTo()` do Playwright não solta o cartão aqui: o Chrome de
+ * canal (`channel: 'chrome'`) não completa a sequência de eventos nativa que
+ * o componente espera (`dragstart` → `dragenter`/`dragover` → `drop`), e o
+ * cartão fica onde estava, sem erro nenhum — silencioso. Confirmado com um
+ * script à parte: o MESMO drag, disparando os `DragEvent` na mão com um
+ * `DataTransfer`, move o cartão igual ao gesto de verdade na tela. */
+async function arrastar(origemLoc, destinoLoc, rotulo) {
+  const origem = await origemLoc.elementHandle()
+  const destino = await destinoLoc.elementHandle()
+  if (!origem || !destino) { falhar(onde, `arrastar: não achei origem ou destino (${rotulo})`); return }
+  await pagina.evaluate(([o, d]) => {
+    const dt = new DataTransfer()
+    const disparar = (el, tipo) => el.dispatchEvent(new DragEvent(tipo, { bubbles: true, cancelable: true, dataTransfer: dt }))
+    disparar(o, 'dragstart')
+    disparar(d, 'dragenter')
+    disparar(d, 'dragover')
+    disparar(d, 'drop')
+    disparar(o, 'dragend')
+  }, [origem, destino])
+  await esperar()
+  await conferirTela()
+}
+
 /** Passa por TODAS as opções de TODO <select> visível e volta à primeira. */
 async function mexerEmTodosOsSelects() {
   const selects = pagina.locator('select:visible')
@@ -129,9 +153,16 @@ await pagina.goto(CENTRAL)
 await pagina.waitForSelector('.cvmenu-card')
 await esperar(600)
 const menu = await conferirTela()
-for (const t of ['Private Appointment', 'Beauty Sessions', 'Private Edit', 'Stylist Circle', 'Material Gráfico', 'Appointment Card']) {
+for (const t of ['Private Appointment', 'Beauty Sessions', 'Stylist Circle', 'Material Gráfico', 'Appointment Card']) {
   if (!menu.includes(t)) falhar(onde, `o menu não mostra "${t}"`)
 }
+// ⚠️ 25/09/2026 (Task 12): o Private Edit saiu da demo (é a segunda das três
+// soluções; a demo mostra só a primeira, o Stylist Circle) — tirado do perfil
+// de mentira, não do catálogo de verdade. Confere as DUAS pontas: sem cartão
+// no menu, e a rota fechada (a guarda manda para o Início) se alguém tentar
+// pelo endereço direto.
+if (menu.includes('Private Edit')) falhar(onde, 'o Private Edit ainda aparece no menu — devia ter saído da demo')
+if (await pagina.locator('.cvmenu-card', { hasText: 'Private Edit' }).count()) falhar(onde, 'ainda existe um cartão "Private Edit" no menu')
 passo('Appointment Card (abre o site noutra aba, a demonstração continua)')
 {
   const [aba] = await Promise.all([
@@ -258,34 +289,58 @@ passo('Material Gráfico')
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-passo('Private Edit')
+// ⚠️ 25/09/2026 (Task 12): o Private Edit não abre mais nesta demo — sem a
+// permissão, a guarda de rota (`podeEntrar`) manda para o Início. Confere que
+// é exatamente isso que acontece, em vez de supor.
+passo('Private Edit: a rota está fechada (sem a permissão, some no Início)')
 {
-  const t = await abrirPeloMenu('Private Edit')
-  if (!/Marina Castro \(exemplo\)/.test(t)) falhar(onde, 'os encontros de exemplo não apareceram')
-  await mexerEmTodosOsSelects()
-  // ⚠️ 25/09/2026: o Private Edit abre na AGENDA (pedido do dono) — a busca é da lista.
-  if (!/Agenda das lojas/i.test(await conferirTela())) falhar(onde, 'o Private Edit não abriu na Agenda')
-  await clicar(pagina.getByRole('tab', { name: 'Lista' }), 'aba Lista')
-  await esperar()
-  await pagina.locator('input[type="search"]').first().fill('CPS'); await esperar(); await conferirTela()
-  await pagina.locator('input[type="search"]').first().fill(''); await esperar()
+  await pagina.goto(`${CENTRAL}#/private-edit`)
+  await esperar(600)
+  const t = await conferirTela()
+  if (/Marina Castro \(exemplo\)|Agenda das lojas/i.test(t)) falhar(onde, 'o endereço direto ainda abriu o Private Edit')
+  if (!/Inteligência RBV/i.test(t)) falhar(onde, 'fechar o Private Edit não caiu no Início')
 }
 
 // ════════════════════════════════════════════════════════════════════════════
 passo('Stylist Circle')
 {
+  // ⚠️ 25/09/2026: "Paula Reis" e "Bianca Serra" saíram do cenário no
+  // commit 87c1776 (outra tarefa — o cenário voltou a ser exatamente as 63
+  // stylists reais). Os alvos abaixo trocaram; o que cada bloco PROVA
+  // continua o mesmo (ver o relatório da task 12).
   const t = await abrirPeloMenu('Stylist Circle')
-  if (!/Paula Reis \(exemplo\)/.test(t)) falhar(onde, 'as parceiras de exemplo não apareceram')
+  if (!/Marina Castro \(exemplo\)/.test(t)) falhar(onde, 'as parceiras de exemplo não apareceram')
   await mexerEmTodosOsSelects()
-  await clicar(pagina.getByText('Paula Reis (exemplo)').first(), 'abrir a ficha da Paula')
+  await clicar(pagina.getByText('Marina Castro (exemplo)').first(), 'abrir a ficha da Marina')
   await esperar(500)
   const fechar = pagina.getByRole('button', { name: /✕|Fechar/ })
   if (await fechar.count()) await clicar(fechar.first(), 'fechar a ficha')
+  // ⚠️ 25/09/2026 (Task 7/9/11, outra tarefa): o placar agora é POR EDIÇÃO —
+  // "Escolha uma praça na barra acima para ver o placar" sem isso não mostra
+  // NADA (nem "Comparecimento" nem a meta). Escolher a edição de Campinas
+  // pelo atalho da lista ("Campinas · iguatemi — Edição 1 · N stylists")
+  // antes de conferir o placar.
+  await clicar(pagina.locator('.pd-abertas-linha', { hasText: 'Campinas' }), 'escolher a Edição 1 de Campinas no placar')
+  await esperar(500)
   // 24/09: o scorecard, a nota de qualificação e as metas.
   const tela = await conferirTela()
   if (!/Comparecimento/.test(tela) || !/meta: 70% ou mais/.test(tela)) falhar(onde, 'o placar não mostra a meta do comparecimento')
-  if (!/faixa de teste: 1 a 3/.test(tela)) falhar(onde, 'o placar não mostra a faixa de vendas por encontro')
+  // ⚠️ 25/09/2026 (Task 7, outra tarefa): era "faixa de teste: 1 a 3" (a meta
+  // de vendas por encontro) — esse número saiu do placar por edição de
+  // propósito: `vessel_placar_da_edicao` não traz receita/vendas nenhuma
+  // ("decisão do dono": o panorama de compras fica congelado numa edição
+  // encerrada, e mostrar zero mentiria). O placar hoje EXPLICA isso, em vez
+  // de mostrar a meta — é essa explicação que a conferência prova agora.
+  if (!/Sem receita nenhuma aqui/.test(tela)) falhar(onde, 'o placar não explica a ausência de receita')
   if (!/Sem nota/i.test(tela) || !/Faixa A/i.test(tela)) falhar(onde, 'o quadro não mostra os selos da faixa')
+  // ⚠️ Volta para "Todas as praças": o resto do bloco (Luiza, Gislaine e
+  // Letícia são de Limeira; Carol é de Piracicaba) precisa do quadro
+  // INTEIRO — a barra também recorta o quadro, não só o placar (Task 7).
+  // O rótulo "Praça" também existe no bloco "Cadastrar parceira", mais
+  // abaixo — por isso o seletor pela barra (`.pe-barra`, o primeiro <select>
+  // dela é sempre a Praça, o segundo a Edição), não por rótulo.
+  await pagina.locator('.pe-barra select').first().selectOption('')
+  await esperar(500)
   await clicar(pagina.locator('.cv-quadro-nome', { hasText: 'Marina' }).first(), 'abrir a ficha da Marina')
   await pagina.waitForSelector('.cv-scorecard .cv-numero', { timeout: 5000 }).catch(() => falhar(onde, 'o scorecard não abriu'))
   if (!/Professional Fee estimado/.test(await conferirTela())) falhar(onde, 'o scorecard não mostra o Professional Fee')
@@ -302,12 +357,16 @@ passo('Stylist Circle')
   // "Etapas do funil" (adicionar, subir, excluir com destino), e a ficha avança
   // de etapa e mostra o histórico de etapas.
   const noQuadro = await pagina.locator('.cv-quadro-titulo').allInnerTexts()
-  if (!/^Identificado · /i.test(noQuadro[0] || '')) falhar(onde, `a primeira coluna do quadro não é Identificado: ${noQuadro[0]}`)
+  if (!/^Stylist levantado · /i.test(noQuadro[0] || '')) falhar(onde, `a primeira coluna do quadro não é Stylist levantado: ${noQuadro[0]}`)
   // 24/09/2026: cada saída é a sua coluna, no fim (alvo do arrastar).
   if (!/^Ativada · /i.test(noQuadro.at(-2) || '') || !/^Desclassificado · /i.test(noQuadro.at(-1) || '')) {
     falhar(onde, `as saídas não são as duas últimas colunas (Ativada, Desclassificado): ${noQuadro.slice(-2)}`)
   }
-  if (!/Motivo: Não conecta com a marca/.test(await pagina.locator('.cv-quadro-cartao', { hasText: 'Bianca Serra' }).innerText().catch(() => ''))) {
+  // ⚠️ 25/09/2026: era a Bianca Serra (saiu do cenário, 87c1776). A Letícia
+  // Farias (Limeira) já nasce Desclassificada com motivo no cenário de
+  // praça-e-edição — prova a mesma coisa: o cartão de quem SAIU de propósito
+  // (não na sessão) mostra o motivo.
+  if (!/Motivo: Fora da praça \(logística\)/.test(await pagina.locator('.cv-quadro-cartao', { hasText: 'Letícia Farias' }).innerText().catch(() => ''))) {
     falhar(onde, 'o cartão da desclassificada não mostra o motivo')
   }
   // O contato fácil no cartão: só confere o endereço (o toque abriria uma aba de fora).
@@ -330,18 +389,18 @@ passo('Stylist Circle')
   await clicar(modal.getByRole('button', { name: /Adicionar etapa/ }), 'adicionar a etapa Qualificada')
   if (!/Qualificada/.test(await modal.innerText())) falhar(onde, 'a etapa nova não apareceu na lista')
   await clicar(modal.getByRole('button', { name: 'Subir Qualificada' }), 'subir a Qualificada')
-  const classificacao = modal.locator('.cv-etapa', { hasText: 'Classificação' })
-  await clicar(classificacao.getByRole('button', { name: /Excluir…/ }), 'excluir Classificação…')
-  if (!/escolha para onde elas vão/.test(await classificacao.innerText())) falhar(onde, 'excluir com gente não pediu o destino')
-  await classificacao.locator('select').selectOption({ label: 'Identificado' })
-  await clicar(classificacao.getByRole('button', { name: /Excluir a etapa/ }), 'excluir movendo para Identificado')
-  if (await modal.locator('.cv-etapa', { hasText: 'Classificação' }).count()) falhar(onde, 'a etapa excluída continuou na lista')
+  const validado = modal.locator('.cv-etapa', { hasText: 'Validado' })
+  await clicar(validado.getByRole('button', { name: /Excluir…/ }), 'excluir Validado…')
+  if (!/escolha para onde elas vão/.test(await validado.innerText())) falhar(onde, 'excluir com gente não pediu o destino')
+  await validado.locator('select').selectOption({ label: 'Stylist levantado' })
+  await clicar(validado.getByRole('button', { name: /Excluir a etapa/ }), 'excluir movendo para Stylist levantado')
+  if (await modal.locator('.cv-etapa', { hasText: 'Validado' }).count()) falhar(onde, 'a etapa excluída continuou na lista')
   await clicar(modal.locator('.cv-modal-fechar'), 'fechar Etapas do funil')
   if (!(await pagina.locator('.cv-quadro-titulo', { hasText: 'Qualificada' }).count())) falhar(onde, 'a etapa nova não virou coluna do quadro')
   await clicar(pagina.locator('.cv-quadro-nome', { hasText: 'Luiza' }).first(), 'abrir a ficha da Luiza')
   await clicar(pagina.locator('.cv-ficha-etapa .btn-principal'), 'Avançar para a próxima etapa')
   await esperar(400)
-  if (!/Identificado → Qualificada/.test(await pagina.locator('.cv-modal-corpo').innerText())) falhar(onde, 'avançou e o histórico de etapas não mostrou')
+  if (!/Stylist levantado → Qualificada/.test(await pagina.locator('.cv-modal-corpo').innerText())) falhar(onde, 'avançou e o histórico de etapas não mostrou')
   await clicar(pagina.locator('.cv-modal-fechar').first(), 'fechar a ficha da Luiza')
 
   // ── 24/09/2026: ARRASTAR — para a Ativada (entra na base do Private Edit) e
@@ -349,19 +408,24 @@ passo('Stylist Circle')
   const cartao = (nome) => pagina.locator('.cv-quadro-cartao', { hasText: nome }).first()
   const coluna = (etapa) => pagina.locator(`.cv-quadro-coluna[data-etapa="${etapa}"]`)
   const colunaDe = async (nome) => cartao(nome).evaluate((el) => el.closest('.cv-quadro-coluna')?.dataset.etapa)
-  await cartao('Luiza').dragTo(coluna('Ativada'))
+  await arrastar(cartao('Luiza'), coluna('Ativada'), 'Luiza → Ativada')
   await esperar(600); await conferirTela()
   if ((await colunaDe('Luiza')) !== 'Ativada') falhar(onde, `arrastar a Luiza para a Ativada não moveu: ${await colunaDe('Luiza')}`)
   if (!/Luiza Amaral \(exemplo\) ativada — já aparece em Marcar um encontro do Private Edit/.test(await conferirTela())) {
     falhar(onde, 'soltar na Ativada não deu o aviso de que ela entrou na base do Private Edit')
   }
-  await cartao('Paula').dragTo(coluna('Desclassificado'))
+  // ⚠️ 25/09/2026: era a Paula Reis (saiu do cenário, 87c1776). A Gislaine
+  // Prado (Limeira) prova a mesma coisa — está hoje em "Confirmado" (uma
+  // etapa de funil comum, não uma saída — o funil novo da Task 13 absorveu
+  // o antigo "Convidado" dela em "Confirmado"), então o cancelar-e-confirmar
+  // do motivo se testa do mesmo jeito.
+  await arrastar(cartao('Gislaine'), coluna('Desclassificado'), 'Gislaine → Desclassificado (1ª vez)')
   await esperar(400)
   const pop = pagina.locator('[role="dialog"][aria-label="Motivo: Desclassificado"]')
   if (!(await pop.count())) falhar(onde, 'soltar no Desclassificado não abriu a escolha do motivo')
   await clicar(pop.getByRole('button', { name: 'Cancelar' }).last(), 'cancelar o motivo')
-  if ((await colunaDe('Paula')) !== 'Convidado') falhar(onde, `cancelar o motivo moveu a Paula: ${await colunaDe('Paula')}`)
-  await cartao('Paula').dragTo(coluna('Desclassificado'))
+  if ((await colunaDe('Gislaine')) !== 'Confirmado') falhar(onde, `cancelar o motivo moveu a Gislaine: ${await colunaDe('Gislaine')}`)
+  await arrastar(cartao('Gislaine'), coluna('Desclassificado'), 'Gislaine → Desclassificado (2ª vez)')
   await esperar(400)
   await clicar(pop.getByRole('button', { name: 'Desclassificar' }), 'desclassificar sem motivo')
   if (!/Escolha o motivo/.test(await pop.innerText().catch(() => ''))) falhar(onde, 'desclassificar sem motivo passou calado')
@@ -371,8 +435,8 @@ passo('Stylist Circle')
   await clicar(pop.getByRole('radio', { name: 'Desinteresse' }), 'motivo Desinteresse')
   await clicar(pop.getByRole('button', { name: 'Desclassificar' }), 'desclassificar com motivo')
   await esperar(500)
-  if ((await colunaDe('Paula')) !== 'Desclassificado') falhar(onde, `a Paula não foi para o Desclassificado: ${await colunaDe('Paula')}`)
-  if (!/Motivo: Desinteresse/.test(await cartao('Paula').innerText())) falhar(onde, 'o cartão da Paula não mostra o motivo')
+  if ((await colunaDe('Gislaine')) !== 'Desclassificado') falhar(onde, `a Gislaine não foi para o Desclassificado: ${await colunaDe('Gislaine')}`)
+  if (!/Motivo: Desinteresse/.test(await cartao('Gislaine').innerText())) falhar(onde, 'o cartão da Gislaine não mostra o motivo')
   const saidas = await pagina.locator('.cv-grupo-saidas').innerText().catch(() => '')
   if (!/Saídas por motivo/i.test(saidas) || !/Desinteresse\s*1/.test(saidas)) falhar(onde, `o bloco "Saídas por motivo" não contou: ${saidas.slice(0, 200)}`)
   // A ficha diz se ela pode ter Private Edit.
@@ -382,89 +446,6 @@ passo('Stylist Circle')
   await clicar(pagina.locator('.cv-quadro-nome', { hasText: 'Renata' }).first(), 'abrir a ficha da Renata')
   if (!/Private Edit liberado ao chegar em: Ativada/.test(await pagina.locator('.cv-ficha-etapa').innerText())) falhar(onde, 'a ficha da Renata não diz onde o Private Edit libera')
   await clicar(pagina.locator('.cv-modal-fechar').first(), 'fechar a ficha da Renata')
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-passo('Private Edit: quem foi para a Ativada aparece na hora; as outras não')
-{
-  await abrirPeloMenu('Private Edit')
-  const opcoes = await pagina.locator('#pe-stylist option').allInnerTexts()
-  if (!opcoes.some((t) => /Luiza Amaral/.test(t))) falhar(onde, `a Luiza (arrastada para a Ativada) não está em "Marcar um encontro": ${opcoes}`)
-  if (opcoes.some((t) => /Renata Lima|Paula Reis/.test(t))) falhar(onde, `parceira fora da Ativada no seletor: ${opcoes}`)
-  if (!/Só aparecem as parceiras em etapas que liberam Private Edit \(hoje: Ativada\)/.test(await conferirTela())) falhar(onde, 'a nota da base do Private Edit não apareceu')
-  const luiza = await pagina.locator('#pe-stylist option', { hasText: 'Luiza Amaral' }).getAttribute('value')
-  await pagina.selectOption('#pe-stylist', luiza)
-  const d = new Date(); d.setDate(d.getDate() + 3)
-  await pagina.fill('#pe-quando', `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}T19:00`)
-  await pagina.selectOption('#pe-praca', 'CPS')
-  await clicar(pagina.getByRole('button', { name: 'Criar encontro' }), 'criar o encontro com a Luiza')
-  if (!/criado\. O convite está na lista abaixo/.test(await conferirTela())) falhar(onde, 'o encontro com a Luiza (na Ativada) não foi criado')
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-// 25/09/2026: A AGENDA DO PRIVATE EDIT — o mês, o par que se sobrepõe, o
-// quadrinho de leitura, o clique que abre o encontro e o aviso de sobreposto.
-passo('Private Edit: a agenda, o par sobreposto e o aviso antes de gravar')
-{
-  await abrirPeloMenu('Private Edit')
-  await clicar(pagina.getByRole('tab', { name: 'Agenda' }), 'aba Agenda')
-  await pagina.waitForSelector('.ag-grade .ag-chip', { timeout: 5000 }).catch(() => falhar(onde, 'a grade da agenda não mostrou nenhum compromisso'))
-  // O par de exemplo é daqui a 6 dias: pode cair no mês seguinte.
-  if (!(await pagina.locator('.ag-grade .ag-chip-sobrepoe').count())) await clicar(pagina.getByRole('button', { name: 'Próximo mês' }), 'próximo mês')
-  if ((await pagina.locator('.ag-grade .ag-chip-sobrepoe').count()) < 2) falhar(onde, 'a agenda não marcou o par que se sobrepõe no Iguatemi')
-  if (!(await pagina.locator('.ag-grade .ag-dia-sobrepoe .ag-selo-sobrepoe').count())) falhar(onde, 'o dia do par não ganhou o selo "sobrepõe"')
-  if (!/Private Edit\(s\) se sobrepõem/.test(await conferirTela())) falhar(onde, 'o aviso do mês não contou os sobrepostos')
-  if (!(await pagina.locator('.ag-grade .ag-chip.ag-bs').count())) falhar(onde, 'a Beauty Session do mesmo dia não apareceu na agenda')
-  await mexerEmTodosOsSelects()
-  await pagina.check('#ag-so-pe'); await esperar()
-  if (await pagina.locator('.ag-grade .ag-chip.ag-bs').count()) falhar(onde, '"Só Private Edits" deixou a Beauty Session na grade')
-  await pagina.uncheck('#ag-so-pe'); await esperar(); await conferirTela()
-  await clicar(pagina.locator('.ag-grade .ag-chip.ag-bs').first(), 'abrir a Beauty Session')
-  if (!/Só leitura aqui/.test(await pagina.locator('.ag-quadrinho').innerText().catch(() => ''))) falhar(onde, 'o quadrinho de leitura da sessão não abriu')
-  await clicar(pagina.locator('.ag-quadrinho').getByRole('button', { name: 'Fechar' }), 'fechar o quadrinho')
-  const pa = pagina.locator('.ag-grade .ag-chip.ag-pa')
-  if (await pa.count()) {
-    await clicar(pa.first(), 'abrir um Private Appointment')
-    // As clientes de exemplo do Private Appointment: nenhuma pode aparecer aqui.
-    if (/Laura|Mariana|Nathalia|Olívia|Priscila|Raquel|Sofia|Tatiana|Vanessa|Yasmin|Clara/.test(await pagina.locator('.ag-quadrinho').innerText().catch(() => ''))) {
-      falhar(onde, 'o quadrinho da visita mostrou o nome da cliente')
-    }
-    await pagina.keyboard.press('Escape'); await esperar()
-    if (await pagina.locator('.ag-quadrinho').count()) falhar(onde, 'Esc não fechou o quadrinho')
-  }
-  const codigoDoPar = (await pagina.locator('.ag-grade .ag-chip-sobrepoe').first().getAttribute('title')) || ''
-  await clicar(pagina.locator('.ag-grade .ag-chip-sobrepoe').first(), 'abrir o encontro sobreposto pela agenda')
-  if (!(await pagina.locator('.id-cartao[id^="pe-cartao-"]').count()) || !(await pagina.locator('.id-caixa-form').count())) {
-    falhar(onde, `clicar no encontro da agenda não abriu o cartão com a edição (${codigoDoPar})`)
-  }
-
-  // O aviso: marcar a Marina às 21h do mesmo dia, no Iguatemi (cruza os dois).
-  const d = new Date(); d.setDate(d.getDate() + 6)
-  await pagina.selectOption('#pe-stylist', 'STY-0001')
-  await pagina.fill('#pe-quando', `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}T21:00`)
-  await pagina.selectOption('#pe-praca', 'CPS')
-  await pagina.selectOption('#pe-loja', 'iguatemi')
-  await clicar(pagina.getByRole('button', { name: 'Criar encontro' }), 'criar um encontro que se sobrepõe')
-  const dialogo = pagina.getByRole('alertdialog')
-  const texto = await dialogo.innerText().catch(() => '')
-  if (!/Horário já ocupado/.test(texto) || !/Marcar mesmo assim\?/.test(texto)) falhar(onde, 'o aviso de sobreposto não abriu')
-  if ((texto.match(/PE-\d{8}-CPS-0\d/g) || []).length < 2) falhar(onde, `o aviso não disse com quais encontros cruza: ${texto.slice(0, 200)}`)
-  if (!/Beauty Session/.test(texto)) falhar(onde, 'o aviso não trouxe a nota da Beauty Session do mesmo dia')
-  await clicar(dialogo.getByRole('button', { name: 'Voltar e mudar o horário' }), 'voltar sem gravar')
-  if (await pagina.getByRole('alertdialog').count()) falhar(onde, 'voltar não fechou o aviso')
-  if (/criado\. O convite está na lista abaixo/.test(await conferirTela())) falhar(onde, 'voltar do aviso gravou o encontro')
-  await clicar(pagina.getByRole('button', { name: 'Criar encontro' }), 'criar de novo')
-  await clicar(pagina.getByRole('alertdialog').getByRole('button', { name: 'Marcar mesmo assim' }), 'marcar mesmo assim')
-  if (!/criado\. O convite está na lista abaixo/.test(await conferirTela())) falhar(onde, 'confirmar o aviso não criou o encontro')
-
-  // No celular: a lista dia a dia, sem rolar de lado.
-  await pagina.setViewportSize({ width: 375, height: 812 })
-  await clicar(pagina.getByRole('tab', { name: 'Agenda' }), 'aba Agenda no celular')
-  await pagina.waitForSelector('.ag-lista .ag-chip', { timeout: 5000 }).catch(() => falhar(onde, 'a lista do celular não mostrou nada'))
-  if (await pagina.locator('.ag-grade').isVisible()) falhar(onde, 'no celular a grade de 7 colunas continuou na tela')
-  const larga = await pagina.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
-  if (larga > 0) falhar(onde, `a agenda no celular rola de lado (${larga}px)`)
-  await pagina.setViewportSize({ width: 1440, height: 900 })
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -488,7 +469,7 @@ passo('Página do roteiro: Celular | Notebook')
   await roteiro.goto(ROTEIRO)
   await roteiro.waitForTimeout(2500)
   const passos = await roteiro.locator('#passos > li').count()
-  if (passos < 11) falhar(onde, `o roteiro mostrou ${passos} passos (eram 11)`)
+  if (passos < 5) falhar(onde, `o roteiro mostrou ${passos} passos (eram 5)`)
   for (const modo of ['notebook', 'celular']) {
     await roteiro.click(`#modo-${modo}`)
     await roteiro.waitForTimeout(600)
@@ -505,7 +486,7 @@ if (FOTOS) {
   passo(`Fotos em ${FOTOS}`)
   const MODULOS = [
     ['menu', 'comercial-vessel'], ['private-appointment', 'atendimentos'], ['beauty-sessions', 'beauty-sessions'],
-    ['private-edit', 'private-edit'], ['stylist-circle', 'stylist-circle'], ['material-grafico', 'material-grafico'],
+    ['stylist-circle', 'stylist-circle'], ['material-grafico', 'material-grafico'],
   ]
   const roteiro = await contexto.newPage()
   vigiar(roteiro, 'roteiro')

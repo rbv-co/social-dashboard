@@ -455,8 +455,21 @@ todas zeradas — igual a antes de começar.
 
 ## Parte A — Só o dono resolve (clique, sem código)
 
-**Vazia desde 18/09/2026.** O último item daqui foi o A1 — está logo acima, com o
-motivo da saída.
+### A6 · A loja de destino de Limeira e de Piracicaba · *entrou em 25/09/2026*
+
+Praça agora é cadastro (`vessel_pracas`, ainda não aplicado em produção — ver o
+B15 e a entrega de 25/09), e cada uma tem uma loja de destino — que pode ser de
+outra cidade, é assim que se resolve "Piracicaba vai pra qual loja". As duas
+praças novas, **Limeira e Piracicaba**, nasceram com a loja **vazia de
+propósito**: ninguém sabia a resposta, e a tela mostra "loja a definir" em vez
+de inventar uma.
+
+**O que destrava:** você escolher a loja de cada uma, na tela de Praças
+(Comercial Vessel › Praças, um cartão por praça, campo "Editar" → "Loja de
+destino"). Um clique resolve — não precisa de código nem de migration nova.
+Enquanto não escolher, as duas continuam aparecendo como pendência na tela, à
+vista, e ninguém perde nada por isso — Limeira e Piracicaba já contam
+stylists e têm placar por edição normalmente, só a loja é que falta.
 
 ## Parte B — Precisa programar
 
@@ -510,6 +523,27 @@ do convite da cliente. Não há teto de tentativas.
 descobrir quem a chama (a página do check-in? o Appointment Card?) antes de
 fechar; se for uma página pública, trocar por uma porta que peça algo além do
 código e não aceite `p_teste` de fora. Relacionado ao B13.
+
+### B15 · O panorama "comprou / não comprou" está congelado · *entrou em 25/09/2026*
+
+O Breno pediu três painéis: Style Cycle, Private Edition e o panorama completo
+— "olhar se comprou, se não comprou". Os dois primeiros saíram nesta entrega
+(25/09). **O terceiro fica congelado, por decisão do dono**: enquanto isso
+valer, receita e "comprou" **saem** dos painéis 1 e 2 em vez de mostrar zero
+com cara de fracasso comercial.
+
+**Por que está assim:** o panorama de compra depende de saber QUEM comprou —
+e a venda hoje não está ligada a pessoa nenhuma. Medido em 25/09/2026, em
+produção: **481 `vessel_pedidos`, 0 ligados a uma pessoa** (`vessel_pessoas`
+ou `vessel_stylists`). Não é pouca venda, nem erro de conta: é que o pedido do
+Bling nunca ganhou o vínculo com quem comprou. Enquanto isso não existir,
+qualquer número de "comprou" nasce **mentindo com número certo** — a conta
+bateria, mas contaria a pessoa errada (ou nenhuma).
+
+**O que destrava:** o casamento **venda ↔ pessoa** — alguma regra (por
+telefone, por CPF, pelo canal, à mão) que ligue cada `vessel_pedido` a quem
+comprou. Só depois disso o painel 3 tem o que mostrar, e os painéis 1 e 2
+podem voltar a incluir receita sem inventar número.
 
 **Vazia desde 21/09/2026.** Os últimos itens daqui foram o **B12** (entrou e
 saiu no mesmo dia) e o **B9**. Também saíram nesta revisão o **B10** e o

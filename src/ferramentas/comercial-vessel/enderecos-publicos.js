@@ -102,8 +102,15 @@ export function dataHoraLegivel(iso) {
  * O que está errado num encontro novo, em frases da operação.
  * ⚠️ Espelha as conferências do banco. Quem barra de verdade é
  * `vessel_criar_private_edit` — isto é para a pessoa descobrir antes de enviar.
+ *
+ * ⚠️ 25/09/2026 (Task 8): A LISTA CRAVADA DE SIGLAS (`CPS`, `SAO`, `SBO`,
+ * `BSB`) SAIU DAQUI — ela barrava Limeira e Piracicaba mesmo depois de as duas
+ * entrarem no cadastro. `siglasValidas` é opcional: quando a tela manda a
+ * lista de hoje (as siglas ATIVAS de `vessel_pracas_listar`), a praça
+ * escolhida precisa estar nela; sem o parâmetro, esta função só confere que
+ * ALGUMA praça foi escolhida — quem barra de verdade continua sendo o banco.
  */
-export function problemasDoEncontro({ stylist, quando, praca, vagas } = {}) {
+export function problemasDoEncontro({ stylist, quando, praca, vagas } = {}, siglasValidas) {
   const problemas = []
   if (!stylist || !FORMATO_STYLIST.test(String(stylist).toUpperCase())) {
     problemas.push('Escolha a stylist anfitriã.')
@@ -113,7 +120,8 @@ export function problemasDoEncontro({ stylist, quando, praca, vagas } = {}) {
   } else if (new Date(quando).getTime() < Date.now() - 24 * 3600 * 1000) {
     problemas.push('Esta data já passou — o convite nasceria vencido.')
   }
-  if (!praca || !['CPS', 'SAO', 'SBO', 'BSB'].includes(String(praca).toUpperCase())) {
+  const pracaConhecida = !Array.isArray(siglasValidas) || siglasValidas.includes(String(praca || '').toUpperCase())
+  if (!praca || !pracaConhecida) {
     problemas.push('Escolha a praça.')
   }
   // ⚠️ T11: capacidade planejada de 7 a 10 (decisão do dono, 22/09/2026) — a

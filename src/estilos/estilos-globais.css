@@ -329,6 +329,10 @@
   /* COMERCIAL VESSEL: cada ferramenta com a cor do seu ícone no menu. O par
      do tema escuro já vem no token (ver --cor-stylist-circle no :root). */
   .tela-sty{ --modulo:var(--cor-stylist-circle); }
+  /* Praça e Edição (25/09/2026): recorte do cadastro do Stylist Circle —
+     mesma cor da família (nunca inventar tom novo pra um recorte). */
+  .tela-pracas{ --modulo:var(--cor-stylist-circle); }
+  .tela-edicoes{ --modulo:var(--cor-stylist-circle); }
   .tela-pe{ --modulo:var(--cor-private-edit); }
   .tela-atendimentos{ --modulo:var(--cor-private-appointment); }
   .tela-bs{ --modulo:var(--cor-beauty-sessions); }

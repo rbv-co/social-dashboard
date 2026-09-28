@@ -203,11 +203,13 @@ test('placar: a legenda da taxa sem base diz o que falta, e não "sem base ainda
 })
 
 test('FIAÇÃO: a taxa de ativação sai da sequência (taxaDoPasso) e a de show rate de legendaDaTaxa', () => {
-  const tela = readFileSync(new URL('./tela-de-stylist-circle.vue', import.meta.url), 'utf8')
+  // 25/09/2026 (Task 7): o placar (e a sequência) se mudaram para o
+  // componente próprio — ver `placar-do-stylist-circle.vue`.
+  const tela = readFileSync(new URL('./placar-do-stylist-circle.vue', import.meta.url), 'utf8')
   // 24/09/2026: a ativação é o 2º passo da sequência do placar, com a taxa da turma.
   assert.match(tela, /v-for="p in sequencia"/)
   assert.match(tela, /taxaDoPasso\(p\)/)
-  assert.match(tela, /sequenciaDoPlacar\(placar\.value\)/)
+  assert.match(tela, /sequenciaDoPlacar\(props\.placar\)/)
   assert.match(tela, /legendaDaTaxa\('showRate', taxas\.showRate\)/)
   assert.doesNotMatch(tela, /das confirmadas em encontros que aconteceram/)
 })
@@ -218,6 +220,77 @@ test('placar: os dois campos novos existem na função do banco', () => {
   assert.match(corpo, /'prospectadas_ja_ativadas'/)
   assert.match(corpo, /'confirmadas_em_realizados'/)
   assert.match(corpo, /'presentes_em_realizados', \(select count\(\*\)::int from conv\s+where status = 'realizado' and status_do_encontro = 'realizado'\)/)
+})
+
+// ── 25/09/2026 (Task 7): o placar passa a ser DA EDIÇÃO, sem receita ───────
+// A resposta de `vessel_placar_da_edicao` não traz nenhuma chave de receita
+// (decisão do dono: o panorama de compras está congelado, e mostrar zero
+// seria mentir). `taxasDoPlacar` continua sendo a MESMA função — o
+// scorecard-da-stylist.vue chama ela sobre `vessel_scorecard_da_stylist`, que
+// SEMPRE grava `receita` (mesmo 0) — mas sobre uma resposta que não tem a
+// CHAVE `receita` (ausente, não zero), as três razões de dinheiro não podem
+// fingir base.
+const PLACAR_DA_EDICAO_SEM_RECEITA = {
+  edicao: { id: 11, praca_id: 2, numero: 2, situacao: 'aberta' },
+  etapas: [],
+  prospectadas: 10, prospectadas_ja_ativadas: 4, ativadas: 4,
+  com_private_edit_agendado: 3, com_private_edit_realizado: 2, recorrentes_no_periodo: 1,
+  encontros_agendados: 5, encontros_realizados: 3, encontros_cancelados: 1,
+  convidadas: 10, confirmadas: 8, presentes: 6, confirmadas_em_realizados: 5, presentes_em_realizados: 4,
+}
+
+test('placar da edição: sem a CHAVE receita, ticket/receitaPorConvidada/receitaPorEncontro não viram 0 — não têm base', () => {
+  const t = taxasDoPlacar(PLACAR_DA_EDICAO_SEM_RECEITA)
+  assert.equal(t.ticket.temBase, false)
+  assert.equal(t.receitaPorConvidada.temBase, false)
+  assert.equal(t.receitaPorEncontro.temBase, false)
+  // ⚠️ SEM O GUARDA: `receitaPorConvidada`/`receitaPorEncontro` dariam R$ 0 de
+  // verdade — `presentes` e `encontros_realizados` JÁ vêm na resposta da
+  // edição (só `receita` que falta) —, e "R$ 0" é mentira, não silêncio
+  // (PADRAO-DA-CENTRAL.md, item 9).
+  assert.equal(t.receitaPorConvidada.valor, null)
+  assert.equal(t.receitaPorEncontro.valor, null)
+})
+
+test('placar da edição: as outras taxas da turma continuam de pé — não é um placar mudo', () => {
+  const t = taxasDoPlacar(PLACAR_DA_EDICAO_SEM_RECEITA)
+  assert.equal(t.ativacao.temBase, true)
+  assert.equal(t.realizacao.temBase, true)
+  assert.equal(t.showRate.temBase, true)
+})
+
+test('o scorecard da stylist continua recebendo ticket/receitaPorEncontro/receitaPorConvidada — a razão NÃO SAI de t11-regras.js', () => {
+  // `vessel_scorecard_da_stylist` SEMPRE grava a chave `receita` (mesmo 0) —
+  // por isso a razão tem base mesmo sem venda nenhuma na janela.
+  const t = taxasDoPlacar({ receita: 0, vendas: 0, presentes: 4, encontros_realizados: 2 })
+  assert.equal(t.ticket.temBase, false) // sem base por FALTA DE VENDA, não porque a chave sumiu
+  assert.equal(t.receitaPorConvidada.temBase, true)
+  assert.equal(t.receitaPorConvidada.valor, 0)
+  assert.equal(t.receitaPorEncontro.temBase, true)
+  assert.equal(t.receitaPorEncontro.valor, 0)
+})
+
+test('sequência do placar: a resposta DA EDIÇÃO (sem receita) continua com os cinco passos e as taxas da turma', () => {
+  const seq = sequenciaDoPlacar(PLACAR_DA_EDICAO_SEM_RECEITA)
+  assert.deepEqual(seq.map((p) => p.rotulo),
+    ['Prospectadas', 'Ativadas', 'Com Private Edit agendado', 'Com Private Edit realizado', 'Recorrentes'])
+  assert.deepEqual(seq.map((p) => p.valor), [10, 4, 3, 2, 1])
+  assert.deepEqual(seq.slice(1).map((p) => p.taxa.temBase), [true, true, true, true])
+})
+
+// ── Rodada 1 de conserto (MENOR 9): sem NENHUMA das duas fontes, a taxa da
+// turma não pode virar "0% (0 de N)" COM base — é a mesma "falha que vira
+// número" que a guarda da receita evita, e tem de usar o mesmo critério. ───
+test('placar: sem nenhuma das duas fontes do passo do meio, a taxa da turma fica sem base — nunca 0% fabricado', () => {
+  const t = taxasDoPlacar({ prospectadas: 5, prospectadas_ja_ativadas: 3 })
+  assert.equal(t.agendamento.temBase, false)
+  assert.equal(t.agendamento.valor, null)
+  assert.equal(t.realizacaoDaTurma.temBase, false)
+  assert.equal(t.recorrenciaDaTurma.temBase, false)
+  // com a chave (mesmo 0), a régua de sempre volta a valer.
+  const u = taxasDoPlacar({ prospectadas: 5, prospectadas_ja_ativadas: 3, com_private_edit_agendado: 0 })
+  assert.equal(u.agendamento.temBase, true)
+  assert.equal(u.agendamento.valor, 0)
 })
 
 // ── a fiação: o `.vue` usa as regras, não reescreve ─────────────────────────
@@ -232,8 +305,12 @@ test('FIAÇÃO: a etapa não se digita nem se corrige no formulário — é da f
 })
 
 test('FIAÇÃO: o placar vem do banco e as taxas de taxasDoPlacar', () => {
-  assert.match(TELA_STY, /vessel_placar_do_stylist_circle/)
-  assert.match(TELA_STY, /taxasDoPlacar\(/)
+  // 25/09/2026 (Task 7): a busca do placar virou `vessel_placar_da_edicao`,
+  // dentro de `placar-do-stylist-circle.vue` — a tela só decide a edição.
+  const placarDaEdicao = readFileSync(new URL('./placar-do-stylist-circle.vue', import.meta.url), 'utf8')
+  assert.match(placarDaEdicao, /vessel_placar_da_edicao/)
+  assert.match(placarDaEdicao, /taxasDoPlacar\(/)
+  assert.doesNotMatch(TELA_STY, /vessel_placar_do_stylist_circle/, 'o placar mensal antigo continua na tela')
 })
 
 test('FIAÇÃO: a situação do encontro e o convite passam pelas funções do banco', () => {
@@ -318,4 +395,50 @@ test('sequência do placar: os cinco passos, cada taxa sobre o passo de cima, da
 test('cor: a saída que libera Private Edit (Ativada) é viva; a outra saída continua queda', () => {
   assert.equal(seloDaEtapa({ etapa: 'Ativada', etapa_tipo: 'saida', etapa_libera_private_edit: true }).tom, 'viva')
   assert.equal(seloDaEtapa({ etapa: 'Desclassificado', etapa_tipo: 'saida', etapa_libera_private_edit: false }).tom, 'queda')
+})
+
+// ── 25/09/2026 (Task 7): a barra Praça · Edição e o placar da edição ───────
+const TELA_STY_2 = readFileSync(new URL('./tela-de-stylist-circle.vue', import.meta.url), 'utf8')
+
+test('FIAÇÃO: a lista de praças cravada no código SAI do Stylist Circle', () => {
+  assert.doesNotMatch(TELA_STY_2, /PRACAS = \{ CPS:/, 'a constante PRACAS cravada voltou')
+  assert.match(TELA_STY_2, /vessel_pracas_listar/, 'a tela não lê o cadastro de praças')
+})
+
+test('FIAÇÃO: a tela usa a barra de Praça e Edição, que recorta o placar, o quadro e a lista', () => {
+  assert.match(TELA_STY_2, /<barra-de-praca-e-edicao/)
+  assert.match(TELA_STY_2, /v-model:praca/)
+  assert.match(TELA_STY_2, /v-model:edicao/)
+  // a lista/quadro voltam ao banco com o recorte escolhido
+  assert.match(TELA_STY_2, /p_praca_id/)
+  assert.match(TELA_STY_2, /p_edicao_id/)
+})
+
+test('FIAÇÃO: o placar saiu para o componente próprio, e não mostra mais o seletor de período', () => {
+  assert.match(TELA_STY_2, /<placar-do-stylist-circle/)
+  assert.doesNotMatch(TELA_STY_2, /PERIODOS_DO_PLACAR/, 'o seletor de período do placar voltou')
+  assert.doesNotMatch(TELA_STY_2, /vessel_placar_do_stylist_circle/, 'o placar mensal antigo continua sendo chamado')
+})
+
+const PLACAR_DO_CIRCLE = readFileSync(new URL('./placar-do-stylist-circle.vue', import.meta.url), 'utf8')
+
+test('FIAÇÃO: o placar da edição usa as regras já testadas, e nunca mostra receita', () => {
+  assert.match(PLACAR_DO_CIRCLE, /vessel_placar_da_edicao/)
+  assert.match(PLACAR_DO_CIRCLE, /sequenciaDoPlacar/)
+  assert.match(PLACAR_DO_CIRCLE, /taxasDoPlacar/)
+  for (const proibido of [/taxas\.ticket/, /receitaPorEncontro/, /receitaPorConvidada/, /placar\.receita/, /emReais\(/, /placar\.vendas/, /placar\.compradoras/]) {
+    assert.doesNotMatch(PLACAR_DO_CIRCLE, proibido, `o placar da edição mostra ${proibido}`)
+  }
+})
+
+test('FIAÇÃO: as etapas do funil aparecem TODAS, na ordem — nunca um número fixo de caixas', () => {
+  assert.match(PLACAR_DO_CIRCLE, /placar\.etapas/)
+  assert.doesNotMatch(PLACAR_DO_CIRCLE, /etapas\.slice\(0,\s*7\)/)
+})
+
+const BARRA_PRACA_EDICAO = readFileSync(new URL('./barra-de-praca-e-edicao.vue', import.meta.url), 'utf8')
+
+test('FIAÇÃO: a barra avisa quem está sem praça, e o aviso abre a tela de Praças', () => {
+  assert.match(BARRA_PRACA_EDICAO, /selo-atencao/)
+  assert.match(BARRA_PRACA_EDICAO, /pracas['"]?\s*\}\)|name:\s*['"]pracas['"]/)
 })
