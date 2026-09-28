@@ -134,3 +134,54 @@ test('⚠️ o card do Material Gráfico está atrás da chave dele e abre a rot
   assert.equal(ferramentaDaRota('material-grafico')?.key, 'atendimentos.material-grafico')
   assert.match(linha, /tela-de-material-grafico\.vue/)
 })
+
+// ── A EDIÇÃO É O EVENTO (28/09/2026, Task 4) ────────────────────────────────
+// ⚠️ SUBSTRING NÃO PROVA: "chamar('vessel_edicao_turma'" escrito num
+// comentário passaria num `includes`. Por isso cada guarda abaixo lê o `.vue`
+// SEM os comentários (`<!-- -->`, `/* */`, `//`) — o que sobra é o que roda.
+import { readdirSync } from 'node:fs'
+
+const PASTA = new URL('./', import.meta.url)
+const semComentarios = (fonte) => fonte
+  .replace(/<!--[\s\S]*?-->/g, '')
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .replace(/(^|[^:'"`\\])\/\/.*$/gm, '$1')
+const telas = () => readdirSync(PASTA).filter((f) => f.endsWith('.vue'))
+  .map((f) => ({ arquivo: f, fonte: semComentarios(readFileSync(new URL(f, PASTA), 'utf8')) }))
+const lerSemComentarios = (arquivo) => semComentarios(readFileSync(new URL(arquivo, PASTA), 'utf8'))
+
+test('⚠️ nenhuma tela escreve "fora de edição" — o encontro leva o evento de origem ou "Sem evento"', () => {
+  const com = telas().filter((t) => /fora de edi[çc][ãa]o/i.test(t.fonte)).map((t) => t.arquivo)
+  assert.deepEqual(com, [], `"fora de edição" voltou em: ${com.join(', ')}`)
+})
+
+test('⚠️ nenhuma tela pede "termina_em" — a edição é um evento de UM dia (só a data do evento)', () => {
+  const com = telas().filter((t) => /termina_?em/i.test(t.fonte.replace(/p_termina_em:\s*null\b/g, '')))
+    .map((t) => t.arquivo)
+  assert.deepEqual(com, [], `a data de fim voltou em: ${com.join(', ')}`)
+})
+
+test('⚠️ a tela de Edições lê a turma e tem o "Tirar" — chamadas de verdade, não comentário', () => {
+  const fonte = lerSemComentarios('tela-de-edicoes.vue')
+  for (const f of ['vessel_edicao_turma', 'vessel_edicao_tirar_stylist', 'vessel_edicao_incluir_stylist', 'vessel_placar_da_edicao']) {
+    assert.match(fonte, new RegExp(`chamar\\(\\s*'${f}'`), `tela-de-edicoes.vue precisa chamar ${f}`)
+  }
+  // encerrar não leva mais ninguém: o destino vai sempre nulo
+  assert.match(fonte, /chamar\(\s*'vessel_edicao_encerrar',\s*\{[^}]*p_levar_para:\s*null\b/)
+  assert.match(fonte, /Para de aceitar convidadas\./, 'o aviso de encerrar sumiu')
+  assert.match(fonte, /Data do evento/, 'o campo "Data do evento" sumiu')
+})
+
+test('⚠️ o Private Edit rotula pelo evento de ORIGEM (vessel_eventos_de_origem + rotuloDoEncontro)', () => {
+  const fonte = lerSemComentarios('tela-de-private-edit.vue')
+  assert.match(fonte, /chamar\(\s*'vessel_eventos_de_origem'/)
+  assert.match(fonte, /rotuloDoEncontro\(/)
+  const usam = telas().filter((t) => /edicaoDoEncontro\b/.test(t.fonte)).map((t) => t.arquivo)
+  assert.deepEqual(usam, [], `a regra antiga por data voltou em: ${usam.join(', ')}`)
+})
+
+test('⚠️ a ficha diz de que evento a stylist veio (fraseDaOrigem + vessel_eventos_de_origem)', () => {
+  const fonte = lerSemComentarios('ficha-da-stylist.vue')
+  assert.match(fonte, /chamar\(\s*'vessel_eventos_de_origem'/)
+  assert.match(fonte, /fraseDaOrigem\(/)
+})

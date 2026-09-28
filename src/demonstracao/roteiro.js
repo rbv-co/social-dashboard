@@ -45,6 +45,15 @@ export const PASSOS = [
   // qualquer outra não basta.
   { id: 5, quem: 'Ionara', titulo: 'Ativar a parceira (mover para Ativada)',
     onde: 'No quadro, arraste o cartão dela até a coluna "Ativada" (no computador) — ou, na ficha, "Ou mover para" → Ativada e "Mover". As etapas se configuram na engrenagem "Etapas do funil".' },
+  // ⚠️ 28/09/2026 (Task 3): A EDIÇÃO VIROU O EVENTO — estes dois passos são
+  // livres (qualquer cartão já Convidado ou Confirmado serve, como a Gislaine
+  // ou a Ingrid, de Limeira) e mostram o placar do evento em Comercial Vessel
+  // → Praças e Edições. O banco de mentira avisa pelo MESMO `etapa_mudada` de
+  // sempre — nenhum aviso novo precisou ser criado.
+  { id: 6, quem: 'Ionara', titulo: 'Mover uma parceira convidada para Presença (e ver o placar do evento subir)',
+    onde: 'No quadro, arraste até a coluna "Presença" o cartão de uma parceira já Convidada ou Confirmada (em Limeira, a Gislaine ou a Ingrid) — ou, na ficha dela, "Ou mover para" → Presença e "Mover". Depois abra Comercial Vessel → Praças e Edições → Limeira → Edição 1 e veja "Presentes" subir no placar.' },
+  { id: 7, quem: 'Ionara', titulo: 'Desclassificar por "Indisponível na data"',
+    onde: 'No quadro, arraste um cartão até a coluna "Desclassificado", escolha o motivo "Indisponível na data" e confirme. Ela some da turma de hoje, mas volta sozinha para "Convidado" quando a próxima edição daquela praça abrir.' },
 ]
 
 export function roteiroVazio() {
@@ -65,6 +74,8 @@ export function aplicarAviso(roteiro, evento, dados = {}) {
       if (dados.para === 'Validado') marcar(3)
       else if (dados.para === 'Conversa') marcar(4)
       else if (dados.libera_private_edit) marcar(5)
+      else if (dados.para === 'Presença') marcar(6)
+      else if (dados.para === 'Desclassificado') marcar(7)
       break
     default: return roteiro
   }

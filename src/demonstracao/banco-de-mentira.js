@@ -27,6 +27,7 @@ import { DURACAO_DO_PRIVATE_EDIT_EM_HORAS } from '../ferramentas/comercial-vesse
 import { faixaDaNota } from '../ferramentas/comercial-vessel/qualificacao-regras.js'
 import { emailCanonico } from '../ferramentas/beauty-sessions/cadastro-de-lead.js'
 import { achatarCidade } from '../ferramentas/comercial-vessel/praca-regras.js'
+import { eventoDeOrigem, funilDoEvento } from '../ferramentas/comercial-vessel/edicao-regras.js'
 
 /** ⚠️ A MARCA QUE O BUILD DA CENTRAL NÃO PODE TER: o relatório da entrega
  * procura esta string em `dist/` (o build normal) — achá-la lá quer dizer que
@@ -154,49 +155,88 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
     return p && p.ativa !== false ? p.id : null
   }
   const edicaoPorId = (id) => (id == null ? null : b.edicoes.find((e) => e.id === Number(id)) || null)
-  /** TASK 11 (25/09/2026, commit 9eff666): "edição = a rodada daquela praça"
-   * — o vínculo é AUTOMÁTICO. Vincula a stylist à edição ABERTA da praça
-   * dela, se houver (a MESMA elegibilidade de `vessel_edicao_abrir`: ativa,
-   * não-teste). Sem edição aberta, ou já vinculada, não faz nada — nunca
-   * toca edição encerrada (só procura entre as abertas) e nunca duplica. */
-  function vincularNaEdicaoAbertaDaPraca(stylistId, pracaId) {
-    if (pracaId == null) return
-    const s = stylistPorId(stylistId)
-    if (!s || s.teste || s.ativa === false) return
-    const ed = b.edicoes.find((e) => e.praca_id === pracaId && e.situacao === 'aberta')
-    if (!ed) return
-    // ⚠️ REVISÃO FINAL (CRÍTICO 1) — o caso do RETORNO, espelhando o
-    // `on conflict … do update set saiu_em = null, etapa_ao_sair = null` do
-    // banco de verdade. Dois cliques na ficha: a stylist está em LIM·Ed1 →
-    // troca para CPS (o vínculo de LIM fecha) → percebe o engano e VOLTA para
-    // LIM. Aqui havia um `return` quando já existia QUALQUER linha com a
-    // edição — inclusive a FECHADA —, e ela ficava com `praca_id = LIM` e
-    // NENHUM vínculo aberto: sumia de todo placar e continuava na lista.
-    // Só edição ABERTA chega aqui, então nada de congelado é reaberto.
-    const jaTem = b.naEdicao.find((n) => n.stylist_id === stylistId && n.edicao_id === ed.id)
-    if (jaTem) {
-      jaTem.saiu_em = null
-      jaTem.etapa_ao_sair = null
-      return
-    }
-    b.naEdicao.push({ id: proximo(b.naEdicao), stylist_id: stylistId, edicao_id: ed.id,
-      entrou_em: agoraIso(), saiu_em: null, etapa_ao_sair: null })
+  // ⚠️ TASK 3 (28/09/2026, edição = evento): `vessel_stylist_sincronizar_edicao`
+  // virou `return;` no banco de verdade — mudar de praça NÃO mexe mais na
+  // turma de evento nenhuma (a turma é de quem foi CONVIDADA, e mudar de
+  // praça depois não muda de qual evento ela veio). Por isso NÃO HÁ MAIS
+  // `vincularNaEdicaoAbertaDaPraca`/`fecharVinculoDaPracaAntiga` aqui: quem
+  // entra na turma é só `vesselEdicaoMarcarMovimento`, chamada pelo MESMO
+  // movimento de etapa que a equipe já faz (ver `vessel_stylist_mover_de_etapa`
+  // e `vessel_edicao_abrir`, abaixo).
+  /** `vessel_etapa_ativa_por_nome`: a etapa ATIVA de um tipo pelo NOME (como o
+   * SQL faz com `lower(btrim(nome))`) — se houver mais de uma (não deveria),
+   * a de MAIOR ordem, como o `max(...) filter` do banco. */
+  function etapaAtivaPorNomeETipo(nomeAlvo, tipo) {
+    const alvo = nomeAlvo.trim().toLowerCase()
+    const candidatas = etapasAtivas().filter((e) => e.tipo === tipo && e.nome.trim().toLowerCase() === alvo)
+    return candidatas.length ? candidatas.reduce((a, x) => (x.ordem > a.ordem ? x : a)) : null
   }
-  /** TASK 11, RODADA 1 DE CONSERTO (achado CRÍTICO da revisão do banco): ao
-   * MUDAR de praça, fecha (`saiu_em`) o vínculo ainda ativo com a edição
-   * ABERTA da praça ANTIGA — senão a mesma stylist fica contada em DUAS
-   * edições ao mesmo tempo (a de antes e a nova, que `vincularNaEdicaoAberta
-   * DaPraca` acabou de abrir). Edição antiga ENCERRADA fica intocada: o
-   * congelamento dela já é dela, esta função não mexe. */
-  function fecharVinculoDaPracaAntiga(stylistId, pracaAntigaId) {
-    if (pracaAntigaId == null) return
-    const edAntiga = b.edicoes.find((e) => e.praca_id === pracaAntigaId && e.situacao === 'aberta')
-    if (!edAntiga) return
-    const vinculo = b.naEdicao.find((n) => n.stylist_id === stylistId && n.edicao_id === edAntiga.id && !n.saiu_em)
-    if (!vinculo) return
+  /** `vessel_evento_de_origem`, para UMA stylist: importa a regra pura de
+   * `edicao-regras.js` — NUNCA copiada aqui. */
+  function eventoDeOrigemDoStylist(stylistId) {
+    return eventoDeOrigem(b.naEdicao.filter((n) => n.stylist_id === stylistId)
+      .map((n) => ({ edicao_id: n.edicao_id, presente_em: n.presente_em })))
+  }
+  /** `vessel_edicao_marcar_movimento` — chamada pelo mover de etapa (o mover
+   * e a volta do "indisponível"). Vale só para a edição ABERTA da praça da
+   * stylist; sem ela, nada acontece (nem erro) — NENHUMA LINHA CRIADA.
+   *   funil, de Convidado em diante → entra na turma (`convidada_em`);
+   *   de Confirmado em diante → `confirmou_em`; de Presença em diante →
+   *   `presente_em` (as anteriores por "coalesce": quem pula etapa ganha
+   *   todas); saída com motivo `volta_na_proxima_edicao` → `indisponivel_em`.
+   * ⚠️ NUNCA APAGA MARCA: uma marca já gravada nunca volta a nulo. */
+  function vesselEdicaoMarcarMovimento(stylistId, etapa, motivoId) {
+    const conv = etapaAtivaPorNomeETipo('convidado', 'funil')
+    const conf = etapaAtivaPorNomeETipo('confirmado', 'funil')
+    const pres = etapaAtivaPorNomeETipo('presença', 'funil')
+    if (!conv || !conf || !pres || !etapa) return
     const s = stylistPorId(stylistId)
-    vinculo.saiu_em = agoraIso()
-    vinculo.etapa_ao_sair = s?.etapa_id ?? null
+    if (!s) return
+    const ed = b.edicoes.find((e) => e.praca_id === s.praca_id && e.situacao === 'aberta')
+    if (!ed) return
+    if (etapa.tipo === 'funil' && etapa.ordem >= conv.ordem) {
+      // entra na turma com o MESMO critério de sempre (ativa, não-teste)
+      const elegivel = s.ativa !== false && !s.teste
+      let linha = b.naEdicao.find((n) => n.stylist_id === stylistId && n.edicao_id === ed.id)
+      if (!linha && elegivel) {
+        linha = { id: proximo(b.naEdicao), stylist_id: stylistId, edicao_id: ed.id,
+          entrou_em: null, saiu_em: null, etapa_ao_sair: null,
+          convidada_em: null, confirmou_em: null, presente_em: null, indisponivel_em: null }
+        b.naEdicao.push(linha)
+      }
+      if (linha) {
+        linha.convidada_em = linha.convidada_em ?? agoraIso()
+        if (etapa.ordem >= conf.ordem) linha.confirmou_em = linha.confirmou_em ?? agoraIso()
+        if (etapa.ordem >= pres.ordem) linha.presente_em = linha.presente_em ?? agoraIso()
+      }
+    } else if (etapa.tipo === 'saida' && motivoId != null) {
+      const m = b.motivos.find((x) => x.id === Number(motivoId) && x.etapa_id === etapa.id)
+      if (m?.volta_na_proxima_edicao) {
+        const linha = b.naEdicao.find((n) => n.stylist_id === stylistId && n.edicao_id === ed.id)
+        if (linha) linha.indisponivel_em = linha.indisponivel_em ?? agoraIso()
+      }
+    }
+  }
+  /** `vessel_edicao_abrir` (nota da volta): de onde a stylist voltou —
+   * 1º a última linha DELA (qualquer edição) com `indisponivel_em` (mais
+   * recente); sem isso, a edição ANTERIOR da MESMA praça (a de maior número
+   * antes desta). Sem os dois, nulo — a chamadora escreve "indisponível na
+   * data" puro. */
+  function rotuloDeOndeFicouIndisponivel(s, edicaoNova) {
+    const linhas = b.naEdicao.filter((n) => n.stylist_id === s.id && n.indisponivel_em)
+      .sort((x, y) => (x.indisponivel_em === y.indisponivel_em ? y.id - x.id : (x.indisponivel_em < y.indisponivel_em ? 1 : -1)))
+    if (linhas.length) {
+      const ed = edicaoPorId(linhas[0].edicao_id)
+      const p = pracaPorId(ed?.praca_id)
+      if (ed && p) return `Edição ${ed.numero} · ${p.nome}`
+    }
+    const anteriores = b.edicoes.filter((x) => x.praca_id === edicaoNova.praca_id && x.id !== edicaoNova.id && x.numero < edicaoNova.numero)
+      .sort((x, y) => y.numero - x.numero)
+    if (anteriores.length) {
+      const p = pracaPorId(edicaoNova.praca_id)
+      return `Edição ${anteriores[0].numero} · ${p?.nome ?? ''}`
+    }
+    return null
   }
 
   // ── a agenda e o encontro sobreposto (`2026-09-25-vessel-agenda-do-private-
@@ -261,7 +301,11 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
   /** Os dois gatilhos de `vessel_stylists`: a data da prospecção e o histórico.
    * ⚠️ 24/09/2026: o histórico guarda o motivo da saída, a nota e a FOTO da
    * marca "libera Private Edit" na hora da chegada (é dela que sai a ativação). */
-  function mudarDeEtapa(s, etapaId, motivo, saida = null) {
+  // ⚠️ TASK 3 (28/09/2026): `notaDaVolta` é a nota da VOLTA do "indisponível na
+  // data" (`vessel_edicao_abrir`) — a mesma ideia de `vessel.nota_da_volta` no
+  // banco de verdade: só entra no histórico quando a CHEGADA não é numa saída
+  // (a saída já tem a nota dela própria, em `saida`).
+  function mudarDeEtapa(s, etapaId, motivo, saida = null, notaDaVolta = null) {
     const de = s.etapa_id ?? null
     s.etapa_id = etapaId
     if (!s.prospectado_em && contaComoProspectada(etapaId)) s.prospectado_em = hoje()
@@ -270,7 +314,8 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
     const m = naSaida && saida?.motivoId != null ? b.motivos.find((x) => x.id === Number(saida.motivoId) && x.etapa_id === etapaId) : null
     b.historicoDeEtapas.push({ id: proximo(b.historicoDeEtapas), stylist_id: s.id, de_etapa_id: de,
       para_etapa_id: etapaId, motivo, por_nome: USUARIO_DA_DEMONSTRACAO, em: agoraIso(),
-      motivo_id: m?.id ?? null, nota: naSaida ? limpo(saida?.nota) : null, liberava_private_edit: !!e?.libera_private_edit })
+      motivo_id: m?.id ?? null, nota: naSaida ? limpo(saida?.nota) : limpo(notaDaVolta),
+      liberava_private_edit: !!e?.libera_private_edit })
   }
   // ── os motivos das saídas e a ativação (24/09/2026) ─────────────────────
   const motivosDe = (etapaId) => b.motivos.filter((m) => m.etapa_id === etapaId)
@@ -448,7 +493,9 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
     // igual. E ganhou `praca_id`/`praca_sigla`/`praca_nome`/`loja_destino`
     // (a praça de CADASTRO, não mais só o texto de `praca_preview`) e
     // `edicao_atual_id` (a edição em que ela está ATIVA agora — nula se não
-    // estiver em nenhuma aberta/planejada no momento).
+    // estiver em nenhuma). ⚠️ TASK 3 (28/09/2026): `saiu_em` deixou de ser
+    // gravado (a edição não fecha mais vínculo nenhum) — o critério virou a
+    // linha mais RECENTE cuja edição NÃO ESTÁ ENCERRADA.
     vessel_rastreio_dos_stylists({ p_dias = 7, p_incluir_desativadas = false, p_praca_id = null, p_edicao_id = null } = {}) {
       const dias = Math.max(Number(p_dias ?? 7) || 0, 0)
       const vendas = vendasDosEncontros(dias)
@@ -459,9 +506,10 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
           || b.naEdicao.some((n) => n.stylist_id === s.id && n.edicao_id === Number(p_edicao_id)))
         .map((s) => {
           const pc = pracaPorId(s.praca_id)
-          // `order by n.entrou_em desc limit 1`: a mais recente ainda ativa.
-          const edicaoAtual = b.naEdicao.filter((n) => n.stylist_id === s.id && !n.saiu_em)
-            .sort((x, y) => (x.entrou_em === y.entrou_em ? 0 : (x.entrou_em < y.entrou_em ? 1 : -1)))[0] || null
+          // a linha mais RECENTE (maior id) cuja edição não está encerrada.
+          const edicaoAtual = b.naEdicao.filter((n) => n.stylist_id === s.id
+              && edicaoPorId(n.edicao_id)?.situacao !== 'encerrada')
+            .sort((x, y) => y.id - x.id)[0] || null
           const ev = b.encontros.filter((e) => e.stylist_id === s.id && !e.teste && !e.arquivada && e.status === 'realizado')
           const ultima = ev.map((e) => e.realizado_em).filter(Boolean).sort().pop() || null
           const contatos = b.contatos.filter((c) => c.stylist_id === s.id)
@@ -765,11 +813,9 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
         proxima_acao_em: a.p_proxima_acao_em || null, ativada_em: null, etapa_id: null, ativa: true, teste: false,
       }
       b.stylists.push(s)
-      // Cadastro novo entra na PRIMEIRA etapa de funil.
+      // Cadastro novo entra na PRIMEIRA etapa de funil — nunca entra na turma
+      // de evento nenhuma por aqui (Task 3: só o movimento de etapa marca).
       mudarDeEtapa(s, primeiraDoFunil()?.id ?? null, 'cadastro')
-      // ⚠️ TASK 11: nasce vinculada à edição ABERTA da praça, se houver — ela
-      // nasce sempre ativa e nunca teste, então não precisa reconferir os dois.
-      vincularNaEdicaoAbertaDaPraca(s.id, pracaId)
       avisar('stylist_criada', { codigo, nome: s.nome })
       return { ok: true, situacao: 'ok', codigo }
     },
@@ -809,7 +855,6 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
       }
       if (loja && !LOJAS.includes(loja)) return { ok: false, situacao: 'loja_invalida' }
       if (origem && !ORIGENS.includes(origem)) return { ok: false, situacao: 'origem_invalida' }
-      const pracaAntiga = s.praca_id
       Object.assign(s, {
         sem_contato: comContato ? false : (a.p_sem_contato ?? s.sem_contato ?? false),
         nome: limpo(a.p_nome) ?? s.nome,
@@ -829,15 +874,10 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
         // `observacoes`: nula não mexe, string vazia apaga.
         observacoes: a.p_observacoes == null ? (s.observacoes ?? null) : limpo(a.p_observacoes),
       })
-      // ⚠️ TASK 11: quando a praça MUDA, vincula à edição ABERTA da praça
-      // nova, se houver. RODADA 1 DE CONSERTO (achado CRÍTICO): e fecha o
-      // vínculo com a edição ABERTA da praça ANTIGA — senão ela ficava
-      // contada em duas edições ao mesmo tempo. Edição antiga ENCERRADA fica
-      // intocada (o congelamento já é dela).
-      if (pracaId != null && pracaId !== pracaAntiga) {
-        fecharVinculoDaPracaAntiga(s.id, pracaAntiga)
-        vincularNaEdicaoAbertaDaPraca(s.id, pracaId)
-      }
+      // ⚠️ TASK 3 (28/09/2026): mudar de praça NÃO mexe mais na turma de
+      // evento nenhuma — a turma é de quem foi CONVIDADA, e mudar de praça
+      // depois não muda de qual evento ela veio (`vessel_stylist_sincronizar_
+      // edicao` virou `return;` no banco de verdade).
       avisar('stylist_editada', { codigo })
       return { ok: true, situacao: 'ok', codigo }
     },
@@ -854,6 +894,8 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
       if (recusa) return { ok: false, situacao: recusa, etapa: e.nome }
       const de = b.etapas.find((x) => x.id === s.etapa_id)?.nome ?? null
       mudarDeEtapa(s, e.id, 'mudanca', { motivoId: p_motivo_id, nota: p_nota })
+      // 28/09/2026 (Task 3): o MESMO movimento marca a turma do evento.
+      vesselEdicaoMarcarMovimento(s.id, e, e.tipo === 'saida' ? p_motivo_id : null)
       avisar('etapa_mudada', { codigo, de, para: e.nome, libera_private_edit: !!e.libera_private_edit })
       return { ok: true, situacao: 'ok', codigo, etapa: e.nome, libera_private_edit: !!e.libera_private_edit,
         prospectado_em: s.prospectado_em }
@@ -1421,12 +1463,13 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
       // pendência "N stylists sem praça" da barra não se resolvia por tela
       // nenhuma. Ninguém TROCA de praça por aqui; só quem está sem. Rodar de
       // novo com a cidade já vinculada também adota, de propósito.
+      // ⚠️ TASK 3: a adoção NÃO vincula mais a nenhuma edição — ganhar praça
+      // não é o mesmo que ser convidada a um evento.
       let adotadas = 0
       for (const st of b.stylists) {
         if (st.praca_id != null || st.teste) continue
         if (achatarCidade(st.cidade) !== chave) continue
         st.praca_id = p.id
-        vincularNaEdicaoAbertaDaPraca(st.id, p.id)
         adotadas++
       }
       return { ok: true, situacao, id, adotadas }
@@ -1444,47 +1487,31 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
       const s = stylistPorCodigo(maiusculo(p_codigo))
       if (!s) return { ok: false, situacao: 'nao_achei' }
       if (p_praca_id != null && !pracaPorId(p_praca_id)) return { ok: false, situacao: 'praca_invalida' }
-      const pracaAntiga = s.praca_id
-      const pracaNova = p_praca_id == null ? null : Number(p_praca_id)
-      s.praca_id = pracaNova
-      // ⚠️ TASK 11: idem vessel_stylist_editar — vincula à edição ABERTA da
-      // praça nova; `p_praca_id` nulo (tirar a praça) NÃO desfaz vínculo
-      // nenhum. RODADA 1 DE CONSERTO (achado CRÍTICO): mudando para uma praça
-      // DIFERENTE, fecha o vínculo com a edição ABERTA da praça antiga antes
-      // de abrir o novo — senão ela conta em duas edições ao mesmo tempo.
-      if (pracaNova != null && pracaNova !== pracaAntiga) {
-        fecharVinculoDaPracaAntiga(s.id, pracaAntiga)
-        vincularNaEdicaoAbertaDaPraca(s.id, pracaNova)
-      }
+      // ⚠️ TASK 3: idem vessel_stylist_editar — mudar (ou tirar) a praça não
+      // mexe na turma de evento nenhuma.
+      s.praca_id = p_praca_id == null ? null : Number(p_praca_id)
       return { ok: true, situacao: 'ok', codigo: s.codigo }
     },
 
-    // as edições de uma praça (ou de todas, com p_praca_id nulo)
+    // as edições de uma praça (ou de todas, com p_praca_id nulo). ⚠️ TASK 3:
+    // `stylists` conta TODAS as linhas da turma (sem `teste`, só `ativa` —
+    // `saiu_em` não recorta mais nada, ninguém fecha vínculo) e ganha
+    // `indisponiveis`. `nao_ativadas` fica (a tela antiga lê), sem uso no
+    // encerrar novo — MESMO critério de antes (`saiu_em` nulo, sem filtrar `ativa`).
     vessel_edicoes_listar({ p_praca_id } = {}) {
       return b.edicoes.filter((e) => p_praca_id == null || e.praca_id === Number(p_praca_id))
         .map((e) => {
           const p = pracaPorId(e.praca_id)
           const membros = b.naEdicao.filter((n) => n.edicao_id === e.id)
-          // ⚠️ REVISÃO FINAL (IMPORTANTE 1): O MESMO CRITÉRIO DO PLACAR — os
-          // dois números aparecem JUNTOS na tela (o bloco "praças com edição
-          // aberta" do placar mostra este `stylists` ao lado do placar da
-          // mesma edição). Edição ABERTA conta quem está dentro AGORA;
-          // ENCERRADA conta a turma CONGELADA. `teste` e `ativa` filtrados
-          // dos dois lados, como o `sty` do placar.
           const stylistsQtd = membros.filter((n) => {
-            if (e.situacao !== 'encerrada' && n.saiu_em) return false
             const s = stylistPorId(n.stylist_id)
             return !!s && !s.teste && s.ativa !== false
           }).length
-          // ⚠️ quantas SERIAM levadas se a edição fosse encerrada agora — o
-          // MESMO critério de `vessel_edicao_encerrar`: vínculo ainda ativo
-          // (`saiu_em` nulo) e a stylist ainda NÃO ATIVOU.
-          // ⚠️ REVISÃO FINAL (MENOR 3): "ativada" é `ativadaEm()` — A
-          // DEFINIÇÃO CANÔNICA (a mesma do placar), nunca mais a coluna crua
-          // `ativada_em`, que desde 24/09/2026 quer dizer outra coisa
-          // ("primeiro Private Edit agendado"). A tela de Edições dizia "N não
-          // ativaram" por uma conta e o placar ao lado dizia "ativadas" por
-          // outra.
+          const indisponiveis = membros.filter((n) => {
+            if (!n.indisponivel_em) return false
+            const s = stylistPorId(n.stylist_id)
+            return !!s && !s.teste && s.ativa !== false
+          }).length
           const naoAtivadas = membros.filter((n) => {
             if (n.saiu_em) return false
             const s = stylistPorId(n.stylist_id)
@@ -1492,7 +1519,7 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
           }).length
           return { id: e.id, praca_id: e.praca_id, praca_nome: p?.nome ?? null, numero: e.numero,
             nome: e.nome ?? null, comeca_em: e.comeca_em, termina_em: e.termina_em ?? null, situacao: e.situacao,
-            stylists: stylistsQtd, nao_ativadas: naoAtivadas }
+            stylists: stylistsQtd, indisponiveis, nao_ativadas: naoAtivadas }
         })
         .sort((a, c) => {
           const oa = pracaPorId(a.praca_id)?.ordem ?? 0, oc = pracaPorId(c.praca_id)?.ordem ?? 0
@@ -1500,184 +1527,189 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
         })
     },
 
-    // criar a próxima edição da praça — numero = maior da praça + 1
-    vessel_edicao_criar({ p_praca_id, p_nome, p_comeca_em, p_termina_em } = {}) {
+    // criar a próxima edição da praça — numero = maior da praça + 1. A
+    // edição é um evento de UM DIA: `p_termina_em` fica na assinatura (a tela
+    // antiga ainda manda) e é IGNORADO — grava sempre nulo.
+    vessel_edicao_criar({ p_praca_id, p_nome, p_comeca_em } = {}) {
       const p = pracaPorId(p_praca_id)
       if (!p) return { ok: false, situacao: 'praca_invalida' }
       const nome = limpo(p_nome)
       if (!p_comeca_em) return { ok: false, situacao: 'sem_data' }
-      if (p_termina_em && p_termina_em < p_comeca_em) return { ok: false, situacao: 'data_invalida' }
       const numero = Math.max(0, ...b.edicoes.filter((e) => e.praca_id === p.id).map((e) => e.numero)) + 1
       const id = proximo(b.edicoes)
-      b.edicoes.push({ id, praca_id: p.id, numero, nome, comeca_em: p_comeca_em, termina_em: p_termina_em || null, situacao: 'planejada' })
+      b.edicoes.push({ id, praca_id: p.id, numero, nome, comeca_em: p_comeca_em, termina_em: null, situacao: 'planejada' })
       return { ok: true, situacao: 'ok', id, numero }
     },
 
-    // abrir uma edição — só uma aberta por praça, e encerrada não reabre
+    // abrir uma edição — só uma aberta por praça, encerrada não reabre. ⚠️
+    // TASK 3: NÃO PUXA MAIS A PRAÇA — a turma se forma pelos convites
+    // (`vesselEdicaoMarcarMovimento`). Só traz de volta, para Convidado, quem
+    // está numa saída cujo motivo é `volta_na_proxima_edicao` (ativa,
+    // não-teste, da mesma praça) — a nota do histórico diz de onde ela voltou.
     vessel_edicao_abrir({ p_id } = {}) {
       const e = edicaoPorId(p_id)
       if (!e) return { ok: false, situacao: 'nao_achei' }
       if (e.situacao === 'encerrada') return { ok: false, situacao: 'edicao_encerrada' }
-      if (e.situacao === 'aberta') return { ok: true, situacao: 'sem_mudanca', incluidas: 0 }
+      if (e.situacao === 'aberta') return { ok: true, situacao: 'sem_mudanca', voltaram: 0 }
       if (b.edicoes.some((x) => x.praca_id === e.praca_id && x.situacao === 'aberta' && x.id !== e.id)) {
         return { ok: false, situacao: 'ja_tem_aberta' }
       }
       e.situacao = 'aberta'
-      // ⚠️ TASK 11 (commit 9eff666): "edição = a rodada daquela praça" — o
-      // vínculo é AUTOMÁTICO. Toda stylist ATIVA e NÃO-teste da praça que
-      // ainda não tem NENHUMA linha com esta edição entra nela — sem isto o
-      // placar por edição nascia zerado para sempre (nenhuma tela chamava
-      // `vessel_edicao_incluir_stylist`), calado. `jaTem` olha a chave
-      // INTEIRA (não só `saiu_em is null`): uma stylist incluída à mão antes
-      // de abrir (a 'planejada' aceita incluir) não vira linha duplicada.
-      let incluidas = 0
-      const agora_ = agoraIso()
-      for (const s of b.stylists) {
-        if (s.praca_id !== e.praca_id || s.teste || s.ativa === false) continue
-        const jaTem = b.naEdicao.some((n) => n.stylist_id === s.id && n.edicao_id === e.id)
-        if (jaTem) continue
-        b.naEdicao.push({ id: proximo(b.naEdicao), stylist_id: s.id, edicao_id: e.id,
-          entrou_em: agora_, saiu_em: null, etapa_ao_sair: null })
-        incluidas++
+      const conv = etapaAtivaPorNomeETipo('convidado', 'funil')
+      let voltaram = 0
+      if (conv) {
+        const candidatas = b.stylists.filter((s) => {
+          if (s.praca_id !== e.praca_id || s.teste || s.ativa === false) return false
+          const et = etapaPorId(s.etapa_id)
+          if (!et || et.tipo !== 'saida') return false
+          const h = saidaAtual(s)
+          const m = h ? b.motivos.find((x) => x.id === h.motivo_id && x.etapa_id === s.etapa_id) : null
+          return !!m?.volta_na_proxima_edicao
+        }).sort((x, y) => x.id - y.id)
+        for (const s of candidatas) {
+          const onde = rotuloDeOndeFicouIndisponivel(s, e)
+          mudarDeEtapa(s, conv.id, 'mudanca', null, onde ? `Voltou: indisponível na ${onde}` : 'Voltou: indisponível na data')
+          vesselEdicaoMarcarMovimento(s.id, conv, null)
+          voltaram++
+        }
       }
-      return { ok: true, situacao: 'ok', incluidas }
+      return { ok: true, situacao: 'ok', voltaram }
     },
 
-    // encerrar uma edição: congela quem estava nela; quem NÃO ativou (por
-    // `ativadaEm()`, a definição canônica) pode ir para uma edição de
-    // destino — quem ativou fica com o vínculo fechado e não vai.
+    // encerrar: só para de aceitar convidadas. O placar segue somando para
+    // sempre; não há mais "levar para a próxima" (a turma é de quem foi
+    // convidada) — `p_levar_para` não nulo é sempre recusado.
     vessel_edicao_encerrar({ p_id, p_levar_para } = {}) {
+      if (p_levar_para != null) return { ok: false, situacao: 'levar_para_nao_existe_mais' }
       const e = edicaoPorId(p_id)
       if (!e) return { ok: false, situacao: 'nao_achei' }
       if (e.situacao === 'encerrada') return { ok: false, situacao: 'edicao_encerrada' }
-      let destino = null
-      if (p_levar_para != null) {
-        destino = edicaoPorId(p_levar_para)
-        if (!destino) return { ok: false, situacao: 'destino_invalido' }
-        // ⚠️ NÃO SE LEVA PARA UM DESTINO CONGELADO.
-        if (destino.situacao === 'encerrada') return { ok: false, situacao: 'edicao_encerrada' }
-        // ⚠️ NÃO SE LEVA PARA OUTRA PRAÇA.
-        if (destino.praca_id !== e.praca_id) return { ok: false, situacao: 'destino_de_outra_praca' }
-      }
       e.situacao = 'encerrada'
-      // ⚠️ O CONGELAMENTO: fecha (`saiu_em`/`etapa_ao_sair`) TODOS os vínculos
-      // ativos desta edição (stylist de teste fica intocada, de propósito —
-      // o mesmo efeito colateral aceito do banco de verdade). Quem NÃO ativou
-      // (`ativada_em` nulo, a coluna crua) e tem destino abre um vínculo novo
-      // lá; quem ativou fica com o vínculo fechado e NÃO é levada.
-      let levadas = 0
-      const agora_ = agoraIso()
-      for (const n of b.naEdicao.filter((x) => x.edicao_id === e.id && !x.saiu_em)) {
-        const s = stylistPorId(n.stylist_id)
-        if (s?.teste) continue
-        n.saiu_em = agora_
-        n.etapa_ao_sair = s?.etapa_id ?? null
-        // ⚠️ REVISÃO FINAL (MENOR 3): quem "não ativou" é quem `ativadaEm()`
-        // diz que não ativou — A DEFINIÇÃO CANÔNICA, a mesma de `nao_ativadas`
-        // e do placar. A canônica já inclui a coluna crua como último recurso,
-        // então quem é levada só pode DIMINUIR: ninguém que a conta antiga
-        // deixava ficar passa a ser levada.
-        if (destino && s && !ativadaEm(s)) {
-          const jaTem = b.naEdicao.some((x) => x.stylist_id === s.id && x.edicao_id === destino.id)
-          if (!jaTem) {
-            b.naEdicao.push({ id: proximo(b.naEdicao), stylist_id: s.id, edicao_id: destino.id, entrou_em: agora_, saiu_em: null, etapa_ao_sair: null })
-            levadas++
-          }
-        }
-      }
-      return { ok: true, situacao: 'ok', levadas }
+      return { ok: true, situacao: 'ok' }
     },
 
-    // incluir uma stylist na edição — recusa se a edição já encerrou
+    // incluir (exceções, botão "Incluir"): igual a antes, e grava `convidada_em`.
     vessel_edicao_incluir_stylist({ p_codigo, p_edicao_id } = {}) {
       const s = stylistPorCodigo(maiusculo(p_codigo))
       if (!s) return { ok: false, situacao: 'nao_achei' }
       const e = edicaoPorId(p_edicao_id)
       if (!e) return { ok: false, situacao: 'edicao_invalida' }
-      // ⚠️ É ESTA TRAVA QUE IMPEDE O PASSADO DE MUDAR: edição encerrada está
-      // congelada, nada entra nela depois.
+      // ⚠️ edição encerrada não aceita convidada nova.
       if (e.situacao === 'encerrada') return { ok: false, situacao: 'edicao_encerrada' }
       if (b.naEdicao.some((n) => n.stylist_id === s.id && n.edicao_id === e.id && !n.saiu_em)) {
         return { ok: true, situacao: 'sem_mudanca' }
       }
-      // ⚠️ REVISÃO FINAL (CRÍTICO 1, irmão): a conferência acima só olha o
-      // vínculo ABERTO — quem JÁ SAIU desta edição tem uma linha FECHADA, e no
-      // banco de verdade o insert estourava `23505` cru na unique. Reabrir é
-      // o que a tela pediu; a edição encerrada já foi barrada lá em cima.
+      // uma linha antiga com `saiu_em` é reaberta em vez de duplicar.
       const fechado = b.naEdicao.find((n) => n.stylist_id === s.id && n.edicao_id === e.id)
       if (fechado) {
         fechado.saiu_em = null
         fechado.etapa_ao_sair = null
+        fechado.convidada_em = fechado.convidada_em ?? agoraIso()
         return { ok: true, situacao: 'ok' }
       }
-      b.naEdicao.push({ id: proximo(b.naEdicao), stylist_id: s.id, edicao_id: e.id, entrou_em: agoraIso(), saiu_em: null, etapa_ao_sair: null })
+      b.naEdicao.push({ id: proximo(b.naEdicao), stylist_id: s.id, edicao_id: e.id, entrou_em: agoraIso(),
+        saiu_em: null, etapa_ao_sair: null,
+        convidada_em: agoraIso(), confirmou_em: null, presente_em: null, indisponivel_em: null })
       return { ok: true, situacao: 'ok' }
     },
 
-    // o placar da edição — edição ABERTA conta quem está dentro AGORA;
-    // ENCERRADA conta a turma congelada (todas as linhas, que o encerramento
-    // fechou no mesmo instante). O MESMO critério de `vessel_edicoes_listar`,
-    // aqui e no banco de verdade. SEM RECEITA NENHUMA (decisão do dono): o
-    // panorama de compras está congelado, e zero na tela mentiria.
+    // tirar (botão "Tirar", engano de inclusão): só enquanto ela não esteve
+    // presente — presença é fato do evento e não se desfaz.
+    vessel_edicao_tirar_stylist({ p_codigo, p_edicao_id } = {}) {
+      const s = stylistPorCodigo(maiusculo(p_codigo))
+      if (!s) return { ok: false, situacao: 'nao_achei' }
+      if (!edicaoPorId(p_edicao_id)) return { ok: false, situacao: 'edicao_invalida' }
+      const linha = b.naEdicao.find((n) => n.stylist_id === s.id && n.edicao_id === Number(p_edicao_id))
+      if (!linha) return { ok: true, situacao: 'sem_mudanca' }
+      if (linha.presente_em) return { ok: false, situacao: 'ja_esteve_presente' }
+      b.naEdicao = b.naEdicao.filter((n) => n !== linha)
+      return { ok: true, situacao: 'ok' }
+    },
+
+    // a turma do evento, com as marcas e a origem de cada uma (tela de
+    // Edições). Mesmo recorte do placar: sem `teste`, só `ativa`.
+    vessel_edicao_turma({ p_edicao_id } = {}) {
+      return b.naEdicao.filter((n) => n.edicao_id === Number(p_edicao_id))
+        .map((n) => {
+          const s = stylistPorId(n.stylist_id)
+          return s && !s.teste && s.ativa !== false ? { s, n } : null
+        })
+        .filter(Boolean)
+        .map(({ s, n }) => ({
+          stylist_id: s.id, codigo: s.codigo, nome: s.nome, etapa_id: s.etapa_id,
+          convidada_em: n.convidada_em ?? null, confirmou_em: n.confirmou_em ?? null,
+          presente_em: n.presente_em ?? null, indisponivel_em: n.indisponivel_em ?? null,
+          origem: eventoDeOrigemDoStylist(s.id),
+        }))
+        .sort((a, c) => {
+          if (a.convidada_em == null || c.convidada_em == null) return (a.convidada_em == null) - (c.convidada_em == null) || (a.nome < c.nome ? -1 : 1)
+          return a.convidada_em === c.convidada_em ? (a.nome < c.nome ? -1 : 1) : (a.convidada_em < c.convidada_em ? -1 : 1)
+        })
+    },
+
+    // o EVENTO DE ORIGEM — a edição da 1ª presença — e a mesma regra para
+    // todas as stylists de uma vez. Importa `eventoDeOrigem` de
+    // `edicao-regras.js`: NUNCA uma cópia da conta.
+    vessel_evento_de_origem({ p_stylist_id } = {}) {
+      return eventoDeOrigemDoStylist(Number(p_stylist_id))
+    },
+    vessel_eventos_de_origem() {
+      const ids = [...new Set(b.naEdicao.filter((n) => n.presente_em).map((n) => n.stylist_id))].sort((a, c) => a - c)
+      // + `codigo` (Task 4): as telas casam a origem pelo CÓDIGO da stylist.
+      return ids.map((id) => ({ stylist_id: id, codigo: stylistPorId(id)?.codigo ?? null, edicao_id: eventoDeOrigemDoStylist(id) }))
+    },
+
+    // O PLACAR DO EVENTO. `funil`/`indisponiveis`/`meta` saem de
+    // `funilDoEvento` (edicao-regras.js) sobre `vessel_edicao_turma` — a MESMA
+    // regra pura do placar de verdade, nunca uma cópia. O resto (convite dos
+    // Private Edits) só conta quem tem EVENTO DE ORIGEM aqui — nada conta duas
+    // vezes. SEM RECEITA NENHUMA (decisão do dono).
     vessel_placar_da_edicao({ p_edicao_id } = {}) {
       const e = edicaoPorId(p_edicao_id)
       if (!e) throw erroDoBanco('P0002', 'edicao nao encontrada')
-      // ⚠️ REVISÃO FINAL (IMPORTANTE 2): O MESMO CRITÉRIO DO BANCO, letra por
-      // letra (`turma_ids` de `vessel_placar_da_edicao`): edição ABERTA conta
-      // quem está dentro AGORA (`saiu_em` nulo); ENCERRADA conta a turma
-      // CONGELADA (todas as linhas). Sem o filtro, a DEMO mostrava o defeito
-      // que o banco já não tem: mudar a praça fazia a stylist contar em DUAS
-      // edições abertas (o mock FECHA o vínculo, mas o placar dele ignorava).
-      // A demo é o portão — ela e o banco não podem discordar no número
-      // central do trabalho.
-      const turmaIds = new Set(b.naEdicao
-        .filter((n) => n.edicao_id === e.id && (e.situacao === 'encerrada' || !n.saiu_em))
-        .map((n) => n.stylist_id))
-      const sty = b.stylists.filter((s) => turmaIds.has(s.id) && !s.teste && s.ativa !== false)
-        .map((s) => ({ ...s, ativou: ativadaEm(s) }))
-      // ⚠️ 28/09/2026 — EDIÇÃO = TURMA DE ENTRADA (decisão do dono), igual a
-      // `2026-09-28-vessel-placar-da-edicao-conta-a-turma.sql`: os encontros são
-      // os das stylists da TURMA, em qualquer data e praça — o fim da edição
-      // não corta o que a turma faz depois.
-      const ev = b.encontros.filter((x) => !x.teste && !x.arquivada && turmaIds.has(x.stylist_id))
+      const turma = funcoes.vessel_edicao_turma({ p_edicao_id: e.id })
+      const turmaIds = new Set(turma.map((t) => t.stylist_id))
+      const daquiIds = new Set(turma.filter((t) => t.presente_em && t.origem === e.id).map((t) => t.stylist_id))
+      const sty = turma.map((t) => stylistPorId(t.stylist_id)).filter(Boolean).map((s) => ({ ...s, ativou: ativadaEm(s) }))
+      const encontrosDaTurma = b.encontros.filter((x) => !x.teste && !x.arquivada && turmaIds.has(x.stylist_id))
+      const doEvento = funilDoEvento(turma, encontrosDaTurma, e.id)
+
+      // ⚠️ DAQUI: os Private Edits (e os convites deles) das stylists cujo
+      // EVENTO DE ORIGEM é ESTA edição, em qualquer data e praça.
+      const ev = b.encontros.filter((x) => !x.teste && !x.arquivada && daquiIds.has(x.stylist_id))
       const conv = b.atendimentos.filter((t) => !t.teste && ev.some((x) => x.codigo === t.evento_codigo))
         .map((t) => {
           const ev1 = ev.find((x) => x.codigo === t.evento_codigo)
           return { ...t, status_do_encontro: ev1.status, situacao: situacaoDe(t, ev1) }
         })
-      // ⚠️ RODADA 1 DE CONSERTO (IMPORTANTE 2): os realizados partem de
-      // `turmaIds` — TODAS as linhas de vínculo, sem o filtro de `teste`/
-      // `ativa` que `sty` tem (a mesma diferença que a migration faz: `sty`
-      // filtra, `turma_ids` não) — senão desativar uma stylist com 2
-      // encontros realizados na janela fazia `intervalos`/
-      // `intervalo_medio_em_dias`/`recorrentes_no_periodo` CAÍREM na demo e
-      // NÃO caírem em produção.
       const realizados = []
-      for (const stylistId of turmaIds) {
+      for (const stylistId of daquiIds) {
         const dela = ev.filter((x) => x.stylist_id === stylistId && x.status === 'realizado')
           .sort((x, y) => (x.realizado_em === y.realizado_em ? x.id - y.id : (x.realizado_em < y.realizado_em ? -1 : 1)))
         dela.forEach((x, i) => realizados.push({ stylist_id: stylistId, realizado_em: x.realizado_em, n: i + 1,
           intervalo: i ? diasEntre(dela[i - 1].realizado_em, x.realizado_em) : null }))
       }
-      const turma = sty.map((s) => {
-        const ativou = !!s.ativou
-        const agendou = ev.some((x) => x.stylist_id === s.id && x.status !== 'em_planejamento')
-        const realizou = realizados.some((r) => r.stylist_id === s.id && r.n === 1)
-        return { ativou, agendou, realizou }
-      })
+      const turmaCalc = sty.map((s) => ({
+        id: s.id, ativou: !!s.ativou,
+        agendou: ev.some((x) => x.stylist_id === s.id && x.status !== 'em_planejamento'),
+        realizou: realizados.some((r) => r.stylist_id === s.id && r.n === 1),
+      }))
       const confirmada = (c) => ['confirmada', 'presente', 'nao_compareceu'].includes(c.situacao)
       const intervalosValidos = realizados.filter((r) => r.intervalo != null)
       const ativadasDaTurma = sty.filter((s) => s.ativou)
       return {
         edicao: { id: e.id, praca_id: e.praca_id, numero: e.numero, nome: e.nome ?? null,
           comeca_em: e.comeca_em, termina_em: e.termina_em ?? null, situacao: e.situacao },
+        funil: doEvento.passos,
+        indisponiveis: doEvento.indisponiveis,
+        meta: doEvento.meta,
         etapas: etapasAtivas().map((et) => ({ id: et.id, nome: et.nome, ordem: et.ordem, tipo: et.tipo,
           stylists: sty.filter((s) => s.etapa_id === et.id).length })),
         prospectadas: sty.length,
-        prospectadas_ja_ativadas: turma.filter((t) => t.ativou).length,
-        ativadas: turma.filter((t) => t.ativou).length,
-        com_private_edit_agendado: turma.filter((t) => t.agendou).length,
-        com_private_edit_realizado: turma.filter((t) => t.realizou).length,
+        prospectadas_ja_ativadas: turmaCalc.filter((t) => t.ativou).length,
+        ativadas: turmaCalc.filter((t) => t.ativou).length,
+        com_private_edit_agendado: turmaCalc.filter((t) => t.agendou).length,
+        com_private_edit_realizado: turmaCalc.filter((t) => t.realizou).length,
         recorrentes_no_periodo: realizados.filter((r) => r.n === 2).length,
         encontros_agendados: ev.filter((x) => x.status !== 'em_planejamento').length,
         encontros_realizados: ev.filter((x) => x.status === 'realizado').length,

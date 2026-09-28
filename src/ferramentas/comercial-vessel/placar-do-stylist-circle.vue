@@ -132,12 +132,13 @@
       </div>
 
       <p class="cv-nota">
-        A edição é uma <b>turma de entrada</b>: começa no dia do Preview e
-        termina quando alguém fecha a turma — o fim só para de entrar parceira
-        nova. Todos os números são das parceiras desta turma, em qualquer data:
-        quem continua fazendo Private Edit depois de a edição encerrar
-        continua contando aqui. <b>Encontros e convidadas</b> são os dos
-        Private Edits das parceiras da turma. As taxas de baixo de cada passo
+        A edição é <b>o evento</b> (o Preview): a turma é de quem foi
+        convidada a ele, e encerrar só para de entrar parceira nova. Os
+        números seguem contando em qualquer data: quem continua fazendo
+        Private Edit depois de a edição encerrar continua contando aqui.
+        <b>Encontros e convidadas</b> são os dos Private Edits das parceiras
+        que têm ESTE evento como origem (o da 1ª presença delas) — nada conta
+        em dois eventos. As taxas de baixo de cada passo
         olham uma turma só: das prospectadas desta edição, quantas chegaram
         àquele passo, sobre as que chegaram ao anterior — por isso elas não
         batem com a divisão dos números grandes, e nunca passam de 100%. A

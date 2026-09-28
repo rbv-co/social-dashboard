@@ -313,6 +313,12 @@ passo('Stylist Circle')
   // continua o mesmo (ver o relatório da task 12).
   const t = await abrirPeloMenu('Stylist Circle')
   if (!/Marina Castro \(exemplo\)/.test(t)) falhar(onde, 'as parceiras de exemplo não apareceram')
+  // 24/09: o selo da faixa (Sem nota / Faixa A/B/C) — conferido aqui, no
+  // quadro INTEIRO (antes de escolher praça e edição): desde a Task 3
+  // (28/09/2026, edição = evento) a turma de cada edição é só quem foi
+  // CONVIDADA, então a Edição 1 de Campinas ficou com só 2 stylists (Marina e
+  // Luísa), as duas já avaliadas — não sobra ninguém "Sem nota" só nela.
+  if (!/Sem nota/i.test(t) || !/Faixa A/i.test(t)) falhar(onde, 'o quadro não mostra os selos da faixa')
   await mexerEmTodosOsSelects()
   await clicar(pagina.getByText('Marina Castro (exemplo)').first(), 'abrir a ficha da Marina')
   await esperar(500)
@@ -335,7 +341,6 @@ passo('Stylist Circle')
   // encerrada, e mostrar zero mentiria). O placar hoje EXPLICA isso, em vez
   // de mostrar a meta — é essa explicação que a conferência prova agora.
   if (!/Sem receita nenhuma aqui/.test(tela)) falhar(onde, 'o placar não explica a ausência de receita')
-  if (!/Sem nota/i.test(tela) || !/Faixa A/i.test(tela)) falhar(onde, 'o quadro não mostra os selos da faixa')
   // ⚠️ Volta para "Todas as praças": o resto do bloco (Luiza, Gislaine e
   // Letícia são de Limeira; Carol é de Piracicaba) precisa do quadro
   // INTEIRO — a barra também recorta o quadro, não só o placar (Task 7).

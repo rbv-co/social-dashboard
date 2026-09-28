@@ -73,9 +73,9 @@
                                :pracas="pracas" :edicoes="edicoesDaPraca" />
       <p v-if="erroDasPracas" class="cv-nota cv-nota-erro">{{ erroDasPracas }}</p>
       <p v-if="erroDasEdicoesDaPraca" class="cv-nota cv-nota-erro">{{ erroDasEdicoesDaPraca }}</p>
-      <!-- RODADA 1 DE CONSERTO (CRÍTICO 2): a mensagem existia no roteiro,
-           mas nunca era desenhada aqui — a falha de vessel_edicoes_listar(null)
-           era muda, e a linha de cada cartão virava "fora de edição" pelo erro. -->
+      <!-- RODADA 1 DE CONSERTO (CRÍTICO 2): a falha de vessel_edicoes_listar(null)
+           (ou, desde 28/09, de vessel_eventos_de_origem) era muda, e a linha de
+           cada cartão mentia pelo erro. A mensagem mora aqui, e a linha cala. -->
       <p v-if="erroDasTodasEdicoes" class="cv-nota cv-nota-erro">{{ erroDasTodasEdicoes }}</p>
 
       <!-- ── LISTA | AGENDA (25/09/2026) ────────────────────────────────────
@@ -187,10 +187,11 @@
                 <span v-if="e.anfitria || e.stylist"> · {{ e.anfitria || e.stylist }}</span>
                 <span v-if="e.local"> · {{ e.local }}</span>
               </p>
-              <!-- ⚠️ 25/09/2026 (Task 8): A EDIÇÃO DO ENCONTRO — a da praça dele
-                   cuja janela contém o dia (`edicaoDoEncontro`, edicao-regras.js).
-                   Fora de qualquer janela: "fora de edição", VISÍVEL, nunca
-                   escondido (PADRAO, item 9 — a tela nunca mente). -->
+              <!-- ⚠️ 28/09/2026 (edição = evento): O EVENTO DO ENCONTRO é o
+                   evento de ORIGEM da anfitriã — a edição da 1ª presença dela
+                   (`rotuloDoEncontro`, edicao-regras.js) —, nunca a data do
+                   encontro. Sem presença em evento nenhum: "Sem evento",
+                   VISÍVEL (PADRAO, item 9 — a tela nunca mente). -->
               <p v-if="rotuloDaEdicaoDoEncontro(e)" class="cv-sub">{{ rotuloDaEdicaoDoEncontro(e) }}</p>
             </div>
             <span class="cv-selo id-selo" :class="[seloDoStatus(e).classe, `id-tom-${seloDoStatus(e).tom}`]">{{ seloDoStatus(e).texto }}</span>
@@ -522,7 +523,7 @@ import AvisoDeSobreposicao from './aviso-de-sobreposicao.vue'
 import BarraDePracaEEdicao from './barra-de-praca-e-edicao.vue'
 import { valoresQueFicam, mudouHoraOuLugar, mapaDeLeiturasDoCard } from './agenda-regras.js'
 import { rotuloDaPraca } from './praca-regras.js'
-import { edicaoDoEncontro, rotuloDaEdicao } from './edicao-regras.js'
+import { rotuloDoEncontro } from './edicao-regras.js'
 import IconeDoBloco from '../../compartilhado/icone-do-bloco.vue'
 import { estado, hasPermission } from '../../compartilhado/controle-de-login-e-usuario.js'
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../../compartilhado/conectar-no-banco-de-dados.js'
@@ -586,12 +587,15 @@ const edicaoEscolhidaId = ref(null)
 const edicoesDaPraca = ref([])
 const erroDasEdicoesDaPraca = ref('')
 // ⚠️ TODAS as edições, de TODAS as praças — não só da escolhida: é o que
-// `edicaoDoEncontro` precisa para dizer a edição de CADA cartão (ela pode
-// estar fora do recorte da barra, e mesmo assim aparecer na lista quando
-// nenhuma praça está escolhida). `edicoesDaPraca` (acima) é só para o
+// `rotuloDoEncontro` precisa para escrever o evento de CADA cartão (a origem
+// da anfitriã pode ser de outra praça). `edicoesDaPraca` (acima) é só para o
 // <select> da barra, que já vem recortado por praça.
 const todasEdicoes = ref([])
 const erroDasTodasEdicoes = ref('')
+// ⚠️ O EVENTO DE ORIGEM de cada anfitriã, pelo CÓDIGO (`e.stylist` do
+// encontro é o código, não o id): { 'STY-0001': 46 }. Quem não está aqui
+// nunca esteve presente num evento — "Sem evento".
+const origemPorCodigo = ref({})
 // Só ativas: escolher uma praça sem loja/edição ainda não trava nada — mas
 // marcar um encontro numa praça DESATIVADA o banco recusaria na hora.
 const pracasAtivas = computed(() => pracas.value.filter((p) => p.ativa !== false))
@@ -638,10 +642,16 @@ watch(pracaEscolhidaId, carregarEdicoesDaPraca, { immediate: true })
 async function carregarTodasEdicoes() {
   erroDasTodasEdicoes.value = ''
   try {
-    todasEdicoes.value = await chamar('vessel_edicoes_listar', { p_praca_id: null }) || []
+    const [eds, origens] = await Promise.all([
+      chamar('vessel_edicoes_listar', { p_praca_id: null }),
+      chamar('vessel_eventos_de_origem', {}),
+    ])
+    todasEdicoes.value = eds || []
+    origemPorCodigo.value = Object.fromEntries((origens || []).map((o) => [o.codigo, o.edicao_id]))
   } catch {
     todasEdicoes.value = []
-    erroDasTodasEdicoes.value = 'Não consegui ler as edições agora — a edição de cada encontro fica sem aparecer até a leitura voltar.'
+    origemPorCodigo.value = {}
+    erroDasTodasEdicoes.value = 'Não consegui ler os eventos agora — o evento de cada encontro fica sem aparecer até a leitura voltar.'
   } finally {
     todasEdicoesProntas.value = true
   }
@@ -650,33 +660,25 @@ async function carregarTodasEdicoes() {
 // A praça de CADA encontro (o campo `praca` que volta é a SIGLA, não o id —
 // `vessel_conta_das_private_edits` não devolve `praca_id`): resolve pelo
 // cadastro já lido. Sigla que o cadastro não conhece devolve nulo (não
-// inventa um id), e `edicaoDoEncontro` já lida com `praca_id` nulo (some).
+// inventa um id) — o encontro só some quando a barra recorta por praça.
 function pracaIdDoEncontro(e) {
   const achou = pracas.value.find((p) => p.sigla === e?.praca)
   return achou ? achou.id : null
 }
-function edicaoDoEncontroNaTela(e) {
-  return edicaoDoEncontro({ praca_id: pracaIdDoEncontro(e), quando: e?.quando }, todasEdicoes.value)
-}
-// ⚠️ Enquanto o cadastro/as edições não terminaram de carregar, NÃO escreve
-// "fora de edição" — seria uma leitura ainda incompleta se passando por
-// resposta. "Terminou" é `pracasProntas`/`todasEdicoesProntas` (acima) — o
-// FIM da tentativa, nunca o tamanho da resposta (RODADA 1, CRÍTICO 1: a
-// tabela de edições nasce vazia, e "lista vazia" É a resposta certa no dia 1).
-const infoDaEdicaoPronta = computed(() => pracasProntas.value && todasEdicoesProntas.value)
-// ⚠️ RODADA 1 DE CONSERTO (CRÍTICO 2): LEITURA QUE FALHOU NÃO VIRA "FORA DE
-// EDIÇÃO" — antes, `erroDasPracas`/`erroDasTodasEdicoes` setados contavam
-// como "terminou" (o `||` de antes), e a tela afirmava "fora de edição" em
-// TODO encontro por causa do ERRO, sem uma palavra de aviso — a mentira mais
-// cara que uma tela conta (PADRAO, item 9). O aviso mora perto da barra
-// (`erroDasPracas`/`erroDasTodasEdicoes`, desenhados no template); aqui só
-// resta CALAR a linha — nunca afirmar uma edição (ou a falta dela) que a
+// A edição de ORIGEM da anfitriã do encontro (nulo = "Sem evento").
+const origemDoEncontro = (e) => origemPorCodigo.value[e?.stylist] ?? null
+// ⚠️ Enquanto as edições/origens não terminaram de carregar, NÃO escreve
+// "Sem evento" — seria uma leitura ainda incompleta se passando por
+// resposta. "Terminou" é `todasEdicoesProntas` — o FIM da tentativa, nunca o
+// tamanho da resposta (RODADA 1, CRÍTICO 1: a tabela de edições nasceu
+// vazia, e "lista vazia" É a resposta certa num dia sem evento).
+// ⚠️ RODADA 1 DE CONSERTO (CRÍTICO 2): LEITURA QUE FALHOU NÃO VIRA "SEM
+// EVENTO" — a mensagem mora perto da barra (`erroDasTodasEdicoes`); aqui só
+// resta CALAR a linha, nunca afirmar um evento (ou a falta dele) que a
 // leitura não provou.
 function rotuloDaEdicaoDoEncontro(e) {
-  if (!infoDaEdicaoPronta.value) return ''
-  if (erroDasPracas.value || erroDasTodasEdicoes.value) return ''
-  const ed = edicaoDoEncontroNaTela(e)
-  return ed ? rotuloDaEdicao(ed) : 'fora de edição'
+  if (!todasEdicoesProntas.value || erroDasTodasEdicoes.value) return ''
+  return rotuloDoEncontro({ stylist_id: e?.stylist }, origemPorCodigo.value, todasEdicoes.value)
 }
 
 const encontros = ref([])
@@ -690,9 +692,11 @@ const leiturasDoCard = computed(() => mapaDeLeiturasDoCard(encontros.value))
 const encontrosRecortados = computed(() => {
   if (!pracaEscolhidaId.value) return encontros.value
   return encontros.value.filter((e) => {
-    if (pracaIdDoEncontro(e) !== pracaEscolhidaId.value) return false
-    if (!edicaoEscolhidaId.value) return true
-    return edicaoDoEncontroNaTela(e)?.id === edicaoEscolhidaId.value
+    // ⚠️ Com a edição escolhida, vale o EVENTO DE ORIGEM da anfitriã — em
+    // qualquer praça (o Private Edit conta no evento dela, onde quer que
+    // aconteça). Só a praça: a praça do próprio encontro.
+    if (edicaoEscolhidaId.value) return origemDoEncontro(e) === edicaoEscolhidaId.value
+    return pracaIdDoEncontro(e) === pracaEscolhidaId.value
   })
 })
 const stylists = ref([])

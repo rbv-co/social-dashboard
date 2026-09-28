@@ -81,11 +81,15 @@ export function dadosIniciais(agora = new Date()) {
   etapas.push({ id: 8, nome: 'Ativada', ordem: 7, tipo: 'saida', conta_como_prospectada: false, libera_private_edit: true,
     ativa: true, alterado_por_nome: null, alterado_em: null })
   const ETAPA = Object.fromEntries(etapas.map((e) => [e.nome, e.id]))
-  // Os nove motivos do Desclassificado, na ordem da migration; "Outro" pede nota.
+  // Os dez motivos do Desclassificado, na ordem da migration; "Outro" pede
+  // nota. ⚠️ 28/09/2026 (Task 3, edição = evento): "Indisponível na data" é o
+  // ÚNICO com `volta_na_proxima_edicao` — quem sai por ele volta para
+  // Convidado quando a próxima edição da praça abre (`vessel_edicao_abrir`).
   const motivos = ['Desinteresse', 'Não conecta com a marca', 'Não retornou os contatos', 'Carteira fora do perfil',
     'Portfólio / estética não alinhados', 'Fora da praça (logística)', 'Não aceitou as condições (Professional Fee)',
-    'Exclusividade com outra marca', 'Outro']
-    .map((nome, i) => ({ id: i + 1, etapa_id: ETAPA.Desclassificado, nome, ordem: i + 1, exige_nota: nome === 'Outro', ativo: true }))
+    'Exclusividade com outra marca', 'Indisponível na data', 'Outro']
+    .map((nome, i) => ({ id: i + 1, etapa_id: ETAPA.Desclassificado, nome, ordem: i + 1, exige_nota: nome === 'Outro',
+      ativo: true, volta_na_proxima_edicao: nome === 'Indisponível na data' }))
   const MOTIVO = Object.fromEntries(motivos.map((m) => [m.nome, m.id]))
 
   const stylists = [
@@ -143,7 +147,8 @@ export function dadosIniciais(agora = new Date()) {
     motivo_id: saida.motivo ? MOTIVO[saida.motivo] : null, nota: saida.nota ?? null,
     liberava_private_edit: !!etapas.find((e) => e.id === ETAPA[para])?.libera_private_edit })
   passou(1, null, 'Stylist levantado', -80, 'cadastro'); passou(1, 'Stylist levantado', 'Conversa', -75)
-  passou(1, 'Conversa', 'Confirmado', -72); passou(1, 'Confirmado', 'Ativada', -70)
+  passou(1, 'Conversa', 'Confirmado', -72); passou(1, 'Confirmado', 'Presença', -71)
+  passou(1, 'Presença', 'Ativada', -70)
   passou(3, null, 'Stylist levantado', -3, 'cadastro'); passou(3, 'Stylist levantado', 'Conversa', -3)
   passou(5, null, 'Stylist levantado', -1, 'cadastro')
   passou(6, null, 'Stylist levantado', -1, 'cadastro'); passou(6, 'Stylist levantado', 'Validado', 0)
@@ -466,26 +471,36 @@ export function dadosIniciais(agora = new Date()) {
   stylistLimeira('Débora Nunes', 'Validado', () => [
     [null, 'Stylist levantado', -10, 'cadastro'], ['Stylist levantado', 'Validado', -5],
   ])
-  stylistLimeira('Fernanda Rios', 'Conversa', () => [
+  // ⚠️ Task 3 (28/09/2026): a Fernanda é a "Indisponível na data" da turma —
+  // chegou a Convidado (entra na turma do evento) e depois saiu por este
+  // motivo (`indisponivel_em`). Quando a PRÓXIMA edição de Limeira abrir, ela
+  // volta sozinha para Convidado (`vessel_edicao_abrir`) — é o roteiro guiado
+  // que mostra isso (ver `roteiro.js`). Reaproveitada (não uma stylist nova)
+  // para não deslocar a numeração `STY-00NN` que os outros testes travam.
+  const idFernanda = stylistLimeira('Fernanda Rios', 'Desclassificado', () => [
     [null, 'Stylist levantado', -25, 'cadastro'], ['Stylist levantado', 'Validado', -22], ['Validado', 'Conversa', -20],
+    ['Conversa', 'Convidado', -18], ['Convidado', 'Desclassificado', -2, 'mudanca', { motivo: 'Indisponível na data' }],
   ], { prospectado_em: dia(-20) })
-  stylistLimeira('Gislaine Prado', 'Convidado', () => [
+  const idGislaine = stylistLimeira('Gislaine Prado', 'Convidado', () => [
     [null, 'Stylist levantado', -24, 'cadastro'], ['Stylist levantado', 'Conversa', -18], ['Conversa', 'Convidado', -15],
   ], { prospectado_em: dia(-18) })
-  stylistLimeira('Ingrid Souto', 'Confirmado', () => [
+  const idIngrid = stylistLimeira('Ingrid Souto', 'Confirmado', () => [
     [null, 'Stylist levantado', -20, 'cadastro'], ['Stylist levantado', 'Conversa', -16], ['Conversa', 'Confirmado', -10],
   ], { prospectado_em: dia(-16) })
-  stylistLimeira('Joana Vilela', 'Presença', () => [
+  const idJoana = stylistLimeira('Joana Vilela', 'Presença', () => [
     [null, 'Stylist levantado', -18, 'cadastro'], ['Stylist levantado', 'Conversa', -14], ['Conversa', 'Confirmado', -8],
     ['Confirmado', 'Presença', -5],
   ], { prospectado_em: dia(-14) })
   // ⚠️ A ATIVADA da turma: um encontro ANTES da edição começar (fora da
   // janela — a tela do Private Edit mostra "fora de edição") e outro DENTRO
   // dela (agendado). Desde 28/09 os DOIS contam no placar da edição (turma de
-  // entrada: a data não corta o que a stylist da turma faz).
+  // entrada: a data não corta o que a stylist da turma faz) — e desde a Task 3
+  // ela passa por "Presença" antes de "Ativada", para GANHAR `presente_em`
+  // (sem ele não tem evento de origem, e os encontros não contariam em lugar
+  // nenhum).
   const idKaren = stylistLimeira('Karen Duarte', 'Ativada', () => [
     [null, 'Stylist levantado', -60, 'cadastro'], ['Stylist levantado', 'Conversa', -55], ['Conversa', 'Confirmado', -52],
-    ['Confirmado', 'Ativada', -50],
+    ['Confirmado', 'Presença', -51], ['Presença', 'Ativada', -50],
   ], { prospectado_em: dia(-55), ativada_em: em(-50, '09:00') })
   stylistLimeira('Letícia Farias', 'Desclassificado', () => [
     [null, 'Stylist levantado', -12, 'cadastro'], ['Stylist levantado', 'Validado', -8],
@@ -514,23 +529,37 @@ export function dadosIniciais(agora = new Date()) {
   stylists.push(...campinasFrias, ...piracicabaFrias, ...limeiraFrias, stylistCombo, ...limeiraDiversas)
 
   // ── AS EDIÇÕES: Limeira com a Edição 1 ABERTA; Campinas com a sua própria ──
+  // ⚠️ Task 3 (28/09/2026, edição = evento): `termina_em` fica sempre nulo — a
+  // edição é um evento de UM DIA (`comeca_em`), não mais uma janela.
   const edicoes = [
     { id: 1, praca_id: PRACA.CPS, numero: 1, nome: null, comeca_em: dia(-90), termina_em: null, situacao: 'aberta' },
     { id: 2, praca_id: PRACA.LIM, numero: 1, nome: null, comeca_em: dia(-30), termina_em: null, situacao: 'aberta' },
   ]
-  // Quem está em cada edição hoje (`vessel_stylist_na_edicao`) — Campinas
-  // leva as suas (as 3 nomeadas + as 24 frias) e Limeira leva as suas (a
-  // Luiza + as 10 frias + as 7 que dão a diversidade de etapa).
+  // ⚠️ Task 3: a TURMA (`vessel_stylist_na_edicao`) deixou de ser "todo mundo
+  // da praça" — é só quem foi CONVIDADA (chegou em Convidado ou além, pelo
+  // histórico), com as três marcas do evento e o "indisponível na data". As
+  // "frias" (Stylist levantado) e quem nunca passou de Conversa/Validado NÃO
+  // entram — o mesmo recorte da migration (seção 8, Edição 1 · Campinas).
+  //   Campinas: Marina (pulou Convidado, chegou direto em Confirmado) e Luísa
+  //     (idem) — as duas com as três marcas (foram à Presença).
+  //   Limeira: a Fernanda (Convidado, depois "Indisponível na data"),
+  //     Gislaine (só Convidado), Ingrid (Convidado+Confirmado, pulou
+  //     Convidado), e Joana e Karen (as três marcas — foram à Presença).
   let idVinculo = 1
-  const vincular = (stylistId, edicaoId, entrouEm) => ({
-    id: idVinculo++, stylist_id: stylistId, edicao_id: edicaoId, entrou_em: entrouEm, saiu_em: null, etapa_ao_sair: null,
+  const vincularComMarcas = (stylistId, edicaoId, marcas) => ({
+    id: idVinculo++, stylist_id: stylistId, edicao_id: edicaoId,
+    entrou_em: marcas.convidada_em ?? null, saiu_em: null, etapa_ao_sair: null,
+    convidada_em: marcas.convidada_em ?? null, confirmou_em: marcas.confirmou_em ?? null,
+    presente_em: marcas.presente_em ?? null, indisponivel_em: marcas.indisponivel_em ?? null,
   })
   const naEdicao = [
-    vincular(1, 1, em(-80, '09:00')), vincular(3, 1, em(-3, '09:00')), vincular(4, 1, em(-50, '09:00')),
-    ...campinasFrias.map((s) => vincular(s.id, 1, em(-80, '09:00'))),
-    vincular(5, 2, em(-1, '09:00')),
-    ...limeiraFrias.map((s) => vincular(s.id, 2, em(-25, '09:00'))),
-    ...limeiraDiversas.map((s) => vincular(s.id, 2, em(-25, '09:00'))),
+    vincularComMarcas(1, 1, { convidada_em: em(-72, '10:00'), confirmou_em: em(-72, '10:00'), presente_em: em(-71, '10:00') }),
+    vincularComMarcas(4, 1, { convidada_em: em(-41, '10:00'), confirmou_em: em(-41, '10:00'), presente_em: em(-25, '10:00') }),
+    vincularComMarcas(idFernanda, 2, { convidada_em: em(-18, '10:00'), indisponivel_em: em(-2, '10:00') }),
+    vincularComMarcas(idGislaine, 2, { convidada_em: em(-15, '10:00') }),
+    vincularComMarcas(idIngrid, 2, { convidada_em: em(-10, '10:00'), confirmou_em: em(-10, '10:00') }),
+    vincularComMarcas(idJoana, 2, { convidada_em: em(-8, '10:00'), confirmou_em: em(-8, '10:00'), presente_em: em(-5, '10:00') }),
+    vincularComMarcas(idKaren, 2, { convidada_em: em(-52, '10:00'), confirmou_em: em(-52, '10:00'), presente_em: em(-51, '10:00') }),
   ]
 
   return {

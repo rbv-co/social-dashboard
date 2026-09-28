@@ -5,24 +5,26 @@ import { PASSOS, roteiroVazio, aplicarAviso, resumoDoRoteiro } from './roteiro.j
 /* O ROTEIRO SE MARCA PELO GESTO, E SÓ PELO GESTO. */
 const seguir = (avisos) => avisos.reduce((r, [evento, dados]) => aplicarAviso(r, evento, dados), roteiroVazio())
 
-test('cinco passos, cada um com quem faz e onde tocar', () => {
-  assert.equal(PASSOS.length, 5)
-  assert.deepEqual(PASSOS.map((p) => p.id), [1, 2, 3, 4, 5])
+test('sete passos, cada um com quem faz e onde tocar', () => {
+  assert.equal(PASSOS.length, 7)
+  assert.deepEqual(PASSOS.map((p) => p.id), [1, 2, 3, 4, 5, 6, 7])
   for (const p of PASSOS) {
     assert.ok(['Ionara', 'Gerente', 'Sistema'].includes(p.quem), `quem do passo ${p.id}`)
     assert.ok(p.titulo && p.onde, `texto do passo ${p.id}`)
   }
 })
 
-test('o roteiro inteiro, na ordem, marca os cinco: cadastrar → conversar → validar → mover para Conversa → ativar', () => {
+test('o roteiro inteiro, na ordem, marca os sete: cadastrar → conversar → validar → conversa → ativar → presença → desclassificar', () => {
   const r = seguir([
     ['stylist_criada'], ['contato_registrado'],
     ['etapa_mudada', { para: 'Validado', libera_private_edit: false }],
     ['etapa_mudada', { para: 'Conversa', libera_private_edit: false }],
     ['etapa_mudada', { para: 'Ativada', libera_private_edit: true }],
+    ['etapa_mudada', { para: 'Presença', libera_private_edit: false }],
+    ['etapa_mudada', { para: 'Desclassificado', libera_private_edit: false }],
   ])
-  assert.deepEqual(r.feitos, [1, 2, 3, 4, 5])
-  assert.equal(resumoDoRoteiro(r), 'Roteiro · 5 de 5 ✓')
+  assert.deepEqual(r.feitos, [1, 2, 3, 4, 5, 6, 7])
+  assert.equal(resumoDoRoteiro(r), 'Roteiro · 7 de 7 ✓')
 })
 
 test('passo 3 só quando ela chega em Validado; passo 4 só em Conversa', () => {
@@ -34,6 +36,15 @@ test('passo 3 só quando ela chega em Validado; passo 4 só em Conversa', () => 
 test('passo 5 só quando ela chega numa etapa que libera Private Edit (a Ativada)', () => {
   assert.deepEqual(seguir([['etapa_mudada', { para: 'Confirmado', libera_private_edit: false }]]).feitos, [])
   assert.deepEqual(seguir([['etapa_mudada', { para: 'Ativada', libera_private_edit: true }]]).feitos, [5])
+})
+
+// ⚠️ Task 3 (28/09/2026): edição = evento. Passos LIVRES — qualquer cartão
+// que chegue em Presença/Desclassificado marca, sem precisar ser o mesmo da
+// jornada dos passos 1-5.
+test('passo 6 só quando um cartão chega em Presença; passo 7 só em Desclassificado', () => {
+  assert.deepEqual(seguir([['etapa_mudada', { para: 'Confirmado', libera_private_edit: false }]]).feitos, [])
+  assert.deepEqual(seguir([['etapa_mudada', { para: 'Presença', libera_private_edit: false }]]).feitos, [6])
+  assert.deepEqual(seguir([['etapa_mudada', { para: 'Desclassificado', libera_private_edit: false }]]).feitos, [7])
 })
 
 test('"pronta" (a Central recarregou) zera o roteiro; aviso desconhecido não mexe', () => {
