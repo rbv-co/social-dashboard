@@ -25,6 +25,7 @@ import { dadosIniciais, USUARIO_DA_DEMONSTRACAO } from './dados-iniciais.js'
 import { diaEmSaoPaulo, somarDias, diasEntre, horaEmSaoPaulo } from './tempo.js'
 import { DURACAO_DO_PRIVATE_EDIT_EM_HORAS } from '../ferramentas/comercial-vessel/agenda-regras.js'
 import { faixaDaNota } from '../ferramentas/comercial-vessel/qualificacao-regras.js'
+import { emailCanonico } from '../ferramentas/beauty-sessions/cadastro-de-lead.js'
 import { achatarCidade } from '../ferramentas/comercial-vessel/praca-regras.js'
 
 /** ⚠️ A MARCA QUE O BUILD DA CENTRAL NÃO PODE TER: o relatório da entrega
@@ -1752,7 +1753,7 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
     // ── `2026-09-24-beauty-session-cadastro-pela-equipe.sql` ─────────────────
     // A equipe cadastra a lead dentro da sessão, pelo mesmo miolo do QR. A
     // MESMA ordem de conferência e as MESMAS situações da função de verdade.
-    vessel_beauty_session_cadastrar_lead({ p_codigo, p_nome, p_whatsapp, p_instagram = null, p_interesse = null } = {}) {
+    vessel_beauty_session_cadastrar_lead({ p_codigo, p_nome, p_whatsapp, p_instagram = null, p_interesse = null, p_email = null } = {}) {
       const s = b.sessoes.find((x) => x.codigo === maiusculo(p_codigo))
       if (!s) return { ok: false, situacao: 'nao_achei' }
       if (s.arquivada) return { ok: false, situacao: 'sessao_arquivada' }
@@ -1760,6 +1761,10 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
       if (nome.length < 2) return { ok: false, situacao: 'sem_nome' }
       const fone = telefoneCanonico(p_whatsapp)
       if (!fone) return { ok: false, situacao: 'whatsapp_invalido' }
+      // `2026-09-28-zzz-vessel-beauty-session-pede-email.sql`: opcional no banco,
+      // mas escrito e inválido recusa — a mesma regra de `vessel_email_canonico`.
+      const email = emailCanonico(p_email)
+      if (limpo(p_email) && !email) return { ok: false, situacao: 'email_invalido' }
       const insta = limpo(p_instagram)
       if (insta && insta.length > 120) return { ok: false, situacao: 'instagram_longo' }
       const interesse = limpo(p_interesse)
@@ -1769,13 +1774,18 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
       let pessoa = b.pessoas.find((p) => p.telefone === fone)
       const naBase = !!pessoa
       if (pessoa && b.origens.some((o) => o.pessoa_id === pessoa.id && o.evento_id === s.codigo)) {
+        // O e-mail novo entra mesmo assim, se a ficha não tinha: é o que a leva ao RD.
+        if (email && !limpo(pessoa.email)) pessoa.email = email
         const porta = (b.cadastros || []).some((c) => c.codigo === s.codigo && c.pessoa_id === pessoa.id) ? 'equipe' : 'qr'
         return { ok: false, situacao: 'ja_estava', porta, pessoa_id: pessoa.id, nome: pessoa.nome }
       }
       // `vessel_anotar_interesse`: a ficha (só completa), a origem, o pedido de
       // visita (janela de 30 min), e as permissões — que aqui não se guardam.
-      if (!pessoa) { pessoa = { id: proximo(b.pessoas), nome, telefone: fone, email: null, instagram: insta }; b.pessoas.push(pessoa) }
-      else if (insta) pessoa.instagram = insta
+      if (!pessoa) { pessoa = { id: proximo(b.pessoas), nome, telefone: fone, email, instagram: insta }; b.pessoas.push(pessoa) }
+      else {
+        if (insta) pessoa.instagram = insta
+        if (email && !limpo(pessoa.email)) pessoa.email = email
+      }
       b.origens.push({ pessoa_id: pessoa.id, momento: agoraIso(), canal: 'beauty_session', evento_id: s.codigo,
         stylist_id: null, utm_source: 'beauty_session', utm_medium: 'offline_equipe',
         utm_campaign: s.codigo.toLowerCase().replace(/-/g, '_') })
