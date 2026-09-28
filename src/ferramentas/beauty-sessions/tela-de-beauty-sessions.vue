@@ -300,9 +300,11 @@
                        v-model="formDe(s).nome"></label>
               <div class="bs-campo bs-campo-largo"><span>WhatsApp com DDD</span>
                 <div class="bs-fone">
-                  <span class="bs-fone-mais" aria-hidden="true">+</span>
-                  <input :id="`bsl-pais-${s.codigo}`" class="bs-fone-pais" type="tel" inputmode="numeric"
-                         maxlength="3" aria-label="Código do país" v-model="formDe(s).pais">
+                  <span class="bs-fone-ddi">
+                    <span class="bs-fone-mais" aria-hidden="true">+</span>
+                    <input :id="`bsl-pais-${s.codigo}`" class="bs-fone-pais" type="tel" inputmode="numeric"
+                           maxlength="3" aria-label="Código do país" v-model="formDe(s).pais">
+                  </span>
                   <input :id="`bsl-ddd-${s.codigo}`" class="bs-fone-ddd" type="tel" inputmode="numeric"
                          maxlength="2" placeholder="19" aria-label="DDD" v-model="formDe(s).ddd">
                   <input :id="`bsl-numero-${s.codigo}`" class="bs-fone-numero" type="tel" inputmode="numeric"
@@ -1069,15 +1071,41 @@ onMounted(carregar)
 
 /* ── cadastrar lead ────────────────────────────────────────────────────── */
 /* O WhatsApp em três pedaços, como na página do QR: +país, DDD e o número. */
+/* ⚠️ O NÚMERO CORTAVA A 375px (28/09/2026): país e DDD tinham 4,2rem e 3,8rem
+   fixos (67 + 61px) e o número ficava com 119px — "98877-6655" mede 99px de
+   texto, mais 24px de respiro, e aparecia "98877-665". A 320px sobravam 38px.
+   Agora país e DDD têm a largura do que cabe neles, em `ch` (a largura do "0",
+   o dígito MAIS LARGO desta fonte: 3ch cabe qualquer código de 3 dígitos), e o
+   número fica com todo o resto. O "+" cola no país: é "+55", uma coisa só.
+   Guarda: `whatsapp-cabe-inteiro.test.mjs`. */
 .bs-fone { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+.bs-fone-ddi { display: flex; align-items: center; flex: 0 0 auto; }
 .bs-fone-mais {
   font-family: var(--fonte-principal);
   font-size: var(--texto-campo);
   color: var(--muted);
 }
-.bs-campo .bs-fone-pais { flex: 0 0 4.2rem; width: 4.2rem; }
-.bs-campo .bs-fone-ddd { flex: 0 0 3.8rem; width: 3.8rem; }
-.bs-campo .bs-fone-numero { flex: 1 1 auto; min-width: 0; }
+/* A caixa = os dígitos + o respiro dos dois lados + a borda (1px de cada lado). */
+.bs-campo .bs-fone-pais,
+.bs-campo .bs-fone-ddd { padding-inline: var(--sp-2); text-align: center; }
+.bs-campo .bs-fone-pais { flex: 0 0 auto; width: calc(3ch + 2 * var(--sp-2) + 2px); }
+.bs-campo .bs-fone-ddd { flex: 0 0 auto; width: calc(2ch + 2 * var(--sp-2) + 2px); }
+.bs-campo .bs-fone-numero { flex: 1 1 0; min-width: 0; }
+@media (max-width: 640px) {
+  /* No celular cada pixel da linha vai para o número: respiro menor nas duas
+     caixas curtas e entre as caixas. */
+  .bs-fone { gap: var(--sp-1); }
+  .bs-campo .bs-fone-pais,
+  .bs-campo .bs-fone-ddd { padding-inline: var(--sp-1); }
+  .bs-campo .bs-fone-pais { width: calc(3ch + 2 * var(--sp-1) + 2px); }
+  .bs-campo .bs-fone-ddd { width: calc(2ch + 2 * var(--sp-1) + 2px); }
+  .bs-campo .bs-fone-numero { padding-inline: var(--sp-2); }
+}
+@media (max-width: 22.5rem) {
+  /* Até 360px: o número MAIS LARGO de celular ("90000-0000", 114px — o "0" é o
+     dígito mais largo) passava 4px a 320px. Medido: com este respiro sobra. */
+  .bs-campo .bs-fone-numero { padding-inline: var(--sp-1); }
+}
 /* ⚠️ o texto do recado é `--text`: a cor é o sinal (a borda e a tinta), o texto
    é para ler — item 2 do padrão. */
 .bs-recado {
