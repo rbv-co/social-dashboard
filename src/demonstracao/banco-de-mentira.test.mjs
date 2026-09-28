@@ -1582,3 +1582,61 @@ test('vessel_eventos_de_origem: devolve a 1ª presença de cada stylist — igua
   chamar('vessel_stylist_mover_de_etapa', { p_codigo: joana.codigo, p_etapa_id: ETAPA.Presença })
   assert.equal(chamar('vessel_evento_de_origem', { p_stylist_id: joana.id }), edicaoLim.id, 'a 1ª presença continua sendo a origem')
 })
+
+test('vessel_stylist_trocar_motivo (29/09): troca o motivo da saída sem mudar a etapa; "Indisponível na data" marca e faz voltar', () => {
+  const { chamar, banco, avisos } = novoBanco()
+  const motivo = (nome) => banco.estado.motivos.find((m) => m.etapa_id === ETAPA.Desclassificado && m.nome === nome).id
+  const lim = chamar('vessel_pracas_listar').find((p) => p.sigla === 'LIM').id
+  const edicao1 = chamar('vessel_edicoes_listar', { p_praca_id: lim })[0]
+  const leticia = banco.estado.stylists.find((s) => s.nome.startsWith('Letícia Farias'))
+  const doHist = () => banco.estado.historicoDeEtapas.filter((h) => h.stylist_id === leticia.id)
+  const antes = doHist().length
+  const outrasAntes = JSON.stringify(banco.estado.stylists.filter((s) => s.id !== leticia.id).map((s) => [s.id, s.etapa_id]))
+
+  // recusas: motivo que pede nota sem nota; motivo que não é da saída atual; quem não está em saída
+  assert.equal(chamar('vessel_stylist_trocar_motivo', { p_codigo: leticia.codigo, p_motivo_id: motivo('Outro') }).situacao, 'nota_obrigatoria')
+  assert.equal(chamar('vessel_stylist_trocar_motivo', { p_codigo: leticia.codigo, p_motivo_id: 999999 }).situacao, 'motivo_invalido')
+  const naoSaida = banco.estado.stylists.find((s) => banco.estado.etapas.find((e) => e.id === s.etapa_id)?.tipo === 'funil')
+  assert.equal(chamar('vessel_stylist_trocar_motivo', { p_codigo: naoSaida.codigo, p_motivo_id: motivo('Indisponível na data') }).situacao, 'nao_esta_em_saida')
+  assert.equal(doHist().length, antes, 'recusa não grava')
+
+  const r = chamar('vessel_stylist_trocar_motivo', { p_codigo: leticia.codigo, p_motivo_id: motivo('Indisponível na data'), p_nota: 'Viaja na data.' })
+  assert.equal(r.ok, true)
+  assert.equal(r.situacao, 'ok')
+  assert.equal(doHist().length, antes + 1, 'exatamente 1 linha nova')
+  const h = doHist().at(-1)
+  assert.deepEqual([h.de_etapa_id, h.para_etapa_id, h.motivo, h.motivo_id, h.nota, h.liberava_private_edit],
+    [ETAPA.Desclassificado, ETAPA.Desclassificado, 'troca_de_motivo', motivo('Indisponível na data'), 'Viaja na data.', false])
+  assert.equal(leticia.etapa_id, ETAPA.Desclassificado, 'a etapa não muda')
+  assert.equal(JSON.stringify(banco.estado.stylists.filter((s) => s.id !== leticia.id).map((s) => [s.id, s.etapa_id])), outrasAntes, 'ninguém mais muda')
+  assert.ok(avisos.some((a) => a.evento === 'motivo_trocado'))
+  // de novo, igual: sem_mudanca e nenhuma linha
+  assert.equal(chamar('vessel_stylist_trocar_motivo', { p_codigo: leticia.codigo, p_motivo_id: motivo('Indisponível na data') }).situacao, 'sem_mudanca')
+  assert.equal(doHist().length, antes + 1)
+  // o histórico da tela mostra a troca com o motivo novo
+  const tela = chamar('vessel_stylist_historico_de_etapas', { p_codigo: leticia.codigo })[0]
+  assert.deepEqual([tela.de, tela.para, tela.motivo, tela.motivo_de_saida], ['Desclassificado', 'Desclassificado', 'troca_de_motivo', 'Indisponível na data'])
+
+  // a próxima edição de Limeira abre e ela volta (junto com a Fernanda)
+  chamar('vessel_edicao_encerrar', { p_id: edicao1.id, p_levar_para: null })
+  const nova = chamar('vessel_edicao_criar', { p_praca_id: lim, p_nome: null, p_comeca_em: '2026-11-01', p_termina_em: null })
+  assert.deepEqual(chamar('vessel_edicao_abrir', { p_id: nova.id }), { ok: true, situacao: 'ok', voltaram: 2 })
+  assert.equal(leticia.etapa_id, ETAPA.Convidado)
+})
+
+test('vessel_stylist_trocar_motivo: com a edição aberta, marca indisponivel_em sem apagar as outras marcas', () => {
+  const { chamar, banco } = novoBanco()
+  const indisp = banco.estado.motivos.find((m) => m.nome === 'Indisponível na data').id
+  const s = chamar('vessel_stylist_criar', { ...PARCEIRA, p_cidade: 'Limeira' })
+  const st = banco.estado.stylists.find((x) => x.codigo === s.codigo)
+  st.praca_id = chamar('vessel_pracas_listar').find((p) => p.sigla === 'LIM').id
+  chamar('vessel_stylist_mover_de_etapa', { p_codigo: s.codigo, p_etapa_id: ETAPA.Confirmado })
+  chamar('vessel_stylist_mover_de_etapa', { p_codigo: s.codigo, p_etapa_id: ETAPA.Desclassificado,
+    p_motivo_id: banco.estado.motivos.find((m) => m.nome === 'Desinteresse').id })
+  const l = banco.estado.naEdicao.find((n) => n.stylist_id === st.id)
+  const marcas = [l.convidada_em, l.confirmou_em, l.presente_em]
+  assert.ok(l.convidada_em && l.confirmou_em && !l.indisponivel_em)
+  assert.equal(chamar('vessel_stylist_trocar_motivo', { p_codigo: s.codigo, p_motivo_id: indisp }).situacao, 'ok')
+  assert.ok(l.indisponivel_em, 'marca indisponivel_em')
+  assert.deepEqual([l.convidada_em, l.confirmou_em, l.presente_em], marcas, 'as outras ficam')
+})

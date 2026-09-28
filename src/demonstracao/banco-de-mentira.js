@@ -901,6 +901,32 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
         prospectado_em: s.prospectado_em }
     },
 
+    /** `vessel_stylist_trocar_motivo` (29/09/2026): troca o motivo da saída
+     * ATUAL sem mudar a etapa — 1 linha no histórico com a mesma etapa em
+     * de/para e `motivo = 'troca_de_motivo'`; nota vazia = mantém a atual;
+     * motivo "volta na próxima edição" marca `indisponivel_em` (nunca apaga). */
+    vessel_stylist_trocar_motivo({ p_codigo, p_motivo_id = null, p_nota = null } = {}) {
+      const codigo = maiusculo(p_codigo)
+      const s = stylistPorCodigo(codigo)
+      if (!s) return { ok: false, situacao: 'nao_achei' }
+      const e = etapaPorId(s.etapa_id)
+      if (!e || e.tipo !== 'saida') return { ok: false, situacao: 'nao_esta_em_saida', codigo, etapa: e?.nome ?? null }
+      const atual = saidaAtual(s)
+      const nota = limpo(p_nota) ?? atual?.nota ?? null
+      let recusa = conferirMotivo(e.id, p_motivo_id, nota)
+      if (!recusa && p_motivo_id == null) recusa = 'motivo_obrigatorio'
+      if (recusa) return { ok: false, situacao: recusa, codigo, etapa: e.nome }
+      const motivoId = Number(p_motivo_id)
+      if ((atual?.motivo_id ?? null) === motivoId && (atual?.nota ?? null) === nota) return { ok: true, situacao: 'sem_mudanca', codigo }
+      b.historicoDeEtapas.push({ id: proximo(b.historicoDeEtapas), stylist_id: s.id, de_etapa_id: e.id,
+        para_etapa_id: e.id, motivo: 'troca_de_motivo', por_nome: USUARIO_DA_DEMONSTRACAO, em: agoraIso(),
+        motivo_id: motivoId, nota, liberava_private_edit: false })
+      vesselEdicaoMarcarMovimento(s.id, e, motivoId)
+      avisar('motivo_trocado', { codigo, motivo_id: motivoId })
+      return { ok: true, situacao: 'ok', codigo, etapa: e.nome, motivo_id: motivoId,
+        motivo_anterior_id: atual?.motivo_id ?? null, motivo: b.motivos.find((m) => m.id === motivoId)?.nome ?? null }
+    },
+
     // ── escritas: a marca "libera Private Edit" e os motivos (24/09/2026) ──
     vessel_stylist_etapa_liberar_private_edit({ p_id, p_libera } = {}) {
       if (p_libera == null) return { ok: false, situacao: 'sem_escolha' }

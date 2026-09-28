@@ -121,6 +121,8 @@ test('o porquê do histórico de etapas', () => {
   assert.equal(motivoDoHistorico('cadastro'), 'Cadastro')
   assert.equal(motivoDoHistorico('mudanca'), 'Mudou de etapa')
   assert.equal(motivoDoHistorico('etapa_excluida'), 'A etapa foi excluída')
+  // 29/09: a troca do motivo sem mudar a etapa (2026-09-29-vessel-stylist-trocar-motivo.sql)
+  assert.equal(motivoDoHistorico('troca_de_motivo'), 'Trocou o motivo')
   // Os três motivos são os do CHECK da migration.
   const i = FUNIL.indexOf('vessel_stylist_etapas_historico_motivo_valido')
   const doCheck = [...FUNIL.slice(i, FUNIL.indexOf(')', FUNIL.indexOf('(', i + 60)) + 1).matchAll(/'([a-z_]+)'/g)].map((m) => m[1])
