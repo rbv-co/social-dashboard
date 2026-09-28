@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { criarBancoDeMentira, telefoneCanonico, sortearChave, situacaoDoConvite } from './banco-de-mentira.js'
 import { dadosIniciais } from './dados-iniciais.js'
 import { somarDias } from './tempo.js'
+import { funilDoEvento } from '../ferramentas/comercial-vessel/edicao-regras.js'
 
 /* O BANCO DE MENTIRA TEM AS REGRAS DO DE VERDADE — cada teste aqui é uma regra
  * de `2026-09-22-vessel-t11-bases-do-stylist-circle.sql` (e do funil configurável
@@ -832,10 +833,13 @@ test('motivos: saída com motivos exige o motivo (e a nota no "Outro"); vai para
   const id = (nome) => des().motivos.find((m) => m.nome === nome).id
   assert.deepEqual(des().motivos.map((m) => m.nome), ['Desinteresse', 'Não conecta com a marca', 'Não retornou os contatos',
     'Carteira fora do perfil', 'Portfólio / estética não alinhados', 'Fora da praça (logística)',
-    'Não aceitou as condições (Professional Fee)', 'Exclusividade com outra marca', 'Outro'])
-  // Os mesmos nove, na mesma ordem, da migration.
+    'Não aceitou as condições (Professional Fee)', 'Exclusividade com outra marca', 'Indisponível na data', 'Outro'])
+  // Os mesmos nove da migration original, na mesma ordem, + "Indisponível na
+  // data" (Task 3, 28/09/2026) entrando ANTES de "Outro" — a mesma posição do
+  // `insert` em `2026-09-28-zzzzzz-vessel-edicao-e-o-evento.sql`.
   const i = MIG_LIBERADA.indexOf("from unnest(array[")
   const daMigration = [...MIG_LIBERADA.slice(i, MIG_LIBERADA.indexOf(']', i)).matchAll(/'([^']+)'/g)].map((m) => m[1])
+  daMigration.splice(daMigration.indexOf('Outro'), 0, 'Indisponível na data')
   assert.deepEqual(des().motivos.map((m) => m.nome), daMigration)
   const mover = (corpo) => chamar('vessel_stylist_mover_de_etapa', { p_codigo: NOVA, p_etapa_id: ETAPA.Desclassificado, ...corpo })
   assert.equal(mover({}).situacao, 'motivo_obrigatorio')
@@ -868,7 +872,7 @@ test('motivos: saída com motivos exige o motivo (e a nota no "Outro"); vai para
   assert.equal(chamar('vessel_stylist_motivo_mover', { p_id: id('Desinteresse'), p_direcao: 'subir' }).situacao, 'no_limite')
   assert.equal(chamar('vessel_stylist_motivo_renomear', { p_id: novo.id, p_nome: 'Mudou de profissão' }).ok, true)
   assert.equal(chamar('vessel_stylist_motivo_exigir_nota', { p_id: novo.id, p_exige: false }).ok, true)
-  assert.deepEqual(des().motivos.filter((m) => m.ativo).map((m) => m.ordem), [1, 2, 3, 4, 5, 6, 7, 8, 9])
+  assert.deepEqual(des().motivos.filter((m) => m.ativo).map((m) => m.ordem), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
 })
 
 test('excluir etapa com destino numa saída com motivos pede o motivo, e ele vai para o histórico de todas', () => {
@@ -1101,22 +1105,22 @@ test('vessel_praca_cidade_vincular/desvincular: a chave é achatarCidade, e cida
 // roda uma vez e `vessel_stylist_definir_praca` não tem chamador. Agora
 // vincular a cidade ADOTA quem está sem praça naquela cidade — e a demo tem de
 // mostrar a mesma coisa que o banco.
-test('vessel_praca_cidade_vincular: ADOTA as stylists daquela cidade que estão sem praça (IMPORTANTE 6)', () => {
+test('vessel_praca_cidade_vincular: ADOTA as stylists daquela cidade que estão sem praça (IMPORTANTE 6); Task 3: NÃO entra em edição nenhuma', () => {
   const { chamar, banco } = novoBanco()
   const lim = chamar('vessel_pracas_listar').find((p) => p.sigla === 'LIM').id
   // A "Limeira / Piracicaba" do cenário é exatamente a pendência: cidade
   // composta que não casa com nenhuma cadastrada, e por isso ela está SEM PRAÇA.
   const orfa = banco.estado.stylists.find((s) => s.cidade === 'Limeira / Piracicaba')
   assert.equal(orfa.praca_id, null, 'pré-condição: ela começa sem praça')
-  const edicaoAbertaLim = chamar('vessel_edicoes_listar', { p_praca_id: lim }).find((e) => e.situacao === 'aberta')
 
   const r = chamar('vessel_praca_cidade_vincular', { p_praca_id: lim, p_cidade: 'Limeira / Piracicaba' })
   assert.equal(r.ok, true)
   assert.equal(r.adotadas, 1, 'a resposta diz quantas foram adotadas, para a tela escrever')
   assert.equal(banco.estado.stylists.find((s) => s.id === orfa.id).praca_id, lim)
-  // e ela JÁ entra na edição ABERTA da praça — a adoção resolve a pendência
-  // inteira, não só metade.
-  assert.ok(banco.estado.naEdicao.some((n) => n.stylist_id === orfa.id && n.edicao_id === edicaoAbertaLim.id && !n.saiu_em))
+  // ⚠️ Task 3 (28/09/2026): ganhar praça NÃO é o mesmo que ser convidada a um
+  // evento — a adoção NÃO cria linha em `vessel_stylist_na_edicao` nenhuma
+  // (`vessel_stylist_sincronizar_edicao` virou `return;` no banco de verdade).
+  assert.ok(!banco.estado.naEdicao.some((n) => n.stylist_id === orfa.id), 'sem vínculo nenhum criado pela adoção')
 
   // quem JÁ TEM praça não é arrastada: vincular "Campinas" a uma praça nova
   // seria trocar a praça de 27 pessoas, e a adoção só preenche buraco.
@@ -1128,134 +1132,137 @@ test('vessel_praca_cidade_vincular: ADOTA as stylists daquela cidade que estão 
   assert.deepEqual(deCampinas.map((s) => s.praca_id), pracasAntes)
 })
 
-test('vessel_stylist_definir_praca: recusa praça inválida, aceita nulo (tira a praça); TASK 11 vincula à edição aberta', () => {
+test('vessel_stylist_definir_praca: recusa praça inválida, aceita nulo (tira a praça); Task 3: NÃO mexe em edição nenhuma', () => {
   const { chamar, banco } = novoBanco()
   // A "Limeira / Piracicaba" (a pendência do cenário) não tem praça: ganha uma na mão.
   const combo = banco.estado.stylists.find((s) => s.cidade === 'Limeira / Piracicaba')
   assert.equal(chamar('vessel_stylist_definir_praca', { p_codigo: 'STY-9999', p_praca_id: 1 }).situacao, 'nao_achei')
   assert.equal(chamar('vessel_stylist_definir_praca', { p_codigo: combo.codigo, p_praca_id: 999999 }).situacao, 'praca_invalida')
   const lim = chamar('vessel_pracas_listar').find((p) => p.sigla === 'LIM').id
-  const edicao1Lim = chamar('vessel_edicoes_listar', { p_praca_id: lim })[0]
   assert.deepEqual(chamar('vessel_stylist_definir_praca', { p_codigo: combo.codigo, p_praca_id: lim }), { ok: true, situacao: 'ok', codigo: combo.codigo })
   assert.equal(banco.estado.stylists.find((s) => s.codigo === combo.codigo).praca_id, lim)
-  // TASK 11: ganhar a praça de LIM vincula à Edição 1 (aberta) automaticamente.
-  assert.ok(banco.estado.naEdicao.some((n) => n.stylist_id === combo.id && n.edicao_id === edicao1Lim.id && !n.saiu_em))
-  // tirar a praça (nulo) NÃO desfaz o vínculo que acabou de entrar.
+  // ⚠️ Task 3: ganhar a praça de LIM NÃO vincula a edição nenhuma.
+  assert.ok(!banco.estado.naEdicao.some((n) => n.stylist_id === combo.id))
   assert.equal(chamar('vessel_stylist_definir_praca', { p_codigo: combo.codigo, p_praca_id: null }).ok, true)
   assert.equal(banco.estado.stylists.find((s) => s.codigo === combo.codigo).praca_id, null)
-  assert.ok(banco.estado.naEdicao.some((n) => n.stylist_id === combo.id && n.edicao_id === edicao1Lim.id && !n.saiu_em))
 })
 
-test('vessel_edicoes_listar(null) devolve todas, ordenadas por praça; nao_ativadas é quem realmente seria levada', () => {
+test('vessel_edicoes_listar(null) devolve todas, ordenadas por praça; Task 3: `stylists` só quem foi CONVIDADA, + `indisponiveis`', () => {
   const { chamar } = novoBanco()
   const todas = chamar('vessel_edicoes_listar', { p_praca_id: null })
   assert.deepEqual(todas.map((e) => [e.praca_nome, e.numero, e.situacao]),
     [['Campinas', 1, 'aberta'], ['Limeira', 1, 'aberta']])
+  const cps = todas.find((e) => e.praca_nome === 'Campinas')
+  // Campinas: Marina e Luísa (as duas pularam Convidado, chegaram por
+  // Confirmado) — as 24 "frias" (Stylist levantado) NÃO entram.
+  assert.equal(cps.stylists, 2)
+  assert.equal(cps.indisponiveis, 0)
   const lim = todas.find((e) => e.praca_nome === 'Limeira')
-  assert.equal(lim.stylists, 18)
-  // 17 não ativaram (só a Karen, que chegou na Ativada, ativou).
-  assert.equal(lim.nao_ativadas, 17)
-  const daCps = chamar('vessel_edicoes_listar', { p_praca_id: todas.find((e) => e.praca_nome === 'Campinas').praca_id })
+  // Limeira: Fernanda, Gislaine, Ingrid, Joana, Karen — Débora (Validado) e
+  // Letícia (nunca passou de Validado) NÃO entram.
+  assert.equal(lim.stylists, 5)
+  assert.equal(lim.indisponiveis, 1, 'a Fernanda, "Indisponível na data"')
+  // 4 não ativaram (só a Karen, que chegou na Ativada, ativou).
+  assert.equal(lim.nao_ativadas, 4)
+  const daCps = chamar('vessel_edicoes_listar', { p_praca_id: cps.praca_id })
   assert.equal(daCps.length, 1)
 })
 
-test('vessel_edicao_criar: numero = maior da praça + 1; sem_data; data_invalida; praca_invalida', () => {
+test('vessel_edicao_criar: numero = maior da praça + 1; sem_data; praca_invalida; Task 3: p_termina_em ignorado (grava nulo)', () => {
   const { chamar } = novoBanco()
   const lim = chamar('vessel_pracas_listar').find((p) => p.sigla === 'LIM').id
   assert.equal(chamar('vessel_edicao_criar', { p_praca_id: 999999, p_nome: null, p_comeca_em: '2026-10-01', p_termina_em: null }).situacao, 'praca_invalida')
   assert.equal(chamar('vessel_edicao_criar', { p_praca_id: lim, p_nome: null, p_comeca_em: null, p_termina_em: null }).situacao, 'sem_data')
-  assert.equal(chamar('vessel_edicao_criar', { p_praca_id: lim, p_nome: null, p_comeca_em: '2026-10-05', p_termina_em: '2026-10-01' }).situacao, 'data_invalida')
-  const r = chamar('vessel_edicao_criar', { p_praca_id: lim, p_nome: 'Verão', p_comeca_em: '2026-10-01', p_termina_em: null })
+  const r = chamar('vessel_edicao_criar', { p_praca_id: lim, p_nome: 'Verão', p_comeca_em: '2026-10-01', p_termina_em: '2026-12-31' })
   assert.deepEqual(r, { ok: true, situacao: 'ok', id: r.id, numero: 2 }, 'a Edição 1 de Limeira já existe: esta nasce numero 2')
+  const listada = chamar('vessel_edicoes_listar', { p_praca_id: lim }).find((e) => e.id === r.id)
+  assert.equal(listada.termina_em, null, '`p_termina_em` é ignorado: a edição é um evento de um dia')
 })
 
-test('vessel_edicao_abrir: só uma aberta por praça, e encerrada não reabre', () => {
-  const { chamar } = novoBanco()
-  const lim = chamar('vessel_pracas_listar').find((p) => p.sigla === 'LIM').id
-  const edicao1 = chamar('vessel_edicoes_listar', { p_praca_id: lim })[0]
-  assert.deepEqual(chamar('vessel_edicao_abrir', { p_id: edicao1.id }), { ok: true, situacao: 'sem_mudanca', incluidas: 0 }, 'já está aberta: sucesso, não erro')
-  const nova = chamar('vessel_edicao_criar', { p_praca_id: lim, p_nome: null, p_comeca_em: '2026-11-01', p_termina_em: null })
-  assert.equal(chamar('vessel_edicao_abrir', { p_id: nova.id }).situacao, 'ja_tem_aberta', 'Limeira já tem a Edição 1 aberta')
+test('vessel_edicao_abrir: só uma aberta por praça, encerrada não reabre; Task 3: NÃO puxa a praça (voltaram: 0)', () => {
+  const { chamar, banco } = novoBanco()
+  // Campinas: ninguém pendente de "Indisponível na data" no cenário — usada
+  // aqui para o mecanismo puro (sem misturar com o teste da volta, abaixo).
+  const cps = chamar('vessel_pracas_listar').find((p) => p.sigla === 'CPS').id
+  const edicao1 = chamar('vessel_edicoes_listar', { p_praca_id: cps })[0]
+  assert.deepEqual(chamar('vessel_edicao_abrir', { p_id: edicao1.id }), { ok: true, situacao: 'sem_mudanca', voltaram: 0 }, 'já está aberta: sucesso, não erro')
+  chamar('vessel_edicao_encerrar', { p_id: edicao1.id, p_levar_para: null })
+  const nova = chamar('vessel_edicao_criar', { p_praca_id: cps, p_nome: null, p_comeca_em: '2026-11-01', p_termina_em: null })
+  assert.equal(banco.estado.naEdicao.filter((n) => n.edicao_id === nova.id).length, 0, 'antes de abrir: ninguém')
+  const r = chamar('vessel_edicao_abrir', { p_id: nova.id })
+  assert.deepEqual(r, { ok: true, situacao: 'ok', voltaram: 0 }, 'sem "Indisponível na data" pendente: ninguém volta')
+  assert.equal(banco.estado.naEdicao.filter((n) => n.edicao_id === nova.id).length, 0,
+    'abrir NÃO puxa a praça inteira nem ninguém — a turma só cresce por convite')
+  const outra = chamar('vessel_edicao_criar', { p_praca_id: cps, p_nome: null, p_comeca_em: '2026-12-01', p_termina_em: null })
+  assert.equal(chamar('vessel_edicao_abrir', { p_id: outra.id }).situacao, 'ja_tem_aberta', 'Campinas já tem uma edição aberta')
   assert.equal(chamar('vessel_edicao_abrir', { p_id: 999999 }).situacao, 'nao_achei')
 })
 
-test('vessel_edicao_abrir: TASK 11 (commit 9eff666) — abrir vincula toda stylist ativa e não-teste da praça, sem duplicar', () => {
-  const { chamar, banco } = novoBanco()
-  const cps = chamar('vessel_pracas_listar').find((p) => p.sigla === 'CPS').id
-  const edicao1Cps = chamar('vessel_edicoes_listar', { p_praca_id: cps })[0]
-  // encerra a Edição 1 de Campinas (já aberta, no cenário) para abrir uma nova do zero.
-  chamar('vessel_edicao_encerrar', { p_id: edicao1Cps.id, p_levar_para: null })
-  const nova = chamar('vessel_edicao_criar', { p_praca_id: cps, p_nome: null, p_comeca_em: '2026-11-01', p_termina_em: null })
-  // uma stylist incluída à MÃO antes de abrir (a 'planejada' aceita incluir) não pode duplicar.
-  const marina = banco.estado.stylists.find((s) => s.codigo === 'STY-0001')
-  chamar('vessel_edicao_incluir_stylist', { p_codigo: marina.codigo, p_edicao_id: nova.id })
-  const elegiveis = banco.estado.stylists.filter((s) => s.praca_id === cps && !s.teste && s.ativa !== false).length
-  const r = chamar('vessel_edicao_abrir', { p_id: nova.id })
-  assert.equal(r.ok, true)
-  assert.equal(r.incluidas, elegiveis - 1, 'a Marina já tinha vínculo (à mão) — não conta de novo')
-  assert.equal(banco.estado.naEdicao.filter((n) => n.stylist_id === marina.id && n.edicao_id === nova.id).length, 1, 'sem duplicar')
-  assert.equal(banco.estado.naEdicao.filter((n) => n.edicao_id === nova.id).length, elegiveis)
-  // abrir de novo (já aberta) não inclui mais ninguém.
-  assert.deepEqual(chamar('vessel_edicao_abrir', { p_id: nova.id }), { ok: true, situacao: 'sem_mudanca', incluidas: 0 })
-})
-
-test('vessel_edicao_encerrar: congela quem estava, leva quem não ativou (a coluna crua) para o destino da MESMA praça', () => {
+test('vessel_edicao_abrir: traz de volta quem saiu por "Indisponível na data" (e só essa); a desativada e o outro motivo NÃO voltam', () => {
   const { chamar, banco } = novoBanco()
   const lim = chamar('vessel_pracas_listar').find((p) => p.sigla === 'LIM').id
-  const cps = chamar('vessel_pracas_listar').find((p) => p.sigla === 'CPS').id
-  const edicao1Lim = chamar('vessel_edicoes_listar', { p_praca_id: lim })[0]
-  const edicao1Cps = chamar('vessel_edicoes_listar', { p_praca_id: cps })[0]
-  // destino inválido, de outra praça, e edição que não existe.
-  assert.equal(chamar('vessel_edicao_encerrar', { p_id: edicao1Lim.id, p_levar_para: 999999 }).situacao, 'destino_invalido')
-  assert.equal(chamar('vessel_edicao_encerrar', { p_id: edicao1Lim.id, p_levar_para: edicao1Cps.id }).situacao, 'destino_de_outra_praca')
-  assert.equal(chamar('vessel_edicao_encerrar', { p_id: 999999, p_levar_para: null }).situacao, 'nao_achei')
-  const destino = chamar('vessel_edicao_criar', { p_praca_id: lim, p_nome: 'Edição 2', p_comeca_em: '2026-11-01', p_termina_em: null })
-  const r = chamar('vessel_edicao_encerrar', { p_id: edicao1Lim.id, p_levar_para: destino.id })
-  assert.equal(r.ok, true)
-  // 17 de Limeira não tinham `ativada_em` (a Karen tinha): as 17 vão.
-  assert.equal(r.levadas, 17)
-  assert.equal(chamar('vessel_edicoes_listar', { p_praca_id: lim }).find((e) => e.id === edicao1Lim.id).situacao, 'encerrada')
-  // encerrada de novo: recusa (não congela duas vezes).
-  assert.equal(chamar('vessel_edicao_encerrar', { p_id: edicao1Lim.id, p_levar_para: null }).situacao, 'edicao_encerrada')
-  // não se leva para um destino já encerrado: a Edição 2 (destino de agora
-  // há pouco) nasceu planejada — abrir, encerrar, e uma terceira que tenta
-  // levar para ela é recusada.
-  // ⚠️ TASK 11: abrir a Edição 2 vincula automaticamente quem AINDA não tinha
-  // vínculo com ela — a Karen (que ficou na Edição 1, sem ser levada, porque
-  // já tinha ativado) é a única de Limeira nessa situação: `incluidas: 1`.
-  assert.deepEqual(chamar('vessel_edicao_abrir', { p_id: destino.id }), { ok: true, situacao: 'ok', incluidas: 1 })
-  assert.equal(chamar('vessel_edicao_encerrar', { p_id: destino.id, p_levar_para: null }).ok, true)
-  const edicao3 = chamar('vessel_edicao_criar', { p_praca_id: lim, p_nome: null, p_comeca_em: '2026-12-01', p_termina_em: null })
-  assert.equal(chamar('vessel_edicao_abrir', { p_id: edicao3.id }).ok, true)
-  assert.equal(chamar('vessel_edicao_encerrar', { p_id: edicao3.id, p_levar_para: destino.id }).situacao, 'edicao_encerrada')
-  // o placar da edição encerrada continua contando a MESMA turma (o congelamento).
-  const placarEncerrada = chamar('vessel_placar_da_edicao', { p_edicao_id: edicao1Lim.id })
-  assert.equal(placarEncerrada.prospectadas, 18)
-  // as 17 levadas pelo encerramento + a Karen, incluída automaticamente ao abrir.
-  assert.equal(banco.estado.naEdicao.filter((n) => n.edicao_id === destino.id).length, 18)
+  const edicao1 = chamar('vessel_edicoes_listar', { p_praca_id: lim })[0]
+  const fernanda = banco.estado.stylists.find((s) => s.nome.startsWith('Fernanda Rios'))
+  const leticia = banco.estado.stylists.find((s) => s.nome.startsWith('Letícia Farias'))
+  assert.equal(fernanda.etapa_id, ETAPA.Desclassificado, 'pré-condição: a Fernanda saiu por "Indisponível na data"')
+  chamar('vessel_edicao_encerrar', { p_id: edicao1.id, p_levar_para: null })
+  const nova = chamar('vessel_edicao_criar', { p_praca_id: lim, p_nome: null, p_comeca_em: '2026-11-01', p_termina_em: null })
+  const r = chamar('vessel_edicao_abrir', { p_id: nova.id })
+  assert.deepEqual(r, { ok: true, situacao: 'ok', voltaram: 1 }, 'só a Fernanda volta')
+  assert.equal(banco.estado.stylists.find((s) => s.id === fernanda.id).etapa_id, ETAPA.Convidado)
+  assert.equal(banco.estado.stylists.find((s) => s.id === leticia.id).etapa_id, ETAPA.Desclassificado, 'outro motivo: fica onde está')
+  const linhaNova = banco.estado.naEdicao.find((n) => n.stylist_id === fernanda.id && n.edicao_id === nova.id)
+  assert.ok(linhaNova?.convidada_em, 'ganha a linha na edição nova, com convidada_em')
+  const historico = chamar('vessel_stylist_historico_de_etapas', { p_codigo: fernanda.codigo })
+  assert.equal(historico[0].para, 'Convidado')
+  assert.equal(historico[0].nota, 'Voltou: indisponível na Edição 1 · Limeira', 'texto exato do Task 2')
+  // abrir de novo (já aberta) não traz mais ninguém.
+  assert.deepEqual(chamar('vessel_edicao_abrir', { p_id: nova.id }), { ok: true, situacao: 'sem_mudanca', voltaram: 0 })
 })
 
-test('vessel_edicao_incluir_stylist: recusa edição encerrada; incluir de novo é sem_mudanca', () => {
-  const { chamar } = novoBanco()
+test('vessel_edicao_encerrar: só para de aceitar convidadas — p_levar_para sempre recusado; placar segue contando depois', () => {
+  const { chamar, banco } = novoBanco()
+  const lim = chamar('vessel_pracas_listar').find((p) => p.sigla === 'LIM').id
+  const edicao1 = chamar('vessel_edicoes_listar', { p_praca_id: lim })[0]
+  assert.equal(chamar('vessel_edicao_encerrar', { p_id: edicao1.id, p_levar_para: 999999 }).situacao, 'levar_para_nao_existe_mais')
+  assert.equal(chamar('vessel_edicao_encerrar', { p_id: 999999, p_levar_para: null }).situacao, 'nao_achei')
+  const turmaAntes = banco.estado.naEdicao.filter((n) => n.edicao_id === edicao1.id).length
+  const r = chamar('vessel_edicao_encerrar', { p_id: edicao1.id, p_levar_para: null })
+  assert.deepEqual(r, { ok: true, situacao: 'ok' })
+  assert.equal(chamar('vessel_edicoes_listar', { p_praca_id: lim }).find((e) => e.id === edicao1.id).situacao, 'encerrada')
+  // encerrada de novo: recusa (não encerra duas vezes).
+  assert.equal(chamar('vessel_edicao_encerrar', { p_id: edicao1.id, p_levar_para: null }).situacao, 'edicao_encerrada')
+  // ⚠️ Task 3: nada de "congelar"/"levar" — a turma continua exatamente a
+  // mesma depois de encerrada (o placar segue somando para sempre).
+  assert.equal(banco.estado.naEdicao.filter((n) => n.edicao_id === edicao1.id).length, turmaAntes)
+  assert.equal(chamar('vessel_placar_da_edicao', { p_edicao_id: edicao1.id }).prospectadas, turmaAntes)
+})
+
+test('vessel_edicao_incluir_stylist: recusa edição encerrada; incluir de novo é sem_mudanca; grava convidada_em', () => {
+  const { chamar, banco } = novoBanco()
   const lim = chamar('vessel_pracas_listar').find((p) => p.sigla === 'LIM').id
   const edicao1 = chamar('vessel_edicoes_listar', { p_praca_id: lim })[0]
   assert.equal(chamar('vessel_edicao_incluir_stylist', { p_codigo: 'STY-9999', p_edicao_id: edicao1.id }).situacao, 'nao_achei')
   assert.equal(chamar('vessel_edicao_incluir_stylist', { p_codigo: 'STY-0001', p_edicao_id: 999999 }).situacao, 'edicao_invalida')
-  // A Marina (STY-0001, Campinas) já está na Edição 1 de Campinas — incluir
-  // de novo na MESMA edição é sem_mudanca; incluir na de Limeira é ok.
-  assert.deepEqual(chamar('vessel_edicao_incluir_stylist', { p_codigo: 'STY-0005', p_edicao_id: edicao1.id }), { ok: true, situacao: 'sem_mudanca' })
-  assert.equal(chamar('vessel_edicao_incluir_stylist', { p_codigo: 'STY-0001', p_edicao_id: edicao1.id }).ok, true)
+  const gislaine = banco.estado.stylists.find((s) => s.nome.startsWith('Gislaine Prado'))
+  // A Gislaine já está na Edição 1 de Limeira — incluir de novo é sem_mudanca.
+  assert.deepEqual(chamar('vessel_edicao_incluir_stylist', { p_codigo: gislaine.codigo, p_edicao_id: edicao1.id }), { ok: true, situacao: 'sem_mudanca' })
+  // a Luiza (Stylist levantado, nunca convidada) entra pela exceção — e ganha convidada_em.
+  const r = chamar('vessel_edicao_incluir_stylist', { p_codigo: 'STY-0005', p_edicao_id: edicao1.id })
+  assert.deepEqual(r, { ok: true, situacao: 'ok' })
+  const linha = banco.estado.naEdicao.find((n) => n.edicao_id === edicao1.id
+    && n.stylist_id === banco.estado.stylists.find((s) => s.codigo === 'STY-0005').id)
+  assert.ok(linha?.convidada_em)
   chamar('vessel_edicao_encerrar', { p_id: edicao1.id, p_levar_para: null })
   assert.equal(chamar('vessel_edicao_incluir_stylist', { p_codigo: 'STY-0006', p_edicao_id: edicao1.id }).situacao, 'edicao_encerrada')
 })
 
-// ══ REVISÃO FINAL — I2: A DEMO NÃO PODE DISCORDAR DO BANCO ═════════════
-// O banco de mentira FECHAVA o vínculo ao mudar de praça, mas o placar dele
-// contava TODAS as linhas — então na demo a mesma stylist contava em DUAS
-// edições abertas, que é exatamente o Crítico que o banco de verdade já não
-// tem. A demo é o portão: o número central do trabalho tem de ser o mesmo.
-test('I2: mudar de praça tira a stylist do placar da edição de origem (e só dela)', () => {
-  const { chamar } = novoBanco()
+// ══ TASK 3 (28/09/2026): mudar de praça NÃO mexe mais na turma de evento ═══
+// `vessel_stylist_sincronizar_edicao` virou `return;` no banco de verdade — a
+// turma é de quem foi CONVIDADA, e mudar de praça depois não muda de qual
+// evento ela veio. A demo é o portão: não pode discordar do banco.
+test('mudar de praça NÃO tira nem põe ninguém na turma de evento nenhuma (sincronizar virou no-op)', () => {
+  const { chamar, banco } = novoBanco()
   const lim = chamar('vessel_pracas_listar').find((p) => p.sigla === 'LIM').id
   const cps = chamar('vessel_pracas_listar').find((p) => p.sigla === 'CPS').id
   const edLim = chamar('vessel_edicoes_listar', { p_praca_id: lim }).find((e) => e.situacao === 'aberta')
@@ -1263,57 +1270,17 @@ test('I2: mudar de praça tira a stylist do placar da edição de origem (e só 
   const antesLim = chamar('vessel_placar_da_edicao', { p_edicao_id: edLim.id }).prospectadas
   const antesCps = chamar('vessel_placar_da_edicao', { p_edicao_id: edCps.id }).prospectadas
 
-  // uma de Limeira muda para Campinas
-  const daLim = chamar('vessel_rastreio_dos_stylists', { p_praca_id: lim })[0]
-  assert.equal(chamar('vessel_stylist_editar', { p_codigo: daLim.codigo, p_praca: 'CPS' }).ok, true)
+  // a Gislaine (na turma de Limeira) muda para Campinas
+  const gislaine = banco.estado.stylists.find((s) => s.nome.startsWith('Gislaine Prado'))
+  assert.equal(chamar('vessel_stylist_editar', { p_codigo: gislaine.codigo, p_praca: 'CPS' }).ok, true)
+  assert.equal(banco.estado.stylists.find((s) => s.id === gislaine.id).praca_id, cps)
 
   const depoisLim = chamar('vessel_placar_da_edicao', { p_edicao_id: edLim.id }).prospectadas
   const depoisCps = chamar('vessel_placar_da_edicao', { p_edicao_id: edCps.id }).prospectadas
-  assert.equal(depoisLim, antesLim - 1, 'o placar da edição de origem PERDE a pessoa')
-  assert.equal(depoisCps, antesCps + 1, 'e o de destino ganha — uma aberta só, nunca duas')
-
-  // ⚠️ IMPORTANTE 1: os DOIS números que a tela mostra juntos têm de bater.
-  const listadaLim = chamar('vessel_edicoes_listar', { p_praca_id: lim }).find((e) => e.id === edLim.id)
-  const listadaCps = chamar('vessel_edicoes_listar', { p_praca_id: cps }).find((e) => e.id === edCps.id)
-  assert.equal(listadaLim.stylists, depoisLim, 'edicoes_listar.stylists = placar.prospectadas (origem)')
-  assert.equal(listadaCps.stylists, depoisCps, 'edicoes_listar.stylists = placar.prospectadas (destino)')
-})
-
-test('I2 + C1: VOLTAR para a praça de origem devolve a stylist ao placar (o vínculo fechado é REABERTO)', () => {
-  const { chamar, banco } = novoBanco()
-  const lim = chamar('vessel_pracas_listar').find((p) => p.sigla === 'LIM').id
-  const edLim = chamar('vessel_edicoes_listar', { p_praca_id: lim }).find((e) => e.situacao === 'aberta')
-  const antes = chamar('vessel_placar_da_edicao', { p_edicao_id: edLim.id }).prospectadas
-  const daLim = chamar('vessel_rastreio_dos_stylists', { p_praca_id: lim })[0]
-  const id = banco.estado.stylists.find((s) => s.codigo === daLim.codigo).id
-
-  // dois cliques na ficha: sai para CPS e VOLTA para LIM
-  chamar('vessel_stylist_editar', { p_codigo: daLim.codigo, p_praca: 'CPS' })
-  chamar('vessel_stylist_editar', { p_codigo: daLim.codigo, p_praca: 'LIM' })
-
-  const linhas = banco.estado.naEdicao.filter((n) => n.stylist_id === id && n.edicao_id === edLim.id)
-  assert.equal(linhas.length, 1, 'reabriu a linha, não duplicou')
-  assert.equal(linhas[0].saiu_em, null, 'e ela está ABERTA de novo — com `do nothing` ela ficava fechada para sempre')
-  assert.equal(linhas[0].etapa_ao_sair, null)
-  assert.equal(chamar('vessel_placar_da_edicao', { p_edicao_id: edLim.id }).prospectadas, antes,
-    'o placar volta a contá-la — era zero a mais, calado, e a lista embaixo continuava mostrando')
-})
-
-test('I2 + C1 (irmão): incluir quem JÁ SAIU da edição reabre o vínculo, sem duplicar', () => {
-  const { chamar, banco } = novoBanco()
-  const lim = chamar('vessel_pracas_listar').find((p) => p.sigla === 'LIM').id
-  const edLim = chamar('vessel_edicoes_listar', { p_praca_id: lim }).find((e) => e.situacao === 'aberta')
-  const daLim = chamar('vessel_rastreio_dos_stylists', { p_praca_id: lim })[0]
-  const id = banco.estado.stylists.find((s) => s.codigo === daLim.codigo).id
-  // ela sai de LIM (muda para CPS): o vínculo de LIM fica FECHADO, com LIM aberta
-  chamar('vessel_stylist_editar', { p_codigo: daLim.codigo, p_praca: 'CPS' })
-  assert.ok(banco.estado.naEdicao.find((n) => n.stylist_id === id && n.edicao_id === edLim.id).saiu_em)
-
-  assert.deepEqual(chamar('vessel_edicao_incluir_stylist', { p_codigo: daLim.codigo, p_edicao_id: edLim.id }),
-    { ok: true, situacao: 'ok' })
-  const linhas = banco.estado.naEdicao.filter((n) => n.stylist_id === id && n.edicao_id === edLim.id)
-  assert.equal(linhas.length, 1)
-  assert.equal(linhas[0].saiu_em, null)
+  assert.equal(depoisLim, antesLim, 'o placar da edição de origem NÃO perde a pessoa — a turma é de quem foi convidada')
+  assert.equal(depoisCps, antesCps, 'e o de Campinas NÃO ganha — mudar de praça não convida a evento nenhum')
+  assert.ok(banco.estado.naEdicao.some((n) => n.stylist_id === gislaine.id && n.edicao_id === edLim.id),
+    'a linha da Gislaine em Limeira continua lá, intocada')
 })
 
 test('vessel_placar_da_edicao: edição que não existe dá erro cru (P0002); SEM receita/vendas/compradoras/pecas nenhuma', () => {
@@ -1322,14 +1289,12 @@ test('vessel_placar_da_edicao: edição que não existe dá erro cru (P0002); SE
   const lim = chamar('vessel_pracas_listar').find((p) => p.sigla === 'LIM').id
   const edicao1 = chamar('vessel_edicoes_listar', { p_praca_id: lim })[0]
   const placar = chamar('vessel_placar_da_edicao', { p_edicao_id: edicao1.id })
-  // RODADA 1 DE CONSERTO (MENOR 3): trava o CONJUNTO inteiro de chaves — as
-  // 20 do `json_build_object` final de `vessel_placar_da_edicao`
-  // (db/migrations/2026-09-25-vessel-praca-e-edicao.sql, seção 11 — a
-  // seção 15 era uma cópia idêntica e foi apagada na revisão final,
-  // MENOR 1) —, não só as cinco
+  // Task 3: o CONJUNTO inteiro de chaves do `json_build_object` de
+  // `vessel_placar_da_edicao` (db/migrations/2026-09-28-zzzzzz-vessel-edicao-
+  // e-o-evento.sql) — ganhou `funil`, `indisponiveis` e `meta` — não só as
   // proibidas: pega chave nova E chave que sumiu.
   assert.deepEqual(Object.keys(placar).sort(), [
-    'edicao', 'etapas', 'prospectadas', 'prospectadas_ja_ativadas', 'ativadas',
+    'edicao', 'funil', 'indisponiveis', 'meta', 'etapas', 'prospectadas', 'prospectadas_ja_ativadas', 'ativadas',
     'com_private_edit_agendado', 'com_private_edit_realizado', 'recorrentes_no_periodo',
     'encontros_agendados', 'encontros_realizados', 'encontros_cancelados',
     'convidadas', 'confirmadas', 'confirmadas_em_realizados', 'presentes', 'presentes_em_realizados',
@@ -1338,14 +1303,16 @@ test('vessel_placar_da_edicao: edição que não existe dá erro cru (P0002); SE
   for (const proibida of ['receita', 'vendas', 'compradoras', 'pecas', 'ticket']) {
     assert.equal(proibida in placar, false, `"${proibida}" não pode aparecer no placar da edição`)
   }
-  // A turma inteira de Limeira, com a diversidade de etapa (para o placar por
+  // A turma de Limeira (Task 3: só quem foi CONVIDADA — Fernanda, Gislaine,
+  // Ingrid, Joana, Karen), com a diversidade de etapa (para o placar por
   // etapa ter o que mostrar) — inclusive as de zero, todas as etapas ativas.
   assert.deepEqual(placar.etapas.map((e) => e.nome),
     ['Stylist levantado', 'Validado', 'Conversa', 'Convidado', 'Confirmado', 'Presença', 'Ativada', 'Desclassificado'])
-  assert.equal(placar.etapas.reduce((a, e) => a + e.stylists, 0), 18)
+  assert.equal(placar.etapas.reduce((a, e) => a + e.stylists, 0), 5)
   // O par de encontros da Karen: um ANTES de a edição começar (realizado) e
   // um depois (agendado). ⚠️ 28/09/2026 — EDIÇÃO = TURMA DE ENTRADA: os dois
-  // contam, porque são da stylist da turma — a data não corta mais nada.
+  // contam, porque são da stylist da turma (a data não corta mais nada) — e
+  // a Karen tem evento de origem NESTA edição (Task 3), então contam aqui.
   assert.equal(placar.encontros_agendados, 2)
   assert.equal(placar.encontros_realizados, 1)
 })
@@ -1368,32 +1335,22 @@ test('vessel_stylist_criar/editar e vessel_criar_private_edit: a praça agora é
   assert.equal(chamar('vessel_criar_private_edit', { p_stylist: NOVA, p_quando: quandoDaqui(5), p_praca: 'BSB', p_vagas: 8 }).situacao, 'praca_invalida')
 })
 
-test('TASK 11, RODADA 1 DE CONSERTO (achado CRÍTICO): mudar de praça fecha o vínculo da edição aberta antiga — nunca conta em duas', () => {
+test('Task 3: mudar de praça não fecha nem abre vínculo nenhum — a linha de origem fica intocada para sempre', () => {
   const { chamar, banco } = novoBanco()
   const cps = chamar('vessel_pracas_listar').find((p) => p.sigla === 'CPS').id
   const lim = chamar('vessel_pracas_listar').find((p) => p.sigla === 'LIM').id
   const edicaoCps = chamar('vessel_edicoes_listar', { p_praca_id: cps })[0]
   const edicaoLim = chamar('vessel_edicoes_listar', { p_praca_id: lim })[0]
   const marina = banco.estado.stylists.find((s) => s.codigo === 'STY-0001')
-  assert.ok(banco.estado.naEdicao.some((n) => n.stylist_id === marina.id && n.edicao_id === edicaoCps.id && !n.saiu_em),
-    'começa vinculada, ativa, à Edição 1 de Campinas')
+  assert.ok(banco.estado.naEdicao.some((n) => n.stylist_id === marina.id && n.edicao_id === edicaoCps.id),
+    'começa vinculada à Edição 1 de Campinas')
   assert.equal(chamar('vessel_stylist_editar', { p_codigo: 'STY-0001', p_praca: 'LIM' }).ok, true)
   const vinculoCps = banco.estado.naEdicao.find((n) => n.stylist_id === marina.id && n.edicao_id === edicaoCps.id)
-  assert.ok(vinculoCps.saiu_em, 'o vínculo com a edição de Campinas foi FECHADO')
-  assert.equal(vinculoCps.etapa_ao_sair, marina.etapa_id)
-  assert.ok(banco.estado.naEdicao.some((n) => n.stylist_id === marina.id && n.edicao_id === edicaoLim.id && !n.saiu_em),
-    'e abriu um vínculo novo, ativo, com a de Limeira')
-  // nunca conta em duas: só UM vínculo ATIVO por vez.
-  assert.equal(banco.estado.naEdicao.filter((n) => n.stylist_id === marina.id && !n.saiu_em).length, 1)
-
-  // Edição ANTIGA já encerrada: o vínculo fica INTOCADO (o congelamento é
-  // dela — esta função não mexe nele de novo).
-  chamar('vessel_edicao_encerrar', { p_id: edicaoLim.id, p_levar_para: null })
-  const jaFechadoPeloEncerramento = banco.estado.naEdicao.find((n) => n.stylist_id === marina.id && n.edicao_id === edicaoLim.id).saiu_em
-  assert.ok(jaFechadoPeloEncerramento)
-  assert.equal(chamar('vessel_stylist_editar', { p_codigo: 'STY-0001', p_praca: 'PIR' }).ok, true, 'PIR não tem edição aberta: sem vínculo novo')
-  assert.equal(banco.estado.naEdicao.find((n) => n.stylist_id === marina.id && n.edicao_id === edicaoLim.id).saiu_em,
-    jaFechadoPeloEncerramento, 'a Edição de Limeira, já encerrada, não muda de novo')
+  assert.equal(vinculoCps.saiu_em, null, 'o vínculo com a edição de Campinas fica INTOCADO')
+  assert.ok(!banco.estado.naEdicao.some((n) => n.stylist_id === marina.id && n.edicao_id === edicaoLim.id),
+    'e NÃO abre vínculo nenhum com a de Limeira — mudar de praça não convida a evento nenhum')
+  assert.equal(banco.estado.naEdicao.filter((n) => n.stylist_id === marina.id).length, 1, 'continua com uma linha só, a de origem')
+  assert.equal(chamar('vessel_evento_de_origem', { p_stylist_id: marina.id }), edicaoCps.id, 'o evento de origem dela não muda')
 })
 
 // ── vessel_rastreio_dos_stylists: 4 parâmetros (Task 5), com a chamada de DOIS
@@ -1423,7 +1380,8 @@ test('vessel_rastreio_dos_stylists: p_praca_id e p_edicao_id recortam a lista', 
   assert.ok(soLimeira.every((s) => s.praca_id === lim))
   const edicao1 = chamar('vessel_edicoes_listar', { p_praca_id: lim })[0]
   const daEdicao = chamar('vessel_rastreio_dos_stylists', { p_dias: 14, p_incluir_desativadas: false, p_praca_id: null, p_edicao_id: edicao1.id })
-  assert.equal(daEdicao.length, 18, 'toda a turma de Limeira está na Edição 1')
+  // Task 3: só quem foi CONVIDADA está na turma (Fernanda, Gislaine, Ingrid, Joana, Karen) — não as 18 da praça inteira.
+  assert.equal(daEdicao.length, 5)
 })
 
 // ── o cenário de verdade, medido (o mesmo número do cabeçalho da migration) ──
@@ -1474,4 +1432,153 @@ test('leitura do card: anota uma vez a cada 10 min por pessoa; chave ruim não a
   assert.equal(linha().leituras_do_card, 5)
   const primeiro = chamar('vessel_conta_das_private_edits', {}).find((e) => e.chave === 'H3N8P4WZ')
   assert.deepEqual([primeiro.leituras_do_card, primeiro.leitoras_do_card], [0, 0])
+})
+
+// ════════════════════════════════════════════════════════════════════════════
+// TASK 3 (28/09/2026) — A EDIÇÃO É O EVENTO: espelhando
+// `2026-09-28-zzzzzz-vessel-edicao-e-o-evento.sql`. As seis provas do Step 1
+// do brief (a-f), uma por teste.
+// ════════════════════════════════════════════════════════════════════════════
+
+// (a) mover para Convidado com edição aberta cria linha
+test('vessel_stylist_mover_de_etapa: Convidado com a edição da praça ABERTA cria a linha na turma, com convidada_em', () => {
+  const { chamar, banco } = novoBanco()
+  const criada = chamar('vessel_stylist_criar', { ...PARCEIRA, p_praca: 'CPS' }) // Campinas: edição aberta
+  const s = banco.estado.stylists.find((x) => x.codigo === criada.codigo)
+  const cps = chamar('vessel_pracas_listar').find((p) => p.sigla === 'CPS').id
+  const edicaoCps = chamar('vessel_edicoes_listar', { p_praca_id: cps }).find((e) => e.situacao === 'aberta')
+  assert.ok(!banco.estado.naEdicao.some((n) => n.stylist_id === s.id), 'antes de Convidado: nenhuma linha')
+  const r = chamar('vessel_stylist_mover_de_etapa', { p_codigo: criada.codigo, p_etapa_id: ETAPA.Convidado })
+  assert.equal(r.ok, true)
+  const linha = banco.estado.naEdicao.find((n) => n.stylist_id === s.id && n.edicao_id === edicaoCps.id)
+  assert.ok(linha, 'ganhou a linha na edição aberta da praça dela')
+  assert.ok(linha.convidada_em, 'convidada_em marcado')
+  assert.equal(linha.confirmou_em, null)
+  assert.equal(linha.presente_em, null)
+  // sem edição aberta na praça (Piracicaba, no cenário): move sem erro, sem linha nenhuma.
+  const criada2 = chamar('vessel_stylist_criar', { ...PARCEIRA, p_praca: 'PIR', p_whatsapp: '19977776655' })
+  const antes = banco.estado.naEdicao.length
+  const r2 = chamar('vessel_stylist_mover_de_etapa', { p_codigo: criada2.codigo, p_etapa_id: ETAPA.Convidado })
+  assert.equal(r2.ok, true, 'praça SEM edição aberta: move sem erro')
+  assert.equal(banco.estado.naEdicao.length, antes, 'e nenhuma linha nova')
+})
+
+// (b) Presença → Confirmado não apaga presente_em
+test('vessel_stylist_mover_de_etapa: voltar de Presença para Confirmado NÃO apaga presente_em; quem pula direto ganha as três marcas', () => {
+  const { chamar, banco } = novoBanco()
+  const criada = chamar('vessel_stylist_criar', { ...PARCEIRA, p_praca: 'CPS' }) // Campinas: edição aberta
+  const s = banco.estado.stylists.find((x) => x.codigo === criada.codigo)
+  const edicaoId = chamar('vessel_edicoes_listar', { p_praca_id: s.praca_id }).find((e) => e.situacao === 'aberta').id
+  const linha = () => banco.estado.naEdicao.find((n) => n.stylist_id === s.id && n.edicao_id === edicaoId)
+  chamar('vessel_stylist_mover_de_etapa', { p_codigo: criada.codigo, p_etapa_id: ETAPA.Convidado })
+  chamar('vessel_stylist_mover_de_etapa', { p_codigo: criada.codigo, p_etapa_id: ETAPA.Confirmado })
+  chamar('vessel_stylist_mover_de_etapa', { p_codigo: criada.codigo, p_etapa_id: ETAPA.Presença })
+  const presenteEm = linha().presente_em
+  assert.ok(presenteEm)
+  chamar('vessel_stylist_mover_de_etapa', { p_codigo: criada.codigo, p_etapa_id: ETAPA.Confirmado })
+  assert.equal(linha().presente_em, presenteEm, 'voltar para Confirmado NÃO desmarca a presença')
+  assert.ok(linha().convidada_em && linha().confirmou_em, 'as marcas de antes continuam')
+
+  // quem pula direto de Stylist levantado para Presença ganha as três marcas.
+  const criada2 = chamar('vessel_stylist_criar', { ...PARCEIRA, p_praca: 'CPS', p_whatsapp: '19977776644' })
+  const p = banco.estado.stylists.find((x) => x.codigo === criada2.codigo)
+  chamar('vessel_stylist_mover_de_etapa', { p_codigo: p.codigo, p_etapa_id: ETAPA.Presença })
+  const lp = banco.estado.naEdicao.find((n) => n.stylist_id === p.id && n.edicao_id === edicaoId)
+  assert.ok(lp?.convidada_em && lp.confirmou_em && lp.presente_em)
+})
+
+// (c) abrir edição 2 traz de volta a indisponível e deixa a desativada
+test('vessel_edicao_abrir: traz de volta quem está "Indisponível na data" (ativa); a MESMA situação mas DESATIVADA não volta', () => {
+  const { chamar, banco } = novoBanco()
+  const cps = chamar('vessel_pracas_listar').find((p) => p.sigla === 'CPS').id
+  const desclassificado = ETAPA.Desclassificado
+  const motivoIndisponivel = () => chamar('vessel_stylist_etapas').find((e) => e.nome === 'Desclassificado')
+    .motivos.find((m) => m.nome === 'Indisponível na data').id
+
+  const criadaVolta = chamar('vessel_stylist_criar', { ...PARCEIRA, p_praca: 'CPS', p_whatsapp: '19977770001' })
+  const volta = banco.estado.stylists.find((x) => x.codigo === criadaVolta.codigo)
+  const criadaInativa = chamar('vessel_stylist_criar', { ...PARCEIRA, p_praca: 'CPS', p_whatsapp: '19977770002', p_nome: 'Inativa Teste' })
+  const inativa = banco.estado.stylists.find((x) => x.codigo === criadaInativa.codigo)
+
+  for (const s of [volta, inativa]) chamar('vessel_stylist_mover_de_etapa', { p_codigo: s.codigo, p_etapa_id: ETAPA.Convidado })
+  chamar('vessel_stylist_mover_de_etapa', { p_codigo: volta.codigo, p_etapa_id: desclassificado, p_motivo_id: motivoIndisponivel() })
+  chamar('vessel_stylist_mover_de_etapa', { p_codigo: inativa.codigo, p_etapa_id: desclassificado, p_motivo_id: motivoIndisponivel() })
+  // desativa DEPOIS de sair (a trava é sobre `ativa`, não sobre quando ela virou false)
+  banco.estado.stylists.find((x) => x.id === inativa.id).ativa = false
+
+  const edicaoCps = chamar('vessel_edicoes_listar', { p_praca_id: cps }).find((e) => e.situacao === 'aberta')
+  chamar('vessel_edicao_encerrar', { p_id: edicaoCps.id, p_levar_para: null })
+  const nova = chamar('vessel_edicao_criar', { p_praca_id: cps, p_nome: null, p_comeca_em: '2026-11-01', p_termina_em: null })
+  const r = chamar('vessel_edicao_abrir', { p_id: nova.id })
+  assert.deepEqual(r, { ok: true, situacao: 'ok', voltaram: 1 }, 'só a ATIVA volta')
+  assert.equal(banco.estado.stylists.find((x) => x.id === volta.id).etapa_id, ETAPA.Convidado)
+  assert.equal(banco.estado.stylists.find((x) => x.id === inativa.id).etapa_id, desclassificado, 'a desativada NÃO volta')
+  assert.ok(banco.estado.naEdicao.some((n) => n.stylist_id === volta.id && n.edicao_id === nova.id))
+  assert.ok(!banco.estado.naEdicao.some((n) => n.stylist_id === inativa.id && n.edicao_id === nova.id))
+})
+
+// (d) vessel_placar_da_edicao devolve funil igual a funilDoEvento(...) dos mesmos dados
+test('vessel_placar_da_edicao: `funil`/`indisponiveis`/`meta` = funilDoEvento(turma, encontros, edicaoId) dos MESMOS dados', () => {
+  const { chamar, banco } = novoBanco()
+  for (const [pracaSigla] of [['LIM'], ['CPS']]) {
+    const praca = chamar('vessel_pracas_listar').find((p) => p.sigla === pracaSigla).id
+    const edicao = chamar('vessel_edicoes_listar', { p_praca_id: praca })[0]
+    const turma = chamar('vessel_edicao_turma', { p_edicao_id: edicao.id })
+    const turmaIds = new Set(turma.map((t) => t.stylist_id))
+    const encontros = banco.estado.encontros
+      .filter((e) => !e.teste && !e.arquivada && turmaIds.has(e.stylist_id))
+      .map((e) => ({ stylist_id: e.stylist_id, status: e.status }))
+    const esperado = funilDoEvento(turma, encontros, edicao.id)
+    const placar = chamar('vessel_placar_da_edicao', { p_edicao_id: edicao.id })
+    assert.deepEqual(placar.funil, esperado.passos, `${pracaSigla}: funil`)
+    assert.equal(placar.indisponiveis, esperado.indisponiveis, `${pracaSigla}: indisponiveis`)
+    assert.deepEqual(placar.meta, esperado.meta, `${pracaSigla}: meta`)
+  }
+})
+
+// (e) vessel_edicao_tirar_stylist recusa presente
+test('vessel_edicao_tirar_stylist: recusa quem já esteve presente; apaga a linha de quem não esteve', () => {
+  const { chamar, banco } = novoBanco()
+  const lim = chamar('vessel_pracas_listar').find((p) => p.sigla === 'LIM').id
+  const edicao1 = chamar('vessel_edicoes_listar', { p_praca_id: lim })[0]
+  const joana = banco.estado.stylists.find((s) => s.nome.startsWith('Joana Vilela')) // já esteve presente
+  const t1 = chamar('vessel_edicao_tirar_stylist', { p_codigo: joana.codigo, p_edicao_id: edicao1.id })
+  assert.deepEqual(t1, { ok: false, situacao: 'ja_esteve_presente' })
+  assert.ok(banco.estado.naEdicao.some((n) => n.stylist_id === joana.id && n.edicao_id === edicao1.id), 'a linha continua lá')
+
+  const criada = chamar('vessel_stylist_criar', { ...PARCEIRA, p_praca: 'LIM', p_whatsapp: '19977770003' })
+  const nova = banco.estado.stylists.find((x) => x.codigo === criada.codigo)
+  const inc = chamar('vessel_edicao_incluir_stylist', { p_codigo: nova.codigo, p_edicao_id: edicao1.id })
+  assert.equal(inc.ok, true)
+  const t2 = chamar('vessel_edicao_tirar_stylist', { p_codigo: nova.codigo, p_edicao_id: edicao1.id })
+  assert.deepEqual(t2, { ok: true, situacao: 'ok' })
+  assert.ok(!banco.estado.naEdicao.some((n) => n.stylist_id === nova.id && n.edicao_id === edicao1.id))
+  // edição inválida e stylist inexistente.
+  assert.equal(chamar('vessel_edicao_tirar_stylist', { p_codigo: 'STY-9999', p_edicao_id: edicao1.id }).situacao, 'nao_achei')
+  assert.equal(chamar('vessel_edicao_tirar_stylist', { p_codigo: joana.codigo, p_edicao_id: 999999 }).situacao, 'edicao_invalida')
+})
+
+// (f) vessel_eventos_de_origem devolve a 1ª presença
+test('vessel_eventos_de_origem: devolve a 1ª presença de cada stylist — igual a vessel_evento_de_origem, uma por uma', () => {
+  const { chamar, banco } = novoBanco()
+  const joana = banco.estado.stylists.find((s) => s.nome.startsWith('Joana Vilela'))
+  const karen = banco.estado.stylists.find((s) => s.nome.startsWith('Karen Duarte'))
+  const marina = banco.estado.stylists.find((s) => s.codigo === 'STY-0001')
+  const luisa = banco.estado.stylists.find((s) => s.codigo === 'STY-0004')
+  const gislaine = banco.estado.stylists.find((s) => s.nome.startsWith('Gislaine Prado')) // nunca presente
+  const todos = chamar('vessel_eventos_de_origem')
+  const porId = new Map(todos.map((x) => [x.stylist_id, x.edicao_id]))
+  assert.ok(!porId.has(gislaine.id), 'sem presença: fora da lista')
+  for (const s of [joana, karen, marina, luisa]) {
+    assert.equal(porId.get(s.id), chamar('vessel_evento_de_origem', { p_stylist_id: s.id }), `origem de ${s.codigo} bate com vessel_evento_de_origem`)
+  }
+  // desempate: duas presenças da MESMA stylist — a MENOR (1ª) vence.
+  const edicaoLim = chamar('vessel_edicoes_listar', { p_praca_id: joana.praca_id }).find((e) => e.situacao === 'aberta')
+  chamar('vessel_edicao_encerrar', { p_id: edicaoLim.id, p_levar_para: null })
+  const nova = chamar('vessel_edicao_criar', { p_praca_id: joana.praca_id, p_nome: null, p_comeca_em: '2026-11-01', p_termina_em: null })
+  chamar('vessel_edicao_abrir', { p_id: nova.id })
+  chamar('vessel_edicao_incluir_stylist', { p_codigo: joana.codigo, p_edicao_id: nova.id })
+  chamar('vessel_stylist_mover_de_etapa', { p_codigo: joana.codigo, p_etapa_id: ETAPA.Confirmado })
+  chamar('vessel_stylist_mover_de_etapa', { p_codigo: joana.codigo, p_etapa_id: ETAPA.Presença })
+  assert.equal(chamar('vessel_evento_de_origem', { p_stylist_id: joana.id }), edicaoLim.id, 'a 1ª presença continua sendo a origem')
 })
