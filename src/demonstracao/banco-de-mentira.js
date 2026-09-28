@@ -1569,7 +1569,6 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
     vessel_placar_da_edicao({ p_edicao_id } = {}) {
       const e = edicaoPorId(p_edicao_id)
       if (!e) throw erroDoBanco('P0002', 'edicao nao encontrada')
-      const ate = e.termina_em || '9999-12-31'
       // ⚠️ REVISÃO FINAL (IMPORTANTE 2): O MESMO CRITÉRIO DO BANCO, letra por
       // letra (`turma_ids` de `vessel_placar_da_edicao`): edição ABERTA conta
       // quem está dentro AGORA (`saiu_em` nulo); ENCERRADA conta a turma
@@ -1583,10 +1582,11 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
         .map((n) => n.stylist_id))
       const sty = b.stylists.filter((s) => turmaIds.has(s.id) && !s.teste && s.ativa !== false)
         .map((s) => ({ ...s, ativou: ativadaEm(s) }))
-      // os encontros são da PRAÇA da edição, na janela dela — não dependem de
-      // quem está na turma.
-      const ev = b.encontros.filter((x) => !x.teste && !x.arquivada && x.praca_id === e.praca_id
-        && diaDoEncontro(x) >= e.comeca_em && diaDoEncontro(x) <= ate)
+      // ⚠️ 28/09/2026 — EDIÇÃO = TURMA DE ENTRADA (decisão do dono), igual a
+      // `2026-09-28-vessel-placar-da-edicao-conta-a-turma.sql`: os encontros são
+      // os das stylists da TURMA, em qualquer data e praça — o fim da edição
+      // não corta o que a turma faz depois.
+      const ev = b.encontros.filter((x) => !x.teste && !x.arquivada && turmaIds.has(x.stylist_id))
       const conv = b.atendimentos.filter((t) => !t.teste && ev.some((x) => x.codigo === t.evento_codigo))
         .map((t) => {
           const ev1 = ev.find((x) => x.codigo === t.evento_codigo)

@@ -65,8 +65,7 @@
         </div>
       </div>
 
-      <!-- ⚠️ RODADA 1 DE CONSERTO (IMPORTANTE 4): voltaram — a edição TEM
-           janela, e as duas contas são exatamente as de
+      <!-- ⚠️ RODADA 1 DE CONSERTO (IMPORTANTE 4): voltaram — e as duas contas são exatamente as de
            `vessel_numeros_do_stylist_circle` (o placar mensal e o
            scorecard), só sem o corte de período. -->
       <div class="id-grupo cv-grupo-encontros pd-menor">
@@ -133,12 +132,12 @@
       </div>
 
       <p class="cv-nota">
-        Cada número usa a sua data: <b>prospectadas</b> pela data da
-        prospecção; <b>ativadas</b> pelo dia em que a parceira chegou pela
-        primeira vez numa etapa que libera Private Edit; <b>com Private Edit
-        agendado</b> pelo dia do primeiro encontro agendado; <b>com Private
-        Edit realizado</b> pelo dia do primeiro realizado; e <b>encontros e
-        convidadas</b> pelo dia do encontro. As taxas de baixo de cada passo
+        A edição é uma <b>turma de entrada</b>: começa no dia do Preview e
+        termina quando alguém fecha a turma — o fim só para de entrar parceira
+        nova. Todos os números são das parceiras desta turma, em qualquer data:
+        quem continua fazendo Private Edit depois de a edição encerrar
+        continua contando aqui. <b>Encontros e convidadas</b> são os dos
+        Private Edits das parceiras da turma. As taxas de baixo de cada passo
         olham uma turma só: das prospectadas desta edição, quantas chegaram
         àquele passo, sobre as que chegaram ao anterior — por isso elas não
         batem com a divisão dos números grandes, e nunca passam de 100%. A

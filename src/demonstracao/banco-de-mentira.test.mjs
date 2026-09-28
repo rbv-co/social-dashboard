@@ -1343,10 +1343,11 @@ test('vessel_placar_da_edicao: edição que não existe dá erro cru (P0002); SE
   assert.deepEqual(placar.etapas.map((e) => e.nome),
     ['Stylist levantado', 'Validado', 'Conversa', 'Convidado', 'Confirmado', 'Presença', 'Ativada', 'Desclassificado'])
   assert.equal(placar.etapas.reduce((a, e) => a + e.stylists, 0), 18)
-  // O par de encontros da Karen: um antes da edição (fora da janela — não
-  // conta aqui, mas continua na tabela) e um dentro (agendado).
-  assert.equal(placar.encontros_agendados, 1)
-  assert.equal(placar.encontros_realizados, 0)
+  // O par de encontros da Karen: um ANTES de a edição começar (realizado) e
+  // um depois (agendado). ⚠️ 28/09/2026 — EDIÇÃO = TURMA DE ENTRADA: os dois
+  // contam, porque são da stylist da turma — a data não corta mais nada.
+  assert.equal(placar.encontros_agendados, 2)
+  assert.equal(placar.encontros_realizados, 1)
 })
 
 // ── Step "as que mudaram": praça deixou de ser lista fechada — recusa
