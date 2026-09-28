@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { rotuloDaEdicao, rotuloCurtoDaEdicao, edicaoDoEncontro, placarPorEtapa } from './edicao-regras.js'
+import { rotuloDaEdicao, rotuloCurtoDaEdicao, edicaoDoEncontro, placarPorEtapa,
+  eventoDeOrigem, rotuloDoEncontro, funilDoEvento } from './edicao-regras.js'
 
 const EDICOES = [
   { id: 10, praca_id: 2, praca_nome: 'Limeira', numero: 1, comeca_em: '2026-09-01', termina_em: '2026-09-30', situacao: 'encerrada' },
@@ -57,6 +58,64 @@ test('edição sem fim vale daí em diante, e fora de tudo é nulo (nunca escond
   assert.equal(edicaoDoEncontro({ quando: '2027-01-01T12:00:00Z', praca_id: 2 }, EDICOES).id, 11)
   assert.equal(edicaoDoEncontro({ quando: '2026-08-01T12:00:00Z', praca_id: 2 }, EDICOES), null)
   assert.equal(edicaoDoEncontro({ quando: null, praca_id: 2 }, EDICOES), null)
+})
+
+// ── O EVENTO (Task 1): a edição vira EVENTO, e o encontro leva a origem da
+// stylist, não a data. `edicaoDoEncontro`, acima, fica só até a Task 4. ────
+test('evento de origem = a 1ª presença; sem presença, nulo', () => {
+  assert.equal(eventoDeOrigem([{ edicao_id: 2, presente_em: '2026-11-10T20:00:00Z' },
+                               { edicao_id: 1, presente_em: '2026-10-15T22:00:00Z' }]), 1)
+  assert.equal(eventoDeOrigem([{ edicao_id: 1, presente_em: null }]), null)
+  assert.equal(eventoDeOrigem([]), null)
+})
+
+test('⚠️ presença no MESMO instante em duas edições: desempata pelo menor id', () => {
+  assert.equal(eventoDeOrigem([{ edicao_id: 7, presente_em: '2026-10-15T22:00:00Z' },
+                               { edicao_id: 5, presente_em: '2026-10-15T22:00:00Z' }]), 5)
+})
+
+test('o encontro leva o evento de origem da STYLIST, não a data', () => {
+  const eds = [{ id: 46, praca_nome: 'Campinas', numero: 1 }]
+  assert.equal(rotuloDoEncontro({ stylist_id: 9, quando: '2027-03-01T20:00:00Z' }, { 9: 46 }, eds), 'Campinas · Edição 1')
+  assert.equal(rotuloDoEncontro({ stylist_id: 8, quando: '2026-10-20T20:00:00Z' }, { 9: 46 }, eds), 'Sem evento')
+  assert.equal(rotuloDoEncontro({ stylist_id: null }, {}, eds), 'Sem evento')
+})
+
+const T = (o) => ({ convidada_em: '2026-10-01', confirmou_em: null, presente_em: null, indisponivel_em: null, origem: null, ...o })
+
+test('funil do evento: cada passo sobre o anterior, e a meta é sobre as presentes', () => {
+  const turma = [
+    T({ stylist_id: 1, confirmou_em: 'x', presente_em: 'x', origem: 46 }),
+    T({ stylist_id: 2, confirmou_em: 'x', presente_em: 'x', origem: 46 }),
+    T({ stylist_id: 3, confirmou_em: 'x' }),
+    T({ stylist_id: 4, indisponivel_em: 'x' }),
+  ]
+  const encontros = [{ stylist_id: 1, status: 'realizado', realizado_em: '2026-10-20' },
+                     { stylist_id: 1, status: 'realizado', realizado_em: '2026-10-27' },
+                     { stylist_id: 2, status: 'agendado', realizado_em: null }]
+  const f = funilDoEvento(turma, encontros, 46)
+  assert.deepEqual(f.passos.map((p) => [p.chave, p.n]),
+    [['convidadas', 4], ['confirmaram', 3], ['presentes', 2], ['agendaram', 2], ['fizeram', 1], ['repetiram', 1]])
+  assert.equal(f.indisponiveis, 1)
+  assert.deepEqual(f.meta, { pct: 100, bateu: true })
+})
+
+test('⚠️ Private Edit de quem tem ORIGEM em outra edição não conta aqui', () => {
+  const f = funilDoEvento([T({ stylist_id: 1, presente_em: 'x', confirmou_em: 'x', origem: 40 })],
+    [{ stylist_id: 1, status: 'realizado', realizado_em: '2026-10-20' }], 46)
+  assert.equal(f.passos.find((p) => p.chave === 'agendaram').n, 0)
+})
+
+test('⚠️ zero presentes: a meta é "—" (nulo), nunca 0%', () => {
+  const f = funilDoEvento([T({ stylist_id: 1 })], [], 46)
+  assert.deepEqual(f.meta, { pct: null, bateu: null })
+  assert.equal(f.passos.find((p) => p.chave === 'agendaram').pct, null)
+})
+
+test('status em_planejamento não conta como agendou', () => {
+  const f = funilDoEvento([T({ stylist_id: 1, presente_em: 'x', origem: 46 })],
+    [{ stylist_id: 1, status: 'em_planejamento' }], 46)
+  assert.equal(f.passos.find((p) => p.chave === 'agendaram').n, 0)
 })
 
 test('o placar traz TODAS as etapas na ordem, inclusive as de zero', () => {
