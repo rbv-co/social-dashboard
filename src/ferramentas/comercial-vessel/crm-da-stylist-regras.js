@@ -234,7 +234,7 @@ export function mensagemDasEtapas(situacao) {
 
 /** O porquê de uma linha do histórico de etapas, em palavras. */
 export function motivoDoHistorico(motivo) {
-  return { cadastro: 'Cadastro', mudanca: 'Mudou de etapa', etapa_excluida: 'A etapa foi excluída' }[motivo] || motivo || ''
+  return { cadastro: 'Cadastro', mudanca: 'Mudou de etapa', etapa_excluida: 'A etapa foi excluída', troca_de_motivo: 'Trocou o motivo' }[motivo] || motivo || ''
 }
 
 // ── o contato fácil (pedido do dono, 24/09/2026) ───────────────────────────
