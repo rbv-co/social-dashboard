@@ -48,10 +48,10 @@ PARA COLOCAR NO AR (nada disto foi feito ainda — só o código está no reposi
        --project-ref kounqtdoioootxqegkij --no-verify-jwt
    Testar: um POST com assinatura errada deve devolver 401 {"error":"nao_autorizado"}
    (503 BOOT_ERROR = a função quebrou ao subir).
-3. Segredo: a edge usa SHOPIFY_WEBHOOK_SECRET, o mesmo do receber-webhook-checkout.
-   ⚠️ Confirmar que serve: o segredo de um webhook criado pela API (com o app)
-   pode ser DIFERENTE do de um webhook criado no admin da loja. Se a assinatura
-   falhar com 401 mesmo com o corpo certo, é isto.
+3. Segredo: a edge aceita a assinatura de DOIS segredos, porque o Shopify assina
+   conforme quem criou o webhook: SHOPIFY_WEBHOOK_SECRET (criado no admin da loja,
+   o mesmo do receber-webhook-checkout) ou SHOPIFY_CLIENT_SECRET (criado por API,
+   pelo app). Conferido em 28/09/2026: são DOIS valores diferentes no Supabase.
 4. Cadastrar os três webhooks apontando para
    https://kounqtdoioootxqegkij.supabase.co/functions/v1/receber-webhook-abandono :
      checkouts/create, checkouts/update, orders/create
