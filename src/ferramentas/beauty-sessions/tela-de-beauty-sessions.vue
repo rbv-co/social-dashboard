@@ -328,10 +328,13 @@
                 </select></label>
             </div>
             <!-- ⚠️ DECISÃO DO DONO: o cadastro pela equipe grava a autorização de
-                 marketing SEMPRE. A frase existe para a equipe perguntar antes. -->
+                 marketing SEMPRE. A frase existe para a equipe perguntar antes.
+                 28/09/2026: "e por e-mail" — o cadastro vai ao RD Station, e a
+                 versão do aceite no banco subiu para `equipe-beauty-session-2026-09-28`
+                 (a mesma virada da caixa do QR, política v4). -->
             <p class="bs-nota">
               Ao cadastrar, fica registrado que <b>ela autorizou receber convites e
-              novidades da VESSEL pelo WhatsApp</b>. Confirme com ela antes.
+              novidades da VESSEL pelo WhatsApp e por e-mail</b>. Confirme com ela antes.
             </p>
             <ul v-if="formDe(s).tocado && problemasDaLead(formDe(s)).length" class="bs-problemas">
               <li v-for="p in problemasDaLead(formDe(s))" :key="p">{{ p }}</li>
