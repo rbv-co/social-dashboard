@@ -20,13 +20,13 @@ export const ORIGEM_DOS_AVISOS = 'demonstracao-vessel'
 // ⚠️ 25/09/2026 (Task 13): O FUNIL DA DEMONSTRAÇÃO TROCOU (pedido direto do
 // dono). O de hoje (Identificado → Classificação → Prospectado → Convidado →
 // Confirmou Ida → Esteve Presente) virou "Stylist levantado → Validado →
-// Conversa → Confirmado → Presença" — cinco etapas, as duas saídas de sempre
+// Conversa → Convidado → Confirmado → Presença" (28/09/2026: o "Convidado"
+// ficou, opção C do dono, e produção ganhou os mesmos nomes), as duas saídas de sempre
 // (Ativada e Desclassificado). Os passos 3 e 4 abaixo mudaram de alvo: era
 // "mover para Classificação" e "mover para Prospectado", agora é "mover para
 // Validado" e "mover para Conversa" (a nova marcada como prospectada — ver
-// `dados-iniciais.js`). ⚠️ É SÓ NESTA DEMONSTRAÇÃO: o funil de verdade é
-// cadastro em `vessel_stylist_etapas`, o dono muda pela tela "Etapas do
-// funil", sem código.
+// `dados-iniciais.js`). O funil de verdade é cadastro em
+// `vessel_stylist_etapas` — desde 28/09 com os mesmos nomes desta demo.
 export const PASSOS = [
   // ⚠️ O nome "Stylist levantado" é só a etapa; a explicação do dono ("vem da
   // nossa pesquisa ou do cadastro da LP") não cabe no cabeçalho da coluna do

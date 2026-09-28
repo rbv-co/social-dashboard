@@ -58,43 +58,27 @@ export function dadosIniciais(agora = new Date()) {
     { id: 6, praca_id: PRACA.PIR, cidade: 'Piracicaba' },
   ].map((c) => ({ ...c, cidade_chave: achatarCidade(c.cidade) }))
 
-  // ⚠️ AS ETAPAS DO FUNIL (configuráveis desde 24/09/2026) — 25/09/2026 (TASK
-  // 13, pedido direto do dono, "agora"): TROCA DE FUNIL NESTA DEMONSTRAÇÃO.
-  // O de hoje (Identificado → Classificação → Prospectado → Convidado →
-  // Confirmou Ida → Esteve Presente, seis etapas) vira CINCO: "Stylist
-  // levantado → Validado → Conversa → Confirmado → Presença". As duas saídas
-  // continuam (Ativada — a única que libera Private Edit — e Desclassificado).
-  // A CONVERSA é a que conta como prospectada (`conta_como_prospectada`),
-  // decisão do dono — não mais o antigo "Prospectado".
-  // ⚠️ O antigo "Convidado" não vira etapa própria: seis nomes de antes viram
-  // cinco, e "Confirmado" (de "Confirmou Ida") absorve o que era "Convidado" —
-  // quem estava lá passa a contar como "Confirmado" (ver mais abaixo, no bloco
-  // das sete stylists de Limeira que davam diversidade de etapa: a Gislaine,
-  // que estava em "Convidado", e a Ingrid, que estava em "Confirmou Ida",
-  // ficam as duas em "Confirmado" — a diversidade perde uma caixa exclusiva,
-  // mas o placar continua tendo caixa de zero em Campinas — ver o cabeçalho
-  // do arquivo).
+  // ⚠️ AS ETAPAS DO FUNIL (configuráveis desde 24/09/2026) — IGUAIS ÀS DE
+  // PRODUÇÃO desde 28/09/2026 (`2026-09-28-vessel-stylist-funil-nomes-novos.sql`,
+  // opção C do dono): Stylist levantado → Validado → Conversa → Convidado →
+  // Confirmado → Presença, mais as saídas Ativada (a única que libera Private
+  // Edit) e Desclassificado. A CONVERSA é a que conta como prospectada.
+  // (Em 25/09 a demo tinha tirado o "Convidado"; o dono decidiu mantê-lo.)
   // ⚠️ SOBRE O NOME DA PRIMEIRA: o dono escreveu "Stylist levantado (nossa
-  // pesquisa ou cadastro LP)". A coluna do quadro (`quadro-do-stylist-circle.vue`
-  // — tela de VERDADE, fora do alcance desta demo) só tem espaço para "Nome ·
-  // N", sem legenda por coluna: nome comprido demais quebra a leitura do
-  // cabeçalho. Decisão: o NOME da etapa é só "Stylist levantado", e a
-  // explicação vai como nota no primeiro passo do roteiro guiado
-  // (`roteiro.js`, PASSOS[0].onde) — é o lugar que sobrou para explicar sem
-  // mexer na tela de verdade.
-  // ⚠️ É SÓ NESTA DEMONSTRAÇÃO. O funil do sistema de verdade é CADASTRO
-  // (`vessel_stylist_etapas`): o dono muda pela tela "Etapas do funil", sem
-  // código — nada disto é migration nem aplicador.
-  // ⚠️ 24/09/2026 (`2026-09-24-vessel-private-edit-so-com-stylist-liberada.sql`):
-  // a saída "Ativada", ANTES do Desclassificado, é a única que libera Private
-  // Edit. O id dela é o 7 (a ordem é a 6): os ids das seis de antes não mudam.
+  // pesquisa ou cadastro LP)". O cabeçalho da coluna do quadro só tem espaço
+  // para "Nome · N"; a explicação mora no primeiro passo do roteiro guiado
+  // (`roteiro.js`, PASSOS[0].onde).
+  // ⚠️ O funil do sistema de verdade é CADASTRO (`vessel_stylist_etapas`): o
+  // dono muda pela tela "Etapas do funil". Os ids aqui seguem a mesma ordem;
+  // a Ativada é o id 8 (ordem 7) e o Desclassificado a ordem 8.
   const etapas = [
-    ['Stylist levantado', 'funil'], ['Validado', 'funil'], ['Conversa', 'funil', true], ['Confirmado', 'funil'],
+    ['Stylist levantado', 'funil'], ['Validado', 'funil'], ['Conversa', 'funil', true], ['Convidado', 'funil'],
+    ['Confirmado', 'funil'],
     ['Presença', 'funil'], ['Desclassificado', 'saida'],
   ].map(([nome, tipo, marcada], i) => ({ id: i + 1, nome, ordem: i + 1, tipo, conta_como_prospectada: !!marcada,
     libera_private_edit: false, ativa: true, alterado_por_nome: null, alterado_em: null }))
-  etapas.find((e) => e.nome === 'Desclassificado').ordem = 7
-  etapas.push({ id: 7, nome: 'Ativada', ordem: 6, tipo: 'saida', conta_como_prospectada: false, libera_private_edit: true,
+  etapas.find((e) => e.nome === 'Desclassificado').ordem = 8
+  etapas.push({ id: 8, nome: 'Ativada', ordem: 7, tipo: 'saida', conta_como_prospectada: false, libera_private_edit: true,
     ativa: true, alterado_por_nome: null, alterado_em: null })
   const ETAPA = Object.fromEntries(etapas.map((e) => [e.nome, e.id]))
   // Os nove motivos do Desclassificado, na ordem da migration; "Outro" pede nota.
@@ -468,21 +452,16 @@ export function dadosIniciais(agora = new Date()) {
     for (const [de, para, n, ...resto] of historico(id)) passou(id, de, para, n, ...resto)
     return id
   }
-  // ⚠️ 25/09/2026 (Task 13, funil novo): a Gislaine estava em "Convidado" e a
-  // Ingrid em "Confirmou Ida" — as duas etapas de antes que "Confirmado"
-  // absorveu. Ficam as duas em "Confirmado" (ver o cabeçalho do arquivo): a
-  // diversidade perde uma caixa exclusiva, mas o placar de Campinas continua
-  // tendo caixa de zero (Validado, Confirmado e Desclassificado não têm
-  // ninguém lá — só Identificado/Stylist levantado, Conversa, Presença e
-  // Ativada têm gente).
+  // ⚠️ 28/09/2026: o "Convidado" voltou (opção C do dono) — a Gislaine fica
+  // nele e a Ingrid em "Confirmado", cada uma na sua caixa.
   stylistLimeira('Débora Nunes', 'Validado', () => [
     [null, 'Stylist levantado', -10, 'cadastro'], ['Stylist levantado', 'Validado', -5],
   ])
   stylistLimeira('Fernanda Rios', 'Conversa', () => [
     [null, 'Stylist levantado', -25, 'cadastro'], ['Stylist levantado', 'Validado', -22], ['Validado', 'Conversa', -20],
   ], { prospectado_em: dia(-20) })
-  stylistLimeira('Gislaine Prado', 'Confirmado', () => [
-    [null, 'Stylist levantado', -24, 'cadastro'], ['Stylist levantado', 'Conversa', -18], ['Conversa', 'Confirmado', -15],
+  stylistLimeira('Gislaine Prado', 'Convidado', () => [
+    [null, 'Stylist levantado', -24, 'cadastro'], ['Stylist levantado', 'Conversa', -18], ['Conversa', 'Convidado', -15],
   ], { prospectado_em: dia(-18) })
   stylistLimeira('Ingrid Souto', 'Confirmado', () => [
     [null, 'Stylist levantado', -20, 'cadastro'], ['Stylist levantado', 'Conversa', -16], ['Conversa', 'Confirmado', -10],

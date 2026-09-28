@@ -115,7 +115,7 @@ test('as etapas: criar, renomear, reordenar, saída, a marca e excluir com desti
   const nomes = () => chamar('vessel_stylist_etapas').map((e) => e.nome)
   const nova = chamar('vessel_stylist_etapa_criar', { p_nome: ' Qualificada ', p_posicao: 3 })
   assert.equal(nova.ok, true)
-  assert.deepEqual(nomes(), ['Stylist levantado', 'Validado', 'Qualificada', 'Conversa', 'Confirmado', 'Presença', 'Ativada', 'Desclassificado'])
+  assert.deepEqual(nomes(), ['Stylist levantado', 'Validado', 'Qualificada', 'Conversa', 'Convidado', 'Confirmado', 'Presença', 'Ativada', 'Desclassificado'])
   assert.equal(chamar('vessel_stylist_etapa_criar', { p_nome: 'qualificada' }).situacao, 'nome_repetido')
   assert.equal(chamar('vessel_stylist_etapa_renomear', { p_id: nova.id, p_nome: 'CONVERSA' }).situacao, 'nome_repetido')
   assert.equal(chamar('vessel_stylist_etapa_mover', { p_id: ETAPA['Stylist levantado'], p_direcao: 'subir' }).situacao, 'no_limite')
@@ -133,7 +133,7 @@ test('as etapas: criar, renomear, reordenar, saída, a marca e excluir com desti
   assert.equal(banco.estado.stylists.find((x) => x.codigo === 'STY-0006').etapa_id, ETAPA['Stylist levantado'])
   assert.equal(banco.estado.stylists.find((x) => x.codigo === 'STY-0059').etapa_id, ETAPA['Stylist levantado'])
   assert.equal(chamar('vessel_stylist_historico_de_etapas', { p_codigo: 'STY-0006' })[0].motivo, 'etapa_excluida')
-  assert.deepEqual(chamar('vessel_stylist_etapas').map((e) => e.ordem), [1, 2, 3, 4, 5, 6, 7], 'a ordem fecha, sem buraco')
+  assert.deepEqual(chamar('vessel_stylist_etapas').map((e) => e.ordem), [1, 2, 3, 4, 5, 6, 7, 8], 'a ordem fecha, sem buraco')
   // A marca muda; as datas gravadas ficam.
   const marinaAntes = banco.estado.stylists.find((x) => x.codigo === 'STY-0001').prospectado_em
   assert.equal(chamar('vessel_stylist_etapa_marcar_prospectada', { p_id: nova.id }).ok, true)
@@ -1341,7 +1341,7 @@ test('vessel_placar_da_edicao: edição que não existe dá erro cru (P0002); SE
   // A turma inteira de Limeira, com a diversidade de etapa (para o placar por
   // etapa ter o que mostrar) — inclusive as de zero, todas as etapas ativas.
   assert.deepEqual(placar.etapas.map((e) => e.nome),
-    ['Stylist levantado', 'Validado', 'Conversa', 'Confirmado', 'Presença', 'Ativada', 'Desclassificado'])
+    ['Stylist levantado', 'Validado', 'Conversa', 'Convidado', 'Confirmado', 'Presença', 'Ativada', 'Desclassificado'])
   assert.equal(placar.etapas.reduce((a, e) => a + e.stylists, 0), 18)
   // O par de encontros da Karen: um antes da edição (fora da janela — não
   // conta aqui, mas continua na tabela) e um dentro (agendado).

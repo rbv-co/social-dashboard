@@ -415,16 +415,16 @@ passo('Stylist Circle')
     falhar(onde, 'soltar na Ativada não deu o aviso de que ela entrou na base do Private Edit')
   }
   // ⚠️ 25/09/2026: era a Paula Reis (saiu do cenário, 87c1776). A Gislaine
-  // Prado (Limeira) prova a mesma coisa — está hoje em "Confirmado" (uma
-  // etapa de funil comum, não uma saída — o funil novo da Task 13 absorveu
-  // o antigo "Convidado" dela em "Confirmado"), então o cancelar-e-confirmar
+  // Prado (Limeira) prova a mesma coisa — está em "Convidado" (uma
+  // etapa de funil comum, não uma saída — 28/09/2026: o "Convidado" voltou,
+  // opção C do dono), então o cancelar-e-confirmar
   // do motivo se testa do mesmo jeito.
   await arrastar(cartao('Gislaine'), coluna('Desclassificado'), 'Gislaine → Desclassificado (1ª vez)')
   await esperar(400)
   const pop = pagina.locator('[role="dialog"][aria-label="Motivo: Desclassificado"]')
   if (!(await pop.count())) falhar(onde, 'soltar no Desclassificado não abriu a escolha do motivo')
   await clicar(pop.getByRole('button', { name: 'Cancelar' }).last(), 'cancelar o motivo')
-  if ((await colunaDe('Gislaine')) !== 'Confirmado') falhar(onde, `cancelar o motivo moveu a Gislaine: ${await colunaDe('Gislaine')}`)
+  if ((await colunaDe('Gislaine')) !== 'Convidado') falhar(onde, `cancelar o motivo moveu a Gislaine: ${await colunaDe('Gislaine')}`)
   await arrastar(cartao('Gislaine'), coluna('Desclassificado'), 'Gislaine → Desclassificado (2ª vez)')
   await esperar(400)
   await clicar(pop.getByRole('button', { name: 'Desclassificar' }), 'desclassificar sem motivo')
