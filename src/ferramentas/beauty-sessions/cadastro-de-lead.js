@@ -86,8 +86,8 @@ export const FORMULARIO_VAZIO = Object.freeze({
  *
  * ⚠️ NOME, WHATSAPP E E-MAIL SÃO OBRIGATÓRIOS. O e-mail entrou em 28/09/2026,
  * por decisão do dono: o cadastro vai sozinho ao RD Station Marketing, e a
- * conta de lá recusa contato sem e-mail. No banco ele segue opcional (a porta
- * do QR ainda não pede) — quem exige é esta tela.
+ * conta de lá recusa contato sem e-mail. O banco também recusa sem e-mail
+ * (`2026-09-28-zzzz-...-email-obrigatorio-no-banco.sql`), pelas duas portas.
  *
  * ⚠️ NÚMERO DE FORA DO BRASIL É AVISADO AQUI, e não só recusado lá dentro: o
  * banco guarda só `55` + DDD + número (`vessel_telefone_canonico`), e a página

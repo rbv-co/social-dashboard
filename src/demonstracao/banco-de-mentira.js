@@ -1761,10 +1761,10 @@ export function criarBancoDeMentira({ agora = () => new Date(), aoAvisar = () =>
       if (nome.length < 2) return { ok: false, situacao: 'sem_nome' }
       const fone = telefoneCanonico(p_whatsapp)
       if (!fone) return { ok: false, situacao: 'whatsapp_invalido' }
-      // `2026-09-28-zzz-vessel-beauty-session-pede-email.sql`: opcional no banco,
-      // mas escrito e inválido recusa — a mesma regra de `vessel_email_canonico`.
+      // `2026-09-28-zzzz-...-email-obrigatorio-no-banco.sql`: vazio ou inválido
+      // recusa — a mesma regra de `vessel_email_canonico`.
       const email = emailCanonico(p_email)
-      if (limpo(p_email) && !email) return { ok: false, situacao: 'email_invalido' }
+      if (!email) return { ok: false, situacao: 'email_invalido' }
       const insta = limpo(p_instagram)
       if (insta && insta.length > 120) return { ok: false, situacao: 'instagram_longo' }
       const interesse = limpo(p_interesse)

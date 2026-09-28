@@ -520,11 +520,12 @@ test('conta das Beauty Sessions: LISTA com as chaves do json_build_object do SQL
 // ── o cadastro pela equipe (`2026-09-24-beauty-session-cadastro-pela-equipe.sql`) ──
 test('cadastrar lead: as conferências e as situações da função de verdade, na ordem', () => {
   const { chamar } = novoBanco()
-  const ok = { p_codigo: S2, p_nome: 'Helena Prado (exemplo)', p_whatsapp: '5519988776655' }
+  const ok = { p_codigo: S2, p_nome: 'Helena Prado (exemplo)', p_whatsapp: '5519988776655', p_email: 'helena@prova.com' }
   assert.equal(chamar('vessel_beauty_session_cadastrar_lead', { ...ok, p_codigo: 'BS-20990101-CPS-XX' }).situacao, 'nao_achei')
   assert.equal(chamar('vessel_beauty_session_cadastrar_lead', { ...ok, p_codigo: S4 }).situacao, 'sessao_arquivada')
   assert.equal(chamar('vessel_beauty_session_cadastrar_lead', { ...ok, p_nome: ' x ' }).situacao, 'sem_nome')
   assert.equal(chamar('vessel_beauty_session_cadastrar_lead', { ...ok, p_whatsapp: '9900' }).situacao, 'whatsapp_invalido')
+  assert.equal(chamar('vessel_beauty_session_cadastrar_lead', { ...ok, p_email: undefined }).situacao, 'email_invalido')
   assert.equal(chamar('vessel_beauty_session_cadastrar_lead', { ...ok, p_instagram: 'x'.repeat(121) }).situacao, 'instagram_longo')
   assert.equal(chamar('vessel_beauty_session_cadastrar_lead', { ...ok, p_interesse: 'outra' }).situacao, 'interesse_invalido')
   const r = chamar('vessel_beauty_session_cadastrar_lead', { ...ok, p_interesse: 'rever-uma-peca' })
@@ -542,13 +543,13 @@ test('cadastrar lead: as conferências e as situações da função de verdade, 
 })
 
 // ── o e-mail (`2026-09-28-zzz-vessel-beauty-session-pede-email.sql`) ──
-test('cadastrar lead: e-mail escrito e inválido recusa; válido entra limpo, e na duplicata só se faltava', () => {
+test('cadastrar lead: e-mail vazio ou inválido recusa; válido entra limpo, e na duplicata só se faltava', () => {
   const { chamar, banco } = novoBanco()
   const ok = { p_codigo: S2, p_nome: 'Helena Prado (exemplo)', p_whatsapp: '5519988776655' }
   const pessoa = (fone) => banco.estado.pessoas.find((p) => p.telefone === fone)
   // A MESMA ordem do banco: o e-mail é conferido depois do WhatsApp.
   assert.equal(chamar('vessel_beauty_session_cadastrar_lead', { ...ok, p_whatsapp: '9900', p_email: 'x' }).situacao, 'whatsapp_invalido')
-  for (const ruim of ['sem-arroba', 'a@b.c', 'ana@prova', 'ana maria@prova.com']) {
+  for (const ruim of ['', '   ', 'sem-arroba', 'a@b.c', 'ana@prova', 'ana maria@prova.com']) {
     assert.equal(chamar('vessel_beauty_session_cadastrar_lead', { ...ok, p_email: ruim }).situacao, 'email_invalido', ruim)
   }
   assert.equal(pessoa('5519988776655'), undefined, 'recusa não cria ficha')
@@ -557,13 +558,12 @@ test('cadastrar lead: e-mail escrito e inválido recusa; válido entra limpo, e 
   // Já estava: o e-mail que ela JÁ TEM não é trocado…
   chamar('vessel_beauty_session_cadastrar_lead', { ...ok, p_email: 'outro@prova.com' })
   assert.equal(pessoa('5519988776655').email, 'helena@prova.com')
-  // …mas quem estava sem e-mail ganha o deste cadastro, mesmo como `ja_estava`.
-  const semEmail = { ...ok, p_whatsapp: '5519977001122' }
-  chamar('vessel_beauty_session_cadastrar_lead', semEmail)
-  assert.equal(pessoa('5519977001122').email, null)
-  const dup = chamar('vessel_beauty_session_cadastrar_lead', { ...semEmail, p_email: 'nova@prova.com' })
+  // …mas quem estava sem e-mail (a Priscila, que leu o QR antes de o e-mail
+  // existir) ganha o deste cadastro, mesmo como `ja_estava`.
+  assert.equal(pessoa('5519970000305').email ?? null, null)
+  const dup = chamar('vessel_beauty_session_cadastrar_lead', { ...ok, p_whatsapp: '5519970000305', p_email: 'nova@prova.com' })
   assert.equal(dup.situacao, 'ja_estava')
-  assert.equal(pessoa('5519977001122').email, 'nova@prova.com')
+  assert.equal(pessoa('5519970000305').email, 'nova@prova.com')
 })
 
 test('as leads da sessão: porta, quem cadastrou, foi à loja e comprou', () => {
