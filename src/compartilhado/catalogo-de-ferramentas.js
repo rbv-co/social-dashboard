@@ -144,6 +144,11 @@ export const FERRAMENTAS = [
   { key: 'atendimentos.stylist-circle', label: 'Stylist Circle', acoes: ['ver', 'editar'], grupo: 'atendimentos', rotas: ['stylist-circle'] },
   { key: 'atendimentos.material-grafico', label: 'Material Gráfico', acoes: ['ver'], grupo: 'atendimentos', rotas: ['material-grafico'] },
   { key: 'atendimentos.appointment-card', label: 'Appointment Card', acoes: ['ver'], grupo: 'atendimentos', links: ['appointment-card'] },
+  // O gêmeo do Appointment Card (28/09/2026): outra porta para o site, a do
+  // gerador do convite do Private Edit. Chave PRÓPRIA desde o nascimento e
+  // SEM pré-concessão — não é pedaço de nenhuma tela que alguém já usava, então
+  // nasce desmarcada para todos (regra do dono) e é dada pelo editor.
+  { key: 'atendimentos.private-edit-card', label: 'Private Edit Card', acoes: ['ver'], grupo: 'atendimentos', links: ['private-edit-card'] },
   // Praça e Edição do Stylist Circle (25/09/2026, Task 6): chave PRÓPRIA desde
   // o nascimento — nasceram como recorte de 'atendimentos.stylist-circle' (a
   // trava do banco, db/migrations/2026-09-25-vessel-praca-e-edicao.sql seção

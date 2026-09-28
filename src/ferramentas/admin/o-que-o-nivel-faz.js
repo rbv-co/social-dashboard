@@ -181,6 +181,15 @@ export const FRASES = {
       + 'mora no site da Vessel: quem tiver o endereço ainda abre.)',
     ver: 'Vê o cartão que abre o gerador do Appointment Card no site da Vessel.',
   },
+  'atendimentos.private-edit-card': {
+    // O gêmeo do de cima: um <a> para o gerador do convite do Private Edit no
+    // site da Vessel (enderecos-publicos.js). A chave só mostra ou esconde o
+    // cartão; o gerador em si é página pública.
+    sem: 'O cartão do Private Edit Card não aparece no menu dela. (O gerador '
+      + 'mora no site da Vessel: quem tiver o endereço ainda abre.)',
+    ver: 'Vê o cartão que abre o gerador do Private Edit Card (o convite do '
+      + 'encontro, com o QR para o WhatsApp da loja) no site da Vessel.',
+  },
   'claude.status': {
     // mapa-de-enderecos.js:31 (rota gateada em 'ver'); dentro da tela não há
     // NENHUM hasPermission. Em 19/08/2026 o quadro de projetos saiu da tela, e

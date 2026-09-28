@@ -68,6 +68,25 @@ export const ENDERECO_DO_CIRCLE = `${SITE}/stylist-circle/`
  */
 export const ENDERECO_DO_GERADOR_DE_CARTAO = `${SITE}/geradorappointmentcard/`
 
+/* O GERADOR DO PRIVATE EDIT CARD (28/09/2026) — o GÊMEO do de cima.
+ *
+ * Desenha o convite do Private Edit (anfitriã, data, hora e loja), e o QR dele
+ * leva ao WhatsApp da loja, para a convidada confirmar presença.
+ *
+ * ⚠️ OS MESMOS TRÊS AVISOS DO APPOINTMENT CARD, pelos mesmos motivos:
+ *   · MORA NO OUTRO REPOSITÓRIO (`rbv-co/vessel-brasil`). É PORTA, não cópia —
+ *     o desenho, o fundo, as fontes e o QR ficam num lugar só.
+ *   · NÃO DÁ PARA EMBUTIR EM MOLDURA: a Vercel manda `frame-ancestors` e o
+ *     quadro sai branco, com o erro só no console.
+ *   · ABRE VAZIO. O gerador não lê nada da barra de endereço; parâmetro aqui
+ *     faria a Client Advisor achar que preencheu quando não preencheu.
+ *
+ * ⚠️ NÃO CONFUNDIR com `enderecoDoConvite(chave)` (`/pe/<chave>`): aquele é a
+ * página do convite de UM encontro, que a stylist manda. Este é o gerador da
+ * IMAGEM, que a equipe da loja preenche à mão.
+ */
+export const ENDERECO_DO_GERADOR_DO_PRIVATE_EDIT_CARD = `${SITE}/geradorprivateeditcard/`
+
 // ⚠️ 24/09/2026: o funil da stylist é CONFIGURÁVEL (`vessel_stylist_etapas`),
 // e nenhuma lista de etapas mora mais no código — o `ESTAGIOS` que ficava aqui
 // saiu junto com a lista fechada.
