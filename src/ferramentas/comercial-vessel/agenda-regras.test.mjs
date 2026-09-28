@@ -5,8 +5,19 @@ import {
   DURACAO_DO_PRIVATE_EDIT_EM_HORAS, CHAVES_DO_ITEM, hojeEmSaoPaulo, somarDias, diaDaSemana, gradeDoMes,
   limitesDoMes, periodoParaPedir, diasDaLista, outroMes, nomeDoMes, diaPorExtenso, agruparPorDia,
   lugaresDaAgenda, filtrarAgenda, sobrepoe, diaTemSobreposicao, linhaDoItem, horarioDoItem, detalhesDoItem,
-  linhaDoConflito, linhaDoContexto, valoresQueFicam, mudouHoraOuLugar, nomeDoLugar,
+  linhaDoConflito, linhaDoContexto, valoresQueFicam, mudouHoraOuLugar, nomeDoLugar, nomeDaPraca,
 } from './agenda-regras.js'
+
+// ⚠️ 25/09/2026 (Task 8): O CADASTRO DE PRAÇAS, PASSADO POR PARÂMETRO — a
+// forma de `vessel_pracas_listar` (só os campos que `nomeDaPraca` usa).
+// Nenhuma lista de praça mora mais em `agenda-regras.js`.
+const PRACAS_DE_TESTE = [
+  { id: 1, sigla: 'CPS', nome: 'Campinas' },
+  { id: 2, sigla: 'SAO', nome: 'São Paulo' },
+  { id: 3, sigla: 'SBO', nome: 'Santa Bárbara' },
+  { id: 4, sigla: 'BSB', nome: 'Brasília' },
+  { id: 5, sigla: 'LIM', nome: 'Limeira' },
+]
 
 /* ⚠️ AS AMOSTRAS TÊM A FORMA DA RESPOSTA DE VERDADE (`vessel_agenda_das_lojas`):
  * as 18 chaves, nenhuma a mais, montadas por `item()` a partir de
@@ -92,7 +103,7 @@ test('o filtro de loja sai do que veio; sem loja, o lugar do banco (praça + lug
     PE({ codigo: 'B', dia: '2026-09-25', loja: null, praca: 'CPS', local: 'Hotel X', lugar: 'praca:CPS|hotel x' }),
     item({ tipo: 'beauty_session', codigo: 'BS', dia: '2026-09-25', loja: 'tivoli', praca: 'SBO', lugar: 'tivoli' }),
   ]
-  assert.deepEqual(lugaresDaAgenda(itens), [
+  assert.deepEqual(lugaresDaAgenda(itens, PRACAS_DE_TESTE), [
     { chave: 'praca:CPS|hotel x', rotulo: 'Campinas · Hotel X' },
     { chave: 'iguatemi', rotulo: 'Iguatemi' },
     { chave: 'tivoli', rotulo: 'Tivoli' },
@@ -100,6 +111,24 @@ test('o filtro de loja sai do que veio; sem loja, o lugar do banco (praça + lug
   assert.deepEqual(filtrarAgenda(itens, { lugar: 'iguatemi', soPrivateEdit: false }).map((i) => i.codigo), ['A'])
   assert.deepEqual(filtrarAgenda(itens, { lugar: '', soPrivateEdit: true }).map((i) => i.codigo), ['A', 'B'])
   assert.equal(nomeDoLugar(item({ tipo: 'private_edit' })), 'Sem lugar')
+})
+
+// ⚠️ 25/09/2026 (Task 8): a lista `PRACAS` cravada morre — o nome da praça vem
+// do CADASTRO, recebido por parâmetro; sigla que o cadastro não conhece
+// aparece pela PRÓPRIA SIGLA, nunca em branco (a tela nunca mente).
+test('⚠️ o nome da praça vem do cadastro (parâmetro), e sigla desconhecida aparece pela sigla, nunca em branco', () => {
+  assert.equal(nomeDaPraca('CPS', PRACAS_DE_TESTE), 'Campinas')
+  assert.equal(nomeDaPraca('LIM', PRACAS_DE_TESTE), 'Limeira', 'praça nova (Limeira) — não existia na lista cravada de antes')
+  assert.equal(nomeDaPraca('PIR', PRACAS_DE_TESTE), 'PIR', 'fora do cadastro passado: a própria sigla, nunca em branco')
+  assert.equal(nomeDaPraca('CPS'), 'CPS', 'sem cadastro nenhum: a própria sigla, nunca em branco')
+  assert.equal(nomeDaPraca('', PRACAS_DE_TESTE), '')
+
+  const comLoja = PE({ codigo: 'A', dia: '2026-09-25', praca: 'LIM', loja: null, local: 'Hotel X' })
+  assert.equal(nomeDoLugar(comLoja, PRACAS_DE_TESTE), 'Limeira · Hotel X')
+
+  const foraDoCadastro = PE({ codigo: 'B', dia: '2026-09-25', praca: 'PIR', loja: null, local: 'Salão Y' })
+  assert.equal(nomeDoLugar(foraDoCadastro, PRACAS_DE_TESTE), 'PIR · Salão Y')
+  assert.equal(nomeDoLugar(foraDoCadastro), 'PIR · Salão Y', 'nem cadastro nenhum: a sigla, nunca em branco')
 })
 
 test('sobrepõe: só Private Edit com a lista cheia; sessão e visita nunca são conflito', () => {
@@ -131,10 +160,10 @@ test('o aviso: cada encontro que cruza com código, anfitriã, loja e horário; 
     dia: '2026-09-29', hora: '19:00', hora_fim: '23:00', loja: 'iguatemi', praca: 'CPS', local: null, status: 'agendado' }
   assert.equal(linhaDoConflito(o), 'PE-20260929-CPS-01 · Marina (exemplo) · Iguatemi · 29/09/2026 19:00–23:00')
   assert.equal(linhaDoContexto({ tipo: 'beauty_session', codigo: 'BS', dia: '2026-09-29', hora: null, loja: 'iguatemi',
-    praca: 'CPS', parceiro: 'Salão (exemplo)', client_advisor: null, status: null }),
+    praca: 'CPS', parceiro: 'Salão (exemplo)', client_advisor: null, status: null }, PRACAS_DE_TESTE),
   'Beauty Session — Salão (exemplo) no mesmo dia (Iguatemi)')
   assert.equal(linhaDoContexto({ tipo: 'private_appointment', codigo: null, dia: '2026-09-29', hora: '20:30', loja: 'iguatemi',
-    praca: null, parceiro: null, client_advisor: 'Carolina', status: 'confirmado' }),
+    praca: null, parceiro: null, client_advisor: 'Carolina', status: 'confirmado' }, PRACAS_DE_TESTE),
   'Private Appointment às 20:30 com Carolina (Iguatemi)')
 })
 

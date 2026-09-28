@@ -113,3 +113,20 @@ test('sem stylist e sem praça, a tela reclama das duas', () => {
   assert.ok(p.some((x) => /stylist/i.test(x)))
   assert.ok(p.some((x) => /praça/i.test(x)))
 })
+
+// ⚠️ 25/09/2026 (Task 8): a lista cravada `['CPS','SAO','SBO','BSB']` saiu
+// daqui — ela barrava Limeira e Piracicaba pela TELA mesmo depois de as duas
+// entrarem no cadastro. `siglasValidas` é opcional (a tela sempre manda a
+// lista de hoje); sem ele, só confere que ALGUMA praça foi escolhida.
+test('⚠️ a praça vem do cadastro (parâmetro), não de lista cravada — sigla nova do cadastro passa, e fora do cadastro é barrada', () => {
+  const amanha = new Date(Date.now() + 10 * 86400000).toISOString()
+  const siglasDeHoje = ['CPS', 'SAO', 'SBO', 'BSB', 'LIM', 'PIR']
+  assert.deepEqual(
+    problemasDoEncontro({ stylist: 'STY-0001', quando: amanha, praca: 'LIM', vagas: 8 }, siglasDeHoje), [],
+    'Limeira não existia na lista cravada de antes — agora passa por vir do cadastro')
+  const p = problemasDoEncontro({ stylist: 'STY-0001', quando: amanha, praca: 'XXX', vagas: 8 }, siglasDeHoje)
+  assert.ok(p.some((x) => /praça/i.test(x)), JSON.stringify(p))
+  // sem `siglasValidas` (compatibilidade): só confere que uma praça foi escolhida.
+  assert.deepEqual(
+    problemasDoEncontro({ stylist: 'STY-0001', quando: amanha, praca: 'LIM', vagas: 8 }), [])
+})
