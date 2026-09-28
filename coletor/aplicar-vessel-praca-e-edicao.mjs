@@ -174,11 +174,17 @@ try {
      from public.vessel_stylists s left join public.vessel_pracas p on p.id = s.praca_id
      where not coalesce(s.teste, false) group by 1 order by 1`)
   const mapa = Object.fromEntries(porPraca.map((x) => [x.sigla, x.n]))
-  conferir(mapa.CPS === 27 && mapa.LIM === 18 && mapa.PIR === 17 && mapa['(sem praca)'] === 1 && !mapa.SAO && !mapa.SBO && !mapa.BSB,
-    'praca_id por cidade: 27 Campinas, 18 Limeira, 17 Piracicaba, 1 sem praça (Limeira / Piracicaba)', porPraca)
-  const semPraca = await uma(`select cidade from public.vessel_stylists
-     where not coalesce(teste, false) and praca_id is null`)
-  conferir(semPraca?.cidade === 'Limeira / Piracicaba', 'a única sem praça é exatamente a "Limeira / Piracicaba"', semPraca)
+  // ⚠️ 28/09/2026: os números mudaram desde o ensaio de 25/09 — entraram duas
+  // stylists de verdade (uma de Campinas e uma de JUNDIAÍ). Jundiaí não é
+  // cidade de praça nenhuma, então fica sem praça DE PROPÓSITO (a tela mostra
+  // "sem praça", ninguém inventa uma). Tráfego ao vivo que mude isto de novo
+  // aborta aqui com segurança — atualizar os números e rodar de novo.
+  conferir(mapa.CPS === 28 && mapa.LIM === 18 && mapa.PIR === 17 && mapa['(sem praca)'] === 2 && !mapa.SAO && !mapa.SBO && !mapa.BSB,
+    'praca_id por cidade: 28 Campinas, 18 Limeira, 17 Piracicaba, 2 sem praça (Limeira / Piracicaba e Jundiaí)', porPraca)
+  const semPraca = (await todas(`select cidade from public.vessel_stylists
+     where not coalesce(teste, false) and praca_id is null order by cidade`)).map((x) => x.cidade)
+  conferir(JSON.stringify(semPraca) === JSON.stringify(['Jundiaí', 'Limeira / Piracicaba']),
+    'as únicas sem praça são exatamente "Jundiaí" e "Limeira / Piracicaba"', semPraca)
 
   console.log('\n── IMPORTANTE 1 e 2: dado SUJO, migrado pelo UPDATE REAL do .sql (nunca uma cópia redigitada)')
   // ⚠️ Isto NÃO reroda um UPDATE retiplado à mão: reroda a própria variável
