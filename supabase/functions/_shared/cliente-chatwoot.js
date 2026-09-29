@@ -13,9 +13,16 @@ export class ErroChatwoot extends Error {
   }
 }
 
-/** 401/403 -> parar a rodada (credencial); 429/5xx/rede -> tentar de novo; demais 4xx -> falhou. */
+const TIMEOUT_MS = 15000
+
+/**
+ * 401/403 -> parar a rodada (credencial); 429/5xx/rede -> tentar de novo; demais 4xx -> falhou.
+ * ⚠️ Rede/timeout (status 0) no `enviar_template` NÃO tenta de novo: a requisição pode ter chegado
+ * e a mensagem saído, e retentar mandaria DUAS ao cliente. Vira `falhou` (visível na tela).
+ */
 export function classificarErro(e) {
   if (!(e instanceof ErroChatwoot)) return 'tentar_de_novo'
+  if (e.status === 0) return e.passo === 'enviar_template' ? 'falhou' : 'tentar_de_novo'
   if (e.status === 401 || e.status === 403) return 'parar'
   if (e.status === 429 || e.status >= 500) return 'tentar_de_novo'
   return 'falhou'
@@ -25,11 +32,18 @@ export function criarClienteChatwoot({ url, contaId, caixaId, token, fetchFn = f
   const base = `${url.replace(/\/$/, '')}/api/v1/accounts/${contaId}`
 
   async function chamar(passo, caminho, { metodo = 'GET', corpo } = {}) {
-    const r = await fetchFn(base + caminho, {
-      method: metodo,
-      headers: { 'Content-Type': 'application/json', api_access_token: token },
-      body: corpo ? JSON.stringify(corpo) : undefined,
-    })
+    let r
+    try {
+      r = await fetchFn(base + caminho, {
+        method: metodo,
+        headers: { 'Content-Type': 'application/json', api_access_token: token },
+        body: corpo ? JSON.stringify(corpo) : undefined,
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+      })
+    } catch (e) {
+      // Rede ou timeout: erro identificado (status 0), com o passo, para o robô saber o que fazer.
+      throw new ErroChatwoot(0, String(e?.message ?? e).slice(0, 160), passo)
+    }
     const texto = await r.text()
     let json = null
     try { json = texto ? JSON.parse(texto) : null } catch { /* corpo que não é JSON: fica só o texto */ }

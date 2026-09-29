@@ -34,8 +34,12 @@ test('finalizar só vale para quem está enviando; devolver conta tentativa e es
   assert.match(SQL, /'tentativas_esgotadas'/)
 })
 
-test('travados: enviando há mais de 10 min volta a ser elegível', () => {
-  assert.match(SQL, /mensagem_reservada_em < now\(\) - interval '10 minutes'/)
+test('⚠️ travados: enviando há mais de 10 min vira FALHOU (visível), nunca volta a ser elegível: o template pode já ter saído', () => {
+  const fn = SQL.slice(SQL.indexOf('function public.liberar_mensagens_travadas'), SQL.indexOf('revoke execute'))
+  assert.match(fn, /mensagem_reservada_em < now\(\) - interval '10 minutes'/)
+  assert.match(fn, /mensagem_status = 'falhou'/)
+  assert.match(fn, /'travada_sem_confirmacao'/)
+  assert.ok(!/mensagem_status = null/.test(fn), 'não pode devolver a null: reenviaria uma mensagem que pode ter saído')
 })
 
 test('⚠️ bloqueados: RLS ligada, sem policy, fechada para anon/authenticated', () => {

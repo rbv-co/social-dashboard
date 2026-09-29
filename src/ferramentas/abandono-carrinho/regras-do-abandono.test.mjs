@@ -57,9 +57,13 @@ test('lista que bateu no limite é marcada como cortada', () => {
 test('seloDaMensagem: um selo por estado, e nada quando a mensagem nem começou', () => {
   assert.equal(seloDaMensagem({ mensagem_status: null }), null)
   assert.deepEqual(seloDaMensagem({ mensagem_status: 'enviando' }), { texto: 'enviando…', tipo: 'info' })
-  assert.deepEqual(seloDaMensagem({ mensagem_status: 'enviada' }), { texto: 'mensagem enviada', tipo: 'ok' })
+  // ⚠️ "enviada" = aceita pelo Chatwoot. Ele responde 200 e só depois a Meta pode recusar (template
+  // não aprovado/pausado), então o rótulo não pode prometer "entregue".
+  assert.deepEqual(seloDaMensagem({ mensagem_status: 'enviada' }), { texto: 'enviada ao Chatwoot', tipo: 'ok' })
   assert.deepEqual(seloDaMensagem({ mensagem_status: 'falhou', mensagem_motivo: 'enviar_template:422' }),
     { texto: 'falhou', tipo: 'erro' })
+  assert.deepEqual(seloDaMensagem({ mensagem_status: 'falhou', mensagem_motivo: 'travada_sem_confirmacao' }),
+    { texto: 'sem confirmação: confira no Chatwoot', tipo: 'erro' })
 })
 
 test('seloDaMensagem: ignorada explica o motivo em português; motivo desconhecido não quebra', () => {

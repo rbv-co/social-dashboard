@@ -89,7 +89,11 @@ Funções puras com teste: `primeiroNome`, `normalizarTelefone`, `dentroDaJanela
 ## Riscos
 
 - **Consentimento ausente** (decisão do dono): risco de queda de qualidade e bloqueio do número da loja, e de questionamento pela LGPD. Mitigação: bloqueio permanente pelo botão, uma mensagem por checkout, horário comercial, modo desligado por padrão.
-- **Template reprovado ou mudado pela Meta:** nenhuma mensagem sai. O robô tem que registrar o erro claramente e parar.
+- **Template reprovado ou mudado pela Meta:** nenhuma mensagem sai. ⚠️ **O robô NÃO enxerga isso**: conferido no código do Chatwoot, a API responde 200 ao criar a mensagem e o envio à Meta acontece depois, em segundo plano; se o template não estiver aprovado, a mensagem fica com falha no Chatwoot e o robô já marcou `enviada`. Por isso `enviada` significa **"aceita pelo Chatwoot"** (e a tela diz isso), não "entregue". Fechar essa lacuna exige ler o status da mensagem no Chatwoot (ou um webhook `message_updated`): **fica como próximo passo, não está neste plano**. Por enquanto, a verificação do template é manual: no teste com o número do dono (modo `lista`), conferir no Chatwoot e no WhatsApp que a mensagem chegou.
+- **Robô que morre entre enviar e gravar:** o item fica `enviando` e, depois de 10 minutos, vira `falhou / travada_sem_confirmacao` (visível na tela: "confira no Chatwoot"). **Não volta para a fila**: reenviar mandaria a mesma mensagem duas vezes.
+- **Falha de rede/timeout no envio do template:** também `falhou` (o robô não sabe se saiu). Rede antes do envio (busca de contato, abrir conversa) tenta de novo, até 3 vezes.
+- **Falha ao ler a lista de bloqueados:** a rodada inteira é abortada e os itens são devolvidos. "Não consegui ler" nunca é tratado como "ninguém pediu para parar".
+- **Configuração ausente ou inválida** (link base, limite, template, credenciais): a rodada falha fechada com `config_invalida`, sem tocar em nenhum lead.
 - **Cliente não é o dono do telefone** (o número do checkout pode ser de terceiro): mensagem indevida. Sem mitigação total.
 - **Checkout recriado pelo Shopify** com o contato guardado (visto em 29/09/2026, "Luis Magrin"): pode disparar mensagem para quem não estava comprando.
 

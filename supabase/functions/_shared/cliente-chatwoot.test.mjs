@@ -59,3 +59,23 @@ test('⚠️ classificarErro: 401/403 para; 429, 5xx e rede tentam de novo; 4xx 
   assert.equal(classificarErro(e(422)), 'falhou')
   assert.equal(classificarErro(e(404)), 'falhou')
 })
+
+test('⚠️ toda chamada leva um timeout (AbortSignal): um fetch pendurado não prende a rodada nem deixa item preso', async () => {
+  let sinal
+  const fetchFn = async (_url, init) => { sinal = init.signal; return json({ payload: [] }) }
+  await cliente(fetchFn).acharOuCriarContato({ nome: 'x', telefone: '5519982621828' }).catch(() => {})
+  assert.ok(sinal instanceof AbortSignal, 'a chamada deveria levar um AbortSignal')
+})
+
+test('⚠️ falha de rede/timeout vira ErroChatwoot com status 0 e o passo, em vez de escapar como erro genérico', async () => {
+  const fetchFn = async () => { throw new TypeError('fetch failed') }
+  await assert.rejects(
+    () => cliente(fetchFn).abrirConversa({ contatoId: 1, telefone: '5519982621828' }),
+    (e) => e instanceof ErroChatwoot && e.status === 0 && e.passo === 'abrir_conversa')
+})
+
+test('⚠️ classificarErro: rede em passo ANTES do envio tenta de novo; rede no enviar_template NÃO (a mensagem pode ter saído: retentar duplicaria)', () => {
+  assert.equal(classificarErro(new ErroChatwoot(0, 'fetch failed', 'buscar_contato')), 'tentar_de_novo')
+  assert.equal(classificarErro(new ErroChatwoot(0, 'fetch failed', 'abrir_conversa')), 'tentar_de_novo')
+  assert.equal(classificarErro(new ErroChatwoot(0, 'timeout', 'enviar_template')), 'falhou')
+})

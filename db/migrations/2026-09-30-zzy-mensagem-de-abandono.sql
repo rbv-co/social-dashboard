@@ -108,7 +108,10 @@ as $$
      and mensagem_status = 'enviando';
 $$;
 
--- Robô que morreu no meio da rodada: quem ficou `enviando` por mais de 10 min volta a ser elegível.
+-- Robô que morreu no meio da rodada: quem ficou `enviando` por mais de 10 min NÃO volta para a
+-- fila. ⚠️ O template pode já ter saído (o robô pode ter morrido depois de enviar e antes de
+-- gravar), e devolver a `null` mandaria a mesma mensagem DUAS vezes ao cliente. Vira `falhou`,
+-- que aparece na tela para decisão humana.
 create or replace function public.liberar_mensagens_travadas()
 returns int
 language plpgsql
@@ -119,7 +122,7 @@ declare
   liberados int;
 begin
   update public.checkout_abandono
-     set mensagem_status = null, mensagem_reservada_em = null
+     set mensagem_status = 'falhou', mensagem_motivo = 'travada_sem_confirmacao', mensagem_reservada_em = null
    where mensagem_status = 'enviando'
      and mensagem_reservada_em < now() - interval '10 minutes';
   get diagnostics liberados = row_count;

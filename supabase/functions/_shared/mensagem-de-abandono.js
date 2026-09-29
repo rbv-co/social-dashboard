@@ -36,7 +36,8 @@ export function dentroDaJanela(agora = new Date()) {
 
 /** O link dinâmico do template = parte FIXA + um sufixo variável. Fora da base fixa: null. */
 export function sufixoDoLink(url, base) {
-  if (typeof url !== 'string' || !url.startsWith(base)) return null
+  // ⚠️ Base vazia: `startsWith('')` é sempre true e o "sufixo" seria a URL inteira (botão quebrado).
+  if (typeof base !== 'string' || !base || typeof url !== 'string' || !url.startsWith(base)) return null
   return url.slice(base.length) || null
 }
 
@@ -54,6 +55,30 @@ export function montarTemplateParams({ nomeTemplate, idioma, nome, sufixoUrl }) 
       buttons: [{ type: 'url', parameter: sufixoUrl }],
     },
   }
+}
+
+const LIMITE_MAXIMO_POR_RODADA = 100
+
+/**
+ * Configuração que o robô exige ANTES de tocar em qualquer lead. Devolve a lista de problemas
+ * (vazia = ok). O objetivo é falhar FECHADO: segredo ausente ou inválido nunca pode virar
+ * "sem limite" nem "link quebrado para todos".
+ * `modo` seco não fala com o Chatwoot, então não exige Chatwoot nem template.
+ */
+export function validarConfig({ modo, limite, linkBase, templateNome, chatwoot = {}, soPara = [] }) {
+  const problemas = []
+  if (!Number.isInteger(limite) || limite < 1 || limite > LIMITE_MAXIMO_POR_RODADA) {
+    problemas.push(`ENVIO_LIMITE_POR_RODADA inválido (inteiro de 1 a ${LIMITE_MAXIMO_POR_RODADA})`)
+  }
+  if (!linkBase || !linkBase.endsWith('/')) problemas.push('LINK_BASE vazio ou sem a barra final')
+  if (modo === 'seco') return problemas
+  if (!templateNome) problemas.push('TEMPLATE_NOME vazio')
+  if (!/^https?:\/\//.test(chatwoot.url ?? '')) problemas.push('CHATWOOT_URL vazio ou sem http(s)')
+  if (!chatwoot.contaId) problemas.push('CHATWOOT_CONTA_ID vazio')
+  if (!Number.isInteger(Number(chatwoot.caixaId)) || Number(chatwoot.caixaId) < 1) problemas.push('CHATWOOT_CAIXA_ID vazio ou inválido')
+  if (!chatwoot.token) problemas.push('CHATWOOT_API_TOKEN vazio')
+  if (modo === 'lista' && !soPara.length) problemas.push('ENVIO_SO_PARA vazio')
+  return problemas
 }
 
 /** Decide o que fazer com UMA linha da fila. `bloqueados` = Set de telefones já normalizados. */

@@ -54,8 +54,13 @@ const MOTIVOS_IGNORADA = {
 export function seloDaMensagem(linha) {
   switch (linha.mensagem_status) {
     case 'enviando': return { texto: 'enviando…', tipo: 'info' }
-    case 'enviada': return { texto: 'mensagem enviada', tipo: 'ok' }
-    case 'falhou': return { texto: 'falhou', tipo: 'erro' }
+    // "enviada" = aceita pelo Chatwoot. Ele responde 200 e só depois a Meta pode recusar o template,
+    // então o rótulo não promete "entregue".
+    case 'enviada': return { texto: 'enviada ao Chatwoot', tipo: 'ok' }
+    case 'falhou':
+      return linha.mensagem_motivo === 'travada_sem_confirmacao'
+        ? { texto: 'sem confirmação: confira no Chatwoot', tipo: 'erro' }
+        : { texto: 'falhou', tipo: 'erro' }
     case 'ignorada': return { texto: MOTIVOS_IGNORADA[linha.mensagem_motivo] ?? 'não enviada', tipo: 'neutro' }
     default: return null
   }

@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  primeiroNome, normalizarTelefone, dentroDaJanela, sufixoDoLink, montarTemplateParams, decidirEnvio,
+  primeiroNome, normalizarTelefone, dentroDaJanela, sufixoDoLink, montarTemplateParams, decidirEnvio, validarConfig,
 } from './mensagem-de-abandono.js'
 
 test('primeiroNome: só o primeiro nome, com fallback e teto', () => {
@@ -66,6 +66,43 @@ test('decidirEnvio: motivos de ignorar, na ordem certa', () => {
   assert.equal(decidir(linha({ telefone: '1932221828' })).motivo, 'telefone_invalido')
   assert.equal(decidir(linha(), { bloqueados: new Set(['5519982621828']) }).motivo, 'pediu_para_nao_receber')
   assert.equal(decidir(linha({ url_de_recuperacao: 'https://outra.com/x' })).motivo, 'sem_link')
+})
+
+test('⚠️ decidirEnvio: sem base de link configurada NUNCA envia (senão o botão vira base + URL inteira)', () => {
+  for (const baseLink of ['', undefined, null]) {
+    assert.equal(decidir(linha(), { baseLink }).motivo, 'sem_link', `baseLink=${baseLink}`)
+  }
+})
+
+const CONFIG_OK = {
+  modo: 'ligado', limite: 10, linkBase: 'https://loja.com.br/', templateNome: 'recuperacao_checkout_v1',
+  chatwoot: { url: 'https://cw.exemplo.com', contaId: '7', caixaId: '3', token: 'T' }, soPara: [],
+}
+
+test('validarConfig: configuração completa não tem problema, em qualquer modo ativo', () => {
+  assert.deepEqual(validarConfig(CONFIG_OK), [])
+  assert.deepEqual(validarConfig({ ...CONFIG_OK, modo: 'lista', soPara: ['5519982621828'] }), [])
+  assert.deepEqual(validarConfig({ ...CONFIG_OK, modo: 'seco', chatwoot: {}, templateNome: '' }), []) // seco não fala com o Chatwoot
+})
+
+test('⚠️ validarConfig: limite inválido (NaN, 0, negativo, fracionado, gigante) é problema, não "sem limite"', () => {
+  for (const limite of [NaN, 0, -1, 2.5, 101, undefined]) {
+    assert.ok(validarConfig({ ...CONFIG_OK, limite }).some((p) => /limite/i.test(p)), `limite=${limite}`)
+  }
+})
+
+test('⚠️ validarConfig: link base vazio ou sem barra final é problema (a URL final ficaria "//" ou quebrada)', () => {
+  assert.ok(validarConfig({ ...CONFIG_OK, linkBase: '' }).some((p) => /LINK_BASE/.test(p)))
+  assert.ok(validarConfig({ ...CONFIG_OK, linkBase: 'https://loja.com.br' }).some((p) => /LINK_BASE/.test(p)))
+  assert.ok(validarConfig({ ...CONFIG_OK, modo: 'seco', linkBase: '' }).some((p) => /LINK_BASE/.test(p)))
+})
+
+test('⚠️ validarConfig: envio de verdade exige template e Chatwoot completos; lista exige números', () => {
+  assert.ok(validarConfig({ ...CONFIG_OK, templateNome: '' }).some((p) => /TEMPLATE_NOME/.test(p)))
+  assert.ok(validarConfig({ ...CONFIG_OK, chatwoot: { ...CONFIG_OK.chatwoot, token: '' } }).some((p) => /CHATWOOT_API_TOKEN/.test(p)))
+  assert.ok(validarConfig({ ...CONFIG_OK, chatwoot: { ...CONFIG_OK.chatwoot, url: '' } }).some((p) => /CHATWOOT_URL/.test(p)))
+  assert.ok(validarConfig({ ...CONFIG_OK, chatwoot: { ...CONFIG_OK.chatwoot, caixaId: 'abc' } }).some((p) => /CHATWOOT_CAIXA_ID/.test(p)))
+  assert.ok(validarConfig({ ...CONFIG_OK, modo: 'lista', soPara: [] }).some((p) => /ENVIO_SO_PARA/.test(p)))
 })
 
 test('decidirEnvio: fora do horário espera (e só depois de validar o resto)', () => {
