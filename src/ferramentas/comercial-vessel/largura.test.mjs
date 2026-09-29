@@ -67,13 +67,3 @@ test('a folha da familia nao ganhou hex novo', () => {
   const css = ler('src/ferramentas/comercial-vessel/estilo-comercial.css')
   assert.ok(!/#[0-9a-fA-F]{3,8}\b/.test(css), 'entrou hex na folha do Comercial Vessel')
 })
-
-// ⚠️ O Funil de Carrinho JÁ usava a largura toda — não ganha .cv-largo nem o
-// import da folha do Comercial Vessel (ele não é dessa família visualmente).
-// A única mudança nele é o respiro lateral, para as seis telas respirarem
-// igual. Esse teste guarda essa mudança pontual.
-test('o funil de carrinho respira igual as outras cinco', () => {
-  const fonte = ler('src/ferramentas/funil-carrinho/tela-de-funil-carrinho.vue')
-  assert.ok(fonte.includes('clamp(16px, 2.4vw, 40px)'),
-    'o funil de carrinho nao ganhou o respiro responsivo da familia')
-})

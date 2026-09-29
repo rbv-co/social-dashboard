@@ -13,7 +13,7 @@
 // vessel_lista_espera.clique_meta/utm_*) — agora os três tipos têm atribuição.
 
 // Sem `.limit()` explícito, o PostgREST corta em 1000 linhas por padrão, sem
-// erro — mesmo cuidado de agregacoes-carrinho.js (LIMITE_CARRINHO).
+// erro — sempre com teto de linhas (LIMITE_LEADS).
 export const LIMITE_LEADS = 2000
 
 export function foiCortado(linhas) {

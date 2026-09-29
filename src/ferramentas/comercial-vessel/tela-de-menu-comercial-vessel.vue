@@ -89,15 +89,6 @@
           <span class="cvmenu-card-enter">→</span>
         </div>
 
-        <div class="cvmenu-card" v-if="podeAbrir('funil-carrinho')" @click="ir('funil-carrinho')">
-          <div class="cvmenu-card-icon" style="background:linear-gradient(135deg,#ea580c 0%,#c2410c 100%)">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="20" r="1"/><circle cx="18" cy="20" r="1"/><path d="M1 1h4l2.7 12.4a2 2 0 0 0 2 1.6h8.6a2 2 0 0 0 2-1.6L23 6H6"/></svg>
-          </div>
-          <div class="cvmenu-card-title">Funil de Carrinho</div>
-          <div class="cvmenu-card-desc">O que entra e sai do carrinho na loja, e quem desistiu antes de pagar.</div>
-          <span class="cvmenu-card-enter">→</span>
-        </div>
-
         <div class="cvmenu-card" v-if="podeAbrir('abandono-carrinho')" @click="ir('abandono-carrinho')">
           <div class="cvmenu-card-icon" style="background:linear-gradient(135deg,#ea580c 0%,#c2410c 100%)">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>

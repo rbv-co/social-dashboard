@@ -56,7 +56,7 @@ test('⚠️ o card do Appointment Card está atrás da chave DELE (podeAbrir), 
   const tag = tagDeAberturaDoCard(ler())
   assert.match(tag, /v-if="podeAbrir\('appointment-card'\)"/,
     'o card do Appointment Card precisa estar atrás de v-if="podeAbrir(\'appointment-card\')" — sem isso, ' +
-    'alguém com só "carrinho" enxergaria um card que não devia')
+    'alguém sem a chave dele enxergaria um card que não devia')
   assert.equal(ferramentaDaRota('appointment-card')?.key, 'atendimentos.appointment-card')
 })
 
@@ -89,24 +89,6 @@ test('⚠️ o card do Private Edit Card está atrás da chave DELE, não da do 
   assert.match(tag, /v-if="podeAbrir\('private-edit-card'\)"/,
     'o card do Private Edit Card precisa estar atrás de v-if="podeAbrir(\'private-edit-card\')"')
   assert.equal(ferramentaDaRota('private-edit-card')?.key, 'atendimentos.private-edit-card')
-})
-
-// ⚠️ Quem tem SÓ 'carrinho' tem de ver o Funil e NÃO ver o Appointment Card —
-// é o par de casos que a regra do dono pediu por extenso. Conferido aqui pelo
-// TEXTO da tela (os dois v-if certos, na tag certa), não só pela unidade de
-// hasPermission — hasPermission já está certa; o que falta provar é a
-// LIGAÇÃO com o template.
-test('⚠️ o Funil de Carrinho continua atrás da chave carrinho, não de atendimentos', () => {
-  const fonte = ler()
-  const idxTituloFunil = fonte.indexOf('>Funil de Carrinho<')
-  assert.ok(idxTituloFunil !== -1, 'o card do Funil de Carrinho precisa existir na tela')
-  const antes = fonte.slice(0, idxTituloFunil)
-  const idxDivFunil = antes.lastIndexOf('<div class="cvmenu-card"')
-  const fimDaTag = fonte.indexOf('>', idxDivFunil)
-  const tagFunil = fonte.slice(idxDivFunil, fimDaTag + 1)
-  assert.match(tagFunil, /v-if="podeAbrir\('funil-carrinho'\)"/,
-    'o card do Funil de Carrinho precisa continuar atrás da rota dele')
-  assert.equal(ferramentaDaRota('funil-carrinho')?.key, 'carrinho')
 })
 
 // ── O MATERIAL GRÁFICO (23/09/2026) ─────────────────────────────────────────
