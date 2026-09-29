@@ -30,7 +30,7 @@ Nome do produto no texto (a fila não guarda os itens), cupom, mais de uma mensa
 ## NÃO verificado (a confirmar antes de depender)
 
 1. Os endereços HTTP e o corpo exato para **achar/criar contato** e **criar conversa** na caixa do WhatsApp (versão instalada do Chatwoot).
-2. Como chega ao webhook do Chatwoot a **resposta do botão "Não quero receber"**.
+2. O **formato do payload** que o webhook padrão do Chatwoot ("Message created") manda quando o cliente responde "Não quero receber" (o plano o reconhece por `event`, `message_type: incoming`, `content` e `sender.phone_number`, de memória da documentação).
 3. O formato do `abandoned_checkout_url` contra o domínio da loja: o link dinâmico do template só aceita **parte fixa + um sufixo variável**.
 
 Esses três entram como passo de verificação no plano, em **modo seco** e com **o número do dono**, antes de qualquer cliente.
@@ -43,8 +43,14 @@ pg_cron (1/min) -> disparar_robo -> edge enviar-mensagem-abandono
    |- regras puras (_shared/mensagem-de-abandono.js)
    |- Chatwoot API: contato -> conversa -> mensagem com template_params
    '- grava o resultado em checkout_abandono
-receber-webhook-chatwoot (já existe) -> reconhece "Não quero receber" -> contatos_sem_mensagem
+receber-opt-out-chatwoot (NOVA; webhook padrão "Message created" do Chatwoot) -> reconhece
+   "Não quero receber" -> contatos_sem_mensagem
 ```
+
+> **Correção (29/09/2026):** a versão anterior deste design dizia que o bloqueio estenderia o
+> `receber-webhook-chatwoot`. Não dá: aquele é um webhook de **CRM customizado** que só aceita
+> `lead_novo`/`lead_quente` e **não recebe respostas de clientes**. O bloqueio é uma função nova,
+> ligada pelo dono a um webhook padrão do Chatwoot (Configurações → Integrações → Webhooks).
 
 ## Dados
 
