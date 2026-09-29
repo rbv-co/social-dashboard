@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { valorDoCampo, metaPorDia, mudancas, reescalarDiarias, rotuloDeVendedora } from './metas.js'
+import { valorDoCampo, metaPorDia, mudancas, reescalarDiarias, rotuloDeVendedora, agruparPorLoja } from './metas.js'
 
 test('valorDoCampo entende o jeito brasileiro de digitar', () => {
   assert.equal(valorDoCampo('R$ 74.151,13'), 74151.13)
@@ -45,4 +45,17 @@ test('rotuloDeVendedora só acrescenta o código quando o nome repete', () => {
   const todas = [{ vendor_id: 1, nome: 'Elen' }, { vendor_id: 2, nome: 'Elen' }, { vendor_id: 3, nome: 'Ana' }]
   assert.equal(rotuloDeVendedora(todas[0], todas), 'Elen (cód. 1)')
   assert.equal(rotuloDeVendedora(todas[2], todas), 'Ana')
+})
+
+test('agruparPorLoja põe cada vendedora na loja onde mais vendeu', () => {
+  const lojas = [{ id: '1', nome: 'A' }, { id: '2', nome: 'B' }]
+  const vend = [{ id: '10', nome: 'Ana' }, { id: '11', nome: 'Bia' }, { id: '12', nome: 'Cida' }, { id: '13', nome: 'Duda' }]
+  const pedidos = [
+    { vendor_id: 10, loja_id: 1 }, { vendor_id: 10, loja_id: 1 }, { vendor_id: 10, loja_id: 2 },
+    { vendor_id: 11, loja_id: 2 },
+    { vendor_id: 13, loja_id: 99 },          // loja que não está na lista
+  ]
+  const r = agruparPorLoja(lojas, vend, pedidos)
+  assert.deepEqual(r.grupos.map((g) => g.vendedoras.map((v) => v.nome)), [['Ana'], ['Bia']])
+  assert.deepEqual(r.sem.map((v) => v.nome), ['Cida', 'Duda'])   // sem venda, e loja desconhecida
 })

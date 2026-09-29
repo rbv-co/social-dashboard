@@ -7,6 +7,7 @@
 //
 // PURO: os testes provam cada decisão sem navegador.
 import { parsearValor } from '../patrimonio/patrimonio.js'
+import { lojaDaVendedora } from './vendedoras.js'
 
 // O que foi digitado, em reais.
 //   ''            -> null  (campo vazio: sem meta)
@@ -71,4 +72,25 @@ export function reescalarDiarias(diarias, novoTotal) {
 export function rotuloDeVendedora(v, todas) {
   const repetido = todas.filter((o) => o.nome === v.nome).length > 1
   return repetido ? `${v.nome} (cód. ${v.vendor_id})` : v.nome
+}
+
+// LOJA E SUAS VENDEDORAS, JUNTAS (pedido do dono, 29/09/2026).
+//
+// O cadastro não guarda de qual loja é cada vendedora; a loja vem das vendas
+// (`lojaDaVendedora`: onde ela mais vendeu, a mesma regra da tela de Times).
+// Quem não tem venda com loja registrada, ou vendeu numa loja que não está na
+// lista, vai para `sem` — nunca some e nunca é jogada numa loja no chute.
+// `lojas` e `vendedoras` são [{ id, nome }]; `pedidos` são [{ vendor_id, loja_id }].
+export function agruparPorLoja(lojas, vendedoras, pedidos) {
+  const porVendedora = {}
+  for (const p of pedidos || []) (porVendedora[p.vendor_id] = porVendedora[p.vendor_id] || []).push(p)
+  const grupos = (lojas || []).map((loja) => ({ loja, vendedoras: [] }))
+  const sem = []
+  for (const v of vendedoras || []) {
+    const { loja_id } = lojaDaVendedora(porVendedora[v.id] || [])
+    const g = loja_id != null && grupos.find((x) => String(x.loja.id) === String(loja_id))
+    if (g) g.vendedoras.push(v)
+    else sem.push(v)
+  }
+  return { grupos, sem }
 }

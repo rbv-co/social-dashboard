@@ -176,14 +176,9 @@
             <select id="mt-mes-sel" class="admin-input mt-mes-sel"></select>
           </div>
           <section class="adm-bloco adm-bl-oliva">
-          <span class="sg-label id-titulo adm-bloco-cab"><span class="adm-pastilha"><icone-do-bloco nome="venda" /></span>Meta por canal e loja</span>
-          <div class="admin-section-sub adm-explica">Cada canal do banco está aqui. Digite quanto ele deve vender no mês e salve. A meta por dia é o valor do mês dividido pelos dias do mês. O <b>Total geral</b> é opcional: se ficar vazio, vale a soma dos canais.</div>
-          <div id="admin-metas-lojas"><div class="mt-msg">Carregando...</div></div>
-          </section>
-          <section class="adm-bloco adm-bl-rose">
-          <span class="sg-label id-titulo adm-bloco-cab"><span class="adm-pastilha"><icone-do-bloco nome="pessoa" /></span>Meta por vendedora</span>
-          <div class="admin-section-sub adm-explica">As vendedoras vêm do cadastro do Bling. Digite a meta do mês de cada uma. Balcão (como “Fábrica” ou “loja”) não aparece, porque não é pessoa.</div>
-          <div id="admin-metas-vend"><div class="mt-msg">Carregando...</div></div>
+          <span class="sg-label id-titulo adm-bloco-cab"><span class="adm-pastilha"><icone-do-bloco nome="venda" /></span>Metas por loja e vendedora</span>
+          <div class="admin-section-sub adm-explica">Cada loja do banco tem o campo da meta dela e, logo abaixo, as vendedoras que vendem nela. Digite quanto cada um deve vender no mês e salve. A meta por dia é o valor do mês dividido pelos dias do mês. O <b>Total geral</b> é opcional: se ficar vazio, vale a soma das lojas. A loja de cada vendedora vem das vendas (onde ela mais vendeu); quem ainda não tem venda com loja fica em “Sem loja identificada”. Balcão (como “Fábrica”) não aparece, porque não é pessoa.</div>
+          <div id="admin-metas-corpo"><div class="mt-msg">Carregando...</div></div>
           </section>
         </div>
         <!-- SOLICITAÇÕES -->
@@ -283,7 +278,7 @@ import {
   agruparVendedores, lojaDaVendedora, comoDizerALoja, viraConta, emailSugerido, ehBalcao,
 } from './vendedoras.js'
 // Metas de vendas: ler o valor digitado, achar o que mudou, reescalar metas diárias.
-import { valorDoCampo, metaPorDia, mudancas, reescalarDiarias, rotuloDeVendedora } from './metas.js'
+import { valorDoCampo, metaPorDia, mudancas, reescalarDiarias, rotuloDeVendedora, agruparPorLoja } from './metas.js'
 // Separar as pessoas por marca, local ou setor: a gaveta escolhida e o "sem
 // ___" que fecha a lista moram aqui, puro e testado — a tela só desenha.
 import { agruparPor, DIMENSOES } from './lotacao.js'
@@ -4068,15 +4063,17 @@ function adminShowColetorInfo() { adminShowCmd('Rodar coletor de dados', 'cd ~/I
 
 /* ── METAS ADMIN ──
    Redesenhado em 29/09/2026 a pedido do dono: "esse modelo por planilha tá
-   ruim". Agora a tela lista as lojas (bling_lojas) e as vendedoras
-   (bling_vendedores) do banco, cada uma com o campo de quanto de meta no mês.
+   ruim" e, depois, "agrupa loja e seus vendedores". A tela lista as lojas
+   (bling_lojas) e, dentro de cada uma, as vendedoras dela (bling_vendedores,
+   ligadas à loja pelas vendas), cada um com o campo de quanto de meta no mês.
    A conta de decisão mora em ./metas.js (puro, com teste). */
 let _mtAno = 0
 let _mtMes = 0
 const _mt = {
-  loja: { itens: [], linhas: {}, alvo: 'admin-metas-lojas' },
-  vend: { itens: [], linhas: {}, alvo: 'admin-metas-vend' },
+  loja: { itens: [], linhas: {}, tabela: 'bling_metas', chave: 'loja_id' },
+  vend: { itens: [], linhas: {}, tabela: 'bling_vendedor_metas', chave: 'vendor_id' },
 }
+const _MT_ALVO = 'admin-metas-corpo'
 
 function _mtNomeDoMes(a, m) {
   const t = new Date(a, m - 1, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
@@ -4092,71 +4089,77 @@ function _mtDesenharMes() {
     opcoes.push({ a: x.getFullYear(), m: x.getMonth() + 1 })
   }
   sel.innerHTML = opcoes.map(o => '<option value="' + o.a + '-' + o.m + '"' + (o.a === _mtAno && o.m === _mtMes ? ' selected' : '') + '>' + escHtml(_mtNomeDoMes(o.a, o.m)) + '</option>').join('')
-  sel.onchange = () => { const [a, m] = sel.value.split('-').map(Number); _mtAno = a; _mtMes = m; _mtCarregarTudo() }
+  sel.onchange = () => { const [a, m] = sel.value.split('-').map(Number); _mtAno = a; _mtMes = m; _mtCarregar() }
 }
 
 async function loadAdminMetas() {
   if (!_mtAno) { const n = new Date(); _mtAno = n.getFullYear(); _mtMes = n.getMonth() + 1 }
   _mtDesenharMes()
-  await _mtCarregarTudo()
+  await _mtCarregar()
 }
-
-function _mtCarregarTudo() { return Promise.all([_mtCarregar('loja'), _mtCarregar('vend')]) }
 
 // Lê do banco e desenha. Erro de leitura aparece como erro — nunca como lista
 // vazia (PADRAO item 9). `aviso` é o recado que fica depois de gravar.
-async function _mtCarregar(tipo, aviso) {
-  const cfg = _mt[tipo]
-  const alvo = document.getElementById(cfg.alvo); if (!alvo) return
+async function _mtCarregar(aviso) {
+  const alvo = document.getElementById(_MT_ALVO); if (!alvo) return
   const primeiroDia = _mtAno + '-' + String(_mtMes).padStart(2, '0') + '-01'
-  const [cadastro, metas] = await Promise.all(tipo === 'loja' ? [
+  const [rl, rm, rv, rvm, rp] = await Promise.all([
     sbClient.from('bling_lojas').select('loja_id,nome,fechado_em').order('nome'),
     sbClient.from('bling_metas').select('loja_id,meta_valor,daily_goals').eq('year', _mtAno).eq('month', _mtMes),
-  ] : [
     sbClient.from('bling_vendedores').select('vendor_id,nome').order('nome'),
     sbClient.from('bling_vendedor_metas').select('vendor_id,meta_valor,daily_goals').eq('year', _mtAno).eq('month', _mtMes),
+    sbClient.from('bling_pedido_vendedor').select('vendor_id,loja_id').order('pedido_data', { ascending: false }).limit(5000),
   ])
-  const erro = cadastro.error || metas.error
+  const erro = rl.error || rm.error || rv.error || rvm.error || rp.error
   if (erro) {
-    alvo.innerHTML = '<div class="mt-msg mt-msg-erro">Não consegui ler ' + (tipo === 'loja' ? 'os canais e as metas' : 'as vendedoras e as metas') + ': ' + escHtml(erro.message) + '</div>'
+    alvo.innerHTML = '<div class="mt-msg mt-msg-erro">Não consegui ler as lojas, as vendedoras e as metas: ' + escHtml(erro.message) + '</div>'
     return
   }
-  const chave = tipo === 'loja' ? 'loja_id' : 'vendor_id'
-  cfg.linhas = {}
-  ;(metas.data || []).forEach(r => { cfg.linhas[String(r[chave])] = r })
-  let lista = (cadastro.data || []).map(x => ({ id: String(x[chave]), nome: x.nome || ('Sem nome (cód. ' + x[chave] + ')') }))
-  if (tipo === 'loja') {
-    const fora = ocultosNoPeriodo(cadastro.data || [], primeiroDia)
-    lista = lista.filter(x => !fora.has(Number(x.id)) || cfg.linhas[x.id])
-  } else {
-    // balcão ("Fábrica", "loja tivoli") não é pessoa — só aparece se já tem meta gravada
-    lista = lista.filter(x => !ehBalcao(x.nome) || cfg.linhas[x.id])
-    const base = lista.map(x => ({ vendor_id: x.id, nome: x.nome }))
-    lista.forEach(x => { x.nome = rotuloDeVendedora({ vendor_id: x.id, nome: x.nome }, base) })
-  }
-  cfg.itens = lista
-  _mtDesenhar(tipo, alvo, aviso)
+  _mt.loja.linhas = {}; _mt.vend.linhas = {}
+  ;(rm.data || []).forEach(r => { _mt.loja.linhas[String(r.loja_id)] = r })
+  ;(rvm.data || []).forEach(r => { _mt.vend.linhas[String(r.vendor_id)] = r })
+  const fora = ocultosNoPeriodo(rl.data || [], primeiroDia)
+  const lojas = (rl.data || []).map(x => ({ id: String(x.loja_id), nome: x.nome || ('Sem nome (cód. ' + x.loja_id + ')') }))
+    .filter(x => !fora.has(Number(x.id)) || _mt.loja.linhas[x.id])
+  // balcão ("Fábrica", "loja tivoli") não é pessoa — só aparece se já tem meta gravada
+  const pessoas = (rv.data || []).filter(x => !ehBalcao(x.nome) || _mt.vend.linhas[String(x.vendor_id)])
+  const vends = pessoas.map(x => ({ id: String(x.vendor_id), nome: rotuloDeVendedora({ vendor_id: x.vendor_id, nome: x.nome || 'Sem nome' }, pessoas) }))
+  _mt.loja.itens = lojas
+  _mt.vend.itens = vends
+  _mtDesenhar(alvo, agruparPorLoja(lojas, vends, rp.data || []), aviso)
 }
 
-function _mtDesenhar(tipo, alvo, aviso) {
-  const cfg = _mt[tipo]
-  const linha = (id, nome, dica) => {
-    const gravado = cfg.linhas[id] ? Number(cfg.linhas[id].meta_valor) : null
-    const val = gravado ? gravado.toFixed(2).replace('.', ',') : ''
-    return '<div class="mt-linha" data-mt-linha="' + escHtml(id) + '">' +
-      '<label class="mt-nome" for="mt-' + tipo + '-' + escHtml(id) + '">' + escHtml(nome) + (dica ? '<span class="mt-dica">' + escHtml(dica) + '</span>' : '') + '</label>' +
-      '<input id="mt-' + tipo + '-' + escHtml(id) + '" class="mt-campo" inputmode="decimal" autocomplete="off" placeholder="0,00" aria-label="Meta do mês de ' + escHtml(nome) + ', em reais" data-mt-campo data-mt-id="' + escHtml(id) + '" value="' + val + '">' +
-      '<span class="mt-dia" data-mt-dia></span></div>'
+function _mtLinha(tipo, id, nome, dica, extra) {
+  const r = _mt[tipo].linhas[id]
+  const gravado = r ? Number(r.meta_valor) : null
+  const val = gravado ? gravado.toFixed(2).replace('.', ',') : ''
+  const e = escHtml(id)
+  return '<div class="mt-linha' + (extra || '') + '" data-mt-linha="' + tipo + ':' + e + '">' +
+    '<label class="mt-nome" for="mt-' + tipo + '-' + e + '">' + escHtml(nome) + (dica ? '<span class="mt-dica">' + escHtml(dica) + '</span>' : '') + '</label>' +
+    '<input id="mt-' + tipo + '-' + e + '" class="mt-campo" inputmode="decimal" autocomplete="off" placeholder="0,00" aria-label="Meta do mês de ' + escHtml(nome) + ', em reais" data-mt-campo data-mt-tipo="' + tipo + '" data-mt-id="' + e + '" value="' + val + '">' +
+    '<span class="mt-dia" data-mt-dia></span></div>'
+}
+
+function _mtDesenhar(alvo, { grupos, sem }, aviso) {
+  let h = '<div class="mt-grupo mt-grupo-total">' + _mtLinha('loja', '0', 'Total geral', 'Opcional. Vazio = soma dos canais.') + '</div>'
+  if (!_mt.loja.itens.length && !sem.length) h += '<div class="mt-msg">Nenhuma loja cadastrada.</div>'
+  for (const g of grupos) {
+    h += '<div class="mt-grupo">' + _mtLinha('loja', g.loja.id, g.loja.nome, '', ' mt-linha-loja')
+    if (g.vendedoras.length) {
+      h += '<div class="mt-vendedoras"><div class="mt-sub">Vendedoras</div>' + g.vendedoras.map(v => _mtLinha('vend', v.id, v.nome, '', ' mt-linha-vend')).join('') +
+        '<div class="mt-resumo" data-mt-resumo="' + escHtml(g.loja.id) + '" data-mt-ids="' + g.vendedoras.map(v => escHtml(v.id)).join(',') + '"></div></div>'
+    }
+    h += '</div>'
   }
-  let h = ''
-  if (tipo === 'loja') h += linha('0', 'Total geral', 'Opcional. Vazio = soma dos canais.')
-  if (!cfg.itens.length) h += '<div class="mt-msg">' + (tipo === 'loja' ? 'Nenhum canal cadastrado.' : 'Nenhuma vendedora cadastrada.') + '</div>'
-  h += cfg.itens.map(x => linha(x.id, x.nome)).join('')
+  if (sem.length) {
+    h += '<div class="mt-grupo"><div class="mt-cab-grupo">Sem loja identificada<span class="mt-dica">Estas vendedoras ainda não têm venda com loja registrada.</span></div>' +
+      '<div class="mt-vendedoras">' + sem.map(v => _mtLinha('vend', v.id, v.nome, '', ' mt-linha-vend')).join('') + '</div></div>'
+  }
   h += '<div class="mt-rodape"><span class="mt-soma" data-mt-soma></span>' +
     '<button type="button" class="btn btn-principal" data-mt-salvar disabled>Salvar</button></div>' +
     '<div class="mt-aviso" data-mt-aviso role="status"></div>'
   alvo.innerHTML = h
-  _mtLigar(tipo, alvo)
+  _mtLigar(alvo)
   if (aviso) _mtAviso(alvo, aviso.texto, aviso.erro)
 }
 
@@ -4171,81 +4174,92 @@ function _mtAtuais(tipo) {
   return o
 }
 
-function _mtDigitados(alvo) {
+function _mtDigitados(alvo, tipo) {
   const o = {}
-  alvo.querySelectorAll('[data-mt-campo]').forEach(c => { o[c.getAttribute('data-mt-id')] = c.value })
+  alvo.querySelectorAll('[data-mt-campo][data-mt-tipo="' + tipo + '"]').forEach(c => { o[c.getAttribute('data-mt-id')] = c.value })
   return o
 }
 
-function _mtLigar(tipo, alvo) {
+function _mtLigar(alvo) {
   const btn = alvo.querySelector('[data-mt-salvar]')
   const atualizar = () => {
-    const r = mudancas(_mtAtuais(tipo), _mtDigitados(alvo))
-    const mudou = new Set([...r.gravar.map(g => g.id), ...r.apagar])
-    let soma = 0
+    const r = { loja: mudancas(_mtAtuais('loja'), _mtDigitados(alvo, 'loja')), vend: mudancas(_mtAtuais('vend'), _mtDigitados(alvo, 'vend')) }
+    const mudou = new Set()
+    for (const t of ['loja', 'vend']) { r[t].gravar.forEach(g => mudou.add(t + ':' + g.id)); r[t].apagar.forEach(id => mudou.add(t + ':' + id)) }
+    const soma = { loja: 0, vend: 0 }
+    const valorDe = {}
     alvo.querySelectorAll('.mt-linha').forEach(l => {
-      const id = l.getAttribute('data-mt-linha')
+      const chave = l.getAttribute('data-mt-linha')
       const c = l.querySelector('[data-mt-campo]')
+      const tipo = c.getAttribute('data-mt-tipo')
       const v = valorDoCampo(c.value)
       const invalido = Number.isNaN(v)
-      l.classList.toggle('mt-alterada', mudou.has(id))
+      valorDe[chave] = v > 0 ? v : 0
+      l.classList.toggle('mt-alterada', mudou.has(chave))
       c.classList.toggle('mt-invalida', invalido)
       c.setAttribute('aria-invalid', invalido ? 'true' : 'false')
       l.querySelector('[data-mt-dia]').textContent = v > 0 ? fmtR(metaPorDia(v, _mtAno, _mtMes)) + ' por dia' : ''
-      if (v > 0 && id !== '0') soma += v
+      if (v > 0 && chave !== 'loja:0') soma[tipo] += v
     })
-    alvo.querySelector('[data-mt-soma]').textContent = (tipo === 'loja' ? 'Soma dos canais: ' : 'Soma das vendedoras: ') + fmtR(soma)
+    // por loja: quanto as vendedoras dela somam diante da meta da loja
+    alvo.querySelectorAll('[data-mt-resumo]').forEach(el => {
+      const somaV = el.getAttribute('data-mt-ids').split(',').reduce((s, id) => s + (valorDe['vend:' + id] || 0), 0)
+      const metaLoja = valorDe['loja:' + el.getAttribute('data-mt-resumo')]
+      el.textContent = 'Vendedoras somam ' + fmtR(somaV) + (metaLoja > 0 ? ' de ' + fmtR(metaLoja) + ' da loja' : '')
+    })
+    alvo.querySelector('[data-mt-soma]').textContent = 'Soma das lojas: ' + fmtR(soma.loja) + ' · Soma das vendedoras: ' + fmtR(soma.vend)
     const n = mudou.size
-    btn.disabled = n === 0 && !r.invalidos.length
+    btn.disabled = n === 0 && !r.loja.invalidos.length && !r.vend.invalidos.length
     btn.textContent = n ? 'Salvar ' + n + (n === 1 ? ' alteração' : ' alterações') : 'Salvar'
   }
   alvo.querySelectorAll('[data-mt-campo]').forEach(c => { c.oninput = atualizar })
-  btn.onclick = () => _mtSalvar(tipo, alvo, btn)
+  btn.onclick = () => _mtSalvar(alvo, btn)
   atualizar()
 }
 
 // Toda escrita confere que pegou: update/delete que o banco recusa por
 // permissão volta "sem erro" e sem linha — e a tela diria "salvo" mentindo.
 async function _mtGravar(tipo, { id, valor }) {
-  const t = tipo === 'loja' ? 'bling_metas' : 'bling_vendedor_metas'
-  const chave = tipo === 'loja' ? 'loja_id' : 'vendor_id'
+  const { tabela, chave } = _mt[tipo]
   const existente = _mt[tipo].linhas[id]
   const dg = reescalarDiarias(existente && existente.daily_goals, valor)
   let r
   if (tipo === 'vend') {
-    r = await sbClient.from(t).upsert({ vendor_id: Number(id), year: _mtAno, month: _mtMes, meta_valor: valor, daily_goals: dg }, { onConflict: 'vendor_id,year,month' }).select(chave)
+    r = await sbClient.from(tabela).upsert({ vendor_id: Number(id), year: _mtAno, month: _mtMes, meta_valor: valor, daily_goals: dg }, { onConflict: 'vendor_id,year,month' }).select(chave)
   } else if (existente) {
-    r = await sbClient.from(t).update({ meta_valor: valor, daily_goals: dg }).eq(chave, Number(id)).eq('year', _mtAno).eq('month', _mtMes).select(chave)
+    r = await sbClient.from(tabela).update({ meta_valor: valor, daily_goals: dg }).eq(chave, Number(id)).eq('year', _mtAno).eq('month', _mtMes).select(chave)
   } else {
-    r = await sbClient.from(t).insert({ [chave]: Number(id), year: _mtAno, month: _mtMes, meta_valor: valor, ...(dg ? { daily_goals: dg } : {}) }).select(chave)
+    r = await sbClient.from(tabela).insert({ [chave]: Number(id), year: _mtAno, month: _mtMes, meta_valor: valor, ...(dg ? { daily_goals: dg } : {}) }).select(chave)
   }
   if (r.error) throw new Error(r.error.message)
   if (!r.data || !r.data.length) throw new Error('o banco não aceitou a gravação (sem permissão?)')
 }
 
 async function _mtApagar(tipo, id) {
-  const t = tipo === 'loja' ? 'bling_metas' : 'bling_vendedor_metas'
-  const chave = tipo === 'loja' ? 'loja_id' : 'vendor_id'
-  const r = await sbClient.from(t).delete().eq(chave, Number(id)).eq('year', _mtAno).eq('month', _mtMes).select(chave)
+  const { tabela, chave } = _mt[tipo]
+  const r = await sbClient.from(tabela).delete().eq(chave, Number(id)).eq('year', _mtAno).eq('month', _mtMes).select(chave)
   if (r.error) throw new Error(r.error.message)
   if (!r.data || !r.data.length) throw new Error('o banco não apagou a meta (sem permissão?)')
 }
 
-async function _mtSalvar(tipo, alvo, btn) {
-  const r = mudancas(_mtAtuais(tipo), _mtDigitados(alvo))
-  const nomeDe = id => id === '0' ? 'Total geral' : ((_mt[tipo].itens.find(x => x.id === id) || {}).nome || id)
-  if (r.invalidos.length) { _mtAviso(alvo, 'Valor inválido em: ' + r.invalidos.map(nomeDe).join(', ') + '. Use só números, ex.: 60000 ou 60.000,00.', 'erro'); return }
+async function _mtSalvar(alvo, btn) {
+  const r = { loja: mudancas(_mtAtuais('loja'), _mtDigitados(alvo, 'loja')), vend: mudancas(_mtAtuais('vend'), _mtDigitados(alvo, 'vend')) }
+  const nomeDe = (tipo, id) => id === '0' ? 'Total geral' : ((_mt[tipo].itens.find(x => x.id === id) || {}).nome || id)
+  const ruins = [...r.loja.invalidos.map(id => nomeDe('loja', id)), ...r.vend.invalidos.map(id => nomeDe('vend', id))]
+  if (ruins.length) { _mtAviso(alvo, 'Valor inválido em: ' + ruins.join(', ') + '. Use só números, ex.: 60000 ou 60.000,00.', 'erro'); return }
   btn.disabled = true
   _mtAviso(alvo, 'Salvando…')
   let feitos = 0
   try {
-    for (const g of r.gravar) { await _mtGravar(tipo, g); feitos++ }
-    for (const id of r.apagar) { await _mtApagar(tipo, id); feitos++ }
+    for (const t of ['loja', 'vend']) {
+      for (const g of r[t].gravar) { await _mtGravar(t, g); feitos++ }
+      for (const id of r[t].apagar) { await _mtApagar(t, id); feitos++ }
+    }
     adminToast('Metas salvas')
-    await _mtCarregar(tipo, { texto: feitos + (feitos === 1 ? ' meta salva' : ' metas salvas') + ' em ' + _mtNomeDoMes(_mtAno, _mtMes) + '.', erro: 'ok' })
+    await _mtCarregar({ texto: feitos + (feitos === 1 ? ' meta salva' : ' metas salvas') + ' em ' + _mtNomeDoMes(_mtAno, _mtMes) + '.', erro: 'ok' })
   } catch (e) {
     // o que já foi gravado fica; recarregar mostra a verdade e os campos voltam ao valor do banco
-    await _mtCarregar(tipo, { texto: 'Não salvou tudo: ' + e.message + '. ' + feitos + ' já ' + (feitos === 1 ? 'foi gravada' : 'foram gravadas') + '.', erro: 'erro' })
+    await _mtCarregar({ texto: 'Não salvou tudo: ' + e.message + '. ' + feitos + ' já ' + (feitos === 1 ? 'foi gravada' : 'foram gravadas') + '.', erro: 'erro' })
   }
 }
 
@@ -5119,6 +5133,13 @@ Object.assign(window, {
 .tela-admin :deep(.mt-mes-sel){flex:0 1 16rem;min-height:40px;font-size:var(--texto-campo);}
 .tela-admin :deep(.mt-linha){display:grid;grid-template-columns:minmax(0,1fr) 12rem 11rem;gap:var(--sp-3);align-items:center;padding:var(--sp-2) 0 var(--sp-2) var(--sp-3);border-bottom:1px solid var(--border);border-left:3px solid transparent;}
 .tela-admin :deep(.mt-linha.mt-alterada){border-left-color:var(--modulo);}
+.tela-admin :deep(.mt-grupo){border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);padding:var(--sp-2) var(--sp-3) var(--sp-3);margin-bottom:var(--sp-3);}
+.tela-admin :deep(.mt-grupo .mt-linha){border-bottom:none;}
+.tela-admin :deep(.mt-linha-loja .mt-nome){font-size:var(--texto-campo);font-weight:600;}
+.tela-admin :deep(.mt-vendedoras){margin-top:var(--sp-2);padding-left:var(--sp-4);border-left:2px solid var(--border);}
+.tela-admin :deep(.mt-sub),.tela-admin :deep(.mt-cab-grupo){font-family:var(--fonte-principal);font-size:var(--texto-etiqueta);letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);padding:var(--sp-1) 0 var(--sp-1) var(--sp-3);}
+.tela-admin :deep(.mt-cab-grupo .mt-dica){text-transform:none;letter-spacing:0;}
+.tela-admin :deep(.mt-resumo){font-family:var(--fonte-principal);font-size:var(--texto-corpo);color:var(--muted);padding:var(--sp-1) 0 0 var(--sp-3);overflow-wrap:anywhere;}
 .tela-admin :deep(.mt-nome){font-family:var(--fonte-principal);font-size:var(--texto-corpo);color:var(--text);overflow-wrap:anywhere;}
 .tela-admin :deep(.mt-dica){display:block;font-size:var(--texto-etiqueta);color:var(--muted);}
 .tela-admin :deep(.mt-campo){box-sizing:border-box;width:100%;min-height:40px;padding:0 var(--sp-3);border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface);color:var(--text);font-family:var(--fonte-principal);font-size:var(--texto-campo);text-align:right;}
@@ -5136,6 +5157,7 @@ Object.assign(window, {
   .tela-admin :deep(.mt-linha){grid-template-columns:minmax(0,1fr) minmax(0,1fr);row-gap:var(--sp-1);}
   .tela-admin :deep(.mt-nome){grid-column:1 / -1;}
   .tela-admin :deep(.mt-dia){text-align:left;}
+  .tela-admin :deep(.mt-vendedoras){padding-left:var(--sp-2);}
   .tela-admin :deep(.mt-rodape .btn){width:100%;}
 }
 </style>

@@ -79,9 +79,11 @@ Como funciona (resumido):
 - Contas: perfis do Instagram conectados à plataforma (nome, username, cor
   de destaque).
 - Solicitações: pedidos de acesso de gente de fora, para aprovar ou negar.
-- Metas: lista os canais (bling_lojas) e as vendedoras (bling_vendedores) do
-  banco, cada um com um campo de R$ para a meta do mês (mês atual, anterior e
-  os dois seguintes). Sem planilha. A regra (ler o valor, achar o que mudou,
+- Metas: um cartão por loja (bling_lojas) com o campo de R$ da meta do mês
+  e, dentro dele, as vendedoras (bling_vendedores) que vendem nela. A loja de
+  cada vendedora vem das vendas (bling_pedido_vendedor, onde ela mais vendeu);
+  quem não tem venda com loja fica em "Sem loja identificada". Mês atual,
+  anterior e os dois seguintes. Um só botão Salvar. Sem planilha. A regra (ler o valor, achar o que mudou,
   reescalar metas diárias já gravadas) está em metas.js, com teste ao lado.
   Mudar o total de quem já tem meta por dia reescala os dias na mesma
   proporção; a tela não edita dia a dia.
