@@ -20,6 +20,14 @@ A REGRA (a mesma do Shopify, "Recovering abandoned checkouts")
     orders/paid                            -> COMPROU
     orders/cancelled (Pix expirou)         -> volta: AGUARDANDO (10 min recomeçam) ou,
                                               se já tinha ido para a fila de envio, FILA DE ENVIO
+    35 min em PAGAMENTO PENDENTE           -> a mesma volta, feita pelo cron (não depende de
+                                              webhook). ⚠️ O Shopify NÃO disparou orders/cancelled
+                                              quando o Pix expirou (só troca o status do pagamento
+                                              para "Expirado"): visto em 29/09/2026, registro preso
+                                              44 min. 35 = os 30 do Pix + 5. Vale para PIX: boleto
+                                              dura dias, então se a loja vender boleto trocar por
+                                              teto por forma de pagamento.
+  Não existe um estágio "Expirado" na tela: Pix expirado é só uma recuperação que reabre.
 - ⚠️ `completed_at` do checkout NÃO é compra: com Pix o checkout é "concluído" ao gerar
   o QR, antes de pagar. (Erro que existiu até 28/09/2026: o painel dizia "comprou" com o
   pedido em Pagamento pendente.)
