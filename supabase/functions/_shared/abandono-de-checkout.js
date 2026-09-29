@@ -10,22 +10,34 @@
 
 const texto = (v) => (typeof v === 'string' && v.trim() ? v.trim() : null)
 
+// Pedido só conta como COMPRA quando está pago (ou autorizado). Pix e boleto criam o pedido
+// ANTES de pagar, com financial_status 'pending' — isso NÃO é compra (visto em 28/09/2026:
+// o QR do Pix foi gerado e o painel já dizia "comprou", com o pedido em Pagamento pendente).
+const PAGO = ['paid', 'authorized', 'partially_paid']
+
 /**
- * @returns {{acao:'registrar', args:object} | {acao:'comprou', token:string} | {acao:'ignorar', motivo:string}}
+ * @returns {{acao:'registrar', args:object}
+ *   | {acao:'comprou'|'pagamento_pendente'|'reabrir', token:string}
+ *   | {acao:'ignorar', motivo:string}}
  */
 export function decidir(topico, corpo) {
   if (!corpo || typeof corpo !== 'object') return { acao: 'ignorar', motivo: 'corpo_invalido' }
 
-  if (topico === 'orders/create') {
+  if (topico === 'orders/create' || topico === 'orders/paid' || topico === 'orders/cancelled') {
     const token = texto(corpo.checkout_token)
-    return token ? { acao: 'comprou', token } : { acao: 'ignorar', motivo: 'pedido_sem_checkout' }
+    if (!token) return { acao: 'ignorar', motivo: 'pedido_sem_checkout' }
+    // Pedido cancelado (Pix que expirou): o checkout volta a valer para a recuperação.
+    if (topico === 'orders/cancelled') return { acao: 'reabrir', token }
+    if (topico === 'orders/paid' || PAGO.includes(corpo.financial_status)) return { acao: 'comprou', token }
+    return { acao: 'pagamento_pendente', token }
   }
 
   if (topico === 'checkouts/create' || topico === 'checkouts/update') {
     const token = texto(corpo.token)
     if (!token) return { acao: 'ignorar', motivo: 'sem_token' }
-    // O checkout que já virou pedido chega como update com completed_at.
-    if (corpo.completed_at) return { acao: 'comprou', token }
+    // ⚠️ `completed_at` NÃO é compra: com Pix o checkout é "concluído" ao gerar o QR, antes de
+    // pagar. Quem decide o destino do checkout são os webhooks de PEDIDO.
+    if (corpo.completed_at) return { acao: 'ignorar', motivo: 'checkout_concluido' }
 
     // ⚠️ ORDEM: o que o cliente DIGITOU no checkout (endereço) vem antes de `customer`.
     // `customer` é o registro do cliente no Shopify: nasce no primeiro passo e NÃO acompanha

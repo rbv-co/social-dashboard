@@ -25,14 +25,33 @@ test('sem e-mail e sem telefone é ignorado (o Shopify também não trata como a
     { acao: 'ignorar', motivo: 'sem_contato' })
 })
 
-test('checkout já concluído (completed_at) conta como compra', () => {
+test('⚠️ checkout com completed_at NÃO é compra (Pix conclui o checkout ao gerar o QR, antes de pagar)', () => {
   assert.deepEqual(decidir('checkouts/update', { token: 't', email: 'a@b.com', completed_at: '2026-09-28T10:00:00Z' }),
-    { acao: 'comprou', token: 't' })
+    { acao: 'ignorar', motivo: 'checkout_concluido' })
 })
 
-test('orders/create casa pelo checkout_token; pedido sem checkout é ignorado', () => {
-  assert.deepEqual(decidir('orders/create', { checkout_token: 'zzz' }), { acao: 'comprou', token: 'zzz' })
-  assert.equal(decidir('orders/create', { checkout_token: null }).acao, 'ignorar')
+test('⚠️ orders/create com pagamento PENDENTE (Pix/boleto) não é compra: vira pagamento_pendente', () => {
+  for (const financial_status of ['pending', 'voided', undefined]) {
+    assert.deepEqual(decidir('orders/create', { checkout_token: 'zzz', financial_status }),
+      { acao: 'pagamento_pendente', token: 'zzz' })
+  }
+})
+
+test('orders/create já pago (cartão) é compra; orders/paid sempre é compra', () => {
+  for (const financial_status of ['paid', 'authorized', 'partially_paid']) {
+    assert.deepEqual(decidir('orders/create', { checkout_token: 'zzz', financial_status }), { acao: 'comprou', token: 'zzz' })
+  }
+  assert.deepEqual(decidir('orders/paid', { checkout_token: 'zzz' }), { acao: 'comprou', token: 'zzz' })
+})
+
+test('orders/cancelled (Pix expirado) reabre o checkout', () => {
+  assert.deepEqual(decidir('orders/cancelled', { checkout_token: 'zzz' }), { acao: 'reabrir', token: 'zzz' })
+})
+
+test('pedido sem checkout_token (pedido manual, PDV) é ignorado em qualquer tópico de pedido', () => {
+  for (const t of ['orders/create', 'orders/paid', 'orders/cancelled']) {
+    assert.equal(decidir(t, { checkout_token: null }).motivo, 'pedido_sem_checkout')
+  }
 })
 
 test('sem token, tópico desconhecido e corpo inválido são ignorados', () => {

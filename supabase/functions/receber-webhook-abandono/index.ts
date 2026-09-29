@@ -27,6 +27,12 @@ const SEGREDOS_DO_WEBHOOK = [
   Deno.env.get('SHOPIFY_CLIENT_SECRET'),
 ].filter((s): s is string => !!s);
 
+const FUNCAO_DO_PEDIDO = {
+  comprou: 'marcar_checkout_comprou',
+  pagamento_pendente: 'marcar_checkout_pagamento_pendente',
+  reabrir: 'reabrir_checkout_abandono',
+} as const;
+
 const responder = (corpo: unknown, status = 200) =>
   new Response(JSON.stringify(corpo), { status, headers: { 'Content-Type': 'application/json' } });
 
@@ -46,9 +52,10 @@ Deno.serve(async (req) => {
   if (decisao.acao === 'ignorar') return responder({ ok: true, ignorado: decisao.motivo });
 
   const sb = createClient(SUPABASE_URL, SERVICE_KEY);
+  // ação -> função do banco (db/migrations/2026-09-29-abandono-de-checkout.sql e 2026-09-30-...-pagamento-pendente.sql)
   const { error } = decisao.acao === 'registrar'
     ? await sb.rpc('registrar_checkout_abandono', decisao.args)
-    : await sb.rpc('marcar_checkout_comprou', { p_token: decisao.token });
+    : await sb.rpc(FUNCAO_DO_PEDIDO[decisao.acao], { p_token: decisao.token });
 
   // Mesmo raciocínio do receber-webhook-checkout: a Shopify reenvia se não vir 2xx,
   // e erro de banco não se resolve com retentativa. Loga e responde 200.
