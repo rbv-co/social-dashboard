@@ -177,7 +177,7 @@
           </div>
           <section class="adm-bloco adm-bl-oliva">
           <span class="sg-label id-titulo adm-bloco-cab"><span class="adm-pastilha"><icone-do-bloco nome="venda" /></span>Metas por loja e vendedora</span>
-          <div class="admin-section-sub adm-explica">Cada loja do banco tem o campo da meta dela e, logo abaixo, as vendedoras que vendem nela. Digite quanto cada um deve vender no mês e salve. A meta por dia é o valor do mês dividido pelos dias do mês. O <b>Total geral</b> é opcional: se ficar vazio, vale a soma das lojas. A loja de cada vendedora vem das vendas (onde ela mais vendeu); quem ainda não tem venda com loja fica em “Sem loja identificada”. Balcão (como “Fábrica”) não aparece, porque não é pessoa.</div>
+          <div class="admin-section-sub adm-explica">Cada loja do banco tem o campo da meta dela e, logo abaixo, as vendedoras que vendem nela. Digite quanto cada um deve vender no mês e salve. A meta por dia é o valor do mês dividido pelos dias do mês. O <b>Total geral</b> é opcional: se ficar vazio, vale a soma das lojas. A loja de cada vendedora vem das vendas (onde ela mais vendeu); loja fechada não conta, e quem não tem venda numa loja aberta fica em “Sem loja identificada”. Balcão (como “Fábrica”) não aparece, porque não é pessoa.</div>
           <div id="admin-metas-corpo"><div class="mt-msg">Carregando...</div></div>
           </section>
         </div>
@@ -4119,8 +4119,9 @@ async function _mtCarregar(aviso) {
   ;(rm.data || []).forEach(r => { _mt.loja.linhas[String(r.loja_id)] = r })
   ;(rvm.data || []).forEach(r => { _mt.vend.linhas[String(r.vendor_id)] = r })
   const fora = ocultosNoPeriodo(rl.data || [], primeiroDia)
-  const lojas = (rl.data || []).map(x => ({ id: String(x.loja_id), nome: x.nome || ('Sem nome (cód. ' + x.loja_id + ')') }))
-    .filter(x => !fora.has(Number(x.id)) || _mt.loja.linhas[x.id])
+  // loja fechada só aparece se já tem meta gravada, e vem marcada: venda nela não liga vendedora a ela
+  const lojas = (rl.data || []).map(x => ({ id: String(x.loja_id), nome: x.nome || ('Sem nome (cód. ' + x.loja_id + ')'), fechada: fora.has(Number(x.loja_id)) }))
+    .filter(x => !x.fechada || _mt.loja.linhas[x.id])
   // balcão ("Fábrica", "loja tivoli") não é pessoa — só aparece se já tem meta gravada
   const pessoas = (rv.data || []).filter(x => !ehBalcao(x.nome) || _mt.vend.linhas[String(x.vendor_id)])
   const vends = pessoas.map(x => ({ id: String(x.vendor_id), nome: rotuloDeVendedora({ vendor_id: x.vendor_id, nome: x.nome || 'Sem nome' }, pessoas) }))
@@ -4152,7 +4153,7 @@ function _mtDesenhar(alvo, { grupos, sem }, aviso) {
     h += '</div>'
   }
   if (sem.length) {
-    h += '<div class="mt-grupo"><div class="mt-cab-grupo">Sem loja identificada<span class="mt-dica">Estas vendedoras ainda não têm venda com loja registrada.</span></div>' +
+    h += '<div class="mt-grupo"><div class="mt-cab-grupo">Sem loja identificada<span class="mt-dica">Estas vendedoras não têm venda registrada em nenhuma loja aberta.</span></div>' +
       '<div class="mt-vendedoras">' + sem.map(v => _mtLinha('vend', v.id, v.nome, '', ' mt-linha-vend')).join('') + '</div></div>'
   }
   h += '<div class="mt-rodape"><span class="mt-soma" data-mt-soma></span>' +

@@ -59,3 +59,16 @@ test('agruparPorLoja põe cada vendedora na loja onde mais vendeu', () => {
   assert.deepEqual(r.grupos.map((g) => g.vendedoras.map((v) => v.nome)), [['Ana'], ['Bia']])
   assert.deepEqual(r.sem.map((v) => v.nome), ['Cida', 'Duda'])   // sem venda, e loja desconhecida
 })
+
+test('agruparPorLoja ignora loja fechada: quem dividia entre fechada e aberta vai para a aberta', () => {
+  const lojas = [{ id: '1', nome: 'Iguatemi' }, { id: '2', nome: 'Dom Pedro', fechada: true }]
+  const vend = [{ id: '10', nome: 'Kariny' }, { id: '11', nome: 'Silvia' }]
+  const pedidos = [
+    ...Array(45).fill({ vendor_id: 10, loja_id: 2 }), ...Array(9).fill({ vendor_id: 10, loja_id: 1 }),
+    ...Array(161).fill({ vendor_id: 11, loja_id: 2 }),   // só vendeu na loja que fechou
+  ]
+  const r = agruparPorLoja(lojas, vend, pedidos)
+  assert.deepEqual(r.grupos[0].vendedoras.map((v) => v.nome), ['Kariny'])
+  assert.deepEqual(r.grupos[1].vendedoras, [])
+  assert.deepEqual(r.sem.map((v) => v.nome), ['Silvia'])
+})

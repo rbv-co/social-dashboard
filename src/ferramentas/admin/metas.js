@@ -78,12 +78,21 @@ export function rotuloDeVendedora(v, todas) {
 //
 // O cadastro não guarda de qual loja é cada vendedora; a loja vem das vendas
 // (`lojaDaVendedora`: onde ela mais vendeu, a mesma regra da tela de Times).
-// Quem não tem venda com loja registrada, ou vendeu numa loja que não está na
-// lista, vai para `sem` — nunca some e nunca é jogada numa loja no chute.
-// `lojas` e `vendedoras` são [{ id, nome }]; `pedidos` são [{ vendor_id, loja_id }].
+//
+// LOJA FECHADA NÃO CONTA (dono, 29/09/2026: "o Dom Pedro fechou, só temos o
+// Iguatemi agora"). Venda numa loja `fechada` é ignorada na hora de decidir:
+// senão a Kariny, com 45 pedidos na Dom Pedro (fechada) e 9 no Iguatemi, ficava
+// presa a uma loja que não existe mais. Quem só vendeu em loja fechada, ou sem
+// loja registrada, vai para `sem` — nunca some e nunca é jogada numa loja no chute.
+// `lojas` são [{ id, nome, fechada? }], `vendedoras` [{ id, nome }] e `pedidos`
+// [{ vendor_id, loja_id }].
 export function agruparPorLoja(lojas, vendedoras, pedidos) {
+  const abertas = new Set((lojas || []).filter((l) => !l.fechada).map((l) => String(l.id)))
   const porVendedora = {}
-  for (const p of pedidos || []) (porVendedora[p.vendor_id] = porVendedora[p.vendor_id] || []).push(p)
+  for (const p of pedidos || []) {
+    if (!abertas.has(String(p.loja_id))) continue
+    ;(porVendedora[p.vendor_id] = porVendedora[p.vendor_id] || []).push(p)
+  }
   const grupos = (lojas || []).map((loja) => ({ loja, vendedoras: [] }))
   const sem = []
   for (const v of vendedoras || []) {
