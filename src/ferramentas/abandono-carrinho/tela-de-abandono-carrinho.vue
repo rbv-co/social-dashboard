@@ -37,6 +37,27 @@
 
         <section class="ac-cartao card-base">
           <h2 class="ac-titulo-secao id-titulo">
+            <icone-do-bloco nome="carrinho-mais" />Pagamento pendente
+            <span class="ac-contagem-total">{{ colunas.pagamentoPendente.length }}</span>
+          </h2>
+          <p class="ac-detalhe">Pix ou boleto gerado e ainda não pago. Não recebe mensagem enquanto espera.</p>
+          <p v-if="carregando" class="ac-carregando">Carregando…</p>
+          <p v-else-if="!erro && !colunas.pagamentoPendente.length" class="ac-vazio">Nenhum pagamento pendente.</p>
+          <ul v-else class="ac-lista">
+            <li v-for="c in colunas.pagamentoPendente" :key="c.token" class="ac-item">
+              <div class="ac-linha">
+                <span class="ac-quem">{{ c.nome || 'Sem nome' }}</span>
+                <span class="ac-tempo">{{ hora(c.pedido_criado_em) }}</span>
+              </div>
+              <span class="ac-detalhe">{{ contato(c) }}</span>
+              <span class="ac-detalhe">{{ dinheiro(c) }}</span>
+              <span class="selo selo-atencao">aguardando pagamento</span>
+            </li>
+          </ul>
+        </section>
+
+        <section class="ac-cartao card-base">
+          <h2 class="ac-titulo-secao id-titulo">
             <icone-do-bloco nome="carrinho-mais" />Fila de envio
             <span class="ac-contagem-total">{{ colunas.filaEnvio.length }}</span>
           </h2>
@@ -95,7 +116,7 @@ import {
 const router = useRouter()
 const voltar = () => router.push({ name: paiDaTela('abandono-carrinho') })
 
-const vazio = () => ({ aguardando: [], filaEnvio: [], compraram: [] })
+const vazio = () => ({ aguardando: [], pagamentoPendente: [], filaEnvio: [], compraram: [] })
 const carregando = ref(true)
 const erro = ref(null)
 const cortado = ref(false)
@@ -149,7 +170,7 @@ onBeforeUnmount(() => { clearInterval(relogio); clearInterval(recarga) })
 .ac-body { padding:clamp(16px, 2.4vw, 40px); display:flex; flex-direction:column; gap:var(--sp-6); }
 .ac-barra { display:flex; align-items:center; justify-content:space-between; gap:var(--sp-4); flex-wrap:wrap; }
 .ac-regra { margin:0; color:var(--muted); font-size:var(--texto-corpo); overflow-wrap:anywhere; flex:1 1 280px; }
-.ac-grade { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:var(--sp-6); align-items:start; }
+.ac-grade { display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:var(--sp-6); align-items:start; }
 .ac-cartao { display:flex; flex-direction:column; gap:var(--sp-4); }
 .ac-titulo-secao { display:flex; align-items:center; gap:var(--sp-2); margin:0; }
 .ac-contagem-total { margin-left:auto; color:var(--muted); font-variant-numeric:tabular-nums; }
@@ -165,7 +186,6 @@ onBeforeUnmount(() => { clearInterval(relogio); clearInterval(recarga) })
 .ac-erro { margin:0; padding:var(--sp-3); border-radius:var(--radius-md); color:var(--text); background:color-mix(in srgb, var(--red) 10%, var(--surface)); border:1px solid color-mix(in srgb, var(--red) 38%, var(--surface)); }
 .ac-aviso { margin:0; padding:var(--sp-3); border-radius:var(--radius-md); color:var(--text); background:color-mix(in srgb, var(--orange) 10%, var(--surface)); border:1px solid color-mix(in srgb, var(--orange) 38%, var(--surface)); }
 
-@media (max-width:1000px) { .ac-grade { grid-template-columns:repeat(2, minmax(0, 1fr)); } }
 @media (max-width:640px) {
   .ac-body { padding:var(--sp-4); }
   .ac-grade { grid-template-columns:1fr; }

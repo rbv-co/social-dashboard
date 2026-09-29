@@ -12,10 +12,19 @@ A REGRA (a mesma do Shopify, "Recovering abandoned checkouts")
   trata como abandono.
 - Cada novo evento do checkout (checkouts/update) ZERA o relógio de 10 minutos.
 - 10 minutos sem evento e sem pedido -> vai para a FILA DE ENVIO.
-- Pedido com o mesmo checkout (orders/create, campo checkout_token) -> COMPROU.
-- Pedido que chega DEPOIS de o checkout ir para a fila de envio -> COMPROU e fica
-  marcado "comprou depois" (quem manda a mensagem deve conferir o status antes de
-  enviar).
+- PEDIDO decide o destino do checkout (casa pelo campo checkout_token):
+    orders/create já pago (cartão)         -> COMPROU
+    orders/create com pagamento PENDENTE   -> PAGAMENTO PENDENTE (Pix/boleto: o pedido
+                                              existe, mas ainda não foi pago. NÃO é
+                                              compra e NÃO vai para a fila de envio)
+    orders/paid                            -> COMPROU
+    orders/cancelled (Pix expirou)         -> volta: AGUARDANDO (10 min recomeçam) ou,
+                                              se já tinha ido para a fila de envio, FILA DE ENVIO
+- ⚠️ `completed_at` do checkout NÃO é compra: com Pix o checkout é "concluído" ao gerar
+  o QR, antes de pagar. (Erro que existiu até 28/09/2026: o painel dizia "comprou" com o
+  pedido em Pagamento pendente.)
+- Pedido que chega DEPOIS de o checkout ir para a fila de envio -> fica marcado
+  "comprou depois" (quem manda a mensagem deve conferir o status antes de enviar).
 - Update que chega depois de o checkout sair de "aguardando" NÃO o traz de volta.
 
 COMO O DADO CHEGA
@@ -24,7 +33,8 @@ Shopify --webhook--> edge `receber-webhook-abandono` --rpc--> tabela `checkout_a
                                                    pg_cron a cada minuto -> `mover_abandonados_para_fila(10)`
 
 - Regra pura: supabase/functions/_shared/abandono-de-checkout.js (com teste).
-- Tabela, funções e cron: db/migrations/2026-09-29-abandono-de-checkout.sql.
+- Tabela, funções e cron: db/migrations/2026-09-29-abandono-de-checkout.sql; pagamento
+  pendente (Pix/boleto): db/migrations/2026-09-30-abandono-de-checkout-pagamento-pendente.sql.
 - Tela: lê `checkout_abandono` e recarrega a cada 15s. A contagem regressiva é
   desenhada no navegador; quem MOVE para a fila é o banco.
 - Os 10 minutos existem em DOIS lugares: `mover_abandonados_para_fila(10)` no
@@ -52,10 +62,13 @@ PARA COLOCAR NO AR (nada disto foi feito ainda — só o código está no reposi
    conforme quem criou o webhook: SHOPIFY_WEBHOOK_SECRET (criado no admin da loja,
    o mesmo do receber-webhook-checkout) ou SHOPIFY_CLIENT_SECRET (criado por API,
    pelo app). Conferido em 28/09/2026: são DOIS valores diferentes no Supabase.
-4. Cadastrar os três webhooks apontando para
+4. Cadastrar os webhooks (Configurações > Notificações > Webhooks, formato JSON) apontando para
    https://kounqtdoioootxqegkij.supabase.co/functions/v1/receber-webhook-abandono :
-     checkouts/create, checkouts/update, orders/create
-   (checkouts/* só pela API/app; no admin da loja só aparecem os de pedido.)
+     Criação de checkout, Atualização de checkout, Criação de pedido,
+     Pagamento de pedido (orders/paid), Cancelamento de pedido (orders/cancelled)
+   (Os de checkout aparecem no admin: confirmado em 28/09/2026. Um webhook "de pedido" já
+   existente apontando para OUTRO endereço não conta: crie um novo, o Shopify aceita vários
+   por evento.)
 5. Dar a permissão `abandono-carrinho` a quem for ver a tela.
 
 Teste ao vivo: abra o checkout na loja, preencha o e-mail e saia. A linha deve

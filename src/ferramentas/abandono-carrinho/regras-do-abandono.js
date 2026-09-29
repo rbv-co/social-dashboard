@@ -24,7 +24,7 @@ export function formatarContagem(segundos) {
   return `${m}:${String(s).padStart(2, '0')}`
 }
 
-/** Separa a lista do banco nas três colunas, cada uma na ordem que faz sentido. */
+/** Separa a lista do banco nas quatro colunas, cada uma na ordem que faz sentido. */
 export function separarPorStatus(linhas) {
   const porData = (campo, sentido) => (a, b) =>
     sentido * (new Date(a[campo]).getTime() - new Date(b[campo]).getTime())
@@ -32,6 +32,8 @@ export function separarPorStatus(linhas) {
   return {
     // quem vai vencer primeiro fica em cima
     aguardando: de('aguardando').sort(porData('ultimo_evento_em', 1)),
+    // Pix/boleto: pedido criado e ainda não pago. NÃO está na fila de envio (o cliente ainda pode pagar).
+    pagamentoPendente: de('pagamento_pendente').sort(porData('pedido_criado_em', -1)),
     filaEnvio: de('fila_envio').sort(porData('fila_envio_em', -1)),
     compraram: de('comprou').sort(porData('comprou_em', -1)),
   }

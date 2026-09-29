@@ -40,10 +40,13 @@ test('separa por status; aguardando: o que vence primeiro em cima; demais: o mai
     { token: 'c', status: 'fila_envio', fila_envio_em: '2026-09-28T12:10:00Z' },
     { token: 'd', status: 'fila_envio', fila_envio_em: '2026-09-28T12:20:00Z' },
     { token: 'e', status: 'comprou', comprou_em: '2026-09-28T12:30:00Z' },
+    { token: 'f', status: 'pagamento_pendente', pedido_criado_em: '2026-09-28T12:40:00Z' },
+    { token: 'g', status: 'pagamento_pendente', pedido_criado_em: '2026-09-28T12:50:00Z' },
   ])
   assert.deepEqual(r.aguardando.map((x) => x.token), ['b', 'a'])
   assert.deepEqual(r.filaEnvio.map((x) => x.token), ['d', 'c'])
   assert.deepEqual(r.compraram.map((x) => x.token), ['e'])
+  assert.deepEqual(r.pagamentoPendente.map((x) => x.token), ['g', 'f'])
 })
 
 test('lista que bateu no limite é marcada como cortada', () => {
