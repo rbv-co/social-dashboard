@@ -87,4 +87,43 @@ PARA COLOCAR NO AR (nada disto foi feito ainda — só o código está no reposi
 5. Dar a permissão `abandono-carrinho` a quem for ver a tela.
 
 Teste ao vivo: abra o checkout na loja, preencha o e-mail e saia. A linha deve
-aparecer em AGUARDANDO e, 10 minutos depois, em FILA DE ENVIO.
+aparecer em AGUARDANDO e, 10 minutos depois, em FILA DE MENSAGENS.
+
+ROBÔ DE MENSAGENS (WhatsApp via Chatwoot)
+-----------------------------------------
+Design: docs/superpowers/specs/2026-09-29-mensagem-de-abandono-design.md
+Plano:  docs/superpowers/plans/2026-09-29-mensagem-de-abandono.md
+
+Quem está na FILA DE MENSAGENS (status `fila_envio`) recebe UMA mensagem, com o template aprovado
+pela Meta. Edge `enviar-mensagem-abandono`, a cada minuto (pg_cron). Regras puras (telefone,
+horário, link, decisão) em supabase/functions/_shared/mensagem-de-abandono.js.
+
+⚠️ O ROBÔ NASCE DESLIGADO. Segredo `ENVIO_MODO`:
+  desligado (padrão) -> não faz nada
+  seco               -> só DEVOLVE o que enviaria (não reserva, não fala com o Chatwoot)
+  lista              -> só os telefones de ENVIO_SO_PARA (o número do dono)
+  ligado             -> todos
+Nunca ir para `ligado` sem passar por `seco` e `lista`.
+
+Segredos (gravados pelo dono no Supabase; NUNCA no código): CHATWOOT_URL, CHATWOOT_CONTA_ID,
+CHATWOOT_CAIXA_ID, CHATWOOT_API_TOKEN, TEMPLATE_NOME, TEMPLATE_IDIOMA (pt_BR), TEMPLATE_TEXTO
+(opcional, com {{1}}), LINK_BASE, ENVIO_MODO, ENVIO_SO_PARA, ENVIO_LIMITE_POR_RODADA (10),
+ENVIO_ATRASO_MINUTOS (0).
+
+Regras que protegem o cliente e o número:
+- Uma mensagem por checkout. Quem voltou para a fila depois de um Pix expirado e já recebeu NÃO
+  recebe de novo (`mensagem_status = 'enviada'`).
+- ⚠️ Só recebe quem entrou na fila nas ÚLTIMAS 24 HORAS. A fila antiga nunca é mensageada: ao
+  ligar o robô, os checkouts de dias atrás ficam de fora (decisão registrada no plano).
+- Só celular brasileiro válido; quem só deixou e-mail não recebe WhatsApp.
+- Só entre 08:00 e 21:00 (Brasília).
+- Quem responde "Não quero receber" (ou PARAR/SAIR) é bloqueado para sempre
+  (`contatos_sem_mensagem`). Isso vem do webhook padrão do Chatwoot ("Message created"),
+  cadastrado pelo dono, apontando para a edge `receber-opt-out-chatwoot?token=...`.
+- Erro 401/403 do Chatwoot interrompe a rodada e NÃO marca ninguém como falha.
+
+Verificar o Chatwoot com o número do dono, antes de qualquer cliente: coletor/verificar-chatwoot.mjs.
+
+⚠️ CONSENTIMENTO: por decisão do dono (29/09/2026) o robô envia SEM registrar aceite do cliente.
+A Meta exige opt-in para mensagem de marketing; sem ele a nota de qualidade do número pode cair e o
+número ser limitado ou bloqueado.
