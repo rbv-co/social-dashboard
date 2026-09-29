@@ -6,7 +6,7 @@
       <div class="ac-barra">
         <p class="ac-regra">
           Quem informou e-mail ou telefone no checkout e ficou {{ MINUTOS_ATE_ABANDONO }} minutos sem mexer
-          e sem comprar vai para a fila de envio.
+          e sem comprar vai para a fila de mensagens, e recebe o WhatsApp de recuperação.
         </p>
         <button class="btn" :disabled="carregando" @click="carregar">Atualizar</button>
       </div>
@@ -58,11 +58,12 @@
 
         <section class="ac-cartao card-base">
           <h2 class="ac-titulo-secao id-titulo">
-            <icone-do-bloco nome="carrinho-mais" />Fila de envio
+            <icone-do-bloco nome="carrinho-mais" />Fila de mensagens
             <span class="ac-contagem-total">{{ colunas.filaEnvio.length }}</span>
           </h2>
+          <p class="ac-detalhe">Quem NÃO comprou. É quem vai receber a mensagem de WhatsApp de recuperação.</p>
           <p v-if="carregando" class="ac-carregando">Carregando…</p>
-          <p v-else-if="!erro && !colunas.filaEnvio.length" class="ac-vazio">Ninguém na fila de envio.</p>
+          <p v-else-if="!erro && !colunas.filaEnvio.length" class="ac-vazio">Ninguém na fila de mensagens.</p>
           <ul v-else class="ac-lista">
             <li v-for="c in colunas.filaEnvio" :key="c.token" class="ac-item">
               <div class="ac-linha">
@@ -91,7 +92,7 @@
               </div>
               <span class="ac-detalhe">{{ contato(c) }}</span>
               <span class="ac-detalhe">{{ dinheiro(c) }}</span>
-              <span class="selo selo-ok">{{ c.comprou_depois ? 'comprou depois de ir para a fila' : 'comprou antes do prazo' }}</span>
+              <span class="selo selo-ok">{{ c.comprou_depois ? 'comprou depois de entrar na fila de mensagens' : 'comprou antes do prazo' }}</span>
             </li>
           </ul>
         </section>
