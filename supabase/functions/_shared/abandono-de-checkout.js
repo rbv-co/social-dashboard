@@ -10,6 +10,11 @@
 
 const texto = (v) => (typeof v === 'string' && v.trim() ? v.trim() : null)
 
+// Nome e sobrenome de um bloco do payload (endereço ou customer). Antes só o first_name
+// era guardado e "Luis Fulano" aparecia como "Luis". Quem manda a mensagem que quiser só
+// o primeiro nome separa na hora de enviar (a parte antes do primeiro espaço).
+const nomeDe = (p) => [texto(p?.first_name), texto(p?.last_name)].filter(Boolean).join(' ') || null
+
 // Pedido só conta como COMPRA quando está pago (ou autorizado). Pix e boleto criam o pedido
 // ANTES de pagar, com financial_status 'pending' — isso NÃO é compra (visto em 28/09/2026:
 // o QR do Pix foi gerado e o painel já dizia "comprou", com o pedido em Pagamento pendente).
@@ -55,8 +60,7 @@ export function decidir(topico, corpo) {
         p_token: token,
         p_email: email,
         p_telefone: telefone,
-        p_nome: texto(corpo.shipping_address?.first_name) ?? texto(corpo.billing_address?.first_name)
-          ?? texto(corpo.customer?.first_name),
+        p_nome: nomeDe(corpo.shipping_address) ?? nomeDe(corpo.billing_address) ?? nomeDe(corpo.customer),
         p_total: Number.isFinite(total) ? total : null,
         p_moeda: texto(corpo.currency) ?? texto(corpo.presentment_currency),
         p_url: texto(corpo.abandoned_checkout_url),

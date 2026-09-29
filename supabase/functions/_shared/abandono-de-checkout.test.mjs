@@ -79,6 +79,19 @@ test('sem endereço, o nome cai para billing e depois para customer', () => {
   assert.equal(decidir('checkouts/update', { ...base, customer: { first_name: 'Ana' } }).args.p_nome, 'Ana')
 })
 
+test('o nome vem COMPLETO (nome + sobrenome), não só o primeiro', () => {
+  const base = { token: 't', email: 'a@b.com' }
+  assert.equal(decidir('checkouts/update', { ...base, shipping_address: { first_name: 'Luis', last_name: 'Fulano de Tal' } }).args.p_nome, 'Luis Fulano de Tal')
+  assert.equal(decidir('checkouts/update', { ...base, customer: { first_name: 'Ana', last_name: 'Silva' } }).args.p_nome, 'Ana Silva')
+})
+
+test('sem sobrenome (ou só com sobrenome) o nome não fica com espaço sobrando nem vira "null"', () => {
+  const base = { token: 't', email: 'a@b.com' }
+  assert.equal(decidir('checkouts/update', { ...base, shipping_address: { first_name: 'Luis', last_name: '  ' } }).args.p_nome, 'Luis')
+  assert.equal(decidir('checkouts/update', { ...base, shipping_address: { first_name: null, last_name: 'Silva' } }).args.p_nome, 'Silva')
+  assert.equal(decidir('checkouts/update', { ...base, shipping_address: { first_name: '', last_name: '' } }).args.p_nome, null)
+})
+
 test('⚠️ o telefone corrigido no endereço vence o de customer', () => {
   const r = decidir('checkouts/update', {
     token: 't', customer: { phone: '+551100000000' }, shipping_address: { phone: '+5511999999999' },
