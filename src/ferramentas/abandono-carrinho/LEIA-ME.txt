@@ -3,8 +3,15 @@ CHECKOUTS ABANDONADOS
 
 O que é: a fila de quem começou o checkout na loja (Shopify), informou e-mail ou
 telefone e não comprou. É o que alimenta o WhatsApp de recuperação. A tela mostra
-a fila em três colunas: AGUARDANDO (com contagem regressiva), FILA DE ENVIO e
-COMPRARAM.
+a fila em quatro colunas: AGUARDANDO (com contagem regressiva), PAGAMENTO PENDENTE,
+FILA DE MENSAGENS e COMPRARAM.
+
+⚠️ NOME: a coluna "Fila de mensagens" NÃO é a do envio do pedido (frete/entrega). É quem
+NÃO comprou e vai receber o WhatsApp. Ela se chamava "Fila de envio" e foi lida como a fila
+de quem comprou (29/09/2026), porque "envio" também é a entrega do produto. Por isso o nome
+na tela mudou. No BANCO e no código continua `fila_envio` (status, `fila_envio_em`,
+`filaEnvio`): renomear isso é risco sem ganho. Onde este texto disser "fila de envio",
+leia "fila de mensagens".
 
 A REGRA (a mesma do Shopify, "Recovering abandoned checkouts")
 --------------------------------------------------------------
