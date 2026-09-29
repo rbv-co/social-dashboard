@@ -79,3 +79,58 @@ test('⚠️ classificarErro: rede em passo ANTES do envio tenta de novo; rede n
   assert.equal(classificarErro(new ErroChatwoot(0, 'fetch failed', 'abrir_conversa')), 'tentar_de_novo')
   assert.equal(classificarErro(new ErroChatwoot(0, 'timeout', 'enviar_template')), 'falhou')
 })
+
+// ── nome do contato: o Chatwoot já pode ter criado o contato com o TELEFONE como nome (automação de triagem) ──
+const existente = (name) => json({ payload: [{ id: 11, name, phone_number: '+5521983892620' }] })
+const acharComNome = (fetchFn, nome = 'Maysa Priscila') =>
+  cliente(fetchFn).acharOuCriarContato({ nome, telefone: '5521983892620' })
+
+test('⚠️ contato que já existe com o telefone como nome ganha o nome da cliente (PUT só com o nome)', async () => {
+  for (const nomeAtual of ['5521983892620', '+5521983892620', '+55 21 98389-2620', '', null]) {
+    const { chamadas, fetchFn } = fake([existente(nomeAtual), json({ id: 11 })])
+    assert.equal(await acharComNome(fetchFn), 11, `nome atual: ${nomeAtual}`)
+    assert.equal(chamadas.length, 2, `nome atual: ${nomeAtual}`)
+    assert.equal(chamadas[1].metodo, 'PUT')
+    assert.equal(chamadas[1].url, 'https://cw.exemplo.com/api/v1/accounts/7/contacts/11')
+    assert.deepEqual(chamadas[1].corpo, { name: 'Maysa Priscila' })
+  }
+})
+
+test('⚠️ nome REAL que alguém já colocou nunca é sobrescrito', async () => {
+  const { chamadas, fetchFn } = fake([existente('Maysa P. (VIP)')])
+  assert.equal(await acharComNome(fetchFn), 11)
+  assert.equal(chamadas.length, 1) // só a busca: nenhum PUT
+})
+
+test('sem nome no checkout, não há o que atualizar (e nada de PUT com nome vazio)', async () => {
+  for (const nome of [null, undefined, '', '   ']) {
+    const { chamadas, fetchFn } = fake([existente('5521983892620')])
+    // chamada direta: o `undefined` passado ao auxiliar cairia no valor padrão dele
+    assert.equal(await cliente(fetchFn).acharOuCriarContato({ nome, telefone: '5521983892620' }), 11)
+    assert.equal(chamadas.length, 1)
+  }
+})
+
+test('⚠️ falha ao atualizar o nome (422, 5xx, rede) NÃO impede o envio: é só cosmético', async () => {
+  const falhas = [json({ error: 'x' }, 422), json({ error: 'x' }, 500)]
+  for (const resposta of falhas) {
+    const { fetchFn } = fake([existente('5521983892620'), resposta])
+    assert.equal(await acharComNome(fetchFn), 11)
+  }
+  let n = 0
+  const fetchRede = async () => { n += 1; if (n === 1) return existente('5521983892620'); throw new TypeError('fetch failed') }
+  assert.equal(await acharComNome(fetchRede), 11)
+})
+
+test('⚠️ mas credencial recusada (401/403) na atualização continua parando a rodada', async () => {
+  const { fetchFn } = fake([existente('5521983892620'), json({ error: 'x' }, 401)])
+  await assert.rejects(() => acharComNome(fetchFn), (e) => e instanceof ErroChatwoot && e.status === 401)
+})
+
+test('contato novo continua sendo criado já com o nome da cliente (sem PUT)', async () => {
+  const { chamadas, fetchFn } = fake([json({ payload: [] }), json({ payload: { contact: { id: 12 } } })])
+  assert.equal(await acharComNome(fetchFn), 12)
+  assert.equal(chamadas.length, 2)
+  assert.equal(chamadas[1].metodo, 'POST')
+  assert.equal(chamadas[1].corpo.name, 'Maysa Priscila')
+})

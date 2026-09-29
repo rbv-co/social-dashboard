@@ -28,6 +28,9 @@ export function classificarErro(e) {
   return 'falhou'
 }
 
+/** O "nome" do contato é só um telefone (ou está vazio)? Ex.: "5521983892620", "+55 21 98389-2620". */
+const pareceTelefone = (nome) => /^[+\d\s()-]*$/.test(String(nome ?? '').trim())
+
 export function criarClienteChatwoot({ url, contaId, caixaId, token, fetchFn = fetch }) {
   const base = `${url.replace(/\/$/, '')}/api/v1/accounts/${contaId}`
 
@@ -56,7 +59,20 @@ export function criarClienteChatwoot({ url, contaId, caixaId, token, fetchFn = f
       const e164 = '+' + telefone
       const achados = await chamar('buscar_contato', `/contacts/search?q=${encodeURIComponent(e164)}`)
       const existente = (achados?.payload ?? []).find((c) => c.phone_number === e164)
-      if (existente) return existente.id
+      if (existente) {
+        // A automação de triagem do Chatwoot cria o contato com o TELEFONE como nome. Se é só isso (ou
+        // vazio), põe o nome da cliente. Nome real que alguém já colocou NUNCA é sobrescrito.
+        // `name` ausente da resposta = desconhecido (não mexe); null ou "" = vazio (o Chatwoot sempre devolve o campo).
+        if (nome?.trim() && existente.name !== undefined && pareceTelefone(existente.name)) {
+          try {
+            await chamar('atualizar_contato', `/contacts/${existente.id}`, { metodo: 'PUT', corpo: { name: nome.trim() } })
+          } catch (e) {
+            // Nome é cosmético: falha aqui não pode impedir o envio. Credencial recusada, sim, para a rodada.
+            if (classificarErro(e) === 'parar') throw e
+          }
+        }
+        return existente.id
+      }
       const criado = await chamar('criar_contato', '/contacts', {
         metodo: 'POST', corpo: { inbox_id: caixaId, name: nome || e164, phone_number: e164 },
       })
