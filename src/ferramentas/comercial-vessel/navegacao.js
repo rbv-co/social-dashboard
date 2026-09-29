@@ -17,7 +17,6 @@ export const PAI_DA_TELA = {
   'material-grafico': 'comercial-vessel',
   'pracas': 'comercial-vessel',
   'edicoes': 'comercial-vessel',
-  'funil-carrinho': 'comercial-vessel',
   'abandono-carrinho': 'comercial-vessel',
   'comercial-vessel': 'inicio',
 }

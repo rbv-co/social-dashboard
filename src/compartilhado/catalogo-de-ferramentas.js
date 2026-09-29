@@ -156,11 +156,8 @@ export const FERRAMENTAS = [
   // nesta entrega, com pré-concessão ADITIVA para quem já tinha a mãe.
   { key: 'atendimentos.pracas', label: 'Praças', acoes: ['ver', 'editar'], grupo: 'atendimentos', rotas: ['pracas'] },
   { key: 'atendimentos.edicoes', label: 'Edições', acoes: ['ver', 'editar'], grupo: 'atendimentos', rotas: ['edicoes'] },
-  // O Funil de Carrinho mora no menu do Comercial Vessel: o editor o mostra
-  // no mesmo cartão. A chave continua 'carrinho' (nunca renomear).
-  { key: 'carrinho', label: 'Funil de Carrinho', acoes: ['ver'], grupo: 'atendimentos', rotas: ['funil-carrinho'] },
-  // Chave PRÓPRIA (não pega carona em 'carrinho'): esta tela mostra e-mail e telefone
-  // de clientes, o Funil não. Nasce concedida a ninguém; super-admin passa sempre.
+  // Chave PRÓPRIA: esta tela mostra e-mail e telefone de clientes.
+  // Nasce concedida a ninguém; super-admin passa sempre.
   { key: 'abandono-carrinho', label: 'Checkouts Abandonados', acoes: ['ver'], grupo: 'atendimentos', rotas: ['abandono-carrinho'] },
 ]
 
