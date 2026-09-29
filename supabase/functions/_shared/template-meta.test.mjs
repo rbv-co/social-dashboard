@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { montarTemplate, validarTemplate, TEMPLATE_B } from './template-meta.js'
+import { montarTemplate, validarTemplate, TEMPLATE_A, TEMPLATE_B } from './template-meta.js'
 
 const BASE = {
   nome: 'recuperacao_checkout_v2', idioma: 'pt_BR',
@@ -35,8 +35,23 @@ test('sem rodapé, o componente FOOTER não entra', () => {
   assert.deepEqual(t.components.map((c) => c.type), ['BODY', 'BUTTONS'])
 })
 
-test('validarTemplate: o modelo B do projeto é válido', () => {
+test('validarTemplate: os modelos A e B do projeto são válidos', () => {
+  assert.deepEqual(validarTemplate(TEMPLATE_A), [])
   assert.deepEqual(validarTemplate(TEMPLATE_B), [])
+})
+
+test('o modelo A é o texto completo, com o nome recuperacao_checkout_v1 e o botão de link primeiro', () => {
+  assert.equal(TEMPLATE_A.nome, 'recuperacao_checkout_v1')
+  assert.match(TEMPLATE_A.corpo, /^Oi, \{\{1\}\}! Você deixou seu carrinho na Vessel esperando por você\./)
+  assert.match(TEMPLATE_A.corpo, /a gente ajuda\.$/)
+  const [, , btns] = montarTemplate(TEMPLATE_A).components
+  assert.deepEqual(btns.buttons.map((b) => b.type), ['URL', 'QUICK_REPLY'])
+})
+
+test('⚠️ dá para criar o mesmo texto com OUTRO nome (a Meta trava o nome de um modelo já usado), sem mexer no resto', () => {
+  const novo = montarTemplate({ ...TEMPLATE_A, nome: 'recuperacao_checkout_a2' })
+  assert.equal(novo.name, 'recuperacao_checkout_a2')
+  assert.deepEqual(novo.components, montarTemplate(TEMPLATE_A).components)
 })
 
 test('⚠️ validarTemplate: variável no começo ou no fim do corpo é recusada pela Meta, então é problema', () => {
