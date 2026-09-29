@@ -169,9 +169,22 @@
         <div class="admin-section adm-bl-oliva" id="admin-section-metas">
           <div class="adm-secao-cab">
             <div class="admin-section-title id-titulo"><span class="adm-pastilha"><icone-do-bloco nome="placar" /></span>Metas de Vendas</div>
-            <div class="admin-section-sub">Configure as metas mensais por canal e loja</div>
+            <div class="admin-section-sub">Defina a meta do mês de cada canal e de cada vendedora</div>
           </div>
-          <div id="admin-metas-body"><div style="color:var(--muted);font-size:max(9px, calc(12px * var(--escala-texto, 1)))">Carregando...</div></div>
+          <div class="mt-mes">
+            <label class="mt-rotulo" for="mt-mes-sel">Mês</label>
+            <select id="mt-mes-sel" class="admin-input mt-mes-sel"></select>
+          </div>
+          <section class="adm-bloco adm-bl-oliva">
+          <span class="sg-label id-titulo adm-bloco-cab"><span class="adm-pastilha"><icone-do-bloco nome="venda" /></span>Meta por canal e loja</span>
+          <div class="admin-section-sub adm-explica">Cada canal do banco está aqui. Digite quanto ele deve vender no mês e salve. A meta por dia é o valor do mês dividido pelos dias do mês. O <b>Total geral</b> é opcional: se ficar vazio, vale a soma dos canais.</div>
+          <div id="admin-metas-lojas"><div class="mt-msg">Carregando...</div></div>
+          </section>
+          <section class="adm-bloco adm-bl-rose">
+          <span class="sg-label id-titulo adm-bloco-cab"><span class="adm-pastilha"><icone-do-bloco nome="pessoa" /></span>Meta por vendedora</span>
+          <div class="admin-section-sub adm-explica">As vendedoras vêm do cadastro do Bling. Digite a meta do mês de cada uma. Balcão (como “Fábrica” ou “loja”) não aparece, porque não é pessoa.</div>
+          <div id="admin-metas-vend"><div class="mt-msg">Carregando...</div></div>
+          </section>
         </div>
         <!-- SOLICITAÇÕES -->
         <div class="admin-section adm-bl-bronze" id="admin-section-requests">
@@ -247,7 +260,7 @@ import { agruparCanaisPorCadastro, podeApagarGrupo, nomeDeGrupoAceito } from '..
 // quem recebe o quê — a tela LÊ dela em vez de repetir os nomes.
 import { TIPOS_DE_NOTIFICACAO, querReceber } from '../../../supabase/functions/_shared/notificacoes.js'
 import { adminToast } from '../../compartilhado/avisos.js'
-import { dataDigitadaParaISO, dataISOparaBR } from '../../compartilhado/canal-fechado.js'
+import { dataDigitadaParaISO, dataISOparaBR, ocultosNoPeriodo } from '../../compartilhado/canal-fechado.js'
 import { gerarSenhaForte } from './senha.js'
 import { sb } from '../../compartilhado/buscar-e-salvar-dados.js'
 // As REGRAS dos times (quem administra, quem concede o quê, o que falta em cada
@@ -267,8 +280,10 @@ import {
 // Puxar as vendedoras das VENDAS: agrupa duplicadas, separa balcão de pessoa e
 // deduz a loja. Regras puras, testadas contra os 22 cadastros reais do Bling.
 import {
-  agruparVendedores, lojaDaVendedora, comoDizerALoja, viraConta, emailSugerido,
+  agruparVendedores, lojaDaVendedora, comoDizerALoja, viraConta, emailSugerido, ehBalcao,
 } from './vendedoras.js'
+// Metas de vendas: ler o valor digitado, achar o que mudou, reescalar metas diárias.
+import { valorDoCampo, metaPorDia, mudancas, reescalarDiarias, rotuloDeVendedora } from './metas.js'
 // Separar as pessoas por marca, local ou setor: a gaveta escolhida e o "sem
 // ___" que fecha a lista moram aqui, puro e testado — a tela só desenha.
 import { agruparPor, DIMENSOES } from './lotacao.js'
@@ -402,7 +417,7 @@ const logoEscuroUrl = '/midia/LOGOTIPOBRENOBRANCO.png'
 // modal de permissões) segue montado via getElementById/createElement/
 // innerHTML, exatamente como a produção atual. Por isso o cluster de funções
 // chamadas por onclick="..."/onchange="..." literal (no <template> acima e
-// dentro das strings de innerHTML geradas por loadAdminMetas) é exposto em
+// dentro das strings de innerHTML das seções) é exposto em
 // window no fim deste bloco.
 // ==========================================================================
 
@@ -4051,224 +4066,187 @@ function adminShowCmd(title, cmd) {
 function adminShowRefetchInfo() { adminShowCmd('Atualizar fotos de perfil', 'cd ~/IAmundi/projetos/central-inteligencia/redes-sociais/coletor\npython3 fetch_profile_pics.py') }
 function adminShowColetorInfo() { adminShowCmd('Rodar coletor de dados', 'cd ~/IAmundi/projetos/central-inteligencia/redes-sociais/coletor\npython3 coletar.py') }
 
-/* ── METAS ADMIN (legacy L4853-5076, verbatim) ── */
+/* ── METAS ADMIN ──
+   Redesenhado em 29/09/2026 a pedido do dono: "esse modelo por planilha tá
+   ruim". Agora a tela lista as lojas (bling_lojas) e as vendedoras
+   (bling_vendedores) do banco, cada uma com o campo de quanto de meta no mês.
+   A conta de decisão mora em ./metas.js (puro, com teste). */
+let _mtAno = 0
+let _mtMes = 0
+const _mt = {
+  loja: { itens: [], linhas: {}, alvo: 'admin-metas-lojas' },
+  vend: { itens: [], linhas: {}, alvo: 'admin-metas-vend' },
+}
+
+function _mtNomeDoMes(a, m) {
+  const t = new Date(a, m - 1, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
+  return t.charAt(0).toUpperCase() + t.slice(1)
+}
+
+function _mtDesenharMes() {
+  const sel = document.getElementById('mt-mes-sel'); if (!sel) return
+  const hoje = new Date()
+  const opcoes = []
+  for (let d = -1; d <= 2; d++) {
+    const x = new Date(hoje.getFullYear(), hoje.getMonth() + d, 1)
+    opcoes.push({ a: x.getFullYear(), m: x.getMonth() + 1 })
+  }
+  sel.innerHTML = opcoes.map(o => '<option value="' + o.a + '-' + o.m + '"' + (o.a === _mtAno && o.m === _mtMes ? ' selected' : '') + '>' + escHtml(_mtNomeDoMes(o.a, o.m)) + '</option>').join('')
+  sel.onchange = () => { const [a, m] = sel.value.split('-').map(Number); _mtAno = a; _mtMes = m; _mtCarregarTudo() }
+}
+
 async function loadAdminMetas() {
-  const body = document.getElementById('admin-metas-body')
-  body.textContent = ''
-  const now = new Date()
-  const y = now.getFullYear(), m = now.getMonth() + 1
-  const mesLabel = now.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }).toUpperCase()
-  const [lojasRes, metasRes] = await Promise.all([
-    sbClient.from('bling_lojas').select('loja_id,nome').order('nome'),
-    sbClient.from('bling_metas').select('loja_id,meta_valor').eq('year', y).eq('month', m)
-  ])
-  const lojas = lojasRes.data || []
-  const metasMap = {}; (metasRes.data || []).forEach(r => metasMap[r.loja_id] = r.meta_valor)
-  const hasData = Object.keys(metasMap).length > 0
-  const daysInMonth = new Date(y, m, 0).getDate()
-
-  const safeRows = hasData ? [
-    ...(metasMap[0] ? [`<tr><td><strong>Total Geral</strong></td><td style="text-align:right"><strong>${escHtml(fmtR(metasMap[0]))}</strong></td><td style="text-align:right;color:var(--muted)">${escHtml(fmtR(metasMap[0] / daysInMonth))}</td></tr>`] : []),
-    ...lojas.filter(l => metasMap[l.loja_id]).map(l => `<tr><td>${escHtml(l.nome)}</td><td style="text-align:right">${escHtml(fmtR(metasMap[l.loja_id]))}</td><td style="text-align:right;color:var(--muted)">${escHtml(fmtR(metasMap[l.loja_id] / daysInMonth))}</td></tr>`)
-  ].join('') : null
-
-  const html = [
-    '<div class="admin-section-sub adm-explica" style="margin-bottom:20px">Importe uma planilha <strong>.xlsx</strong> (Excel) com as metas por canal. Baixe o template, preencha a meta de cada dia por canal e importe. Também aceita <em>.xls</em> e <em>.csv</em>.</div>',
-    '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:24px">',
-    '<button class="admin-btn-sm btn" onclick="downloadMetasTemplate()">',
-    '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Baixar template .xlsx</button>',
-    `<label class="admin-btn-sm" style="display:flex;align-items:center;gap:6px;padding:8px 16px;cursor:pointer;background:var(--modulo);color:var(--sobre-cor);border-color:var(--modulo)">`,
-    '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>Importar planilha',
-    `<input type="file" accept=".xlsx,.xls,.csv" id="metas-csv-input" style="display:none" onchange="importMetasCSV(this,${y},${m})"></label></div>`,
-    '<div id="metas-import-msg" style="font-size:max(9px, calc(12px * var(--escala-texto, 1)));margin-bottom:16px;display:none"></div>',
-    hasData ? `<div class="sg-label">Metas actuais — ${escHtml(mesLabel)}</div><div class="sg"><table class="metas-tbl"><thead><tr><th>Canal / Loja</th><th style="text-align:right">Meta (R$)</th><th style="text-align:right">Meta/dia*</th></tr></thead><tbody>${safeRows}</tbody></table><div style="font-size:max(9px, calc(10px * var(--escala-texto, 1)));color:var(--muted);padding:8px 0">*Meta diária = meta mensal ÷ dias do mês</div></div>`
-      : '<div style="color:var(--muted);font-size:max(9px, calc(12px * var(--escala-texto, 1)));padding:8px 0">Nenhuma meta cadastrada para este mês. Importe uma planilha para começar.</div>'
-  ].join('')
-  body.innerHTML = html
-  await loadAdminVendMetas(body, y, m, mesLabel)
+  if (!_mtAno) { const n = new Date(); _mtAno = n.getFullYear(); _mtMes = n.getMonth() + 1 }
+  _mtDesenharMes()
+  await _mtCarregarTudo()
 }
 
-async function downloadMetasTemplate() {
-  const now = new Date()
-  const y = now.getFullYear(), m = now.getMonth() + 1
-  const daysInMonth = new Date(y, m, 0).getDate()
-  const [{ data: lojas }, { data: metas }] = await Promise.all([
-    sbClient.from('bling_lojas').select('loja_id,nome').order('nome'),
-    sbClient.from('bling_metas').select('loja_id,meta_valor,daily_goals').eq('year', y).eq('month', m)
-  ])
-  const metasMap = {}; const dailyMap = {}
-  ;(metas || []).forEach(r => { metasMap[r.loja_id] = r.meta_valor; if (r.daily_goals) dailyMap[r.loja_id] = r.daily_goals })
-  const dayHdrs = Array.from({ length: daysInMonth }, (_, i) => `dia_${String(i + 1).padStart(2, '0')}`)
-  const makeRow = (id, nome) => {
-    const dg = dailyMap[id] || {}
-    return [id, nome, ...Array.from({ length: daysInMonth }, (_, i) => dg[i + 1] != null ? Number(dg[i + 1]) : '')]
-  }
-  const rows = [['loja_id', 'nome', ...dayHdrs], makeRow(0, 'Total Geral'), ...(lojas || []).map(l => makeRow(l.loja_id, l.nome))]
-  const ws = XLSX.utils.aoa_to_sheet(rows)
-  ws['!freeze'] = { xSplit: 2, ySplit: 1, topLeftCell: 'C2', activePane: 'bottomLeft', state: 'frozen' }
-  const wb = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, ws, 'Metas')
-  XLSX.writeFile(wb, `metas_template_${y}_${String(m).padStart(2, '0')}.xlsx`)
-}
+function _mtCarregarTudo() { return Promise.all([_mtCarregar('loja'), _mtCarregar('vend')]) }
 
-async function importMetasCSV(input, y, m) {
-  const file = input.files[0]
-  if (!file) return
-  showMetasMsg('Lendo arquivo...', false, true)
-  try {
-    const buf = await file.arrayBuffer()
-    const wb = XLSX.read(buf, { type: 'array', cellDates: false, raw: false })
-    const ws = wb.Sheets[wb.SheetNames[0]]
-    const data = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })
-    if (!data.length) { showMetasMsg('Arquivo vazio.', true); return }
-    const hdr = data[0].map(h => String(h == null ? '' : h).trim().toLowerCase())
-    const idxId = hdr.indexOf('loja_id')
-    const idxTotal = hdr.findIndex(h => h === 'meta_total' || h === 'meta_valor')
-    const dayMap = []; hdr.forEach((h, i) => { const mt = /^dia_(\d+)$/.exec(h); if (mt) dayMap.push({ i, d: parseInt(mt[1]) }) })
-    if (idxId < 0 || (idxTotal < 0 && !dayMap.length)) {
-      const preview = hdr.filter(Boolean).slice(0, 5).join(' | ') || '(nenhuma)'
-      showMetasMsg('Coluna loja_id nao encontrada. Colunas: ' + preview + '. Use o template.', true)
-      return
-    }
-    const toNum = v => { if (typeof v === 'number') return isNaN(v) ? NaN : v; const s = String(v).trim().replace(/[R$\s]/g, ''); const lc = s.lastIndexOf(','), ld = s.lastIndexOf('.'); return parseFloat(lc > ld ? s.replace(/\./g, '').replace(',', '.') : s) }
-    const rows = []
-    for (let i = 1; i < data.length; i++) {
-      const row = data[i]
-      const id = parseInt(String(row[idxId] || ''))
-      if (isNaN(id)) continue
-      const dg = {}; let sumDays = 0
-      dayMap.forEach(({ i: ci, d: day }) => { const v = toNum(row[ci]); if (!isNaN(v) && v > 0) { dg[day] = v; sumDays += v } })
-      const val = sumDays > 0 ? sumDays : (idxTotal >= 0 ? toNum(row[idxTotal]) : NaN)
-      if (!isNaN(id) && !isNaN(val) && val > 0) {
-        const rec = { loja_id: id, year: y, month: m, meta_valor: val }
-        if (sumDays > 0) rec.daily_goals = dg
-        rows.push(rec)
-      }
-    }
-    if (!rows.length) { showMetasMsg('Nenhum valor valido encontrado. Verifique loja_id e valores nos dias.', true); return }
-    showMetasMsg(`Importando ${rows.length} metas...`, false, true)
-    const { error: delErr } = await sbClient.from('bling_metas').delete().eq('year', y).eq('month', m)
-    if (delErr) { showMetasMsg('Erro ao limpar metas anteriores: ' + delErr.message, true); return }
-    const { error } = await sbClient.from('bling_metas').insert(rows)
-    if (error) { showMetasMsg('Erro ao salvar: ' + error.message, true) }
-    else { showMetasMsg(`${rows.length} meta${rows.length !== 1 ? 's' : ''} importada${rows.length !== 1 ? 's' : ''}!`, false); loadAdminMetas() }
-  } catch (e) { showMetasMsg('Erro ao ler arquivo: ' + e.message, true) }
-  input.value = ''
-}
-
-async function loadAdminVendMetas(parentBody, y, m, mesLabel) {
-  const [vendsRes, vendMetasRes] = await Promise.all([
+// Lê do banco e desenha. Erro de leitura aparece como erro — nunca como lista
+// vazia (PADRAO item 9). `aviso` é o recado que fica depois de gravar.
+async function _mtCarregar(tipo, aviso) {
+  const cfg = _mt[tipo]
+  const alvo = document.getElementById(cfg.alvo); if (!alvo) return
+  const primeiroDia = _mtAno + '-' + String(_mtMes).padStart(2, '0') + '-01'
+  const [cadastro, metas] = await Promise.all(tipo === 'loja' ? [
+    sbClient.from('bling_lojas').select('loja_id,nome,fechado_em').order('nome'),
+    sbClient.from('bling_metas').select('loja_id,meta_valor,daily_goals').eq('year', _mtAno).eq('month', _mtMes),
+  ] : [
     sbClient.from('bling_vendedores').select('vendor_id,nome').order('nome'),
-    sbClient.from('bling_vendedor_metas').select('vendor_id,meta_valor').eq('year', y).eq('month', m)
+    sbClient.from('bling_vendedor_metas').select('vendor_id,meta_valor,daily_goals').eq('year', _mtAno).eq('month', _mtMes),
   ])
-  const vends = vendsRes.data || []
-  const vendMetasMap = {}; (vendMetasRes.data || []).forEach(r => vendMetasMap[r.vendor_id] = r.meta_valor)
-  const diasMes = new Date(y, m, 0).getDate()
-  const hasVendData = Object.keys(vendMetasMap).length > 0
-
-  const sec = document.createElement('div'); sec.style.marginTop = '32px'
-  const hdr = document.createElement('div'); hdr.className = 'sg-label'; hdr.textContent = 'METAS DE VENDEDORAS'
-  sec.appendChild(hdr)
-
-  const desc = document.createElement('div'); desc.className = 'admin-section-sub'; desc.style.marginBottom = '20px'
-  desc.textContent = 'Baixe o template, preencha as metas diárias por vendedora e importe.'
-  sec.appendChild(desc)
-
-  const btnRow = document.createElement('div'); btnRow.style.cssText = 'display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:24px'
-
-  const dlBtn = document.createElement('button'); dlBtn.className = 'admin-btn-sm'; dlBtn.style.cssText = 'display:flex;align-items:center;gap:6px;padding:8px 16px'; dlBtn.textContent = 'Baixar template .xlsx'
-  dlBtn.addEventListener('click', () => downloadVendedoresTemplate())
-  btnRow.appendChild(dlBtn)
-
-  const label = document.createElement('label'); label.className = 'admin-btn-sm'; label.style.cssText = 'display:flex;align-items:center;gap:6px;padding:8px 16px;cursor:pointer;background:var(--accent);color:var(--sobre-cor);border-color:var(--accent)'
-  label.textContent = 'Importar planilha'
-  const fileInput = document.createElement('input'); fileInput.type = 'file'; fileInput.accept = '.xlsx,.xls,.csv'; fileInput.style.display = 'none'; fileInput.id = 'vend-metas-csv-input'
-  fileInput.addEventListener('change', function () { importVendedoresCSV(this, y, m) })
-  label.appendChild(fileInput)
-  btnRow.appendChild(label)
-  sec.appendChild(btnRow)
-
-  const msgEl = document.createElement('div'); msgEl.id = 'vend-metas-import-msg'; msgEl.style.cssText = 'font-size:max(9px, calc(12px * var(--escala-texto, 1)));margin-bottom:16px;display:none'
-  sec.appendChild(msgEl)
-
-  if (hasVendData) {
-    const tblTitle = document.createElement('div'); tblTitle.className = 'sg-label'; tblTitle.textContent = 'Metas actuais — ' + mesLabel; sec.appendChild(tblTitle)
-    const sg = document.createElement('div'); sg.className = 'sg'
-    const tbl = document.createElement('table'); tbl.className = 'metas-tbl'
-    const thead = document.createElement('thead')
-    const hr = document.createElement('tr')
-    ;['Vendedora', 'Meta (R$)', 'Meta/dia'].forEach(h => { const th = document.createElement('th'); th.textContent = h; hr.appendChild(th) })
-    thead.appendChild(hr); tbl.appendChild(thead)
-    const tbody = document.createElement('tbody')
-    vends.filter(v => vendMetasMap[v.vendor_id]).forEach(v => {
-      const tr = document.createElement('tr')
-      const nm = document.createElement('td'); nm.textContent = v.nome; tr.appendChild(nm)
-      const mv = document.createElement('td'); mv.style.textAlign = 'right'; mv.textContent = fmtR(vendMetasMap[v.vendor_id]); tr.appendChild(mv)
-      const md = document.createElement('td'); md.style.cssText = 'text-align:right;color:var(--muted)'; md.textContent = fmtR(vendMetasMap[v.vendor_id] / diasMes); tr.appendChild(md)
-      tbody.appendChild(tr)
-    })
-    tbl.appendChild(tbody); sg.appendChild(tbl); sec.appendChild(sg)
+  const erro = cadastro.error || metas.error
+  if (erro) {
+    alvo.innerHTML = '<div class="mt-msg mt-msg-erro">Não consegui ler ' + (tipo === 'loja' ? 'os canais e as metas' : 'as vendedoras e as metas') + ': ' + escHtml(erro.message) + '</div>'
+    return
+  }
+  const chave = tipo === 'loja' ? 'loja_id' : 'vendor_id'
+  cfg.linhas = {}
+  ;(metas.data || []).forEach(r => { cfg.linhas[String(r[chave])] = r })
+  let lista = (cadastro.data || []).map(x => ({ id: String(x[chave]), nome: x.nome || ('Sem nome (cód. ' + x[chave] + ')') }))
+  if (tipo === 'loja') {
+    const fora = ocultosNoPeriodo(cadastro.data || [], primeiroDia)
+    lista = lista.filter(x => !fora.has(Number(x.id)) || cfg.linhas[x.id])
   } else {
-    const empty = document.createElement('div'); empty.style.cssText = 'color:var(--muted);font-size:max(9px, calc(12px * var(--escala-texto, 1)));padding:8px 0'; empty.textContent = 'Nenhuma meta de vendedora para este mês.'; sec.appendChild(empty)
+    // balcão ("Fábrica", "loja tivoli") não é pessoa — só aparece se já tem meta gravada
+    lista = lista.filter(x => !ehBalcao(x.nome) || cfg.linhas[x.id])
+    const base = lista.map(x => ({ vendor_id: x.id, nome: x.nome }))
+    lista.forEach(x => { x.nome = rotuloDeVendedora({ vendor_id: x.id, nome: x.nome }, base) })
   }
-  parentBody.appendChild(sec)
+  cfg.itens = lista
+  _mtDesenhar(tipo, alvo, aviso)
 }
 
-async function downloadVendedoresTemplate() {
-  const now = new Date(); const y = now.getFullYear(), m = now.getMonth() + 1; const diasMes = new Date(y, m, 0).getDate()
-  const [{ data: vends }, { data: metas }] = await Promise.all([
-    sbClient.from('bling_vendedores').select('vendor_id,nome').order('nome'),
-    sbClient.from('bling_vendedor_metas').select('vendor_id,daily_goals').eq('year', y).eq('month', m)
-  ])
-  const dailyMap = {}; (metas || []).forEach(r => { if (r.daily_goals) dailyMap[r.vendor_id] = r.daily_goals })
-  const dayHdrs = Array.from({ length: diasMes }, (_, i) => String(i + 1))
-  const makeRow = (id, nome) => { const dg = dailyMap[id] || {}; return [id, nome, ...Array.from({ length: diasMes }, (_, i) => dg[i + 1] != null ? Number(dg[i + 1]) : '')] }
-  const rows = [['vendor_id', 'nome', ...dayHdrs], ...(vends || []).map(v => makeRow(v.vendor_id, v.nome))]
-  const ws = XLSX.utils.aoa_to_sheet(rows); ws['!freeze'] = { xSplit: 2, ySplit: 1, topLeftCell: 'C2', activePane: 'bottomLeft', state: 'frozen' }
-  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'MetasVendedoras')
-  XLSX.writeFile(wb, `metas_vendedoras_${y}_${String(m).padStart(2, '0')}.xlsx`)
+function _mtDesenhar(tipo, alvo, aviso) {
+  const cfg = _mt[tipo]
+  const linha = (id, nome, dica) => {
+    const gravado = cfg.linhas[id] ? Number(cfg.linhas[id].meta_valor) : null
+    const val = gravado ? gravado.toFixed(2).replace('.', ',') : ''
+    return '<div class="mt-linha" data-mt-linha="' + escHtml(id) + '">' +
+      '<label class="mt-nome" for="mt-' + tipo + '-' + escHtml(id) + '">' + escHtml(nome) + (dica ? '<span class="mt-dica">' + escHtml(dica) + '</span>' : '') + '</label>' +
+      '<input id="mt-' + tipo + '-' + escHtml(id) + '" class="mt-campo" inputmode="decimal" autocomplete="off" placeholder="0,00" aria-label="Meta do mês de ' + escHtml(nome) + ', em reais" data-mt-campo data-mt-id="' + escHtml(id) + '" value="' + val + '">' +
+      '<span class="mt-dia" data-mt-dia></span></div>'
+  }
+  let h = ''
+  if (tipo === 'loja') h += linha('0', 'Total geral', 'Opcional. Vazio = soma dos canais.')
+  if (!cfg.itens.length) h += '<div class="mt-msg">' + (tipo === 'loja' ? 'Nenhum canal cadastrado.' : 'Nenhuma vendedora cadastrada.') + '</div>'
+  h += cfg.itens.map(x => linha(x.id, x.nome)).join('')
+  h += '<div class="mt-rodape"><span class="mt-soma" data-mt-soma></span>' +
+    '<button type="button" class="btn btn-principal" data-mt-salvar disabled>Salvar</button></div>' +
+    '<div class="mt-aviso" data-mt-aviso role="status"></div>'
+  alvo.innerHTML = h
+  _mtLigar(tipo, alvo)
+  if (aviso) _mtAviso(alvo, aviso.texto, aviso.erro)
 }
 
-async function importVendedoresCSV(input, y, m) {
-  const msgEl = document.getElementById('vend-metas-import-msg')
-  if (msgEl) { msgEl.style.display = 'block'; msgEl.textContent = 'Processando...' }
+function _mtAviso(alvo, texto, tipoAviso) {
+  const el = alvo.querySelector('[data-mt-aviso]'); if (!el) return
+  el.innerHTML = texto ? '<div class="mt-msg' + (tipoAviso === 'erro' ? ' mt-msg-erro' : tipoAviso === 'ok' ? ' mt-msg-ok' : '') + '">' + escHtml(texto) + '</div>' : ''
+}
+
+function _mtAtuais(tipo) {
+  const o = {}
+  Object.entries(_mt[tipo].linhas).forEach(([id, r]) => { o[id] = Number(r.meta_valor) })
+  return o
+}
+
+function _mtDigitados(alvo) {
+  const o = {}
+  alvo.querySelectorAll('[data-mt-campo]').forEach(c => { o[c.getAttribute('data-mt-id')] = c.value })
+  return o
+}
+
+function _mtLigar(tipo, alvo) {
+  const btn = alvo.querySelector('[data-mt-salvar]')
+  const atualizar = () => {
+    const r = mudancas(_mtAtuais(tipo), _mtDigitados(alvo))
+    const mudou = new Set([...r.gravar.map(g => g.id), ...r.apagar])
+    let soma = 0
+    alvo.querySelectorAll('.mt-linha').forEach(l => {
+      const id = l.getAttribute('data-mt-linha')
+      const c = l.querySelector('[data-mt-campo]')
+      const v = valorDoCampo(c.value)
+      const invalido = Number.isNaN(v)
+      l.classList.toggle('mt-alterada', mudou.has(id))
+      c.classList.toggle('mt-invalida', invalido)
+      c.setAttribute('aria-invalid', invalido ? 'true' : 'false')
+      l.querySelector('[data-mt-dia]').textContent = v > 0 ? fmtR(metaPorDia(v, _mtAno, _mtMes)) + ' por dia' : ''
+      if (v > 0 && id !== '0') soma += v
+    })
+    alvo.querySelector('[data-mt-soma]').textContent = (tipo === 'loja' ? 'Soma dos canais: ' : 'Soma das vendedoras: ') + fmtR(soma)
+    const n = mudou.size
+    btn.disabled = n === 0 && !r.invalidos.length
+    btn.textContent = n ? 'Salvar ' + n + (n === 1 ? ' alteração' : ' alterações') : 'Salvar'
+  }
+  alvo.querySelectorAll('[data-mt-campo]').forEach(c => { c.oninput = atualizar })
+  btn.onclick = () => _mtSalvar(tipo, alvo, btn)
+  atualizar()
+}
+
+// Toda escrita confere que pegou: update/delete que o banco recusa por
+// permissão volta "sem erro" e sem linha — e a tela diria "salvo" mentindo.
+async function _mtGravar(tipo, { id, valor }) {
+  const t = tipo === 'loja' ? 'bling_metas' : 'bling_vendedor_metas'
+  const chave = tipo === 'loja' ? 'loja_id' : 'vendor_id'
+  const existente = _mt[tipo].linhas[id]
+  const dg = reescalarDiarias(existente && existente.daily_goals, valor)
+  let r
+  if (tipo === 'vend') {
+    r = await sbClient.from(t).upsert({ vendor_id: Number(id), year: _mtAno, month: _mtMes, meta_valor: valor, daily_goals: dg }, { onConflict: 'vendor_id,year,month' }).select(chave)
+  } else if (existente) {
+    r = await sbClient.from(t).update({ meta_valor: valor, daily_goals: dg }).eq(chave, Number(id)).eq('year', _mtAno).eq('month', _mtMes).select(chave)
+  } else {
+    r = await sbClient.from(t).insert({ [chave]: Number(id), year: _mtAno, month: _mtMes, meta_valor: valor, ...(dg ? { daily_goals: dg } : {}) }).select(chave)
+  }
+  if (r.error) throw new Error(r.error.message)
+  if (!r.data || !r.data.length) throw new Error('o banco não aceitou a gravação (sem permissão?)')
+}
+
+async function _mtApagar(tipo, id) {
+  const t = tipo === 'loja' ? 'bling_metas' : 'bling_vendedor_metas'
+  const chave = tipo === 'loja' ? 'loja_id' : 'vendor_id'
+  const r = await sbClient.from(t).delete().eq(chave, Number(id)).eq('year', _mtAno).eq('month', _mtMes).select(chave)
+  if (r.error) throw new Error(r.error.message)
+  if (!r.data || !r.data.length) throw new Error('o banco não apagou a meta (sem permissão?)')
+}
+
+async function _mtSalvar(tipo, alvo, btn) {
+  const r = mudancas(_mtAtuais(tipo), _mtDigitados(alvo))
+  const nomeDe = id => id === '0' ? 'Total geral' : ((_mt[tipo].itens.find(x => x.id === id) || {}).nome || id)
+  if (r.invalidos.length) { _mtAviso(alvo, 'Valor inválido em: ' + r.invalidos.map(nomeDe).join(', ') + '. Use só números, ex.: 60000 ou 60.000,00.', 'erro'); return }
+  btn.disabled = true
+  _mtAviso(alvo, 'Salvando…')
+  let feitos = 0
   try {
-    const file = input.files[0]; if (!file) return
-    const buf = await file.arrayBuffer()
-    const wb = XLSX.read(buf, { type: 'array' })
-    const ws = wb.Sheets[wb.SheetNames[0]]
-    const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })
-    if (rows.length < 2) { throw new Error('Planilha vazia') }
-    const header = rows[0].map(h => String(h).trim())
-    const idIdx = header.indexOf('vendor_id')
-    if (idIdx < 0) throw new Error('Coluna vendor_id não encontrada')
-    const dayIdxs = []; for (let c = 0; c < header.length; c++) { const n = parseInt(header[c]); if (!isNaN(n) && n >= 1 && n <= 31) dayIdxs.push({ col: c, day: n }) }
-    const records = []
-    for (let r = 1; r < rows.length; r++) {
-      const row = rows[r]; const id = parseInt(row[idIdx]); if (!id || isNaN(id)) continue
-      const goals = {}; let total = 0
-      dayIdxs.forEach(({ col, day }) => { const v = parseFloat(row[col]) || 0; if (v > 0) { goals[String(day)] = v; total += v } })
-      records.push({ vendor_id: id, year: y, month: m, meta_valor: total, daily_goals: goals })
-    }
-    for (const rec of records) {
-      const { error } = await sbClient.from('bling_vendedor_metas').upsert(rec, { onConflict: 'vendor_id,year,month' })
-      if (error) throw error
-    }
-    if (msgEl) { msgEl.style.color = 'var(--accent)'; msgEl.textContent = records.length + ' vendedora(s) importada(s) com sucesso.' }
-    adminToast('Metas de vendedoras importadas')
+    for (const g of r.gravar) { await _mtGravar(tipo, g); feitos++ }
+    for (const id of r.apagar) { await _mtApagar(tipo, id); feitos++ }
+    adminToast('Metas salvas')
+    await _mtCarregar(tipo, { texto: feitos + (feitos === 1 ? ' meta salva' : ' metas salvas') + ' em ' + _mtNomeDoMes(_mtAno, _mtMes) + '.', erro: 'ok' })
   } catch (e) {
-    if (msgEl) { msgEl.style.color = 'var(--red)'; msgEl.textContent = 'Erro: ' + e.message }
-    adminToast('Erro ao importar: ' + e.message, false)
+    // o que já foi gravado fica; recarregar mostra a verdade e os campos voltam ao valor do banco
+    await _mtCarregar(tipo, { texto: 'Não salvou tudo: ' + e.message + '. ' + feitos + ' já ' + (feitos === 1 ? 'foi gravada' : 'foram gravadas') + '.', erro: 'erro' })
   }
-  input.value = ''
-}
-
-function showMetasMsg(text, isErr, neutral) {
-  const msg = document.getElementById('metas-import-msg')
-  if (!msg) return
-  msg.style.color = neutral ? 'var(--muted)' : isErr ? 'var(--red)' : 'var(--green)'
-  msg.textContent = text
-  msg.style.display = 'block'
 }
 
 /* ── SOLICITAÇÕES ADMIN (legacy L5078-5213, verbatim) ── */
@@ -4343,9 +4321,9 @@ onUnmounted(() => {})
 
 // Exposição em window: todas as funções chamadas por onclick="..."/
 // onchange="..." literais no <template> acima e dentro das strings de
-// innerHTML geradas por loadAdminMetas (loadAdminSection, adminInviteUser,
+// innerHTML geradas por outras seções (loadAdminSection, adminInviteUser,
 // adminSaveSetting, adminShowRefetchInfo, adminShowColetorInfo,
-// downloadMetasTemplate, importMetasCSV, openPermModal*, closePermModal,
+// openPermModal*, closePermModal,
 // savePermissions, handleRequest*). (*openPermModal e handleRequest são hoje
 // disparados via addEventListener dentro de loadAdminUsers/loadAdminRequests
 // — não por atributo onclick literal — mas ficam expostos também, sem custo,
@@ -4356,8 +4334,6 @@ Object.assign(window, {
   adminInviteUser,
   adminShowRefetchInfo,
   adminShowColetorInfo,
-  downloadMetasTemplate,
-  importMetasCSV,
   openPermModal,
   closePermModal,
   savePermissions,
@@ -5018,8 +4994,7 @@ Object.assign(window, {
 /* AS LISTAS das seções sem sub-bloco (Contas, Solicitações, Metas): filete
    no tom da seção; em Contas, o topo do cartão (foto e nome) tingido. */
 .tela-admin :deep(#admin-accounts-list > .sg),
-.tela-admin :deep(#admin-requests-body > .sg),
-.tela-admin :deep(#admin-metas-body .sg){border-left:4px solid var(--bloco);border-color:color-mix(in srgb,var(--bloco) 40%,var(--surface));border-left-color:var(--bloco);}
+.tela-admin :deep(#admin-requests-body > .sg){border-left:4px solid var(--bloco);border-color:color-mix(in srgb,var(--bloco) 40%,var(--surface));border-left-color:var(--bloco);}
 .tela-admin :deep(#admin-accounts-list > .sg > .sr:first-child){background:color-mix(in srgb,var(--bloco) 12%,var(--surface));}
 
 /* A JANELA DE PERMISSÕES: faixa de título e cabeçalho de cada ferramenta no
@@ -5136,5 +5111,31 @@ Object.assign(window, {
      pra fechar o número. */
   .tela-admin :deep(.av-edit-btn){opacity:1;width:22px;height:22px;bottom:-4px;right:-4px;}
   .tela-admin :deep(.av-edit-btn svg){width:11px;height:11px;}
+}
+
+/* ── METAS DE VENDAS (29/09/2026): um campo de R$ por canal e por vendedora ── */
+.tela-admin :deep(.mt-mes){display:flex;align-items:center;gap:var(--sp-3);flex-wrap:wrap;margin-bottom:var(--sp-2);}
+.tela-admin :deep(.mt-rotulo){font-family:var(--fonte-principal);font-size:var(--texto-etiqueta);letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);}
+.tela-admin :deep(.mt-mes-sel){flex:0 1 16rem;min-height:40px;font-size:var(--texto-campo);}
+.tela-admin :deep(.mt-linha){display:grid;grid-template-columns:minmax(0,1fr) 12rem 11rem;gap:var(--sp-3);align-items:center;padding:var(--sp-2) 0 var(--sp-2) var(--sp-3);border-bottom:1px solid var(--border);border-left:3px solid transparent;}
+.tela-admin :deep(.mt-linha.mt-alterada){border-left-color:var(--modulo);}
+.tela-admin :deep(.mt-nome){font-family:var(--fonte-principal);font-size:var(--texto-corpo);color:var(--text);overflow-wrap:anywhere;}
+.tela-admin :deep(.mt-dica){display:block;font-size:var(--texto-etiqueta);color:var(--muted);}
+.tela-admin :deep(.mt-campo){box-sizing:border-box;width:100%;min-height:40px;padding:0 var(--sp-3);border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface);color:var(--text);font-family:var(--fonte-principal);font-size:var(--texto-campo);text-align:right;}
+.tela-admin :deep(.mt-campo:focus){outline:2px solid var(--modulo);outline-offset:1px;}
+.tela-admin :deep(.mt-campo.mt-invalida){border-color:var(--red);}
+.tela-admin :deep(.mt-dia){font-family:var(--fonte-principal);font-size:var(--texto-corpo);color:var(--muted);text-align:right;overflow-wrap:anywhere;}
+.tela-admin :deep(.mt-rodape){display:flex;flex-wrap:wrap;gap:var(--sp-3);align-items:center;justify-content:space-between;padding-top:var(--sp-3);}
+.tela-admin :deep(.mt-soma){font-family:var(--fonte-principal);font-size:var(--texto-corpo);font-weight:600;color:var(--text);}
+.tela-admin :deep(.mt-aviso){margin-top:var(--sp-3);}
+.tela-admin :deep(.mt-aviso:empty){display:none;}
+.tela-admin :deep(.mt-msg){--cor:var(--muted);font-family:var(--fonte-principal);font-size:var(--texto-corpo);color:var(--text);padding:var(--sp-2) var(--sp-3);border:1px solid color-mix(in srgb,var(--cor) 38%,var(--surface));background:color-mix(in srgb,var(--cor) 10%,var(--surface));border-radius:var(--radius-md);overflow-wrap:anywhere;}
+.tela-admin :deep(.mt-msg-erro){--cor:var(--red);}
+.tela-admin :deep(.mt-msg-ok){--cor:var(--green);}
+@media(max-width:640px){
+  .tela-admin :deep(.mt-linha){grid-template-columns:minmax(0,1fr) minmax(0,1fr);row-gap:var(--sp-1);}
+  .tela-admin :deep(.mt-nome){grid-column:1 / -1;}
+  .tela-admin :deep(.mt-dia){text-align:left;}
+  .tela-admin :deep(.mt-rodape .btn){width:100%;}
 }
 </style>

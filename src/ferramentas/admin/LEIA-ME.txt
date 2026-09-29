@@ -79,8 +79,12 @@ Como funciona (resumido):
 - Contas: perfis do Instagram conectados à plataforma (nome, username, cor
   de destaque).
 - Solicitações: pedidos de acesso de gente de fora, para aprovar ou negar.
-- Metas: importa uma planilha (.xlsx/.xls/.csv) com as metas de vendas do mês
-  por canal/loja e por vendedora; tem botão de baixar o template pronto.
+- Metas: lista os canais (bling_lojas) e as vendedoras (bling_vendedores) do
+  banco, cada um com um campo de R$ para a meta do mês (mês atual, anterior e
+  os dois seguintes). Sem planilha. A regra (ler o valor, achar o que mudou,
+  reescalar metas diárias já gravadas) está em metas.js, com teste ao lado.
+  Mudar o total de quem já tem meta por dia reescala os dias na mesma
+  proporção; a tela não edita dia a dia.
 - Aparência: nome da plataforma, frase de rodapé e cor de destaque por conta.
 - Dados: contadores gerais do banco + última coleta por conta + atalhos que
   mostram o comando de terminal para rodar o coletor/atualizar fotos
