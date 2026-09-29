@@ -43,7 +43,22 @@ export function validarTemplate({ nome, corpo, exemploCorpo, rodape, textoLink, 
   return p
 }
 
-/** Modelo B (versão curta). O A (`recuperacao_checkout_v1`) foi criado pela tela da Meta. */
+const EXEMPLO_LINK = '77052313848/checkouts/c1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6/hWNAbCdEfGhIjKlMnOpQrStU/recover?key=0a1b2c3d4e5f60718293a4b5c6d7e8f9&locale=pt-BR'
+
+/** Modelo A (texto completo). A primeira tentativa, feita pela tela da Meta, não foi para frente. */
+export const TEMPLATE_A = {
+  nome: 'recuperacao_checkout_v1',
+  idioma: 'pt_BR',
+  corpo: 'Oi, {{1}}! Você deixou seu carrinho na Vessel esperando por você. Guardamos tudo para você finalizar quando quiser. Se tiver dúvida sobre a peça, o prazo ou o pagamento, é só responder aqui que a gente ajuda.',
+  exemploCorpo: 'Maria',
+  rodape: 'Vessel Brasil',
+  textoLink: 'Finalizar compra',
+  baseLink: 'https://loja.vesselbrasil.com.br/',
+  exemploLink: EXEMPLO_LINK, // valor inventado, no formato real dos links (token, código e chave falsos)
+  textoResposta: 'Não quero receber',
+}
+
+/** Modelo B (versão curta). */
 export const TEMPLATE_B = {
   nome: 'recuperacao_checkout_v2',
   idioma: 'pt_BR',
