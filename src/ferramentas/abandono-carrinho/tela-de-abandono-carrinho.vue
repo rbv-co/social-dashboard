@@ -73,6 +73,8 @@
               <span class="ac-detalhe">{{ contato(c) }}</span>
               <span class="ac-detalhe">{{ dinheiro(c) }}</span>
               <span v-if="c.comprou_depois" class="selo selo-atencao">comprou depois</span>
+              <span v-if="seloDaMensagem(c)" class="selo" :class="'selo-' + seloDaMensagem(c).tipo">{{ seloDaMensagem(c).texto }}</span>
+              <span v-if="c.mensagem_status === 'enviada' && c.mensagem_enviada_em" class="ac-detalhe">enviada às {{ hora(c.mensagem_enviada_em) }}</span>
             </li>
           </ul>
         </section>
@@ -111,7 +113,7 @@ import { diasAtras } from '../../compartilhado/datas.js'
 import { paiDaTela, ROTULO_DO_PAI } from '../comercial-vessel/navegacao.js'
 import {
   MINUTOS_ATE_ABANDONO, LIMITE_ABANDONO, segundosRestantes, percentualDoPrazo,
-  formatarContagem, separarPorStatus, foiCortado,
+  formatarContagem, separarPorStatus, foiCortado, seloDaMensagem,
 } from './regras-do-abandono.js'
 
 const router = useRouter()

@@ -41,3 +41,22 @@ export function separarPorStatus(linhas) {
 
 /** A consulta bateu no limite? Então a lista pode estar cortada e a tela avisa. */
 export const foiCortado = (linhas) => linhas.length >= LIMITE_ABANDONO
+
+const MOTIVOS_IGNORADA = {
+  sem_telefone: 'sem telefone: não recebe WhatsApp',
+  telefone_invalido: 'telefone inválido',
+  pediu_para_nao_receber: 'pediu para não receber',
+  sem_link: 'sem link de recuperação',
+  nao_esta_mais_na_fila: 'já não estava na fila',
+}
+
+/** Selo do estado da mensagem de WhatsApp para os itens da Fila de mensagens. */
+export function seloDaMensagem(linha) {
+  switch (linha.mensagem_status) {
+    case 'enviando': return { texto: 'enviando…', tipo: 'info' }
+    case 'enviada': return { texto: 'mensagem enviada', tipo: 'ok' }
+    case 'falhou': return { texto: 'falhou', tipo: 'erro' }
+    case 'ignorada': return { texto: MOTIVOS_IGNORADA[linha.mensagem_motivo] ?? 'não enviada', tipo: 'neutro' }
+    default: return null
+  }
+}
