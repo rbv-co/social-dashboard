@@ -44,3 +44,25 @@ test('sem token, tópico desconhecido e corpo inválido são ignorados', () => {
 test('total ausente ou lixo vira null, não NaN', () => {
   assert.equal(decidir('checkouts/create', { token: 't', email: 'a@b.com', total_price: 'x' }).args.p_total, null)
 })
+
+test('⚠️ o nome que o cliente TROCOU no endereço vence o registro antigo de customer', () => {
+  const r = decidir('checkouts/update', {
+    token: 't', email: 'a@b.com',
+    customer: { first_name: 'Gabrie' },          // registro criado no 1º passo, não acompanha a troca
+    shipping_address: { first_name: 'Gabriel' }, // o que ele digitou depois
+  })
+  assert.equal(r.args.p_nome, 'Gabriel')
+})
+
+test('sem endereço, o nome cai para billing e depois para customer', () => {
+  const base = { token: 't', email: 'a@b.com' }
+  assert.equal(decidir('checkouts/update', { ...base, billing_address: { first_name: 'Bia' }, customer: { first_name: 'Ana' } }).args.p_nome, 'Bia')
+  assert.equal(decidir('checkouts/update', { ...base, customer: { first_name: 'Ana' } }).args.p_nome, 'Ana')
+})
+
+test('⚠️ o telefone corrigido no endereço vence o de customer', () => {
+  const r = decidir('checkouts/update', {
+    token: 't', customer: { phone: '+551100000000' }, shipping_address: { phone: '+5511999999999' },
+  })
+  assert.equal(r.args.p_telefone, '+5511999999999')
+})
