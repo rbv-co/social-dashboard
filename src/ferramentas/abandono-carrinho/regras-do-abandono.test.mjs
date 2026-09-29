@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   MINUTOS_ATE_ABANDONO, segundosRestantes, percentualDoPrazo, formatarContagem,
-  separarPorStatus, foiCortado, LIMITE_ABANDONO,
+  separarPorStatus, foiCortado, LIMITE_ABANDONO, seloDaMensagem,
 } from './regras-do-abandono.js'
 
 const T0 = new Date('2026-09-28T12:00:00Z').getTime()
@@ -52,4 +52,27 @@ test('separa por status; aguardando: o que vence primeiro em cima; demais: o mai
 test('lista que bateu no limite é marcada como cortada', () => {
   assert.equal(foiCortado(new Array(LIMITE_ABANDONO).fill({})), true)
   assert.equal(foiCortado([]), false)
+})
+
+test('seloDaMensagem: um selo por estado, e nada quando a mensagem nem começou', () => {
+  assert.equal(seloDaMensagem({ mensagem_status: null }), null)
+  assert.deepEqual(seloDaMensagem({ mensagem_status: 'enviando' }), { texto: 'enviando…', tipo: 'info' })
+  // ⚠️ "enviada" = aceita pelo Chatwoot. Ele responde 200 e só depois a Meta pode recusar (template
+  // não aprovado/pausado), então o rótulo não pode prometer "entregue".
+  assert.deepEqual(seloDaMensagem({ mensagem_status: 'enviada' }), { texto: 'enviada ao Chatwoot', tipo: 'ok' })
+  assert.deepEqual(seloDaMensagem({ mensagem_status: 'falhou', mensagem_motivo: 'enviar_template:422' }),
+    { texto: 'falhou', tipo: 'erro' })
+  assert.deepEqual(seloDaMensagem({ mensagem_status: 'falhou', mensagem_motivo: 'travada_sem_confirmacao' }),
+    { texto: 'sem confirmação: confira no Chatwoot', tipo: 'erro' })
+})
+
+test('seloDaMensagem: ignorada explica o motivo em português; motivo desconhecido não quebra', () => {
+  const motivo = (m) => seloDaMensagem({ mensagem_status: 'ignorada', mensagem_motivo: m })
+  assert.equal(motivo('sem_telefone').texto, 'sem telefone: não recebe WhatsApp')
+  assert.equal(motivo('telefone_invalido').texto, 'telefone inválido')
+  assert.equal(motivo('pediu_para_nao_receber').texto, 'pediu para não receber')
+  assert.equal(motivo('sem_link').texto, 'sem link de recuperação')
+  assert.equal(motivo('nao_esta_mais_na_fila').texto, 'já não estava na fila')
+  assert.deepEqual(motivo('algo_novo'), { texto: 'não enviada', tipo: 'neutro' })
+  assert.equal(motivo('sem_telefone').tipo, 'neutro')
 })

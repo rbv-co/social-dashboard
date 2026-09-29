@@ -41,3 +41,27 @@ export function separarPorStatus(linhas) {
 
 /** A consulta bateu no limite? Então a lista pode estar cortada e a tela avisa. */
 export const foiCortado = (linhas) => linhas.length >= LIMITE_ABANDONO
+
+const MOTIVOS_IGNORADA = {
+  sem_telefone: 'sem telefone: não recebe WhatsApp',
+  telefone_invalido: 'telefone inválido',
+  pediu_para_nao_receber: 'pediu para não receber',
+  sem_link: 'sem link de recuperação',
+  nao_esta_mais_na_fila: 'já não estava na fila',
+}
+
+/** Selo do estado da mensagem de WhatsApp para os itens da Fila de mensagens. */
+export function seloDaMensagem(linha) {
+  switch (linha.mensagem_status) {
+    case 'enviando': return { texto: 'enviando…', tipo: 'info' }
+    // "enviada" = aceita pelo Chatwoot. Ele responde 200 e só depois a Meta pode recusar o template,
+    // então o rótulo não promete "entregue".
+    case 'enviada': return { texto: 'enviada ao Chatwoot', tipo: 'ok' }
+    case 'falhou':
+      return linha.mensagem_motivo === 'travada_sem_confirmacao'
+        ? { texto: 'sem confirmação: confira no Chatwoot', tipo: 'erro' }
+        : { texto: 'falhou', tipo: 'erro' }
+    case 'ignorada': return { texto: MOTIVOS_IGNORADA[linha.mensagem_motivo] ?? 'não enviada', tipo: 'neutro' }
+    default: return null
+  }
+}
