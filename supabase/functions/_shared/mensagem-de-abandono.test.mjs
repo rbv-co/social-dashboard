@@ -2,8 +2,15 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   primeiroNome, formatarNomeCompleto, normalizarTelefone, dentroDaJanela, sufixoDoLink, montarTemplateParams, decidirEnvio, validarConfig,
-  montarTemplateParamsPedido,
+  montarTemplateParamsPedido, montarTemplateParamsInicio,
 } from './mensagem-de-abandono.js'
+
+test('⚠️ montarTemplateParamsInicio: MARKETING (não existe pedido ainda), corpo {1: primeiro nome} e NENHUM botão', () => {
+  assert.deepEqual(
+    montarTemplateParamsInicio({ nomeTemplate: 'checkout_iniciado_v1', idioma: 'pt_BR', nome: 'maysa priscila' }),
+    { name: 'checkout_iniciado_v1', category: 'MARKETING', language: 'pt_BR', processed_params: { body: { '1': 'Maysa' } } })
+  assert.equal(montarTemplateParamsInicio({ nomeTemplate: 't', idioma: 'pt_BR', nome: null }).processed_params.body['1'], 'cliente')
+})
 
 test('⚠️ montarTemplateParamsPedido: categoria UTILIDADE, corpo {1: primeiro nome, 2: número} e NENHUM botão', () => {
   assert.deepEqual(

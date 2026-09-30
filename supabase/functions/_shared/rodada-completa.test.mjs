@@ -8,13 +8,13 @@ const CHATWOOT = { CHATWOOT_URL: 'https://cw.exemplo.com', CHATWOOT_CONTA_ID: '7
 const env = (o) => (nome) => o[nome] ?? ''
 const calar = (t) => t.mock.method(console, 'error', () => {})
 
-function fakeSb({ linhasPedido = [], linhasFollowup = [] } = {}) {
+function fakeSb({ linhasPedido = [], linhasFollowup = [], linhasInicio = [] } = {}) {
   const chamadas = []
   return {
     chamadas,
     async rpc(nome, args) {
       chamadas.push([nome, args])
-      if (nome === 'pegar_da_fila') return { data: args.p_tipo === 'pedido' ? linhasPedido : linhasFollowup, error: null }
+      if (nome === 'pegar_da_fila') return { data: { pedido: linhasPedido, inicio: linhasInicio }[args.p_tipo] ?? linhasFollowup, error: null }
       if (nome === 'pegar_para_mensagem') return { data: [], error: null }
       return { data: null, error: null }
     },
@@ -37,9 +37,36 @@ const nomes = (sb) => sb.chamadas.map((c) => c[0])
 test('⚠️ nasce tudo desligado: nada é tocado, nenhum cliente do Chatwoot é criado, e o formato antigo da resposta é mantido', async () => {
   const r = await rodar({})
   assert.equal(r.status, 200)
-  assert.deepEqual(r.corpo, { ok: true, modo: 'desligado', pedido: { ok: true, modo: 'desligado' }, followup: { ok: true, modo: 'desligado' } })
+  assert.deepEqual(r.corpo, {
+    ok: true, modo: 'desligado', inicio: { ok: true, modo: 'desligado' }, pedido: { ok: true, modo: 'desligado' }, followup: { ok: true, modo: 'desligado' },
+  })
   assert.deepEqual(r.sb.chamadas, [])
   assert.equal(r.criados.length, 0)
+})
+
+test('inicio em modo lista: teto de 1 h, só os números da lista, e o modelo/texto do INICIO (não os do pedido nem do abandono)', async () => {
+  const linha = { tipo: 'inicio', chave: 'tok1', numero: null, nome: 'maysa', telefone: '19982621821', url_de_recuperacao: null, conversa_origem: null }
+  const r = await rodar({
+    ENVIO_MODO_INICIO: 'lista', ENVIO_SO_PARA: '5519982621821', TEMPLATE_INICIO: 'checkout_iniciado_v1', TEMPLATE_PEDIDO: 'nao_e_este',
+    TEMPLATE_NOME: 'nem_este', TEMPLATE_TEXTO_INICIO: 'Olá, {{1}}, tudo bem? Nós reservamos seu pedido.', ENVIO_LIMITE_POR_RODADA: '4',
+  }, { sb: fakeSb({ linhasInicio: [linha] }) })
+  const args = r.sb.chamadas.find((c) => c[0] === 'pegar_da_fila' && c[1].p_tipo === 'inicio')[1]
+  assert.deepEqual(args, { p_tipo: 'inicio', p_limite: 4, p_max_horas: 1, p_reservar: true, p_ultimos11: ['19982621821'] })
+  const envio = r.cliente.chamadas.find((c) => c[0] === 'template')[1]
+  assert.equal(envio.templateParams.name, 'checkout_iniciado_v1')
+  assert.equal(envio.texto, 'Olá, Maysa, tudo bem? Nós reservamos seu pedido.')
+  assert.equal(r.corpo.inicio.quantidade, 1)
+  assert.deepEqual(r.corpo.pedido, { ok: true, modo: 'desligado' })
+})
+
+test('INICIO_MAX_HORAS configura o teto; modo desconhecido do inicio falha fechado só nele', async (t) => {
+  calar(t)
+  const a = await rodar({ ENVIO_MODO_INICIO: 'seco', INICIO_MAX_HORAS: '2' })
+  assert.equal(a.sb.chamadas.find((c) => c[0] === 'pegar_da_fila')[1].p_max_horas, 2)
+  const b = await rodar({ ENVIO_MODO_INICIO: 'talvez', ENVIO_MODO: 'seco' })
+  assert.equal(b.status, 500)
+  assert.deepEqual(b.corpo.inicio, { ok: false, erro: 'modo_invalido', modo: 'talvez' })
+  assert.equal(b.corpo.modo, 'seco')
 })
 
 test('só o abandono ligado (como hoje): resposta com `modo` e `quantidade` no topo, teto de 24 h, cliente com caixa numérica', async () => {

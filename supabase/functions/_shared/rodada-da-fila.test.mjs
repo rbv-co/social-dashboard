@@ -14,6 +14,10 @@ const pedido = (n, extra = {}) => ({
   tipo: 'pedido', chave: `100${n}`, numero: `#100${n}`, nome: 'maysa priscila', telefone: `1998262182${n}`,
   url_de_recuperacao: null, conversa_origem: null, ...extra,
 })
+const inicio = (n, extra = {}) => ({
+  tipo: 'inicio', chave: `tok${n}`, numero: null, nome: 'maysa priscila', telefone: `1998262182${n}`,
+  url_de_recuperacao: null, conversa_origem: null, ...extra,
+})
 const followup = (n, extra = {}) => ({
   tipo: 'followup', chave: `tok${n}`, numero: null, nome: 'maysa priscila', telefone: `1998262182${n}`,
   url_de_recuperacao: `${BASE}1/checkouts/tok${n}/recover?key=SEGREDO${n}`, conversa_origem: 900 + n, ...extra,
@@ -259,6 +263,57 @@ test('⚠️ se gravar "enviada" falhar, NÃO devolve nem reenvia (fica enviando
   assert.equal(cliente.chamadas.filter((c) => c[0] === 'template').length, 1)
   assert.ok(!nomes(sb).includes('devolver_da_fila'))
   assert.equal(r.corpo.resultado[0].resultado, 'enviada_sem_gravar')
+})
+
+// ── inicio ("Nós reservamos seu pedido", assim que o checkout aparece com telefone) ──
+test('inicio, caminho feliz: contato com nome formatado, conversa e template MARKETING {1: nome} SEM botão', async () => {
+  const sb = fakeSb({ linhas: [inicio(1)] })
+  const cliente = fakeCliente()
+  const r = await rodar('inicio', sb, cliente, { maxHoras: 1 })
+  assert.equal(r.status, 200)
+  assert.deepEqual(rpcs(sb, 'pegar_da_fila'), [{ p_tipo: 'inicio', p_limite: 5, p_max_horas: 1, p_reservar: true, p_ultimos11: null }])
+  assert.deepEqual(cliente.chamadas.map((c) => c[0]), ['contato', 'conversa', 'template'])
+  assert.equal(cliente.chamadas[0][1].nome, 'Maysa Priscila')
+  const tp = cliente.chamadas[2][1].templateParams
+  assert.equal(tp.category, 'MARKETING')
+  assert.deepEqual(tp.processed_params, { body: { '1': 'Maysa' } })
+  assert.deepEqual(sb.chamadas.at(-1), ['marcar_da_fila', { p_tipo: 'inicio', p_chave: 'tok1', p_status: 'enviada', p_conversa: 22 }])
+})
+
+test('inicio: não exige LINK_BASE, não relê status de checkout e não pergunta se respondeu (a cliente acabou de chegar)', async () => {
+  const sb = fakeSb({ linhas: [inicio(1)] })
+  const cliente = fakeCliente()
+  const r = await rodar('inicio', sb, cliente, { maxHoras: 1, linkBase: '' })
+  assert.equal(r.status, 200)
+  assert.ok(!nomes(sb).includes('from:checkout_abandono'))
+  assert.ok(!cliente.chamadas.some((c) => c[0] === 'respondeu'))
+  assert.equal(cliente.chamadas.filter((c) => c[0] === 'template').length, 1)
+})
+
+test('⚠️ inicio é marketing: quem pediu para não receber é ignorado, e se a lista não puder ser lida a rodada aborta e devolve TODOS', async (t) => {
+  const sb = fakeSb({ linhas: [inicio(1)], bloqueados: ['5519982621821'] })
+  const cliente = fakeCliente()
+  await rodar('inicio', sb, cliente, { maxHoras: 1 })
+  assert.equal(cliente.chamadas.length, 0)
+  assert.deepEqual(sb.chamadas.at(-1), ['marcar_da_fila', { p_tipo: 'inicio', p_chave: 'tok1', p_status: 'ignorada', p_motivo: 'pediu_para_nao_receber' }])
+
+  calar(t)
+  const sb2 = fakeSb({ linhas: [inicio(1), inicio(2)], errBloq: { message: '504' } })
+  const r = await rodar('inicio', sb2, fakeCliente(), { maxHoras: 1 })
+  assert.equal(r.status, 500)
+  assert.deepEqual(rpcs(sb2, 'devolver_da_fila').map((a) => a.p_chave), ['tok1', 'tok2'])
+})
+
+test('inicio: o texto de pré-visualização troca {{1}}; fora da janela espera; telefone inválido é ignorado', async () => {
+  const cliente = fakeCliente()
+  await rodar('inicio', fakeSb({ linhas: [inicio(1)] }), cliente, { maxHoras: 1, templateTexto: 'Olá, {{1}}, tudo bem? Nós reservamos seu pedido.' })
+  assert.equal(cliente.chamadas.find((c) => c[0] === 'template')[1].texto, 'Olá, Maysa, tudo bem? Nós reservamos seu pedido.')
+  const fora = fakeSb({ linhas: [inicio(1)] })
+  await rodar('inicio', fora, fakeCliente(), { maxHoras: 1 }, NOITE)
+  assert.deepEqual(fora.chamadas.at(-1), ['devolver_da_fila', { p_tipo: 'inicio', p_chave: 'tok1', p_contar: false }])
+  const ruim = fakeSb({ linhas: [inicio(1, { telefone: '1932221828' })] })
+  await rodar('inicio', ruim, fakeCliente(), { maxHoras: 1 })
+  assert.equal(ruim.chamadas.at(-1)[1].p_motivo, 'telefone_invalido')
 })
 
 test('erro ao pegar da fila: 500 e nada mais é chamado', async (t) => {

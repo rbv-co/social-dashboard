@@ -110,8 +110,16 @@ CHATWOOT_CAIXA_ID, CHATWOOT_API_TOKEN, TEMPLATE_NOME, TEMPLATE_IDIOMA (pt_BR), T
 (opcional, com {{1}}), LINK_BASE, ENVIO_MODO, ENVIO_SO_PARA, ENVIO_LIMITE_POR_RODADA (10),
 ENVIO_ATRASO_MINUTOS (0), ENVIO_MAX_HORAS (24).
 
-FLUXO DE MENSAGENS (3 tipos, cada um com o SEU modo; nasce tudo desligado)
+FLUXO DE MENSAGENS (4 tipos, cada um com o SEU modo; nasce tudo desligado)
 Design: docs/superpowers/specs/2026-09-30-fluxo-de-mensagens-design.md | Plano: docs/superpowers/plans/2026-09-30-fluxo-de-mensagens.md
+  INICIO            ENVIO_MODO_INICIO      modelo TEMPLATE_INICIO (marketing, corpo {{1}} nome, SEM botão, "Nós reservamos seu
+                    pedido"), texto TEMPLATE_TEXTO_INICIO, teto INICIO_MAX_HORAS (1). Sai na HORA em que o checkout aparece com
+                    telefone (status Aguardando), não quando a cliente escolhe o pagamento. Decisão do dono (30/09).
+                    ⚠️ Na Shopify o checkout AINDA NÃO é um pedido (o pedido nasce quando ela conclui), então o modelo é
+                    marketing e não leva número de pedido. Uma vez por checkout (quando ganha telefone e ainda está Aguardando),
+                    uma por telefone a cada 12 h, só na janela 08:00-21:00 (passou de 1 h, não sai mais: nada de "reservamos
+                    seu pedido" de manhã para quem abriu o checkout à noite). Confere a lista de bloqueados (é marketing).
+                    Fila: `mensagem_fila` tipo `inicio`, preenchida por `registrar_checkout_abandono`.
   PEDIDO RECEBIDO   ENVIO_MODO_PEDIDO    modelo TEMPLATE_PEDIDO (utilidade, corpo {{1}} nome e {{2}} número, SEM botão),
                     texto TEMPLATE_TEXTO_PEDIDO, teto PEDIDO_MAX_HORAS (14). Sai no orders/create da loja online
                     (source_name web, não teste), uma vez por pedido, na janela 08:00-21:00. Pedido cancelado antes
@@ -121,8 +129,12 @@ Design: docs/superpowers/specs/2026-09-30-fluxo-de-mensagens-design.md | Plano: 
   FOLLOW-UP         ENVIO_MODO_FOLLOWUP    modelo TEMPLATE_FOLLOWUP, texto TEMPLATE_TEXTO_FOLLOWUP. Sai FOLLOWUP_APOS_HORAS
                     (48) depois da mensagem de abandono, uma vez, se não comprou e NÃO respondeu (o robô lê a conversa
                     no Chatwoot; se não conseguir ler, não envia). Teto FOLLOWUP_MAX_HORAS (24).
-Ordem da rodada: pedido, abandono, follow-up. O corpo da resposta do cron mantém as chaves do abandono no topo
-(`modo`, `quantidade`...) e traz `pedido` e `followup`. Uma passada com problema não derruba as outras.
+Ordem da rodada: inicio, pedido, abandono, follow-up. O corpo da resposta do cron mantém as chaves do abandono no topo
+(`modo`, `quantidade`...) e traz `inicio`, `pedido` e `followup`. Uma passada com problema não derruba as outras.
+Com o INICIO ligado, deixe o PEDIDO desligado (a mesma cliente receberia duas confirmações seguidas).
+
+⚠️ ANTES DE LIGAR O INICIO (modo lista -> ligado): como no pedido, a fila enche mesmo com o modo desligado, mas aqui o teto
+é de 1 hora, então o que sobrar é descartado sozinho. Não precisa limpar nada.
 
 ⚠️ ANTES DE LIGAR O PEDIDO (modo lista -> ligado): o webhook grava os pedidos em `mensagem_fila` MESMO com o
 pedido desligado, e ao ligar sairiam de uma vez os das últimas 14 h. Para começar do zero, no momento de ligar:
