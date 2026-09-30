@@ -21,6 +21,9 @@ export async function processarRodada({ sb, cliente, config, agora = new Date() 
 
   // 1) Configuração: falha FECHADA. Nada de lead é tocado com segredo ausente ou inválido.
   const problemas = validarConfig(config)
+  // Teto de horas na fila (padrão 24 = o comportamento de sempre). Para a mensagem das 24 h: atraso 1440 e teto 48.
+  const maxHoras = config.maxHoras ?? 24
+  if (!Number.isInteger(maxHoras) || maxHoras < 1) problemas.push('ENVIO_MAX_HORAS inválido (inteiro a partir de 1)')
   if (problemas.length) return { status: 500, corpo: { ok: false, erro: 'config_invalida', problemas } }
 
   // Chamada ao banco que só LOGA o erro (o item já foi decidido; não há o que refazer aqui).
@@ -38,6 +41,7 @@ export async function processarRodada({ sb, cliente, config, agora = new Date() 
     p_atraso_min: config.atrasoMin,
     p_reservar: !seco,
     p_ultimos11: modo === 'lista' ? config.soPara.map((n) => n.slice(-11)) : null,
+    p_max_horas: maxHoras,
   })
   if (error) return { status: 500, corpo: { ok: false, erro: 'falha_ao_pegar', detalhe: error.message } }
   const lote = linhas ?? []
