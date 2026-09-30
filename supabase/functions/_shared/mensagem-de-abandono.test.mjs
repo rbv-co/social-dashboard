@@ -11,6 +11,28 @@ test('primeiroNome: só o primeiro nome, com fallback e teto', () => {
   assert.equal(primeiroNome('A'.repeat(80)).length, 30)
 })
 
+test('⚠️ primeiroNome: tudo minúsculo ou tudo maiúsculo vira "Nome" (com acento, hífen e apóstrofo)', () => {
+  const casos = {
+    'maria da silva': 'Maria', 'MARIA': 'Maria', 'MARIA DA SILVA': 'Maria', 'joão': 'João', 'élcio': 'Élcio', 'ÁLVARO': 'Álvaro',
+    'ana-clara': 'Ana-Clara', 'ANA-CLARA': 'Ana-Clara', "d'avila": "D'Avila", 'luis': 'Luis', '  luis   magrinho ': 'Luis',
+  }
+  for (const [entrada, esperado] of Object.entries(casos)) assert.equal(primeiroNome(entrada), esperado, `"${entrada}"`)
+})
+
+test('⚠️ primeiroNome: maiúsculas e minúsculas misturadas foram digitadas de propósito e ficam como vieram', () => {
+  for (const nome of ['Maria', 'DeAndre', 'McKenzie', 'Ana-Clara', 'JoÃo']) assert.equal(primeiroNome(nome), nome)
+})
+
+test('primeiroNome: número e emoji não quebram o formatador', () => {
+  assert.equal(primeiroNome('123'), '123')
+  assert.equal(primeiroNome('maria😊'), 'Maria😊')
+})
+
+test('montarTemplateParams: a variável do nome já vai formatada', () => {
+  const tp = montarTemplateParams({ nomeTemplate: 't', idioma: 'pt_BR', nome: 'maysa priscila', sufixoUrl: 'x' })
+  assert.equal(tp.processed_params.body['1'], 'Maysa')
+})
+
 test('⚠️ normalizarTelefone: só celular brasileiro válido (55 + DDD + 9 + 8 dígitos)', () => {
   assert.equal(normalizarTelefone('19982621828'), '5519982621828')
   assert.equal(normalizarTelefone('+5519982621828'), '5519982621828')
