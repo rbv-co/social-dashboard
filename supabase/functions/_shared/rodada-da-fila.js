@@ -6,7 +6,7 @@
 //
 // • pedido: transacional (orders/create). Não consulta bloqueados nem status de checkout, e não tem link.
 // • inicio: "Nós reservamos seu pedido", assim que o checkout aparece com telefone. É marketing (ainda não existe pedido):
-//   confere bloqueados. Sem link, sem botão, sem releitura de status (a cliente acabou de chegar).
+//   confere bloqueados e leva o link do checkout no botão. Sem releitura de status (a cliente acabou de chegar).
 // • followup: marketing. Confere bloqueados, RELÊ o status do checkout e NÃO envia se a cliente já respondeu.
 //   ⚠️ "não consegui ler" NUNCA vira "pode enviar": falha na leitura devolve o item (contando tentativa).
 import {
@@ -26,8 +26,8 @@ function decidirLinha({ tipo, linha, bloqueados, agora, baseLink }) {
   let sufixoUrl = null
   if (tipo === 'followup' || tipo === 'inicio') {
     if (bloqueados.has(telefone)) return { acao: 'ignorar', motivo: 'pediu_para_nao_receber' }
-  }
-  if (tipo === 'followup') {
+    // inicio: o link pode chegar num evento seguinte do checkout; espera sem gastar tentativa (o teto de horas encerra).
+    if (tipo === 'inicio' && !linha.url_de_recuperacao) return { acao: 'esperar', motivo: 'sem_link_ainda' }
     sufixoUrl = sufixoDoLink(linha.url_de_recuperacao, baseLink)
     if (!sufixoUrl) return { acao: 'ignorar', motivo: 'sem_link' }
   }
@@ -45,7 +45,7 @@ export async function processarFila({ sb, cliente, config, tipo, agora = new Dat
   const followup = tipo === 'followup'
 
   // 1) Configuração: falha FECHADA (segredo ausente ou inválido não toca em ninguém).
-  const problemas = validarConfig({ ...config, exigeLink: followup })
+  const problemas = validarConfig({ ...config, exigeLink: followup || tipo === 'inicio' })
   if (!Number.isInteger(config.maxHoras) || config.maxHoras < 1) problemas.push('ENVIO_MAX_HORAS inválido (inteiro a partir de 1)')
   if (problemas.length) return { status: 500, corpo: { ok: false, erro: 'config_invalida', problemas } }
 
@@ -144,7 +144,7 @@ export async function processarFila({ sb, cliente, config, tipo, agora = new Dat
         .replace('{{1}}', primeiroNome(linha.nome)).replace('{{2}}', linha.numero ?? '')
       const base = { nomeTemplate: config.templateNome, idioma: config.idioma, nome: linha.nome }
       const templateParams = followup ? montarTemplateParams({ ...base, sufixoUrl: d.sufixoUrl })
-        : tipo === 'inicio' ? montarTemplateParamsInicio(base)
+        : tipo === 'inicio' ? montarTemplateParamsInicio({ ...base, sufixoUrl: d.sufixoUrl })
           : montarTemplateParamsPedido({ ...base, numero: linha.numero })
       await cliente.enviarTemplate({ conversaId, texto, templateParams })
       // ⚠️ A mensagem JÁ SAIU. Se gravar falhar, não devolve nem reenvia: fica `enviando` e, passados 10 min, vira

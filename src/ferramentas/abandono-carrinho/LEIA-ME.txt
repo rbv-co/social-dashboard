@@ -112,9 +112,12 @@ ENVIO_ATRASO_MINUTOS (0), ENVIO_MAX_HORAS (24).
 
 FLUXO DE MENSAGENS (4 tipos, cada um com o SEU modo; nasce tudo desligado)
 Design: docs/superpowers/specs/2026-09-30-fluxo-de-mensagens-design.md | Plano: docs/superpowers/plans/2026-09-30-fluxo-de-mensagens.md
-  INICIO            ENVIO_MODO_INICIO      modelo TEMPLATE_INICIO (marketing, corpo {{1}} nome, SEM botão, "Nós reservamos seu
-                    pedido"), texto TEMPLATE_TEXTO_INICIO, teto INICIO_MAX_HORAS (1). Sai na HORA em que o checkout aparece com
-                    telefone (status Aguardando), não quando a cliente escolhe o pagamento. Decisão do dono (30/09).
+  INICIO            ENVIO_MODO_INICIO      modelo TEMPLATE_INICIO (checkout_iniciado_v2, marketing, corpo {{1}} nome, dois botões:
+                    "Finalizar compra" (link do checkout, PRIMEIRO) e "Falar c/ personal shopper" (resposta rápida, sem
+                    parâmetro; só coloca a frase na conversa, quem atende é a personal shopper), texto TEMPLATE_TEXTO_INICIO,
+                    teto INICIO_MAX_HORAS (1). Sai na HORA em que o checkout aparece com telefone (status Aguardando), não
+                    quando a cliente escolhe o pagamento. Decisão do dono (30/09). Sem o link ainda (a Shopify pode mandar num
+                    evento seguinte), o robô espera sem gastar tentativa; link de outra base é ignorado.
                     ⚠️ Na Shopify o checkout AINDA NÃO é um pedido (o pedido nasce quando ela conclui), então o modelo é
                     marketing e não leva número de pedido. Uma vez por checkout (quando ganha telefone e ainda está Aguardando),
                     uma por telefone a cada 12 h, só na janela 08:00-21:00 (passou de 1 h, não sai mais: nada de "reservamos

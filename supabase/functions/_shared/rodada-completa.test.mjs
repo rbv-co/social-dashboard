@@ -45,7 +45,7 @@ test('⚠️ nasce tudo desligado: nada é tocado, nenhum cliente do Chatwoot é
 })
 
 test('inicio em modo lista: teto de 1 h, só os números da lista, e o modelo/texto do INICIO (não os do pedido nem do abandono)', async () => {
-  const linha = { tipo: 'inicio', chave: 'tok1', numero: null, nome: 'maysa', telefone: '19982621821', url_de_recuperacao: null, conversa_origem: null }
+  const linha = { tipo: 'inicio', chave: 'tok1', numero: null, nome: 'maysa', telefone: '19982621821', url_de_recuperacao: 'https://loja.com.br/1/checkouts/tok1/recover?key=K', conversa_origem: null }
   const r = await rodar({
     ENVIO_MODO_INICIO: 'lista', ENVIO_SO_PARA: '5519982621821', TEMPLATE_INICIO: 'checkout_iniciado_v1', TEMPLATE_PEDIDO: 'nao_e_este',
     TEMPLATE_NOME: 'nem_este', TEMPLATE_TEXTO_INICIO: 'Olá, {{1}}, tudo bem? Nós reservamos seu pedido.', ENVIO_LIMITE_POR_RODADA: '4',
@@ -54,6 +54,7 @@ test('inicio em modo lista: teto de 1 h, só os números da lista, e o modelo/te
   assert.deepEqual(args, { p_tipo: 'inicio', p_limite: 4, p_max_horas: 1, p_reservar: true, p_ultimos11: ['19982621821'] })
   const envio = r.cliente.chamadas.find((c) => c[0] === 'template')[1]
   assert.equal(envio.templateParams.name, 'checkout_iniciado_v1')
+  assert.deepEqual(envio.templateParams.processed_params.buttons, [{ type: 'url', parameter: '1/checkouts/tok1/recover?key=K' }])
   assert.equal(envio.texto, 'Olá, Maysa, tudo bem? Nós reservamos seu pedido.')
   assert.equal(r.corpo.inicio.quantidade, 1)
   assert.deepEqual(r.corpo.pedido, { ok: true, modo: 'desligado' })
