@@ -4,31 +4,28 @@ import { readFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-// O comportamento da rodada é testado de verdade em _shared/rodada-de-mensagens.test.mjs.
-// Aqui só se garante o que a casca da edge (index.ts) e o agendamento têm que manter.
+// O comportamento das rodadas é testado de verdade em _shared/rodada-completa.test.mjs (modos, nasce desligado,
+// modo inválido, seco sem cliente) e nos testes de cada rodada. Aqui só se garante o que a casca da edge
+// (index.ts) e o agendamento têm que manter.
 const aqui = dirname(fileURLToPath(import.meta.url))
 const TS = readFileSync(join(aqui, 'index.ts'), 'utf8')
 const CRON = readFileSync(join(aqui, '../../../db/migrations/2026-09-30-zzz-enviar-mensagem-abandono-cron.sql'), 'utf8')
 
-test('⚠️ nasce desligado: sem ENVIO_MODO o robô não faz nada, e a checagem do cron vem primeiro', () => {
-  assert.match(TS, /Deno\.env\.get\('ENVIO_MODO'\) \|\| 'desligado'/)
-  assert.ok(TS.indexOf('exigirSegredoDeCron') < TS.indexOf("MODO === 'desligado'"))
-  assert.match(TS, /if \(MODO === 'desligado'\) return responder\(\{ ok: true, modo: MODO \}\)/)
+test('⚠️ a checagem do segredo do cron vem ANTES de qualquer rodada', () => {
+  assert.match(TS, /exigirSegredoDeCron\(req, 'enviar-mensagem-abandono'\)/)
+  assert.ok(TS.indexOf('exigirSegredoDeCron(req') < TS.indexOf('rodarTudo({'))
 })
 
-test('modo desconhecido falha fechado (500) antes de tocar em qualquer lead', () => {
-  assert.match(TS, /modo_invalido/)
-  assert.ok(TS.indexOf('modo_invalido') < TS.indexOf('processarRodada({'))
+test('a edge delega tudo ao módulo testado e não decide nada sozinha', () => {
+  assert.match(TS, /import \{ rodarTudo \} from '\.\.\/_shared\/rodada-completa\.js'/)
+  assert.match(TS, /rodarTudo\(\{ env, sb, criarCliente/)
+  assert.ok(!/decidirEnvio|marcar_mensagem|devolver_mensagem|marcar_da_fila|processarRodada|processarFila/.test(TS),
+    'a lógica das rodadas não deve voltar para o index.ts')
 })
 
-test('a edge delega a rodada ao módulo testado e não decide nada sozinha', () => {
-  assert.match(TS, /import \{ processarRodada \} from '\.\.\/_shared\/rodada-de-mensagens\.js'/)
-  assert.match(TS, /processarRodada\(\{ sb, cliente, config \}\)/)
-  assert.ok(!/decidirEnvio|marcar_mensagem|devolver_mensagem/.test(TS), 'a lógica da rodada não deve voltar para o index.ts')
-})
-
-test('⚠️ modo seco não recebe cliente do Chatwoot (nem existe conexão para chamar)', () => {
-  assert.match(TS, /const cliente = MODO === 'seco' \? null : criarClienteChatwoot/)
+test('a configuração é lida a CADA chamada (não congelada no início da instância)', () => {
+  assert.match(TS, /const env = \(nome: string\) => Deno\.env\.get\(nome\) \?\? ''/)
+  assert.ok(!/^const [A-Z_]+ = Deno\.env\.get\('ENVIO_/m.test(TS), 'nenhum ENVIO_* pode virar constante de módulo')
 })
 
 test('o token do Chatwoot nunca é logado', () => {
