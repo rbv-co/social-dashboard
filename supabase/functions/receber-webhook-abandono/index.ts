@@ -19,6 +19,7 @@
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { assinaturaValida } from '../_shared/verificar-webhook-shopify.js';
 import { decidir } from '../_shared/abandono-de-checkout.js';
+import { aplicarDecisao } from '../_shared/aplicar-decisao.js';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -26,12 +27,6 @@ const SEGREDOS_DO_WEBHOOK = [
   Deno.env.get('SHOPIFY_WEBHOOK_SECRET'),
   Deno.env.get('SHOPIFY_CLIENT_SECRET'),
 ].filter((s): s is string => !!s);
-
-const FUNCAO_DO_PEDIDO = {
-  comprou: 'marcar_checkout_comprou',
-  pagamento_pendente: 'marcar_checkout_pagamento_pendente',
-  reabrir: 'reabrir_checkout_abandono',
-} as const;
 
 const responder = (corpo: unknown, status = 200) =>
   new Response(JSON.stringify(corpo), { status, headers: { 'Content-Type': 'application/json' } });
@@ -49,18 +44,7 @@ Deno.serve(async (req) => {
   try { corpo = JSON.parse(corpoCru); } catch { return responder({ ok: true, ignorado: 'json_invalido' }); }
 
   const decisao = decidir(req.headers.get('x-shopify-topic') ?? '', corpo);
-  if (decisao.acao === 'ignorar') return responder({ ok: true, ignorado: decisao.motivo });
-
-  const sb = createClient(SUPABASE_URL, SERVICE_KEY);
-  // ação -> função do banco (db/migrations/2026-09-29-abandono-de-checkout.sql e 2026-09-30-...-pagamento-pendente.sql)
-  const { error } = decisao.acao === 'registrar'
-    ? await sb.rpc('registrar_checkout_abandono', decisao.args)
-    : await sb.rpc(FUNCAO_DO_PEDIDO[decisao.acao], { p_token: decisao.token });
-
-  // Mesmo raciocínio do receber-webhook-checkout: a Shopify reenvia se não vir 2xx,
-  // e erro de banco não se resolve com retentativa. Loga e responde 200.
-  // Reenvio do mesmo evento é inofensivo: as duas funções são idempotentes.
-  if (error) console.error('falha ao gravar abandono de checkout:', error.message);
-
-  return responder({ ok: true });
+  // Grava e responde (ver aplicar-decisao.js): erro de banco devolve 500 para a Shopify reenviar.
+  const { status, corpo: resposta } = await aplicarDecisao(createClient(SUPABASE_URL, SERVICE_KEY), decisao);
+  return responder(resposta, status);
 });

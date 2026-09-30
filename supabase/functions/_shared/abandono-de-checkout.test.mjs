@@ -39,9 +39,24 @@ test('⚠️ orders/create com pagamento PENDENTE (Pix/boleto) não é compra: v
 
 test('orders/create já pago (cartão) é compra; orders/paid sempre é compra', () => {
   for (const financial_status of ['paid', 'authorized', 'partially_paid']) {
-    assert.deepEqual(decidir('orders/create', { checkout_token: 'zzz', financial_status }), { acao: 'comprou', token: 'zzz' })
+    assert.deepEqual(decidir('orders/create', { checkout_token: 'zzz', financial_status }), { acao: 'comprou', token: 'zzz', email: null, telefone: null })
   }
-  assert.deepEqual(decidir('orders/paid', { checkout_token: 'zzz' }), { acao: 'comprou', token: 'zzz' })
+  assert.deepEqual(decidir('orders/paid', { checkout_token: 'zzz' }), { acao: 'comprou', token: 'zzz', email: null, telefone: null })
+})
+
+test('⚠️ compra leva o contato do PEDIDO (o endereço vence o cadastro), para tirar da fila os outros checkouts da mesma pessoa', () => {
+  const pedido = { checkout_token: 'zzz', email: 'ana@x.com', customer: { email: 'velho@x.com', phone: '+5511000000000' }, shipping_address: { phone: '+5519982621828' } }
+  assert.deepEqual(decidir('orders/paid', pedido), { acao: 'comprou', token: 'zzz', email: 'ana@x.com', telefone: '+5519982621828' })
+  assert.deepEqual(decidir('orders/paid', { checkout_token: 'zzz', contact_email: 'b@x.com', billing_address: { phone: '+5511988887777' } }),
+    { acao: 'comprou', token: 'zzz', email: 'b@x.com', telefone: '+5511988887777' })
+})
+
+test('⚠️ pedido PAGO sem checkout (admin, WhatsApp) mas com contato também tira o abandonado da fila; pendente ou cancelado, não', () => {
+  const contato = { email: 'ana@x.com', phone: '+5519982621828', checkout_token: null }
+  assert.deepEqual(decidir('orders/paid', contato), { acao: 'comprou', token: null, email: 'ana@x.com', telefone: '+5519982621828' })
+  assert.equal(decidir('orders/create', { ...contato, financial_status: 'paid' }).acao, 'comprou')
+  assert.equal(decidir('orders/create', { ...contato, financial_status: 'pending' }).motivo, 'pedido_sem_checkout')
+  assert.equal(decidir('orders/cancelled', contato).motivo, 'pedido_sem_checkout')
 })
 
 test('orders/cancelled (Pix expirado) reabre o checkout', () => {

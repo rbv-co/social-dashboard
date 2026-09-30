@@ -15,7 +15,8 @@ const lead = (n, extra = {}) => ({
   url_de_recuperacao: `${BASE}1/checkouts/t${n}/recover?key=SEGREDO${n}`, ...extra,
 })
 
-function fakeSb({ linhas = [], errPegar = null, errBloq = null, bloqueados = [], falhaMarcarEnviada = false } = {}) {
+// `statusAgora`: o status que o checkout tem NA HORA de enviar ({ token: status }); o padrão é seguir na fila.
+function fakeSb({ linhas = [], errPegar = null, errBloq = null, bloqueados = [], falhaMarcarEnviada = false, statusAgora = {}, errStatus = null } = {}) {
   const chamadas = []
   return {
     chamadas,
@@ -26,6 +27,12 @@ function fakeSb({ linhas = [], errPegar = null, errBloq = null, bloqueados = [],
       return { data: null, error: null }
     },
     from(tabela) {
+      if (tabela === 'checkout_abandono') {
+        return { select: () => ({ eq: (_col, token) => ({ maybeSingle: async () => {
+          chamadas.push(['from:checkout_abandono', token])
+          return { data: errStatus ? null : { status: statusAgora[token] ?? 'fila_envio' }, error: errStatus }
+        } }) }) }
+      }
       return { select: () => ({ in: async (_col, valores) => {
         chamadas.push([`from:${tabela}`, valores])
         return { data: bloqueados.filter((b) => valores.includes(b)).map((telefone) => ({ telefone })), error: errBloq }
@@ -154,6 +161,33 @@ test('⚠️ rede/timeout NO ENVIO do template: falhou (retentar duplicaria); re
   const antes = fakeSb({ linhas: [lead(1)] })
   await rodar(antes, fakeCliente({ falharEm: 'conversa', erro: new ErroChatwoot(0, 'fetch failed', 'abrir_conversa') }))
   assert.deepEqual(antes.chamadas.at(-1), ['devolver_mensagem', { p_token: 't1', p_contar: true }])
+})
+
+test('⚠️ o status é RELIDO na hora de enviar: quem comprou entre a reserva e o envio não recebe (e o item seguinte segue)', async () => {
+  const sb = fakeSb({ linhas: [lead(1), lead(2)], statusAgora: { t1: 'comprou' } })
+  const cliente = fakeCliente()
+  const r = await rodar(sb, cliente)
+  assert.equal(cliente.chamadas.filter((c) => c[0] === 'template').length, 1)
+  assert.equal(cliente.chamadas.find((c) => c[0] === 'contato')[1].telefone, '5519982621822')
+  assert.ok(sb.chamadas.some((c) => c[0] === 'marcar_mensagem' && c[1].p_token === 't1' && c[1].p_status === 'ignorada' && c[1].p_motivo === 'nao_esta_mais_na_fila'))
+  assert.deepEqual(r.corpo.resultado.map((x) => x.resultado), ['ignorada', 'enviada'])
+})
+
+test('⚠️ pagamento pendente na hora de enviar também barra (não está mais em fila_envio)', async () => {
+  const sb = fakeSb({ linhas: [lead(1)], statusAgora: { t1: 'pagamento_pendente' } })
+  const cliente = fakeCliente()
+  await rodar(sb, cliente)
+  assert.equal(cliente.chamadas.length, 0)
+})
+
+test('⚠️ se a releitura do status falhar, NÃO envia: devolve à fila contando tentativa (não vira laço infinito)', async (t) => {
+  calar(t)
+  const sb = fakeSb({ linhas: [lead(1)], errStatus: { message: '504' } })
+  const cliente = fakeCliente()
+  const r = await rodar(sb, cliente)
+  assert.equal(cliente.chamadas.length, 0)
+  assert.deepEqual(sb.chamadas.at(-1), ['devolver_mensagem', { p_token: 't1', p_contar: true }])
+  assert.equal(r.corpo.resultado[0].resultado, 'esperando')
 })
 
 test('fora da janela: devolve sem contar tentativa e não fala com o Chatwoot', async () => {
