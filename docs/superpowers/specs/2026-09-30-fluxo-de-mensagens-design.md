@@ -25,7 +25,7 @@ Trocar a mensagem única de 10 minutos por um fluxo de três mensagens, cada uma
 | Ponto | Padrão | Por quê |
 |---|---|---|
 | Prazo do follow-up | 48 h depois da mensagem de 24 h (≈ 72 h do abandono), uma vez | Dá tempo de a cliente decidir sem parecer insistência |
-| Texto do abandono | "ainda estão disponíveis", **não** "reservado" | A Shopify não segura estoque depois que o checkout expira; "reservado" seria promessa falsa |
+| Texto do abandono | ~~"ainda estão disponíveis"~~ **Decidido pelo dono em 30/09: "Nós reservamos sua bolsa"** | O dono afirma que reserva a bolsa. O texto cita "bolsa" fixo: se o carrinho tiver outro produto, a frase fica errada |
 | Pedido: número do pedido | Inclui `{{2}}` (número do pedido) | Confirmação sem número parece mensagem genérica |
 | Pedido: janela | Respeita 08:00–21:00 (espera até de manhã, teto de 14 h) | Confirmação às 23 h incomoda mais do que ajuda |
 | Texto do follow-up | Ajuda, sem desconto e sem "última chance" (proposto abaixo) | Intenção real ainda não definida |
@@ -44,8 +44,14 @@ Criados pela API do Chatwoot (`feat/template-com-botoes`), como o v3. Em portugu
 | Modelo | Categoria | Corpo (proposto) | Botões |
 |---|---|---|---|
 | `pedido_recebido_v1` | UTILIDADE | Olá, {{1}}, tudo bem? Já recebemos o seu pedido {{2}}. | nenhum |
-| `abandono_curadoria_v1` | MARKETING | Oi, {{1}}! As peças que você escolheu ainda estão disponíveis. Aconteceu alguma coisa? Se ficou dúvida de tamanho, prazo ou pagamento, é só responder aqui. | "Finalizar compra" (URL dinâmica, índice 0), "Não quero receber" |
+| `abandono_curadoria_v3` (o v1 e o v2, submetidos antes, com outro texto ou botão, não serão usados) | MARKETING | Oi, {{1}}! Nós reservamos sua bolsa. Aconteceu alguma coisa? | "Finalizar compra" (URL dinâmica, índice 0), "Falar c/ personal shopper" (resposta rápida), "Não quero receber" (resposta rápida) |
 | `abandono_followup_v1` | MARKETING | Oi, {{1}}! Passando para saber se ficou alguma dúvida sobre as peças que você escolheu. Se preferir, é só responder por aqui que a gente te ajuda. | "Finalizar compra" (URL dinâmica, índice 0), "Não quero receber" |
+
+**Botão "Falar c/ personal shopper":** é uma resposta rápida da Meta. Ao tocar, o WhatsApp coloca o texto do botão como mensagem da
+cliente na conversa do Chatwoot (caixa "Whatsapp Varejo"), sem automação: quem atende é a personal shopper. O texto do botão tem
+no máximo 25 caracteres (a Meta recusou "Falar com personal shopper", 26, por isso "Falar c/ personal shopper", 25). As respostas rápidas ficam juntas, depois do botão de
+link, que precisa continuar sendo o primeiro. Como qualquer mensagem recebida conta como "respondeu", quem toca no botão também
+não recebe o follow-up.
 
 Regras do modelo de utilidade: sem link, sem promoção, sem convite à compra. Texto comercial faz a Meta reclassificar
 como marketing (mais caro e sujeito ao teto de marketing).
@@ -90,7 +96,7 @@ webhook checkouts/*   ─► checkout_abandono (fila_envio) ─► 24 h ──�
 
 **Abandono às 24 h**
 - Igual ao robô atual (celular válido, janela, link de recuperação, um por telefone em 7 dias, status relido no envio),
-  com elegibilidade entre 24 h e 48 h depois de `fila_envio_em` e o modelo `abandono_curadoria_v1`.
+  com elegibilidade entre 24 h e 48 h depois de `fila_envio_em` e o modelo `abandono_curadoria_v3`.
 - Quem já recebeu a mensagem antiga de 10 min não recebe esta (regra de telefone do #290).
 
 **Follow-up**
@@ -112,7 +118,7 @@ webhook checkouts/*   ─► checkout_abandono (fila_envio) ─► 24 h ──�
 
 Novos: `ENVIO_MODO_PEDIDO`, `ENVIO_MODO_FOLLOWUP`, `TEMPLATE_PEDIDO`, `TEMPLATE_FOLLOWUP`, `TEMPLATE_TEXTO_PEDIDO`,
 `TEMPLATE_TEXTO_FOLLOWUP`, `ENVIO_MAX_HORAS` (48), `FOLLOWUP_APOS_HORAS` (48). Existentes que mudam na troca:
-`ENVIO_ATRASO_MINUTOS` (0 → 1440) e `TEMPLATE_NOME` (v3 → `abandono_curadoria_v1`).
+`ENVIO_ATRASO_MINUTOS` (0 → 1440) e `TEMPLATE_NOME` (v3 → `abandono_curadoria_v3`).
 **Isso torna obsoleto o ajuste `ENVIO_ATRASO_MINUTOS=3` pedido antes**: a troca leva o valor a 1440.
 
 ## Implantação (ordem)
