@@ -108,7 +108,26 @@ Nunca ir para `ligado` sem passar por `seco` e `lista`.
 Segredos (gravados pelo dono no Supabase; NUNCA no código): CHATWOOT_URL, CHATWOOT_CONTA_ID,
 CHATWOOT_CAIXA_ID, CHATWOOT_API_TOKEN, TEMPLATE_NOME, TEMPLATE_IDIOMA (pt_BR), TEMPLATE_TEXTO
 (opcional, com {{1}}), LINK_BASE, ENVIO_MODO, ENVIO_SO_PARA, ENVIO_LIMITE_POR_RODADA (10),
-ENVIO_ATRASO_MINUTOS (0).
+ENVIO_ATRASO_MINUTOS (0), ENVIO_MAX_HORAS (24).
+
+FLUXO DE MENSAGENS (3 tipos, cada um com o SEU modo; nasce tudo desligado)
+Design: docs/superpowers/specs/2026-09-30-fluxo-de-mensagens-design.md | Plano: docs/superpowers/plans/2026-09-30-fluxo-de-mensagens.md
+  PEDIDO RECEBIDO   ENVIO_MODO_PEDIDO    modelo TEMPLATE_PEDIDO (utilidade, corpo {{1}} nome e {{2}} número, SEM botão),
+                    texto TEMPLATE_TEXTO_PEDIDO, teto PEDIDO_MAX_HORAS (14). Sai no orders/create da loja online
+                    (source_name web, não teste), uma vez por pedido, na janela 08:00-21:00. Pedido cancelado antes
+                    do envio não recebe. Não conta na regra de "um por telefone".
+  ABANDONO          ENVIO_MODO             modelo TEMPLATE_NOME. Hoje 10 min; para as 24 h: ENVIO_ATRASO_MINUTOS=1440
+                    e ENVIO_MAX_HORAS=48 (e TEMPLATE_NOME com o modelo de curadoria). É só configuração.
+  FOLLOW-UP         ENVIO_MODO_FOLLOWUP    modelo TEMPLATE_FOLLOWUP, texto TEMPLATE_TEXTO_FOLLOWUP. Sai FOLLOWUP_APOS_HORAS
+                    (48) depois da mensagem de abandono, uma vez, se não comprou e NÃO respondeu (o robô lê a conversa
+                    no Chatwoot; se não conseguir ler, não envia). Teto FOLLOWUP_MAX_HORAS (24).
+Ordem da rodada: pedido, abandono, follow-up. O corpo da resposta do cron mantém as chaves do abandono no topo
+(`modo`, `quantidade`...) e traz `pedido` e `followup`. Uma passada com problema não derruba as outras.
+
+⚠️ ANTES DE LIGAR O PEDIDO (modo lista -> ligado): o webhook grava os pedidos em `mensagem_fila` MESMO com o
+pedido desligado, e ao ligar sairiam de uma vez os das últimas 14 h. Para começar do zero, no momento de ligar:
+  update public.mensagem_fila set mensagem_status = 'ignorada', mensagem_motivo = 'anterior_ao_lancamento'
+   where tipo = 'pedido' and mensagem_status is null;
 
 Regras que protegem o cliente e o número:
 - Uma mensagem por checkout. Quem voltou para a fila depois de um Pix expirado e já recebeu NÃO
@@ -123,8 +142,8 @@ Regras que protegem o cliente e o número:
   `ignorada / nao_esta_mais_na_fila`. Se a leitura falhar, não envia (devolve à fila, até 3 tentativas).
 - ⚠️ Erro de banco no webhook devolve 500 (a Shopify reenvia); as funções são idempotentes. Ao publicar,
   aplicar a MIGRATION antes de publicar a edge: a edge nova chama `marcar_checkout_comprou` com 3 argumentos.
-- ⚠️ Só recebe quem entrou na fila nas ÚLTIMAS 24 HORAS. A fila antiga nunca é mensageada: ao
-  ligar o robô, os checkouts de dias atrás ficam de fora (decisão registrada no plano).
+- ⚠️ Só recebe quem entrou na fila dentro do teto de horas (ENVIO_MAX_HORAS, padrão 24). A fila antiga nunca é
+  mensageada: ao ligar o robô, os checkouts de dias atrás ficam de fora (decisão registrada no plano).
 - Só celular brasileiro válido; quem só deixou e-mail não recebe WhatsApp.
 - Só entre 08:00 e 21:00 (Brasília).
 - Quem responde "Não quero receber" (ou PARAR/SAIR) é bloqueado para sempre
