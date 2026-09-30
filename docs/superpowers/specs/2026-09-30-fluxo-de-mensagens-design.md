@@ -44,12 +44,12 @@ Criados pela API do Chatwoot (`feat/template-com-botoes`), como o v3. Em portugu
 | Modelo | Categoria | Corpo (proposto) | Botões |
 |---|---|---|---|
 | `pedido_recebido_v1` | UTILIDADE | Olá, {{1}}, tudo bem? Já recebemos o seu pedido {{2}}. | nenhum |
-| `abandono_curadoria_v2` (o v1, com outro texto e sem o botão novo, foi submetido e não será usado) | MARKETING | Oi, {{1}}! Nós reservamos sua bolsa. Aconteceu alguma coisa? | "Finalizar compra" (URL dinâmica, índice 0), "Chamar personal shopper" (resposta rápida), "Não quero receber" (resposta rápida) |
+| `abandono_curadoria_v3` (o v1 e o v2, submetidos antes, com outro texto ou botão, não serão usados) | MARKETING | Oi, {{1}}! Nós reservamos sua bolsa. Aconteceu alguma coisa? | "Finalizar compra" (URL dinâmica, índice 0), "Falar c/ personal shopper" (resposta rápida), "Não quero receber" (resposta rápida) |
 | `abandono_followup_v1` | MARKETING | Oi, {{1}}! Passando para saber se ficou alguma dúvida sobre as peças que você escolheu. Se preferir, é só responder por aqui que a gente te ajuda. | "Finalizar compra" (URL dinâmica, índice 0), "Não quero receber" |
 
-**Botão "Chamar personal shopper":** é uma resposta rápida da Meta. Ao tocar, o WhatsApp coloca o texto do botão como mensagem da
+**Botão "Falar c/ personal shopper":** é uma resposta rápida da Meta. Ao tocar, o WhatsApp coloca o texto do botão como mensagem da
 cliente na conversa do Chatwoot (caixa "Whatsapp Varejo"), sem automação: quem atende é a personal shopper. O texto do botão tem
-no máximo 25 caracteres (a Meta recusou "Falar com personal shopper", 26). As respostas rápidas ficam juntas, depois do botão de
+no máximo 25 caracteres (a Meta recusou "Falar com personal shopper", 26, por isso "Falar c/ personal shopper", 25). As respostas rápidas ficam juntas, depois do botão de
 link, que precisa continuar sendo o primeiro. Como qualquer mensagem recebida conta como "respondeu", quem toca no botão também
 não recebe o follow-up.
 
@@ -96,7 +96,7 @@ webhook checkouts/*   ─► checkout_abandono (fila_envio) ─► 24 h ──�
 
 **Abandono às 24 h**
 - Igual ao robô atual (celular válido, janela, link de recuperação, um por telefone em 7 dias, status relido no envio),
-  com elegibilidade entre 24 h e 48 h depois de `fila_envio_em` e o modelo `abandono_curadoria_v2`.
+  com elegibilidade entre 24 h e 48 h depois de `fila_envio_em` e o modelo `abandono_curadoria_v3`.
 - Quem já recebeu a mensagem antiga de 10 min não recebe esta (regra de telefone do #290).
 
 **Follow-up**
@@ -118,7 +118,7 @@ webhook checkouts/*   ─► checkout_abandono (fila_envio) ─► 24 h ──�
 
 Novos: `ENVIO_MODO_PEDIDO`, `ENVIO_MODO_FOLLOWUP`, `TEMPLATE_PEDIDO`, `TEMPLATE_FOLLOWUP`, `TEMPLATE_TEXTO_PEDIDO`,
 `TEMPLATE_TEXTO_FOLLOWUP`, `ENVIO_MAX_HORAS` (48), `FOLLOWUP_APOS_HORAS` (48). Existentes que mudam na troca:
-`ENVIO_ATRASO_MINUTOS` (0 → 1440) e `TEMPLATE_NOME` (v3 → `abandono_curadoria_v2`).
+`ENVIO_ATRASO_MINUTOS` (0 → 1440) e `TEMPLATE_NOME` (v3 → `abandono_curadoria_v3`).
 **Isso torna obsoleto o ajuste `ENVIO_ATRASO_MINUTOS=3` pedido antes**: a troca leva o valor a 1440.
 
 ## Implantação (ordem)
