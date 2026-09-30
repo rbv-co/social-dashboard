@@ -1,13 +1,15 @@
 // supabase/functions/_shared/rodada-completa.js
 //
-// A rodada do robô inteira: três passadas independentes (pedido recebido, abandono, follow-up), cada uma com o
-// seu MODO. A edge `enviar-mensagem-abandono` só lê o ambiente e chama isto (com `env`, `sb` e `criarCliente`
+// A rodada do robô inteira: quatro passadas independentes (inicio do checkout, pedido recebido, abandono, follow-up),
+// cada uma com o seu MODO. A edge `enviar-mensagem-abandono` só lê o ambiente e chama isto (com `env`, `sb` e `criarCliente`
 // injetados, para testar sem Deno nem rede). Design: docs/superpowers/specs/2026-09-30-fluxo-de-mensagens-design.md
 //
 // ⚠️ NASCE TUDO DESLIGADO. Modo por tipo: desligado (padrão: não faz nada) | seco (decide e devolve o que enviaria;
 // não reserva, não grava, não agenda, não chama o Chatwoot) | lista (só os telefones de ENVIO_SO_PARA) | ligado.
 // Nunca ir para `ligado` sem passar por `seco` e `lista`. Um modo desconhecido falha fechado (500) só naquele tipo.
 //
+//   ENVIO_MODO_INICIO    inicio     (INICIO_MAX_HORAS=1, TEMPLATE_INICIO, TEMPLATE_TEXTO_INICIO) "Nós reservamos seu pedido",
+//                                   assim que o checkout aparece com telefone (Aguardando)
 //   ENVIO_MODO           abandono   (ENVIO_ATRASO_MINUTOS, ENVIO_MAX_HORAS=24, TEMPLATE_NOME, TEMPLATE_TEXTO)
 //   ENVIO_MODO_PEDIDO    pedido     (PEDIDO_MAX_HORAS=14, TEMPLATE_PEDIDO, TEMPLATE_TEXTO_PEDIDO)
 //   ENVIO_MODO_FOLLOWUP  follow-up  (FOLLOWUP_APOS_HORAS=48, FOLLOWUP_MAX_HORAS=24, TEMPLATE_FOLLOWUP, TEMPLATE_TEXTO_FOLLOWUP)
@@ -23,7 +25,7 @@ const numero = (valor, padrao) => Number(valor || padrao)
 /**
  * @param {{env:(nome:string)=>string, sb:object, criarCliente:(cfg:object)=>object, agora?:Date}} p
  * @returns {Promise<{status:number, corpo:object}>}
- *   corpo: as chaves do abandono NO TOPO (formato de sempre) + `pedido` e `followup`.
+ *   corpo: as chaves do abandono NO TOPO (formato de sempre) + `inicio`, `pedido` e `followup`.
  */
 export async function rodarTudo({ env, sb, criarCliente, agora = new Date() }) {
   const chatwoot = { url: env('CHATWOOT_URL'), contaId: env('CHATWOOT_CONTA_ID'), caixaId: env('CHATWOOT_CAIXA_ID'), token: env('CHATWOOT_API_TOKEN') }
@@ -36,6 +38,13 @@ export async function rodarTudo({ env, sb, criarCliente, agora = new Date() }) {
   }
 
   const passadas = [
+    {
+      nome: 'inicio', modo: env('ENVIO_MODO_INICIO') || 'desligado',
+      rodar: (cliente, modo) => processarFila({
+        sb, cliente, agora, tipo: 'inicio',
+        config: { ...base, modo, maxHoras: numero(env('INICIO_MAX_HORAS'), 1), templateNome: env('TEMPLATE_INICIO'), templateTexto: env('TEMPLATE_TEXTO_INICIO') },
+      }),
+    },
     {
       nome: 'pedido', modo: env('ENVIO_MODO_PEDIDO') || 'desligado',
       rodar: (cliente, modo) => processarFila({
@@ -93,5 +102,5 @@ export async function rodarTudo({ env, sb, criarCliente, agora = new Date() }) {
       status = Math.max(status, 500)
     }
   }
-  return { status, corpo: { ...corpos.abandono, ok: status === 200, pedido: corpos.pedido, followup: corpos.followup } }
+  return { status, corpo: { ...corpos.abandono, ok: status === 200, inicio: corpos.inicio, pedido: corpos.pedido, followup: corpos.followup } }
 }

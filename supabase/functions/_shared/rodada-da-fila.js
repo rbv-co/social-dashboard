@@ -1,15 +1,17 @@
 // supabase/functions/_shared/rodada-da-fila.js
 //
-// Uma RODADA das mensagens de PEDIDO RECEBIDO e de FOLLOW-UP do abandono, com `sb` (Supabase) e `cliente`
-// (Chatwoot) injetados. Irmã de rodada-de-mensagens.js (o abandono), que NÃO é tocada de propósito: está no ar.
-// Design: docs/superpowers/specs/2026-09-30-fluxo-de-mensagens-design.md
+// Uma RODADA das mensagens de INICIO (checkout com telefone), PEDIDO RECEBIDO e FOLLOW-UP do abandono, com `sb`
+// (Supabase) e `cliente` (Chatwoot) injetados. Irmã de rodada-de-mensagens.js (o abandono), que NÃO é tocada de
+// propósito: está no ar. Design: docs/superpowers/specs/2026-09-30-fluxo-de-mensagens-design.md
 //
-// • pedido: transacional. Não consulta bloqueados nem status de checkout, e não tem link.
+// • pedido: transacional (orders/create). Não consulta bloqueados nem status de checkout, e não tem link.
+// • inicio: "Nós reservamos seu pedido", assim que o checkout aparece com telefone. É marketing (ainda não existe pedido):
+//   confere bloqueados. Sem link, sem botão, sem releitura de status (a cliente acabou de chegar).
 // • followup: marketing. Confere bloqueados, RELÊ o status do checkout e NÃO envia se a cliente já respondeu.
 //   ⚠️ "não consegui ler" NUNCA vira "pode enviar": falha na leitura devolve o item (contando tentativa).
 import {
-  dentroDaJanela, formatarNomeCompleto, montarTemplateParams, montarTemplateParamsPedido, normalizarTelefone,
-  primeiroNome, sufixoDoLink, validarConfig,
+  dentroDaJanela, formatarNomeCompleto, montarTemplateParams, montarTemplateParamsInicio, montarTemplateParamsPedido,
+  normalizarTelefone, primeiroNome, sufixoDoLink, validarConfig,
 } from './mensagem-de-abandono.js'
 import { classificarErro, ErroChatwoot } from './cliente-chatwoot.js'
 
@@ -22,8 +24,10 @@ function decidirLinha({ tipo, linha, bloqueados, agora, baseLink }) {
   const telefone = normalizarTelefone(linha.telefone)
   if (!telefone) return { acao: 'ignorar', motivo: 'telefone_invalido' }
   let sufixoUrl = null
-  if (tipo === 'followup') {
+  if (tipo === 'followup' || tipo === 'inicio') {
     if (bloqueados.has(telefone)) return { acao: 'ignorar', motivo: 'pediu_para_nao_receber' }
+  }
+  if (tipo === 'followup') {
     sufixoUrl = sufixoDoLink(linha.url_de_recuperacao, baseLink)
     if (!sufixoUrl) return { acao: 'ignorar', motivo: 'sem_link' }
   }
@@ -65,10 +69,10 @@ export async function processarFila({ sb, cliente, config, tipo, agora = new Dat
   }
   const lote = linhas ?? []
 
-  // 2) Bloqueados (só o follow-up é marketing). ⚠️ Se a leitura FALHAR, não se envia nada.
+  // 2) Bloqueados (o pedido é transacional; inicio e follow-up são marketing). ⚠️ Se a leitura FALHAR, não se envia nada.
   let bloqueados = new Set()
   const telefones = [...new Set(lote.map((l) => normalizarTelefone(l.telefone)).filter(Boolean))]
-  if (followup && telefones.length) {
+  if ((followup || tipo === 'inicio') && telefones.length) {
     const r = await sb.from('contatos_sem_mensagem').select('telefone').in('telefone', telefones)
     if (r.error) {
       console.error('falha ao ler bloqueados; rodada abortada:', r.error.message)
@@ -138,9 +142,10 @@ export async function processarFila({ sb, cliente, config, tipo, agora = new Dat
       const conversaId = await cliente.abrirConversa({ contatoId, telefone: d.telefone })
       const texto = (config.templateTexto || `[template ${config.templateNome}]`)
         .replace('{{1}}', primeiroNome(linha.nome)).replace('{{2}}', linha.numero ?? '')
-      const templateParams = followup
-        ? montarTemplateParams({ nomeTemplate: config.templateNome, idioma: config.idioma, nome: linha.nome, sufixoUrl: d.sufixoUrl })
-        : montarTemplateParamsPedido({ nomeTemplate: config.templateNome, idioma: config.idioma, nome: linha.nome, numero: linha.numero })
+      const base = { nomeTemplate: config.templateNome, idioma: config.idioma, nome: linha.nome }
+      const templateParams = followup ? montarTemplateParams({ ...base, sufixoUrl: d.sufixoUrl })
+        : tipo === 'inicio' ? montarTemplateParamsInicio(base)
+          : montarTemplateParamsPedido({ ...base, numero: linha.numero })
       await cliente.enviarTemplate({ conversaId, texto, templateParams })
       // ⚠️ A mensagem JÁ SAIU. Se gravar falhar, não devolve nem reenvia: fica `enviando` e, passados 10 min, vira
       // `falhou/travada_sem_confirmacao` (visível), nunca uma segunda mensagem.
