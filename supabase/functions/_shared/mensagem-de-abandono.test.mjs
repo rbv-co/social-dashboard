@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  primeiroNome, normalizarTelefone, dentroDaJanela, sufixoDoLink, montarTemplateParams, decidirEnvio, validarConfig,
+  primeiroNome, formatarNomeCompleto, normalizarTelefone, dentroDaJanela, sufixoDoLink, montarTemplateParams, decidirEnvio, validarConfig,
 } from './mensagem-de-abandono.js'
 
 test('primeiroNome: só o primeiro nome, com fallback e teto', () => {
@@ -21,6 +21,20 @@ test('⚠️ primeiroNome: tudo minúsculo ou tudo maiúsculo vira "Nome" (com a
 
 test('⚠️ primeiroNome: maiúsculas e minúsculas misturadas foram digitadas de propósito e ficam como vieram', () => {
   for (const nome of ['Maria', 'DeAndre', 'McKenzie', 'Ana-Clara', 'JoÃo']) assert.equal(primeiroNome(nome), nome)
+})
+
+test('⚠️ formatarNomeCompleto: cada palavra vira "Nome", com "da/de/do/das/dos/e" em minúsculas no meio', () => {
+  const casos = {
+    'maysa priscila': 'Maysa Priscila', 'MARIA DA SILVA': 'Maria da Silva', 'joão de souza e silva': 'João de Souza e Silva',
+    'ana-clara dos santos': 'Ana-Clara dos Santos', '  maria   silva ': 'Maria Silva', 'da silva': 'Da Silva',
+    'MARIA DAS DORES': 'Maria das Dores', 'maria mcKenzie': 'Maria mcKenzie',
+  }
+  for (const [entrada, esperado] of Object.entries(casos)) assert.equal(formatarNomeCompleto(entrada), esperado, `"${entrada}"`)
+})
+
+test('formatarNomeCompleto: palavra com maiúsculas misturadas fica como veio; vazio ou não-texto vira null (sem "cliente")', () => {
+  assert.equal(formatarNomeCompleto('maria DeAndre'), 'Maria DeAndre')
+  for (const v of [null, undefined, '', '   ', 42]) assert.equal(formatarNomeCompleto(v), null)
 })
 
 test('primeiroNome: número e emoji não quebram o formatador', () => {

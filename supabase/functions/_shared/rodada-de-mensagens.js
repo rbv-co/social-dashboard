@@ -3,7 +3,9 @@
 // Uma RODADA do robô de mensagens de abandono, com `sb` (Supabase) e `cliente` (Chatwoot)
 // injetados: a edge só monta as dependências, e é aqui que a lógica é testada de verdade.
 // Design: docs/superpowers/specs/2026-09-29-mensagem-de-abandono-design.md
-import { decidirEnvio, montarTemplateParams, normalizarTelefone, primeiroNome, validarConfig } from './mensagem-de-abandono.js'
+import {
+  decidirEnvio, formatarNomeCompleto, montarTemplateParams, normalizarTelefone, primeiroNome, validarConfig,
+} from './mensagem-de-abandono.js'
 import { classificarErro, ErroChatwoot } from './cliente-chatwoot.js'
 
 /** Mostra o sufixo do link sem a chave secreta de recuperação (a resposta do cron fica em log). */
@@ -84,7 +86,7 @@ export async function processarRodada({ sb, cliente, config, agora = new Date() 
     }
 
     try {
-      const contatoId = await cliente.acharOuCriarContato({ nome: d.nome, telefone: d.telefone })
+      const contatoId = await cliente.acharOuCriarContato({ nome: formatarNomeCompleto(d.nome), telefone: d.telefone })
       const conversaId = await cliente.abrirConversa({ contatoId, telefone: d.telefone })
       const texto = (config.templateTexto || `[template ${config.templateNome}]`).replace('{{1}}', primeiroNome(d.nome))
       await cliente.enviarTemplate({

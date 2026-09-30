@@ -73,6 +73,21 @@ test('caminho feliz: contato → conversa → template, e grava enviada com o id
   assert.deepEqual(r.corpo.resultado, [{ token: 't1', resultado: 'enviada' }])
 })
 
+test('⚠️ o contato no Chatwoot recebe o nome COMPLETO já formatado ("maysa priscila" -> "Maysa Priscila"); a variável, só o primeiro', async () => {
+  const sb = fakeSb({ linhas: [lead(1, { nome: 'maysa priscila' })] })
+  const cliente = fakeCliente()
+  await rodar(sb, cliente)
+  assert.equal(cliente.chamadas[0][1].nome, 'Maysa Priscila')
+  assert.equal(cliente.chamadas.find((c) => c[0] === 'template')[1].templateParams.processed_params.body['1'], 'Maysa')
+})
+
+test('sem nome no checkout, o contato é criado sem nome (o cliente do Chatwoot cai no telefone)', async () => {
+  const sb = fakeSb({ linhas: [lead(1, { nome: null })] })
+  const cliente = fakeCliente()
+  await rodar(sb, cliente)
+  assert.equal(cliente.chamadas[0][1].nome, null)
+})
+
 test('⚠️ CRÍTICO: falha ao ler os bloqueados aborta a rodada e devolve TODOS os reservados (nunca envia sem checar)', async (t) => {
   calar(t)
   const sb = fakeSb({ linhas: [lead(1), lead(2)], errBloq: { message: '504' } })
