@@ -50,13 +50,13 @@ Chatwoot (API), Meta (modelos).
 - `candidatos_para_mensagem` e `pegar_para_mensagem` ganham `p_max_horas int default 24` (a assinatura antiga sai; senão a chamada com nomes fica ambígua).
 
 **Casos de teste (SQL de verdade):**
-- [ ] pedido: registrar duas vezes o mesmo `pedido_id` cria uma linha; dois pedidos do mesmo telefone são dois; `pegar_da_fila('pedido')` entrega ambos.
-- [ ] pedido mais velho que `p_max_horas` não é entregue; cancelar antes do envio vira `ignorada / pedido_cancelado`; depois de `enviando` não muda.
-- [ ] follow-up: só agenda checkout `fila_envio` com mensagem `enviada` entre 48 h e 72 h atrás; não agenda quem comprou, quem está em `pagamento_pendente` nem quem já tem follow-up; rodar duas vezes não duplica.
-- [ ] follow-up: dois checkouts do mesmo telefone no mesmo lote entregam um só; telefone com follow-up `enviando` bloqueia.
-- [ ] reserva: `p_reservar false` não grava nada; `marcar_da_fila` só finaliza quem está `enviando`; `devolver_da_fila` conta tentativa e esgota em 3; `liberar_travadas_da_fila` manda `enviando` há mais de 10 min para `falhou`.
-- [ ] abandono: com `p_atraso_min = 1440` e `p_max_horas = 48`, elegível só entre 24 h e 48 h; sem parâmetros o comportamento de hoje (24 h) não muda.
-- [ ] permissões: só `service_role` executa as funções novas; tabela sem acesso para `anon`/`authenticated`.
+- [x] pedido: registrar duas vezes o mesmo `pedido_id` cria uma linha; dois pedidos do mesmo telefone são dois; `pegar_da_fila('pedido')` entrega ambos.
+- [x] pedido mais velho que `p_max_horas` não é entregue; cancelar antes do envio vira `ignorada / pedido_cancelado`; depois de `enviando` não muda.
+- [x] follow-up: só agenda checkout `fila_envio` com mensagem `enviada` entre 48 h e 72 h atrás; não agenda quem comprou, quem está em `pagamento_pendente` nem quem já tem follow-up; rodar duas vezes não duplica.
+- [x] follow-up: dois checkouts do mesmo telefone no mesmo lote entregam um só; telefone com follow-up `enviando` bloqueia.
+- [x] reserva: `p_reservar false` não grava nada; `marcar_da_fila` só finaliza quem está `enviando`; `devolver_da_fila` conta tentativa e esgota em 3; `liberar_travadas_da_fila` manda `enviando` há mais de 10 min para `falhou`.
+- [x] abandono: com `p_atraso_min = 1440` e `p_max_horas = 48`, elegível só entre 24 h e 48 h; sem parâmetros o comportamento de hoje (24 h) não muda.
+- [x] permissões: só `service_role` executa as funções novas; tabela sem acesso para `anon`/`authenticated`.
 
 ### Task 2: regras puras em JS
 
@@ -108,6 +108,20 @@ Chatwoot (API), Meta (modelos).
 
 - `pedido_recebido_v1` (UTILIDADE, sem botões) e `abandono_curadoria_v1` (MARKETING, botões como o v3): criar, sincronizar e esperar `APPROVED`.
 - **Follow-up:** só depois de o dono confirmar o texto.
+
+## Progresso (registro da execução)
+
+- Tasks 1 a 7: **concluídas** (testes vermelhos antes do código, depois verdes; `node --test 'supabase/functions/**/*.test.mjs'` 1004/1004;
+  `npm test` sem falha nova em relação à execução anterior).
+- **Ruling (Task 2):** `validarConfig` ganhou o parâmetro `exigeLink` (padrão `true`) em vez de uma `validarConfigFila` nova. Menor diff,
+  o abandono não muda. Custo se errado: nenhum.
+- **Ruling (Task 7):** a lógica das três passadas foi para um módulo novo, `_shared/rodada-completa.js`, com testes de comportamento
+  (nasce desligado, modo inválido por tipo, seco sem cliente, exceção isolada). O `index.ts` da edge ficou só como casca, e
+  `enviar-mensagem-abandono/modos.test.mjs` (que conferia o TEXTO do `index.ts` por regex) foi reescrito para a nova casca.
+  Custo se errado: um arquivo a mais.
+- **Ruling (Task 4):** o follow-up abre uma conversa nova (como o abandono), em vez de escrever na conversa de origem, porque este é o
+  caminho já validado em produção. Custo: uma conversa a mais na caixa por follow-up.
+- Falta: Task 8 (modelos na Meta) e Task 9 (publicar e ligar por etapas).
 
 ### Task 9: publicar e validar
 
