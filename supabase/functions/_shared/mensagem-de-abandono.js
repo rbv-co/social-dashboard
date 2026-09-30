@@ -100,14 +100,15 @@ export function montarTemplateParamsPedido({ nomeTemplate, idioma, nome, numero 
 
 /**
  * `template_params` da mensagem de INICIO ("Nós reservamos seu pedido"), enviada quando o checkout aparece com telefone.
- * MARKETING: ainda não existe pedido, então não é transacional. Corpo {1: nome}, sem botão e sem link.
+ * MARKETING: ainda não existe pedido, então não é transacional. Corpo {1: nome} e o link do checkout no PRIMEIRO botão
+ * (o de resposta rápida "Falar c/ personal shopper" não leva parâmetro).
  */
-export function montarTemplateParamsInicio({ nomeTemplate, idioma, nome }) {
+export function montarTemplateParamsInicio({ nomeTemplate, idioma, nome, sufixoUrl }) {
   return {
     name: nomeTemplate,
     category: 'MARKETING',
     language: idioma,
-    processed_params: { body: { '1': primeiroNome(nome) } },
+    processed_params: { body: { '1': primeiroNome(nome) }, buttons: [{ type: 'url', parameter: sufixoUrl }] },
   }
 }
 

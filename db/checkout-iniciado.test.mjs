@@ -12,6 +12,7 @@ const banco = bancoDescartavel([
   '2026-09-30-zzzz-abandono-sem-duplicidade.sql',
   '2026-09-30-zzzzz-fila-de-mensagens.sql',
   '2026-09-30-zzzzzz-checkout-iniciado.sql',
+  '2026-09-30-zzzzzzz-checkout-iniciado-com-link.sql',
 ])
 const { sql } = banco
 before(() => banco.iniciar())
@@ -20,8 +21,9 @@ const opcoes = { skip: temPg ? false : 'Postgres local não encontrado' }
 
 const limpar = () => sql('delete from public.mensagem_fila; delete from public.checkout_abandono')
 const lit = (v) => (v === null ? 'null' : `'${v}'`)
-const registrar = (token, { tel = null, email = 'a@x.com', nome = 'ana silva' } = {}) =>
-  sql(`select public.registrar_checkout_abandono('${token}', ${lit(email)}, ${lit(tel)}, ${lit(nome)}, 100, 'BRL', 'https://loja/${token}')`)
+const registrar = (token, { tel = null, email = 'a@x.com', nome = 'ana silva', url = `https://loja/${token}` } = {}) =>
+  sql(`select public.registrar_checkout_abandono('${token}', ${lit(email)}, ${lit(tel)}, ${lit(nome)}, 100, 'BRL', ${lit(url)})`)
+const linkDaFila = (chave) => sql(`select coalesce(url_de_recuperacao, '(sem link)') from public.mensagem_fila where tipo = 'inicio' and chave = '${chave}'`)
 const inicios = () => sql(`select coalesce(string_agg(chave, ',' order by chave), '') from public.mensagem_fila where tipo = 'inicio'`)
 const pegar = (extra = {}) => {
   const { max = 1, reservar = 'true' } = extra
@@ -105,6 +107,32 @@ test('o follow-up e o pedido seguem iguais: follow-up agrupa por telefone, pedid
                                                                      ('pedido', '1', '11988887777'), ('pedido', '2', '11988887777')`)
   assert.equal(sql(`select string_agg(chave, ',' order by chave) from public.pegar_da_fila('followup', 10, 24, false)`), 'f1')
   assert.equal(sql(`select string_agg(chave, ',' order by chave) from public.pegar_da_fila('pedido', 10, 24, false)`), '1,2')
+})
+
+test('⚠️ o link do checkout vai junto para a fila (o botão "Finalizar compra" precisa dele)', opcoes, () => {
+  limpar()
+  registrar('l1', { tel: '19982621828' })
+  assert.equal(linkDaFila('l1'), 'https://loja/l1')
+})
+
+test('⚠️ sem link no primeiro evento: o link que chega num evento seguinte entra na linha enquanto ela não foi enviada', opcoes, () => {
+  limpar()
+  registrar('l2', { tel: '19982621828', url: null })
+  assert.equal(linkDaFila('l2'), '(sem link)')
+  registrar('l2', { tel: '19982621828', url: 'https://loja/l2' })
+  assert.equal(linkDaFila('l2'), 'https://loja/l2')
+  assert.equal(sql(`select count(*) from public.mensagem_fila where tipo = 'inicio'`), '1') // continua uma só
+})
+
+test('o link já gravado não é trocado por outro, e depois de enviada a linha não muda mais', opcoes, () => {
+  limpar()
+  registrar('l3', { tel: '19982621828', url: 'https://loja/primeiro' })
+  registrar('l3', { tel: '19982621828', url: 'https://loja/segundo' })
+  assert.equal(linkDaFila('l3'), 'https://loja/primeiro')
+  registrar('l4', { tel: '11988887777', url: null })
+  sql(`update public.mensagem_fila set mensagem_status = 'enviada' where chave = 'l4'`)
+  registrar('l4', { tel: '11988887777', url: 'https://loja/tarde' })
+  assert.equal(linkDaFila('l4'), '(sem link)')
 })
 
 test('funções continuam fechadas: só o service_role executa registrar_checkout_abandono e candidatos_da_fila', opcoes, () => {

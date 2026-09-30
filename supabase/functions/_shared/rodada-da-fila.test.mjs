@@ -16,7 +16,7 @@ const pedido = (n, extra = {}) => ({
 })
 const inicio = (n, extra = {}) => ({
   tipo: 'inicio', chave: `tok${n}`, numero: null, nome: 'maysa priscila', telefone: `1998262182${n}`,
-  url_de_recuperacao: null, conversa_origem: null, ...extra,
+  url_de_recuperacao: `${BASE}1/checkouts/tok${n}/recover?key=SEGREDO${n}`, conversa_origem: null, ...extra,
 })
 const followup = (n, extra = {}) => ({
   tipo: 'followup', chave: `tok${n}`, numero: null, nome: 'maysa priscila', telefone: `1998262182${n}`,
@@ -266,7 +266,7 @@ test('⚠️ se gravar "enviada" falhar, NÃO devolve nem reenvia (fica enviando
 })
 
 // ── inicio ("Nós reservamos seu pedido", assim que o checkout aparece com telefone) ──
-test('inicio, caminho feliz: contato com nome formatado, conversa e template MARKETING {1: nome} SEM botão', async () => {
+test('inicio, caminho feliz: contato com nome formatado, conversa e template MARKETING {1: nome} com o link no botão', async () => {
   const sb = fakeSb({ linhas: [inicio(1)] })
   const cliente = fakeCliente()
   const r = await rodar('inicio', sb, cliente, { maxHoras: 1 })
@@ -276,18 +276,32 @@ test('inicio, caminho feliz: contato com nome formatado, conversa e template MAR
   assert.equal(cliente.chamadas[0][1].nome, 'Maysa Priscila')
   const tp = cliente.chamadas[2][1].templateParams
   assert.equal(tp.category, 'MARKETING')
-  assert.deepEqual(tp.processed_params, { body: { '1': 'Maysa' } })
+  assert.deepEqual(tp.processed_params, { body: { '1': 'Maysa' }, buttons: [{ type: 'url', parameter: '1/checkouts/tok1/recover?key=SEGREDO1' }] })
   assert.deepEqual(sb.chamadas.at(-1), ['marcar_da_fila', { p_tipo: 'inicio', p_chave: 'tok1', p_status: 'enviada', p_conversa: 22 }])
 })
 
-test('inicio: não exige LINK_BASE, não relê status de checkout e não pergunta se respondeu (a cliente acabou de chegar)', async () => {
+test('inicio: exige LINK_BASE (o botão precisa do link), não relê status de checkout e não pergunta se respondeu', async () => {
   const sb = fakeSb({ linhas: [inicio(1)] })
   const cliente = fakeCliente()
-  const r = await rodar('inicio', sb, cliente, { maxHoras: 1, linkBase: '' })
+  const r = await rodar('inicio', sb, cliente, { maxHoras: 1 })
   assert.equal(r.status, 200)
   assert.ok(!nomes(sb).includes('from:checkout_abandono'))
   assert.ok(!cliente.chamadas.some((c) => c[0] === 'respondeu'))
-  assert.equal(cliente.chamadas.filter((c) => c[0] === 'template').length, 1)
+  const sem = await rodar('inicio', fakeSb({ linhas: [inicio(1)] }), fakeCliente(), { maxHoras: 1, linkBase: '' })
+  assert.equal(sem.status, 500)
+  assert.equal(sem.corpo.erro, 'config_invalida')
+})
+
+test('⚠️ inicio sem link AINDA (a Shopify pode mandar o link num evento seguinte): espera sem gastar tentativa; link de outra base é ignorado', async () => {
+  const sb = fakeSb({ linhas: [inicio(1, { url_de_recuperacao: null })] })
+  const cliente = fakeCliente()
+  const r = await rodar('inicio', sb, cliente, { maxHoras: 1 })
+  assert.equal(cliente.chamadas.length, 0)
+  assert.deepEqual(sb.chamadas.at(-1), ['devolver_da_fila', { p_tipo: 'inicio', p_chave: 'tok1', p_contar: false }])
+  assert.deepEqual(r.corpo.resultado, [{ chave: 'tok1', resultado: 'esperando', motivo: 'sem_link_ainda' }])
+  const outra = fakeSb({ linhas: [inicio(1, { url_de_recuperacao: 'https://outra.com/x' })] })
+  await rodar('inicio', outra, fakeCliente(), { maxHoras: 1 })
+  assert.equal(outra.chamadas.at(-1)[1].p_motivo, 'sem_link')
 })
 
 test('⚠️ inicio é marketing: quem pediu para não receber é ignorado, e se a lista não puder ser lida a rodada aborta e devolve TODOS', async (t) => {

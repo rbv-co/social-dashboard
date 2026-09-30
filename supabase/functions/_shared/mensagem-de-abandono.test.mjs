@@ -5,11 +5,14 @@ import {
   montarTemplateParamsPedido, montarTemplateParamsInicio,
 } from './mensagem-de-abandono.js'
 
-test('⚠️ montarTemplateParamsInicio: MARKETING (não existe pedido ainda), corpo {1: primeiro nome} e NENHUM botão', () => {
+test('⚠️ montarTemplateParamsInicio: MARKETING (não existe pedido ainda), corpo {1: primeiro nome} e o link no PRIMEIRO botão', () => {
   assert.deepEqual(
-    montarTemplateParamsInicio({ nomeTemplate: 'checkout_iniciado_v1', idioma: 'pt_BR', nome: 'maysa priscila' }),
-    { name: 'checkout_iniciado_v1', category: 'MARKETING', language: 'pt_BR', processed_params: { body: { '1': 'Maysa' } } })
-  assert.equal(montarTemplateParamsInicio({ nomeTemplate: 't', idioma: 'pt_BR', nome: null }).processed_params.body['1'], 'cliente')
+    montarTemplateParamsInicio({ nomeTemplate: 'checkout_iniciado_v2', idioma: 'pt_BR', nome: 'maysa priscila', sufixoUrl: 'x/y' }),
+    {
+      name: 'checkout_iniciado_v2', category: 'MARKETING', language: 'pt_BR',
+      processed_params: { body: { '1': 'Maysa' }, buttons: [{ type: 'url', parameter: 'x/y' }] },
+    })
+  assert.equal(montarTemplateParamsInicio({ nomeTemplate: 't', idioma: 'pt_BR', nome: null, sufixoUrl: 'x' }).processed_params.body['1'], 'cliente')
 })
 
 test('⚠️ montarTemplateParamsPedido: categoria UTILIDADE, corpo {1: primeiro nome, 2: número} e NENHUM botão', () => {
