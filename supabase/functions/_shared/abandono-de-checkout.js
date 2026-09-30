@@ -8,12 +8,21 @@
 // telefone não há WhatsApp de recuperação. Só que "sem contato" também é a
 // regra do Shopify para NÃO haver abandono, então checkout sem os dois é ignorado.
 
-const texto = (v) => (typeof v === 'string' && v.trim() ? v.trim() : null)
+export const texto = (v) => (typeof v === 'string' && v.trim() ? v.trim() : null)
 
 // Nome e sobrenome de um bloco do payload (endereço ou customer). Antes só o first_name
 // era guardado e "Luis Fulano" aparecia como "Luis". Quem manda a mensagem que quiser só
 // o primeiro nome separa na hora de enviar (a parte antes do primeiro espaço).
-const nomeDe = (p) => [texto(p?.first_name), texto(p?.last_name)].filter(Boolean).join(' ') || null
+export const nomeDe = (p) => [texto(p?.first_name), texto(p?.last_name)].filter(Boolean).join(' ') || null
+
+/** Contato do PEDIDO: o que foi digitado no endereço vence o cadastro do cliente (`customer`). */
+export function contatoDoPedido(corpo) {
+  return {
+    email: texto(corpo.email) ?? texto(corpo.contact_email) ?? texto(corpo.customer?.email),
+    telefone: texto(corpo.phone) ?? texto(corpo.shipping_address?.phone)
+      ?? texto(corpo.billing_address?.phone) ?? texto(corpo.customer?.phone),
+  }
+}
 
 // Pedido só conta como COMPRA quando está pago (ou autorizado). Pix e boleto criam o pedido
 // ANTES de pagar, com financial_status 'pending' — isso NÃO é compra (visto em 28/09/2026:
@@ -34,9 +43,7 @@ export function decidir(topico, corpo) {
     const pago = topico === 'orders/paid' || PAGO.includes(corpo.financial_status)
     // Contato do PEDIDO (o endereço vence o cadastro, como no checkout). Serve para tirar da fila os
     // OUTROS checkouts da mesma pessoa: quem abandona um e compra por outro não pode receber a mensagem.
-    const email = texto(corpo.email) ?? texto(corpo.contact_email) ?? texto(corpo.customer?.email)
-    const telefone = texto(corpo.phone) ?? texto(corpo.shipping_address?.phone)
-      ?? texto(corpo.billing_address?.phone) ?? texto(corpo.customer?.phone)
+    const { email, telefone } = contatoDoPedido(corpo)
     if (!token) {
       // Pedido pago sem checkout (admin, WhatsApp) também é uma compra dessa pessoa.
       if (topico !== 'orders/cancelled' && pago && (email || telefone)) return { acao: 'comprou', token: null, email, telefone }

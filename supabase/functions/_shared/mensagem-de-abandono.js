@@ -85,6 +85,19 @@ export function montarTemplateParams({ nomeTemplate, idioma, nome, sufixoUrl }) 
   }
 }
 
+/**
+ * `template_params` da mensagem de PEDIDO RECEBIDO: categoria UTILIDADE, corpo {1: nome, 2: número do pedido}
+ * e nenhum botão (nada de link, para a Meta não reclassificar como marketing).
+ */
+export function montarTemplateParamsPedido({ nomeTemplate, idioma, nome, numero }) {
+  return {
+    name: nomeTemplate,
+    category: 'UTILITY',
+    language: idioma,
+    processed_params: { body: { '1': primeiroNome(nome), '2': numero } },
+  }
+}
+
 const LIMITE_MAXIMO_POR_RODADA = 100
 
 /**
@@ -92,13 +105,14 @@ const LIMITE_MAXIMO_POR_RODADA = 100
  * (vazia = ok). O objetivo é falhar FECHADO: segredo ausente ou inválido nunca pode virar
  * "sem limite" nem "link quebrado para todos".
  * `modo` seco não fala com o Chatwoot, então não exige Chatwoot nem template.
+ * `exigeLink` (padrão true): a mensagem de pedido não tem link e não exige LINK_BASE.
  */
-export function validarConfig({ modo, limite, linkBase, templateNome, chatwoot = {}, soPara = [] }) {
+export function validarConfig({ modo, limite, linkBase, templateNome, chatwoot = {}, soPara = [], exigeLink = true }) {
   const problemas = []
   if (!Number.isInteger(limite) || limite < 1 || limite > LIMITE_MAXIMO_POR_RODADA) {
     problemas.push(`ENVIO_LIMITE_POR_RODADA inválido (inteiro de 1 a ${LIMITE_MAXIMO_POR_RODADA})`)
   }
-  if (!linkBase || !linkBase.endsWith('/')) problemas.push('LINK_BASE vazio ou sem a barra final')
+  if (exigeLink && (!linkBase || !linkBase.endsWith('/'))) problemas.push('LINK_BASE vazio ou sem a barra final')
   if (modo === 'seco') return problemas
   if (!templateNome) problemas.push('TEMPLATE_NOME vazio')
   if (!/^https?:\/\//.test(chatwoot.url ?? '')) problemas.push('CHATWOOT_URL vazio ou sem http(s)')

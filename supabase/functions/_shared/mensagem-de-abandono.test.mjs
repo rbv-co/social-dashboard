@@ -2,7 +2,26 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   primeiroNome, formatarNomeCompleto, normalizarTelefone, dentroDaJanela, sufixoDoLink, montarTemplateParams, decidirEnvio, validarConfig,
+  montarTemplateParamsPedido,
 } from './mensagem-de-abandono.js'
+
+test('⚠️ montarTemplateParamsPedido: categoria UTILIDADE, corpo {1: primeiro nome, 2: número} e NENHUM botão', () => {
+  assert.deepEqual(
+    montarTemplateParamsPedido({ nomeTemplate: 'pedido_recebido_v1', idioma: 'pt_BR', nome: 'maysa priscila', numero: '#1001' }),
+    { name: 'pedido_recebido_v1', category: 'UTILITY', language: 'pt_BR', processed_params: { body: { '1': 'Maysa', '2': '#1001' } } })
+})
+
+test('montarTemplateParamsPedido: sem nome vira "cliente" (a variável não pode ir vazia)', () => {
+  assert.equal(montarTemplateParamsPedido({ nomeTemplate: 't', idioma: 'pt_BR', nome: null, numero: '#1' }).processed_params.body['1'], 'cliente')
+})
+
+test('⚠️ validarConfig com exigeLink false (pedido): não exige LINK_BASE, mas segue exigindo o resto', () => {
+  const base = { modo: 'ligado', limite: 3, linkBase: '', templateNome: 't', chatwoot: { url: 'https://cw', contaId: '1', caixaId: '2', token: 'T' } }
+  assert.ok(validarConfig(base).some((p) => /LINK_BASE/.test(p)))
+  assert.deepEqual(validarConfig({ ...base, exigeLink: false }), [])
+  assert.ok(validarConfig({ ...base, exigeLink: false, templateNome: '' }).some((p) => /TEMPLATE_NOME/.test(p)))
+  assert.ok(validarConfig({ ...base, exigeLink: false, limite: 0 }).some((p) => /limite/i.test(p)))
+})
 
 test('primeiroNome: só o primeiro nome, com fallback e teto', () => {
   assert.equal(primeiroNome('Luis Magrin'), 'Luis')
