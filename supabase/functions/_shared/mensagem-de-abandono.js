@@ -7,12 +7,22 @@ const FUSO = 'America/Sao_Paulo'
 export const JANELA_INICIO = 8   // 08:00 entra
 export const JANELA_FIM = 21     // 21:00 não entra
 
-/** Só o primeiro nome. Nunca devolve vazio: o template exige a variável preenchida. */
+/**
+ * "maria", "MARIA" -> "Maria"; "ana-clara" -> "Ana-Clara"; "d'avila" -> "D'Avila".
+ * Maiúsculas e minúsculas MISTURADAS foram digitadas de propósito ("DeAndre", "McKenzie"): ficam como vieram.
+ */
+function capitalizarNome(palavra) {
+  const minusculo = palavra.toLocaleLowerCase('pt-BR')
+  if (palavra !== minusculo && palavra !== palavra.toLocaleUpperCase('pt-BR')) return palavra
+  return minusculo.replace(/(^|[-'’])(\p{L})/gu, (_, separador, letra) => separador + letra.toLocaleUpperCase('pt-BR'))
+}
+
+/** Só o primeiro nome, já formatado. Nunca devolve vazio: o template exige a variável preenchida. */
 export function primeiroNome(nome) {
   if (typeof nome !== 'string') return 'cliente'
   const primeiro = nome.trim().split(/\s+/)[0]
   if (!primeiro) return 'cliente'
-  return primeiro.slice(0, 30)
+  return capitalizarNome(primeiro.slice(0, 30))
 }
 
 /**
