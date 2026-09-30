@@ -134,3 +134,31 @@ test('contato novo continua sendo criado já com o nome da cliente (sem PUT)', a
   assert.equal(chamadas[1].metodo, 'POST')
   assert.equal(chamadas[1].corpo.name, 'Maysa Priscila')
 })
+
+test('⚠️ respondeu: lê as mensagens da conversa; mensagem RECEBIDA (message_type 0) = a cliente respondeu', async () => {
+  const { chamadas, fetchFn } = fake([json({ payload: [{ id: 1, message_type: 1 }, { id: 2, message_type: 0 }] })])
+  assert.equal(await cliente(fetchFn).respondeu({ conversaId: 55 }), true)
+  assert.equal(chamadas[0].metodo, 'GET')
+  assert.equal(chamadas[0].url, 'https://cw.exemplo.com/api/v1/accounts/7/conversations/55/messages')
+})
+
+test('respondeu: só mensagens enviadas ou de atividade (1, 2, 3) = não respondeu; lista vazia também', async () => {
+  const so = (payload) => cliente(fake([json({ payload })]).fetchFn).respondeu({ conversaId: 1 })
+  assert.equal(await so([{ message_type: 1 }, { message_type: 2 }, { message_type: 3 }]), false)
+  assert.equal(await so([]), false)
+})
+
+test('respondeu: aceita também a lista pura (sem o envelope payload)', async () => {
+  assert.equal(await cliente(fake([json([{ message_type: 0 }])]).fetchFn).respondeu({ conversaId: 1 }), true)
+})
+
+test('⚠️ respondeu: falha na leitura NÃO vira "não respondeu": lança ErroChatwoot (o robô não envia)', async () => {
+  await assert.rejects(cliente(fake([json({ error: 'x' }, 500)]).fetchFn).respondeu({ conversaId: 1 }),
+    (e) => e instanceof ErroChatwoot && e.status === 500 && e.passo === 'ler_conversa')
+  await assert.rejects(cliente(fake([json({ error: 'x' }, 401)]).fetchFn).respondeu({ conversaId: 1 }),
+    (e) => classificarErro(e) === 'parar')
+})
+
+test('respondeu: corpo inesperado (nem lista nem payload) lança, não devolve false', async () => {
+  await assert.rejects(cliente(fake([json({ ok: true })]).fetchFn).respondeu({ conversaId: 1 }), (e) => e instanceof ErroChatwoot && e.passo === 'ler_conversa')
+})

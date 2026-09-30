@@ -220,3 +220,24 @@ test('modo lista: pede só os últimos 11 dígitos dos números da lista, e rese
   assert.deepEqual(args.p_ultimos11, ['19982621821'])
   assert.equal(args.p_reservar, true)
 })
+
+test('⚠️ teto de horas do abandono: o de configuração vai para o banco; sem configuração vale 24 (o comportamento de hoje)', async () => {
+  const pega = async (extra) => {
+    const sb = fakeSb({ linhas: [] })
+    await rodar(sb, fakeCliente(), extra)
+    return sb.chamadas.find((c) => c[0] === 'pegar_para_mensagem')[1]
+  }
+  assert.equal((await pega({})).p_max_horas, 24)
+  assert.equal((await pega({ maxHoras: 48, atrasoMin: 1440 })).p_max_horas, 48)
+  assert.equal((await pega({ maxHoras: 48, atrasoMin: 1440 })).p_atraso_min, 1440)
+})
+
+test('⚠️ teto de horas inválido (0, negativo, fracionado, texto): 500 config_invalida e NADA é tocado', async () => {
+  for (const maxHoras of [0, -5, 2.5, 'abc', NaN]) {
+    const sb = fakeSb({ linhas: [lead(1)] })
+    const r = await rodar(sb, fakeCliente(), { maxHoras })
+    assert.equal(r.status, 500, String(maxHoras))
+    assert.equal(r.corpo.erro, 'config_invalida')
+    assert.deepEqual(sb.chamadas, [])
+  }
+})

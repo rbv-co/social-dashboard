@@ -1,8 +1,8 @@
 // supabase/functions/receber-webhook-abandono/index.ts
 //
-// Webhook NATIVO da Shopify para a fila de checkouts abandonados. Tópicos:
-// checkouts/create, checkouts/update, orders/create. Cadastrar cada um apontando
-// para esta função (ver LEIA-ME de src/ferramentas/abandono-carrinho).
+// Webhook NATIVO da Shopify para a fila de checkouts abandonados e para a mensagem de pedido recebido.
+// Tópicos: checkouts/create, checkouts/update, orders/create, orders/paid, orders/cancelled. Cadastrar
+// cada um apontando para esta função (ver LEIA-ME de src/ferramentas/abandono-carrinho).
 //
 // Irmã do `receber-webhook-checkout`, mas SEPARADA de propósito: aquela guarda só
 // o cart_token (corte de dado pessoal); esta guarda e-mail e telefone, porque o
@@ -18,8 +18,7 @@
 // checkouts/* deste fluxo são criados por API, então sem o segundo daria 401 em tudo.
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { assinaturaValida } from '../_shared/verificar-webhook-shopify.js';
-import { decidir } from '../_shared/abandono-de-checkout.js';
-import { aplicarDecisao } from '../_shared/aplicar-decisao.js';
+import { processarWebhook } from '../_shared/aplicar-decisao.js';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -43,8 +42,9 @@ Deno.serve(async (req) => {
   let corpo: unknown;
   try { corpo = JSON.parse(corpoCru); } catch { return responder({ ok: true, ignorado: 'json_invalido' }); }
 
-  const decisao = decidir(req.headers.get('x-shopify-topic') ?? '', corpo);
-  // Grava e responde (ver aplicar-decisao.js): erro de banco devolve 500 para a Shopify reenviar.
-  const { status, corpo: resposta } = await aplicarDecisao(createClient(SUPABASE_URL, SERVICE_KEY), decisao);
+  // Grava a fila de abandono E a mensagem do pedido (ver aplicar-decisao.js): erro de banco devolve 500
+  // para a Shopify reenviar (as gravações são idempotentes).
+  const { status, corpo: resposta } = await processarWebhook(
+    createClient(SUPABASE_URL, SERVICE_KEY), req.headers.get('x-shopify-topic') ?? '', corpo);
   return responder(resposta, status);
 });
