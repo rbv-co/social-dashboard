@@ -17,6 +17,24 @@ function capitalizarNome(palavra) {
   return minusculo.replace(/(^|[-'’])(\p{L})/gu, (_, separador, letra) => separador + letra.toLocaleUpperCase('pt-BR'))
 }
 
+const PARTICULAS = new Set(['da', 'de', 'do', 'das', 'dos', 'e'])
+
+/**
+ * Nome COMPLETO para o contato: "maysa priscila" -> "Maysa Priscila"; "MARIA DA SILVA" -> "Maria da Silva".
+ * Mesma regra de capitalizarNome por palavra; "da/de/do/das/dos/e" ficam minúsculas no meio do nome.
+ * Vazio ou não-texto devolve null (quem chama cai no telefone), nunca "cliente".
+ */
+export function formatarNomeCompleto(nome) {
+  if (typeof nome !== 'string') return null
+  const palavras = nome.trim().split(/\s+/).filter(Boolean)
+  if (!palavras.length) return null
+  return palavras.map((p, i) => {
+    const minuscula = p.toLocaleLowerCase('pt-BR')
+    const soUmCaso = p === minuscula || p === p.toLocaleUpperCase('pt-BR')
+    return i > 0 && soUmCaso && PARTICULAS.has(minuscula) ? minuscula : capitalizarNome(p)
+  }).join(' ')
+}
+
 /** Só o primeiro nome, já formatado. Nunca devolve vazio: o template exige a variável preenchida. */
 export function primeiroNome(nome) {
   if (typeof nome !== 'string') return 'cliente'
