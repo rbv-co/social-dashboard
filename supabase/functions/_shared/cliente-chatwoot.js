@@ -94,5 +94,17 @@ export function criarClienteChatwoot({ url, contaId, caixaId, token, fetchFn = f
       })
       return m?.id
     },
+
+    /**
+     * A cliente já respondeu nesta conversa? Mensagem RECEBIDA = `message_type` 0 (enviada 1, atividade 2, template 3),
+     * entre as últimas 20 que a API devolve. ⚠️ Falha na leitura LANÇA: "não consegui ler" NÃO é "não respondeu"
+     * (quem chama não envia). Quem tocou em "Não quero receber" também chega aqui como mensagem recebida.
+     */
+    async respondeu({ conversaId }) {
+      const r = await chamar('ler_conversa', `/conversations/${conversaId}/messages`)
+      const mensagens = Array.isArray(r) ? r : r?.payload
+      if (!Array.isArray(mensagens)) throw new ErroChatwoot(200, 'resposta_inesperada', 'ler_conversa')
+      return mensagens.some((m) => m?.message_type === 0)
+    },
   }
 }
