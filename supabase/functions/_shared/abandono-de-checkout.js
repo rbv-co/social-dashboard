@@ -22,7 +22,8 @@ const PAGO = ['paid', 'authorized', 'partially_paid']
 
 /**
  * @returns {{acao:'registrar', args:object}
- *   | {acao:'comprou'|'pagamento_pendente'|'reabrir', token:string}
+ *   | {acao:'comprou', token:string|null, email:string|null, telefone:string|null}
+ *   | {acao:'pagamento_pendente'|'reabrir', token:string}
  *   | {acao:'ignorar', motivo:string}}
  */
 export function decidir(topico, corpo) {
@@ -30,10 +31,20 @@ export function decidir(topico, corpo) {
 
   if (topico === 'orders/create' || topico === 'orders/paid' || topico === 'orders/cancelled') {
     const token = texto(corpo.checkout_token)
-    if (!token) return { acao: 'ignorar', motivo: 'pedido_sem_checkout' }
+    const pago = topico === 'orders/paid' || PAGO.includes(corpo.financial_status)
+    // Contato do PEDIDO (o endereço vence o cadastro, como no checkout). Serve para tirar da fila os
+    // OUTROS checkouts da mesma pessoa: quem abandona um e compra por outro não pode receber a mensagem.
+    const email = texto(corpo.email) ?? texto(corpo.contact_email) ?? texto(corpo.customer?.email)
+    const telefone = texto(corpo.phone) ?? texto(corpo.shipping_address?.phone)
+      ?? texto(corpo.billing_address?.phone) ?? texto(corpo.customer?.phone)
+    if (!token) {
+      // Pedido pago sem checkout (admin, WhatsApp) também é uma compra dessa pessoa.
+      if (topico !== 'orders/cancelled' && pago && (email || telefone)) return { acao: 'comprou', token: null, email, telefone }
+      return { acao: 'ignorar', motivo: 'pedido_sem_checkout' }
+    }
     // Pedido cancelado (Pix que expirou): o checkout volta a valer para a recuperação.
     if (topico === 'orders/cancelled') return { acao: 'reabrir', token }
-    if (topico === 'orders/paid' || PAGO.includes(corpo.financial_status)) return { acao: 'comprou', token }
+    if (pago) return { acao: 'comprou', token, email, telefone }
     return { acao: 'pagamento_pendente', token }
   }
 

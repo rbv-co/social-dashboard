@@ -85,6 +85,22 @@ export async function processarRodada({ sb, cliente, config, agora = new Date() 
       continue
     }
 
+    // ⚠️ RELÊ o status na hora de enviar: a linha veio da reserva, que pode ter alguns segundos (cada item
+    // anterior do lote leva até 3 chamadas ao Chatwoot), e um pagamento pode ter chegado nesse meio tempo.
+    // Se não der para ler, NÃO envia: devolve contando tentativa (na terceira falha vira `falhou`, sem laço).
+    const atual = await sb.from('checkout_abandono').select('status').eq('token', linha.token).maybeSingle()
+    if (atual.error) {
+      console.error('falha ao reler o status; item devolvido:', atual.error.message)
+      await rpc('devolver_mensagem', { p_token: linha.token, p_contar: true })
+      resultado.push({ token: curto, resultado: 'esperando', motivo: 'falha_ao_reler_status' })
+      continue
+    }
+    if (atual.data?.status !== 'fila_envio') {
+      await rpc('marcar_mensagem', { p_token: linha.token, p_status: 'ignorada', p_motivo: 'nao_esta_mais_na_fila' })
+      resultado.push({ token: curto, resultado: 'ignorada', motivo: 'nao_esta_mais_na_fila' })
+      continue
+    }
+
     try {
       const contatoId = await cliente.acharOuCriarContato({ nome: formatarNomeCompleto(d.nome), telefone: d.telefone })
       const conversaId = await cliente.abrirConversa({ contatoId, telefone: d.telefone })

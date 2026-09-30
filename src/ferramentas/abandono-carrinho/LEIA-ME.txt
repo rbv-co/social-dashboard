@@ -113,6 +113,16 @@ ENVIO_ATRASO_MINUTOS (0).
 Regras que protegem o cliente e o número:
 - Uma mensagem por checkout. Quem voltou para a fila depois de um Pix expirado e já recebeu NÃO
   recebe de novo (`mensagem_status = 'enviada'`).
+- ⚠️ Uma mensagem por TELEFONE (db/migrations/2026-09-30-zzzz-abandono-sem-duplicidade.sql): dois
+  checkouts do mesmo telefone no mesmo lote mandam só o mais antigo; quem recebeu nos últimos 7 dias
+  por outro checkout fica `ignorada / telefone_ja_recebeu`; quem está `enviando` bloqueia o mesmo telefone.
+- ⚠️ Comprou por OUTRO checkout: um pedido PAGO tira da fila os checkouts abertos (aguardando/fila_envio)
+  do mesmo e-mail ou telefone, e vale também para pedido pago sem checkout (admin, WhatsApp). Quem está em
+  pagamento pendente não é mexido.
+- ⚠️ O status é relido na hora de enviar: quem comprou entre a reserva e o envio vira
+  `ignorada / nao_esta_mais_na_fila`. Se a leitura falhar, não envia (devolve à fila, até 3 tentativas).
+- ⚠️ Erro de banco no webhook devolve 500 (a Shopify reenvia); as funções são idempotentes. Ao publicar,
+  aplicar a MIGRATION antes de publicar a edge: a edge nova chama `marcar_checkout_comprou` com 3 argumentos.
 - ⚠️ Só recebe quem entrou na fila nas ÚLTIMAS 24 HORAS. A fila antiga nunca é mensageada: ao
   ligar o robô, os checkouts de dias atrás ficam de fora (decisão registrada no plano).
 - Só celular brasileiro válido; quem só deixou e-mail não recebe WhatsApp.
