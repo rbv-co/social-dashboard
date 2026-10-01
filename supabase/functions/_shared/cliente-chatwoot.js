@@ -99,12 +99,23 @@ export function criarClienteChatwoot({ url, contaId, caixaId, token, fetchFn = f
      * A cliente já respondeu nesta conversa? Mensagem RECEBIDA = `message_type` 0 (enviada 1, atividade 2, template 3),
      * entre as últimas 20 que a API devolve. ⚠️ Falha na leitura LANÇA: "não consegui ler" NÃO é "não respondeu"
      * (quem chama não envia). Quem tocou em "Não quero receber" também chega aqui como mensagem recebida.
+     *
+     * `desde` (opcional; Date, ISO ou string do banco): só conta a resposta recebida NESSE momento ou depois. A conversa
+     * da cliente é reaproveitada (uma por contato), então sem isto uma conversa antiga com a loja contaria como
+     * "respondeu". Mensagem recebida sem data legível, ou `desde` inválido, LANÇA (falha fechada).
      */
-    async respondeu({ conversaId }) {
+    async respondeu({ conversaId, desde }) {
       const r = await chamar('ler_conversa', `/conversations/${conversaId}/messages`)
       const mensagens = Array.isArray(r) ? r : r?.payload
       if (!Array.isArray(mensagens)) throw new ErroChatwoot(200, 'resposta_inesperada', 'ler_conversa')
-      return mensagens.some((m) => m?.message_type === 0)
+      const recebidas = mensagens.filter((m) => m?.message_type === 0)
+      if (desde === undefined || desde === null) return recebidas.length > 0
+      const limite = new Date(desde).getTime() / 1000 // o Chatwoot manda created_at em segundos
+      if (!Number.isFinite(limite)) throw new ErroChatwoot(200, 'desde_invalido', 'ler_conversa')
+      return recebidas.some((m) => {
+        if (!Number.isFinite(Number(m.created_at))) throw new ErroChatwoot(200, 'mensagem_sem_data', 'ler_conversa')
+        return Number(m.created_at) >= limite
+      })
     },
   }
 }

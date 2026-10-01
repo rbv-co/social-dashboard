@@ -108,6 +108,15 @@ export async function processarRodada({ sb, cliente, config, agora = new Date() 
     try {
       const contatoId = await cliente.acharOuCriarContato({ nome: formatarNomeCompleto(d.nome), telefone: d.telefone })
       const conversaId = await cliente.abrirConversa({ contatoId, telefone: d.telefone })
+      // ⚠️ Se a cliente JÁ RESPONDEU depois que este checkout começou (ex.: tocou em "Falar c/ personal shopper" na
+      // primeira mensagem e está falando com a loja), a de 24 h não sai: chegaria como se ninguém tivesse falado com
+      // ela. É "desde o início do checkout" porque a conversa é reaproveitada (uma por contato) e uma conversa antiga
+      // com a loja não conta. Não conseguir ler a conversa LANÇA e cai no catch: não envia (falha fechada).
+      if (await cliente.respondeu({ conversaId, desde: linha.iniciado_em })) {
+        await rpc('marcar_mensagem', { p_token: linha.token, p_status: 'ignorada', p_motivo: 'respondeu' })
+        resultado.push({ token: curto, resultado: 'ignorada', motivo: 'respondeu' })
+        continue
+      }
       const texto = (config.templateTexto || `[template ${config.templateNome}]`).replace('{{1}}', primeiroNome(d.nome))
       await cliente.enviarTemplate({
         conversaId, texto,

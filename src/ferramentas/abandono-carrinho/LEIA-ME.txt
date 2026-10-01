@@ -155,6 +155,10 @@ Regras que protegem o cliente e o número:
   pagamento pendente não é mexido.
 - ⚠️ O status é relido na hora de enviar: quem comprou entre a reserva e o envio vira
   `ignorada / nao_esta_mais_na_fila`. Se a leitura falhar, não envia (devolve à fila, até 3 tentativas).
+- ⚠️ A mensagem de 24 h (abandono) NÃO sai para quem já RESPONDEU depois que o checkout começou (por exemplo, tocou em
+  "Falar c/ personal shopper" na primeira mensagem e está falando com a loja): vira `ignorada / respondeu`. A pergunta é
+  "respondeu DESDE o início do checkout" (`iniciado_em`), porque a conversa é reaproveitada (uma por contato) e uma conversa
+  antiga com a loja não conta. Se a conversa não puder ser lida, não envia (mesma falha fechada do follow-up).
 - ⚠️ Erro de banco no webhook devolve 500 (a Shopify reenvia); as funções são idempotentes. Ao publicar,
   aplicar a MIGRATION antes de publicar a edge: a edge nova chama `marcar_checkout_comprou` com 3 argumentos.
 - ⚠️ Só recebe quem entrou na fila dentro do teto de horas (ENVIO_MAX_HORAS, padrão 24). A fila antiga nunca é
