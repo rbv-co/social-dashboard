@@ -40,7 +40,7 @@ function fakeSb({ linhas = [], errPegar = null, errBloq = null, bloqueados = [],
     },
   }
 }
-function fakeCliente({ falharEm = null, erro = null } = {}) {
+function fakeCliente({ falharEm = null, erro = null, respondeu = false } = {}) {
   const chamadas = []
   const passo = (nome, valor) => async (arg) => {
     chamadas.push([nome, arg])
@@ -51,6 +51,7 @@ function fakeCliente({ falharEm = null, erro = null } = {}) {
     chamadas,
     acharOuCriarContato: passo('contato', 11),
     abrirConversa: passo('conversa', 22),
+    respondeu: passo('respondeu', respondeu),
     enviarTemplate: passo('template', 33),
   }
 }
@@ -72,8 +73,8 @@ test('caminho feliz: contato → conversa → template, e grava enviada com o id
   const cliente = fakeCliente()
   const r = await rodar(sb, cliente)
   assert.equal(r.status, 200)
-  assert.deepEqual(cliente.chamadas.map((c) => c[0]), ['contato', 'conversa', 'template'])
-  const tp = cliente.chamadas[2][1].templateParams
+  assert.deepEqual(cliente.chamadas.map((c) => c[0]), ['contato', 'conversa', 'respondeu', 'template'])
+  const tp = cliente.chamadas.find((c) => c[0] === 'template')[1].templateParams
   assert.equal(tp.processed_params.body['1'], 'Luis')
   assert.equal(tp.processed_params.buttons[0].parameter, '1/checkouts/t1/recover?key=SEGREDO1')
   assert.deepEqual(sb.chamadas.at(-1), ['marcar_mensagem', { p_token: 't1', p_status: 'enviada', p_conversa: 22 }])
@@ -188,6 +189,48 @@ test('⚠️ se a releitura do status falhar, NÃO envia: devolve à fila contan
   assert.equal(cliente.chamadas.length, 0)
   assert.deepEqual(sb.chamadas.at(-1), ['devolver_mensagem', { p_token: 't1', p_contar: true }])
   assert.equal(r.corpo.resultado[0].resultado, 'esperando')
+})
+
+const INICIO = '2026-10-01T12:00:00+00:00' // quando o checkout começou (iniciado_em, como o banco devolve)
+
+test('⚠️ a cliente JÁ RESPONDEU depois que o checkout começou (ex.: tocou em "Falar c/ personal shopper"): NÃO envia a de 24 h, marca ignorada/respondeu e o item seguinte segue', async () => {
+  const sb = fakeSb({ linhas: [lead(1, { iniciado_em: INICIO }), lead(2, { iniciado_em: INICIO })] })
+  let n = 0
+  const cliente = fakeCliente()
+  cliente.respondeu = async (arg) => { cliente.chamadas.push(['respondeu', arg]); return n++ === 0 }
+  const r = await rodar(sb, cliente)
+  assert.equal(cliente.chamadas.filter((c) => c[0] === 'template').length, 1)
+  assert.deepEqual(sb.chamadas.find((c) => c[0] === 'marcar_mensagem' && c[1].p_token === 't1')[1], { p_token: 't1', p_status: 'ignorada', p_motivo: 'respondeu' })
+  assert.deepEqual(r.corpo.resultado.map((x) => x.resultado), ['ignorada', 'enviada'])
+})
+
+test('⚠️ a pergunta é "respondeu DESDE o início do checkout": passa a conversa e o iniciado_em (conversa antiga da loja não conta)', async () => {
+  const cliente = fakeCliente()
+  await rodar(fakeSb({ linhas: [lead(1, { iniciado_em: INICIO })] }), cliente)
+  assert.deepEqual(cliente.chamadas.find((c) => c[0] === 'respondeu')[1], { conversaId: 22, desde: INICIO })
+  assert.deepEqual(cliente.chamadas.map((c) => c[0]), ['contato', 'conversa', 'respondeu', 'template'])
+})
+
+test('⚠️ se NÃO der para ler a conversa, não envia: erro de servidor devolve contando tentativa; credencial recusada (401) para a rodada', async (t) => {
+  calar(t)
+  const sb = fakeSb({ linhas: [lead(1, { iniciado_em: INICIO })] })
+  const c1 = fakeCliente({ falharEm: 'respondeu', erro: new ErroChatwoot(500, 'x', 'ler_conversa') })
+  await rodar(sb, c1)
+  assert.ok(!c1.chamadas.some((c) => c[0] === 'template'))
+  assert.deepEqual(sb.chamadas.at(-1), ['devolver_mensagem', { p_token: 't1', p_contar: true }])
+
+  const sb2 = fakeSb({ linhas: [lead(1, { iniciado_em: INICIO }), lead(2, { iniciado_em: INICIO })] })
+  const r = await rodar(sb2, fakeCliente({ falharEm: 'respondeu', erro: new ErroChatwoot(401, 'x', 'ler_conversa') }))
+  assert.equal(r.status, 502)
+  assert.deepEqual(sb2.chamadas.filter((c) => c[0] === 'devolver_mensagem').map((c) => c[1].p_token), ['t1', 't2'])
+})
+
+test('sem resposta da cliente o envio segue como antes (nada muda para quem só recebeu a primeira mensagem)', async () => {
+  const sb = fakeSb({ linhas: [lead(1, { iniciado_em: INICIO })] })
+  const cliente = fakeCliente({ respondeu: false })
+  const r = await rodar(sb, cliente)
+  assert.deepEqual(r.corpo.resultado, [{ token: 't1', resultado: 'enviada' }])
+  assert.deepEqual(sb.chamadas.at(-1), ['marcar_mensagem', { p_token: 't1', p_status: 'enviada', p_conversa: 22 }])
 })
 
 test('fora da janela: devolve sem contar tentativa e não fala com o Chatwoot', async () => {

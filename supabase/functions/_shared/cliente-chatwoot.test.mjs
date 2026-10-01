@@ -162,3 +162,30 @@ test('⚠️ respondeu: falha na leitura NÃO vira "não respondeu": lança Erro
 test('respondeu: corpo inesperado (nem lista nem payload) lança, não devolve false', async () => {
   await assert.rejects(cliente(fake([json({ ok: true })]).fetchFn).respondeu({ conversaId: 1 }), (e) => e instanceof ErroChatwoot && e.passo === 'ler_conversa')
 })
+
+// ── respondeu "desde quando": a conversa é reaproveitada, então uma conversa antiga da loja não pode contar ──
+const T = (iso) => Math.floor(new Date(iso).getTime() / 1000) // o Chatwoot manda created_at em segundos
+const recebidas = (...datas) => json({ payload: datas.map((d) => ({ message_type: 0, created_at: T(d) })) })
+
+test('⚠️ respondeu com `desde`: mensagem recebida ANTES do início do checkout não conta; DEPOIS conta', async () => {
+  const desde = '2026-10-01T12:00:00Z'
+  assert.equal(await cliente(fake([recebidas('2026-09-20T10:00:00Z')]).fetchFn).respondeu({ conversaId: 1, desde }), false)
+  assert.equal(await cliente(fake([recebidas('2026-09-20T10:00:00Z', '2026-10-01T12:30:00Z')]).fetchFn).respondeu({ conversaId: 1, desde }), true)
+})
+
+test('respondeu com `desde`: aceita Date e string do banco; mensagem enviada ou de atividade depois do início não conta', async () => {
+  const depois = T('2026-10-01T13:00:00Z')
+  const lista = json({ payload: [{ message_type: 1, created_at: depois }, { message_type: 2, created_at: depois }, { message_type: 3, created_at: depois }] })
+  assert.equal(await cliente(fake([lista]).fetchFn).respondeu({ conversaId: 1, desde: new Date('2026-10-01T12:00:00Z') }), false)
+  assert.equal(await cliente(fake([recebidas('2026-10-01T13:00:00Z')]).fetchFn).respondeu({ conversaId: 1, desde: '2026-10-01T12:00:00+00:00' }), true)
+})
+
+test('⚠️ respondeu com `desde` inválido ou mensagem sem data legível LANÇA (falha fechada: nunca "não respondeu" por engano)', async () => {
+  await assert.rejects(cliente(fake([recebidas('2026-10-01T13:00:00Z')]).fetchFn).respondeu({ conversaId: 1, desde: 'ontem' }), (e) => e instanceof ErroChatwoot && e.passo === 'ler_conversa')
+  const semData = json({ payload: [{ message_type: 0 }] })
+  await assert.rejects(cliente(fake([semData]).fetchFn).respondeu({ conversaId: 1, desde: '2026-10-01T12:00:00Z' }), (e) => e instanceof ErroChatwoot && e.passo === 'ler_conversa')
+})
+
+test('respondeu sem `desde` continua igual: qualquer mensagem recebida conta (o follow-up usa assim)', async () => {
+  assert.equal(await cliente(fake([json({ payload: [{ message_type: 0 }] })]).fetchFn).respondeu({ conversaId: 1 }), true)
+})
