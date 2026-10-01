@@ -481,7 +481,7 @@ import BarraDeLista from '../comercial-vessel/barra-de-lista.vue'
 import IconeDoBloco from '../../compartilhado/icone-do-bloco.vue'
 import { estado, hasPermission } from '../../compartilhado/controle-de-login-e-usuario.js'
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../../compartilhado/conectar-no-banco-de-dados.js'
-import { classificarErro } from '../../compartilhado/classificar-erro.js'
+import { classificarErro, ERRO_DE_REDE } from '../../compartilhado/classificar-erro.js'
 import {
   LOJAS, codigoSugerido, problemasDaSessao, resumoDaSessao, dataLegivel,
 } from './contas-das-sessoes.js'
@@ -573,11 +573,27 @@ function cabecalho() {
   }
 }
 
+// ⚠️ O ERRO JÁ SAI CLASSIFICADO (mesmo padrão de tela-de-material-grafico.vue):
+// um `new Error(string)` não carrega `status`, e `classificarErro(e)` chamado
+// no catch com ESSE objeto nunca reconhece 401/403 — toda falha do banco virava
+// "O servidor não respondeu", sessão expirada e falta de permissão incluídas.
+// Aqui o erro continua um `Error` de verdade (com `.message` da frase
+// classificada) porque `buscarLeads` lê `e?.message` direto — assim ela ganha a
+// frase certa em vez de "erro desconhecido", e `carregar` lê `e.classificado`.
 async function chamar(funcao, corpo) {
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${funcao}`, {
-    method: 'POST', headers: cabecalho(), body: JSON.stringify(corpo || {}),
-  })
-  if (!r.ok) throw new Error(`o banco respondeu ${r.status}`)
+  let r
+  try {
+    r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${funcao}`, {
+      method: 'POST', headers: cabecalho(), body: JSON.stringify(corpo || {}),
+    })
+  } catch {
+    throw Object.assign(new Error(ERRO_DE_REDE.mensagem), { classificado: ERRO_DE_REDE })
+  }
+  if (!r.ok) {
+    const corpoDoErro = await r.json().catch(() => null)
+    const classificado = classificarErro(r.status, corpoDoErro)
+    throw Object.assign(new Error(classificado.mensagem), { classificado })
+  }
   return r.json()
 }
 
@@ -603,7 +619,7 @@ async function carregar(opcoes) {
     sessoes.value = await chamar('vessel_conta_das_beauty_sessions',
       { p_dias: P_DIAS, p_incluir_arquivadas: incluirArquivadas }) || []
   } catch (e) {
-    erro.value = classificarErro(e)
+    erro.value = e?.classificado || classificarErro(0, null)
   } finally {
     carregando.value = false
   }

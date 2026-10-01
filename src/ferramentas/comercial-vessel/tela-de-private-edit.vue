@@ -527,7 +527,7 @@ import { rotuloDoEncontro } from './edicao-regras.js'
 import IconeDoBloco from '../../compartilhado/icone-do-bloco.vue'
 import { estado, hasPermission } from '../../compartilhado/controle-de-login-e-usuario.js'
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../../compartilhado/conectar-no-banco-de-dados.js'
-import { classificarErro } from '../../compartilhado/classificar-erro.js'
+import { classificarErro, ERRO_DE_REDE } from '../../compartilhado/classificar-erro.js'
 import { enderecoDoConvite, dataHoraLegivel, dataLegivel, problemasDoEncontro } from './enderecos-publicos.js'
 // ⚠️ RODADA 1 DE CONSERTO (MENOR 6): `emReais`/`janelaEscrita` ficaram sem uso
 // depois que a receita saiu do cartão e do "Como ler" — a receita continua
@@ -798,11 +798,23 @@ function cabecalho() {
   }
 }
 
+// ⚠️ O ERRO JÁ SAI CLASSIFICADO (mesmo padrão de tela-de-material-grafico.vue):
+// um `new Error(string)` não carrega `status`, e `classificarErro(e)` chamado
+// no catch com ESSE objeto nunca reconhece 401/403 — toda falha do banco virava
+// "O servidor não respondeu", sessão expirada e falta de permissão incluídas.
 async function chamar(funcao, corpo) {
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${funcao}`, {
-    method: 'POST', headers: cabecalho(), body: JSON.stringify(corpo || {}),
-  })
-  if (!r.ok) throw new Error(`o banco respondeu ${r.status}`)
+  let r
+  try {
+    r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${funcao}`, {
+      method: 'POST', headers: cabecalho(), body: JSON.stringify(corpo || {}),
+    })
+  } catch {
+    throw { classificado: ERRO_DE_REDE }
+  }
+  if (!r.ok) {
+    const corpoDoErro = await r.json().catch(() => null)
+    throw { classificado: classificarErro(r.status, corpoDoErro) }
+  }
   return r.json()
 }
 
@@ -851,7 +863,7 @@ async function carregar(opcoes) {
       }
     }
   } catch (e) {
-    erro.value = classificarErro(e)
+    erro.value = e?.classificado || classificarErro(0, null)
   } finally {
     carregando.value = false
   }
