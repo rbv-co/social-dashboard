@@ -38,7 +38,7 @@ test('os caminhos que as telas usam CONTINUAM abertos', () => {
     'pedidos/vendas', 'pedidos/vendas/123', 'vendedores/45',
     'produtos', 'produtos/999', 'estoques/saldos',
     'nfe', 'nfe/7', 'nfce', 'nfce/7',
-    'depositos',
+    'depositos', 'formas-pagamentos',
   ]) {
     assert.ok(permite(bom), `caminho que uma tela usa foi fechado: ${bom}`);
   }

@@ -55,6 +55,12 @@ const CAMINHOS_PERMITIDOS: RegExp[] = [
   // nova exigia mexer em codigo. Aqui e so leitura de nome de deposito — nao
   // traz saldo, preco nem cliente.
   /^depositos$/,
+  // `formas-pagamentos` entrou em 03/10/2026: só o CATÁLOGO (id, descrição,
+  // tipoPagamento) de formas de pagamento cadastradas. Não traz pedido, não
+  // traz cliente, não traz saldo — usado para separar devolução de
+  // mercadoria (tipoPagamento=5) de venda nova. Ver
+  // supabase/functions/_shared/valor-liquido-de-troca.js.
+  /^formas-pagamentos$/,
   /^nfe$/,
   /^nfe\/[A-Za-z0-9_-]+$/,
   /^nfce$/,
