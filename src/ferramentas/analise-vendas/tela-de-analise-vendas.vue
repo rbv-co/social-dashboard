@@ -611,6 +611,7 @@ async function _saPopulateItemCounts(pedidos,pvQtdMap,pvMap){
   for(let i=0;i<Math.min(pedidos.length,200);i++){
     if(window._saItemFetchV!==myV)return;
     const p=pedidos[i];
+    if(p.fonte==='shopify')continue;
     if(pvQtdMap[parseInt(p.id)]>1)continue;
     try{
       const resp=await blingCall(`pedidos/vendas/${p.id}`,{});
@@ -668,7 +669,7 @@ async function _saPopulateDescontos(pedidos){
   if(hadCache)_rerender();
 
   // Fetch uncached orders in parallel batches of 5, single re-render at the end
-  const toFetch=pedidos.filter(p=>p._desconto===undefined).slice(0,400);
+  const toFetch=pedidos.filter(p=>p._desconto===undefined&&p.fonte!=='shopify').slice(0,400);
   const BATCH=5;
   for(let i=0;i<toFetch.length;i+=BATCH){
     if(window._saDescFetchV!==myV)return;

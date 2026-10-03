@@ -47,6 +47,11 @@ test('sem id: payload inválido, não dá pra gravar sem chave', () => {
   assert.equal(pedidoDoPayload(payload), null);
 });
 
+test('sem created_at: payload inválido, a coluna criado_em_shopify é not null', () => {
+  const payload = { ...payloadCompleto(), created_at: undefined };
+  assert.equal(pedidoDoPayload(payload), null);
+});
+
 test('sem name nem order_number: numero fica nulo, resto do pedido entra do mesmo jeito', () => {
   const payload = { ...payloadCompleto(), name: undefined, order_number: undefined };
   const p = pedidoDoPayload(payload);

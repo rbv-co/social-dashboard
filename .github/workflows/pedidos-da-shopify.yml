@@ -4,10 +4,13 @@ name: Pedidos da Loja Shopify (direto da API, sem Bling)
 # conferência de janela curta de hora em hora, pra pegar pedido que mudou de
 # status (Pix confirmado depois, por exemplo) sem esperar o dia seguinte.
 #
-# ⚠️ SÓ COMEÇA A FUNCIONAR QUANDO SHOPIFY_ADMIN_TOKEN E SHOPIFY_SHOP_DOMAIN
-# FOREM CADASTRADOS EM Settings → Secrets → Actions deste repositório. Até lá,
-# toda rodada falha com uma mensagem clara (ver coletor/trazer-pedidos-da-shopify.mjs)
-# e não afeta nenhum outro robô.
+# ⚠️ SÓ COMEÇA A FUNCIONAR QUANDO SHOPIFY_SHOP E UMA CREDENCIAL
+# (SHOPIFY_CLIENT_ID + SHOPIFY_CLIENT_SECRET, ou SHOPIFY_ACCESS_TOKEN — mesmos
+# nomes de coletor/estoque-do-site.mjs) FOREM CADASTRADOS EM Settings → Secrets
+# → Actions deste repositório. Sem SHOPIFY_SHOP a rodada é pulada sem falhar
+# (nada de e-mail de "Run failed" de hora em hora); com SHOPIFY_SHOP e sem
+# credencial, falha com mensagem clara (ver coletor/trazer-pedidos-da-shopify.mjs).
+# Não afeta nenhum outro robô.
 on:
   schedule:
     - cron: '41 7 * * *'     # varredura profunda: 30 dias (17 min depois do robô do Bling, mesmo motivo de espaçamento)
@@ -43,12 +46,18 @@ jobs:
       - name: Trazer os pedidos da Shopify
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          SHOPIFY_ADMIN_TOKEN: ${{ secrets.SHOPIFY_ADMIN_TOKEN }}
-          SHOPIFY_SHOP_DOMAIN: ${{ secrets.SHOPIFY_SHOP_DOMAIN }}
+          SHOPIFY_SHOP: ${{ secrets.SHOPIFY_SHOP }}
+          SHOPIFY_CLIENT_ID: ${{ secrets.SHOPIFY_CLIENT_ID }}
+          SHOPIFY_CLIENT_SECRET: ${{ secrets.SHOPIFY_CLIENT_SECRET }}
+          SHOPIFY_ACCESS_TOKEN: ${{ secrets.SHOPIFY_ACCESS_TOKEN }}
           DIAS: ${{ github.event.inputs.dias }}
           ENSAIO: ${{ github.event.inputs.ensaio }}
           QUAL_CRON: ${{ github.event.schedule }}
         run: |
+          if [ -z "$SHOPIFY_SHOP" ]; then
+            echo "SHOPIFY_SHOP ainda não configurado em Settings → Secrets → Actions — pulando esta rodada (não é falha, é esperado até o dono configurar)."
+            exit 0
+          fi
           if [ -n "$DIAS" ] && ! printf '%s' "$DIAS" | grep -qE '^[0-9]+$'; then
             echo "DIAS inválido (esperado número): $DIAS"; exit 1
           fi

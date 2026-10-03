@@ -227,6 +227,7 @@ async function _gvBuildSkuSlide(pedidos,pedidosPrev){
 
   // Processa pedidos do período atual: SKU + vendor mapping
   for(const p of pedidos){
+    if(p.fonte==='shopify')continue;
     if(myVersion!==_gvSkuVersion)return;
     try{
       const resp=await blingCall(`pedidos/vendas/${p.id}`,{});
@@ -271,6 +272,7 @@ async function _gvBuildSkuSlide(pedidos,pedidosPrev){
 
   // Processa pedidos anteriores: só vendor mapping (sem SKU)
   for(const p of(pedidosPrev||[])){
+    if(p.fonte==='shopify')continue;
     if(myVersion!==_gvSkuVersion)return;
     if(window._gvPedidoVendorMap[p.id])continue;
     try{

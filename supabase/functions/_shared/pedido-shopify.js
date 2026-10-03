@@ -9,8 +9,10 @@
 // mesma regra discordam cedo ou tarde.
 //
 // LOJA_ID É FIXO: esta tabela é só da Loja Shopify (205512275). Não existe
-// hoje nenhuma outra loja que fale com este código.
-const LOJA_ID_SHOPIFY = 205512275;
+// hoje nenhuma outra loja que fale com este código. Exportado pelo mesmo
+// motivo de STATUS_QUE_CONTAM: src/compartilhado/pedidos-shopify.js usa o
+// MESMO número, não uma segunda cópia.
+export const LOJA_ID_SHOPIFY = 205512275;
 
 // O que conta como venda. "Pending" (Pix/boleto ainda não confirmado) e
 // qualquer status que a Shopify venha a inventar NÃO contam — o lado seguro
@@ -27,7 +29,7 @@ export function ehVendaValida(statusFinanceiro) {
 }
 
 export function pedidoDoPayload(corpo) {
-  if (!corpo || corpo.id == null) return null;
+  if (!corpo || corpo.id == null || !corpo.created_at) return null;
   const nome = [corpo.customer?.first_name, corpo.customer?.last_name].filter(Boolean).join(' ');
   return {
     id: Number(corpo.id),

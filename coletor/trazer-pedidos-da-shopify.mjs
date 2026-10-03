@@ -11,9 +11,10 @@
 // através do Bling. O dono quer parar de depender do Bling pra esta loja —
 // ver docs/superpowers/specs/2026-10-03-pedidos-da-shopify-direto-design.md.
 //
-// ⚠️ ESTE ROBÔ SÓ SABE QUE FOI LIGADO QUANDO SHOPIFY_ADMIN_TOKEN E
-// SHOPIFY_SHOP_DOMAIN EXISTIREM EM coletor/.env — até lá, ele PARA (lança) e
-// diz exatamente o que falta. Não é erro silencioso: o robô do Bling continua
+// ⚠️ ESTE ROBÔ SÓ SABE QUE FOI LIGADO QUANDO SHOPIFY_SHOP E UMA CREDENCIAL
+// (SHOPIFY_CLIENT_ID + SHOPIFY_CLIENT_SECRET, ou SHOPIFY_ACCESS_TOKEN) EXISTIREM
+// EM coletor/.env — mesmos nomes de coletor/estoque-do-site.mjs. Até lá, ele
+// PARA (lança) e diz exatamente o que falta. Não é erro silencioso: o robô do Bling continua
 // rodando normalmente, e este é um robô SEPARADO (cron próprio), então faltar
 // a credencial da Shopify não derruba a importação de mais nada.
 //
@@ -21,9 +22,16 @@
 // 1x por dia, mais uma conferência de janela curta de hora em hora — pra
 // pegar pedido que mudou de status (ex: Pix confirmado depois) sem esperar o
 // dia seguinte. Ver .github/workflows/pedidos-da-shopify.yml.
+//
+// ⚠️ RISCO ACEITO: ESCRITA FORA DE ORDEM. A Shopify não garante a ordem de
+// entrega dos webhooks, e uma busca deste robô pode trazer um estado mais
+// antigo que o que o webhook acabou de gravar — então, em tese, uma gravação
+// mais velha sobrescreve uma mais nova (ex: o pedido virou `refunded` e um
+// `paid` atrasado chega depois). A conferência de hora em hora relê o pedido e
+// corrige sozinha em até uma hora; por isso não há trava de versão aqui.
 import './lib/carregar-env.mjs';
 import pg from 'pg';
-import { shopifyPedidos } from './lib/shopify-admin.mjs';
+import { shopifyPedidos, tokenShopify } from './lib/shopify-admin.mjs';
 import { pedidoDoPayload } from '../supabase/functions/_shared/pedido-shopify.js';
 
 const arg = (nome, padrao) => {
@@ -33,12 +41,12 @@ const arg = (nome, padrao) => {
 const dias = Number(arg('dias', 30));
 const ensaio = process.argv.includes('--ensaio');
 
-const DOMINIO = process.env.SHOPIFY_SHOP_DOMAIN;
-const TOKEN = process.env.SHOPIFY_ADMIN_TOKEN;
-if (!DOMINIO || !TOKEN) {
-  throw new Error('faltam SHOPIFY_SHOP_DOMAIN e/ou SHOPIFY_ADMIN_TOKEN em coletor/.env — '
+const DOMINIO = process.env.SHOPIFY_SHOP;
+if (!DOMINIO) {
+  throw new Error('falta SHOPIFY_SHOP em coletor/.env — '
     + 'o robô do Bling não é afetado, só este aqui para até a credencial existir.');
 }
+const TOKEN = await tokenShopify(DOMINIO);
 
 const cli = new pg.Client({ connectionString: process.env.DATABASE_URL });
 await cli.connect();
@@ -71,6 +79,6 @@ for (const bruto of brutos) {
 }
 
 console.log(`\n  gravados  ${gravados}`);
-console.log(`  inválidos ${invalidos}  (payload sem id — não dá pra gravar sem chave)`);
+console.log(`  inválidos ${invalidos}  (payload sem id ou sem created_at — não dá pra gravar)`);
 
 await cli.end();

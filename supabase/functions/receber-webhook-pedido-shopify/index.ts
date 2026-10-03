@@ -9,15 +9,23 @@
 // nem se a Shopify reentrega o mesmo evento (ela reentrega se não receber 2xx
 // a tempo — comportamento documentado).
 //
-// Mesma autenticação de receber-webhook-checkout: assinatura HMAC no
-// cabeçalho X-Shopify-Hmac-Sha256, contra SHOPIFY_WEBHOOK_SECRET.
+// Publicar com --no-verify-jwt (quem chama é o servidor da Shopify, sem JWT). A
+// autenticação é a assinatura HMAC no cabeçalho X-Shopify-Hmac-Sha256, sobre o
+// corpo CRU.
+//
+// ⚠️ DOIS segredos possíveis, mesmo caso de receber-webhook-abandono: webhook
+// criado no ADMIN da loja assina com SHOPIFY_WEBHOOK_SECRET; criado por API,
+// pelo app, assina com o segredo do APP, SHOPIFY_CLIENT_SECRET. Vale o que bater.
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { assinaturaValida } from '../_shared/verificar-webhook-shopify.js';
 import { pedidoDoPayload } from '../_shared/pedido-shopify.js';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-const SEGREDO_DO_WEBHOOK = Deno.env.get('SHOPIFY_WEBHOOK_SECRET') ?? '';
+const SEGREDOS_DO_WEBHOOK = [
+  Deno.env.get('SHOPIFY_WEBHOOK_SECRET'),
+  Deno.env.get('SHOPIFY_CLIENT_SECRET'),
+].filter((s): s is string => !!s);
 
 const responder = (corpo: unknown, status = 200) =>
   new Response(JSON.stringify(corpo), { status, headers: { 'Content-Type': 'application/json' } });
@@ -27,12 +35,11 @@ Deno.serve(async (req) => {
 
   const corpoCru = await req.text();
   const assinatura = req.headers.get('x-shopify-hmac-sha256');
-  if (!(await assinaturaValida(SEGREDO_DO_WEBHOOK, corpoCru, assinatura))) {
-    return responder({ error: 'nao_autorizado' }, 401);
-  }
+  const confere = await Promise.all(SEGREDOS_DO_WEBHOOK.map((s) => assinaturaValida(s, corpoCru, assinatura)));
+  if (!confere.some(Boolean)) return responder({ error: 'nao_autorizado' }, 401);
 
   const pedido = pedidoDoPayload(JSON.parse(corpoCru));
-  if (!pedido) return responder({ ok: true, ignorado: 'payload sem id' });
+  if (!pedido) return responder({ ok: true, ignorado: 'payload sem id ou sem created_at' });
 
   const sb = createClient(SUPABASE_URL, SERVICE_KEY);
   const { error } = await sb.from('shopify_pedidos').upsert({
