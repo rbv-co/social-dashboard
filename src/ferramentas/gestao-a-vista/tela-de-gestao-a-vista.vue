@@ -136,6 +136,7 @@ import { calcularRankingPorVendedor } from './ranking-por-vendedor.js'
 import { agruparCanais, estadoDoGrupo, alternarGrupo } from '../../compartilhado/grupo-do-canal.js'
 import { aplicarDataDaVenda } from '../../compartilhado/data-da-venda.js'
 import { buscarAjustesDeValor, aplicarValorCorrigido } from '../../compartilhado/valor-corrigido.js'
+import { buscarDevolucoes, aplicarValorLiquidoDeTroca } from '../../compartilhado/valor-liquido-de-troca.js'
 import { buscarAjustesDeVendedor, aplicarVendedorCorrigido } from '../../compartilhado/vendedor-corrigido.js'
 // Quando a recarga de 5 minutos deve acontecer — e quando é só desperdício.
 import { decidirNoTique, decidirAoVoltar } from '../../compartilhado/recarga-automatica.js'
@@ -648,16 +649,22 @@ async function loadGestaoVistaData(period){
     // linhas de `bling_pedido_ajuste_vendedor` dizem quem de fato vendeu. Ver
     // src/compartilhado/vendedor-corrigido.js. Também não depende do que o
     // Bling devolveu — por isso entra no mesmo Promise.all.
-    const [ajuste,ajustePrev,ajustesDeValor,ajustesDeVendedor]=await Promise.all([
+    const [ajuste,ajustePrev,ajustesDeValor,ajustesDeVendedor,devolucoes]=await Promise.all([
       aplicarDataDaVenda(sbClient,pedidosBrutos,di,df),
       aplicarDataDaVenda(sbClient,pedidosPrevBrutos,diPrev,dfPrev),
       buscarAjustesDeValor(sbClient),
       buscarAjustesDeVendedor(sbClient),
+      buscarDevolucoes(sbClient),
     ]);
     if(myLoad!==_gvLoadId)return;
     // `let`, e não `const`: o recorte por time (mais abaixo) reatribui os dois.
     let pedidos=aplicarValorCorrigido(ajuste.pedidos,ajustesDeValor).pedidos;
     let pedidosPrev=aplicarValorCorrigido(ajustePrev.pedidos,ajustesDeValor).pedidos;
+    // E A DEVOLUÇÃO DE MERCADORIA (troca), que não é venda nova. Entra DEPOIS
+    // do valor corrigido, subtraindo do total que já vale de verdade — não do
+    // bruto do Bling. Ver src/compartilhado/valor-liquido-de-troca.js.
+    pedidos=aplicarValorLiquidoDeTroca(pedidos,devolucoes||[]).pedidos;
+    pedidosPrev=aplicarValorLiquidoDeTroca(pedidosPrev,devolucoes||[]).pedidos;
 
     // Supabase: pode rodar em paralelo (API diferente)
     const[canaisCheio,metasRows,eqTimes,eqMembros,eqMembrosDeGrupo,depsRows,vincRows]=await Promise.all([
