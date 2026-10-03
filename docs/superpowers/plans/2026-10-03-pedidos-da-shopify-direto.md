@@ -262,10 +262,15 @@ const LOJA_ID_SHOPIFY = 205512275;
 // O que conta como venda. "Pending" (Pix/boleto ainda não confirmado) e
 // qualquer status que a Shopify venha a inventar NÃO contam — o lado seguro
 // é nunca contar um status desconhecido como faturamento.
-const STATUS_QUE_CONTAM = new Set(['paid', 'partially_refunded']);
+//
+// Exportado (não só a função) porque src/compartilhado/pedidos-shopify.js
+// (Task 7) precisa da LISTA, não só do predicado — o filtro `.in()` do
+// Supabase pede um array de valores, e duas cópias desta lista discordariam
+// cedo ou tarde (mesma lição de todo módulo _shared deste projeto).
+export const STATUS_QUE_CONTAM = ['paid', 'partially_refunded'];
 
 export function ehVendaValida(statusFinanceiro) {
-  return STATUS_QUE_CONTAM.has(statusFinanceiro);
+  return STATUS_QUE_CONTAM.includes(statusFinanceiro);
 }
 
 export function pedidoDoPayload(corpo) {
@@ -719,6 +724,7 @@ git commit -m "feat: webhook que recebe pedido da Shopify em tempo real"
 - Test: `src/compartilhado/pedidos-shopify.test.mjs`
 
 **Interfaces:**
+- Consumes: `STATUS_QUE_CONTAM` (array exportado por `supabase/functions/_shared/pedido-shopify.js`, Task 2) — não duplica a lista de status.
 - Produces: `buscarPedidosShopifyDoPeriodo(sbClient, di, df): Promise<Array|null>`, `mesclarPedidosShopify(pedidosBling, linhasShopify, lojaIdShopify = 205512275): Array` — usados pelas Tasks 8 e 9.
 
 - [ ] **Step 1: Escrever o teste (falhando)**
@@ -814,11 +820,13 @@ Expected: FAIL — módulo não existe.
 // disso nenhuma lógica de soma/ranking precisa saber que esta loja tem uma
 // fonte diferente.
 //
-// Mesma régua de "o que conta como venda" do robô/webhook (ver
-// supabase/functions/_shared/pedido-shopify.js), mas aplicada aqui como
-// filtro de leitura — não precisa importar o módulo Deno/Node pra isso.
+// Mesma régua de "o que conta como venda" do robô/webhook — importada do
+// MESMO módulo (ver supabase/functions/_shared/pedido-shopify.js), não uma
+// segunda cópia da lista. O arquivo é JS puro sem nada específico de Deno,
+// então o navegador (via bundler) consegue importar dele direto.
+import { STATUS_QUE_CONTAM } from '../../supabase/functions/_shared/pedido-shopify.js';
+
 const LOJA_ID_SHOPIFY = 205512275;
-const STATUS_QUE_CONTAM = ['paid', 'partially_refunded'];
 
 // Devolve null quando não deu para consultar — "não sei", e quem chama
 // mantém a tela como está (nunca interpreta null como "zero venda").
