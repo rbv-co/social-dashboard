@@ -92,6 +92,7 @@ import { adminToast } from '../../compartilhado/avisos.js'
 import { hojeLocal, diasAtras } from '../../compartilhado/datas.js'
 import { aplicarDataDaVenda } from '../../compartilhado/data-da-venda.js'
 import { buscarAjustesDeValor, aplicarValorCorrigido } from '../../compartilhado/valor-corrigido.js'
+import { buscarPedidosShopifyDoPeriodo, mesclarPedidosShopify } from '../../compartilhado/pedidos-shopify.js'
 // A PORTA DO BLING E O QUE FAZER QUANDO ELE NÃO RESPONDE — mesmo módulo da
 // Gestão à Vista, para as duas telas de venda nunca discordarem sobre isso.
 import { chamarBling, paginasDoBling, ErroDoBling, textoDoAviso } from '../../compartilhado/chamada-do-bling.js'
@@ -445,15 +446,23 @@ async function loadSalesAnalysisData(period,opcoes){
     // só, aplicada nas TRÊS janelas pelo mesmo motivo do recorte abaixo — e
     // depois do data-da-venda, que é por onde passam também os pedidos trazidos
     // de outro dia. Ver src/compartilhado/valor-corrigido.js.
-    const[aj,ajPrev,aj15,ajustesDeValor]=await Promise.all([
+    const[aj,ajPrev,aj15,ajustesDeValor,pedidosShopify,pedidosShopifyPrev,pedidosShopify15]=await Promise.all([
       aplicarDataDaVenda(sbClient,pedidosBrutos,di,df),
       aplicarDataDaVenda(sbClient,pedidosPrevBrutos,diPrev,dfPrev),
       aplicarDataDaVenda(sbClient,pedidos15Brutos,di15,df15),
       buscarAjustesDeValor(sbClient),
+      buscarPedidosShopifyDoPeriodo(sbClient,di,df),
+      buscarPedidosShopifyDoPeriodo(sbClient,diPrev,dfPrev),
+      buscarPedidosShopifyDoPeriodo(sbClient,di15,df15),
     ]);
     aj.pedidos=aplicarValorCorrigido(aj.pedidos,ajustesDeValor).pedidos;
     ajPrev.pedidos=aplicarValorCorrigido(ajPrev.pedidos,ajustesDeValor).pedidos;
     aj15.pedidos=aplicarValorCorrigido(aj15.pedidos,ajustesDeValor).pedidos;
+    // A LOJA SHOPIFY SAI DO BLING E ENTRA SÓ POR AQUI — mesma regra da
+    // Gestão à Vista. Ver docs/superpowers/specs/2026-10-03-pedidos-da-shopify-direto-design.md.
+    aj.pedidos=mesclarPedidosShopify(aj.pedidos,pedidosShopify||[]);
+    ajPrev.pedidos=mesclarPedidosShopify(ajPrev.pedidos,pedidosShopifyPrev||[]);
+    aj15.pedidos=mesclarPedidosShopify(aj15.pedidos,pedidosShopify15||[]);
     // AS TRÊS JANELAS RECEBEM O MESMO RECORTE. Recortar só a atual faria o
     // comparativo ("vs período anterior") medir a loja dela contra a empresa
     // inteira — um número errado com cara de verdade.
