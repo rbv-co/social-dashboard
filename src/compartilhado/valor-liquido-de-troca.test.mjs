@@ -9,16 +9,19 @@ import { aplicarDevolucaoDeTroca, buscarDevolucoes } from './valor-liquido-de-tr
 const ped = (id, total = 1900) => ({ id, total, loja: { id: 205834116 } });
 const linha = (pedido_id, valor) => ({ pedido_id, valor });
 
-function sbComPaginas(paginas, chamadas = []) {
+function sbComPaginas(paginas, chamadas = [], chamadasEq = []) {
   return {
     from: () => ({
       select: () => ({
-        eq: () => ({
-          range: async (de, ate) => {
-            chamadas.push([de, ate]);
-            return { data: paginas.shift() ?? [], error: null };
-          },
-        }),
+        eq: (campo, valor) => {
+          chamadasEq.push([campo, valor]);
+          return {
+            range: async (de, ate) => {
+              chamadas.push([de, ate]);
+              return { data: paginas.shift() ?? [], error: null };
+            },
+          };
+        },
       }),
     }),
   };
@@ -67,4 +70,10 @@ test('a tabela inteira (filtrada por eh_devolucao) é lida — não se filtra pe
   const chamadas = [];
   await buscarDevolucoes(sbComPaginas([[]], chamadas));
   assert.equal(chamadas.length, 1, 'uma consulta só, sem depender de quantos pedidos a janela tem');
+});
+
+test('filtra por eh_devolucao=true — nunca pela tabela inteira sem filtro', async () => {
+  const chamadasEq = [];
+  await buscarDevolucoes(sbComPaginas([[]], [], chamadasEq));
+  assert.deepEqual(chamadasEq, [['eh_devolucao', true]]);
 });

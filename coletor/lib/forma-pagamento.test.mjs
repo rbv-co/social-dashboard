@@ -56,3 +56,9 @@ test('loja_id nulo é aceito (detalhe do Bling sem loja)', () => {
   const linhas = linhasDeFormaPagamento(1, null, [parcelasReais[0]], catalogo);
   assert.equal(linhas[0].loja_id, null);
 });
+
+test('data_vencimento "0000-00-00" do Bling vira null, não a string zerada', () => {
+  const parcela = [{ id: 1, valor: 50, dataVencimento: '0000-00-00', formaPagamento: { id: 7621351 } }];
+  const linhas = linhasDeFormaPagamento(1, 1, parcela, catalogo);
+  assert.equal(linhas[0].data_vencimento, null);
+});

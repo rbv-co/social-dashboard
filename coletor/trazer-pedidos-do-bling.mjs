@@ -106,16 +106,25 @@ try {
 
   // ── 0. o catálogo de formas de pagamento, uma vez por rodada ───────────────
   // Decide quais parcelas são devolução de mercadoria (tipoPagamento=5), não
-  // venda nova. Se não der para ler, o robô TEM que parar — seguir sem o
-  // catálogo classificaria toda troca como venda normal de novo, o bug que
-  // esta mudança corrige. Ver supabase/functions/_shared/valor-liquido-de-troca.js.
+  // venda nova. Se não der para ler, a IMPORTAÇÃO DE VENDAS CONTINUA — só a
+  // gravação de forma de pagamento desta rodada é pulada (nunca classifica
+  // devolução "no chute"; a próxima rodada, idempotente, tenta de novo). Até
+  // 03/10/2026 um `throw` aqui matava TODA a rodada (inclusive vessel_pedidos)
+  // sempre que o catálogo falhasse — e este robô roda de HORA EM HORA, não só
+  // 1x por dia, então um catálogo fora do ar por pouco tempo já derrubava
+  // várias rodadas seguidas de importação de venda por um problema que é só do
+  // lado de forma de pagamento. Ver supabase/functions/_shared/valor-liquido-de-troca.js.
   const formasDePagamento = await blingFormasDePagamento(token);
-  if (!formasDePagamento.length) {
-    throw new Error('catálogo de formas de pagamento veio vazio — não dá para classificar devolução, parando.');
+  const tipoPagamentoPorFormaId = formasDePagamento.length
+    ? new Map(formasDePagamento.map((f) => [String(f.id), f.tipoPagamento]))
+    : null;
+  if (tipoPagamentoPorFormaId) {
+    console.log(`${formasDePagamento.length} formas de pagamento no catálogo`
+      + ` (${formasDePagamento.filter((f) => f.tipoPagamento === 5).length} marcadas como devolução)`);
+  } else {
+    console.warn('⚠️  catálogo de formas de pagamento veio vazio — pulando a gravação de '
+      + 'forma de pagamento NESTA rodada (a importação de vendas continua normalmente).');
   }
-  const tipoPagamentoPorFormaId = new Map(formasDePagamento.map((f) => [String(f.id), f.tipoPagamento]));
-  console.log(`${formasDePagamento.length} formas de pagamento no catálogo`
-    + ` (${formasDePagamento.filter((f) => f.tipoPagamento === 5).length} marcadas como devolução)`);
 
   // ── 1. TODOS os pedidos da janela, em qualquer situação ────────────────────
   //
@@ -182,7 +191,7 @@ try {
 
   // ── 5. cada pedido ─────────────────────────────────────────────────────────
   const fichaDoContato = new Map();   // cache da rodada: uma leitura por ficha
-  let gravados = 0, orfaos = 0, porFicha = 0, porTel = 0, semTelefone = 0;
+  let gravados = 0, orfaos = 0, porFicha = 0, porTel = 0, semTelefone = 0, semCatalogoFP = 0;
   const leadPor = { ficha: 0, email: 0, telefone: 0 };
 
   // Lê a ficha uma vez por rodada. Antes só se lia a de quem não casava pela
@@ -311,22 +320,39 @@ try {
       valores);
 
     // ── forma de pagamento desta venda, linha por linha ──────────────────────
-    // Upsert por parcela_id (chave do próprio Bling): se o Bling recriar a
-    // parcela com id novo ao editar o pedido, a linha antiga fica órfã — caso
-    // raro, aceito por ora (ver spec).
-    const linhasFP = linhasDeFormaPagamento(p.id, detalhe.loja?.id || null, detalhe.parcelas, tipoPagamentoPorFormaId);
-    for (const l of linhasFP) {
-      await cli.query(
-        `insert into bling_pedido_forma_pagamento
-           (parcela_id, pedido_id, loja_id, forma_pagamento_id, valor, data_vencimento, eh_devolucao, atualizado_em)
-         values ($1,$2,$3,$4,$5,$6,$7, now())
-         on conflict (parcela_id) do update set
-           pedido_id = excluded.pedido_id, loja_id = excluded.loja_id,
-           forma_pagamento_id = excluded.forma_pagamento_id, valor = excluded.valor,
-           data_vencimento = excluded.data_vencimento, eh_devolucao = excluded.eh_devolucao,
-           atualizado_em = now()`,
-        [l.parcela_id, l.pedido_id, l.loja_id, l.forma_pagamento_id, l.valor, l.data_vencimento, l.eh_devolucao],
-      );
+    // Só roda se o catálogo desta rodada veio ok (ver bloco 0 no topo do
+    // arquivo) — sem catálogo, pular é mais seguro que gravar errado.
+    if (tipoPagamentoPorFormaId) {
+      const linhasFP = linhasDeFormaPagamento(p.id, detalhe.loja?.id || null, detalhe.parcelas, tipoPagamentoPorFormaId);
+      // Forma de pagamento fora do catálogo (raro: Bling pode ter cadastrado
+      // uma forma nova entre a leitura do catálogo e a do pedido) — conta,
+      // não esconde. Mesmo estilo dos contadores de "órfãos" deste arquivo.
+      semCatalogoFP += linhasFP.filter((l) => !tipoPagamentoPorFormaId.has(String(l.forma_pagamento_id))).length;
+      // Limpa parcela que não existe mais no pedido (o Bling pode recriar uma
+      // parcela com id novo ao editar o pedido) — sem isto, uma devolução
+      // antiga continuaria descontando do total pra sempre, ou um desconto
+      // seria aplicado em dobro se a parcela nova tivesse outro id.
+      const idsAtuais = linhasFP.map((l) => l.parcela_id);
+      if (idsAtuais.length) {
+        await cli.query(
+          'delete from bling_pedido_forma_pagamento where pedido_id = $1 and parcela_id <> all($2::bigint[])',
+          [p.id, idsAtuais]);
+      } else {
+        await cli.query('delete from bling_pedido_forma_pagamento where pedido_id = $1', [p.id]);
+      }
+      for (const l of linhasFP) {
+        await cli.query(
+          `insert into bling_pedido_forma_pagamento
+             (parcela_id, pedido_id, loja_id, forma_pagamento_id, valor, data_vencimento, eh_devolucao, atualizado_em)
+           values ($1,$2,$3,$4,$5,$6,$7, now())
+           on conflict (parcela_id) do update set
+             pedido_id = excluded.pedido_id, loja_id = excluded.loja_id,
+             forma_pagamento_id = excluded.forma_pagamento_id, valor = excluded.valor,
+             data_vencimento = excluded.data_vencimento, eh_devolucao = excluded.eh_devolucao,
+             atualizado_em = now()`,
+          [l.parcela_id, l.pedido_id, l.loja_id, l.forma_pagamento_id, l.valor, l.data_vencimento, l.eh_devolucao],
+        );
+      }
     }
 
     // Os itens são REFEITOS a cada rodada: pedido editado no Bling muda de
@@ -434,6 +460,7 @@ try {
   console.log(`  ÓRFÃOS              ${orfaos}  ${pedidos.length
     ? '(' + (orfaos / pedidos.length * 100).toFixed(0) + '% — compraram sem ter passado por nós)' : ''}`);
   console.log(`  ficha sem telefone  ${semTelefone}`);
+  if (semCatalogoFP) console.log(`  forma de pagto fora do catálogo ${semCatalogoFP}`);
   console.log(`  VIERAM DE UM LEAD   ${leadPor.ficha + leadPor.email + leadPor.telefone}`
     + `  (ficha ${leadPor.ficha} · e-mail ${leadPor.email} · telefone ${leadPor.telefone})`
     + `${temLead ? '' : '  — colunas ainda não existem, nada gravado'}`);
