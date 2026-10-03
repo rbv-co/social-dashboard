@@ -35,7 +35,8 @@
 // com ninguém entra com `pessoa_id` nulo, e o robô diz quantos foram.
 import './lib/carregar-env.mjs';
 import pg from 'pg';
-import { loginServico, blingProxy } from './lib/bling-comercial.mjs';
+import { loginServico, blingProxy, blingFormasDePagamento } from './lib/bling-comercial.mjs';
+import { linhasDeFormaPagamento } from './lib/forma-pagamento.mjs';
 import { aplicarValorCorrigido } from '../supabase/functions/_shared/valor-corrigido.js';
 import { ajustesDeValor } from './lib/ajustes-de-valor.mjs';
 import { colunasExistem } from './lib/colunas-existem.mjs';
@@ -102,6 +103,19 @@ try {
   const ate = new Date();
   const de = new Date(ate); de.setDate(de.getDate() - dias);
   console.log(`\njanela: ${iso(de)} a ${iso(ate)}${ensaio ? '  (ENSAIO — nada será gravado)' : ''}\n`);
+
+  // ── 0. o catálogo de formas de pagamento, uma vez por rodada ───────────────
+  // Decide quais parcelas são devolução de mercadoria (tipoPagamento=5), não
+  // venda nova. Se não der para ler, o robô TEM que parar — seguir sem o
+  // catálogo classificaria toda troca como venda normal de novo, o bug que
+  // esta mudança corrige. Ver supabase/functions/_shared/valor-liquido-de-troca.js.
+  const formasDePagamento = await blingFormasDePagamento(token);
+  if (!formasDePagamento.length) {
+    throw new Error('catálogo de formas de pagamento veio vazio — não dá para classificar devolução, parando.');
+  }
+  const tipoPagamentoPorFormaId = new Map(formasDePagamento.map((f) => [String(f.id), f.tipoPagamento]));
+  console.log(`${formasDePagamento.length} formas de pagamento no catálogo`
+    + ` (${formasDePagamento.filter((f) => f.tipoPagamento === 5).length} marcadas como devolução)`);
 
   // ── 1. TODOS os pedidos da janela, em qualquer situação ────────────────────
   //
@@ -295,6 +309,25 @@ try {
           atualizado_em = now()
        returning id`,
       valores);
+
+    // ── forma de pagamento desta venda, linha por linha ──────────────────────
+    // Upsert por parcela_id (chave do próprio Bling): se o Bling recriar a
+    // parcela com id novo ao editar o pedido, a linha antiga fica órfã — caso
+    // raro, aceito por ora (ver spec).
+    const linhasFP = linhasDeFormaPagamento(p.id, detalhe.loja?.id || null, detalhe.parcelas, tipoPagamentoPorFormaId);
+    for (const l of linhasFP) {
+      await cli.query(
+        `insert into bling_pedido_forma_pagamento
+           (parcela_id, pedido_id, loja_id, forma_pagamento_id, valor, data_vencimento, eh_devolucao, atualizado_em)
+         values ($1,$2,$3,$4,$5,$6,$7, now())
+         on conflict (parcela_id) do update set
+           pedido_id = excluded.pedido_id, loja_id = excluded.loja_id,
+           forma_pagamento_id = excluded.forma_pagamento_id, valor = excluded.valor,
+           data_vencimento = excluded.data_vencimento, eh_devolucao = excluded.eh_devolucao,
+           atualizado_em = now()`,
+        [l.parcela_id, l.pedido_id, l.loja_id, l.forma_pagamento_id, l.valor, l.data_vencimento, l.eh_devolucao],
+      );
+    }
 
     // Os itens são REFEITOS a cada rodada: pedido editado no Bling muda de
     // itens, e acrescentar deixaria os antigos ali para sempre.
