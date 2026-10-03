@@ -136,6 +136,7 @@ import { agruparCanais, estadoDoGrupo, alternarGrupo } from '../../compartilhado
 import { aplicarDataDaVenda } from '../../compartilhado/data-da-venda.js'
 import { buscarAjustesDeValor, aplicarValorCorrigido } from '../../compartilhado/valor-corrigido.js'
 import { buscarAjustesDeVendedor, aplicarVendedorCorrigido } from '../../compartilhado/vendedor-corrigido.js'
+import { buscarPedidosShopifyDoPeriodo, mesclarPedidosShopify } from '../../compartilhado/pedidos-shopify.js'
 // Quando a recarga de 5 minutos deve acontecer — e quando é só desperdício.
 import { decidirNoTique, decidirAoVoltar } from '../../compartilhado/recarga-automatica.js'
 // A PORTA DO BLING E O QUE FAZER QUANDO ELE NÃO RESPONDE. Mesmo módulo da
@@ -667,16 +668,24 @@ async function loadGestaoVistaData(period){
     // linhas de `bling_pedido_ajuste_vendedor` dizem quem de fato vendeu. Ver
     // src/compartilhado/vendedor-corrigido.js. Também não depende do que o
     // Bling devolveu — por isso entra no mesmo Promise.all.
-    const [ajuste,ajustePrev,ajustesDeValor,ajustesDeVendedor]=await Promise.all([
+    const [ajuste,ajustePrev,ajustesDeValor,ajustesDeVendedor,pedidosShopify,pedidosShopifyPrev]=await Promise.all([
       aplicarDataDaVenda(sbClient,pedidosBrutos,di,df),
       aplicarDataDaVenda(sbClient,pedidosPrevBrutos,diPrev,dfPrev),
       buscarAjustesDeValor(sbClient),
       buscarAjustesDeVendedor(sbClient),
+      buscarPedidosShopifyDoPeriodo(sbClient,di,df),
+      buscarPedidosShopifyDoPeriodo(sbClient,diPrev,dfPrev),
     ]);
     if(myLoad!==_gvLoadId)return;
     // `let`, e não `const`: o recorte por time (mais abaixo) reatribui os dois.
     let pedidos=aplicarValorCorrigido(ajuste.pedidos,ajustesDeValor).pedidos;
     let pedidosPrev=aplicarValorCorrigido(ajustePrev.pedidos,ajustesDeValor).pedidos;
+    // A LOJA SHOPIFY SAI DO BLING E ENTRA SÓ POR AQUI. Ver
+    // docs/superpowers/specs/2026-10-03-pedidos-da-shopify-direto-design.md.
+    // mesclarPedidosShopify tira o que o Bling trouxer dessa loja (trava
+    // contra conta em dobro) e põe no lugar o que veio da Shopify direto.
+    pedidos=mesclarPedidosShopify(pedidos,pedidosShopify||[]);
+    pedidosPrev=mesclarPedidosShopify(pedidosPrev,pedidosShopifyPrev||[]);
 
     // Supabase: pode rodar em paralelo (API diferente)
     const[canaisCheio,metasRows,eqTimes,eqMembros,eqMembrosDeGrupo,depsRows,vincRows]=await Promise.all([
