@@ -45,6 +45,28 @@ export async function blingDepositos(token) {
   })).filter((x) => Number.isFinite(x.deposito_id) && x.deposito_id > 0);
 }
 
+// O catálogo de formas de pagamento: id → tipoPagamento (código fixo do
+// Bling, não o nome — a loja pode renomear a forma de pagamento a qualquer
+// hora; o código não muda). Usado para marcar tipoPagamento=5 ("Devolução de
+// mercadorias"/crédito loja) nas parcelas de um pedido. Ver
+// supabase/functions/_shared/valor-liquido-de-troca.js.
+//
+// Bounded em 20 páginas (2000 formas) por segurança, mesmo padrão de
+// blingProdutos — esta conta tem 77 hoje.
+export async function blingFormasDePagamento(token, maxPaginas = 20) {
+  const todas = [];
+  for (let pagina = 1; pagina <= maxPaginas; pagina++) {
+    const resp = await blingProxy(token, 'formas-pagamentos', { pagina, limite: 100 });
+    const d = resp.data;
+    if (!Array.isArray(d) || !d.length) break;
+    todas.push(...d);
+    if (d.length < 100) break;
+  }
+  return todas
+    .map((f) => ({ id: Number(f.id), tipoPagamento: Number(f.tipoPagamento) }))
+    .filter((f) => Number.isFinite(f.id));
+}
+
 // ── Conta de serviço: login → access_token ──
 export async function loginServico() {
   const r = await fetch(SUPABASE_URL + '/auth/v1/token?grant_type=password', {
