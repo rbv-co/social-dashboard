@@ -132,6 +132,7 @@ import { adminToast } from '../../compartilhado/avisos.js'
 import { ocultosNoPeriodo } from '../../compartilhado/canal-fechado.js'
 import { filtrarPedidosPorCanal, depositosVisiveis, prepararEstoque, statusSaldo, categoriasDisponiveis, normalizarDepositos, DEPOSITOS_SEMENTE } from './estoque-gv.js'
 import { montarLinhas, posicionarLinhas, alturaComum } from './velocimetro-gv.js'
+import { calcularRankingPorVendedor } from './ranking-por-vendedor.js'
 import { agruparCanais, estadoDoGrupo, alternarGrupo } from '../../compartilhado/grupo-do-canal.js'
 import { aplicarDataDaVenda } from '../../compartilhado/data-da-venda.js'
 import { buscarAjustesDeValor, aplicarValorCorrigido } from '../../compartilhado/valor-corrigido.js'
@@ -327,29 +328,9 @@ function _gvUpdateVendRanking(){
   const el=document.getElementById('gv-rank-inner-v');
   if(!el)return;
   const pedidos=ctx.pedidosView||ctx.pedidos; // filtrado (vista atual do board), não o cheio de ctx.pedidos
-  const {pedidosPrev,canais,diPrev,dfPrev}=ctx;
-  const vm=window._gvVendedoresCache||{};
-  const pm=window._gvPedidoVendorMap||{};
-  const porVendObj={};
-  pedidos.forEach(p=>{
-    const vId=pm[p.id]||p.vendedor?.id;
-    const vNome=(vm[vId]?.nome||'Sem vendedor').split(' ').slice(0,2).join(' ');
-    const canal=ctx.canais?.[p.loja?.id]||'';
-    const key=vId||vNome;
-    if(!porVendObj[key])porVendObj[key]={nm:vNome,total:0,cnt:0,canalCnt:{}};
-    porVendObj[key].total+=parseFloat(p.total||0);
-    porVendObj[key].cnt++;
-    if(canal)porVendObj[key].canalCnt[canal]=(porVendObj[key].canalCnt[canal]||0)+1;
-  });
-  Object.values(porVendObj).forEach(vd=>{const e=Object.entries(vd.canalCnt);vd.canal=e.sort((a,b)=>b[1]-a[1])[0]?.[0]||'';});
-  const vendsArr=Object.values(porVendObj).sort((a,b)=>b.total-a.total);
-  const porVendPrev={};
-  (pedidosPrev||[]).forEach(p=>{
-    const vId=pm[p.id]||p.vendedor?.id;
-    const vNome=(vm[vId]?.nome||'Sem vendedor').split(' ').slice(0,2).join(' ');
-    const key=vId||vNome;
-    porVendPrev[key]=(porVendPrev[key]||0)+parseFloat(p.total||0);
-  });
+  const {pedidosPrev,canais}=ctx;
+  const {porVendObj,vendsArr,porVendPrev}=calcularRankingPorVendedor(
+    pedidos,pedidosPrev,window._gvPedidoVendorMap,window._gvVendedoresCache,canais);
   const maxVend=vendsArr[0]?.total||1;
   function numCls(i){return i===0?'gold':i===1?'silver':i===2?'bronze':'rest';}
   function fmtR0(v){return 'R$ '+Math.round(Number(v)).toLocaleString('pt-BR');}
@@ -1175,28 +1156,8 @@ function renderGestaoVista(pedidos,canais,metasMap,hoje,diasMes,diaAtual,di,peri
   const maxC=canaisArr[0]?.v||1;
 
   // Per vendedor — usa mapa pedido→vendedor preenchido em background pelo _gvBuildSkuSlide
-  const _vm=window._gvVendedoresCache||{};
-  const _pm=window._gvPedidoVendorMap||{};
-  const porVendObj={};
-  pedidos.forEach(p=>{
-    const vId=_pm[p.id]||p.vendedor?.id;
-    const vNome=(_vm[vId]?.nome||'Sem vendedor').split(' ').slice(0,2).join(' ');
-    const canal=canais[p.loja?.id]||'';
-    const key=vId||vNome;
-    if(!porVendObj[key])porVendObj[key]={nm:vNome,total:0,cnt:0,canalCnt:{}};
-    porVendObj[key].total+=parseFloat(p.total||0);
-    porVendObj[key].cnt++;
-    if(canal)porVendObj[key].canalCnt[canal]=(porVendObj[key].canalCnt[canal]||0)+1;
-  });
-  Object.values(porVendObj).forEach(vd=>{const e=Object.entries(vd.canalCnt);vd.canal=e.sort((a,b)=>b[1]-a[1])[0]?.[0]||'';});
-  const vendsArr=Object.values(porVendObj).sort((a,b)=>b.total-a.total);
-  const porVendPrev={};
-  (pedidosPrev||[]).forEach(p=>{
-    const vId=_pm[p.id]||p.vendedor?.id;
-    const vNome=(_vm[vId]?.nome||'Sem vendedor').split(' ').slice(0,2).join(' ');
-    const key=vId||vNome;
-    porVendPrev[key]=(porVendPrev[key]||0)+parseFloat(p.total||0);
-  });
+  const {porVendObj,vendsArr,porVendPrev}=calcularRankingPorVendedor(
+    pedidos,pedidosPrev,window._gvPedidoVendorMap,window._gvVendedoresCache,canais);
   const maxV=vendsArr[0]?.total||1;
 
   const isDark=document.documentElement.dataset.theme==='dark';
