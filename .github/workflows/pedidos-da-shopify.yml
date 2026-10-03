@@ -1,0 +1,69 @@
+name: Pedidos da Loja Shopify (direto da API, sem Bling)
+
+# Mesmo desenho de confiança do robô do Bling: varredura funda 1x por dia +
+# conferência de janela curta de hora em hora, pra pegar pedido que mudou de
+# status (Pix confirmado depois, por exemplo) sem esperar o dia seguinte.
+#
+# ⚠️ SÓ COMEÇA A FUNCIONAR QUANDO SHOPIFY_SHOP E UMA CREDENCIAL
+# (SHOPIFY_CLIENT_ID + SHOPIFY_CLIENT_SECRET, ou SHOPIFY_ACCESS_TOKEN — mesmos
+# nomes de coletor/estoque-do-site.mjs) FOREM CADASTRADOS EM Settings → Secrets
+# → Actions deste repositório. Sem SHOPIFY_SHOP a rodada é pulada sem falhar
+# (nada de e-mail de "Run failed" de hora em hora); com SHOPIFY_SHOP e sem
+# credencial, falha com mensagem clara (ver coletor/trazer-pedidos-da-shopify.mjs).
+# Não afeta nenhum outro robô.
+on:
+  schedule:
+    - cron: '41 7 * * *'     # varredura profunda: 30 dias (17 min depois do robô do Bling, mesmo motivo de espaçamento)
+    - cron: '41 * * * *'     # conferência ao vivo: 3 dias
+  workflow_dispatch:
+    inputs:
+      dias:
+        description: 'Janela em dias (vazio = 30)'
+        required: false
+        default: ''
+      ensaio:
+        description: 'Só ler, sem gravar? (qualquer texto = sim)'
+        required: false
+        default: ''
+
+concurrency:
+  group: pedidos-da-shopify
+  cancel-in-progress: false
+
+jobs:
+  trazer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - name: Instalar as dependências do coletor
+        working-directory: coletor
+        run: npm ci
+
+      - name: Trazer os pedidos da Shopify
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SHOPIFY_SHOP: ${{ secrets.SHOPIFY_SHOP }}
+          SHOPIFY_CLIENT_ID: ${{ secrets.SHOPIFY_CLIENT_ID }}
+          SHOPIFY_CLIENT_SECRET: ${{ secrets.SHOPIFY_CLIENT_SECRET }}
+          SHOPIFY_ACCESS_TOKEN: ${{ secrets.SHOPIFY_ACCESS_TOKEN }}
+          DIAS: ${{ github.event.inputs.dias }}
+          ENSAIO: ${{ github.event.inputs.ensaio }}
+          QUAL_CRON: ${{ github.event.schedule }}
+        run: |
+          if [ -z "$SHOPIFY_SHOP" ]; then
+            echo "SHOPIFY_SHOP ainda não configurado em Settings → Secrets → Actions — pulando esta rodada (não é falha, é esperado até o dono configurar)."
+            exit 0
+          fi
+          if [ -n "$DIAS" ] && ! printf '%s' "$DIAS" | grep -qE '^[0-9]+$'; then
+            echo "DIAS inválido (esperado número): $DIAS"; exit 1
+          fi
+          padrao=30
+          if [ "$QUAL_CRON" = "41 * * * *" ]; then padrao=3; fi
+          argumentos="--dias=${DIAS:-$padrao}"
+          if [ -n "$ENSAIO" ]; then argumentos="$argumentos --ensaio"; fi
+          echo "janela: $argumentos  (cron: ${QUAL_CRON:-manual})"
+          node coletor/trazer-pedidos-da-shopify.mjs $argumentos

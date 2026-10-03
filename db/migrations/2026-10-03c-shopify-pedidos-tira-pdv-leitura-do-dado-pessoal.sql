@@ -1,0 +1,24 @@
+-- Tira o papel pdv_leitura das colunas de dado pessoal de shopify_pedidos.
+--
+-- POR QUE ESTA MIGRATION EXISTE
+-- A migration anterior (2026-10-03b) restringiu `authenticated` às colunas
+-- sem dado pessoal. Mas existe um papel de banco `pdv_leitura` — com
+-- `rolbypassrls = true` (ignora toda política de RLS) e `rolcanlogin = true`
+-- — que tinha GRANT PRÓPRIO e direto nas 11 colunas da tabela, incluindo
+-- `cliente_nome`, `cliente_email` e `bruto`. Esse grant não veio de nenhuma
+-- migration deste repositório (não há nenhuma menção a `pdv_leitura` em
+-- arquivo nenhum) — é quase certo que existe uma regra de "default privilege"
+-- no banco que concede SELECT a esse papel em toda tabela nova criada no
+-- schema public, automaticamente.
+--
+-- O QUE ESTA MIGRATION FAZ E O QUE NÃO FAZ
+-- Só tira `pdv_leitura` das 3 colunas de dado pessoal DESTA tabela — mantém
+-- o acesso dele às outras 8 colunas (id, numero, loja_id, total, moeda,
+-- status_financeiro, criado_em_shopify, atualizado_em), porque não há
+-- informação aqui sobre o que esse papel faz nem se ele precisa delas (é
+-- provavelmente um sistema de PDV físico de loja, por causa do nome, mas
+-- isso não foi confirmado). NÃO mexe na regra de "default privilege" que
+-- concede esse acesso por padrão a toda tabela nova — isso é uma política de
+-- banco inteira do projeto, não desta tabela, e exige decisão do dono.
+
+revoke select (cliente_nome, cliente_email, bruto) on public.shopify_pedidos from pdv_leitura;

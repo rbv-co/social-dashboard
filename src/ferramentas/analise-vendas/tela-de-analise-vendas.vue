@@ -93,6 +93,7 @@ import { hojeLocal, diasAtras } from '../../compartilhado/datas.js'
 import { aplicarDataDaVenda } from '../../compartilhado/data-da-venda.js'
 import { buscarAjustesDeValor, aplicarValorCorrigido } from '../../compartilhado/valor-corrigido.js'
 import { buscarDevolucoes, aplicarValorLiquidoDeTroca } from '../../compartilhado/valor-liquido-de-troca.js'
+import { buscarPedidosShopifyDoPeriodo, mesclarPedidosShopify } from '../../compartilhado/pedidos-shopify.js'
 // A PORTA DO BLING E O QUE FAZER QUANDO ELE NÃO RESPONDE — mesmo módulo da
 // Gestão à Vista, para as duas telas de venda nunca discordarem sobre isso.
 import { chamarBling, paginasDoBling, ErroDoBling, textoDoAviso } from '../../compartilhado/chamada-do-bling.js'
@@ -446,12 +447,15 @@ async function loadSalesAnalysisData(period,opcoes){
     // só, aplicada nas TRÊS janelas pelo mesmo motivo do recorte abaixo — e
     // depois do data-da-venda, que é por onde passam também os pedidos trazidos
     // de outro dia. Ver src/compartilhado/valor-corrigido.js.
-    const[aj,ajPrev,aj15,ajustesDeValor,devolucoes]=await Promise.all([
+    const[aj,ajPrev,aj15,ajustesDeValor,devolucoes,pedidosShopify,pedidosShopifyPrev,pedidosShopify15]=await Promise.all([
       aplicarDataDaVenda(sbClient,pedidosBrutos,di,df),
       aplicarDataDaVenda(sbClient,pedidosPrevBrutos,diPrev,dfPrev),
       aplicarDataDaVenda(sbClient,pedidos15Brutos,di15,df15),
       buscarAjustesDeValor(sbClient),
       buscarDevolucoes(sbClient),
+      buscarPedidosShopifyDoPeriodo(sbClient,di,df),
+      buscarPedidosShopifyDoPeriodo(sbClient,diPrev,dfPrev),
+      buscarPedidosShopifyDoPeriodo(sbClient,di15,df15),
     ]);
     aj.pedidos=aplicarValorCorrigido(aj.pedidos,ajustesDeValor).pedidos;
     ajPrev.pedidos=aplicarValorCorrigido(ajPrev.pedidos,ajustesDeValor).pedidos;
@@ -461,6 +465,12 @@ async function loadSalesAnalysisData(period,opcoes){
     aj.pedidos=aplicarValorLiquidoDeTroca(aj.pedidos,devolucoes||[]).pedidos;
     ajPrev.pedidos=aplicarValorLiquidoDeTroca(ajPrev.pedidos,devolucoes||[]).pedidos;
     aj15.pedidos=aplicarValorLiquidoDeTroca(aj15.pedidos,devolucoes||[]).pedidos;
+    // A LOJA SHOPIFY SAI DO BLING E ENTRA SÓ POR AQUI, por último (depois de
+    // qualquer correção de valor) — mesma regra da Gestão à Vista. Ver
+    // docs/superpowers/specs/2026-10-03-pedidos-da-shopify-direto-design.md.
+    aj.pedidos=mesclarPedidosShopify(aj.pedidos,pedidosShopify||[]);
+    ajPrev.pedidos=mesclarPedidosShopify(ajPrev.pedidos,pedidosShopifyPrev||[]);
+    aj15.pedidos=mesclarPedidosShopify(aj15.pedidos,pedidosShopify15||[]);
     // AS TRÊS JANELAS RECEBEM O MESMO RECORTE. Recortar só a atual faria o
     // comparativo ("vs período anterior") medir a loja dela contra a empresa
     // inteira — um número errado com cara de verdade.
@@ -609,6 +619,7 @@ async function _saPopulateItemCounts(pedidos,pvQtdMap,pvMap){
   for(let i=0;i<Math.min(pedidos.length,200);i++){
     if(window._saItemFetchV!==myV)return;
     const p=pedidos[i];
+    if(p.fonte==='shopify')continue;
     if(pvQtdMap[parseInt(p.id)]>1)continue;
     try{
       const resp=await blingCall(`pedidos/vendas/${p.id}`,{});
@@ -666,7 +677,7 @@ async function _saPopulateDescontos(pedidos){
   if(hadCache)_rerender();
 
   // Fetch uncached orders in parallel batches of 5, single re-render at the end
-  const toFetch=pedidos.filter(p=>p._desconto===undefined).slice(0,400);
+  const toFetch=pedidos.filter(p=>p._desconto===undefined&&p.fonte!=='shopify').slice(0,400);
   const BATCH=5;
   for(let i=0;i<toFetch.length;i+=BATCH){
     if(window._saDescFetchV!==myV)return;
