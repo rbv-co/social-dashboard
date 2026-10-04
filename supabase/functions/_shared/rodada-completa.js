@@ -12,6 +12,8 @@
 //                                   assim que o checkout aparece com telefone (Aguardando)
 //   ENVIO_MODO           abandono   (ENVIO_ATRASO_MINUTOS, ENVIO_MAX_HORAS=24, TEMPLATE_NOME, TEMPLATE_TEXTO)
 //   ENVIO_MODO_PEDIDO    pedido     (PEDIDO_MAX_HORAS=14, TEMPLATE_PEDIDO, TEMPLATE_TEXTO_PEDIDO)
+//   ENVIO_MODO_PAGAMENTO pagamento  (PAGAMENTO_MAX_HORAS=14, TEMPLATE_PAGAMENTO, TEMPLATE_TEXTO_PAGAMENTO) "pagamento
+//                                   confirmado", disparada em orders/paid. Design: 2026-10-04-mensagens-pos-pedido-design.md
 //   ENVIO_MODO_FOLLOWUP  follow-up  (FOLLOWUP_APOS_HORAS=48, FOLLOWUP_MAX_HORAS=24, TEMPLATE_FOLLOWUP, TEMPLATE_TEXTO_FOLLOWUP)
 //   comuns: ENVIO_LIMITE_POR_RODADA=10, ENVIO_SO_PARA, LINK_BASE, TEMPLATE_IDIOMA=pt_BR, CHATWOOT_*
 import { processarRodada } from './rodada-de-mensagens.js'
@@ -50,6 +52,13 @@ export async function rodarTudo({ env, sb, criarCliente, agora = new Date() }) {
       rodar: (cliente, modo) => processarFila({
         sb, cliente, agora, tipo: 'pedido',
         config: { ...base, modo, maxHoras: numero(env('PEDIDO_MAX_HORAS'), 14), templateNome: env('TEMPLATE_PEDIDO'), templateTexto: env('TEMPLATE_TEXTO_PEDIDO') },
+      }),
+    },
+    {
+      nome: 'pagamento', modo: env('ENVIO_MODO_PAGAMENTO') || 'desligado',
+      rodar: (cliente, modo) => processarFila({
+        sb, cliente, agora, tipo: 'pagamento',
+        config: { ...base, modo, maxHoras: numero(env('PAGAMENTO_MAX_HORAS'), 14), templateNome: env('TEMPLATE_PAGAMENTO'), templateTexto: env('TEMPLATE_TEXTO_PAGAMENTO') },
       }),
     },
     {
@@ -102,5 +111,5 @@ export async function rodarTudo({ env, sb, criarCliente, agora = new Date() }) {
       status = Math.max(status, 500)
     }
   }
-  return { status, corpo: { ...corpos.abandono, ok: status === 200, inicio: corpos.inicio, pedido: corpos.pedido, followup: corpos.followup } }
+  return { status, corpo: { ...corpos.abandono, ok: status === 200, inicio: corpos.inicio, pedido: corpos.pedido, pagamento: corpos.pagamento, followup: corpos.followup } }
 }

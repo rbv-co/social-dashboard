@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { aplicarDecisao, aplicarPedido, processarWebhook } from './aplicar-decisao.js'
+import { aplicarDecisao, aplicarPedido, aplicarPagamento, processarWebhook } from './aplicar-decisao.js'
 
 // `error` vale para todas as chamadas; `falhaEm` (lista de nomes) faz falhar só essas.
 const fakeSb = (error = null, falhaEm = null) => {
@@ -62,6 +62,22 @@ test('⚠️ aplicarPedido: erro de banco vira 500 (a Shopify reenvia; o registr
   }
 })
 
+// ── pagamento ────────────────────────────────────────────────────────────────
+test('aplicarPagamento: registrar chama a função certa; ignorar não chama nada', async () => {
+  const sb = fakeSb()
+  assert.deepEqual(await aplicarPagamento(sb, { acao: 'registrar_pagamento', args: { p_pedido_id: 5 } }), { status: 200, corpo: { ok: true } })
+  assert.deepEqual(sb.chamadas, [['registrar_pagamento_para_mensagem', { p_pedido_id: 5 }]])
+  const sb2 = fakeSb()
+  assert.deepEqual(await aplicarPagamento(sb2, { acao: 'ignorar', motivo: 'sem_telefone' }), { status: 200, corpo: { ok: true, ignorado: 'sem_telefone' } })
+  assert.deepEqual(sb2.chamadas, [])
+})
+
+test('⚠️ aplicarPagamento: erro de banco vira 500 (a Shopify reenvia; o registro é idempotente)', async (t) => {
+  calar(t)
+  const r = await aplicarPagamento(fakeSb({ message: '504' }), { acao: 'registrar_pagamento', args: {} })
+  assert.equal(r.status, 500)
+})
+
 // ── o webhook inteiro (checkout + pedido) ─────────────────────────────────────
 const PEDIDO_WEB = {
   id: 6012345678901, name: '#1001', source_name: 'web', checkout_token: 'tok1', financial_status: 'pending',
@@ -76,13 +92,14 @@ test('⚠️ orders/create da loja: marca o checkout como pagamento pendente E r
   assert.equal(sb.chamadas[1][1].p_pedido_id, 6012345678901)
 })
 
-test('orders/cancelled: reabre o checkout E cancela a mensagem do pedido; orders/paid só marca comprou', async () => {
+test('orders/cancelled: reabre o checkout E cancela a mensagem do pedido; orders/paid marca comprou E registra o pagamento', async () => {
   const c = fakeSb()
   await processarWebhook(c, 'orders/cancelled', PEDIDO_WEB)
   assert.deepEqual(c.chamadas.map((x) => x[0]), ['reabrir_checkout_abandono', 'cancelar_mensagem_pedido'])
   const p = fakeSb()
   await processarWebhook(p, 'orders/paid', PEDIDO_WEB)
-  assert.deepEqual(p.chamadas.map((x) => x[0]), ['marcar_checkout_comprou'])
+  assert.deepEqual(p.chamadas.map((x) => x[0]), ['marcar_checkout_comprou', 'registrar_pagamento_para_mensagem'])
+  assert.equal(p.chamadas[1][1].p_pedido_id, 6012345678901)
 })
 
 test('checkouts/update só mexe na fila de abandono (nada de pedido)', async () => {

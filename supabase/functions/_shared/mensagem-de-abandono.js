@@ -86,8 +86,9 @@ export function montarTemplateParams({ nomeTemplate, idioma, nome, sufixoUrl }) 
 }
 
 /**
- * `template_params` da mensagem de PEDIDO RECEBIDO: categoria UTILIDADE, corpo {1: nome, 2: número do pedido}
- * e nenhum botão (nada de link, para a Meta não reclassificar como marketing).
+ * `template_params` das mensagens transacionais de PEDIDO (pedido recebido, pagamento confirmado): categoria
+ * UTILIDADE, corpo {1: nome, 2: número do pedido} e nenhum botão (nada de link, para a Meta não reclassificar
+ * como marketing). O nome da função ficou "Pedido" por ser a primeira; serve às duas (ver rodada-da-fila.js).
  */
 export function montarTemplateParamsPedido({ nomeTemplate, idioma, nome, numero }) {
   return {

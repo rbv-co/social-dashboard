@@ -4,7 +4,8 @@
 // (Supabase) e `cliente` (Chatwoot) injetados. Irmã de rodada-de-mensagens.js (o abandono), que NÃO é tocada de
 // propósito: está no ar. Design: docs/superpowers/specs/2026-09-30-fluxo-de-mensagens-design.md
 //
-// • pedido: transacional (orders/create). Não consulta bloqueados nem status de checkout, e não tem link.
+// • pedido, pagamento: transacionais (orders/create, orders/paid). Não consultam bloqueados nem status de
+//   checkout, e não têm link — mesmo template (UTILIDADE, corpo {1: nome, 2: número}), só o nome muda.
 // • inicio: "Nós reservamos seu pedido", assim que o checkout aparece com telefone. É marketing (ainda não existe pedido):
 //   confere bloqueados e leva o link do checkout no botão. Sem releitura de status (a cliente acabou de chegar).
 // • followup: marketing. Confere bloqueados, RELÊ o status do checkout e NÃO envia se a cliente já respondeu.

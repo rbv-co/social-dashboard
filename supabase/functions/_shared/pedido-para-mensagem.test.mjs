@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { decidirPedido } from './pedido-para-mensagem.js'
+import { decidirPedido, decidirPagamento } from './pedido-para-mensagem.js'
 
 const PEDIDO = {
   id: 6012345678901, name: '#1001', source_name: 'web', test: false, created_at: '2026-09-30T15:00:00-03:00',
@@ -48,4 +48,23 @@ test('orders/cancelled cancela a mensagem do pedido; os outros tópicos e corpos
   assert.equal(decidirPedido('orders/paid', PEDIDO).motivo, 'topico_nao_tratado')
   assert.equal(decidirPedido('checkouts/update', PEDIDO).motivo, 'topico_nao_tratado')
   assert.equal(decidirPedido('orders/create', null).motivo, 'corpo_invalido')
+})
+
+// ── pagamento confirmado (orders/paid) ─────────────────────────────────────────
+test('orders/paid da loja online vira o registro do pagamento, com os mesmos dados do pedido', () => {
+  assert.deepEqual(decidirPagamento('orders/paid', PEDIDO), {
+    acao: 'registrar_pagamento',
+    args: { p_pedido_id: 6012345678901, p_numero: '#1001', p_nome: 'Maysa Priscila', p_telefone: '+5519982621828', p_criado_em: '2026-09-30T15:00:00-03:00' },
+  })
+})
+
+test('⚠️ pagamento: mesmas regras de elegibilidade do pedido (teste, canal, sem telefone/número), e só orders/paid é tratado', () => {
+  const motivo = (extra) => decidirPagamento('orders/paid', { ...PEDIDO, ...extra }).motivo
+  assert.equal(motivo({ test: true }), 'pedido_de_teste')
+  assert.equal(motivo({ source_name: 'pos' }), 'pedido_de_outro_canal')
+  assert.equal(motivo({ shipping_address: {}, customer: {} }), 'sem_telefone')
+  assert.equal(motivo({ name: null, order_number: null }), 'sem_numero')
+  assert.equal(decidirPagamento('orders/create', PEDIDO).motivo, 'topico_nao_tratado')
+  assert.equal(decidirPagamento('orders/cancelled', PEDIDO).motivo, 'topico_nao_tratado')
+  assert.equal(decidirPagamento('orders/paid', null).motivo, 'corpo_invalido')
 })
