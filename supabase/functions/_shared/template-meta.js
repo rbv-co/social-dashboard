@@ -43,6 +43,36 @@ export function validarTemplate({ nome, corpo, exemploCorpo, rodape, textoLink, 
   return p
 }
 
+// ── UTILIDADE (mensagens transacionais: sem botão, {{1}} nome e {{2}} número do pedido) ────────
+// Mesmo formato do pedido_recebido_v1 (2026-09-30-fluxo-de-mensagens-design.md): só BODY, categoria
+// UTILITY. A Meta exige exemplo de CADA variável, na ordem em que aparecem no corpo.
+
+/** @returns {object} corpo do POST para a Meta. Categoria sempre UTILITY, sem botões. */
+export function montarTemplateUtilidade({ nome, idioma = 'pt_BR', corpo, exemploVar1, exemploVar2 }) {
+  return { name: nome, language: idioma, category: 'UTILITY', components: [{ type: 'BODY', text: corpo, example: { body_text: [[exemploVar1, exemploVar2]] } }] }
+}
+
+/** Regras da Meta para o modelo de UTILIDADE. Vazio = ok. */
+export function validarTemplateUtilidade({ nome, corpo, exemploVar1, exemploVar2 }) {
+  const p = []
+  if (!/^[a-z0-9_]{1,512}$/.test(nome ?? '')) p.push('nome inválido (só minúsculas, números e _)')
+  const variaveis = (corpo ?? '').match(/\{\{\s*\d\s*\}\}/g) ?? []
+  if (variaveis.length !== 2 || variaveis[0] !== '{{1}}' || variaveis[1] !== '{{2}}') p.push('o corpo precisa de exatamente {{1}} (nome) e {{2}} (número do pedido), nesta ordem')
+  if ((corpo ?? '').length > LIMITE_CORPO) p.push(`corpo passa de ${LIMITE_CORPO} caracteres`)
+  if (!exemploVar1) p.push('falta o exemplo da variável {{1}}')
+  if (!exemploVar2) p.push('falta o exemplo da variável {{2}}')
+  return p
+}
+
+/** Mensagem de PAGAMENTO CONFIRMADO. Design: 2026-10-04-mensagens-pos-pedido-design.md */
+export const TEMPLATE_PAGAMENTO = {
+  nome: 'pedido_pagamento_confirmado_v1',
+  idioma: 'pt_BR',
+  corpo: 'Olá {{1}}!\n\nParabéns pela compra! Seu pagamento do pedido {{2}} foi confirmado e já estamos preparando tudo com carinho para o envio.\n\nEm breve você recebe o código de rastreio por aqui.',
+  exemploVar1: 'Maria',
+  exemploVar2: '#1001',
+}
+
 const EXEMPLO_LINK = '77052313848/checkouts/c1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6/hWNAbCdEfGhIjKlMnOpQrStU/recover?key=0a1b2c3d4e5f60718293a4b5c6d7e8f9&locale=pt-BR'
 
 /** Modelo A (texto completo). A primeira tentativa, feita pela tela da Meta, não foi para frente. */

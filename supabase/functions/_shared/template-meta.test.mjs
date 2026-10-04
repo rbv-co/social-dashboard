@@ -1,6 +1,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { montarTemplate, validarTemplate, TEMPLATE_A, TEMPLATE_B } from './template-meta.js'
+import {
+  montarTemplate, validarTemplate, TEMPLATE_A, TEMPLATE_B,
+  montarTemplateUtilidade, validarTemplateUtilidade, TEMPLATE_PAGAMENTO,
+} from './template-meta.js'
 
 const BASE = {
   nome: 'recuperacao_checkout_v2', idioma: 'pt_BR',
@@ -73,4 +76,26 @@ test('⚠️ validarTemplate: limites da Meta e formato do link', () => {
   assert.ok(validarTemplate({ ...BASE, baseLink: 'http://loja.com.br/' }).some((p) => /baseLink/.test(p)))
   assert.ok(validarTemplate({ ...BASE, exemploLink: 'https://loja.vesselbrasil.com.br/77/x' }).some((p) => /exemploLink/.test(p)))
   assert.ok(validarTemplate({ ...BASE, nome: 'Recuperacao-V2' }).some((p) => /nome/.test(p)))
+})
+
+// ── UTILIDADE (mensagens transacionais: pagamento confirmado) ──────────────────
+test('montarTemplateUtilidade: só BODY, categoria UTILITY, exemplo das DUAS variáveis na ordem', () => {
+  assert.deepEqual(montarTemplateUtilidade(TEMPLATE_PAGAMENTO), {
+    name: 'pedido_pagamento_confirmado_v1', language: 'pt_BR', category: 'UTILITY',
+    components: [{ type: 'BODY', text: TEMPLATE_PAGAMENTO.corpo, example: { body_text: [['Maria', '#1001']] } }],
+  })
+})
+
+test('validarTemplateUtilidade: o modelo de pagamento do projeto é válido', () => {
+  assert.deepEqual(validarTemplateUtilidade(TEMPLATE_PAGAMENTO), [])
+})
+
+test('⚠️ validarTemplateUtilidade: exige {{1}} e {{2}} NESTA ORDEM, e os dois exemplos', () => {
+  const base = { nome: 'x', corpo: 'Olá {{1}}! Pedido {{2}} confirmado.', exemploVar1: 'Maria', exemploVar2: '#1001' }
+  assert.deepEqual(validarTemplateUtilidade(base), [])
+  assert.ok(validarTemplateUtilidade({ ...base, corpo: 'Olá! Pedido confirmado.' }).some((p) => /\{\{1\}\}/.test(p)))
+  assert.ok(validarTemplateUtilidade({ ...base, corpo: 'Olá {{1}}! Pedido confirmado.' }).some((p) => /\{\{1\}\}/.test(p)))
+  assert.ok(validarTemplateUtilidade({ ...base, corpo: 'Pedido {{2}} confirmado, {{1}}.' }).some((p) => /\{\{1\}\}/.test(p)))
+  assert.ok(validarTemplateUtilidade({ ...base, exemploVar1: '' }).some((p) => /\{\{1\}\}/.test(p)))
+  assert.ok(validarTemplateUtilidade({ ...base, exemploVar2: '' }).some((p) => /\{\{2\}\}/.test(p)))
 })

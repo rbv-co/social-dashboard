@@ -4,18 +4,27 @@
 //   Ver o modelo A (status, categoria, motivo de recusa e a ORDEM dos botões):
 //     META_WABA_ID=... META_TOKEN=... node coletor/template-meta.mjs consultar recuperacao_checkout_v1
 //
-//   Criar o modelo A (recuperacao_checkout_v1) ou o B (recuperacao_checkout_v2). Sem --enviar só
-//   MOSTRA o que seria enviado:
+//   Criar o modelo A (recuperacao_checkout_v1), o B (recuperacao_checkout_v2, MARKETING com botão) ou o
+//   de pagamento (pedido_pagamento_confirmado_v1, UTILIDADE sem botão). Sem --enviar só MOSTRA o que seria enviado:
 //     node coletor/template-meta.mjs criar a
-//     META_WABA_ID=... META_TOKEN=... node coletor/template-meta.mjs criar a --enviar
+//     META_WABA_ID=... META_TOKEN=... node coletor/template-meta.mjs criar pagamento --enviar
 //   A Meta trava o NOME de um modelo já usado (mesmo recusado ou apagado). Se ela disser que o nome
 //   já existe, crie o mesmo texto com outro nome:  criar a --nome=recuperacao_checkout_a2 --enviar
-//   (e use o nome novo em TEMPLATE_NOME, o segredo do robô).
+//   (e use o nome novo em TEMPLATE_NOME/TEMPLATE_PAGAMENTO, o segredo do robô).
 //
 // META_WABA_ID = id da conta do WhatsApp Business. META_TOKEN = token de acesso com permissão
 // whatsapp_business_management (de um usuário do sistema). Quem passa é o dono, pelo ambiente:
 // nunca coloque o token neste arquivo. O token nunca é impresso.
-import { montarTemplate, validarTemplate, TEMPLATE_A, TEMPLATE_B } from '../supabase/functions/_shared/template-meta.js'
+import {
+  montarTemplate, validarTemplate, TEMPLATE_A, TEMPLATE_B,
+  montarTemplateUtilidade, validarTemplateUtilidade, TEMPLATE_PAGAMENTO,
+} from '../supabase/functions/_shared/template-meta.js'
+
+const MODELOS = {
+  a: { montar: montarTemplate, validar: validarTemplate, dados: TEMPLATE_A },
+  b: { montar: montarTemplate, validar: validarTemplate, dados: TEMPLATE_B },
+  pagamento: { montar: montarTemplateUtilidade, validar: validarTemplateUtilidade, dados: TEMPLATE_PAGAMENTO },
+}
 
 const e = process.env
 const VERSAO = e.META_API_VERSION || 'v21.0'
@@ -54,13 +63,13 @@ if (comando === 'consultar') {
     if (!botoes.length) console.log('  (sem botões)')
   }
 } else if (comando === 'criar') {
-  const modelo = { a: TEMPLATE_A, b: TEMPLATE_B }[argumento]
-  if (!modelo) falhar('Uso: criar <a|b> [--nome=outro_nome] [--enviar]')
+  const modelo = MODELOS[argumento]
+  if (!modelo) falhar('Uso: criar <a|b|pagamento> [--nome=outro_nome] [--enviar]')
   const nomeNovo = process.argv.find((a) => a.startsWith('--nome='))?.slice('--nome='.length)
-  const escolhido = nomeNovo ? { ...modelo, nome: nomeNovo } : modelo
-  const problemas = validarTemplate(escolhido)
+  const escolhido = nomeNovo ? { ...modelo.dados, nome: nomeNovo } : modelo.dados
+  const problemas = modelo.validar(escolhido)
   if (problemas.length) falhar(`Modelo inválido:\n- ${problemas.join('\n- ')}`)
-  const payload = montarTemplate(escolhido)
+  const payload = modelo.montar(escolhido)
   if (!enviar) {
     console.log('SÓ MOSTRANDO (nada foi enviado). Para criar de verdade, acrescente --enviar.\n')
     console.log(JSON.stringify(payload, null, 2))
@@ -70,5 +79,5 @@ if (comando === 'consultar') {
     console.log(`Enviado para revisão da Meta: id=${r.id} status=${r.status} categoria=${r.category}`)
   }
 } else {
-  falhar('Comandos: consultar <nome> | criar <a|b> [--nome=outro_nome] [--enviar]')
+  falhar('Comandos: consultar <nome> | criar <a|b|pagamento> [--nome=outro_nome] [--enviar]')
 }
