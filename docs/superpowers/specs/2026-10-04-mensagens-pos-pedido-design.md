@@ -1,6 +1,16 @@
 # Mensagens de WhatsApp pós-pedido: pagamento, rastreio e entrega — design
 
-Data: 04/10/2026. Estado: **textos aprovados pelo dono em conversa; arquitetura de disparo (fase 2) ainda não desenhada.**
+Data: 04/10/2026. Estado: **pagamento confirmado implementado (PR #300); falta criar o template na Meta e publicar.
+Rastreio e entrega seguem em "fora de escopo", arquitetura de disparo (fase 2) ainda não desenhada.**
+
+**Acompanhamento do template na Meta (04/10/2026):** `pedido_pagamento_confirmado_v1` **ainda não existe** na
+Meta (conferido com o dono). O payload já está pronto (categoria UTILIDADE, sem botão, `{{1}}` nome e `{{2}}`
+número do pedido) em `supabase/functions/_shared/template-meta.js` (`TEMPLATE_PAGAMENTO`). Para criar e depois
+acompanhar o status de aprovação:
+```
+node coletor/template-meta.mjs criar pagamento --enviar          # cria na Meta (precisa de META_WABA_ID/META_TOKEN)
+node coletor/template-meta.mjs consultar pedido_pagamento_confirmado_v1  # status, categoria, motivo de recusa
+```
 
 ## Motivação
 
