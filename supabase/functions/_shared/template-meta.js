@@ -1,0 +1,103 @@
+// supabase/functions/_shared/template-meta.js
+//
+// Monta (e valida) o modelo de mensagem da recuperação de checkout no formato da API da Meta
+// (POST /{WABA_ID}/message_templates). Função pura: quem chama a Meta é coletor/template-meta.mjs.
+// Formato conferido na documentação: BODY com example.body_text, BUTTONS com URL dinâmico
+// (example = SÓ o valor da variável) e QUICK_REPLY.
+// https://developers.facebook.com/documentation/business-messaging/whatsapp/templates/components
+
+const LIMITE_CORPO = 1024
+const LIMITE_RODAPE = 60
+const LIMITE_BOTAO = 25
+
+/** @returns {object} corpo do POST para a Meta. Categoria sempre MARKETING (recuperação de carrinho). */
+export function montarTemplate({ nome, idioma = 'pt_BR', corpo, exemploCorpo, rodape, textoLink, baseLink, exemploLink, textoResposta }) {
+  const components = [{ type: 'BODY', text: corpo, example: { body_text: [[exemploCorpo]] } }]
+  if (rodape) components.push({ type: 'FOOTER', text: rodape })
+  components.push({
+    type: 'BUTTONS',
+    buttons: [
+      // ⚠️ O botão de link é o PRIMEIRO: o robô (Chatwoot) preenche o botão na posição 0.
+      { type: 'URL', text: textoLink, url: `${baseLink}{{1}}`, example: [exemploLink] },
+      { type: 'QUICK_REPLY', text: textoResposta },
+    ],
+  })
+  return { name: nome, language: idioma, category: 'MARKETING', components }
+}
+
+/** Regras da Meta que o modelo tem que respeitar ANTES de gastar uma submissão. Vazio = ok. */
+export function validarTemplate({ nome, corpo, exemploCorpo, rodape, textoLink, baseLink, exemploLink, textoResposta }) {
+  const p = []
+  if (!/^[a-z0-9_]{1,512}$/.test(nome ?? '')) p.push('nome inválido (só minúsculas, números e _)')
+  const variaveis = (corpo ?? '').match(/\{\{\s*\w+\s*\}\}/g) ?? []
+  if (variaveis.length !== 1 || variaveis[0] !== '{{1}}') p.push('o corpo precisa de exatamente uma variável, a {{1}} (o primeiro nome)')
+  if ((corpo ?? '').length > LIMITE_CORPO) p.push(`corpo passa de ${LIMITE_CORPO} caracteres`)
+  if ((corpo ?? '').trimStart().startsWith('{{1}}')) p.push('variável no começo do corpo (a Meta recusa)')
+  if ((corpo ?? '').trimEnd().endsWith('{{1}}')) p.push('variável no fim do corpo (a Meta recusa)')
+  if (!exemploCorpo) p.push('falta o exemplo da variável do corpo')
+  if ((rodape ?? '').length > LIMITE_RODAPE) p.push(`rodapé passa de ${LIMITE_RODAPE} caracteres`)
+  if (!textoLink || textoLink.length > LIMITE_BOTAO) p.push(`texto do botão de link vazio ou acima de ${LIMITE_BOTAO} caracteres`)
+  if (!textoResposta || textoResposta.length > LIMITE_BOTAO) p.push(`texto da resposta rápida vazio ou acima de ${LIMITE_BOTAO} caracteres`)
+  if (!/^https:\/\/.+\/$/.test(baseLink ?? '')) p.push('baseLink precisa começar com https:// e terminar com /')
+  if (!exemploLink || /^https?:\/\//.test(exemploLink)) p.push('exemploLink deve ser só o valor da variável, sem a URL inteira')
+  return p
+}
+
+// ── UTILIDADE (mensagens transacionais: sem botão, {{1}} nome e {{2}} número do pedido) ────────
+// Mesmo formato do pedido_recebido_v1 (2026-09-30-fluxo-de-mensagens-design.md): só BODY, categoria
+// UTILITY. A Meta exige exemplo de CADA variável, na ordem em que aparecem no corpo.
+
+/** @returns {object} corpo do POST para a Meta. Categoria sempre UTILITY, sem botões. */
+export function montarTemplateUtilidade({ nome, idioma = 'pt_BR', corpo, exemploVar1, exemploVar2 }) {
+  return { name: nome, language: idioma, category: 'UTILITY', components: [{ type: 'BODY', text: corpo, example: { body_text: [[exemploVar1, exemploVar2]] } }] }
+}
+
+/** Regras da Meta para o modelo de UTILIDADE. Vazio = ok. */
+export function validarTemplateUtilidade({ nome, corpo, exemploVar1, exemploVar2 }) {
+  const p = []
+  if (!/^[a-z0-9_]{1,512}$/.test(nome ?? '')) p.push('nome inválido (só minúsculas, números e _)')
+  const variaveis = (corpo ?? '').match(/\{\{\s*\d\s*\}\}/g) ?? []
+  if (variaveis.length !== 2 || variaveis[0] !== '{{1}}' || variaveis[1] !== '{{2}}') p.push('o corpo precisa de exatamente {{1}} (nome) e {{2}} (número do pedido), nesta ordem')
+  if ((corpo ?? '').length > LIMITE_CORPO) p.push(`corpo passa de ${LIMITE_CORPO} caracteres`)
+  if (!exemploVar1) p.push('falta o exemplo da variável {{1}}')
+  if (!exemploVar2) p.push('falta o exemplo da variável {{2}}')
+  return p
+}
+
+/** Mensagem de PAGAMENTO CONFIRMADO. Design: 2026-10-04-mensagens-pos-pedido-design.md */
+export const TEMPLATE_PAGAMENTO = {
+  nome: 'pedido_pagamento_confirmado_v1',
+  idioma: 'pt_BR',
+  corpo: 'Olá {{1}}!\n\nParabéns pela compra! Seu pagamento do pedido {{2}} foi confirmado e já estamos preparando tudo com carinho para o envio.\n\nEm breve você recebe o código de rastreio por aqui.',
+  exemploVar1: 'Maria',
+  exemploVar2: '#1001',
+}
+
+const EXEMPLO_LINK = '77052313848/checkouts/c1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6/hWNAbCdEfGhIjKlMnOpQrStU/recover?key=0a1b2c3d4e5f60718293a4b5c6d7e8f9&locale=pt-BR'
+
+/** Modelo A (texto completo). A primeira tentativa, feita pela tela da Meta, não foi para frente. */
+export const TEMPLATE_A = {
+  nome: 'recuperacao_checkout_v1',
+  idioma: 'pt_BR',
+  corpo: 'Oi, {{1}}! Você deixou seu carrinho na Vessel esperando por você. Guardamos tudo para você finalizar quando quiser. Se tiver dúvida sobre a peça, o prazo ou o pagamento, é só responder aqui que a gente ajuda.',
+  exemploCorpo: 'Maria',
+  rodape: 'Vessel Brasil',
+  textoLink: 'Finalizar compra',
+  baseLink: 'https://loja.vesselbrasil.com.br/',
+  exemploLink: EXEMPLO_LINK, // valor inventado, no formato real dos links (token, código e chave falsos)
+  textoResposta: 'Não quero receber',
+}
+
+/** Modelo B (versão curta). */
+export const TEMPLATE_B = {
+  nome: 'recuperacao_checkout_v2',
+  idioma: 'pt_BR',
+  corpo: 'Oi, {{1}}! Seu carrinho na Vessel ficou guardado. Quer finalizar? Se precisar de ajuda com a peça, o prazo ou o pagamento, é só responder aqui.',
+  exemploCorpo: 'Maria',
+  rodape: 'Vessel Brasil',
+  textoLink: 'Finalizar compra',
+  baseLink: 'https://loja.vesselbrasil.com.br/',
+  // Valor inventado, no formato real dos links (token, código e chave falsos).
+  exemploLink: '77052313848/checkouts/c1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6/hWNAbCdEfGhIjKlMnOpQrStU/recover?key=0a1b2c3d4e5f60718293a4b5c6d7e8f9&locale=pt-BR',
+  textoResposta: 'Não quero receber',
+}
