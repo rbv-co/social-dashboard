@@ -60,6 +60,11 @@ test('extrai evento lead_quente com classificacao_ia preenchida', () => {
   assert.equal(evento.classificacao_ia, 'quente')
 })
 
+test('extrai evento qualified_lead (substituiu lead_quente em 05/10/2026)', () => {
+  const evento = extrairEventoDoChatwoot(payloadBase({ tipo: 'qualified_lead' }))
+  assert.equal(evento.tipo, 'qualified_lead')
+})
+
 test('⚠️ created_at perto da meia-noite BRT: dia_br é o dia de São Paulo, não o de UTC', () => {
   // 23:30 em São Paulo (UTC-3) já é 02:30 do dia seguinte em UTC — dia_br
   // tem que bater com o relógio de SP, não virar o dia errado.
@@ -67,7 +72,7 @@ test('⚠️ created_at perto da meia-noite BRT: dia_br é o dia de São Paulo, 
   assert.equal(evento.dia_br, '2026-09-23')
 })
 
-test('tipo fora de lead_novo/lead_quente vira null (payload que a gente não entende, não trava o webhook)', () => {
+test('tipo fora de lead_novo/lead_quente/qualified_lead vira null (payload que a gente não entende, não trava o webhook)', () => {
   assert.equal(extrairEventoDoChatwoot(payloadBase({ tipo: 'outra_coisa' })), null)
   assert.equal(extrairEventoDoChatwoot(payloadBase({ tipo: '' })), null)
   assert.equal(extrairEventoDoChatwoot(payloadBase({ tipo: undefined })), null)

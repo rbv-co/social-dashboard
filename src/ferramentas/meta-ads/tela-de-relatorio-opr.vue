@@ -146,7 +146,7 @@
             <div class="metric-grid panel-top">
               <div class="metric"><div class="metric-label">Investimento</div><div class="metric-value">{{ fmtValor(dados.leadsEVendas.investimento, 'moeda') }}</div></div>
               <div class="metric"><div class="metric-label">Leads</div><div class="metric-value">{{ fmtValor(dados.leadsEVendas.leads) }}</div></div>
-              <div class="metric"><div class="metric-label">Leads Quentes</div><div class="metric-value">{{ fmtValor(dados.leadsEVendas.leadsQuentes) }}</div></div>
+              <div class="metric"><div class="metric-label">Leads Qualificados</div><div class="metric-value">{{ fmtValor(dados.leadsEVendas.leadsQualificados) }}</div></div>
               <div class="metric"><div class="metric-label">Vendas</div><div class="metric-value">{{ fmtValor(dados.leadsEVendas.vendas) }}</div></div>
             </div>
             <div class="metric-grid panel-bottom">
@@ -305,7 +305,7 @@ async function carregar() {
     sb('campaigns?select=campaign_id,name,objective'),
     sb(`campaign_insights?select=campaign_id,spend,likes,comments,shares,saves,conversas,cadastros,compras,visitas,post_engagement,impressions,clicks,reach&account_id=eq.${CONTA_VESSEL}&captured_at=gte.${inicio}&captured_at=lte.${fim}&period_days=eq.0`),
     sb(`followers_leituras?select=followers_count,lido_em,origem&account_id=eq.${CONTA_VESSEL}&lido_em=gte.${desdeSeguidores}&order=lido_em.asc`),
-    // Leads/Leads Quentes de verdade (24/09/2026) — ver
+    // Leads/Leads Qualificados de verdade (24/09/2026) — ver
     // docs/superpowers/specs/2026-09-24-chatwoot-leads-design.md.
     sb(`chatwoot_eventos?select=tipo&dia_br=gte.${inicio}&dia_br=lte.${fim}`),
   ])
@@ -322,7 +322,9 @@ async function carregar() {
   const seguidoresDoPeriodo = seguidoresNoPeriodo(deltas, inicio, fim)
   const leadsChatwoot = {
     novo: eventosChatwoot.filter((e) => e.tipo === 'lead_novo').length,
-    quente: eventosChatwoot.filter((e) => e.tipo === 'lead_quente').length,
+    // Só qualified_lead (desde 05/10/2026): o lead_quente antigo era a
+    // temperatura da IA do Chatwoot, que deixou de existir — outro significado.
+    qualificado: eventosChatwoot.filter((e) => e.tipo === 'qualified_lead').length,
   }
 
   dados.value = calcularDadosOpr(campanhasDoPeriodo, seguidoresDoPeriodo, leadsChatwoot)

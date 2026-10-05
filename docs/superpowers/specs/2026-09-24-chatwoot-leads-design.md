@@ -4,6 +4,13 @@
 sempre que um lead chega e lead quente também, esse vai alimentar o
 relatório com os dados corretos."
 
+> **Atualização 05/10/2026:** o Chatwoot deixou de classificar temperatura
+> (quente/morno/frio). `lead_quente` foi substituído por `qualified_lead`,
+> disparado uma vez por conversa quando ela ganha o primeiro evento Meta
+> QualifiedLead, e o payload perdeu `classificacao_ia`. O OPR mostra
+> "Leads Qualificados" (`leadsEVendas.leadsQualificados`), contando só
+> `qualified_lead`; as linhas antigas de `lead_quente` ficam como histórico.
+
 ## Problema
 
 Hoje "Leads Gerados" no OPR (`relatorio-diario-opr.js`) vem inteiramente da
@@ -49,7 +56,7 @@ trabalho que simplesmente receber o evento na hora que ele acontece.
 }
 ```
 
-`tipo` é `"lead_novo"` ou `"lead_quente"`. `loja` e `classificacao_ia` podem
+`tipo` é `"lead_novo"` ou `"lead_quente"` (`"qualified_lead"` desde 05/10/2026, ver a atualização no topo). `loja` e `classificacao_ia` podem
 vir `null`. Content-Type `application/json`, sem assinatura HMAC (Chatwoot
 não assina webhook nativamente, diferente da Shopify) — autenticação por um
 segredo fixo (`CHATWOOT_WEBHOOK_SEGREDO`) na própria URL

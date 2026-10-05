@@ -232,7 +232,7 @@ export function montarHtmlOpr(dados, meta) {
       ${painel('04', 'funnel', 'Leads & Vendas', 'Do interesse ao faturamento', [
         metric('Investimento', fmtValor(leadsEVendas.investimento, 'moeda')),
         metric('Leads', fmtValor(leadsEVendas.leads)),
-        metric('Leads Quentes', fmtValor(leadsEVendas.leadsQuentes)),
+        metric('Leads Qualificados', fmtValor(leadsEVendas.leadsQualificados)),
         metric('Vendas', fmtValor(leadsEVendas.vendas)),
       ], [
         metric('Custo por Lead', fmtValor(leadsEVendas.custoPorLead, 'moeda')),

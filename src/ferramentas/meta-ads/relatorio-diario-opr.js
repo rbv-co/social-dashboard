@@ -107,18 +107,18 @@ function somar(campanhas, campo) {
 // nem por investimento <= 0 — cai pra `null`, nunca "R$ 0,00" inventado.
 // `seguidoresDoDia` pode ser `null` (nenhuma leitura de seguidor nesse dia
 // ainda) — é dado de CONTA, nunca dependeu de campanha nem de classificação.
-// `leadsChatwoot` (24/09/2026): { novo, quente } — contagem do dia vinda de
+// `leadsChatwoot` (24/09/2026): { novo, qualificado } — contagem do dia vinda de
 // `chatwoot_eventos`, alimentada pela Edge Function receber-webhook-chatwoot
 // (ver docs/superpowers/specs/2026-09-24-chatwoot-leads-design.md).
 // Segunda entrega daquele spec: agora TEM fonte pra "Leads Gerados"/"Leads
-// Quentes" que não seja a ação de "conversa iniciada" da própria Meta (que
+// Qualificados" que não seja a ação de "conversa iniciada" da própria Meta (que
 // mede o anúncio abrir uma conversa, não a conversa chegar de verdade na
 // caixa do Chatwoot — achado real, 22/09/2026: o maior gerador de conversa
 // do dia era campanha de Tráfego, não de Leads). Contagem "cega" quanto a
 // campanha, de propósito: um lead pode vir de qualquer tipo, e o OPR não
 // quebra número nenhum por campanha.
 export function calcularDadosOpr(campanhasDoDia, seguidoresDoDia, leadsChatwoot = {}) {
-  const { novo: leadsNovoDoDia = 0, quente: leadsQuenteDoDia = 0 } = leadsChatwoot;
+  const { novo: leadsNovoDoDia = 0, qualificado: leadsQualificadosDoDia = 0 } = leadsChatwoot;
   // "outro" continua fora de QUALQUER soma — `agruparCampanhasDoDia` só tira
   // o ruído (vaga/atacado/rh/dre), "outro" (objective não mapeado) ainda
   // aparece na lista pra quem quiser auditar, mas nunca entra em número
@@ -200,7 +200,7 @@ export function calcularDadosOpr(campanhasDoDia, seguidoresDoDia, leadsChatwoot 
   const compras = somar(vendasCampanhas, 'compras');
 
   // Leads & Vendas no mesmo painel (22/09/2026, igual o antigo "Leads &
-  // Sales"). `leads`/`leadsQuentes` vêm do Chatwoot (24/09/2026, ver
+  // Sales"). `leads`/`leadsQualificados` vêm do Chatwoot (24/09/2026, ver
   // comentário de `leadsChatwoot` acima) — não mais de `conversas`/
   // `cadastros` da Meta, que ficam gravados em `campanhasDoDia` só pra
   // quem quiser auditar contra o dado antigo. Custo por Lead usa o
@@ -211,7 +211,7 @@ export function calcularDadosOpr(campanhasDoDia, seguidoresDoDia, leadsChatwoot 
   const leadsEVendas = {
     investimento: investimentoLeadsEVendas,
     leads: leadsNovoDoDia,
-    leadsQuentes: leadsQuenteDoDia,
+    leadsQualificados: leadsQualificadosDoDia,
     vendas: compras,
     custoPorLead: investimentoTotal > 0 && leadsNovoDoDia > 0
       ? custoPorLead(investimentoTotal, leadsNovoDoDia) : null,

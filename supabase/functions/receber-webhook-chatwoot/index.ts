@@ -1,8 +1,9 @@
 // supabase/functions/receber-webhook-chatwoot/index.ts
 //
 // Recebe o evento de CRM que o Chatwoot manda (Custom::CrmEventWebhookService,
-// do lado de lá) quando uma conversa vira lead novo ou lead quente — grava
-// em `chatwoot_eventos`, que o OPR (Leads Gerados / Leads Quentes) vai
+// do lado de lá) quando uma conversa vira lead novo ou lead qualificado
+// (qualified_lead; era lead_quente até 05/10/2026) — grava
+// em `chatwoot_eventos`, que o OPR (Leads Gerados / Leads Qualificados) vai
 // passar a ler numa entrega futura (ver
 // docs/superpowers/specs/2026-09-24-chatwoot-leads-design.md; por enquanto
 // o relatório continua lendo da Meta, sem depender deste dado ainda).
@@ -42,7 +43,7 @@ Deno.serve(async (req) => {
   const sb = createClient(SUPABASE_URL, SERVICE_KEY);
   // upsert ignorando conflito: o Chatwoot pode reenviar o mesmo evento
   // (timeout, retry) ou a etiqueta pode ser removida/reaplicada — cada
-  // conversa conta só UMA vez como lead_novo e UMA vez como lead_quente
+  // conversa conta só UMA vez por tipo (lead_novo, qualified_lead)
   // (índice único em conversation_id+tipo, ver a migration da tabela).
   const { error } = await sb
     .from('chatwoot_eventos')

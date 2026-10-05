@@ -102,7 +102,7 @@ test('calcularDadosOpr: soma cada categoria certa (seguidores/trafego/engajament
     c0: 'OUTCOME_TRAFFIC', c1: 'OUTCOME_LEADS', c2: 'OUTCOME_ENGAGEMENT', c3: 'OUTCOME_TRAFFIC', c4: 'OUTCOME_SALES', c5: 'OUTCOME_AWARENESS',
   });
 
-  const dados = calcularDadosOpr(campanhas, 12, { novo: 5, quente: 2 });
+  const dados = calcularDadosOpr(campanhas, 12, { novo: 5, qualificado: 2 });
 
   assert.equal(dados.seguidores.investimento, 40);
   assert.equal(dados.seguidores.novos, 12);
@@ -118,7 +118,7 @@ test('calcularDadosOpr: soma cada categoria certa (seguidores/trafego/engajament
   assert.equal(dados.engajamento.totalInteracoes, 80, 'usa post_engagement da Meta, não a soma de curtida+coment.+compart.+salv. (que seria 40)');
   assert.equal(dados.leadsEVendas.investimento, 100 + 30, 'leads + vendas somados (gasto por objective, não muda com o Chatwoot)');
   assert.equal(dados.leadsEVendas.leads, 5, 'vem do Chatwoot (leadsChatwoot.novo), não mais de cadastros/conversas da Meta');
-  assert.equal(dados.leadsEVendas.leadsQuentes, 2, 'vem do Chatwoot (leadsChatwoot.quente)');
+  assert.equal(dados.leadsEVendas.leadsQualificados, 2, 'vem do Chatwoot (leadsChatwoot.qualificado)');
   assert.equal(dados.leadsEVendas.vendas, 1);
   assert.equal(dados.leadsEVendas.custoPorLead, 420 / 5, 'investimento TOTAL do dia, não só o balde Leads — o lead pode vir de qualquer campanha');
   assert.equal(dados.leadsEVendas.custoPorVenda, 30 / 1);
@@ -136,9 +136,9 @@ test('⚠️ calcularDadosOpr: Leads Gerados/Quentes vêm do Chatwoot, não de c
     { campaign_id: 'c1', spend: 500, conversas: 35, cadastros: 10 },
   ], { c1: '[LEADS LOJA][mixconversão]' }, { c1: 'OUTCOME_TRAFFIC' });
 
-  const dados = calcularDadosOpr(campanhas, 0, { novo: 7, quente: 3 });
+  const dados = calcularDadosOpr(campanhas, 0, { novo: 7, qualificado: 3 });
   assert.equal(dados.header.leadsGerados, 7, 'ignora completamente conversas/cadastros da Meta');
-  assert.equal(dados.leadsEVendas.leadsQuentes, 3);
+  assert.equal(dados.leadsEVendas.leadsQualificados, 3);
   assert.equal(dados.leadsEVendas.custoPorLead, 500 / 7, 'usa o investimento total do dia (a campanha é Tráfego, sem balde Leads)');
 });
 
@@ -146,7 +146,7 @@ test('calcularDadosOpr: sem leadsChatwoot (parâmetro omitido) vira 0, não queb
   const dados = calcularDadosOpr([], 0);
   assert.equal(dados.header.leadsGerados, 0);
   assert.equal(dados.leadsEVendas.leads, 0);
-  assert.equal(dados.leadsEVendas.leadsQuentes, 0);
+  assert.equal(dados.leadsEVendas.leadsQualificados, 0);
   assert.equal(dados.leadsEVendas.custoPorLead, null, 'zero lead nunca inventa custo');
 });
 

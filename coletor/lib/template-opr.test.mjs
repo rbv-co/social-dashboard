@@ -14,7 +14,7 @@ function dadosBase() {
     trafego: { investimento: 50, visitas: 40, custoPorVisita: 1.25 },
     engajamento: { investimento: 200, curtidas: 30, comentarios: 5, compartilhamentos: 2, salvamentos: 3, custoPorCurtida: 6.67, custoPorComentario: 40, custoPorCompartilhamento: 100, custoPorSalvamento: 66.67, totalInteracoes: 40, custoMedioPorEngajamento: 5 },
     leadsEVendas: {
-      investimento: 180, leads: 5, leadsQuentes: null, vendas: 1, custoPorLead: 20, custoPorVenda: 30,
+      investimento: 180, leads: 5, leadsQualificados: null, vendas: 1, custoPorLead: 20, custoPorVenda: 30,
     },
     mix: {
       seguidores: 10.4, trafego: 10.4, engajamento: 41.7, leadsEVendas: 37.5,
@@ -60,7 +60,7 @@ test('montarHtmlOpr: valor null aparece como travessão, nunca "null" ou número
     trafego: { investimento: 0, visitas: 0, custoPorVisita: null },
     engajamento: { investimento: 0, curtidas: 0, comentarios: 0, compartilhamentos: 0, salvamentos: 0, custoPorCurtida: null, custoPorComentario: null, custoPorCompartilhamento: null, custoPorSalvamento: null, totalInteracoes: 0, custoMedioPorEngajamento: null },
     leadsEVendas: {
-      investimento: 0, leads: 0, leadsQuentes: null, vendas: 0, custoPorLead: null, custoPorVenda: null,
+      investimento: 0, leads: 0, leadsQualificados: null, vendas: 0, custoPorLead: null, custoPorVenda: null,
     },
     mix: {
       seguidores: null, trafego: null, engajamento: null, leadsEVendas: null,
@@ -71,10 +71,10 @@ test('montarHtmlOpr: valor null aparece como travessão, nunca "null" ou número
   assert.match(html, /—/);
 });
 
-test('⚠️ montarHtmlOpr: Leads Quentes null vira travessão (nunca número inventado), Leads/Vendas aparecem com o valor real', () => {
+test('⚠️ montarHtmlOpr: Leads Qualificados null vira travessão (nunca número inventado), Leads/Vendas aparecem com o valor real', () => {
   const dados = dadosBase();
   const html = montarHtmlOpr(dados, { conta: 'Vessel Brasil', periodoLabel: '16/09/2026' });
-  assert.match(html, /Leads Quentes[\s\S]*?—/, 'sem número inventado pra Leads Quentes');
+  assert.match(html, /Leads Qualificados[\s\S]*?—/, 'sem número inventado pra Leads Qualificados');
   assert.match(html, /metric-value">5</, 'Leads já tem fonte real — leadsEVendas.leads=5 aparece de verdade, não travessão');
 });
 
@@ -110,7 +110,7 @@ test('integração: agruparCampanhasDoDia -> calcularDadosOpr -> montarHtmlOpr, 
   const objectivesPorCampanha = { c1: 'OUTCOME_LEADS', c2: 'OUTCOME_TRAFFIC', c3: 'OUTCOME_ENGAGEMENT' };
 
   const campanhasDoDia = agruparCampanhasDoDia(linhas, nomesPorCampanha, objectivesPorCampanha);
-  const dados = calcularDadosOpr(campanhasDoDia, /* seguidoresDoDia */ 5, /* leadsChatwoot */ { novo: 4, quente: 1 });
+  const dados = calcularDadosOpr(campanhasDoDia, /* seguidoresDoDia */ 5, /* leadsChatwoot */ { novo: 4, qualificado: 1 });
 
   // Contas de cabeça, pra conferir que a agregação bateu antes de olhar o HTML:
   // custoPorLead = investimentoTotal(301+100+50=451) / 4 leads do Chatwoot = 112,75

@@ -1,7 +1,7 @@
 // supabase/functions/_shared/verificar-webhook-chatwoot.js
 //
 // Evento de CRM que o Chatwoot manda (Custom::CrmEventWebhookService, do
-// lado de lá) quando uma conversa vira lead novo ou lead quente. Chatwoot
+// lado de lá) quando uma conversa vira lead novo ou lead qualificado. Chatwoot
 // não assina o corpo (sem HMAC nativo, diferente do webhook da Shopify —
 // ver verificar-webhook-shopify.js) — autentica por um segredo fixo, na
 // própria URL do webhook, comparado em tempo constante (mesmo motivo do
@@ -16,7 +16,9 @@ export function tokenValido(segredo, recebido) {
   return diferenca === 0
 }
 
-const TIPOS_VALIDOS = new Set(['lead_novo', 'lead_quente'])
+// 'qualified_lead' substituiu 'lead_quente' em 05/10/2026 (o Chatwoot deixou de
+// classificar temperatura). 'lead_quente' segue aceito para reenvio de evento antigo.
+const TIPOS_VALIDOS = new Set(['lead_novo', 'lead_quente', 'qualified_lead'])
 
 // `agora` só entra quando o Chatwoot não manda (ou manda inválido) o
 // `created_at` — não deveria acontecer, mas nunca trava a gravação por

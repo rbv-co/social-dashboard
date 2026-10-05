@@ -2,7 +2,7 @@
 //
 // Webhook PADRÃO do Chatwoot (evento "Message created") -> quem pediu para não receber vai para
 // `contatos_sem_mensagem`. Não confundir com receber-webhook-chatwoot, que é o webhook de CRM
-// customizado (só lead_novo/lead_quente) e não recebe respostas de clientes.
+// customizado (só lead_novo/qualified_lead) e não recebe respostas de clientes.
 // Autentica pelo segredo na URL (?token=), o mesmo CHATWOOT_WEBHOOK_SEGREDO daquele.
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { tokenValido } from '../_shared/verificar-webhook-chatwoot.js';
