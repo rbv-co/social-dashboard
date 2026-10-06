@@ -1,0 +1,99 @@
+# O ROBÔ DOS CARTÕES EAN. Esvazia a fila `vessel_cartao_pedidos`.
+#
+# ⚠️ POR QUE ISTO EXISTE: a aba "Cartões EAN" (Autenticidade) já colocava pedidos na fila, e NADA os pegava. Em
+# 06/10/2026 dois pedidos (2 e 110 peças) ficaram parados horas e o dono achou que o robô tinha travado: ele nunca
+# tinha sido ligado. O que faltava era exatamente isto + o gatilho do banco (migration 2026-10-06-robo-de-cartoes).
+#
+# Quem acorda: o banco, assim que o pedido entra (edge `vessel-cartoes-trigger` -> workflow_dispatch). A rodada de
+# hora em hora é a RETAGUARDA: pega pedido cujo gatilho se perdeu e devolve à fila o que ficou `rodando` com o
+# runner morto. Ela só liga o ambiente pesado se houver pedido na fila.
+#
+# O gerador do cartão mora no repositório do SITE (rbv-co/vessel-brasil), baixado em ./vessel-brasil como no
+# `fotos-do-selo`. O robô é coletor/robo-de-cartoes.mjs.
+name: Cartões EAN — gerar a fila
+
+on:
+  schedule:
+    - cron: '23 * * * *'
+  workflow_dispatch:
+
+# Duas rodadas ao mesmo tempo pegariam pedidos diferentes (a fila é segura), mas brigariam pelo Chrome e pelo Zoho.
+# A de fora espera; a de dentro NÃO é cancelada no meio de um cartão.
+concurrency:
+  group: cartoes-ean
+  cancel-in-progress: false
+
+jobs:
+  olhar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      tem: ${{ steps.fila.outputs.tem }}
+    steps:
+      - name: Há pedido na fila?
+        id: fila
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          # Falha de leitura NÃO vira "fila vazia": o passo morre e a rodada aparece vermelha.
+          corpo=$(curl -fsS "$SUPABASE_URL/rest/v1/vessel_cartao_pedidos?situacao=in.(na_fila,rodando)&select=id&limit=1" \
+            -H "apikey: $SUPABASE_SERVICE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_KEY")
+          if [ "$corpo" = "[]" ]; then echo "tem=nao" >> "$GITHUB_OUTPUT"; echo "Fila vazia."; else echo "tem=sim" >> "$GITHUB_OUTPUT"; echo "Há pedido na fila."; fi
+
+  gerar:
+    needs: olhar
+    # Disparo na mão ou pelo banco sempre roda; a retaguarda só roda se houver pedido.
+    if: needs.olhar.outputs.tem == 'sim' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    # 110 cartões levam algumas dezenas de minutos. O banco devolve à fila o que ficar `rodando` por mais de 150.
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+
+      # ⚠️ SEM O TOKEN, o passo seguinte morre com "repository not found", que parece repositório errado.
+      - name: Conferir se há como alcançar o repositório do site
+        run: |
+          if [ -z "${{ secrets.PAT_DO_SITE }}" ]; then
+            echo "::error::Falta o segredo PAT_DO_SITE (o site, rbv-co/vessel-brasil, é OUTRO repositório; leitura basta)."
+            exit 1
+          fi
+
+      - name: Trazer o repositório do site (tem o gerador do cartão)
+        uses: actions/checkout@v7
+        with:
+          repository: rbv-co/vessel-brasil
+          path: vessel-brasil
+          token: ${{ secrets.PAT_DO_SITE }}
+
+      - uses: actions/setup-node@v6
+        with: { node-version: '24' }   # exportar.mjs usa o WebSocket global (Node 22+)
+      - uses: actions/setup-python@v6
+        with: { python-version: '3.11' }
+
+      - name: Cache dos modelos e das dependências
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.u2net
+            coletor/node_modules
+            ~/.cache/pip
+          key: cartoes-${{ runner.os }}-${{ hashFiles('coletor/package-lock.json') }}
+
+      - name: Instalar dependências
+        run: |
+          cd coletor && npm ci
+          # recortar.py: rembg + onnxruntime (pinado, como a Fábrica) + scipy. pdf-para-png.py: PyMuPDF.
+          pip install rembg "onnxruntime==1.19.2" pillow numpy scipy pymupdf
+          google-chrome --version   # o exportador acha o Chrome pelo PATH; o ubuntu-latest já o traz
+
+      - name: Gerar os cartões da fila
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          ZOHO_CLIENT_ID: ${{ secrets.ZOHO_CLIENT_ID }}
+          ZOHO_CLIENT_SECRET: ${{ secrets.ZOHO_CLIENT_SECRET }}
+          ZOHO_REFRESH_TOKEN: ${{ secrets.ZOHO_REFRESH_TOKEN }}
+          ZOHO_DC: ${{ secrets.ZOHO_DC }}
+        # O `curl-fetch` é obrigatório: o fetch do Node leva ECONNRESET atrás do Cloudflare (Bling e Supabase).
+        run: node --import ./coletor/lib/curl-fetch.mjs coletor/robo-de-cartoes.mjs

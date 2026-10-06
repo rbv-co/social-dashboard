@@ -27,10 +27,26 @@ async function accessToken() {
 const API = () => `https://www.zohoapis.${DC()}/workdrive/api/v1`;
 async function authH() { return { Authorization: 'Zoho-oauthtoken ' + (await accessToken()) }; }
 
+// ⚠️ PAGINA. A API devolve poucos itens por chamada (50 no máximo); a pasta "Vessel Brasil" tem dezenas de
+// subpastas, e sem paginar `acharOuCriarPasta` não via a pasta que já existia — e criava outra igual.
+const POR_PAGINA = 50;
 export async function listarPasta(parentId) {
-  const r = await fetch(`${API()}/files/${parentId}/files`, { headers: { ...(await authH()), Accept: 'application/vnd.api+json' } });
-  const j = await r.json();
-  return (Array.isArray(j.data) ? j.data : []).map((d) => ({ id: d.id, name: (d.attributes?.name || '').trim(), folder: d.attributes?.is_folder }));
+  const todos = [];
+  for (let offset = 0; offset < 5000; offset += POR_PAGINA) {
+    const r = await fetch(`${API()}/files/${parentId}/files?page%5Blimit%5D=${POR_PAGINA}&page%5Boffset%5D=${offset}`, { headers: { ...(await authH()), Accept: 'application/vnd.api+json' } });
+    const j = await r.json();
+    const pagina = Array.isArray(j.data) ? j.data : [];
+    todos.push(...pagina);
+    if (pagina.length < POR_PAGINA) break;
+  }
+  return todos.map((d) => ({ id: d.id, name: (d.attributes?.name || '').trim(), folder: d.attributes?.is_folder }));
+}
+
+// Baixa o arquivo por id. Devolve Buffer; erro de rede/permissão LANÇA (arquivo que não veio não é arquivo vazio).
+export async function baixarArquivo(fileId) {
+  const r = await fetch(`${API()}/download/${encodeURIComponent(fileId)}`, { headers: await authH() });
+  if (!r.ok) throw new Error('zoho download ' + fileId + ' -> ' + r.status);
+  return Buffer.from(await r.arrayBuffer());
 }
 
 // acha (por nome) ou cria uma subpasta dentro de parentId; devolve o id. Cacheado em memória por run.
@@ -39,7 +55,9 @@ export async function acharOuCriarPasta(parentId, nome) {
   const chave = parentId + '/' + nome;
   if (_cachePasta.has(chave)) return _cachePasta.get(chave);
   const itens = await listarPasta(parentId);
-  let id = itens.find((x) => x.folder && x.name === nome)?.id;
+  // NFC dos dois lados: "Cartões" pode estar composto ou decomposto (acento solto) conforme quem criou a pasta, e
+  // sem normalizar "não achei" cria uma segunda pasta com o mesmo nome.
+  let id = itens.find((x) => x.folder && x.name.normalize('NFC') === nome.normalize('NFC'))?.id;
   if (!id) {
     const r = await fetch(`${API()}/files`, {
       method: 'POST', headers: { ...(await authH()), 'Content-Type': 'application/vnd.api+json', Accept: 'application/vnd.api+json' },
