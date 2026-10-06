@@ -20,7 +20,7 @@ import { tmpdir } from 'node:os';
 import { pathToFileURL } from 'node:url';
 import { listarPasta, acharOuCriarPasta, uploadArquivo, baixarArquivo } from './lib/zoho-workdrive.mjs';
 import { conexaoZoho } from './lib/zoho-da-central.mjs';
-import { agruparPorSku, nomeDaSubpasta, planoDeDevolucao, rotuloDoCartao } from './lib/cartoes-da-fila.js';
+import { agruparPorSku, nomeDaSubpasta, planoDeDevolucao, rotuloDoCartao, arquivosDoCartao } from './lib/cartoes-da-fila.js';
 import { fazerCartao } from './lib/cartao-de-uma-peca.mjs';
 
 const SECO = process.argv.includes('--seco');
