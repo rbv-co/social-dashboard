@@ -65,3 +65,32 @@ export function seloDaMensagem(linha) {
     default: return null
   }
 }
+
+// ── MENSAGENS QUE NÃO SAÍRAM (faixa de aviso) ────────────────────────────
+// Vem de `mensagens_que_falharam` (db/migrations/2026-10-06-mensagens-que-falharam.sql).
+// Existe porque a falha de 04/10/2026 (Camila Altran, 422 do Chatwoot) ficou só no banco, que a tela não lia.
+export const HORAS_DO_AVISO_DE_FALHA = 48
+
+const ROTULO_DO_TIPO = { inicio: 'início do checkout', followup: 'follow-up', pedido: 'pedido recebido', abandono: 'abandono (24 h)' }
+
+/** Texto humano do motivo gravado pelo robô; o bruto vai junto em `tecnico` para quem for investigar. */
+export function explicarFalha(motivo) {
+  const m = String(motivo ?? '')
+  if (/fluxo automatico/i.test(m)) return 'o Chatwoot barrou o template (trava do Chatwoot, não é problema da cliente)'
+  if (/travada_sem_confirmacao/.test(m)) return 'o envio ficou sem confirmação: confira no Chatwoot se a mensagem saiu'
+  if (/:(401|403)\b/.test(m)) return 'o Chatwoot recusou a credencial do robô'
+  if (/:4\d\d\b/.test(m)) return 'o Chatwoot recusou o envio'
+  return 'o envio falhou'
+}
+
+/** Linhas de `mensagens_que_falharam` -> o que a faixa mostra. Vazio = nada a dizer (a faixa nem aparece). */
+export function falhasParaAviso(linhas) {
+  return (linhas ?? []).map((l) => ({
+    chave: `${l.tipo}:${l.chave}`,
+    nome: l.nome || 'Sem nome',
+    tipo: ROTULO_DO_TIPO[l.tipo] ?? l.tipo,
+    quando: l.quando,
+    explicacao: explicarFalha(l.motivo),
+    tecnico: String(l.motivo ?? '').slice(0, 140),
+  }))
+}

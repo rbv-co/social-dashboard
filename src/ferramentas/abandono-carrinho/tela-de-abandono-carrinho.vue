@@ -12,6 +12,16 @@
       </div>
 
       <p v-if="erro" class="ac-erro" role="alert">Não consegui carregar os dados: {{ erro }}</p>
+      <div v-if="falhas.length" class="ac-falha" role="alert">
+        <strong>{{ falhas.length === 1 ? '1 mensagem não saiu' : falhas.length + ' mensagens não saíram' }} nas últimas {{ HORAS_DO_AVISO_DE_FALHA }} horas.</strong>
+        <ul class="ac-falha-lista">
+          <li v-for="f in falhas" :key="f.chave">
+            <span class="ac-quem">{{ f.nome }}</span> · {{ f.tipo }} · {{ dataHora(f.quando) }}: {{ f.explicacao }}.
+            <span class="ac-detalhe">{{ f.tecnico }}</span>
+          </li>
+        </ul>
+      </div>
+      <p v-if="erroFalhas" class="ac-erro" role="alert">Não consegui conferir as mensagens que falharam: {{ erroFalhas }}</p>
       <p v-if="cortado" class="ac-aviso">Mostrando só os {{ LIMITE_ABANDONO }} mais recentes; a lista pode estar cortada.</p>
 
       <div class="ac-grade">
@@ -114,6 +124,7 @@ import { paiDaTela, ROTULO_DO_PAI } from '../comercial-vessel/navegacao.js'
 import {
   MINUTOS_ATE_ABANDONO, LIMITE_ABANDONO, segundosRestantes, percentualDoPrazo,
   formatarContagem, separarPorStatus, foiCortado, seloDaMensagem,
+  HORAS_DO_AVISO_DE_FALHA, falhasParaAviso,
 } from './regras-do-abandono.js'
 
 const router = useRouter()
@@ -125,6 +136,18 @@ const erro = ref(null)
 const cortado = ref(false)
 const colunas = ref(vazio())
 const agora = ref(Date.now())
+const falhas = ref([])
+const erroFalhas = ref(null)
+
+const dataHora = (iso) => new Date(iso).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+
+// Mensagens que não saíram. Lê por função do banco porque `mensagem_fila` não abre para a tela (tem telefone).
+// Erro aqui NÃO vira "nenhuma falha": a tela diz que não conseguiu conferir.
+async function carregarFalhas() {
+  const { data, error } = await sbClient.rpc('mensagens_que_falharam', { p_horas: HORAS_DO_AVISO_DE_FALHA })
+  erroFalhas.value = error ? error.message : null
+  falhas.value = error ? [] : falhasParaAviso(data)
+}
 
 const hora = (iso) => (iso
   ? new Date(iso).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo' })
@@ -154,6 +177,7 @@ async function carregar() {
     cortado.value = foiCortado(data)
   }
   carregando.value = false
+  await carregarFalhas()
 }
 
 let relogio = null
@@ -187,6 +211,8 @@ onBeforeUnmount(() => { clearInterval(relogio); clearInterval(recarga) })
 .ac-preenchido { height:100%; background:var(--modulo); }
 .ac-carregando, .ac-vazio { margin:0; color:var(--muted); }
 .ac-erro { margin:0; padding:var(--sp-3); border-radius:var(--radius-md); color:var(--text); background:color-mix(in srgb, var(--red) 10%, var(--surface)); border:1px solid color-mix(in srgb, var(--red) 38%, var(--surface)); }
+.ac-falha { display:flex; flex-direction:column; gap:var(--sp-2); padding:var(--sp-3); border-radius:var(--radius-md); color:var(--text); overflow-wrap:anywhere; background:color-mix(in srgb, var(--red) 10%, var(--surface)); border:1px solid color-mix(in srgb, var(--red) 38%, var(--surface)); }
+.ac-falha-lista { margin:0; padding-left:var(--sp-5); display:flex; flex-direction:column; gap:var(--sp-2); }
 .ac-aviso { margin:0; padding:var(--sp-3); border-radius:var(--radius-md); color:var(--text); background:color-mix(in srgb, var(--orange) 10%, var(--surface)); border:1px solid color-mix(in srgb, var(--orange) 38%, var(--surface)); }
 
 @media (max-width:640px) {

@@ -2,8 +2,29 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   MINUTOS_ATE_ABANDONO, segundosRestantes, percentualDoPrazo, formatarContagem,
-  separarPorStatus, foiCortado, LIMITE_ABANDONO, seloDaMensagem,
+  separarPorStatus, foiCortado, LIMITE_ABANDONO, seloDaMensagem, explicarFalha, falhasParaAviso,
 } from './regras-do-abandono.js'
+
+test('o 422 do template de checkout (caso Camila, 04/10) vira um aviso legível, não "falhou" mudo', () => {
+  const motivo = 'enviar_template:422 {"message":"Este template so pode ser enviado pelo fluxo automatico"}'
+  assert.match(explicarFalha(motivo), /barrou o template/)
+  const [f] = falhasParaAviso([{ tipo: 'inicio', chave: 'abc', nome: 'Camila Altran', quando: '2026-10-04T12:14:47Z', motivo }])
+  assert.equal(f.nome, 'Camila Altran')
+  assert.equal(f.tipo, 'início do checkout')
+  assert.match(f.explicacao, /barrou o template/)
+})
+
+test('credencial recusada, sem confirmação e erro genérico têm texto próprio', () => {
+  assert.match(explicarFalha('criar_contato:401 {}'), /credencial/)
+  assert.match(explicarFalha('travada_sem_confirmacao'), /confira no Chatwoot/)
+  assert.match(explicarFalha('enviar_template:422 {}'), /recusou o envio/)
+  assert.equal(explicarFalha(null), 'o envio falhou')
+})
+
+test('sem falha não há aviso (aviso que aparece sempre vira paisagem)', () => {
+  assert.deepEqual(falhasParaAviso([]), [])
+  assert.deepEqual(falhasParaAviso(undefined), [])
+})
 
 const T0 = new Date('2026-09-28T12:00:00Z').getTime()
 const em = (seg) => T0 + seg * 1000
