@@ -202,7 +202,9 @@ ALERTAS    Os sinais de falsificacao. A etiqueta guarda um endereco, e endereco
            com --no-verify-jwt (siga o CLAUDE.md: partir da main, comparar o que
            esta no ar); (3) o workflow na main; (4) disparar uma vez na mao
            (Actions > Cartoes EAN > Run workflow) para esvaziar o que ja esta
-           na fila. Precisa dos segredos PAT_DO_SITE, SUPABASE_*, ZOHO_* e do
+           na fila. O Zoho e o da CENTRAL (Acessos > Zoho): para renovar, e so
+           reconectar la — nao ha segredo ZOHO_* a atualizar. Precisa de
+           PAT_DO_SITE, SUPABASE_SERVICE_KEY e do
            `GITHUB_PAT_FOTOS` (ou `GITHUB_PAT_FABRICA`) na edge.
 
            ⚠️ DEPOIS DE O CARTAO SAIR, O NUMERO DAQUELA PECA NAO MUDA MAIS.

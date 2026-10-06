@@ -95,9 +95,6 @@ jobs:
       - name: Gerar os cartões da fila
         env:
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-          ZOHO_CLIENT_ID: ${{ secrets.ZOHO_CLIENT_ID }}
-          ZOHO_CLIENT_SECRET: ${{ secrets.ZOHO_CLIENT_SECRET }}
-          ZOHO_REFRESH_TOKEN: ${{ secrets.ZOHO_REFRESH_TOKEN }}
-          ZOHO_DC: ${{ secrets.ZOHO_DC }}
+          # O Zoho NÃO vem de segredo do GitHub: o robô lê a conexão da Central (Acessos → Zoho, no banco).
         # O `curl-fetch` é obrigatório: o fetch do Node leva ECONNRESET atrás do Cloudflare (Bling e Supabase).
         run: node --import ./coletor/lib/curl-fetch.mjs coletor/robo-de-cartoes.mjs

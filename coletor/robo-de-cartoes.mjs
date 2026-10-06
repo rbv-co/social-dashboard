@@ -18,14 +18,14 @@ import { mkdirSync, mkdtempSync, writeFileSync, readFileSync, rmSync } from 'nod
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { pathToFileURL } from 'node:url';
-import { zohoAtivo, listarPasta, acharOuCriarPasta, uploadArquivo, baixarArquivo } from './lib/zoho-workdrive.mjs';
+import { listarPasta, acharOuCriarPasta, uploadArquivo, baixarArquivo } from './lib/zoho-workdrive.mjs';
+import { conexaoZoho } from './lib/zoho-da-central.mjs';
 import { agruparPorSku, nomeDaSubpasta, planoDeDevolucao, rotuloDoCartao } from './lib/cartoes-da-fila.js';
 import { fazerCartao } from './lib/cartao-de-uma-peca.mjs';
 
 const SECO = process.argv.includes('--seco');
 const { SUPABASE_URL, SUPABASE_SERVICE_KEY } = process.env;
 if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) { console.error('faltam SUPABASE_URL e SUPABASE_SERVICE_KEY'); process.exit(1); }
-if (!zohoAtivo()) { console.error('faltam os segredos do Zoho (ZOHO_CLIENT_ID, ZOHO_CLIENT_SECRET, ZOHO_REFRESH_TOKEN)'); process.exit(1); }
 
 const VESSEL = resolve(process.env.VESSEL_DIR || 'vessel-brasil');
 // "Fotos por SKU (coletor)", no Zoho; dentro dela ficam "Vessel Brasil" e, dentro desta, "Cartões com EAN".
@@ -43,6 +43,18 @@ function curto(e) {
 }
 
 const cab = { apikey: SUPABASE_SERVICE_KEY, Authorization: 'Bearer ' + SUPABASE_SERVICE_KEY };
+
+// ⚠️ O ZOHO É O DA CENTRAL (Acessos → Zoho, tabela `acessos_conexoes`), e NÃO os segredos ZOHO_* do GitHub: em
+// 06/10/2026 os dois deram `inactive_client` (o aplicativo do Zoho tinha caído) e renovar em dois lugares é pedir
+// para um ficar velho. Assim há UM lugar para reconectar. O cliente de coletor/lib/zoho-workdrive.mjs lê o
+// ambiente na hora de usar, então basta preenchê-lo aqui. Sem conexão, para ANTES de pegar pedido: ele fica na fila.
+{
+  const z = await conexaoZoho(`${SUPABASE_URL}/rest/v1`, cab);
+  process.env.ZOHO_CLIENT_ID = z.client_id;
+  process.env.ZOHO_CLIENT_SECRET = z.client_secret;
+  process.env.ZOHO_REFRESH_TOKEN = z.refresh_token;
+  process.env.ZOHO_DC = String(z.data_center || '.com').replace(/^\./, '');
+}
 async function rpc(nome, corpo = {}) {
   const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${nome}`, {
     method: 'POST', headers: { ...cab, 'Content-Type': 'application/json' }, body: JSON.stringify(corpo),
