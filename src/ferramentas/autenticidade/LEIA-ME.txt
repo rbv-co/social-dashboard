@@ -181,6 +181,30 @@ ALERTAS    Os sinais de falsificacao. A etiqueta guarda um endereco, e endereco
            Marque as pecas, confira a previa, mande gerar. O robo desenha e
            entrega em PNG e PDF no Zoho, em "Cartoes com EAN/<AAAA-MM-DD>".
 
+           O ROBO (06/10/2026): `coletor/robo-de-cartoes.mjs`, no GitHub Actions
+           (`.github/workflows/cartoes-ean.yml`). Ate esse dia a fila existia e
+           NADA a pegava — dois pedidos ficaram horas parados. O banco o acorda
+           quando o pedido entra (gatilho + edge `vessel-cartoes-trigger`); uma
+           rodada de hora em hora e a retaguarda (devolve a fila o que ficou
+           `rodando` ha mais de 150 min).
+           Por pedido: liga cada codigo de peca ao SKU e ao numero dela no lote
+           (o `codigo` NAO e o numero de serie), baixa as fotos do Zoho, gera,
+           exporta a 600 dpi, LE o codigo de barras do PNG e compara com o GTIN
+           do Bling, sobe 4 arquivos (frente/verso, PNG/PDF) e confere que eles
+           aparecem no Zoho. So entao a peca e marcada (`cartao_gerado_em`, que
+           prende o numero de serie). Resultado parcial: marca as boas e fecha o
+           pedido como `falhou` com a lista do que faltou — a tela mostra o erro.
+           Ver antes de gerar, sem tocar em nada:
+             node --env-file=coletor/.env --import ./coletor/lib/curl-fetch.mjs \
+               coletor/robo-de-cartoes.mjs --seco
+           PARA COLOCAR NO AR, NESTA ORDEM: (1) migration
+           `2026-10-06-robo-de-cartoes.sql`; (2) edge `vessel-cartoes-trigger`
+           com --no-verify-jwt (siga o CLAUDE.md: partir da main, comparar o que
+           esta no ar); (3) o workflow na main; (4) disparar uma vez na mao
+           (Actions > Cartoes EAN > Run workflow) para esvaziar o que ja esta
+           na fila. Precisa dos segredos PAT_DO_SITE, SUPABASE_*, ZOHO_* e do
+           `GITHUB_PAT_FOTOS` (ou `GITHUB_PAT_FABRICA`) na edge.
+
            ⚠️ DEPOIS DE O CARTAO SAIR, O NUMERO DAQUELA PECA NAO MUDA MAIS.
            Papel dentro de bolsa nao se regrava — diferente da etiqueta NFC. A
            peca com cartao passa a contar como PRESA, junto com a gravada e a
