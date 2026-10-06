@@ -128,7 +128,11 @@ async function processar(pedido, estado, ctx) {
       for (const p of pecas) estado.falhas.push({ rotulo: `${sku} nº${p.numero}`, motivo });
       continue;
     }
-    const idSubpasta = await acharOuCriarPasta(pastaDia, nomeDaSubpasta(achadas[0].name, sku));
+    // ⚠️ Falha num SKU NÃO derruba o pedido: as peças dele viram falha e o próximo SKU segue (06/10: um erro de Zoho
+    // aqui deixou 7 peças de outros SKUs sem nem serem tentadas).
+    let idSubpasta;
+    try { idSubpasta = await acharOuCriarPasta(pastaDia, nomeDaSubpasta(achadas[0].name, sku)); }
+    catch (e) { for (const p of pecas) estado.falhas.push({ rotulo: `${sku} nº${p.numero}`, motivo: curto(e) }); continue; }
     const feitas = [];
     for (const peca of pecas) {
       const rotulo = rotuloDoCartao(sku, peca.numero);
@@ -145,7 +149,9 @@ async function processar(pedido, estado, ctx) {
       }
     }
     // Confirma NO ZOHO (não no que o upload respondeu): só conta o cartão cujos 4 arquivos aparecem na pasta.
-    const noZoho = new Set((await listarPasta(idSubpasta)).map((x) => x.name));
+    let noZoho;
+    try { noZoho = new Set((await listarPasta(idSubpasta)).map((x) => x.name)); }
+    catch (e) { for (const f of feitas) estado.falhas.push({ rotulo: `${sku} nº${f.peca.numero}`, motivo: 'não consegui conferir no Zoho: ' + curto(e) }); continue; }
     for (const f of feitas) {
       const faltando = arquivosDoCartao(f.rotulo).filter((n) => !noZoho.has(n));
       if (series.get(f.serie) > 1) estado.falhas.push({ rotulo: `${sku} nº${f.peca.numero}`, motivo: `número de série repetido (${f.serie})` });
