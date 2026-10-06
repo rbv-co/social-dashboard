@@ -27,14 +27,30 @@ async function accessToken() {
 const API = () => `https://www.zohoapis.${DC()}/workdrive/api/v1`;
 async function authH() { return { Authorization: 'Zoho-oauthtoken ' + (await accessToken()) }; }
 
+// ⚠️ O ZOHO INVALIDA O TOKEN ANTES DE 1 HORA. Em 06/10/2026, 21 min depois de o robô de cartões começar, o upload voltou
+// 500 {"id":"F7003","title":"Invalid OAuth token."} e a rodada perdeu 9 cartões. Quem vê esse erro renova o token e
+// tenta UMA vez de novo (o upload sobrescreve pelo nome, então repetir é seguro). Qualquer outro erro passa direto.
+// `montar(cabecalho)` faz a chamada; o corpo da resposta de erro é lido numa cópia para não gastar o original.
+async function zoho(montar) {
+  for (let tentativa = 0; ; tentativa++) {
+    const r = await montar(await authH());
+    if (r.ok || tentativa) return r;
+    const txt = await (r.clone ? r.clone() : r).text().catch(() => '');
+    if (!/F7003|invalid.{0,3}oauth/i.test(txt)) return r;
+    _at = null; // o próximo authH() pede um token novo
+  }
+}
+
 // ⚠️ PAGINA. A API devolve poucos itens por chamada (50 no máximo); a pasta "Vessel Brasil" tem dezenas de
 // subpastas, e sem paginar `acharOuCriarPasta` não via a pasta que já existia — e criava outra igual.
 const POR_PAGINA = 50;
 export async function listarPasta(parentId) {
   const todos = [];
   for (let offset = 0; offset < 5000; offset += POR_PAGINA) {
-    const r = await fetch(`${API()}/files/${parentId}/files?page%5Blimit%5D=${POR_PAGINA}&page%5Boffset%5D=${offset}`, { headers: { ...(await authH()), Accept: 'application/vnd.api+json' } });
+    const r = await zoho(async (h) => fetch(`${API()}/files/${parentId}/files?page%5Blimit%5D=${POR_PAGINA}&page%5Boffset%5D=${offset}`, { headers: { ...h, Accept: 'application/vnd.api+json' } }));
     const j = await r.json();
+    // Leitura que falhou NÃO é pasta vazia: devolver [] aqui fazia "não achei" -> criar pasta duplicada.
+    if (!r.ok) throw new Error('zoho listar ' + parentId + ' -> ' + r.status + ' ' + JSON.stringify(j.errors || j).slice(0, 120));
     const pagina = Array.isArray(j.data) ? j.data : [];
     todos.push(...pagina);
     if (pagina.length < POR_PAGINA) break;
@@ -44,7 +60,7 @@ export async function listarPasta(parentId) {
 
 // Baixa o arquivo por id. Devolve Buffer; erro de rede/permissão LANÇA (arquivo que não veio não é arquivo vazio).
 export async function baixarArquivo(fileId) {
-  const r = await fetch(`${API()}/download/${encodeURIComponent(fileId)}`, { headers: await authH() });
+  const r = await zoho(async (h) => fetch(`${API()}/download/${encodeURIComponent(fileId)}`, { headers: h }));
   if (!r.ok) throw new Error('zoho download ' + fileId + ' -> ' + r.status);
   return Buffer.from(await r.arrayBuffer());
 }
@@ -59,10 +75,10 @@ export async function acharOuCriarPasta(parentId, nome) {
   // sem normalizar "não achei" cria uma segunda pasta com o mesmo nome.
   let id = itens.find((x) => x.folder && x.name.normalize('NFC') === nome.normalize('NFC'))?.id;
   if (!id) {
-    const r = await fetch(`${API()}/files`, {
-      method: 'POST', headers: { ...(await authH()), 'Content-Type': 'application/vnd.api+json', Accept: 'application/vnd.api+json' },
+    const r = await zoho(async (h) => fetch(`${API()}/files`, {
+      method: 'POST', headers: { ...h, 'Content-Type': 'application/vnd.api+json', Accept: 'application/vnd.api+json' },
       body: JSON.stringify({ data: { attributes: { name: nome, parent_id: parentId }, type: 'files' } }),
-    });
+    }));
     const j = await r.json();
     id = Array.isArray(j.data) ? j.data[0]?.id : j.data?.id;
     if (!id) throw new Error('zoho criar pasta "' + nome + '" -> ' + JSON.stringify(j.errors || j).slice(0, 150));
@@ -92,9 +108,9 @@ export async function uploadArquivo(parentId, filename, buf, mime = 'application
     { name: 'filename', value: filename },
     { name: 'override-name-exist', value: 'true' },
   ]);
-  const r = await fetch(`${API()}/upload`, {
-    method: 'POST', headers: { ...(await authH()), 'Content-Type': contentType }, body, curlMaxTime: 120,
-  });
+  const r = await zoho(async (h) => fetch(`${API()}/upload`, {
+    method: 'POST', headers: { ...h, 'Content-Type': contentType }, body, curlMaxTime: 120,
+  }));
   if (!r.ok) throw new Error('zoho upload "' + filename + '" -> ' + r.status + ' ' + (await r.text()).slice(0, 150));
   return true;
 }

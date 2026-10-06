@@ -23,6 +23,12 @@ concurrency:
   group: cartoes-ean
   cancel-in-progress: false
 
+# ⚠️ A URL do projeto é PÚBLICA e vai escrita aqui, como em status-projetos.yml e panorama-noticias.yml. O segredo
+# `SUPABASE_URL` NÃO existe neste repositório: a 1ª rodada (06/10/2026) chegou com ele VAZIO e morreu em 8 segundos
+# com "curl: No host part in the URL". Não volte a ler dele.
+env:
+  SUPABASE_URL: https://kounqtdoioootxqegkij.supabase.co
+
 jobs:
   olhar:
     runs-on: ubuntu-latest
@@ -33,7 +39,6 @@ jobs:
       - name: Há pedido na fila?
         id: fila
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: |
           # Falha de leitura NÃO vira "fila vazia": o passo morre e a rodada aparece vermelha.
@@ -89,11 +94,7 @@ jobs:
 
       - name: Gerar os cartões da fila
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-          ZOHO_CLIENT_ID: ${{ secrets.ZOHO_CLIENT_ID }}
-          ZOHO_CLIENT_SECRET: ${{ secrets.ZOHO_CLIENT_SECRET }}
-          ZOHO_REFRESH_TOKEN: ${{ secrets.ZOHO_REFRESH_TOKEN }}
-          ZOHO_DC: ${{ secrets.ZOHO_DC }}
+          # O Zoho NÃO vem de segredo do GitHub: o robô lê a conexão da Central (Acessos → Zoho, no banco).
         # O `curl-fetch` é obrigatório: o fetch do Node leva ECONNRESET atrás do Cloudflare (Bling e Supabase).
         run: node --import ./coletor/lib/curl-fetch.mjs coletor/robo-de-cartoes.mjs

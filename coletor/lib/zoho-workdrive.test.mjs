@@ -37,6 +37,32 @@ test('acha a pasta que existe na 2ª página, mesmo com acento decomposto, e NÃ
   assert.equal(criou, false)
 })
 
+test('token invalidado pelo Zoho no meio do trabalho (F7003): renova e tenta de novo UMA vez', async () => {
+  let tokens = 0, uploads = 0
+  globalThis.fetch = async (url, opts = {}) => {
+    if (String(url).includes('oauth/v2/token')) { tokens++; return resposta({ access_token: 't' + tokens }) }
+    uploads++
+    // o 1º upload (token t1 ou o já em cache) é recusado; o seguinte, com token novo, passa
+    return uploads === 1 ? resposta({ errors: [{ id: 'F7003', title: 'Invalid OAuth token.' }] }, false, 500) : resposta({})
+  }
+  const antes = tokens
+  const { uploadArquivo } = await import('./zoho-workdrive.mjs')
+  assert.equal(await uploadArquivo('pasta', 'a.png', Buffer.from('x')), true)
+  assert.equal(uploads, 2, 'tentou de novo uma vez')
+  assert.ok(tokens > antes, 'pediu um token novo')
+})
+
+test('erro que NÃO é de token não é repetido, e listagem que falhou LANÇA em vez de virar pasta vazia', async () => {
+  let chamadas = 0
+  globalThis.fetch = async (url) => {
+    if (String(url).includes('oauth/v2/token')) return resposta({ access_token: 'x' })
+    chamadas++
+    return resposta({ errors: [{ id: 'F1' }] }, false, 403)
+  }
+  await assert.rejects(listarPasta('p'), /403/)
+  assert.equal(chamadas, 1)
+})
+
 test('download devolve os bytes e o erro de permissão LANÇA, em vez de virar arquivo vazio', async () => {
   globalThis.fetch = async (url) => String(url).includes('oauth/v2/token') ? resposta({ access_token: 't' })
     : String(url).includes('/download/ok') ? resposta({ bytes: 'abc' }) : resposta({}, false, 403)
