@@ -602,6 +602,9 @@ async function loadGestaoVistaData(period){
   else period=_gvCurrentPeriod;
   document.querySelectorAll('.gv-pbtn').forEach(b=>b.classList.toggle('active',b.dataset.period===period));
   const board=document.getElementById('gv-board');
+  // Troca de período leva ~10s (Bling): sem isto o painel velho parece travado.
+  // Na 1ª carga já há o spinner de tela cheia, então só marca quando há painel.
+  if(!board.querySelector('.gv-loading-screen'))board.classList.add('gv-atualizando');
   const now=new Date();
   // Datas calculadas no fuso horário BRT para evitar deslocamento UTC vs Bling API
   const brt=new Date(now.toLocaleString('en-US',{timeZone:'America/Sao_Paulo'}));
@@ -783,6 +786,7 @@ async function loadGestaoVistaData(period){
     if(myLoad!==_gvLoadId)return; // troca de período enquanto carregava — descarta silenciosamente
     const totalPrev=pedidosPrev.reduce((s,p)=>s+parseFloat(p.total||0),0);
     _fadeSwap(board,()=>{
+      board.classList.remove('gv-atualizando');
       renderGestaoVista(pedidos,canais,metasMap,df,diasMes,diaAtual,di,period,totalPrev,pedidosPrev.length,pedidosPrev,diPrev,dfPrev,vendedoresMap,dailyGoalsMap,brtToday);
       _gvMontaChips();
       // se algum canal já estava selecionado (ex.: trocou de período com filtro ativo),
@@ -799,6 +803,7 @@ async function loadGestaoVistaData(period){
     document.getElementById('gv-refresh-tag').textContent='PRÓX. '+String(brtNow.getHours()).padStart(2,'0')+':'+String((brtNow.getMinutes()+5)%60).padStart(2,'0');
   }catch(e){
     if(myLoad!==_gvLoadId)return;
+    board.classList.remove('gv-atualizando');
     // Erro que NAO veio do Bling e defeito nosso, e o texto tem de dizer isso —
     // senao a tela manda consertar o fornecedor por bug da Central.
     const causa=e instanceof ErroDoBling?e.causa:'erro-na-tela';
@@ -1784,6 +1789,10 @@ onUnmounted(() => {
 .tela-gestao-a-vista :deep(.gv-main-kpi-d){font-family:var(--fonte-principal);font-size:max(9px, calc(9px * var(--escala-texto, 1)));font-weight:700;letter-spacing:.2px;white-space:nowrap;}
 .tela-gestao-a-vista :deep(.gv-loading-full){grid-column:1/-1;display:flex;align-items:center;justify-content:center;font-family:var(--fonte-principal);font-size:max(9px, calc(14px * var(--escala-texto, 1)));letter-spacing:4px;text-transform:uppercase;color:var(--muted);opacity:.4;}
 @keyframes gvSpin{to{transform:rotate(360deg)}}
+.tela-gestao-a-vista :deep(.gv-board.gv-atualizando){pointer-events:none;}
+.tela-gestao-a-vista :deep(.gv-board.gv-atualizando > *){opacity:.4;transition:opacity .2s ease;}
+.tela-gestao-a-vista :deep(.gv-board.gv-atualizando)::before{content:'';position:fixed;top:calc(50% - 40px);left:calc(50% - 24px);z-index:50;width:48px;height:48px;border-radius:50%;border:3px solid var(--border);border-top-color:var(--accent);animation:gvSpin .9s linear infinite;}
+.tela-gestao-a-vista :deep(.gv-board.gv-atualizando)::after{content:'Atualizando';position:fixed;top:calc(50% + 24px);left:50%;z-index:50;transform:translateX(-50%);white-space:nowrap;font-family:var(--fonte-principal);font-size:max(11px, calc(13px * var(--escala-texto, 1)));font-weight:600;letter-spacing:4px;text-transform:uppercase;color:var(--text);}
 .tela-gestao-a-vista :deep(.gv-loading-screen){grid-column:1/-1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;min-height:60vh;}
 .tela-gestao-a-vista :deep(.gv-spinner){width:48px;height:48px;border-radius:50%;border:3px solid var(--border);border-top-color:var(--accent);animation:gvSpin .9s linear infinite;}
 .tela-gestao-a-vista :deep(.gv-loading-lbl){font-family:var(--fonte-principal);font-size:max(9px, calc(10px * var(--escala-texto, 1)));letter-spacing:4px;text-transform:uppercase;color:var(--muted);}
