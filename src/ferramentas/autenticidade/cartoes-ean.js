@@ -63,8 +63,8 @@ export function impedimentoDoCartao(peca, lote, indice) {
 export const MOTIVO_DO_IMPEDIMENTO = {
   sem_sku: 'Este lote não tem código de produto. Edite o lote e informe o SKU: '
     + 'sem ele não há código de barras nem foto.',
-  sem_foto: 'Este produto ainda não tem foto tratada publicada. '
-    + 'A foto entra pelo robô das fotos; sem ela o cartão sairia com um vazio no lugar da bolsa.',
+  sem_foto: 'Este produto não tem foto cadastrada no Zoho. Se a foto já foi tratada, '
+    + 'chame o administrador para sincronizar o banco. Sem a foto o cartão sairia com um vazio no lugar da bolsa.',
   sem_numero: 'Esta peça está sem número de série. Recarregue a tela: '
     + 'o lote pode ter acabado de ser renumerado.',
 }
