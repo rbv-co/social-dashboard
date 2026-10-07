@@ -266,6 +266,18 @@ export function fraseDoDownloadRecusado(motivo) {
   }
 }
 
+/**
+ * SÓ OS PEDIDOS DA PESSOA QUE ESTÁ LOGADA. A lista de pedidos recentes mostra o que EU mandei gerar: quem
+ * pediu o quê é assunto de quem pediu, e a Maria não precisa ver a lista do João.
+ *
+ * ⚠️ Sem usuário conhecido a lista fica VAZIA, e não "todos": na dúvida, não mostrar o que é dos outros. Pedido
+ * sem `criado_por` (os que o próprio robô enfileirou) também não aparece para ninguém.
+ * Isto filtra o que a tela MOSTRA — o estado de cada peça na tabela (Gerando…, ✓) continua vindo de todos os
+ * pedidos, senão duas pessoas mandariam gerar a mesma peça ao mesmo tempo.
+ */
+export const pedidosDaPessoa = (pedidos, usuarioId) =>
+  usuarioId ? (pedidos || []).filter((q) => q.criado_por && q.criado_por === usuarioId) : []
+
 /** Há pedido que o robô ainda não terminou? É o que liga a releitura automática da fila. */
 export const temPedidoAtivo = (pedidos) =>
   (pedidos || []).some((q) => q.situacao === 'na_fila' || q.situacao === 'rodando')

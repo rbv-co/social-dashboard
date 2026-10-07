@@ -5,7 +5,7 @@ import {
   linhasDeCartao, marcadasPorPadrao, resumoDoPedido, pecaParaODesenho,
   recursosDoDesenho, cssDoCartao, fraseDoPedidoRecusado, situacaoDoPedido,
   BASE_DOS_RECURSOS, andamentoDaPeca, temPedidoAtivo, bolsasDoPedido,
-  nomeDoArquivoBaixado, nomeDoArquivoDosDois, fraseDoDownloadRecusado,
+  nomeDoArquivoBaixado, nomeDoArquivoDosDois, fraseDoDownloadRecusado, pedidosDaPessoa,
 } from './cartoes-ean.js'
 
 // Um pedaço do índice publicado, com a forma REAL do arquivo que está no ar —
@@ -255,6 +255,20 @@ test('cada recusa do download diz o que fazer, e motivo novo não vira tela muda
   assert.match(fraseDoDownloadRecusado('zoho_recusou'), /de novo/)
   assert.ok(fraseDoDownloadRecusado('coisa_nova').length > 20)
   assert.ok(fraseDoDownloadRecusado(undefined).length > 20)
+})
+
+test('cada pessoa vê só os pedidos que ela mesma fez', () => {
+  const fila = [
+    { id: 'a', criado_por: 'maria' }, { id: 'b', criado_por: 'joao' },
+    { id: 'c', criado_por: 'maria' }, { id: 'd', criado_por: null },   // d: enfileirado pelo robô
+  ]
+  assert.deepEqual(pedidosDaPessoa(fila, 'maria').map((q) => q.id), ['a', 'c'])
+  assert.deepEqual(pedidosDaPessoa(fila, 'joao').map((q) => q.id), ['b'])
+  // Na dúvida, nada: usuário desconhecido NÃO vira "mostra tudo", e pedido sem dono não é de ninguém.
+  assert.deepEqual(pedidosDaPessoa(fila, null), [])
+  assert.deepEqual(pedidosDaPessoa(fila, undefined), [])
+  assert.deepEqual(pedidosDaPessoa(fila, 'ninguem'), [])
+  assert.deepEqual(pedidosDaPessoa(null, 'maria'), [])
 })
 
 test('a releitura da fila só liga enquanto há pedido a terminar', () => {
