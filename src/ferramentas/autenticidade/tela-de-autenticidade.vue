@@ -3705,12 +3705,17 @@ async function carregarAFilaDeCartoes() {
   pedidosDeCartao.value = data || []
 }
 
-function verOCartao(linha) {
+async function verOCartao(linha) {
   erroDaPrevia.value = ''
   pecaNaPrevia.value = pecaParaODesenho(linha, indiceDosCartoes.value || {})
   if (!pecaNaPrevia.value) {
     erroDaPrevia.value = MOTIVO_DO_IMPEDIMENTO.sem_foto
   }
+  // ⚠️ A PRÉVIA ABRE DEPOIS DA LISTA INTEIRA. Com dezenas de peças ela nasce a
+  // milhares de pixels do botão, fora da tela — e o clique parecia não fazer
+  // nada (07/10/2026). Rolar até ela é o que fecha o ciclo clique → cartão.
+  await nextTick()
+  document.querySelector('.au-previa-cartao')?.scrollIntoView({ block: 'start', behavior: 'smooth' })
 }
 
 function fecharAPrevia() {
