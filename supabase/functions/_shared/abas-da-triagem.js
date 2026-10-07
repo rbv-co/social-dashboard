@@ -1,4 +1,4 @@
-// A TRIAGEM DA VAGA DO TIVOLI — transforma as linhas de `vessel_candidaturas`
+// A TRIAGEM DAS VAGAS (Tivoli, Brasília) — transforma as linhas de `vessel_candidaturas`
 // nas abas da planilha "Triagem Tivoli Vendedora.xlsx" (04. Vessel Brasil /
 // 10. RH-DP). Aqui só se monta — puro, roda no node (teste) e na edge
 // `vessel-triagem-da-vaga`, que busca, envia e roda a cada minuto.
@@ -18,6 +18,30 @@
 
 export const VAGA = 'consultor-tivoli';
 export const PASTA_DOS_CURRICULOS = 'Triagem Tivoli - Currículos';
+
+// AS VAGAS QUE O ROBÔ TRIA. A chave é a MESMA da lista fechada do banco
+// (`vessel_candidatar_vaga`) e da pasta `vessel-curriculos`. Cada vaga tem a sua
+// planilha e a sua pasta de currículos, ao lado, em 04. Vessel Brasil / 10. RH-DP.
+// ⚠️ `whatsapp: null` = a vaga ainda não tem número de recebimento; a aba "Como
+// usar" então não cita número nenhum (nunca o de outra loja).
+export const VAGAS = {
+  'consultor-tivoli': {
+    arquivo: 'Triagem Tivoli Vendedora.xlsx',
+    pasta: PASTA_DOS_CURRICULOS,
+    titulo: 'TRIAGEM TIVOLI — VENDEDORA',
+    local: 'Tivoli Shopping',
+    pagina: 'vesselbrasil.com.br/vaga-tivoli',
+    whatsapp: '(19) 99822-7221',
+  },
+  'consultor-brasilia': {
+    arquivo: 'Triagem Brasília Vendedora.xlsx',
+    pasta: 'Triagem Brasília - Currículos',
+    titulo: 'TRIAGEM BRASÍLIA — VENDEDORA',
+    local: 'Brasília',
+    pagina: 'vesselbrasil.com.br/vaga-brasilia',
+    whatsapp: null,
+  },
+};
 
 const EXPERIENCIA = {
   luxo: 'Sim, em moda ou varejo de luxo',
@@ -69,9 +93,9 @@ export function nomeDoCurriculo(c) {
   return `${dia} - ${nome} - ${String(c.id).slice(0, 8)}.${ext}`;
 }
 
-const COMO_USAR = [
-  { texto: 'TRIAGEM TIVOLI — VENDEDORA', secao: true },
-  'Cada linha da aba "Candidatos" é uma pessoa que se candidatou à vaga de Consultor de Vendas do Tivoli Shopping pela página vesselbrasil.com.br/vaga-tivoli (o destino do anúncio).',
+const comoUsar = (v) => [
+  { texto: v.titulo, secao: true },
+  `Cada linha da aba "Candidatos" é uma pessoa que se candidatou à vaga de Consultor de Vendas ${v.local === 'Brasília' ? 'da loja de' : 'do'} ${v.local} pela página ${v.pagina} (o destino do anúncio).`,
   'A planilha se atualiza sozinha: em até 1 minuto depois de cada candidatura nova. Mais novo em cima.',
   '',
   { texto: 'O QUE O RH PODE MEXER', secao: true },
@@ -88,8 +112,10 @@ const COMO_USAR = [
   '❌ Sem fim de semana — respondeu que não pode fazer a escala de shopping.',
   '',
   { texto: 'O CURRÍCULO', secao: true },
-  `Quem anexou na página tem o arquivo na pasta "${PASTA_DOS_CURRICULOS}", ao lado desta planilha, com o nome que aparece na coluna "Currículo".`,
-  'Quem não anexou foi convidada a mandar pelo WhatsApp (19) 99822-7221. Para chamar, use o link da coluna "WhatsApp".',
+  `Quem anexou na página tem o arquivo na pasta "${v.pasta}", ao lado desta planilha, com o nome que aparece na coluna "Currículo".`,
+  v.whatsapp
+    ? `Quem não anexou foi convidada a mandar pelo WhatsApp ${v.whatsapp}. Para chamar, use o link da coluna "WhatsApp".`
+    : 'Quem não anexou fica como "Não anexou": peça o currículo quando chamar, pelo link da coluna "WhatsApp".',
 ];
 
 const TITULOS = [
@@ -145,10 +171,10 @@ function linhaNova(c) {
   };
 }
 
-const abaDeUso = () => ({
+const abaDeUso = (vaga) => ({
   nome: 'Como usar', filtro: false, zebra: false,
   colunas: [{ titulo: 'COMO USAR ESTA PLANILHA', largura: 110 }],
-  linhas: COMO_USAR.map((l) => [l]),
+  linhas: comoUsar(VAGAS[vaga]).map((l) => [l]),
 });
 
 /**
@@ -159,7 +185,7 @@ const abaDeUso = () => ({
  * ⚠️ SEM A COLUNA "ID do cadastro" NÃO HÁ COMO SABER QUEM JÁ ESTÁ LÁ: em vez
  * de adivinhar (e duplicar todo mundo, ou apagar), ele LANÇA ERRO e não mexe.
  */
-export function montarAbasDaTriagem(candidaturas, abasLidas = null) {
+export function montarAbasDaTriagem(candidaturas, abasLidas = null, vaga = VAGA) {
   const todas = [...(candidaturas || [])]
     .sort((a, b) => String(b.criado_em).localeCompare(String(a.criado_em)));
   const lida = (abasLidas || []).find((a) => a.nome === 'Candidatos');
@@ -173,7 +199,7 @@ export function montarAbasDaTriagem(candidaturas, abasLidas = null) {
     }
     const linhas = todas.map((c) => TITULOS.map((t) => linhaNova(c)[t]));
     return {
-      abas: [{ nome: 'Candidatos', colunas: TITULOS.map((titulo, i) => ({ titulo, largura: LARGURAS[i] })), linhas }, abaDeUso()],
+      abas: [{ nome: 'Candidatos', colunas: TITULOS.map((titulo, i) => ({ titulo, largura: LARGURAS[i] })), linhas }, abaDeUso(vaga)],
       entregues: todas.map((c) => String(c.id)),
       novas: todas.length,
     };
@@ -205,7 +231,7 @@ export function montarAbasDaTriagem(candidaturas, abasLidas = null) {
   return {
     abas: [
       { nome: 'Candidatos', colunas: lida.colunas.map((titulo) => ({ titulo, largura: larg(titulo) })), linhas: [...linhasNovas, ...doRh] },
-      abaDeUso(),
+      abaDeUso(vaga),
       ...outras,
     ],
     entregues: [...new Set([...novas.map((c) => String(c.id)), ...todas.filter((c) => noArquivo.has(String(c.id))).map((c) => String(c.id))])],
