@@ -1322,35 +1322,38 @@
         </p>
       </div>
 
-      <!-- ── O PEDIDO, NO TOPO ───────────────────────────────────────────────
-           Ficava embaixo da lista, e numa lista de dezenas de peças o botão
-           ficava a milhares de pixels de quem acabou de marcar (07/10/2026). -->
-      <div v-if="podeEditar" class="au-acoes au-pedir-cartoes">
-        <p class="au-aviso-menor">
-          {{ resumoDosCartoes.total }} peça(s) marcada(s) — {{ resumoDosCartoes.arquivos }} arquivos
-          (frente e verso, PNG e PDF).
-          <!-- REFAZER É PERMITIDO (cartão rasga, mancha, some), mas a tela tem de
-               DIZER: senão a pasta do Zoho volta com o dobro dos arquivos e
-               ninguém sabe qual é o bom. -->
-          <strong v-if="resumoDosCartoes.refazendo">
-            {{ resumoDosCartoes.refazendo }} já tinha(m) cartão e será(ão) refeito(s).
-          </strong>
-        </p>
-        <button class="au-botao" type="button"
-                :disabled="!resumoDosCartoes.total || pedindoCartoes"
-                @click="pedirOsCartoes">
-          {{ pedindoCartoes ? 'Mandando…' : 'Gerar ' + resumoDosCartoes.total + ' cartão(ões)' }}
-        </button>
-      </div>
-
       <p v-if="carregandoOsCartoes" class="au-vazio">Carregando os produtos publicados…</p>
       <p v-else-if="!linhasDosCartoes.length" class="au-vazio">
         Nenhuma peça neste recorte. Escolha outro lote, ou crie o lote no passo 1.
       </p>
 
       <div v-else class="au-lista au-tabela au-tabela-cartoes">
-        <div class="au-tabela-cab" aria-hidden="true">
-          <span>Peça</span><span>Nº de série</span><span>Cartão</span><span>Ações</span>
+        <!-- ── O PEDIDO + O CABEÇALHO, GRUDADOS NO TOPO ───────────────────────
+             O botão ficava embaixo da lista, e numa lista de dezenas de peças ele
+             ficava a milhares de pixels de quem acabou de marcar (07/10/2026). Agora
+             os dois blocos formam UM só, que acompanha a rolagem logo abaixo da
+             barra de topo do app — o botão de gerar nunca sai da tela. -->
+        <div class="au-fixo-cartoes">
+          <div v-if="podeEditar" class="au-acoes au-pedir-cartoes">
+            <p class="au-aviso-menor">
+              {{ resumoDosCartoes.total }} peça(s) marcada(s) — {{ resumoDosCartoes.arquivos }} arquivos
+              (frente e verso, PNG e PDF).
+              <!-- REFAZER É PERMITIDO (cartão rasga, mancha, some), mas a tela tem de
+                   DIZER: senão a pasta do Zoho volta com o dobro dos arquivos e
+                   ninguém sabe qual é o bom. -->
+              <strong v-if="resumoDosCartoes.refazendo">
+                {{ resumoDosCartoes.refazendo }} já tinha(m) cartão e será(ão) refeito(s).
+              </strong>
+            </p>
+            <button class="au-botao" type="button"
+                    :disabled="!resumoDosCartoes.total || pedindoCartoes"
+                    @click="pedirOsCartoes">
+              {{ pedindoCartoes ? 'Mandando…' : 'Gerar ' + resumoDosCartoes.total + ' cartão(ões)' }}
+            </button>
+          </div>
+          <div class="au-tabela-cab" aria-hidden="true">
+            <span>Peça</span><span>Nº de série</span><span>Cartão</span><span>Ações</span>
+          </div>
         </div>
         <!-- O tom repete a MESMA escolha dos três selos logo abaixo. -->
         <div v-for="ln in linhasDosCartoes" :key="ln.codigo" class="au-card id-cartao"
@@ -3854,6 +3857,7 @@ async function pedirUmCartao(linha) {
 // `cartao_gerado_em` (o ✓ "Cartão pronto") aparece.
 const INTERVALO_DA_FILA = 8000
 let relogioDaFila = null
+let observadorDoTopo = null
 
 async function recarregarAsPecas() {
   const { data, error } = await sbClient.from('vessel_pecas')
@@ -4944,6 +4948,14 @@ onMounted(() => {
   if (podeEditar.value && !guiaJaVisto()) guiaAberto.value = true
   // A prévia do cartão fala por `postMessage` quando não consegue desenhar.
   window.addEventListener('message', ouvirAPrevia)
+  // A barra de topo do app é sticky; o bloco do pedido gruda logo abaixo dela.
+  const barraDoTopo = document.querySelector('.bt-barra')
+  const raiz = document.querySelector('.tela-autenticidade')
+  if (barraDoTopo && raiz && typeof ResizeObserver !== 'undefined') {
+    observadorDoTopo = new ResizeObserver(() =>
+      raiz.style.setProperty('--au-topo-fixo', barraDoTopo.offsetHeight + 'px'))
+    observadorDoTopo.observe(barraDoTopo)
+  }
 })
 
 // ⚠️ E O OUVINTE SAI JUNTO COM A TELA. Sem isto ele fica pendurado em `window`
@@ -4952,6 +4964,7 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener('message', ouvirAPrevia)
   clearInterval(relogioDaFila)
+  observadorDoTopo?.disconnect()
 })
 </script>
 
@@ -6479,7 +6492,23 @@ onUnmounted(() => {
    cobre a última linha); só vem antes. */
 .au-pedir-cartoes{
   flex-wrap:wrap; align-items:center; gap:var(--sp-3);
-  margin:var(--sp-3) 0;
+  margin:0; padding:var(--sp-3) var(--sp-4);
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:var(--card-radius);
+}
+/* ⚠️ O BLOCO GRUDA ABAIXO DA BARRA DE TOPO DO APP, que também é `sticky` (top:0).
+   `--au-topo-fixo` é a altura REAL dela, medida na tela (ResizeObserver): número
+   escrito à mão ficaria errado no celular, onde a barra quebra de linha.
+   O fundo é opaco de propósito — sem ele as linhas passam por trás do botão. */
+.au-fixo-cartoes{
+  position:sticky; top:var(--au-topo-fixo, 0px); z-index:15;
+  background:var(--bg); padding-bottom:var(--sp-2);
+}
+@media (min-width:900px){
+  /* No computador o pedido é a "tampa" da tabela: o cabeçalho de colunas vem colado embaixo. */
+  .au-tabela-cartoes .au-pedir-cartoes{border-radius:var(--card-radius) var(--card-radius) 0 0; border-bottom:0;}
+  .au-tabela-cartoes .au-fixo-cartoes .au-tabela-cab{border-radius:0; border-bottom:1px solid var(--border);}
+  .au-fixo-cartoes{padding-bottom:0;}
 }
 .au-pedir-cartoes .au-aviso-menor{flex:1 1 16em; min-width:0;}
 
