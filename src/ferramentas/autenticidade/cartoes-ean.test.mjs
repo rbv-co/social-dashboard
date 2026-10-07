@@ -5,7 +5,7 @@ import {
   linhasDeCartao, marcadasPorPadrao, resumoDoPedido, pecaParaODesenho,
   recursosDoDesenho, cssDoCartao, fraseDoPedidoRecusado, situacaoDoPedido,
   BASE_DOS_RECURSOS, andamentoDaPeca, temPedidoAtivo, bolsasDoPedido,
-  nomeDoArquivoBaixado, fraseDoDownloadRecusado,
+  nomeDoArquivoBaixado, nomeDoArquivoDosDois, fraseDoDownloadRecusado,
 } from './cartoes-ean.js'
 
 // Um pedaço do índice publicado, com a forma REAL do arquivo que está no ar —
@@ -234,6 +234,17 @@ test('o arquivo baixado tem o nome que o robô entregou no Zoho', () => {
   const l = { sku: 'SS0001HB.S1', numeroNaSerie: 4 }
   assert.equal(nomeDoArquivoBaixado(l, 'frente', 'png'), 'SS0001HB.S1_cartao_04_frente.png')
   assert.equal(nomeDoArquivoBaixado({ sku: 'SS0003SB.B2', numeroNaSerie: 10 }, 'verso', 'pdf'), 'SS0003SB.B2_cartao_10_verso.pdf')
+})
+
+test('o download dos dois lados tem nome próprio: PDF único e zip dos PNGs', () => {
+  const l = { sku: 'SS0001HB.S1', numeroNaSerie: 4 }
+  assert.equal(nomeDoArquivoDosDois(l, 'pdf'), 'SS0001HB.S1_cartao_04.pdf')
+  assert.equal(nomeDoArquivoDosDois(l, 'png'), 'SS0001HB.S1_cartao_04_png.zip')
+})
+
+test('sem resposta do servidor (rede/CORS) a frase diz isso, em vez de "erro"', () => {
+  assert.match(fraseDoDownloadRecusado('sem_resposta'), /servidor/)
+  assert.match(fraseDoDownloadRecusado('sem_resposta'), /localhost/)
 })
 
 test('cada recusa do download diz o que fazer, e motivo novo não vira tela muda', () => {
