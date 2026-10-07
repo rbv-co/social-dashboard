@@ -1510,11 +1510,28 @@
             </button>
           </div>
           <p v-if="erroDaPrevia" class="au-erro">{{ erroDaPrevia }}</p>
+          <!-- ⚠️ PEÇA COM CARTÃO PRONTO MOSTRA O ARQUIVO PRONTO, e não a prévia. A prévia usa a foto
+               tratada PUBLICADA no site; o robô refaz o cartão a partir da foto original do Zoho — e o
+               arquivo que sai é mais nítido que a prévia (07/10/2026: "a baixada saiu melhor"). Mostrar
+               a prévia ao lado de um download diferente é prometer um cartão e entregar outro. -->
           <div class="au-previa-quadro">
-            <iframe class="au-previa-folha" :src="enderecoDaPrevia"
+            <p v-if="carregandoImagens" class="au-aviso-menor au-previa-carregando">Carregando o cartão pronto…</p>
+            <template v-else-if="imagensDoCartao">
+              <img class="au-previa-imagem" :src="imagensDoCartao.frente" alt="Frente do cartão pronto">
+              <img class="au-previa-imagem" :src="imagensDoCartao.verso" alt="Verso do cartão pronto">
+            </template>
+            <iframe v-else class="au-previa-folha" :src="enderecoDaPrevia"
                     sandbox="allow-scripts allow-same-origin"
                     title="Prévia do cartão desta peça" loading="lazy"></iframe>
           </div>
+          <p v-if="imagensDoCartao" class="au-aviso-menor au-previa-nota">
+            Este é o cartão pronto: o mesmo arquivo que você baixa abaixo.
+          </p>
+          <p v-else-if="!carregandoImagens" class="au-aviso-menor au-previa-nota">
+            <template v-if="avisoDasImagens">{{ avisoDasImagens }} Abaixo, a prévia aproximada.</template>
+            <template v-else>Prévia aproximada: usa a foto publicada no site. O robô refaz o cartão com a foto
+              original do Zoho, e o arquivo final sai mais nítido.</template>
+          </p>
           <!-- ── BAIXAR: o ARQUIVO REAL que o robô entregou no Zoho (o da gráfica), e não uma
                cópia da prévia. Só existe para peça com cartão gerado; para as outras, o recado
                diz o que fazer em vez de esconder o botão calado. -->
@@ -2304,7 +2321,7 @@ import { ref, reactive, computed, watch, onMounted, onUnmounted, nextTick } from
 import { useRouter } from 'vue-router'
 import BarraDeTopo from '../../compartilhado/barra-de-topo.vue'
 import { sbClient } from '../../compartilhado/conectar-no-banco-de-dados.js'
-import { hasPermission } from '../../compartilhado/controle-de-login-e-usuario.js'
+import { hasPermission, estado as estadoDoLogin } from '../../compartilhado/controle-de-login-e-usuario.js'
 import IconeDoBloco from '../../compartilhado/icone-do-bloco.vue'
 // O filete do cartão no tom do selo dele (Onda 2c).
 import { classeDoTom } from './tom-do-selo.js'
@@ -2407,7 +2424,7 @@ import { estadoDaBancada, acaoDaBancada, nomeDoModo } from './modo-bancada.js'
 import {
   BASE_DOS_RECURSOS, MOTIVO_DO_IMPEDIMENTO, linhasDeCartao, marcadasPorPadrao,
   resumoDoPedido, pecaParaODesenho, fraseDoPedidoRecusado, situacaoDoPedido,
-  andamentoDaPeca, temPedidoAtivo, bolsasDoPedido, nomeDoArquivoBaixado, nomeDoArquivoDosDois, fraseDoDownloadRecusado,
+  andamentoDaPeca, temPedidoAtivo, bolsasDoPedido, pedidosDaPessoa, nomeDoArquivoBaixado, nomeDoArquivoDosDois, fraseDoDownloadRecusado,
 } from './cartoes-ean.js'
 import { pdfComDuasPaginas, zipDosArquivos } from './cartao-junto.js'
 
@@ -2480,6 +2497,10 @@ const pecaNaPrevia = ref(null)
 // cartão e qual é o código para pedir.
 const linhaNaPrevia = ref(null)
 const folhaDaPrevia = ref(null)
+// As imagens do cartão PRONTO (frente e verso, em URLs de objeto) e o estado de carregá-las.
+const imagensDoCartao = ref(null)
+const carregandoImagens = ref(false)
+const avisoDasImagens = ref('')
 // O código da peça cujo menu de três pontinhos está aberto ('' = nenhum).
 const menuDoCartao = ref('')
 const menuParaEsquerda = ref(false)
@@ -3809,7 +3830,9 @@ async function irAteALinha(codigo) {
 }
 
 /** Só os pedidos que ainda dizem alguma coisa: fila vazia não ocupa tela. */
-const pedidosEmAndamento = computed(() => pedidosDeCartao.value
+// Só os pedidos de QUEM ESTÁ LOGADO (a lista é "o que eu mandei gerar"). O estado das peças na tabela continua
+// vindo de `pedidosDeCartao`, de todos: duas pessoas não podem mandar gerar a mesma peça ao mesmo tempo.
+const pedidosEmAndamento = computed(() => pedidosDaPessoa(pedidosDeCartao.value, estadoDoLogin.user?.id)
   .filter((q) => q.situacao !== 'pronto' || Date.now() - Date.parse(q.terminou_em || 0) < 36e5)
   .slice(0, 5))
 
@@ -3868,12 +3891,15 @@ async function verOCartao(linha) {
   // O modal só abre com a peça; sem ela o motivo vai para a faixa de erro da aba,
   // que fica à vista (dentro do modal, nem abriria).
   if (!pecaNaPrevia.value) { erroDosCartoes.value = MOTIVO_DO_IMPEDIMENTO.sem_foto; return }
+  soltarAsImagens()
+  if (linha.jaTemCartao) carregarAsImagensDoCartao(linha)
   // O foco entra no modal: é o que faz o Esc valer sem o dedo ter de achar a caixa.
   await nextTick()
   folhaDaPrevia.value?.focus()
 }
 
 function fecharAPrevia() {
+  soltarAsImagens()
   pecaNaPrevia.value = null
   linhaNaPrevia.value = null
   erroDaPrevia.value = ''
@@ -3909,6 +3935,31 @@ function entregarNoNavegador(bytes, nome) {
   a.download = nome
   a.click()
   URL.revokeObjectURL(url)
+}
+
+let geracaoDasImagens = 0   // cada abertura do modal ganha um número: resposta atrasada de outra peça não pinta esta
+
+/** Solta as URLs de objeto (senão cada abertura do modal deixa duas imagens na memória) e cancela o que está a caminho. */
+function soltarAsImagens() {
+  geracaoDasImagens++
+  for (const url of Object.values(imagensDoCartao.value || {})) URL.revokeObjectURL(url)
+  imagensDoCartao.value = null
+  carregandoImagens.value = false
+  avisoDasImagens.value = ''
+}
+
+/** Busca frente e verso do cartão pronto. Se falhar, o modal cai na prévia aproximada e DIZ por quê. */
+async function carregarAsImagensDoCartao(linha) {
+  const minha = geracaoDasImagens
+  carregandoImagens.value = true
+  const [f, v] = await Promise.all([
+    buscarOArquivoDoCartao(linha, 'frente', 'png'), buscarOArquivoDoCartao(linha, 'verso', 'png'),
+  ])
+  if (minha !== geracaoDasImagens) return
+  carregandoImagens.value = false
+  if (f.erro || v.erro) { avisoDasImagens.value = f.erro || v.erro; return }
+  const url = (r) => URL.createObjectURL(new Blob([r.bytes], { type: 'image/png' }))
+  imagensDoCartao.value = { frente: url(f), verso: url(v) }
 }
 
 /**
@@ -6603,6 +6654,12 @@ onUnmounted(() => {
 .au-folha-previa{outline:none;}
 .au-folha-previa .au-previa-quadro{padding:0 var(--sp-2);}
 .au-previa-acoes{padding:var(--sp-3) var(--sp-4) 0; justify-content:flex-end;}
+.au-previa-imagem{
+  display:block; width:min(100%, 86.6mm); height:auto; margin:var(--sp-2) auto 0;
+  border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--bg);
+}
+.au-previa-carregando{padding:var(--sp-5) var(--sp-3); text-align:center;}
+.au-previa-nota{padding:var(--sp-2) var(--sp-4) 0;}
 .au-previa-baixar{padding:var(--sp-3) var(--sp-4) 0; display:flex; flex-direction:column; gap:var(--sp-2);}
 .au-previa-baixar .au-erro{padding:0;}
 .au-baixar-linha{display:flex; align-items:center; gap:var(--sp-2);}
