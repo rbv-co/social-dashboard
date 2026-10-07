@@ -1316,27 +1316,32 @@
 
       <!-- A FILA, QUANDO HÁ ALGO NELA. Some quando está vazia: aviso que
            aparece sempre vira paisagem. -->
-      <div v-if="pedidosEmAndamento.length" class="au-confirma" role="status">
-        <div v-for="q in pedidosEmAndamento" :key="q.id" class="au-pedido-aviso">
-          <p class="au-confirma-texto">
-            <strong>{{ situacaoDoPedido(q).rotulo }}</strong> — {{ situacaoDoPedido(q).detalhe }}
-          </p>
-          <!-- QUAIS BOLSAS: o aviso dizia só "2 cartões" e a pessoa não sabia de qual
-               bolsa. Um botão leva até a linha da peça na lista. -->
-          <ul class="au-pedido-bolsas">
-            <li v-for="g in bolsasDe(q).grupos" :key="g.nome">
-              <span class="au-pedido-bolsa-nome">{{ g.nome }}</span>
-              <span class="au-pedido-bolsa-series">{{ g.series.join(', ') }}</span>
-              <button v-if="g.achada" class="au-link" type="button"
+      <!-- ── OS PEDIDOS RECENTES ────────────────────────────────────────────────
+           Uma lista dentro da margem da página, e não uma caixa de ponta a ponta:
+           a situação num selo, a bolsa em destaque (a pessoa não sabia DE QUAL era o
+           "2 cartões"), a série embaixo, e o botão que leva até a linha à direita. -->
+      <section v-if="pedidosEmAndamento.length" class="au-fila" aria-label="Pedidos recentes de cartões" role="status">
+        <article v-for="q in pedidosEmAndamento" :key="q.id" class="au-fila-pedido">
+          <header class="au-fila-cab">
+            <span class="selo" :class="seloDoPedido(q)">{{ situacaoDoPedido(q).rotulo }}</span>
+            <span class="au-fila-detalhe">{{ situacaoDoPedido(q).detalhe }}</span>
+          </header>
+          <ul class="au-fila-bolsas">
+            <li v-for="g in bolsasDe(q).grupos" :key="g.nome" class="au-fila-bolsa">
+              <span class="au-fila-texto">
+                <span class="au-fila-nome">{{ g.nome }}</span>
+                <span class="au-fila-series">{{ g.series.join(', ') }}</span>
+              </span>
+              <button v-if="g.achada" class="au-botao-claro au-fila-ir" type="button"
                       :aria-label="'Ir até a linha de ' + g.nome"
                       @click="irAteALinha(g.codigos[0])">Ir até a linha</button>
             </li>
-            <li v-if="bolsasDe(q).alemDisso" class="au-pedido-bolsa-series">
+            <li v-if="bolsasDe(q).alemDisso" class="au-fila-series au-fila-resto">
               e mais {{ bolsasDe(q).alemDisso }} modelo(s)
             </li>
           </ul>
-        </div>
-      </div>
+        </article>
+      </section>
 
       <p v-if="carregandoOsCartoes" class="au-vazio">Carregando os produtos publicados…</p>
       <p v-else-if="!linhasDosCartoes.length" class="au-vazio">
@@ -1516,15 +1521,20 @@
           <div v-if="linhaNaPrevia" class="au-previa-baixar">
             <template v-if="linhaNaPrevia.jaTemCartao">
               <p class="au-aviso-menor">Baixar o cartão pronto (o arquivo que foi para a gráfica):</p>
-              <div v-for="face in ['frente', 'verso']" :key="face" class="au-baixar-linha">
+              <div v-for="face in ['frente', 'verso', 'ambos']" :key="face" class="au-baixar-linha">
                 <span class="au-baixar-rotulo">{{ face }}</span>
                 <button v-for="formato in ['png', 'pdf']" :key="formato" class="au-botao-claro" type="button"
                         :disabled="!!baixandoCartao"
-                        :aria-label="'Baixar a ' + face + ' em ' + formato.toUpperCase()"
+                        :aria-label="face === 'ambos'
+                          ? (formato === 'pdf' ? 'Baixar frente e verso num PDF de duas páginas' : 'Baixar frente e verso em PNG, num arquivo zip')
+                          : 'Baixar a ' + face + ' em ' + formato.toUpperCase()"
                         @click="baixarOCartao(linhaNaPrevia, face, formato)">
                   {{ baixandoCartao === face + '-' + formato ? 'Baixando…' : formato.toUpperCase() }}
                 </button>
               </div>
+              <p class="au-aviso-menor">
+                Ambos: o PDF sai num arquivo só, com duas páginas (frente e verso); o PNG sai num .zip com as duas imagens.
+              </p>
             </template>
             <p v-else class="au-aviso-menor">
               O arquivo para baixar aparece depois que o cartão é gerado. Gere o cartão e volte aqui.
@@ -2397,8 +2407,9 @@ import { estadoDaBancada, acaoDaBancada, nomeDoModo } from './modo-bancada.js'
 import {
   BASE_DOS_RECURSOS, MOTIVO_DO_IMPEDIMENTO, linhasDeCartao, marcadasPorPadrao,
   resumoDoPedido, pecaParaODesenho, fraseDoPedidoRecusado, situacaoDoPedido,
-  andamentoDaPeca, temPedidoAtivo, bolsasDoPedido, nomeDoArquivoBaixado, fraseDoDownloadRecusado,
+  andamentoDaPeca, temPedidoAtivo, bolsasDoPedido, nomeDoArquivoBaixado, nomeDoArquivoDosDois, fraseDoDownloadRecusado,
 } from './cartoes-ean.js'
+import { pdfComDuasPaginas, zipDosArquivos } from './cartao-junto.js'
 
 // A BARRA DE ABAS É UMA SEQUÊNCIA, e não um armário: os três primeiros são
 // PASSOS numerados, na ordem em que se faz — cria o lote, grava as etiquetas,
@@ -3782,6 +3793,9 @@ const todasAsLinhasDeCartao = computed(() =>
   linhasDeCartao(pecas.value, lotesPorId.value, indiceDosCartoes.value || {}))
 const bolsasDe = (pedido) => bolsasDoPedido(pedido, todasAsLinhasDeCartao.value)
 
+/** A cor do selo do pedido: pronto verde, falhou vermelho, e o que o robô ainda está fazendo na cor do robô. */
+const seloDoPedido = (q) => q.situacao === 'pronto' ? 'selo-ok' : q.situacao === 'falhou' ? 'selo-erro' : 'selo-robo'
+
 const pecaEmDestaque = ref('')
 /** Leva até a linha da peça e a acende por uns segundos. Se ela está em outro lote, mostra todos antes. */
 async function irAteALinha(codigo) {
@@ -3866,33 +3880,63 @@ function fecharAPrevia() {
   erroDoDownload.value = ''
 }
 
-const baixandoCartao = ref('')   // 'frente-png', 'verso-pdf'… enquanto um download está em curso
+const baixandoCartao = ref('')   // 'frente-png', 'verso-pdf', 'ambos-pdf'… enquanto um download está em curso
 const erroDoDownload = ref('')
 
+/** Busca UM arquivo (frente ou verso) pela edge `vessel-baixar-cartao`, que o lê no Zoho. Devolve { bytes } ou { erro: frase }. */
+async function buscarOArquivoDoCartao(linha, face, formato) {
+  try {
+    const { data, error } = await sbClient.functions.invoke('vessel-baixar-cartao',
+      { body: { codigo: linha.codigo, face, formato } })
+    if (error) {
+      // Fora do 2xx o supabase-js entrega só `error`; o motivo está no corpo (mesma lição de `conferirASenha`).
+      // Sem corpo para ler (`context` não é uma resposta) é que o navegador nem recebeu resposta: CORS ou rede.
+      if (typeof error.context?.json !== 'function') return { erro: fraseDoDownloadRecusado('sem_resposta') }
+      const detalhe = await error.context.json().catch(() => null)
+      return { erro: fraseDoDownloadRecusado(detalhe?.erro) }
+    }
+    if (!(data instanceof Blob) || !data.size) return { erro: fraseDoDownloadRecusado(null) }
+    return { bytes: new Uint8Array(await data.arrayBuffer()) }
+  } catch (e) {
+    return { erro: fraseDoDownloadRecusado('sem_resposta') }
+  }
+}
+
+function entregarNoNavegador(bytes, nome) {
+  const url = URL.createObjectURL(new Blob([bytes]))
+  const a = document.createElement('a')
+  a.href = url
+  a.download = nome
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 /**
- * BAIXA O ARQUIVO REAL do cartão (frente/verso, PNG/PDF) pela edge `vessel-baixar-cartao`, que o busca no Zoho.
- * Um por vez: dois downloads em paralelo duplicariam a leitura do Zoho sem ganho.
+ * BAIXA O CARTÃO REAL (o arquivo que o robô entregou no Zoho). `face` é 'frente', 'verso' ou 'ambos':
+ * em "ambos" o PDF sai UM só com duas páginas separadas (frente, verso) e o PNG sai num .zip com os dois.
+ * Um download por vez: dois em paralelo duplicariam a leitura do Zoho sem ganho.
  */
 async function baixarOCartao(linha, face, formato) {
   if (baixandoCartao.value) return
   baixandoCartao.value = `${face}-${formato}`
   erroDoDownload.value = ''
   try {
-    const { data, error } = await sbClient.functions.invoke('vessel-baixar-cartao',
-      { body: { codigo: linha.codigo, face, formato } })
-    if (error) {
-      // Fora do 2xx o supabase-js entrega só `error`; o motivo está no corpo (mesma lição de `conferirASenha`).
-      const detalhe = await error.context?.json?.().catch(() => null)
-      erroDoDownload.value = fraseDoDownloadRecusado(detalhe?.erro)
-      return
+    const faces = face === 'ambos' ? ['frente', 'verso'] : [face]
+    const arquivos = []
+    for (const f of faces) {
+      const r = await buscarOArquivoDoCartao(linha, f, formato)
+      if (r.erro) { erroDoDownload.value = r.erro; return }
+      arquivos.push(r.bytes)
     }
-    if (!(data instanceof Blob) || !data.size) { erroDoDownload.value = fraseDoDownloadRecusado(null); return }
-    const url = URL.createObjectURL(data)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = nomeDoArquivoBaixado(linha, face, formato)
-    a.click()
-    URL.revokeObjectURL(url)
+    if (face !== 'ambos') { entregarNoNavegador(arquivos[0], nomeDoArquivoBaixado(linha, face, formato)); return }
+    if (formato === 'pdf') {
+      entregarNoNavegador(await pdfComDuasPaginas(arquivos[0], arquivos[1]), nomeDoArquivoDosDois(linha, 'pdf'))
+    } else {
+      entregarNoNavegador(await zipDosArquivos({
+        [nomeDoArquivoBaixado(linha, 'frente', 'png')]: arquivos[0],
+        [nomeDoArquivoBaixado(linha, 'verso', 'png')]: arquivos[1],
+      }), nomeDoArquivoDosDois(linha, 'png'))
+    }
   } catch (e) {
     erroDoDownload.value = fraseDoDownloadRecusado(null)
   } finally {
@@ -6623,12 +6667,27 @@ onUnmounted(() => {
 .au-pedir-cartoes .au-aviso-menor{flex:1 1 16em; min-width:0;}
 
 /* ── O AVISO DO PEDIDO: quais bolsas, e o botão que leva até a linha ──────────── */
-.au-pedido-aviso + .au-pedido-aviso{margin-top:var(--sp-3);}
-.au-pedido-bolsas{list-style:none; margin:var(--sp-1) 0 0; padding:0; display:flex; flex-direction:column; gap:var(--sp-1);}
-.au-pedido-bolsas li{display:flex; flex-wrap:wrap; align-items:center; gap:var(--sp-1) var(--sp-3);}
-.au-pedido-bolsa-nome{font-size:var(--texto-campo); font-weight:700; color:var(--text); overflow-wrap:anywhere;}
-.au-pedido-bolsa-series{font-size:var(--texto-corpo); color:var(--muted); overflow-wrap:anywhere;}
-.au-pedido-bolsas .au-link{display:inline-flex; align-items:center; min-height:40px;}
+/* Uma lista dentro da margem de 24px da aba (a mesma dos campos), cada pedido uma linha de cartão. */
+.au-fila{
+  margin:var(--sp-4) var(--sp-5) 0; display:flex; flex-direction:column;
+  background:var(--surface); border:1px solid var(--border); border-radius:var(--card-radius);
+}
+.au-fila-pedido{padding:var(--sp-3) var(--sp-4);}
+.au-fila-pedido + .au-fila-pedido{border-top:1px solid var(--border);}
+.au-fila-cab{display:flex; flex-wrap:wrap; align-items:center; gap:var(--sp-1) var(--sp-3);}
+.au-fila-detalhe{font-size:var(--texto-corpo); color:var(--muted); overflow-wrap:anywhere; min-width:0;}
+.au-fila-bolsas{list-style:none; margin:var(--sp-2) 0 0; padding:0; display:flex; flex-direction:column;}
+.au-fila-bolsa{
+  display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:var(--sp-3);
+  padding:var(--sp-2) 0;
+}
+.au-fila-bolsa + .au-fila-bolsa{border-top:1px solid var(--border);}
+.au-fila-texto{display:flex; flex-direction:column; gap:2px; min-width:0;}
+.au-fila-nome{font-size:var(--texto-campo); font-weight:700; color:var(--text); overflow-wrap:anywhere;}
+.au-fila-series{font-size:var(--texto-corpo); color:var(--muted); overflow-wrap:anywhere;}
+.au-fila-resto{padding-top:var(--sp-1);}
+/* O botão não estica: `.au-botao-claro` é `flex:1` para as linhas de baixar do modal. */
+.au-fila-ir{flex:none; white-space:nowrap; padding:0 var(--sp-3);}
 /* A linha que o botão acabou de mostrar: acende com o accent misturado à superfície (o tema cuida do escuro). */
 .au-card.au-destaque{
   background:color-mix(in srgb, var(--accent) 12%, var(--surface));
@@ -6833,6 +6892,7 @@ onUnmounted(() => {
   .au-pecas-topo{flex-direction:column; align-items:stretch;}
   .au-pecas-topo .au-botao{flex:none;}
   .au-aviso-garantia{margin-left:16px; margin-right:16px;}
+  .au-fila{margin-left:16px; margin-right:16px;}
   /* Mesmo recuo dos campos ao lado dele, que a 520px caem para 16px. O da
      edição não entra aqui: lá o recuo é do bloco, e continua sendo. */
   .au-aviso-serie{margin-left:16px; margin-right:16px;}

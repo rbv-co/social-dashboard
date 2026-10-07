@@ -239,9 +239,22 @@ export function bolsasDoPedido(pedido, linhas, maximo = 4) {
 export const nomeDoArquivoBaixado = (linha, face, formato) =>
   `${linha.sku}_cartao_${String(linha.numeroNaSerie).padStart(2, '0')}_${face}.${formato}`
 
+/**
+ * O nome do download dos DOIS lados juntos: o PDF único (duas páginas) é `SKU_cartao_NN.pdf`; os PNGs vão
+ * num `SKU_cartao_NN_png.zip` (o `_png` evita dois arquivos com o mesmo nome base na pasta de Downloads).
+ */
+export const nomeDoArquivoDosDois = (linha, formato) => {
+  const base = `${linha.sku}_cartao_${String(linha.numeroNaSerie).padStart(2, '0')}`
+  return formato === 'pdf' ? `${base}.pdf` : `${base}_png.zip`
+}
+
 /** O que dizer quando a edge recusa o download. Cada motivo diz o que fazer; nenhum vira tela muda. */
 export function fraseDoDownloadRecusado(motivo) {
   switch (motivo) {
+    // O navegador nem recebeu resposta: rede, ou CORS (o servidor só aceita os endereços da Central — localhost não).
+    case 'sem_resposta':
+      return 'Não consegui falar com o servidor dos cartões. Confira a conexão e tente de novo. '
+        + 'Se você está testando num endereço de desenvolvimento (localhost), ele só responde à Central publicada.'
     case 'sem_permissao': return 'Você não tem permissão para baixar os cartões.'
     case 'sem_cartao': return 'Esta peça ainda não tem cartão gerado. Gere o cartão e baixe depois.'
     case 'arquivo_nao_achado':
