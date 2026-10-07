@@ -1359,7 +1359,7 @@
           </div>
           <div class="au-acoes">
             <button v-if="ln.podeGerar" class="au-link" type="button"
-                    @click="verOCartao(ln)">Ver o cartão</button>
+                    @click="verOCartao(ln)">Ver a prévia</button>
             <!-- Botão desabilitado calado faz a pessoa achar que a ferramenta
                  quebrou. Cada impedimento tem a frase que diz o que fazer. -->
             <span v-else class="au-aviso-menor">{{ MOTIVO_DO_IMPEDIMENTO[ln.impedimento] }}</span>
@@ -3705,12 +3705,17 @@ async function carregarAFilaDeCartoes() {
   pedidosDeCartao.value = data || []
 }
 
-function verOCartao(linha) {
+async function verOCartao(linha) {
   erroDaPrevia.value = ''
   pecaNaPrevia.value = pecaParaODesenho(linha, indiceDosCartoes.value || {})
   if (!pecaNaPrevia.value) {
     erroDaPrevia.value = MOTIVO_DO_IMPEDIMENTO.sem_foto
   }
+  // ⚠️ A PRÉVIA ABRE DEPOIS DA LISTA INTEIRA. Com dezenas de peças ela nasce a
+  // milhares de pixels do botão, fora da tela — e o clique parecia não fazer
+  // nada (07/10/2026). Rolar até ela é o que fecha o ciclo clique → cartão.
+  await nextTick()
+  document.querySelector('.au-previa-cartao')?.scrollIntoView({ block: 'start', behavior: 'smooth' })
 }
 
 function fecharAPrevia() {
