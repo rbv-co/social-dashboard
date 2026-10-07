@@ -1,6 +1,6 @@
 // supabase/functions/vessel-triagem-da-vaga/index.ts
 //
-// A TRIAGEM DA VAGA DO TIVOLI, A CADA MINUTO (pedido do dono em 25/09/2026:
+// A TRIAGEM DAS VAGAS (TIVOLI E BRASÍLIA), A CADA MINUTO (pedido do dono em 25/09/2026:
 // "robô de minuto em minuto sempre").
 //
 // Leva as candidaturas da página `vesselbrasil.com.br/vaga-tivoli`
@@ -24,7 +24,7 @@ import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { exigirSegredoDeCron } from '../_shared/segredo-de-cron.ts';
 import { montarXlsx, bytesIguais } from '../_shared/planilha-xlsx.js';
 import { abasDoXlsx } from '../_shared/ler-xlsx.mjs';
-import { montarAbasDaTriagem, nomeDoCurriculo, VAGA, PASTA_DOS_CURRICULOS }
+import { montarAbasDaTriagem, nomeDoCurriculo, VAGAS }
   from '../_shared/abas-da-triagem.js';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
@@ -34,7 +34,6 @@ const WD = 'https://www.zohoapis.com/workdrive/api/v1';
 // Caminho por NOME, nunca por id: pasta recriada no Zoho muda de id.
 const RAIZ = 'wbp6sefe483fe7da14c6ebe53225105f1f389'; // espaço "01. RBV and Company"
 const CAMINHO = ['04. Vessel Brasil', '10. RH-DP'];
-const ARQUIVO = 'Triagem Tivoli Vendedora.xlsx';
 const TIPO_XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 const CAMPOS = 'id,criado_em,nome,whatsapp,cidade,experiencia,fim_de_semana,curriculo,origem,na_planilha_em';
 
@@ -119,77 +118,90 @@ async function subir(t: string, pastaId: string, nome: string, bytes: Uint8Array
   if (!r.ok) throw new Error(`O Zoho recusou "${nome}" (código ${r.status}).`);
 }
 
-// ── a rodada ────────────────────────────────────────────────────────────────
+// ── a rodada de UMA vaga ────────────────────────────────────────────────────
+async function rodada(sb: any, vaga: string, forcar: boolean) {
+  const cfg = VAGAS[vaga as keyof typeof VAGAS];
+  // A pergunta de toda rodada: tem alguém esperando para entrar?
+  const { count, error: e1 } = await sb.from('vessel_candidaturas')
+    .select('id', { count: 'exact', head: true })
+    .eq('vaga', vaga).eq('teste', false).is('na_planilha_em', null);
+  if (e1) throw new Error(e1.message);
+  if (!count && !forcar) return { ok: true, vaga, novas: 0 };
+
+  // ⚠️ LEITURA QUE FALHA PARA A RODADA. Com lista vazia por erro, a planilha
+  // subiria sem ninguém novo — e a candidata ficaria marcada como entregue.
+  const { data: candidaturas, error: e2 } = await sb.from('vessel_candidaturas')
+    .select(CAMPOS).eq('vaga', vaga).eq('teste', false)
+    .order('criado_em', { ascending: false }).limit(5000);
+  if (e2) throw new Error(e2.message);
+
+  const { data: conexao } = await sb.from('acessos_conexoes')
+    .select('client_id, client_secret, refresh_token, data_center')
+    .eq('provedor', 'zoho').maybeSingle();
+  if (!conexao?.refresh_token) throw new Error('A central não está conectada ao Zoho (Acessos → Zoho).');
+  const tz = await tokenZoho(conexao);
+
+  let rh = RAIZ;
+  for (const nome of CAMINHO) rh = await pasta(tz, rh, nome, false);
+
+  // Os currículos das que ainda não foram entregues, e só os que faltam lá.
+  const pendentes = (candidaturas ?? []).filter((c: any) => !c.na_planilha_em && c.curriculo);
+  let levados = 0;
+  if (pendentes.length) {
+    const pastaCv = await pasta(tz, rh, cfg.pasta, true);
+    const jaLa = new Set((await filhosDe(tz, pastaCv)).map(nomeDe));
+    for (const c of pendentes) {
+      const nome = nomeDoCurriculo(c);
+      if (jaLa.has(nome)) continue;
+      const { data: arq, error } = await sb.storage.from('vessel-curriculos').download(c.curriculo);
+      // ⚠️ Um currículo que não baixa não segura a candidata fora da planilha:
+      // ela entra, e o RH pede o currículo pelo WhatsApp.
+      if (error || !arq) { console.warn(`currículo de ${c.id} não baixou: ${error?.message}`); continue; }
+      await subir(tz, pastaCv, nome, new Uint8Array(await arq.arrayBuffer()),
+        arq.type || 'application/octet-stream');
+      levados++;
+    }
+  }
+
+  const laDentro = await baixar(tz, rh, cfg.arquivo);
+  // Sem aba "Candidatos" ou sem a coluna do ID, isto LANÇA e nada sobe.
+  const { abas, entregues, novas } = montarAbasDaTriagem(candidaturas, laDentro ? abasDoXlsx(laDentro) : null, vaga);
+  const bytes = await montarXlsx(abas);
+  const subiu = !bytesIguais(laDentro, bytes) && (novas > 0 || !laDentro);
+  if (subiu) await subir(tz, rh, cfg.arquivo, bytes, TIPO_XLSX);
+
+  // Só DEPOIS de subir. Marcar antes, e o envio falhar, faria a candidata
+  // parecer "apagada pelo RH" — e ela nunca entraria.
+  const marcar = entregues.filter((id: string) =>
+    !(candidaturas ?? []).find((c: any) => String(c.id) === id)?.na_planilha_em);
+  if (marcar.length) {
+    const { error } = await sb.from('vessel_candidaturas')
+      .update({ na_planilha_em: new Date().toISOString() }).in('id', marcar);
+    if (error) throw new Error(`subi a planilha mas não marquei as entregues: ${error.message}`);
+  }
+  const resumo = { ok: true, vaga, novas, curriculos: levados, subiu, marcadas: marcar.length };
+  console.log(JSON.stringify(resumo));
+  return resumo;
+}
+
+// ⚠️ CADA VAGA NA SUA VOLTA, E UMA NÃO DERRUBA A OUTRA. Brasília com erro no Zoho
+// (pasta renomeada, token) não pode segurar a planilha do Tivoli, que o RH usa.
 Deno.serve(async (req: Request) => {
   const negado = await exigirSegredoDeCron(req, 'vessel-triagem-da-vaga');
   if (negado) return negado;
   const forcar = Boolean((await req.json().catch(() => ({})))?.forcar);
   const sb = createClient(SUPABASE_URL, SERVICE_KEY);
 
-  try {
-    // A pergunta de toda rodada: tem alguém esperando para entrar?
-    const { count, error: e1 } = await sb.from('vessel_candidaturas')
-      .select('id', { count: 'exact', head: true })
-      .eq('vaga', VAGA).eq('teste', false).is('na_planilha_em', null);
-    if (e1) throw new Error(e1.message);
-    if (!count && !forcar) return json({ ok: true, novas: 0 });
-
-    // ⚠️ LEITURA QUE FALHA PARA A RODADA. Com lista vazia por erro, a planilha
-    // subiria sem ninguém novo — e a candidata ficaria marcada como entregue.
-    const { data: candidaturas, error: e2 } = await sb.from('vessel_candidaturas')
-      .select(CAMPOS).eq('vaga', VAGA).eq('teste', false)
-      .order('criado_em', { ascending: false }).limit(5000);
-    if (e2) throw new Error(e2.message);
-
-    const { data: conexao } = await sb.from('acessos_conexoes')
-      .select('client_id, client_secret, refresh_token, data_center')
-      .eq('provedor', 'zoho').maybeSingle();
-    if (!conexao?.refresh_token) throw new Error('A central não está conectada ao Zoho (Acessos → Zoho).');
-    const tz = await tokenZoho(conexao);
-
-    let rh = RAIZ;
-    for (const nome of CAMINHO) rh = await pasta(tz, rh, nome, false);
-
-    // Os currículos das que ainda não foram entregues, e só os que faltam lá.
-    const pendentes = (candidaturas ?? []).filter((c: any) => !c.na_planilha_em && c.curriculo);
-    let levados = 0;
-    if (pendentes.length) {
-      const pastaCv = await pasta(tz, rh, PASTA_DOS_CURRICULOS, true);
-      const jaLa = new Set((await filhosDe(tz, pastaCv)).map(nomeDe));
-      for (const c of pendentes) {
-        const nome = nomeDoCurriculo(c);
-        if (jaLa.has(nome)) continue;
-        const { data: arq, error } = await sb.storage.from('vessel-curriculos').download(c.curriculo);
-        // ⚠️ Um currículo que não baixa não segura a candidata fora da planilha:
-        // ela entra, e o RH pede o currículo pelo WhatsApp.
-        if (error || !arq) { console.warn(`currículo de ${c.id} não baixou: ${error?.message}`); continue; }
-        await subir(tz, pastaCv, nome, new Uint8Array(await arq.arrayBuffer()),
-          arq.type || 'application/octet-stream');
-        levados++;
-      }
+  const resultados: unknown[] = [];
+  let falhou = false;
+  for (const vaga of Object.keys(VAGAS)) {
+    try {
+      resultados.push(await rodada(sb, vaga, forcar));
+    } catch (e) {
+      falhou = true;
+      console.error(`vessel-triagem-da-vaga (${vaga}):`, (e as Error).message);
+      resultados.push({ ok: false, vaga, error: (e as Error).message });
     }
-
-    const laDentro = await baixar(tz, rh, ARQUIVO);
-    // Sem aba "Candidatos" ou sem a coluna do ID, isto LANÇA e nada sobe.
-    const { abas, entregues, novas } = montarAbasDaTriagem(candidaturas, laDentro ? abasDoXlsx(laDentro) : null);
-    const bytes = await montarXlsx(abas);
-    const subiu = !bytesIguais(laDentro, bytes) && (novas > 0 || !laDentro);
-    if (subiu) await subir(tz, rh, ARQUIVO, bytes, TIPO_XLSX);
-
-    // Só DEPOIS de subir. Marcar antes, e o envio falhar, faria a candidata
-    // parecer "apagada pelo RH" — e ela nunca entraria.
-    const marcar = entregues.filter((id: string) =>
-      !(candidaturas ?? []).find((c: any) => String(c.id) === id)?.na_planilha_em);
-    if (marcar.length) {
-      const { error } = await sb.from('vessel_candidaturas')
-        .update({ na_planilha_em: new Date().toISOString() }).in('id', marcar);
-      if (error) throw new Error(`subi a planilha mas não marquei as entregues: ${error.message}`);
-    }
-    const resumo = { ok: true, novas, curriculos: levados, subiu, marcadas: marcar.length };
-    console.log(JSON.stringify(resumo));
-    return json(resumo);
-  } catch (e) {
-    console.error('vessel-triagem-da-vaga:', (e as Error).message);
-    return json({ error: (e as Error).message }, 500);
   }
+  return json({ ok: !falhou, vagas: resultados }, falhou ? 500 : 200);
 });

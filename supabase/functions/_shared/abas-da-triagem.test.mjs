@@ -1,9 +1,10 @@
 import { test } from 'node:test';
+import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { montarXlsx } from './planilha-xlsx.js';
 import { abasDoXlsx } from './ler-xlsx.mjs';
 import {
-  montarAbasDaTriagem, triagem, telefoneLegivel, veioPor, nomeDoCurriculo, chegouEm,
+  montarAbasDaTriagem, VAGAS, triagem, telefoneLegivel, veioPor, nomeDoCurriculo, chegouEm,
 } from './abas-da-triagem.js';
 
 const ANA = {
@@ -102,4 +103,26 @@ test('⚠️ sem a coluna do ID ou sem a aba, o robô para em vez de adivinhar',
 test('sem ninguém ainda: a planilha abre com as duas abas', async () => {
   const abas = await doZoho(montarAbasDaTriagem([], null).abas);
   assert.deepEqual(abas.map((a) => a.nome), ['Candidatos', 'Como usar']);
+});
+
+test('Brasília: planilha e pasta próprias, e a aba "Como usar" não cita número de outra loja', () => {
+  const { abas } = montarAbasDaTriagem([ANA], null, 'consultor-brasilia');
+  const texto = abas[1].linhas.flat().filter((x) => typeof x === 'string').join('\n');
+  assert.match(texto, /Brasília/);
+  assert.match(texto, /Triagem Brasília - Currículos/);
+  assert.doesNotMatch(texto, /Tivoli|99822/);
+  assert.notEqual(VAGAS['consultor-brasilia'].arquivo, VAGAS['consultor-tivoli'].arquivo);
+  assert.notEqual(VAGAS['consultor-brasilia'].pasta, VAGAS['consultor-tivoli'].pasta);
+});
+
+test('⚠️ toda vaga que o robô tria está nas DUAS listas fechadas do banco', () => {
+  // Vaga fora da política da pasta = currículo recusado; fora da função =
+  // "vaga desconhecida". Qualquer uma das duas e a candidata some calada.
+  const sqls = ['2026-09-25-vessel-candidaturas-da-vaga.sql', '2026-10-07-vessel-vaga-brasilia.sql']
+    .map((f) => readFileSync(new URL(`../../../db/migrations/${f}`, import.meta.url), 'utf8'));
+  const ultima = sqls[1];
+  for (const vaga of Object.keys(VAGAS)) {
+    assert.match(ultima, new RegExp(`foldername\\(name\\)\\)\\[1\\] in \\([^)]*'${vaga}'`), `política sem ${vaga}`);
+    assert.match(ultima, new RegExp(`not in \\([^)]*'${vaga}'`), `função sem ${vaga}`);
+  }
 });
