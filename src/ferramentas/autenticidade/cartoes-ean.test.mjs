@@ -4,7 +4,8 @@ import {
   chaveDoProduto, verbeteDoProduto, impedimentoDoCartao, MOTIVO_DO_IMPEDIMENTO,
   linhasDeCartao, marcadasPorPadrao, resumoDoPedido, pecaParaODesenho,
   recursosDoDesenho, cssDoCartao, fraseDoPedidoRecusado, situacaoDoPedido,
-  BASE_DOS_RECURSOS, andamentoDaPeca, temPedidoAtivo,
+  BASE_DOS_RECURSOS, andamentoDaPeca, temPedidoAtivo, bolsasDoPedido,
+  nomeDoArquivoBaixado, fraseDoDownloadRecusado,
 } from './cartoes-ean.js'
 
 // Um pedaço do índice publicado, com a forma REAL do arquivo que está no ar —
@@ -203,6 +204,46 @@ test('cada peça sabe em que ponto da fila está, sem inventar porcentagem', () 
   // Na fila e rodando ao mesmo tempo: vale o que está de fato acontecendo.
   assert.equal(andamentoDaPeca('A', [...fila, { situacao: 'na_fila', pecas: ['A'] }]), 'rodando')
   assert.equal(andamentoDaPeca('A', null), null)
+})
+
+test('o aviso do pedido diz QUAIS bolsas são, agrupadas por nome', () => {
+  const linhas = [
+    { codigo: 'A', nome: 'Linear Small Vermelha', numeroDeSerie: 'SS0001HBS2001' },
+    { codigo: 'B', nome: 'Linear Small Vermelha', numeroDeSerie: 'SS0001HBS2002' },
+    { codigo: 'C', nome: 'Maelle Bege', numeroDeSerie: 'SS0001CBM1001' },
+  ]
+  const r = bolsasDoPedido({ pecas: ['A', 'B', 'C'] }, linhas)
+  assert.equal(r.grupos.length, 2)
+  assert.deepEqual(r.grupos[0].codigos, ['A', 'B'], 'o primeiro código é o que o botão procura na lista')
+  assert.deepEqual(r.grupos[0].series, ['SS0001HBS2001', 'SS0001HBS2002'])
+  assert.equal(r.grupos[0].achada, true)
+  assert.equal(r.alemDisso, 0)
+  // Peça que não está na lista aparece pelo código e não promete botão.
+  const sumida = bolsasDoPedido({ pecas: ['ZZ'] }, linhas)
+  assert.equal(sumida.grupos[0].nome, 'ZZ')
+  assert.equal(sumida.grupos[0].achada, false)
+  // Pedido grande não vira 110 linhas: corta no máximo e diz quantos ficaram de fora.
+  const muitas = Array.from({ length: 7 }, (_, i) => ({ codigo: 'P' + i, nome: 'Modelo ' + i, numeroDeSerie: 'S' + i }))
+  const g = bolsasDoPedido({ pecas: muitas.map((m) => m.codigo) }, muitas, 4)
+  assert.equal(g.grupos.length, 4)
+  assert.equal(g.alemDisso, 3)
+  assert.deepEqual(bolsasDoPedido(null, null), { grupos: [], alemDisso: 0 })
+})
+
+test('o arquivo baixado tem o nome que o robô entregou no Zoho', () => {
+  const l = { sku: 'SS0001HB.S1', numeroNaSerie: 4 }
+  assert.equal(nomeDoArquivoBaixado(l, 'frente', 'png'), 'SS0001HB.S1_cartao_04_frente.png')
+  assert.equal(nomeDoArquivoBaixado({ sku: 'SS0003SB.B2', numeroNaSerie: 10 }, 'verso', 'pdf'), 'SS0003SB.B2_cartao_10_verso.pdf')
+})
+
+test('cada recusa do download diz o que fazer, e motivo novo não vira tela muda', () => {
+  assert.match(fraseDoDownloadRecusado('sem_cartao'), /Gere/)
+  assert.match(fraseDoDownloadRecusado('arquivo_nao_achado'), /Zoho/)
+  assert.match(fraseDoDownloadRecusado('sem_permissao'), /permiss[aã]o/)
+  assert.match(fraseDoDownloadRecusado('zoho_desconectado'), /administrador/)
+  assert.match(fraseDoDownloadRecusado('zoho_recusou'), /de novo/)
+  assert.ok(fraseDoDownloadRecusado('coisa_nova').length > 20)
+  assert.ok(fraseDoDownloadRecusado(undefined).length > 20)
 })
 
 test('a releitura da fila só liga enquanto há pedido a terminar', () => {

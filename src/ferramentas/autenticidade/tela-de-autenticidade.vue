@@ -1317,9 +1317,25 @@
       <!-- A FILA, QUANDO HÁ ALGO NELA. Some quando está vazia: aviso que
            aparece sempre vira paisagem. -->
       <div v-if="pedidosEmAndamento.length" class="au-confirma" role="status">
-        <p class="au-confirma-texto" v-for="q in pedidosEmAndamento" :key="q.id">
-          <strong>{{ situacaoDoPedido(q).rotulo }}</strong> — {{ situacaoDoPedido(q).detalhe }}
-        </p>
+        <div v-for="q in pedidosEmAndamento" :key="q.id" class="au-pedido-aviso">
+          <p class="au-confirma-texto">
+            <strong>{{ situacaoDoPedido(q).rotulo }}</strong> — {{ situacaoDoPedido(q).detalhe }}
+          </p>
+          <!-- QUAIS BOLSAS: o aviso dizia só "2 cartões" e a pessoa não sabia de qual
+               bolsa. Um botão leva até a linha da peça na lista. -->
+          <ul class="au-pedido-bolsas">
+            <li v-for="g in bolsasDe(q).grupos" :key="g.nome">
+              <span class="au-pedido-bolsa-nome">{{ g.nome }}</span>
+              <span class="au-pedido-bolsa-series">{{ g.series.join(', ') }}</span>
+              <button v-if="g.achada" class="au-link" type="button"
+                      :aria-label="'Ir até a linha de ' + g.nome"
+                      @click="irAteALinha(g.codigos[0])">Ir até a linha</button>
+            </li>
+            <li v-if="bolsasDe(q).alemDisso" class="au-pedido-bolsa-series">
+              e mais {{ bolsasDe(q).alemDisso }} modelo(s)
+            </li>
+          </ul>
+        </div>
       </div>
 
       <p v-if="carregandoOsCartoes" class="au-vazio">Carregando os produtos publicados…</p>
@@ -1357,7 +1373,9 @@
         </div>
         <!-- O tom repete a MESMA escolha dos três selos logo abaixo. -->
         <div v-for="ln in linhasDosCartoes" :key="ln.codigo" class="au-card id-cartao"
-             :class="classeDoTom(ln.jaTemCartao ? 'selo-ok' : !ln.podeGerar ? 'selo-atencao' : '')">
+             :id="'cartao-' + ln.codigo"
+             :class="[classeDoTom(ln.jaTemCartao ? 'selo-ok' : !ln.podeGerar ? 'selo-atencao' : ''),
+                      { 'au-destaque': pecaEmDestaque === ln.codigo }]">
           <div class="au-card-topo">
             <!-- ⚠️ A MARCA É UM `checkbox` DE VERDADE, e não uma div clicável: é
                  o que o leitor de tela anuncia e o que o teclado alcança. -->
@@ -1491,6 +1509,27 @@
             <iframe class="au-previa-folha" :src="enderecoDaPrevia"
                     sandbox="allow-scripts allow-same-origin"
                     title="Prévia do cartão desta peça" loading="lazy"></iframe>
+          </div>
+          <!-- ── BAIXAR: o ARQUIVO REAL que o robô entregou no Zoho (o da gráfica), e não uma
+               cópia da prévia. Só existe para peça com cartão gerado; para as outras, o recado
+               diz o que fazer em vez de esconder o botão calado. -->
+          <div v-if="linhaNaPrevia" class="au-previa-baixar">
+            <template v-if="linhaNaPrevia.jaTemCartao">
+              <p class="au-aviso-menor">Baixar o cartão pronto (o arquivo que foi para a gráfica):</p>
+              <div v-for="face in ['frente', 'verso']" :key="face" class="au-baixar-linha">
+                <span class="au-baixar-rotulo">{{ face }}</span>
+                <button v-for="formato in ['png', 'pdf']" :key="formato" class="au-botao-claro" type="button"
+                        :disabled="!!baixandoCartao"
+                        :aria-label="'Baixar a ' + face + ' em ' + formato.toUpperCase()"
+                        @click="baixarOCartao(linhaNaPrevia, face, formato)">
+                  {{ baixandoCartao === face + '-' + formato ? 'Baixando…' : formato.toUpperCase() }}
+                </button>
+              </div>
+            </template>
+            <p v-else class="au-aviso-menor">
+              O arquivo para baixar aparece depois que o cartão é gerado. Gere o cartão e volte aqui.
+            </p>
+            <p v-if="erroDoDownload" class="au-erro">{{ erroDoDownload }}</p>
           </div>
           <div v-if="podeEditar && linhaNaPrevia" class="au-acoes au-previa-acoes">
             <button class="au-botao" type="button"
@@ -2358,7 +2397,7 @@ import { estadoDaBancada, acaoDaBancada, nomeDoModo } from './modo-bancada.js'
 import {
   BASE_DOS_RECURSOS, MOTIVO_DO_IMPEDIMENTO, linhasDeCartao, marcadasPorPadrao,
   resumoDoPedido, pecaParaODesenho, fraseDoPedidoRecusado, situacaoDoPedido,
-  andamentoDaPeca, temPedidoAtivo,
+  andamentoDaPeca, temPedidoAtivo, bolsasDoPedido, nomeDoArquivoBaixado, fraseDoDownloadRecusado,
 } from './cartoes-ean.js'
 
 // A BARRA DE ABAS É UMA SEQUÊNCIA, e não um armário: os três primeiros são
@@ -3737,6 +3776,24 @@ const linhasDosCartoes = computed(() => {
 const resumoDosCartoes = computed(() =>
   resumoDoPedido(linhasDosCartoes.value, marcadasParaCartao.value))
 
+// TODAS as peças, e não só as do lote escolhido: o aviso de um pedido tem de nomear a bolsa mesmo que ela
+// esteja em outro lote.
+const todasAsLinhasDeCartao = computed(() =>
+  linhasDeCartao(pecas.value, lotesPorId.value, indiceDosCartoes.value || {}))
+const bolsasDe = (pedido) => bolsasDoPedido(pedido, todasAsLinhasDeCartao.value)
+
+const pecaEmDestaque = ref('')
+/** Leva até a linha da peça e a acende por uns segundos. Se ela está em outro lote, mostra todos antes. */
+async function irAteALinha(codigo) {
+  if (!linhasDosCartoes.value.some((l) => l.codigo === codigo)) loteDosCartoes.value = ''
+  await nextTick()
+  const linha = document.getElementById('cartao-' + codigo)
+  if (!linha) return
+  linha.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  pecaEmDestaque.value = codigo
+  setTimeout(() => { if (pecaEmDestaque.value === codigo) pecaEmDestaque.value = '' }, 3000)
+}
+
 /** Só os pedidos que ainda dizem alguma coisa: fila vazia não ocupa tela. */
 const pedidosEmAndamento = computed(() => pedidosDeCartao.value
   .filter((q) => q.situacao !== 'pronto' || Date.now() - Date.parse(q.terminou_em || 0) < 36e5)
@@ -3806,6 +3863,44 @@ function fecharAPrevia() {
   pecaNaPrevia.value = null
   linhaNaPrevia.value = null
   erroDaPrevia.value = ''
+  erroDoDownload.value = ''
+}
+
+const baixandoCartao = ref('')   // 'frente-png', 'verso-pdf'… enquanto um download está em curso
+const erroDoDownload = ref('')
+
+/**
+ * BAIXA O ARQUIVO REAL do cartão (frente/verso, PNG/PDF) pela edge `vessel-baixar-cartao`, que o busca no Zoho.
+ * Um por vez: dois downloads em paralelo duplicariam a leitura do Zoho sem ganho.
+ */
+async function baixarOCartao(linha, face, formato) {
+  if (baixandoCartao.value) return
+  baixandoCartao.value = `${face}-${formato}`
+  erroDoDownload.value = ''
+  try {
+    const { data, error } = await sbClient.functions.invoke('vessel-baixar-cartao',
+      { body: { codigo: linha.codigo, face, formato } })
+    if (error) {
+      // Fora do 2xx o supabase-js entrega só `error`; o motivo está no corpo (mesma lição de `conferirASenha`).
+      const detalhe = await error.context?.json?.().catch(() => null)
+      erroDoDownload.value = fraseDoDownloadRecusado(detalhe?.erro)
+      return
+    }
+    if (!(data instanceof Blob) || !data.size) { erroDoDownload.value = fraseDoDownloadRecusado(null); return }
+    const url = URL.createObjectURL(data)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = nomeDoArquivoBaixado(linha, face, formato)
+    a.click()
+    URL.revokeObjectURL(url)
+  } catch (e) {
+    erroDoDownload.value = fraseDoDownloadRecusado(null)
+  } finally {
+    baixandoCartao.value = ''
+    // O botão clicado ficou desabilitado e o foco caiu no corpo da página: sem devolvê-lo ao modal, o Esc não fecha mais.
+    await nextTick()
+    folhaDaPrevia.value?.focus()
+  }
 }
 
 /** Manda uma lista de peças para a fila. As duas portas (a marcação e o menu da linha) passam por aqui. */
@@ -6464,6 +6559,21 @@ onUnmounted(() => {
 .au-folha-previa{outline:none;}
 .au-folha-previa .au-previa-quadro{padding:0 var(--sp-2);}
 .au-previa-acoes{padding:var(--sp-3) var(--sp-4) 0; justify-content:flex-end;}
+.au-previa-baixar{padding:var(--sp-3) var(--sp-4) 0; display:flex; flex-direction:column; gap:var(--sp-2);}
+.au-previa-baixar .au-erro{padding:0;}
+.au-baixar-linha{display:flex; align-items:center; gap:var(--sp-2);}
+.au-baixar-rotulo{
+  flex:0 0 6.5em; font-size:var(--texto-etiqueta); font-weight:700; letter-spacing:1.5px;
+  text-transform:uppercase; color:var(--muted);
+}
+/* Botão comum: borda e fundo transparente — nunca cinza (PADRÃO item 3). */
+.au-botao-claro{
+  flex:1; min-height:40px; padding:0 var(--sp-4); cursor:pointer;
+  font-family:var(--fonte-principal); font-size:var(--texto-etiqueta); font-weight:700; letter-spacing:1.5px;
+  background:transparent; color:var(--text); border:1px solid var(--border); border-radius:var(--radius-md);
+}
+.au-botao-claro:hover:not(:disabled), .au-botao-claro:focus-visible{border-color:var(--modulo, var(--accent)); background:var(--surface2);}
+.au-botao-claro:disabled{color:var(--muted); cursor:default;}
 /* ⚠️ O QUADRO TEM O TAMANHO DO CARTÃO, EM MILÍMETROS — 86,6 × 54,98 mm, as duas
    faces empilhadas. Ele não se estica.
 
@@ -6511,6 +6621,20 @@ onUnmounted(() => {
   .au-fixo-cartoes{padding-bottom:0;}
 }
 .au-pedir-cartoes .au-aviso-menor{flex:1 1 16em; min-width:0;}
+
+/* ── O AVISO DO PEDIDO: quais bolsas, e o botão que leva até a linha ──────────── */
+.au-pedido-aviso + .au-pedido-aviso{margin-top:var(--sp-3);}
+.au-pedido-bolsas{list-style:none; margin:var(--sp-1) 0 0; padding:0; display:flex; flex-direction:column; gap:var(--sp-1);}
+.au-pedido-bolsas li{display:flex; flex-wrap:wrap; align-items:center; gap:var(--sp-1) var(--sp-3);}
+.au-pedido-bolsa-nome{font-size:var(--texto-campo); font-weight:700; color:var(--text); overflow-wrap:anywhere;}
+.au-pedido-bolsa-series{font-size:var(--texto-corpo); color:var(--muted); overflow-wrap:anywhere;}
+.au-pedido-bolsas .au-link{display:inline-flex; align-items:center; min-height:40px;}
+/* A linha que o botão acabou de mostrar: acende com o accent misturado à superfície (o tema cuida do escuro). */
+.au-card.au-destaque{
+  background:color-mix(in srgb, var(--accent) 12%, var(--surface));
+  box-shadow:inset 0 0 0 2px var(--accent);
+}
+.au-tabela-cartoes .au-card{scroll-margin-top:calc(var(--au-topo-fixo, 0px) + 140px);}
 
 /* ── A BARRA DE ANDAMENTO DE CADA PEÇA ──────────────────────────────────────
    `--roxo` é o robô agindo (PADRÃO item 2). "Gerando" corre; "Na fila" fica

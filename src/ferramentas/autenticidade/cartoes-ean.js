@@ -207,6 +207,52 @@ export function situacaoDoPedido(pedido) {
   }
 }
 
+/**
+ * QUAIS BOLSAS ESTÃO NUM PEDIDO, para o aviso da fila dizer "Linear Small Vermelha" e não só "2 cartões".
+ *
+ * Agrupa por nome (um pedido de 110 peças vira meia dúzia de linhas, não 110) e guarda os códigos de cada grupo:
+ * o primeiro é o que o botão "Ir até a linha" procura na lista. `linhas` são TODAS as peças (e não só as do lote
+ * escolhido na tela) — a bolsa de um pedido antigo pode estar em outro lote, e o aviso não pode esconder isso.
+ * Peça que sumiu da lista aparece pelo código, sem botão que leva a lugar nenhum.
+ */
+export function bolsasDoPedido(pedido, linhas, maximo = 4) {
+  const porCodigo = new Map((linhas || []).map((l) => [l.codigo, l]))
+  const grupos = new Map()
+  for (const codigo of pedido?.pecas || []) {
+    const l = porCodigo.get(codigo)
+    const nome = l ? (l.nome || l.modelo || l.codigo) : codigo
+    if (!grupos.has(nome)) grupos.set(nome, { nome, codigos: [], series: [], achada: false })
+    const g = grupos.get(nome)
+    g.codigos.push(codigo)
+    g.series.push(l?.numeroDeSerie || codigo)
+    if (l) g.achada = true
+  }
+  const todos = [...grupos.values()]
+  return { grupos: todos.slice(0, maximo), alemDisso: Math.max(0, todos.length - maximo) }
+}
+
+/**
+ * O nome do arquivo baixado: o MESMO que o robô entregou no Zoho (`SKU_cartao_NN_frente.png`). É o que a edge
+ * `vessel-baixar-cartao` devolve no `Content-Disposition`; a tela repete aqui porque o `<a download>` precisa do nome
+ * na mão, e porque assim ele não depende de cabeçalho que o navegador pode esconder.
+ */
+export const nomeDoArquivoBaixado = (linha, face, formato) =>
+  `${linha.sku}_cartao_${String(linha.numeroNaSerie).padStart(2, '0')}_${face}.${formato}`
+
+/** O que dizer quando a edge recusa o download. Cada motivo diz o que fazer; nenhum vira tela muda. */
+export function fraseDoDownloadRecusado(motivo) {
+  switch (motivo) {
+    case 'sem_permissao': return 'Você não tem permissão para baixar os cartões.'
+    case 'sem_cartao': return 'Esta peça ainda não tem cartão gerado. Gere o cartão e baixe depois.'
+    case 'arquivo_nao_achado':
+      return 'O cartão consta como gerado, mas o arquivo não está na pasta do Zoho. Refaça o cartão desta peça.'
+    case 'zoho_desconectado': return 'A Central não está conectada ao Zoho. Chame o administrador.'
+    case 'zoho_indisponivel': case 'zoho_recusou': case 'banco_indisponivel':
+      return 'O Zoho não respondeu agora. Tente de novo em instantes.'
+    default: return 'Não consegui baixar o cartão agora. Tente de novo; se repetir, chame o administrador.'
+  }
+}
+
 /** Há pedido que o robô ainda não terminou? É o que liga a releitura automática da fila. */
 export const temPedidoAtivo = (pedidos) =>
   (pedidos || []).some((q) => q.situacao === 'na_fila' || q.situacao === 'rodando')
