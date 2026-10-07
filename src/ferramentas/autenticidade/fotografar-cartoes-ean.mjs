@@ -184,7 +184,7 @@ async function fotografar(contexto, prefixo) {
     await pagina.screenshot({ path: join(FOTOS, `${prefixo}-2-previa.png`), fullPage: true })
     // E um recorte SÓ do quadro: a foto de página inteira não é confiável para
     // iframe de outro endereço, e um branco ali seria lido como defeito.
-    const quadro = pagina.locator('.au-previa-cartao')
+    const quadro = pagina.locator('.au-folha-previa')
     if (await quadro.count()) {
       await quadro.scrollIntoViewIfNeeded()
       await pagina.waitForTimeout(400)

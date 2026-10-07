@@ -206,3 +206,21 @@ export function situacaoDoPedido(pedido) {
     default:         return { rotulo: '—', detalhe: '' }
   }
 }
+
+/** Há pedido que o robô ainda não terminou? É o que liga a releitura automática da fila. */
+export const temPedidoAtivo = (pedidos) =>
+  (pedidos || []).some((q) => q.situacao === 'na_fila' || q.situacao === 'rodando')
+
+/**
+ * Onde a peça está na fila: 'rodando', 'na_fila' ou null.
+ *
+ * ⚠️ O robô NÃO grava progresso por peça — só o pedido inteiro muda de estado, e o `cartao_gerado_em`
+ * das peças entra todo de uma vez no fim. Por isso a tela mostra o estado do pedido em cada peça dele,
+ * e nunca uma porcentagem: número que o robô não informou seria número inventado.
+ */
+export function andamentoDaPeca(codigo, pedidos) {
+  const meus = (pedidos || []).filter((q) =>
+    (q.situacao === 'na_fila' || q.situacao === 'rodando') && (q.pecas || []).includes(codigo))
+  if (meus.some((q) => q.situacao === 'rodando')) return 'rodando'
+  return meus.length ? 'na_fila' : null
+}

@@ -1322,6 +1322,27 @@
         </p>
       </div>
 
+      <!-- ── O PEDIDO, NO TOPO ───────────────────────────────────────────────
+           Ficava embaixo da lista, e numa lista de dezenas de peças o botão
+           ficava a milhares de pixels de quem acabou de marcar (07/10/2026). -->
+      <div v-if="podeEditar" class="au-acoes au-pedir-cartoes">
+        <p class="au-aviso-menor">
+          {{ resumoDosCartoes.total }} peça(s) marcada(s) — {{ resumoDosCartoes.arquivos }} arquivos
+          (frente e verso, PNG e PDF).
+          <!-- REFAZER É PERMITIDO (cartão rasga, mancha, some), mas a tela tem de
+               DIZER: senão a pasta do Zoho volta com o dobro dos arquivos e
+               ninguém sabe qual é o bom. -->
+          <strong v-if="resumoDosCartoes.refazendo">
+            {{ resumoDosCartoes.refazendo }} já tinha(m) cartão e será(ão) refeito(s).
+          </strong>
+        </p>
+        <button class="au-botao" type="button"
+                :disabled="!resumoDosCartoes.total || pedindoCartoes"
+                @click="pedirOsCartoes">
+          {{ pedindoCartoes ? 'Mandando…' : 'Gerar ' + resumoDosCartoes.total + ' cartão(ões)' }}
+        </button>
+      </div>
+
       <p v-if="carregandoOsCartoes" class="au-vazio">Carregando os produtos publicados…</p>
       <p v-else-if="!linhasDosCartoes.length" class="au-vazio">
         Nenhuma peça neste recorte. Escolha outro lote, ou crie o lote no passo 1.
@@ -1329,7 +1350,7 @@
 
       <div v-else class="au-lista au-tabela au-tabela-cartoes">
         <div class="au-tabela-cab" aria-hidden="true">
-          <span>Peça</span><span>Nº de série</span><span>Cartão</span><span>Prévia</span>
+          <span>Peça</span><span>Nº de série</span><span>Cartão</span><span>Ações</span>
         </div>
         <!-- O tom repete a MESMA escolha dos três selos logo abaixo. -->
         <div v-for="ln in linhasDosCartoes" :key="ln.codigo" class="au-card id-cartao"
@@ -1339,7 +1360,7 @@
                  o que o leitor de tela anuncia e o que o teclado alcança. -->
             <label class="au-marca-cartao">
               <input type="checkbox" :value="ln.codigo" v-model="marcadasParaCartao"
-                     :disabled="!ln.podeGerar || !podeEditar"
+                     :disabled="!ln.podeGerar || !podeEditar || !!andamentoDaPeca(ln.codigo, pedidosDeCartao)"
                      :aria-label="'Gerar cartão de ' + (ln.numeroDeSerie || ln.codigo)">
               <span class="au-modelo">{{ ln.nome || ln.modelo || ln.codigo }}</span>
             </label>
@@ -1353,13 +1374,62 @@
             <span class="au-serie-cartao"><span class="au-rot-serie">nº de série </span>{{ ln.numeroDeSerie || '—' }}</span>
           </div>
           <div class="au-card-linha">
-            <span v-if="ln.jaTemCartao" class="selo selo-ok">Já impresso</span>
+            <!-- A BARRA É A DO ROBÔ (`--roxo`: o que a automação faz sozinha) e é
+                 "correndo", sem porcentagem: o robô só avisa quando o pedido todo
+                 muda de estado, e número que ele não informou seria inventado. -->
+            <span v-if="andamentoDaPeca(ln.codigo, pedidosDeCartao)" class="au-andamento"
+                  role="progressbar" aria-busy="true"
+                  :aria-label="(andamentoDaPeca(ln.codigo, pedidosDeCartao) === 'rodando' ? 'Gerando' : 'Na fila') + ' o cartão de ' + (ln.numeroDeSerie || ln.codigo)">
+              <span class="au-andamento-texto">{{ andamentoDaPeca(ln.codigo, pedidosDeCartao) === 'rodando' ? 'Gerando…' : 'Na fila' }}</span>
+              <span class="au-andamento-trilho"><span class="au-andamento-barra"
+                    :class="{ 'au-andamento-parada': andamentoDaPeca(ln.codigo, pedidosDeCartao) === 'na_fila' }"></span></span>
+            </span>
+            <span v-else-if="ln.jaTemCartao" class="selo selo-ok">
+              <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="none"
+                   stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="5 13 10 18 19 7" />
+              </svg>
+              Cartão pronto
+            </span>
             <span v-else-if="!ln.podeGerar" class="selo selo-atencao">Não dá</span>
             <span v-else class="selo">Sem cartão</span>
           </div>
-          <div class="au-acoes">
-            <button v-if="ln.podeGerar" class="au-link" type="button"
-                    @click="verOCartao(ln)">Ver a prévia</button>
+          <div class="au-acoes au-acoes-cartao">
+            <template v-if="ln.podeGerar">
+              <button class="au-icone-acao" type="button" title="Ver prévia"
+                      :aria-label="'Ver a prévia do cartão de ' + (ln.numeroDeSerie || ln.codigo)"
+                      @click="verOCartao(ln)">
+                <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none"
+                     stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z" /><circle cx="12" cy="12" r="3" />
+                </svg>
+              </button>
+              <div class="au-menu-acoes" @keydown.esc="fecharOMenu($event)">
+                <button class="au-icone-acao" type="button" aria-haspopup="menu"
+                        :aria-expanded="menuDoCartao === ln.codigo"
+                        :aria-label="'Mais ações do cartão de ' + (ln.numeroDeSerie || ln.codigo)"
+                        @click="alternarOMenu(ln.codigo, $event)">
+                  <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="currentColor">
+                    <circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" />
+                  </svg>
+                </button>
+                <!-- Clicar fora fecha: um fundo invisível sob o menu, e não um ouvinte
+                     em `document` — esta tela só aceita `window.addEventListener('message')`
+                     (lembretes-do-selo.test.mjs, "negar por padrão"). -->
+                <div v-if="menuDoCartao === ln.codigo" class="au-menu-fundo" @click="menuDoCartao = ''"></div>
+                <div v-if="menuDoCartao === ln.codigo" class="au-menu" role="menu"
+                     :class="{ 'au-menu-esq': menuParaEsquerda, 'au-menu-cima': menuParaCima }">
+                  <button class="au-menu-item" type="button" role="menuitem"
+                          @click="verOCartao(ln)">Ver prévia</button>
+                  <button v-if="podeEditar" class="au-menu-item" type="button" role="menuitem"
+                          :disabled="pedindoCartoes || !!andamentoDaPeca(ln.codigo, pedidosDeCartao)"
+                          @click="pedirUmCartao(ln)">
+                    {{ andamentoDaPeca(ln.codigo, pedidosDeCartao) ? 'Já está na fila'
+                      : ln.jaTemCartao ? 'Refazer o cartão' : 'Gerar o cartão' }}
+                  </button>
+                </div>
+              </div>
+            </template>
             <!-- Botão desabilitado calado faz a pessoa achar que a ferramenta
                  quebrou. Cada impedimento tem a frase que diz o que fazer. -->
             <span v-else class="au-aviso-menor">{{ MOTIVO_DO_IMPEDIMENTO[ln.impedimento] }}</span>
@@ -1396,36 +1466,38 @@
            montado, e a checagem de imagem que não carregou morre — que é
            justamente a que impede o cartão sair com um vazio no lugar da
            bolsa. Medido: `Cannot read properties of null (reading 'images')`. -->
-      <div v-if="pecaNaPrevia" class="au-previa-cartao">
-        <div class="au-card-topo">
-          <span class="au-modelo">Cartão de {{ pecaNaPrevia.numeroDeSerie }}</span>
-          <button class="au-link" type="button" @click="fecharAPrevia">Fechar</button>
+      <!-- ⚠️ É UM MODAL, e vem DEPOIS dos outros `.au-fundo` do template só se
+           a ordem importar: ele nasce de um clique na linha, nunca junto com
+           outro. Antes era um bloco depois da lista inteira — a milhares de
+           pixels do botão, e o clique parecia não fazer nada (07/10/2026). -->
+      <div v-if="pecaNaPrevia" v-trava-rolagem class="au-fundo" @click.self="fecharAPrevia"
+           @keydown.esc="fecharAPrevia">
+        <div ref="folhaDaPrevia" class="au-folha au-folha-previa" role="dialog" aria-modal="true" tabindex="-1"
+             :aria-label="'Cartão de ' + pecaNaPrevia.numeroDeSerie">
+          <div class="au-folha-topo">
+            <h2>Cartão de {{ pecaNaPrevia.numeroDeSerie }}</h2>
+            <button class="au-fechar" type="button" aria-label="Fechar" @click="fecharAPrevia">
+              <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none"
+                   stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+                <line x1="6" y1="6" x2="18" y2="18" /><line x1="18" y1="6" x2="6" y2="18" />
+              </svg>
+            </button>
+          </div>
+          <p v-if="erroDaPrevia" class="au-erro">{{ erroDaPrevia }}</p>
+          <div class="au-previa-quadro">
+            <iframe class="au-previa-folha" :src="enderecoDaPrevia"
+                    sandbox="allow-scripts allow-same-origin"
+                    title="Prévia do cartão desta peça" loading="lazy"></iframe>
+          </div>
+          <div v-if="podeEditar && linhaNaPrevia" class="au-acoes au-previa-acoes">
+            <button class="au-botao" type="button"
+                    :disabled="pedindoCartoes || !!andamentoDaPeca(linhaNaPrevia.codigo, pedidosDeCartao)"
+                    @click="pedirUmCartao(linhaNaPrevia)">
+              {{ andamentoDaPeca(linhaNaPrevia.codigo, pedidosDeCartao) ? 'Já está na fila'
+                : linhaNaPrevia.jaTemCartao ? 'Refazer este cartão' : 'Gerar este cartão' }}
+            </button>
+          </div>
         </div>
-        <p v-if="erroDaPrevia" class="au-erro">{{ erroDaPrevia }}</p>
-        <div class="au-previa-quadro">
-          <iframe class="au-previa-folha" :src="enderecoDaPrevia"
-                  sandbox="allow-scripts allow-same-origin"
-                  title="Prévia do cartão desta peça" loading="lazy"></iframe>
-        </div>
-      </div>
-
-      <!-- ── O PEDIDO ────────────────────────────────────────────────────── -->
-      <div v-if="podeEditar" class="au-acoes au-pedir-cartoes">
-        <p class="au-aviso-menor">
-          {{ resumoDosCartoes.total }} peça(s) marcada(s) — {{ resumoDosCartoes.arquivos }} arquivos
-          (frente e verso, PNG e PDF).
-          <!-- REFAZER É PERMITIDO (cartão rasga, mancha, some), mas a tela tem de
-               DIZER: senão a pasta do Zoho volta com o dobro dos arquivos e
-               ninguém sabe qual é o bom. -->
-          <strong v-if="resumoDosCartoes.refazendo">
-            {{ resumoDosCartoes.refazendo }} já tinha(m) cartão e será(ão) refeito(s).
-          </strong>
-        </p>
-        <button class="au-botao" type="button"
-                :disabled="!resumoDosCartoes.total || pedindoCartoes"
-                @click="pedirOsCartoes">
-          {{ pedindoCartoes ? 'Mandando…' : 'Gerar ' + resumoDosCartoes.total + ' cartão(ões)' }}
-        </button>
       </div>
     </template>
 
@@ -2283,6 +2355,7 @@ import { estadoDaBancada, acaoDaBancada, nomeDoModo } from './modo-bancada.js'
 import {
   BASE_DOS_RECURSOS, MOTIVO_DO_IMPEDIMENTO, linhasDeCartao, marcadasPorPadrao,
   resumoDoPedido, pecaParaODesenho, fraseDoPedidoRecusado, situacaoDoPedido,
+  andamentoDaPeca, temPedidoAtivo,
 } from './cartoes-ean.js'
 
 // A BARRA DE ABAS É UMA SEQUÊNCIA, e não um armário: os três primeiros são
@@ -2350,6 +2423,14 @@ const marcadasParaCartao = ref([])
 const pedidosDeCartao = ref([])
 const pedindoCartoes = ref(false)
 const pecaNaPrevia = ref(null)
+// A linha de onde a prévia foi aberta: é dela que o modal sabe se a peça já tem
+// cartão e qual é o código para pedir.
+const linhaNaPrevia = ref(null)
+const folhaDaPrevia = ref(null)
+// O código da peça cujo menu de três pontinhos está aberto ('' = nenhum).
+const menuDoCartao = ref('')
+const menuParaEsquerda = ref(false)
+const menuParaCima = ref(false)
 const erroDaPrevia = ref('')
 const formulario = ref(false)
 const salvando = ref(false)
@@ -3706,21 +3787,44 @@ async function carregarAFilaDeCartoes() {
 }
 
 async function verOCartao(linha) {
+  menuDoCartao.value = ''
   erroDaPrevia.value = ''
+  linhaNaPrevia.value = linha
   pecaNaPrevia.value = pecaParaODesenho(linha, indiceDosCartoes.value || {})
-  if (!pecaNaPrevia.value) {
-    erroDaPrevia.value = MOTIVO_DO_IMPEDIMENTO.sem_foto
-  }
-  // ⚠️ A PRÉVIA ABRE DEPOIS DA LISTA INTEIRA. Com dezenas de peças ela nasce a
-  // milhares de pixels do botão, fora da tela — e o clique parecia não fazer
-  // nada (07/10/2026). Rolar até ela é o que fecha o ciclo clique → cartão.
+  // O modal só abre com a peça; sem ela o motivo vai para a faixa de erro da aba,
+  // que fica à vista (dentro do modal, nem abriria).
+  if (!pecaNaPrevia.value) { erroDosCartoes.value = MOTIVO_DO_IMPEDIMENTO.sem_foto; return }
+  // O foco entra no modal: é o que faz o Esc valer sem o dedo ter de achar a caixa.
   await nextTick()
-  document.querySelector('.au-previa-cartao')?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+  folhaDaPrevia.value?.focus()
 }
 
 function fecharAPrevia() {
   pecaNaPrevia.value = null
+  linhaNaPrevia.value = null
   erroDaPrevia.value = ''
+}
+
+/** Manda uma lista de peças para a fila. As duas portas (a marcação e o menu da linha) passam por aqui. */
+async function enviarPedido(codigos) {
+  pedindoCartoes.value = true
+  erroDosCartoes.value = ''
+  try {
+    const { data, error } = await sbClient.rpc('vessel_pedir_cartoes', { p_pecas: codigos })
+    if (error) throw error
+    if (!data?.ok) { erroDosCartoes.value = fraseDoPedidoRecusado(data?.motivo, data); return false }
+    adminToast(`${data.pecas} cartão(ões) na fila. O robô avisa aqui quando entregar no Zoho.`)
+    // Sai da marcação só o que foi pedido: pedir UMA peça pelo menu não pode
+    // desmarcar as outras que a pessoa ainda estava juntando.
+    marcadasParaCartao.value = marcadasParaCartao.value.filter((c) => !codigos.includes(c))
+    await carregarAFilaDeCartoes()
+    return true
+  } catch (e) {
+    erroDosCartoes.value = 'Não consegui mandar o pedido: ' + (e?.message || e)
+    return false
+  } finally {
+    pedindoCartoes.value = false
+  }
 }
 
 async function pedirOsCartoes() {
@@ -3732,21 +3836,67 @@ async function pedirOsCartoes() {
       + 'ter cartão. Desmarque-as antes de gerar — o banco recusaria a leva inteira.'
     return
   }
-  pedindoCartoes.value = true
-  erroDosCartoes.value = ''
-  try {
-    const { data, error } = await sbClient.rpc('vessel_pedir_cartoes',
-      { p_pecas: marcadasParaCartao.value })
-    if (error) throw error
-    if (!data?.ok) { erroDosCartoes.value = fraseDoPedidoRecusado(data?.motivo, data); return }
-    adminToast(`${data.pecas} cartão(ões) na fila. O robô avisa aqui quando entregar no Zoho.`)
-    marcadasParaCartao.value = []
-    await carregarAFilaDeCartoes()
-  } catch (e) {
-    erroDosCartoes.value = 'Não consegui mandar o pedido: ' + (e?.message || e)
-  } finally {
-    pedindoCartoes.value = false
+  await enviarPedido([...marcadasParaCartao.value])
+}
+
+/** O "Gerar / Refazer" de UMA peça, pelo menu da linha ou pelo modal da prévia. */
+async function pedirUmCartao(linha) {
+  menuDoCartao.value = ''
+  if (!linha?.podeGerar || pedindoCartoes.value || andamentoDaPeca(linha.codigo, pedidosDeCartao.value)) return
+  if (await enviarPedido([linha.codigo])) fecharAPrevia()
+}
+
+// ── A FILA ANDA SOZINHA ─────────────────────────────────────────────────────
+// ⚠️ A tela só lia a fila ao abrir a aba. O robô leva uns 3 a 4 minutos depois do
+// pedido, e "Na fila" ficava parado na tela mesmo com o cartão já pronto — o dono
+// reclamou duas vezes de que "a fila não anda" (07/10/2026). Enquanto houver pedido
+// a terminar, relê a cada 8 s; quando o último termina, relê as peças, que é onde o
+// `cartao_gerado_em` (o ✓ "Cartão pronto") aparece.
+const INTERVALO_DA_FILA = 8000
+let relogioDaFila = null
+
+async function recarregarAsPecas() {
+  const { data, error } = await sbClient.from('vessel_pecas')
+    .select('codigo,lote_id,numero_na_serie,gravada_em,cartao_gerado_em')
+  // Falhar aqui deixaria o ✓ de fora sem ninguém saber por quê.
+  if (error) { erroDosCartoes.value = 'Não consegui atualizar os cartões prontos: ' + error.message; return }
+  pecas.value = data || []
+}
+
+watch(() => temPedidoAtivo(pedidosDeCartao.value), (ativo, antes) => {
+  if (ativo && !relogioDaFila) {
+    relogioDaFila = setInterval(() => { if (aba.value === 'cartoes') carregarAFilaDeCartoes() }, INTERVALO_DA_FILA)
+  } else if (!ativo && relogioDaFila) {
+    clearInterval(relogioDaFila)
+    relogioDaFila = null
+    if (antes) recarregarAsPecas()
   }
+})
+
+/** Abre/fecha o menu de três pontinhos e leva o foco para o primeiro item (teclado e leitor de tela). */
+async function alternarOMenu(codigo, evento) {
+  const dono = evento.currentTarget.closest('.au-menu-acoes')
+  menuDoCartao.value = menuDoCartao.value === codigo ? '' : codigo
+  menuParaEsquerda.value = false
+  menuParaCima.value = false
+  if (!menuDoCartao.value) return
+  await nextTick()
+  // ⚠️ MEDE, NÃO ADIVINHA. Na tabela do computador o botão está na ponta direita e
+  // no cartão do celular na esquerda; e a última linha da lista fica colada no fim
+  // da janela. Um lado fixo cortava o menu em uma das duas (medido a 375px: -55px).
+  const m = dono?.querySelector('.au-menu')?.getBoundingClientRect()
+  if (m) {
+    menuParaEsquerda.value = m.right > window.innerWidth
+    menuParaCima.value = m.bottom > window.innerHeight
+  }
+  dono?.querySelector('[role="menuitem"]')?.focus()
+}
+
+/** Esc no menu: fecha e devolve o foco ao botão que o abriu. */
+function fecharOMenu(evento) {
+  const botao = evento.currentTarget.querySelector('.au-icone-acao')
+  menuDoCartao.value = ''
+  botao?.focus()
 }
 
 // A PRÉVIA AVISA QUANDO NÃO CONSEGUE DESENHAR. Prévia que falha em silêncio é
@@ -4799,7 +4949,10 @@ onMounted(() => {
 // ⚠️ E O OUVINTE SAI JUNTO COM A TELA. Sem isto ele fica pendurado em `window`
 // depois de a pessoa voltar para a Gestão Interna, e cada visita à ferramenta
 // pendura mais um — todos escrevendo num `erroDaPrevia` que não existe mais.
-onUnmounted(() => window.removeEventListener('message', ouvirAPrevia))
+onUnmounted(() => {
+  window.removeEventListener('message', ouvirAPrevia)
+  clearInterval(relogioDaFila)
+})
 </script>
 
 <style scoped>
@@ -5661,6 +5814,7 @@ onUnmounted(() => window.removeEventListener('message', ouvirAPrevia))
   .au-aneis-fim .au-anel-2, .au-aneis-fim .au-anel-3, .au-aneis-fim .au-anel-nucleo{opacity:0!important}
   .au-aneis-ok .au-anel-visto, .au-aneis-fim .au-anel-visto{opacity:1!important}
   .au-barra-cheia{transition:none!important}
+  .au-andamento-barra{animation:none!important; transform:none!important}
 }
 
 /* ── 3. A ÚNICA AÇÃO PRINCIPAL ─────────────────────────────────────────────
@@ -5983,7 +6137,7 @@ onUnmounted(() => window.removeEventListener('message', ouvirAPrevia))
   .au-tabela-lembretes .au-card-linha{display:contents;}
   .au-tabela-lembretes .au-rot-lembrete{display:none}
   .au-tabela-cartoes .au-tabela-cab, .au-tabela-cartoes .au-card{
-    grid-template-columns:minmax(0,2.4fr) minmax(0,1.4fr) minmax(0,1fr) minmax(0,1.6fr);
+    grid-template-columns:minmax(0,2.2fr) minmax(0,1.3fr) minmax(0,1.5fr) minmax(0,1.4fr);
   }
   .au-tabela-cartoes .au-card-linha{display:contents;}
   /* ⚠️ O "VER O CARTÃO" FICA NA COLUNA "PRÉVIA", e não numa linha própria. A
@@ -6291,13 +6445,12 @@ onUnmounted(() => window.removeEventListener('message', ouvirAPrevia))
    faces empilhadas —, então o quadro nunca corta nem sobra: 86,6 / (54,98 × 2).
    Escrito como `aspect-ratio`, ele acompanha a largura em qualquer tela sem
    ninguém precisar recalcular altura. */
-.au-previa-cartao{
-  margin-top:var(--sp-4);
-  padding:var(--sp-3);
-  border:1px solid var(--cor-borda);
-  border-radius:var(--raio);
-  background:var(--cor-superficie);
-}
+/* O MODAL DA PRÉVIA reaproveita `.au-fundo` e `.au-folha` (420px, `dvh`, trava de
+   arrasto). O cartão tem 86,6 mm ≈ 327 px: com 8px de recuo de cada lado cabe
+   inteiro até em 375px de tela (351 de caixa − 16), sem rolar de lado. */
+.au-folha-previa{outline:none;}
+.au-folha-previa .au-previa-quadro{padding:0 var(--sp-2);}
+.au-previa-acoes{padding:var(--sp-3) var(--sp-4) 0; justify-content:flex-end;}
 /* ⚠️ O QUADRO TEM O TAMANHO DO CARTÃO, EM MILÍMETROS — 86,6 × 54,98 mm, as duas
    faces empilhadas. Ele não se estica.
 
@@ -6321,14 +6474,63 @@ onUnmounted(() => window.removeEventListener('message', ouvirAPrevia))
   border-radius:var(--raio-pequeno, 6px);
 }
 
-/* O PEDIDO FICA GRUDADO NO FIM DA LISTA, e não flutuando: numa lista de 160
-   peças, botão fixo na base cobre a última linha — que é justamente a que a
-   pessoa acabou de marcar. */
+/* O PEDIDO FICA NO TOPO DA LISTA, acima das peças: numa lista de 160, embaixo ele
+   ficava a milhares de pixels de quem acabou de marcar. Não flutua (botão fixo
+   cobre a última linha); só vem antes. */
 .au-pedir-cartoes{
   flex-wrap:wrap; align-items:center; gap:var(--sp-3);
-  margin-top:var(--sp-4);
+  margin:var(--sp-3) 0;
 }
 .au-pedir-cartoes .au-aviso-menor{flex:1 1 16em; min-width:0;}
+
+/* ── A BARRA DE ANDAMENTO DE CADA PEÇA ──────────────────────────────────────
+   `--roxo` é o robô agindo (PADRÃO item 2). "Gerando" corre; "Na fila" fica
+   parada — a diferença entre esperar a vez e estar sendo feito se lê sem texto.
+   Sem porcentagem: o robô não informa progresso por peça. */
+.au-andamento{display:flex; flex-direction:column; gap:var(--sp-1); min-width:0; width:100%;}
+.au-andamento-texto{font-size:var(--texto-corpo); color:var(--text); overflow-wrap:anywhere;}
+.au-andamento-trilho{
+  display:block; height:6px; border-radius:var(--radius-sm); overflow:hidden;
+  background:var(--surface2); border:1px solid var(--border);
+}
+.au-andamento-barra{
+  display:block; width:40%; height:100%; background:var(--roxo);
+  border-radius:var(--radius-sm); animation:au-correndo 1.4s ease-in-out infinite;
+}
+.au-andamento-parada{animation:none; width:12%;}
+@keyframes au-correndo{0%{transform:translateX(-100%)}100%{transform:translateX(260%)}}
+/* Movimento reduzido: a barra para (regra no bloco oficial `prefers-reduced-motion`, mais abaixo). */
+.selo svg{flex:none; vertical-align:-2px; margin-right:var(--sp-1);}
+
+/* ── AS AÇÕES DA LINHA: o olho (prévia) e os três pontinhos (menu) ─────────── */
+.au-acoes-cartao{display:flex; align-items:center; gap:var(--sp-2); flex-wrap:wrap;}
+.au-icone-acao{
+  flex:none; width:40px; height:40px; display:inline-flex; align-items:center;
+  justify-content:center; background:transparent; color:var(--text);
+  border:1px solid var(--border); border-radius:var(--radius-md); cursor:pointer;
+}
+.au-icone-acao:hover, .au-icone-acao:focus-visible, .au-icone-acao[aria-expanded="true"]{
+  background:var(--surface2); border-color:var(--modulo, var(--accent));
+}
+.au-menu-acoes{position:relative;}
+.au-menu-fundo{position:fixed; inset:0; z-index:19; background:transparent;}
+/* Nasce para baixo e para a direita do botão; `alternarOMenu` mede depois de
+   renderizar e vira para a esquerda / para cima só quando não cabe na janela. */
+.au-menu-esq{left:auto!important; right:0;}
+.au-menu-cima{top:auto!important; bottom:calc(100% + var(--sp-1));}
+.au-menu{
+  position:absolute; left:0; top:calc(100% + var(--sp-1)); z-index:20;
+  min-width:12em; display:flex; flex-direction:column; padding:var(--sp-1);
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:var(--radius-md); box-shadow:var(--shadow-md);
+}
+.au-menu-item{
+  min-height:40px; padding:0 var(--sp-3); text-align:left; cursor:pointer;
+  font-family:var(--fonte-principal); font-size:var(--texto-corpo); color:var(--text);
+  background:transparent; border:0; border-radius:var(--radius-sm); overflow-wrap:anywhere;
+}
+.au-menu-item:hover:not(:disabled), .au-menu-item:focus-visible{background:var(--surface2);}
+.au-menu-item:disabled{color:var(--muted); cursor:default;}
 
 /* ── O MATERIAL DO LOTE ─────────────────────────────────────────────────────
    A LINHA DO CARTÃO. Não entrou em `.au-card-linha` (que é `--muted` e

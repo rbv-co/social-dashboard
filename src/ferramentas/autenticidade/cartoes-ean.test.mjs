@@ -4,7 +4,7 @@ import {
   chaveDoProduto, verbeteDoProduto, impedimentoDoCartao, MOTIVO_DO_IMPEDIMENTO,
   linhasDeCartao, marcadasPorPadrao, resumoDoPedido, pecaParaODesenho,
   recursosDoDesenho, cssDoCartao, fraseDoPedidoRecusado, situacaoDoPedido,
-  BASE_DOS_RECURSOS,
+  BASE_DOS_RECURSOS, andamentoDaPeca, temPedidoAtivo,
 } from './cartoes-ean.js'
 
 // Um pedaço do índice publicado, com a forma REAL do arquivo que está no ar —
@@ -185,4 +185,30 @@ test('a fila se explica sozinha, inclusive quando falha', () => {
   assert.equal(situacaoDoPedido({ situacao: 'falhou', pecas: ['A'], erro: 'o Zoho recusou' }).detalhe,
     'o Zoho recusou')
   assert.equal(situacaoDoPedido(null).rotulo, '—')
+})
+
+test('cada peça sabe em que ponto da fila está, sem inventar porcentagem', () => {
+  const fila = [
+    { situacao: 'rodando', pecas: ['A', 'B'] },
+    { situacao: 'na_fila', pecas: ['C'] },
+    { situacao: 'pronto', pecas: ['D'] },
+    { situacao: 'falhou', pecas: ['E'] },
+  ]
+  assert.equal(andamentoDaPeca('A', fila), 'rodando')
+  assert.equal(andamentoDaPeca('C', fila), 'na_fila')
+  // Pedido que acabou (bem ou mal) não prende a peça numa barra que nunca anda.
+  assert.equal(andamentoDaPeca('D', fila), null)
+  assert.equal(andamentoDaPeca('E', fila), null)
+  assert.equal(andamentoDaPeca('Z', fila), null)
+  // Na fila e rodando ao mesmo tempo: vale o que está de fato acontecendo.
+  assert.equal(andamentoDaPeca('A', [...fila, { situacao: 'na_fila', pecas: ['A'] }]), 'rodando')
+  assert.equal(andamentoDaPeca('A', null), null)
+})
+
+test('a releitura da fila só liga enquanto há pedido a terminar', () => {
+  assert.equal(temPedidoAtivo([{ situacao: 'pronto' }, { situacao: 'falhou' }]), false)
+  assert.equal(temPedidoAtivo([{ situacao: 'pronto' }, { situacao: 'na_fila' }]), true)
+  assert.equal(temPedidoAtivo([{ situacao: 'rodando' }]), true)
+  assert.equal(temPedidoAtivo([]), false)
+  assert.equal(temPedidoAtivo(undefined), false)
 })
