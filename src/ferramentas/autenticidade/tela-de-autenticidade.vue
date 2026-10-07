@@ -1359,7 +1359,7 @@
           </div>
           <div class="au-acoes">
             <button v-if="ln.podeGerar" class="au-link" type="button"
-                    @click="verOCartao(ln)">Ver o cartão</button>
+                    @click="verOCartao(ln)">Ver a prévia</button>
             <!-- Botão desabilitado calado faz a pessoa achar que a ferramenta
                  quebrou. Cada impedimento tem a frase que diz o que fazer. -->
             <span v-else class="au-aviso-menor">{{ MOTIVO_DO_IMPEDIMENTO[ln.impedimento] }}</span>

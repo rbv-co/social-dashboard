@@ -166,7 +166,7 @@ async function fotografar(contexto, prefixo) {
   await pagina.screenshot({ path: join(FOTOS, `${prefixo}-1-lista.png`), fullPage: true })
 
   // A prévia: é o que a aba promete, e é o que a foto tem de provar.
-  const verOCartao = pagina.getByRole('button', { name: 'Ver o cartão' }).first()
+  const verOCartao = pagina.getByRole('button', { name: 'Ver a prévia' }).first()
   let previaDesenhou = null
   if (await verOCartao.count()) {
     // ⚠️ ESCUTA O RECADO DA PRÉVIA, e não só o tamanho do quadro. Um iframe que
