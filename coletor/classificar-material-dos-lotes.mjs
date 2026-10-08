@@ -30,10 +30,13 @@
 // evita perguntar ao Bling o nome da mesma peça de ferragem 64 vezes.
 import './lib/carregar-env.mjs'
 import pg from 'pg'
+import { blingDoColetor } from './lib/bling-token.mjs'
 import { writeFileSync } from 'node:fs'
 import { classificarMaterial } from '../src/ferramentas/autenticidade/material-do-produto.js'
 
 const BLING = 'https://api.bling.com.br/Api/v3'
+// CORE_BLING_TOKEN=true: o `core` é o dono do token e este robô NÃO renova (ver lib/bling-token.mjs).
+const CORE_BLING = blingDoColetor()
 const CSV_DE_SAIDA = '/private/tmp/claude-501/-Users-erickmartins/1343e15e-997e-4f51-a038-d5128dc87527/scratchpad/material-dos-lotes.csv'
 const espera = (ms) => new Promise((r) => setTimeout(r, ms))
 // ⚠️ 400ms ENTRE CHAMADAS, DE PROPÓSITO — o Bling limita a 3 por segundo, e
@@ -48,7 +51,9 @@ const PAUSA_ENTRE_CHAMADAS_MS = 400
  * ⚠️ RENOVAR ROTACIONA O `refresh_token`: renovar e não gravar de volta deixa
  * o próximo robô que usar o antigo ser recusado.
  */
-async function pegarToken(cli) {
+const pegarToken = (cli) => CORE_BLING.token(() => pegarTokenDoBanco(cli))
+
+async function pegarTokenDoBanco(cli) {
   const { rows: [t] } = await cli.query('select * from bling_tokens order by id desc limit 1')
   if (!t?.access_token) throw new Error('não há token do Bling guardado.')
   if (new Date(t.expires_at) > new Date(Date.now() + 5 * 60 * 1000)) return t.access_token
@@ -83,7 +88,7 @@ const nomeDoComponente = new Map()
 async function nomeDoProdutoBling(id, cabecalho) {
   if (nomeDoComponente.has(id)) return nomeDoComponente.get(id)
   await espera(PAUSA_ENTRE_CHAMADAS_MS)
-  const r = await fetch(`${BLING}/produtos/${id}`, { headers: cabecalho })
+  const r = await CORE_BLING.fetch(`${BLING}/produtos/${id}`, { headers: cabecalho })
   const nome = r.ok ? ((await r.json())?.data?.nome ?? `(id ${id})`) : `(id ${id}, o Bling respondeu ${r.status})`
   nomeDoComponente.set(id, nome)
   return nome
@@ -93,13 +98,13 @@ async function nomeDoProdutoBling(id, cabecalho) {
 // — SKU não encontrado, sem `estrutura.componentes`, ou lista vazia.
 async function estruturaDoSku(sku, cabecalho) {
   await espera(PAUSA_ENTRE_CHAMADAS_MS)
-  const busca = await fetch(`${BLING}/produtos?criterio=5&codigo=${encodeURIComponent(sku)}`, { headers: cabecalho })
+  const busca = await CORE_BLING.fetch(`${BLING}/produtos?criterio=5&codigo=${encodeURIComponent(sku)}`, { headers: cabecalho })
   if (!busca.ok) return { erro: `busca por SKU respondeu ${busca.status}` }
   const achado = (await busca.json())?.data?.[0]
   if (!achado?.id) return { erro: 'SKU não encontrado no Bling' }
 
   await espera(PAUSA_ENTRE_CHAMADAS_MS)
-  const detalhe = await fetch(`${BLING}/produtos/${achado.id}`, { headers: cabecalho })
+  const detalhe = await CORE_BLING.fetch(`${BLING}/produtos/${achado.id}`, { headers: cabecalho })
   if (!detalhe.ok) return { erro: `detalhe do produto respondeu ${detalhe.status}` }
   const produto = (await detalhe.json())?.data
   const componentesIds = produto?.estrutura?.componentes

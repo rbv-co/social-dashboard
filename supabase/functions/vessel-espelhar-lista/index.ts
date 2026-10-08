@@ -81,11 +81,14 @@ import { montarXlsx, bytesIguais } from '../_shared/planilha-xlsx.js';
 import { linhasDoVigia, ROBO_ETAPAS_LIKE, DIAS_DE_HISTORICO } from '../_shared/vigia-do-espelho.js';
 import { celularParaOBling } from '../_shared/celular-do-bling.js';
 import { completarContato } from '../_shared/completar-contato-do-bling.js';
+import { blingDoCore } from '../_shared/core-bling-token.js';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const WD = 'https://www.zohoapis.com/workdrive/api/v1';
 const BLING = 'https://api.bling.com.br/Api/v3';
+// CORE_BLING_TOKEN=true: o `core` é o dono do token; nenhum ponto aqui renova (ver _shared/core-bling-token.js).
+const CORE_BLING = blingDoCore(Deno.env.toObject());
 
 // O CAMINHO DA PASTA VAI POR NOME, NUNCA POR ID ESCRITO AQUI. Se alguém
 // recriar uma pasta no Zoho, o id muda — e um id fixo continuaria apontando,
@@ -290,7 +293,11 @@ async function lerTudo(sb: any, { tabela, colunas, ordem }: any): Promise<any[]>
 
 // ── Bling ───────────────────────────────────────────────────────────────────
 
-async function tokenBling(sb: any): Promise<string> {
+function tokenBling(sb: any): Promise<string> {
+  return CORE_BLING.token(() => renovarSeVencido(sb));
+}
+
+async function renovarSeVencido(sb: any): Promise<string> {
   const { data } = await sb.from('bling_tokens').select('*').order('id', { ascending: false }).limit(1).maybeSingle();
   if (!data?.access_token) throw new Error('Não há token do Bling guardado.');
   if (new Date(data.expires_at) > new Date(Date.now() + 5 * 60 * 1000)) return data.access_token;
@@ -346,7 +353,7 @@ export function codigoDeOrigem(linha: any): string {
 
 /** Devolve `{id}` se deu certo, ou `{erro}` com a frase em português. */
 async function mandarPraBling(t: string, linha: any): Promise<{ id: string } | { erro: string }> {
-  const r = await fetch(`${BLING}/contatos`, {
+  const r = await CORE_BLING.fetch(`${BLING}/contatos`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${t}`, 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify({
@@ -593,7 +600,7 @@ async function rodada(sb: any): Promise<Response> {
         // pelo CPF, que é o que liga a pessoa à compra dela.
         let contatoId = g.bling_contato_id;
         if (!contatoId) {
-          const busca = await fetch(
+          const busca = await CORE_BLING.fetch(
             `${BLING}/contatos?numeroDocumento=${encodeURIComponent(String(g.cpf).replace(/\D/g, ''))}`,
             { headers: { Authorization: `Bearer ${tb}`, Accept: 'application/json' } });
           const jb = await busca.json().catch(() => null);
@@ -607,7 +614,7 @@ async function rodada(sb: any): Promise<Response> {
           continue;
         }
 
-        const det = await fetch(`${BLING}/contatos/${contatoId}`,
+        const det = await CORE_BLING.fetch(`${BLING}/contatos/${contatoId}`,
           { headers: { Authorization: `Bearer ${tb}`, Accept: 'application/json' } });
         const atual = (await det.json().catch(() => null))?.data;
         if (!atual) { semContato++; continue; }
@@ -623,7 +630,7 @@ async function rodada(sb: any): Promise<Response> {
           continue;
         }
 
-        const put = await fetch(`${BLING}/contatos/${contatoId}`, {
+        const put = await CORE_BLING.fetch(`${BLING}/contatos/${contatoId}`, {
           method: 'PUT',
           headers: { Authorization: `Bearer ${tb}`, Accept: 'application/json',
                      'Content-Type': 'application/json' },

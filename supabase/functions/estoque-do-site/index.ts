@@ -28,6 +28,7 @@ import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { exigirSegredoDeCron } from '../_shared/segredo-de-cron.ts';
 import { calcularAjustes } from '../_shared/estoque-do-site.js';
 import { clienteDoAmbiente, escolherFonte, ligada, saldoDoDepositoPorSku } from '../_shared/core-leitura.js';
+import { blingDoCore } from '../_shared/core-bling-token.js';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -36,6 +37,8 @@ const SHOPIFY_CLIENT_ID = Deno.env.get('SHOPIFY_CLIENT_ID');
 const SHOPIFY_CLIENT_SECRET = Deno.env.get('SHOPIFY_CLIENT_SECRET');
 const API = `https://${SHOP}/admin/api/2026-01/graphql.json`;
 const BLING = 'https://api.bling.com.br/Api/v3';
+// CORE_BLING_TOKEN=true: o `core` é o dono do token; nenhum ponto aqui renova (ver _shared/core-bling-token.js).
+const CORE_BLING = blingDoCore(Deno.env.toObject());
 
 const DEPOSITO_IGUATEMI = '14888726277';                  // "Estoque Loja Iguatemi"
 const LOCAL_SHOPIFY = 'gid://shopify/Location/94919065848';
@@ -60,7 +63,12 @@ async function gravarEstado(sb: SB, chave: string, valor: unknown) {
 }
 
 // ── Bling (só leitura) ──────────────────────────────────────────────────────
-async function tokenBling(sb: SB): Promise<string | null> {
+function tokenBling(sb: SB): Promise<string | null> {
+  // core fora do ar = sem token (null): a rodada é pulada, como com token vencido.
+  return CORE_BLING.token(() => lerTokenDoBanco(sb)).catch(() => null);
+}
+
+async function lerTokenDoBanco(sb: SB): Promise<string | null> {
   const { data } = await sb.from('bling_tokens').select('access_token, expires_at')
     .order('id', { ascending: false }).limit(1).single();
   if (!data?.access_token) return null;
@@ -72,7 +80,7 @@ async function blingGet(token: string, endpoint: string, params: Record<string, 
   const url = new URL(`${BLING}/${endpoint}`);
   for (const [k, v] of Object.entries(params)) url.searchParams.append(k, v);
   for (let t = 0; t < 4; t++) {
-    const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    const r = await CORE_BLING.fetch(url, { headers: { Authorization: `Bearer ${token}` } });
     if (r.status === 429 || r.status >= 500) { await sleep(700 * (t + 1)); continue; }
     if (!r.ok) throw new Error(`bling ${endpoint} -> ${r.status}`);
     return r.json();

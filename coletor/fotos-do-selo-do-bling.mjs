@@ -36,6 +36,7 @@
 // (`baixar-fotos-bling.mjs`) pega essa primeiro — por isso ele nao serve aqui.
 import './lib/carregar-env.mjs'
 import pg from 'pg'
+import { blingDoColetor } from './lib/bling-token.mjs'
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { mkdirSync, writeFileSync, existsSync, rmSync, statSync } from 'node:fs'
@@ -72,6 +73,8 @@ function raizDoIamundi() {
 const SITE = join(raizDoIamundi(), 'vessel-brasil')
 const PASTA_DAS_FOTOS = join(SITE, 'fotos', 'selo')
 const BLING = 'https://api.bling.com.br/Api/v3'
+// CORE_BLING_TOKEN=true: o `core` é o dono do token; aqui só se LÊ (ver lib/bling-token.mjs).
+const CORE_BLING = blingDoColetor()
 const DRY = process.argv.includes('--dry')
 const SEM_PUSH = process.argv.includes('--sem-push')
 // ⚠️ `--refazer` REBAIXA A FOTO DE QUEM JA TEM. Serve para quando a ORDEM DAS
@@ -117,7 +120,7 @@ async function pedirAoBling(caminho, token) {
   // O Bling responde 429 com facilidade. Esperar e tentar de novo e mais
   // barato do que perder a rodada inteira e voltar so amanha.
   for (let tentativa = 0; tentativa < 4; tentativa++) {
-    const r = await fetch(`${BLING}/${caminho}`, {
+    const r = await CORE_BLING.fetch(`${BLING}/${caminho}`, {
       headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
     })
     if (r.status === 429) { await espera(1500 * (tentativa + 1)); continue }
@@ -180,9 +183,11 @@ async function main() {
   await cliente.connect()
   let publicou = false
   try {
-    const { rows: tokens } = await cliente.query(
-      'select access_token from public.bling_tokens order by id desc limit 1')
-    const token = tokens[0]?.access_token
+    const token = await CORE_BLING.token(async () => {
+      const { rows: tokens } = await cliente.query(
+        'select access_token from public.bling_tokens order by id desc limit 1')
+      return tokens[0]?.access_token
+    })
     if (!token) { console.log('Sem token do Bling. Nada a fazer.'); return }
 
     const { rows: lotes } = await cliente.query(

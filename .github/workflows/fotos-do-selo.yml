@@ -97,6 +97,10 @@ jobs:
         working-directory: .
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          # Token do Bling vindo do core (desligado por padrão: variável do repositório ausente).
+          CORE_BLING_TOKEN: ${{ vars.CORE_BLING_TOKEN }}
+          CORE_URL: ${{ vars.CORE_URL }}
+          CORE_API_TOKEN: ${{ secrets.CORE_API_TOKEN }}
           ZOHO_CLIENT_ID: ${{ secrets.ZOHO_CLIENT_ID }}
           ZOHO_CLIENT_SECRET: ${{ secrets.ZOHO_CLIENT_SECRET }}
           ZOHO_REFRESH_TOKEN: ${{ secrets.ZOHO_REFRESH_TOKEN }}
