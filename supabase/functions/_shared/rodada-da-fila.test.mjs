@@ -399,7 +399,24 @@ test('reserva: `reservado` envia, com tipo pedido_recebido, chave = número sem 
   const cliente = comReserva('reservado')
   const r = await rodar('pedido', fakeSb({ linhas: [pedido(1)] }), cliente, RESERVA)
   assert.equal(r.corpo.resultado[0].resultado, 'enviada')
-  assert.deepEqual(cliente.reservas, [{ phone: '5519982621821', tipo: 'pedido_recebido', chave: '1001' }])
+  assert.deepEqual(cliente.reservas, [{ phone: '5519982621821', tipo: 'pedido_recebido', chave: '1001', idadeS: undefined }])
+})
+
+test('reserva: leva idadeS = agora - criado_em; 30 s com `adiado` não envia, 130 s com `reservado` envia', async () => {
+  const criado = (seg) => new Date(DENTRO.getTime() - seg * 1000).toISOString()
+  const c1 = comReserva('adiado'), sb1 = fakeSb({ linhas: [pedido(1, { criado_em: criado(30) })] })
+  const r1 = await rodar('pedido', sb1, c1, RESERVA)
+  assert.equal(c1.reservas[0].idadeS, 30)
+  assert.equal(r1.corpo.adiados, 1)
+  assert.equal(c1.chamadas.length, 0)
+  assert.deepEqual(rpcs(sb1, 'devolver_da_fila').map((a) => a.p_contar), [false])
+  const c2 = comReserva('reservado')
+  const r2 = await rodar('pedido', fakeSb({ linhas: [pedido(1, { criado_em: criado(130) })] }), c2, RESERVA)
+  assert.equal(c2.reservas[0].idadeS, 130)
+  assert.equal(r2.corpo.resultado[0].resultado, 'enviada')
+  const c3 = comReserva('reservado') // criado_em no futuro (relógio) -> 0, nunca negativo
+  await rodar('pedido', fakeSb({ linhas: [pedido(1, { criado_em: criado(-50) })] }), c3, RESERVA)
+  assert.equal(c3.reservas[0].idadeS, 0)
 })
 
 test('reserva: duplicado e janela NÃO enviam e marcam ignorada com motivo', async () => {

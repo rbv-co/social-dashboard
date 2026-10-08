@@ -60,13 +60,14 @@ export function criarClienteChatwoot({ url, contaId, caixaId, token, botSecret, 
      * Devolve 'reservado' | 'duplicado' | 'janela' | 'adiado'. Qualquer outra coisa LANÇA ErroChatwoot (passo
      * `reservar_aviso`): quem chama só envia se vier 'reservado'. O segredo e o telefone nunca entram em erro nem log.
      */
-    async reservarAviso({ phone, tipo, chave }) {
+    async reservarAviso({ phone, tipo, chave, idadeS }) {
       let r
       try {
         r = await fetchFn(`${url.replace(/\/$/, '')}/custom_api/v1/accounts/${contaId}/avisos/reservar`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'X-Bot-Secret': botSecret },
-          body: JSON.stringify({ phone, tipo, chave }),
+          // idade_s (inteiro >= 0, segundos desde que o pedido entrou): o Chatwoot só adia (`adiado`) enquanto < 120 s. Ausente = como antes.
+          body: JSON.stringify({ phone, tipo, chave, ...(Number.isInteger(idadeS) && idadeS >= 0 ? { idade_s: idadeS } : {}) }),
           signal: AbortSignal.timeout(TIMEOUT_MS),
         })
       } catch (e) {

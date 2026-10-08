@@ -199,6 +199,10 @@ test('reservarAviso: POST no custom_api com X-Bot-Secret; só aceita os 4 result
   assert.equal(chamadas[0][1].headers['X-Bot-Secret'], 'SEGREDO-BOT')
   assert.equal(chamadas[0][1].headers.api_access_token, undefined)
   assert.deepEqual(JSON.parse(chamadas[0][1].body), { phone: '5519982621821', tipo: 'pedido_recebido', chave: '1001' })
+  await mk(resp(200, { ok: true, resultado: 'reservado' })).reservarAviso({ phone: '5519982621821', tipo: 'pedido_recebido', chave: '1001', idadeS: 130 })
+  assert.deepEqual(JSON.parse(chamadas.at(-1)[1].body), { phone: '5519982621821', tipo: 'pedido_recebido', chave: '1001', idade_s: 130 })
+  await mk(resp(200, { ok: true, resultado: 'reservado' })).reservarAviso({ phone: '5519982621821', tipo: 'pedido_recebido', chave: '1001', idadeS: -5 })
+  assert.equal('idade_s' in JSON.parse(chamadas.at(-1)[1].body), false, 'idade inválida não é enviada')
   for (const f of [resp(503, {}), resp(401, {}), resp(200, { ok: true, resultado: 'talvez' }), resp(200, { ok: false }), async () => { throw new Error('5519982621821 SEGREDO-BOT') }]) {
     await assert.rejects(mk(f).reservarAviso({ phone: '5519982621821', tipo: 'x', chave: '1' }), (e) => e.passo === 'reservar_aviso' && !JSON.stringify([e.message, e.corpo]).match(/SEGREDO-BOT|5519982621821/))
   }
