@@ -43,6 +43,15 @@ em Frota / <carro> / <ano-mês>. Não é chamada por tela nenhuma: quem chama é
 o cron. Se o Zoho estiver fora, a ficha continua assinada e válida — só o
 papel atrasa, e o motivo fica escrito na fila em português.
 
+receber-webhook-abandono: DISPARO IMEDIATO, atrás de DISPARO_IMEDIATO=true (padrão desligado = comportamento de sempre).
+  Depois de gravar a linha em mensagem_fila, a própria edge roda a rodada do robô (rodarTudo, _shared/disparo-imediato.js)
+  só para o tipo do tópico (checkouts/create|update -> inicio; orders/create|paid -> pedido), em segundo plano, sem esperar
+  o minuto do pg_cron. Mesmas travas do robô: modos ENVIO_MODO_*, ENVIO_SO_PARA, janela de horário, bloqueados, trava
+  cruzada e reserva do Chatwoot (adiado -> fica para o robô). A reserva atômica de pegar_da_fila impede envio em dobro com
+  o robô de 1 min. Falha do disparo nunca muda a resposta do webhook (erro só no log, sem telefone nem segredo; limite 20 s).
+  Não usa secret novo. COMO LIGAR: DISPARO_IMEDIATO=true na edge receber-webhook-abandono (precisa dos mesmos secrets
+  CHATWOOT_*, ENVIO_*, TEMPLATE_* do robô nessa edge). COMO DESLIGAR: remover a flag (ou false); o robô de 1 min segue igual.
+
 enviar-mensagem-abandono: robô das mensagens de WhatsApp (início, pedido recebido, abandono, follow-up) via Chatwoot.
   RESERVA DO AVISO (rodada `pedido`), atrás de RESERVAR_AVISO_CHATWOOT (padrão desligado = comportamento de sempre):
   antes de enviar o `pedido_recebido`, chama POST {CHATWOOT_URL}/custom_api/v1/accounts/{CHATWOOT_CONTA_ID}/avisos/reservar

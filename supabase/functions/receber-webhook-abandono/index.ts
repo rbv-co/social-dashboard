@@ -19,6 +19,8 @@
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { assinaturaValida } from '../_shared/verificar-webhook-shopify.js';
 import { processarWebhook } from '../_shared/aplicar-decisao.js';
+import { dispararAgora } from '../_shared/disparo-imediato.js';
+import { criarClienteChatwoot } from '../_shared/cliente-chatwoot.js';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -44,7 +46,17 @@ Deno.serve(async (req) => {
 
   // Grava a fila de abandono E a mensagem do pedido (ver aplicar-decisao.js): erro de banco devolve 500
   // para a Shopify reenviar (as gravações são idempotentes).
-  const { status, corpo: resposta } = await processarWebhook(
-    createClient(SUPABASE_URL, SERVICE_KEY), req.headers.get('x-shopify-topic') ?? '', corpo);
+  const sb = createClient(SUPABASE_URL, SERVICE_KEY);
+  const topico = req.headers.get('x-shopify-topic') ?? '';
+  const { status, corpo: resposta } = await processarWebhook(sb, topico, corpo);
+
+  // DISPARO IMEDIATO (DISPARO_IMEDIATO=true; padrão desligado): manda a mensagem já, sem esperar o minuto do cron.
+  // Roda DEPOIS de gravar, em segundo plano (a resposta ao webhook não espera) e nunca lança. Ver disparo-imediato.js.
+  if (status === 200) {
+    const disparo = dispararAgora({ env: (n: string) => Deno.env.get(n) ?? '', sb, criarCliente: criarClienteChatwoot, topico });
+    // deno-lint-ignore no-explicit-any
+    const rt = (globalThis as any).EdgeRuntime;
+    if (rt?.waitUntil) rt.waitUntil(disparo); else await disparo; // a promessa nunca rejeita
+  }
   return responder(resposta, status);
 });
