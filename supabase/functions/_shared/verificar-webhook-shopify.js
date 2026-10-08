@@ -45,3 +45,15 @@ export function extrairEventoDeCheckout(corpo) {
     ? corpo.cart_token.trim() : null
   return { tipo: 'checkout_iniciado', cart_token: cartToken }
 }
+
+/**
+ * Idempotência de reentrega: a linha leva o X-Shopify-Event-Id (igual em toda reentrega do mesmo evento).
+ * Sem o cabeçalho, devolve o evento como veio (comportamento de sempre).
+ */
+export function comIdDoEventoShopify(evento, eventId) {
+  const id = String(eventId ?? '').trim()
+  return id ? { ...evento, evento_shopify_id: id } : evento
+}
+
+/** Violação do índice único (23505) = reentrega do mesmo evento: já gravado, não é erro. */
+export const ehReentrega = (error) => error?.code === '23505'

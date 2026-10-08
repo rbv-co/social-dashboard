@@ -46,3 +46,18 @@ test('checkout sem cart_token (raro, mas não pode quebrar) vira null', () => {
   assert.deepEqual(extrairEventoDeCheckout({}), { tipo: 'checkout_iniciado', cart_token: null })
   assert.deepEqual(extrairEventoDeCheckout({ cart_token: '' }), { tipo: 'checkout_iniciado', cart_token: null })
 })
+
+import { comIdDoEventoShopify, ehReentrega } from './verificar-webhook-shopify.js'
+
+test('X-Shopify-Event-Id vira evento_shopify_id; sem cabeçalho o evento não muda', () => {
+  const ev = { tipo: 'checkout_iniciado', cart_token: 'abc' }
+  assert.deepEqual(comIdDoEventoShopify(ev, ' e-1 '), { ...ev, evento_shopify_id: 'e-1' })
+  assert.deepEqual(comIdDoEventoShopify(ev, null), ev)
+  assert.deepEqual(comIdDoEventoShopify(ev, ''), ev)
+})
+
+test('reentrega = violação única 23505; outro erro continua erro', () => {
+  assert.equal(ehReentrega({ code: '23505' }), true)
+  assert.equal(ehReentrega({ code: '42P01' }), false)
+  assert.equal(ehReentrega(null), false)
+})

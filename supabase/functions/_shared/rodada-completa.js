@@ -13,9 +13,10 @@
 //   ENVIO_MODO           abandono   (ENVIO_ATRASO_MINUTOS, ENVIO_MAX_HORAS=24, TEMPLATE_NOME, TEMPLATE_TEXTO)
 //   ENVIO_MODO_PEDIDO    pedido     (PEDIDO_MAX_HORAS=2, TEMPLATE_PEDIDO, TEMPLATE_TEXTO_PEDIDO)
 //   ENVIO_MODO_FOLLOWUP  follow-up  (FOLLOWUP_APOS_HORAS=48, FOLLOWUP_MAX_HORAS=24, TEMPLATE_FOLLOWUP, TEMPLATE_TEXTO_FOLLOWUP)
-//   comuns: ENVIO_LIMITE_POR_RODADA=10, ENVIO_SO_PARA, LINK_BASE, TEMPLATE_IDIOMA=pt_BR, CHATWOOT_*
+//   comuns: ABANDONO_TRAVA_CRUZADA=true (nada sai se o telefone recebeu outra automática em 20 h), ENVIO_LIMITE_POR_RODADA=10, ENVIO_SO_PARA, LINK_BASE, TEMPLATE_IDIOMA=pt_BR, CHATWOOT_*
 import { processarRodada } from './rodada-de-mensagens.js'
 import { processarFila } from './rodada-da-fila.js'
+import { travaCruzadaLigada } from './trava-cruzada.js'
 
 const MODOS = ['desligado', 'seco', 'lista', 'ligado']
 
@@ -35,6 +36,7 @@ export async function rodarTudo({ env, sb, criarCliente, agora = new Date() }) {
     linkBase: env('LINK_BASE'),
     idioma: env('TEMPLATE_IDIOMA') || 'pt_BR',
     chatwoot,
+    travaCruzada: travaCruzadaLigada(env('ABANDONO_TRAVA_CRUZADA')),
   }
 
   const passadas = [

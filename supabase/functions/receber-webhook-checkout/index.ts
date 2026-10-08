@@ -15,7 +15,7 @@
 // o segredo mostrado quando o webhook é cadastrado em Configurações >
 // Notificações > Webhooks no admin da loja (SHOPIFY_WEBHOOK_SECRET).
 import { createClient } from 'jsr:@supabase/supabase-js@2';
-import { assinaturaValida, extrairEventoDeCheckout } from '../_shared/verificar-webhook-shopify.js';
+import { assinaturaValida, comIdDoEventoShopify, ehReentrega, extrairEventoDeCheckout } from '../_shared/verificar-webhook-shopify.js';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -37,14 +37,16 @@ Deno.serve(async (req) => {
   }
 
   const corpo = JSON.parse(corpoCru);
-  const evento = extrairEventoDeCheckout(corpo);
+  // O core repassa com retry: o mesmo evento pode chegar de novo. O índice único parcial em evento_shopify_id
+  // derruba a duplicata (23505), que aqui é sucesso. Sem o cabeçalho, grava como sempre.
+  const evento = comIdDoEventoShopify(extrairEventoDeCheckout(corpo), req.headers.get('x-shopify-event-id'));
 
   const sb = createClient(SUPABASE_URL, SERVICE_KEY);
   const { error } = await sb.from('carrinho_eventos').insert(evento);
   // A Shopify tenta de novo se não receber 2xx — erro de banco nunca deve
   // virar uma tempestade de retentativas por um problema que retry nenhum
   // resolve; loga pro robô investigar depois, mas responde 200 assim mesmo.
-  if (error) console.error('falha ao gravar checkout_iniciado:', error.message);
+  if (error && !ehReentrega(error)) console.error('falha ao gravar checkout_iniciado:', error.message);
 
   return responder({ ok: true });
 });

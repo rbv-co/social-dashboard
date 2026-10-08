@@ -44,3 +44,13 @@ test('peça fora do local do Iguatemi: ativa só se houver o que vender', () => 
   assert.deepEqual(r.ajustes, [{ sku: 'A', inventoryItemId: 'ia', de: 0, para: 2, ativar: true }]);
   assert.deepEqual(r.iguais, ['B']);
 });
+
+import { donoDoEstoque } from './estoque-do-site.js';
+
+test('dono do estoque: core por padrão; só "edge" explícito liga a edge', () => {
+  assert.equal(donoDoEstoque({}), 'core');
+  assert.equal(donoDoEstoque({ ESTOQUE_DO_SITE_DONO: '' }), 'core');
+  assert.equal(donoDoEstoque({ ESTOQUE_DO_SITE_DONO: 'core' }), 'core');
+  assert.equal(donoDoEstoque({ ESTOQUE_DO_SITE_DONO: 'talvez' }), 'core');
+  assert.equal(donoDoEstoque({ ESTOQUE_DO_SITE_DONO: ' Edge ' }), 'edge');
+});

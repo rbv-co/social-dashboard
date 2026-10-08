@@ -338,3 +338,50 @@ test('erro ao pegar da fila: 500 e nada mais é chamado', async (t) => {
   assert.equal(r.corpo.erro, 'falha_ao_pegar')
   assert.equal(cliente.chamadas.length, 0)
 })
+
+// ── trava cruzada ─────────────────────────────────────────────────────────────
+const comTrava = (sb, resposta) => {
+  const antes = sb.rpc
+  sb.rpc = async (nome, args) => {
+    if (nome === 'recebeu_mensagem_automatica') { sb.chamadas.push([nome, args]); return resposta }
+    return antes(nome, args)
+  }
+  return sb
+}
+
+test('⚠️ trava cruzada: telefone com outra automática em 20 h não recebe (ignorada_trava_cruzada), sem tocar no Chatwoot', async () => {
+  for (const tipo of ['inicio', 'followup']) {
+    const sb = comTrava(fakeSb({ linhas: [tipo === 'inicio' ? inicio(1) : followup(1)] }), { data: true, error: null })
+    const cliente = fakeCliente()
+    const r = await rodar(tipo, sb, cliente, { travaCruzada: true })
+    assert.equal(r.corpo.resultado[0].motivo, 'ignorada_trava_cruzada', tipo)
+    assert.deepEqual(rpcs(sb, 'marcar_da_fila')[0], { p_tipo: tipo, p_chave: 'tok1', p_status: 'ignorada', p_motivo: 'ignorada_trava_cruzada' })
+    assert.deepEqual(cliente.chamadas, [])
+    assert.equal(rpcs(sb, 'recebeu_mensagem_automatica')[0].p_horas, 20)
+  }
+})
+
+test('trava cruzada: sem outra mensagem recente envia; desligada (ou ausente) nem consulta', async () => {
+  const sb = comTrava(fakeSb({ linhas: [inicio(1)] }), { data: false, error: null })
+  assert.equal((await rodar('inicio', sb, fakeCliente(), { travaCruzada: true })).corpo.resultado[0].resultado, 'enviada')
+  const sb2 = comTrava(fakeSb({ linhas: [inicio(1)] }), { data: true, error: null })
+  assert.equal((await rodar('inicio', sb2, fakeCliente(), { travaCruzada: false })).corpo.resultado[0].resultado, 'enviada')
+  assert.equal(rpcs(sb2, 'recebeu_mensagem_automatica').length, 0)
+})
+
+test('⚠️ trava cruzada: falha ao consultar NÃO libera: devolve contando tentativa', async (t) => {
+  calar(t)
+  const sb = comTrava(fakeSb({ linhas: [followup(1)] }), { data: null, error: { message: 'boom' } })
+  const cliente = fakeCliente()
+  const r = await rodar('followup', sb, cliente, { travaCruzada: true })
+  assert.equal(r.corpo.resultado[0].motivo, 'falha_na_trava_cruzada')
+  assert.deepEqual(rpcs(sb, 'devolver_da_fila')[0], { p_tipo: 'followup', p_chave: 'tok1', p_contar: true })
+  assert.deepEqual(cliente.chamadas, [])
+})
+
+test('trava cruzada: o pedido recebido (transacional) nunca é barrado', async () => {
+  const sb = comTrava(fakeSb({ linhas: [pedido(1)] }), { data: true, error: null })
+  const r = await rodar('pedido', sb, fakeCliente(), { travaCruzada: true })
+  assert.equal(r.corpo.resultado[0].resultado, 'enviada')
+  assert.equal(rpcs(sb, 'recebeu_mensagem_automatica').length, 0)
+})
