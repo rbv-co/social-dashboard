@@ -413,3 +413,50 @@ test('⚠️ as ações que já existiam continuam todas lá, e a nova chega int
     /const\s*\{[^}]*\berror\b[^}]*\}\s*=\s*await\s+sb\.rpc\(/,
     'falta desestruturar "error" (só "data" deixa erro do rpc calado)');
 });
+
+// ── O TETO POR IP (08/10/2026) ───────────────────────────────────────────────
+// A chave anônima é pública e a edge roda sem JWT: sem teto de QUEM chama, o
+// cadastro dispara e-mail de `vesselbrasil.com.br` para qualquer endereço.
+const antes = (bloco, a, b) => {
+  const ia = bloco.indexOf(a);
+  const ib = bloco.indexOf(b);
+  assert.ok(ia > -1, `não achei ${a}`);
+  assert.ok(ib > -1, `não achei ${b}`);
+  return ia < ib;
+};
+
+test('⚠️ "criar" confere o teto (por IP e global) ANTES de criar perfil e de mandar e-mail', () => {
+  const bloco = blocoDaAcao(FONTE, 'criar');
+  assert.ok(antes(bloco, 'teto:criar:ip:', "rpc('vessel_conta_criar'"), 'teto por IP depois do rpc');
+  assert.ok(antes(bloco, "'teto:criar:global'", "rpc('vessel_conta_criar'"), 'teto global depois do rpc');
+  assert.ok(antes(bloco, 'teto:criar:ip:', 'mandarEmail('), 'o e-mail sairia antes do teto');
+  assert.match(bloco, /motivo:\s*'muitas_tentativas'/, 'a tela já traduz esse motivo');
+});
+
+test('⚠️ "entrar" tem teto por IP e grava o hash do IP na sessão (já não é mais null)', () => {
+  const bloco = blocoDaAcao(FONTE, 'entrar');
+  assert.ok(antes(bloco, 'teto:entrar:ip:', "rpc('vessel_conta_entrar'"));
+  assert.ok(!/p_ip_hash:\s*null/.test(bloco), 'p_ip_hash voltou a null');
+});
+
+test('⚠️ "esqueci" estourou o teto: responde {ok:true} igual a todo o resto, sem motivo', () => {
+  const bloco = blocoDaAcao(FONTE, 'esqueci');
+  assert.ok(antes(bloco, 'teto:esqueci:ip:', "rpc('vessel_conta_pedido_de_nova_senha'"));
+  const corte = bloco.slice(bloco.indexOf('teto:esqueci:ip:'),
+    bloco.indexOf("rpc('vessel_conta_pedido_de_nova_senha'"));
+  assert.match(corte, /responder\(\{ ok: true \}\)/);
+  assert.ok(!/muitas_tentativas/.test(corte),
+    '"muitas tentativas" aqui seria um sinal diferente na tela: vaza se o perfil existe');
+});
+
+test('⚠️ o IP nunca é gravado nem logado puro: só o hash, salgado com a chave de serviço', () => {
+  const fn = FONTE.slice(FONTE.indexOf('async function hashDoIp'), FONTE.indexOf('async function dentroDoTeto'));
+  assert.match(fn, /SHA-256/);
+  assert.match(fn, /SERVICE_KEY/);
+  assert.ok(!/console\./.test(fn), 'hashDoIp não pode logar');
+});
+
+test('o teto falha ABERTO, com log — função ausente no banco não derruba o cadastro', () => {
+  const fn = FONTE.slice(FONTE.indexOf('async function dentroDoTeto'));
+  assert.match(fn.slice(0, 700), /if \(error\) \{[\s\S]*console\.error[\s\S]*return true;/);
+});
