@@ -7,6 +7,9 @@
 // • pedido: transacional (orders/create). Não consulta bloqueados nem status de checkout, e não tem link.
 // • inicio: "Nós reservamos seu pedido", assim que o checkout aparece com telefone. É marketing (ainda não existe pedido):
 //   confere bloqueados e leva o link do checkout no botão. Sem releitura de status (a cliente acabou de chegar).
+// • pedido + RESERVAR_AVISO_CHATWOOT=true: antes de enviar, reserva o aviso no Chatwoot (reservarAviso). `reservado` envia;
+//   `duplicado`/`janela` -> ignorada (aviso_chatwoot_*); `adiado` -> devolve sem mudar nada e só conta (`adiados`);
+//   rede/5xx/resposta estranha -> devolve sem enviar nem contar tentativa; 401/403 -> 502 `reserva_recusada`.
 // • followup: marketing. Confere bloqueados, RELÊ o status do checkout e NÃO envia se a cliente já respondeu.
 //   ⚠️ "não consegui ler" NUNCA vira "pode enviar": falha na leitura devolve o item (contando tentativa).
 import {
@@ -48,6 +51,9 @@ export async function processarFila({ sb, cliente, config, tipo, agora = new Dat
   // 1) Configuração: falha FECHADA (segredo ausente ou inválido não toca em ninguém).
   const problemas = validarConfig({ ...config, exigeLink: followup || tipo === 'inicio' })
   if (!Number.isInteger(config.maxHoras) || config.maxHoras < 1) problemas.push('ENVIO_MAX_HORAS inválido (inteiro a partir de 1)')
+  // Reserva do aviso no Chatwoot ligada sem o segredo: falha fechada (não envia o pedido sem a trava que se pediu).
+  const reservar = tipo === 'pedido' && config.reservarAviso === true
+  if (reservar && !config.chatwoot?.botSecret) problemas.push('CHATWOOT_BOT_SECRET ausente (RESERVAR_AVISO_CHATWOOT=true exige)')
   if (problemas.length) return { status: 500, corpo: { ok: false, erro: 'config_invalida', problemas } }
 
   const rpc = async (nome, args) => {
@@ -84,6 +90,7 @@ export async function processarFila({ sb, cliente, config, tipo, agora = new Dat
   }
 
   const resultado = []
+  let adiados = 0 // reserva respondeu `adiado`: o core manda a NF-e; só se conta, sem uma linha por minuto
   const pendentes = lote.map((l) => l.chave)
 
   for (const linha of lote) {
@@ -123,6 +130,36 @@ export async function processarFila({ sb, cliente, config, tipo, agora = new Dat
       if (t === 'barrar') {
         await marcar(linha.chave, 'ignorada', MOTIVO_TRAVA_CRUZADA)
         resultado.push({ chave: curto, resultado: 'ignorada', motivo: MOTIVO_TRAVA_CRUZADA })
+        continue
+      }
+    }
+
+    // Reserva do aviso no Chatwoot (trava ADICIONAL ao #313): só `reservado` autoriza. Não roda no modo seco (já saiu acima).
+    if (reservar) {
+      let r
+      try {
+        r = await cliente.reservarAviso({ phone: d.telefone, tipo: 'pedido_recebido', chave: String(linha.numero ?? '').replace(/^#/, '') || String(linha.chave) })
+      } catch (e) {
+        const status = e instanceof ErroChatwoot ? e.status : 0
+        const detalhe = `reservar_aviso:${status}`
+        await devolver(linha.chave, false) // não envia e não marca: a próxima rodada tenta de novo (o teto de horas encerra)
+        if (status === 401 || status === 403) {
+          for (const chave of pendentes) await devolver(chave, false)
+          console.error('chatwoot recusou o X-Bot-Secret na reserva do aviso; rodada interrompida:', detalhe)
+          return { status: 502, corpo: { ok: false, erro: 'reserva_recusada', detalhe, resultado } }
+        }
+        resultado.push({ chave: curto, resultado: 'esperando', motivo: 'falha_na_reserva_do_aviso', detalhe })
+        continue
+      }
+      if (r === 'adiado') {
+        await devolver(linha.chave, false)
+        adiados++
+        continue
+      }
+      if (r !== 'reservado') { // duplicado | janela: já foi avisada
+        const motivo = `aviso_chatwoot_${r}`
+        await marcar(linha.chave, 'ignorada', motivo)
+        resultado.push({ chave: curto, resultado: 'ignorada', motivo })
         continue
       }
     }
@@ -185,5 +222,5 @@ export async function processarFila({ sb, cliente, config, tipo, agora = new Dat
     }
   }
 
-  return { status: 200, corpo: { ok: true, modo, tipo, quantidade: resultado.length, resultado } }
+  return { status: 200, corpo: { ok: true, modo, tipo, quantidade: resultado.length, ...(reservar ? { adiados } : {}), resultado } }
 }

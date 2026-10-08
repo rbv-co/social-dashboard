@@ -13,6 +13,10 @@
 //   ENVIO_MODO           abandono   (ENVIO_ATRASO_MINUTOS, ENVIO_MAX_HORAS=24, TEMPLATE_NOME, TEMPLATE_TEXTO)
 //   ENVIO_MODO_PEDIDO    pedido     (PEDIDO_MAX_HORAS=2, TEMPLATE_PEDIDO, TEMPLATE_TEXTO_PEDIDO)
 //   ENVIO_MODO_FOLLOWUP  follow-up  (FOLLOWUP_APOS_HORAS=48, FOLLOWUP_MAX_HORAS=24, TEMPLATE_FOLLOWUP, TEMPLATE_TEXTO_FOLLOWUP)
+//   RESERVAR_AVISO_CHATWOOT=true (padrão desligado = comportamento de sempre): o `pedido` reserva o aviso no Chatwoot
+//     (POST custom_api .../avisos/reservar, cabeçalho X-Bot-Secret = env CHATWOOT_BOT_SECRET, o segredo do AgentBot) antes de enviar.
+//     ORDEM PARA LIGAR: 1) Chatwoot com CUSTOM_AVISO_UNICO ligado; 2) esta flag na edge; 3) só então CUSTOM_NFE_WHATSAPP no Chatwoot.
+//     PARA DESLIGAR: apague a flag (ou ponha false); a próxima rodada já envia como antes. Ver supabase/functions/LEIA-ME.txt.
 //   comuns: ABANDONO_TRAVA_CRUZADA=true (nada sai se o telefone recebeu outra automática em 20 h), ENVIO_LIMITE_POR_RODADA=10, ENVIO_SO_PARA, LINK_BASE, TEMPLATE_IDIOMA=pt_BR, CHATWOOT_*
 import { processarRodada } from './rodada-de-mensagens.js'
 import { processarFila } from './rodada-da-fila.js'
@@ -29,7 +33,7 @@ const numero = (valor, padrao) => Number(valor || padrao)
  *   corpo: as chaves do abandono NO TOPO (formato de sempre) + `inicio`, `pedido` e `followup`.
  */
 export async function rodarTudo({ env, sb, criarCliente, agora = new Date() }) {
-  const chatwoot = { url: env('CHATWOOT_URL'), contaId: env('CHATWOOT_CONTA_ID'), caixaId: env('CHATWOOT_CAIXA_ID'), token: env('CHATWOOT_API_TOKEN') }
+  const chatwoot = { url: env('CHATWOOT_URL'), contaId: env('CHATWOOT_CONTA_ID'), caixaId: env('CHATWOOT_CAIXA_ID'), token: env('CHATWOOT_API_TOKEN'), botSecret: env('CHATWOOT_BOT_SECRET') }
   const base = {
     limite: numero(env('ENVIO_LIMITE_POR_RODADA'), 10),
     soPara: env('ENVIO_SO_PARA').split(',').map((n) => n.replace(/\D/g, '')).filter(Boolean),
@@ -51,7 +55,7 @@ export async function rodarTudo({ env, sb, criarCliente, agora = new Date() }) {
       nome: 'pedido', modo: env('ENVIO_MODO_PEDIDO') || 'desligado',
       rodar: (cliente, modo) => processarFila({
         sb, cliente, agora, tipo: 'pedido',
-        config: { ...base, modo, maxHoras: numero(env('PEDIDO_MAX_HORAS'), 2), templateNome: env('TEMPLATE_PEDIDO'), templateTexto: env('TEMPLATE_TEXTO_PEDIDO') },
+        config: { ...base, modo, reservarAviso: env('RESERVAR_AVISO_CHATWOOT') === 'true', maxHoras: numero(env('PEDIDO_MAX_HORAS'), 2), templateNome: env('TEMPLATE_PEDIDO'), templateTexto: env('TEMPLATE_TEXTO_PEDIDO') },
       }),
     },
     {
@@ -85,7 +89,7 @@ export async function rodarTudo({ env, sb, criarCliente, agora = new Date() }) {
   // Só cria o cliente do Chatwoot se alguma passada de fato envia (seco e desligado nunca falam com ele).
   const enviaDeVerdade = passadas.some((p) => p.modo === 'lista' || p.modo === 'ligado')
   const cliente = enviaDeVerdade
-    ? criarCliente({ url: chatwoot.url, contaId: chatwoot.contaId, caixaId: Number(chatwoot.caixaId), token: chatwoot.token })
+    ? criarCliente({ url: chatwoot.url, contaId: chatwoot.contaId, caixaId: Number(chatwoot.caixaId), token: chatwoot.token, botSecret: chatwoot.botSecret })
     : null
 
   const corpos = {}

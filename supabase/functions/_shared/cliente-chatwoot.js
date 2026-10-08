@@ -31,7 +31,7 @@ export function classificarErro(e) {
 /** O "nome" do contato é só um telefone (ou está vazio)? Ex.: "5521983892620", "+55 21 98389-2620". */
 const pareceTelefone = (nome) => /^[+\d\s()-]*$/.test(String(nome ?? '').trim())
 
-export function criarClienteChatwoot({ url, contaId, caixaId, token, fetchFn = fetch }) {
+export function criarClienteChatwoot({ url, contaId, caixaId, token, botSecret, fetchFn = fetch }) {
   const base = `${url.replace(/\/$/, '')}/api/v1/accounts/${contaId}`
 
   async function chamar(passo, caminho, { metodo = 'GET', corpo } = {}) {
@@ -55,6 +55,33 @@ export function criarClienteChatwoot({ url, contaId, caixaId, token, fetchFn = f
   }
 
   return {
+    /**
+     * Reserva o aviso único no core do Chatwoot (custom_api, autenticado por `X-Bot-Secret`, NÃO pelo api_access_token).
+     * Devolve 'reservado' | 'duplicado' | 'janela' | 'adiado'. Qualquer outra coisa LANÇA ErroChatwoot (passo
+     * `reservar_aviso`): quem chama só envia se vier 'reservado'. O segredo e o telefone nunca entram em erro nem log.
+     */
+    async reservarAviso({ phone, tipo, chave }) {
+      let r
+      try {
+        r = await fetchFn(`${url.replace(/\/$/, '')}/custom_api/v1/accounts/${contaId}/avisos/reservar`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Bot-Secret': botSecret },
+          body: JSON.stringify({ phone, tipo, chave }),
+          signal: AbortSignal.timeout(TIMEOUT_MS),
+        })
+      } catch (e) {
+        throw new ErroChatwoot(0, 'rede_ou_timeout', 'reservar_aviso')
+      }
+      const texto = await r.text()
+      let json = null
+      try { json = texto ? JSON.parse(texto) : null } catch { /* não é JSON */ }
+      if (!r.ok) throw new ErroChatwoot(r.status, null, 'reservar_aviso')
+      if (json?.ok !== true || !['reservado', 'duplicado', 'janela', 'adiado'].includes(json.resultado)) {
+        throw new ErroChatwoot(r.status, 'resposta_inesperada', 'reservar_aviso')
+      }
+      return json.resultado
+    },
+
     async acharOuCriarContato({ nome, telefone }) {
       const e164 = '+' + telefone
       const achados = await chamar('buscar_contato', `/contacts/search?q=${encodeURIComponent(e164)}`)

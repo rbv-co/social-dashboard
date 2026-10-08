@@ -78,7 +78,7 @@ test('só o abandono ligado (como hoje): resposta com `modo` e `quantidade` no t
   assert.deepEqual(r.corpo.pedido, { ok: true, modo: 'desligado' })
   const args = r.sb.chamadas.find((c) => c[0] === 'pegar_para_mensagem')[1]
   assert.deepEqual([args.p_limite, args.p_atraso_min, args.p_max_horas, args.p_reservar], [3, 0, 24, true])
-  assert.deepEqual(r.criados, [{ url: 'https://cw.exemplo.com', contaId: '7', caixaId: 3, token: 'SEGREDO-DO-TOKEN' }])
+  assert.deepEqual(r.criados, [{ url: 'https://cw.exemplo.com', contaId: '7', caixaId: 3, token: 'SEGREDO-DO-TOKEN', botSecret: '' }])
 })
 
 test('⚠️ troca do abandono para 24 h é só configuração: ENVIO_ATRASO_MINUTOS=1440 e ENVIO_MAX_HORAS=48 chegam ao banco', async () => {
@@ -151,4 +151,19 @@ test('⚠️ número inválido na configuração (ENVIO_MAX_HORAS="abc") falha f
   assert.equal(r.status, 500)
   assert.equal(r.corpo.erro, 'config_invalida')
   assert.ok(!r.sb.chamadas.some((c) => c[0] === 'pegar_para_mensagem'))
+})
+
+test('RESERVAR_AVISO_CHATWOOT=true: o pedido reserva com CHATWOOT_BOT_SECRET; sem a flag, nunca reserva', async () => {
+  const linha = { tipo: 'pedido', chave: '5001', numero: '#1001', nome: 'maysa', telefone: '19982621821', url_de_recuperacao: null, conversa_origem: null }
+  const base = { ENVIO_MODO_PEDIDO: 'ligado', TEMPLATE_PEDIDO: 'pedido_recebido_v1', CHATWOOT_BOT_SECRET: 'BOT' }
+  const reservas = []
+  const cliente = { ...fakeCliente(), reservarAviso: async (a) => { reservas.push(a); return 'adiado' } }
+  const on = await rodar({ ...base, RESERVAR_AVISO_CHATWOOT: 'true' }, { sb: fakeSb({ linhasPedido: [linha] }), cliente })
+  assert.equal(on.criados[0].botSecret, 'BOT')
+  assert.equal(on.corpo.pedido.adiados, 1)
+  assert.equal(reservas[0].chave, '1001')
+  assert.equal(on.cliente.chamadas.length, 0)
+  const off = await rodar(base, { sb: fakeSb({ linhasPedido: [linha] }), cliente })
+  assert.equal(off.corpo.pedido.resultado[0].resultado, 'enviada')
+  assert.equal(reservas.length, 1)
 })
