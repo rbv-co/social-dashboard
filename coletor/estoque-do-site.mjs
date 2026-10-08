@@ -28,6 +28,7 @@ import { homedir } from 'node:os';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { loginServico, blingProxy, blingProdutos } from './lib/bling-comercial.mjs';
 import { calcularAjustes } from '../supabase/functions/_shared/estoque-do-site.js';
+import { graphqlDoAmbiente, shopifyLeituraLigada, variantesDoSiteViaCore } from '../supabase/functions/_shared/core-shopify.js';
 import { clienteDoAmbiente, escolherFonte, saldoDoDepositoPorSku } from '../supabase/functions/_shared/core-leitura.js';
 
 // As credenciais do Shopify moram no .env da RAIZ do iamundi, e ELAS VENCEM as
@@ -170,7 +171,10 @@ async function gravar(token, a) {
 
 async function main() {
   const tShop = await tokenShopify();
-  const variantes = await variantesDoShopify(tShop);
+  // CORE_SHOPIFY_LEITURA=true lê as variantes pelo proxy do core (só LEITURA; a escrita abaixo segue igual).
+  const variantes = shopifyLeituraLigada(process.env)
+    ? await variantesDoSiteViaCore(graphqlDoAmbiente(process.env), { local: LOCAL_SHOPIFY, nomeLocal: NOME_LOCAL_SHOPIFY, comNome: true })
+    : await variantesDoShopify(tShop);
   const skus = new Set(variantes.map((v) => String(v.sku || '').trim()).filter(Boolean));
   // CORE_LEITURA_ESTOQUE_DO_SITE=true lê o saldo do espelho do core (sem login nem Bling).
   // Desligada (padrão): caminho antigo, idêntico.

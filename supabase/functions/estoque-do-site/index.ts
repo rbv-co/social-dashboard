@@ -28,6 +28,7 @@ import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { exigirSegredoDeCron } from '../_shared/segredo-de-cron.ts';
 import { calcularAjustes } from '../_shared/estoque-do-site.js';
 import { clienteDoAmbiente, escolherFonte, ligada, saldoDoDepositoPorSku } from '../_shared/core-leitura.js';
+import { graphqlDoAmbiente, shopifyLeituraLigada, variantesDoSiteViaCore } from '../_shared/core-shopify.js';
 import { blingDoCore } from '../_shared/core-bling-token.js';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
@@ -211,7 +212,10 @@ Deno.serve(async (req: Request) => {
       if (!tBling) return json({ pulado: 'token do Bling vencido ou ausente — quem renova é o bling-proxy' }, 503);
     }
     const tShop = await tokenShopify(sb);
-    const variantes = await variantesDoShopify(tShop);
+    // CORE_SHOPIFY_LEITURA=true lê as variantes pelo proxy do core (só LEITURA; a escrita segue igual).
+    const variantes = shopifyLeituraLigada(env)
+      ? await variantesDoSiteViaCore(graphqlDoAmbiente(env), { local: LOCAL_SHOPIFY, nomeLocal: NOME_LOCAL_SHOPIFY })
+      : await variantesDoShopify(tShop);
     const skus = new Set<string>(variantes.map((v) => String(v.sku || '').trim()).filter(Boolean));
     const saldo: Map<string, number> = await escolherFonte('ESTOQUE_DO_SITE', env, {
       bling: () => saldoDoIguatemi(sb, tBling!, skus),
