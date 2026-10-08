@@ -11,7 +11,7 @@
 //   ENVIO_MODO_INICIO    inicio     (INICIO_MAX_HORAS=1, TEMPLATE_INICIO, TEMPLATE_TEXTO_INICIO) "Nós reservamos seu pedido",
 //                                   assim que o checkout aparece com telefone (Aguardando)
 //   ENVIO_MODO           abandono   (ENVIO_ATRASO_MINUTOS, ENVIO_MAX_HORAS=24, TEMPLATE_NOME, TEMPLATE_TEXTO)
-//   ENVIO_MODO_PEDIDO    pedido     (PEDIDO_MAX_HORAS=14, TEMPLATE_PEDIDO, TEMPLATE_TEXTO_PEDIDO)
+//   ENVIO_MODO_PEDIDO    pedido     (PEDIDO_MAX_HORAS=2, TEMPLATE_PEDIDO, TEMPLATE_TEXTO_PEDIDO)
 //   ENVIO_MODO_FOLLOWUP  follow-up  (FOLLOWUP_APOS_HORAS=48, FOLLOWUP_MAX_HORAS=24, TEMPLATE_FOLLOWUP, TEMPLATE_TEXTO_FOLLOWUP)
 //   comuns: ENVIO_LIMITE_POR_RODADA=10, ENVIO_SO_PARA, LINK_BASE, TEMPLATE_IDIOMA=pt_BR, CHATWOOT_*
 import { processarRodada } from './rodada-de-mensagens.js'
@@ -49,7 +49,7 @@ export async function rodarTudo({ env, sb, criarCliente, agora = new Date() }) {
       nome: 'pedido', modo: env('ENVIO_MODO_PEDIDO') || 'desligado',
       rodar: (cliente, modo) => processarFila({
         sb, cliente, agora, tipo: 'pedido',
-        config: { ...base, modo, maxHoras: numero(env('PEDIDO_MAX_HORAS'), 14), templateNome: env('TEMPLATE_PEDIDO'), templateTexto: env('TEMPLATE_TEXTO_PEDIDO') },
+        config: { ...base, modo, maxHoras: numero(env('PEDIDO_MAX_HORAS'), 2), templateNome: env('TEMPLATE_PEDIDO'), templateTexto: env('TEMPLATE_TEXTO_PEDIDO') },
       }),
     },
     {

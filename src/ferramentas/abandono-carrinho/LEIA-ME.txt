@@ -124,7 +124,7 @@ Design: docs/superpowers/specs/2026-09-30-fluxo-de-mensagens-design.md | Plano: 
                     seu pedido" de manhã para quem abriu o checkout à noite). Confere a lista de bloqueados (é marketing).
                     Fila: `mensagem_fila` tipo `inicio`, preenchida por `registrar_checkout_abandono`.
   PEDIDO RECEBIDO   ENVIO_MODO_PEDIDO    modelo TEMPLATE_PEDIDO (utilidade, corpo {{1}} nome e {{2}} número, SEM botão),
-                    texto TEMPLATE_TEXTO_PEDIDO, teto PEDIDO_MAX_HORAS (14). Sai no orders/create da loja online
+                    texto TEMPLATE_TEXTO_PEDIDO, teto PEDIDO_MAX_HORAS (2; pedido feito fora da janela 08-21 h NÃO sai na manhã seguinte, é descartado). Sai no orders/create da loja online
                     (source_name web, não teste), uma vez por pedido, na janela 08:00-21:00. Pedido cancelado antes
                     do envio não recebe. Não conta na regra de "um por telefone".
   ABANDONO          ENVIO_MODO             modelo TEMPLATE_NOME. Hoje 10 min; para as 24 h: ENVIO_ATRASO_MINUTOS=1440
@@ -140,7 +140,7 @@ Com o INICIO ligado, deixe o PEDIDO desligado (a mesma cliente receberia duas co
 é de 1 hora, então o que sobrar é descartado sozinho. Não precisa limpar nada.
 
 ⚠️ ANTES DE LIGAR O PEDIDO (modo lista -> ligado): o webhook grava os pedidos em `mensagem_fila` MESMO com o
-pedido desligado, e ao ligar sairiam de uma vez os das últimas 14 h. Para começar do zero, no momento de ligar:
+pedido desligado, e ao ligar sairiam de uma vez os das últimas 2 h. Para começar do zero, no momento de ligar:
   update public.mensagem_fila set mensagem_status = 'ignorada', mensagem_motivo = 'anterior_ao_lancamento'
    where tipo = 'pedido' and mensagem_status is null;
 

@@ -87,13 +87,13 @@ test('⚠️ troca do abandono para 24 h é só configuração: ENVIO_ATRASO_MIN
   assert.deepEqual([args.p_atraso_min, args.p_max_horas], [1440, 48])
 })
 
-test('pedido em modo lista: teto de 14 h, só os números da lista, e o modelo/texto do PEDIDO (não os do abandono)', async () => {
+test('pedido em modo lista: teto de 2 h, só os números da lista, e o modelo/texto do PEDIDO (não os do abandono)', async () => {
   const linha = { tipo: 'pedido', chave: '1001', numero: '#1001', nome: 'maysa', telefone: '19982621821', url_de_recuperacao: null, conversa_origem: null }
   const r = await rodar({
     ENVIO_MODO_PEDIDO: 'lista', ENVIO_SO_PARA: '5519982621821', TEMPLATE_PEDIDO: 'pedido_v1', TEMPLATE_NOME: 'nao_e_este', ENVIO_LIMITE_POR_RODADA: '4',
   }, { sb: fakeSb({ linhasPedido: [linha] }) })
   const args = r.sb.chamadas.find((c) => c[0] === 'pegar_da_fila')[1]
-  assert.deepEqual(args, { p_tipo: 'pedido', p_limite: 4, p_max_horas: 14, p_reservar: true, p_ultimos11: ['19982621821'] })
+  assert.deepEqual(args, { p_tipo: 'pedido', p_limite: 4, p_max_horas: 2, p_reservar: true, p_ultimos11: ['19982621821'] })
   assert.equal(r.cliente.chamadas.find((c) => c[0] === 'template')[1].templateParams.name, 'pedido_v1')
   assert.equal(r.corpo.pedido.quantidade, 1)
   assert.deepEqual(r.corpo.modo, 'desligado') // o abandono segue desligado
