@@ -34,6 +34,11 @@ jobs:
           ZAPI_INSTANCE_ID: ${{ secrets.ZAPI_INSTANCE_ID }}
           ZAPI_INSTANCE_TOKEN: ${{ secrets.ZAPI_INSTANCE_TOKEN }}
           ZAPI_TOKEN: ${{ secrets.ZAPI_TOKEN }}
+          # Graph da Meta pelo core (desligado por padrão: variável do repositório CORE_META ausente).
+          # Ligado, este passo NÃO lê accounts.access_token da Meta.
+          CORE_META: ${{ vars.CORE_META }}
+          CORE_URL: ${{ vars.CORE_URL }}
+          CORE_API_TOKEN: ${{ secrets.CORE_API_TOKEN }}
         run: node coletor/gerar-opr-diario.mjs
       - name: Guardar o PNG gerado
         uses: actions/upload-artifact@v4

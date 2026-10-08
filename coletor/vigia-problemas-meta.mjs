@@ -30,11 +30,14 @@
 // Bandeira que o robô não conhece FAZ ELE PARAR, em vez de ser ignorada.
 import './lib/carregar-env.mjs';
 import { linhasDaConta } from './lib/problemas-por-conta.mjs';
+import { metaDoColetor } from './lib/core-meta.mjs';
 
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://kounqtdoioootxqegkij.supabase.co';
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 const REST = SUPABASE_URL + '/rest/v1';
 const GRAPH = 'https://graph.facebook.com/v21.0';
+// CORE_META=true: a Graph passa pelo proxy do `core` (token global); não lê accounts.access_token. Ver lib/core-meta.mjs.
+const META = metaDoColetor();
 const sb = { apikey: SERVICE_KEY, Authorization: 'Bearer ' + SERVICE_KEY, 'Content-Type': 'application/json' };
 
 const PAUSA_MINIMA = 250;
@@ -68,9 +71,9 @@ if (ARGS.erro) {
 // ------------------------------------------------------------- Supabase
 
 async function contasComAnuncio() {
-  const r = await fetch(`${REST}/accounts?select=id,name,ad_account_id,access_token`, { headers: sb });
+  const r = await fetch(`${REST}/accounts?select=${META.colunas('id,name,ad_account_id,access_token')}`, { headers: sb });
   if (!r.ok) throw new Error(`GET accounts -> ${r.status} ${(await r.text()).slice(0, 200)}`);
-  return (await r.json()).filter((c) => c && c.ad_account_id && c.access_token);
+  return (await r.json()).filter((c) => c && c.ad_account_id && META.token(c));
 }
 
 // A MESMA função que a tela chama. Ela é `security definer`, sabe fechar o que
@@ -98,7 +101,7 @@ async function graphTudo(caminho, campos, token) {
   // Teto de páginas: a Meta já devolveu cursor que gira sozinho neste projeto.
   while (proxima && pagina < 40) {
     if (pagina++) await dormir(ARGS.pausa);
-    const r = await fetch(proxima);
+    const r = await META.fetch(proxima);
     const j = await r.json().catch(() => null);
     if (!r.ok || !j?.data) throw new Error(j?.error?.message || `HTTP ${r.status}`);
     todos.push(...j.data);
@@ -127,13 +130,13 @@ async function principal() {
     let campanhas;
     let anuncios;
     try {
-      campanhas = await graphTudo(`act_${acc}/campaigns`, 'id,name', conta.access_token);
+      campanhas = await graphTudo(`act_${acc}/campaigns`, 'id,name', META.token(conta));
       await dormir(ARGS.pausa);
       // `anúncios TODOS`, sem filtrar por ativo: medido em 17/08/2026, dos 13
       // anúncios com `issues_info` nas 5 contas, ZERO estavam ACTIVE. Um problema
       // grave tira o anúncio do ar por definição — exigir que ele esteja no ar
       // para aparecer é pedir a contradição.
-      anuncios = await graphTudo(`act_${acc}/ads`, 'id,name,campaign_id,effective_status,issues_info', conta.access_token);
+      anuncios = await graphTudo(`act_${acc}/ads`, 'id,name,campaign_id,effective_status,issues_info', META.token(conta));
     } catch (e) {
       // REGRA 1: pular, NÃO mandar vazio.
       falharam.push({ nome: conta.name, porque: (e && e.message) || String(e) });

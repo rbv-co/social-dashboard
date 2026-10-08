@@ -71,6 +71,12 @@ jobs:
 
       - name: 2/7 · Instagram (Top Viral + Últimos Posts + Reels)
         timeout-minutes: 20
+        env:
+          # Graph da Meta pelo core (desligado por padrão: variável do repositório CORE_META ausente).
+          # Ligado, este passo NÃO lê accounts.access_token da Meta.
+          CORE_META: ${{ vars.CORE_META }}
+          CORE_URL: ${{ vars.CORE_URL }}
+          CORE_API_TOKEN: ${{ secrets.CORE_API_TOKEN }}
         run: node coletor/ig-coletor.mjs
 
       - name: 3/7 · Editorial (manchetes via web search · Sonnet)

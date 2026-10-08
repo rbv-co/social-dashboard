@@ -16,6 +16,11 @@ import { contagensDaCampanha } from '../_shared/acoes-de-campanha.js';
 // N+1 dias, com o dia de HOJE (incompleto) dentro — ver janela-de-ads.js.
 import { janelaDeAds } from '../_shared/janela-de-ads.js';
 import { linkDoCriativo } from '../_shared/delta-de-hora.js';
+import { metaDoCore } from '../_shared/core-meta.js';
+
+// CORE_META=true: a Graph passa pelo proxy do `core` (token global): não lê accounts.access_token e
+// não renova token (renovarToken vira no-op). Desligada, tudo igual a antes. Ver _shared/core-meta.js.
+const META = metaDoCore(Deno.env.toObject());
 
 const GRAPH = 'https://graph.facebook.com/v21.0';
 const APP_ID = Deno.env.get('META_APP_ID') ?? '';
@@ -59,7 +64,7 @@ function periodLabel(dias: number): string {
 async function apiGet(path: string, params: Record<string, string>): Promise<any> {
   const url = new URL(`${GRAPH}/${path}`);
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
-  const r = await fetch(url.toString());
+  const r = await META.fetch(url.toString());
   if (!r.ok) throw new Error(`Meta API ${path}: ${r.status} ${await r.text()}`);
   return r.json();
 }
@@ -74,7 +79,7 @@ async function apiGetAll(path: string, params: Record<string, string>): Promise<
   let data = await apiGet(path, { limit: '500', ...params });
   all.push(...(data.data ?? []));
   while (data.paging?.next) {
-    const r = await fetch(data.paging.next);
+    const r = await META.fetch(data.paging.next);
     if (!r.ok) break;
     data = await r.json();
     all.push(...(data.data ?? []));
@@ -94,7 +99,7 @@ function actVal(actions: any, types: string[]): number {
 }
 
 async function renovarToken(token: string): Promise<string> {
-  if (!APP_ID || !APP_SECRET) return token;
+  if (META.ligada || !APP_ID || !APP_SECRET) return token;   // ligada: o core é o dono do token; nada é trocado aqui
   try {
     const d = await apiGet('oauth/access_token', {
       grant_type: 'fb_exchange_token',
@@ -516,7 +521,8 @@ async function coletarAdsDia(sb: any, adAccountId: string, accountId: string, to
 }
 
 async function processarConta(sb: any, acc: any, degraded: string[], semBruto: string[]) {
-  const { id: accountId, instagram_id: igId, name, access_token: token, ad_account_id: adAccountId, picture_url: fotoAtual } = acc;
+  const { id: accountId, instagram_id: igId, name, ad_account_id: adAccountId, picture_url: fotoAtual } = acc;
+  const token = META.token(acc);
   if (!token) { console.log(`⚠ Sem token: ${name}`); return null; }
   const hoje = todayBR();
   console.log(`▶ ${name}`);
@@ -686,7 +692,7 @@ async function rodarColeta(apenasConta?: string | null) {
   );
   // ad_account_id vem daqui — antes o coletor nem selecionava a coluna e usava um
   // mapa fixo no código, que estava errado para a Mantova Móveis.
-  let q = sb.from('accounts').select('id,name,instagram_id,access_token,ad_account_id,picture_url');
+  let q = sb.from('accounts').select(META.colunas('id,name,instagram_id,access_token,ad_account_id,picture_url'));
   if (apenasConta) q = q.eq('id', apenasConta);
   const { data: accounts, error } = await q;
   if (error) throw error;

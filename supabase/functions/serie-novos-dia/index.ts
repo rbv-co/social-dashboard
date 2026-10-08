@@ -7,6 +7,10 @@ import { createClient } from 'jsr:@supabase/supabase-js@2'
 // mesmo quando a resposta vinha sem número nenhum, e o gráfico desenhava um zero
 // que parecia verdade. Foi o que o dono viu de 03 a 06/08/2026.
 import { lerBrutoDoDia } from '../_shared/bruto-de-seguidores.js'
+import { metaDoCore, emOndas } from '../_shared/core-meta.js'
+
+// CORE_META=true: a Graph passa pelo proxy do `core` (token global; não lê accounts.access_token). Ver _shared/core-meta.js.
+const META = metaDoCore(Deno.env.toObject())
 
 const GRAPH = 'https://graph.facebook.com/v21.0'
 const cors = {
@@ -29,19 +33,28 @@ Deno.serve(async (req) => {
 
     const { account_id, dias } = await req.json()
     if (!Array.isArray(dias) || !dias.length) return json({ serie: [] })
-    const { data: acc } = await sb.from('accounts').select('instagram_id,access_token').eq('id', account_id).single()
+    const { data: acc } = await sb.from('accounts').select(META.colunas('instagram_id,access_token')).eq('id', account_id).single()
     if (!acc) return json({ erro: 'conta não encontrada' }, 404)
-    const ig = acc.instagram_id as string, token = acc.access_token as string
+    const ig = acc.instagram_id as string, token = META.token(acc) as string
 
     const lista = dias.slice(0, 93) // teto de segurança (~3 meses / 2 batches)
     const serie: any[] = []
     for (let off = 0; off < lista.length; off += 50) {
       const chunk = lista.slice(off, off + 50)
-      const form = new URLSearchParams()
-      form.set('access_token', token)
-      form.set('batch', JSON.stringify(chunk.map((d: any) => ({ method: 'GET', relative_url: `${ig}/insights?metric=follows_and_unfollows&period=day&metric_type=total_value&breakdown=follow_type&since=${d.since}&until=${d.until}` }))))
-      const r = await fetch(`${GRAPH}/`, { method: 'POST', body: form })
-      const arr = await r.json()
+      const relativa = (d: any) => `${ig}/insights?metric=follows_and_unfollows&period=day&metric_type=total_value&breakdown=follow_type&since=${d.since}&until=${d.until}`
+      let arr: any[]
+      if (META.ligada) {
+        // O proxy do core não aceita o batch (POST /): um GET por dia, em ondas de 5, no mesmo formato [{ body }].
+        arr = await emOndas(chunk, 5, async (d: any) => {
+          try { const r = await META.fetch(`${GRAPH}/${relativa(d)}`); return { code: r.status, body: await r.text() } } catch { return { body: '' } }
+        })
+      } else {
+        const form = new URLSearchParams()
+        form.set('access_token', token)
+        form.set('batch', JSON.stringify(chunk.map((d: any) => ({ method: 'GET', relative_url: relativa(d) }))))
+        const r = await fetch(`${GRAPH}/`, { method: 'POST', body: form })
+        arr = await r.json()
+      }
       for (let i = 0; i < chunk.length; i++) {
         // `publicado: false` é a informação nova. Quem desenha o gráfico usa isso
         // para trocar o dia pela ESTIMATIVA (variação da contagem total) em vez de

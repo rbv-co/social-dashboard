@@ -3,6 +3,10 @@
 // Todas as chamadas à Meta rodam em PARALELO (Promise.all) — latência = a mais lenta, não a soma.
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 import { somarGasto, semRespostaDaMeta, podeBuscarProximaPagina } from '../_shared/gasto-de-campanhas.js'
+import { metaDoCore } from '../_shared/core-meta.js'
+
+// CORE_META=true: a Graph passa pelo proxy do `core` (token global; não lê accounts.access_token). Ver _shared/core-meta.js.
+const META = metaDoCore(Deno.env.toObject())
 
 const GRAPH = 'https://graph.facebook.com/v21.0'
 const cors = {
@@ -15,7 +19,7 @@ const json = (obj: unknown, status = 200) => new Response(JSON.stringify(obj), {
 async function apiGet(path: string, params: Record<string, string>, token: string): Promise<any> {
   const url = new URL(`${GRAPH}/${path}`)
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v)
-  const r = await fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` } })
+  const r = await META.fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` } })
   return await r.json()
 }
 
@@ -84,7 +88,7 @@ async function gasto(adAccountId: string, eS: string, eU: string, token: string,
   // `paging.next`, com página vazia — a Graph manda `next` em página vazia, e o
   // laço giraria para sempre — ou no teto de páginas.
   while (podeBuscarProximaPagina(pagina, paginas, MAX_PAGINAS)) {
-    const r = await fetch(pagina.paging.next)
+    const r = await META.fetch(pagina.paging.next)
     if (!r.ok) return null           // meia soma sob rótulo de "ao vivo" é pior que cair no coletado
     pagina = await r.json()
     if (semRespostaDaMeta(pagina)) return null
@@ -128,9 +132,9 @@ Deno.serve(async (req) => {
     const body = await req.json()
     const { account_id, engSince, engUntil, folSince, folUntil, prevEngSince, prevEngUntil, prevFolSince, prevFolUntil } = body
     const campanhas: string[] = Array.isArray(body?.campanhas) ? body.campanhas.map(String) : []
-    const { data: acc } = await sb.from('accounts').select('instagram_id,access_token,ad_account_id').eq('id', account_id).single()
+    const { data: acc } = await sb.from('accounts').select(META.colunas('instagram_id,access_token,ad_account_id')).eq('id', account_id).single()
     if (!acc) return json({ meta_erro: 'conta não encontrada' }, 404)
-    const ig = acc.instagram_id as string, token = acc.access_token as string, adAcc = acc.ad_account_id as string | null
+    const ig = acc.instagram_id as string, token = META.token(acc) as string, adAcc = acc.ad_account_id as string | null
     const wantPrev = !!(prevEngSince && prevEngUntil && prevFolSince && prevFolUntil)
 
     // TUDO EM PARALELO (atual + anterior) — a latência vira a da chamada mais lenta.

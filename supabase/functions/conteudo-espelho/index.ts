@@ -19,6 +19,10 @@ import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { exigirSegredoDeCron } from '../_shared/segredo-de-cron.ts';
 import { casar } from '../_shared/casar-publicacao.js';
 import { precisaMedir, lerMetricas, DIAS_DE_ACOMPANHAMENTO } from '../_shared/cadencia-de-medicao.js';
+import { metaDoCore } from '../_shared/core-meta.js';
+
+// CORE_META=true: a Graph passa pelo proxy do `core` (token global; não lê accounts.access_token). Ver _shared/core-meta.js.
+const META = metaDoCore(Deno.env.toObject());
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -34,7 +38,7 @@ const json = (b: unknown, s = 200) =>
 async function graph(caminho: string, params: Record<string, string>, token: string) {
   const u = new URL(`${GRAPH}/${caminho}`);
   for (const [k, v] of Object.entries(params)) u.searchParams.set(k, v);
-  const r = await fetch(u, { headers: { Authorization: `Bearer ${token}` } });
+  const r = await META.fetch(u, { headers: { Authorization: `Bearer ${token}` } });
   const j = await r.json();
   if (j && j.error) throw new Error(j.error.message || 'erro na Meta');
   return j;
@@ -88,15 +92,15 @@ Deno.serve(async (req) => {
   if (porConta.size) {
     const { data: contas } = await sb
       .from('accounts')
-      .select('id,name,instagram_id,access_token')
+      .select(META.colunas('id,name,instagram_id,access_token'))
       .in('id', [...porConta.keys()]);
 
     for (const conta of contas || []) {
-      if (!conta.instagram_id || !conta.access_token) continue;
+      if (!conta.instagram_id || !META.token(conta)) continue;
       resumo.contas++;
       try {
         const midias = await graph(
-          `${conta.instagram_id}/media`, { fields: CAMPOS_MIDIA, limit: '50' }, conta.access_token,
+          `${conta.instagram_id}/media`, { fields: CAMPOS_MIDIA, limit: '50' }, META.token(conta),
         );
         resumo.midias_vistas += (midias?.data || []).length;
 
@@ -166,20 +170,20 @@ Deno.serve(async (req) => {
 
     if (aMedir.length) {
       const { data: contas } = await sb
-        .from('accounts').select('id,name,access_token')
+        .from('accounts').select(META.colunas('id,name,access_token'))
         .in('id', [...new Set(aMedir.map((p: any) => p.account_id))]);
       const tokens = Object.fromEntries((contas || []).map((c: any) => [c.id, c]));
 
       for (const p of aMedir) {
         const conta = tokens[p.account_id];
-        if (!conta?.access_token) continue;
+        if (!conta || !META.token(conta)) continue;
         try {
           const [midia, insights] = await Promise.all([
-            graph(p.ig_media_id, { fields: 'like_count,comments_count,permalink' }, conta.access_token),
+            graph(p.ig_media_id, { fields: 'like_count,comments_count,permalink' }, META.token(conta)),
             // Os insights falham em alguns tipos de mídia (e em post antigo).
             // Isso não pode impedir a gravação de curtidas e comentários, que
             // vieram do objeto da mídia e são o que aparece no cartão.
-            graph(`${p.ig_media_id}/insights`, { metric: 'reach,saved,shares,views' }, conta.access_token)
+            graph(`${p.ig_media_id}/insights`, { metric: 'reach,saved,shares,views' }, META.token(conta))
               .catch(() => null),
           ]);
 

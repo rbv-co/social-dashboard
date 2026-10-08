@@ -25,6 +25,10 @@ import webpush from 'npm:web-push@3';
 import { exigirSegredoDeCron } from '../_shared/segredo-de-cron.ts';
 import { atrasadaDemais, montarAvisoDePeca, alvosDoAviso } from '../_shared/aviso-de-conteudo.js';
 import { publicarPeca, publicacaoAutomaticaLigada } from '../_shared/publicar-instagram.js';
+import { metaDoCore } from '../_shared/core-meta.js';
+
+// CORE_META=true: a publicação (desligada hoje) passa pelo proxy do `core` (token global; não lê accounts.access_token).
+const META = metaDoCore(Deno.env.toObject());
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -72,9 +76,9 @@ Deno.serve(async (req) => {
   const contasIds = [...new Set(naHora.map((p: any) => p.account_id))];
   const { data: contas } = await sb
     .from('accounts')
-    .select('id,name,instagram_id,access_token,publicacao_automatica')
+    .select(META.colunas('id,name,instagram_id,access_token,publicacao_automatica'))
     .in('id', contasIds);
-  const porConta = Object.fromEntries((contas || []).map((c: any) => [c.id, c]));
+  const porConta = Object.fromEntries((contas || []).map((c: any) => [c.id, { ...c, access_token: META.token(c) }]));
 
   const paraAvisar: any[] = [];
   const publicadas: any[] = [];
@@ -95,7 +99,7 @@ Deno.serve(async (req) => {
         if (error) throw new Error(`não consegui assinar a URL de "${caminho}": ${error.message}`);
         return data?.signedUrl || '';
       };
-      const r = await publicarPeca(p, arquivos || [], conta, { urlAssinada });
+      const r = await publicarPeca(p, arquivos || [], conta, { urlAssinada, fetch: META.fetch });
       if (r.modo === 'automatico') {
         await sb.from('conteudo_pecas').update({
           status: 'publicada', publicado_em: new Date().toISOString(), ig_media_id: r.ig_media_id,

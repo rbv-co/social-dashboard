@@ -1,9 +1,13 @@
 import { createClient } from 'jsr:@supabase/supabase-js@2';
+import { metaDoCore } from '../_shared/core-meta.js';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
 const META_GRAPH = 'https://graph.facebook.com/v22.0';
+// CORE_META=true: o token (global) e a ida à Graph ficam no `core`; esta função continua sendo a porta autenticada
+// (sessão + permissão `meta`) e NÃO lê accounts.access_token. Desligada, tudo igual a antes. Ver _shared/core-meta.js.
+const META = metaDoCore(Deno.env.toObject());
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -43,6 +47,37 @@ function urlDeMidiaPermitida(bruta: unknown): URL | null {
   return u;
 }
 
+// Com CORE_META ligada: mesmo contrato de entrada e de saída. A Graph volta tal qual ({error:{...}} + status).
+// Erro do PRÓPRIO proxy volta como STRING (`{error:'...'}`), porque o gestor classifica por aí (tela-de-gestao-trafego
+// `naoChegouNaMeta`): barrado antes da Meta = status < 500; desistiu no meio (rede core->Meta, core fora) = 500.
+async function viaCore(svc: any, p: any, json: (b: unknown, s?: number) => Response) {
+  const { data: acc } = await svc.from('accounts').select('id').eq('id', p.accountId).single();
+  if (!acc) return json({ error: 'conta nao encontrada' }, 400);
+  if (p.imageFromUrl && !urlDeMidiaPermitida(p.imageFromUrl)) return json({ error: 'origem da imagem nao permitida' }, 400);
+  if (!p.imageFromUrl && p.videoFromUrl && !urlDeMidiaPermitida(p.videoFromUrl)) return json({ error: 'origem do video nao permitida' }, 400);
+  const parametros: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(p.params || {})) if (v !== undefined && v !== null) parametros[k] = v;
+  const metodo = (p.imageFromUrl || (p.videoFromUrl && !p.imageFromUrl)) ? 'POST'
+    : (typeof p.method === 'string' && ['GET', 'POST', 'DELETE'].includes(p.method.toUpperCase())) ? p.method.toUpperCase() : 'GET';
+  const corpo: Record<string, unknown> = { caminho: p.path, metodo, parametros };
+  if (p.imageFromUrl) {
+    corpo.imagem_url = p.imageFromUrl;
+    if (typeof p.imageField === 'string' && p.imageField) corpo.imagem_campo = p.imageField;
+  } else if (p.videoFromUrl) corpo.video_url = p.videoFromUrl;
+  // Sem retry de recuo aqui: o gestor e os robôs já tentam de novo; esperar dentro da edge só seguraria a tela.
+  const ms = p.imageFromUrl ? 45000 : p.videoFromUrl ? 75000 : 25000;
+  const { status, json: j, retryAfter } = await META.chamar(corpo, { signal: AbortSignal.timeout(ms), tentativas: 1 });
+  if (j && typeof j === 'object' && 'erro' in j) {                       // erro do core, não da Graph
+    const msg = String(j.erro);
+    const barrado = status >= 400 && status < 500 && status !== 401 && status !== 403;
+    const r = json({ error: msg }, barrado ? status : 500);
+    if (status === 429 && retryAfter) r.headers.set('Retry-After', String(retryAfter));
+    return r;
+  }
+  if (j && typeof j === 'object' && !('error' in j) && status >= 400) return json({ error: `core: ${status}` }, status < 500 && status !== 401 && status !== 403 ? status : 500);
+  return json(j, status);
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
   const json = (body: unknown, status = 200) =>
@@ -64,6 +99,8 @@ Deno.serve(async (req: Request) => {
 
     const { accountId, path, params, method, imageFromUrl, imageField, videoFromUrl } = await req.json();
     if (!accountId || !path) return json({ error: 'accountId e path obrigatorios' }, 400);
+
+    if (META.ligada) return await viaCore(svc, { accountId, path, params, method, imageFromUrl, imageField, videoFromUrl }, json);
 
     const { data: acc, error: accErr } = await svc.from('accounts').select('access_token').eq('id', accountId).single();
     if (accErr || !acc?.access_token) return json({ error: 'conta sem token' }, 400);

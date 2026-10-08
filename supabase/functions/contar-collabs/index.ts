@@ -3,6 +3,10 @@
 // (o post lista `collaborators`, lido pelo token da conta DONA). Auth (usuário social) + CORS. verify_jwt=false.
 // Limitação: só pega collabs ENTRE perfis da RBV (precisa do token do dono); collabs com contas externas não entram.
 import { createClient } from 'jsr:@supabase/supabase-js@2'
+import { metaDoCore } from '../_shared/core-meta.js'
+
+// CORE_META=true: a Graph passa pelo proxy do `core` (token global; não lê accounts.access_token). Ver _shared/core-meta.js.
+const META = metaDoCore(Deno.env.toObject())
 
 const GRAPH = 'https://graph.facebook.com/v21.0'
 const cors = {
@@ -15,7 +19,7 @@ const json = (obj: unknown, status = 200) => new Response(JSON.stringify(obj), {
 async function apiGet(path: string, params: Record<string, string>, token: string): Promise<any> {
   const url = new URL(`${GRAPH}/${path}`)
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v)
-  const r = await fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` } })
+  const r = await META.fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` } })
   return await r.json()
 }
 
@@ -35,7 +39,7 @@ Deno.serve(async (req) => {
     const { data: alvo } = await sb.from('accounts').select('instagram_id').eq('id', account_id).single()
     if (!alvo) return json({ erro: 'conta não encontrada' }, 404)
     const alvoIg = String(alvo.instagram_id)
-    const { data: outros } = await sb.from('accounts').select('instagram_id,access_token').neq('id', account_id)
+    const { data: outros } = await sb.from('accounts').select(META.colunas('instagram_id,access_token')).neq('id', account_id)
 
     let posts = 0, reels = 0
     const ids = new Set<string>()
@@ -44,7 +48,7 @@ Deno.serve(async (req) => {
       for (let pag = 0; pag < 5; pag++) {
         const p: Record<string, string> = { fields: 'id,media_product_type,collaborators', since, until, limit: '50' }
         if (after) p.after = after
-        const m = await apiGet(`${o.instagram_id}/media`, p, o.access_token)
+        const m = await apiGet(`${o.instagram_id}/media`, p, META.token(o))
         if (m.error) break
         for (const x of (m.data ?? [])) {
           const col = x.collaborators?.data ?? []

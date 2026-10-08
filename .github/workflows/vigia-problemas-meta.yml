@@ -31,6 +31,11 @@ jobs:
     env:
       SUPABASE_URL: https://kounqtdoioootxqegkij.supabase.co
       SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      # Graph da Meta pelo core (desligado por padrão: variável do repositório CORE_META ausente).
+      # Ligado, este passo NÃO lê accounts.access_token da Meta.
+      CORE_META: ${{ vars.CORE_META }}
+      CORE_URL: ${{ vars.CORE_URL }}
+      CORE_API_TOKEN: ${{ secrets.CORE_API_TOKEN }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
@@ -39,6 +44,6 @@ jobs:
 
       # Os tokens da Meta NÃO são segredo daqui: o robô lê o de cada conta em
       # `accounts.access_token`, com a chave de serviço. Um segredo a menos para
-      # rotacionar em dois lugares.
+      # rotacionar em dois lugares. Com CORE_META=true nem isso: o token é do core.
       - name: Ler a Meta e registrar o que ela reclama
         run: node coletor/vigia-problemas-meta.mjs

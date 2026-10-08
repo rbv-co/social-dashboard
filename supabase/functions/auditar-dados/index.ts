@@ -1,5 +1,9 @@
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { exigirSegredoDeCron } from '../_shared/segredo-de-cron.ts';
+import { metaDoCore } from '../_shared/core-meta.js'
+
+// CORE_META=true: a Graph passa pelo proxy do `core` (token global; não lê accounts.access_token). Ver _shared/core-meta.js.
+const META = metaDoCore(Deno.env.toObject())
 
 const GRAPH = 'https://graph.facebook.com/v21.0';
 
@@ -30,12 +34,12 @@ Deno.serve(async (req: Request) => {
   if (!hoje) return new Response(JSON.stringify({ ok: false, error: 'sem snapshots' }), { status: 500 });
 
   // 2) Spot-check contra a Meta ao vivo (curtidas + alcance, 7 dias)
-  const { data: accounts } = await sb.from('accounts').select('id,name,instagram_id,access_token');
+  const { data: accounts } = await sb.from('accounts').select(META.colunas('id,name,instagram_id,access_token'));
   const now = Math.floor(Date.now() / 1000), since = now - 7 * 86400;
   await sb.from('data_integrity_checks').delete().eq('checked_date', hoje).eq('check_name', 'meta_spotcheck');
 
   for (const a of accounts ?? []) {
-    const tok = (a.access_token || '').replace(/\s/g, '');
+    const tok = String(META.token(a) || '').replace(/\s/g, '');
     if (!tok) continue;
     let metaLikes: number | null = null, metaReach: number | null = null;
     try {
@@ -46,7 +50,7 @@ Deno.serve(async (req: Request) => {
       url.searchParams.set('since', String(since));
       url.searchParams.set('until', String(now));
       url.searchParams.set('access_token', tok);
-      const j = await (await fetch(url.toString())).json();
+      const j = await (await META.fetch(url.toString())).json();
       for (const it of j.data ?? []) {
         if (it.name === 'likes') metaLikes = it.total_value?.value ?? null;
         if (it.name === 'reach') metaReach = it.total_value?.value ?? null;

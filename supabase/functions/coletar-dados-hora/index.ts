@@ -4,6 +4,10 @@ import {
   conversasIniciadas, calcularDeltaHora, visitasNoPerfil, deltaSimples, linkClicks,
 } from '../_shared/delta-de-hora.js';
 import { tipoDaCampanha } from '../_shared/relatorio-por-hora.js';
+import { metaDoCore } from '../_shared/core-meta.js';
+
+// CORE_META=true: a Graph passa pelo proxy do `core` (token global); não lê accounts.access_token. Ver _shared/core-meta.js.
+const META = metaDoCore(Deno.env.toObject());
 
 const GRAPH = 'https://graph.facebook.com/v22.0';
 
@@ -28,7 +32,7 @@ function epochInicioDoDiaSP(dia: string): number {
 async function apiGet(path: string, params: Record<string, string>): Promise<any> {
   const url = new URL(`${GRAPH}/${path}`);
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
-  const r = await fetch(url.toString());
+  const r = await META.fetch(url.toString());
   if (!r.ok) throw new Error(`Meta API ${path}: ${r.status} ${await r.text()}`);
   return r.json();
 }
@@ -39,7 +43,7 @@ async function apiGetAll(path: string, params: Record<string, string>): Promise<
   const out: any[] = [];
   let next: string | null = url.toString();
   while (next) {
-    const r = await fetch(next);
+    const r = await META.fetch(next);
     if (!r.ok) throw new Error(`Meta API ${path}: ${r.status} ${await r.text()}`);
     const d = await r.json();
     out.push(...(d.data ?? []));
@@ -55,7 +59,8 @@ async function apiGetAll(path: string, params: Record<string, string>): Promise<
 // `console.error` não aparece em lugar nenhum que alguém olhe (mesmo motivo
 // documentado em coletar-dados/index.ts).
 async function coletarConta(sb: any, acc: any, dia: string, hora: number, degraded: string[]): Promise<number> {
-  const { id: accountId, ad_account_id: adAccountId, access_token: token, name } = acc;
+  const { id: accountId, ad_account_id: adAccountId, name } = acc;
+  const token = META.token(acc);
   if (!adAccountId || !token) return 0;
   try {
     const items = await apiGetAll(`act_${adAccountId}/insights`, {
@@ -132,7 +137,8 @@ async function coletarConta(sb: any, acc: any, dia: string, hora: number, degrad
 // coletar-dados; aqui vira ~24x/dia). Quem calcula o delta hora a hora é a
 // tela, comparando leituras consecutivas — aqui só grava o bruto.
 async function coletarSeguidoresDaConta(sb: any, acc: any, degraded: string[]): Promise<void> {
-  const { id: accountId, instagram_id: igId, access_token: token, name } = acc;
+  const { id: accountId, instagram_id: igId, name } = acc;
+  const token = META.token(acc);
   if (!igId || !token) return;
   try {
     const d = await apiGet(igId, { fields: 'followers_count', access_token: token });
@@ -155,7 +161,8 @@ async function coletarSeguidoresDaConta(sb: any, acc: any, degraded: string[]): 
 // anterior da MESMA conta, MESMO dia — reseta na virada (é atividade, não
 // estoque como seguidor).
 async function coletarVisitasPerfilDaConta(sb: any, acc: any, dia: string, hora: number, degraded: string[]): Promise<void> {
-  const { id: accountId, instagram_id: igId, access_token: token, name } = acc;
+  const { id: accountId, instagram_id: igId, name } = acc;
+  const token = META.token(acc);
   if (!igId || !token) return;
   try {
     const d = await apiGet(`${igId}/insights`, {
@@ -199,7 +206,8 @@ async function coletarVisitasPerfilDaConta(sb: any, acc: any, dia: string, hora:
 // destinos. `campaigns`/`ads` já estão sincronizadas pelo coletar-dados
 // (nome/link não mudam de hora em hora, não vale perguntar de novo aqui).
 async function coletarAnunciosOutroPorHora(sb: any, acc: any, dia: string, hora: number, degraded: string[]): Promise<void> {
-  const { id: accountId, ad_account_id: adAccountId, access_token: token, name } = acc;
+  const { id: accountId, ad_account_id: adAccountId, name } = acc;
+  const token = META.token(acc);
   if (!adAccountId || !token) return;
   try {
     const { data: campanhasRows, error: erroCampanhas } = await sb
@@ -272,7 +280,7 @@ Deno.serve(async (req: Request) => {
 
   const { data: contas, error: erroContas } = await sb
     .from('accounts')
-    .select('id,name,ad_account_id,access_token,instagram_id')
+    .select(META.colunas('id,name,ad_account_id,access_token,instagram_id'))
     .not('ad_account_id', 'is', null);
 
   if (erroContas) {
