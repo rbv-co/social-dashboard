@@ -22,6 +22,12 @@ import { checarTravaCruzada, MOTIVO_TRAVA_CRUZADA } from './trava-cruzada.js'
 /** Mostra o sufixo do link sem a chave secreta de recuperação (a resposta do cron fica em log). */
 const amostraDoSufixo = (s) => s.replace(/(key=)[^&]*/i, '$1…')
 
+/** Segundos desde `criado_em` (coluna de mensagem_fila devolvida por pegar_da_fila; no pedido é o created_at da Shopify). Inválido -> undefined (não envia idade_s). */
+function idadeEmSegundos(criadoEm, agora) {
+  const t = Date.parse(criadoEm)
+  return Number.isNaN(t) ? undefined : Math.max(0, Math.floor((agora.getTime() - t) / 1000))
+}
+
 /** Decide o que fazer com UMA linha, antes de qualquer chamada externa. `bloqueados` = Set de telefones normalizados. */
 function decidirLinha({ tipo, linha, bloqueados, agora, baseLink }) {
   if (typeof linha.telefone !== 'string' || !linha.telefone.trim()) return { acao: 'ignorar', motivo: 'sem_telefone' }
@@ -138,7 +144,7 @@ export async function processarFila({ sb, cliente, config, tipo, agora = new Dat
     if (reservar) {
       let r
       try {
-        r = await cliente.reservarAviso({ phone: d.telefone, tipo: 'pedido_recebido', chave: String(linha.numero ?? '').replace(/^#/, '') || String(linha.chave) })
+        r = await cliente.reservarAviso({ phone: d.telefone, tipo: 'pedido_recebido', chave: String(linha.numero ?? '').replace(/^#/, '') || String(linha.chave), idadeS: idadeEmSegundos(linha.criado_em, agora) })
       } catch (e) {
         const status = e instanceof ErroChatwoot ? e.status : 0
         const detalhe = `reservar_aviso:${status}`
