@@ -40,3 +40,10 @@ export function calcularAjustes(variantes, saldoPorSku) {
   }
   return { ajustes, semBling, iguais };
 }
+
+// QUEM ESCREVE no Shopify: desde out/2026 o dono é o core (`core:shopify-estoque-site`, modo aplicar). Dois
+// escritores brigam a cada minuto, então a edge e o coletor só gravam se ESTOQUE_DO_SITE_DONO for exatamente
+// `edge` (rollback consciente). Qualquer outro valor, ou ausente, = core.
+export function donoDoEstoque(env) {
+  return String(env?.ESTOQUE_DO_SITE_DONO ?? '').trim().toLowerCase() === 'edge' ? 'edge' : 'core';
+}

@@ -26,7 +26,7 @@
 
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { exigirSegredoDeCron } from '../_shared/segredo-de-cron.ts';
-import { calcularAjustes } from '../_shared/estoque-do-site.js';
+import { calcularAjustes, donoDoEstoque } from '../_shared/estoque-do-site.js';
 import { clienteDoAmbiente, escolherFonte, ligada, saldoDoDepositoPorSku } from '../_shared/core-leitura.js';
 import { graphqlDoAmbiente, shopifyLeituraLigada, variantesDoSiteViaCore } from '../_shared/core-shopify.js';
 import { blingDoCore } from '../_shared/core-bling-token.js';
@@ -201,6 +201,8 @@ async function gravar(token: string, a: any): Promise<string[]> {
 Deno.serve(async (req: Request) => {
   const negado = await exigirSegredoDeCron(req, 'estoque-do-site');
   if (negado) return negado;
+  // O dono do estoque do site é o core (`core:shopify-estoque-site`). Sem ESTOQUE_DO_SITE_DONO=edge, esta edge não toca a Shopify.
+  if (donoDoEstoque(Deno.env.toObject()) !== 'edge') return json({ pulado: 'dono=core' });
   const sb = createClient(SUPABASE_URL, SERVICE_KEY);
   try {
     // CORE_LEITURA_ESTOQUE_DO_SITE=true lê o saldo do espelho do core (sem tocar no

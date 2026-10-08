@@ -27,7 +27,7 @@ import { dirname, join } from 'node:path';
 import { homedir } from 'node:os';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { loginServico, blingProxy, blingProdutos } from './lib/bling-comercial.mjs';
-import { calcularAjustes } from '../supabase/functions/_shared/estoque-do-site.js';
+import { calcularAjustes, donoDoEstoque } from '../supabase/functions/_shared/estoque-do-site.js';
 import { graphqlDoAmbiente, shopifyLeituraLigada, variantesDoSiteViaCore } from '../supabase/functions/_shared/core-shopify.js';
 import { clienteDoAmbiente, escolherFonte, saldoDoDepositoPorSku } from '../supabase/functions/_shared/core-leitura.js';
 
@@ -44,6 +44,11 @@ if (existsSync(raiz) && !process.env.GITHUB_ACTIONS) {
 }
 
 const APLICAR = process.argv.includes('--aplicar');
+// O dono do estoque do site é o core (`core:shopify-estoque-site`): gravar daqui é segundo escritor. O ensaio (só leitura) segue livre.
+if (APLICAR && donoDoEstoque(process.env) !== 'edge') {
+  console.error('estoque-do-site: dono=core. Este coletor não grava no Shopify (defina ESTOQUE_DO_SITE_DONO=edge só se o core estiver desligado).');
+  process.exit(0);
+}
 const LOCAL = !process.env.GITHUB_ACTIONS;           // detalhe por peça só fora do log público
 const DEPOSITO_IGUATEMI = '14888726277';             // "Estoque Loja Iguatemi" (ver bling_depositos)
 const LOCAL_SHOPIFY = 'gid://shopify/Location/94919065848';
