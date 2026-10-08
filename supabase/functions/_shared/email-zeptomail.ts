@@ -28,7 +28,10 @@ export async function mandarEmail(
   para: string,
   msg: { assunto: string; html: string; texto: string },
 ): Promise<boolean> {
-  if (!TOKEN) return false;
+  if (!TOKEN) {
+    console.error('zeptomail: ZEPTOMAIL_TOKEN ausente');
+    return false;
+  }
   try {
     const r = await fetch('https://api.zeptomail.com/v1.1/email', {
       method: 'POST',
@@ -42,11 +45,19 @@ export async function mandarEmail(
         textbody: msg.texto,
       }),
     });
-    return r.ok;
-  } catch {
+    if (r.ok) return true;
+    // ⚠️ O MOTIVO DA RECUSA FICA NO LOG (achado de 08/10/2026: o ZeptoMail
+    // recusava tudo e ninguém via por quê, porque aqui só saía `false`). Vai
+    // só status, código e mensagem do ZeptoMail — NUNCA o corpo inteiro, o
+    // destinatário, o texto do e-mail (leva a senha) nem o token.
+    const corpo = await r.json().catch(() => null);
+    console.error('zeptomail recusou', r.status, corpo?.error?.code, corpo?.error?.message);
+    return false;
+  } catch (e) {
     // Rede fora, DNS, timeout: qualquer coisa aqui é "não conseguimos
     // mandar agora", não um erro para propagar — quem chama decide o que
     // fazer (tentar de novo, avisar em tela, etc.).
+    console.error('zeptomail sem resposta', (e as Error)?.message);
     return false;
   }
 }
