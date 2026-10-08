@@ -189,3 +189,17 @@ test('⚠️ respondeu com `desde` inválido ou mensagem sem data legível LANÇ
 test('respondeu sem `desde` continua igual: qualquer mensagem recebida conta (o follow-up usa assim)', async () => {
   assert.equal(await cliente(fake([json({ payload: [{ message_type: 0 }] })]).fetchFn).respondeu({ conversaId: 1 }), true)
 })
+
+test('reservarAviso: POST no custom_api com X-Bot-Secret; só aceita os 4 resultados; erro não vaza segredo nem telefone', async () => {
+  const chamadas = []
+  const resp = (status, corpo) => async (u, o) => { chamadas.push([u, o]); return { ok: status < 400, status, text: async () => JSON.stringify(corpo) } }
+  const mk = (fetchFn) => criarClienteChatwoot({ url: 'https://cw.exemplo.com/', contaId: '7', caixaId: 3, token: 'TOK', botSecret: 'SEGREDO-BOT', fetchFn })
+  assert.equal(await mk(resp(200, { ok: true, resultado: 'adiado' })).reservarAviso({ phone: '5519982621821', tipo: 'pedido_recebido', chave: '1001' }), 'adiado')
+  assert.equal(chamadas[0][0], 'https://cw.exemplo.com/custom_api/v1/accounts/7/avisos/reservar')
+  assert.equal(chamadas[0][1].headers['X-Bot-Secret'], 'SEGREDO-BOT')
+  assert.equal(chamadas[0][1].headers.api_access_token, undefined)
+  assert.deepEqual(JSON.parse(chamadas[0][1].body), { phone: '5519982621821', tipo: 'pedido_recebido', chave: '1001' })
+  for (const f of [resp(503, {}), resp(401, {}), resp(200, { ok: true, resultado: 'talvez' }), resp(200, { ok: false }), async () => { throw new Error('5519982621821 SEGREDO-BOT') }]) {
+    await assert.rejects(mk(f).reservarAviso({ phone: '5519982621821', tipo: 'x', chave: '1' }), (e) => e.passo === 'reservar_aviso' && !JSON.stringify([e.message, e.corpo]).match(/SEGREDO-BOT|5519982621821/))
+  }
+})

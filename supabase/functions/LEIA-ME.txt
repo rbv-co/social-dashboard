@@ -42,3 +42,14 @@ cada uma e arquiva no Zoho WorkDrive, dentro da pasta "Gestão de Serviços",
 em Frota / <carro> / <ano-mês>. Não é chamada por tela nenhuma: quem chama é
 o cron. Se o Zoho estiver fora, a ficha continua assinada e válida — só o
 papel atrasa, e o motivo fica escrito na fila em português.
+
+enviar-mensagem-abandono: robô das mensagens de WhatsApp (início, pedido recebido, abandono, follow-up) via Chatwoot.
+  RESERVA DO AVISO (rodada `pedido`), atrás de RESERVAR_AVISO_CHATWOOT (padrão desligado = comportamento de sempre):
+  antes de enviar o `pedido_recebido`, chama POST {CHATWOOT_URL}/custom_api/v1/accounts/{CHATWOOT_CONTA_ID}/avisos/reservar
+  com o cabeçalho X-Bot-Secret = secret CHATWOOT_BOT_SECRET (o segredo do AgentBot; é um secret NOVO desta edge).
+  Só `reservado` envia. duplicado/janela -> linha `ignorada` (aviso_chatwoot_*). adiado -> não envia nem muda a linha
+  (o core manda uma mensagem só, com a NF-e; aparece como `adiados` na resposta). Rede/5xx -> tenta na rodada seguinte.
+  401/403 -> resposta 502 `reserva_recusada`. É uma trava ADICIONAL à `recebeu_mensagem_automatica` (#313).
+  COMO LIGAR, nesta ordem: 1) Chatwoot com CUSTOM_AVISO_UNICO ligado; 2) secret CHATWOOT_BOT_SECRET na edge e depois
+  RESERVAR_AVISO_CHATWOOT=true; 3) só depois CUSTOM_NFE_WHATSAPP no Chatwoot.
+  COMO DESLIGAR: remover RESERVAR_AVISO_CHATWOOT (ou false); a rodada seguinte já envia como antes.

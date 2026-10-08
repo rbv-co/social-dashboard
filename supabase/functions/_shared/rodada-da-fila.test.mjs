@@ -385,3 +385,76 @@ test('trava cruzada: o pedido recebido (transacional) nunca é barrado', async (
   assert.equal(r.corpo.resultado[0].resultado, 'enviada')
   assert.equal(rpcs(sb, 'recebeu_mensagem_automatica').length, 0)
 })
+
+// ── reserva do aviso no Chatwoot (RESERVAR_AVISO_CHATWOOT) ────────────────────
+const comReserva = (resp) => {
+  const c = fakeCliente()
+  c.reservas = []
+  c.reservarAviso = async (arg) => { c.reservas.push(arg); if (resp instanceof Error) throw resp; return resp }
+  return c
+}
+const RESERVA = { reservarAviso: true, chatwoot: { ...CONFIG.chatwoot, botSecret: 'SEGREDO-BOT' } }
+
+test('reserva: `reservado` envia, com tipo pedido_recebido, chave = número sem # e telefone normalizado', async () => {
+  const cliente = comReserva('reservado')
+  const r = await rodar('pedido', fakeSb({ linhas: [pedido(1)] }), cliente, RESERVA)
+  assert.equal(r.corpo.resultado[0].resultado, 'enviada')
+  assert.deepEqual(cliente.reservas, [{ phone: '5519982621821', tipo: 'pedido_recebido', chave: '1001' }])
+})
+
+test('reserva: duplicado e janela NÃO enviam e marcam ignorada com motivo', async () => {
+  for (const resp of ['duplicado', 'janela']) {
+    const sb = fakeSb({ linhas: [pedido(1)] })
+    const cliente = comReserva(resp)
+    const r = await rodar('pedido', sb, cliente, RESERVA)
+    assert.equal(r.corpo.resultado[0].motivo, `aviso_chatwoot_${resp}`)
+    assert.deepEqual(rpcs(sb, 'marcar_da_fila')[0], { p_tipo: 'pedido', p_chave: '1001', p_status: 'ignorada', p_motivo: `aviso_chatwoot_${resp}` })
+    assert.equal(cliente.chamadas.length, 0)
+  }
+})
+
+test('reserva: adiado devolve sem contar tentativa, não envia, não marca e só aparece como contagem', async () => {
+  const sb = fakeSb({ linhas: [pedido(1), pedido(2)] })
+  const cliente = comReserva('adiado')
+  const r = await rodar('pedido', sb, cliente, RESERVA)
+  assert.equal(r.corpo.adiados, 2)
+  assert.deepEqual(r.corpo.resultado, [])
+  assert.deepEqual(rpcs(sb, 'devolver_da_fila').map((a) => a.p_contar), [false, false])
+  assert.equal(rpcs(sb, 'marcar_da_fila').length, 0)
+  assert.equal(cliente.chamadas.length, 0)
+})
+
+test('reserva: rede/5xx não envia nem marca nem conta tentativa; 401/403 interrompe com erro claro e sem vazar segredo/telefone', async (t) => {
+  calar(t)
+  for (const status of [0, 503]) {
+    const sb = fakeSb({ linhas: [pedido(1)] })
+    const cliente = comReserva(new ErroChatwoot(status, null, 'reservar_aviso'))
+    const r = await rodar('pedido', sb, cliente, RESERVA)
+    assert.equal(r.status, 200)
+    assert.equal(r.corpo.resultado[0].motivo, 'falha_na_reserva_do_aviso')
+    assert.equal(rpcs(sb, 'marcar_da_fila').length, 0)
+    assert.equal(rpcs(sb, 'devolver_da_fila')[0].p_contar, false)
+    assert.equal(cliente.chamadas.length, 0)
+  }
+  const sb = fakeSb({ linhas: [pedido(1), pedido(2)] })
+  const r = await rodar('pedido', sb, comReserva(new ErroChatwoot(401, null, 'reservar_aviso')), RESERVA)
+  assert.equal(r.status, 502)
+  assert.equal(r.corpo.erro, 'reserva_recusada')
+  assert.equal(rpcs(sb, 'devolver_da_fila').length, 2)
+  assert.equal(rpcs(sb, 'marcar_da_fila').length, 0)
+  const todo = JSON.stringify(r) + JSON.stringify(console.error.mock.calls)
+  assert.ok(!todo.includes('SEGREDO-BOT') && !todo.includes('5519982621821'))
+})
+
+test('reserva: desligada (padrão) ou em modo seco nunca chama o Chatwoot; ligada sem segredo falha fechada', async () => {
+  const cliente = comReserva('duplicado')
+  const r = await rodar('pedido', fakeSb({ linhas: [pedido(1)] }), cliente)
+  assert.equal(r.corpo.resultado[0].resultado, 'enviada')
+  assert.equal('adiados' in r.corpo, false)
+  await rodar('pedido', fakeSb({ linhas: [pedido(1)] }), cliente, { ...RESERVA, modo: 'seco' })
+  assert.equal(cliente.reservas.length, 0)
+  const sb = fakeSb({ linhas: [pedido(1)] })
+  const f = await rodar('pedido', sb, cliente, { reservarAviso: true })
+  assert.equal(f.status, 500)
+  assert.deepEqual(sb.chamadas, [])
+})
