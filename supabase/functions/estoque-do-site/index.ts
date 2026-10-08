@@ -27,6 +27,7 @@
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { exigirSegredoDeCron } from '../_shared/segredo-de-cron.ts';
 import { calcularAjustes } from '../_shared/estoque-do-site.js';
+import { clienteDoAmbiente, escolherFonte, ligada, saldoDoDepositoPorSku } from '../_shared/core-leitura.js';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -193,12 +194,23 @@ Deno.serve(async (req: Request) => {
   if (negado) return negado;
   const sb = createClient(SUPABASE_URL, SERVICE_KEY);
   try {
-    const tBling = await tokenBling(sb);
-    if (!tBling) return json({ pulado: 'token do Bling vencido ou ausente — quem renova é o bling-proxy' }, 503);
+    // CORE_LEITURA_ESTOQUE_DO_SITE=true lê o saldo do espelho do core (sem tocar no
+    // Bling nem no token dele). Desligada (padrão): caminho antigo, idêntico.
+    const env = Deno.env.toObject();
+    let tBling: string | null = null;
+    if (!ligada('ESTOQUE_DO_SITE', env)) {
+      tBling = await tokenBling(sb);
+      if (!tBling) return json({ pulado: 'token do Bling vencido ou ausente — quem renova é o bling-proxy' }, 503);
+    }
     const tShop = await tokenShopify(sb);
     const variantes = await variantesDoShopify(tShop);
     const skus = new Set<string>(variantes.map((v) => String(v.sku || '').trim()).filter(Boolean));
-    const saldo = await saldoDoIguatemi(sb, tBling, skus);
+    const saldo: Map<string, number> = await escolherFonte('ESTOQUE_DO_SITE', env, {
+      bling: () => saldoDoIguatemi(sb, tBling!, skus),
+      core: () => saldoDoDepositoPorSku(clienteDoAmbiente(env), {
+        skus, depositoId: DEPOSITO_IGUATEMI, maxIdadeMin: Number(env.CORE_ESPELHO_MAX_IDADE_MIN) || 0,
+      }),
+    });
     const { ajustes, semBling, iguais } = calcularAjustes(variantes, saldo);
     const falhas: string[] = [];
     for (const a of ajustes) {
