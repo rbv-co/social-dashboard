@@ -59,9 +59,13 @@ import { casaComOSku } from '../_shared/casar-sku-do-bling.js';
 // PRESENTE (ver o uso, junto de `tem_marca`, mais abaixo).
 import { nomesBatem, nomesChegamPerto } from '../_shared/nome-de-quem-deu.js';
 
+import { blingDoCore } from '../_shared/core-bling-token.js';
+
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const BLING = 'https://api.bling.com.br/Api/v3';
+// CORE_BLING_TOKEN=true: o `core` é o dono do token; nenhum ponto aqui renova (ver _shared/core-bling-token.js).
+const CORE_BLING = blingDoCore(Deno.env.toObject());
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -83,7 +87,12 @@ const responder = (corpo: unknown, status = 200) =>
  * gastando um refresh por registro e podendo derrubar o acesso do painel
  * inteiro. Erro que não dá erro é o caro.
  */
-async function tokenDoBling(sb: ReturnType<typeof createClient>): Promise<string | null> {
+function tokenDoBling(sb: ReturnType<typeof createClient>): Promise<string | null> {
+  // core fora do ar = sem token (null), como falha de refresh: o pedido fica pendente.
+  return CORE_BLING.token(() => renovarSeVencido(sb)).catch(() => null);
+}
+
+async function renovarSeVencido(sb: ReturnType<typeof createClient>): Promise<string | null> {
   const { data, error } = await sb.from('bling_tokens').select('*')
     .order('id', { ascending: false }).limit(1).single();
   if (error || !data) return null;
@@ -117,7 +126,7 @@ type Achado = { pedido: string; contato: string; quando: string | null } | null;
 
 /** Procura uma compra daquele CPF com aquele modelo. `null` = não achou. */
 async function procurarACompra(t: string, cpf: string, sku: string): Promise<Achado> {
-  const busca = await fetch(`${BLING}/contatos?numeroDocumento=${encodeURIComponent(cpf)}`,
+  const busca = await CORE_BLING.fetch(`${BLING}/contatos?numeroDocumento=${encodeURIComponent(cpf)}`,
     { headers: { Authorization: `Bearer ${t}`, Accept: 'application/json' } });
   if (!busca.ok) return null;
   const contatos = (await busca.json())?.data;
@@ -126,7 +135,7 @@ async function procurarACompra(t: string, cpf: string, sku: string): Promise<Ach
   // Mais de um contato com o mesmo CPF acontece (cadastro duplicado no ERP), e
   // a compra pode estar em qualquer um deles.
   for (const contato of contatos.slice(0, 5)) {
-    const lista = await fetch(`${BLING}/pedidos/vendas?idContato=${contato.id}&limite=50`,
+    const lista = await CORE_BLING.fetch(`${BLING}/pedidos/vendas?idContato=${contato.id}&limite=50`,
       { headers: { Authorization: `Bearer ${t}`, Accept: 'application/json' } });
     if (!lista.ok) continue;
     const pedidos = (await lista.json())?.data;
@@ -136,7 +145,7 @@ async function procurarACompra(t: string, cpf: string, sku: string): Promise<Ach
     // registrando a última. E o teto de 20 existe para a página não ficar
     // pendurada em cliente antigo de cinquenta pedidos.
     for (const p of pedidos.slice(0, 20)) {
-      const det = await fetch(`${BLING}/pedidos/vendas/${p.id}`,
+      const det = await CORE_BLING.fetch(`${BLING}/pedidos/vendas/${p.id}`,
         { headers: { Authorization: `Bearer ${t}`, Accept: 'application/json' } });
       if (!det.ok) continue;
       const itens = (await det.json())?.data?.itens;

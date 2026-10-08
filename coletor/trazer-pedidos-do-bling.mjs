@@ -35,6 +35,7 @@
 // com ninguém entra com `pessoa_id` nulo, e o robô diz quantos foram.
 import './lib/carregar-env.mjs';
 import pg from 'pg';
+import { blingDoColetor } from './lib/bling-token.mjs';
 import { loginServico, blingProxy, blingFormasDePagamento } from './lib/bling-comercial.mjs';
 import { linhasDeFormaPagamento } from './lib/forma-pagamento.mjs';
 import { aplicarValorCorrigido } from '../supabase/functions/_shared/valor-corrigido.js';
@@ -45,6 +46,8 @@ import { indiceDeLeads, leadDoPedido } from './lib/lead-do-pedido.mjs';
 
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://kounqtdoioootxqegkij.supabase.co';
 const BLING = 'https://api.bling.com.br/Api/v3';
+// CORE_BLING_TOKEN=true: o `core` é o dono do token; aqui só se LÊ (ver lib/bling-token.mjs).
+const CORE_BLING = blingDoColetor();
 const ATENDIDO = 9;                       // a situação que conta como venda
 const espera = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -68,9 +71,12 @@ const cli = new pg.Client({ connectionString: process.env.DATABASE_URL });
 await cli.connect();
 
 try {
-  const { rows: [tk] } = await cli.query(
-    'select access_token from bling_tokens order by id desc limit 1');
-  if (!tk?.access_token) throw new Error('não há token do Bling guardado.');
+  const tokenBling = await CORE_BLING.token(async () => {
+    const { rows: [tk] } = await cli.query(
+      'select access_token from bling_tokens order by id desc limit 1');
+    if (!tk?.access_token) throw new Error('não há token do Bling guardado.');
+    return tk.access_token;
+  });
 
   // ⚠️ C5 (revisão final, 17/09/2026): este robô roda da `main` todo dia às
   // 07h34 UTC. Se a migration que cria `observacoes`/`observacoes_internas`
@@ -199,8 +205,8 @@ try {
   const lerFicha = async (contatoId) => {
     if (!fichaDoContato.has(contatoId)) {
       await espera(380);                         // o Bling limita 3 por segundo
-      const r = await fetch(`${BLING}/contatos/${contatoId}`, {
-        headers: { Authorization: 'Bearer ' + tk.access_token, Accept: 'application/json' } });
+      const r = await CORE_BLING.fetch(`${BLING}/contatos/${contatoId}`, {
+        headers: { Authorization: 'Bearer ' + tokenBling, Accept: 'application/json' } });
       const ficha = r.ok ? (await r.json())?.data || {} : {};
       // ⚠️ OS DOIS CAMPOS. A ficha criada pela loja no PDV preenche
       // `telefone`; a criada pelo nosso robô preenche `celular`. Ler só um

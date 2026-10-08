@@ -17,8 +17,11 @@
 // deixaria essas vendas sem dono, sem erro nenhum aparecer.
 import './lib/carregar-env.mjs';
 import pg from 'pg';
+import { blingDoColetor } from './lib/bling-token.mjs';
 
 const BLING = 'https://api.bling.com.br/Api/v3';
+// CORE_BLING_TOKEN=true: o `core` é o dono do token e este robô NÃO renova (ver lib/bling-token.mjs).
+const CORE_BLING = blingDoColetor();
 const ensaio = process.argv.includes('--ensaio');
 const espera = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -30,7 +33,9 @@ const espera = (ms) => new Promise((r) => setTimeout(r, ms));
  * isso só renovamos quando o atual já não serve — renovar por precaução, com
  * outro robô rodando ao lado, é o que derruba os dois.
  */
-async function pegarToken(cli) {
+const pegarToken = (cli) => CORE_BLING.token(() => pegarTokenDoBanco(cli));
+
+async function pegarTokenDoBanco(cli) {
   const { rows: [t] } = await cli.query(
     'select * from bling_tokens order by id desc limit 1');
   if (!t?.access_token) throw new Error('não há token do Bling guardado.');
@@ -64,7 +69,7 @@ try {
   // ── 1. a lista inteira ────────────────────────────────────────────────────
   const vendedores = new Map();
   for (let pagina = 1; pagina <= 20; pagina++) {
-    const r = await fetch(`${BLING}/vendedores?pagina=${pagina}&limite=100`, { headers: cabecalho });
+    const r = await CORE_BLING.fetch(`${BLING}/vendedores?pagina=${pagina}&limite=100`, { headers: cabecalho });
     if (!r.ok) throw new Error(`o Bling recusou a lista de vendedores (${r.status}).`);
     const lote = (await r.json()).data || [];
     for (const v of lote) vendedores.set(String(v.id), v);
@@ -85,7 +90,7 @@ try {
   console.log(`${faltando.length} vendedores com venda que não vieram na lista; buscando um a um`);
   for (const id of faltando) {
     await espera(380);
-    const r = await fetch(`${BLING}/vendedores/${id}`, { headers: cabecalho });
+    const r = await CORE_BLING.fetch(`${BLING}/vendedores/${id}`, { headers: cabecalho });
     if (r.ok) vendedores.set(id, (await r.json()).data);
     else console.log(`  ${id}: o Bling respondeu ${r.status}`);
   }

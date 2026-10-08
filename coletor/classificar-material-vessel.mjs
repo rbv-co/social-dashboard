@@ -34,9 +34,12 @@
  * mais promete o que a marca não vai honrar.
  */
 import pg from 'pg'
+import { blingDoColetor } from './lib/bling-token.mjs'
 import { writeFileSync, readFileSync, existsSync } from 'node:fs'
 
 const BLING = 'https://api.bling.com.br/Api/v3'
+// CORE_BLING_TOKEN=true: o `core` é o dono do token; aqui só se LÊ (ver lib/bling-token.mjs).
+const CORE_BLING = blingDoColetor()
 const SAIDA = process.argv[2] || 'material-por-peca.txt'
 const DESPEJO = process.argv.includes('--despejo')
   ? process.argv[process.argv.indexOf('--despejo') + 1] : null
@@ -51,13 +54,16 @@ const TECIDO = /TECIDO|IMPREGNAD|KROYAL|LONA|CANVAS|SINTETIC|SINTÉTIC|YORK|ARTE
 async function baixarDoBling() {
   const cli = new pg.Client({ connectionString: process.env.DATABASE_URL })
   await cli.connect()
-  const { rows: [t] } = await cli.query('select access_token from bling_tokens order by id desc limit 1')
-  if (!t?.access_token) throw new Error('não há token do Bling guardado.')
-  const cab = { Authorization: `Bearer ${t.access_token}`, Accept: 'application/json' }
+  const token = await CORE_BLING.token(async () => {
+    const { rows: [t] } = await cli.query('select access_token from bling_tokens order by id desc limit 1')
+    if (!t?.access_token) throw new Error('não há token do Bling guardado.')
+    return t.access_token
+  })
+  const cab = { Authorization: `Bearer ${token}`, Accept: 'application/json' }
   const nomes = new Map()
   const pega = async (u) => {
     for (let i = 0; i < 3; i++) {
-      const r = await fetch(u, { headers: cab })
+      const r = await CORE_BLING.fetch(u, { headers: cab })
       if (r.status === 429) { await dorme(1500 * (i + 1)); continue }
       if (!r.ok) return null
       return r.json().catch(() => null)

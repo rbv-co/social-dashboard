@@ -22,6 +22,7 @@ import { ajustarPelaDataDaNota } from '../_shared/data-da-venda.js';
 // O valor real de venda que o Bling congelou errada. Mesma regra das telas.
 import { aplicarValorCorrigido } from '../_shared/valor-corrigido.js';
 import { exigirSegredoDeCron } from '../_shared/segredo-de-cron.ts';
+import { blingDoCore } from '../_shared/core-bling-token.js';
 // Quem quer receber ESTE tipo (ver _shared/notificacoes.js). 'vendas' vem
 // ligado por padrão — quem não quiser, o admin desliga na tela de Usuários.
 import { inscricoesDoTipo } from '../_shared/notificacoes.js';
@@ -29,6 +30,8 @@ import { inscricoesDoTipo } from '../_shared/notificacoes.js';
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const BLING_BASE = 'https://api.bling.com.br/Api/v3';
+// CORE_BLING_TOKEN=true: o `core` é o dono do token; nenhum ponto aqui renova (ver _shared/core-bling-token.js).
+const CORE_BLING = blingDoCore(Deno.env.toObject());
 
 const ITENS_BUDGET_MS = 90_000;   // teto de tempo pra detalhar itens
 const ITENS_CONCORRENCIA = 8;     // chamadas simultâneas ao Bling
@@ -52,7 +55,12 @@ function brtDatas(): { hoje: string; ontem: string; anteontem: string } {
   return { hoje: iso(nowBrt), ontem: iso(ontem), anteontem: iso(anteontem) };
 }
 
-async function lerTokenBling(sb: ReturnType<typeof createClient>): Promise<string | null> {
+function lerTokenBling(sb: ReturnType<typeof createClient>): Promise<string | null> {
+  // core fora do ar = sem token (null), como token vencido.
+  return CORE_BLING.token(() => lerTokenDoBanco(sb)).catch(() => null);
+}
+
+async function lerTokenDoBanco(sb: ReturnType<typeof createClient>): Promise<string | null> {
   const { data } = await sb.from('bling_tokens').select('access_token, expires_at')
     .order('id', { ascending: false }).limit(1).single();
   if (!data?.access_token) return null;
@@ -67,7 +75,7 @@ async function blingGet(token: string, endpoint: string, params: Record<string, 
     if (Array.isArray(v)) for (const it of v) url.searchParams.append(k, String(it));
     else url.searchParams.set(k, String(v));
   }
-  const r = await fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` } });
+  const r = await CORE_BLING.fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` } });
   if (!r.ok) throw new Error(`bling ${endpoint} -> ${r.status}`);
   return r.json();
 }

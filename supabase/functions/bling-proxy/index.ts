@@ -10,10 +10,14 @@ import {
   PRAZO_POR_TENTATIVA_MS,
 } from '../_shared/tentar-de-novo.js';
 
+import { blingDoCore } from '../_shared/core-bling-token.js';
+
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
 const BLING_BASE = 'https://api.bling.com.br/Api/v3';
+// CORE_BLING_TOKEN=true: o `core` é o dono do token; nenhum ponto aqui renova (ver _shared/core-bling-token.js).
+const CORE_BLING = blingDoCore(Deno.env.toObject());
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -71,7 +75,11 @@ function caminhoPermitido(endpoint: string): boolean {
   return CAMINHOS_PERMITIDOS.some((re) => re.test(endpoint));
 }
 
-async function getValidToken(sb: ReturnType<typeof createClient>): Promise<string> {
+function getValidToken(sb: ReturnType<typeof createClient>): Promise<string> {
+  return CORE_BLING.token(() => renovarSeVencido(sb));
+}
+
+async function renovarSeVencido(sb: ReturnType<typeof createClient>): Promise<string> {
   const { data, error } = await sb
     .from('bling_tokens')
     .select('*')
@@ -271,7 +279,7 @@ Deno.serve(async (req: Request) => {
         let estourouOPrazo = false;
         let retryAfterSegundos: number | null = null;
         try {
-          const resp = await fetch(url.toString(), {
+          const resp = await CORE_BLING.fetch(url.toString(), {
             headers: { 'Authorization': `Bearer ${token}` },
             signal: cortar.signal,
           });
