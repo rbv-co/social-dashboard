@@ -53,8 +53,12 @@ jobs:
           DIAS: ${{ github.event.inputs.dias }}
           ENSAIO: ${{ github.event.inputs.ensaio }}
           QUAL_CRON: ${{ github.event.schedule }}
+          # Leitura pelo espelho do core (sem credencial da Shopify). Variável do repo; ausente = desligada.
+          CORE_SHOPIFY_LEITURA: ${{ vars.CORE_SHOPIFY_LEITURA }}
+          CORE_URL: ${{ vars.CORE_URL }}
+          CORE_API_TOKEN: ${{ secrets.CORE_API_TOKEN }}
         run: |
-          if [ -z "$SHOPIFY_SHOP" ]; then
+          if [ -z "$SHOPIFY_SHOP" ] && [ "$CORE_SHOPIFY_LEITURA" != "true" ] && [ "$CORE_SHOPIFY_LEITURA" != "1" ]; then
             echo "SHOPIFY_SHOP ainda não configurado em Settings → Secrets → Actions — pulando esta rodada (não é falha, é esperado até o dono configurar)."
             exit 0
           fi

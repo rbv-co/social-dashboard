@@ -33,6 +33,8 @@ import './lib/carregar-env.mjs';
 import pg from 'pg';
 import { shopifyPedidos, tokenShopify } from './lib/shopify-admin.mjs';
 import { pedidoDoPayload } from '../supabase/functions/_shared/pedido-shopify.js';
+import { clienteDoAmbiente } from '../supabase/functions/_shared/core-leitura.js';
+import { shopifyLeituraLigada, pedidosDoEspelho, SQL_UPSERT_PEDIDO_SEM_PII } from '../supabase/functions/_shared/core-shopify.js';
 
 const arg = (nome, padrao) => {
   const a = process.argv.find((x) => x.startsWith(`--${nome}=`));
@@ -41,12 +43,15 @@ const arg = (nome, padrao) => {
 const dias = Number(arg('dias', 30));
 const ensaio = process.argv.includes('--ensaio');
 
+// CORE_SHOPIFY_LEITURA=true: lê do espelho do core (sem credencial da Shopify). Desligada (padrão):
+// caminho antigo, idêntico.
+const DO_CORE = shopifyLeituraLigada(process.env);
 const DOMINIO = process.env.SHOPIFY_SHOP;
-if (!DOMINIO) {
+if (!DO_CORE && !DOMINIO) {
   throw new Error('falta SHOPIFY_SHOP em coletor/.env — '
     + 'o robô do Bling não é afetado, só este aqui para até a credencial existir.');
 }
-const TOKEN = await tokenShopify(DOMINIO);
+const TOKEN = DO_CORE ? null : await tokenShopify(DOMINIO);
 
 const cli = new pg.Client({ connectionString: process.env.DATABASE_URL });
 await cli.connect();
@@ -55,14 +60,22 @@ const desde = new Date();
 desde.setDate(desde.getDate() - dias);
 console.log(`\njanela: desde ${desde.toISOString()}${ensaio ? '  (ENSAIO — nada será gravado)' : ''}\n`);
 
-const brutos = await shopifyPedidos(DOMINIO, TOKEN, { atualizadosApartirDe: desde.toISOString() });
-console.log(`${brutos.length} pedidos na Shopify na janela`);
+// No espelho não há nome/e-mail/payload do cliente: grava só o resto e preserva o que o webhook já gravou.
+const brutos = DO_CORE ? null : await shopifyPedidos(DOMINIO, TOKEN, { atualizadosApartirDe: desde.toISOString() });
+const doEspelho = DO_CORE ? await pedidosDoEspelho(clienteDoAmbiente(process.env), { desde }) : null;
+console.log(`${(brutos || doEspelho).length} pedidos ${DO_CORE ? 'no espelho do core' : 'na Shopify'} na janela`);
 
 let gravados = 0, invalidos = 0;
-for (const bruto of brutos) {
-  const p = pedidoDoPayload(bruto);
+for (const bruto of brutos || doEspelho) {
+  const p = DO_CORE ? bruto : pedidoDoPayload(bruto);
   if (!p) { invalidos++; continue; }
   if (ensaio) continue;
+  if (DO_CORE) {
+    await cli.query(SQL_UPSERT_PEDIDO_SEM_PII,
+      [p.id, p.numero, p.loja_id, p.total, p.moeda, p.status_financeiro, p.criado_em_shopify]);
+    gravados++;
+    continue;
+  }
   await cli.query(
     `insert into shopify_pedidos
        (id, numero, loja_id, total, moeda, status_financeiro, cliente_nome, cliente_email, criado_em_shopify, bruto, atualizado_em)
