@@ -28,6 +28,7 @@ import { homedir } from 'node:os';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { loginServico, blingProxy, blingProdutos } from './lib/bling-comercial.mjs';
 import { calcularAjustes } from '../supabase/functions/_shared/estoque-do-site.js';
+import { clienteDoAmbiente, escolherFonte, saldoDoDepositoPorSku } from '../supabase/functions/_shared/core-leitura.js';
 
 // As credenciais do Shopify moram no .env da RAIZ do iamundi, e ELAS VENCEM as
 // do coletor/.env: lá existe um SHOPIFY_CLIENT_ID de OUTRO app (medido em
@@ -170,8 +171,15 @@ async function gravar(token, a) {
 async function main() {
   const tShop = await tokenShopify();
   const variantes = await variantesDoShopify(tShop);
-  const tBling = await loginServico();
-  const saldo = await saldoDoIguatemi(tBling, new Set(variantes.map((v) => String(v.sku || '').trim()).filter(Boolean)));
+  const skus = new Set(variantes.map((v) => String(v.sku || '').trim()).filter(Boolean));
+  // CORE_LEITURA_ESTOQUE_DO_SITE=true lê o saldo do espelho do core (sem login nem Bling).
+  // Desligada (padrão): caminho antigo, idêntico.
+  const saldo = await escolherFonte('ESTOQUE_DO_SITE', process.env, {
+    bling: async () => saldoDoIguatemi(await loginServico(), skus),
+    core: () => saldoDoDepositoPorSku(clienteDoAmbiente(process.env), {
+      skus, depositoId: DEPOSITO_IGUATEMI, maxIdadeMin: Number(process.env.CORE_ESPELHO_MAX_IDADE_MIN) || 0,
+    }),
+  });
   const { ajustes, semBling, iguais } = calcularAjustes(variantes, saldo);
 
   console.log(`${APLICAR ? 'APLICANDO' : 'ENSAIO (nada gravado)'} — ${variantes.length} variantes, ${iguais.length} já certas, ${ajustes.length} a corrigir, ${semBling.length} sem par no Bling`);

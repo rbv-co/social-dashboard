@@ -16,6 +16,7 @@ import { ajustarPelaDataDaNota, linhasDaJanela } from './notas-bling.mjs';
 // O valor real de venda que o Bling congelou errada. A regra é a MESMA das telas.
 import { aplicarValorCorrigido } from '../../supabase/functions/_shared/valor-corrigido.js';
 import { ajustesDeValor } from './ajustes-de-valor.mjs';
+import { catalogoDoCore, clienteDoAmbiente, escolherFonte } from '../../supabase/functions/_shared/core-leitura.js';
 
 // Depósito de cada canal foco (mapeado no Bling):
 // ⚠️ ESTA LISTA DEIXOU DE SER A VERDADE em 05/09/2026. Ela ficou só como
@@ -157,6 +158,14 @@ export async function blingPedidos(token, dataInicial, dataFinal) {
 
 // Lista o catálogo de produtos (id → nome/código/preço). Bounded por segurança.
 export async function blingProdutos(token, maxPaginas = 20) {
+  // CORE_LEITURA_CATALOGO=true lê o catálogo do espelho do core (ativos). Desligada: Bling, como sempre.
+  return escolherFonte('CATALOGO', process.env, {
+    bling: () => blingProdutosDoBling(token, maxPaginas),
+    core: () => catalogoDoCore(clienteDoAmbiente(process.env)),
+  });
+}
+
+async function blingProdutosDoBling(token, maxPaginas) {
   const prod = {};
   for (let pagina = 1; pagina <= maxPaginas; pagina++) {
     let resp;
