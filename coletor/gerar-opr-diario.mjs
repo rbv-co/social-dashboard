@@ -22,6 +22,10 @@ import {
   montarMensagemLeadsFechamentoDia, montarMensagemSeguidoresFechamentoDia,
 } from '../src/ferramentas/meta-ads/relatorio-por-hora.js';
 import { visitasPerfilDoDiaMeta, salvarVisitasPerfilDoDia } from './lib/visitas-perfil-meta.mjs';
+import { metaDoColetor } from './lib/core-meta.mjs';
+
+// CORE_META=true: a Graph passa pelo proxy do `core` (token global); não lê accounts.access_token.
+const META = metaDoColetor();
 
 // Nome sem ser "URL" — o global `URL` (usado abaixo pra montar o caminho do
 // PNG em --dry) fica sombreado por um `const URL` no escopo do módulo.
@@ -119,7 +123,7 @@ async function main() {
       // deltaDeSeguidoresPorHora ter "anterior" pra comparar desde a primeira
       // hora do dia inteiro (não só a última hora, como no relatório por hora).
       sbGet(`/followers_leituras?select=followers_count,lido_em,origem&account_id=eq.${CONTA_VESSEL}&lido_em=gte.${new Date(Date.now() - 48 * 3600 * 1000).toISOString()}&order=lido_em.asc`),
-      sbGet(`/accounts?select=instagram_id,access_token&id=eq.${CONTA_VESSEL}`),
+      sbGet(`/accounts?select=${META.colunas('instagram_id,access_token')}&id=eq.${CONTA_VESSEL}`),
       // Leads/Leads Qualificados de verdade (24/09/2026) — ver
       // docs/superpowers/specs/2026-09-24-chatwoot-leads-design.md.
       sbGet(`/chatwoot_eventos?select=tipo&dia_br=eq.${dia}`),
@@ -135,7 +139,8 @@ async function main() {
     // últimos ~55min do dia, veja coletor/lib/visitas-perfil-meta.mjs). O
     // fechamento roda de manhã, bem depois da virada — pede o dia inteiro
     // numa chamada só, sem esse buraco.
-    const { instagram_id: igId, access_token: token } = contas[0];
+    const { instagram_id: igId } = contas[0];
+    const token = META.token(contas[0]);
     const visitasPerfilDoDia = await visitasPerfilDoDiaMeta(igId, token, dia);
     // Alimenta o cache que a tela do OPR lê pra qualquer período (fora de
     // --dry — dry é só preview, nunca escreve nada além do PNG local).

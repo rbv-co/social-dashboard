@@ -3,6 +3,7 @@
 // Últimos Posts (10 recentes), Reels (10 vídeos recentes). Conteúdo AMPLO (não só bolsa),
 // pra ler comportamento de marketing. Re-hospeda mídia (dedup) e logo no Storage (ig-cache).
 import fs from 'fs';
+import { metaDoColetor } from './lib/core-meta.mjs';
 
 const env = {};
 try { for (const l of fs.readFileSync(new URL('./.env', import.meta.url), 'utf8').split('\n')) { const m = l.match(/^([A-Z_]+)=(.*)$/); if (m) env[m[1]] = m[2].replace(/^["']|["']$/g, ''); } } catch (e) {}
@@ -65,13 +66,15 @@ const clean = s => String(s || '').replace(/\p{Cc}/gu, ' ').replace(/\s+/g, ' ')
 const cut = (s, n) => Array.from(s).slice(0, n).join('');
 const eng = m => (Number(m.like_count) || 0) + (Number(m.comments_count) || 0);
 
-const accs = await (await fetch(URL_SB + '/rest/v1/accounts?select=access_token', { headers: sbHeaders })).json();
-const tok = (accs.find(a => a.access_token) || {}).access_token;
+// CORE_META=true: a Graph passa pelo proxy do `core` (token global): não lê accounts.access_token. Ver lib/core-meta.mjs.
+const META = metaDoColetor({ ...env, ...process.env });
+const accs = META.ligada ? [] : await (await fetch(URL_SB + '/rest/v1/accounts?select=access_token', { headers: sbHeaders })).json();
+const tok = META.ligada ? 'core' : (accs.find(a => a.access_token) || {}).access_token;
 if (!tok) throw new Error('sem token Meta');
 const graph = async (path, params = {}) => {
   const u = new URL(G + path); u.searchParams.set('access_token', tok);
   for (const [k, v] of Object.entries(params)) u.searchParams.set(k, typeof v === 'object' ? JSON.stringify(v) : v);
-  return (await fetch(u)).json();
+  return (await META.fetch(u)).json();
 };
 const pages = await graph('/me/accounts', { fields: 'instagram_business_account{id}' });
 const igId = (pages.data || []).map(p => p.instagram_business_account && p.instagram_business_account.id).find(Boolean);

@@ -561,6 +561,7 @@ export function custoAtualDoAlvo(balde, ins, regua, interacaoDeclarada) {
 
 // ---------- infra (rede) — só roda no main(), não é importado nos testes ----------
 import { registrarExecucao } from './registrar-execucao.mjs';
+import { metaDoColetor } from './lib/core-meta.mjs';
 // Onde mora o orçamento (CBO na campanha x ABO nos conjuntos) e quanto ele soma
 // de fato. Módulo puro, o MESMO que a tela usa — a conta não pode divergir entre
 // o que o robô sugere e o que a tela mostra.
@@ -608,6 +609,8 @@ const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://kounqtdoioootxqegkij.supabase.co';
 const MODEL = process.env.BUDGET_MODEL || 'claude-opus-4-8';
 const GRAPH = 'https://graph.facebook.com/v21.0';
+// CORE_META=true: a Graph passa pelo proxy do `core` (token global); não lê accounts.access_token. Ver lib/core-meta.mjs.
+const META = metaDoColetor();
 const REST = SUPABASE_URL + '/rest/v1';
 const DRY = process.argv.includes('--dry');
 
@@ -635,7 +638,7 @@ async function graphGet(path, params, token) {
   const url = new URL(GRAPH + path);
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, typeof v === 'object' ? JSON.stringify(v) : String(v)));
   url.searchParams.set('access_token', token);
-  const r = await fetch(url.toString());
+  const r = await META.fetch(url.toString());
   if (!r.ok) throw new Error('Graph ' + path + ' -> ' + r.status + ' ' + (await r.text()).slice(0, 200));
   return r.json();
 }
@@ -689,7 +692,7 @@ async function main() {
 
   // accounts guarda contas IG/página com access_token; a coluna ad_account_id é vazia.
   // A(s) conta(s) de anúncio são descobertas em runtime via Graph /me/adaccounts (igual ao meta-proxy).
-  const contas = await sbGet('/accounts?select=id,name,ad_account_id,access_token');
+  const contas = await sbGet('/accounts?select=' + META.colunas('id,name,ad_account_id,access_token'));
   // ATENÇÃO: `accounts` tem DOIS tipos de registro. Cinco são as contas do painel
   // (com ad_account_id) e duas são só portadoras de token ("Gustavo Guerra",
   // "Humberto Mendonca") que enxergam TODAS as contas de anúncios. O robô varre
@@ -741,10 +744,10 @@ async function main() {
   const campFields ='id,name,effective_status,objective,daily_budget,lifetime_budget,start_time,stop_time,created_time';
   const insFields = 'campaign_id,impressions,clicks,spend,ctr,cpc,reach,frequency,actions,action_values,purchase_roas,objective';
   for (const acc of contas) {
-    if (!acc.access_token) continue;
+    if (!META.token(acc)) continue;
     let adAccounts;
     try {
-      adAccounts = (await graphGet('/me/adaccounts', { fields: 'account_id', limit: 200 }, acc.access_token)).data || [];
+      adAccounts = (await graphGet('/me/adaccounts', { fields: 'account_id', limit: 200 }, META.token(acc))).data || [];
     } catch (e) { console.log('  conta ' + acc.id + ' falhou /me/adaccounts: ' + e.message); continue; }
     for (const aa of adAccounts) {
       const adAcc = cleanAcc(aa.account_id || aa.id);
@@ -791,8 +794,8 @@ async function main() {
         // realmente veiculou nos últimos 7 dias é feita depois, com os insights.
         // ARCHIVED/DELETED ficam de fora nos dois modos (campanha morta não recebe sugestão).
         const statusPedidos = modo === 'amplo' ? STATUS_AMPLO : STATUS_ATIVAS;
-        camps = (await graphGet(`/act_${adAcc}/campaigns`, { fields: campFields, effective_status: statusPedidos, limit: 500 }, acc.access_token)).data || [];
-        insights = (await graphGet(`/act_${adAcc}/insights`, { level: 'campaign', fields: insFields, time_range: { since, until }, limit: 500 }, acc.access_token)).data || [];
+        camps = (await graphGet(`/act_${adAcc}/campaigns`, { fields: campFields, effective_status: statusPedidos, limit: 500 }, META.token(acc))).data || [];
+        insights = (await graphGet(`/act_${adAcc}/insights`, { level: 'campaign', fields: insFields, time_range: { since, until }, limit: 500 }, META.token(acc))).data || [];
       } catch (e) { console.log('  act_' + adAcc + ' falhou no Graph: ' + e.message); continue; }
       const insByCamp = {};
       insights.forEach((i) => { insByCamp[i.campaign_id] = i; });
@@ -843,7 +846,7 @@ async function main() {
       try {
         insAnt = (await graphGet(`/act_${adAcc}/insights`,
           { level: 'campaign', fields: insFields, time_range: { since: iniAnt, until: fimAnt }, limit: 500 },
-          acc.access_token)).data || [];
+          META.token(acc))).data || [];
       } catch (e) {
         // Tolerado de propósito — perder a tendência é pior que derrubar a
         // rodada inteira — mas NUNCA em silêncio: sem este log, a conta fica
@@ -866,7 +869,7 @@ async function main() {
         // ser de WhatsApp (ver ehDeWhatsapp em baldes.js). Sem eles, campanha de
         // WhatsApp de verdade era julgada pela meta de engajamento — a "[IA] Dom
         // Pedro · WhatsApp" caía em R$ 0,012 por ponto em vez de R$ 7,70 por conversa.
-        adsets = (await graphGet(`/act_${adAcc}/adsets`, { fields: 'id,campaign_id,daily_budget,lifetime_budget,effective_status,destination_type,optimization_goal', limit: 500 }, acc.access_token)).data || [];
+        adsets = (await graphGet(`/act_${adAcc}/adsets`, { fields: 'id,campaign_id,daily_budget,lifetime_budget,effective_status,destination_type,optimization_goal', limit: 500 }, META.token(acc))).data || [];
       } catch (e) { console.log('  act_' + adAcc + ' falhou adsets no Graph: ' + e.message); }
       // INSIGHTS POR CONJUNTO (Onda C, Tarefa 3): só usados quando a campanha
       // sai MISTA (dois mercados vivos ao mesmo tempo, ver mercadoDaCampanha
@@ -880,7 +883,7 @@ async function main() {
       const adsetFields = 'adset_id,campaign_id,spend,impressions,clicks,ctr,cpc,reach,frequency,actions,action_values';
       let adsetIns = [];
       try {
-        adsetIns = (await graphGet(`/act_${adAcc}/insights`, { level: 'adset', fields: adsetFields, time_range: { since, until }, limit: 500 }, acc.access_token)).data || [];
+        adsetIns = (await graphGet(`/act_${adAcc}/insights`, { level: 'adset', fields: adsetFields, time_range: { since, until }, limit: 500 }, META.token(acc))).data || [];
       } catch (e) { console.log('  act_' + adAcc + ' falhou insights por conjunto no Graph: ' + e.message); }
       const insPorAdset = {};
       adsetIns.forEach((i) => { insPorAdset[i.adset_id] = i; });
@@ -905,8 +908,8 @@ async function main() {
       const adFields = 'ad_id,ad_name,adset_id,adset_name,campaign_id,spend,impressions,clicks,ctr,cpc,reach,frequency,actions,action_values';
       let adIns = [], adObjs = [];
       try {
-        adIns = (await graphGet(`/act_${adAcc}/insights`, { level: 'ad', fields: adFields, time_range: { since, until }, limit: 500 }, acc.access_token)).data || [];
-        adObjs = (await graphGet(`/act_${adAcc}/ads`, { fields: 'id,effective_status', limit: 500 }, acc.access_token)).data || [];
+        adIns = (await graphGet(`/act_${adAcc}/insights`, { level: 'ad', fields: adFields, time_range: { since, until }, limit: 500 }, META.token(acc))).data || [];
+        adObjs = (await graphGet(`/act_${adAcc}/ads`, { fields: 'id,effective_status', limit: 500 }, META.token(acc))).data || [];
       } catch (e) { console.log('  act_' + adAcc + ' falhou ads no Graph: ' + e.message); }
       const adStatus = {};
       adObjs.forEach((a) => { adStatus[a.id] = a.effective_status || ''; });

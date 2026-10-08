@@ -19,6 +19,10 @@ import { exigirSegredoDeCron } from '../_shared/segredo-de-cron.ts';
 // Quem quer receber ESTE tipo. Sem isto o push ia pra todas as inscrições — e
 // saldo de conta de anúncio não é assunto de todo mundo.
 import { inscricoesDoTipo } from '../_shared/notificacoes.js';
+import { metaDoCore } from '../_shared/core-meta.js';
+
+// CORE_META=true: a Graph passa pelo proxy do `core` (token global; não lê accounts.access_token). Ver _shared/core-meta.js.
+const META = metaDoCore(Deno.env.toObject());
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -37,7 +41,7 @@ async function graph(caminho: string, params: Record<string, string>, token: str
   const u = new URL(`${GRAPH}/${caminho}`);
   for (const [k, v] of Object.entries(params)) u.searchParams.set(k, v);
   u.searchParams.set('access_token', token);
-  const r = await fetch(u);
+  const r = await META.fetch(u);
   const j = await r.json();
   if (j && j.error) throw new Error(j.error.message || 'erro na Meta');
   return j;
@@ -59,8 +63,8 @@ Deno.serve(async (req) => {
   if (!seg.vapid_public_key || !seg.vapid_private_key) return json({ error: 'vapid_nao_configurado' }, 500);
   webpush.setVapidDetails(seg.vapid_subject || 'mailto:breno@rbvcompany.com', seg.vapid_public_key, seg.vapid_private_key);
 
-  const { data: contas } = await sb.from('accounts').select('id,name,ad_account_id,access_token');
-  const comConta = (contas || []).filter((c: any) => c.ad_account_id && c.access_token);
+  const { data: contas } = await sb.from('accounts').select(META.colunas('id,name,ad_account_id,access_token'));
+  const comConta = (contas || []).filter((c: any) => c.ad_account_id && META.token(c));
   if (!comConta.length) return json({ ok: true, enviado: false, motivo: 'sem_contas' });
 
   // Uma conta que falhe não derruba as outras: o aviso das demais continua
@@ -71,10 +75,10 @@ Deno.serve(async (req) => {
     const acc = limparId(c.ad_account_id);
     try {
       const [detalhe, insights] = await Promise.all([
-        graph(`act_${acc}`, { fields: 'is_prepay_account,funding_source_details' }, c.access_token),
+        graph(`act_${acc}`, { fields: 'is_prepay_account,funding_source_details' }, META.token(c)),
         // Ritmo dos últimos 7 dias — é o que transforma "R$ 200" em "dura 2
         // dias". Sem ele o módulo não estima prazo e a conta não vira aviso.
-        graph(`act_${acc}/insights`, { date_preset: 'last_7d', fields: 'spend' }, c.access_token).catch(() => null),
+        graph(`act_${acc}/insights`, { date_preset: 'last_7d', fields: 'spend' }, META.token(c)).catch(() => null),
       ]);
       const gasto7 = Number(insights?.data?.[0]?.spend || 0);
       leituras.push({ ...lerSaldo(detalhe, gasto7 / 7), conta: c.name || acc, account_id: c.id });

@@ -8,6 +8,10 @@
 // Uso: node coletor/backfill-visitas-perfil-dia.mjs [--dias=30]
 import './lib/carregar-env.mjs';
 import { visitasPerfilDoDiaMeta, salvarVisitasPerfilDoDia } from './lib/visitas-perfil-meta.mjs';
+import { metaDoColetor } from './lib/core-meta.mjs';
+
+// CORE_META=true: a Graph passa pelo proxy do `core` (token global); não lê accounts.access_token.
+const META = metaDoColetor();
 
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://kounqtdoioootxqegkij.supabase.co';
 const SK = process.env.SUPABASE_SERVICE_KEY;
@@ -29,9 +33,11 @@ function somarDias(iso, delta) {
 }
 
 async function main() {
-  const r = await fetch(`${REST}/accounts?select=instagram_id,access_token&id=eq.${CONTA_VESSEL}`, { headers: H });
+  const r = await fetch(`${REST}/accounts?select=${META.colunas('instagram_id,access_token')}&id=eq.${CONTA_VESSEL}`, { headers: H });
   if (!r.ok) throw new Error('GET accounts ' + r.status);
-  const [{ instagram_id: igId, access_token: token }] = await r.json();
+  const [conta] = await r.json();
+  const { instagram_id: igId } = conta;
+  const token = META.token(conta);
 
   const hoje = hojeBR();
   // Só dias FECHADOS — "hoje" ainda não fechou, o fechamento nunca roda pra

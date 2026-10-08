@@ -35,6 +35,7 @@
 // arquivo de retomada, e além disso o UPDATE só toca linha que ainda está nula.
 
 import './lib/carregar-env.mjs';
+import { metaDoColetor } from './lib/core-meta.mjs';
 import { readFileSync, writeFileSync, renameSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -47,6 +48,8 @@ const SUPABASE_URL = process.env.SUPABASE_URL || 'https://kounqtdoioootxqegkij.s
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 const REST = SUPABASE_URL + '/rest/v1';
 const GRAPH = 'https://graph.facebook.com/v21.0';
+// CORE_META=true: a Graph passa pelo proxy do `core` (token global); não lê accounts.access_token. Ver lib/core-meta.mjs.
+const META = metaDoColetor();
 const sb = { apikey: SERVICE_KEY, Authorization: 'Bearer ' + SERVICE_KEY, 'Content-Type': 'application/json' };
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
@@ -155,7 +158,7 @@ async function insightsDaJanela(adAccountId, token, since, until) {
     // Página seguinte também é chamada à Meta, e conta no mesmo limite de taxa
     // que a tela ao vivo. A primeira não espera; as demais, sim.
     if (pagina++) await dormir(PAUSA);
-    const r = await fetch(proxima);
+    const r = await META.fetch(proxima);
     const j = await r.json().catch(() => null);
     if (!r.ok || !j?.data) throw new Error(j?.error?.message || `HTTP ${r.status}`);
     todos.push(...j.data);
@@ -195,7 +198,7 @@ async function main() {
   if (!SERVICE_KEY) { console.error('✗ Falta SUPABASE_SERVICE_KEY (coletor/.env)'); process.exit(1); }
   const comecou = Date.now();
 
-  const { linhas: contas } = await sbGet('/accounts?select=id,name,ad_account_id,access_token');
+  const { linhas: contas } = await sbGet('/accounts?select=' + META.colunas('id,name,ad_account_id,access_token'));
   const porId = Object.fromEntries(contas.map((c) => [c.id, c]));
 
   const linhas = await lerLinhasNulas();
@@ -231,7 +234,7 @@ async function main() {
   for (const alvo of fila) {
     const conta = porId[alvo.account_id];
     const rotulo = `${(conta?.name || alvo.account_id).slice(0, 18).padEnd(18)} ${alvo.captured_at} p${String(alvo.period_days).padEnd(2)}`;
-    if (!conta?.access_token || !conta?.ad_account_id) {
+    if (!META.token(conta || {}) || !conta?.ad_account_id) {
       semConta++; console.log(`  ! ${rotulo}  sem token ou sem conta de anúncio`); continue;
     }
 
@@ -245,7 +248,7 @@ async function main() {
     let itens;
     let nesteAlvo = 0;
     try {
-      itens = await insightsDaJanela(conta.ad_account_id, conta.access_token, janela.since, janela.until);
+      itens = await insightsDaJanela(conta.ad_account_id, META.token(conta), janela.since, janela.until);
 
       // REGRA 2: resposta vazia NÃO vira zero. Não grava e NÃO marca como feito —
       // pode ter sido a Meta engasgando, e a próxima execução tenta de novo.

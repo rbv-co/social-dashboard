@@ -26,6 +26,8 @@ const SUPABASE_URL = process.env.SUPABASE_URL || 'https://kounqtdoioootxqegkij.s
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 const REST = SUPABASE_URL + '/rest/v1';
 const GRAPH = 'https://graph.facebook.com/v21.0';
+// CORE_META=true: a Graph passa pelo proxy do `core` (token global); não lê accounts.access_token. Ver lib/core-meta.mjs.
+const META = metaDoColetor();
 const sb = { apikey: SERVICE_KEY, Authorization: 'Bearer ' + SERVICE_KEY, 'Content-Type': 'application/json' };
 
 const GRAVAR = process.argv.includes('--gravar');
@@ -65,7 +67,7 @@ async function pedirAMeta(igId, token, dia, dias) {
   url.searchParams.set('since', String(since));
   url.searchParams.set('until', String(until));
   url.searchParams.set('access_token', token);
-  const r = await fetch(url.toString());
+  const r = await META.fetch(url.toString());
   const j = await r.json().catch(() => null);
   if (!r.ok || !j?.data) return { erro: j?.error?.message || `HTTP ${r.status}` };
   const v = {};
@@ -89,7 +91,7 @@ async function regravar(id, leitura) {
 async function main() {
   if (!SERVICE_KEY) { console.error('✗ Falta SUPABASE_SERVICE_KEY (coletor/.env)'); process.exit(1); }
 
-  const contas = await sbGet('/accounts?select=id,name,instagram_id,access_token');
+  const contas = await sbGet('/accounts?select=' + META.colunas('id,name,instagram_id,access_token'));
   const porId = Object.fromEntries(contas.map((c) => [c.id, c]));
 
   // O mesmo critério do guarda: alcance real, curtidas zeradas e interação
@@ -105,9 +107,9 @@ async function main() {
   for (const linha of ruins) {
     const c = porId[linha.account_id];
     const rotulo = `${(c?.name || '?').padEnd(18)} ${linha.captured_at} p${String(linha.period_days).padEnd(2)}`;
-    if (!c?.access_token) { erros++; console.log(`  ! ${rotulo}  sem token`); continue; }
+    if (!META.token(c || {})) { erros++; console.log(`  ! ${rotulo}  sem token`); continue; }
 
-    const { leitura, erro } = await pedirAMeta(c.instagram_id, c.access_token, linha.captured_at, linha.period_days);
+    const { leitura, erro } = await pedirAMeta(c.instagram_id, META.token(c), linha.captured_at, linha.period_days);
     await sleep(250); // a Graph API não gosta de rajada
     if (erro) { erros++; console.log(`  ! ${rotulo}  ${String(erro).slice(0, 80)}`); continue; }
 

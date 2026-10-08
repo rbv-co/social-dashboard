@@ -8,6 +8,8 @@
 // então os últimos ~55 minutos do dia (justo o pico de movimento) nunca são
 // contados. O fechamento roda de manhã, bem depois da virada — pede o dia
 // inteiro já fechado numa chamada só, sem esse buraco.
+import { metaDoColetor } from './core-meta.mjs';
+
 const GRAPH = 'https://graph.facebook.com/v22.0';
 
 // Brasil não observa horário de verão desde 2019 — -03:00 é fixo o ano
@@ -18,7 +20,8 @@ export function epochDoDiaSP(diaISO) {
   return { since, until };
 }
 
-export async function visitasPerfilDoDiaMeta(igId, token, diaISO) {
+// `meta` (opcional): cliente de lib/core-meta.mjs. Padrão = do ambiente (CORE_META=true -> proxy do core; `token` é ignorado).
+export async function visitasPerfilDoDiaMeta(igId, token, diaISO, meta = metaDoColetor()) {
   const { since, until } = epochDoDiaSP(diaISO);
   const url = new URL(`${GRAPH}/${igId}/insights`);
   url.searchParams.set('metric', 'profile_views');
@@ -27,7 +30,7 @@ export async function visitasPerfilDoDiaMeta(igId, token, diaISO) {
   url.searchParams.set('since', String(since));
   url.searchParams.set('until', String(until));
   url.searchParams.set('access_token', token);
-  const r = await fetch(url);
+  const r = await meta.fetch(url);
   if (!r.ok) throw new Error(`Meta API profile_views: ${r.status} ${await r.text()}`);
   const d = await r.json();
   return d.data?.[0]?.total_value?.value ?? 0;
