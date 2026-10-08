@@ -37,6 +37,35 @@ const CORS = {
 const responder = (corpo: unknown, status = 200) =>
   new Response(JSON.stringify(corpo), { status, headers: { ...CORS, 'Content-Type': 'application/json' } });
 
+// ⚠️ O IP DE QUEM CHAMA, JÁ EM HASH. `cf-connecting-ip` é posto pelo Cloudflare
+// na frente da Supabase e o cliente não consegue forjar; o fallback é a ÚLTIMA
+// entrada de `x-forwarded-for` (a que o proxy acrescenta, não a que o cliente
+// escreve). Vai salgado com a chave de serviço: o IP puro nunca é gravado.
+// ponytail: atrás de NAT/wifi da loja várias clientes dividem o mesmo IP — por
+// isso os tetos abaixo são folgados; se um dia travar a loja, subir o teto.
+async function hashDoIp(req: Request): Promise<string> {
+  const ip = req.headers.get('cf-connecting-ip')
+    ?? (req.headers.get('x-forwarded-for') ?? '').split(',').pop()?.trim()
+    ?? '';
+  const bytes = new TextEncoder().encode(`vessel-conta:${SERVICE_KEY}:${ip || 'desconhecido'}`);
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, 32);
+}
+
+// ⚠️ FALHA ABERTA, COM LOG: o teto é defesa em profundidade, e um banco sem a
+// função `vessel_teto_de_chamadas` (migration ainda não aplicada) ou fora do
+// ar não pode derrubar o cadastro da cliente. O log leva só o nome do rpc e a
+// mensagem do Postgres, nunca IP, CPF ou e-mail.
+async function dentroDoTeto(sb: ReturnType<typeof createClient>, chave: string, max: number, janelaSegundos: number) {
+  const { data, error } = await sb.rpc('vessel_teto_de_chamadas', {
+    p_chave: chave, p_max: max, p_janela_segundos: janelaSegundos });
+  if (error) {
+    console.error('vessel_teto_de_chamadas', error.message);
+    return true;
+  }
+  return data === true;
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   if (req.method !== 'POST') return responder({ ok: false, motivo: 'metodo' }, 405);
@@ -47,7 +76,17 @@ Deno.serve(async (req) => {
   const sb = createClient(SUPABASE_URL, SERVICE_KEY);
   const agente = req.headers.get('user-agent') ?? '';
 
+  const ip = await hashDoIp(req);
+
   if (corpo.acao === 'criar') {
+    // ⚠️ TETO ANTES DE TUDO, e antes de gastar um e-mail: cadastro com e-mail
+    // alheio dispara mensagem de `vesselbrasil.com.br` para quem não pediu.
+    // 20/hora por IP (a loja pode cadastrar várias clientes no mesmo wifi) e
+    // 500/hora no total, como disjuntor — o uso normal é de dezenas por dia.
+    if (!(await dentroDoTeto(sb, `teto:criar:ip:${ip}`, 20, 3600))
+        || !(await dentroDoTeto(sb, 'teto:criar:global', 500, 3600))) {
+      return responder({ ok: false, motivo: 'muitas_tentativas' });
+    }
     const senha = gerarSenha();
     const { data, error } = await sb.rpc('vessel_conta_criar', {
       p_nome: corpo.nome, p_cpf: corpo.cpf, p_email: corpo.email,
@@ -82,9 +121,14 @@ Deno.serve(async (req) => {
   }
 
   if (corpo.acao === 'entrar') {
+    // O teto por login (5 erros/15 min) já existe no banco; este é por IP, para
+    // quem chuta senha de MUITOS perfis de um lugar só.
+    if (!(await dentroDoTeto(sb, `teto:entrar:ip:${ip}`, 60, 3600))) {
+      return responder({ ok: false, motivo: 'muitas_tentativas' });
+    }
     const { data, error } = await sb.rpc('vessel_conta_entrar', {
       p_login: corpo.login, p_senha: corpo.senha, p_lembrar: corpo.lembrar === true,
-      p_agente: agente, p_ip_hash: null,
+      p_agente: agente, p_ip_hash: ip,
     });
     if (error) {
       console.error('vessel_conta_entrar', error.message);
@@ -121,6 +165,12 @@ Deno.serve(async (req) => {
     // acabou de falhar. Agora é em dois passos: primeiro só se PERGUNTA para
     // onde mandar (e isso já confere o teto de 3/hora, no banco); a senha só
     // é trocada de verdade DEPOIS que o e-mail sai.
+    // ⚠️ Estourou o teto do IP: responde {ok:true} IGUAL a todo o resto, sem
+    // e-mail e sem tocar no banco. Dizer "muitas tentativas" aqui seria outro
+    // sinal diferente na tela (ver o parágrafo sobre a resposta, abaixo).
+    if (!(await dentroDoTeto(sb, `teto:esqueci:ip:${ip}`, 10, 3600))) {
+      return responder({ ok: true });
+    }
     const { data, error } = await sb.rpc('vessel_conta_pedido_de_nova_senha', {
       p_login: corpo.login });
     // ⚠️ Erro de infraestrutura (parâmetro divergente, banco fora do ar) NÃO
