@@ -32,7 +32,7 @@ const numero = (valor, padrao) => Number(valor || padrao)
  * @returns {Promise<{status:number, corpo:object}>}
  *   corpo: as chaves do abandono NO TOPO (formato de sempre) + `inicio`, `pedido` e `followup`.
  */
-export async function rodarTudo({ env, sb, criarCliente, agora = new Date() }) {
+export async function rodarTudo({ env, sb, criarCliente, agora = new Date(), tipos = null }) {
   const chatwoot = { url: env('CHATWOOT_URL'), contaId: env('CHATWOOT_CONTA_ID'), caixaId: env('CHATWOOT_CAIXA_ID'), token: env('CHATWOOT_API_TOKEN'), botSecret: env('CHATWOOT_BOT_SECRET') }
   const base = {
     limite: numero(env('ENVIO_LIMITE_POR_RODADA'), 10),
@@ -43,7 +43,7 @@ export async function rodarTudo({ env, sb, criarCliente, agora = new Date() }) {
     travaCruzada: travaCruzadaLigada(env('ABANDONO_TRAVA_CRUZADA')),
   }
 
-  const passadas = [
+  const todas = [
     {
       nome: 'inicio', modo: env('ENVIO_MODO_INICIO') || 'desligado',
       rodar: (cliente, modo) => processarFila({
@@ -85,6 +85,9 @@ export async function rodarTudo({ env, sb, criarCliente, agora = new Date() }) {
       },
     },
   ]
+
+  // `tipos` (ex.: ['inicio','pedido']) roda SÓ essas passadas: é o disparo imediato (disparo-imediato.js). Sem ele, todas.
+  const passadas = tipos ? todas.filter((p) => tipos.includes(p.nome)) : todas
 
   // Só cria o cliente do Chatwoot se alguma passada de fato envia (seco e desligado nunca falam com ele).
   const enviaDeVerdade = passadas.some((p) => p.modo === 'lista' || p.modo === 'ligado')
