@@ -14,6 +14,7 @@ import {
   normalizarTelefone, primeiroNome, sufixoDoLink, validarConfig,
 } from './mensagem-de-abandono.js'
 import { classificarErro, ErroChatwoot } from './cliente-chatwoot.js'
+import { checarTravaCruzada, MOTIVO_TRAVA_CRUZADA } from './trava-cruzada.js'
 
 /** Mostra o sufixo do link sem a chave secreta de recuperação (a resposta do cron fica em log). */
 const amostraDoSufixo = (s) => s.replace(/(key=)[^&]*/i, '$1…')
@@ -108,6 +109,22 @@ export async function processarFila({ sb, cliente, config, tipo, agora = new Dat
       await devolver(linha.chave, false)
       resultado.push({ chave: curto, resultado: 'esperando', motivo: d.motivo })
       continue
+    }
+
+    // Trava cruzada: outra mensagem automática ao mesmo telefone nas últimas 20 h (qualquer tipo) barra esta.
+    // O pedido recebido é transacional (confirma uma compra) e nunca é barrado.
+    if (config.travaCruzada && tipo !== 'pedido') {
+      const t = await checarTravaCruzada(sb, d.telefone)
+      if (t === 'erro') {
+        await devolver(linha.chave, true)
+        resultado.push({ chave: curto, resultado: 'esperando', motivo: 'falha_na_trava_cruzada' })
+        continue
+      }
+      if (t === 'barrar') {
+        await marcar(linha.chave, 'ignorada', MOTIVO_TRAVA_CRUZADA)
+        resultado.push({ chave: curto, resultado: 'ignorada', motivo: MOTIVO_TRAVA_CRUZADA })
+        continue
+      }
     }
 
     if (followup) {

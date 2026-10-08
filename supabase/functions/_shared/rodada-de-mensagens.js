@@ -7,6 +7,7 @@ import {
   decidirEnvio, formatarNomeCompleto, montarTemplateParams, normalizarTelefone, primeiroNome, validarConfig,
 } from './mensagem-de-abandono.js'
 import { classificarErro, ErroChatwoot } from './cliente-chatwoot.js'
+import { checarTravaCruzada, MOTIVO_TRAVA_CRUZADA } from './trava-cruzada.js'
 
 /** Mostra o sufixo do link sem a chave secreta de recuperação (a resposta do cron fica em log). */
 const amostraDoSufixo = (s) => s.replace(/(key=)[^&]*/i, '$1…')
@@ -87,6 +88,21 @@ export async function processarRodada({ sb, cliente, config, agora = new Date() 
       await rpc('devolver_mensagem', { p_token: linha.token, p_contar: false })
       resultado.push({ token: curto, resultado: 'esperando', motivo: d.motivo })
       continue
+    }
+
+    // Trava cruzada: outra mensagem automática ao mesmo telefone nas últimas 20 h (qualquer tipo) barra esta.
+    if (config.travaCruzada) {
+      const t = await checarTravaCruzada(sb, d.telefone)
+      if (t === 'erro') {
+        await rpc('devolver_mensagem', { p_token: linha.token, p_contar: true })
+        resultado.push({ token: curto, resultado: 'esperando', motivo: 'falha_na_trava_cruzada' })
+        continue
+      }
+      if (t === 'barrar') {
+        await rpc('marcar_mensagem', { p_token: linha.token, p_status: 'ignorada', p_motivo: MOTIVO_TRAVA_CRUZADA })
+        resultado.push({ token: curto, resultado: 'ignorada', motivo: MOTIVO_TRAVA_CRUZADA })
+        continue
+      }
     }
 
     // ⚠️ RELÊ o status na hora de enviar: a linha veio da reserva, que pode ter alguns segundos (cada item
