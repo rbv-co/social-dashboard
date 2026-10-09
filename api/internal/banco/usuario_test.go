@@ -27,6 +27,8 @@ func TestComUsuarioGravaAIdentidadeParaOsTriggers(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// pool de uma conexão: a transação e o insert seguinte usam a mesma sessão
+	p = umaConexao(t, p)
 	err := banco.ComUsuario(ctx, p, uidA, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `insert into coisas (nome) values ('a')`)
 		return err

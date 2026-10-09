@@ -9,11 +9,27 @@ import (
 	"context"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rbv-co/social-dashboard/api/internal/banco"
 	"github.com/rbv-co/social-dashboard/api/internal/testebanco"
 )
 
 const uidA = "11111111-1111-1111-1111-111111111111"
+
+// umaConexao devolve um pool de UMA conexão só (mesma URL e search_path de p). Os testes de
+// vazamento precisam das duas fases na mesma sessão: numa conexão nova o GUC nunca foi
+// definido e o teste passaria sem provar nada.
+func umaConexao(t *testing.T, p *pgxpool.Pool) *pgxpool.Pool {
+	t.Helper()
+	cfg := p.Config().Copy()
+	cfg.MaxConns = 1
+	p1, err := pgxpool.NewWithConfig(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(p1.Close)
+	return p1
+}
 
 func TestCompat(t *testing.T) {
 	p := testebanco.Novo(t)
@@ -30,7 +46,8 @@ func TestCompat(t *testing.T) {
 		t.Fatalf("sem app.usuario_id deveria ser null, veio %v (err %v)", uid, err)
 	}
 
-	tx, err := p.Begin(ctx)
+	p1 := umaConexao(t, p)
+	tx, err := p1.Begin(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,9 +61,14 @@ func TestCompat(t *testing.T) {
 	if err := tx.Commit(ctx); err != nil {
 		t.Fatal(err)
 	}
-	// set_config(..., true) vale só na transação: não pode vazar
+	// set_config(..., true) vale só na transação: não pode vazar. Na MESMA conexão o GUC
+	// continua definido como '' (peculiaridade do Postgres): auth.uid() precisa do nullif.
+	var guc string
+	if err := p1.QueryRow(ctx, `select current_setting('app.usuario_id', true)`).Scan(&guc); err != nil || guc != "" {
+		t.Fatalf("GUC após o commit = %q, esperado '' (err %v)", guc, err)
+	}
 	uid = nil
-	if err := p.QueryRow(ctx, `select auth.uid()::text`).Scan(&uid); err != nil || uid != nil {
+	if err := p1.QueryRow(ctx, `select auth.uid()::text`).Scan(&uid); err != nil || uid != nil {
 		t.Fatalf("vazou para fora da transação: %v (err %v)", uid, err)
 	}
 
