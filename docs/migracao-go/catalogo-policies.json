@@ -1,0 +1,2823 @@
+[
+  {
+    "tabela": "%I",
+    "nome": "so_contas_permitidas",
+    "tipo": "restrictive",
+    "dinamica": true,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "public.pode_ver_conta(account_id::text)",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-07-31-allowed-accounts-no-banco.sql"
+  },
+  {
+    "tabela": "accounts",
+    "nome": "admin_update_accounts",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "update",
+    "papeis": [
+      "public"
+    ],
+    "using": "EXISTS (\n      SELECT 1 FROM public.profiles p\n      WHERE p.id = auth.uid() AND p.role = 'admin'\n    )",
+    "withCheck": "EXISTS (\n      SELECT 1 FROM public.profiles p\n      WHERE p.id = auth.uid() AND p.role = 'admin'\n    )",
+    "arquivo": "db/migrations/006_accounts_update_policy.sql"
+  },
+  {
+    "tabela": "acessos_drive_marcas",
+    "nome": "acessos_drive_marcas_rw",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "public.is_acessos_admin()",
+    "withCheck": "public.is_acessos_admin()",
+    "arquivo": "db/migrations/acessos/015_drive_marcas.sql"
+  },
+  {
+    "tabela": "acessos_drive_overrides",
+    "nome": "acessos_drive_overrides_rw",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "public.is_acessos_admin()",
+    "withCheck": "public.is_acessos_admin()",
+    "arquivo": "db/migrations/acessos/016_drive_setores_overrides.sql"
+  },
+  {
+    "tabela": "acessos_drive_setores",
+    "nome": "acessos_drive_setores_rw",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "public.is_acessos_admin()",
+    "withCheck": "public.is_acessos_admin()",
+    "arquivo": "db/migrations/acessos/016_drive_setores_overrides.sql"
+  },
+  {
+    "tabela": "acessos_log",
+    "nome": "acessos_log_insert",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "insert",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": null,
+    "withCheck": "public.is_acessos_admin()",
+    "arquivo": "db/migrations/acessos/002_rls.sql"
+  },
+  {
+    "tabela": "acessos_log",
+    "nome": "acessos_log_select",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "public.is_acessos_admin()",
+    "withCheck": null,
+    "arquivo": "db/migrations/acessos/002_rls.sql"
+  },
+  {
+    "tabela": "acessos_organizacoes",
+    "nome": "acessos_organizacoes_rw",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "public.is_acessos_admin()",
+    "withCheck": "public.is_acessos_admin()",
+    "arquivo": "db/migrations/acessos/005_organizacoes.sql"
+  },
+  {
+    "tabela": "acessos_patrimonio_historico",
+    "nome": "acessos_patrimonio_historico_rw",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "is_acessos_admin()",
+    "withCheck": "is_acessos_admin()",
+    "arquivo": "db/migrations/2026-07-17-patrimonio-completo.sql"
+  },
+  {
+    "tabela": "acessos_perfis",
+    "nome": "acessos_perfis_escrever",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "public.is_superadmin()",
+    "withCheck": "public.is_superadmin()",
+    "arquivo": "db/migrations/acessos/039_perfis_de_acesso.sql"
+  },
+  {
+    "tabela": "acessos_perfis",
+    "nome": "acessos_perfis_ler",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null,
+    "arquivo": "db/migrations/acessos/039_perfis_de_acesso.sql"
+  },
+  {
+    "tabela": "acessos_recursos",
+    "nome": "acessos_recursos_rw",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "public.is_acessos_admin()",
+    "withCheck": "public.is_acessos_admin()",
+    "arquivo": "db/migrations/acessos/009_recursos.sql"
+  },
+  {
+    "tabela": "acessos_setores",
+    "nome": "acessos_setores_rw",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "public.is_acessos_admin()",
+    "withCheck": "public.is_acessos_admin()",
+    "arquivo": "db/migrations/acessos/004_v2.sql"
+  },
+  {
+    "tabela": "acessos_termos",
+    "nome": "acessos_termos_rw",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "public.is_acessos_admin()",
+    "withCheck": "public.is_acessos_admin()",
+    "arquivo": "db/migrations/acessos/004_v2.sql"
+  },
+  {
+    "tabela": "acessos_vinculos",
+    "nome": "acessos_vinculos_rw",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "public.is_acessos_admin()",
+    "withCheck": "public.is_acessos_admin()",
+    "arquivo": "db/migrations/acessos/012_icloud_vinculos.sql"
+  },
+  {
+    "tabela": "ad_insights_hora",
+    "nome": "ad_insights_hora_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "exists (\n      select 1 from public.profiles p\n       where p.id = auth.uid()\n         and (p.role = 'admin' or p.is_superadmin or p.permissions ? 'meta.hora')\n    )",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-09-18-meta-ads-ad-insights-hora.sql"
+  },
+  {
+    "tabela": "ad_insights_hora",
+    "nome": "so_contas_permitidas",
+    "tipo": "restrictive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "public.pode_ver_conta(account_id::text)",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-09-18-meta-ads-ad-insights-hora.sql"
+  },
+  {
+    "tabela": "ads",
+    "nome": "auth_read_ads",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "auth.role() = 'authenticated'",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-09-18-meta-ads-catalogo-anuncios.sql"
+  },
+  {
+    "tabela": "ads",
+    "nome": "so_contas_permitidas",
+    "tipo": "restrictive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "public.pode_ver_conta(account_id::text)",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-09-18-meta-ads-catalogo-anuncios.sql"
+  },
+  {
+    "tabela": "bling_depositos",
+    "nome": "bling_depositos_read",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-09-05-bling-depositos.sql"
+  },
+  {
+    "tabela": "bling_lojas",
+    "nome": "bling_lojas_grupo_superadmin",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "update",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "public.superadmin_pela_ficha()",
+    "withCheck": "public.superadmin_pela_ficha()",
+    "arquivo": "db/migrations/2026-08-20-grupo-do-canal.sql"
+  },
+  {
+    "tabela": "bling_pedido_ajuste_valor",
+    "nome": "bpav_escrever",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "public.superadmin_pela_ficha()",
+    "withCheck": "public.superadmin_pela_ficha()",
+    "arquivo": "db/migrations/2026-09-12-valor-corrigido-da-venda.sql"
+  },
+  {
+    "tabela": "bling_pedido_ajuste_valor",
+    "nome": "bpav_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-09-12-valor-corrigido-da-venda.sql"
+  },
+  {
+    "tabela": "bling_pedido_ajuste_valor",
+    "nome": "bpav_so_do_meu_canal",
+    "tipo": "restrictive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "public.pode_ver_canal(loja_id)",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-09-12-valor-corrigido-da-venda.sql"
+  },
+  {
+    "tabela": "bling_pedido_ajuste_vendedor",
+    "nome": "bpaven_escrever",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "public.superadmin_pela_ficha()",
+    "withCheck": "public.superadmin_pela_ficha()",
+    "arquivo": "db/migrations/2026-09-25-ajuste-manual-do-vendedor.sql"
+  },
+  {
+    "tabela": "bling_pedido_ajuste_vendedor",
+    "nome": "bpaven_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-09-25-ajuste-manual-do-vendedor.sql"
+  },
+  {
+    "tabela": "bling_pedido_ajuste_vendedor",
+    "nome": "bpaven_so_do_meu_canal",
+    "tipo": "restrictive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "public.pode_ver_canal(loja_id)",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-09-25-ajuste-manual-do-vendedor.sql"
+  },
+  {
+    "tabela": "bling_pedido_forma_pagamento",
+    "nome": "bpfp_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-10-03-forma-de-pagamento-do-pedido.sql"
+  },
+  {
+    "tabela": "bling_pedido_forma_pagamento",
+    "nome": "bpfp_so_do_meu_canal",
+    "tipo": "restrictive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "public.pode_ver_canal(loja_id)",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-10-03-forma-de-pagamento-do-pedido.sql"
+  },
+  {
+    "tabela": "bling_pedido_nota",
+    "nome": "bpn_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-08-11-nota-fiscal-dos-pedidos.sql"
+  },
+  {
+    "tabela": "bling_pedido_nota",
+    "nome": "bpn_so_do_meu_canal",
+    "tipo": "restrictive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "public.pode_ver_canal(loja_id)",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-08-11-nota-fiscal-dos-pedidos.sql"
+  },
+  {
+    "tabela": "bling_pedido_vendedor",
+    "nome": "quem ve vendas atualiza pedido_vendedor",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "update",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "public.pode_ver_vendas()",
+    "withCheck": "public.pode_ver_vendas()",
+    "arquivo": "db/migrations/2026-08-18-cache-de-vendas-so-quem-ve-vendas.sql"
+  },
+  {
+    "tabela": "bling_pedido_vendedor",
+    "nome": "quem ve vendas grava pedido_vendedor",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "insert",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": null,
+    "withCheck": "public.pode_ver_vendas()",
+    "arquivo": "db/migrations/2026-08-18-cache-de-vendas-so-quem-ve-vendas.sql"
+  },
+  {
+    "tabela": "bling_vendedor_metas",
+    "nome": "admin_write_vend_metas",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "exists (select 1 from profiles where profiles.id = auth.uid() and profiles.role = 'admin')",
+    "withCheck": "exists (select 1 from profiles where profiles.id = auth.uid() and profiles.role = 'admin')",
+    "arquivo": "supabase/migrations/20260707_criar_bling_vendedor_metas.sql"
+  },
+  {
+    "tabela": "bling_vendedor_metas",
+    "nome": "authenticated_read_vend_metas",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "public"
+    ],
+    "using": "auth.role() = 'authenticated'",
+    "withCheck": null,
+    "arquivo": "supabase/migrations/20260707_criar_bling_vendedor_metas.sql"
+  },
+  {
+    "tabela": "bling_vendedor_metas",
+    "nome": "service_role_full_vend_metas",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "all",
+    "papeis": [
+      "public"
+    ],
+    "using": "auth.role() = 'service_role'",
+    "withCheck": null,
+    "arquivo": "supabase/migrations/20260707_criar_bling_vendedor_metas.sql"
+  },
+  {
+    "tabela": "bling_vendedores",
+    "nome": "quem ve vendas atualiza vendedores",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "update",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "public.pode_ver_vendas()",
+    "withCheck": "public.pode_ver_vendas()",
+    "arquivo": "db/migrations/2026-08-18-cache-de-vendas-so-quem-ve-vendas.sql"
+  },
+  {
+    "tabela": "bling_vendedores",
+    "nome": "quem ve vendas grava vendedores",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "insert",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": null,
+    "withCheck": "public.pode_ver_vendas()",
+    "arquivo": "db/migrations/2026-08-18-cache-de-vendas-so-quem-ve-vendas.sql"
+  },
+  {
+    "tabela": "campaign_adsets",
+    "nome": "campaign_adsets_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null,
+    "arquivo": "supabase/migrations/20260817_baldes_de_campanha_conjuntos_e_contagens.sql"
+  },
+  {
+    "tabela": "campaign_adsets",
+    "nome": "so_contas_permitidas",
+    "tipo": "restrictive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "pode_ver_conta((account_id)::text)",
+    "withCheck": null,
+    "arquivo": "supabase/migrations/20260817_trava_por_conta_em_campaign_adsets.sql"
+  },
+  {
+    "tabela": "campaign_insights_hora",
+    "nome": "campaign_insights_hora_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "exists (\n      select 1 from public.profiles p\n       where p.id = auth.uid()\n         and (p.role = 'admin' or p.is_superadmin or p.permissions ? 'meta.hora')\n    )",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-09-11-meta-ads-hora-permissiva.sql"
+  },
+  {
+    "tabela": "campaign_insights_hora",
+    "nome": "so_contas_permitidas",
+    "tipo": "restrictive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "public.pode_ver_conta(account_id::text)",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-09-11-meta-ads-hora-tabela.sql"
+  },
+  {
+    "tabela": "canais_grupos",
+    "nome": "canais_grupos_escrever",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "public.superadmin_pela_ficha()",
+    "withCheck": "public.superadmin_pela_ficha()",
+    "arquivo": "db/migrations/2026-08-21-canal-pai-e-supervisora-de-grupo.sql"
+  },
+  {
+    "tabela": "canais_grupos",
+    "nome": "canais_grupos_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-08-21-canal-pai-e-supervisora-de-grupo.sql"
+  },
+  {
+    "tabela": "canais_grupos_membros",
+    "nome": "cgm_escrever",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "public.superadmin_pela_ficha()",
+    "withCheck": "public.superadmin_pela_ficha()",
+    "arquivo": "db/migrations/2026-08-21-canal-pai-e-supervisora-de-grupo.sql"
+  },
+  {
+    "tabela": "canais_grupos_membros",
+    "nome": "cgm_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "profile_id = auth.uid() or public.pode_ver_grupo(grupo_id)",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-08-21-canal-pai-e-supervisora-de-grupo.sql"
+  },
+  {
+    "tabela": "carrinho_eventos",
+    "nome": "carrinho_eventos_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "exists (\n    select 1 from public.profiles p where p.id = auth.uid()\n      and (p.role = 'admin' or p.is_superadmin or 'carrinho' = any (p.features))\n  )",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-09-17-carrinho-eventos.sql"
+  },
+  {
+    "tabela": "carrinho_eventos",
+    "nome": "carrinho_eventos_leitura_meta_leads",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "public.is_vessel_leads()",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-09-24-meta-ads-base-de-leads-leitura.sql"
+  },
+  {
+    "tabela": "chatwoot_eventos",
+    "nome": "chatwoot_eventos_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "exists (\n      select 1 from public.profiles p\n       where p.id = auth.uid()\n         and (p.role = 'admin' or p.is_superadmin or p.permissions ? 'meta.opr')\n    )",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-09-24-chatwoot-eventos.sql"
+  },
+  {
+    "tabela": "checkout_abandono",
+    "nome": "checkout_abandono_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "exists (\n    select 1 from public.profiles p\n    where p.id = auth.uid()\n      and (p.role = 'admin' or p.is_superadmin or 'abandono-carrinho' = any (p.features))\n  )",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-09-29-abandono-de-checkout.sql"
+  },
+  {
+    "tabela": "coletor_log",
+    "nome": "coletor_log_select",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null,
+    "arquivo": "db/migrations/010_coletor_log.sql"
+  },
+  {
+    "tabela": "conteudo_arquivos",
+    "nome": "conteudo_arquivos_escrita",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "exists (select 1 from public.profiles p\n             where p.id = auth.uid()\n               and (p.role = 'admin' or p.is_superadmin or 'conteudo' = any (p.features)))",
+    "withCheck": "exists (select 1 from public.profiles p\n             where p.id = auth.uid()\n               and (p.role = 'admin' or p.is_superadmin or 'conteudo' = any (p.features)))",
+    "arquivo": "db/migrations/2026-07-29-conteudo-01-fundacao.sql"
+  },
+  {
+    "tabela": "conteudo_arquivos",
+    "nome": "conteudo_arquivos_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "exists (select 1 from public.profiles p\n             where p.id = auth.uid()\n               and (p.role = 'admin' or p.is_superadmin or 'conteudo' = any (p.features)))",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-07-29-conteudo-01-fundacao.sql"
+  },
+  {
+    "tabela": "conteudo_blocos",
+    "nome": "conteudo_blocos_escrita",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "exists (select 1 from public.profiles p where p.id = auth.uid()\n                  and (p.role = 'admin' or p.is_superadmin or 'conteudo' = any (p.features)))",
+    "withCheck": "exists (select 1 from public.profiles p where p.id = auth.uid()\n                  and (p.role = 'admin' or p.is_superadmin or 'conteudo' = any (p.features)))",
+    "arquivo": "db/migrations/2026-07-31-conteudo-10-ideias.sql"
+  },
+  {
+    "tabela": "conteudo_blocos",
+    "nome": "conteudo_blocos_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "exists (select 1 from public.profiles p where p.id = auth.uid()\n                  and (p.role = 'admin' or p.is_superadmin or 'conteudo' = any (p.features)))",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-07-31-conteudo-10-ideias.sql"
+  },
+  {
+    "tabela": "conteudo_blocos",
+    "nome": "conteudo_blocos_srv",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "all",
+    "papeis": [
+      "public"
+    ],
+    "using": "auth.role() = 'service_role'",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-07-31-conteudo-10-ideias.sql"
+  },
+  {
+    "tabela": "conteudo_casamentos",
+    "nome": "conteudo_casamentos_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "exists (select 1 from public.profiles p where p.id = auth.uid()\n                  and (p.role = 'admin' or p.is_superadmin or 'conteudo' = any (p.features)))",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-07-31-conteudo-07-metricas.sql"
+  },
+  {
+    "tabela": "conteudo_casamentos",
+    "nome": "conteudo_casamentos_srv",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "all",
+    "papeis": [
+      "public"
+    ],
+    "using": "auth.role() = 'service_role'",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-07-31-conteudo-07-metricas.sql"
+  },
+  {
+    "tabela": "conteudo_concorrentes",
+    "nome": "conteudo_concorrentes_escrita",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "exists (select 1 from public.profiles p where p.id = auth.uid()\n                  and (p.role = 'admin' or p.is_superadmin or 'conteudo' = any (p.features)))",
+    "withCheck": "exists (select 1 from public.profiles p where p.id = auth.uid()\n                  and (p.role = 'admin' or p.is_superadmin or 'conteudo' = any (p.features)))",
+    "arquivo": "db/migrations/2026-08-01-conteudo-12-concorrentes-por-marca.sql"
+  },
+  {
+    "tabela": "conteudo_concorrentes",
+    "nome": "conteudo_concorrentes_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "exists (select 1 from public.profiles p where p.id = auth.uid()\n                  and (p.role = 'admin' or p.is_superadmin or 'conteudo' = any (p.features)))",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-08-01-conteudo-12-concorrentes-por-marca.sql"
+  },
+  {
+    "tabela": "conteudo_concorrentes",
+    "nome": "conteudo_concorrentes_srv",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "all",
+    "papeis": [
+      "public"
+    ],
+    "using": "auth.role() = 'service_role'",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-08-01-conteudo-12-concorrentes-por-marca.sql"
+  },
+  {
+    "tabela": "conteudo_eventos",
+    "nome": "conteudo_eventos_insercao",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "insert",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": null,
+    "withCheck": "exists (select 1 from public.profiles p\n             where p.id = auth.uid()\n               and (p.role = 'admin' or p.is_superadmin or 'conteudo' = any (p.features)))\n    \n    and quem = auth.uid()",
+    "arquivo": "db/migrations/2026-07-29-conteudo-01-fundacao.sql"
+  },
+  {
+    "tabela": "conteudo_eventos",
+    "nome": "conteudo_eventos_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "exists (select 1 from public.profiles p\n             where p.id = auth.uid()\n               and (p.role = 'admin' or p.is_superadmin or 'conteudo' = any (p.features)))",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-07-29-conteudo-01-fundacao.sql"
+  },
+  {
+    "tabela": "conteudo_ideias",
+    "nome": "conteudo_ideias_escrita",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "exists (select 1 from public.profiles p where p.id = auth.uid()\n                  and (p.role = 'admin' or p.is_superadmin or 'conteudo' = any (p.features)))",
+    "withCheck": "exists (select 1 from public.profiles p where p.id = auth.uid()\n                  and (p.role = 'admin' or p.is_superadmin or 'conteudo' = any (p.features)))",
+    "arquivo": "db/migrations/2026-07-31-conteudo-10-ideias.sql"
+  },
+  {
+    "tabela": "conteudo_ideias",
+    "nome": "conteudo_ideias_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "exists (select 1 from public.profiles p where p.id = auth.uid()\n                  and (p.role = 'admin' or p.is_superadmin or 'conteudo' = any (p.features)))",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-07-31-conteudo-10-ideias.sql"
+  },
+  {
+    "tabela": "conteudo_ideias",
+    "nome": "conteudo_ideias_srv",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "all",
+    "papeis": [
+      "public"
+    ],
+    "using": "auth.role() = 'service_role'",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-07-31-conteudo-10-ideias.sql"
+  },
+  {
+    "tabela": "conteudo_jobs",
+    "nome": "conteudo_jobs_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "exists (select 1 from public.profiles p where p.id = auth.uid()\n                  and (p.role = 'admin' or p.is_superadmin or 'conteudo' = any (p.features)))",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-07-31-conteudo-10-ideias.sql"
+  },
+  {
+    "tabela": "conteudo_jobs",
+    "nome": "conteudo_jobs_srv",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "all",
+    "papeis": [
+      "public"
+    ],
+    "using": "auth.role() = 'service_role'",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-07-31-conteudo-10-ideias.sql"
+  },
+  {
+    "tabela": "conteudo_metricas",
+    "nome": "conteudo_metricas_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "exists (select 1 from public.profiles p where p.id = auth.uid()\n                  and (p.role = 'admin' or p.is_superadmin or 'conteudo' = any (p.features)))",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-07-31-conteudo-07-metricas.sql"
+  },
+  {
+    "tabela": "conteudo_metricas",
+    "nome": "conteudo_metricas_srv",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "all",
+    "papeis": [
+      "public"
+    ],
+    "using": "auth.role() = 'service_role'",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-07-31-conteudo-07-metricas.sql"
+  },
+  {
+    "tabela": "conteudo_pecas",
+    "nome": "conteudo_pecas_escrita",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "exists (select 1 from public.profiles p\n             where p.id = auth.uid()\n               and (p.role = 'admin' or p.is_superadmin or 'conteudo' = any (p.features)))",
+    "withCheck": "exists (select 1 from public.profiles p\n             where p.id = auth.uid()\n               and (p.role = 'admin' or p.is_superadmin or 'conteudo' = any (p.features)))",
+    "arquivo": "db/migrations/2026-07-29-conteudo-01-fundacao.sql"
+  },
+  {
+    "tabela": "conteudo_pecas",
+    "nome": "conteudo_pecas_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "exists (select 1 from public.profiles p\n             where p.id = auth.uid()\n               and (p.role = 'admin' or p.is_superadmin or 'conteudo' = any (p.features)))",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-07-29-conteudo-01-fundacao.sql"
+  },
+  {
+    "tabela": "entradas_como_outro_usuario",
+    "nome": "superadmin le entradas como outro usuario",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "public"
+    ],
+    "using": "public.superadmin_pela_ficha()",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-09-17-log-de-entrar-como.sql"
+  },
+  {
+    "tabela": "equipes",
+    "nome": "equipes_apagar",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "delete",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "coalesce((select is_superadmin from public.profiles where id = auth.uid()), false)",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-08-04-equipes-e-escopo.sql"
+  },
+  {
+    "tabela": "equipes",
+    "nome": "equipes_criar",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "insert",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": null,
+    "withCheck": "coalesce((select is_superadmin from public.profiles where id = auth.uid()), false)\n    or exists (select 1 from public.equipes_membros m\n                where m.profile_id = auth.uid() and m.papel = 'gestor')",
+    "arquivo": "db/migrations/2026-08-04-equipes-e-escopo.sql"
+  },
+  {
+    "tabela": "equipes",
+    "nome": "equipes_editar",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "update",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "public.sou_gestor_da_equipe(id)",
+    "withCheck": "public.sou_gestor_da_equipe(id)",
+    "arquivo": "db/migrations/2026-08-04-equipes-e-escopo.sql"
+  },
+  {
+    "tabela": "equipes",
+    "nome": "equipes_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-08-04-equipes-e-escopo.sql"
+  },
+  {
+    "tabela": "equipes_membros",
+    "nome": "membros_escrever",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "public.sou_gestor_da_equipe(equipe_id)",
+    "withCheck": "public.sou_gestor_da_equipe(equipe_id)",
+    "arquivo": "db/migrations/2026-08-04-equipes-e-escopo.sql"
+  },
+  {
+    "tabela": "equipes_membros",
+    "nome": "membros_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "profile_id = auth.uid() or public.pode_ver_equipe(equipe_id)",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-08-04-equipes-e-escopo.sql"
+  },
+  {
+    "tabela": "equipes_permissoes",
+    "nome": "eqperm_escrever",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "public.superadmin_pela_ficha() or public.tenho_papel_na_equipe(equipe_id, array['supervisora','gestor'])",
+    "withCheck": "public.superadmin_pela_ficha() or public.tenho_papel_na_equipe(equipe_id, array['supervisora','gestor'])",
+    "arquivo": "db/migrations/2026-08-21-canal-pai-regras.sql"
+  },
+  {
+    "tabela": "equipes_permissoes",
+    "nome": "eqperm_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "profile_id = auth.uid() or public.pode_ver_equipe(equipe_id)",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-08-04-escopo-em-vendas-e-estoque.sql"
+  },
+  {
+    "tabela": "fabrica_campanhas",
+    "nome": "fab_camp_read",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null,
+    "arquivo": "db/migrations/015_fabrica_criativos.sql"
+  },
+  {
+    "tabela": "fabrica_campanhas",
+    "nome": "fab_camp_srv",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "all",
+    "papeis": [
+      "public"
+    ],
+    "using": "auth.role() = 'service_role'",
+    "withCheck": null,
+    "arquivo": "db/migrations/015_fabrica_criativos.sql"
+  },
+  {
+    "tabela": "fabrica_campanhas",
+    "nome": "fab_camp_write",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "EXISTS (SELECT 1 FROM public.profiles p WHERE p.id = auth.uid() AND (p.role='admin' OR p.is_superadmin=true OR p.permissions ? 'meta.fabrica'))",
+    "withCheck": "EXISTS (SELECT 1 FROM public.profiles p WHERE p.id = auth.uid() AND (p.role='admin' OR p.is_superadmin=true OR p.permissions ? 'meta.fabrica'))",
+    "arquivo": "db/migrations/015_fabrica_criativos.sql"
+  },
+  {
+    "tabela": "fabrica_candidatos",
+    "nome": "fab_cand_read",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null,
+    "arquivo": "db/migrations/014_fabrica_anuncios.sql"
+  },
+  {
+    "tabela": "fabrica_candidatos",
+    "nome": "fab_cand_srv",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "all",
+    "papeis": [
+      "public"
+    ],
+    "using": "auth.role() = 'service_role'",
+    "withCheck": null,
+    "arquivo": "db/migrations/014_fabrica_anuncios.sql"
+  },
+  {
+    "tabela": "fabrica_candidatos",
+    "nome": "fab_cand_update",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "update",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "EXISTS (SELECT 1 FROM public.profiles p WHERE p.id = auth.uid()\n                 AND (p.role = 'admin' OR p.is_superadmin = true OR p.permissions ? 'meta.fabrica'))",
+    "withCheck": "EXISTS (SELECT 1 FROM public.profiles p WHERE p.id = auth.uid()\n                 AND (p.role = 'admin' OR p.is_superadmin = true OR p.permissions ? 'meta.fabrica'))",
+    "arquivo": "db/migrations/014_fabrica_anuncios.sql"
+  },
+  {
+    "tabela": "fabrica_criativos",
+    "nome": "fab_criativos_read",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null,
+    "arquivo": "db/migrations/015_fabrica_criativos.sql"
+  },
+  {
+    "tabela": "fabrica_criativos",
+    "nome": "fab_criativos_srv",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "all",
+    "papeis": [
+      "public"
+    ],
+    "using": "auth.role() = 'service_role'",
+    "withCheck": null,
+    "arquivo": "db/migrations/015_fabrica_criativos.sql"
+  },
+  {
+    "tabela": "fabrica_criativos",
+    "nome": "fab_criativos_write",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "EXISTS (SELECT 1 FROM public.profiles p WHERE p.id = auth.uid() AND (p.role='admin' OR p.is_superadmin=true OR p.permissions ? 'meta.fabrica'))",
+    "withCheck": "EXISTS (SELECT 1 FROM public.profiles p WHERE p.id = auth.uid() AND (p.role='admin' OR p.is_superadmin=true OR p.permissions ? 'meta.fabrica'))",
+    "arquivo": "db/migrations/015_fabrica_criativos.sql"
+  },
+  {
+    "tabela": "fabrica_jobs",
+    "nome": "fab_jobs_read",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null,
+    "arquivo": "db/migrations/017_fabrica_jobs_lifecycle.sql"
+  },
+  {
+    "tabela": "fabrica_jobs",
+    "nome": "fab_jobs_srv",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "all",
+    "papeis": [
+      "public"
+    ],
+    "using": "auth.role() = 'service_role'",
+    "withCheck": null,
+    "arquivo": "db/migrations/017_fabrica_jobs_lifecycle.sql"
+  },
+  {
+    "tabela": "fabrica_lojas",
+    "nome": "fab_lojas_read",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null,
+    "arquivo": "db/migrations/014_fabrica_anuncios.sql"
+  },
+  {
+    "tabela": "fabrica_lojas",
+    "nome": "fab_lojas_srv",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "all",
+    "papeis": [
+      "public"
+    ],
+    "using": "auth.role() = 'service_role'",
+    "withCheck": null,
+    "arquivo": "db/migrations/014_fabrica_anuncios.sql"
+  },
+  {
+    "tabela": "fabrica_looks",
+    "nome": "fab_looks_read",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null,
+    "arquivo": "db/migrations/024_fabrica_looks.sql"
+  },
+  {
+    "tabela": "fabrica_marcas",
+    "nome": "fab_marcas_read",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null,
+    "arquivo": "db/migrations/018_fabrica_marcas_lojas.sql"
+  },
+  {
+    "tabela": "fabrica_marcas",
+    "nome": "fab_marcas_srv",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "all",
+    "papeis": [
+      "public"
+    ],
+    "using": "auth.role() = 'service_role'",
+    "withCheck": null,
+    "arquivo": "db/migrations/018_fabrica_marcas_lojas.sql"
+  },
+  {
+    "tabela": "fabrica_meta_jobs",
+    "nome": "fab_meta_read",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null,
+    "arquivo": "db/migrations/016_fabrica_meta_jobs.sql"
+  },
+  {
+    "tabela": "fabrica_meta_jobs",
+    "nome": "fab_meta_srv",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "all",
+    "papeis": [
+      "public"
+    ],
+    "using": "auth.role() = 'service_role'",
+    "withCheck": null,
+    "arquivo": "db/migrations/016_fabrica_meta_jobs.sql"
+  },
+  {
+    "tabela": "fabrica_objetivos",
+    "nome": "fab_obj_read",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null,
+    "arquivo": "db/migrations/022_fabrica_objetivos.sql"
+  },
+  {
+    "tabela": "fabrica_publicos",
+    "nome": "fab_pub_read",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null,
+    "arquivo": "db/migrations/023_fabrica_publicos.sql"
+  },
+  {
+    "tabela": "fabrica_rodadas",
+    "nome": "fab_rodadas_read",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null,
+    "arquivo": "db/migrations/014_fabrica_anuncios.sql"
+  },
+  {
+    "tabela": "fabrica_rodadas",
+    "nome": "fab_rodadas_srv",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "all",
+    "papeis": [
+      "public"
+    ],
+    "using": "auth.role() = 'service_role'",
+    "withCheck": null,
+    "arquivo": "db/migrations/014_fabrica_anuncios.sql"
+  },
+  {
+    "tabela": "followers_leituras",
+    "nome": "auth_read_followers_leituras",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-07-16-followers-leituras.sql"
+  },
+  {
+    "tabela": "frota_abastecimentos",
+    "nome": "frota_abast_escrever",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "all",
+    "papeis": [
+      "public"
+    ],
+    "using": "public.is_frota_admin()",
+    "withCheck": "public.is_frota_admin()",
+    "arquivo": "db/migrations/acessos/056_frota_abastecimentos.sql"
+  },
+  {
+    "tabela": "frota_abastecimentos",
+    "nome": "frota_abast_ler",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "public"
+    ],
+    "using": "public.is_frota_admin()",
+    "withCheck": null,
+    "arquivo": "db/migrations/acessos/056_frota_abastecimentos.sql"
+  },
+  {
+    "tabela": "frota_checklist_pdf",
+    "nome": "frota_checklist_pdf_escrever",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "all",
+    "papeis": [
+      "public"
+    ],
+    "using": "public.is_frota_admin()",
+    "withCheck": "public.is_frota_admin()",
+    "arquivo": "db/migrations/acessos/036_frota_checklist_pdf.sql"
+  },
+  {
+    "tabela": "frota_checklist_pdf",
+    "nome": "frota_checklist_pdf_ler",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "public"
+    ],
+    "using": "public.is_frota_admin()",
+    "withCheck": null,
+    "arquivo": "db/migrations/acessos/036_frota_checklist_pdf.sql"
+  },
+  {
+    "tabela": "frota_manutencoes",
+    "nome": "frota_manut_escrever",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "all",
+    "papeis": [
+      "public"
+    ],
+    "using": "public.is_frota_admin()",
+    "withCheck": "public.is_frota_admin()",
+    "arquivo": "db/migrations/acessos/041_frota_manutencao.sql"
+  },
+  {
+    "tabela": "frota_manutencoes",
+    "nome": "frota_manut_ler",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "public"
+    ],
+    "using": "public.is_frota_admin()",
+    "withCheck": null,
+    "arquivo": "db/migrations/acessos/041_frota_manutencao.sql"
+  },
+  {
+    "tabela": "frota_plano_revisao",
+    "nome": "frota_plano_escrever",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "all",
+    "papeis": [
+      "public"
+    ],
+    "using": "public.is_frota_admin()",
+    "withCheck": "public.is_frota_admin()",
+    "arquivo": "db/migrations/acessos/022_frota.sql"
+  },
+  {
+    "tabela": "frota_plano_revisao",
+    "nome": "frota_plano_ler",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "public"
+    ],
+    "using": "public.is_frota_admin()",
+    "withCheck": null,
+    "arquivo": "db/migrations/acessos/022_frota.sql"
+  },
+  {
+    "tabela": "frota_requisicoes",
+    "nome": "frota_req_atualizar",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "update",
+    "papeis": [
+      "public"
+    ],
+    "using": "public.is_frota_admin()",
+    "withCheck": "public.is_frota_admin()",
+    "arquivo": "db/migrations/acessos/023_frota_requisicoes.sql"
+  },
+  {
+    "tabela": "frota_requisicoes",
+    "nome": "frota_req_criar",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "insert",
+    "papeis": [
+      "public"
+    ],
+    "using": null,
+    "withCheck": "public.is_frota_admin() and criada_por = auth.uid()",
+    "arquivo": "db/migrations/acessos/023_frota_requisicoes.sql"
+  },
+  {
+    "tabela": "frota_requisicoes",
+    "nome": "frota_req_ler",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "public"
+    ],
+    "using": "public.is_frota_admin()",
+    "withCheck": null,
+    "arquivo": "db/migrations/acessos/023_frota_requisicoes.sql"
+  },
+  {
+    "tabela": "frota_requisicoes_historico",
+    "nome": "frota_req_hist_ler",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "public"
+    ],
+    "using": "public.is_frota_admin()",
+    "withCheck": null,
+    "arquivo": "db/migrations/acessos/045_frota_reserva_editar_cancelar_revogar.sql"
+  },
+  {
+    "tabela": "frota_revisoes",
+    "nome": "frota_rev_escrever",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "all",
+    "papeis": [
+      "public"
+    ],
+    "using": "public.is_frota_admin()",
+    "withCheck": "public.is_frota_admin()",
+    "arquivo": "db/migrations/acessos/024_frota_revisoes.sql"
+  },
+  {
+    "tabela": "frota_revisoes",
+    "nome": "frota_rev_ler",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "public"
+    ],
+    "using": "public.is_frota_admin()",
+    "withCheck": null,
+    "arquivo": "db/migrations/acessos/024_frota_revisoes.sql"
+  },
+  {
+    "tabela": "frota_uso",
+    "nome": "frota_uso_escrever",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "all",
+    "papeis": [
+      "public"
+    ],
+    "using": "public.is_frota_admin()",
+    "withCheck": "public.is_frota_admin()",
+    "arquivo": "db/migrations/acessos/022_frota.sql"
+  },
+  {
+    "tabela": "frota_uso",
+    "nome": "frota_uso_ler",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "public"
+    ],
+    "using": "public.is_frota_admin()",
+    "withCheck": null,
+    "arquivo": "db/migrations/acessos/022_frota.sql"
+  },
+  {
+    "tabela": "frota_uso_pdf",
+    "nome": "frota_uso_pdf_escrever",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "all",
+    "papeis": [
+      "public"
+    ],
+    "using": "is_frota_admin()",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-08-18-fila-do-pdf-do-aceite.sql"
+  },
+  {
+    "tabela": "frota_uso_pdf",
+    "nome": "frota_uso_pdf_ler",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "public"
+    ],
+    "using": "is_frota_admin()",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-08-18-fila-do-pdf-do-aceite.sql"
+  },
+  {
+    "tabela": "frota_veiculos",
+    "nome": "frota_veiculos_escrever",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "all",
+    "papeis": [
+      "public"
+    ],
+    "using": "public.is_frota_admin()",
+    "withCheck": "public.is_frota_admin()",
+    "arquivo": "db/migrations/acessos/022_frota.sql"
+  },
+  {
+    "tabela": "frota_veiculos",
+    "nome": "frota_veiculos_ler",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "public"
+    ],
+    "using": "public.is_frota_admin()",
+    "withCheck": null,
+    "arquivo": "db/migrations/acessos/022_frota.sql"
+  },
+  {
+    "tabela": "gc_estoque_item",
+    "nome": "gc_ei_read",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null,
+    "arquivo": "db/migrations/012_relatorios_comerciais.sql"
+  },
+  {
+    "tabela": "gc_estoque_item",
+    "nome": "gc_ei_so_do_meu_time",
+    "tipo": "restrictive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "public.pode_ver_estoque(deposito_id)",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-08-04-escopo-em-vendas-e-estoque.sql"
+  },
+  {
+    "tabela": "gc_vendas_item",
+    "nome": "gc_vi_read",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null,
+    "arquivo": "db/migrations/012_relatorios_comerciais.sql"
+  },
+  {
+    "tabela": "gc_vendas_item",
+    "nome": "gc_vi_so_do_meu_time",
+    "tipo": "restrictive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "public.pode_ver_canal(canal_loja_id)",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-08-04-escopo-em-vendas-e-estoque.sql"
+  },
+  {
+    "tabela": "gestao_comercial_briefings",
+    "nome": "gcb_select",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null,
+    "arquivo": "db/migrations/011_gestao_comercial.sql"
+  },
+  {
+    "tabela": "gestor_log",
+    "nome": "gestor_log_select",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null,
+    "arquivo": "db/migrations/011_gestao_comercial.sql"
+  },
+  {
+    "tabela": "gt_ad_analises",
+    "nome": "gt_ad_read",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "public"
+    ],
+    "using": "exists (select 1 from public.profiles p\n      where p.id = auth.uid() and (p.role='admin' or 'meta.gestor' = any(p.features)))",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-07-02-gt-ad-analises.sql"
+  },
+  {
+    "tabela": "gt_budget_analises",
+    "nome": "gt_budget_read",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "public"
+    ],
+    "using": "exists (\n      select 1 from public.profiles p\n      where p.id = auth.uid()\n        and (p.role = 'admin' or 'meta.gestor' = any(p.features))\n    )",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-07-02-gt-budget-analises.sql"
+  },
+  {
+    "tabela": "gt_campanhas_rascunho",
+    "nome": "gt_rascunho_apagar",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "delete",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "criado_por = auth.uid()",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-08-03-gt-rascunhos-de-campanha.sql"
+  },
+  {
+    "tabela": "gt_campanhas_rascunho",
+    "nome": "gt_rascunho_atualizar",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "update",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "criado_por = auth.uid()",
+    "withCheck": "criado_por = auth.uid()",
+    "arquivo": "db/migrations/2026-08-03-gt-rascunhos-de-campanha.sql"
+  },
+  {
+    "tabela": "gt_campanhas_rascunho",
+    "nome": "gt_rascunho_inserir",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "insert",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": null,
+    "withCheck": "criado_por = auth.uid()\n    and exists (\n      select 1 from public.profiles p\n      where p.id = auth.uid()\n        and (p.role = 'admin' or 'meta.gestor' = any (p.features))\n    )",
+    "arquivo": "db/migrations/2026-08-03-gt-rascunhos-de-campanha.sql"
+  },
+  {
+    "tabela": "gt_campanhas_rascunho",
+    "nome": "gt_rascunho_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "exists (\n      select 1 from public.profiles p\n      where p.id = auth.uid()\n        and (p.role = 'admin' or 'meta.gestor' = any (p.features))\n    )",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-08-03-gt-rascunhos-de-campanha.sql"
+  },
+  {
+    "tabela": "gt_campanhas_rascunho",
+    "nome": "so_contas_permitidas",
+    "tipo": "restrictive",
+    "dinamica": false,
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "pode_ver_conta(account_id)",
+    "withCheck": "pode_ver_conta(account_id)",
+    "arquivo": "db/migrations/2026-08-03-gt-rascunhos-de-campanha.sql"
+  },
+  {
+    "tabela": "gt_config_metricas",
+    "nome": "gt_cfg_admin_insert",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "insert",
+    "papeis": [
+      "public"
+    ],
+    "using": null,
+    "withCheck": "exists (\n      select 1 from public.profiles p\n      where p.id = auth.uid() and p.role = 'admin'\n    )",
+    "arquivo": "db/migrations/2026-07-02-gt-config-metricas.sql"
+  },
+  {
+    "tabela": "gt_config_metricas",
+    "nome": "gt_cfg_admin_update",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "update",
+    "papeis": [
+      "public"
+    ],
+    "using": "exists (\n      select 1 from public.profiles p\n      where p.id = auth.uid() and p.role = 'admin'\n    )",
+    "withCheck": "exists (\n      select 1 from public.profiles p\n      where p.id = auth.uid() and p.role = 'admin'\n    )",
+    "arquivo": "db/migrations/2026-07-02-gt-config-metricas.sql"
+  },
+  {
+    "tabela": "gt_config_metricas",
+    "nome": "gt_cfg_ferramenta_insert",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "insert",
+    "papeis": [
+      "public"
+    ],
+    "using": null,
+    "withCheck": "exists (\n      select 1 from public.profiles p\n      where p.id = auth.uid()\n        and (p.role = 'admin' or 'meta.gestor' = any(p.features))\n    )",
+    "arquivo": "db/migrations/2026-07-02-gt-config-metricas-acesso-ferramenta.sql"
+  },
+  {
+    "tabela": "gt_config_metricas",
+    "nome": "gt_cfg_ferramenta_update",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "update",
+    "papeis": [
+      "public"
+    ],
+    "using": "exists (\n      select 1 from public.profiles p\n      where p.id = auth.uid()\n        and (p.role = 'admin' or 'meta.gestor' = any(p.features))\n    )",
+    "withCheck": "exists (\n      select 1 from public.profiles p\n      where p.id = auth.uid()\n        and (p.role = 'admin' or 'meta.gestor' = any(p.features))\n    )",
+    "arquivo": "db/migrations/2026-07-02-gt-config-metricas-acesso-ferramenta.sql"
+  },
+  {
+    "tabela": "gt_config_metricas",
+    "nome": "gt_cfg_read",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "public"
+    ],
+    "using": "true",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-07-02-gt-config-metricas.sql"
+  },
+  {
+    "tabela": "gt_fila_decisoes",
+    "nome": "gt_fila_decisoes_insercao",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "insert",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": null,
+    "withCheck": "exists (\n      select 1 from public.profiles p\n       where p.id = auth.uid()\n         and (p.role = 'admin' or 'meta.gestor' = any (p.features))\n    )\n    \n    and decidido_por = auth.uid()",
+    "arquivo": "db/migrations/2026-07-29-fila-decisoes.sql"
+  },
+  {
+    "tabela": "gt_fila_decisoes",
+    "nome": "gt_fila_decisoes_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "exists (\n      select 1 from public.profiles p\n       where p.id = auth.uid()\n         and (p.role = 'admin' or 'meta.gestor' = any (p.features))\n    )",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-07-29-fila-decisoes.sql"
+  },
+  {
+    "tabela": "gt_objetivo_interacao",
+    "nome": "objetivo_interacao_escrita",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "exists (select 1 from public.profiles p where p.id = auth.uid()\n                 and (p.role = 'admin' or 'meta.gestor' = any(p.features)))",
+    "withCheck": "exists (select 1 from public.profiles p where p.id = auth.uid()\n                 and (p.role = 'admin' or 'meta.gestor' = any(p.features)))",
+    "arquivo": "supabase/migrations/20260728_objetivo_por_interacao.sql"
+  },
+  {
+    "tabela": "gt_objetivo_interacao",
+    "nome": "objetivo_interacao_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null,
+    "arquivo": "supabase/migrations/20260728_objetivo_por_interacao.sql"
+  },
+  {
+    "tabela": "gt_ponderada_config",
+    "nome": "ponderada_config_escrita",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "update",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "exists (\n      select 1 from public.profiles p\n      where p.id = auth.uid()\n        and (p.role = 'admin' or 'meta.gestor' = any(p.features))\n    )",
+    "withCheck": "exists (\n      select 1 from public.profiles p\n      where p.id = auth.uid()\n        and (p.role = 'admin' or 'meta.gestor' = any(p.features))\n    )",
+    "arquivo": "supabase/migrations/20260728_ponderada_config.sql"
+  },
+  {
+    "tabela": "gt_ponderada_config",
+    "nome": "ponderada_config_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null,
+    "arquivo": "supabase/migrations/20260728_ponderada_config.sql"
+  },
+  {
+    "tabela": "gt_ponderada_config_log",
+    "nome": "ponderada_log_escrita",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "insert",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": null,
+    "withCheck": "exists (\n      select 1 from public.profiles p\n      where p.id = auth.uid()\n        and (p.role = 'admin' or 'meta.gestor' = any(p.features))\n    )",
+    "arquivo": "supabase/migrations/20260728_ponderada_config.sql"
+  },
+  {
+    "tabela": "gt_ponderada_config_log",
+    "nome": "ponderada_log_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null,
+    "arquivo": "supabase/migrations/20260728_ponderada_config.sql"
+  },
+  {
+    "tabela": "gt_problemas_meta",
+    "nome": "gt_problemas_meta_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "exists (\n      select 1 from public.profiles p\n       where p.id = auth.uid()\n         and (p.role = 'admin' or 'meta.gestor' = any (p.features))\n    )",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-08-17-guardar-o-motivo-da-meta.sql"
+  },
+  {
+    "tabela": "gt_problemas_meta",
+    "nome": "so_contas_permitidas",
+    "tipo": "restrictive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "public.pode_ver_conta(account_id)",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-08-17-guardar-o-motivo-da-meta.sql"
+  },
+  {
+    "tabela": "ia_execucoes",
+    "nome": "ia_exec_select",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null,
+    "arquivo": "db/migrations/025_ia_execucoes.sql"
+  },
+  {
+    "tabela": "interesses_sugeridos",
+    "nome": "int_sug_read",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-07-31-interesses-sugeridos.sql"
+  },
+  {
+    "tabela": "noticias_concorrentes",
+    "nome": "noticias_select_authenticated",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null,
+    "arquivo": "db/migrations/007_noticias_concorrentes.sql"
+  },
+  {
+    "tabela": "noticias_panorama",
+    "nome": "noticias_panorama_read",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null,
+    "arquivo": "db/migrations/acessos/017_noticias_panorama.sql"
+  },
+  {
+    "tabela": "noticias_panorama",
+    "nome": "noticias_panorama_read_anon",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "anon"
+    ],
+    "using": "true",
+    "withCheck": null,
+    "arquivo": "db/migrations/acessos/017_noticias_panorama.sql"
+  },
+  {
+    "tabela": "patrimonio_bens",
+    "nome": "patrimonio_bens_apagar_so_do_meu_time",
+    "tipo": "restrictive",
+    "dinamica": false,
+    "comando": "delete",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "public.pode_ver_bem(local_id, pessoa_id)",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-08-04-patrimonio-por-time.sql"
+  },
+  {
+    "tabela": "patrimonio_bens",
+    "nome": "patrimonio_bens_editar_so_do_meu_time",
+    "tipo": "restrictive",
+    "dinamica": false,
+    "comando": "update",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "public.pode_ver_bem(local_id, pessoa_id)",
+    "withCheck": "public.pode_ver_bem(local_id, pessoa_id)",
+    "arquivo": "db/migrations/2026-08-04-patrimonio-por-time.sql"
+  },
+  {
+    "tabela": "patrimonio_bens",
+    "nome": "patrimonio_bens_rw",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "public.is_patrimonio_admin()",
+    "withCheck": "public.is_patrimonio_admin()",
+    "arquivo": "db/migrations/acessos/019_patrimonio_bens.sql"
+  },
+  {
+    "tabela": "patrimonio_bens",
+    "nome": "patrimonio_bens_so_do_meu_time",
+    "tipo": "restrictive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "public.pode_ver_bem(local_id, pessoa_id)",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-08-04-patrimonio-por-time.sql"
+  },
+  {
+    "tabela": "patrimonio_comodos",
+    "nome": "patrimonio_comodos_criar_frota",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "insert",
+    "papeis": [
+      "public"
+    ],
+    "using": null,
+    "withCheck": "public.is_frota_admin()",
+    "arquivo": "db/migrations/acessos/034_arvore_local_universal.sql"
+  },
+  {
+    "tabela": "patrimonio_comodos",
+    "nome": "patrimonio_comodos_leitura_frota",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "public"
+    ],
+    "using": "public.is_frota_admin()",
+    "withCheck": null,
+    "arquivo": "db/migrations/acessos/034_arvore_local_universal.sql"
+  },
+  {
+    "tabela": "patrimonio_config",
+    "nome": "patrimonio_config_rw",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "public.is_patrimonio_admin()",
+    "withCheck": "public.is_patrimonio_admin()",
+    "arquivo": "db/migrations/acessos/021_patrimonio_config.sql"
+  },
+  {
+    "tabela": "patrimonio_empresas",
+    "nome": "patrimonio_empresas_criar_frota",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "insert",
+    "papeis": [
+      "public"
+    ],
+    "using": null,
+    "withCheck": "public.is_frota_admin()",
+    "arquivo": "db/migrations/acessos/034_arvore_local_universal.sql"
+  },
+  {
+    "tabela": "patrimonio_empresas",
+    "nome": "patrimonio_empresas_leitura_frota",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "public"
+    ],
+    "using": "public.is_frota_admin()",
+    "withCheck": null,
+    "arquivo": "db/migrations/acessos/034_arvore_local_universal.sql"
+  },
+  {
+    "tabela": "patrimonio_locais",
+    "nome": "patrimonio_locais_criar_frota",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "insert",
+    "papeis": [
+      "public"
+    ],
+    "using": null,
+    "withCheck": "public.is_frota_admin()",
+    "arquivo": "db/migrations/acessos/034_arvore_local_universal.sql"
+  },
+  {
+    "tabela": "patrimonio_locais",
+    "nome": "patrimonio_locais_leitura_frota",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "public"
+    ],
+    "using": "public.is_frota_admin()",
+    "withCheck": null,
+    "arquivo": "db/migrations/acessos/034_arvore_local_universal.sql"
+  },
+  {
+    "tabela": "patrimonio_log",
+    "nome": "patrimonio_log_insert",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "insert",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": null,
+    "withCheck": "public.is_patrimonio_admin()",
+    "arquivo": "db/migrations/acessos/019_patrimonio_bens.sql"
+  },
+  {
+    "tabela": "patrimonio_log",
+    "nome": "patrimonio_log_select",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "public.is_patrimonio_admin()",
+    "withCheck": null,
+    "arquivo": "db/migrations/acessos/019_patrimonio_bens.sql"
+  },
+  {
+    "tabela": "patrimonio_posse",
+    "nome": "patrimonio_posse_rw",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "public.is_patrimonio_admin()",
+    "withCheck": "public.is_patrimonio_admin()",
+    "arquivo": "db/migrations/acessos/019_patrimonio_bens.sql"
+  },
+  {
+    "tabela": "patrimonio_posse",
+    "nome": "patrimonio_posse_segue_o_bem",
+    "tipo": "restrictive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "exists (select 1 from public.patrimonio_bens b\n                  where b.id = bem_id and public.pode_ver_bem(b.local_id, b.pessoa_id))",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-08-04-patrimonio-por-time.sql"
+  },
+  {
+    "tabela": "perfil_visitas_hora",
+    "nome": "perfil_visitas_hora_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "exists (\n      select 1 from public.profiles p\n       where p.id = auth.uid()\n         and (p.role = 'admin' or p.is_superadmin or p.permissions ? 'meta.hora')\n    )",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-09-12-meta-ads-hora-visitas-perfil-permissiva.sql"
+  },
+  {
+    "tabela": "perfil_visitas_hora",
+    "nome": "so_contas_permitidas",
+    "tipo": "restrictive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "public.pode_ver_conta(account_id::text)",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-09-12-meta-ads-hora-visitas-perfil-da-conta.sql"
+  },
+  {
+    "tabela": "profiles",
+    "nome": "auth_read_profiles",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "public"
+    ],
+    "using": "auth.role() = 'authenticated' and public.conta_ativa()",
+    "withCheck": null,
+    "arquivo": "db/migrations/acessos/054_desativado_fecha_de_verdade.sql"
+  },
+  {
+    "tabela": "projetos_status",
+    "nome": "projetos_status_del",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "delete",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null,
+    "arquivo": "db/migrations/028_projetos_status_manual.sql"
+  },
+  {
+    "tabela": "projetos_status",
+    "nome": "projetos_status_ins",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "insert",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": null,
+    "withCheck": "true",
+    "arquivo": "db/migrations/028_projetos_status_manual.sql"
+  },
+  {
+    "tabela": "projetos_status",
+    "nome": "projetos_status_select",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null,
+    "arquivo": "db/migrations/026_projetos_status.sql"
+  },
+  {
+    "tabela": "projetos_status",
+    "nome": "projetos_status_upd",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "update",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": "true",
+    "arquivo": "db/migrations/028_projetos_status_manual.sql"
+  },
+  {
+    "tabela": "push_preferencias",
+    "nome": "push_pref_escrita",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "user_id = auth.uid()\n    or exists (select 1 from public.profiles p where p.id = auth.uid() and (p.role = 'admin' or p.is_superadmin))",
+    "withCheck": "user_id = auth.uid()\n    or exists (select 1 from public.profiles p where p.id = auth.uid() and (p.role = 'admin' or p.is_superadmin))",
+    "arquivo": "db/migrations/2026-07-29-push-preferencias.sql"
+  },
+  {
+    "tabela": "push_preferencias",
+    "nome": "push_pref_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "user_id = auth.uid()\n    or exists (select 1 from public.profiles p where p.id = auth.uid() and (p.role = 'admin' or p.is_superadmin))",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-07-29-push-preferencias.sql"
+  },
+  {
+    "tabela": "push_subs",
+    "nome": "push_subs_dono_delete",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "delete",
+    "papeis": [
+      "public"
+    ],
+    "using": "auth.uid() = user_id",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-07-24-push-subs.sql"
+  },
+  {
+    "tabela": "push_subs",
+    "nome": "push_subs_dono_insert",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "insert",
+    "papeis": [
+      "public"
+    ],
+    "using": null,
+    "withCheck": "auth.uid() = user_id",
+    "arquivo": "db/migrations/2026-07-24-push-subs.sql"
+  },
+  {
+    "tabela": "push_subs",
+    "nome": "push_subs_dono_select",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "public"
+    ],
+    "using": "auth.uid() = user_id",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-07-24-push-subs.sql"
+  },
+  {
+    "tabela": "push_subs",
+    "nome": "push_subs_dono_update",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "update",
+    "papeis": [
+      "public"
+    ],
+    "using": "auth.uid() = user_id",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-07-24-push-subs.sql"
+  },
+  {
+    "tabela": "robos_esperados",
+    "nome": "robos_esperados_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "exists (select 1 from public.profiles p where p.id = auth.uid()\n                  and (p.role = 'admin' or p.is_superadmin\n                       or 'claude.status' = any (p.features)))",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-07-31-saude-dos-robos.sql"
+  },
+  {
+    "tabela": "robos_esperados",
+    "nome": "robos_esperados_srv",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "all",
+    "papeis": [
+      "public"
+    ],
+    "using": "auth.role() = 'service_role'",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-07-31-saude-dos-robos.sql"
+  },
+  {
+    "tabela": "robos_execucoes",
+    "nome": "robos_execucoes_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "exists (select 1 from public.profiles p where p.id = auth.uid()\n                  and (p.role = 'admin' or p.is_superadmin\n                       or 'claude.status' = any (p.features)))",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-07-31-saude-dos-robos.sql"
+  },
+  {
+    "tabela": "robos_execucoes",
+    "nome": "robos_execucoes_srv",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "all",
+    "papeis": [
+      "public"
+    ],
+    "using": "auth.role() = 'service_role'",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-07-31-saude-dos-robos.sql"
+  },
+  {
+    "tabela": "shopify_pedidos",
+    "nome": "shopify_pedidos_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-10-03-pedidos-da-shopify.sql"
+  },
+  {
+    "tabela": "shopify_pedidos",
+    "nome": "shopify_pedidos_so_do_meu_canal",
+    "tipo": "restrictive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "public.pode_ver_canal(loja_id)",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-10-03-pedidos-da-shopify.sql"
+  },
+  {
+    "tabela": "storage.objects",
+    "nome": "acessos_avatars_write",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "bucket_id = 'acessos-avatars' and public.is_acessos_admin()",
+    "withCheck": "bucket_id = 'acessos-avatars' and public.is_acessos_admin()",
+    "arquivo": "db/migrations/acessos/008_avatars_policy.sql"
+  },
+  {
+    "tabela": "storage.objects",
+    "nome": "acessos_termos_rw",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "bucket_id = 'acessos-termos' and public.is_acessos_admin()",
+    "withCheck": "bucket_id = 'acessos-termos' and public.is_acessos_admin()",
+    "arquivo": "db/migrations/acessos/003_storage.sql"
+  },
+  {
+    "tabela": "storage.objects",
+    "nome": "conteudo_obj_apagar",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "delete",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "bucket_id = 'conteudo'\n    and exists (select 1 from public.profiles p\n                 where p.id = auth.uid()\n                   and (p.role = 'admin' or p.is_superadmin or 'conteudo' = any (p.features)))",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-07-29-conteudo-02-bucket.sql"
+  },
+  {
+    "tabela": "storage.objects",
+    "nome": "conteudo_obj_atualizar",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "update",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "bucket_id = 'conteudo'\n    and exists (select 1 from public.profiles p\n                 where p.id = auth.uid()\n                   and (p.role = 'admin' or p.is_superadmin or 'conteudo' = any (p.features)))",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-07-29-conteudo-02-bucket.sql"
+  },
+  {
+    "tabela": "storage.objects",
+    "nome": "conteudo_obj_escrever",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "insert",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": null,
+    "withCheck": "bucket_id = 'conteudo'\n    and exists (select 1 from public.profiles p\n                 where p.id = auth.uid()\n                   and (p.role = 'admin' or p.is_superadmin or 'conteudo' = any (p.features)))",
+    "arquivo": "db/migrations/2026-07-29-conteudo-02-bucket.sql"
+  },
+  {
+    "tabela": "storage.objects",
+    "nome": "conteudo_obj_ler",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "bucket_id = 'conteudo'\n    and exists (select 1 from public.profiles p\n                 where p.id = auth.uid()\n                   and (p.role = 'admin' or p.is_superadmin or 'conteudo' = any (p.features)))",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-07-29-conteudo-02-bucket.sql"
+  },
+  {
+    "tabela": "storage.objects",
+    "nome": "gestor_envios_atualizar",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "update",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "bucket_id = 'fabrica-criativos'\n    and name like 'gestor-envios/%'\n    and exists (\n      select 1 from public.profiles p\n      where p.id = auth.uid()\n        and (p.role = 'admin' or 'meta.gestor' = any (p.features))\n    )",
+    "withCheck": "bucket_id = 'fabrica-criativos'\n    and name like 'gestor-envios/%'\n    and exists (\n      select 1 from public.profiles p\n      where p.id = auth.uid()\n        and (p.role = 'admin' or 'meta.gestor' = any (p.features))\n    )",
+    "arquivo": "db/migrations/2026-08-03-gestor-envio-de-imagem.sql"
+  },
+  {
+    "tabela": "storage.objects",
+    "nome": "gestor_envios_inserir",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "insert",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": null,
+    "withCheck": "bucket_id = 'fabrica-criativos'\n    and name like 'gestor-envios/%'\n    and exists (\n      select 1 from public.profiles p\n      where p.id = auth.uid()\n        and (p.role = 'admin' or 'meta.gestor' = any (p.features))\n    )",
+    "arquivo": "db/migrations/2026-08-03-gestor-envio-de-imagem.sql"
+  },
+  {
+    "tabela": "storage.objects",
+    "nome": "vessel_curriculos_anon_so_envia",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "insert",
+    "papeis": [
+      "anon"
+    ],
+    "using": null,
+    "withCheck": "bucket_id = 'vessel-curriculos'\n    and (storage.foldername(name))[1] in ('consultor-tivoli', 'consultor-brasilia')",
+    "arquivo": "db/migrations/2026-10-07-vessel-vaga-brasilia.sql"
+  },
+  {
+    "tabela": "user_permissions",
+    "nome": "admin gerencia permissoes",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "all",
+    "papeis": [
+      "public"
+    ],
+    "using": "EXISTS (\n      SELECT 1 FROM public.profiles p\n      WHERE p.id = auth.uid() AND p.role = 'admin'\n    )",
+    "withCheck": null,
+    "arquivo": "db/migrations/003_user_permissions.sql"
+  },
+  {
+    "tabela": "user_permissions",
+    "nome": "user le proprias permissoes",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "public"
+    ],
+    "using": "auth.uid() = user_id",
+    "withCheck": null,
+    "arquivo": "db/migrations/003_user_permissions.sql"
+  },
+  {
+    "tabela": "vessel_baixas",
+    "nome": "vessel_baixas_read",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "public.is_vessel_admin()",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-08-30-vessel-baixas.sql"
+  },
+  {
+    "tabela": "vessel_cartao_pedidos",
+    "nome": "vessel_cartao_pedidos_read",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "public.is_vessel_admin()",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-09-11-vessel-cartoes-fila-e-trava.sql"
+  },
+  {
+    "tabela": "vessel_clientes",
+    "nome": "vessel_clientes_read",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "public.is_vessel_admin()",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-09-17-vessel-contas-base.sql"
+  },
+  {
+    "tabela": "vessel_edicoes",
+    "nome": "vessel_edicoes_read",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "public.is_vessel_admin()",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-09-01-vessel-editar-etiquetas.sql"
+  },
+  {
+    "tabela": "vessel_garantias_baixadas",
+    "nome": "vessel_garantias_baixadas_read",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "public.is_vessel_admin()",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-09-05-vessel-garantias-baixadas.sql"
+  },
+  {
+    "tabela": "vessel_leituras",
+    "nome": "vessel_leituras_read",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "public.is_vessel_admin()",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-08-05-vessel-painel.sql"
+  },
+  {
+    "tabela": "vessel_lembretes",
+    "nome": "vessel_lembretes_read",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "public.is_vessel_admin()",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-09-19-zzz-vessel-lembretes-register-later.sql"
+  },
+  {
+    "tabela": "vessel_lotes",
+    "nome": "vessel_lotes_read",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "public.is_vessel_admin()",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-08-05-vessel-painel.sql"
+  },
+  {
+    "tabela": "vessel_pecas",
+    "nome": "vessel_pecas_read",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "public.is_vessel_admin()",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-08-05-vessel-painel.sql"
+  },
+  {
+    "tabela": "vessel_pedidos_de_registro",
+    "nome": "vessel_pedidos_registro_read",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "public.is_vessel_admin()",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-09-03-zz-vessel-garantia-com-dono.sql"
+  },
+  {
+    "tabela": "vessel_private_edits",
+    "nome": "vessel_private_edits_le_central",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "public.is_vessel_atendimentos()",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-09-18-vessel-private-edit.sql"
+  },
+  {
+    "tabela": "vessel_registros",
+    "nome": "vessel_registros_read",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "public.is_vessel_admin()",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-08-05-vessel-painel.sql"
+  },
+  {
+    "tabela": "vessel_sessao_aberturas",
+    "nome": "vessel_sessao_aberturas_le_central",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "public.is_vessel_atendimentos()",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-09-18-vessel-contar-as-beauty-sessions.sql"
+  },
+  {
+    "tabela": "vessel_stylist_aberturas",
+    "nome": "vessel_stylist_aberturas_le_central",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "public.is_vessel_atendimentos()",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-09-18-vessel-rastreio-por-stylist.sql"
+  },
+  {
+    "tabela": "visitas_perfil_dia",
+    "nome": "auth_read_visitas_perfil_dia",
+    "tipo": "permissive",
+    "dinamica": false,
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null,
+    "arquivo": "db/migrations/2026-09-17-visitas-perfil-dia.sql"
+  }
+]
