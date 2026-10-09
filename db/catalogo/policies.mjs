@@ -40,15 +40,19 @@ export function catalogo(arquivos) {
   for (const { nome: arquivo, sql } of arquivos) {
     const s = semComentario(sql)
     const eventos = []
-    for (const m of s.matchAll(/drop\s+policy\s+(?:if\s+exists\s+)?("[^"]+"|\w+)\s+on\s+([\w".]+)/gi)) {
+    for (const m of s.matchAll(/drop\s+policy\s+(?:if\s+exists\s+)?("[^"]+"|\w+)\s+on\s+([\w".%]+)/gi)) {
       eventos.push({ pos: m.index, drop: true, nome: nome(m[1]), tabela: nome(m[2]) })
     }
-    for (const m of s.matchAll(/create\s+policy\s+("[^"]+"|\w+)\s+on\s+([\w".]+)/gi)) {
+    for (const m of s.matchAll(/create\s+policy\s+("[^"]+"|\w+)\s+on\s+([\w".%]+)/gi)) {
       const corpo = s.slice(m.index, fimDoComando(s, m.index))
       const cmd = /\bfor\s+(all|select|insert|update|delete)\b/i.exec(corpo)
+      const tipo = /\bas\s+(permissive|restrictive)\b/i.exec(corpo)
       const to = /\bto\s+([\w",\s]+?)(?=\s+(?:using|with)\b|\s*$)/i.exec(corpo)
       eventos.push({
-        pos: m.index, drop: false, nome: nome(m[1]), tabela: nome(m[2]),
+        pos: m.index, drop: false, nome: nome(m[1]), tabela: /%[Is]/.test(m[2]) ? m[2].replace(/^public\./i, '') : nome(m[2]),
+        tipo: tipo ? tipo[1].toLowerCase() : 'permissive',
+        // ponytail: tabela montada por format('%I') não é resolvida; fica marcada, a lista real vem da migration.
+        dinamica: /%[Is]/.test(m[2]),
         comando: cmd ? cmd[1].toLowerCase() : 'all',
         papeis: to ? to[1].split(',').map((x) => x.trim().replace(/"/g, '').toLowerCase()).filter(Boolean) : ['public'],
         using: clausula(corpo, /\busing\s*\(/i),
@@ -60,7 +64,7 @@ export function catalogo(arquivos) {
     for (const e of eventos) {
       const k = `${e.tabela}|${e.nome}`
       if (e.drop) mapa.delete(k)
-      else mapa.set(k, { tabela: e.tabela, nome: e.nome, comando: e.comando, papeis: e.papeis, using: e.using, withCheck: e.withCheck, arquivo: e.arquivo })
+      else mapa.set(k, { tabela: e.tabela, nome: e.nome, tipo: e.tipo, dinamica: e.dinamica, comando: e.comando, papeis: e.papeis, using: e.using, withCheck: e.withCheck, arquivo: e.arquivo })
     }
   }
   return [...mapa.values()].sort((a, b) => a.tabela.localeCompare(b.tabela) || a.nome.localeCompare(b.nome))

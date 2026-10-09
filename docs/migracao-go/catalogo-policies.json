@@ -1,7 +1,9 @@
 [
   {
-    "tabela": "",
+    "tabela": "%I",
     "nome": "so_contas_permitidas",
+    "tipo": "restrictive",
+    "dinamica": true,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -13,6 +15,8 @@
   {
     "tabela": "accounts",
     "nome": "admin_update_accounts",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "update",
     "papeis": [
       "public"
@@ -24,6 +28,8 @@
   {
     "tabela": "acessos_drive_marcas",
     "nome": "acessos_drive_marcas_rw",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "all",
     "papeis": [
       "authenticated"
@@ -35,6 +41,8 @@
   {
     "tabela": "acessos_drive_overrides",
     "nome": "acessos_drive_overrides_rw",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "all",
     "papeis": [
       "authenticated"
@@ -46,6 +54,8 @@
   {
     "tabela": "acessos_drive_setores",
     "nome": "acessos_drive_setores_rw",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "all",
     "papeis": [
       "authenticated"
@@ -57,6 +67,8 @@
   {
     "tabela": "acessos_log",
     "nome": "acessos_log_insert",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "insert",
     "papeis": [
       "authenticated"
@@ -68,6 +80,8 @@
   {
     "tabela": "acessos_log",
     "nome": "acessos_log_select",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -79,6 +93,8 @@
   {
     "tabela": "acessos_organizacoes",
     "nome": "acessos_organizacoes_rw",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "all",
     "papeis": [
       "authenticated"
@@ -90,6 +106,8 @@
   {
     "tabela": "acessos_patrimonio_historico",
     "nome": "acessos_patrimonio_historico_rw",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "all",
     "papeis": [
       "authenticated"
@@ -101,6 +119,8 @@
   {
     "tabela": "acessos_perfis",
     "nome": "acessos_perfis_escrever",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "all",
     "papeis": [
       "authenticated"
@@ -112,6 +132,8 @@
   {
     "tabela": "acessos_perfis",
     "nome": "acessos_perfis_ler",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -123,6 +145,8 @@
   {
     "tabela": "acessos_recursos",
     "nome": "acessos_recursos_rw",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "all",
     "papeis": [
       "authenticated"
@@ -134,6 +158,8 @@
   {
     "tabela": "acessos_setores",
     "nome": "acessos_setores_rw",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "all",
     "papeis": [
       "authenticated"
@@ -145,6 +171,8 @@
   {
     "tabela": "acessos_termos",
     "nome": "acessos_termos_rw",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "all",
     "papeis": [
       "authenticated"
@@ -156,6 +184,8 @@
   {
     "tabela": "acessos_vinculos",
     "nome": "acessos_vinculos_rw",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "all",
     "papeis": [
       "authenticated"
@@ -167,6 +197,8 @@
   {
     "tabela": "ad_insights_hora",
     "nome": "ad_insights_hora_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -178,6 +210,8 @@
   {
     "tabela": "ad_insights_hora",
     "nome": "so_contas_permitidas",
+    "tipo": "restrictive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -189,6 +223,8 @@
   {
     "tabela": "ads",
     "nome": "auth_read_ads",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -200,6 +236,8 @@
   {
     "tabela": "ads",
     "nome": "so_contas_permitidas",
+    "tipo": "restrictive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -211,6 +249,8 @@
   {
     "tabela": "bling_depositos",
     "nome": "bling_depositos_read",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -222,6 +262,8 @@
   {
     "tabela": "bling_lojas",
     "nome": "bling_lojas_grupo_superadmin",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "update",
     "papeis": [
       "authenticated"
@@ -233,6 +275,8 @@
   {
     "tabela": "bling_pedido_ajuste_valor",
     "nome": "bpav_escrever",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "all",
     "papeis": [
       "authenticated"
@@ -244,6 +288,8 @@
   {
     "tabela": "bling_pedido_ajuste_valor",
     "nome": "bpav_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -255,6 +301,8 @@
   {
     "tabela": "bling_pedido_ajuste_valor",
     "nome": "bpav_so_do_meu_canal",
+    "tipo": "restrictive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -266,6 +314,8 @@
   {
     "tabela": "bling_pedido_ajuste_vendedor",
     "nome": "bpaven_escrever",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "all",
     "papeis": [
       "authenticated"
@@ -277,6 +327,8 @@
   {
     "tabela": "bling_pedido_ajuste_vendedor",
     "nome": "bpaven_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -288,6 +340,8 @@
   {
     "tabela": "bling_pedido_ajuste_vendedor",
     "nome": "bpaven_so_do_meu_canal",
+    "tipo": "restrictive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -299,6 +353,8 @@
   {
     "tabela": "bling_pedido_forma_pagamento",
     "nome": "bpfp_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -310,6 +366,8 @@
   {
     "tabela": "bling_pedido_forma_pagamento",
     "nome": "bpfp_so_do_meu_canal",
+    "tipo": "restrictive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -321,6 +379,8 @@
   {
     "tabela": "bling_pedido_nota",
     "nome": "bpn_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -332,6 +392,8 @@
   {
     "tabela": "bling_pedido_nota",
     "nome": "bpn_so_do_meu_canal",
+    "tipo": "restrictive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -343,6 +405,8 @@
   {
     "tabela": "bling_pedido_vendedor",
     "nome": "quem ve vendas atualiza pedido_vendedor",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "update",
     "papeis": [
       "authenticated"
@@ -354,6 +418,8 @@
   {
     "tabela": "bling_pedido_vendedor",
     "nome": "quem ve vendas grava pedido_vendedor",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "insert",
     "papeis": [
       "authenticated"
@@ -365,6 +431,8 @@
   {
     "tabela": "bling_vendedor_metas",
     "nome": "admin_write_vend_metas",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "all",
     "papeis": [
       "authenticated"
@@ -376,6 +444,8 @@
   {
     "tabela": "bling_vendedor_metas",
     "nome": "authenticated_read_vend_metas",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "public"
@@ -387,6 +457,8 @@
   {
     "tabela": "bling_vendedor_metas",
     "nome": "service_role_full_vend_metas",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "all",
     "papeis": [
       "public"
@@ -398,6 +470,8 @@
   {
     "tabela": "bling_vendedores",
     "nome": "quem ve vendas atualiza vendedores",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "update",
     "papeis": [
       "authenticated"
@@ -409,6 +483,8 @@
   {
     "tabela": "bling_vendedores",
     "nome": "quem ve vendas grava vendedores",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "insert",
     "papeis": [
       "authenticated"
@@ -420,6 +496,8 @@
   {
     "tabela": "campaign_adsets",
     "nome": "campaign_adsets_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -431,6 +509,8 @@
   {
     "tabela": "campaign_adsets",
     "nome": "so_contas_permitidas",
+    "tipo": "restrictive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -442,6 +522,8 @@
   {
     "tabela": "campaign_insights_hora",
     "nome": "campaign_insights_hora_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -453,6 +535,8 @@
   {
     "tabela": "campaign_insights_hora",
     "nome": "so_contas_permitidas",
+    "tipo": "restrictive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -464,6 +548,8 @@
   {
     "tabela": "canais_grupos",
     "nome": "canais_grupos_escrever",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "all",
     "papeis": [
       "authenticated"
@@ -475,6 +561,8 @@
   {
     "tabela": "canais_grupos",
     "nome": "canais_grupos_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -486,6 +574,8 @@
   {
     "tabela": "canais_grupos_membros",
     "nome": "cgm_escrever",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "all",
     "papeis": [
       "authenticated"
@@ -497,6 +587,8 @@
   {
     "tabela": "canais_grupos_membros",
     "nome": "cgm_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -508,6 +600,8 @@
   {
     "tabela": "carrinho_eventos",
     "nome": "carrinho_eventos_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -519,6 +613,8 @@
   {
     "tabela": "carrinho_eventos",
     "nome": "carrinho_eventos_leitura_meta_leads",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -530,6 +626,8 @@
   {
     "tabela": "chatwoot_eventos",
     "nome": "chatwoot_eventos_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -541,6 +639,8 @@
   {
     "tabela": "checkout_abandono",
     "nome": "checkout_abandono_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -552,6 +652,8 @@
   {
     "tabela": "coletor_log",
     "nome": "coletor_log_select",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -563,6 +665,8 @@
   {
     "tabela": "conteudo_arquivos",
     "nome": "conteudo_arquivos_escrita",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "all",
     "papeis": [
       "authenticated"
@@ -574,6 +678,8 @@
   {
     "tabela": "conteudo_arquivos",
     "nome": "conteudo_arquivos_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -585,6 +691,8 @@
   {
     "tabela": "conteudo_blocos",
     "nome": "conteudo_blocos_escrita",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "all",
     "papeis": [
       "authenticated"
@@ -596,6 +704,8 @@
   {
     "tabela": "conteudo_blocos",
     "nome": "conteudo_blocos_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -607,6 +717,8 @@
   {
     "tabela": "conteudo_blocos",
     "nome": "conteudo_blocos_srv",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "all",
     "papeis": [
       "public"
@@ -618,6 +730,8 @@
   {
     "tabela": "conteudo_casamentos",
     "nome": "conteudo_casamentos_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -629,6 +743,8 @@
   {
     "tabela": "conteudo_casamentos",
     "nome": "conteudo_casamentos_srv",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "all",
     "papeis": [
       "public"
@@ -640,6 +756,8 @@
   {
     "tabela": "conteudo_concorrentes",
     "nome": "conteudo_concorrentes_escrita",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "all",
     "papeis": [
       "authenticated"
@@ -651,6 +769,8 @@
   {
     "tabela": "conteudo_concorrentes",
     "nome": "conteudo_concorrentes_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -662,6 +782,8 @@
   {
     "tabela": "conteudo_concorrentes",
     "nome": "conteudo_concorrentes_srv",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "all",
     "papeis": [
       "public"
@@ -673,6 +795,8 @@
   {
     "tabela": "conteudo_eventos",
     "nome": "conteudo_eventos_insercao",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "insert",
     "papeis": [
       "authenticated"
@@ -684,6 +808,8 @@
   {
     "tabela": "conteudo_eventos",
     "nome": "conteudo_eventos_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -695,6 +821,8 @@
   {
     "tabela": "conteudo_ideias",
     "nome": "conteudo_ideias_escrita",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "all",
     "papeis": [
       "authenticated"
@@ -706,6 +834,8 @@
   {
     "tabela": "conteudo_ideias",
     "nome": "conteudo_ideias_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -717,6 +847,8 @@
   {
     "tabela": "conteudo_ideias",
     "nome": "conteudo_ideias_srv",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "all",
     "papeis": [
       "public"
@@ -728,6 +860,8 @@
   {
     "tabela": "conteudo_jobs",
     "nome": "conteudo_jobs_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -739,6 +873,8 @@
   {
     "tabela": "conteudo_jobs",
     "nome": "conteudo_jobs_srv",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "all",
     "papeis": [
       "public"
@@ -750,6 +886,8 @@
   {
     "tabela": "conteudo_metricas",
     "nome": "conteudo_metricas_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -761,6 +899,8 @@
   {
     "tabela": "conteudo_metricas",
     "nome": "conteudo_metricas_srv",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "all",
     "papeis": [
       "public"
@@ -772,6 +912,8 @@
   {
     "tabela": "conteudo_pecas",
     "nome": "conteudo_pecas_escrita",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "all",
     "papeis": [
       "authenticated"
@@ -783,6 +925,8 @@
   {
     "tabela": "conteudo_pecas",
     "nome": "conteudo_pecas_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -794,6 +938,8 @@
   {
     "tabela": "entradas_como_outro_usuario",
     "nome": "superadmin le entradas como outro usuario",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "public"
@@ -805,6 +951,8 @@
   {
     "tabela": "equipes",
     "nome": "equipes_apagar",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "delete",
     "papeis": [
       "authenticated"
@@ -816,6 +964,8 @@
   {
     "tabela": "equipes",
     "nome": "equipes_criar",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "insert",
     "papeis": [
       "authenticated"
@@ -827,6 +977,8 @@
   {
     "tabela": "equipes",
     "nome": "equipes_editar",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "update",
     "papeis": [
       "authenticated"
@@ -838,6 +990,8 @@
   {
     "tabela": "equipes",
     "nome": "equipes_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -849,6 +1003,8 @@
   {
     "tabela": "equipes_membros",
     "nome": "membros_escrever",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "all",
     "papeis": [
       "authenticated"
@@ -860,6 +1016,8 @@
   {
     "tabela": "equipes_membros",
     "nome": "membros_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -871,6 +1029,8 @@
   {
     "tabela": "equipes_permissoes",
     "nome": "eqperm_escrever",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "all",
     "papeis": [
       "authenticated"
@@ -882,6 +1042,8 @@
   {
     "tabela": "equipes_permissoes",
     "nome": "eqperm_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -893,6 +1055,8 @@
   {
     "tabela": "fabrica_campanhas",
     "nome": "fab_camp_read",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -904,6 +1068,8 @@
   {
     "tabela": "fabrica_campanhas",
     "nome": "fab_camp_srv",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "all",
     "papeis": [
       "public"
@@ -915,6 +1081,8 @@
   {
     "tabela": "fabrica_campanhas",
     "nome": "fab_camp_write",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "all",
     "papeis": [
       "authenticated"
@@ -926,6 +1094,8 @@
   {
     "tabela": "fabrica_candidatos",
     "nome": "fab_cand_read",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -937,6 +1107,8 @@
   {
     "tabela": "fabrica_candidatos",
     "nome": "fab_cand_srv",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "all",
     "papeis": [
       "public"
@@ -948,6 +1120,8 @@
   {
     "tabela": "fabrica_candidatos",
     "nome": "fab_cand_update",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "update",
     "papeis": [
       "authenticated"
@@ -959,6 +1133,8 @@
   {
     "tabela": "fabrica_criativos",
     "nome": "fab_criativos_read",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -970,6 +1146,8 @@
   {
     "tabela": "fabrica_criativos",
     "nome": "fab_criativos_srv",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "all",
     "papeis": [
       "public"
@@ -981,6 +1159,8 @@
   {
     "tabela": "fabrica_criativos",
     "nome": "fab_criativos_write",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "all",
     "papeis": [
       "authenticated"
@@ -992,6 +1172,8 @@
   {
     "tabela": "fabrica_jobs",
     "nome": "fab_jobs_read",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -1003,6 +1185,8 @@
   {
     "tabela": "fabrica_jobs",
     "nome": "fab_jobs_srv",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "all",
     "papeis": [
       "public"
@@ -1014,6 +1198,8 @@
   {
     "tabela": "fabrica_lojas",
     "nome": "fab_lojas_read",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -1025,6 +1211,8 @@
   {
     "tabela": "fabrica_lojas",
     "nome": "fab_lojas_srv",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "all",
     "papeis": [
       "public"
@@ -1036,6 +1224,8 @@
   {
     "tabela": "fabrica_looks",
     "nome": "fab_looks_read",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -1047,6 +1237,8 @@
   {
     "tabela": "fabrica_marcas",
     "nome": "fab_marcas_read",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -1058,6 +1250,8 @@
   {
     "tabela": "fabrica_marcas",
     "nome": "fab_marcas_srv",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "all",
     "papeis": [
       "public"
@@ -1069,6 +1263,8 @@
   {
     "tabela": "fabrica_meta_jobs",
     "nome": "fab_meta_read",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -1080,6 +1276,8 @@
   {
     "tabela": "fabrica_meta_jobs",
     "nome": "fab_meta_srv",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "all",
     "papeis": [
       "public"
@@ -1091,6 +1289,8 @@
   {
     "tabela": "fabrica_objetivos",
     "nome": "fab_obj_read",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -1102,6 +1302,8 @@
   {
     "tabela": "fabrica_publicos",
     "nome": "fab_pub_read",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -1113,6 +1315,8 @@
   {
     "tabela": "fabrica_rodadas",
     "nome": "fab_rodadas_read",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -1124,6 +1328,8 @@
   {
     "tabela": "fabrica_rodadas",
     "nome": "fab_rodadas_srv",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "all",
     "papeis": [
       "public"
@@ -1135,6 +1341,8 @@
   {
     "tabela": "followers_leituras",
     "nome": "auth_read_followers_leituras",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -1146,6 +1354,8 @@
   {
     "tabela": "frota_abastecimentos",
     "nome": "frota_abast_escrever",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "all",
     "papeis": [
       "public"
@@ -1157,6 +1367,8 @@
   {
     "tabela": "frota_abastecimentos",
     "nome": "frota_abast_ler",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "public"
@@ -1168,6 +1380,8 @@
   {
     "tabela": "frota_checklist_pdf",
     "nome": "frota_checklist_pdf_escrever",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "all",
     "papeis": [
       "public"
@@ -1179,6 +1393,8 @@
   {
     "tabela": "frota_checklist_pdf",
     "nome": "frota_checklist_pdf_ler",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "public"
@@ -1190,6 +1406,8 @@
   {
     "tabela": "frota_manutencoes",
     "nome": "frota_manut_escrever",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "all",
     "papeis": [
       "public"
@@ -1201,6 +1419,8 @@
   {
     "tabela": "frota_manutencoes",
     "nome": "frota_manut_ler",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "public"
@@ -1212,6 +1432,8 @@
   {
     "tabela": "frota_plano_revisao",
     "nome": "frota_plano_escrever",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "all",
     "papeis": [
       "public"
@@ -1223,6 +1445,8 @@
   {
     "tabela": "frota_plano_revisao",
     "nome": "frota_plano_ler",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "public"
@@ -1234,6 +1458,8 @@
   {
     "tabela": "frota_requisicoes",
     "nome": "frota_req_atualizar",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "update",
     "papeis": [
       "public"
@@ -1245,6 +1471,8 @@
   {
     "tabela": "frota_requisicoes",
     "nome": "frota_req_criar",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "insert",
     "papeis": [
       "public"
@@ -1256,6 +1484,8 @@
   {
     "tabela": "frota_requisicoes",
     "nome": "frota_req_ler",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "public"
@@ -1267,6 +1497,8 @@
   {
     "tabela": "frota_requisicoes_historico",
     "nome": "frota_req_hist_ler",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "public"
@@ -1278,6 +1510,8 @@
   {
     "tabela": "frota_revisoes",
     "nome": "frota_rev_escrever",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "all",
     "papeis": [
       "public"
@@ -1289,6 +1523,8 @@
   {
     "tabela": "frota_revisoes",
     "nome": "frota_rev_ler",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "public"
@@ -1300,6 +1536,8 @@
   {
     "tabela": "frota_uso",
     "nome": "frota_uso_escrever",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "all",
     "papeis": [
       "public"
@@ -1311,6 +1549,8 @@
   {
     "tabela": "frota_uso",
     "nome": "frota_uso_ler",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "public"
@@ -1322,6 +1562,8 @@
   {
     "tabela": "frota_uso_pdf",
     "nome": "frota_uso_pdf_escrever",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "all",
     "papeis": [
       "public"
@@ -1333,6 +1575,8 @@
   {
     "tabela": "frota_uso_pdf",
     "nome": "frota_uso_pdf_ler",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "public"
@@ -1344,6 +1588,8 @@
   {
     "tabela": "frota_veiculos",
     "nome": "frota_veiculos_escrever",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "all",
     "papeis": [
       "public"
@@ -1355,6 +1601,8 @@
   {
     "tabela": "frota_veiculos",
     "nome": "frota_veiculos_ler",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "public"
@@ -1366,6 +1614,8 @@
   {
     "tabela": "gc_estoque_item",
     "nome": "gc_ei_read",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -1377,6 +1627,8 @@
   {
     "tabela": "gc_estoque_item",
     "nome": "gc_ei_so_do_meu_time",
+    "tipo": "restrictive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -1388,6 +1640,8 @@
   {
     "tabela": "gc_vendas_item",
     "nome": "gc_vi_read",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -1399,6 +1653,8 @@
   {
     "tabela": "gc_vendas_item",
     "nome": "gc_vi_so_do_meu_time",
+    "tipo": "restrictive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -1410,6 +1666,8 @@
   {
     "tabela": "gestao_comercial_briefings",
     "nome": "gcb_select",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -1421,6 +1679,8 @@
   {
     "tabela": "gestor_log",
     "nome": "gestor_log_select",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -1432,6 +1692,8 @@
   {
     "tabela": "gt_ad_analises",
     "nome": "gt_ad_read",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "public"
@@ -1443,6 +1705,8 @@
   {
     "tabela": "gt_budget_analises",
     "nome": "gt_budget_read",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "public"
@@ -1454,6 +1718,8 @@
   {
     "tabela": "gt_campanhas_rascunho",
     "nome": "gt_rascunho_apagar",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "delete",
     "papeis": [
       "authenticated"
@@ -1465,6 +1731,8 @@
   {
     "tabela": "gt_campanhas_rascunho",
     "nome": "gt_rascunho_atualizar",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "update",
     "papeis": [
       "authenticated"
@@ -1476,6 +1744,8 @@
   {
     "tabela": "gt_campanhas_rascunho",
     "nome": "gt_rascunho_inserir",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "insert",
     "papeis": [
       "authenticated"
@@ -1487,6 +1757,8 @@
   {
     "tabela": "gt_campanhas_rascunho",
     "nome": "gt_rascunho_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -1498,6 +1770,8 @@
   {
     "tabela": "gt_campanhas_rascunho",
     "nome": "so_contas_permitidas",
+    "tipo": "restrictive",
+    "dinamica": false,
     "comando": "all",
     "papeis": [
       "authenticated"
@@ -1509,6 +1783,8 @@
   {
     "tabela": "gt_config_metricas",
     "nome": "gt_cfg_admin_insert",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "insert",
     "papeis": [
       "public"
@@ -1520,6 +1796,8 @@
   {
     "tabela": "gt_config_metricas",
     "nome": "gt_cfg_admin_update",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "update",
     "papeis": [
       "public"
@@ -1531,6 +1809,8 @@
   {
     "tabela": "gt_config_metricas",
     "nome": "gt_cfg_ferramenta_insert",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "insert",
     "papeis": [
       "public"
@@ -1542,6 +1822,8 @@
   {
     "tabela": "gt_config_metricas",
     "nome": "gt_cfg_ferramenta_update",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "update",
     "papeis": [
       "public"
@@ -1553,6 +1835,8 @@
   {
     "tabela": "gt_config_metricas",
     "nome": "gt_cfg_read",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "public"
@@ -1564,6 +1848,8 @@
   {
     "tabela": "gt_fila_decisoes",
     "nome": "gt_fila_decisoes_insercao",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "insert",
     "papeis": [
       "authenticated"
@@ -1575,6 +1861,8 @@
   {
     "tabela": "gt_fila_decisoes",
     "nome": "gt_fila_decisoes_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -1586,6 +1874,8 @@
   {
     "tabela": "gt_objetivo_interacao",
     "nome": "objetivo_interacao_escrita",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "all",
     "papeis": [
       "authenticated"
@@ -1597,6 +1887,8 @@
   {
     "tabela": "gt_objetivo_interacao",
     "nome": "objetivo_interacao_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -1608,6 +1900,8 @@
   {
     "tabela": "gt_ponderada_config",
     "nome": "ponderada_config_escrita",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "update",
     "papeis": [
       "authenticated"
@@ -1619,6 +1913,8 @@
   {
     "tabela": "gt_ponderada_config",
     "nome": "ponderada_config_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -1630,6 +1926,8 @@
   {
     "tabela": "gt_ponderada_config_log",
     "nome": "ponderada_log_escrita",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "insert",
     "papeis": [
       "authenticated"
@@ -1641,6 +1939,8 @@
   {
     "tabela": "gt_ponderada_config_log",
     "nome": "ponderada_log_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -1652,6 +1952,8 @@
   {
     "tabela": "gt_problemas_meta",
     "nome": "gt_problemas_meta_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -1663,6 +1965,8 @@
   {
     "tabela": "gt_problemas_meta",
     "nome": "so_contas_permitidas",
+    "tipo": "restrictive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -1674,6 +1978,8 @@
   {
     "tabela": "ia_execucoes",
     "nome": "ia_exec_select",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -1685,6 +1991,8 @@
   {
     "tabela": "interesses_sugeridos",
     "nome": "int_sug_read",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -1696,6 +2004,8 @@
   {
     "tabela": "noticias_concorrentes",
     "nome": "noticias_select_authenticated",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -1707,6 +2017,8 @@
   {
     "tabela": "noticias_panorama",
     "nome": "noticias_panorama_read",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -1718,6 +2030,8 @@
   {
     "tabela": "noticias_panorama",
     "nome": "noticias_panorama_read_anon",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "anon"
@@ -1729,6 +2043,8 @@
   {
     "tabela": "patrimonio_bens",
     "nome": "patrimonio_bens_apagar_so_do_meu_time",
+    "tipo": "restrictive",
+    "dinamica": false,
     "comando": "delete",
     "papeis": [
       "authenticated"
@@ -1740,6 +2056,8 @@
   {
     "tabela": "patrimonio_bens",
     "nome": "patrimonio_bens_editar_so_do_meu_time",
+    "tipo": "restrictive",
+    "dinamica": false,
     "comando": "update",
     "papeis": [
       "authenticated"
@@ -1751,6 +2069,8 @@
   {
     "tabela": "patrimonio_bens",
     "nome": "patrimonio_bens_rw",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "all",
     "papeis": [
       "authenticated"
@@ -1762,6 +2082,8 @@
   {
     "tabela": "patrimonio_bens",
     "nome": "patrimonio_bens_so_do_meu_time",
+    "tipo": "restrictive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -1773,6 +2095,8 @@
   {
     "tabela": "patrimonio_comodos",
     "nome": "patrimonio_comodos_criar_frota",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "insert",
     "papeis": [
       "public"
@@ -1784,6 +2108,8 @@
   {
     "tabela": "patrimonio_comodos",
     "nome": "patrimonio_comodos_leitura_frota",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "public"
@@ -1795,6 +2121,8 @@
   {
     "tabela": "patrimonio_config",
     "nome": "patrimonio_config_rw",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "all",
     "papeis": [
       "authenticated"
@@ -1806,6 +2134,8 @@
   {
     "tabela": "patrimonio_empresas",
     "nome": "patrimonio_empresas_criar_frota",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "insert",
     "papeis": [
       "public"
@@ -1817,6 +2147,8 @@
   {
     "tabela": "patrimonio_empresas",
     "nome": "patrimonio_empresas_leitura_frota",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "public"
@@ -1828,6 +2160,8 @@
   {
     "tabela": "patrimonio_locais",
     "nome": "patrimonio_locais_criar_frota",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "insert",
     "papeis": [
       "public"
@@ -1839,6 +2173,8 @@
   {
     "tabela": "patrimonio_locais",
     "nome": "patrimonio_locais_leitura_frota",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "public"
@@ -1850,6 +2186,8 @@
   {
     "tabela": "patrimonio_log",
     "nome": "patrimonio_log_insert",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "insert",
     "papeis": [
       "authenticated"
@@ -1861,6 +2199,8 @@
   {
     "tabela": "patrimonio_log",
     "nome": "patrimonio_log_select",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -1872,6 +2212,8 @@
   {
     "tabela": "patrimonio_posse",
     "nome": "patrimonio_posse_rw",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "all",
     "papeis": [
       "authenticated"
@@ -1883,6 +2225,8 @@
   {
     "tabela": "patrimonio_posse",
     "nome": "patrimonio_posse_segue_o_bem",
+    "tipo": "restrictive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -1894,6 +2238,8 @@
   {
     "tabela": "perfil_visitas_hora",
     "nome": "perfil_visitas_hora_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -1905,6 +2251,8 @@
   {
     "tabela": "perfil_visitas_hora",
     "nome": "so_contas_permitidas",
+    "tipo": "restrictive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -1916,6 +2264,8 @@
   {
     "tabela": "profiles",
     "nome": "auth_read_profiles",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "public"
@@ -1927,6 +2277,8 @@
   {
     "tabela": "projetos_status",
     "nome": "projetos_status_del",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "delete",
     "papeis": [
       "authenticated"
@@ -1938,6 +2290,8 @@
   {
     "tabela": "projetos_status",
     "nome": "projetos_status_ins",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "insert",
     "papeis": [
       "authenticated"
@@ -1949,6 +2303,8 @@
   {
     "tabela": "projetos_status",
     "nome": "projetos_status_select",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -1960,6 +2316,8 @@
   {
     "tabela": "projetos_status",
     "nome": "projetos_status_upd",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "update",
     "papeis": [
       "authenticated"
@@ -1971,6 +2329,8 @@
   {
     "tabela": "push_preferencias",
     "nome": "push_pref_escrita",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "all",
     "papeis": [
       "authenticated"
@@ -1982,6 +2342,8 @@
   {
     "tabela": "push_preferencias",
     "nome": "push_pref_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -1993,6 +2355,8 @@
   {
     "tabela": "push_subs",
     "nome": "push_subs_dono_delete",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "delete",
     "papeis": [
       "public"
@@ -2004,6 +2368,8 @@
   {
     "tabela": "push_subs",
     "nome": "push_subs_dono_insert",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "insert",
     "papeis": [
       "public"
@@ -2015,6 +2381,8 @@
   {
     "tabela": "push_subs",
     "nome": "push_subs_dono_select",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "public"
@@ -2026,6 +2394,8 @@
   {
     "tabela": "push_subs",
     "nome": "push_subs_dono_update",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "update",
     "papeis": [
       "public"
@@ -2037,6 +2407,8 @@
   {
     "tabela": "robos_esperados",
     "nome": "robos_esperados_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -2048,6 +2420,8 @@
   {
     "tabela": "robos_esperados",
     "nome": "robos_esperados_srv",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "all",
     "papeis": [
       "public"
@@ -2059,6 +2433,8 @@
   {
     "tabela": "robos_execucoes",
     "nome": "robos_execucoes_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -2070,6 +2446,8 @@
   {
     "tabela": "robos_execucoes",
     "nome": "robos_execucoes_srv",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "all",
     "papeis": [
       "public"
@@ -2081,6 +2459,8 @@
   {
     "tabela": "shopify_pedidos",
     "nome": "shopify_pedidos_leitura",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -2092,6 +2472,8 @@
   {
     "tabela": "shopify_pedidos",
     "nome": "shopify_pedidos_so_do_meu_canal",
+    "tipo": "restrictive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -2103,6 +2485,8 @@
   {
     "tabela": "storage.objects",
     "nome": "acessos_avatars_write",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "all",
     "papeis": [
       "authenticated"
@@ -2114,6 +2498,8 @@
   {
     "tabela": "storage.objects",
     "nome": "acessos_termos_rw",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "all",
     "papeis": [
       "authenticated"
@@ -2125,6 +2511,8 @@
   {
     "tabela": "storage.objects",
     "nome": "conteudo_obj_apagar",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "delete",
     "papeis": [
       "authenticated"
@@ -2136,6 +2524,8 @@
   {
     "tabela": "storage.objects",
     "nome": "conteudo_obj_atualizar",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "update",
     "papeis": [
       "authenticated"
@@ -2147,6 +2537,8 @@
   {
     "tabela": "storage.objects",
     "nome": "conteudo_obj_escrever",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "insert",
     "papeis": [
       "authenticated"
@@ -2158,6 +2550,8 @@
   {
     "tabela": "storage.objects",
     "nome": "conteudo_obj_ler",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -2169,6 +2563,8 @@
   {
     "tabela": "storage.objects",
     "nome": "gestor_envios_atualizar",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "update",
     "papeis": [
       "authenticated"
@@ -2180,6 +2576,8 @@
   {
     "tabela": "storage.objects",
     "nome": "gestor_envios_inserir",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "insert",
     "papeis": [
       "authenticated"
@@ -2191,6 +2589,8 @@
   {
     "tabela": "storage.objects",
     "nome": "vessel_curriculos_anon_so_envia",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "insert",
     "papeis": [
       "anon"
@@ -2202,6 +2602,8 @@
   {
     "tabela": "user_permissions",
     "nome": "admin gerencia permissoes",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "all",
     "papeis": [
       "public"
@@ -2213,6 +2615,8 @@
   {
     "tabela": "user_permissions",
     "nome": "user le proprias permissoes",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "public"
@@ -2224,6 +2628,8 @@
   {
     "tabela": "vessel_baixas",
     "nome": "vessel_baixas_read",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -2235,6 +2641,8 @@
   {
     "tabela": "vessel_cartao_pedidos",
     "nome": "vessel_cartao_pedidos_read",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -2246,6 +2654,8 @@
   {
     "tabela": "vessel_clientes",
     "nome": "vessel_clientes_read",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -2257,6 +2667,8 @@
   {
     "tabela": "vessel_edicoes",
     "nome": "vessel_edicoes_read",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -2268,6 +2680,8 @@
   {
     "tabela": "vessel_garantias_baixadas",
     "nome": "vessel_garantias_baixadas_read",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -2279,6 +2693,8 @@
   {
     "tabela": "vessel_leituras",
     "nome": "vessel_leituras_read",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -2290,6 +2706,8 @@
   {
     "tabela": "vessel_lembretes",
     "nome": "vessel_lembretes_read",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -2301,6 +2719,8 @@
   {
     "tabela": "vessel_lotes",
     "nome": "vessel_lotes_read",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -2312,6 +2732,8 @@
   {
     "tabela": "vessel_pecas",
     "nome": "vessel_pecas_read",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -2323,6 +2745,8 @@
   {
     "tabela": "vessel_pedidos_de_registro",
     "nome": "vessel_pedidos_registro_read",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -2334,6 +2758,8 @@
   {
     "tabela": "vessel_private_edits",
     "nome": "vessel_private_edits_le_central",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -2345,6 +2771,8 @@
   {
     "tabela": "vessel_registros",
     "nome": "vessel_registros_read",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -2356,6 +2784,8 @@
   {
     "tabela": "vessel_sessao_aberturas",
     "nome": "vessel_sessao_aberturas_le_central",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -2367,6 +2797,8 @@
   {
     "tabela": "vessel_stylist_aberturas",
     "nome": "vessel_stylist_aberturas_le_central",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"
@@ -2378,6 +2810,8 @@
   {
     "tabela": "visitas_perfil_dia",
     "nome": "auth_read_visitas_perfil_dia",
+    "tipo": "permissive",
+    "dinamica": false,
     "comando": "select",
     "papeis": [
       "authenticated"

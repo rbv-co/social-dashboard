@@ -46,3 +46,27 @@ test('papéis múltiplos', () => {
   const [p] = um(`create policy x on t for select to anon, authenticated using (true);`)
   assert.deepEqual(p.papeis, ['anon', 'authenticated'])
 })
+
+test('tipo: permissive por padrão e restrictive quando declarado', () => {
+  const [a] = um(`create policy x on t for select using (true);`)
+  assert.equal(a.tipo, 'permissive')
+  const [b] = um(`create policy x on public.t as restrictive for select to authenticated using (true);`)
+  assert.equal(b.tipo, 'restrictive')
+  assert.equal(b.comando, 'select')
+  const [c] = um(`create policy x on t as permissive using (true);`)
+  assert.equal(c.tipo, 'permissive')
+})
+
+test('policy dinâmica (format com %I) é marcada e não vira tabela vazia', () => {
+  const r = um(`do $$ begin
+    execute format('drop policy if exists p on public.%I', t);
+    execute format(
+      'create policy p on public.%I as restrictive for select '
+      'to authenticated using (public.pode_ver_conta(account_id::text))', t);
+  end $$;`)
+  assert.equal(r.length, 1)
+  assert.equal(r[0].tabela, '%I')
+  assert.equal(r[0].dinamica, true)
+  assert.equal(r[0].tipo, 'restrictive')
+  assert.equal(um(`create policy x on t using (true);`)[0].dinamica, false)
+})
