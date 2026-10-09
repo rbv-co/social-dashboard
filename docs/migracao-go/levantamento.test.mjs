@@ -17,7 +17,9 @@ test('levantar.sh força transação somente leitura e confere em tempo de execu
   const sh = readFileSync(new URL('./levantar.sh', import.meta.url), 'utf8')
   assert.match(sh, /^export PGOPTIONS=.*default_transaction_read_only=on/m)
   assert.match(sh, /ON_ERROR_STOP/)
-  assert.match(sh, /show default_transaction_read_only/)
+  // a garantia é `begin read only` em volta de cada consulta (pooler em modo transação ignora PGOPTIONS)
+  assert.match(sh, /begin read only; show transaction_read_only; commit;/)
+  assert.match(sh, /echo 'begin read only;'; .*cat "\$f"; echo 'commit;'/)
 })
 
 test('levantar.sh não deixa a URL vazar', () => {
