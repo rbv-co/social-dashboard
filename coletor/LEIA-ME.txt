@@ -437,3 +437,11 @@ login com a conta de serviço (loginServico) antes de começar, igual à Fábric
 Isso já causou um bug que quase passou: com a chave errada, o robô rodaria toda
 semana, tomaria 401 em toda busca, gravaria zero e NADA pareceria erro — você só
 veria a Fábrica sem sugestão nenhuma, sem saber por quê.
+
+BLING PELO PROXY DO CORE NO COLETOR
+  trazer-pedidos-do-bling, trazer-vendedores-do-bling, fotos-do-selo-do-bling e classificar-material-* usam
+  lib/bling-token.mjs (blingPeloCore). Com CORE_BLING_PROXY=true vão pelo proxy do core (CORE_URL + CORE_API_TOKEN) e
+  não tocam em bling_tokens. Desligada = como antes, mas nenhum robô renova token (trazer-vendedores e
+  classificar-material-dos-lotes perderam o refresh próprio: só leem). lib/bling-comercial.mjs (blingProxy) já passa
+  pela edge bling-proxy, que segue a flag da própria edge (secret do Supabase).
+  guardar-copia-do-banco já tira access_token/refresh_token/client_secret de bling_tokens da cópia (SEM_O_VALOR).

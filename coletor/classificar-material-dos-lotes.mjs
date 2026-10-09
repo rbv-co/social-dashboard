@@ -35,7 +35,7 @@ import { writeFileSync } from 'node:fs'
 import { classificarMaterial } from '../src/ferramentas/autenticidade/material-do-produto.js'
 
 const BLING = 'https://api.bling.com.br/Api/v3'
-// CORE_BLING_TOKEN=true: o `core` é o dono do token e este robô NÃO renova (ver lib/bling-token.mjs).
+// CORE_BLING_PROXY=true: as chamadas vão pelo proxy do core; este robô NÃO renova token (ver lib/bling-token.mjs).
 const CORE_BLING = blingDoColetor()
 const CSV_DE_SAIDA = '/private/tmp/claude-501/-Users-erickmartins/1343e15e-997e-4f51-a038-d5128dc87527/scratchpad/material-dos-lotes.csv'
 const espera = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -45,35 +45,14 @@ const espera = (ms) => new Promise((r) => setTimeout(r, ms))
 const PAUSA_ENTRE_CHAMADAS_MS = 400
 
 /**
- * O token, e a renovação só se precisar — mesma conta de sempre
- * (`bling_tokens`), copiada de `trazer-vendedores-do-bling.mjs`.
- *
- * ⚠️ RENOVAR ROTACIONA O `refresh_token`: renovar e não gravar de volta deixa
- * o próximo robô que usar o antigo ser recusado.
+ * O token. Com CORE_BLING_PROXY=true nem é lido (o core põe o token). No caminho antigo só se
+ * LÊ `bling_tokens`: este robô NÃO renova (o refresh do Bling é de uso único; quem renova é o core).
  */
-const pegarToken = (cli) => CORE_BLING.token(() => pegarTokenDoBanco(cli))
-
-async function pegarTokenDoBanco(cli) {
-  const { rows: [t] } = await cli.query('select * from bling_tokens order by id desc limit 1')
+const pegarToken = (cli) => CORE_BLING.token(async () => {
+  const { rows: [t] } = await cli.query('select access_token from bling_tokens order by id desc limit 1')
   if (!t?.access_token) throw new Error('não há token do Bling guardado.')
-  if (new Date(t.expires_at) > new Date(Date.now() + 5 * 60 * 1000)) return t.access_token
-
-  console.log('o token estava vencendo; renovando.')
-  const credenciais = Buffer.from(`${t.client_id}:${t.client_secret}`).toString('base64')
-  const r = await fetch(`${BLING}/oauth/token`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded', Authorization: `Basic ${credenciais}` },
-    body: `grant_type=refresh_token&refresh_token=${t.refresh_token}`,
-  })
-  if (!r.ok) throw new Error(`não consegui renovar o acesso ao Bling (${r.status}).`)
-  const novo = await r.json()
-  await cli.query(
-    `update bling_tokens set access_token = $1, refresh_token = $2,
-            expires_at = $3, updated_at = now() where id = $4`,
-    [novo.access_token, novo.refresh_token,
-     new Date(Date.now() + novo.expires_in * 1000).toISOString(), t.id])
-  return novo.access_token
-}
+  return t.access_token
+})
 
 // Excel em português abre CSV separado por PONTO-E-VÍRGULA — mesma regra de
 // `src/ferramentas/autenticidade/lotes.js` (`celula`/`linhasDoCsv`).

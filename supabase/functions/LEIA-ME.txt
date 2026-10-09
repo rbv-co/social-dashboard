@@ -73,3 +73,15 @@ enviar-mensagem-abandono: robô das mensagens de WhatsApp (início, pedido receb
   COMO LIGAR, nesta ordem: 1) Chatwoot com CUSTOM_AVISO_UNICO ligado; 2) secret CHATWOOT_BOT_SECRET na edge e depois
   RESERVAR_AVISO_CHATWOOT=true; 3) só depois CUSTOM_NFE_WHATSAPP no Chatwoot.
   COMO DESLIGAR: remover RESERVAR_AVISO_CHATWOOT (ou false); a rodada seguinte já envia como antes.
+
+BLING PELO PROXY DO CORE (CORE_BLING_PROXY)
+  Com CORE_BLING_PROXY=true TODA chamada ao Bling destas edges vai por POST {CORE_URL}/api/interno/bling/proxy
+  (Bearer CORE_API_TOKEN): bling-proxy, enviar-push-vendas, estoque-do-site, vessel-registrar-garantia e
+  vessel-espelhar-lista. O core é o único que fala com o Bling e controla os 150 req/min (faixas caixa/webhook/sync;
+  aqui tudo sai como `sync`). Ligada, ninguém lê nem renova `bling_tokens`. Falta CORE_API_TOKEN = erro claro, falha fechada.
+  Desligada (padrão) = caminho antigo, idêntico. O refresh próprio (oauth/token) FICOU só nesse caminho antigo de
+  bling-proxy, vessel-registrar-garantia e vessel-espelhar-lista: é o único que renova se a flag voltar a false. Sai de vez
+  quando a flag for definitiva. Código: _shared/core-bling-proxy.js (`blingPeloCore`).
+  ORDEM DE PUBLICAÇÃO (uma edge por vez, conferindo com o dono): estoque-do-site -> enviar-push-vendas ->
+  vessel-registrar-garantia -> bling-proxy (a mais usada, por último). Antes de cada: regra do topo do CLAUDE.md.
+  REVERTER: CORE_BLING_PROXY=false (ou apagar o secret); vale na próxima chamada, sem republicar.

@@ -73,7 +73,7 @@ function raizDoIamundi() {
 const SITE = join(raizDoIamundi(), 'vessel-brasil')
 const PASTA_DAS_FOTOS = join(SITE, 'fotos', 'selo')
 const BLING = 'https://api.bling.com.br/Api/v3'
-// CORE_BLING_TOKEN=true: o `core` é o dono do token; aqui só se LÊ (ver lib/bling-token.mjs).
+// CORE_BLING_PROXY=true: as chamadas vão pelo proxy do core; aqui nunca se renova token (ver lib/bling-token.mjs).
 const CORE_BLING = blingDoColetor()
 const DRY = process.argv.includes('--dry')
 const SEM_PUSH = process.argv.includes('--sem-push')

@@ -99,6 +99,8 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           # Token do Bling vindo do core (desligado por padrão: variável do repositório ausente).
           CORE_BLING_TOKEN: ${{ vars.CORE_BLING_TOKEN }}
+          # Bling pelo proxy do core (desligado por padrão: variável do repositório CORE_BLING_PROXY ausente).
+          CORE_BLING_PROXY: ${{ vars.CORE_BLING_PROXY }}
           CORE_URL: ${{ vars.CORE_URL }}
           CORE_API_TOKEN: ${{ secrets.CORE_API_TOKEN }}
           ZOHO_CLIENT_ID: ${{ secrets.ZOHO_CLIENT_ID }}

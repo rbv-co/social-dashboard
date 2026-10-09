@@ -59,13 +59,14 @@ import { casaComOSku } from '../_shared/casar-sku-do-bling.js';
 // PRESENTE (ver o uso, junto de `tem_marca`, mais abaixo).
 import { nomesBatem, nomesChegamPerto } from '../_shared/nome-de-quem-deu.js';
 
-import { blingDoCore } from '../_shared/core-bling-token.js';
+import { blingPeloCore } from '../_shared/core-bling-proxy.js';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const BLING = 'https://api.bling.com.br/Api/v3';
-// CORE_BLING_TOKEN=true: o `core` é o dono do token; nenhum ponto aqui renova (ver _shared/core-bling-token.js).
-const CORE_BLING = blingDoCore(Deno.env.toObject());
+// CORE_BLING_PROXY=true: TODA chamada ao Bling vai pelo proxy do core (CORE_API_TOKEN/CORE_URL); esta edge não lê nem renova bling_tokens.
+// Desligada (padrão): caminho antigo, idêntico (CORE_BLING_TOKEN ou token do banco). Ver blingPeloCore em _shared/core-bling-proxy.js.
+const CORE_BLING = blingPeloCore(Deno.env.toObject());
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',

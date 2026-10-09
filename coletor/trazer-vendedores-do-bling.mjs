@@ -20,44 +20,21 @@ import pg from 'pg';
 import { blingDoColetor } from './lib/bling-token.mjs';
 
 const BLING = 'https://api.bling.com.br/Api/v3';
-// CORE_BLING_TOKEN=true: o `core` é o dono do token e este robô NÃO renova (ver lib/bling-token.mjs).
+// CORE_BLING_PROXY=true: as chamadas vão pelo proxy do core; este robô NÃO renova token (ver lib/bling-token.mjs).
 const CORE_BLING = blingDoColetor();
 const ensaio = process.argv.includes('--ensaio');
 const espera = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /**
- * O token, e a renovação só se precisar.
- *
- * ⚠️ RENOVAR ROTACIONA O `refresh_token`: renovar e não gravar de volta deixa o
- * próximo que usar o antigo ser recusado. Por isso a gravação vem junto, e por
- * isso só renovamos quando o atual já não serve — renovar por precaução, com
- * outro robô rodando ao lado, é o que derruba os dois.
+ * O token. Com CORE_BLING_PROXY=true nem é lido (o core põe o token). No caminho antigo
+ * só se LÊ `bling_tokens`: ESTE ROBÔ NÃO RENOVA (o refresh do Bling é de uso único e quem
+ * renova é o core / o bling-proxy). Vencido = o Bling responde 401 e o robô para, em voz alta.
  */
-const pegarToken = (cli) => CORE_BLING.token(() => pegarTokenDoBanco(cli));
-
-async function pegarTokenDoBanco(cli) {
-  const { rows: [t] } = await cli.query(
-    'select * from bling_tokens order by id desc limit 1');
+const pegarToken = (cli) => CORE_BLING.token(async () => {
+  const { rows: [t] } = await cli.query('select access_token from bling_tokens order by id desc limit 1');
   if (!t?.access_token) throw new Error('não há token do Bling guardado.');
-  if (new Date(t.expires_at) > new Date(Date.now() + 5 * 60 * 1000)) return t.access_token;
-
-  console.log('o token estava vencendo; renovando.');
-  const credenciais = Buffer.from(`${t.client_id}:${t.client_secret}`).toString('base64');
-  const r = await fetch(`${BLING}/oauth/token`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded',
-               Authorization: `Basic ${credenciais}` },
-    body: `grant_type=refresh_token&refresh_token=${t.refresh_token}`,
-  });
-  if (!r.ok) throw new Error(`não consegui renovar o acesso ao Bling (${r.status}).`);
-  const novo = await r.json();
-  await cli.query(
-    `update bling_tokens set access_token = $1, refresh_token = $2,
-            expires_at = $3, updated_at = now() where id = $4`,
-    [novo.access_token, novo.refresh_token,
-     new Date(Date.now() + novo.expires_in * 1000).toISOString(), t.id]);
-  return novo.access_token;
-}
+  return t.access_token;
+});
 
 const cli = new pg.Client({ connectionString: process.env.DATABASE_URL });
 await cli.connect();
