@@ -17,7 +17,7 @@ function sbDo(abandono) {
     async rpc(nome, args) {
       chamadas.push([nome, args])
       if (nome === 'pegar_para_mensagem') return { data: [linha], error: null }
-      if (nome === 'recebeu_mensagem_automatica') return { data: abandono, error: null }
+      if (nome === 'avaliar_trava_cruzada') return { data: abandono === true ? 'barrar' : abandono === false ? 'liberar' : abandono, error: null }
       return { data: null, error: null }
     },
     from: () => ({ select: () => ({ in: async () => ({ data: [], error: null }), eq: () => ({ maybeSingle: async () => ({ data: { status: 'fila_envio' }, error: null }) }) }) }),
@@ -38,7 +38,7 @@ test('rodarTudo: ABANDONO_TRAVA_CRUZADA chega à rodada (padrão ligada, false d
     const sb = sbDo(true)
     const env = (n) => ({ ENVIO_MODO: 'lista', ENVIO_SO_PARA: '19982621821', TEMPLATE_NOME: 't', LINK_BASE: 'https://loja.com.br/', CHATWOOT_URL: 'https://cw.exemplo.com', CHATWOOT_CONTA_ID: '1', CHATWOOT_CAIXA_ID: '1', CHATWOOT_API_TOKEN: 'T', ABANDONO_TRAVA_CRUZADA: flag }[n] ?? '')
     await rodarTudo({ sb, env, criarCliente: () => ({}), agora: new Date('2026-09-29T15:00:00Z') })
-    return sb.chamadas.filter((c) => c[0] === 'recebeu_mensagem_automatica').length
+    return sb.chamadas.filter((c) => c[0] === 'avaliar_trava_cruzada').length
   }
   assert.equal(await consultas(''), 1)
   assert.equal(await consultas('false'), 0)

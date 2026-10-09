@@ -343,7 +343,7 @@ test('erro ao pegar da fila: 500 e nada mais é chamado', async (t) => {
 const comTrava = (sb, resposta) => {
   const antes = sb.rpc
   sb.rpc = async (nome, args) => {
-    if (nome === 'recebeu_mensagem_automatica') { sb.chamadas.push([nome, args]); return resposta }
+    if (nome === 'avaliar_trava_cruzada') { sb.chamadas.push([nome, args]); return resposta }
     return antes(nome, args)
   }
   return sb
@@ -351,22 +351,24 @@ const comTrava = (sb, resposta) => {
 
 test('⚠️ trava cruzada: telefone com outra automática em 20 h não recebe (ignorada_trava_cruzada), sem tocar no Chatwoot', async () => {
   for (const tipo of ['inicio', 'followup']) {
-    const sb = comTrava(fakeSb({ linhas: [tipo === 'inicio' ? inicio(1) : followup(1)] }), { data: true, error: null })
+    const sb = comTrava(fakeSb({ linhas: [tipo === 'inicio' ? inicio(1) : followup(1)] }), { data: 'barrar', error: null })
     const cliente = fakeCliente()
     const r = await rodar(tipo, sb, cliente, { travaCruzada: true })
     assert.equal(r.corpo.resultado[0].motivo, 'ignorada_trava_cruzada', tipo)
     assert.deepEqual(rpcs(sb, 'marcar_da_fila')[0], { p_tipo: tipo, p_chave: 'tok1', p_status: 'ignorada', p_motivo: 'ignorada_trava_cruzada' })
     assert.deepEqual(cliente.chamadas, [])
-    assert.equal(rpcs(sb, 'recebeu_mensagem_automatica')[0].p_horas, 20)
+    assert.equal(rpcs(sb, 'avaliar_trava_cruzada')[0].p_horas, 20)
+    assert.equal(rpcs(sb, 'avaliar_trava_cruzada')[0].p_tipo, tipo)
+    assert.equal(rpcs(sb, 'avaliar_trava_cruzada')[0].p_chave, 'tok1')
   }
 })
 
 test('trava cruzada: sem outra mensagem recente envia; desligada (ou ausente) nem consulta', async () => {
-  const sb = comTrava(fakeSb({ linhas: [inicio(1)] }), { data: false, error: null })
+  const sb = comTrava(fakeSb({ linhas: [inicio(1)] }), { data: 'liberar', error: null })
   assert.equal((await rodar('inicio', sb, fakeCliente(), { travaCruzada: true })).corpo.resultado[0].resultado, 'enviada')
-  const sb2 = comTrava(fakeSb({ linhas: [inicio(1)] }), { data: true, error: null })
+  const sb2 = comTrava(fakeSb({ linhas: [inicio(1)] }), { data: 'barrar', error: null })
   assert.equal((await rodar('inicio', sb2, fakeCliente(), { travaCruzada: false })).corpo.resultado[0].resultado, 'enviada')
-  assert.equal(rpcs(sb2, 'recebeu_mensagem_automatica').length, 0)
+  assert.equal(rpcs(sb2, 'avaliar_trava_cruzada').length, 0)
 })
 
 test('⚠️ trava cruzada: falha ao consultar NÃO libera: devolve contando tentativa', async (t) => {
@@ -379,11 +381,28 @@ test('⚠️ trava cruzada: falha ao consultar NÃO libera: devolve contando ten
   assert.deepEqual(cliente.chamadas, [])
 })
 
+test('⚠️ trava cruzada: outra linha do telefone `enviando` com prioridade -> `esperar`: devolve SEM contar tentativa e sem tocar no Chatwoot', async () => {
+  const sb = comTrava(fakeSb({ linhas: [inicio(1)] }), { data: 'esperar', error: null })
+  const cliente = fakeCliente()
+  const r = await rodar('inicio', sb, cliente, { travaCruzada: true })
+  assert.equal(r.corpo.resultado[0].motivo, 'telefone_com_envio_em_andamento')
+  assert.deepEqual(rpcs(sb, 'devolver_da_fila')[0], { p_tipo: 'inicio', p_chave: 'tok1', p_contar: false })
+  assert.equal(rpcs(sb, 'marcar_da_fila').length, 0)
+  assert.deepEqual(cliente.chamadas, [])
+})
+
+test('trava cruzada: resposta desconhecida da função não libera (devolve contando tentativa)', async (t) => {
+  calar(t)
+  const sb = comTrava(fakeSb({ linhas: [inicio(1)] }), { data: true, error: null })
+  const r = await rodar('inicio', sb, fakeCliente(), { travaCruzada: true })
+  assert.equal(r.corpo.resultado[0].motivo, 'falha_na_trava_cruzada')
+})
+
 test('trava cruzada: o pedido recebido (transacional) nunca é barrado', async () => {
-  const sb = comTrava(fakeSb({ linhas: [pedido(1)] }), { data: true, error: null })
+  const sb = comTrava(fakeSb({ linhas: [pedido(1)] }), { data: 'barrar', error: null })
   const r = await rodar('pedido', sb, fakeCliente(), { travaCruzada: true })
   assert.equal(r.corpo.resultado[0].resultado, 'enviada')
-  assert.equal(rpcs(sb, 'recebeu_mensagem_automatica').length, 0)
+  assert.equal(rpcs(sb, 'avaliar_trava_cruzada').length, 0)
 })
 
 // ── reserva do aviso no Chatwoot (RESERVAR_AVISO_CHATWOOT) ────────────────────
@@ -474,4 +493,87 @@ test('reserva: desligada (padrão) ou em modo seco nunca chama o Chatwoot; ligad
   const f = await rodar('pedido', sb, cliente, { reservarAviso: true })
   assert.equal(f.status, 500)
   assert.deepEqual(sb.chamadas, [])
+})
+
+// ── reserva órfã: liberarAviso ────────────────────────────────────────────────
+const comLiberar = (resp, erroNa = null) => {
+  const c = comReserva(resp)
+  c.liberadas = []
+  c.liberarAviso = async (a) => { c.liberadas.push(a); return 'liberado' }
+  return c
+}
+const ESPERADO_LIBERAR = { phone: '5519982621821', tipo: 'pedido_recebido', chave: '1001' }
+
+test('⚠️ reserva órfã: falha ANTES do envio (contato/conversa) libera a reserva ANTES de devolver a linha', async () => {
+  for (const falharEm of ['contato', 'conversa']) {
+    const sb = fakeSb({ linhas: [pedido(1)] })
+    const cliente = comLiberar('reservado')
+    const base = fakeCliente({ falharEm, erro: new ErroChatwoot(503, null, 'x') })
+    Object.assign(cliente, { acharOuCriarContato: base.acharOuCriarContato, abrirConversa: base.abrirConversa, enviarTemplate: base.enviarTemplate })
+    const r = await rodar('pedido', sb, cliente, RESERVA)
+    assert.equal(r.corpo.resultado[0].resultado, 'tentar_de_novo', falharEm)
+    assert.deepEqual(cliente.liberadas, [ESPERADO_LIBERAR], falharEm)
+    const ordem = nomes(sb).filter((n) => n === 'devolver_da_fila')
+    assert.equal(ordem.length, 1)
+  }
+})
+
+test('⚠️ reserva órfã: 4xx definitivo do enviar_template (não aceito) libera e marca falhou; 401 libera e interrompe a rodada', async () => {
+  const mk = (erro) => { const c = comLiberar('reservado'); c.enviarTemplate = async () => { throw erro }; return c }
+  const c1 = mk(new ErroChatwoot(422, 'x', 'enviar_template'))
+  const sb1 = fakeSb({ linhas: [pedido(1)] })
+  assert.equal((await rodar('pedido', sb1, c1, RESERVA)).corpo.resultado[0].resultado, 'falhou')
+  assert.equal(c1.liberadas.length, 1)
+  const c2 = mk(new ErroChatwoot(401, 'x', 'enviar_template'))
+  const r2 = await rodar('pedido', fakeSb({ linhas: [pedido(1)] }), c2, RESERVA)
+  assert.equal(r2.status, 502)
+  assert.equal(c2.liberadas.length, 1)
+})
+
+test('⚠️ envio AMBÍGUO (timeout ou 5xx no enviar_template) com reserva: NÃO libera, NÃO devolve, marca falhou com motivo envio_incerto', async () => {
+  for (const status of [0, 502]) {
+    const sb = fakeSb({ linhas: [pedido(1)] })
+    const c = comLiberar('reservado')
+    c.enviarTemplate = async () => { throw new ErroChatwoot(status, 'x', 'enviar_template') }
+    const r = await rodar('pedido', sb, c, RESERVA)
+    assert.equal(r.corpo.resultado[0].motivo, 'envio_incerto', String(status))
+    assert.deepEqual(c.liberadas, [])
+    assert.equal(rpcs(sb, 'devolver_da_fila').length, 0)
+    assert.match(rpcs(sb, 'marcar_da_fila')[0].p_motivo, /^envio_incerto_conferir_no_chatwoot/)
+    assert.equal(rpcs(sb, 'marcar_da_fila')[0].p_status, 'falhou')
+  }
+})
+
+test('reserva: timeout/5xx NA RESERVA tenta liberar e fica esperando; 4xx (não processada) e 401 não liberam', async () => {
+  for (const [status, libera] of [[0, 1], [504, 1], [500, 1], [404, 0]]) {
+    const c = comLiberar(new ErroChatwoot(status, null, 'reservar_aviso'))
+    const sb = fakeSb({ linhas: [pedido(1)] })
+    const r = await rodar('pedido', sb, c, RESERVA)
+    assert.equal(r.corpo.resultado[0].resultado, 'esperando', String(status))
+    assert.equal(c.liberadas.length, libera, String(status))
+    assert.deepEqual(rpcs(sb, 'devolver_da_fila')[0], { p_tipo: 'pedido', p_chave: '1001', p_contar: false })
+  }
+  const c401 = comLiberar(new ErroChatwoot(401, null, 'reservar_aviso'))
+  await rodar('pedido', fakeSb({ linhas: [pedido(1)] }), c401, RESERVA)
+  assert.equal(c401.liberadas.length, 0)
+})
+
+test('reserva: `duplicado` (reserva de outra origem) NUNCA libera; liberarAviso que lança não derruba a rodada', async () => {
+  const c = comLiberar('duplicado')
+  await rodar('pedido', fakeSb({ linhas: [pedido(1)] }), c, RESERVA)
+  assert.equal(c.liberadas.length, 0)
+  const c2 = comLiberar('reservado')
+  c2.liberarAviso = async () => { throw new Error('boom') }
+  c2.acharOuCriarContato = async () => { throw new ErroChatwoot(503, null, 'buscar_contato') }
+  const sb = fakeSb({ linhas: [pedido(1)] })
+  const r = await rodar('pedido', sb, c2, RESERVA)
+  assert.equal(r.status, 200)
+  assert.equal(rpcs(sb, 'devolver_da_fila').length, 1)
+})
+
+test('sem reserva (flag desligada): o comportamento de sempre; liberarAviso nunca é chamado', async () => {
+  const c = comLiberar('reservado')
+  c.acharOuCriarContato = async () => { throw new ErroChatwoot(503, null, 'buscar_contato') }
+  await rodar('pedido', fakeSb({ linhas: [pedido(1)] }), c, {})
+  assert.equal(c.liberadas.length, 0)
 })

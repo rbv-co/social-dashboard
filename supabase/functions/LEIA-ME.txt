@@ -48,7 +48,10 @@ receber-webhook-abandono: DISPARO IMEDIATO, atrás de DISPARO_IMEDIATO=true (pad
   só para o tipo do tópico (checkouts/create|update -> inicio; orders/create|paid -> pedido), em segundo plano, sem esperar
   o minuto do pg_cron. Mesmas travas do robô: modos ENVIO_MODO_*, ENVIO_SO_PARA, janela de horário, bloqueados, trava
   cruzada e reserva do Chatwoot (adiado -> fica para o robô). A reserva atômica de pegar_da_fila impede envio em dobro com
-  o robô de 1 min. Falha do disparo nunca muda a resposta do webhook (erro só no log, sem telefone nem segredo; limite 20 s).
+  o robô de 1 min. Falha do disparo nunca muda a resposta do webhook (erro só no log, sem telefone nem segredo).
+  O webhook responde 200 sem esperar; a promessa entregue ao EdgeRuntime.waitUntil só termina com a rodada COMPLETA (senão o
+  isolate podia morrer com linhas `enviando`, que viram `falhou/travada_sem_confirmacao`). Limite de 120 s: ao estourar, a
+  rodada não começa mais nenhuma linha e o que sobrou volta à fila sem contar tentativa (quem já está no envio termina).
   Não usa secret novo. COMO LIGAR: DISPARO_IMEDIATO=true na edge receber-webhook-abandono (precisa dos mesmos secrets
   CHATWOOT_*, ENVIO_*, TEMPLATE_* do robô nessa edge). COMO DESLIGAR: remover a flag (ou false); o robô de 1 min segue igual.
 
@@ -59,6 +62,14 @@ enviar-mensagem-abandono: robô das mensagens de WhatsApp (início, pedido receb
   Só `reservado` envia. duplicado/janela -> linha `ignorada` (aviso_chatwoot_*). adiado -> não envia nem muda a linha
   (o core manda uma mensagem só, com a NF-e; aparece como `adiados` na resposta). Rede/5xx -> tenta na rodada seguinte.
   401/403 -> resposta 502 `reserva_recusada`. É uma trava ADICIONAL à `recebeu_mensagem_automatica` (#313).
+  RESERVA ÓRFÃ: se o envio falha depois de `reservado` e a mensagem comprovadamente não foi aceita (falha em contato/conversa,
+  4xx do template, ou timeout/5xx NA RESERVA), a rodada chama POST .../avisos/liberar ({phone,tipo,chave}, best-effort, timeout 4 s)
+  antes de devolver a linha. Timeout/5xx no ENVIO do template é ambíguo: NÃO libera nem reenvia; a linha vira `falhou` com
+  motivo `envio_incerto_conferir_no_chatwoot` (conferir no Chatwoot). Exige o endpoint /avisos/liberar no Chatwoot.
+  TRAVA CRUZADA x DISPARO IMEDIATO: a edge chama a RPC `avaliar_trava_cruzada` (barrar|esperar|liberar), criada pela migration
+  db/migrations/2026-10-09-trava-cruzada-considera-enviando.sql, que também espera quando outra linha do mesmo telefone está
+  `enviando` com prioridade. APLICAR A MIGRATION ANTES de publicar esta versão da edge (sem a função, a trava devolve 'erro' e as
+  linhas voltam à fila contando tentativa).
   COMO LIGAR, nesta ordem: 1) Chatwoot com CUSTOM_AVISO_UNICO ligado; 2) secret CHATWOOT_BOT_SECRET na edge e depois
   RESERVAR_AVISO_CHATWOOT=true; 3) só depois CUSTOM_NFE_WHATSAPP no Chatwoot.
   COMO DESLIGAR: remover RESERVAR_AVISO_CHATWOOT (ou false); a rodada seguinte já envia como antes.

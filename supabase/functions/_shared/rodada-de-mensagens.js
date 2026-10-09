@@ -92,10 +92,15 @@ export async function processarRodada({ sb, cliente, config, agora = new Date() 
 
     // Trava cruzada: outra mensagem automática ao mesmo telefone nas últimas 20 h (qualquer tipo) barra esta.
     if (config.travaCruzada) {
-      const t = await checarTravaCruzada(sb, d.telefone)
+      const t = await checarTravaCruzada(sb, d.telefone, { tipo: 'abandono', chave: linha.token })
       if (t === 'erro') {
         await rpc('devolver_mensagem', { p_token: linha.token, p_contar: true })
         resultado.push({ token: curto, resultado: 'esperando', motivo: 'falha_na_trava_cruzada' })
+        continue
+      }
+      if (t === 'esperar') { // outra mensagem ao mesmo telefone está `enviando` e tem prioridade: volta à fila, sem contar tentativa
+        await rpc('devolver_mensagem', { p_token: linha.token, p_contar: false })
+        resultado.push({ token: curto, resultado: 'esperando', motivo: 'telefone_com_envio_em_andamento' })
         continue
       }
       if (t === 'barrar') {

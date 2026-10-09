@@ -207,3 +207,19 @@ test('reservarAviso: POST no custom_api com X-Bot-Secret; só aceita os 4 result
     await assert.rejects(mk(f).reservarAviso({ phone: '5519982621821', tipo: 'x', chave: '1' }), (e) => e.passo === 'reservar_aviso' && !JSON.stringify([e.message, e.corpo]).match(/SEGREDO-BOT|5519982621821/))
   }
 })
+
+test('liberarAviso: POST em /avisos/liberar com X-Bot-Secret e {phone,tipo,chave}; nunca lança; só liberado/inexistente valem', async () => {
+  const chamadas = []
+  const resp = (status, corpo) => async (u, o) => { chamadas.push([u, o]); return { ok: status < 400, status, text: async () => JSON.stringify(corpo) } }
+  const mk = (fetchFn) => criarClienteChatwoot({ url: 'https://cw.exemplo.com/', contaId: '7', caixaId: 3, token: 'TOK', botSecret: 'SEGREDO-BOT', fetchFn })
+  const arg = { phone: '5519982621821', tipo: 'pedido_recebido', chave: '1001' }
+  assert.equal(await mk(resp(200, { ok: true, resultado: 'liberado' })).liberarAviso(arg), 'liberado')
+  assert.equal(chamadas[0][0], 'https://cw.exemplo.com/custom_api/v1/accounts/7/avisos/liberar')
+  assert.equal(chamadas[0][1].headers['X-Bot-Secret'], 'SEGREDO-BOT')
+  assert.deepEqual(JSON.parse(chamadas[0][1].body), arg)
+  assert.ok(chamadas[0][1].signal, 'tem timeout')
+  assert.equal(await mk(resp(200, { ok: true, resultado: 'inexistente' })).liberarAviso(arg), 'inexistente')
+  for (const f of [resp(503, {}), resp(401, {}), resp(200, { ok: true, resultado: 'talvez' }), async () => { throw new Error('boom') }, async () => ({ ok: true, status: 200, text: async () => 'x<' })]) {
+    assert.equal(await mk(f).liberarAviso(arg), null)
+  }
+})

@@ -27,6 +27,7 @@ function fakeSb(linhas) {
         await Promise.resolve() // devolver a resposta cede a vez: o outro disparo roda aqui no meio
         return { data: ps.map((l) => ({ ...l })), error: null }
       }
+      if (nome === 'avaliar_trava_cruzada') return { data: 'liberar', error: null }
       const l = linhas.find((x) => x.tipo === args.p_tipo && x.chave === args.p_chave)
       if (nome === 'marcar_da_fila' && l?.mensagem_status === 'enviando') l.mensagem_status = args.p_status
       if (nome === 'devolver_da_fila' && l?.mensagem_status === 'enviando') l.mensagem_status = null
@@ -146,10 +147,30 @@ test('⚠️ falha nunca vaza: banco que lança, Chatwoot que lança e limite de
   const sb = fakeSb([inicio()]), c = fakeCliente()
   c.enviarTemplate = async () => { throw new Error('rede 19982621821 SEGREDO-DO-TOKEN') }
   await disparar({}, sb, c, 'checkouts/create')
-  const r3 = await dispararAgora({ env: env(BASE), sb: { rpc: () => new Promise(() => {}) }, criarCliente: () => fakeCliente(), topico: 'checkouts/create', limiteMs: 20, agora: DENTRO })
+  const r3 = await dispararAgora({ env: env(BASE), sb: { rpc: () => new Promise(() => {}) }, criarCliente: () => fakeCliente(), topico: 'checkouts/create', limiteMs: 20, gracaMs: 20, agora: DENTRO })
   assert.deepEqual(r3, { rodou: true, motivo: 'limite_de_tempo' })
   const r4 = await dispararAgora({ env: () => { throw new Error('env quebrou') }, sb, criarCliente: () => c, topico: 'checkouts/create' })
   assert.equal(r4.motivo, 'excecao')
   assert.ok(!logs.join('\n').includes('19982621821'), 'telefone nunca no log')
   assert.ok(!logs.join('\n').includes('SEGREDO-DO-TOKEN'), 'segredo nunca no log')
+})
+
+test('⚠️ limite de tempo: o waitUntil só termina com a rodada completa; o resto da fila volta SEM contar tentativa e quem estava enviando não é reenviado', async (t) => {
+  calar(t)
+  const sb = fakeSb([pedido({ chave: '1', telefone: '19982621821' }), pedido({ chave: '2', telefone: '19982621822' }), pedido({ chave: '3', telefone: '19982621823' })])
+  const c = fakeCliente()
+  let liberaEnvio
+  c.enviarTemplate = async (a) => { await new Promise((r) => { liberaEnvio = r }); c.enviados.push(a) } // a 1ª mensagem demora além do limite
+  let terminou = false
+  const p = dispararAgora({ env: env(BASE), sb, criarCliente: () => c, topico: 'orders/create', limiteMs: 30, agora: DENTRO }).then((r) => { terminou = true; return r })
+  await new Promise((r) => setTimeout(r, 80))
+  assert.equal(terminou, false, 'a rodada ainda não acabou: a promessa do waitUntil não pode ter resolvido')
+  liberaEnvio()
+  const r = await p
+  assert.equal(r.motivo, 'limite_de_tempo')
+  assert.equal(c.enviados.length, 1, 'só a que já estava no envio sai')
+  assert.deepEqual(sb.linhas.map((l) => l.mensagem_status), ['enviada', null, null], 'as outras voltaram à fila')
+  const devolvidas = sb.chamadas.filter((x) => x[0] === 'devolver_da_fila')
+  assert.equal(devolvidas.length, 2)
+  assert.ok(devolvidas.every((x) => x[1].p_contar === false), 'devolver por limite de tempo não gasta tentativa')
 })

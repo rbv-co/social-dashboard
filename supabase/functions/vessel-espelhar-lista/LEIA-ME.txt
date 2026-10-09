@@ -97,3 +97,8 @@ CPF, a releitura e o PUT de /contatos/{id} vão pelo proxy do core, com chave de
 idempotência estável (pessoa + operação + hash do corpo). Resposta 504 "incerto" NÃO é
 reenviada: a linha mostra o aviso e alguém confere o contato no Bling. Para desligar:
 remover o secret ou pôr false. Código em _shared/core-bling-proxy.js.
+PUT do contato com resultado incerto (504 resultado_incerto, queda ou timeout), em _shared/put-contato-bling.js:
+a linha de vessel_registros SAI da fila (bling_atualizado_em) para não ocupar um dos 25 slots a cada rodada, e o
+aviso "resultado incerto (conferir o contato no Bling, NÃO será reenviado)" com código, contato e chave vai no
+resultado da rodada (campo `cadastros`). 429 do Bling: a rodada para e retoma na seguinte. 429/5xx que o core REPETE
+para a mesma chave: refaz uma vez com chave nova (janela de 15 min), sem congelar a linha.

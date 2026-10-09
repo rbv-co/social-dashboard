@@ -14,6 +14,7 @@ export class ErroChatwoot extends Error {
 }
 
 const TIMEOUT_MS = 15000
+const TIMEOUT_LIBERAR_MS = 4000 // liberarAviso é best-effort e roda no caminho de erro: não pode segurar a rodada
 
 /**
  * 401/403 -> parar a rodada (credencial); 429/5xx/rede -> tentar de novo; demais 4xx -> falhou.
@@ -81,6 +82,28 @@ export function criarClienteChatwoot({ url, contaId, caixaId, token, botSecret, 
         throw new ErroChatwoot(r.status, 'resposta_inesperada', 'reservar_aviso')
       }
       return json.resultado
+    },
+
+    /**
+     * Desfaz a reserva do aviso (POST .../avisos/liberar, mesmo X-Bot-Secret; corpo {phone, tipo, chave}). Chamar SÓ quando a
+     * mensagem comprovadamente NÃO foi aceita (falha antes do envio, ou a reserva cuja resposta se perdeu). BEST-EFFORT:
+     * nunca lança, timeout curto. Devolve 'liberado' | 'inexistente' | null (não deu para saber: a reserva pode ter ficado).
+     */
+    async liberarAviso({ phone, tipo, chave }) {
+      try {
+        const r = await fetchFn(`${url.replace(/\/$/, '')}/custom_api/v1/accounts/${contaId}/avisos/liberar`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Bot-Secret': botSecret },
+          body: JSON.stringify({ phone, tipo, chave }),
+          signal: AbortSignal.timeout(TIMEOUT_LIBERAR_MS),
+        })
+        let json = null
+        try { json = JSON.parse(await r.text()) } catch { /* não é JSON */ }
+        if (r.ok && json?.ok === true && (json.resultado === 'liberado' || json.resultado === 'inexistente')) return json.resultado
+        return null
+      } catch {
+        return null
+      }
     },
 
     async acharOuCriarContato({ nome, telefone }) {
