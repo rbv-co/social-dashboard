@@ -71,6 +71,22 @@ async function ler(caminho) {
   return r.json();
 }
 
+/**
+ * Grava onde está cada arquivo no Zoho (`vessel_cartao_arquivos`): a edge `vessel-baixar-cartao` baixa direto pelo id em vez de
+ * procurar dias -> pastas -> arquivo a cada clique. ⚠️ Falhar aqui NÃO derruba o cartão (já está no Zoho e confirmado): sem a
+ * linha, a edge cai na busca antiga, só mais lenta.
+ */
+async function guardarOsIds(linhas) {
+  if (!linhas.length) return;
+  try {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/vessel_cartao_arquivos?on_conflict=codigo,nome`, {
+      method: 'POST', headers: { ...cab, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify(linhas),
+    });
+    if (!r.ok) console.log(`  aviso: não gravei os ids dos arquivos (${r.status}): ${(await r.text()).slice(0, 120)}`);
+  } catch (e) { console.log('  aviso: não gravei os ids dos arquivos: ' + curto(e)); }
+}
+
 /** vessel_pecas com o SKU do lote, em lotes de 100 códigos (limite de tamanho da URL). */
 async function buscarPecas(codigos) {
   const linhas = [];
@@ -214,15 +230,20 @@ async function processar(pedido, estado, ctx) {
     }
     marca('cartões');
     // Confirma NO ZOHO (não no que o upload respondeu): só conta o cartão cujos 4 arquivos aparecem na pasta.
-    let noZoho;
-    try { noZoho = new Set((await listarPasta(idSubpasta)).map((x) => x.name)); }
+    let noZoho; // nome do arquivo -> id no Zoho
+    try { noZoho = new Map((await listarPasta(idSubpasta)).map((x) => [x.name, x.id])); }
     catch (e) { for (const f of feitas) estado.falhas.push({ rotulo: `${sku} nº${f.peca.numero}`, motivo: 'não consegui conferir no Zoho: ' + curto(e) }); continue; }
+    const paraGravar = [];
     for (const f of feitas) {
       const faltando = arquivosDoCartao(f.rotulo).filter((n) => !noZoho.has(n));
       if (series.get(f.serie) > 1) estado.falhas.push({ rotulo: `${sku} nº${f.peca.numero}`, motivo: `número de série repetido (${f.serie})` });
       else if (faltando.length) estado.falhas.push({ rotulo: `${sku} nº${f.peca.numero}`, motivo: `não achei no Zoho: ${faltando.join(', ')}` });
-      else estado.confirmadas.push(f.peca.codigo);
+      else {
+        estado.confirmadas.push(f.peca.codigo);
+        for (const n of arquivosDoCartao(f.rotulo)) paraGravar.push({ codigo: f.peca.codigo, nome: n, zoho_id: noZoho.get(n), pasta_id: idSubpasta, atualizado_em: new Date().toISOString() });
+      }
     }
+    await guardarOsIds(paraGravar);
     marca('conferir no Zoho');
   }
   console.log('  ⏱ pedido: ' + Object.entries(tempos).map(([k, v]) => `${k} ${v.toFixed(1)}s`).join(' · ') + ` · total ${segs(t0)}`);
