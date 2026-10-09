@@ -1,13 +1,21 @@
 # Postgres 17 da API (saída do Supabase). Sem porta publicada: quem fala com ele são os
 # contêineres na rede api_net (a API e o worker) e `docker exec` para administração.
 # Memória (a VPS é compartilhada): teto de 1 GB no contêiner; shared_buffers 256 MB (~25% do
-# teto, o usual) e shm_size 256 MB para caber; max_connections 100 basta para API + worker.
+# teto, o usual); max_connections 100 basta para API + worker. O shm_size de 256 MB é folga para
+# memória compartilhada dinâmica (consultas paralelas); o shared_buffers em si não fica em /dev/shm.
+# A rede api_net nasce aqui: a futura composição da API a declara como `external: true`.
 name: api-db
 services:
   api-db:
-    image: postgres:17
+    image: postgres:17-trixie
     container_name: api-db
     restart: unless-stopped
+    stop_grace_period: 60s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     env_file: /root/secrets/api-db.env
     shm_size: 256mb
     mem_limit: 1g
@@ -18,6 +26,7 @@ services:
       -c idle_in_transaction_session_timeout=60000
       -c log_min_duration_statement=500
       -c log_connections=off
+      -c log_parameter_max_length=0
     volumes:
       - api_db_data:/var/lib/postgresql/data
     networks: [api_net]
