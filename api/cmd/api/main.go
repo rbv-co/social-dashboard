@@ -40,12 +40,22 @@ func main() {
 	switch os.Args[1] {
 	case "api":
 		srv := &http.Server{Addr: cfg.Addr, Handler: web.Rotas(p), ReadHeaderTimeout: 10 * time.Second}
-		go func() { <-ctx.Done(); srv.Shutdown(context.Background()) }()
+		fim := make(chan struct{})
+		go func() {
+			<-ctx.Done()
+			c, cancela := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancela()
+			if err := srv.Shutdown(c); err != nil {
+				slog.Error("encerramento", "erro", err)
+			}
+			close(fim)
+		}()
 		slog.Info("api no ar", "addr", cfg.Addr)
 		if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
 			slog.Error("servidor", "erro", err)
 			os.Exit(1)
 		}
+		<-fim // espera o escoamento das requisições antes do p.Close() adiado
 	default:
 		slog.Error("subcomando desconhecido", "cmd", os.Args[1])
 		os.Exit(2)
