@@ -25,7 +25,8 @@ for t in $tabelas; do
   ca=$(pq "$A" -X -Atqc "select count(*) from public.\"$t\"") || ca=ERRO
   case "$ca" in ''|*[!0-9]*) ca=ERRO ;; esac
   marca=
-  if [ "$co" != "$ca" ]; then ruim=1; marca=" <-- DIFERE (confira: tabela quente durante o dump ou erro real)"; fi
+  # ERRO nos dois lados também é DIFERE (ERRO == ERRO não pode parecer igual)
+  if [ "$co" != "$ca" ] || [ "$co" = ERRO ] || [ "$ca" = ERRO ]; then ruim=1; marca=" <-- DIFERE (confira: tabela quente durante o dump ou erro real)"; fi
   echo "$t $co $ca$marca"
 done
 exit $ruim

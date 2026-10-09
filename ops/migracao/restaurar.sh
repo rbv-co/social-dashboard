@@ -10,7 +10,7 @@ DUMP=${2:?uso: restaurar.sh ALVO_DATABASE_URL DUMP_DIR}
 AQUI=$(cd "$(dirname "$0")" && pwd)
 RAIZ=$(cd "$AQUI/../.." && pwd)
 oculta() { sed -E 's#postgres(ql)?://[^ "]*#<URL>#g'; }
-LOG=$(mktemp); trap 'rm -f "$LOG"' EXIT
+LOG=$(mktemp); ESTADOS=$(mktemp); trap 'rm -f "$LOG" "$ESTADOS"' EXIT
 # psql cujo stderr passa por oculta (a URL não vaza), preservando o código de saída
 pq() { s=0; psql "$@" 2> "$LOG" || s=$?; oculta < "$LOG" >&2; return $s; }
 
@@ -30,9 +30,7 @@ echo "schema restaurado"
 sh "$AQUI/pg17.sh" pg_restore --data-only --disable-triggers --single-transaction --no-owner --exit-on-error -d "$ALVO" < "$DUMP/completo.dump" > "$LOG" 2>&1 || { oculta < "$LOG" >&2; echo "pg_restore falhou" >&2; exit 1; }
 # o pg_restore --disable-triggers religa TODOS os triggers ao fim de cada tabela (ENABLE TRIGGER ALL),
 # desfazendo DISABLE / ENABLE REPLICA / ENABLE ALWAYS do schema: reaplica os estados do schema.sql.
-ESTADOS=$(mktemp)
 grep -E '^ALTER TABLE .* (DISABLE|ENABLE (REPLICA|ALWAYS)) TRIGGER ' "$DUMP/schema.sql" > "$ESTADOS" || true   # grep sai 1 se não houver nenhum: ok
-if [ -s "$ESTADOS" ]; then pq "$ALVO" -X -q -v ON_ERROR_STOP=1 -f "$ESTADOS" > /dev/null || { rm -f "$ESTADOS"; echo "reaplicar estados de triggers falhou" >&2; exit 1; }; fi
-rm -f "$ESTADOS"
+if [ -s "$ESTADOS" ]; then pq "$ALVO" -X -q -v ON_ERROR_STOP=1 -f "$ESTADOS" > /dev/null || { echo "reaplicar estados de triggers falhou" >&2; exit 1; }; fi
 pq "$ALVO" -X -q -c "analyze" > /dev/null
 echo "dados restaurados (rode importar-usuarios e conferir-orfaos.sh em seguida)"

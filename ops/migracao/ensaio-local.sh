@@ -100,4 +100,9 @@ grep -q DIFERE "$OUT/contagens.txt" && falha "contagens diferem: $(grep DIFERE "
 psql "$URL_A" -X -q -c "alter table public.notas rename to notas_x"
 st_neg=0; sh "$AQUI/conferir-contagens.sh" "$URL_O" "$URL_A" > "$OUT/neg.txt" 2>/dev/null || st_neg=$?
 [ "$st_neg" = 1 ] && grep -q '^notas 100 ERRO .*DIFERE' "$OUT/neg.txt" || falha "tabela faltando no alvo não foi reportada como DIFERE com exit 1 (exit $st_neg): $(cat "$OUT/neg.txt")"
+# prova negativa 2: tabela ilegível na origem E ausente no alvo (ERRO nos dois lados) também tem de ser DIFERE
+psql "$URL_O" -X -q -c "create role leitor login password 'x'; create table public.segredo (id int); grant references on public.segredo to leitor"
+URL_L="postgres://leitor:x@127.0.0.1:$PO/postgres?sslmode=disable"
+st_neg2=0; sh "$AQUI/conferir-contagens.sh" "$URL_L" "$URL_A" > "$OUT/neg2.txt" 2>/dev/null || st_neg2=$?
+[ "$st_neg2" = 1 ] && grep -q '^segredo ERRO ERRO .*DIFERE' "$OUT/neg2.txt" || falha "ERRO nos dois lados não foi reportado como DIFERE com exit 1 (exit $st_neg2): $(cat "$OUT/neg2.txt")"
 echo "OK: ensaio local passou (dump -> limpeza -> restore -> contagens) em $(( $(date +%s) - T0 ))s"
