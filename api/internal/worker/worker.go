@@ -28,7 +28,20 @@ func Novo(p *pgxpool.Pool) *Agendador {
 	return &Agendador{pool: p, cron: cron.New(cron.WithLocation(time.UTC)), agora: time.Now}
 }
 
+func validar(t Tarefa) error {
+	if t.Limite <= 0 {
+		return fmt.Errorf("tarefa %q: Limite deve ser positivo", t.Nome)
+	}
+	if t.Executar == nil {
+		return fmt.Errorf("tarefa %q: Executar não pode ser nil", t.Nome)
+	}
+	return nil
+}
+
 func (a *Agendador) Registrar(t Tarefa) error {
+	if err := validar(t); err != nil {
+		return err
+	}
 	_, err := a.cron.AddFunc(t.Agenda, func() {
 		if _, err := a.Rodar(context.Background(), t); err != nil {
 			slog.Error("tarefa", "nome", t.Nome, "erro", err)
@@ -51,6 +64,9 @@ func executar(ctx context.Context, t Tarefa) (err error) {
 // Rodar executa uma vez sob pg_try_advisory_lock: se outra instância já roda a
 // mesma tarefa, devolve false sem executar. Grava o resultado em robos_execucoes.
 func (a *Agendador) Rodar(ctx context.Context, t Tarefa) (bool, error) {
+	if err := validar(t); err != nil {
+		return false, err
+	}
 	conn, err := a.pool.Acquire(ctx)
 	if err != nil {
 		return false, err
@@ -64,7 +80,18 @@ func (a *Agendador) Rodar(ctx context.Context, t Tarefa) (bool, error) {
 		return false, nil
 	}
 	// Mesma conexão do lock (advisory lock é por sessão); roda antes do Release.
-	defer conn.Exec(context.Background(), `select pg_advisory_unlock(hashtext($1))`, t.Nome)
+	// Se o unlock falhar, a conexão é fechada: o Postgres derruba a sessão e a
+	// trava com ela (senão ficaria presa numa conexão do pool, reentrante, e
+	// nenhuma outra instância conseguiria rodar a tarefa).
+	defer func() {
+		c, cancela := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancela()
+		var soltou bool
+		if err := conn.QueryRow(c, `select pg_advisory_unlock(hashtext($1))`, t.Nome).Scan(&soltou); err != nil || !soltou {
+			slog.Error("não consegui soltar a trava; fechando a conexão", "nome", t.Nome, "soltou", soltou, "erro", err)
+			conn.Conn().Close(c)
+		}
+	}()
 
 	ctxT, cancela := context.WithTimeout(ctx, t.Limite)
 	defer cancela()
@@ -74,8 +101,11 @@ func (a *Agendador) Rodar(ctx context.Context, t Tarefa) (bool, error) {
 	if erro != nil {
 		resp, status = erro.Error(), 500
 	}
-	// context.Background(): o ctx da tarefa pode ter expirado e o resultado precisa ser gravado.
-	_, err = a.pool.Exec(context.Background(),
+	// Grava na conexão que já está em mãos (pedir outra ao pool pode travar com
+	// o pool esgotado). Contexto novo: o da tarefa pode ter expirado.
+	c, cancelaC := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancelaC()
+	_, err = conn.Exec(c,
 		`insert into robos_execucoes (robo, disparado_em, status_code, ok, resposta) values ($1, $2, $3, $4, $5)`,
 		t.Nome, inicio, status, ok, resp)
 	return true, err
