@@ -76,9 +76,9 @@ func (h *Handlers) Entrar(w http.ResponseWriter, r *http.Request) {
 	}
 	ip := ipDe(r)
 	chave := email + "|" + ip
-	// as três chaves são sempre consultadas e registradas antes do bcrypt
-	a, b, c := h.limite.Tentar(chave), h.porMail.Tentar(email), h.porIP.Tentar(ip)
-	if !a || !b || !c {
+	// registra antes do bcrypt; IP primeiro e em curto-circuito: IP bloqueado não
+	// registra nas chaves de e-mail (senão trancaria contas alheias e incharia o mapa)
+	if !(h.porIP.Tentar(ip) && h.limite.Tentar(chave) && h.porMail.Tentar(email)) {
 		erroJSON(w, http.StatusTooManyRequests, "muitas_tentativas")
 		return
 	}

@@ -247,3 +247,19 @@ func TestTokenSemPrefixoBearerEhVazio(t *testing.T) {
 		t.Fatalf("token = %q", got)
 	}
 }
+
+func TestIPBloqueadoNaoTrancaContaDaVitima(t *testing.T) {
+	p, _, h := montar(t)
+	usuarioComSenha(t, p, uid, "vitima@x.com", "certa", `{}`)
+	for i := 0; i < 20; i++ {
+		entrarDe(h, "203.0.113.50:1000", "u"+strconv.Itoa(i)+"@x.com", "errada")
+	}
+	for i := 0; i < 10; i++ { // já bloqueado por IP: não pode registrar na chave da vítima
+		if c := entrarDe(h, "203.0.113.50:1000", "vitima@x.com", "errada"); c != 429 {
+			t.Fatalf("esperava 429, veio %d", c)
+		}
+	}
+	if c := entrarDe(h, "198.51.100.9:1000", "vitima@x.com", "certa"); c != 200 {
+		t.Fatalf("vítima de outro IP = %d", c)
+	}
+}
