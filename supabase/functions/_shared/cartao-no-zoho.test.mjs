@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { rotuloDoCartao, nomeDoArquivo, diasEmOrdem, pastaDoSku, ehPastaDosCartoes } from './cartao-no-zoho.js'
+import { rotuloDoCartao, nomeDoArquivo, diasEmOrdem, pastaDoSku, ehPastaDosCartoes, diaDaPasta, diasComDicaPrimeiro } from './cartao-no-zoho.js'
 
 // Nomes REAIS conferidos no Zoho em 07/10/2026 (Cartões com EAN/2026-10-06/…).
 test('o nome do arquivo é o que o robô entregou', () => {
@@ -44,4 +44,22 @@ test('"Cartões com EAN" é achada com ou sem acento solto, e a cópia de segura
   assert.equal(ehPastaDosCartoes('Cartões com EAN'), true)
   assert.equal(ehPastaDosCartoes('Cartões com EAN'.normalize('NFD')), true)
   assert.equal(ehPastaDosCartoes('Cartões com EAN - BKP 06-09-2026'), false)
+})
+
+test('o dia do pedido vira dica; o que não é um dia não vira dica', () => {
+  assert.equal(diaDaPasta('Cartões com EAN/2026-10-09'), '2026-10-09')
+  assert.equal(diaDaPasta(' Cartões com EAN/2026-10-09 '), '2026-10-09')
+  assert.equal(diaDaPasta('Cartões com EAN/2026-10-09 - BKP'), null)
+  assert.equal(diaDaPasta('Cartões com EAN'), null)
+  assert.equal(diaDaPasta(null), null)
+  assert.equal(diaDaPasta(''), null)
+})
+
+test('o dia-dica vai para a frente e os outros seguem na ordem de antes', () => {
+  const dias = [{ name: '2026-10-09' }, { name: '2026-10-07' }, { name: '2026-10-06' }]
+  assert.deepEqual(diasComDicaPrimeiro(dias, '2026-10-06').map((d) => d.name), ['2026-10-06', '2026-10-09', '2026-10-07'])
+  assert.deepEqual(diasComDicaPrimeiro(dias, '2026-10-09').map((d) => d.name), ['2026-10-09', '2026-10-07', '2026-10-06'])
+  // Dica de um dia que não existe na lista, ou sem dica: a lista como veio (nada some).
+  assert.deepEqual(diasComDicaPrimeiro(dias, '2026-01-01').map((d) => d.name), ['2026-10-09', '2026-10-07', '2026-10-06'])
+  assert.deepEqual(diasComDicaPrimeiro(dias, null), dias)
 })

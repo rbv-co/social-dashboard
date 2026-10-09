@@ -24,6 +24,19 @@ export function diasEmOrdem(pastas) {
     .sort((a, b) => String(b.name).trim().localeCompare(String(a.name).trim()))
 }
 
+/** O dia ("2026-10-06") de uma `pasta` de pedido do robô ("Cartões com EAN/2026-10-06"); `null` se não for isso. Serve de dica, nunca de verdade. */
+export function diaDaPasta(pasta) {
+  const dia = String(pasta ?? '').split('/').pop().trim()
+  return /^\d{4}-\d{2}-\d{2}$/.test(dia) ? dia : null
+}
+
+/** A mesma lista de dias com o dia-dica na frente (os outros seguem na ordem de antes). Sem dica, a lista como veio. */
+export function diasComDicaPrimeiro(dias, dica) {
+  if (!dica) return dias
+  const nome = (d) => String(d.name || '').trim()
+  return [...dias.filter((d) => nome(d) === dica), ...dias.filter((d) => nome(d) !== dica)]
+}
+
 /**
  * A subpasta do SKU dentro de um dia: "SS0001HB.S1 - Linear Caramelo Pequena" começa com "SKU - ".
  * ⚠️ NFC dos dois lados: "Cartões"/"Média" podem vir com acento solto, conforme quem criou a pasta.
