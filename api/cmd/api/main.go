@@ -13,6 +13,7 @@ import (
 	"github.com/rbv-co/social-dashboard/api/internal/auth"
 	"github.com/rbv-co/social-dashboard/api/internal/banco"
 	"github.com/rbv-co/social-dashboard/api/internal/config"
+	"github.com/rbv-co/social-dashboard/api/internal/importacao"
 	"github.com/rbv-co/social-dashboard/api/internal/web"
 )
 
@@ -57,6 +58,18 @@ func main() {
 			os.Exit(1)
 		}
 		<-fim // espera o escoamento das requisições antes do p.Close() adiado
+	case "importar-usuarios":
+		origem := os.Getenv("ORIGEM_DATABASE_URL")
+		if origem == "" {
+			slog.Error("defina ORIGEM_DATABASE_URL (somente leitura, restore local no ensaio)")
+			os.Exit(1)
+		}
+		n, ign, err := importacao.Importar(ctx, importacao.FonteSupabase(origem), p, time.Now())
+		if err != nil {
+			slog.Error("importação", "erro", err)
+			os.Exit(1)
+		}
+		slog.Info("usuários importados", "importados", n, "ignorados_sem_email", ign)
 	default:
 		slog.Error("subcomando desconhecido", "cmd", os.Args[1])
 		os.Exit(2)
