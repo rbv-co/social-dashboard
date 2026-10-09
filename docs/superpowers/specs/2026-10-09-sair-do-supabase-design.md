@@ -21,7 +21,9 @@ Isto **reverte** a decisão anterior ("social-dashboard mantém o Supabase", reg
 
 ## 2. Inventário do que o Supabase faz hoje
 
-Contagens por grep (aproximadas; migrations repetem funções redefinidas):
+> **Atualização 2026-10-09:** o levantamento em produção (`docs/migracao-go/RESULTADO-DO-LEVANTAMENTO.md`) substitui as contagens por grep abaixo. Números reais: banco de **197 MB**, **276 policies** em 144 tabelas (37 `restrictive`), **308 funções** (260 `security definer`), **63 triggers**, **24 crons ativos**, **51 edge functions**, **26 usuários** (todos e-mail+senha), 24 perfis (5 `disabled`), **11 buckets ≈ 640 MB**. A especificação das permissões é o catálogo de produção (`catalogo-policies-producao.json`), não o das migrations.
+
+Contagens por grep (aproximadas, **superadas pela atualização acima**; migrations repetem funções redefinidas):
 
 | Peça | Tamanho |
 |---|---|
@@ -68,7 +70,7 @@ Consumidores fora do repo que também mudam:
 - Postgres 16 ou 17 em container na VPS `op`, rede Docker própria, volume nomeado, **fora** do compose do core e do `db-lavessel`.
 - Backup diário com `pg_dump` + WAL opcional, retenção local de 14 dias e cópia fora da máquina; restauração testada antes do corte (padrão já usado no `core-db`).
 - Conexão da API com usuário de aplicação sem superuser; um segundo usuário somente leitura para o comparador e relatórios.
-- Extensões necessárias, a confirmar no levantamento (fase 0): `pgcrypto`, `pg_trgm`, `unaccent`, `uuid-ossp`. `pg_cron` e `pg_net` **não** são levados: o agendador passa para o `worker`.
+- Extensões necessárias (confirmado no levantamento): `pgcrypto`, `uuid-ossp`. Produção **não** usa `pg_trgm` nem `unaccent`. `pg_cron`, `pg_net`, `pg_stat_statements` e `supabase_vault` **não** são levados: o agendador passa para o `worker`.
 - `auth.*`, `storage.*` e `realtime.*` do Supabase **não** são migrados como schema. Os dados úteis deles são exportados (seções 4 e 7).
 
 ## 4. Autenticação e sessões
@@ -147,9 +149,9 @@ Regras de portabilidade:
 
 ### 8.1 Agendamentos (pg_cron → worker)
 
-Extraídos das migrations (horários em UTC, como no pg_cron). A fase 0 confere contra `cron.job` de produção antes de portar, porque a produção pode ter jobs que não estão no repo ou o contrário.
+Agenda **real de produção** (24 jobs ativos, UTC; fonte: `cron.job`, ver `docs/migracao-go/RESULTADO-DO-LEVANTAMENTO.md`): `abandono-de-checkout` `* * * * *` · `coletar-dados-07h` `0 10` · `-12h` `0 15` · `-18h` `0 21` · `-2359` `59 2` · `coletar-dados-hora` `5 * * * *` · `coletar-dados-hora-retentativa-00h` `30 3 * * *` · `conferir-robos` `2-59/5 * * * *` · `conteudo-espelho` `*/30 * * * *` · `conteudo-hora-h` `*/5 * * * *` · `enviar-mensagem-abandono` `* * * * *` · `enviar-pdf-checklist` `*/10 * * * *` · `enviar-push-frota` `30 10 * * 1-5` · `enviar-relatorio-hora` `10 * * * *` · `fabrica-purga-diaria` `17 4 * * *` · `integridade-diaria` `30 2 * * *` · `push-saldo-08h` `0 11 * * *` · `push-vendas-07h` `0 10 * * *` · `push-vendas-22h` `0 1 * * *` · `vessel-espelhar-lista` `*/3 * * * *` · `vessel-lembretes` `0 12 * * *` · `vessel-log-de-carocos` `4,14,24,34,44,54 * * * *` · `vessel-rd-station` `* * * * *` · `vessel-triagem-da-vaga` `* * * * *`.
 
-`coletar-dados-07h` `0 10` · `-12h` `0 15` · `-18h` `0 21` · `-2359` `59 2` · `push-vendas` `0 10` e `0 1` · `push-saldo` `0 11` · `integridade-diaria` `30 2` · `fabrica-purga-diaria` `17 4` · `conteudo-espelho` `*/30` · `conteudo-hora-h` `*/5` · `conferir-robos` `2-59/5` · `abandono-de-checkout`, `enviar-mensagem-abandono`, `estoque-do-site`, `vessel-triagem-da-vaga`, `vessel-rd-station` todos `* * * * *` · `vessel-log-de-carocos` `4,14,24,34,44,54` · `enviar-pdf-checklist` `*/10` · mais os de `enviar-relatorio-hora`, `coletar-dados-hora` (retentativa 00h), `enviar-push-frota` e `vessel-espelho-agendado`, cujas expressões ficam definidas no levantamento. `teste-auditar-agora` é resíduo de teste e **não** é portado. `vessel-rd-station` (integração RD Station feita no banco) não tem edge correspondente: precisa de decisão explícita (portar para o worker ou descartar) na fase 0.
+**Não portar:** `estoque-do-site` (nas migrations, mas desligado em produção em 2026-10-08: o core assumiu o estoque) e `teste-auditar-agora` (resíduo de teste). `vessel-rd-station`, `abandono-de-checkout` e `conferir-robos` são **SQL puro** (não chamam edge); `vessel-rd-station` fala com a RD Station pelo banco e exige decisão explícita (portar ou descartar). Há ainda o workflow `guardar-copia-do-banco` (GitHub Actions), que copia o banco via Supabase e muda de alvo.
 
 O `worker` executa cada tarefa sob `pg_try_advisory_lock(hash(nome))` (nunca duas instâncias), registra início/fim/erro em `robos_execucoes` (tabela que a tela "saúde dos robôs" já lê) e tem tempo limite por tarefa. O comportamento de `conferir-robos` (alerta quando um robô não roda) é mantido.
 
