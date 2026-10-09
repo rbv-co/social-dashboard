@@ -36,7 +36,7 @@ create extension if not exists pgcrypto with schema extensions;
 create publication supabase_realtime;
 `
   const r = limpar(sql)
-  assert.deepEqual(r.removidos, { policies: 1, rls: 2, grants: 3, extensoes: 1, publicacoes: 1 })
+  assert.deepEqual(r.removidos, { policies: 1, rls: 2, grants: 3, extensoes: 1, publicacoes: 1, schemas: 0 })
   assert.deepEqual(r.reescritos, { fks_usuarios: 0 })
   assert.match(r.sql, /create table t/)
   assert.match(r.sql, /create extension if not exists pgcrypto/)
@@ -51,7 +51,7 @@ begin
 end $f$;`
   const r = limpar(sql)
   assert.equal(r.sql.trim(), sql.trim())
-  assert.deepEqual(r.removidos, { policies: 0, rls: 0, grants: 0, extensoes: 0, publicacoes: 0 })
+  assert.deepEqual(r.removidos, { policies: 0, rls: 0, grants: 0, extensoes: 0, publicacoes: 0, schemas: 0 })
 })
 
 test('limpar reescreve FK para auth.users(id) em alter table e create table, mantendo o ON DELETE', () => {
@@ -77,4 +77,39 @@ select 1;`
 test('limpar mantém o resto do dump byte a byte', () => {
   const sql = `-- cabeçalho\nset check_function_bodies = false;\ncreate table a (id int);\ncomment on table a is 'x;y';\n`
   assert.equal(limpar(sql).sql, sql)
+})
+
+test('limpar remove COMMENT ON POLICY junto com a policy (nome com ponto e vírgula)', () => {
+  const sql = `create policy "p; x" on t for select using (true);
+comment on policy "p; x" on t is 'um;comentário';
+select 1;`
+  const r = limpar(sql)
+  assert.equal(r.removidos.policies, 2)
+  assert.equal(r.sql.trim(), 'select 1;')
+})
+
+test('limpar remove CREATE SCHEMA public (com ou sem IF NOT EXISTS) e mantém outros schemas', () => {
+  const sql = `CREATE SCHEMA public;\nCREATE SCHEMA IF NOT EXISTS public;\ncreate schema outro;\n`
+  const r = limpar(sql)
+  assert.equal(r.removidos.schemas, 2)
+  assert.equal(r.sql.trim(), 'create schema outro;')
+})
+
+test('limpar não interpreta $ especiais ao reescrever FK', () => {
+  const sql = `create table t (id int, u uuid references auth.users(id), check (c ~ '^a$'::text));`
+  const r = limpar(sql)
+  assert.equal(r.sql, `create table t (id int, u uuid REFERENCES public.usuarios(id), check (c ~ '^a$'::text));`)
+})
+
+test('CLI roda via caminho com symlink', async () => {
+  const { mkdtempSync, symlinkSync, writeFileSync, readFileSync } = await import('node:fs')
+  const { tmpdir } = await import('node:os')
+  const { join } = await import('node:path')
+  const { execFileSync } = await import('node:child_process')
+  const d = mkdtempSync(join(tmpdir(), 'ld-'))
+  const link = join(d, 'l.mjs')
+  symlinkSync(new URL('./limpar-dump.mjs', import.meta.url).pathname, link)
+  writeFileSync(join(d, 'in.sql'), 'grant all on table a to anon;\n')
+  execFileSync('node', [link, join(d, 'in.sql'), join(d, 'out.sql')])
+  assert.equal(readFileSync(join(d, 'out.sql'), 'utf8').trim(), '')
 })

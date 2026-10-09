@@ -2,8 +2,8 @@
 // tira policies, RLS, grants para os papéis do Supabase, publicações e extensões que não levamos.
 // Divide o texto em COMANDOS respeitando '...', "...", $tag$...$tag$ e comentários, porque
 // um corpo de função (`$$ ... $$`) pode ter ';' e até a frase "create policy" dentro.
-import { readFileSync, writeFileSync } from 'node:fs'
-import { pathToFileURL } from 'node:url'
+import { readFileSync, realpathSync, writeFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 
 function fimDeAspas(s, i, q) {
   const escapa = q === "'" && /[eE]/.test(s[i - 1] || '') && !/\w/.test(s[i - 2] || ' ')
@@ -48,7 +48,8 @@ export function dividir(sql) {
 const semComentarios = (c) => c.replace(/\/\*[\s\S]*?\*\//g, ' ').split('\n').filter((l) => !/^\s*--/.test(l)).join('\n').trim()
 
 const REGRAS = [
-  ['policies', /^create\s+policy\b/i],
+  ['policies', /^(create|comment\s+on)\s+policy\b/i],
+  ['schemas', /^create\s+schema\s+(if\s+not\s+exists\s+)?"?public"?\s*;$/i],
   ['rls', /^alter\s+table\b[\s\S]*\b(enable|force|disable|no\s+force)\s+row\s+level\s+security\s*;$/i],
   ['grants', /^(grant|revoke)\b/i],
   ['grants', /^alter\s+default\s+privileges\b/i],
@@ -62,7 +63,7 @@ const REGRAS = [
 const FK_AUTH = /\breferences\s+auth\.users\s*\(\s*id\s*\)/gi
 
 export function limpar(sql) {
-  const removidos = { policies: 0, rls: 0, grants: 0, extensoes: 0, publicacoes: 0 }
+  const removidos = { policies: 0, rls: 0, grants: 0, extensoes: 0, publicacoes: 0, schemas: 0 }
   const reescritos = { fks_usuarios: 0 }
   const mantidos = []
   for (const cmd of dividir(sql)) {
@@ -72,13 +73,13 @@ export function limpar(sql) {
     if (/^(alter\s+table|create\s+table)\b/i.test(corpo) && corpo.search(FK_AUTH) >= 0) {
       reescritos.fks_usuarios += (corpo.match(FK_AUTH) || []).length
       // troca só no corpo do comando (não nos comentários que o antecedem)
-      mantidos.push(cmd.replace(corpo, corpo.replace(FK_AUTH, 'REFERENCES public.usuarios(id)')))
+      mantidos.push(cmd.replace(corpo, () => corpo.replace(FK_AUTH, 'REFERENCES public.usuarios(id)')))
     } else mantidos.push(cmd)
   }
   return { sql: mantidos.join(''), removidos, reescritos }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const [entrada, saida] = process.argv.slice(2)
   if (!entrada || !saida) { console.error('uso: node limpar-dump.mjs ENTRADA.sql SAIDA.sql'); process.exit(2) }
   const r = limpar(readFileSync(entrada, 'utf8'))
