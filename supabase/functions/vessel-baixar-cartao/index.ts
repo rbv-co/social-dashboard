@@ -21,7 +21,7 @@
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { corsDoPedido } from '../_shared/enderecos-do-app.js';
 import {
-  nomeDoArquivo, diasEmOrdem, pastaDoSku, ehPastaDosCartoes,
+  nomeDoArquivo, diasEmOrdem, pastaDoSku, ehPastaDosCartoes, diaDaPasta, diasComDicaPrimeiro,
 } from '../_shared/cartao-no-zoho.js';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
@@ -104,21 +104,53 @@ async function acharPastaDosCartoes(c: Conexao): Promise<string | null> {
   return pastaDosCartoes;
 }
 
-/** O id do arquivo no dia mais novo que o tem; `null` se nenhum dia tem. */
-async function acharOArquivo(c: Conexao, sku: string, nome: string): Promise<string | null> {
+// ── O QUE FICA NA MEMÓRIA DA INSTÂNCIA (ponytail: some quando a instância é reciclada; nada vai para o banco) ──────────
+// Cada clique em "Baixar" refazia a busca inteira no Zoho em série (dias → pastas do dia → pasta do SKU → arquivo, ~7 s) e
+// "frente e verso" a fazia duas vezes. Agora UMA listagem da pasta do SKU guarda o id de TODOS os arquivos dela (frente, verso,
+// png, pdf, de todas as peças), e o clique seguinte vai direto ao download.
+// ⚠️ A chave leva o DIA: "vale o dia mais NOVO que tiver o arquivo" (peça refeita em outro dia). Sem o dia, o id do cartão
+// velho ficaria valendo por 10 min depois de a pessoa refazer. Só se confia no guardado quando o dia é o do último pedido
+// da peça; sem esse dia a busca é a completa de sempre. Id guardado que o Zoho recusa é esquecido e a busca é refeita.
+const VALE_MS = 10 * 60 * 1000;
+const arquivosConhecidos = new Map<string, { id: string; ate: number }>(); // `${dia}/${sku}|${nome}` -> id no Zoho
+let diasConhecidos: { itens: Item[]; ate: number } | null = null;
+
+async function listarOsDias(c: Conexao, raiz: string, forcar: boolean): Promise<{ itens: Item[]; doCache: boolean }> {
+  if (!forcar && diasConhecidos && Date.now() < diasConhecidos.ate) return { itens: diasConhecidos.itens, doCache: true };
+  const itens = diasEmOrdem((await listar(c, raiz)).filter((p) => p.folder));
+  diasConhecidos = { itens, ate: Date.now() + VALE_MS };
+  return { itens, doCache: false };
+}
+
+/**
+ * O id do arquivo no dia mais novo que o tem; `null` se nenhum dia tem. `diaDica` é o dia do último pedido da peça: é
+ * olhado primeiro (e só ele autoriza usar o id guardado).
+ */
+async function acharOArquivo(c: Conexao, sku: string, nome: string, diaDica: string | null, semGuardado = false): Promise<string | null> {
+  if (diaDica && !semGuardado) {
+    const g = arquivosConhecidos.get(`${diaDica}/${sku}|${nome}`);
+    if (g && Date.now() < g.ate) return g.id;
+  }
   const raiz = await acharPastaDosCartoes(c);
   if (!raiz) return null;
-  const dias = diasEmOrdem((await listar(c, raiz)).filter((p) => p.folder));
-  for (const dia of dias) {
-    const pasta = pastaDoSku((await listar(c, dia.id)).filter((p) => p.folder), sku);
-    if (!pasta) continue;
-    const arquivo = (await listar(c, pasta.id)).find((a) => !a.folder && a.name === nome);
-    if (arquivo) return arquivo.id;
+  // Lista de dias velha pode não ter o dia de hoje (a 1ª peça do dia cria a pasta): se não achar, refaz com lista nova.
+  for (const forcar of [false, true]) {
+    const { itens, doCache } = await listarOsDias(c, raiz, forcar);
+    for (const dia of diasComDicaPrimeiro(itens, diaDica)) {
+      const pasta = pastaDoSku((await listar(c, dia.id)).filter((p) => p.folder), sku);
+      if (!pasta) continue;
+      const arquivos = (await listar(c, pasta.id)).filter((a) => !a.folder);
+      for (const a of arquivos) arquivosConhecidos.set(`${dia.name.trim()}/${sku}|${a.name}`, { id: a.id, ate: Date.now() + VALE_MS });
+      const achado = arquivos.find((a) => a.name === nome);
+      if (achado) return achado.id;
+    }
+    if (!doCache) break; // a lista já era nova: não adianta repetir
   }
   return null;
 }
 
 async function tratar(req: Request): Promise<Response> {
+  const t0 = Date.now();
   if (req.method !== 'POST') return json({ erro: 'metodo_invalido' }, 405);
 
   // --- quem é e se pode ---
@@ -153,10 +185,23 @@ async function tratar(req: Request): Promise<Response> {
     .select('client_id, client_secret, refresh_token, data_center').eq('provedor', 'zoho').limit(1).maybeSingle();
   if (!con?.refresh_token) return json({ erro: 'zoho_desconectado' }, 503);
 
+  // O dia do último pedido que entregou a peça (o robô grava "Cartões com EAN/AAAA-MM-DD"). Só uma dica: se faltar, vale a busca completa.
+  const { data: ultimo } = await sb.from('vessel_cartao_pedidos').select('pasta')
+    .contains('pecas', [codigo]).in('situacao', ['pronto', 'falhou']).not('pasta', 'is', null)
+    .order('terminou_em', { ascending: false }).limit(1).maybeSingle();
+  const diaDica = diaDaPasta(ultimo?.pasta);
+
   try {
-    const id = await acharOArquivo(con as Conexao, sku, nome);
+    let id = await acharOArquivo(con as Conexao, sku, nome, diaDica);
+    const msBusca = Date.now() - t0; // tudo até achar o id: login, banco, busca no Zoho
     if (!id) return json({ erro: 'arquivo_nao_achado', arquivo: nome }, 404);
-    const r = await zoho(con as Conexao, `/download/${encodeURIComponent(id)}`);
+    let r = await zoho(con as Conexao, `/download/${encodeURIComponent(id)}`);
+    if (!r.ok) {
+      // Pode ser o id guardado que ficou velho (arquivo trocado/apagado): esquece e busca de novo, UMA vez.
+      id = await acharOArquivo(con as Conexao, sku, nome, diaDica, true);
+      if (!id) return json({ erro: 'arquivo_nao_achado', arquivo: nome }, 404);
+      r = await zoho(con as Conexao, `/download/${encodeURIComponent(id)}`);
+    }
     if (!r.ok) { console.error('vessel-baixar-cartao: download', nome, r.status); return json({ erro: 'zoho_recusou', status: r.status }, 502); }
     // `application/octet-stream` de propósito: é o que faz o supabase-js entregar um Blob (png/pdf viriam como texto).
     return new Response(r.body, {
@@ -165,6 +210,8 @@ async function tratar(req: Request): Promise<Response> {
         'Content-Type': 'application/octet-stream',
         'Content-Disposition': `attachment; filename="${nome}"`,
         'Cache-Control': 'no-store',
+        // Aba Network do navegador: "busca" = até achar o arquivo no Zoho; "total" = até começar a devolver.
+        'Server-Timing': `busca;dur=${msBusca}, total;dur=${Date.now() - t0}`,
       },
     });
   } catch (e) {
