@@ -15,6 +15,7 @@ import (
 	"github.com/rbv-co/social-dashboard/api/internal/config"
 	"github.com/rbv-co/social-dashboard/api/internal/importacao"
 	"github.com/rbv-co/social-dashboard/api/internal/web"
+	"github.com/rbv-co/social-dashboard/api/internal/worker"
 )
 
 func main() {
@@ -58,6 +59,10 @@ func main() {
 			os.Exit(1)
 		}
 		<-fim // espera o escoamento das requisições antes do p.Close() adiado
+	case "worker":
+		ag := worker.Novo(p)
+		slog.Info("worker no ar (sem tarefas registradas ainda; entram nos planos seguintes)")
+		ag.Iniciar(ctx)
 	case "importar-usuarios":
 		origem := os.Getenv("ORIGEM_DATABASE_URL")
 		if origem == "" {
