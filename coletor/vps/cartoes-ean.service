@@ -1,6 +1,6 @@
 # /etc/systemd/system/cartoes-ean.service — vigia da fila de Cartões EAN (ver cartoes-ean-vigia.sh).
 # Os limites existem porque a VPS também roda o PDV, o Chatwoot e o monitor: o robô (Chrome + rembg) nunca pode
-# sufocá-los. Passou de 3 GB, o systemd mata SÓ o robô; o pedido volta à fila (recolocar_travados) e o resto segue.
+# sufocá-los. Passou de 4 GB (dois robôs + Chrome + rembg), o systemd mata SÓ o robô; o pedido volta à fila (recolocar_travados) e o resto segue.
 [Unit]
 Description=Robô de Cartões EAN (vigia da fila)
 After=network-online.target
@@ -14,8 +14,8 @@ Restart=always
 RestartSec=15
 Nice=10
 CPUWeight=50
-MemoryHigh=2500M
-MemoryMax=3G
+MemoryHigh=3000M
+MemoryMax=4G
 
 [Install]
 WantedBy=multi-user.target
