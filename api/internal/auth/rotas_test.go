@@ -263,3 +263,32 @@ func TestIPBloqueadoNaoTrancaContaDaVitima(t *testing.T) {
 		t.Fatalf("vítima de outro IP = %d", c)
 	}
 }
+
+func TestLoginDeDesativadoPorProfilesEh401MesmoComSenhaCerta(t *testing.T) {
+	p, _, h := montar(t)
+	usuarioComSenha(t, p, uid, "a@x.com", "certa", `{}`)
+	p.Exec(context.Background(), `update profiles set disabled = true where id = $1`, uid)
+	w := chamar(h, "POST", "/auth/entrar", `{"email":"a@x.com","senha":"certa"}`, "")
+	if w.Code != 401 || !strings.Contains(w.Body.String(), "credenciais_invalidas") {
+		t.Fatalf("= %d %s", w.Code, w.Body)
+	}
+}
+
+func TestSessaoDeDesativadoPorProfilesEh401NaRota(t *testing.T) {
+	p, _, h := montar(t)
+	usuarioComSenha(t, p, uid, "a@x.com", "certa", `{}`)
+	tok := entrar(t, h, "a@x.com", "certa")
+	p.Exec(context.Background(), `update profiles set disabled = true where id = $1`, uid)
+	if w := chamar(h, "GET", "/auth/eu", "", tok); w.Code != 401 {
+		t.Fatalf("= %d", w.Code)
+	}
+}
+
+func TestLoginDeUsuarioSemProfilesFunciona(t *testing.T) {
+	p, _, h := montar(t)
+	hash, _ := HashDaSenha("s3nha")
+	p.Exec(context.Background(), `insert into usuarios (id, email, senha_hash) values ($1, 'c@x.com', $2)`, uid, hash)
+	if entrar(t, h, "c@x.com", "s3nha") == "" {
+		t.Fatal("sem token")
+	}
+}

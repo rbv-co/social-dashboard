@@ -18,7 +18,8 @@ import (
 const legado = `
 create table profiles (
   id uuid primary key, email text, role text,
-  is_superadmin boolean default false, permissions jsonb default '{}'::jsonb
+  is_superadmin boolean default false, permissions jsonb default '{}'::jsonb,
+  disabled boolean default false
 );
 create table robos_execucoes (
   id bigserial primary key, robo text not null, request_id bigint,

@@ -84,7 +84,9 @@ func (h *Handlers) Entrar(w http.ResponseWriter, r *http.Request) {
 	}
 	var id, hash string
 	err := h.pool.QueryRow(r.Context(),
-		`select id::text, coalesce(senha_hash, '') from usuarios where lower(email) = $1 and desativado_em is null`, email).
+		`select u.id::text, coalesce(u.senha_hash, '')
+		   from usuarios u left join profiles p on p.id = u.id
+		  where lower(u.email) = $1 and u.desativado_em is null and not coalesce(p.disabled, false)`, email).
 		Scan(&id, &hash)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		erroJSON(w, http.StatusInternalServerError, "erro_interno")

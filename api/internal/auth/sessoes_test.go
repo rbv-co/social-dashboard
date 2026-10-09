@@ -92,3 +92,52 @@ func TestRevogar(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+func TestDesativadoPorProfilesDepoisDaSessaoPerdeAcesso(t *testing.T) {
+	s := NovoStore(testebanco.Novo(t))
+	ctx := context.Background()
+	novoUsuario(t, s, uid, "a@x.com")
+	s.pool.Exec(ctx, `insert into profiles (id, email, role) values ($1, 'a@x.com', 'viewer')`, uid)
+	tok, _ := s.Criar(ctx, uid, "painel", nil)
+	if _, err := s.Buscar(ctx, tok); err != nil {
+		t.Fatalf("antes de desativar: %v", err)
+	}
+	s.pool.Exec(ctx, `update profiles set disabled = true where id = $1`, uid)
+	if _, err := s.Buscar(ctx, tok); !errors.Is(err, ErrSessaoInvalida) {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestImpersonadorDesativadoMataASessao(t *testing.T) {
+	for _, nome := range []string{"usuarios.desativado_em", "profiles.disabled"} {
+		t.Run(nome, func(t *testing.T) {
+			s := NovoStore(testebanco.Novo(t))
+			ctx := context.Background()
+			novoUsuario(t, s, uid, "a@x.com")
+			novoUsuario(t, s, uid2, "adm@x.com")
+			s.pool.Exec(ctx, `insert into profiles (id, email, role) values ($1, 'adm@x.com', 'admin')`, uid2)
+			imp := uid2
+			tok, _ := s.Criar(ctx, uid, "painel", &imp)
+			if _, err := s.Buscar(ctx, tok); err != nil {
+				t.Fatalf("antes de desativar: %v", err)
+			}
+			if nome == "profiles.disabled" {
+				s.pool.Exec(ctx, `update profiles set disabled = true where id = $1`, uid2)
+			} else {
+				s.pool.Exec(ctx, `update usuarios set desativado_em = now() where id = $1`, uid2)
+			}
+			if _, err := s.Buscar(ctx, tok); !errors.Is(err, ErrSessaoInvalida) {
+				t.Fatalf("err = %v", err)
+			}
+		})
+	}
+}
+
+func TestUsuarioSemProfilesContinuaValendo(t *testing.T) {
+	s := NovoStore(testebanco.Novo(t))
+	novoUsuario(t, s, uid, "cliente@x.com") // conta de cliente: sem linha em profiles
+	tok, _ := s.Criar(context.Background(), uid, "cliente", nil)
+	if _, err := s.Buscar(context.Background(), tok); err != nil {
+		t.Fatalf("err = %v", err)
+	}
+}
