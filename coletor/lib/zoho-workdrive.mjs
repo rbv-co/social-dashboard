@@ -61,7 +61,12 @@ export async function listarPasta(parentId) {
     todos.push(...pagina);
     if (pagina.length < POR_PAGINA) break;
   }
-  return todos.map((d) => ({ id: d.id, name: (d.attributes?.name || '').trim(), folder: d.attributes?.is_folder }));
+  // `versao` muda quando o arquivo é substituído (modificação + tamanho): é com ela que o espelho de fotos sabe se o que
+  // tem em disco ainda vale.
+  return todos.map((d) => {
+    const a = d.attributes || {};
+    return { id: d.id, name: (a.name || '').trim(), folder: a.is_folder, versao: a.modified_time_in_millisecond ? `${a.modified_time_in_millisecond}:${a.storage_info?.size_in_bytes ?? ''}` : '' };
+  });
 }
 
 // Baixa o arquivo por id. Devolve Buffer; erro de rede/permissão LANÇA (arquivo que não veio não é arquivo vazio).

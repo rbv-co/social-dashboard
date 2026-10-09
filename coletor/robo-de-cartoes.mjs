@@ -15,13 +15,14 @@
 //
 // O gerador do cartão mora no repositório do SITE (vessel-brasil/cartao), que o workflow baixa em ./vessel-brasil.
 import { mkdirSync, mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
-import { pathToFileURL } from 'node:url';
+import { pathToFileURL, fileURLToPath } from 'node:url';
 import { listarPasta, acharOuCriarPasta, uploadArquivo, baixarArquivo } from './lib/zoho-workdrive.mjs';
 import { conexaoZoho } from './lib/zoho-da-central.mjs';
 import { agruparPorSku, nomeDaSubpasta, planoDeDevolucao, rotuloDoCartao, arquivosDoCartao } from './lib/cartoes-da-fila.js';
 import { fazerCartao } from './lib/cartao-de-uma-peca.mjs';
+import { emParalelo, sincronizarPasta, podarPastas, versaoDoTratamento } from './lib/espelho-de-fotos.mjs';
 
 const SECO = process.argv.includes('--seco');
 const { SUPABASE_URL, SUPABASE_SERVICE_KEY } = process.env;
@@ -90,13 +91,17 @@ const pastasDoSku = (pastas, sku) =>
   pastas.filter((p) => (p.name.toUpperCase().match(REGEX_SKU) || []).includes(sku.toUpperCase()));
 
 const SIMULTANEAS = 6; // chamadas ao Zoho ao mesmo tempo (listar 71 pastas em fila levava ~50 s)
+const AQUI = dirname(fileURLToPath(import.meta.url));
+// Com FOTOS_CACHE (VPS) o espelho é PERMANENTE: só baixa o que mudou no Zoho. Sem ele (GitHub Actions) é refeito a cada
+// pedido, como sempre foi. Regras de validade em lib/espelho-de-fotos.mjs.
+const CACHE = !!process.env.FOTOS_CACHE;
+const VARREDURA_VALE_MS = 15 * 60 * 1000; // a busca do desenho do modelo nas ~70 pastas irmãs vale por 15 min
+const segs = (t0) => ((Date.now() - t0) / 1000).toFixed(1) + 's';
 
-/** `fn` em cada item, no máximo `n` ao mesmo tempo; o primeiro erro derruba tudo (leitura que falhou não é pasta vazia). */
-async function emParalelo(itens, n, fn) {
-  const fila = [...itens];
-  await Promise.all(Array.from({ length: Math.min(n, fila.length) }, async () => {
-    while (fila.length) await fn(fila.shift());
-  }));
+/** Apaga o que o gerador derivou das fotos (recorte, foto tratada, desenho tratado). Ele guarda por NOME de arquivo. */
+function limparDerivados() {
+  for (const d of [join(AQUI, 'fotos-cutout'), join(VESSEL, 'cartao', 'fotos-tratadas'), join(VESSEL, 'cartao', 'desenhos-tratados')]) rmSync(d, { recursive: true, force: true });
+  console.log('  fotos tratadas guardadas apagadas (uma foto ou o tratamento mudou)');
 }
 
 /**
@@ -106,28 +111,52 @@ async function emParalelo(itens, n, fn) {
  * próprio .jpg/.jpeg (`desenhoDaPasta` vem antes). Aí baixa só os .jpg/.jpeg das demais.
  */
 async function espelharFotos(pastas, skus, raiz) {
-  const alvos = [...new Set(skus.flatMap((s) => pastasDoSku(pastas, s)))];
-  const baixar = (dir, arquivos) => emParalelo(arquivos, SIMULTANEAS, async (f) => writeFileSync(join(dir, limpo(f.name)), await baixarArquivo(f.id)));
+  const arquivoManifesto = join(raiz, '.manifesto.json');
+  let estado = { arquivos: {}, varridoEm: 0, tratamento: '' };
+  if (CACHE) { try { estado = { ...estado, ...JSON.parse(readFileSync(arquivoManifesto, 'utf8')) }; } catch { /* primeira vez */ } }
+  const m = estado.arquivos;
+  let trocados = 0;
 
+  if (CACHE) {
+    // O que muda o resultado do tratamento: os scripts e os recortes à mão. Mudou = o que está guardado é de outra regra.
+    const v = versaoDoTratamento([
+      join(VESSEL, 'cartao', 'tratar-foto.py'), join(VESSEL, 'cartao', 'preparar-desenho.py'), join(VESSEL, 'cartao', 'recortes-a-mao'),
+      join(AQUI, 'recortar.py'), join(AQUI, 'lib', 'cutout.mjs'),
+    ]);
+    if (v !== estado.tratamento) { trocados++; estado.tratamento = v; }
+    trocados += podarPastas(raiz, new Set(pastas.map((p) => limpo(p.name))), m);
+  }
+
+  const sync = async (p, quer) => {
+    const lista = (await listarPasta(p.id)).filter((x) => !x.folder);
+    const r = await sincronizarPasta({
+      dir: join(raiz, limpo(p.name)),
+      remotos: lista.filter((x) => quer.test(x.name)).map((x) => ({ ...x, nome: limpo(x.name) })),
+      todosNomes: new Set(lista.map((x) => limpo(x.name))),
+      manifesto: m, baixar: (f) => baixarArquivo(f.id), simultaneas: SIMULTANEAS,
+    });
+    trocados += r.trocados;
+    return lista;
+  };
+
+  const alvos = [...new Set(skus.flatMap((s) => pastasDoSku(pastas, s)))];
   let faltaDesenho = false;
   await emParalelo(alvos, SIMULTANEAS, async (p) => {
-    const dir = join(raiz, limpo(p.name));
-    mkdirSync(dir, { recursive: true });
-    const arquivos = (await listarPasta(p.id)).filter((x) => !x.folder && /\.(png|jpe?g|webp)$/i.test(x.name));
-    if (!arquivos.some((x) => /\.jpe?g$/i.test(x.name))) faltaDesenho = true;
-    await baixar(dir, arquivos);
+    const lista = await sync(p, /\.(png|jpe?g|webp)$/i);
+    if (!lista.some((x) => /\.jpe?g$/i.test(x.name))) faltaDesenho = true;
   });
-  if (!faltaDesenho) return;
-
-  const ids = new Set(alvos.map((p) => p.id));
-  await emParalelo(pastas.filter((p) => !ids.has(p.id)), SIMULTANEAS, async (p) => {
-    const dir = join(raiz, limpo(p.name));
-    mkdirSync(dir, { recursive: true });
-    await baixar(dir, (await listarPasta(p.id)).filter((x) => !x.folder && /\.jpe?g$/i.test(x.name)));
-  });
+  if (faltaDesenho && !(CACHE && Date.now() - estado.varridoEm < VARREDURA_VALE_MS)) {
+    const ids = new Set(alvos.map((p) => p.id));
+    await emParalelo(pastas.filter((p) => !ids.has(p.id)), SIMULTANEAS, (p) => sync(p, /\.jpe?g$/i));
+    estado.varridoEm = Date.now();
+  }
+  if (trocados) limparDerivados();
+  if (CACHE) writeFileSync(arquivoManifesto, JSON.stringify(estado));
 }
 
 async function processar(pedido, estado, ctx) {
+  const t0 = Date.now(); let t = t0;
+  const tempos = {}; const marca = (e) => { tempos[e] = (tempos[e] || 0) + (Date.now() - t) / 1000; t = Date.now(); }; // soma entre SKUs
   const { porSku, semDados } = agruparPorSku(pedido.pecas, await buscarPecas(pedido.pecas));
   for (const x of semDados) estado.falhas.push({ rotulo: x.codigo, motivo: x.motivo });
 
@@ -135,15 +164,17 @@ async function processar(pedido, estado, ctx) {
   const dia = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }); // AAAA-MM-DD
   estado.pasta = `Cartões com EAN/${dia}`;
   const pastaDia = await acharOuCriarPasta(await acharOuCriarPasta(vbId, 'Cartões com EAN'), dia);
+  marca('zoho (pastas)');
 
   // ⚠️ O caminho tem de ser o MESMO em todos os pedidos da rodada: `dados.mjs` fixa VESSEL_FOTOS_ZOHO no primeiro
   // import e o módulo fica em cache. Pasta nova por pedido = do 2º em diante o gerador aponta para uma pasta
   // apagada ("não achei a pasta de fotos do Zoho", 09/10). Por isso o caminho é fixo e só o conteúdo é refeito.
   process.env.VESSEL_FOTOS_ZOHO = FOTOS; // ANTES de importar o gerador
-  rmSync(FOTOS, { recursive: true, force: true });
+  if (!CACHE) rmSync(FOTOS, { recursive: true, force: true });
   mkdirSync(FOTOS, { recursive: true });
   await espelharFotos(pastas, [...porSku.keys()], FOTOS);
   const { gerarCartao } = await import(pathToFileURL(join(VESSEL, 'cartao', 'gerar.mjs')).href);
+  marca('fotos');
 
   const series = new Map(); // nº de série impresso -> quantas vezes (duas bolsas com a mesma identidade = defeito)
   for (const [sku, pecas] of porSku) {
@@ -163,7 +194,10 @@ async function processar(pedido, estado, ctx) {
       const rotulo = rotuloDoCartao(sku, peca.numero);
       try {
         const c = await fazerCartao({ gerarCartao, vessel: VESSEL, trabalho: ctx.trabalho, sku, numero: peca.numero });
-        for (const f of c.arquivos) await uploadArquivo(idSubpasta, f, readFileSync(join(c.saida, f)), MIME[f.split('.').pop()]);
+        const tUp = Date.now();
+        await emParalelo(c.arquivos, 4, (f) => uploadArquivo(idSubpasta, f, readFileSync(join(c.saida, f)), MIME[f.split('.').pop()]));
+        c.tempos.upload = +((Date.now() - tUp) / 1000).toFixed(1);
+        console.log(`  ⏱ ${rotulo}: ` + Object.entries(c.tempos).map(([k, v]) => `${k} ${v}s`).join(' · '));
         rmSync(c.saida, { recursive: true, force: true });
         series.set(c.serie, (series.get(c.serie) || 0) + 1);
         feitas.push({ peca, rotulo, serie: c.serie });
@@ -173,6 +207,7 @@ async function processar(pedido, estado, ctx) {
         console.log(`  ✗ ${rotulo}  ${curto(e)}`);
       }
     }
+    marca('cartões');
     // Confirma NO ZOHO (não no que o upload respondeu): só conta o cartão cujos 4 arquivos aparecem na pasta.
     let noZoho;
     try { noZoho = new Set((await listarPasta(idSubpasta)).map((x) => x.name)); }
@@ -183,7 +218,9 @@ async function processar(pedido, estado, ctx) {
       else if (faltando.length) estado.falhas.push({ rotulo: `${sku} nº${f.peca.numero}`, motivo: `não achei no Zoho: ${faltando.join(', ')}` });
       else estado.confirmadas.push(f.peca.codigo);
     }
+    marca('conferir no Zoho');
   }
+  console.log('  ⏱ pedido: ' + Object.entries(tempos).map(([k, v]) => `${k} ${v.toFixed(1)}s`).join(' · ') + ` · total ${segs(t0)}`);
 }
 
 async function secoMode() {
@@ -208,7 +245,7 @@ if (SECO) { await secoMode(); process.exit(0); }
 // banco (migration pendente), segue sem ela: é a retaguarda, não o caminho principal.
 await rpc('vessel_cartao_recolocar_travados', { p_minutos: 150 }).catch((e) => console.log('aviso: ' + e.message));
 
-const FOTOS = join(mkdtempSync(join(tmpdir(), 'cartoes-fotos-')), 'fotos');
+const FOTOS = CACHE ? resolve(process.env.FOTOS_CACHE) : join(mkdtempSync(join(tmpdir(), 'cartoes-fotos-')), 'fotos');
 let feitos = 0;
 for (;;) {
   const { pedido } = await rpc('vessel_cartao_pegar_da_fila');
