@@ -8,6 +8,7 @@ import { rotuloDoCartao, arquivosDoCartao } from './cartoes-da-fila.js';
 
 /**
  * @param {object} p
+ * @param {Function} [p.exclusivo]   `(fn) => fn()` com trava entre robôs (VPS); padrão: sem trava
  * @param {Function} p.gerarCartao  `gerarCartao` de vessel-brasil/cartao/gerar.mjs
  * @param {string} p.vessel         pasta do repositório do site (tem cartao/exportar.mjs e conferir-barras.py)
  * @param {string} p.trabalho       pasta temporária onde o HTML e os arquivos nascem
@@ -15,13 +16,14 @@ import { rotuloDoCartao, arquivosDoCartao } from './cartoes-da-fila.js';
  * Lança se o cartão não puder ser considerado BOM: foto achada só pelo nome, arquivo faltando ou código de barras
  * que não bate com o GTIN do Bling. "Tem arquivo" não é "tem cartão bom" (foram 5 cartões sem barras por 3 semanas).
  */
-export async function fazerCartao({ gerarCartao, vessel, trabalho, sku, numero }) {
+export async function fazerCartao({ exclusivo = (fn) => fn(), gerarCartao, vessel, trabalho, sku, numero }) {
   const rotulo = rotuloDoCartao(sku, numero);
   const tempos = {}; // segundos por etapa, para o log mostrar onde o tempo vai
   let t = Date.now();
   const marca = (etapa) => { tempos[etapa] = +((Date.now() - t) / 1000).toFixed(1); t = Date.now(); };
   const html = join(trabalho, 'html', `${rotulo}.html`);
-  const r = await gerarCartao(sku, numero, { saida: html });
+  // Só o `gerarCartao` (Bling + recorte + foto tratada, que o gerador guarda por nome de arquivo) é exclusivo; Chrome e o resto correm em paralelo.
+  const r = await exclusivo(() => gerarCartao(sku, numero, { saida: html }));
   marca('bling+recorte');
   if (r.foto.confiavel === false) throw new Error('a pasta de fotos só foi achada pelo nome do produto, não pelo SKU');
 

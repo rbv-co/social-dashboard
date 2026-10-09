@@ -23,6 +23,7 @@ import { conexaoZoho } from './lib/zoho-da-central.mjs';
 import { agruparPorSku, nomeDaSubpasta, planoDeDevolucao, rotuloDoCartao, arquivosDoCartao } from './lib/cartoes-da-fila.js';
 import { fazerCartao } from './lib/cartao-de-uma-peca.mjs';
 import { emParalelo, sincronizarPasta, podarPastas, versaoDoTratamento } from './lib/espelho-de-fotos.mjs';
+import { comTrava } from './lib/trava-de-arquivo.mjs';
 
 const SECO = process.argv.includes('--seco');
 const { SUPABASE_URL, SUPABASE_SERVICE_KEY } = process.env;
@@ -95,6 +96,10 @@ const AQUI = dirname(fileURLToPath(import.meta.url));
 // Com FOTOS_CACHE (VPS) o espelho é PERMANENTE: só baixa o que mudou no Zoho. Sem ele (GitHub Actions) é refeito a cada
 // pedido, como sempre foi. Regras de validade em lib/espelho-de-fotos.mjs.
 const CACHE = !!process.env.FOTOS_CACHE;
+// Na VPS pode haver mais de um robô ao mesmo tempo (vigia, CARTOES_WORKERS). O que eles dividem — o espelho de fotos, o
+// que o gerador guarda por nome de arquivo e o "achar ou criar pasta" no Zoho — passa por esta trava. O resto (Chrome,
+// código de barras, upload, conferência) roda em paralelo. Sem FOTOS_CACHE só há um robô: não trava nada.
+const exclusivo = (fn) => (CACHE ? comTrava(resolve(process.env.FOTOS_CACHE) + '.trava', fn) : fn());
 const VARREDURA_VALE_MS = 15 * 60 * 1000; // a busca do desenho do modelo nas ~70 pastas irmãs vale por 15 min
 const segs = (t0) => ((Date.now() - t0) / 1000).toFixed(1) + 's';
 
@@ -163,7 +168,7 @@ async function processar(pedido, estado, ctx) {
   const { vbId, pastas } = await pastasDeFotos();
   const dia = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }); // AAAA-MM-DD
   estado.pasta = `Cartões com EAN/${dia}`;
-  const pastaDia = await acharOuCriarPasta(await acharOuCriarPasta(vbId, 'Cartões com EAN'), dia);
+  const pastaDia = await exclusivo(async () => acharOuCriarPasta(await acharOuCriarPasta(vbId, 'Cartões com EAN'), dia));
   marca('zoho (pastas)');
 
   // ⚠️ O caminho tem de ser o MESMO em todos os pedidos da rodada: `dados.mjs` fixa VESSEL_FOTOS_ZOHO no primeiro
@@ -172,7 +177,7 @@ async function processar(pedido, estado, ctx) {
   process.env.VESSEL_FOTOS_ZOHO = FOTOS; // ANTES de importar o gerador
   if (!CACHE) rmSync(FOTOS, { recursive: true, force: true });
   mkdirSync(FOTOS, { recursive: true });
-  await espelharFotos(pastas, [...porSku.keys()], FOTOS);
+  await exclusivo(() => espelharFotos(pastas, [...porSku.keys()], FOTOS));
   const { gerarCartao } = await import(pathToFileURL(join(VESSEL, 'cartao', 'gerar.mjs')).href);
   marca('fotos');
 
@@ -187,13 +192,13 @@ async function processar(pedido, estado, ctx) {
     // ⚠️ Falha num SKU NÃO derruba o pedido: as peças dele viram falha e o próximo SKU segue (06/10: um erro de Zoho
     // aqui deixou 7 peças de outros SKUs sem nem serem tentadas).
     let idSubpasta;
-    try { idSubpasta = await acharOuCriarPasta(pastaDia, nomeDaSubpasta(achadas[0].name, sku)); }
+    try { idSubpasta = await exclusivo(() => acharOuCriarPasta(pastaDia, nomeDaSubpasta(achadas[0].name, sku))); }
     catch (e) { for (const p of pecas) estado.falhas.push({ rotulo: `${sku} nº${p.numero}`, motivo: curto(e) }); continue; }
     const feitas = [];
     for (const peca of pecas) {
       const rotulo = rotuloDoCartao(sku, peca.numero);
       try {
-        const c = await fazerCartao({ gerarCartao, vessel: VESSEL, trabalho: ctx.trabalho, sku, numero: peca.numero });
+        const c = await fazerCartao({ exclusivo, gerarCartao, vessel: VESSEL, trabalho: ctx.trabalho, sku, numero: peca.numero });
         const tUp = Date.now();
         await emParalelo(c.arquivos, 4, (f) => uploadArquivo(idSubpasta, f, readFileSync(join(c.saida, f)), MIME[f.split('.').pop()]));
         c.tempos.upload = +((Date.now() - tUp) / 1000).toFixed(1);
