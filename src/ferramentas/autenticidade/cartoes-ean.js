@@ -283,6 +283,22 @@ export const temPedidoAtivo = (pedidos) =>
   (pedidos || []).some((q) => q.situacao === 'na_fila' || q.situacao === 'rodando')
 
 /**
+ * Peças dos pedidos que ACABARAM entre duas leituras da fila (estavam na_fila/rodando e agora não estão mais, ou sumiram).
+ *
+ * ⚠️ É o que manda reler `cartao_gerado_em`. Reler só quando o ÚLTIMO pedido termina deixava as peças dos pedidos que já
+ * tinham acabado em "Sem cartão" até a fila inteira esvaziar — com dois robôs ao mesmo tempo isso aparece o tempo todo.
+ */
+export function pecasDosPedidosQueAcabaram(antes, depois) {
+  const ativo = (q) => q.situacao === 'na_fila' || q.situacao === 'rodando'
+  const aindaAtivos = new Set((depois || []).filter(ativo).map((q) => q.id))
+  const codigos = new Set()
+  for (const q of antes || []) {
+    if (ativo(q) && !aindaAtivos.has(q.id)) for (const c of q.pecas || []) codigos.add(c)
+  }
+  return [...codigos]
+}
+
+/**
  * Onde a peça está na fila: 'rodando', 'na_fila' ou null.
  *
  * ⚠️ O robô NÃO grava progresso por peça — só o pedido inteiro muda de estado, e o `cartao_gerado_em`
