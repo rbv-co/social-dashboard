@@ -1,6 +1,8 @@
 package auth
 
 import (
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -10,24 +12,41 @@ func TestLimitadorBloqueiaAposMaxEJanelaExpira(t *testing.T) {
 	agora := time.Now()
 	l.agora = func() time.Time { return agora }
 	for i := 0; i < l.Max; i++ {
-		if l.Bloqueado("k") {
+		if !l.Tentar("k") {
 			t.Fatalf("bloqueou cedo, i=%d", i)
 		}
-		l.Falhou("k")
 	}
-	if !l.Bloqueado("k") {
+	if l.Tentar("k") {
 		t.Fatal("deveria bloquear")
 	}
-	if l.Bloqueado("outra") {
+	if !l.Tentar("outra") {
 		t.Fatal("chave diferente não pode ser afetada")
 	}
 	agora = agora.Add(l.Janela + time.Second)
-	if l.Bloqueado("k") {
+	if !l.Tentar("k") {
 		t.Fatal("janela deveria ter expirado")
 	}
-	l.Falhou("k")
 	l.Limpar("k")
-	if l.Bloqueado("k") || len(l.falhas["k"]) != 0 {
+	if len(l.falhas["k"]) != 0 || !l.Tentar("k") {
 		t.Fatal("Limpar deveria zerar")
+	}
+}
+
+func TestLimitadorTentarEhAtomico(t *testing.T) {
+	l := NovoLimitador()
+	var ok atomic.Int32
+	var wg sync.WaitGroup
+	for i := 0; i < 50; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if l.Tentar("k") {
+				ok.Add(1)
+			}
+		}()
+	}
+	wg.Wait()
+	if int(ok.Load()) != l.Max {
+		t.Fatalf("permitidas = %d, esperava exatamente %d", ok.Load(), l.Max)
 	}
 }

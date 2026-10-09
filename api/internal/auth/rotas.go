@@ -1,6 +1,8 @@
 package auth
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"net"
@@ -15,24 +17,48 @@ import (
 type Handlers struct {
 	pool    *pgxpool.Pool
 	sessoes *Store
-	limite  *Limitador
+	limite  *Limitador // e-mail|ip
+	porMail *Limitador // só e-mail: IPs trocando não escapam
+	porIP   *Limitador // só ip: um IP varrendo e-mails
 }
 
 func NovosHandlers(p *pgxpool.Pool, s *Store, l *Limitador) *Handlers {
-	return &Handlers{pool: p, sessoes: s, limite: l}
+	extra := func(max int) *Limitador {
+		x := NovoLimitador()
+		x.Max, x.Janela = max, l.Janela
+		return x
+	}
+	return &Handlers{pool: p, sessoes: s, limite: l, porMail: extra(10), porIP: extra(20)}
 }
 
-// gasta o mesmo tempo de bcrypt quando o e-mail não existe (ou a conta não tem
-// senha), para não revelar quem tem conta
-var hashFalso, _ = bcrypt.GenerateFromPassword([]byte("x"), bcrypt.DefaultCost)
-
-// ipDe tira a porta de RemoteAddr: sem isso cada conexão nova teria chave própria
-// e escaparia do limite. Atrás do nginx, RealIP já deixa só o IP.
-func ipDe(r *http.Request) string {
-	if ip, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
-		return ip
+// Hash de uma senha aleatória que ninguém conhece: gasta o mesmo tempo de bcrypt
+// quando o e-mail não existe (ou a conta não tem senha), sem revelar quem tem conta.
+var hashFalso = func() string {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
 	}
-	return r.RemoteAddr
+	h, err := bcrypt.GenerateFromPassword([]byte(hex.EncodeToString(b)), bcrypt.DefaultCost)
+	if err != nil {
+		panic(err)
+	}
+	return string(h)
+}()
+
+// ipDe devolve o IP do cliente. Só confia em X-Real-IP quando a conexão vem de
+// loopback/rede privada (nosso nginx, que DEVE setar `X-Real-IP $remote_addr`);
+// de origem pública, cabeçalhos do cliente são forjáveis e ignorados.
+func ipDe(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	if ip := net.ParseIP(host); ip != nil && (ip.IsLoopback() || ip.IsPrivate()) {
+		if real := net.ParseIP(strings.TrimSpace(r.Header.Get("X-Real-IP"))); real != nil {
+			return real.String()
+		}
+	}
+	return host
 }
 
 func (h *Handlers) Entrar(w http.ResponseWriter, r *http.Request) {
@@ -40,13 +66,19 @@ func (h *Handlers) Entrar(w http.ResponseWriter, r *http.Request) {
 		Email string `json:"email"`
 		Senha string `json:"senha"`
 	}
-	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10)).Decode(&in) != nil || in.Email == "" || in.Senha == "" {
+	email := ""
+	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10)).Decode(&in) == nil {
+		email = strings.ToLower(strings.TrimSpace(in.Email))
+	}
+	if email == "" || in.Senha == "" {
 		erroJSON(w, http.StatusBadRequest, "pedido_invalido")
 		return
 	}
-	email := strings.ToLower(strings.TrimSpace(in.Email))
-	chave := email + "|" + ipDe(r)
-	if h.limite.Bloqueado(chave) {
+	ip := ipDe(r)
+	chave := email + "|" + ip
+	// as três chaves são sempre consultadas e registradas antes do bcrypt
+	a, b, c := h.limite.Tentar(chave), h.porMail.Tentar(email), h.porIP.Tentar(ip)
+	if !a || !b || !c {
 		erroJSON(w, http.StatusTooManyRequests, "muitas_tentativas")
 		return
 	}
@@ -54,21 +86,20 @@ func (h *Handlers) Entrar(w http.ResponseWriter, r *http.Request) {
 	err := h.pool.QueryRow(r.Context(),
 		`select id::text, coalesce(senha_hash, '') from usuarios where lower(email) = $1 and desativado_em is null`, email).
 		Scan(&id, &hash)
-	if errors.Is(err, pgx.ErrNoRows) {
-		id = ""
-	} else if err != nil {
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		erroJSON(w, http.StatusInternalServerError, "erro_interno")
 		return
 	}
-	if hash == "" { // sem conta ou sem senha cadastrada: mesmo custo de bcrypt
-		hash = string(hashFalso)
+	if err != nil || hash == "" { // sem conta ou sem senha cadastrada: nega, com o mesmo custo de bcrypt
+		id, hash = "", hashFalso
 	}
 	if !SenhaConfere(hash, in.Senha) || id == "" {
-		h.limite.Falhou(chave)
 		erroJSON(w, http.StatusUnauthorized, "credenciais_invalidas")
 		return
 	}
+	// ip não é limpo: senão um atacante zeraria o contador entrando na própria conta
 	h.limite.Limpar(chave)
+	h.porMail.Limpar(email)
 	token, err := h.sessoes.Criar(r.Context(), id, "painel", nil)
 	if err != nil {
 		erroJSON(w, http.StatusInternalServerError, "erro_interno")

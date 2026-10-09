@@ -18,6 +18,8 @@ func TestPode(t *testing.T) {
 		{"recurso vazio", comum, "", "ver", false},
 		{"super-admin passa tudo", &Ator{Tipo: "painel", SuperAdmin: true}, "qualquer", "excluir", true},
 		{"cliente da Vessel nunca", &Ator{Tipo: "cliente", SuperAdmin: true, Permissoes: map[string][]string{"frota": {"ver"}}}, "frota", "ver", false},
+		{"tipo desconhecido nega até super-admin", &Ator{Tipo: "outro", SuperAdmin: true, Permissoes: map[string][]string{"frota": {"ver"}}}, "frota", "ver", false},
+		{"tipo vazio nega", &Ator{SuperAdmin: true}, "frota", "ver", false},
 		{"conta de serviço usa permissões", &Ator{Tipo: "servico", Permissoes: map[string][]string{"meta.gestor": {"ver"}}}, "meta.gestor", "ver", true},
 	}
 	for _, c := range casos {

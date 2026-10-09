@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -162,5 +163,87 @@ func TestPermissaoPorRota(t *testing.T) {
 	}
 	if w := chamar(h, "GET", "/frota", "", entrar(t, h, "sem@x.com", "s")); w.Code != 403 {
 		t.Fatalf("sem 'ver' = %d", w.Code)
+	}
+}
+
+func TestSenhaXNaoEntraSemSenhaNemSemConta(t *testing.T) {
+	p, _, h := montar(t)
+	novoUsuario(t, NovoStore(p), uid, "sem@x.com") // senha_hash nulo
+	if _, err := p.Exec(context.Background(), `insert into usuarios (id, email, senha_hash) values ($1, 'vazia@x.com', '')`, uid2); err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range []string{"sem@x.com", "vazia@x.com", "naoexiste@x.com"} {
+		if w := chamar(h, "POST", "/auth/entrar", `{"email":"`+e+`","senha":"x"}`, ""); w.Code != 401 {
+			t.Fatalf("%s com senha x = %d %s", e, w.Code, w.Body)
+		}
+	}
+}
+
+func TestEmailSoEspacosEh400(t *testing.T) {
+	_, _, h := montar(t)
+	if w := chamar(h, "POST", "/auth/entrar", `{"email":"   ","senha":"abc"}`, ""); w.Code != 400 {
+		t.Fatalf("= %d", w.Code)
+	}
+}
+
+func entrarDe(h http.Handler, addr, email, senha string) int {
+	r := httptest.NewRequest("POST", "/auth/entrar", strings.NewReader(`{"email":"`+email+`","senha":"`+senha+`"}`))
+	r.RemoteAddr = addr
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	return w.Code
+}
+
+func TestLimitePorEmailComIPsDiferentes(t *testing.T) {
+	p, _, h := montar(t)
+	usuarioComSenha(t, p, uid, "a@x.com", "certa", `{}`)
+	for i := 0; i < 10; i++ {
+		entrarDe(h, "198.51.100."+strconv.Itoa(i+1)+":1000", "a@x.com", "errada")
+	}
+	if c := entrarDe(h, "198.51.100.200:1000", "a@x.com", "certa"); c != 429 {
+		t.Fatalf("IP novo contra e-mail bloqueado = %d", c)
+	}
+}
+
+func TestLimitePorIPComEmailsDiferentes(t *testing.T) {
+	_, _, h := montar(t)
+	for i := 0; i < 20; i++ {
+		entrarDe(h, "203.0.113.7:1000", "u"+strconv.Itoa(i)+"@x.com", "errada")
+	}
+	if c := entrarDe(h, "203.0.113.7:1000", "novo@x.com", "errada"); c != 429 {
+		t.Fatalf("mesmo IP, e-mail novo = %d", c)
+	}
+}
+
+func TestIPDe(t *testing.T) {
+	casos := []struct {
+		nome, addr string
+		hdr        map[string]string
+		quer       string
+	}{
+		{"público ignora cabeçalhos forjados", "203.0.113.9:5555", map[string]string{"X-Real-IP": "1.1.1.1", "True-Client-IP": "2.2.2.2", "X-Forwarded-For": "3.3.3.3"}, "203.0.113.9"},
+		{"privado usa X-Real-IP", "172.18.0.2:5555", map[string]string{"X-Real-IP": "198.51.100.4"}, "198.51.100.4"},
+		{"loopback usa X-Real-IP", "127.0.0.1:5555", map[string]string{"X-Real-IP": "198.51.100.4"}, "198.51.100.4"},
+		{"privado sem cabeçalho", "10.0.0.5:1", nil, "10.0.0.5"},
+		{"privado com X-Real-IP lixo", "10.0.0.5:1", map[string]string{"X-Real-IP": "não-é-ip"}, "10.0.0.5"},
+		{"privado ignora XFF", "10.0.0.5:1", map[string]string{"X-Forwarded-For": "9.9.9.9"}, "10.0.0.5"},
+	}
+	for _, c := range casos {
+		r := httptest.NewRequest("GET", "/", nil)
+		r.RemoteAddr = c.addr
+		for k, v := range c.hdr {
+			r.Header.Set(k, v)
+		}
+		if got := ipDe(r); got != c.quer {
+			t.Errorf("%s: ipDe = %q, esperava %q", c.nome, got, c.quer)
+		}
+	}
+}
+
+func TestTokenSemPrefixoBearerEhVazio(t *testing.T) {
+	r := httptest.NewRequest("GET", "/", nil)
+	r.Header.Set("Authorization", "abc123")
+	if got := tokenDe(r); got != "" {
+		t.Fatalf("token = %q", got)
 	}
 }

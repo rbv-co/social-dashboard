@@ -23,7 +23,10 @@ func erroJSON(w http.ResponseWriter, status int, codigo string) {
 }
 
 func tokenDe(r *http.Request) string {
-	t, _ := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	t, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if !ok {
+		return ""
+	}
 	return t
 }
 

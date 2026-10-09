@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// Limitador conta falhas de login por chave (e-mail|ip) numa janela.
+// Limitador conta tentativas de login por chave numa janela.
 // ponytail: em memória, vale para uma instância só; Redis/Postgres se houver mais de uma.
 type Limitador struct {
 	Max    int
@@ -34,17 +34,18 @@ func (l *Limitador) podar(k string) {
 	l.falhas[k] = vivas
 }
 
-func (l *Limitador) Bloqueado(k string) bool {
+// Tentar poda, confere o máximo e REGISTRA a tentativa numa única seção crítica,
+// antes de qualquer trabalho caro (bcrypt): requisições paralelas não furam o limite.
+// Devolve false (sem registrar) quando a chave já está bloqueada.
+func (l *Limitador) Tentar(k string) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.podar(k)
-	return len(l.falhas[k]) >= l.Max
-}
-
-func (l *Limitador) Falhou(k string) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
+	if len(l.falhas[k]) >= l.Max {
+		return false
+	}
 	l.falhas[k] = append(l.falhas[k], l.agora())
+	return true
 }
 
 func (l *Limitador) Limpar(k string) {
