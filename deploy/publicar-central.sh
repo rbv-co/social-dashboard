@@ -36,7 +36,7 @@ fumaca() {
   pacote=$(grep -oE '/assets/index-[A-Za-z0-9_-]+\.js' "$BASE/atual/index.html" | head -1)
   c() { curl -s -o /dev/null -w %{http_code} --max-time 8 $RES "$@"; }
   [ "$(c "$HOST/")" = 200 ] && [ "$(c "$HOST$pacote")" = 200 ] && [ "$(c "$HOST/sw-push.js")" = 200 ] \
-    && [ "$(c "$HOST/escritorio-3d/")" = 200 ] && [ "$(c "$HOST/verify/ABC")" = 302 ] \
+    && [ "$(c "$HOST/escritorio-3d/")" = 200 ] && [ "$(c "$HOST/verify/ABC")" = 307 ] \
     && [ "$(c "$HOST/assets/nao-existe.js")" = 404 ]
 }
 if fumaca; then
