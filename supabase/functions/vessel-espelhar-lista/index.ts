@@ -17,6 +17,12 @@
 // toda falha é gravada em português na própria linha (`ultimo_erro`), dizendo
 // o que fazer, e a linha continua na fila.
 //
+// CORE_BLING_PROXY (padrão DESLIGADO): `true` faz as leituras e escritas de contatos
+// passarem pelo proxy do core (POST {CORE_URL}/api/interno/bling/proxy), com chave de
+// idempotência estável. Exige CORE_URL/CORE_API_TOKEN, que já existem nesta edge. Para
+// desligar, apague o secret (ou ponha false): volta o fetch direto, idêntico ao de antes.
+// Detalhes e o contrato em _shared/core-bling-proxy.js.
+//
 // A PÁGINA NUNCA ESCREVE NO BLING NEM NO ZOHO. Quem escreve é este robô, com
 // credencial própria. Três ganhos: a portaria pública do Bling (`bling-proxy`)
 // continua SÓ LEITURA, o cadastro não se perde se um terceiro cair, e a página
@@ -82,6 +88,7 @@ import { linhasDoVigia, ROBO_ETAPAS_LIKE, DIAS_DE_HISTORICO } from '../_shared/v
 import { celularParaOBling } from '../_shared/celular-do-bling.js';
 import { completarContato } from '../_shared/completar-contato-do-bling.js';
 import { blingDoCore } from '../_shared/core-bling-token.js';
+import { blingViaCore, chaveIdempotente } from '../_shared/core-bling-proxy.js';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -89,6 +96,12 @@ const WD = 'https://www.zohoapis.com/workdrive/api/v1';
 const BLING = 'https://api.bling.com.br/Api/v3';
 // CORE_BLING_TOKEN=true: o `core` é o dono do token; nenhum ponto aqui renova (ver _shared/core-bling-token.js).
 const CORE_BLING = blingDoCore(Deno.env.toObject());
+// CORE_BLING_PROXY=true: leituras e escritas de contatos passam pelo proxy do core (ver _shared/core-bling-proxy.js).
+// Desligada = o fetch direto de sempre. Ligada, o core põe o token: esta edge nem lê nem renova o do Bling.
+const BLING_PROXY = blingViaCore(Deno.env.toObject(), {
+  base: BLING, direto: (url: string, init: any) => CORE_BLING.fetch(url, init),
+});
+const ORIGEM_CHAVE = 'espelhar-lista';
 
 // O CAMINHO DA PASTA VAI POR NOME, NUNCA POR ID ESCRITO AQUI. Se alguém
 // recriar uma pasta no Zoho, o id muda — e um id fixo continuaria apontando,
@@ -294,6 +307,7 @@ async function lerTudo(sb: any, { tabela, colunas, ordem }: any): Promise<any[]>
 // ── Bling ───────────────────────────────────────────────────────────────────
 
 function tokenBling(sb: any): Promise<string> {
+  if (BLING_PROXY.ligada) return Promise.resolve(''); // o proxy do core é quem tem o token
   return CORE_BLING.token(() => renovarSeVencido(sb));
 }
 
@@ -353,10 +367,7 @@ export function codigoDeOrigem(linha: any): string {
 
 /** Devolve `{id}` se deu certo, ou `{erro}` com a frase em português. */
 async function mandarPraBling(t: string, linha: any): Promise<{ id: string } | { erro: string }> {
-  const r = await CORE_BLING.fetch(`${BLING}/contatos`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${t}`, 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify({
+  const corpo = {
       nome: linha.nome,
       // OBRIGATÓRIOS, e a falta dos dois derrubava TODO cadastro com 400.
       // "F" é pessoa física; "A" é ativo. Medido contra a API.
@@ -377,8 +388,15 @@ async function mandarPraBling(t: string, linha: any): Promise<{ id: string } | {
       // ele não está lá) — o Bling aceita no envio e descarta calado.
       codigo: codigoDeOrigem(linha),
       tiposContato: TIPOS_DO_CADASTRO,
-    }),
-  });
+    };
+  // Chave ESTÁVEL (pessoa + operação + hash do corpo): a mesma tentativa nunca duplica no core.
+  const chave = await chaveIdempotente(`${ORIGEM_CHAVE}:${linha.id}`, 'contato-criar', corpo);
+  const r = await BLING_PROXY.chamar('POST', '/contatos', { corpo, chave, token: t });
+  if (r.reautorizar) return { erro: FALTA_PERMISSAO_BLING };
+  // 504 do proxy: não se sabe se o Bling gravou. NÃO reenvia; o core devolve o mesmo "incerto" para esta
+  // chave até alguém conferir no Bling (o corpo corrigido gera chave nova).
+  if (r.incerto) return { erro: `Não deu para saber se o Bling gravou este cadastro (chave ${chave}). `
+    + 'Ele NÃO será reenviado sozinho, para não duplicar: confira o contato no Bling.' };
   if (r.status === 403) return { erro: FALTA_PERMISSAO_BLING };
   if (!r.ok) {
     const txt = (await r.text()).slice(0, 300);
@@ -600,9 +618,9 @@ async function rodada(sb: any): Promise<Response> {
         // pelo CPF, que é o que liga a pessoa à compra dela.
         let contatoId = g.bling_contato_id;
         if (!contatoId) {
-          const busca = await CORE_BLING.fetch(
-            `${BLING}/contatos?numeroDocumento=${encodeURIComponent(String(g.cpf).replace(/\D/g, ''))}`,
-            { headers: { Authorization: `Bearer ${tb}`, Accept: 'application/json' } });
+          const busca = await BLING_PROXY.chamar('GET', '/contatos',
+            { query: { numeroDocumento: String(g.cpf).replace(/\D/g, '') }, token: tb });
+          if (busca.reautorizar) throw new Error(FALTA_PERMISSAO_BLING);
           const jb = await busca.json().catch(() => null);
           contatoId = jb?.data?.[0]?.id ?? null;
         }
@@ -614,8 +632,8 @@ async function rodada(sb: any): Promise<Response> {
           continue;
         }
 
-        const det = await CORE_BLING.fetch(`${BLING}/contatos/${contatoId}`,
-          { headers: { Authorization: `Bearer ${tb}`, Accept: 'application/json' } });
+        const det = await BLING_PROXY.chamar('GET', `/contatos/${contatoId}`, { token: tb });
+        if (det.reautorizar) throw new Error(FALTA_PERMISSAO_BLING);
         const atual = (await det.json().catch(() => null))?.data;
         if (!atual) { semContato++; continue; }
 
@@ -630,12 +648,10 @@ async function rodada(sb: any): Promise<Response> {
           continue;
         }
 
-        const put = await CORE_BLING.fetch(`${BLING}/contatos/${contatoId}`, {
-          method: 'PUT',
-          headers: { Authorization: `Bearer ${tb}`, Accept: 'application/json',
-                     'Content-Type': 'application/json' },
-          body: JSON.stringify(corpo),
-        });
+        // Chave estável: registro + contato + hash do corpo. 504 `incerto` NÃO é reenviado: a linha
+        // fica sem marca e o core repete o "incerto" até conferirem o contato no Bling.
+        const chave = await chaveIdempotente(`${ORIGEM_CHAVE}:${g.codigo}:${contatoId}`, 'contato-completar', corpo);
+        const put = await BLING_PROXY.chamar('PUT', `/contatos/${contatoId}`, { corpo, chave, token: tb });
         if (put.ok) {
           await sb.from('vessel_registros')
             .update({ bling_atualizado_em: new Date().toISOString(), bling_contato_id: String(contatoId) })
