@@ -4,7 +4,7 @@ import {
   chaveDoProduto, verbeteDoProduto, impedimentoDoCartao, MOTIVO_DO_IMPEDIMENTO,
   linhasDeCartao, marcadasPorPadrao, resumoDoPedido, pecaParaODesenho,
   recursosDoDesenho, cssDoCartao, fraseDoPedidoRecusado, situacaoDoPedido,
-  BASE_DOS_RECURSOS, andamentoDaPeca, temPedidoAtivo, bolsasDoPedido,
+  BASE_DOS_RECURSOS, andamentoDaPeca, temPedidoAtivo, bolsasDoPedido, pecasDosPedidosQueAcabaram,
   nomeDoArquivoBaixado, nomeDoArquivoDosDois, fraseDoDownloadRecusado, pedidosDaPessoa,
 } from './cartoes-ean.js'
 
@@ -277,4 +277,27 @@ test('a releitura da fila só liga enquanto há pedido a terminar', () => {
   assert.equal(temPedidoAtivo([{ situacao: 'rodando' }]), true)
   assert.equal(temPedidoAtivo([]), false)
   assert.equal(temPedidoAtivo(undefined), false)
+})
+
+test('as peças de um pedido que acabou são relidas na hora, sem esperar a fila inteira esvaziar', () => {
+  const antes = [
+    { id: '1', situacao: 'rodando', pecas: ['A', 'B'] },
+    { id: '2', situacao: 'na_fila', pecas: ['C'] },
+    { id: '3', situacao: 'rodando', pecas: ['D'] },
+  ]
+  const depois = [
+    { id: '1', situacao: 'pronto', pecas: ['A', 'B'] },
+    { id: '2', situacao: 'rodando', pecas: ['C'] },
+    { id: '3', situacao: 'falhou', pecas: ['D'] },
+  ]
+  // O pedido 2 ainda anda; o 1 (pronto) e o 3 (falhou) acabaram: as peças deles mudaram (ou não) no banco.
+  assert.deepEqual(pecasDosPedidosQueAcabaram(antes, depois).sort(), ['A', 'B', 'D'])
+  // Nada mudou, ou só andou de na_fila para rodando: nada a reler.
+  assert.deepEqual(pecasDosPedidosQueAcabaram(antes, antes), [])
+  assert.deepEqual(pecasDosPedidosQueAcabaram(antes, [{ id: '1', situacao: 'rodando', pecas: ['A', 'B'] }, { id: '2', situacao: 'rodando', pecas: ['C'] }, { id: '3', situacao: 'rodando', pecas: ['D'] }]), [])
+  // Pedido que sumiu da lista (passou das 20 mais recentes) também acabou.
+  assert.deepEqual(pecasDosPedidosQueAcabaram([{ id: '9', situacao: 'rodando', pecas: ['Z'] }], []), ['Z'])
+  // Primeira leitura (ou sem dados): nada a reler.
+  assert.deepEqual(pecasDosPedidosQueAcabaram([], depois), [])
+  assert.deepEqual(pecasDosPedidosQueAcabaram(null, null), [])
 })

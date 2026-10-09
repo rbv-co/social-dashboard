@@ -2424,7 +2424,7 @@ import { estadoDaBancada, acaoDaBancada, nomeDoModo } from './modo-bancada.js'
 import {
   BASE_DOS_RECURSOS, MOTIVO_DO_IMPEDIMENTO, linhasDeCartao, marcadasPorPadrao,
   resumoDoPedido, pecaParaODesenho, fraseDoPedidoRecusado, situacaoDoPedido,
-  andamentoDaPeca, temPedidoAtivo, bolsasDoPedido, pedidosDaPessoa, nomeDoArquivoBaixado, nomeDoArquivoDosDois, fraseDoDownloadRecusado,
+  andamentoDaPeca, temPedidoAtivo, pecasDosPedidosQueAcabaram, bolsasDoPedido, pedidosDaPessoa, nomeDoArquivoBaixado, nomeDoArquivoDosDois, fraseDoDownloadRecusado,
 } from './cartoes-ean.js'
 import { pdfComDuasPaginas, zipDosArquivos } from './cartao-junto.js'
 
@@ -3880,6 +3880,11 @@ async function carregarAFilaDeCartoes() {
   // também não pode sumir calada — a pessoa mandaria gerar de novo achando que
   // o primeiro pedido se perdeu.
   if (error) { erroDosCartoes.value = 'Não consegui ler a fila de cartões: ' + error.message; return }
+  // ⚠️ Pedido que acabou mudou `cartao_gerado_em` das peças dele: relê AGORA, e ANTES de trocar a fila. Depois de trocar, a
+  // linha passaria por "Sem cartão" (não está mais na fila e o ✓ ainda não chegou) até a leitura voltar — e, relendo só
+  // quando o ÚLTIMO pedido termina, ficava assim até a fila inteira esvaziar (com 2 robôs, o tempo todo).
+  const acabadas = pecasDosPedidosQueAcabaram(pedidosDeCartao.value, data)
+  if (acabadas.length) await atualizarAsPecas(acabadas)
   pedidosDeCartao.value = data || []
 }
 
@@ -4043,11 +4048,24 @@ async function pedirUmCartao(linha) {
 // ⚠️ A tela só lia a fila ao abrir a aba. O robô leva uns 3 a 4 minutos depois do
 // pedido, e "Na fila" ficava parado na tela mesmo com o cartão já pronto — o dono
 // reclamou duas vezes de que "a fila não anda" (07/10/2026). Enquanto houver pedido
-// a terminar, relê a cada 8 s; quando o último termina, relê as peças, que é onde o
-// `cartao_gerado_em` (o ✓ "Cartão pronto") aparece.
-const INTERVALO_DA_FILA = 8000
+// a terminar, relê a cada 3 s; cada pedido que termina faz reler as peças dele (em
+// `carregarAFilaDeCartoes`), que é onde o `cartao_gerado_em` (o ✓ "Cartão pronto") aparece.
+const INTERVALO_DA_FILA = 3000 // o robô leva ~20 s por pedido: 8 s de intervalo era quase metade do tempo
 let relogioDaFila = null
 let observadorDoTopo = null
+
+/** Relê só estas peças (em blocos: o filtro vai na URL) e troca no lugar. Falha avisa na faixa da aba, como a leitura inteira. */
+async function atualizarAsPecas(codigos) {
+  const lidas = []
+  for (let i = 0; i < codigos.length; i += 100) {
+    const { data, error } = await sbClient.from('vessel_pecas')
+      .select('codigo,lote_id,numero_na_serie,gravada_em,cartao_gerado_em').in('codigo', codigos.slice(i, i + 100))
+    if (error) { erroDosCartoes.value = 'Não consegui atualizar os cartões prontos: ' + error.message; return }
+    lidas.push(...(data || []))
+  }
+  const porCodigo = new Map(lidas.map((p) => [p.codigo, p]))
+  pecas.value = pecas.value.map((p) => porCodigo.get(p.codigo) || p)
+}
 
 async function recarregarAsPecas() {
   const { data, error } = await sbClient.from('vessel_pecas')
