@@ -89,21 +89,42 @@ async function pastasDeFotos() {
 const pastasDoSku = (pastas, sku) =>
   pastas.filter((p) => (p.name.toUpperCase().match(REGEX_SKU) || []).includes(sku.toUpperCase()));
 
+const SIMULTANEAS = 6; // chamadas ao Zoho ao mesmo tempo (listar 71 pastas em fila levava ~50 s)
+
+/** `fn` em cada item, no máximo `n` ao mesmo tempo; o primeiro erro derruba tudo (leitura que falhou não é pasta vazia). */
+async function emParalelo(itens, n, fn) {
+  const fila = [...itens];
+  await Promise.all(Array.from({ length: Math.min(n, fila.length) }, async () => {
+    while (fila.length) await fn(fila.shift());
+  }));
+}
+
 /**
  * Espelha em disco a estrutura que o gerador espera (VESSEL_FOTOS_ZOHO): uma pasta por produto. Nas pastas dos
- * SKUs pedidos baixa as imagens; em TODAS as outras baixa só os .jpg/.jpeg, porque o desenho a lápis do modelo
- * mora numa pasta de cor só (ver `desenhoDoModelo`). As pastas vazias existem para o casamento por nome.
+ * SKUs pedidos baixa as imagens. As outras pastas só entram se faltar desenho: `desenhoDoModelo` (que procura o
+ * desenho a lápis do modelo, guardado numa pasta de cor só) só é consultado quando a pasta do SKU NÃO tem o seu
+ * próprio .jpg/.jpeg (`desenhoDaPasta` vem antes). Aí baixa só os .jpg/.jpeg das demais.
  */
 async function espelharFotos(pastas, skus, raiz) {
-  const alvos = new Set(skus.flatMap((s) => pastasDoSku(pastas, s).map((p) => p.id)));
-  for (const p of pastas) {
+  const alvos = [...new Set(skus.flatMap((s) => pastasDoSku(pastas, s)))];
+  const baixar = (dir, arquivos) => emParalelo(arquivos, SIMULTANEAS, async (f) => writeFileSync(join(dir, limpo(f.name)), await baixarArquivo(f.id)));
+
+  let faltaDesenho = false;
+  await emParalelo(alvos, SIMULTANEAS, async (p) => {
     const dir = join(raiz, limpo(p.name));
     mkdirSync(dir, { recursive: true });
-    const quer = alvos.has(p.id) ? /\.(png|jpe?g|webp)$/i : /\.jpe?g$/i;
-    for (const f of (await listarPasta(p.id)).filter((x) => !x.folder && quer.test(x.name))) {
-      writeFileSync(join(dir, limpo(f.name)), await baixarArquivo(f.id));
-    }
-  }
+    const arquivos = (await listarPasta(p.id)).filter((x) => !x.folder && /\.(png|jpe?g|webp)$/i.test(x.name));
+    if (!arquivos.some((x) => /\.jpe?g$/i.test(x.name))) faltaDesenho = true;
+    await baixar(dir, arquivos);
+  });
+  if (!faltaDesenho) return;
+
+  const ids = new Set(alvos.map((p) => p.id));
+  await emParalelo(pastas.filter((p) => !ids.has(p.id)), SIMULTANEAS, async (p) => {
+    const dir = join(raiz, limpo(p.name));
+    mkdirSync(dir, { recursive: true });
+    await baixar(dir, (await listarPasta(p.id)).filter((x) => !x.folder && /\.jpe?g$/i.test(x.name)));
+  });
 }
 
 async function processar(pedido, estado, ctx) {

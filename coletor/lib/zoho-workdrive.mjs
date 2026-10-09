@@ -9,9 +9,13 @@ export function zohoAtivo() {
   return !!(process.env.ZOHO_REFRESH_TOKEN && process.env.ZOHO_CLIENT_ID && process.env.ZOHO_CLIENT_SECRET);
 }
 
-let _at = null, _atExp = 0;
-async function accessToken() {
-  if (_at && Date.now() < _atExp) return _at;
+let _at = null, _atExp = 0, _renovando = null;
+// Várias chamadas em paralelo com o token vencido pedem UM token novo só (o Zoho limita as renovações).
+function accessToken() {
+  if (_at && Date.now() < _atExp) return Promise.resolve(_at);
+  return _renovando ||= renovar().finally(() => { _renovando = null; });
+}
+async function renovar() {
   const body = new URLSearchParams({
     grant_type: 'refresh_token', refresh_token: process.env.ZOHO_REFRESH_TOKEN,
     client_id: process.env.ZOHO_CLIENT_ID, client_secret: process.env.ZOHO_CLIENT_SECRET,
@@ -33,7 +37,9 @@ async function authH() { return { Authorization: 'Zoho-oauthtoken ' + (await acc
 // `montar(cabecalho)` faz a chamada; o corpo da resposta de erro é lido numa cópia para não gastar o original.
 async function zoho(montar) {
   for (let tentativa = 0; ; tentativa++) {
-    const r = await montar(await authH());
+    let r = await montar(await authH());
+    // Zoho devolve 429 quando as chamadas vêm rápido demais: espera e tenta de novo (até 3 vezes).
+    for (let i = 1; r.status === 429 && i <= 3; i++) { await new Promise((ok) => setTimeout(ok, 2000 * i)); r = await montar(await authH()); }
     if (r.ok || tentativa) return r;
     const txt = await (r.clone ? r.clone() : r).text().catch(() => '');
     if (!/F7003|invalid.{0,3}oauth/i.test(txt)) return r;
