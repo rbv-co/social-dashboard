@@ -22,7 +22,7 @@ import { ajustarPelaDataDaNota } from '../_shared/data-da-venda.js';
 // O valor real de venda que o Bling congelou errada. Mesma regra das telas.
 import { aplicarValorCorrigido } from '../_shared/valor-corrigido.js';
 import { exigirSegredoDeCron } from '../_shared/segredo-de-cron.ts';
-import { blingDoCore } from '../_shared/core-bling-token.js';
+import { blingPeloCore } from '../_shared/core-bling-proxy.js';
 // Quem quer receber ESTE tipo (ver _shared/notificacoes.js). 'vendas' vem
 // ligado por padrão — quem não quiser, o admin desliga na tela de Usuários.
 import { inscricoesDoTipo } from '../_shared/notificacoes.js';
@@ -30,8 +30,9 @@ import { inscricoesDoTipo } from '../_shared/notificacoes.js';
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const BLING_BASE = 'https://api.bling.com.br/Api/v3';
-// CORE_BLING_TOKEN=true: o `core` é o dono do token; nenhum ponto aqui renova (ver _shared/core-bling-token.js).
-const CORE_BLING = blingDoCore(Deno.env.toObject());
+// CORE_BLING_PROXY=true: TODA chamada ao Bling vai pelo proxy do core (CORE_API_TOKEN/CORE_URL); esta edge não lê nem renova bling_tokens.
+// Desligada (padrão): caminho antigo, idêntico (CORE_BLING_TOKEN ou token do banco). Ver blingPeloCore em _shared/core-bling-proxy.js.
+const CORE_BLING = blingPeloCore(Deno.env.toObject());
 
 const ITENS_BUDGET_MS = 90_000;   // teto de tempo pra detalhar itens
 const ITENS_CONCORRENCIA = 8;     // chamadas simultâneas ao Bling

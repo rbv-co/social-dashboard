@@ -108,6 +108,9 @@ jobs:
       - name: Gerar os cartões da fila
         env:
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          # O cartão (vessel-brasil) fala com o Bling pelo proxy do core: sempre, sem flag.
+          CORE_URL: ${{ vars.CORE_URL }}
+          CORE_API_TOKEN: ${{ secrets.CORE_API_TOKEN }}
           # O Zoho NÃO vem de segredo do GitHub: o robô lê a conexão da Central (Acessos → Zoho, no banco).
         # O `curl-fetch` é obrigatório: o fetch do Node leva ECONNRESET atrás do Cloudflare (Bling e Supabase).
         run: node --import ./coletor/lib/curl-fetch.mjs coletor/robo-de-cartoes.mjs

@@ -29,7 +29,7 @@ import { exigirSegredoDeCron } from '../_shared/segredo-de-cron.ts';
 import { calcularAjustes, donoDoEstoque } from '../_shared/estoque-do-site.js';
 import { clienteDoAmbiente, escolherFonte, ligada, saldoDoDepositoPorSku } from '../_shared/core-leitura.js';
 import { graphqlDoAmbiente, shopifyLeituraLigada, variantesDoSiteViaCore } from '../_shared/core-shopify.js';
-import { blingDoCore } from '../_shared/core-bling-token.js';
+import { blingPeloCore } from '../_shared/core-bling-proxy.js';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -38,8 +38,9 @@ const SHOPIFY_CLIENT_ID = Deno.env.get('SHOPIFY_CLIENT_ID');
 const SHOPIFY_CLIENT_SECRET = Deno.env.get('SHOPIFY_CLIENT_SECRET');
 const API = `https://${SHOP}/admin/api/2026-01/graphql.json`;
 const BLING = 'https://api.bling.com.br/Api/v3';
-// CORE_BLING_TOKEN=true: o `core` é o dono do token; nenhum ponto aqui renova (ver _shared/core-bling-token.js).
-const CORE_BLING = blingDoCore(Deno.env.toObject());
+// CORE_BLING_PROXY=true: TODA chamada ao Bling vai pelo proxy do core (CORE_API_TOKEN/CORE_URL); esta edge não lê nem renova bling_tokens.
+// Desligada (padrão): caminho antigo, idêntico (CORE_BLING_TOKEN ou token do banco). Ver blingPeloCore em _shared/core-bling-proxy.js.
+const CORE_BLING = blingPeloCore(Deno.env.toObject());
 
 const DEPOSITO_IGUATEMI = '14888726277';                  // "Estoque Loja Iguatemi"
 const LOCAL_SHOPIFY = 'gid://shopify/Location/94919065848';

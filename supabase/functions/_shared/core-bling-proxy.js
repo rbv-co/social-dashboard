@@ -20,6 +20,9 @@
 //
 // Nunca loga token nem telefone. Módulo puro (sem Deno/Node); `fetchImpl` é injetável.
 
+import { blingDoCore } from './core-bling-token.js';
+
+export const BLING_BASE = 'https://api.bling.com.br/Api/v3';
 export const CAMINHO_PROXY = '/api/interno/bling/proxy';
 export const CORE_URL_PADRAO = 'https://core.rbvcompany.com';
 export const TIMEOUT_MS = 30e3;
@@ -44,7 +47,7 @@ function resposta(status, texto, extra = {}) {
   return {
     status, ok: status >= 200 && status < 300, text: async () => texto,
     json: async () => (json ??= JSON.parse(texto)),
-    replay: false, incerto: false, reautorizar: false, ...extra,
+    replay: false, incerto: false, reautorizar: false, retryAfter: null, ...extra,
   };
 }
 
@@ -58,7 +61,7 @@ function resposta(status, texto, extra = {}) {
 export function blingViaCore(env, { fetchImpl = globalThis.fetch, direto, base, timeoutMs = TIMEOUT_MS } = {}) {
   const liga = ligada(env);
 
-  async function chamar(metodo, caminho, { query, corpo, chave, prioridade, token } = {}) {
+  async function chamar(metodo, caminho, { query, corpo, chave, prioridade, token, signal } = {}) {
     const escrita = metodo !== 'GET';
     if (!liga) {
       const qs = query ? `?${new URLSearchParams(query)}` : '';
@@ -70,7 +73,7 @@ export function blingViaCore(env, { fetchImpl = globalThis.fetch, direto, base, 
       });
     }
     const t = env?.CORE_API_TOKEN;
-    if (!t) throw new Error('CORE_API_TOKEN ausente');
+    if (!t) throw new Error('CORE_BLING_PROXY=true exige o secret CORE_API_TOKEN (e CORE_URL); nenhum token do Bling é lido ou renovado aqui');
     const url = `${String(env.CORE_URL || CORE_URL_PADRAO).replace(/\/+$/, '')}${CAMINHO_PROXY}`;
     let r;
     try {
@@ -82,7 +85,7 @@ export function blingViaCore(env, { fetchImpl = globalThis.fetch, direto, base, 
           ...(query ? { query } : {}), ...(corpo !== undefined ? { corpo } : {}),
           ...(prioridade ? { prioridade } : {}), ...(chave ? { idempotency_key: chave } : {}),
         }),
-        signal: AbortSignal.timeout(timeoutMs),
+        signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs),
       });
     } catch {
       // Queda/timeout: na escrita não dá para saber se o core chegou a mandar. Não reenvia.
@@ -97,8 +100,42 @@ export function blingViaCore(env, { fetchImpl = globalThis.fetch, direto, base, 
       replay: r.headers.get('Idempotent-Replay') === 'true',
       incerto: erro === 'resultado_incerto',
       reautorizar: erro === 'reautorizacao_necessaria',
+      retryAfter: r.headers.get('Retry-After'),
     });
   }
 
   return { ligada: liga, chamar };
+}
+
+/**
+ * Encaixe PRONTO para quem já fazia `fetch` direto no Bling com o token do core:
+ * devolve `{ ligada, fetch(url, init), token(senao) }`, o mesmo formato de `blingDoCore`.
+ *  - DESLIGADA (padrão): é o `blingDoCore` de sempre (token do core se CORE_BLING_TOKEN, senão o
+ *    caminho antigo `senao()`), nada muda.
+ *  - LIGADA: `fetch` recebe a URL do Bling (`BLING_BASE/...`) e a manda ao proxy do core
+ *    (GET/escrita pelo método de `init`). Devolve algo com `status/ok/headers.get('retry-after')/text()/json()`.
+ *    `token()` devolve 'via-core' (o core põe o token; `senao` NUNCA roda, então `bling_tokens` não é lido nem renovado).
+ *    Falha de transporte de GET LANÇA (como o fetch); escrita incerta volta 504 com `incerto`.
+ */
+export function blingPeloCore(env, { fetchImpl, base = BLING_BASE, prioridade = 'sync', leitor } = {}) {
+  if (!ligada(env)) return blingDoCore(env, { fetchImpl, leitor });
+  const b = blingViaCore(env, { fetchImpl, base });
+  return {
+    ligada: true,
+    token: async () => 'via-core', // placeholder: não é segredo; só faz o `if (!token)` das edges passar
+    async fetch(url, init = {}) {
+      const u = new URL(String(url));
+      const caminho = u.pathname.replace(new URL(base).pathname, '') || '/';
+      const query = {};
+      for (const [k, v] of u.searchParams) query[k] = k in query ? [].concat(query[k], v) : v;
+      let corpo;
+      if (init.body !== undefined && init.body !== null) corpo = JSON.parse(String(init.body));
+      const metodo = (init.method || 'GET').toUpperCase();
+      const r = await b.chamar(metodo, caminho, {
+        ...(Object.keys(query).length ? { query } : {}), corpo, prioridade, signal: init.signal,
+      });
+      if (r.status === 0) throw new Error('core indisponível');
+      return { ...r, headers: { get: (k) => (String(k).toLowerCase() === 'retry-after' ? r.retryAfter : null) } };
+    },
+  };
 }

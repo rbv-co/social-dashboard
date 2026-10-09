@@ -46,7 +46,7 @@ import { indiceDeLeads, leadDoPedido } from './lib/lead-do-pedido.mjs';
 
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://kounqtdoioootxqegkij.supabase.co';
 const BLING = 'https://api.bling.com.br/Api/v3';
-// CORE_BLING_TOKEN=true: o `core` é o dono do token; aqui só se LÊ (ver lib/bling-token.mjs).
+// CORE_BLING_PROXY=true: as chamadas vão pelo proxy do core; aqui nunca se renova token (ver lib/bling-token.mjs).
 const CORE_BLING = blingDoColetor();
 const ATENDIDO = 9;                       // a situação que conta como venda
 const espera = (ms) => new Promise((r) => setTimeout(r, ms));

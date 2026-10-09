@@ -38,7 +38,7 @@ import { blingDoColetor } from './lib/bling-token.mjs'
 import { writeFileSync, readFileSync, existsSync } from 'node:fs'
 
 const BLING = 'https://api.bling.com.br/Api/v3'
-// CORE_BLING_TOKEN=true: o `core` é o dono do token; aqui só se LÊ (ver lib/bling-token.mjs).
+// CORE_BLING_PROXY=true: as chamadas vão pelo proxy do core; aqui nunca se renova token (ver lib/bling-token.mjs).
 const CORE_BLING = blingDoColetor()
 const SAIDA = process.argv[2] || 'material-por-peca.txt'
 const DESPEJO = process.argv.includes('--despejo')

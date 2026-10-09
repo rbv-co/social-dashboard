@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { blingViaCore, chaveIdempotente, ligada } from './core-bling-proxy.js';
+import { blingPeloCore, blingViaCore, chaveIdempotente, ligada } from './core-bling-proxy.js';
 
 const ENV = { CORE_BLING_PROXY: 'true', CORE_API_TOKEN: 'segredo', CORE_URL: 'https://core.x/' };
 const H = (o) => ({ get: (k) => o[k] ?? null });
@@ -86,4 +86,30 @@ test('ligada sem CORE_API_TOKEN lança sem chamar nada', async () => {
   const f = falso();
   await assert.rejects(blingViaCore({ CORE_BLING_PROXY: '1' }, { fetchImpl: f }).chamar('GET', '/contatos'), /CORE_API_TOKEN/);
   assert.equal(f.c.length, 0);
+});
+
+test('blingPeloCore ligada: GET vira proxy sync, repassa Retry-After e nunca roda o refresh', async () => {
+  const f = falso(core(429, { error: 'x' }, { 'Retry-After': '7', 'X-Core-Origem': 'bling' }));
+  const b = blingPeloCore(ENV, { fetchImpl: f });
+  assert.equal(await b.token(() => { throw new Error('refresh proibido'); }), 'via-core');
+  const r = await b.fetch('https://api.bling.com.br/Api/v3/pedidos/vendas?pagina=2&idsSituacoes[]=9&idsSituacoes[]=6', { headers: { Authorization: 'Bearer x' } });
+  assert.equal(r.status, 429);
+  assert.equal(r.headers.get('retry-after'), '7');
+  const [c] = f.c;
+  assert.equal(c.i.headers.Authorization, 'Bearer segredo');
+  assert.deepEqual(c.b, { metodo: 'GET', caminho: '/pedidos/vendas', prioridade: 'sync',
+    query: { pagina: '2', 'idsSituacoes[]': ['9', '6'] } });
+});
+
+test('blingPeloCore ligada: queda de GET lança; sem CORE_API_TOKEN lança mensagem clara sem chamar', async () => {
+  await assert.rejects(blingPeloCore(ENV, { fetchImpl: falso(new Error('rede')) }).fetch(new URL('https://api.bling.com.br/Api/v3/produtos')), /core indisponível/);
+  const f = falso();
+  await assert.rejects(blingPeloCore({ CORE_BLING_PROXY: 'true' }, { fetchImpl: f }).fetch('https://api.bling.com.br/Api/v3/produtos'), /CORE_API_TOKEN/);
+  assert.equal(f.c.length, 0);
+});
+
+test('blingPeloCore desligada: é o fetch direto de sempre, com a senão rodando', async () => {
+  const b = blingPeloCore({}, { fetchImpl: async () => ({ status: 200 }) });
+  assert.equal(b.ligada, false);
+  assert.equal(await b.token(async () => 'do-banco'), 'do-banco');
 });
