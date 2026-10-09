@@ -14,7 +14,7 @@
 // processo for morto; aí `vessel_cartao_recolocar_travados` o devolve à fila depois de 150 min.
 //
 // O gerador do cartão mora no repositório do SITE (vessel-brasil/cartao), que o workflow baixa em ./vessel-brasil.
-import { mkdirSync, mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync, readFileSync, renameSync, rmSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { pathToFileURL, fileURLToPath } from 'node:url';
@@ -97,11 +97,44 @@ async function buscarPecas(codigos) {
   return linhas;
 }
 
-/** As subpastas de "Vessel Brasil" no Zoho e o id da própria "Vessel Brasil". */
-async function pastasDeFotos() {
+// ── O QUE O ZOHO NÃO MUDA DE UM PEDIDO PARA O OUTRO (só com FOTOS_CACHE, na VPS) ──────────────────────────────────────
+// Achar "Vessel Brasil", listar as ~70 pastas de produto e achar/criar "Cartões com EAN/<dia>" eram ~6 chamadas em série a
+// CADA pedido (7 a 16 s, mais que o cartão). Guarda em disco por 10 min. ⚠️ Lista velha pode não ter uma pasta criada há pouco
+// (produto novo): se um SKU pedido não tem exatamente UMA pasta na lista guardada, ela é relida do Zoho antes de decidir.
+// Pasta do dia apagada no Zoho dentro desses 10 min faria o upload falhar: pedido com falha esquece tudo (`esquecerOsIds`).
+const IDS_VALE_MS = 10 * 60 * 1000;
+const arquivoGuardado = (nome) => join(FOTOS, nome);
+function lerGuardado(nome) {
+  if (!CACHE) return null;
+  try { const c = JSON.parse(readFileSync(arquivoGuardado(nome), 'utf8')); return Date.now() - c.em < IDS_VALE_MS ? c : null; } catch { return null; }
+}
+function guardar(nome, conteudo) {
+  if (!CACHE) return;
+  mkdirSync(FOTOS, { recursive: true });
+  const tmp = arquivoGuardado(nome) + '.' + process.pid; // escreve e renomeia: outro robô nunca lê metade
+  writeFileSync(tmp, JSON.stringify({ ...conteudo, em: Date.now() }));
+  renameSync(tmp, arquivoGuardado(nome));
+}
+function esquecerOsIds() { for (const n of ['.zoho-pastas.json', '.zoho-dia.json']) rmSync(arquivoGuardado(n), { force: true }); }
+
+/** As subpastas de "Vessel Brasil" no Zoho e o id da própria "Vessel Brasil". `doCache` diz se veio do disco. */
+async function pastasDeFotos({ forcar = false } = {}) {
+  const g = forcar ? null : lerGuardado('.zoho-pastas.json');
+  if (g) return { vbId: g.vbId, pastas: g.pastas, doCache: true };
   const vb = (await listarPasta(RAIZ_FOTOS_ID)).find((x) => x.folder && NFC(x.name) === 'Vessel Brasil');
   if (!vb) throw new Error('não achei a pasta "Vessel Brasil" dentro de "Fotos por SKU (coletor)" no Zoho');
-  return { vbId: vb.id, pastas: (await listarPasta(vb.id)).filter((x) => x.folder) };
+  const pastas = (await listarPasta(vb.id)).filter((x) => x.folder);
+  guardar('.zoho-pastas.json', { vbId: vb.id, pastas });
+  return { vbId: vb.id, pastas, doCache: false };
+}
+
+/** O id de "Cartões com EAN/<dia>", criando o que faltar. Chamar dentro de `exclusivo` (dois robôs criariam a mesma pasta). */
+async function pastaDoDia(vbId, dia) {
+  const g = lerGuardado('.zoho-dia.json');
+  if (g && g.vbId === vbId && g.dia === dia) return g.id;
+  const id = await acharOuCriarPasta(await acharOuCriarPasta(vbId, 'Cartões com EAN'), dia);
+  guardar('.zoho-dia.json', { vbId, dia, id });
+  return id;
 }
 
 const pastasDoSku = (pastas, sku) =>
@@ -112,6 +145,8 @@ const AQUI = dirname(fileURLToPath(import.meta.url));
 // Com FOTOS_CACHE (VPS) o espelho é PERMANENTE: só baixa o que mudou no Zoho. Sem ele (GitHub Actions) é refeito a cada
 // pedido, como sempre foi. Regras de validade em lib/espelho-de-fotos.mjs.
 const CACHE = !!process.env.FOTOS_CACHE;
+// Um caminho só por processo (ver o aviso em `processar`); sem cache, uma pasta temporária própria, criada em `processar`.
+const FOTOS = CACHE ? resolve(process.env.FOTOS_CACHE) : join(tmpdir(), `cartoes-fotos-${process.pid}`, 'fotos');
 // Na VPS pode haver mais de um robô ao mesmo tempo (vigia, CARTOES_WORKERS). O que eles dividem — o espelho de fotos, o
 // que o gerador guarda por nome de arquivo e o "achar ou criar pasta" no Zoho — passa por esta trava. O resto (Chrome,
 // código de barras, upload, conferência) roda em paralelo. Sem FOTOS_CACHE só há um robô: não trava nada.
@@ -181,10 +216,11 @@ async function processar(pedido, estado, ctx) {
   const { porSku, semDados } = agruparPorSku(pedido.pecas, await buscarPecas(pedido.pecas));
   for (const x of semDados) estado.falhas.push({ rotulo: x.codigo, motivo: x.motivo });
 
-  const { vbId, pastas } = await pastasDeFotos();
+  let { vbId, pastas, doCache } = await pastasDeFotos();
+  if (doCache && [...porSku.keys()].some((sku) => pastasDoSku(pastas, sku).length !== 1)) ({ vbId, pastas } = await pastasDeFotos({ forcar: true }));
   const dia = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }); // AAAA-MM-DD
   estado.pasta = `Cartões com EAN/${dia}`;
-  const pastaDia = await exclusivo(async () => acharOuCriarPasta(await acharOuCriarPasta(vbId, 'Cartões com EAN'), dia));
+  const pastaDia = await exclusivo(() => pastaDoDia(vbId, dia));
   marca('zoho (pastas)');
 
   // ⚠️ O caminho tem de ser o MESMO em todos os pedidos da rodada: `dados.mjs` fixa VESSEL_FOTOS_ZOHO no primeiro
@@ -271,7 +307,6 @@ if (SECO) { await secoMode(); process.exit(0); }
 // banco (migration pendente), segue sem ela: é a retaguarda, não o caminho principal.
 await rpc('vessel_cartao_recolocar_travados', { p_minutos: 150 }).catch((e) => console.log('aviso: ' + e.message));
 
-const FOTOS = CACHE ? resolve(process.env.FOTOS_CACHE) : join(mkdtempSync(join(tmpdir(), 'cartoes-fotos-')), 'fotos');
 let feitos = 0;
 for (;;) {
   const { pedido } = await rpc('vessel_cartao_pegar_da_fila');
@@ -282,6 +317,7 @@ for (;;) {
   try { await processar(pedido, estado, { trabalho }); }
   catch (e) { estado.falhas.push({ rotulo: 'pedido', motivo: curto(e) }); console.log('✗ ' + curto(e)); }
   finally { rmSync(trabalho, { recursive: true, force: true }); }
+  if (estado.falhas.length) esquecerOsIds(); // pasta guardada que o Zoho já não tem derrubaria o próximo pedido também
   for (const c of planoDeDevolucao({ pedidas: pedido.pecas, confirmadas: estado.confirmadas, falhas: estado.falhas, pasta: estado.pasta })) {
     const r = await rpc('vessel_cartao_pedido_terminou', { p_pedido: pedido.id, p_ok: c.ok, p_pasta: c.pasta, p_erro: c.erro, p_pecas: c.pecas });
     console.log(`  devolvido: ok=${c.ok} marcadas=${r?.marcadas ?? 0}${c.erro ? ' erro=' + c.erro.slice(0, 120) : ''}`);
