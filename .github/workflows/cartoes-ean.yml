@@ -101,6 +101,8 @@ jobs:
       - name: Usar o Python do venv
         run: |
           echo "$HOME/venv-cartoes/bin" >> "$GITHUB_PATH"
+          # Venv vindo do cache quebrado = falha aqui, legível, e não no meio de um cartão.
+          "$HOME/venv-cartoes/bin/python" -c "import rembg, onnxruntime, PIL, numpy, scipy, fitz; print('python ok')"
           google-chrome --version   # o exportador acha o Chrome pelo PATH; o ubuntu-latest já o traz
 
       - name: Gerar os cartões da fila
