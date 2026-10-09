@@ -13,6 +13,8 @@ set -u
 RAIZ="${RAIZ:-/opt/cartoes-ean}"
 export PATH="$RAIZ/node/bin:$RAIZ/venv/bin:$PATH"
 export VESSEL_DIR="$RAIZ/social-dashboard/vessel-brasil"
+# Espelho PERMANENTE das fotos do Zoho: só baixa o que mudou (regras de validade em coletor/lib/espelho-de-fotos.mjs).
+export FOTOS_CACHE="$RAIZ/cache-fotos"
 : "${SUPABASE_URL:?falta SUPABASE_URL}" "${SUPABASE_SERVICE_KEY:?falta SUPABASE_SERVICE_KEY}"
 log() { echo "$(date -u +%FT%TZ) $*"; }
 
