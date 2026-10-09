@@ -20,7 +20,7 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		slog.Error("uso: api <api|worker|importar-usuarios>")
+		slog.Error("uso: api <api|worker|importar-usuarios|migrar>")
 		os.Exit(2)
 	}
 	ctx, parar := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -75,6 +75,8 @@ func main() {
 			os.Exit(1)
 		}
 		slog.Info("usuários importados", "importados", n, "ignorados_sem_email", ign)
+	case "migrar":
+		slog.Info("migrations aplicadas")
 	default:
 		slog.Error("subcomando desconhecido", "cmd", os.Args[1])
 		os.Exit(2)
