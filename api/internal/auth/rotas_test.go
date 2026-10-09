@@ -292,3 +292,20 @@ func TestLoginDeUsuarioSemProfilesFunciona(t *testing.T) {
 		t.Fatal("sem token")
 	}
 }
+
+func TestSessaoClienteEh403EmRotasDoPainel(t *testing.T) {
+	p, s, h := montar(t)
+	novoUsuario(t, s, uid, "c@x.com")
+	tok, _ := s.Criar(context.Background(), uid, "cliente", nil)
+	for _, c := range [][2]string{{"GET", "/auth/eu"}, {"POST", "/auth/sair"}} {
+		w := chamar(h, c[0], c[1], "", tok)
+		if w.Code != 403 || !strings.Contains(w.Body.String(), "sem_permissao") {
+			t.Fatalf("%s %s = %d %s", c[0], c[1], w.Code, w.Body)
+		}
+	}
+	var n int
+	p.QueryRow(context.Background(), `select count(*) from sessoes`).Scan(&n)
+	if n != 1 {
+		t.Fatalf("sair de cliente não deveria ter revogado: %d sessões", n)
+	}
+}

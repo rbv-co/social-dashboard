@@ -47,6 +47,12 @@ func Exigir(p *pgxpool.Pool, s *Store) func(http.Handler) http.Handler {
 				erroJSON(w, http.StatusInternalServerError, "erro_interno")
 				return
 			}
+			// default deny (spec §5): sessão de cliente só vale nas rotas públicas da
+			// Vessel, que terão middleware próprio
+			if se.Tipo != "painel" && se.Tipo != "servico" {
+				erroJSON(w, http.StatusForbidden, "sem_permissao")
+				return
+			}
 			a, err := CarregarAtor(r.Context(), p, se)
 			if err != nil {
 				erroJSON(w, http.StatusInternalServerError, "erro_interno")
