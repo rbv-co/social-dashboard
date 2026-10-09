@@ -16,6 +16,7 @@ function fakeSb({ linhasPedido = [], linhasFollowup = [], linhasInicio = [] } = 
       chamadas.push([nome, args])
       if (nome === 'pegar_da_fila') return { data: { pedido: linhasPedido, inicio: linhasInicio }[args.p_tipo] ?? linhasFollowup, error: null }
       if (nome === 'pegar_para_mensagem') return { data: [], error: null }
+      if (nome === 'avaliar_trava_cruzada') return { data: 'liberar', error: null }
       return { data: null, error: null }
     },
     from() { return { select: () => ({ in: async () => ({ data: [], error: null }), eq: () => ({ maybeSingle: async () => ({ data: { status: 'fila_envio' }, error: null }) }) }) } },

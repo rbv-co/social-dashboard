@@ -12,6 +12,14 @@
 //   rede/5xx/resposta estranha -> devolve sem enviar nem contar tentativa; 401/403 -> 502 `reserva_recusada`.
 // • followup: marketing. Confere bloqueados, RELÊ o status do checkout e NÃO envia se a cliente já respondeu.
 //   ⚠️ "não consegui ler" NUNCA vira "pode enviar": falha na leitura devolve o item (contando tentativa).
+// • RESERVA ÓRFÃ: a reserva do aviso é gravada ANTES do envio. Se o envio falha DEPOIS de `reservado` e a mensagem
+//   comprovadamente não foi aceita (falha em acharOuCriarContato/abrirConversa, ou 4xx do enviar_template), a rodada chama
+//   `cliente.liberarAviso` (best-effort, sem lançar) ANTES de devolver a linha: sem isso a rodada seguinte receberia
+//   `duplicado` e a mensagem nunca sairia. Timeout/5xx NA RESERVA (a resposta pode ter se perdido) também libera e fica
+//   'esperando'. Falha AMBÍGUA (timeout ou 5xx no enviar_template: a Meta pode ter aceitado) NÃO libera e NÃO reenvia: a
+//   linha vira `falhou` com motivo `envio_incerto…` (conferir no Chatwoot).
+// • TRAVA CRUZADA: RPC `avaliar_trava_cruzada` (migration 2026-10-09-trava-cruzada-considera-enviando.sql) devolve
+//   barrar | esperar | liberar; `esperar` = outra mensagem ao mesmo telefone está `enviando` e tem prioridade: devolve sem contar.
 import {
   dentroDaJanela, formatarNomeCompleto, montarTemplateParams, montarTemplateParamsInicio, montarTemplateParamsPedido,
   normalizarTelefone, primeiroNome, sufixoDoLink, validarConfig,
@@ -127,10 +135,15 @@ export async function processarFila({ sb, cliente, config, tipo, agora = new Dat
     // Trava cruzada: outra mensagem automática ao mesmo telefone nas últimas 20 h (qualquer tipo) barra esta.
     // O pedido recebido é transacional (confirma uma compra) e nunca é barrado.
     if (config.travaCruzada && tipo !== 'pedido') {
-      const t = await checarTravaCruzada(sb, d.telefone)
+      const t = await checarTravaCruzada(sb, d.telefone, { tipo, chave: linha.chave })
       if (t === 'erro') {
         await devolver(linha.chave, true)
         resultado.push({ chave: curto, resultado: 'esperando', motivo: 'falha_na_trava_cruzada' })
+        continue
+      }
+      if (t === 'esperar') { // outra rodada está enviando ao mesmo telefone e tem prioridade: volta à fila, sem gastar tentativa
+        await devolver(linha.chave, false)
+        resultado.push({ chave: curto, resultado: 'esperando', motivo: 'telefone_com_envio_em_andamento' })
         continue
       }
       if (t === 'barrar') {
@@ -141,13 +154,24 @@ export async function processarFila({ sb, cliente, config, tipo, agora = new Dat
     }
 
     // Reserva do aviso no Chatwoot (trava ADICIONAL ao #313): só `reservado` autoriza. Não roda no modo seco (já saiu acima).
+    let avisoReservado = null // {phone, tipo, chave} da reserva que ESTA rodada fez: quem precisa desfazê-la
+    const liberarReserva = async () => { // best-effort, nunca lança (cliente sem liberarAviso = não faz nada)
+      if (!avisoReservado) return
+      const alvo = avisoReservado
+      avisoReservado = null
+      try { await cliente.liberarAviso?.(alvo) } catch { /* best-effort */ }
+    }
     if (reservar) {
+      const aviso = { phone: d.telefone, tipo: 'pedido_recebido', chave: String(linha.numero ?? '').replace(/^#/, '') || String(linha.chave) }
       let r
       try {
-        r = await cliente.reservarAviso({ phone: d.telefone, tipo: 'pedido_recebido', chave: String(linha.numero ?? '').replace(/^#/, '') || String(linha.chave), idadeS: idadeEmSegundos(linha.criado_em, agora) })
+        r = await cliente.reservarAviso({ ...aviso, idadeS: idadeEmSegundos(linha.criado_em, agora) })
       } catch (e) {
         const status = e instanceof ErroChatwoot ? e.status : 0
         const detalhe = `reservar_aviso:${status}`
+        // Timeout/5xx/resposta ilegível: o POST pode ter gravado a reserva e a resposta se perdido. Libera (best-effort)
+        // antes de devolver, senão a próxima rodada receberia `duplicado` e a mensagem nunca sairia.
+        if (status === 0 || status >= 500 || status === 200) { avisoReservado = aviso; await liberarReserva() }
         await devolver(linha.chave, false) // não envia e não marca: a próxima rodada tenta de novo (o teto de horas encerra)
         if (status === 401 || status === 403) {
           for (const chave of pendentes) await devolver(chave, false)
@@ -168,6 +192,7 @@ export async function processarFila({ sb, cliente, config, tipo, agora = new Dat
         resultado.push({ chave: curto, resultado: 'ignorada', motivo })
         continue
       }
+      avisoReservado = aviso
     }
 
     if (followup) {
@@ -192,6 +217,7 @@ export async function processarFila({ sb, cliente, config, tipo, agora = new Dat
       }
     }
 
+    let chegouNoEnvio = false // true = o enviarTemplate foi chamado: a partir daqui uma falha pode ser ambígua
     try {
       if (followup && await cliente.respondeu({ conversaId: linha.conversa_origem })) {
         await marcar(linha.chave, 'ignorada', 'respondeu')
@@ -206,6 +232,7 @@ export async function processarFila({ sb, cliente, config, tipo, agora = new Dat
       const templateParams = followup ? montarTemplateParams({ ...base, sufixoUrl: d.sufixoUrl })
         : tipo === 'inicio' ? montarTemplateParamsInicio({ ...base, sufixoUrl: d.sufixoUrl })
           : montarTemplateParamsPedido({ ...base, numero: linha.numero })
+      chegouNoEnvio = true
       await cliente.enviarTemplate({ conversaId, texto, templateParams })
       // ⚠️ A mensagem JÁ SAIU. Se gravar falhar, não devolve nem reenvia: fica `enviando` e, passados 10 min, vira
       // `falhou/travada_sem_confirmacao` (visível), nunca uma segunda mensagem.
@@ -216,6 +243,15 @@ export async function processarFila({ sb, cliente, config, tipo, agora = new Dat
       const detalhe = e instanceof ErroChatwoot
         ? `${e.passo}:${e.status} ${JSON.stringify(e.corpo ?? '').slice(0, 160)}`
         : String(e).slice(0, 160)
+      // ⚠️ Falha AMBÍGUA no envio (timeout/queda/5xx/erro estranho do enviar_template): o Chatwoot/Meta pode ter aceitado.
+      // Com reserva: NÃO libera (liberar permitiria um segundo aviso) e NÃO devolve (reenviaria): `falhou`, visível.
+      const ambigua = chegouNoEnvio && (!(e instanceof ErroChatwoot) || e.status === 0 || e.status >= 500)
+      if (avisoReservado && ambigua) {
+        await marcar(linha.chave, 'falhou', `envio_incerto_conferir_no_chatwoot: ${detalhe}`)
+        resultado.push({ chave: curto, resultado: 'falhou', motivo: 'envio_incerto', detalhe })
+        continue
+      }
+      await liberarReserva() // falha comprovadamente ANTES de a mensagem ser aceita: a reserva não pode ficar órfã
       if (como === 'parar') {
         // Credencial/permissão: o problema não é do item. Devolve este e os que sobraram, sem contar tentativa.
         for (const chave of [linha.chave, ...pendentes]) await devolver(chave, false)

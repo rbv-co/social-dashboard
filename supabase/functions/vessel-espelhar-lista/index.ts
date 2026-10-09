@@ -89,6 +89,7 @@ import { celularParaOBling } from '../_shared/celular-do-bling.js';
 import { completarContato } from '../_shared/completar-contato-do-bling.js';
 import { blingDoCore } from '../_shared/core-bling-token.js';
 import { blingViaCore, chaveIdempotente } from '../_shared/core-bling-proxy.js';
+import { colocarContato } from '../_shared/put-contato-bling.js';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -611,7 +612,8 @@ async function rodada(sb: any): Promise<Response> {
 
     if (paraCompletar?.length) {
       const tb = await tokenBling(sb);
-      let completados = 0, semContato = 0, semMudanca = 0;
+      let completados = 0, semContato = 0, semMudanca = 0, limitado = false;
+      const incertos: string[] = [];
 
       for (const g of paraCompletar) {
         // O contato vem do registro quando a compra foi casada; senão, procura
@@ -648,21 +650,40 @@ async function rodada(sb: any): Promise<Response> {
           continue;
         }
 
-        // Chave estável: registro + contato + hash do corpo. 504 `incerto` NÃO é reenviado: a linha
-        // fica sem marca e o core repete o "incerto" até conferirem o contato no Bling.
-        const chave = await chaveIdempotente(`${ORIGEM_CHAVE}:${g.codigo}:${contatoId}`, 'contato-completar', corpo);
-        const put = await BLING_PROXY.chamar('PUT', `/contatos/${contatoId}`, { corpo, chave, token: tb });
-        if (put.ok) {
+        // Chave estável: registro + contato + hash do corpo (ver _shared/put-contato-bling.js).
+        const put = await colocarContato({
+          proxy: BLING_PROXY, contatoId, corpo, token: tb, chaveIdempotente,
+          origem: `${ORIGEM_CHAVE}:${g.codigo}:${contatoId}`,
+        });
+        if (put.tipo === 'reautorizar') throw new Error(FALTA_PERMISSAO_BLING);
+        if (put.tipo === 'ok') {
           await sb.from('vessel_registros')
             .update({ bling_atualizado_em: new Date().toISOString(), bling_contato_id: String(contatoId) })
             .eq('codigo', g.codigo);
           completados++;
+        } else if (put.tipo === 'incerto') {
+          // ⚠️ 504 `resultado_incerto`/queda/timeout: o core repete este mesmo 504 para a mesma chave até alguém conciliar,
+          // então reprocessar só prende um dos 25 slots do `.limit(25)` a cada rodada (com 25 presas, lead novo nunca
+          // completa). TIRA a linha da fila (mesma marca de "feito") e guarda o aviso no resultado da rodada
+          // (robos_execucoes). vessel_registros NÃO tem coluna de erro: se quiserem o aviso na própria linha, ver o PR
+          // (coluna `bling_ultimo_erro`, migration a aplicar). NÃO reenvia nem sobrescreve: conferir o contato no Bling.
+          await sb.from('vessel_registros')
+            .update({ bling_atualizado_em: new Date().toISOString(), bling_contato_id: String(contatoId) })
+            .eq('codigo', g.codigo);
+          incertos.push(`${g.codigo} (contato ${contatoId}, chave ${put.chave})`);
+        } else if (put.limite) {
+          // 429: o Bling pede calma. Para de bater nele nesta rodada; as linhas ficam na fila e a próxima tenta de novo.
+          limitado = true;
+          break;
         }
+        // 5xx/recusa: NÃO marca; fica na fila e a próxima rodada tenta de novo (chave nova se o core repetiu o erro).
         // Recusa do Bling NÃO marca: a linha fica na fila e a próxima rodada
         // tenta de novo. Garantia não se perde por isso — ela já está no banco.
       }
       resultado.cadastros = `${completados} completado(s), ${semMudanca} já em dia, `
-        + `${semContato} sem cadastro no Bling`;
+        + `${semContato} sem cadastro no Bling`
+        + (limitado ? ', parou no limite de chamadas do Bling (429); retoma na próxima rodada' : '')
+        + (incertos.length ? `. ATENÇÃO, resultado incerto (conferir o contato no Bling, NÃO será reenviado): ${incertos.join('; ')}` : '');
     } else {
       resultado.cadastros = 'nenhum pendente';
     }
