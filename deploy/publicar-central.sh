@@ -28,7 +28,7 @@ mkdir -p "$BASE/releases" && rm -rf "$REL" && cp -r dist "$REL"
 # armadilha ja vista: arquivos 600/700 que o nginx (www-data) nao le
 find "$REL" -type f -exec chmod 644 {} + ; find "$REL" -type d -exec chmod 755 {} +
 
-ANTES=$(readlink -f "$BASE/atual" 2>/dev/null || true)
+ANTES=; [ -L "$BASE/atual" ] && ANTES=$(readlink -f "$BASE/atual"); [ -d "$ANTES" ] || ANTES=
 ln -sfn "$REL" "$BASE/atual.novo" && mv -T "$BASE/atual.novo" "$BASE/atual"
 
 fumaca() {
@@ -45,5 +45,5 @@ if fumaca; then
   exit 0
 fi
 echo "FALHOU na fumaca: REVERTENDO"
-if [ -n "$ANTES" ]; then ln -sfn "$ANTES" "$BASE/atual.novo" && mv -T "$BASE/atual.novo" "$BASE/atual"; echo "voltou para $ANTES"; fi
+if [ -n "$ANTES" ]; then ln -sfn "$ANTES" "$BASE/atual.novo" && mv -T "$BASE/atual.novo" "$BASE/atual"; echo "voltou para $ANTES"; else rm -f "$BASE/atual"; echo "sem release anterior: atual removido"; fi
 exit 1
