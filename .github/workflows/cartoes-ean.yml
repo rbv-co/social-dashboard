@@ -76,20 +76,31 @@ jobs:
       - uses: actions/setup-python@v6
         with: { python-version: '3.11' }
 
-      - name: Cache dos modelos e das dependências
+      # ⚠️ O CACHE TEM DE SER USADO, não só guardado: `npm ci` apaga o node_modules antes de instalar, então cachear a
+      # pasta e rodar `npm ci` mesmo assim não poupava nada. E `pip install` com cache de rodas ainda desempacota o rembg
+      # e o onnxruntime a cada rodada. Por isso o Python mora num venv que volta pronto, e as instalações só rodam
+      # quando a chave muda (package-lock.json ou requirements-cartoes.txt). Para forçar versões novas: mude o arquivo.
+      - name: Cache das dependências e dos modelos
+        id: deps
         uses: actions/cache@v6
         with:
           path: |
             ~/.u2net
+            ~/venv-cartoes
             coletor/node_modules
-            ~/.cache/pip
-          key: cartoes-${{ runner.os }}-${{ hashFiles('coletor/package-lock.json') }}
+          key: cartoes-${{ runner.os }}-py3.11-${{ hashFiles('coletor/package-lock.json', 'coletor/requirements-cartoes.txt') }}
 
-      - name: Instalar dependências
+      - name: Instalar dependências (só se o cache não veio)
+        if: steps.deps.outputs.cache-hit != 'true'
         run: |
-          cd coletor && npm ci
-          # recortar.py: rembg + onnxruntime (pinado, como a Fábrica) + scipy. pdf-para-png.py: PyMuPDF.
-          pip install rembg "onnxruntime==1.19.2" pillow numpy scipy pymupdf
+          (cd coletor && npm ci)
+          python -m venv ~/venv-cartoes
+          ~/venv-cartoes/bin/pip install -r coletor/requirements-cartoes.txt
+
+      # Todos os scripts do gerador chamam `python3` pelo PATH: o venv vai na frente.
+      - name: Usar o Python do venv
+        run: |
+          echo "$HOME/venv-cartoes/bin" >> "$GITHUB_PATH"
           google-chrome --version   # o exportador acha o Chrome pelo PATH; o ubuntu-latest já o traz
 
       - name: Gerar os cartões da fila

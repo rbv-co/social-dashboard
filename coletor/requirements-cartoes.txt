@@ -1,0 +1,8 @@
+# Python do robô de cartões EAN (.github/workflows/cartoes-ean.yml). Mudar este arquivo renova o cache do workflow.
+# rembg + onnxruntime (pinado, como a Fábrica) + scipy: recortar a foto. PyMuPDF: pdf-para-png.py.
+rembg
+onnxruntime==1.19.2
+pillow
+numpy
+scipy
+pymupdf
