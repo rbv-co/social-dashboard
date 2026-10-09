@@ -120,3 +120,5 @@ entregas/
 # A demonstração do Comercial Vessel (npm run build:demonstracao) — pasta gerada.
 dist-demonstracao
 docs/migracao-go/levantamento/
+
+ops/migracao/saida/
