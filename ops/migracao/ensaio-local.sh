@@ -5,10 +5,11 @@
 # Uso: sh ops/migracao/ensaio-local.sh
 set -eu
 AQUI=$(cd "$(dirname "$0")" && pwd)
-ORIG=ensaio-origem; ALVO=ensaio-alvo; PO=${ENSAIO_PORTA_ORIGEM:-58441}; PA=${ENSAIO_PORTA_ALVO:-58442}
+ORIG=ensaio-local-origem; ALVO=ensaio-local-alvo; PO=${ENSAIO_PORTA_ORIGEM:-58441}; PA=${ENSAIO_PORTA_ALVO:-58442}
 OUT=$(mktemp -d)
 limpa() { docker rm -f "$ORIG" "$ALVO" >/dev/null 2>&1 || true; rm -rf "$OUT"; }
-trap limpa EXIT INT TERM
+trap limpa EXIT
+trap 'limpa; exit 130' INT TERM
 docker rm -f "$ORIG" "$ALVO" >/dev/null 2>&1 || true
 for par in "$ORIG:$PO" "$ALVO:$PA"; do
   n=${par%%:*}; p=${par##*:}
@@ -44,12 +45,27 @@ begin execute 'create policy x on public.notas using (true)'; end $f$;
 insert into auth.users select gen_random_uuid(), 'u' || g || '@x.com' from generate_series(1, 2) g;
 insert into public.profiles select id, case when email like 'u1%' then 'Ana' else 'Bia' end, email like 'u2%' from auth.users;
 insert into public.notas (dono, texto) select id, 'nota ' || g from public.profiles, generate_series(1, 50) g;
+-- triggers de negócio, criados DEPOIS dos dados (a origem os tem; a carga no alvo NÃO pode dispará-los):
+-- t_bloqueia levanta erro em todo insert em notas; t_audita grava em auditoria (tem de ficar com 0 linhas)
+create table public.auditoria (id serial primary key, quando timestamptz default now());
+create function public.bloqueia() returns trigger language plpgsql as $f$ begin raise exception 'trigger de negócio disparou na carga'; end $f$;
+create function public.audita() returns trigger language plpgsql as $f$ begin insert into public.auditoria default values; return new; end $f$;
+create function public.nada() returns trigger language plpgsql as $f$ begin return new; end $f$;
+create trigger t_bloqueia before insert on public.notas for each row execute function public.bloqueia();
+create trigger t_audita after insert on public.notas for each row execute function public.audita();
+create trigger t_replica after insert on public.profiles for each row execute function public.nada();
+create trigger t_sempre after insert on public.profiles for each row execute function public.nada();
+create trigger t_desligado after insert on public.profiles for each row execute function public.nada();
+alter table public.notas disable trigger t_audita;       -- D (estado não padrão a preservar)
+alter table public.profiles enable replica trigger t_replica;  -- R
+alter table public.profiles enable always trigger t_sempre;    -- A
+alter table public.profiles disable trigger t_desligado;       -- D
 SQL
 
 # 2) dump -> limpeza -> restore -> contagens
 t=$(date +%s); sh "$AQUI/dump-supabase.sh" "$URL_O" "$OUT/dump" >/dev/null; echo "dump: $(( $(date +%s) - t ))s"
 t=$(date +%s); sh "$AQUI/restaurar.sh" "$URL_A" "$OUT/dump" >/dev/null; echo "restore: $(( $(date +%s) - t ))s"
-t=$(date +%s); sh "$AQUI/conferir-contagens.sh" "$URL_O" "$URL_A" > "$OUT/contagens.txt" || true; echo "contagens: $(( $(date +%s) - t ))s"
+t=$(date +%s); st_cont=0; sh "$AQUI/conferir-contagens.sh" "$URL_O" "$URL_A" > "$OUT/contagens.txt" || st_cont=$?; echo "contagens: $(( $(date +%s) - t ))s"
 cat "$OUT/contagens.txt"
 
 # 2b) "importar-usuarios" simulado: copia os ids de auth.users da origem para public.usuarios do alvo
@@ -70,6 +86,18 @@ falha() { echo "FALHOU: $1" >&2; exit 1; }
 [ "$(psql "$URL_A" -X -Atc "select set_config('app.usuario_id','11111111-1111-1111-1111-111111111111',false); select public.quem()::text" | tail -1)" = 11111111-1111-1111-1111-111111111111 ] || falha "auth.uid() não lê app.usuario_id"
 [ "$(psql "$URL_A" -X -Atc "select count(*) from pg_proc where proname='cria_policy_dinamica'")" = 1 ] || falha "a função com 'create policy' no corpo foi removida"
 [ "$(psql "$URL_A" -X -Atc "select count(*) from public.notas")" = 100 ] || falha "dados não bateram"
-[ "$(psql "$URL_A" -X -Atc "select count(*) from pg_trigger t join pg_class c on c.oid=t.tgrelid where c.relnamespace='public'::regnamespace and not t.tgisinternal and t.tgenabled='D'")" = 0 ] || falha "restou trigger desabilitado"
+# triggers: nada de negócio disparou, e os estados (D/R/A/O) da origem foram preservados
+[ "$(psql "$URL_A" -X -Atc "select count(*) from public.auditoria")" = 0 ] || falha "a trilha de auditoria tem linhas: trigger de negócio disparou na carga"
+[ "$(psql "$URL_A" -X -Atc "select count(*) from pg_trigger t join pg_class c on c.oid=t.tgrelid where c.relnamespace='public'::regnamespace and t.tgisinternal and t.tgenabled='D'")" = 0 ] || falha "trigger interno (FK) ficou desabilitado"
+SQL_TRG="select c.relname || '.' || t.tgname || '=' || t.tgenabled::text from pg_trigger t join pg_class c on c.oid=t.tgrelid where c.relnamespace='public'::regnamespace and not t.tgisinternal and c.relname not in ('usuarios','sessoes','goose_db_version') order by 1"
+psql "$URL_O" -X -Atc "$SQL_TRG" > "$OUT/trg-o.txt"; psql "$URL_A" -X -Atc "$SQL_TRG" > "$OUT/trg-a.txt"
+[ -s "$OUT/trg-o.txt" ] || falha "a origem do ensaio não tem triggers (o teste não provaria nada)"
+grep -q '=D$' "$OUT/trg-o.txt" && grep -q '=R$' "$OUT/trg-o.txt" && grep -q '=A$' "$OUT/trg-o.txt" || falha "a origem do ensaio deveria ter triggers D, R e A"
+diff "$OUT/trg-o.txt" "$OUT/trg-a.txt" > "$OUT/trg.diff" || falha "estados de triggers diferem origem×alvo: $(cat "$OUT/trg.diff")"
+[ "$st_cont" = 0 ] || falha "conferir-contagens saiu com $st_cont: $(cat "$OUT/contagens.txt")"
 grep -q DIFERE "$OUT/contagens.txt" && falha "contagens diferem: $(grep DIFERE "$OUT/contagens.txt")"
+# prova negativa: tabela faltando no alvo tem de dar DIFERE e exit 1 (nunca verde)
+psql "$URL_A" -X -q -c "alter table public.notas rename to notas_x"
+st_neg=0; sh "$AQUI/conferir-contagens.sh" "$URL_O" "$URL_A" > "$OUT/neg.txt" 2>/dev/null || st_neg=$?
+[ "$st_neg" = 1 ] && grep -q '^notas 100 ERRO .*DIFERE' "$OUT/neg.txt" || falha "tabela faltando no alvo não foi reportada como DIFERE com exit 1 (exit $st_neg): $(cat "$OUT/neg.txt")"
 echo "OK: ensaio local passou (dump -> limpeza -> restore -> contagens) em $(( $(date +%s) - T0 ))s"

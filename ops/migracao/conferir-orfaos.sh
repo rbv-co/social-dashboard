@@ -4,13 +4,14 @@
 # Um usuário apagado (soft delete) no Auth que ainda é referenciado aparece aqui, não é escondido.
 set -eu
 A=${1:?uso: conferir-orfaos.sh ALVO_URL}
-ruim=$(mktemp)
-lista=$(psql "$A" -X -Atq -F '|' -c "select conrelid::regclass::text, (select attname from pg_attribute where attrelid = conrelid and attnum = conkey[1]) from pg_constraint where contype = 'f' and confrelid = 'public.usuarios'::regclass and array_length(conkey, 1) = 1 order by 1, 2")
-[ -n "$lista" ] || { echo "nenhuma FK aponta para public.usuarios: restauração errada?" >&2; rm -f "$ruim"; exit 1; }
+oculta() { sed -E 's#postgres(ql)?://[^ "]*#<URL>#g'; }
+ruim=$(mktemp); ERR=$(mktemp); trap 'rm -f "$ruim" "$ERR"' EXIT
+pq() { s=0; psql "$@" 2> "$ERR" || s=$?; oculta < "$ERR" >&2; return $s; }
+lista=$(pq "$A" -X -Atq -F '|' -c "select conrelid::regclass::text, (select attname from pg_attribute where attrelid = conrelid and attnum = conkey[1]) from pg_constraint where contype = 'f' and confrelid = 'public.usuarios'::regclass and array_length(conkey, 1) = 1 order by 1, 2")
+[ -n "$lista" ] || { echo "nenhuma FK aponta para public.usuarios: restauração errada?" >&2; exit 1; }
 printf '%s\n' "$lista" | while IFS='|' read -r tabela coluna; do
-    n=$(psql "$A" -X -Atqc "select count(*) from $tabela t where t.\"$coluna\" is not null and not exists (select 1 from public.usuarios u where u.id = t.\"$coluna\")")
+    n=$(pq "$A" -X -Atqc "select count(*) from $tabela t where t.\"$coluna\" is not null and not exists (select 1 from public.usuarios u where u.id = t.\"$coluna\")") || n=ERRO
     echo "$tabela.$coluna $n"
     [ "$n" = 0 ] || echo x >> "$ruim"
   done
-if [ -s "$ruim" ]; then rm -f "$ruim"; exit 1; fi
-rm -f "$ruim"
+[ ! -s "$ruim" ]
