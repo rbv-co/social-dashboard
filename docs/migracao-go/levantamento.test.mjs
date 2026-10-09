@@ -13,8 +13,19 @@ test('levantamento.sql só tem SELECT', () => {
   for (const c of comandos) assert.match(c, /^(select|with)\b/i, `não é SELECT: ${c.slice(0, 60)}`)
 })
 
-test('levantar.sh força transação somente leitura e não imprime URL', () => {
+test('levantar.sh força transação somente leitura e confere em tempo de execução', () => {
   const sh = readFileSync(new URL('./levantar.sh', import.meta.url), 'utf8')
-  assert.match(sh, /default_transaction_read_only=on/)
-  assert.doesNotMatch(sh, /echo\s+"?\$\{?DATABASE_URL/)
+  assert.match(sh, /^export PGOPTIONS=.*default_transaction_read_only=on/m)
+  assert.match(sh, /ON_ERROR_STOP/)
+  assert.match(sh, /show default_transaction_read_only/)
+})
+
+test('levantar.sh não deixa a URL vazar', () => {
+  const sh = readFileSync(new URL('./levantar.sh', import.meta.url), 'utf8')
+  assert.doesNotMatch(sh, /set\s+-\w*x/)
+  const linhas = sh.split('\n').filter((l) => !l.trim().startsWith('#') && l.includes('DATABASE_URL'))
+  assert.ok(linhas.length > 0)
+  for (const l of linhas) {
+    assert.ok(l.includes('[ -n "${DATABASE_URL:-}" ]') || /psql "\$DATABASE_URL"/.test(l), `uso suspeito de DATABASE_URL: ${l}`)
+  }
 })
