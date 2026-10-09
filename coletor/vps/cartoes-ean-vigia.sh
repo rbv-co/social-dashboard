@@ -6,12 +6,13 @@
 # O workflow do GitHub (.github/workflows/cartoes-ean.yml) continua como retaguarda; `vessel_cartao_pegar_da_fila`
 # é atômica, então os dois não pegam o mesmo pedido.
 #
-# Layout esperado em $RAIZ:  node/ (Node 22)  venv/ (Python)  social-dashboard/  vessel-brasil/
+# Layout esperado em $RAIZ:  node/ (Node 22)  venv/ (Python)  social-dashboard/ e, DENTRO dele, vessel-brasil/
+# ⚠️ vessel-brasil tem de ficar DENTRO de social-dashboard: o gerador do site importa ../../coletor/lib/cutout.mjs.
 # Segredos: SUPABASE_URL e SUPABASE_SERVICE_KEY vêm do EnvironmentFile do serviço (/etc/cartoes-ean.env).
 set -u
 RAIZ="${RAIZ:-/opt/cartoes-ean}"
 export PATH="$RAIZ/node/bin:$RAIZ/venv/bin:$PATH"
-export VESSEL_DIR="$RAIZ/vessel-brasil"
+export VESSEL_DIR="$RAIZ/social-dashboard/vessel-brasil"
 : "${SUPABASE_URL:?falta SUPABASE_URL}" "${SUPABASE_SERVICE_KEY:?falta SUPABASE_SERVICE_KEY}"
 log() { echo "$(date -u +%FT%TZ) $*"; }
 
