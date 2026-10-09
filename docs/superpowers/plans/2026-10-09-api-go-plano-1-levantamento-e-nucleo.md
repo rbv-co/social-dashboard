@@ -2042,7 +2042,7 @@ git commit -m "feat(api): worker com trava por tarefa e registro em robos_execuc
 
 ## Verificação final do Plano 1
 
-- [ ] `node --test db/catalogo/ docs/migracao-go/` → verde.
+- [ ] `node --test db/catalogo/policies.test.mjs docs/migracao-go/levantamento.test.mjs` → verde.
 - [ ] `make -C api teste` → verde; `go vet ./...` e `gofmt -l .` limpos.
 - [ ] `npm test` (suíte existente) continua verde: este plano não altera código do front nem das edges.
 - [ ] Subir localmente: `DATABASE_URL=... go run ./cmd/api api`, `curl localhost:8080/saude` → `ok`; importar um restore de teste com `importar-usuarios`; login com a senha original de um usuário real do restore (**nunca** em produção sem ok).

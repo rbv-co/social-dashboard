@@ -25,3 +25,13 @@ select viewname, definition from pg_views where schemaname = 'public' order by 1
 select column_name, data_type, is_nullable from information_schema.columns where table_schema = 'public' and table_name = 'profiles' order by ordinal_position;
 -- 13 sequências e tabelas sem chave primária (risco de importação)
 select c.relname as tabela from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public' and c.relkind = 'r' and not exists (select 1 from pg_index i where i.indrelid = c.oid and i.indisprimary) order by 1;
+-- 14 contas desativadas em profiles (flag real de desativação)
+select count(*) filter (where coalesce(disabled, false)) as desativados, count(*) as total from public.profiles;
+-- 15 formato de profiles.permissions (só contagem por tipo jsonb)
+select jsonb_typeof(permissions) as tipo, count(*) as n from public.profiles group by 1 order by 2 desc;
+-- 16 e-mails duplicados em auth.users ignorando maiúsculas (só contagens, sem e-mails)
+select count(*) as emails_duplicados, coalesce(sum(n), 0) as contas_envolvidas from (select count(*) as n from auth.users group by lower(email) having count(*) > 1) d;
+-- 17 usuários banidos para sempre (banned_until = infinity)
+select count(*) as banidos_para_sempre from auth.users where banned_until = 'infinity';
+-- 18 usuários com senha e e-mail não confirmado
+select count(*) as com_senha_sem_confirmacao from auth.users where coalesce(encrypted_password, '') <> '' and email_confirmed_at is null;
