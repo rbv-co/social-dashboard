@@ -8,15 +8,16 @@ import (
 // Limitador conta tentativas de login por chave numa janela.
 // ponytail: em memória, vale para uma instância só; Redis/Postgres se houver mais de uma.
 type Limitador struct {
-	Max    int
-	Janela time.Duration
-	mu     sync.Mutex
-	falhas map[string][]time.Time
-	agora  func() time.Time
+	Max       int
+	Janela    time.Duration
+	MaxChaves int // teto de chaves antes de varrer o mapa inteiro
+	mu        sync.Mutex
+	falhas    map[string][]time.Time
+	agora     func() time.Time
 }
 
 func NovoLimitador() *Limitador {
-	return &Limitador{Max: 5, Janela: 15 * time.Minute, falhas: map[string][]time.Time{}, agora: time.Now}
+	return &Limitador{Max: 5, Janela: 15 * time.Minute, MaxChaves: 10_000, falhas: map[string][]time.Time{}, agora: time.Now}
 }
 
 func (l *Limitador) podar(k string) {
@@ -40,6 +41,13 @@ func (l *Limitador) podar(k string) {
 func (l *Limitador) Tentar(k string) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	// ponytail: chaves só eram podadas quando reusadas; acima de MaxChaves (10 mil)
+	// varre o mapa todo sob o lock (O(n), raro). Com mais carga/instâncias: Redis ou Postgres.
+	if len(l.falhas) > l.MaxChaves {
+		for chave := range l.falhas {
+			l.podar(chave)
+		}
+	}
 	l.podar(k)
 	if len(l.falhas[k]) >= l.Max {
 		return false

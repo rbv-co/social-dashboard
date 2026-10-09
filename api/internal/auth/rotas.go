@@ -53,12 +53,19 @@ func ipDe(r *http.Request) string {
 	if err != nil {
 		host = r.RemoteAddr
 	}
-	if ip := net.ParseIP(host); ip != nil && (ip.IsLoopback() || ip.IsPrivate()) {
+	ip := net.ParseIP(host)
+	if ip != nil && (ip.IsLoopback() || ip.IsPrivate()) {
 		if real := net.ParseIP(strings.TrimSpace(r.Header.Get("X-Real-IP"))); real != nil {
-			return real.String()
+			ip = real
 		}
 	}
-	return host
+	if ip == nil {
+		return host
+	}
+	if ip.To4() == nil { // IPv6: um cliente controla o /64 inteiro, então a chave é o /64
+		return ip.Mask(net.CIDRMask(64, 128)).String()
+	}
+	return ip.String()
 }
 
 func (h *Handlers) Entrar(w http.ResponseWriter, r *http.Request) {
@@ -70,7 +77,7 @@ func (h *Handlers) Entrar(w http.ResponseWriter, r *http.Request) {
 	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10)).Decode(&in) == nil {
 		email = strings.ToLower(strings.TrimSpace(in.Email))
 	}
-	if email == "" || in.Senha == "" {
+	if email == "" || in.Senha == "" || len(email) > 254 { // antes do limitador: chave não cresce sem teto
 		erroJSON(w, http.StatusBadRequest, "pedido_invalido")
 		return
 	}

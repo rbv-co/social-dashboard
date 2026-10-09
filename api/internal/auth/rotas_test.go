@@ -309,3 +309,29 @@ func TestSessaoClienteEh403EmRotasDoPainel(t *testing.T) {
 		t.Fatalf("sair de cliente não deveria ter revogado: %d sessões", n)
 	}
 }
+
+func TestEmailGrandeEh400SemTocarNoLimitador(t *testing.T) {
+	_, _, h := montar(t)
+	hd := NovosHandlers(nil, nil, NovoLimitador())
+	longo := strings.Repeat("a", 250) + "@x.com"
+	for _, x := range []http.Handler{h, http.HandlerFunc(hd.Entrar)} {
+		if w := chamar(x, "POST", "/auth/entrar", `{"email":"`+longo+`","senha":"abc"}`, ""); w.Code != 400 {
+			t.Fatalf("= %d", w.Code)
+		}
+	}
+	if n := len(hd.limite.falhas) + len(hd.porMail.falhas) + len(hd.porIP.falhas); n != 0 {
+		t.Fatalf("limitador com %d chaves", n)
+	}
+}
+
+func TestIPv6AgrupaPorSlash64(t *testing.T) {
+	ip := func(addr string) string {
+		r := httptest.NewRequest("GET", "/", nil)
+		r.RemoteAddr = addr
+		return ipDe(r)
+	}
+	a, b, c := ip("[2001:db8:1:2:aaaa::1]:1"), ip("[2001:db8:1:2:bbbb::9]:2"), ip("[2001:db8:1:3::1]:3")
+	if a != b || a == c {
+		t.Fatalf("a=%s b=%s c=%s", a, b, c)
+	}
+}
