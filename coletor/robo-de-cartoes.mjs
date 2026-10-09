@@ -136,9 +136,13 @@ async function processar(pedido, estado, ctx) {
   estado.pasta = `Cartões com EAN/${dia}`;
   const pastaDia = await acharOuCriarPasta(await acharOuCriarPasta(vbId, 'Cartões com EAN'), dia);
 
-  const fotos = join(ctx.trabalho, 'fotos');
-  process.env.VESSEL_FOTOS_ZOHO = fotos; // ANTES de importar o gerador: `dados.mjs` lê isto ao carregar
-  await espelharFotos(pastas, [...porSku.keys()], fotos);
+  // ⚠️ O caminho tem de ser o MESMO em todos os pedidos da rodada: `dados.mjs` fixa VESSEL_FOTOS_ZOHO no primeiro
+  // import e o módulo fica em cache. Pasta nova por pedido = do 2º em diante o gerador aponta para uma pasta
+  // apagada ("não achei a pasta de fotos do Zoho", 09/10). Por isso o caminho é fixo e só o conteúdo é refeito.
+  process.env.VESSEL_FOTOS_ZOHO = FOTOS; // ANTES de importar o gerador
+  rmSync(FOTOS, { recursive: true, force: true });
+  mkdirSync(FOTOS, { recursive: true });
+  await espelharFotos(pastas, [...porSku.keys()], FOTOS);
   const { gerarCartao } = await import(pathToFileURL(join(VESSEL, 'cartao', 'gerar.mjs')).href);
 
   const series = new Map(); // nº de série impresso -> quantas vezes (duas bolsas com a mesma identidade = defeito)
@@ -204,6 +208,7 @@ if (SECO) { await secoMode(); process.exit(0); }
 // banco (migration pendente), segue sem ela: é a retaguarda, não o caminho principal.
 await rpc('vessel_cartao_recolocar_travados', { p_minutos: 150 }).catch((e) => console.log('aviso: ' + e.message));
 
+const FOTOS = join(mkdtempSync(join(tmpdir(), 'cartoes-fotos-')), 'fotos');
 let feitos = 0;
 for (;;) {
   const { pedido } = await rpc('vessel_cartao_pegar_da_fila');
