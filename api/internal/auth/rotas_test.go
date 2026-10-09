@@ -1,0 +1,166 @@
+package auth
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rbv-co/social-dashboard/api/internal/testebanco"
+)
+
+func montar(t *testing.T) (*pgxpool.Pool, *Store, http.Handler) {
+	t.Helper()
+	p := testebanco.Novo(t)
+	s := NovoStore(p)
+	h := NovosHandlers(p, s, NovoLimitador())
+	r := chi.NewRouter()
+	r.Post("/auth/entrar", h.Entrar)
+	r.Group(func(r chi.Router) {
+		r.Use(Exigir(p, s))
+		r.Post("/auth/sair", h.Sair)
+		r.Get("/auth/eu", h.Eu)
+		r.With(ExigirPermissao("frota", "ver")).Get("/frota", func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("ok")) })
+	})
+	return p, s, r
+}
+
+func usuarioComSenha(t *testing.T, p *pgxpool.Pool, id, email, senha, permissoes string) {
+	t.Helper()
+	hash, _ := HashDaSenha(senha)
+	ctx := context.Background()
+	if _, err := p.Exec(ctx, `insert into usuarios (id, email, senha_hash) values ($1, $2, $3)`, id, email, hash); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.Exec(ctx, `insert into profiles (id, email, role, permissions) values ($1, $2, 'viewer', $3::jsonb)`, id, email, permissoes); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func chamar(h http.Handler, metodo, caminho, corpo, token string) *httptest.ResponseRecorder {
+	r := httptest.NewRequest(metodo, caminho, strings.NewReader(corpo))
+	if token != "" {
+		r.Header.Set("Authorization", "Bearer "+token)
+	}
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	return w
+}
+
+func entrar(t *testing.T, h http.Handler, email, senha string) string {
+	t.Helper()
+	w := chamar(h, "POST", "/auth/entrar", `{"email":"`+email+`","senha":"`+senha+`"}`, "")
+	if w.Code != 200 {
+		t.Fatalf("entrar = %d %s", w.Code, w.Body)
+	}
+	var o struct{ Token string }
+	json.Unmarshal(w.Body.Bytes(), &o)
+	return o.Token
+}
+
+func TestLoginNormalizaEmailEntraNaMesmaConta(t *testing.T) {
+	p, _, h := montar(t)
+	usuarioComSenha(t, p, uid, "pessoa@x.com", "s3nha", `{}`)
+	if entrar(t, h, "  PESSOA@X.com ", "s3nha") == "" {
+		t.Fatal("sem token")
+	}
+}
+
+func TestLoginErradoEPedidoRuim(t *testing.T) {
+	p, _, h := montar(t)
+	usuarioComSenha(t, p, uid, "a@x.com", "certa", `{}`)
+	casos := []struct {
+		corpo string
+		code  int
+	}{
+		{`{"email":"a@x.com","senha":"errada"}`, 401},
+		{`{"email":"nao@x.com","senha":"qualquer"}`, 401},
+		{`{"email":"","senha":""}`, 400},
+		{`nao é json`, 400},
+		{`{"email":"a@x.com","senha":"` + strings.Repeat("a", 10000) + `"}`, 400},
+	}
+	for _, c := range casos {
+		if w := chamar(h, "POST", "/auth/entrar", c.corpo, ""); w.Code != c.code {
+			t.Fatalf("corpo %.30q: %d, esperava %d", c.corpo, w.Code, c.code)
+		}
+	}
+}
+
+func TestLoginSemSenhaCadastradaEh401ECountaNoLimite(t *testing.T) {
+	p, _, h := montar(t)
+	novoUsuario(t, NovoStore(p), uid, "sem@x.com") // senha_hash nulo
+	corpo := `{"email":"sem@x.com","senha":"qualquer"}`
+	for i := 0; i < 5; i++ {
+		w := chamar(h, "POST", "/auth/entrar", corpo, "")
+		if w.Code != 401 || !strings.Contains(w.Body.String(), "credenciais_invalidas") {
+			t.Fatalf("tentativa %d = %d %s", i, w.Code, w.Body)
+		}
+	}
+	if w := chamar(h, "POST", "/auth/entrar", corpo, ""); w.Code != 429 {
+		t.Fatalf("falhas deveriam contar no limite: %d", w.Code)
+	}
+}
+
+func TestLimiteDeTentativas(t *testing.T) {
+	p, _, h := montar(t)
+	usuarioComSenha(t, p, uid, "a@x.com", "certa", `{}`)
+	for i := 0; i < 5; i++ {
+		chamar(h, "POST", "/auth/entrar", `{"email":"a@x.com","senha":"errada"}`, "")
+	}
+	if w := chamar(h, "POST", "/auth/entrar", `{"email":"a@x.com","senha":"certa"}`, ""); w.Code != 429 {
+		t.Fatalf("esperava 429, veio %d", w.Code)
+	}
+}
+
+func TestLimiteIgnoraPortaDeOrigem(t *testing.T) {
+	p, _, h := montar(t)
+	usuarioComSenha(t, p, uid, "a@x.com", "certa", `{}`)
+	do := func(addr, senha string) int {
+		r := httptest.NewRequest("POST", "/auth/entrar", strings.NewReader(`{"email":"a@x.com","senha":"`+senha+`"}`))
+		r.RemoteAddr = addr
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w.Code
+	}
+	for i := 0; i < 5; i++ {
+		do("192.0.2.1:"+string(rune('a'+i)), "errada") // porta nova a cada conexão
+	}
+	if c := do("192.0.2.1:9999", "certa"); c != 429 {
+		t.Fatalf("trocar de porta não pode escapar do limite: %d", c)
+	}
+}
+
+func TestEuSairESemToken(t *testing.T) {
+	p, _, h := montar(t)
+	usuarioComSenha(t, p, uid, "a@x.com", "certa", `{"frota":["ver"]}`)
+	if w := chamar(h, "GET", "/auth/eu", "", ""); w.Code != 401 {
+		t.Fatalf("sem token = %d", w.Code)
+	}
+	tok := entrar(t, h, "a@x.com", "certa")
+	w := chamar(h, "GET", "/auth/eu", "", tok)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"frota":["ver"]`) {
+		t.Fatalf("eu = %d %s", w.Code, w.Body)
+	}
+	if w := chamar(h, "POST", "/auth/sair", "", tok); w.Code != 204 {
+		t.Fatalf("sair = %d", w.Code)
+	}
+	if w := chamar(h, "GET", "/auth/eu", "", tok); w.Code != 401 {
+		t.Fatalf("depois de sair = %d", w.Code)
+	}
+}
+
+func TestPermissaoPorRota(t *testing.T) {
+	p, _, h := montar(t)
+	usuarioComSenha(t, p, uid, "com@x.com", "s", `{"frota":["ver"]}`)
+	usuarioComSenha(t, p, uid2, "sem@x.com", "s", `{"frota":["editar"]}`)
+	if w := chamar(h, "GET", "/frota", "", entrar(t, h, "com@x.com", "s")); w.Code != 200 {
+		t.Fatalf("com permissão = %d", w.Code)
+	}
+	if w := chamar(h, "GET", "/frota", "", entrar(t, h, "sem@x.com", "s")); w.Code != 403 {
+		t.Fatalf("sem 'ver' = %d", w.Code)
+	}
+}

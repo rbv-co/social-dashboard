@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/rbv-co/social-dashboard/api/internal/auth"
 	"github.com/rbv-co/social-dashboard/api/internal/banco"
 	"github.com/rbv-co/social-dashboard/api/internal/config"
 	"github.com/rbv-co/social-dashboard/api/internal/web"
@@ -39,7 +40,7 @@ func main() {
 	}
 	switch os.Args[1] {
 	case "api":
-		srv := &http.Server{Addr: cfg.Addr, Handler: web.Rotas(p), ReadHeaderTimeout: 10 * time.Second}
+		srv := &http.Server{Addr: cfg.Addr, Handler: web.Rotas(p, auth.NovoStore(p), auth.NovoLimitador()), ReadHeaderTimeout: 10 * time.Second}
 		fim := make(chan struct{})
 		go func() {
 			<-ctx.Done()

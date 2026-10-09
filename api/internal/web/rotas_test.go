@@ -5,12 +5,13 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/rbv-co/social-dashboard/api/internal/auth"
 	"github.com/rbv-co/social-dashboard/api/internal/testebanco"
 )
 
 func TestSaudeEPronto(t *testing.T) {
 	p := testebanco.Novo(t)
-	h := Rotas(p)
+	h := Rotas(p, auth.NovoStore(p), auth.NovoLimitador())
 	for _, caminho := range []string{"/saude", "/pronto"} {
 		r := httptest.NewRecorder()
 		h.ServeHTTP(r, httptest.NewRequest("GET", caminho, nil))

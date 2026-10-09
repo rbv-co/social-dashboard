@@ -7,9 +7,10 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rbv-co/social-dashboard/api/internal/auth"
 )
 
-func Rotas(p *pgxpool.Pool) http.Handler {
+func Rotas(p *pgxpool.Pool, s *auth.Store, l *auth.Limitador) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RealIP) // ponytail: confia em X-Forwarded-For; só serve atrás do nginx
 	r.Get("/saude", func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("ok")) })
@@ -19,6 +20,13 @@ func Rotas(p *pgxpool.Pool) http.Handler {
 			return
 		}
 		w.Write([]byte("ok"))
+	})
+	h := auth.NovosHandlers(p, s, l)
+	r.Post("/auth/entrar", h.Entrar)
+	r.Group(func(r chi.Router) {
+		r.Use(auth.Exigir(p, s))
+		r.Post("/auth/sair", h.Sair)
+		r.Get("/auth/eu", h.Eu)
 	})
 	return r
 }
