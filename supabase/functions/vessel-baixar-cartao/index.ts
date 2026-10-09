@@ -185,22 +185,36 @@ async function tratar(req: Request): Promise<Response> {
     .select('client_id, client_secret, refresh_token, data_center').eq('provedor', 'zoho').limit(1).maybeSingle();
   if (!con?.refresh_token) return json({ erro: 'zoho_desconectado' }, 503);
 
-  // O dia do último pedido que entregou a peça (o robô grava "Cartões com EAN/AAAA-MM-DD"). Só uma dica: se faltar, vale a busca completa.
-  const { data: ultimo } = await sb.from('vessel_cartao_pedidos').select('pasta')
-    .contains('pecas', [codigo]).in('situacao', ['pronto', 'falhou']).not('pasta', 'is', null)
-    .order('terminou_em', { ascending: false }).limit(1).maybeSingle();
-  const diaDica = diaDaPasta(ultimo?.pasta);
+  // O robô grava o id de cada arquivo que entrega (vessel_cartao_arquivos): baixa direto, SEM procurar. Sem linha (cartão
+  // de antes da tabela, ou erro de leitura) ou com id que o Zoho recusa (arquivo trocado/apagado), cai na busca de sempre.
+  const { data: gravado } = await sb.from('vessel_cartao_arquivos').select('zoho_id')
+    .eq('codigo', codigo).eq('nome', nome).maybeSingle();
 
   try {
-    let id = await acharOArquivo(con as Conexao, sku, nome, diaDica);
-    const msBusca = Date.now() - t0; // tudo até achar o id: login, banco, busca no Zoho
-    if (!id) return json({ erro: 'arquivo_nao_achado', arquivo: nome }, 404);
-    let r = await zoho(con as Conexao, `/download/${encodeURIComponent(id)}`);
-    if (!r.ok) {
-      // Pode ser o id guardado que ficou velho (arquivo trocado/apagado): esquece e busca de novo, UMA vez.
-      id = await acharOArquivo(con as Conexao, sku, nome, diaDica, true);
+    let id: string | null = gravado?.zoho_id ?? null;
+    let r: Response | null = null;
+    let origem = 'banco';
+    if (id) {
+      r = await zoho(con as Conexao, `/download/${encodeURIComponent(id)}`);
+      if (!r.ok) { r = null; id = null; }
+    }
+    const msBusca = Date.now() - t0; // login + banco (+ a tentativa direta); a busca no Zoho vem a seguir, se precisar
+    if (!r) {
+      origem = 'busca';
+      // O dia do último pedido que entregou a peça (o robô grava "Cartões com EAN/AAAA-MM-DD"). Só uma dica: se faltar, vale a busca completa.
+      const { data: ultimo } = await sb.from('vessel_cartao_pedidos').select('pasta')
+        .contains('pecas', [codigo]).in('situacao', ['pronto', 'falhou']).not('pasta', 'is', null)
+        .order('terminou_em', { ascending: false }).limit(1).maybeSingle();
+      const diaDica = diaDaPasta(ultimo?.pasta);
+      id = await acharOArquivo(con as Conexao, sku, nome, diaDica);
       if (!id) return json({ erro: 'arquivo_nao_achado', arquivo: nome }, 404);
       r = await zoho(con as Conexao, `/download/${encodeURIComponent(id)}`);
+      if (!r.ok) {
+        // Pode ser o id guardado na memória que ficou velho (arquivo trocado/apagado): esquece e busca de novo, UMA vez.
+        id = await acharOArquivo(con as Conexao, sku, nome, diaDica, true);
+        if (!id) return json({ erro: 'arquivo_nao_achado', arquivo: nome }, 404);
+        r = await zoho(con as Conexao, `/download/${encodeURIComponent(id)}`);
+      }
     }
     if (!r.ok) { console.error('vessel-baixar-cartao: download', nome, r.status); return json({ erro: 'zoho_recusou', status: r.status }, 502); }
     // `application/octet-stream` de propósito: é o que faz o supabase-js entregar um Blob (png/pdf viriam como texto).
@@ -210,8 +224,8 @@ async function tratar(req: Request): Promise<Response> {
         'Content-Type': 'application/octet-stream',
         'Content-Disposition': `attachment; filename="${nome}"`,
         'Cache-Control': 'no-store',
-        // Aba Network do navegador: "busca" = até achar o arquivo no Zoho; "total" = até começar a devolver.
-        'Server-Timing': `busca;dur=${msBusca}, total;dur=${Date.now() - t0}`,
+        // Aba Network do navegador: "origem" diz se veio do id gravado pelo robô ("banco") ou da busca no Zoho ("busca").
+        'Server-Timing': `pre;dur=${msBusca}, total;dur=${Date.now() - t0}, ${origem};dur=0`,
       },
     });
   } catch (e) {
