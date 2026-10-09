@@ -88,3 +88,12 @@ Dá para gerar o mesmo arquivo pela mão, do computador, com o mesmo código:
 
   node coletor/espelhar-vessel-no-zoho.mjs --ensaio    (monta e mostra, sem enviar)
   node coletor/espelhar-vessel-no-zoho.mjs             (envia para o Zoho)
+
+
+PROXY DO CORE (CORE_BLING_PROXY)
+Desligado por padrão. Para ligar: secret CORE_BLING_PROXY=true nesta edge (usa os
+CORE_URL e CORE_API_TOKEN que ela já tem). Aí o cadastro (POST /contatos), a busca por
+CPF, a releitura e o PUT de /contatos/{id} vão pelo proxy do core, com chave de
+idempotência estável (pessoa + operação + hash do corpo). Resposta 504 "incerto" NÃO é
+reenviada: a linha mostra o aviso e alguém confere o contato no Bling. Para desligar:
+remover o secret ou pôr false. Código em _shared/core-bling-proxy.js.
