@@ -327,3 +327,23 @@ func TestSemClienteHTTPNaoSegueRedirecionamento(t *testing.T) {
 		t.Fatalf("r=%+v err=%v", r, err)
 	}
 }
+
+func TestMetaAndaNoRitmo(t *testing.T) {
+	c, f, esperas := novoCore(t, status(200, `{"data":[]}`))
+	c.RitmoMeta = 100 * time.Millisecond
+	for range 3 {
+		if _, err := c.Meta(context.Background(), PedidoMeta{Caminho: "/1784", Metodo: "GET"}, 1); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// O Dormir do teste não dorme: a fila anda 100 ms por chamada (1ª sem espera, 2ª ~100 ms, 3ª ~200 ms).
+	if f.n() != 3 || len(*esperas) != 2 || (*esperas)[0] < 80*time.Millisecond || (*esperas)[1] < 180*time.Millisecond {
+		t.Fatalf("chamadas=%d esperas=%v", f.n(), *esperas)
+	}
+	c2, _, esperas2 := novoCore(t, status(200, `{}`))
+	c2.Meta(context.Background(), PedidoMeta{Caminho: "/1"}, 1)
+	c2.Meta(context.Background(), PedidoMeta{Caminho: "/1"}, 1)
+	if len(*esperas2) != 0 {
+		t.Fatalf("sem RitmoMeta não espera: %v", *esperas2)
+	}
+}

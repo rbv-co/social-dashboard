@@ -33,6 +33,8 @@ var producao = map[string]string{
 	"abandono-de-checkout": "* * * * *",
 	"vessel-rd-station":    "* * * * *",
 	"fabrica-purga":        "17 4 * * *",
+	// Task 3
+	"enviar-push-saldo-08h": "0 11 * * *",
 }
 
 func TestTarefasDeProducao(t *testing.T) {

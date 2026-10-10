@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 )
 
@@ -39,6 +40,13 @@ type Cliente struct {
 	Orcamento time.Duration                                    // da chamada inteira no Bling; 0 = 25 s
 	PrazoMeta time.Duration                                    // da chamada à Meta quando o ctx não tem prazo; 0 = 60 s
 	Dormir    func(ctx context.Context, d time.Duration) error // nil = espera de verdade (o teste troca)
+	// RitmoMeta: intervalo mínimo entre duas chamadas à Meta deste cliente (0 = sem ritmo). O core
+	// limita 120 chamadas/min por consumidor nas rotas da Meta (vessel-core-go@e8a06e8c3,
+	// services/core/cmd/core/meta.go:40 e internal/config/config.go:172); o worker anda abaixo disso.
+	RitmoMeta time.Duration
+
+	ritmoMu     sync.Mutex
+	proximaMeta time.Time
 }
 
 // Novo devolve um cliente que não segue redirecionamento (o Bearer não sai para outro lugar).
@@ -220,6 +228,9 @@ func (c *Cliente) Meta(ctx context.Context, p PedidoMeta, tentativas int) (*Resp
 		defer cancela()
 	}
 	for t := 1; ; t++ {
+		if err := c.esperarRitmo(ctx); err != nil {
+			return nil, err
+		}
 		r, err := c.enviar(ctx, CaminhoMeta, p)
 		if err != nil || r.Status != http.StatusTooManyRequests || t >= tentativas {
 			return r, err
@@ -232,4 +243,24 @@ func (c *Cliente) Meta(ctx context.Context, p PedidoMeta, tentativas int) (*Resp
 			return nil, err
 		}
 	}
+}
+
+// esperarRitmo segura a chamada até a vez dela (fila por ordem de chegada): no máximo uma chamada à
+// Meta a cada RitmoMeta. Sem ritmo, passa direto.
+func (c *Cliente) esperarRitmo(ctx context.Context) error {
+	if c.RitmoMeta <= 0 {
+		return nil
+	}
+	c.ritmoMu.Lock()
+	agora := time.Now()
+	vez := c.proximaMeta
+	if vez.Before(agora) {
+		vez = agora
+	}
+	c.proximaMeta = vez.Add(c.RitmoMeta)
+	c.ritmoMu.Unlock()
+	if d := vez.Sub(agora); d > 0 {
+		return c.dormir(ctx, d)
+	}
+	return nil
 }

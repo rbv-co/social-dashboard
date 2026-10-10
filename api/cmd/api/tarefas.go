@@ -1,12 +1,15 @@
 package main
 
 import (
+	"time"
+
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rbv-co/social-dashboard/api/internal/comercial"
 	"github.com/rbv-co/social-dashboard/api/internal/config"
 	"github.com/rbv-co/social-dashboard/api/internal/core"
 	"github.com/rbv-co/social-dashboard/api/internal/fabrica"
 	"github.com/rbv-co/social-dashboard/api/internal/mensagens"
+	"github.com/rbv-co/social-dashboard/api/internal/meta"
 	"github.com/rbv-co/social-dashboard/api/internal/vessel"
 	"github.com/rbv-co/social-dashboard/api/internal/webpush"
 	"github.com/rbv-co/social-dashboard/api/internal/worker"
@@ -17,6 +20,7 @@ import (
 // está no Plano 4 e é conferida por TestTarefasDeProducao. Só monta: nada aqui fala com rede ou banco.
 func tarefas(p *pgxpool.Pool, cfg config.Config, ag *worker.Agendador) []worker.Tarefa {
 	cli := core.Novo(cfg.CoreURL, cfg.CoreToken)
+	cli.RitmoMeta = 600 * time.Millisecond // ~100 chamadas/min à Meta, abaixo do teto de 120/min do core
 	var ts []worker.Tarefa
 	// HTTP nil: o push herda o cliente seguro (Dialer.Control recusa faixas proibidas).
 	pv := &comercial.PushVendas{Pool: p, Core: cli, VAPID: vapid(cfg)}
@@ -24,6 +28,7 @@ func tarefas(p *pgxpool.Pool, cfg config.Config, ag *worker.Agendador) []worker.
 	ts = append(ts, worker.ConferirRobos(p), worker.FaxinaDaAPI(p), mensagens.MoverAbandonados(p),
 		(&vessel.RD{Pool: p, Token: cfg.RDStationToken}).Tarefa(),
 		(&fabrica.Purga{Pool: p, Dir: cfg.ArquivosDir}).Tarefa())
+	ts = append(ts, (&meta.PushSaldo{Pool: p, Core: cli, VAPID: vapid(cfg)}).Tarefa())
 	return ts
 }
 
