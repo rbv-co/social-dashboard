@@ -55,6 +55,11 @@ func TestComUsuarioGravaAIdentidadeParaOsTriggers(t *testing.T) {
 	if quem != nil {
 		t.Fatalf("a identidade vazou para outra transação: %v", *quem)
 	}
+	// e o GUC, na mesma conexão, voltou a '' (não guarda o uuid anterior)
+	var guc string
+	if err := p.QueryRow(ctx, `select current_setting('app.usuario_id', true)`).Scan(&guc); err != nil || guc != "" {
+		t.Fatalf("GUC após o ComUsuario = %q, esperado '' (err %v)", guc, err)
+	}
 }
 
 func TestComUsuarioFazRollbackSeAFuncaoFalhar(t *testing.T) {
@@ -94,7 +99,7 @@ func TestComUsuarioRecusaIDInvalidoSemExecutarAFuncao(t *testing.T) {
 	}
 	chamou := false
 	err := banco.ComUsuario(ctx, p, "nao-e-uuid", func(pgx.Tx) error { chamou = true; return nil })
-	if err == nil || chamou {
+	if !errors.Is(err, banco.ErrUsuarioInvalido) || chamou {
 		t.Fatalf("deveria recusar um id que não é uuid (err=%v, chamou=%v)", err, chamou)
 	}
 }

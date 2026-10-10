@@ -4,14 +4,34 @@
 -- Idempotente. NÃO cria policies nem dá permissão a ninguém: a autorização é do Go.
 
 do $$
+declare r text;
 begin
-  if not exists (select 1 from pg_roles where rolname = 'anon') then create role anon nologin; end if;
-  if not exists (select 1 from pg_roles where rolname = 'authenticated') then create role authenticated nologin; end if;
-  if not exists (select 1 from pg_roles where rolname = 'service_role') then create role service_role nologin; end if;
+  -- Corrida entre sessões: o papel pode surgir entre o exists e o create.
+  foreach r in array array['anon','authenticated','service_role'] loop
+    if not exists (select 1 from pg_roles where rolname = r) then
+      begin
+        execute format('create role %I nologin', r);
+      exception when duplicate_object then null;
+      end;
+    end if;
+  end loop;
 end
 $$;
 
 create schema if not exists extensions;
+
+-- "create extension if not exists" passa calado se a extensão já existir em OUTRO schema
+-- (ex.: public), e aí extensions.gen_random_bytes() não resolveria. Falha com mensagem clara.
+do $$
+declare e record;
+begin
+  for e in select x.extname, n.nspname from pg_extension x join pg_namespace n on n.oid = x.extnamespace
+           where x.extname in ('pgcrypto', 'uuid-ossp') and n.nspname <> 'extensions' loop
+    raise exception 'a extensão % já está instalada no schema %, não em "extensions"; use um banco novo ou mova-a (alter extension % set schema extensions)', e.extname, e.nspname, quote_ident(e.extname);
+  end loop;
+end
+$$;
+
 create extension if not exists pgcrypto with schema extensions;
 create extension if not exists "uuid-ossp" with schema extensions;
 

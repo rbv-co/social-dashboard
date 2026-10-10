@@ -7,8 +7,13 @@ package banco_test
 
 import (
 	"context"
+	"fmt"
+	"os"
+	"strings"
 	"testing"
+	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rbv-co/social-dashboard/api/internal/banco"
 	"github.com/rbv-co/social-dashboard/api/internal/testebanco"
@@ -85,7 +90,6 @@ func TestCompat(t *testing.T) {
 	if err := tx.QueryRow(ctx, `select auth.uid()::text`).Scan(&uid); err != nil || uid != nil {
 		t.Fatalf("valor inválido: %v (err %v)", uid, err)
 	}
-	tx.Rollback(ctx)
 
 	// extensions.* resolve (as 18 funções de produção que usam pgcrypto/uuid)
 	var n int
@@ -107,5 +111,41 @@ func TestCompat(t *testing.T) {
 	var q int
 	if err := p.QueryRow(ctx, `select count(*) from pg_roles where rolname in ('anon','authenticated','service_role') and not rolcanlogin`).Scan(&q); err != nil || q != 3 {
 		t.Fatalf("papéis NOLOGIN = %d (err %v)", q, err)
+	}
+}
+
+// Extensão já instalada em outro schema: a camada tem de falhar com mensagem clara, não passar calada.
+// Extensões são do banco inteiro, então o teste usa um banco descartável próprio.
+func TestCompatFalhaSeExtensaoEstaEmOutroSchema(t *testing.T) {
+	_ = testebanco.Novo(t) // só para pular sem TEST_DATABASE_URL
+	ctx := context.Background()
+	cfg, err := pgx.ParseConfig(os.Getenv("TEST_DATABASE_URL"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	admin, err := pgx.ConnectConfig(ctx, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer admin.Close(ctx)
+	nome := fmt.Sprintf("t_ext_%d", time.Now().UnixNano())
+	if _, err := admin.Exec(ctx, "create database "+nome); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { admin.Exec(ctx, "drop database if exists "+nome+" with (force)") })
+
+	cfg2 := cfg.Copy()
+	cfg2.Database = nome
+	c, err := pgx.ConnectConfig(ctx, cfg2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close(ctx)
+	if _, err := c.Exec(ctx, `create extension pgcrypto with schema public`); err != nil {
+		t.Fatal(err)
+	}
+	_, err = c.Exec(ctx, banco.Compat)
+	if err == nil || !strings.Contains(err.Error(), "pgcrypto") || !strings.Contains(err.Error(), "public") {
+		t.Fatalf("esperava erro citando pgcrypto e public, veio %v", err)
 	}
 }

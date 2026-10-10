@@ -2,12 +2,15 @@ package banco
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"regexp"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+// ErrUsuarioInvalido: o id de usuário não é um uuid.
+var ErrUsuarioInvalido = errors.New("usuário inválido: não é um uuid")
 
 var reUUID = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
@@ -16,7 +19,7 @@ var reUUID = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[
 // set_config(..., true) vale só até o fim da transação: não vaza para a próxima.
 func ComUsuario(ctx context.Context, p *pgxpool.Pool, usuarioID string, fn func(tx pgx.Tx) error) error {
 	if !reUUID.MatchString(usuarioID) {
-		return fmt.Errorf("usuário inválido: não é um uuid")
+		return ErrUsuarioInvalido
 	}
 	tx, err := p.Begin(ctx)
 	if err != nil {
