@@ -25,7 +25,7 @@ func CarregarAtor(ctx context.Context, p *pgxpool.Pool, s *Sessao) (*Ator, error
 	var perm []byte
 	err := p.QueryRow(ctx,
 		`select coalesce(role::text, ''), coalesce(is_superadmin, false), coalesce(permissions, '{}'::jsonb),
-		        coalesce(features, '{}'::text[])
+		        coalesce(array_remove(features, null), '{}'::text[])
 		   from profiles where id = $1`, s.UsuarioID).Scan(&a.Papel, &a.SuperAdmin, &perm, &a.Modulos)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return a, nil // sem perfil = sem permissão (cliente da Vessel não tem profile)
