@@ -1,7 +1,10 @@
 package meta
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -10,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rbv-co/social-dashboard/api/internal/auth"
 	"github.com/rbv-co/social-dashboard/api/internal/core"
 )
 
@@ -87,8 +91,12 @@ func TestInsightsAoVivoCampanhasPeriodoAnteriorEErros(t *testing.T) {
 		t.Fatalf("soma só de c1 nas duas páginas = %v", m["investimento"])
 	}
 	ant, ok := m["anterior"].(map[string]any)
-	if !ok || m["meta_erro"] != "meta_incompleto" || ant["engajamento"] == nil {
-		t.Fatalf("anterior/meta_erro: %s", w.Body)
+	if !ok || m["meta_erro"] != nil || ant["engajamento"] == nil || m["engajamento"].(map[string]any)["views"] != 100.0 {
+		t.Fatalf("falha só no período anterior não pode virar meta_erro: %s", w.Body)
+	}
+	atualFalha := a.post("/insights-ao-vivo", a.tokens[uSocial], `{"account_id":"conta-1","engSince":"erro","engUntil":"2","folSince":"1","folUntil":"2"}`)
+	if m := decodificar(t, atualFalha); m["meta_erro"] != "meta_incompleto" {
+		t.Fatalf("falha no período atual é meta_incompleto: %s", atualFalha.Body)
 	}
 	var pagina2 *core.PedidoMeta
 	for i, p := range a.core.pedidos {
@@ -225,6 +233,119 @@ func TestAoVivoCore401Nunca401(t *testing.T) {
 	}
 	w = a.post("/serie-novos-dia", a.tokens[uSocial], `{"account_id":"conta-1","dias":[{"since":"1","until":"2","label":"x"}]}`)
 	if w.Code != 200 || strings.Contains(w.Body.String(), tokenDoCore) || !strings.Contains(w.Body.String(), `"publicado":false`) {
+		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+}
+
+const corpoInsights = `{"account_id":"conta-1","engSince":"1","engUntil":"2","folSince":"1","folUntil":"2"}`
+const corpoSerie = `{"account_id":"conta-1","dias":[{"since":"1","until":"2","label":"x"}]}`
+const corpoCollabs = `{"account_id":"conta-1","since":"2026-10-01","until":"2026-10-07"}`
+
+var rotasAoVivo = []struct{ rota, corpo string }{
+	{"/insights-ao-vivo", corpoInsights}, {"/serie-novos-dia", corpoSerie}, {"/contar-collabs", corpoCollabs},
+}
+
+func TestAoVivoPortaoNasTresRotas(t *testing.T) {
+	a := montarMeta(t, graphFalsa)
+	servico := func(u string) string {
+		tk, err := auth.NovoStore(a.p).Criar(context.Background(), u, "servico", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return tk
+	}
+	for _, r := range rotasAoVivo {
+		for _, c := range []struct {
+			nome, token string
+			quer        int
+		}{
+			{"sem sessão", "", 401}, {"token inválido", "lixo", 401},
+			{"sem o módulo social", a.tokens[uNada], 403}, {"só meta", a.tokens[uMeta], 403},
+			{"social", a.tokens[uSocial], 200}, {"role admin", a.tokens[uAdmin], 200},
+			{"sessão de serviço com social", servico(uSocial), 200}, {"sessão de serviço sem social", servico(uNada), 403},
+		} {
+			if w := a.post(r.rota, c.token, r.corpo); w.Code != c.quer {
+				t.Errorf("%s %s: %d, esperava %d (%s)", r.rota, c.nome, w.Code, c.quer, w.Body)
+			}
+		}
+	}
+}
+
+func capturarLog(t *testing.T) *bytes.Buffer {
+	var log bytes.Buffer
+	antes := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&log, nil)))
+	t.Cleanup(func() { slog.SetDefault(antes) })
+	return &log
+}
+
+func TestAoVivoSemTokenDoCore503(t *testing.T) {
+	a := montarMeta(t, graphFalsa)
+	a.cli.Token = ""
+	for _, r := range rotasAoVivo {
+		w := a.post(r.rota, a.tokens[uSocial], r.corpo)
+		if w.Code != 503 || !strings.Contains(w.Body.String(), "core nao configurado") {
+			t.Errorf("%s: %d %s", r.rota, w.Code, w.Body)
+		}
+	}
+	if a.core.n() != 0 {
+		t.Fatalf("sem token nada vai ao core: %d", a.core.n())
+	}
+}
+
+func TestAoVivoLogaCausaDos500SemVazarToken(t *testing.T) {
+	log := capturarLog(t)
+	a := montarMeta(t, graphFalsa)
+	morto := httptest.NewServer(http.NotFoundHandler())
+	morto.Close()
+	a.cli.URL = morto.URL
+	for _, r := range []struct{ rota, corpo string }{{"/insights-ao-vivo", corpoInsights}, {"/contar-collabs", corpoCollabs}} {
+		w := a.post(r.rota, a.tokens[uSocial], r.corpo)
+		if w.Code != 500 || strings.Contains(w.Body.String(), tokenDoCore) {
+			t.Fatalf("%s: %d %s", r.rota, w.Code, w.Body)
+		}
+	}
+	if !strings.Contains(log.String(), "level=ERROR") || strings.Contains(log.String(), tokenDoCore) {
+		t.Fatalf("log: %s", log.String())
+	}
+	// banco fora também loga a causa (e responde 500)
+	log.Reset()
+	a.p.Close()
+	for _, r := range rotasAoVivo {
+		if w := a.post(r.rota, a.tokens[uSocial], r.corpo); w.Code == 200 {
+			t.Fatalf("%s com banco fora: %d", r.rota, w.Code)
+		}
+	}
+}
+
+func TestSerieNovosDiaRepete429EPulaDiaSemDatas(t *testing.T) {
+	var chamadas atomic.Int32
+	a := montarMeta(t, func(p core.PedidoMeta) (int, string, map[string]string) {
+		if chamadas.Add(1) == 1 {
+			return 429, `{"erro":"meta_em_recuo"}`, map[string]string{"Retry-After": "1"}
+		}
+		return 200, `{"data":[{"total_value":{"breakdowns":[{"results":[{"dimension_values":["FOLLOWER"],"value":2}]}]}}]}`, nil
+	})
+	w := a.post("/serie-novos-dia", a.tokens[uSocial], corpoSerie)
+	if !strings.Contains(w.Body.String(), `"publicado":true`) || a.core.n() != 2 {
+		t.Fatalf("429 e depois 200: %s, %d chamadas", w.Body, a.core.n())
+	}
+	antes := a.core.n()
+	w = a.post("/serie-novos-dia", a.tokens[uSocial], `{"account_id":"conta-1","dias":[{"label":"a"},{"since":"1","label":"b"},{"until":"2","label":"c"}]}`)
+	if strings.Count(w.Body.String(), `"publicado":false`) != 3 || a.core.n() != antes {
+		t.Fatalf("dia sem since/until: %s, %d chamadas novas", w.Body, a.core.n()-antes)
+	}
+}
+
+func TestInsightsSoNovosFalhaViraIncompleto(t *testing.T) {
+	a := montarMeta(t, func(p core.PedidoMeta) (int, string, map[string]string) {
+		if p.Parametros["metric"] == "follows_and_unfollows" {
+			return 400, `{"error":{"message":"x","code":100}}`, nil
+		}
+		return graphFalsa(p)
+	})
+	w := a.post("/insights-ao-vivo", a.tokens[uSocial], corpoInsights)
+	if m := decodificar(t, w); w.Code != 200 || m["meta_erro"] != "meta_incompleto" {
 		t.Fatalf("%d %s", w.Code, w.Body)
 	}
 }

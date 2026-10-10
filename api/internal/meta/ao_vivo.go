@@ -6,11 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"regexp"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 	_ "time/tzdata" // America/Sao_Paulo sem depender do zoneinfo do contêiner
 
@@ -203,6 +205,17 @@ func lerCorpo(w http.ResponseWriter, r *http.Request, destino any) bool {
 	return true
 }
 
+// falhar responde a uma falha sem resposta do core: sem token = 503 (como meta-proxy e bling),
+// o resto = 500 `erro interno`. Só a causa vai ao log (o cliente do core não põe o token em erro).
+func falhar(w http.ResponseWriter, rota, chave string, err error) {
+	if errors.Is(err, core.ErrSemToken) {
+		responder(w, http.StatusServiceUnavailable, obj{chave: "core nao configurado"})
+		return
+	}
+	slog.Error("ao-vivo: falha", "rota", rota, "erro", err)
+	responder(w, http.StatusInternalServerError, obj{chave: "erro interno"})
+}
+
 // ── insights-ao-vivo ──────────────────────────────────────────────────────────
 
 type periodo struct{ eS, eU, fS, fU string }
@@ -226,7 +239,7 @@ func (av *AoVivo) Insights(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		responder(w, http.StatusInternalServerError, obj{"meta_erro": "erro interno"})
+		falhar(w, "insights-ao-vivo", "meta_erro", err)
 		return
 	}
 	igID := ""
@@ -254,13 +267,13 @@ func (av *AoVivo) Insights(w http.ResponseWriter, r *http.Request) {
 			falhou = err
 		}
 	}
-	por := func(destino obj, p periodo) {
+	por := func(destino obj, p periodo, corrente bool) {
 		wg.Go(func() {
 			e, err := av.engajamento(ctx, igID, p.eS, p.eU)
 			anotar(err)
 			mu.Lock()
 			destino["engajamento"] = e.obj
-			incompl = incompl || e.erro
+			incompl = incompl || (corrente && e.erro)
 			mu.Unlock()
 		})
 		wg.Go(func() {
@@ -275,7 +288,7 @@ func (av *AoVivo) Insights(w http.ResponseWriter, r *http.Request) {
 			anotar(err)
 			mu.Lock()
 			destino["novos"] = obj{"seguiu": n.seguiu, "deixou": n.deixou, "total": n.seguiu - n.deixou}
-			incompl = incompl || n.erro
+			incompl = incompl || (corrente && n.erro)
 			mu.Unlock()
 		})
 		wg.Go(func() {
@@ -308,13 +321,13 @@ func (av *AoVivo) Insights(w http.ResponseWriter, r *http.Request) {
 		seguidor = f
 		mu.Unlock()
 	})
-	por(out, atual)
+	por(out, atual, true)
 	if querAnterior {
-		por(anterior, ant)
+		por(anterior, ant, false)
 	}
 	wg.Wait()
 	if falhou != nil {
-		responder(w, http.StatusInternalServerError, obj{"meta_erro": "erro interno"})
+		falhar(w, "insights-ao-vivo", "meta_erro", falhou)
 		return
 	}
 	// Interações de anúncio = Ads Manager (sobrepõe o breakdown do IG, que difere).
@@ -515,7 +528,7 @@ func (av *AoVivo) SerieNovosDia(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		responder(w, http.StatusInternalServerError, obj{"erro": "erro interno"})
+		falhar(w, "serie-novos-dia", "erro", err)
 		return
 	}
 	igID := ""
@@ -524,14 +537,22 @@ func (av *AoVivo) SerieNovosDia(w http.ResponseWriter, r *http.Request) {
 	}
 	dias := in.Dias[:min(len(in.Dias), 93)]
 	serie := make([]obj, len(dias))
+	var semToken atomic.Bool
 	for ini := 0; ini < len(dias); ini += 5 {
 		var wg sync.WaitGroup
 		for i := ini; i < min(ini+5, len(dias)); i++ {
 			wg.Go(func() {
 				d := dias[i]
+				if textoDe(d["since"]) == "" || textoDe(d["until"]) == "" { // a edge mandava "undefined" e a Graph recusava
+					serie[i] = obj{"label": d["label"], "seguiu": 0.0, "deixou": 0.0, "publicado": false}
+					return
+				}
 				resp, err := av.graph(r.Context(), "/"+igID+"/insights", obj{"metric": "follows_and_unfollows", "period": "day",
 					"metric_type": "total_value", "breakdown": "follow_type", "since": textoDe(d["since"]), "until": textoDe(d["until"])})
 				publicado, seguiu, deixou := false, 0.0, 0.0
+				if errors.Is(err, core.ErrSemToken) {
+					semToken.Store(true)
+				}
 				if err == nil { // sem resposta = "não publicado", nunca um zero que parece verdade
 					publicado, seguiu, deixou = lerBrutoDoDia(resp)
 				}
@@ -539,6 +560,10 @@ func (av *AoVivo) SerieNovosDia(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 		wg.Wait()
+		if semToken.Load() {
+			falhar(w, "serie-novos-dia", "erro", core.ErrSemToken)
+			return
+		}
 	}
 	responder(w, http.StatusOK, obj{"serie": serie})
 }
@@ -568,17 +593,17 @@ func (av *AoVivo) ContarCollabs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		responder(w, http.StatusInternalServerError, obj{"erro": "erro interno"})
+		falhar(w, "contar-collabs", "erro", err)
 		return
 	}
 	linhas, err := av.Pool.Query(r.Context(), `select instagram_id::text from accounts where id::text <> $1 and instagram_id is not null`, conta)
 	if err != nil {
-		responder(w, http.StatusInternalServerError, obj{"erro": "erro interno"})
+		falhar(w, "contar-collabs", "erro", err)
 		return
 	}
 	outros, err := pgx.CollectRows(linhas, pgx.RowTo[string])
 	if err != nil {
-		responder(w, http.StatusInternalServerError, obj{"erro": "erro interno"})
+		falhar(w, "contar-collabs", "erro", err)
 		return
 	}
 	alvoIG := ""
@@ -596,7 +621,7 @@ func (av *AoVivo) ContarCollabs(w http.ResponseWriter, r *http.Request) {
 			}
 			m, err := av.graph(r.Context(), "/"+o+"/media", params)
 			if err != nil {
-				responder(w, http.StatusInternalServerError, obj{"erro": "erro interno"})
+				falhar(w, "contar-collabs", "erro", err)
 				return
 			}
 			if m["error"] != nil {
