@@ -44,5 +44,23 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 # Vigia de problemas do Meta (leitura + upsert, sem IA).
 7 7 * * * root /opt/robos/social-dashboard/coletor/vps/rodar-robo.sh vigia-problemas-meta 20 -- node coletor/vigia-problemas-meta.mjs
 
+# ── Semanais e relatório diário (migrados do Actions em 2026-10-10) ───────────────────────────────────────────
+# O GitHub atrasava estes agendamentos em horas (o OPR de 08:00 UTC chegou a rodar às ~14:07); aqui rodam no minuto.
+# Todos gastam IA ou mandam mensagem: o lock do nome impede rodada dupla.
+
+# Coletor de Notícias (segunda 09:07 UTC): 7 passos, falha de um não aborta os outros. Opus + web search: ~2,5 h no máximo.
+7 9 * * 1 root /opt/robos/social-dashboard/coletor/vps/rodar-robo.sh coletor-noticias 160 -- bash coletor/vps/coletor-noticias.sh
+
+# Gestor Comercial (briefing semanal, segunda 09:23 UTC).
+23 9 * * 1 root /opt/robos/social-dashboard/coletor/vps/rodar-robo.sh gestor-comercial 20 -- node coletor/gestor-comercial.mjs
+
+# Sugestão de interesses (domingo 10:34 UTC; só o modo normal. As sondas e o --dry eram do botão manual).
+34 10 * * 0 root /opt/robos/social-dashboard/coletor/vps/rodar-robo.sh sugerir-interesses 20 -- node coletor/sugerir-interesses.mjs
+
+# Relatório OPR diário (05h BRT = 08:00 UTC): gera o PNG e manda para o grupo pela Z-API. Node 22 de propósito (o 24 deu
+# "Illegal base64 character" no send-image). ⚠️ Falha todo dia enquanto a instância Z-API estiver com o WhatsApp
+# desconectado (reconectar = ler o QR na Z-API); o alerta só avisa na 1ª falha, não 1 por dia.
+0 8 * * * root /opt/robos/social-dashboard/coletor/vps/rodar-robo.sh opr-diario 10 -- node coletor/gerar-opr-diario.mjs
+
 # Budget IA (análise diária de tráfego, 08h BRT). Gasta IA: nunca duas rodadas juntas (o lock do nome cuida disso).
 0 11 * * * root /opt/robos/social-dashboard/coletor/vps/rodar-robo.sh budget-ia 20 -- node coletor/budget-ia.mjs
