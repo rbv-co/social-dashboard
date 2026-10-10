@@ -99,6 +99,10 @@ func montarMetaCom(t *testing.T, resp func(core.PedidoMeta) (int, string, map[st
 	r.Group(func(r chi.Router) {
 		r.Use(auth.Exigir(p, s))
 		r.With(auth.ExigirModulo("meta")).Post("/meta-proxy", (&Proxy{Pool: p, Core: cli, HostsDeMidia: hosts}).ServeHTTP)
+		av := &AoVivo{Pool: p, Core: cli}
+		r.With(auth.ExigirModulo("social")).Post("/insights-ao-vivo", av.Insights)
+		r.With(auth.ExigirModulo("social")).Post("/serie-novos-dia", av.SerieNovosDia)
+		r.With(auth.ExigirModulo("social")).Post("/contar-collabs", av.ContarCollabs)
 	})
 	return &ambienteMeta{p: p, h: r, core: f, cli: cli, tokens: tokens}
 }
