@@ -31,8 +31,15 @@ shift 3
 mkdir -p "$LOGS"
 log() { echo "$(date -u +%FT%TZ) [$nome] $*" >> "$LOGS/$nome.log"; }
 
-# Segredos para o ambiente do robô. `set -a` exporta tudo o que o arquivo definir.
-if [ -r "$ENV_ROBOS" ]; then set -a; . "$ENV_ROBOS"; set +a; else log "ERRO: sem $ENV_ROBOS"; exit 78; fi
+# Segredos para o ambiente do robô. Lidos como TEXTO (CHAVE=valor, aspas externas opcionais), nunca com `source`:
+# uma senha com `$(...)`, `&` ou `;` não pode virar comando.
+[ -r "$ENV_ROBOS" ] || { log "ERRO: sem $ENV_ROBOS"; exit 78; }
+while IFS= read -r linha || [ -n "$linha" ]; do
+  [[ "$linha" =~ ^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]] || continue   # pula comentário e linha vazia
+  valor="${BASH_REMATCH[2]}"
+  case "$valor" in \"*\") valor="${valor:1:${#valor}-2}" ;; \'*\') valor="${valor:1:${#valor}-2}" ;; esac
+  export "${BASH_REMATCH[1]}=$valor"
+done < "$ENV_ROBOS"
 export PATH="$NODE_BIN:$PATH"
 
 avisar() {

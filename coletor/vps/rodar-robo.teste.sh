@@ -7,13 +7,16 @@ T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 mkdir -p "$T/raiz/coletor"
 git -C "$T/raiz" init -q
 export RAIZ="$T/raiz" LOGS="$T/logs" LOCKS="$T" ENV_ROBOS="$T/robos.env" NODE_BIN="$T"
-echo 'SEGREDO=valor-que-nao-pode-ir-pro-log' > "$T/robos.env"
+printf '%s\n' '# comentário' 'SEGREDO=valor-que-nao-pode-ir-pro-log' 'ASPAS="com aspas"' "PERIGO=a&b;touch $T/executou \$(touch $T/executou2)" '' > "$T/robos.env"
 falhas=0
 confere() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FALHA $1 (esperado '$3', veio '$2')"; falhas=$((falhas + 1)); fi; }
 R="$AQUI/rodar-robo.sh"
 
 bash "$R" ok 1 -- sh -c 'test -n "$SEGREDO"'; confere "sucesso e env carregado" $? 0
 [ -e "$T/logs/ok.falhou" ]; confere "sucesso não deixa marca de falha" $? 1
+bash "$R" aspas 1 -- sh -c '[ "$ASPAS" = "com aspas" ]'; confere "aspas externas são removidas" $? 0
+bash "$R" perigo 1 -- sh -c 'case "$PERIGO" in a\&b\;touch*) exit 0;; *) exit 1;; esac'; confere "valor com & ; \$() chega literal" $? 0
+[ -e "$T/executou" ] || [ -e "$T/executou2" ]; confere "valor do env nunca é executado" $? 1
 
 bash "$R" ruim 1 -- sh -c 'exit 3'; confere "falha devolve o código" $? 3
 [ -e "$T/logs/ruim.falhou" ]; confere "falha deixa marca" $? 0
