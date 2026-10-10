@@ -133,3 +133,25 @@ test('saldoDoDepositoPorSku: maxIdadeMin barra espelho velho; 0 nao checa', asyn
   assert.equal((await saldoDoDepositoPorSku(mk(), { ...args, maxIdadeMin: 0 })).get('A'), 5);
   assert.equal((await saldoDoDepositoPorSku(mk(), { ...args, maxIdadeMin: 600 })).get('A'), 5);
 });
+
+// Core LENTO/pendurado: sem prazo o robô ficava parado até o limite do wrapper (30 min) sem dizer nada.
+test('core lento: fetch que nunca responde e abortado pelo prazo e lanca erro claro', async () => {
+  // timer com ref: o fetch de verdade mantém o loop vivo; o falso precisa fazer o mesmo (AbortSignal.timeout é unref).
+  const pendurado = (_url, init) => new Promise((_, rej) => {
+    const vivo = setTimeout(() => {}, 5000);
+    init.signal.addEventListener('abort', () => { clearTimeout(vivo); rej(init.signal.reason); });
+  });
+  const core = criarClienteCore({ token: 't', fetchImpl: pendurado, prazoMs: 20, esperar: semEspera });
+  await assert.rejects(core.todas('pedidos'), (e) => /prazo|timeout|abort/i.test(`${e.name} ${e.message}`));
+});
+
+test('core fora (conexao recusada): lanca, nunca devolve lista vazia', async () => {
+  const core = criarClienteCore({ token: 't', fetchImpl: async () => { throw new TypeError('fetch failed'); }, esperar: semEspera });
+  await assert.rejects(core.todas('pedidos'), /fetch failed/);
+});
+
+test('core 200 com corpo que nao e JSON: lanca', async () => {
+  const f = falso(() => ({ ok: true, status: 200, json: async () => { throw new SyntaxError('Unexpected token <'); } }));
+  const core = criarClienteCore({ token: 't', fetchImpl: f.fetchImpl, esperar: semEspera });
+  await assert.rejects(core.todas('pedidos'), /Unexpected token/);
+});
