@@ -238,6 +238,28 @@ test('Retry-After de um 503 é respeitado (espera o que o servidor mandou)', asy
   } finally { srv.close() }
 })
 
+test('503 sem Retry-After (ou com valor inválido) espera o backoff normal; com data HTTP espera até ela', async () => {
+  const medir = async (cabecalho, espera) => {
+    const { srv, url } = await simples((req, res, n) => {
+      if (req.method === 'POST') return res.end(lista1('a.txt', 2))
+      if (n === 2) return res.writeHead(503, cabecalho ? { 'retry-after': cabecalho() } : {}).end()
+      res.end('xx')
+    })
+    try {
+      const t0 = Date.now()
+      const r = await copiarBucket({ url, chave: 'k', bucket: 'b', destino: dest(), espera })
+      assert.equal(r.copiados, 1)
+      return Date.now() - t0
+    } finally { srv.close() }
+  }
+  assert.ok(await medir(null, 300) >= 250, 'sem cabeçalho repetiu sem esperar o backoff')
+  assert.ok(await medir(() => '-5', 300) >= 250, 'valor negativo deveria cair no backoff')
+  assert.ok(await medir(() => 'Infinity', 300) >= 250, 'Infinity deveria cair no backoff')
+  assert.ok(await medir(() => '', 300) >= 250, 'vazio deveria cair no backoff')
+  const t = await medir(() => new Date(Date.now() + 2500).toUTCString(), 1) // data HTTP ~1,5 a 2,5 s à frente
+  assert.ok(t >= 1000, `data HTTP: esperou só ${t} ms`)
+})
+
 test('timeout de cabeçalhos: servidor que nunca responde falha com TIMEOUT', async () => {
   const { srv, url } = await simples(() => {})
   try {

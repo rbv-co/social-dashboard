@@ -5,6 +5,7 @@
 # Uso: sh ops/migracao/ensaio-local.sh
 set -eu
 AQUI=$(cd "$(dirname "$0")" && pwd)
+. "$AQUI/oculta.sh"
 ORIG=ensaio-local-origem; ALVO=ensaio-local-alvo; PO=${ENSAIO_PORTA_ORIGEM:-58441}; PA=${ENSAIO_PORTA_ALVO:-58442}
 OUT=$(mktemp -d)
 limpa() { docker rm -fv "$ORIG" "$ALVO" >/dev/null 2>&1 || true; rm -rf "$OUT"; }

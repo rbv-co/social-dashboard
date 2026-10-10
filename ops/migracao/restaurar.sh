@@ -9,7 +9,7 @@ ALVO=${1:?uso: restaurar.sh ALVO_DATABASE_URL DUMP_DIR}
 DUMP=${2:?uso: restaurar.sh ALVO_DATABASE_URL DUMP_DIR}
 AQUI=$(cd "$(dirname "$0")" && pwd)
 RAIZ=$(cd "$AQUI/../.." && pwd)
-oculta() { sed -E 's#postgres(ql)?://[^ "]*#<URL>#g'; }
+. "$AQUI/oculta.sh"
 LOG=$(mktemp); ESTADOS=$(mktemp); trap 'rm -f "$LOG" "$ESTADOS"' EXIT
 # psql cujo stderr passa por oculta (a URL não vaza), preservando o código de saída
 pq() { s=0; psql "$@" 2> "$LOG" || s=$?; oculta < "$LOG" >&2; return $s; }
