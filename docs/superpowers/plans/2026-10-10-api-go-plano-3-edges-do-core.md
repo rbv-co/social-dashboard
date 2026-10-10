@@ -25,7 +25,7 @@
 
 ## Review Focus
 
-1. **`params` do bling-proxy montado à mão pelo front** (objeto aninhado, `null`, lista de um item, número) → a mesma `query` que a edge mandava ao core (objeto vira texto JSON, lista de um vira texto, `null` some, número vira o literal). Teste: `TestBlingProxyRepassaOContrato` (Task 3).
+1. **`params` do bling-proxy montado à mão pelo front** (objeto aninhado, `null`, lista de um item, número) → a mesma `query` que a edge mandava ao core (objeto vira o texto "[object Object]" (String() do JS, como a edge), lista de um vira texto, `null` some, número vira o literal). Teste: `TestBlingProxyRepassaOContrato` (Task 3).
 2. **`accountId` numérico × texto no meta-proxy** (o front manda os dois) → ambos acham a conta (`id::text = $1`). Teste: último caso de `TestMetaProxyMontaOPedidoDoCore` (Task 4).
 3. **Cabeçalho de assinatura da Shopify com base64 inválido ou espaços nas pontas** → 401 sem pânico / aceito depois de aparar. Teste: `TestShopifyAssinatura` (Task 7).
 4. **Pedido do Bling com `loja.id` em texto ou sem `loja`, para quem está limitado** → texto e número casam; sem loja é negado, nunca "de todo mundo". Teste: `TestRecortar` (Task 2).
