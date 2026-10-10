@@ -4,7 +4,7 @@
 
 **Goal:** Ter o Postgres próprio definido e testável, uma camada de compatibilidade que restaura o schema `public` de produção **sem reescrever as 308 funções no dia 1**, scripts de dump → limpeza → restore → conferência, cópia do Storage, e um ensaio de corte cronometrado e repetível.
 
-**Architecture:** O schema `public` de produção é restaurado como está num Postgres 17 novo, depois de uma limpeza (sem policies, RLS, grants de `anon/authenticated/service_role` e extensões do Supabase). Uma camada de compatibilidade (`auth.uid()` lido de `app.usuario_id`, schema `extensions` com pgcrypto/uuid-ossp, papéis `NOLOGIN`) deixa as 64 funções que usam `auth.uid()` e as 18 que usam `extensions.*` funcionarem; a API define `app.usuario_id` por transação (`ComUsuario`). O dado migra com `pg_restore --data-only --disable-triggers`. O Storage migra por um script que lê a API REST e grava em disco.
+**Architecture:** O schema `public` de produção é restaurado como está num Postgres 17 novo, depois de uma limpeza (sem policies, RLS, grants de `anon/authenticated/service_role` e extensões do Supabase). Uma camada de compatibilidade (`auth.uid()` lido de `app.usuario_id`, schema `extensions` com pgcrypto/uuid-ossp, papéis `NOLOGIN`) deixa as 64 funções que usam `auth.uid()` e as 18 que usam `extensions.*` funcionarem; a API define `app.usuario_id` por transação (`ComUsuario`). As **21 chaves estrangeiras de 16 tabelas para `auth.users(id)`** (medido em produção) são reescritas na limpeza para `public.usuarios(id)`, a tabela de identidade da API, que o restore cria (migration do Plano 1) **antes** de carregar o schema. O dado migra com `pg_restore --data-only --disable-triggers`. O Storage migra por um script que lê a API REST e grava em disco.
 
 **Tech Stack:** Go 1.26 (`api/`), Postgres 17, Docker, shell POSIX, Node 22 (`node --test`).
 
@@ -19,6 +19,7 @@
 - **Dumps contêm dado pessoal e segredos** (`bling_tokens`, `segredos_de_cron`, `acessos_conexoes`...): ficam em `ops/migracao/saida/` (ignorada pelo git), modo `600`, e o ensaio **apaga** os dumps ao terminar, a menos que `--manter`.
 - Não levar: schemas `auth`, `storage`, `cron`, `net`, `vault`, `realtime`, `extensions` do Supabase, `supabase_*`; nem `pg_cron`, `pg_net`, `supabase_vault`, `pg_stat_statements` (spec §3.2).
 - Policies, `ENABLE ROW LEVEL SECURITY` e `GRANT/REVOKE` para `anon/authenticated/service_role` **não** vão para o banco novo (decisão do dono: sem RLS).
+- **Chaves estrangeiras para `auth.users(id)` (21, em 16 tabelas) viram `REFERENCES public.usuarios(id)`** com o mesmo `ON DELETE`; depois de importar os usuários não pode haver linha órfã (`conferir-orfaos.sh`).
 - Sem ORM e sem dependências novas além de `node:*` e do que já existe em `api/go.mod`.
 - Cada commit termina com `Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>`. Textos e comentários em português, com acentuação correta.
 
@@ -31,7 +32,8 @@
 5. Nome de objeto do Storage com `..`, barra inicial ou caractere de controle **não escreve fora** da pasta de destino (Task 6).
 6. Cópia do Storage interrompida e repetida não corrompe nem duplica (retomável por tamanho) (Task 6).
 7. Rodar o ensaio duas vezes seguidas dá o mesmo resultado (idempotente: recria o banco alvo do zero) (Task 7).
-8. O ensaio nunca aponta para produção por engano: recusa `ALVO_DATABASE_URL` cujo host não seja `localhost`/`127.0.0.1`/`::1` sem `--permitir-alvo-remoto` (Task 7).
+9. As FKs para `auth.users` são reescritas **só** em `alter table`/`create table` (nunca em texto dentro de corpo de função) e, após `importar-usuarios`, nenhuma FK para `usuarios` tem órfãos; usuário apagado (soft delete) no Auth que ainda é referenciado aparece como órfão no relatório, não é escondido (Tasks 3, 4, 7).
+8. O ensaio nunca aponta para produção por engano: recusa `ALVO_DATABASE_URL` cujo host não seja `127.0.0.1` (o contêiner só escuta nele; `localhost` e `::1` NÃO são aceitos) sem `--permitir-alvo-remoto` (Task 7).
 
 ## Estrutura de arquivos
 
@@ -47,6 +49,7 @@ ops/migracao/limpar-dump.test.mjs
 ops/migracao/dump-supabase.sh             # schema + dados, somente leitura
 ops/migracao/restaurar.sh                 # compat + schema limpo + dados
 ops/migracao/conferir-contagens.sh        # count(*) origem × destino
+ops/migracao/conferir-orfaos.sh           # FKs para public.usuarios sem linha pai
 ops/migracao/ensaio-local.sh              # prova de ponta a ponta com um "Supabase de mentira" no Docker
 ops/migracao/copiar-storage.mjs           # Storage REST -> disco
 ops/migracao/copiar-storage.test.mjs
@@ -393,7 +396,7 @@ git commit -m "feat(api): ComUsuario grava app.usuario_id por transação para o
 - Modify: `.gitignore` (acrescentar `ops/migracao/saida/`)
 
 **Interfaces:**
-- Produces: `dividir(sql) -> string[]` (comandos, cada um com o `;` final e os comentários que o antecedem; linhas `\meta` do psql viram itens próprios) e `limpar(sql) -> { sql: string, removidos: { policies, rls, grants, extensoes, publicacoes } }`. CLI: `node ops/migracao/limpar-dump.mjs ENTRADA.sql SAIDA.sql` (imprime as contagens).
+- Produces: `dividir(sql) -> string[]` (comandos, cada um com o `;` final e os comentários que o antecedem; linhas `\meta` do psql viram itens próprios) e `limpar(sql) -> { sql: string, removidos: { policies, rls, grants, extensoes, publicacoes }, reescritos: { fks_usuarios } }` (`fks_usuarios` conta as ocorrências de `REFERENCES auth.users(id)` trocadas por `REFERENCES public.usuarios(id)`, apenas dentro de comandos `alter table` e `create table`). CLI: `node ops/migracao/limpar-dump.mjs ENTRADA.sql SAIDA.sql` (imprime o JSON `{removidos, reescritos}`).
 
 - [ ] **Step 1: Teste que falha**
 
@@ -439,6 +442,7 @@ create publication supabase_realtime;
 `
   const r = limpar(sql)
   assert.deepEqual(r.removidos, { policies: 1, rls: 2, grants: 3, extensoes: 1, publicacoes: 1 })
+  assert.deepEqual(r.reescritos, { fks_usuarios: 0 })
   assert.match(r.sql, /create table t/)
   assert.match(r.sql, /create extension if not exists pgcrypto/)
   assert.doesNotMatch(r.sql, /create policy|row level security|grant all|pg_cron|publication/i)
@@ -453,6 +457,26 @@ end $f$;`
   const r = limpar(sql)
   assert.equal(r.sql.trim(), sql.trim())
   assert.deepEqual(r.removidos, { policies: 0, rls: 0, grants: 0, extensoes: 0, publicacoes: 0 })
+})
+
+test('limpar reescreve FK para auth.users(id) em alter table e create table, mantendo o ON DELETE', () => {
+  const sql = `alter table only public.profiles add constraint profiles_id_fkey foreign key (id) references auth.users(id) on delete cascade;
+create table public.t (id int, u uuid references auth.users (id) on delete set null, v uuid references auth.users(id));`
+  const r = limpar(sql)
+  assert.equal(r.reescritos.fks_usuarios, 3)
+  assert.match(r.sql, /references public\.usuarios\(id\) on delete cascade/i)
+  assert.match(r.sql, /references public\.usuarios\(id\) on delete set null/i)
+  assert.doesNotMatch(r.sql, /auth\.users/)
+})
+
+test('limpar NÃO mexe em "references auth.users" dentro de corpo de função nem de comentário', () => {
+  const sql = `create function f() returns void language plpgsql as $$ begin perform 1; -- references auth.users(id)
+  execute 'alter table t add foreign key (u) references auth.users(id)'; end $$;
+-- alter table x add foreign key (u) references auth.users(id);
+select 1;`
+  const r = limpar(sql)
+  assert.equal(r.sql, sql)
+  assert.equal(r.reescritos.fks_usuarios, 0)
 })
 
 test('limpar mantém o resto do dump byte a byte', () => {
@@ -529,16 +553,25 @@ const REGRAS = [
   ['publicacoes', /^(create|alter|drop)\s+publication\b/i],
 ]
 
+// 21 FKs de 16 tabelas apontam para auth.users(id); no banco novo a identidade é public.usuarios.
+// Só em alter table / create table: texto dentro de função ou de comentário não é tocado.
+const FK_AUTH = /\breferences\s+auth\.users\s*\(\s*id\s*\)/gi
+
 export function limpar(sql) {
   const removidos = { policies: 0, rls: 0, grants: 0, extensoes: 0, publicacoes: 0 }
+  const reescritos = { fks_usuarios: 0 }
   const mantidos = []
   for (const cmd of dividir(sql)) {
     const corpo = semComentarios(cmd)
     const regra = REGRAS.find(([, re]) => re.test(corpo))
-    if (regra) removidos[regra[0]]++
-    else mantidos.push(cmd)
+    if (regra) { removidos[regra[0]]++; continue }
+    if (/^(alter\s+table|create\s+table)\b/i.test(corpo) && corpo.search(FK_AUTH) >= 0) {
+      reescritos.fks_usuarios += (corpo.match(FK_AUTH) || []).length
+      // troca só no corpo do comando (não nos comentários que o antecedem)
+      mantidos.push(cmd.replace(corpo, corpo.replace(FK_AUTH, 'REFERENCES public.usuarios(id)')))
+    } else mantidos.push(cmd)
   }
-  return { sql: mantidos.join(''), removidos }
+  return { sql: mantidos.join(''), removidos, reescritos }
 }
 
 if (process.argv[1] && import.meta.url === new URL(process.argv[1], 'file://').href) {
@@ -546,7 +579,7 @@ if (process.argv[1] && import.meta.url === new URL(process.argv[1], 'file://').h
   if (!entrada || !saida) { console.error('uso: node limpar-dump.mjs ENTRADA.sql SAIDA.sql'); process.exit(2) }
   const r = limpar(readFileSync(entrada, 'utf8'))
   writeFileSync(saida, r.sql, { mode: 0o600 })
-  console.log(JSON.stringify(r.removidos))
+  console.log(JSON.stringify({ removidos: r.removidos, reescritos: r.reescritos }))
 }
 ```
 
@@ -568,15 +601,18 @@ git commit -m "feat(migracao-go): limpeza do dump do Supabase (sem policies, RLS
 ### Task 4: Dump, restore e conferência (com prova de ponta a ponta num "Supabase de mentira")
 
 **Files:**
-- Create: `ops/migracao/pg17.sh`, `ops/migracao/dump-supabase.sh`, `ops/migracao/restaurar.sh`, `ops/migracao/conferir-contagens.sh`, `ops/migracao/ensaio-local.sh`
+- Create: `ops/migracao/pg17.sh`, `ops/migracao/dump-supabase.sh`, `ops/migracao/restaurar.sh`, `ops/migracao/conferir-contagens.sh`, `ops/migracao/conferir-orfaos.sh`, `ops/migracao/ensaio-local.sh`
+- Modify: `api/cmd/api/main.go` (subcomando `migrar`)
 
 **Interfaces:**
 - Consumes: `api/internal/banco/compat/compat.sql` (Task 1), `ops/migracao/limpar-dump.mjs` (Task 3).
 - Produces (linha de comando):
   - `pg17.sh <comando> [args...]`: executa o comando (`pg_dump`, `pg_restore`, `psql`) numa imagem `postgres:17`, com a pasta atual montada em `/work`.
-  - `dump-supabase.sh ORIGEM_DATABASE_URL SAIDA_DIR`: grava `SAIDA_DIR/schema.sql` (já limpo) e `SAIDA_DIR/dados.dump` (formato custom) e imprime as contagens de remoção.
-  - `restaurar.sh ALVO_DATABASE_URL DUMP_DIR`: aplica compat, schema limpo e dados.
-  - `conferir-contagens.sh ORIGEM_URL ALVO_URL`: imprime `tabela origem destino` e sai com 1 se houver diferença (veja Review Focus 4).
+  - `dump-supabase.sh ORIGEM_DATABASE_URL SAIDA_DIR`: grava `SAIDA_DIR/schema.sql` (já limpo) e `SAIDA_DIR/completo.dump` (formato custom) e imprime as contagens de remoção.
+  - `restaurar.sh ALVO_DATABASE_URL DUMP_DIR`: exige o alvo **vazio**; aplica compat, roda `go run ./cmd/api migrar` (cria `usuarios`, `sessoes`, `goose_db_version`), carrega o schema limpo e os dados.
+  - `conferir-contagens.sh ORIGEM_URL ALVO_URL`: itera as tabelas **da origem** e imprime `tabela origem destino`; sai com 1 se houver diferença (veja Review Focus 4). O alvo tem tabelas a mais (`usuarios`, `sessoes`, `goose_db_version`) que não entram.
+  - `conferir-orfaos.sh ALVO_URL`: para cada FK que aponta para `public.usuarios`, conta linhas órfãs; imprime `tabela.coluna n` e sai com 1 se algum `n` for maior que 0 (veja Review Focus 9).
+  - Subcomando `api migrar`: aplica as migrations do banco (as mesmas que todo subcomando já aplica ao iniciar) e termina.
 
 - [ ] **Step 1: `pg17.sh` e `dump-supabase.sh`**
 
@@ -616,9 +652,9 @@ echo "limpeza: $(cat "$SAIDA/limpeza.json")"
 
 # dados: formato custom (restauração seletiva e paralela); transação REPEATABLE READ somente leitura
 sh "$AQUI/pg17.sh" pg_dump "$ORIGEM" --schema=public --data-only --no-owner --no-privileges -Fc \
-  > "$SAIDA/dados.dump" 2> "$SAIDA/dados.erro" || { oculta < "$SAIDA/dados.erro" >&2; echo "pg_dump (dados) falhou" >&2; exit 1; }
+  > "$SAIDA/completo.dump" 2> "$SAIDA/dados.erro" || { oculta < "$SAIDA/dados.erro" >&2; echo "pg_dump (dados) falhou" >&2; exit 1; }
 rm -f "$SAIDA/schema.erro" "$SAIDA/dados.erro"
-echo "dump gravado em $SAIDA (schema.sql, dados.dump)"
+echo "dump gravado em $SAIDA (schema.sql, completo.dump)"
 ```
 
 - [ ] **Step 2: `restaurar.sh` e `conferir-contagens.sh`**
@@ -627,7 +663,8 @@ echo "dump gravado em $SAIDA (schema.sql, dados.dump)"
 
 ```sh
 #!/bin/sh
-# Restaura no Postgres ALVO: compat -> schema limpo -> dados. O alvo deve estar VAZIO.
+# Restaura no Postgres ALVO: compat -> migrations da API (usuarios, sessoes) -> schema limpo -> dados.
+# O alvo deve estar VAZIO. As FKs que apontavam para auth.users já vêm reescritas para public.usuarios.
 # Uso: sh ops/migracao/restaurar.sh 'postgres://...@alvo/db' ops/migracao/saida/2026-10-09
 set -eu
 ALVO=${1:?uso: restaurar.sh ALVO_DATABASE_URL DUMP_DIR}
@@ -640,17 +677,19 @@ JA=$(psql "$ALVO" -X -Atqc "select count(*) from information_schema.tables where
 [ "$JA" = 0 ] || { echo "o alvo já tem $JA tabelas no public; use um banco vazio" >&2; exit 1; }
 
 psql "$ALVO" -X -q -v ON_ERROR_STOP=1 -f "$RAIZ/api/internal/banco/compat/compat.sql" > /dev/null
+# cria public.usuarios/sessoes (as FKs reescritas do schema precisam da tabela pai)
+( cd "$RAIZ/api" && DATABASE_URL="$ALVO" go run ./cmd/api migrar )
 # check_function_bodies=off: funções SQL que citam objetos que não levamos (net.*, storage.*)
 # criam sem erro; elas serão reescritas nos planos de domínio.
 PGOPTIONS='-c check_function_bodies=off' psql "$ALVO" -X -q -v ON_ERROR_STOP=1 -f "$DUMP/schema.sql" > /dev/null
 echo "schema restaurado"
-# dados com triggers desligados (não dispara regra de negócio nem trilha); precisa de superusuário
-sh "$AQUI/pg17.sh" pg_restore --data-only --disable-triggers --no-owner --exit-on-error -d "$ALVO" "$DUMP/dados.dump"
+# dados com triggers desligados (não dispara regra de negócio, trilha nem checagem de FK); precisa de superusuário
+sh "$AQUI/pg17.sh" pg_restore --data-only --disable-triggers --no-owner --exit-on-error -d "$ALVO" "$DUMP/completo.dump"
 psql "$ALVO" -X -q -c "analyze" > /dev/null
-echo "dados restaurados"
+echo "dados restaurados (rode importar-usuarios e conferir-orfaos.sh em seguida)"
 ```
 
-Observação: se `pg17.sh pg_restore -d "$ALVO"` não alcançar o alvo local pelo `localhost` do Mac, use `host.docker.internal` na URL passada ao `pg17.sh`.
+Observação: se `pg17.sh pg_restore -d "$ALVO"` não alcançar o alvo local pelo `localhost` do Mac, use `host.docker.internal` na URL passada ao `pg17.sh`. Como o `schema.sql` já referencia `public.usuarios`, a checagem de FK não ocorre na carga (triggers desligados); a consistência é conferida depois, por `conferir-orfaos.sh`.
 
 `ops/migracao/conferir-contagens.sh`:
 
@@ -664,7 +703,8 @@ set -eu
 O=${1:?uso: conferir-contagens.sh ORIGEM_URL ALVO_URL}
 A=${2:?uso: conferir-contagens.sh ORIGEM_URL ALVO_URL}
 O=$(printf '%s' "$O" | sed 's#:6543/#:5432/#')
-tabelas=$(psql "$A" -X -Atqc "select table_name from information_schema.tables where table_schema='public' and table_type='BASE TABLE' order by 1")
+# itera as tabelas da ORIGEM: o alvo tem a mais usuarios, sessoes e goose_db_version
+tabelas=$(printf 'begin read only;\nselect table_name from information_schema.tables where table_schema=%s and table_type=%s order by 1;\ncommit;\n' "'public'" "'BASE TABLE'" | psql "$O" -X -Atq | grep -vE '^(BEGIN|COMMIT)$')
 ruim=0
 for t in $tabelas; do
   co=$(printf 'begin read only;\nselect count(*) from public."%s";\ncommit;\n' "$t" | psql "$O" -X -Atq | sed -n 2p)
@@ -679,6 +719,26 @@ exit $ruim
 (`sed -n 2p`: dentro do `begin read only`, a linha 1 de saída é `BEGIN`, a 2 é o `count`, a 3 `COMMIT`; com `-q` os rótulos de comando somem, então se a contagem aparecer na linha 1, troque por `grep -E '^[0-9]+$'`. O implementador valida isso no ensaio e usa `grep -E '^[0-9]+$' | head -1`, que funciona nos dois casos.)
 
 - [ ] **Step 3: `ensaio-local.sh` (a prova de ponta a ponta)**
+
+`ops/migracao/conferir-orfaos.sh`:
+
+```sh
+#!/bin/sh
+# Para cada chave estrangeira que aponta para public.usuarios, conta as linhas órfãs
+# (valor preenchido sem linha pai). Saída "tabela.coluna n"; exit 1 se algum n > 0.
+# Um usuário apagado (soft delete) no Auth que ainda é referenciado aparece aqui, não é escondido.
+set -eu
+A=${1:?uso: conferir-orfaos.sh ALVO_URL}
+ruim=$(mktemp)
+psql "$A" -X -Atq -F '|' -c "select conrelid::regclass::text, (select attname from pg_attribute where attrelid = conrelid and attnum = conkey[1]) from pg_constraint where contype = 'f' and confrelid = 'public.usuarios'::regclass and array_length(conkey, 1) = 1 order by 1, 2" \
+| while IFS='|' read -r tabela coluna; do
+    n=$(psql "$A" -X -Atqc "select count(*) from $tabela t where t.\"$coluna\" is not null and not exists (select 1 from public.usuarios u where u.id = t.\"$coluna\")")
+    echo "$tabela.$coluna $n"
+    [ "$n" = 0 ] || echo x >> "$ruim"
+  done
+if [ -s "$ruim" ]; then rm -f "$ruim"; exit 1; fi
+rm -f "$ruim"
+```
 
 `ops/migracao/ensaio-local.sh` sobe **dois** Postgres 17 no Docker (um "Supabase de mentira" com `auth`, políticas e grants, e um alvo vazio), roda dump → limpeza → restore → conferência e afirma o resultado:
 
@@ -709,7 +769,8 @@ create schema extensions; create extension pgcrypto with schema extensions;
 create extension "uuid-ossp" with schema extensions;
 create schema auth;
 create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
-create table public.profiles (id uuid primary key, nome text, disabled boolean default false);
+create table auth.users (id uuid primary key, email text);
+create table public.profiles (id uuid primary key references auth.users(id) on delete cascade, nome text, disabled boolean default false);
 create table public.notas (id serial primary key, dono uuid, texto text);
 alter table public.notas enable row level security;
 create policy "dono le" on public.notas for select to authenticated using (dono = auth.uid());
@@ -718,7 +779,8 @@ create function public.token_curto() returns text language sql as $$ select enco
 create function public.quem() returns uuid language sql stable as $$ select auth.uid() $$;
 create function public.cria_policy_dinamica() returns void language plpgsql as $f$
 begin execute 'create policy x on public.notas using (true)'; end $f$;
-insert into public.profiles values (gen_random_uuid(), 'Ana', false), (gen_random_uuid(), 'Bia', true);
+insert into auth.users select gen_random_uuid(), 'u' || g || '@x.com' from generate_series(1, 2) g;
+insert into public.profiles select id, case when email like 'u1%' then 'Ana' else 'Bia' end, email like 'u2%' from auth.users;
 insert into public.notas (dono, texto) select id, 'nota ' || g from public.profiles, generate_series(1, 50) g;
 SQL
 
@@ -727,8 +789,17 @@ sh "$AQUI/dump-supabase.sh" "$URL_O" "$OUT/dump" >/dev/null
 sh "$AQUI/restaurar.sh" "$URL_A" "$OUT/dump" >/dev/null
 sh "$AQUI/conferir-contagens.sh" "$URL_O" "$URL_A" > "$OUT/contagens.txt"
 
+# 2b) "importar-usuarios" simulado: copia os ids de auth.users da origem para public.usuarios do alvo
+psql "$URL_O" -X -Atc "select id, email from auth.users" -F '|' | while IFS='|' read -r id email; do
+  psql "$URL_A" -X -q -c "insert into public.usuarios (id, email) values ('$id', '$email')"
+done
+sh "$AQUI/conferir-orfaos.sh" "$URL_A" > "$OUT/orfaos.txt" || falha_orfaos=1
+
 # 3) afirmações
 falha() { echo "FALHOU: $1" >&2; exit 1; }
+[ -z "${falha_orfaos:-}" ] || falha "FK com órfãos: $(grep -v ' 0$' "$OUT/orfaos.txt")"
+[ "$(psql "$URL_A" -X -Atc "select count(*) from pg_constraint where contype='f' and confrelid='public.usuarios'::regclass and conrelid='public.profiles'::regclass")" = 1 ] || falha "a FK de profiles não aponta para public.usuarios"
+[ "$(psql "$URL_A" -X -Atc "select count(*) from pg_namespace where nspname='auth' and exists (select 1 from pg_class c where c.relnamespace=pg_namespace.oid and c.relname='users')")" = 0 ] || falha "o alvo não deveria ter auth.users
 [ "$(psql "$URL_A" -X -Atc "select count(*) from pg_policies where schemaname='public'")" = 0 ] || falha "restaram policies"
 [ "$(psql "$URL_A" -X -Atc "select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relrowsecurity")" = 0 ] || falha "restou RLS ligada"
 [ "$(psql "$URL_A" -X -Atc "select length(public.token_curto())")" = 8 ] || falha "extensions.gen_random_bytes não funciona no alvo"
@@ -746,10 +817,21 @@ echo "OK: ensaio local passou (dump -> limpeza -> restore -> contagens)"
 Run: `sh ops/migracao/ensaio-local.sh`
 Expected: termina com `OK: ensaio local passou (dump -> limpeza -> restore -> contagens)` e deixa **nenhum** contêiner (`docker ps -a | grep ensaio-` vazio). O implementador corrige o que a execução real exigir (rede do Docker no Mac, `--network host`, `host.docker.internal`, a linha de `sed` das contagens) e **registra cada ajuste no relatório**.
 
+- [ ] **Step 4b: Subcomando `migrar`**
+
+Em `api/cmd/api/main.go`, junto dos outros `case` do `switch os.Args[1]`, acrescentar (o `Migrar` já rodou antes do `switch`, então o caso só registra e termina):
+
+```go
+	case "migrar":
+		slog.Info("migrations aplicadas")
+```
+
+Run: `cd api && gofmt -w . && go vet ./... && go build ./...` — Expected: limpo.
+
 - [ ] **Step 5: Commit**
 
 ```bash
-git add ops/migracao/pg17.sh ops/migracao/dump-supabase.sh ops/migracao/restaurar.sh ops/migracao/conferir-contagens.sh ops/migracao/ensaio-local.sh
+git add api/cmd/api/main.go ops/migracao/pg17.sh ops/migracao/dump-supabase.sh ops/migracao/restaurar.sh ops/migracao/conferir-contagens.sh ops/migracao/conferir-orfaos.sh ops/migracao/ensaio-local.sh
 git commit -m "feat(migracao-go): dump, restore e conferência com prova de ponta a ponta local" -m "Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
 ```
 
@@ -1093,15 +1175,16 @@ while [ $# -gt 0 ]; do case "$1" in
   --excluir-buckets) shift; EXCL=${1:-};; *) echo "opção desconhecida: $1" >&2; exit 2;; esac; shift; done
 [ -n "${ORIGEM_DATABASE_URL:-}" ] || { echo "defina ORIGEM_DATABASE_URL (não é impresso)"; exit 1; }
 ALVO_URL=${ALVO_DATABASE_URL:-postgres://postgres:x@127.0.0.1:58450/postgres}
-# nunca aponta para produção por engano: o alvo tem de ser local
+# nunca aponta para produção por engano: o alvo tem de ser local, e só 127.0.0.1 é aceito
+# (localhost e ::1 não: o contêiner só escuta em 127.0.0.1)
 case "$ALVO_URL" in
-  *@localhost[:/]*|*@127.0.0.1[:/]*|*@\[::1\][:/]*) ;;
+  *@127.0.0.1[:/]*) ;;
   *) [ "$REMOTO" = 1 ] || { echo "ALVO_DATABASE_URL não é local; recuso (use --permitir-alvo-remoto se for de propósito)" >&2; exit 1; } ;;
 esac
 OUT="$AQUI/saida/ensaio-$(date +%Y%m%d-%H%M)"; mkdir -p "$OUT"; chmod 700 "$OUT"
 rel() { printf '%s\n' "$*" | tee -a "$OUT/relatorio.txt"; }
 etapa() { T0=$(date +%s); NOME=$1; shift; "$@"; rel "$(printf '%-34s %5ss' "$NOME" "$(( $(date +%s) - T0 ))")"; }
-limpa() { docker rm -f ensaio-alvo >/dev/null 2>&1 || true; [ "$MANTER" = 1 ] || rm -f "$OUT"/dump/schema-bruto.sql "$OUT"/dump/schema.sql "$OUT"/dump/dados.dump; }
+limpa() { docker rm -f ensaio-alvo >/dev/null 2>&1 || true; [ "$MANTER" = 1 ] || rm -f "$OUT"/dump/schema-bruto.sql "$OUT"/dump/schema.sql "$OUT"/dump/completo.dump; }
 trap limpa EXIT INT TERM
 
 sobe_alvo() {
@@ -1123,8 +1206,11 @@ etapa "2. dump (schema + dados)"    sh "$AQUI/dump-supabase.sh" "$ORIGEM_DATABAS
 etapa "3. restaurar"                sh "$AQUI/restaurar.sh" "$ALVO_URL" "$OUT/dump"
 etapa "4. importar usuários"        importa_usuarios
 etapa "5. conferir contagens"       sh -c "sh '$AQUI/conferir-contagens.sh' '$ORIGEM_DATABASE_URL' '$ALVO_URL' > '$OUT/contagens.txt' || true"
+etapa "5b. conferir órfãos (FKs)"   sh -c "sh '$AQUI/conferir-orfaos.sh' '$ALVO_URL' > '$OUT/orfaos.txt' || true"
 etapa "6. copiar Storage"           storage
 DIF=$(grep -c DIFERE "$OUT/contagens.txt" || true)
+ORF=$(grep -vc ' 0$' "$OUT/orfaos.txt" || true)
+rel "FKs para usuarios com órfãos: $ORF (ver $OUT/orfaos.txt)"
 rel "tabelas com contagem diferente: $DIF (ver $OUT/contagens.txt; tabela quente pode crescer durante o dump)"
 rel "pronto. Somar as etapas 2–6 dá a janela de manutenção do corte."
 ```
