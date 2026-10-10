@@ -47,7 +47,7 @@ function resposta(status, texto, extra = {}) {
   return {
     status, ok: status >= 200 && status < 300, text: async () => texto,
     json: async () => (json ??= JSON.parse(texto)),
-    replay: false, incerto: false, reautorizar: false, retryAfter: null, ...extra,
+    replay: false, incerto: false, reautorizar: false, retryAfter: null, origem: null, ...extra,
   };
 }
 
@@ -101,10 +101,20 @@ export function blingViaCore(env, { fetchImpl = globalThis.fetch, direto, base, 
       incerto: erro === 'resultado_incerto',
       reautorizar: erro === 'reautorizacao_necessaria',
       retryAfter: r.headers.get('Retry-After'),
+      origem: r.headers.get('X-Core-Origem'), // 'bling' = repassado do Bling; 'proxy' = erro do core; null = autenticação/nginx
     });
   }
 
   return { ligada: liga, chamar };
+}
+
+/**
+ * 401/403 que NÃO é do Bling nem do proxy: o core recusou a credencial DESTA API (CORE_API_TOKEN).
+ * Repassar esse 401/403 à tela a faria dizer "você não tem acesso a vendas" (chamada-do-bling.js) por defeito nosso.
+ * Mesma regra de api/internal/comercial/bling.go.
+ */
+export function credencialRecusadaPeloCore(r) {
+  return (r?.status === 401 || r?.status === 403) && r.origem !== 'bling' && r.origem !== 'proxy';
 }
 
 /**
