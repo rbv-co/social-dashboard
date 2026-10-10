@@ -14,6 +14,7 @@ type Limitador struct {
 	mu        sync.Mutex
 	falhas    map[string][]time.Time
 	agora     func() time.Time
+	varridoEm time.Time // última varredura total: no máximo uma por Janela/4
 }
 
 func NovoLimitador() *Limitador {
@@ -41,9 +42,13 @@ func (l *Limitador) podar(k string) {
 func (l *Limitador) Tentar(k string) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	// ponytail: chaves só eram podadas quando reusadas; acima de MaxChaves (10 mil)
-	// varre o mapa todo sob o lock (O(n), raro). Com mais carga/instâncias: Redis ou Postgres.
-	if len(l.falhas) > l.MaxChaves {
+	// ponytail: chaves só eram podadas quando reusadas; acima de MaxChaves (10 mil) varre o
+	// mapa todo sob o lock (O(n)), mas no máximo uma vez por Janela/4: sem isso cada requisição
+	// pagaria a varredura (0,7-2,4 ms com 12-40 mil chaves) e a rota pública viraria amplificador
+	// de CPU. Abaixo de MaxChaves nada é varrido: chave vencida só some quando reusada (custo: memória
+	// limitada a MaxChaves); acima, some em até Janela/4 após vencer. Com mais carga/instâncias: Redis ou Postgres.
+	if agora := l.agora(); len(l.falhas) > l.MaxChaves && agora.Sub(l.varridoEm) >= l.Janela/4 {
+		l.varridoEm = agora
 		for chave := range l.falhas {
 			l.podar(chave)
 		}

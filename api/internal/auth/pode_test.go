@@ -28,3 +28,29 @@ func TestPode(t *testing.T) {
 		}
 	}
 }
+
+func TestPodeModulo(t *testing.T) {
+	vendas := &Ator{Tipo: "painel", Papel: "viewer", Modulos: []string{"banco", "sales"}}
+	casos := []struct {
+		nome   string
+		ator   *Ator
+		modulo string
+		quer   bool
+	}{
+		{"ator nulo", nil, "sales", false},
+		{"tem o módulo", vendas, "sales", true},
+		{"não tem o módulo", vendas, "meta", false},
+		{"módulo vazio", vendas, "", false},
+		{"role admin passa (como nas edges)", &Ator{Tipo: "painel", Papel: "admin"}, "meta", true},
+		{"super-admin passa", &Ator{Tipo: "painel", SuperAdmin: true}, "social", true},
+		{"conta de serviço usa os módulos", &Ator{Tipo: "servico", Modulos: []string{"sales"}}, "sales", true},
+		{"cliente da Vessel nunca, nem admin", &Ator{Tipo: "cliente", Papel: "admin", Modulos: []string{"sales"}}, "sales", false},
+		{"tipo vazio nega", &Ator{Papel: "admin"}, "sales", false},
+		{"permissions não abre módulo", &Ator{Tipo: "painel", Permissoes: map[string][]string{"meta": {"ver"}}}, "meta", false},
+	}
+	for _, c := range casos {
+		if got := c.ator.PodeModulo(c.modulo); got != c.quer {
+			t.Errorf("%s: PodeModulo(%q) = %v, esperava %v", c.nome, c.modulo, got, c.quer)
+		}
+	}
+}
