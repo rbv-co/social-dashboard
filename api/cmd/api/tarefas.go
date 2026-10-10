@@ -5,6 +5,9 @@ import (
 	"github.com/rbv-co/social-dashboard/api/internal/comercial"
 	"github.com/rbv-co/social-dashboard/api/internal/config"
 	"github.com/rbv-co/social-dashboard/api/internal/core"
+	"github.com/rbv-co/social-dashboard/api/internal/fabrica"
+	"github.com/rbv-co/social-dashboard/api/internal/mensagens"
+	"github.com/rbv-co/social-dashboard/api/internal/vessel"
 	"github.com/rbv-co/social-dashboard/api/internal/webpush"
 	"github.com/rbv-co/social-dashboard/api/internal/worker"
 )
@@ -18,6 +21,9 @@ func tarefas(p *pgxpool.Pool, cfg config.Config, ag *worker.Agendador) []worker.
 	// HTTP nil: o push herda o cliente seguro (Dialer.Control recusa faixas proibidas).
 	pv := &comercial.PushVendas{Pool: p, Core: cli, VAPID: vapid(cfg)}
 	ts = append(ts, pv.Tarefas()...)
+	ts = append(ts, worker.ConferirRobos(p), worker.FaxinaDaAPI(p), mensagens.MoverAbandonados(p),
+		(&vessel.RD{Pool: p, Token: cfg.RDStationToken}).Tarefa(),
+		(&fabrica.Purga{Pool: p, Dir: cfg.ArquivosDir}).Tarefa())
 	return ts
 }
 

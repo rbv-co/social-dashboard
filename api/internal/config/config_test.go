@@ -129,3 +129,16 @@ func TestCarregarVariaveisDoWorker(t *testing.T) {
 		t.Fatalf("o token do core é segredo do worker: %v", c.Segredos())
 	}
 }
+
+func TestCarregarRDEArquivos(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://x")
+	t.Setenv("RD_STATION_TOKEN", " token-publico-rd ")
+	c, _ := Carregar()
+	if c.RDStationToken != "token-publico-rd" || c.ArquivosDir != "/var/lib/api/arquivos" || !slices.Contains(c.Segredos(), "token-publico-rd") {
+		t.Fatalf("%+v", c)
+	}
+	t.Setenv("ARQUIVOS_DIR", "/dados/arquivos")
+	if c, _ := Carregar(); c.ArquivosDir != "/dados/arquivos" {
+		t.Fatalf("ArquivosDir = %q", c.ArquivosDir)
+	}
+}

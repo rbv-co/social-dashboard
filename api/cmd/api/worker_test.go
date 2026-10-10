@@ -27,6 +27,12 @@ import (
 var producao = map[string]string{
 	"enviar-push-vendas-07h": "0 10 * * *",
 	"enviar-push-vendas-22h": "0 1 * * *",
+	// Task 2
+	"conferir-robos":       "2-59/5 * * * *",
+	"faxina-da-api":        "41 5 * * *",
+	"abandono-de-checkout": "* * * * *",
+	"vessel-rd-station":    "* * * * *",
+	"fabrica-purga":        "17 4 * * *",
 }
 
 func TestTarefasDeProducao(t *testing.T) {
