@@ -13,22 +13,18 @@
 name: Fotos do selo — buscar e publicar
 
 on:
-  # De hora em hora. Não é caro (a maioria das rodadas não acha nada para fazer)
-  # e encurta a janela em que uma bolsa sai com o certificado vazio.
-  schedule:
-    - cron: '5 * * * *'
-  # Para rodar na mão quando quiser.
+  # ⚠️ ESTE ROBÔ MORA NA VPS DESDE 2026-10-10 (coletor/vps/robos.cron, a cada 5 min). O workflow só roda por disparo
+  # manual, como retaguarda. Saíram o `schedule` e o `repository_dispatch: lote-novo` (que o banco dispara ao criar um
+  # lote): SE UM DOS DOIS VOLTAR, o Actions e a VPS rodam juntos, empurram para o mesmo repositório do site e um deles
+  # leva push recusado. A VPS pega o lote novo em até 5 min sozinha.
+  # ⚠️ Este workflow ainda publica pela Vercel (publicar.sh antigo não existe mais): se precisar dele, use só com o DNS
+  # apontando para a Vercel (roll-back). Na VPS o site é publicado por `deploy-vesselbrasil`.
   workflow_dispatch:
     inputs:
       refazer:
         description: 'Rebaixar TAMBÉM as fotos de quem já tem (use ao mudar a ordem das fontes)'
         type: boolean
         default: false
-  # ⚠️ É POR AQUI QUE O LOTE NOVO ACORDA O ROBÔ. O banco dispara este evento
-  # assim que um lote é criado, e a foto entra em minutos em vez da manhã
-  # seguinte.
-  repository_dispatch:
-    types: [lote-novo]
 
 # Duas rodadas ao mesmo tempo publicariam o site duas vezes e poderiam brigar
 # pelo mesmo commit. A de fora espera; a de dentro não é cancelada no meio de um

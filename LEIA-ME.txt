@@ -9,7 +9,7 @@ mostra dados de redes sociais (Instagram/Meta), anúncios (Meta Ads),
 vendas (Bling), notícias de concorrentes e Controle de Acessos, tudo
 num só lugar.
 
-Está publicado na Vercel em DOIS endereços, que servem o mesmo app:
+Está publicado na VPS (nginx) em DOIS endereços, que servem o mesmo app:
    central.rbvcompany.com           (o nome novo, desde 19/08/2026)
    socialdashboard.rbvcompany.com   (o nome antigo, que CONTINUA valendo)
 
@@ -33,7 +33,9 @@ Como o site é montado? (importante de entender)
 O app é um app Vue 3 moderno (não é mais um HTML gigante): cada tela
 é um componente em `src/ferramentas/<nome>/`, montado e otimizado
 pelo Vite (comando `npm run build`) na pasta `dist/`, que é o que a
-Vercel publica de verdade.
+VPS publica de verdade (deploy/publicar-central.sh).
+O merge em main NÃO publica mais: para publicar, rode `ssh op /root/deploy-central.sh`.
+A Vercel só serve os PREVIEWS por branch.
 
   index.html   -> O "molde" raiz que o Vite usa para montar o app
                   (só um <div id="app">, sem conteúdo da tela).
@@ -47,8 +49,8 @@ Vercel publica de verdade.
                   legacy/LEIA-ME.txt.
 
 ATENÇÃO ao deploy: o git checa a identidade. Garanta que
-user.name/user.email NÃO estejam vazios, senão o build na Vercel
-pode falhar.
+user.name/user.email NÃO estejam vazios, senão o build do preview na
+Vercel pode falhar.
 
 
 O que é cada pasta/arquivo da raiz?
@@ -85,7 +87,8 @@ O que é cada pasta/arquivo da raiz?
                   coletor legado). Não faz parte do app Vue nem do
                   seu build. (veja projetos/LEIA-ME.txt)
 
-  vercel.json  -> Configuração do site na Vercel: manda toda rota
+  vercel.json  -> Configuração dos PREVIEWS na Vercel (a produção usa
+                  deploy/nginx/): manda toda rota
                   para /index.html (o app decide a tela por rota) e
                   aplica cabeçalhos de SEGURANÇA (proíbe abrir o site
                   dentro de iframe, força HTTPS, etc.).
@@ -118,7 +121,8 @@ de iniciante, 2-6 linhas dizendo o que a pasta é/faz).
 
 Conceitos rápidos (pra quem está aprendendo)
 --------------------------------------------
-  - Vercel   : serviço que publica o site na internet.
+  - VPS      : servidor (nginx) que publica o site na internet.
+  - Vercel   : serviço que publica só os previews por branch.
   - Supabase : o banco de dados na nuvem (guarda os números do painel).
   - Meta API : de onde vêm os dados do Instagram/Facebook e Meta Ads.
   - Bling    : sistema de gestão de onde vêm as vendas/faturamento.

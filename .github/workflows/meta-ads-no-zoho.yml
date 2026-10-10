@@ -11,8 +11,7 @@ name: Meta Ads da Vessel (a planilha)
 # motivo deles: os três batem no mesmo banco, e o minuto quebrado evita a hora
 # cheia, que neste repositório atrasa de 2 a 3 horas.
 on:
-  schedule:
-    - cron: '42 9 * * *'
+  # AGENDAMENTO NA VPS (coletor/vps/robos.cron): este workflow só roda por disparo manual, como retaguarda.
   workflow_dispatch:
     inputs:
       ensaio:

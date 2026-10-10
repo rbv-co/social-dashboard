@@ -104,10 +104,10 @@ volumes() { # nenhum dos volumes capturados pode ter sobrado, e ao menos um tem 
 shim() { mkdir -p "$TMP/$1"; printf '#!/bin/sh\ncase "$*" in *importar-usuarios*) %s;; esac\nexec "%s" "$@"\n' "$2" "$(command -v go)" > "$TMP/$1/go"; chmod +x "$TMP/$1/go"; }
 
 echo "0) oculta (ensaio.sh) mascara URL e host/usuário/papel do texto de erro do libpq"
-eval "$(grep '^oculta()' "$AQUI/ensaio.sh")"
-o=$(printf '%s\n' 'connection to server at "db.exemplo.com" (10.1.2.3), port 5432 failed: FATAL:  password authentication failed for user "admin"' 'psql: error: connection to server on host "x.y" failed; role "r1" does not exist' 'falhou postgres://u:senha@h:5432/d?sslmode=disable fim' | oculta)
-case "$o" in *exemplo*|*10.1.2.3*|*admin*|*x.y*|*r1*|*senha*) falha "oculta deixou vazar: $o";; esac
-case "$o" in *'server at "<oculto>", port 5432'*'user "<oculto>"'*'host "<oculto>"'*'role "<oculto>"'*'<URL> fim'*) ;; *) falha "oculta mascarou errado: $o";; esac
+. "$AQUI/oculta.sh"
+o=$(printf '%s\n' 'connection to server at "db.exemplo.com" (10.1.2.3), port 5432 failed: FATAL:  password authentication failed for user "admin"' 'psql: error: connection to server on host "x.y" failed; role "r1" does not exist' 'could not translate host name "db.x" to address: Name or service not known' 'falhou postgres://u:senha@h:5432/d?sslmode=disable fim' | oculta)
+case "$o" in *exemplo*|*10.1.2.3*|*admin*|*x.y*|*db.x*|*r1*|*senha*) falha "oculta deixou vazar: $o";; esac
+case "$o" in *'server at "<oculto>", port 5432'*'user "<oculto>"'*'host "<oculto>"'*'role "<oculto>"'*'host name "<oculto>" to address'*'<URL> fim'*) ;; *) falha "oculta mascarou errado: $o";; esac
 passou "oculta"
 
 echo "1) guarda do alvo (hostil recusado antes de qualquer docker)"

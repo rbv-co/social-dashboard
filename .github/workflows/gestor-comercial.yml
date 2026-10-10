@@ -7,8 +7,7 @@ name: Gestor Comercial (briefing semanal)
 # rodada de 13/07 só começou às 12:15 — 3h05 de atraso. O atraso não some (o
 # agendamento do Actions nunca é pontual), mas encolhe fora do pico.
 on:
-  schedule:
-    - cron: '23 9 * * 1'
+  # AGENDAMENTO NA VPS (coletor/vps/robos.cron): este workflow só roda por disparo manual, como retaguarda.
   workflow_dispatch: {}
 
 concurrency:

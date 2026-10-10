@@ -14,8 +14,7 @@ name: Vigia dos problemas da Meta
 #
 # Custo: zero de IA. É só leitura do Graph e uma chamada de banco por conta.
 on:
-  schedule:
-    - cron: '7 7 * * *'
+  # AGENDAMENTO NA VPS (coletor/vps/robos.cron): este workflow só roda por disparo manual, como retaguarda.
   workflow_dispatch: {}
 
 concurrency:

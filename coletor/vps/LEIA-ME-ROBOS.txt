@@ -1,0 +1,51 @@
+ROBÔS AGENDADOS NA VPS (substituem os `schedule:` do GitHub Actions)
+====================================================================
+
+POR QUE: o Actions de repositório privado cobra por minuto (cada rodada de 5 s cobra 1 min cheio; um robô de hora em
+hora = ~720 min/mês só nele) e o dono não quer depender dele para agendar. Os robôs são scripts Node que só falam
+com APIs (Supabase, Bling via core, Shopify, Zoho); rodam igual em qualquer máquina.
+
+PEÇAS
+- rodar-robo.sh      wrapper de TODA rodada: um por vez (flock), limite de tempo, segredos, git pull, log e alerta.
+- robos.cron         a agenda (formato /etc/cron.d). Horários em UTC, iguais aos dos workflows de origem.
+- copia-do-banco.sh  e faxina-storage.sh: os dois workflows que tinham mais de um passo.
+- rodar-robo.teste.sh  autoteste do wrapper (Linux). `bash coletor/vps/rodar-robo.teste.sh`
+
+ONDE FICA NA VPS
+- Código:     /opt/robos/social-dashboard  (clone da main; o wrapper faz `git pull --ff-only` a cada rodada)
+- Segredos:   /etc/robos.env               (root, 600; formato CHAVE=valor, sem aspas). NUNCA no git.
+- Logs:       /var/log/robos/<nome>.log    (rotacionado). Falha deixa /var/log/robos/<nome>.falhou.
+- Agenda:     /etc/cron.d/robos-social-dashboard  (cópia de robos.cron; reinstalar depois de mudar o arquivo:
+              install -m 644 -o root -g root /opt/robos/social-dashboard/coletor/vps/robos.cron /etc/cron.d/robos-social-dashboard)
+- Node 22:    /opt/cartoes-ean/node/bin (o Ubuntu da VPS só tem o 20; os robôs foram feitos para o 22).
+
+OPERAÇÃO
+- Ver o que rodou:   tail -n 50 /var/log/robos/<nome>.log
+- Rodar à mão:       /opt/robos/social-dashboard/coletor/vps/rodar-robo.sh <nome> <min> -- <comando>   (mesma linha do robos.cron)
+- Quem falhou:       ls /var/log/robos/*.falhou
+- Alerta de falha:   em /etc/robos.env, ALERT_COMANDO=/opt/robos/social-dashboard/coletor/vps/avisar-whatsapp.py (o MESMO
+                     grupo do monitor da VPS; lê /root/monitor/config.json) e/ou ALERT_WEBHOOK_URL (Slack/Discord, JSON).
+                     Avisa quando o robô CAI e quando VOLTA, e repete a cada 6 h enquanto estiver caído (marca .falhou).
+                     ⚠️ Depende da sessão do WhatsApp da Evolution estar aberta: `avisar-whatsapp.py --verificar` (não envia
+                     nada). Em 2026-10-10 ela estava `close` (reconectar = ler o QR de novo). Sessão fechada = aviso não chega,
+                     mas a falha continua no log e na marca .falhou.
+- Rodada pulada:     "pulada: a rodada anterior ainda está rodando" no log. No Actions a rodada entrava na fila.
+- Voltar ao Actions: o workflow continua existindo (disparo manual). Para voltar a agendar por lá, reponha o `schedule:`
+                     no yml (git revert do PR que o tirou) e apague a linha do robô em /etc/cron.d/robos-social-dashboard.
+                     NUNCA deixe os dois agendando o mesmo robô: pedidos e relatórios são idempotentes, mas o token do Bling
+                     e as mensagens de WhatsApp não perdoam rodada dobrada.
+
+O QUE FICOU DE FORA DE PROPÓSITO
+- vigia-do-pdv: é a segunda rede que vigia a VPS DE FORA. Rodando nela, cairia junto com o que vigia.
+- O SITE vesselbrasil.com.br SAIU DA VERCEL (2026-10-10): roda no nginx da VPS, e fotos-do-selo e publicar-o-site migraram
+  junto (sem VERCEL_TOKEN). publicar-o-site = `deploy-vesselbrasil --se-mudou` de 5 em 5 min; fotos-do-selo roda de 5 em 5 min
+  (no lugar de hora em hora + o `lote-novo` do banco), faz push no vessel-brasil com uma chave de deploy COM ESCRITA só
+  nesse repo (alias ssh `github-robos-site`; clone aninhado em /opt/robos/social-dashboard/vessel-brasil) e chama o deploy.
+  Documentação do site: vessel-brasil/vps/LEIA-ME-VPS.txt. Os dois workflows do Actions ficam só como disparo manual (retaguarda
+  do roll-back para a Vercel). NÃO recoloque `schedule` nem `repository_dispatch` neles: Actions e VPS publicariam juntos.
+- budget-ia migrou com a chave `anthropic_api_key_trafego` da tabela segredos_de_cron (validada com --dry e chamada mínima).
+- coletor-noticias, sugerir-interesses e gestor-comercial migraram (2026-10-10). Como o secret ANTHROPIC_API_KEY "padrão" só
+  existe no GitHub, os dois primeiros usam a chave ANTHROPIC_API_KEY_GESTOR (testada com os modelos do coletor): só muda a
+  atribuição de custo na conta da Anthropic. gestor-comercial e coletor-noticias não têm modo de ensaio: a 1ª rodada real
+  é segunda-feira; confira /var/log/robos/<nome>.log. Se algo falhar, o workflow ainda roda por disparo manual.
+- opr-diario migrou, mas falha todo dia enquanto a instância Z-API estiver com o WhatsApp desconectado (precisa de QR).

@@ -86,8 +86,13 @@ async function chamar(f, url, chave, init = {}, { cabecalhosMs = 60000 } = {}) {
     const err = new Error(`Storage respondeu ${r.status} em ${new URL(url).pathname}`) // sem a chave na mensagem
     err.status = r.status
     err.retentavel = r.status === 429 || r.status >= 500
-    const ra = Number(r.headers?.get?.('retry-after'))
-    if ((r.status === 429 || r.status === 503) && Number.isFinite(ra) && ra >= 0) err.retryAfterMs = ra * 1000
+    if (r.status === 429 || r.status === 503) {
+      // cabeçalho ausente/vazio = sem Retry-After (Number('') daria 0 e repetiria sem esperar); aceita segundos ou data HTTP
+      const h = r.headers?.get?.('retry-after')
+      const seg = h ? Number(h) : NaN
+      const ms = Number.isFinite(seg) ? seg * 1000 : h ? Date.parse(h) - Date.now() : NaN
+      if (Number.isFinite(ms) && ms >= 0) err.retryAfterMs = ms
+    }
     await r.body?.cancel?.().catch(() => {})
     throw err
   }

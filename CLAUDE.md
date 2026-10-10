@@ -40,7 +40,9 @@ derruba a outra janela, que pode estar em produção. Em 13/08/2026 e de novo em
   ⚠️ Se precisar refazer: o `-c credential.helper=` **vazio** antes do ajudante é
   obrigatório — `credential.helper` é uma LISTA que acumula, e sem zerar a fila o
   `osxkeychain` responde primeiro, com a conta errada.
-- **Vercel** → time `brenoov-7581s-projects`, projeto `social-dashboard`. A
+- **Vercel** → time `brenoov-7581s-projects`, projeto `social-dashboard`. Só
+  serve os previews por branch: a produção está na VPS desde 09/10/2026
+  (`deploy/publicar-central.sh`). A
   conexão interna (MCP da Vercel) **já está nesta conta**; não precisa login.
   O CLI da Vercel é que não tem login global — se precisar dele aqui, usar um
   login por pasta (`vercel login --global-config ~/.vercel-iamundi`) em vez de

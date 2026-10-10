@@ -12,7 +12,7 @@ AQUI=$(cd "$(dirname "$0")" && pwd)
 ORIGEM=$(printf '%s' "$ORIGEM" | sed 's#:6543/#:5432/#')
 umask 077   # tudo que for criado daqui em diante é 600/700 (o dump tem dados pessoais e segredos)
 mkdir -p "$SAIDA"; chmod 700 "$SAIDA"
-oculta() { sed -E 's#postgres(ql)?://[^ "]*#<URL>#g'; }
+. "$AQUI/oculta.sh"
 
 # formato custom: permite restauração seletiva (schema, dados) a partir de um único arquivo
 sh "$AQUI/pg17.sh" pg_dump "$ORIGEM" --schema=public --no-owner --no-privileges -Fc \

@@ -7,8 +7,7 @@ name: Cards Comercial (números diários, sem IA)
 # propósito (mesma lógica do gestor-comercial.yml): a hora cheia/meia cai no
 # pico do GitHub Actions e atrasa. Fica ~17min depois do gestor semanal.
 on:
-  schedule:
-    - cron: '40 9 * * *'
+  # AGENDAMENTO NA VPS (coletor/vps/robos.cron): este workflow só roda por disparo manual, como retaguarda.
   workflow_dispatch: {}
 
 concurrency:

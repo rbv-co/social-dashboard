@@ -24,6 +24,8 @@ import (
 const (
 	PrazoMetaAoVivo = 90 * time.Second
 	PrazoCollabs    = 120 * time.Second
+	// bling-proxy: usuário limitado a lojas faz UMA chamada ao core por loja (até 25 s cada).
+	PrazoBling = 90 * time.Second
 )
 
 // comPrazo limita o contexto da requisição; o que estiver preso na rede/core desiste junto.
@@ -74,7 +76,7 @@ func Rotas(p *pgxpool.Pool, s *auth.Store, l *auth.Limitador, cfg config.Config)
 		r.Post("/auth/sair", h.Sair)
 		r.Get("/auth/eu", h.Eu)
 		r.Get("/eu/canais", canais.Handler(p))
-		r.Post("/bling-proxy", (&comercial.Bling{Pool: p, Core: cli}).ServeHTTP)                                                           // portão por caminho, lá dentro
+		r.With(comPrazo(PrazoBling)).Post("/bling-proxy", (&comercial.Bling{Pool: p, Core: cli}).ServeHTTP)                                // portão por caminho, lá dentro
 		r.With(auth.ExigirModulo("meta")).Post("/meta-proxy", (&meta.Proxy{Pool: p, Core: cli, HostsDeMidia: cfg.HostsDeMidia}).ServeHTTP) // prazo próprio (25/45/75 s)
 		r.With(auth.ExigirModulo("social"), comPrazo(PrazoMetaAoVivo)).Post("/insights-ao-vivo", av.Insights)
 		r.With(auth.ExigirModulo("social"), comPrazo(PrazoMetaAoVivo)).Post("/serie-novos-dia", av.SerieNovosDia)

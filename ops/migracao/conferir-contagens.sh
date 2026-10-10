@@ -11,7 +11,8 @@ set -eu
 O=${1:?uso: conferir-contagens.sh ORIGEM_URL ALVO_URL}
 A=${2:?uso: conferir-contagens.sh ORIGEM_URL ALVO_URL}
 O=$(printf '%s' "$O" | sed 's#:6543/#:5432/#')
-oculta() { sed -E 's#postgres(ql)?://[^ "]*#<URL>#g'; }
+AQUI=$(cd "$(dirname "$0")" && pwd)
+. "$AQUI/oculta.sh"
 ERR=$(mktemp); SAIDA=$(mktemp); COMPLETA=0
 # qualquer saída antes do fim da varredura (sinal, set -e no meio) vira exit 2, não um 1 que pareça divergência
 fim() { s=$?; trap - EXIT; rm -f "$ERR" "$SAIDA"; [ "$COMPLETA" = 1 ] || [ "$s" = 2 ] || s=2; exit $s; }

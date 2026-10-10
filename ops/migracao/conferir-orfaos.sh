@@ -4,7 +4,8 @@
 # Um usuário apagado (soft delete) no Auth que ainda é referenciado aparece aqui, não é escondido.
 set -eu
 A=${1:?uso: conferir-orfaos.sh ALVO_URL}
-oculta() { sed -E 's#postgres(ql)?://[^ "]*#<URL>#g'; }
+AQUI=$(cd "$(dirname "$0")" && pwd)
+. "$AQUI/oculta.sh"
 ruim=$(mktemp); ERR=$(mktemp); trap 'rm -f "$ruim" "$ERR"' EXIT
 pq() { s=0; psql "$@" 2> "$ERR" || s=$?; oculta < "$ERR" >&2; return $s; }
 lista=$(pq "$A" -X -Atq -F '|' -c "select conrelid::regclass::text, (select attname from pg_attribute where attrelid = conrelid and attnum = conkey[1]) from pg_constraint where contype = 'f' and confrelid = 'public.usuarios'::regclass and array_length(conkey, 1) = 1 order by 1, 2")

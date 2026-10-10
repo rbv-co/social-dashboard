@@ -79,17 +79,24 @@ func (c *Chatwoot) entrada(w http.ResponseWriter, r *http.Request) (map[string]a
 	return mapa(corpo), true
 }
 
+// PrazoGravarPadrao é o teto da gravação em produção (PrazoGravar = 0).
+const PrazoGravarPadrao = 10 * time.Second
+
+func (c *Chatwoot) prazoDeGravacao() time.Duration {
+	if c.PrazoGravar == 0 {
+		return PrazoGravarPadrao
+	}
+	return c.PrazoGravar
+}
+
 func (c *Chatwoot) gravar(ctx context.Context, w http.ResponseWriter, quem, sql string, args ...any) {
 	// o Chatwoot desiste em 5 s e não reenvia: cancelamento da requisição não pode perder a gravação
 	// ...mas com prazo próprio, para um banco travado não prender a goroutine para sempre.
-	prazo := c.PrazoGravar
-	if prazo == 0 {
-		prazo = 10 * time.Second
-	}
+	prazo := c.prazoDeGravacao()
 	ctx, cancela := context.WithTimeout(context.WithoutCancel(ctx), prazo)
 	defer cancela()
 	if _, err := c.Pool.Exec(ctx, sql, args...); err != nil {
-		slog.Error("webhook chatwoot: falha ao gravar", "rota", quem, "erro", err)
+		slog.Error("webhook chatwoot: falha ao gravar", "rota", quem, "erro", erroSemDados(err))
 		responder(w, http.StatusInternalServerError, map[string]any{"ok": false, "erro": "falha_ao_gravar"})
 		return
 	}

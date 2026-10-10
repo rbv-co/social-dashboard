@@ -64,8 +64,7 @@ limpa() {
 trap limpa EXIT
 trap 'exit 130' INT TERM HUP
 
-# oculta a URL e, no texto de erro do libpq, host/usuário/papel: server at "h" (ip), host "h", user "u", role "r"
-oculta() { sed -E -e 's#postgres(ql)?://[^ "]*#<URL>#g' -e 's#(server at|host|user|role) "[^"]*"( \([^)]*\))?#\1 "<oculto>"#g'; }
+. "$AQUI/oculta.sh"
 rel() { printf '%s\n' "$*" | tee -a "$OUT/relatorio.txt"; }
 FALHAS=""; BLOQ=""; JANELA=0; JANELA6=0; CONF=""; CONFIRA=""
 pula() { rel "$(printf '%-30s %5s  PULADA (%s)' "$1" - "$2")"; }

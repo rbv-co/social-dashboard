@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -115,4 +116,30 @@ func (a *Agendador) Iniciar(ctx context.Context) {
 	a.cron.Start()
 	<-ctx.Done()
 	<-a.cron.Stop().Done() // espera as tarefas em andamento terminarem
+}
+
+// Filtrar tira as tarefas desligadas ("*" desliga todas), para o ensaio não disparar efeitos reais.
+// Nome que não é "*" nem de tarefa registrada é erro (um erro de digitação manteria ligado o que
+// se quis desligar, ex.: push real no ensaio).
+func Filtrar(ts []Tarefa, desligadas []string) ([]Tarefa, error) {
+	validos := []string{}
+	for _, t := range ts {
+		validos = append(validos, t.Nome)
+	}
+	var desconhecidos []string
+	for _, d := range desligadas {
+		if d != "*" && !slices.Contains(validos, d) {
+			desconhecidos = append(desconhecidos, d)
+		}
+	}
+	if len(desconhecidos) > 0 {
+		return nil, fmt.Errorf("WORKER_TAREFAS_DESLIGADAS: nomes desconhecidos %v; válidos: * ou %v", desconhecidos, validos)
+	}
+	var out []Tarefa
+	for _, t := range ts {
+		if !slices.Contains(desligadas, "*") && !slices.Contains(desligadas, t.Nome) {
+			out = append(out, t)
+		}
+	}
+	return out, nil
 }
