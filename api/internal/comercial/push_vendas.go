@@ -3,7 +3,6 @@ package comercial
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -47,20 +46,40 @@ const (
 // Tarefas: as agendas reais de produção (cron.job, UTC).
 func (pv *PushVendas) Tarefas() []worker.Tarefa {
 	return []worker.Tarefa{
-		{Nome: "push-vendas-07h", Agenda: "0 10 * * *", Limite: 5 * time.Minute, Executar: func(ctx context.Context) error { return pv.Rodar(ctx, "ontem") }},
-		{Nome: "push-vendas-22h", Agenda: "0 1 * * *", Limite: 5 * time.Minute, Executar: func(ctx context.Context) error { return pv.Rodar(ctx, "hoje") }},
+		{Nome: "enviar-push-vendas-07h", Agenda: "0 10 * * *", Limite: 5 * time.Minute, Executar: func(ctx context.Context) error { return pv.Rodar(ctx, "ontem") }},
+		{Nome: "enviar-push-vendas-22h", Agenda: "0 1 * * *", Limite: 5 * time.Minute, Executar: func(ctx context.Context) error { return pv.Rodar(ctx, "hoje") }},
 	}
 }
 
 // pedidoBling é o pedaço do pedido de venda do Bling que importa aqui.
 type pedidoBling struct {
-	ID    int64   `json:"id"`
-	Data  string  `json:"data"`
-	Total float64 `json:"total"`
+	ID    numero `json:"id"`
+	Data  string `json:"data"`
+	Total numero `json:"total"`
 	Loja  *struct {
-		ID int64 `json:"id"`
+		ID numero `json:"id"`
 	} `json:"loja"`
 	Itens []json.RawMessage `json:"itens"`
+}
+
+// numero aceita número ou texto ("123", "99.9") no JSON, como as Tasks 2/3 fazem com o que vem do Bling.
+type numero float64
+
+func (n *numero) UnmarshalJSON(b []byte) error {
+	var v json.Number
+	if err := json.Unmarshal(b, &v); err != nil {
+		var t string
+		if err2 := json.Unmarshal(b, &t); err2 != nil {
+			return err
+		}
+		v = json.Number(t)
+	}
+	f, err := strconv.ParseFloat(string(v), 64)
+	if err != nil {
+		return fmt.Errorf("número inválido")
+	}
+	*n = numero(f)
+	return nil
 }
 
 // blingGET lê um caminho do Bling pelo core; qualquer coisa que não seja 2xx é erro.
@@ -87,9 +106,9 @@ func (pv *PushVendas) listarPedidos(ctx context.Context, dia string) ([]pedido, 
 			return nil, err
 		}
 		for _, p := range resp.Data {
-			np := pedido{ID: p.ID, Data: p.Data, Total: p.Total}
+			np := pedido{ID: int64(p.ID), Data: p.Data, Total: float64(p.Total)}
 			if p.Loja != nil {
-				id := p.Loja.ID
+				id := int64(p.Loja.ID)
 				np.LojaID = &id
 			}
 			todos = append(todos, np)
@@ -115,8 +134,10 @@ func (pv *PushVendas) linhasDoDia(ctx context.Context, dia string) ([]linhaDaNot
 }
 
 func (pv *PushVendas) Rodar(ctx context.Context, modo string) error {
-	if pv.VAPID.Publica == "" || pv.VAPID.Privada == "" {
-		return errors.New("vapid_nao_configurado")
+	// Config errada falha AQUI, uma vez, e vira erro da tarefa (robos_execucoes ok=false) em vez
+	// de 100% das inscrições falharem caladas.
+	if _, err := webpush.ValidarVAPID(pv.VAPID); err != nil {
+		return err
 	}
 	agora := time.Now
 	if pv.Agora != nil {
@@ -215,7 +236,7 @@ func (pv *PushVendas) Rodar(ctx context.Context, modo string) error {
 		st, err := webpush.Enviar(ctx, pv.HTTP, s, payload, pv.VAPID)
 		switch {
 		case err != nil:
-			slog.Warn("push de vendas: inscrição pulada", "erro", err) // o endpoint não vai ao log
+			slog.Warn("push de vendas: inscrição pulada", "erro", err) // o erro não traz o endpoint (é um token) nem chaves
 		case st == http.StatusGone || st == http.StatusNotFound:
 			if _, err := pv.Pool.Exec(ctx, `delete from push_subs where endpoint = $1`, s.Endpoint); err == nil {
 				podados++
@@ -225,6 +246,9 @@ func (pv *PushVendas) Rodar(ctx context.Context, modo string) error {
 		}
 	}
 	slog.Info("push de vendas", "modo", modo, "dia", diaRef, "pedidos", len(todos), "enviados", enviados, "podados", podados)
+	if len(alvos) > 0 && enviados == 0 {
+		return fmt.Errorf("nenhum_push_entregue: %d inscrições, 0 aceitas (%d podadas)", len(alvos), podados)
+	}
 	return nil
 }
 

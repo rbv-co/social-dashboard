@@ -7,6 +7,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"encoding/base64"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -36,6 +37,7 @@ insert into bling_pedido_ajuste_valor values (1, 90);`
 type pushFalso struct {
 	mu        sync.Mutex
 	recebidos []string // caminhos que receberam push
+	corpos    map[string][]byte
 }
 
 // ambientePush: banco, core de mentira (pedidos por dia) e serviço de push em https://example.com.
@@ -56,9 +58,20 @@ func ambientePush(t *testing.T, resp func(core.PedidoBling, int) (int, string, m
 	srvPush := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		pf.mu.Lock()
 		pf.recebidos = append(pf.recebidos, r.URL.Path)
+		if pf.corpos == nil {
+			pf.corpos = map[string][]byte{}
+		}
+		pf.corpos[r.URL.Path], _ = io.ReadAll(r.Body)
 		pf.mu.Unlock()
-		if strings.HasSuffix(r.URL.Path, "/morta") {
-			w.WriteHeader(http.StatusGone)
+		for sufixo, st := range map[string]int{"/morta": 410, "/nf": 404, "/e500": 500, "/e503": 503, "/e429": 429} {
+			if strings.HasSuffix(r.URL.Path, sufixo) {
+				w.WriteHeader(st)
+				return
+			}
+		}
+		if strings.HasSuffix(r.URL.Path, "/rede") {
+			c, _, _ := w.(http.Hijacker).Hijack()
+			c.Close()
 			return
 		}
 		w.WriteHeader(http.StatusCreated)
@@ -77,13 +90,14 @@ func ambientePush(t *testing.T, resp func(core.PedidoBling, int) (int, string, m
 	return &PushVendas{Pool: p, Core: cli, VAPID: v, HTTP: hc, Agora: agora}, f, pf, p
 }
 
-func inscrever(t *testing.T, p *pgxpool.Pool, caminho string, userID any) {
+func inscrever(t *testing.T, p *pgxpool.Pool, caminho string, userID any) *ecdh.PrivateKey {
 	t.Helper()
 	ua, _ := ecdh.P256().GenerateKey(rand.Reader)
 	if _, err := p.Exec(context.Background(), `insert into push_subs values ($1, $2, $3, $4)`, "https://example.com/push/"+caminho,
 		base64.RawURLEncoding.EncodeToString(ua.PublicKey().Bytes()), base64.RawURLEncoding.EncodeToString(make([]byte, 16)), userID); err != nil {
 		t.Fatal(err)
 	}
+	return ua
 }
 
 // pedidosPorDia: 09/10 tem o pedido 1 (Dom Pedro, total 100) e o 2 (sem cache de itens); 08/10, o 3.
@@ -186,11 +200,16 @@ func TestPushVendasInscricaoRuimNaoDerrubaAsOutras(t *testing.T) {
 	if strings.Join(pf.recebidos, ",") != "/push/boa" {
 		t.Fatalf("recebidos = %v", pf.recebidos)
 	}
+	var n int
+	p.QueryRow(context.Background(), `select count(*) from push_subs where endpoint like '%/ruim'`).Scan(&n)
+	if n != 1 {
+		t.Fatal("inscrição malformada não pode ser apagada")
+	}
 }
 
 func TestPushVendasAgendas(t *testing.T) {
 	ts := (&PushVendas{}).Tarefas()
-	if len(ts) != 2 || ts[0].Nome != "push-vendas-07h" || ts[0].Agenda != "0 10 * * *" || ts[1].Nome != "push-vendas-22h" || ts[1].Agenda != "0 1 * * *" {
+	if len(ts) != 2 || ts[0].Nome != "enviar-push-vendas-07h" || ts[0].Agenda != "0 10 * * *" || ts[1].Nome != "enviar-push-vendas-22h" || ts[1].Agenda != "0 1 * * *" {
 		t.Fatalf("%+v", ts)
 	}
 }

@@ -10,15 +10,17 @@ import (
 	"crypto/hkdf"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"io"
 	"log/slog"
 	"math/big"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -128,7 +130,7 @@ func TestEnviarEntregaCifradoComVAPIDValido(t *testing.T) {
 	partes := strings.Split(jwt, ".")
 	var claims map[string]any
 	json.Unmarshal(dec(t, partes[1]), &claims)
-	if claims["aud"] != "https://example.com" || claims["sub"] != v.Assunto || int64(claims["exp"].(float64)) <= time.Now().Unix() {
+	if claims["aud"] != "https://example.com" || claims["sub"] != v.Assunto || int64(claims["exp"].(float64)) <= time.Now().Unix() || int64(claims["exp"].(float64)) > time.Now().Add(24*time.Hour).Unix() {
 		t.Fatalf("claims = %v", claims)
 	}
 	sig := dec(t, partes[2])
@@ -169,7 +171,8 @@ func TestEnviarRecusas(t *testing.T) {
 	}
 }
 
-// Chaves e tokens VAPID nunca aparecem em log nem em erro, e redirecionamento não é seguido.
+// Chaves VAPID nunca aparecem em log nem em erro (o teste chega ao caminho da chave privada),
+// o erro de rede não traz a URL do endpoint (um token) e redirecionamento não é seguido.
 func TestEnviarNaoVazaSegredoNemSegueRedirecionamento(t *testing.T) {
 	var buf strings.Builder
 	antigo := slog.Default()
@@ -179,21 +182,158 @@ func TestEnviarNaoVazaSegredoNemSegueRedirecionamento(t *testing.T) {
 	ua, _ := ecdh.P256().GenerateKey(rand.Reader)
 	destino := 0
 	cli := servicoDePush(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/alvo" {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/rede"):
+			c, _, _ := w.(http.Hijacker).Hijack()
+			c.Close()
+		case r.URL.Path == "/alvo":
 			destino++
+		default:
+			http.Redirect(w, r, "https://example.com/alvo", http.StatusFound)
 		}
-		http.Redirect(w, r, "https://example.com/alvo", http.StatusFound)
 	})
 	ins := Inscricao{Endpoint: "https://example.com/p", P256dh: base64.RawURLEncoding.EncodeToString(ua.PublicKey().Bytes()), Auth: base64.RawURLEncoding.EncodeToString(make([]byte, 16))}
 	st, err := Enviar(context.Background(), cli, ins, []byte("x"), v)
 	if err != nil || st != http.StatusFound || destino != 0 {
 		t.Fatalf("st=%d err=%v destino=%d", st, err, destino)
 	}
-	ins.P256dh = "nao-e-chave"
-	_, err2 := Enviar(context.Background(), cli, ins, []byte("x"), VAPID{Publica: v.Publica, Privada: "lixo", Assunto: v.Assunto})
-	for _, saida := range []string{buf.String(), fmt.Sprint(err2)} {
-		if strings.Contains(saida, v.Privada) || strings.Contains(saida, v.Publica) || strings.Contains(saida, "lixo") {
-			t.Fatalf("vazou segredo: %q", saida)
+	saidas := []string{}
+	// privada que decodifica mas não é chave (escalar zero): chega ao caminho da chave privada
+	zero := base64.RawURLEncoding.EncodeToString(make([]byte, 32))
+	outra, _ := chavesVAPID(t)
+	for _, ruim := range []VAPID{{Publica: v.Publica, Privada: zero, Assunto: v.Assunto}, {Publica: outra.Publica, Privada: v.Privada, Assunto: v.Assunto}} {
+		_, err := Enviar(context.Background(), cli, ins, []byte("x"), ruim)
+		if err == nil {
+			t.Fatal("VAPID ruim deveria falhar")
 		}
+		saidas = append(saidas, err.Error())
+	}
+	ins.Endpoint = "https://example.com/push/TOKEN-SECRETO/rede"
+	_, err = Enviar(context.Background(), cli, ins, []byte("x"), v)
+	if err == nil {
+		t.Fatal("conexão cortada deveria dar erro")
+	}
+	saidas = append(saidas, err.Error(), buf.String())
+	for _, saida := range saidas {
+		for _, segredo := range []string{v.Privada, v.Publica, outra.Publica, zero, "TOKEN-SECRETO", "example.com/push"} {
+			if strings.Contains(saida, segredo) {
+				t.Fatalf("vazou %q em %q", segredo, saida)
+			}
+		}
+	}
+}
+
+func TestEndpointsRecusadosPorNomeEForma(t *testing.T) {
+	v, _ := chavesVAPID(t)
+	ua, _ := ecdh.P256().GenerateKey(rand.Reader)
+	boa := Inscricao{Endpoint: "https://example.com/p", P256dh: base64.RawURLEncoding.EncodeToString(ua.PublicKey().Bytes()), Auth: base64.RawURLEncoding.EncodeToString(make([]byte, 16))}
+	chamadas := 0
+	cli := servicoDePush(t, func(w http.ResponseWriter, _ *http.Request) { chamadas++; w.WriteHeader(201) })
+	for _, e := range []string{
+		"https://LOCALHOST/p", "https://localhost./p", "https://2130706433/p", "https://0x7f.1/p", "https://127.1/p", "https://0/p",
+		"https://[fe80::1%25en0]/p", "https://impressora.local/p", "https://api.internal/p", "https://a.b.localhost/p",
+		"https://usuario:senha@example.com/p", "https://user@example.com/p", "https://10.0.0.1/p", "https://[::ffff:127.0.0.1]/p",
+		"https://0177.0.0.1/p", "https://example.com:443@127.0.0.1/p", "https:///p", "ftp://example.com/p", "https://100.64.0.1/p",
+	} {
+		ins := boa
+		ins.Endpoint = e
+		if _, err := Enviar(context.Background(), cli, ins, []byte("x"), v); err == nil {
+			t.Errorf("endpoint %q deveria ser recusado", e)
+		}
+	}
+	if chamadas != 0 {
+		t.Fatalf("%d chamadas saíram", chamadas)
+	}
+	for _, e := range []string{"https://example.com/p", "https://fcm.googleapis.com/fcm/send/abc", "https://updates.push.services.mozilla.com/wpush/v2/x", "https://web.push.apple.com/Qx", "https://wns2-par02p.notify.windows.com/w/?token=a", "https://exemplo.de/p", "https://push.example.com.br/p"} {
+		u, _ := url.Parse(e)
+		if !endpointAceito(u) {
+			t.Errorf("endpoint %q deveria passar", e)
+		}
+	}
+}
+
+// O cliente de produção (clienteSeguro, o mesmo que Enviar usa com cli == nil) recusa conectar
+// em endereço interno, mesmo com o certificado e o servidor perfeitamente válidos.
+func TestClienteSeguroRecusaEnderecoInterno(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { t.Error("chegou no servidor"); w.WriteHeader(201) }))
+	defer srv.Close()
+	cli := clienteSeguro()
+	cli.Transport.(*http.Transport).TLSClientConfig = &tls.Config{RootCAs: srv.Client().Transport.(*http.Transport).TLSClientConfig.RootCAs}
+	_, err := cli.Get(srv.URL) // https://127.0.0.1:porta
+	if err == nil || !strings.Contains(err.Error(), "destino recusado") {
+		t.Fatalf("err = %v", err)
+	}
+	for _, ip := range []string{"127.0.0.1", "10.1.2.3", "172.16.0.1", "192.168.1.1", "169.254.169.254", "100.64.0.1", "100.127.255.255", "0.0.0.0", "224.0.0.1", "::1", "fe80::1", "fc00::1", "::", "ff02::1", "::ffff:127.0.0.1"} {
+		if !destinoProibido(netip.MustParseAddr(ip)) {
+			t.Errorf("%s deveria ser proibido", ip)
+		}
+	}
+	for _, ip := range []string{"8.8.8.8", "142.250.0.1", "100.128.0.1", "2607:f8b0:4004::1"} {
+		if destinoProibido(netip.MustParseAddr(ip)) {
+			t.Errorf("%s deveria passar", ip)
+		}
+	}
+}
+
+func TestValidarVAPID(t *testing.T) {
+	v, _ := chavesVAPID(t)
+	if _, err := ValidarVAPID(v); err != nil {
+		t.Fatal(err)
+	}
+	outra, _ := chavesVAPID(t)
+	std := func(s string) string { return base64.StdEncoding.EncodeToString(dec(t, s)) }
+	casos := map[string]VAPID{
+		"vazia":         {},
+		"trocada":       {Publica: outra.Publica, Privada: v.Privada, Assunto: v.Assunto},
+		"malformada":    {Publica: v.Publica, Privada: "lixo!", Assunto: v.Assunto},
+		"escalar zero":  {Publica: v.Publica, Privada: base64.RawURLEncoding.EncodeToString(make([]byte, 32)), Assunto: v.Assunto},
+		"assunto vazio": {Publica: v.Publica, Privada: v.Privada},
+		"assunto ruim":  {Publica: v.Publica, Privada: v.Privada, Assunto: "http://exemplo.com"},
+		"assunto curto": {Publica: v.Publica, Privada: v.Privada, Assunto: "mailto:"},
+		"pública curta": {Publica: v.Publica[:20], Privada: v.Privada, Assunto: v.Assunto},
+	}
+	// chave em base64 padrão (com + e /): procura um par que contenha esses caracteres
+	for range 200 {
+		k, _ := chavesVAPID(t)
+		if strings.ContainsAny(std(k.Publica), "+/") {
+			casos["base64 padrão"] = VAPID{Publica: std(k.Publica), Privada: std(k.Privada), Assunto: k.Assunto}
+			break
+		}
+	}
+	if _, ok := casos["base64 padrão"]; !ok {
+		t.Fatal("não achei par com + ou /")
+	}
+	for nome, c := range casos {
+		_, err := ValidarVAPID(c)
+		if err == nil {
+			t.Errorf("%s: deveria falhar", nome)
+			continue
+		}
+		for _, seg := range []string{c.Privada, c.Publica} {
+			if seg != "" && strings.Contains(err.Error(), seg) {
+				t.Errorf("%s: erro traz a chave: %v", nome, err)
+			}
+		}
+	}
+	if _, err := ValidarVAPID(VAPID{Publica: v.Publica, Privada: v.Privada, Assunto: "https://exemplo.com/contato"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestEnviarRecusaPayloadMaiorQueOUnicoRegistro(t *testing.T) {
+	v, _ := chavesVAPID(t)
+	ua, _ := ecdh.P256().GenerateKey(rand.Reader)
+	ins := Inscricao{Endpoint: "https://example.com/p", P256dh: base64.RawURLEncoding.EncodeToString(ua.PublicKey().Bytes()), Auth: base64.RawURLEncoding.EncodeToString(make([]byte, 16))}
+	var tam int
+	cli := servicoDePush(t, func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		tam = len(b)
+		w.WriteHeader(201)
+	})
+	if st, err := Enviar(context.Background(), cli, ins, make([]byte, 3993), v); err != nil || st != 201 || tam != 4096 {
+		t.Fatalf("no limite: st=%d err=%v tam=%d", st, err, tam)
+	}
+	if _, err := Enviar(context.Background(), cli, ins, make([]byte, 3994), v); err == nil {
+		t.Fatal("3994 bytes deveria ser recusado")
 	}
 }

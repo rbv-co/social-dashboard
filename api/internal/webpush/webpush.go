@@ -22,8 +22,10 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -99,12 +101,84 @@ func jwtVAPID(aud, sub string, priv *ecdsa.PrivateKey, exp time.Time) (string, e
 	return assinado + "." + base64.RawURLEncoding.EncodeToString(sig), nil
 }
 
-// endpointAceito: o endpoint vem do NAVEGADOR (push_subs) e o worker faz POST nele; só https
-// num host por nome (nunca IP nem localhost), para não virar SSRF cego para a rede interna.
-func endpointAceito(u *url.URL) bool {
-	h := u.Hostname()
-	return u.Scheme == "https" && h != "" && h != "localhost" && net.ParseIP(h) == nil
+// hostRecusado: o endpoint vem do NAVEGADOR (push_subs) e o worker faz POST nele. Só vale host
+// por NOME de internet: nada de IP (nem em forma curta/decimal/hex/zona IPv6), localhost ou
+// sufixos internos. A defesa de verdade contra um nome que resolve para rede interna é o
+// Control do discador (clienteSeguro).
+func hostRecusado(h string) bool {
+	h = strings.TrimSuffix(strings.ToLower(h), ".")
+	if h == "" || strings.ContainsAny(h, ":%[]") {
+		return true
+	}
+	if _, err := netip.ParseAddr(h); err == nil {
+		return true
+	}
+	if h == "localhost" || strings.HasSuffix(h, ".localhost") || strings.HasSuffix(h, ".local") || strings.HasSuffix(h, ".internal") {
+		return true
+	}
+	ultimo := h[strings.LastIndex(h, ".")+1:] // 2130706433, 0x7f.1, 127.1, 0 -> IP disfarçado
+	if strings.HasPrefix(ultimo, "0x") || strings.Trim(ultimo, "0123456789") == "" {
+		return true
+	}
+	return false
 }
+
+func endpointAceito(u *url.URL) bool {
+	return u.Scheme == "https" && u.User == nil && !hostRecusado(u.Hostname())
+}
+
+var cgnat = netip.MustParsePrefix("100.64.0.0/10")
+
+// destinoProibido: loopback, privado, link-local (inclui metadados 169.254.169.254),
+// não especificado, multicast e CGNAT.
+func destinoProibido(ip netip.Addr) bool {
+	ip = ip.Unmap()
+	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
+		ip.IsUnspecified() || ip.IsMulticast() || cgnat.Contains(ip)
+}
+
+// clienteSeguro confere o IP JÁ RESOLVIDO na hora de conectar (vale para DNS que aponta para
+// dentro e para redirecionamento). A verificação do TLS fica ligada.
+func clienteSeguro() *http.Client {
+	d := &net.Dialer{Timeout: 10 * time.Second, Control: func(_, endereco string, _ syscall.RawConn) error {
+		ap, err := netip.ParseAddrPort(endereco)
+		if err != nil || destinoProibido(ap.Addr()) {
+			return errors.New("webpush: destino recusado (endereço interno)")
+		}
+		return nil
+	}}
+	return &http.Client{Transport: &http.Transport{DialContext: d.DialContext, TLSHandshakeTimeout: 10 * time.Second}}
+}
+
+// ValidarVAPID confere a configuração UMA vez (chamador: o início do disparo): chaves no
+// formato base64url, par público/privada coerente e assunto mailto:/https:. Os erros nunca
+// trazem as chaves.
+func ValidarVAPID(v VAPID) (*ecdsa.PrivateKey, error) {
+	if strings.TrimSpace(v.Publica) == "" || strings.TrimSpace(v.Privada) == "" {
+		return nil, errors.New("vapid_nao_configurado")
+	}
+	if (!strings.HasPrefix(v.Assunto, "mailto:") || len(v.Assunto) == len("mailto:")) && (!strings.HasPrefix(v.Assunto, "https:") || len(v.Assunto) == len("https:")) {
+		return nil, errors.New("vapid_invalido: assunto precisa começar com mailto: ou https:")
+	}
+	d, err := b64(v.Privada)
+	if err != nil {
+		return nil, errors.New("vapid_invalido: privada não é base64url")
+	}
+	priv, err := ecdsa.ParseRawPrivateKey(elliptic.P256(), d)
+	if err != nil {
+		return nil, errors.New("vapid_invalido: privada não é uma chave P-256")
+	}
+	pub, err := priv.PublicKey.Bytes()
+	if err != nil || base64.RawURLEncoding.EncodeToString(pub) != strings.TrimRight(strings.TrimSpace(v.Publica), "=") {
+		return nil, errors.New("vapid_invalido: a chave pública não confere com a privada")
+	}
+	return priv, nil
+}
+
+// Limite do RFC 8188 num registro só: 4096 - cabeçalho(86) - tag(16) - delimitador(1).
+const maxPayload = 3993
+
+var padrao = clienteSeguro()
 
 // Enviar cifra o payload e o entrega. Devolve o status do serviço de push (201 = aceito;
 // 404/410 = inscrição morta, apagar). Erro = nem chegou a ter resposta, ou dado inválido.
@@ -121,16 +195,12 @@ func Enviar(ctx context.Context, cli *http.Client, s Inscricao, payload []byte, 
 	if err != nil || len(authSecret) != 16 {
 		return 0, errors.New("webpush: auth inválido")
 	}
-	d, err := b64(v.Privada)
-	if err != nil {
-		return 0, errors.New("webpush: VAPID privada inválida")
+	if len(payload) > maxPayload {
+		return 0, errors.New("webpush: payload maior que o registro único permite")
 	}
-	priv, err := ecdsa.ParseRawPrivateKey(elliptic.P256(), d)
+	priv, err := ValidarVAPID(v)
 	if err != nil {
-		return 0, errors.New("webpush: VAPID privada inválida")
-	}
-	if pub, err := priv.PublicKey.Bytes(); err != nil || base64.RawURLEncoding.EncodeToString(pub) != strings.TrimRight(strings.TrimSpace(v.Publica), "=") {
-		return 0, errors.New("webpush: a chave VAPID pública não confere com a privada")
+		return 0, err
 	}
 	as, err := ecdh.P256().GenerateKey(rand.Reader)
 	if err != nil {
@@ -158,17 +228,21 @@ func Enviar(ctx context.Context, cli *http.Client, s Inscricao, payload []byte, 
 	req.Header.Set("Authorization", "vapid t="+jwt+", k="+strings.TrimRight(strings.TrimSpace(v.Publica), "="))
 	// Sem redirecionamento (o endpoint não pode mandar o worker para outro lugar) e com
 	// prazo próprio, mesmo que o cliente do chamador não tenha.
-	c := http.Client{}
-	if cli != nil {
-		c = *cli
+	if cli == nil {
+		cli = padrao
 	}
+	c := *cli
 	c.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	if c.Timeout == 0 {
 		c.Timeout = 30 * time.Second
 	}
 	r, err := c.Do(req)
 	if err != nil {
-		return 0, err
+		var ue *url.Error
+		if errors.As(err, &ue) { // o *url.Error traz a URL inteira do endpoint (que é um token)
+			err = ue.Err
+		}
+		return 0, fmt.Errorf("webpush: sem resposta do serviço de push: %w", err)
 	}
 	defer r.Body.Close()
 	io.Copy(io.Discard, io.LimitReader(r.Body, 64<<10))
