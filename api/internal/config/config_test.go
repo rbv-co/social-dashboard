@@ -142,3 +142,11 @@ func TestCarregarRDEArquivos(t *testing.T) {
 		t.Fatalf("ArquivosDir = %q", c.ArquivosDir)
 	}
 }
+func TestCarregarAlerta(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://x")
+	t.Setenv("ALERT_WEBHOOK_URL", "https://hooks.exemplo/segredo-do-webhook")
+	c, _ := Carregar()
+	if c.AlertaWebhook != "https://hooks.exemplo/segredo-do-webhook" || !slices.Contains(c.Segredos(), c.AlertaWebhook) {
+		t.Fatalf("%+v", c)
+	}
+}

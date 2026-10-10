@@ -32,6 +32,8 @@ func tarefas(p *pgxpool.Pool, cfg config.Config, ag *worker.Agendador) []worker.
 	ts = append(ts, (&meta.PushSaldo{Pool: p, Core: cli, VAPID: vapid(cfg)}).Tarefa())
 	ts = append(ts, (&frota.PushFrota{Pool: p, VAPID: vapid(cfg)}).Tarefa())
 	ts = append(ts, (&conteudo.HoraH{Pool: p, VAPID: vapid(cfg)}).Tarefa(), (&conteudo.Espelho{Pool: p, Core: cli}).Tarefa())
+	ts = append(ts, (&meta.ColetaDiaria{Pool: p, Core: cli, Gravar: ag.Gravador(), Alerta: cfg.AlertaWebhook}).Tarefas()...)
+	ts = append(ts, (&meta.Auditoria{Pool: p, Core: cli, Alerta: cfg.AlertaWebhook}).Tarefa())
 	return ts
 }
 
