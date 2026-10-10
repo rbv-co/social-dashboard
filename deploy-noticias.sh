@@ -16,7 +16,7 @@ if git diff --cached --quiet; then
 else
   git commit -m "feat(noticias): Portal de Notícias por concorrente" && echo "    commit OK"
 fi
-git push && echo "    push OK — a Vercel vai publicar em instantes"
+git push && echo "    push OK — só o preview da Vercel atualiza; a produção sobe com: ssh op /root/deploy-central.sh"
 
 echo "==> Migrations no Supabase"
 # Carrega DATABASE_URL do coletor/.env, se existir.
