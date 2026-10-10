@@ -9,6 +9,12 @@
 //     (pg_advisory_xact_lock(hashtext(...)), objsubid = 1): nenhuma trava do worker colide com elas;
 //   - o resultado vai para robos_execucoes com o nome de PRODUÇÃO (a tela "saúde dos robôs" casa
 //     robos_esperados por LIKE '<robo>%') e conferido_em = now().
+//
+// A trava impede SOBREPOSIÇÃO (duas execuções ao mesmo tempo, ex.: deploy com dois workers); ela NÃO
+// impede uma segunda execução da mesma janela depois que a primeira acabou (cron + `api worker
+// rodar`, reentrega). "Enviar uma vez só" é garantido pelo livro envios_feitos (banco.ReservarEnvio),
+// em CADA tarefa que manda algo para fora: uma tarefa nova que envia sem reservar quebra o Review
+// Focus 1 do Plano 4, mesmo com a trava.
 package worker
 
 import (
@@ -18,6 +24,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"runtime/debug"
 	"slices"
 	"strings"
 	"sync"
@@ -65,9 +72,8 @@ type Metrica struct {
 }
 
 type Agendador struct {
-	pool  *pgxpool.Pool
-	cron  *cron.Cron
-	agora func() time.Time
+	pool *pgxpool.Pool
+	cron *cron.Cron
 
 	Desligadas []string      // WORKER_TAREFAS_DESLIGADAS; "*" desliga todas
 	Segredos   []string      // valores que nunca saem em robos_execucoes nem no log
@@ -84,7 +90,7 @@ type Agendador struct {
 
 func Novo(p *pgxpool.Pool) *Agendador {
 	ctx, cancela := context.WithCancel(context.Background())
-	return &Agendador{pool: p, cron: cron.New(cron.WithLocation(time.UTC)), agora: time.Now,
+	return &Agendador{pool: p, cron: cron.New(cron.WithLocation(time.UTC)),
 		ctxTarefas: ctx, cancelaTarefas: cancela, tarefas: map[string]Tarefa{}, metricas: map[string]*Metrica{}}
 }
 
@@ -126,12 +132,21 @@ func (a *Agendador) Registrar(t Tarefa) error {
 		slog.Info("tarefa desligada por WORKER_TAREFAS_DESLIGADAS", "nome", t.Nome)
 		return nil
 	}
-	_, err := a.cron.AddFunc(t.Agenda, func() {
-		if _, err := a.Rodar(a.ctxTarefas, t); err != nil {
-			slog.Error("tarefa falhou", "nome", t.Nome, "erro", Limpar(err.Error(), a.Segredos))
-		}
-	})
+	_, err := a.cron.AddFunc(t.Agenda, func() { a.disparar(t) })
 	return err
+}
+
+// disparar é o que a agenda faz a cada hora marcada. Confere Desligada de novo (e não só em
+// Registrar): se a lista for definida depois do registro, a tarefa desligada não pode rodar sozinha
+// (no ensaio, seria push de verdade). `api worker rodar --forcar` passa por Rodar, não por aqui.
+func (a *Agendador) disparar(t Tarefa) {
+	if a.Desligada(t.Nome) {
+		slog.Info("tarefa desligada: agenda ignorada", "nome", t.Nome)
+		return
+	}
+	if _, err := a.Rodar(a.ctxTarefas, t); err != nil {
+		slog.Error("tarefa falhou", "nome", t.Nome, "erro", err.Error()) // já sem segredos (Rodar)
+	}
 }
 
 // Buscar devolve a tarefa registrada (ligada ou desligada).
@@ -166,18 +181,41 @@ func (a *Agendador) contar(nome string, f func(*Metrica)) {
 }
 
 // executar roda a tarefa convertendo pânico em erro: uma tarefa defeituosa não derruba o worker.
+// O log leva a pilha (sem o valor do pânico, que pode trazer segredo); o valor vai no erro, que
+// Rodar limpa.
 func executar(ctx context.Context, t Tarefa) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
+			slog.Error("pânico na tarefa", "nome", t.Nome, "pilha", string(debug.Stack()))
 			err = fmt.Errorf("pânico: %v", r)
 		}
 	}()
 	return t.Executar(ctx)
 }
 
+// erroLimpo é o erro que Rodar devolve: Error() já sem os segredos do Agendador, de modo que
+// nenhum chamador (log, CLI, teste) os vaze. Unwrap guarda o original para errors.Is/As.
+type erroLimpo struct {
+	msg string
+	err error
+}
+
+func (e *erroLimpo) Error() string { return e.msg }
+func (e *erroLimpo) Unwrap() error { return e.err }
+
+func (a *Agendador) limpo(err error) error {
+	if err == nil {
+		return nil
+	}
+	return &erroLimpo{msg: Limpar(err.Error(), a.Segredos), err: err}
+}
+
 // Rodar executa UMA vez sob a trava. executou=false (sem erro) = outra execução segura a trava
 // (fica no log e em Metrica.Puladas, nunca em robos_execucoes). err = o erro da tarefa (já gravado
-// em robos_execucoes) ou da infraestrutura (conexão, gravação).
+// em robos_execucoes) ou da infraestrutura (conexão, gravação), com os segredos já mascarados.
+//
+// A trava só evita SOBREPOSIÇÃO; uma execução repetida da mesma janela depois que esta acaba roda de
+// novo. Quem envia algo para fora reserva a chave no livro (banco.ReservarEnvio) antes de enviar.
 func (a *Agendador) Rodar(ctx context.Context, t Tarefa) (bool, error) {
 	if err := validar(t); err != nil {
 		return false, err
@@ -186,7 +224,7 @@ func (a *Agendador) Rodar(ctx context.Context, t Tarefa) (bool, error) {
 	// mesmo tempo nunca esgotam o pool segurando travas.
 	conn, err := pgx.ConnectConfig(ctx, a.pool.Config().ConnConfig.Copy())
 	if err != nil {
-		return false, err
+		return false, a.limpo(err)
 	}
 	defer func() {
 		c, cancela := context.WithTimeout(context.Background(), 5*time.Second)
@@ -195,7 +233,7 @@ func (a *Agendador) Rodar(ctx context.Context, t Tarefa) (bool, error) {
 	}()
 	var ganhou bool
 	if err := conn.QueryRow(ctx, `select pg_try_advisory_lock($1::int, hashtext($2::text))`, EspacoDaTrava, t.trava()).Scan(&ganhou); err != nil {
-		return false, err
+		return false, a.limpo(err)
 	}
 	if ganhou {
 		// Solta EXPLICITAMENTE antes de fechar: o fim da sessão é assíncrono no servidor, e a próxima
@@ -216,11 +254,11 @@ func (a *Agendador) Rodar(ctx context.Context, t Tarefa) (bool, error) {
 
 	ctxT, cancela := context.WithTimeout(ctx, t.Limite)
 	defer cancela()
-	inicio, relogio := a.agora(), time.Now()
+	inicio := time.Now()
 	erro := executar(ctxT, t)
 	a.contar(t.Nome, func(m *Metrica) {
 		m.Execucoes++
-		m.UltimoInicio, m.UltimaDuracaoMs, m.UltimoErro = inicio, time.Since(relogio).Milliseconds(), ""
+		m.UltimoInicio, m.UltimaDuracaoMs, m.UltimoErro = inicio, time.Since(inicio).Milliseconds(), ""
 		if erro != nil {
 			m.Falhas++
 			m.UltimoErro = cortar(Limpar(erro.Error(), a.Segredos), 200)
@@ -229,10 +267,16 @@ func (a *Agendador) Rodar(ctx context.Context, t Tarefa) (bool, error) {
 	if t.RegistroProprio && erro == nil {
 		return true, nil
 	}
-	// Contexto novo: o da tarefa pode ter vencido. Grava na conexão da trava (o pool pode estar cheio).
+	// Contexto novo: o da tarefa pode ter vencido. Grava na conexão da trava (o pool pode estar cheio);
+	// se ela caiu no meio da tarefa, grava pelo pool, para a linha existir de qualquer jeito.
 	c, cancelaC := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancelaC()
-	return true, errors.Join(erro, Gravar(c, conn, t.Nome, inicio, erro, a.Segredos))
+	gerr := Gravar(c, conn, t.Nome, inicio, erro, a.Segredos)
+	if gerr != nil {
+		slog.Warn("conexão da trava perdida durante a tarefa; gravando a linha pelo pool", "nome", t.Nome, "erro", Limpar(gerr.Error(), a.Segredos))
+		gerr = Gravar(c, a.pool, t.Nome, inicio, erro, a.Segredos)
+	}
+	return true, a.limpo(errors.Join(erro, gerr))
 }
 
 // Gravar grava UMA linha em robos_execucoes. status_code 200/500 e ok como o conferir_robos fazia
@@ -256,9 +300,13 @@ func (a *Agendador) Gravador() func(ctx context.Context, robo string, inicio tim
 	}
 }
 
-// Limpar troca cada segredo (com 8 caracteres ou mais) por ***. É a ÚLTIMA barreira: quem monta o
-// erro já não deve pôr segredo nele.
+// Limpar troca cada segredo (com 8 caracteres ou mais) por ***, o mais longo primeiro (um segredo
+// que é prefixo de outro não pode deixar a cauda do maior à mostra). É a ÚLTIMA barreira: quem monta
+// o erro já não deve pôr segredo nele. Segredo com menos de 8 caracteres NÃO é mascarado (trocaria
+// texto comum); o `api worker` avisa no boot.
 func Limpar(s string, segredos []string) string {
+	segredos = slices.Clone(segredos)
+	slices.SortFunc(segredos, func(x, y string) int { return len(y) - len(x) })
 	for _, seg := range segredos {
 		if len(seg) >= 8 {
 			s = strings.ReplaceAll(s, seg, "***")
@@ -331,10 +379,10 @@ func (a *Agendador) Saude() http.Handler {
 	return m
 }
 
-// Filtrar tira as tarefas desligadas ("*" desliga todas), para o ensaio não disparar efeitos reais.
-// Nome que não é "*" nem de tarefa registrada é erro (um erro de digitação manteria ligado o que
-// se quis desligar, ex.: push real no ensaio).
-func Filtrar(ts []Tarefa, desligadas []string) ([]Tarefa, error) {
+// ValidarDesligadas confere os nomes de WORKER_TAREFAS_DESLIGADAS: "*" ou nome de tarefa registrada.
+// Um erro de digitação manteria ligado o que se quis desligar (ex.: push real no ensaio), então o
+// worker recusa subir. Quem de fato não agenda a tarefa desligada é o Agendador (Desligadas).
+func ValidarDesligadas(ts []Tarefa, desligadas []string) error {
 	validos := []string{}
 	for _, t := range ts {
 		validos = append(validos, t.Nome)
@@ -346,7 +394,17 @@ func Filtrar(ts []Tarefa, desligadas []string) ([]Tarefa, error) {
 		}
 	}
 	if len(desconhecidos) > 0 {
-		return nil, fmt.Errorf("WORKER_TAREFAS_DESLIGADAS: nomes desconhecidos %v; válidos: * ou %v", desconhecidos, validos)
+		return fmt.Errorf("WORKER_TAREFAS_DESLIGADAS: nomes desconhecidos %v; válidos: * ou %v", desconhecidos, validos)
+	}
+	return nil
+}
+
+// Filtrar devolve as tarefas que não estão desligadas ("*" desliga todas), depois de validar os
+// nomes (ValidarDesligadas). O worker não a usa para agendar (isso é do Agendador); fica para quem
+// precisa da lista filtrada.
+func Filtrar(ts []Tarefa, desligadas []string) ([]Tarefa, error) {
+	if err := ValidarDesligadas(ts, desligadas); err != nil {
+		return nil, err
 	}
 	var out []Tarefa
 	for _, t := range ts {

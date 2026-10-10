@@ -2,14 +2,17 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"os"
 	"slices"
+	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rbv-co/social-dashboard/api/internal/config"
 	"github.com/rbv-co/social-dashboard/api/internal/webpush"
@@ -25,19 +28,30 @@ import (
 //
 // Saída de `rodar`: 0 ok, 1 a tarefa falhou, 2 uso errado (tarefa desconhecida, ou desligada sem
 // --forcar), 3 pulada (outra execução segura a trava). Não existe rota HTTP que execute tarefa.
+// montarTarefas é `tarefas`, trocável nos testes (para injetar uma tarefa que falha com segredo).
+var montarTarefas = tarefas
+
 func rodarWorker(ctx context.Context, p *pgxpool.Pool, cfg config.Config, args []string) int {
 	sub := ""
 	if len(args) > 0 {
 		sub = args[0]
 	}
 	if err := conferirTabelas(ctx, p); err != nil {
-		slog.Error("worker: banco sem as tabelas do worker; rode `api migrar` (ou suba o api) antes", "erro", err)
+		var pg *pgconn.PgError
+		if errors.As(err, &pg) && pg.Code == "42P01" { // undefined_table
+			slog.Error("worker: banco sem as tabelas do worker; rode `api migrar` (ou suba o api) antes", "erro", err)
+		} else {
+			slog.Error("worker: não consegui conferir o banco (conexão ou permissão); as tabelas podem existir", "erro", err)
+		}
 		return 1
 	}
 	ag := worker.Novo(p)
+	// Desligadas e Segredos ANTES de registrar: Registrar não agenda o que já está desligado (e a
+	// agenda confere de novo na hora de disparar).
 	ag.Desligadas, ag.Segredos = cfg.TarefasDesligadas, cfg.Segredos()
-	ts := tarefas(p, cfg, ag)
-	if _, err := worker.Filtrar(ts, cfg.TarefasDesligadas); err != nil { // nome desconhecido: recusa subir
+	avisarSegredosCurtos(ag.Segredos)
+	ts := montarTarefas(p, cfg, ag)
+	if err := worker.ValidarDesligadas(ts, cfg.TarefasDesligadas); err != nil { // nome desconhecido: recusa subir
 		slog.Error("configuração", "erro", err)
 		return 1
 	}
@@ -103,6 +117,20 @@ func rodarWorker(ctx context.Context, p *pgxpool.Pool, cfg config.Config, args [
 	return 2
 }
 
+// avisarSegredosCurtos: worker.Limpar não mascara segredo com menos de 8 caracteres. Avisa a
+// quantidade, nunca o valor.
+func avisarSegredosCurtos(segredos []string) {
+	n := 0
+	for _, s := range segredos {
+		if s != "" && len(s) < 8 {
+			n++
+		}
+	}
+	if n > 0 {
+		slog.Warn("segredo configurado com menos de 8 caracteres não é mascarado nos erros e no log; use um mais longo", "quantidade", n)
+	}
+}
+
 // conferirTabelas: as tabelas que o worker escreve existem (o worker não migra; ver main).
 func conferirTabelas(ctx context.Context, p *pgxpool.Pool) error {
 	_, err := p.Exec(ctx, `select 1 from envios_feitos limit 0; select 1 from robos_execucoes limit 0`)
@@ -110,6 +138,7 @@ func conferirTabelas(ctx context.Context, p *pgxpool.Pool) error {
 }
 
 func saudeDoWorker(addr string) int {
+	addr = strings.TrimSpace(addr) // como config.Carregar
 	if addr == "" {
 		fmt.Fprintln(os.Stderr, "WORKER_ADDR vazio: o worker não expõe /saude")
 		return 1

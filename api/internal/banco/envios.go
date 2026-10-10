@@ -14,6 +14,13 @@ type Executor interface {
 // ReservarEnvio é o livro de envios: marca `chave` ANTES de mandar a mensagem. true = esta execução
 // pode mandar; false = já foi mandada (ou está sendo, por outra execução). Uma execução repetida
 // (manual, duas instâncias, reentrega) nunca reenvia.
+//
+// Duas regras de quem chama:
+//   - reserve em AUTOCOMMIT (passe o pool ou uma conexão, nunca uma transação que ainda possa dar
+//     rollback depois do envio): uma reserva desfeita pelo rollback liberaria o reenvio;
+//   - a chave TEM de incluir a janela de tempo (dia, hora...): a faxina-da-api apaga as reservas com
+//     mais de 45 dias, então uma chave sem janela voltaria a poder enviar depois disso (e, sem
+//     janela, a mensagem de amanhã nunca sairia).
 func ReservarEnvio(ctx context.Context, db Executor, chave string) (bool, error) {
 	tag, err := db.Exec(ctx, `insert into envios_feitos (chave) values ($1::text) on conflict (chave) do nothing`, chave)
 	if err != nil {
