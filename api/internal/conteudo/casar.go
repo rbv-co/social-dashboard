@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
+	"math/big"
 	"regexp"
 	"slices"
 	"strconv"
@@ -15,6 +16,8 @@ import (
 	"unicode/utf16"
 
 	"github.com/rbv-co/social-dashboard/api/internal/texto"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 	"golang.org/x/text/unicode/norm"
 )
 
@@ -50,7 +53,7 @@ func normalizar(s string) []uint16 {
 		}
 		return r
 	}, s)
-	s = strings.Trim(reEspacos.ReplaceAllString(strings.ToLower(s), " "), " ")
+	s = strings.Trim(reEspacos.ReplaceAllString(cases.Lower(language.Und).String(s), " "), " ")
 	u := utf16.Encode([]rune(s))
 	if len(u) > 200 {
 		u = u[:200]
@@ -111,7 +114,8 @@ func semelhancaDeTexto(a, b string) float64 {
 	if comeca(na, nb) || comeca(nb, na) { // legenda colada e alguém acrescentou algo no fim
 		return 1
 	}
-	return pesoPalavras*dice(palavras(na), palavras(nb)) + pesoBigramas*dice(bigramas(na), bigramas(nb))
+	// float64(...) em cada produto: proíbe a fusão multiplica-e-soma (FMA) do arm64, que muda o último bit.
+	return float64(pesoPalavras*dice(palavras(na), palavras(nb))) + float64(pesoBigramas*dice(bigramas(na), bigramas(nb)))
 }
 
 // Midia é um item de /{ig}/media.
@@ -162,7 +166,27 @@ type nota struct {
 	motivo         string
 }
 
-func arredondar(x float64) int64 { return int64(math.Floor(x + 0.5)) } // Math.round do JS (x >= 0)
+// arredondar é o Math.round do JS (x >= 0): o inteiro mais próximo, empate para o maior. Compara a
+// parte fracionária (exata) em vez de somar 0,5, que arredonda errado em 0,49999999999999994.
+func arredondar(x float64) int64 {
+	f := math.Floor(x)
+	if x-f >= 0.5 {
+		f++
+	}
+	return int64(f)
+}
+
+// paraQuatroCasas é Number(x.toFixed(4)) do JS para x >= 0: o n que deixa n/10⁴ mais perto de x, e no
+// empate EXATO o maior (o FormatFloat do Go arredonda o empate para o par: 0,28125 → 0,2812; o JS, 0,2813).
+// A conta é exata (big.Float de 256 bits: x tem 53 e 10⁴ cabe em 14).
+func paraQuatroCasas(x float64) float64 {
+	v := new(big.Float).SetPrec(256).SetFloat64(x)
+	v.Mul(v, big.NewFloat(10000))
+	v.Add(v, big.NewFloat(0.5))
+	n, _ := v.Int64() // trunca: x >= 0, então é o piso
+	r, _ := strconv.ParseFloat(fmt.Sprintf("%d.%04d", n/10000, n%10000), 64)
+	return r
+}
 
 func pontuar(p Peca, m Midia) (nota, bool) {
 	if p.PublicarEm == nil || m.Timestamp == "" || !formatoCombina(p.Formato, m) {
@@ -193,7 +217,7 @@ func pontuar(p Peca, m Midia) (nota, bool) {
 		}
 		quando = fmt.Sprintf("%d min %s do combinado", dif, lado)
 	}
-	return nota{total: pesoLegenda*legenda + pesoTempo*tempo, legenda: legenda,
+	return nota{total: float64(pesoLegenda*legenda) + float64(pesoTempo*tempo), legenda: legenda,
 		motivo: fmt.Sprintf("Legenda %d%% parecida, publicado %s.", arredondar(legenda*100), quando)}, true
 }
 
@@ -252,7 +276,7 @@ func casar(pecas []Peca, midias []Midia, jaUsados map[string]bool) []Achado {
 		if !sozinho {
 			motivo += " Há outro post parecido no mesmo período."
 		}
-		pont, _ := strconv.ParseFloat(strconv.FormatFloat(x.n.total, 'f', 4, 64), 64) // Number(total.toFixed(4))
+		pont := paraQuatroCasas(x.n.total) // Number(total.toFixed(4))
 		feitas[x.p.ID], usadas[x.m.ID] = true, true
 		saida = append(saida, Achado{PecaID: x.p.ID, IGMediaID: x.m.ID, IGPermalink: ouNulo(x.m.Permalink),
 			IGTimestamp: x.m.Timestamp, IGCaption: x.m.Caption, IGThumb: ouNulo(x.m.ThumbnailURL, x.m.MediaURL),

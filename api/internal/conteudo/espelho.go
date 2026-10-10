@@ -3,6 +3,7 @@ package conteudo
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -40,17 +41,18 @@ func (e *Espelho) Rodar(ctx context.Context) error {
 		agora = e.Agora
 	}
 	t := agora()
+	// Uma falha (conta, peça, banco) não derruba as outras nem o passo seguinte, mas a rodada fica vermelha.
 	var falhas []string
 	casadas, sugeridas, err := e.casar(ctx, t, &falhas)
 	if err != nil {
-		return err
+		falhas = append(falhas, "casar: "+err.Error())
 	}
 	medidas, err := e.medir(ctx, t, &falhas)
 	if err != nil {
-		return err
+		falhas = append(falhas, "medir: "+err.Error())
 	}
 	slog.Info("conteudo-espelho", "casadas", casadas, "sugeridas", sugeridas, "medidas", medidas, "falhas", len(falhas))
-	if len(falhas) > 0 { // uma conta/peça que falha não derruba as outras, mas a rodada fica vermelha
+	if len(falhas) > 0 {
 		return fmt.Errorf("espelho: %d falha(s): %s", len(falhas), strings.Join(falhas, " · "))
 	}
 	return nil
@@ -58,7 +60,8 @@ func (e *Espelho) Rodar(ctx context.Context) error {
 
 type contaIG struct{ id, nome, ig string }
 
-// casar = PASSO A. Story fica de fora (a Graph não devolve story de forma confiável em /media).
+// casar = PASSO A. Story fica de fora (a Graph não devolve story de forma confiável em /media). O erro
+// devolvido é só o das leituras iniciais; o resto (Meta, banco por conta ou por achado) vai para `falhas`.
 func (e *Espelho) casar(ctx context.Context, t time.Time, falhas *[]string) (casadas, sugeridas int, err error) {
 	linhas, err := e.Pool.Query(ctx, `select id::text, account_id::text, coalesce(formato, ''), coalesce(legenda, ''), coalesce(hashtags, ''), publicar_em
 		  from conteudo_pecas
@@ -94,68 +97,86 @@ func (e *Espelho) casar(ctx context.Context, t time.Time, falhas *[]string) (cas
 		if c.ig == "" {
 			continue
 		}
-		j, err := meta.GET(ctx, e.Core, "/"+c.ig+"/media", map[string]any{"fields": camposMidia, "limit": "50"})
+		ca, su, err := e.casarConta(ctx, c, porConta[c.id], falhas)
+		casadas, sugeridas = casadas+ca, sugeridas+su
 		if err != nil {
 			*falhas = append(*falhas, "casar "+c.nome+": "+err.Error())
-			continue
-		}
-		var lote struct {
-			Data []Midia `json:"data"`
-		}
-		b, _ := json.Marshal(j)
-		json.Unmarshal(b, &lote)
-		daConta := porConta[c.id]
-		pecaIDs := make([]string, len(daConta))
-		for i, p := range daConta {
-			pecaIDs[i] = p.ID
-		}
-		// Posts já vinculados a alguma peça, ou já decididos para estas: nunca oferecer de novo o que a
-		// pessoa já disse que não era.
-		linhas, err := e.Pool.Query(ctx, `select ig_media_id from conteudo_pecas where ig_media_id is not null
-			union select ig_media_id from conteudo_casamentos where peca_id::text = any($1::text[])`, pecaIDs)
-		if err != nil {
-			return 0, 0, err
-		}
-		usados, err := pgx.CollectRows(linhas, pgx.RowTo[string])
-		if err != nil {
-			return 0, 0, err
-		}
-		jaUsados := map[string]bool{}
-		for _, u := range usados {
-			jaUsados[u] = true
-		}
-		for _, a := range casar(daConta, lote.Data, jaUsados) {
-			err := pgx.BeginFunc(ctx, e.Pool, func(tx pgx.Tx) error {
-				if _, err := tx.Exec(ctx, `insert into conteudo_casamentos (peca_id, ig_media_id, ig_permalink, ig_timestamp, ig_caption, ig_thumb, pontuacao, situacao, motivo)
-					values ($1::uuid, $2::text, $3::text, $4::timestamptz, $5::text, $6::text, $7::numeric, $8::text, $9::text)
-					on conflict (peca_id, ig_media_id) do update set ig_permalink = excluded.ig_permalink, ig_timestamp = excluded.ig_timestamp,
-					  ig_caption = excluded.ig_caption, ig_thumb = excluded.ig_thumb, pontuacao = excluded.pontuacao,
-					  situacao = excluded.situacao, motivo = excluded.motivo`,
-					a.PecaID, a.IGMediaID, a.IGPermalink, a.IGTimestamp, a.IGCaption, a.IGThumb, a.Pontuacao, a.Situacao, a.Motivo); err != nil {
-					return err
-				}
-				if a.Situacao != "automatico" {
-					return nil
-				}
-				if _, err := tx.Exec(ctx, `update conteudo_pecas set ig_media_id = $2::text, ig_permalink = $3::text, status = 'publicada',
-					publicado_em = $4::timestamptz where id = $1::uuid`, a.PecaID, a.IGMediaID, a.IGPermalink, a.IGTimestamp); err != nil {
-					return err
-				}
-				_, err := tx.Exec(ctx, `insert into conteudo_eventos (peca_id, acao, detalhe) values ($1::uuid, 'casou', $2::text)`,
-					a.PecaID, "Encontrei o post no Instagram sozinho. "+a.Motivo)
-				return err
-			})
-			if err != nil {
-				return 0, 0, err
-			}
-			if a.Situacao == "automatico" {
-				casadas++
-			} else {
-				sugeridas++
-			}
 		}
 	}
 	return casadas, sugeridas, nil
+}
+
+// casarConta: o erro devolvido é o do banco (o da Meta vai para `falhas`, já com o nome da conta).
+func (e *Espelho) casarConta(ctx context.Context, c contaIG, daConta []Peca, falhas *[]string) (casadas, sugeridas int, err error) {
+	j, err := meta.GET(ctx, e.Core, "/"+c.ig+"/media", map[string]any{"fields": camposMidia, "limit": "50"})
+	if err != nil {
+		*falhas = append(*falhas, "casar "+c.nome+": "+err.Error())
+		return 0, 0, nil
+	}
+	// meta.GET devolve o JSON já decodificado (map); volta a Midia pelo formato de ida e volta.
+	var lote struct {
+		Data []Midia `json:"data"`
+	}
+	b, err := json.Marshal(j)
+	if err == nil {
+		err = json.Unmarshal(b, &lote)
+	}
+	if err != nil { // resposta fora do formato não pode virar "nenhum post" calado
+		*falhas = append(*falhas, "casar "+c.nome+": resposta da Meta ilegível: "+err.Error())
+		return 0, 0, nil
+	}
+	pecaIDs := make([]string, len(daConta))
+	for i, p := range daConta {
+		pecaIDs[i] = p.ID
+	}
+	// Posts já vinculados a alguma peça, ou já decididos para estas: nunca oferecer de novo o que a
+	// pessoa já disse que não era.
+	linhas, err := e.Pool.Query(ctx, `select ig_media_id from conteudo_pecas where ig_media_id is not null
+		union select ig_media_id from conteudo_casamentos where peca_id::text = any($1::text[])`, pecaIDs)
+	if err != nil {
+		return 0, 0, err
+	}
+	usados, err := pgx.CollectRows(linhas, pgx.RowTo[string])
+	if err != nil {
+		return 0, 0, err
+	}
+	jaUsados := map[string]bool{}
+	for _, u := range usados {
+		jaUsados[u] = true
+	}
+	var erros []error
+	for _, a := range casar(daConta, lote.Data, jaUsados) {
+		err := pgx.BeginFunc(ctx, e.Pool, func(tx pgx.Tx) error {
+			if _, err := tx.Exec(ctx, `insert into conteudo_casamentos (peca_id, ig_media_id, ig_permalink, ig_timestamp, ig_caption, ig_thumb, pontuacao, situacao, motivo)
+				values ($1::uuid, $2::text, $3::text, $4::timestamptz, $5::text, $6::text, $7::numeric, $8::text, $9::text)
+				on conflict (peca_id, ig_media_id) do update set ig_permalink = excluded.ig_permalink, ig_timestamp = excluded.ig_timestamp,
+				  ig_caption = excluded.ig_caption, ig_thumb = excluded.ig_thumb, pontuacao = excluded.pontuacao,
+				  situacao = excluded.situacao, motivo = excluded.motivo`,
+				a.PecaID, a.IGMediaID, a.IGPermalink, a.IGTimestamp, a.IGCaption, a.IGThumb, a.Pontuacao, a.Situacao, a.Motivo); err != nil {
+				return err
+			}
+			if a.Situacao != "automatico" {
+				return nil
+			}
+			if _, err := tx.Exec(ctx, `update conteudo_pecas set ig_media_id = $2::text, ig_permalink = $3::text, status = 'publicada',
+				publicado_em = $4::timestamptz where id = $1::uuid`, a.PecaID, a.IGMediaID, a.IGPermalink, a.IGTimestamp); err != nil {
+				return err
+			}
+			_, err := tx.Exec(ctx, `insert into conteudo_eventos (peca_id, acao, detalhe) values ($1::uuid, 'casou', $2::text)`,
+				a.PecaID, "Encontrei o post no Instagram sozinho. "+a.Motivo)
+			return err
+		})
+		if err != nil { // o achado seguinte da conta continua valendo
+			erros = append(erros, fmt.Errorf("peça %s: %w", a.PecaID, err))
+			continue
+		}
+		if a.Situacao == "automatico" {
+			casadas++
+		} else {
+			sugeridas++
+		}
+	}
+	return casadas, sugeridas, errors.Join(erros...)
 }
 
 // precisaMedir (cadencia-de-medicao.js): todo dia na 1ª semana, uma vez por semana até 30 dias,
@@ -229,6 +250,7 @@ func (e *Espelho) medir(ctx context.Context, t time.Time, falhas *[]string) (int
 			continue
 		}
 		// Os insights falham em alguns tipos de mídia (e em post antigo): não impedem curtidas e comentários.
+		// O erro é engolido DE PROPÓSITO, como na edge (`.catch(() => null)`): vira métrica nula, não falha da rodada.
 		ins, _ := meta.GET(ctx, e.Core, "/"+p.media+"/insights", map[string]any{"metric": "reach,saved,shares,views"})
 		bruto, _ := json.Marshal(map[string]any{"midia": midia, "insights": ins})
 		if _, err := e.Pool.Exec(ctx, `insert into conteudo_metricas (peca_id, capturado_em, curtidas, comentarios, alcance, salvamentos, compartilhamentos, visualizacoes, bruto)
@@ -239,7 +261,8 @@ func (e *Espelho) medir(ctx context.Context, t time.Time, falhas *[]string) (int
 			p.id, t.UTC().Format("2006-01-02"), numeroOuNulo(midia["like_count"]), numeroOuNulo(midia["comments_count"]),
 			numeroOuNulo(insight(ins, "reach")), numeroOuNulo(insight(ins, "saved")), numeroOuNulo(insight(ins, "shares")),
 			numeroOuNulo(insight(ins, "views", "impressions")), string(bruto)); err != nil {
-			return medidas, err
+			*falhas = append(*falhas, "medir "+p.id+": "+err.Error()) // o banco recusou esta peça; as outras seguem
+			continue
 		}
 		medidas++
 	}

@@ -3,9 +3,11 @@ package conteudo
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -40,6 +42,7 @@ type pecaDaHora struct {
 	id, accountID, titulo, formato, conta string
 	publicarEm                            *time.Time
 	responsavel                           string
+	avisadoEm                             *time.Time
 }
 
 // avisoDePeca = montarAvisoDePeca (aviso-de-conteudo.js).
@@ -66,6 +69,10 @@ func avisoDePeca(p pecaDaHora) []byte {
 	return b
 }
 
+// prazoPorPeca: o que cada peça reivindicada tem para ser avisada, mesmo depois de a execução ter
+// perdido o contexto (prazo ou desligamento): a reivindicação é irreversível.
+const prazoPorPeca = 30 * time.Second
+
 func (h *HoraH) Rodar(ctx context.Context) error {
 	// VAPID errado falha ANTES de reivindicar: senão as peças seriam marcadas e nunca avisadas.
 	if _, err := webpush.ValidarVAPID(h.VAPID); err != nil {
@@ -76,62 +83,76 @@ func (h *HoraH) Rodar(ctx context.Context) error {
 		agora = h.Agora
 	}
 	linhas, err := h.Pool.Query(ctx, `select c.id::text, c.account_id::text, coalesce(c.titulo, ''), coalesce(c.formato, ''),
-			coalesce(a.name, ''), c.publicar_em, coalesce(c.responsavel::text, '')
+			coalesce(a.name, ''), c.publicar_em, coalesce(c.responsavel::text, ''), c.avisado_em
 		  from conteudo_reivindicar_hora_h() c left join accounts a on a.id = c.account_id`)
 	if err != nil {
 		return fmt.Errorf("falha_ao_reivindicar: %w", err)
 	}
 	pecas, err := pgx.CollectRows(linhas, func(r pgx.CollectableRow) (p pecaDaHora, err error) {
-		return p, r.Scan(&p.id, &p.accountID, &p.titulo, &p.formato, &p.conta, &p.publicarEm, &p.responsavel)
+		return p, r.Scan(&p.id, &p.accountID, &p.titulo, &p.formato, &p.conta, &p.publicarEm, &p.responsavel, &p.avisadoEm)
 	})
 	if err != nil {
 		return fmt.Errorf("falha_ao_reivindicar: %w", err)
 	}
-	if len(pecas) == 0 {
-		return nil
-	}
-	evento := func(id, detalhe string) error {
-		_, err := h.Pool.Exec(ctx, `insert into conteudo_eventos (peca_id, acao, detalhe) values ($1::uuid, 'avisou', $2::text)`, id, detalhe)
-		return err
-	}
+	// Daqui em diante cada peça é avisada por conta própria: o erro de uma (banco, push) não deixa as
+	// outras, já reivindicadas, sem aviso nem trilha. Os erros sobem juntos no fim.
 	var total webpush.Resultado
+	var erros []error
 	for _, p := range pecas {
-		if p.publicarEm == nil || agora().Sub(*p.publicarEm) > toleranciaHoraH {
-			if err := evento(p.id, "Passou mais de 12 horas do horário marcado — não avisei para não encher o celular de aviso velho."); err != nil {
-				return err
-			}
-			continue
-		}
-		alvos, err := alvosDoAviso(ctx, h.Pool, p.responsavel)
-		if err != nil {
-			return err
-		}
-		if len(alvos) == 0 { // a peça já foi reivindicada: o motivo fica na trilha
-			detalhe := "Chegou a hora, mas ninguém tem o aviso de conteúdo ligado (Administração › Usuários)."
-			if p.responsavel != "" {
-				detalhe = "Chegou a hora, mas quem é responsável por esta peça está com o aviso de conteúdo desligado (Administração › Usuários)."
-			}
-			if err := evento(p.id, detalhe); err != nil {
-				return err
-			}
-			continue
-		}
-		r, err := webpush.Entregar(ctx, h.Pool, h.HTTP, alvos, avisoDePeca(p), h.VAPID, "conteudo-hora-h:"+p.id)
-		if err != nil {
-			return err
-		}
+		r, err := h.avisar(ctx, p, agora())
 		total.Enviados += r.Enviados
 		total.Podados += r.Podados
 		total.Falhas += r.Falhas
-		if err := evento(p.id, fmt.Sprintf("Aviso enviado para %d aparelho(s).", r.Enviados+r.Repetidos)); err != nil {
-			return err
+		if err != nil {
+			erros = append(erros, fmt.Errorf("peça %s: %w", p.id, err))
 		}
 	}
-	slog.Info("conteudo-hora-h", "pecas", len(pecas), "enviados", total.Enviados, "podados", total.Podados, "falhas", total.Falhas)
-	if total.Enviados == 0 && total.Falhas > 0 {
-		return fmt.Errorf("nenhum_push_entregue: %d falhas", total.Falhas)
+	if len(pecas) > 0 {
+		slog.Info("conteudo-hora-h", "pecas", len(pecas), "enviados", total.Enviados, "podados", total.Podados, "falhas", total.Falhas)
 	}
-	return nil
+	if total.Falhas > 0 { // falha parcial também é falha: a tela de saúde tem de ficar vermelha
+		erros = append(erros, fmt.Errorf("push_nao_entregue: %d falha(s)", total.Falhas))
+	}
+	return errors.Join(erros...)
+}
+
+// avisar trata UMA peça já reivindicada.
+func (h *HoraH) avisar(ctx context.Context, p pecaDaHora, agora time.Time) (webpush.Resultado, error) {
+	ctx, cancela := context.WithTimeout(context.WithoutCancel(ctx), prazoPorPeca)
+	defer cancela()
+	evento := func(detalhe string) error {
+		_, err := h.Pool.Exec(ctx, `insert into conteudo_eventos (peca_id, acao, detalhe) values ($1::uuid, 'avisou', $2::text)`, p.id, detalhe)
+		return err
+	}
+	if p.publicarEm == nil || agora.Sub(*p.publicarEm) > toleranciaHoraH {
+		return webpush.Resultado{}, evento("Passou mais de 12 horas do horário marcado — não avisei para não encher o celular de aviso velho.")
+	}
+	alvos, err := alvosDoAviso(ctx, h.Pool, p.responsavel)
+	if err != nil {
+		return webpush.Resultado{}, err
+	}
+	if len(alvos) == 0 { // a peça já foi reivindicada: o motivo fica na trilha
+		detalhe := "Chegou a hora, mas ninguém tem o aviso de conteúdo ligado (Administração › Usuários)."
+		if p.responsavel != "" {
+			detalhe = "Chegou a hora, mas quem é responsável por esta peça está com o aviso de conteúdo desligado (Administração › Usuários)."
+		}
+		return webpush.Resultado{}, evento(detalhe)
+	}
+	// A chave do livro leva o instante da reivindicação: "Reavisar" e a reaprovação zeram avisado_em e a
+	// peça volta a ser reivindicada; sem a janela, todo aparelho viria como repetido e nada sairia. Duas
+	// execuções simultâneas continuam sem duplicar: quem não reivindica não chega aqui.
+	var janela int64
+	if p.avisadoEm != nil {
+		janela = p.avisadoEm.UnixMicro()
+	}
+	r, err := webpush.Entregar(ctx, h.Pool, h.HTTP, alvos, avisoDePeca(p), h.VAPID, "conteudo-hora-h:"+p.id+":"+strconv.FormatInt(janela, 10))
+	if err != nil {
+		return r, err
+	}
+	if r.Enviados+r.Repetidos == 0 { // não pode parecer sucesso; a reivindicação fica (desfazê-la repetiria a cada 5 min)
+		return r, evento(fmt.Sprintf(`Tentei avisar, mas nenhum aparelho recebeu (%d falha(s)). Use "Reavisar" para tentar de novo.`, r.Falhas+r.Podados))
+	}
+	return r, evento(fmt.Sprintf("Aviso enviado para %d aparelho(s).", r.Enviados+r.Repetidos))
 }
 
 // alvosDoAviso (aviso-de-conteudo.js): quer o tipo 'conteudo' E pode abrir a ferramenta (admin,

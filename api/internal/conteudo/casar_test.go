@@ -4,6 +4,7 @@ import (
 	"math"
 	"testing"
 	"time"
+	"unicode"
 )
 
 // Esperados gerados com o próprio _shared/casar-publicacao.js (Node 22).
@@ -64,5 +65,66 @@ func TestCasarComoAEdge(t *testing.T) {
 	}
 	if again := casar(pecas, midias, map[string]bool{"m1": true}); len(again) != 2 || again[0].PecaID != "p2" {
 		t.Fatalf("post já usado não é oferecido de novo: %+v", again)
+	}
+}
+
+// umPar casa uma peça de legenda igual à do post, `minutos` depois do combinado.
+func umPar(minutos int) Achado {
+	base := time.Date(2026, 10, 9, 14, 0, 0, 0, time.UTC)
+	peca := Peca{ID: "p", Formato: "feed", Legenda: "Bolsa de couro preta", PublicarEm: &base}
+	m := Midia{ID: "m", Caption: "Bolsa de couro preta", MediaType: "IMAGE", MediaProductType: "FEED",
+		Timestamp: base.Add(time.Duration(minutos) * time.Minute).Format("2006-01-02T15:04:05-0700")}
+	got := casar([]Peca{peca}, []Midia{m}, map[string]bool{})
+	if len(got) != 1 {
+		return Achado{}
+	}
+	return got[0]
+}
+
+// Esperados do casar() do _shared/casar-publicacao.js (Node 22). Em 90, 450 e 1050 min o total ×10⁴ cai
+// exatamente em x,5: o toFixed(4) do JS arredonda para o maior, o FormatFloat do Go para o par.
+func TestPontuacaoArredondaComoOToFixedDoJS(t *testing.T) {
+	for _, c := range []struct {
+		min  int
+		quer float64
+		sit  string
+	}{
+		{90, 0.9812, "automatico"}, {-90, 0.9812, "automatico"}, {450, 0.9063, "automatico"}, {1050, 0.7813, "sugerido"},
+		{0, 1, "automatico"}, {360, 0.925, "automatico"},
+		// limiar automático: 0,875 passa de 0,85 (e de 0,80); 0,8125 está entre 0,80 e 0,85
+		{600, 0.875, "automatico"}, {900, 0.8125, "sugerido"}, {1200, 0.75, "sugerido"},
+	} {
+		if a := umPar(c.min); a.Pontuacao != c.quer || a.Situacao != c.sit {
+			t.Errorf("%d min: %v %s, esperava %v %s", c.min, a.Pontuacao, a.Situacao, c.quer, c.sit)
+		}
+	}
+}
+
+func TestMinusculaComoOtoLowerCaseDoJS(t *testing.T) {
+	// sigma final: JS "ΟΔΥΣΣΕΥΣ".toLowerCase() = "οδυσσευς" (strings.ToLower do Go daria "οδυσσευσ")
+	if got := semelhancaDeTexto("ΟΔΥΣΣΕΥΣ ΜΕΓΑΣ", "οδυσσευς μεγας"); got != 1 {
+		t.Errorf("sigma final = %v", got)
+	}
+}
+
+// Sondas geradas com /\p{Extended_Pictographic}/u do Node 22: as bordas das faixas da tabela e os
+// pontos que ela mais usa (✨ 2728, 😍 1F60D, 🎬 1F3AC, 🐀…📽 1F400–1F4FD).
+func TestTabelaPictograficaContraONode22(t *testing.T) {
+	for _, c := range []struct {
+		r    rune
+		quer bool
+	}{
+		{0x2727, false}, {0x2728, true}, {0x2729, false}, {0x1F60C, true}, {0x1F60D, true}, {0x1F60E, true}, {0x1F3AB, true},
+		{0x1F3AC, true}, {0x1F3AD, true}, {0x1F3F7, true}, {0x1F3FA, true}, {0x1F3FB, false}, {0x1F3FF, false}, {0x1F400, true},
+		{0x1F4FD, true}, {0x1F4FE, false}, {0x1F4FF, true}, {0x1F53D, true}, {0x1F53E, false}, {0x2600, true}, {0x2604, true},
+		{0x2605, false}, {0xA9, true}, {0xAA, false}, {0xAE, true}, {0xAF, false}, {0x203C, true}, {0x1F004, true}, {0x1F005, false},
+		{0x1F9FF, true}, {0x1FA00, false}, {0x1FAFF, true}, {0x1FB00, false}, {0x1FC00, true}, {0x1FFFD, true}, {0x1FFFE, false},
+		{0x2B50, true}, {0x2B55, true}, {0x2B56, false}, {0x3297, true}, {0x3299, true}, {0x329A, false}, {0x23, false}, {0x30, false},
+		{0x1F1E6, false}, {0x1F1FF, false}, {0x1F680, true}, {0x1F6C5, true}, {0x1F6C6, false}, {0x1F90C, true}, {0x1F93A, true},
+		{0x1F93B, false}, {0x1F93C, true}, {0x1F945, true}, {0x1F946, false}, {0x1F947, true},
+	} {
+		if got := unicode.Is(pictografico, c.r); got != c.quer {
+			t.Errorf("U+%X: %v, Node 22 diz %v", c.r, got, c.quer)
+		}
 	}
 }
