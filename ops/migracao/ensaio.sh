@@ -137,7 +137,7 @@ orfaos() {
 # O que o ensaio-local prova no Supabase de mentira, refeito contra a ORIGEM de verdade (somente leitura):
 # o alvo não tem policies nem RLS, e o estado (tgenabled) de cada trigger de usuário é o mesmo origem × alvo
 # (trigger desligado em produção e ligado no alvo apareceria só depois do corte).
-SQL_TRG="select c.relname || '.' || t.tgname || '=' || t.tgenabled::text from pg_trigger t join pg_class c on c.oid=t.tgrelid where c.relnamespace='public'::regnamespace and not t.tgisinternal and c.relname not in ('usuarios','sessoes','goose_db_version') order by 1"
+SQL_TRG="select c.relname || '.' || t.tgname || '=' || t.tgenabled::text from pg_trigger t join pg_class c on c.oid=t.tgrelid where c.relnamespace='public'::regnamespace and not t.tgisinternal and c.relname not in ('usuarios','sessoes','goose_db_version') order by (c.relname || '.' || t.tgname || '=' || t.tgenabled::text) collate \"C\""
 estrutura() {
   O=$(printf '%s' "$ORIGEM_DATABASE_URL" | sed 's#:6543/#:5432/#'); E="$OUT/estrutura.err"
   pol=$(psql "$ALVO_URL" -X -Atqc "select count(*) from pg_policies where schemaname='public'" 2> "$E") || { oculta < "$E" >&2; return 1; }

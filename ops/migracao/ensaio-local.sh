@@ -89,7 +89,7 @@ falha() { echo "FALHOU: $1" >&2; exit 1; }
 # triggers: nada de negócio disparou, e os estados (D/R/A/O) da origem foram preservados
 [ "$(psql "$URL_A" -X -Atc "select count(*) from public.auditoria")" = 0 ] || falha "a trilha de auditoria tem linhas: trigger de negócio disparou na carga"
 [ "$(psql "$URL_A" -X -Atc "select count(*) from pg_trigger t join pg_class c on c.oid=t.tgrelid where c.relnamespace='public'::regnamespace and t.tgisinternal and t.tgenabled='D'")" = 0 ] || falha "trigger interno (FK) ficou desabilitado"
-SQL_TRG="select c.relname || '.' || t.tgname || '=' || t.tgenabled::text from pg_trigger t join pg_class c on c.oid=t.tgrelid where c.relnamespace='public'::regnamespace and not t.tgisinternal and c.relname not in ('usuarios','sessoes','goose_db_version') order by 1"
+SQL_TRG="select c.relname || '.' || t.tgname || '=' || t.tgenabled::text from pg_trigger t join pg_class c on c.oid=t.tgrelid where c.relnamespace='public'::regnamespace and not t.tgisinternal and c.relname not in ('usuarios','sessoes','goose_db_version') order by (c.relname || '.' || t.tgname || '=' || t.tgenabled::text) collate \"C\""
 psql "$URL_O" -X -Atc "$SQL_TRG" > "$OUT/trg-o.txt"; psql "$URL_A" -X -Atc "$SQL_TRG" > "$OUT/trg-a.txt"
 [ -s "$OUT/trg-o.txt" ] || falha "a origem do ensaio não tem triggers (o teste não provaria nada)"
 grep -q '=D$' "$OUT/trg-o.txt" && grep -q '=R$' "$OUT/trg-o.txt" && grep -q '=A$' "$OUT/trg-o.txt" || falha "a origem do ensaio deveria ter triggers D, R e A"

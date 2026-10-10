@@ -67,6 +67,31 @@ Ledger do Plano 2 (briefs, relatórios e `progress.md` com todos os `Ruling:`): 
 **A. Fechar o Plano 2 (worktree `api-go-pg`, branch `feat/api-go-postgres-ensaio`)**
 1. **Feito:** Tasks 1 a 7 (compat/`ComUsuario`, `limpar-dump.mjs`, dump/restore/conferência + `api migrar` + `ensaio-local.sh`, Postgres da API na VPS em `ops/vps/api-db`, `copiar-storage.mjs`, `ensaio.sh` com `ensaio.test.sh`), todas revisadas; ledger em `.claude/worktrees/api-go-pg/.superpowers/sdd/2026-10-09-api-go-plano-2-postgres-e-ensaio/` (ignorado pelo git; `progress.md` tem os `Ruling:`).
 2. **Falta:** (a) **ensaio real** (Task 7 Step 4), rodado pelo controlador: leitura em produção, alvo local; dumps têm dado pessoal e segredos e são apagados ao fim; anexar o relatório de durações (a janela de manutenção); ig-cache/fotos-modelo (~590 MB) ficam fora ou dentro por decisão do dono. (b) **Abrir o PR** (base `feat/api-go-nucleo`, ou `main` depois do #333); push/PR só com o ok da delegação atual; sem merge. (c) **Aplicar o Postgres na VPS só com ok do dono.** (d) **Planos 3 a 8** (edges do core, worker e crons, domínios, Zoho/Microsoft, front, virada e rollback).
+
+**B. Planos 3–8 (escrever e executar depois, na mesma sequência spec→plano→SDD)**
+- **3** Edges que o core já cobre: `bling-proxy`, `meta-proxy`, `estoque-do-site` (já desligado), `enviar-push-vendas`, coletores Meta; webhooks Shopify/Chatwoot (`receber-webhook-*`) → core ou Go com HMAC.
+- **4** Worker e crons: 24 jobs reais; decidir `vessel-rd-station`; **reescrever o workflow `guardar-copia-do-banco`**; robôs que já falham muito (decidir reproduzir × corrigir); `conferido_em` em `robos_execucoes`; namespace de advisory lock (26 funções já usam `pg_advisory`).
+- **5** Domínios (`frota`, `acessos`, `conteudo`, `admin`, `patrimonio`, `meta-ads`, `gestao-trafego`, `autenticidade`, `comercial`): usar `catalogo-policies-producao.json` e a triagem das 308 funções (lógica de negócio × consulta pura × trigger de integridade). Entra aqui "entrar como outro usuário", convites/reset de senha, regra de canais por loja.
+- **6** Zoho/Microsoft (`acessos-*`, `enviar-pdf-checklist`, `vessel-espelhar-lista`, `vessel-log-de-carocos`, `vessel-triagem-da-vaga`), Storage (URLs assinadas), rotas públicas da Vessel (≈20 RPCs chamadas por `vessel-brasil` com chave anon, `vessel-conta`, `vessel-registrar-garantia`, `vessel-lembretes`), CORS/subdomínio para `vesselbrasil.com.br`; decidir como clientes da Vessel ficam fora do login do painel (`usuarios` ainda não tem tipo de conta).
+- **7** Front (trocar `supabase-js` por cliente da API: ~347 `.from`, 43 `.rpc`, 39 `functions.invoke`), `coletor/` e 29 workflows do GitHub Actions, consumidores externos (tema Shopify `capturacontato.liquid`, workflow n8n `OWv78JhWKGS5x7br`, PDV `pecas-origem.service.ts`, `vessel-brasil`).
+- **8** Virada e rollback: congelar o Supabase em somente leitura, dump final, restore, trocar URLs/segredos/build, observação ativa; Supabase intacto 14 dias; dump horário do Postgres novo nas primeiras 24 h; **cancelamento do plano só com ok explícito**. Pós-corte: todos os 26 usuários precisam entrar de novo (sessões do GoTrue não migram), sem trocar senha.
+
+## 7. Decisões pendentes do dono (pergunte quando chegar a hora, uma por vez)
+- Migrar ou regenerar os buckets `ig-cache` e `fotos-modelo` (~590 MB, caches).
+- `vessel-rd-station`: portar para o worker ou descartar.
+- Aplicar o Postgres na VPS (Task 5 do Plano 2) — ok explícito para `ssh op` com escrita.
+- Onde fica o código Go (assumido `api/` no repo `social-dashboard`).
+- `sqlc` (spec §3.1) ainda não adotado (SQL cru com `pgx`): decidir antes dos planos de domínio.
+- Quando fazer push/PR do que estiver pronto e quando mesclar o PR #333.
+- Divergência numérica de contagem no ensaio (tabela quente) sai como `CONFIRA` com exit 3, nunca "OK"; o dono pode ajustar essa regra (ex.: tolerar tabelas quentes nomeadas).
+- Já decidido no ledger (`Ruling:`): o dump é um único `completo.dump` (antes o plano dizia `dados.dump`); órfãos (usuário apagado ainda referenciado) reprovam o ensaio e têm de ser resolvidos antes do corte.
+
+## 8. Armadilhas já pagas (não repetir)
+- Portas **55432/55433 do host estão ocupadas** por outras sessões: use `make -C api teste PG_PORTA=58432`.
+- Teste de banco que **pula** (sem `TEST_DATABASE_URL`) **não é** aprovação: conferir contagem de executados × pulados.
+- `npm run test:ci` tem **49 falhas pré-existentes** neste ambiente (falta `.env`), idênticas com e sem este trabalho; use `node --test <arquivos>` ao verificar o que você mudou (passar **diretórios** ao `node --test` falha no Node 22).
+- `go.mod` ficou em `go 1.26.0` (uma dependência exige).
+- O ruling de "igualar o tempo de login" gerou uma falha crítica (senha "x" entrava em conta sem senha); foi corrigida. Em autenticação, sempre testar também o caminho "senha fixa/conhecida".
 - Revisores acharam bugs reais em todas as rodadas; **não pule a revisão por tarefa nem a re-revisão escopada**.
 - Ao mexer em chaves de segurança do levantamento (`levantar.sh`), manter o `begin read only` e o teste `docs/migracao-go/levantamento.test.mjs`.
 

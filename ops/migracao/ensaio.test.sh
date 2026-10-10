@@ -44,6 +44,7 @@ insert into public.notas (dono, texto) select id, 'nota ' || g from public.profi
 create function public.nada() returns trigger language plpgsql as $f$ begin return new; end $f$;
 create trigger t_nada after insert on public.notas for each row execute function public.nada();
 create trigger t_off after insert on public.profiles for each row execute function public.nada();
+create trigger "T_up" after insert on public.notas for each row execute function public.nada();  -- maiúscula: a ordem C difere da do locale
 alter table public.profiles disable trigger t_off;   -- estado D que o alvo tem de reproduzir
 SQL
 
@@ -183,6 +184,7 @@ ENV_EXTRA="PATH=$TMP/shim6:$PATH"; rodar --sem-storage
 [ "$ST" = 1 ] || { cat "$R" >&2; falha "trigger com estado diferente deveria dar saída 1 (deu $ST)"; }
 contem "5c. policies/RLS/triggers.*FALHOU" "$OUT/relatorio.txt"; contem "notas.t_nada=O" "$OUT/triggers.diff"; contem "notas.t_nada=D" "$OUT/triggers.diff"
 contem "t_off=D" "$OUT/triggers-alvo.txt"
+LC_ALL=C sort -c "$OUT/triggers-origem.txt" && LC_ALL=C sort -c "$OUT/triggers-alvo.txt" || falha "a lista de triggers não está em ordem C (falso diff em collations diferentes)"
 passou "policy e trigger divergente reprovam; estado D da origem reproduzido no alvo"
 
 echo "6) Storage de mentira: caminho feliz (--manter), --excluir-buckets, bucket inexistente e servidor fora"
