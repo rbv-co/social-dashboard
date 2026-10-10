@@ -349,3 +349,58 @@ func TestComPrazoPoeDeadlineNoContexto(t *testing.T) {
 		t.Fatalf("deadline = %v (tem=%v)", time.Until(dl), tem)
 	}
 }
+
+// Plano 4: avisar-decisao-de-reserva pela montagem real. O corpo vazio dá 400 DEPOIS do portão: quem
+// recebe 400 passou; quem recebe 403 parou nele (mata um portão montado com a permissão errada). O
+// portão é o da edge: superadmin ou permissions['frota.aprovar'] com 'ver'. Papel admin, módulo e
+// outra permissão da Frota NÃO abrem.
+func TestAvisarDecisaoDeReservaPeloPortaoReal(t *testing.T) {
+	p := testebanco.Novo(t)
+	s := auth.NovoStore(p)
+	h := Rotas(p, s, auth.NovoLimitador(), config.Config{})
+	ctx := context.Background()
+	toks := map[string]string{}
+	for i, u := range []struct {
+		nome, perm, role string
+		super            bool
+	}{
+		{"aprova", `{"frota.aprovar":["ver"]}`, "viewer", false}, {"frota-ver", `{"frota":["ver"]}`, "viewer", false},
+		{"aprova-editar", `{"frota.aprovar":["editar"]}`, "viewer", false}, {"papel-admin", `{}`, "admin", false},
+		{"super", `{}`, "viewer", true}, {"sem-nada", `{}`, "viewer", false},
+	} {
+		id := fmt.Sprintf("22222222-2222-2222-2222-22222222222%d", i)
+		p.Exec(ctx, `insert into usuarios (id, email) values ($1::uuid, $1::text || '@x')`, id)
+		if _, err := p.Exec(ctx, `insert into profiles (id, email, role, is_superadmin, permissions) values ($1::uuid, $1::text || '@x', $2::text, $3::boolean, $4::jsonb)`,
+			id, u.role, u.super, u.perm); err != nil {
+			t.Fatal(err)
+		}
+		toks[u.nome], _ = s.Criar(ctx, id, "painel", nil)
+	}
+	pedir := func(tok string) int {
+		r := httptest.NewRequest("POST", "/avisar-decisao-de-reserva", strings.NewReader(`{}`))
+		if tok != "" {
+			r.Header.Set("Authorization", "Bearer "+tok)
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w.Code
+	}
+	if got := pedir(""); got != 401 {
+		t.Errorf("sem sessão = %d, esperava 401", got)
+	}
+	for nome, quer := range map[string]int{"aprova": 400, "super": 400, "frota-ver": 403, "aprova-editar": 403, "papel-admin": 403, "sem-nada": 403} {
+		if got := pedir(toks[nome]); got != quer {
+			t.Errorf("%s = %d, esperava %d", nome, got, quer)
+		}
+	}
+	// Só POST: o resto é 405 do roteador, nunca chega ao handler.
+	for _, m := range []string{"GET", "PUT", "DELETE"} {
+		r := httptest.NewRequest(m, "/avisar-decisao-de-reserva", nil)
+		r.Header.Set("Authorization", "Bearer "+toks["aprova"])
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != 405 {
+			t.Errorf("%s = %d, esperava 405", m, w.Code)
+		}
+	}
+}
