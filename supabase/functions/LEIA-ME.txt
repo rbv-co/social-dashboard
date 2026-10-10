@@ -85,3 +85,8 @@ BLING PELO PROXY DO CORE (CORE_BLING_PROXY)
   ORDEM DE PUBLICAÇÃO (uma edge por vez, conferindo com o dono): estoque-do-site -> enviar-push-vendas ->
   vessel-registrar-garantia -> bling-proxy (a mais usada, por último). Antes de cada: regra do topo do CLAUDE.md.
   REVERTER: CORE_BLING_PROXY=false (ou apagar o secret); vale na próxima chamada, sem republicar.
+
+ESTOQUE DO SITE (atualizado em 10/10/2026): o ÚNICO escritor é o Core (`core:shopify-estoque-site`, a cada minuto, regra
+Iguatemi − 1). A edge `estoque-do-site` e `coletor/estoque-do-site.mjs` só gravam com ESTOQUE_DO_SITE_DONO=edge (não existe
+nos segredos) e o cron do Supabase está desligado desde 08/10. Quem vigia é o próprio Core (saude: estoque_site_travado);
+`estoque-do-site` saiu de `robos_esperados`. Ligar a edge de novo exige desligar `CORE_ESTOQUE_SITE_MODO` no Core ANTES.
