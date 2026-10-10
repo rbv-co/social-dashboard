@@ -29,7 +29,7 @@ done
 # Tabelas esperadas = as que o ÍNDICE do dump lista (TABLE public <nome>), por nome; as restauradas = relações
 # comuns e particionadas (relkind r/p) do schema public. Comparar as LISTAS (e não contar linhas de texto)
 # pega tabela trocada por outra e não diverge com tabelas particionadas.
-ESPERADO=$(docker exec -i "$CT" pg_restore -l < "$ARQ" | awk '/ TABLE public /{for(i=1;i<NF;i++) if($i=="public"){print $(i+1); break}}' | LC_ALL=C sort)
+ESPERADO=$(docker exec -i "$CT" pg_restore -l < "$ARQ" | awk '/ TABLE public /{for(i=1;i<NF;i++) if($i=="public"){n=$(i+1); for(j=i+2;j<NF;j++) n=n" "$j; print n; break}}' | LC_ALL=C sort)
 [ -n "$ESPERADO" ] || { erro "o índice do dump não lista nenhuma TABLE public"; exit 1; }
 docker exec "$CT" createdb -U postgres teste
 docker exec -i "$CT" pg_restore -U postgres -d teste --no-owner --exit-on-error < "$ARQ"

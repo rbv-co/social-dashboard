@@ -19,7 +19,7 @@ sh "$AQUI/pg17.sh" pg_dump "$ORIGEM" --schema=public --no-owner --no-privileges 
   > "$SAIDA/completo.dump" 2> "$SAIDA/dump.erro" || { oculta < "$SAIDA/dump.erro" >&2; echo "pg_dump falhou" >&2; exit 1; }
 rm -f "$SAIDA/dump.erro"
 
-# schema bruto derivado localmente do mesmo arquivo (stdin: o dump pode estar fora da pasta montada)
+# schema bruto derivado localmente do mesmo arquivo (stdin: o pg_restore roda num contêiner que não enxerga o arquivo do Mac)
 sh "$AQUI/pg17.sh" pg_restore --schema-only --no-owner --no-privileges -f - < "$SAIDA/completo.dump" > "$SAIDA/schema-bruto.sql" \
   || { echo "pg_restore (schema) falhou" >&2; exit 1; }
 node "$AQUI/limpar-dump.mjs" "$SAIDA/schema-bruto.sql" "$SAIDA/schema.sql" > "$SAIDA/limpeza.json"

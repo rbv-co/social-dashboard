@@ -58,7 +58,7 @@ Memória do assistente (se disponível): `project-saida-do-supabase.md`, `projec
 |---|---|---|
 | `/Users/gabrielgertrudes/Projetos/Trabalho/lavessel/social-dashboard` (checkout principal) | `main` local | À frente de `origin/main` com o merge `ead64b2d`; arquivos sujos de terceiros. **Não mexer.** Ao mesclar o PR #333 no GitHub, o `main` local pode divergir (principalmente se for squash): combinar com o dono antes de qualquer `pull`/`reset`. |
 | `.claude/worktrees/levantamento-ro` | `feat/api-go-nucleo` (= PR #333, head `e89aad93`) | Limpo. Tem os CSVs do levantamento (ignorados pelo git). |
-| `.claude/worktrees/api-go-pg` | `feat/api-go-postgres-ensaio` (empilhada sobre `feat/api-go-nucleo`; **não enviada ao GitHub**) | As 7 tasks do Plano 2 estão implementadas e revisadas, com onda final de correção; árvore limpa. |
+| `.claude/worktrees/api-go-pg` | `feat/api-go-postgres-ensaio` (empilhada sobre `feat/api-go-nucleo`; **já enviada**: `origin/feat/api-go-postgres-ensaio`, PR rascunho #334 aberto, base `feat/api-go-nucleo`) | As 7 tasks do Plano 2 estão implementadas e revisadas, com onda final de correção e a rodada dos menores diferidos (5 commits: compat/API, limpar-dump, scripts do ensaio, copiar-storage, ops/vps/api-db) mais a rodada de correção da revisão; árvore limpa. |
 
 Ledger do Plano 2 (briefs, relatórios e `progress.md` com todos os `Ruling:`): `.claude/worktrees/api-go-pg/.superpowers/sdd/2026-10-09-api-go-plano-2-postgres-e-ensaio/` (ignorado pelo git). Scripts da skill: `/Users/gabrielgertrudes/.claude/plugins/cache/claude-plugins-official/superpowers/6.4.1/skills/subagent-driven-development/scripts/` (`sdd-workspace`, `task-brief`, `review-package`). Se o ledger sumir, recupere pelo `git log`.
 
@@ -66,7 +66,7 @@ Ledger do Plano 2 (briefs, relatórios e `progress.md` com todos os `Ruling:`): 
 
 **A. Fechar o Plano 2 (worktree `api-go-pg`, branch `feat/api-go-postgres-ensaio`)**
 1. **Feito:** Tasks 1 a 7 (compat/`ComUsuario`, `limpar-dump.mjs`, dump/restore/conferência + `api migrar` + `ensaio-local.sh`, Postgres da API na VPS em `ops/vps/api-db`, `copiar-storage.mjs`, `ensaio.sh` com `ensaio.test.sh`), todas revisadas; ledger em `.claude/worktrees/api-go-pg/.superpowers/sdd/2026-10-09-api-go-plano-2-postgres-e-ensaio/` (ignorado pelo git; `progress.md` tem os `Ruling:`).
-2. **Falta:** (a) **ensaio real** (Task 7 Step 4), rodado pelo controlador: leitura em produção, alvo local; dumps têm dado pessoal e segredos e são apagados ao fim; anexar o relatório de durações (a janela de manutenção); ig-cache/fotos-modelo (~590 MB) ficam fora ou dentro por decisão do dono. (b) **Abrir o PR** (base `feat/api-go-nucleo`, ou `main` depois do #333); push/PR só com o ok da delegação atual; sem merge. (c) **Aplicar o Postgres na VPS só com ok do dono.** (d) **Planos 3 a 8** (edges do core, worker e crons, domínios, Zoho/Microsoft, front, virada e rollback).
+2. **Falta:** (a) **ensaio real** (Task 7 Step 4), rodado pelo controlador: leitura em produção, alvo local; dumps têm dado pessoal e segredos e são apagados ao fim; anexar o relatório de durações (a janela de manutenção); ig-cache/fotos-modelo (~590 MB) ficam fora ou dentro por decisão do dono. (b) **PR #334 já aberto** (rascunho, base `feat/api-go-nucleo`; trocar a base para `main` depois do #333); novos pushes e o merge só com o ok da delegação atual. (c) **Aplicar o Postgres na VPS só com ok do dono.** (d) **Planos 3 a 8** (edges do core, worker e crons, domínios, Zoho/Microsoft, front, virada e rollback).
 
 **B. Planos 3–8 (escrever e executar depois, na mesma sequência spec→plano→SDD)**
 - **3** Edges que o core já cobre: `bling-proxy`, `meta-proxy`, `estoque-do-site` (já desligado), `enviar-push-vendas`, coletores Meta; webhooks Shopify/Chatwoot (`receber-webhook-*`) → core ou Go com HMAC.
@@ -87,7 +87,7 @@ Ledger do Plano 2 (briefs, relatórios e `progress.md` com todos os `Ruling:`): 
 - Já decidido no ledger (`Ruling:`): o dump é um único `completo.dump` (antes o plano dizia `dados.dump`); órfãos (usuário apagado ainda referenciado) reprovam o ensaio e têm de ser resolvidos antes do corte.
 
 ## 8. Armadilhas já pagas (não repetir)
-- Portas **55432/55433 do host estão ocupadas** por outras sessões: use `make -C api teste PG_PORTA=58432`.
+- Portas **55432/55433 do host estão ocupadas** por outras sessões: use `make -C api teste PG_PORTA=58432` (ou 58633, usada na rodada dos menores).
 - Teste de banco que **pula** (sem `TEST_DATABASE_URL`) **não é** aprovação: conferir contagem de executados × pulados.
 - `npm run test:ci` tem **49 falhas pré-existentes** neste ambiente (falta `.env`), idênticas com e sem este trabalho; use `node --test <arquivos>` ao verificar o que você mudou (passar **diretórios** ao `node --test` falha no Node 22).
 - `go.mod` ficou em `go 1.26.0` (uma dependência exige).

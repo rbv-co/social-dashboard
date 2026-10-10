@@ -57,13 +57,15 @@ mkdir -p "$OUT" && chmod 700 "$SAIDA" "$OUT" || { echo "não consegui criar $OUT
 limpa() {
   s=$?; trap - EXIT INT TERM HUP
   [ "$REMOTO" = 1 ] || docker rm -fv "$CONT" >/dev/null 2>&1
+  [ -z "${E:-}" ] || rm -f "$E"   # stderr cru da etapa estrutura, se a interrupção veio no meio dela
   [ "$MANTER" = 1 ] || rm -rf "$OUT/dump" "$OUT/storage"
   exit $s
 }
 trap limpa EXIT
 trap 'exit 130' INT TERM HUP
 
-oculta() { sed -E 's#postgres(ql)?://[^ "]*#<URL>#g'; }
+# oculta a URL e, no texto de erro do libpq, host/usuário/papel: server at "h" (ip), host "h", user "u", role "r"
+oculta() { sed -E -e 's#postgres(ql)?://[^ "]*#<URL>#g' -e 's#(server at|host|user|role) "[^"]*"( \([^)]*\))?#\1 "<oculto>"#g'; }
 rel() { printf '%s\n' "$*" | tee -a "$OUT/relatorio.txt"; }
 FALHAS=""; BLOQ=""; JANELA=0; JANELA6=0; CONF=""; CONFIRA=""
 pula() { rel "$(printf '%-30s %5s  PULADA (%s)' "$1" - "$2")"; }
@@ -126,7 +128,7 @@ contagens() {
     1) if grep -Eq ' ERRO( |$)' "$OUT/contagens.txt"; then echo "contagem com ERRO (consulta falhou em algum lado)" >&2; return 1; fi
        [ "$DIF" != 0 ] || { echo "conferir-contagens saiu 1 sem nenhuma linha DIFERE" >&2; return 1; }
        CONF=1; return 3;;
-    2) echo "conferir-contagens não conseguiu listar as tabelas da origem (saída 2)" >&2; return 2;;
+    2) echo "conferir-contagens não conseguiu listar as tabelas da origem ou a varredura foi interrompida (saída 2)" >&2; return 2;;
     *) echo "conferir-contagens falhou (saída $s)" >&2; return $s;;
   esac
 }

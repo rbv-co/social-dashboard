@@ -83,7 +83,7 @@ N=0; ENV_EXTRA=
 rodar() {
   N=$((N + 1)); R="$TMP/rodada-$N.txt"; ST=0
   espreita_volume "$TMP/vol-$N" & EP=$!
-  env ORIGEM_DATABASE_URL="$URL_O" ALVO_PORTA=$PA ALVO_CONTAINER=$ALVO ENSAIO_SAIDA="$TMP/saida" $ENV_EXTRA sh "$AQUI/ensaio.sh" "$@" > "$R" 2>&1 || ST=$?
+  env ORIGEM_DATABASE_URL="$URL_O" ALVO_PORTA=$PA ALVO_CONTAINER=$ALVO ENSAIO_SAIDA="$TMP/saida" $ENV_EXTRA sh "$AQUI/ensaio.sh" "$@" > "$R" 2>&1 < /dev/null || ST=$?
   ENV_EXTRA=
   kill "$EP" 2>/dev/null; wait "$EP" 2>/dev/null
   OUT=$(ls -td "$TMP"/saida/ensaio-* | head -1)
@@ -102,6 +102,13 @@ volumes() { # nenhum dos volumes capturados pode ter sobrado, e ao menos um tem 
   [ "$achou" = 1 ] || falha "não capturei o volume do contêiner (o teste não provaria nada): $1"
 }
 shim() { mkdir -p "$TMP/$1"; printf '#!/bin/sh\ncase "$*" in *importar-usuarios*) %s;; esac\nexec "%s" "$@"\n' "$2" "$(command -v go)" > "$TMP/$1/go"; chmod +x "$TMP/$1/go"; }
+
+echo "0) oculta (ensaio.sh) mascara URL e host/usuário/papel do texto de erro do libpq"
+eval "$(grep '^oculta()' "$AQUI/ensaio.sh")"
+o=$(printf '%s\n' 'connection to server at "db.exemplo.com" (10.1.2.3), port 5432 failed: FATAL:  password authentication failed for user "admin"' 'psql: error: connection to server on host "x.y" failed; role "r1" does not exist' 'falhou postgres://u:senha@h:5432/d?sslmode=disable fim' | oculta)
+case "$o" in *exemplo*|*10.1.2.3*|*admin*|*x.y*|*r1*|*senha*) falha "oculta deixou vazar: $o";; esac
+case "$o" in *'server at "<oculto>", port 5432'*'user "<oculto>"'*'host "<oculto>"'*'role "<oculto>"'*'<URL> fim'*) ;; *) falha "oculta mascarou errado: $o";; esac
+passou "oculta"
 
 echo "1) guarda do alvo (hostil recusado antes de qualquer docker)"
 mkdir "$TMP/shim"; printf '#!/bin/sh\ntouch "%s/docker-chamado"\nexit 1\n' "$TMP" > "$TMP/shim/docker"; chmod +x "$TMP/shim/docker"
@@ -197,10 +204,14 @@ echo "5d) origem inalcançável em conferir-contagens (listagem, depois só as c
 mkdir "$TMP/shim7"; cat > "$TMP/shim7/psql" <<SH
 #!/bin/sh
 real=\$(PATH="\${PATH#$TMP/shim7:}" command -v psql)
-for a in "\$@"; do case "\$a" in -c|-c*) exec "\$real" "\$@";; esac; done
-in=\$(cat)
-case "\$*" in *:$PO/*) if printf '%s' "\$in" | grep -Eq "\$PADRAO_FALHA"; then echo 'psql: error: connection to server at "origem.exemplo.com" failed: Connection refused' >&2; exit 2; fi;; esac
-printf '%s\n' "\$in" | exec "\$real" "\$@"
+# só as chamadas à ORIGEM são interceptadas; todas as outras (-c, -f do restaurar.sh, ...) vão direto ao psql
+# real, ANTES de ler o stdin (que, para elas, pode nunca fechar)
+case "\$*" in
+  *:$PO/*) in=\$(cat)
+    if printf '%s' "\$in" | grep -Eq "\$PADRAO_FALHA"; then echo 'psql: error: connection to server at "origem.exemplo.com" failed: Connection refused' >&2; exit 2; fi
+    printf '%s\n' "\$in" | exec "\$real" "\$@";;
+  *) exec "\$real" "\$@";;
+esac
 SH
 chmod +x "$TMP/shim7/psql"
 ENV_EXTRA="PATH=$TMP/shim7:$PATH PADRAO_FALHA=information_schema.tables"; rodar --sem-storage
