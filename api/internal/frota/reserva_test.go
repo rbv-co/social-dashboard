@@ -255,3 +255,68 @@ func TestReservaIgnoraTextoDoCliente(t *testing.T) {
 		t.Fatalf("%v", aviso)
 	}
 }
+
+// Ordem da edge: "sem aparelho / aviso desligado" vem ANTES de "vapid_nao_configurado" (quem não tem aparelho
+// não depende de chave nenhuma); com aparelho e VAPID ruim, é 500.
+func TestReservaSemAparelhoVemAntesDoVAPID(t *testing.T) {
+	a := montarReserva(t)
+	v := pushteste.VAPID(t)
+	v.Publica = "lixo"
+	r := chi.NewRouter()
+	r.Use(auth.Exigir(a.p, auth.NovoStore(a.p)))
+	r.Post("/avisar-decisao-de-reserva", (&Reserva{Pool: a.p, VAPID: v, HTTP: a.srv.HTTP}).ServeHTTP)
+	req := httptest.NewRequest("POST", "/avisar-decisao-de-reserva", strings.NewReader(`{"requisicaoId":"`+reqID+`"}`))
+	req.Header.Set("Authorization", "Bearer "+a.tokens[uAprova])
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	var m map[string]any
+	json.Unmarshal(w.Body.Bytes(), &m)
+	if w.Code != 200 || m["motivo"] != "sem_aparelho_ou_aviso_desligado" {
+		t.Fatalf("sem aparelho e VAPID ruim: %d %v", w.Code, m)
+	}
+}
+
+// O id da requisição vem do front: UUID em maiúsculas acha a mesma linha (o PostgREST da edge aceitava).
+func TestReservaIdEmMaiusculasAcha(t *testing.T) {
+	a := montarReserva(t)
+	pushteste.Inscrever(t, a.p, "barbara", uBarbara)
+	ligarAviso(t, a.p, "frota_reserva", uBarbara)
+	const id = "abcdef12-0000-0000-0000-00000000abcd" // com letras: reqID só tem dígitos e a caixa não mudaria nada
+	a.p.Exec(context.Background(), `update frota_requisicoes set id = $1::uuid`, id)
+	for _, q := range []string{id, strings.ToUpper(id)} {
+		if c, m := a.post(a.tokens[uAprova], `{"requisicaoId":"`+q+`"}`); c != 200 || m["enviados"] != 1.0 {
+			t.Fatalf("%s: %d %v", q, c, m)
+		}
+	}
+}
+
+// Corpo acima de 8 KB é cortado na leitura: o id válido que vem antes do lixo não vale (400 sem_requisicao,
+// como corpo inválido na edge) e nada é enviado.
+func TestReservaCorpoGrandeDemaisNaoPassa(t *testing.T) {
+	a := montarReserva(t)
+	pushteste.Inscrever(t, a.p, "barbara", uBarbara)
+	ligarAviso(t, a.p, "frota_reserva", uBarbara)
+	grande := `{"requisicaoId":"` + reqID + `","lixo":"` + strings.Repeat("x", 9<<10) + `"}`
+	if c, m := a.post(a.tokens[uAprova], grande); c != 400 || m["erro"] != "sem_requisicao" || a.srv.Total() != 0 {
+		t.Fatalf("%d %v total=%d", c, m, a.srv.Total())
+	}
+}
+
+// Destino enorme (a coluna é texto livre) não pode estourar o registro único do Web Push (3993 bytes): o fim do
+// CORPO é cortado com reticências, o começo (carro, data) e o título ficam, e o aviso sai. Tamanho normal: intacto.
+func TestReservaDestinoEnormeCabeNoPush(t *testing.T) {
+	a := montarReserva(t)
+	ua := pushteste.Inscrever(t, a.p, "barbara", uBarbara)
+	ligarAviso(t, a.p, "frota_reserva", uBarbara)
+	a.p.Exec(context.Background(), `update frota_requisicoes set situacao = 'aprovada', destino = repeat('ç', 6000)`)
+	c, m := a.post(a.tokens[uAprova], `{"requisicaoId":"`+reqID+`"}`)
+	if c != 200 || m["enviados"] != 1.0 || m["falhas"] != 0.0 {
+		t.Fatalf("%d %v", c, m)
+	}
+	var aviso map[string]string
+	json.Unmarshal(pushteste.Decifrar(t, a.srv.Ultimo(t, "barbara"), ua), &aviso)
+	if aviso["titulo"] != "Reserva aprovada" || !strings.HasPrefix(aviso["corpo"], "Volvo · 12/10 às 14:05 · çç") || !strings.HasSuffix(aviso["corpo"], "ç…") ||
+		aviso["body"] != aviso["corpo"] || aviso["tag"] != "reserva-"+reqID {
+		t.Fatalf("%q", aviso["corpo"][:60])
+	}
+}

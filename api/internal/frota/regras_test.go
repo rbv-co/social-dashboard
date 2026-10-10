@@ -1,10 +1,12 @@
 package frota
 
 import (
+	"encoding/json"
 	"slices"
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 func sp(s string) *string { return &s }
@@ -101,5 +103,23 @@ func TestMontarAvisoDeReservaComoAEdge(t *testing.T) {
 	}
 	if _, ok := montarAvisoDeReserva(com(func(r *Requisicao) { r.Situacao = "pendente" }), "Volvo"); ok {
 		t.Fatal("pendente não é decisão: não avisa")
+	}
+}
+
+// carga: tamanho normal fica byte a byte (texto da edge + title/body + tag); acima do registro único do Web Push
+// (3993 bytes) só o fim do corpo é cortado, em fronteira de caractere, e o resultado cabe.
+func TestCargaCabeNoRegistroDoWebPush(t *testing.T) {
+	normal := carga(Aviso{"Reserva aprovada", "Volvo · 12/10 às 14:05 · Campinas", "/frota"}, "reserva-1")
+	quer := `{"titulo":"Reserva aprovada","corpo":"Volvo · 12/10 às 14:05 · Campinas","title":"Reserva aprovada","body":"Volvo · 12/10 às 14:05 · Campinas","tag":"reserva-1","url":"/frota"}`
+	if string(normal) != quer {
+		t.Fatalf("%s", normal)
+	}
+	for _, c := range []string{"ç", "<", "😀", "a"} {
+		b := carga(Aviso{"T", "Volvo · " + strings.Repeat(c, 9000), "/frota"}, "reserva-1")
+		var m map[string]string
+		if err := json.Unmarshal(b, &m); err != nil || len(b) > 3993 || len(b) < 3800 || !utf8.Valid(b) ||
+			m["corpo"] != m["body"] || !strings.HasPrefix(m["corpo"], "Volvo · "+c) || !strings.HasSuffix(m["corpo"], c+"…") || m["tag"] != "reserva-1" {
+			t.Fatalf("%q: len=%d err=%v", c, len(b), err)
+		}
 	}
 }

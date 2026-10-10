@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -95,12 +96,12 @@ func (pf *PushFrota) Rodar(ctx context.Context) error {
 		return err
 	}
 	var total webpush.Resultado
-	var semAviso []string
+	var semAviso, semEntrega []string
 	for _, v := range devendo {
 		var us, um *string
 		if err := pf.Pool.QueryRow(ctx, `select
-			  max(feita_em) filter (where 'semanal' = any(cadencias))::text,
-			  max(feita_em) filter (where 'mensal' = any(cadencias))::text
+			  to_char(max(feita_em) filter (where 'semanal' = any(cadencias)), 'YYYY-MM-DD'),
+			  to_char(max(feita_em) filter (where 'mensal' = any(cadencias)), 'YYYY-MM-DD')
 			from frota_checklist where veiculo_id = $1::uuid and feita_em >= $2::date`, v.id, desde).Scan(&us, &um); err != nil {
 			return fmt.Errorf("fichas de checklist: %w", err)
 		}
@@ -137,12 +138,20 @@ func (pf *PushFrota) Rodar(ctx context.Context) error {
 		total.Podados += r.Podados
 		total.Repetidos += r.Repetidos
 		total.Falhas += r.Falhas
+		// Cada carro avisa uma pessoa diferente: um carro cujos aparelhos todos falharam (nenhum aviso entregue) é
+		// erro da tarefa, ainda que os outros tenham saído. Vários aparelhos da MESMA pessoa com um ruim: tolerado
+		// (ela recebeu). Aparelho morto podado (410) e reenvio repetido não são falha. A tarefa avisa todos os
+		// carros antes de falhar.
+		if r.Falhas > 0 && r.Enviados == 0 {
+			semEntrega = append(semEntrega, v.nome)
+		}
 	}
-	// Quem devia hoje e não tem login sai NOMEADO no log (o defeito antigo era pular calado).
+	// Quem devia hoje e não tem login sai NOMEADO no LOG (a edge o punha também na resposta, que aqui não existe:
+	// a tarefa só devolve erro ou nada). O defeito antigo era pular calado; no log ele aparece com o nome.
 	slog.Info("push da frota", "hoje", hoje, "enviados", total.Enviados, "podados", total.Podados,
 		"repetidos", total.Repetidos, "falhas", total.Falhas, "sem_aviso", semAviso)
-	if total.Enviados == 0 && total.Falhas > 0 {
-		return fmt.Errorf("nenhum_push_entregue: %d falhas", total.Falhas)
+	if len(semEntrega) > 0 {
+		return fmt.Errorf("nenhum_push_entregue: %d carro(s) sem aviso entregue (%s): %d falhas", len(semEntrega), strings.Join(semEntrega, ", "), total.Falhas)
 	}
 	return nil
 }

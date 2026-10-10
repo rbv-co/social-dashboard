@@ -140,21 +140,46 @@ type Aviso struct {
 	URL    string `json:"url"`
 }
 
+// maxCarga é o registro único do Web Push (RFC 8188): 4096 - cabeçalho(86) - tag(16) - delimitador(1). O mesmo
+// número do webpush.maxPayload, que não é exportado; acima dele o envio falha para todo aparelho.
+const maxCarga = 3993
+
 // carga é o corpo do push: o texto e a url IGUAIS aos da edge (titulo/corpo/url), mais `title`/`body` (as
 // chaves que public/sw-push.js lê: sem elas o celular mostraria "Vendas de hoje" e corpo vazio) e a `tag`
 // própria do tipo. Tag vazia ou 'vendas-do-dia' (o que o service worker usa quando falta) faria um reenvio
 // SUBSTITUIR o card das vendas: quem chama passa sempre uma tag estável. A tag é só do aparelho; a
 // deduplicação do envio é do livro (envios_feitos), que leva o dia ou o id da decisão.
+//
+// Tamanho: o corpo vai duas vezes (corpo e body) e o destino da reserva é texto livre. Se passar de maxCarga,
+// só o FIM do corpo é cortado (busca binária pelo maior prefixo que cabe, em fronteira de caractere, mais
+// "…"); o título, o começo do corpo e a url ficam. Até esse tamanho o texto não muda um byte.
 func carga(a Aviso, tag string) []byte {
-	b, _ := json.Marshal(struct {
-		Titulo string `json:"titulo"`
-		Corpo  string `json:"corpo"`
-		Title  string `json:"title"`
-		Body   string `json:"body"`
-		Tag    string `json:"tag"`
-		URL    string `json:"url"`
-	}{a.Titulo, a.Corpo, a.Titulo, a.Corpo, tag, a.URL})
-	return b
+	monta := func(corpo string) []byte {
+		b, _ := json.Marshal(struct {
+			Titulo string `json:"titulo"`
+			Corpo  string `json:"corpo"`
+			Title  string `json:"title"`
+			Body   string `json:"body"`
+			Tag    string `json:"tag"`
+			URL    string `json:"url"`
+		}{a.Titulo, corpo, a.Titulo, corpo, tag, a.URL})
+		return b
+	}
+	b := monta(a.Corpo)
+	if len(b) <= maxCarga {
+		return b
+	}
+	corpo := []rune(a.Corpo)
+	lo, hi := 0, len(corpo) // maior n com o prefixo de n caracteres + "…" cabendo
+	for lo < hi {
+		meio := (lo + hi + 1) / 2
+		if len(monta(string(corpo[:meio])+"…")) <= maxCarga {
+			lo = meio
+		} else {
+			hi = meio - 1
+		}
+	}
+	return monta(string(corpo[:lo]) + "…")
 }
 
 var reEspacos = regexp.MustCompile(texto.EspacoJS + `+`)
