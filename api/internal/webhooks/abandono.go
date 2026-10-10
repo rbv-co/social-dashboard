@@ -3,6 +3,7 @@ package webhooks
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"strconv"
 	"strings"
 
@@ -84,7 +85,7 @@ func decidir(topico string, c map[string]any) decisao {
 		if token == nil {
 			return decisao{acao: "ignorar", motivo: "sem_token"}
 		}
-		if c["completed_at"] != nil {
+		if verdadeiro(c["completed_at"]) {
 			return decisao{acao: "ignorar", motivo: "checkout_concluido"} // com Pix, concluído ≠ pago
 		}
 		email := primeiroTexto(c["email"], mapa(c["customer"])["email"])
@@ -100,7 +101,7 @@ func decidir(topico string, c map[string]any) decisao {
 		if d.nome == nil {
 			d.nome = nomeDe(c["customer"])
 		}
-		if f, err := strconv.ParseFloat(strings.TrimSpace(textoCru(c["total_price"])), 64); err == nil {
+		if f, ok := numero64(textoCru(c["total_price"])); ok {
 			v := strconv.FormatFloat(f, 'f', -1, 64)
 			d.total = &v
 		}
@@ -184,4 +185,26 @@ func aplicar(ctx context.Context, tx pgx.Tx, d decisao) error {
 		err = errAcaoDesconhecida
 	}
 	return err
+}
+
+// numero64: número finito do texto (NaN e infinito viram "sem valor").
+func numero64(s string) (float64, bool) {
+	f, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
+	return f, err == nil && !math.IsNaN(f) && !math.IsInf(f, 0)
+}
+
+// verdadeiro: a verdade do JavaScript (null, false, "", 0 e NaN são falsos).
+func verdadeiro(v any) bool {
+	switch x := v.(type) {
+	case nil:
+		return false
+	case bool:
+		return x
+	case string:
+		return x != ""
+	case json.Number:
+		f, err := x.Float64()
+		return err != nil || f != 0
+	}
+	return true
 }

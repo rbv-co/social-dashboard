@@ -14,13 +14,28 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-const limiteShopify = 5 << 20 // pedido grande da Shopify cabe com folga
+const (
+	limiteShopify  = 5 << 20 // pedido grande da Shopify cabe com folga
+	limiteEventoID = 256
+)
+
+// erroSemDados: o texto de erro do Postgres pode citar o valor recusado (dado pessoal); do erro do
+// banco só vão ao log o código e a restrição/contexto.
+func erroSemDados(err error) string {
+	var pg *pgconn.PgError
+	if errors.As(err, &pg) {
+		return "pg " + pg.Code + " " + pg.ConstraintName
+	}
+	return err.Error()
+}
 
 func responder(w http.ResponseWriter, status int, corpo any) {
 	w.Header().Set("Content-Type", "application/json")
@@ -65,11 +80,21 @@ func (s *Shopify) receber(w http.ResponseWriter, r *http.Request, origem string,
 	}
 	cru, err := io.ReadAll(http.MaxBytesReader(w, r.Body, limiteShopify))
 	if err != nil {
-		responder(w, http.StatusRequestEntityTooLarge, map[string]string{"error": "corpo_grande_demais"})
+		var grande *http.MaxBytesError
+		if errors.As(err, &grande) {
+			responder(w, http.StatusRequestEntityTooLarge, map[string]string{"error": "corpo_grande_demais"})
+		} else {
+			responder(w, http.StatusBadRequest, map[string]string{"error": "corpo_ilegivel"})
+		}
 		return
 	}
 	if !assinaturaShopify(s.Segredos, cru, r.Header.Get("X-Shopify-Hmac-Sha256")) {
 		responder(w, http.StatusUnauthorized, map[string]string{"error": "nao_autorizado"})
+		return
+	}
+	eventoID := strings.TrimSpace(r.Header.Get("X-Shopify-Event-Id"))
+	if len(eventoID) > limiteEventoID {
+		responder(w, http.StatusBadRequest, map[string]string{"error": "event_id_invalido"})
 		return
 	}
 	var corpo map[string]any
@@ -82,13 +107,15 @@ func (s *Shopify) receber(w http.ResponseWriter, r *http.Request, origem string,
 	ctx := r.Context()
 	tx, err := s.Pool.Begin(ctx)
 	if err != nil {
+		slog.Error("webhook shopify: falha ao abrir transação", "origem", origem, "erro", erroSemDados(err))
 		responder(w, http.StatusInternalServerError, map[string]any{"ok": false, "erro": "falha_ao_gravar"})
 		return
 	}
 	defer tx.Rollback(ctx)
-	if id := strings.TrimSpace(r.Header.Get("X-Shopify-Event-Id")); id != "" {
-		tag, err := tx.Exec(ctx, `insert into webhooks_recebidos (origem, evento_id) values ($1, $2) on conflict do nothing`, origem, id)
+	if eventoID != "" {
+		tag, err := tx.Exec(ctx, `insert into webhooks_recebidos (origem, evento_id) values ($1, $2) on conflict do nothing`, origem, eventoID)
 		if err != nil {
+			slog.Error("webhook shopify: falha ao marcar o evento", "origem", origem, "erro", erroSemDados(err))
 			responder(w, http.StatusInternalServerError, map[string]any{"ok": false, "erro": "falha_ao_gravar"})
 			return
 		}
@@ -101,9 +128,16 @@ func (s *Shopify) receber(w http.ResponseWriter, r *http.Request, origem string,
 	if err == nil {
 		err = tx.Commit(ctx)
 	}
+	var pg *pgconn.PgError
+	if errors.As(err, &pg) && strings.HasPrefix(pg.Code, "22") {
+		// Dado que a reentrega não conserta (data inválida, \u0000 no JSON...): como a edge, 200 com log.
+		slog.Error("webhook shopify: dado inválido, descartado", "origem", origem, "erro", erroSemDados(err))
+		responder(w, http.StatusOK, map[string]any{"ok": true, "ignorado": "dado_invalido"})
+		return
+	}
 	if err != nil {
 		// 500: o core (ou a Shopify) reentrega com recuo; os efeitos são idempotentes.
-		slog.Error("webhook shopify: falha ao gravar", "origem", origem, "erro", err)
+		slog.Error("webhook shopify: falha ao gravar", "origem", origem, "erro", erroSemDados(err))
 		responder(w, http.StatusInternalServerError, map[string]any{"ok": false, "erro": "falha_ao_gravar"})
 		return
 	}
@@ -147,11 +181,9 @@ func (s *Shopify) Pedido(w http.ResponseWriter, r *http.Request) {
 				numero = &v
 			}
 		}
-		total := "0"
-		if v, ok := c["total_price"].(string); ok && v != "" {
-			total = v
-		} else if v, ok := c["total_price"].(json.Number); ok {
-			total = v.String()
+		total := "0" // Number(x) || 0 do JS: lixo, NaN e infinito viram 0
+		if f, ok := numero64(textoCru(c["total_price"])); ok {
+			total = strconv.FormatFloat(f, 'f', -1, 64)
 		}
 		moeda, status := "BRL", "pending"
 		if m := texto(c["currency"]); m != nil {
@@ -192,17 +224,14 @@ func (s *Shopify) Pedido(w http.ResponseWriter, r *http.Request) {
 // carrinho_eventos (corte de dado pessoal; e-mail e telefone ficam de fora de propósito).
 func (s *Shopify) Checkout(w http.ResponseWriter, r *http.Request) {
 	s.receber(w, r, "shopify:checkout", func(ctx context.Context, tx pgx.Tx, _ string, c map[string]any, _ []byte) (int, any, error) {
-		token := texto(c["cart_token"])
-		if token == nil {
-			return http.StatusOK, map[string]any{"ok": true, "ignorado": "sem_cart_token"}, nil
-		}
+		token := texto(c["cart_token"]) // nulo é válido: a coluna aceita e a tela de leads conta a linha
 		id := strings.TrimSpace(r.Header.Get("X-Shopify-Event-Id"))
 		var evento *string
 		if id != "" {
 			evento = &id
 		}
 		_, err := tx.Exec(ctx, `insert into carrinho_eventos (tipo, cart_token, evento_shopify_id)
-			values ('checkout_iniciado', $1, $2) on conflict do nothing`, *token, evento)
+			values ('checkout_iniciado', $1, $2) on conflict do nothing`, token, evento)
 		return http.StatusOK, map[string]any{"ok": true}, err
 	})
 }
@@ -220,7 +249,7 @@ func (s *Shopify) Abandono(w http.ResponseWriter, r *http.Request) {
 		if err := aplicar(ctx, tx, dp); err != nil {
 			return 0, nil, err
 		}
-		if dc.acao == "ignorar" && dp.acao == "ignorar" {
+		if dc.acao == "ignorar" { // como a edge: sem falha, a resposta é a do checkout
 			return http.StatusOK, map[string]any{"ok": true, "ignorado": dc.motivo}, nil
 		}
 		return http.StatusOK, map[string]any{"ok": true}, nil
