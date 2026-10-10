@@ -1,17 +1,20 @@
 -- Camada de compatibilidade com o que o Supabase oferecia, para restaurar o schema
 -- `public` de produção sem reescrever, no dia 1, as funções que o usam:
 --   64 funções chamam auth.uid(); 18 chamam extensions.* (pgcrypto/uuid-ossp); 1 chama auth.role().
--- Idempotente. NÃO cria policies nem dá permissão a ninguém: a autorização é do Go.
+-- Idempotente (reaplicar é seguro). NÃO é à prova de corrida entre sessões concorrentes: só a criação dos
+-- papéis tolera isso; create schema/extension if not exists e create or replace function, rodados em
+-- paralelo, podem falhar. Aplique a camada de uma sessão só. NÃO cria policies nem dá permissão a ninguém: a autorização é do Go.
 
 do $$
 declare r text;
 begin
-  -- Corrida entre sessões: o papel pode surgir entre o exists e o create.
+  -- Corrida entre sessões: o papel pode surgir entre o exists e o create (duplicate_object; em transações
+  -- concorrentes o Postgres dá unique_violation).
   foreach r in array array['anon','authenticated','service_role'] loop
     if not exists (select 1 from pg_roles where rolname = r) then
       begin
         execute format('create role %I nologin', r);
-      exception when duplicate_object then null;
+      exception when duplicate_object or unique_violation then null;
       end;
     end if;
   end loop;

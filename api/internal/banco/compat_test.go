@@ -127,20 +127,30 @@ func TestCompatFalhaSeExtensaoEstaEmOutroSchema(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer admin.Close(ctx)
 	nome := fmt.Sprintf("t_ext_%d", time.Now().UnixNano())
 	if _, err := admin.Exec(ctx, "create database "+nome); err != nil {
+		admin.Close(ctx)
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { admin.Exec(ctx, "drop database if exists "+nome+" with (force)") })
+	var c *pgx.Conn
+	// um só Cleanup, na ordem certa: fecha a conexão do banco de teste, derruba o banco pela conexão admin
+	// (ainda aberta) e só então fecha a admin; se o drop falhar o teste falha (não deixa t_ext_* para trás)
+	t.Cleanup(func() {
+		if c != nil {
+			c.Close(ctx)
+		}
+		if _, err := admin.Exec(ctx, "drop database if exists "+nome+" with (force)"); err != nil {
+			t.Errorf("não consegui apagar o banco de teste %s: %v", nome, err)
+		}
+		admin.Close(ctx)
+	})
 
 	cfg2 := cfg.Copy()
 	cfg2.Database = nome
-	c, err := pgx.ConnectConfig(ctx, cfg2)
+	c, err = pgx.ConnectConfig(ctx, cfg2)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer c.Close(ctx)
 	if _, err := c.Exec(ctx, `create extension pgcrypto with schema public`); err != nil {
 		t.Fatal(err)
 	}
