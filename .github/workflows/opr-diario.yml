@@ -8,8 +8,7 @@ on:
   # (achamos ao vivo, 17/09, que menos folga = número mais cru/instável;
   # 8h dava 8h de folga, 5h dá 5h — sem garantia de que é suficiente,
   # ajustar de novo se o dado sair sistematicamente mais baixo que o real).
-  schedule:
-    - cron: '0 8 * * *'  # 05h BRT — Brasil não tem horário de verão desde 2019
+  # AGENDAMENTO NA VPS (coletor/vps/robos.cron): este workflow só roda por disparo manual, como retaguarda.
 jobs:
   gerar:
     runs-on: ubuntu-latest

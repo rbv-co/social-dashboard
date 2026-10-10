@@ -14,10 +14,8 @@ name: Sugestão de interesses (semanal)
 # escolhido pra não colidir com os outros robôs, que se concentram nas manhãs de
 # segunda e nos primeiros minutos das 9h UTC.
 on:
-  schedule:
-    # O cron do Actions é em UTC. O Brasil não tem mais horário de verão, então
-    # BRT = UTC-3 o ano todo.
-    - cron: '34 10 * * 0'
+  # AGENDAMENTO NA VPS (coletor/vps/robos.cron): este workflow só roda por disparo manual, como retaguarda.
+  # Horário: domingo 10:34 UTC (07:34 BRT; o Brasil não tem mais horário de verão).
   workflow_dispatch:
     inputs:
       modo:

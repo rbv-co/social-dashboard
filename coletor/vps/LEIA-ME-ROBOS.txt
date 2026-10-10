@@ -37,8 +37,10 @@ OPERAÇÃO
 
 O QUE FICOU DE FORA DE PROPÓSITO
 - vigia-do-pdv: é a segunda rede que vigia a VPS DE FORA. Rodando nela, cairia junto com o que vigia.
-- Os que precisam de chaves que só existem como secret do GitHub: coletor-noticias e sugerir-interesses (ANTHROPIC_API_KEY),
-  fotos-do-selo e publicar-o-site-da-vessel (PAT_DO_SITE, VERCEL_*; fotos também precisa de imagemagick, `vercel` e de um
-  gatilho para o `lote-novo`). gestor-comercial: dá para migrar, mas não tem modo de ensaio e rende ~6 min/mês.
-  opr-diario (WhatsApp): não dá para testar sem mandar a mensagem de verdade.
-- budget-ia JÁ migrou (chave `anthropic_api_key_trafego` da tabela segredos_de_cron; validada com --dry e uma chamada mínima).
+- fotos-do-selo e publicar-o-site-da-vessel: precisam de VERCEL_TOKEN, que só existe como secret do GitHub.
+- budget-ia migrou com a chave `anthropic_api_key_trafego` da tabela segredos_de_cron (validada com --dry e chamada mínima).
+- coletor-noticias, sugerir-interesses e gestor-comercial migraram (2026-10-10). Como o secret ANTHROPIC_API_KEY "padrão" só
+  existe no GitHub, os dois primeiros usam a chave ANTHROPIC_API_KEY_GESTOR (testada com os modelos do coletor): só muda a
+  atribuição de custo na conta da Anthropic. gestor-comercial e coletor-noticias não têm modo de ensaio: a 1ª rodada real
+  é segunda-feira; confira /var/log/robos/<nome>.log. Se algo falhar, o workflow ainda roda por disparo manual.
+- opr-diario migrou, mas falha todo dia enquanto a instância Z-API estiver com o WhatsApp desconectado (precisa de QR).
