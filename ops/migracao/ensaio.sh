@@ -6,9 +6,12 @@
 # Ambiente: ORIGEM_DATABASE_URL (obrigatória, nunca impressa); SUPABASE_URL e SUPABASE_SERVICE_KEY
 # (obrigatórias, exceto com --sem-storage); ALVO_PORTA (padrão 58450); ALVO_DATABASE_URL (padrão: o
 # contêiner local); ALVO_CONTAINER (padrão ensaio-alvo); ENSAIO_SAIDA (padrão ops/migracao/saida).
-# Saída: 0 = tudo conferido; 1 = alguma etapa ou conferência falhou (o relatório diz qual); 2 = uso.
+# Saída: 0 = tudo conferido; 1 = alguma etapa falhou, ERRO de contagem ou órfãos (o relatório diz qual);
+# 2 = uso; 3 = só divergência numérica de contagem (CONFIRA: tabela quente?), nunca "OK"; 130 = interrompido.
 # Com --permitir-alvo-remoto o alvo NÃO é um contêiner: ALVO_DATABASE_URL tem de ser um banco vazio.
 set -u
+# o ambiente do shell não pode redirecionar psql/pg_dump/go para outro host
+unset PGHOSTADDR PGSERVICE PGSERVICEFILE PGHOST PGPORT
 umask 077   # dump, Storage e relatório: 600/700
 AQUI=$(cd "$(dirname "$0")" && pwd)
 RAIZ=$(cd "$AQUI/../.." && pwd)
@@ -22,12 +25,23 @@ while [ $# -gt 0 ]; do case "$1" in
 [ -n "${ORIGEM_DATABASE_URL:-}" ] || { echo "defina ORIGEM_DATABASE_URL (não é impresso)" >&2; exit 1; }
 PORTA=${ALVO_PORTA:-58450}; CONT=${ALVO_CONTAINER:-ensaio-alvo}
 ALVO_URL=${ALVO_DATABASE_URL:-postgres://postgres:x@127.0.0.1:$PORTA/postgres?sslmode=disable}
-# nunca aponta para produção por engano: o host do alvo (depois do último @ da autoridade) tem de ser local
+# nunca aponta para produção por engano. Só se aceita URL postgres:// simples: host local (depois do
+# único @ da autoridade), sem lista de hosts, sem %, e na query só sslmode= (nada de host=, hostaddr=,
+# service=, nem nomes percent-encoded). A porta tem de ser a do contêiner (ALVO_PORTA).
+recusa() { echo "ALVO_DATABASE_URL não é local ($1); recuso (use --permitir-alvo-remoto se for de propósito)" >&2; exit 1; }
 if [ "$REMOTO" != 1 ]; then
-  AUT=${ALVO_URL#*://}; AUT=${AUT%%/*}; HP=${AUT##*@}
-  case "$HP" in localhost|localhost:*|127.0.0.1|127.0.0.1:*|\[::1\]|\[::1\]:*) ;;
-    *) echo "ALVO_DATABASE_URL não é local; recuso (use --permitir-alvo-remoto se for de propósito)" >&2; exit 1 ;; esac
-  case "$ALVO_URL" in *host=*|*hostaddr=*) echo "ALVO_DATABASE_URL não é local (parâmetro host= na URL); recuso" >&2; exit 1 ;; esac
+  case "$ALVO_URL" in postgres://*|postgresql://*) ;; *) recusa "só aceito URL postgres://";; esac
+  case "$ALVO_URL" in *" "*|*#*) recusa "espaço ou # na URL";; esac
+  REST=${ALVO_URL#*://}; AUT=${REST%%[/?]*}
+  case "$AUT" in *@*@*) recusa "mais de um @";; esac
+  HP=${AUT##*@}
+  case "$HP" in *,*|*%*) recusa "lista de hosts ou %";; esac
+  case "$HP" in localhost|localhost:*|127.0.0.1|127.0.0.1:*|\[::1\]|\[::1\]:*) ;; *) recusa "host $HP";; esac
+  case "$REST" in *\?*)
+    set -f; IFS='&'; set -- ${REST#*\?}; unset IFS; set +f
+    for p; do case "$p" in sslmode=*[!a-z-]*|sslmode=) recusa "parâmetro inválido";; sslmode=*) ;; *) recusa "só sslmode= é aceito na query";; esac; done;; esac
+  case "$HP" in \[::1\]:*) P=${HP#\[::1\]:};; \[::1\]) P=;; *:*) P=${HP#*:};; *) P=;; esac
+  [ "${P:-5432}" = "$PORTA" ] || { echo "a porta da ALVO_DATABASE_URL (${P:-5432}) difere de ALVO_PORTA ($PORTA); recuso" >&2; exit 1; }
 fi
 
 if [ "$STORAGE" = 1 ]; then
@@ -36,28 +50,31 @@ fi
 SAIDA=${ENSAIO_SAIDA:-$AQUI/saida}
 OUT="$SAIDA/ensaio-$(date +%Y%m%d-%H%M%S)-$$"
 mkdir -p "$OUT" && chmod 700 "$SAIDA" "$OUT" || { echo "não consegui criar $OUT" >&2; exit 1; }
-# no EXIT preserva o código de saída; INT/TERM saem com 130 (e caem no EXIT, que limpa)
+# no EXIT preserva o código de saída; INT/TERM/HUP saem com 130 (e caem no EXIT, que limpa)
 limpa() {
-  s=$?; trap - EXIT INT TERM
-  [ "$REMOTO" = 1 ] || docker rm -f "$CONT" >/dev/null 2>&1
+  s=$?; trap - EXIT INT TERM HUP
+  [ "$REMOTO" = 1 ] || docker rm -fv "$CONT" >/dev/null 2>&1
   [ "$MANTER" = 1 ] || rm -rf "$OUT/dump" "$OUT/storage"
   exit $s
 }
 trap limpa EXIT
-trap 'exit 130' INT TERM
+trap 'exit 130' INT TERM HUP
 
 oculta() { sed -E 's#postgres(ql)?://[^ "]*#<URL>#g'; }
 rel() { printf '%s\n' "$*" | tee -a "$OUT/relatorio.txt"; }
-FALHAS=""; BLOQ=""; JANELA=0
+FALHAS=""; BLOQ=""; JANELA=0; CONF=""
+pula() { rel "$(printf '%-30s %5s  PULADA (%s)' "$1" - "$2")"; }
 # etapa NOME MODO cmd...  MODO: bloqueia (falha trava as dependentes), depende (pulada se travado), livre
 etapa() {
   nome=$1; modo=$2; shift 2
   if [ -n "$BLOQ" ] && [ "$modo" != livre ]; then
-    rel "$(printf '%-30s %5s  PULADA (etapa anterior falhou)' "$nome" -)"; return 1
+    pula "$nome" "etapa anterior falhou"; return 1
   fi
   t0=$(date +%s); s=0; "$@" || s=$?; d=$(( $(date +%s) - t0 ))
   case "$nome" in [2-6]*) JANELA=$((JANELA + d));; esac
-  if [ $s = 0 ]; then r=OK; else
+  if [ $s = 0 ]; then r=OK
+  elif [ $s = 3 ] && [ "$CONF" = 1 ]; then r="CONFIRA ($DIF tabelas)"
+  else
     r="FALHOU (saída $s)"; FALHAS="$FALHAS
   - $nome"; [ "$modo" != bloqueia ] || BLOQ=1
   fi
@@ -66,7 +83,7 @@ etapa() {
 
 sobe_alvo() {
   if [ "$REMOTO" = 1 ]; then echo "(alvo remoto informado: nada a subir)"; return 0; fi
-  docker rm -f "$CONT" >/dev/null 2>&1
+  docker rm -fv "$CONT" >/dev/null 2>&1
   if command -v nc >/dev/null 2>&1 && nc -z 127.0.0.1 "$PORTA" >/dev/null 2>&1; then
     echo "a porta $PORTA já está ocupada; escolha outra com ALVO_PORTA=..." >&2; return 1
   fi
@@ -88,13 +105,21 @@ importa_usuarios() {
   oculta < "$OUT/importar.log" > "$OUT/importar.log.tmp" && mv "$OUT/importar.log.tmp" "$OUT/importar.log"; cat "$OUT/importar.log" >&2
   return $s
 }
-# DIFERE = diferença real ou erro (confira: tabela quente durante o dump?); saída ≠ 0 ou vazia = falha
+# Só linhas DIFERE numéricas (listagem ok, nenhum ERRO) = tabela possivelmente quente: devolve 3
+# (CONFIRA, o humano decide). Listagem falhou (2), linha ERRO, saída vazia ou qualquer outro status = falha.
 contagens() {
   s=0; sh "$AQUI/conferir-contagens.sh" "$ORIGEM_DATABASE_URL" "$ALVO_URL" > "$OUT/contagens.txt" || s=$?
   DIF=$(grep -c DIFERE "$OUT/contagens.txt"); grep DIFERE "$OUT/contagens.txt"
-  [ $s = 0 ] || { echo "conferir-contagens saiu com $s" >&2; return $s; }
-  [ -s "$OUT/contagens.txt" ] || { echo "conferir-contagens não produziu saída" >&2; return 1; }
-  [ "$DIF" = 0 ]
+  case $s in
+    0) [ -s "$OUT/contagens.txt" ] || { echo "conferir-contagens não produziu saída" >&2; return 1; }
+       [ "$DIF" = 0 ] || { echo "conferir-contagens saiu 0 mas há linhas DIFERE" >&2; return 1; }
+       return 0;;
+    1) if grep -Eq ' ERRO( |$)' "$OUT/contagens.txt"; then echo "contagem com ERRO (consulta falhou em algum lado)" >&2; return 1; fi
+       [ "$DIF" != 0 ] || { echo "conferir-contagens saiu 1 sem nenhuma linha DIFERE" >&2; return 1; }
+       CONF=1; return 3;;
+    2) echo "conferir-contagens não conseguiu listar as tabelas da origem (saída 2)" >&2; return 2;;
+    *) echo "conferir-contagens falhou (saída $s)" >&2; return $s;;
+  esac
 }
 # órfão = FK para usuarios sem pai depois do importar-usuarios (usuário apagado ainda referenciado):
 # resolver antes do corte
@@ -106,7 +131,6 @@ orfaos() {
   [ "$ORF" = 0 ]
 }
 storage() {
-  [ "$STORAGE" = 1 ] || { echo "(storage pulado por --sem-storage)"; return 0; }
   s=0; node "$AQUI/copiar-storage.mjs" --destino "$OUT/storage" ${EXCL:+--excluir "$EXCL"} > "$OUT/storage.txt" 2>&1 || s=$?
   cat "$OUT/storage.txt"
   [ $s = 0 ] || return $s
@@ -114,14 +138,17 @@ storage() {
 }
 
 DUMP_BYTES=""; DIF="?"; ORF="?"
-rel "ensaio $(date '+%F %T'): origem somente leitura, alvo $(printf '%s' "$ALVO_URL" | sed -E 's#//[^@]*@#//***@#'), storage: $([ "$STORAGE" = 1 ] && echo "sim${EXCL:+ (excluindo $EXCL)}" || echo não)"
+rel "ensaio $(date '+%F %T'): origem somente leitura, alvo $(printf '%s' "$ALVO_URL" | sed -E 's#//.*@#//***@#'), storage: $([ "$STORAGE" = 1 ] && echo "sim${EXCL:+ (excluindo $EXCL)}" || echo não)"
+# esquenta o cache do Go (sem cronometrar) para a compilação não entrar nas etapas 3 e 4
+( cd "$RAIZ/api" && go build -o /dev/null ./cmd/api ) || { echo "go build falhou" >&2; exit 1; }
 etapa "1. subir Postgres alvo"     bloqueia sobe_alvo
 etapa "2. dump (completo + schema)" bloqueia dump
 etapa "3. restaurar"               bloqueia restaura
-etapa "4. importar usuários"       depende  importa_usuarios
+etapa "4. importar usuários"       depende  importa_usuarios; s4=$?
 etapa "5. conferir contagens"      depende  contagens
-etapa "5b. conferir órfãos (FKs)"  depende  orfaos
-etapa "6. copiar Storage"          livre    storage
+if [ $s4 = 0 ] || [ -n "$BLOQ" ]; then etapa "5b. conferir órfãos (FKs)" depende orfaos
+else pula "5b. conferir órfãos (FKs)" "importar usuários falhou"; fi
+if [ "$STORAGE" = 1 ]; then etapa "6. copiar Storage" livre storage; else pula "6. copiar Storage" "--sem-storage"; fi
 
 MB=$(awk -v b="${DUMP_BYTES:-0}" 'BEGIN { printf "%.1f", b / 1e6 }')
 rel "----"
@@ -131,5 +158,8 @@ rel "FKs para usuarios com órfãos: $ORF (ver $OUT/orfaos.txt; resolver antes d
 rel "janela de manutenção estimada (soma das etapas 2 a 6): ${JANELA}s; relatório em $OUT/relatorio.txt"
 if [ -n "$FALHAS" ]; then
   rel "ENSAIO FALHOU, etapas com problema:$FALHAS"; exit 1
+fi
+if [ -n "$CONF" ]; then
+  rel "ENSAIO CONCLUÍDO COM DIVERGÊNCIAS A CONFERIR (contagens: $DIF tabelas; ver $OUT/contagens.txt)"; exit 3
 fi
 rel "ENSAIO OK"

@@ -7,10 +7,10 @@ set -eu
 AQUI=$(cd "$(dirname "$0")" && pwd)
 ORIG=ensaio-local-origem; ALVO=ensaio-local-alvo; PO=${ENSAIO_PORTA_ORIGEM:-58441}; PA=${ENSAIO_PORTA_ALVO:-58442}
 OUT=$(mktemp -d)
-limpa() { docker rm -f "$ORIG" "$ALVO" >/dev/null 2>&1 || true; rm -rf "$OUT"; }
+limpa() { docker rm -fv "$ORIG" "$ALVO" >/dev/null 2>&1 || true; rm -rf "$OUT"; }
 trap limpa EXIT
 trap 'limpa; exit 130' INT TERM
-docker rm -f "$ORIG" "$ALVO" >/dev/null 2>&1 || true
+docker rm -fv "$ORIG" "$ALVO" >/dev/null 2>&1 || true
 for par in "$ORIG:$PO" "$ALVO:$PA"; do
   n=${par%%:*}; p=${par##*:}
   docker run -d --rm --name "$n" -e POSTGRES_PASSWORD=x -p 127.0.0.1:$p:5432 postgres:17 >/dev/null
