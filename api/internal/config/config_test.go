@@ -70,3 +70,12 @@ func TestCarregarTiraEspacosDoToken(t *testing.T) {
 		t.Fatalf("CoreToken = %q", c.CoreToken)
 	}
 }
+
+func TestHostsDeMidiaEmMinusculas(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://x")
+	t.Setenv("HOSTS_DE_MIDIA", " CDN.Exemplo.COM , B.exemplo")
+	c, _ := Carregar()
+	if len(c.HostsDeMidia) != 2 || c.HostsDeMidia[0] != "cdn.exemplo.com" || c.HostsDeMidia[1] != "b.exemplo" {
+		t.Fatalf("HostsDeMidia = %#v", c.HostsDeMidia)
+	}
+}

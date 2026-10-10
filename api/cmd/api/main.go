@@ -12,9 +12,12 @@ import (
 
 	"github.com/rbv-co/social-dashboard/api/internal/auth"
 	"github.com/rbv-co/social-dashboard/api/internal/banco"
+	"github.com/rbv-co/social-dashboard/api/internal/comercial"
 	"github.com/rbv-co/social-dashboard/api/internal/config"
+	"github.com/rbv-co/social-dashboard/api/internal/core"
 	"github.com/rbv-co/social-dashboard/api/internal/importacao"
 	"github.com/rbv-co/social-dashboard/api/internal/web"
+	"github.com/rbv-co/social-dashboard/api/internal/webpush"
 	"github.com/rbv-co/social-dashboard/api/internal/worker"
 )
 
@@ -42,7 +45,12 @@ func main() {
 	}
 	switch os.Args[1] {
 	case "api":
-		srv := &http.Server{Addr: cfg.Addr, Handler: web.Rotas(p, auth.NovoStore(p), auth.NovoLimitador()), ReadHeaderTimeout: 10 * time.Second}
+		// Prazos: WriteTimeout acima do maior prazo por requisição (web.PrazoCollabs = 120 s)
+		// para o handler terminar e responder antes de a conexão cair; ReadTimeout cobre o
+		// corpo de até 5 MB da Shopify em rede ruim; IdleTimeout fecha keep-alive parado.
+		srv := &http.Server{Addr: cfg.Addr, Handler: web.Rotas(p, auth.NovoStore(p), auth.NovoLimitador(), cfg),
+			ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second,
+			WriteTimeout: web.PrazoCollabs + 30*time.Second, IdleTimeout: 120 * time.Second}
 		fim := make(chan struct{})
 		go func() {
 			<-ctx.Done()
@@ -61,7 +69,16 @@ func main() {
 		<-fim // espera o escoamento das requisições antes do p.Close() adiado
 	case "worker":
 		ag := worker.Novo(p)
-		slog.Info("worker no ar (sem tarefas registradas ainda; entram nos planos seguintes)")
+		// HTTP nil: o push herda o cliente seguro (Dialer.Control recusa faixas proibidas).
+		pv := &comercial.PushVendas{Pool: p, Core: core.Novo(cfg.CoreURL, cfg.CoreToken),
+			VAPID: webpush.VAPID{Publica: cfg.VAPIDPublica, Privada: cfg.VAPIDPrivada, Assunto: cfg.VAPIDAssunto}}
+		for _, t := range pv.Tarefas() {
+			if err := ag.Registrar(t); err != nil {
+				slog.Error("tarefa", "nome", t.Nome, "erro", err)
+				os.Exit(1)
+			}
+		}
+		slog.Info("worker no ar", "tarefas", len(pv.Tarefas()))
 		ag.Iniciar(ctx)
 	case "importar-usuarios":
 		origem := os.Getenv("ORIGEM_DATABASE_URL")

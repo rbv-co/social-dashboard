@@ -74,3 +74,47 @@ Tarefa 8 (worker)
 - Shutdown não cancela tarefas em andamento (ctx Background) e `Iniciar` espera sem teto.
 - `hashtext` de 32 bits (aceitável com 14 nomes).
 - `<-preso` do teste pode travar se a primeira `Rodar` falhar (usar select com timeout).
+
+## Plano 3 — edges do core (Bling, Meta, push de vendas, webhooks)
+
+### Variáveis de ambiente novas
+- `CORE_URL` (padrão `https://core.rbvcompany.com`) e `CORE_API_TOKEN` — api e worker. No core, o consumidor desta API precisa estar em `CORE_API_TOKENS` com os escopos `bling` e `meta` (`AutenticaConsumidor`). O token é opcional na carga (a API sobe no ensaio sem core), mas sem ele as rotas do core respondem 503 e o push de vendas termina com erro (Ruling 28): esquecer só aparece na primeira chamada.
+- `HOSTS_DE_MIDIA` (api): host(s) de onde o meta-proxy aceita imagem/vídeo, separados por vírgula; a config aplica minúsculas e `trim` uma vez. Vazio = nenhum upload. O mesmo host vai para `META_HOSTS_MIDIA` do core (quem baixa a imagem é o core).
+- `SHOPIFY_WEBHOOK_SEGREDOS` (api, lista por vírgula): segredo do admin da loja, segredo do app e o `segredo` do destino desta API em `CORE_SHOPIFY_DESTINOS`. Vazio = 401 em tudo.
+- `CHATWOOT_WEBHOOK_SEGREDO` (api). Vazio = 401 em tudo.
+- `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` e `VAPID_SUBJECT` (worker): OBRIGATÓRIAS, os MESMOS valores de `segredos_de_cron` (`vapid_public_key`, `vapid_private_key`, `vapid_subject`), copiados por quem tem acesso. Trocar a chave invalida todas as inscrições de push. `VAPID_SUBJECT` não tem padrão no código; a edge antiga caía em `mailto:breno@rbvcompany.com` quando faltava: sem ele o push falha alto.
+
+### nginx (location `/api`)
+- `location /api/` repassa para a API (porta só alcançável pelo proxy) com `proxy_set_header X-Real-IP $remote_addr;`. O limite de 600 req/min por IP dos 5 webhooks usa SÓ esse cabeçalho e só o aceita quando o par TCP é o nginx (loopback/rede privada); `X-Forwarded-For` e `True-Client-IP` do cliente nunca contam. Sem o `X-Real-IP`, todos os webhooks dividem o balde do IP do proxy.
+- Rotas novas: `/api/bling-proxy`, `/api/meta-proxy`, `/api/insights-ao-vivo`, `/api/serie-novos-dia`, `/api/contar-collabs`, `/api/eu/canais` (sessão) e `/api/receber-webhook-pedido-shopify`, `-checkout`, `-abandono`, `/api/receber-webhook-chatwoot`, `/api/receber-opt-out-chatwoot` (públicas, só POST; outro método = 405).
+- Limites de corpo (a API também limita; o nginx corta antes): `client_max_body_size 5m;` em `/api/receber-webhook-pedido-shopify`, `-checkout` e `-abandono`; `1m` em `/api/receber-webhook-chatwoot` e `/api/receber-opt-out-chatwoot`; `64k` em `/api/bling-proxy`, `/api/meta-proxy`, `/api/insights-ao-vivo`, `/api/serie-novos-dia` e `/api/contar-collabs`.
+- Log de acesso: `/api/receber-webhook-chatwoot` e `/api/receber-opt-out-chatwoot` levam o segredo em `?token=`. Nessas duas `location`, usar um `log_format` SEM `$args`, `$request_uri` e `$request` (ex.: `'$remote_addr [$time_local] "$request_method $uri" $status'`) ou `access_log off;`. Conferir também `error_log` em nível debug e qualquer log de upstream. A API nunca loga a URL.
+- Prazos: o servidor Go usa `ReadHeaderTimeout 10s`, `ReadTimeout 30s`, `WriteTimeout 150s`, `IdleTimeout 120s`. Prazos por requisição: `meta-proxy` 25 s (45 s imagem, 75 s vídeo), `insights-ao-vivo` e `serie-novos-dia` 90 s, `contar-collabs` 120 s (N perfis x até 5 páginas em série). `proxy_read_timeout` do nginx deve ficar ACIMA do prazo: `130s` em `/api/contar-collabs` e `100s` nas demais rotas da Meta (80 s no mínimo para o vídeo); `proxy_send_timeout` padrão.
+
+### Chatwoot
+- O Chatwoot registra a URL com `?token=` no PRÓPRIO log em qualquer resposta não-2xx (inclusive o 500 por falha de banco): o segredo está nos logs dele. Tratar esses logs como sensíveis.
+- Versões novas do Chatwoot suportam webhook assinado (`secret:`). Conferir a versão implantada antes da virada: o Ruling 18 (segredo na query) pode estar desatualizado e a assinatura seria melhor que o `?token=`.
+- O Ruling 15 (500 em erro de banco) NÃO recupera eventos do Chatwoot: não há retry de webhook de conta no upstream. Não contar com isso; o evento perdido fica perdido.
+
+### Shopify (fan-out do core)
+- O core re-assina o corpo com o segredo do destino e preserva os cabeçalhos `X-Shopify-*` (o `X-Shopify-Event-Id` é a chave de replay). `CORE_SHOPIFY_FANOUT` está dormente hoje: nada chega até ser ligado no dia da virada.
+
+### Push de vendas (worker)
+- Tarefas `enviar-push-vendas-07h` (cron `0 10 * * *` UTC) e `enviar-push-vendas-22h` (`0 1 * * *` UTC): os nomes de produção; a tela de saúde as casa por `robos_esperados` (`enviar-push-vendas%`).
+- A VPS precisa de saída IPv4 para o Web Push. Com DNS64 os endpoints resolvem para `64:ff9b::/96`, o discador seguro recusa (SSRF) e a tarefa falha ALTO com `nenhum_push_entregue`.
+- O cliente HTTP do push herda o discador seguro (`Dialer.Control`); nunca configurar `InsecureSkipVerify` nem trocar o cliente.
+
+### Dia da virada (Plano 8)
+- Core: três destinos em `CORE_SHOPIFY_DESTINOS`, todos com o mesmo `segredo` (que entra em `SHOPIFY_WEBHOOK_SEGREDOS`): `/api/receber-webhook-pedido-shopify` (`orders/create`, `orders/paid`, `orders/updated`), `/api/receber-webhook-checkout` (`checkouts/create`) e `/api/receber-webhook-abandono` (`checkouts/create`, `checkouts/update`, `orders/create`, `orders/paid`, `orders/cancelled`); remover os webhooks antigos (que apontam para as edges) na Shopify no MESMO momento e ligar `CORE_SHOPIFY_FANOUT=true` (`vessel-core-go/docs/migracao-core/SHOPIFY.md`, "Ordem de virada", passo 7).
+- Chatwoot: `CRM_EVENT_WEBHOOK_URL` e o webhook padrão "Message created" para as URLs novas, com o mesmo `?token=` (ou a assinatura, se a versão suportar).
+- `estoque-do-site` NÃO foi portado: desligado em produção em 2026-10-08, o core assumiu o estoque; nada a trocar.
+
+### Premissas a conferir antes do corte
+- O contrato do core foi lido de `vessel-core-go` no commit `168882e29` (Ruling 34). O core em produção pode estar em outra versão: reconferir `X-Core-Origem` (`bling`/`proxy`) e os códigos de erro (401/403/429) antes da virada; se mudarem, bling-proxy e meta-proxy classificam errado.
+- `bling_pedido_vendedor.pedido_id`: o tipo não foi confirmado; conferir no banco restaurado (o push de vendas junta por ele).
+- Ids e campos assumidos nas tabelas do banco restaurado: `accounts.id`/`instagram_id`/`ad_account_id`, `profiles.features`/`escopo_por_equipe`, `bling_lojas.loja_id`, `bling_pedido_nota.nota_situacao`, `webhooks_recebidos`, `checkout_*` (funções SQL do abandono): conferir no ensaio do Plano 2.
+
+### Pendências para os próximos planos
+- Purga de `webhooks_recebidos` com mais de 30 dias (plano de crons).
+- Unificar `Ator.PodeModulo` (`profiles.features`) com `Ator.Pode` (`permissions`) no plano de domínios.
+- Os 3 coletores Meta de cron (`coletar-dados`, `coletar-dados-hora`, `conteudo-espelho`) são do Plano 4, junto com o disparo imediato do abandono.

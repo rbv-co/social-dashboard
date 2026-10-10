@@ -35,6 +35,15 @@ func lista(nome string) []string {
 	return out
 }
 
+// minusculas: host é case-insensitive e o meta-proxy compara com o host já em minúsculas;
+// uma entrada "CDN.Exemplo" nunca poderia casar e falharia fechada em silêncio.
+func minusculas(l []string) []string {
+	for i, v := range l {
+		l[i] = strings.ToLower(v)
+	}
+	return l
+}
+
 func Carregar() (Config, error) {
 	c := Config{
 		Addr:            os.Getenv("ADDR"),
@@ -42,7 +51,7 @@ func Carregar() (Config, error) {
 		Origens:         lista("ORIGENS_PERMITIDAS"),
 		CoreURL:         strings.TrimRight(strings.TrimSpace(os.Getenv("CORE_URL")), "/"),
 		CoreToken:       strings.TrimSpace(os.Getenv("CORE_API_TOKEN")),
-		HostsDeMidia:    lista("HOSTS_DE_MIDIA"),
+		HostsDeMidia:    minusculas(lista("HOSTS_DE_MIDIA")),
 		ShopifySegredos: lista("SHOPIFY_WEBHOOK_SEGREDOS"),
 		ChatwootSegredo: os.Getenv("CHATWOOT_WEBHOOK_SEGREDO"),
 		VAPIDPublica:    os.Getenv("VAPID_PUBLIC_KEY"),
