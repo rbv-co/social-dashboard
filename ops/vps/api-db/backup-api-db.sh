@@ -19,6 +19,9 @@ docker exec "$CT" sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > "$
 docker exec -i "$CT" pg_restore -f /dev/null < "$ARQ.tmp" \
   || { erro "backup ilegível (pg_restore falhou ao ler o dump inteiro)"; exit 1; }
 [ "$(wc -c < "$ARQ.tmp")" -gt 1000 ] || { erro "backup suspeito (muito pequeno)"; exit 1; }
+# o piso de tamanho é só defesa extra: um dump de banco SEM tabelas passa de 1 KB, então exige TABLE no índice
+docker exec -i "$CT" pg_restore -l < "$ARQ.tmp" | grep -q ' TABLE public ' \
+  || { erro "backup sem nenhuma tabela do schema public (banco vazio?)"; exit 1; }
 mv "$ARQ.tmp" "$ARQ"
 ( cd "$DIR" && sha "$(basename "$ARQ")" > "$(basename "$ARQ").sha256" )
 chmod 600 "$ARQ" "$ARQ.sha256"

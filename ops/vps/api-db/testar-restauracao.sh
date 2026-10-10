@@ -1,6 +1,6 @@
 #!/bin/sh
 # Restaura o backup MAIS RECENTE num contêiner temporário (nunca toca o banco de verdade) e
-# confere tabelas e dados: as tabelas restauradas batem com o índice do dump e public.usuarios tem linhas.
+# confere tabelas e dados: a lista de tabelas restauradas bate com a do índice do dump e public.usuarios tem linhas.
 # Uso: sh testar-restauracao.sh [arquivo.dump]
 # Variáveis opcionais (padrões = produção): BACKUP_DIR, TESTE_CONTAINER (o nome deve terminar em -teste).
 set -eu
@@ -26,12 +26,17 @@ for _ in $(seq 90); do
   sleep 1
 done
 [ "$OK" -ge 2 ] || { erro "contêiner de teste não subiu"; exit 1; }
-ESPERADO=$(docker exec -i "$CT" pg_restore -l < "$ARQ" | grep -c ' TABLE public ' || true)
+# Tabelas esperadas = as que o ÍNDICE do dump lista (TABLE public <nome>), por nome; as restauradas = relações
+# comuns e particionadas (relkind r/p) do schema public. Comparar as LISTAS (e não contar linhas de texto)
+# pega tabela trocada por outra e não diverge com tabelas particionadas.
+ESPERADO=$(docker exec -i "$CT" pg_restore -l < "$ARQ" | awk '/ TABLE public /{for(i=1;i<NF;i++) if($i=="public"){print $(i+1); break}}' | LC_ALL=C sort)
+[ -n "$ESPERADO" ] || { erro "o índice do dump não lista nenhuma TABLE public"; exit 1; }
 docker exec "$CT" createdb -U postgres teste
 docker exec -i "$CT" pg_restore -U postgres -d teste --no-owner --exit-on-error < "$ARQ"
-N=$(docker exec "$CT" psql -U postgres -d teste -Atc "select count(*) from information_schema.tables where table_schema='public' and table_type='BASE TABLE'")
-[ "$N" -gt 0 ] || { erro "restauração sem tabelas"; exit 1; }
-[ "$N" -eq "$ESPERADO" ] || { erro "restauração difere: $N tabelas, o dump lista $ESPERADO"; exit 1; }
+RESTAURADAS=$(docker exec "$CT" psql -U postgres -d teste -Atc "select c.relname from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind in ('r','p')" | LC_ALL=C sort)
+[ -n "$RESTAURADAS" ] || { erro "restauração sem tabelas"; exit 1; }
+[ "$RESTAURADAS" = "$ESPERADO" ] || { erro "restauração difere: o dump lista [$(echo $ESPERADO)], restaurou [$(echo $RESTAURADAS)]"; exit 1; }
+N=$(printf '%s\n' "$ESPERADO" | wc -l | tr -d ' ')
 U=$(docker exec "$CT" psql -U postgres -d teste -Atc "select count(*) from public.usuarios")
 [ "$U" -gt 0 ] || { erro "restauração sem dados: public.usuarios vazia"; exit 1; }
 echo "$(date '+%F %T') restauração ok: $N tabelas, $U usuários ($ARQ)"

@@ -55,9 +55,9 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 - `backup-api-db.sh`: `pg_dump -Fc` para `/root/backups-api/api-db-AAAA-MM-DD-HHMM.dump` + `.sha256`
   (modo 600), retenção de 14 dias. Lê o dump inteiro com `pg_restore -f /dev/null` (pega truncamento)
-  e recusa arquivo ilegível ou menor que 1 KB (apaga o parcial).
+  e recusa arquivo ilegível, menor que 1 KB ou cujo índice não liste nenhuma `TABLE public` (apaga o parcial).
 - `testar-restauracao.sh [arquivo]`: confere o `.sha256`, restaura o mais recente num contêiner
-  temporário `api-db-teste` (sem rede, 1 GB, volume removido ao fim) e compara as tabelas com o
+  temporário `api-db-teste` (sem rede, 1 GB, volume removido ao fim) e compara a lista de tabelas (`pg_class` r/p do `public`) com a do
   índice do dump e a contagem de `public.usuarios`. Nunca toca o banco de verdade.
 - Para ensaiar fora da VPS: `BACKUP_DIR`, `BACKUP_RETENCAO_DIAS`, `API_DB_CONTAINER`, e
   `TESTE_CONTAINER` (o nome deve terminar em `-teste`).
