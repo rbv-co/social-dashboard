@@ -101,6 +101,8 @@ func TestChatwootEvento(t *testing.T) {
 	}{
 		{`{"tipo":"lead_frio","conversation_id":1}`, 400},
 		{`{"tipo":"lead_novo"}`, 400},
+		{`{"tipo":"lead_novo","conversation_id":0}`, 400},
+		{`{"tipo":"lead_novo","conversation_id":"0"}`, 400},
 		{`não é json`, 400},
 		{`{"tipo":"lead_novo","conversation_id":1,"x":"` + strings.Repeat("a", limiteChatwoot) + `"}`, 413},
 	}
@@ -366,5 +368,64 @@ func TestChatwootTokenErradoNaoLeOCorpo(t *testing.T) {
 		if w.Code != 401 {
 			t.Errorf("%s: %d", rota, w.Code)
 		}
+	}
+}
+
+// conversation_id 0 é payload incompleto (nada gravado) e o tipo legado lead_quente ainda
+// grava a linha inteira (reenvio de evento antigo).
+func TestChatwootConversaZeroELeadQuenteLegado(t *testing.T) {
+	p, h := montarChatwoot(t, segredoCW)
+	w := postCW(h, "/receber-webhook-chatwoot", segredoCW, `{"tipo":"lead_novo","conversation_id":0}`)
+	if w.Code != 400 || !strings.Contains(w.Body.String(), "payload_incompleto") {
+		t.Fatalf("conversation_id 0: %d %s", w.Code, w.Body)
+	}
+	if n := contar(t, p, `select count(*) from chatwoot_eventos`); n != 0 {
+		t.Fatalf("conversation_id 0 gravou %d linhas", n)
+	}
+	corpo := strings.Replace(lead, "qualified_lead", "lead_quente", 1)
+	if corpo == lead {
+		t.Fatal("fixture lead mudou: sem qualified_lead")
+	}
+	if w := postCW(h, "/receber-webhook-chatwoot", segredoCW, corpo); w.Code != 200 {
+		t.Fatalf("lead_quente: %d %s", w.Code, w.Body)
+	}
+	var tipo, acc, conv, disp, cid, nome, fone, loja, ia, criado, dia string
+	err := p.QueryRow(context.Background(), `select tipo, chatwoot_account_id::text, conversation_id::text, conversation_display_id::text,
+		contact_id::text, contact_name, contact_phone_number, loja, classificacao_ia,
+		to_char(criado_em_chatwoot at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS'), dia_br::text from chatwoot_eventos`).
+		Scan(&tipo, &acc, &conv, &disp, &cid, &nome, &fone, &loja, &ia, &criado, &dia)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := strings.Join([]string{tipo, acc, conv, disp, cid, nome, fone, loja, ia, criado, dia}, "|")
+	if want := "lead_quente|1|555|12|9|Ana|+5511987654321|Tivoli|quente|2026-10-10T01:30:00|2026-10-09"; got != want {
+		t.Fatalf("linha %q, esperava %q", got, want)
+	}
+}
+
+// A gravação sobrevive ao cancelamento da requisição, mas tem prazo: com o banco lento
+// (gatilho dormindo 2 s) e PrazoGravar de 200 ms, responde 500 logo e não grava.
+func TestChatwootGravacaoTemPrazo(t *testing.T) {
+	p := testebanco.Novo(t)
+	ctx := context.Background()
+	for _, q := range []string{esquemaChatwoot,
+		`create function lento() returns trigger language plpgsql as $$ begin perform pg_sleep(2); return new; end $$`,
+		`create trigger t_lento before insert on chatwoot_eventos for each row execute function lento()`} {
+		if _, err := p.Exec(ctx, q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	c := &Chatwoot{Pool: p, Segredo: segredoCW, PrazoGravar: 200 * time.Millisecond}
+	reqCtx, cancela := context.WithCancel(ctx)
+	cancela()
+	req := httptest.NewRequest("POST", "/receber-webhook-chatwoot?token="+segredoCW, strings.NewReader(lead)).WithContext(reqCtx)
+	w := httptest.NewRecorder()
+	ini := time.Now()
+	c.Evento(w, req)
+	if w.Code != 500 || time.Since(ini) > 1500*time.Millisecond {
+		t.Fatalf("%d em %v, esperava 500 em ~200 ms", w.Code, time.Since(ini))
+	}
+	if n := contar(t, p, `select count(*) from chatwoot_eventos`); n != 0 {
+		t.Fatalf("gravou %d linhas além do prazo", n)
 	}
 }

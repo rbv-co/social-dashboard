@@ -72,6 +72,9 @@ func main() {
 		// HTTP nil: o push herda o cliente seguro (Dialer.Control recusa faixas proibidas).
 		pv := &comercial.PushVendas{Pool: p, Core: core.Novo(cfg.CoreURL, cfg.CoreToken),
 			VAPID: webpush.VAPID{Publica: cfg.VAPIDPublica, Privada: cfg.VAPIDPrivada, Assunto: cfg.VAPIDAssunto}}
+		if _, err := webpush.ValidarVAPID(pv.VAPID); err != nil { // o erro nunca traz as chaves
+			slog.Warn("VAPID inválido: o push de vendas vai falhar em toda execução", "erro", err)
+		}
 		for _, t := range pv.Tarefas() {
 			if err := ag.Registrar(t); err != nil {
 				slog.Error("tarefa", "nome", t.Nome, "erro", err)

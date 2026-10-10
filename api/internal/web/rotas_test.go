@@ -3,13 +3,16 @@ package web
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rbv-co/social-dashboard/api/internal/auth"
 	"github.com/rbv-co/social-dashboard/api/internal/config"
 	"github.com/rbv-co/social-dashboard/api/internal/testebanco"
@@ -72,7 +75,9 @@ func webhooksPublicos() []string {
 // sem sessão = 401; todo webhook sem assinatura/segredo = 401 (a rota existe: não é 404).
 func TestNenhumaRotaNovaFicaAberta(t *testing.T) {
 	p := testebanco.Novo(t)
-	h := Rotas(p, auth.NovoStore(p), auth.NovoLimitador(), config.Config{ShopifySegredos: []string{"s"}, ChatwootSegredo: "c"})
+	st := auth.NovoStore(p)
+	h := Rotas(p, st, auth.NovoLimitador(), config.Config{ShopifySegredos: []string{"s"}, ChatwootSegredo: "c"})
+	semModulo := fixtureUsuarios(t, p, st)["nenhum"]
 	var vistas []string
 	err := chi.Walk(h.(chi.Routes), func(metodo, rota string, _ http.Handler, _ ...func(http.Handler) http.Handler) error {
 		chave := metodo + " " + rota
@@ -84,6 +89,17 @@ func TestNenhumaRotaNovaFicaAberta(t *testing.T) {
 		h.ServeHTTP(r, httptest.NewRequest(metodo, rota, strings.NewReader(`{"a":1}`)))
 		if r.Code != http.StatusUnauthorized {
 			t.Errorf("%s sem sessão = %d, esperava 401 (rota nova fora do grupo autenticado?)", chave, r.Code)
+		}
+		// com sessão e SEM módulo nenhum: 403 em toda rota, salvo a lista curta de só-sessão
+		if soSessao[chave] {
+			return nil
+		}
+		r = httptest.NewRecorder()
+		req := httptest.NewRequest(metodo, rota, strings.NewReader(`{"endpoint":"pedidos/vendas"}`))
+		req.Header.Set("Authorization", "Bearer "+semModulo)
+		h.ServeHTTP(r, req)
+		if r.Code != http.StatusForbidden {
+			t.Errorf("%s com sessão sem módulo = %d, esperava 403 (rota nova sem ExigirModulo?)", chave, r.Code)
 		}
 		return nil
 	})
@@ -123,50 +139,75 @@ func TestWebhooksSoAceitamPOST(t *testing.T) {
 	}
 }
 
-// 401 (sem sessão), 403 (sem o módulo) e 200 (autorizado) em cada rota protegida, pela
-// montagem de produção. O core é um servidor falso que devolve {"data":[]}.
-func TestRotasProtegidasPelaMontagemReal(t *testing.T) {
-	p := testebanco.Novo(t)
-	s := auth.NovoStore(p)
+const conta = "33333333-3333-3333-3333-333333333333"
+
+// fixtureUsuarios cria a conta Meta e uma pessoa por módulo (SÓ aquele módulo), uma sem
+// módulo nenhum e uma admin; devolve o token de sessão de cada uma pelo nome.
+func fixtureUsuarios(t *testing.T, p *pgxpool.Pool, s *auth.Store) map[string]string {
+	t.Helper()
 	ctx := context.Background()
-	coreFalso := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	if _, err := p.Exec(ctx, `create table accounts (id uuid primary key, instagram_id text, ad_account_id text);
+		insert into accounts values ('`+conta+`', '1784', 'act_1')`); err != nil {
+		t.Fatal(err)
+	}
+	perfis := []struct{ nome, role, features string }{
+		{"nenhum", "viewer", "{}"}, {"so-meta", "viewer", "{meta}"}, {"so-social", "viewer", "{social}"},
+		{"so-sales", "viewer", "{sales}"}, {"admin", "admin", "{}"},
+	}
+	toks := map[string]string{}
+	for i, pf := range perfis {
+		id := fmt.Sprintf("11111111-1111-1111-1111-11111111111%d", i)
+		email := pf.nome + "@x.com"
+		if _, err := p.Exec(ctx, `insert into usuarios (id, email) values ($1, $2)`, id, email); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := p.Exec(ctx, `insert into profiles (id, email, role, features, escopo_por_equipe) values ($1, $2, $3, $4::text[], false)`, id, email, pf.role, pf.features); err != nil {
+			t.Fatal(err)
+		}
+		tok, err := s.Criar(ctx, id, "painel", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		toks[pf.nome] = tok
+	}
+	return toks
+}
+
+func coreFalso(t *testing.T) string {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`{"data":[]}`))
 	}))
-	defer coreFalso.Close()
-	h := Rotas(p, s, auth.NovoLimitador(), config.Config{CoreURL: coreFalso.URL, CoreToken: "t"})
-	const comTudo, semNada = "11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"
-	for _, q := range []string{
-		`create table accounts (id uuid primary key, instagram_id text, ad_account_id text)`,
-		`insert into accounts values ('33333333-3333-3333-3333-333333333333', '1784', 'act_1')`,
-		`insert into usuarios (id, email) values ('` + comTudo + `', 'a@x.com'), ('` + semNada + `', 'b@x.com')`,
-		`insert into profiles (id, email, role, features, escopo_por_equipe) values ('` + comTudo + `', 'a@x.com', 'viewer', '{sales,meta,social}', false)`,
-		`insert into profiles (id, email, role, features, escopo_por_equipe) values ('` + semNada + `', 'b@x.com', 'viewer', '{}', false)`,
-	} {
-		if _, err := p.Exec(ctx, q); err != nil {
-			t.Fatal(err)
-		}
-	}
-	tokTudo, _ := s.Criar(ctx, comTudo, "painel", nil)
-	tokNada, _ := s.Criar(ctx, semNada, "painel", nil)
-	const conta = "33333333-3333-3333-3333-333333333333"
+	t.Cleanup(srv.Close)
+	return srv.URL
+}
+
+// Rotas que só exigem sessão (qualquer módulo, ou nenhum). TODA outra rota do grupo
+// autenticado tem de ter portão de módulo: uma rota nova sem portão falha no teste da varredura.
+var soSessao = map[string]bool{"POST /auth/sair": true, "GET /auth/eu": true, "GET /eu/canais": true}
+
+// Matriz completa 401/403/200 por rota pela montagem de produção: cada módulo abre SÓ as
+// suas rotas (pega portão trocado, portão extra ou ausente). O core é um servidor falso.
+func TestRotasProtegidasPelaMontagemReal(t *testing.T) {
+	p := testebanco.Novo(t)
+	s := auth.NovoStore(p)
+	h := Rotas(p, s, auth.NovoLimitador(), config.Config{CoreURL: coreFalso(t), CoreToken: "t"})
+	toks := fixtureUsuarios(t, p, s)
 	casos := []struct {
 		metodo, caminho, corpo string
-		semPortao              bool // só exige sessão: sem módulo também dá 200
+		quem                   []string // quem passa (200); admin passa em todas
 	}{
-		{"GET", "/eu/canais", "", true},
-		{"GET", "/auth/eu", "", true},
-		{"POST", "/bling-proxy", `{"endpoint":"pedidos/vendas"}`, false},
-		{"POST", "/meta-proxy", fmt.Sprintf(`{"accountId":%q,"path":"x"}`, conta), false},
-		{"POST", "/insights-ao-vivo", fmt.Sprintf(`{"account_id":%q}`, conta), false},
-		{"POST", "/serie-novos-dia", fmt.Sprintf(`{"account_id":%q,"dias":[]}`, conta), false},
-		{"POST", "/contar-collabs", fmt.Sprintf(`{"account_id":%q}`, conta), false},
+		{"GET", "/eu/canais", "", []string{"nenhum", "so-meta", "so-social", "so-sales"}},
+		{"GET", "/auth/eu", "", []string{"nenhum", "so-meta", "so-social", "so-sales"}},
+		{"POST", "/bling-proxy", `{"endpoint":"pedidos/vendas"}`, []string{"so-sales"}},
+		{"POST", "/meta-proxy", fmt.Sprintf(`{"accountId":%q,"path":"x"}`, conta), []string{"so-meta"}},
+		{"POST", "/insights-ao-vivo", fmt.Sprintf(`{"account_id":%q}`, conta), []string{"so-social"}},
+		{"POST", "/serie-novos-dia", fmt.Sprintf(`{"account_id":%q,"dias":[]}`, conta), []string{"so-social"}},
+		{"POST", "/contar-collabs", fmt.Sprintf(`{"account_id":%q}`, conta), []string{"so-social"}},
 	}
-	pedir := func(c struct {
-		metodo, caminho, corpo string
-		semPortao              bool
-	}, tok string) int {
-		r := httptest.NewRequest(c.metodo, c.caminho, strings.NewReader(c.corpo))
+	pedir := func(metodo, caminho, corpo, tok string) int {
+		r := httptest.NewRequest(metodo, caminho, strings.NewReader(corpo))
 		if tok != "" {
 			r.Header.Set("Authorization", "Bearer "+tok)
 		}
@@ -175,18 +216,85 @@ func TestRotasProtegidasPelaMontagemReal(t *testing.T) {
 		return w.Code
 	}
 	for _, c := range casos {
-		if got := pedir(c, ""); got != 401 {
+		if got := pedir(c.metodo, c.caminho, c.corpo, ""); got != 401 {
 			t.Errorf("%s %s sem sessão = %d, esperava 401", c.metodo, c.caminho, got)
 		}
-		quer := 403
-		if c.semPortao {
-			quer = 200
+		for _, quem := range []string{"nenhum", "so-meta", "so-social", "so-sales", "admin"} {
+			quer := 403
+			if quem == "admin" || slices.Contains(c.quem, quem) {
+				quer = 200
+			}
+			if got := pedir(c.metodo, c.caminho, c.corpo, toks[quem]); got != quer {
+				t.Errorf("%s %s como %s = %d, esperava %d", c.metodo, c.caminho, quem, got, quer)
+			}
 		}
-		if got := pedir(c, tokNada); got != quer {
-			t.Errorf("%s %s sem módulo = %d, esperava %d", c.metodo, c.caminho, got, quer)
+	}
+}
+
+// Prazos pela montagem real: percorre as rotas e, nos middlewares embutidos de cada uma,
+// confere que o de prazo dá o deadline esperado (contar-collabs 120 s, as outras ao vivo 90 s)
+// e que nenhuma outra rota ganha prazo sem constar aqui.
+func TestPrazosPorRotaPelaMontagemReal(t *testing.T) {
+	p := testebanco.Novo(t)
+	h := Rotas(p, auth.NovoStore(p), auth.NovoLimitador(), config.Config{})
+	quer := map[string]time.Duration{"POST /insights-ao-vivo": 90 * time.Second, "POST /serie-novos-dia": 90 * time.Second, "POST /contar-collabs": 120 * time.Second}
+	vistos := map[string]bool{}
+	chi.Walk(h.(chi.Routes), func(metodo, rota string, _ http.Handler, mws ...func(http.Handler) http.Handler) error {
+		chave := metodo + " " + rota
+		var achado time.Duration
+		for _, mw := range mws {
+			mw(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+				if dl, ok := r.Context().Deadline(); ok {
+					achado = time.Until(dl).Round(time.Second)
+				}
+			})).ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("POST", "/", nil))
 		}
-		if got := pedir(c, tokTudo); got != 200 {
-			t.Errorf("%s %s autorizado = %d, esperava 200", c.metodo, c.caminho, got)
+		if q, ok := quer[chave]; ok {
+			vistos[chave] = true
+			if achado != q {
+				t.Errorf("%s: prazo %v, esperava %v", chave, achado, q)
+			}
+		} else if achado != 0 {
+			t.Errorf("%s ganhou prazo %v fora da lista", chave, achado)
+		}
+		return nil
+	})
+	if len(vistos) != len(quer) {
+		t.Errorf("rotas com prazo não montadas: %v", vistos)
+	}
+}
+
+// meta-proxy: o prazo é do handler (25 s; 45 s com imagem; 75 s com vídeo), visto no
+// contexto da chamada ao core pela montagem real.
+type gravaPrazo struct{ prazo *time.Duration }
+
+func (g gravaPrazo) RoundTrip(r *http.Request) (*http.Response, error) {
+	if dl, ok := r.Context().Deadline(); ok {
+		*g.prazo = time.Until(dl).Round(time.Second)
+	}
+	return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"data":[]}`)), Request: r}, nil
+}
+
+func TestMetaProxyPrazosPelaMontagemReal(t *testing.T) {
+	p := testebanco.Novo(t)
+	s := auth.NovoStore(p)
+	var visto time.Duration
+	antigo := http.DefaultTransport
+	http.DefaultTransport = gravaPrazo{&visto}
+	t.Cleanup(func() { http.DefaultTransport = antigo })
+	h := Rotas(p, s, auth.NovoLimitador(), config.Config{CoreURL: "http://core.invalido", CoreToken: "t", HostsDeMidia: []string{"m.exemplo"}})
+	tok := fixtureUsuarios(t, p, s)["so-meta"]
+	for _, c := range []struct {
+		extra string
+		quer  time.Duration
+	}{{``, 25 * time.Second}, {`,"imageFromUrl":"https://m.exemplo/a.jpg"`, 45 * time.Second}, {`,"videoFromUrl":"https://m.exemplo/a.mp4"`, 75 * time.Second}} {
+		visto = 0
+		r := httptest.NewRequest("POST", "/meta-proxy", strings.NewReader(fmt.Sprintf(`{"accountId":%q,"path":"x"%s}`, conta, c.extra)))
+		r.Header.Set("Authorization", "Bearer "+tok)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != 200 || visto != c.quer {
+			t.Errorf("%q: status %d, prazo %v, esperava 200 e %v", c.extra, w.Code, visto, c.quer)
 		}
 	}
 }

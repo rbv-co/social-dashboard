@@ -44,6 +44,10 @@ type obj = map[string]any
 // _shared/core-meta.js). 429 do core (recuo) repete até 3 vezes (chamarGraph). Erro só
 // quando não houve resposta (rede/prazo) ou falta o token.
 func (av *AoVivo) graph(ctx context.Context, caminho string, params obj) (obj, error) {
+	// 60 s por chamada: nunca estende o prazo da rota (WithTimeout mantém o que vencer antes),
+	// mas uma chamada presa não come o orçamento inteiro das demais.
+	ctx, cancela := context.WithTimeout(ctx, 60*time.Second)
+	defer cancela()
 	r, err := av.Core.Meta(ctx, core.PedidoMeta{Caminho: caminho, Metodo: "GET", Parametros: params}, 3)
 	if err != nil {
 		return nil, err

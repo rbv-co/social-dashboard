@@ -43,6 +43,8 @@ type Chatwoot struct {
 	Pool    *pgxpool.Pool
 	Segredo string
 	Agora   func() time.Time // nil = time.Now
+	// PrazoGravar limita a gravação (que ignora o cancelamento da requisição); 0 = 10 s.
+	PrazoGravar time.Duration
 }
 
 // entrada: método, segredo, tamanho e JSON. false = já respondeu.
@@ -79,7 +81,14 @@ func (c *Chatwoot) entrada(w http.ResponseWriter, r *http.Request) (map[string]a
 
 func (c *Chatwoot) gravar(ctx context.Context, w http.ResponseWriter, quem, sql string, args ...any) {
 	// o Chatwoot desiste em 5 s e não reenvia: cancelamento da requisição não pode perder a gravação
-	if _, err := c.Pool.Exec(context.WithoutCancel(ctx), sql, args...); err != nil {
+	// ...mas com prazo próprio, para um banco travado não prender a goroutine para sempre.
+	prazo := c.PrazoGravar
+	if prazo == 0 {
+		prazo = 10 * time.Second
+	}
+	ctx, cancela := context.WithTimeout(context.WithoutCancel(ctx), prazo)
+	defer cancela()
+	if _, err := c.Pool.Exec(ctx, sql, args...); err != nil {
 		slog.Error("webhook chatwoot: falha ao gravar", "rota", quem, "erro", err)
 		responder(w, http.StatusInternalServerError, map[string]any{"ok": false, "erro": "falha_ao_gravar"})
 		return

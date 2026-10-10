@@ -8,7 +8,7 @@ Registro versionado do que o Plano 1 (levantamento e núcleo) deixou para os pr�
 - A porta da API só pode ser alcançável pelo proxy. O auxiliar de IP do cliente só confia em `X-Real-IP` quando a conexão vem de loopback/rede privada; CGNAT/Tailscale (100.64/10) não conta como privado.
 - O limite por IP também conta logins bem-sucedidos. NAT grande (escritório, operadora) pode precisar de teto maior.
 - O limite por e-mail permite que um atacante trave o login de uma conta por 15 min. É inerente à spec §4.
-- O limitador é em memória e vale para uma instância só (teto de 10 mil chaves, varredura total ao passar dele).
+- O limitador é em memória e vale para uma instância só (teto de 10 mil chaves; acima dele, varredura total no máximo uma vez por Janela/4).
 
 ## Decisões para os próximos planos
 
@@ -19,7 +19,7 @@ Registro versionado do que o Plano 1 (levantamento e núcleo) deixou para os pr�
 - `email_confirmado_em` é ignorado no login (o GoTrue bloqueia e-mail não confirmado quando a confirmação está ligada). Decidir após a consulta 18 do levantamento.
 - `sessoes.origem` (IP/user-agent) da spec §4 ainda não existe.
 - `sqlc` (spec §3.1) ainda não foi adotado; hoje é SQL cru via pgx. Decidir antes dos planos de domínio.
-- Timeouts de leitura/escrita/ociosidade do servidor HTTP ficam para o plano de deploy.
+- Timeouts do servidor HTTP: resolvidos no Plano 3 (ver a seção abaixo).
 - A leitura de `permissions` é estrita (`map[string][]string`): uma linha jsonb malformada dá 500 para aquele usuário. Considerar leitura tolerante, como o front faz com `Array.isArray`.
 - `profiles.role` pode ser enum: usar `role::text`.
 - Sessões impersonadas recebem o TTL cheio de 12 h e `ultimo_uso_em` fica congelado. Decidir no plano de admin.
@@ -45,7 +45,7 @@ Tarefa 3 (esqueleto, testebanco, banco)
 - `testebanco` vaza conexão admin/schema se `t.Fatal` ocorrer antes do Cleanup.
 - Globals do goose (`SetBaseFS`) são racy apenas com `t.Parallel`.
 - Subcomando é validado depois de conectar/migrar.
-- Sem Idle/WriteTimeout.
+- Idle/WriteTimeout: resolvidos no Plano 3.
 - Workflow `api.yml` não inclui o próprio arquivo em `paths`.
 
 Tarefa 4 (sessões)
@@ -85,11 +85,15 @@ Tarefa 8 (worker)
 - `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` e `VAPID_SUBJECT` (worker): OBRIGATÓRIAS, os MESMOS valores de `segredos_de_cron` (`vapid_public_key`, `vapid_private_key`, `vapid_subject`), copiados por quem tem acesso. Trocar a chave invalida todas as inscrições de push. `VAPID_SUBJECT` não tem padrão no código; a edge antiga caía em `mailto:breno@rbvcompany.com` quando faltava: sem ele o push falha alto.
 
 ### nginx (location `/api`)
-- `location /api/` repassa para a API (porta só alcançável pelo proxy) com `proxy_set_header X-Real-IP $remote_addr;`. O limite de 600 req/min por IP dos 5 webhooks usa SÓ esse cabeçalho e só o aceita quando o par TCP é o nginx (loopback/rede privada); `X-Forwarded-For` e `True-Client-IP` do cliente nunca contam. Sem o `X-Real-IP`, todos os webhooks dividem o balde do IP do proxy.
+- As rotas Go NÃO têm o prefixo `/api`: o `proxy_pass` precisa remover o prefixo (`location /api/ { proxy_pass http://127.0.0.1:8080/; }`, com a barra final). Cada `location` própria (webhooks do Chatwoot, limites de corpo, prazos) precisa do SEU `proxy_pass` com a barra final: ele não é herdado do `location /api/`.
+- `proxy_set_header X-Real-IP $remote_addr;`: o limite de 600 req/min por IP dos 5 webhooks usa SÓ esse cabeçalho e só o aceita quando o par TCP é o nginx (loopback/rede privada); `X-Forwarded-For` e `True-Client-IP` do cliente nunca contam. ATENÇÃO: o nginx só herda os `proxy_set_header` do nível acima se a `location` NÃO declarar nenhum; acrescentar qualquer `proxy_set_header` numa `location` própria derruba o `X-Real-IP` ali em silêncio, e todos os webhooks passam a dividir UM balde (o IP do proxy): ~10 req/s de um anônimo bastam para devolver 429 ao fan-out do core e ao Chatwoot. Repita o `proxy_set_header X-Real-IP $remote_addr;` em cada `location` que tenha cabeçalho próprio.
+- Com CDN/Cloudflare na frente, `$remote_addr` seria o IP da CDN: restaurar o IP do cliente ANTES (`set_real_ip_from <faixas da CDN>; real_ip_header CF-Connecting-IP;` ou `X-Forwarded-For` com `real_ip_recursive on`), só com as faixas da própria CDN em `set_real_ip_from`.
 - Rotas novas: `/api/bling-proxy`, `/api/meta-proxy`, `/api/insights-ao-vivo`, `/api/serie-novos-dia`, `/api/contar-collabs`, `/api/eu/canais` (sessão) e `/api/receber-webhook-pedido-shopify`, `-checkout`, `-abandono`, `/api/receber-webhook-chatwoot`, `/api/receber-opt-out-chatwoot` (públicas, só POST; outro método = 405).
 - Limites de corpo (a API também limita; o nginx corta antes): `client_max_body_size 5m;` em `/api/receber-webhook-pedido-shopify`, `-checkout` e `-abandono`; `1m` em `/api/receber-webhook-chatwoot` e `/api/receber-opt-out-chatwoot`; `64k` em `/api/bling-proxy`, `/api/meta-proxy`, `/api/insights-ao-vivo`, `/api/serie-novos-dia` e `/api/contar-collabs`.
-- Log de acesso: `/api/receber-webhook-chatwoot` e `/api/receber-opt-out-chatwoot` levam o segredo em `?token=`. Nessas duas `location`, usar um `log_format` SEM `$args`, `$request_uri` e `$request` (ex.: `'$remote_addr [$time_local] "$request_method $uri" $status'`) ou `access_log off;`. Conferir também `error_log` em nível debug e qualquer log de upstream. A API nunca loga a URL.
-- Prazos: o servidor Go usa `ReadHeaderTimeout 10s`, `ReadTimeout 30s`, `WriteTimeout 150s`, `IdleTimeout 120s`. Prazos por requisição: `meta-proxy` 25 s (45 s imagem, 75 s vídeo), `insights-ao-vivo` e `serie-novos-dia` 90 s, `contar-collabs` 120 s (N perfis x até 5 páginas em série). `proxy_read_timeout` do nginx deve ficar ACIMA do prazo: `130s` em `/api/contar-collabs` e `100s` nas demais rotas da Meta (80 s no mínimo para o vídeo); `proxy_send_timeout` padrão.
+- SEGREDO DO CHATWOOT NO LOG DO NGINX (`?token=`), em DOIS lugares:
+  1. Log de acesso: `log_format` só pode ser declarado em `http {}` (em `location` o `nginx -t` falha); defina lá, por exemplo, `log_format semquery '$remote_addr [$time_local] "$request_method $uri" $status';` e, nas duas `location` (`/api/receber-webhook-chatwoot` e `/api/receber-opt-out-chatwoot`), `access_log /var/log/nginx/chatwoot.log semquery;` (ou `access_log off;`). Esse formato NÃO pode conter `$args`, `$query_string`, `$arg_token`, `$request_uri` nem `$request` (este traz a query).
+  2. Log de erro: o nginx acrescenta `request: "POST /…?token=…"` e `upstream: "http://…?token=…"` a TODA linha de `error_log` de nível error (API fora do ar, timeout do upstream, 413 etc.), e nenhum `log_format` controla isso. Prescrição: dentro dessas duas `location`, `error_log /var/log/nginx/chatwoot-erro.log crit;` (só falhas gravíssimas) ou tratar o `error.log` como dado sensível (acesso restrito, rotação curta). Sem uma das duas, o segredo vai parar em `error.log`.
+- Prazos: o servidor Go usa `ReadHeaderTimeout 10s`, `ReadTimeout 30s`, `WriteTimeout 150s`, `IdleTimeout 120s`. Prazos por requisição: `meta-proxy` 25 s (45 s imagem, 75 s vídeo), `insights-ao-vivo` e `serie-novos-dia` 90 s, `contar-collabs` 120 s (N perfis x até 5 páginas em série); cada chamada à Meta dessas três rotas ainda tem teto de 60 s, que nunca estende o prazo da rota. `proxy_read_timeout` do nginx deve ficar ACIMA do prazo: `130s` em `/api/contar-collabs`, `100s` nas demais rotas da Meta (80 s no mínimo para o vídeo); `proxy_send_timeout` padrão.
 
 ### Chatwoot
 - O Chatwoot registra a URL com `?token=` no PRÓPRIO log em qualquer resposta não-2xx (inclusive o 500 por falha de banco): o segredo está nos logs dele. Tratar esses logs como sensíveis.
