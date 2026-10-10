@@ -101,17 +101,112 @@ test('nomes inseguros (barra inicial, contrabarra, controle) são recusados e na
   }
 })
 
-test('cópia interrompida não deixa arquivo parcial com nome final e é retomada', async () => {
+test('cópia interrompida no meio do corpo não deixa arquivo parcial (nem .parcial) e é retomada', async () => {
   const { srv, url } = await servidor({ 'a.txt': 'conteudo' })
   try {
     const destino = mkdtempSync(join(tmpdir(), 'st-'))
-    const f = async (u, init) => { const r = await fetch(u, init); return u.includes('/authenticated/') ? { ok: true, arrayBuffer: async () => { throw new Error('queda') } } : r }
-    await assert.rejects(() => copiarBucket({ url, chave: 'segredo', bucket: 'b', destino, fetch: f }), /queda/)
-    assert.equal(existsSync(join(destino, 'b', 'a.txt')), false)
+    const f = async (u, init) => {
+      if (!u.includes('/authenticated/')) return fetch(u, init)
+      return new Response(new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode('cont')); c.error(new Error('queda')) } }))
+    }
+    await assert.rejects(() => copiarBucket({ url, chave: 'segredo', bucket: 'b', destino, fetch: f, espera: 1 }), /queda/)
+    assert.deepEqual(readdirSync(join(destino, 'b')), []) // nem a.txt nem a.txt.parcial
     const r = await copiarBucket({ url, chave: 'segredo', bucket: 'b', destino })
     assert.deepEqual([r.copiados, r.pulados], [1, 0])
     assert.deepEqual(readdirSync(join(destino, 'b')), ['a.txt'])
   } finally { srv.close() }
+})
+
+// Storage de mentira sem servidor: lista fixa por prefixo e download por Response
+const enc = new TextEncoder()
+function falso(listas, { baixar = (caminho) => new Response(enc.encode('xx')) } = {}) {
+  const chamadas = []
+  const f = async (u, init) => {
+    const p = new URL(u).pathname
+    chamadas.push(p)
+    if (init.method === 'POST') return new Response(JSON.stringify(listas[JSON.parse(init.body).prefix] || []))
+    return baixar(decodeURIComponent(p.slice('/storage/v1/object/authenticated/b/'.length)), chamadas.length)
+  }
+  return { f, chamadas }
+}
+const arq = (name) => ({ name, id: 'i-' + name, metadata: { size: 2 }, updated_at: '2026-01-01T00:00:00.000Z' })
+
+test('503 e 429 são repetidos com backoff e depois dá certo; 401 não é repetido', async () => {
+  let n = 0
+  const { f } = falso({ '': [arq('a.txt')] }, { baixar: () => (++n < 3 ? new Response('x', { status: n === 1 ? 503 : 429 }) : new Response(enc.encode('xx'))) })
+  const r = await copiarBucket({ url: 'http://x', chave: 'k', bucket: 'b', destino: mkdtempSync(join(tmpdir(), 'st-')), fetch: f, espera: 1 })
+  assert.deepEqual([r.copiados, n], [1, 3])
+
+  let m = 0
+  const g = async () => { m++; return new Response('{}', { status: 401 }) }
+  await assert.rejects(() => copiarBucket({ url: 'http://x', chave: 'k', bucket: 'b', destino: mkdtempSync(join(tmpdir(), 'st-')), fetch: g, espera: 1 }), /401/)
+  assert.equal(m, 1)
+  let h = 0
+  const k = async () => { h++; return new Response('{}', { status: 503 }) }
+  await assert.rejects(() => copiarBucket({ url: 'http://x', chave: 'k', bucket: 'b', destino: mkdtempSync(join(tmpdir(), 'st-')), fetch: k, espera: 1 }), /503/)
+  assert.equal(h, 3) // 3 tentativas e desiste
+})
+
+test('objeto listado e apagado antes do download (404) é pulado com aviso e não derruba o bucket', async () => {
+  const avisos = []
+  const { f } = falso({ '': [arq('a.txt'), arq('b.txt')] }, { baixar: (c) => (c === 'a.txt' ? new Response('{}', { status: 404 }) : new Response(enc.encode('xx'))) })
+  const destino = mkdtempSync(join(tmpdir(), 'st-'))
+  const r = await copiarBucket({ url: 'http://x', chave: 'k', bucket: 'b', destino, fetch: f, aviso: (m) => avisos.push(m) })
+  assert.deepEqual([r.copiados, r.sumiram, r.falhas], [1, 1, 0])
+  assert.match(avisos[0], /a\.txt/)
+  assert.deepEqual(readdirSync(join(destino, 'b')), ['b.txt'])
+})
+
+test('objeto "a" e pasta "a/" no mesmo bucket: erro por objeto, conta em falhas e os demais seguem (nas duas ordens)', async () => {
+  const pasta = { name: 'a', id: null, metadata: null }
+  for (const ordem of [[arq('a'), pasta, arq('z')], [pasta, arq('a'), arq('z')]]) {
+    const avisos = []
+    const { f } = falso({ '': ordem, 'a/': [arq('b')] })
+    const destino = mkdtempSync(join(tmpdir(), 'st-'))
+    const r = await copiarBucket({ url: 'http://x', chave: 'k', bucket: 'b', destino, fetch: f, aviso: (m) => avisos.push(m) })
+    assert.equal(r.falhas, 1)
+    assert.equal(r.copiados, 2) // z e (a ou a/b)
+    assert.ok(existsSync(join(destino, 'b', 'z')))
+    assert.match(avisos.join('\n'), /conflito entre arquivo e pasta/)
+    assert.equal(readdirSync(join(destino, 'b')).some((n) => n.endsWith('.parcial')), false)
+  }
+})
+
+test('nome com 250 bytes (+ .parcial passaria de 255) usa temporário curto e copia normalmente', async () => {
+  const nome = 'x'.repeat(250)
+  const { f } = falso({ '': [arq(nome)] })
+  const destino = mkdtempSync(join(tmpdir(), 'st-'))
+  const r = await copiarBucket({ url: 'http://x', chave: 'k', bucket: 'b', destino, fetch: f })
+  assert.deepEqual([r.copiados, r.falhas], [1, 0])
+  assert.deepEqual(readdirSync(join(destino, 'b')), [nome])
+})
+
+test('erro de rede mostra o código da causa (e a mensagem dela, sem a chave), nunca o e.message do fetch', async () => {
+  let n = 0
+  const f = async () => {
+    n++
+    const causa = Object.assign(new AggregateError([Object.assign(new Error('x'), { code: 'ECONNREFUSED' })], 'recusado com SEGREDOK'), {})
+    throw new TypeError('fetch failed SEGREDOK', { cause: causa })
+  }
+  await assert.rejects(() => copiarBucket({ url: 'http://x', chave: 'SEGREDOK', bucket: 'b', destino: mkdtempSync(join(tmpdir(), 'st-')), fetch: f, espera: 1 }),
+    (e) => /ECONNREFUSED/.test(e.message) && /recusado com \*\*\*/.test(e.message) && !/SEGREDOK/.test(e.message))
+  assert.equal(n, 3) // erro de rede é repetido
+  // de verdade, contra uma porta fechada
+  await assert.rejects(() => copiarBucket({ url: 'http://127.0.0.1:58699', chave: 'segredo', bucket: 'b', destino: mkdtempSync(join(tmpdir(), 'st-')), espera: 1 }), /ECONNREFUSED/)
+})
+
+test('download em streaming: arquivo grande copiado inteiro, com tamanho conferido', async () => {
+  const grande = Buffer.alloc(5 * 1024 * 1024, 7)
+  const { f } = falso({ '': [{ ...arq('g.bin'), metadata: { size: grande.length } }] }, { baixar: () => new Response(grande) })
+  const destino = mkdtempSync(join(tmpdir(), 'st-'))
+  const r = await copiarBucket({ url: 'http://x', chave: 'k', bucket: 'b', destino, fetch: f })
+  assert.equal(r.bytes, grande.length)
+  assert.equal(readFileSync(join(destino, 'b', 'g.bin')).equals(grande), true)
+  // tamanho diferente do listado: falha e não deixa nada
+  const { f: f2 } = falso({ '': [{ ...arq('h.bin'), metadata: { size: 3 } }] }, { baixar: () => new Response(grande) })
+  await assert.rejects(() => copiarBucket({ url: 'http://x', chave: 'k', bucket: 'b', destino, fetch: f2 }), /tamanho baixado difere/)
+  assert.equal(existsSync(join(destino, 'b', 'h.bin')), false)
+  assert.equal(readdirSync(join(destino, 'b')).some((n) => n.endsWith('.parcial')), false)
 })
 
 test('seleção de buckets é explícita: incluir, excluir e nenhum filtro', () => {
