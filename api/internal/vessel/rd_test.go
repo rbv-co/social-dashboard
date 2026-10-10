@@ -1,6 +1,7 @@
 package vessel
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"net/http"
@@ -37,6 +38,10 @@ type rdFalsa struct {
 	querys []string
 	status int
 	atraso time.Duration // responde depois disso (lentidão)
+	// travaNa: ao chegar o N-ésimo POST (>0) o servidor chama cancelar e só responde quando o cliente
+	// desiste (prazo estourando com um envio no ar).
+	travaNa  int
+	cancelar func()
 }
 
 // responder troca a resposta da RD (sob a trava: o servidor lê em outra goroutine).
@@ -67,8 +72,16 @@ func ambienteRD(t *testing.T, status int) (*RD, *rdFalsa, *pgxpool.Pool) {
 		f.mu.Lock()
 		f.corpos = append(f.corpos, string(b))
 		f.querys = append(f.querys, r.URL.RawQuery)
-		st, atraso := f.status, f.atraso
+		st, atraso, trava, cancelar := f.status, f.atraso, f.travaNa > 0 && len(f.corpos) == f.travaNa, f.cancelar
 		f.mu.Unlock()
+		if trava {
+			cancelar()
+			select {
+			case <-r.Context().Done():
+			case <-time.After(10 * time.Second):
+			}
+			return
+		}
 		time.Sleep(atraso)
 		if r.Header.Get("Content-Type") != "application/json" {
 			st = 415
@@ -134,6 +147,9 @@ func TestRDFalhaTentaAteCincoVezesEAparece(t *testing.T) {
 		if i < 5 && (err == nil || !strings.Contains(err.Error(), "1 de 1")) {
 			t.Fatalf("rodada %d: falha tem de virar erro da tarefa: %v", i, err)
 		}
+		if i == 4 && (err == nil || !strings.Contains(err.Error(), "esgotaram as 5 tentativas")) {
+			t.Fatalf("a 5ª falha tira a linha da fila: tem de aparecer no erro da tarefa: %v", err)
+		}
 		if i == 5 && err != nil {
 			t.Fatalf("depois de 5 tentativas a linha sai da fila: %v", err)
 		}
@@ -147,13 +163,17 @@ func TestRDEnviadoParadoHaDezMinutosVoltaAFila(t *testing.T) {
 	rd, f, p := ambienteRD(t, 200)
 	ctx := context.Background()
 	p.Exec(ctx, `insert into vessel_rd_envios (origem_id, pessoa_id, status, tentativas, atualizado_em) values
-		(40, 1, 'enviado', 1, now() - interval '11 minutes'), (41, 1, 'enviado', 1, now() - interval '2 minutes')`)
+		(40, 1, 'enviado', 1, now() - interval '11 minutes'), (41, 1, 'enviado', 1, now() - interval '2 minutes'),
+		(42, 1, 'enviado', 1, now() - interval '7 minutes')`)
 	rd.Rodar(ctx)
 	if st, n, _, _ := estadoRD(t, p, 40); st != "ok" || n != 2 {
 		t.Fatalf("parado há 11 min é reenviado: st=%s n=%d", st, n)
 	}
 	if st, _, _, _ := estadoRD(t, p, 41); st != "enviado" || envios(f) != 1 {
 		t.Fatalf("enviado há 2 min fica quieto: st=%s envios=%d", st, envios(f))
+	}
+	if st, _, _, _ := estadoRD(t, p, 42); st != "enviado" {
+		t.Fatalf("enviado há 7 min ainda não passou dos 10: st=%s", st)
 	}
 }
 
@@ -231,5 +251,224 @@ func TestRDRespostaQueEcoaOTokenNaoVaiParaATabela(t *testing.T) {
 	_, _, _, resp := estadoRD(t, p, 80)
 	if err == nil || strings.Contains(err.Error(), tokenRD) || strings.Contains(resp, tokenRD) || !strings.Contains(resp, "***") {
 		t.Fatalf("err=%v resp=%q", err, resp)
+	}
+}
+
+// Prazo da tarefa estoura no meio do lote (a RD está lenta): o que já saiu fica ok, o envio que estava
+// no ar fica 'enviado' (ambíguo: a regra de 10 min decide) e o que NUNCA foi enviado volta a 'pendente'
+// com a tentativa devolvida, senão leads sem envio esgotariam as 5 tentativas em silêncio.
+func TestRDPrazoNoMeioDoLoteDevolveOQueNaoSaiu(t *testing.T) {
+	rd, f, p := ambienteRD(t, 200)
+	ctx, cancela := context.WithCancel(context.Background())
+	defer cancela()
+	f.travaNa, f.cancelar = 2, cancela
+	for o := 90; o <= 94; o++ {
+		p.Exec(context.Background(), `insert into vessel_rd_envios (origem_id, pessoa_id) values ($1::bigint, 1)`, o)
+	}
+	err := rd.Rodar(ctx)
+	if err == nil || !strings.Contains(err.Error(), "limite_de_tempo") || strings.Contains(err.Error(), tokenRD) {
+		t.Fatalf("err=%v", err)
+	}
+	bg := context.Background()
+	if st, n, _, _ := estadoRD(t, p, 90); st != "ok" || n != 1 {
+		t.Fatalf("o que saiu antes do prazo fica ok: st=%s n=%d", st, n)
+	}
+	if st, n, _, _ := estadoRD(t, p, 91); st != "enviado" || n != 1 {
+		t.Fatalf("envio no ar quando o prazo estourou é ambíguo, fica enviado: st=%s n=%d", st, n)
+	}
+	for o := int64(92); o <= 94; o++ {
+		if st, n, _, resp := estadoRD(t, p, o); st != "pendente" || n != 0 || strings.Contains(resp, "deadline") {
+			t.Fatalf("origem %d nunca foi enviada: volta pendente sem gastar tentativa: st=%s n=%d resp=%q", o, st, n, resp)
+		}
+	}
+	if envios(f) != 2 {
+		t.Fatalf("envios = %d", envios(f))
+	}
+	// Próxima rodada manda o resto; o ambíguo espera os 10 min e então vai de novo.
+	f.travaNa = 0
+	if err := rd.Rodar(bg); err != nil || envios(f) != 5 {
+		t.Fatalf("err=%v envios=%d", err, envios(f))
+	}
+	if st, _, _, _ := estadoRD(t, p, 91); st != "enviado" {
+		t.Fatalf("o ambíguo não é reenviado antes dos 10 min: %s", st)
+	}
+	p.Exec(bg, `update vessel_rd_envios set atualizado_em = now() - interval '11 minutes' where origem_id = 91`)
+	if err := rd.Rodar(bg); err != nil {
+		t.Fatal(err)
+	}
+	if st, n, _, _ := estadoRD(t, p, 91); st != "ok" || n != 2 {
+		t.Fatalf("st=%s n=%d", st, n)
+	}
+}
+
+// O resultado de um envio que TERMINOU é gravado mesmo com o contexto da tarefa já cancelado (o
+// WithoutCancel da gravação): sem isso um ok viraria 'enviado' e a conversão sairia de novo em 10 min.
+func TestRDGravaOResultadoMesmoComOPrazoVencido(t *testing.T) {
+	rd, f, p := ambienteRD(t, 200)
+	ctx, cancela := context.WithCancel(context.Background())
+	defer cancela()
+	rd.HTTP = &http.Client{Transport: cancelaDepois{cancela}}
+	for o := 100; o <= 101; o++ {
+		p.Exec(context.Background(), `insert into vessel_rd_envios (origem_id, pessoa_id) values ($1::bigint, 1)`, o)
+	}
+	err := rd.Rodar(ctx)
+	if err == nil || !strings.Contains(err.Error(), "limite_de_tempo") {
+		t.Fatalf("err=%v", err)
+	}
+	if st, n, h, _ := estadoRD(t, p, 100); st != "ok" || n != 1 || h == nil || *h != 200 {
+		t.Fatalf("o envio que terminou tem o resultado gravado: st=%s n=%d http=%v", st, n, h)
+	}
+	if st, n, _, _ := estadoRD(t, p, 101); st != "pendente" || n != 0 || envios(f) != 1 {
+		t.Fatalf("o seguinte volta à fila: st=%s n=%d envios=%d", st, n, envios(f))
+	}
+}
+
+// cancelaDepois faz o POST de verdade, lê a resposta inteira e então cancela o contexto da tarefa.
+type cancelaDepois struct{ cancela func() }
+
+func (c cancelaDepois) RoundTrip(r *http.Request) (*http.Response, error) {
+	resp, err := http.DefaultTransport.RoundTrip(r)
+	if err != nil {
+		return nil, err
+	}
+	corpo, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	resp.Body = io.NopCloser(bytes.NewReader(corpo))
+	c.cancela()
+	return resp, nil
+}
+
+// Falha ao gravar o resultado de um envio não aborta o resto do lote (as outras linhas seguem) e
+// aparece no erro. A linha sem resultado fica 'enviado' e a regra de 10 min a recupera.
+func TestRDFalhaAoGravarNaoAbortaOLote(t *testing.T) {
+	rd, f, p := ambienteRD(t, 200)
+	ctx := context.Background()
+	// Só a linha 110 tem a gravação do resultado recusada (resposta com NUL não entra em text).
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		f.mu.Lock()
+		f.corpos = append(f.corpos, string(b))
+		f.mu.Unlock()
+		if strings.Contains(string(b), "beauty-session-110") {
+			io.WriteString(w, "a\x00b")
+			return
+		}
+		io.WriteString(w, "{}")
+	}))
+	t.Cleanup(srv.Close)
+	rd.URL = srv.URL
+	for o := 110; o <= 112; o++ {
+		p.Exec(ctx, `insert into vessel_rd_envios (origem_id, pessoa_id) values ($1::bigint, 1)`, o)
+	}
+	err := rd.Rodar(ctx)
+	if err == nil {
+		t.Fatal("falha ao gravar tem de aparecer")
+	}
+	if st, _, _, _ := estadoRD(t, p, 110); st != "enviado" {
+		t.Fatalf("sem resultado gravado a linha fica enviado: %s", st)
+	}
+	for _, o := range []int64{111, 112} {
+		if st, _, _, _ := estadoRD(t, p, o); st != "ok" {
+			t.Fatalf("origem %d: o resto do lote segue: %s", o, st)
+		}
+	}
+}
+
+// Redirecionamento da RD não é seguido: o Referer carregaria ?api_key= para outro host.
+func TestRDNaoSegueRedirecionamento(t *testing.T) {
+	rd, _, p := ambienteRD(t, 200)
+	var chegou int
+	var mu sync.Mutex
+	alheio := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		chegou++
+		mu.Unlock()
+	}))
+	t.Cleanup(alheio.Close)
+	redir := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, alheio.URL+"/?"+r.URL.RawQuery, http.StatusTemporaryRedirect)
+	}))
+	t.Cleanup(redir.Close)
+	rd.URL = redir.URL
+	p.Exec(context.Background(), `insert into vessel_rd_envios (origem_id, pessoa_id) values (120, 1)`)
+	err := rd.Rodar(context.Background())
+	st, _, h, resp := estadoRD(t, p, 120)
+	mu.Lock()
+	defer mu.Unlock()
+	if err == nil || chegou != 0 || st != "falhou" || h == nil || *h != 307 || strings.Contains(resp, tokenRD) {
+		t.Fatalf("err=%v chegou=%d st=%s http=%v resp=%q", err, chegou, st, h, resp)
+	}
+}
+
+// Duas rodadas ao mesmo tempo sobre as mesmas linhas (dois workers, `api worker rodar` junto com o
+// cron): a reserva num comando só com skip locked faz cada conversão sair UMA vez.
+func TestRDDuasRodadasSimultaneasEnviamCadaLinhaUmaVez(t *testing.T) {
+	rd, f, p := ambienteRD(t, 200)
+	f.responder(200, 15*time.Millisecond)
+	ctx := context.Background()
+	for o := 200; o < 260; o++ { // 60 > 50: uma rodada não leva tudo
+		if _, err := p.Exec(ctx, `insert into vessel_rd_envios (origem_id, pessoa_id) values ($1::bigint, 1)`, o); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var wg sync.WaitGroup
+	erros := make([]error, 2)
+	for i := range erros {
+		wg.Add(1)
+		go func() { defer wg.Done(); erros[i] = rd.Rodar(ctx) }()
+	}
+	wg.Wait()
+	if erros[0] != nil || erros[1] != nil {
+		t.Fatalf("erros: %v", erros)
+	}
+	corpos, _ := f.lista()
+	vistos := map[string]int{}
+	for _, c := range corpos {
+		vistos[c]++
+	}
+	for c, n := range vistos {
+		if n != 1 {
+			t.Fatalf("%d envios do mesmo corpo: %s", n, c)
+		}
+	}
+	if len(vistos) != 60 {
+		t.Fatalf("enviou %d de 60", len(vistos))
+	}
+	var naoOk int
+	p.QueryRow(ctx, `select count(*) from vessel_rd_envios where status <> 'ok' or tentativas <> 1`).Scan(&naoOk)
+	if naoOk != 0 {
+		t.Fatalf("%d linhas fora de ok/1 tentativa", naoOk)
+	}
+}
+
+// Linha travada por outra transação (outro worker reservando) é PULADA, não esperada: a rodada manda
+// as demais sem bloquear e a travada fica para quem a segura. Sem o skip locked a rodada pendura.
+func TestRDPulaLinhaTravadaPorOutraTransacao(t *testing.T) {
+	rd, f, p := ambienteRD(t, 200)
+	bg := context.Background()
+	for o := 300; o <= 305; o++ {
+		p.Exec(bg, `insert into vessel_rd_envios (origem_id, pessoa_id) values ($1::bigint, 1)`, o)
+	}
+	tx, err := p.Begin(bg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(bg)
+	if _, err := tx.Exec(bg, `select id from vessel_rd_envios where origem_id in (300, 301) for update`); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancela := context.WithTimeout(bg, 10*time.Second)
+	defer cancela()
+	if err := rd.Rodar(ctx); err != nil || envios(f) != 4 {
+		t.Fatalf("err=%v envios=%d (esperava 4: as 2 travadas ficam de fora, sem esperar)", err, envios(f))
+	}
+	for _, o := range []int64{300, 301} {
+		if st, n, _, _ := estadoRD(t, p, o); st != "pendente" || n != 0 {
+			t.Fatalf("origem %d: travada por outro, intocada: st=%s n=%d", o, st, n)
+		}
+	}
+	tx.Commit(bg)
+	if err := rd.Rodar(bg); err != nil || envios(f) != 6 {
+		t.Fatalf("err=%v envios=%d", err, envios(f))
 	}
 }

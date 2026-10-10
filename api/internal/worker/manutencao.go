@@ -25,8 +25,10 @@ func ConferirRobos(p *pgxpool.Pool) Tarefa {
 
 // FaxinaDaAPI (tarefa nova, faxina-da-api) apaga o que as tabelas da própria API acumulam:
 // sessões vencidas (NOTAS-DA-IMPLANTACAO, Plano 1), marcas de webhook com mais de 30 dias (reentrega
-// do core vai até ~5 h; pendência do Plano 3) e o livro de envios com mais de 45 dias (as chaves
-// levam o dia: nada repete depois disso).
+// do core vai até ~5 h; pendência do Plano 3) e o livro de envios com mais de 45 dias. Atenção: só
+// as chaves das janelas que se repetem (push e relatório do dia/hora) levam a data. Chaves SEM data
+// (ex.: decisão de reserva por pedido e situação, peça do conteudo-hora-h) também somem aos 45 dias:
+// se o mesmo evento puder chegar de novo depois disso, a tarefa que usa a chave volta a enviar.
 func FaxinaDaAPI(p *pgxpool.Pool) Tarefa {
 	return Tarefa{Nome: "faxina-da-api", Agenda: "41 5 * * *", Limite: 2 * time.Minute, Executar: func(ctx context.Context) error {
 		for _, sql := range []string{

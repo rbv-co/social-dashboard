@@ -14,6 +14,7 @@ func TestConferirRobos(t *testing.T) {
 	if _, err := p.Exec(ctx, `insert into robos_execucoes (robo, disparado_em, ok, resposta, conferido_em) values
 		('pendente-velha', now() - interval '7 hours', null, null, null),
 		('pendente-nova', now() - interval '1 hour', null, null, null),
+		('pendente-5h', now() - interval '5 hours', null, null, null),
 		('conferida-velha', now() - interval '7 hours', true, 'ok', now() - interval '7 hours'),
 		('vencida', now() - interval '61 days', true, 'ok', now() - interval '61 days'),
 		('quase-vencida', now() - interval '59 days', true, 'ok', now() - interval '59 days')`); err != nil {
@@ -31,6 +32,9 @@ func TestConferirRobos(t *testing.T) {
 	}
 	if _, _, c := estado("pendente-nova"); c {
 		t.Fatal("pendente com menos de 6 h não se mexe")
+	}
+	if _, _, c := estado("pendente-5h"); c {
+		t.Fatal("pendente há 5 h ainda não passou do limite de 6 h")
 	}
 	if _, resp, _ := estado("conferida-velha"); resp != "ok" {
 		t.Fatalf("linha já conferida nunca é reescrita: %q", resp)

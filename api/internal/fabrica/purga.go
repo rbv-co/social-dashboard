@@ -34,7 +34,13 @@ func (pu *Purga) Rodar(ctx context.Context) error {
 	if pu.Dir == "" {
 		return errors.New("ARQUIVOS_DIR vazio: não sei onde estão os criativos")
 	}
-	base := filepath.Join(pu.Dir, "fabrica-criativos")
+	// A pasta-base tem de existir ANTES de qualquer coisa no banco: sem ela (volume não montado) toda
+	// rodada fechada seria marcada como purgada sem ter apagado arquivo nenhum.
+	raiz, err := os.OpenRoot(filepath.Join(pu.Dir, "fabrica-criativos"))
+	if err != nil {
+		return fmt.Errorf("pasta-base ausente: volume montado? %w", err)
+	}
+	defer raiz.Close()
 	linhas, err := pu.Pool.Query(ctx, `select id::text from fabrica_campanhas
 		where purgado_em is null and (fechada_em is not null or created_at < now() - interval '30 days')`)
 	if err != nil {
@@ -44,53 +50,61 @@ func (pu *Purga) Rodar(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	objetos := 0
+	// Uma rodada com problema não trava as outras (Ruling 17): os erros se juntam e a tarefa falha
+	// visível; a rodada com erro NÃO é marcada e é tentada de novo amanhã.
+	var erros []error
+	purgadas, objetos := 0, 0
 	for _, id := range rodadas {
-		linhas, err := pu.Pool.Query(ctx, `select storage_path from fabrica_criativos
-			where campanha_id = $1::uuid and purgado_em is null and coalesce(storage_path, '') <> ''`, id)
+		n, err := pu.purgar(ctx, raiz, id)
+		objetos += n
 		if err != nil {
-			return err
+			erros = append(erros, fmt.Errorf("rodada %s: %w", id, err))
+			continue
 		}
-		caminhos, err := pgx.CollectRows(linhas, pgx.RowTo[string])
-		if err != nil {
-			return err
-		}
-		for _, c := range caminhos {
-			if err := apagar(base, c); err != nil {
-				return fmt.Errorf("rodada %s: %w", id, err)
-			}
-		}
-		objetos += len(caminhos)
-		err = pgx.BeginFunc(ctx, pu.Pool, func(tx pgx.Tx) error {
-			if _, err := tx.Exec(ctx, `update fabrica_criativos set purgado_em = now() where campanha_id = $1::uuid and purgado_em is null`, id); err != nil {
-				return err
-			}
-			_, err := tx.Exec(ctx, `update fabrica_campanhas set purgado_em = now() where id = $1::uuid`, id)
-			return err
-		})
-		if err != nil {
-			return err
-		}
+		purgadas++
 	}
-	slog.Info("fabrica-purga", "rodadas_purgadas", len(rodadas), "objetos_apagados", objetos)
-	return nil
+	slog.Info("fabrica-purga", "rodadas_purgadas", purgadas, "rodadas_com_erro", len(erros), "objetos_apagados", objetos)
+	return errors.Join(erros...)
 }
 
-// apagar remove base/c. O caminho vem do banco: nunca sai da pasta do bucket. filepath.IsLocal recusa
+// purgar apaga os arquivos de UMA rodada e só então a marca (e os criativos) como purgada, na mesma
+// transação. Um caminho recusado não impede apagar os outros arquivos da rodada, mas impede a marca.
+func (pu *Purga) purgar(ctx context.Context, raiz *os.Root, id string) (int, error) {
+	linhas, err := pu.Pool.Query(ctx, `select storage_path from fabrica_criativos
+		where campanha_id = $1::uuid and purgado_em is null and coalesce(storage_path, '') <> ''`, id)
+	if err != nil {
+		return 0, err
+	}
+	caminhos, err := pgx.CollectRows(linhas, pgx.RowTo[string])
+	if err != nil {
+		return 0, err
+	}
+	var erros []error
+	for _, c := range caminhos {
+		if err := apagar(raiz, c); err != nil {
+			erros = append(erros, err)
+		}
+	}
+	if len(erros) > 0 {
+		return len(caminhos) - len(erros), errors.Join(erros...)
+	}
+	err = pgx.BeginFunc(ctx, pu.Pool, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `update fabrica_criativos set purgado_em = now() where campanha_id = $1::uuid and purgado_em is null`, id); err != nil {
+			return err
+		}
+		_, err := tx.Exec(ctx, `update fabrica_campanhas set purgado_em = now() where id = $1::uuid`, id)
+		return err
+	})
+	return len(caminhos), err
+}
+
+// apagar remove raiz/c. O caminho vem do banco: nunca sai da pasta do bucket. filepath.IsLocal recusa
 // "..", absoluto e vazio; o NUL é recusado à parte; e os.Root recusa symlink de DIRETÓRIO que aponte
 // para fora (IsLocal só olha o texto). Arquivo que já não existe conta como apagado.
-func apagar(base, c string) error {
+func apagar(raiz *os.Root, c string) error {
 	if !filepath.IsLocal(c) || strings.ContainsRune(c, 0) {
 		return fmt.Errorf("caminho recusado %q", c)
 	}
-	raiz, err := os.OpenRoot(base)
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil // a pasta do bucket nem existe: não há o que apagar
-	}
-	if err != nil {
-		return err
-	}
-	defer raiz.Close()
 	if err := raiz.Remove(c); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
