@@ -9,6 +9,17 @@
 SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
+# ── O site vesselbrasil.com.br (nginx na VPS desde 2026-10-10; saiu da Vercel) ─────────────────────────────────
+# Publicação: a cada 5 min confere se o `main` do vessel-brasil mudou e, se mudou, publica (testes + travas do SELO,
+# release atômico, reversão automática). Em dia = silêncio. Substitui o poll de 10 min que rodava no Actions.
+# Doc: vessel-brasil/vps/LEIA-ME-VPS.txt.
+*/5 * * * * root /opt/robos/social-dashboard/coletor/vps/rodar-robo.sh publicar-o-site 15 -- /usr/local/sbin/deploy-vesselbrasil --se-mudou
+
+# Fotos do selo (certificado): busca as fotos das bolsas dos lotes novos (Zoho/Bling), commita e dá push no vessel-brasil
+# (chave de deploy COM ESCRITA só nesse repo) e manda publicar. A cada 5 min no lugar de hora em hora + `lote-novo` do banco
+# (que acordava o Actions por repository_dispatch): a maioria das rodadas não acha nada para fazer.
+2-59/5 * * * * root /opt/robos/social-dashboard/coletor/vps/rodar-robo.sh fotos-do-selo 60 -- node coletor/fotos-do-selo-do-bling.mjs
+
 # ── De hora em hora ─────────────────────────────────────────────────────────────────────────────────────────────
 # Notas dos pedidos (data da venda): janela de 7 dias, idempotente (workflow notas-dos-pedidos).
 23 * * * * root /opt/robos/social-dashboard/coletor/vps/rodar-robo.sh notas-dos-pedidos 120 -- node coletor/notas-dos-pedidos.mjs --dias=7

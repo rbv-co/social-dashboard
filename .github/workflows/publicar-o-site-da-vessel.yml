@@ -28,11 +28,9 @@ name: Publicar o site da Vessel
 # não só esta. O que este arquivo faz é tirar a publicação do caminho dela.
 
 on:
-  schedule:
-    # De 10 em 10 minutos, no minuto 7 — desencontrado da hora cheia (medido
-    # neste repositório: agendar na hora cheia atrasa de 2 a 3 horas) e dos
-    # outros robôs, que moram nos minutos 0, 5 e 12.
-    - cron: '7,17,27,37,47,57 * * * *'
+  # ⚠️ O SITE SAIU DA VERCEL EM 2026-10-10 (nginx na VPS) e quem publica é `deploy-vesselbrasil`, chamado de 5 em 5 minutos
+  # por coletor/vps/robos.cron. Este workflow só roda por disparo manual e publica na VERCEL: é a retaguarda do ROLL-BACK
+  # (DNS de volta para a Vercel). Com o DNS na VPS, rodá-lo não muda o que o público vê.
   # ⚠️ O BOTÃO NÃO É "PUBLICAR À FORÇA". Ele roda exatamente a mesma vigia, com
   # a mesma conferência de commit: serve para não esperar dez minutos quando se
   # quer ver o robô trabalhar. Clicar nele com o site já em dia não publica nada.
