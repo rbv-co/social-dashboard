@@ -41,6 +41,10 @@ create table public.notas (id serial primary key, dono uuid, texto text);
 insert into auth.users (id, email, encrypted_password, email_confirmed_at) select gen_random_uuid(), 'u' || g || '@x.com', 'hash', now() from generate_series(1, 2) g;
 insert into public.profiles select id, 'nome' from auth.users;
 insert into public.notas (dono, texto) select id, 'nota ' || g from public.profiles, generate_series(1, 20) g;
+create function public.nada() returns trigger language plpgsql as $f$ begin return new; end $f$;
+create trigger t_nada after insert on public.notas for each row execute function public.nada();
+create trigger t_off after insert on public.profiles for each row execute function public.nada();
+alter table public.profiles disable trigger t_off;   -- estado D que o alvo tem de reproduzir
 SQL
 
 # Storage de mentira (lista + download); cada requisição vai para $TMP/storage.log
@@ -88,9 +92,11 @@ while IFS= read -r u; do
 done <<URLS
 postgres://u:p@db.exemplo.com/x
 postgres://u:p@evil.com/db@localhost/x
+postgres://u:p@localhost:$PA/x
 postgres://u:p@localhost:$PA/x?host=evil.com
 postgres://u:p@localhost:58509,evil.invalid:5432/x
 postgres://u@evil.invalid:5432,x@localhost/x
+postgres://u:p@[::1]:$PA/x
 postgres://u:p@localhost:$PA/x?%68ost=evil.invalid
 postgres://u:p@localhost:$PA/x?hostaddr=192.0.2.1
 postgres://u:p@localhost:$PA/x?service=foo
@@ -101,7 +107,7 @@ dbname=x user=u@localhost
 host=evil.invalid dbname=x
 URLS
 [ ! -e "$TMP/docker-chamado" ] || falha "o docker foi chamado antes da guarda"
-passou "13 URLs hostis recusadas com saída 1 e sem tocar no docker"
+passou "15 URLs hostis (inclui localhost e [::1], só 127.0.0.1 é aceito) recusadas com saída 1 e sem tocar no docker"
 s=0; ENSAIO_SAIDA="$TMP/saida-g" ORIGEM_DATABASE_URL="$URL_O" ALVO_PORTA=$PA ALVO_DATABASE_URL="postgres://postgres:x@127.0.0.1:58499/postgres" sh "$AQUI/ensaio.sh" --sem-storage > "$TMP/g.txt" 2>&1 || s=$?
 [ "$s" = 1 ] && grep -q 'ALVO_PORTA' "$TMP/g.txt" || falha "porta da URL diferente de ALVO_PORTA deveria ser recusada (saída $s)"
 passou "porta da URL diferente de ALVO_PORTA recusada"
@@ -109,10 +115,18 @@ s=0; ENSAIO_SAIDA="$TMP/saida-g" ORIGEM_DATABASE_URL="$URL_O" sh "$AQUI/ensaio.s
 [ "$s" = 1 ] && grep -q 'SUPABASE_SERVICE_KEY' "$TMP/g.txt" || falha "sem Storage configurado e sem --sem-storage deveria recusar"
 passou "Storage sem credenciais e sem --sem-storage é recusado"
 
+echo "1b) ALVO_CONTAINER fora de ensaio-* recusado antes de qualquer docker"
+for c in postgres 'ensaio' 'meu-banco' 'ensaio-x;rm'; do
+  s=0; PATH="$TMP/shim:$PATH" ENSAIO_SAIDA="$TMP/saida-g" ORIGEM_DATABASE_URL="$URL_O" ALVO_CONTAINER="$c" sh "$AQUI/ensaio.sh" --sem-storage > "$TMP/g.txt" 2>&1 || s=$?
+  [ "$s" = 1 ] && grep -q 'ALVO_CONTAINER' "$TMP/g.txt" || falha "ALVO_CONTAINER '$c' não foi recusado (saída $s)"
+done
+[ ! -e "$TMP/docker-chamado" ] || falha "docker chamado com ALVO_CONTAINER inválido"
+passou "4 nomes recusados sem tocar no docker"
+
 echo "2) caminho feliz + dumps apagados + nada vaza"
 rodar --sem-storage
 [ "$ST" = 0 ] || { cat "$R" >&2; falha "rodada 1 saiu com $ST"; }
-for e in "1. subir" "2. dump" "3. restaurar" "4. importar" "5. conferir contagens" "5b. conferir" "6. copiar Storage .*PULADA (--sem-storage)" "volume: dump" "janela de manutenção" "ENSAIO OK" '//\*\*\*@'; do contem "$e" "$OUT/relatorio.txt"; done
+for e in "1. subir" "2. dump" "3. restaurar" "4. importar" "5. conferir contagens" "5b. conferir" "6. copiar Storage .*PULADA (--sem-storage)" "volume: dump" "JANELA de manutenção" "5c. policies/RLS/triggers.*OK" "limpeza do schema (contagens): {" "importar-usuarios: " "FKs para usuarios conferidas: [0-9]" "SEM Storage" "ENSAIO OK" '//\*\*\*@'; do contem "$e" "$OUT/relatorio.txt"; done
 sem_dump; vazou
 [ "$(stat -f %Lp "$OUT" 2>/dev/null || stat -c %a "$OUT")" = 700 ] || falha "pasta da rodada não é 700"
 passou "exit 0, relatório completo, stage 6 PULADA (--sem-storage), dump apagado, pasta 700, sem segredos"
@@ -132,7 +146,7 @@ psql "$URL_O" -X -q -c "insert into auth.users (id, email, deleted_at) values ('
 rodar --sem-storage
 [ "$ST" = 1 ] || falha "órfão deveria dar saída 1 (deu $ST)"
 contem "órfãos: 1" "$OUT/relatorio.txt"; contem "5b. conferir.*FALHOU" "$OUT/relatorio.txt"; contem "ENSAIO FALHOU" "$OUT/relatorio.txt"
-contem "janela de manutenção" "$OUT/relatorio.txt"; sem_dump
+contem "JANELA de manutenção" "$OUT/relatorio.txt"; sem_dump
 passou "saída 1, órfão contado e relatório completo mesmo com a falha"
 psql "$URL_O" -X -q -c "delete from public.profiles where nome='fantasma'; delete from auth.users where email='morto@x.com'"
 
@@ -159,10 +173,22 @@ ENV_EXTRA="PATH=$TMP/shim4:$PATH"; rodar --sem-storage
 contem "5. conferir contagens.*FALHOU" "$OUT/relatorio.txt"; contem "ERRO" "$OUT/contagens.txt"; contem "ENSAIO FALHOU" "$OUT/relatorio.txt"; nao_contem "ENSAIO OK" "$OUT/relatorio.txt"
 passou "saída 1"
 
+echo "5c) policy no alvo e trigger com estado diferente da origem => FALHOU, saída 1"
+shim shim5 "psql \"\$DATABASE_URL\" -X -q -c 'create policy p on public.notas using (true)'"
+ENV_EXTRA="PATH=$TMP/shim5:$PATH"; rodar --sem-storage
+[ "$ST" = 1 ] || { cat "$R" >&2; falha "policy no alvo deveria dar saída 1 (deu $ST)"; }
+contem "5c. policies/RLS/triggers.*FALHOU" "$OUT/relatorio.txt"; contem "o alvo tem 1 policies" "$R"; nao_contem "ENSAIO OK" "$OUT/relatorio.txt"
+shim shim6 "psql \"\$DATABASE_URL\" -X -q -c 'alter table public.notas disable trigger t_nada'"
+ENV_EXTRA="PATH=$TMP/shim6:$PATH"; rodar --sem-storage
+[ "$ST" = 1 ] || { cat "$R" >&2; falha "trigger com estado diferente deveria dar saída 1 (deu $ST)"; }
+contem "5c. policies/RLS/triggers.*FALHOU" "$OUT/relatorio.txt"; contem "notas.t_nada=O" "$OUT/triggers.diff"; contem "notas.t_nada=D" "$OUT/triggers.diff"
+contem "t_off=D" "$OUT/triggers-alvo.txt"
+passou "policy e trigger divergente reprovam; estado D da origem reproduzido no alvo"
+
 echo "6) Storage de mentira: caminho feliz (--manter), --excluir-buckets, bucket inexistente e servidor fora"
 ENV_EXTRA="SUPABASE_URL=$URL_S SUPABASE_SERVICE_KEY=$CHAVE"; rodar --manter
 [ "$ST" = 0 ] || { cat "$R" >&2; falha "Storage feliz saiu com $ST"; }
-contem "6. copiar Storage .*[0-9]s  OK" "$OUT/relatorio.txt"; contem "volume: dump .*total: 2 copiados" "$OUT/relatorio.txt"; contem "ENSAIO OK" "$OUT/relatorio.txt"; vazou
+contem "6. copiar Storage .*[0-9]s  OK" "$OUT/relatorio.txt"; contem "volume: dump .*total: 2 copiados" "$OUT/relatorio.txt"; contem "JANELA COM Storage" "$OUT/relatorio.txt"; contem "ENSAIO OK" "$OUT/relatorio.txt"; vazou
 [ "$(cat "$OUT/storage/b1/a.txt")" = hello ] && [ "$(cat "$OUT/storage/b2/a.txt")" = hello ] || falha "objetos do Storage não foram copiados"
 [ -s "$OUT/dump/completo.dump" ] && [ "$(stat -f %Lp "$OUT/dump/completo.dump" 2>/dev/null || stat -c %a "$OUT/dump/completo.dump")" = 600 ] || falha "--manter: dump ausente ou não 600"
 rm -rf "$OUT/dump" "$OUT/storage"

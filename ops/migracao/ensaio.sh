@@ -6,8 +6,8 @@
 # Ambiente: ORIGEM_DATABASE_URL (obrigatória, nunca impressa); SUPABASE_URL e SUPABASE_SERVICE_KEY
 # (obrigatórias, exceto com --sem-storage); ALVO_PORTA (padrão 58450); ALVO_DATABASE_URL (padrão: o
 # contêiner local); ALVO_CONTAINER (padrão ensaio-alvo); ENSAIO_SAIDA (padrão ops/migracao/saida).
-# Saída: 0 = tudo conferido; 1 = alguma etapa falhou, ERRO de contagem ou órfãos (o relatório diz qual);
-# 2 = uso; 3 = só divergência numérica de contagem (CONFIRA: tabela quente?), nunca "OK"; 130 = interrompido.
+# Saída: 0 = tudo conferido; 1 = variável obrigatória ausente, guarda recusou, etapa falhou, ERRO de contagem,
+# órfãos ou diferença de políticas/triggers (o relatório diz qual); 2 = opção inválida (uso); 3 = só divergência numérica de contagem (CONFIRA: tabela quente?), nunca "OK"; 130 = interrompido.
 # Com --permitir-alvo-remoto o alvo NÃO é um contêiner: ALVO_DATABASE_URL tem de ser um banco vazio.
 set -u
 # o ambiente do shell não pode redirecionar psql/pg_dump/go para outro host
@@ -25,9 +25,12 @@ while [ $# -gt 0 ]; do case "$1" in
 [ -n "${ORIGEM_DATABASE_URL:-}" ] || { echo "defina ORIGEM_DATABASE_URL (não é impresso)" >&2; exit 1; }
 PORTA=${ALVO_PORTA:-58450}; CONT=${ALVO_CONTAINER:-ensaio-alvo}
 ALVO_URL=${ALVO_DATABASE_URL:-postgres://postgres:x@127.0.0.1:$PORTA/postgres?sslmode=disable}
-# nunca aponta para produção por engano. Só se aceita URL postgres:// simples: host local (depois do
+# nunca aponta para produção por engano. Só se aceita URL postgres:// simples: host 127.0.0.1 (o contêiner só escuta nele; depois do
 # único @ da autoridade), sem lista de hosts, sem %, e na query só sslmode= (nada de host=, hostaddr=,
 # service=, nem nomes percent-encoded). A porta tem de ser a do contêiner (ALVO_PORTA).
+# o nome do contêiner é apagado com docker rm -fv: só aceita ensaio-*
+case "$CONT" in ensaio-*[!A-Za-z0-9_.-]*|ensaio-*) ;; *) echo "ALVO_CONTAINER tem de começar com ensaio- (recuso apagar '$CONT')" >&2; exit 1;; esac
+case "$CONT" in *[!A-Za-z0-9_.-]*) echo "ALVO_CONTAINER com caracteres inválidos; recuso" >&2; exit 1;; esac
 recusa() { echo "ALVO_DATABASE_URL não é local ($1); recuso (use --permitir-alvo-remoto se for de propósito)" >&2; exit 1; }
 if [ "$REMOTO" != 1 ]; then
   case "$ALVO_URL" in postgres://*|postgresql://*) ;; *) recusa "só aceito URL postgres://";; esac
@@ -36,11 +39,11 @@ if [ "$REMOTO" != 1 ]; then
   case "$AUT" in *@*@*) recusa "mais de um @";; esac
   HP=${AUT##*@}
   case "$HP" in *,*|*%*) recusa "lista de hosts ou %";; esac
-  case "$HP" in localhost|localhost:*|127.0.0.1|127.0.0.1:*|\[::1\]|\[::1\]:*) ;; *) recusa "host $HP";; esac
+  case "$HP" in 127.0.0.1|127.0.0.1:*) ;; *) recusa "host $HP";; esac
   case "$REST" in *\?*)
     set -f; IFS='&'; set -- ${REST#*\?}; unset IFS; set +f
     for p; do case "$p" in sslmode=*[!a-z-]*|sslmode=) recusa "parâmetro inválido";; sslmode=*) ;; *) recusa "só sslmode= é aceito na query";; esac; done;; esac
-  case "$HP" in \[::1\]:*) P=${HP#\[::1\]:};; \[::1\]) P=;; *:*) P=${HP#*:};; *) P=;; esac
+  case "$HP" in *:*) P=${HP#*:};; *) P=;; esac
   [ "${P:-5432}" = "$PORTA" ] || { echo "a porta da ALVO_DATABASE_URL (${P:-5432}) difere de ALVO_PORTA ($PORTA); recuso" >&2; exit 1; }
 fi
 
@@ -62,7 +65,7 @@ trap 'exit 130' INT TERM HUP
 
 oculta() { sed -E 's#postgres(ql)?://[^ "]*#<URL>#g'; }
 rel() { printf '%s\n' "$*" | tee -a "$OUT/relatorio.txt"; }
-FALHAS=""; BLOQ=""; JANELA=0; CONF=""
+FALHAS=""; BLOQ=""; JANELA=0; JANELA6=0; CONF=""
 pula() { rel "$(printf '%-30s %5s  PULADA (%s)' "$1" - "$2")"; }
 # etapa NOME MODO cmd...  MODO: bloqueia (falha trava as dependentes), depende (pulada se travado), livre
 etapa() {
@@ -71,7 +74,7 @@ etapa() {
     pula "$nome" "etapa anterior falhou"; return 1
   fi
   t0=$(date +%s); s=0; "$@" || s=$?; d=$(( $(date +%s) - t0 ))
-  case "$nome" in [2-6]*) JANELA=$((JANELA + d));; esac
+  case "$nome" in 6*) JANELA6=$d;; [2-5]*) JANELA=$((JANELA + d));; esac
   if [ $s = 0 ]; then r=OK
   elif [ $s = 3 ] && [ "$CONF" = 1 ]; then r="CONFIRA ($DIF tabelas)"
   else
@@ -96,6 +99,7 @@ sobe_alvo() {
 dump() {
   sh "$AQUI/dump-supabase.sh" "$ORIGEM_DATABASE_URL" "$OUT/dump" || return $?
   DUMP_BYTES=$(wc -c < "$OUT/dump/completo.dump" | tr -d ' ')
+  cp "$OUT/dump/limpeza.json" "$OUT/limpeza.json"   # só contagens; o dump/ é apagado no fim
 }
 restaura() { sh "$AQUI/restaurar.sh" "$ALVO_URL" "$OUT/dump"; }
 importa_usuarios() {
@@ -130,6 +134,23 @@ orfaos() {
   [ -s "$OUT/orfaos.txt" ] || { echo "conferir-orfaos não produziu saída" >&2; return 1; }
   [ "$ORF" = 0 ]
 }
+# O que o ensaio-local prova no Supabase de mentira, refeito contra a ORIGEM de verdade (somente leitura):
+# o alvo não tem policies nem RLS, e o estado (tgenabled) de cada trigger de usuário é o mesmo origem × alvo
+# (trigger desligado em produção e ligado no alvo apareceria só depois do corte).
+SQL_TRG="select c.relname || '.' || t.tgname || '=' || t.tgenabled::text from pg_trigger t join pg_class c on c.oid=t.tgrelid where c.relnamespace='public'::regnamespace and not t.tgisinternal and c.relname not in ('usuarios','sessoes','goose_db_version') order by 1"
+estrutura() {
+  O=$(printf '%s' "$ORIGEM_DATABASE_URL" | sed 's#:6543/#:5432/#'); E="$OUT/estrutura.err"
+  pol=$(psql "$ALVO_URL" -X -Atqc "select count(*) from pg_policies where schemaname='public'" 2> "$E") || { oculta < "$E" >&2; return 1; }
+  rls=$(psql "$ALVO_URL" -X -Atqc "select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relrowsecurity" 2> "$E") || { oculta < "$E" >&2; return 1; }
+  psql "$ALVO_URL" -X -Atqc "$SQL_TRG" > "$OUT/triggers-alvo.txt" 2> "$E" || { oculta < "$E" >&2; return 1; }
+  printf 'begin read only;\n%s;\ncommit;\n' "$SQL_TRG" | psql "$O" -X -Atq 2> "$E" | grep -vE '^(BEGIN|COMMIT)$' > "$OUT/triggers-origem.txt"
+  [ "$(cat "$E" | wc -c | tr -d ' ')" = 0 ] || { oculta < "$E" >&2; echo "consulta de triggers na origem falhou" >&2; return 1; }
+  s=0; diff "$OUT/triggers-origem.txt" "$OUT/triggers-alvo.txt" > "$OUT/triggers.diff" || s=1
+  TRG=$(wc -l < "$OUT/triggers-alvo.txt" | tr -d ' ')
+  [ "$pol" = 0 ] || { echo "o alvo tem $pol policies (deveria ter 0)" >&2; s=1; }
+  [ "$rls" = 0 ] || { echo "o alvo tem $rls tabelas com RLS ligada (deveria ter 0)" >&2; s=1; }
+  [ $s = 0 ] || { echo "triggers origem (<) × alvo (>):" >&2; cat "$OUT/triggers.diff" >&2; return 1; }
+}
 storage() {
   s=0; node "$AQUI/copiar-storage.mjs" --destino "$OUT/storage" ${EXCL:+--excluir "$EXCL"} > "$OUT/storage.txt" 2>&1 || s=$?
   cat "$OUT/storage.txt"
@@ -137,7 +158,7 @@ storage() {
   grep -q '^total:' "$OUT/storage.txt" || { echo "copiar-storage terminou sem a linha de total" >&2; return 1; }
 }
 
-DUMP_BYTES=""; DIF="?"; ORF="?"
+DUMP_BYTES=""; DIF="?"; ORF="?"; TRG="?"
 rel "ensaio $(date '+%F %T'): origem somente leitura, alvo $(printf '%s' "$ALVO_URL" | sed -E 's#//.*@#//***@#'), storage: $([ "$STORAGE" = 1 ] && echo "sim${EXCL:+ (excluindo $EXCL)}" || echo não)"
 # esquenta o cache do Go (sem cronometrar) para a compilação não entrar nas etapas 3 e 4
 ( cd "$RAIZ/api" && go build -o /dev/null ./cmd/api ) || { echo "go build falhou" >&2; exit 1; }
@@ -148,14 +169,24 @@ etapa "4. importar usuários"       depende  importa_usuarios; s4=$?
 etapa "5. conferir contagens"      depende  contagens
 if [ $s4 = 0 ] || [ -n "$BLOQ" ]; then etapa "5b. conferir órfãos (FKs)" depende orfaos
 else pula "5b. conferir órfãos (FKs)" "importar usuários falhou"; fi
+etapa "5c. policies/RLS/triggers" depende estrutura
 if [ "$STORAGE" = 1 ]; then etapa "6. copiar Storage" livre storage; else pula "6. copiar Storage" "--sem-storage"; fi
 
 MB=$(awk -v b="${DUMP_BYTES:-0}" 'BEGIN { printf "%.1f", b / 1e6 }')
 rel "----"
 rel "volume: dump ${MB} MB; storage: $(grep '^total:' "$OUT/storage.txt" 2>/dev/null || echo 'n/d (pulado ou falhou)')"
+rel "limpeza do schema (contagens): $(cat "$OUT/limpeza.json" 2>/dev/null || echo n/d)"
+rel "importar-usuarios: $(grep 'usuários importados' "$OUT/importar.log" 2>/dev/null | sed -E 's/^.*msg=//' || true)"
 rel "tabelas com contagem diferente (DIFERE): $DIF (ver $OUT/contagens.txt; tabela quente pode crescer durante o dump)"
-rel "FKs para usuarios com órfãos: $ORF (ver $OUT/orfaos.txt; resolver antes do corte)"
-rel "janela de manutenção estimada (soma das etapas 2 a 6): ${JANELA}s; relatório em $OUT/relatorio.txt"
+rel "FKs para usuarios conferidas: $(wc -l < "$OUT/orfaos.txt" 2>/dev/null | tr -d ' ') (inclui as de sessoes; em produção o levantamento espera 23 = 21 + 2 em sessoes); com órfãos: $ORF (ver $OUT/orfaos.txt; resolver antes do corte)"
+rel "triggers de usuário comparados origem × alvo: $TRG (diferenças em $OUT/triggers.diff)"
+if [ "$STORAGE" = 1 ]; then
+  rel "JANELA de manutenção estimada SEM Storage (etapas 2 a 5c): ${JANELA}s"
+  rel "JANELA COM Storage (etapas 2 a 6): $((JANELA + JANELA6))s (no corte o Storage é rsync incremental, spec §7 e §9; aqui a etapa 6 é a cópia completa)"
+else
+  rel "JANELA de manutenção estimada SEM Storage (etapas 2 a 5c): ${JANELA}s; com Storage: n/d (--sem-storage)"
+fi
+rel "relatório em $OUT/relatorio.txt"
 if [ -n "$FALHAS" ]; then
   rel "ENSAIO FALHOU, etapas com problema:$FALHAS"; exit 1
 fi

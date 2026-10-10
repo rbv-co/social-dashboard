@@ -15,4 +15,4 @@ else
   REDE=--network=host
 fi
 # shellcheck disable=SC2086
-exec docker run --rm -i $REDE -v "$PWD:/work" -w /work postgres:17 "$@"
+exec docker run --rm -i $REDE postgres:17 "$@"

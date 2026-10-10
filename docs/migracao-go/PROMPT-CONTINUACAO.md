@@ -58,45 +58,19 @@ Memória do assistente (se disponível): `project-saida-do-supabase.md`, `projec
 |---|---|---|
 | `/Users/gabrielgertrudes/Projetos/Trabalho/lavessel/social-dashboard` (checkout principal) | `main` local | À frente de `origin/main` com o merge `ead64b2d`; arquivos sujos de terceiros. **Não mexer.** Ao mesclar o PR #333 no GitHub, o `main` local pode divergir (principalmente se for squash): combinar com o dono antes de qualquer `pull`/`reset`. |
 | `.claude/worktrees/levantamento-ro` | `feat/api-go-nucleo` (= PR #333, head `e89aad93`) | Limpo. Tem os CSVs do levantamento (ignorados pelo git). |
-| `.claude/worktrees/api-go-pg` | `feat/api-go-postgres-ensaio` (empilhada sobre `feat/api-go-nucleo`; **não enviada ao GitHub**) | Commits do Plano 2: `64064b6e` (plano), `aa372b58` (Task 1), `ef3f08d2` (Task 2). **Edições NÃO commitadas e NÃO verificadas** em `api/internal/banco/compat_test.go` e `usuario_test.go` (correção a meio caminho, interrompida): conferir com `git diff`; ou terminar conforme o item abaixo ou descartar com `git checkout -- <arquivos>`. |
+| `.claude/worktrees/api-go-pg` | `feat/api-go-postgres-ensaio` (empilhada sobre `feat/api-go-nucleo`; **não enviada ao GitHub**) | As 7 tasks do Plano 2 estão implementadas e revisadas, com onda final de correção; árvore limpa. |
 
 Ledger do Plano 2 (briefs, relatórios e `progress.md` com todos os `Ruling:`): `.claude/worktrees/api-go-pg/.superpowers/sdd/2026-10-09-api-go-plano-2-postgres-e-ensaio/` (ignorado pelo git). Scripts da skill: `/Users/gabrielgertrudes/.claude/plugins/cache/claude-plugins-official/superpowers/6.4.1/skills/subagent-driven-development/scripts/` (`sdd-workspace`, `task-brief`, `review-package`). Se o ledger sumir, recupere pelo `git log`.
 
 ## 6. O que falta (em ordem)
 
-**A. Terminar o Plano 2 (SDD, worktree `api-go-pg`)**
-1. **Tasks 1+2** (compat `auth.uid()`/`extensions`/papéis + `banco.ComUsuario`): implementadas e revisadas; falta a **rodada 1 de correção**: os testes de não-vazamento do `auth.uid()` precisam usar **a mesma conexão** nas duas fases (hoje usam o pool e podem passar sem exercitar o quirk do GUC `''` pós-transação), assertando também `current_setting('app.usuario_id', true) = ''` e `auth.uid()` ainda nulo; provar (sem commitar) que o teste falha sem o `nullif`. Depois, re-revisão escopada e fechar no ledger. Minors adiados estão no ledger.
-2. **Tasks 3–7**, nesta ordem: 3 `limpar-dump.mjs` (parser de SQL com `$$`, remove policies/RLS/grants/extensões do Supabase, **reescreve FKs para `public.usuarios`**) → 4 dump/restore/conferência + subcomando `api migrar` + `ensaio-local.sh` (prova de ponta a ponta com um "Supabase de mentira" no Docker; no macOS ajustar rede do Docker/`host.docker.internal`) → 5 Postgres da API na VPS (compose, backup, teste de restauração; **o passo de aplicar na VPS só com ok do dono**) → 6 `copiar-storage.mjs` → 7 `ensaio.sh` (cronometrado, alvo local obrigatório).
-3. **Pré-voo já feito** para o Plano 2 (tabela no ledger). Modelos usados: implementadores `sonnet`; revisores `sonnet`, `opus` para parser de SQL e scripts que tocam produção; revisão final `opus`.
-4. **Revisão final do branch**, onda única de correção, re-revisão escopada, depois **ensaio real** (Task 7 Step 4: leitura em produção + alvo local; dumps têm dado pessoal e segredos → apagar ao fim) e relatório de durações (a janela de manutenção do corte).
-5. **Abrir PR do Plano 2** (base `feat/api-go-nucleo` empilhado, ou `main` depois do #333) — **push/PR só depois do ok** ou conforme a delegação atual (PR é o fluxo do repo; não fazer merge).
-
-**B. Planos 3–8 (escrever e executar depois, na mesma sequência spec→plano→SDD)**
-- **3** Edges que o core já cobre: `bling-proxy`, `meta-proxy`, `estoque-do-site` (já desligado), `enviar-push-vendas`, coletores Meta; webhooks Shopify/Chatwoot (`receber-webhook-*`) → core ou Go com HMAC.
-- **4** Worker e crons: 24 jobs reais; decidir `vessel-rd-station`; **reescrever o workflow `guardar-copia-do-banco`**; robôs que já falham muito (decidir reproduzir × corrigir); `conferido_em` em `robos_execucoes`; namespace de advisory lock (26 funções já usam `pg_advisory`).
-- **5** Domínios (`frota`, `acessos`, `conteudo`, `admin`, `patrimonio`, `meta-ads`, `gestao-trafego`, `autenticidade`, `comercial`): usar `catalogo-policies-producao.json` e a triagem das 308 funções (lógica de negócio × consulta pura × trigger de integridade). Entra aqui "entrar como outro usuário", convites/reset de senha, regra de canais por loja.
-- **6** Zoho/Microsoft (`acessos-*`, `enviar-pdf-checklist`, `vessel-espelhar-lista`, `vessel-log-de-carocos`, `vessel-triagem-da-vaga`), Storage (URLs assinadas), rotas públicas da Vessel (≈20 RPCs chamadas por `vessel-brasil` com chave anon, `vessel-conta`, `vessel-registrar-garantia`, `vessel-lembretes`), CORS/subdomínio para `vesselbrasil.com.br`; decidir como clientes da Vessel ficam fora do login do painel (`usuarios` ainda não tem tipo de conta).
-- **7** Front (trocar `supabase-js` por cliente da API: ~347 `.from`, 43 `.rpc`, 39 `functions.invoke`), `coletor/` e 29 workflows do GitHub Actions, consumidores externos (tema Shopify `capturacontato.liquid`, workflow n8n `OWv78JhWKGS5x7br`, PDV `pecas-origem.service.ts`, `vessel-brasil`).
-- **8** Virada e rollback: congelar o Supabase em somente leitura, dump final, restore, trocar URLs/segredos/build, observação ativa; Supabase intacto 14 dias; dump horário do Postgres novo nas primeiras 24 h; **cancelamento do plano só com ok explícito**. Pós-corte: todos os 26 usuários precisam entrar de novo (sessões do GoTrue não migram), sem trocar senha.
-
-## 7. Decisões pendentes do dono (pergunte quando chegar a hora, uma por vez)
-- Migrar ou regenerar os buckets `ig-cache` e `fotos-modelo` (~590 MB, caches).
-- `vessel-rd-station`: portar para o worker ou descartar.
-- Aplicar o Postgres na VPS (Task 5 do Plano 2) — ok explícito para `ssh op` com escrita.
-- Onde fica o código Go (assumido `api/` no repo `social-dashboard`).
-- `sqlc` (spec §3.1) ainda não adotado (SQL cru com `pgx`): decidir antes dos planos de domínio.
-- Quando fazer push/PR do que estiver pronto e quando mesclar o PR #333.
-
-## 8. Armadilhas já pagas (não repetir)
-- Portas **55432/55433 do host estão ocupadas** por outras sessões: use `make -C api teste PG_PORTA=58432`.
-- Teste de banco que **pula** (sem `TEST_DATABASE_URL`) **não é** aprovação: conferir contagem de executados × pulados.
-- `npm run test:ci` tem **49 falhas pré-existentes** neste ambiente (falta `.env`), idênticas com e sem este trabalho; use `node --test <arquivos>` ao verificar o que você mudou (passar **diretórios** ao `node --test` falha no Node 22).
-- `go.mod` ficou em `go 1.26.0` (uma dependência exige).
-- O ruling de "igualar o tempo de login" gerou uma falha crítica (senha "x" entrava em conta sem senha); foi corrigida. Em autenticação, sempre testar também o caminho "senha fixa/conhecida".
+**A. Fechar o Plano 2 (worktree `api-go-pg`, branch `feat/api-go-postgres-ensaio`)**
+1. **Feito:** Tasks 1 a 7 (compat/`ComUsuario`, `limpar-dump.mjs`, dump/restore/conferência + `api migrar` + `ensaio-local.sh`, Postgres da API na VPS em `ops/vps/api-db`, `copiar-storage.mjs`, `ensaio.sh` com `ensaio.test.sh`), todas revisadas; ledger em `.claude/worktrees/api-go-pg/.superpowers/sdd/2026-10-09-api-go-plano-2-postgres-e-ensaio/` (ignorado pelo git; `progress.md` tem os `Ruling:`).
+2. **Falta:** (a) **ensaio real** (Task 7 Step 4), rodado pelo controlador: leitura em produção, alvo local; dumps têm dado pessoal e segredos e são apagados ao fim; anexar o relatório de durações (a janela de manutenção); ig-cache/fotos-modelo (~590 MB) ficam fora ou dentro por decisão do dono. (b) **Abrir o PR** (base `feat/api-go-nucleo`, ou `main` depois do #333); push/PR só com o ok da delegação atual; sem merge. (c) **Aplicar o Postgres na VPS só com ok do dono.** (d) **Planos 3 a 8** (edges do core, worker e crons, domínios, Zoho/Microsoft, front, virada e rollback).
 - Revisores acharam bugs reais em todas as rodadas; **não pule a revisão por tarefa nem a re-revisão escopada**.
 - Ao mexer em chaves de segurança do levantamento (`levantar.sh`), manter o `begin read only` e o teste `docs/migracao-go/levantamento.test.mjs`.
 
 ## 9. Primeiro passo sugerido
-1. Entre em `.claude/worktrees/api-go-pg`, rode `git status` e `git diff`, decida sobre as edições parciais e **retome a rodada de correção das Tasks 1+2** (item 6.A.1).
-2. Releia o ledger e siga as Tasks 3–7 pelo SDD.
+1. Entre em `.claude/worktrees/api-go-pg`, rode `git status` e `git log --oneline` (árvore limpa; 7 tasks do Plano 2 prontas).
+2. Rode o ensaio real com o controlador (item 6.A.2a) e depois abra o PR conforme a delegação.
 3. Reporte ao dono, em português, o que mudou e o que depende dele, sem repetir o que já está neste prompt.

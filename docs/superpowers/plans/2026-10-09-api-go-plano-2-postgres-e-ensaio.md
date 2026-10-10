@@ -608,7 +608,7 @@ git commit -m "feat(migracao-go): limpeza do dump do Supabase (sem policies, RLS
 - Consumes: `api/internal/banco/compat/compat.sql` (Task 1), `ops/migracao/limpar-dump.mjs` (Task 3).
 - Produces (linha de comando):
   - `pg17.sh <comando> [args...]`: executa o comando (`pg_dump`, `pg_restore`, `psql`) numa imagem `postgres:17`, com a pasta atual montada em `/work`.
-  - `dump-supabase.sh ORIGEM_DATABASE_URL SAIDA_DIR`: grava `SAIDA_DIR/schema.sql` (já limpo) e `SAIDA_DIR/dados.dump` (formato custom) e imprime as contagens de remoção.
+  - `dump-supabase.sh ORIGEM_DATABASE_URL SAIDA_DIR`: grava `SAIDA_DIR/schema.sql` (já limpo) e `SAIDA_DIR/completo.dump` (formato custom) e imprime as contagens de remoção.
   - `restaurar.sh ALVO_DATABASE_URL DUMP_DIR`: exige o alvo **vazio**; aplica compat, roda `go run ./cmd/api migrar` (cria `usuarios`, `sessoes`, `goose_db_version`), carrega o schema limpo e os dados.
   - `conferir-contagens.sh ORIGEM_URL ALVO_URL`: itera as tabelas **da origem** e imprime `tabela origem destino`; sai com 1 se houver diferença (veja Review Focus 4). O alvo tem tabelas a mais (`usuarios`, `sessoes`, `goose_db_version`) que não entram.
   - `conferir-orfaos.sh ALVO_URL`: para cada FK que aponta para `public.usuarios`, conta linhas órfãs; imprime `tabela.coluna n` e sai com 1 se algum `n` for maior que 0 (veja Review Focus 9).
@@ -652,9 +652,9 @@ echo "limpeza: $(cat "$SAIDA/limpeza.json")"
 
 # dados: formato custom (restauração seletiva e paralela); transação REPEATABLE READ somente leitura
 sh "$AQUI/pg17.sh" pg_dump "$ORIGEM" --schema=public --data-only --no-owner --no-privileges -Fc \
-  > "$SAIDA/dados.dump" 2> "$SAIDA/dados.erro" || { oculta < "$SAIDA/dados.erro" >&2; echo "pg_dump (dados) falhou" >&2; exit 1; }
+  > "$SAIDA/completo.dump" 2> "$SAIDA/dados.erro" || { oculta < "$SAIDA/dados.erro" >&2; echo "pg_dump (dados) falhou" >&2; exit 1; }
 rm -f "$SAIDA/schema.erro" "$SAIDA/dados.erro"
-echo "dump gravado em $SAIDA (schema.sql, dados.dump)"
+echo "dump gravado em $SAIDA (schema.sql, completo.dump)"
 ```
 
 - [ ] **Step 2: `restaurar.sh` e `conferir-contagens.sh`**
@@ -684,7 +684,7 @@ psql "$ALVO" -X -q -v ON_ERROR_STOP=1 -f "$RAIZ/api/internal/banco/compat/compat
 PGOPTIONS='-c check_function_bodies=off' psql "$ALVO" -X -q -v ON_ERROR_STOP=1 -f "$DUMP/schema.sql" > /dev/null
 echo "schema restaurado"
 # dados com triggers desligados (não dispara regra de negócio, trilha nem checagem de FK); precisa de superusuário
-sh "$AQUI/pg17.sh" pg_restore --data-only --disable-triggers --no-owner --exit-on-error -d "$ALVO" "$DUMP/dados.dump"
+sh "$AQUI/pg17.sh" pg_restore --data-only --disable-triggers --no-owner --exit-on-error -d "$ALVO" "$DUMP/completo.dump"
 psql "$ALVO" -X -q -c "analyze" > /dev/null
 echo "dados restaurados (rode importar-usuarios e conferir-orfaos.sh em seguida)"
 ```
@@ -1183,7 +1183,7 @@ esac
 OUT="$AQUI/saida/ensaio-$(date +%Y%m%d-%H%M)"; mkdir -p "$OUT"; chmod 700 "$OUT"
 rel() { printf '%s\n' "$*" | tee -a "$OUT/relatorio.txt"; }
 etapa() { T0=$(date +%s); NOME=$1; shift; "$@"; rel "$(printf '%-34s %5ss' "$NOME" "$(( $(date +%s) - T0 ))")"; }
-limpa() { docker rm -f ensaio-alvo >/dev/null 2>&1 || true; [ "$MANTER" = 1 ] || rm -f "$OUT"/dump/schema-bruto.sql "$OUT"/dump/schema.sql "$OUT"/dump/dados.dump; }
+limpa() { docker rm -f ensaio-alvo >/dev/null 2>&1 || true; [ "$MANTER" = 1 ] || rm -f "$OUT"/dump/schema-bruto.sql "$OUT"/dump/schema.sql "$OUT"/dump/completo.dump; }
 trap limpa EXIT INT TERM
 
 sobe_alvo() {
