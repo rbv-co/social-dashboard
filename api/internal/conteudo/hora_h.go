@@ -1,0 +1,164 @@
+package conteudo
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rbv-co/social-dashboard/api/internal/webpush"
+	"github.com/rbv-co/social-dashboard/api/internal/worker"
+)
+
+// HoraH porta supabase/functions/conteudo-hora-h (pg_cron */5, robô 'conteudo-hora-h'): reivindica as
+// peças cuja hora chegou (conteudo_reivindicar_hora_h: UPDATE ... RETURNING no banco, então duas
+// execuções nunca avisam a mesma peça) e manda o push a quem pode publicar. A publicação automática
+// da edge NÃO é portada: está desligada (ESCOPOS_DE_PUBLICACAO_LIBERADOS = false, sem App Review).
+type HoraH struct {
+	Pool  *pgxpool.Pool
+	VAPID webpush.VAPID
+	HTTP  *http.Client     // serviço de push; nil = o cliente seguro do webpush
+	Agora func() time.Time // nil = time.Now
+}
+
+func (h *HoraH) Tarefa() worker.Tarefa {
+	return worker.Tarefa{Nome: "conteudo-hora-h", Agenda: "*/5 * * * *", Limite: 2 * time.Minute, Executar: h.Rodar}
+}
+
+// toleranciaHoraH: peça mais velha que isto é reivindicada (não fica presa) mas não gera aviso
+// (aviso-de-conteudo.js: HORAS_DE_TOLERANCIA = 12).
+const toleranciaHoraH = 12 * time.Hour
+
+var formatos = map[string]string{"feed": "Post do feed", "carrossel": "Carrossel", "reels": "Reels", "stories": "Story"}
+
+type pecaDaHora struct {
+	id, accountID, titulo, formato, conta string
+	publicarEm                            *time.Time
+	responsavel                           string
+}
+
+// avisoDePeca = montarAvisoDePeca (aviso-de-conteudo.js).
+func avisoDePeca(p pecaDaHora) []byte {
+	titulo := strings.TrimSpace(p.titulo)
+	if titulo == "" {
+		titulo = "Peça sem título"
+	}
+	formato := formatos[p.formato]
+	if formato == "" {
+		formato = "Publicação"
+	}
+	partes := []string{formato}
+	if marca := strings.TrimSpace(p.conta); marca != "" {
+		partes = append(partes, marca)
+	}
+	partes = append(partes, "legenda pronta para copiar")
+	b, _ := json.Marshal(struct {
+		Title string `json:"title"`
+		Body  string `json:"body"`
+		Tag   string `json:"tag"` // por peça: o service worker usa renotify, tag repetida apagaria o aviso anterior
+		URL   string `json:"url"`
+	}{"Hora de publicar: " + titulo, strings.Join(partes, " · "), "conteudo-" + p.id, "/conteudo/peca/" + p.id})
+	return b
+}
+
+func (h *HoraH) Rodar(ctx context.Context) error {
+	// VAPID errado falha ANTES de reivindicar: senão as peças seriam marcadas e nunca avisadas.
+	if _, err := webpush.ValidarVAPID(h.VAPID); err != nil {
+		return err
+	}
+	agora := time.Now
+	if h.Agora != nil {
+		agora = h.Agora
+	}
+	linhas, err := h.Pool.Query(ctx, `select c.id::text, c.account_id::text, coalesce(c.titulo, ''), coalesce(c.formato, ''),
+			coalesce(a.name, ''), c.publicar_em, coalesce(c.responsavel::text, '')
+		  from conteudo_reivindicar_hora_h() c left join accounts a on a.id = c.account_id`)
+	if err != nil {
+		return fmt.Errorf("falha_ao_reivindicar: %w", err)
+	}
+	pecas, err := pgx.CollectRows(linhas, func(r pgx.CollectableRow) (p pecaDaHora, err error) {
+		return p, r.Scan(&p.id, &p.accountID, &p.titulo, &p.formato, &p.conta, &p.publicarEm, &p.responsavel)
+	})
+	if err != nil {
+		return fmt.Errorf("falha_ao_reivindicar: %w", err)
+	}
+	if len(pecas) == 0 {
+		return nil
+	}
+	evento := func(id, detalhe string) error {
+		_, err := h.Pool.Exec(ctx, `insert into conteudo_eventos (peca_id, acao, detalhe) values ($1::uuid, 'avisou', $2::text)`, id, detalhe)
+		return err
+	}
+	var total webpush.Resultado
+	for _, p := range pecas {
+		if p.publicarEm == nil || agora().Sub(*p.publicarEm) > toleranciaHoraH {
+			if err := evento(p.id, "Passou mais de 12 horas do horário marcado — não avisei para não encher o celular de aviso velho."); err != nil {
+				return err
+			}
+			continue
+		}
+		alvos, err := alvosDoAviso(ctx, h.Pool, p.responsavel)
+		if err != nil {
+			return err
+		}
+		if len(alvos) == 0 { // a peça já foi reivindicada: o motivo fica na trilha
+			detalhe := "Chegou a hora, mas ninguém tem o aviso de conteúdo ligado (Administração › Usuários)."
+			if p.responsavel != "" {
+				detalhe = "Chegou a hora, mas quem é responsável por esta peça está com o aviso de conteúdo desligado (Administração › Usuários)."
+			}
+			if err := evento(p.id, detalhe); err != nil {
+				return err
+			}
+			continue
+		}
+		r, err := webpush.Entregar(ctx, h.Pool, h.HTTP, alvos, avisoDePeca(p), h.VAPID, "conteudo-hora-h:"+p.id)
+		if err != nil {
+			return err
+		}
+		total.Enviados += r.Enviados
+		total.Podados += r.Podados
+		total.Falhas += r.Falhas
+		if err := evento(p.id, fmt.Sprintf("Aviso enviado para %d aparelho(s).", r.Enviados+r.Repetidos)); err != nil {
+			return err
+		}
+	}
+	slog.Info("conteudo-hora-h", "pecas", len(pecas), "enviados", total.Enviados, "podados", total.Podados, "falhas", total.Falhas)
+	if total.Enviados == 0 && total.Falhas > 0 {
+		return fmt.Errorf("nenhum_push_entregue: %d falhas", total.Falhas)
+	}
+	return nil
+}
+
+// alvosDoAviso (aviso-de-conteudo.js): quer o tipo 'conteudo' E pode abrir a ferramenta (admin,
+// superadmin ou 'conteudo' em features). Com responsável, o aviso é SÓ dele (vazio se ele desligou).
+func alvosDoAviso(ctx context.Context, p *pgxpool.Pool, responsavel string) ([]webpush.Destino, error) {
+	querem, err := webpush.Destinatarios(ctx, p, "conteudo", responsavel)
+	if err != nil || len(querem) == 0 {
+		return nil, err
+	}
+	linhas, err := p.Query(ctx, `select id::text from profiles
+		where coalesce(role::text, '') = 'admin' or coalesce(is_superadmin, false) or 'conteudo' = any(coalesce(features, '{}'::text[]))`)
+	if err != nil {
+		return nil, err
+	}
+	ids, err := pgx.CollectRows(linhas, pgx.RowTo[string])
+	if err != nil {
+		return nil, err
+	}
+	podem := map[string]bool{}
+	for _, id := range ids {
+		podem[id] = true
+	}
+	var out []webpush.Destino
+	for _, d := range querem {
+		if podem[d.UserID] {
+			out = append(out, d)
+		}
+	}
+	return out, nil
+}

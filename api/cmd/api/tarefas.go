@@ -6,6 +6,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rbv-co/social-dashboard/api/internal/comercial"
 	"github.com/rbv-co/social-dashboard/api/internal/config"
+	"github.com/rbv-co/social-dashboard/api/internal/conteudo"
 	"github.com/rbv-co/social-dashboard/api/internal/core"
 	"github.com/rbv-co/social-dashboard/api/internal/fabrica"
 	"github.com/rbv-co/social-dashboard/api/internal/frota"
@@ -30,6 +31,7 @@ func tarefas(p *pgxpool.Pool, cfg config.Config, ag *worker.Agendador) []worker.
 		(&fabrica.Purga{Pool: p, Dir: cfg.ArquivosDir}).Tarefa())
 	ts = append(ts, (&meta.PushSaldo{Pool: p, Core: cli, VAPID: vapid(cfg)}).Tarefa())
 	ts = append(ts, (&frota.PushFrota{Pool: p, VAPID: vapid(cfg)}).Tarefa())
+	ts = append(ts, (&conteudo.HoraH{Pool: p, VAPID: vapid(cfg)}).Tarefa(), (&conteudo.Espelho{Pool: p, Core: cli}).Tarefa())
 	return ts
 }
 

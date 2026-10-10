@@ -37,6 +37,9 @@ var producao = map[string]string{
 	"enviar-push-saldo-08h": "0 11 * * *",
 	// Task 4
 	"enviar-push-frota": "30 10 * * 1-5",
+	// Task 5
+	"conteudo-hora-h":  "*/5 * * * *",
+	"conteudo-espelho": "*/30 * * * *",
 }
 
 func TestTarefasDeProducao(t *testing.T) {
