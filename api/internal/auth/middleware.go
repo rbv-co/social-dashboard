@@ -75,3 +75,19 @@ func ExigirPermissao(recurso, acao string) func(http.Handler) http.Handler {
 		})
 	}
 }
+
+// ExigirModulo deve vir DEPOIS de Exigir: passa quem tem QUALQUER um dos módulos (PodeModulo).
+func ExigirModulo(modulos ...string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			a := AtorDoContexto(r.Context())
+			for _, m := range modulos {
+				if a.PodeModulo(m) {
+					next.ServeHTTP(w, r)
+					return
+				}
+			}
+			erroJSON(w, http.StatusForbidden, "sem_permissao")
+		})
+	}
+}
