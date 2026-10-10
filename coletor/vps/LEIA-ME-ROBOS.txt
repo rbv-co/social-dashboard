@@ -29,6 +29,10 @@ OPERAÇÃO
                      ⚠️ Depende da sessão do WhatsApp da Evolution estar aberta: `avisar-whatsapp.py --verificar` (não envia
                      nada). Em 2026-10-10 ela estava `close` (reconectar = ler o QR de novo). Sessão fechada = aviso não chega,
                      mas a falha continua no log e na marca .falhou.
+- 2º canal (painel):  toda rodada (ok ou falha) também vira uma linha em `robos_execucoes` do Supabase (precisa de
+                     SUPABASE_URL e SUPABASE_SERVICE_KEY em /etc/robos.env). O painel de saúde da central (`robos_saude`) compara
+                     com o teto de `robos_esperados` (migration 2026-10-10-robos-da-vps-no-painel-de-saude.sql): robô novo =
+                     uma linha lá. Não depende do WhatsApp. Rodada pulada por sobreposição não grava nada.
 - Rodada pulada:     "pulada: a rodada anterior ainda está rodando" no log. No Actions a rodada entrava na fila.
 - Voltar ao Actions: o workflow continua existindo (disparo manual). Para voltar a agendar por lá, reponha o `schedule:`
                      no yml (git revert do PR que o tirou) e apague a linha do robô em /etc/cron.d/robos-social-dashboard.
