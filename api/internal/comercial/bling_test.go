@@ -139,7 +139,7 @@ func TestCaminhosPermitidos(t *testing.T) {
 		}
 	}
 	for _, mau := range []string{"contatos", "contatos/1", "financeiro", "contas/pagar", "contas/receber", "oauth/token",
-		"usuarios", "notas", "estoques", "estoques/saldos/1", "pedidos", "pedidos/compras", "depositos/1",
+		"usuarios", "notas", "estoques", "estoques/saldos/1", "pedidos", "pedidos/compras", "depositos/1", "depositos/1/saldos", "depositos/../contatos",
 		"produtos/../oauth/token", "produtos/..%2Foauth", "../financeiro", "depositos ", " depositos", "depositos/", "/produtos"} {
 		if permitido(mau) {
 			t.Errorf("caminho perigoso ficou ABERTO: %q", mau)
@@ -157,20 +157,24 @@ func TestBlingProxyAutorizacao(t *testing.T) {
 	casos := []struct {
 		nome, token, corpo string
 		quer               int
+		texto              string
 	}{
-		{"sem sessão", "", `{"endpoint":"produtos"}`, 401},
-		{"fora da lista", a.tokens[uVendas], `{"endpoint":"contatos"}`, 403},
-		{"fuga de caminho", a.tokens[uVendas], `{"endpoint":"produtos/../oauth/token"}`, 403},
-		{"sem endpoint", a.tokens[uVendas], `{}`, 400},
-		{"corpo não é JSON", a.tokens[uVendas], `xx`, 400},
-		{"sem sales/gestor", a.tokens[uNada], `{"endpoint":"produtos"}`, 403},
-		{"autenticidade só produto: produtos", a.tokens[uAutent], `{"endpoint":"produtos/1"}`, 200},
-		{"autenticidade só produto: pedidos", a.tokens[uAutent], `{"endpoint":"pedidos/vendas"}`, 403},
-		{"vendas pode pedidos", a.tokens[uVendas], `{"endpoint":"pedidos/vendas"}`, 200},
+		{"sem sessão", "", `{"endpoint":"produtos"}`, 401, ""},
+		{"fora da lista", a.tokens[uVendas], `{"endpoint":"contatos"}`, 403, "endpoint nao permitido"},
+		{"fuga de caminho", a.tokens[uVendas], `{"endpoint":"produtos/../oauth/token"}`, 403, "endpoint nao permitido"},
+		{"lista antes do portão", a.tokens[uNada], `{"endpoint":"contatos"}`, 403, "endpoint nao permitido"},
+		{"sem endpoint", a.tokens[uVendas], `{}`, 400, "endpoint required"},
+		{"corpo não é JSON", a.tokens[uVendas], `xx`, 400, "endpoint required"},
+		{"sem sales/gestor", a.tokens[uNada], `{"endpoint":"produtos"}`, 403, "sem permissao"},
+		{"autenticidade só produto: produtos", a.tokens[uAutent], `{"endpoint":"produtos/1"}`, 200, ""},
+		{"autenticidade só produto: pedidos", a.tokens[uAutent], `{"endpoint":"pedidos/vendas"}`, 403, "sem permissao"},
+		{"vendas pode pedidos", a.tokens[uVendas], `{"endpoint":"pedidos/vendas"}`, 200, ""},
 	}
 	for _, c := range casos {
 		if w := a.post(c.token, c.corpo); w.Code != c.quer {
 			t.Errorf("%s: %d %s, esperava %d", c.nome, w.Code, w.Body, c.quer)
+		} else if c.texto != "" && strings.TrimSpace(w.Body.String()) != `{"error":"`+c.texto+`"}` {
+			t.Errorf("%s: corpo %s, esperava erro %q", c.nome, w.Body, c.texto)
 		}
 	}
 	if a.core.n() != 2 {
@@ -379,5 +383,81 @@ func TestBlingProxyCaminhosComLixoNaoChegamAoCore(t *testing.T) {
 	}
 	if a.core.n() != 0 {
 		t.Fatalf("core chamado %d vezes", a.core.n())
+	}
+}
+
+func TestBlingProxyIdLojaDaPessoaVenceOParametro(t *testing.T) {
+	a := montar(t, ok200(`{"data":[{"id":1,"loja":{"id":205657609}}]}`))
+	for _, corpo := range []string{
+		`{"endpoint":"pedidos/vendas","params":{"idLoja":205834140}}`, // tenta a loja dos outros
+		`{"endpoint":"pedidos/vendas","params":{"idLoja":[205834140,1]}}`,
+		`{"endpoint":"pedidos/vendas"}`,
+	} {
+		if w := a.post(a.tokens[uLimitada], corpo); w.Code != 200 {
+			t.Fatalf("%s: %d %s", corpo, w.Code, w.Body)
+		}
+		if q := a.core.pedidos[a.core.n()-1].Query; q["idLoja"] != "205657609" {
+			t.Errorf("%s: o core recebeu idLoja=%v, esperava a loja da própria pessoa", corpo, q["idLoja"])
+		}
+	}
+}
+
+func TestBlingProxyOrigemDoCore(t *testing.T) {
+	for _, c := range []struct {
+		nome   string
+		status int
+		origem string
+		quer   int
+	}{
+		{"403 sem origem", 403, "", 502},
+		{"401 sem origem", 401, "", 502},
+		{"401 do Bling", 401, "bling", 401},
+		{"403 do proxy", 403, "proxy", 403},
+		{"401 de origem desconhecida", 401, "nginx", 502},
+	} {
+		a := montar(t, func(core.PedidoBling, int) (int, string, map[string]string) {
+			cab := map[string]string{}
+			if c.origem != "" {
+				cab["X-Core-Origem"] = c.origem
+			}
+			return c.status, `{"erro":"x"}`, cab
+		})
+		w := a.post(a.tokens[uVendas], `{"endpoint":"produtos"}`)
+		if w.Code != c.quer {
+			t.Errorf("%s: %d %s, esperava %d", c.nome, w.Code, w.Body, c.quer)
+		}
+		if c.quer == 502 && strings.Contains(w.Body.String(), `"erro"`) {
+			t.Errorf("%s: corpo do core vazou: %s", c.nome, w.Body)
+		}
+	}
+}
+
+func TestBlingProxyNotaFiscalParaLimitadaNemChamaOCore(t *testing.T) {
+	a := montar(t, ok200(`{}`))
+	a.cli.Token = "" // core "fora": ainda assim 403, não 503
+	for _, e := range []string{"nfe", "nfe/7", "nfce", "nfce/7"} {
+		w := a.post(a.tokens[uLimitada], `{"endpoint":"`+e+`"}`)
+		if w.Code != 403 || strings.TrimSpace(w.Body.String()) != `{"error":"sem permissao para este canal"}` {
+			t.Errorf("%s: %d %s", e, w.Code, w.Body)
+		}
+	}
+	if a.core.n() != 0 {
+		t.Fatalf("core chamado %d vezes", a.core.n())
+	}
+}
+
+func TestBlingProxyClienteDesistiuNaoLogaErro(t *testing.T) {
+	var buf bytes.Buffer
+	antes := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	t.Cleanup(func() { slog.SetDefault(antes) })
+	a := montar(t, func(core.PedidoBling, int) (int, string, map[string]string) { return 0, "", nil })
+	ctx, cancela := context.WithCancel(context.Background())
+	req := httptest.NewRequest("POST", "/bling-proxy", strings.NewReader(`{"endpoint":"produtos"}`)).WithContext(ctx)
+	req.Header.Set("Authorization", "Bearer "+a.tokens[uVendas])
+	go func() { time.Sleep(30 * time.Millisecond); cancela() }()
+	a.h.ServeHTTP(httptest.NewRecorder(), req)
+	if strings.Contains(buf.String(), "ERROR") {
+		t.Fatalf("log de erro para cliente que desistiu: %s", buf.String())
 	}
 }

@@ -150,6 +150,8 @@ func (b *Bling) chamar(r *http.Request, endpoint string, q map[string]any) saida
 	switch {
 	case errors.Is(err, core.ErrSemToken):
 		return falha(http.StatusServiceUnavailable, "core nao configurado")
+	case r.Context().Err() != nil: // quem pediu desistiu: nada a registrar
+		return falha(http.StatusBadGateway, "falha ao falar com o core")
 	case errors.As(err, &sr):
 		slog.Error("bling-proxy: desisti", "endpoint", endpoint, "tentativas", sr.Tentativas, "causa", sr.Causa)
 		return falha(http.StatusGatewayTimeout, sr.Error())
@@ -228,6 +230,14 @@ func (b *Bling) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		slog.Error("bling-proxy: carregar canais", "erro", err)
 		erro(w, http.StatusInternalServerError, "erro_interno")
 		return
+	}
+	// Nota fiscal nunca sai para quem está limitado (Recortar sempre nega): responde já,
+	// sem gastar cota do Bling e mesmo com o core fora.
+	if lista != nil {
+		if _, negado := canais.Recortar(in.Endpoint, nil, lista); negado {
+			erro(w, http.StatusForbidden, "sem permissao para este canal")
+			return
+		}
 	}
 
 	// A LISTA de pedidos para quem está limitado: quem recorta é o Bling (`idLoja`, uma loja
