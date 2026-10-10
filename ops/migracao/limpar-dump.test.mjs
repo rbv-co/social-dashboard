@@ -1,5 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { fileURLToPath } from 'node:url'
 import { dividir, limpar } from './limpar-dump.mjs'
 
 test('dividir não corta ponto e vírgula dentro de $$ nem de aspas', () => {
@@ -17,9 +18,12 @@ alter table "a;b" add column x text default 'it''s;ok';`)
 })
 
 test('dividir mantém comentário junto do comando e linha \\meta do psql como item próprio', () => {
-  const c = dividir(`\\restrict abc123\n-- Name: t; Type: TABLE\ncreate table t (id int);\n\\unrestrict abc123\n`)
+  // layout real do pg_dump 17.6: \restrict vem DEPOIS do cabeçalho "-- PostgreSQL database dump"
+  const c = dividir(`--\n-- PostgreSQL database dump\n--\n\n\\restrict abc123\n\n-- Name: t; Type: TABLE\ncreate table t (id int);\n\\unrestrict abc123\n`)
   assert.equal(c.length, 3)
-  assert.match(c[1], /^-- Name: t; Type: TABLE\ncreate table t/)
+  assert.match(c[0], /^--\n-- PostgreSQL database dump\n--\n\n\\restrict abc123\n$/)
+  assert.match(c[1], /^\n-- Name: t; Type: TABLE\ncreate table t/)
+  assert.match(c[2], /\\unrestrict abc123\n$/)
 })
 
 test('limpar remove policies, RLS, grants, publicações e extensões do Supabase', () => {
@@ -108,8 +112,22 @@ test('CLI roda via caminho com symlink', async () => {
   const { execFileSync } = await import('node:child_process')
   const d = mkdtempSync(join(tmpdir(), 'ld-'))
   const link = join(d, 'l.mjs')
-  symlinkSync(new URL('./limpar-dump.mjs', import.meta.url).pathname, link)
+  symlinkSync(fileURLToPath(new URL('./limpar-dump.mjs', import.meta.url)), link)
   writeFileSync(join(d, 'in.sql'), 'grant all on table a to anon;\n')
   execFileSync('node', [link, join(d, 'in.sql'), join(d, 'out.sql')])
   assert.equal(readFileSync(join(d, 'out.sql'), 'utf8').trim(), '')
+})
+
+test('limpar remove ALTER SCHEMA public OWNER TO e COMMENT ON SCHEMA public e conta em schemas', () => {
+  const sql = `ALTER SCHEMA public OWNER TO pg_database_owner;\nCOMMENT ON SCHEMA public IS 'standard public schema';\nalter schema outro owner to x;\n`
+  const r = limpar(sql)
+  assert.equal(r.removidos.schemas, 2)
+  assert.equal(r.sql.trim(), 'alter schema outro owner to x;')
+})
+
+test('limpar só conta FK reescrita se o texto mudou (comentário no meio do comando)', () => {
+  const sql = `alter table t add constraint f foreign key (u)\n-- meio\n references auth.users(id);`
+  const r = limpar(sql)
+  assert.equal(r.sql, sql)
+  assert.equal(r.reescritos.fks_usuarios, 0)
 })

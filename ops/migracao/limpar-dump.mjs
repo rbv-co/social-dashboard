@@ -22,7 +22,8 @@ export function dividir(sql) {
   let ini = 0
   let i = 0
   const n = sql.length
-  const soEspacoDesde = (de, ate) => /^\s*$/.test(sql.slice(de, ate))
+  // só espaço e comentários desde o início do comando (pg_dump 17.6 põe \restrict depois do cabeçalho em comentário)
+  const soEspacoDesde = (de, ate) => semComentarios(sql.slice(de, ate)) === ''
   while (i < n) {
     const c = sql[i]
     if (c === '-' && sql[i + 1] === '-') { const f = sql.indexOf('\n', i); i = f < 0 ? n : f + 1; continue }
@@ -50,6 +51,8 @@ const semComentarios = (c) => c.replace(/\/\*[\s\S]*?\*\//g, ' ').split('\n').fi
 const REGRAS = [
   ['policies', /^(create|comment\s+on)\s+policy\b/i],
   ['schemas', /^create\s+schema\s+(if\s+not\s+exists\s+)?"?public"?\s*;$/i],
+  ['schemas', /^alter\s+schema\s+"?public"?\s+owner\s+to\b/i],
+  ['schemas', /^comment\s+on\s+schema\s+"?public"?\s+is\b/i],
   ['rls', /^alter\s+table\b[\s\S]*\b(enable|force|disable|no\s+force)\s+row\s+level\s+security\s*;$/i],
   ['grants', /^(grant|revoke)\b/i],
   ['grants', /^alter\s+default\s+privileges\b/i],
@@ -71,9 +74,11 @@ export function limpar(sql) {
     const regra = REGRAS.find(([, re]) => re.test(corpo))
     if (regra) { removidos[regra[0]]++; continue }
     if (/^(alter\s+table|create\s+table)\b/i.test(corpo) && corpo.search(FK_AUTH) >= 0) {
-      reescritos.fks_usuarios += (corpo.match(FK_AUTH) || []).length
-      // troca só no corpo do comando (não nos comentários que o antecedem)
-      mantidos.push(cmd.replace(corpo, () => corpo.replace(FK_AUTH, 'REFERENCES public.usuarios(id)')))
+      // troca só no corpo do comando (não nos comentários que o antecedem); só conta se o texto mudou
+      // (com comentário no meio do comando o corpo sem comentários não aparece em cmd e nada muda)
+      const novo = cmd.replace(corpo, () => corpo.replace(FK_AUTH, 'REFERENCES public.usuarios(id)'))
+      if (novo !== cmd) reescritos.fks_usuarios += (corpo.match(FK_AUTH) || []).length
+      mantidos.push(novo)
     } else mantidos.push(cmd)
   }
   return { sql: mantidos.join(''), removidos, reescritos }
