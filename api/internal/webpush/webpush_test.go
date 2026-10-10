@@ -233,12 +233,16 @@ func TestEndpointsRecusadosPorNomeEForma(t *testing.T) {
 		"https://LOCALHOST/p", "https://localhost./p", "https://2130706433/p", "https://0x7f.1/p", "https://127.1/p", "https://0/p",
 		"https://[fe80::1%25en0]/p", "https://impressora.local/p", "https://api.internal/p", "https://a.b.localhost/p",
 		"https://usuario:senha@example.com/p", "https://user@example.com/p", "https://10.0.0.1/p", "https://[::ffff:127.0.0.1]/p",
-		"https://0177.0.0.1/p", "https://example.com:443@127.0.0.1/p", "https:///p", "ftp://example.com/p", "https://100.64.0.1/p",
+		"https://0177.0.0.1/p", "https://127.0.0.0x1/p", "https://example.0x7f/p", "https://example.com:443@127.0.0.1/p", "https:///p", "ftp://example.com/p", "https://100.64.0.1/p",
 	} {
 		ins := boa
 		ins.Endpoint = e
-		if _, err := Enviar(context.Background(), cli, ins, []byte("x"), v); err == nil {
-			t.Errorf("endpoint %q deveria ser recusado", e)
+		// a regra de nome/forma é que recusa (não um erro de certificado lá na frente)
+		if u, err := url.Parse(e); err == nil && endpointAceito(u) {
+			t.Errorf("endpointAceito(%q) deveria ser false", e)
+		}
+		if _, err := Enviar(context.Background(), cli, ins, []byte("x"), v); err == nil || !strings.Contains(err.Error(), "endpoint recusado") {
+			t.Errorf("endpoint %q deveria ser recusado pela validação, err=%v", e, err)
 		}
 	}
 	if chamadas != 0 {
@@ -263,12 +267,12 @@ func TestClienteSeguroRecusaEnderecoInterno(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "destino recusado") {
 		t.Fatalf("err = %v", err)
 	}
-	for _, ip := range []string{"127.0.0.1", "10.1.2.3", "172.16.0.1", "192.168.1.1", "169.254.169.254", "100.64.0.1", "100.127.255.255", "0.0.0.0", "224.0.0.1", "::1", "fe80::1", "fc00::1", "::", "ff02::1", "::ffff:127.0.0.1"} {
+	for _, ip := range []string{"127.0.0.1", "10.1.2.3", "172.16.0.1", "192.168.1.1", "169.254.169.254", "100.64.0.1", "100.127.255.255", "0.0.0.0", "224.0.0.1", "::1", "fe80::1", "fc00::1", "::", "ff02::1", "::ffff:127.0.0.1", "64:ff9b::7f00:1", "64:ff9b::a00:1", "::7f00:1", "::a00:1", "2002:7f00:1::1", "2002:c0a8:101::", "fec0::1", "198.18.0.1", "198.19.255.255", "240.0.0.1", "255.255.255.255"} {
 		if !destinoProibido(netip.MustParseAddr(ip)) {
 			t.Errorf("%s deveria ser proibido", ip)
 		}
 	}
-	for _, ip := range []string{"8.8.8.8", "142.250.0.1", "100.128.0.1", "2607:f8b0:4004::1"} {
+	for _, ip := range []string{"8.8.8.8", "142.250.0.1", "100.128.0.1", "2607:f8b0:4004::1", "198.20.0.1", "223.255.255.255", "2001:4860:4860::8888"} {
 		if destinoProibido(netip.MustParseAddr(ip)) {
 			t.Errorf("%s deveria passar", ip)
 		}
@@ -335,5 +339,45 @@ func TestEnviarRecusaPayloadMaiorQueOUnicoRegistro(t *testing.T) {
 	}
 	if _, err := Enviar(context.Background(), cli, ins, make([]byte, 3994), v); err == nil {
 		t.Fatal("3994 bytes deveria ser recusado")
+	}
+}
+
+type rtFalso func(*http.Request) (*http.Response, error)
+
+func (f rtFalso) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// Enviar com cliente nil usa o cliente seguro (o `padrao`), e ele não usa proxy do ambiente.
+func TestEnviarSemClienteUsaOClienteSeguro(t *testing.T) {
+	tr, ok := padrao.Transport.(*http.Transport)
+	if !ok || tr.Proxy != nil {
+		t.Fatalf("o cliente seguro não pode ter Proxy (ProxyFromEnvironment contornaria o Control): %#v", padrao.Transport)
+	}
+	if _, err := tr.DialContext(context.Background(), "tcp", "127.0.0.1:9"); err == nil || !strings.Contains(err.Error(), "destino recusado") {
+		t.Fatalf("o discador do padrao deveria recusar loopback: %v", err)
+	}
+	v, _ := chavesVAPID(t)
+	ua, _ := ecdh.P256().GenerateKey(rand.Reader)
+	ins := Inscricao{Endpoint: "https://example.com/p", P256dh: base64.RawURLEncoding.EncodeToString(ua.PublicKey().Bytes()), Auth: base64.RawURLEncoding.EncodeToString(make([]byte, 16))}
+	antigo, usou := padrao, 0
+	padrao = &http.Client{Transport: rtFalso(func(*http.Request) (*http.Response, error) {
+		usou++
+		return &http.Response{StatusCode: 201, Body: io.NopCloser(strings.NewReader(""))}, nil
+	})}
+	defer func() { padrao = antigo }()
+	if st, err := Enviar(context.Background(), nil, ins, []byte("x"), v); err != nil || st != 201 || usou != 1 {
+		t.Fatalf("st=%d err=%v usou=%d", st, err, usou)
+	}
+}
+
+func TestControlSeguroFalhaFechada(t *testing.T) {
+	for _, ruim := range []string{"", "lixo", "example.com:443", "[::1]", "127.0.0.1", "8.8.8.8", "8.8.8.8:porta", "127.0.0.1:443", "[::1]:443"} {
+		if err := controlSeguro("tcp", ruim, nil); err == nil {
+			t.Errorf("controlSeguro(%q) deveria recusar", ruim)
+		}
+	}
+	for _, boa := range []string{"8.8.8.8:443", "[2607:f8b0:4004::1]:443"} {
+		if err := controlSeguro("tcp", boa, nil); err != nil {
+			t.Errorf("controlSeguro(%q) = %v", boa, err)
+		}
 	}
 }

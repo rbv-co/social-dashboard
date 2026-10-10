@@ -63,7 +63,7 @@ func ambientePush(t *testing.T, resp func(core.PedidoBling, int) (int, string, m
 		}
 		pf.corpos[r.URL.Path], _ = io.ReadAll(r.Body)
 		pf.mu.Unlock()
-		for sufixo, st := range map[string]int{"/morta": 410, "/nf": 404, "/e500": 500, "/e503": 503, "/e429": 429} {
+		for sufixo, st := range map[string]int{"/morta": 410, "/nf": 404, "/e500": 500, "/e503": 503, "/e429": 429, "/e403": 403} {
 			if strings.HasSuffix(r.URL.Path, sufixo) {
 				w.WriteHeader(st)
 				return

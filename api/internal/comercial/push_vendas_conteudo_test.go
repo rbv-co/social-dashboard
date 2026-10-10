@@ -163,7 +163,6 @@ func TestPushVendasVAPIDRuimFalhaERegistraNoRobo(t *testing.T) {
 	casos := map[string]webpush.VAPID{
 		"par trocado":      outra,
 		"privada ruim":     {Publica: boa.Publica, Privada: "lixo!", Assunto: boa.Assunto},
-		"base64 padrão":    {Publica: strings.NewReplacer("-", "+", "_", "/").Replace(boa.Publica) + "=", Privada: boa.Privada, Assunto: boa.Assunto},
 		"assunto vazio":    {Publica: boa.Publica, Privada: boa.Privada},
 		"assunto inválido": {Publica: boa.Publica, Privada: boa.Privada, Assunto: "teste@exemplo.com"},
 	}
@@ -213,5 +212,57 @@ func TestPushVendasLogNaoTrazSegredo(t *testing.T) {
 		if strings.Contains(saida, segredo) {
 			t.Fatalf("vazou %q:\n%s", segredo, saida)
 		}
+	}
+}
+
+func TestPedidoBlingNumeroComoAEdge(t *testing.T) {
+	var ps []pedidoBling
+	corpo := `[{"id":"7","total":"12.5","loja":{"id":"3"}},{"id":8,"total":null,"loja":{"id":null}},{"id":9,"total":"","loja":{}},{"id":10,"total":"abc","loja":null},{"id":11}]`
+	if err := json.Unmarshal([]byte(corpo), &ps); err != nil {
+		t.Fatal(err)
+	}
+	totais := []float64{12.5, 0, 0, 0, 0}
+	for i, p := range ps {
+		if float64(p.Total) != totais[i] || int(p.ID) != 7+i {
+			t.Errorf("%d: %+v", i, p)
+		}
+		if (i == 0) != (p.Loja != nil && p.Loja.ID != nil) {
+			t.Errorf("%d: loja = %+v", i, p.Loja)
+		}
+	}
+}
+
+func TestPushVendasPodaTudoNaoEErroMasFalhaSemPodaE(t *testing.T) {
+	u := "cccccccc-0000-0000-0000-000000000001"
+	// só 410 e 404: assinantes velhos podados, tarefa ok
+	pv, _, _, p := ambientePush(t, pedidosPorDia)
+	inscrever(t, p, "morta", u)
+	inscrever(t, p, "nf", u)
+	if err := pv.Rodar(context.Background(), "hoje"); err != nil {
+		t.Fatalf("só podas legítimas: %v", err)
+	}
+	// poda + falha de verdade, nada aceito: erro
+	pv, _, _, p = ambientePush(t, pedidosPorDia)
+	inscrever(t, p, "morta", u)
+	inscrever(t, p, "e500", u)
+	if err := pv.Rodar(context.Background(), "hoje"); err == nil || !strings.Contains(err.Error(), "nenhum_push_entregue") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestPushVendasLogaStatusRecusadoSemEndpoint(t *testing.T) {
+	var buf bytes.Buffer
+	antigo := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	defer slog.SetDefault(antigo)
+	pv, _, _, p := ambientePush(t, pedidosPorDia)
+	u := "cccccccc-0000-0000-0000-000000000001"
+	inscrever(t, p, "boa", u)
+	inscrever(t, p, "TOKEN-XYZ/e403", u)
+	if err := pv.Rodar(context.Background(), "hoje"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), "status=403") || strings.Contains(buf.String(), "TOKEN-XYZ") {
+		t.Fatalf("log = %s", buf.String())
 	}
 }

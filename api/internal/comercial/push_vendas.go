@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 	_ "time/tzdata" // America/Sao_Paulo sem depender do zoneinfo do contêiner
@@ -57,26 +59,19 @@ type pedidoBling struct {
 	Data  string `json:"data"`
 	Total numero `json:"total"`
 	Loja  *struct {
-		ID numero `json:"id"`
+		ID *numero `json:"id"` // null/ausente = sem loja (p.loja?.id ?? null)
 	} `json:"loja"`
 	Itens []json.RawMessage `json:"itens"`
 }
 
-// numero aceita número ou texto ("123", "99.9") no JSON, como as Tasks 2/3 fazem com o que vem do Bling.
+// numero aceita número ou texto ("123", "99.9") no JSON; null, "" ou lixo valem 0, como o
+// `Number(x) || 0` da edge (um campo estranho não derruba a rodada inteira).
 type numero float64
 
 func (n *numero) UnmarshalJSON(b []byte) error {
-	var v json.Number
-	if err := json.Unmarshal(b, &v); err != nil {
-		var t string
-		if err2 := json.Unmarshal(b, &t); err2 != nil {
-			return err
-		}
-		v = json.Number(t)
-	}
-	f, err := strconv.ParseFloat(string(v), 64)
-	if err != nil {
-		return fmt.Errorf("número inválido")
+	f, err := strconv.ParseFloat(strings.TrimSpace(strings.Trim(strings.TrimSpace(string(b)), `"`)), 64)
+	if err != nil || math.IsInf(f, 0) || math.IsNaN(f) {
+		f = 0
 	}
 	*n = numero(f)
 	return nil
@@ -107,8 +102,8 @@ func (pv *PushVendas) listarPedidos(ctx context.Context, dia string) ([]pedido, 
 		}
 		for _, p := range resp.Data {
 			np := pedido{ID: int64(p.ID), Data: p.Data, Total: float64(p.Total)}
-			if p.Loja != nil {
-				id := int64(p.Loja.ID)
+			if p.Loja != nil && p.Loja.ID != nil {
+				id := int64(*p.Loja.ID)
 				np.LojaID = &id
 			}
 			todos = append(todos, np)
@@ -243,10 +238,14 @@ func (pv *PushVendas) Rodar(ctx context.Context, modo string) error {
 			}
 		case st >= 200 && st < 300:
 			enviados++
+		default:
+			slog.Warn("push de vendas: serviço de push recusou", "status", st) // só o código: o endpoint é um token
 		}
 	}
 	slog.Info("push de vendas", "modo", modo, "dia", diaRef, "pedidos", len(todos), "enviados", enviados, "podados", podados)
-	if len(alvos) > 0 && enviados == 0 {
+	// Assinante morto (404/410) apagado é manutenção normal, não falha; falha é ter destinatário
+	// que nem aceitou nem foi podado e nenhum push aceito.
+	if enviados == 0 && len(alvos)-podados > 0 {
 		return fmt.Errorf("nenhum_push_entregue: %d inscrições, 0 aceitas (%d podadas)", len(alvos), podados)
 	}
 	return nil

@@ -127,26 +127,43 @@ func endpointAceito(u *url.URL) bool {
 	return u.Scheme == "https" && u.User == nil && !hostRecusado(u.Hostname())
 }
 
-var cgnat = netip.MustParsePrefix("100.64.0.0/10")
+// Faixas que não são internet pública (além do que netip já classifica): CGNAT, benchmark
+// 198.18/15, reservado 240/4, NAT64 64:ff9b::/96, IPv4-compatível ::/96, 6to4 2002::/16 e
+// site-local fec0::/10.
+var proibidas = []netip.Prefix{
+	netip.MustParsePrefix("100.64.0.0/10"), netip.MustParsePrefix("198.18.0.0/15"), netip.MustParsePrefix("240.0.0.0/4"),
+	netip.MustParsePrefix("64:ff9b::/96"), netip.MustParsePrefix("::/96"), netip.MustParsePrefix("2002::/16"), netip.MustParsePrefix("fec0::/10"),
+}
 
 // destinoProibido: loopback, privado, link-local (inclui metadados 169.254.169.254),
 // não especificado, multicast e CGNAT.
 func destinoProibido(ip netip.Addr) bool {
 	ip = ip.Unmap()
-	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
-		ip.IsUnspecified() || ip.IsMulticast() || cgnat.Contains(ip)
+	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() || ip.IsMulticast() {
+		return true
+	}
+	for _, f := range proibidas {
+		if f.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+// controlSeguro roda no discador com o IP JÁ resolvido; endereço que não dá para ler = recusa
+// (falha fechada).
+func controlSeguro(_, endereco string, _ syscall.RawConn) error {
+	ap, err := netip.ParseAddrPort(endereco)
+	if err != nil || destinoProibido(ap.Addr()) {
+		return errors.New("webpush: destino recusado (endereço interno)")
+	}
+	return nil
 }
 
 // clienteSeguro confere o IP JÁ RESOLVIDO na hora de conectar (vale para DNS que aponta para
 // dentro e para redirecionamento). A verificação do TLS fica ligada.
 func clienteSeguro() *http.Client {
-	d := &net.Dialer{Timeout: 10 * time.Second, Control: func(_, endereco string, _ syscall.RawConn) error {
-		ap, err := netip.ParseAddrPort(endereco)
-		if err != nil || destinoProibido(ap.Addr()) {
-			return errors.New("webpush: destino recusado (endereço interno)")
-		}
-		return nil
-	}}
+	d := &net.Dialer{Timeout: 10 * time.Second, Control: controlSeguro}
 	return &http.Client{Transport: &http.Transport{DialContext: d.DialContext, TLSHandshakeTimeout: 10 * time.Second}}
 }
 
