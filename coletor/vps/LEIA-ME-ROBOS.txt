@@ -37,7 +37,12 @@ OPERAÇÃO
 
 O QUE FICOU DE FORA DE PROPÓSITO
 - vigia-do-pdv: é a segunda rede que vigia a VPS DE FORA. Rodando nela, cairia junto com o que vigia.
-- fotos-do-selo e publicar-o-site-da-vessel: precisam de VERCEL_TOKEN, que só existe como secret do GitHub.
+- O SITE vesselbrasil.com.br SAIU DA VERCEL (2026-10-10): roda no nginx da VPS, e fotos-do-selo e publicar-o-site migraram
+  junto (sem VERCEL_TOKEN). publicar-o-site = `deploy-vesselbrasil --se-mudou` de 5 em 5 min; fotos-do-selo roda de 5 em 5 min
+  (no lugar de hora em hora + o `lote-novo` do banco), faz push no vessel-brasil com uma chave de deploy COM ESCRITA só
+  nesse repo (alias ssh `github-robos-site`; clone aninhado em /opt/robos/social-dashboard/vessel-brasil) e chama o deploy.
+  Documentação do site: vessel-brasil/vps/LEIA-ME-VPS.txt. Os dois workflows do Actions ficam só como disparo manual (retaguarda
+  do roll-back para a Vercel). NÃO recoloque `schedule` nem `repository_dispatch` neles: Actions e VPS publicariam juntos.
 - budget-ia migrou com a chave `anthropic_api_key_trafego` da tabela segredos_de_cron (validada com --dry e chamada mínima).
 - coletor-noticias, sugerir-interesses e gestor-comercial migraram (2026-10-10). Como o secret ANTHROPIC_API_KEY "padrão" só
   existe no GitHub, os dois primeiros usam a chave ANTHROPIC_API_KEY_GESTOR (testada com os modelos do coletor): só muda a
