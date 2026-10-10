@@ -1,0 +1,38 @@
+ROBÔS AGENDADOS NA VPS (substituem os `schedule:` do GitHub Actions)
+====================================================================
+
+POR QUE: o Actions de repositório privado cobra por minuto (cada rodada de 5 s cobra 1 min cheio; um robô de hora em
+hora = ~720 min/mês só nele) e o dono não quer depender dele para agendar. Os robôs são scripts Node que só falam
+com APIs (Supabase, Bling via core, Shopify, Zoho); rodam igual em qualquer máquina.
+
+PEÇAS
+- rodar-robo.sh      wrapper de TODA rodada: um por vez (flock), limite de tempo, segredos, git pull, log e alerta.
+- robos.cron         a agenda (formato /etc/cron.d). Horários em UTC, iguais aos dos workflows de origem.
+- copia-do-banco.sh  e faxina-storage.sh: os dois workflows que tinham mais de um passo.
+- rodar-robo.teste.sh  autoteste do wrapper (Linux). `bash coletor/vps/rodar-robo.teste.sh`
+
+ONDE FICA NA VPS
+- Código:     /opt/robos/social-dashboard  (clone da main; o wrapper faz `git pull --ff-only` a cada rodada)
+- Segredos:   /etc/robos.env               (root, 600; formato CHAVE=valor, sem aspas). NUNCA no git.
+- Logs:       /var/log/robos/<nome>.log    (rotacionado). Falha deixa /var/log/robos/<nome>.falhou.
+- Agenda:     /etc/cron.d/robos-social-dashboard  (cópia de robos.cron; reinstalar depois de mudar o arquivo:
+              install -m 644 -o root -g root /opt/robos/social-dashboard/coletor/vps/robos.cron /etc/cron.d/robos-social-dashboard)
+- Node 22:    /opt/cartoes-ean/node/bin (o Ubuntu da VPS só tem o 20; os robôs foram feitos para o 22).
+
+OPERAÇÃO
+- Ver o que rodou:   tail -n 50 /var/log/robos/<nome>.log
+- Rodar à mão:       /opt/robos/social-dashboard/coletor/vps/rodar-robo.sh <nome> <min> -- <comando>   (mesma linha do robos.cron)
+- Quem falhou:       ls /var/log/robos/*.falhou
+- Alerta de falha:   defina ALERT_WEBHOOK_URL em /etc/robos.env (Slack/Discord/qualquer um que aceite JSON).
+                     Sem ele, a falha só fica no log e na marca .falhou — nada grita sozinho.
+- Rodada pulada:     "pulada: a rodada anterior ainda está rodando" no log. No Actions a rodada entrava na fila.
+- Voltar ao Actions: o workflow continua existindo (disparo manual). Para voltar a agendar por lá, reponha o `schedule:`
+                     no yml (git revert do PR que o tirou) e apague a linha do robô em /etc/cron.d/robos-social-dashboard.
+                     NUNCA deixe os dois agendando o mesmo robô: pedidos e relatórios são idempotentes, mas o token do Bling
+                     e as mensagens de WhatsApp não perdoam rodada dobrada.
+
+O QUE FICOU DE FORA DE PROPÓSITO
+- vigia-do-pdv: é a segunda rede que vigia a VPS DE FORA. Rodando nela, cairia junto com o que vigia.
+- Os que precisam de chaves que só existem como secret do GitHub (Anthropic, PAT, Vercel): budget-ia, coletor-noticias,
+  gestor-comercial, sugerir-interesses, fotos-do-selo, publicar-o-site-da-vessel. opr-diario (WhatsApp) também, porque
+  não dá para testar sem mandar a mensagem de verdade.

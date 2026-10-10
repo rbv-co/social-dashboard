@@ -19,8 +19,7 @@ name: Notas dos Pedidos (data da venda)
 # Relatórios Comerciais (08:52 UTC) — os dois batem no mesmo Bling, que limita
 # 3 chamadas por segundo.
 on:
-  schedule:
-    - cron: '23 * * * *'
+  # AGENDAMENTO NA VPS (coletor/vps/robos.cron): este workflow só roda por disparo manual, como retaguarda.
   workflow_dispatch:
     inputs:
       dias:

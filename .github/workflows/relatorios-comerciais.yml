@@ -7,8 +7,7 @@ name: Relatórios Comerciais
 # rodadas saíram entre 10:22 e 11:41 — 2 a 3h de atraso.
 # Disparo manual com input `backfill` (Nº de meses) p/ popular o histórico.
 on:
-  schedule:
-    - cron: '52 8 * * *'
+  # AGENDAMENTO NA VPS (coletor/vps/robos.cron): este workflow só roda por disparo manual, como retaguarda.
   workflow_dispatch:
     inputs:
       backfill:

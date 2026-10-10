@@ -12,9 +12,7 @@ name: Pedidos da Loja Shopify (direto da API, sem Bling)
 # credencial, falha com mensagem clara (ver coletor/trazer-pedidos-da-shopify.mjs).
 # Não afeta nenhum outro robô.
 on:
-  schedule:
-    - cron: '41 7 * * *'     # varredura profunda: 30 dias (17 min depois do robô do Bling, mesmo motivo de espaçamento)
-    - cron: '41 * * * *'     # conferência ao vivo: 3 dias
+  # AGENDAMENTO NA VPS (coletor/vps/robos.cron): este workflow só roda por disparo manual, como retaguarda.
   workflow_dispatch:
     inputs:
       dias:

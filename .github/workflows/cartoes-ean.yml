@@ -13,8 +13,7 @@
 name: Cartões EAN — gerar a fila
 
 on:
-  schedule:
-    - cron: '23 * * * *'
+  # AGENDAMENTO NA VPS (coletor/vps/robos.cron): este workflow só roda por disparo manual, como retaguarda.
   workflow_dispatch:
 
 # Duas rodadas ao mesmo tempo pegariam pedidos diferentes (a fila é segura), mas brigariam pelo Chrome e pelo Zoho.
