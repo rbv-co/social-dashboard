@@ -46,6 +46,9 @@ var producao = map[string]string{
 	"coletar-dados-18h":  "0 21 * * *",
 	"coletar-dados-2359": "59 2 * * *",
 	"auditar-dados":      "30 2 * * *",
+	// Task 7
+	"meta-hora":                 "5 * * * *",
+	"meta-hora-retentativa-00h": "30 3 * * *",
 }
 
 func TestTarefasDeProducao(t *testing.T) {
