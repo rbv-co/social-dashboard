@@ -61,12 +61,20 @@ type ambienteMeta struct {
 	tokens map[string]string
 }
 
+const accountsTexto = `create table accounts (id text primary key, instagram_id text, ad_account_id text, access_token text);
+	insert into accounts values ('conta-1', '1784', '999', 'TOKEN-DA-CONTA'), ('42', '1785', null, null), ('conta-3', '1786', null, null), ('conta-sem-ig', null, null, null);`
+
 func montarMeta(t *testing.T, resp func(core.PedidoMeta) (int, string, map[string]string)) *ambienteMeta {
+	t.Helper()
+	return montarMetaCom(t, resp, accountsTexto, []string{"midia.exemplo"})
+}
+
+// montarMetaCom deixa o teste escolher o DDL de accounts (id text ou uuid) e os hosts de mídia.
+func montarMetaCom(t *testing.T, resp func(core.PedidoMeta) (int, string, map[string]string), ddlAccounts string, hosts []string) *ambienteMeta {
 	t.Helper()
 	p := testebanco.Novo(t)
 	ctx := context.Background()
-	if _, err := p.Exec(ctx, `create table accounts (id text primary key, instagram_id text, ad_account_id text, access_token text);
-		insert into accounts values ('conta-1', '1784', '999', 'TOKEN-DA-CONTA'), ('42', '1785', null, null), ('conta-3', '1786', null, null), ('conta-sem-ig', null, null, null);`); err != nil {
+	if _, err := p.Exec(ctx, ddlAccounts); err != nil {
 		t.Fatal(err)
 	}
 	s := auth.NovoStore(p)
@@ -90,7 +98,7 @@ func montarMeta(t *testing.T, resp func(core.PedidoMeta) (int, string, map[strin
 	r := chi.NewRouter()
 	r.Group(func(r chi.Router) {
 		r.Use(auth.Exigir(p, s))
-		r.With(auth.ExigirModulo("meta")).Post("/meta-proxy", (&Proxy{Pool: p, Core: cli, HostsDeMidia: []string{"midia.exemplo"}}).ServeHTTP)
+		r.With(auth.ExigirModulo("meta")).Post("/meta-proxy", (&Proxy{Pool: p, Core: cli, HostsDeMidia: hosts}).ServeHTTP)
 	})
 	return &ambienteMeta{p: p, h: r, core: f, cli: cli, tokens: tokens}
 }

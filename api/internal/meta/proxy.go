@@ -51,10 +51,19 @@ type Proxy struct {
 	HostsDeMidia []string // vazio = nenhum upload de mídia é aceito
 }
 
-// midiaPermitida fecha o SSRF: a URL de mídia só pode ser https num host da lista.
-func (p *Proxy) midiaPermitida(bruta string) bool {
+// midiaPermitida fecha o SSRF: a URL de mídia só pode ser https, sem credenciais, num host
+// da lista (u.Host inclui a porta: host:8443 não casa). Devolve a URL normalizada (u.String(),
+// host em minúsculas como o `new URL` do edge): é ela, e não a bruta, que vai ao core.
+func (p *Proxy) midiaPermitida(bruta string) (string, bool) {
 	u, err := url.Parse(bruta)
-	return err == nil && u.Scheme == "https" && u.Host != "" && slices.Contains(p.HostsDeMidia, u.Host)
+	if err != nil || u.Scheme != "https" || u.User != nil {
+		return "", false
+	}
+	u.Host = strings.ToLower(u.Host)
+	if u.Host == "" || !slices.Contains(p.HostsDeMidia, u.Host) {
+		return "", false
+	}
+	return u.String(), true
 }
 
 func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -85,6 +94,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	var existe bool
 	if err := p.Pool.QueryRow(r.Context(), `select exists(select 1 from accounts where id::text = $1)`, conta).Scan(&existe); err != nil {
+		slog.Error("meta-proxy: consulta de conta falhou", "erro", err)
 		erro(w, http.StatusInternalServerError, "erro_interno")
 		return
 	}
@@ -92,13 +102,20 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		erro(w, http.StatusBadRequest, "conta nao encontrada")
 		return
 	}
-	if in.ImageFromURL != "" && !p.midiaPermitida(in.ImageFromURL) {
-		erro(w, http.StatusBadRequest, "origem da imagem nao permitida")
-		return
-	}
-	if in.ImageFromURL == "" && in.VideoFromURL != "" && !p.midiaPermitida(in.VideoFromURL) {
-		erro(w, http.StatusBadRequest, "origem do video nao permitida")
-		return
+	// Igual ao edge: com imageFromUrl o vídeo é ignorado (nem validado nem encaminhado).
+	var imagem, video string
+	if in.ImageFromURL != "" {
+		var ok bool
+		if imagem, ok = p.midiaPermitida(in.ImageFromURL); !ok {
+			erro(w, http.StatusBadRequest, "origem da imagem nao permitida")
+			return
+		}
+	} else if in.VideoFromURL != "" {
+		var ok bool
+		if video, ok = p.midiaPermitida(in.VideoFromURL); !ok {
+			erro(w, http.StatusBadRequest, "origem do video nao permitida")
+			return
+		}
 	}
 	ped := core.PedidoMeta{Caminho: in.Path, Metodo: "GET", Parametros: map[string]any{}}
 	for k, v := range in.Params {
@@ -111,10 +128,10 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	prazo := 25 * time.Second
 	switch {
-	case in.ImageFromURL != "":
-		ped.Metodo, ped.ImagemURL, ped.ImagemCampo, prazo = "POST", in.ImageFromURL, in.ImageField, 45*time.Second
-	case in.VideoFromURL != "":
-		ped.Metodo, ped.VideoURL, prazo = "POST", in.VideoFromURL, 75*time.Second
+	case imagem != "":
+		ped.Metodo, ped.ImagemURL, ped.ImagemCampo, prazo = "POST", imagem, in.ImageField, 45*time.Second
+	case video != "":
+		ped.Metodo, ped.VideoURL, prazo = "POST", video, 75*time.Second
 	}
 	ctx, cancela := context.WithTimeout(r.Context(), prazo)
 	defer cancela()
@@ -125,7 +142,8 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		slog.Error("meta-proxy: sem resposta do core", "caminho", in.Path)
+		// só a causa (o cliente do core não põe o token em erro) e o caminho; nunca parametros.
+		slog.Error("meta-proxy: sem resposta do core", "caminho", in.Path, "erro", err)
 		erro(w, http.StatusInternalServerError, "falha ao falar com o core")
 		return
 	}
@@ -136,26 +154,24 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		j = map[string]any{"raw": string(resp.Corpo)}
 	}
 	// Erro do PRÓPRIO core vem em `erro` e volta como STRING em `error`: o gestor classifica
-	// por aí (barrado antes da Meta = status < 500; desistiu no meio = 500).
+	// por aí (barrado antes da Meta = status < 500; desistiu no meio = 500). Um 401/403 do core
+	// (credencial da API, escopo) NUNCA sai como 401/403: o front leria "sessão expirada".
 	obj, eObj := j.(map[string]any)
 	barrado := resp.Status >= 400 && resp.Status < 500 && resp.Status != 401 && resp.Status != 403
+	status := http.StatusInternalServerError
+	if barrado {
+		status = resp.Status
+	}
 	if e, ok := obj["erro"]; eObj && ok {
-		st := http.StatusInternalServerError
-		if barrado {
-			st = resp.Status
-		}
 		if resp.Status == http.StatusTooManyRequests && resp.RetryAfter != "" {
 			w.Header().Set("Retry-After", resp.RetryAfter)
 		}
-		erro(w, st, fmt.Sprint(e))
+		erro(w, status, fmt.Sprint(e))
 		return
 	}
-	if _, temErro := obj["error"]; eObj && !temErro && resp.Status >= 400 {
-		st := http.StatusInternalServerError
-		if barrado {
-			st = resp.Status
-		}
-		erro(w, st, fmt.Sprintf("core: %d", resp.Status))
+	_, temErro := obj["error"]
+	if resp.Status == http.StatusUnauthorized || resp.Status == http.StatusForbidden || (resp.Status >= 400 && !(eObj && temErro)) {
+		erro(w, status, fmt.Sprintf("core: %d", resp.Status))
 		return
 	}
 	responder(w, resp.Status, j) // a Graph tal qual (inclusive {error:{...}} da Meta)
