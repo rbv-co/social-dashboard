@@ -27,6 +27,7 @@ if [ -z "$nome" ] || ! [[ "$limite" =~ ^[0-9]+$ ]] || [ "${3:-}" != "--" ] || [ 
   echo "uso: $0 <nome> <minutos> -- <comando> [args...]" >&2; exit 64
 fi
 shift 3
+[[ "$nome" =~ ^[A-Za-z0-9_-]+$ ]] || { echo "nome inválido: só letras, números, _ e -" >&2; exit 64; }
 
 mkdir -p "$LOGS"
 log() { echo "$(date -u +%FT%TZ) [$nome] $*" >> "$LOGS/$nome.log"; }
@@ -51,6 +52,19 @@ avisar() {
     curl -fsS -m 15 -H 'Content-Type: application/json' \
       -d "{\"text\":\"$1\",\"content\":\"$1\"}" "$ALERT_WEBHOOK_URL" >/dev/null 2>&1 || log "aviso: webhook de alerta falhou"
   fi
+}
+
+# SEGUNDO CANAL DE AVISO: grava a rodada em `robos_execucoes`, o mesmo termômetro do painel de saúde da central
+# (`robos_saude`, olhado contra `robos_esperados`). O WhatsApp (ALERT_COMANDO) depende de uma sessão da Evolution que
+# cai e só volta lendo QR; sem este canal, robô parado é silêncio. Falha ao gravar NUNCA derruba nem muda o robô.
+# Sem SUPABASE_URL/SUPABASE_SERVICE_KEY em $ENV_ROBOS, não faz nada. $1=status $2=ok(true/false) $3=texto sem aspas.
+reportar() {
+  [ -n "${SUPABASE_URL:-}" ] && [ -n "${SUPABASE_SERVICE_KEY:-}" ] || return 0
+  curl -fsS -m 15 -X POST "$SUPABASE_URL/rest/v1/robos_execucoes" \
+    -H "apikey: $SUPABASE_SERVICE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
+    -H 'Content-Type: application/json' -H 'Prefer: return=minimal' \
+    -d "{\"robo\":\"$nome\",\"status_code\":$1,\"ok\":$2,\"resposta\":\"$3\",\"conferido_em\":\"$(date -u +%FT%TZ)\"}" \
+    >/dev/null 2>&1 || log "aviso: não consegui gravar a rodada no painel da central"
 }
 
 # Um robô por vez: se o da rodada anterior ainda roda, pula esta (no Actions a rodada entrava na fila).
@@ -90,10 +104,12 @@ dur=$(( $(date +%s) - inicio ))
 marca="$LOGS/$nome.falhou"
 if [ "$codigo" -eq 0 ]; then
   log "fim: ok em ${dur}s"
+  reportar 200 true "ok em ${dur}s"
   if [ -e "$marca" ]; then rm -f "$marca"; avisar "Robô $nome voltou ao normal na VPS."; fi
 else
   [ "$codigo" -eq 124 ] && motivo="estourou o limite de ${limite} min" || motivo="saiu com código $codigo"
   log "FALHOU: $motivo (${dur}s)"
+  reportar 500 false "$motivo (${dur}s)"
   if [ ! -e "$marca" ] || [ -n "$(find "$marca" -mmin +360 2>/dev/null)" ]; then
     touch "$marca"
     avisar "Robô $nome falhou na VPS: $motivo. Log: $LOGS/$nome.log"
