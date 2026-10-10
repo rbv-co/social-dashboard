@@ -43,3 +43,6 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 # Vigia de problemas do Meta (leitura + upsert, sem IA).
 7 7 * * * root /opt/robos/social-dashboard/coletor/vps/rodar-robo.sh vigia-problemas-meta 20 -- node coletor/vigia-problemas-meta.mjs
+
+# Budget IA (análise diária de tráfego, 08h BRT). Gasta IA: nunca duas rodadas juntas (o lock do nome cuida disso).
+0 11 * * * root /opt/robos/social-dashboard/coletor/vps/rodar-robo.sh budget-ia 20 -- node coletor/budget-ia.mjs

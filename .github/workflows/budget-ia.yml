@@ -8,14 +8,9 @@ name: Budget IA (análise diária)
 #   - todo dia: só as campanhas em veiculação agora;
 #   - segunda:  também as que veicularam em algum momento nos últimos 7 dias.
 on:
-  schedule:
-    # 08:00 BRT. O cron do GitHub Actions é em UTC, e o Brasil não tem mais
-    # horário de verão, então BRT = UTC-3 o ano todo.
-    #
-    # Rodava 06:41 BRT; passou pra 08:00 a pedido do dono (2026-07-29), junto do
-    # aviso de saldo — assim, quando ele abre o painel de manhã, a fila já está
-    # com a análise do dia e não com a de ontem.
-    - cron: '0 11 * * *'
+  # AGENDAMENTO NA VPS (coletor/vps/robos.cron): este workflow só roda por disparo manual, como retaguarda.
+  # Horário: 08:00 BRT (11:00 UTC), a pedido do dono (2026-07-29), junto do aviso de saldo — assim, quando ele abre o
+  # painel de manhã, a fila já está com a análise do dia e não com a de ontem.
   workflow_dispatch:
     inputs:
       escopo:

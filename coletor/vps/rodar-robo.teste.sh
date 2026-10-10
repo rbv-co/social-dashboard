@@ -8,6 +8,8 @@ mkdir -p "$T/raiz/coletor"
 git -C "$T/raiz" init -q
 export RAIZ="$T/raiz" LOGS="$T/logs" LOCKS="$T" ENV_ROBOS="$T/robos.env" NODE_BIN="$T"
 printf '%s\n' '# comentário' 'SEGREDO=valor-que-nao-pode-ir-pro-log' 'ASPAS="com aspas"' "PERIGO=a&b;touch $T/executou \$(touch $T/executou2)" '' > "$T/robos.env"
+printf '#!/bin/sh\necho "$1" >> "%s/avisos"\n' "$T" > "$T/avisa.sh"; chmod +x "$T/avisa.sh"
+echo "ALERT_COMANDO=$T/avisa.sh" >> "$T/robos.env"
 falhas=0
 confere() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FALHA $1 (esperado '$3', veio '$2')"; falhas=$((falhas + 1)); fi; }
 R="$AQUI/rodar-robo.sh"
@@ -20,7 +22,14 @@ bash "$R" perigo 1 -- sh -c 'case "$PERIGO" in a\&b\;touch*) exit 0;; *) exit 1;
 
 bash "$R" ruim 1 -- sh -c 'exit 3'; confere "falha devolve o código" $? 3
 [ -e "$T/logs/ruim.falhou" ]; confere "falha deixa marca" $? 0
+bash "$R" ruim 1 -- sh -c 'exit 3'; bash "$R" ruim 1 -- sh -c 'exit 3'
+confere "aviso só na 1ª falha (3 falhas seguidas = 1 aviso)" "$(grep -c 'falhou na VPS' "$T/avisos")" 1
 bash "$R" ruim 1 -- true; [ -e "$T/logs/ruim.falhou" ]; confere "sucesso seguinte limpa a marca" $? 1
+confere "avisa quando volta ao normal" "$(grep -c 'voltou ao normal' "$T/avisos")" 1
+touch -d '7 hours ago' "$T/logs/velha.falhou"; bash "$R" velha 1 -- sh -c 'exit 1'
+confere "repete o aviso depois de 6 h de falha" "$(grep -c 'Robô velha falhou' "$T/avisos")" 1
+bash "$R" ok 1 -- true
+confere "sucesso sem falha anterior não avisa" "$(grep -c 'Robô ok' "$T/avisos")" 0
 
 (bash "$R" lento 1 -- sleep 3 &) ; sleep 1
 bash "$R" lento 1 -- true; confere "sobreposição é pulada com 0" $? 0

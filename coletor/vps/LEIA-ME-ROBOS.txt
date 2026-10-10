@@ -23,8 +23,12 @@ OPERAÇÃO
 - Ver o que rodou:   tail -n 50 /var/log/robos/<nome>.log
 - Rodar à mão:       /opt/robos/social-dashboard/coletor/vps/rodar-robo.sh <nome> <min> -- <comando>   (mesma linha do robos.cron)
 - Quem falhou:       ls /var/log/robos/*.falhou
-- Alerta de falha:   defina ALERT_WEBHOOK_URL em /etc/robos.env (Slack/Discord/qualquer um que aceite JSON).
-                     Sem ele, a falha só fica no log e na marca .falhou — nada grita sozinho.
+- Alerta de falha:   em /etc/robos.env, ALERT_COMANDO=/opt/robos/social-dashboard/coletor/vps/avisar-whatsapp.py (o MESMO
+                     grupo do monitor da VPS; lê /root/monitor/config.json) e/ou ALERT_WEBHOOK_URL (Slack/Discord, JSON).
+                     Avisa quando o robô CAI e quando VOLTA, e repete a cada 6 h enquanto estiver caído (marca .falhou).
+                     ⚠️ Depende da sessão do WhatsApp da Evolution estar aberta: `avisar-whatsapp.py --verificar` (não envia
+                     nada). Em 2026-10-10 ela estava `close` (reconectar = ler o QR de novo). Sessão fechada = aviso não chega,
+                     mas a falha continua no log e na marca .falhou.
 - Rodada pulada:     "pulada: a rodada anterior ainda está rodando" no log. No Actions a rodada entrava na fila.
 - Voltar ao Actions: o workflow continua existindo (disparo manual). Para voltar a agendar por lá, reponha o `schedule:`
                      no yml (git revert do PR que o tirou) e apague a linha do robô em /etc/cron.d/robos-social-dashboard.
@@ -33,6 +37,8 @@ OPERAÇÃO
 
 O QUE FICOU DE FORA DE PROPÓSITO
 - vigia-do-pdv: é a segunda rede que vigia a VPS DE FORA. Rodando nela, cairia junto com o que vigia.
-- Os que precisam de chaves que só existem como secret do GitHub (Anthropic, PAT, Vercel): budget-ia, coletor-noticias,
-  gestor-comercial, sugerir-interesses, fotos-do-selo, publicar-o-site-da-vessel. opr-diario (WhatsApp) também, porque
-  não dá para testar sem mandar a mensagem de verdade.
+- Os que precisam de chaves que só existem como secret do GitHub: coletor-noticias e sugerir-interesses (ANTHROPIC_API_KEY),
+  fotos-do-selo e publicar-o-site-da-vessel (PAT_DO_SITE, VERCEL_*; fotos também precisa de imagemagick, `vercel` e de um
+  gatilho para o `lote-novo`). gestor-comercial: dá para migrar, mas não tem modo de ensaio e rende ~6 min/mês.
+  opr-diario (WhatsApp): não dá para testar sem mandar a mensagem de verdade.
+- budget-ia JÁ migrou (chave `anthropic_api_key_trafego` da tabela segredos_de_cron; validada com --dry e uma chamada mínima).
