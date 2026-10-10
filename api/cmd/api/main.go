@@ -75,7 +75,11 @@ func main() {
 		if _, err := webpush.ValidarVAPID(pv.VAPID); err != nil { // o erro nunca traz as chaves
 			slog.Warn("VAPID inválido: o push de vendas vai falhar em toda execução", "erro", err)
 		}
-		tarefas := worker.Filtrar(pv.Tarefas(), cfg.TarefasDesligadas)
+		tarefas, err := worker.Filtrar(pv.Tarefas(), cfg.TarefasDesligadas)
+		if err != nil {
+			slog.Error("configuração", "erro", err)
+			os.Exit(1)
+		}
 		for _, t := range tarefas {
 			if err := ag.Registrar(t); err != nil {
 				slog.Error("tarefa", "nome", t.Nome, "erro", err)

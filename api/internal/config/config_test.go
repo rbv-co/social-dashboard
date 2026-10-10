@@ -84,7 +84,7 @@ func TestCoreURLSoHTTPSOuLoopback(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgres://x")
 	for url, ok := range map[string]bool{
 		"https://core.exemplo": true, "http://localhost:8000": true, "http://127.0.0.1:9": true, "http://[::1]:9": true,
-		"http://core.exemplo": false, "http://localhost.evil.com": false, "ftp://core.exemplo": false, "core.exemplo": false, "https://": false,
+		"HTTPS://core.x": true, "https:/x": false, "http://localhost@evil.com": false, "http://core.exemplo": false, "http://localhost.evil.com": false, "ftp://core.exemplo": false, "core.exemplo": false, "https://": false,
 	} {
 		t.Setenv("CORE_URL", url)
 		if _, err := Carregar(); (err == nil) != ok {
