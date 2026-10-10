@@ -88,3 +88,22 @@ test('flag desligada: coletor e edge só desviam por flag (caminho antigo intact
   const edge = readFileSync(new URL('../estoque-do-site/index.ts', import.meta.url), 'utf8');
   assert.match(edge, /shopifyLeituraLigada\(env\)\s*\n\s*\? await variantesDoSiteViaCore[^\n]*\n\s*: await variantesDoShopify\(tShop\)/);
 });
+
+test('pedidos do espelho: espelho VAZIO lanca (vazio nao e "nenhum pedido"); janela sem pedido e ok', async () => {
+  const vazio = criarClienteCore({ token: 't', fetchImpl: async () => resp({ proximo_cursor: null, data: [] }) });
+  await assert.rejects(pedidosDoEspelho(vazio, { desde: new Date('2026-10-05T00:00:00Z') }), /espelho .*vazio|sem pedidos/i);
+
+  const antigo = criarClienteCore({ token: 't', fetchImpl: async () => resp({ proximo_cursor: null, data: [
+    { shopify_id: 1, nome: '#1', status_financeiro: 'paid', total: '1', moeda: 'BRL', criado_em: '2026-08-01 00:00:00', atualizado_em: '2026-08-02 00:00:00' }] }) });
+  assert.deepEqual(await pedidosDoEspelho(antigo, { desde: new Date('2026-10-05T00:00:00Z') }), []);
+});
+
+test('proxy do core lento: fetch pendurado e abortado pelo prazo', async () => {
+  // timer com ref: o fetch de verdade mantém o loop vivo; o falso precisa fazer o mesmo (AbortSignal.timeout é unref).
+  const pendurado = (_url, init) => new Promise((_, rej) => {
+    const vivo = setTimeout(() => {}, 5000);
+    init.signal.addEventListener('abort', () => { clearTimeout(vivo); rej(init.signal.reason); });
+  });
+  const graphql = graphqlPeloCore({ token: 't', fetchImpl: pendurado, prazoMs: 20, esperar: semEspera });
+  await assert.rejects(graphql('{ shop { name } }'), (e) => /prazo|timeout|abort/i.test(`${e.name} ${e.message}`));
+});

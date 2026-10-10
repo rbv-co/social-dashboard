@@ -14,7 +14,7 @@
 //    de antes passa pelo proxy (resposta idêntica à da Shopify).
 //
 // Módulo puro (roda na edge e no coletor); `fetchImpl` e `esperar` injetáveis para o teste.
-import { CORE_URL_PADRAO } from './core-leitura.js';
+import { CORE_URL_PADRAO, PRAZO_PADRAO_MS } from './core-leitura.js';
 import { LOJA_ID_SHOPIFY } from './pedido-shopify.js';
 
 export function shopifyLeituraLigada(env) {
@@ -25,7 +25,7 @@ export function shopifyLeituraLigada(env) {
 const esperarPadrao = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** GraphQL de LEITURA pelo proxy do core. Devolve `data`; lança em erro (token nunca vai na mensagem). */
-export function graphqlPeloCore({ url, token, fetchImpl = globalThis.fetch, esperar = esperarPadrao } = {}) {
+export function graphqlPeloCore({ url, token, fetchImpl = globalThis.fetch, esperar = esperarPadrao, prazoMs = PRAZO_PADRAO_MS } = {}) {
   if (!token) throw new Error('CORE_API_TOKEN ausente');
   const base = String(url || CORE_URL_PADRAO).replace(/\/+$/, '');
   return async function graphql(query, variaveis) {
@@ -34,6 +34,7 @@ export function graphqlPeloCore({ url, token, fetchImpl = globalThis.fetch, espe
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify({ tipo: 'graphql', query, variaveis }),
+        signal: AbortSignal.timeout(prazoMs),   // só leitura: abortar não deixa escrita incerta
       });
       if (r.status === 429 || r.status >= 500) { await esperar(700 * (t + 1)); continue; }
       const j = await r.json().catch(() => null);
@@ -91,6 +92,8 @@ const isoUtc = (s) => {
 export async function pedidosDoEspelho(core, { desde } = {}) {
   const { linhas } = await core.todas('shopify_pedidos',
     { campos: ['shopify_id', 'nome', 'status_financeiro', 'total', 'moeda', 'criado_em', 'atualizado_em'] });
+  // Espelho sem NENHUM pedido (a tabela inteira, não a janela) é o espelho quebrado, não "loja sem venda".
+  if (!linhas.length) throw new Error('core: espelho de pedidos da Shopify vazio');
   const corte = desde ? desde.getTime() : 0;
   const out = [];
   for (const l of linhas) {
