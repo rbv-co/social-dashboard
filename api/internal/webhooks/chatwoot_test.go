@@ -429,3 +429,37 @@ func TestChatwootGravacaoTemPrazo(t *testing.T) {
 		t.Fatalf("gravou %d linhas além do prazo", n)
 	}
 }
+
+// O padrão de produção da gravação é 10 s (PrazoGravar = 0); subir para horas falha aqui.
+func TestChatwootPrazoDeGravacaoPadraoEDe10s(t *testing.T) {
+	if got := (&Chatwoot{}).prazoDeGravacao(); got != 10*time.Second || PrazoGravarPadrao != 10*time.Second {
+		t.Fatalf("padrão = %v", got)
+	}
+	if got := (&Chatwoot{PrazoGravar: time.Second}).prazoDeGravacao(); got != time.Second {
+		t.Fatalf("injetado = %v", got)
+	}
+}
+
+// O log da falha de gravação traz só código/restrição do Postgres, nunca o texto do erro
+// (que pode citar o dado pessoal recusado), como no receptor da Shopify.
+func TestChatwootErroDeBancoNaoLogaDadoPessoal(t *testing.T) {
+	var log bytes.Buffer
+	antes := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&log, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	t.Cleanup(func() { slog.SetDefault(antes) })
+	p, h := montarChatwoot(t, segredoCW)
+	for _, q := range []string{
+		`create function recusa() returns trigger language plpgsql as $$ begin raise exception 'recusado: %', new.contact_name; end $$`,
+		`create trigger t_recusa before insert on chatwoot_eventos for each row execute function recusa()`} {
+		if _, err := p.Exec(context.Background(), q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	log.Reset() // descarta o que a migração do banco de teste logou
+	if w := postCW(h, "/receber-webhook-chatwoot", segredoCW, lead); w.Code != 500 {
+		t.Fatalf("%d", w.Code)
+	}
+	if !strings.Contains(log.String(), "falha ao gravar") || strings.Contains(log.String(), "recusado") || strings.Contains(log.String(), "Ana") {
+		t.Fatalf("log: %s", log.String())
+	}
+}

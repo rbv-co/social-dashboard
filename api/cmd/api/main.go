@@ -75,13 +75,14 @@ func main() {
 		if _, err := webpush.ValidarVAPID(pv.VAPID); err != nil { // o erro nunca traz as chaves
 			slog.Warn("VAPID inválido: o push de vendas vai falhar em toda execução", "erro", err)
 		}
-		for _, t := range pv.Tarefas() {
+		tarefas := worker.Filtrar(pv.Tarefas(), cfg.TarefasDesligadas)
+		for _, t := range tarefas {
 			if err := ag.Registrar(t); err != nil {
 				slog.Error("tarefa", "nome", t.Nome, "erro", err)
 				os.Exit(1)
 			}
 		}
-		slog.Info("worker no ar", "tarefas", len(pv.Tarefas()))
+		slog.Info("worker no ar", "tarefas", len(tarefas), "desligadas", cfg.TarefasDesligadas)
 		ag.Iniciar(ctx)
 	case "importar-usuarios":
 		origem := os.Getenv("ORIGEM_DATABASE_URL")

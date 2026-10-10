@@ -79,3 +79,34 @@ func TestHostsDeMidiaEmMinusculas(t *testing.T) {
 		t.Fatalf("HostsDeMidia = %#v", c.HostsDeMidia)
 	}
 }
+
+func TestCoreURLSoHTTPSOuLoopback(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://x")
+	for url, ok := range map[string]bool{
+		"https://core.exemplo": true, "http://localhost:8000": true, "http://127.0.0.1:9": true, "http://[::1]:9": true,
+		"http://core.exemplo": false, "http://localhost.evil.com": false, "ftp://core.exemplo": false, "core.exemplo": false, "https://": false,
+	} {
+		t.Setenv("CORE_URL", url)
+		if _, err := Carregar(); (err == nil) != ok {
+			t.Errorf("CORE_URL=%q: err=%v, esperava ok=%v", url, err, ok)
+		}
+	}
+}
+
+func TestTiraEspacosDoSegredoDoChatwoot(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://x")
+	t.Setenv("CHATWOOT_WEBHOOK_SEGREDO", " seg\n")
+	c, _ := Carregar()
+	if c.ChatwootSegredo != "seg" {
+		t.Fatalf("%q", c.ChatwootSegredo)
+	}
+}
+
+func TestTarefasDesligadas(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://x")
+	t.Setenv("WORKER_TAREFAS_DESLIGADAS", " enviar-push-vendas-07h, ,*")
+	c, _ := Carregar()
+	if len(c.TarefasDesligadas) != 2 || c.TarefasDesligadas[0] != "enviar-push-vendas-07h" || c.TarefasDesligadas[1] != "*" {
+		t.Fatalf("%#v", c.TarefasDesligadas)
+	}
+}

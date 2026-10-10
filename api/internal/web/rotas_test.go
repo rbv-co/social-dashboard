@@ -237,7 +237,7 @@ func TestRotasProtegidasPelaMontagemReal(t *testing.T) {
 func TestPrazosPorRotaPelaMontagemReal(t *testing.T) {
 	p := testebanco.Novo(t)
 	h := Rotas(p, auth.NovoStore(p), auth.NovoLimitador(), config.Config{})
-	quer := map[string]time.Duration{"POST /insights-ao-vivo": 90 * time.Second, "POST /serie-novos-dia": 90 * time.Second, "POST /contar-collabs": 120 * time.Second}
+	quer := map[string]time.Duration{"POST /bling-proxy": 90 * time.Second, "POST /insights-ao-vivo": 90 * time.Second, "POST /serie-novos-dia": 90 * time.Second, "POST /contar-collabs": 120 * time.Second}
 	vistos := map[string]bool{}
 	chi.Walk(h.(chi.Routes), func(metodo, rota string, _ http.Handler, mws ...func(http.Handler) http.Handler) error {
 		chave := metodo + " " + rota

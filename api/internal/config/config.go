@@ -3,6 +3,7 @@ package config
 
 import (
 	"errors"
+	"net/url"
 	"os"
 	"strings"
 )
@@ -22,6 +23,9 @@ type Config struct {
 	VAPIDPublica    string   // VAPID_PUBLIC_KEY (base64url, 65 bytes)
 	VAPIDPrivada    string   // VAPID_PRIVATE_KEY (base64url, 32 bytes)
 	VAPIDAssunto    string   // VAPID_SUBJECT (ex.: mailto:...)
+	// WORKER_TAREFAS_DESLIGADAS: nomes de tarefas que o worker NÃO registra ("*" = todas).
+	// O ensaio roda com banco restaurado de produção: ligue "*" (ou o push) para não mandar push de verdade.
+	TarefasDesligadas []string
 }
 
 // lista lê uma variável separada por vírgulas, sem itens vazios.
@@ -44,6 +48,8 @@ func minusculas(l []string) []string {
 	return l
 }
 
+func loopback(h string) bool { return h == "localhost" || h == "127.0.0.1" || h == "::1" }
+
 func Carregar() (Config, error) {
 	c := Config{
 		Addr:            os.Getenv("ADDR"),
@@ -53,10 +59,12 @@ func Carregar() (Config, error) {
 		CoreToken:       strings.TrimSpace(os.Getenv("CORE_API_TOKEN")),
 		HostsDeMidia:    minusculas(lista("HOSTS_DE_MIDIA")),
 		ShopifySegredos: lista("SHOPIFY_WEBHOOK_SEGREDOS"),
-		ChatwootSegredo: os.Getenv("CHATWOOT_WEBHOOK_SEGREDO"),
+		ChatwootSegredo: strings.TrimSpace(os.Getenv("CHATWOOT_WEBHOOK_SEGREDO")),
 		VAPIDPublica:    os.Getenv("VAPID_PUBLIC_KEY"),
 		VAPIDPrivada:    os.Getenv("VAPID_PRIVATE_KEY"),
 		VAPIDAssunto:    os.Getenv("VAPID_SUBJECT"),
+
+		TarefasDesligadas: lista("WORKER_TAREFAS_DESLIGADAS"),
 	}
 	if c.Addr == "" {
 		c.Addr = ":8080"
@@ -66,6 +74,10 @@ func Carregar() (Config, error) {
 	}
 	if c.DatabaseURL == "" {
 		return c, errors.New("DATABASE_URL ausente")
+	}
+	// O Bearer do core viaja na chamada: só https (http apenas em loopback, para dev/teste).
+	if u, err := url.Parse(c.CoreURL); err != nil || u.Host == "" || !(u.Scheme == "https" || (u.Scheme == "http" && loopback(u.Hostname()))) {
+		return c, errors.New("CORE_URL deve ser https (http só para localhost, 127.0.0.1 ou ::1)")
 	}
 	return c, nil
 }
