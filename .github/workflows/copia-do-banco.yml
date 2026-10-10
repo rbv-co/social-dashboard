@@ -22,8 +22,7 @@ name: Cópia de segurança do banco
 # DOMINGO leva `--semanal`: inclui o histórico de métrica, que é grande e quase
 # todo recoletável, e por isso não vale copiar todo dia.
 on:
-  schedule:
-    - cron: '12 6 * * *'
+  # AGENDAMENTO NA VPS (coletor/vps/robos.cron): este workflow só roda por disparo manual, como retaguarda.
   workflow_dispatch:
     inputs:
       semanal:

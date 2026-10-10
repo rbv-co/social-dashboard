@@ -1,0 +1,10 @@
+# Instalar em /etc/logrotate.d/robos (install -m 644 -o root -g root robos.logrotate /etc/logrotate.d/robos)
+/var/log/robos/*.log {
+    weekly
+    rotate 8
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+}

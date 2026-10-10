@@ -38,9 +38,7 @@ name: Pedidos da Vessel (a venda, pedido a pedido)
 # dias continua UMA vez por dia — é ela que pega o pedido que demora quinze
 # dias para virar Atendido.
 on:
-  schedule:
-    - cron: '34 7 * * *'     # varredura profunda: 30 dias
-    - cron: '23 * * * *'     # conferência ao vivo: 3 dias
+  # AGENDAMENTO NA VPS (coletor/vps/robos.cron): este workflow só roda por disparo manual, como retaguarda.
   workflow_dispatch:
     inputs:
       dias:

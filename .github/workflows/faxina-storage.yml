@@ -12,8 +12,7 @@ name: Faxina do Storage (sobras + vigia do teto)
 # 80% ele deixa uma ANOTAÇÃO e a rodada segue verde; só acima de 95% ele derruba a rodada.
 # Alarme que toca todo dia deixa de ser alarme — e o projeto vive na faixa dos 86%.
 on:
-  schedule:
-    - cron: '23 5 * * *'
+  # AGENDAMENTO NA VPS (coletor/vps/robos.cron): este workflow só roda por disparo manual, como retaguarda.
   workflow_dispatch:
     inputs:
       dry:

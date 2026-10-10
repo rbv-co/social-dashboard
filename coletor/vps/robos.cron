@@ -1,0 +1,45 @@
+# AGENDAMENTO DOS ROBÔS DO COLETOR, NA VPS. Instalar com:
+#   install -m 644 -o root -g root /opt/robos/social-dashboard/coletor/vps/robos.cron /etc/cron.d/robos-social-dashboard
+# Substitui os `schedule:` dos workflows do GitHub Actions (que passaram a só aceitar disparo manual).
+# Leia coletor/vps/LEIA-ME-ROBOS.txt antes de mexer. Formato de /etc/cron.d: tem a coluna do usuário.
+#
+# Horários em UTC, iguais aos dos workflows de origem (a VPS roda em UTC). Cada linha:
+#   <cron> root <wrapper> <nome> <limite em minutos> -- <comando>
+# O <nome> é o lock: duas linhas com o mesmo nome nunca rodam juntas (a segunda é pulada, não enfileirada).
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# ── De hora em hora ─────────────────────────────────────────────────────────────────────────────────────────────
+# Notas dos pedidos (data da venda): janela de 7 dias, idempotente (workflow notas-dos-pedidos).
+23 * * * * root /opt/robos/social-dashboard/coletor/vps/rodar-robo.sh notas-dos-pedidos 120 -- node coletor/notas-dos-pedidos.mjs --dias=7
+
+# Pedidos da Vessel: vendedores do Bling antes dos pedidos. Conferência ao vivo (3 dias) a cada hora e varredura
+# profunda (30 dias) às 07:34. No Actions as duas caíam no mesmo grupo de concorrência; aqui elas têm o mesmo nome
+# (= mesmo lock) e minutos diferentes. O minuto 29 (e não 23) afasta este robô do das notas: os dois falam com o Bling.
+29 * * * * root /opt/robos/social-dashboard/coletor/vps/rodar-robo.sh pedidos-da-vessel 90 -- bash -c 'set -e; node coletor/trazer-vendedores-do-bling.mjs; node coletor/trazer-pedidos-do-bling.mjs --dias=3'
+34 7 * * * root /opt/robos/social-dashboard/coletor/vps/rodar-robo.sh pedidos-da-vessel 90 -- bash -c 'set -e; node coletor/trazer-vendedores-do-bling.mjs; node coletor/trazer-pedidos-do-bling.mjs --dias=30'
+
+# Pedidos da Loja Shopify: ao vivo (3 dias) em toda hora EXCETO 07h, onde a varredura profunda (30 dias) ocupa o
+# lugar. No Actions as duas coincidiam às 07:41 e a segunda esperava na fila; aqui a segunda seria pulada, então
+# a hora 7 é da profunda.
+41 0-6,8-23 * * * root /opt/robos/social-dashboard/coletor/vps/rodar-robo.sh pedidos-da-shopify 30 -- node coletor/trazer-pedidos-da-shopify.mjs --dias=3
+41 7 * * * root /opt/robos/social-dashboard/coletor/vps/rodar-robo.sh pedidos-da-shopify 30 -- node coletor/trazer-pedidos-da-shopify.mjs --dias=30
+
+# ── Diários ─────────────────────────────────────────────────────────────────────────────────────────────────────
+# 03h12 em Campinas: cópia de segurança do banco para o Zoho (domingo leva o histórico de métrica; dia 1º confere).
+12 6 * * * root /opt/robos/social-dashboard/coletor/vps/rodar-robo.sh copia-do-banco 60 -- bash coletor/vps/copia-do-banco.sh
+
+# Faxina do Storage + vigia de armazenamento.
+23 5 * * * root /opt/robos/social-dashboard/coletor/vps/rodar-robo.sh faxina-storage 15 -- bash coletor/vps/faxina-storage.sh
+
+# Meta Ads: planilha para o Zoho WorkDrive.
+42 9 * * * root /opt/robos/social-dashboard/coletor/vps/rodar-robo.sh meta-ads-no-zoho 20 -- node coletor/meta-ads-no-zoho.mjs
+
+# Cards do comercial.
+40 9 * * * root /opt/robos/social-dashboard/coletor/vps/rodar-robo.sh cards-comercial-diario 15 -- node coletor/atualizar-cards-comercial.mjs
+
+# Relatórios comerciais (o --backfill vazio é o que o workflow passava no cron).
+52 8 * * * root /opt/robos/social-dashboard/coletor/vps/rodar-robo.sh relatorios-comerciais 120 -- node coletor/relatorios-comerciais.mjs --backfill=
+
+# Vigia de problemas do Meta (leitura + upsert, sem IA).
+7 7 * * * root /opt/robos/social-dashboard/coletor/vps/rodar-robo.sh vigia-problemas-meta 20 -- node coletor/vigia-problemas-meta.mjs
