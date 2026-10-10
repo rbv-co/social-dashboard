@@ -42,12 +42,15 @@ while IFS= read -r linha || [ -n "$linha" ]; do
 done < "$ENV_ROBOS"
 export PATH="$NODE_BIN:$PATH"
 
+# Canais de aviso (ambos opcionais, em /etc/robos.env): ALERT_COMANDO (programa que recebe o texto como $1; na VPS
+# é o avisar-whatsapp.py, o mesmo grupo do monitor) e ALERT_WEBHOOK_URL (JSON `text`/`content`: Slack e Discord).
+# A mensagem nunca leva segredo: só o nome do robô e o motivo.
 avisar() {
-  touch "$LOGS/$nome.falhou"
-  [ -n "${ALERT_WEBHOOK_URL:-}" ] || return 0
-  # Mensagem sem segredo: só o nome e o código de saída. `text` e `content` cobrem Slack e Discord.
-  curl -fsS -m 15 -H 'Content-Type: application/json' \
-    -d "{\"text\":\"$1\",\"content\":\"$1\"}" "$ALERT_WEBHOOK_URL" >/dev/null 2>&1 || log "aviso: webhook de alerta falhou"
+  if [ -n "${ALERT_COMANDO:-}" ]; then "$ALERT_COMANDO" "$1" >> "$LOGS/$nome.log" 2>&1 || log "aviso: ALERT_COMANDO falhou"; fi
+  if [ -n "${ALERT_WEBHOOK_URL:-}" ]; then
+    curl -fsS -m 15 -H 'Content-Type: application/json' \
+      -d "{\"text\":\"$1\",\"content\":\"$1\"}" "$ALERT_WEBHOOK_URL" >/dev/null 2>&1 || log "aviso: webhook de alerta falhou"
+  fi
 }
 
 # Um robô por vez: se o da rodada anterior ainda roda, pula esta (no Actions a rodada entrava na fila).
@@ -82,12 +85,18 @@ nice -n 10 timeout --kill-after=30 "$((limite * 60))" "$@" >> "$LOGS/$nome.log" 
 codigo=$?
 dur=$(( $(date +%s) - inicio ))
 
+# Avisa na MUDANÇA de estado (caiu / voltou), e repete a cada 6 h enquanto continuar caído — um robô de hora em hora
+# quebrado não pode mandar 24 mensagens por dia. O momento da primeira falha é a data da marca `.falhou`.
+marca="$LOGS/$nome.falhou"
 if [ "$codigo" -eq 0 ]; then
   log "fim: ok em ${dur}s"
-  rm -f "$LOGS/$nome.falhou"
+  if [ -e "$marca" ]; then rm -f "$marca"; avisar "Robô $nome voltou ao normal na VPS."; fi
 else
   [ "$codigo" -eq 124 ] && motivo="estourou o limite de ${limite} min" || motivo="saiu com código $codigo"
   log "FALHOU: $motivo (${dur}s)"
-  avisar "Robô $nome falhou na VPS: $motivo. Log: $LOGS/$nome.log"
+  if [ ! -e "$marca" ] || [ -n "$(find "$marca" -mmin +360 2>/dev/null)" ]; then
+    touch "$marca"
+    avisar "Robô $nome falhou na VPS: $motivo. Log: $LOGS/$nome.log"
+  fi
 fi
 exit "$codigo"
