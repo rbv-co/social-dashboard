@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import { symlinkSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
-import { copiarBucket, selecionarBuckets } from './copiar-storage.mjs'
+import { copiarBucket, selecionarBuckets, esperaDoRetry } from './copiar-storage.mjs'
 
 const cont = (v) => (typeof v === 'string' ? v : v.c)
 function servidor(arvore) {
@@ -207,6 +207,84 @@ test('download em streaming: arquivo grande copiado inteiro, com tamanho conferi
   await assert.rejects(() => copiarBucket({ url: 'http://x', chave: 'k', bucket: 'b', destino, fetch: f2 }), /tamanho baixado difere/)
   assert.equal(existsSync(join(destino, 'b', 'h.bin')), false)
   assert.equal(readdirSync(join(destino, 'b')).some((n) => n.endsWith('.parcial')), false)
+})
+
+// servidor de mentira programável: handler(req, res, n) com n = número da requisição (1, 2, ...)
+function simples(handler) {
+  let n = 0
+  const srv = http.createServer((req, res) => { req.resume(); handler(req, res, ++n) })
+  return new Promise((r) => srv.listen(0, '127.0.0.1', () => r({ srv, url: `http://127.0.0.1:${srv.address().port}` })))
+}
+const lista1 = (nome, tam) => JSON.stringify([{ name: nome, id: 'i', metadata: { size: tam }, updated_at: '2026-01-01T00:00:00.000Z' }])
+const dest = () => mkdtempSync(join(tmpdir(), 'st-'))
+
+test('esperaDoRetry: backoff 1 s, 3 s, 9 s; Retry-After vale, com teto de 30 s', () => {
+  assert.deepEqual([1, 2, 3].map((i) => esperaDoRetry({}, i, 1000)), [1000, 3000, 9000])
+  assert.equal(esperaDoRetry({ retryAfterMs: 2000 }, 1, 1000), 2000)
+  assert.equal(esperaDoRetry({ retryAfterMs: 999000 }, 1, 1000), 30000)
+})
+
+test('Retry-After de um 503 é respeitado (espera o que o servidor mandou)', async () => {
+  const { srv, url } = await simples((req, res, n) => {
+    if (req.method === 'POST') return res.end(lista1('a.txt', 2))
+    if (n === 2) return res.writeHead(503, { 'retry-after': '1' }).end()
+    res.end('xx')
+  })
+  try {
+    const t0 = Date.now()
+    const r = await copiarBucket({ url, chave: 'k', bucket: 'b', destino: dest(), espera: 1 })
+    assert.equal(r.copiados, 1)
+    assert.ok(Date.now() - t0 >= 900, `esperou só ${Date.now() - t0} ms`)
+  } finally { srv.close() }
+})
+
+test('timeout de cabeçalhos: servidor que nunca responde falha com TIMEOUT', async () => {
+  const { srv, url } = await simples(() => {})
+  try {
+    await assert.rejects(() => copiarBucket({ url, chave: 'k', bucket: 'b', destino: dest(), cabecalhosMs: 100, tentativas: 1 }), /TIMEOUT/)
+  } finally { srv.closeAllConnections?.(); srv.close() }
+})
+
+test('corpo que trava sem progresso falha citando o objeto; corpo lento mas com progresso passa', async () => {
+  const { srv, url } = await simples((req, res, n) => {
+    if (req.method === 'POST') return res.end(lista1('a.txt', 6))
+    res.writeHead(200); res.write('ab')            // 2 de 6 bytes e trava
+  })
+  try {
+    await assert.rejects(() => copiarBucket({ url, chave: 'k', bucket: 'b', destino: dest(), inatividadeMs: 150, tentativas: 1 }),
+      (e) => /falha ao baixar "a\.txt"/.test(e.message) && /sem progresso/.test(e.message))
+  } finally { srv.closeAllConnections?.(); srv.close() }
+  const lento = await simples((req, res) => {
+    if (req.method === 'POST') return res.end(lista1('a.txt', 6))
+    res.writeHead(200)
+    let i = 0; const t = setInterval(() => { res.write('ab'); if (++i === 3) { clearInterval(t); res.end() } }, 100) // 300 ms no total > inatividadeMs
+  })
+  try {
+    const r = await copiarBucket({ url: lento.url, chave: 'k', bucket: 'b', destino: dest(), inatividadeMs: 250, tentativas: 1 })
+    assert.equal(r.bytes, 6)
+  } finally { lento.srv.close() }
+})
+
+test('queda no meio do corpo registra o caminho do objeto', async () => {
+  const { srv, url } = await simples((req, res) => {
+    if (req.method === 'POST') return res.end(lista1('pasta-x.bin', 10))
+    res.writeHead(200, { 'content-length': '10' }); res.write('abc'); setTimeout(() => res.destroy(), 20)
+  })
+  try {
+    await assert.rejects(() => copiarBucket({ url, chave: 'k', bucket: 'b', destino: dest(), espera: 1, tentativas: 2 }), /falha ao baixar "pasta-x\.bin"/)
+  } finally { srv.close() }
+})
+
+test('corpo da LISTAGEM cortado no meio é repetido e depois dá certo', async () => {
+  const { srv, url } = await simples((req, res, n) => {
+    if (req.method === 'POST' && n === 1) { res.writeHead(200, { 'content-length': '1000' }); res.write('[{"na'); setTimeout(() => res.destroy(), 20); return }
+    if (req.method === 'POST') return res.end(lista1('a.txt', 2))
+    res.end('xx')
+  })
+  try {
+    const r = await copiarBucket({ url, chave: 'k', bucket: 'b', destino: dest(), espera: 1 })
+    assert.equal(r.copiados, 1)
+  } finally { srv.close() }
 })
 
 test('seleção de buckets é explícita: incluir, excluir e nenhum filtro', () => {

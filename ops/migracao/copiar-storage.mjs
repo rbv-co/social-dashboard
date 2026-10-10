@@ -14,7 +14,7 @@
 // Uso: SUPABASE_URL=... SUPABASE_SERVICE_KEY=... node copiar-storage.mjs --destino DIR [--incluir a,b | --bucket x] [--excluir a,b]
 import { mkdirSync, statSync, renameSync, existsSync, utimesSync, realpathSync, createWriteStream, rmSync } from 'node:fs'
 import { createHash } from 'node:crypto'
-import { Readable } from 'node:stream'
+import { Readable, Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { fileURLToPath } from 'node:url'
 import { dirname, join, resolve, sep } from 'node:path'
@@ -43,39 +43,77 @@ function seguro(destinoBucket, caminho) {
 
 const CODIGOS_DE_CONFLITO = ['EEXIST', 'ENOTDIR', 'EISDIR', 'ENOTEMPTY', 'ENAMETOOLONG']
 const esperar = (ms) => new Promise((r) => setTimeout(r, ms))
+const TETO_RETRY_AFTER_MS = 30000
 
-// Até `tentativas` execuções com backoff (espera, 2×espera, ...) enquanto o erro for `retentavel`.
-async function comRetry(fn, { tentativas = 3, espera = 500 } = {}) {
+// Quanto esperar antes da tentativa seguinte (i = tentativa que acabou de falhar): backoff espera, 3×espera,
+// 9×espera (1 s, 3 s, 9 s com o padrão); se o servidor mandou Retry-After (em segundos), vale ele, com teto de 30 s.
+export function esperaDoRetry(e, i, espera) {
+  if (e.retryAfterMs != null) return Math.min(e.retryAfterMs, TETO_RETRY_AFTER_MS)
+  return espera * 3 ** (i - 1)
+}
+
+// Até `tentativas` execuções enquanto o erro for `retentavel`.
+async function comRetry(fn, { tentativas = 3, espera = 1000 } = {}) {
   for (let i = 1; ; i++) {
     try { return await fn() } catch (e) {
       if (!e.retentavel || i >= tentativas) throw e
-      await esperar(espera * 2 ** (i - 1))
+      await esperar(esperaDoRetry(e, i, espera))
     }
   }
 }
 
-async function chamar(f, url, chave, init = {}, timeoutMs = 300000) {
+// Timeouts: `cabecalhosMs` até chegarem os cabeçalhos da resposta; depois disso o corpo só cai se ficar
+// `inatividadeMs` SEM nenhum progresso (objeto grande em link lento não falha enquanto os bytes fluem).
+async function chamar(f, url, chave, init = {}, { cabecalhosMs = 60000 } = {}) {
+  const ctl = new AbortController()
+  let estourou = false
+  const t = setTimeout(() => { estourou = true; ctl.abort() }, cabecalhosMs)
   let r
   try {
     // redirect: 'error' — a chave nunca segue um redirecionamento para outra origem
-    r = await f(url, { ...init, redirect: 'error', signal: AbortSignal.timeout(timeoutMs), headers: { authorization: `Bearer ${chave}`, apikey: chave, ...(init.headers || {}) } })
+    r = await f(url, { ...init, redirect: 'error', signal: ctl.signal, headers: { authorization: `Bearer ${chave}`, apikey: chave, ...(init.headers || {}) } })
   } catch (e) {
     // nunca e.message do fetch (pode conter o valor do cabeçalho, a chave): só o código e a mensagem da CAUSA
     // (erro de rede do undici), com a chave mascarada por garantia
-    const codigo = e.cause?.errors?.[0]?.code || e.cause?.code || e.name
-    const msg = e.cause?.message ? ` (${String(e.cause.message).split(chave).join('***')})` : ''
+    const codigo = estourou ? 'TIMEOUT' : e.cause?.errors?.[0]?.code || e.cause?.code || e.name
+    const msg = estourou ? ` (sem cabeçalhos em ${cabecalhosMs} ms)` : e.cause?.message ? ` (${String(e.cause.message).split(chave).join('***')})` : ''
     const err = new Error(`falha ao chamar o Storage em ${new URL(url).pathname}: ${codigo}${msg}`)
     err.retentavel = !(e instanceof TypeError && !e.cause) // TypeError sem causa = argumento inválido, não rede
     throw err
-  }
+  } finally { clearTimeout(t) }
+  r.ctl = ctl
   if (!r.ok) {
     const err = new Error(`Storage respondeu ${r.status} em ${new URL(url).pathname}`) // sem a chave na mensagem
     err.status = r.status
     err.retentavel = r.status === 429 || r.status >= 500
+    const ra = Number(r.headers?.get?.('retry-after'))
+    if ((r.status === 429 || r.status === 503) && Number.isFinite(ra) && ra >= 0) err.retryAfterMs = ra * 1000
     await r.body?.cancel?.().catch(() => {})
     throw err
   }
   return r
+}
+
+// Vigia de inatividade do corpo: aborta a requisição se passar `ms` sem progresso. tocar() reinicia o relógio.
+function vigia(ctl, ms) {
+  let t, estourou = false
+  const tocar = () => { clearTimeout(t); t = setTimeout(() => { estourou = true; ctl.abort() }, ms) }
+  return { tocar, parar: () => clearTimeout(t), estourou: () => estourou }
+}
+
+// Lê o corpo JSON com vigia de inatividade; queda no meio do corpo é repetível (retentavel).
+async function lerJson(r, inatividadeMs) {
+  if (!r.body) return r.json()
+  const v = vigia(r.ctl, inatividadeMs); v.tocar()
+  try {
+    const partes = []
+    for await (const c of Readable.fromWeb(r.body)) { v.tocar(); partes.push(c) }
+    return JSON.parse(Buffer.concat(partes).toString('utf8'))
+  } catch (e) {
+    const err = new Error(v.estourou() ? `corpo da resposta sem progresso por ${inatividadeMs} ms` : `corpo da resposta interrompido: ${e.cause?.code || e.name}`)
+    err.retentavel = true
+    throw err
+  } finally { v.parar() }
 }
 
 async function listar(f, url, chave, bucket, prefixo, opc) {
@@ -85,8 +123,8 @@ async function listar(f, url, chave, bucket, prefixo, opc) {
       const r = await chamar(f, `${url}/storage/v1/object/list/${encodeURIComponent(bucket)}`, chave, {
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ prefix: prefixo, limit: PAGINA, offset, sortBy: { column: 'name', order: 'asc' } }),
-      }, opc.timeoutMs)
-      return r.json()
+      }, opc)
+      return lerJson(r, opc.inatividadeMs)
     }, opc)
     itens.push(...pagina)
     if (pagina.length < PAGINA) return itens
@@ -101,9 +139,9 @@ function nomeTemporario(alvo) {
   return join(dirname(alvo), '.' + createHash('sha256').update(alvo).digest('hex').slice(0, 24) + '.parcial')
 }
 
-export async function copiarBucket({ url, chave, bucket, destino, fetch: f = fetch, tentativas = 3, espera = 500, timeoutMs = 300000, aviso = console.error }) {
+export async function copiarBucket({ url, chave, bucket, destino, fetch: f = fetch, tentativas = 3, espera = 1000, cabecalhosMs = 60000, inatividadeMs = 60000, aviso = console.error }) {
   const res = { copiados: 0, pulados: 0, bytes: 0, sumiram: 0, falhas: 0 }
-  const opc = { tentativas, espera, timeoutMs }
+  const opc = { tentativas, espera, cabecalhosMs, inatividadeMs }
   if (bucket.includes('/')) throw new Error(`caminho inseguro no Storage: ${JSON.stringify(bucket)}`) // bucket é um único segmento
   const destinoBucket = seguro(destino, bucket)
   mkdirSync(destinoBucket, { recursive: true })
@@ -113,12 +151,18 @@ export async function copiarBucket({ url, chave, bucket, destino, fetch: f = fet
     const tmp = nomeTemporario(alvo)
     try {
       return await comRetry(async () => {
-        const r = await chamar(f, `${url}/storage/v1/object/authenticated/${encodeURIComponent(bucket)}/${caminho.split('/').map(encodeURIComponent).join('/')}`, chave, {}, timeoutMs)
+        const r = await chamar(f, `${url}/storage/v1/object/authenticated/${encodeURIComponent(bucket)}/${caminho.split('/').map(encodeURIComponent).join('/')}`, chave, {}, opc)
         mkdirSync(dirname(alvo), { recursive: true })
-        try { await pipeline(Readable.fromWeb(r.body), createWriteStream(tmp)) } catch (e) {
+        const v = vigia(r.ctl, inatividadeMs); v.tocar()
+        const toque = new Transform({ transform(c, _e, cb) { v.tocar(); cb(null, c) } })
+        try { await pipeline(Readable.fromWeb(r.body), toque, createWriteStream(tmp)) } catch (e) {
           if (!e.syscall) e.retentavel = true // queda no meio do corpo; erro do disco (syscall) não se repete
-          throw e
-        }
+          // registra QUAL objeto caiu (o erro do undici é só "terminated"); sem a chave
+          // (erro novo: o message de alguns erros, como o AbortError, é só leitura)
+          const novo = new Error(`falha ao baixar ${JSON.stringify(caminho)}: ${v.estourou() ? `sem progresso por ${inatividadeMs} ms` : String(e.message).split(chave).join('***')}${e.cause?.code ? ` (${e.cause.code})` : ''}`)
+          Object.assign(novo, { retentavel: e.retentavel, code: e.code, syscall: e.syscall })
+          throw novo
+        } finally { v.parar() }
         const bytes = statSync(tmp).size
         if (tam != null && bytes !== tam) throw new Error(`tamanho baixado difere do listado em ${JSON.stringify(caminho)}`)
         renameSync(tmp, alvo) // nunca deixa meio-arquivo com o nome final
@@ -160,7 +204,7 @@ async function principal() {
   const destino = arg('--destino'); const incluir = [arg('--bucket'), ...(arg('--incluir') || '').split(',')].filter(Boolean); const excluir = (arg('--excluir') || '').split(',').filter(Boolean)
   const url = process.env.SUPABASE_URL; const chave = process.env.SUPABASE_SERVICE_KEY
   if (!destino || !url || !chave) { console.error('uso: SUPABASE_URL=... SUPABASE_SERVICE_KEY=... node copiar-storage.mjs --destino DIR [--incluir a,b | --bucket x] [--excluir a,b]'); process.exit(2) }
-  const todos = (await comRetry(async () => (await chamar(fetch, `${url}/storage/v1/bucket`, chave)).json())).map((b) => b.name)
+  const todos = (await comRetry(async () => lerJson(await chamar(fetch, `${url}/storage/v1/bucket`, chave), 60000))).map((b) => b.name)
   let buckets
   try { buckets = selecionarBuckets(todos, { incluir, excluir }) } catch (e) { console.error(e.message); process.exit(2) }
   console.log(`buckets selecionados: ${buckets.join(', ') || '(nenhum)'}`)
