@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"slices"
+	"testing"
+)
 
 func TestCarregarExigeDatabaseURL(t *testing.T) {
 	t.Setenv("DATABASE_URL", "")
@@ -108,5 +111,21 @@ func TestTarefasDesligadas(t *testing.T) {
 	c, _ := Carregar()
 	if len(c.TarefasDesligadas) != 2 || c.TarefasDesligadas[0] != "enviar-push-vendas-07h" || c.TarefasDesligadas[1] != "*" {
 		t.Fatalf("%#v", c.TarefasDesligadas)
+	}
+}
+
+func TestCarregarVariaveisDoWorker(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://x")
+	t.Setenv("WORKER_ADDR", " 127.0.0.1:8081 ")
+	t.Setenv("CORE_API_TOKEN", "tok-do-core")
+	c, err := Carregar()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.WorkerAddr != "127.0.0.1:8081" {
+		t.Fatalf("%+v", c)
+	}
+	if !slices.Contains(c.Segredos(), "tok-do-core") {
+		t.Fatalf("o token do core é segredo do worker: %v", c.Segredos())
 	}
 }

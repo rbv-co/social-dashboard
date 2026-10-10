@@ -23,9 +23,19 @@ type Config struct {
 	VAPIDPublica    string   // VAPID_PUBLIC_KEY (base64url, 65 bytes)
 	VAPIDPrivada    string   // VAPID_PRIVATE_KEY (base64url, 32 bytes)
 	VAPIDAssunto    string   // VAPID_SUBJECT (ex.: mailto:...)
-	// WORKER_TAREFAS_DESLIGADAS: nomes de tarefas que o worker NÃO registra ("*" = todas).
+	// WORKER_TAREFAS_DESLIGADAS: tarefas que o worker NÃO agenda ("*" = todas); `api worker rodar <t> --forcar` ainda roda.
+	// Nome que não é "*" nem de tarefa registrada: o worker recusa subir (worker.Filtrar).
 	// O ensaio roda com banco restaurado de produção: ligue "*" (ou o push) para não mandar push de verdade.
 	TarefasDesligadas []string
+
+	// Plano 4 (worker).
+	WorkerAddr string // WORKER_ADDR: endereço do GET /saude e /metricas do worker; vazio = sem HTTP
+}
+
+// Segredos: os valores que nunca podem sair em robos_execucoes nem no log do worker
+// (worker.Limpar troca cada um por ***).
+func (c Config) Segredos() []string {
+	return append([]string{c.CoreToken, c.ChatwootSegredo, c.VAPIDPrivada}, c.ShopifySegredos...)
 }
 
 // lista lê uma variável separada por vírgulas, sem itens vazios.
@@ -65,6 +75,7 @@ func Carregar() (Config, error) {
 		VAPIDAssunto:    os.Getenv("VAPID_SUBJECT"),
 
 		TarefasDesligadas: lista("WORKER_TAREFAS_DESLIGADAS"),
+		WorkerAddr:        strings.TrimSpace(os.Getenv("WORKER_ADDR")),
 	}
 	if c.Addr == "" {
 		c.Addr = ":8080"
