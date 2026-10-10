@@ -100,6 +100,14 @@ Deno.serve(async (req: Request) => {
     const { accountId, path, params, method, imageFromUrl, imageField, videoFromUrl } = await req.json();
     if (!accountId || !path) return json({ error: 'accountId e path obrigatorios' }, 400);
 
+    // `allowed_accounts` vale aqui também: este proxy usa a service key, que atravessa o RLS, e escreve na Meta
+    // (copies, customaudiences, media_publish). Quem tem a feature `meta` mas está limitado a certas marcas não
+    // alcança as outras. `pode_ver_conta` é a mesma regra das 19 tabelas (admin/superadmin/sem lista = livre);
+    // chamada com o JWT do usuário, que é o que ela lê em auth.uid().
+    const { data: podeVer, error: erroConta } = await userClient.rpc('pode_ver_conta', { p_conta: String(accountId) });
+    if (erroConta) return json({ error: 'nao foi possivel conferir o acesso a conta' }, 500);
+    if (podeVer !== true) return json({ error: 'sem permissao para esta conta' }, 403);
+
     if (META.ligada) return await viaCore(svc, { accountId, path, params, method, imageFromUrl, imageField, videoFromUrl }, json);
 
     const { data: acc, error: accErr } = await svc.from('accounts').select('access_token').eq('id', accountId).single();
