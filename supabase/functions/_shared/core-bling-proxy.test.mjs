@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { blingPeloCore, blingViaCore, chaveIdempotente, ligada } from './core-bling-proxy.js';
+import { blingPeloCore, blingViaCore, chaveIdempotente, credencialRecusadaPeloCore, ligada } from './core-bling-proxy.js';
 
 const ENV = { CORE_BLING_PROXY: 'true', CORE_API_TOKEN: 'segredo', CORE_URL: 'https://core.x/' };
 const H = (o) => ({ get: (k) => o[k] ?? null });
@@ -112,4 +112,21 @@ test('blingPeloCore desligada: é o fetch direto de sempre, com a senão rodando
   const b = blingPeloCore({}, { fetchImpl: async () => ({ status: 200 }) });
   assert.equal(b.ligada, false);
   assert.equal(await b.token(async () => 'do-banco'), 'do-banco');
+});
+
+test('credencial recusada pelo core (401/403 sem X-Core-Origem) é distinta do 401/403 do Bling', async () => {
+  const via = async (status, origem) => {
+    const f = falso(core(status, { x: 1 }, origem ? { 'X-Core-Origem': origem } : {}));
+    return blingPeloCore(ENV, { fetchImpl: f }).fetch('https://api.bling.com.br/Api/v3/pedidos/vendas', {});
+  };
+  // o core (nginx/autenticação da API) recusou o CORE_API_TOKEN: não é "a pessoa sem acesso a vendas"
+  assert.equal(credencialRecusadaPeloCore(await via(401)), true);
+  assert.equal(credencialRecusadaPeloCore(await via(403)), true);
+  // 403 insufficient_scope é do Bling; 4xx do próprio proxy do core também segue como veio
+  assert.equal((await via(403, 'bling')).origem, 'bling');
+  assert.equal(credencialRecusadaPeloCore(await via(403, 'bling')), false);
+  assert.equal(credencialRecusadaPeloCore(await via(403, 'proxy')), false);
+  assert.equal(credencialRecusadaPeloCore(await via(401, 'bling')), false);
+  assert.equal(credencialRecusadaPeloCore(await via(200)), false);
+  assert.equal(credencialRecusadaPeloCore(await via(429)), false);
 });

@@ -10,7 +10,7 @@ import {
   PRAZO_POR_TENTATIVA_MS,
 } from '../_shared/tentar-de-novo.js';
 
-import { blingPeloCore } from '../_shared/core-bling-proxy.js';
+import { blingPeloCore, credencialRecusadaPeloCore } from '../_shared/core-bling-proxy.js';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -285,6 +285,11 @@ Deno.serve(async (req: Request) => {
             signal: cortar.signal,
           });
           status = resp.status;
+          if (credencialRecusadaPeloCore(resp)) {
+            // O core recusou o CORE_API_TOKEN desta edge. 401/403 aqui viraria "sem acesso a vendas" na tela da pessoa.
+            console.error(`[bling-proxy] o core recusou a credencial desta edge (${status})`);
+            return { status: 502, corpo: { error: 'o core recusou a credencial desta API' } };
+          }
           const pedido = Number(resp.headers.get('retry-after'));
           retryAfterSegundos = Number.isFinite(pedido) && pedido > 0 ? pedido : null;
           const text = await resp.text();
