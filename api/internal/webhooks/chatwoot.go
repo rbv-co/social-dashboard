@@ -6,6 +6,7 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"regexp"
@@ -13,7 +14,6 @@ import (
 	"strings"
 	"time"
 	_ "time/tzdata" // America/Sao_Paulo sem depender do zoneinfo do contêiner
-	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/text/unicode/norm"
@@ -59,7 +59,13 @@ func (c *Chatwoot) entrada(w http.ResponseWriter, r *http.Request) (map[string]a
 	d := json.NewDecoder(http.MaxBytesReader(w, r.Body, limiteChatwoot))
 	d.UseNumber()
 	var corpo any
-	if err := d.Decode(&corpo); err != nil {
+	err := d.Decode(&corpo)
+	if err == nil {
+		if _, e2 := d.Token(); e2 != io.EOF { // dado depois do JSON: req.json() do edge também recusa
+			err = errors.New("dados depois do JSON")
+		}
+	}
+	if err != nil {
 		var grande *http.MaxBytesError
 		if errors.As(err, &grande) {
 			responder(w, http.StatusRequestEntityTooLarge, map[string]string{"error": "corpo_grande_demais"})
@@ -72,7 +78,8 @@ func (c *Chatwoot) entrada(w http.ResponseWriter, r *http.Request) (map[string]a
 }
 
 func (c *Chatwoot) gravar(ctx context.Context, w http.ResponseWriter, quem, sql string, args ...any) {
-	if _, err := c.Pool.Exec(ctx, sql, args...); err != nil {
+	// o Chatwoot desiste em 5 s e não reenvia: cancelamento da requisição não pode perder a gravação
+	if _, err := c.Pool.Exec(context.WithoutCancel(ctx), sql, args...); err != nil {
 		slog.Error("webhook chatwoot: falha ao gravar", "rota", quem, "erro", err)
 		responder(w, http.StatusInternalServerError, map[string]any{"ok": false, "erro": "falha_ao_gravar"})
 		return
@@ -135,7 +142,8 @@ func (c *Chatwoot) Evento(w http.ResponseWriter, r *http.Request) {
 			quando = t
 		}
 	case json.Number:
-		if ms, err := v.Int64(); err == nil { // new Date(número) do JS = milissegundos
+		// new Date(número) do JS = milissegundos; 0/negativo: o edge trata 0 como ausente (falsy)
+		if ms, err := v.Int64(); err == nil && ms > 0 {
 			quando = time.UnixMilli(ms)
 		}
 	}
@@ -172,7 +180,7 @@ func limpar(s string) string {
 func normalizarTelefone(bruto string) string {
 	d := naoDigito.ReplaceAllString(bruto, "")
 	d = strings.TrimPrefix(d, "00")
-	if n := utf8.RuneCountInString(d); n == 10 || n == 11 {
+	if n := len(d); n == 10 || n == 11 {
 		d = "55" + d
 	}
 	if !celularBR.MatchString(d) {
