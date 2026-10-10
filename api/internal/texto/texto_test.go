@@ -1,7 +1,9 @@
 package texto
 
 import (
+	"math"
 	"regexp"
+	"strings"
 	"testing"
 )
 
@@ -68,5 +70,46 @@ func TestEspacoJS(t *testing.T) {
 	}
 	if re.MatchString("\U00000085") || re.MatchString("\U0000200b") {
 		t.Fatal("U+0085 e U+200B não são \\s no JS")
+	}
+}
+
+// Extremos, também do Node 22: NaN, infinito, zero negativo, centavo que "vai um" e valores além do
+// inteiro seguro (o JS imprime os dígitos mais curtos do double e completa com zeros; o Go faz igual).
+func TestReaisExtremosComoOIntlDoJS(t *testing.T) {
+	casos := []struct {
+		v              float64
+		reais, simples string
+	}{
+		{math.NaN(), "R$\U000000a0NaN", "R$ NaN"},
+		{math.Inf(1), "R$\U000000a0∞", "R$ ∞"},
+		{math.Inf(-1), "-R$\U000000a0∞", "R$ -∞"},
+		{math.Copysign(0, -1), "-R$\U000000a00,00", "R$ -0,00"},
+		{-0.001, "-R$\U000000a00,00", "R$ -0,00"},
+		{-0.004, "-R$\U000000a00,00", "R$ -0,00"},
+		{-0.005, "-R$\U000000a00,01", "R$ -0,01"},
+		{0.995, "R$\U000000a01,00", "R$ 1,00"},
+		{1e15, "R$\U000000a01.000.000.000.000.000,00", "R$ 1.000.000.000.000.000,00"},
+		{9007199254740991, "R$\U000000a09.007.199.254.740.991,00", "R$ 9.007.199.254.740.991,00"},
+		{1e17, "R$\U000000a0100.000.000.000.000.000,00", "R$ 100.000.000.000.000.000,00"},
+		{123456789012345680, "R$\U000000a0123.456.789.012.345.680,00", "R$ 123.456.789.012.345.680,00"},
+		{1e21, "R$\U000000a01.000.000.000.000.000.000.000,00", "R$ 1.000.000.000.000.000.000.000,00"},
+		{-1e21, "-R$\U000000a01.000.000.000.000.000.000.000,00", "R$ -1.000.000.000.000.000.000.000,00"},
+		{1.5e21, "R$\U000000a01.500.000.000.000.000.000.000,00", "R$ 1.500.000.000.000.000.000.000,00"},
+		{99999999999999.995, "R$\U000000a0100.000.000.000.000,00", "R$ 100.000.000.000.000,00"},
+		{1e300, "R$\U000000a01" + strings.Repeat(".000", 100) + ",00", "R$ 1" + strings.Repeat(".000", 100) + ",00"},
+	}
+	for _, c := range casos {
+		if got := Reais(c.v); got != c.reais {
+			t.Errorf("Reais(%v) = %q, esperava %q", c.v, got, c.reais)
+		}
+		if got := ReaisSimples(c.v); got != c.simples {
+			t.Errorf("ReaisSimples(%v) = %q, esperava %q", c.v, got, c.simples)
+		}
+	}
+	if got := Milhar(math.MinInt64); got != "-9.223.372.036.854.775.808" {
+		t.Errorf("Milhar(MinInt64) = %q", got)
+	}
+	if got := Milhar(math.MaxInt64); got != "9.223.372.036.854.775.807" {
+		t.Errorf("Milhar(MaxInt64) = %q", got)
 	}
 }

@@ -2,7 +2,10 @@ package meta
 
 import (
 	"context"
+	"crypto/ecdh"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -144,5 +147,156 @@ func TestPushSaldoSemVAPIDNemChamaOCore(t *testing.T) {
 	}
 	if tf := ps.Tarefa(); tf.Nome != "enviar-push-saldo-08h" || tf.Agenda != "0 11 * * *" {
 		t.Fatalf("%+v", tf)
+	}
+}
+
+const uSaldo = "cccccccc-0000-0000-0000-000000000001"
+
+// assinante inscreve um aparelho em /push/<caminho> de quem ligou o aviso de saldo.
+func assinante(t *testing.T, ps *PushSaldo, caminho string) *ecdh.PrivateKey {
+	t.Helper()
+	ua := pushteste.Inscrever(t, ps.Pool, caminho, uSaldo)
+	if _, err := ps.Pool.Exec(context.Background(), `insert into push_preferencias (user_id, tipo, ativo) values ($1::uuid, 'saldo', true) on conflict do nothing`, uSaldo); err != nil {
+		t.Fatal(err)
+	}
+	return ua
+}
+
+// A chave do livro leva o DIA de São Paulo: dia novo envia de novo (senão o aviso de amanhã nunca
+// sairia) e a madrugada UTC do dia seguinte, que ainda é a noite do mesmo dia em São Paulo, não reenvia.
+func TestPushSaldoChaveDoLivroLevaODiaDeSaoPaulo(t *testing.T) {
+	ps, srv, _ := ambienteSaldo(t, false)
+	assinante(t, ps, "quer")
+	ctx := context.Background()
+	rodaEm := func(quando time.Time, total int) {
+		t.Helper()
+		ps.Agora = func() time.Time { return quando }
+		if err := ps.Rodar(ctx); err != nil || srv.Total() != total {
+			t.Fatalf("em %s: err=%v total=%d, esperava %d", quando.Format(time.RFC3339), err, srv.Total(), total)
+		}
+	}
+	rodaEm(time.Date(2026, 10, 10, 11, 0, 0, 0, time.UTC), 1) // 08h do dia 10 em São Paulo
+	rodaEm(time.Date(2026, 10, 10, 11, 0, 0, 0, time.UTC), 1) // mesma manhã: nada
+	rodaEm(time.Date(2026, 10, 11, 2, 0, 0, 0, time.UTC), 1)  // 23h do dia 10 em São Paulo: ainda o dia 10
+	rodaEm(time.Date(2026, 10, 11, 3, 0, 0, 0, time.UTC), 2)  // 00h do dia 11 em São Paulo: dia novo
+	rodaEm(time.Date(2026, 10, 12, 11, 0, 0, 0, time.UTC), 3) // 08h do dia 12
+	var chaves []string
+	linhas, _ := ps.Pool.Query(ctx, `select chave from envios_feitos order by chave`)
+	for linhas.Next() {
+		var c string
+		linhas.Scan(&c)
+		chaves = append(chaves, c)
+	}
+	for i, dia := range []string{"2026-10-10", "2026-10-11", "2026-10-12"} {
+		if i >= len(chaves) || !strings.HasPrefix(chaves[i], "enviar-push-saldo:"+dia+":") {
+			t.Fatalf("chaves do livro: %v", chaves)
+		}
+	}
+}
+
+func TestPushSaldoTodosOsAparelhosRecusandoEErro(t *testing.T) {
+	ps, srv, _ := ambienteSaldo(t, false)
+	assinante(t, ps, "e500")
+	err := ps.Rodar(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "nenhum_push_entregue") || srv.Recebidos("e500") != 1 {
+		t.Fatalf("err=%v recebidos=%d", err, srv.Recebidos("e500"))
+	}
+}
+
+// A mensagem separa quantos falharam de quantos já tinham sido enviados hoje e de quantos foram podados.
+func TestPushSaldoErroDistingueFalhaRepetidoEPodado(t *testing.T) {
+	ps, srv, _ := ambienteSaldo(t, false)
+	assinante(t, ps, "boa")
+	assinante(t, ps, "e500")
+	assinante(t, ps, "morta")
+	ctx := context.Background()
+	if err := ps.Rodar(ctx); err != nil { // 1 enviado: a tarefa não falha por causa do aparelho que recusou
+		t.Fatal(err)
+	}
+	err := ps.Rodar(ctx) // 'boa' já recebeu hoje, 'e500' recusa de novo, 'morta' foi podada na 1ª
+	quer := "nenhum_push_entregue: 2 inscrições (falharam 1, já enviadas hoje 1, podadas 0)"
+	if err == nil || err.Error() != quer {
+		t.Fatalf("err = %v, esperava %q", err, quer)
+	}
+	if srv.Recebidos("boa") != 1 {
+		t.Fatal("o aparelho que já recebeu hoje não recebe de novo")
+	}
+}
+
+// Nada que identifique o aparelho (endpoint é um token), o token do core ou a chave VAPID chega ao
+// erro da tarefa nem ao log.
+func TestPushSaldoErroELogSemEndpointNemToken(t *testing.T) {
+	log := capturarLog(t)
+	ps, _, _ := ambienteSaldo(t, true)
+	for _, c := range []string{"boa", "e500", "rede", "e429", "morta", "lento"} {
+		assinante(t, ps, c)
+	}
+	ctx := context.Background()
+	var erros []string
+	junta := func(err error) {
+		if err != nil {
+			erros = append(erros, err.Error())
+		}
+	}
+	junta(ps.Rodar(ctx)) // conta que falha na Graph + aparelhos que recusam
+	junta(ps.Rodar(ctx)) // repetida: só os que falham
+	morto := httptest.NewServer(http.NotFoundHandler())
+	morto.Close()
+	ps.Core.URL = morto.URL // core fora do ar
+	junta(ps.Rodar(ctx))
+	ps.Core.URL = ""
+	ps.VAPID.Privada = "segredo-vapid-inventado!"
+	junta(ps.Rodar(ctx))
+	if len(erros) != 4 {
+		t.Fatalf("esperava 4 erros, vieram %d: %q", len(erros), erros)
+	}
+	tudo := strings.Join(erros, "\n") + "\n" + log.String()
+	for _, proibido := range []string{"example.com", "/push/", tokenDoCore, "segredo-vapid-inventado", ps.VAPID.Publica} {
+		if strings.Contains(tudo, proibido) {
+			t.Errorf("%q vazou:\n%s", proibido, tudo)
+		}
+	}
+	if !strings.Contains(log.String(), "push: o serviço de push recusou") {
+		t.Fatalf("o log devia registrar as recusas (só o status): %s", log.String())
+	}
+}
+
+// Fronteiras de dias vindas do próprio _shared/saldo-de-conta.js (Node 22): 1,0 dia é "atenção"
+// (não "crítico") e 3,0 dias já é "ok" (não "atenção").
+func TestSaldoNasFronteirasDosDias(t *testing.T) {
+	saldo := func(reais string) map[string]any { return conta(true, 20, "Saldo disponível (R$ "+reais+" BRL)") }
+	casos := []struct {
+		reais         string
+		gasto         float64
+		nivel, porque string
+	}{
+		{"200,00", 200, "atencao", "No ritmo atual, o saldo dura cerca de 1 dia."},
+		{"199,99", 200, "critico", "No ritmo atual, o saldo não passa de hoje."},
+		{"300,00", 100, "ok", "No ritmo atual, o saldo dura cerca de 3 dias."},
+		{"299,99", 100, "atencao", "No ritmo atual, o saldo dura cerca de 2 dias."},
+	}
+	for _, c := range casos {
+		if x := lerSaldo(saldo(c.reais), c.gasto); x.Nivel != c.nivel || x.Porque != c.porque {
+			t.Errorf("%s a %v/dia: %s %q", c.reais, c.gasto, x.Nivel, x.Porque)
+		}
+	}
+	l := func(nome, reais string, gasto float64) Leitura {
+		x := lerSaldo(saldo(reais), gasto)
+		x.Conta = nome
+		return x
+	}
+	avisos := []struct {
+		ls            []Leitura
+		titulo, corpo string
+	}{
+		{[]Leitura{l("A", "200,00", 200), l("B", "200,00", 300)}, "B: saldo acaba hoje", "B: R$ 200,00 (~hoje) · A: R$ 200,00 (~1 dia)"},
+		{[]Leitura{l("A", "200,00", 100), l("B", "100,00", 100)}, "B: saldo para 1 dia", "B: R$ 100,00 (~1 dia) · A: R$ 200,00 (~2 dias)"},
+		{[]Leitura{l("A", "300,00", 100)}, "", ""},
+	}
+	for i, c := range avisos {
+		titulo, corpo, ok := montarAvisoDeSaldo(c.ls)
+		if titulo != c.titulo || corpo != c.corpo || ok != (c.titulo != "") {
+			t.Errorf("aviso %d: %q / %q / %v", i, titulo, corpo, ok)
+		}
 	}
 }

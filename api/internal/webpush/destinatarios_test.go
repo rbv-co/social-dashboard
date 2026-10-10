@@ -1,8 +1,11 @@
 package webpush_test
 
 import (
+	"bytes"
 	"context"
+	"log/slog"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -113,5 +116,37 @@ func TestEntregarLentoFalhaEDepoisEntrega(t *testing.T) {
 	}
 	if r, _ := webpush.Entregar(ctx, p, srv.HTTP, alvos, []byte(`{}`), v, "lento:2026-10-10"); r != (webpush.Resultado{Enviados: 1}) {
 		t.Fatalf("depois do prazo vencido a reserva foi liberada: %+v", r)
+	}
+}
+
+// Poda que falha (o banco recusa o delete): é falha, não "podado", e a reserva é liberada para a
+// próxima execução tentar de novo. O log traz o erro do banco, nunca o endpoint (que é um token).
+func TestEntregarPodaQueFalhaContaComoFalha(t *testing.T) {
+	var log bytes.Buffer
+	antes := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&log, nil)))
+	t.Cleanup(func() { slog.SetDefault(antes) })
+	p := testebanco.Novo(t)
+	ctx := context.Background()
+	if _, err := p.Exec(ctx, pushteste.Tabelas+`
+create function recusa_delete() returns trigger language plpgsql as $$ begin raise exception 'delete recusado no teste'; end $$;
+create trigger t_recusa before delete on push_subs for each row execute function recusa_delete();`); err != nil {
+		t.Fatal(err)
+	}
+	srv := pushteste.Novo(t)
+	pushteste.Inscrever(t, p, "morta", uQuer)
+	alvos, _ := webpush.Destinatarios(ctx, p, "vendas", "")
+	r, err := webpush.Entregar(ctx, p, srv.HTTP, alvos, []byte(`{}`), pushteste.VAPID(t), "poda:2026-10-10")
+	if err != nil || r != (webpush.Resultado{Falhas: 1}) {
+		t.Fatalf("poda que falha: %+v err=%v", r, err)
+	}
+	if !strings.Contains(log.String(), "delete recusado no teste") || strings.Contains(log.String(), "example.com") || strings.Contains(log.String(), "/push/") {
+		t.Fatalf("log da poda: %s", log.String())
+	}
+	if _, err := p.Exec(ctx, `drop trigger t_recusa on push_subs`); err != nil {
+		t.Fatal(err)
+	}
+	if r, _ := webpush.Entregar(ctx, p, srv.HTTP, alvos, []byte(`{}`), pushteste.VAPID(t), "poda:2026-10-10"); r != (webpush.Resultado{Podados: 1}) {
+		t.Fatalf("a reserva tinha sido liberada, então tenta e poda: %+v", r)
 	}
 }

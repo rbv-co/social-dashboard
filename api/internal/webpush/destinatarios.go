@@ -49,8 +49,9 @@ type Resultado struct {
 
 // Entregar manda `payload` a cada destino. Antes de cada envio reserva `prefixo:<sha do endpoint>`
 // no livro de envios: destino já servido com esse prefixo não recebe de novo (execução repetida =
-// Repetidos). 404/410 apaga a inscrição (morta). Sem 2xx a reserva é desfeita, e a próxima execução
-// pode tentar. A falha de um destino não derruba os outros; o erro devolvido é só o do banco.
+// Repetidos). 404/410 apaga a inscrição (morta; poda que o banco recusa conta como Falhas). Sem 2xx a
+// reserva é desfeita, e a próxima execução pode tentar. A falha de um destino não derruba os outros; o
+// erro devolvido é só o do banco.
 func Entregar(ctx context.Context, p *pgxpool.Pool, cli *http.Client, alvos []Destino, payload []byte, v VAPID, prefixo string) (Resultado, error) {
 	var r Resultado
 	for _, d := range alvos {
@@ -73,7 +74,10 @@ func Entregar(ctx context.Context, p *pgxpool.Pool, cli *http.Client, alvos []De
 			r.Enviados++
 			continue // a reserva fica: esta mensagem saiu
 		case st == http.StatusGone || st == http.StatusNotFound:
-			if _, err := p.Exec(ctx, `delete from push_subs where endpoint = $1::text`, d.Endpoint); err == nil {
+			if _, err := p.Exec(ctx, `delete from push_subs where endpoint = $1::text`, d.Endpoint); err != nil {
+				slog.Warn("push: não consegui podar a inscrição morta", "erro", err) // o erro do banco não traz o endpoint
+				r.Falhas++
+			} else {
 				r.Podados++
 			}
 		default:

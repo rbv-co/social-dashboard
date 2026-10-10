@@ -223,3 +223,10 @@ func TestSaudeDoWorkerAceitaEnderecoComEspacos(t *testing.T) {
 		t.Fatalf("got=%d", got)
 	}
 }
+
+func TestClienteDoCoreDoWorkerAndaNoRitmoDoCore(t *testing.T) {
+	cli := clienteDoCore(config.Config{CoreURL: "http://core.exemplo", CoreToken: "token-inventado"})
+	if cli.RitmoMeta != 600*time.Millisecond || cli.URL != "http://core.exemplo" || cli.Token != "token-inventado" {
+		t.Fatalf("cliente do worker: %+v", cli)
+	}
+}

@@ -47,6 +47,7 @@ type Cliente struct {
 
 	ritmoMu     sync.Mutex
 	proximaMeta time.Time
+	relogio     func() time.Time // nil = time.Now (o teste para o relógio)
 }
 
 // Novo devolve um cliente que não segue redirecionamento (o Bearer não sai para outro lugar).
@@ -253,6 +254,9 @@ func (c *Cliente) esperarRitmo(ctx context.Context) error {
 	}
 	c.ritmoMu.Lock()
 	agora := time.Now()
+	if c.relogio != nil {
+		agora = c.relogio()
+	}
 	vez := c.proximaMeta
 	if vez.Before(agora) {
 		vez = agora

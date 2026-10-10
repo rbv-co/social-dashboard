@@ -19,8 +19,7 @@ import (
 // tela de saúde casa robos_esperados por prefixo) e a agenda de cron.job (UTC). A tabela completa
 // está no Plano 4 e é conferida por TestTarefasDeProducao. Só monta: nada aqui fala com rede ou banco.
 func tarefas(p *pgxpool.Pool, cfg config.Config, ag *worker.Agendador) []worker.Tarefa {
-	cli := core.Novo(cfg.CoreURL, cfg.CoreToken)
-	cli.RitmoMeta = 600 * time.Millisecond // ~100 chamadas/min à Meta, abaixo do teto de 120/min do core
+	cli := clienteDoCore(cfg)
 	var ts []worker.Tarefa
 	// HTTP nil: o push herda o cliente seguro (Dialer.Control recusa faixas proibidas).
 	pv := &comercial.PushVendas{Pool: p, Core: cli, VAPID: vapid(cfg)}
@@ -30,6 +29,14 @@ func tarefas(p *pgxpool.Pool, cfg config.Config, ag *worker.Agendador) []worker.
 		(&fabrica.Purga{Pool: p, Dir: cfg.ArquivosDir}).Tarefa())
 	ts = append(ts, (&meta.PushSaldo{Pool: p, Core: cli, VAPID: vapid(cfg)}).Tarefa())
 	return ts
+}
+
+// clienteDoCore é o cliente do worker: anda a 600 ms por chamada à Meta (~100/min), abaixo do teto de
+// 120/min por consumidor do core. A API (rotas ao vivo) usa outro cliente, sem ritmo.
+func clienteDoCore(cfg config.Config) *core.Cliente {
+	cli := core.Novo(cfg.CoreURL, cfg.CoreToken)
+	cli.RitmoMeta = 600 * time.Millisecond
+	return cli
 }
 
 func vapid(cfg config.Config) webpush.VAPID {

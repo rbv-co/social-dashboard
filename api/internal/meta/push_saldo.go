@@ -113,7 +113,7 @@ func (ps *PushSaldo) Rodar(ctx context.Context) error {
 	}
 	slog.Info("push de saldo", "titulo", titulo, "enviados", r.Enviados, "podados", r.Podados, "repetidos", r.Repetidos, "falhas", r.Falhas)
 	if r.Enviados == 0 && r.Falhas > 0 {
-		return fmt.Errorf("nenhum_push_entregue: %d inscrições, 0 aceitas", len(alvos))
+		return fmt.Errorf("nenhum_push_entregue: %d inscrições (falharam %d, já enviadas hoje %d, podadas %d)", len(alvos), r.Falhas, r.Repetidos, r.Podados)
 	}
 	return erroDasFalhas()
 }
