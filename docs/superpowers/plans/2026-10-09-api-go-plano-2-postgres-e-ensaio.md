@@ -33,7 +33,7 @@
 6. Cópia do Storage interrompida e repetida não corrompe nem duplica (retomável por tamanho) (Task 6).
 7. Rodar o ensaio duas vezes seguidas dá o mesmo resultado (idempotente: recria o banco alvo do zero) (Task 7).
 9. As FKs para `auth.users` são reescritas **só** em `alter table`/`create table` (nunca em texto dentro de corpo de função) e, após `importar-usuarios`, nenhuma FK para `usuarios` tem órfãos; usuário apagado (soft delete) no Auth que ainda é referenciado aparece como órfão no relatório, não é escondido (Tasks 3, 4, 7).
-8. O ensaio nunca aponta para produção por engano: recusa `ALVO_DATABASE_URL` cujo host não seja `localhost`/`127.0.0.1`/`::1` sem `--permitir-alvo-remoto` (Task 7).
+8. O ensaio nunca aponta para produção por engano: recusa `ALVO_DATABASE_URL` cujo host não seja `127.0.0.1` (o contêiner só escuta nele; `localhost` e `::1` NÃO são aceitos) sem `--permitir-alvo-remoto` (Task 7).
 
 ## Estrutura de arquivos
 
@@ -1175,9 +1175,10 @@ while [ $# -gt 0 ]; do case "$1" in
   --excluir-buckets) shift; EXCL=${1:-};; *) echo "opção desconhecida: $1" >&2; exit 2;; esac; shift; done
 [ -n "${ORIGEM_DATABASE_URL:-}" ] || { echo "defina ORIGEM_DATABASE_URL (não é impresso)"; exit 1; }
 ALVO_URL=${ALVO_DATABASE_URL:-postgres://postgres:x@127.0.0.1:58450/postgres}
-# nunca aponta para produção por engano: o alvo tem de ser local
+# nunca aponta para produção por engano: o alvo tem de ser local, e só 127.0.0.1 é aceito
+# (localhost e ::1 não: o contêiner só escuta em 127.0.0.1)
 case "$ALVO_URL" in
-  *@localhost[:/]*|*@127.0.0.1[:/]*|*@\[::1\][:/]*) ;;
+  *@127.0.0.1[:/]*) ;;
   *) [ "$REMOTO" = 1 ] || { echo "ALVO_DATABASE_URL não é local; recuso (use --permitir-alvo-remoto se for de propósito)" >&2; exit 1; } ;;
 esac
 OUT="$AQUI/saida/ensaio-$(date +%Y%m%d-%H%M)"; mkdir -p "$OUT"; chmod 700 "$OUT"

@@ -29,7 +29,7 @@ ALVO_URL=${ALVO_DATABASE_URL:-postgres://postgres:x@127.0.0.1:$PORTA/postgres?ss
 # único @ da autoridade), sem lista de hosts, sem %, e na query só sslmode= (nada de host=, hostaddr=,
 # service=, nem nomes percent-encoded). A porta tem de ser a do contêiner (ALVO_PORTA).
 # o nome do contêiner é apagado com docker rm -fv: só aceita ensaio-*
-case "$CONT" in ensaio-*[!A-Za-z0-9_.-]*|ensaio-*) ;; *) echo "ALVO_CONTAINER tem de começar com ensaio- (recuso apagar '$CONT')" >&2; exit 1;; esac
+case "$CONT" in ensaio-?*) ;; *) echo "ALVO_CONTAINER tem de começar com ensaio- e ter mais ao menos um caractere depois (recuso apagar '$CONT')" >&2; exit 1;; esac
 case "$CONT" in *[!A-Za-z0-9_.-]*) echo "ALVO_CONTAINER com caracteres inválidos; recuso" >&2; exit 1;; esac
 recusa() { echo "ALVO_DATABASE_URL não é local ($1); recuso (use --permitir-alvo-remoto se for de propósito)" >&2; exit 1; }
 if [ "$REMOTO" != 1 ]; then
@@ -65,7 +65,7 @@ trap 'exit 130' INT TERM HUP
 
 oculta() { sed -E 's#postgres(ql)?://[^ "]*#<URL>#g'; }
 rel() { printf '%s\n' "$*" | tee -a "$OUT/relatorio.txt"; }
-FALHAS=""; BLOQ=""; JANELA=0; JANELA6=0; CONF=""
+FALHAS=""; BLOQ=""; JANELA=0; JANELA6=0; CONF=""; CONFIRA=""
 pula() { rel "$(printf '%-30s %5s  PULADA (%s)' "$1" - "$2")"; }
 # etapa NOME MODO cmd...  MODO: bloqueia (falha trava as dependentes), depende (pulada se travado), livre
 etapa() {
@@ -76,11 +76,12 @@ etapa() {
   t0=$(date +%s); s=0; "$@" || s=$?; d=$(( $(date +%s) - t0 ))
   case "$nome" in 6*) JANELA6=$d;; [2-5]*) JANELA=$((JANELA + d));; esac
   if [ $s = 0 ]; then r=OK
-  elif [ $s = 3 ] && [ "$CONF" = 1 ]; then r="CONFIRA ($DIF tabelas)"
+  elif [ $s = 3 ] && [ "$CONF" = 1 ]; then r="CONFIRA ($DIF tabelas)"; CONFIRA=1
   else
     r="FALHOU (saída $s)"; FALHAS="$FALHAS
   - $nome"; [ "$modo" != bloqueia ] || BLOQ=1
   fi
+  CONF=""   # a flag vale só para a etapa que a levantou: um 3 de etapa posterior é FALHOU, não CONFIRA
   rel "$(printf '%-30s %4ss  %s' "$nome" "$d" "$r")"; return $s
 }
 
@@ -114,6 +115,10 @@ importa_usuarios() {
 contagens() {
   s=0; sh "$AQUI/conferir-contagens.sh" "$ORIGEM_DATABASE_URL" "$ALVO_URL" > "$OUT/contagens.txt" || s=$?
   DIF=$(grep -c DIFERE "$OUT/contagens.txt"); grep DIFERE "$OUT/contagens.txt"
+  # saída cortada (crash no meio da varredura) não pode virar CONFIRA: sem a última linha, é falha
+  if [ $s = 0 ] || [ $s = 1 ]; then
+    grep -q '^varredura completa: [0-9]' "$OUT/contagens.txt" || { echo "conferir-contagens não terminou a varredura (saída cortada)" >&2; return 2; }
+  fi
   case $s in
     0) [ -s "$OUT/contagens.txt" ] || { echo "conferir-contagens não produziu saída" >&2; return 1; }
        [ "$DIF" = 0 ] || { echo "conferir-contagens saiu 0 mas há linhas DIFERE" >&2; return 1; }
@@ -138,8 +143,13 @@ orfaos() {
 # o alvo não tem policies nem RLS, e o estado (tgenabled) de cada trigger de usuário é o mesmo origem × alvo
 # (trigger desligado em produção e ligado no alvo apareceria só depois do corte).
 SQL_TRG="select c.relname || '.' || t.tgname || '=' || t.tgenabled::text from pg_trigger t join pg_class c on c.oid=t.tgrelid where c.relnamespace='public'::regnamespace and not t.tgisinternal and c.relname not in ('usuarios','sessoes','goose_db_version') order by (c.relname || '.' || t.tgname || '=' || t.tgenabled::text) collate \"C\""
+# o stderr cru (pode ter host/usuário) fica num temporário; só a versão oculta é guardada em estrutura.err
 estrutura() {
-  O=$(printf '%s' "$ORIGEM_DATABASE_URL" | sed 's#:6543/#:5432/#'); E="$OUT/estrutura.err"
+  E=$(mktemp); s=0; estrutura_ || s=$?
+  oculta < "$E" > "$OUT/estrutura.err"; rm -f "$E"; return $s
+}
+estrutura_() {
+  O=$(printf '%s' "$ORIGEM_DATABASE_URL" | sed 's#:6543/#:5432/#')
   pol=$(psql "$ALVO_URL" -X -Atqc "select count(*) from pg_policies where schemaname='public'" 2> "$E") || { oculta < "$E" >&2; return 1; }
   rls=$(psql "$ALVO_URL" -X -Atqc "select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relrowsecurity" 2> "$E") || { oculta < "$E" >&2; return 1; }
   psql "$ALVO_URL" -X -Atqc "$SQL_TRG" > "$OUT/triggers-alvo.txt" 2> "$E" || { oculta < "$E" >&2; return 1; }
@@ -190,7 +200,7 @@ rel "relatório em $OUT/relatorio.txt"
 if [ -n "$FALHAS" ]; then
   rel "ENSAIO FALHOU, etapas com problema:$FALHAS"; exit 1
 fi
-if [ -n "$CONF" ]; then
+if [ -n "$CONFIRA" ]; then
   rel "ENSAIO CONCLUÍDO COM DIVERGÊNCIAS A CONFERIR (contagens: $DIF tabelas; ver $OUT/contagens.txt)"; exit 3
 fi
 rel "ENSAIO OK"

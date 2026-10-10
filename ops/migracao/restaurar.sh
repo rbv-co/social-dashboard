@@ -26,7 +26,13 @@ pq "$ALVO" -X -q -v ON_ERROR_STOP=1 -f "$RAIZ/api/internal/banco/compat/compat.s
 pq "$ALVO" -X -q -v ON_ERROR_STOP=1 -f "$DUMP/schema.sql" > /dev/null
 echo "schema restaurado"
 # dados com triggers desligados (não dispara regra de negócio, trilha nem checagem de FK).
-# O dump entra por stdin (pode estar fora da pasta montada em /work); --single-transaction: tudo ou nada.
+# O dump entra por stdin (o pg_restore roda num contêiner que não enxerga o arquivo do Mac);
+# --single-transaction: tudo ou nada.
+# LIMITE: lendo por stdin o pg_restore não faz seek, então NÃO aceita -j (restauração paralela) nem
+# combina -j com --single-transaction. Se o restore real for lento, troque por: montar a pasta do dump
+# no contêiner (docker run -v "$DUMP":/dump:ro; pg_restore ... -j N /dump/completo.dump) e tirar
+# --single-transaction (o -j exige abrir uma conexão por trabalhador; perde-se o "tudo ou nada",
+# o que a regra "alvo vazio" já cobre: se falhar, recria-se o alvo).
 sh "$AQUI/pg17.sh" pg_restore --data-only --disable-triggers --single-transaction --no-owner --exit-on-error -d "$ALVO" < "$DUMP/completo.dump" > "$LOG" 2>&1 || { oculta < "$LOG" >&2; echo "pg_restore falhou" >&2; exit 1; }
 # o pg_restore --disable-triggers religa TODOS os triggers ao fim de cada tabela (ENABLE TRIGGER ALL),
 # desfazendo DISABLE / ENABLE REPLICA / ENABLE ALWAYS do schema: reaplica os estados do schema.sql.

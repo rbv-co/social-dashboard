@@ -66,15 +66,26 @@ JS
 : > "$TMP/storage.log"; node "$TMP/storage-fake.mjs" "$PS" "$TMP/storage.log" & SPID=$!
 for i in $(seq 30); do nc -z 127.0.0.1 "$PS" 2>/dev/null && break; sleep 0.2; done
 URL_S="http://127.0.0.1:$PS"
-VOL0=$(docker volume ls -qf dangling=true | wc -l | tr -d ' ')
+# Volume anônimo do contêiner do alvo: o nome é capturado (docker inspect) ENQUANTO o contêiner roda, e no fim
+# se confere que ESSE volume sumiu. (Comparar a contagem global de volumes dangling dá falso alarme quando
+# outra sessão usa o Docker ao mesmo tempo.)
+espreita_volume() { # espreita_volume ARQUIVO: grava o nome do volume do $ALVO assim que ele aparecer
+  for i in $(seq 600); do
+    v=$(docker inspect -f '{{range .Mounts}}{{.Name}} {{end}}' "$ALVO" 2>/dev/null | tr -d ' \n')
+    [ -z "$v" ] || { printf '%s' "$v" > "$1"; return 0; }
+    sleep 0.2
+  done
+}
 
 # roda o ensaio com a saída em $TMP/rodada-N.txt; ST = status; OUT = pasta da rodada.
 # ENV_EXTRA: variáveis extras ("A=1 B=2") só para esta rodada.
 N=0; ENV_EXTRA=
 rodar() {
   N=$((N + 1)); R="$TMP/rodada-$N.txt"; ST=0
+  espreita_volume "$TMP/vol-$N" & EP=$!
   env ORIGEM_DATABASE_URL="$URL_O" ALVO_PORTA=$PA ALVO_CONTAINER=$ALVO ENSAIO_SAIDA="$TMP/saida" $ENV_EXTRA sh "$AQUI/ensaio.sh" "$@" > "$R" 2>&1 || ST=$?
   ENV_EXTRA=
+  kill "$EP" 2>/dev/null; wait "$EP" 2>/dev/null
   OUT=$(ls -td "$TMP"/saida/ensaio-* | head -1)
 }
 contem() { grep -q -- "$1" "$2" || { cat "$2" >&2; falha "esperava '$1' em $2"; }; }
@@ -82,7 +93,14 @@ nao_contem() { ! grep -q -- "$1" "$2" || { cat "$2" >&2; falha "NÃO esperava '$
 sem_dump() { [ ! -e "$OUT/dump" ] && [ ! -e "$OUT/storage" ] || falha "o dump/Storage ficou no disco: $(ls "$OUT")"; }
 vazou() { ! grep -rq -e "$SENHA" -e "$CHAVE" "$TMP/rodada-$N.txt" "$OUT" || falha "senha ou chave apareceu na saída/relatório"; }
 estados() { grep -oE 'OK$|FALHOU \(saída [0-9]+\)$|PULADA' "$1" | tr '\n' ' '; }
-volumes() { [ "$(docker volume ls -qf dangling=true | wc -l | tr -d ' ')" = "$VOL0" ] || falha "sobraram volumes anônimos do Docker ($VOL0 antes, depois: $(docker volume ls -qf dangling=true | wc -l)): $1"; }
+volumes() { # nenhum dos volumes capturados pode ter sobrado, e ao menos um tem de ter sido capturado
+  achou=0
+  for f in "$TMP"/vol-*; do
+    [ -s "$f" ] || continue; achou=1
+    ! docker volume inspect "$(cat "$f")" >/dev/null 2>&1 || falha "sobrou o volume anônimo $(cat "$f") do contêiner do alvo: $1"
+  done
+  [ "$achou" = 1 ] || falha "não capturei o volume do contêiner (o teste não provaria nada): $1"
+}
 shim() { mkdir -p "$TMP/$1"; printf '#!/bin/sh\ncase "$*" in *importar-usuarios*) %s;; esac\nexec "%s" "$@"\n' "$2" "$(command -v go)" > "$TMP/$1/go"; chmod +x "$TMP/$1/go"; }
 
 echo "1) guarda do alvo (hostil recusado antes de qualquer docker)"
@@ -117,17 +135,17 @@ s=0; ENSAIO_SAIDA="$TMP/saida-g" ORIGEM_DATABASE_URL="$URL_O" sh "$AQUI/ensaio.s
 passou "Storage sem credenciais e sem --sem-storage é recusado"
 
 echo "1b) ALVO_CONTAINER fora de ensaio-* recusado antes de qualquer docker"
-for c in postgres 'ensaio' 'meu-banco' 'ensaio-x;rm'; do
+for c in postgres 'ensaio' 'ensaio-' 'meu-banco' 'ensaio-x;rm'; do
   s=0; PATH="$TMP/shim:$PATH" ENSAIO_SAIDA="$TMP/saida-g" ORIGEM_DATABASE_URL="$URL_O" ALVO_CONTAINER="$c" sh "$AQUI/ensaio.sh" --sem-storage > "$TMP/g.txt" 2>&1 || s=$?
   [ "$s" = 1 ] && grep -q 'ALVO_CONTAINER' "$TMP/g.txt" || falha "ALVO_CONTAINER '$c' não foi recusado (saída $s)"
 done
 [ ! -e "$TMP/docker-chamado" ] || falha "docker chamado com ALVO_CONTAINER inválido"
-passou "4 nomes recusados sem tocar no docker"
+passou "5 nomes recusados sem tocar no docker (inclui 'ensaio-' sozinho)"
 
 echo "2) caminho feliz + dumps apagados + nada vaza"
 rodar --sem-storage
 [ "$ST" = 0 ] || { cat "$R" >&2; falha "rodada 1 saiu com $ST"; }
-for e in "1. subir" "2. dump" "3. restaurar" "4. importar" "5. conferir contagens" "5b. conferir" "6. copiar Storage .*PULADA (--sem-storage)" "volume: dump" "JANELA de manutenção" "5c. policies/RLS/triggers.*OK" "limpeza do schema (contagens): {" "importar-usuarios: " "FKs para usuarios conferidas: [0-9]" "SEM Storage" "ENSAIO OK" '//\*\*\*@'; do contem "$e" "$OUT/relatorio.txt"; done
+for e in "1. subir" "2. dump" "3. restaurar" "4. importar" "5. conferir contagens" "5b. conferir" "6. copiar Storage .*PULADA (--sem-storage)" "volume: dump" "JANELA de manutenção" "5c. policies/RLS/triggers.*OK" "limpeza do schema (contagens): {" "importar-usuarios: .*importados=[0-9]" "FKs para usuarios conferidas: [0-9]" "SEM Storage" "ENSAIO OK" '//\*\*\*@'; do contem "$e" "$OUT/relatorio.txt"; done
 sem_dump; vazou
 [ "$(stat -f %Lp "$OUT" 2>/dev/null || stat -c %a "$OUT")" = 700 ] || falha "pasta da rodada não é 700"
 passou "exit 0, relatório completo, stage 6 PULADA (--sem-storage), dump apagado, pasta 700, sem segredos"
@@ -174,6 +192,34 @@ ENV_EXTRA="PATH=$TMP/shim4:$PATH"; rodar --sem-storage
 contem "5. conferir contagens.*FALHOU" "$OUT/relatorio.txt"; contem "ERRO" "$OUT/contagens.txt"; contem "ENSAIO FALHOU" "$OUT/relatorio.txt"; nao_contem "ENSAIO OK" "$OUT/relatorio.txt"
 passou "saída 1"
 
+echo "5d) origem inalcançável em conferir-contagens (listagem, depois só as contagens) => FALHOU, nunca CONFIRA/OK"
+# psql falso: só para a ORIGEM, e só quando o script lido do stdin casa com $2, simula conexão recusada
+mkdir "$TMP/shim7"; cat > "$TMP/shim7/psql" <<SH
+#!/bin/sh
+real=\$(PATH="\${PATH#$TMP/shim7:}" command -v psql)
+for a in "\$@"; do case "\$a" in -c|-c*) exec "\$real" "\$@";; esac; done
+in=\$(cat)
+case "\$*" in *:$PO/*) if printf '%s' "\$in" | grep -Eq "\$PADRAO_FALHA"; then echo 'psql: error: connection to server at "origem.exemplo.com" failed: Connection refused' >&2; exit 2; fi;; esac
+printf '%s\n' "\$in" | exec "\$real" "\$@"
+SH
+chmod +x "$TMP/shim7/psql"
+ENV_EXTRA="PATH=$TMP/shim7:$PATH PADRAO_FALHA=information_schema.tables"; rodar --sem-storage
+[ "$ST" = 1 ] || { cat "$R" >&2; falha "origem fora do ar na listagem deveria dar saída 1 (deu $ST)"; }
+contem "5. conferir contagens.*FALHOU (saída 2)" "$OUT/relatorio.txt"; contem "ENSAIO FALHOU" "$OUT/relatorio.txt"; nao_contem "CONFIRA" "$OUT/relatorio.txt"; nao_contem "ENSAIO OK" "$OUT/relatorio.txt"
+ENV_EXTRA="PATH=$TMP/shim7:$PATH PADRAO_FALHA=count"; rodar --sem-storage
+[ "$ST" = 1 ] || { cat "$R" >&2; falha "origem fora do ar nas contagens deveria dar saída 1 (deu $ST)"; }
+contem "5. conferir contagens.*FALHOU (saída 1)" "$OUT/relatorio.txt"; contem "ERRO" "$OUT/contagens.txt"; nao_contem "CONFIRA" "$OUT/relatorio.txt"; nao_contem "ENSAIO OK" "$OUT/relatorio.txt"
+passou "saída 1 nos dois casos; nunca CONFIRA nem OK"
+
+echo "5e) um 3 de etapa POSTERIOR (Storage) depois de um CONFIRA das contagens não vira CONFIRA"
+shim shim8 "psql '$URL_O' -X -q -c \"insert into public.notas (texto) values ('quente')\" >/dev/null"
+printf '#!/bin/sh\ncase "$*" in *copiar-storage*) echo "falha simulada" >&2; exit 3;; esac\nexec "%s" "$@"\n' "$(command -v node)" > "$TMP/shim8/node"; chmod +x "$TMP/shim8/node"
+ENV_EXTRA="PATH=$TMP/shim8:$PATH SUPABASE_URL=$URL_S SUPABASE_SERVICE_KEY=$CHAVE"; rodar
+[ "$ST" = 1 ] || { cat "$R" >&2; falha "3 do Storage depois de CONFIRA deveria dar saída 1 (deu $ST)"; }
+contem "5. conferir contagens.*CONFIRA" "$OUT/relatorio.txt"; contem "6. copiar Storage.*FALHOU (saída 3)" "$OUT/relatorio.txt"; contem "ENSAIO FALHOU" "$OUT/relatorio.txt"; nao_contem "ENSAIO OK" "$OUT/relatorio.txt"; nao_contem "6. copiar Storage.*CONFIRA" "$OUT/relatorio.txt"
+psql "$URL_O" -X -q -c "delete from public.notas where texto='quente'"
+passou "6 = FALHOU (saída 3), 5 = CONFIRA, final = ENSAIO FALHOU, saída 1"
+
 echo "5c) policy no alvo e trigger com estado diferente da origem => FALHOU, saída 1"
 shim shim5 "psql \"\$DATABASE_URL\" -X -q -c 'create policy p on public.notas using (true)'"
 ENV_EXTRA="PATH=$TMP/shim5:$PATH"; rodar --sem-storage
@@ -216,12 +262,14 @@ passou "mensagem clara e etapas dependentes puladas"
 echo "8) interrupção (TERM e HUP) no meio => saída 130 e dump apagado"
 for sig in TERM HUP; do
   rm -rf "$TMP/saida2"
+  espreita_volume "$TMP/vol-int-$sig" & EP=$!
   env ORIGEM_DATABASE_URL="$URL_O" ALVO_PORTA=$PA ALVO_CONTAINER=$ALVO ENSAIO_SAIDA="$TMP/saida2" sh "$AQUI/ensaio.sh" --sem-storage > "$TMP/rodada-int.txt" 2>&1 &
   PID=$!
   for i in $(seq 120); do ls "$TMP"/saida2/ensaio-*/dump/completo.dump >/dev/null 2>&1 && break; sleep 0.5; done
   ls "$TMP"/saida2/ensaio-*/dump/completo.dump >/dev/null 2>&1 || falha "o dump não apareceu a tempo para interromper"
   kill -$sig $PID; s=0; wait $PID || s=$?
   [ "$s" = 130 ] || falha "$sig deveria sair com 130 (saiu $s)"
+  kill "$EP" 2>/dev/null; wait "$EP" 2>/dev/null
   OUT=$(ls -td "$TMP"/saida2/ensaio-* | head -1); sem_dump
   [ -z "$(docker ps -q -f name=$ALVO)" ] || falha "o contêiner do alvo ficou de pé depois de $sig"
 done

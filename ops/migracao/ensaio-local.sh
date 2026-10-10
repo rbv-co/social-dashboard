@@ -105,4 +105,22 @@ psql "$URL_O" -X -q -c "create role leitor login password 'x'; create table publ
 URL_L="postgres://leitor:x@127.0.0.1:$PO/postgres?sslmode=disable"
 st_neg2=0; sh "$AQUI/conferir-contagens.sh" "$URL_L" "$URL_A" > "$OUT/neg2.txt" 2>/dev/null || st_neg2=$?
 [ "$st_neg2" = 1 ] && grep -q '^segredo ERRO ERRO .*DIFERE' "$OUT/neg2.txt" || falha "ERRO nos dois lados não foi reportado como DIFERE com exit 1 (exit $st_neg2): $(cat "$OUT/neg2.txt")"
+# prova negativa 3: a execução completa termina com a linha de varredura (sem ela a saída está cortada)
+grep -q '^varredura completa: [0-9]' "$OUT/contagens.txt" || falha "conferir-contagens não imprimiu a linha 'varredura completa' no caminho feliz"
+# prova negativa 4: ORIGEM inalcançável => exit 2 (nunca 0 nem 1), sem linha de varredura, nunca "OK"
+st_off=0; sh "$AQUI/conferir-contagens.sh" "postgres://postgres:x@127.0.0.1:9/postgres?sslmode=disable&connect_timeout=2" "$URL_A" > "$OUT/off.txt" 2>/dev/null || st_off=$?
+[ "$st_off" = 2 ] && ! grep -q 'varredura completa' "$OUT/off.txt" || falha "origem inalcançável deveria dar exit 2 sem varredura (exit $st_off): $(cat "$OUT/off.txt")"
+# prova negativa 5: o script morre NO MEIO da varredura (um psql falso manda TERM ao processo na 3ª consulta
+# à origem, depois da listagem e da 1ª tabela) => exit 2 e sem a linha final; saída cortada nunca vira DIFERE (1)
+mkdir "$OUT/shim"
+cat > "$OUT/shim/psql" <<SH
+#!/bin/sh
+case "\$*" in *:$PO/*) n=\$(cat "$OUT/cnt" 2>/dev/null || echo 0); n=\$((n + 1)); echo \$n > "$OUT/cnt"; [ \$n != 3 ] || kill -TERM "\$(cat "$OUT/pid")";; esac
+exec "$(command -v psql)" "\$@"
+SH
+chmod +x "$OUT/shim/psql"
+psql "$URL_A" -X -q -c "alter table public.notas_x rename to notas"
+st_cut=0
+PATH="$OUT/shim:$PATH" sh -c 'echo $$ > "$1/pid"; shift; exec sh "$@"' _ "$OUT" "$AQUI/conferir-contagens.sh" "$URL_O" "$URL_A" > "$OUT/cut.txt" 2>/dev/null || st_cut=$?
+[ "$st_cut" = 2 ] && ! grep -q 'varredura completa' "$OUT/cut.txt" || falha "execução cortada no meio deveria dar exit 2 sem varredura (exit $st_cut): $(cat "$OUT/cut.txt")"
 echo "OK: ensaio local passou (dump -> limpeza -> restore -> contagens) em $(( $(date +%s) - T0 ))s"
