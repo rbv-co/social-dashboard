@@ -41,7 +41,7 @@ func Carregar() (Config, error) {
 		DatabaseURL:     os.Getenv("DATABASE_URL"),
 		Origens:         lista("ORIGENS_PERMITIDAS"),
 		CoreURL:         strings.TrimRight(strings.TrimSpace(os.Getenv("CORE_URL")), "/"),
-		CoreToken:       os.Getenv("CORE_API_TOKEN"),
+		CoreToken:       strings.TrimSpace(os.Getenv("CORE_API_TOKEN")),
 		HostsDeMidia:    lista("HOSTS_DE_MIDIA"),
 		ShopifySegredos: lista("SHOPIFY_WEBHOOK_SEGREDOS"),
 		ChatwootSegredo: os.Getenv("CHATWOOT_WEBHOOK_SEGREDO"),

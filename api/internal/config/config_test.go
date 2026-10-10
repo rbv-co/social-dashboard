@@ -61,3 +61,12 @@ func TestCarregarCoreURLPadrao(t *testing.T) {
 		t.Fatalf("CoreURL = %q", c.CoreURL)
 	}
 }
+
+func TestCarregarTiraEspacosDoToken(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://x")
+	t.Setenv("CORE_API_TOKEN", " tok\n")
+	c, _ := Carregar()
+	if c.CoreToken != "tok" {
+		t.Fatalf("CoreToken = %q", c.CoreToken)
+	}
+}

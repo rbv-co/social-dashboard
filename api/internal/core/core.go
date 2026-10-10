@@ -25,6 +25,9 @@ const (
 // limiteResposta: nenhuma resposta legítima do core passa disso (var para o teste baixar).
 var limiteResposta int64 = 32 << 20
 
+// ErrRespostaGrande: o core devolveu mais que limiteResposta; não se repete.
+var ErrRespostaGrande = errors.New("core: resposta grande demais")
+
 // ErrSemToken: CORE_API_TOKEN não configurado; nada é enviado.
 var ErrSemToken = errors.New("core: CORE_API_TOKEN ausente")
 
@@ -34,14 +37,17 @@ type Cliente struct {
 	HTTP      *http.Client
 	Prazo     time.Duration                                    // por tentativa no Bling; 0 = 11 s
 	Orcamento time.Duration                                    // da chamada inteira no Bling; 0 = 25 s
+	PrazoMeta time.Duration                                    // da chamada à Meta quando o ctx não tem prazo; 0 = 60 s
 	Dormir    func(ctx context.Context, d time.Duration) error // nil = espera de verdade (o teste troca)
 }
 
 // Novo devolve um cliente que não segue redirecionamento (o Bearer não sai para outro lugar).
 func Novo(url, token string) *Cliente {
-	return &Cliente{URL: url, Token: token, HTTP: &http.Client{
-		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
-	}}
+	return &Cliente{URL: url, Token: token, HTTP: semRedirecionamento()}
+}
+
+func semRedirecionamento() *http.Client {
+	return &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 }
 
 // Resposta é o que o core devolveu, cru.
@@ -103,7 +109,7 @@ func (c *Cliente) enviar(ctx context.Context, caminho string, corpo any) (*Respo
 	req.Header.Set("Accept", "application/json")
 	cli := c.HTTP
 	if cli == nil {
-		cli = http.DefaultClient
+		cli = semRedirecionamento()
 	}
 	r, err := cli.Do(req)
 	if err != nil {
@@ -115,7 +121,7 @@ func (c *Cliente) enviar(ctx context.Context, caminho string, corpo any) (*Respo
 		return nil, err
 	}
 	if int64(len(lido)) > limiteResposta {
-		return nil, errors.New("core: resposta grande demais")
+		return nil, ErrRespostaGrande
 	}
 	return &Resposta{Status: r.StatusCode, Corpo: lido, RetryAfter: r.Header.Get("Retry-After"), Origem: r.Header.Get("X-Core-Origem")}, nil
 }
@@ -142,6 +148,7 @@ func retryAfter(r *Resposta) time.Duration {
 	if err != nil || s <= 0 {
 		return 0
 	}
+	s = min(s, 86400) // evita estouro de Duration; Meta ainda limita a 30 s
 	return time.Duration(s) * time.Second
 }
 
@@ -157,18 +164,20 @@ func (c *Cliente) Bling(ctx context.Context, p PedidoBling) (*Resposta, error) {
 		orc = 25 * time.Second
 	}
 	comeco := time.Now()
+	var ultima *Resposta // a última resposta de verdade: vale mais que um timeout posterior
 	causa := "o Bling não respondeu"
 	for tentativa := 1; ; tentativa++ {
 		ctxT, cancela := context.WithTimeout(ctx, prazo)
 		r, err := c.enviar(ctxT, CaminhoBling, p)
 		cancela()
-		if errors.Is(err, ErrSemToken) || (err != nil && ctx.Err() != nil) {
+		if errors.Is(err, ErrSemToken) || errors.Is(err, ErrRespostaGrande) || (err != nil && ctx.Err() != nil) {
 			return nil, err
 		}
 		status := 0
 		if err != nil {
 			causa = "o Bling não respondeu no prazo"
 		} else {
+			ultima = r
 			status = r.Status
 			if status >= 400 {
 				causa = fmt.Sprintf("o Bling respondeu %d", status)
@@ -179,6 +188,9 @@ func (c *Cliente) Bling(ctx context.Context, p PedidoBling) (*Resposta, error) {
 			d = decidir(tentativa, status, time.Since(comeco), retryAfter(r), prazo, orc)
 		}
 		if !d.repetir {
+			if err != nil && ultima != nil {
+				return ultima, nil
+			}
 			if err != nil {
 				return nil, &SemResposta{Causa: causa, Tentativas: tentativa}
 			}
@@ -193,10 +205,19 @@ func (c *Cliente) Bling(ctx context.Context, p PedidoBling) (*Resposta, error) {
 
 // Meta chama a Graph pelo core. Só repete 429 do core (recuo por uso alto: nada chegou à
 // Meta), esperando o Retry-After (padrão 5 s, teto 30 s), até `tentativas`. 5xx, rede e
-// prazo NÃO se repetem: POST repetido duplicaria campanha. O prazo é o do ctx.
+// prazo NÃO se repetem: POST repetido duplicaria campanha. O prazo é o do ctx (60 s se não tiver).
 func (c *Cliente) Meta(ctx context.Context, p PedidoMeta, tentativas int) (*Resposta, error) {
 	if p.Parametros == nil {
 		p.Parametros = map[string]any{}
+	}
+	if _, tem := ctx.Deadline(); !tem {
+		prazo := c.PrazoMeta
+		if prazo == 0 {
+			prazo = 60 * time.Second
+		}
+		var cancela context.CancelFunc
+		ctx, cancela = context.WithTimeout(ctx, prazo)
+		defer cancela()
 	}
 	for t := 1; ; t++ {
 		r, err := c.enviar(ctx, CaminhoMeta, p)

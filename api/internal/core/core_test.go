@@ -253,3 +253,77 @@ func TestNaoSegueRedirecionamento(t *testing.T) {
 		t.Fatalf("r=%+v err=%v", r, err)
 	}
 }
+
+func TestRespostaGrandeNaoRepeteNoBling(t *testing.T) {
+	antes := limiteResposta
+	limiteResposta = 10
+	t.Cleanup(func() { limiteResposta = antes })
+	c, f, _ := novoCore(t, status(200, `{"data":"12345678901234567890"}`))
+	_, err := c.Bling(context.Background(), leitura)
+	if !errors.Is(err, ErrRespostaGrande) || f.n() != 1 {
+		t.Fatalf("err=%v chamadas=%d", err, f.n())
+	}
+	var sr *SemResposta
+	if errors.As(err, &sr) || strings.Contains(err.Error(), "prazo") {
+		t.Fatalf("mensagem errada: %v", err)
+	}
+	_, err = c.Meta(context.Background(), PedidoMeta{Caminho: "/me", Metodo: "GET"}, 1)
+	if !errors.Is(err, ErrRespostaGrande) {
+		t.Fatalf("meta err = %v", err)
+	}
+}
+
+func TestMetaTemPrazoPadraoSemDeadlineNoCtx(t *testing.T) {
+	c, f, _ := novoCore(t, pendurar)
+	c.PrazoMeta = 50 * time.Millisecond
+	ini := time.Now()
+	_, err := c.Meta(context.Background(), PedidoMeta{Caminho: "/me", Metodo: "GET"}, 1)
+	if err == nil || f.n() != 1 || time.Since(ini) > 2*time.Second {
+		t.Fatalf("err=%v chamadas=%d em %v", err, f.n(), time.Since(ini))
+	}
+}
+
+func TestBlingGuardaUltimaRespostaEmVezDoTimeoutFinal(t *testing.T) {
+	c, f, _ := novoCore(t, sequencia(status(503, `{"erro":"bling_indisponivel"}`), pendurar))
+	c.Prazo = 50 * time.Millisecond
+	r, err := c.Bling(context.Background(), leitura)
+	if err != nil || r == nil || r.Status != 503 || f.n() != 3 {
+		t.Fatalf("r=%+v err=%v chamadas=%d", r, err, f.n())
+	}
+}
+
+func TestCancelarDuranteORecuoVoltaLogo(t *testing.T) {
+	c, _, _ := novoCore(t, status(503, `{}`))
+	c.Dormir = nil
+	ctx, cancela := context.WithCancel(context.Background())
+	time.AfterFunc(50*time.Millisecond, cancela)
+	ini := time.Now()
+	_, err := c.Bling(ctx, leitura)
+	if !errors.Is(err, context.Canceled) || time.Since(ini) > 400*time.Millisecond {
+		t.Fatalf("err=%v em %v", err, time.Since(ini))
+	}
+}
+
+func TestRetryAfterInvalidoCaiNoRecuoNormal(t *testing.T) {
+	for _, ra := range []string{"abc", "0", "-5", ""} {
+		c, _, esperas := novoCore(t, sequencia(status(429, `{}`, "Retry-After", ra), status(200, `{}`)))
+		c.Bling(context.Background(), leitura)
+		if len(*esperas) != 1 || (*esperas)[0] != 600*time.Millisecond {
+			t.Errorf("Retry-After %q: esperas=%v", ra, *esperas)
+		}
+	}
+	c, _, esperas := novoCore(t, sequencia(status(429, `{}`, "Retry-After", "99999999999"), status(200, `{}`)))
+	c.Meta(context.Background(), PedidoMeta{Caminho: "/me", Metodo: "GET"}, 2)
+	if len(*esperas) != 1 || (*esperas)[0] != 30*time.Second {
+		t.Fatalf("Retry-After enorme: esperas=%v", *esperas)
+	}
+}
+
+func TestSemClienteHTTPNaoSegueRedirecionamento(t *testing.T) {
+	c, f, _ := novoCore(t, status(302, ``, "Location", "https://outro.exemplo/roubar"))
+	c.HTTP = nil
+	r, err := c.Meta(context.Background(), PedidoMeta{Caminho: "/me", Metodo: "GET"}, 1)
+	if err != nil || r.Status != 302 || f.n() != 1 {
+		t.Fatalf("r=%+v err=%v", r, err)
+	}
+}
