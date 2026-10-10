@@ -150,3 +150,19 @@ func TestCarregarAlerta(t *testing.T) {
 		t.Fatalf("%+v", c)
 	}
 }
+
+func TestCarregarZAPI(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://x")
+	t.Setenv("ZAPI_INSTANCE_ID", "instancia-123")
+	t.Setenv("ZAPI_INSTANCE_TOKEN", "token-da-instancia")
+	t.Setenv("ZAPI_TOKEN", "client-token")
+	c, _ := Carregar()
+	if c.ZAPIInstancia != "instancia-123" || c.ZAPIToken != "token-da-instancia" || c.ZAPICliente != "client-token" {
+		t.Fatalf("%+v", c)
+	}
+	for _, s := range []string{"instancia-123", "token-da-instancia", "client-token"} {
+		if !slices.Contains(c.Segredos(), s) {
+			t.Errorf("%q fora de Segredos()", s)
+		}
+	}
+}

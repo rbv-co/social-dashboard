@@ -35,6 +35,8 @@ func tarefas(p *pgxpool.Pool, cfg config.Config, ag *worker.Agendador) []worker.
 	ts = append(ts, (&meta.ColetaDiaria{Pool: p, Core: cli, Gravar: ag.Gravador(), Alerta: cfg.AlertaWebhook}).Tarefas()...)
 	ts = append(ts, (&meta.Auditoria{Pool: p, Core: cli, Alerta: cfg.AlertaWebhook}).Tarefa())
 	ts = append(ts, (&meta.ColetaHora{Pool: p, Core: cli}).Tarefas()...)
+	zapi := &meta.ZAPI{InstanceID: cfg.ZAPIInstancia, InstanceToken: cfg.ZAPIToken, ClientToken: cfg.ZAPICliente}
+	ts = append(ts, (&meta.RelatorioHora{Pool: p, ZAPI: zapi}).Tarefa())
 	return ts
 }
 

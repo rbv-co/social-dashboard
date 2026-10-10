@@ -33,12 +33,16 @@ type Config struct {
 	RDStationToken string // RD_STATION_TOKEN: token público da RD Station (vessel-rd-station)
 	ArquivosDir    string // ARQUIVOS_DIR: raiz dos buckets no disco (spec §7); padrão /var/lib/api/arquivos
 	AlertaWebhook  string // ALERT_WEBHOOK_URL: recados de coleta zerada e da auditoria (opcional; é segredo)
+	ZAPIInstancia  string // ZAPI_INSTANCE_ID (vai no caminho da URL da Z-API)
+	ZAPIToken      string // ZAPI_INSTANCE_TOKEN (vai no caminho da URL da Z-API)
+	ZAPICliente    string // ZAPI_TOKEN (cabeçalho Client-Token)
 }
 
 // Segredos: os valores que nunca podem sair em robos_execucoes nem no log do worker
 // (worker.Limpar troca cada um por ***).
 func (c Config) Segredos() []string {
-	return append([]string{c.CoreToken, c.ChatwootSegredo, c.VAPIDPrivada, c.RDStationToken, c.AlertaWebhook}, c.ShopifySegredos...)
+	return append([]string{c.CoreToken, c.ChatwootSegredo, c.VAPIDPrivada, c.RDStationToken, c.AlertaWebhook,
+		c.ZAPIInstancia, c.ZAPIToken, c.ZAPICliente}, c.ShopifySegredos...)
 }
 
 // lista lê uma variável separada por vírgulas, sem itens vazios.
@@ -82,6 +86,9 @@ func Carregar() (Config, error) {
 		RDStationToken:    strings.TrimSpace(os.Getenv("RD_STATION_TOKEN")),
 		ArquivosDir:       strings.TrimSpace(os.Getenv("ARQUIVOS_DIR")),
 		AlertaWebhook:     strings.TrimSpace(os.Getenv("ALERT_WEBHOOK_URL")),
+		ZAPIInstancia:     strings.TrimSpace(os.Getenv("ZAPI_INSTANCE_ID")),
+		ZAPIToken:         strings.TrimSpace(os.Getenv("ZAPI_INSTANCE_TOKEN")),
+		ZAPICliente:       strings.TrimSpace(os.Getenv("ZAPI_TOKEN")),
 	}
 	if c.Addr == "" {
 		c.Addr = ":8080"
