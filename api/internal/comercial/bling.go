@@ -227,6 +227,10 @@ func (b *Bling) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	lista, err := canais.Carregar(r.Context(), b.Pool, a)
 	if err != nil {
+		if r.Context().Err() != nil { // quem pediu desistiu no meio da consulta: nada a registrar
+			erro(w, http.StatusBadGateway, "falha ao falar com o core")
+			return
+		}
 		slog.Error("bling-proxy: carregar canais", "erro", err)
 		erro(w, http.StatusInternalServerError, "erro_interno")
 		return
