@@ -50,6 +50,7 @@ func Novo(t *testing.T) *pgxpool.Pool {
 		t.Fatal(err)
 	}
 	cfg.ConnConfig.RuntimeParams["search_path"] = esquema
+	banco.Configurar(cfg)
 	p, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
 		t.Fatal(err)
