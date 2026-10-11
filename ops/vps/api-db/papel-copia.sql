@@ -25,6 +25,17 @@ grant select on all tables in schema public to copia;
 -- Tabela que nascer depois (migração nova) também entra: a regra da cópia é "copiar TUDO menos o decidido".
 alter default privileges in schema public grant select on tables to copia;
 
+-- FUNÇÕES: o `limpar-dump.mjs` tira todo GRANT/REVOKE do dump do Supabase, então as funções do public nascem
+-- com o EXECUTE padrão para PUBLIC, e muitas são SECURITY DEFINER do superusuário `api`: sem este REVOKE o papel
+-- `copia` poderia chamar uma função que ESCREVE (corre com os poderes do dono, não com os do papel). O dono
+-- `api` (superusuário: a API e o worker conectam como ele) não é afetado; gatilhos não pedem EXECUTE a quem insere.
+-- O ALTER DEFAULT vale para as funções que o dono (o papel que roda este arquivo) criar depois (migração nova).
+-- ⚠️ SEM `in schema public` DE PROPÓSITO: `alter default privileges in schema ... revoke` não tira o EXECUTE
+-- de PUBLIC (o padrão de função é global e o do schema só SOMA a ele), então com `in schema` o comando seria
+-- um no-op silencioso (o teste copia-do-banco-pg.teste.sh pega isso).
+revoke execute on all functions in schema public from public;
+alter default privileges revoke execute on functions from public;
+
 -- O hash dos tokens de sessão não sai nem por engano (SEM_COPIA já pula a tabela; o banco garante).
 revoke select on public.sessoes from copia;
 

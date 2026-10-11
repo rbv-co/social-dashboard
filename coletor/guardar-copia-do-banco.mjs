@@ -29,7 +29,7 @@ import {
   RAIZ_RBV, conexaoZoho, tokenZoho, pastasDe, acharOuCriarPasta,
   baixarArquivo, subirArquivo, mandarParaLixeira,
 } from './lib/zoho-da-central.mjs';
-import { abrirFontePg } from './lib/fonte-pg.mjs';
+import { abrirFontePg, NOME_DO_ROBO } from './lib/fonte-pg.mjs';
 
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://kounqtdoioootxqegkij.supabase.co';
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
@@ -40,7 +40,6 @@ const RAIZ = RAIZ_RBV;
 const PASTA_BASE = '00. Copias de seguranca da Central';
 
 const ensaio = process.argv.includes('--ensaio');
-const NOME_DO_ROBO = 'guardar-copia-do-banco';
 const semanal = process.argv.includes('--semanal');
 const limpar = process.argv.includes('--limpar');
 
@@ -110,6 +109,13 @@ const SEM_O_VALOR = {
   accounts: ['access_token'],
 };
 const MARCA = '(fora da copia: e credencial)';
+/**
+ * Colunas listadas acima que NÃO existem no banco (a lista é uma defesa larga, e esta nunca existiu em
+ * acessos_conexoes). Fora daqui, coluna listada que não aparece numa tabela com linhas é coluna RENOMEADA: o valor
+ * sairia em texto puro para o drive. No Postgres próprio isso derruba a cópia; no Supabase (que roda hoje) só avisa,
+ * para não mudar o que já funciona.
+ */
+const PODE_NAO_EXISTIR = { acessos_conexoes: ['access_token'] };
 
 const DIARIAS_QUE_FICAM = 30;      // dias
 const MENSAIS_QUE_FICAM = 12;      // meses
@@ -257,6 +263,14 @@ for (const [tabela, colunas] of Object.entries(SEM_O_VALOR)) {
   for (const linha of arquivo.texto.trim().split('\n')) {
     const obj = JSON.parse(linha);
     for (const c of colunas) {
+      if (!(c in obj) && !PODE_NAO_EXISTIR[tabela]?.includes(c)) {
+        const frase = `${tabela}.${c}: a coluna de credencial sumiu das linhas (renomeada? o valor sairia em texto puro com outro nome)`;
+        if (fontePg) {
+          console.error(`\n⛔ NADA FOI GRAVADO. ${frase}.`);
+          process.exit(1);
+        }
+        console.warn(`⚠️ ${frase}`);
+      }
       if (c in obj && obj[c] !== null && obj[c] !== MARCA) {
         console.error(`\n⛔ NADA FOI GRAVADO. ${tabela}.${c} ainda tem valor no arquivo.`);
         process.exit(1);
@@ -288,6 +302,9 @@ const ultima = anteriores.find((p) => p.nome !== DIA);
 if (ultima) {
   const bruto = await baixarArquivo(tz, ultima.id, 'manifesto.json');
   const antes = bruto ? JSON.parse(bruto) : null;
+  // Pasta do dia sem manifesto (rodada que parou no meio): a trava de encolhimento não tem com o que comparar.
+  // Segue como sempre, mas fica dito, para não parecer que a conferência aconteceu.
+  if (!antes) console.warn(`⚠️ ${ultima.nome} sem manifesto: a trava de encolhimento não conferiu nada nesta rodada`);
   const quedas = [];
   for (const [tabela, agora] of Object.entries(manifesto.tabelas)) {
     const era = antes?.tabelas?.[tabela]?.linhas;

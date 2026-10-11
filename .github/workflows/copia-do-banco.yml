@@ -13,7 +13,10 @@ name: Cópia de segurança do banco
 # workflow rodasse depois do corte, copiaria o Supabase VELHO e, como o upload sobrescreve pelo nome
 # (override-name-exist), trocaria a cópia boa do dia por dado parado. Por isso, no corte, o dono liga a
 # variável do repositório SAIU_DO_SUPABASE=sim (gh variable set SAIU_DO_SUPABASE --body sim) e a primeira
-# etapa abaixo recusa. O Plano 8 apaga este arquivo junto com os segredos do Supabase.
+# etapa abaixo recusa com QUALQUER valor não vazio (0, false, no também recusam: a trava não pode falhar aberta).
+# Também no corte: apagar (ou renomear) o segredo SUPABASE_SERVICE_KEY do repositório, que derruba até os
+# disparos manuais de branches antigas, que levam a versão velha deste arquivo sem a trava. O Plano 8 apaga este
+# arquivo junto com os segredos do Supabase.
 #
 # O minuto 12 da VPS evita a hora cheia e a madrugada evita disputar banda com os robôs do dia. DOMINGO leva
 # `--semanal`: inclui o histórico de métrica, que é grande e quase todo recoletável.
@@ -40,7 +43,7 @@ jobs:
     timeout-minutes: 60
     steps:
       - name: Recusar depois do corte
-        if: vars.SAIU_DO_SUPABASE == 'sim'
+        if: vars.SAIU_DO_SUPABASE != ''
         run: |
           echo "::error::Saímos do Supabase: a cópia roda só na VPS (coletor/vps/robos.cron) e lê o Postgres da API. Este workflow copiaria dado velho por cima da cópia boa do dia."
           exit 1

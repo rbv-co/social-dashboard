@@ -66,9 +66,21 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 Até o corte, a cópia diária para o Zoho WorkDrive (`coletor/vps/robos.cron` → `coletor/vps/copia-do-banco.sh` →
 `coletor/guardar-copia-do-banco.mjs`, 06h12 UTC) lê o Supabase. No corte ela passa a ler ESTE banco com o papel
-`copia`: SELECT em todas as tabelas do `public` (menos `sessoes`) e INSERT só em `robos_execucoes` (a linha da
-rodada, que o painel cobra como crítica). Continua sem porta publicada: o `copia-do-banco.sh` lê o IP do `api-db`
-na `api_net` a cada rodada e monta `COPIA_DATABASE_URL` sozinho quando `COPIA_DB_SENHA` existe em `/etc/robos.env`.
+`copia`: SELECT em todas as tabelas do `public` (`sessoes` é negada pelo banco e pulada pelo robô) e INSERT só em
+`robos_execucoes` (a linha da rodada, que o painel cobra como crítica). Nenhuma função do `public` é executável
+por ele (o `papel-copia.sql` revoga o EXECUTE de PUBLIC: o dump do Supabase vem sem GRANT/REVOKE e muitas funções
+são `SECURITY DEFINER` do superusuário, que ESCREVEM). Continua sem porta publicada: o `copia-do-banco.sh` lê o IP
+do `api-db` na `api_net` a cada rodada e monta `COPIA_DATABASE_URL` (sem a senha, que vai no `PGPASSWORD`).
+
+Duas variáveis em `/etc/robos.env`, e só NO CORTE: `COPIA_DB_SENHA` (a senha do papel) e `SAIU_DO_SUPABASE=sim`
+(qualquer valor não vazio). Com a segunda ligada, faltar a primeira é ERRO (`exit 1`), nunca volta calada para o
+Supabase velho. Para voltar ao Supabase de propósito: apagar AS DUAS linhas.
+
+**O que a cópia deixa de levar:** as views (`carrinho_abandonados`, `robos_saude`...) não são tabelas e saem da
+cópia (vêm do esquema, não são dado). Tabelas novas da API (`sessoes`, `goose_db_version`, `webhooks_recebidos`,
+`envios_feitos`) ficam fora de propósito, `usuarios.senha_hash` sai sem o valor, e restaurar exige `api migrar`.
+A lista de tabelas vem de `pg_tables`: uma tabela que o papel não consegue ler FALHA a cópia (e deixa a linha
+`ok = false` no painel); nunca some calada.
 
 Um comando por linha. A senha nunca vai para a linha de comando (o `ps` do host mostra argumentos): entra pelo
 ambiente, e o `papel-copia.sql` a lê com `\getenv`.
@@ -78,17 +90,51 @@ scp ops/vps/api-db/papel-copia.sql op:/root/api-db/papel-copia.sql
 ssh op
 [ -e /root/secrets/copia.senha ] || ( umask 077; openssl rand -hex 24 > /root/secrets/copia.senha )
 SENHA_COPIA="$(cat /root/secrets/copia.senha)" docker exec -i -e SENHA_COPIA api-db psql -U api -d api < /root/api-db/papel-copia.sql
-grep -q '^COPIA_DB_SENHA=' /etc/robos.env || echo "COPIA_DB_SENHA=$(cat /root/secrets/copia.senha)" >> /etc/robos.env
-/opt/robos/social-dashboard/coletor/vps/rodar-robo.sh copia-do-banco 60 -- bash coletor/vps/copia-do-banco.sh --ensaio
+COPIA_DB_SENHA="$(cat /root/secrets/copia.senha)" /opt/robos/social-dashboard/coletor/vps/rodar-robo.sh copia-do-banco 60 -- bash coletor/vps/copia-do-banco.sh --ensaio
 tail -30 /var/log/robos/copia-do-banco.log
 ```
 
-O ensaio lista as tabelas e as contagens sem enviar nada. Como o papel `copia` não enxerga `sessoes`, o ensaio conta uma tabela a menos que o banco tem. A senha é hex de propósito: vai na URL sem escapar.
-Reaplicar o `papel-copia.sql` é seguro (troca a senha e refaz os GRANTs; tabela nova criada pelo `api` também
-entra, por `ALTER DEFAULT PRIVILEGES`). Para voltar ao Supabase antes do corte: apagar a linha `COPIA_DB_SENHA`
-do `/etc/robos.env`. No corte, ligar também `gh variable set SAIU_DO_SUPABASE --body sim`: a retaguarda manual
-do GitHub (`.github/workflows/copia-do-banco.yml`) passa a recusar, porque copiaria o Supabase velho por cima da
-cópia boa do dia.
+O ensaio lista as tabelas e as contagens sem enviar nada. A senha vai INLINE no ensaio: não grave `COPIA_DB_SENHA` no
+`/etc/robos.env` antes do corte (com ela gravada, a rodada das 06h12 já leria o banco novo). A senha é hex de
+propósito (sem caractere que precise de escape). Reaplicar o `papel-copia.sql` é seguro (troca a senha e refaz os
+GRANTs/REVOKEs; tabela e função novas criadas pelo `api` seguem a mesma regra, por `ALTER DEFAULT PRIVILEGES`).
+
+### No corte (só com ok do dono)
+
+```sh
+grep -q '^COPIA_DB_SENHA=' /etc/robos.env || echo "COPIA_DB_SENHA=$(cat /root/secrets/copia.senha)" >> /etc/robos.env
+grep -q '^SAIU_DO_SUPABASE=' /etc/robos.env || echo "SAIU_DO_SUPABASE=sim" >> /etc/robos.env
+```
+
+E no GitHub (na máquina do dono, sem trocar de conta): `gh variable set SAIU_DO_SUPABASE --body sim` e remover (ou
+renomear) o segredo `SUPABASE_SERVICE_KEY` do repositório (`gh secret delete SUPABASE_SERVICE_KEY`). A variável faz o
+workflow `.github/workflows/copia-do-banco.yml` recusar com QUALQUER valor não vazio (copiaria o Supabase velho por
+cima da cópia boa do dia). O segredo removido mata também os disparos manuais de branches antigas, que levam a
+versão velha do workflow, sem a trava. Conferir que não sobrou chave do Supabase na VPS:
+`grep -c '^SUPABASE_' /etc/robos.env` deve dar 0 depois do corte (ou só as que o dono decidir manter).
+
+### Verificar na VPS (antes do corte e depois do primeiro dia)
+
+Cada item com o resultado esperado. Um comando por linha; consultas rodam como `api`:
+
+1. **RLS desligada no `api-db`**: `docker exec api-db psql -U api -d api -Atc "select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relrowsecurity"` → `0`.
+   (`docs/migracao-go/NOTAS-DA-IMPLANTACAO.md:157` diz que as tabelas restauradas mantêm RLS ligada: está
+   DESATUALIZADO. O certo é `0`: `ops/migracao/limpar-dump.mjs` remove `enable row level security` do dump e
+   `ops/migracao/ensaio.sh:162` exige `0` tabelas com RLS e `0` policies. Se der diferente de `0`, pare: o dump
+   não passou pelo `limpar-dump.mjs`.)
+2. **Donos e privilégios**: `docker exec api-db psql -U api -d api -c "select tablename, tableowner, has_table_privilege('copia', format('public.%I', tablename), 'select') as copia_le from pg_tables where schemaname='public' order by 1"`
+   → todas com dono `api` e `copia_le = t`, exceto `sessoes` (`f`).
+3. **Nomes de tabela no padrão** (`^[a-z_][a-z0-9_]*$`, o que o robô aceita): `docker exec api-db psql -U api -d api -Atc "select tablename from pg_tables where schemaname='public' and tablename !~ '^[a-z_][a-z0-9_]*$'"` → nenhuma linha.
+4. **Nenhuma função `SECURITY DEFINER` executável pelo `copia`**: `docker exec api-db psql -U api -d api -Atc "select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.prosecdef and has_function_privilege('copia', p.oid, 'execute')"` → `0`.
+5. **Fuso do servidor**: `docker exec api-db psql -U api -d api -Atc "show timezone"` → `Etc/UTC` (as datas da cópia saem no fuso do servidor, como saíam do PostgREST).
+6. **Tempo e memória no banco real (197 MB)**: `COPIA_DB_SENHA="$(cat /root/secrets/copia.senha)" /usr/bin/time -v /opt/robos/social-dashboard/coletor/vps/rodar-robo.sh copia-do-banco 60 -- bash coletor/vps/copia-do-banco.sh --ensaio --semanal 2>&1 | tail -30`
+   → "Elapsed" bem abaixo do limite de 60 min do `rodar-robo.sh` e "Maximum resident set size" compatível com a VPS
+   compartilhada (a cópia monta todos os arquivos na memória antes de enviar).
+7. **`docker` no PATH do cron**: `PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin command -v docker` (é o PATH do
+   `/etc/cron.d/robos-social-dashboard`) → imprime um caminho.
+8. **`/etc/robos.env`**: `stat -c '%a %U' /etc/robos.env` → `600 root`; e `grep -c "$(cat /root/secrets/copia.senha)" /var/log/robos/copia-do-banco.log` → `0` (a senha nunca no log).
+9. **Primeira rodada real depois do corte** (a das 06h12 UTC): (a) linha nova em `robos_execucoes` com `robo = 'guardar-copia-do-banco'`, `ok = t` e `conferido_em` preenchido; (b) a pasta do dia no Zoho tem `manifesto.json` e um `.jsonl` por tabela copiada; (c) a conferência da cópia termina sem divergência: no dia 1º ela roda sozinha depois da cópia (está no log); para adiantar, a partir de `/opt/robos/social-dashboard`: `IP=$(docker inspect -f '{{(index .NetworkSettings.Networks "api_net").IPAddress}}' api-db); PATH=/opt/cartoes-ean/node/bin:$PATH COPIA_DATABASE_URL="postgres://copia@$IP:5432/api" PGPASSWORD="$(cat /root/secrets/copia.senha)" node coletor/restaurar-copia.mjs --conferir <dia>` (a senha entra pelo ambiente, não por argumento).
+10. **Janela do contêiner**: não recriar o `api-db` (`docker compose up --force-recreate`, mudança de imagem) entre 06h12 e 07h UTC: o IP muda e a rodada em andamento perde a conexão (ela falha limpo e registra, mas o dia fica sem cópia).
 
 ## Regras do projeto
 
