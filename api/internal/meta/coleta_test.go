@@ -237,7 +237,7 @@ func TestColetaDiariaUsaOUltimoBomEAgendas(t *testing.T) {
 }
 
 // Core fora do ar: nenhuma conta coleta, cada uma fica com a linha dela (ok=false) e a rodada sinaliza.
-// O endereço do core (core.Cliente devolve o *url.Error), o webhook de alerta e o token não aparecem
+// O endereço do core (core.Cliente devolve só a classe da falha), o webhook de alerta e o token não aparecem
 // nas linhas, no erro da rodada nem no log.
 func TestColetaDiariaCoreForaDoArNaoVazaSegredos(t *testing.T) {
 	p := testebanco.Novo(t)

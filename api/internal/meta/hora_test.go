@@ -540,6 +540,14 @@ func TestColetaDiariaAnunciosFalhaDeInsightsViraDegradado(t *testing.T) {
 	if !strings.Contains(recado, "Vessel: 1 de 12 janelas de insights de campanha falharam (Meta API /act_999/insights: (#2) Service temporarily unavailable)") {
 		t.Fatalf("recado ao super admin: %q", recado)
 	}
+	// a leitura pela metade da Breno vira o texto de métricas zeradas (outra linha do mesmo recado); a falha
+	// da Graph tem o texto dela.
+	for _, linha := range strings.Split(recado, "\n") {
+		if strings.Contains(linha, "janelas de insights de campanha") &&
+			(!strings.HasPrefix(linha, "⚠️ Coleta IG: falha ao ler a Graph da Meta") || strings.Contains(linha, "retornou métricas zeradas") || strings.Contains(linha, "5 tentativas")) {
+			t.Fatalf("falha da Graph não é métrica zerada: %q", linha)
+		}
+	}
 	var n int
 	p.QueryRow(ctx, `select count(*) from campaign_insights where period_days = 14`).Scan(&n)
 	if n != 1 {

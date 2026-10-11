@@ -88,15 +88,9 @@ func (c *ColetaDiaria) dormir(ctx context.Context, d time.Duration) error {
 	}
 }
 
-// semEndereco tira do erro o *url.Error do cliente HTTP (ele carrega a URL do core, que não sai em
-// linha, erro nem log); o resto do erro, como o prazo vencido, fica.
-func semEndereco(err error) error {
-	var ue *url.Error
-	if errors.As(err, &ue) {
-		return ue.Err
-	}
-	return err
-}
+// degradados: o que a rodada avisa ao super admin no fim, em duas famílias: métricas que a Meta devolveu
+// zeradas/inconsistentes (`zeradas`) e leituras da Graph que falharam de fato (`graph`).
+type degradados struct{ zeradas, graph []string }
 
 // Rodada coleta todas as contas, em série. O dia ("hoje" em São Paulo) é o do COMEÇO da rodada para todas
 // (a de 23:59 passa da meia-noite com várias contas). A falha de uma conta vira a linha DELA (ok=false) e
@@ -115,11 +109,12 @@ func (c *ColetaDiaria) Rodada(ctx context.Context, rodada string) error {
 	if err != nil {
 		return err
 	}
-	var degradados, falharam []string
+	var deg degradados
+	var falharam []string
 	defer func() {
 		g, cancela := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 		defer cancela()
-		c.avisarSuperAdmin(g, hoje, degradados)
+		c.avisarSuperAdmin(g, hoje, deg)
 	}()
 	for i, conta := range contas {
 		if ctx.Err() != nil { // o prazo da rodada acabou com conta sem coletar
@@ -127,10 +122,9 @@ func (c *ColetaDiaria) Rodada(ctx context.Context, rodada string) error {
 		}
 		inicio := c.agora()
 		ctxC, cancela := context.WithTimeout(ctx, c.prazoConta())
-		erro := c.processarConta(ctxC, conta, hoje, &degradados)
+		erro := c.processarConta(ctxC, conta, hoje, &deg)
 		cancela()
 		if erro != nil {
-			erro = semEndereco(erro)
 			falharam = append(falharam, conta.nome)
 			slog.Error("coletar-dados: conta falhou", "rodada", rodada, "conta", conta.nome, "erro", erro.Error())
 		}
@@ -174,7 +168,7 @@ func diaDaMeta(ts string) string {
 	return ""
 }
 
-func (c *ColetaDiaria) processarConta(ctx context.Context, conta contaColeta, hoje string, degradados *[]string) error {
+func (c *ColetaDiaria) processarConta(ctx context.Context, conta contaColeta, hoje string, deg *degradados) error {
 	j, err := GET(ctx, c.Core, "/"+conta.ig, map[string]any{"fields": "followers_count"})
 	if err != nil {
 		return err // como a edge: sem a contagem, nada desta conta é coletado nesta rodada
@@ -199,7 +193,7 @@ func (c *ColetaDiaria) processarConta(ctx context.Context, conta contaColeta, ho
 		if erroMidias == nil { // uma leitura de /media serve os 5 períodos (a edge pedia a mesma coisa 5 vezes)
 			posts, reels = contarMidias(midias, conta.ig, hoje, dias)
 		}
-		if err := c.gravarEng(ctx, conta, hoje, dias, degradados); err != nil {
+		if err := c.gravarEng(ctx, conta, hoje, dias, deg); err != nil {
 			return err
 		}
 		sql := `insert into content_snapshots (account_id, captured_at, period_days, posts_count, reels_count)
@@ -225,11 +219,11 @@ func (c *ColetaDiaria) processarConta(ctx context.Context, conta contaColeta, ho
 			return err
 		}
 	}
-	if err := c.gravarEng(ctx, conta, hoje, 99, degradados); err != nil {
+	if err := c.gravarEng(ctx, conta, hoje, 99, deg); err != nil {
 		return err
 	}
 	if conta.ad != "" { // perfil sem ad_account_id não tem anúncios: pula, sem erro
-		if err := c.anuncios(ctx, conta, hoje, degradados); err != nil {
+		if err := c.anuncios(ctx, conta, hoje, deg); err != nil {
 			return err
 		}
 	}
@@ -467,7 +461,7 @@ func (c *ColetaDiaria) engajamento(ctx context.Context, ig, hoje string, dias in
 }
 
 // gravarEng: grava o período; leitura pela metade não é gravada (vira degradado e fica o último bom).
-func (c *ColetaDiaria) gravarEng(ctx context.Context, conta contaColeta, hoje string, dias int, degradados *[]string) error {
+func (c *ColetaDiaria) gravarEng(ctx context.Context, conta contaColeta, hoje string, dias int, deg *degradados) error {
 	if dias == 0 { // "hoje" é reescrito 4x por dia e só cresce: na dúvida, NÃO sobrescreve
 		var v eng
 		for i := range 4 {
@@ -482,7 +476,7 @@ func (c *ColetaDiaria) gravarEng(ctx context.Context, conta contaColeta, hoje st
 			}
 		}
 		if leituraParcial(v) {
-			*degradados = append(*degradados, conta.nome+" "+rotulo(0))
+			deg.zeradas = append(deg.zeradas, conta.nome+" "+rotulo(0))
 			return nil
 		}
 		return c.upsertEng(ctx, conta.id, hoje, 0, v)
@@ -524,11 +518,11 @@ func (c *ColetaDiaria) gravarEng(ctx context.Context, conta contaColeta, hoje st
 				}
 			}
 			if dias != 1 { // 1d não alerta: o painel mostra 2D e um dia quieto é normal
-				*degradados = append(*degradados, conta.nome+" "+rotulo(dias))
+				deg.zeradas = append(deg.zeradas, conta.nome+" "+rotulo(dias))
 			}
 		case junto == nil || !(junto["reach"] > 0) || leituraParcial(junto):
 			if dias != 1 {
-				*degradados = append(*degradados, conta.nome+" "+rotulo(dias)+" (sem histórico)")
+				deg.zeradas = append(deg.zeradas, conta.nome+" "+rotulo(dias)+" (sem histórico)")
 			}
 			return nil
 		}
@@ -591,14 +585,23 @@ func (c *ColetaDiaria) upsertEng(ctx context.Context, conta, hoje string, dias i
 	return err
 }
 
-// avisarSuperAdmin: métricas zeradas/inconsistentes viram UMA linha 'coleta_zerada' (e o webhook, se
-// houver). É aviso: falhar aqui não derruba a conta.
-func (c *ColetaDiaria) avisarSuperAdmin(ctx context.Context, hoje string, degradados []string) {
-	if len(degradados) == 0 {
+// avisarSuperAdmin: métricas zeradas/inconsistentes e leituras da Graph que falharam viram UMA linha
+// 'coleta_zerada' (e o webhook, se houver), cada família com o texto que diz o que aconteceu. É aviso:
+// falhar aqui não derruba a conta.
+func (c *ColetaDiaria) avisarSuperAdmin(ctx context.Context, hoje string, deg degradados) {
+	var partes []string
+	if len(deg.zeradas) > 0 {
+		partes = append(partes, "⚠️ Coleta IG: a Meta retornou métricas zeradas/inconsistentes (alcance 0 ou likes/comments/saves/shares zerados com interações>0) mesmo após 5 tentativas em: "+
+			strings.Join(deg.zeradas, " · ")+". Mantive o valor mais recente válido (não zerei o painel). Verificar token/permissões da Meta.")
+	}
+	if len(deg.graph) > 0 {
+		partes = append(partes, "⚠️ Coleta IG: falha ao ler a Graph da Meta (a leitura não chegou ou a Meta recusou; não são métricas zeradas) em: "+
+			strings.Join(deg.graph, " · ")+". O que já estava gravado foi mantido e as outras leituras seguiram. Verificar o status da Meta e o token/permissões.")
+	}
+	if len(partes) == 0 {
 		return
 	}
-	msg := "⚠️ Coleta IG: a Meta retornou métricas zeradas/inconsistentes (alcance 0 ou likes/comments/saves/shares zerados com interações>0) mesmo após 5 tentativas em: " +
-		strings.Join(degradados, " · ") + ". Mantive o valor mais recente válido (não zerei o painel). Verificar token/permissões da Meta."
+	msg := strings.Join(partes, "\n")
 	if _, err := c.Pool.Exec(ctx, `insert into data_integrity_checks (checked_date, status, check_name, detail) values ($1::date, 'fail', 'coleta_zerada', $2::text)`,
 		hoje, texto.CortarUTF16(msg, 900)); err != nil {
 		slog.Error("coletar-dados: alerta no banco", "erro", err)

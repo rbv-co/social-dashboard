@@ -348,7 +348,7 @@ func TestColetaDiariaPrazoPorContaCortaSoAContaLenta(t *testing.T) {
 	}
 	var resp string
 	p.QueryRow(ctx, `select resposta from robos_execucoes where robo = 'coletar-dados-07h · Breno' and not ok`).Scan(&resp)
-	if !strings.Contains(resp, "context deadline exceeded") {
+	if !strings.Contains(resp, "core: prazo vencido") || strings.Contains(resp, "127.0.0.1") {
 		t.Fatalf("a conta lenta foi cortada pelo prazo: %q", resp)
 	}
 	var vessel bool

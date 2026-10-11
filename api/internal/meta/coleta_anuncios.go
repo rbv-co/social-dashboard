@@ -15,7 +15,7 @@ import (
 // conjuntos e os insights por campanha (5 recortes + o gasto de cada um dos 7 dias anteriores como
 // period_days 0: a Meta re-atribui gasto por 1-2 dias). Erro da META segue o que a edge fazia (pula,
 // ou vira degradado nos anúncios); erro do BANCO aborta a conta (linha ok=false em robos_execucoes).
-func (c *ColetaDiaria) anuncios(ctx context.Context, conta contaColeta, hoje string, degradados *[]string) error {
+func (c *ColetaDiaria) anuncios(ctx context.Context, conta contaColeta, hoje string, deg *degradados) error {
 	act := "/act_" + conta.ad
 	if itens, err := Paginas(ctx, c.Core, act+"/campaigns", obj{"fields": "id,name,objective,status", "limit": "500"}, maxPaginas, true); err == nil {
 		err := pgx.BeginFunc(ctx, c.Pool, func(tx pgx.Tx) error {
@@ -40,7 +40,7 @@ func (c *ColetaDiaria) anuncios(ctx context.Context, conta contaColeta, hoje str
 
 	// Página de 100: com o campo aninhado do criativo a Meta recusa 500 por página (medido em 18/09/2026).
 	if itens, err := Paginas(ctx, c.Core, act+"/ads", obj{"fields": "id,name,campaign_id,status,creative{object_story_spec,asset_feed_spec,object_url}", "limit": "100"}, maxPaginas, true); err != nil {
-		*degradados = append(*degradados, fmt.Sprintf("ads (%s): %s", conta.id, err.Error()))
+		deg.graph = append(deg.graph, fmt.Sprintf("ads (%s): %s", conta.id, err.Error()))
 	} else {
 		err := pgx.BeginFunc(ctx, c.Pool, func(tx pgx.Tx) error {
 			for _, x := range itens {
@@ -116,7 +116,7 @@ func (c *ColetaDiaria) anuncios(ctx context.Context, conta contaColeta, hoje str
 	}
 	if falhas > 0 {
 		slog.Warn("coletar-dados: insights de campanha", "conta", conta.nome, "falhas", falhas, "janelas", janelas, "erro", primeiraFalha)
-		*degradados = append(*degradados, fmt.Sprintf("%s: %d de %d janelas de insights de campanha falharam (%s)", conta.nome, falhas, janelas, primeiraFalha))
+		deg.graph = append(deg.graph, fmt.Sprintf("%s: %d de %d janelas de insights de campanha falharam (%s)", conta.nome, falhas, janelas, primeiraFalha))
 	}
 	return nil
 }

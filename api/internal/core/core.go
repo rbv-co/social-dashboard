@@ -7,14 +7,19 @@ package core
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -31,6 +36,58 @@ var ErrRespostaGrande = errors.New("core: resposta grande demais")
 
 // ErrSemToken: CORE_API_TOKEN não configurado; nada é enviado.
 var ErrSemToken = errors.New("core: CORE_API_TOKEN ausente")
+
+// ErroRede é a falha de transporte (sem resposta do core) com mensagem FIXA por classe: nunca leva
+// host, porta, caminho nem o *url.Error do http (a regra: erro de rede sai desembrulhado). Só o erro
+// do contexto (prazo, cancelamento) continua na cadeia, para errors.Is.
+type ErroRede struct {
+	Classe string // "conexão recusada", "prazo vencido", "DNS", "TLS", "rede" ou "cancelado"
+	ctx    error  // context.DeadlineExceeded / context.Canceled, ou nil
+}
+
+func (e *ErroRede) Error() string { return "core: " + e.Classe }
+func (e *ErroRede) Unwrap() error { return e.ctx }
+
+// semEndereco classifica o erro do http e descarta o resto. A causa completa (que tem o host) não sai
+// daqui nem em log: só a classe e a operação, em Debug.
+func semEndereco(err error, caminho string) error {
+	e := &ErroRede{Classe: "rede"}
+	var dns *net.DNSError
+	var ne net.Error
+	switch {
+	case errors.Is(err, context.Canceled):
+		e.Classe, e.ctx = "cancelado", context.Canceled
+	case errors.Is(err, context.DeadlineExceeded):
+		e.Classe, e.ctx = "prazo vencido", context.DeadlineExceeded
+	case errors.As(err, &dns):
+		e.Classe = "DNS"
+	case ehTLS(err):
+		e.Classe = "TLS"
+	case errors.Is(err, syscall.ECONNREFUSED):
+		e.Classe = "conexão recusada"
+	case errors.As(err, &ne) && ne.Timeout():
+		e.Classe = "prazo vencido"
+	}
+	op := "meta"
+	if caminho == CaminhoBling {
+		op = "bling"
+	}
+	slog.Debug("core: falha de transporte", "classe", e.Classe, "op", op)
+	return e
+}
+
+func ehTLS(err error) bool {
+	var (
+		ver  *tls.CertificateVerificationError
+		auto x509.UnknownAuthorityError
+		nome x509.HostnameError
+		inv  x509.CertificateInvalidError
+		reg  tls.RecordHeaderError
+		alt  tls.AlertError
+	)
+	return errors.As(err, &ver) || errors.As(err, &auto) || errors.As(err, &nome) || errors.As(err, &inv) ||
+		errors.As(err, &reg) || errors.As(err, &alt) || strings.Contains(err.Error(), "tls:")
+}
 
 type Cliente struct {
 	URL       string // sem barra no fim
@@ -99,8 +156,8 @@ func (e *SemResposta) Error() string {
 	return fmt.Sprintf("Não consegui falar com o Bling agora (%s). Tentei %d %s. Tente de novo em instantes; se continuar, o Bling está fora do ar.", e.Causa, e.Tentativas, vez)
 }
 
-// enviar faz UMA chamada. Erro = sem resposta (rede, prazo, ctx). O token vai só no
-// cabeçalho: o erro do http (método + URL + causa) nunca o contém.
+// enviar faz UMA chamada. Erro = sem resposta (*ErroRede: rede, prazo, ctx). O token vai só no
+// cabeçalho e o erro do http (método + URL + causa) nunca sai daqui: vira *ErroRede.
 func (c *Cliente) enviar(ctx context.Context, caminho string, corpo any) (*Resposta, error) {
 	if c.Token == "" {
 		return nil, ErrSemToken
@@ -111,7 +168,7 @@ func (c *Cliente) enviar(ctx context.Context, caminho string, corpo any) (*Respo
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.URL+caminho, bytes.NewReader(b))
 	if err != nil {
-		return nil, err
+		return nil, errors.New("core: URL inválida") // o erro do parse carrega a URL (e o usuário:senha, se houver)
 	}
 	req.Header.Set("Authorization", "Bearer "+c.Token)
 	req.Header.Set("Content-Type", "application/json")
@@ -122,12 +179,12 @@ func (c *Cliente) enviar(ctx context.Context, caminho string, corpo any) (*Respo
 	}
 	r, err := cli.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, semEndereco(err, caminho)
 	}
 	defer r.Body.Close()
 	lido, err := io.ReadAll(io.LimitReader(r.Body, limiteResposta+1))
 	if err != nil {
-		return nil, err
+		return nil, semEndereco(err, caminho)
 	}
 	if int64(len(lido)) > limiteResposta {
 		return nil, ErrRespostaGrande
