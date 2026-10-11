@@ -53,10 +53,20 @@ type envioRD struct {
 
 func (rd *RD) Rodar(ctx context.Context) error {
 	// 1) Enviado há mais de 10 min sem resposta (inclui o que estava no pg_net na hora do corte).
-	if _, err := rd.Pool.Exec(ctx, `update vessel_rd_envios
+	//    Se era a 5ª tentativa, a linha sai da fila aqui (nenhum envio dela passa pelo lote): conta como esgotada.
+	var travadas int
+	if err := rd.Pool.QueryRow(ctx, `with m as (update vessel_rd_envios
 		   set status = 'falhou', resposta = 'sem resposta em 10 min', atualizado_em = now()
-		 where status = 'enviado' and atualizado_em < now() - interval '10 minutes'`); err != nil {
+		 where status = 'enviado' and atualizado_em < now() - interval '10 minutes'
+		 returning tentativas)
+		select (count(*) filter (where tentativas >= 5))::int from m`).Scan(&travadas); err != nil {
 		return err
+	}
+	esgotou := func(n int) error {
+		if n == 0 {
+			return nil
+		}
+		return fmt.Errorf("rd: %d linha(s) esgotaram as 5 tentativas e saíram da fila: precisam de olho humano", n)
 	}
 	// 2) Sem e-mail espera (a conta da RD recusa contato só com telefone); ganhou e-mail, volta à fila.
 	if _, err := rd.Pool.Exec(ctx, `update vessel_rd_envios e
@@ -66,10 +76,10 @@ func (rd *RD) Rodar(ctx context.Context) error {
 		 where p.id = e.pessoa_id
 		   and ((e.status = 'pendente' and nullif(trim(p.email), '') is null)
 		     or (e.status = 'sem_email' and nullif(trim(p.email), '') is not null))`); err != nil {
-		return err
+		return errors.Join(err, esgotou(travadas)) // a esgotada do passo 1 não se perde
 	}
 	if rd.Token == "" {
-		return errors.New("rd_sem_token: RD_STATION_TOKEN vazio (para desligar a tarefa, WORKER_TAREFAS_DESLIGADAS=vessel-rd-station)")
+		return errors.Join(errors.New("rd_sem_token: RD_STATION_TOKEN vazio (para desligar a tarefa, WORKER_TAREFAS_DESLIGADAS=vessel-rd-station)"), esgotou(travadas))
 	}
 	// 3) Reserva até 50 (pendentes e falhas com menos de 5 tentativas) num comando só: quem reservou
 	//    marca 'enviado' e conta a tentativa ANTES do HTTP (caiu no meio = volta em 10 min, passo 1).
@@ -81,13 +91,13 @@ func (rd *RD) Rodar(ctx context.Context) error {
 		  from alvo where e.id = alvo.id
 		returning e.id, e.origem_id, e.tentativas`)
 	if err != nil {
-		return err
+		return errors.Join(err, esgotou(travadas)) // a esgotada do passo 1 não se perde
 	}
 	alvos, err := pgx.CollectRows(linhas, func(r pgx.CollectableRow) (a envioRD, err error) {
 		return a, r.Scan(&a.id, &a.origem, &a.tentativas)
 	})
 	if err != nil {
-		return err
+		return errors.Join(err, esgotou(travadas)) // a esgotada do passo 1 não se perde
 	}
 	slices.SortFunc(alvos, func(a, b envioRD) int { return cmp.Compare(a.id, b.id) })
 	var erros []error
@@ -149,8 +159,8 @@ func (rd *RD) Rodar(ctx context.Context) error {
 	if falhas > 0 {
 		erros = append(erros, fmt.Errorf("rd: %d de %d envios falharam (tentam de novo no próximo minuto, até 5 vezes)", falhas, len(alvos)))
 	}
-	if esgotadas > 0 {
-		erros = append(erros, fmt.Errorf("rd: %d linha(s) esgotaram as 5 tentativas e saíram da fila: precisam de olho humano", esgotadas))
+	if err := esgotou(esgotadas + travadas); err != nil {
+		erros = append(erros, err)
 	}
 	return errors.Join(erros...)
 }

@@ -38,7 +38,13 @@ func (pu *Purga) Rodar(ctx context.Context) error {
 	// rodada fechada seria marcada como purgada sem ter apagado arquivo nenhum.
 	raiz, err := os.OpenRoot(filepath.Join(pu.Dir, "fabrica-criativos"))
 	if err != nil {
-		return fmt.Errorf("pasta-base ausente: volume montado? %w", err)
+		switch {
+		case errors.Is(err, fs.ErrPermission):
+			return fmt.Errorf("pasta-base sem permissão de leitura (dono/permissão do volume em ARQUIVOS_DIR): %w", err)
+		case errors.Is(err, fs.ErrNotExist):
+			return fmt.Errorf("pasta-base ausente: volume montado? %w", err)
+		}
+		return fmt.Errorf("pasta-base inacessível: %w", err)
 	}
 	defer raiz.Close()
 	linhas, err := pu.Pool.Query(ctx, `select id::text from fabrica_campanhas

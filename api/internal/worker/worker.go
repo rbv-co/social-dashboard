@@ -296,7 +296,11 @@ func (a *Agendador) Rodar(ctx context.Context, t Tarefa) (bool, error) {
 	defer cancelaC()
 	gerr := Gravar(c, conn, t.Nome, inicio, erro, a.Segredos)
 	if gerr != nil {
-		slog.Warn("conexão da trava perdida durante a tarefa; gravando a linha pelo pool", "nome", t.Nome, "erro", Limpar(gerr.Error(), a.Segredos))
+		msg := "falha ao gravar a linha na conexão da trava; gravando pelo pool"
+		if conn.IsClosed() { // o pgx fecha a conexão quando a rede cai ou o backend é morto
+			msg = "conexão da trava perdida durante a tarefa; gravando a linha pelo pool"
+		}
+		slog.Warn(msg, "nome", t.Nome, "erro", Limpar(gerr.Error(), a.Segredos))
 		gerr = Gravar(c, a.pool, t.Nome, inicio, erro, a.Segredos)
 	}
 	return true, a.limpo(errors.Join(erro, gerr))
@@ -420,20 +424,4 @@ func ValidarDesligadas(ts []Tarefa, desligadas []string) error {
 		return fmt.Errorf("WORKER_TAREFAS_DESLIGADAS: nomes desconhecidos %v; válidos: * ou %v", desconhecidos, validos)
 	}
 	return nil
-}
-
-// Filtrar devolve as tarefas que não estão desligadas ("*" desliga todas), depois de validar os
-// nomes (ValidarDesligadas). O worker não a usa para agendar (isso é do Agendador); fica para quem
-// precisa da lista filtrada.
-func Filtrar(ts []Tarefa, desligadas []string) ([]Tarefa, error) {
-	if err := ValidarDesligadas(ts, desligadas); err != nil {
-		return nil, err
-	}
-	var out []Tarefa
-	for _, t := range ts {
-		if !slices.Contains(desligadas, "*") && !slices.Contains(desligadas, t.Nome) {
-			out = append(out, t)
-		}
-	}
-	return out, nil
 }

@@ -472,3 +472,23 @@ func TestRDPulaLinhaTravadaPorOutraTransacao(t *testing.T) {
 		t.Fatalf("err=%v envios=%d", err, envios(f))
 	}
 }
+
+// A 5ª tentativa que fica 'enviado' (processo caiu no meio) e é virada a 'falhou' pelo passo de 10 min sai
+// da fila como as outras esgotadas: o erro da tarefa tem de dizer, uma vez só (depois a linha já é 'falhou').
+func TestRDEsgotadaPeloPassoDe10MinAparece(t *testing.T) {
+	rd, f, p := ambienteRD(t, 200)
+	ctx := context.Background()
+	p.Exec(ctx, `insert into vessel_rd_envios (origem_id, pessoa_id, status, tentativas, atualizado_em) values
+		(40, 1, 'enviado', 5, now() - interval '11 minutes'),
+		(41, 1, 'enviado', 3, now() - interval '11 minutes')`)
+	err := rd.Rodar(ctx)
+	if err == nil || !strings.Contains(err.Error(), "1 linha(s) esgotaram as 5 tentativas") {
+		t.Fatalf("a 5ª tentativa travada tem de contar como esgotada (e só ela): %v", err)
+	}
+	if st, n, _, resp := estadoRD(t, p, 40); st != "falhou" || n != 5 || resp != "sem resposta em 10 min" || envios(f) != 1 {
+		t.Fatalf("st=%s n=%d resp=%q envios=%d", st, n, resp, envios(f))
+	}
+	if err := rd.Rodar(ctx); err != nil {
+		t.Fatalf("avisa uma vez só: %v", err)
+	}
+}

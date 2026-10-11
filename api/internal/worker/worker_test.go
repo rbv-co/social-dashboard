@@ -477,7 +477,7 @@ func TestDesligadaDepoisDoRegistrarNaoDispara(t *testing.T) {
 		t.Fatal(err)
 	}
 	a.Desligadas = []string{"push-real"} // ordem errada de quem monta o worker: o agendamento não pode furar a lista
-	a.disparar(tf)
+	a.cron.Entries()[0].Job.Run()        // o closure que o cron chama de verdade: tem de passar por disparar
 	if rodou != 0 {
 		t.Fatal("tarefa desligada depois do Registrar disparou pela agenda")
 	}
@@ -586,7 +586,7 @@ func TestTarefaQueTerminaNaGracaNaoECancelada(t *testing.T) {
 func TestConexaoDaTravaPerdidaGravaPeloPool(t *testing.T) {
 	p := testebanco.Novo(t)
 	a := Novo(p)
-	capturarLog(t)
+	log := capturarLog(t)
 	ex, err := a.Rodar(context.Background(), Tarefa{Nome: "perde-trava", Limite: 10 * time.Second, Executar: func(ctx context.Context) error {
 		var matou bool
 		return p.QueryRow(ctx, `select coalesce(bool_and(pg_terminate_backend(pid, 5000)), false) from pg_locks
@@ -601,6 +601,26 @@ func TestConexaoDaTravaPerdidaGravaPeloPool(t *testing.T) {
 		t.Fatalf("a linha tem de existir mesmo sem a conexão da trava: ok=%v resp=%q n=%d", ok, resp, n)
 	}
 	semTrava(t, p, "perde-trava")
+	if !strings.Contains(log.String(), "conexão da trava perdida") {
+		t.Fatalf("conexão perdida de verdade tem de avisar: %s", log)
+	}
+}
+
+// Insert recusado com a conexão da trava viva NÃO é "conexão perdida": o aviso diz o que houve.
+func TestFalhaDeGravarComConexaoVivaNaoDizConexaoPerdida(t *testing.T) {
+	p := testebanco.Novo(t)
+	if _, err := p.Exec(context.Background(), `alter table robos_execucoes add constraint sem_recusada check (robo <> 'recusada')`); err != nil {
+		t.Fatal(err)
+	}
+	a := Novo(p)
+	log := capturarLog(t)
+	_, err := a.Rodar(context.Background(), Tarefa{Nome: "recusada", Limite: time.Second, Executar: func(context.Context) error { return nil }})
+	if err == nil {
+		t.Fatal("a gravação recusada tem de voltar como erro")
+	}
+	if strings.Contains(log.String(), "conexão da trava perdida") || !strings.Contains(log.String(), "recusada") {
+		t.Fatalf("aviso errado: %s", log)
+	}
 }
 
 func TestValidarDesligadas(t *testing.T) {
@@ -608,7 +628,7 @@ func TestValidarDesligadas(t *testing.T) {
 	if err := ValidarDesligadas(ts, []string{"a", "*"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := ValidarDesligadas(ts, []string{"c"}); err == nil || !strings.Contains(err.Error(), "c") {
-		t.Fatalf("nome desconhecido: %v", err)
+	if err := ValidarDesligadas(ts, []string{"c"}); err == nil || !strings.Contains(err.Error(), "[c]") || !strings.Contains(err.Error(), "[a b]") {
+		t.Fatalf("erro de digitação deve falhar listando desconhecidos e válidos: %v", err)
 	}
 }

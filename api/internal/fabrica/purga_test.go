@@ -2,6 +2,8 @@ package fabrica
 
 import (
 	"context"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -153,5 +155,26 @@ func TestPurgaPastaBaseAusenteFalhaSemMarcarNada(t *testing.T) {
 		+ (select count(*) from fabrica_criativos where purgado_em is not null)`).Scan(&n)
 	if n != 0 {
 		t.Fatalf("%d linhas ficaram marcadas como purgadas sem apagar arquivo", n)
+	}
+}
+
+// Permissão negada na pasta-base não é "volume não montado": a mensagem manda olhar dono/permissão.
+func TestPurgaPastaBaseSemPermissaoNaoDizVolumeNaoMontado(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignora permissão de pasta")
+	}
+	pu, _, dir := ambientePurga(t)
+	trancada := filepath.Join(dir, "trancada")
+	if err := os.MkdirAll(filepath.Join(trancada, "fabrica-criativos"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(trancada, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(trancada, 0o755) })
+	pu.Dir = trancada
+	err := pu.Rodar(context.Background())
+	if err == nil || strings.Contains(err.Error(), "volume montado") || !strings.Contains(err.Error(), "permissão") || !errors.Is(err, fs.ErrPermission) {
+		t.Fatalf("err=%v", err)
 	}
 }

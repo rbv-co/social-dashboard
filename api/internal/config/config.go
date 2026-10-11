@@ -24,7 +24,7 @@ type Config struct {
 	VAPIDPrivada    string   // VAPID_PRIVATE_KEY (base64url, 32 bytes)
 	VAPIDAssunto    string   // VAPID_SUBJECT (ex.: mailto:...)
 	// WORKER_TAREFAS_DESLIGADAS: tarefas que o worker NÃO agenda ("*" = todas); `api worker rodar <t> --forcar` ainda roda.
-	// Nome que não é "*" nem de tarefa registrada: o worker recusa subir (worker.Filtrar).
+	// Nome que não é "*" nem de tarefa registrada: o worker recusa subir (worker.ValidarDesligadas).
 	// O ensaio roda com banco restaurado de produção: ligue "*" (ou o push) para não mandar push de verdade.
 	TarefasDesligadas []string
 
