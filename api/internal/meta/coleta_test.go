@@ -2,6 +2,8 @@ package meta
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"regexp"
 	"strconv"
 	"strings"
@@ -48,6 +50,8 @@ var agoraColeta = time.Date(2026, 10, 10, 10, 0, 0, 0, time.UTC)
 
 // permitidoNoCore: a allow-list de GET do proxy da Meta (vessel-core-go@e8a06e8c3,
 // services/core/internal/meta/http.go:111). Caminho fora dela = 400 no core de verdade.
+var dataISO = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
+
 var permitidoNoCore = regexp.MustCompile(`^(/(me|act_\d+|\d+)(/[a-z_]+){0,3}|/search)$`)
 
 func diaDoSince(p core.PedidoMeta) string {
@@ -58,6 +62,19 @@ func diaDoSince(p core.PedidoMeta) string {
 
 func graphDaColeta(p core.PedidoMeta) (int, string, map[string]string) {
 	m := func(k string) string { s, _ := p.Parametros[k].(string); return s }
+	if _, tem := p.Parametros["since"]; tem { // janela de insights: since < until, ou a Meta recusa
+		si, _ := strconv.ParseInt(m("since"), 10, 64)
+		ui, _ := strconv.ParseInt(m("until"), 10, 64)
+		if si <= 0 || ui <= si {
+			return 400, `{"error":{"message":"(#100) since/until inválidos"}}`, nil
+		}
+	}
+	if tr := m("time_range"); tr != "" { // anúncios: {"since":"AAAA-MM-DD","until":"AAAA-MM-DD"}, since <= until
+		var j struct{ Since, Until string }
+		if json.Unmarshal([]byte(tr), &j) != nil || !dataISO.MatchString(j.Since) || !dataISO.MatchString(j.Until) || j.Since > j.Until {
+			return 400, `{"error":{"message":"(#100) time_range inválido"}}`, nil
+		}
+	}
 	switch {
 	case p.Caminho == "/1785":
 		return 500, `{"error":{"message":"(#2) Service temporarily unavailable"}}`, nil
@@ -117,8 +134,8 @@ func TestColetaDiariaUmaLinhaPorContaComONomeDeProducao(t *testing.T) {
 	c, f, p, ag := ambienteColeta(t)
 	ctx := context.Background()
 	ex, err := ag.Rodar(ctx, c.Tarefas()[0])
-	if !ex || err != nil {
-		t.Fatalf("a conta que falha fica na linha dela; a rodada não falha: ex=%v err=%v", ex, err)
+	if !ex || !falhaDeContas(err) {
+		t.Fatalf("a conta que falha fica na linha dela e a rodada sinaliza (sem linha agregada): ex=%v err=%v", ex, err)
 	}
 	linhas, _ := p.Query(ctx, `select robo, ok, coalesce(resposta, '') from robos_execucoes order by robo`)
 	var got []string
@@ -149,7 +166,7 @@ func TestColetaDiariaUmaLinhaPorContaComONomeDeProducao(t *testing.T) {
 func TestColetaDiariaGravaComoAEdge(t *testing.T) {
 	c, _, p, _ := ambienteColeta(t)
 	ctx := context.Background()
-	if err := c.Rodada(ctx, "07h"); err != nil {
+	if err := c.Rodada(ctx, "07h"); err != nil && !falhaDeContas(err) {
 		t.Fatal(err)
 	}
 	var seguidores, ganho, perda int
@@ -203,7 +220,7 @@ func TestColetaDiariaUsaOUltimoBomEAgendas(t *testing.T) {
 	ctx := context.Background()
 	p.Exec(ctx, `insert into engagement_snapshots (account_id, captured_at, period_days, likes, comments, saves, shares, reach, views, total_interactions, accounts_engaged, profile_views)
 		values ($1::uuid, '2026-10-09', 7, 80, 9, 4, 2, 800, 1500, 95, 40, 15)`, contaA3)
-	if err := c.Rodada(ctx, "12h"); err != nil {
+	if err := c.Rodada(ctx, "12h"); err != nil && !falhaDeContas(err) {
 		t.Fatal(err)
 	}
 	var likes, comments int
@@ -219,28 +236,36 @@ func TestColetaDiariaUsaOUltimoBomEAgendas(t *testing.T) {
 	}
 }
 
-// Core fora do ar: o webhook de alerta e o token do core não aparecem na linha da conta. O endereço do
-// core aparece hoje (core.Cliente devolve o *url.Error sem desembrulhar; é do Plano 3 e fica fora desta
-// task): por isso o teste não o procura.
+// Core fora do ar: nenhuma conta coleta, cada uma fica com a linha dela (ok=false) e a rodada sinaliza.
+// O endereço do core (core.Cliente devolve o *url.Error), o webhook de alerta e o token não aparecem
+// nas linhas, no erro da rodada nem no log.
 func TestColetaDiariaCoreForaDoArNaoVazaSegredos(t *testing.T) {
 	p := testebanco.Novo(t)
 	ctx := context.Background()
 	if _, err := p.Exec(ctx, tabelasColeta); err != nil {
 		t.Fatal(err)
 	}
+	log := capturarLog(t)
 	ag := worker.Novo(p)
 	ag.Segredos = []string{"http://127.0.0.1:1/hook-secreto-456", "token-inventado"}
 	cli := core.Novo("http://127.0.0.1:1/core-secreto-789", "token-inventado")
 	c := &ColetaDiaria{Pool: p, Core: cli, Gravar: ag.Gravador(), Alerta: "http://127.0.0.1:1/hook-secreto-456",
 		Agora: func() time.Time { return agoraColeta }, Dormir: func(context.Context, time.Duration) error { return nil }}
-	if err := c.Rodada(ctx, "07h"); err != nil {
-		t.Fatal(err)
+	err := c.Rodada(ctx, "07h")
+	var fi *worker.FalhaDeItens
+	if !errors.As(err, &fi) || fi.Quantos != 3 {
+		t.Fatalf("3 contas falharam: %v", err)
 	}
 	var resp string
-	if err := p.QueryRow(ctx, `select string_agg(coalesce(resposta, ''), ' | ') from robos_execucoes`).Scan(&resp); err != nil {
+	var n int
+	if err := p.QueryRow(ctx, `select string_agg(coalesce(resposta, ''), ' | '), count(*) from robos_execucoes where not ok`).Scan(&resp, &n); err != nil {
 		t.Fatal(err)
 	}
-	if resp == "" || strings.Contains(resp, "hook-secreto") || strings.Contains(resp, "token-inventado") {
-		t.Fatalf("respostas = %q", resp)
+	tudo := resp + " " + err.Error() + " " + log.String()
+	if n != 3 || strings.Contains(tudo, "secreto") || strings.Contains(tudo, "token-inventado") {
+		t.Fatalf("linhas=%d, saída = %q", n, tudo)
+	}
+	if strings.Count(log.String(), "coletar-dados: conta falhou") != 3 || !strings.Contains(log.String(), `conta="Mantova Móveis"`) {
+		t.Fatalf("um slog.Error por conta que falhou: %s", log)
 	}
 }

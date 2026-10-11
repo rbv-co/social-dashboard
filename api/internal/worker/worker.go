@@ -54,6 +54,24 @@ type Tarefa struct {
 	Executar        func(ctx context.Context) error
 }
 
+// FalhaDeItens é o erro de uma tarefa com uma linha por conta (RegistroProprio) em que alguma conta
+// falhou: a conta que falhou JÁ tem a linha dela (ok=false) em robos_execucoes, e a view robos_saude
+// julga cada variante pela execução mais recente DELA. Uma linha agregada vermelha com o nome da
+// tarefa criaria uma variante sem nenhum sucesso ("nunca deu certo" por 72 h). Por isso Rodar, com esta
+// falha, NÃO grava a linha da tarefa; só sinaliza: Metrica.Falhas e UltimoErro, o log do cron e o código
+// de saída de `api worker rodar` (1). Outro erro (banco, prazo) segue gravando a linha da tarefa.
+type FalhaDeItens struct {
+	Quantos int
+	Resumo  string // quem falhou (nomes de conta; sem segredo, e Rodar ainda limpa)
+}
+
+func (e *FalhaDeItens) Error() string {
+	return fmt.Sprintf("%d item(ns) falharam: %s", e.Quantos, e.Resumo)
+}
+
+// Falhou: o resultado de uma tarefa por conta quando n contas falharam (ver FalhaDeItens).
+func Falhou(n int, resumo string) error { return &FalhaDeItens{Quantos: n, Resumo: resumo} }
+
 func (t Tarefa) trava() string {
 	if t.Trava != "" {
 		return t.Trava
@@ -266,6 +284,11 @@ func (a *Agendador) Rodar(ctx context.Context, t Tarefa) (bool, error) {
 	})
 	if t.RegistroProprio && erro == nil {
 		return true, nil
+	}
+	if _, porConta := erro.(*FalhaDeItens); t.RegistroProprio && porConta {
+		// Cada conta que falhou já gravou a linha dela; a métrica acima e este erro (log do cron e
+		// código de saída da CLI) sinalizam. Sem linha agregada: ver FalhaDeItens.
+		return true, a.limpo(erro)
 	}
 	// Contexto novo: o da tarefa pode ter vencido. Grava na conexão da trava (o pool pode estar cheio);
 	// se ela caiu no meio da tarefa, grava pelo pool, para a linha existir de qualquer jeito.

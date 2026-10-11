@@ -26,16 +26,33 @@ import (
 // robos_execucoes com o nome de produção 'coletar-dados-<rodada> · <conta>' (a tela casa
 // 'coletar-dados%'). A Graph vai pelo core, que é o dono do token: renovarToken não existe mais.
 type ColetaDiaria struct {
-	Pool   *pgxpool.Pool
-	Core   *core.Cliente
-	Gravar func(ctx context.Context, robo string, inicio time.Time, erro error) error // worker.Agendador.Gravador()
-	Alerta string                                                                     // ALERT_WEBHOOK_URL (opcional; vazio = só a linha em data_integrity_checks)
-	HTTP   *http.Client                                                               // para o alerta; nil = prazo de 15 s
-	Agora  func() time.Time                                                           // nil = time.Now
-	Dormir func(context.Context, time.Duration) error                                 // espera entre releituras; nil = espera de verdade
+	Pool       *pgxpool.Pool
+	Core       *core.Cliente
+	Gravar     func(ctx context.Context, robo string, inicio time.Time, erro error) error // worker.Agendador.Gravador()
+	Alerta     string                                                                     // ALERT_WEBHOOK_URL (opcional; vazio = só a linha em data_integrity_checks)
+	HTTP       *http.Client                                                               // para o alerta; nil = prazo de 15 s
+	Agora      func() time.Time                                                           // nil = time.Now
+	Dormir     func(context.Context, time.Duration) error                                 // espera entre releituras; nil = espera de verdade
+	PrazoConta time.Duration                                                              // 0 = 6 min por conta (prazoPorConta)
+}
+
+func (c *ColetaDiaria) prazoConta() time.Duration {
+	if c.PrazoConta > 0 {
+		return c.PrazoConta
+	}
+	return prazoPorConta
 }
 
 // Tarefas: as 4 rodadas de produção (cron.job, UTC). Dividem a trava: duas rodadas nunca se cruzam.
+//
+// RegistroProprio e falha de conta: cada conta grava a linha DELA em robos_execucoes
+// ('coletar-dados-07h · <conta>') e a falha de uma conta vira a linha dela com ok=false, sem derrubar as
+// outras. A view robos_saude julga cada variante pela execução mais recente DELA; uma linha agregada
+// vermelha 'coletar-dados-07h' criaria uma variante sem nenhum sucesso ("nunca deu certo" por 72 h).
+// Por isso a rodada NÃO devolve erro comum quando só contas falharam: devolve worker.Falhou(n, nomes),
+// que o agendador trata sem gravar linha agregada, mas sinalizando: slog.Error por conta (aqui),
+// Metrica.Falhas/UltimoErro e o código de saída 1 de `api worker rodar`. Erro de verdade (limite de 50 min
+// com conta sem coletar, banco fora) continua gravando a linha agregada.
 func (c *ColetaDiaria) Tarefas() []worker.Tarefa {
 	rodada := func(nome, agenda string) worker.Tarefa {
 		return worker.Tarefa{Nome: "coletar-dados-" + nome, Agenda: agenda, Trava: "coletar-dados", RegistroProprio: true,
@@ -71,8 +88,22 @@ func (c *ColetaDiaria) dormir(ctx context.Context, d time.Duration) error {
 	}
 }
 
-// Rodada coleta todas as contas. A falha de uma conta vira a linha DELA (ok=false) e a rodada segue.
+// semEndereco tira do erro o *url.Error do cliente HTTP (ele carrega a URL do core, que não sai em
+// linha, erro nem log); o resto do erro, como o prazo vencido, fica.
+func semEndereco(err error) error {
+	var ue *url.Error
+	if errors.As(err, &ue) {
+		return ue.Err
+	}
+	return err
+}
+
+// Rodada coleta todas as contas, em série. O dia ("hoje" em São Paulo) é o do COMEÇO da rodada para todas
+// (a de 23:59 passa da meia-noite com várias contas). A falha de uma conta vira a linha DELA (ok=false) e
+// a rodada segue; no fim devolve worker.Falhou se alguma falhou (ver Tarefas). Os degradados são uma
+// lista só para a rodada, avisada no fim (como a edge), mesmo com conta que terminou em erro.
 func (c *ColetaDiaria) Rodada(ctx context.Context, rodada string) error {
+	hoje := c.hoje()
 	linhas, err := c.Pool.Query(ctx, `select id::text, coalesce(name, ''), instagram_id::text, coalesce(ad_account_id::text, '')
 		  from accounts where instagram_id is not null and access_token is not null order by name`)
 	if err != nil {
@@ -84,20 +115,34 @@ func (c *ColetaDiaria) Rodada(ctx context.Context, rodada string) error {
 	if err != nil {
 		return err
 	}
-	for _, conta := range contas {
+	var degradados, falharam []string
+	defer func() {
+		g, cancela := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+		defer cancela()
+		c.avisarSuperAdmin(g, hoje, degradados)
+	}()
+	for i, conta := range contas {
+		if ctx.Err() != nil { // o prazo da rodada acabou com conta sem coletar
+			return fmt.Errorf("limite de tempo da rodada: %d de %d conta(s) sem coletar: %w", len(contas)-i, len(contas), ctx.Err())
+		}
 		inicio := c.agora()
-		ctxC, cancela := context.WithTimeout(ctx, prazoPorConta)
-		erro := c.processarConta(ctxC, conta)
+		ctxC, cancela := context.WithTimeout(ctx, c.prazoConta())
+		erro := c.processarConta(ctxC, conta, hoje, &degradados)
 		cancela()
+		if erro != nil {
+			erro = semEndereco(erro)
+			falharam = append(falharam, conta.nome)
+			slog.Error("coletar-dados: conta falhou", "rodada", rodada, "conta", conta.nome, "erro", erro.Error())
+		}
 		g, cancelaG := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		err := c.Gravar(g, fmt.Sprintf("coletar-dados-%s · %s", rodada, conta.nome), inicio, erro)
 		cancelaG()
 		if err != nil {
 			return err
 		}
-		if ctx.Err() != nil { // o prazo da rodada acabou: o que faltou não foi coletado (a linha da tarefa diz)
-			return ctx.Err()
-		}
+	}
+	if len(falharam) > 0 {
+		return worker.Falhou(len(falharam), strings.Join(falharam, ", "))
 	}
 	return nil
 }
@@ -129,9 +174,7 @@ func diaDaMeta(ts string) string {
 	return ""
 }
 
-func (c *ColetaDiaria) processarConta(ctx context.Context, conta contaColeta) error {
-	hoje := c.hoje()
-	var degradados []string
+func (c *ColetaDiaria) processarConta(ctx context.Context, conta contaColeta, hoje string, degradados *[]string) error {
 	j, err := GET(ctx, c.Core, "/"+conta.ig, map[string]any{"fields": "followers_count"})
 	if err != nil {
 		return err // como a edge: sem a contagem, nada desta conta é coletado nesta rodada
@@ -156,7 +199,7 @@ func (c *ColetaDiaria) processarConta(ctx context.Context, conta contaColeta) er
 		if erroMidias == nil { // uma leitura de /media serve os 5 períodos (a edge pedia a mesma coisa 5 vezes)
 			posts, reels = contarMidias(midias, conta.ig, hoje, dias)
 		}
-		if err := c.gravarEng(ctx, conta, hoje, dias, &degradados); err != nil {
+		if err := c.gravarEng(ctx, conta, hoje, dias, degradados); err != nil {
 			return err
 		}
 		sql := `insert into content_snapshots (account_id, captured_at, period_days, posts_count, reels_count)
@@ -182,15 +225,14 @@ func (c *ColetaDiaria) processarConta(ctx context.Context, conta contaColeta) er
 			return err
 		}
 	}
-	if err := c.gravarEng(ctx, conta, hoje, 99, &degradados); err != nil {
+	if err := c.gravarEng(ctx, conta, hoje, 99, degradados); err != nil {
 		return err
 	}
 	if conta.ad != "" { // perfil sem ad_account_id não tem anúncios: pula, sem erro
-		if err := c.anuncios(ctx, conta, hoje, &degradados); err != nil {
+		if err := c.anuncios(ctx, conta, hoje, degradados); err != nil {
 			return err
 		}
 	}
-	c.avisarSuperAdmin(ctx, hoje, degradados)
 	return nil
 }
 
@@ -354,7 +396,7 @@ func (c *ColetaDiaria) brutoDeSeguidores(ctx context.Context, conta contaColeta,
 		plural = "dia"
 	}
 	recado := fmt.Sprintf("%s: o Instagram não publica seguiram/deixaram desde %s/%s (%d %s sem número)", conta.nome, desde[8:10], desde[5:7], len(semBruto), plural)
-	return pgx.BeginFunc(ctx, c.Pool, func(tx pgx.Tx) error { // regravável: fica sempre a leitura mais nova do dia
+	err = pgx.BeginFunc(ctx, c.Pool, func(tx pgx.Tx) error { // regravável: fica sempre a leitura mais nova do dia
 		if _, err := tx.Exec(ctx, `delete from data_integrity_checks where checked_date = $1::date and check_name = 'bruto_seguidores_parado' and account_id = $2::uuid`,
 			hoje, conta.id); err != nil {
 			return err
@@ -363,6 +405,10 @@ func (c *ColetaDiaria) brutoDeSeguidores(ctx context.Context, conta contaColeta,
 			hoje, conta.id, texto.CortarUTF16(recado, 900))
 		return err
 	})
+	if err != nil { // é recado: como na edge, não derruba a conta (o resto da coleta vale mais que ele)
+		slog.Error("coletar-dados: recado do bruto parado", "conta", conta.nome, "erro", err)
+	}
+	return nil
 }
 
 // ── engajamento (leitura-de-engajamento.js) ─────────────────────────────────────────────────────
@@ -391,7 +437,7 @@ func rotulo(dias int) string {
 
 // engajamento lê as 9 métricas da conta no período; nil = a Meta não respondeu.
 func (c *ColetaDiaria) engajamento(ctx context.Context, ig, hoje string, dias int) eng {
-	agora := c.agora().Unix()
+	agora := min(c.agora().Unix(), inicioDoDia(menosDias(hoje, -1))) // a rodada de 23:59 não invade o dia seguinte
 	var de, ate int64
 	switch dias {
 	case 0:
