@@ -4,6 +4,7 @@ import (
 	"errors"
 	"math"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -129,4 +130,32 @@ func (c Config) ProblemasDoFollowup() []string {
 		return []string{"FOLLOWUP_APOS_HORAS inválido (inteiro a partir de 0)"}
 	}
 	return nil
+}
+
+// Problemas junta os validadores de cada passada que NÃO está desligada (os mesmos que a rodada usa e que
+// a fazem falhar com config_invalida), para o aviso do boot do worker: ENVIO_*, TEMPLATE_*, LINK_BASE,
+// CHATWOOT_* e FOLLOWUP_APOS_HORAS. Cada texto leva o nome da passada ("abandono: LINK_BASE ...").
+func (c Config) Problemas() []string {
+	var ps []string
+	for _, x := range []struct {
+		nome string
+		p    Passada
+		prob []string
+	}{
+		{"inicio", c.Inicio, problemasDaFila(c.Inicio, c.Chatwoot, "inicio")},
+		{"pedido", c.Pedido, problemasDaFila(c.Pedido, c.Chatwoot, "pedido")},
+		{"abandono", c.Abandono, problemasDoAbandono(c.Abandono, c.Chatwoot)},
+		{"followup", c.Followup, append(problemasDaFila(c.Followup, c.Chatwoot, "followup"), c.ProblemasDoFollowup()...)},
+	} {
+		switch {
+		case x.p.Modo == "desligado":
+		case !slices.Contains(modos, x.p.Modo):
+			ps = append(ps, x.nome+": modo inválido")
+		default:
+			for _, p := range x.prob {
+				ps = append(ps, x.nome+": "+p)
+			}
+		}
+	}
+	return ps
 }

@@ -42,9 +42,11 @@ function queryString(params) {
 /**
  * Cliente do core. `todas` segue `proximo_cursor` até acabar e devolve
  * `{ linhas, espelhadoEm }`. Falha de leitura LANÇA (nunca devolve lista parcial:
- * quem consome decide estoque com isto).
+ * quem consome decide estoque com isto), inclusive Core sem responder em `prazoMs`.
  */
-export function criarClienteCore({ url, token, fetchImpl = globalThis.fetch, esperar = esperarPadrao } = {}) {
+export const PRAZO_PADRAO_MS = 30_000;
+
+export function criarClienteCore({ url, token, fetchImpl = globalThis.fetch, esperar = esperarPadrao, prazoMs = PRAZO_PADRAO_MS } = {}) {
   if (!token) throw new Error('CORE_API_TOKEN ausente');
   const base = String(url || CORE_URL_PADRAO).replace(/\/+$/, '');
 
@@ -52,6 +54,8 @@ export function criarClienteCore({ url, token, fetchImpl = globalThis.fetch, esp
     for (let t = 0; t < 4; t++) {
       const r = await fetchImpl(`${base}${caminho}${queryString(params)}`, {
         headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+        // Core pendurado = erro em prazo conhecido, não robô parado até o limite do wrapper.
+        signal: AbortSignal.timeout(prazoMs),
       });
       if (r.status === 429 || r.status >= 500) { await esperar(700 * (t + 1)); continue; }
       if (!r.ok) throw new Error(`core ${caminho} -> ${r.status}`);

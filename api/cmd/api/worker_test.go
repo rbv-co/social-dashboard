@@ -18,6 +18,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rbv-co/social-dashboard/api/internal/config"
+	"github.com/rbv-co/social-dashboard/api/internal/mensagens"
 	"github.com/rbv-co/social-dashboard/api/internal/testebanco"
 	"github.com/rbv-co/social-dashboard/api/internal/worker"
 )
@@ -291,5 +292,20 @@ func TestClienteDoCoreDoWorkerAndaNoRitmoDoCore(t *testing.T) {
 	cli := clienteDoCore(config.Config{CoreURL: "http://core.exemplo", CoreToken: "token-inventado"})
 	if cli.RitmoMeta != 600*time.Millisecond || cli.URL != "http://core.exemplo" || cli.Token != "token-inventado" {
 		t.Fatalf("cliente do worker: %+v", cli)
+	}
+}
+
+// O aviso do boot cobre ENVIO_*, TEMPLATE_*, LINK_BASE e FOLLOWUP (mensagens.Config.Problemas), não só o follow-up.
+func TestAvisoDoBootCobreAsMensagens(t *testing.T) {
+	env := map[string]string{"ENVIO_MODO": "ligado", "ENVIO_LIMITE_POR_RODADA": "500", "LINK_BASE": "https://loja.exemplo", "CHATWOOT_URL": "https://chat.exemplo",
+		"CHATWOOT_CONTA_ID": "1", "CHATWOOT_CAIXA_ID": "2", "CHATWOOT_API_TOKEN": "token-do-teste"}
+	ps := strings.Join(problemasDasMensagens(mensagens.LerConfig(func(k string) string { return env[k] })), " | ")
+	for _, quer := range []string{"ENVIO_LIMITE_POR_RODADA", "LINK_BASE", "TEMPLATE_NOME"} {
+		if !strings.Contains(ps, quer) {
+			t.Errorf("o aviso do boot não menciona %s: %s", quer, ps)
+		}
+	}
+	if p := problemasDasMensagens(mensagens.LerConfig(func(string) string { return "" })); len(p) != 0 {
+		t.Fatalf("tudo desligado não avisa nada: %q", p)
 	}
 }

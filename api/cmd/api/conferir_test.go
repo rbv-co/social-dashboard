@@ -313,29 +313,42 @@ func TestConferirBancoForaDoArNaoMostraOEndereco(t *testing.T) {
 
 // ---- nomes × robos_esperados ----
 
-// robosEsperadosDasMigracoes lê as linhas que as migrations do repositório inserem em robos_esperados (o
-// banco restaurado pode ter mais: as notas mandam comparar `select robo from robos_esperados` no ensaio).
+// robosEsperadosDasMigracoes lê as linhas que as migrations do repositório inserem em robos_esperados: as do
+// Supabase (db/migrations) e as do goose do próprio api (internal/banco/migracoes, só o trecho Up), menos as
+// que o goose apaga (`delete from robos_esperados where robo = '...'`). O banco restaurado pode ter mais: as
+// notas mandam comparar `select robo from robos_esperados` no ensaio.
 func robosEsperadosDasMigracoes(t *testing.T) []string {
 	t.Helper()
-	dir := filepath.Join("..", "..", "..", "db", "migrations")
-	arqs, err := filepath.Glob(filepath.Join(dir, "*.sql"))
+	arqs, err := filepath.Glob(filepath.Join("..", "..", "..", "db", "migrations", "*.sql"))
 	if err != nil || len(arqs) == 0 {
-		t.Fatalf("migrations não encontradas em %s: %v", dir, err)
+		t.Fatalf("migrations não encontradas em db/migrations: %v", err)
+	}
+	goose, err := filepath.Glob(filepath.Join("..", "..", "internal", "banco", "migracoes", "*.sql"))
+	if err != nil || len(goose) == 0 {
+		t.Fatalf("migrations do goose não encontradas: %v", err)
 	}
 	reTupla := regexp.MustCompile(`\(\s*'([a-z0-9][a-z0-9-]*)'\s*,\s*\d+\s*,\s*(?:true|false)`)
-	var nomes []string
-	for _, a := range arqs {
+	reInsert := regexp.MustCompile(`insert into (?:public\.)?robos_esperados`)
+	reApaga := regexp.MustCompile(`delete from (?:public\.)?robos_esperados where robo = '([a-z0-9][a-z0-9-]*)'`)
+	var nomes, apagados []string
+	for _, a := range append(arqs, goose...) { // o goose por último: o que ele apaga já foi inserido antes
 		b, err := os.ReadFile(a)
 		if err != nil {
 			t.Fatal(err)
 		}
 		s := string(b)
+		if i := strings.Index(s, "-- +goose Down"); i >= 0 {
+			s = s[:i]
+		}
+		for _, m := range reApaga.FindAllStringSubmatch(s, -1) {
+			apagados = append(apagados, m[1])
+		}
 		for {
-			i := strings.Index(s, "insert into public.robos_esperados")
-			if i < 0 {
+			loc := reInsert.FindStringIndex(s)
+			if loc == nil {
 				break
 			}
-			s = s[i:]
+			s = s[loc[0]:]
 			fim, aspas := len(s), false // o comando acaba no ';' fora de aspas simples
 			for j := 0; j < len(s); j++ {
 				if s[j] == '\'' {
@@ -353,7 +366,7 @@ func robosEsperadosDasMigracoes(t *testing.T) []string {
 			s = s[fim:]
 		}
 	}
-	return nomes
+	return slices.DeleteFunc(nomes, func(n string) bool { return slices.Contains(apagados, n) })
 }
 
 // donoNaTela é a regra da view robos_saude (migration 2026-09-22-vigia-dos-robos-cada-um-no-seu-teto.sql): a
@@ -375,21 +388,24 @@ func donoNaTela(esperados []string, robo string) string {
 func TestNomesCasamComRobosEsperados(t *testing.T) {
 	esperados := robosEsperadosDasMigracoes(t)
 	for _, deve := range []string{"coletar-dados", "meta-hora", "meta-hora-retentativa-00h", "enviar-push-vendas", "enviar-push-saldo", "guardar-copia-do-banco",
-		"enviar-mensagem-abandono", "vessel-triagem-da-vaga", "estoque-do-site"} {
+		"enviar-mensagem-abandono", "vessel-triagem-da-vaga",
+		"enviar-push-frota", "fabrica-purga", "vessel-rd-station", "abandono-de-checkout", "conferir-robos", "faxina-da-api"} {
 		if !slices.Contains(esperados, deve) {
 			t.Fatalf("o leitor das migrations não achou %q (achou %v)", deve, esperados)
 		}
 	}
-	// destino de cada tarefa de produção; "" = sem ficha (eram SQL puro ou são novas) e não pode cair na de outro
+	if slices.Contains(esperados, "estoque-do-site") { // o Core é o único escritor: a ficha crítica ficaria vermelha para sempre
+		t.Fatal("estoque-do-site não pode ter ficha (a migration 00004 a apaga)")
+	}
+	// destino de cada tarefa de produção pelo prefixo mais longo; toda tarefa tem ficha (robô sem ficha não é cobrado)
 	quer := map[string]string{
 		"meta-hora": "meta-hora", "meta-hora-retentativa-00h": "meta-hora-retentativa-00h",
 		"enviar-push-saldo-08h": "enviar-push-saldo", "enviar-push-vendas-07h": "enviar-push-vendas", "enviar-push-vendas-22h": "enviar-push-vendas",
 		"auditar-dados": "auditar-dados", "conteudo-hora-h": "conteudo-hora-h",
 		"conteudo-espelho": "conteudo-espelho", "enviar-relatorio-hora": "enviar-relatorio-hora", "enviar-mensagem-abandono": "enviar-mensagem-abandono",
-		// sem ficha nas migrations (o robô de frota nunca foi cadastrado nelas; o banco restaurado pode ter a linha: as notas
-		// mandam comparar `select robo from robos_esperados` no ensaio)
-		"enviar-push-frota": "",
-		"conferir-robos":    "", "faxina-da-api": "", "abandono-de-checkout": "", "vessel-rd-station": "", "fabrica-purga": "",
+		// fichas que a migration 00004 do goose cadastra (antes só existiam por acaso no banco real)
+		"enviar-push-frota": "enviar-push-frota", "conferir-robos": "conferir-robos", "faxina-da-api": "faxina-da-api",
+		"abandono-de-checkout": "abandono-de-checkout", "vessel-rd-station": "vessel-rd-station", "fabrica-purga": "fabrica-purga",
 		"coletar-dados-07h": "coletar-dados", "coletar-dados-12h": "coletar-dados", "coletar-dados-18h": "coletar-dados", "coletar-dados-2359": "coletar-dados",
 	}
 	p := testebanco.Novo(t)
@@ -401,7 +417,7 @@ func TestNomesCasamComRobosEsperados(t *testing.T) {
 			t.Errorf("tarefa %q sem destino conferido na tela de saúde", tf.Nome)
 			continue
 		}
-		if got := donoNaTela(esperados, tf.Nome); got != e {
+		if got := donoNaTela(esperados, tf.Nome); got == "" || got != e {
 			t.Errorf("%q cai em %q, esperava %q", tf.Nome, got, e)
 		}
 	}
@@ -415,10 +431,9 @@ func TestNomesCasamComRobosEsperados(t *testing.T) {
 		if tf.Nome != "coletar-dados-07h" {
 			continue
 		}
-		if err := ag.Registrar(tf); err != nil {
-			t.Fatal(err)
-		}
-		saidaDe(t, func() { ag.Rodar(context.Background(), tf) })
+		// Executar direto, sem o ag.Rodar: o Rodar toma a trava do `coletar-dados` e os advisory locks são por
+		// BANCO (não por schema), então outro pacote rodando em paralelo contra o mesmo servidor a disputaria.
+		saidaDe(t, func() { tf.Executar(context.Background()) })
 	}
 	linhas, err := p.Query(context.Background(), `select robo from robos_execucoes where robo like 'coletar-dados-07h%' order by robo`)
 	if err != nil {
