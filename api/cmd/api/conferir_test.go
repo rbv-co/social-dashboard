@@ -431,10 +431,9 @@ func TestNomesCasamComRobosEsperados(t *testing.T) {
 		if tf.Nome != "coletar-dados-07h" {
 			continue
 		}
-		if err := ag.Registrar(tf); err != nil {
-			t.Fatal(err)
-		}
-		saidaDe(t, func() { ag.Rodar(context.Background(), tf) })
+		// Executar direto, sem o ag.Rodar: o Rodar toma a trava do `coletar-dados` e os advisory locks são por
+		// BANCO (não por schema), então outro pacote rodando em paralelo contra o mesmo servidor a disputaria.
+		saidaDe(t, func() { tf.Executar(context.Background()) })
 	}
 	linhas, err := p.Query(context.Background(), `select robo from robos_execucoes where robo like 'coletar-dados-07h%' order by robo`)
 	if err != nil {
