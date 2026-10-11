@@ -16,6 +16,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -41,12 +42,15 @@ var ErrSemToken = errors.New("core: CORE_API_TOKEN ausente")
 // host, porta, caminho nem o *url.Error do http (a regra: erro de rede sai desembrulhado). Só o erro
 // do contexto (prazo, cancelamento) continua na cadeia, para errors.Is.
 type ErroRede struct {
-	Classe string // "conexão recusada", "prazo vencido", "DNS", "TLS", "rede" ou "cancelado"
+	Classe string // "conexão recusada", "prazo vencido", "DNS", "TLS", "URL inválida", "rede" ou "cancelado"
 	ctx    error  // context.DeadlineExceeded / context.Canceled, ou nil
 }
 
 func (e *ErroRede) Error() string { return "core: " + e.Classe }
 func (e *ErroRede) Unwrap() error { return e.ctx }
+
+// errURLInvalida: a URL do core não passa no parse (configuração). Não adianta repetir.
+var errURLInvalida = &ErroRede{Classe: "URL inválida"}
 
 // semEndereco classifica o erro do http e descarta o resto. A causa completa (que tem o host) não sai
 // daqui nem em log: só a classe e a operação, em Debug.
@@ -85,8 +89,14 @@ func ehTLS(err error) bool {
 		reg  tls.RecordHeaderError
 		alt  tls.AlertError
 	)
-	return errors.As(err, &ver) || errors.As(err, &auto) || errors.As(err, &nome) || errors.As(err, &inv) ||
-		errors.As(err, &reg) || errors.As(err, &alt) || strings.Contains(err.Error(), "tls:")
+	if errors.As(err, &ver) || errors.As(err, &auto) || errors.As(err, &nome) || errors.As(err, &inv) ||
+		errors.As(err, &reg) || errors.As(err, &alt) {
+		return true
+	}
+	// Erro de TLS sem tipo ("tls: handshake failure"): só o texto da causa, nunca o do *url.Error,
+	// que leva a URL (um host "mtls" casaria com "tls:").
+	var ue *url.Error
+	return errors.As(err, &ue) && strings.Contains(ue.Err.Error(), "tls:")
 }
 
 type Cliente struct {
@@ -168,7 +178,7 @@ func (c *Cliente) enviar(ctx context.Context, caminho string, corpo any) (*Respo
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.URL+caminho, bytes.NewReader(b))
 	if err != nil {
-		return nil, errors.New("core: URL inválida") // o erro do parse carrega a URL (e o usuário:senha, se houver)
+		return nil, errURLInvalida // o erro do parse carrega a URL (e o usuário:senha, se houver)
 	}
 	req.Header.Set("Authorization", "Bearer "+c.Token)
 	req.Header.Set("Content-Type", "application/json")
@@ -236,7 +246,7 @@ func (c *Cliente) Bling(ctx context.Context, p PedidoBling) (*Resposta, error) {
 		ctxT, cancela := context.WithTimeout(ctx, prazo)
 		r, err := c.enviar(ctxT, CaminhoBling, p)
 		cancela()
-		if errors.Is(err, ErrSemToken) || errors.Is(err, ErrRespostaGrande) || (err != nil && ctx.Err() != nil) {
+		if errors.Is(err, ErrSemToken) || errors.Is(err, ErrRespostaGrande) || errors.Is(err, errURLInvalida) || (err != nil && ctx.Err() != nil) {
 			return nil, err
 		}
 		status := 0

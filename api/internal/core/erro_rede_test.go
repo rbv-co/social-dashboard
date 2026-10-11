@@ -173,3 +173,53 @@ func TestRepeticaoComTransportePermanece(t *testing.T) {
 		t.Fatalf("Meta não repete rede: err=%v esperas=%d", err, esperas)
 	}
 }
+
+// Host com "tls" no nome: a recusa de conexão continua "conexão recusada" (o texto do *url.Error
+// inteiro, com a URL, não pode decidir a classe TLS).
+func TestHostComTLSNoNomeRecusadoNaoEhTLS(t *testing.T) {
+	fechada := strings.TrimPrefix(portaFechada(t), "http://")
+	c := Novo("http://mtls:"+strings.Split(fechada, ":")[1], tokenDeTeste)
+	c.HTTP.Transport = &http.Transport{DialContext: func(ctx context.Context, rede, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, rede, fechada) // o nome "mtls" não resolve: vai direto à porta fechada
+	}}
+	_, err := c.Meta(context.Background(), PedidoMeta{Caminho: "/me", Metodo: "GET"}, 1)
+	if err == nil || err.Error() != "core: conexão recusada" {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+type erroDeTempo struct{}
+
+func (erroDeTempo) Error() string   { return "i/o timeout" }
+func (erroDeTempo) Timeout() bool   { return true }
+func (erroDeTempo) Temporary() bool { return true }
+
+// net.Error.Timeout() sem contexto vencido (Dialer.Timeout, TLS handshake...) é "prazo vencido".
+func TestNetErrorTimeoutEhPrazoVencido(t *testing.T) {
+	c := Novo("http://core.exemplo.invalid:4433", tokenDeTeste)
+	c.HTTP.Transport = &http.Transport{DialContext: func(context.Context, string, string) (net.Conn, error) {
+		return nil, &net.OpError{Op: "dial", Net: "tcp", Err: erroDeTempo{}}
+	}}
+	_, err := c.Meta(context.Background(), PedidoMeta{Caminho: "/me", Metodo: "GET"}, 1)
+	if err == nil || err.Error() != "core: prazo vencido" || errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+// URL inválida é *ErroRede (classe própria, sem a URL) e o Bling NÃO a repete: uma tentativa só,
+// sem a frase "no prazo" do SemResposta.
+func TestURLInvalidaEhErroRedeEBlingNaoRepete(t *testing.T) {
+	c := Novo("http://usuario:senha-do-core@host ruim", tokenDeTeste)
+	esperas := 0
+	c.Dormir = func(context.Context, time.Duration) error { esperas++; return nil }
+	_, err := c.Meta(context.Background(), PedidoMeta{Caminho: "/me", Metodo: "GET"}, 1)
+	var er *ErroRede
+	if !errors.As(err, &er) || err.Error() != "core: URL inválida" {
+		t.Fatalf("Meta: err = %v", err)
+	}
+	_, err = c.Bling(context.Background(), leitura)
+	var sr *SemResposta
+	if !errors.As(err, &er) || errors.As(err, &sr) || esperas != 0 || strings.Contains(err.Error(), "senha-do-core") {
+		t.Fatalf("Bling: err=%v esperas=%d", err, esperas)
+	}
+}

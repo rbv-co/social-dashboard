@@ -38,12 +38,13 @@ type ajusteColeta struct {
 	midias        string // corpo de /1784/media; "" = o padrão
 	stories       string // corpo de /1784/stories; "" = o padrão
 	campanhas     bool   // /act_999/campaigns devolve uma campanha
+	adsFalha      bool   // /act_999/ads responde 500 (a Meta recusou a leitura dos anúncios)
 	segura        map[string]chan struct{}
 }
 
 func (a *ajusteColeta) resp(p core.PedidoMeta) (int, string, map[string]string) {
 	a.mu.Lock()
-	seg, likes, parcial, bruto, midias, stories, camp := a.seguidores, a.likes, a.vesselParcial, a.brutoSempre, a.midias, a.stories, a.campanhas
+	seg, likes, parcial, bruto, midias, stories, camp, adsFalha := a.seguidores, a.likes, a.vesselParcial, a.brutoSempre, a.midias, a.stories, a.campanhas, a.adsFalha
 	ch := a.segura[p.Caminho]
 	a.mu.Unlock()
 	m := func(k string) string { s, _ := p.Parametros[k].(string); return s }
@@ -69,6 +70,8 @@ func (a *ajusteColeta) resp(p core.PedidoMeta) (int, string, map[string]string) 
 		return 200, midias, nil
 	case p.Caminho == "/1784/stories" && stories != "":
 		return 200, stories, nil
+	case adsFalha && p.Caminho == "/act_999/ads":
+		return 500, `{"error":{"message":"ads fora"}}`, nil
 	case camp && p.Caminho == "/act_999/campaigns":
 		return 200, `{"data":[{"id":"c1","name":"Campanha","objective":"x","status":"ACTIVE"}]}`, nil
 	}
@@ -434,6 +437,33 @@ func TestColetaDiariaAvisoDeZeradasSaiUmaVezNoFimMesmoComContaQueFalhou(t *testi
 	p.QueryRow(ctx, `select ok from robos_execucoes where robo = 'coletar-dados-07h · Breno'`).Scan(&ok)
 	if ok || !strings.Contains(log.String(), `conta=Breno`) {
 		t.Fatalf("a Breno terminou com erro (linha ok=false e slog.Error): ok=%v log=%s", ok, log)
+	}
+}
+
+// A falha da Meta na leitura dos anúncios é falha da Graph (deg.graph), nunca "métrica zerada": o texto do
+// aviso é o da Graph e a rodada segue (a conta termina ok).
+func TestColetaDiariaFalhaDeAdsVaiParaDegradadoDaGraphNaoParaZeradas(t *testing.T) {
+	c, _, p, _ := ambienteComAjuste(t, &ajusteColeta{adsFalha: true}, agoraColeta)
+	ctx := context.Background()
+	p.Exec(ctx, `update accounts set ad_account_id = '999' where id = $1::uuid`, contaA3)
+	if err := c.Rodada(ctx, "07h"); err != nil && !falhaDeContas(err) {
+		t.Fatal(err)
+	}
+	var n int
+	var detalhe string
+	p.QueryRow(ctx, `select count(*) from data_integrity_checks where check_name = 'coleta_zerada'`).Scan(&n)
+	p.QueryRow(ctx, `select detail from data_integrity_checks where check_name = 'coleta_zerada'`).Scan(&detalhe)
+	// o fake já devolve métricas zeradas para a Breno: a linha de zeradas existe, mas "ads (" tem de estar só na da Graph.
+	var graph, zeradas string
+	for _, l := range strings.Split(detalhe, "\n") {
+		if strings.HasPrefix(l, "⚠️ Coleta IG: falha ao ler a Graph da Meta") {
+			graph = l
+		} else {
+			zeradas = l
+		}
+	}
+	if n != 1 || !strings.Contains(graph, "ads (") || strings.Contains(zeradas, "ads (") {
+		t.Fatalf("n=%d detalhe=%q", n, detalhe)
 	}
 }
 
