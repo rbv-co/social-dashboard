@@ -118,8 +118,7 @@ versão velha do workflow, sem a trava. Conferir que não sobrou chave do Supaba
 Cada item com o resultado esperado. Um comando por linha; consultas rodam como `api`:
 
 1. **RLS desligada no `api-db`**: `docker exec api-db psql -U api -d api -Atc "select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relrowsecurity"` → `0`.
-   (`docs/migracao-go/NOTAS-DA-IMPLANTACAO.md:157` diz que as tabelas restauradas mantêm RLS ligada: está
-   DESATUALIZADO. O certo é `0`: `ops/migracao/limpar-dump.mjs` remove `enable row level security` do dump e
+   (CORRIGIDO: `docs/migracao-go/NOTAS-DA-IMPLANTACAO.md`, item "Banco: o restore NÃO traz RLS", já diz isto. O certo é `0`: `ops/migracao/limpar-dump.mjs` remove `enable row level security` do dump e
    `ops/migracao/ensaio.sh:162` exige `0` tabelas com RLS e `0` policies. Se der diferente de `0`, pare: o dump
    não passou pelo `limpar-dump.mjs`.)
 2. **Donos e privilégios**: `docker exec api-db psql -U api -d api -c "select tablename, tableowner, has_table_privilege('copia', format('public.%I', tablename), 'select') as copia_le from pg_tables where schemaname='public' order by 1"`

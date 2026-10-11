@@ -38,9 +38,17 @@ func tarefas(p *pgxpool.Pool, cfg config.Config, ag *worker.Agendador) []worker.
 	ts = append(ts, (&meta.ColetaHora{Pool: p, Core: cli}).Tarefas()...)
 	zapi := &meta.ZAPI{InstanceID: cfg.ZAPIInstancia, InstanceToken: cfg.ZAPIToken, ClientToken: cfg.ZAPICliente}
 	ts = append(ts, (&meta.RelatorioHora{Pool: p, ZAPI: zapi}).Tarefa())
-	ts = append(ts, mensagensDeProducao(p).Tarefa())
+	msg := mensagensDeProducao(p)
+	if aoMontar != nil {
+		aoMontar(cli, msg)
+	}
+	ts = append(ts, msg.Tarefa())
 	return ts
 }
+
+// aoMontar é o gancho dos testes de fiação: recebe o cliente do core e o robô de mensagens que tarefas()
+// montou DE VERDADE (o mesmo cliente serve às tarefas da Graph e do Bling; o robô vira a tarefa registrada).
+var aoMontar func(*core.Cliente, *mensagens.Mensagens)
 
 // mensagensDeProducao monta o robô das mensagens. HTTP fica nil de propósito: o cliente padrão do Chatwoot
 // nunca segue redirect (o http.DefaultClient repetiria o POST do envio num 307 e a mensagem sairia duas vezes).

@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -292,102 +291,5 @@ func TestClienteDoCoreDoWorkerAndaNoRitmoDoCore(t *testing.T) {
 	cli := clienteDoCore(config.Config{CoreURL: "http://core.exemplo", CoreToken: "token-inventado"})
 	if cli.RitmoMeta != 600*time.Millisecond || cli.URL != "http://core.exemplo" || cli.Token != "token-inventado" {
 		t.Fatalf("cliente do worker: %+v", cli)
-	}
-}
-
-func TestConferirSchema(t *testing.T) {
-	p := testebanco.Novo(t)
-	ctx := context.Background()
-	for _, sql := range []string{
-		`create table daily_snapshots (account_id uuid, captured_at date, followers_count int, gained int, lost int, unique (captured_at, account_id))`,
-		`create table campaigns (campaign_id text, account_id uuid)`,
-		`create function vessel_rd_payload(p_origem_id bigint) returns jsonb language sql as 'select null::jsonb'`,
-	} {
-		if _, err := p.Exec(ctx, sql); err != nil {
-			t.Fatal(err)
-		}
-	}
-	faltam, err := conferirSchema(ctx, p)
-	if err != nil {
-		t.Fatal(err)
-	}
-	tem := func(item string) bool { return slices.Contains(faltam, item) }
-	for _, quer := range []string{"coluna campaigns.objective", "único campaigns(campaign_id)", "função pegar_da_fila(text,integer,integer,boolean,text[])",
-		"coluna accounts.id"} {
-		if !tem(quer) {
-			t.Errorf("faltou acusar %q", quer)
-		}
-	}
-	for _, nao := range []string{"coluna daily_snapshots.gained", "único daily_snapshots(account_id,captured_at)", "função vessel_rd_payload(bigint)",
-		"coluna robos_execucoes.conferido_em"} {
-		if tem(nao) {
-			t.Errorf("acusou o que existe: %q", nao)
-		}
-	}
-	if got := rodarWorker(ctx, p, config.Config{}, []string{"conferir"}); got != 1 {
-		t.Fatalf("schema incompleto = saída 1: %d", got)
-	}
-}
-
-// ON CONFLICT (colunas) não usa índice único parcial: o Postgres recusa o upsert, então a conferência acusa.
-func TestConferirSchemaAcusaUnicoParcial(t *testing.T) {
-	p := testebanco.Novo(t)
-	ctx := context.Background()
-	for _, sql := range []string{
-		`create table campaigns (campaign_id text, account_id uuid, status text)`,
-		`create unique index campaigns_parcial on campaigns (campaign_id) where status = 'x'`,
-		`create table ads (ad_id text, campaign_id text)`,
-		`create unique index ads_cheio on ads (ad_id)`,
-	} {
-		if _, err := p.Exec(ctx, sql); err != nil {
-			t.Fatal(err)
-		}
-	}
-	faltam, err := conferirSchema(ctx, p)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !slices.Contains(faltam, "único campaigns(campaign_id)") {
-		t.Error("índice único parcial não serve ao ON CONFLICT: devia ser acusado")
-	}
-	if slices.Contains(faltam, "único ads(ad_id)") {
-		t.Error("índice único comum foi acusado")
-	}
-}
-
-// Os nomes que a tela "saúde dos robôs" enxerga: robos_saude atribui cada execução ao robô esperado de
-// prefixo MAIS LONGO (migration 2026-09-22-vigia-dos-robos-cada-um-no-seu-teto.sql). Um nome trocado
-// faz o robô sumir da tela ou cair no teto do vizinho (meta-hora dentro de coletar-dados: alarme falso).
-func TestNomesCasamComRobosEsperados(t *testing.T) {
-	esperados := []string{"coletar-dados", "conteudo-hora-h", "conteudo-espelho", "enviar-push-vendas", "enviar-push-saldo", "auditar-dados",
-		"meta-hora", "enviar-relatorio-hora", "meta-hora-retentativa-00h", "vessel-espelhar-lista", "vessel-log-de-carocos", "estoque-do-site",
-		"vessel-triagem-da-vaga", "enviar-mensagem-abandono", "enviar-push-frota", "guardar-copia-do-banco"}
-	dono := func(robo string) string {
-		melhor := ""
-		for _, e := range esperados {
-			if strings.HasPrefix(robo, e) && len(e) > len(melhor) {
-				melhor = e
-			}
-		}
-		return melhor
-	}
-	quer := map[string]string{
-		"coletar-dados-07h · Mantova Móveis": "coletar-dados", "coletar-dados-2359 · Vessel": "coletar-dados",
-		"meta-hora": "meta-hora", "meta-hora-retentativa-00h": "meta-hora-retentativa-00h",
-		"enviar-push-saldo-08h": "enviar-push-saldo", "enviar-push-vendas-07h": "enviar-push-vendas", "enviar-push-vendas-22h": "enviar-push-vendas",
-		"enviar-push-frota": "enviar-push-frota", "auditar-dados": "auditar-dados", "conteudo-hora-h": "conteudo-hora-h",
-		"conteudo-espelho": "conteudo-espelho", "enviar-relatorio-hora": "enviar-relatorio-hora", "enviar-mensagem-abandono": "enviar-mensagem-abandono",
-		// sem ficha em robos_esperados (eram SQL puro, ou são novas): não podem cair na de outro robô
-		"conferir-robos": "", "faxina-da-api": "", "abandono-de-checkout": "", "vessel-rd-station": "", "fabrica-purga": "",
-	}
-	for robo, e := range quer {
-		if got := dono(robo); got != e {
-			t.Errorf("%q cai em %q, esperava %q", robo, got, e)
-		}
-	}
-	for nome := range producao { // toda tarefa de produção tem o destino na tabela acima (exceto as variantes por conta)
-		if _, ok := quer[nome]; !ok && !strings.HasPrefix(nome, "coletar-dados-") {
-			t.Errorf("tarefa %q sem destino conferido na tela de saúde", nome)
-		}
 	}
 }

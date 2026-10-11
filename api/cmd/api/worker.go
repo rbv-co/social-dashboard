@@ -38,6 +38,9 @@ func rodarWorker(ctx context.Context, p *pgxpool.Pool, cfg config.Config, args [
 	if len(args) > 0 {
 		sub = args[0]
 	}
+	if sub == "conferir" { // só as conferências de schema: nada de aviso de VAPID, de desligadas nem recusa por tabela
+		return conferirComando(ctx, p)
+	}
 	if err := conferirTabelas(ctx, p); err != nil {
 		var pg *pgconn.PgError
 		if errors.As(err, &pg) && pg.Code == "42P01" { // undefined_table
@@ -53,6 +56,9 @@ func rodarWorker(ctx context.Context, p *pgxpool.Pool, cfg config.Config, args [
 	ag.Desligadas = cfg.TarefasDesligadas
 	ag.Segredos = append(cfg.Segredos(), mensagens.LerConfig(os.Getenv).Segredos()...)
 	avisarSegredosCurtos(ag.Segredos)
+	if ps := problemasDasMensagens(mensagens.LerConfig(os.Getenv)); len(ps) > 0 {
+		slog.Warn("configuração do enviar-mensagem-abandono inválida: a passada afetada falha a cada rodada", "problemas", ps)
+	}
 	ts := montarTarefas(p, cfg, ag)
 	if err := worker.ValidarDesligadas(ts, cfg.TarefasDesligadas); err != nil { // nome desconhecido: recusa subir
 		slog.Error("configuração", "erro", err)
@@ -90,21 +96,6 @@ func rodarWorker(ctx context.Context, p *pgxpool.Pool, cfg config.Config, args [
 			fmt.Printf("%-44s %-26s %-8s %s\n", t.Nome, t.Agenda, t.Limite, estado)
 		}
 		return 0
-	case "conferir":
-		faltam, err := conferirSchema(ctx, p)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "conferir:", err)
-			return 1
-		}
-		for _, f := range faltam {
-			fmt.Println(f)
-		}
-		if len(faltam) > 0 {
-			fmt.Fprintf(os.Stderr, "%d premissa(s) do worker quebrada(s) no schema\n", len(faltam))
-			return 1
-		}
-		fmt.Println("schema confere com o que o worker presume")
-		return 0
 	case "rodar":
 		if len(args) < 2 {
 			fmt.Fprintln(os.Stderr, "uso: api worker rodar <tarefa> [--forcar]")
@@ -133,6 +124,21 @@ func rodarWorker(ctx context.Context, p *pgxpool.Pool, cfg config.Config, args [
 	}
 	fmt.Fprintf(os.Stderr, "subcomando desconhecido: worker %s\n", sub)
 	return 2
+}
+
+// problemasDasMensagens: o que a configuração das mensagens já reprova hoje, para avisar no boot (os
+// validadores das passadas são internos de mensagens e só rodam na rodada). Passada desligada não conta.
+// ponytail: ENVIO_*/TEMPLATE_*/LINK_BASE só entram aqui quando mensagens.Config ganhar Problemas() (a
+// asserção abaixo as pega sem mexer neste arquivo); hoje o aviso cobre FOLLOWUP_APOS_HORAS.
+func problemasDasMensagens(c mensagens.Config) []string {
+	var ps []string
+	if c.Followup.Modo != "desligado" {
+		ps = append(ps, c.ProblemasDoFollowup()...)
+	}
+	if v, ok := any(c).(interface{ Problemas() []string }); ok {
+		ps = append(ps, v.Problemas()...)
+	}
+	return ps
 }
 
 // avisarSegredosCurtos: worker.Limpar não mascara segredo com menos de 8 caracteres. Avisa a

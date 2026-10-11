@@ -2,64 +2,125 @@ package main
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"os"
 	"slices"
 	"sort"
 	"strings"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// O que as tarefas do worker presumem do schema de PRODUÇÃO restaurado (várias tabelas são anteriores
-// às migrations e não têm DDL no repositório). `api worker conferir` roda isto no ensaio do Plano 2,
-// depois do restore: cada item listado é uma premissa quebrada (coluna, índice único usado em
-// ON CONFLICT ou função SQL que o worker chama).
+// O que o código da API (worker, rotas do core, webhooks) presume do schema de PRODUÇÃO restaurado: várias
+// tabelas são anteriores às migrations e não têm DDL no repositório. `api worker conferir` roda isto no
+// ensaio do Plano 2, depois do restore: cada item listado é uma premissa quebrada (coluna, tipo, índice
+// único usado em ON CONFLICT ou função SQL). As listas foram derivadas das consultas SQL de TODOS os pacotes
+// de api/internal (comercial, conteudo, fabrica, frota, mensagens, meta, vessel, webhooks, webpush, worker,
+// canais, auth); quem mexer numa consulta com tabela, coluna ou função nova acrescenta aqui.
 var colunasDoWorker = map[string]string{
-	"accounts":               "id,name,instagram_id,ad_account_id,access_token",
-	"daily_snapshots":        "account_id,captured_at,followers_count,gained,lost",
-	"followers_leituras":     "account_id,followers_count,origem,lido_em",
-	"engagement_snapshots":   "account_id,captured_at,period_days,likes,comments,saves,shares,reach,views,total_interactions,accounts_engaged,profile_views",
-	"content_snapshots":      "account_id,captured_at,period_days,posts_count,reels_count,stories_count,story_shares,story_replies,story_reach,story_interactions,story_navigation,story_profile_visits,story_follows,story_nav_forward,story_nav_back,story_nav_exit,story_nav_next",
-	"data_integrity_checks":  "checked_date,account_id,check_name,status,detail",
-	"campaigns":              "campaign_id,account_id,name,objective,status,synced_at",
-	"ads":                    "ad_id,campaign_id,account_id,name,status,destino_link,synced_at",
-	"campaign_adsets":        "adset_id,campaign_id,account_id,destination_type,optimization_goal,synced_at",
-	"campaign_insights":      "campaign_id,account_id,captured_at,period_days,spend,impressions,clicks,reach,post_engagement,likes,comments,shares,saves,conversas,cadastros,compras,visitas",
-	"campaign_insights_hora": "campaign_id,account_id,dia,hora,gasto_acumulado,conversas_acumuladas,cliques_acumulados,gasto_hora,conversas_hora,cliques_hora",
-	"perfil_visitas_hora":    "account_id,dia,hora,visitas_acumuladas,visitas_hora",
-	"ad_insights_hora":       "ad_id,campaign_id,account_id,dia,hora,gasto_acumulado,cliques_acumulados,gasto_hora,cliques_hora",
-	"push_subs":              "endpoint,p256dh,auth,user_id",
-	"push_preferencias":      "user_id,tipo,ativo",
-	"profiles":               "id,email,role,is_superadmin,features,permissions",
-	"acessos_pessoas":        "id,nome,profile_id,email_corporativo",
-	"frota_veiculos":         "id,nome,pessoa_id,situacao",
-	"frota_checklist_itens":  "cadencia,ordem,ativo",
-	"frota_checklist_config": "dia_semanal,semana_mensal,dia_mensal",
-	"frota_checklist":        "veiculo_id,feita_em,cadencias",
-	"frota_uso":              "veiculo_id,pessoa_id,tipo,volta_em",
-	"frota_requisicoes":      "id,veiculo_id,situacao,retirada_prevista,destino,motivo_decisao,encerrada_motivo,pessoa_id,pessoa_nome,criada_por",
-	"conteudo_pecas":         "id,account_id,titulo,formato,status,legenda,hashtags,publicar_em,publicado_em,avisado_em,ig_media_id,ig_permalink,responsavel",
-	"conteudo_eventos":       "peca_id,acao,detalhe",
-	"conteudo_casamentos":    "peca_id,ig_media_id,ig_permalink,ig_timestamp,ig_caption,ig_thumb,pontuacao,situacao,motivo",
-	"conteudo_metricas":      "peca_id,capturado_em,curtidas,comentarios,alcance,salvamentos,compartilhamentos,visualizacoes,bruto",
-	"checkout_abandono":      "token,status",
-	"contatos_sem_mensagem":  "telefone",
-	"vessel_rd_envios":       "id,origem_id,pessoa_id,status,tentativas,http_status,resposta,atualizado_em",
-	"vessel_pessoas":         "id,email",
-	"fabrica_campanhas":      "id,created_at,fechada_em,purgado_em",
-	"fabrica_criativos":      "campanha_id,storage_path,purgado_em",
-	"robos_execucoes":        "robo,disparado_em,status_code,ok,resposta,conferido_em",
+	"accounts":                  "id,name,instagram_id,ad_account_id,access_token",
+	"daily_snapshots":           "account_id,captured_at,followers_count,gained,lost",
+	"followers_leituras":        "account_id,followers_count,origem,lido_em",
+	"engagement_snapshots":      "account_id,captured_at,period_days,likes,comments,saves,shares,reach,views,total_interactions,accounts_engaged,profile_views",
+	"content_snapshots":         "account_id,captured_at,period_days,posts_count,reels_count,stories_count,story_shares,story_replies,story_reach,story_interactions,story_navigation,story_profile_visits,story_follows,story_nav_forward,story_nav_back,story_nav_exit,story_nav_next",
+	"data_integrity_checks":     "checked_date,account_id,check_name,status,detail",
+	"campaigns":                 "campaign_id,account_id,name,objective,status,synced_at",
+	"ads":                       "ad_id,campaign_id,account_id,name,status,destino_link,synced_at",
+	"campaign_adsets":           "adset_id,campaign_id,account_id,destination_type,optimization_goal,synced_at",
+	"campaign_insights":         "campaign_id,account_id,captured_at,period_days,spend,impressions,clicks,reach,post_engagement,likes,comments,shares,saves,conversas,cadastros,compras,visitas",
+	"campaign_insights_hora":    "campaign_id,account_id,dia,hora,gasto_acumulado,conversas_acumuladas,cliques_acumulados,gasto_hora,conversas_hora,cliques_hora",
+	"perfil_visitas_hora":       "account_id,dia,hora,visitas_acumuladas,visitas_hora",
+	"ad_insights_hora":          "ad_id,campaign_id,account_id,dia,hora,gasto_acumulado,cliques_acumulados,gasto_hora,cliques_hora",
+	"push_subs":                 "endpoint,p256dh,auth,user_id",
+	"push_preferencias":         "user_id,tipo,ativo",
+	"profiles":                  "id,email,role,is_superadmin,disabled,features,permissions,escopo_por_equipe",
+	"equipes":                   "id,canal_loja_id",
+	"equipes_membros":           "equipe_id,profile_id,papel",
+	"canais_grupos_membros":     "grupo_id,profile_id,papel",
+	"bling_lojas":               "loja_id,nome,grupo,grupo_id",
+	"bling_pedido_nota":         "pedido_id,data_pedido,data_da_venda,total,loja_id,nota_situacao",
+	"bling_pedido_ajuste_valor": "pedido_id,total_corrigido",
+	"bling_pedido_vendedor":     "pedido_id,qtd_itens",
+	"acessos_pessoas":           "id,nome,profile_id,email_corporativo",
+	"frota_veiculos":            "id,nome,pessoa_id,situacao",
+	"frota_checklist_itens":     "cadencia,ordem,ativo",
+	"frota_checklist_config":    "dia_semanal,semana_mensal,dia_mensal",
+	"frota_checklist":           "veiculo_id,feita_em,cadencias",
+	"frota_uso":                 "id,veiculo_id,pessoa_id,tipo,saida_em,volta_em",
+	"frota_requisicoes":         "id,veiculo_id,situacao,retirada_prevista,destino,motivo_decisao,encerrada_motivo,pessoa_id,pessoa_nome,criada_por",
+	"conteudo_pecas":            "id,account_id,titulo,formato,status,legenda,hashtags,publicar_em,publicado_em,avisado_em,ig_media_id,ig_permalink,responsavel",
+	"conteudo_eventos":          "peca_id,acao,detalhe",
+	"conteudo_casamentos":       "peca_id,ig_media_id,ig_permalink,ig_timestamp,ig_caption,ig_thumb,pontuacao,situacao,motivo",
+	"conteudo_metricas":         "peca_id,capturado_em,curtidas,comentarios,alcance,salvamentos,compartilhamentos,visualizacoes,bruto",
+	"checkout_abandono":         "token,status",
+	"contatos_sem_mensagem":     "telefone,motivo",
+	"chatwoot_eventos":          "tipo,chatwoot_account_id,conversation_id,conversation_display_id,contact_id,contact_name,contact_phone_number,loja,classificacao_ia,criado_em_chatwoot,dia_br",
+	"shopify_pedidos":           "id,numero,loja_id,total,moeda,status_financeiro,cliente_nome,cliente_email,criado_em_shopify,bruto,atualizado_em",
+	"carrinho_eventos":          "tipo,cart_token,evento_shopify_id",
+	"vessel_rd_envios":          "id,origem_id,pessoa_id,status,tentativas,http_status,resposta,atualizado_em",
+	"vessel_pessoas":            "id,email",
+	"fabrica_campanhas":         "id,created_at,fechada_em,purgado_em",
+	"fabrica_criativos":         "campanha_id,storage_path,purgado_em",
+	"robos_execucoes":           "robo,disparado_em,status_code,ok,resposta,conferido_em",
 }
 
-// unicosDoWorker: os alvos de ON CONFLICT (sem o índice único o Postgres recusa o upsert).
+// tiposDoWorker: tabela.coluna -> tipo (nome de regtype) de que o código depende (cast do parâmetro, junção,
+// leitura direta no Scan ou texto de data). "a|b" = qualquer um dos dois; "text" aceita varchar. Só entram
+// as colunas em que o tipo errado quebra o SQL ou muda o resultado (o resto o código converte com cast).
+var tiposDoWorker = map[string]string{
+	"accounts.id": "uuid", "profiles.id": "uuid", "profiles.features": "text[]", "profiles.permissions": "jsonb",
+	"profiles.is_superadmin": "boolean", "profiles.disabled": "boolean", "profiles.escopo_por_equipe": "boolean",
+	"daily_snapshots.captured_at": "date", "engagement_snapshots.captured_at": "date", "content_snapshots.captured_at": "date",
+	"data_integrity_checks.checked_date": "date", "campaign_insights.captured_at": "date", "campaign_insights_hora.dia": "date",
+	"perfil_visitas_hora.dia": "date", "ad_insights_hora.dia": "date", "conteudo_metricas.capturado_em": "date",
+	"frota_checklist.feita_em": "date", "frota_checklist.cadencias": "text[]", "chatwoot_eventos.dia_br": "date",
+	"bling_pedido_nota.data_pedido": "date", "bling_pedido_nota.data_da_venda": "date", "bling_pedido_nota.nota_situacao": "smallint|integer",
+	"bling_pedido_ajuste_valor.pedido_id": "bigint|integer", "bling_pedido_vendedor.pedido_id": "bigint|integer",
+	"campaigns.campaign_id": "text", "ads.ad_id": "text", "ads.campaign_id": "text", "campaign_adsets.adset_id": "text",
+	"campaign_adsets.campaign_id": "text", "campaign_insights.campaign_id": "text", "campaign_insights_hora.campaign_id": "text",
+	"ad_insights_hora.ad_id": "text", "ad_insights_hora.campaign_id": "text",
+	"push_subs.endpoint": "text", "push_subs.p256dh": "text", "push_subs.auth": "text", "push_preferencias.tipo": "text", "push_preferencias.ativo": "boolean",
+	"conteudo_pecas.id": "uuid", "conteudo_pecas.ig_media_id": "text", "conteudo_pecas.publicar_em": "timestamp with time zone",
+	"conteudo_pecas.publicado_em": "timestamp with time zone", "conteudo_pecas.avisado_em": "timestamp with time zone",
+	"conteudo_eventos.peca_id": "uuid", "conteudo_casamentos.peca_id": "uuid", "conteudo_casamentos.ig_media_id": "text",
+	"conteudo_casamentos.ig_timestamp": "timestamp with time zone", "conteudo_metricas.peca_id": "uuid", "conteudo_metricas.bruto": "jsonb",
+	"frota_checklist.veiculo_id": "uuid", "fabrica_campanhas.id": "uuid", "fabrica_criativos.campanha_id": "uuid",
+	"followers_leituras.lido_em": "timestamp with time zone", "checkout_abandono.token": "text", "contatos_sem_mensagem.telefone": "text",
+	"shopify_pedidos.bruto": "jsonb", "robos_execucoes.disparado_em": "timestamp with time zone", "robos_execucoes.conferido_em": "timestamp with time zone",
+	"robos_execucoes.robo": "text", "robos_execucoes.resposta": "text", "robos_execucoes.ok": "boolean",
+	"vessel_rd_envios.atualizado_em": "timestamp with time zone",
+}
+
+// anulaveisDoWorker: colunas que precisam ACEITAR nulo (a migração de 2026-09-18 tirou o NOT NULL do cart_token).
+var anulaveisDoWorker = []string{"carrinho_eventos.cart_token"}
+
+func init() { // toda coluna account_id é uuid: o código a preenche e a junta com accounts.id por uuid
+	for tabela, cols := range colunasDoWorker {
+		if slices.Contains(strings.Split(cols, ","), "account_id") {
+			tiposDoWorker[tabela+".account_id"] = "uuid"
+		}
+	}
+}
+
+// unicosDoWorker: os alvos de ON CONFLICT (sem o índice único COMPLETO, válido e imediato, o Postgres recusa o
+// upsert; índice parcial, de expressão ou DEFERRABLE não vale).
 var unicosDoWorker = []string{
 	"daily_snapshots(account_id,captured_at)", "engagement_snapshots(account_id,captured_at,period_days)",
 	"content_snapshots(account_id,captured_at,period_days)", "campaigns(campaign_id)", "ads(ad_id)", "campaign_adsets(adset_id)",
 	"campaign_insights(campaign_id,account_id,captured_at,period_days)", "campaign_insights_hora(campaign_id,account_id,dia,hora)",
 	"perfil_visitas_hora(account_id,dia,hora)", "ad_insights_hora(ad_id,account_id,dia,hora)",
 	"conteudo_casamentos(peca_id,ig_media_id)", "conteudo_metricas(peca_id,capturado_em)",
+	"chatwoot_eventos(conversation_id,tipo)", "contatos_sem_mensagem(telefone)", "shopify_pedidos(id)",
 }
 
-// funcoesDoWorker: as funções SQL de produção que o worker chama (assinatura de to_regprocedure).
+// deduplicadoresDoWorker: `on conflict do nothing` sem alvo; é o índice único (parcial vale) que impede a
+// duplicata. Sem ele o insert passa e o evento entra duas vezes, sem erro nenhum.
+var deduplicadoresDoWorker = []string{"carrinho_eventos(evento_shopify_id)"}
+
+// funcoesDoWorker: as funções SQL de produção que o código chama (assinatura de to_regprocedure).
 var funcoesDoWorker = []string{
 	"mover_abandonados_para_fila(integer,integer)", "pegar_para_mensagem(integer,integer,boolean,text[],integer)",
 	"pegar_da_fila(text,integer,integer,boolean,text[])", "marcar_mensagem(text,text,text,bigint)",
@@ -68,57 +129,255 @@ var funcoesDoWorker = []string{
 	"avaliar_trava_cruzada(text,integer,text,text)", "conteudo_reivindicar_hora_h()", "vessel_rd_payload(bigint)",
 }
 
-// conferirSchema devolve as premissas quebradas, em ordem (vazio = tudo certo).
+// funcoesPorNomeDoWorker: chamadas dos webhooks, que o levantamento não detalhou por assinatura (há
+// sobrecargas, ex.: marcar_checkout_comprou(text) e (text,text,text)): basta UMA sobrecarga com os parâmetros.
+var funcoesPorNomeDoWorker = []string{
+	"registrar_checkout_abandono", "marcar_checkout_comprou", "marcar_checkout_pagamento_pendente", "reabrir_checkout_abandono",
+	"registrar_pedido_para_mensagem", "cancelar_mensagem_pedido",
+}
+
+// parametrosDasFuncoes: os parâmetros NOMEADOS que o código passa (`p_x => $1`); nome diferente = erro de
+// "função não existe" só na primeira execução.
+var parametrosDasFuncoes = map[string][]string{
+	"pegar_para_mensagem":                {"p_limite", "p_atraso_min", "p_reservar", "p_ultimos11", "p_max_horas"},
+	"pegar_da_fila":                      {"p_tipo", "p_limite", "p_max_horas", "p_reservar", "p_ultimos11"},
+	"marcar_mensagem":                    {"p_token", "p_status", "p_motivo", "p_conversa"},
+	"marcar_da_fila":                     {"p_tipo", "p_chave", "p_status", "p_motivo", "p_conversa"},
+	"devolver_mensagem":                  {"p_token", "p_contar"},
+	"devolver_da_fila":                   {"p_tipo", "p_chave", "p_contar"},
+	"agendar_followups":                  {"p_apos_horas", "p_teto_horas"},
+	"avaliar_trava_cruzada":              {"p_telefone", "p_horas", "p_tipo", "p_chave"},
+	"mover_abandonados_para_fila":        {"p_minutos"},
+	"registrar_checkout_abandono":        {"p_token", "p_email", "p_telefone", "p_nome", "p_total", "p_moeda", "p_url"},
+	"marcar_checkout_comprou":            {"p_token", "p_email", "p_telefone"},
+	"marcar_checkout_pagamento_pendente": {"p_token"},
+	"reabrir_checkout_abandono":          {"p_token"},
+	"registrar_pedido_para_mensagem":     {"p_pedido_id", "p_numero", "p_nome", "p_telefone", "p_criado_em"},
+	"cancelar_mensagem_pedido":           {"p_pedido_id"},
+}
+
+// retornoDasFuncoes: as colunas que o código LÊ do que a função devolve (`select token, ... from f(...)`).
+var retornoDasFuncoes = map[string][]string{
+	"pegar_para_mensagem":         {"token", "telefone", "nome", "url_de_recuperacao", "status", "iniciado_em"},
+	"pegar_da_fila":               {"chave", "numero", "nome", "telefone", "url_de_recuperacao", "conversa_origem", "criado_em"},
+	"conteudo_reivindicar_hora_h": {"id", "account_id", "titulo", "formato", "publicar_em", "responsavel", "avisado_em"},
+}
+
+// tipoConfere: "a|b" aceita qualquer; "text" aceita também varchar, "text[]" também varchar[].
+func tipoConfere(esperado, achado string) bool {
+	for _, e := range strings.Split(esperado, "|") {
+		if e == achado || (e == "text" && achado == "character varying") || (e == "text[]" && achado == "character varying[]") {
+			return true
+		}
+	}
+	return false
+}
+
+func nomeDaFuncao(item string) string { n, _, _ := strings.Cut(item, "("); return n }
+
+// conferirSchema devolve as premissas quebradas, em ordem (vazio = tudo certo). Só lê (transação somente
+// leitura) e só olha o schema atual (current_schema); pg_attribute e pg_index, não information_schema, que
+// esconde o que o papel não consegue acessar.
 func conferirSchema(ctx context.Context, p *pgxpool.Pool) ([]string, error) {
+	tx, err := p.BeginTx(ctx, pgx.TxOptions{AccessMode: pgx.ReadOnly})
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(context.WithoutCancel(ctx))
 	var faltam []string
-	for tabela, cols := range colunasDoWorker {
-		var existentes []string
-		linhas, err := p.Query(ctx, `select column_name::text from information_schema.columns
-			where table_schema = current_schema() and table_name = $1::text`, tabela)
-		if err != nil {
+
+	// Migração: tabelas do `api migrar`.
+	var semMigrar []string
+	for _, t := range []string{"envios_feitos", "webhooks_recebidos", "sessoes", "usuarios"} {
+		var existe bool
+		if err := tx.QueryRow(ctx, `select to_regclass(current_schema() || '.' || $1::text) is not null`, t).Scan(&existe); err != nil {
 			return nil, err
 		}
-		for linhas.Next() {
-			var c string
-			if err := linhas.Scan(&c); err != nil {
-				linhas.Close()
-				return nil, err
-			}
-			existentes = append(existentes, c)
+		if !existe {
+			semMigrar = append(semMigrar, t)
 		}
-		linhas.Close()
-		for _, c := range strings.Split(cols, ",") {
-			if !slices.Contains(existentes, c) {
-				faltam = append(faltam, "coluna "+tabela+"."+c)
+	}
+	if len(semMigrar) > 0 {
+		faltam = append(faltam, "migrações: `api migrar` ainda não rodou neste banco (faltam "+strings.Join(semMigrar, ", ")+")")
+	}
+
+	// Colunas, tipos e nulabilidade: uma consulta só.
+	tabelas := make([]string, 0, len(colunasDoWorker))
+	for t := range colunasDoWorker {
+		tabelas = append(tabelas, t)
+	}
+	sort.Strings(tabelas)
+	linhas, err := tx.Query(ctx, `select c.relname::text, a.attname::text, a.atttypid::regtype::text, a.attnotnull
+		from pg_attribute a join pg_class c on c.oid = a.attrelid
+		where c.relnamespace = current_schema()::regnamespace and c.relkind in ('r', 'p', 'v', 'm', 'f')
+		  and a.attnum > 0 and not a.attisdropped and c.relname = any($1::text[])`, tabelas)
+	if err != nil {
+		return nil, err
+	}
+	type col struct {
+		tipo    string
+		naoNulo bool
+	}
+	achadas := map[string]col{}
+	for linhas.Next() {
+		var t, c, tipo string
+		var nn bool
+		if err := linhas.Scan(&t, &c, &tipo, &nn); err != nil {
+			linhas.Close()
+			return nil, err
+		}
+		achadas[t+"."+c] = col{tipo, nn}
+	}
+	linhas.Close()
+	if err := linhas.Err(); err != nil {
+		return nil, err
+	}
+	for _, t := range tabelas {
+		for _, c := range strings.Split(colunasDoWorker[t], ",") {
+			k := t + "." + c
+			a, ok := achadas[k]
+			switch {
+			case !ok:
+				faltam = append(faltam, "coluna "+k)
+			case tiposDoWorker[k] != "" && !tipoConfere(tiposDoWorker[k], a.tipo):
+				faltam = append(faltam, fmt.Sprintf("tipo %s: esperado %s, achado %s", k, tiposDoWorker[k], a.tipo))
 			}
 		}
 	}
-	for _, u := range unicosDoWorker {
+	for _, k := range anulaveisDoWorker {
+		if a, ok := achadas[k]; ok && a.naoNulo {
+			faltam = append(faltam, "coluna "+k+" deve aceitar nulo (NOT NULL achado)")
+		}
+	}
+
+	// Índices únicos: o conjunto de colunas-CHAVE (sem as de INCLUDE) tem de ser exatamente o alvo.
+	unico := func(u string, parcialOk bool) (bool, error) {
 		tabela, cols, _ := strings.Cut(strings.TrimSuffix(u, ")"), "(")
 		quer := strings.Split(cols, ",")
 		sort.Strings(quer)
 		var tem bool
-		if err := p.QueryRow(ctx, `select exists (
+		err := tx.QueryRow(ctx, `select exists (
 			select 1 from pg_index x join pg_class t on t.oid = x.indrelid
-			 where t.relname = $1::text and t.relnamespace = current_schema()::regnamespace and x.indisunique
-				   and x.indpred is null and x.indexprs is null -- ON CONFLICT (colunas) não infere índice parcial nem de expressão
-			   and (select array_agg(a.attname::text order by a.attname) from unnest(x.indkey) k
-			          join pg_attribute a on a.attrelid = t.oid and a.attnum = k) = $2::text[])`, tabela, quer).Scan(&tem); err != nil {
+			 where t.relname = $1::text and t.relnamespace = current_schema()::regnamespace
+			   and x.indisunique and x.indisvalid and x.indimmediate and x.indexprs is null
+			   and ($3::boolean or x.indpred is null)
+			   and (select array_agg(a.attname::text order by a.attname)
+			          from unnest(x.indkey) with ordinality as k(attnum, ord)
+			          join pg_attribute a on a.attrelid = t.oid and a.attnum = k.attnum
+			         where k.ord <= x.indnkeyatts) = $2::text[])`, tabela, quer, parcialOk).Scan(&tem)
+		return tem, err
+	}
+	for _, u := range unicosDoWorker {
+		tem, err := unico(u, false)
+		if err != nil {
 			return nil, err
 		}
 		if !tem {
 			faltam = append(faltam, "único "+u)
 		}
 	}
-	for _, f := range funcoesDoWorker {
-		var tem bool
-		if err := p.QueryRow(ctx, `select to_regprocedure(current_schema() || '.' || $1::text) is not null`, f).Scan(&tem); err != nil {
+	for _, u := range deduplicadoresDoWorker {
+		tem, err := unico(u, true)
+		if err != nil {
 			return nil, err
 		}
 		if !tem {
-			faltam = append(faltam, "função "+f)
+			faltam = append(faltam, "único (dedupe do on conflict do nothing) "+u)
 		}
+	}
+
+	// Funções: existe, tem os parâmetros nomeados e devolve as colunas que o código lê.
+	itens := append(slices.Clone(funcoesDoWorker), funcoesPorNomeDoWorker...)
+	for _, item := range itens {
+		nome := nomeDaFuncao(item)
+		sig := ""
+		if strings.Contains(item, "(") {
+			sig = item
+		}
+		linhas, err := tx.Query(ctx, `select coalesce(p.proargnames, '{}'::text[]), coalesce(p.proargmodes::text[], '{}'::text[]),
+				coalesce(array(select a.attname::text from pg_attribute a
+				        where a.attrelid = t.typrelid and a.attnum > 0 and not a.attisdropped order by a.attnum), '{}'::text[])
+			  from pg_proc p join pg_type t on t.oid = p.prorettype
+			 where p.pronamespace = current_schema()::regnamespace and p.proname = $1::text
+			   and ($2::text = '' or p.oid = to_regprocedure(current_schema() || '.' || $2::text))`, nome, sig)
+		if err != nil {
+			return nil, err
+		}
+		var melhor []string
+		achou := false
+		for linhas.Next() {
+			var nomes, modos, compostas []string
+			if err := linhas.Scan(&nomes, &modos, &compostas); err != nil {
+				linhas.Close()
+				return nil, err
+			}
+			var entradas, saidas []string
+			for i, n := range nomes {
+				m := "i"
+				if i < len(modos) {
+					m = modos[i]
+				}
+				if m == "i" || m == "b" || m == "v" {
+					entradas = append(entradas, n)
+				}
+				if m == "o" || m == "b" || m == "t" {
+					saidas = append(saidas, n)
+				}
+			}
+			if len(saidas) == 0 {
+				saidas = compostas // setof tabela/tipo composto: as colunas são as do tipo
+			}
+			var sem []string
+			for _, a := range parametrosDasFuncoes[nome] {
+				if !slices.Contains(entradas, a) {
+					sem = append(sem, "função "+item+" sem o parâmetro "+a)
+				}
+			}
+			for _, c := range retornoDasFuncoes[nome] {
+				if !slices.Contains(saidas, c) {
+					sem = append(sem, "função "+item+" não devolve a coluna "+c)
+				}
+			}
+			if !achou || len(sem) < len(melhor) { // com sobrecargas, vale a que mais se aproxima do que o código chama
+				melhor, achou = sem, true
+			}
+		}
+		linhas.Close()
+		if err := linhas.Err(); err != nil {
+			return nil, err
+		}
+		if !achou {
+			faltam = append(faltam, "função "+item)
+			continue
+		}
+		faltam = append(faltam, melhor...)
 	}
 	sort.Strings(faltam)
 	return faltam, nil
+}
+
+// conferirComando é `api worker conferir`: SÓ as conferências de schema (sem aviso de VAPID, sem
+// ValidarDesligadas, sem recusar por falta de tabela: faltar `api migrar` é um dos itens listados e o resto
+// continua sendo conferido). Saída 0 = confere; 1 = lista o que falta. Nunca imprime URL nem credencial do
+// banco: erro de conexão sai só com a classe.
+func conferirComando(ctx context.Context, p *pgxpool.Pool) int {
+	faltam, err := conferirSchema(ctx, p)
+	if err != nil {
+		var pg *pgconn.PgError
+		if errors.As(err, &pg) {
+			fmt.Fprintf(os.Stderr, "conferir: o banco recusou a consulta (%s %s)\n", pg.Code, pg.Message)
+		} else {
+			fmt.Fprintln(os.Stderr, "conferir: não consegui consultar o banco (conexão ou permissão)")
+		}
+		return 1
+	}
+	for _, f := range faltam {
+		fmt.Println(f)
+	}
+	if len(faltam) > 0 {
+		fmt.Fprintf(os.Stderr, "%d premissa(s) do código quebrada(s) no schema\n", len(faltam))
+		return 1
+	}
+	fmt.Println("schema confere com o que o worker presume")
+	return 0
 }
