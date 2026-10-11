@@ -19,7 +19,7 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		slog.Error("uso: api <api|worker [listar|rodar <tarefa> [--forcar]|saude]|importar-usuarios|migrar>")
+		slog.Error("uso: api <api|worker [listar|rodar <tarefa> [--forcar]|saude|conferir]|importar-usuarios|migrar>")
 		os.Exit(2)
 	}
 	if os.Args[1] == "worker" && len(os.Args) > 2 && os.Args[2] == "saude" {

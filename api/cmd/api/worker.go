@@ -25,6 +25,7 @@ import (
 //	api worker                          agenda tudo e fica no ar (SIGTERM = desligamento gracioso)
 //	api worker listar                   nome, agenda (UTC), prazo e se está desligada
 //	api worker rodar <tarefa> [--forcar] executa UMA vez agora, com trava e linha em robos_execucoes
+//	api worker conferir                 lista as premissas de schema quebradas (ensaio, depois do restore)
 //	api worker saude                    GET http://$WORKER_ADDR/saude (healthcheck; tratado em main, sem banco)
 //
 // Saída de `rodar`: 0 ok, 1 a tarefa falhou, 2 uso errado (tarefa desconhecida, ou desligada sem
@@ -88,6 +89,21 @@ func rodarWorker(ctx context.Context, p *pgxpool.Pool, cfg config.Config, args [
 			}
 			fmt.Printf("%-44s %-26s %-8s %s\n", t.Nome, t.Agenda, t.Limite, estado)
 		}
+		return 0
+	case "conferir":
+		faltam, err := conferirSchema(ctx, p)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "conferir:", err)
+			return 1
+		}
+		for _, f := range faltam {
+			fmt.Println(f)
+		}
+		if len(faltam) > 0 {
+			fmt.Fprintf(os.Stderr, "%d premissa(s) do worker quebrada(s) no schema\n", len(faltam))
+			return 1
+		}
+		fmt.Println("schema confere com o que o worker presume")
 		return 0
 	case "rodar":
 		if len(args) < 2 {
