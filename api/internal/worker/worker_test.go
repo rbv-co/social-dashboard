@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http/httptest"
 	"strings"
 	"sync"
@@ -630,5 +631,45 @@ func TestValidarDesligadas(t *testing.T) {
 	}
 	if err := ValidarDesligadas(ts, []string{"c"}); err == nil || !strings.Contains(err.Error(), "[c]") || !strings.Contains(err.Error(), "[a b]") {
 		t.Fatalf("erro de digitação deve falhar listando desconhecidos e válidos: %v", err)
+	}
+}
+
+// Banco que aceita a conexão TCP e nunca responde (rede em buraco negro): a conexão da trava não pode ficar
+// pendurada, senão a cada minuto uma goroutine nova espera no TCP e elas se acumulam.
+func TestConexaoDaTravaTemPrazo(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			t.Cleanup(func() { c.Close() }) // aceita e fica mudo
+		}
+	}()
+	p, err := pgxpool.New(context.Background(), "postgres://u:p@"+ln.Addr().String()+"/db?sslmode=disable") // preguiçoso: não conecta aqui
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(p.Close)
+	antes := prazoDaConexao
+	prazoDaConexao = 300 * time.Millisecond
+	t.Cleanup(func() { prazoDaConexao = antes })
+	if antes != 10*time.Second {
+		t.Fatalf("o prazo de produção é de 10 s, está em %s", antes)
+	}
+	a := Novo(p)
+	chamou := false
+	inicio := time.Now()
+	executou, err := a.Rodar(context.Background(), Tarefa{Nome: "t", Limite: time.Second, Executar: func(context.Context) error { chamou = true; return nil }})
+	if executou || chamou || err == nil {
+		t.Fatalf("executou=%v chamou=%v err=%v", executou, chamou, err)
+	}
+	if d := time.Since(inicio); d > 3*time.Second {
+		t.Fatalf("a conexão esperou %s: sem prazo", d)
 	}
 }

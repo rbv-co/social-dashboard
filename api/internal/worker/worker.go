@@ -41,6 +41,11 @@ import (
 // pode usar pg_advisory_*(int, int) com esta 1ª chave.
 const EspacoDaTrava int32 = 0x57524B52
 
+// prazoDaConexao é o teto para abrir a conexão da trava. Sem ele, com o banco fora do ar (TCP sem resposta)
+// cada execução por minuto esperaria o timeout do sistema e as goroutines se acumulariam. Um connect_timeout
+// menor na DATABASE_URL vale (o pgx o aplica por dentro); este é só o teto.
+var prazoDaConexao = 10 * time.Second
+
 type Tarefa struct {
 	Nome   string        // nome de PRODUÇÃO em robos_execucoes
 	Agenda string        // cron de 5 campos, em UTC (como o pg_cron)
@@ -240,7 +245,9 @@ func (a *Agendador) Rodar(ctx context.Context, t Tarefa) (bool, error) {
 	}
 	// Conexão PRÓPRIA para a trava (fora do pool): a tarefa usa o pool à vontade e várias tarefas ao
 	// mesmo tempo nunca esgotam o pool segurando travas.
-	conn, err := pgx.ConnectConfig(ctx, a.pool.Config().ConnConfig.Copy())
+	ctxConexao, cancelaConexao := context.WithTimeout(ctx, prazoDaConexao)
+	conn, err := pgx.ConnectConfig(ctxConexao, a.pool.Config().ConnConfig.Copy())
+	cancelaConexao() // o prazo vale só para conectar; a conexão pronta não depende mais dele
 	if err != nil {
 		return false, a.limpo(err)
 	}

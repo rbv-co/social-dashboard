@@ -203,7 +203,7 @@ Valem para o serviço `worker`, salvo onde diz `api`. Todas vêm de variáveis d
 
 | Variável | Quem usa | Observação |
 |---|---|---|
-| `DATABASE_URL` | `api` e `worker` | obrigatória |
+| `DATABASE_URL` | `api` e `worker` | obrigatória. Acrescentar `connect_timeout=5` (segundos) à URL: o banco fora do ar com a rede sem resposta (TCP pendurado) faria cada tarefa esperar o timeout do sistema, a cada minuto. A conexão da trava do worker já tem um teto de 10 s; o `connect_timeout` da URL, se menor, vale (o pgx o aplica por dentro). Estourado, a execução termina com erro de conexão (sem endereço) e a próxima tenta de novo |
 | `CORE_URL` | `api` e `worker` | https (http só para localhost/127.0.0.1/::1); padrão `https://core.rbvcompany.com` |
 | `CORE_API_TOKEN` | `api` e `worker` | RECOMENDADO um consumidor PRÓPRIO do worker no core: o core limita 120 chamadas da Meta por minuto POR CONSUMIDOR e o worker anda a 600 ms por chamada (~100/min); com o token da API, as telas ao vivo e o worker disputam o mesmo balde e levam 429. Sem token, as tarefas do core falham ("core: CORE_API_TOKEN ausente") |
 | escopos do consumidor | no core | o core de produção passou a impor `CORE_API_ESCOPOS` por consumidor (sem entrada = 403 `escopo_negado`; hoje `social-dashboard` = `bling\|shopify\|meta\|espelho`). O consumidor do worker precisa de `meta` (coletas, saldo, espelho, auditoria) e de `bling` (push de vendas); conferir no core se as rotas da Meta também pedem `espelho` (o grupo de limite delas se chama "espelho") |
