@@ -150,7 +150,7 @@ func TestHoraHReavisarMandaDeNovo(t *testing.T) {
 	p.Exec(ctx, `insert into profiles (id, email, role, features) values ('`+uConteudo+`', 'c@x', 'viewer', '{conteudo}')`)
 	pushteste.Inscrever(t, p, "conteudo", uConteudo)
 	p.Exec(ctx, `insert into push_preferencias (user_id, tipo, ativo) values ('`+uConteudo+`', 'conteudo', true)`)
-	id := peca(t, p, "Bolsa", "feed", "agendada", time.Now().Add(-time.Minute), "")
+	id := peca(t, p, "Bolsa", "feed", "agendada", time.Now().Add(-time.Hour), "")
 	srv := pushteste.Novo(t)
 	h := &HoraH{Pool: p, VAPID: pushteste.VAPID(t), HTTP: srv.HTTP}
 	for rodada := 1; rodada <= 2; rodada++ {
@@ -179,7 +179,7 @@ func TestHoraHExecucoesSimultaneasReivindicamUmaVez(t *testing.T) {
 	p.Exec(ctx, `insert into push_preferencias (user_id, tipo, ativo) values ('`+uConteudo+`', 'conteudo', true)`)
 	var ids []string
 	for _, t1 := range []string{"A", "B", "C"} {
-		ids = append(ids, peca(t, p, t1, "feed", "agendada", time.Now().Add(-time.Minute), ""))
+		ids = append(ids, peca(t, p, t1, "feed", "agendada", time.Now().Add(-time.Hour), ""))
 	}
 	srv := pushteste.Novo(t)
 	h := &HoraH{Pool: p, VAPID: pushteste.VAPID(t), HTTP: srv.HTTP}
@@ -214,10 +214,10 @@ func TestHoraHErroNumaPecaNaoParaAsOutras(t *testing.T) {
 	p.Exec(ctx, `insert into profiles (id, email, role, features) values ('`+uConteudo+`', 'c@x', 'viewer', '{conteudo}')`)
 	pushteste.Inscrever(t, p, "conteudo", uConteudo)
 	p.Exec(ctx, `insert into push_preferencias (user_id, tipo, ativo) values ('`+uConteudo+`', 'conteudo', true)`)
-	ruim := peca(t, p, "Ruim", "feed", "agendada", time.Now().Add(-time.Minute), "")
+	ruim := peca(t, p, "Ruim", "feed", "agendada", time.Now().Add(-time.Hour), "")
 	var boas []string
 	for _, n := range []string{"B1", "B2", "B3"} {
-		boas = append(boas, peca(t, p, n, "feed", "agendada", time.Now().Add(-time.Minute), ""))
+		boas = append(boas, peca(t, p, n, "feed", "agendada", time.Now().Add(-time.Hour), ""))
 	}
 	if _, err := p.Exec(ctx, `create function barra_peca() returns trigger language plpgsql as $$
 		begin if new.peca_id = '`+ruim+`'::uuid then raise exception 'banco recusou a trilha'; end if; return new; end $$;
@@ -247,7 +247,7 @@ func TestHoraHContextoCanceladoDepoisDoClaimTerminaAsPecas(t *testing.T) {
 	p.Exec(context.Background(), `insert into push_preferencias (user_id, tipo, ativo) values ('`+uConteudo+`', 'conteudo', true)`)
 	var ids []string
 	for _, n := range []string{"A", "B"} {
-		ids = append(ids, peca(t, p, n, "feed", "agendada", time.Now().Add(-time.Minute), ""))
+		ids = append(ids, peca(t, p, n, "feed", "agendada", time.Now().Add(-time.Hour), ""))
 	}
 	srv := pushteste.Novo(t)
 	ctx, cancela := context.WithCancel(context.Background())
@@ -286,8 +286,8 @@ func TestHoraHFalhaParcialEPecaSemNenhumAparelhoFicamVisiveis(t *testing.T) {
 	pushteste.Inscrever(t, p, "ruim/e500", uConteudo)
 	pushteste.Inscrever(t, p, "so-ruim/e500", uOutro)
 	p.Exec(ctx, `insert into push_preferencias (user_id, tipo, ativo) values ('`+uConteudo+`', 'conteudo', true), ('`+uOutro+`', 'conteudo', true)`)
-	parcial := peca(t, p, "Parcial", "feed", "agendada", time.Now().Add(-time.Minute), uConteudo)
-	nenhum := peca(t, p, "Nenhum", "feed", "agendada", time.Now().Add(-time.Minute), uOutro)
+	parcial := peca(t, p, "Parcial", "feed", "agendada", time.Now().Add(-time.Hour), uConteudo)
+	nenhum := peca(t, p, "Nenhum", "feed", "agendada", time.Now().Add(-time.Hour), uOutro)
 	srv := pushteste.Novo(t)
 	err := (&HoraH{Pool: p, VAPID: pushteste.VAPID(t), HTTP: srv.HTTP}).Rodar(ctx)
 	if err == nil || !strings.Contains(err.Error(), "2 falha(s)") {
@@ -321,8 +321,8 @@ func TestHoraHPushLentoNaoDeixaATrilhaVazia(t *testing.T) {
 	pushteste.Inscrever(t, p, "a/lento", uOutro)
 	pushteste.Inscrever(t, p, "b-normal", uOutro)
 	p.Exec(ctx, `insert into push_preferencias (user_id, tipo, ativo) values ('`+uConteudo+`', 'conteudo', true), ('`+uOutro+`', 'conteudo', true)`)
-	um := peca(t, p, "Um aparelho lento", "feed", "agendada", time.Now().Add(-time.Minute), uConteudo)
-	dois := peca(t, p, "Prazo vence entre aparelhos", "feed", "agendada", time.Now().Add(-time.Minute), uOutro)
+	um := peca(t, p, "Um aparelho lento", "feed", "agendada", time.Now().Add(-time.Hour), uConteudo)
+	dois := peca(t, p, "Prazo vence entre aparelhos", "feed", "agendada", time.Now().Add(-time.Hour), uOutro)
 	srv := pushteste.Novo(t)
 	err := (&HoraH{Pool: p, VAPID: pushteste.VAPID(t), HTTP: srv.HTTP}).Rodar(ctx)
 	if err == nil {
@@ -345,8 +345,8 @@ func TestHoraHPodadoNaoContaComoFalhaNaTrilha(t *testing.T) {
 	pushteste.Inscrever(t, p, "morta-2/morta", uOutro)
 	pushteste.Inscrever(t, p, "ruim/e500", uOutro)
 	p.Exec(ctx, `insert into push_preferencias (user_id, tipo, ativo) values ('`+uConteudo+`', 'conteudo', true), ('`+uOutro+`', 'conteudo', true)`)
-	soMorto := peca(t, p, "So morto", "feed", "agendada", time.Now().Add(-time.Minute), uConteudo)
-	misto := peca(t, p, "Morto e ruim", "feed", "agendada", time.Now().Add(-time.Minute), uOutro)
+	soMorto := peca(t, p, "So morto", "feed", "agendada", time.Now().Add(-time.Hour), uConteudo)
+	misto := peca(t, p, "Morto e ruim", "feed", "agendada", time.Now().Add(-time.Hour), uOutro)
 	srv := pushteste.Novo(t)
 	err := (&HoraH{Pool: p, VAPID: pushteste.VAPID(t), HTTP: srv.HTTP}).Rodar(ctx)
 	if err == nil || !strings.Contains(err.Error(), "1 falha(s)") { // só o e500 é falha da tarefa
@@ -414,7 +414,7 @@ func TestHoraHResponsavelDesligadoFicaNaTrilhaEVAPIDRuimNaoReivindica(t *testing
 	p := bancoConteudo(t)
 	ctx := context.Background()
 	p.Exec(ctx, `insert into profiles (id, email, role, features) values ('`+uConteudo+`', 'c@x', 'viewer', '{conteudo}')`)
-	id := peca(t, p, "Do dono", "feed", "agendada", time.Now().Add(-time.Minute), uConteudo)
+	id := peca(t, p, "Do dono", "feed", "agendada", time.Now().Add(-time.Hour), uConteudo)
 	h := &HoraH{Pool: p, VAPID: pushteste.VAPID(t), HTTP: pushteste.Novo(t).HTTP}
 	h.VAPID.Privada = ""
 	if err := h.Rodar(ctx); err == nil {
@@ -566,7 +566,7 @@ func TestConteudoNaoVazaSegredoNemEndpoint(t *testing.T) {
 	p.Exec(ctx, `insert into profiles (id, email, role, features) values ('`+uConteudo+`', 'c@x', 'viewer', '{conteudo}')`)
 	pushteste.Inscrever(t, p, "segredo-do-endpoint/e500", uConteudo)
 	p.Exec(ctx, `insert into push_preferencias (user_id, tipo, ativo) values ('`+uConteudo+`', 'conteudo', true)`)
-	id := peca(t, p, "Bolsa", "feed", "agendada", time.Now().Add(-time.Minute), "")
+	id := peca(t, p, "Bolsa", "feed", "agendada", time.Now().Add(-time.Hour), "")
 	h := &HoraH{Pool: p, VAPID: pushteste.VAPID(t), HTTP: pushteste.Novo(t).HTTP}
 	err := h.Rodar(ctx)
 	if err == nil || !strings.Contains(err.Error(), "push_nao_entregue") {
