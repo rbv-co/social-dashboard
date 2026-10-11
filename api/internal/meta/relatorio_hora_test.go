@@ -3,12 +3,14 @@ package meta
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -30,6 +32,7 @@ type zapiFalsa struct {
 	clientes  []string
 	status    int           // 0 = 200
 	derrubar  bool          // simula queda depois de receber (envio ambíguo)
+	eco       bool          // a recusa devolve o caminho e o Client-Token recebidos (serviço que ecoa o pedido)
 	atraso    time.Duration // responde depois disso (lentidão)
 }
 
@@ -69,7 +72,7 @@ func ambienteRelatorio(t *testing.T) (*RelatorioHora, *zapiFalsa, *pgxpool.Pool)
 		z.mensagens = append(z.mensagens, corpo["phone"]+"|"+corpo["message"])
 		z.caminhos = append(z.caminhos, r.URL.Path)
 		z.clientes = append(z.clientes, r.Header.Get("Client-Token"))
-		st, derrubar, atraso := z.status, z.derrubar, z.atraso
+		st, derrubar, atraso, eco := z.status, z.derrubar, z.atraso, z.eco
 		z.mu.Unlock()
 		time.Sleep(atraso)
 		if derrubar {
@@ -79,6 +82,10 @@ func ambienteRelatorio(t *testing.T) (*RelatorioHora, *zapiFalsa, *pgxpool.Pool)
 		}
 		if st != 0 {
 			w.WriteHeader(st)
+			if eco {
+				io.WriteString(w, `{"error":"instance not connected","caminho":"`+r.URL.Path+`","client":"`+r.Header.Get("Client-Token")+`"}`)
+				return
+			}
 			io.WriteString(w, `{"error":"instance not connected"}`)
 			return
 		}
@@ -98,15 +105,15 @@ func dadosDoRelatorio(t *testing.T, p *pgxpool.Pool) {
 		`insert into campaigns (campaign_id, name) values ('c-wpp', '[CAMPANHA WPP] Leads Vessel'), ('c-wpp2', '[CAMPANHA WPP] Remarketing'),
 			('c-seg', '[+ SEGUIDORES] Perfil'), ('c-outro', 'AXIOM')`,
 		`insert into campaign_insights_hora (campaign_id, account_id, dia, hora, gasto_hora, gasto_acumulado, conversas_hora) values
-			('c-wpp', '` + contaVessel + `', '2026-10-10', 13, 12.5, 40.25, 3), ('c-wpp', '` + contaVessel + `', '2026-10-10', 14, 10, 50.25, 4),
-			('c-wpp2', '` + contaVessel + `', '2026-10-10', 14, 5.333, 5.333, 1), ('c-seg', '` + contaVessel + `', '2026-10-10', 14, 7.2, 30, 0),
-			('c-seg', '` + contaVessel + `', '2026-10-10', 13, 6, 22.8, 0), ('c-outro', '` + contaVessel + `', '2026-10-10', 14, 3, 3, 0)`,
+			('c-wpp', '` + contaDaEdge + `', '2026-10-10', 13, 12.5, 40.25, 3), ('c-wpp', '` + contaDaEdge + `', '2026-10-10', 14, 10, 50.25, 4),
+			('c-wpp2', '` + contaDaEdge + `', '2026-10-10', 14, 5.333, 5.333, 1), ('c-seg', '` + contaDaEdge + `', '2026-10-10', 14, 7.2, 30, 0),
+			('c-seg', '` + contaDaEdge + `', '2026-10-10', 13, 6, 22.8, 0), ('c-outro', '` + contaDaEdge + `', '2026-10-10', 14, 3, 3, 0)`,
 		`insert into followers_leituras (account_id, followers_count, lido_em, origem) values
-			('` + contaVessel + `', 24300, '2026-10-09T23:05:00Z', 'hora'), ('` + contaVessel + `', 24310, '2026-10-10T03:05:00Z', 'hora'),
-			('` + contaVessel + `', 24311, '2026-10-10T16:05:00Z', 'hora'), ('` + contaVessel + `', 24330, '2026-10-10T17:05:00Z', 'hora'),
-			('` + contaVessel + `', 24332, '2026-10-10T17:08:00Z', 'diario')`,
-		`insert into perfil_visitas_hora (account_id, dia, hora, visitas_hora) values ('` + contaVessel + `', '2026-10-10', 13, 5),
-			('` + contaVessel + `', '2026-10-10', 14, 8)`,
+			('` + contaDaEdge + `', 24300, '2026-10-09T23:05:00Z', 'hora'), ('` + contaDaEdge + `', 24310, '2026-10-10T03:05:00Z', 'hora'),
+			('` + contaDaEdge + `', 24311, '2026-10-10T16:05:00Z', 'hora'), ('` + contaDaEdge + `', 24330, '2026-10-10T17:05:00Z', 'hora'),
+			('` + contaDaEdge + `', 24332, '2026-10-10T17:08:00Z', 'diario')`,
+		`insert into perfil_visitas_hora (account_id, dia, hora, visitas_hora) values ('` + contaDaEdge + `', '2026-10-10', 13, 5),
+			('` + contaDaEdge + `', '2026-10-10', 14, 8)`,
 	} {
 		if _, err := p.Exec(context.Background(), sql); err != nil {
 			t.Fatal(err)
@@ -156,12 +163,15 @@ func TestRelatorioHoraSemDadoAvisa(t *testing.T) {
 
 func TestRelatorioHoraLeituraQueFalhaAvisaEEErro(t *testing.T) {
 	rh, z, p := ambienteRelatorio(t)
-	p.Exec(context.Background(), `drop table followers_leituras`)
+	if _, err := p.Exec(context.Background(), `drop table followers_leituras`); err != nil {
+		t.Fatal(err)
+	}
 	err := rh.Rodar(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "não consegui ler os dados de seguidores") {
 		t.Fatalf("a edge dava 200 aqui; agora é erro visível: %v", err)
 	}
-	if msgs, _, _ := z.lista(); len(msgs) != 1 || !strings.Contains(msgs[0], "não saiu — não consegui ler os dados de seguidores.") {
+	// texto COMPLETO: nenhum detalhe do pgx (nome de tabela, SQL) chega ao grupo
+	if msgs, _, _ := z.lista(); len(msgs) != 1 || msgs[0] != grupoDaEdge+"|⚠️ Relatório das 14h, 10/10 não saiu — não consegui ler os dados de seguidores." {
 		t.Fatalf("%q", msgs)
 	}
 }
@@ -172,14 +182,22 @@ func TestRelatorioHoraZAPIRecusaEhErroSemToken(t *testing.T) {
 	rh, z, p := ambienteRelatorio(t)
 	dadosDoRelatorio(t, p)
 	z.responder(401, false)
+	z.mu.Lock()
+	z.eco = true // a Z-API devolve o caminho (com o token da instância) e o Client-Token no corpo da recusa
+	z.mu.Unlock()
 	ag := worker.Novo(p)
 	ag.Segredos = []string{zapiToken, zapiCliente}
 	ex, err := ag.Rodar(context.Background(), rh.Tarefa())
 	if !ex || err == nil {
 		t.Fatalf("ex=%v err=%v", ex, err)
 	}
-	var resp string
-	p.QueryRow(context.Background(), `select resposta from robos_execucoes where robo = 'enviar-relatorio-hora'`).Scan(&resp)
+	var resp, linha string
+	if err := p.QueryRow(context.Background(), `select resposta, r::text from robos_execucoes r where robo = 'enviar-relatorio-hora'`).Scan(&resp, &linha); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(linha, zapiToken) || strings.Contains(linha, zapiCliente) {
+		t.Fatalf("segredo na linha de robos_execucoes: %s", linha)
+	}
 	if !strings.Contains(resp, "wpp: Z-API send-text: 401") || strings.Contains(resp, zapiToken) || strings.Contains(err.Error(), zapiToken) {
 		t.Fatalf("resp=%q err=%v", resp, err)
 	}
@@ -238,5 +256,128 @@ func TestRelatorioHoraZAPI429LiberaELentaNaoRepete(t *testing.T) {
 	}
 	if msgs, _, _ := z.lista(); len(msgs) != 4 {
 		t.Fatalf("2 recusadas (429) + 2 ambíguas (lentas), nenhuma repetida depois: %d", len(msgs))
+	}
+}
+
+// A chave do livro leva o dia E a hora: a mesma tarefa em outra hora manda de novo.
+func TestRelatorioHoraEmDuasHorasMandaAsDuas(t *testing.T) {
+	rh, z, p := ambienteRelatorio(t)
+	dadosDoRelatorio(t, p)
+	ctx := context.Background()
+	for _, utc := range []int{17, 16} { // 14h10 e depois 13h10 em São Paulo
+		rh.Agora = func() time.Time { return time.Date(2026, 10, 10, utc, 10, 0, 0, time.UTC) }
+		if err := rh.Rodar(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	msgs, _, _ := z.lista()
+	if len(msgs) != 4 || !strings.Contains(msgs[0], "14h, 10/10") || !strings.Contains(msgs[2], "13h, 10/10") {
+		t.Fatalf("%q", msgs)
+	}
+	var chaves []string
+	linhas, err := p.Query(ctx, `select chave from envios_feitos order by chave`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for linhas.Next() {
+		var c string
+		linhas.Scan(&c)
+		chaves = append(chaves, c)
+	}
+	linhas.Close()
+	want := []string{"enviar-relatorio-hora:2026-10-10:13:seguidores", "enviar-relatorio-hora:2026-10-10:13:wpp",
+		"enviar-relatorio-hora:2026-10-10:14:seguidores", "enviar-relatorio-hora:2026-10-10:14:wpp"}
+	if !slices.Equal(chaves, want) {
+		t.Fatalf("chaves = %q", chaves)
+	}
+}
+
+// O pedido seguiria o 3xx levando Client-Token (e o Referer com o token da instância) ao outro endereço, e a
+// página 200 do destino contaria como enviada. 3xx é recusa clara: nada vai ao outro host e a hora NÃO fica
+// marcada como enviada (libera a reserva).
+func TestRelatorioHoraRedirecionamentoEhRecusaClara(t *testing.T) {
+	for _, status := range []int{301, 302, 307} {
+		t.Run(fmt.Sprint(status), func(t *testing.T) {
+			rh, _, p := ambienteRelatorio(t)
+			dadosDoRelatorio(t, p)
+			var tocou atomic.Int32
+			destino := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				tocou.Add(1)
+				io.WriteString(w, "<html>200</html>")
+			}))
+			defer destino.Close()
+			origem := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				http.Redirect(w, r, destino.URL+"/outro", status)
+			}))
+			defer origem.Close()
+			rh.ZAPI.URL, rh.ZAPI.HTTP = origem.URL, nil // o cliente PADRÃO
+			err := rh.Rodar(context.Background())
+			if err == nil || !strings.Contains(err.Error(), fmt.Sprintf("Z-API send-text: %d", status)) || strings.Contains(err.Error(), zapiToken) {
+				t.Fatalf("err=%v", err)
+			}
+			if tocou.Load() != 0 {
+				t.Fatalf("o segundo host recebeu %d pedidos", tocou.Load())
+			}
+			var n int
+			p.QueryRow(context.Background(), `select count(*) from envios_feitos`).Scan(&n)
+			if n != 0 {
+				t.Fatalf("a hora ficou marcada como enviada (%d chaves)", n)
+			}
+		})
+	}
+}
+
+// O caminho da URL leva o token da instância: um serviço que ecoa o pedido na recusa não o faz chegar ao erro
+// (nem direto, sem o worker).
+func TestRelatorioHoraRecusaQueEcoaOPedidoNaoVazaSegredo(t *testing.T) {
+	rh, z, p := ambienteRelatorio(t)
+	dadosDoRelatorio(t, p)
+	z.responder(401, false)
+	z.mu.Lock()
+	z.eco = true
+	z.mu.Unlock()
+	err := rh.Rodar(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "Z-API send-text: 401") || strings.Contains(err.Error(), zapiToken) || strings.Contains(err.Error(), zapiCliente) {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+// 502/504: o gateway pode ter repassado a mensagem à Z-API antes de falhar: fica reservada (mensagem a
+// cliente não é push); 500 e 503 são recusa do servidor: libera, a próxima rodada da hora manda.
+func TestRelatorioHoraStatusDeGateway(t *testing.T) {
+	for _, c := range []struct {
+		status int
+		manda  int // mensagens depois da segunda rodada, com a Z-API já boa
+	}{{502, 2}, {504, 2}, {500, 4}, {503, 4}} {
+		t.Run(fmt.Sprint(c.status), func(t *testing.T) {
+			rh, z, p := ambienteRelatorio(t)
+			dadosDoRelatorio(t, p)
+			z.responder(c.status, false)
+			if err := rh.Rodar(context.Background()); err == nil || !strings.Contains(err.Error(), fmt.Sprintf("Z-API send-text: %d", c.status)) {
+				t.Fatalf("err=%v", err)
+			}
+			z.responder(0, false)
+			if err := rh.Rodar(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			if msgs, _, _ := z.lista(); len(msgs) != c.manda {
+				t.Fatalf("mensagens = %d, esperava %d", len(msgs), c.manda)
+			}
+		})
+	}
+}
+
+// O prazo de 2 min da tarefa acabou durante a leitura do banco: o aviso ao grupo sai mesmo assim (contexto
+// próprio, curto), e a tarefa termina em erro.
+func TestRelatorioHoraAvisoSaiComOPrazoDaTarefaVencido(t *testing.T) {
+	rh, z, _ := ambienteRelatorio(t)
+	ctx, cancela := context.WithCancel(context.Background())
+	cancela()
+	err := rh.Rodar(ctx)
+	if err == nil || !strings.Contains(err.Error(), "não consegui ler os dados de campanha") {
+		t.Fatalf("err=%v", err)
+	}
+	if msgs, _, _ := z.lista(); len(msgs) != 1 || msgs[0] != grupoDaEdge+"|⚠️ Relatório das 14h, 10/10 não saiu — não consegui ler os dados de campanha." {
+		t.Fatalf("%q", msgs)
 	}
 }

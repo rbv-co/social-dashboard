@@ -49,22 +49,33 @@ func (z *ZAPI) Enviar(ctx context.Context, telefone, mensagem string) (ambiguo b
 	}
 	req.Header.Set("Client-Token", z.ClientToken)
 	req.Header.Set("Content-Type", "application/json")
-	cli := z.HTTP
-	if cli == nil {
-		cli = &http.Client{Timeout: 20 * time.Second}
+	cli := &http.Client{Timeout: 20 * time.Second}
+	if z.HTTP != nil {
+		c := *z.HTTP
+		cli = &c
 	}
+	// Nunca segue redirecionamento: o pedido levaria o Client-Token (e o Referer, com o token da instância no
+	// caminho) a outro endereço, e a página 200 do destino contaria como enviada. 3xx é recusa clara.
+	cli.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	r, err := cli.Do(req)
 	if err != nil {
 		var ue *url.Error
 		if errors.As(err, &ue) {
 			err = ue.Err
 		}
+		// Sem resposta (prazo, queda, conexão recusada): ambíguo. "Conexão recusada" provadamente não enviou
+		// nada, mas fica reservada do mesmo jeito (aceito: nunca duplica; a próxima hora usa outra chave).
 		return true, fmt.Errorf("Z-API send-text: %w", err)
 	}
 	defer r.Body.Close()
 	b, _ := io.ReadAll(io.LimitReader(r.Body, 4<<10))
 	if r.StatusCode < 200 || r.StatusCode > 299 {
-		return false, fmt.Errorf("Z-API send-text: %d %s", r.StatusCode, texto.CortarUTF16(string(b), 200))
+		// Um serviço que ecoa o pedido na recusa devolveria o caminho (token da instância) e o Client-Token.
+		corpo := strings.NewReplacer(z.InstanceToken, "***", z.ClientToken, "***", z.InstanceID, "***").Replace(string(b))
+		// 502/504: o gateway pode ter repassado a mensagem antes de falhar. Fica reservada (mensagem a cliente
+		// não é push). Qualquer outro não-2xx é recusa clara.
+		ambiguo := r.StatusCode == http.StatusBadGateway || r.StatusCode == http.StatusGatewayTimeout
+		return ambiguo, fmt.Errorf("Z-API send-text: %d %s", r.StatusCode, texto.CortarUTF16(corpo, 200))
 	}
 	return false, nil
 }
@@ -164,14 +175,18 @@ func montarMensagemWpp(dia string, hora int, campanhas []campanhaDaHora, leadsHo
 	return strings.Join(linhas, "\n")
 }
 
+// somaDoTipo soma a hora primeiro e depois as horas, como a edge (gastoWppNoDia/gastoSeguidoresNoDia): somar
+// campanha por campanha direto no total do dia inverte um centavo por ordem de soma em ponto flutuante.
 func somaDoTipo(horas []horaDoDia, tipo string, f func(campanhaDaHora) float64) float64 {
 	s := 0.0
 	for _, h := range horas {
+		sh := 0.0
 		for _, c := range h.campanhas {
 			if c.tipo == tipo {
-				s += f(c)
+				sh += f(c)
 			}
 		}
+		s += sh
 	}
 	return s
 }
@@ -370,6 +385,9 @@ func aviso(dia string, hora int, motivo string) string {
 // semDados: leitura do banco falhou. Avisa o grupo (melhor um aviso curto que silêncio) e a tarefa
 // termina com ERRO (a edge respondia 200 aqui, e a saúde dos robôs ficava verde).
 func (rh *RelatorioHora) semDados(ctx context.Context, dia string, hora int, motivo string, causa error) error {
+	// O prazo da tarefa pode ter acabado justamente na leitura que falhou: o aviso tem contexto próprio e curto.
+	ctx, cancela := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	defer cancela()
 	if err := rh.enviar(ctx, fmt.Sprintf("enviar-relatorio-hora:%s:%02d:aviso", dia, hora), aviso(dia, hora, motivo)); err != nil {
 		return fmt.Errorf("%s: %w (e o aviso falhou: %v)", motivo, causa, err)
 	}
@@ -395,7 +413,9 @@ func (rh *RelatorioHora) enviar(ctx context.Context, chave, msg string) error {
 }
 
 // lerCampanhas: campaign_insights_hora da conta no DIA inteiro (o total do dia soma as horas),
-// agrupado por hora (crescente) e, na hora, por gasto (maior primeiro), como agruparPorDiaEHora.
+// agrupado por hora (crescente) e, na hora, por gasto (maior primeiro), como agruparPorDiaEHora. O desempate
+// por campaign_id é escolha deliberada e determinística (a edge lia sem ORDER BY): só muda a ordem de linhas
+// de gasto igual, que não altera nenhuma soma nem texto.
 func (rh *RelatorioHora) lerCampanhas(ctx context.Context, dia string) ([]horaDoDia, error) {
 	linhas, err := rh.Pool.Query(ctx, `select h.hora, h.campaign_id, coalesce(nullif(c.name, ''), h.campaign_id), coalesce(h.gasto_hora, 0)::float8,
 			coalesce(h.gasto_acumulado, 0)::float8, coalesce(h.conversas_hora, 0)
