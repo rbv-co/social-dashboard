@@ -127,19 +127,8 @@ func rodarWorker(ctx context.Context, p *pgxpool.Pool, cfg config.Config, args [
 }
 
 // problemasDasMensagens: o que a configuração das mensagens já reprova hoje, para avisar no boot (os
-// validadores das passadas são internos de mensagens e só rodam na rodada). Passada desligada não conta.
-// ponytail: ENVIO_*/TEMPLATE_*/LINK_BASE só entram aqui quando mensagens.Config ganhar Problemas() (a
-// asserção abaixo as pega sem mexer neste arquivo); hoje o aviso cobre FOLLOWUP_APOS_HORAS.
-func problemasDasMensagens(c mensagens.Config) []string {
-	var ps []string
-	if c.Followup.Modo != "desligado" {
-		ps = append(ps, c.ProblemasDoFollowup()...)
-	}
-	if v, ok := any(c).(interface{ Problemas() []string }); ok {
-		ps = append(ps, v.Problemas()...)
-	}
-	return ps
-}
+// validadores das passadas só rodam na rodada). Passada desligada não conta.
+func problemasDasMensagens(c mensagens.Config) []string { return c.Problemas() }
 
 // avisarSegredosCurtos: worker.Limpar não mascara segredo com menos de 8 caracteres. Avisa a
 // quantidade, nunca o valor.

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"math"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 )
@@ -277,5 +278,67 @@ func TestFollowupAposHorasInvalidoReprova(t *testing.T) {
 	}
 	if inteiro(math.Inf(1)) || inteiro(math.Inf(-1)) {
 		t.Error("inteiro(Inf)")
+	}
+}
+
+// Problemas junta os validadores de todas as passadas ligadas (o aviso do boot do worker): passada desligada
+// não conta, cada problema leva o nome da passada, e config boa não devolve nada.
+func TestConfigProblemasAgregaAsPassadasLigadas(t *testing.T) {
+	cfg := func(env map[string]string) Config { return LerConfig(func(k string) string { return env[k] }) }
+	if p := cfg(nil).Problemas(); len(p) != 0 {
+		t.Fatalf("tudo desligado não tem problema: %q", p)
+	}
+	bom := map[string]string{"ENVIO_MODO": "ligado", "TEMPLATE_NOME": "abandono_v1", "LINK_BASE": "https://loja.exemplo/", "CHATWOOT_URL": "https://chat.exemplo",
+		"CHATWOOT_CONTA_ID": "1", "CHATWOOT_CAIXA_ID": "2", "CHATWOOT_API_TOKEN": "token-do-teste"}
+	if p := cfg(bom).Problemas(); len(p) != 0 {
+		t.Fatalf("config completa: %q", p)
+	}
+	com := func(k, v string) map[string]string {
+		m := map[string]string{}
+		for a, b := range bom {
+			m[a] = b
+		}
+		m[k] = v
+		return m
+	}
+	casos := []struct {
+		env  map[string]string
+		quer string
+	}{
+		{com("ENVIO_LIMITE_POR_RODADA", "0"), "abandono: ENVIO_LIMITE_POR_RODADA inválido (inteiro de 1 a 100)"},
+		{com("TEMPLATE_NOME", ""), "abandono: TEMPLATE_NOME vazio"},
+		{com("LINK_BASE", "https://loja.exemplo"), "abandono: LINK_BASE vazio ou sem a barra final"},
+		{com("ENVIO_MAX_HORAS", "x"), "abandono: ENVIO_MAX_HORAS inválido (inteiro a partir de 1)"},
+		{com("ENVIO_ATRASO_MINUTOS", "-1"), "abandono: ENVIO_ATRASO_MINUTOS inválido (inteiro a partir de 0)"},
+		{com("CHATWOOT_API_TOKEN", ""), "abandono: CHATWOOT_API_TOKEN vazio"},
+		{com("ENVIO_MODO", "ligadoo"), "abandono: modo inválido"},
+		{com("ENVIO_MODO_INICIO", "ligado"), "inicio: TEMPLATE_NOME vazio"}, // TEMPLATE_INICIO ausente reprova
+		{com("ENVIO_MODO_PEDIDO", "ligado"), "pedido: TEMPLATE_NOME vazio"},
+		{com("ENVIO_MODO_FOLLOWUP", "ligado"), "followup: TEMPLATE_NOME vazio"},
+		{com("FOLLOWUP_APOS_HORAS", "2.5"), ""}, // followup desligado: não conta
+	}
+	for _, c := range casos {
+		p := cfg(c.env).Problemas()
+		if c.quer == "" {
+			if len(p) != 0 {
+				t.Errorf("%v: %q", c.env, p)
+			}
+			continue
+		}
+		if !slices.Contains(p, c.quer) {
+			t.Errorf("faltou %q em %q", c.quer, p)
+		}
+	}
+	// follow-up ligado com FOLLOWUP_APOS_HORAS ruim: o problema aparece uma vez só
+	env := com("ENVIO_MODO_FOLLOWUP", "ligado")
+	env["TEMPLATE_FOLLOWUP"], env["FOLLOWUP_APOS_HORAS"] = "followup_v1", "2.5"
+	n := 0
+	for _, p := range cfg(env).Problemas() {
+		if strings.Contains(p, "FOLLOWUP_APOS_HORAS") {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Fatalf("FOLLOWUP_APOS_HORAS aparece %d vezes", n)
 	}
 }
