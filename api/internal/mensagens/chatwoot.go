@@ -37,8 +37,10 @@ const (
 // corpoNaoEnviado marca o ErroChatwoot de um envio que nem começou (contexto já vencido).
 const corpoNaoEnviado = "nao_enviado"
 
-// classificarErro: nao_enviado -> devolver o item à fila sem gastar tentativa; 401/403 -> parar a rodada (credencial); 429/5xx/rede -> tentar de novo; demais 4xx
-// -> falhou. ⚠️ Rede/prazo e 502/504 NO enviar_template NÃO tentam de novo: a mensagem pode ter saído.
+// classificarErro: nao_enviado -> devolver o item à fila sem gastar tentativa; 401/403 -> parar a rodada
+// (credencial); demais 4xx -> falhou. Fora do enviar_template: 429, 5xx e rede/prazo -> tentar de novo.
+// ⚠️ No enviar_template (a mensagem pode ter saído): rede/prazo e TODO 5xx exceto 501 são ambíguos ->
+// falhou (nunca reenvia); só o 429 (recusa antes de processar) tenta de novo.
 func classificarErro(err error) string {
 	var e *ErroChatwoot
 	if !errors.As(err, &e) {

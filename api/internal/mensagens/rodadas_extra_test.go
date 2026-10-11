@@ -619,11 +619,42 @@ func TestSegredoNoCorteDoDetalheNaoVazaPedaco(t *testing.T) {
 	}
 }
 
-// A fiação de produção deixa Mensagens.HTTP nil: o cliente padrão nunca segue redirect (ver
-// TestRedirecionamentoNoEnvioNaoEhSeguido).
-func TestRodarNaoInjetaClienteHTTPQuandoNil(t *testing.T) {
-	m := &Mensagens{}
-	if m.HTTP != nil || (&Chatwoot{HTTP: m.HTTP}).cliente() != clientePadrao {
-		t.Fatal("HTTP nil tem de cair no cliente que não segue redirect")
+// 5xx FORA do envio (buscar contato, abrir conversa, ler a conversa) é seguro repetir: o item volta à fila
+// CONTANDO a tentativa, nada é marcado, e a reserva do aviso (pedido) é liberada. Só o 5xx NO envio é ambíguo.
+// Mata "5xx = falhou em qualquer passo" e a retirada do `chegouNoEnvio &&` (que deixaria o pedido reservado
+// como envio_incerto sem avisar a cliente).
+func TestErro5xxForaDoEnvioDevolveContandoEPassaPelaReserva(t *testing.T) {
+	passos := []struct {
+		nome     string
+		ocorre   func(met, caminho string) bool
+		passadas []string
+	}{
+		{"buscar_contato", func(met, c string) bool { return met == "GET" && strings.Contains(c, "/contacts/search") }, todasAsPassadas},
+		{"abrir_conversa", func(met, c string) bool { return met == "POST" && c == "/api/v1/accounts/3/conversations" }, todasAsPassadas},
+		{"ler_conversa", func(met, c string) bool { return met == "GET" && strings.HasSuffix(c, "/messages") }, []string{"abandono", "followup"}},
+	}
+	for _, passo := range passos {
+		for _, tipo := range passo.passadas {
+			for _, st := range []int{500, 503} {
+				f := filaCom(tipo, "k1")
+				m, cw := robo(t, f, func(met, c string, _ map[string]any) (int, string) {
+					if passo.ocorre(met, c) {
+						return st, `{"error":"x"}`
+					}
+					return 0, ""
+				}, tipo)
+				m.Cfg.Pedido.ReservarAviso = true
+				if err := m.Rodar(context.Background()); err != nil {
+					t.Fatalf("%s %s %d: %v", passo.nome, tipo, st, err)
+				}
+				if f.tem("devolver "+tipo+" k1 contar=true") != 1 || f.tem("marcar") != 0 || cw.chamadas("POST /api/v1/accounts/3/conversations/77/messages") != 0 {
+					t.Errorf("%s %s %d: volta à fila contando, sem marcar, sem envio:\n%s", passo.nome, tipo, st, strings.Join(f.chamadas, "\n"))
+				}
+				if tipo == "pedido" && (cw.chamadas("POST /custom_api/v1/accounts/3/avisos/reservar") != 1 || cw.chamadas("POST /custom_api/v1/accounts/3/avisos/liberar") != 1) {
+					t.Errorf("%s pedido: a reserva do aviso tem de ser liberada (reservar=%d liberar=%d)", passo.nome,
+						cw.chamadas("POST /custom_api/v1/accounts/3/avisos/reservar"), cw.chamadas("POST /custom_api/v1/accounts/3/avisos/liberar"))
+				}
+			}
+		}
 	}
 }

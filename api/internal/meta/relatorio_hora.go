@@ -34,8 +34,8 @@ func (z *ZAPI) configurada() bool {
 	return z != nil && z.InstanceID != "" && z.InstanceToken != "" && z.ClientToken != ""
 }
 
-// Enviar manda `mensagem` a `telefone` (um grupo é "<id>-group"). ambiguo=true: não houve resposta
-// (prazo, queda) e a mensagem PODE ter saído — quem chama não repete.
+// Enviar manda `mensagem` a `telefone` (um grupo é "<id>-group"). ambiguo=true: a mensagem PODE ter saído
+// (sem resposta por prazo, queda ou conexão recusada; ou resposta 502/504 de gateway) — quem chama não repete.
 func (z *ZAPI) Enviar(ctx context.Context, telefone, mensagem string) (ambiguo bool, err error) {
 	base := z.URL
 	if base == "" {

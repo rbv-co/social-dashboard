@@ -571,6 +571,43 @@ func TestContextoVencidoAntesDoEnvioENaoEnviado(t *testing.T) {
 	}
 }
 
+// Cancelar o contexto NO MEIO do voo (o servidor já recebeu o POST do envio) é ambíguo: `falhou`, nunca
+// `nao_enviado` (que devolveria a mensagem à fila e a reenviaria). Só o contexto já vencido ANTES do envio é nao_enviado.
+func TestCancelarNoMeioDoVooEhFalhouNuncaNaoEnviado(t *testing.T) {
+	for nome, vence := range map[string]func(context.Context) (context.Context, context.CancelFunc, func()){
+		"cancelado": func(c context.Context) (context.Context, context.CancelFunc, func()) {
+			ctx, cancela := context.WithCancel(c)
+			return ctx, cancela, cancela
+		},
+		"prazo": func(c context.Context) (context.Context, context.CancelFunc, func()) {
+			ctx, cancela := context.WithTimeout(c, 300*time.Millisecond)
+			return ctx, cancela, func() {}
+		},
+	} {
+		t.Run(nome, func(t *testing.T) {
+			var cancela func()
+			cw, f := novoChatwoot(t, func(met, caminho string, _ map[string]any) (int, string) {
+				if met == "POST" && strings.HasSuffix(caminho, "/messages") {
+					cancela() // o servidor JÁ recebeu o envio quando o contexto morre
+					time.Sleep(700 * time.Millisecond)
+				}
+				return 0, ""
+			})
+			ctx, c, vencer := vence(context.Background())
+			defer c()
+			cancela = vencer
+			err := cw.EnviarTemplate(ctx, 77, "Oi", templateMarketing("t", "pt_BR", nil, "x"))
+			var ec *ErroChatwoot
+			if !errors.As(err, &ec) || ec.Status != 0 || ec.Corpo == "nao_enviado" || classificarErro(err) != "falhou" {
+				t.Fatalf("meio do voo é ambíguo: err=%v classe=%q", err, classificarErro(err))
+			}
+			if f.chamadas("POST /api/v1/accounts/3/conversations/77/messages") != 1 {
+				t.Fatalf("o servidor tinha de ter recebido o envio: %d", f.chamadas("POST "))
+			}
+		})
+	}
+}
+
 // M12: o erro de rede nunca traz a URL (a busca carrega o telefone na query) nem o endereço.
 func TestErroDeRedeNaoTrazURLNemTelefone(t *testing.T) {
 	cw, _ := novoChatwoot(t, func(m, cam string, _ map[string]any) (int, string) { return -1, "" })

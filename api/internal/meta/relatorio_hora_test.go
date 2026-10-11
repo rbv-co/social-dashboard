@@ -327,6 +327,35 @@ func TestRelatorioHoraRedirecionamentoEhRecusaClara(t *testing.T) {
 	}
 }
 
+// Com um cliente HTTP PRÓPRIO (ZAPI.HTTP != nil, que segue redirecionamento por padrão) o bloqueio continua valendo,
+// e o cliente do chamador não é alterado (o Enviar trabalha numa cópia).
+func TestRelatorioHoraRedirecionamentoComClienteHTTPProprio(t *testing.T) {
+	rh, _, p := ambienteRelatorio(t)
+	dadosDoRelatorio(t, p)
+	var tocou atomic.Int32
+	destino := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		tocou.Add(1)
+		io.WriteString(w, "<html>200</html>")
+	}))
+	defer destino.Close()
+	origem := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, destino.URL+"/outro", http.StatusTemporaryRedirect)
+	}))
+	defer origem.Close()
+	proprio := &http.Client{Timeout: 5 * time.Second} // CheckRedirect nil: seguiria
+	rh.ZAPI.URL, rh.ZAPI.HTTP = origem.URL, proprio
+	err := rh.Rodar(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "Z-API send-text: 307") || strings.Contains(err.Error(), zapiToken) {
+		t.Fatalf("err=%v", err)
+	}
+	if tocou.Load() != 0 {
+		t.Fatalf("o segundo host recebeu %d pedidos", tocou.Load())
+	}
+	if proprio.CheckRedirect != nil || proprio.Timeout != 5*time.Second {
+		t.Fatal("o cliente do chamador foi alterado")
+	}
+}
+
 // O caminho da URL leva o token da instância: um serviço que ecoa o pedido na recusa não o faz chegar ao erro
 // (nem direto, sem o worker).
 func TestRelatorioHoraRecusaQueEcoaOPedidoNaoVazaSegredo(t *testing.T) {
@@ -337,7 +366,8 @@ func TestRelatorioHoraRecusaQueEcoaOPedidoNaoVazaSegredo(t *testing.T) {
 	z.eco = true
 	z.mu.Unlock()
 	err := rh.Rodar(context.Background())
-	if err == nil || !strings.Contains(err.Error(), "Z-API send-text: 401") || strings.Contains(err.Error(), zapiToken) || strings.Contains(err.Error(), zapiCliente) {
+	if err == nil || !strings.Contains(err.Error(), "Z-API send-text: 401") || strings.Contains(err.Error(), zapiToken) ||
+		strings.Contains(err.Error(), zapiCliente) || strings.Contains(err.Error(), zapiInstancia) { // o id da instância também está no caminho ecoado
 		t.Fatalf("err=%v", err)
 	}
 }
