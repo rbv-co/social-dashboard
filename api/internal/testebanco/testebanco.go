@@ -68,3 +68,20 @@ func Novo(t *testing.T) *pgxpool.Pool {
 	}
 	return p
 }
+
+// TabelasDoEscopo cria (se faltarem) as tabelas que autz.CarregarEscopo lê, com as colunas que
+// ele usa. Para os testes de rotas que passam por autz.ComEscopo sem montar o mundo inteiro.
+func TabelasDoEscopo(t *testing.T, p *pgxpool.Pool) {
+	t.Helper()
+	if _, err := p.Exec(context.Background(), `
+alter table profiles add column if not exists allowed_accounts text[];
+create table if not exists equipes (id uuid primary key, canal_loja_id bigint);
+alter table equipes add column if not exists local_id uuid, add column if not exists deposito_id bigint;
+create table if not exists equipes_membros (equipe_id uuid not null, profile_id uuid not null, papel text);
+create table if not exists canais_grupos_membros (grupo_id uuid not null, profile_id uuid not null, papel text);
+create table if not exists bling_lojas (loja_id bigint primary key, nome text, grupo text, grupo_id uuid);
+create table if not exists equipes_permissoes (equipe_id uuid not null, profile_id uuid not null, chave text not null);
+create table if not exists acessos_pessoas (id uuid primary key, nome text, profile_id uuid, email_corporativo text);`); err != nil {
+		t.Fatal(err)
+	}
+}
