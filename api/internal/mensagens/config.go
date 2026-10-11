@@ -1,9 +1,13 @@
 package mensagens
 
 import (
+	"errors"
 	"math"
+	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/rbv-co/social-dashboard/api/internal/texto"
 )
 
 // ChatwootConfig: CHATWOOT_URL, CHATWOOT_CONTA_ID, CHATWOOT_CAIXA_ID, CHATWOOT_API_TOKEN e
@@ -32,17 +36,44 @@ type Config struct {
 	FollowupAposHoras                  float64
 }
 
+var (
+	reDecimalJS   = regexp.MustCompile(`^[+-]?(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:[eE][+-]?[0-9]+)?$`)
+	rePrefixadoJS = regexp.MustCompile(`^0(?:[xX][0-9a-fA-F]+|[bB][01]+|[oO][0-7]+)$`)
+	reBordasJS    = regexp.MustCompile(`^` + texto.EspacoJS + `+|` + texto.EspacoJS + `+$`)
+)
+
 // numeroJS = Number(v || padrao) do JS: vazio vira o padrão; texto que não é número vira NaN (e a
-// validação RECUSA, nunca "sem limite").
+// validação RECUSA, nunca "sem limite"). Segue o Number() do JS, não o ParseFloat do Go: só espaço nas
+// pontas (com o \s do JS; "  " é 0), decimal com sinal e expoente, 0x/0b/0o sem sinal, e "Infinity" com
+// a caixa exata; "1_0", "inf", "nan", "0x1p3" são NaN (o ParseFloat do Go os aceitaria).
+// ponytail: 0x/0b/0o acima de 2^64 viram NaN (o JS daria um número enorme): ambos reprovam nos limites.
 func numeroJS(v string, padrao float64) float64 {
 	if v == "" {
 		return padrao
 	}
-	f, err := strconv.ParseFloat(strings.TrimSpace(v), 64)
-	if err != nil {
-		return math.NaN()
+	t := reBordasJS.ReplaceAllString(v, "")
+	switch {
+	case t == "":
+		return 0
+	case t == "Infinity" || t == "+Infinity":
+		return math.Inf(1)
+	case t == "-Infinity":
+		return math.Inf(-1)
+	case reDecimalJS.MatchString(t):
+		f, err := strconv.ParseFloat(t, 64)
+		if err != nil && !errors.Is(err, strconv.ErrRange) { // ErrRange: ±Inf, como o JS
+			return math.NaN()
+		}
+		return f
+	case rePrefixadoJS.MatchString(t):
+		base := map[byte]int{'x': 16, 'b': 2, 'o': 8}[t[1]|0x20]
+		n, err := strconv.ParseUint(t[2:], base, 64)
+		if err != nil {
+			return math.NaN()
+		}
+		return float64(n)
 	}
-	return f
+	return math.NaN()
 }
 
 // LerConfig lê o mesmo ambiente da edge enviar-mensagem-abandono (getenv = os.Getenv).
@@ -90,3 +121,12 @@ func parse(s string) float64 { f, _ := strconv.ParseFloat(s, 64); return f }
 
 // Segredos: os valores do ambiente das mensagens que nunca podem ir para log nem robos_execucoes.
 func (c Config) Segredos() []string { return []string{c.Chatwoot.Token, c.Chatwoot.BotSecret} }
+
+// ProblemasDoFollowup: FOLLOWUP_APOS_HORAS vai para agendar_followups(int, int): NaN, infinito, fração
+// ou negativo reprovam (sem isto o int() do Go viraria lixo).
+func (c Config) ProblemasDoFollowup() []string {
+	if h := c.FollowupAposHoras; !inteiro(h) || h < 0 {
+		return []string{"FOLLOWUP_APOS_HORAS inválido (inteiro a partir de 0)"}
+	}
+	return nil
+}

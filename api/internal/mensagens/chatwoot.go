@@ -33,14 +33,22 @@ const (
 	prazoLiberar  = 4 * time.Second // best-effort, no caminho de erro: não pode segurar a rodada
 )
 
-// classificarErro: 401/403 -> parar a rodada (credencial); 429/5xx/rede -> tentar de novo; demais 4xx
-// -> falhou. ⚠️ Rede/prazo NO enviar_template NÃO tenta de novo: a mensagem pode ter saído.
+// corpoNaoEnviado marca o ErroChatwoot de um envio que nem começou (contexto já vencido).
+const corpoNaoEnviado = "nao_enviado"
+
+// classificarErro: nao_enviado -> devolver o item à fila sem gastar tentativa; 401/403 -> parar a rodada (credencial); 429/5xx/rede -> tentar de novo; demais 4xx
+// -> falhou. ⚠️ Rede/prazo e 502/504 NO enviar_template NÃO tentam de novo: a mensagem pode ter saído.
 func classificarErro(err error) string {
 	var e *ErroChatwoot
 	if !errors.As(err, &e) {
 		return "tentar_de_novo"
 	}
 	switch {
+	case e.Status == 0 && e.Corpo == corpoNaoEnviado:
+		return "nao_enviado" // o contexto já tinha vencido: nada saiu e nada gasta tentativa
+	// 502/504 no envio: o gateway pode ter repassado a mensagem antes de falhar (a edge repetia: aqui não).
+	case e.Passo == "enviar_template" && (e.Status == 502 || e.Status == 504):
+		return "falhou"
 	case e.Status == 0 && e.Passo == "enviar_template":
 		return "falhou"
 	case e.Status == 0:
@@ -79,14 +87,12 @@ type Chatwoot struct {
 	HTTP         *http.Client
 }
 
-// clientePadrao não segue redirecionamento para OUTRO host: o Go repassa cabeçalhos próprios
-// (api_access_token, X-Bot-Secret) a quem o redirect apontar, e o http.Client padrão só tira o
-// Authorization. Mesmo host segue (http->https do proxy); outro host devolve o 3xx como resposta.
-var clientePadrao = &http.Client{CheckRedirect: func(req *http.Request, via []*http.Request) error {
-	if len(via) >= 10 || req.URL.Host != via[0].URL.Host {
-		return http.ErrUseLastResponse
-	}
-	return nil
+// clientePadrao NUNCA segue redirect. O Go repassa cabeçalhos próprios (api_access_token, X-Bot-Secret)
+// a quem o Location apontar, e um 301/302/303 num POST vira GET: o GET da lista de mensagens devolve 200
+// e o envio ficaria registrado como feito sem nunca ter saído. O 3xx volta como resposta e vira erro
+// `falhou` (visível, nunca duplica). Se Chatwoot.HTTP for dado, quem o monta assume essa política.
+var clientePadrao = &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error {
+	return http.ErrUseLastResponse
 }}
 
 func (c *Chatwoot) cliente() *http.Client {
@@ -235,7 +241,10 @@ func (c *Chatwoot) AcharOuCriarContato(ctx context.Context, nome *string, telefo
 		if ct["phone_number"] != e164 {
 			continue
 		}
-		id, _ := id64(ct["id"])
+		id, ok := id64(ct["id"])
+		if !ok || id <= 0 {
+			return 0, idInesperado("buscar_contato")
+		}
 		nomeAtual, temNome := ct["name"]
 		atual, _ := nomeAtual.(string) // null vira "": vazio também é "só telefone"
 		if nome != nil && strings.TrimSpace(*nome) != "" && temNome && reTelefoneComoNome.MatchString(strings.TrimSpace(atual)) {
@@ -254,10 +263,13 @@ func (c *Chatwoot) AcharOuCriarContato(ctx context.Context, nome *string, telefo
 	if err != nil {
 		return 0, err
 	}
-	if id, ok := id64(campo(criado, "payload", "contact", "id")); ok {
-		return id, nil
+	id, ok := id64(campo(criado, "payload", "contact", "id"))
+	if !ok {
+		id, ok = id64(campo(criado, "id"))
 	}
-	id, _ := id64(campo(criado, "id"))
+	if !ok || id <= 0 {
+		return 0, idInesperado("criar_contato")
+	}
 	return id, nil
 }
 
@@ -267,11 +279,23 @@ func (c *Chatwoot) AbrirConversa(ctx context.Context, contatoID int64, telefone 
 	if err != nil {
 		return 0, err
 	}
-	id, _ := id64(campo(j, "id"))
+	id, ok := id64(campo(j, "id"))
+	if !ok || id <= 0 {
+		return 0, idInesperado("abrir_conversa")
+	}
 	return id, nil
 }
 
+// idInesperado: a resposta veio 2xx sem um id utilizável. Nada foi enviado: erro (falhou), nunca um id 0
+// que mandaria o template para /conversations/0/messages.
+func idInesperado(passo string) error { return &ErroChatwoot{200, "resposta_inesperada", passo} }
+
+// EnviarTemplate: contexto já vencido antes de começar = ErroChatwoot "nao_enviado" (classificarErro:
+// nao_enviado, nada saiu); vencido DEPOIS de o pedido sair é ambíguo (status 0 -> falhou).
 func (c *Chatwoot) EnviarTemplate(ctx context.Context, conversaID int64, texto string, params Template) error {
+	if ctx.Err() != nil {
+		return &ErroChatwoot{0, corpoNaoEnviado, "enviar_template"}
+	}
 	_, err := c.chamar(ctx, "enviar_template", http.MethodPost, "/conversations/"+strconv.FormatInt(conversaID, 10)+"/messages",
 		map[string]any{"content": texto, "message_type": "outgoing", "private": false, "template_params": params})
 	return err
