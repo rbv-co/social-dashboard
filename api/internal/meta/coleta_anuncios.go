@@ -87,17 +87,36 @@ func (c *ColetaDiaria) anuncios(ctx context.Context, conta contaColeta, hoje str
 		}
 	}
 
+	// Erro da META numa janela: a edge pulava em silêncio; aqui vira UM recado por conta (degradado), com a
+	// 1ª causa, e as outras janelas seguem. Erro do BANCO aborta a conta.
+	janelas, falhas := 0, 0
+	var primeiraFalha error
+	coletar := func(de, ate, capturado string, dias int) error {
+		janelas++
+		erroMeta, err := c.insightsDeCampanha(ctx, conta, act, de, ate, capturado, dias)
+		if erroMeta != nil {
+			falhas++
+			if primeiraFalha == nil {
+				primeiraFalha = erroMeta
+			}
+		}
+		return err
+	}
 	for _, dias := range periodos {
 		de, ate := janelaDeAds(hoje, dias)
-		if err := c.insightsDeCampanha(ctx, conta, act, de, ate, hoje, dias); err != nil {
+		if err := coletar(de, ate, hoje, dias); err != nil {
 			return err
 		}
 	}
 	for dd := 1; dd <= 7; dd++ { // o pd=0 de ontem até 7 dias atrás, pela atribuição tardia da Meta
 		dia := menosDias(hoje, dd)
-		if err := c.insightsDeCampanha(ctx, conta, act, dia, dia, dia, 0); err != nil {
+		if err := coletar(dia, dia, dia, 0); err != nil {
 			return err
 		}
+	}
+	if falhas > 0 {
+		slog.Warn("coletar-dados: insights de campanha", "conta", conta.nome, "falhas", falhas, "janelas", janelas, "erro", primeiraFalha)
+		*degradados = append(*degradados, fmt.Sprintf("%s: %d de %d janelas de insights de campanha falharam (%s)", conta.nome, falhas, janelas, primeiraFalha))
 	}
 	return nil
 }
@@ -110,13 +129,14 @@ func janelaDeAds(hoje string, dias int) (string, string) {
 	return menosDias(hoje, dias), menosDias(hoje, 1)
 }
 
-func (c *ColetaDiaria) insightsDeCampanha(ctx context.Context, conta contaColeta, act, de, ate, capturado string, dias int) error {
+// insightsDeCampanha grava uma janela. Devolve (erro da Meta, erro do banco): só o segundo aborta a conta.
+func (c *ColetaDiaria) insightsDeCampanha(ctx context.Context, conta contaColeta, act, de, ate, capturado string, dias int) (erroMeta, erroBanco error) {
 	itens, err := Paginas(ctx, c.Core, act+"/insights", obj{"fields": "campaign_id,spend,impressions,clicks,reach,actions",
 		"time_range": fmt.Sprintf(`{"since":"%s","until":"%s"}`, de, ate), "level": "campaign", "limit": "500"}, maxPaginas, true)
 	if err != nil {
-		return nil // sem dados de anúncio: a edge pulava em silêncio
+		return err, nil
 	}
-	return pgx.BeginFunc(ctx, c.Pool, func(tx pgx.Tx) error {
+	return nil, pgx.BeginFunc(ctx, c.Pool, func(tx pgx.Tx) error {
 		for _, x := range itens {
 			r, _ := x.(obj)
 			acoes, _ := r["actions"].([]any)

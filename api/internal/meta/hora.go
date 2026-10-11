@@ -47,9 +47,6 @@ func tipoDaCampanha(nome string) string {
 	return "outro"
 }
 
-// primeiraAcao (conversasIniciadas/visitasNoPerfil/linkClicks de delta-de-hora.js): o 1º tipo achado.
-func primeiraAcao(acoes []any, tipos ...string) int64 { return acao(acoes, tipos...) }
-
 func delta(atual, anterior float64) float64 { return max(0, atual-anterior) } // nunca negativo (a Meta corrige para baixo)
 
 type contaHora struct{ id, nome, ad, ig string }
@@ -78,13 +75,15 @@ func (ch *ColetaHora) Rodar(ctx context.Context) error {
 		ch.visitas(ctx, c, dia, hora, agora(), &degradados)
 		ch.anunciosOutro(ctx, c, dia, hora, &degradados)
 	}
-	if len(degradados) > 0 {
-		slog.Warn("meta-hora: degradado", "dia", dia, "hora", hora, "itens", degradados)
-	}
 	// Havia conta e NADA foi coletado: erro (a edge devolvia 500 para a saúde enxergar). Na hora 0 isto
 	// é o esperado às 00:05 (a Meta ainda não processou o dia); a repescagem das 00:30 cobre.
 	if campanhas == 0 && len(contas) > 0 {
 		return fmt.Errorf("nada coletado (dia %s, hora %d): %s", dia, hora, strings.Join(degradados, " · "))
+	}
+	// Coletou, mas alguma conta ou fonte falhou: o que deu certo já está gravado e a tarefa termina em
+	// erro (a edge devolvia 200 com `degraded` dentro; aqui a falha é sempre visível em robos_execucoes).
+	if len(degradados) > 0 {
+		return fmt.Errorf("coletado com falhas (dia %s, hora %d): %s", dia, hora, strings.Join(degradados, " · "))
 	}
 	slog.Info("meta-hora", "dia", dia, "hora", hora, "contas", len(contas), "campanhas", campanhas)
 	return nil
@@ -127,13 +126,10 @@ func (ch *ColetaHora) campanhas(ctx context.Context, c contaHora, dia string, ho
 			r, _ := x.(obj)
 			acoes, _ := r["actions"].([]any)
 			id := textoDe(r["campaign_id"])
-			gasto := 0.0
-			if g := floatJS(r["spend"]); g != nil {
-				gasto = *g
-			}
-			conversas := float64(primeiraAcao(acoes, "onsite_conversion.messaging_conversation_started_7d", "onsite_conversion.messaging_conversation_started"))
+			gasto := gastoOuZero(r["spend"])
+			conversas := float64(acao(acoes, "onsite_conversion.messaging_conversation_started_7d", "onsite_conversion.messaging_conversation_started"))
 			// "cliques_*" por herança do schema: o conteúdo é visita ao perfil, que na prática cai no link_click.
-			visitas := float64(primeiraAcao(acoes, "profile_visits", "profile_views", "link_click"))
+			visitas := float64(acao(acoes, "profile_visits", "profile_views", "link_click"))
 			a := ant[id]
 			if _, err := tx.Exec(ctx, `insert into campaign_insights_hora (campaign_id, account_id, dia, hora, gasto_acumulado, conversas_acumuladas,
 					cliques_acumulados, gasto_hora, conversas_hora, cliques_hora)
@@ -253,11 +249,8 @@ func (ch *ColetaHora) anunciosOutro(ctx context.Context, c contaHora, dia string
 				continue
 			}
 			acoes, _ := r["actions"].([]any)
-			gasto := 0.0
-			if g := floatJS(r["spend"]); g != nil {
-				gasto = *g
-			}
-			cliques := float64(primeiraAcao(acoes, "link_click"))
+			gasto := gastoOuZero(r["spend"])
+			cliques := float64(acao(acoes, "link_click"))
 			a := ant[id]
 			if _, err := tx.Exec(ctx, `insert into ad_insights_hora (ad_id, campaign_id, account_id, dia, hora, gasto_acumulado, cliques_acumulados, gasto_hora, cliques_hora)
 				values ($1::text, $2::text, $3::uuid, $4::date, $5::int, $6::numeric, $7::int, $8::numeric, $9::int)
@@ -272,4 +265,14 @@ func (ch *ColetaHora) anunciosOutro(ctx context.Context, c contaHora, dia string
 	if err != nil {
 		*degradados = append(*degradados, c.nome+": falha ao gravar ad_insights_hora ("+err.Error()+")")
 	}
+}
+
+// gastoOuZero = parseFloat(spend ?? '0'). Desvio deliberado da edge: com um spend sem número (NaN) a edge
+// mandava null para uma coluna NOT NULL e o upsert INTEIRO da conta falhava; aqui o gasto vira 0 e o resto
+// da conta é gravado.
+func gastoOuZero(v any) float64 {
+	if g := floatJS(v); g != nil {
+		return *g
+	}
+	return 0
 }
