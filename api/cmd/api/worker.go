@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rbv-co/social-dashboard/api/internal/config"
+	"github.com/rbv-co/social-dashboard/api/internal/mensagens"
 	"github.com/rbv-co/social-dashboard/api/internal/webpush"
 	"github.com/rbv-co/social-dashboard/api/internal/worker"
 )
@@ -48,7 +49,8 @@ func rodarWorker(ctx context.Context, p *pgxpool.Pool, cfg config.Config, args [
 	ag := worker.Novo(p)
 	// Desligadas e Segredos ANTES de registrar: Registrar não agenda o que já está desligado (e a
 	// agenda confere de novo na hora de disparar).
-	ag.Desligadas, ag.Segredos = cfg.TarefasDesligadas, cfg.Segredos()
+	ag.Desligadas = cfg.TarefasDesligadas
+	ag.Segredos = append(cfg.Segredos(), mensagens.LerConfig(os.Getenv).Segredos()...)
 	avisarSegredosCurtos(ag.Segredos)
 	ts := montarTarefas(p, cfg, ag)
 	if err := worker.ValidarDesligadas(ts, cfg.TarefasDesligadas); err != nil { // nome desconhecido: recusa subir

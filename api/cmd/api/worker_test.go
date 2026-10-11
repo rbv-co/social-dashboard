@@ -52,6 +52,9 @@ var producao = map[string]string{
 
 	// Task 8
 	"enviar-relatorio-hora": "10 * * * *",
+
+	// Task 10
+	"enviar-mensagem-abandono": "* * * * *",
 }
 
 func TestTarefasDeProducao(t *testing.T) {
@@ -172,6 +175,37 @@ func TestRodarManualNaoMostraSegredoNemNoErroNemNoLog(t *testing.T) {
 	p.QueryRow(context.Background(), `select resposta from robos_execucoes where robo = 'falha-com-segredo'`).Scan(&resp)
 	if strings.Contains(resp, seg) {
 		t.Fatalf("segredo em robos_execucoes: %q", resp)
+	}
+}
+
+// Os segredos das mensagens (token do Chatwoot e segredo do bot) lidos do ambiente passam por worker.Limpar:
+// não chegam à linha de robos_execucoes, à saída da CLI nem ao log.
+func TestRodarManualNaoMostraSegredosDasMensagens(t *testing.T) {
+	const token, bot = "token-chatwoot-inventado-1234", "segredo-bot-inventado-5678"
+	t.Setenv("CHATWOOT_API_TOKEN", token)
+	t.Setenv("CHATWOOT_BOT_SECRET", bot)
+	p := testebanco.Novo(t)
+	antiga := montarTarefas
+	montarTarefas = func(*pgxpool.Pool, config.Config, *worker.Agendador) []worker.Tarefa {
+		return []worker.Tarefa{{Nome: "falha-com-segredo", Agenda: "0 1 * * *", Limite: time.Second, Executar: func(context.Context) error {
+			return fmt.Errorf("chatwoot recusou %s e %s", token, bot)
+		}}}
+	}
+	t.Cleanup(func() { montarTarefas = antiga })
+	log := capturarLog(t)
+	var codigo int
+	saida := saidaDe(t, func() {
+		codigo = rodarWorker(context.Background(), p, config.Config{}, []string{"rodar", "falha-com-segredo"})
+	})
+	var resp string
+	p.QueryRow(context.Background(), `select resposta from robos_execucoes where robo = 'falha-com-segredo'`).Scan(&resp)
+	if codigo != 1 || !strings.Contains(resp, "***") {
+		t.Fatalf("codigo=%d resp=%q", codigo, resp)
+	}
+	for _, onde := range []string{saida, log.String(), resp} {
+		if strings.Contains(onde, token) || strings.Contains(onde, bot) {
+			t.Fatalf("segredo das mensagens vazou: %q", onde)
+		}
 	}
 }
 

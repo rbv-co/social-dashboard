@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -37,6 +38,8 @@ func tarefas(p *pgxpool.Pool, cfg config.Config, ag *worker.Agendador) []worker.
 	ts = append(ts, (&meta.ColetaHora{Pool: p, Core: cli}).Tarefas()...)
 	zapi := &meta.ZAPI{InstanceID: cfg.ZAPIInstancia, InstanceToken: cfg.ZAPIToken, ClientToken: cfg.ZAPICliente}
 	ts = append(ts, (&meta.RelatorioHora{Pool: p, ZAPI: zapi}).Tarefa())
+	// HTTP nil de propósito: o cliente padrão do Chatwoot nunca segue redirect (reenviaria o POST do envio).
+	ts = append(ts, (&mensagens.Mensagens{Pool: p, Cfg: mensagens.LerConfig(os.Getenv)}).Tarefa())
 	return ts
 }
 
