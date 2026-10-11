@@ -243,7 +243,8 @@ func TestClassificarEDetalhe(t *testing.T) {
 		{&ErroChatwoot{429, nil, "enviar_template"}, "tentar_de_novo"},
 		{&ErroChatwoot{502, nil, "abrir_conversa"}, "tentar_de_novo"},
 		{&ErroChatwoot{502, nil, "enviar_template"}, "falhou"}, // ruling: gateway no envio é ambíguo
-		{&ErroChatwoot{503, nil, "enviar_template"}, "tentar_de_novo"},
+		{&ErroChatwoot{503, nil, "enviar_template"}, "falhou"}, // ruling: 500/503 no envio também são ambíguos
+		{&ErroChatwoot{500, nil, "enviar_template"}, "falhou"},
 		{&ErroChatwoot{422, nil, "enviar_template"}, "falhou"},
 		{errors.New("outra coisa"), "tentar_de_novo"},
 	} {
@@ -479,10 +480,12 @@ func TestSegredosEMascaramNoErroDoCliente(t *testing.T) {
 	}
 }
 
-// Ruling 5xx: 502/504 no envio são AMBÍGUOS (o gateway pode ter repassado a mensagem): falhou, nunca
-// reenvia. 429/500/503 seguem tentar_de_novo, como na edge. Nos outros passos 5xx é seguro repetir.
+// Ruling 5xx: 500/502/503/504 (e qualquer 5xx, menos o 501) no envio são AMBÍGUOS (o gateway ou o servidor
+// pode ter repassado a mensagem antes de falhar): falhou, nunca reenvia. A edge repetia; aqui não, porque
+// mensagem a cliente nunca sai duas vezes. 429 (recusado antes de processar) e 501 seguem tentar_de_novo.
+// Nos outros passos 5xx é seguro repetir.
 func TestGatewayAmbiguoNoEnvio(t *testing.T) {
-	for st, quer := range map[int]string{429: "tentar_de_novo", 500: "tentar_de_novo", 501: "tentar_de_novo", 502: "falhou", 503: "tentar_de_novo", 504: "falhou"} {
+	for st, quer := range map[int]string{429: "tentar_de_novo", 500: "falhou", 501: "tentar_de_novo", 502: "falhou", 503: "falhou", 504: "falhou", 520: "falhou"} {
 		if got := classificarErro(&ErroChatwoot{st, nil, "enviar_template"}); got != quer {
 			t.Errorf("enviar_template %d = %s, esperava %s", st, got, quer)
 		}
@@ -639,5 +642,30 @@ func TestDetalheCortaEm160(t *testing.T) {
 	}
 	if sem := semURL(errors.New(strings.Repeat("c", 300))); len(sem) != 160 {
 		t.Fatalf("semURL: %d", len(sem))
+	}
+}
+
+// O segredo é mascarado ANTES do corte em 160: um token que atravessa a posição 160 não deixa pedaço.
+func TestDetalheMascaraSegredoAntesDoCorte(t *testing.T) {
+	// `{"error":"` tem 10 caracteres: o segredo começa na posição 150 do JSON e termina na 174.
+	corpo := map[string]any{"error": strings.Repeat("a", 140) + tokenChatwoot}
+	err := &ErroChatwoot{422, corpo, "enviar_template"}
+	if puro := detalheDoErro(err); !strings.Contains(puro, tokenChatwoot[:8]) || strings.Contains(puro, tokenChatwoot) {
+		t.Fatalf("o teste precisa do token cortado ao meio: %q", puro)
+	}
+	d := detalheDoErroSem(err, []string{tokenChatwoot, segredoDoBot})
+	if strings.Contains(d, tokenChatwoot[:8]) || !strings.Contains(d, "***") || !strings.HasPrefix(d, "enviar_template:422 ") {
+		t.Fatalf("%q", d)
+	}
+	if n := len(d) - len("enviar_template:422 "); n > 160 {
+		t.Fatalf("o corte de 160 continua valendo: %d", n)
+	}
+	// Erro que não é do Chatwoot (texto livre) e segredo menor que 8 caracteres (não mascara: como worker.Limpar).
+	livre := errors.New(strings.Repeat("b", 150) + segredoDoBot)
+	if d := detalheDoErroSem(livre, []string{segredoDoBot}); strings.Contains(d, segredoDoBot[:8]) {
+		t.Fatalf("%q", d)
+	}
+	if d := detalheDoErroSem(&ErroChatwoot{422, "curto", "enviar_template"}, nil); d != `enviar_template:422 "curto"` {
+		t.Fatalf("%q", d)
 	}
 }

@@ -38,9 +38,14 @@ func tarefas(p *pgxpool.Pool, cfg config.Config, ag *worker.Agendador) []worker.
 	ts = append(ts, (&meta.ColetaHora{Pool: p, Core: cli}).Tarefas()...)
 	zapi := &meta.ZAPI{InstanceID: cfg.ZAPIInstancia, InstanceToken: cfg.ZAPIToken, ClientToken: cfg.ZAPICliente}
 	ts = append(ts, (&meta.RelatorioHora{Pool: p, ZAPI: zapi}).Tarefa())
-	// HTTP nil de propósito: o cliente padrão do Chatwoot nunca segue redirect (reenviaria o POST do envio).
-	ts = append(ts, (&mensagens.Mensagens{Pool: p, Cfg: mensagens.LerConfig(os.Getenv)}).Tarefa())
+	ts = append(ts, mensagensDeProducao(p).Tarefa())
 	return ts
+}
+
+// mensagensDeProducao monta o robô das mensagens. HTTP fica nil de propósito: o cliente padrão do Chatwoot
+// nunca segue redirect (o http.DefaultClient repetiria o POST do envio num 307 e a mensagem sairia duas vezes).
+func mensagensDeProducao(p *pgxpool.Pool) *mensagens.Mensagens {
+	return &mensagens.Mensagens{Pool: p, Cfg: mensagens.LerConfig(os.Getenv)}
 }
 
 // clienteDoCore é o cliente do worker: anda a 600 ms por chamada à Meta (~100/min), abaixo do teto de

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/rbv-co/social-dashboard/api/internal/texto"
+	"github.com/rbv-co/social-dashboard/api/internal/worker"
 )
 
 // Porta de _shared/cliente-chatwoot.js. O token NUNCA aparece em log nem em mensagem de erro.
@@ -46,8 +47,11 @@ func classificarErro(err error) string {
 	switch {
 	case e.Status == 0 && e.Corpo == corpoNaoEnviado:
 		return "nao_enviado" // o contexto já tinha vencido: nada saiu e nada gasta tentativa
-	// 502/504 no envio: o gateway pode ter repassado a mensagem antes de falhar (a edge repetia: aqui não).
-	case e.Passo == "enviar_template" && (e.Status == 502 || e.Status == 504):
+	// DIVERGÊNCIA DELIBERADA da edge (que repetia): 5xx NO enviar_template é ambíguo. O servidor ou o gateway
+	// (500, 502, 503, 504, 52x…) pode ter repassado a mensagem à Meta antes de falhar, e repetir mandaria a
+	// mesma mensagem duas vezes à cliente. Fica `falhou` (visível), nunca reenvia. 429 é recusa ANTES de
+	// processar (repete) e 501 (não implementado) nunca aceita nada. Nos outros passos 5xx é seguro repetir.
+	case e.Passo == "enviar_template" && e.Status >= 500 && e.Status != 501:
 		return "falhou"
 	case e.Status == 0 && e.Passo == "enviar_template":
 		return "falhou"
@@ -62,10 +66,15 @@ func classificarErro(err error) string {
 }
 
 // detalheDoErro: `${passo}:${status} ${JSON.stringify(corpo ?? ”).slice(0,160)}` (ou o texto do erro).
-func detalheDoErro(err error) string {
+func detalheDoErro(err error) string { return detalheDoErroSem(err, nil) }
+
+// detalheDoErroSem é o detalhe com os `segredos` mascarados (como worker.Limpar: só os de 8+ caracteres)
+// ANTES do corte em 160: um token que atravessa a posição 160 não pode deixar pedaço no resultado, no log
+// nem na coluna de motivo da fila.
+func detalheDoErroSem(err error, segredos []string) string {
 	var e *ErroChatwoot
 	if !errors.As(err, &e) {
-		return texto.CortarUTF16(err.Error(), 160)
+		return texto.CortarUTF16(worker.Limpar(err.Error(), segredos), 160)
 	}
 	var b bytes.Buffer
 	enc := json.NewEncoder(&b)
@@ -75,7 +84,8 @@ func detalheDoErro(err error) string {
 		corpo = ""
 	}
 	enc.Encode(corpo)
-	return fmt.Sprintf("%s:%d %s", e.Passo, e.Status, texto.CortarUTF16(strings.TrimRight(b.String(), "\n"), 160))
+	json := worker.Limpar(strings.TrimRight(b.String(), "\n"), segredos)
+	return fmt.Sprintf("%s:%d %s", e.Passo, e.Status, texto.CortarUTF16(json, 160))
 }
 
 // Chatwoot é o cliente mínimo da API do Chatwoot para o robô.

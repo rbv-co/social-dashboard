@@ -499,3 +499,131 @@ func TestSubstituirComoOReplaceDoJS(t *testing.T) {
 		t.Fatalf("envio=%s", envio)
 	}
 }
+
+// A cliente JÁ respondeu na conversa de origem: o follow-up não sai (nem busca contato, nem abre conversa).
+func TestFollowupNaoEnviaQuemRespondeuNaConversaDeOrigem(t *testing.T) {
+	f := filaCom("followup", "k1")
+	m, cw := robo(t, f, func(met, c string, _ map[string]any) (int, string) {
+		if met == "GET" && c == "/api/v1/accounts/3/conversations/55/messages" {
+			return 200, `{"payload":[{"message_type":0,"created_at":1760000000}]}`
+		}
+		return 0, ""
+	}, "followup")
+	if err := m.Rodar(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if f.tem("marcar followup k1 ignorada respondeu") != 1 || f.tem("marcar followup k1 enviada") != 0 || f.tem("devolver") != 0 ||
+		cw.chamadas("GET /api/v1/accounts/3/conversations/55/messages") != 1 || cw.chamadas("POST") != 0 {
+		t.Fatalf("%s\nchatwoot: %d chamadas", strings.Join(f.chamadas, "\n"), cw.chamadas(""))
+	}
+}
+
+// O corpo do POST do envio, byte a byte, como a edge monta (gerado no Node 22 com
+// montarTemplateParams, montarTemplateParamsInicio e montarTemplateParamsPedido de
+// supabase/functions/_shared/mensagem-de-abandono.js; JSON.stringify de {content, message_type, private,
+// template_params}). Inicio e follow-up levam o botão de link e MARKETING; o pedido, UTILITY e o número.
+func TestCorpoDoEnvioEhOMesmoDaEdgePorPassada(t *testing.T) {
+	vetores := map[string]string{
+		"inicio":   `{"content":"Oi Maria, reservamos!","message_type":"outgoing","private":false,"template_params":{"name":"inicio_v1","category":"MARKETING","language":"pt_BR","processed_params":{"body":{"1":"Maria"},"buttons":[{"type":"url","parameter":"abc?key=1"}]}}}`,
+		"followup": `{"content":"Maria, ainda dá tempo","message_type":"outgoing","private":false,"template_params":{"name":"followup_v1","category":"MARKETING","language":"pt_BR","processed_params":{"body":{"1":"Maria"},"buttons":[{"type":"url","parameter":"abc?key=1"}]}}}`,
+		"pedido":   `{"content":"Maria, pedido #1001 recebido","message_type":"outgoing","private":false,"template_params":{"name":"pedido_v1","category":"UTILITY","language":"pt_BR","processed_params":{"body":{"1":"Maria","2":"#1001"}}}}`,
+		"abandono": `{"content":"Oi Maria, seu carrinho {{1}}","message_type":"outgoing","private":false,"template_params":{"name":"abandono_v2","category":"MARKETING","language":"pt_BR","processed_params":{"body":{"1":"Maria"},"buttons":[{"type":"url","parameter":"abc?key=1"}]}}}`,
+	}
+	for tipo, quer := range vetores {
+		f := filaCom(tipo, "k1")
+		m, cw := robo(t, f, nil, tipo)
+		if err := m.Rodar(context.Background()); err != nil {
+			t.Fatalf("%s: %v", tipo, err)
+		}
+		pedidos, _ := cw.lista()
+		var envios []string
+		for _, p := range pedidos {
+			if cab := "POST /api/v1/accounts/3/conversations/77/messages "; strings.HasPrefix(p, cab) {
+				envios = append(envios, strings.TrimPrefix(p, cab))
+			}
+		}
+		if len(envios) != 1 || envios[0] != quer {
+			t.Errorf("%s:\n got  %q\n quer %q", tipo, envios, quer)
+		}
+	}
+}
+
+// 500, 502, 503 e 504 NO envio são ambíguos (o gateway pode ter repassado a mensagem): `falhou`, nunca volta
+// à fila nem é reenviado, em todas as passadas. 429 (recusado antes de processar) segue tentar_de_novo.
+func TestErro5xxNoEnvioNuncaReenvia(t *testing.T) {
+	for _, tipo := range todasAsPassadas {
+		for _, st := range []int{500, 502, 503, 504} {
+			f := filaCom(tipo, "k1")
+			m, cw := robo(t, f, func(met, c string, _ map[string]any) (int, string) {
+				if met == "POST" && strings.HasSuffix(c, "/messages") {
+					return st, `{"error":"x"}`
+				}
+				return 0, ""
+			}, tipo)
+			if err := m.Rodar(context.Background()); err != nil {
+				t.Fatalf("%s %d: %v", tipo, st, err)
+			}
+			if f.tem("marcar "+tipo+" k1 falhou enviar_template:"+fmt.Sprint(st)) != 1 || f.tem("devolver") != 0 || cw.chamadas("POST /api/v1/accounts/3/conversations/77/messages") != 1 {
+				t.Errorf("%s %d:\n%s", tipo, st, strings.Join(f.chamadas, "\n"))
+			}
+		}
+		f := filaCom(tipo, "k1")
+		m, _ := robo(t, f, func(met, c string, _ map[string]any) (int, string) {
+			if met == "POST" && strings.HasSuffix(c, "/messages") {
+				return 429, `{}`
+			}
+			return 0, ""
+		}, tipo)
+		m.Rodar(context.Background())
+		if f.tem("devolver "+tipo+" k1 contar=true") != 1 || f.tem("marcar") != 0 {
+			t.Errorf("%s 429 devolve contando tentativa:\n%s", tipo, strings.Join(f.chamadas, "\n"))
+		}
+	}
+}
+
+// Segredo que ATRAVESSA o corte de 160 caracteres do detalhe: o corpo do erro é mascarado ANTES de cortar, e
+// nenhum pedaço do token ou do segredo do bot sobra no resultado, no log nem no que vai para a fila.
+func TestSegredoNoCorteDoDetalheNaoVazaPedaco(t *testing.T) {
+	log := &bufferLog{}
+	antigo := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(log, nil)))
+	defer slog.SetDefault(antigo)
+	// `{"error":"` tem 10 caracteres: o segredo começa na posição 150 do JSON e termina além da 160.
+	corpoCom := func(seg string) string { return `{"error":"` + strings.Repeat("a", 140) + seg + `"}` }
+	var saidas []string
+	for _, seg := range []string{tokenChatwoot, segredoDoBot} {
+		for _, tipo := range todasAsPassadas {
+			f := filaCom(tipo, "k1")
+			m, _ := robo(t, f, func(met, c string, _ map[string]any) (int, string) {
+				if met == "POST" && strings.HasSuffix(c, "/messages") {
+					return 422, corpoCom(seg)
+				}
+				return 0, ""
+			}, tipo)
+			if err := m.Rodar(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			if f.tem("marcar "+tipo+" k1 falhou enviar_template:422") != 1 {
+				t.Fatalf("%s: %s", tipo, strings.Join(f.chamadas, "\n"))
+			}
+			saidas = append(saidas, strings.Join(f.chamadas, "\n"))
+		}
+	}
+	saidas = append(saidas, log.String())
+	for _, x := range saidas {
+		for _, seg := range []string{tokenChatwoot, segredoDoBot} {
+			if strings.Contains(x, seg[:8]) {
+				t.Fatalf("pedaço do segredo %q... na saída:\n%s", seg[:8], x)
+			}
+		}
+	}
+}
+
+// A fiação de produção deixa Mensagens.HTTP nil: o cliente padrão nunca segue redirect (ver
+// TestRedirecionamentoNoEnvioNaoEhSeguido).
+func TestRodarNaoInjetaClienteHTTPQuandoNil(t *testing.T) {
+	m := &Mensagens{}
+	if m.HTTP != nil || (&Chatwoot{HTTP: m.HTTP}).cliente() != clientePadrao {
+		t.Fatal("HTTP nil tem de cair no cliente que não segue redirect")
+	}
+}

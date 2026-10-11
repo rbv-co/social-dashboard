@@ -174,10 +174,10 @@ func substituirJS(s, alvo, novo string) string {
 	return antes + b.String() + depois
 }
 
-// limpo mascara o token e o segredo do bot no texto que vai para o log, o resultado e a coluna de motivo da
-// fila (o corpo de erro do Chatwoot é de fora e pode ecoar um cabeçalho).
-func limpo(s string, cli *Chatwoot) string {
-	return worker.Limpar(s, []string{cli.Token, cli.BotSecret})
+// detalheLimpo: o detalhe do erro com o token e o segredo do bot mascarados ANTES do corte em 160 (o corpo de
+// erro do Chatwoot é de fora e pode ecoar um cabeçalho); vai para o log, o resultado e a coluna de motivo.
+func detalheLimpo(err error, cli *Chatwoot) string {
+	return detalheDoErroSem(err, []string{cli.Token, cli.BotSecret})
 }
 
 // semResposta: o Chatwoot não respondeu (rede ou prazo).
@@ -354,7 +354,7 @@ func processarRodada(ctx context.Context, f fila, cli *Chatwoot, cfg Passada, ch
 
 func enviarAbandono(ctx, db context.Context, f fila, cli *Chatwoot, cfg Passada, l LinhaAbandono, d Decisao) (map[string]any, int) {
 	falha := func(err error) (map[string]any, int) {
-		como, detalhe := classificarErro(err), limpo(detalheDoErro(err), cli)
+		como, detalhe := classificarErro(err), detalheLimpo(err, cli)
 		acabou := ctx.Err() != nil && semResposta(err) // a queda foi do PRAZO, não da rede
 		switch {
 		case como == "parar":
@@ -611,7 +611,7 @@ func enviarDaFila(ctx, db context.Context, f fila, cli *Chatwoot, cfg Passada, t
 	comReserva bool, liberarReserva func()) (map[string]any, int) {
 	chegouNoEnvio := false // a partir do enviarTemplate uma falha pode ser ambígua
 	falha := func(err error) (map[string]any, int) {
-		como, detalhe := classificarErro(err), limpo(detalheDoErro(err), cli)
+		como, detalhe := classificarErro(err), detalheLimpo(err, cli)
 		var ec *ErroChatwoot
 		ehChatwoot := errors.As(err, &ec)
 		acabou := ctx.Err() != nil && semResposta(err) // a queda foi do PRAZO, não da rede

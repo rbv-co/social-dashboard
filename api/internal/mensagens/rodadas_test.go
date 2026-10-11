@@ -444,7 +444,7 @@ func TestPrazoAcabaNoMeio(t *testing.T) {
 
 func TestTarefaDasMensagens(t *testing.T) {
 	tf := (&Mensagens{}).Tarefa()
-	if tf.Nome != "enviar-mensagem-abandono" || tf.Agenda != "* * * * *" || tf.Limite <= time.Minute {
+	if tf.Nome != "enviar-mensagem-abandono" || tf.Agenda != "* * * * *" || tf.Limite != 4*time.Minute {
 		t.Fatalf("%+v", tf)
 	}
 }

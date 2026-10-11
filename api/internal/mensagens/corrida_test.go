@@ -209,7 +209,11 @@ func TestDoisWorkersNaoEnviamDuasVezes(t *testing.T) {
 }
 
 // falhaAoGravar: a mensagem sai, mas gravar 'enviada' no banco falha (o banco caiu logo depois do envio).
-type falhaAoGravar struct{ fila }
+// Anota se alguém tentou devolver o item à fila (nunca pode).
+type falhaAoGravar struct {
+	fila
+	devolucoes *[]string
+}
 
 func (falhaAoGravar) marcarMensagem(ctx context.Context, token, status, motivo string, conversa *int64) error {
 	if status == "enviada" {
@@ -218,48 +222,84 @@ func (falhaAoGravar) marcarMensagem(ctx context.Context, token, status, motivo s
 	return nil
 }
 
+func (falhaAoGravar) marcarDaFila(ctx context.Context, tipo, chave, status, motivo string, conversa *int64) error {
+	if status == "enviada" {
+		return fmt.Errorf("banco fora")
+	}
+	return nil
+}
+
+func (f falhaAoGravar) devolverMensagem(ctx context.Context, token string, contar bool) error {
+	*f.devolucoes = append(*f.devolucoes, "abandono/"+token)
+	return f.fila.devolverMensagem(ctx, token, contar)
+}
+
+func (f falhaAoGravar) devolverDaFila(ctx context.Context, tipo, chave string, contar bool) error {
+	*f.devolucoes = append(*f.devolucoes, tipo+"/"+chave)
+	return f.fila.devolverDaFila(ctx, tipo, chave, contar)
+}
+
 // A mensagem SAIU e o banco não registrou: a linha fica `enviando` (nunca volta à fila) e, passados 10 min,
-// vira falhou/travada_sem_confirmacao — visível, jamais uma segunda mensagem.
+// vira falhou/travada_sem_confirmacao — visível, jamais uma segunda mensagem. Vale para as QUATRO passadas.
 func TestEnviadaSemGravarNuncaReenvia(t *testing.T) {
-	p := bancoDeProducao(t)
-	ctx := context.Background()
-	if _, err := p.Exec(ctx, `insert into checkout_abandono (token, telefone, nome, url_de_recuperacao, status, iniciado_em, fila_envio_em)
-		values ('ab-1', '11987650001', 'MARIA', 'https://loja.com/checkouts/ab1?key=1', 'fila_envio', now() - interval '1 hour', now() - interval '2 minutes')`); err != nil {
-		t.Fatal(err)
+	casos := []struct {
+		tipo, chave, conversa string
+		semeia                string
+	}{
+		{"abandono", "ab-1", "1", `insert into checkout_abandono (token, telefone, nome, url_de_recuperacao, status, iniciado_em, fila_envio_em)
+			values ('ab-1', '11987650001', 'MARIA', 'https://loja.com/checkouts/ab1?key=1', 'fila_envio', now() - interval '1 hour', now() - interval '2 minutes')`},
+		{"inicio", "in-1", "21", `insert into mensagem_fila (tipo, chave, nome, telefone, url_de_recuperacao)
+			values ('inicio', 'in-1', 'BIA', '11987650021', 'https://loja.com/checkouts/in1?key=1')`},
+		{"pedido", "1001", "11", `select registrar_pedido_para_mensagem(1001, '#1001', 'ANA', '11987650011', now() - interval '30 seconds')`},
+		{"followup", "fu-1", "31", `insert into checkout_abandono (token, telefone, nome, url_de_recuperacao, status, iniciado_em, fila_envio_em, mensagem_status, mensagem_enviada_em, chatwoot_conversation_id)
+			values ('fu-1', '11987650031', 'CARLA', 'https://loja.com/checkouts/fu1?key=1', 'fila_envio', now() - interval '51 hours', now() - interval '51 hours', 'enviada', now() - interval '50 hours', 55)`},
 	}
-	cw, falso := chatwootPorTelefone(t, 0, nil)
-	m := novoRobo(p, cw)
-	desligar(&m.Cfg, "abandono")
-	m.fila = falhaAoGravar{filaSQL{p}}
-	if err := m.Rodar(ctx); err != nil {
-		t.Fatal(err)
-	}
-	status := func() (string, string) {
-		var st, motivo string
-		p.QueryRow(ctx, `select coalesce(mensagem_status, 'fila'), coalesce(mensagem_motivo, '') from checkout_abandono where token = 'ab-1'`).Scan(&st, &motivo)
-		return st, motivo
-	}
-	if st, _ := status(); st != "enviando" {
-		t.Fatalf("status = %s", st)
-	}
-	for i := 0; i < 2; i++ {
-		m2 := novoRobo(p, cw)
-		desligar(&m2.Cfg, "abandono")
-		if err := m2.Rodar(ctx); err != nil {
-			t.Fatal(err)
-		}
-	}
-	p.Exec(ctx, `update checkout_abandono set mensagem_reservada_em = now() - interval '11 minutes' where token = 'ab-1'`)
-	m3 := novoRobo(p, cw)
-	desligar(&m3.Cfg, "abandono")
-	if err := m3.Rodar(ctx); err != nil {
-		t.Fatal(err)
-	}
-	if st, motivo := status(); st != "falhou" || motivo != "travada_sem_confirmacao" {
-		t.Fatalf("status=%s motivo=%s", st, motivo)
-	}
-	if got := mensagensPorConversa(falso); fmt.Sprint(got) != "map[1:1]" {
-		t.Fatalf("mensagens = %v", got)
+	for _, c := range casos {
+		t.Run(c.tipo, func(t *testing.T) {
+			p := bancoDeProducao(t)
+			ctx := context.Background()
+			if _, err := p.Exec(ctx, c.semeia); err != nil {
+				t.Fatal(err)
+			}
+			cw, falso := chatwootPorTelefone(t, 0, nil)
+			rodada := func(f fila) {
+				m := novoRobo(p, cw)
+				desligar(&m.Cfg, c.tipo)
+				m.fila = f
+				if err := m.Rodar(ctx); err != nil {
+					t.Fatal(err)
+				}
+			}
+			chave := c.tipo + "/" + c.chave
+			estado := func() string { return estados(t, p)[chave] }
+			var devolucoes []string
+			rodada(falhaAoGravar{filaSQL{p}, &devolucoes})
+			if got := estado(); got != "enviando" {
+				t.Fatalf("estado = %s: depois do envio a linha não volta à fila", got)
+			}
+			if len(devolucoes) != 0 {
+				t.Fatalf("devolveu depois de a mensagem sair: %v", devolucoes)
+			}
+			rodada(filaSQL{p})
+			rodada(filaSQL{p})
+			if got := estado(); got != "enviando" {
+				t.Fatalf("estado = %s", got)
+			}
+			p.Exec(ctx, `update checkout_abandono set mensagem_reservada_em = now() - interval '11 minutes' where mensagem_status = 'enviando'`)
+			p.Exec(ctx, `update mensagem_fila set mensagem_reservada_em = now() - interval '11 minutes' where mensagem_status = 'enviando'`)
+			rodada(filaSQL{p})
+			if got := estado(); got != "falhou" {
+				t.Fatalf("estado = %s, esperava falhou/travada_sem_confirmacao", got)
+			}
+			var motivo string
+			p.QueryRow(ctx, `select coalesce((select mensagem_motivo from mensagem_fila where tipo || '/' || chave = $1::text), (select mensagem_motivo from checkout_abandono where 'abandono/' || token = $1::text))`, chave).Scan(&motivo)
+			if motivo != "travada_sem_confirmacao" {
+				t.Fatalf("motivo = %q", motivo)
+			}
+			if got := mensagensPorConversa(falso); fmt.Sprint(got) != "map["+c.conversa+":1]" {
+				t.Fatalf("mensagens = %v: uma só, nunca duas", got)
+			}
+		})
 	}
 }
 
