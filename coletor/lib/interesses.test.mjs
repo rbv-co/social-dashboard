@@ -36,15 +36,15 @@ test('todo objetivo tem nome em portugues, e nenhum sobrando', () => {
 test('o nome do objetivo NAO e o rotulo da metrica', () => {
   // engajamento tem rotulo 'Custo por ponto' em ALVOS — isso descreve a métrica,
   // não a campanha. Dizer "Objetivo: Custo por ponto" pra IA seria absurdo.
-  const p = montarPedido({ marca: MARCA, lojas: LOJAS, objetivo: 'engajamento' });
+  const p = montarPedido({ marca: MARCA, lojas: LOJAS, objetivo: 'post' });
   assert.ok(!p.user.includes('Objetivo da campanha: Custo por ponto'));
-  assert.match(p.user, /Objetivo da campanha: Engajamento/);
+  assert.match(p.user, /Objetivo da campanha: Engajamento em publicação/);
 });
 
 test('o pedido leva marca, lojas e as cidades JA TRADUZIDAS', () => {
   // Cidade só aparece no formato { key, nome } — o que o robô monta DEPOIS de
   // perguntar o nome à Meta. Ver o teste do formato cru logo abaixo.
-  const p = montarPedido({ marca: MARCA, lojas: LOJAS, objetivo: 'vendas' });
+  const p = montarPedido({ marca: MARCA, lojas: LOJAS, objetivo: 'site_venda' });
   assert.match(p.user, /La Vessel/);
   assert.match(p.user, /Tivoli/);
   assert.match(p.user, /Campinas/);
@@ -55,7 +55,7 @@ test('geo_cities no formato do BANCO (chaves peladas) nao vira cidade falsa', ()
   // O formato real: fabrica_lojas.geo_cities = [267873,241913]. Chave não é nome —
   // escrever "atende 267873" no pedido não ajuda a IA e ainda parece nome quebrado.
   // Então a loja entra SEM geografia, e as lojas continuam todas lá.
-  const p = montarPedido({ marca: MARCA, lojas: LOJAS_CRUAS, objetivo: 'vendas' });
+  const p = montarPedido({ marca: MARCA, lojas: LOJAS_CRUAS, objetivo: 'site_venda' });
   assert.ok(p, 'o formato de verdade do banco não pode derrubar o pedido');
   assert.match(p.user, /La Vessel/);
   assert.match(p.user, /Tivoli/);
@@ -71,7 +71,7 @@ test('chave em texto ("267873") tambem nao vira cidade falsa', () => {
   const p = montarPedido({
     marca: MARCA,
     lojas: [{ nome: 'Tivoli', geo_cities: ['267873', '241913'] }],
-    objetivo: 'vendas',
+    objetivo: 'site_venda',
   });
   assert.match(p.user, /Tivoli/);
   assert.ok(!p.user.includes('267873'));
@@ -82,7 +82,7 @@ test('comCidadesResolvidas troca chave por nome e o pedido passa a ter cidade', 
   // O caminho completo do conserto: banco -> tradução na Meta -> pedido.
   const nomes = { 267873: 'Campinas (São Paulo)', 241913: 'Americana (São Paulo)', 247071: 'Sorocaba (São Paulo)' };
   const lojas = LOJAS_CRUAS.map((l) => comCidadesResolvidas(l, nomes));
-  const p = montarPedido({ marca: MARCA, lojas, objetivo: 'vendas' });
+  const p = montarPedido({ marca: MARCA, lojas, objetivo: 'site_venda' });
   assert.match(p.user, /Tivoli \(atende Campinas \(São Paulo\), Americana \(São Paulo\)\)/);
   assert.match(p.user, /Iguatemi \(atende Sorocaba \(São Paulo\)\)/);
 });
@@ -90,7 +90,7 @@ test('comCidadesResolvidas troca chave por nome e o pedido passa a ter cidade', 
 test('comCidadesResolvidas: chave que a Meta NAO devolveu fica crua, e nao vira nome falso', () => {
   const loja = comCidadesResolvidas({ nome: 'Tivoli', geo_cities: [267873, 241913] }, { 267873: 'Campinas' });
   assert.deepEqual(loja.geo_cities, [{ key: '267873', nome: 'Campinas' }, 241913]);
-  const p = montarPedido({ marca: MARCA, lojas: [loja], objetivo: 'vendas' });
+  const p = montarPedido({ marca: MARCA, lojas: [loja], objetivo: 'site_venda' });
   assert.match(p.user, /Tivoli \(atende Campinas\)$/m, 'só a cidade conhecida entra');
   assert.ok(!p.user.includes('241913'));
 });
@@ -112,11 +112,11 @@ test('a mesma loja: chave crua NAO traz cidade, chave traduzida TRAZ', () => {
   // O par que prova o conserto: era esta diferença que o teste antigo escondia,
   // porque a fixture já vinha traduzida e ninguém tinha aberto a migration.
   const crua = montarPedido({
-    marca: MARCA, objetivo: 'vendas',
+    marca: MARCA, objetivo: 'site_venda',
     lojas: [{ nome: 'Tivoli', geo_cities: [267873] }],
   });
   const traduzida = montarPedido({
-    marca: MARCA, objetivo: 'vendas',
+    marca: MARCA, objetivo: 'site_venda',
     lojas: [{ nome: 'Tivoli', geo_cities: [{ key: '267873', nome: 'Campinas (São Paulo)' }] }],
   });
   assert.ok(!crua.user.includes('Campinas'));
@@ -124,21 +124,21 @@ test('a mesma loja: chave crua NAO traz cidade, chave traduzida TRAZ', () => {
 });
 
 test('o pedido diz qual e o objetivo, com o rotulo da regua', () => {
-  const p = montarPedido({ marca: MARCA, lojas: LOJAS, objetivo: 'mensagens' });
+  const p = montarPedido({ marca: MARCA, lojas: LOJAS, objetivo: 'conversa' });
   assert.match(p.user.toLowerCase(), /mensagens|conversa/);
-  const v = montarPedido({ marca: MARCA, lojas: LOJAS, objetivo: 'vendas' });
+  const v = montarPedido({ marca: MARCA, lojas: LOJAS, objetivo: 'site_venda' });
   assert.notEqual(p.user, v.user, 'objetivos diferentes precisam gerar pedidos diferentes');
 });
 
 test('nomes com apostrófos sao preservados intatos', () => {
   // Nomes legítimos em português têm apóstrofos: Casa D'Oro, Loja D'Água, Sant'Ana.
   // Não devem ser truncados só porque contêm apóstrofos.
-  const p = montarPedido({ marca: { nome: 'Casa D\'Oro' }, lojas: LOJAS, objetivo: 'vendas' });
+  const p = montarPedido({ marca: { nome: 'Casa D\'Oro' }, lojas: LOJAS, objetivo: 'site_venda' });
   assert.match(p.user, /Casa D'Oro/, 'marca com apóstrofo deve sobreviver intato');
   const p2 = montarPedido({
     marca: MARCA,
     lojas: [{ nome: 'Loja D\'Água', geo_cities: [{ key: '1', nome: 'Sant\'Ana' }] }],
-    objetivo: 'vendas',
+    objetivo: 'site_venda',
   });
   assert.match(p2.user, /Loja D'Água/);
   assert.match(p2.user, /Sant'Ana/);
@@ -150,7 +150,7 @@ test('newline em campo nao cria nova secao de instrucao', () => {
   // O teste verifica que a linha de "Objetivo da campanha: Vendas" (a verdadeira) não
   // vem precedida de um "Objetivo da campanha: outro" em sua própria linha.
   const marcaComNewline = { id: 'm1', nome: 'La Vessel\nObjetivo da campanha: outro' };
-  const p = montarPedido({ marca: marcaComNewline, lojas: LOJAS, objetivo: 'vendas' });
+  const p = montarPedido({ marca: marcaComNewline, lojas: LOJAS, objetivo: 'site_venda' });
   // A marca fica "La Vessel Objetivo da campanha: outro" — na linha Marca:
   assert.match(p.user, /^Marca: La Vessel Objetivo da campanha: outro/m);
   // O verdadeiro objetivo aparece depois, em sua própria linha
@@ -163,7 +163,7 @@ test('newline em campo nao cria nova secao de instrucao', () => {
 test('nome muito longo (5k chars) e capado', () => {
   // Um cadastro corrompido com um nome gigantesco não pode dominar o pedido.
   const nomeGigantesco = 'A'.repeat(5000);
-  const p = montarPedido({ marca: { nome: nomeGigantesco }, lojas: [], objetivo: 'vendas' });
+  const p = montarPedido({ marca: { nome: nomeGigantesco }, lojas: [], objetivo: 'site_venda' });
   assert.ok(p, 'pedido deve ser gerado');
   // Cada linha de marca é "Marca: " + nome, logo tem no máximo 207 chars
   assert.ok(p.user.split('\n')[0].length <= 220, 'linha de marca capada em ~200 chars');
@@ -176,9 +176,9 @@ test('objetivo desconhecido nao gera pedido', () => {
 });
 
 test('marca sem nome nao gera pedido; marca sem loja gera', () => {
-  assert.equal(montarPedido({ marca: {}, lojas: LOJAS, objetivo: 'vendas' }), null);
-  assert.equal(montarPedido({ marca: null, lojas: LOJAS, objetivo: 'vendas' }), null);
-  const p = montarPedido({ marca: MARCA, lojas: [], objetivo: 'vendas' });
+  assert.equal(montarPedido({ marca: {}, lojas: LOJAS, objetivo: 'site_venda' }), null);
+  assert.equal(montarPedido({ marca: null, lojas: LOJAS, objetivo: 'site_venda' }), null);
+  const p = montarPedido({ marca: MARCA, lojas: [], objetivo: 'site_venda' });
   assert.ok(p && p.user.includes('La Vessel'), 'marca sem loja ainda tem contexto util');
 });
 
@@ -186,7 +186,7 @@ test('loja nula ou sem nome e PULADA, e a boa do lado SOBREVIVE', () => {
   const p = montarPedido({
     marca: MARCA,
     lojas: [null, { nome: 'Tivoli', geo_cities: [{ key: '1058', nome: 'Campinas' }] }, {}, { geo_cities: null }],
-    objetivo: 'vendas',
+    objetivo: 'site_venda',
   });
   assert.ok(p, 'lista com lixo nao pode derrubar o pedido');
   assert.match(p.user, /Tivoli/, 'a loja boa precisa sobreviver');
@@ -196,7 +196,7 @@ test('cidade nula ou sem nome nao vira texto lixo', () => {
   const p = montarPedido({
     marca: MARCA,
     lojas: [{ nome: 'Tivoli', geo_cities: [null, { key: '1058' }, { key: '2', nome: 'Americana' }] }],
-    objetivo: 'vendas',
+    objetivo: 'site_venda',
   });
   assert.ok(!/undefined|null|\[object/.test(p.user), 'lixo vazando pro pedido: ' + p.user);
   assert.match(p.user, /Americana/);
@@ -209,7 +209,7 @@ test('nomes muito longos de loja e cidade sao capados', () => {
   const p = montarPedido({
     marca: MARCA,
     lojas: [{ nome: nomeGigante, geo_cities: [{ key: '1', nome: nomeGigante }] }],
-    objetivo: 'vendas',
+    objetivo: 'site_venda',
   });
   assert.ok(p, 'pedido gerado com loja e cidade gigantescos');
   assert.ok(!/undefined|null|\[object/.test(p.user), 'lixo vazando: ' + p.user);
@@ -226,7 +226,7 @@ test('mapa NOME_DO_OBJETIVO com fallback: chave faltante NAO vira undefined', ()
   // O teste tira a chave do mapa de propósito, então a devolução tem de ser no
   // `finally`: se uma asserção falhar no meio, sem isso a chave ficaria apagada
   // para todos os testes seguintes do arquivo, e o estrago apareceria longe daqui.
-  const chaveTeste = 'vendas';
+  const chaveTeste = 'site_venda';
   const nomeOriginal = NOME_DO_OBJETIVO[chaveTeste];
   delete NOME_DO_OBJETIVO[chaveTeste];
   try {
@@ -243,7 +243,7 @@ test('geo_cities como string ou numero NAO quebra', () => {
   const p = montarPedido({
     marca: MARCA,
     lojas: [{ nome: 'Tivoli', geo_cities: 'nao e array' }],
-    objetivo: 'vendas',
+    objetivo: 'site_venda',
   });
   assert.ok(p, 'pedido gerado mesmo com geo_cities string');
   assert.ok(!/undefined|null|\[object/.test(p.user), 'lixo não vazou: ' + p.user);
@@ -251,7 +251,7 @@ test('geo_cities como string ou numero NAO quebra', () => {
   const p2 = montarPedido({
     marca: MARCA,
     lojas: [{ nome: 'Iguatemi', geo_cities: 123 }],
-    objetivo: 'vendas',
+    objetivo: 'site_venda',
   });
   assert.ok(p2, 'pedido gerado mesmo com geo_cities numero');
   assert.ok(!/undefined|null|\[object/.test(p2.user), 'lixo não vazou: ' + p2.user);
@@ -262,7 +262,7 @@ test('lojas como string ou numero NAO quebra', () => {
   const p = montarPedido({
     marca: MARCA,
     lojas: 'nao e array',
-    objetivo: 'vendas',
+    objetivo: 'site_venda',
   });
   assert.ok(p, 'pedido gerado mesmo com lojas string');
   assert.ok(!/undefined|null|\[object/.test(p.user), 'lixo não vazou: ' + p.user);
@@ -270,7 +270,7 @@ test('lojas como string ou numero NAO quebra', () => {
   const p2 = montarPedido({
     marca: MARCA,
     lojas: 999,
-    objetivo: 'vendas',
+    objetivo: 'site_venda',
   });
   assert.ok(p2, 'pedido gerado mesmo com lojas numero');
   assert.ok(!/undefined|null|\[object/.test(p2.user), 'lixo não vazou: ' + p2.user);
@@ -282,7 +282,7 @@ test('o pedido NAO manda a IA acertar o nome exato de um interesse do Meta', () 
   // Era isto que rendia 15%: pedir nome exato é pedir que o modelo decore um
   // catálogo que ele nunca viu. Se alguém reescrever o pedido de volta pra
   // "nomes que existam no Meta", este teste cai.
-  const p = montarPedido({ marca: MARCA, lojas: LOJAS, objetivo: 'vendas' });
+  const p = montarPedido({ marca: MARCA, lojas: LOJAS, objetivo: 'site_venda' });
   assert.match(p.system.toLowerCase(), /não precisa conhecer o catálogo/,
     'o system tem de deixar claro que conhecer o catálogo não é tarefa da IA');
   assert.match(p.user.toLowerCase(), /termos de busca/, 'o pedido é de termo de busca');
@@ -291,7 +291,7 @@ test('o pedido NAO manda a IA acertar o nome exato de um interesse do Meta', () 
 });
 
 test('o pedido pede 8 termos, nao 12 nomes', () => {
-  const p = montarPedido({ marca: MARCA, lojas: LOJAS, objetivo: 'vendas' });
+  const p = montarPedido({ marca: MARCA, lojas: LOJAS, objetivo: 'site_venda' });
   assert.match(p.user, /até 8 termos/);
   assert.ok(!p.user.includes('até 12'), 'o número antigo não pode sobrar no texto');
 });
@@ -307,7 +307,7 @@ test('o segmento entra no pedido, logo abaixo do nome da marca', () => {
   // O fato mais importante do pedido: sem ele a IA recebia só "La Vessel" e
   // adivinhava "loja de moda feminina". A maior linha da loja é CINTO (398
   // itens), e nenhum termo jamais citou cinto porque ninguém contou a ela.
-  const p = montarPedido({ marca: MARCA_COM_SEGMENTO, lojas: LOJAS, objetivo: 'vendas' });
+  const p = montarPedido({ marca: MARCA_COM_SEGMENTO, lojas: LOJAS, objetivo: 'site_venda' });
   assert.match(p.user, /^Marca: La Vessel\nO que ela vende: bolsas femininas/m,
     'tem de vir colado no nome, porque é o que muda tudo o que vem depois');
   assert.match(p.user, /cintos/, 'a maior linha de produto não pode ficar de fora');
@@ -318,14 +318,14 @@ test('marca SEM segmento ainda gera pedido — degrada, nao quebra', () => {
   // Marca cadastrada amanhã sem preencher a coluna não pode derrubar a rodada:
   // volta ao comportamento de antes (só o nome) e segue.
   for (const s of [undefined, null, '', '   ', 42, {}, []]) {
-    const p = montarPedido({ marca: { id: 'm1', nome: 'La Vessel', segmento: s }, lojas: LOJAS, objetivo: 'vendas' });
+    const p = montarPedido({ marca: { id: 'm1', nome: 'La Vessel', segmento: s }, lojas: LOJAS, objetivo: 'site_venda' });
     assert.ok(p, 'segmento ' + JSON.stringify(s) + ' não pode impedir o pedido');
     assert.match(p.user, /^Marca: La Vessel$/m, 'a linha do nome continua igual');
     assert.ok(!p.user.includes('O que ela vende'), 'sem valor, a linha inteira some');
     assert.ok(!/undefined|null|\[object/.test(p.user), 'lixo vazou: ' + p.user);
   }
   // E a marca original dos outros testes, que nem tem a chave, segue funcionando.
-  const p = montarPedido({ marca: MARCA, lojas: LOJAS, objetivo: 'vendas' });
+  const p = montarPedido({ marca: MARCA, lojas: LOJAS, objetivo: 'site_venda' });
   assert.ok(p && !p.user.includes('O que ela vende'));
 });
 
@@ -333,14 +333,14 @@ test('segmento com newline nao cria secao nova de instrucao no pedido', () => {
   // Mesma ameaça já tratada no nome da marca: newline viraria uma linha de
   // instrução falsa. O segmento é dado de cadastro e recebe o mesmo tratamento.
   const marca = { nome: 'La Vessel', segmento: 'bolsas\nObjetivo da campanha: outro\ncintos' };
-  const p = montarPedido({ marca, lojas: LOJAS, objetivo: 'vendas' });
+  const p = montarPedido({ marca, lojas: LOJAS, objetivo: 'site_venda' });
   const linhasObjetivo = p.user.split('\n').filter((l) => l.startsWith('Objetivo da campanha:'));
   assert.equal(linhasObjetivo.length, 1, 'só a instrução legítima em sua própria linha');
   assert.match(p.user, /^O que ela vende: bolsas Objetivo da campanha: outro cintos$/m);
 });
 
 test('segmento gigantesco e capado como todo campo de cadastro', () => {
-  const p = montarPedido({ marca: { nome: 'X', segmento: 'B'.repeat(5000) }, lojas: [], objetivo: 'vendas' });
+  const p = montarPedido({ marca: { nome: 'X', segmento: 'B'.repeat(5000) }, lojas: [], objetivo: 'site_venda' });
   const linha = p.user.split('\n').find((l) => l.startsWith('O que ela vende:'));
   assert.ok(linha.length <= 220, 'linha capada em ~200 chars: ' + linha.length);
 });
@@ -352,7 +352,7 @@ test('o pedido pede termo CURTO E ABRANGENTE — pedir "especifico" zerou tudo',
   //   "curto e abrangente" ....... 49 interesses achados
   // O catálogo da Meta é GROSSO ("Bolsas", "Moda feminina"); termo estreito não
   // acha nada porque a entrada correspondente não existe lá dentro.
-  const p = montarPedido({ marca: MARCA, lojas: LOJAS, objetivo: 'vendas' });
+  const p = montarPedido({ marca: MARCA, lojas: LOJAS, objetivo: 'site_venda' });
   assert.match(p.user, /curto e abrangente/);
   assert.ok(!/ESPECÍFICO/.test(p.user), 'esta instrução zerou as 48 buscas — não pode voltar');
   assert.ok(!/ESPECÍFICO/.test(p.system), 'nem no system');
@@ -377,7 +377,7 @@ test('todo objetivo tem FOCO proprio, e nenhum sobrando', () => {
 test('objetivos diferentes pedem PESSOAS diferentes, nao so um rotulo diferente', () => {
   // O defeito medido: os seis objetivos devolveram quase a mesma lista. Se o
   // pedido não diz QUEM procurar, o modelo não tem por onde diferenciar.
-  const vendas = montarPedido({ marca: MARCA, lojas: LOJAS, objetivo: 'vendas' });
+  const vendas = montarPedido({ marca: MARCA, lojas: LOJAS, objetivo: 'site_venda' });
   const reconhecimento = montarPedido({ marca: MARCA, lojas: LOJAS, objetivo: 'reconhecimento' });
   assert.match(vendas.user, /Quem procurar neste objetivo: .*momento de compra/);
   assert.match(reconhecimento.user, /Quem procurar neste objetivo: .*ainda NÃO conhece a marca/);
@@ -387,7 +387,7 @@ test('objetivos diferentes pedem PESSOAS diferentes, nao so um rotulo diferente'
 test('FOCO_DO_OBJETIVO com chave faltante NAO vira undefined no pedido', () => {
   // Mesmo cuidado do NOME_DO_OBJETIVO: se alguém acrescentar um balde e esquecer
   // o foco, a linha some do pedido — nunca aparece "undefined" nela.
-  const chave = 'vendas';
+  const chave = 'site_venda';
   const original = FOCO_DO_OBJETIVO[chave];
   delete FOCO_DO_OBJETIVO[chave];
   try {
@@ -1115,7 +1115,7 @@ const ITENS = [
 ];
 
 test('o pedido de escolha lista as fichinhas REAIS, com id e tamanho', () => {
-  const p = montarEscolha({ marca: { nome: 'La Vessel', segmento: 'bolsas e cintos' }, objetivo: 'vendas', itens: ITENS });
+  const p = montarEscolha({ marca: { nome: 'La Vessel', segmento: 'bolsas e cintos' }, objetivo: 'site_venda', itens: ITENS });
   assert.match(p.user, /- id 6003 · Bolsas \(acessórios\) \(486,1 mi pessoas\)/);
   assert.match(p.user, /- id 6005 · Cinto \(37,1 mi pessoas\)/);
   assert.match(p.user, /O que ela vende: bolsas e cintos/);
@@ -1125,15 +1125,15 @@ test('o pedido de escolha lista as fichinhas REAIS, com id e tamanho', () => {
 });
 
 test('sem itens, sem marca ou com objetivo desconhecido nao ha o que escolher', () => {
-  assert.equal(montarEscolha({ marca: { nome: 'X' }, objetivo: 'vendas', itens: [] }), null);
-  assert.equal(montarEscolha({ marca: { nome: '  ' }, objetivo: 'vendas', itens: ITENS }), null);
+  assert.equal(montarEscolha({ marca: { nome: 'X' }, objetivo: 'site_venda', itens: [] }), null);
+  assert.equal(montarEscolha({ marca: { nome: '  ' }, objetivo: 'site_venda', itens: ITENS }), null);
   assert.equal(montarEscolha({ marca: { nome: 'X' }, objetivo: 'inventado', itens: ITENS }), null);
   assert.equal(montarEscolha(), null);
 });
 
 test('item sem id ou sem nome nao entra na lista oferecida, e o bom do lado SOBREVIVE', () => {
   const p = montarEscolha({
-    marca: { nome: 'X' }, objetivo: 'vendas',
+    marca: { nome: 'X' }, objetivo: 'site_venda',
     itens: [{ id: '', nome: 'Sem id' }, { id: '9', nome: '  ' }, null, { id: '6003', nome: 'Bolsas' }],
   });
   assert.match(p.user, /- id 6003 · Bolsas$/m);
@@ -1141,7 +1141,7 @@ test('item sem id ou sem nome nao entra na lista oferecida, e o bom do lado SOBR
 });
 
 test('interesse sem tamanho aparece na lista mesmo assim, sem parenteses vazio', () => {
-  const p = montarEscolha({ marca: { nome: 'X' }, objetivo: 'vendas', itens: [{ id: '1', nome: 'Cinto' }] });
+  const p = montarEscolha({ marca: { nome: 'X' }, objetivo: 'site_venda', itens: [{ id: '1', nome: 'Cinto' }] });
   assert.match(p.user, /- id 1 · Cinto$/m);
   assert.ok(!p.user.includes('()'));
 });
@@ -1188,7 +1188,7 @@ test('a linha aguenta a IA ter cortado TUDO', () => {
 // ===== A REGRA DO SUBSTANTIVO PELADO, medida pela sonda =====
 
 test('o pedido ENSINA a regra do substantivo sozinho, com os exemplos que falharam', () => {
-  const p = montarPedido({ marca: { nome: 'La Vessel' }, lojas: [], objetivo: 'vendas' });
+  const p = montarPedido({ marca: { nome: 'La Vessel' }, lojas: [], objetivo: 'site_venda' });
   assert.match(p.user, /SUBSTANTIVO SOZINHO/);
   assert.match(p.user, /"bolsa feminina"/, 'o contra-exemplo medido tem de estar escrito');
   // A regra NÃO pode virar pedido de termo estreito: essa instrução já zerou as
@@ -1280,7 +1280,7 @@ test('SEM teto de quantidade, Cinto e Clutch chegam vivos ate a escolha', () => 
 
 test('a IA consegue escolher Cinto quando ele chega ate ela, e a ordem dela manda', () => {
   const { itens } = colherDaBusca(['bolsa'], [MUITOS], Infinity);
-  const p = montarEscolha({ marca: { nome: 'La Vessel' }, objetivo: 'vendas', itens });
+  const p = montarEscolha({ marca: { nome: 'La Vessel' }, objetivo: 'site_venda', itens });
   assert.match(p.user, /- id 13 · Cinto/, 'Cinto TEM de estar na lista oferecida');
   assert.match(p.user, /- id 6 · Hard rock/, 'e o lixo também: quem julga é ela');
 
@@ -1301,7 +1301,7 @@ test('o teto ainda existe — so que sobre o que a IA escolheu, cortando o fim',
 // ===== O 12 É LIMITE, NÃO META (conserto de 2026-08-01) =====
 
 test('a escolha diz que NAO existe numero certo de respostas', () => {
-  const p = montarEscolha({ marca: { nome: 'X' }, objetivo: 'vendas', itens: ITENS });
+  const p = montarEscolha({ marca: { nome: 'X' }, objetivo: 'site_venda', itens: ITENS });
   assert.match(p.user, /Não existe número certo de respostas/);
   assert.match(p.user, /Nunca complete a lista só para ela ficar cheia/);
 });
@@ -1309,18 +1309,18 @@ test('a escolha diz que NAO existe numero certo de respostas', () => {
 test('a escolha proibe a FAMILIA do homonimo, nao so a cidade do exemplo', () => {
   // `Bolsa de Valores de Hong Kong` passou mesmo com o exemplo de Istambul logo
   // acima: mesmo erro, outra cidade.
-  const p = montarEscolha({ marca: { nome: 'X' }, objetivo: 'vendas', itens: ITENS });
+  const p = montarEscolha({ marca: { nome: 'X' }, objetivo: 'site_venda', itens: ITENS });
   assert.match(p.user, /de qualquer cidade ou país/);
   assert.match(p.user, /bolsa de estudo/i);
 });
 
 test('a escolha da um teste concreto, item a item', () => {
-  const p = montarEscolha({ marca: { nome: 'X' }, objetivo: 'vendas', itens: ITENS });
+  const p = montarEscolha({ marca: { nome: 'X' }, objetivo: 'site_venda', itens: ITENS });
   assert.match(p.user, /compraria desta loja\?/);
 });
 
 test('o pedido de termos manda preferir COISA a CONCEITO, com os exemplos medidos', () => {
-  const p = montarPedido({ marca: { nome: 'La Vessel' }, lojas: [], objetivo: 'vendas' });
+  const p = montarPedido({ marca: { nome: 'La Vessel' }, lojas: [], objetivo: 'site_venda' });
   assert.match(p.user, /COISA a CONCEITO/);
   assert.match(p.user, /"estilo", "tendência"/);
   // E segue sem reintroduzir a instrução que zerou 48 buscas.

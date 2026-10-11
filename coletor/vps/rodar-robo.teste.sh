@@ -10,6 +10,8 @@ export RAIZ="$T/raiz" LOGS="$T/logs" LOCKS="$T" ENV_ROBOS="$T/robos.env" NODE_BI
 printf '%s\n' '# comentário' 'SEGREDO=valor-que-nao-pode-ir-pro-log' 'ASPAS="com aspas"' "PERIGO=a&b;touch $T/executou \$(touch $T/executou2)" '' > "$T/robos.env"
 printf '#!/bin/sh\necho "$1" >> "%s/avisos"\n' "$T" > "$T/avisa.sh"; chmod +x "$T/avisa.sh"
 echo "ALERT_COMANDO=$T/avisa.sh" >> "$T/robos.env"
+printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> "%s/curl-chamadas"\n' "$T" > "$T/curl"; chmod +x "$T/curl"
+printf '%s\n' 'SUPABASE_URL=https://exemplo.supabase.co' 'SUPABASE_SERVICE_KEY=chave-que-nao-pode-ir-pro-log' >> "$T/robos.env"
 falhas=0
 confere() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FALHA $1 (esperado '$3', veio '$2')"; falhas=$((falhas + 1)); fi; }
 R="$AQUI/rodar-robo.sh"
@@ -30,6 +32,14 @@ touch -d '7 hours ago' "$T/logs/velha.falhou"; bash "$R" velha 1 -- sh -c 'exit 
 confere "repete o aviso depois de 6 h de falha" "$(grep -c 'Robô velha falhou' "$T/avisos")" 1
 bash "$R" ok 1 -- true
 confere "sucesso sem falha anterior não avisa" "$(grep -c 'Robô ok' "$T/avisos")" 0
+
+# painel da central: cada rodada vira uma linha em robos_execucoes (ok e falha), sem a chave na linha de comando do log
+: > "$T/curl-chamadas"
+bash "$R" painel-ok 1 -- true; bash "$R" painel-ruim 1 -- sh -c 'exit 2'
+grep -q '"robo":"painel-ok","status_code":200,"ok":true' "$T/curl-chamadas"; confere "sucesso é gravado no painel" $? 0
+grep -q '"robo":"painel-ruim","status_code":500,"ok":false,"resposta":"saiu com código 2' "$T/curl-chamadas"; confere "falha é gravada no painel" $? 0
+grep -q "rest/v1/robos_execucoes" "$T/curl-chamadas"; confere "grava na tabela robos_execucoes" $? 0
+bash "$R" 'nome ruim"' 1 -- true 2>/dev/null; confere "nome com aspas/espaço dá 64" $? 64
 
 (bash "$R" lento 1 -- sleep 3 &) ; sleep 1
 bash "$R" lento 1 -- true; confere "sobreposição é pulada com 0" $? 0

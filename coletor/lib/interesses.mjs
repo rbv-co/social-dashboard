@@ -21,12 +21,14 @@ export const OBJETIVOS = Object.keys(ALVOS);
 // Meta para a chave do balde. Este mapa preenche essa lacuna, e há teste
 // garantindo que ele cobre exatamente OBJETIVOS — nem a mais, nem a menos.
 export const NOME_DO_OBJETIVO = {
-  engajamento: 'Engajamento',
+  conversa: 'Conversas no WhatsApp ou Direct',
+  perfil: 'Visitas ao perfil do Instagram',
+  video: 'Visualizações de vídeo',
+  post: 'Engajamento em publicação',
+  site_venda: 'Vendas no site',
+  site_trafego: 'Tráfego para o site',
+  lead: 'Cadastros (leads)',
   reconhecimento: 'Reconhecimento de marca',
-  trafego: 'Tráfego para o site',
-  mensagens: 'Conversas no WhatsApp ou Direct',
-  leads: 'Cadastros (leads)',
-  vendas: 'Vendas',
 };
 
 // QUEM PROCURAR em cada objetivo — a linha que faz os seis objetivos pedirem
@@ -52,12 +54,14 @@ export const NOME_DO_OBJETIVO = {
 // for editar aqui: palavra que empurre pra estreitar o termo ("específico",
 // "nicho", "detalhado") reintroduz o defeito sem parecer que reintroduziu.
 export const FOCO_DO_OBJETIVO = {
-  engajamento: 'Gente que já gosta do assunto e comenta sobre ele: hobbies, comunidades e temas do dia a dia dela.',
+  conversa: 'Gente que tira dúvida antes de comprar: assuntos de quem quer atendimento, medida, encomenda, personalização.',
+  perfil: 'Gente que ainda NÃO segue a marca mas combina com ela: o estilo de vida e os gostos de quem teria a ver com ela.',
+  video: 'Gente que assiste e se inspira em conteúdo sobre o assunto: hobbies, comunidades e temas do dia a dia dela.',
+  post: 'Gente que já gosta do assunto e comenta sobre ele: hobbies, comunidades e temas do dia a dia dela.',
+  site_venda: 'Gente em momento de compra: marcas concorrentes e ocasiões que levam a comprar.',
+  site_trafego: 'Gente que pesquisa e compara antes de decidir: assuntos de quem está se informando sobre esse tipo de produto.',
+  lead: 'Gente disposta a deixar contato em troca de algo: assuntos de quem busca novidade, lista de espera, condição especial.',
   reconhecimento: 'Gente que ainda NÃO conhece a marca: o estilo de vida e os gostos de quem teria a ver com ela.',
-  trafego: 'Gente que pesquisa e compara antes de decidir: assuntos de quem está se informando sobre esse tipo de produto.',
-  mensagens: 'Gente que tira dúvida antes de comprar: assuntos de quem quer atendimento, medida, encomenda, personalização.',
-  leads: 'Gente disposta a deixar contato em troca de algo: assuntos de quem busca novidade, lista de espera, condição especial.',
-  vendas: 'Gente em momento de compra: marcas concorrentes e ocasiões que levam a comprar.',
 };
 
 const lista = (v) => (Array.isArray(v) ? v : []);
