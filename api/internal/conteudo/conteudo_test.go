@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -304,6 +305,86 @@ func TestHoraHFalhaParcialEPecaSemNenhumAparelhoFicamVisiveis(t *testing.T) {
 		if !avisado {
 			t.Fatalf("peça %s voltou à fila", id)
 		}
+	}
+}
+
+// Push lento (o prazo da peça vence com o envio no ar): a trilha tem de sair MESMO ASSIM, com contexto próprio,
+// e se o prazo vence entre dois aparelhos (a reserva do 2º falha) a trilha também diz que o envio foi interrompido.
+func TestHoraHPushLentoNaoDeixaATrilhaVazia(t *testing.T) {
+	antes := prazoPorPeca
+	prazoPorPeca = 150 * time.Millisecond
+	t.Cleanup(func() { prazoPorPeca = antes })
+	p := bancoConteudo(t)
+	ctx := context.Background()
+	p.Exec(ctx, `insert into profiles (id, email, role, features) values ('`+uConteudo+`', 'c@x', 'viewer', '{conteudo}'), ('`+uOutro+`', 'o@x', 'viewer', '{conteudo}')`)
+	pushteste.Inscrever(t, p, "lento", uConteudo)
+	pushteste.Inscrever(t, p, "a/lento", uOutro)
+	pushteste.Inscrever(t, p, "b-normal", uOutro)
+	p.Exec(ctx, `insert into push_preferencias (user_id, tipo, ativo) values ('`+uConteudo+`', 'conteudo', true), ('`+uOutro+`', 'conteudo', true)`)
+	um := peca(t, p, "Um aparelho lento", "feed", "agendada", time.Now().Add(-time.Minute), uConteudo)
+	dois := peca(t, p, "Prazo vence entre aparelhos", "feed", "agendada", time.Now().Add(-time.Minute), uOutro)
+	srv := pushteste.Novo(t)
+	err := (&HoraH{Pool: p, VAPID: pushteste.VAPID(t), HTTP: srv.HTTP}).Rodar(ctx)
+	if err == nil {
+		t.Fatal("push que não chegou é erro da tarefa")
+	}
+	if ev := eventos(t, p, um); len(ev) != 1 || !strings.Contains(ev[0], "nenhum aparelho recebeu") {
+		t.Fatalf("a trilha da peça com o push lento ficou vazia ou errada: %v", ev)
+	}
+	if ev := eventos(t, p, dois); len(ev) != 1 || !strings.Contains(ev[0], "interrompido") {
+		t.Fatalf("o prazo venceu entre os aparelhos: a trilha tem de dizer: %v", ev)
+	}
+}
+
+// Aparelho morto (410) podado não é "falha" na trilha: aparece como "removido(s)", separado das falhas.
+func TestHoraHPodadoNaoContaComoFalhaNaTrilha(t *testing.T) {
+	p := bancoConteudo(t)
+	ctx := context.Background()
+	p.Exec(ctx, `insert into profiles (id, email, role, features) values ('`+uConteudo+`', 'c@x', 'viewer', '{conteudo}'), ('`+uOutro+`', 'o@x', 'viewer', '{conteudo}')`)
+	pushteste.Inscrever(t, p, "morta", uConteudo)
+	pushteste.Inscrever(t, p, "morta-2/morta", uOutro)
+	pushteste.Inscrever(t, p, "ruim/e500", uOutro)
+	p.Exec(ctx, `insert into push_preferencias (user_id, tipo, ativo) values ('`+uConteudo+`', 'conteudo', true), ('`+uOutro+`', 'conteudo', true)`)
+	soMorto := peca(t, p, "So morto", "feed", "agendada", time.Now().Add(-time.Minute), uConteudo)
+	misto := peca(t, p, "Morto e ruim", "feed", "agendada", time.Now().Add(-time.Minute), uOutro)
+	srv := pushteste.Novo(t)
+	err := (&HoraH{Pool: p, VAPID: pushteste.VAPID(t), HTTP: srv.HTTP}).Rodar(ctx)
+	if err == nil || !strings.Contains(err.Error(), "1 falha(s)") { // só o e500 é falha da tarefa
+		t.Fatalf("err = %v", err)
+	}
+	if ev := eventos(t, p, soMorto); len(ev) != 1 || strings.Contains(ev[0], "falha(s)") || !strings.Contains(ev[0], "1 removido(s)") {
+		t.Fatalf("morto sozinho: %v", ev)
+	}
+	if ev := eventos(t, p, misto); len(ev) != 1 || !strings.Contains(ev[0], "(1 falha(s), 1 removido(s))") {
+		t.Fatalf("morto e ruim: %v", ev)
+	}
+}
+
+// A MESMA peça reivindicada, entregue de novo na mesma execução (ou numa execução repetida do mesmo claim), mantém a
+// chave do livro: ela vem do avisado_em da reivindicação, não do relógio. Aparelho já servido vem como repetido.
+func TestHoraHMesmaPecaReivindicadaTemSempreAMesmaChaveDoLivro(t *testing.T) {
+	p := bancoConteudo(t)
+	ctx := context.Background()
+	p.Exec(ctx, `insert into profiles (id, email, role, features) values ('`+uConteudo+`', 'c@x', 'viewer', '{conteudo}')`)
+	pushteste.Inscrever(t, p, "conteudo", uConteudo)
+	p.Exec(ctx, `insert into push_preferencias (user_id, tipo, ativo) values ('`+uConteudo+`', 'conteudo', true)`)
+	srv := pushteste.Novo(t)
+	h := &HoraH{Pool: p, VAPID: pushteste.VAPID(t), HTTP: srv.HTTP}
+	publicar := time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC)
+	reivindicada := time.Date(2026, 10, 9, 12, 0, 5, 123456000, time.UTC)
+	pc := pecaDaHora{id: "aaaaaaaa-0000-0000-0000-0000000000f1", titulo: "Bolsa", formato: "feed", publicarEm: &publicar, avisadoEm: &reivindicada}
+	p.Exec(ctx, `insert into conteudo_pecas (id, account_id, titulo, formato, status, publicar_em) values ($1::uuid, $2::uuid, 'Bolsa', 'feed', 'agendada', $3::timestamptz)`, pc.id, contaVessel, publicar)
+	if _, err := h.avisar(ctx, pc, publicar.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	r, err := h.avisar(ctx, pc, publicar.Add(2*time.Minute)) // outro "agora": a chave não pode mudar
+	if err != nil || r.Repetidos != 1 || r.Enviados != 0 || srv.Total() != 1 {
+		t.Fatalf("mesmo claim, mesma chave: r=%+v err=%v pushes=%d", r, err, srv.Total())
+	}
+	var chaves []string
+	p.QueryRow(ctx, `select array_agg(chave) from envios_feitos`).Scan(&chaves)
+	if len(chaves) != 1 || !strings.HasPrefix(chaves[0], "conteudo-hora-h:"+pc.id+":"+strconv.FormatInt(reivindicada.UnixMicro(), 10)+":") {
+		t.Fatalf("a chave leva o avisado_em do claim: %v", chaves)
 	}
 }
 

@@ -81,6 +81,7 @@ func TestReaisExtremosComoOIntlDoJS(t *testing.T) {
 		reais, simples string
 	}{
 		{math.NaN(), "R$\U000000a0NaN", "R$ NaN"},
+		{math.Copysign(math.NaN(), -1), "R$\U000000a0NaN", "R$ NaN"}, // NaN com o bit de sinal ligado: NaN não tem sinal
 		{math.Inf(1), "R$\U000000a0∞", "R$ ∞"},
 		{math.Inf(-1), "-R$\U000000a0∞", "R$ -∞"},
 		{math.Copysign(0, -1), "-R$\U000000a00,00", "R$ -0,00"},

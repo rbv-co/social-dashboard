@@ -140,9 +140,10 @@ func (pf *PushFrota) Rodar(ctx context.Context) error {
 		total.Falhas += r.Falhas
 		// Cada carro avisa uma pessoa diferente: um carro cujos aparelhos todos falharam (nenhum aviso entregue) é
 		// erro da tarefa, ainda que os outros tenham saído. Vários aparelhos da MESMA pessoa com um ruim: tolerado
-		// (ela recebeu). Aparelho morto podado (410) e reenvio repetido não são falha. A tarefa avisa todos os
-		// carros antes de falhar.
-		if r.Falhas > 0 && r.Enviados == 0 {
+		// (ela recebeu). Aparelho morto podado (410) e reenvio repetido não são falha; um aparelho já avisado numa
+		// rodada anterior do dia (Repetido) conta como entregue, senão a reexecução manual ficaria vermelha. A tarefa
+		// avisa todos os carros antes de falhar.
+		if r.Falhas > 0 && r.Enviados+r.Repetidos == 0 {
 			semEntrega = append(semEntrega, v.nome)
 		}
 	}

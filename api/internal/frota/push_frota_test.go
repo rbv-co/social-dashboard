@@ -269,6 +269,24 @@ func TestPushFrotaAparelhoRuimEntreVariosOuMortoNaoDerrubaATarefa(t *testing.T) 
 	}
 }
 
+// Reexecução manual no mesmo dia: o aparelho A já recebeu (Repetido) e o B continua falhando. A pessoa foi avisada
+// no A: a tarefa não pode ficar vermelha (Enviados == 0 mas Repetidos > 0).
+func TestPushFrotaReexecucaoComUmAparelhoJaEnviadoEOutroFalhandoNaoFicaVermelha(t *testing.T) {
+	pf, srv, p := ambienteFrota(t)
+	pushteste.Inscrever(t, p, "barbara", uBarbara)
+	pushteste.Inscrever(t, p, "barbara-2/e500", uBarbara)
+	ligarAviso(t, p, "frota", uBarbara)
+	if err := pf.Rodar(context.Background()); err != nil {
+		t.Fatalf("1ª rodada (A enviou, B falhou): %v", err)
+	}
+	if err := pf.Rodar(context.Background()); err != nil {
+		t.Fatalf("2ª rodada (A repetido, B falhou de novo) não pode ficar vermelha: %v", err)
+	}
+	if srv.Recebidos("barbara") != 1 || srv.Recebidos("barbara-2/e500") != 2 {
+		t.Fatalf("A recebeu 1 vez (o livro), B foi tentado de novo: %d e %d", srv.Recebidos("barbara"), srv.Recebidos("barbara-2/e500"))
+	}
+}
+
 // Sem nenhum item na lista não há checklist montado: nada sai (a edge devolvia "sem lista"), com os carros
 // devendo e as pessoas ligadas.
 func TestPushFrotaSemNenhumItemNaoEnvia(t *testing.T) {
@@ -342,7 +360,7 @@ func TestPushFrotaUltimaFichaIndependeDoDateStyle(t *testing.T) {
 	pf.Pool = dmy
 	ua := pushteste.Inscrever(t, p, "barbara", uBarbara)
 	ligarAviso(t, p, "frota", uBarbara)
-	p.Exec(ctx, `insert into frota_checklist (veiculo_id, feita_em, cadencias) values ($1::uuid, '2026-10-09', '{diario,semanal}')`, vVolvo)
+	p.Exec(ctx, `insert into frota_checklist (veiculo_id, feita_em, cadencias) values ($1::uuid, '2026-10-09', '{diario,semanal}'), ($1::uuid, '2026-10-08', '{diario,mensal}')`, vVolvo)
 	pf.Agora = func() time.Time { return time.Date(2026, 10, 13, 10, 30, 0, 0, time.UTC) } // terça: nem dia da semanal nem do mensal
 	if err := pf.Rodar(ctx); err != nil {
 		t.Fatal(err)
@@ -350,6 +368,6 @@ func TestPushFrotaUltimaFichaIndependeDoDateStyle(t *testing.T) {
 	var b map[string]string
 	json.Unmarshal(pushteste.Decifrar(t, srv.Ultimo(t, "barbara"), ua), &b)
 	if b["corpo"] != "1 item e o hodômetro." {
-		t.Fatalf("a semanal de 4 dias atrás não está atrasada: %v", b)
+		t.Fatalf("a semanal de 4 dias atrás e a mensal de 5 não estão atrasadas (semanal E mensal leem a data como texto ISO): %v", b)
 	}
 }
