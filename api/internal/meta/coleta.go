@@ -623,10 +623,14 @@ func avisarWebhook(ctx context.Context, cli *http.Client, alvo, msg string) erro
 		return errors.New("ALERT_WEBHOOK_URL inválida")
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if cli == nil {
-		cli = &http.Client{Timeout: 15 * time.Second}
+	c := &http.Client{Timeout: 15 * time.Second}
+	if cli != nil {
+		cp := *cli
+		c = &cp
 	}
-	r, err := cli.Do(req)
+	// Nunca segue redirect (como Z-API, RD e Chatwoot): o alerta e a URL, que é segredo, iriam a outro endereço.
+	c.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	r, err := c.Do(req)
 	if err != nil {
 		var ue *url.Error
 		if errors.As(err, &ue) {

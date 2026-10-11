@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -237,5 +238,26 @@ func TestAvisarWebhookErrosSemAURL(t *testing.T) {
 	}
 	if !strings.Contains(log.String(), "webhook de alerta respondeu 500") || strings.Contains(log.String(), "hook-secreto") {
 		t.Fatalf("log=%s", log)
+	}
+}
+
+// O webhook de alerta nunca segue redirect: o corpo (o texto do alerta) iria a outro endereço, e a URL do
+// webhook é segredo. 3xx é recusa; o segundo servidor não recebe nada, com cliente próprio ou o padrão.
+func TestAvisarWebhookNaoSegueRedirect(t *testing.T) {
+	var chegou atomic.Int32
+	destino := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { chegou.Add(1) }))
+	t.Cleanup(destino.Close)
+	origem := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, destino.URL+"/outro", http.StatusTemporaryRedirect) // 307 manteria o POST e o corpo
+	}))
+	t.Cleanup(origem.Close)
+	for nome, cli := range map[string]*http.Client{"cliente próprio": {Timeout: 5 * time.Second}, "padrão": nil} {
+		err := avisarWebhook(context.Background(), cli, origem.URL+"/hook-secreto-789", "alerta")
+		if err == nil || err.Error() != "webhook de alerta respondeu 307" || strings.Contains(err.Error(), "secreto") {
+			t.Errorf("%s: err=%v", nome, err)
+		}
+	}
+	if n := chegou.Load(); n != 0 {
+		t.Fatalf("o destino do redirect recebeu %d pedido(s)", n)
 	}
 }
