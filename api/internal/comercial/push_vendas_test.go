@@ -6,7 +6,9 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"io"
 	"net"
 	"net/http"
@@ -211,5 +213,87 @@ func TestPushVendasAgendas(t *testing.T) {
 	ts := (&PushVendas{}).Tarefas()
 	if len(ts) != 2 || ts[0].Nome != "enviar-push-vendas-07h" || ts[0].Agenda != "0 10 * * *" || ts[1].Nome != "enviar-push-vendas-22h" || ts[1].Agenda != "0 1 * * *" {
 		t.Fatalf("%+v", ts)
+	}
+}
+
+// Rodar de novo nunca reenvia: a mesma execução repetida (manual depois do cron, nova tentativa depois
+// de queda, segunda instância) não manda o push outra vez; a chave leva a tarefa (modo) e o dia de referência.
+func TestPushVendasRodarDeNovoNaoReenvia(t *testing.T) {
+	pv, _, pf, p := ambientePush(t, pedidosPorDia)
+	inscrever(t, p, "quer", "cccccccc-0000-0000-0000-000000000001")
+	ctx := context.Background()
+	if err := pv.Rodar(ctx, "hoje"); err != nil {
+		t.Fatal(err)
+	}
+	if err := pv.Rodar(ctx, "hoje"); err != nil { // reexecução toda "repetida": não é falha
+		t.Fatalf("repetição não pode ficar vermelha: %v", err)
+	}
+	if len(pf.recebidos) != 1 {
+		t.Fatalf("a segunda execução do dia reenviou: %v", pf.recebidos)
+	}
+}
+
+// O 22h do dia D e o 07h de D+1 têm o mesmo dia de referência (D): a chave do livro leva o modo, senão o
+// push das 07h nunca sairia.
+func TestPushVendas22hDoDiaDE07hDoDiaSeguinteSaemOsDois(t *testing.T) {
+	pv, _, pf, p := ambientePush(t, pedidosPorDia)
+	inscrever(t, p, "quer", "cccccccc-0000-0000-0000-000000000001")
+	ctx := context.Background()
+	if err := pv.Rodar(ctx, "hoje"); err != nil { // 22h de 09/10 (ref 09/10)
+		t.Fatal(err)
+	}
+	pv.Agora = func() time.Time { return time.Date(2026, 10, 10, 10, 0, 0, 0, time.UTC) } // 07h de 10/10 (ref 09/10)
+	if err := pv.Rodar(ctx, "ontem"); err != nil {
+		t.Fatal(err)
+	}
+	if len(pf.recebidos) != 2 {
+		t.Fatalf("22h e 07h deviam sair, saíram %d", len(pf.recebidos))
+	}
+	var chaves []string
+	linhas, _ := p.Query(ctx, `select chave from envios_feitos order by chave`)
+	for linhas.Next() {
+		var c string
+		linhas.Scan(&c)
+		chaves = append(chaves, c)
+	}
+	if len(chaves) != 2 || !strings.HasPrefix(chaves[0], "enviar-push-vendas-07h:2026-10-09:") || !strings.HasPrefix(chaves[1], "enviar-push-vendas-22h:2026-10-09:") {
+		t.Fatalf("chaves do livro: %v", chaves)
+	}
+	// e a repetição de cada um continua sem enviar
+	if err := pv.Rodar(ctx, "ontem"); err != nil || len(pf.recebidos) != 2 {
+		t.Fatalf("err=%v recebidos=%d", err, len(pf.recebidos))
+	}
+}
+
+// Queda no meio do laço: quem já foi reservado (e o envio pode ter saído) não recebe de novo; quem falhou
+// (serviço de push recusou) tem a reserva desfeita e a próxima execução tenta outra vez.
+func TestPushVendasReexecucaoDepoisDeFalhaNoMeioDoLaco(t *testing.T) {
+	pv, _, pf, p := ambientePush(t, pedidosPorDia)
+	inscrever(t, p, "a/boa", "cccccccc-0000-0000-0000-000000000001")
+	inscrever(t, p, "b/e500", "cccccccc-0000-0000-0000-000000000002")
+	inscrever(t, p, "c/ja-reservada", "cccccccc-0000-0000-0000-000000000003")
+	ctx := context.Background()
+	h := sha256.Sum256([]byte("https://example.com/push/c/ja-reservada")) // reservada por uma execução que caiu
+	if _, err := p.Exec(ctx, `insert into envios_feitos (chave) values ($1)`, "enviar-push-vendas-22h:2026-10-09:"+hex.EncodeToString(h[:8])); err != nil {
+		t.Fatal(err)
+	}
+	if err := pv.Rodar(ctx, "hoje"); err != nil { // 1 aceito: o aparelho que recusou não derruba a tarefa
+		t.Fatal(err)
+	}
+	if got := strings.Join(pf.recebidos, ","); got != "/push/a/boa,/push/b/e500" {
+		t.Fatalf("primeira execução: %s", got)
+	}
+	// a/boa repetida (conta como entregue: a reexecução manual não fica vermelha), b/e500 tenta de novo
+	// (reserva desfeita), c/ja-reservada nunca
+	if err := pv.Rodar(ctx, "hoje"); err != nil {
+		t.Fatalf("há quem já recebeu: %v", err)
+	}
+	if got := strings.Join(pf.recebidos, ","); got != "/push/a/boa,/push/b/e500,/push/b/e500" {
+		t.Fatalf("segunda execução: %s", got)
+	}
+	// sem ninguém entregue (só o aparelho que recusa), é erro da tarefa
+	p.Exec(ctx, `delete from push_subs where endpoint not like '%/b/e500'`)
+	if err := pv.Rodar(ctx, "hoje"); err == nil || !strings.Contains(err.Error(), "nenhum_push_entregue") {
+		t.Fatalf("só falha = erro: %v", err)
 	}
 }

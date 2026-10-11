@@ -214,39 +214,25 @@ func (pv *PushVendas) Rodar(ctx context.Context, modo string) error {
 
 	// Quem quer 'vendas': inscrição COM dono; sem preferência gravada vale o padrão do tipo,
 	// que para 'vendas' é LIGADO (_shared/notificacoes.js).
-	linhas, err = pv.Pool.Query(ctx, `select s.endpoint, s.p256dh, s.auth from push_subs s
-		where s.user_id is not null
-		  and coalesce((select p.ativo from push_preferencias p where p.user_id = s.user_id and p.tipo = 'vendas'), true)`)
+	alvos, err := webpush.Destinatarios(ctx, pv.Pool, "vendas", "")
 	if err != nil {
 		return err
 	}
-	alvos, err := pgx.CollectRows(linhas, func(r pgx.CollectableRow) (s webpush.Inscricao, err error) {
-		return s, r.Scan(&s.Endpoint, &s.P256dh, &s.Auth)
-	})
+	// Rodar de novo nunca reenvia: o livro leva a TAREFA e o dia de referência. O 22h de D e o 07h de D+1
+	// têm o mesmo diaRef (D), por isso o modo entra na chave: são dois pushes diferentes, um por tarefa.
+	tarefa := "enviar-push-vendas-22h"
+	if modo == "ontem" {
+		tarefa = "enviar-push-vendas-07h"
+	}
+	r, err := webpush.Entregar(ctx, pv.Pool, pv.HTTP, alvos, payload, pv.VAPID, tarefa+":"+diaRef)
 	if err != nil {
 		return err
 	}
-	enviados, podados := 0, 0
-	for _, s := range alvos {
-		st, err := webpush.Enviar(ctx, pv.HTTP, s, payload, pv.VAPID)
-		switch {
-		case err != nil:
-			slog.Warn("push de vendas: inscrição pulada", "erro", err) // o erro não traz o endpoint (é um token) nem chaves
-		case st == http.StatusGone || st == http.StatusNotFound:
-			if _, err := pv.Pool.Exec(ctx, `delete from push_subs where endpoint = $1`, s.Endpoint); err == nil {
-				podados++
-			}
-		case st >= 200 && st < 300:
-			enviados++
-		default:
-			slog.Warn("push de vendas: serviço de push recusou", "status", st) // só o código: o endpoint é um token
-		}
-	}
-	slog.Info("push de vendas", "modo", modo, "dia", diaRef, "pedidos", len(todos), "enviados", enviados, "podados", podados)
-	// Assinante morto (404/410) apagado é manutenção normal, não falha; falha é ter destinatário
-	// que nem aceitou nem foi podado e nenhum push aceito.
-	if enviados == 0 && len(alvos)-podados > 0 {
-		return fmt.Errorf("nenhum_push_entregue: %d inscrições, 0 aceitas (%d podadas)", len(alvos), podados)
+	slog.Info("push de vendas", "modo", modo, "dia", diaRef, "pedidos", len(todos), "enviados", r.Enviados, "podados", r.Podados, "repetidos", r.Repetidos, "falhas", r.Falhas)
+	// Assinante morto (404/410) podado é manutenção normal e destino já servido hoje (Repetido) conta como
+	// entregue; falha é ter destino que recusou/falhou e nenhum push aceito nem já entregue (mesma regra do frota).
+	if r.Falhas > 0 && r.Enviados+r.Repetidos == 0 {
+		return fmt.Errorf("nenhum_push_entregue: %d inscrições, 0 aceitas (%d falharam, %d podadas)", len(alvos), r.Falhas, r.Podados)
 	}
 	return nil
 }
