@@ -29,6 +29,7 @@ import {
   RAIZ_RBV, conexaoZoho, tokenZoho, pastasDe, acharOuCriarPasta,
   baixarArquivo, subirArquivo, mandarParaLixeira,
 } from './lib/zoho-da-central.mjs';
+import { abrirFontePg } from './lib/fonte-pg.mjs';
 
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://kounqtdoioootxqegkij.supabase.co';
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
@@ -54,6 +55,9 @@ const limpar = process.argv.includes('--limpar');
 const SEM_COPIA = new Set([
   'robos_execucoes', 'robos_travas', 'coletor_log', 'gestor_log',
   'data_integrity_checks', 'ia_execucoes', 'audit_log', 'schema_migrations',
+  // Da API Go (saída do Supabase): sessões guardam hash de token, as marcas de webhook e o livro de
+  // envios são estado de execução, e goose_db_version se refaz com `api migrar`.
+  'sessoes', 'goose_db_version', 'webhooks_recebidos', 'envios_feitos',
 ]);
 
 /** Histórico de métrica: grande e quase todo recoletável. Só na cópia semanal. */
@@ -99,6 +103,7 @@ const DE_CLIENTE = new Set([
  * atrás não serviria nem se estivesse lá.
  */
 const SEM_O_VALOR = {
+  usuarios: ['senha_hash'],          // a senha (bcrypt) que a API Go copiou do Supabase Auth
   segredos_de_cron: ['segredo'],
   bling_tokens: ['access_token', 'refresh_token', 'client_secret'],
   acessos_conexoes: ['client_secret', 'refresh_token', 'access_token'],
@@ -111,7 +116,12 @@ const MENSAIS_QUE_FICAM = 12;      // meses
 const TETO_DE_APAGAR = 5;          // por rodada, para um defeito não varrer tudo
 const QUEDA_QUE_ASSUSTA = 0.10;    // 10% de linhas a menos numa tabela
 
-// ── Supabase ─────────────────────────────────────────────────────────────────
+// ── a fonte: o Supabase (até o corte) ou o Postgres próprio ──────────────────
+//
+// ⚠️ DEPOIS DO CORTE (saída do Supabase) não existe PostgREST: com COPIA_DATABASE_URL a cópia lê o
+// Postgres da API pelo papel só leitura `copia` (ops/vps/api-db/papel-copia.sql). O resto do robô
+// não muda: mesmas regras de credencial, de dado de cliente e de encolhimento.
+let fontePg = null;
 
 const cabSb = {
   apikey: SERVICE_KEY,
@@ -126,6 +136,7 @@ const cabSb = {
  * a tabela esquecida só aparece no dia em que ela faz falta.
  */
 async function tabelasDoBanco() {
+  if (fontePg) return fontePg.tabelas();
   const r = await fetch(REST + '/', { headers: cabSb });
   if (!r.ok) throw new Error(`não consegui listar as tabelas (HTTP ${r.status})`);
   const spec = await r.json();
@@ -134,6 +145,7 @@ async function tabelasDoBanco() {
 
 /** Uma tabela inteira, de mil em mil linhas. */
 async function lerTabela(nome) {
+  if (fontePg) return fontePg.ler(nome);
   const linhas = [];
   const passo = 1000;
   for (let inicio = 0; ; inicio += passo) {
@@ -151,6 +163,7 @@ async function lerTabela(nome) {
 /** Conta ao painel de saúde que esta rodada aconteceu, e como foi. */
 async function registrar(deuCerto, recado) {
   try {
+    if (fontePg) return await fontePg.registrar(deuCerto, recado);
     await fetch(`${REST}/robos_execucoes`, {
       method: 'POST',
       headers: { ...cabSb, Prefer: 'return=minimal' },
@@ -188,10 +201,11 @@ const p = (n) => String(n).padStart(2, '0');
 const DIA = `${hoje.getFullYear()}-${p(hoje.getMonth() + 1)}-${p(hoje.getDate())}`;
 const MES = `${hoje.getFullYear()}-${p(hoje.getMonth() + 1)}`;
 
-if (!SERVICE_KEY) {
-  console.error('⛔ Falta SUPABASE_SERVICE_KEY.');
+if (!SERVICE_KEY && !process.env.COPIA_DATABASE_URL) {
+  console.error('⛔ Falta SUPABASE_SERVICE_KEY (ou, depois do corte, COPIA_DATABASE_URL).');
   process.exit(1);
 }
+if (process.env.COPIA_DATABASE_URL) fontePg = await abrirFontePg(process.env.COPIA_DATABASE_URL);
 
 console.log(`\nCÓPIA DE ${DIA}${semanal ? ' (semanal: com o histórico de métrica)' : ''}` +
             `${ensaio ? ' — ENSAIO, nada será enviado' : ''}\n`);
@@ -260,7 +274,7 @@ if (ensaio) {
   process.exit(0);
 }
 
-const conexao = await conexaoZoho(REST, cabSb);
+const conexao = fontePg ? await fontePg.conexaoZoho() : await conexaoZoho(REST, cabSb);
 const tz = await tokenZoho(conexao);
 const base = await acharOuCriarPasta(tz, RAIZ, PASTA_BASE);
 const pastaDiaria = await acharOuCriarPasta(tz, base, 'diario');
@@ -340,4 +354,5 @@ if (limpar) {
 // está coberto. Registrado aqui, `robos_esperados` cobra — e cobra como
 // crítico, porque é a única cópia que existe.
 await registrar(true, `${arquivos.length} arquivos, ${(bytes / 1024 / 1024).toFixed(1)} MB, dia ${DIA}`);
+await fontePg?.fechar();
 console.log('\npronto.\n');

@@ -62,6 +62,34 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 - Para ensaiar fora da VPS: `BACKUP_DIR`, `BACKUP_RETENCAO_DIAS`, `API_DB_CONTAINER`, e
   `TESTE_CONTAINER` (o nome deve terminar em `-teste`).
 
+## Cópia de segurança para o Zoho: papel `copia` (no corte, só com ok do dono)
+
+Até o corte, a cópia diária para o Zoho WorkDrive (`coletor/vps/robos.cron` → `coletor/vps/copia-do-banco.sh` →
+`coletor/guardar-copia-do-banco.mjs`, 06h12 UTC) lê o Supabase. No corte ela passa a ler ESTE banco com o papel
+`copia`: SELECT em todas as tabelas do `public` (menos `sessoes`) e INSERT só em `robos_execucoes` (a linha da
+rodada, que o painel cobra como crítica). Continua sem porta publicada: o `copia-do-banco.sh` lê o IP do `api-db`
+na `api_net` a cada rodada e monta `COPIA_DATABASE_URL` sozinho quando `COPIA_DB_SENHA` existe em `/etc/robos.env`.
+
+Um comando por linha. A senha nunca vai para a linha de comando (o `ps` do host mostra argumentos): entra pelo
+ambiente, e o `papel-copia.sql` a lê com `\getenv`.
+
+```sh
+scp ops/vps/api-db/papel-copia.sql op:/root/api-db/papel-copia.sql
+ssh op
+[ -e /root/secrets/copia.senha ] || ( umask 077; openssl rand -hex 24 > /root/secrets/copia.senha )
+SENHA_COPIA="$(cat /root/secrets/copia.senha)" docker exec -i -e SENHA_COPIA api-db psql -U api -d api < /root/api-db/papel-copia.sql
+grep -q '^COPIA_DB_SENHA=' /etc/robos.env || echo "COPIA_DB_SENHA=$(cat /root/secrets/copia.senha)" >> /etc/robos.env
+/opt/robos/social-dashboard/coletor/vps/rodar-robo.sh copia-do-banco 60 -- bash coletor/vps/copia-do-banco.sh --ensaio
+tail -30 /var/log/robos/copia-do-banco.log
+```
+
+O ensaio lista as tabelas e as contagens sem enviar nada. Como o papel `copia` não enxerga `sessoes`, o ensaio conta uma tabela a menos que o banco tem. A senha é hex de propósito: vai na URL sem escapar.
+Reaplicar o `papel-copia.sql` é seguro (troca a senha e refaz os GRANTs; tabela nova criada pelo `api` também
+entra, por `ALTER DEFAULT PRIVILEGES`). Para voltar ao Supabase antes do corte: apagar a linha `COPIA_DB_SENHA`
+do `/etc/robos.env`. No corte, ligar também `gh variable set SAIU_DO_SUPABASE --body sim`: a retaguarda manual
+do GitHub (`.github/workflows/copia-do-banco.yml`) passa a recusar, porque copiaria o Supabase velho por cima da
+cópia boa do dia.
+
 ## Regras do projeto
 
 - **Nunca recriar o contêiner com operação em andamento** (migração, restauração, backup rodando).
