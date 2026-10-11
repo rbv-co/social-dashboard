@@ -12,19 +12,18 @@ import (
 
 	"github.com/rbv-co/social-dashboard/api/internal/auth"
 	"github.com/rbv-co/social-dashboard/api/internal/banco"
-	"github.com/rbv-co/social-dashboard/api/internal/comercial"
 	"github.com/rbv-co/social-dashboard/api/internal/config"
-	"github.com/rbv-co/social-dashboard/api/internal/core"
 	"github.com/rbv-co/social-dashboard/api/internal/importacao"
 	"github.com/rbv-co/social-dashboard/api/internal/web"
-	"github.com/rbv-co/social-dashboard/api/internal/webpush"
-	"github.com/rbv-co/social-dashboard/api/internal/worker"
 )
 
 func main() {
 	if len(os.Args) < 2 {
-		slog.Error("uso: api <api|worker|importar-usuarios|migrar>")
+		slog.Error("uso: api <api|worker [listar|rodar <tarefa> [--forcar]|saude|conferir]|importar-usuarios|migrar>")
 		os.Exit(2)
+	}
+	if os.Args[1] == "worker" && len(os.Args) > 2 && os.Args[2] == "saude" {
+		os.Exit(saudeDoWorker(os.Getenv("WORKER_ADDR"))) // healthcheck: não abre o banco
 	}
 	ctx, parar := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer parar()
@@ -39,9 +38,13 @@ func main() {
 		os.Exit(1)
 	}
 	defer p.Close()
-	if err := banco.Migrar(p); err != nil {
-		slog.Error("migrations", "erro", err)
-		os.Exit(1)
+	// O worker NÃO migra: api e worker subindo juntos disputariam a migração (o goose daqui não
+	// tem trava). Quem migra é o `api` (ou `api migrar`); o worker confere as tabelas e recusa subir.
+	if os.Args[1] != "worker" {
+		if err := banco.Migrar(p); err != nil {
+			slog.Error("migrations", "erro", err)
+			os.Exit(1)
+		}
 	}
 	switch os.Args[1] {
 	case "api":
@@ -68,26 +71,9 @@ func main() {
 		}
 		<-fim // espera o escoamento das requisições antes do p.Close() adiado
 	case "worker":
-		ag := worker.Novo(p)
-		// HTTP nil: o push herda o cliente seguro (Dialer.Control recusa faixas proibidas).
-		pv := &comercial.PushVendas{Pool: p, Core: core.Novo(cfg.CoreURL, cfg.CoreToken),
-			VAPID: webpush.VAPID{Publica: cfg.VAPIDPublica, Privada: cfg.VAPIDPrivada, Assunto: cfg.VAPIDAssunto}}
-		if _, err := webpush.ValidarVAPID(pv.VAPID); err != nil { // o erro nunca traz as chaves
-			slog.Warn("VAPID inválido: o push de vendas vai falhar em toda execução", "erro", err)
-		}
-		tarefas, err := worker.Filtrar(pv.Tarefas(), cfg.TarefasDesligadas)
-		if err != nil {
-			slog.Error("configuração", "erro", err)
-			os.Exit(1)
-		}
-		for _, t := range tarefas {
-			if err := ag.Registrar(t); err != nil {
-				slog.Error("tarefa", "nome", t.Nome, "erro", err)
-				os.Exit(1)
-			}
-		}
-		slog.Info("worker no ar", "tarefas", len(tarefas), "desligadas", cfg.TarefasDesligadas)
-		ag.Iniciar(ctx)
+		codigo := rodarWorker(ctx, p, cfg, os.Args[2:])
+		p.Close()
+		os.Exit(codigo)
 	case "importar-usuarios":
 		origem := os.Getenv("ORIGEM_DATABASE_URL")
 		if origem == "" {

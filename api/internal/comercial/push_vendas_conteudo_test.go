@@ -176,8 +176,8 @@ func TestPushVendasVAPIDRuimFalhaERegistraNoRobo(t *testing.T) {
 		t.Fatalf("nada podia sair: pushes=%d chamadas ao core=%d", len(pf.recebidos), f.n())
 	}
 	pv.VAPID = casos["par trocado"]
-	if _, err := worker.Novo(p).Rodar(context.Background(), pv.Tarefas()[1]); err != nil {
-		t.Fatal(err)
+	if ex, err := worker.Novo(p).Rodar(context.Background(), pv.Tarefas()[1]); !ex || err == nil {
+		t.Fatalf("Rodar devolve o erro da tarefa: ex=%v err=%v", ex, err)
 	}
 	var ok bool
 	var resp string

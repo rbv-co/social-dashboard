@@ -225,8 +225,8 @@ func TestMetaProxyLogaCausaSemSegredo(t *testing.T) {
 	a.cli.URL = morto.URL
 	a.post("/meta-proxy", a.tokens[uMeta], `{"accountId":"conta-1","path":"/me","params":{"segredo":"VALOR-SECRETO"}}`)
 	l := log.String()
-	if !strings.Contains(l, "connect") && !strings.Contains(l, "refused") {
-		t.Errorf("log sem a causa: %s", l)
+	if !strings.Contains(l, "core: conexão recusada") || strings.Contains(l, morto.URL) || strings.Contains(l, "127.0.0.1") {
+		t.Errorf("log sem a causa classificada (ou com o endereço do core): %s", l)
 	}
 	if strings.Contains(l, tokenDoCore) || strings.Contains(l, "VALOR-SECRETO") {
 		t.Errorf("segredo no log: %s", l)

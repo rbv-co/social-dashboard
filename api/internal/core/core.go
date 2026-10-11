@@ -7,13 +7,20 @@ package core
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
+	"net/url"
 	"strconv"
+	"strings"
+	"sync"
+	"syscall"
 	"time"
 )
 
@@ -31,6 +38,67 @@ var ErrRespostaGrande = errors.New("core: resposta grande demais")
 // ErrSemToken: CORE_API_TOKEN não configurado; nada é enviado.
 var ErrSemToken = errors.New("core: CORE_API_TOKEN ausente")
 
+// ErroRede é a falha de transporte (sem resposta do core) com mensagem FIXA por classe: nunca leva
+// host, porta, caminho nem o *url.Error do http (a regra: erro de rede sai desembrulhado). Só o erro
+// do contexto (prazo, cancelamento) continua na cadeia, para errors.Is.
+type ErroRede struct {
+	Classe string // "conexão recusada", "prazo vencido", "DNS", "TLS", "URL inválida", "rede" ou "cancelado"
+	ctx    error  // context.DeadlineExceeded / context.Canceled, ou nil
+}
+
+func (e *ErroRede) Error() string { return "core: " + e.Classe }
+func (e *ErroRede) Unwrap() error { return e.ctx }
+
+// errURLInvalida: a URL do core não passa no parse (configuração). Não adianta repetir.
+var errURLInvalida = &ErroRede{Classe: "URL inválida"}
+
+// semEndereco classifica o erro do http e descarta o resto. A causa completa (que tem o host) não sai
+// daqui nem em log: só a classe e a operação, em Debug.
+func semEndereco(err error, caminho string) error {
+	e := &ErroRede{Classe: "rede"}
+	var dns *net.DNSError
+	var ne net.Error
+	switch {
+	case errors.Is(err, context.Canceled):
+		e.Classe, e.ctx = "cancelado", context.Canceled
+	case errors.Is(err, context.DeadlineExceeded):
+		e.Classe, e.ctx = "prazo vencido", context.DeadlineExceeded
+	case errors.As(err, &dns):
+		e.Classe = "DNS"
+	case ehTLS(err):
+		e.Classe = "TLS"
+	case errors.Is(err, syscall.ECONNREFUSED):
+		e.Classe = "conexão recusada"
+	case errors.As(err, &ne) && ne.Timeout():
+		e.Classe = "prazo vencido"
+	}
+	op := "meta"
+	if caminho == CaminhoBling {
+		op = "bling"
+	}
+	slog.Debug("core: falha de transporte", "classe", e.Classe, "op", op)
+	return e
+}
+
+func ehTLS(err error) bool {
+	var (
+		ver  *tls.CertificateVerificationError
+		auto x509.UnknownAuthorityError
+		nome x509.HostnameError
+		inv  x509.CertificateInvalidError
+		reg  tls.RecordHeaderError
+		alt  tls.AlertError
+	)
+	if errors.As(err, &ver) || errors.As(err, &auto) || errors.As(err, &nome) || errors.As(err, &inv) ||
+		errors.As(err, &reg) || errors.As(err, &alt) {
+		return true
+	}
+	// Erro de TLS sem tipo ("tls: handshake failure"): só o texto da causa, nunca o do *url.Error,
+	// que leva a URL (um host "mtls" casaria com "tls:").
+	var ue *url.Error
+	return errors.As(err, &ue) && strings.Contains(ue.Err.Error(), "tls:")
+}
+
 type Cliente struct {
 	URL       string // sem barra no fim
 	Token     string
@@ -39,6 +107,14 @@ type Cliente struct {
 	Orcamento time.Duration                                    // da chamada inteira no Bling; 0 = 25 s
 	PrazoMeta time.Duration                                    // da chamada à Meta quando o ctx não tem prazo; 0 = 60 s
 	Dormir    func(ctx context.Context, d time.Duration) error // nil = espera de verdade (o teste troca)
+	// RitmoMeta: intervalo mínimo entre duas chamadas à Meta deste cliente (0 = sem ritmo). O core
+	// limita 120 chamadas/min por consumidor nas rotas da Meta (vessel-core-go@e8a06e8c3,
+	// services/core/cmd/core/meta.go:40 e internal/config/config.go:172); o worker anda abaixo disso.
+	RitmoMeta time.Duration
+
+	ritmoMu     sync.Mutex
+	proximaMeta time.Time
+	relogio     func() time.Time // nil = time.Now (o teste para o relógio)
 }
 
 // Novo devolve um cliente que não segue redirecionamento (o Bearer não sai para outro lugar).
@@ -90,8 +166,8 @@ func (e *SemResposta) Error() string {
 	return fmt.Sprintf("Não consegui falar com o Bling agora (%s). Tentei %d %s. Tente de novo em instantes; se continuar, o Bling está fora do ar.", e.Causa, e.Tentativas, vez)
 }
 
-// enviar faz UMA chamada. Erro = sem resposta (rede, prazo, ctx). O token vai só no
-// cabeçalho: o erro do http (método + URL + causa) nunca o contém.
+// enviar faz UMA chamada. Erro = sem resposta (*ErroRede: rede, prazo, ctx). O token vai só no
+// cabeçalho e o erro do http (método + URL + causa) nunca sai daqui: vira *ErroRede.
 func (c *Cliente) enviar(ctx context.Context, caminho string, corpo any) (*Resposta, error) {
 	if c.Token == "" {
 		return nil, ErrSemToken
@@ -102,7 +178,7 @@ func (c *Cliente) enviar(ctx context.Context, caminho string, corpo any) (*Respo
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.URL+caminho, bytes.NewReader(b))
 	if err != nil {
-		return nil, err
+		return nil, errURLInvalida // o erro do parse carrega a URL (e o usuário:senha, se houver)
 	}
 	req.Header.Set("Authorization", "Bearer "+c.Token)
 	req.Header.Set("Content-Type", "application/json")
@@ -113,12 +189,12 @@ func (c *Cliente) enviar(ctx context.Context, caminho string, corpo any) (*Respo
 	}
 	r, err := cli.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, semEndereco(err, caminho)
 	}
 	defer r.Body.Close()
 	lido, err := io.ReadAll(io.LimitReader(r.Body, limiteResposta+1))
 	if err != nil {
-		return nil, err
+		return nil, semEndereco(err, caminho)
 	}
 	if int64(len(lido)) > limiteResposta {
 		return nil, ErrRespostaGrande
@@ -170,7 +246,7 @@ func (c *Cliente) Bling(ctx context.Context, p PedidoBling) (*Resposta, error) {
 		ctxT, cancela := context.WithTimeout(ctx, prazo)
 		r, err := c.enviar(ctxT, CaminhoBling, p)
 		cancela()
-		if errors.Is(err, ErrSemToken) || errors.Is(err, ErrRespostaGrande) || (err != nil && ctx.Err() != nil) {
+		if errors.Is(err, ErrSemToken) || errors.Is(err, ErrRespostaGrande) || errors.Is(err, errURLInvalida) || (err != nil && ctx.Err() != nil) {
 			return nil, err
 		}
 		status := 0
@@ -220,6 +296,9 @@ func (c *Cliente) Meta(ctx context.Context, p PedidoMeta, tentativas int) (*Resp
 		defer cancela()
 	}
 	for t := 1; ; t++ {
+		if err := c.esperarRitmo(ctx); err != nil {
+			return nil, err
+		}
 		r, err := c.enviar(ctx, CaminhoMeta, p)
 		if err != nil || r.Status != http.StatusTooManyRequests || t >= tentativas {
 			return r, err
@@ -232,4 +311,27 @@ func (c *Cliente) Meta(ctx context.Context, p PedidoMeta, tentativas int) (*Resp
 			return nil, err
 		}
 	}
+}
+
+// esperarRitmo segura a chamada até a vez dela (fila por ordem de chegada): no máximo uma chamada à
+// Meta a cada RitmoMeta. Sem ritmo, passa direto.
+func (c *Cliente) esperarRitmo(ctx context.Context) error {
+	if c.RitmoMeta <= 0 {
+		return nil
+	}
+	c.ritmoMu.Lock()
+	agora := time.Now()
+	if c.relogio != nil {
+		agora = c.relogio()
+	}
+	vez := c.proximaMeta
+	if vez.Before(agora) {
+		vez = agora
+	}
+	c.proximaMeta = vez.Add(c.RitmoMeta)
+	c.ritmoMu.Unlock()
+	if d := vez.Sub(agora); d > 0 {
+		return c.dormir(ctx, d)
+	}
+	return nil
 }

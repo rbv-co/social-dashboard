@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -325,5 +326,77 @@ func TestSemClienteHTTPNaoSegueRedirecionamento(t *testing.T) {
 	r, err := c.Meta(context.Background(), PedidoMeta{Caminho: "/me", Metodo: "GET"}, 1)
 	if err != nil || r.Status != 302 || f.n() != 1 {
 		t.Fatalf("r=%+v err=%v", r, err)
+	}
+}
+
+func TestMetaAndaNoRitmo(t *testing.T) {
+	c, f, esperas := novoCore(t, status(200, `{"data":[]}`))
+	c.RitmoMeta = 100 * time.Millisecond
+	for range 3 {
+		if _, err := c.Meta(context.Background(), PedidoMeta{Caminho: "/1784", Metodo: "GET"}, 1); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// O Dormir do teste não dorme: a fila anda 100 ms por chamada (1ª sem espera, 2ª ~100 ms, 3ª ~200 ms).
+	if f.n() != 3 || len(*esperas) != 2 || (*esperas)[0] < 80*time.Millisecond || (*esperas)[1] < 180*time.Millisecond {
+		t.Fatalf("chamadas=%d esperas=%v", f.n(), *esperas)
+	}
+	c2, _, esperas2 := novoCore(t, status(200, `{}`))
+	c2.Meta(context.Background(), PedidoMeta{Caminho: "/1"}, 1)
+	c2.Meta(context.Background(), PedidoMeta{Caminho: "/1"}, 1)
+	if len(*esperas2) != 0 {
+		t.Fatalf("sem RitmoMeta não espera: %v", *esperas2)
+	}
+}
+
+// Com o relógio parado, N chamadas simultâneas têm de sair em vagas distintas, 600 ms uma da outra
+// (sem a trava as vagas repetem; o -race também pega).
+func TestRitmoMetaConcorrenteDaVagasDistintas(t *testing.T) {
+	c, f, _ := novoCore(t, status(200, `{}`))
+	c.RitmoMeta = 600 * time.Millisecond
+	agora := time.Date(2026, 10, 10, 11, 0, 0, 0, time.UTC)
+	c.relogio = func() time.Time { return agora }
+	var mu sync.Mutex
+	var esperas []time.Duration
+	c.Dormir = func(_ context.Context, d time.Duration) error {
+		mu.Lock()
+		esperas = append(esperas, d)
+		mu.Unlock()
+		return nil
+	}
+	const n = 20
+	var wg sync.WaitGroup
+	for range n {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := c.Meta(context.Background(), PedidoMeta{Caminho: "/1", Metodo: "GET"}, 1); err != nil {
+				t.Error(err)
+			}
+		}()
+	}
+	wg.Wait()
+	slices.Sort(esperas)
+	if f.n() != n || len(esperas) != n-1 {
+		t.Fatalf("chamadas=%d esperas=%d", f.n(), len(esperas))
+	}
+	for i, d := range esperas { // a 1ª vaga não espera; as outras, 1x, 2x, ... 600 ms
+		if d != time.Duration(i+1)*600*time.Millisecond {
+			t.Fatalf("vagas fora do ritmo: %v", esperas)
+		}
+	}
+}
+
+// Espera interrompida (prazo ou desligamento) não vira chamada à Meta.
+func TestRitmoMetaEsperaInterrompidaNaoChamaOCore(t *testing.T) {
+	c, f, _ := novoCore(t, status(200, `{}`))
+	c.RitmoMeta = time.Second
+	c.relogio = func() time.Time { return time.Date(2026, 10, 10, 11, 0, 0, 0, time.UTC) }
+	c.Dormir = func(context.Context, time.Duration) error { return context.Canceled }
+	if _, err := c.Meta(context.Background(), PedidoMeta{Caminho: "/1"}, 1); err != nil { // 1ª vaga: sem espera
+		t.Fatal(err)
+	}
+	if _, err := c.Meta(context.Background(), PedidoMeta{Caminho: "/1"}, 1); !errors.Is(err, context.Canceled) || f.n() != 1 {
+		t.Fatalf("err=%v chamadas=%d", err, f.n())
 	}
 }

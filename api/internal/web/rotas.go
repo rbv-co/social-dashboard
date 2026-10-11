@@ -13,8 +13,10 @@ import (
 	"github.com/rbv-co/social-dashboard/api/internal/comercial"
 	"github.com/rbv-co/social-dashboard/api/internal/config"
 	"github.com/rbv-co/social-dashboard/api/internal/core"
+	"github.com/rbv-co/social-dashboard/api/internal/frota"
 	"github.com/rbv-co/social-dashboard/api/internal/meta"
 	"github.com/rbv-co/social-dashboard/api/internal/webhooks"
+	"github.com/rbv-co/social-dashboard/api/internal/webpush"
 )
 
 // Prazos por requisição das rotas lentas da Meta (o contexto da requisição não tem prazo
@@ -81,6 +83,9 @@ func Rotas(p *pgxpool.Pool, s *auth.Store, l *auth.Limitador, cfg config.Config)
 		r.With(auth.ExigirModulo("social"), comPrazo(PrazoMetaAoVivo)).Post("/insights-ao-vivo", av.Insights)
 		r.With(auth.ExigirModulo("social"), comPrazo(PrazoMetaAoVivo)).Post("/serie-novos-dia", av.SerieNovosDia)
 		r.With(auth.ExigirModulo("social"), comPrazo(PrazoCollabs)).Post("/contar-collabs", av.ContarCollabs)
+		// Plano 4: o mesmo portão da edge (superadmin ou permissions['frota.aprovar'] com 'ver').
+		r.With(auth.ExigirPermissao("frota.aprovar", "ver")).Post("/avisar-decisao-de-reserva",
+			(&frota.Reserva{Pool: p, VAPID: webpush.VAPID{Publica: cfg.VAPIDPublica, Privada: cfg.VAPIDPrivada, Assunto: cfg.VAPIDAssunto}}).ServeHTTP)
 	})
 	return r
 }

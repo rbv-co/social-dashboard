@@ -10,6 +10,11 @@ PEÇAS
 - robos.cron         a agenda (formato /etc/cron.d). Horários em UTC, iguais aos dos workflows de origem.
 - copia-do-banco.sh  e faxina-storage.sh: os dois workflows que tinham mais de um passo.
 - rodar-robo.teste.sh  autoteste do wrapper (Linux). `bash coletor/vps/rodar-robo.teste.sh`
+- copia-do-banco.teste.sh  autoteste da cópia (docker e node de mentira). `bash coletor/vps/copia-do-banco.teste.sh`
+  Depois do corte a cópia lê o Postgres da API: COPIA_DB_SENHA e SAIU_DO_SUPABASE em /etc/robos.env, só no corte
+  (com a segunda ligada, faltar a primeira é erro, sem volta calada ao Supabase). Passos e checklist: ops/vps/api-db/LEIA-ME.md.
+- copia-do-banco-pg.teste.sh  prova o papel `copia`, a fonte Postgres e a trava do workflow num Postgres 17 descartável
+  (docker, porta 58812+, removido no fim). `bash coletor/vps/copia-do-banco-pg.teste.sh`
 
 ONDE FICA NA VPS
 - Código:     /opt/robos/social-dashboard  (clone da main; o wrapper faz `git pull --ff-only` a cada rodada)

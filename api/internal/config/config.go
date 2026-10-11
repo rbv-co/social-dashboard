@@ -23,9 +23,26 @@ type Config struct {
 	VAPIDPublica    string   // VAPID_PUBLIC_KEY (base64url, 65 bytes)
 	VAPIDPrivada    string   // VAPID_PRIVATE_KEY (base64url, 32 bytes)
 	VAPIDAssunto    string   // VAPID_SUBJECT (ex.: mailto:...)
-	// WORKER_TAREFAS_DESLIGADAS: nomes de tarefas que o worker NÃO registra ("*" = todas).
+	// WORKER_TAREFAS_DESLIGADAS: tarefas que o worker NÃO agenda ("*" = todas); `api worker rodar <t> --forcar` ainda roda.
+	// Nome que não é "*" nem de tarefa registrada: o worker recusa subir (worker.ValidarDesligadas).
 	// O ensaio roda com banco restaurado de produção: ligue "*" (ou o push) para não mandar push de verdade.
 	TarefasDesligadas []string
+
+	// Plano 4 (worker).
+	WorkerAddr     string // WORKER_ADDR: endereço do GET /saude e /metricas do worker; vazio = sem HTTP
+	RDStationToken string // RD_STATION_TOKEN: token público da RD Station (vessel-rd-station)
+	ArquivosDir    string // ARQUIVOS_DIR: raiz dos buckets no disco (spec §7); padrão /var/lib/api/arquivos
+	AlertaWebhook  string // ALERT_WEBHOOK_URL: recados de coleta zerada e da auditoria (opcional; é segredo)
+	ZAPIInstancia  string // ZAPI_INSTANCE_ID (vai no caminho da URL da Z-API)
+	ZAPIToken      string // ZAPI_INSTANCE_TOKEN (vai no caminho da URL da Z-API)
+	ZAPICliente    string // ZAPI_TOKEN (cabeçalho Client-Token)
+}
+
+// Segredos: os valores que nunca podem sair em robos_execucoes nem no log do worker
+// (worker.Limpar troca cada um por ***).
+func (c Config) Segredos() []string {
+	return append([]string{c.CoreToken, c.ChatwootSegredo, c.VAPIDPrivada, c.RDStationToken, c.AlertaWebhook,
+		c.ZAPIInstancia, c.ZAPIToken, c.ZAPICliente}, c.ShopifySegredos...)
 }
 
 // lista lê uma variável separada por vírgulas, sem itens vazios.
@@ -65,9 +82,19 @@ func Carregar() (Config, error) {
 		VAPIDAssunto:    os.Getenv("VAPID_SUBJECT"),
 
 		TarefasDesligadas: lista("WORKER_TAREFAS_DESLIGADAS"),
+		WorkerAddr:        strings.TrimSpace(os.Getenv("WORKER_ADDR")),
+		RDStationToken:    strings.TrimSpace(os.Getenv("RD_STATION_TOKEN")),
+		ArquivosDir:       strings.TrimSpace(os.Getenv("ARQUIVOS_DIR")),
+		AlertaWebhook:     strings.TrimSpace(os.Getenv("ALERT_WEBHOOK_URL")),
+		ZAPIInstancia:     strings.TrimSpace(os.Getenv("ZAPI_INSTANCE_ID")),
+		ZAPIToken:         strings.TrimSpace(os.Getenv("ZAPI_INSTANCE_TOKEN")),
+		ZAPICliente:       strings.TrimSpace(os.Getenv("ZAPI_TOKEN")),
 	}
 	if c.Addr == "" {
 		c.Addr = ":8080"
+	}
+	if c.ArquivosDir == "" {
+		c.ArquivosDir = "/var/lib/api/arquivos"
 	}
 	if c.CoreURL == "" {
 		c.CoreURL = "https://core.rbvcompany.com"

@@ -17,6 +17,7 @@
 // todo dia 1º pelo agendamento, junto com a cópia.
 import './lib/carregar-env.mjs';
 import { createHash } from 'node:crypto';
+import { abrirFontePg } from './lib/fonte-pg.mjs';
 
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://kounqtdoioootxqegkij.supabase.co';
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
@@ -29,11 +30,21 @@ const cabSb = { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` };
 const wdCab = (t) => ({ Authorization: `Zoho-oauthtoken ${t}`, Accept: 'application/vnd.api+json' });
 const soma = (texto) => createHash('sha256').update(texto).digest('hex');
 
-async function tokenZoho() {
+// Depois do corte (saída do Supabase) a conexão do Zoho vem do Postgres próprio (COPIA_DATABASE_URL).
+async function conexaoDoZoho() {
+  if (process.env.COPIA_DATABASE_URL) {
+    const f = await abrirFontePg(process.env.COPIA_DATABASE_URL);
+    try { return await f.conexaoZoho(); } finally { await f.fechar(); }
+  }
   const r = await fetch(`${REST}/acessos_conexoes?provedor=eq.zoho`
     + '&select=client_id,client_secret,refresh_token,data_center&limit=1', { headers: cabSb });
   const [c] = await r.json();
   if (!c?.refresh_token) throw new Error('A Central não está conectada ao Zoho.');
+  return c;
+}
+
+async function tokenZoho() {
+  const c = await conexaoDoZoho();
   let dc = String(c.data_center || '.com');
   if (!dc.startsWith('.')) dc = '.' + dc;
   const t = await fetch(`https://accounts.zoho${dc}/oauth/v2/token`, {

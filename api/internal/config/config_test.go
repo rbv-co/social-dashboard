@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"slices"
+	"testing"
+)
 
 func TestCarregarExigeDatabaseURL(t *testing.T) {
 	t.Setenv("DATABASE_URL", "")
@@ -108,5 +111,58 @@ func TestTarefasDesligadas(t *testing.T) {
 	c, _ := Carregar()
 	if len(c.TarefasDesligadas) != 2 || c.TarefasDesligadas[0] != "enviar-push-vendas-07h" || c.TarefasDesligadas[1] != "*" {
 		t.Fatalf("%#v", c.TarefasDesligadas)
+	}
+}
+
+func TestCarregarVariaveisDoWorker(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://x")
+	t.Setenv("WORKER_ADDR", " 127.0.0.1:8081 ")
+	t.Setenv("CORE_API_TOKEN", "tok-do-core")
+	c, err := Carregar()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.WorkerAddr != "127.0.0.1:8081" {
+		t.Fatalf("%+v", c)
+	}
+	if !slices.Contains(c.Segredos(), "tok-do-core") {
+		t.Fatalf("o token do core é segredo do worker: %v", c.Segredos())
+	}
+}
+
+func TestCarregarRDEArquivos(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://x")
+	t.Setenv("RD_STATION_TOKEN", " token-publico-rd ")
+	c, _ := Carregar()
+	if c.RDStationToken != "token-publico-rd" || c.ArquivosDir != "/var/lib/api/arquivos" || !slices.Contains(c.Segredos(), "token-publico-rd") {
+		t.Fatalf("%+v", c)
+	}
+	t.Setenv("ARQUIVOS_DIR", "/dados/arquivos")
+	if c, _ := Carregar(); c.ArquivosDir != "/dados/arquivos" {
+		t.Fatalf("ArquivosDir = %q", c.ArquivosDir)
+	}
+}
+func TestCarregarAlerta(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://x")
+	t.Setenv("ALERT_WEBHOOK_URL", "https://hooks.exemplo/segredo-do-webhook")
+	c, _ := Carregar()
+	if c.AlertaWebhook != "https://hooks.exemplo/segredo-do-webhook" || !slices.Contains(c.Segredos(), c.AlertaWebhook) {
+		t.Fatalf("%+v", c)
+	}
+}
+
+func TestCarregarZAPI(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://x")
+	t.Setenv("ZAPI_INSTANCE_ID", "instancia-123")
+	t.Setenv("ZAPI_INSTANCE_TOKEN", "token-da-instancia")
+	t.Setenv("ZAPI_TOKEN", "client-token")
+	c, _ := Carregar()
+	if c.ZAPIInstancia != "instancia-123" || c.ZAPIToken != "token-da-instancia" || c.ZAPICliente != "client-token" {
+		t.Fatalf("%+v", c)
+	}
+	for _, s := range []string{"instancia-123", "token-da-instancia", "client-token"} {
+		if !slices.Contains(c.Segredos(), s) {
+			t.Errorf("%q fora de Segredos()", s)
+		}
 	}
 }
