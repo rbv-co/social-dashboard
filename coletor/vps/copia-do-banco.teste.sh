@@ -35,13 +35,16 @@ saida=$(IP_FALSO= COPIA_DB_SENHA=$SENHA bash "$C" --ensaio 2>&1); confere "api-d
 nao_contem "api-db fora do ar não imprime a senha" "$saida" "$SENHA"
 
 # A CHAVE DO CORTE: com SAIU_DO_SUPABASE (qualquer valor não vazio) a cópia NÃO cai de volta no Supabase velho
-# quando falta a senha: falha alto. Voltar atrás é apagar a variável de /etc/robos.env.
+# quando falta a senha: falha alto. Voltar atrás é apagar AS DUAS linhas de /etc/robos.env (ver o LEIA-ME do api-db).
 for v in sim 0 false no true 1 x; do
   rm -f "$T/node.log"
   saida=$(IP_FALSO=172.20.0.5 SAIU_DO_SUPABASE=$v bash "$C" --ensaio 2>&1); confere "SAIU_DO_SUPABASE='$v' sem COPIA_DB_SENHA falha" $? 1
   [ -e "$T/node.log" ]; confere "SAIU_DO_SUPABASE='$v' sem senha não chama o node" $? 1
 done
 case "$saida" in *"COPIA_DB_SENHA"*) echo "ok   a recusa diz o que falta" ;; *) echo "FALHA a recusa não diz o que falta"; falhas=$((falhas + 1)) ;; esac
+# Só apagar SAIU_DO_SUPABASE não volta ao Supabase se a senha continuar lá (a cópia leria o banco novo): a mensagem
+# manda apagar as DUAS, como o LEIA-ME.
+case "$saida" in *"apague AS DUAS linhas"*"SAIU_DO_SUPABASE e COPIA_DB_SENHA"*) echo "ok   a recusa manda apagar as duas linhas" ;; *) echo "FALHA a recusa não manda apagar as duas linhas"; falhas=$((falhas + 1)) ;; esac
 rm -f "$T/node.log"
 IP_FALSO=172.20.0.5 SAIU_DO_SUPABASE= bash "$C" --ensaio >/dev/null 2>&1; confere "SAIU_DO_SUPABASE vazio = antes do corte, segue no Supabase" $? 0
 confere "...e sem URL" "$(cut -d' ' -f1 "$T/node.log")" "url="

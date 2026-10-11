@@ -15,9 +15,10 @@ set -u
 #
 # A CHAVE DO CORTE: SAIU_DO_SUPABASE (qualquer valor não vazio, em /etc/robos.env) = "o banco agora é o novo".
 # Com ela, faltar COPIA_DB_SENHA é ERRO, nunca "volta para o Supabase velho calado" (copiaria dado parado e o
-# painel diria que está tudo bem). Voltar atrás de propósito = apagar a variável do /etc/robos.env.
+# painel diria que está tudo bem). Voltar atrás de propósito = apagar AS DUAS linhas do /etc/robos.env
+# (SAIU_DO_SUPABASE e COPIA_DB_SENHA): só apagar a primeira NÃO volta, porque com a senha ainda lá a cópia lê o banco novo.
 if [ -n "${SAIU_DO_SUPABASE:-}" ] && [ -z "${COPIA_DB_SENHA:-}" ]; then
-  echo "SAIU_DO_SUPABASE está ligada mas falta COPIA_DB_SENHA em /etc/robos.env: cópia não feita (sem volta ao Supabase). Para voltar ao Supabase de propósito, apague SAIU_DO_SUPABASE." >&2
+  echo "SAIU_DO_SUPABASE está ligada mas falta COPIA_DB_SENHA em /etc/robos.env: cópia não feita (sem volta ao Supabase). Para voltar ao Supabase de propósito, apague AS DUAS linhas de /etc/robos.env: SAIU_DO_SUPABASE e COPIA_DB_SENHA." >&2
   exit 1
 fi
 if [ -n "${COPIA_DB_SENHA:-}" ]; then
