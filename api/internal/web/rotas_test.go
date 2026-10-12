@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -68,7 +69,7 @@ var publicas = map[string]bool{
 	"POST /receber-opt-out-chatwoot": true,
 	// Plano 5.0: links de senha (sem enumeração, limite por IP e por e-mail no handler)
 	"POST /auth/esqueci-senha": true, "POST /auth/definir-senha": true,
-	// Plano 5.1: o pedido de acesso da tela de login (limite de 10 por IP por hora e validação no handler)
+	// Plano 5.1: o pedido de acesso da tela de login (JSON obrigatório, 10 por IP e 100 no total por hora, validação no handler)
 	"POST /pedir-acesso": true,
 }
 
@@ -137,6 +138,20 @@ func TestNenhumaRotaNovaFicaAberta(t *testing.T) {
 		if !slices.Contains(vistas, chave) {
 			t.Errorf("rota só-sessão %s não está montada", chave)
 		}
+	}
+	// Plano 5.1: estar na lista pública e montada não basta: sem sessão, o pedido de acesso responde 201 com JSON
+	// (montá-la no grupo autenticado faria 401; o 415 sem o cabeçalho é do handler, não de sessão).
+	if _, err := p.Exec(context.Background(), `create table access_requests (id uuid primary key default gen_random_uuid(), name text not null,
+		email text not null, message text, status text not null, created_at timestamptz not null default now())`); err != nil {
+		t.Fatal(err)
+	}
+	r := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/pedir-acesso", strings.NewReader(`{"name":"Sem Sessão","email":"sem-sessao@x.com","message":"oi"}`))
+	req.Header.Set("Content-Type", "application/json")
+	h.ServeHTTP(r, req)
+	var pedido struct{ ID string }
+	if r.Code != http.StatusCreated || json.Unmarshal(r.Body.Bytes(), &pedido) != nil || pedido.ID == "" {
+		t.Errorf("POST /pedir-acesso sem sessão = %d %s, esperava 201 com {\"id\"}", r.Code, r.Body)
 	}
 	for _, c := range webhooksPublicos() {
 		r := httptest.NewRecorder()

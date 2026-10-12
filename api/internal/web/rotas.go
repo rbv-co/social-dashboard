@@ -85,7 +85,7 @@ func Rotas(p *pgxpool.Pool, s *auth.Store, l *auth.Limitador, cfg config.Config)
 		cfg.EnderecosDoApp, cfg.EnderecoPadrao)
 	r.Post("/auth/esqueci-senha", conta.EsqueciSenha)
 	r.Post("/auth/definir-senha", conta.DefinirSenha)
-	acesso.MontarPublicas(r, p) // Plano 5.1: POST /pedir-acesso, público com limite por IP (fora de auth.Exigir)
+	acesso.MontarPublicas(r, p) // Plano 5.1: POST /pedir-acesso, público com limite por IP e teto global (fora de auth.Exigir)
 
 	// Webhooks: públicos, sem sessão. O fan-out do core vem de um IP só: teto folgado.
 	// Só POST: outro método = 405 do chi (testado).

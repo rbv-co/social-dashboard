@@ -156,6 +156,13 @@ var funcoesDoWorker = []string{
 	"guard_profiles()", "impedir_autopromocao()", "espelhar_rename_do_grupo()", "equipes_toca_atualizado()",
 }
 
+// gatilhosDoWorker (nome, tabela): os gatilhos do 5.1 têm de existir NA tabela certa e não estar desabilitados
+// (tgenabled = 'D'). Conferir só a função (acima) não pega um gatilho que o restore deixou de ligar.
+var gatilhosDoWorker = [][2]string{
+	{"equipes_atualizado", "equipes"}, {"trg_espelhar_grupo_do_canal", "bling_lojas"}, {"trg_espelhar_rename_do_grupo", "canais_grupos"},
+	{"trg_guard_profiles", "profiles"}, {"trg_impedir_autopromocao", "profiles"},
+}
+
 // funcoesPorNomeDoWorker: chamadas dos webhooks, que o levantamento não detalhou por assinatura (há
 // sobrecargas, ex.: marcar_checkout_comprou(text) e (text,text,text)): basta UMA sobrecarga com os parâmetros.
 var funcoesPorNomeDoWorker = []string{
@@ -378,6 +385,19 @@ func conferirSchema(ctx context.Context, p *pgxpool.Pool) ([]string, error) {
 			continue
 		}
 		faltam = append(faltam, melhor...)
+	}
+
+	// Plano 5.1: gatilhos por nome e tabela (pg_trigger), ligados.
+	for _, g := range gatilhosDoWorker {
+		var tem bool
+		if err := tx.QueryRow(ctx, `select exists (select 1 from pg_trigger t join pg_class c on c.oid = t.tgrelid
+			 where not t.tgisinternal and t.tgname = $1::text and c.relname = $2::text
+			   and c.relnamespace = current_schema()::regnamespace and t.tgenabled <> 'D')`, g[0], g[1]).Scan(&tem); err != nil {
+			return nil, err
+		}
+		if !tem {
+			faltam = append(faltam, "gatilho "+g[0]+" em "+g[1]+" (ausente ou desabilitado)")
+		}
 	}
 
 	// Plano 5.0: ambiente da gramática de SQL, papel da API na auditoria do "entrar como" e as RPC declaradas.

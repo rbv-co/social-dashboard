@@ -409,19 +409,18 @@ Checklist do ensaio: `api migrar` aplicou `00005_tokens_de_senha.sql`; `conferir
 ## Plano 5.1 — admin, equipes e acesso
 
 ### Rotas novas
-- Pública: `POST /api/pedir-acesso` (10 por IP por hora, contando as recusadas; só `name`, `email`, `message`; `status` sempre `pending`; exige `Content-Type: application/json`, senão 415 `tipo_de_conteudo`: o front (Plano 7) tem de mandar o cabeçalho, e um `<form>` de outro site não consegue queimar a cota do visitante).
+- Pública: `POST /api/pedir-acesso` (só `name`, `email`, `message`; `status` sempre `pending`). Três defesas, todas na API (Ruling 5.1-15): (1) exige `Content-Type: application/json`, senão 415 `tipo_de_conteudo` (o front, Plano 7, tem de mandar o cabeçalho; um `<form>` de outro site não consegue queimar a cota do visitante); (2) 10 por IP por hora; (3) teto GLOBAL de 100 por hora por instância, chave constante, somando todos os IPs. Nos limites 2 e 3 contam os pedidos aceitos e os recusados por validação; o estouro dos dois é o mesmo 429 `muitas_requisicoes` com `Retry-After: 3600`. O por IP vem antes: quem estoura o seu IP não gasta o teto dos outros. Os dois limites são em memória, de uma instância só.
 - Com sessão (regra = catálogo de produção; escrita de sessão "entrar como" = 403): `/acesso/usuarios`, `/acesso/perfis`, `/acesso/pedidos`, `/equipes/times`, `/equipes/membros`, `/equipes/permissoes`, `/equipes/grupos`, `/equipes/grupos-membros`, `/avisos/preferencias`, `/eu/push/inscrever`, `/eu/push/desinscrever`, `/saude/conferencias`.
 - `/saude/ia-execucoes` NÃO existe no 5.1 (Ruling 5.1-14): a tela de status do Claude lê `ia_execucoes` por `/status-ia/execucoes`, do 5.12.
 - Tabelas sem rota (Ruling 5.1-5): `user_permissions`, `audit_log`, `entradas_como_outro_usuario`, `platform_settings`, `robos_esperados`, `robos_execucoes`, `coletor_log`, `projetos_status`, `gestor_log` (nenhum sítio no front; quem escreve é gatilho, worker ou robô).
 
 ### nginx
-- `location /api/` genérico cobre as rotas com sessão. `POST /api/pedir-acesso` é pública e anônima: o limite da API é por instância e por IP, então spam vindo de muitos IPs (um /48 de IPv6 tem ~650 mil endereços) passa por ele. Ponha uma `location` própria com `limit_req`, no molde da de `esqueci-senha` (zona própria, `burst` curto, `client_max_body_size 4k`, `proxy_pass http://127.0.0.1:8080/pedir-acesso;` e o `X-Real-IP`):
+- `location /api/` genérico cobre as rotas com sessão. `POST /api/pedir-acesso` é pública e anônima; a contenção do spam é da API (as três defesas acima, inclusive o teto global, que é o que segura muitos IPs: um /48 de IPv6 tem ~650 mil endereços). O `limit_req` do nginx, se ficar, é só EXTRA (a zona abaixo é por IP, não contém spam de muitos IPs nem o `text/plain` de outro site, cada visitante tem o seu IP). `client_max_body_size 16k` é o que importa: a API aceita até 32 KiB de corpo e a mensagem tem até 2000 caracteres (acento/emoji passa de 4 KiB em UTF-8, e o campo da tela de login não tem `maxlength`: com 4k, mensagem longa viraria 413 e "Erro ao enviar"). Location própria no molde da de `esqueci-senha` (`proxy_pass http://127.0.0.1:8080/pedir-acesso;` e o `X-Real-IP`):
   ```nginx
-  limit_req_zone $binary_remote_addr zone=pedido:10m rate=6r/m;   # em http {}
-  location = /api/pedir-acesso { limit_req zone=pedido burst=3 nodelay; client_max_body_size 4k; proxy_pass http://127.0.0.1:8080/pedir-acesso; }
+  limit_req_zone $binary_remote_addr zone=pedido:10m rate=6r/m;   # em http {}; opcional (extra)
+  location = /api/pedir-acesso { limit_req zone=pedido burst=3 nodelay; client_max_body_size 16k; proxy_pass http://127.0.0.1:8080/pedir-acesso; }
   ```
-  Teto global (todos os IPs somados) não existe: se o spam vier distribuído, entra (`ponytail`) um teto na API.
-- Runbook: um escritório atrás de 1 IP tem 10 tentativas por hora, e as recusadas por validação contam. A API ainda NÃO exige `Content-Type: application/json` nesta rota (menor da revisão da Task 8): um formulário de outro site pode postar `text/plain` com o navegador do visitante e distribuir o limite por IPs reais; enquanto isso, o `limit_req` do nginx é a defesa.
+- Runbook: um escritório atrás de 1 IP tem 10 tentativas por hora, e as recusadas por validação contam. Num ataque, o teto global de 100 por hora faz pedidos legítimos também receberem 429 até a janela passar (custo aceito do Ruling 5.1-15; a hora é deslizante por instância e zera ao reiniciar a API).
 
 ### Mudanças de contrato que o Plano 7 absorve
 - Escrita negada responde 403/404 (o PostgREST respondia 2xx com zero linhas); a linha devolvida é a da leitura, ou `{"id"}` quando quem gravou não a lê.
@@ -430,6 +429,7 @@ Checklist do ensaio: `api migrar` aplicou `00005_tokens_de_senha.sql`; `conferir
 - Preferências de aviso vão em lote (`POST /avisos/preferencias`, array); push por `inscrever`/`desinscrever`.
 - `permissions`/`permissions_excecao` têm de ser objeto JSON (400 senão).
 - Sessão "entrar como" só lê no 5.1: as 19 escritas respondem 403 (`TestEscritasRecusamImpersonado`).
+- Forma da resposta das escritas: `POST`/`PATCH` devolvem OBJETO (não array) e `DELETE` devolve 204 sem corpo; todo `Array.isArray(linhas)` de escrita muda. Estes sítios de `tela-de-admin.vue` dariam falso erro DEPOIS de gravar se só a URL fosse trocada (ex.: criar grupo grava e a tela diz "você não tem permissão"; o segundo clique dá 409): `:1040-1043` (`gravar`, usado nos grupos `:1100`/`:1143`/`:1171`), `:1658-1660` (POST de supervisora), `:1682-1684` (DELETE de supervisora com `return=representation`), `:2356-2357`, `:2548-2549` e `:2800-2801` (PATCH de `profiles`).
 - `tela-de-admin.vue`: `:2284` manda `criado_por` (agora 400); `:2301` e `:2500` esperam array e recebem objeto; `:2498-2502` não-super recebe 403 (antes 200 `[]`): mapear o 403 para o aviso "seu login não está na lista de super-admins"; `:2814-2817` manda `alterado_em`/`alterado_por` (agora 400) e `:2819` não confere o status do `adFetch` (um 400 viraria toast "Permissões atualizadas").
 
 ### O que o dono precisa saber/decidir (paridade com produção mantida; nada disto foi corrigido)
@@ -453,7 +453,7 @@ Checklist do ensaio: `api migrar` aplicou `00005_tokens_de_senha.sql`; `conferir
 - **Sem perfil:** `/auth/entrar` dá sessão a qualquer usuário com senha, tenha perfil ou não, e quem não tem perfil lê a lista da equipe (igual a produção: `auth_read_profiles` = conta ativa). Se clientes da Vessel vierem a ter senha, leem a lista da equipe.
 
 ### Antes do corte
-- `api worker conferir` no banco restaurado confere colunas, tipos, únicos e os 4 gatilhos que o 5.1 presume (`guard_profiles`, `impedir_autopromocao`, `espelhar_rename_do_grupo`, `equipes_toca_atualizado`). `ia_execucoes` é cobrada pelo 5.12.
+- `api worker conferir` no banco restaurado confere colunas, tipos, únicos, as 4 funções de gatilho que o 5.1 presume (`guard_profiles`, `impedir_autopromocao`, `espelhar_rename_do_grupo`, `equipes_toca_atualizado`) e os 5 gatilhos por nome e tabela em `pg_trigger`, ligados (`tgenabled <> 'D'`): `equipes_atualizado` (`equipes`), `trg_espelhar_grupo_do_canal` (`bling_lojas`), `trg_espelhar_rename_do_grupo` (`canais_grupos`), `trg_guard_profiles` e `trg_impedir_autopromocao` (`profiles`). `ia_execucoes` é cobrada pelo 5.12.
 - A fatia `api/internal/testebanco/esquema/` é RECONSTRUÍDA (D0 sem dump): quando o ensaio rodar, troque `01-tabelas-*.sql` pelo `pg_dump --schema-only` limpo e rode os testes; divergência de default ou constraint só aparece aí.
 - `access_requests` é presumido (A3): se o `conferir` acusar coluna, ajuste a tabela da fatia e a rota antes de ligar a tela de login.
 

@@ -3,6 +3,7 @@ package acesso
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -249,6 +250,40 @@ func TestPedirAcessoNaoPedeSessaoEOutrosMetodosNaoExistem(t *testing.T) {
 	}
 	if w := pedidoPublico(h, "203.0.113.77:1", `{"name":"Sem sessão","email":"s@x.com"}`); w.Code != 201 {
 		t.Errorf("sem sessão = %d %s", w.Code, w.Body)
+	}
+}
+
+// Ruling 5.1-15: teto global de 100 por hora somando todos os IPs (aceitos e recusados), com o mesmo 429
+// do limite por IP. Quem estoura o PRÓPRIO IP não gasta o teto dos outros (o por IP vem antes).
+func TestPedirAcessoTetoGlobal(t *testing.T) {
+	m := novoMundo(t)
+	h := roteadorPublico(m)
+	const bom, ruim = `{"name":"Teto","email":"teto@x.com"}`, `{"name":"","email":"teto@x.com"}`
+	for i := 0; i < LimitePedirAcesso+5; i++ { // um IP: 10 passam (gastam 10 do teto), 5 levam 429 do IP (não gastam)
+		w := pedidoPublico(h, "203.0.113.1:1", bom)
+		if (i < LimitePedirAcesso) != (w.Code == 201) || (i >= LimitePedirAcesso && w.Code != 429) {
+			t.Fatalf("pedido %d do IP fixo = %d", i, w.Code)
+		}
+	}
+	for i := 0; i < TetoGlobalPedirAcesso-LimitePedirAcesso; i++ { // 90 IPs novos: metade aceita, metade recusada por validação (também contam)
+		corpo, quer := bom, 201
+		if i%2 == 1 {
+			corpo, quer = ruim, 400
+		}
+		if w := pedidoPublico(h, fmt.Sprintf("198.51.100.%d:1", i+1), corpo); w.Code != quer {
+			t.Fatalf("IP novo %d = %d %s, esperava %d (o teto global fechou cedo demais?)", i, w.Code, w.Body, quer)
+		}
+	}
+	antes := m.um(t, contaPedidos)
+	w := pedidoPublico(h, "192.0.2.1:1", bom) // o 101º do total, de um IP que nunca pediu
+	if w.Code != 429 || w.Header().Get("Retry-After") != "3600" || !strings.Contains(w.Body.String(), `"muitas_requisicoes"`) {
+		t.Errorf("pedido além do teto global = %d (Retry-After %q) %s", w.Code, w.Header().Get("Retry-After"), w.Body)
+	}
+	if w := pedidoPublico(h, "192.0.2.2:1", ruim); w.Code != 429 { // recusado por validação também fica atrás do teto
+		t.Errorf("recusado além do teto = %d", w.Code)
+	}
+	if v := m.um(t, contaPedidos); v != antes {
+		t.Errorf("o pedido além do teto gravou: %s -> %s", antes, v)
 	}
 }
 

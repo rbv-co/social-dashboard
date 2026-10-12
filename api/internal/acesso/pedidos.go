@@ -22,14 +22,20 @@ import (
 const (
 	LimitePedirAcesso = 10
 	JanelaPedirAcesso = time.Hour
+	// TetoGlobalPedirAcesso (Ruling 5.1-15): pedidos por hora somando todos os IPs (aceitos e recusados).
+	// O limite por IP não contém spam de muitos IPs nem o <form> de outro site (cada visitante com o seu IP).
+	TetoGlobalPedirAcesso = 100
 	// tetoCorpoPedido: 120 + 2000 caracteres escapados como \uXXXX (6 bytes cada) + e-mail cabem com folga;
 	// acima disso é lixo, e a rota é pública (o teto geral de dados.LerCorpo é 1 MiB).
 	tetoCorpoPedido = 32 << 10
 )
 
-// MontarPublicas: a ÚNICA rota pública do 5.1, montada FORA do grupo autenticado de web.Rotas.
+// MontarPublicas: a ÚNICA rota pública do 5.1, montada FORA do grupo autenticado de web.Rotas. Defesas: JSON
+// obrigatório (415), 10 por IP por hora e, depois do por IP (quem estoura o seu IP não gasta o teto dos outros),
+// o teto global de 100 por hora; os dois limites em memória, por instância.
 func MontarPublicas(r chi.Router, p *pgxpool.Pool) {
-	r.With(auth.LimitarPorIP(LimitePedirAcesso, JanelaPedirAcesso)).Post("/pedir-acesso", pedirAcesso(p))
+	r.With(auth.LimitarPorIP(LimitePedirAcesso, JanelaPedirAcesso), auth.LimitarGlobal(TetoGlobalPedirAcesso, JanelaPedirAcesso)).
+		Post("/pedir-acesso", pedirAcesso(p))
 }
 
 // pedirAcesso: POST /pedir-acesso {name, email, message}, sem sessão (a tela de login). Grava só essas
