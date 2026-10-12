@@ -146,6 +146,14 @@ func TestEuSairESemToken(t *testing.T) {
 	if w.Code != 200 || !strings.Contains(w.Body.String(), `"frota":["ver"]`) {
 		t.Fatalf("eu = %d %s", w.Code, w.Body)
 	}
+	// e-mail e nome para a tela (avatar, menu, faixa do "entrar como"): aditivo ao contrato
+	if b := w.Body.String(); !strings.Contains(b, `"email":"a@x.com"`) || !strings.Contains(b, `"nome":null`) {
+		t.Fatalf("eu sem e-mail/nome: %s", b)
+	}
+	p.Exec(context.Background(), `update profiles set name = 'Ana' where id = $1`, uid)
+	if b := chamar(h, "GET", "/auth/eu", "", tok).Body.String(); !strings.Contains(b, `"nome":"Ana"`) {
+		t.Fatalf("eu sem o nome do perfil: %s", b)
+	}
 	if w := chamar(h, "POST", "/auth/sair", "", tok); w.Code != 204 {
 		t.Fatalf("sair = %d", w.Code)
 	}
