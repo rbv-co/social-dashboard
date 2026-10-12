@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -37,6 +38,7 @@ type corpoCoisa struct {
 
 // corpoComAutor declara a coluna do autor: mesmo assim, quem vale é a sessão.
 type corpoComAutor struct {
+	ID        json.RawMessage `json:"id,omitempty"`
 	AccountID json.RawMessage `json:"account_id,omitempty"`
 	CriadoPor json.RawMessage `json:"criado_por,omitempty"`
 }
@@ -69,7 +71,10 @@ func TestCampos(t *testing.T) {
 }
 
 func TestTabelaValidar(t *testing.T) {
-	cat, _ := autz.Compilar([]byte(catalogoDeEscrita))
+	cat, err := autz.Compilar([]byte(catalogoDeEscrita))
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, tb := range []Tabela{{Nome: "fora", Resposta: "t.id"}, {Nome: "coisa"}, {Nome: "coisa", Resposta: "t.id", Autor: "x y"}} {
 		if tb.Validar(cat) == nil {
 			t.Errorf("%+v validou", tb)
@@ -87,7 +92,19 @@ func montarEscrita(t *testing.T) (http.Handler, *pgxpool.Pool) {
 	if _, err := p.Exec(context.Background(), `create table coisa (
 		  id uuid primary key default gen_random_uuid(), account_id text, nome text not null default 'sem nome',
 		  apelido text, nivel int, quem uuid default nullif(current_setting('app.usuario_id', true), '')::uuid,
-		  segredo text default 'nunca-na-resposta', criado_por text);
+		  segredo text default 'nunca-na-resposta', criado_por text, editado_por text);
+		create table coisa_log (id uuid, quem text);
+		create function coisa_audita() returns trigger language plpgsql as $f$
+		begin
+		  if tg_op = 'DELETE' then
+		    insert into coisa_log values (old.id, nullif(current_setting('app.usuario_id', true), ''));
+		    return old;
+		  end if;
+		  new.editado_por := nullif(current_setting('app.usuario_id', true), '');
+		  return new;
+		end $f$;
+		create trigger coisa_upd before update on coisa for each row execute function coisa_audita();
+		create trigger coisa_del before delete on coisa for each row execute function coisa_audita();
 		insert into coisa (id, account_id, nome, apelido) values ('`+coisaA1+`', 'A1', 'um', 'u'), ('`+coisaA2+`', 'A2', 'dois', 'd')`); err != nil {
 		t.Fatal(err)
 	}
@@ -114,6 +131,7 @@ func montarEscrita(t *testing.T) (http.Handler, *pgxpool.Pool) {
 	autor.Resposta += ", t.criado_por"
 	autor.Autor = "criado_por"
 	r.Post("/autor", RotaCriar[corpoComAutor](p, cat, autor))
+	r.Patch("/autor/{id}", RotaEditar[corpoComAutor](p, cat, autor))
 	r.Patch("/coisas/{id}", RotaEditar[corpoCoisa](p, cat, tab))
 	r.Delete("/coisas/{id}", RotaApagar(p, cat, tab))
 	return r, p
@@ -146,8 +164,14 @@ func TestEscritaDeclarada(t *testing.T) {
 		{"corpo vazio", "frota-a1", "POST", "/coisas", `{}`, 400, "Nada para gravar", "", total, "4"},
 		{"Validar da struct", "frota-a1", "POST", "/coisas", `{"account_id":"A1","nome":"proibido"}`, 400, "nome proibido", "", total, "4"},
 		{"sem escopo no contexto: 500 e nada gravado", "", "POST", "/coisas", `{"account_id":"A1"}`, 500, "erro_interno", "", total, "4"},
-		{"Autor vem da sessão, não do corpo", "frota-a1", "POST", "/autor", `{"account_id":"A1","criado_por":"forjado"}`, 201, `"criado_por":"` + quemEscreve + `"`, "forjado", total, "5"},
+		{"autoria no corpo: 400 e nada gravado (não é trocada em silêncio)", "frota-a1", "POST", "/autor", `{"account_id":"A1","criado_por":"forjado"}`, 400, "corpo_invalido", "", total, "4"},
+		{"autoria no corpo, com outra caixa: 400", "frota-a1", "POST", "/autor", `{"account_id":"A1","CRIADO_POR":"forjado"}`, 400, "corpo_invalido", "", total, "4"},
+		{"id no corpo do POST: 400 e nada gravado", "frota-a1", "POST", "/autor", `{"account_id":"A1","id":"` + coisaA2 + `"}`, 400, "corpo_invalido", "", total, "4"},
+		{"Autor sem ser mandado vem da sessão", "frota-a1", "POST", "/autor", `{"account_id":"A1"}`, 201, `"criado_por":"` + quemEscreve + `"`, "", total, "5"},
+		{"autoria no corpo do PATCH: 400 e intacta", "so-a1", "PATCH", "/autor/" + coisaA1, `{"criado_por":"forjado"}`, 400, "corpo_invalido", "", linha(coisaA1, "criado_por"), "<nulo>"},
+		{"id no corpo do PATCH não troca a chave: 400", "so-a1", "PATCH", "/autor/" + coisaA1, `{"id":"` + coisaA2 + `"}`, 400, "corpo_invalido", "", linha(coisaA1, "count(*)::text"), "1"},
 		{"edita só a coluna enviada", "so-a1", "PATCH", "/coisas/" + coisaA1, `{"nome":"um!"}`, 200, `"apelido":"u"`, "", linha(coisaA1, "nome || '/' || apelido"), "um!/u"},
+		{"edita com a identidade da transação", "so-a1", "PATCH", "/coisas/" + coisaA1, `{"apelido":"u"}`, 200, `"apelido":"u"`, "", linha(coisaA1, "editado_por"), quemEscreve},
 		{"null explícito grava nulo", "so-a1", "PATCH", "/coisas/" + coisaA1, `{"apelido":null}`, 200, `"apelido":null`, "", linha(coisaA1, "apelido"), "<nulo>"},
 		{"linha de outra conta: 404 (IDOR)", "so-a1", "PATCH", "/coisas/" + coisaA2, `{"nome":"x"}`, 404, "nao_encontrado", "", linha(coisaA2, "nome"), "dois"},
 		{"mover para conta que não vê: 403", "so-a1", "PATCH", "/coisas/" + coisaA1, `{"account_id":"A2"}`, 403, "sem_permissao", "", linha(coisaA1, "account_id"), "A1"},
@@ -156,6 +180,7 @@ func TestEscritaDeclarada(t *testing.T) {
 		{"apagar sem a regra: 403 e fica", "so-a1", "DELETE", "/coisas/" + coisaA1, "", 403, "sem_permissao", "", linha(coisaA1, "count(*)::text"), "1"},
 		{"apagar linha invisível: 404 e fica", "so-a1", "DELETE", "/coisas/" + coisaA2, "", 404, "nao_encontrado", "", linha(coisaA2, "count(*)::text"), "1"},
 		{"super pela ficha apaga", "super", "DELETE", "/coisas/" + coisaA2, "", 204, "", "", linha(coisaA2, "count(*)::text"), "0"},
+		{"apaga com a identidade da transação", "super", "DELETE", "/coisas/" + coisaA1, "", 204, "", "", "select quem from coisa_log where id = '" + coisaA1 + "'", quemEscreve},
 	}
 	for _, c := range casos {
 		r := httptest.NewRequest(c.metodo, c.caminho, strings.NewReader(c.corpo))
@@ -171,5 +196,161 @@ func TestEscritaDeclarada(t *testing.T) {
 				t.Errorf("%s: efeito %q = %q, esperava %q", c.nome, c.efeito, v, c.quer)
 			}
 		}
+	}
+}
+
+// A montagem recusa declaração inválida (a API não sobe) e o corpo que não segue a regra:
+// todo campo exportado é json.RawMessage com `json:"<coluna>,omitempty"`.
+func TestMontagemDaEscrita(t *testing.T) {
+	cat, err := autz.Compilar([]byte(catalogoDeEscrita))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bom := Tabela{Nome: "coisa", Resposta: "t.id"}
+	type (
+		boa struct {
+			A json.RawMessage `json:"a,omitempty"`
+		}
+		semOmit struct {
+			A json.RawMessage `json:"a"`
+		}
+		texto struct {
+			A string `json:"a,omitempty"`
+		}
+		ponteiro struct {
+			A *string `json:"a,omitempty"`
+		}
+		semTag    struct{ A json.RawMessage }
+		colunaRim struct {
+			A json.RawMessage `json:"A b,omitempty"`
+		}
+		embutida struct{ boa }
+	)
+	panica := func(f func()) (p bool) {
+		defer func() { p = recover() != nil }()
+		f()
+		return
+	}
+	casos := []struct {
+		nome   string
+		monta  func()
+		panica bool
+	}{
+		{"tabela fora do catálogo (criar)", func() { RotaCriar[boa](nil, cat, Tabela{Nome: "fora", Resposta: "t.id"}) }, true},
+		{"tabela fora do catálogo (editar)", func() { RotaEditar[boa](nil, cat, Tabela{Nome: "fora", Resposta: "t.id"}) }, true},
+		{"tabela fora do catálogo (apagar)", func() { RotaApagar(nil, cat, Tabela{Nome: "fora", Resposta: "t.id"}) }, true},
+		{"sem Resposta (apagar)", func() { RotaApagar(nil, cat, Tabela{Nome: "coisa"}) }, true},
+		{"campo string sem RawMessage", func() { RotaEditar[texto](nil, cat, bom) }, true},
+		{"campo *string", func() { RotaEditar[ponteiro](nil, cat, bom) }, true},
+		{"RawMessage sem omitempty", func() { RotaEditar[semOmit](nil, cat, bom) }, true},
+		{"campo sem tag", func() { RotaCriar[semTag](nil, cat, bom) }, true},
+		{"coluna inválida na tag", func() { RotaCriar[colunaRim](nil, cat, bom) }, true},
+		{"struct embutida", func() { RotaCriar[embutida](nil, cat, bom) }, true},
+		{"corpo que não é struct", func() { RotaCriar[string](nil, cat, bom) }, true},
+		{"declaração correta", func() {
+			RotaCriar[boa](nil, cat, bom)
+			RotaEditar[boa](nil, cat, bom)
+			RotaApagar(nil, cat, bom)
+		}, false},
+	}
+	for _, c := range casos {
+		if got := panica(c.monta); got != c.panica {
+			t.Errorf("%s: panic = %v, esperava %v", c.nome, got, c.panica)
+		}
+	}
+}
+
+// Sem escopo, as três operações respondem igual (negado), nunca 500 numa e 403 em outra.
+func TestEscritaSemEscopoNegaIgual(t *testing.T) {
+	cat, err := autz.Compilar([]byte(catalogoDeEscrita))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := testebanco.Novo(t)
+	ctx := context.Background()
+	if _, err := p.Exec(ctx, `create table coisa (id uuid primary key default gen_random_uuid(), account_id text)`); err != nil {
+		t.Fatal(err)
+	}
+	tab := Tabela{Nome: "coisa", Resposta: "t.id"}
+	tx, err := p.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tab.Criar(ctx, tx, cat, nil, map[string]any{"account_id": "A1"}); !errors.Is(err, autz.ErrNegado) {
+		t.Errorf("Criar sem escopo = %v", err)
+	}
+	if _, err := tab.Editar(ctx, tx, cat, nil, coisaA1, map[string]any{"account_id": "A1"}); !errors.Is(err, autz.ErrNegado) {
+		t.Errorf("Editar sem escopo = %v", err)
+	}
+	if err := tab.Apagar(ctx, tx, cat, nil, coisaA1); !errors.Is(err, autz.ErrNegado) {
+		t.Errorf("Apagar sem escopo = %v", err)
+	}
+}
+
+// Mapa vazio e coluna proibida vindos de um handler próprio são 400, não 500.
+func TestErroDeEscritaDoHelper(t *testing.T) {
+	for _, c := range []struct {
+		err    error
+		status int
+	}{{ErrSemCampos, 400}, {ErrColunaProibida, 400}} {
+		w := httptest.NewRecorder()
+		ErroDeEscrita(w, fmt.Errorf("embrulhado: %w", c.err))
+		if w.Code != c.status || !strings.Contains(w.Body.String(), "corpo_invalido") {
+			t.Errorf("%v: %d %s", c.err, w.Code, w.Body.String())
+		}
+	}
+}
+
+// Corpo sem a coluna que a regra de criar lê: 400 do pedido (a struct declara a coluna); defeito
+// de declaração (a struct nem declara a coluna) continua 500.
+func TestCriarSemColunaDaRegra(t *testing.T) {
+	cat, err := autz.Compilar([]byte(`[
+ {"tabela":"item","nome":"le","tipo":"permissive","comando":"select","papeis":["authenticated"],"using":"pode_ver_conta(account_id)","withCheck":null},
+ {"tabela":"item","nome":"cria","tipo":"permissive","comando":"insert","papeis":["authenticated"],"using":null,"withCheck":"pode_ver_conta(account_id)"}
+]`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := testebanco.Novo(t)
+	if _, err := p.Exec(context.Background(), `create table item (id uuid primary key default gen_random_uuid(), account_id text, nome text)`); err != nil {
+		t.Fatal(err)
+	}
+	tab := Tabela{Nome: "item", Resposta: "t.id, t.account_id, t.nome"}
+	type comConta struct {
+		AccountID json.RawMessage `json:"account_id,omitempty"`
+		Nome      json.RawMessage `json:"nome,omitempty"`
+	}
+	type semConta struct {
+		Nome json.RawMessage `json:"nome,omitempty"`
+	}
+	e := &autz.Escopo{ID: quemEscreve, TemPerfil: true, Ativo: true, SemTrava: true, Contas: []string{"A1"}}
+	r := chi.NewRouter()
+	r.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			next.ServeHTTP(w, req.WithContext(autz.NoContexto(req.Context(), e)))
+		})
+	})
+	r.Post("/com", RotaCriar[comConta](p, cat, tab))
+	r.Post("/sem", RotaCriar[semConta](p, cat, tab))
+	for _, c := range []struct {
+		caminho, corpo string
+		status         int
+		tem            string
+	}{
+		{"/com", `{"nome":"x"}`, 400, "pedido_invalido"},
+		{"/com", `{"account_id":"A1","nome":"x"}`, 201, `"account_id":"A1"`},
+		{"/sem", `{"nome":"x"}`, 500, "erro_interno"},
+	} {
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, httptest.NewRequest("POST", c.caminho, strings.NewReader(c.corpo)))
+		if w.Code != c.status || !strings.Contains(w.Body.String(), c.tem) {
+			t.Errorf("%s %s: %d %s", c.caminho, c.corpo, w.Code, w.Body.String())
+		}
+	}
+	var n int
+	p.QueryRow(context.Background(), `select count(*) from item`).Scan(&n)
+	if n != 1 {
+		t.Errorf("linhas gravadas = %d, esperava 1", n)
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"maps"
 	"net/http"
+	"reflect"
 	"regexp"
 	"slices"
 	"strings"
@@ -30,6 +31,10 @@ var reColuna = regexp.MustCompile(`^[a-z_][a-z0-9_]{0,62}$`)
 
 // ErrSemCampos: o corpo não trouxe coluna nenhuma.
 var ErrSemCampos = errors.New("dados: nada para gravar")
+
+// ErrColunaProibida: o corpo trouxe a coluna de autoria (Tabela.Autor) ou o id; ambos vêm da sessão
+// e da rota, nunca do corpo.
+var ErrColunaProibida = errors.New("dados: coluna que o corpo não pode trazer")
 
 // Validar confere a declaração na montagem (erro = a API não sobe).
 func (t Tabela) Validar(cat *autz.Catalogo) error {
@@ -67,6 +72,18 @@ func Campos(corpo any) (map[string]any, error) {
 	return campos, nil
 }
 
+// recusarReservadas: o corpo nunca escolhe a chave (`id`: o PATCH /…/{id} não muda a identidade do
+// recurso e o POST não escolhe o id) nem a coluna de autoria (vem da sessão). Recusa, não ignora:
+// mandar autoria no corpo é erro do cliente (400), não algo a corrigir em silêncio.
+func (t Tabela) recusarReservadas(campos map[string]any) error {
+	for k := range campos {
+		if k == "id" || (t.Autor != "" && strings.EqualFold(k, t.Autor)) {
+			return fmt.Errorf("%w: %q", ErrColunaProibida, k)
+		}
+	}
+	return nil
+}
+
 // colunas: as chaves em ordem (SQL determinístico), conferidas e citadas.
 func colunas(campos map[string]any) ([]string, error) {
 	if len(campos) == 0 {
@@ -92,6 +109,9 @@ func (t Tabela) Criar(ctx context.Context, tx pgx.Tx, cat *autz.Catalogo, e *aut
 	if e == nil {
 		return nil, autz.ErrNegado
 	}
+	if err := t.recusarReservadas(campos); err != nil {
+		return nil, err
+	}
 	if t.Autor != "" {
 		campos = maps.Clone(campos) // não muda o mapa de quem chamou
 		campos[t.Autor] = e.ID      // autoria vem da sessão, nunca do corpo
@@ -116,6 +136,12 @@ func (t Tabela) Criar(ctx context.Context, tx pgx.Tx, cat *autz.Catalogo, e *aut
 // Editar confere (autz.PodeEditar trava a linha; Ler + USING na antiga; WITH CHECK na nova), muda SÓ
 // as colunas presentes e devolve a linha. Rode dentro de banco.ComUsuario.
 func (t Tabela) Editar(ctx context.Context, tx pgx.Tx, cat *autz.Catalogo, e *autz.Escopo, id string, campos map[string]any) ([]byte, error) {
+	if e == nil {
+		return nil, autz.ErrNegado
+	}
+	if err := t.recusarReservadas(campos); err != nil {
+		return nil, err
+	}
 	cols, err := colunas(campos)
 	if err != nil {
 		return nil, err
@@ -140,6 +166,9 @@ func (t Tabela) Editar(ctx context.Context, tx pgx.Tx, cat *autz.Catalogo, e *au
 
 // Apagar confere (autz.PodeApagar trava a linha; Ler + USING de delete) e apaga.
 func (t Tabela) Apagar(ctx context.Context, tx pgx.Tx, cat *autz.Catalogo, e *autz.Escopo, id string) error {
+	if e == nil {
+		return autz.ErrNegado
+	}
 	if err := cat.PodeApagar(ctx, tx, e, t.Nome, id); err != nil {
 		return err
 	}
@@ -167,6 +196,54 @@ func (t Tabela) devolver(ctx context.Context, tx pgx.Tx, cat *autz.Catalogo, e *
 		return nil, autz.ErrNaoEncontrado
 	}
 	return corpo, nil
+}
+
+// colunasDoCorpo confere na MONTAGEM a struct C do corpo e devolve as colunas que ela declara.
+// Regra mínima: todo campo exportado é json.RawMessage com `json:"<coluna>,omitempty"` (sem
+// embutidas). Só assim "ausente" fica fora do UPDATE e `null` explícito grava nulo: um `string`
+// sem omitempty gravaria "" em todo PATCH, e um `*string` perderia o null explícito. Validação de
+// valor é do banco (cast pelo tipo da coluna) e do método Validar() de C.
+func colunasDoCorpo[C any]() ([]string, error) {
+	rt := reflect.TypeFor[C]()
+	if rt.Kind() != reflect.Struct {
+		return nil, fmt.Errorf("corpo %s não é struct", rt)
+	}
+	var cols []string
+	for i := range rt.NumField() {
+		f := rt.Field(i)
+		if f.Anonymous {
+			return nil, fmt.Errorf("corpo %s: campo embutido %s não é permitido", rt, f.Name)
+		}
+		if !f.IsExported() {
+			continue
+		}
+		tag := f.Tag.Get("json")
+		if tag == "-" {
+			continue
+		}
+		nome, opcao, _ := strings.Cut(tag, ",")
+		switch {
+		case f.Type != reflect.TypeFor[json.RawMessage]():
+			return nil, fmt.Errorf("corpo %s: campo %s tem de ser json.RawMessage (ausente ≠ null)", rt, f.Name)
+		case !reColuna.MatchString(nome) || opcao != "omitempty":
+			return nil, fmt.Errorf("corpo %s: campo %s tem de ter a tag `json:\"<coluna>,omitempty\"`", rt, f.Name)
+		}
+		cols = append(cols, nome)
+	}
+	return cols, nil
+}
+
+// montar: declaração inválida derruba a montagem (panic), como Consulta.Handler: rota de escrita
+// com tabela ou corpo inválidos nunca entra no ar.
+func montar[C any](cat *autz.Catalogo, t Tabela) []string {
+	if err := t.Validar(cat); err != nil {
+		panic(err)
+	}
+	cols, err := colunasDoCorpo[C]()
+	if err != nil {
+		panic(fmt.Errorf("%w: %v", ErrDeclaracao, err))
+	}
+	return cols
 }
 
 // lerCampos lê o corpo C, roda C.Validar() se existir e devolve as colunas presentes. Já respondeu
@@ -203,8 +280,29 @@ func escopoOuErro(w http.ResponseWriter, r *http.Request) *autz.Escopo {
 	return e
 }
 
+var reColunaDaRegra = regexp.MustCompile(`"autz_nova"\."([^"]+)"`) // como autz.colunasDaLinhaNova
+
+// regraTemSuasColunas: coluna que a regra de criar lê, que a struct do corpo declara e que o
+// pedido deixou de mandar é erro do PEDIDO (400 "Informe …"), não 500 com log a cada tentativa.
+// Coluna que a struct nem declara continua defeito da rota: autz.PodeCriar responde ErrDeclaracao.
+func (t Tabela) regraTemSuasColunas(w http.ResponseWriter, cat *autz.Catalogo, e *autz.Escopo, campos map[string]any, declaradas []string) bool {
+	f, err := cat.Filtro(e, t.Nome, autz.Criar, "autz_nova")
+	if err != nil {
+		ErroDeEscrita(w, err)
+		return false
+	}
+	for _, m := range reColunaDaRegra.FindAllStringSubmatch(f.SQL, -1) {
+		if _, tem := campos[m[1]]; !tem && m[1] != t.Autor && slices.Contains(declaradas, m[1]) {
+			Erro(w, http.StatusBadRequest, "pedido_invalido", "Informe "+m[1]+".")
+			return false
+		}
+	}
+	return true
+}
+
 // RotaCriar: POST que lê o corpo C (struct de json.RawMessage), confere e grava em banco.ComUsuario.
 func RotaCriar[C any](p *pgxpool.Pool, cat *autz.Catalogo, t Tabela) http.HandlerFunc {
+	declaradas := montar[C](cat, t)
 	return func(w http.ResponseWriter, r *http.Request) {
 		e := escopoOuErro(w, r)
 		if e == nil {
@@ -212,6 +310,9 @@ func RotaCriar[C any](p *pgxpool.Pool, cat *autz.Catalogo, t Tabela) http.Handle
 		}
 		campos, ok := lerCampos[C](w, r)
 		if !ok {
+			return
+		}
+		if !t.regraTemSuasColunas(w, cat, e, campos, declaradas) {
 			return
 		}
 		var linha []byte
@@ -229,6 +330,7 @@ func RotaCriar[C any](p *pgxpool.Pool, cat *autz.Catalogo, t Tabela) http.Handle
 
 // RotaEditar: PATCH /…/{id} com o corpo C.
 func RotaEditar[C any](p *pgxpool.Pool, cat *autz.Catalogo, t Tabela) http.HandlerFunc {
+	montar[C](cat, t)
 	return func(w http.ResponseWriter, r *http.Request) {
 		e := escopoOuErro(w, r)
 		if e == nil {
@@ -254,6 +356,9 @@ func RotaEditar[C any](p *pgxpool.Pool, cat *autz.Catalogo, t Tabela) http.Handl
 
 // RotaApagar: DELETE /…/{id}.
 func RotaApagar(p *pgxpool.Pool, cat *autz.Catalogo, t Tabela) http.HandlerFunc {
+	if err := t.Validar(cat); err != nil {
+		panic(err)
+	}
 	return func(w http.ResponseWriter, r *http.Request) {
 		e := escopoOuErro(w, r)
 		if e == nil {
