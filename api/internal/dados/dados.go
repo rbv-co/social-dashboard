@@ -146,7 +146,7 @@ func LerCorpo(w http.ResponseWriter, r *http.Request, destino any) bool {
 // filtro) não devolve a tabela inteira, e o Postgres para de calcular na linha seguinte.
 func Lista(ctx context.Context, q Consultor, w http.ResponseWriter, consulta string, args pgx.NamedArgs) {
 	var corpo []byte
-	sql := `select coalesce(json_agg(t), '[]'::json) from (select * from (` + consulta + `) x limit ` + strconv.Itoa(LimitePadrao) + `) t`
+	sql := `select coalesce(json_agg(t.*), '[]'::json) from (select * from (` + consulta + `) x limit ` + strconv.Itoa(LimitePadrao) + `) t`
 	if err := q.QueryRow(ctx, sql, args).Scan(&corpo); err != nil {
 		ErroDoBanco(w, err)
 		return
@@ -160,7 +160,7 @@ func Lista(ctx context.Context, q Consultor, w http.ResponseWriter, consulta str
 func Um(ctx context.Context, q Consultor, w http.ResponseWriter, consulta string, args pgx.NamedArgs) {
 	var corpo []byte
 	var n int
-	err := q.QueryRow(ctx, `select (array_agg(row_to_json(t)))[1], count(*) from (select * from (`+consulta+`) x limit 2) t`, args).Scan(&corpo, &n)
+	err := q.QueryRow(ctx, `select (array_agg(row_to_json(t.*)))[1], count(*) from (select * from (`+consulta+`) x limit 2) t`, args).Scan(&corpo, &n)
 	switch {
 	case err != nil:
 		ErroDoBanco(w, err)

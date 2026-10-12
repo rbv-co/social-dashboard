@@ -122,6 +122,28 @@ func TestListaEUmNoFormatoDoPostgREST(t *testing.T) {
 	}
 }
 
+// Uma coluna chamada t (ou x) não pode esconder a linha inteira: json_agg(t) pegaria a COLUNA t em
+// silêncio e devolveria um array de valores soltos em vez de objetos.
+func TestListaEUmComColunaChamadaTOuX(t *testing.T) {
+	p := testebanco.Novo(t)
+	ctx := context.Background()
+	if _, err := p.Exec(ctx, `create table coisa (id int, nome text); insert into coisa values (1, 'a'), (2, 'b')`); err != nil {
+		t.Fatal(err)
+	}
+	for _, col := range []string{"t", "x"} {
+		w := httptest.NewRecorder()
+		Lista(ctx, p, w, `select id as pid, nome as `+col+` from coisa order by id`, nil)
+		if quer := `[{"pid":1,"` + col + `":"a"},{"pid":2,"` + col + `":"b"}]`; w.Code != 200 || strings.Join(strings.Fields(w.Body.String()), "") != quer {
+			t.Errorf("Lista com coluna %s = %d %s, queria %s", col, w.Code, w.Body, quer)
+		}
+		w = httptest.NewRecorder()
+		Um(ctx, p, w, `select id as pid, nome as `+col+` from coisa where id = 1`, nil)
+		if quer := `{"pid":1,"` + col + `":"a"}`; w.Code != 200 || strings.TrimSpace(w.Body.String()) != quer {
+			t.Errorf("Um com coluna %s = %d %s, queria %s", col, w.Code, w.Body, quer)
+		}
+	}
+}
+
 // O pool de teste usa banco.Configurar: o servidor de teste pode estar em outro fuso, a data sai +00:00.
 func TestPoolDeTesteFalaUTC(t *testing.T) {
 	p := testebanco.Novo(t)
