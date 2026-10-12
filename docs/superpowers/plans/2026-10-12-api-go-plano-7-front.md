@@ -148,8 +148,14 @@ O inventário (robô × tabelas/edges × caminho) é a primeira task deste item,
 
 **⚠️ Não ligar `edges-core` num ambiente com gente de verdade antes do 5.6 mesclado:** o `meta-proxy` em Go ainda NÃO confere `accountId` contra `allowed_accounts` (a edge conferia; Ruling 34, entra no 5.6). Com a chave ligada, quem tem o módulo `meta` consultaria qualquer conta. Em produção a chave está desligada; na virada, o 5.6 já estará mesclado. O envio de imagem/vídeo da Gestão de Tráfego também depende do Storage (Plano 6).
 
+### Área `paineis` (5.12) — 12/10/2026, branch `feat/plano-7-paineis`
+
+**Trocado (atrás de `areaNaApi('paineis')`):** Notícias (`/noticias/rodadas?limite=6` — já distinto, some o `Set`; `/noticias/concorrentes?rodada=a,b,…`; `/noticias/panorama?limite=1`), Status da IA (`/status-ia/execucoes?limite=200`, `/status-ia/saude-dos-robos`) e os custos (`POST /custo-anthropic`, `/custo-openai`; o `detalhe` do não-2xx, como `chave_admin_nao_configurada`, aparece no lugar da frase genérica). `lerDaApi` em `buscar-e-salvar-dados.js` devolve o formato do `sb` (array com `.erro`). Início e Gestão Interna: conferido, nenhum acesso direto ao Supabase.
+
+**Prova** (API do `main` com o 5.12 e o DDL de `testebanco/paineis.go`, `VITE_API_AREAS=conta,edges-core,paineis`, Chrome a 375 e a 1440 px): e-mail do `/auth/eu` no menu do perfil; Notícias com Panorama e marcas; Status da IA com a linha do tempo; 0 pedidos dessas leituras ao Supabase; sem rolagem lateral. Com o e-mail, a faixa do "entrar como" ocupa duas linhas e o avatar fica no lugar (a sobreposição registrada na área `conta` sumiu). O custo aparece "indisponível" no ensaio porque a API local não tem a chave admin da Anthropic — é o comportamento certo.
+
 ### Pendências de API
 
 | Item | Dono | Situação |
 |---|---|---|
-| `email` e `nome` em `GET /auth/eu` | A (5.0, no PR do 5.12) | aceito em 12/10 |
+| `email` e `nome` em `GET /auth/eu` | A (5.0, no PR do 5.12) | entregue (PR #352, Ruling 37) |
