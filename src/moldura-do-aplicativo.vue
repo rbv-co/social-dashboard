@@ -35,15 +35,18 @@
          espaço pra ele custava caro: uma quebrou 10 topbars, outra apertou barras
          que já estavam no limite. Quem quer trocar senha ou sair volta pra
          Central — um toque, e as barras ficam livres pro que é da ferramenta. -->
-    <div v-if="estado.user && naTelaInicio" class="perfil-menu" :class="{ 'perfil-menu--com-faixa': emModoEntrarComo }">
-      <button class="perfil-avatar" type="button" @click="menuAberto = !menuAberto" :title="estado.user.email" aria-label="Menu do perfil">
+    <!-- Pela SESSÃO, e não por `estado.user`: na API em Go (Plano 7) a pessoa só
+         chega com `/auth/eu`, e sem rede no boot o menu — com o "Sair" — sumia.
+         No Supabase os dois nascem e morrem juntos, então nada muda lá. -->
+    <div v-if="estado.currentSession && naTelaInicio" class="perfil-menu" :class="{ 'perfil-menu--com-faixa': emModoEntrarComo }">
+      <button class="perfil-avatar" type="button" @click="menuAberto = !menuAberto" :title="estado.user?.email" aria-label="Menu do perfil">
         <img v-if="estado.avatarUrl" :src="estado.avatarUrl" alt="Perfil">
         <span v-else class="perfil-avatar-ph">{{ iniciais }}</span>
       </button>
       <template v-if="menuAberto">
         <div class="perfil-backdrop" @click="menuAberto = false"></div>
         <div class="perfil-dropdown">
-          <div class="perfil-dropdown-email">{{ estado.user.email }}</div>
+          <div class="perfil-dropdown-email">{{ estado.user?.email }}</div>
           <div class="perfil-dropdown-role" v-if="estado.role === 'admin'">Administrador</div>
           <div class="perfil-dropdown-sep"></div>
           <!-- Ativar notificações: só aparece enquanto NÃO ativou. Ativação é só
