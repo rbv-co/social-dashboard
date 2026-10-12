@@ -280,8 +280,6 @@ func escopoOuErro(w http.ResponseWriter, r *http.Request) *autz.Escopo {
 	return e
 }
 
-var reColunaDaRegra = regexp.MustCompile(`"autz_nova"\."([^"]+)"`) // como autz.colunasDaLinhaNova
-
 // regraTemSuasColunas: coluna que a regra de criar lê, que a struct do corpo declara e que o
 // pedido deixou de mandar é erro do PEDIDO (400 "Informe …"), não 500 com log a cada tentativa.
 // Coluna que a struct nem declara continua defeito da rota: autz.PodeCriar responde ErrDeclaracao.
@@ -291,9 +289,9 @@ func (t Tabela) regraTemSuasColunas(w http.ResponseWriter, cat *autz.Catalogo, e
 		ErroDeEscrita(w, err)
 		return false
 	}
-	for _, m := range reColunaDaRegra.FindAllStringSubmatch(f.SQL, -1) {
-		if _, tem := campos[m[1]]; !tem && m[1] != t.Autor && slices.Contains(declaradas, m[1]) {
-			Erro(w, http.StatusBadRequest, "pedido_invalido", "Informe "+m[1]+".")
+	for _, col := range autz.ColunasDaLinhaNova(f) {
+		if _, tem := campos[col]; !tem && col != t.Autor && slices.Contains(declaradas, col) {
+			Erro(w, http.StatusBadRequest, "pedido_invalido", "Informe "+col+".")
 			return false
 		}
 	}

@@ -71,9 +71,10 @@ func ComEscopo(b Banco) func(http.Handler) http.Handler {
 
 var reColunaDaRegra = regexp.MustCompile(`"autz_nova"\."([^"]+)"`)
 
-// colunasDaLinhaNova: as colunas da linha nova que a regra lê (o SQL da regra as cita como
-// "autz_nova"."coluna"), sem repetição.
-func colunasDaLinhaNova(f Filtro) []string {
+// ColunasDaLinhaNova: as colunas da linha nova que a regra lê (o SQL da regra as cita como
+// "autz_nova"."coluna"), sem repetição. Exportada para dados.Tabela não copiar o formato interno do
+// SQL do autz; o filtro tem de ter sido montado com o alias "autz_nova".
+func ColunasDaLinhaNova(f Filtro) []string {
 	var cols []string
 	for _, m := range reColunaDaRegra.FindAllStringSubmatch(f.SQL, -1) {
 		if !slices.Contains(cols, m[1]) {
@@ -107,7 +108,7 @@ func (c *Catalogo) PodeCriar(ctx context.Context, b Banco, e *Escopo, tab string
 	if err != nil {
 		return err
 	}
-	cols := colunasDaLinhaNova(f)
+	cols := ColunasDaLinhaNova(f)
 	for _, col := range cols {
 		if _, ok := linha[col]; !ok {
 			return fmt.Errorf("%w: a linha de criação de %s não traz a coluna %q, que a regra de Criar lê", ErrDeclaracao, tab, col)
@@ -143,7 +144,7 @@ func (c *Catalogo) PodeEditar(ctx context.Context, tx pgx.Tx, e *Escopo, tab, id
 	if err != nil {
 		return err
 	}
-	if err := semChaveParecida(colunasDaLinhaNova(fn), mudancas); err != nil {
+	if err := semChaveParecida(ColunasDaLinhaNova(fn), mudancas); err != nil {
 		return err
 	}
 	if mudancas == nil {
