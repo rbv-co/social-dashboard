@@ -36,6 +36,11 @@ const (
 	// cancelado cancela a consulta no banco; a resposta é 504 prazo_esgotado). Fica ABAIXO dos 60 s do
 	// proxy_read_timeout padrão do nginx e do WriteTimeout do servidor (main.go).
 	PrazoDominio = 30 * time.Second
+
+	// EscritaDoServidor é o WriteTimeout do http.Server (main.go): a folga de 30 s acima do maior
+	// prazo por requisição (PrazoCollabs) deixa o handler terminar e responder antes de a conexão cair.
+	// TestPrazosPorRotaPelaMontagemReal confere cada prazo de rota contra ESTA constante.
+	EscritaDoServidor = PrazoCollabs + 30*time.Second
 )
 
 // FuncoesRPC é a lista branca de POST /rpc/{nome}. Vazia no 5.0: cada sub-plano acrescenta as

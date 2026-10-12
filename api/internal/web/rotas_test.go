@@ -291,10 +291,13 @@ func TestPrazosPorRotaPelaMontagemReal(t *testing.T) {
 	if len(vistos) != len(quer) {
 		t.Errorf("rotas com prazo não montadas: %v", vistos)
 	}
-	// o WriteTimeout do servidor (main.go) é PrazoCollabs + 30 s: nenhum prazo de rota passa do maior
+	// o WriteTimeout do servidor (main.go usa EscritaDoServidor): cada prazo de rota termina com folga ANTES dele
+	if EscritaDoServidor != 150*time.Second {
+		t.Errorf("EscritaDoServidor = %v: as NOTAS dizem 150 s (PrazoCollabs + 30 s)", EscritaDoServidor)
+	}
 	for chave, d := range quer {
-		if d > PrazoCollabs {
-			t.Errorf("%s: prazo %v acima de PrazoCollabs, de onde sai o WriteTimeout do servidor", chave, d)
+		if d+30*time.Second > EscritaDoServidor {
+			t.Errorf("%s: prazo %v sem 30 s de folga antes do WriteTimeout do servidor (%v): a conexão cairia antes do 504", chave, d, EscritaDoServidor)
 		}
 	}
 	if PrazoDominio >= 60*time.Second {

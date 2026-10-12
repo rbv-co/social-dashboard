@@ -56,7 +56,7 @@ func main() {
 		// corpo de até 5 MB da Shopify em rede ruim; IdleTimeout fecha keep-alive parado.
 		srv := &http.Server{Addr: cfg.Addr, Handler: web.Rotas(p, auth.NovoStore(p), auth.NovoLimitador(), cfg),
 			ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second,
-			WriteTimeout: web.PrazoCollabs + 30*time.Second, IdleTimeout: 120 * time.Second}
+			WriteTimeout: web.EscritaDoServidor, IdleTimeout: 120 * time.Second}
 		fim := make(chan struct{})
 		go func() {
 			<-ctx.Done()
