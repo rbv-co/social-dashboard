@@ -254,7 +254,7 @@ func TestErroDeConfiguracaoNaoVazaOToken(t *testing.T) {
 func TestCarregarChavesDeCusto(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgres://x")
 	t.Setenv("ANTHROPIC_ADMIN_KEY", " sk-ant-admin-falsa-123 ")
-	t.Setenv("OPENAI_ADMIN_KEY", "sk-admin-falsa-456")
+	t.Setenv("OPENAI_ADMIN_KEY", " sk-admin-falsa-456\n") // espaço e quebra de linha de .env/segredo copiado
 	c, err := Carregar()
 	if err != nil {
 		t.Fatal(err)
