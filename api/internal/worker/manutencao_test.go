@@ -66,6 +66,14 @@ func TestFaxinaDaAPI(t *testing.T) {
 		('velha', now() - interval '46 days'), ('nova', now() - interval '44 days')`); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := p.Exec(ctx, `insert into tokens_de_senha (token_hash, usuario_id, tipo, expira_em, usado_em) values
+		('vencido-ha-8d', $1::uuid, 'recuperacao', now() - interval '8 days', null),
+		('vencido-ha-1d', $1::uuid, 'recuperacao', now() - interval '1 day', null),
+		('usado-ha-8d', $1::uuid, 'convite', now() + interval '1 hour', now() - interval '8 days'),
+		('usado-ha-1d', $1::uuid, 'convite', now() + interval '1 hour', now() - interval '1 day'),
+		('vivo', $1::uuid, 'recuperacao', now() + interval '1 hour', null)`, u); err != nil {
+		t.Fatal(err)
+	}
 	if err := FaxinaDaAPI(p).Executar(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -75,6 +83,11 @@ func TestFaxinaDaAPI(t *testing.T) {
 	p.QueryRow(ctx, `select string_agg(chave, ',') from envios_feitos`).Scan(&envios)
 	if sessoes != "valida" || webhooks != "novo" || envios != "nova" {
 		t.Fatalf("sessoes=%q webhooks=%q envios=%q", sessoes, webhooks, envios)
+	}
+	var tokens string
+	p.QueryRow(ctx, `select string_agg(token_hash, ',' order by token_hash) from tokens_de_senha`).Scan(&tokens)
+	if tokens != "usado-ha-1d,vencido-ha-1d,vivo" {
+		t.Fatalf("tokens_de_senha = %q: some o vencido ou usado há mais de 7 dias, e só ele", tokens)
 	}
 }
 

@@ -216,7 +216,7 @@ func TestMontarRecusaParametroDeRegraComDoisValores(t *testing.T) {
 		(select count(*) from eq_b x where {ler:eq_b:x}) as b from coisa c`)
 	e := &autz.Escopo{ID: "11111111-0000-4000-a000-000000000001", TemPerfil: true, Ativo: true, Contas: []string{"A1"},
 		Vinculos: map[string][]string{"E1": {"gestor"}, "E2": {"membro"}}}
-	_, _, _, err := c.montar(map[string][]string{}, e, cat)
+	_, _, _, err := c.montar(map[string][]string{}, e, cat, nil)
 	if !errors.Is(err, ErrDeclaracao) {
 		t.Errorf("montar = %v, esperava ErrDeclaracao", err)
 	}
