@@ -131,7 +131,8 @@ func TestConferirSchemaVazioListaEmOrdem(t *testing.T) {
 		"coluna accounts.id", "coluna bling_pedido_nota.nota_situacao", "coluna bling_pedido_ajuste_valor.pedido_id", "coluna bling_pedido_vendedor.pedido_id",
 		"coluna bling_lojas.loja_id", "coluna frota_uso.saida_em", "coluna frota_uso.id", "função registrar_checkout_abandono",
 		"coluna equipes_permissoes.chave", "coluna entradas_como_outro_usuario.admin_id", "coluna entradas_como_outro_usuario.criado_em", "coluna equipes.deposito_id",
-		"único chatwoot_eventos(conversation_id,tipo)", "único (dedupe do on conflict do nothing) carrinho_eventos(evento_shopify_id)"} {
+		"único chatwoot_eventos(conversation_id,tipo)", "único (dedupe do on conflict do nothing) carrinho_eventos(evento_shopify_id)",
+		"coluna noticias_concorrentes.rodada", "coluna robos_saude.critico"} {
 		if !tem(quer) {
 			t.Errorf("faltou acusar %q", quer)
 		}
