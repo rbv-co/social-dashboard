@@ -25,16 +25,6 @@ export function comErro(array, erro) {
 // O que ele NÃO pega: negação de RLS. O PostgREST responde 200 com lista vazia
 // quando a política de linha esconde tudo — do lado de cá é idêntico a "a tabela
 // realmente não tem nada para você". Isso continua invisível.
-// Leitura de domínio pela API em Go (Plano 7), no MESMO formato de `sb`: array,
-// com `.erro` (não enumerável) quando falha. Sem permissão a API responde
-// `200 []`, como a RLS — continua invisível, igual ao `sb`.
-export async function lerDaApi(caminho, params) {
-  const { data, error } = await pedir('GET', caminho, { params })
-  if (error) return comErro([], error)
-  if (!Array.isArray(data)) return comErro([], erroDaApi(502, null))
-  return data
-}
-
 export async function sb(path) {
   try {
     const token = estado.currentSession?.access_token || SUPABASE_ANON_KEY
@@ -48,4 +38,14 @@ export async function sb(path) {
   } catch (e) {
     return comErro([], ERRO_DE_REDE)
   }
+}
+
+// Leitura de domínio pela API em Go (Plano 7), no MESMO formato de `sb`: array,
+// com `.erro` (não enumerável) quando falha. Sem permissão a API responde
+// `200 []`, como a RLS — continua invisível, igual ao `sb`.
+export async function lerDaApi(caminho, params) {
+  const { data, error } = await pedir('GET', caminho, { params })
+  if (error) return comErro([], error)
+  if (!Array.isArray(data)) return comErro([], erroDaApi(502, null))
+  return data
 }
