@@ -406,3 +406,54 @@ Checklist do ensaio: `api migrar` aplicou `00005_tokens_de_senha.sql`; `conferir
 - **FKs de produção para `auth.users`/`profiles` que barram a exclusão de uma conta** (21 FKs em 16 tabelas para `auth.users`): CASCADE: `profiles.id`, `push_subs.user_id`. SET NULL: `frota_requisicoes.{criada_por,decidida_por,encerrada_por}`, `frota_requisicoes_historico.quem`, `frota_revisoes.criada_por`, `frota_checklist.{criada_por,assinada_por}`, `frota_manutencoes.criada_por`, `frota_uso.aceite_por`. NO ACTION (barram a exclusão): `fabrica_campanhas.criado_por`, `fabrica_jobs.criado_por`, `conteudo_pecas.{criado_por,aprovado_por}`, `conteudo_jobs.criado_por`, `bling_pedido_ajuste_valor.criado_por`, `bling_pedido_ajuste_vendedor.criado_por`, `gt_campanhas_rascunho.criado_por`, `acessos_perfis.criado_por`, `frota_requisicoes.arquivada_por`. Para `profiles`: CASCADE `user_permissions.user_id`, `push_preferencias.user_id`, `equipes_membros.profile_id`, `equipes_permissoes.profile_id`, `canais_grupos_membros.profile_id`; SET NULL `conteudo_pecas.responsavel`; NO ACTION `entradas_como_outro_usuario.{admin_id,alvo_id}`, `user_permissions.granted_by`, `equipes_membros.criado_por`, `equipes_permissoes.concedido_por`, `canais_grupos_membros.concedido_por`; desconhecidas (precisam do dump): `audit_log.actor_id`, `acessos_pessoas.profile_id`. Consequência: quem criou conteúdo, fábrica, ajuste de venda etc. não pode ser excluído (a tela mostra "ainda há registros ligados"); desativar é o caminho.
 - **Conta e senha (paridade com o Supabase, mantida):** `trocar-senha` não exige a senha atual (era o `updateUser`); `definir-senha` não limpa `precisa_trocar_senha`; os limites de taxa são em memória, de uma instância só; um super-admin que troca a PRÓPRIA senha perde a sessão em uso (a edge não derrubava); sessão de tipo `servico` de conta admin passaria no portão do `invite-user` (nada cria sessão de serviço hoje); `conferir-senha` não tem limite por IP (igual à edge).
 - **Antes do corte:** o catálogo de policies e as funções do oráculo (`api/internal/autz/autzteste/ajudantes.sql`) são de 2026-10-09. Se alguém criar/alterar policy ou uma das 25 funções em produção antes do corte, refazer o levantamento, copiar o JSON novo para `api/internal/autz/`, regerar `ajudantes.sql` e rodar o teste de contrato: forma nova de policy faz a API NÃO subir. O Auth do Supabase deixa de mandar e-mail de convite/troca: conferir no ZeptoMail o domínio remetente e a cota.
+
+## Plano 5.1 — admin, equipes e acesso
+
+### Rotas novas
+- Pública: `POST /api/pedir-acesso` (10 por IP por hora, contando as recusadas; só `name`, `email`, `message`; `status` sempre `pending`).
+- Com sessão (regra = catálogo de produção; escrita de sessão "entrar como" = 403): `/acesso/usuarios`, `/acesso/perfis`, `/acesso/pedidos`, `/equipes/times`, `/equipes/membros`, `/equipes/permissoes`, `/equipes/grupos`, `/equipes/grupos-membros`, `/avisos/preferencias`, `/eu/push/inscrever`, `/eu/push/desinscrever`, `/saude/conferencias`.
+- `/saude/ia-execucoes` NÃO existe no 5.1 (Ruling 5.1-14): a tela de status do Claude lê `ia_execucoes` por `/status-ia/execucoes`, do 5.12.
+- Tabelas sem rota (Ruling 5.1-5): `user_permissions`, `audit_log`, `entradas_como_outro_usuario`, `platform_settings`, `robos_esperados`, `robos_execucoes`, `coletor_log`, `projetos_status`, `gestor_log` (nenhum sítio no front; quem escreve é gatilho, worker ou robô).
+
+### nginx
+- `location /api/` genérico cobre as rotas com sessão. `POST /api/pedir-acesso` é pública e anônima: o limite da API é por instância e por IP, então spam vindo de muitos IPs (um /48 de IPv6 tem ~650 mil endereços) passa por ele. Ponha uma `location` própria com `limit_req`, no molde da de `esqueci-senha` (zona própria, `burst` curto, `client_max_body_size 4k`, `proxy_pass http://127.0.0.1:8080/pedir-acesso;` e o `X-Real-IP`):
+  ```nginx
+  limit_req_zone $binary_remote_addr zone=pedido:10m rate=6r/m;   # em http {}
+  location = /api/pedir-acesso { limit_req zone=pedido burst=3 nodelay; client_max_body_size 4k; proxy_pass http://127.0.0.1:8080/pedir-acesso; }
+  ```
+  Teto global (todos os IPs somados) não existe: se o spam vier distribuído, entra (`ponytail`) um teto na API.
+- Runbook: um escritório atrás de 1 IP tem 10 tentativas por hora, e as recusadas por validação contam. A API ainda NÃO exige `Content-Type: application/json` nesta rota (menor da revisão da Task 8): um formulário de outro site pode postar `text/plain` com o navegador do visitante e distribuir o limite por IPs reais; enquanto isso, o `limit_req` do nginx é a defesa.
+
+### Mudanças de contrato que o Plano 7 absorve
+- Escrita negada responde 403/404 (o PostgREST respondia 2xx com zero linhas); a linha devolvida é a da leitura, ou `{"id"}` quando quem gravou não a lê.
+- `criado_por`, `alterado_por` e `concedido_por` saem do corpo (a sessão preenche; mandar = 400).
+- Liberação de estoque é apagada por id (`DELETE /equipes/permissoes/{id}`): `tela-de-admin.vue:1230` passa a ler o `id` e `:1488` a usá-lo.
+- Preferências de aviso vão em lote (`POST /avisos/preferencias`, array); push por `inscrever`/`desinscrever`.
+- `permissions`/`permissions_excecao` têm de ser objeto JSON (400 senão).
+- Sessão "entrar como" só lê no 5.1: as 19 escritas respondem 403 (`TestEscritasRecusamImpersonado`).
+- `tela-de-admin.vue`: `:2284` manda `criado_por` (agora 400); `:2301` e `:2500` esperam array e recebem objeto; `:2498-2502` não-super recebe 403 (antes 200 `[]`): mapear o 403 para o aviso "seu login não está na lista de super-admins"; `:2814-2817` manda `alterado_em`/`alterado_por` (agora 400) e `:2819` não confere o status do `adFetch` (um 400 viraria toast "Permissões atualizadas").
+
+### O que o dono precisa saber/decidir (paridade com produção mantida; nada disto foi corrigido)
+- **D1 (reproduzido):** admin comum marca `is_superadmin` numa segunda conta (200; pode ser conta dele criada por `invite-user`). Essa ficha é o portão do "entrar como", que aceita qualquer alvo: a conta entra como `breno@` (super por e-mail) e lê tudo como ele. Correção: exigir super por e-mail quando `is_superadmin` muda e/ou "entrar como" recusar alvo super por e-mail.
+- **D2 (reproduzido):** admin comum desativa `breno@` e `gabriel.gertrudes@` (`guard_profiles` só protege `erick@`); `disabled` não vai ao `audit_log`.
+- **D3 (presumido em produção; a API fecha com 400):** `impedir_autopromocao` não lista `email`; gravar um e-mail da lista de `is_superadmin()` torna a conta super. Conferir em produção quem já trocou e-mail.
+- **D4 (reproduzido):** a trava de loja e as contas do admin não limitam o que ele concede (`adminRestrito` dá contas que não vê e tira a trava de outra pessoa).
+- **T1:** gestor de um time liga o time a qualquer canal livre do Bling e o time passa a ver o faturamento dele (`tela-de-admin.vue:1354,1392`; policy `equipes_editar`). Decidir: fica com o gestor ou só super-admin.
+- **T2:** gestor de qualquer time cria time novo ligado a canal livre e fica sem dono (só super-admin administra).
+- **T3:** supervisora/gestor libera estoque para quem não é do time (201); sem efeito hoje, passa a valer se a pessoa entrar no time depois.
+- **G2:** apagar grupo com lojas solta as lojas e apaga as supervisoras dele (só o front barra). Decidir 409 ou paridade.
+- **G3 e Ruling 5.1-9:** `concedido_por` (supervisoras de grupo, antes nulo; liberações de estoque) agora é preenchido pela sessão, e a FK é NO ACTION: o super que concedeu não pode ter o perfil excluído enquanto a concessão existir (23503, "ainda há registros ligados"); desativar é o caminho. Mesmo efeito de `equipes_permissoes.concedido_por` e `acessos_perfis.criado_por`.
+- **P1:** duas definições de super-admin: a tela mostra "Salvar como perfil" pela ficha (`:2258`), mas só grava quem está na lista de e-mails.
+- **P2:** apagar perfil de acesso: produção permite ao super; a API não tem rota (nenhuma tela usa; `on delete set null` preserva o acesso).
+- **P3:** nome de perfil vazio, só espaços ou de até 1 MiB é aceito como em produção (3 pessoas escrevem). Sugestão: `check (btrim(nome) <> '' and length(nome) <= 120)`.
+- **A3:** o esquema de `access_requests` é PRESUMIDO (`01-tabelas-5-1.sql`), fora do levantamento: conferir colunas e CHECK antes do corte (`conferir` cobra as colunas).
+- **A4:** nada registra quem aprovou ou negou um pedido (igual produção). **A5:** a lista do admin mostra no máximo 1000 pedidos, sem paginação.
+- **W1:** endpoint de push aceita porta livre e não há teto de inscrições por pessoa; o worker envia em série com até 30 s por envio, então N endpoints num host lento atrasam os avisos de todos. Sugestão: só hosts dos serviços de push (FCM, Mozilla, WNS, Apple) na 443 e/ou ~10 inscrições por pessoa.
+- **W2:** inscrições com `user_id` nulo (opt-in de 24/07) não recebem nada e ninguém as reivindica: conferir quantas existem em produção.
+- **Admin sem ser super:** a tela de Admin só abre para super-admin, mas editar perfis e ler pedidos de acesso exigem `role = 'admin'`: super-admin com papel viewer vê a tela e não grava.
+- **Sem perfil:** `/auth/entrar` dá sessão a qualquer usuário com senha, tenha perfil ou não, e quem não tem perfil lê a lista da equipe (igual a produção: `auth_read_profiles` = conta ativa). Se clientes da Vessel vierem a ter senha, leem a lista da equipe.
+
+### Antes do corte
+- `api worker conferir` no banco restaurado confere colunas, tipos, únicos e os 4 gatilhos que o 5.1 presume (`guard_profiles`, `impedir_autopromocao`, `espelhar_rename_do_grupo`, `equipes_toca_atualizado`). `ia_execucoes` é cobrada pelo 5.12.
+- A fatia `api/internal/testebanco/esquema/` é RECONSTRUÍDA (D0 sem dump): quando o ensaio rodar, troque `01-tabelas-*.sql` pelo `pg_dump --schema-only` limpo e rode os testes; divergência de default ou constraint só aparece aí.
+- `access_requests` é presumido (A3): se o `conferir` acusar coluna, ajuste a tabela da fatia e a rota antes de ligar a tela de login.
