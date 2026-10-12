@@ -50,6 +50,9 @@ type Funcao struct {
 	Params  []Param
 	Retorno Retorno
 	Portao  autz.Regra
+	// SoSessaoPropria: a função GRAVA. Sessão de "entrar como" recebe 403 sem a função rodar
+	// (Ruling 5.2-3); função que só lê fica aberta a quem entrou como (ver o que a pessoa vê).
+	SoSessaoPropria bool
 }
 
 var (
@@ -172,6 +175,10 @@ func (rg *Registro) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if !f.Portao(e) {
 		dados.Erro(w, http.StatusForbidden, "sem_permissao", "")
+		return
+	}
+	if f.SoSessaoPropria && a.ImpersonadorID != nil {
+		dados.Erro(w, http.StatusForbidden, "sem_permissao", dados.FraseEntrarComo)
 		return
 	}
 	// corpo vazio (inclusive sem tamanho declarado, chunked) vale {}
