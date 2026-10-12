@@ -479,6 +479,8 @@ func TestRPCNovoRecusaNomesProibidos(t *testing.T) {
 		"vessel_cpf_valido", "vessel_faixa_da_nota", "vessel_situacao_do_convite", "vessel_numeros_do_stylist_circle", "vessel_telefone_canonico",
 		// páginas públicas (anon): Plano 6
 		"vessel_convite_da_convidada", "vessel_rsvp_da_convidada", "vessel_pedir_atendimento",
+		// ajudantes de policy e funções sem chamada de rede (web.RPCForaDoPainel)
+		"is_vessel_atendimentos_editar", "meus_vinculos", "vessel_chave_do_produto", "vessel_email_canonico", "vessel_placar_do_stylist_circle",
 	}
 	for _, n := range proibidos {
 		if _, err := Novo(nil, Funcao{Nome: n, Portao: todos}); err == nil || !strings.Contains(err.Error(), "proibid") {

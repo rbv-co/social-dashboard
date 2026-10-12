@@ -48,7 +48,10 @@ func main() {
 	}
 	switch os.Args[1] {
 	case "api":
-		// Prazos: WriteTimeout acima do maior prazo por requisição (web.PrazoCollabs = 120 s)
+		if cfg.ZeptoToken == "" { // o convite e o "esqueci a senha" dependem dele (Carregar já validou os endereços e o remetente)
+			slog.Warn("ZEPTOMAIL_TOKEN ausente: convite e esqueci-senha não mandam e-mail")
+		}
+		// Prazos: WriteTimeout acima do maior prazo por requisição (web.PrazoCollabs = 120 s; o grupo de domínio, web.PrazoDominio, é menor)
 		// para o handler terminar e responder antes de a conexão cair; ReadTimeout cobre o
 		// corpo de até 5 MB da Shopify em rede ruim; IdleTimeout fecha keep-alive parado.
 		srv := &http.Server{Addr: cfg.Addr, Handler: web.Rotas(p, auth.NovoStore(p), auth.NovoLimitador(), cfg),

@@ -59,8 +59,9 @@ var (
 
 // proibidas são nomes que NUNCA viram RPC do painel, mesmo que um sub-plano os declare por
 // engano: as duas do Ruling 23, a fila do abandono e os robôs (Ruling 25: ficam em SQL, só o
-// worker as chama), as internas com EXECUTE revogado de `authenticated` e as três de página
-// pública (`anon`, Plano 6). A recusa é aqui, no ponto único de entrada: Novo falha e a API não sobe.
+// worker as chama), as internas com EXECUTE revogado de `authenticated`, as três de página
+// pública (`anon`, Plano 6) e as cinco sem chamada de rede (web.RPCForaDoPainel concorda: teste).
+// A recusa é aqui, no ponto único de entrada: Novo falha e a API não sobe.
 var proibidas = []string{
 	"marcar_senha_trocada", "minha_conta_esta_desativada",
 	"pegar_da_fila", "pegar_para_mensagem", "marcar_da_fila", "marcar_mensagem", "marcar_checkout_comprou",
@@ -69,6 +70,8 @@ var proibidas = []string{
 	"registrar_pedido_para_mensagem", "disparar_robo", "disparar_coletor", "tomar_trava",
 	"vessel_cpf_valido", "vessel_faixa_da_nota", "vessel_situacao_do_convite", "vessel_numeros_do_stylist_circle", "vessel_telefone_canonico",
 	"vessel_convite_da_convidada", "vessel_rsvp_da_convidada", "vessel_pedir_atendimento",
+	// ajudantes de policy (viraram Go em autz) e funções só citadas em comentário: sem chamada de rede do painel
+	"is_vessel_atendimentos_editar", "meus_vinculos", "vessel_chave_do_produto", "vessel_email_canonico", "vessel_placar_do_stylist_circle",
 }
 
 func proibida(nome string) bool {

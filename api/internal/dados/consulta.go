@@ -191,6 +191,17 @@ func prefixoDaSombra(tabelas []string, e *autz.Escopo, cat *autz.Catalogo, args 
 	return "with " + strings.Join(partes, ", ") + " ", nil
 }
 
+// ErrAmbiente: premissa do banco quebrada (PostgreSQL < 15 ou standard_conforming_strings != on),
+// diferente de falha de conexão ou de permissão.
+var ErrAmbiente = errors.New("ambiente do banco fora das premissas")
+
+// ConferirAmbiente é a conferência das premissas da gramática, sem montar rota (usada por
+// `api worker conferir`: o mesmo teste que a montagem de cada rota faz).
+func ConferirAmbiente(ctx context.Context, b Consultor) error {
+	_, err := ambienteDoBanco(ctx, b)
+	return err
+}
+
 // ambienteDoBanco confere as premissas da gramática e lê o que ela precisa: PG 15+ (recusa lixo
 // depois de número: `1x`), standard_conforming_strings = on (barra invertida é literal), e o conjunto de
 // tabelas/views reais do schema corrente. Falha = a rota não sobe.
@@ -205,10 +216,10 @@ func ambienteDoBanco(ctx context.Context, b Consultor) (*ambiente, error) {
 		return nil, err
 	}
 	if conforme != "on" {
-		return nil, fmt.Errorf("standard_conforming_strings = %q: a validação do SQL supõe on", conforme)
+		return nil, fmt.Errorf("%w: standard_conforming_strings = %q: a validação do SQL supõe on", ErrAmbiente, conforme)
 	}
 	if versao < 150000 {
-		return nil, fmt.Errorf("PostgreSQL %d: a validação do SQL supõe 15 ou mais (número seguido de letra é recusado)", versao)
+		return nil, fmt.Errorf("%w: PostgreSQL %d: a validação do SQL supõe 15 ou mais (número seguido de letra é recusado)", ErrAmbiente, versao)
 	}
 	amb := &ambiente{reais: map[string]bool{}, esquemas: map[string]bool{"public": true, "information_schema": true, esquema: true}}
 	for _, n := range nomes {

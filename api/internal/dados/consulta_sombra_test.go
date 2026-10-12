@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rbv-co/social-dashboard/api/internal/autz"
 	"github.com/rbv-co/social-dashboard/api/internal/testebanco"
@@ -236,5 +237,31 @@ func TestAmbienteConfereAsPremissas(t *testing.T) {
 	}
 	if _, err := ambienteDoBanco(context.Background(), tx); err == nil || !strings.Contains(err.Error(), "standard_conforming_strings") {
 		t.Errorf("com standard_conforming_strings = off: %v", err)
+	}
+}
+
+// fakeConsultor devolve uma linha fixa: o que ambienteDoBanco lê (scf, versão, schema, tabelas).
+type fakeConsultor struct {
+	scf    string
+	versao int
+}
+
+func (f fakeConsultor) QueryRow(context.Context, string, ...any) pgx.Row { return f }
+func (f fakeConsultor) Scan(d ...any) error {
+	*d[0].(*string), *d[1].(*int), *d[2].(*string), *d[3].(*[]string) = f.scf, f.versao, "public", []string{"coisa"}
+	return nil
+}
+
+// `api worker conferir` reusa as premissas da montagem (ConferirAmbiente): premissa quebrada vem
+// como ErrAmbiente (diferente de falha de conexão, que é erro comum).
+func TestConferirAmbiente(t *testing.T) {
+	ctx := context.Background()
+	if err := ConferirAmbiente(ctx, fakeConsultor{"on", 170000}); err != nil {
+		t.Errorf("PG 17 com scf on: %v", err)
+	}
+	for nome, f := range map[string]fakeConsultor{"scf off": {"off", 170000}, "PG 14": {"on", 140012}} {
+		if err := ConferirAmbiente(ctx, f); !errors.Is(err, ErrAmbiente) {
+			t.Errorf("%s: err = %v, esperava ErrAmbiente", nome, err)
+		}
 	}
 }

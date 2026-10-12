@@ -5640,6 +5640,14 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
 - (b) `api worker conferir` verifica, para cada nome registrado, no banco restaurado: (i) a função existe em `public` e NÃO existe em `pg_catalog` (nome sem schema resolve pelo `search_path` com `pg_catalog` na frente: uma função de mesmo nome lá a esconderia); (ii) `has_function_privilege('authenticated', oid, 'execute')` é verdadeiro (conferência mecânica de "mesmas permissões" para RPC: se a produção fechou o `EXECUTE` para `authenticated`, a API não pode abrir); (iii) a declaração bate com `pg_proc`: nomes e tipos dos parâmetros (`proargnames`/`proargtypes`), `pronargdefaults` = quantidade de `Opcional`, `proretset`/`void` × `Retorno`.
 - (c) A rota `/rpc` ganha prazo na montagem (`comPrazo` ou `statement_timeout` na transação de `banco.ComUsuario`): função lenta não segura conexão do pool indefinidamente.
 
+**Execução da Task 10 (2026-10-12), o que o código final faz além/diferente do texto abaixo** (o texto é o ponto de partida; a fonte de verdade é o código):
+- Limpeza de integração das Tasks 5–9 (commit à parte): `falhaDaEdge`/`reUUIDConta` únicos (some `recusaDeEntrarComo`/`reUUIDEntrarComo`); a regra de "RAISE escrito por nós" vive em `banco.RaiseNosso`/`banco.FraseDoRaise` (folha sem ciclo) e some a cópia `raiseDoBanco`; `dados.LerFiltros` devolve cada condição já entre parênteses.
+- `ZEPTOMAIL_NOME` (padrão "Central de Inteligência RBV") em vez do nome fixo; `ENDERECOS_DO_APP`/`ENDERECO_PADRAO`/`ZEPTOMAIL_DE` são validados na subida (origem https sem caminho; padrão da lista; remetente só endereço): erro derruba a API. Sem variável para os limites de taxa (fixos no código).
+- `web.RPCPendentes` (92) e `web.RPCForaDoPainel` (15) em `api/internal/web/rpc_lista.go`; `montarRPC` valida as três listas e `Rotas` dá panic; `rpc.Novo` passou a recusar também os 5 nomes "sem chamada de rede" (`is_vessel_atendimentos_editar`, `meus_vinculos`, `vessel_chave_do_produto`, `vessel_email_canonico`, `vessel_placar_do_stylist_circle`), para as duas listas concordarem.
+- O grupo de domínio inteiro tem `comPrazo(PrazoDominio)` (30 s) antes de `autz.ComEscopo`.
+- `conferir` (`cmd/api/conferir_dominio.go`): ambiente da gramática (`dados.ConferirAmbiente`), papel da API na auditoria, cada RPC registrada contra o `pg_proc` e a montagem de `web.Rotas` contra as tabelas reais.
+- Testes de montagem: sessão de cliente recusada em TODA rota protegida; caminhos felizes da conta pela montagem real; o teste do `/rpc` usa um nome que nenhum sub-plano registra (`funcao_que_ninguem_registra`), não `vessel_gerar_lote`.
+
 - [ ] **Step 1: Escrever os testes que falham**
 
 Acrescente ao fim de `api/internal/config/config_test.go` (o arquivo já importa `slices`):

@@ -9,12 +9,15 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rbv-co/social-dashboard/api/internal/auth"
+	"github.com/rbv-co/social-dashboard/api/internal/autz"
 	"github.com/rbv-co/social-dashboard/api/internal/canais"
 	"github.com/rbv-co/social-dashboard/api/internal/comercial"
 	"github.com/rbv-co/social-dashboard/api/internal/config"
 	"github.com/rbv-co/social-dashboard/api/internal/core"
+	"github.com/rbv-co/social-dashboard/api/internal/email"
 	"github.com/rbv-co/social-dashboard/api/internal/frota"
 	"github.com/rbv-co/social-dashboard/api/internal/meta"
+	"github.com/rbv-co/social-dashboard/api/internal/rpc"
 	"github.com/rbv-co/social-dashboard/api/internal/webhooks"
 	"github.com/rbv-co/social-dashboard/api/internal/webpush"
 )
@@ -28,7 +31,17 @@ const (
 	PrazoCollabs    = 120 * time.Second
 	// bling-proxy: usuário limitado a lojas faz UMA chamada ao core por loja (até 25 s cada).
 	PrazoBling = 90 * time.Second
+	// Plano 5: o grupo de DOMÍNIO inteiro (leituras, escritas e POST /rpc/{nome}), do carregamento do
+	// escopo à resposta: função lenta ou consulta presa não segura conexão do pool (o contexto
+	// cancelado cancela a consulta no banco; a resposta é 504 prazo_esgotado). Fica ABAIXO dos 60 s do
+	// proxy_read_timeout padrão do nginx e do WriteTimeout do servidor (main.go).
+	PrazoDominio = 30 * time.Second
 )
+
+// FuncoesRPC é a lista branca de POST /rpc/{nome}. Vazia no 5.0: cada sub-plano acrescenta as
+// funções do seu domínio, com parâmetros, retorno e o portão que espelha a checagem interna da
+// função, e TIRA os nomes dela de RPCPendentes (montarRPC recusa os dois lugares ao mesmo tempo).
+var FuncoesRPC = []rpc.Funcao{}
 
 // comPrazo limita o contexto da requisição; o que estiver preso na rede/core desiste junto.
 func comPrazo(d time.Duration) func(http.Handler) http.Handler {
@@ -57,6 +70,11 @@ func Rotas(p *pgxpool.Pool, s *auth.Store, l *auth.Limitador, cfg config.Config)
 	})
 	h := auth.NovosHandlers(p, s, l)
 	r.Post("/auth/entrar", h.Entrar)
+	// Plano 5.0: links de senha (públicos; limite por IP e por e-mail lá dentro, resposta sem enumeração).
+	conta := auth.NovaConta(p, s, &email.ZeptoMail{Token: cfg.ZeptoToken, De: cfg.ZeptoDe, Nome: cfg.ZeptoNome},
+		cfg.EnderecosDoApp, cfg.EnderecoPadrao)
+	r.Post("/auth/esqueci-senha", conta.EsqueciSenha)
+	r.Post("/auth/definir-senha", conta.DefinirSenha)
 
 	// Webhooks: públicos, sem sessão. O fan-out do core vem de um IP só: teto folgado.
 	// Só POST: outro método = 405 do chi (testado).
@@ -71,6 +89,10 @@ func Rotas(p *pgxpool.Pool, s *auth.Store, l *auth.Limitador, cfg config.Config)
 		r.Post("/receber-opt-out-chatwoot", cw.OptOut)
 	})
 
+	rpcs, err := montarRPC(p, FuncoesRPC, RPCPendentes, RPCForaDoPainel)
+	if err != nil {
+		panic(err) // declaração errada: a API não sobe
+	}
 	cli := core.Novo(cfg.CoreURL, cfg.CoreToken)
 	av := &meta.AoVivo{Pool: p, Core: cli}
 	r.Group(func(r chi.Router) {
@@ -86,6 +108,23 @@ func Rotas(p *pgxpool.Pool, s *auth.Store, l *auth.Limitador, cfg config.Config)
 		// Plano 4: o mesmo portão da edge (superadmin ou permissions['frota.aprovar'] com 'ver').
 		r.With(auth.ExigirPermissao("frota.aprovar", "ver")).Post("/avisar-decisao-de-reserva",
 			(&frota.Reserva{Pool: p, VAPID: webpush.VAPID{Publica: cfg.VAPIDPublica, Privada: cfg.VAPIDPrivada, Assunto: cfg.VAPIDAssunto}}).ServeHTTP)
+
+		// Plano 5.0: conta. Os portões de invite-user e entrar-como são os das edges (papel admin;
+		// super-admin pela ficha), dentro do handler, com a resposta 400 {"error": frase} das edges.
+		r.Post("/auth/trocar-senha", conta.TrocarSenha)
+		r.Get("/eu/perfil", conta.Perfil)
+		r.Post("/invite-user", conta.InviteUser)
+		r.Post("/entrar-como-usuario", conta.EntrarComo)
+		r.Post("/conferir-senha", conta.ConferirSenha)
+
+		// Plano 5: rotas de DOMÍNIO. Toda rota daqui lê autz.EscopoDo(ctx): leitura por dados.Consulta
+		// (regra de Ler do catálogo no WHERE), escrita por autz.PodeCriar/PodeEditar/PodeApagar dentro de
+		// banco.ComUsuario, RPC pelo registro (lista branca). Prazo (PrazoDominio) e escopo vêm do grupo:
+		// rota nova de domínio entra AQUI, nunca solta no grupo de cima. Os sub-planos 5.1+ acrescentam aqui.
+		r.Group(func(r chi.Router) {
+			r.Use(comPrazo(PrazoDominio), autz.ComEscopo(p))
+			r.Post("/rpc/{nome}", rpcs.ServeHTTP)
+		})
 	})
 	return r
 }
