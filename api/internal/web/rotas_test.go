@@ -216,6 +216,8 @@ var soSessao = map[string]bool{"POST /auth/sair": true, "GET /auth/eu": true, "G
 	// TestPaineisPelaMontagemReal.
 	"GET /noticias/rodadas": true, "GET /noticias/concorrentes": true, "GET /noticias/panorama": true,
 	"GET /status-ia/execucoes": true,
+	// quem não passa na regra das duas tabelas recebe 200 [] (TestSaudeDosRobosPelaMontagemReal).
+	"GET /status-ia/saude-dos-robos": true,
 }
 
 // Matriz completa 401/403/200 por rota pela montagem de produção: cada módulo abre SÓ as
@@ -273,7 +275,8 @@ func TestPrazosPorRotaPelaMontagemReal(t *testing.T) {
 		"POST /rpc/{nome}": PrazoDominio,
 		// Plano 5.12: leituras do grupo de domínio
 		"GET /noticias/rodadas": PrazoDominio, "GET /noticias/concorrentes": PrazoDominio,
-		"GET /noticias/panorama": PrazoDominio, "GET /status-ia/execucoes": PrazoDominio}
+		"GET /noticias/panorama": PrazoDominio, "GET /status-ia/execucoes": PrazoDominio,
+		"GET /status-ia/saude-dos-robos": PrazoDominio}
 	vistos := map[string]bool{}
 	chi.Walk(h.(chi.Routes), func(metodo, rota string, _ http.Handler, mws ...func(http.Handler) http.Handler) error {
 		chave := metodo + " " + rota

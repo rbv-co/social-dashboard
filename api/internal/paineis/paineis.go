@@ -29,5 +29,17 @@ func Montar(r chi.Router, b dados.Consultor, cat *autz.Catalogo) error {
 		}
 		r.Get(caminho, c.Handler(b, cat))
 	}
+	for _, t := range tabelasDaSaude { // tabela fora do catálogo: a API não sobe
+		if _, err := cat.Filtro(&autz.Escopo{}, t, autz.Ler, "x"); err != nil {
+			return fmt.Errorf("paineis saúde dos robôs: %w", err)
+		}
+	}
+	if b == nil {
+		r.Get("/status-ia/saude-dos-robos", func(w http.ResponseWriter, _ *http.Request) {
+			dados.Erro(w, http.StatusServiceUnavailable, "sem_banco", "")
+		})
+		return nil
+	}
+	r.Get("/status-ia/saude-dos-robos", SaudeDosRobos(b, cat))
 	return nil
 }
