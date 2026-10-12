@@ -14,6 +14,9 @@ import (
 	"time"
 )
 
+// prazoDoEnvio: quanto o envio espera o ZeptoMail (var só para o teste encurtar).
+var prazoDoEnvio = 15 * time.Second
+
 const URLPadrao = "https://api.zeptomail.com/v1.1/email"
 
 var ErrSemToken = errors.New("zeptomail: ZEPTOMAIL_TOKEN ausente")
@@ -55,9 +58,12 @@ func (z *ZeptoMail) Mandar(ctx context.Context, para, assunto, html, texto strin
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Authorization", z.cabecalho())
-	cli := &http.Client{Timeout: 15 * time.Second}
+	cli := &http.Client{Timeout: prazoDoEnvio}
 	if z.HTTP != nil {
-		copia := *z.HTTP // mesmo com cliente de fora, nunca segue redirecionamento
+		copia := *z.HTTP // mesmo com cliente de fora: nunca segue redirecionamento e sempre tem prazo
+		if copia.Timeout == 0 {
+			copia.Timeout = prazoDoEnvio
+		}
 		cli = &copia
 	}
 	cli.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }

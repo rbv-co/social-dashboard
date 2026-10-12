@@ -23,9 +23,17 @@ type correio struct {
 	mu       sync.Mutex
 	enviados []enviado
 	falhar   bool
+	trava    chan struct{} // se não nil, Mandar espera até ser fechado (e-mail lento)
+	panico   bool          // Mandar entra em pânico com o link no texto
 }
 
 func (c *correio) Mandar(_ context.Context, para, assunto, html, texto string) error {
+	if c.trava != nil {
+		<-c.trava
+	}
+	if c.panico {
+		panic("segredo-no-panico " + texto)
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.falhar {
@@ -72,7 +80,7 @@ func pedirComOrigem(h http.Handler, caminho, corpo, origem string) *httptest.Res
 	return w
 }
 
-var reLink = regexp.MustCompile(`(https://[a-z.]+)/\?type=(recovery|invite)&token=([A-Za-z0-9_-]{43})`)
+var reLink = regexp.MustCompile(`(https://[a-z.]+)/#type=(recovery|invite)&token=([A-Za-z0-9_-]{43})`)
 
 func esperarEnvio(t *testing.T, c *Conta) {
 	t.Helper()
@@ -104,6 +112,9 @@ func TestEsqueciSenha(t *testing.T) {
 		t.Fatalf("enviados = %+v", env)
 	}
 	m := reLink.FindStringSubmatch(env[0].texto)
+	if strings.Contains(env[0].texto, "?") || strings.Contains(env[0].html, "?") {
+		t.Fatalf("o token foi para a query string (vai parar no log do nginx e no Referer): %q", env[0].texto)
+	}
 	if m == nil || m[1] != central || m[2] != "recovery" || !strings.Contains(env[0].html, m[0]) {
 		t.Fatalf("link = %v (%q)", m, env[0].texto)
 	}
@@ -113,6 +124,7 @@ func TestEsqueciSenha(t *testing.T) {
 		t.Fatalf("token no banco: em claro %d, hash %d", claro, hash)
 	}
 	// origem forjada: o link cai no endereço padrão
+	envelhecer(t, p)
 	pedirComOrigem(h, "/auth/esqueci-senha", `{"email":"pessoa@x.com"}`, "https://central.exemplo.ladrao.net")
 	esperarEnvio(t, c)
 	if m := reLink.FindStringSubmatch(cor.lista()[1].texto); m == nil || m[1] != padrao {
@@ -144,12 +156,28 @@ func TestEsqueciSenhaTemLimitePorEmail(t *testing.T) {
 	}
 }
 
+// envelhecer faz os links já criados parecerem de 2 minutos atrás (passam da trava de 60 s do "esqueci").
+func envelhecer(t *testing.T, p *pgxpool.Pool) {
+	t.Helper()
+	if _, err := p.Exec(context.Background(), `update tokens_de_senha set criado_em = criado_em - interval '2 minutes'`); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func linkDe(t *testing.T, c *Conta, cor *correio, h http.Handler, email string) string {
 	t.Helper()
+	envelhecer(t, c.Pool)
 	pedirComOrigem(h, "/auth/esqueci-senha", `{"email":"`+email+`"}`, padrao)
 	esperarEnvio(t, c)
 	env := cor.lista()
-	return reLink.FindStringSubmatch(env[len(env)-1].texto)[3]
+	if len(env) == 0 {
+		t.Fatal("nenhum e-mail enviado")
+	}
+	m := reLink.FindStringSubmatch(env[len(env)-1].texto)
+	if m == nil {
+		t.Fatalf("sem link no e-mail: %q", env[len(env)-1].texto)
+	}
+	return m[3]
 }
 
 func TestDefinirSenhaConsomeOLinkUmaVez(t *testing.T) {

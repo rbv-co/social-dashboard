@@ -200,7 +200,7 @@ api/internal/autz/portoes_test.go              # portões de RPC contra as funç
 api/internal/rpc/rpc.go                        # POST /rpc/{nome}: lista branca, parâmetros tipados, portão, ComUsuario
 api/internal/auth/middleware.go                # + NoContexto
 api/internal/email/email.go                    # ZeptoMail (convite e troca de senha)
-api/internal/banco/migracoes/00004_tokens_de_senha.sql
+api/internal/banco/migracoes/00005_tokens_de_senha.sql
 api/internal/auth/conta.go                     # esqueci/definir/trocar senha, GET /eu/perfil
 api/internal/auth/rotas.go                     # Entrar: 403 conta_desativada só com a senha certa
 api/internal/auth/convite.go                   # POST /invite-user (contrato da edge)
@@ -3964,10 +3964,10 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
 
 **Revisor:** **opus** (autenticação: enumeração de contas, token de uso único, sessão que sobrevive à troca).
 
-O Auth do Supabase fazia três coisas que a tela usa: "esqueci a senha" (`resetPasswordForEmail`), "definir a senha" pelo link do convite/troca (`updateUser` com a sessão do link) e "trocar a senha" logado (`updateUser` + RPC `marcar_senha_trocada`). Aqui: tokens de uso único guardados como hash (`tokens_de_senha`, migração 00004), e-mail pelo ZeptoMail (o mesmo provedor que `vessel-conta` já usa), três rotas e o perfil. Regras: "esqueci" responde SEMPRE `202 {"ok":true}` e manda o e-mail fora da requisição (sem enumeração, nem pelo tempo); só conta ativa recebe; pedir de novo invalida o link anterior; o link leva ao endereço de onde a pessoa pediu se estiver em `ENDERECOS_DO_APP`, senão ao padrão; "definir" consome o link, grava a senha, derruba TODAS as sessões da pessoa e já devolve uma sessão nova; "trocar" (sessão) grava, tira a cobrança `precisa_trocar_senha` na mesma transação (substitui a RPC) e derruba as OUTRAS sessões; sessão de "entrar como" não troca a senha do alvo. Senha de 6 a 72 caracteres (72 = limite do bcrypt). E o login da conta desativada: com a senha CERTA responde `403 conta_desativada` (a tela mostra "fale com quem administra", que hoje vem da RPC `minha_conta_esta_desativada`); com a senha errada, o mesmo 401 de quem não existe.
+O Auth do Supabase fazia três coisas que a tela usa: "esqueci a senha" (`resetPasswordForEmail`), "definir a senha" pelo link do convite/troca (`updateUser` com a sessão do link) e "trocar a senha" logado (`updateUser` + RPC `marcar_senha_trocada`). Aqui: tokens de uso único guardados como hash (`tokens_de_senha`, migração 00005), e-mail pelo ZeptoMail (o mesmo provedor que `vessel-conta` já usa), três rotas e o perfil. Regras: "esqueci" responde SEMPRE `202 {"ok":true}` e manda o e-mail fora da requisição (sem enumeração, nem pelo tempo); só conta ativa recebe; pedir de novo invalida o link anterior; o link leva ao endereço de onde a pessoa pediu se estiver em `ENDERECOS_DO_APP`, senão ao padrão; "definir" consome o link, grava a senha, derruba TODAS as sessões da pessoa e já devolve uma sessão nova; "trocar" (sessão) grava, tira a cobrança `precisa_trocar_senha` na mesma transação (substitui a RPC) e derruba as OUTRAS sessões; sessão de "entrar como" não troca a senha do alvo. Senha de 6 a 72 caracteres (72 = limite do bcrypt). E o login da conta desativada: com a senha CERTA responde `403 conta_desativada` (a tela mostra "fale com quem administra", que hoje vem da RPC `minha_conta_esta_desativada`); com a senha errada, o mesmo 401 de quem não existe.
 
 **Files:**
-- Create: `api/internal/banco/migracoes/00004_tokens_de_senha.sql`
+- Create: `api/internal/banco/migracoes/00005_tokens_de_senha.sql`
 - Create: `api/internal/email/email.go`; Test: `api/internal/email/email_test.go`
 - Create: `api/internal/auth/conta.go`; Test: `api/internal/auth/conta_test.go`
 - Modify: `api/internal/auth/rotas.go` (`Entrar`), `api/internal/auth/rotas_test.go` (um teste trocado)
@@ -4145,7 +4145,7 @@ func pedirComOrigem(h http.Handler, caminho, corpo, origem string) *httptest.Res
 	return w
 }
 
-var reLink = regexp.MustCompile(`(https://[a-z.]+)/\?type=(recovery|invite)&token=([A-Za-z0-9_-]{43})`)
+var reLink = regexp.MustCompile(`(https://[a-z.]+)/#type=(recovery|invite)&token=([A-Za-z0-9_-]{43})`)
 
 func esperarEnvio(t *testing.T, c *Conta) {
 	t.Helper()
@@ -4365,7 +4365,7 @@ Expected: FAIL de compilação (`undefined: ZeptoMail`; `undefined: NovaConta`).
 
 - [ ] **Step 3: Implementar**
 
-Crie `api/internal/banco/migracoes/00004_tokens_de_senha.sql`:
+Crie `api/internal/banco/migracoes/00005_tokens_de_senha.sql`:
 
 ```sql
 -- +goose Up
@@ -4553,7 +4553,7 @@ func novoLink(ctx context.Context, tx pgx.Tx, usuarioID, tipo, base string, praz
 		hashDoToken(tok), usuarioID, tipo, int(prazo.Seconds())); err != nil {
 		return "", err
 	}
-	return base + "/?type=" + map[string]string{"convite": "invite", "recuperacao": "recovery"}[tipo] + "&token=" + tok, nil
+	return base + "/#type=" + map[string]string{"convite": "invite", "recuperacao": "recovery"}[tipo] + "&token=" + tok, nil
 }
 
 func validarSenha(s string) string {
@@ -4781,12 +4781,12 @@ e, logo depois do bloco `if !SenhaConfere(hash, in.Senha) || id == "" { … retu
 - [ ] **Step 4: Rodar e ver passar**
 
 Run: `gofmt -l ./internal && go vet ./... && go test -count=1 -race -v ./internal/email/ ./internal/auth/ 2>&1 | grep -E '^(--- (FAIL|SKIP)|ok|FAIL)'`
-Expected: só `ok` (o pacote `auth` leva ~2 min com `-race`: bcrypt). `go test ./...` continua todo `ok` (a migração 00004 entra em todo banco de teste).
+Expected: só `ok` (o pacote `auth` leva ~2 min com `-race`: bcrypt). `go test ./...` continua todo `ok` (a migração 00005 entra em todo banco de teste).
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add api/internal/banco/migracoes/00004_tokens_de_senha.sql api/internal/email/ api/internal/auth/conta.go api/internal/auth/conta_test.go api/internal/auth/rotas.go api/internal/auth/rotas_test.go api/internal/testebanco/testebanco.go
+git add api/internal/banco/migracoes/00005_tokens_de_senha.sql api/internal/email/ api/internal/auth/conta.go api/internal/auth/conta_test.go api/internal/auth/rotas.go api/internal/auth/rotas_test.go api/internal/testebanco/testebanco.go
 git commit -m "feat(api): links de senha de uso único por e-mail, trocar senha e conta desativada no login
 
 Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
@@ -5860,11 +5860,12 @@ Em `docs/migracao-go/NOTAS-DA-IMPLANTACAO.md`, acrescente ao fim:
 ### Rotas novas
 - Públicas (o `location /api/` genérico cobre; não têm segredo na query): `POST /api/auth/esqueci-senha`, `POST /api/auth/definir-senha`. Limite próprio: 20 por IP e 5 por e-mail a cada 15 min.
 - Com sessão: `POST /api/auth/trocar-senha`, `GET /api/eu/perfil`, `POST /api/invite-user`, `POST /api/entrar-como-usuario`, `POST /api/conferir-senha`, `POST /api/rpc/{nome}` (só nomes registrados pelos sub-planos; vazio no 5.0).
-- Links do e-mail: `<endereço>/?type=recovery&token=<token>` (troca, 1 h) e `<endereço>/?type=invite&token=<token>` (convite, 24 h). O front (Plano 7) lê `type` e `token` da query (hoje lê `type` e o `#access_token` do Supabase) e chama `POST /api/auth/definir-senha {token, senha}`, que devolve `{token}` de sessão.
+- Links do e-mail: `<endereço>/#type=recovery&token=<token>` (troca, 1 h) e `<endereço>/#type=invite&token=<token>` (convite, 24 h). O token vai no FRAGMENTO (`#`), não na query: o fragmento não chega ao servidor, então não cai no log de acesso do nginx (`deploy/nginx/central.rbvcompany.com.conf` registra a linha do pedido e o Referer) nem no `Referer`. O front (Plano 7) lê `type` e `token` do hash (a função `detectarFluxoDeSenha` já lê `type` do hash, hoje junto do `#access_token` do Supabase), **limpa o hash com `history.replaceState(null, "", location.pathname + location.search)` assim que os lê** (antes de qualquer outra chamada), e chama `POST /api/auth/definir-senha {token, senha}`, que devolve `{token}` de sessão.
 
 ### Mudanças de contrato que o Plano 7 absorve
-- `entrar-como-usuario` responde `{token, expira_em}` (não mais `access_token`/`refresh_token`); a sessão vale 1 h e NÃO renova; sessão impersonada não troca senha, não convida/exclui, não entra como terceiros e não confere senha (`403 sessao_de_outra_pessoa`).
+- `entrar-como-usuario` responde `{token, expira_em}` (não mais `access_token`/`refresh_token`); a sessão vale 1 h e NÃO renova; sessão impersonada não convida/exclui, não entra como terceiros e não confere senha (`403 sessao_de_outra_pessoa`) e não troca a senha do alvo (`403 sem_permissao`, o formato do núcleo: é o que `POST /auth/trocar-senha` devolve).
 - `conferir-senha` sem sessão responde `401 {"error":"nao_autenticado"}` (a edge: `{ok:false, erro:"sem_sessao"}`); o resto do contrato é o da edge.
+- Senha: 6 a 72 BYTES (o limite do bcrypt; a mensagem diz "72 bytes"). `definir-senha` e `trocar-senha` derrubam também as sessões "entrar como" em que a pessoa é o impersonador, e `trocar-senha` apaga os links de senha ainda vivos; "esqueci" não manda outro e-mail se já houve link para a pessoa há menos de 60 s (resposta idêntica). `faxina-da-api` apaga `tokens_de_senha` vencidos ou usados há mais de 7 dias.
 - Login de conta desativada com a senha certa: `403 {"error":"conta_desativada"}` (substitui a RPC `minha_conta_esta_desativada`). `POST /auth/trocar-senha` já tira `precisa_trocar_senha` (substitui a RPC `marcar_senha_trocada`).
 - Leituras de domínio: array no formato do PostgREST; sem permissão = `[]`; linha invisível = 404; erro `{"error","mensagem"}` (contrato completo no Plano 5, seção II.2).
 

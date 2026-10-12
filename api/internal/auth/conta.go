@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"slices"
@@ -83,7 +84,8 @@ func novoLink(ctx context.Context, tx pgx.Tx, usuarioID, tipo, base string, praz
 		hashDoToken(tok), usuarioID, tipo, int(prazo.Seconds())); err != nil {
 		return "", err
 	}
-	return base + "/?type=" + map[string]string{"convite": "invite", "recuperacao": "recovery"}[tipo] + "&token=" + tok, nil
+	return base + "/#type=" + // fragmento: não chega ao servidor, ao log do nginx nem ao Referer
+		map[string]string{"convite": "invite", "recuperacao": "recovery"}[tipo] + "&token=" + tok, nil
 }
 
 func validarSenha(s string) string {
@@ -91,7 +93,7 @@ func validarSenha(s string) string {
 	case len(s) < SenhaMinima:
 		return "A senha deve ter ao menos 6 caracteres."
 	case len(s) > SenhaMaxima:
-		return "A senha pode ter no máximo 72 caracteres."
+		return "A senha pode ter no máximo 72 bytes."
 	}
 	return ""
 }
@@ -126,6 +128,11 @@ func (c *Conta) EsqueciSenha(w http.ResponseWriter, r *http.Request) {
 				c.enviando <- struct{}{}
 			}
 		}()
+		defer func() { // um pânico no envio não derruba o processo; o valor pode ter o link: só o tipo vai ao log
+			if p := recover(); p != nil {
+				slog.Error("esqueci-senha: pânico ao enviar o link", "tipo", fmt.Sprintf("%T", p))
+			}
+		}()
 		ctx, cancela := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancela()
 		var id string
@@ -137,12 +144,20 @@ func (c *Conta) EsqueciSenha(w http.ResponseWriter, r *http.Request) {
 		var link string
 		if err == nil {
 			err = pgx.BeginFunc(ctx, c.Pool, func(tx pgx.Tx) error {
+				// trava a linha da pessoa: dois pedidos juntos não passam os dois pela conferência abaixo
+				if _, e := tx.Exec(ctx, `select 1 from usuarios where id = $1::uuid for update`, id); e != nil {
+					return e
+				}
+				var recente bool
+				if e := tx.QueryRow(ctx, `select exists (select 1 from tokens_de_senha where usuario_id = $1::uuid and criado_em > now() - interval '60 seconds')`, id).Scan(&recente); e != nil || recente {
+					return e // anti bombardeio de e-mail: link de menos de 1 min atrás vale; a resposta ao pedido é a mesma
+				}
 				var e error
 				link, e = novoLink(ctx, tx, id, "recuperacao", base, PrazoRecuperacao)
 				return e
 			})
 		}
-		if err == nil {
+		if err == nil && link != "" {
 			err = c.Email.Mandar(ctx, email, "Troque a sua senha da Central",
 				`<p>Para criar uma senha nova, abra o link abaixo (vale por 1 hora):</p><p><a href="`+link+`">Criar senha nova</a></p>`,
 				"Para criar uma senha nova, abra o link (vale por 1 hora): "+link)
@@ -199,7 +214,8 @@ func (c *Conta) DefinirSenha(w http.ResponseWriter, r *http.Request) {
 		if _, err := tx.Exec(r.Context(), `delete from tokens_de_senha where usuario_id = $1::uuid and usado_em is null`, id); err != nil {
 			return err
 		}
-		_, err := tx.Exec(r.Context(), `delete from sessoes where usuario_id = $1::uuid`, id)
+		// também as sessões "entrou como" em que a pessoa é o impersonador (quem roubou a senha dela)
+		_, err := tx.Exec(r.Context(), `delete from sessoes where usuario_id = $1::uuid or impersonador_id = $1::uuid`, id)
 		return err
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -248,7 +264,11 @@ func (c *Conta) TrocarSenha(w http.ResponseWriter, r *http.Request) {
 		if _, err := tx.Exec(r.Context(), `update profiles set precisa_trocar_senha = false where id = $1::uuid`, a.ID); err != nil {
 			return err
 		}
-		_, err := tx.Exec(r.Context(), `delete from sessoes where usuario_id = $1::uuid and token_hash <> $2::text`, a.ID, hashDoToken(tokenDe(r)))
+		// links de senha ainda vivos (podem ter vazado) morrem junto com a senha antiga
+		if _, err := tx.Exec(r.Context(), `delete from tokens_de_senha where usuario_id = $1::uuid and usado_em is null`, a.ID); err != nil {
+			return err
+		}
+		_, err := tx.Exec(r.Context(), `delete from sessoes where (usuario_id = $1::uuid or impersonador_id = $1::uuid) and token_hash <> $2::text`, a.ID, hashDoToken(tokenDe(r)))
 		return err
 	})
 	if err != nil {
