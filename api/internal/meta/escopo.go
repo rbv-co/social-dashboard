@@ -44,13 +44,19 @@ func caminhoDaConta(caminho, adAccount, instagram string) bool {
 	}
 }
 
-// temParam: o corpo traz algum destes nomes em params, sem diferenciar maiúscula (qualquer valor).
+// temParam: o corpo traz algum destes nomes em params (chave normalizada, sem diferenciar maiúscula, qualquer valor).
 // "method" é o override da Graph (GET com method=delete apaga): conta como escrita, então a sessão de
 // "entrar como" não passa. "ids" e "batch" escolhem OUTROS objetos fora do caminho ancorado.
 // ponytail: `fields=` com expansão aninhada (ex.: business_discovery) ainda alcança só dado público de
 // outro perfil; olhar o valor de fields se isso virar problema.
 func temParam(params map[string]any, nomes ...string) bool {
 	for k := range params {
+		// Normaliza a chave: o core tira o "[]" ao montar a query (bling.Query) e a Graph pode aparar
+		// espaços, então "method[]", "Method[0]" e " method" chegam à Graph como `method`.
+		k = strings.TrimSpace(k)
+		if i := strings.IndexByte(k, '['); i >= 0 {
+			k = k[:i]
+		}
 		for _, n := range nomes {
 			if strings.EqualFold(k, n) {
 				return true

@@ -69,7 +69,7 @@ func TestMetaProxyEscopoDeContas(t *testing.T) {
 	})
 
 	t.Run("params ids e batch saem do caminho ancorado", func(t *testing.T) {
-		for _, params := range []string{`{"ids":"1,2"}`, `{"BATCH":"[]"}`} {
+		for _, params := range []string{`{"ids":"1,2"}`, `{"BATCH":"[]"}`, `{"ids[]":"1"}`, `{"batch[]":"[]"}`, `{" ids":"1"}`} {
 			antes := a.core.n()
 			b := `{"accountId":"conta-1","path":"/act_999/insights","params":` + params + `}`
 			st, resp := pedir(a.tokens[uRestrito], b)
@@ -103,6 +103,9 @@ func TestMetaProxyEscopoDeContas(t *testing.T) {
 		for _, b := range []string{
 			`{"accountId":"conta-1","path":"/9001","params":{"method":"delete"}}`,
 			`{"accountId":"conta-1","path":"/act_999/campaigns","params":{"METHOD":"POST"}}`,
+			`{"accountId":"conta-1","path":"/9001","params":{"method[]":"delete"}}`,
+			`{"accountId":"conta-1","path":"/9001","params":{" method":"delete"}}`,
+			`{"accountId":"conta-1","path":"/9001","params":{"Method[0]":"delete"}}`,
 		} {
 			st, resp := pedir(a.tokens["impersonado"], b)
 			if st != 403 || !strings.Contains(resp, `"sem_permissao"`) || !strings.Contains(resp, "Quem entrou como outra pessoa") {
