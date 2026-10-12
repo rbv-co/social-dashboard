@@ -276,7 +276,9 @@ func TestPrazosPorRotaPelaMontagemReal(t *testing.T) {
 		// Plano 5.12: leituras do grupo de domínio
 		"GET /noticias/rodadas": PrazoDominio, "GET /noticias/concorrentes": PrazoDominio,
 		"GET /noticias/panorama": PrazoDominio, "GET /status-ia/execucoes": PrazoDominio,
-		"GET /status-ia/saude-dos-robos": PrazoDominio}
+		"GET /status-ia/saude-dos-robos": PrazoDominio,
+		// Plano 5.12: fatura real das contas de IA (grupo autenticado, FORA do de domínio)
+		"POST /custo-anthropic": 90 * time.Second, "POST /custo-openai": 90 * time.Second}
 	vistos := map[string]bool{}
 	chi.Walk(h.(chi.Routes), func(metodo, rota string, _ http.Handler, mws ...func(http.Handler) http.Handler) error {
 		chave := metodo + " " + rota

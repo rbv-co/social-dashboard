@@ -14,6 +14,7 @@ import (
 	"github.com/rbv-co/social-dashboard/api/internal/comercial"
 	"github.com/rbv-co/social-dashboard/api/internal/config"
 	"github.com/rbv-co/social-dashboard/api/internal/core"
+	"github.com/rbv-co/social-dashboard/api/internal/custo"
 	"github.com/rbv-co/social-dashboard/api/internal/email"
 	"github.com/rbv-co/social-dashboard/api/internal/frota"
 	"github.com/rbv-co/social-dashboard/api/internal/meta"
@@ -32,6 +33,8 @@ const (
 	PrazoCollabs    = 120 * time.Second
 	// bling-proxy: usuário limitado a lojas faz UMA chamada ao core por loja (até 25 s cada).
 	PrazoBling = 90 * time.Second
+	// Plano 5.12: custo-*: a Anthropic chegou a 18 s (cache-de-custo.js:13-15); 90 dias = 3 páginas em série.
+	PrazoCusto = 90 * time.Second
 	// Plano 5: o grupo de DOMÍNIO inteiro (leituras, escritas e POST /rpc/{nome}), do carregamento do
 	// escopo à resposta: função lenta ou consulta presa não segura conexão do pool (o contexto
 	// cancelado cancela a consulta no banco; a resposta é 504 prazo_esgotado). Fica ABAIXO dos 60 s do
@@ -122,6 +125,11 @@ func Rotas(p *pgxpool.Pool, s *auth.Store, l *auth.Limitador, cfg config.Config)
 		r.Post("/invite-user", conta.InviteUser)
 		r.Post("/entrar-como-usuario", conta.EntrarComo)
 		r.Post("/conferir-senha", conta.ConferirSenha)
+
+		// Plano 5.12: a fatura real das contas de IA. Portão da edge (papel admin) DENTRO do handler,
+		// antes de ler o corpo, a chave ou chamar o fornecedor.
+		r.With(comPrazo(PrazoCusto)).Post("/custo-anthropic", custo.Rota{Chave: cfg.AnthropicAdmin, Buscar: custo.Anthropic{}.Buscar}.ServeHTTP)
+		r.With(comPrazo(PrazoCusto)).Post("/custo-openai", custo.Rota{Chave: cfg.OpenAIAdmin, Buscar: custo.OpenAI{}.Buscar}.ServeHTTP)
 
 		// Plano 5: rotas de DOMÍNIO. Toda rota daqui lê autz.EscopoDo(ctx): leitura por dados.Consulta
 		// (regra de Ler do catálogo no WHERE), escrita por autz.PodeCriar/PodeEditar/PodeApagar dentro de
