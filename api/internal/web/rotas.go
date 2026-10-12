@@ -17,6 +17,7 @@ import (
 	"github.com/rbv-co/social-dashboard/api/internal/email"
 	"github.com/rbv-co/social-dashboard/api/internal/frota"
 	"github.com/rbv-co/social-dashboard/api/internal/meta"
+	"github.com/rbv-co/social-dashboard/api/internal/paineis"
 	"github.com/rbv-co/social-dashboard/api/internal/rpc"
 	"github.com/rbv-co/social-dashboard/api/internal/webhooks"
 	"github.com/rbv-co/social-dashboard/api/internal/webpush"
@@ -129,6 +130,10 @@ func Rotas(p *pgxpool.Pool, s *auth.Store, l *auth.Limitador, cfg config.Config)
 		r.Group(func(r chi.Router) {
 			r.Use(comPrazo(PrazoDominio), autz.ComEscopo(p))
 			r.Post("/rpc/{nome}", rpcs.ServeHTTP)
+			// Plano 5.12: notícias e status da IA (leituras declaradas, regra do catálogo).
+			if err := paineis.Montar(r, p, autz.Producao); err != nil {
+				panic(err) // declaração errada: a API não sobe
+			}
 		})
 	})
 	return r
