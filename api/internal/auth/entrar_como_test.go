@@ -30,6 +30,8 @@ func montarEntrarComo(t *testing.T) (*pgxpool.Pool, *Store, *Conta, http.Handler
 		r.Use(Exigir(p, s))
 		r.Post("/entrar-como-usuario", c.EntrarComo)
 		r.Post("/conferir-senha", c.ConferirSenha)
+		r.Post("/invite-user", c.InviteUser)
+		r.Post("/auth/trocar-senha", c.TrocarSenha)
 		r.Get("/auth/eu", NovosHandlers(p, s, NovoLimitador()).Eu)
 	})
 	ids := map[string]string{}
@@ -420,5 +422,77 @@ func TestSessaoDeEntrarComoMorreQuandoOImpersonadorPerdeASuperAdmin(t *testing.T
 	p.Exec(context.Background(), `update profiles set is_superadmin = false where id = $1::uuid`, ids["super"])
 	if w := chamar(h, "GET", "/auth/eu", "", o.Token); w.Code != 401 {
 		t.Fatalf("impersonador rebaixado = %d %s", w.Code, w.Body)
+	}
+}
+
+// Toda recusa de SESSÃO IMPERSONADA em ação de conta tem UM formato só (Ruling 18): 403 com
+// exatamente {"error":"sem_permissao","mensagem":<frase>}, sem efeito no banco. As quatro rotas:
+// trocar a senha do alvo, convidar/excluir, entrar como uma terceira pessoa (encadeamento) e conferir senha.
+func TestRecusaDeSessaoImpersonadaTemUmFormatoSo(t *testing.T) {
+	p, s, _, h, ids := montarEntrarComo(t)
+	ctx := context.Background()
+	imp := ids["super"]
+	tok, err := s.Criar(ctx, ids["admin"], "painel", &imp) // o alvo é um admin: o papel dele abriria os portões
+	if err != nil {
+		t.Fatal(err)
+	}
+	var hashAntes string
+	p.QueryRow(ctx, `select senha_hash from usuarios where id = $1::uuid`, ids["admin"]).Scan(&hashAntes)
+	casos := []struct{ rota, corpo, frase string }{
+		{"/auth/trocar-senha", `{"senha":"do-impostor"}`, "Quem entrou como outra pessoa não troca a senha dela."},
+		{"/invite-user", `{"email":"novo@x.com"}`, "Quem entrou como outra pessoa não administra contas."},
+		{"/invite-user", `{"deleteUserId":"` + ids["alvo"] + `"}`, "Quem entrou como outra pessoa não administra contas."},
+		{"/entrar-como-usuario", `{"alvoId":"` + ids["alvo"] + `"}`, "Sua sessão já é de outra pessoa: saia dela antes de entrar como outra."},
+		{"/conferir-senha", `{"senha":"senha-admin"}`, "Quem entrou como outra pessoa não confere senha por ela."},
+	}
+	for _, c := range casos {
+		w := chamar(h, "POST", c.rota, c.corpo, tok)
+		var o map[string]string
+		if err := json.Unmarshal(w.Body.Bytes(), &o); err != nil {
+			t.Errorf("%s: corpo não é JSON de strings: %s", c.rota, w.Body)
+			continue
+		}
+		if w.Code != 403 || len(o) != 2 || o["error"] != "sem_permissao" || o["mensagem"] != c.frase {
+			t.Errorf("%s = %d %s, esperava 403 {error: sem_permissao, mensagem: %q}", c.rota, w.Code, w.Body, c.frase)
+		}
+	}
+	var n int
+	var hashDepois string
+	p.QueryRow(ctx, `select (select count(*) from entradas_como_outro_usuario) + (select count(*) from usuarios where email = 'novo@x.com')
+	    + (select count(*) from usuarios where id = $1::uuid)`, ids["alvo"]).Scan(&n)
+	p.QueryRow(ctx, `select senha_hash from usuarios where id = $1::uuid`, ids["admin"]).Scan(&hashDepois)
+	if n != 1 || hashDepois != hashAntes { // 1 = o alvo, que continua existindo; nada de auditoria nem conta nova
+		t.Fatalf("a recusa deixou efeito: n=%d, senha mudou=%v", n, hashDepois != hashAntes)
+	}
+}
+
+// Quem já entrou como outra pessoa (admin_id) ou já foi alvo (alvo_id) tem linha na auditoria, e
+// as FKs de produção para profiles não têm ON DELETE: apagar essa pessoa pelo invite-user dá 23503.
+// A exclusão tem de ser recusada com a frase da edge e NADA pode ser apagado (perfil, conta e as
+// sessões "como" que o delete limparia antes ficam todos de pé: a transação volta inteira).
+func TestInviteUserExcluirQuemTemAuditoriaDeEntrarComoERecusadoSemApagarNada(t *testing.T) {
+	p, s, c, h, ids := montarEntrarComo(t)
+	ctx := context.Background()
+	imp := ids["super"]
+	if _, err := s.Criar(ctx, ids["alvo"], "painel", &imp); err != nil { // sessão "como" aberta pelo super-admin
+		t.Fatal(err)
+	}
+	p.Exec(ctx, `insert into entradas_como_outro_usuario (admin_id, admin_email, alvo_id, alvo_email)
+	    values ($1::uuid, 'super@x.com', $2::uuid, 'alvo@x.com')`, ids["super"], ids["alvo"])
+	for _, quem := range []string{"alvo", "super"} { // como alvo_id e como admin_id
+		foto := fotoDeContas(t, c)
+		w := chamar(h, "POST", "/invite-user", `{"deleteUserId":"`+ids[quem]+`"}`, ids["tok-admin"])
+		if w.Code != 400 || !strings.Contains(w.Body.String(), "ainda há registros ligados") {
+			t.Fatalf("excluir %s (com auditoria) = %d %s", quem, w.Code, w.Body)
+		}
+		var sobra int
+		p.QueryRow(ctx, `select (select count(*) from profiles where id = $1::uuid) + (select count(*) from usuarios where id = $1::uuid)
+		    + (select count(*) from entradas_como_outro_usuario) + (select count(*) from sessoes where impersonador_id is not null)`, ids[quem]).Scan(&sobra)
+		if sobra != 4 {
+			t.Fatalf("a exclusão recusada de %s apagou algo (contagem %d, esperava 4)", quem, sobra)
+		}
+		if depois := fotoDeContas(t, c); depois != foto {
+			t.Fatalf("a exclusão recusada de %s mudou o banco:\n antes  %s\n depois %s", quem, foto, depois)
+		}
 	}
 }

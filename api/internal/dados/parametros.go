@@ -199,7 +199,8 @@ func ValidarFiltros(filtros []Filtro, usados ...string) error {
 }
 
 // LerFiltros lê os filtros presentes na query, põe os valores em args e devolve as condições,
-// na ordem do nome do parâmetro (SQL determinístico). Parâmetro que não é filtro nem
+// cada uma JÁ ENTRE PARÊNTESES (um `a or b` solto, num `and` depois da regra de leitura, a
+// cancelaria: nenhum chamador pode esquecer), na ordem do nome do parâmetro (SQL determinístico). Parâmetro que não é filtro nem
 // reservado, repetido (inclusive reservado) ou com valor inválido = erro (400). Filtro mal
 // declarado ou nome já presente em args = ErrDeclaracao (500: defeito da rota).
 func LerFiltros(q url.Values, filtros []Filtro, args pgx.NamedArgs) ([]string, error) {
@@ -235,7 +236,7 @@ func LerFiltros(q url.Values, filtros []Filtro, args pgx.NamedArgs) ([]string, e
 			return nil, fmt.Errorf("%s: %w", nome, err)
 		}
 		args[nome] = v
-		conds = append(conds, f.SQL)
+		conds = append(conds, "("+f.SQL+")")
 	}
 	return conds, nil
 }

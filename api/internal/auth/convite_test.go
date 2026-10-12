@@ -184,7 +184,8 @@ func TestInviteUserNegaQuemNaoEAdmin(t *testing.T) {
 	toks["admin-desativado"], _ = s.Criar(ctx, adminDesativado, "painel", nil)
 	c.Pool.Exec(ctx, `update profiles set disabled = true where id = $1`, adminDesativado)
 	toks["admin-como-cliente"], _ = s.Criar(ctx, toks["admin-id"], "cliente", nil)
-	adm := toks["admin-id"]
+	// quem impersona tem de ser super-admin (Store.Buscar exige, Task 9): o "editor" da fixture é
+	adm := "55555555-5555-4555-a555-555555555551"
 	toks["super-impersonado"], _ = s.Criar(ctx, toks["super-id"], "painel", &adm)
 
 	corpos := []string{

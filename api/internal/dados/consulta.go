@@ -285,11 +285,8 @@ func (c Consulta) montar(q url.Values, e *autz.Escopo, cat *autz.Catalogo, sombr
 	if err != nil {
 		return "", "", nil, comoPedido(err)
 	}
-	// cada condição entre parênteses: `a or b` sem eles viraria `(regra) and a or b` e cancelaria a regra
-	onde := []string{"(" + f.SQL + ")"}
-	for _, cond := range conds {
-		onde = append(onde, "("+cond+")")
-	}
+	// as condições dos filtros já vêm entre parênteses de LerFiltros; a regra e o Onde, aqui
+	onde := append([]string{"(" + f.SQL + ")"}, conds...)
 	if extra != "" {
 		onde = append(onde, "("+extra+")")
 	}

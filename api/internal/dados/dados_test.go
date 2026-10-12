@@ -516,6 +516,15 @@ func TestValidarFiltros(t *testing.T) {
 	}
 }
 
+// A condição com `or` sai embrulhada: `(regra) and <cond>` não pode virar `(regra) and a or b`.
+func TestLerFiltrosEmbrulhaACondicaoEmParenteses(t *testing.T) {
+	fs := []Filtro{{Param: "q", SQL: "c.nome = @q::text or c.dona = @q::text", Tipo: "texto"}}
+	conds, err := LerFiltros(url.Values{"q": {"x"}}, fs, pgx.NamedArgs{})
+	if err != nil || len(conds) != 1 || conds[0] != "(c.nome = @q::text or c.dona = @q::text)" {
+		t.Fatalf("conds = %v err = %v", conds, err)
+	}
+}
+
 func TestLerFiltros(t *testing.T) {
 	fs := []Filtro{
 		{Param: "veiculo", SQL: "u.veiculo_id = @veiculo::uuid", Tipo: "uuid"},
@@ -529,8 +538,10 @@ func TestLerFiltros(t *testing.T) {
 		t.Fatalf("conds=%v err=%v", conds, err)
 	}
 	// SQL determinístico: condições na ordem do nome do parâmetro (o map da query embaralha)
-	if conds[0] != fs[2].SQL || conds[1] != fs[1].SQL || conds[2] != fs[0].SQL {
-		t.Fatalf("conds fora de ordem: %v", conds)
+	// e cada condição JÁ SAI entre parênteses (nenhum chamador precisa lembrar: `a or b` solta
+	// anularia a regra de leitura que vem antes dela num `and`)
+	if conds[0] != "("+fs[2].SQL+")" || conds[1] != "("+fs[1].SQL+")" || conds[2] != "("+fs[0].SQL+")" {
+		t.Fatalf("conds fora de ordem ou sem parênteses: %v", conds)
 	}
 	if args["veiculo"] != "aaaaaaaa-1111-1111-1111-111111111111" || len(args["lojas"].([]int64)) != 2 || args["desde"] != "2026-10-01" {
 		t.Fatalf("args = %#v", args)

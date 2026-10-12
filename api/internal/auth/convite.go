@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
-	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -20,7 +19,7 @@ var (
 	reEmailSimples = regexp.MustCompile(`^[^@\s]+@[^@\s]+\.[^@\s]+$`)
 )
 
-// falhaDaEdge: o contrato de erro de invite-user e entrar-como-usuario (400 {"error": frase}),
+// falhaDaEdge: o contrato de erro de invite-user e entrar-como-usuario (as duas rotas a usam) (400 {"error": frase}),
 // que a tela mostra como está.
 func falhaDaEdge(w http.ResponseWriter, msg string) {
 	w.Header().Set("Content-Type", "application/json")
@@ -31,22 +30,6 @@ func falhaDaEdge(w http.ResponseWriter, msg string) {
 func jaCadastrado(err error) bool {
 	var pe *pgconn.PgError
 	return errors.As(err, &pe) && pe.Code == "23505"
-}
-
-// raiseDoBanco: a frase de um RAISE nosso (gatilho ou função do banco, escrito para a pessoa
-// ler), para sair no formato da edge. Mesma regra de dados.ErroDoBanco (que não dá para usar: o
-// pacote dados importa auth): P0001, ou um dos códigos de RAISE com a primeira linha do Where
-// terminando em "at RAISE". Erro nativo (constraint, permissão) NÃO passa: leva nome de tabela.
-func raiseDoBanco(err error) (string, bool) {
-	var pe *pgconn.PgError
-	if !errors.As(err, &pe) {
-		return "", false
-	}
-	primeira, _, _ := strings.Cut(pe.Where, "\n")
-	if pe.Code == "P0001" || (strings.HasSuffix(primeira, " at RAISE") && slices.Contains([]string{"42501", "22023", "P0002", "23514"}, pe.Code)) {
-		return pe.Message, true
-	}
-	return "", false
 }
 
 // senhaCurta: o mínimo conta CARACTERES (Ruling 33; "ééé" tem 3), o teto conta bytes (bcrypt).
@@ -126,7 +109,7 @@ func (c *Conta) InviteUser(w http.ResponseWriter, r *http.Request) {
 			_, err = tx.Exec(ctx, `delete from sessoes where usuario_id = $1::uuid or impersonador_id = $1::uuid`, in.ResetPasswordUserId)
 			return err
 		})
-		frase, ehRaise := raiseDoBanco(err)
+		frase, ehRaise := banco.FraseDoRaise(err)
 		switch {
 		case ehRaise: // os gatilhos de profiles veem o ator (a edge escrevia como service_role)
 			falhaDaEdge(w, frase)
@@ -166,7 +149,7 @@ func (c *Conta) InviteUser(w http.ResponseWriter, r *http.Request) {
 			return err
 		})
 		var pe *pgconn.PgError
-		frase, ehRaise := raiseDoBanco(err)
+		frase, ehRaise := banco.FraseDoRaise(err)
 		switch {
 		case ehRaise:
 			falhaDaEdge(w, frase)
@@ -231,7 +214,7 @@ func (c *Conta) InviteUser(w http.ResponseWriter, r *http.Request) {
 			    on conflict (id) do update set email = excluded.email, name = excluded.name, role = excluded.role`, id, emailDigitado, in.Name, papel)
 			return err
 		}); err != nil {
-			if msg, ok := raiseDoBanco(err); ok {
+			if msg, ok := banco.FraseDoRaise(err); ok {
 				falhaDaEdge(w, msg)
 				return
 			}
@@ -274,7 +257,7 @@ func (c *Conta) InviteUser(w http.ResponseWriter, r *http.Request) {
 		assunto, frase = "Você foi convidado para a Central", "Você foi convidado! Crie a sua senha pelo link (vale por 24 horas): "
 		return err
 	})
-	if msg, ok := raiseDoBanco(err); ok {
+	if msg, ok := banco.FraseDoRaise(err); ok {
 		falhaDaEdge(w, msg)
 		return
 	}

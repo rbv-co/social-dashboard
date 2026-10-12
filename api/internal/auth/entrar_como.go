@@ -5,7 +5,6 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -16,17 +15,6 @@ import (
 // PrazoEntrarComo: a sessão de "entrar como" vale 1 h e NUNCA renova (Store.Buscar não
 // renova sessão impersonada), como o token de acesso do Supabase que a edge entregava.
 const PrazoEntrarComo = time.Hour
-
-// reUUIDEntrarComo: id de alvo que não é UUID é "pessoa não encontrada" (nunca chega ao SQL).
-var reUUIDEntrarComo = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
-
-// recusaDeEntrarComo: o contrato de erro da edge entrar-como-usuario (400 {"error": frase}),
-// que a tela mostra como está.
-func recusaDeEntrarComo(w http.ResponseWriter, msg string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusBadRequest)
-	json.NewEncoder(w).Encode(map[string]string{"error": msg})
-}
 
 // motivoDeRecusa é supabase/functions/_shared/checagem-de-entrar-como.js, na mesma ordem e com
 // as mesmas frases (a primeira que bater é a que a pessoa lê).
@@ -62,21 +50,21 @@ func (c *Conta) EntrarComo(w http.ResponseWriter, r *http.Request) {
 	}
 	json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10)).Decode(&in)
 	if in.AlvoID == "" {
-		recusaDeEntrarComo(w, "Faltou alvoId")
+		falhaDaEdge(w, "Faltou alvoId")
 		return
 	}
 	// o portão vem ANTES de olhar o alvo (quem não é super-admin não aprende nada sobre quem existe).
 	// Só a sessão de painel entra como outra pessoa: a de serviço, mesmo de conta super-admin, não
 	// (a chave de serviço da edge nem passava no getUser).
 	if !a.SuperAdmin || a.Tipo != "painel" {
-		recusaDeEntrarComo(w, motivoDeRecusa(false, false, a.ID, in.AlvoID, false, false))
+		falhaDaEdge(w, motivoDeRecusa(false, false, a.ID, in.AlvoID, false, false))
 		return
 	}
 	ctx := r.Context()
 	var alvoEmail string
 	var alvoDesativado bool
 	alvoID := in.AlvoID
-	alvoExiste := reUUIDEntrarComo.MatchString(in.AlvoID)
+	alvoExiste := reUUIDConta.MatchString(in.AlvoID)
 	if alvoExiste {
 		// p.id::text devolve o UUID normalizado (minúsculas): é ele que vai para a auditoria e a sessão
 		err := c.Pool.QueryRow(ctx, `select p.id::text, u.email, coalesce(p.disabled, false) or u.desativado_em is not null
@@ -90,7 +78,7 @@ func (c *Conta) EntrarComo(w http.ResponseWriter, r *http.Request) {
 	}
 	// o chamador tem sessão válida, então não está desativado (Store.Buscar recusaria)
 	if msg := motivoDeRecusa(true, false, a.ID, alvoID, alvoExiste, alvoDesativado); msg != "" {
-		recusaDeEntrarComo(w, msg)
+		falhaDaEdge(w, msg)
 		return
 	}
 	tx, err := c.Pool.Begin(ctx)
@@ -102,7 +90,7 @@ func (c *Conta) EntrarComo(w http.ResponseWriter, r *http.Request) {
 	if _, err := tx.Exec(ctx, `insert into entradas_como_outro_usuario (admin_id, admin_email, alvo_id, alvo_email)
 	    values ($1::uuid, (select email from usuarios where id = $1::uuid), $2::uuid, $3::text)`, a.ID, alvoID, alvoEmail); err != nil {
 		slog.Error("entrar-como: auditoria falhou", "erro", err.Error())
-		recusaDeEntrarComo(w, "Não consegui registrar a auditoria.")
+		falhaDaEdge(w, "Não consegui registrar a auditoria.")
 		return
 	}
 	impersonador := a.ID
