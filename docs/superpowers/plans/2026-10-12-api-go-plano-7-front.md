@@ -132,6 +132,8 @@ O inventário (robô × tabelas/edges × caminho) é a primeira task deste item,
 
 **Pendente da API:** `email`/`nome` no `GET /auth/eu` (trilha A, aceito, no PR do 5.12). Até mesclar, o e-mail fica vazio no avatar e na faixa do "entrar como" — e, com a faixa numa linha só, o avatar (`top: 92px`, que supõe a faixa em duas linhas) cai sobre o seletor grade/lista a 375 px. Reconferir a 375 px quando o e-mail chegar.
 
+**Revisão (opus, 1 rodada):** nada bloqueante; 8 menores. Corrigidos: o `429`/`conta_desativada` saiu de `classificarErro` (mudava a frase do 429 do Supabase em produção) para `erroDaApi`; 2xx que não é JSON vira erro em vez de sucesso vazio (o boot não quebra se um rewrite devolver HTML); o 401 só apaga o token se ainda for o enviado (outra aba pode ter entrado no meio); `conferir-senha` na aba de "entrar como" ganhou código e frase próprios (`entrou_como_outra_pessoa`) em vez de "confira a conexão"; a troca de senha do Supabase com mensagem vazia não vira mais "sucesso"; login e sair pela API encerram (`scope: 'local'`) a sessão do Supabase guardada no navegador, para nenhuma tela ainda no Supabase usar a de outra pessoa. **Registrados, sem correção agora:** sem rede no boot, o menu do perfil some até "Tentar de novo" (o `estado.user` só chega com `/auth/eu`; não desloga nem rebaixa); e, até o `email` chegar no `/auth/eu`, o Admin não reconhece a própria linha (`isSelf`) e oferece ações que o servidor recusa — some com o 5.12 mesclado.
+
 **Fora da `conta`, de propósito:** "Solicitar acesso" segue no Supabase com a chave `anon` até a área `admin` (5.1).
 
 ### Pendências de API

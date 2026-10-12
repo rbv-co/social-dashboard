@@ -30,11 +30,6 @@ export const MUITAS_TENTATIVAS = Object.freeze({
 export function classificarErro(status, corpo) {
   const codigo = corpo?.code || ''
 
-  // API em Go (Plano 7): o login com a senha certa de uma conta desativada e o
-  // limite de tentativas têm resposta própria. Antes do 403 genérico, senão a
-  // conta desativada leria "sem permissão para ver isso".
-  if (corpo?.error === 'conta_desativada') return CONTA_DESATIVADA
-  if (status === 429) return MUITAS_TENTATIVAS
 
   if (status === 401 || codigo === 'PGRST301') {
     return { tipo: 'sessao', mensagem: 'Sua sessão expirou — entre de novo.', acao: 'entrar' }

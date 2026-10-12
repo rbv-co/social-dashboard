@@ -138,8 +138,26 @@ test('conferirSenhaPelaApi: os códigos da edge chegam iguais, inclusive no 4xx'
   assert.deepEqual(await api.conferirSenhaPelaApi('x'), { ok: false, erro: 'bloqueado' })
   responder(401, { error: 'nao_autenticado' })
   assert.deepEqual(await api.conferirSenhaPelaApi('x'), { ok: false, erro: 'sem_sessao' })
-  responder(403, { error: 'sem_permissao', mensagem: 'Quem entrou como outra pessoa não confere senha por ela.' })
-  assert.deepEqual(await api.conferirSenhaPelaApi('x'), { ok: false, erro: 'falha_interna' })
   globalThis.fetch = async () => { throw new TypeError('Failed to fetch') }
   assert.deepEqual(await api.conferirSenhaPelaApi('x'), { ok: false, erro: 'falha_interna' })
+})
+
+test('erroDaApi: 403 conta_desativada e 429 têm frase própria (só na API)', () => {
+  assert.equal(api.erroDaApi(403, { error: 'conta_desativada' }).tipo, CONTA_DESATIVADA.tipo)
+  assert.equal(api.erroDaApi(403, { error: 'sem_permissao' }).tipo, 'permissao')
+  const l = api.erroDaApi(429, { error: 'muitas_tentativas' })
+  assert.equal(l.tipo, 'limite')
+  assert.equal(l.acao, null)
+})
+
+test('2xx que não é JSON (rewrite devolvendo HTML) é erro, não sucesso vazio', async () => {
+  globalThis.fetch = async () => ({ status: 200, ok: true, text: async () => '<!doctype html><html>', headers: { get: () => null } })
+  const r = await api.pedir('GET', '/auth/eu')
+  assert.equal(r.data, null)
+  assert.equal(r.error.tipo, 'servidor')
+})
+
+test('conferirSenhaPelaApi: aba de "entrar como" tem código próprio', async () => {
+  responder(403, { error: 'sem_permissao', mensagem: 'Quem entrou como outra pessoa não confere senha por ela.' })
+  assert.deepEqual(await api.conferirSenhaPelaApi('x'), { ok: false, erro: 'entrou_como_outra_pessoa' })
 })

@@ -59,14 +59,7 @@ test('nenhuma mensagem vaza jargao tecnico pro usuario', () => {
   }
 })
 
-test('API em Go: 403 conta_desativada vira CONTA_DESATIVADA, nao sem permissao', async () => {
-  const { CONTA_DESATIVADA } = await import('./classificar-erro.js')
-  assert.equal(classificarErro(403, { error: 'conta_desativada' }), CONTA_DESATIVADA)
-  assert.equal(classificarErro(403, { error: 'sem_permissao' }).tipo, 'permissao')
-})
-
-test('API em Go: 429 vira muitas tentativas, sem tentar de novo na hora', () => {
-  const e = classificarErro(429, { error: 'muitas_tentativas' })
-  assert.equal(e.tipo, 'limite')
-  assert.equal(e.acao, null)
+test('classificarErro (caminho do Supabase) não mudou: 429 segue "tente de novo"', () => {
+  assert.equal(classificarErro(429, { message: 'rate limit' }).tipo, 'servidor')
+  assert.equal(classificarErro(429, null).acao, 'tentar')
 })

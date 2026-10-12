@@ -212,3 +212,13 @@ test('API: queda de rede NÃO rebaixa nem desloga — preserva o perfil anterior
   assert.equal(window.localStorage.getItem(CHAVE_DO_TOKEN), 'tok-vivo')
   assert.notEqual(estado.currentSession, null)
 })
+
+test('API: 401 de um token velho NÃO apaga o token novo que outra aba gravou', async () => {
+  window.localStorage.setItem(CHAVE_DO_TOKEN, 'tok-velho')
+  globalThis.fetch = async () => {
+    window.localStorage.setItem(CHAVE_DO_TOKEN, 'tok-novo-da-outra-aba') // a outra aba entrou durante o pedido
+    return { status: 401, ok: false, text: async () => '{"error":"nao_autenticado"}', headers: { get: () => null } }
+  }
+  await carregarPerfilDaApi()
+  assert.equal(window.localStorage.getItem(CHAVE_DO_TOKEN), 'tok-novo-da-outra-aba')
+})

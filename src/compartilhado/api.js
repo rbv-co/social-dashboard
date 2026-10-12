@@ -11,11 +11,13 @@
 // virada (Plano 8). As áreas e as telas de cada uma: Plano 7, seção I.
 //
 // ⚠️ `conta` É A BASE. A sessão do Supabase e a da API não convivem: uma tela na
-// API sem a sessão da API toma 401, e uma tela no Supabase com a sessão da API
-// também. Lista com área e sem `conta` não é "meio ligado", é erro — e falha
-// ALTO no carregamento em vez de abrir telas que dão 401 caladas.
+// API sem a sessão da API toma 401. Por isso lista com área e sem `conta` não é
+// "meio ligado", é erro — e falha ALTO no carregamento. Com `conta` ligada, as
+// telas ainda no Supabase ficam sem sessão (o login e o sair pela API encerram
+// a do Supabase guardada neste navegador, para nenhuma tela usar a de outra
+// pessoa) e mostram "sua sessão expirou" até a área delas ligar.
 
-import { classificarErro, ERRO_DE_REDE } from './classificar-erro.js'
+import { classificarErro, ERRO_DE_REDE, CONTA_DESATIVADA, MUITAS_TENTATIVAS } from './classificar-erro.js'
 import { calcularModoEntrarComo } from './modo-entrar-como.js'
 
 export const AREAS = Object.freeze([
@@ -76,7 +78,13 @@ export function apagarToken() {
 
 /** Monta o erro: a classificação da casa + o que a API disse. */
 export function erroDaApi(status, corpo) {
-  const c = classificarErro(status, corpo)
+  // Só da API: o login com a senha certa de uma conta desativada e o limite de
+  // tentativas têm resposta própria (antes do 403 genérico, senão a conta
+  // desativada leria "sem permissão"). Fica AQUI e não em classificarErro, que
+  // o caminho do Supabase também usa — lá um 429 continua "tente de novo".
+  const c = corpo?.error === 'conta_desativada' ? CONTA_DESATIVADA
+    : status === 429 ? MUITAS_TENTATIVAS
+      : classificarErro(status, corpo)
   return { ...c, status, codigo: corpo?.error || null, message: corpo?.mensagem || c.mensagem }
 }
 
@@ -104,9 +112,13 @@ export async function pedir(metodo, caminho, { corpo, params, semSessao = false 
   }
   const texto = r.status === 204 ? '' : await r.text().catch(() => '')
   let dados = null
-  try { dados = texto ? JSON.parse(texto) : null } catch { dados = null }
+  let ilegivel = false
+  try { dados = texto ? JSON.parse(texto) : null } catch { ilegivel = true }
   const total = r.headers.get('X-Total-Count')
   if (!r.ok) return { data: dados, error: erroDaApi(r.status, dados), status: r.status, total: null }
+  // 2xx com HTML (um rewrite do servidor de páginas respondendo no lugar da API)
+  // não é sucesso vazio: é a API fora do caminho, e a tela tem de dizer isso.
+  if (ilegivel) return { data: null, error: erroDaApi(502, null), status: r.status, total: null }
   return { data: dados, error: null, status: r.status, total: total === null ? null : Number(total) }
 }
 
@@ -146,5 +158,8 @@ export async function conferirSenhaPelaApi(senha) {
   const { data, error } = await edge('conferir-senha', { senha })
   if (!error && data?.ok === true) return { ok: true }
   if (data?.erro) return { ok: false, erro: data.erro }
-  return { ok: false, erro: error?.codigo === 'nao_autenticado' ? 'sem_sessao' : 'falha_interna' }
+  if (error?.codigo === 'nao_autenticado') return { ok: false, erro: 'sem_sessao' }
+  // Aba de "entrar como": a API não confere a senha de ninguém por outra pessoa.
+  if (error?.codigo === 'sem_permissao') return { ok: false, erro: 'entrou_como_outra_pessoa' }
+  return { ok: false, erro: 'falha_interna' }
 }

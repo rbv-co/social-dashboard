@@ -198,9 +198,10 @@ async function definirSenhaPelaApi() {
   const token = window.__tokenDoLink
   if (!token) { setPassErro.value = 'Este link é inválido ou já venceu. Peça um novo.'; return }
   const r = await pedir('POST', '/auth/definir-senha', { corpo: { token, senha: novaSenha.value }, semSessao: true })
-  if (r.error) {
+  if (r.error || !r.data?.token) {
     // 400 senha_invalida / token_invalido vêm com a frase pronta da API.
-    setPassErro.value = r.error.codigo === 'pedido_invalido' ? 'Este link é inválido ou já venceu. Peça um novo.' : r.error.message
+    setPassErro.value = r.error?.codigo === 'pedido_invalido' ? 'Este link é inválido ou já venceu. Peça um novo.'
+      : (r.error?.message || 'O servidor não respondeu. Tente de novo.')
     return
   }
   // Uso único: o token já não vale nada, e o fluxo acabou.

@@ -1,9 +1,9 @@
 import { reactive } from 'vue'
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from './conectar-no-banco-de-dados.js'
+import { SUPABASE_URL, SUPABASE_ANON_KEY, sbClient } from './conectar-no-banco-de-dados.js'
 import { classificarErro, ERRO_DE_REDE, CONTA_DESATIVADA } from './classificar-erro.js'
 import { lerPerfil, precisaPerguntarSeDesativou } from './leitura-de-perfil.js'
 import { RECURSOS, PERMISSION_TREE, chavesDoGrupo, podeAbrirRota } from './catalogo-de-ferramentas.js'
-import { areaNaApi, pedir, lerToken, guardarToken, apagarToken } from './api.js'
+import { areaNaApi, pedir, lerToken, guardarToken, apagarToken, erroDaApi } from './api.js'
 
 export const estado = reactive({
   currentSession: null,
@@ -149,13 +149,23 @@ function aplicarPerfil(perfil) {
  * Supabase: rebaixar alguém por um blip é a mentira que `erroPerfil` evita. */
 export async function carregarPerfilDaApi() {
   estado.erroPerfil = null
+  const enviado = lerToken()
   const eu = await pedir('GET', '/auth/eu')
   if (eu.error) {
-    if (eu.error.status === 401) { apagarToken(); limparEstado() }
+    // Só apaga se o token guardado ainda for o que morreu: noutra aba alguém
+    // pode ter entrado durante este pedido, e o token novo é dela.
+    if (eu.error.status === 401) {
+      if (lerToken() === enviado) apagarToken()
+      limparEstado()
+    }
     estado.erroPerfil = eu.error
     return { ok: false, erro: eu.error }
   }
-  // `email` e `nome` entram no /auth/eu pelo Ruling do 5.0 pedido pela trilha C.
+  if (!eu.data?.id) {
+    estado.erroPerfil = erroDaApi(502, null)
+    return { ok: false, erro: estado.erroPerfil }
+  }
+  // `email` e `nome` entram no /auth/eu pelo Ruling 37 do plano-mãe (pedido da trilha C).
   const user = { id: eu.data.id, email: eu.data.email || '', user_metadata: { name: eu.data.nome ?? null } }
   estado.userId = user.id
   estado.user = user
@@ -169,8 +179,16 @@ export async function carregarPerfilDaApi() {
   return { ok: true, erro: null }
 }
 
+// A sessão do Supabase que ficou guardada neste navegador (de antes da chave,
+// ou de outra pessoa) não pode servir às telas que ainda estão no Supabase
+// depois de um login ou de um sair pela API. `scope: 'local'`: só apaga daqui.
+async function encerrarSessaoDoSupabase() {
+  try { await sbClient.auth.signOut({ scope: 'local' }) } catch { /* sem sessão para encerrar */ }
+}
+
 /** Abre a sessão com um token da API (login, link de senha, "entrar como"). */
 export async function abrirSessaoDaApi(token) {
+  await encerrarSessaoDoSupabase()
   guardarToken(token)
   setSession({ access_token: token, user: null })
   return carregarPerfil()
@@ -188,6 +206,7 @@ export async function retomarSessaoDaApi() {
 export async function entrarPelaApi(email, senha) {
   const r = await pedir('POST', '/auth/entrar', { corpo: { email, senha }, semSessao: true })
   if (r.error) return { ok: false, erro: fraseDoLogin(r.error) }
+  if (!r.data?.token) return { ok: false, erro: erroDaApi(502, null).message }
   // Falha ao carregar o PERFIL não é falha de login: a sessão abriu, e a tela
   // de Início mostra o `erroPerfil` com "tentar de novo" — como no Supabase.
   await abrirSessaoDaApi(r.data.token)
@@ -205,6 +224,7 @@ export function fraseDoLogin(erro) {
 export async function sairDaApi() {
   await pedir('POST', '/auth/sair')
   apagarToken()
+  await encerrarSessaoDoSupabase()
   limparEstado()
 }
 

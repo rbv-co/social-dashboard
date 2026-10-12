@@ -365,9 +365,12 @@ async function salvarSenha() {
   salvando.value = true
   msgSenha.value = ''
   try {
-    const falha = naApi
-      ? await trocarSenhaPelaApi(novaSenha.value)
-      : (await sbClient.auth.updateUser({ password: novaSenha.value })).error?.message
+    let falha = ''
+    if (naApi) falha = await trocarSenhaPelaApi(novaSenha.value)
+    else {
+      const { error } = await sbClient.auth.updateUser({ password: novaSenha.value })
+      if (error) falha = error.message || 'erro desconhecido'
+    }
     if (falha) { msgErro.value = true; msgSenha.value = 'Não deu pra trocar: ' + falha }
     else {
       msgSenha.value = 'Senha alterada com sucesso!'
