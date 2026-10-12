@@ -826,7 +826,7 @@ func novoMundo(t *testing.T, montar ...func(chi.Router, *pgxpool.Pool)) *mundote
 - `GET /gestao-trafego/analises-de-orcamento` (`gt_budget_analises`; regra: gestor + `pode_ver_conta(account_id)`): a fila (gt:1019). Filtros `account_id`, `veredito`. Ordem padrão `gerado_em desc`.
 - `GET /gestao-trafego/analises-de-anuncio` (`gt_ad_analises`; gestor + restritiva): gt:1132 (`?veredito=pausar`). Filtros `account_id`, `veredito`, `campaign_id`.
 - `GET /gestao-trafego/decisoes` (`gt_fila_decisoes`; gestor + restritiva): gt:1020, 1124 (`?escopo=saude`), 1133 (`?escopo=criativos`), todas `?ordem=decidido_em.desc`. Filtros `account_id`, `escopo`, `campaign_id`; ordem `decidido_em`.
-- `POST /gestao-trafego/decisoes` (`soSessaoPropria`): substitui o `insert` de gt:1378. Corpo: `campaign_id` (dígitos, obrigatório), `veredito` (1–40, obrigatório), `decisao` (`aprovada|recusada`, obrigatório), `escopo` (`orcamento|criativos|saude`, opcional: padrão do banco), `account_id` (uuid ou `null`), `budget_atual_centavos`, `budget_sugerido_centavos`, `analise_gerada_em`, `silenciar_ate`, `aplicado`, `erro` (tipos pelo banco). `decidido_por` vem da SESSÃO (Tabela.Autor); no corpo = `400 corpo_invalido`. Regra: catálogo (`gt_fila_decisoes_insercao`: gestor e `decidido_por = auth.uid()`) **e** a linha nova tem de passar na regra de LER de quem decide (gestor E `pode_ver_conta(account_id)`) — em produção o insert não tinha a restritiva (Ruling 5.7-5). Resposta `201` com `colunasDecisao`.
+- `POST /gestao-trafego/decisoes` (`soSessaoPropria`): substitui o `insert` de gt:1378. Corpo: `campaign_id` (dígitos, obrigatório), `veredito` (1–40, obrigatório), `decisao` (`aprovada|recusada`, obrigatório), `escopo` (`orcamento|criativos|saude`, opcional: padrão do banco), `account_id` (uuid ou `null`), `budget_atual_centavos`, `budget_sugerido_centavos`, `analise_gerada_em`, `aplicado`, `erro` (tipos pelo banco). `silenciar_ate` NÃO vem do corpo (no corpo = `400 corpo_invalido`): o servidor grava `agora + 7 dias` quando `decisao = recusada` e nulo quando `aprovada` (Ruling 5.7-17). `decidido_por` vem da SESSÃO (Tabela.Autor); no corpo = `400 corpo_invalido`. Regra: catálogo (`gt_fila_decisoes_insercao`: gestor e `decidido_por = auth.uid()`) **e** a linha nova tem de passar na regra de LER de quem decide (gestor E `pode_ver_conta(account_id)`) — em produção o insert não tinha a restritiva (Ruling 5.7-5). Resposta `201` com `colunasDecisao`.
 
 ```go
 package trafego
@@ -882,7 +882,6 @@ type corpoDecisao struct {
 	BudgetSugeridoCentavos json.RawMessage `json:"budget_sugerido_centavos,omitempty"`
 	AnaliseGeradaEm        json.RawMessage `json:"analise_gerada_em,omitempty"`
 	Decisao                json.RawMessage `json:"decisao,omitempty"`
-	SilenciarAte           json.RawMessage `json:"silenciar_ate,omitempty"`
 	Aplicado               json.RawMessage `json:"aplicado,omitempty"`
 	Erro                   json.RawMessage `json:"erro,omitempty"`
 }
@@ -910,6 +909,9 @@ func (c corpoDecisao) Validar() error {
 	return errors.Join(e...)
 }
 
+// diasDeSilencio: recusar cala a campanha por 7 dias (DIAS_DE_SILENCIO de tela-de-gestao-trafego.vue).
+const diasDeSilencio = 7
+
 var tabelaDecisoes = dados.Tabela{Nome: "gt_fila_decisoes", Resposta: colunasDecisao, Autor: "decidido_por"}
 
 // criarDecisao: POST /gestao-trafego/decisoes. Append-only (a migration 2026-07-29-fila-decisoes.sql: corrigir
@@ -935,6 +937,10 @@ func criarDecisao(p *pgxpool.Pool) http.HandlerFunc {
 		if err != nil {
 			dados.Erro(w, http.StatusInternalServerError, "erro_interno", "")
 			return
+		}
+		// Ruling 5.7-17: o silêncio é do servidor (a tela mandava agora + DIAS_DE_SILENCIO, falsificável).
+		if textoEm(c.Decisao, "recusada") {
+			campos["silenciar_ate"] = time.Now().UTC().Add(diasDeSilencio * 24 * time.Hour).Format(time.RFC3339Nano)
 		}
 		ctx := r.Context()
 		var corpo []byte
@@ -980,7 +986,7 @@ func montarFila(r chi.Router, p *pgxpool.Pool) {
 - Filtros e ordem: `analises-de-anuncio?veredito=pausar` como `gestorTodas` → `7001` e `7002`, sem `7003`; `decisoes?escopo=saude&ordem=decidido_em.desc` como `gestorTodas` → só `9002`; `decisoes` padrão → `9002` (11/10) antes de `9001` (10/10) antes de `9003`; `analises-de-orcamento` padrão → `9002` (09h) antes de `9001` (08h), com `"impactos":{"conversas": 3}`.
 - Contagem e IDOR: `gestorA1` `?account_id=` + A2 em cada leitura → `[]`; `decisoes?contar=1&limite=1` → `X-Total-Count: 2` para `gestorA1`, `3` para `gestorTodas`.
 - 400: `?ordem=veredito`, `?limite=1001`, `?decidido_em=hoje`.
-- Criar, permitido: `gestorA1` `{"campaign_id":"9001","account_id":"<A1>","veredito":"escalar","decisao":"recusada","escopo":"orcamento","silenciar_ate":"2026-10-19T00:00:00Z","aplicado":[]}` → 201 com `"decisao":"recusada"` e sem `decidido_por`; efeito: a linha nova tem `decidido_por = idGestorA1`. `{"campaign_id":"9004","account_id":null,"veredito":"pausar","decisao":"aprovada"}` → 201 (sem conta: visível a todo gestor) e `escopo = 'orcamento'` (padrão). `adminA1` com A2 → 201.
+- Criar, permitido: `gestorA1` `{"campaign_id":"9001","account_id":"<A1>","veredito":"escalar","decisao":"recusada","escopo":"orcamento","aplicado":[]}` → 201 com `"decisao":"recusada"` e sem `decidido_por`; efeito: a linha nova tem `decidido_por = idGestorA1` e `silenciar_ate` entre agora + 7 dias − 1 min e agora + 7 dias + 1 min. `"silenciar_ate":"2099-01-01T00:00:00Z"` no corpo → `400 corpo_invalido`, nada gravado. `decisao` `aprovada` → `silenciar_ate` nulo. `{"campaign_id":"9004","account_id":null,"veredito":"pausar","decisao":"aprovada"}` → 201 (sem conta: visível a todo gestor) e `escopo = 'orcamento'` (padrão). `adminA1` com A2 → 201.
 - Criar, negado e intacto: `gestorA1` com A2 → 403 (**conta que não vê**); com A3 (não existe) → 403 igual; `gestorNenhuma` com A1 → 403; `leitor`, `superA1` → 403; `impersonado` → 403 com "Quem entrou como outra pessoa"; `{"decidido_por":"<idGestorTodas>",…}` → 400 `corpo_invalido`; `decisao "talvez"`, `campaign_id "abc"`, `veredito ""`, `account_id "x"`, sem `campaign_id` → 400.
 - Mutações que têm de reprovar: tirar a conferência de Ler (`gestorA1` cria a decisão de A2: 201); `Autor: ""` em `tabelaDecisoes` (a linha de criar fica sem `decidido_por`, que a regra lê: `autz.ErrDeclaracao`, o caso permitido vira 500); tirar `soSessaoPropria` do POST.
 
@@ -2669,11 +2675,12 @@ Na mesma tela, de OUTROS planos (não trocar pelo 5.7): **5.6** — `accounts` (
 14. Ruling: `buscar-lugar` fala só com `https://nominatim.openstreetmap.org` (constante), caminhos fixos, termo e coordenadas só na query, sem redirecionamento, resposta até 1 MiB, uma ligação por vez com 1 s de intervalo, cache de 24 h/500 em memória (paridade), erro fora do cache, 60 por minuto por pessoa; portão `ExigirModulo("meta")`, que também deixa passar o super-admin pela ficha (a edge não olhava `is_superadmin`; é o mesmo portão do `meta-proxy`) — a regra de uso do Nominatim é a razão de existir da edge; SSRF exige destino fixo; a diferença do super é de quem já entra em tudo — custo se errada: rajada de buscas espera na fila (até o prazo de 20 s).
 15. Ruling: log dos proxies = uma linha por chamada externa com rota, pessoa, status, contagem de tokens, duração e tamanho do PDF; nunca chave, prompt, persona, evidência, documento, corpo de erro da Anthropic, termo ou coordenada — a persona e o documento são da marca (dado de negócio), a chave é segredo, e o termo/coordenada diz onde a pessoa anuncia; o `detalhe` do erro continua na RESPOSTA, como na edge — custo se errada: depurar exige reproduzir o pedido.
 16. Ruling: o `init` de `cmd/api/conferir.go` passa a respeitar o tipo de `account_id` declarado em `tiposDoWorker` — ele forçava `uuid` em toda tabela com `account_id`, e as gt_* (e a `social_metas` do 5.6) são `text`: a conferência acusaria falso no banco restaurado — custo se errada: nenhum.
+17. Ruling: `silenciar_ate` da fila é calculado no servidor (`agora + 7 dias` ao recusar; nulo ao aprovar) e recusado no corpo — a tela sempre mandava `agora + DIAS_DE_SILENCIO` (7), então o prazo vindo do navegador só servia para calar uma campanha por anos; decidido pela trilha B na execução — custo se errada: mudar o prazo vira deploy da API (a tela deixa de mandar o campo no Plano 7).
 
 ## Achados para o dono
 
 1. **`gt_registrar_problemas` deixava um gestor com lista de contas gravar e FECHAR os problemas da Meta de qualquer conta** (a função é SECURITY DEFINER e não olha `pode_ver_conta`). A API confere a conta antes de rodar.
-2. **A fila aceitava decisão de qualquer conta, e o "silenciar até" vem do navegador** (dá para calar uma campanha por anos). A API recusa conta que a pessoa não vê; o prazo do silêncio continua vindo da tela (7 dias). Decisão sua: fixar os 7 dias no servidor?
+2. **A fila aceitava decisão de qualquer conta, e o "silenciar até" vem do navegador** (dá para calar uma campanha por anos). A API recusa conta que a pessoa não vê e fixa os 7 dias no servidor (Ruling 5.7-17).
 3. **A régua e os objetivos por interação são de todos:** qualquer sessão lê as metas de custo de TODAS as contas (`metas_por_conta`) e os objetivos declarados; qualquer gestor muda o objetivo de campanha de qualquer conta (as policies não têm a restritiva). Mantido (paridade); a régua passa a só mudar as metas da conta que a pessoa vê. Fechar a leitura = policy em produção.
 4. **`gt_budget_analises.account_id` antigo:** o comentário da tela (gt:951) diz que ele era o id do registro do token, igual para todas as contas; o robô hoje grava a conta do painel (`budget-ia.mjs:1025-1028`). Linhas antigas, se ainda houver, são recortadas pelo id errado para quem tem lista. Conferir no ensaio: `select account_id, count(*) from gt_budget_analises group by 1`.
 5. **Modelos fixos nas edges:** `sugerir-publico-ia` usa `claude-opus-4-5` (geração anterior) e `ler-documento` usa `claude-opus-5`. A migração mantém; trocar (por exemplo por `claude-opus-5-5`, mais barato por token) é decisão sua, com um teste de qualidade das sugestões.
