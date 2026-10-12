@@ -161,3 +161,33 @@ test('conferirSenhaPelaApi: aba de "entrar como" tem código próprio', async ()
   responder(403, { error: 'sem_permissao', mensagem: 'Quem entrou como outra pessoa não confere senha por ela.' })
   assert.deepEqual(await api.conferirSenhaPelaApi('x'), { ok: false, erro: 'entrou_como_outra_pessoa' })
 })
+
+test('invocar: formato do functions.invoke, com o motivo do não-2xx em error.context.json()', async () => {
+  responder(200, { serie: [1, 2] })
+  assert.deepEqual(await api.invocar('serie-novos-dia', { dias: 7 }), { data: { serie: [1, 2] }, error: null })
+
+  responder(404, { meta_erro: 'conta nao encontrada' })
+  const r = await api.invocar('insights-ao-vivo', {})
+  assert.equal(r.data, null)
+  assert.equal(r.error.status, 404)
+  assert.deepEqual(await r.error.context.json(), { meta_erro: 'conta nao encontrada' })
+})
+
+test('fetchDaApi: mesmo Response, endereço /api, token da API e sem apikey do Supabase', async () => {
+  api.guardarToken('tok-9')
+  const pedidos = responder(200, { ok: true })
+  const r = await api.fetchDaApi('/meta-proxy', { method: 'POST', headers: { apikey: 'anon', Authorization: 'Bearer jwt-supabase', 'Content-Type': 'application/json' }, body: '{}' })
+  assert.equal(r.ok, true)
+  assert.equal(pedidos[0].url, '/api/meta-proxy')
+  assert.equal(pedidos[0].headers.Authorization, 'Bearer tok-9')
+  assert.equal(pedidos[0].headers.apikey, undefined)
+  assert.equal(pedidos[0].headers['Content-Type'], 'application/json')
+})
+
+test('invocarNaArea: com a área desligada, a chamada do Supabase é a mesma', async () => {
+  const chamadas = []
+  const sb = { functions: { invoke: async (n, o) => { chamadas.push([n, o]); return { data: 'do-supabase', error: null } } } }
+  const r = await api.invocarNaArea('edges-core', sb, 'bling-proxy', { body: { endpoint: 'produtos' } })
+  assert.equal(r.data, 'do-supabase')
+  assert.deepEqual(chamadas, [['bling-proxy', { body: { endpoint: 'produtos' } }]])
+})

@@ -163,3 +163,39 @@ export async function conferirSenhaPelaApi(senha) {
   if (error?.codigo === 'sem_permissao') return { ok: false, erro: 'entrou_como_outra_pessoa' }
   return { ok: false, erro: 'falha_interna' }
 }
+
+/**
+ * Edge portada no formato de `sbClient.functions.invoke(nome, { body })`:
+ * sucesso = `{ data: corpo, error: null }`; falha = `{ data: null, error }`, com
+ * `error.context.json()` devolvendo o corpo da resposta — o caminho por onde as
+ * telas já leem o motivo de um não-2xx (o supabase-js zera o `data` nesse caso).
+ * `error.message` é a frase da classificação da casa.
+ */
+export async function invocar(nome, corpo) {
+  const r = await edge(nome, corpo)
+  if (!r.error) return { data: r.data, error: null }
+  const daResposta = r.data
+  return { data: null, error: { ...r.error, context: { status: r.status, json: async () => daResposta } } }
+}
+
+/**
+ * Para o sítio que já faz `fetch` numa edge e lê o `Response` (`r.ok`,
+ * `r.status`, `r.json()`): mesmo `Response`, outro endereço e o token da API.
+ * `caminho` começa com `/` (`/meta-proxy`). O `apikey` do Supabase não vai.
+ */
+export function fetchDaApi(caminho, init = {}) {
+  const headers = { ...(init.headers || {}) }
+  delete headers.apikey
+  const token = lerToken()
+  if (token) headers.Authorization = `Bearer ${token}`
+  else delete headers.Authorization
+  return fetch(BASE_DA_API + caminho, { ...init, headers })
+}
+
+/**
+ * `sbClient.functions.invoke(nome, opcoes)` ou a API, pela chave da área. A
+ * troca no sítio vira um prefixo, e o ramo do Supabase segue a MESMA chamada.
+ */
+export function invocarNaArea(area, sbClient, nome, opcoes) {
+  return areaNaApi(area) ? invocar(nome, opcoes?.body) : sbClient.functions.invoke(nome, opcoes)
+}

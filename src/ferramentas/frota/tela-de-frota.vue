@@ -21,7 +21,8 @@ import { useRouter } from 'vue-router'
 import { sbClient, SUPABASE_URL, SUPABASE_ANON_KEY } from '../../compartilhado/conectar-no-banco-de-dados.js'
 import { hasPermission, estado } from '../../compartilhado/controle-de-login-e-usuario.js'
 // Chave `conta` (Plano 7): invite-user e conferir-senha (5.0) pela API em Go.
-import { areaNaApi, corpoDaEdge, conferirSenhaPelaApi } from '../../compartilhado/api.js'
+// Chave `edges-core` (Plano 7): avisar-decisao-de-reserva (Plano 4).
+import { areaNaApi, corpoDaEdge, conferirSenhaPelaApi, fetchDaApi } from '../../compartilhado/api.js'
 import { estadoDoVeiculo, ordenarEstados, rotuloDoTanque, NIVEIS_TANQUE, problemasDaDevolucao, problemasDoRegistroAvulso, ultimoHodometro } from './estado-do-veiculo.js'
 import { seloDoVeiculo, tomDoCartao, linhaDoCartao, acaoPrincipalDoVeiculo, cartaoCompacto } from './cartao-do-veiculo.js'
 import { nomeDeQuemAgiu } from './nome-de-quem-agiu.js'
@@ -2523,15 +2524,16 @@ async function avisarQuemPediu(requisicaoId, acao) {
   // 'cancelada', 'revogada'). O QUE vai no celular da pessoa é montado no
   // servidor, a partir do que está gravado — nunca do que esta tela mandar.
   try {
-    const { data: { session } } = await sbClient.auth.getSession()
-    const r = await fetch(`${SUPABASE_URL}/functions/v1/avisar-decisao-de-reserva`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${session?.access_token || SUPABASE_ANON_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ requisicaoId }),
-    })
+    const r = areaNaApi('edges-core')
+      ? await fetchDaApi('/avisar-decisao-de-reserva', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ requisicaoId }) })
+      : await fetch(`${SUPABASE_URL}/functions/v1/avisar-decisao-de-reserva`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${(await sbClient.auth.getSession()).data.session?.access_token || SUPABASE_ANON_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ requisicaoId }),
+      })
     const res = await r.json().catch(() => null)
     if (!r.ok || !res || res.ok === false) {
       adminToast(`Reserva ${acao}. Não consegui avisar quem pediu — fale com a pessoa.`, false)

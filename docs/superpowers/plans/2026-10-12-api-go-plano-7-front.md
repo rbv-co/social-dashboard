@@ -28,7 +28,7 @@
 | Chave | Sub-plano | Telas e sítios (coluna "Telas" da IV.2) |
 |---|---|---|
 | `conta` | 5.0 (+ Planos 3/4 já mesclados) | `ponto-de-partida.js`, `controle-de-login-e-usuario.js`, `login/tela-de-login.vue`, `moldura-do-aplicativo.vue` (troca de senha, sair, "entrar como"); as edges `invite-user` (Admin 3×, Frota, Redes), `entrar-como-usuario` (Admin) e `conferir-senha` (Frota, Autenticidade) |
-| `edges-core` | Planos 3 e 4 | `bling-proxy` (`chamada-do-bling.js`), `meta-proxy`, `insights-ao-vivo`, `serie-novos-dia`, `contar-collabs`, `avisar-decisao-de-reserva` — sítios de `functions.invoke`/`fetch …/functions/v1/` dessas edges |
+| `edges-core` | Planos 3 e 4 | `bling-proxy` (`chamada-do-bling.js`, Gestão Comercial), `meta-proxy` (Análise de Campanhas, Gestão de Tráfego, Fábrica, `painel-subir`), `insights-ao-vivo`, `serie-novos-dia`, `contar-collabs` (Redes), `avisar-decisao-de-reserva` (Frota). O `GET /eu/canais` (também do Plano 3) vai com `comercial`: as telas que o usam leem o resto do recorte (`bling_lojas`, metas) do domínio 5.5 |
 | `admin` | 5.1 | `admin/tela-de-admin.vue`, pedir acesso no login, `notificacoes-push.js` |
 | `patrimonio` | 5.2 | `patrimonio/*`, cadastro rápido em `frota` e `acessos` |
 | `frota` | 5.3 | `frota/*` |
@@ -135,6 +135,14 @@ O inventário (robô × tabelas/edges × caminho) é a primeira task deste item,
 **Revisão (opus, 1 rodada):** nada bloqueante; 8 menores. Corrigidos: o `429`/`conta_desativada` saiu de `classificarErro` (mudava a frase do 429 do Supabase em produção) para `erroDaApi`; 2xx que não é JSON vira erro em vez de sucesso vazio (o boot não quebra se um rewrite devolver HTML); o 401 só apaga o token se ainda for o enviado (outra aba pode ter entrado no meio); `conferir-senha` na aba de "entrar como" ganhou código e frase próprios (`entrou_como_outra_pessoa`) em vez de "confira a conexão"; a troca de senha do Supabase com mensagem vazia não vira mais "sucesso"; login e sair pela API encerram (`scope: 'local'`) a sessão do Supabase guardada no navegador, para nenhuma tela ainda no Supabase usar a de outra pessoa. **Registrados, sem correção agora:** sem rede no boot, o menu do perfil some até "Tentar de novo" (o `estado.user` só chega com `/auth/eu`; não desloga nem rebaixa); e, até o `email` chegar no `/auth/eu`, o Admin não reconhece a própria linha (`isSelf`) e oferece ações que o servidor recusa — some com o 5.12 mesclado.
 
 **Fora da `conta`, de propósito:** "Solicitar acesso" segue no Supabase com a chave `anon` até a área `admin` (5.1).
+
+### Área `edges-core` (Planos 3 e 4) — 12/10/2026, branch `feat/plano-7-edges-core`
+
+**Trocado (atrás de `areaNaApi('edges-core')`):** 13 sítios de `functions.invoke` (Redes ×3, Gestão Comercial ×2, `painel-subir` ×8) por `invocarNaArea` — o ramo do Supabase segue a MESMA chamada; 8 sítios de `fetch` (Análise de Campanhas, Gestão de Tráfego ×4, Fábrica, Frota, `chamada-do-bling.js`) por `fetchDaApi`, que devolve o mesmo `Response` com o token da API e sem `apikey`.
+
+**Decisões:** `invocar` devolve o formato do `functions.invoke`, inclusive `error.context.json()` com o corpo do não-2xx (as telas leem o motivo por ali). Os sítios que paravam em "sem sessão do Supabase" antes do `fetch` não consultam mais o Supabase com a chave ligada. `/eu/canais` foi para a área `comercial` (decisão acima, na tabela).
+
+**Prova** (API local com `CORE_URL` num core de mentira em `127.0.0.1:58613`, `VITE_API_AREAS=conta,edges-core`, Chrome a 375 px, chamando os módulos reais da tela pelo Vite): `chamarBling` → `bling-proxy` → core (`/api/interno/bling/proxy`) → produto lido; `meta-proxy` → core (`/api/interno/meta/graph`) → `effective_status`; `insights-ao-vivo` com erro → motivo da edge em `error.context.json()`; 0 pedidos a `functions/v1`. `npm test` 6733/6733, build ok. **Tela a 375 px/desktop com dado:** não dá com só `conta`+`edges-core` — todas essas telas leem as próprias tabelas do domínio antes de chamar a edge; a medida da tela vem com a área do domínio de cada uma (5.3, 5.5, 5.6, 5.7, 5.8).
 
 ### Pendências de API
 

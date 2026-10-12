@@ -13,6 +13,8 @@
 // manda quem for consertar para o lugar errado. Foi o que aconteceu — a primeira
 // suspeita caiu sobre a regra da data da venda, que era inocente.
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './conectar-no-banco-de-dados.js'
+// Chave `edges-core` (Plano 7): bling-proxy pela API em Go.
+import { areaNaApi, fetchDaApi } from './api.js'
 
 export class ErroDoBling extends Error {
   constructor(causa, tecnica) {
@@ -110,11 +112,16 @@ export function avisoDoErro(erro, opcoes = {}) {
 // A diferença que importa em relação ao código antigo é UMA linha: conferir
 // `r.ok` antes de interpretar o corpo. O resto é o mesmo.
 export async function chamarBling(sbClient, endpoint, params) {
-  const { data: { session } } = await sbClient.auth.getSession()
-  if (!session) throw new ErroDoBling('sem-acesso-a-vendas', 'sem sessão no navegador')
+  const naApi = areaNaApi('edges-core')
+  const { data: { session } } = naApi ? { data: { session: null } } : await sbClient.auth.getSession()
+  if (!naApi && !session) throw new ErroDoBling('sem-acesso-a-vendas', 'sem sessão no navegador')
   let r
   try {
-    r = await fetch(SUPABASE_URL + '/functions/v1/bling-proxy', {
+    r = naApi ? await fetchDaApi('/bling-proxy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ endpoint, params }),
+    }) : await fetch(SUPABASE_URL + '/functions/v1/bling-proxy', {
       method: 'POST',
       headers: {
         'Authorization': 'Bearer ' + session.access_token,

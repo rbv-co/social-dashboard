@@ -5,6 +5,8 @@ import { useRouter } from 'vue-router'
 import { hasPermission } from '../../compartilhado/controle-de-login-e-usuario.js'
 import { sb } from '../../compartilhado/buscar-e-salvar-dados.js'
 import { sbClient, SUPABASE_URL, SUPABASE_ANON_KEY } from '../../compartilhado/conectar-no-banco-de-dados.js'
+// Chave `edges-core` (Plano 7): meta-proxy pela API em Go.
+import { areaNaApi, fetchDaApi } from '../../compartilhado/api.js'
 import TourCoachmark from './tour-coachmark.vue'
 import { CHECKLIST, COACH } from './tutorial-fabrica.js'
 import './estudio.css'
@@ -73,12 +75,14 @@ function estadoDoStatus(eff) {
 // Excluída = o Graph nega o GET (code 100 / "does not exist"). Erro transitório -> '?' (não afirma excluída).
 async function statusCampanhaMeta(metaId) {
   try {
-    const { data: { session } } = await sbClient.auth.getSession()
-    const r = await fetch(SUPABASE_URL + '/functions/v1/meta-proxy', {
-      method: 'POST',
-      headers: { Authorization: 'Bearer ' + (session?.access_token || SUPABASE_ANON_KEY), apikey: SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ accountId: ACCOUNT_ID, path: '/' + metaId, params: { fields: 'effective_status' }, method: 'GET' }),
-    })
+    const corpo = JSON.stringify({ accountId: ACCOUNT_ID, path: '/' + metaId, params: { fields: 'effective_status' }, method: 'GET' })
+    const r = areaNaApi('edges-core')
+      ? await fetchDaApi('/meta-proxy', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: corpo })
+      : await fetch(SUPABASE_URL + '/functions/v1/meta-proxy', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + ((await sbClient.auth.getSession()).data.session?.access_token || SUPABASE_ANON_KEY), apikey: SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+        body: corpo,
+      })
     const d = await r.json().catch(() => null)
     if (d && d.effective_status) return estadoDoStatus(d.effective_status)
     const msg = String((d && d.error && (d.error.message || d.error)) || '')
