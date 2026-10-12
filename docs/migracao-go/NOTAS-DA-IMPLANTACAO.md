@@ -410,7 +410,7 @@ Checklist do ensaio: `api migrar` aplicou `00005_tokens_de_senha.sql`; `conferir
 ## Plano 5.1 — admin, equipes e acesso
 
 ### Rotas novas
-- Pública: `POST /api/pedir-acesso` (10 por IP por hora, contando as recusadas; só `name`, `email`, `message`; `status` sempre `pending`).
+- Pública: `POST /api/pedir-acesso` (10 por IP por hora, contando as recusadas; só `name`, `email`, `message`; `status` sempre `pending`; exige `Content-Type: application/json`, senão 415 `tipo_de_conteudo`: o front (Plano 7) tem de mandar o cabeçalho, e um `<form>` de outro site não consegue queimar a cota do visitante).
 - Com sessão (regra = catálogo de produção; escrita de sessão "entrar como" = 403): `/acesso/usuarios`, `/acesso/perfis`, `/acesso/pedidos`, `/equipes/times`, `/equipes/membros`, `/equipes/permissoes`, `/equipes/grupos`, `/equipes/grupos-membros`, `/avisos/preferencias`, `/eu/push/inscrever`, `/eu/push/desinscrever`, `/saude/conferencias`.
 - `/saude/ia-execucoes` NÃO existe no 5.1 (Ruling 5.1-14): a tela de status do Claude lê `ia_execucoes` por `/status-ia/execucoes`, do 5.12.
 - Tabelas sem rota (Ruling 5.1-5): `user_permissions`, `audit_log`, `entradas_como_outro_usuario`, `platform_settings`, `robos_esperados`, `robos_execucoes`, `coletor_log`, `projetos_status`, `gestor_log` (nenhum sítio no front; quem escreve é gatilho, worker ou robô).
