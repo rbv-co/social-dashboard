@@ -17,7 +17,11 @@ var tabelasDaSaude = []string{"robos_esperados", "robos_execucoes"}
 // do Plano 5) como está, ou [] para quem não lê as duas tabelas de baixo.
 func SaudeDosRobos(b dados.Consultor, cat *autz.Catalogo) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if len(r.URL.Query()) > 0 {
+		q, ok := dados.LerQuery(w, r) // r.URL.Query() descartaria o par malformado e responderia 200
+		if !ok {
+			return
+		}
+		if len(q) > 0 {
 			dados.Erro(w, http.StatusBadRequest, "pedido_invalido", "esta leitura não aceita parâmetros")
 			return
 		}
@@ -28,6 +32,8 @@ func SaudeDosRobos(b dados.Consultor, cat *autz.Catalogo) http.HandlerFunc {
 				dados.ErroDoBanco(w, err)
 				return
 			}
+			// Policies diferentes nas duas tabelas dariam "sem registro ainda" na visão com
+			// security_invoker; aqui dão [] (mais restritivo e hoje inalcançável: as duas são iguais).
 			// ponytail: a visão agrega as tabelas inteiras, então só cabe regra POR PESSOA (constante);
 			// regra por linha (forma nova no catálogo) responde [] até a rota ser reescrita, e
 			// TestRegraDaSaudeDosRobosEhPorPessoa acusa a mudança antes do deploy.

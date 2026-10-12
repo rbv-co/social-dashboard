@@ -13,8 +13,9 @@ import (
 )
 
 // A visão robos_saude pela montagem real: quem lê as duas tabelas (admin, super-admin pela ficha,
-// claude.status em features) vê as linhas; o resto recebe 200 [] (nunca 403: a visão é
-// security_invoker e a RLS filtra em vez de negar).
+// claude.status em features) vê as linhas; o resto recebe 200 [] (nunca 403: a RLS filtra em vez
+// de negar, e a API aplica a regra que a visão aplicaria se ainda fosse security_invoker, que a
+// 09-22 perdeu: Ruling 1 do 5.12).
 func TestSaudeDosRobosPelaMontagemReal(t *testing.T) {
 	p := testebanco.Novo(t)
 	s := auth.NovoStore(p)
@@ -22,11 +23,12 @@ func TestSaudeDosRobosPelaMontagemReal(t *testing.T) {
 	toks := pessoasDosPaineis(t, p, s)
 	if _, err := p.Exec(context.Background(), `
 insert into robos_esperados (robo, horas_sem_sucesso_ate, critico) values
- ('coletar-dados', 30, true), ('meta-hora', 4, false), ('meta-hora-retentativa-00h', 24, false), ('sem-rodar', 2, false);
+ ('coletar-dados', 30, true), ('meta-hora', 4, false), ('meta-hora-retentativa-00h', 24, false), ('sem-rodar', 2, false), ('parado', 2, false);
 insert into robos_execucoes (robo, disparado_em, ok) values
  ('coletar-dados-07h · Vessel', now() - interval '1 hour', false),
  ('meta-hora', now() - interval '1 hour', true),
- ('meta-hora-retentativa-00h', now() - interval '2 hours', true);`); err != nil {
+ ('meta-hora-retentativa-00h', now() - interval '2 hours', true),
+ ('parado', now() - interval '3 hours', true);`); err != nil {
 		t.Fatal(err)
 	}
 	const caminho = "/status-ia/saude-dos-robos"
@@ -63,22 +65,31 @@ insert into robos_execucoes (robo, disparado_em, ok) values
 		for _, l := range linhas {
 			robos, situacoes = append(robos, l.Robo), append(situacoes, l.Situacao)
 		}
-		if got, quer := strings.Join(robos, "|"), "coletar-dados|meta-hora|meta-hora-retentativa-00h|sem-rodar"; got != quer {
+		if got, quer := strings.Join(robos, "|"), "coletar-dados|meta-hora|meta-hora-retentativa-00h|parado|sem-rodar"; got != quer {
 			t.Errorf("como %s: robôs %q, esperava %q", quem, got, quer)
 		}
-		if got, quer := strings.Join(situacoes, "|"), "nunca deu certo|ok|ok|sem registro ainda"; got != quer {
+		if got, quer := strings.Join(situacoes, "|"), "nunca deu certo|ok|ok|ATRASADO|sem registro ainda"; got != quer {
 			t.Errorf("como %s: situações %q, esperava %q", quem, got, quer)
 		}
-		if len(linhas) == 4 && !slices.Equal(linhas[0].QuemFalhou, []string{"coletar-dados-07h · Vessel"}) {
+		if len(linhas) == 5 && !slices.Equal(linhas[0].QuemFalhou, []string{"coletar-dados-07h · Vessel"}) {
 			t.Errorf("como %s: quem_falhou = %v", quem, linhas[0].QuemFalhou)
+		}
+		if len(linhas) == 5 && !slices.Equal(linhas[3].QuemFalhou, []string{"parado"}) {
+			t.Errorf("como %s: quem_falhou do parado = %v", quem, linhas[3].QuemFalhou)
 		}
 		// as chaves do 1º objeto, na ordem das 11 colunas da visão
 		d := json.NewDecoder(strings.NewReader(corpo))
-		d.Token() // [
-		d.Token() // {
+		for range 2 { // [ e {
+			if _, err := d.Token(); err != nil {
+				t.Fatal(err)
+			}
+		}
 		var chaves []string
 		for d.More() {
-			k, _ := d.Token()
+			k, err := d.Token()
+			if err != nil {
+				t.Fatal(err)
+			}
 			chaves = append(chaves, k.(string))
 			var v json.RawMessage
 			if err := d.Decode(&v); err != nil {
@@ -96,7 +107,7 @@ insert into robos_execucoes (robo, disparado_em, ok) values
 	}
 	_, corpo := lerDosPaineis(h, caminho, toks["admin"])
 	var l []struct{ Robo string }
-	if err := json.Unmarshal([]byte(corpo), &l); err != nil || len(l) != 5 || l[0].Robo != "coletar-dados" || l[1].Robo != "zz-critico" {
+	if err := json.Unmarshal([]byte(corpo), &l); err != nil || len(l) != 6 || l[0].Robo != "coletar-dados" || l[1].Robo != "zz-critico" {
 		t.Errorf("ordem critico desc, robo: %s (%v)", corpo, err)
 	}
 }

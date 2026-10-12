@@ -41,10 +41,10 @@ func TestRegraDaSaudeDosRobosEhPorPessoa(t *testing.T) {
 	}
 }
 
-func catalogoDaSaude(t *testing.T, execucoes string) *autz.Catalogo {
+func catalogoDaSaude(t *testing.T, esperados, execucoes string) *autz.Catalogo {
 	t.Helper()
 	cat, err := autz.Compilar([]byte(`[
- {"tabela":"robos_esperados","nome":"le","tipo":"permissive","comando":"select","papeis":["authenticated"],"using":"true","withCheck":null},
+ {"tabela":"robos_esperados","nome":"le","tipo":"permissive","comando":"select","papeis":["authenticated"],"using":"` + esperados + `","withCheck":null},
  {"tabela":"robos_execucoes","nome":"le","tipo":"permissive","comando":"select","papeis":["authenticated"],"using":"` + execucoes + `","withCheck":null}]`))
 	if err != nil {
 		t.Fatal(err)
@@ -68,7 +68,7 @@ func TestSaudeExigeAsDuasTabelas(t *testing.T) {
 	if _, err := p.Exec(context.Background(), `insert into robos_esperados values ('r', 1, false, 'x')`); err != nil {
 		t.Fatal(err)
 	}
-	h := SaudeDosRobos(p, catalogoDaSaude(t, "is_frota_admin()"))
+	h := SaudeDosRobos(p, catalogoDaSaude(t, "true", "is_frota_admin()"))
 	frota := &autz.Escopo{ID: eu, TemPerfil: true, Ativo: true, SemTrava: true, Modulos: []string{"frota"}}
 	comum := &autz.Escopo{ID: eu, TemPerfil: true, Ativo: true, SemTrava: true}
 	if st, corpo := lerSaude(h, frota, ""); st != 200 || !strings.Contains(corpo, `"robo":"r"`) {
@@ -77,14 +77,25 @@ func TestSaudeExigeAsDuasTabelas(t *testing.T) {
 	if st, corpo := lerSaude(h, comum, ""); st != 200 || corpo != "[]" {
 		t.Errorf("só a primeira tabela liberada = %d %s, esperava []", st, corpo)
 	}
+	// simétrico: a 2ª tabela aberta e a 1ª restrita também fecha (um laço só sobre a 2ª passaria)
+	hEsperados := SaudeDosRobos(p, catalogoDaSaude(t, "is_frota_admin()", "true"))
+	if st, corpo := lerSaude(hEsperados, frota, ""); st != 200 || !strings.Contains(corpo, `"robo":"r"`) {
+		t.Errorf("quem lê as duas (restrita a 1ª) = %d %s", st, corpo)
+	}
+	if st, corpo := lerSaude(hEsperados, comum, ""); st != 200 || corpo != "[]" {
+		t.Errorf("só a segunda tabela liberada = %d %s, esperava []", st, corpo)
+	}
 	conta := &autz.Escopo{ID: eu, TemPerfil: true, Ativo: true, SemTrava: true, Contas: []string{"A1"}}
-	if st, corpo := lerSaude(SaudeDosRobos(p, catalogoDaSaude(t, "pode_ver_conta(account_id)")), conta, ""); st != 200 || corpo != "[]" {
+	if st, corpo := lerSaude(SaudeDosRobos(p, catalogoDaSaude(t, "true", "pode_ver_conta(account_id)")), conta, ""); st != 200 || corpo != "[]" {
 		t.Errorf("regra por linha = %d %s, esperava [] (fecha)", st, corpo)
 	}
 	if st, _ := lerSaude(h, nil, ""); st != 500 {
 		t.Errorf("sem escopo = %d, esperava 500", st)
 	}
-	if st, _ := lerSaude(h, frota, "?x=1"); st != 400 {
-		t.Errorf("parâmetro = %d, esperava 400", st)
+	// query malformada também é 400: r.URL.Query() descartaria o par e responderia 200
+	for _, q := range []string{"?x=1", "?x", "?x=%zz", "?%zz", "?a;b"} {
+		if st, _ := lerSaude(h, frota, q); st != 400 {
+			t.Errorf("parâmetro %q = %d, esperava 400", q, st)
+		}
 	}
 }
