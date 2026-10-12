@@ -1,12 +1,9 @@
 package acesso
 
 import (
-	"context"
 	"encoding/json"
 	"slices"
 	"testing"
-
-	"github.com/rbv-co/social-dashboard/api/internal/auth"
 )
 
 const (
@@ -189,15 +186,8 @@ func TestTimesIDORIgualAoInexistente(t *testing.T) {
 // supervisora do T1), nenhuma das escritas passa e nada muda. A rota de leitura segue valendo.
 func TestTimesImpersonadoSoLe(t *testing.T) {
 	m := novoMundo(t, montarTimes)
-	s := auth.NovoStore(m.p)
-	super := idSuper
-	for chave, id := range map[string]string{"gestorImp": idGestorT1, "supervImp": idSupervT1} {
-		tok, err := s.Criar(context.Background(), id, "painel", &super)
-		if err != nil {
-			t.Fatal(err)
-		}
-		m.tok[chave] = tok
-	}
+	m.entrarComo(t, "gestorImp", idGestorT1, idSuper)
+	m.entrarComo(t, "supervImp", idSupervT1, idSuper)
 	antes := m.um(t, fotoDoMundo)
 	imp := func(nome, quem, metodo, caminho, corpo string) caso {
 		return caso{nome: nome, quem: quem, metodo: metodo, caminho: caminho, corpo: corpo, status: 403, tem: "Quem entrou como outra pessoa", efeito: fotoDoMundo, quer: antes}

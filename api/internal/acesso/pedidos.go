@@ -9,7 +9,6 @@ import (
 	"slices"
 	"strings"
 	"time"
-	"unicode"
 	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
@@ -57,8 +56,7 @@ func pedirAcesso(p *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 		nome, email, msg := strings.TrimSpace(in.Name), strings.TrimSpace(in.Email), strings.TrimSpace(in.Message)
-		// vazio também é nome só com espaço invisível (U+200B, U+FEFF...: categoria Cf)
-		if strings.TrimFunc(nome, func(r rune) bool { return unicode.IsSpace(r) || unicode.Is(unicode.Cf, r) }) == "" || email == "" {
+		if emBranco(nome) || email == "" {
 			dados.Erro(w, http.StatusBadRequest, "pedido_invalido", "Nome e email são obrigatórios.")
 			return
 		}

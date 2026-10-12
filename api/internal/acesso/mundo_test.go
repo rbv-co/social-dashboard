@@ -123,7 +123,7 @@ type mundo struct {
 }
 
 // novoMundo: a fatia de produção, as pessoas e as linhas acima, uma sessão por pessoa (+ "impersonado":
-// a sessão do admin aberta pelo super; + "semPerfil": usuário com sessão de painel e sem linha em
+// a sessão do admin aberta pelo super, e as de "entrar como" num super-admin; + "semPerfil": usuário com sessão de painel e sem linha em
 // profiles) e as rotas de `montar` atrás da mesma cadeia de autorização do grupo de domínio de
 // web.Rotas: auth.Exigir → autz.ComEscopo. Sem o comPrazo, que só limita o tempo (montagem real: Task 11;
 // Ruling 5.1-12).
@@ -156,12 +156,12 @@ func novoMundo(t *testing.T, montar ...func(chi.Router, *pgxpool.Pool)) *mundo {
 		t.Fatal(err)
 	}
 	m.tok["semPerfil"] = tokSP
-	super := idSuper
-	tok, err := s.Criar(ctx, idAdmin, "painel", &super)
-	if err != nil {
-		t.Fatal(err)
-	}
-	m.tok["impersonado"] = tok
+	m.entrarComo(t, "impersonado", idAdmin, idSuper)
+	// o ALVO é super-admin: a regra do catálogo deixaria escrever, só o portão soSessaoPropria recusa.
+	// impersonadoSuper = alvo super pela ficha; superImpersonado = alvo super por e-mail (breno@), entrando
+	// um super como outro super.
+	m.entrarComo(t, "impersonadoSuper", idSuperFicha, idSuper)
+	m.entrarComo(t, "superImpersonado", idSuper, idSuperFicha)
 	if _, err := p.Exec(ctx, linhasDoMundo); err != nil {
 		t.Fatal(err)
 	}
@@ -175,6 +175,16 @@ func novoMundo(t *testing.T, montar ...func(chi.Router, *pgxpool.Pool)) *mundo {
 	})
 	m.h = r
 	return m
+}
+
+// entrarComo abre uma sessão "entrar como" (`impersonador` entra na conta de `alvo`) e a guarda em m.tok[chave].
+func (m *mundo) entrarComo(t *testing.T, chave, alvo, impersonador string) {
+	t.Helper()
+	tok, err := auth.NovoStore(m.p).Criar(context.Background(), alvo, "painel", &impersonador)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.tok[chave] = tok
 }
 
 // resposta faz a requisição como `quem` ("" = sem sessão).
