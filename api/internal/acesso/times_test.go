@@ -65,9 +65,15 @@ func TestTimesMembrosELiberacoes(t *testing.T) {
 			{nome: "canal já é de outro time", quem: "gestorT1", metodo: "PATCH", caminho: "/equipes/times/" + T1, corpo: `{"canal_loja_id":2}`, status: 409, efeito: `select canal_loja_id::text from equipes where id = '` + T1 + `'`, quer: "1"},
 			{nome: "tipo fora da lista", quem: "gestorT1", metodo: "PATCH", caminho: "/equipes/times/" + T1, corpo: `{"tipo":"bar"}`, status: 400, efeito: `select tipo from equipes where id = '` + T1 + `'`, quer: "loja"},
 			{nome: "coluna que a rota não declara", quem: "gestorT1", metodo: "PATCH", caminho: "/equipes/times/" + T1, corpo: `{"ativo":false}`, status: 400, efeito: `select ativo::text from equipes where id = '` + T1 + `'`, quer: "true"},
-			{nome: "id do corpo", quem: "gestorT1", metodo: "PATCH", caminho: "/equipes/times/" + T1, corpo: `{"id":"` + T2 + `"}`, status: 400},
+			{nome: "id do corpo", quem: "gestorT1", metodo: "PATCH", caminho: "/equipes/times/" + T1, corpo: `{"id":"` + T2 + `"}`, status: 400, efeito: `select id::text from equipes where nome = 'Time Um'`, quer: T1},
 			{nome: "time que não existe", quem: "gestorT1", metodo: "PATCH", caminho: "/equipes/times/" + semEquipe, corpo: `{"nome":"x"}`, status: 404},
 			{nome: "sem sessão", quem: "", metodo: "POST", caminho: "/equipes/times", corpo: `{"nome":"x"}`, status: 401, efeito: contar("equipes"), quer: "5"},
+			// o corpo que as telas mandam de verdade (tela-de-admin.vue:1726-1729, time-de-vendas.vue:178): tirar
+			// `tipo` ou `canal_loja_id` das structs quebraria as telas com 400
+			{nome: "corpo real da tela: PATCH com nome, tipo e canal", quem: "gestorT1", metodo: "PATCH", caminho: "/equipes/times/" + T1, corpo: `{"nome":"Time Um","tipo":"canal","canal_loja_id":1}`, status: 200, tem: `"tipo":"canal"`,
+				efeito: `select tipo from equipes where id = '` + T1 + `'`, quer: "canal"},
+			{nome: "corpo real da tela: POST com tipo e canal nulo", quem: "gestorT1", metodo: "POST", caminho: "/equipes/times", corpo: `{"nome":"Nova","tipo":"loja","canal_loja_id":null}`, status: 201, tem: `"canal_loja_id":null`,
+				efeito: contar("equipes"), quer: "6"},
 		})
 	})
 
@@ -124,6 +130,9 @@ func TestTimesMembrosELiberacoes(t *testing.T) {
 			{nome: "gestor apaga do próprio time", quem: "gestorT1", metodo: "DELETE", caminho: "/equipes/membros/" + mVendT1, status: 204, efeito: existe(mVendT1), quer: "0"},
 			{nome: "super apaga de qualquer time", quem: "super", metodo: "DELETE", caminho: "/equipes/membros/" + mVendT2, status: 204, efeito: existe(mVendT2), quer: "0"},
 			{nome: "o vínculo do T3 segue", efeito: existe(mVendT2emT3), quer: "1"},
+			// o corpo que as telas mandam (tela-de-admin.vue:753, :1539): com `papel`; tirá-lo da struct quebraria com 400
+			{nome: "corpo real da tela: gestor adiciona com papel", quem: "gestorT1", metodo: "POST", caminho: "/equipes/membros", corpo: `{"equipe_id":"` + T1 + `","profile_id":"` + idSuperFicha + `","papel":"vendedora"}`, status: 201,
+				tem: `"papel":"vendedora"`, efeito: `select papel from equipes_membros where profile_id = '` + idSuperFicha + `' and equipe_id = '` + T1 + `'`, quer: "vendedora"},
 		})
 		// DELETE é de uma TABELA só: apagar o id de um time por esta rota não apaga o time
 		m.rodar(t, []caso{
@@ -131,7 +140,18 @@ func TestTimesMembrosELiberacoes(t *testing.T) {
 		})
 	})
 
-	t.Run("liberacoes", func(t *testing.T) {
+	t.Run("sem autopromoção e sem oráculo", func(t *testing.T) {
+		m := novoMundo(t, montarTimes)
+		papel := `select papel from equipes_membros where id = '` + mVendT1 + `'`
+		m.rodar(t, []caso{
+			{nome: "vendedora não se promove pelo próprio vínculo (que ela lê)", quem: "vendT1", metodo: "PATCH", caminho: "/equipes/membros/" + mVendT1, corpo: `{"papel":"gestor"}`, status: 403, efeito: papel, quer: "vendedora"},
+			// quem não é gestora recebe 403 mesmo quando o vínculo/liberação já existe em time alheio (não 409): sem oráculo
+			{nome: "não-gestor, vínculo que já existe em time alheio: 403, não 409", quem: "supervT1", metodo: "POST", caminho: "/equipes/membros", corpo: `{"equipe_id":"` + T2 + `","profile_id":"` + idVendT2 + `"}`, status: 403, efeito: contar("equipes_membros"), quer: "5"},
+			{nome: "não-supervisora, liberação que já existe em time alheio: 403, não 409", quem: "vendT1", metodo: "POST", caminho: "/equipes/permissoes", corpo: `{"equipe_id":"` + T2 + `","profile_id":"` + idVendT2 + `","chave":"estoque"}`, status: 403, efeito: contar("equipes_permissoes"), quer: "2"},
+		})
+	})
+
+	t.Run("liberações", func(t *testing.T) {
 		m := novoMundo(t, montarTimes)
 		conferirIds(t, m, "vendedora vê a própria", "vendT1", "/equipes/permissoes", epVendT1)
 		conferirIds(t, m, "T2 invisível filtrando", "vendT1", "/equipes/permissoes?equipe_id="+T2)
@@ -159,7 +179,7 @@ func TestTimesMembrosELiberacoes(t *testing.T) {
 			{nome: "a própria vendedora não apaga a dela", quem: "vendT1", metodo: "DELETE", caminho: "/equipes/permissoes/" + epVendT1, status: 403, efeito: existe(epVendT1), quer: "1"},
 			{nome: "supervisora apaga a do próprio time", quem: "supervT1", metodo: "DELETE", caminho: "/equipes/permissoes/" + epVendT1, status: 204, efeito: existe(epVendT1), quer: "0"},
 			{nome: "super pela ficha apaga de qualquer time", quem: "superFicha", metodo: "DELETE", caminho: "/equipes/permissoes/" + epVendT2, status: 204, efeito: existe(epVendT2), quer: "0"},
-			{nome: "liberação não se edita", quem: "super", metodo: "PATCH", caminho: "/equipes/permissoes/" + epVendT1, corpo: `{"chave":"estoque"}`, status: 405},
+			{nome: "liberação não se edita", quem: "super", metodo: "PATCH", caminho: "/equipes/permissoes/" + epVendT1, corpo: `{"chave":"estoque"}`, status: 405, efeito: contar("equipes_permissoes"), quer: "2"},
 		})
 	})
 }
