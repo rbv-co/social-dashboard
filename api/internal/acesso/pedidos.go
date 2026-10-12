@@ -3,11 +3,13 @@ package acesso
 import (
 	"encoding/json"
 	"errors"
+	"mime"
 	"net/http"
 	"net/mail"
 	"slices"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
@@ -37,6 +39,14 @@ func MontarPublicas(r chi.Router, p *pgxpool.Pool) {
 // e-mail novo ou repetido (não há unicidade: a rota não serve para descobrir quem já pediu).
 func pedirAcesso(p *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// Rota anônima: um <form> de outro site posta com o navegador (e o IP) do visitante, mas só
+		// sem preflight com text/plain, multipart ou urlencoded. Exigir JSON impede que terceiros
+		// queimem a cota por IP de quem visita o site deles. (O argumento "Bearer, sem CSRF" de
+		// dados.LerCorpo vale para rota autenticada, não para esta.)
+		if mt, _, err := mime.ParseMediaType(r.Header.Get("Content-Type")); err != nil || mt != "application/json" {
+			dados.Erro(w, http.StatusUnsupportedMediaType, "tipo_de_conteudo", "Envie o pedido como application/json.")
+			return
+		}
 		r.Body = http.MaxBytesReader(w, r.Body, tetoCorpoPedido)
 		var in struct {
 			Name    string `json:"name"`
@@ -47,7 +57,8 @@ func pedirAcesso(p *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 		nome, email, msg := strings.TrimSpace(in.Name), strings.TrimSpace(in.Email), strings.TrimSpace(in.Message)
-		if nome == "" || email == "" {
+		// vazio também é nome só com espaço invisível (U+200B, U+FEFF...: categoria Cf)
+		if strings.TrimFunc(nome, func(r rune) bool { return unicode.IsSpace(r) || unicode.Is(unicode.Cf, r) }) == "" || email == "" {
 			dados.Erro(w, http.StatusBadRequest, "pedido_invalido", "Nome e email são obrigatórios.")
 			return
 		}

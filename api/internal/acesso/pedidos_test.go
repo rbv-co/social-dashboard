@@ -18,6 +18,7 @@ const contaPedidos = `select count(*)::text from access_requests`
 func pedidoPublico(h http.Handler, ip, corpo string, cabecalhos ...string) *httptest.ResponseRecorder {
 	r := httptest.NewRequest("POST", "/pedir-acesso", strings.NewReader(corpo))
 	r.RemoteAddr = ip
+	r.Header.Set("Content-Type", "application/json") // as telas mandam; os cabeçalhos do teste podem trocar
 	for i := 0; i+1 < len(cabecalhos); i += 2 {
 		r.Header.Set(cabecalhos[i], cabecalhos[i+1])
 	}
@@ -113,6 +114,59 @@ func TestPedirAcessoPublico(t *testing.T) {
 
 	if s := logs.String(); strings.Contains(s, "ana@x.com") || strings.Contains(s, "Ana Teste") || strings.Contains(s, "bia@x.com") {
 		t.Errorf("nome ou e-mail foram para o log:\n%s", s)
+	}
+}
+
+// Rota anônima: um <form> de outro site usa o navegador (e o IP) do visitante, e só consegue
+// mandar text/plain, multipart ou urlencoded sem preflight. Exigir application/json fecha isso
+// (o limite por IP não pode ser queimado por terceiros). 415 antes de ler o corpo e sem gravar.
+func TestPedirAcessoExigeJSON(t *testing.T) {
+	m := novoMundo(t)
+	h := roteadorPublico(m)
+	const ip = "203.0.113.60:1"
+	corpo := `{"name":"Form","email":"form@x.com"}`
+	antes := m.um(t, contaPedidos)
+	for _, ct := range []string{"text/plain", "text/plain;charset=UTF-8", "application/x-www-form-urlencoded", "multipart/form-data; boundary=x", "", "application/jsonx", "application/json, text/plain"} {
+		w := pedidoPublico(h, ip, corpo, "Content-Type", ct)
+		if w.Code != 415 || !strings.Contains(w.Body.String(), `"error":"tipo_de_conteudo"`) {
+			t.Errorf("Content-Type %q = %d %s; esperava 415 tipo_de_conteudo", ct, w.Code, w.Body)
+		}
+	}
+	if v := m.um(t, contaPedidos); v != antes {
+		t.Errorf("recusados por tipo gravaram: %s -> %s", antes, v)
+	}
+	for _, ct := range []string{"application/json", "application/json; charset=utf-8", "Application/JSON"} {
+		if w := pedidoPublico(h, ip, corpo, "Content-Type", ct); w.Code != 201 {
+			t.Errorf("Content-Type %q = %d %s; esperava 201", ct, w.Code, w.Body)
+		}
+	}
+}
+
+// Espaço invisível não é nome; espaços em volta do e-mail são aparados (e o que vai para o banco já
+// vem aparado); `ana@[1.2.3.4]` (domínio literal) passa: é endereço válido do net/mail, o que
+// importa é a rota não gravar lixo, e e-mail de pedido só é lido por um admin.
+func TestPedirAcessoApara(t *testing.T) {
+	m := novoMundo(t)
+	h := roteadorPublico(m)
+	const ip = "203.0.113.61:1"
+	antes := m.um(t, contaPedidos)
+	for _, nome := range []string{`\u200b`, `\u200b\u200b \u200b`, `\ufeff`, `\u00a0\u200d`} {
+		w := pedidoPublico(h, ip, `{"name":"`+nome+`","email":"inv@x.com"}`)
+		if w.Code != 400 || !strings.Contains(w.Body.String(), "Nome e email são obrigatórios.") {
+			t.Errorf("nome %q = %d %s; esperava 400", nome, w.Code, w.Body)
+		}
+	}
+	if v := m.um(t, contaPedidos); v != antes {
+		t.Errorf("nome invisível gravou: %s -> %s", antes, v)
+	}
+	if w := pedidoPublico(h, ip, `{"name":"  Cris\u200b ","email":"  cris@x.com\t","message":" oi \n"}`); w.Code != 201 {
+		t.Fatalf("e-mail com espaços em volta = %d %s", w.Code, w.Body)
+	}
+	if v := m.um(t, `select name||'|'||email||'|'||message from access_requests where email like 'cris%'`); v != "Cris\u200b|cris@x.com|oi" {
+		t.Errorf("linha gravada = %q (esperava aparada)", v)
+	}
+	if w := pedidoPublico(h, ip, `{"name":"Literal","email":"ana@[1.2.3.4]"}`); w.Code != 201 {
+		t.Errorf("domínio literal = %d (aceito, registrado como inofensivo)", w.Code)
 	}
 }
 
