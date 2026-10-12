@@ -419,7 +419,7 @@ Hoje as duas estão em `segredos_de_cron` (`anthropic_admin_key`, `openai_admin_
 
 ### Rotas novas (com sessão)
 - `GET /api/noticias/rodadas`, `GET /api/noticias/concorrentes?rodada=…`, `GET /api/noticias/panorama`, `GET /api/status-ia/execucoes`, `GET /api/status-ia/saude-dos-robos` (grupo de domínio; regra do catálogo).
-- `POST /api/custo-anthropic`, `POST /api/custo-openai` (papel admin; prazo de 90 s — o `proxy_read_timeout` do nginx já fica acima, Plano 3). A VPS precisa de saída HTTPS para `api.anthropic.com` e `api.openai.com`.
+- `POST /api/custo-anthropic`, `POST /api/custo-openai` (papel admin; prazo de 90 s). **NGINX: criar `location = /api/custo-anthropic` e `location = /api/custo-openai` com `proxy_read_timeout 100s;` (e `client_max_body_size 1k;`)**: o nginx dos Planos 3/5.0 só tem `proxy_read_timeout` explícito em `contar-collabs` e `bling-proxy`; sem isso essas rotas caem no `/api/` genérico (60 s) e uma fatura lenta vira 504 do nginx. A VPS precisa de saída HTTPS para `api.anthropic.com` e `api.openai.com`.
 
 ### Antes do corte
 - `api worker conferir` cobra também `noticias_concorrentes` (`id,rodada,destaque,created_at`; `rodada` como `date`), `noticias_panorama` (`rodada,conteudo_md,modelo,created_at`; `rodada` como `date`), `ia_execucoes` (`id,run_at`) e a visão `robos_saude` (`robo,critico`).
