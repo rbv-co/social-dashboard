@@ -14,7 +14,6 @@ import (
 // (não divida por 100: index.ts:13-16) e custo REAL por chave de API.
 type OpenAI struct {
 	Base  string                                     // vazio = https://api.openai.com/v1/organization
-	HTTP  *http.Client                               // nil = semRedirecionar
 	Pausa func(context.Context, time.Duration) error // nil = esperar
 }
 
@@ -36,7 +35,7 @@ func (o OpenAI) cliente(chave string) cliente {
 	if pausa == nil {
 		pausa = esperar
 	}
-	return cliente{fornecedor: "OpenAI", chave: chave, http: cmp.Or(o.HTTP, semRedirecionar), pausa: pausa,
+	return cliente{fornecedor: "OpenAI", chave: chave, http: semRedirecionar, pausa: pausa,
 		prazo: 8 * time.Second, orcamento: 20 * time.Second,
 		cabecalho: func(h http.Header, k string) { h.Set("Authorization", "Bearer "+k) }}
 }
@@ -163,7 +162,7 @@ func (o OpenAI) nomesDasChaves(ctx context.Context, c cliente) map[string]string
 	listas := make([][]chave, len(proj.Data))
 	var wg sync.WaitGroup
 	for i, p := range proj.Data {
-		if p.ID == "" {
+		if p.ID == "" || p.ID == "." || p.ID == ".." { // segmento de ponto mudaria o caminho
 			continue
 		}
 		wg.Add(1)

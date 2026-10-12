@@ -15,7 +15,6 @@ import (
 // CENTAVOS de dólar (texto decimal), e Usage Report por chave de API.
 type Anthropic struct {
 	Base  string                                     // vazio = https://api.anthropic.com
-	HTTP  *http.Client                               // nil = semRedirecionar
 	Pausa func(context.Context, time.Duration) error // nil = esperar
 }
 
@@ -35,7 +34,7 @@ func (a Anthropic) cliente(chave string) cliente {
 	if pausa == nil {
 		pausa = esperar
 	}
-	return cliente{fornecedor: "Anthropic", chave: chave, http: cmp.Or(a.HTTP, semRedirecionar), pausa: pausa,
+	return cliente{fornecedor: "Anthropic", chave: chave, http: semRedirecionar, pausa: pausa,
 		prazo: 15 * time.Second, orcamento: 30 * time.Second,
 		cabecalho: func(h http.Header, k string) { h.Set("x-api-key", k); h.Set("anthropic-version", "2023-06-01") }}
 }
@@ -63,10 +62,7 @@ func (a Anthropic) Buscar(ctx context.Context, chave string, j Janela) (Fatura, 
 	if err != nil {
 		return Fatura{}, err
 	}
-	soma := 0.0
-	for _, d := range dias {
-		soma += d.Usd
-	}
+	soma := somaDosDias(dias)
 	var cats []Categoria
 	var chaves []ChaveRateada
 	var wg sync.WaitGroup

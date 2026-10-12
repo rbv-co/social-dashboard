@@ -29,13 +29,13 @@ func apiAnthropicFalsa(t *testing.T, mudar map[string]http.HandlerFunc) (*httpte
 		mu.Lock()
 		hits[rota]++
 		mu.Unlock()
-		if h := mudar[rota]; h != nil {
-			h(w, r)
-			return
-		}
 		if r.URL.Path != "/v1/organizations/api_keys" && (q.Get("starting_at") != "2026-09-13T00:00:00Z" ||
 			q.Get("ending_at") != "2026-10-13T00:00:00Z" || q.Get("bucket_width") != "1d" || q.Get("limit") != "31") {
 			t.Errorf("%s: consulta errada %s", rota, r.URL.RawQuery)
+		}
+		if h := mudar[rota]; h != nil {
+			h(w, r)
+			return
 		}
 		switch rota {
 		case "/v1/organizations/cost_report":
@@ -71,7 +71,7 @@ func apiAnthropicFalsa(t *testing.T, mudar map[string]http.HandlerFunc) (*httpte
 
 func TestAnthropicFatura(t *testing.T) {
 	if (Anthropic{}).cliente("k").http != semRedirecionar {
-		t.Fatal("sem HTTP próprio, a Anthropic tem de usar semRedirecionar")
+		t.Fatal("o cliente da Anthropic tem de ser o semRedirecionar")
 	}
 	srv, _ := apiAnthropicFalsa(t, nil)
 	f, err := Anthropic{Base: srv.URL, Pausa: semEspera}.Buscar(context.Background(), chaveFalsa, janelaDeTeste)
@@ -198,6 +198,27 @@ func TestAnthropicRateioArredondaEm4Casas(t *testing.T) {
 	}
 }
 
+// Ruído de float: a categoria soma Σ(amount/100) item a item (0.001 + 0.002 = 0.003), e não
+// (Σ amount)/100 (0.1 + 0.2 = 0.30000000000000004 → 0.0030000000000000005); api_key_id "" é "desconhecida".
+func TestAnthropicRuidoDeFloatEChaveVazia(t *testing.T) {
+	srv, _ := apiAnthropicFalsa(t, map[string]http.HandlerFunc{
+		"/v1/organizations/cost_report?description": func(w http.ResponseWriter, _ *http.Request) {
+			io.WriteString(w, `{"data":[{"results":[{"description":"X","amount":"0.1"},{"description":"X","amount":"0.2"}]}],"has_more":false}`)
+		},
+		"/v1/organizations/usage_report/messages?api_key_id": func(w http.ResponseWriter, _ *http.Request) {
+			io.WriteString(w, `{"data":[{"results":[{"api_key_id":"","output_tokens":10}]}],"has_more":false}`)
+		},
+	})
+	f, err := Anthropic{Base: srv.URL, Pausa: semEspera}.Buscar(context.Background(), chaveFalsa, janelaDeTeste)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := json.Marshal(f)
+	if !strings.Contains(string(b), `"porCategoria":[{"item":"X","usd":0.003}]`) || !strings.Contains(string(b), `"porChave":[{"nome":"desconhecida","tokensIn":0,"tokensOut":10,`) {
+		t.Fatalf("fatura = %s", b)
+	}
+}
+
 // Sem consumo nenhum: lista vazia (nada de divisão por zero nem NaN no JSON).
 func TestAnthropicSemUsoNaoQuebra(t *testing.T) {
 	srv, _ := apiAnthropicFalsa(t, map[string]http.HandlerFunc{
@@ -214,7 +235,7 @@ func TestAnthropicSemUsoNaoQuebra(t *testing.T) {
 	}
 }
 
-// O usd de cada dia é o valor cru (centavos/100); só o total é arredondado (index.ts:48-49, 183).
+// O usd de cada dia é o valor cru (centavos/100); só o total é arredondado (index.ts:54-55 o dia, :180 o total).
 func TestAnthropicDiaNaoArredonda(t *testing.T) {
 	srv, _ := apiAnthropicFalsa(t, map[string]http.HandlerFunc{
 		"/v1/organizations/cost_report": func(w http.ResponseWriter, _ *http.Request) {

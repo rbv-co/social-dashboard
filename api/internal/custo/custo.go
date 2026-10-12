@@ -63,13 +63,19 @@ type Fatura struct {
 	PorChave     any         `json:"porChave"` // Anthropic: []ChaveRateada; OpenAI: []ChaveReal (nunca nil)
 }
 
-// novaFatura soma os dias NA ORDEM (o reduce das edges) e arredonda como o toFixed. Lista vazia sai
-// [] (nunca null: a tela faz Array.isArray).
-func novaFatura(j Janela, dias []Dia, cats []Categoria, porChave any) Fatura {
+// somaDosDias é o reduce das edges: soma NA ORDEM dos dias (a ordem muda o último bit do float).
+func somaDosDias(dias []Dia) float64 {
 	soma := 0.0
 	for _, d := range dias {
 		soma += d.Usd
 	}
+	return soma
+}
+
+// novaFatura soma os dias NA ORDEM (o reduce das edges) e arredonda como o toFixed. Lista vazia sai
+// [] (nunca null: a tela faz Array.isArray).
+func novaFatura(j Janela, dias []Dia, cats []Categoria, porChave any) Fatura {
+	soma := somaDosDias(dias)
 	if dias == nil {
 		dias = []Dia{}
 	}

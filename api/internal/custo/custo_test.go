@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -213,6 +214,16 @@ func TestNovaTentativa(t *testing.T) {
 		}
 		if got := int(atomic.LoadInt32(n)); got != c.chamadas || !slices.Equal(pausas, c.pausas) {
 			t.Errorf("%s: %d chamadas e pausas %v, esperava %d e %v", c.nome, got, pausas, c.chamadas, c.pausas)
+		}
+	}
+}
+
+// Nenhum fornecedor aceita http.Client próprio: um cliente comum seguiria o redirecionamento e
+// levaria o cabeçalho com a chave a outro endereço. O único cliente é o semRedirecionar.
+func TestFornecedoresNaoAceitamClienteProprio(t *testing.T) {
+	for _, f := range []any{Anthropic{}, OpenAI{}} {
+		if _, tem := reflect.TypeOf(f).FieldByName("HTTP"); tem {
+			t.Errorf("%T tem o campo HTTP: reabre a porta para seguir redirecionamento", f)
 		}
 	}
 }

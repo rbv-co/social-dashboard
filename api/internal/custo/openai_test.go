@@ -32,13 +32,13 @@ func apiOpenAIFalsa(t *testing.T, mudar map[string]http.HandlerFunc) (*httptest.
 		mu.Lock()
 		hits[rota]++
 		mu.Unlock()
-		if h := mudar[rota]; h != nil {
-			h(w, r)
-			return
-		}
 		if strings.HasPrefix(rota, "/costs") && (q.Get("start_time") != "1789257600" || q.Get("end_time") != "1791849600" ||
 			q.Get("bucket_width") != "1d" || q.Get("limit") != "180") {
 			t.Errorf("%s: consulta errada %s", rota, r.URL.RawQuery)
+		}
+		if h := mudar[rota]; h != nil {
+			h(w, r)
+			return
 		}
 		switch rota {
 		case "/costs":
@@ -62,7 +62,7 @@ func apiOpenAIFalsa(t *testing.T, mudar map[string]http.HandlerFunc) (*httptest.
 			if q.Get("limit") != "50" {
 				t.Errorf("projects sem limit=50: %s", r.URL.RawQuery)
 			}
-			io.WriteString(w, `{"data":[{"id":"proj_1"},{"id":"proj/../x"},{"name":"sem id"}]}`)
+			io.WriteString(w, `{"data":[{"id":"proj_1"},{"id":"proj/../x"},{"name":"sem id"},{"id":"."},{"id":".."},{"id":"a b"}]}`)
 		case "/projects/proj_1/api_keys":
 			if q.Get("limit") != "100" {
 				t.Errorf("api_keys sem limit=100: %s", r.URL.RawQuery)
@@ -70,6 +70,8 @@ func apiOpenAIFalsa(t *testing.T, mudar map[string]http.HandlerFunc) (*httptest.
 			io.WriteString(w, `{"data":[{"id":"key_1","name":"FabricadeAnuncios"}]}`)
 		case "/projects/proj%2F..%2Fx/api_keys":
 			w.WriteHeader(500)
+		case "/projects/a%20b/api_keys": // PathEscape: espaço = %20 (QueryEscape daria +)
+			io.WriteString(w, `{"data":[]}`)
 		default:
 			t.Errorf("rota inesperada %s", rota)
 			w.WriteHeader(404)
@@ -91,7 +93,7 @@ func buscarOpenAI(t *testing.T, srv *httptest.Server) (string, error) {
 
 func TestOpenAIFatura(t *testing.T) {
 	if (OpenAI{}).cliente("k").http != semRedirecionar {
-		t.Fatal("sem HTTP próprio, a OpenAI tem de usar semRedirecionar")
+		t.Fatal("o cliente da OpenAI tem de ser o semRedirecionar")
 	}
 	if c := (OpenAI{}).cliente("k"); c.prazo != 8*time.Second || c.orcamento != 20*time.Second || c.fornecedor != "OpenAI" {
 		t.Fatalf("prazo/orçamento/nome da edge: %v %v %q", c.prazo, c.orcamento, c.fornecedor)
@@ -114,7 +116,7 @@ func TestOpenAIFatura(t *testing.T) {
 		t.Fatalf("fatura =\n%s\nesperava\n%s", got, quer)
 	}
 	// o projeto cujo id tem "/" é pedido com o caminho ESCAPADO (o id nunca muda o caminho), e o sem id não é pedido
-	if hits("/projects/proj%2F..%2Fx/api_keys") != 3 || hits("/projects/proj_1/api_keys") != 1 || hits("/costs") != 2 {
+	if hits("/projects/proj%2F..%2Fx/api_keys") != 3 || hits("/projects/proj_1/api_keys") != 1 || hits("/costs") != 2 || hits("/projects/a%20b/api_keys") != 1 {
 		t.Errorf("chamadas: x=%d proj_1=%d costs=%d", hits("/projects/proj%2F..%2Fx/api_keys"), hits("/projects/proj_1/api_keys"), hits("/costs"))
 	}
 }
@@ -214,6 +216,10 @@ func TestOpenAIValorEmTextoEIlegivel(t *testing.T) {
 // Dinheiro: o total arredonda em 4 casas e o BRL em 2 pelo toFixed do JS (valor exato do float), o dia
 // fica cru, e a data do balde sem start_time_iso vem de start_time (UTC).
 func TestOpenAITotalArredondaComoOToFixed(t *testing.T) {
+	// fuso não-UTC: a data vinda de start_time tem de sair em UTC (a CI roda com TZ=UTC e não notaria)
+	local := time.Local
+	time.Local = time.FixedZone("BRT", -3*3600)
+	t.Cleanup(func() { time.Local = local })
 	// Node: (13.35+0.123456789).toFixed(4) = "13.4735"; ((13.35+0.123456789)*5.5).toFixed(2) = "74.10"
 	srv, _ := apiOpenAIFalsa(t, map[string]http.HandlerFunc{
 		"/costs": func(w http.ResponseWriter, r *http.Request) {
@@ -297,8 +303,33 @@ func TestOpenAIDetalhesPaginadosERedondos(t *testing.T) {
 	}
 }
 
+// Crédito/ajuste (valor negativo): soma com sinal no total e nos detalhes, e o que fecha negativo não
+// aparece (filtro > 0). Igual à edge, que não usa módulo nem filtra != 0.
+func TestOpenAIValoresNegativos(t *testing.T) {
+	srv, _ := apiOpenAIFalsa(t, map[string]http.HandlerFunc{
+		"/costs": func(w http.ResponseWriter, _ *http.Request) {
+			io.WriteString(w, `{"data":[{"start_time":1791590400,"results":[{"amount":{"value":5}},{"amount":{"value":-2}}]}],"has_more":false}`)
+		},
+		"/costs?line_item": func(w http.ResponseWriter, _ *http.Request) {
+			io.WriteString(w, `{"data":[{"start_time":1,"results":[{"line_item":"A","amount":{"value":5}},{"line_item":"A","amount":{"value":-2}},{"line_item":"B","amount":{"value":-2}}]}],"has_more":false}`)
+		},
+		"/costs?api_key_id": func(w http.ResponseWriter, _ *http.Request) {
+			io.WriteString(w, `{"data":[{"start_time":1,"results":[{"api_key_id":"k1","amount":{"value":4}},{"api_key_id":"k1","amount":{"value":-1}},{"api_key_id":"k2","amount":{"value":-1}}]}],"has_more":false}`)
+		},
+	})
+	got, err := buscarOpenAI(t, srv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, quer := range []string{`"totalUsd":3,`, `"dias":[{"data":"2026-10-10","usd":3}]`, `"porCategoria":[{"item":"A","usd":3}]`, `"porChave":[{"nome":"k1","usd":3}]}`} {
+		if !strings.Contains(got, quer) {
+			t.Errorf("faltou %s em %s", quer, got)
+		}
+	}
+}
+
 // Um valor ilegível no detalhe invalida o detalhe inteiro (nada de lista pela metade), sem derrubar o total.
-func TestOpenAIDetalheIlegivelZeraSoOseuDetalhe(t *testing.T) {
+func TestOpenAIDetalheIlegivelZeraSoOSeuDetalhe(t *testing.T) {
 	srv, _ := apiOpenAIFalsa(t, map[string]http.HandlerFunc{
 		"/costs?api_key_id": func(w http.ResponseWriter, _ *http.Request) {
 			io.WriteString(w, `{"data":[{"start_time":1,"results":[{"api_key_id":"key_1","amount":{"value":3}},{"api_key_id":"key_2","amount":{"value":"abc"}}]}],"has_more":false}`)
