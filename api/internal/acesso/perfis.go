@@ -34,17 +34,18 @@ type corpoPerfilEdicao struct {
 	Permissions json.RawMessage `json:"permissions,omitempty"`
 }
 
-// permissionsObjeto: permissions, se veio, é objeto JSON (Ruling 5.1-13; null explícito também é recusado).
-func permissionsObjeto(v json.RawMessage) error {
+// mapaDePermissoes: o campo `campo` (permissions, permissions_excecao), se veio, é objeto JSON (Ruling
+// 5.1-13; null explícito também é recusado). Usada também por usuarios.go.
+func mapaDePermissoes(campo string, v json.RawMessage) error {
 	var m map[string]json.RawMessage
 	if v != nil && (json.Unmarshal(v, &m) != nil || m == nil) {
-		return fmt.Errorf("permissions tem de ser um objeto")
+		return fmt.Errorf("%s tem de ser um objeto", campo)
 	}
 	return nil
 }
 
-func (c corpoPerfilNovo) Validar() error   { return permissionsObjeto(c.Permissions) }
-func (c corpoPerfilEdicao) Validar() error { return permissionsObjeto(c.Permissions) }
+func (c corpoPerfilNovo) Validar() error   { return mapaDePermissoes("permissions", c.Permissions) }
+func (c corpoPerfilEdicao) Validar() error { return mapaDePermissoes("permissions", c.Permissions) }
 
 var tabelaPerfis = dados.Tabela{Nome: "acessos_perfis", Resposta: colunasPerfil, Autor: "criado_por"}
 
