@@ -31,9 +31,9 @@ import (
 //   - Literais entre apóstrofos são lidos por inteiro (parênteses e palavras dentro deles não contam);
 //     um literal não pode conter `{ler:`; E'..', B'..', U&'..' são recusados.
 //   - Nomes recusados em TODO o texto (sem caixa): prefixos pg_, lo_, dblink, txid_, query_to_xml,
-//     table_to_xml, cursor_to_xml, schema_to_xml, database_to_xml, to_reg, ts_stat; set_config,
-//     nextval/currval/setval/lastval, information_schema, public e o schema corrente, regclass e
-//     similares (reg*), tableoid, oid. `x.y` só com x alias declarado (senão x pode ser um schema).
+//     table_to_xml, cursor_to_xml, schema_to_xml, database_to_xml, to_reg, ts_stat, ts_rewrite,
+//     currtid, reg*; set_config, nextval/currval/setval/lastval, information_schema, public e o schema
+//     corrente, tableoid, oid e o resto da LISTA FECHADA abaixo (nomeNegado). `x.y` só com x alias declarado (senão x pode ser um schema).
 //   - O nível 0 é: select <lista> from <Tabela> <Alias> [join ...]*, sem where/group/order/limit
 //     (o framework acrescenta where, order by e limit; filtros e a regra entram ali, ou em Onde).
 //   - A principal (Tabela Alias) aparece UMA vez, em qualquer lugar do texto, e é o primeiro item do
@@ -175,18 +175,45 @@ var proibidas = map[string]bool{"union": true, "intersect": true, "except": true
 	// o SQL da consulta nunca muda configuração
 	"set": true, "reset": true}
 
-// Funções e nomes que executam SQL em texto ou leem tabelas por nome/oid: escapam da sombra e da
-// gramática. Recusados em TODO o texto (comparação sem caixa: os identificadores já vêm em minúsculas).
+// LISTA FECHADA de funções e nomes que executam SQL em texto, leem relação por nome/oid ou espiam o
+// catálogo por oid: escapam da sombra e da gramática (ts_rewrite(tsquery, 'select ...') roda um SELECT
+// pelo SPI; currtid2('tabela', tid) lê uma relação por nome). Recusados em TODO o texto (comparação sem
+// caixa: os identificadores já vêm em minúsculas). Fonte: pg_proc do PG 15-17 (toda função de
+// pg_catalog que recebe regclass/regproc/.../oid/text de SQL), mais as funções de contrib comuns
+// (tablefunc, xml2, pgstattuple, pageinspect, amcheck, PostGIS). Função nova do PG que leia relação por
+// nome tem de entrar aqui (o teste TestListaFechadaDeFuncoesQueExecutamSQLOuLeemRelacao a documenta).
+//   - SQL em texto: query_to_xml*, cursor_to_xml*, ts_rewrite, ts_stat, dblink*, crosstab*.
+//   - relação por nome/oid: table_to_xml*, schema_to_xml*, database_to_xml*, currtid*, pg_* (pg_get_*def,
+//     pg_relation_*, pg_table_size...), regclass e as outras reg* (regclassout(oid) devolve o nome),
+//     to_reg*, nextval/currval/setval/lastval, brin_summarize*, gin_clean*, row_security_active,
+//     connectby, xpath_table, pgstat*, pgrowlocks, get_raw_page, bt_*/hash_*/gin_*/gist_*/brin_* do
+//     pageinspect, verify_heapam, st_estimatedextent e afins do PostGIS, lo_*/loread/lowrite.
+//   - catálogo por oid ou nome: has_*_privilege, obj_description, col_description, shobj_description,
+//     format_type, current_query, current_setting, set_config, txid_*, information_schema.
+//
+// Falso positivo aceito: uma coluna cujo nome comece com um destes prefixos também é recusada (a rota
+// cita outra coluna ou usa uma view).
 var negadosPorPrefixo = []string{"pg_", "lo_", "dblink", "txid_", "query_to_xml", "table_to_xml", "cursor_to_xml",
-	"schema_to_xml", "database_to_xml", "to_reg", "ts_stat", "xmlnamespaces"}
+	"schema_to_xml", "database_to_xml", "to_reg", "ts_stat", "ts_rewrite", "currtid", "xmlnamespaces",
+	"regclass", "regcollation", "regconfig", "regdictionary", "regnamespace", "regoper", "regproc", "regrole", "regtype",
+	"binary_upgrade", "brin_summarize", "brin_desummarize", "gin_clean",
+	// contrib: SQL em texto ou relação por nome
+	"crosstab", "connectby", "xpath_table", "pgstat", "pgrowlocks", "get_raw_page", "page_header", "heap_page",
+	"bt_page", "bt_metap", "bt_index_", "hash_page", "hash_bitmap", "hash_metapage", "gin_page", "gin_leafpage",
+	"gin_metapage", "gist_page", "brin_page", "brin_metapage", "brin_revmap", "fsm_page", "tuple_data_split",
+	"verify_heapam", "st_estimatedextent", "find_srid", "populate_geometry_columns", "updategeometrysrid",
+	"addgeometrycolumn", "dropgeometrycolumn", "dropgeometrytable"}
 var negadosExatos = map[string]bool{"set_config": true, "nextval": true, "currval": true, "setval": true, "lastval": true,
-	"information_schema": true, "public": true, "regclass": true, "regproc": true, "regprocedure": true, "regoper": true,
-	"regoperator": true, "regtype": true, "regnamespace": true, "regrole": true, "regconfig": true, "regdictionary": true,
-	"tableoid": true, "oid": true}
+	"information_schema": true, "public": true, "tableoid": true, "oid": true,
+	"row_security_active": true, "obj_description": true, "col_description": true, "shobj_description": true,
+	"format_type": true, "current_query": true, "current_setting": true, "loread": true, "lowrite": true}
 
 // nomeNegado: o identificador w é de uma função/nome que a consulta declarada não pode usar.
 func nomeNegado(w string, esquemas map[string]bool) bool {
 	if negadosExatos[w] || esquemas[w] {
+		return true
+	}
+	if strings.HasPrefix(w, "has_") && strings.HasSuffix(w, "_privilege") { // has_table_privilege & cia
 		return true
 	}
 	for _, p := range negadosPorPrefixo {

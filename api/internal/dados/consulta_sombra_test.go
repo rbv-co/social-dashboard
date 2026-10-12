@@ -205,6 +205,74 @@ func TestFuncoesQueEscapamDaSombraSaoRecusadas(t *testing.T) {
 	}
 }
 
+// Revisão final: ts_rewrite(tsquery, text) executa um SELECT escrito em texto (pelo SPI, sem sombra e
+// sem gramática) e currtid2(nome, tid) lê uma relação por nome. Aqui está a LISTA FECHADA recusada
+// (PG 15-17 + contrib comum): toda função de pg_proc que executa SQL de texto, lê relação por
+// nome/oid (regclass, text, oid) ou espia o catálogo por oid.
+func TestListaFechadaDeFuncoesQueExecutamSQLOuLeemRelacao(t *testing.T) {
+	_, cat, amb := fixtureSombra(t)
+	casos := map[string]string{
+		"ts_rewrite":              "ts_rewrite('a'::tsquery, 'select ''a''::tsquery, ''b''::tsquery from segredo')",
+		"ts_rewrite caixa":        "TS_REWRITE('a'::tsquery, 'select 1')",
+		"ts_rewrite 3 args":       "ts_rewrite('a'::tsquery, 'b'::tsquery, 'c'::tsquery)",
+		"currtid2":                "currtid2('segredo', '(0,1)'::tid)",
+		"currtid":                 "currtid('x', '(0,1)'::tid)",
+		"regclassout":             "regclassout(1::oid)",
+		"regtypeout":              "regtypeout(1::oid)",
+		"brin_summarize":          "brin_summarize_new_values(1::oid)",
+		"gin_clean_pending_list":  "gin_clean_pending_list(1::oid)",
+		"row_security_active":     "row_security_active('segredo')",
+		"has_table_privilege":     "has_table_privilege('segredo', 'select')",
+		"has_column_privilege":    "has_column_privilege('segredo', 'valor', 'select')",
+		"has_schema_privilege":    "has_schema_privilege('public', 'usage')",
+		"has_database_privilege":  "has_database_privilege('postgres', 'connect')",
+		"obj_description":         "obj_description(1::oid, 'pg_class')",
+		"col_description":         "col_description(1::oid, 1)",
+		"shobj_description":       "shobj_description(1::oid, 'pg_database')",
+		"format_type":             "format_type(1::oid, null)",
+		"current_query":           "current_query()",
+		"current_setting":         "current_setting('server_version')",
+		"loread":                  "loread(1, 1)",
+		"lowrite":                 "lowrite(1, 'x'::bytea)",
+		"binary_upgrade":          "binary_upgrade_set_next_pg_tablespace_oid(1::oid)",
+		"query_to_xml_and_schema": "query_to_xml_and_xmlschema('select 1', true, false, '')",
+		"table_to_xmlschema":      "table_to_xmlschema('segredo', true, false, '')",
+		"cursor_to_xmlschema":     "cursor_to_xmlschema('x', true, false, '')",
+		"schema_to_xmlschema":     "schema_to_xmlschema('public', true, false, '')",
+		"database_to_xmlschema":   "database_to_xmlschema(true, false, '')",
+		"crosstab (tablefunc)":    "crosstab('select 1')",
+		"connectby (tablefunc)":   "connectby('segredo', 'a', 'b', 'c', 1)",
+		"xpath_table (xml2)":      "xpath_table('a', 'b', 'segredo', 'c', 'd')",
+		"pgstattuple":             "pgstattuple('segredo')",
+		"pgrowlocks":              "pgrowlocks('segredo')",
+		"get_raw_page":            "get_raw_page('segredo', 0)",
+		"bt_page_items":           "bt_page_items('x', 1)",
+		"verify_heapam":           "verify_heapam('segredo')",
+		"st_estimatedextent":      "st_estimatedextent('segredo', 'geom')",
+	}
+	for nome, expr := range casos {
+		for onde, c := range map[string]Consulta{
+			"lista": consultaAtaque("select c.nome, " + expr + " from coisa c"),
+			"onde": func() Consulta {
+				c := consultaAtaque("select c.nome from coisa c")
+				c.Onde = expr + " is not null"
+				return c
+			}(),
+		} {
+			if err := c.validar(cat, amb); !errors.Is(err, ErrDeclaracao) {
+				t.Errorf("%s (%s): aceito ou sem ErrDeclaracao: %v", nome, onde, err)
+			}
+		}
+	}
+	// o que NÃO lê relação segue aceito (a lista fechada não pode virar recusa geral)
+	for _, expr := range []string{"lower(c.nome)", "to_tsvector('portuguese', c.nome)", "regexp_replace(c.nome, 'a', 'b')",
+		"json_build_object('a', c.nome)", "coalesce(c.dona, '')", "c.nome || 'x'", "length(c.nome) + 1"} {
+		if err := consultaAtaque("select c.nome, "+expr+" from coisa c").validar(cat, amb); err != nil {
+			t.Errorf("%s recusado: %v", expr, err)
+		}
+	}
+}
+
 func TestMenoresDaSegundaRevisao(t *testing.T) {
 	_, cat, amb := fixtureSombra(t)
 	base := func() Consulta { return consultaAtaque("select c.nome from coisa c") }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/rand"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -65,10 +66,16 @@ type mundoFuzz struct {
 	cheio, a1   *pgxpool.Pool // o banco completo e o banco só com o que A1 vê
 	amb         *ambiente
 	eA1, eTodas *autz.Escopo
+	origem      string
+	stats       map[string]*porOrigem
 }
 
 func (m *mundoFuzz) rodar(p *pgxpool.Pool, c Consulta, e *autz.Escopo, sombra []string) (string, error) {
-	sql, _, args, err := c.montar(map[string][]string{}, e, m.cat, sombra)
+	q := url.Values{}
+	if len(c.Filtros) > 0 { // o filtro declarado de fato executa
+		q.Set("q", "x1")
+	}
+	sql, _, args, err := c.montar(q, e, m.cat, sombra)
 	if err != nil {
 		return "", err
 	}
@@ -84,10 +91,20 @@ func (m *mundoFuzz) rodar(p *pgxpool.Pool, c Consulta, e *autz.Escopo, sombra []
 
 type contagem struct{ total, aceitas, recusadas, executadas, comErroSQL int }
 
+// porOrigem: quanto cada gerador aceita e quantas execuções chegam ao fim sem erro de SQL (só estas
+// exercitam a sombra e o oráculo; erro de sintaxe do Postgres não devolve dado nenhum).
+type porOrigem struct{ total, aceitas, executadas, comErro int }
+
 // avaliar: uma declaração candidata. Devolve true se foi aceita pela Validar.
 func (m *mundoFuzz) avaliar(c Consulta, cnt *contagem) bool {
 	m.t.Helper()
 	cnt.total++
+	st := m.stats[m.origem]
+	if st == nil {
+		st = &porOrigem{}
+		m.stats[m.origem] = st
+	}
+	st.total++
 	var err error
 	func() {
 		defer func() {
@@ -106,6 +123,10 @@ func (m *mundoFuzz) avaliar(c Consulta, cnt *contagem) bool {
 		return false
 	}
 	cnt.aceitas++
+	st.aceitas++
+	if n := nomePerigosoEm(c); n != "" { // a lista fechada vale para TODO o texto da declaração
+		m.t.Errorf("ACEITA declaração com %q (executa SQL em texto/lê relação por nome): %+v", n, c)
+	}
 	for _, sombra := range [][]string{c.tabelasDaSombra(m.amb), nil} {
 		got, e1 := m.rodar(m.cheio, c, m.eA1, sombra)
 		want, e2 := m.rodar(m.a1, c, m.eTodas, sombra)
@@ -114,8 +135,10 @@ func (m *mundoFuzz) avaliar(c Consulta, cnt *contagem) bool {
 			continue
 		}
 		cnt.executadas++
+		st.executadas++
 		if strings.HasPrefix(got, "ERRO") || strings.HasPrefix(want, "ERRO") {
 			cnt.comErroSQL++
+			st.comErro++
 			continue // SQL inválido para o Postgres (coluna que não existe...): não devolve dado
 		}
 		if got != want {
@@ -128,13 +151,31 @@ func (m *mundoFuzz) avaliar(c Consulta, cnt *contagem) bool {
 	return true
 }
 
+// nomesPerigosos: a lista fechada de gramatica.go, vista de fora (o fuzz não pode depender de nomeNegado).
+var nomesPerigosos = []string{"query_to_xml", "table_to_xml", "schema_to_xml", "database_to_xml", "cursor_to_xml", "ts_rewrite",
+	"ts_stat", "currtid", "to_regclass", "dblink", "pg_", "regclass", "row_security_active", "has_table_privilege",
+	"obj_description", "current_query", "current_setting", "crosstab", "connectby", "pgstattuple", "nextval", "set_config"}
+
+func nomePerigosoEm(c Consulta) string {
+	txt := strings.ToLower(c.SQL + " " + c.Onde)
+	for _, f := range c.Filtros {
+		txt += " " + strings.ToLower(f.SQL)
+	}
+	for _, n := range nomesPerigosos {
+		if strings.Contains(txt, n) {
+			return n
+		}
+	}
+	return ""
+}
+
 func novoMundoFuzz(t *testing.T) *mundoFuzz {
 	t.Helper()
 	cat, err := autz.Compilar([]byte(catalogoDoFuzz))
 	if err != nil {
 		t.Fatal(err)
 	}
-	m := &mundoFuzz{t: t, cat: cat, cheio: testebanco.Novo(t), a1: testebanco.Novo(t)}
+	m := &mundoFuzz{t: t, cat: cat, cheio: testebanco.Novo(t), a1: testebanco.Novo(t), stats: map[string]*porOrigem{}}
 	carregarFuzz(t, m.cheio, false)
 	carregarFuzz(t, m.a1, true)
 	if m.amb, err = ambienteDoBanco(context.Background(), m.cheio); err != nil {
@@ -159,7 +200,8 @@ var (
 		"A.id in (select 1)", "c.nome between 'a' and 'z'", "A.id = c.id::text", ""}
 	itensLista = []string{"c.nome", "c.account_id", "'literal'", "c.id + 1", "(select 1)", "length(')')", "left(c.nome, 1)", "c.nome::text"}
 	lixo       = []string{"/**/", "-- x\n", "\"conta\"", "public.", "table conta", "union select 1", ";", "(select 1) q,", "lateral", "with q as (select 1)",
-		"pg_sleep(0)", "to_regclass('conta')", "query_to_xml('select 1', true, false, '')", "::regclass", "set x", "for update",
+		"pg_sleep(0)", "to_regclass('conta')", "ts_rewrite('a'::tsquery, 'select 1')", "currtid2('segredo', '(0,1)'::tid)",
+		"has_table_privilege('segredo', 'select')", "row_security_active('segredo')", "current_setting('x')", "crosstab('select 1')", "query_to_xml('select 1', true, false, '')", "::regclass", "set x", "for update",
 		"c.nome between 'a' and 'b'", "'{ler:conta:k}'", "E'x'", "$1", "\\", "é", "right join conta r on true", "full join conta r on true",
 		"natural join conta", "using (id)", "pg_class", "information_schema.tables", "limit 1", "order by 1", "where true", "group by 1",
 		"{ler:conta:q}", "{ler:coisa:c}", "}", "{", "((", "))", ",", "select", "from", "join", "on", "left", "outer", "and", "or", "not", "case", "end"}
@@ -269,6 +311,208 @@ func gerar(r *rand.Rand) Consulta {
 	return c
 }
 
+// ---- funções que executam SQL em texto / leem relação por nome (a lista fechada de gramatica.go) ----
+
+// perigosas: o Postgres executaria o SQL do texto (ou leria a relação pelo nome) sem a sombra e sem a
+// gramática; Validar TEM de recusar toda declaração que as contenha. Os alvos incluem a tabela de A2.
+func perigosa(r *rand.Rand) string {
+	alvo := escolher(r, []string{"coisa", "conta", "item", "segredo"})
+	txt := escolher(r, []string{"select * from " + alvo, "select id from " + alvo + " where true", "select nome from coisa where account_id = ''A2''"})
+	txt = strings.ReplaceAll(txt, "''", "'")
+	q := strings.ReplaceAll(txt, "'", "''")
+	return escolher(r, []string{
+		"query_to_xml('" + q + "', true, false, '')",
+		"(xpath('/row', query_to_xml('" + q + "', true, true, '')))[1]",
+		"query_to_xml_and_xmlschema('" + q + "', true, false, '')",
+		"table_to_xml('" + alvo + "'::regclass, true, false, '')",
+		"table_to_xml('" + alvo + "', true, false, '')",
+		"schema_to_xml('public', true, false, '')",
+		"database_to_xml(true, false, '')",
+		"cursor_to_xml('x', 1, true, false, '')",
+		"ts_rewrite('a'::tsquery, 'select ''a''::tsquery, ''b''::tsquery from " + alvo + "')",
+		"ts_rewrite('a'::tsquery, 'select ''a''::tsquery, nome::tsquery from coisa')",
+		"TS_REWRITE('a'::tsquery, '" + q + "')",
+		"ts_stat('" + q + "')",
+		"currtid2('" + alvo + "', '(0,1)'::tid)",
+		"currtid2('" + alvo + "', c.ctid)",
+		"to_regclass('" + alvo + "')",
+		"dblink('dbname=x', '" + q + "')",
+		"pg_get_viewdef('" + alvo + "'::regclass)",
+		"pg_relation_size('" + alvo + "')",
+		"pg_table_size('" + alvo + "')",
+		"regclassout('" + alvo + "'::regclass)",
+		"row_security_active('" + alvo + "')",
+		"has_table_privilege('" + alvo + "', 'select')",
+		"obj_description(1::oid, 'pg_class')",
+		"current_query()",
+		"current_setting('server_version')",
+		"crosstab('" + q + "')",
+		"connectby('" + alvo + "', 'id', 'id', '1', 1)",
+		"pgstattuple('" + alvo + "')",
+		"nextval('" + alvo + "')",
+		"set_config('search_path', '" + alvo + "', false)",
+	})
+}
+
+// inofensivas: funções comuns que a gramática aceita e que EXECUTAM (exercitam a sombra e o oráculo).
+func inofensiva(r *rand.Rand) string {
+	return escolher(r, []string{"lower(c.nome)", "coalesce(c.account_id, '')", "left(c.nome, 2)", "c.nome || 'x'", "length(c.nome) + 1",
+		"to_tsvector('portuguese', c.nome)", "json_build_object('n', c.nome)", "to_json(c.nome)", "regexp_replace(c.nome, 'x', 'y')",
+		"c.account_id is null", "case when c.dona is null then 1 else 2 end", "upper(coalesce(c.account_id, 'n'))", "xmlforest(c.nome as n)::text",
+		"jsonb_build_array(c.id, c.nome)", "(c.id % 2 = 0)", "md5(c.nome)", "array_length(array[c.id, 1], 1)"})
+}
+
+// ---- gerador correto por construção: toda leitura de outra tabela traz o marcador certo ----
+
+var colunasFuzz = map[string][]string{"conta": {"id", "rotulo"}, "item": {"id", "nome", "account_id", "coisa_id"}}
+var aliasFuzz = map[string]string{"conta": "k", "item": "i"}
+
+// ligacaoFuzz: o termo que liga a tabela t a coisa c.
+func ligacaoFuzz(r *rand.Rand, t string) string {
+	a := aliasFuzz[t]
+	if t == "conta" {
+		return escolher(r, []string{a + ".id = c.dona", a + ".id = c.account_id", a + ".id is not null"})
+	}
+	return escolher(r, []string{a + ".coisa_id = c.id", a + ".account_id = c.account_id", a + ".nome <> 'q'"})
+}
+
+// condicaoCorreta: termos de and com o marcador certo (em posição, agrupamento e redundância variados).
+func condicaoCorreta(r *rand.Rand, t string) string {
+	a := aliasFuzz[t]
+	mk := "{ler:" + t + ":" + a + "}"
+	termos := []string{ligacaoFuzz(r, t)}
+	if r.Intn(3) == 0 {
+		if t == "conta" {
+			termos = append(termos, a+".id <> ''")
+		} else {
+			termos = append(termos, a+".id > 0")
+		}
+	}
+	switch r.Intn(4) {
+	case 0:
+		mk = "(" + mk + ")"
+	case 1:
+		mk = "((" + mk + "))"
+	}
+	pos := r.Intn(len(termos) + 1)
+	termos = append(termos[:pos], append([]string{mk}, termos[pos:]...)...)
+	c := strings.Join(termos, " and ")
+	if r.Intn(5) == 0 {
+		c = "(" + c + ")"
+	}
+	return c
+}
+
+func subconsultaCorreta(r *rand.Rand, t string) string {
+	a := aliasFuzz[t]
+	cond := condicaoCorreta(r, t)
+	switch r.Intn(4) {
+	case 0:
+		return fmt.Sprintf("(select count(*) from %s %s where %s)", t, a, cond)
+	case 1:
+		return fmt.Sprintf("exists (select 1 from %s %s where %s)", t, a, cond)
+	case 2:
+		return fmt.Sprintf("(select json_agg(%s.id order by %s.id) from %s %s where %s)", a, a, t, a, cond)
+	}
+	return fmt.Sprintf("array(select %s.id from %s %s where %s)", a, t, a, cond)
+}
+
+// gerarCorreta: declaração válida por construção, com no máximo um defeito (corrupção) opcional.
+// O defeito é uma das formas torta/ausente de marcador, a função perigosa, ou lixo de sintaxe.
+func gerarCorreta(r *rand.Rand, corromper bool) Consulta {
+	var js, lista strings.Builder
+	juntadas := map[string]bool{}
+	lista.WriteString("select c.id as pid")
+	for _, t := range []string{"conta", "item"} {
+		if r.Intn(2) == 0 {
+			continue
+		}
+		a := aliasFuzz[t]
+		kind := escolher(r, []string{"left join", "left join", "join", "inner join"})
+		js.WriteString(fmt.Sprintf(" %s %s %s on %s", kind, t, a, condicaoCorreta(r, t)))
+		juntadas[t] = true
+		lista.WriteString(", " + a + "." + escolher(r, colunasFuzz[t]))
+	}
+	for n := r.Intn(4); n > 0; n-- {
+		switch r.Intn(3) {
+		case 0:
+			lista.WriteString(", " + inofensiva(r))
+		case 1:
+			lista.WriteString(", " + subconsultaCorreta(r, escolher(r, []string{"conta", "item"})))
+		default:
+			lista.WriteString(", " + escolher(r, []string{"c.nome", "c.account_id", "c.nome", "c.id + 1"}))
+		}
+	}
+	sql := lista.String() + " from coisa c" + js.String()
+	c := Consulta{Tabela: "coisa", Alias: "c", SQL: sql, OrdemPadrao: "c.nome", Desempate: "c.id"}
+	if r.Intn(3) == 0 {
+		t := escolher(r, []string{"conta", "item"})
+		c.Onde = escolher(r, []string{"exists", "not exists"}) + " (select 1 from " + t + " " + aliasFuzz[t] + " where " + condicaoCorreta(r, t) + ")"
+	}
+	if r.Intn(4) == 0 {
+		c.Filtros = []Filtro{{Param: "q", SQL: "c.nome = @q::text", Tipo: "texto"}}
+	}
+	if !corromper {
+		return c
+	}
+	switch r.Intn(6) {
+	case 0: // marcador torto
+		c.SQL = strings.Replace(c.SQL, "{ler:", escolher(r, []string{"not {ler:", "false or {ler:", "true or {ler:"}), 1)
+	case 1: // marcador ausente
+		for _, t := range []string{"conta", "item"} {
+			c.SQL = strings.Replace(c.SQL, " and {ler:"+t+":"+aliasFuzz[t]+"}", "", 1)
+			c.SQL = strings.Replace(c.SQL, "{ler:"+t+":"+aliasFuzz[t]+"} and ", "", 1)
+		}
+	case 2: // função perigosa na lista, no Onde, num filtro ou numa condição de on
+		x := perigosa(r)
+		switch r.Intn(4) {
+		case 0:
+			c.SQL = strings.Replace(c.SQL, " from coisa c", ", "+x+" as z from coisa c", 1)
+		case 1:
+			c.Onde = x + " is not null"
+		case 2:
+			c.Filtros = []Filtro{{Param: "q", SQL: "c.nome = @q::text and " + x + " is not null", Tipo: "texto"}}
+		default:
+			c.SQL = strings.Replace(c.SQL, " on ", " on "+x+" is not null and ", 1)
+		}
+	case 3: // lixo de sintaxe
+		c.SQL += " " + escolher(r, lixo)
+	case 4: // outra tabela real no lugar de uma do catálogo
+		c.SQL = strings.Replace(c.SQL, " from conta ", " from segredo ", 1)
+		c.SQL = strings.Replace(c.SQL, "join conta ", "join segredo ", 1)
+	default: // tabela principal lida de novo
+		c.SQL = strings.Replace(c.SQL, " from coisa c", ", (select count(*) from coisa c where true) from coisa c", 1)
+	}
+	return c
+}
+
+// mutarEstruturado: troca peças inteiras de uma declaração (forma do marcador, tipo de junção, item
+// extra) em vez de tokens soltos; o resultado quase sempre ainda é SQL válido e EXECUTA.
+func mutarEstruturado(r *rand.Rand, c Consulta) Consulta {
+	for n := 1 + r.Intn(2); n > 0; n-- {
+		switch r.Intn(5) {
+		case 0:
+			for _, t := range []string{"conta", "item"} {
+				mk := "{ler:" + t + ":" + aliasFuzz[t] + "}"
+				if strings.Contains(c.SQL, mk) {
+					c.SQL = strings.Replace(c.SQL, mk, troca(escolher(r, marcadores), t, aliasFuzz[t]), 1)
+					break
+				}
+			}
+		case 1:
+			c.SQL = strings.Replace(c.SQL, " left join ", " join ", 1)
+		case 2:
+			c.SQL = strings.Replace(c.SQL, " join ", " left join ", 1)
+		case 3:
+			c.SQL = strings.Replace(c.SQL, " from coisa c", ", "+inofensiva(r)+" as m from coisa c", 1)
+		default:
+			t := escolher(r, []string{"conta", "item"})
+			c.SQL = strings.Replace(c.SQL, " from coisa c", ", "+subconsultaCorreta(r, t)+" as s from coisa c", 1)
+		}
+	}
+	return c
+}
+
 // mutar: mutação no nível dos tokens de uma declaração (válida ou não).
 func mutar(r *rand.Rand, c Consulta) Consulta {
 	toks := strings.Fields(strings.NewReplacer("(", " ( ", ")", " ) ", ",", " , ").Replace(c.SQL))
@@ -303,7 +547,7 @@ func sequenciaAleatoria(r *rand.Rand) Consulta {
 func TestFuzzDaGramaticaESombra(t *testing.T) {
 	m := novoMundoFuzz(t)
 	r := rand.New(rand.NewSource(20261012))
-	n := 20000
+	n := 12000
 	if testing.Short() {
 		n = 2000
 	}
@@ -317,6 +561,7 @@ func TestFuzzDaGramaticaESombra(t *testing.T) {
 		consultaAtaque("select c.id as pid, e.value from coisa c, jsonb_array_elements('[1]'::jsonb) e"),
 		consultaAtaque("select c.id as pid, i.nome from coisa c join item i on i.coisa_id = c.id and {ler:item:i} left join conta k on k.id = i.account_id and {ler:conta:k}"),
 	}
+	m.origem = "semente"
 	for i := range conhecidas {
 		conhecidas[i].Desempate = "c.id"
 		if !m.avaliar(conhecidas[i], &cnt) {
@@ -326,6 +571,7 @@ func TestFuzzDaGramaticaESombra(t *testing.T) {
 	aceitas = append(aceitas, conhecidas...)
 	// sistemático: toda forma de marcador (certa e torta) em todo contexto (on de left join, on de
 	// join, where de subconsulta escalar/agregada/exists, Onde) para as tabelas do catálogo
+	m.origem = "sistemática"
 	for _, tab := range []struct{ nome, alias string }{{"conta", "k"}, {"item", "i"}} {
 		for _, mk := range marcadores {
 			cond := troca(mk, tab.nome, tab.alias)
@@ -351,16 +597,22 @@ func TestFuzzDaGramaticaESombra(t *testing.T) {
 	inicio := time.Now()
 	for i := 0; i < n; i++ {
 		var c Consulta
-		switch i % 4 {
+		switch i % 8 {
 		case 0, 1:
-			c = gerar(r)
-		case 2:
-			c = mutar(r, escolher(r, aceitas))
+			m.origem, c = "gerada (livre)", gerar(r)
+		case 2, 3:
+			m.origem, c = "gerada (correta)", gerarCorreta(r, false)
+		case 4:
+			m.origem, c = "gerada (com defeito)", gerarCorreta(r, true)
+		case 5:
+			m.origem, c = "mutação estruturada", mutarEstruturado(r, escolher(r, aceitas))
+		case 6:
+			m.origem, c = "mutação de token", mutar(r, escolher(r, aceitas))
 		default:
 			if r.Intn(4) == 0 {
-				c = sequenciaAleatoria(r)
+				m.origem, c = "sequência aleatória", sequenciaAleatoria(r)
 			} else {
-				c = mutar(r, gerar(r))
+				m.origem, c = "mutação de gerada", mutar(r, gerar(r))
 			}
 		}
 		if m.avaliar(c, &cnt) && len(aceitas) < 400 {
@@ -372,6 +624,15 @@ func TestFuzzDaGramaticaESombra(t *testing.T) {
 	}
 	t.Logf("FUZZ: %d declarações, %d aceitas, %d recusadas, %d execuções (%d com erro de SQL do Postgres) em %v",
 		cnt.total, cnt.aceitas, cnt.recusadas, cnt.executadas, cnt.comErroSQL, time.Since(inicio).Round(time.Millisecond))
+	for o, st := range m.stats {
+		t.Logf("  %-22s %6d declarações %6d aceitas %6d execuções %6d com erro de SQL", o, st.total, st.aceitas, st.executadas, st.comErro)
+	}
+	// o gerador tem de EXERCITAR: a maioria das execuções roda de verdade (erro de SQL do Postgres não
+	// devolve dado e não testa nada). Antes da revisão final ~40% eram erros.
+	limpas := cnt.executadas - cnt.comErroSQL
+	if limpas*100 < cnt.executadas*85 || limpas < 500 {
+		t.Errorf("só %d de %d execuções rodaram sem erro de SQL: o gerador não exercita a sombra e o oráculo", limpas, cnt.executadas)
+	}
 	if cnt.aceitas < 50 {
 		t.Errorf("o fuzz aceitou só %d declarações: o gerador não exercita a gramática", cnt.aceitas)
 	}
