@@ -310,8 +310,13 @@ func TestLoginDeUsuarioSemProfilesFunciona(t *testing.T) {
 	p, _, h := montar(t)
 	hash, _ := HashDaSenha("s3nha")
 	p.Exec(context.Background(), `insert into usuarios (id, email, senha_hash) values ($1, 'c@x.com', $2)`, uid, hash)
-	if entrar(t, h, "c@x.com", "s3nha") == "" {
+	tok := entrar(t, h, "c@x.com", "s3nha")
+	if tok == "" {
 		t.Fatal("sem token")
+	}
+	// sem perfil: /auth/eu responde com o e-mail e nome null (Ruling 37), nunca 500
+	if w := chamar(h, "GET", "/auth/eu", "", tok); w.Code != 200 || !strings.Contains(w.Body.String(), `"email":"c@x.com"`) || !strings.Contains(w.Body.String(), `"nome":null`) {
+		t.Fatalf("eu sem perfil = %d %s", w.Code, w.Body)
 	}
 }
 
