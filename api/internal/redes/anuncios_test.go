@@ -9,12 +9,28 @@ import (
 
 var rotasDeAnuncios = []string{"/redes/campanhas", "/redes/conjuntos", "/redes/anuncios", "/redes/insights-de-campanha", "/redes/insights-da-conta"}
 
+// totais esperados de contar=1 por rota e pessoa (linhas semeadas: campanhas 9000 sem conta, 9001 A1, 9002 A2).
+var totais = map[string]map[string]string{
+	"/redes/campanhas":            {"todas": "3", "soA1": "2", "nenhuma": "1"},
+	"/redes/conjuntos":            {"todas": "2", "soA1": "1", "nenhuma": "0"},
+	"/redes/anuncios":             {"todas": "2", "soA1": "1", "nenhuma": "0"},
+	"/redes/insights-de-campanha": {"todas": "3", "soA1": "2", "nenhuma": "0"},
+	"/redes/insights-da-conta":    {"todas": "2", "soA1": "1", "nenhuma": "0"},
+}
+
 func TestAnuncios(t *testing.T) {
 	m := novoMundo(t, montarAnuncios)
 	foto := m.Um(t, fotoDasRedes)
 	var casos []mundoteste.Caso
 	c1, c2 := `"account_id":"`+A1+`"`, `"account_id":"`+A2+`"`
 	for _, rota := range rotasDeAnuncios {
+		// contagem sob a regra (X-Total-Count): quem é restrito conta só o que vê; as campanhas têm a 9000 sem conta
+		for quem, esperado := range totais[rota] {
+			w := m.Resposta(t, quem, "GET", rota+"?contar=1&limite=1", "")
+			if got := w.Header().Get("X-Total-Count"); w.Code != 200 || got != esperado {
+				t.Errorf("%s contar=1 como %s = %d X-Total-Count %q, esperava %q", rota, quem, w.Code, got, esperado)
+			}
+		}
 		casos = append(casos, mundoteste.Caso{Nome: "sem sessão " + rota, Metodo: "GET", Caminho: rota, Status: 401})
 		// a matriz por conta: quem vê o quê, sem filtro
 		for _, q := range []string{"todas", "adminA1", "superA1", "semModulo"} {
@@ -31,7 +47,7 @@ func TestAnuncios(t *testing.T) {
 		}
 		if rota == "/redes/campanhas" {
 			// a campanha sem conta (9000) é visível a todos: pode_ver_conta(null)
-			casos = append(casos, mundoteste.Caso{Nome: "nenhuma só a sem conta", Quem: "nenhuma", Metodo: "GET", Caminho: rota, Status: 200, Tem: `"campaign_id":"9000"`, NaoTem: `"campaign_id":"900` + "1"})
+			casos = append(casos, mundoteste.Caso{Nome: "nenhuma só a sem conta", Quem: "nenhuma", Metodo: "GET", Caminho: rota, Status: 200, Tem: `"campaign_id":"9000"`, NaoTem: `"campaign_id":"9001"`})
 			casos = append(casos, mundoteste.Caso{Nome: "nenhuma sem 9002", Quem: "nenhuma", Metodo: "GET", Caminho: rota, Status: 200, NaoTem: `"campaign_id":"9002"`})
 			casos = append(casos, mundoteste.Caso{Nome: "soA1 vê a sem conta", Quem: "soA1", Metodo: "GET", Caminho: rota, Status: 200, Tem: `"campaign_id":"9000"`})
 		} else {
@@ -46,6 +62,9 @@ func TestAnuncios(t *testing.T) {
 	casos = append(casos,
 		// gasto exato: numeric sai do Postgres como número JSON, sem passar por float64
 		mundoteste.Caso{Nome: "gasto da campanha", Quem: "soA1", Metodo: "GET", Caminho: "/redes/insights-de-campanha?account_id=" + A1 + "&period_days=0&captured_at=2026-10-11", Status: 200, Tem: `"spend":1234.56`, NaoTem: `"spend":100.1`},
+		// o zero final só o numeric do Postgres preserva: float64 em Go daria 100.1
+		mundoteste.Caso{Nome: "gasto 100.10 com o zero final", Quem: "todas", Metodo: "GET", Caminho: "/redes/insights-de-campanha?account_id=" + A1 + "&captured_at=2026-10-10", Status: 200, Tem: `"spend":100.10,`},
+		mundoteste.Caso{Nome: "filtro campaign_id direto", Quem: "todas", Metodo: "GET", Caminho: "/redes/insights-de-campanha?campaign_id=9001", Status: 200, Tem: `"campaign_id":"9001"`, NaoTem: `"campaign_id":"9002"`},
 		mundoteste.Caso{Nome: "gasto e frequência da conta", Quem: "soA1", Metodo: "GET", Caminho: "/redes/insights-da-conta?account_id=" + A1 + "&period_days=7&ordem=captured_at.desc&limite=1", Status: 200, Tem: `"spend":1334.66,`},
 		mundoteste.Caso{Nome: "frequência da conta", Quem: "soA1", Metodo: "GET", Caminho: "/redes/insights-da-conta?account_id=" + A1 + "&period_days=7&ordem=captured_at.desc&limite=1", Status: 200, Tem: `"frequency":3.33`},
 		// lista de campanhas pedida por id: a regra continua valendo
@@ -76,20 +95,5 @@ func TestAnuncios(t *testing.T) {
 	_, corpo = m.Pedir(t, "todas", "GET", "/redes/campanhas", "")
 	if a, b := pos(corpo, `"status":"ACTIVE"`), pos(corpo, `"status":"PAUSED"`); a < 0 || b < 0 || a > b {
 		t.Errorf("ordem padrão das campanhas (status, name): ACTIVE antes de PAUSED: %s", corpo)
-	}
-
-	// contagem sob a regra: a restrita conta só o que vê
-	for quem, esperado := range map[string]string{"soA1": "2", "todas": "3", "nenhuma": "0"} {
-		w := m.Resposta(t, quem, "GET", "/redes/insights-de-campanha?contar=1&limite=1", "")
-		if got := w.Header().Get("X-Total-Count"); w.Code != 200 || got != esperado {
-			t.Errorf("%s: contar=1 = %d X-Total-Count %q, esperava %q", quem, w.Code, got, esperado)
-		}
-	}
-	// o gasto que sai do corpo é o texto do Postgres: 1234.56 e nunca 1234.5599999
-	_, corpo = m.Pedir(t, "todas", "GET", "/redes/insights-de-campanha", "")
-	for _, ruim := range []string{"1234.5599", "100.0999", "999.9899", "1234.560000"} {
-		if strings.Contains(corpo, ruim) {
-			t.Errorf("gasto fora do exato (%s): %s", ruim, corpo)
-		}
 	}
 }
