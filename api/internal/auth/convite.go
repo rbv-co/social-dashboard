@@ -6,7 +6,9 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
+	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -31,6 +33,25 @@ func jaCadastrado(err error) bool {
 	return errors.As(err, &pe) && pe.Code == "23505"
 }
 
+// raiseDoBanco: a frase de um RAISE nosso (gatilho ou função do banco, escrito para a pessoa
+// ler), para sair no formato da edge. Mesma regra de dados.ErroDoBanco (que não dá para usar: o
+// pacote dados importa auth): P0001, ou um dos códigos de RAISE com a primeira linha do Where
+// terminando em "at RAISE". Erro nativo (constraint, permissão) NÃO passa: leva nome de tabela.
+func raiseDoBanco(err error) (string, bool) {
+	var pe *pgconn.PgError
+	if !errors.As(err, &pe) {
+		return "", false
+	}
+	primeira, _, _ := strings.Cut(pe.Where, "\n")
+	if pe.Code == "P0001" || (strings.HasSuffix(primeira, " at RAISE") && slices.Contains([]string{"42501", "22023", "P0002", "23514"}, pe.Code)) {
+		return pe.Message, true
+	}
+	return "", false
+}
+
+// senhaCurta: o mínimo conta CARACTERES (Ruling 33; "ééé" tem 3), o teto conta bytes (bcrypt).
+func senhaCurta(s string) bool { return utf8.RuneCountInString(s) < SenhaMinima }
+
 func sucesso(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Write([]byte(`{"success":true}`))
@@ -48,7 +69,7 @@ func sucesso(w http.ResponseWriter) {
 func (c *Conta) InviteUser(w http.ResponseWriter, r *http.Request) {
 	a := AtorDoContexto(r.Context())
 	if a.ImpersonadorID != nil {
-		falhaDaEdge(w, "Quem entrou como outra pessoa não administra contas.")
+		erroComMensagem(w, http.StatusForbidden, "sem_permissao", "Quem entrou como outra pessoa não administra contas.")
 		return
 	}
 	if a.Papel != "admin" {
@@ -69,12 +90,12 @@ func (c *Conta) InviteUser(w http.ResponseWriter, r *http.Request) {
 			falhaDaEdge(w, "Apenas superadmin pode trocar a senha de usuários")
 			return
 		}
-		if len(in.Password) < SenhaMinima {
+		if senhaCurta(in.Password) {
 			falhaDaEdge(w, "A senha precisa de no mínimo 6 caracteres")
 			return
 		}
 		if len(in.Password) > SenhaMaxima {
-			falhaDaEdge(w, "A senha pode ter no máximo 72 caracteres.")
+			falhaDaEdge(w, "A senha pode ter no máximo 72 bytes.")
 			return
 		}
 		if !reUUIDConta.MatchString(in.ResetPasswordUserId) {
@@ -97,10 +118,18 @@ func (c *Conta) InviteUser(w http.ResponseWriter, r *http.Request) {
 			if _, err := tx.Exec(ctx, `update profiles set precisa_trocar_senha = true where id = $1::uuid`, in.ResetPasswordUserId); err != nil {
 				return err
 			}
-			_, err = tx.Exec(ctx, `delete from sessoes where usuario_id = $1::uuid`, in.ResetPasswordUserId)
+			// links de senha ainda vivos do alvo (podem ter vazado) morrem com a senha antiga; as
+			// sessões dele, e as que ele abriu "como" outra pessoa, também
+			if _, err := tx.Exec(ctx, `delete from tokens_de_senha where usuario_id = $1::uuid and usado_em is null`, in.ResetPasswordUserId); err != nil {
+				return err
+			}
+			_, err = tx.Exec(ctx, `delete from sessoes where usuario_id = $1::uuid or impersonador_id = $1::uuid`, in.ResetPasswordUserId)
 			return err
 		})
+		frase, ehRaise := raiseDoBanco(err)
 		switch {
+		case ehRaise: // os gatilhos de profiles veem o ator (a edge escrevia como service_role)
+			falhaDaEdge(w, frase)
 		case err != nil:
 			erroJSON(w, http.StatusInternalServerError, "erro_interno")
 		case !achou:
@@ -111,7 +140,7 @@ func (c *Conta) InviteUser(w http.ResponseWriter, r *http.Request) {
 		return
 
 	case in.DeleteUserId != "":
-		if in.DeleteUserId == a.ID {
+		if strings.EqualFold(in.DeleteUserId, a.ID) { // UUID não tem caixa: A..F e a..f são a mesma conta
 			falhaDaEdge(w, "Não é possível excluir sua própria conta")
 			return
 		}
@@ -122,7 +151,7 @@ func (c *Conta) InviteUser(w http.ResponseWriter, r *http.Request) {
 		achou := false
 		err := banco.ComUsuario(ctx, c.Pool, a.ID, func(tx pgx.Tx) error {
 			// tudo numa transação: se um registro ligado barrar a exclusão (FK), o perfil também
-			// volta (a edge apagava o perfil antes e deixava um perfil sem conta). As sessões e os
+			// volta (a edge apagava o perfil antes e, se a conta não saísse, deixava uma CONTA SEM PERFIL). As sessões e os
 			// links da conta caem em cascata; as que ela abriu "como" outra pessoa (impersonador_id,
 			// sem cascata) são apagadas aqui para não barrar a exclusão de um super-admin.
 			if _, err := tx.Exec(ctx, `delete from sessoes where impersonador_id = $1::uuid`, in.DeleteUserId); err != nil {
@@ -137,7 +166,10 @@ func (c *Conta) InviteUser(w http.ResponseWriter, r *http.Request) {
 			return err
 		})
 		var pe *pgconn.PgError
+		frase, ehRaise := raiseDoBanco(err)
 		switch {
+		case ehRaise:
+			falhaDaEdge(w, frase)
 		case errors.As(err, &pe) && pe.Code == "23503":
 			falhaDaEdge(w, "Não é possível excluir: ainda há registros ligados a esta pessoa.")
 		case err != nil:
@@ -150,7 +182,11 @@ func (c *Conta) InviteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	email := strings.ToLower(strings.TrimSpace(in.Email))
+	// usuarios.email em minúsculas (como o Auth do Supabase fazia); profiles.email COMO DIGITADO
+	// (como a edge gravava): a tela de vendedoras em lote e a da Frota procuram o perfil por
+	// igualdade exata no e-mail digitado.
+	emailDigitado := strings.TrimSpace(in.Email)
+	email := strings.ToLower(emailDigitado)
 	if email == "" {
 		falhaDaEdge(w, "Email obrigatório")
 		return
@@ -171,9 +207,9 @@ func (c *Conta) InviteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if len(in.Password) >= SenhaMinima { // criar já com senha (a edge: password && length >= 6)
+	if !senhaCurta(in.Password) { // criar já com senha (a edge: password && length >= 6)
 		if len(in.Password) > SenhaMaxima {
-			falhaDaEdge(w, "A senha pode ter no máximo 72 caracteres.")
+			falhaDaEdge(w, "A senha pode ter no máximo 72 bytes.")
 			return
 		}
 		if existente != "" {
@@ -192,9 +228,13 @@ func (c *Conta) InviteUser(w http.ResponseWriter, r *http.Request) {
 				return err
 			}
 			_, err := tx.Exec(ctx, `insert into profiles (id, email, name, role) values ($1::uuid, $2::text, $3::text, $4::text)
-			    on conflict (id) do update set email = excluded.email, name = excluded.name, role = excluded.role`, id, email, in.Name, papel)
+			    on conflict (id) do update set email = excluded.email, name = excluded.name, role = excluded.role`, id, emailDigitado, in.Name, papel)
 			return err
 		}); err != nil {
+			if msg, ok := raiseDoBanco(err); ok {
+				falhaDaEdge(w, msg)
+				return
+			}
 			if jaCadastrado(err) { // dois pedidos juntos para o mesmo e-mail: o índice único decide
 				falhaDaEdge(w, "A user with this email address has already been registered")
 				return
@@ -227,13 +267,17 @@ func (c *Conta) InviteUser(w http.ResponseWriter, r *http.Request) {
 			return err
 		}
 		if _, err := tx.Exec(ctx, `insert into profiles (id, email, name, role) values ($1::uuid, $2::text, $3::text, $4::text)
-		    on conflict (id) do nothing`, id, email, in.Name, papel); err != nil {
+		    on conflict (id) do nothing`, id, emailDigitado, in.Name, papel); err != nil {
 			return err
 		}
 		link, err = novoLink(ctx, tx, id, "convite", base, PrazoConvite)
 		assunto, frase = "Você foi convidado para a Central", "Você foi convidado! Crie a sua senha pelo link (vale por 24 horas): "
 		return err
 	})
+	if msg, ok := raiseDoBanco(err); ok {
+		falhaDaEdge(w, msg)
+		return
+	}
 	if jaCadastrado(err) {
 		falhaDaEdge(w, "A user with this email address has already been registered")
 		return

@@ -5,9 +5,11 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -43,7 +45,6 @@ func TestInviteUserPortaoEContrato(t *testing.T) {
 	}{
 		{"viewer", `{"email":"novo@x.com"}`, `{"error":"Apenas administradores podem realizar esta ação"}`},
 		{"viewer", `lixo`, `{"error":"Apenas administradores podem realizar esta ação"}`},
-		{"admin-impersonado", `{"email":"novo@x.com"}`, `{"error":"Quem entrou como outra pessoa não administra contas."}`},
 		{"admin", `{}`, `{"error":"Email obrigatório"}`},
 		{"admin", `{"email":"sem-arroba"}`, `{"error":"E-mail inválido"}`},
 		{"admin", `{"resetPasswordUserId":"` + toks["viewer-id"] + `","password":"nova-senha"}`, `{"error":"Apenas superadmin pode trocar a senha de usuários"}`},
@@ -58,6 +59,11 @@ func TestInviteUserPortaoEContrato(t *testing.T) {
 		if w.Code != 400 || strings.TrimSpace(w.Body.String()) != k.quer {
 			t.Errorf("%s %s = %d %s", k.quem, k.corpo, w.Code, w.Body)
 		}
+	}
+	// "entrar como" não administra contas: 403 no formato do núcleo, com a frase em "mensagem"
+	if w := chamar(h, "POST", "/invite-user", `{"email":"novo@x.com"}`, toks["admin-impersonado"]); w.Code != 403 ||
+		strings.TrimSpace(w.Body.String()) != `{"error":"sem_permissao","mensagem":"Quem entrou como outra pessoa não administra contas."}` {
+		t.Errorf("entrar como = %d %s", w.Code, w.Body)
 	}
 	var n int
 	c.Pool.QueryRow(context.Background(), `select count(*) from usuarios where email = 'novo@x.com'`).Scan(&n)
@@ -191,11 +197,11 @@ func TestInviteUserNegaQuemNaoEAdmin(t *testing.T) {
 	for _, quem := range []string{"viewer", "editor", "sem-perfil", "admin-impersonado", "super-impersonado"} {
 		for _, corpo := range corpos {
 			w := chamar(h, "POST", "/invite-user", corpo, toks[quem])
-			quer := `{"error":"Apenas administradores podem realizar esta ação"}`
+			quer, status := `{"error":"Apenas administradores podem realizar esta ação"}`, 400
 			if strings.Contains(quem, "impersonado") {
-				quer = `{"error":"Quem entrou como outra pessoa não administra contas."}`
+				quer, status = `{"error":"sem_permissao","mensagem":"Quem entrou como outra pessoa não administra contas."}`, 403
 			}
-			if w.Code != 400 || strings.TrimSpace(w.Body.String()) != quer {
+			if w.Code != status || strings.TrimSpace(w.Body.String()) != quer {
 				t.Errorf("%s %s = %d %s", quem, corpo, w.Code, w.Body)
 			}
 		}
@@ -504,6 +510,210 @@ func TestInviteUserNaoVazaSegredoNoLogEValidaCorpo(t *testing.T) {
 	for _, e := range []string{"a@b", "a b@x.com", "@x.com", "a@@x.com", strings.Repeat("a", 250) + "@x.com"} {
 		if w := chamar(h, "POST", "/invite-user", `{"email":"`+e+`"}`, toks["admin"]); w.Code != 400 || !strings.Contains(w.Body.String(), "E-mail inválido") {
 			t.Errorf("e-mail %.20q = %d %s", e, w.Code, w.Body)
+		}
+	}
+}
+
+// B1: o Auth normalizava o e-mail de auth.users, mas a edge gravava profiles.email COMO RECEBIDO,
+// e duas telas (vendedoras em lote, Frota) procuram o perfil por igualdade exata.
+func TestInviteUserPerfilGuardaOEmailComoDigitado(t *testing.T) {
+	c, _, h, toks := montarConvite(t)
+	ctx := context.Background()
+	dois := func(email string) (usuario, perfil string) {
+		if err := c.Pool.QueryRow(ctx, `select u.email, p.email from usuarios u join profiles p on p.id = u.id where lower(u.email) = lower($1::text)`, email).Scan(&usuario, &perfil); err != nil {
+			t.Fatalf("%s: %v", email, err)
+		}
+		return
+	}
+	// criar com senha, e convidar sem senha
+	for corpo, quer := range map[string]string{
+		`{"email":"  Ana.Silva@Loja.com ","password":"senha-boa"}`: "Ana.Silva@Loja.com",
+		`{"email":" Bia.Souza@Loja.com "}`:                         "Bia.Souza@Loja.com",
+	} {
+		if w := chamar(h, "POST", "/invite-user", corpo, toks["admin"]); w.Code != 200 {
+			t.Fatalf("%s = %d %s", corpo, w.Code, w.Body)
+		}
+		u, p := dois(quer)
+		if u != strings.ToLower(quer) || p != quer {
+			t.Errorf("usuarios.email=%q (esperava %q) profiles.email=%q (esperava %q)", u, strings.ToLower(quer), p, quer)
+		}
+		// a busca exata que as telas fazem (`email=eq.`) acha o perfil
+		var n int
+		c.Pool.QueryRow(ctx, `select count(*) from profiles where email = $1::text`, quer).Scan(&n)
+		if n != 1 {
+			t.Errorf("busca exata por %q achou %d perfis", quer, n)
+		}
+	}
+	// is_superadmin por lista de e-mail é sensível a caixa em produção: criar BRENO@... NÃO herda o
+	// poder (nenhum privilégio novo); o e-mail fica como digitado e não casa com a lista em minúsculas.
+	if w := chamar(h, "POST", "/invite-user", `{"email":"BRENO@RBVCOMPANY.COM","password":"senha-boa"}`, toks["admin"]); w.Code != 200 {
+		t.Fatalf("criar = %d %s", w.Code, w.Body)
+	}
+	var casaComALista, super bool
+	c.Pool.QueryRow(ctx, `select email = any (array['breno@rbvcompany.com']::text[]), coalesce(is_superadmin, false) from profiles where lower(email) = 'breno@rbvcompany.com'`).Scan(&casaComALista, &super)
+	if casaComALista || super {
+		t.Fatalf("BRENO@RBVCOMPANY.COM casou com a lista (%v) ou virou super (%v)", casaComALista, super)
+	}
+}
+
+// m1: o UUID da própria conta em maiúsculas não pode furar a trava "não exclua a si mesmo".
+func TestInviteUserNaoExcluiASiMesmoComUUIDEmMaiusculas(t *testing.T) {
+	c, _, h, toks := montarConvite(t)
+	for _, id := range []string{strings.ToUpper(toks["admin-id"]), toks["admin-id"]} {
+		w := chamar(h, "POST", "/invite-user", `{"deleteUserId":"`+id+`"}`, toks["admin"])
+		if w.Code != 400 || strings.TrimSpace(w.Body.String()) != `{"error":"Não é possível excluir sua própria conta"}` {
+			t.Errorf("excluir a si mesmo (%s) = %d %s", id, w.Code, w.Body)
+		}
+	}
+	var n int
+	c.Pool.QueryRow(context.Background(), `select count(*) from usuarios where id = $1::uuid`, toks["admin-id"]).Scan(&n)
+	if n != 1 {
+		t.Fatal("o admin se excluiu")
+	}
+	// em maiúsculas, o alvo é achado do mesmo jeito (o Postgres lê UUID sem caixa)
+	if w := chamar(h, "POST", "/invite-user", `{"deleteUserId":"`+strings.ToUpper(toks["viewer-id"])+`"}`, toks["admin"]); w.Code != 200 {
+		t.Fatalf("excluir outro em maiúsculas = %d %s", w.Code, w.Body)
+	}
+}
+
+// m3: o mínimo conta CARACTERES (Ruling 33); o teto de 72 continua em BYTES.
+func TestInviteUserMinimoDeSenhaContaCaracteres(t *testing.T) {
+	c, _, h, toks := montarConvite(t)
+	ctx := context.Background()
+	if msg := validarSenha("ééé"); msg == "" {
+		t.Error("validarSenha aceitou 3 caracteres (6 bytes)")
+	}
+	if msg := validarSenha("éééééé"); msg != "" {
+		t.Errorf("validarSenha recusou 6 caracteres: %s", msg)
+	}
+	if msg := validarSenha(strings.Repeat("é", 37)); msg == "" {
+		t.Error("validarSenha aceitou 74 bytes")
+	}
+	if utf8.RuneCountInString("ééé") != 3 {
+		t.Fatal("premissa")
+	}
+	// reset: "ééé" recusada (a senha do alvo não muda); "éééééé" vale
+	w := chamar(h, "POST", "/invite-user", `{"resetPasswordUserId":"`+toks["viewer-id"]+`","password":"ééé"}`, toks["super"])
+	if w.Code != 400 || !strings.Contains(w.Body.String(), "no mínimo 6") {
+		t.Fatalf("reset com 3 caracteres = %d %s", w.Code, w.Body)
+	}
+	entrar(t, h, "viewer@x.com", "s3nha")
+	if w := chamar(h, "POST", "/invite-user", `{"resetPasswordUserId":"`+toks["viewer-id"]+`","password":"éééééé"}`, toks["super"]); w.Code != 200 {
+		t.Fatalf("reset com 6 caracteres = %d %s", w.Code, w.Body)
+	}
+	// criar: com 3 caracteres não nasce conta com essa senha (como na edge, vira convite por e-mail)
+	if w := chamar(h, "POST", "/invite-user", `{"email":"curta@x.com","password":"ééé"}`, toks["admin"]); w.Code != 200 {
+		t.Fatalf("criar com 3 caracteres = %d %s", w.Code, w.Body)
+	}
+	var comSenha bool
+	c.Pool.QueryRow(ctx, `select senha_hash is not null from usuarios where email = 'curta@x.com'`).Scan(&comSenha)
+	if comSenha {
+		t.Fatal("a conta nasceu com a senha de 3 caracteres")
+	}
+	if w := chamar(h, "POST", "/auth/entrar", `{"email":"curta@x.com","senha":"ééé"}`, ""); w.Code == 200 {
+		t.Fatal("entrou com a senha de 3 caracteres")
+	}
+	if w := chamar(h, "POST", "/invite-user", `{"email":"longa@x.com","password":"éééééé"}`, toks["admin"]); w.Code != 200 {
+		t.Fatalf("criar com 6 caracteres = %d %s", w.Code, w.Body)
+	}
+	entrar(t, h, "longa@x.com", "éééééé")
+}
+
+// m4: o reset roda com a identidade do ator e passa pelos gatilhos de profiles (a edge escrevia
+// como service_role, que o guard_profiles deixa passar). A frase do RAISE chega à tela (400) e a
+// transação volta inteira; um erro nativo do banco não vaza.
+func TestInviteUserRaiseDoGatilhoVira400ComAFrase(t *testing.T) {
+	c, _, h, toks := montarConvite(t)
+	ctx := context.Background()
+	alvo := toks["viewer-id"]
+	c.Pool.Exec(ctx, `create function barra_fn() returns trigger language plpgsql as $f$ begin
+	    raise exception 'Só um super-admin da lista pode mexer neste perfil' using errcode = 'P0001'; end $f$`)
+	c.Pool.Exec(ctx, `create trigger barra_t before update on profiles for each row execute function barra_fn()`)
+	antes := fotoDeContas(t, c)
+	w := chamar(h, "POST", "/invite-user", `{"resetPasswordUserId":"`+alvo+`","password":"provisoria"}`, toks["super"])
+	if w.Code != 400 || strings.TrimSpace(w.Body.String()) != `{"error":"Só um super-admin da lista pode mexer neste perfil"}` {
+		t.Fatalf("reset barrado pelo gatilho = %d %s", w.Code, w.Body)
+	}
+	if depois := fotoDeContas(t, c); depois != antes {
+		t.Fatalf("o reset barrado deixou resto:\n antes  %s\n depois %s", antes, depois)
+	}
+	entrar(t, h, "viewer@x.com", "s3nha") // a senha antiga continua valendo (e o login abre uma sessão: nova foto)
+	antes = fotoDeContas(t, c)
+	// o mesmo para excluir e criar
+	c.Pool.Exec(ctx, `drop trigger barra_t on profiles`)
+	c.Pool.Exec(ctx, `create trigger barra_t before delete or insert on profiles for each row execute function barra_fn()`)
+	for _, corpo := range []string{`{"deleteUserId":"` + alvo + `"}`, `{"email":"nova@x.com","password":"senha-boa"}`, `{"email":"nova2@x.com"}`} {
+		w := chamar(h, "POST", "/invite-user", corpo, toks["admin"])
+		if w.Code != 400 || !strings.Contains(w.Body.String(), "Só um super-admin da lista") {
+			t.Errorf("%s = %d %s", corpo, w.Code, w.Body)
+		}
+	}
+	if depois := fotoDeContas(t, c); depois != antes {
+		t.Fatalf("recusado pelo gatilho e mesmo assim mudou o banco:\n antes  %s\n depois %s", antes, depois)
+	}
+	// erro nativo (não é RAISE nosso) continua 500 sem texto do banco
+	c.Pool.Exec(ctx, `drop trigger barra_t on profiles`)
+	c.Pool.Exec(ctx, `alter table profiles add constraint so_perfil_ok check (precisa_trocar_senha = false)`)
+	w = chamar(h, "POST", "/invite-user", `{"resetPasswordUserId":"`+alvo+`","password":"provisoria"}`, toks["super"])
+	if w.Code != 500 || strings.Contains(w.Body.String(), "so_perfil_ok") || strings.Contains(w.Body.String(), "profiles") {
+		t.Fatalf("erro nativo = %d %s", w.Code, w.Body)
+	}
+}
+
+// m5: a troca de senha pelo super-admin derruba também as sessões em que o alvo é o IMPERSONADOR
+// e mata os links de senha ainda vivos do alvo (podem ter vazado).
+func TestInviteUserResetDerrubaSessoesComoImpersonadorELinksVivos(t *testing.T) {
+	c, _, h, toks := montarConvite(t)
+	ctx := context.Background()
+	alvo := toks["viewer-id"]
+	// o alvo entrou como o admin (sessão do admin com impersonador_id = alvo)
+	comoAdmin, err := c.Sessoes.Criar(ctx, toks["admin-id"], "painel", &alvo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Pool.Exec(ctx, `insert into tokens_de_senha (token_hash, usuario_id, tipo, expira_em) values ('vivo-1', $1::uuid, 'recuperacao', now() + interval '1 hour'), ('vivo-2', $1::uuid, 'convite', now() + interval '1 day')`, alvo)
+	c.Pool.Exec(ctx, `insert into tokens_de_senha (token_hash, usuario_id, tipo, expira_em) values ('vivo-do-outro', $1::uuid, 'recuperacao', now() + interval '1 hour')`, toks["admin-id"])
+	if w := chamar(h, "POST", "/invite-user", `{"resetPasswordUserId":"`+alvo+`","password":"provisoria"}`, toks["super"]); w.Code != 200 {
+		t.Fatalf("reset = %d %s", w.Code, w.Body)
+	}
+	if _, err := c.Sessoes.Buscar(ctx, comoAdmin); err != ErrSessaoInvalida {
+		t.Fatalf("a sessão aberta pelo alvo como outra pessoa continuou: %v", err)
+	}
+	var doAlvo, doOutro int
+	c.Pool.QueryRow(ctx, `select count(*) filter (where usuario_id = $1::uuid), count(*) filter (where usuario_id = $2::uuid) from tokens_de_senha where usado_em is null`, alvo, toks["admin-id"]).Scan(&doAlvo, &doOutro)
+	if doAlvo != 0 || doOutro != 1 {
+		t.Fatalf("links vivos: do alvo %d (esperava 0), de outra pessoa %d (esperava 1)", doAlvo, doOutro)
+	}
+}
+
+// m7: o link do e-mail só leva a um endereço do app; Origin forjado cai no padrão.
+func TestInviteUserOrigemForjadaNaoViraLink(t *testing.T) {
+	_, cor, h, toks := montarConvite(t)
+	pedir := func(origem, corpo string) string {
+		r := httptest.NewRequest("POST", "/invite-user", strings.NewReader(corpo))
+		r.Header.Set("Authorization", "Bearer "+toks["admin"])
+		r.Header.Set("Origin", origem)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != 200 {
+			t.Fatalf("%s = %d %s", corpo, w.Code, w.Body)
+		}
+		env := cor.lista()
+		m := reLink.FindStringSubmatch(env[len(env)-1].texto)
+		if m == nil {
+			t.Fatalf("sem link em %+v", env[len(env)-1])
+		}
+		return m[1]
+	}
+	for _, corpo := range []string{`{"email":"forja1@x.com"}`, `{"email":"viewer@x.com"}`} { // convite novo e troca de quem já existe
+		if got := pedir("https://central.exemplo.ladrao.net", corpo); got != padrao {
+			t.Errorf("%s: origem forjada levou o link para %s", corpo, got)
+		}
+		if got := pedir("", corpo); got != padrao {
+			t.Errorf("%s: sem origem levou o link para %s", corpo, got)
+		}
+		if got := pedir(central, corpo); got != central {
+			t.Errorf("%s: origem do app levou o link para %s", corpo, got)
 		}
 	}
 }
