@@ -43,7 +43,7 @@
 (Dos planos; o pré-voo confere cada uma. Nome diferente só de campo/função: use o real em todo o plano. Semântica diferente: **pare e reporte**.)
 
 - **5.0** — `dados.Consulta{Tabela, Alias, SQL, Onde; Filtros []Filtro; Ordens map[string]string; OrdemPadrao, Desempate string}` com `Validar(cat)`/`Handler(b, cat)` (`panic` na montagem se a declaração é inválida; `contar=1` → `X-Total-Count` sob a MESMA regra; teto 1000; parâmetro desconhecido = 400; `left join … on … and {ler:<tabela>:<alias>}`); `dados.Filtro{Param, SQL, Tipo}` (`texto|uuid|inteiro|data|instante|booleano`); `dados.LerCorpo` (`DisallowUnknownFields`, 1 MiB), `dados.Erro`, `dados.Responder`, `dados.ErroDeEscrita`, `dados.Campos`. `autz`: `Producao`, `Escopo{ID, TemPerfil, Ativo, Papel, SuperFicha, Modulos, TodasContas, Contas…}` com `Modulo(m)`, `CarregarEscopo`, `EscopoDo`, `NoContexto`, `ComEscopo`, `Ler/Criar/Editar/EditarNova/Apagar`, `(*Catalogo).Filtro/PodeCriar`, `Filtro.Nega/Juntar`, `Conferir`, `ErrNegado`, `ErrNaoEncontrado`, `ErrDeclaracao`, `Regra`. `auth`: `Ator{ID, Tipo, SuperAdmin, Modulos, ImpersonadorID}`, `AtorDoContexto`, `NoContexto`, `Exigir`, `ExigirModulo` (passa super-admin pela ficha, papel `admin` ou o módulo), `NovoLimitador`/`Limitador{Max, Janela}.Tentar(k)`. `banco.ComUsuario`. `rpc.Funcao{Nome, Params, Retorno, Portao}`, `rpc.Param{Nome, Tipo, Opcional}`, `rpc.Novo`, `rpc.Valor`. `web.Rotas`, `web.FuncoesRPC`, `web.RPCPendentes` (contém `gt_registrar_problemas`), `comPrazo`, `EscritaDoServidor` (150 s), mapas `publicas`/`soSessao` de `rotas_test.go`. `config.Config`/`Segredos()`.
-- **5.1** — `testebanco.ComEsquemaDeProducao(t)` (banco novo: compat + migrações + `esquema/*.sql` em ordem de nome); `esquema/01-tabelas-5-1.sql` (`profiles`, `usuarios` vêm das migrações); `dados.Tabela{Nome, Resposta, Autor}` com `Validar`, `Criar`, `Editar`, `Apagar`; `dados.RotaCriar[C]/RotaEditar[C]/RotaApagar` (id de `chi.URLParam(r, "id")`; `C.Validar()`; `{}` = 400; invisível = 404; regra que lê coluna declarada e ausente = `400 "Informe <coluna>."`).
+- **5.1** — `testebanco.ComEsquemaDeProducao(t)` (banco novo: compat + migrações + `esquema/*.sql` em ordem de nome); `esquema/01-tabelas-5-01.sql` (`profiles`, `usuarios` vêm das migrações); `dados.Tabela{Nome, Resposta, Autor}` com `Validar`, `Criar`, `Editar`, `Apagar`; `dados.RotaCriar[C]/RotaEditar[C]/RotaApagar` (id de `chi.URLParam(r, "id")`; `C.Validar()`; `{}` = 400; invisível = 404; regra que lê coluna declarada e ausente = `400 "Informe <coluna>."`).
 - **5.2 (fundação comum)** — `dados.SoSessaoPropria(frase)`, `dados.FraseEntrarComo`; `testebanco/mundoteste`: `Pessoa{Chave, ID, Email, Papel; Super, Trava, Desativado; Modulos, Contas}` (`Contas` nil = `allowed_accounts` nulo; `[]string{}` = `'{}'`), `Opcoes{Pessoas, Linhas, Impersonadas}`, `Novo(t, o, montar...)`, `Mundo{P, H, Tok}` com `Resposta/Pedir/Um/Rodar`, `Caso{Nome, Quem, Metodo, Caminho, Corpo, Status, Tem, NaoTem, Efeito, Quer}`. **Não usados** (trilha A do 5.2, podem não existir): `Tabela.CriarSoLegivel` (a decisão da fila confere a leitura por conta própria: Ruling 5.7-5). `rpc.Funcao.SoSessaoPropria`: usado; se o 5.2 ainda não o trouxe, a Task 2 o acrescenta com o código EXATO do plano 5.2 (Task 2, Step 3), para o merge posterior ser idêntico.
 - **5.6** — `autz.PodeVerConta(e *Escopo, conta string) bool` (e `VeTodasAsContas`); `redes.upsertVisivel(ctx, tx, e, tab, chave, linha, resposta)` em `api/internal/redes/escolhas.go` (a Task 2 o promove a `dados.UpsertVisivel` e o 5.6 passa a chamar o promovido); `GET /redes/contas` (a tela lê as contas por ele). **Nenhuma FK das tabelas gt_* aponta para `accounts`** (em produção `account_id` é texto sem FK): a fatia 5.7 não depende da fatia 5.6; só o código depende do 5.6.
 
@@ -53,7 +53,7 @@
 - `rpc.Funcao.ParamConta string` (Task 2): RPC que recebe uma conta da Meta confere `autz.PodeVerConta` antes de rodar.
 - `trafego.Montar(r chi.Router, p *pgxpool.Pool)` e `trafego.FuncoesRPC` (Tasks 8 e 11).
 - `ia.Nova(chave string) *ia.IA` com `SugerirPublico` e `LerDocumento`; `mapa.Novo() *mapa.Mapa` (`http.Handler`): o `POST /buscar-lugar` serve também à fábrica (5.8 não porta outro).
-- D0: `esquema/01-tabelas-5-7.sql` (as 10 tabelas e `fabrica_marcas`, que é do 5.8 e passa a ser declarada aqui: Ruling 5.7-1) e `esquema/03-funcoes-5-7.sql` (gatilho e RPC verbatim).
+- D0: `esquema/01-tabelas-5-07.sql` (as 10 tabelas e `fabrica_marcas`, que é do 5.8 e passa a ser declarada aqui: Ruling 5.7-1) e `esquema/03-funcoes-5-07.sql` (gatilho e RPC verbatim).
 - `config.Config.IATrafego` (`ANTHROPIC_API_KEY_TRAFEGO`).
 
 ## Pré-voo (antes da Task 1)
@@ -88,8 +88,8 @@
 ## Estrutura de arquivos
 
 ```
-api/internal/testebanco/esquema/01-tabelas-5-7.sql      # as 10 tabelas + fabrica_marcas (fonte por bloco)
-api/internal/testebanco/esquema/03-funcoes-5-7.sql      # gt_rascunho_toca_updated_at + gatilho e gt_registrar_problemas VERBATIM
+api/internal/testebanco/esquema/01-tabelas-5-07.sql      # as 10 tabelas + fabrica_marcas (fonte por bloco)
+api/internal/testebanco/esquema/03-funcoes-5-07.sql      # gt_rascunho_toca_updated_at + gatilho e gt_registrar_problemas VERBATIM
 api/internal/testebanco/esquema_trafego_test.go         # TestFatiaDoTrafego
 api/internal/dados/upsert.go           (+ upsert_test.go) # UpsertVisivel (promovido do 5.6)
 api/internal/redes/escolhas.go                           # (mod.) chama dados.UpsertVisivel; o local sai
@@ -111,7 +111,7 @@ api/cmd/api/conferir.go                (+ conferir_test.go) # colunas, tipos, ú
 docs/migracao-go/NOTAS-DA-IMPLANTACAO.md                 # seção do 5.7
 ```
 
-**Não toca:** `esquema/gerar-gatilhos.mjs` nem `esquema/02-gatilhos.sql` (o único gatilho das 10 tabelas vai verbatim em `03-funcoes-5-7.sql` com `create or replace trigger`: Ruling 5.7-1); `autz` (nenhum átomo novo: as 24 policies já compilam; o portão da RPC mora em `trafego`); `meta` e o `meta-proxy`.
+**Não toca:** `esquema/gerar-gatilhos.mjs` nem `esquema/02-gatilhos.sql` (o único gatilho das 10 tabelas vai verbatim em `03-funcoes-5-07.sql` com `create or replace trigger`: Ruling 5.7-1); `autz` (nenhum átomo novo: as 24 policies já compilam; o portão da RPC mora em `trafego`); `meta` e o `meta-proxy`.
 
 ## Tarefas
 
@@ -136,8 +136,8 @@ docs/migracao-go/NOTAS-DA-IMPLANTACAO.md                 # seção do 5.7
 **Revisor:** opus. **Depende de:** 5.1 Task 1 (carregador, `usuarios`, `profiles`).
 
 **(a) Contrato**
-- `esquema/01-tabelas-5-7.sql` (abaixo): as 10 tabelas da linha 5.7 e `fabrica_marcas` (dona: 5.8; declarada aqui porque `interesses_sugeridos` tem FK para ela e `01-tabelas-5-7` carrega ANTES de `01-tabelas-5-8`: Ruling 5.7-1). Cada bloco com a fonte; o que não tem DDL no repositório leva `presumido` e é conferido pelo `api worker conferir` (Task 11). FKs de `auth.users` viram `public.usuarios` (como no dump limpo). Nenhuma FK para `accounts` (produção não tem).
-- `esquema/03-funcoes-5-7.sql`: `gt_rascunho_toca_updated_at` (`levantamento/02-funções.csv:1201-1208`) e o gatilho `gt_rascunho_updated_at` (`03-triggers.csv:26`; `BEFORE UPDATE … FOR EACH ROW`, como na migration `2026-08-03-gt-rascunhos-de-campanha.sql`), e `gt_registrar_problemas` (`02-funções.csv:1210-1286`), **verbatim** entre `CREATE` e `$function$`. `create or replace trigger` (Postgres 14+): se um dia o gerador também emitir este gatilho em `02-gatilhos.sql`, a recriação aqui é idempotente.
+- `esquema/01-tabelas-5-07.sql` (abaixo): as 10 tabelas da linha 5.7 e `fabrica_marcas` (dona: 5.8; declarada aqui porque `interesses_sugeridos` tem FK para ela e `01-tabelas-5-7` carrega ANTES de `01-tabelas-5-8`: Ruling 5.7-1). Cada bloco com a fonte; o que não tem DDL no repositório leva `presumido` e é conferido pelo `api worker conferir` (Task 11). FKs de `auth.users` viram `public.usuarios` (como no dump limpo). Nenhuma FK para `accounts` (produção não tem).
+- `esquema/03-funcoes-5-07.sql`: `gt_rascunho_toca_updated_at` (`levantamento/02-funções.csv:1201-1208`) e o gatilho `gt_rascunho_updated_at` (`03-triggers.csv:26`; `BEFORE UPDATE … FOR EACH ROW`, como na migration `2026-08-03-gt-rascunhos-de-campanha.sql`), e `gt_registrar_problemas` (`02-funções.csv:1210-1286`), **verbatim** entre `CREATE` e `$function$`. `create or replace trigger` (Postgres 14+): se um dia o gerador também emitir este gatilho em `02-gatilhos.sql`, a recriação aqui é idempotente.
 - Os únicos são os alvos de `ON CONFLICT` da tela (`gt_config_metricas(balde)`, `gt_objetivo_interacao(alvo_id)`), da RPC (`gt_problemas_meta(ad_id, codigo)`) e do robô `sugerir-interesses` (`interesses_sugeridos(marca_id, objetivo)`).
 
 **(b) Testes de aceitação** (`TestFatiaDoTrafego`, `esquema_trafego_test.go`, num `testebanco.ComEsquemaDeProducao`)
@@ -148,18 +148,18 @@ docs/migracao-go/NOTAS-DA-IMPLANTACAO.md                 # seção do 5.7
 - Checks (cada um `23514`): `gt_fila_decisoes.escopo = 'outro'`; `gt_fila_decisoes.decisao = 'talvez'`; `gt_campanhas_rascunho.status = 'x'`; `gt_ponderada_config.id = 2`; `gt_objetivo_interacao.interacao = 'likes'`; `gt_objetivo_interacao.nivel = 'conta'`.
 - FKs (`23503`): `interesses_sugeridos` com `marca_id` inexistente; `gt_campanhas_rascunho` com `criado_por` inexistente. `delete from fabrica_marcas` leva junto os `interesses_sugeridos` dela (`on delete cascade`).
 - `gt_registrar_problemas` verbatim: `pg_get_functiondef('public.gt_registrar_problemas(text,jsonb)'::regprocedure)` contém `SECURITY DEFINER`, `service_role` e `distinct on (ad_id, codigo)`; chamada como pessoa com `features '{meta.gestor}'` com `p_conta 'A1'` e um item → `1` e a linha existe com `account_id = 'A1'`; como pessoa `viewer` sem módulo → `P0001` com `Sem permissao na Gestao de Trafego.`.
-- Mutações que têm de reprovar: apagar `03-funcoes-5-7.sql` (gatilho e função somem); tirar o `unique (marca_id, objetivo)`; trocar `account_id text` por `uuid` em `gt_problemas_meta` (a RPC grava `p_conta` texto: `'A1'` não converte).
+- Mutações que têm de reprovar: apagar `03-funcoes-5-07.sql` (gatilho e função somem); tirar o `unique (marca_id, objetivo)`; trocar `account_id text` por `uuid` em `gt_problemas_meta` (a RPC grava `p_conta` texto: `'A1'` não converte).
 
-**(c) Arquivos:** Create `api/internal/testebanco/esquema/01-tabelas-5-7.sql`, `api/internal/testebanco/esquema/03-funcoes-5-7.sql`, `api/internal/testebanco/esquema_trafego_test.go`.
+**(c) Arquivos:** Create `api/internal/testebanco/esquema/01-tabelas-5-07.sql`, `api/internal/testebanco/esquema/03-funcoes-5-07.sql`, `api/internal/testebanco/esquema_trafego_test.go`.
 
 **(d) Dependências:** 5.1 Task 1; `banco.ComUsuario`.
 
-- [ ] **Step 1: A DDL da fatia.** Crie `api/internal/testebanco/esquema/01-tabelas-5-7.sql`:
+- [ ] **Step 1: A DDL da fatia.** Crie `api/internal/testebanco/esquema/01-tabelas-5-07.sql`:
 
 ```sql
 -- FATIA 5.7 do esquema de produção para os testes (D0 reconstruído: Rulings 5.1-1, 5.6-1 e 5.7-1).
 -- Carrega depois de 01-tabelas-5-1…5-6 (ordem de nome) e antes de 01-tabelas-5-8. As funções e o
--- único gatilho vêm em 03-funcoes-5-7.sql. Nenhuma FK para accounts: em produção account_id destas
+-- único gatilho vêm em 03-funcoes-5-07.sql. Nenhuma FK para accounts: em produção account_id destas
 -- tabelas é TEXTO sem FK (as policies fazem pode_ver_conta(account_id) sem cast). FKs de auth.users
 -- viram public.usuarios (ops/migracao/limpar-dump.mjs:64). "presumido" = sem DDL no repositório;
 -- conferido pelo `api worker conferir` no banco restaurado.
@@ -320,7 +320,7 @@ create table public.interesses_sugeridos (
 );
 ```
 
-- [ ] **Step 2: As funções.** Crie `api/internal/testebanco/esquema/03-funcoes-5-7.sql` (os corpos são os de produção, sem mudar um caractere entre `CREATE` e `$function$`):
+- [ ] **Step 2: As funções.** Crie `api/internal/testebanco/esquema/03-funcoes-5-07.sql` (os corpos são os de produção, sem mudar um caractere entre `CREATE` e `$function$`):
 
 ```sql
 -- VERBATIM de levantamento/02-funções.csv:1201-1208 e 1210-1286; o gatilho de 03-triggers.csv:26 com a
@@ -1082,7 +1082,7 @@ func montarRascunhos(r chi.Router, p *pgxpool.Pool) {
 - Criar: `gestorA1` `{"account_id":"<A1>","estado":{"objetivo":"seguidores"},"passo":1,"nome":"Nova","tipo":"Seguidores","status":"rascunho"}` → 201 com `"criado_por":"<idGestorA1>"`. Negados, contagem igual: `account_id` A2 → 403; sem `account_id` → 400 "Informe account_id."; `{"criado_por":"<idGestorTodas>",…}` → 400 `corpo_invalido`; `leitor` → 403; `superA1` → 403; `impersonado` → 403 com a frase; `"status":"enviada"`, `"estado":[]`, `"passo":51` → 400.
 - Editar: `gestorA1` `PATCH R2 {"status":"criada","resultado":{"campanha":"123"}}` → 200 e o gatilho carimbou (`select (updated_at > '2026-10-11T10:00:00Z')::text from gt_campanhas_rascunho where id = R2` = `true`); `gestorA1` `PATCH R1` (do `gestorTodas`, visível) → 403 e R1 intacto; `PATCH R3` → 404 (não vê); `PATCH R2 {"account_id":"<A2>"}` → 403 e R2 continua em A1; `PATCH /gestao-trafego/rascunhos/abc` → 404; `{}` → 400; `gestorTodas` `PATCH R3 {"nome":"x"}` → 200 (dele).
 - Apagar: `gestorA1` `DELETE R1` → 403; `DELETE R3` → 404; `impersonado` `DELETE R2` → 403; `gestorA1` `DELETE R2` → 204 e a linha some.
-- Mutações que têm de reprovar: `Autor: ""` (a linha de criar fica sem `criado_por`, que a regra lê: `autz.ErrDeclaracao`, o caso permitido vira 500); tirar `soSessaoPropria` do DELETE; apagar o gatilho de `03-funcoes-5-7.sql` (o carimbo não muda).
+- Mutações que têm de reprovar: `Autor: ""` (a linha de criar fica sem `criado_por`, que a regra lê: `autz.ErrDeclaracao`, o caso permitido vira 500); tirar `soSessaoPropria` do DELETE; apagar o gatilho de `03-funcoes-5-07.sql` (o carimbo não muda).
 
 **(c) Arquivos:** Create `api/internal/trafego/rascunhos.go`, `api/internal/trafego/rascunhos_test.go`.
 
@@ -2659,7 +2659,7 @@ Na mesma tela, de OUTROS planos (não trocar pelo 5.7): **5.6** — `accounts` (
 
 ## Rulings do 5.7
 
-1. Ruling: D0 = fatia RECONSTRUÍDA `01-tabelas-5-7.sql` (as 10 tabelas das migrations, com os presumidos marcados, e `fabrica_marcas`, que é do 5.8 mas é alvo de FK de `interesses_sugeridos` e carregaria depois) + `03-funcoes-5-7.sql` com o gatilho e a RPC verbatim, o gatilho por `create or replace trigger`; o gerador e `02-gatilhos.sql` não mudam — fica disjunto do 5.3 (que regera o `02`), a FK de produção é testada e o `create or replace` não quebra se o gerador um dia emitir o mesmo gatilho; nenhuma FK para `accounts` porque produção não tem — custo se errada: tipo presumido divergente (`impactos`, `limiares_resultado`) só aparece no `api worker conferir` do banco restaurado; o 5.8 precisa saber que `fabrica_marcas` já está declarada (dito na fatia e em "O que vem depois").
+1. Ruling: D0 = fatia RECONSTRUÍDA `01-tabelas-5-07.sql` (as 10 tabelas das migrations, com os presumidos marcados, e `fabrica_marcas`, que é do 5.8 mas é alvo de FK de `interesses_sugeridos` e carregaria depois) + `03-funcoes-5-07.sql` com o gatilho e a RPC verbatim, o gatilho por `create or replace trigger`; o gerador e `02-gatilhos.sql` não mudam — fica disjunto do 5.3 (que regera o `02`), a FK de produção é testada e o `create or replace` não quebra se o gerador um dia emitir o mesmo gatilho; nenhuma FK para `accounts` porque produção não tem — custo se errada: tipo presumido divergente (`impactos`, `limiares_resultado`) só aparece no `api worker conferir` do banco restaurado; o 5.8 precisa saber que `fabrica_marcas` já está declarada (dito na fatia e em "O que vem depois").
 2. Ruling: três pacotes — `trafego` (tabelas e RPC, grupo de domínio), `ia` (os dois proxies da Anthropic) e `mapa` (`buscar-lugar`, que serve também à fábrica) — os proxies não leem tabela nem precisam do mundo de banco, têm prazo maior que o do grupo de domínio e testes com servidor externo de mentira; separados, andam em paralelo às tasks de tabela — custo se errada: três pacotes pequenos em vez de um.
 3. Ruling: permissão = catálogo nas 10 tabelas, sem módulo nem escopo extra: "gestor" é papel `admin` ou `meta.gestor` em `features` (super-admin pela ficha NÃO entra, como em produção); as tabelas de leitura `true` (`gt_config_metricas`, `gt_objetivo_interacao`, `gt_ponderada_config`, `interesses_sugeridos`) são lidas por qualquer sessão (Ruling 36 do mestre: só sessão) e por isso ficam fora da varredura de vazamento; escrita negada pela regra vira `403`, no lugar do "0 linhas" silencioso do PostgREST — "mesmas permissões de hoje"; restringir é policy em produção, que o catálogo recompilado leva à API sem código (achados 3 e 7) — custo se errada: a régua e os objetivos de todas as contas continuam legíveis por todos, como hoje.
 4. Ruling: só as rotas que as telas usam, com as colunas que telas e robôs leem, e TODA leitura de tabela com a restritiva declara o filtro `account_id` e projeta `account_id` — sem rota para `gt_problemas_meta` (só robô e funções SQL a leem) nem para `gt_ponderada_config_log` (ninguém lê; a escrita é do `PUT /regua`); `decidido_por`/`updated_by` (uuid de pessoa) não saem — rota sem tela é superfície sem dono, e a varredura só prova algo se a conta aparece na resposta — custo se errada: uma tela nova que queira o histórico da régua ou os problemas ganha uma `Consulta` de ~5 linhas.
