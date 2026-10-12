@@ -181,6 +181,8 @@ import { onMounted, onUnmounted } from 'vue'
 import BarraDeTopo from '../../compartilhado/barra-de-topo.vue'
 import { useRouter } from 'vue-router'
 import { sbClient, SUPABASE_URL, SUPABASE_ANON_KEY } from '../../compartilhado/conectar-no-banco-de-dados.js'
+// Chave `edges-core` (Plano 7): meta-proxy pela API em Go.
+import { areaNaApi, fetchDaApi, trocarCodigoPorFrase } from '../../compartilhado/api.js'
 import { estado, hasPermission } from '../../compartilhado/controle-de-login-e-usuario.js'
 import { adminToast } from '../../compartilhado/avisos.js'
 import { sb } from '../../compartilhado/buscar-e-salvar-dados.js'
@@ -366,16 +368,18 @@ const logoEscuroUrl = '/midia/LOGOTIPOBRENOBRANCO.png'
 function adTok(){return estado.currentSession?.access_token||SUPABASE_ANON_KEY;}
 function adFetch(path,opts={}){return fetch(`${SUPABASE_URL}/rest/v1/${path}`,{...opts,headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${adTok()}`,'Content-Type':'application/json',...(opts.headers||{})}});}
 async function metaFetch(path,params,accountId){
-  const{data:{session}}=await sbClient.auth.getSession();
-  if(!session)throw new Error('Não autenticado');
+  const naApi=areaNaApi('edges-core');
+  const{data:{session}}=naApi?{data:{session:null}}:await sbClient.auth.getSession();
+  if(!naApi&&!session)throw new Error('Não autenticado');
   const ctrl=new AbortController();const timer=setTimeout(()=>ctrl.abort(),15000);
   try{
-    const r=await fetch(SUPABASE_URL+'/functions/v1/meta-proxy',{
+    const corpo=JSON.stringify({accountId,path,params});
+    const r=naApi?await fetchDaApi('/meta-proxy',{method:'POST',signal:ctrl.signal,headers:{'Content-Type':'application/json'},body:corpo}):await fetch(SUPABASE_URL+'/functions/v1/meta-proxy',{
       method:'POST',signal:ctrl.signal,
       headers:{'Authorization':'Bearer '+session.access_token,'apikey':SUPABASE_ANON_KEY,'Content-Type':'application/json'},
-      body:JSON.stringify({accountId,path,params})
+      body:corpo
     });
-    const d=await r.json();
+    const d=naApi?trocarCodigoPorFrase(r.status,await r.json()):await r.json();
     if(d&&d.error)throw new Error((d.error&&d.error.message)||d.error||'Meta API error');
     return d;
   }finally{clearTimeout(timer);}
@@ -392,16 +396,18 @@ async function metaFetchAll(path,params,accountId){
   return results;
 }
 async function metaPost(path,params,accountId){
-  const{data:{session}}=await sbClient.auth.getSession();
+  const naApi=areaNaApi('edges-core');
+  const{data:{session}}=naApi?{data:{session:null}}:await sbClient.auth.getSession();
   // Nem chegou a sair do navegador — mesma certeza de um pedido barrado no
   // proxy: nada foi gravado. Ver a classificação logo abaixo.
-  if(!session){const semSessao=new Error('Não autenticado');semSessao.naoChegouNaMeta=true;throw semSessao;}
-  const r=await fetch(SUPABASE_URL+'/functions/v1/meta-proxy',{
+  if(!naApi&&!session){const semSessao=new Error('Não autenticado');semSessao.naoChegouNaMeta=true;throw semSessao;}
+  const corpo=JSON.stringify({accountId,path,params,method:'POST'});
+  const r=naApi?await fetchDaApi('/meta-proxy',{method:'POST',headers:{'Content-Type':'application/json'},body:corpo}):await fetch(SUPABASE_URL+'/functions/v1/meta-proxy',{
     method:'POST',
     headers:{'Authorization':'Bearer '+session.access_token,'apikey':SUPABASE_ANON_KEY,'Content-Type':'application/json'},
-    body:JSON.stringify({accountId,path,params,method:'POST'})
+    body:corpo
   });
-  const d=await r.json();
+  const d=naApi?trocarCodigoPorFrase(r.status,await r.json()):await r.json();
   if(d&&d.error){
     // A EXPLICAÇÃO DA META VAI JUNTO NA MENSAGEM, e não só o `message`.
     //
@@ -5430,10 +5436,11 @@ function _gtNovoEnviarImagem(){
       const up=await sbClient.storage.from('fabrica-criativos').upload(caminho,arq,{upsert:true,contentType:arq.type});
       if(up.error)throw new Error(up.error.message);
       const {data:pub}=sbClient.storage.from('fabrica-criativos').getPublicUrl(caminho);
-      const r=await fetch(SUPABASE_URL+'/functions/v1/meta-proxy',{
+      const corpo=JSON.stringify({accountId:_gtCurAcc.id,path:'/'+_gtCleanAct(_gtCurAcc.ad_account_id)+'/adimages',method:'POST',params:{},imageFromUrl:pub.publicUrl,imageField:'envio'});
+      const r=areaNaApi('edges-core')?await fetchDaApi('/meta-proxy',{method:'POST',headers:{'Content-Type':'application/json'},body:corpo}):await fetch(SUPABASE_URL+'/functions/v1/meta-proxy',{
         method:'POST',
         headers:{'Authorization':'Bearer '+session.access_token,'apikey':SUPABASE_ANON_KEY,'Content-Type':'application/json'},
-        body:JSON.stringify({accountId:_gtCurAcc.id,path:'/'+_gtCleanAct(_gtCurAcc.ad_account_id)+'/adimages',method:'POST',params:{},imageFromUrl:pub.publicUrl,imageField:'envio'}),
+        body:corpo,
       });
       const d=await r.json().catch(()=>({}));
       const primeira=d&&d.images&&Object.values(d.images)[0];
@@ -5463,15 +5470,16 @@ async function _gtNovoEnviarVideo(arq){
     if(up.error)throw new Error(up.error.message);
     const {data:pub}=sbClient.storage.from('fabrica-criativos').getPublicUrl(caminho);
 
-    const r=await fetch(SUPABASE_URL+'/functions/v1/meta-proxy',{
+    const corpo=JSON.stringify({
+      accountId:_gtCurAcc.id,
+      path:'/'+_gtCleanAct(_gtCurAcc.ad_account_id)+'/advideos',
+      method:'POST',params:{name:String(arq.name||'vídeo')},
+      videoFromUrl:pub.publicUrl,
+    });
+    const r=areaNaApi('edges-core')?await fetchDaApi('/meta-proxy',{method:'POST',headers:{'Content-Type':'application/json'},body:corpo}):await fetch(SUPABASE_URL+'/functions/v1/meta-proxy',{
       method:'POST',
       headers:{'Authorization':'Bearer '+session.access_token,'apikey':SUPABASE_ANON_KEY,'Content-Type':'application/json'},
-      body:JSON.stringify({
-        accountId:_gtCurAcc.id,
-        path:'/'+_gtCleanAct(_gtCurAcc.ad_account_id)+'/advideos',
-        method:'POST',params:{name:String(arq.name||'vídeo')},
-        videoFromUrl:pub.publicUrl,
-      }),
+      body:corpo,
     });
     const d=await r.json().catch(()=>({}));
     if(!d||!d.id)throw new Error((d&&d.error&&(d.error.error_user_msg||d.error.message))||'a Meta não devolveu o código do vídeo');

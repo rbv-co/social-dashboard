@@ -133,7 +133,8 @@ func TestConferirSchemaVazioListaEmOrdem(t *testing.T) {
 		"coluna equipes_permissoes.chave", "coluna entradas_como_outro_usuario.admin_id", "coluna entradas_como_outro_usuario.criado_em", "coluna equipes.deposito_id",
 		"coluna access_requests.status", "coluna acessos_perfis.permissions", "coluna canais_grupos_membros.concedido_por", "coluna push_preferencias.alterado_por",
 		"único push_subs(endpoint)", "único push_preferencias(user_id,tipo)", "função guard_profiles()", "função equipes_toca_atualizado()", // Plano 5.1
-		"único chatwoot_eventos(conversation_id,tipo)", "único (dedupe do on conflict do nothing) carrinho_eventos(evento_shopify_id)"} {
+		"único chatwoot_eventos(conversation_id,tipo)", "único (dedupe do on conflict do nothing) carrinho_eventos(evento_shopify_id)",
+		"coluna noticias_concorrentes.rodada", "coluna noticias_panorama.rodada", "coluna ia_execucoes.run_at", "coluna robos_saude.critico"} {
 		if !tem(quer) {
 			t.Errorf("faltou acusar %q", quer)
 		}
@@ -150,6 +151,22 @@ func TestConferirSchemaVazioListaEmOrdem(t *testing.T) {
 	}
 }
 
+// robos_saude é uma VISÃO em produção (relkind 'v'): a conferência de colunas a enxerga, e acusa a
+// que falta nela (não olha só tabelas).
+func TestConferirEnxergaAVisaoRobosSaude(t *testing.T) {
+	p := testebanco.Novo(t)
+	esquemaCompleto(t, p, false)
+	exec(t, p, `alter table robos_saude rename to robos_saude_base`,
+		`create view robos_saude as select robo, critico from robos_saude_base`)
+	if f := faltamDe(t, p); len(f) > 0 {
+		t.Fatalf("a visão com robo e critico devia conferir:\n%s", strings.Join(f, "\n"))
+	}
+	exec(t, p, `drop view robos_saude`, `create view robos_saude as select robo from robos_saude_base`)
+	if f := faltamDe(t, p); !slices.Equal(f, []string{"coluna robos_saude.critico"}) {
+		t.Fatalf("visão sem critico: %v", f)
+	}
+}
+
 // Toda coluna como text: tipo errado em tudo. Tem de sair 1 e dizer esperado × achado.
 func TestConferirSchemaTudoTextoFalhaPeloTipo(t *testing.T) {
 	p := testebanco.Novo(t)
@@ -157,7 +174,8 @@ func TestConferirSchemaTudoTextoFalhaPeloTipo(t *testing.T) {
 	faltam := faltamDe(t, p)
 	for _, quer := range []string{"tipo accounts.id: esperado uuid, achado text", "tipo daily_snapshots.account_id: esperado uuid, achado text",
 		"tipo bling_pedido_vendedor.pedido_id: esperado bigint|integer, achado text", "tipo bling_pedido_nota.nota_situacao: esperado smallint|integer, achado text",
-		"tipo daily_snapshots.captured_at: esperado date, achado text", "tipo frota_checklist.cadencias: esperado text[], achado text"} {
+		"tipo daily_snapshots.captured_at: esperado date, achado text", "tipo frota_checklist.cadencias: esperado text[], achado text",
+		"tipo noticias_concorrentes.rodada: esperado date, achado text", "tipo noticias_panorama.rodada: esperado date, achado text"} {
 		if !slices.Contains(faltam, quer) {
 			t.Errorf("faltou acusar %q", quer)
 		}

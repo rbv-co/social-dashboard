@@ -75,6 +75,10 @@ var colunasDoWorker = map[string]string{
 	"fabrica_campanhas":           "id,created_at,fechada_em,purgado_em",
 	"fabrica_criativos":           "campanha_id,storage_path,purgado_em",
 	"robos_execucoes":             "robo,disparado_em,status_code,ok,resposta,conferido_em",
+	"noticias_concorrentes":       "id,rodada,destaque,created_at", // Plano 5.12: filtro e ordem das leituras
+	"noticias_panorama":           "rodada,conteudo_md,modelo,created_at",
+	"ia_execucoes":                "id,run_at",
+	"robos_saude":                 "robo,critico", // visão (relkind 'v'): ordem da leitura
 }
 
 // tiposDoWorker: tabela.coluna -> tipo (nome de regtype) de que o código depende (cast do parâmetro, junção,
@@ -111,6 +115,7 @@ var tiposDoWorker = map[string]string{
 	"equipes_permissoes.equipe_id": "uuid", "equipes_permissoes.profile_id": "uuid",
 	"canais_grupos_membros.grupo_id": "uuid", "canais_grupos_membros.profile_id": "uuid",
 	"push_subs.user_id": "uuid", "push_preferencias.user_id": "uuid",
+	"noticias_concorrentes.rodada": "date", "noticias_panorama.rodada": "date", // o filtro faz @rodada::date[]
 }
 
 // anulaveisDoWorker: colunas que precisam ACEITAR nulo (a migração de 2026-09-18 tirou o NOT NULL do cart_token).

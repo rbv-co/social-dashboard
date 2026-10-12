@@ -261,9 +261,10 @@ func TestSessaoDeEntrarComoGuardaOImpersonador(t *testing.T) {
 		ID             string  `json:"id"`
 		SuperAdmin     bool    `json:"superadmin"`
 		ImpersonadorID *string `json:"impersonador_id"`
+		Email          string  `json:"email"` // a faixa do "entrar como" mostra como quem a aba está
 	}
 	json.Unmarshal(w.Body.Bytes(), &eu)
-	if w.Code != 200 || eu.ID != ids["alvo"] || eu.SuperAdmin || eu.ImpersonadorID == nil || *eu.ImpersonadorID != ids["super"] {
+	if w.Code != 200 || eu.ID != ids["alvo"] || eu.SuperAdmin || eu.ImpersonadorID == nil || *eu.ImpersonadorID != ids["super"] || eu.Email != "alvo@x.com" {
 		t.Fatalf("/auth/eu na sessão impersonada = %d %s", w.Code, w.Body)
 	}
 }
