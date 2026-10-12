@@ -36,6 +36,43 @@ func colunasDa(tab string, catalogo []map[string]any) []string {
 	return out
 }
 
+// moverSQL: o update que MOVE uma linha (troca uma coluna que as policies leem por outro valor),
+// como a pessoa (SECURITY INVOKER: a RLS vale). Cada linha roda numa subtransação desfeita, então
+// uma não muda o que a outra enxerga; devolve {id: "ok" | "erro" | "0"} ("erro" = 42501: a linha
+// NOVA foi recusada; "0" = a linha antiga nem apareceu).
+const moverSQL = `
+create function autz_mover(tab text, col text, patch jsonb, ids uuid[]) returns jsonb language plpgsql as $f$
+declare r jsonb := '{}'; i uuid; n bigint := 0;
+begin
+  foreach i in array ids loop
+    begin
+      execute format('update %I set %I = (jsonb_populate_record(null::%I, $1)).%I where id = $2', tab, col, tab, col) using patch, i;
+      get diagnostics n = row_count;
+      raise exception 'desfazer' using errcode = 'P0001';
+    exception
+      when sqlstate 'P0001' then r := r || jsonb_build_object(i::text, case when n = 1 then 'ok' else '0' end);
+      when insufficient_privilege then r := r || jsonb_build_object(i::text, 'erro');
+    end;
+  end loop;
+  return r;
+end $f$;`
+
+// atualizaveis: as tabelas com policy de update/all para sessão de pessoa.
+func atualizaveis(catalogo []map[string]any) map[string]bool {
+	out := map[string]bool{}
+	for _, p := range catalogo {
+		if c := p["comando"]; c != "update" && c != "all" {
+			continue
+		}
+		for _, r := range p["papeis"].([]any) {
+			if r == "authenticated" || r == "public" {
+				out[p["tabela"].(string)] = true
+			}
+		}
+	}
+	return out
+}
+
 func nomes() []string {
 	var l []string
 	for _, c := range autzteste.Colunas {
@@ -77,6 +114,7 @@ type placar struct {
 	cobertura  map[string]*resultado
 	constantes map[string]map[string]bool // tab×op -> formas do SQL do Go vistas ("true", "false", "linha")
 	falhas     int
+	atualiz    map[string]bool // tabelas com policy de update/all
 }
 
 func (p *placar) contar(chave string, ok bool) {
@@ -126,6 +164,9 @@ func TestContratoDePermissaoContraARLSDeProducao(t *testing.T) {
 	ctx := context.Background()
 	var catalogo []map[string]any
 	json.Unmarshal(autz.CatalogoJSON(), &catalogo)
+	if _, err := m.Pool.Exec(ctx, moverSQL); err != nil {
+		t.Fatal(err)
+	}
 	var todos []any
 	for _, ps := range m.Personas {
 		todos = append(todos, ps.ID)
@@ -144,7 +185,7 @@ func TestContratoDePermissaoContraARLSDeProducao(t *testing.T) {
 			t.Fatalf("%s: %v", tab, err)
 		}
 	}
-	pl := &placar{cobertura: map[string]*resultado{}, constantes: map[string]map[string]bool{}}
+	pl := &placar{cobertura: map[string]*resultado{}, constantes: map[string]map[string]bool{}, atualiz: atualizaveis(catalogo)}
 	t.Run("pessoas", func(t *testing.T) {
 		for _, ps := range m.Personas {
 			t.Run(ps.Nome, func(t *testing.T) {
@@ -161,9 +202,19 @@ func TestContratoDePermissaoContraARLSDeProducao(t *testing.T) {
 	// mostrar o outro lado, e a constante é a própria regra (ex.: `true`, ou nenhuma policy).
 	var fracas []string
 	for k, r := range pl.cobertura {
+		if strings.HasSuffix(k, "×mover") {
+			continue // conferido abaixo, só nas tabelas em que a leitura da linha nova decide
+		}
 		c := pl.constantes[k]
 		if (r.negado == 0 && !(len(c) == 1 && c["true"])) || (r.permitido == 0 && !(len(c) == 1 && c["false"])) {
 			fracas = append(fracas, fmt.Sprintf("%s (permitido %d, negado %d, Go %v)", k, r.permitido, r.negado, c))
+		}
+	}
+	// O update que MOVE a linha tem de ter mostrado os dois lados nas tabelas em que a regra de
+	// leitura da linha nova decide (conta): senão a dimensão não pegaria o EditarNova errado.
+	for _, tab := range []string{"conteudo_pecas", "conteudo_blocos", "conteudo_ideias", "campaign_filters", "social_metas"} {
+		if r := pl.cobertura[tab+"×mover"]; r == nil || r.permitido == 0 || r.negado == 0 {
+			fracas = append(fracas, fmt.Sprintf("%s×mover não mostrou os dois lados (%+v)", tab, r))
 		}
 	}
 	sort.Strings(fracas)
@@ -277,6 +328,56 @@ func verificarPessoa(t *testing.T, m *autzteste.Mundo, pl *placar, ps autzteste.
 				pl.contar(tab+"×ler", rlsLer[x])
 				pl.contar(tab+"×apagar", rlsApagar[x])
 				pl.contar(tab+"×editar", rlsEditar[x] == "1")
+			}
+
+			// EDITAR-NOVA: o update que MOVE a linha (troca uma coluna que as policies leem por um
+			// valor que a pessoa pode ou não enxergar). A RLS exige que a linha NOVA passe no WITH
+			// CHECK das de update/all E no USING das de select/all; o Go avalia o EditarNova sobre
+			// a linha movida. Só as linhas que a pessoa pode editar (a antiga passou no USING).
+			if pl.atualiz[tab] {
+				var editaveis []string
+				for _, x := range todas {
+					if goEditar[x] != "0" {
+						editaveis = append(editaveis, x)
+					}
+				}
+				for _, c := range cols[tab] {
+					valores, ok := autzteste.Valores[c]
+					if autzteste.DeDono[c] {
+						valores, ok = []any{outro, ps.ID, nil}, true
+					}
+					if !ok || len(editaveis) == 0 {
+						continue
+					}
+					for _, v := range valores {
+						patch, _ := json.Marshal(map[string]any{c: v})
+						goNova := map[string]bool{}
+						qs, err := m.Pool.Query(ctx, `select id::text, coalesce(`+fn.SQL+`, false) from (select (jsonb_populate_record(null::`+nomeT+
+							`, to_jsonb(t) || @autz_patch::jsonb)).* from `+nomeT+` t where id::text = any(@autz_ids::text[])) as `+nomeT,
+							fn.Juntar(pgx.NamedArgs{"autz_patch": string(patch), "autz_ids": editaveis}))
+						if err != nil {
+							t.Fatalf("%s mover %s: %v", tab, c, err)
+						}
+						var xid string
+						var passa bool
+						if _, err := pgx.ForEachRow(qs, []any{&xid, &passa}, func() error { goNova[xid] = passa; return nil }); err != nil {
+							t.Fatalf("%s mover %s: %v", tab, c, err)
+						}
+						var res map[string]string
+						emSavepoint(t, tx, func() error {
+							return tx.QueryRow(ctx, `select autz_mover($1::text, $2::text, $3::jsonb, $4::uuid[])`, tab, c, string(patch), editaveis).Scan(&res)
+						})
+						for _, x := range editaveis {
+							rls := res[x] == "ok"
+							if res[x] == "0" || res[x] == "" {
+								pl.erro(t, "%s × %s × mover %s para %v, linha %s: a RLS nem viu a linha que o Go diz editável (%q)", ps.Nome, tab, c, v, x, res[x])
+							} else if rls != goNova[x] {
+								pl.erro(t, "%s × %s × mover %s para %v, linha %s: RLS %v, Go %v (%s)", ps.Nome, tab, c, v, x, rls, goNova[x], fn.SQL)
+							}
+							pl.contar(tab+"×mover", rls)
+						}
+					}
+				}
 			}
 
 			// CRIAR: linhas candidatas desta pessoa (dono = ela, outra pessoa ou ninguém)

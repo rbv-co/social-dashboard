@@ -26,7 +26,7 @@ const (
 	Ler        Op = iota // USING das policies de select/all
 	Criar                // WITH CHECK das de insert/all (ALL sem check usa o USING)
 	Editar               // linha ANTIGA: Ler e USING das de update/all (o UPDATE com WHERE lê a linha)
-	EditarNova           // linha NOVA: WITH CHECK das de update/all (sem check usa o USING)
+	EditarNova           // linha NOVA: Ler (o UPDATE com WHERE/RETURNING aplica o USING das de select/all à linha nova) e WITH CHECK das de update/all (sem check usa o USING)
 	Apagar               // Ler e USING das de delete/all
 )
 
@@ -43,7 +43,11 @@ type policy struct {
 type tabela struct{ policies []policy }
 
 // Catalogo é o conjunto de policies compiladas, por tabela.
-type Catalogo struct{ tabelas map[string]*tabela }
+type Catalogo struct {
+	tabelas    map[string]*tabela
+	compiladas int      // policies analisadas e compiladas
+	ignoradas  []string // "tabela.nome" das que não valem para sessão de pessoa (só anon/service_role)
+}
 
 type policyJSON struct {
 	Tabela, Nome, Tipo, Comando string
@@ -76,6 +80,7 @@ func Compilar(bruto []byte) (*Catalogo, error) {
 			c.tabelas[p.Tabela] = t
 		}
 		if !slices.Contains(p.Papeis, "authenticated") && !slices.Contains(p.Papeis, "public") {
+			c.ignoradas = append(c.ignoradas, p.Tabela+"."+p.Nome)
 			continue
 		}
 		if !slices.Contains([]string{"select", "insert", "update", "delete", "all"}, p.Comando) || (p.Tipo != "permissive" && p.Tipo != "restrictive") {
@@ -94,6 +99,7 @@ func Compilar(bruto []byte) (*Catalogo, error) {
 			}
 		}
 		t.policies = append(t.policies, pol)
+		c.compiladas++
 	}
 	return c, nil
 }
@@ -155,7 +161,7 @@ func (c *Catalogo) regra(tab string, op Op) (pred, error) {
 	case Editar:
 		return e_{ler, combinar([]string{"update", "all"}, usingDe)}, nil
 	case EditarNova:
-		return combinar([]string{"update", "all"}, checkDe), nil
+		return e_{ler, combinar([]string{"update", "all"}, checkDe)}, nil
 	case Apagar:
 		return e_{ler, combinar([]string{"delete", "all"}, usingDe)}, nil
 	}

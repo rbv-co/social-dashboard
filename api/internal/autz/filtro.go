@@ -52,6 +52,9 @@ func (f Filtro) Juntar(args pgx.NamedArgs) pgx.NamedArgs {
 // Conferir avalia o filtro sobre uma linha que ainda não existe (insert, ou o valor novo de um
 // update): monta a linha com o tipo da própria tabela (jsonb_populate_record) e roda a condição.
 // Coluna que a tabela não tem é ignorada pelo Postgres; NULL na condição = negado.
+// ATENÇÃO: a rota tem de passar em `linha` TODA coluna que alguma policy da tabela lê. Defaults
+// de coluna e gatilhos BEFORE não são aplicados aqui: coluna ausente vira NULL, e a RLS (que roda
+// depois deles) pode ver outro valor.
 func Conferir(ctx context.Context, b Banco, f Filtro, tab string, linha map[string]any) (bool, error) {
 	if f.Nega() {
 		return false, nil
