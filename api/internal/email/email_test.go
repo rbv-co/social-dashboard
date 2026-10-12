@@ -6,7 +6,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 const tokenDeTeste = "segredo-zepto-123456"
@@ -64,5 +66,46 @@ func TestMandarFalhaSemVazar(t *testing.T) {
 	}
 	if err := (&ZeptoMail{}).Mandar(context.Background(), "a", "b", "c", "d"); err != ErrSemToken {
 		t.Fatalf("sem token: %v", err)
+	}
+}
+
+// Cliente injetado também não segue redirecionamento (o corpo leva o link de senha e o cabeçalho, o token).
+func TestMandarNaoSegueRedirecionamentoNemComClienteInjetado(t *testing.T) {
+	var visitas atomic.Int32
+	alvo := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { visitas.Add(1) }))
+	defer alvo.Close()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, alvo.URL, http.StatusTemporaryRedirect)
+	}))
+	defer srv.Close()
+	z := &ZeptoMail{URL: srv.URL, Token: tokenDeTeste, HTTP: &http.Client{}}
+	if err := z.Mandar(context.Background(), "pessoa@x", "a", "b", "c"); err == nil || err.Error() != "zeptomail: recusou (307 )" {
+		t.Fatalf("err = %v", err)
+	}
+	if visitas.Load() != 0 {
+		t.Fatal("seguiu o redirecionamento")
+	}
+}
+
+// Servidor lento: o envio desiste (15 s em produção), com cliente próprio ou injetado sem prazo.
+func TestMandarTemPrazo(t *testing.T) {
+	prazoAntes := prazoDoEnvio
+	prazoDoEnvio = 150 * time.Millisecond
+	defer func() { prazoDoEnvio = prazoAntes }()
+	fim := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-fim:
+		case <-time.After(5 * time.Second):
+		}
+	}))
+	defer srv.Close()
+	defer close(fim)
+	for nome, cli := range map[string]*http.Client{"próprio": nil, "injetado": {}} {
+		t0 := time.Now()
+		err := (&ZeptoMail{URL: srv.URL, Token: tokenDeTeste, HTTP: cli}).Mandar(context.Background(), "pessoa@x", "a", "b", "c")
+		if err == nil || err.Error() != "zeptomail: rede" || time.Since(t0) > 2*time.Second {
+			t.Errorf("%s: err = %v em %v", nome, err, time.Since(t0))
+		}
 	}
 }
