@@ -1,0 +1,3038 @@
+[
+  {
+    "tabela": "access_requests",
+    "nome": "admin_read_requests",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "(EXISTS ( SELECT 1\n   FROM profiles\n  WHERE ((profiles.id = auth.uid()) AND (profiles.role = 'admin'::text))))",
+    "withCheck": null
+  },
+  {
+    "tabela": "access_requests",
+    "nome": "admin_update_requests",
+    "tipo": "permissive",
+    "comando": "update",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "(EXISTS ( SELECT 1\n   FROM profiles\n  WHERE ((profiles.id = auth.uid()) AND (profiles.role = 'admin'::text))))",
+    "withCheck": "true"
+  },
+  {
+    "tabela": "access_requests",
+    "nome": "public_insert",
+    "tipo": "permissive",
+    "comando": "insert",
+    "papeis": [
+      "public"
+    ],
+    "using": null,
+    "withCheck": "true"
+  },
+  {
+    "tabela": "account_insights",
+    "nome": "authenticated read",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null
+  },
+  {
+    "tabela": "account_insights",
+    "nome": "service write",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "service_role"
+    ],
+    "using": "true",
+    "withCheck": null
+  },
+  {
+    "tabela": "account_insights",
+    "nome": "so_contas_permitidas",
+    "tipo": "restrictive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "pode_ver_conta((account_id)::text)",
+    "withCheck": null
+  },
+  {
+    "tabela": "accounts",
+    "nome": "admin_update_accounts",
+    "tipo": "permissive",
+    "comando": "update",
+    "papeis": [
+      "public"
+    ],
+    "using": "(EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = auth.uid()) AND (p.role = 'admin'::text))))",
+    "withCheck": "(EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = auth.uid()) AND (p.role = 'admin'::text))))"
+  },
+  {
+    "tabela": "accounts",
+    "nome": "auth_read_accounts",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "public"
+    ],
+    "using": "(auth.role() = 'authenticated'::text)",
+    "withCheck": null
+  },
+  {
+    "tabela": "acessos_config",
+    "nome": "acessos_config_rw",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "is_acessos_admin()",
+    "withCheck": "is_acessos_admin()"
+  },
+  {
+    "tabela": "acessos_dispositivos",
+    "nome": "acessos_dispositivos_rw",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "is_acessos_admin()",
+    "withCheck": "is_acessos_admin()"
+  },
+  {
+    "tabela": "acessos_drive_marcas",
+    "nome": "acessos_drive_marcas_rw",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "is_acessos_admin()",
+    "withCheck": "is_acessos_admin()"
+  },
+  {
+    "tabela": "acessos_drive_overrides",
+    "nome": "acessos_drive_overrides_rw",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "is_acessos_admin()",
+    "withCheck": "is_acessos_admin()"
+  },
+  {
+    "tabela": "acessos_drive_setores",
+    "nome": "acessos_drive_setores_rw",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "is_acessos_admin()",
+    "withCheck": "is_acessos_admin()"
+  },
+  {
+    "tabela": "acessos_log",
+    "nome": "acessos_log_insert",
+    "tipo": "permissive",
+    "comando": "insert",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": null,
+    "withCheck": "is_acessos_admin()"
+  },
+  {
+    "tabela": "acessos_log",
+    "nome": "acessos_log_select",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "is_acessos_admin()",
+    "withCheck": null
+  },
+  {
+    "tabela": "acessos_organizacoes",
+    "nome": "acessos_organizacoes_rw",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "is_acessos_admin()",
+    "withCheck": "is_acessos_admin()"
+  },
+  {
+    "tabela": "acessos_patrimonio_historico",
+    "nome": "acessos_patrimonio_historico_rw",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "is_acessos_admin()",
+    "withCheck": "is_acessos_admin()"
+  },
+  {
+    "tabela": "acessos_perfis",
+    "nome": "acessos_perfis_escrever",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "is_superadmin()",
+    "withCheck": "is_superadmin()"
+  },
+  {
+    "tabela": "acessos_perfis",
+    "nome": "acessos_perfis_ler",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null
+  },
+  {
+    "tabela": "acessos_pessoas",
+    "nome": "acessos_pessoas_rw",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "is_acessos_admin()",
+    "withCheck": "is_acessos_admin()"
+  },
+  {
+    "tabela": "acessos_recursos",
+    "nome": "acessos_recursos_rw",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "is_acessos_admin()",
+    "withCheck": "is_acessos_admin()"
+  },
+  {
+    "tabela": "acessos_setores",
+    "nome": "acessos_setores_rw",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "is_acessos_admin()",
+    "withCheck": "is_acessos_admin()"
+  },
+  {
+    "tabela": "acessos_termos",
+    "nome": "acessos_termos_rw",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "is_acessos_admin()",
+    "withCheck": "is_acessos_admin()"
+  },
+  {
+    "tabela": "acessos_vinculos",
+    "nome": "acessos_vinculos_rw",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "is_acessos_admin()",
+    "withCheck": "is_acessos_admin()"
+  },
+  {
+    "tabela": "ad_insights_hora",
+    "nome": "ad_insights_hora_leitura",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "(EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = auth.uid()) AND ((p.role = 'admin'::text) OR p.is_superadmin OR (p.permissions ? 'meta.hora'::text)))))",
+    "withCheck": null
+  },
+  {
+    "tabela": "ad_insights_hora",
+    "nome": "so_contas_permitidas",
+    "tipo": "restrictive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "pode_ver_conta((account_id)::text)",
+    "withCheck": null
+  },
+  {
+    "tabela": "ads",
+    "nome": "auth_read_ads",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "(auth.role() = 'authenticated'::text)",
+    "withCheck": null
+  },
+  {
+    "tabela": "ads",
+    "nome": "so_contas_permitidas",
+    "tipo": "restrictive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "pode_ver_conta((account_id)::text)",
+    "withCheck": null
+  },
+  {
+    "tabela": "ads_snapshots",
+    "nome": "auth_read_ads",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "public"
+    ],
+    "using": "(auth.role() = 'authenticated'::text)",
+    "withCheck": null
+  },
+  {
+    "tabela": "ads_snapshots",
+    "nome": "service_write_ads",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "public"
+    ],
+    "using": "(auth.role() = 'service_role'::text)",
+    "withCheck": null
+  },
+  {
+    "tabela": "ads_snapshots",
+    "nome": "so_contas_permitidas",
+    "tipo": "restrictive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "pode_ver_conta((account_id)::text)",
+    "withCheck": null
+  },
+  {
+    "tabela": "audit_log",
+    "nome": "admin read audit",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "(get_my_role() = 'admin'::text)",
+    "withCheck": null
+  },
+  {
+    "tabela": "bling_depositos",
+    "nome": "bling_depositos_read",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null
+  },
+  {
+    "tabela": "bling_lojas",
+    "nome": "authenticated read bling_lojas",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null
+  },
+  {
+    "tabela": "bling_lojas",
+    "nome": "bling_lojas_grupo_superadmin",
+    "tipo": "permissive",
+    "comando": "update",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "superadmin_pela_ficha()",
+    "withCheck": "superadmin_pela_ficha()"
+  },
+  {
+    "tabela": "bling_metas",
+    "nome": "admin_write_metas",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "(EXISTS ( SELECT 1\n   FROM profiles\n  WHERE ((profiles.id = auth.uid()) AND (profiles.role = 'admin'::text))))",
+    "withCheck": "(EXISTS ( SELECT 1\n   FROM profiles\n  WHERE ((profiles.id = auth.uid()) AND (profiles.role = 'admin'::text))))"
+  },
+  {
+    "tabela": "bling_metas",
+    "nome": "authenticated read metas",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "public"
+    ],
+    "using": "(auth.role() = 'authenticated'::text)",
+    "withCheck": null
+  },
+  {
+    "tabela": "bling_metas",
+    "nome": "service_role full access metas",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "public"
+    ],
+    "using": "(auth.role() = 'service_role'::text)",
+    "withCheck": null
+  },
+  {
+    "tabela": "bling_pedido_ajuste_valor",
+    "nome": "bpav_escrever",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "superadmin_pela_ficha()",
+    "withCheck": "superadmin_pela_ficha()"
+  },
+  {
+    "tabela": "bling_pedido_ajuste_valor",
+    "nome": "bpav_leitura",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null
+  },
+  {
+    "tabela": "bling_pedido_ajuste_valor",
+    "nome": "bpav_so_do_meu_canal",
+    "tipo": "restrictive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "pode_ver_canal(loja_id)",
+    "withCheck": null
+  },
+  {
+    "tabela": "bling_pedido_ajuste_vendedor",
+    "nome": "bpaven_escrever",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "superadmin_pela_ficha()",
+    "withCheck": "superadmin_pela_ficha()"
+  },
+  {
+    "tabela": "bling_pedido_ajuste_vendedor",
+    "nome": "bpaven_leitura",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null
+  },
+  {
+    "tabela": "bling_pedido_ajuste_vendedor",
+    "nome": "bpaven_so_do_meu_canal",
+    "tipo": "restrictive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "pode_ver_canal(loja_id)",
+    "withCheck": null
+  },
+  {
+    "tabela": "bling_pedido_forma_pagamento",
+    "nome": "bpfp_leitura",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null
+  },
+  {
+    "tabela": "bling_pedido_forma_pagamento",
+    "nome": "bpfp_so_do_meu_canal",
+    "tipo": "restrictive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "pode_ver_canal(loja_id)",
+    "withCheck": null
+  },
+  {
+    "tabela": "bling_pedido_nota",
+    "nome": "bpn_leitura",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null
+  },
+  {
+    "tabela": "bling_pedido_nota",
+    "nome": "bpn_so_do_meu_canal",
+    "tipo": "restrictive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "pode_ver_canal(loja_id)",
+    "withCheck": null
+  },
+  {
+    "tabela": "bling_pedido_vendedor",
+    "nome": "authenticated can read pedido_vendedor",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null
+  },
+  {
+    "tabela": "bling_pedido_vendedor",
+    "nome": "quem ve vendas atualiza pedido_vendedor",
+    "tipo": "permissive",
+    "comando": "update",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "pode_ver_vendas()",
+    "withCheck": "pode_ver_vendas()"
+  },
+  {
+    "tabela": "bling_pedido_vendedor",
+    "nome": "quem ve vendas grava pedido_vendedor",
+    "tipo": "permissive",
+    "comando": "insert",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": null,
+    "withCheck": "pode_ver_vendas()"
+  },
+  {
+    "tabela": "bling_tokens",
+    "nome": "service_role full access tokens",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "public"
+    ],
+    "using": "(auth.role() = 'service_role'::text)",
+    "withCheck": null
+  },
+  {
+    "tabela": "bling_vendedor_metas",
+    "nome": "admin_write_vend_metas",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "(EXISTS ( SELECT 1\n   FROM profiles\n  WHERE ((profiles.id = auth.uid()) AND (profiles.role = 'admin'::text))))",
+    "withCheck": "(EXISTS ( SELECT 1\n   FROM profiles\n  WHERE ((profiles.id = auth.uid()) AND (profiles.role = 'admin'::text))))"
+  },
+  {
+    "tabela": "bling_vendedor_metas",
+    "nome": "authenticated_read_vend_metas",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "public"
+    ],
+    "using": "(auth.role() = 'authenticated'::text)",
+    "withCheck": null
+  },
+  {
+    "tabela": "bling_vendedor_metas",
+    "nome": "service_role_full_vend_metas",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "public"
+    ],
+    "using": "(auth.role() = 'service_role'::text)",
+    "withCheck": null
+  },
+  {
+    "tabela": "bling_vendedores",
+    "nome": "authenticated can read vendedores",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null
+  },
+  {
+    "tabela": "bling_vendedores",
+    "nome": "quem ve vendas atualiza vendedores",
+    "tipo": "permissive",
+    "comando": "update",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "pode_ver_vendas()",
+    "withCheck": "pode_ver_vendas()"
+  },
+  {
+    "tabela": "bling_vendedores",
+    "nome": "quem ve vendas grava vendedores",
+    "tipo": "permissive",
+    "comando": "insert",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": null,
+    "withCheck": "pode_ver_vendas()"
+  },
+  {
+    "tabela": "campaign_adsets",
+    "nome": "campaign_adsets_leitura",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null
+  },
+  {
+    "tabela": "campaign_adsets",
+    "nome": "so_contas_permitidas",
+    "tipo": "restrictive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "pode_ver_conta((account_id)::text)",
+    "withCheck": null
+  },
+  {
+    "tabela": "campaign_filters",
+    "nome": "auth_read_filters",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "public"
+    ],
+    "using": "(auth.role() = 'authenticated'::text)",
+    "withCheck": null
+  },
+  {
+    "tabela": "campaign_filters",
+    "nome": "auth_write_filters",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "public"
+    ],
+    "using": "(auth.role() = 'authenticated'::text)",
+    "withCheck": null
+  },
+  {
+    "tabela": "campaign_filters",
+    "nome": "so_contas_permitidas",
+    "tipo": "restrictive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "pode_ver_conta((account_id)::text)",
+    "withCheck": null
+  },
+  {
+    "tabela": "campaign_insights",
+    "nome": "authenticated read",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null
+  },
+  {
+    "tabela": "campaign_insights",
+    "nome": "service write",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "service_role"
+    ],
+    "using": "true",
+    "withCheck": null
+  },
+  {
+    "tabela": "campaign_insights",
+    "nome": "so_contas_permitidas",
+    "tipo": "restrictive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "pode_ver_conta((account_id)::text)",
+    "withCheck": null
+  },
+  {
+    "tabela": "campaign_insights_hora",
+    "nome": "campaign_insights_hora_leitura",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "(EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = auth.uid()) AND ((p.role = 'admin'::text) OR p.is_superadmin OR (p.permissions ? 'meta.hora'::text)))))",
+    "withCheck": null
+  },
+  {
+    "tabela": "campaign_insights_hora",
+    "nome": "so_contas_permitidas",
+    "tipo": "restrictive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "pode_ver_conta((account_id)::text)",
+    "withCheck": null
+  },
+  {
+    "tabela": "campaigns",
+    "nome": "auth_read_campaigns",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "public"
+    ],
+    "using": "(auth.role() = 'authenticated'::text)",
+    "withCheck": null
+  },
+  {
+    "tabela": "campaigns",
+    "nome": "service_write_campaigns",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "public"
+    ],
+    "using": "(auth.role() = 'service_role'::text)",
+    "withCheck": null
+  },
+  {
+    "tabela": "campaigns",
+    "nome": "so_contas_permitidas",
+    "tipo": "restrictive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "pode_ver_conta((account_id)::text)",
+    "withCheck": null
+  },
+  {
+    "tabela": "canais_grupos",
+    "nome": "canais_grupos_escrever",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "superadmin_pela_ficha()",
+    "withCheck": "superadmin_pela_ficha()"
+  },
+  {
+    "tabela": "canais_grupos",
+    "nome": "canais_grupos_leitura",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null
+  },
+  {
+    "tabela": "canais_grupos_membros",
+    "nome": "cgm_escrever",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "superadmin_pela_ficha()",
+    "withCheck": "superadmin_pela_ficha()"
+  },
+  {
+    "tabela": "canais_grupos_membros",
+    "nome": "cgm_leitura",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "((profile_id = auth.uid()) OR pode_ver_grupo(grupo_id))",
+    "withCheck": null
+  },
+  {
+    "tabela": "carrinho_eventos",
+    "nome": "carrinho_eventos_leitura",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "(EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = auth.uid()) AND ((p.role = 'admin'::text) OR p.is_superadmin OR ('carrinho'::text = ANY (p.features))))))",
+    "withCheck": null
+  },
+  {
+    "tabela": "carrinho_eventos",
+    "nome": "carrinho_eventos_leitura_meta_leads",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "is_vessel_leads()",
+    "withCheck": null
+  },
+  {
+    "tabela": "chatwoot_eventos",
+    "nome": "chatwoot_eventos_leitura",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "(EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = auth.uid()) AND ((p.role = 'admin'::text) OR p.is_superadmin OR (p.permissions ? 'meta.opr'::text)))))",
+    "withCheck": null
+  },
+  {
+    "tabela": "checkout_abandono",
+    "nome": "checkout_abandono_leitura",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "(EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = auth.uid()) AND ((p.role = 'admin'::text) OR p.is_superadmin OR ('abandono-carrinho'::text = ANY (p.features))))))",
+    "withCheck": null
+  },
+  {
+    "tabela": "coletor_log",
+    "nome": "coletor_log_select",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null
+  },
+  {
+    "tabela": "content_snapshots",
+    "nome": "auth_read_content",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "public"
+    ],
+    "using": "(auth.role() = 'authenticated'::text)",
+    "withCheck": null
+  },
+  {
+    "tabela": "content_snapshots",
+    "nome": "so_contas_permitidas",
+    "tipo": "restrictive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "pode_ver_conta((account_id)::text)",
+    "withCheck": null
+  },
+  {
+    "tabela": "conteudo_arquivos",
+    "nome": "conteudo_arquivos_escrita",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "(EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = auth.uid()) AND ((p.role = 'admin'::text) OR p.is_superadmin OR ('conteudo'::text = ANY (p.features))))))",
+    "withCheck": "(EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = auth.uid()) AND ((p.role = 'admin'::text) OR p.is_superadmin OR ('conteudo'::text = ANY (p.features))))))"
+  },
+  {
+    "tabela": "conteudo_arquivos",
+    "nome": "conteudo_arquivos_leitura",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "(EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = auth.uid()) AND ((p.role = 'admin'::text) OR p.is_superadmin OR ('conteudo'::text = ANY (p.features))))))",
+    "withCheck": null
+  },
+  {
+    "tabela": "conteudo_blocos",
+    "nome": "conteudo_blocos_escrita",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "(EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = auth.uid()) AND ((p.role = 'admin'::text) OR p.is_superadmin OR ('conteudo'::text = ANY (p.features))))))",
+    "withCheck": "(EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = auth.uid()) AND ((p.role = 'admin'::text) OR p.is_superadmin OR ('conteudo'::text = ANY (p.features))))))"
+  },
+  {
+    "tabela": "conteudo_blocos",
+    "nome": "conteudo_blocos_leitura",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "(EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = auth.uid()) AND ((p.role = 'admin'::text) OR p.is_superadmin OR ('conteudo'::text = ANY (p.features))))))",
+    "withCheck": null
+  },
+  {
+    "tabela": "conteudo_blocos",
+    "nome": "conteudo_blocos_srv",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "public"
+    ],
+    "using": "(auth.role() = 'service_role'::text)",
+    "withCheck": null
+  },
+  {
+    "tabela": "conteudo_blocos",
+    "nome": "so_contas_permitidas",
+    "tipo": "restrictive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "pode_ver_conta((account_id)::text)",
+    "withCheck": null
+  },
+  {
+    "tabela": "conteudo_casamentos",
+    "nome": "conteudo_casamentos_leitura",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "(EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = auth.uid()) AND ((p.role = 'admin'::text) OR p.is_superadmin OR ('conteudo'::text = ANY (p.features))))))",
+    "withCheck": null
+  },
+  {
+    "tabela": "conteudo_casamentos",
+    "nome": "conteudo_casamentos_srv",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "public"
+    ],
+    "using": "(auth.role() = 'service_role'::text)",
+    "withCheck": null
+  },
+  {
+    "tabela": "conteudo_concorrentes",
+    "nome": "conteudo_concorrentes_escrita",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "(EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = auth.uid()) AND ((p.role = 'admin'::text) OR p.is_superadmin OR ('conteudo'::text = ANY (p.features))))))",
+    "withCheck": "(EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = auth.uid()) AND ((p.role = 'admin'::text) OR p.is_superadmin OR ('conteudo'::text = ANY (p.features))))))"
+  },
+  {
+    "tabela": "conteudo_concorrentes",
+    "nome": "conteudo_concorrentes_leitura",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "(EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = auth.uid()) AND ((p.role = 'admin'::text) OR p.is_superadmin OR ('conteudo'::text = ANY (p.features))))))",
+    "withCheck": null
+  },
+  {
+    "tabela": "conteudo_concorrentes",
+    "nome": "conteudo_concorrentes_srv",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "public"
+    ],
+    "using": "(auth.role() = 'service_role'::text)",
+    "withCheck": null
+  },
+  {
+    "tabela": "conteudo_eventos",
+    "nome": "conteudo_eventos_insercao",
+    "tipo": "permissive",
+    "comando": "insert",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": null,
+    "withCheck": "((EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = auth.uid()) AND ((p.role = 'admin'::text) OR p.is_superadmin OR ('conteudo'::text = ANY (p.features)))))) AND (quem = auth.uid()))"
+  },
+  {
+    "tabela": "conteudo_eventos",
+    "nome": "conteudo_eventos_leitura",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "(EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = auth.uid()) AND ((p.role = 'admin'::text) OR p.is_superadmin OR ('conteudo'::text = ANY (p.features))))))",
+    "withCheck": null
+  },
+  {
+    "tabela": "conteudo_ideias",
+    "nome": "conteudo_ideias_escrita",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "(EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = auth.uid()) AND ((p.role = 'admin'::text) OR p.is_superadmin OR ('conteudo'::text = ANY (p.features))))))",
+    "withCheck": "(EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = auth.uid()) AND ((p.role = 'admin'::text) OR p.is_superadmin OR ('conteudo'::text = ANY (p.features))))))"
+  },
+  {
+    "tabela": "conteudo_ideias",
+    "nome": "conteudo_ideias_leitura",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "(EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = auth.uid()) AND ((p.role = 'admin'::text) OR p.is_superadmin OR ('conteudo'::text = ANY (p.features))))))",
+    "withCheck": null
+  },
+  {
+    "tabela": "conteudo_ideias",
+    "nome": "conteudo_ideias_srv",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "public"
+    ],
+    "using": "(auth.role() = 'service_role'::text)",
+    "withCheck": null
+  },
+  {
+    "tabela": "conteudo_ideias",
+    "nome": "so_contas_permitidas",
+    "tipo": "restrictive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "pode_ver_conta((account_id)::text)",
+    "withCheck": null
+  },
+  {
+    "tabela": "conteudo_jobs",
+    "nome": "conteudo_jobs_leitura",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "(EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = auth.uid()) AND ((p.role = 'admin'::text) OR p.is_superadmin OR ('conteudo'::text = ANY (p.features))))))",
+    "withCheck": null
+  },
+  {
+    "tabela": "conteudo_jobs",
+    "nome": "conteudo_jobs_srv",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "public"
+    ],
+    "using": "(auth.role() = 'service_role'::text)",
+    "withCheck": null
+  },
+  {
+    "tabela": "conteudo_jobs",
+    "nome": "so_contas_permitidas",
+    "tipo": "restrictive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "pode_ver_conta((account_id)::text)",
+    "withCheck": null
+  },
+  {
+    "tabela": "conteudo_metricas",
+    "nome": "conteudo_metricas_leitura",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "(EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = auth.uid()) AND ((p.role = 'admin'::text) OR p.is_superadmin OR ('conteudo'::text = ANY (p.features))))))",
+    "withCheck": null
+  },
+  {
+    "tabela": "conteudo_metricas",
+    "nome": "conteudo_metricas_srv",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "public"
+    ],
+    "using": "(auth.role() = 'service_role'::text)",
+    "withCheck": null
+  },
+  {
+    "tabela": "conteudo_pecas",
+    "nome": "conteudo_pecas_escrita",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "(EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = auth.uid()) AND ((p.role = 'admin'::text) OR p.is_superadmin OR ('conteudo'::text = ANY (p.features))))))",
+    "withCheck": "(EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = auth.uid()) AND ((p.role = 'admin'::text) OR p.is_superadmin OR ('conteudo'::text = ANY (p.features))))))"
+  },
+  {
+    "tabela": "conteudo_pecas",
+    "nome": "conteudo_pecas_leitura",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "(EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = auth.uid()) AND ((p.role = 'admin'::text) OR p.is_superadmin OR ('conteudo'::text = ANY (p.features))))))",
+    "withCheck": null
+  },
+  {
+    "tabela": "conteudo_pecas",
+    "nome": "so_contas_permitidas",
+    "tipo": "restrictive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "pode_ver_conta((account_id)::text)",
+    "withCheck": null
+  },
+  {
+    "tabela": "daily_snapshots",
+    "nome": "auth_read_daily",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "public"
+    ],
+    "using": "(auth.role() = 'authenticated'::text)",
+    "withCheck": null
+  },
+  {
+    "tabela": "daily_snapshots",
+    "nome": "so_contas_permitidas",
+    "tipo": "restrictive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "pode_ver_conta((account_id)::text)",
+    "withCheck": null
+  },
+  {
+    "tabela": "data_integrity_checks",
+    "nome": "dic_sel",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null
+  },
+  {
+    "tabela": "data_integrity_checks",
+    "nome": "so_contas_permitidas",
+    "tipo": "restrictive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "pode_ver_conta((account_id)::text)",
+    "withCheck": null
+  },
+  {
+    "tabela": "engagement_snapshots",
+    "nome": "auth_read_engagement",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "public"
+    ],
+    "using": "(auth.role() = 'authenticated'::text)",
+    "withCheck": null
+  },
+  {
+    "tabela": "engagement_snapshots",
+    "nome": "so_contas_permitidas",
+    "tipo": "restrictive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "pode_ver_conta((account_id)::text)",
+    "withCheck": null
+  },
+  {
+    "tabela": "entradas_como_outro_usuario",
+    "nome": "superadmin le entradas como outro usuario",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "public"
+    ],
+    "using": "superadmin_pela_ficha()",
+    "withCheck": null
+  },
+  {
+    "tabela": "equipes",
+    "nome": "equipes_apagar",
+    "tipo": "permissive",
+    "comando": "delete",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "COALESCE(( SELECT profiles.is_superadmin\n   FROM profiles\n  WHERE (profiles.id = auth.uid())), false)",
+    "withCheck": null
+  },
+  {
+    "tabela": "equipes",
+    "nome": "equipes_criar",
+    "tipo": "permissive",
+    "comando": "insert",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": null,
+    "withCheck": "(COALESCE(( SELECT profiles.is_superadmin\n   FROM profiles\n  WHERE (profiles.id = auth.uid())), false) OR (EXISTS ( SELECT 1\n   FROM equipes_membros m\n  WHERE ((m.profile_id = auth.uid()) AND (m.papel = 'gestor'::text)))))"
+  },
+  {
+    "tabela": "equipes",
+    "nome": "equipes_editar",
+    "tipo": "permissive",
+    "comando": "update",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "sou_gestor_da_equipe(id)",
+    "withCheck": "sou_gestor_da_equipe(id)"
+  },
+  {
+    "tabela": "equipes",
+    "nome": "equipes_leitura",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null
+  },
+  {
+    "tabela": "equipes_membros",
+    "nome": "membros_escrever",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "sou_gestor_da_equipe(equipe_id)",
+    "withCheck": "sou_gestor_da_equipe(equipe_id)"
+  },
+  {
+    "tabela": "equipes_membros",
+    "nome": "membros_leitura",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "((profile_id = auth.uid()) OR pode_ver_equipe(equipe_id))",
+    "withCheck": null
+  },
+  {
+    "tabela": "equipes_permissoes",
+    "nome": "eqperm_escrever",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "(superadmin_pela_ficha() OR tenho_papel_na_equipe(equipe_id, ARRAY['supervisora'::text, 'gestor'::text]))",
+    "withCheck": "(superadmin_pela_ficha() OR tenho_papel_na_equipe(equipe_id, ARRAY['supervisora'::text, 'gestor'::text]))"
+  },
+  {
+    "tabela": "equipes_permissoes",
+    "nome": "eqperm_leitura",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "((profile_id = auth.uid()) OR pode_ver_equipe(equipe_id))",
+    "withCheck": null
+  },
+  {
+    "tabela": "fabrica_campanhas",
+    "nome": "fab_camp_read",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null
+  },
+  {
+    "tabela": "fabrica_campanhas",
+    "nome": "fab_camp_srv",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "public"
+    ],
+    "using": "(auth.role() = 'service_role'::text)",
+    "withCheck": null
+  },
+  {
+    "tabela": "fabrica_campanhas",
+    "nome": "fab_camp_write",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "(EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = auth.uid()) AND ((p.role = 'admin'::text) OR (p.is_superadmin = true) OR (p.permissions ? 'meta.fabrica'::text)))))",
+    "withCheck": "(EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = auth.uid()) AND ((p.role = 'admin'::text) OR (p.is_superadmin = true) OR (p.permissions ? 'meta.fabrica'::text)))))"
+  },
+  {
+    "tabela": "fabrica_criativos",
+    "nome": "fab_criativos_read",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null
+  },
+  {
+    "tabela": "fabrica_criativos",
+    "nome": "fab_criativos_srv",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "public"
+    ],
+    "using": "(auth.role() = 'service_role'::text)",
+    "withCheck": null
+  },
+  {
+    "tabela": "fabrica_criativos",
+    "nome": "fab_criativos_write",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "(EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = auth.uid()) AND ((p.role = 'admin'::text) OR (p.is_superadmin = true) OR (p.permissions ? 'meta.fabrica'::text)))))",
+    "withCheck": "(EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = auth.uid()) AND ((p.role = 'admin'::text) OR (p.is_superadmin = true) OR (p.permissions ? 'meta.fabrica'::text)))))"
+  },
+  {
+    "tabela": "fabrica_jobs",
+    "nome": "fab_jobs_read",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null
+  },
+  {
+    "tabela": "fabrica_jobs",
+    "nome": "fab_jobs_srv",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "public"
+    ],
+    "using": "(auth.role() = 'service_role'::text)",
+    "withCheck": null
+  },
+  {
+    "tabela": "fabrica_lojas",
+    "nome": "fab_lojas_read",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null
+  },
+  {
+    "tabela": "fabrica_lojas",
+    "nome": "fab_lojas_srv",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "public"
+    ],
+    "using": "(auth.role() = 'service_role'::text)",
+    "withCheck": null
+  },
+  {
+    "tabela": "fabrica_looks",
+    "nome": "fab_looks_read",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null
+  },
+  {
+    "tabela": "fabrica_marcas",
+    "nome": "fab_marcas_read",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null
+  },
+  {
+    "tabela": "fabrica_marcas",
+    "nome": "fab_marcas_srv",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "public"
+    ],
+    "using": "(auth.role() = 'service_role'::text)",
+    "withCheck": null
+  },
+  {
+    "tabela": "fabrica_marcas",
+    "nome": "so_contas_permitidas",
+    "tipo": "restrictive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "pode_ver_conta(account_id)",
+    "withCheck": null
+  },
+  {
+    "tabela": "fabrica_meta_jobs",
+    "nome": "fab_meta_read",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null
+  },
+  {
+    "tabela": "fabrica_meta_jobs",
+    "nome": "fab_meta_srv",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "public"
+    ],
+    "using": "(auth.role() = 'service_role'::text)",
+    "withCheck": null
+  },
+  {
+    "tabela": "fabrica_objetivos",
+    "nome": "fab_obj_read",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null
+  },
+  {
+    "tabela": "fabrica_publicos",
+    "nome": "fab_pub_read",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null
+  },
+  {
+    "tabela": "followers_leituras",
+    "nome": "auth_read_followers_leituras",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null
+  },
+  {
+    "tabela": "followers_leituras",
+    "nome": "so_contas_permitidas",
+    "tipo": "restrictive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "pode_ver_conta((account_id)::text)",
+    "withCheck": null
+  },
+  {
+    "tabela": "frota_abastecimentos",
+    "nome": "frota_abast_escrever",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "public"
+    ],
+    "using": "is_frota_admin()",
+    "withCheck": "is_frota_admin()"
+  },
+  {
+    "tabela": "frota_abastecimentos",
+    "nome": "frota_abast_ler",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "public"
+    ],
+    "using": "is_frota_admin()",
+    "withCheck": null
+  },
+  {
+    "tabela": "frota_checklist",
+    "nome": "frota_checklist_escrever",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "public"
+    ],
+    "using": "is_frota_admin()",
+    "withCheck": "is_frota_admin()"
+  },
+  {
+    "tabela": "frota_checklist",
+    "nome": "frota_checklist_ler",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "public"
+    ],
+    "using": "is_frota_admin()",
+    "withCheck": null
+  },
+  {
+    "tabela": "frota_checklist_config",
+    "nome": "frota_checklist_config_escrever",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "public"
+    ],
+    "using": "is_frota_admin()",
+    "withCheck": "is_frota_admin()"
+  },
+  {
+    "tabela": "frota_checklist_config",
+    "nome": "frota_checklist_config_ler",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "public"
+    ],
+    "using": "is_frota_admin()",
+    "withCheck": null
+  },
+  {
+    "tabela": "frota_checklist_itens",
+    "nome": "frota_checklist_itens_escrever",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "public"
+    ],
+    "using": "is_frota_admin()",
+    "withCheck": "is_frota_admin()"
+  },
+  {
+    "tabela": "frota_checklist_itens",
+    "nome": "frota_checklist_itens_ler",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "public"
+    ],
+    "using": "is_frota_admin()",
+    "withCheck": null
+  },
+  {
+    "tabela": "frota_checklist_pdf",
+    "nome": "frota_checklist_pdf_escrever",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "public"
+    ],
+    "using": "is_frota_admin()",
+    "withCheck": "is_frota_admin()"
+  },
+  {
+    "tabela": "frota_checklist_pdf",
+    "nome": "frota_checklist_pdf_ler",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "public"
+    ],
+    "using": "is_frota_admin()",
+    "withCheck": null
+  },
+  {
+    "tabela": "frota_checklist_respostas",
+    "nome": "frota_checklist_respostas_escrever",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "public"
+    ],
+    "using": "is_frota_admin()",
+    "withCheck": "is_frota_admin()"
+  },
+  {
+    "tabela": "frota_checklist_respostas",
+    "nome": "frota_checklist_respostas_ler",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "public"
+    ],
+    "using": "is_frota_admin()",
+    "withCheck": null
+  },
+  {
+    "tabela": "frota_manutencoes",
+    "nome": "frota_manut_escrever",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "public"
+    ],
+    "using": "is_frota_admin()",
+    "withCheck": "is_frota_admin()"
+  },
+  {
+    "tabela": "frota_manutencoes",
+    "nome": "frota_manut_ler",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "public"
+    ],
+    "using": "is_frota_admin()",
+    "withCheck": null
+  },
+  {
+    "tabela": "frota_plano_revisao",
+    "nome": "frota_plano_escrever",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "public"
+    ],
+    "using": "is_frota_admin()",
+    "withCheck": "is_frota_admin()"
+  },
+  {
+    "tabela": "frota_plano_revisao",
+    "nome": "frota_plano_ler",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "public"
+    ],
+    "using": "is_frota_admin()",
+    "withCheck": null
+  },
+  {
+    "tabela": "frota_requisicoes",
+    "nome": "frota_req_atualizar",
+    "tipo": "permissive",
+    "comando": "update",
+    "papeis": [
+      "public"
+    ],
+    "using": "is_frota_admin()",
+    "withCheck": "is_frota_admin()"
+  },
+  {
+    "tabela": "frota_requisicoes",
+    "nome": "frota_req_criar",
+    "tipo": "permissive",
+    "comando": "insert",
+    "papeis": [
+      "public"
+    ],
+    "using": null,
+    "withCheck": "(is_frota_admin() AND (criada_por = auth.uid()))"
+  },
+  {
+    "tabela": "frota_requisicoes",
+    "nome": "frota_req_ler",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "public"
+    ],
+    "using": "is_frota_admin()",
+    "withCheck": null
+  },
+  {
+    "tabela": "frota_requisicoes_historico",
+    "nome": "frota_req_hist_ler",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "public"
+    ],
+    "using": "is_frota_admin()",
+    "withCheck": null
+  },
+  {
+    "tabela": "frota_revisoes",
+    "nome": "frota_rev_escrever",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "public"
+    ],
+    "using": "is_frota_admin()",
+    "withCheck": "is_frota_admin()"
+  },
+  {
+    "tabela": "frota_revisoes",
+    "nome": "frota_rev_ler",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "public"
+    ],
+    "using": "is_frota_admin()",
+    "withCheck": null
+  },
+  {
+    "tabela": "frota_uso",
+    "nome": "frota_uso_escrever",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "public"
+    ],
+    "using": "is_frota_admin()",
+    "withCheck": "is_frota_admin()"
+  },
+  {
+    "tabela": "frota_uso",
+    "nome": "frota_uso_ler",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "public"
+    ],
+    "using": "is_frota_admin()",
+    "withCheck": null
+  },
+  {
+    "tabela": "frota_uso_pdf",
+    "nome": "frota_uso_pdf_escrever",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "public"
+    ],
+    "using": "is_frota_admin()",
+    "withCheck": null
+  },
+  {
+    "tabela": "frota_uso_pdf",
+    "nome": "frota_uso_pdf_ler",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "public"
+    ],
+    "using": "is_frota_admin()",
+    "withCheck": null
+  },
+  {
+    "tabela": "frota_veiculos",
+    "nome": "frota_veiculos_escrever",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "public"
+    ],
+    "using": "is_frota_admin()",
+    "withCheck": "is_frota_admin()"
+  },
+  {
+    "tabela": "frota_veiculos",
+    "nome": "frota_veiculos_ler",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "public"
+    ],
+    "using": "is_frota_admin()",
+    "withCheck": null
+  },
+  {
+    "tabela": "gc_estoque_item",
+    "nome": "gc_ei_read",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null
+  },
+  {
+    "tabela": "gc_estoque_item",
+    "nome": "gc_ei_so_do_meu_time",
+    "tipo": "restrictive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "pode_ver_estoque(deposito_id)",
+    "withCheck": null
+  },
+  {
+    "tabela": "gc_vendas_item",
+    "nome": "gc_vi_read",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null
+  },
+  {
+    "tabela": "gc_vendas_item",
+    "nome": "gc_vi_so_do_meu_time",
+    "tipo": "restrictive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "pode_ver_canal(canal_loja_id)",
+    "withCheck": null
+  },
+  {
+    "tabela": "gestao_comercial_briefings",
+    "nome": "gcb_select",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null
+  },
+  {
+    "tabela": "gestor_log",
+    "nome": "gestor_log_select",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null
+  },
+  {
+    "tabela": "gt_ad_analises",
+    "nome": "gt_ad_read",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "public"
+    ],
+    "using": "(EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = auth.uid()) AND ((p.role = 'admin'::text) OR ('meta.gestor'::text = ANY (p.features))))))",
+    "withCheck": null
+  },
+  {
+    "tabela": "gt_ad_analises",
+    "nome": "so_contas_permitidas",
+    "tipo": "restrictive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "pode_ver_conta(account_id)",
+    "withCheck": null
+  },
+  {
+    "tabela": "gt_budget_analises",
+    "nome": "gt_budget_read",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "public"
+    ],
+    "using": "(EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = auth.uid()) AND ((p.role = 'admin'::text) OR ('meta.gestor'::text = ANY (p.features))))))",
+    "withCheck": null
+  },
+  {
+    "tabela": "gt_budget_analises",
+    "nome": "so_contas_permitidas",
+    "tipo": "restrictive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "pode_ver_conta(account_id)",
+    "withCheck": null
+  },
+  {
+    "tabela": "gt_campanhas_rascunho",
+    "nome": "gt_rascunho_apagar",
+    "tipo": "permissive",
+    "comando": "delete",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "(criado_por = auth.uid())",
+    "withCheck": null
+  },
+  {
+    "tabela": "gt_campanhas_rascunho",
+    "nome": "gt_rascunho_atualizar",
+    "tipo": "permissive",
+    "comando": "update",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "(criado_por = auth.uid())",
+    "withCheck": "(criado_por = auth.uid())"
+  },
+  {
+    "tabela": "gt_campanhas_rascunho",
+    "nome": "gt_rascunho_inserir",
+    "tipo": "permissive",
+    "comando": "insert",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": null,
+    "withCheck": "((criado_por = auth.uid()) AND (EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = auth.uid()) AND ((p.role = 'admin'::text) OR ('meta.gestor'::text = ANY (p.features)))))))"
+  },
+  {
+    "tabela": "gt_campanhas_rascunho",
+    "nome": "gt_rascunho_leitura",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "(EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = auth.uid()) AND ((p.role = 'admin'::text) OR ('meta.gestor'::text = ANY (p.features))))))",
+    "withCheck": null
+  },
+  {
+    "tabela": "gt_campanhas_rascunho",
+    "nome": "so_contas_permitidas",
+    "tipo": "restrictive",
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "pode_ver_conta(account_id)",
+    "withCheck": "pode_ver_conta(account_id)"
+  },
+  {
+    "tabela": "gt_config_metricas",
+    "nome": "gt_cfg_ferramenta_insert",
+    "tipo": "permissive",
+    "comando": "insert",
+    "papeis": [
+      "public"
+    ],
+    "using": null,
+    "withCheck": "(EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = auth.uid()) AND ((p.role = 'admin'::text) OR ('meta.gestor'::text = ANY (p.features))))))"
+  },
+  {
+    "tabela": "gt_config_metricas",
+    "nome": "gt_cfg_ferramenta_update",
+    "tipo": "permissive",
+    "comando": "update",
+    "papeis": [
+      "public"
+    ],
+    "using": "(EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = auth.uid()) AND ((p.role = 'admin'::text) OR ('meta.gestor'::text = ANY (p.features))))))",
+    "withCheck": "(EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = auth.uid()) AND ((p.role = 'admin'::text) OR ('meta.gestor'::text = ANY (p.features))))))"
+  },
+  {
+    "tabela": "gt_config_metricas",
+    "nome": "gt_cfg_read",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "public"
+    ],
+    "using": "true",
+    "withCheck": null
+  },
+  {
+    "tabela": "gt_fila_decisoes",
+    "nome": "gt_fila_decisoes_insercao",
+    "tipo": "permissive",
+    "comando": "insert",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": null,
+    "withCheck": "((EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = auth.uid()) AND ((p.role = 'admin'::text) OR ('meta.gestor'::text = ANY (p.features)))))) AND (decidido_por = auth.uid()))"
+  },
+  {
+    "tabela": "gt_fila_decisoes",
+    "nome": "gt_fila_decisoes_leitura",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "(EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = auth.uid()) AND ((p.role = 'admin'::text) OR ('meta.gestor'::text = ANY (p.features))))))",
+    "withCheck": null
+  },
+  {
+    "tabela": "gt_fila_decisoes",
+    "nome": "so_contas_permitidas",
+    "tipo": "restrictive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "pode_ver_conta(account_id)",
+    "withCheck": null
+  },
+  {
+    "tabela": "gt_objetivo_interacao",
+    "nome": "objetivo_interacao_escrita",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "(EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = auth.uid()) AND ((p.role = 'admin'::text) OR ('meta.gestor'::text = ANY (p.features))))))",
+    "withCheck": "(EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = auth.uid()) AND ((p.role = 'admin'::text) OR ('meta.gestor'::text = ANY (p.features))))))"
+  },
+  {
+    "tabela": "gt_objetivo_interacao",
+    "nome": "objetivo_interacao_leitura",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null
+  },
+  {
+    "tabela": "gt_ponderada_config",
+    "nome": "ponderada_config_escrita",
+    "tipo": "permissive",
+    "comando": "update",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "(EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = auth.uid()) AND ((p.role = 'admin'::text) OR ('meta.gestor'::text = ANY (p.features))))))",
+    "withCheck": "(EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = auth.uid()) AND ((p.role = 'admin'::text) OR ('meta.gestor'::text = ANY (p.features))))))"
+  },
+  {
+    "tabela": "gt_ponderada_config",
+    "nome": "ponderada_config_leitura",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null
+  },
+  {
+    "tabela": "gt_ponderada_config_log",
+    "nome": "ponderada_log_escrita",
+    "tipo": "permissive",
+    "comando": "insert",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": null,
+    "withCheck": "(EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = auth.uid()) AND ((p.role = 'admin'::text) OR ('meta.gestor'::text = ANY (p.features))))))"
+  },
+  {
+    "tabela": "gt_ponderada_config_log",
+    "nome": "ponderada_log_leitura",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null
+  },
+  {
+    "tabela": "gt_problemas_meta",
+    "nome": "gt_problemas_meta_leitura",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "(EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = auth.uid()) AND ((p.role = 'admin'::text) OR ('meta.gestor'::text = ANY (p.features))))))",
+    "withCheck": null
+  },
+  {
+    "tabela": "gt_problemas_meta",
+    "nome": "so_contas_permitidas",
+    "tipo": "restrictive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "pode_ver_conta(account_id)",
+    "withCheck": null
+  },
+  {
+    "tabela": "ia_execucoes",
+    "nome": "ia_exec_select",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null
+  },
+  {
+    "tabela": "interesses_sugeridos",
+    "nome": "int_sug_read",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null
+  },
+  {
+    "tabela": "noticias_concorrentes",
+    "nome": "noticias_select_authenticated",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null
+  },
+  {
+    "tabela": "noticias_panorama",
+    "nome": "noticias_panorama_read",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null
+  },
+  {
+    "tabela": "noticias_panorama",
+    "nome": "noticias_panorama_read_anon",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "anon"
+    ],
+    "using": "true",
+    "withCheck": null
+  },
+  {
+    "tabela": "patrimonio_bens",
+    "nome": "patrimonio_bens_apagar_so_do_meu_time",
+    "tipo": "restrictive",
+    "comando": "delete",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "pode_ver_bem(local_id, pessoa_id)",
+    "withCheck": null
+  },
+  {
+    "tabela": "patrimonio_bens",
+    "nome": "patrimonio_bens_editar_so_do_meu_time",
+    "tipo": "restrictive",
+    "comando": "update",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "pode_ver_bem(local_id, pessoa_id)",
+    "withCheck": "pode_ver_bem(local_id, pessoa_id)"
+  },
+  {
+    "tabela": "patrimonio_bens",
+    "nome": "patrimonio_bens_rw",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "is_patrimonio_admin()",
+    "withCheck": "is_patrimonio_admin()"
+  },
+  {
+    "tabela": "patrimonio_bens",
+    "nome": "patrimonio_bens_so_do_meu_time",
+    "tipo": "restrictive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "pode_ver_bem(local_id, pessoa_id)",
+    "withCheck": null
+  },
+  {
+    "tabela": "patrimonio_categorias",
+    "nome": "patrimonio_categorias_rw",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "is_patrimonio_admin()",
+    "withCheck": "is_patrimonio_admin()"
+  },
+  {
+    "tabela": "patrimonio_comodos",
+    "nome": "patrimonio_comodos_criar_frota",
+    "tipo": "permissive",
+    "comando": "insert",
+    "papeis": [
+      "public"
+    ],
+    "using": null,
+    "withCheck": "is_frota_admin()"
+  },
+  {
+    "tabela": "patrimonio_comodos",
+    "nome": "patrimonio_comodos_leitura_frota",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "public"
+    ],
+    "using": "is_frota_admin()",
+    "withCheck": null
+  },
+  {
+    "tabela": "patrimonio_comodos",
+    "nome": "patrimonio_comodos_rw",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "is_patrimonio_admin()",
+    "withCheck": "is_patrimonio_admin()"
+  },
+  {
+    "tabela": "patrimonio_config",
+    "nome": "patrimonio_config_rw",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "is_patrimonio_admin()",
+    "withCheck": "is_patrimonio_admin()"
+  },
+  {
+    "tabela": "patrimonio_empresas",
+    "nome": "patrimonio_empresas_criar_frota",
+    "tipo": "permissive",
+    "comando": "insert",
+    "papeis": [
+      "public"
+    ],
+    "using": null,
+    "withCheck": "is_frota_admin()"
+  },
+  {
+    "tabela": "patrimonio_empresas",
+    "nome": "patrimonio_empresas_leitura_frota",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "public"
+    ],
+    "using": "is_frota_admin()",
+    "withCheck": null
+  },
+  {
+    "tabela": "patrimonio_empresas",
+    "nome": "patrimonio_empresas_rw",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "is_patrimonio_admin()",
+    "withCheck": "is_patrimonio_admin()"
+  },
+  {
+    "tabela": "patrimonio_locais",
+    "nome": "patrimonio_locais_criar_frota",
+    "tipo": "permissive",
+    "comando": "insert",
+    "papeis": [
+      "public"
+    ],
+    "using": null,
+    "withCheck": "is_frota_admin()"
+  },
+  {
+    "tabela": "patrimonio_locais",
+    "nome": "patrimonio_locais_leitura_frota",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "public"
+    ],
+    "using": "is_frota_admin()",
+    "withCheck": null
+  },
+  {
+    "tabela": "patrimonio_locais",
+    "nome": "patrimonio_locais_rw",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "is_patrimonio_admin()",
+    "withCheck": "is_patrimonio_admin()"
+  },
+  {
+    "tabela": "patrimonio_log",
+    "nome": "patrimonio_log_insert",
+    "tipo": "permissive",
+    "comando": "insert",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": null,
+    "withCheck": "is_patrimonio_admin()"
+  },
+  {
+    "tabela": "patrimonio_log",
+    "nome": "patrimonio_log_select",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "is_patrimonio_admin()",
+    "withCheck": null
+  },
+  {
+    "tabela": "patrimonio_posse",
+    "nome": "patrimonio_posse_rw",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "is_patrimonio_admin()",
+    "withCheck": "is_patrimonio_admin()"
+  },
+  {
+    "tabela": "patrimonio_posse",
+    "nome": "patrimonio_posse_segue_o_bem",
+    "tipo": "restrictive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "(EXISTS ( SELECT 1\n   FROM patrimonio_bens b\n  WHERE ((b.id = patrimonio_posse.bem_id) AND pode_ver_bem(b.local_id, b.pessoa_id))))",
+    "withCheck": null
+  },
+  {
+    "tabela": "patrimonio_tipos",
+    "nome": "patrimonio_tipos_rw",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "is_patrimonio_admin()",
+    "withCheck": "is_patrimonio_admin()"
+  },
+  {
+    "tabela": "perfil_visitas_hora",
+    "nome": "perfil_visitas_hora_leitura",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "(EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = auth.uid()) AND ((p.role = 'admin'::text) OR p.is_superadmin OR (p.permissions ? 'meta.hora'::text)))))",
+    "withCheck": null
+  },
+  {
+    "tabela": "perfil_visitas_hora",
+    "nome": "so_contas_permitidas",
+    "tipo": "restrictive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "pode_ver_conta((account_id)::text)",
+    "withCheck": null
+  },
+  {
+    "tabela": "platform_settings",
+    "nome": "admin write settings",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "public"
+    ],
+    "using": "(EXISTS ( SELECT 1\n   FROM profiles\n  WHERE ((profiles.id = auth.uid()) AND (profiles.role = 'admin'::text))))",
+    "withCheck": null
+  },
+  {
+    "tabela": "platform_settings",
+    "nome": "authenticated read settings",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "public"
+    ],
+    "using": "(auth.role() = 'authenticated'::text)",
+    "withCheck": null
+  },
+  {
+    "tabela": "profiles",
+    "nome": "admin_update_profiles",
+    "tipo": "permissive",
+    "comando": "update",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "(get_my_role() = 'admin'::text)",
+    "withCheck": null
+  },
+  {
+    "tabela": "profiles",
+    "nome": "auth_read_profiles",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "public"
+    ],
+    "using": "((auth.role() = 'authenticated'::text) AND conta_ativa())",
+    "withCheck": null
+  },
+  {
+    "tabela": "projetos_status",
+    "nome": "projetos_status_del",
+    "tipo": "permissive",
+    "comando": "delete",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null
+  },
+  {
+    "tabela": "projetos_status",
+    "nome": "projetos_status_ins",
+    "tipo": "permissive",
+    "comando": "insert",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": null,
+    "withCheck": "true"
+  },
+  {
+    "tabela": "projetos_status",
+    "nome": "projetos_status_select",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null
+  },
+  {
+    "tabela": "projetos_status",
+    "nome": "projetos_status_upd",
+    "tipo": "permissive",
+    "comando": "update",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": "true"
+  },
+  {
+    "tabela": "push_preferencias",
+    "nome": "push_pref_escrita",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "((user_id = auth.uid()) OR (EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = auth.uid()) AND ((p.role = 'admin'::text) OR p.is_superadmin)))))",
+    "withCheck": "((user_id = auth.uid()) OR (EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = auth.uid()) AND ((p.role = 'admin'::text) OR p.is_superadmin)))))"
+  },
+  {
+    "tabela": "push_preferencias",
+    "nome": "push_pref_leitura",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "((user_id = auth.uid()) OR (EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = auth.uid()) AND ((p.role = 'admin'::text) OR p.is_superadmin)))))",
+    "withCheck": null
+  },
+  {
+    "tabela": "push_subs",
+    "nome": "push_subs_dono_delete",
+    "tipo": "permissive",
+    "comando": "delete",
+    "papeis": [
+      "public"
+    ],
+    "using": "(auth.uid() = user_id)",
+    "withCheck": null
+  },
+  {
+    "tabela": "push_subs",
+    "nome": "push_subs_dono_insert",
+    "tipo": "permissive",
+    "comando": "insert",
+    "papeis": [
+      "public"
+    ],
+    "using": null,
+    "withCheck": "(auth.uid() = user_id)"
+  },
+  {
+    "tabela": "push_subs",
+    "nome": "push_subs_dono_select",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "public"
+    ],
+    "using": "(auth.uid() = user_id)",
+    "withCheck": null
+  },
+  {
+    "tabela": "push_subs",
+    "nome": "push_subs_dono_update",
+    "tipo": "permissive",
+    "comando": "update",
+    "papeis": [
+      "public"
+    ],
+    "using": "(auth.uid() = user_id)",
+    "withCheck": null
+  },
+  {
+    "tabela": "robos_esperados",
+    "nome": "robos_esperados_leitura",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "(EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = auth.uid()) AND ((p.role = 'admin'::text) OR p.is_superadmin OR ('claude.status'::text = ANY (p.features))))))",
+    "withCheck": null
+  },
+  {
+    "tabela": "robos_esperados",
+    "nome": "robos_esperados_srv",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "public"
+    ],
+    "using": "(auth.role() = 'service_role'::text)",
+    "withCheck": null
+  },
+  {
+    "tabela": "robos_execucoes",
+    "nome": "robos_execucoes_leitura",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "(EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = auth.uid()) AND ((p.role = 'admin'::text) OR p.is_superadmin OR ('claude.status'::text = ANY (p.features))))))",
+    "withCheck": null
+  },
+  {
+    "tabela": "robos_execucoes",
+    "nome": "robos_execucoes_srv",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "public"
+    ],
+    "using": "(auth.role() = 'service_role'::text)",
+    "withCheck": null
+  },
+  {
+    "tabela": "shopify_pedidos",
+    "nome": "shopify_pedidos_leitura",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null
+  },
+  {
+    "tabela": "shopify_pedidos",
+    "nome": "shopify_pedidos_so_do_meu_canal",
+    "tipo": "restrictive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "pode_ver_canal(loja_id)",
+    "withCheck": null
+  },
+  {
+    "tabela": "social_metas",
+    "nome": "so_contas_permitidas",
+    "tipo": "restrictive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "pode_ver_conta(account_id)",
+    "withCheck": null
+  },
+  {
+    "tabela": "social_metas",
+    "nome": "social_metas_read",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null
+  },
+  {
+    "tabela": "social_metas",
+    "nome": "social_metas_write",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": "true"
+  },
+  {
+    "tabela": "user_permissions",
+    "nome": "Admin gerencia permissoes",
+    "tipo": "permissive",
+    "comando": "all",
+    "papeis": [
+      "public"
+    ],
+    "using": "(EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = auth.uid()) AND (p.role = 'admin'::text))))",
+    "withCheck": null
+  },
+  {
+    "tabela": "user_permissions",
+    "nome": "User le proprias permissoes",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "public"
+    ],
+    "using": "(auth.uid() = user_id)",
+    "withCheck": null
+  },
+  {
+    "tabela": "vessel_atendimentos",
+    "nome": "vessel_atendimentos_le_central",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "vessel_pode('atendimentos'::text, 'ver'::text)",
+    "withCheck": null
+  },
+  {
+    "tabela": "vessel_atendimentos",
+    "nome": "vessel_atendimentos_leitura_meta_leads",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "is_vessel_leads()",
+    "withCheck": null
+  },
+  {
+    "tabela": "vessel_baixas",
+    "nome": "vessel_baixas_read",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "is_vessel_admin()",
+    "withCheck": null
+  },
+  {
+    "tabela": "vessel_cartao_pedidos",
+    "nome": "vessel_cartao_pedidos_read",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "is_vessel_admin()",
+    "withCheck": null
+  },
+  {
+    "tabela": "vessel_client_advisors",
+    "nome": "vessel_client_advisors_le_central",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "vessel_pode('atendimentos'::text, 'ver'::text)",
+    "withCheck": null
+  },
+  {
+    "tabela": "vessel_clientes",
+    "nome": "vessel_clientes_read",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "is_vessel_admin()",
+    "withCheck": null
+  },
+  {
+    "tabela": "vessel_convite_aberturas",
+    "nome": "vessel_convite_aberturas_le_central",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "vessel_pode('atendimentos'::text, 'ver'::text)",
+    "withCheck": null
+  },
+  {
+    "tabela": "vessel_edicoes",
+    "nome": "vessel_edicoes_read",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "is_vessel_admin()",
+    "withCheck": null
+  },
+  {
+    "tabela": "vessel_garantias_baixadas",
+    "nome": "vessel_garantias_baixadas_read",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "is_vessel_admin()",
+    "withCheck": null
+  },
+  {
+    "tabela": "vessel_leituras",
+    "nome": "vessel_leituras_read",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "is_vessel_admin()",
+    "withCheck": null
+  },
+  {
+    "tabela": "vessel_lembretes",
+    "nome": "vessel_lembretes_read",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "is_vessel_admin()",
+    "withCheck": null
+  },
+  {
+    "tabela": "vessel_lista_espera",
+    "nome": "vessel_lista_espera_leitura_meta_leads",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "is_vessel_leads()",
+    "withCheck": null
+  },
+  {
+    "tabela": "vessel_lotes",
+    "nome": "vessel_lotes_read",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "is_vessel_admin()",
+    "withCheck": null
+  },
+  {
+    "tabela": "vessel_origens",
+    "nome": "vessel_origens_leitura_meta_leads",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "is_vessel_leads()",
+    "withCheck": null
+  },
+  {
+    "tabela": "vessel_pecas",
+    "nome": "vessel_pecas_read",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "is_vessel_admin()",
+    "withCheck": null
+  },
+  {
+    "tabela": "vessel_pedido_itens",
+    "nome": "vessel_pedido_itens_le_central",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "vessel_pode('atendimentos'::text, 'ver'::text)",
+    "withCheck": null
+  },
+  {
+    "tabela": "vessel_pedidos",
+    "nome": "vessel_pedidos_le_central",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "vessel_pode('atendimentos'::text, 'ver'::text)",
+    "withCheck": null
+  },
+  {
+    "tabela": "vessel_pedidos_de_registro",
+    "nome": "vessel_pedidos_registro_read",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "is_vessel_admin()",
+    "withCheck": null
+  },
+  {
+    "tabela": "vessel_pessoas",
+    "nome": "vessel_pessoas_le_central",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "vessel_pode('atendimentos'::text, 'ver'::text)",
+    "withCheck": null
+  },
+  {
+    "tabela": "vessel_pessoas",
+    "nome": "vessel_pessoas_leitura_meta_leads",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "is_vessel_leads()",
+    "withCheck": null
+  },
+  {
+    "tabela": "vessel_private_edits",
+    "nome": "vessel_private_edits_le_central",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "vessel_pode('atendimentos.private-edit'::text, 'ver'::text)",
+    "withCheck": null
+  },
+  {
+    "tabela": "vessel_registros",
+    "nome": "vessel_registros_read",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "is_vessel_admin()",
+    "withCheck": null
+  },
+  {
+    "tabela": "vessel_sessao_aberturas",
+    "nome": "vessel_sessao_aberturas_le_central",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "vessel_pode('atendimentos.beauty-sessions'::text, 'ver'::text)",
+    "withCheck": null
+  },
+  {
+    "tabela": "vessel_stylist_aberturas",
+    "nome": "vessel_stylist_aberturas_le_central",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "vessel_pode('atendimentos.stylist-circle'::text, 'ver'::text)",
+    "withCheck": null
+  },
+  {
+    "tabela": "visitas_perfil_dia",
+    "nome": "auth_read_visitas_perfil_dia",
+    "tipo": "permissive",
+    "comando": "select",
+    "papeis": [
+      "authenticated"
+    ],
+    "using": "true",
+    "withCheck": null
+  }
+]

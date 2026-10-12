@@ -90,11 +90,12 @@ func (h *Handlers) Entrar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var id, hash string
+	var ativa bool
 	err := h.pool.QueryRow(r.Context(),
-		`select u.id::text, coalesce(u.senha_hash, '')
+		`select u.id::text, coalesce(u.senha_hash, ''), u.desativado_em is null and not coalesce(p.disabled, false)
 		   from usuarios u left join profiles p on p.id = u.id
-		  where lower(u.email) = $1 and u.desativado_em is null and not coalesce(p.disabled, false)`, email).
-		Scan(&id, &hash)
+		  where lower(u.email) = $1::text`, email).
+		Scan(&id, &hash, &ativa)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		erroJSON(w, http.StatusInternalServerError, "erro_interno")
 		return
@@ -104,6 +105,12 @@ func (h *Handlers) Entrar(w http.ResponseWriter, r *http.Request) {
 	}
 	if !SenhaConfere(hash, in.Senha) || id == "" {
 		erroJSON(w, http.StatusUnauthorized, "credenciais_invalidas")
+		return
+	}
+	// Só com a senha CERTA a conta desativada fica sabendo que foi desativada (a tela mostra
+	// "fale com quem administra"); senha errada continua o 401 de sempre (sem oráculo).
+	if !ativa {
+		erroJSON(w, http.StatusForbidden, "conta_desativada")
 		return
 	}
 	// ip não é limpo: senão um atacante zeraria o contador entrando na própria conta
