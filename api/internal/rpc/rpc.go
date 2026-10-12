@@ -10,12 +10,15 @@
 package rpc
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"maps"
 	"net/http"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -54,6 +57,24 @@ var (
 	tipos  = []string{"text", "uuid", "integer", "bigint", "numeric", "boolean", "date", "timestamptz", "jsonb"}
 )
 
+// proibidas são nomes que NUNCA viram RPC do painel, mesmo que um sub-plano os declare por
+// engano: as duas do Ruling 23, a fila do abandono e os robôs (Ruling 25: ficam em SQL, só o
+// worker as chama), as internas com EXECUTE revogado de `authenticated` e as três de página
+// pública (`anon`, Plano 6). A recusa é aqui, no ponto único de entrada: Novo falha e a API não sobe.
+var proibidas = []string{
+	"marcar_senha_trocada", "minha_conta_esta_desativada",
+	"pegar_da_fila", "pegar_para_mensagem", "marcar_da_fila", "marcar_mensagem", "marcar_checkout_comprou",
+	"marcar_checkout_pagamento_pendente", "liberar_travadas_da_fila", "liberar_mensagens_travadas", "agendar_followups",
+	"avaliar_trava_cruzada", "mover_abandonados_para_fila", "devolver_da_fila", "devolver_mensagem",
+	"registrar_pedido_para_mensagem", "disparar_robo", "disparar_coletor", "tomar_trava",
+	"vessel_cpf_valido", "vessel_faixa_da_nota", "vessel_situacao_do_convite", "vessel_numeros_do_stylist_circle", "vessel_telefone_canonico",
+	"vessel_convite_da_convidada", "vessel_rsvp_da_convidada", "vessel_pedir_atendimento",
+}
+
+func proibida(nome string) bool {
+	return slices.Contains(proibidas, nome) || strings.HasPrefix(nome, "checkout_")
+}
+
 type Registro struct {
 	pool    *pgxpool.Pool
 	funcoes map[string]Funcao
@@ -65,6 +86,9 @@ func Novo(p *pgxpool.Pool, fs ...Funcao) (*Registro, error) {
 	for _, f := range fs {
 		if !reNome.MatchString(f.Nome) || f.Portao == nil {
 			return nil, fmt.Errorf("rpc %q: nome inválido ou sem portão", f.Nome)
+		}
+		if proibida(f.Nome) {
+			return nil, fmt.Errorf("rpc %q: nome proibido na lista branca do painel", f.Nome)
 		}
 		if _, dup := r.funcoes[f.Nome]; dup {
 			return nil, fmt.Errorf("rpc %q registrada duas vezes", f.Nome)
@@ -107,6 +131,17 @@ func formaOk(pr Param, v json.RawMessage) string {
 		if !strings.HasPrefix(bruto, "[") && bruto != "null" {
 			return pr.Nome + " deve ser uma lista"
 		}
+		if pr.Tipo == "text[]" && bruto != "null" { // elementos: só texto (ou null)
+			var el []any
+			if err := json.Unmarshal(v, &el); err != nil {
+				return pr.Nome + " deve ser uma lista"
+			}
+			for _, x := range el {
+				if _, ehTexto := x.(string); !ehTexto && x != nil {
+					return pr.Nome + " deve ser uma lista de textos"
+				}
+			}
+		}
 	case pr.Tipo != "jsonb":
 		if strings.HasPrefix(bruto, "[") || strings.HasPrefix(bruto, "{") {
 			return pr.Nome + " deve ser um valor simples"
@@ -136,9 +171,18 @@ func (rg *Registro) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		dados.Erro(w, http.StatusForbidden, "sem_permissao", "")
 		return
 	}
+	// corpo vazio (inclusive sem tamanho declarado, chunked) vale {}
 	corpo := map[string]json.RawMessage{}
-	if r.ContentLength != 0 && !dados.LerCorpo(w, r, &corpo) {
+	bruto, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
+	if err != nil {
+		dados.Erro(w, http.StatusRequestEntityTooLarge, "corpo_grande_demais", "")
 		return
+	}
+	if len(bytes.TrimSpace(bruto)) > 0 {
+		r.Body = io.NopCloser(bytes.NewReader(bruto))
+		if !dados.LerCorpo(w, r, &corpo) {
+			return
+		}
 	}
 	args := pgx.NamedArgs{}
 	var chamadas []string
@@ -169,10 +213,12 @@ func (rg *Registro) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	chamada := pgx.Identifier{f.Nome}.Sanitize() + "(" + strings.Join(chamadas, ", ") + ")"
 	var saida []byte
-	err := banco.ComUsuario(r.Context(), rg.pool, a.ID, func(tx pgx.Tx) error {
+	err = banco.ComUsuario(r.Context(), rg.pool, a.ID, func(tx pgx.Tx) error {
 		switch f.Retorno {
 		case Conjunto:
-			return tx.QueryRow(r.Context(), `select coalesce(json_agg(r), '[]'::json) from `+chamada+` r`, args).Scan(&saida)
+			// linha inteira (r.*: uma coluna chamada r não a esconde) e o teto de linhas do PostgREST
+			return tx.QueryRow(r.Context(), `select coalesce(json_agg(t.v), '[]'::json) from (select to_json(r.*) as v from `+
+				chamada+` r limit `+strconv.Itoa(dados.LimitePadrao)+`) t`, args).Scan(&saida)
 		case Nada:
 			_, err := tx.Exec(r.Context(), `select `+chamada, args)
 			return err

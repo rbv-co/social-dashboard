@@ -2,6 +2,8 @@ package rpc
 
 import (
 	"context"
+	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -12,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rbv-co/social-dashboard/api/internal/auth"
 	"github.com/rbv-co/social-dashboard/api/internal/autz"
+	"github.com/rbv-co/social-dashboard/api/internal/dados"
 	"github.com/rbv-co/social-dashboard/api/internal/testebanco"
 )
 
@@ -39,7 +42,13 @@ func montarCom(t *testing.T, ator *auth.Ator, escopo *autz.Escopo, fs ...Funcao)
 		create function regra() returns int language plpgsql as $$ begin raise exception 'Lote já gravado'; end $$;
 		create function eco(p_j jsonb) returns jsonb language sql as $$ select p_j $$;
 		create function eco_texto(p_t text) returns text language sql as $$ select p_t $$;
-		create function nulo() returns int language sql as $$ select null::int $$;`); err != nil {
+		create function nulo() returns int language sql as $$ select null::int $$;
+		create function tabela_com_r() returns table(r int, x text) language sql as $$ select 1, 'a' union all select 2, 'b' $$;
+		create function muitas() returns table(n int, m int) language sql as $$ select g, 1 from generate_series(1, 5000) g $$;
+		create function escalares() returns setof integer language sql as $$ select generate_series(1, 3) $$;
+		create function nenhuma() returns table(n int) language sql as $$ select 1 where false $$;
+		create function textos(p_t text[]) returns integer language sql as $$ select cardinality(p_t) $$;
+		create function ints(p_i integer[]) returns integer language sql as $$ select cardinality(p_i) $$;`); err != nil {
 		t.Fatal(err)
 	}
 	reg, err := Novo(p, fs...)
@@ -105,14 +114,14 @@ func TestRPCChamaComParametrosNomeadosEIdentidade(t *testing.T) {
 		{"soma", `{"p_a":1,"p_c":1}`, 400, `{"error":"pedido_invalido","mensagem":"parâmetro desconhecido: p_c"}`},
 		{"soma", `{"p_a":1} lixo`, 400, `{"error":"corpo_invalido"}`},
 		{"lista", `{"p_ids":["bbbbbbbb-0000-4000-a000-000000000002","aaaaaaaa-0000-4000-a000-000000000001"]}`, 200,
-			`[{"id":"aaaaaaaa-0000-4000-a000-000000000001","n":1}, ` + "\n" + ` {"id":"bbbbbbbb-0000-4000-a000-000000000002","n":1}]`},
+			`[{"id":"aaaaaaaa-0000-4000-a000-000000000001","n":1}, {"id":"bbbbbbbb-0000-4000-a000-000000000002","n":1}]`},
 		{"lista", `{"p_ids":"aaaaaaaa-0000-4000-a000-000000000001"}`, 400, `{"error":"pedido_invalido","mensagem":"p_ids deve ser uma lista"}`},
 		{"quem", ``, 200, `"` + quemPede + `"`},
 		{"eco", `{"p_j":{"a":[1,"x"]}}`, 200, `{"a": [1, "x"]}`},
 		{"eco", `{"p_j":null}`, 200, `null`},
 		{"nulo", `{}`, 200, `null`},
-		// 42501 da função: 403 sem a frase (dados.ErroDoBanco não repassa texto que não seja P0001)
-		{"negada", `{}`, 403, `{"error":"sem_permissao"}`},
+		// 42501 do RAISE da função: 403 com a frase (como o PostgREST)
+		{"negada", `{}`, 403, `{"error":"sem_permissao","mensagem":"Sem acesso para isso"}`},
 		{"regra", `{}`, 400, `{"error":"regra_de_negocio","mensagem":"Lote já gravado"}`},
 		{"pg_sleep", `{}`, 404, `{"error":"nao_encontrado"}`}, // não registrada: lista branca
 		{"marcar", `{}`, 404, `{"error":"nao_encontrado"}`},
@@ -366,5 +375,117 @@ func TestRPCRegistroVazioNega(t *testing.T) {
 		if w := chamar(h, n, `{}`); w.Code != 404 {
 			t.Errorf("%s = %d", n, w.Code)
 		}
+	}
+}
+
+// Função que devolve tabela: a linha inteira vira o objeto (mesmo com coluna chamada r), o teto
+// é o max_rows do PostgREST (1000), escalar setof continua escalar, vazio é [] e void é 204.
+func TestRPCConjuntoLinhaInteiraETeto(t *testing.T) {
+	_, h := montar(t,
+		Funcao{Nome: "tabela_com_r", Retorno: Conjunto, Portao: todos},
+		Funcao{Nome: "muitas", Retorno: Conjunto, Portao: todos},
+		Funcao{Nome: "escalares", Retorno: Conjunto, Portao: todos},
+		Funcao{Nome: "nenhuma", Retorno: Conjunto, Portao: todos},
+		Funcao{Nome: "marcar", Retorno: Nada, Portao: todos},
+	)
+	if w := chamar(h, "tabela_com_r", `{}`); w.Code != 200 || strings.Join(strings.Fields(w.Body.String()), "") != `[{"r":1,"x":"a"},{"r":2,"x":"b"}]` {
+		t.Errorf("coluna r = %d %s", w.Code, w.Body)
+	}
+	w := chamar(h, "muitas", `{}`)
+	var linhas []map[string]int
+	if err := json.Unmarshal(w.Body.Bytes(), &linhas); err != nil || w.Code != 200 || len(linhas) != dados.LimitePadrao {
+		t.Errorf("5000 linhas = %d, %d linhas (%v)", w.Code, len(linhas), err)
+	}
+	if w := chamar(h, "escalares", `{}`); w.Code != 200 || strings.Join(strings.Fields(w.Body.String()), "") != `[1,2,3]` {
+		t.Errorf("setof escalar = %d %s", w.Code, w.Body)
+	}
+	if w := chamar(h, "nenhuma", `{}`); w.Code != 200 || strings.TrimSpace(w.Body.String()) != `[]` {
+		t.Errorf("vazia = %d %s", w.Code, w.Body)
+	}
+	if w := chamar(h, "marcar", `{}`); w.Code != 204 {
+		t.Errorf("void = %d %s", w.Code, w.Body)
+	}
+}
+
+// text[] só aceita textos (e null); uuid[]/integer[] seguem com os 400 do cast.
+func TestRPCListaDeTextoSoComTexto(t *testing.T) {
+	_, h := montar(t,
+		Funcao{Nome: "textos", Params: []Param{{Nome: "p_t", Tipo: "text[]"}}, Portao: todos},
+		Funcao{Nome: "ints", Params: []Param{{Nome: "p_i", Tipo: "integer[]"}}, Portao: todos},
+	)
+	for _, c := range []struct {
+		nome, corpo string
+		status      int
+		quer        string
+	}{
+		{"textos", `{"p_t":["a","b"]}`, 200, `2`},
+		{"textos", `{"p_t":["a",null]}`, 200, `2`},
+		{"textos", `{"p_t":[]}`, 200, `0`},
+		{"textos", `{"p_t":[["a"]]}`, 400, ``},
+		{"textos", `{"p_t":[{"a":1}]}`, 400, ``},
+		{"textos", `{"p_t":[1]}`, 400, ``},
+		{"textos", `{"p_t":[true]}`, 400, ``},
+		{"ints", `{"p_i":[1,2]}`, 200, `2`},
+		{"ints", `{"p_i":[[1]]}`, 400, ``},
+		{"ints", `{"p_i":[{"a":1}]}`, 400, ``},
+		{"ints", `{"p_i":["x"]}`, 400, ``},
+	} {
+		w := chamar(h, c.nome, c.corpo)
+		if w.Code != c.status || (c.quer != "" && strings.TrimSpace(w.Body.String()) != c.quer) {
+			t.Errorf("%s %s = %d %s", c.nome, c.corpo, w.Code, w.Body)
+		}
+	}
+}
+
+// Corpo vazio com tamanho desconhecido (chunked, ContentLength -1) vale {} .
+func TestRPCCorpoVazioSemTamanho(t *testing.T) {
+	_, h := montar(t, Funcao{Nome: "quem", Portao: todos}, Funcao{Nome: "soma", Params: []Param{{Nome: "p_a", Tipo: "integer"}}, Portao: todos})
+	for _, corpo := range []string{"", "  \n"} {
+		req := httptest.NewRequest("POST", "/rpc/quem", io.NopCloser(strings.NewReader(corpo)))
+		req.ContentLength = -1
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		if w.Code != 200 {
+			t.Errorf("corpo %q sem tamanho = %d %s", corpo, w.Code, w.Body)
+		}
+	}
+	req := httptest.NewRequest("POST", "/rpc/soma", io.NopCloser(strings.NewReader("")))
+	req.ContentLength = -1
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != 400 || !strings.Contains(w.Body.String(), "falta o parâmetro p_a") {
+		t.Errorf("param obrigatório sem corpo = %d %s", w.Code, w.Body)
+	}
+	req = httptest.NewRequest("POST", "/rpc/soma", io.NopCloser(strings.NewReader(`{"p_a":4}`)))
+	req.ContentLength = -1
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != 200 || strings.TrimSpace(w.Body.String()) != `5` {
+		t.Errorf("corpo sem tamanho = %d %s", w.Code, w.Body)
+	}
+}
+
+// Nomes que nunca viram RPC do painel: Novo recusa (a montagem da API não sobe).
+func TestRPCNovoRecusaNomesProibidos(t *testing.T) {
+	proibidos := []string{
+		// Ruling 23
+		"marcar_senha_trocada", "minha_conta_esta_desativada",
+		// fila do abandono (Ruling 25) e robôs
+		"pegar_da_fila", "pegar_para_mensagem", "marcar_da_fila", "marcar_mensagem", "marcar_checkout_comprou",
+		"marcar_checkout_pagamento_pendente", "liberar_travadas_da_fila", "liberar_mensagens_travadas", "agendar_followups",
+		"avaliar_trava_cruzada", "mover_abandonados_para_fila", "devolver_da_fila", "devolver_mensagem",
+		"registrar_pedido_para_mensagem", "checkout_qualquer_coisa", "checkout_", "disparar_robo", "disparar_coletor", "tomar_trava",
+		// internas com EXECUTE revogado de authenticated
+		"vessel_cpf_valido", "vessel_faixa_da_nota", "vessel_situacao_do_convite", "vessel_numeros_do_stylist_circle", "vessel_telefone_canonico",
+		// páginas públicas (anon): Plano 6
+		"vessel_convite_da_convidada", "vessel_rsvp_da_convidada", "vessel_pedir_atendimento",
+	}
+	for _, n := range proibidos {
+		if _, err := Novo(nil, Funcao{Nome: n, Portao: todos}); err == nil || !strings.Contains(err.Error(), "proibid") {
+			t.Errorf("%s: erro = %v", n, err)
+		}
+	}
+	if _, err := Novo(nil, Funcao{Nome: "vessel_alertas", Portao: todos}); err != nil {
+		t.Errorf("nome comum recusado: %v", err)
 	}
 }

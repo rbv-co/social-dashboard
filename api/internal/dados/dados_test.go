@@ -222,6 +222,130 @@ func TestErroNativoDoBancoNaoVazaOValor(t *testing.T) {
 	}
 }
 
+// RAISE escrito por nós (a primeira linha de Where termina em " at RAISE") leva a frase até a
+// pessoa nos códigos que as funções do banco de produção usam; erro nativo do Postgres (mesmo
+// com o mesmo código, mesmo dentro do plpgsql) e RAISE re-lançado de erro nativo continuam
+// genéricos. Roda funções de verdade: a regra depende do Where que o servidor monta.
+func TestErroDoBancoDistingueRaiseNossoDeErroNativo(t *testing.T) {
+	p := testebanco.Novo(t)
+	ctx := context.Background()
+	if _, err := p.Exec(ctx, `
+		create table unico (x text unique);
+		insert into unico values ('SEGREDO-constraint');
+		create function f_42501() returns int language plpgsql as $$ begin raise exception 'Sem acesso à lista de colaboradores' using errcode = '42501'; end $$;
+		create function f_p0001() returns int language plpgsql as $$ begin raise exception 'Digite o nome antes de criar.'; end $$;
+		create function f_22023() returns int language plpgsql as $$ begin raise exception 'o fim vem antes do começo' using errcode = '22023'; end $$;
+		create function f_p0002() returns int language plpgsql as $$ begin raise exception 'edicao nao encontrada' using errcode = 'P0002'; end $$;
+		create function f_23514() returns trigger language plpgsql as $$ begin raise exception 'periodo longo demais (maximo 190 dias)' using errcode = '23514'; end $$;
+		create table com_gatilho (x int);
+		create trigger t before insert on com_gatilho for each row execute function f_23514();
+		create function f_aninhada() returns int language plpgsql as $$ begin return f_42501(); end $$;
+		create function f_nativa_22p02() returns int language plpgsql as $$ begin return 'SEGREDO'::uuid::text::int; end $$;
+		create function f_nativa_22012() returns int language plpgsql as $$ declare n int := 0; begin return 1 / n; end $$;
+		create function f_nativa_22023() returns int language plpgsql as $$ begin return extract(epoch from date_trunc('SEGREDO', now())); end $$;
+		create function f_nativa_42501() returns int language sql as $$ select 1 $$;
+		create function f_reraise_23505() returns int language plpgsql as $$ begin insert into unico values ('SEGREDO-constraint'); return 1; exception when unique_violation then raise; end $$;
+		create function f_codigo_fora_da_lista() returns int language plpgsql as $$ begin raise exception 'SEGREDO fora da lista' using errcode = '23505'; end $$;
+		create function f_sql() returns int language sql as $$ select (1 / (select 0))::int $$;
+		do $r$ begin create role sem_poder_dados nologin; exception when duplicate_object then null; end $r$;
+		do $r$ begin execute format('grant usage on schema %I to sem_poder_dados', current_schema()); end $r$;
+		create table fechada (x int);
+		revoke all on fechada from public;`); err != nil {
+		t.Fatal(err)
+	}
+	casos := []struct {
+		sql    string
+		status int
+		corpo  string
+	}{
+		{`select f_42501()`, 403, `{"error":"sem_permissao","mensagem":"Sem acesso à lista de colaboradores"}`},
+		{`select f_aninhada()`, 403, `{"error":"sem_permissao","mensagem":"Sem acesso à lista de colaboradores"}`},
+		{`select f_p0001()`, 400, `{"error":"regra_de_negocio","mensagem":"Digite o nome antes de criar."}`},
+		{`select f_22023()`, 400, `{"error":"regra_de_negocio","mensagem":"o fim vem antes do começo"}`},
+		{`select f_p0002()`, 404, `{"error":"nao_encontrado","mensagem":"edicao nao encontrada"}`},
+		// nativos, mesmo dentro do plpgsql: sem texto do banco
+		{`select f_nativa_22p02()`, 400, `{"error":"pedido_invalido"}`},
+		{`select f_nativa_22012()`, 400, `{"error":"pedido_invalido"}`},
+		{`select f_nativa_22023()`, 400, `{"error":"pedido_invalido"}`},
+		{`select f_sql()`, 400, `{"error":"pedido_invalido"}`},
+		// re-lançado (raise;) de erro nativo: continua o texto fixo do 409
+		{`select f_reraise_23505()`, 409, `{"error":"conflito","mensagem":"Já existe um registro com esses dados."}`},
+		// código fora da lista, mesmo com RAISE: genérico
+		{`select f_codigo_fora_da_lista()`, 409, `{"error":"conflito","mensagem":"Já existe um registro com esses dados."}`},
+	}
+	for _, c := range casos {
+		w := httptest.NewRecorder()
+		Lista(ctx, p, w, c.sql, nil)
+		if w.Code != c.status || strings.TrimSpace(w.Body.String()) != c.corpo {
+			t.Errorf("%s = %d %s, esperava %d %s", c.sql, w.Code, w.Body, c.status, c.corpo)
+		}
+		if strings.Contains(w.Body.String(), "SEGREDO") {
+			t.Errorf("%s vazou: %s", c.sql, w.Body)
+		}
+	}
+	// 23514 vindo de gatilho com RAISE nosso: a frase passa (escrita numa transação)
+	_, err := p.Exec(ctx, `insert into com_gatilho values (1)`)
+	w := httptest.NewRecorder()
+	ErroDoBanco(w, err)
+	if w.Code != 400 || strings.TrimSpace(w.Body.String()) != `{"error":"regra_de_negocio","mensagem":"periodo longo demais (maximo 190 dias)"}` {
+		t.Errorf("23514 do gatilho = %d %s", w.Code, w.Body)
+	}
+	// 23514 nativo (CHECK) e 42501 nativo (permissão de tabela): sem texto
+	if _, err := p.Exec(ctx, `create table ck (x int check (x > 0))`); err != nil {
+		t.Fatal(err)
+	}
+	_, err = p.Exec(ctx, `insert into ck values (-1)`)
+	w = httptest.NewRecorder()
+	ErroDoBanco(w, err)
+	if w.Code != 400 || strings.Contains(w.Body.String(), "ck") || strings.Contains(w.Body.String(), "mensagem") {
+		t.Errorf("23514 nativo = %d %s", w.Code, w.Body)
+	}
+	tx, err := p.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, `set local role sem_poder_dados`); err != nil {
+		t.Fatal(err)
+	}
+	_, err = tx.Exec(ctx, `select * from fechada`)
+	w = httptest.NewRecorder()
+	ErroDoBanco(w, err)
+	if w.Code != 403 || strings.TrimSpace(w.Body.String()) != `{"error":"sem_permissao"}` {
+		t.Errorf("42501 nativo = %d %s (err %v)", w.Code, w.Body, err)
+	}
+}
+
+// Sem Where (erro montado à mão) nada passa; com Where de RAISE só os códigos da lista.
+func TestErroDoBancoRaiseSinteticoPorCodigo(t *testing.T) {
+	raise := "PL/pgSQL function f() line 3 at RAISE"
+	casos := []struct {
+		pe     pgconn.PgError
+		status int
+		corpo  string
+	}{
+		{pgconn.PgError{Code: "42501", Message: "frase", Where: raise}, 403, `{"error":"sem_permissao","mensagem":"frase"}`},
+		{pgconn.PgError{Code: "42501", Message: "frase", Where: raise + "\nSQL statement \"select f()\"\nPL/pgSQL function g() line 1 at RETURN"}, 403, `{"error":"sem_permissao","mensagem":"frase"}`},
+		{pgconn.PgError{Code: "42501", Message: "permission denied for table SEGREDO", Where: "SQL function \"f\" during inlining"}, 403, `{"error":"sem_permissao"}`},
+		{pgconn.PgError{Code: "42501", Message: "permission denied for table SEGREDO", Where: "PL/pgSQL function f() line 2 at RETURN\nPL/pgSQL function g() line 1 at RAISE"}, 403, `{"error":"sem_permissao"}`},
+		{pgconn.PgError{Code: "P0002", Message: "x", Where: raise}, 404, `{"error":"nao_encontrado","mensagem":"x"}`},
+		{pgconn.PgError{Code: "23514", Message: "x", Where: raise}, 400, `{"error":"regra_de_negocio","mensagem":"x"}`},
+		{pgconn.PgError{Code: "22023", Message: "x", Where: raise}, 400, `{"error":"regra_de_negocio","mensagem":"x"}`},
+		{pgconn.PgError{Code: "22023", Message: "SEGREDO", Where: "PL/pgSQL function f() line 2 at SQL statement"}, 400, `{"error":"pedido_invalido"}`},
+		{pgconn.PgError{Code: "23505", Message: "SEGREDO", Where: raise}, 409, `{"error":"conflito","mensagem":"Já existe um registro com esses dados."}`},
+		{pgconn.PgError{Code: "22P02", Message: "SEGREDO", Where: raise}, 400, `{"error":"pedido_invalido"}`},
+		{pgconn.PgError{Code: "XX000", Message: "SEGREDO", Where: raise}, 500, `{"error":"erro_interno"}`},
+		{pgconn.PgError{Code: "P0002", Message: "SEGREDO"}, 500, `{"error":"erro_interno"}`},
+	}
+	for _, c := range casos {
+		w := httptest.NewRecorder()
+		ErroDoBanco(w, &c.pe)
+		if w.Code != c.status || strings.TrimSpace(w.Body.String()) != c.corpo {
+			t.Errorf("%s %q: %d %s, esperava %d %s", c.pe.Code, c.pe.Where, w.Code, w.Body, c.status, c.corpo)
+		}
+	}
+}
+
 func TestLerPagina(t *testing.T) {
 	for q, quer := range map[string]Pagina{"": {1000, 0}, "limite=10&deslocamento=20": {10, 20}, "limite=1000": {1000, 0}, "deslocamento=2147483647": {1000, 2147483647}} {
 		v, _ := url.ParseQuery(q)
