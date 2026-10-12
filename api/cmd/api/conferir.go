@@ -391,6 +391,13 @@ func conferirComando(ctx context.Context, p *pgxpool.Pool, cfg config.Config) in
 		}
 		return 1
 	}
+	avisos, err := conferirAvisos(ctx, p)
+	if err != nil {
+		avisos = []string{"não consegui conferir o formato de profiles.permissions"}
+	}
+	for _, a := range avisos { // aviso não falha o conferir
+		fmt.Println("AVISO: " + a)
+	}
 	faltam = append(faltam, conferirRotas(p, cfg)...) // a montagem das rotas de domínio contra as tabelas reais
 	sort.Strings(faltam)
 	for _, f := range faltam {

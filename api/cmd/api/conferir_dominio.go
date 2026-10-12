@@ -67,6 +67,30 @@ func conferirAuditoria(ctx context.Context, tx pgx.Tx) ([]string, error) {
 	return faltam, nil
 }
 
+// conferirAvisos: dado suspeito que NÃO impede o corte (não falha o conferir). A API tolera
+// profiles.permissions fora do formato {recurso: [ações]} (auth.LerPermissoes: array, escalar, null e
+// valor que não é array não dão ação nenhuma, nunca 500), mas a pessoa fica sem a permissão que o dono
+// achava ter: vale olhar a lista antes do corte.
+func conferirAvisos(ctx context.Context, p *pgxpool.Pool) ([]string, error) {
+	var tem bool
+	if err := p.QueryRow(ctx, `select exists (select 1 from pg_attribute a
+		 where a.attrelid = to_regclass(current_schema() || '.profiles') and a.attname = 'permissions' and not a.attisdropped
+		   and a.atttypid = 'jsonb'::regtype)`).Scan(&tem); err != nil || !tem {
+		return nil, err // sem profiles.permissions jsonb: conferirSchema já acusa a coluna/o tipo
+	}
+	var n int
+	if err := p.QueryRow(ctx, `select count(*) from profiles
+		 where permissions is not null and case jsonb_typeof(permissions)
+		         when 'object' then exists (select 1 from jsonb_each(permissions) e where jsonb_typeof(e.value) <> 'array')
+		         else true end`).Scan(&n); err != nil {
+		return nil, err
+	}
+	if n == 0 {
+		return nil, nil
+	}
+	return []string{fmt.Sprintf("%d perfil(is) com profiles.permissions fora do formato {recurso: [ações]} (array, texto, null ou valor que não é array): a API ignora o que não for lista de textos, e a pessoa fica sem essa permissão", n)}, nil
+}
+
 // papelDasRPC: o papel do Supabase que chamava `.rpc` (var só para o teste do papel ausente).
 var papelDasRPC = "authenticated"
 

@@ -7,11 +7,11 @@ package autz
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"slices"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/rbv-co/social-dashboard/api/internal/auth"
 )
 
 // Banco é o que CarregarEscopo e Conferir precisam: *pgxpool.Pool e pgx.Tx servem.
@@ -91,7 +91,7 @@ func CarregarEscopo(ctx context.Context, b Banco, usuarioID string) (*Escopo, er
 	default:
 		e.TemPerfil, e.Ativo, e.SemTrava = true, !desativado, !porEquipe
 		e.TodasContas, e.Contas = contas == nil, contas
-		lerPermissoes(perm, e)
+		e.Chaves, e.Acoes = auth.LerPermissoes(perm)
 	}
 
 	// meus_vinculos(): os vínculos diretos + 'supervisora' em toda equipe cujo canal é loja de
@@ -166,36 +166,4 @@ func acrescentar(l []string, v string) []string {
 		return l
 	}
 	return append(l, v)
-}
-
-// lerPermissoes é tolerante como o banco: permissions array só serve ao operador ? (casa
-// os elementos texto) e escalar não dá chave nenhuma (o vessel_pode exige objeto); valor que não é array conta para o operador ? mas não tem
-// ações; dentro do array só textos contam (o ? do jsonb só casa elemento texto).
-func lerPermissoes(bruto []byte, e *Escopo) {
-	var obj map[string]json.RawMessage
-	if json.Unmarshal(bruto, &obj) != nil {
-		// array: o ? do jsonb casa os elementos texto (nenhuma ação: vessel_pode exige objeto)
-		var lista []any
-		json.Unmarshal(bruto, &lista)
-		for _, x := range lista {
-			if s, ok := x.(string); ok {
-				e.Chaves[s] = true
-			}
-		}
-		return
-	}
-	for k, v := range obj {
-		e.Chaves[k] = true
-		var lista []any
-		if json.Unmarshal(v, &lista) != nil {
-			continue
-		}
-		acoes := []string{}
-		for _, x := range lista {
-			if s, ok := x.(string); ok {
-				acoes = append(acoes, s)
-			}
-		}
-		e.Acoes[k] = acoes
-	}
 }

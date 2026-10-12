@@ -238,3 +238,31 @@ func TestConferirSchemaConfereAsRPCRegistradas(t *testing.T) {
 		t.Fatalf("faltam = %q", f)
 	}
 }
+
+// profiles.permissions fora do formato (array, escalar, chave cujo valor não é array) é tolerado pela API
+// (nunca 500), mas é dado suspeito: o conferir AVISA com a contagem, sem falhar.
+func TestConferirAvisaPermissionsForaDoFormato(t *testing.T) {
+	p := testebanco.Novo(t)
+	esquemaCompleto(t, p, false)
+	ctx := context.Background()
+	if av, err := conferirAvisos(ctx, p); err != nil || len(av) != 0 {
+		t.Fatalf("sem perfis: avisos = %q (%v)", av, err)
+	}
+	exec(t, p, `insert into profiles (id, permissions) values
+		(gen_random_uuid(), '{"meta.opr": ["ver"]}'), (gen_random_uuid(), null), (gen_random_uuid(), '{}'),
+		(gen_random_uuid(), '["meta.opr"]'), (gen_random_uuid(), '"texto"'), (gen_random_uuid(), 'null'),
+		(gen_random_uuid(), '{"meta.opr": true}'), (gen_random_uuid(), '{"k": [1]}'), (gen_random_uuid(), '{"k": ["ver"], "j": "x"}')`)
+	av, err := conferirAvisos(ctx, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// fora do formato: array, texto, 'null', {"meta.opr": true}, {"k": ["ver"], "j": "x"} = 5 (o `{"k": [1]}` é array: vale)
+	if len(av) != 1 || !strings.Contains(av[0], "5 perfil(is)") || !strings.Contains(av[0], "permissions") {
+		t.Fatalf("avisos = %q", av)
+	}
+	var codigo int
+	saida := saidaDe(t, func() { codigo = rodarWorker(ctx, p, config.Config{}, []string{"conferir"}) })
+	if codigo != 0 || !strings.Contains(saida, "AVISO: ") || !strings.Contains(saida, "5 perfil(is)") || !strings.Contains(saida, "schema confere") {
+		t.Fatalf("AVISO não falha o conferir: codigo=%d saida=%q", codigo, saida)
+	}
+}
