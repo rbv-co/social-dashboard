@@ -32,10 +32,12 @@ func TestConferirLinhaNova(t *testing.T) {
 		{Criar, map[string]any{}, false}, // coluna nula nunca casa
 		{Ler, map[string]any{"canal": 7}, true},
 		{Ler, map[string]any{"canal": 8}, false},
-		{EditarNova, map[string]any{"conta": "A1"}, true},
-		{EditarNova, map[string]any{"conta": "B2"}, false},
-		{EditarNova, map[string]any{}, true},              // conta nula: a regra de produção libera
-		{Apagar, map[string]any{"local_id": "L1"}, false}, // Apagar exige também o Ler: a policy de select (canal) nega a linha sem canal
+		// EditarNova = leitura (canal) E update (conta) da linha NOVA
+		{EditarNova, map[string]any{"conta": "A1", "canal": 7}, true},
+		{EditarNova, map[string]any{"conta": "B2", "canal": 7}, false}, // conta que não é minha
+		{EditarNova, map[string]any{"conta": "A1", "canal": 8}, false}, // canal que não é meu: a policy de select nega a linha nova
+		{EditarNova, map[string]any{"canal": 7}, true},                 // conta nula: a regra de produção libera
+		{Apagar, map[string]any{"local_id": "L1"}, false},              // Apagar exige também o Ler: a policy de select (canal) nega a linha sem canal
 	}
 	for _, c := range casos {
 		f, err := cat.Filtro(e, "autz_t", c.op, "v")

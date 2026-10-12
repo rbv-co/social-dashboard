@@ -66,11 +66,31 @@ func TestPermissivaRestritivaELeituraDeEditar(t *testing.T) {
 			t.Errorf("%s sem policy de leitura = %q", op, s)
 		}
 	}
+	// Sem policy de select a linha NOVA também não é legível: o UPDATE com WHERE/RETURNING cai no check do select.
+	if s := sqlDe(t, c, e, EditarNova); s != "false" {
+		t.Errorf("editar-nova sem policy de leitura = %q", s)
+	}
+	// Com a leitura liberada, o EditarNova é o WITH CHECK/USING do update (+ restritiva).
+	c = catalogoDe(t,
+		pol("permissive", "select", `["authenticated"]`, "true"),
+		pol("permissive", "update", `["authenticated"]`, "true"),
+		pol("restrictive", "update", `["authenticated"]`, "is_frota_admin()"))
 	if s := sqlDe(t, c, e, EditarNova); s != "true" {
 		t.Errorf("editar-nova com frota = %q", s)
 	}
 	if s := sqlDe(t, c, semFrota, EditarNova); s != "false" {
 		t.Errorf("editar-nova sem frota (restritiva) = %q", s)
+	}
+	// Restritiva de SELECT também vale para a linha nova (mover de A1 para A2 quem só vê A1), mas não para o Criar.
+	c = catalogoDe(t,
+		pol("permissive", "all", `["authenticated"]`, "true"),
+		pol("restrictive", "select", `["authenticated"]`, "pode_ver_conta(account_id)"))
+	a1 := &Escopo{ID: e.ID, TemPerfil: true, Ativo: true, Contas: []string{"A1"}}
+	if s := sqlDe(t, c, a1, EditarNova); s != `("v"."account_id" is null or "v"."account_id"::text = any(@autz_v_3_1::text[]))` {
+		t.Errorf("editar-nova com restritiva de select = %q", s)
+	}
+	if s := sqlDe(t, c, a1, Criar); s != "true" {
+		t.Errorf("criar não leva a regra de leitura = %q", s)
 	}
 }
 
@@ -133,8 +153,10 @@ func TestEscopoTravadoNaoViraTrue(t *testing.T) {
 
 // Papel na equipe: só as equipes onde o papel casa entram na lista; papel diferente nega.
 func TestPapelNaEquipe(t *testing.T) {
-	c := catalogoDe(t, pol("permissive", "update", `["authenticated"]`, "tenho_papel_na_equipe(equipe_id, ARRAY['gestor'::text])"))
-	// a política só de update não tem leitura: Editar sempre nega; o EditarNova mostra a lista
+	c := catalogoDe(t,
+		pol("permissive", "select", `["authenticated"]`, "true"),
+		pol("permissive", "update", `["authenticated"]`, "tenho_papel_na_equipe(equipe_id, ARRAY['gestor'::text])"))
+	// a leitura (true) é constante: o EditarNova é só a condição de update, com a lista das equipes onde sou gestor
 	id := "11111111-0000-4000-a000-000000000001"
 	gestor := &Escopo{ID: id, TemPerfil: true, Ativo: true, Vinculos: map[string][]string{"E1": {"gestor"}, "E2": {"membro"}}}
 	f, err := c.Filtro(gestor, "t", EditarNova, "v")

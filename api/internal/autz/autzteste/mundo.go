@@ -176,6 +176,12 @@ func personas(catalogo []map[string]any) []Persona {
 			Persona{Nome: "vessel:" + f + ":editar", perfil: perfil("permissions", map[string]any{f: []string{"ver", "editar"}})},
 			Persona{Nome: "vessel:" + f + ":so-editar", perfil: perfil("permissions", map[string]any{f: []string{"editar"}})})
 	}
+	// Módulo que dá escrita (conteudo, sales, frota...) COM a trava de conta: é a combinação em que a
+	// leitura da linha NOVA (restritiva de select por conta) decide o update que a move de A1 para A2.
+	// No fim da lista: os ids das pessoas anteriores não mudam.
+	ps = append(ps,
+		Persona{Nome: "conteudo-a1", perfil: perfil("features", []string{"conteudo"}, "allowed_accounts", []string{"A1"})},
+		Persona{Nome: "conteudo-contas-vazio", perfil: perfil("features", []string{"conteudo"}, "allowed_accounts", []string{})})
 	for i := range ps {
 		ps[i].ID = id("00000000", i+1)
 	}

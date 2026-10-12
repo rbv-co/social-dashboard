@@ -2,9 +2,13 @@ package autz
 
 import (
 	"bytes"
+	"context"
 	"os"
+	"slices"
 	"strings"
 	"testing"
+
+	"github.com/rbv-co/social-dashboard/api/internal/testebanco"
 )
 
 func TestCatalogoEmbutidoIgualAoDosDocs(t *testing.T) {
@@ -69,6 +73,57 @@ func TestFiltroFormaDoSQL(t *testing.T) {
 	} {
 		if f, err := chamar(); err == nil || !f.Nega() {
 			t.Errorf("%s: %q %v", nome, f.SQL, err)
+		}
+	}
+}
+
+// As 276 policies de produção: 273 compilam e exatamente 3 ficam de fora (só service_role/anon,
+// nunca valem para uma sessão da API). Quem entrar ou sair desta lista tem de ser decisão consciente.
+func TestPoliciesCompiladasEIgnoradasDeProducao(t *testing.T) {
+	quer := []string{"account_insights.service write", "campaign_insights.service write", "noticias_panorama.noticias_panorama_read_anon"}
+	got := slices.Clone(Producao.ignoradas)
+	slices.Sort(got)
+	if !slices.Equal(got, quer) {
+		t.Errorf("ignoradas = %q\nesperava  %q", got, quer)
+	}
+	if Producao.compiladas != 273 || Producao.compiladas+len(Producao.ignoradas) != 276 {
+		t.Errorf("compiladas = %d e ignoradas = %d (esperava 273 + 3 = 276)", Producao.compiladas, len(Producao.ignoradas))
+	}
+}
+
+// UPDATE com WHERE/RETURNING (todo PATCH, todo upsert) exige que a linha NOVA também passe no USING
+// das policies de select/all: mover uma linha de A1 para A2 quem só enxerga A1 NÃO pode.
+func TestEditarNovaExigeALeituraDaLinhaNova(t *testing.T) {
+	a1 := &Escopo{ID: "11111111-0000-4000-a000-000000000001", TemPerfil: true, Ativo: true, Modulos: []string{"conteudo"}, Contas: []string{"A1"}}
+	for _, tab := range []string{"conteudo_pecas", "conteudo_blocos", "conteudo_ideias", "campaign_filters", "social_metas"} {
+		f, err := Producao.Filtro(a1, tab, EditarNova, "v")
+		if err != nil || !strings.Contains(f.SQL, `"v"."account_id"::text = any(`) {
+			t.Errorf("%s×editar-nova = %q %v: faltou a condição de conta (pode_ver_conta) da linha nova", tab, f.SQL, err)
+		}
+		// Criar NÃO leva a regra de leitura: o INSERT sem RETURNING das linhas não aplica as policies de select.
+		if c, err := Producao.Filtro(a1, tab, Criar, "v"); err != nil || strings.Contains(c.SQL, "autz_v_0_") {
+			t.Errorf("%s×criar = %q %v: não devia incluir a regra de leitura", tab, c.SQL, err)
+		}
+	}
+}
+
+func TestConferirContaNovaDeOutraContaNega(t *testing.T) {
+	p := testebanco.Novo(t)
+	ctx := context.Background()
+	a1 := &Escopo{ID: "11111111-0000-4000-a000-000000000001", TemPerfil: true, Ativo: true, Modulos: []string{"conteudo"}, Contas: []string{"A1"}}
+	for _, tab := range []string{"conteudo_pecas", "conteudo_blocos", "conteudo_ideias", "campaign_filters", "social_metas"} {
+		if _, err := p.Exec(ctx, `create table "`+tab+`" (account_id text)`); err != nil {
+			t.Fatal(err)
+		}
+		f, err := Producao.Filtro(a1, tab, EditarNova, "v")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for conta, quer := range map[string]bool{"A1": true, "A2": false} {
+			got, err := Conferir(ctx, p, f, tab, map[string]any{"account_id": conta})
+			if err != nil || got != quer {
+				t.Errorf("%s×editar-nova conta %s = %v %v, esperava %v", tab, conta, got, err, quer)
+			}
 		}
 	}
 }
