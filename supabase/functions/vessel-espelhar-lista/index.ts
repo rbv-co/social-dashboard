@@ -322,7 +322,8 @@ async function renovarSeVencido(sb: any): Promise<string> {
   const creds = btoa(`${data.client_id}:${data.client_secret}`);
   const r = await fetch(`${BLING}/oauth/token`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded', Authorization: `Basic ${creds}` },
+    // enable-jwt: sem isso o Bling devolve token opaco (descontinuado)
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', Authorization: `Basic ${creds}`, 'enable-jwt': '1' },
     body: `grant_type=refresh_token&refresh_token=${data.refresh_token}`,
   });
   if (!r.ok) throw new Error('Não consegui renovar o acesso ao Bling.');

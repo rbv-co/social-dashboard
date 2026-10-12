@@ -12,6 +12,9 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rbv-co/social-dashboard/api/internal/autz"
+	"github.com/rbv-co/social-dashboard/api/internal/config"
+	"github.com/rbv-co/social-dashboard/api/internal/web"
 )
 
 // O que o código da API (worker, rotas do core, webhooks) presume do schema de PRODUÇÃO restaurado: várias
@@ -21,50 +24,53 @@ import (
 // de api/internal (comercial, conteudo, fabrica, frota, mensagens, meta, vessel, webhooks, webpush, worker,
 // canais, auth); quem mexer numa consulta com tabela, coluna ou função nova acrescenta aqui.
 var colunasDoWorker = map[string]string{
-	"accounts":                  "id,name,instagram_id,ad_account_id,access_token",
-	"daily_snapshots":           "account_id,captured_at,followers_count,gained,lost",
-	"followers_leituras":        "account_id,followers_count,origem,lido_em",
-	"engagement_snapshots":      "account_id,captured_at,period_days,likes,comments,saves,shares,reach,views,total_interactions,accounts_engaged,profile_views",
-	"content_snapshots":         "account_id,captured_at,period_days,posts_count,reels_count,stories_count,story_shares,story_replies,story_reach,story_interactions,story_navigation,story_profile_visits,story_follows,story_nav_forward,story_nav_back,story_nav_exit,story_nav_next",
-	"data_integrity_checks":     "checked_date,account_id,check_name,status,detail",
-	"campaigns":                 "campaign_id,account_id,name,objective,status,synced_at",
-	"ads":                       "ad_id,campaign_id,account_id,name,status,destino_link,synced_at",
-	"campaign_adsets":           "adset_id,campaign_id,account_id,destination_type,optimization_goal,synced_at",
-	"campaign_insights":         "campaign_id,account_id,captured_at,period_days,spend,impressions,clicks,reach,post_engagement,likes,comments,shares,saves,conversas,cadastros,compras,visitas",
-	"campaign_insights_hora":    "campaign_id,account_id,dia,hora,gasto_acumulado,conversas_acumuladas,cliques_acumulados,gasto_hora,conversas_hora,cliques_hora",
-	"perfil_visitas_hora":       "account_id,dia,hora,visitas_acumuladas,visitas_hora",
-	"ad_insights_hora":          "ad_id,campaign_id,account_id,dia,hora,gasto_acumulado,cliques_acumulados,gasto_hora,cliques_hora",
-	"push_subs":                 "endpoint,p256dh,auth,user_id",
-	"push_preferencias":         "user_id,tipo,ativo",
-	"profiles":                  "id,email,role,is_superadmin,disabled,features,permissions,escopo_por_equipe",
-	"equipes":                   "id,canal_loja_id",
-	"equipes_membros":           "equipe_id,profile_id,papel",
-	"canais_grupos_membros":     "grupo_id,profile_id,papel",
-	"bling_lojas":               "loja_id,nome,grupo,grupo_id",
-	"bling_pedido_nota":         "pedido_id,data_pedido,data_da_venda,total,loja_id,nota_situacao",
-	"bling_pedido_ajuste_valor": "pedido_id,total_corrigido",
-	"bling_pedido_vendedor":     "pedido_id,qtd_itens",
-	"acessos_pessoas":           "id,nome,profile_id,email_corporativo",
-	"frota_veiculos":            "id,nome,pessoa_id,situacao",
-	"frota_checklist_itens":     "cadencia,ordem,ativo",
-	"frota_checklist_config":    "dia_semanal,semana_mensal,dia_mensal",
-	"frota_checklist":           "veiculo_id,feita_em,cadencias",
-	"frota_uso":                 "id,veiculo_id,pessoa_id,tipo,saida_em,volta_em",
-	"frota_requisicoes":         "id,veiculo_id,situacao,retirada_prevista,destino,motivo_decisao,encerrada_motivo,pessoa_id,pessoa_nome,criada_por",
-	"conteudo_pecas":            "id,account_id,titulo,formato,status,legenda,hashtags,publicar_em,publicado_em,avisado_em,ig_media_id,ig_permalink,responsavel",
-	"conteudo_eventos":          "peca_id,acao,detalhe",
-	"conteudo_casamentos":       "peca_id,ig_media_id,ig_permalink,ig_timestamp,ig_caption,ig_thumb,pontuacao,situacao,motivo",
-	"conteudo_metricas":         "peca_id,capturado_em,curtidas,comentarios,alcance,salvamentos,compartilhamentos,visualizacoes,bruto",
-	"checkout_abandono":         "token,status",
-	"contatos_sem_mensagem":     "telefone,motivo",
-	"chatwoot_eventos":          "tipo,chatwoot_account_id,conversation_id,conversation_display_id,contact_id,contact_name,contact_phone_number,loja,classificacao_ia,criado_em_chatwoot,dia_br",
-	"shopify_pedidos":           "id,numero,loja_id,total,moeda,status_financeiro,cliente_nome,cliente_email,criado_em_shopify,bruto,atualizado_em",
-	"carrinho_eventos":          "tipo,cart_token,evento_shopify_id",
-	"vessel_rd_envios":          "id,origem_id,pessoa_id,status,tentativas,http_status,resposta,atualizado_em",
-	"vessel_pessoas":            "id,email",
-	"fabrica_campanhas":         "id,created_at,fechada_em,purgado_em",
-	"fabrica_criativos":         "campanha_id,storage_path,purgado_em",
-	"robos_execucoes":           "robo,disparado_em,status_code,ok,resposta,conferido_em",
+	"accounts":               "id,name,instagram_id,ad_account_id,access_token",
+	"daily_snapshots":        "account_id,captured_at,followers_count,gained,lost",
+	"followers_leituras":     "account_id,followers_count,origem,lido_em",
+	"engagement_snapshots":   "account_id,captured_at,period_days,likes,comments,saves,shares,reach,views,total_interactions,accounts_engaged,profile_views",
+	"content_snapshots":      "account_id,captured_at,period_days,posts_count,reels_count,stories_count,story_shares,story_replies,story_reach,story_interactions,story_navigation,story_profile_visits,story_follows,story_nav_forward,story_nav_back,story_nav_exit,story_nav_next",
+	"data_integrity_checks":  "checked_date,account_id,check_name,status,detail",
+	"campaigns":              "campaign_id,account_id,name,objective,status,synced_at",
+	"ads":                    "ad_id,campaign_id,account_id,name,status,destino_link,synced_at",
+	"campaign_adsets":        "adset_id,campaign_id,account_id,destination_type,optimization_goal,synced_at",
+	"campaign_insights":      "campaign_id,account_id,captured_at,period_days,spend,impressions,clicks,reach,post_engagement,likes,comments,shares,saves,conversas,cadastros,compras,visitas",
+	"campaign_insights_hora": "campaign_id,account_id,dia,hora,gasto_acumulado,conversas_acumuladas,cliques_acumulados,gasto_hora,conversas_hora,cliques_hora",
+	"perfil_visitas_hora":    "account_id,dia,hora,visitas_acumuladas,visitas_hora",
+	"ad_insights_hora":       "ad_id,campaign_id,account_id,dia,hora,gasto_acumulado,cliques_acumulados,gasto_hora,cliques_hora",
+	"push_subs":              "endpoint,p256dh,auth,user_id",
+	"push_preferencias":      "user_id,tipo,ativo",
+	"profiles":               "id,email,name,role,is_superadmin,disabled,features,permissions,escopo_por_equipe,allowed_accounts,avatar_url,precisa_trocar_senha",
+	"equipes":                "id,canal_loja_id,local_id,deposito_id",
+	"equipes_permissoes":     "equipe_id,profile_id,chave",
+	// a auditoria do "entrar como" (Plano 5.0): a API insere e o super-admin lê; conferirAuditoria olha o dono/RLS
+	"entradas_como_outro_usuario": "admin_id,admin_email,alvo_id,alvo_email,criado_em",
+	"equipes_membros":             "equipe_id,profile_id,papel",
+	"canais_grupos_membros":       "grupo_id,profile_id,papel",
+	"bling_lojas":                 "loja_id,nome,grupo,grupo_id",
+	"bling_pedido_nota":           "pedido_id,data_pedido,data_da_venda,total,loja_id,nota_situacao",
+	"bling_pedido_ajuste_valor":   "pedido_id,total_corrigido",
+	"bling_pedido_vendedor":       "pedido_id,qtd_itens",
+	"acessos_pessoas":             "id,nome,profile_id,email_corporativo",
+	"frota_veiculos":              "id,nome,pessoa_id,situacao",
+	"frota_checklist_itens":       "cadencia,ordem,ativo",
+	"frota_checklist_config":      "dia_semanal,semana_mensal,dia_mensal",
+	"frota_checklist":             "veiculo_id,feita_em,cadencias",
+	"frota_uso":                   "id,veiculo_id,pessoa_id,tipo,saida_em,volta_em",
+	"frota_requisicoes":           "id,veiculo_id,situacao,retirada_prevista,destino,motivo_decisao,encerrada_motivo,pessoa_id,pessoa_nome,criada_por",
+	"conteudo_pecas":              "id,account_id,titulo,formato,status,legenda,hashtags,publicar_em,publicado_em,avisado_em,ig_media_id,ig_permalink,responsavel",
+	"conteudo_eventos":            "peca_id,acao,detalhe",
+	"conteudo_casamentos":         "peca_id,ig_media_id,ig_permalink,ig_timestamp,ig_caption,ig_thumb,pontuacao,situacao,motivo",
+	"conteudo_metricas":           "peca_id,capturado_em,curtidas,comentarios,alcance,salvamentos,compartilhamentos,visualizacoes,bruto",
+	"checkout_abandono":           "token,status",
+	"contatos_sem_mensagem":       "telefone,motivo",
+	"chatwoot_eventos":            "tipo,chatwoot_account_id,conversation_id,conversation_display_id,contact_id,contact_name,contact_phone_number,loja,classificacao_ia,criado_em_chatwoot,dia_br",
+	"shopify_pedidos":             "id,numero,loja_id,total,moeda,status_financeiro,cliente_nome,cliente_email,criado_em_shopify,bruto,atualizado_em",
+	"carrinho_eventos":            "tipo,cart_token,evento_shopify_id",
+	"vessel_rd_envios":            "id,origem_id,pessoa_id,status,tentativas,http_status,resposta,atualizado_em",
+	"vessel_pessoas":              "id,email",
+	"fabrica_campanhas":           "id,created_at,fechada_em,purgado_em",
+	"fabrica_criativos":           "campanha_id,storage_path,purgado_em",
+	"robos_execucoes":             "robo,disparado_em,status_code,ok,resposta,conferido_em",
 }
 
 // tiposDoWorker: tabela.coluna -> tipo (nome de regtype) de que o código depende (cast do parâmetro, junção,
@@ -73,7 +79,10 @@ var colunasDoWorker = map[string]string{
 var tiposDoWorker = map[string]string{
 	"accounts.id": "uuid", "profiles.id": "uuid", "profiles.features": "text[]", "profiles.permissions": "jsonb",
 	"profiles.is_superadmin": "boolean", "profiles.disabled": "boolean", "profiles.escopo_por_equipe": "boolean",
-	"daily_snapshots.captured_at": "date", "engagement_snapshots.captured_at": "date", "content_snapshots.captured_at": "date",
+	"profiles.precisa_trocar_senha": "boolean", "equipes.deposito_id": "bigint|integer", "equipes.canal_loja_id": "bigint|integer",
+	"entradas_como_outro_usuario.admin_id": "uuid", "entradas_como_outro_usuario.alvo_id": "uuid",
+	"entradas_como_outro_usuario.criado_em": "timestamp with time zone",
+	"daily_snapshots.captured_at":           "date", "engagement_snapshots.captured_at": "date", "content_snapshots.captured_at": "date",
 	"data_integrity_checks.checked_date": "date", "campaign_insights.captured_at": "date", "campaign_insights_hora.dia": "date",
 	"perfil_visitas_hora.dia": "date", "ad_insights_hora.dia": "date", "conteudo_metricas.capturado_em": "date",
 	"frota_checklist.feita_em": "date", "frota_checklist.cadencias": "text[]", "chatwoot_eventos.dia_br": "date",
@@ -352,6 +361,21 @@ func conferirSchema(ctx context.Context, p *pgxpool.Pool) ([]string, error) {
 		}
 		faltam = append(faltam, melhor...)
 	}
+
+	// Plano 5.0: ambiente da gramática de SQL, papel da API na auditoria do "entrar como" e as RPC declaradas.
+	for _, conferir := range []func(context.Context, pgx.Tx) ([]string, error){
+		conferirAmbiente, conferirAuditoria,
+		func(ctx context.Context, tx pgx.Tx) ([]string, error) {
+			return conferirLeituraDoCatalogo(ctx, tx, autz.Producao.Tabelas())
+		},
+		func(ctx context.Context, tx pgx.Tx) ([]string, error) { return conferirRPC(ctx, tx, web.FuncoesRPC) },
+	} {
+		mais, err := conferir(ctx, tx)
+		if err != nil {
+			return nil, err
+		}
+		faltam = append(faltam, mais...)
+	}
 	sort.Strings(faltam)
 	return faltam, nil
 }
@@ -360,7 +384,7 @@ func conferirSchema(ctx context.Context, p *pgxpool.Pool) ([]string, error) {
 // ValidarDesligadas, sem recusar por falta de tabela: faltar `api migrar` é um dos itens listados e o resto
 // continua sendo conferido). Saída 0 = confere; 1 = lista o que falta. Nunca imprime URL nem credencial do
 // banco: erro de conexão sai só com a classe.
-func conferirComando(ctx context.Context, p *pgxpool.Pool) int {
+func conferirComando(ctx context.Context, p *pgxpool.Pool, cfg config.Config) int {
 	faltam, err := conferirSchema(ctx, p)
 	if err != nil {
 		var pg *pgconn.PgError
@@ -371,6 +395,15 @@ func conferirComando(ctx context.Context, p *pgxpool.Pool) int {
 		}
 		return 1
 	}
+	avisos, err := conferirAvisos(ctx, p)
+	if err != nil {
+		avisos = []string{"não consegui conferir o formato de profiles.permissions"}
+	}
+	for _, a := range avisos { // aviso não falha o conferir
+		fmt.Println("AVISO: " + a)
+	}
+	faltam = append(faltam, conferirRotas(p, cfg)...) // a montagem das rotas de domínio contra as tabelas reais
+	sort.Strings(faltam)
 	for _, f := range faltam {
 		fmt.Println(f)
 	}

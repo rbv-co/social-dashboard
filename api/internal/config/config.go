@@ -3,8 +3,11 @@ package config
 
 import (
 	"errors"
+	"fmt"
+	"net/mail"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 )
 
@@ -36,13 +39,20 @@ type Config struct {
 	ZAPIInstancia  string // ZAPI_INSTANCE_ID (vai no caminho da URL da Z-API)
 	ZAPIToken      string // ZAPI_INSTANCE_TOKEN (vai no caminho da URL da Z-API)
 	ZAPICliente    string // ZAPI_TOKEN (cabeçalho Client-Token)
+
+	// Plano 5.0 (conta: convite e troca de senha por e-mail).
+	ZeptoToken     string   // ZEPTOMAIL_TOKEN (vazio = convite e "esqueci a senha" não mandam e-mail; é segredo)
+	ZeptoDe        string   // ZEPTOMAIL_DE; padrão nao-responda@vesselbrasil.com.br (domínio verificado no ZeptoMail)
+	ZeptoNome      string   // ZEPTOMAIL_NOME; padrão "Central de Inteligência RBV" (o nome do remetente)
+	EnderecosDoApp []string // ENDERECOS_DO_APP: para onde o link de senha pode levar (a origem do pedido, se estiver aqui)
+	EnderecoPadrao string   // ENDERECO_PADRAO: o link quando a origem não é do app (um dos EnderecosDoApp)
 }
 
 // Segredos: os valores que nunca podem sair em robos_execucoes nem no log do worker
 // (worker.Limpar troca cada um por ***).
 func (c Config) Segredos() []string {
 	return append([]string{c.CoreToken, c.ChatwootSegredo, c.VAPIDPrivada, c.RDStationToken, c.AlertaWebhook,
-		c.ZAPIInstancia, c.ZAPIToken, c.ZAPICliente}, c.ShopifySegredos...)
+		c.ZAPIInstancia, c.ZAPIToken, c.ZAPICliente, c.ZeptoToken}, c.ShopifySegredos...)
 }
 
 // lista lê uma variável separada por vírgulas, sem itens vazios.
@@ -63,6 +73,19 @@ func minusculas(l []string) []string {
 		l[i] = strings.ToLower(v)
 	}
 	return l
+}
+
+// origemDoApp valida e normaliza um endereço do app: só origem (esquema + host[:porta]), https
+// (http só em loopback), sem usuário, caminho, query nem fragmento; a barra final e a caixa saem
+// (o Origin do navegador nunca leva barra e vem em minúsculas, e a comparação é por texto exato).
+// Valor que nunca casaria viraria e-mail com link para o endereço padrão em silêncio.
+func origemDoApp(nome, v string) (string, error) {
+	u, err := url.Parse(v)
+	if err != nil || u.Host == "" || u.User != nil || (u.Path != "" && u.Path != "/") || strings.ContainsAny(v, "?#") ||
+		!(strings.EqualFold(u.Scheme, "https") || (strings.EqualFold(u.Scheme, "http") && loopback(u.Hostname()))) {
+		return "", fmt.Errorf("%s: %q deve ser só a origem (https://host[:porta], sem caminho nem query; http só para localhost, 127.0.0.1 ou ::1)", nome, v)
+	}
+	return strings.ToLower(u.Scheme) + "://" + strings.ToLower(u.Host), nil
 }
 
 func loopback(h string) bool { return h == "localhost" || h == "127.0.0.1" || h == "::1" }
@@ -89,6 +112,11 @@ func Carregar() (Config, error) {
 		ZAPIInstancia:     strings.TrimSpace(os.Getenv("ZAPI_INSTANCE_ID")),
 		ZAPIToken:         strings.TrimSpace(os.Getenv("ZAPI_INSTANCE_TOKEN")),
 		ZAPICliente:       strings.TrimSpace(os.Getenv("ZAPI_TOKEN")),
+		ZeptoToken:        strings.TrimSpace(os.Getenv("ZEPTOMAIL_TOKEN")),
+		ZeptoDe:           strings.TrimSpace(os.Getenv("ZEPTOMAIL_DE")),
+		ZeptoNome:         strings.TrimSpace(os.Getenv("ZEPTOMAIL_NOME")),
+		EnderecosDoApp:    lista("ENDERECOS_DO_APP"),
+		EnderecoPadrao:    strings.TrimSpace(os.Getenv("ENDERECO_PADRAO")),
 	}
 	if c.Addr == "" {
 		c.Addr = ":8080"
@@ -99,6 +127,19 @@ func Carregar() (Config, error) {
 	if c.CoreURL == "" {
 		c.CoreURL = "https://core.rbvcompany.com"
 	}
+	if c.ZeptoDe == "" {
+		c.ZeptoDe = "nao-responda@vesselbrasil.com.br"
+	}
+	if c.ZeptoNome == "" {
+		c.ZeptoNome = "Central de Inteligência RBV"
+	}
+	// os dois endereços de supabase/functions/_shared/enderecos-do-app.js; o padrão ainda é o antigo
+	if len(c.EnderecosDoApp) == 0 {
+		c.EnderecosDoApp = []string{"https://socialdashboard.rbvcompany.com", "https://central.rbvcompany.com"}
+	}
+	if c.EnderecoPadrao == "" {
+		c.EnderecoPadrao = c.EnderecosDoApp[0]
+	}
 	if c.DatabaseURL == "" {
 		return c, errors.New("DATABASE_URL ausente")
 	}
@@ -106,5 +147,25 @@ func Carregar() (Config, error) {
 	if u, err := url.Parse(c.CoreURL); err != nil || u.Host == "" || !(u.Scheme == "https" || (u.Scheme == "http" && loopback(u.Hostname()))) {
 		return c, errors.New("CORE_URL deve ser https (http só para localhost, 127.0.0.1 ou ::1)")
 	}
+	// Plano 5.0: o que errar aqui manda link de senha para o lugar errado (ou para lugar nenhum):
+	// a API não sobe. Os erros trazem os endereços (públicos), nunca o token.
+	if a, err := mail.ParseAddress(c.ZeptoDe); err != nil || a.Address != c.ZeptoDe {
+		return c, errors.New("ZEPTOMAIL_DE deve ser só um endereço de e-mail (sem nome nem lista)")
+	}
+	for i, e := range c.EnderecosDoApp {
+		o, err := origemDoApp("ENDERECOS_DO_APP", e)
+		if err != nil {
+			return c, err
+		}
+		c.EnderecosDoApp[i] = o
+	}
+	padrao, err := origemDoApp("ENDERECO_PADRAO", c.EnderecoPadrao)
+	if err != nil {
+		return c, err
+	}
+	if !slices.Contains(c.EnderecosDoApp, padrao) {
+		return c, fmt.Errorf("ENDERECO_PADRAO %q não está em ENDERECOS_DO_APP (o link de senha só leva a endereço da lista)", padrao)
+	}
+	c.EnderecoPadrao = padrao
 	return c, nil
 }

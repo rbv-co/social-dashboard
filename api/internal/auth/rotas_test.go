@@ -264,13 +264,27 @@ func TestIPBloqueadoNaoTrancaContaDaVitima(t *testing.T) {
 	}
 }
 
-func TestLoginDeDesativadoPorProfilesEh401MesmoComSenhaCerta(t *testing.T) {
-	p, _, h := montar(t)
-	usuarioComSenha(t, p, uid, "a@x.com", "certa", `{}`)
-	p.Exec(context.Background(), `update profiles set disabled = true where id = $1`, uid)
-	w := chamar(h, "POST", "/auth/entrar", `{"email":"a@x.com","senha":"certa"}`, "")
-	if w.Code != 401 || !strings.Contains(w.Body.String(), "credenciais_invalidas") {
-		t.Fatalf("= %d %s", w.Code, w.Body)
+// Conta desativada (profiles.disabled ou usuarios.desativado_em): com a senha CERTA, 403
+// conta_desativada e nenhuma sessão; com a senha ERRADA, o mesmo 401 de quem não existe.
+func TestLoginDeDesativadoSoDizQueEstaDesativadoComASenhaCerta(t *testing.T) {
+	for _, como := range []string{`update profiles set disabled = true where id = $1`, `update usuarios set desativado_em = now() where id = $1`} {
+		p, _, h := montar(t)
+		usuarioComSenha(t, p, uid, "a@x.com", "certa", `{}`)
+		p.Exec(context.Background(), como, uid)
+		w := chamar(h, "POST", "/auth/entrar", `{"email":"a@x.com","senha":"certa"}`, "")
+		if w.Code != 403 || strings.TrimSpace(w.Body.String()) != `{"error":"conta_desativada"}` {
+			t.Fatalf("%s: senha certa = %d %s", como, w.Code, w.Body)
+		}
+		w = chamar(h, "POST", "/auth/entrar", `{"email":"a@x.com","senha":"errada"}`, "")
+		inexistente := chamar(h, "POST", "/auth/entrar", `{"email":"ninguem@x.com","senha":"errada"}`, "")
+		if w.Code != 401 || w.Body.String() != inexistente.Body.String() {
+			t.Fatalf("%s: senha errada = %d %s (inexistente: %s)", como, w.Code, w.Body, inexistente.Body)
+		}
+		var n int
+		p.QueryRow(context.Background(), `select count(*) from sessoes`).Scan(&n)
+		if n != 0 {
+			t.Fatalf("%s: conta desativada ganhou %d sessão(ões)", como, n)
+		}
 	}
 }
 
