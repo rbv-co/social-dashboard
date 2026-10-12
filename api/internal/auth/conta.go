@@ -296,7 +296,7 @@ func (c *Conta) TrocarSenha(w http.ResponseWriter, r *http.Request) {
 // profiles?id=eq.<eu>&select=role,features,...: [] quando não há perfil.
 func (c *Conta) Perfil(w http.ResponseWriter, r *http.Request) {
 	var corpo []byte
-	err := c.Pool.QueryRow(r.Context(), `select coalesce(json_agg(t), '[]'::json) from (
+	err := c.Pool.QueryRow(r.Context(), `select coalesce(json_agg(t.*), '[]'::json) from (
 	    select role, features, avatar_url, permissions, allowed_accounts, is_superadmin, precisa_trocar_senha, escopo_por_equipe
 	      from profiles where id = $1::uuid) t`, AtorDoContexto(r.Context()).ID).Scan(&corpo)
 	if err != nil {
