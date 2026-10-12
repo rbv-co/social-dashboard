@@ -37,8 +37,8 @@ type Escopo struct {
 	Modulos     []string            // profiles.features
 	Chaves      map[string]bool     // chaves do objeto profiles.permissions (operador ? do jsonb)
 	Acoes       map[string][]string // permissions[chave] quando é array: os textos dele
-	SemTrava    bool                // tem perfil e escopo_por_equipe = false
-	TodasContas bool                // allowed_accounts nulo
+	SemTrava    bool                // tem perfil e escopo_por_equipe = false (nulo conta como true: restrito)
+	TodasContas bool                // allowed_accounts nulo ('{}' é nenhuma conta; elemento nulo é descartado)
 	Contas      []string            // allowed_accounts::text[]
 	Vinculos    map[string][]string // meus_vinculos(): equipe -> papéis (inclui a supervisora de grupo)
 	Diretos     map[string][]string // equipes_membros do próprio: equipe -> papéis
@@ -75,12 +75,12 @@ func CarregarEscopo(ctx context.Context, b Banco, usuarioID string) (*Escopo, er
 	e := &Escopo{ID: usuarioID, Ativo: true, Chaves: map[string]bool{}, Acoes: map[string][]string{},
 		Vinculos: map[string][]string{}, Diretos: map[string][]string{}}
 	var perm []byte
-	var desativado, porEquipe bool
+	var desativado, porEquipe bool // porEquipe: escopo_por_equipe, nulo = true (restrito)
 	var contas []string
 	err := b.QueryRow(ctx, `select coalesce(email, ''), coalesce(role::text, ''), coalesce(is_superadmin, false),
-	        coalesce(disabled, false), coalesce(escopo_por_equipe, false),
+	        coalesce(disabled, false), coalesce(escopo_por_equipe, true),
 	        coalesce(array_remove(features, null), '{}'::text[]), coalesce(permissions, '{}'::jsonb),
-	        allowed_accounts::text[]
+	        array_remove(allowed_accounts::text[], null)
 	   from profiles where id = $1::uuid`, usuarioID).
 		Scan(&e.Email, &e.Papel, &e.SuperFicha, &desativado, &porEquipe, &e.Modulos, &perm, &contas)
 	switch {
