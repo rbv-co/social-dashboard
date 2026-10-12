@@ -174,10 +174,9 @@ func TestConsultaValidar(t *testing.T) {
 		}
 	}
 	for nome, c := range map[string]Consulta{
-		"join com regra":    ok(Consulta{SQL: `select c.nome from coisa c left join conta k on k.id = c.dona and {ler:conta:k}`}),
-		"vírgula com regra": ok(Consulta{SQL: `select c.nome from coisa c, conta k where k.id = c.dona and {ler:conta:k}`}),
-		"Onde com regra":    ok(Consulta{SQL: `select c.nome from coisa c`, Onde: `exists (select 1 from conta k where k.id = c.dona and {ler:conta:k})`}),
-		"extract(from)":     ok(Consulta{SQL: `select extract(year from now()) from coisa c`}),
+		"join com regra": ok(Consulta{SQL: `select c.nome from coisa c left join conta k on k.id = c.dona and {ler:conta:k}`}),
+		"Onde com regra": ok(Consulta{SQL: `select c.nome from coisa c`, Onde: `exists (select 1 from conta k where k.id = c.dona and {ler:conta:k})`}),
+		"date_part (no lugar de extract ... from)": ok(Consulta{SQL: `select date_part('year', now()) from coisa c`}),
 	} {
 		if err := c.Validar(cat); err != nil {
 			t.Errorf("%s: recusado: %v", nome, err)
