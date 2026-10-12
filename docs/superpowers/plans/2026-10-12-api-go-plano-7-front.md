@@ -144,6 +144,10 @@ O inventário (robô × tabelas/edges × caminho) é a primeira task deste item,
 
 **Prova** (API local com `CORE_URL` num core de mentira em `127.0.0.1:58613`, `VITE_API_AREAS=conta,edges-core`, Chrome a 375 px, chamando os módulos reais da tela pelo Vite): `chamarBling` → `bling-proxy` → core (`/api/interno/bling/proxy`) → produto lido; `meta-proxy` → core (`/api/interno/meta/graph`) → `effective_status`; `insights-ao-vivo` com erro → motivo da edge em `error.context.json()`; 0 pedidos a `functions/v1`. `npm test` 6733/6733, build ok. **Tela a 375 px/desktop com dado:** não dá com só `conta`+`edges-core` — todas essas telas leem as próprias tabelas do domínio antes de chamar a edge; a medida da tela vem com a área do domínio de cada uma (5.3, 5.5, 5.6, 5.7, 5.8).
 
+**Revisão (opus, 1 rodada):** nada bloqueante; 2 menores, corrigidos: `invocar` passou a mostrar a frase do corpo (Meta repassada, edge, núcleo) em vez de "o servidor não respondeu" quando o servidor respondeu e recusou (`fraseDoCorpo`); `metaFetch`/`metaPost` trocam o código do portão (`sem_permissao`, `nao_autenticado`) pela frase (`trocarCodigoPorFrase`).
+
+**⚠️ Não ligar `edges-core` num ambiente com gente de verdade antes do 5.6 mesclado:** o `meta-proxy` em Go ainda NÃO confere `accountId` contra `allowed_accounts` (a edge conferia; Ruling 34, entra no 5.6). Com a chave ligada, quem tem o módulo `meta` consultaria qualquer conta. Em produção a chave está desligada; na virada, o 5.6 já estará mesclado. O envio de imagem/vídeo da Gestão de Tráfego também depende do Storage (Plano 6).
+
 ### Pendências de API
 
 | Item | Dono | Situação |

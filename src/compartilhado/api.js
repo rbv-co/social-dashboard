@@ -143,8 +143,7 @@ export function edge(nome, corpo) {
 export async function corpoDaEdge(nome, corpo) {
   const { data, error } = await edge(nome, corpo)
   if (!error) return data ?? {}
-  const daEdge = typeof data?.error === 'string' && !/^[a-z_]+$/.test(data.error) ? data.error : null
-  return { ...(data || {}), error: data?.mensagem || daEdge || error.message }
+  return { ...(data || {}), error: fraseDoCorpo(data) || error.message }
 }
 
 /**
@@ -175,7 +174,36 @@ export async function invocar(nome, corpo) {
   const r = await edge(nome, corpo)
   if (!r.error) return { data: r.data, error: null }
   const daResposta = r.data
-  return { data: null, error: { ...r.error, context: { status: r.status, json: async () => daResposta } } }
+  // O servidor RESPONDEU e recusou: a frase é a do corpo (edge, Meta repassada,
+  // núcleo), não "o servidor não respondeu" da classificação por status.
+  const message = fraseDoCorpo(daResposta) || r.error.message
+  return { data: null, error: { ...r.error, message, context: { status: r.status, json: async () => daResposta } } }
+}
+
+/**
+ * A frase legível que um corpo de erro traz, nos formatos que as edges portadas
+ * usam: `mensagem` (núcleo), `error` em texto (edge; código como `sem_permissao`
+ * NÃO conta), `error.message` (Meta repassada), `meta_erro`, `erro`.
+ */
+export function fraseDoCorpo(corpo) {
+  if (!corpo || typeof corpo !== 'object') return null
+  if (typeof corpo.mensagem === 'string' && corpo.mensagem) return corpo.mensagem
+  if (typeof corpo.error === 'string' && corpo.error && !/^[a-z_]+$/.test(corpo.error)) return corpo.error
+  if (corpo.error && typeof corpo.error.message === 'string') return corpo.error.message
+  for (const k of ['meta_erro', 'erro']) if (typeof corpo[k] === 'string' && corpo[k] && !/^[a-z_]+$/.test(corpo[k])) return corpo[k]
+  return null
+}
+
+/**
+ * Para os sítios de `fetch` que fazem `throw new Error(d.error)`: o portão da
+ * API (sessão, módulo) responde com CÓDIGO (`{"error":"sem_permissao"}`). Troca
+ * o código pela frase, para a tela não mostrar "Erro: sem_permissao".
+ */
+export function trocarCodigoPorFrase(status, corpo) {
+  if (corpo && typeof corpo.error === 'string' && /^[a-z_]+$/.test(corpo.error)) {
+    return { ...corpo, error: fraseDoCorpo(corpo) || erroDaApi(status, corpo).message }
+  }
+  return corpo
 }
 
 /**

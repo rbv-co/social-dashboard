@@ -191,3 +191,20 @@ test('invocarNaArea: com a área desligada, a chamada do Supabase é a mesma', a
   assert.equal(r.data, 'do-supabase')
   assert.deepEqual(chamadas, [['bling-proxy', { body: { endpoint: 'produtos' } }]])
 })
+
+test('invocar: recusa com corpo mostra a frase do corpo, não "o servidor não respondeu"', async () => {
+  responder(400, { error: { message: 'Invalid parameter', error_user_msg: 'x' } })
+  assert.equal((await api.invocar('meta-proxy', {})).error.message, 'Invalid parameter')
+  responder(400, { error: 'conta sem token' })
+  assert.equal((await api.invocar('meta-proxy', {})).error.message, 'conta sem token')
+  responder(403, { error: 'sem_permissao' })
+  assert.match((await api.invocar('meta-proxy', {})).error.message, /permiss[ãa]o/)
+})
+
+test('trocarCodigoPorFrase: código do portão vira frase; frase e erro da Meta ficam', () => {
+  assert.match(api.trocarCodigoPorFrase(403, { error: 'sem_permissao' }).error, /permiss[ãa]o/)
+  assert.match(api.trocarCodigoPorFrase(401, { error: 'nao_autenticado' }).error, /sess[ãa]o/)
+  assert.deepEqual(api.trocarCodigoPorFrase(400, { error: 'conta nao encontrada' }), { error: 'conta nao encontrada' })
+  const meta = { error: { message: 'x', code: 100 } }
+  assert.equal(api.trocarCodigoPorFrase(400, meta), meta)
+})

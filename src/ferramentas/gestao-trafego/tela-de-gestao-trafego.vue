@@ -182,7 +182,7 @@ import BarraDeTopo from '../../compartilhado/barra-de-topo.vue'
 import { useRouter } from 'vue-router'
 import { sbClient, SUPABASE_URL, SUPABASE_ANON_KEY } from '../../compartilhado/conectar-no-banco-de-dados.js'
 // Chave `edges-core` (Plano 7): meta-proxy pela API em Go.
-import { areaNaApi, fetchDaApi } from '../../compartilhado/api.js'
+import { areaNaApi, fetchDaApi, trocarCodigoPorFrase } from '../../compartilhado/api.js'
 import { estado, hasPermission } from '../../compartilhado/controle-de-login-e-usuario.js'
 import { adminToast } from '../../compartilhado/avisos.js'
 import { sb } from '../../compartilhado/buscar-e-salvar-dados.js'
@@ -379,7 +379,7 @@ async function metaFetch(path,params,accountId){
       headers:{'Authorization':'Bearer '+session.access_token,'apikey':SUPABASE_ANON_KEY,'Content-Type':'application/json'},
       body:corpo
     });
-    const d=await r.json();
+    const d=naApi?trocarCodigoPorFrase(r.status,await r.json()):await r.json();
     if(d&&d.error)throw new Error((d.error&&d.error.message)||d.error||'Meta API error');
     return d;
   }finally{clearTimeout(timer);}
@@ -407,7 +407,7 @@ async function metaPost(path,params,accountId){
     headers:{'Authorization':'Bearer '+session.access_token,'apikey':SUPABASE_ANON_KEY,'Content-Type':'application/json'},
     body:corpo
   });
-  const d=await r.json();
+  const d=naApi?trocarCodigoPorFrase(r.status,await r.json()):await r.json();
   if(d&&d.error){
     // A EXPLICAÇÃO DA META VAI JUNTO NA MENSAGEM, e não só o `message`.
     //
