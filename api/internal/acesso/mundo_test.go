@@ -15,19 +15,23 @@ import (
 )
 
 // Pessoas e linhas do mundo de teste do 5.1 (ids fixos). E-mails da lista de is_superadmin() só onde a
-// regra pede: super (breno@) e erick@ (o perfil que guard_profiles protege).
+// regra pede: super (breno@), erick@ (o perfil que guard_profiles protege) e superSoPorEmail
+// (gabriel.gertrudes@: na lista, mas com a ficha falsa).
 const (
-	idSuper      = "5e000000-0000-4000-a000-000000000001" // papel admin, super pela ficha E por e-mail
-	idSuperFicha = "5e000000-0000-4000-a000-000000000002" // super SÓ pela ficha, papel viewer
-	idAdmin      = "5e000000-0000-4000-a000-000000000003" // papel admin
-	idViewer     = "5e000000-0000-4000-a000-000000000004" // trava de loja, só a conta A1, sem time
-	idSemTrava   = "5e000000-0000-4000-a000-000000000005" // escopo_por_equipe = false
-	idGestorT1   = "5e000000-0000-4000-a000-000000000006"
-	idSupervT1   = "5e000000-0000-4000-a000-000000000007"
-	idVendT1     = "5e000000-0000-4000-a000-000000000008"
-	idVendT2     = "5e000000-0000-4000-a000-000000000009" // vendedora no T2 e no T3
-	idSupervG1   = "5e000000-0000-4000-a000-000000000010" // supervisora do grupo G1 (a loja 3 é do G1: vê o T3)
-	idErick      = "5e000000-0000-4000-a000-000000000011"
+	idSuper           = "5e000000-0000-4000-a000-000000000001" // papel admin, super pela ficha E por e-mail
+	idSuperFicha      = "5e000000-0000-4000-a000-000000000002" // super SÓ pela ficha, papel viewer
+	idAdmin           = "5e000000-0000-4000-a000-000000000003" // papel admin
+	idViewer          = "5e000000-0000-4000-a000-000000000004" // trava de loja, só a conta A1, sem time
+	idSemTrava        = "5e000000-0000-4000-a000-000000000005" // escopo_por_equipe = false
+	idGestorT1        = "5e000000-0000-4000-a000-000000000006"
+	idSupervT1        = "5e000000-0000-4000-a000-000000000007"
+	idVendT1          = "5e000000-0000-4000-a000-000000000008"
+	idVendT2          = "5e000000-0000-4000-a000-000000000009" // vendedora no T2 e no T3
+	idSupervG1        = "5e000000-0000-4000-a000-000000000010" // supervisora do grupo G1 (a loja 3 é do G1: vê o T3)
+	idErick           = "5e000000-0000-4000-a000-000000000011"
+	idAdminRestrito   = "5e000000-0000-4000-a000-000000000012" // papel admin COM trava de loja e só a conta A1
+	idSuperSoPorEmail = "5e000000-0000-4000-a000-000000000013" // e-mail na lista de is_superadmin(), ficha falsa, papel viewer
+	idSemPerfil       = "5e000000-0000-4000-a000-000000000014" // usuarios + sessão painel, SEM linha em profiles
 
 	T1 = "e1000000-0000-4000-a000-000000000001" // canal 1
 	T2 = "e1000000-0000-4000-a000-000000000002" // canal 2
@@ -65,6 +69,8 @@ var pessoas = []struct {
 	{"vendT2", idVendT2, "vendt2@x.com", "viewer", false, true, nil},
 	{"supervG1", idSupervG1, "supervg1@x.com", "viewer", false, true, nil},
 	{"erick", idErick, "erick@rbvcompany.com", "admin", true, false, nil},
+	{"adminRestrito", idAdminRestrito, "adminrestrito@x.com", "admin", false, true, []string{A1}},
+	{"superSoPorEmail", idSuperSoPorEmail, "gabriel.gertrudes@rbvcompany.com", "viewer", false, false, nil},
 }
 
 // sem identidade: os gatilhos de profiles são só de UPDATE
@@ -93,13 +99,16 @@ insert into data_integrity_checks (checked_date, account_id, check_name, status,
   ('2026-10-11', null, 'meta_spotcheck', 'warn', 'sem conta');
 insert into ia_execucoes (run_at, robo, acao) values ('2026-10-10T10:00:00Z', 'panorama', 'antiga'), ('2026-10-11T10:00:00Z', 'panorama', 'nova');`
 
-// fotoDoMundo: um hash de todas as tabelas que o 5.1 escreve (e do rastro). Igual antes e depois = nada mudou.
+// fotoDoMundo: um hash das tabelas que o 5.1 escreve (e do rastro; bling_lojas entra porque o gatilho de
+// renomear grupo grava nela). Fora de propósito: sessoes (Buscar renova a expiração a cada requisição).
+// Igual antes e depois = nada mudou.
 const fotoDoMundo = `select md5(string_agg(l, '|' order by l)) from (
   select 'profiles:' || t::text as l from profiles t union all
   select 'equipes:' || t::text from equipes t union all
   select 'equipes_membros:' || t::text from equipes_membros t union all
   select 'equipes_permissoes:' || t::text from equipes_permissoes t union all
   select 'canais_grupos:' || t::text from canais_grupos t union all
+  select 'bling_lojas:' || t::text from bling_lojas t union all
   select 'canais_grupos_membros:' || t::text from canais_grupos_membros t union all
   select 'acessos_perfis:' || t::text from acessos_perfis t union all
   select 'access_requests:' || t::text from access_requests t union all
@@ -114,8 +123,10 @@ type mundo struct {
 }
 
 // novoMundo: a fatia de produção, as pessoas e as linhas acima, uma sessão por pessoa (+ "impersonado":
-// a sessão do admin aberta pelo super) e as rotas de `montar` atrás da MESMA cadeia do grupo de
-// domínio de web.Rotas: auth.Exigir → autz.ComEscopo (Ruling 5.1-12).
+// a sessão do admin aberta pelo super; + "semPerfil": usuário com sessão de painel e sem linha em
+// profiles) e as rotas de `montar` atrás da mesma cadeia de autorização do grupo de domínio de
+// web.Rotas: auth.Exigir → autz.ComEscopo. Sem o comPrazo, que só limita o tempo (montagem real: Task 11;
+// Ruling 5.1-12).
 func novoMundo(t *testing.T, montar ...func(chi.Router, *pgxpool.Pool)) *mundo {
 	t.Helper()
 	p := testebanco.ComEsquemaDeProducao(t)
@@ -137,6 +148,14 @@ func novoMundo(t *testing.T, montar ...func(chi.Router, *pgxpool.Pool)) *mundo {
 		}
 		m.tok[x.chave] = tok
 	}
+	if _, err := p.Exec(ctx, `insert into usuarios (id, email) values ($1::uuid, 'semperfil@x.com')`, idSemPerfil); err != nil {
+		t.Fatal(err)
+	}
+	tokSP, err := s.Criar(ctx, idSemPerfil, "painel", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.tok["semPerfil"] = tokSP
 	super := idSuper
 	tok, err := s.Criar(ctx, idAdmin, "painel", &super)
 	if err != nil {
