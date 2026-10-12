@@ -279,3 +279,65 @@ func TestLoginDeDesativadoNaoLimpaOLimite(t *testing.T) {
 		}
 	}
 }
+
+// Corrida: quem roubou a sessão X da pessoa chama trocar-senha ao MESMO tempo em que a dona define a
+// senha por um link (o que derruba X e cria a sessão nova N). O middleware já tinha aceitado X; a troca
+// do ladrão espera o lock da linha de usuarios e, ao soltar, NÃO pode sobrescrever a senha da dona nem
+// apagar N: a própria sessão de quem troca é conferida (e travada) DENTRO da transação, depois do lock
+// de usuarios (mesma ordem de lock do definir-senha: sem deadlock).
+func TestTrocarSenhaDoLadraoNaCorridaComODefinirDaDona(t *testing.T) {
+	p, s, _, _, h := montarConta(t)
+	ctx := context.Background()
+	usuarioComSenha(t, p, uid, "pessoa@x.com", "antiga", `{}`)
+	ladrao := entrar(t, h, "pessoa@x.com", "antiga") // a sessão X
+	hashDaDona, _ := HashDaSenha("senha-da-dona")
+
+	// A transação do definir-senha da dona, ainda aberta: segura o lock de usuarios.
+	tx, err := p.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, `update usuarios set senha_hash = $2::text where id = $1::uuid`, uid, hashDaDona); err != nil {
+		t.Fatal(err)
+	}
+
+	resp := make(chan int, 1)
+	go func() { resp <- chamar(h, "POST", "/auth/trocar-senha", `{"senha":"senha-do-ladrao"}`, ladrao).Code }()
+	// espera a troca do ladrão ficar presa no lock (já passou pelo middleware com X viva)
+	for i := 0; ; i++ {
+		var presos int
+		p.QueryRow(ctx, `select count(*) from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock'`).Scan(&presos)
+		if presos > 0 {
+			break
+		}
+		if i > 200 {
+			t.Fatal("a troca do ladrão não chegou ao lock de usuarios")
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+
+	// o resto do definir-senha da dona: derruba X, cria N, confirma
+	if _, err := tx.Exec(ctx, `delete from sessoes where usuario_id = $1::uuid`, uid); err != nil {
+		t.Fatal(err)
+	}
+	nova, _, err := s.inserir(ctx, tx, uid, "painel", nil, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	if codigo := <-resp; codigo != 401 {
+		t.Errorf("trocar-senha do ladrão com a sessão já derrubada = %d, queria 401", codigo)
+	}
+	if _, err := s.Buscar(ctx, nova); err != nil {
+		t.Errorf("a sessão nova da dona foi apagada pela troca do ladrão: %v", err)
+	}
+	var hash string
+	p.QueryRow(ctx, `select senha_hash from usuarios where id = $1::uuid`, uid).Scan(&hash)
+	if hash != hashDaDona {
+		t.Errorf("a senha da dona foi sobrescrita pela troca do ladrão")
+	}
+}

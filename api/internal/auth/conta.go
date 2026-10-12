@@ -258,8 +258,17 @@ func (c *Conta) TrocarSenha(w http.ResponseWriter, r *http.Request) {
 		erroJSON(w, http.StatusInternalServerError, "erro_interno")
 		return
 	}
+	meuHash := hashDoToken(tokenDe(r))
 	err = banco.ComUsuario(r.Context(), c.Pool, a.ID, func(tx pgx.Tx) error { // gatilhos de profiles veem quem
 		if _, err := tx.Exec(r.Context(), `update usuarios set senha_hash = $2::text where id = $1::uuid`, a.ID, hash); err != nil {
+			return err
+		}
+		// A sessão de quem troca foi validada ANTES da transação: um definir-senha concorrente (a dona) pode
+		// tê-la derrubado e criado a sessão nova dela. Conferida e travada aqui, DEPOIS do lock de usuarios (a
+		// mesma ordem do definir-senha: sem deadlock): sumiu = 401, a transação desfaz tudo e não apaga a
+		// sessão nova da dona nem sobrescreve a senha dela.
+		var viva bool
+		if err := tx.QueryRow(r.Context(), `select true from sessoes where token_hash = $1::text for update`, meuHash).Scan(&viva); err != nil {
 			return err
 		}
 		if _, err := tx.Exec(r.Context(), `update profiles set precisa_trocar_senha = false where id = $1::uuid`, a.ID); err != nil {
@@ -269,9 +278,13 @@ func (c *Conta) TrocarSenha(w http.ResponseWriter, r *http.Request) {
 		if _, err := tx.Exec(r.Context(), `delete from tokens_de_senha where usuario_id = $1::uuid and usado_em is null`, a.ID); err != nil {
 			return err
 		}
-		_, err := tx.Exec(r.Context(), `delete from sessoes where (usuario_id = $1::uuid or impersonador_id = $1::uuid) and token_hash <> $2::text`, a.ID, hashDoToken(tokenDe(r)))
+		_, err := tx.Exec(r.Context(), `delete from sessoes where (usuario_id = $1::uuid or impersonador_id = $1::uuid) and token_hash <> $2::text`, a.ID, meuHash)
 		return err
 	})
+	if errors.Is(err, pgx.ErrNoRows) { // a própria sessão sumiu durante a troca
+		erroJSON(w, http.StatusUnauthorized, "nao_autenticado")
+		return
+	}
 	if err != nil {
 		erroJSON(w, http.StatusInternalServerError, "erro_interno")
 		return
