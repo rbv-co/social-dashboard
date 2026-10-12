@@ -91,6 +91,53 @@ func conferirAvisos(ctx context.Context, p *pgxpool.Pool) ([]string, error) {
 	return []string{fmt.Sprintf("%d perfil(is) com profiles.permissions fora do formato {recurso: [ações]} (array, texto, null ou valor que não é array): a API ignora o que não for lista de textos, e a pessoa fica sem essa permissão", n)}, nil
 }
 
+// conferirLeituraDoCatalogo: dados.Consulta lê pelo pool, FORA de banco.ComUsuario (a autorização é do autz, em
+// Go; o papel da API não vira o `authenticated`). Com a RLS ligada numa tabela do catálogo e o papel da API
+// nem dono (sem FORCE), nem BYPASSRLS, nem superusuário, toda leitura de domínio daquela tabela devolve []
+// em silêncio: as tabelas restauradas ficam do papel que fez o restore. Sem SELECT, a leitura dá erro
+// (alto, mas só depois do corte). Tabela que não existe aqui é ignorada (a conferência de colunas e a
+// montagem das rotas acusam). `entradas_como_outro_usuario` é de conferirAuditoria (o INSERT).
+func conferirLeituraDoCatalogo(ctx context.Context, tx pgx.Tx, tabelas []string) ([]string, error) {
+	linhas, err := tx.Query(ctx, `select c.relname::text,
+			c.relrowsecurity and not (r.rolsuper or r.rolbypassrls or (pg_has_role(current_user, c.relowner, 'usage') and not c.relforcerowsecurity)),
+			not has_table_privilege(current_user, c.oid, 'select')
+		  from pg_class c, pg_roles r
+		 where r.rolname = current_user and c.relnamespace = current_schema()::regnamespace
+		   and c.relkind in ('r', 'p') and c.relname = any($1::text[]) and c.relname <> 'entradas_como_outro_usuario'
+		 order by 1`, tabelas)
+	if err != nil {
+		return nil, err
+	}
+	var semRLS, semSelect []string
+	var nome string
+	var rls, sem bool
+	if _, err := pgx.ForEachRow(linhas, []any{&nome, &rls, &sem}, func() error {
+		if rls {
+			semRLS = append(semRLS, nome)
+		}
+		if sem {
+			semSelect = append(semSelect, nome)
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	lista := func(l []string) string {
+		if len(l) > 15 {
+			return strings.Join(l[:15], ", ") + fmt.Sprintf(" e mais %d", len(l)-15)
+		}
+		return strings.Join(l, ", ")
+	}
+	var faltam []string
+	if len(semRLS) > 0 {
+		faltam = append(faltam, fmt.Sprintf("leitura do catálogo: RLS ligada e o papel de conexão da API não é dono (sem FORCE), nem BYPASSRLS, nem superusuário em %d tabela(s): toda leitura de domínio nelas devolveria [] em silêncio (faça a API dona das tabelas restauradas ou dê BYPASSRLS ao papel): %s", len(semRLS), lista(semRLS)))
+	}
+	if len(semSelect) > 0 {
+		faltam = append(faltam, fmt.Sprintf("leitura do catálogo: o papel de conexão da API não tem SELECT em %d tabela(s) (toda leitura de domínio nelas daria erro): %s", len(semSelect), lista(semSelect)))
+	}
+	return faltam, nil
+}
+
 // papelDasRPC: o papel do Supabase que chamava `.rpc` (var só para o teste do papel ausente).
 var papelDasRPC = "authenticated"
 

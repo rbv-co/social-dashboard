@@ -266,3 +266,74 @@ func TestConferirAvisaPermissionsForaDoFormato(t *testing.T) {
 		t.Fatalf("AVISO não falha o conferir: codigo=%d saida=%q", codigo, saida)
 	}
 }
+
+// Toda leitura de dados.Consulta vai pelo pool, FORA de banco.ComUsuario (a autorização é do autz, em Go).
+// Com a RLS ligada nas tabelas restauradas e o papel da API nem dono nem BYPASSRLS, toda leitura de domínio
+// devolveria [] em silêncio (e sem SELECT, erro). O conferir acusa as tabelas do catálogo nessa situação.
+func TestConferirLeituraDoCatalogoRLSEPrivilegio(t *testing.T) {
+	p := testebanco.Novo(t)
+	b := make([]byte, 4)
+	rand.Read(b)
+	papel := "api_leit_" + hex.EncodeToString(b)
+	exec(t, p, `create role `+papel+` nologin`)
+	t.Cleanup(func() {
+		p.Exec(context.Background(), `drop owned by `+papel)
+		p.Exec(context.Background(), `drop role if exists `+papel)
+	})
+	var esquema string
+	p.QueryRow(context.Background(), `select current_schema()`).Scan(&esquema)
+	exec(t, p, `grant usage on schema `+esquema+` to `+papel,
+		`create table t_sem_rls (id int)`, `create table t_rls_alheia (id int)`, `create table t_rls_dona (id int)`,
+		`create table t_rls_force (id int)`, `create table t_rls_bypass (id int)`, `create table t_sem_select (id int)`,
+		`grant select on t_sem_rls, t_rls_alheia, t_rls_dona, t_rls_force, t_rls_bypass to `+papel,
+		`alter table t_rls_alheia enable row level security`, `alter table t_rls_dona owner to `+papel,
+		`alter table t_rls_dona enable row level security`, `alter table t_rls_force owner to `+papel,
+		`alter table t_rls_force enable row level security`, `alter table t_rls_force force row level security`,
+		`alter table t_rls_bypass enable row level security`)
+	tabelas := []string{"t_sem_rls", "t_rls_alheia", "t_rls_dona", "t_rls_force", "t_rls_bypass", "t_sem_select", "t_que_nao_existe"}
+	casos := []struct {
+		nome, role string
+		quer       []string // trechos que a mensagem tem de trazer ("" = confere)
+		naoQuer    []string
+	}{
+		{"superusuário: a RLS não vale", "", nil, nil},
+		{"papel da API: dono ou sem RLS passa, o resto é acusado", papel,
+			[]string{"t_rls_alheia", "t_rls_force", "t_rls_bypass", "devolveria []", "t_sem_select", "não tem SELECT"},
+			[]string{"t_sem_rls", "t_rls_dona", "t_que_nao_existe"}},
+	}
+	for _, c := range casos {
+		emTx(t, p, func(tx pgx.Tx) {
+			if c.role != "" {
+				txExec(t, tx, `set local role `+c.role)
+			}
+			faltam, err := conferirLeituraDoCatalogo(context.Background(), tx, tabelas)
+			if err != nil {
+				t.Fatalf("%s: %v", c.nome, err)
+			}
+			if c.quer == nil && len(faltam) != 0 {
+				t.Errorf("%s: faltam = %q", c.nome, faltam)
+			}
+			juntas := strings.Join(faltam, "\n")
+			for _, q := range c.quer {
+				if !strings.Contains(juntas, q) {
+					t.Errorf("%s: faltou %q em %q", c.nome, q, juntas)
+				}
+			}
+			for _, q := range c.naoQuer {
+				if strings.Contains(juntas, q) {
+					t.Errorf("%s: não devia citar %q em %q", c.nome, q, juntas)
+				}
+			}
+		})
+	}
+	// BYPASSRLS resolve a RLS (t_rls_bypass e t_rls_alheia passam; o SELECT em t_sem_select continua faltando)
+	exec(t, p, `alter role `+papel+` bypassrls`)
+	emTx(t, p, func(tx pgx.Tx) {
+		txExec(t, tx, `set local role `+papel)
+		faltam, err := conferirLeituraDoCatalogo(context.Background(), tx, tabelas)
+		juntas := strings.Join(faltam, "\n")
+		if err != nil || strings.Contains(juntas, "devolveria []") || !strings.Contains(juntas, "t_sem_select") {
+			t.Errorf("BYPASSRLS: faltam = %q err = %v", faltam, err)
+		}
+	})
+}

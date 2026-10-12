@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rbv-co/social-dashboard/api/internal/autz"
 	"github.com/rbv-co/social-dashboard/api/internal/config"
 	"github.com/rbv-co/social-dashboard/api/internal/web"
 )
@@ -364,6 +365,9 @@ func conferirSchema(ctx context.Context, p *pgxpool.Pool) ([]string, error) {
 	// Plano 5.0: ambiente da gramática de SQL, papel da API na auditoria do "entrar como" e as RPC declaradas.
 	for _, conferir := range []func(context.Context, pgx.Tx) ([]string, error){
 		conferirAmbiente, conferirAuditoria,
+		func(ctx context.Context, tx pgx.Tx) ([]string, error) {
+			return conferirLeituraDoCatalogo(ctx, tx, autz.Producao.Tabelas())
+		},
 		func(ctx context.Context, tx pgx.Tx) ([]string, error) { return conferirRPC(ctx, tx, web.FuncoesRPC) },
 	} {
 		mais, err := conferir(ctx, tx)
