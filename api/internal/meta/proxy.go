@@ -15,8 +15,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rbv-co/social-dashboard/api/internal/auth"
+	"github.com/rbv-co/social-dashboard/api/internal/autz"
 	"github.com/rbv-co/social-dashboard/api/internal/core"
+	"github.com/rbv-co/social-dashboard/api/internal/dados"
 )
 
 func responder(w http.ResponseWriter, status int, corpo any) {
@@ -92,14 +96,36 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		erro(w, http.StatusBadRequest, "accountId e path obrigatorios")
 		return
 	}
-	var existe bool
-	if err := p.Pool.QueryRow(r.Context(), `select exists(select 1 from accounts where id::text = $1)`, conta).Scan(&existe); err != nil {
+	metodo := strings.ToUpper(in.Method)
+	escreve := metodo == "POST" || metodo == "DELETE" || in.ImageFromURL != "" || in.VideoFromURL != "" || temParam(in.Params, "method")
+	if a := auth.AtorDoContexto(r.Context()); escreve && (a == nil || a.ImpersonadorID != nil) {
+		// Ruling 5.6-6: criar campanha, subir mídia e apagar na Meta gastam dinheiro em nome de alguém.
+		responder(w, http.StatusForbidden, map[string]string{"error": "sem_permissao", "mensagem": dados.FraseEntrarComo})
+		return
+	}
+	if !contaVisivel(r, conta) { // Ruling 34: conta que a pessoa não vê responde igual à que não existe
+		erro(w, http.StatusBadRequest, "conta nao encontrada")
+		return
+	}
+	var adAcc, ig *string
+	err := p.Pool.QueryRow(r.Context(), `select ad_account_id::text, instagram_id::text from accounts where id::text = $1`, conta).Scan(&adAcc, &ig)
+	if errors.Is(err, pgx.ErrNoRows) {
+		erro(w, http.StatusBadRequest, "conta nao encontrada")
+		return
+	}
+	if err != nil {
 		slog.Error("meta-proxy: consulta de conta falhou", "erro", err)
 		erro(w, http.StatusInternalServerError, "erro_interno")
 		return
 	}
-	if !existe {
-		erro(w, http.StatusBadRequest, "conta nao encontrada")
+	texto := func(s *string) string {
+		if s == nil {
+			return ""
+		}
+		return *s
+	}
+	if !autz.VeTodasAsContas(autz.EscopoDo(r.Context())) && (!caminhoDaConta(in.Path, texto(adAcc), texto(ig)) || temParam(in.Params, "ids", "batch")) {
+		erro(w, http.StatusForbidden, "caminho fora da conta")
 		return
 	}
 	// Igual ao edge: com imageFromUrl o vídeo é ignorado (nem validado nem encaminhado).
@@ -123,8 +149,8 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			ped.Parametros[k] = v
 		}
 	}
-	if m := strings.ToUpper(in.Method); m == "POST" || m == "DELETE" {
-		ped.Metodo = m
+	if metodo == "POST" || metodo == "DELETE" {
+		ped.Metodo = metodo
 	}
 	prazo := 25 * time.Second
 	switch {
