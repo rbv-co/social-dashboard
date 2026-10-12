@@ -66,7 +66,7 @@ func lerDosPaineis(h http.Handler, caminho, tok string) (int, string) {
 	return w.Code, strings.TrimSpace(w.Body.String())
 }
 
-// semearPaineis: 3 rodadas de notícias (5 linhas), 2 panoramas e 2 execuções de IA.
+// semearPaineis: 4 rodadas de notícias (7 linhas, 2 empatadas), 2 panoramas e 4 execuções de IA (2 empatadas).
 func semearPaineis(t *testing.T, p *pgxpool.Pool) {
 	t.Helper()
 	_, err := p.Exec(context.Background(), `
@@ -75,13 +75,24 @@ insert into noticias_concorrentes (marca, titulo, rodada, destaque, created_at, 
  ('Schutz', 'B1', '2026-10-06', false, '2026-10-06 10:00+00', null),
  ('Schutz', 'B2', '2026-10-06', true,  '2026-10-06 09:00+00', '[{"nome":"Bolsa X","preco":199.9}]'),
  ('Mercado', 'C1', '2026-10-06', false, '2026-10-06 11:00+00', null),
- ('Arezzo&Co', 'D1', '2026-09-22', false, '2026-09-22 10:00+00', null);
+ ('Arezzo&Co', 'D1', '2026-09-22', false, '2026-09-22 10:00+00', null),
+ -- empate total na chave de ordem (rodada, destaque, created_at): decide o Desempate n.id (uuid fixo:
+ -- o de E2 é menor), e E2 vem depois de E1 na ordem alfabética, para a mutação n.id → n.titulo aparecer
+ ('Arezzo&Co', 'E2', '2026-09-15', false, '2026-09-15 10:00+00', null),
+ ('Arezzo&Co', 'E1', '2026-09-15', false, '2026-09-15 10:00+00', null);
+update noticias_concorrentes set id = '00000000-0000-4000-a000-000000000001' where titulo = 'E2';
+update noticias_concorrentes set id = '00000000-0000-4000-a000-000000000002' where titulo = 'E1';
 insert into noticias_panorama (rodada, conteudo_md, modelo, uso, created_at) values
  ('2026-09-29', '# Panorama', 'claude-opus-4-8', '{"in":1}', '2026-09-29 12:00+00'),
  ('2026-10-06', '# Panorama', 'claude-opus-4-8', '{"in":1}', '2026-10-06 12:00+00');
 insert into ia_execucoes (run_at, robo, acao, usd) values
  ('2026-10-06 12:00+00', 'noticias', 'panorama', 0.1234),
- ('2026-10-05 12:00+00', 'noticias', 'coleta', 0.05);`)
+ ('2026-10-05 12:00+00', 'noticias', 'coleta', 0.05),
+ -- empate em run_at: decide o Desempate x.id (uuid fixo: o de zeta é menor, mas alfa vem antes no alfabeto)
+ ('2026-10-04 12:00+00', 'zeta', 'coleta', 0.01),
+ ('2026-10-04 12:00+00', 'alfa', 'coleta', 0.01);
+update ia_execucoes set id = '00000000-0000-4000-a000-000000000001' where robo = 'zeta';
+update ia_execucoes set id = '00000000-0000-4000-a000-000000000002' where robo = 'alfa';`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +116,7 @@ func TestPaineisPelaMontagemReal(t *testing.T) {
 			}
 		}
 		var ref string
-		for _, quem := range []string{"nenhum", "admin", "super", "status"} {
+		for _, quem := range []string{"nenhum", "so-permissao", "admin", "super", "status"} { // policy `true`: sem permissão ainda lê
 			c, corpo := lerDosPaineis(h, caminho, toks[quem])
 			if c != 200 {
 				t.Errorf("%s como %s = %d, esperava 200 (%s)", caminho, quem, c, corpo)
@@ -161,8 +172,8 @@ func TestPaineisPelaMontagemReal(t *testing.T) {
 		}
 	}
 	code, corpo = lerDosPaineis(h, "/noticias/concorrentes", toks["nenhum"])
-	if code != 200 || titulos(corpo) != "B2,C1,B1,A1,D1" {
-		t.Errorf("concorrentes sem filtro = %d, títulos %q, esperava B2,C1,B1,A1,D1", code, titulos(corpo))
+	if code != 200 || titulos(corpo) != "B2,C1,B1,A1,D1,E2,E1" {
+		t.Errorf("concorrentes sem filtro = %d, títulos %q, esperava B2,C1,B1,A1,D1,E2,E1 (empate por id)", code, titulos(corpo))
 	}
 
 	for _, caminho := range []string{
@@ -180,11 +191,24 @@ func TestPaineisPelaMontagemReal(t *testing.T) {
 	if code != 200 || !strings.Contains(corpo, `"usd":0.1234`) || !strings.Contains(corpo, `"run_at":"2026-10-06T12:00:00+00:00"`) || strings.Count(corpo, `"robo"`) != 1 {
 		t.Errorf("execuções limite=1 = %d %s", code, corpo)
 	}
+	// empate em run_at: por id (o de zeta é menor), não por robo
+	code, corpo = lerDosPaineis(h, "/status-ia/execucoes", toks["nenhum"])
+	var execs []map[string]any
+	if err := json.Unmarshal([]byte(corpo), &execs); err != nil || len(execs) != 4 {
+		t.Fatalf("execuções = %d %s (%v)", code, corpo, err)
+	}
+	var robos []string
+	for _, x := range execs {
+		robos = append(robos, x["robo"].(string))
+	}
+	if got := strings.Join(robos, ","); got != "noticias,noticias,zeta,alfa" {
+		t.Errorf("ordem das execuções = %s, esperava noticias,noticias,zeta,alfa", got)
+	}
 	r := httptest.NewRequest("GET", "/status-ia/execucoes?contar=1&limite=1", nil)
 	r.Header.Set("Authorization", "Bearer "+toks["nenhum"])
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, r)
-	if w.Code != 200 || w.Header().Get("X-Total-Count") != "2" {
-		t.Errorf("contar = %d, X-Total-Count %q, esperava 2", w.Code, w.Header().Get("X-Total-Count"))
+	if w.Code != 200 || w.Header().Get("X-Total-Count") != "4" {
+		t.Errorf("contar = %d, X-Total-Count %q, esperava 4", w.Code, w.Header().Get("X-Total-Count"))
 	}
 }

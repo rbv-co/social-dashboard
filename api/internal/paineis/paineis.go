@@ -4,7 +4,6 @@ package paineis
 import (
 	"fmt"
 	"maps"
-	"net/http"
 	"slices"
 
 	"github.com/go-chi/chi/v5"
@@ -13,19 +12,12 @@ import (
 )
 
 // Montar registra as rotas do 5.12 no grupo de DOMÍNIO de web.Rotas (depois de autz.ComEscopo).
-// Consulta que não valida contra o catálogo = erro (a API não sobe). Com b == nil só valida e
-// registra um handler que responde 503 (teste sem banco).
+// Consulta que não valida contra o catálogo = erro (a API não sobe).
 func Montar(r chi.Router, b dados.Consultor, cat *autz.Catalogo) error {
 	for _, caminho := range slices.Sorted(maps.Keys(leituras)) {
 		c := leituras[caminho]
 		if err := c.Validar(cat); err != nil {
 			return fmt.Errorf("paineis %s: %w", caminho, err)
-		}
-		if b == nil {
-			r.Get(caminho, func(w http.ResponseWriter, _ *http.Request) {
-				dados.Erro(w, http.StatusServiceUnavailable, "sem_banco", "")
-			})
-			continue
 		}
 		r.Get(caminho, c.Handler(b, cat))
 	}
@@ -33,12 +25,6 @@ func Montar(r chi.Router, b dados.Consultor, cat *autz.Catalogo) error {
 		if _, err := cat.Filtro(&autz.Escopo{}, t, autz.Ler, "x"); err != nil {
 			return fmt.Errorf("paineis saúde dos robôs: %w", err)
 		}
-	}
-	if b == nil {
-		r.Get("/status-ia/saude-dos-robos", func(w http.ResponseWriter, _ *http.Request) {
-			dados.Erro(w, http.StatusServiceUnavailable, "sem_banco", "")
-		})
-		return nil
 	}
 	r.Get("/status-ia/saude-dos-robos", SaudeDosRobos(b, cat))
 	return nil
