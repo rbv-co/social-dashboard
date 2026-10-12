@@ -58,3 +58,15 @@ test('nenhuma mensagem vaza jargao tecnico pro usuario', () => {
     assert.doesNotMatch(c.mensagem, /PGRST|JWT|42501|null|undefined|Error/i, `vazou jargao: ${c.mensagem}`)
   }
 })
+
+test('API em Go: 403 conta_desativada vira CONTA_DESATIVADA, nao sem permissao', async () => {
+  const { CONTA_DESATIVADA } = await import('./classificar-erro.js')
+  assert.equal(classificarErro(403, { error: 'conta_desativada' }), CONTA_DESATIVADA)
+  assert.equal(classificarErro(403, { error: 'sem_permissao' }).tipo, 'permissao')
+})
+
+test('API em Go: 429 vira muitas tentativas, sem tentar de novo na hora', () => {
+  const e = classificarErro(429, { error: 'muitas_tentativas' })
+  assert.equal(e.tipo, 'limite')
+  assert.equal(e.acao, null)
+})

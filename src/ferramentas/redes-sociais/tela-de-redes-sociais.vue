@@ -501,6 +501,8 @@ import { useRouter } from 'vue-router'
 import FaixaDeErro from '../../compartilhado/faixa-de-erro.vue'
 import { sbClient, SUPABASE_URL, SUPABASE_ANON_KEY } from '../../compartilhado/conectar-no-banco-de-dados.js'
 import { estado, hasPermission, contasPermitidas } from '../../compartilhado/controle-de-login-e-usuario.js'
+// Chave `conta` (Plano 7): o convite (invite-user, 5.0) pela API em Go.
+import { areaNaApi, corpoDaEdge } from '../../compartilhado/api.js'
 import { adminToast } from '../../compartilhado/avisos.js'
 import { sb } from '../../compartilhado/buscar-e-salvar-dados.js'
 import { hojeLocal } from '../../compartilhado/datas.js'
@@ -3763,15 +3765,21 @@ async function doInvite() {
   const btn = document.getElementById('invite-btn')
   if (!email) { msgEl.textContent = 'Informe o e-mail.'; msgEl.className = 'admin-msg err'; msgEl.style.display = 'block'; return }
   msgEl.style.display = 'none'; btn.disabled = true; btn.textContent = 'Enviando...'
-  const { data: { session } } = await sbClient.auth.getSession()
-  const token = session?.access_token || SUPABASE_ANON_KEY
-  const redirectTo = location.origin + location.pathname
-  const r = await fetch(`${SUPABASE_URL}/functions/v1/invite-user`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, redirectTo })
-  })
-  const res = await r.json()
+  let res
+  // Pela API não vai `redirectTo`: o link do e-mail volta para o endereço da
+  // Central que a API conhece, nunca para um endereço vindo do pedido.
+  if (areaNaApi('conta')) res = await corpoDaEdge('invite-user', { email })
+  else {
+    const { data: { session } } = await sbClient.auth.getSession()
+    const token = session?.access_token || SUPABASE_ANON_KEY
+    const redirectTo = location.origin + location.pathname
+    const r = await fetch(`${SUPABASE_URL}/functions/v1/invite-user`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, redirectTo })
+    })
+    res = await r.json()
+  }
   btn.disabled = false; btn.textContent = 'Enviar convite'
   if (res.error) { msgEl.textContent = 'Erro: ' + res.error; msgEl.className = 'admin-msg err'; msgEl.style.display = 'block' }
   else { msgEl.textContent = ''; const t = document.createTextNode('✓ Convite enviado para '); const eb = document.createElement('strong'); eb.textContent = email; msgEl.appendChild(t); msgEl.appendChild(eb); msgEl.className = 'admin-msg ok'; msgEl.style.display = 'block'; document.getElementById('invite-email').value = ''; loadUsers() }

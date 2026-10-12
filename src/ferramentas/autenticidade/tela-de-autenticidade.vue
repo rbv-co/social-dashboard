@@ -2322,6 +2322,8 @@ import { useRouter } from 'vue-router'
 import BarraDeTopo from '../../compartilhado/barra-de-topo.vue'
 import { sbClient } from '../../compartilhado/conectar-no-banco-de-dados.js'
 import { hasPermission, estado as estadoDoLogin } from '../../compartilhado/controle-de-login-e-usuario.js'
+// Chave `conta` (Plano 7): conferir-senha (5.0) pela API em Go.
+import { areaNaApi, conferirSenhaPelaApi } from '../../compartilhado/api.js'
 import IconeDoBloco from '../../compartilhado/icone-do-bloco.vue'
 // O filete do cartão no tom do selo dele (Onda 2c).
 import { classeDoTom } from './tom-do-selo.js'
@@ -4488,6 +4490,7 @@ function fecharExcluir() {
 // quem manda de verdade é `is_vessel_admin()` por dentro da função do banco.
 async function conferirASenha(senha) {
   if (!senha) return { ok: false, erro: 'sem_senha' }
+  if (areaNaApi('conta')) return conferirSenhaPelaApi(senha)
   try {
     const { data, error } = await sbClient.functions.invoke('conferir-senha', { body: { senha } })
     if (error) {

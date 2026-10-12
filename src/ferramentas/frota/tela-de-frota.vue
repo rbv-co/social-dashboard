@@ -20,6 +20,8 @@ import IconeDoBloco from '../../compartilhado/icone-do-bloco.vue'
 import { useRouter } from 'vue-router'
 import { sbClient, SUPABASE_URL, SUPABASE_ANON_KEY } from '../../compartilhado/conectar-no-banco-de-dados.js'
 import { hasPermission, estado } from '../../compartilhado/controle-de-login-e-usuario.js'
+// Chave `conta` (Plano 7): invite-user e conferir-senha (5.0) pela API em Go.
+import { areaNaApi, corpoDaEdge, conferirSenhaPelaApi } from '../../compartilhado/api.js'
 import { estadoDoVeiculo, ordenarEstados, rotuloDoTanque, NIVEIS_TANQUE, problemasDaDevolucao, problemasDoRegistroAvulso, ultimoHodometro } from './estado-do-veiculo.js'
 import { seloDoVeiculo, tomDoCartao, linhaDoCartao, acaoPrincipalDoVeiculo, cartaoCompacto } from './cartao-do-veiculo.js'
 import { nomeDeQuemAgiu } from './nome-de-quem-agiu.js'
@@ -753,17 +755,18 @@ async function darAcessoAoDono(c) {
   const senha = senhaInicial(12)
   try {
     // PASSO 1: a conta.
-    const r = await fetch(`${SUPABASE_URL}/functions/v1/invite-user`, {
+    const corpo = { email, name: pessoa.nome, role: 'viewer', password: senha }
+    const r = areaNaApi('conta') ? null : await fetch(`${SUPABASE_URL}/functions/v1/invite-user`, {
       method: 'POST',
       headers: {
         apikey: SUPABASE_ANON_KEY,
         Authorization: `Bearer ${(await sbClient.auth.getSession()).data.session?.access_token || ''}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ email, name: pessoa.nome, role: 'viewer', password: senha }),
+      body: JSON.stringify(corpo),
     })
-    const d = await r.json().catch(() => ({}))
-    if (!r.ok) {
+    const d = r ? await r.json().catch(() => ({})) : await corpoDaEdge('invite-user', corpo)
+    if (r ? !r.ok : d.error) {
       const cru = String(d.error || '')
       // A mensagem crua da Supabase vem em inglês. Traduzir o caso mais comum
       // evita "already been registered" na cara de quem não lê inglês.
@@ -2126,9 +2129,10 @@ async function gravarChecklist({ ficha, respostas, assinatura }) {
 
     // 1) A senha, no SERVIDOR. `signInWithPassword` aqui TROCARIA A SESSÃO
     //    (D19a) — é a razão de a Edge `conferir-senha` existir.
-    const { data: conf, error: erroConf } = await sbClient.functions.invoke('conferir-senha', {
-      body: { senha: assinatura.senha },
-    })
+    //    Pela API (chave `conta`), o motivo já vem no `{ ok, erro }`.
+    const { data: conf, error: erroConf } = areaNaApi('conta')
+      ? await conferirSenhaPelaApi(assinatura.senha).then((c) => ({ data: c, error: null }))
+      : await sbClient.functions.invoke('conferir-senha', { body: { senha: assinatura.senha } })
     if (erroConf || !conf?.ok) {
       // A Edge responde 429 (bloqueado), 401 (sem sessão) e 400 (sem senha)
       // FORA do 2xx, e o supabase-js transforma isso em `error` com `data`

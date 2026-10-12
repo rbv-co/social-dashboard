@@ -155,3 +155,60 @@ test('carregar de novo com sucesso limpa o erroPerfil antigo', async () => {
   assert.equal(estado.erroPerfil, null)
   assert.equal(estado.role, 'admin')
 })
+
+/* ── Sessão pela API em Go (chave `conta`, Plano 7) ─────────────────────────── */
+const { carregarPerfilDaApi } = await import('./controle-de-login-e-usuario.js')
+const { CHAVE_DO_TOKEN } = await import('./api.js')
+
+function guardaDeMentira() {
+  const m = new Map()
+  return { getItem: k => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)), removeItem: k => m.delete(k) }
+}
+// Responde por caminho: { '/auth/eu': [status, corpo], '/eu/perfil': [...] }
+function api(rotas) {
+  globalThis.fetch = async (url) => {
+    const [status, corpo] = rotas[new URL(url, 'http://x').pathname.replace(/^\/api/, '')]
+    return { status, ok: status < 300, text: async () => JSON.stringify(corpo), headers: { get: () => null } }
+  }
+}
+
+test('API: /auth/eu + /eu/perfil preenchem a pessoa e o perfil', async () => {
+  window.localStorage = guardaDeMentira(); window.sessionStorage = guardaDeMentira(); window.location = { search: '' }
+  window.localStorage.setItem(CHAVE_DO_TOKEN, 'tok-api')
+  limparEstado()
+  estado.currentSession = { access_token: 'tok-api', user: null }
+  api({
+    '/auth/eu': [200, { id: 'u9', email: 'ana@x.com', nome: 'Ana' }],
+    '/eu/perfil': [200, [{ role: 'admin', is_superadmin: true, permissions: { social: ['ver'] }, features: ['social'] }]],
+  })
+  const r = await carregarPerfilDaApi()
+  assert.deepEqual(r, { ok: true, erro: null })
+  assert.equal(estado.user.email, 'ana@x.com')
+  assert.equal(estado.user.user_metadata.name, 'Ana')
+  assert.equal(estado.currentSession.user.id, 'u9')
+  assert.equal(estado.is_superadmin, true)
+})
+
+test('API: 401 no /auth/eu apaga o token e zera (a guarda leva ao login)', async () => {
+  window.localStorage.setItem(CHAVE_DO_TOKEN, 'tok-morto')
+  estado.currentSession = { access_token: 'tok-morto', user: null }
+  api({ '/auth/eu': [401, { error: 'nao_autenticado' }] })
+  const r = await carregarPerfilDaApi()
+  assert.equal(r.ok, false)
+  assert.equal(window.localStorage.getItem(CHAVE_DO_TOKEN), null)
+  assert.equal(estado.currentSession, null)
+  assert.equal(estado.erroPerfil.tipo, 'sessao')
+})
+
+test('API: queda de rede NÃO rebaixa nem desloga — preserva o perfil anterior', async () => {
+  window.localStorage.setItem(CHAVE_DO_TOKEN, 'tok-vivo')
+  estado.currentSession = { access_token: 'tok-vivo', user: { id: 'u1' } }
+  estadoDeSuperAdmin()
+  globalThis.fetch = async () => { throw new TypeError('Failed to fetch') }
+  const r = await carregarPerfilDaApi()
+  assert.equal(r.ok, false)
+  assert.equal(estado.erroPerfil.tipo, 'rede')
+  assert.equal(estado.is_superadmin, true)
+  assert.equal(window.localStorage.getItem(CHAVE_DO_TOKEN), 'tok-vivo')
+  assert.notEqual(estado.currentSession, null)
+})
