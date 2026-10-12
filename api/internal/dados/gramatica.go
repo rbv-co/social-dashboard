@@ -10,12 +10,30 @@ import (
 
 // GRAMÁTICA ACEITA PARA O SQL DE UMA Consulta (e para Onde, filtros e ordens). O que não for
 // reconhecido é recusado (ErrDeclaracao): a validação FALHA FECHADA. Ela existe para que nenhuma
-// tabela seja lida sem a regra de Ler do catálogo; não é um parser de SQL.
+// tabela seja lida sem a regra de Ler do catálogo; não é um parser de SQL. Há DUAS camadas:
+//
+//  1. Esta gramática (marcadores {ler:} em cada leitura).
+//  2. A SOMBRA (consulta.go, prefixoDaSombra): o framework prefixa o SQL com uma CTE filtrada, de
+//     mesmo nome, para cada tabela real do schema citada no texto. A CTE sobrepõe a tabela real em toda
+//     referência sem schema do statement principal, então um defeito desta gramática vira, no pior
+//     caso, a leitura da relação já filtrada. A sombra só funciona porque (a) tabela/view real fora do
+//     catálogo é recusada (Ruling 27), (b) nenhum qualificador de schema é aceito (`public.conta`
+//     escaparia da CTE), (c) a gramática recusa `with` (o prefixo é o único WITH) e (d) as funções
+//     abaixo, que executam SQL em texto ou leem tabelas por nome/oid, são recusadas em todo o texto.
+//
+// PREMISSAS (conferidas na montagem em ambienteDoBanco): PostgreSQL 15 ou mais (número seguido de
+// letra, `1x`, é erro de sintaxe: o tokenizador não precisa tratá-lo) e standard_conforming_strings = on
+// (barra invertida dentro de literal é comum; senão o `\'` fecharia o literal diferente do que lemos).
 //
 //   - UM select só, sem `;`, sem comentário (`--`, `/*`), sem identificador entre aspas, sem `$`,
-//     sem `union`/`intersect`/`except`, `with`, `table`, `values`, `lateral`, `for`, `into`, `window`.
+//     sem `union`/`intersect`/`except`, `with`, `table`, `values`, `lateral`, `for`, `into`, `window`,
+//     `between`/`symmetric`/`similar` (o `and` do between não é um termo de and), `set`/`reset`.
 //   - Literais entre apóstrofos são lidos por inteiro (parênteses e palavras dentro deles não contam);
 //     um literal não pode conter `{ler:`; E'..', B'..', U&'..' são recusados.
+//   - Nomes recusados em TODO o texto (sem caixa): prefixos pg_, lo_, dblink, txid_, query_to_xml,
+//     table_to_xml, cursor_to_xml, schema_to_xml, database_to_xml, to_reg, ts_stat; set_config,
+//     nextval/currval/setval/lastval, information_schema, public e o schema corrente, regclass e
+//     similares (reg*), tableoid, oid. `x.y` só com x alias declarado (senão x pode ser um schema).
 //   - O nível 0 é: select <lista> from <Tabela> <Alias> [join ...]*, sem where/group/order/limit
 //     (o framework acrescenta where, order by e limit; filtros e a regra entram ali, ou em Onde).
 //   - A principal (Tabela Alias) aparece UMA vez, em qualquer lugar do texto, e é o primeiro item do
@@ -23,28 +41,33 @@ import (
 //   - Toda outra tabela lida, em qualquer lugar (join, subconsulta na lista, em where, em parênteses),
 //     vem depois de from/join, é tabela do catálogo, tem alias, e tem o marcador {ler:<tabela>:<alias>}
 //     NA SUA CONDIÇÃO: no `on` do próprio join, ou no `where` da subconsulta quando é o primeiro item
-//     do from. O marcador tem de ser um termo de `and` (precedido por and/on/where/"(" e seguido de
-//     and/")"), sem `or` no mesmo nível nem em nível que o envolva, e sem `not`, comparação ou função
-//     em volta: o marcador vira "(regra)", e `x or (regra)` ou `not (regra)` cancelaria a regra.
-//   - Um alias por tabela e uma tabela por alias, em toda a declaração (SQL e Onde): os parâmetros
-//     da regra se chamam autz_<alias>_..., e dois marcadores com o mesmo alias trocariam parâmetros.
+//     do from. O marcador é um termo de `and` DA CONDIÇÃO INTEIRA: precedido de and/on/where/"(" e
+//     seguido de and/")"/fim, e cada grupo de parênteses que o envolve é só agrupamento (precedido de
+//     and/on/where/"(", seguido de and/")"/fim, sem select dentro), sem `or` em nenhum nível que o
+//     envolva. O marcador vira "(regra)": `x or (regra)`, `not (regra)`, `(regra) = false`,
+//     `(regra) is not true`, `(regra)::text`, `(regra) in (...)`, função(regra) ou case com ela
+//     cancelariam ou inverteriam a regra. Marcador que não está na condição de uma leitura é recusado.
+//   - Um alias por tabela e uma tabela por alias, em toda a declaração (SQL e Onde); alias começando
+//     com autz_ é reservado (parâmetros e sombras do framework).
 //   - Só join, inner join e left join, sempre com `on`. Sem right/full/cross/natural join, sem
-//     `using`, sem junção por vírgula, sem subconsulta nem parênteses depois de from/join.
+//     `using`, sem junção por vírgula, sem subconsulta nem parênteses depois de from/join. Vírgula no
+//     nível do from depois de `on`/`where` é recusada (o Postgres abriria ali um item novo do from).
 //   - Função depois de from/join só da lista fechada abaixo (funções de conjunto que expandem uma
 //     coluna ou literal); qualquer outra poderia ler tabelas (SECURITY DEFINER) sem regra.
 //   - `from` só abre o from de um select; dentro de função ou expressão é recusado.
+//   - Ordens e OrdemPadrao não podem trazer limit/offset (o framework os acrescenta).
 //
-// FALSOS POSITIVOS (recusados de propósito): `is [not] distinct from` (use `is not distinct from`
-// só no where das subconsultas? não: use `coalesce`/`<>` com `is null`), `extract(... from c.col)`
-// (use `date_part('...', c.col)`), `trim/substring/overlay(... from ...)` (use btrim/ltrim/rtrim,
-// substr, left/right), `from` com várias tabelas separadas por vírgula (use join), CTE (`with`),
-// subconsulta no from (derived table), `left`/`right`/`inner`/`full`/`cross`/`natural`/`using`/`order`/
-// `group`/`limit`/`for`/`window`/`values`/`only`/`table`/`into`/`fetch`/`returning` usados como nome de
-// coluna, qualquer `where`/`group by`/`order by`/`limit` no nível 0, marcador sob `or`/`not`.
+// FALSOS POSITIVOS (recusados de propósito): `is [not] distinct from` (use `is null`/`<>`),
+// `extract(... from c.col)` (use `date_part('...', c.col)`), `trim/substring/overlay(... from ...)` (use
+// btrim/ltrim/rtrim, substr, left/right), `between` (use `>=` e `<=`), junção por vírgula (use join), CTE
+// (`with`), subconsulta no from (derived table), `union`, `right/full/cross/natural join`, `using`,
+// `for update`, comentários, where/group/order/limit no nível 0, marcador sob `or`/`not`/função/
+// comparação, nome de coluna/alias igual a tabela real fora do catálogo ou a schema (`public`), alias
+// `autz_*`, funções fora da lista fechada depois de from/join, e as funções/nomes da lista acima.
 //
 // NÃO É VERIFICÁVEL AQUI (revisão humana em cada rota): função na LISTA do select (ou em qualquer
 // expressão) que leia tabelas por dentro (funções SECURITY DEFINER do banco): chamá-la pode expor
-// linhas que a regra de Ler não deixaria ver.
+// linhas que a regra de Ler não deixaria ver; a sombra não alcança o que roda dentro dessas funções.
 var funcoesDeConjunto = []string{"jsonb_array_elements", "jsonb_array_elements_text", "json_array_elements",
 	"json_array_elements_text", "jsonb_each", "jsonb_each_text", "json_each", "json_each_text", "unnest", "generate_series"}
 
@@ -55,6 +78,9 @@ type tk struct {
 }
 
 var reAliasSQL = regexp.MustCompile(`^[a-z][a-z0-9_]{0,30}$`)
+
+// aliasValido: alias simples, e fora do prefixo autz_ (dos parâmetros e das sombras do framework).
+func aliasValido(s string) bool { return reAliasSQL.MatchString(s) && !strings.HasPrefix(s, "autz_") }
 
 func ehLetra(c byte) bool   { return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c == '_' }
 func ehDigito(c byte) bool  { return c >= '0' && c <= '9' }
@@ -143,7 +169,33 @@ func tokenizar(sql string) ([]tk, error) {
 
 var proibidas = map[string]bool{"union": true, "intersect": true, "except": true, "table": true, "with": true,
 	"recursive": true, "lateral": true, "full": true, "natural": true, "cross": true, "using": true, "values": true,
-	"only": true, "tablesample": true, "for": true, "into": true, "fetch": true, "window": true, "returning": true}
+	"only": true, "tablesample": true, "for": true, "into": true, "fetch": true, "window": true, "returning": true,
+	// between: o `and` dele é parte do between, não um termo de and (`between x and {ler:..}` vira intervalo)
+	"between": true, "symmetric": true, "similar": true,
+	// o SQL da consulta nunca muda configuração
+	"set": true, "reset": true}
+
+// Funções e nomes que executam SQL em texto ou leem tabelas por nome/oid: escapam da sombra e da
+// gramática. Recusados em TODO o texto (comparação sem caixa: os identificadores já vêm em minúsculas).
+var negadosPorPrefixo = []string{"pg_", "lo_", "dblink", "txid_", "query_to_xml", "table_to_xml", "cursor_to_xml",
+	"schema_to_xml", "database_to_xml", "to_reg", "ts_stat", "xmlnamespaces"}
+var negadosExatos = map[string]bool{"set_config": true, "nextval": true, "currval": true, "setval": true, "lastval": true,
+	"information_schema": true, "public": true, "regclass": true, "regproc": true, "regprocedure": true, "regoper": true,
+	"regoperator": true, "regtype": true, "regnamespace": true, "regrole": true, "regconfig": true, "regdictionary": true,
+	"tableoid": true, "oid": true}
+
+// nomeNegado: o identificador w é de uma função/nome que a consulta declarada não pode usar.
+func nomeNegado(w string, esquemas map[string]bool) bool {
+	if negadosExatos[w] || esquemas[w] {
+		return true
+	}
+	for _, p := range negadosPorPrefixo {
+		if strings.HasPrefix(w, p) {
+			return true
+		}
+	}
+	return false
+}
 
 // reservadas não são nome de tabela nem de alias.
 var reservadas = map[string]bool{"select": true, "from": true, "where": true, "on": true, "join": true, "left": true,
@@ -151,10 +203,33 @@ var reservadas = map[string]bool{"select": true, "from": true, "where": true, "o
 	"having": true, "as": true, "and": true, "or": true, "not": true, "distinct": true, "by": true}
 
 // registro liga cada alias a uma tabela e cada tabela a um alias, em toda a declaração.
-type registro struct{ tabAlias, aliasTab map[string]string }
+type registro struct {
+	tabAlias, aliasTab map[string]string
+	srf                map[string]bool // aliases de funções de conjunto (declarados, mas não são tabela)
+}
 
 func novoRegistro() *registro {
-	return &registro{tabAlias: map[string]string{}, aliasTab: map[string]string{}}
+	return &registro{tabAlias: map[string]string{}, aliasTab: map[string]string{}, srf: map[string]bool{}}
+}
+
+// clonar: cópia para os fragmentos (filtros, ordens), que veem os aliases do SQL mas não registram nada nele.
+func (r *registro) clonar() *registro {
+	n := novoRegistro()
+	for k, v := range r.tabAlias {
+		n.tabAlias[k] = v
+	}
+	for k, v := range r.aliasTab {
+		n.aliasTab[k] = v
+	}
+	for k := range r.srf {
+		n.srf[k] = true
+	}
+	return n
+}
+
+func (r *registro) declarado(alias string) bool {
+	_, ok := r.aliasTab[alias]
+	return ok || r.srf[alias]
 }
 
 func (r *registro) ligar(tab, alias string) error {
@@ -206,6 +281,10 @@ type varredor struct {
 	d          []int // profundidade de cada token ("(" e ")" ficam na de fora)
 	leituras   []*leitura
 	usados     []int // índices dos marcadores
+	// ambiente (nil = só a gramática): tabelas/views reais do schema e nomes de schema; proibe: palavras
+	// extras recusadas neste texto (limit/offset nas ordens)
+	reais, esquemas, proibe map[string]bool
+	consumidos              map[int]bool // marcadores que a condição de uma leitura aceitou
 }
 
 func (v *varredor) e(formato string, a ...any) error { return declaracao(formato, a...) }
@@ -230,6 +309,18 @@ func (v *varredor) varrer(sql string, nivel0 bool) error {
 	}
 	v.nivel0 = nivel0
 	v.toks, v.d = toks, make([]int, len(toks))
+	for i, t := range toks {
+		if t.k != 'i' {
+			continue
+		}
+		if nomeNegado(t.s, v.esquemas) || v.proibe[t.s] {
+			return v.e("%q não é aceito numa consulta declarada (função/nome que executa SQL, lê tabela por nome ou escapa da regra)", t.s)
+		}
+		// toda tabela/view real citada tem de ser do catálogo (a rota nunca lê o que está fora dele)
+		if v.reais[t.s] && !v.cat.Tem(t.s) && (i == 0 || !toks[i-1].eh(".")) {
+			return v.e("%q é uma tabela/view real fora do catálogo de permissões: não pode ser citada", t.s)
+		}
+	}
 	n := len(toks)
 	pilha := []*moldura{{sel: nivel0, fase: fLista, primeiro: false}}
 	i := 0
@@ -265,17 +356,19 @@ func (v *varredor) varrer(sql string, nivel0 bool) error {
 		if f.sel && f.fase == fAliasSRF {
 			f.fase = fApos
 			if t.k == 'i' && t.s == "as" {
-				if p := v.prox(i); p.k != 'i' || reservadas[p.s] || !reAliasSQL.MatchString(p.s) {
+				if p := v.prox(i); p.k != 'i' || reservadas[p.s] || !aliasValido(p.s) {
 					return v.e("alias inválido depois de as")
 				}
 				i++
 				v.d[i] = len(pilha) - 1
+				v.reg.srf[toks[i].s] = true
 				continue
 			}
 			if t.k == 'i' && !reservadas[t.s] {
-				if !reAliasSQL.MatchString(t.s) {
+				if !aliasValido(t.s) {
 					return v.e("alias inválido %q", t.s)
 				}
+				v.reg.srf[t.s] = true
 				continue
 			}
 		}
@@ -321,6 +414,11 @@ func (v *varredor) varrer(sql string, nivel0 bool) error {
 			continue
 		}
 		if t.k != 'i' {
+			if f.sel && (f.fase == fOn || f.fase == fOnde) && t.eh(",") {
+				// no nível do from, a vírgula depois do on/where abre um item NOVO do from (uma tabela
+				// que esta gramática não veria como item)
+				return v.e("vírgula no nível do from, depois do on/where: use join ... on")
+			}
 			if f.sel && f.fase == fApos {
 				if t.eh(",") {
 					p, q := v.prox(i), tk{}
@@ -498,7 +596,7 @@ func (v *varredor) item(f *moldura, i int) (int, error) {
 	if p.eh("as") {
 		j++
 	}
-	if j >= len(v.toks) || v.toks[j].k != 'i' || reservadas[v.toks[j].s] || !reAliasSQL.MatchString(v.toks[j].s) {
+	if j >= len(v.toks) || v.toks[j].k != 'i' || reservadas[v.toks[j].s] || !aliasValido(v.toks[j].s) {
 		return 0, v.e("tabela %q sem alias válido", t.s)
 	}
 	tab, alias := t.s, v.toks[j].s
@@ -533,6 +631,7 @@ func (v *varredor) item(f *moldura, i int) (int, error) {
 // conferir: toda tabela lida tem o marcador dela, bem posto, na condição dela; e todo
 // marcador usado pertence a uma tabela lida (ou à principal).
 func (v *varredor) conferir() error {
+	v.consumidos = map[int]bool{}
 	for _, rd := range v.leituras {
 		if rd.ini < 0 || rd.ini >= len(v.toks) || rd.fim < rd.ini {
 			return v.e("%s %s é lida sem condição: ponha {ler:%s:%s} no on do join, ou no where da subconsulta", rd.tab, rd.alias, rd.tab, rd.alias)
@@ -541,7 +640,7 @@ func (v *varredor) conferir() error {
 		for _, m := range v.usados {
 			if m >= rd.ini && m < rd.fim && v.toks[m].s == rd.tab && v.toks[m].a == rd.alias && v.marcadorSeguro(rd.ini, rd.fim, m) {
 				achou = true
-				break
+				v.consumidos[m] = true
 			}
 		}
 		if !achou {
@@ -552,6 +651,15 @@ func (v *varredor) conferir() error {
 		t := v.toks[m]
 		if v.reg.tabAlias[t.s] != t.a {
 			return v.e("marcador {ler:%s:%s} sem a leitura da tabela com esse alias", t.s, t.a)
+		}
+		if !v.consumidos[m] {
+			return v.e("marcador {ler:%s:%s} fora da condição da leitura dele (na lista, no topo do Onde, ou em lugar sem leitura)", t.s, t.a)
+		}
+	}
+	// qualificador: `x.y` só com x alias declarado (senão x pode ser schema: public.conta escapa da sombra)
+	for i := 0; i+2 < len(v.toks); i++ {
+		if v.toks[i].k == 'i' && v.toks[i+1].eh(".") && v.toks[i+1].k == 'o' && (i == 0 || !v.toks[i-1].eh(".")) && !v.reg.declarado(v.toks[i].s) {
+			return v.e("%s. : qualificador que não é alias declarado (schema? use o alias)", v.toks[i].s)
 		}
 	}
 	return nil
@@ -597,6 +705,17 @@ func (v *varredor) marcadorSeguro(ini, fim, m int) bool {
 			}
 			if v.toks[ab+1].eh("select") {
 				return false
+			}
+			// depois do ")" que fecha o grupo: só and, o ")" de outro grupo (conferido no nível dele)
+			// ou o fim da condição; operador, is, cast ou in depois dele inverte/cancela a regra
+			cl := dir + 1
+			if cl >= fim || !v.toks[cl].eh(")") {
+				return false
+			}
+			if cl+1 < fim {
+				if p := v.toks[cl+1]; !(p.k == 'i' && p.s == "and") && !p.eh(")") {
+					return false
+				}
 			}
 		}
 	}
