@@ -182,6 +182,16 @@ func personas(catalogo []map[string]any) []Persona {
 	ps = append(ps,
 		Persona{Nome: "conteudo-a1", perfil: perfil("features", []string{"conteudo"}, "allowed_accounts", []string{"A1"})},
 		Persona{Nome: "conteudo-contas-vazio", perfil: perfil("features", []string{"conteudo"}, "allowed_accounts", []string{})})
+	// Revisão final (duas mutações de segurança sobreviviam ao oráculo). Também no fim da lista.
+	//   - super-trava-contas-vazio: super-admin PELA FICHA com a trava de equipe LIGADA e sem nenhuma
+	//     conta. semTravaOuSuper sem SuperFicha tiraria dele canal/bem/equipe/estoque/grupo.
+	//   - sup-grupo-e-membro: segundo membro do grupo G1 (que já tem a supervisora-grupo). A policy de
+	//     canais_grupos_membros deixa ver a linha de OUTRO membro só por pode_ver_grupo: sem esta pessoa
+	//     (e com a trava ligada) ninguém dependia de Grupos, e podeVerGrupo com Equipes() passava.
+	ps = append(ps,
+		Persona{Nome: "super-trava-contas-vazio", perfil: perfil("is_superadmin", true, "escopo_por_equipe", true, "allowed_accounts", []string{})},
+		Persona{Nome: "sup-grupo-e-membro", perfil: perfil("escopo_por_equipe", true), depois: []string{
+			`insert into canais_grupos_membros (grupo_id, profile_id, papel) values ('` + G1 + `', '%s', 'membro')`}})
 	for i := range ps {
 		ps[i].ID = id("00000000", i+1)
 	}
