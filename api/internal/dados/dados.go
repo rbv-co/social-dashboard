@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -57,10 +58,29 @@ func LerQuery(w http.ResponseWriter, r *http.Request) (url.Values, bool) {
 	return q, true
 }
 
-// ErroDoBanco traduz o erro de uma consulta. SÓ as mensagens de P0001 (raise exception escrito
-// por nós nas funções do banco) chegam à pessoa, como o PostgREST fazia. Os códigos nativos
-// (42501 "permission denied for table x", 22023 "unit \"xx\" not recognized"...) carregam nome
-// de tabela, coluna ou valor do pedido: saem com texto fixo e status certo. Detail nunca é lido.
+// codigosDeRaise são os SQLSTATE que as funções e gatilhos de produção levantam de propósito
+// (`raise exception '...' using errcode = ...`) com frase escrita para a pessoa ler.
+var codigosDeRaise = []string{"P0001", "42501", "22023", "P0002", "23514"}
+
+// raiseNosso diz se o erro é um RAISE escrito por nós numa função do banco, e não um erro
+// nativo do Postgres. O servidor monta Where de baixo para cima e a PRIMEIRA linha é onde o
+// erro nasceu: num RAISE é `PL/pgSQL function f() line N at RAISE` (mesmo aninhado); um erro
+// nativo mostra `... at RETURN`, `SQL expression ...`, `during inlining` etc. O código tem de
+// estar na lista: um `raise;` que re-lança unique_violation (23505) também termina em "at
+// RAISE", mas leva o texto nativo (nome de constraint).
+func raiseNosso(pe *pgconn.PgError) bool {
+	if pe.Code == "P0001" { // raise_exception: o Postgres nativo nunca usa este código
+		return true
+	}
+	primeira, _, _ := strings.Cut(pe.Where, "\n")
+	return strings.HasSuffix(primeira, " at RAISE") && slices.Contains(codigosDeRaise, pe.Code)
+}
+
+// ErroDoBanco traduz o erro de uma consulta. A frase de um RAISE nosso chega à pessoa, como o
+// PostgREST fazia: P0001/22023/23514 = 400 regra_de_negocio, 42501 = 403 sem_permissao, P0002 =
+// 404 nao_encontrado, sempre com "mensagem". Os erros nativos (42501 "permission denied for
+// table x", 22023 "unit \"xx\" not recognized"...) carregam nome de tabela, coluna ou valor do
+// pedido: saem com texto fixo e status certo. Detail nunca é lido.
 func ErroDoBanco(w http.ResponseWriter, err error) {
 	var pe *pgconn.PgError
 	switch {
@@ -68,7 +88,11 @@ func ErroDoBanco(w http.ResponseWriter, err error) {
 		Erro(w, http.StatusNotFound, "nao_encontrado", "")
 	case errors.As(err, &pe):
 		switch {
-		case pe.Code == "P0001":
+		case raiseNosso(pe) && pe.Code == "42501":
+			Erro(w, http.StatusForbidden, "sem_permissao", pe.Message)
+		case raiseNosso(pe) && pe.Code == "P0002":
+			Erro(w, http.StatusNotFound, "nao_encontrado", pe.Message)
+		case raiseNosso(pe):
 			Erro(w, http.StatusBadRequest, "regra_de_negocio", pe.Message)
 		case pe.Code == "42501":
 			Erro(w, http.StatusForbidden, "sem_permissao", "")

@@ -13,6 +13,11 @@ import (
 
 type chaveAtor struct{}
 
+// NoContexto põe o ator no contexto (o Exigir usa; os testes de outros pacotes também).
+func NoContexto(ctx context.Context, a *Ator) context.Context {
+	return context.WithValue(ctx, chaveAtor{}, a)
+}
+
 func AtorDoContexto(ctx context.Context) *Ator {
 	a, _ := ctx.Value(chaveAtor{}).(*Ator)
 	return a
@@ -60,7 +65,7 @@ func Exigir(p *pgxpool.Pool, s *Store) func(http.Handler) http.Handler {
 				erroJSON(w, http.StatusInternalServerError, "erro_interno")
 				return
 			}
-			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), chaveAtor{}, a)))
+			next.ServeHTTP(w, r.WithContext(NoContexto(r.Context(), a)))
 		})
 	}
 }
