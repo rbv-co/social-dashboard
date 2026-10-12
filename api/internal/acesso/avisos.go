@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -13,12 +14,14 @@ import (
 	"github.com/rbv-co/social-dashboard/api/internal/autz"
 	"github.com/rbv-co/social-dashboard/api/internal/banco"
 	"github.com/rbv-co/social-dashboard/api/internal/dados"
+	"github.com/rbv-co/social-dashboard/api/internal/webpush"
 )
 
 // Avisos: preferências por tipo e inscrição de push. Preferência: a própria OU perfil admin/super pela
 // ficha (push_pref_*). Inscrição: só do dono da linha (push_subs_dono_*). O endpoint e as chaves
-// (p256dh, auth) são segredo: nunca vão para log nem para a resposta. O SSRF do endpoint é barrado no
-// ENVIO (webpush.endpointAceito); aqui só o formato.
+// (p256dh, auth) são segredo: nunca vão para log nem para a resposta. A inscrição usa a MESMA regra do
+// envio (webpush.EndpointAceito e ChavesAceitas); o SSRF por nome que resolve para rede interna é barrado
+// no ENVIO (Control do discador).
 
 const colunasPreferencia = `t.user_id, t.tipo, t.ativo, t.alterado_em, t.alterado_por`
 
@@ -27,6 +30,10 @@ var consultaPreferencias = dados.Consulta{Tabela: "push_preferencias", Alias: "t
 	SQL:     `select ` + colunasPreferencia + ` from push_preferencias t`,
 	Filtros: []dados.Filtro{{Param: "user_id", SQL: "t.user_id = @user_id::uuid", Tipo: "uuid"}},
 	Ordens:  map[string]string{}, OrdemPadrao: "t.user_id", Desempate: "t.tipo"}
+
+// uuidCanonico: só a forma 8-4-4-4-12. O Postgres também lê sem hífens e entre chaves, e aí o par
+// (user_id, tipo) repetido passaria pela checagem de duplicata e daria 21000 (500) no upsert.
+var uuidCanonico = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
 type preferencia struct {
 	UserID string `json:"user_id"`
@@ -54,8 +61,8 @@ func gravarPreferencias(p *pgxpool.Pool) http.HandlerFunc {
 		vistas := map[string]bool{}
 		for _, l := range linhas {
 			k := strings.ToLower(l.UserID) + "|" + l.Tipo
-			if l.Ativo == nil || vistas[k] {
-				dados.Erro(w, http.StatusBadRequest, "pedido_invalido", "Cada preferência precisa de ativo e aparece uma vez só.")
+			if l.Ativo == nil || !uuidCanonico.MatchString(l.UserID) || vistas[k] {
+				dados.Erro(w, http.StatusBadRequest, "pedido_invalido", "Cada preferência precisa de user_id (uuid), ativo e aparece uma vez só.")
 				return
 			}
 			vistas[k] = true
@@ -109,8 +116,7 @@ func inscrever(p *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 		u, err := url.Parse(in.Endpoint)
-		if err != nil || u.Scheme != "https" || u.Host == "" || len(in.Endpoint) > 2048 ||
-			in.P256dh == "" || in.Auth == "" || len(in.P256dh) > 256 || len(in.Auth) > 256 {
+		if err != nil || len(in.Endpoint) > 2048 || !webpush.EndpointAceito(u) || !webpush.ChavesAceitas(in.P256dh, in.Auth) {
 			dados.Erro(w, http.StatusBadRequest, "pedido_invalido", "Inscrição de push inválida.")
 			return
 		}
