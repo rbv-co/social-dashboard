@@ -97,7 +97,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	metodo := strings.ToUpper(in.Method)
-	escreve := metodo == "POST" || metodo == "DELETE" || in.ImageFromURL != "" || in.VideoFromURL != ""
+	escreve := metodo == "POST" || metodo == "DELETE" || in.ImageFromURL != "" || in.VideoFromURL != "" || temParam(in.Params, "method")
 	if a := auth.AtorDoContexto(r.Context()); escreve && (a == nil || a.ImpersonadorID != nil) {
 		// Ruling 5.6-6: criar campanha, subir mídia e apagar na Meta gastam dinheiro em nome de alguém.
 		responder(w, http.StatusForbidden, map[string]string{"error": "sem_permissao", "mensagem": dados.FraseEntrarComo})
@@ -124,7 +124,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		return *s
 	}
-	if !autz.VeTodasAsContas(autz.EscopoDo(r.Context())) && !caminhoDaConta(in.Path, texto(adAcc), texto(ig)) {
+	if !autz.VeTodasAsContas(autz.EscopoDo(r.Context())) && (!caminhoDaConta(in.Path, texto(adAcc), texto(ig)) || temParam(in.Params, "ids", "batch")) {
 		erro(w, http.StatusForbidden, "caminho fora da conta")
 		return
 	}

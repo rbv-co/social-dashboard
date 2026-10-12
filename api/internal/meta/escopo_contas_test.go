@@ -68,6 +68,24 @@ func TestMetaProxyEscopoDeContas(t *testing.T) {
 		}
 	})
 
+	t.Run("params ids e batch saem do caminho ancorado", func(t *testing.T) {
+		for _, params := range []string{`{"ids":"1,2"}`, `{"BATCH":"[]"}`} {
+			antes := a.core.n()
+			b := `{"accountId":"conta-1","path":"/act_999/insights","params":` + params + `}`
+			st, resp := pedir(a.tokens[uRestrito], b)
+			if st != 403 || strings.TrimSpace(resp) != `{"error":"caminho fora da conta"}` {
+				t.Errorf("%s: %d %s", b, st, resp)
+			}
+			if a.core.n() != antes {
+				t.Errorf("%s: o core recebeu o pedido", b)
+			}
+		}
+		antes := a.core.n()
+		if st, resp := pedir(a.tokens[uMeta], `{"accountId":"conta-1","path":"/act_999/insights","params":{"ids":"1"}}`); st != 200 || a.core.n() != antes+1 {
+			t.Errorf("uMeta com ids (paridade): %d %s, core %d", st, resp, a.core.n()-antes)
+		}
+	})
+
 	t.Run("quem vê todas as contas não tem âncora (paridade com o Plano 3)", func(t *testing.T) {
 		for nome, tok := range map[string]string{"admin com lista": a.tokens[uAdminRestrito], "sem lista": a.tokens[uMeta]} {
 			antes := a.core.n()
@@ -77,6 +95,26 @@ func TestMetaProxyEscopoDeContas(t *testing.T) {
 			if a.core.n() != antes+1 {
 				t.Errorf("%s: core chamado %d vezes, esperava 1", nome, a.core.n()-antes)
 			}
+		}
+	})
+
+	t.Run("entrar como não escreve pelo override method da Graph", func(t *testing.T) {
+		antes := a.core.n()
+		for _, b := range []string{
+			`{"accountId":"conta-1","path":"/9001","params":{"method":"delete"}}`,
+			`{"accountId":"conta-1","path":"/act_999/campaigns","params":{"METHOD":"POST"}}`,
+		} {
+			st, resp := pedir(a.tokens["impersonado"], b)
+			if st != 403 || !strings.Contains(resp, `"sem_permissao"`) || !strings.Contains(resp, "Quem entrou como outra pessoa") {
+				t.Errorf("%s: %d %s", b, st, resp)
+			}
+		}
+		if a.core.n() != antes {
+			t.Fatalf("o override method chegou ao core (%d pedidos)", a.core.n()-antes)
+		}
+		// paridade: sessão normal segue passando o param (o Plano 3 não o filtrava)
+		if st, resp := pedir(a.tokens[uMeta], `{"accountId":"conta-1","path":"/9001","params":{"method":"delete"}}`); st != 200 || a.core.n() != antes+1 {
+			t.Errorf("uMeta com method (paridade): %d %s, core %d", st, resp, a.core.n()-antes)
 		}
 	})
 

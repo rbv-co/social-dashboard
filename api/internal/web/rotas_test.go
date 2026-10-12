@@ -82,7 +82,6 @@ func TestNenhumaRotaNovaFicaAberta(t *testing.T) {
 	st := auth.NovoStore(p)
 	h := Rotas(p, st, auth.NovoLimitador(), config.Config{ShopifySegredos: []string{"s"}, ChatwootSegredo: "c"})
 	semModulo := fixtureUsuarios(t, p, st)["nenhum"]
-	testebanco.TabelasDoEscopo(t, p) // o escopo carrega: uma rota de domínio aberta responde 200, não 500
 	const clienteID = "88888888-8888-4888-a888-888888888888"
 	p.Exec(context.Background(), `insert into usuarios (id, email) values ($1, 'cliente-walk@x.com')`, clienteID)
 	tokCliente, _ := st.Criar(context.Background(), clienteID, "cliente", nil)
@@ -294,7 +293,7 @@ func TestEscopoDeContasPelaMontagemReal(t *testing.T) {
 	if st, resp := pedir("/insights-ao-vivo", ao, toks["so-social"]); st == 404 {
 		t.Errorf("so-social no /insights-ao-vivo: %d %s", st, resp)
 	}
-	if st, resp := pedir("/insights-ao-vivo", ao, toks["meta-restrito"]); st != 404 {
+	if st, resp := pedir("/insights-ao-vivo", ao, toks["meta-restrito"]); st != 404 || !strings.Contains(resp, "conta não encontrada") {
 		t.Errorf("meta-restrito no /insights-ao-vivo: %d %s", st, resp)
 	}
 }
@@ -494,7 +493,6 @@ func TestContaPelaMontagemReal(t *testing.T) {
 	s := auth.NovoStore(p)
 	h := Rotas(p, s, auth.NovoLimitador(), config.Config{EnderecosDoApp: []string{"https://central.exemplo"}, EnderecoPadrao: "https://central.exemplo"})
 	viewer := fixtureUsuarios(t, p, s)["nenhum"]
-	testebanco.TabelasDoEscopo(t, p)
 	ctx := context.Background()
 	const cliente = "77777777-7777-4777-a777-777777777777"
 	p.Exec(ctx, `insert into usuarios (id, email) values ($1, 'cliente@x.com')`, cliente)
@@ -598,7 +596,6 @@ func TestRPCRegistradaPelaMontagemReal(t *testing.T) {
 	s := auth.NovoStore(p)
 	h := Rotas(p, s, auth.NovoLimitador(), config.Config{})
 	toks := fixtureUsuarios(t, p, s)
-	testebanco.TabelasDoEscopo(t, p)
 	ctx := context.Background()
 	if _, err := p.Exec(ctx, `create table marca (n int);
 		create function `+nome+`(p_n integer) returns integer language plpgsql as $$ begin insert into marca values (p_n); return p_n + 1; end $$`); err != nil {

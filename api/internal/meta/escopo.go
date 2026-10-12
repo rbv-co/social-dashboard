@@ -43,3 +43,19 @@ func caminhoDaConta(caminho, adAccount, instagram string) bool {
 		return instagram != "" && raiz == instagram
 	}
 }
+
+// temParam: o corpo traz algum destes nomes em params, sem diferenciar maiúscula (qualquer valor).
+// "method" é o override da Graph (GET com method=delete apaga): conta como escrita, então a sessão de
+// "entrar como" não passa. "ids" e "batch" escolhem OUTROS objetos fora do caminho ancorado.
+// ponytail: `fields=` com expansão aninhada (ex.: business_discovery) ainda alcança só dado público de
+// outro perfil; olhar o valor de fields se isso virar problema.
+func temParam(params map[string]any, nomes ...string) bool {
+	for k := range params {
+		for _, n := range nomes {
+			if strings.EqualFold(k, n) {
+				return true
+			}
+		}
+	}
+	return false
+}
