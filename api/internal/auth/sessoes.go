@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -38,17 +39,35 @@ func hashDoToken(t string) string {
 }
 
 func (s *Store) Criar(ctx context.Context, usuarioID, tipo string, impersonadorID *string) (string, error) {
+	return s.CriarComPrazo(ctx, usuarioID, tipo, impersonadorID, s.TTL)
+}
+
+// CriarComPrazo cria a sessão com vida própria (a de "entrar como" vale 1 h e não renova).
+func (s *Store) CriarComPrazo(ctx context.Context, usuarioID, tipo string, impersonadorID *string, ttl time.Duration) (string, error) {
+	token, _, err := s.inserir(ctx, s.pool, usuarioID, tipo, impersonadorID, ttl)
+	return token, err
+}
+
+// executor é o que o pool e a transação têm em comum: "entrar como" insere a auditoria e a
+// sessão na mesma transação.
+type executor interface {
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+}
+
+// inserir grava a sessão e devolve o token (em claro, só aqui) e a expiração gravada.
+func (s *Store) inserir(ctx context.Context, q executor, usuarioID, tipo string, impersonadorID *string, ttl time.Duration) (string, time.Time, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
-		return "", err
+		return "", time.Time{}, err
 	}
 	token := base64.RawURLEncoding.EncodeToString(b)
 	agora := s.agora()
-	_, err := s.pool.Exec(ctx,
+	expira := agora.Add(ttl)
+	_, err := q.Exec(ctx,
 		`insert into sessoes (token_hash, usuario_id, tipo, impersonador_id, criada_em, expira_em, ultimo_uso_em)
 		 values ($1, $2, $3, $4, $5, $6, $5)`,
-		hashDoToken(token), usuarioID, tipo, impersonadorID, agora, agora.Add(s.TTL))
-	return token, err
+		hashDoToken(token), usuarioID, tipo, impersonadorID, agora, expira)
+	return token, expira, err
 }
 
 // Buscar valida o token (conta e impersonador ativos: `profiles.disabled` é a

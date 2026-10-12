@@ -41,6 +41,7 @@ type Conta struct {
 	PorIP     *Limitador
 	PorEmail  *Limitador
 	enviando  chan struct{} // testes: avisa quando o envio assíncrono termina
+	conferir  conferencias  // conferir-senha: erros por pessoa
 }
 
 func NovaConta(p *pgxpool.Pool, s *Store, m Mandador, enderecos []string, padrao string) *Conta {
