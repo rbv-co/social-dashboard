@@ -446,7 +446,7 @@ Checklist do ensaio: `api migrar` aplicou `00005_tokens_de_senha.sql`; `conferir
 - **P1:** duas definições de super-admin: a tela mostra "Salvar como perfil" pela ficha (`:2258`), mas só grava quem está na lista de e-mails.
 - **P2:** apagar perfil de acesso: produção permite ao super; a API não tem rota (nenhuma tela usa; `on delete set null` preserva o acesso).
 - **P3:** nome de perfil vazio, só espaços ou de até 1 MiB é aceito como em produção (3 pessoas escrevem). Sugestão: `check (btrim(nome) <> '' and length(nome) <= 120)`.
-- **A3:** o esquema de `access_requests` é PRESUMIDO (`01-tabelas-5-1.sql`), fora do levantamento: conferir colunas e CHECK antes do corte (`conferir` cobra as colunas).
+- **A3:** o esquema de `access_requests` é PRESUMIDO (`01-tabelas-5-01.sql`), fora do levantamento: conferir colunas e CHECK antes do corte (`conferir` cobra as colunas).
 - **A4:** nada registra quem aprovou ou negou um pedido (igual produção). **A5:** a lista do admin mostra no máximo 1000 pedidos, sem paginação.
 - **W1:** endpoint de push aceita porta livre e não há teto de inscrições por pessoa; o worker envia em série com até 30 s por envio, então N endpoints num host lento atrasam os avisos de todos. Sugestão: só hosts dos serviços de push (FCM, Mozilla, WNS, Apple) na 443 e/ou ~10 inscrições por pessoa.
 - **W2:** inscrições com `user_id` nulo (opt-in de 24/07) não recebem nada e ninguém as reivindica: conferir quantas existem em produção.

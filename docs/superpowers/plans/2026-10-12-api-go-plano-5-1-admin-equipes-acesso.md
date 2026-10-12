@@ -76,7 +76,7 @@
 ```
 api/internal/testebanco/esquema.go                   # ComEsquemaDeProducao: banco novo com compat + migrações + esquema/*.sql
 api/internal/testebanco/esquema_test.go              # os gatilhos verbatim disparam com a identidade da transação
-api/internal/testebanco/esquema/01-tabelas-5-1.sql   # DDL da fatia 5.1 (fonte citada por tabela)
+api/internal/testebanco/esquema/01-tabelas-5-01.sql   # DDL da fatia 5.1 (fonte citada por tabela)
 api/internal/testebanco/esquema/gerar-gatilhos.mjs   # gera 02-gatilhos.sql do levantamento
 api/internal/testebanco/esquema/02-gatilhos.sql      # GERADO: funções e gatilhos de produção, verbatim
 api/internal/dados/escrita.go                        # Tabela (Criar/Editar/Apagar), Campos, RotaCriar/Editar/Apagar, Responder
@@ -120,9 +120,9 @@ docs/migracao-go/NOTAS-DA-IMPLANTACAO.md             # seção do 5.1
 
 **(a) Contrato**
 - `testebanco.ComEsquemaDeProducao(t *testing.T) *pgxpool.Pool`: banco **novo** `esq_<hex>` (as funções de produção citam `public.<tabela>`: por isso banco, e não schema, por teste) com, nesta ordem: `banco.Compat` (`auth.uid()` lê `app.usuario_id`), `banco.Migrar` (`usuarios`, `sessoes`...; as FKs do dump limpo apontam para `public.usuarios`, `ops/migracao/limpar-dump.mjs:64`) e os arquivos `esquema/*.sql` em ordem de nome. Pula sem `TEST_DATABASE_URL`, como `Novo`. Apaga o banco no `Cleanup` (`with (force)`).
-- `esquema/01-tabelas-5-1.sql`: DDL das 14 tabelas que as rotas, o `Escopo` e os gatilhos do 5.1 leem (fonte por tabela, abaixo). Os sub-planos seguintes acrescentam `01-tabelas-5-N.sql` (a ordem de nome mantém `5-1` antes).
-- `esquema/gerar-gatilhos.mjs <dir do levantamento>` → `esquema/02-gatilhos.sql`: os gatilhos de produção das tabelas declaradas em `01-tabelas-*.sql` e o fechamento das funções que eles chamam, **verbatim** de `02-funções.csv`/`03-triggers.csv`. Resultado esperado para a fatia 5.1: 7 funções (`conta_ativa`, `equipes_toca_atualizado`, `espelhar_grupo_do_canal`, `espelhar_rename_do_grupo`, `guard_profiles`, `impedir_autopromocao`, `is_superadmin`) e 5 gatilhos (`levantamento/03-triggers.csv:2-6,30-31`).
-- Premissas (Ruling 5.1-1): `03-triggers.csv` não traz `FOR EACH`/`WHEN`; os 5 gatilhos da fatia são por linha e sem `WHEN` (`2026-08-04-equipes-e-escopo.sql:246-247`, `2026-08-21-canal-pai-e-supervisora-de-grupo.sql:87-90`, `supabase/migrations/20260727_impedir_autopromocao_de_admin.sql:50-53`; `guard_profiles` usa `new`/`old`, logo é por linha).
+- `esquema/01-tabelas-5-01.sql`: DDL das 15 tabelas que as rotas, o `Escopo` e os gatilhos do 5.1 leem (fonte por tabela, abaixo). Os sub-planos seguintes acrescentam `01-tabelas-5-NN.sql` com DOIS dígitos (`5-02` ... `5-12`; a ordem é a do nome e `5-10` viria antes de `5-2`).
+- `esquema/gerar-gatilhos.mjs <dir do levantamento>` → `esquema/02-gatilhos.sql`: os gatilhos de produção das tabelas declaradas em `01-tabelas-*.sql` e o fechamento das funções que eles chamam, **verbatim** de `02-funções.csv`/`03-triggers.csv`. Resultado esperado para a fatia 5.1: 7 funções (`conta_ativa`, `equipes_toca_atualizado`, `espelhar_grupo_do_canal`, `espelhar_rename_do_grupo`, `guard_profiles`, `impedir_autopromocao`, `is_superadmin`) e 5 gatilhos (`levantamento/03-triggers.csv:2-4,6,30-31`).
+- Premissas (Ruling 5.1-1): `03-triggers.csv` não traz `FOR EACH`, `WHEN` nem a lista do `UPDATE OF`; os 5 gatilhos da fatia são por linha e sem `WHEN` (`2026-08-04-equipes-e-escopo.sql:246-247`; o de rename do grupo é `2026-08-21-canal-pai-e-supervisora-de-grupo.sql:87-90`; o de `bling_lojas` é `BEFORE INSERT OR UPDATE OF grupo_id, grupo` em `2026-08-27-espelho-do-grupo-nos-dois-sentidos.sql:116-119` e sai gerado sem o `OF`, mesmo efeito porque o corpo só age com `is distinct from` nessas colunas; `supabase/migrations/20260727_impedir_autopromocao_de_admin.sql:50-53`; `guard_profiles` usa `new`/`old`, logo é por linha).
 
 **(b) Testes de aceitação** (`TestEsquemaDeProducaoComOsGatilhosVerbatim`)
 - Os gatilhos existentes são exatamente `equipes_atualizado, trg_espelhar_grupo_do_canal, trg_espelhar_rename_do_grupo, trg_guard_profiles, trg_impedir_autopromocao`.
@@ -131,11 +131,11 @@ docs/migracao-go/NOTAS-DA-IMPLANTACAO.md             # seção do 5.1
 - Sem identidade (`p.Exec` fora de `ComUsuario`) o `guard_profiles` deixa mudar o cargo — prova de por que toda escrita roda em `ComUsuario`.
 - Renomear `canais_grupos` leva o nome a `bling_lojas.grupo`; `update` em `equipes` move `atualizado_em`; `equipes_membros.criado_por` recebe `auth.uid()` de quem grava.
 
-**(c) Arquivos:** Create `api/internal/testebanco/esquema.go`, `api/internal/testebanco/esquema_test.go`, `api/internal/testebanco/esquema/01-tabelas-5-1.sql`, `api/internal/testebanco/esquema/gerar-gatilhos.mjs`, `api/internal/testebanco/esquema/02-gatilhos.sql` (gerado).
+**(c) Arquivos:** Create `api/internal/testebanco/esquema.go`, `api/internal/testebanco/esquema_test.go`, `api/internal/testebanco/esquema/01-tabelas-5-01.sql`, `api/internal/testebanco/esquema/gerar-gatilhos.mjs`, `api/internal/testebanco/esquema/02-gatilhos.sql` (gerado).
 
 **(d) Dependências:** `banco.Compat`, `banco.Migrar`, `banco.Configurar`, `banco.ComUsuario`; levantamento local.
 
-- [ ] **Step 1: A DDL da fatia.** Crie `api/internal/testebanco/esquema/01-tabelas-5-1.sql`:
+- [ ] **Step 1: A DDL da fatia.** Crie `api/internal/testebanco/esquema/01-tabelas-5-01.sql`:
 
 ```sql
 -- FATIA 5.1 do esquema de produção para os testes (D0 reconstruído: Ruling 5.1-1). Carregada por
@@ -597,7 +597,7 @@ func ComEsquemaDeProducao(t *testing.T) *pgxpool.Pool {
 	if err := banco.Migrar(p); err != nil {
 		t.Fatalf("migrações: %v", err)
 	}
-	arquivos, err := fs.Glob(esquema, "esquema/*.sql") // ordem do nome: 01-tabelas-5-1, 01-tabelas-5-2..., 02-gatilhos
+	arquivos, err := fs.Glob(esquema, "esquema/*.sql") // ordem do nome: 01-tabelas-5-01, 01-tabelas-5-02..., 02-gatilhos
 	if err != nil || len(arquivos) == 0 {
 		t.Fatalf("esquema/*.sql: %v", err)
 	}
@@ -2293,7 +2293,7 @@ Nas mesmas telas, de OUTROS planos (não trocar pelo 5.1): 5.0 — `invite-user`
 Spec §5 (autorização por catálogo, escopo de equipe/grupo/conta, IDOR, testes ator × operação × recurso) e §11 (rota pública curta com limite e validação; segredo e dado pessoal fora de log). Gatilhos da linha 5.1: `guard_profiles`, `impedir_autopromocao`, `equipes_toca_atualizado`, `espelhar_rename_do_grupo` (Task 1); `guard_user_permissions` fica no banco sem rota que o alcance. Os botões "coletar/auditar agora" da aba Saúde não são portados (Ruling 30 do mestre).
 
 **O que o 5.2+ assume:**
-- `testebanco.ComEsquemaDeProducao(t)`: cada sub-plano acrescenta `esquema/01-tabelas-5-N.sql` (fonte citada por tabela, FKs de `auth.users` → `public.usuarios`) e roda `gerar-gatilhos.mjs` de novo (ele lê as tabelas de todos os `01-tabelas-*.sql`), conferindo nas migrations a orientação e o `WHEN` dos gatilhos novos.
+- `testebanco.ComEsquemaDeProducao(t)`: cada sub-plano acrescenta `esquema/01-tabelas-5-NN.sql` (dois dígitos) (fonte citada por tabela, FKs de `auth.users` → `public.usuarios`) e roda `gerar-gatilhos.mjs` de novo (ele lê as tabelas de todos os `01-tabelas-*.sql`), conferindo nas migrations a orientação e o `WHEN` dos gatilhos novos.
 - `dados.Tabela` + `RotaCriar/RotaEditar/RotaApagar` + `Campos` + `Responder` para toda escrita de tabela; handler próprio só quando o SQL foge do CRUD (upsert, lote), sempre com `PodeX` antes e em `ComUsuario`. Coluna com `default` que uma policy lê (ex.: `criado_por default auth.uid()` lido por `criado_por = auth.uid()`) vai no mapa via `Autor`: `autz.Conferir` não aplica default.
 - `soSessaoPropria` é decisão do 5.1 (escrita de acesso de gente); cada sub-plano decide a sua.
 - Rotas que os outros domínios reusam em vez de recriar: `GET /acesso/usuarios` (lista de pessoas para escolha: frota, conteúdo), `GET /equipes/times`, `/equipes/membros` e `/equipes/grupos-membros` (telas de vendas do 5.5), `GET /saude/ia-execucoes` (5.12). Os `PATCH bling_lojas` da seção de canais do admin são do 5.5.
