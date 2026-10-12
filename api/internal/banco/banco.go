@@ -13,8 +13,19 @@ import (
 //go:embed migracoes/*.sql
 var migracoes embed.FS
 
+// Configurar é o que toda conexão da API usa. timezone=UTC é o do Supabase: o JSON que o
+// Postgres monta (dados.Lista) sai com "+00:00", no formato que o PostgREST entregava às telas.
+func Configurar(c *pgxpool.Config) {
+	c.ConnConfig.RuntimeParams["timezone"] = "UTC"
+}
+
 func Abrir(ctx context.Context, url string) (*pgxpool.Pool, error) {
-	p, err := pgxpool.New(ctx, url)
+	cfg, err := pgxpool.ParseConfig(url)
+	if err != nil {
+		return nil, err
+	}
+	Configurar(cfg)
+	p, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
 		return nil, err
 	}

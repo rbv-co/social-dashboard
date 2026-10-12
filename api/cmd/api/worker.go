@@ -39,7 +39,7 @@ func rodarWorker(ctx context.Context, p *pgxpool.Pool, cfg config.Config, args [
 		sub = args[0]
 	}
 	if sub == "conferir" { // só as conferências de schema: nada de aviso de VAPID, de desligadas nem recusa por tabela
-		return conferirComando(ctx, p)
+		return conferirComando(ctx, p, cfg)
 	}
 	if err := conferirTabelas(ctx, p); err != nil {
 		var pg *pgconn.PgError
