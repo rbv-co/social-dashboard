@@ -259,6 +259,7 @@ func TestTrocarSenha(t *testing.T) {
 	entrar(t, h, "pessoa@x.com", "nova-senha")
 	// sessão de "entrar como": nunca troca a senha do alvo
 	usuarioComSenha(t, p, uid2, "super@x.com", "s", `{}`)
+	p.Exec(context.Background(), `update profiles set is_superadmin = true where id = $1::uuid`, uid2)
 	imp := uid2
 	tokImp, _ := s.Criar(context.Background(), uid, "painel", &imp)
 	if w := chamar(h, "POST", "/auth/trocar-senha", `{"senha":"do-impostor"}`, tokImp); w.Code != 403 {

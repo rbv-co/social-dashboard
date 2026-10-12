@@ -65,6 +65,8 @@ func TestRenovacaoDeslizanteMasNuncaParaImpersonada(t *testing.T) {
 	s := NovoStore(testebanco.Novo(t))
 	novoUsuario(t, s, uid, "a@x.com")
 	novoUsuario(t, s, uid2, "adm@x.com")
+	// o impersonador de uma sessão de "entrar como" é super-admin pela ficha
+	s.pool.Exec(context.Background(), `insert into profiles (id, email, role, is_superadmin) values ($1, 'adm@x.com', 'admin', true)`, uid2)
 	normal, _ := s.Criar(context.Background(), uid, "painel", nil)
 	imp := uid2
 	impersonada, _ := s.Criar(context.Background(), uid, "painel", &imp)
@@ -115,7 +117,7 @@ func TestImpersonadorDesativadoMataASessao(t *testing.T) {
 			ctx := context.Background()
 			novoUsuario(t, s, uid, "a@x.com")
 			novoUsuario(t, s, uid2, "adm@x.com")
-			s.pool.Exec(ctx, `insert into profiles (id, email, role) values ($1, 'adm@x.com', 'admin')`, uid2)
+			s.pool.Exec(ctx, `insert into profiles (id, email, role, is_superadmin) values ($1, 'adm@x.com', 'admin', true)`, uid2)
 			imp := uid2
 			tok, _ := s.Criar(ctx, uid, "painel", &imp)
 			if _, err := s.Buscar(ctx, tok); err != nil {

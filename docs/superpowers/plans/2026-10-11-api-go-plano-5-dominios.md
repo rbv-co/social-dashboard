@@ -5205,7 +5205,7 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
 
 **Revisor:** **opus** (impersonação auditada; conferência de senha que não pode virar oráculo).
 
-"Entrar como": só super-admin pela ficha; recusas com as frases e a ordem de `_shared/checagem-de-entrar-como.js`; a auditoria em `entradas_como_outro_usuario` é gravada ANTES de existir sessão (falhou = nenhuma sessão, mensagem sem detalhe do banco); a sessão nova é do alvo, marcada com `impersonador_id`, vale 1 h e não renova (o `Store.Buscar` do Plano 1 já não renova sessão impersonada); sessão impersonada não encadeia. Resposta `{token, expira_em}` (a edge devolvia tokens do Supabase: o front muda no Plano 7). "Conferir senha": a pessoa sai da sessão, nunca do corpo; contrato da edge (`{ok:true}`; `{ok:false, erro:"senha_incorreta", restam}`; 5 erros = `429 bloqueado` por 10 min com `bloqueado_ate` no formato do `toISOString` do JS; `400 sem_senha`; `500 falha_interna` sem a mensagem do erro); sessão impersonada = `403 sessao_de_outra_pessoa` (o super-admin não assina checklist pelo alvo). Contagem em memória por pessoa, como a edge (Ruling 22).
+"Entrar como": só super-admin pela ficha; recusas com as frases e a ordem de `_shared/checagem-de-entrar-como.js`; a auditoria em `entradas_como_outro_usuario` é gravada ANTES de existir sessão (falhou = nenhuma sessão, mensagem sem detalhe do banco); a sessão nova é do alvo, marcada com `impersonador_id`, vale 1 h e não renova (o `Store.Buscar` do Plano 1 já não renova sessão impersonada); sessão impersonada não encadeia. Resposta `{token, expira_em}` (a edge devolvia tokens do Supabase: o front muda no Plano 7). "Conferir senha": a pessoa sai da sessão, nunca do corpo; contrato da edge (`{ok:true}`; `{ok:false, erro:"senha_incorreta", restam}`; 5 erros = `429 bloqueado` por 10 min com `bloqueado_ate` no formato do `toISOString` do JS; `400 sem_senha`; `500 falha_interna` sem a mensagem do erro); sessão impersonada = `403 {"error":"sem_permissao","mensagem":<frase>}` (o super-admin não assina checklist pelo alvo). Contagem em memória por pessoa, como a edge (Ruling 22).
 
 **Files:**
 - Modify: `api/internal/auth/sessoes.go` (`CriarComPrazo`)
@@ -5373,7 +5373,7 @@ func TestConferirSenha(t *testing.T) {
 	}
 	imp := ids["super"]
 	tokImp, _ := s.Criar(context.Background(), ids["admin"], "painel", &imp)
-	if c, b := pedir(`{"senha":"senha-admin"}`, tokImp); c != 403 || b != `{"erro":"sessao_de_outra_pessoa","ok":false}` {
+	if c, b := pedir(`{"senha":"senha-admin"}`, tokImp); c != 403 || b != `{"error":"sem_permissao","mensagem":"Quem entrou como outra pessoa não confere senha por ela."}` {
 		t.Fatalf("impersonada = %d %s", c, b)
 	}
 	if c, _ := pedir(`{"senha":"senha-admin"}`, ""); c != 401 {
@@ -5544,7 +5544,7 @@ func respostaConferir(w http.ResponseWriter, status int, corpo map[string]any) {
 func (c *Conta) ConferirSenha(w http.ResponseWriter, r *http.Request) {
 	a := AtorDoContexto(r.Context())
 	if a.ImpersonadorID != nil {
-		respostaConferir(w, http.StatusForbidden, map[string]any{"ok": false, "erro": "sessao_de_outra_pessoa"})
+		erroComMensagem(w, http.StatusForbidden, "sem_permissao", "Quem entrou como outra pessoa não confere senha por ela.")
 		return
 	}
 	cf := &c.conferir
@@ -5631,6 +5631,8 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
 **Interfaces:**
 - Consumes: tudo das Tasks 1–9.
 - Produces: `config.Config` ganha `ZeptoToken, ZeptoDe string; EnderecosDoApp []string; EnderecoPadrao string` (e `ZeptoToken` entra em `Segredos()`); `var web.FuncoesRPC []rpc.Funcao` (a lista branca que os sub-planos completam); o grupo de domínio em `web.Rotas` (com `autz.ComEscopo`), onde os sub-planos montam as suas rotas.
+
+- **`conferir` e `entradas_como_outro_usuario` (achado da revisão da Task 9):** no banco restaurado, conferir que a tabela existe com as colunas `admin_id`, `admin_email`, `alvo_id`, `alvo_email`, `criado_em`, que o papel de conexão da API consegue `insert` nela (dono da tabela ou grant; com RLS ligada e só a policy de `select` do super-admin, o `insert` da API falharia e "entrar como" ficaria recusado com "Não consegui registrar a auditoria."), e que a API grava como dono/BYPASSRLS de propósito (ensaio de RLS/ownership).
 
 **Requisitos da lista branca de RPC (a Task 10 os cumpre junto da montagem; são exigências, o código segue o padrão dos testes de `web`):**
 
@@ -5863,7 +5865,7 @@ Em `docs/migracao-go/NOTAS-DA-IMPLANTACAO.md`, acrescente ao fim:
 - Links do e-mail: `<endereço>/#type=recovery&token=<token>` (troca, 1 h) e `<endereço>/#type=invite&token=<token>` (convite, 24 h). O token vai no FRAGMENTO (`#`), não na query: o fragmento não chega ao servidor, então não cai no log de acesso do nginx (`deploy/nginx/central.rbvcompany.com.conf` registra a linha do pedido e o Referer) nem no `Referer`. O front (Plano 7) lê `type` e `token` do hash (a função `detectarFluxoDeSenha` já lê `type` do hash, hoje junto do `#access_token` do Supabase), **limpa o hash com `history.replaceState(null, "", location.pathname + location.search)` assim que os lê** (antes de qualquer outra chamada), e chama `POST /api/auth/definir-senha {token, senha}`, que devolve `{token}` de sessão.
 
 ### Mudanças de contrato que o Plano 7 absorve
-- `entrar-como-usuario` responde `{token, expira_em}` (não mais `access_token`/`refresh_token`); a sessão vale 1 h e NÃO renova; sessão impersonada não convida/exclui, não entra como terceiros e não confere senha (`403 sessao_de_outra_pessoa`) e não troca a senha do alvo (`403 sem_permissao`, o formato do núcleo: é o que `POST /auth/trocar-senha` devolve).
+- `entrar-como-usuario` responde `{token, expira_em}` (não mais `access_token`/`refresh_token`); a sessão vale 1 h e NÃO renova; sessão impersonada não convida/exclui, não entra como terceiros e não confere senha, e não troca a senha do alvo: toda recusa de sessão impersonada em ação de conta é `403 {"error":"sem_permissao","mensagem":<frase>}` (o formato que `POST /auth/trocar-senha` já devolve).
 - `conferir-senha` sem sessão responde `401 {"error":"nao_autenticado"}` (a edge: `{ok:false, erro:"sem_sessao"}`); o resto do contrato é o da edge.
 - Senha: 6 a 72 BYTES (o limite do bcrypt; a mensagem diz "72 bytes"). `definir-senha` e `trocar-senha` derrubam também as sessões "entrar como" em que a pessoa é o impersonador, e `trocar-senha` apaga os links de senha ainda vivos; "esqueci" não manda outro e-mail se já houve link para a pessoa há menos de 60 s (resposta idêntica). `faxina-da-api` apaga `tokens_de_senha` vencidos ou usados há mais de 7 dias.
 - Login de conta desativada com a senha certa: `403 {"error":"conta_desativada"}` (substitui a RPC `minha_conta_esta_desativada`). `POST /auth/trocar-senha` já tira `precisa_trocar_senha` (substitui a RPC `marcar_senha_trocada`).
@@ -5955,7 +5957,7 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
 15. Ruling: Login de conta desativada com a senha CERTA responde `403 conta_desativada`; com a senha errada, o mesmo 401 de quem não existe — a tela já mostra "conta desativada" (hoje pela RPC `minha_conta_esta_desativada`, depois de logar); exigir a senha certa evita oráculo de contas — custo se errada: quem sabe a senha de uma conta desativada descobre que ela está desativada (já descobria hoje).
 16. Ruling: Links de senha são tokens de 256 bits de uso único guardados como hash (`tokens_de_senha`), 1 h para troca e 24 h para convite, enviados pelo ZeptoMail; "esqueci a senha" responde igual para todo mundo e envia fora da requisição; o link só leva a `ENDERECOS_DO_APP` — sem o Auth do Supabase alguém tem de mandar o e-mail, e o ZeptoMail já é o provedor verificado da casa; resposta e tempo iguais evitam enumerar contas — custo se errada: e-mail perdido só aparece no log (a pessoa pede de novo).
 17. Ruling: `definir-senha` derruba todas as sessões e já devolve uma nova; `trocar-senha` derruba as OUTRAS e tira `precisa_trocar_senha` na mesma transação (substitui a RPC `marcar_senha_trocada`) — troca de senha é o momento de expulsar quem tinha a senha antiga; fazer as duas coisas juntas evita senha trocada sem a cobrança tirada — custo se errada: a pessoa entra de novo nos outros aparelhos.
-18. Ruling: Sessão de "entrar como" não troca senha, não convida/exclui contas, não entra como terceiros e não confere senha (`403`) — o propósito é ver o que a pessoa vê; agir em nome dela sobre conta e assinatura seria fraude possível (hoje o JWT do alvo permitia) — custo se errada: o super-admin sai da sessão impersonada para administrar (deve mesmo).
+18. Ruling: Sessão de "entrar como" não troca senha, não convida/exclui contas, não entra como terceiros e não confere senha (sempre `403 {"error":"sem_permissao","mensagem":<frase>}`, o formato do `TrocarSenha`) — o propósito é ver o que a pessoa vê; agir em nome dela sobre conta e assinatura seria fraude possível (hoje o JWT do alvo permitia) — custo se errada: o super-admin sai da sessão impersonada para administrar (deve mesmo).
 19. Ruling: A sessão de "entrar como" vale 1 h e não renova; a resposta passa a `{token, expira_em}` — sem refresh token no desenho de sessão opaca (spec §4), 1 h é o access token do Supabase; a pendência das NOTAS ("TTL cheio de 12 h") fica resolvida — custo se errada: o super-admin entra de novo depois de 1 h.
 20. Ruling: Troca de senha por super-admin (`resetPasswordUserId`) derruba as sessões do alvo, além de marcar a senha como provisória como a edge — senha trocada por outra pessoa costuma ser resposta a conta comprometida — custo se errada: o alvo entra de novo com a senha provisória (que já precisaria trocar).
 21. Ruling: `invite-user` mantém o portão e as respostas da edge, inclusive "qualquer admin exclui qualquer conta" e "admin cria outro admin" — "mesmas permissões de hoje"; restringir é decisão do dono, não da migração (achado registrado) — custo se errada: um admin continua podendo excluir um super-admin, como hoje.

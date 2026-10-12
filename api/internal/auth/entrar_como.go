@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -35,7 +36,7 @@ func motivoDeRecusa(chamadorSuper, chamadorDesativado bool, chamadorID, alvoID s
 		return "Apenas super-admin pode entrar como outro usuário"
 	case chamadorDesativado:
 		return "Sua conta está desativada"
-	case chamadorID == alvoID:
+	case strings.EqualFold(chamadorID, alvoID): // UUID em maiúsculas é a mesma pessoa
 		return "Você já é você — não precisa entrar como si mesmo"
 	case !alvoExiste:
 		return "Não encontrei essa pessoa"
@@ -53,7 +54,7 @@ func motivoDeRecusa(chamadorSuper, chamadorDesativado bool, chamadorID, alvoID s
 func (c *Conta) EntrarComo(w http.ResponseWriter, r *http.Request) {
 	a := AtorDoContexto(r.Context())
 	if a.ImpersonadorID != nil {
-		recusaDeEntrarComo(w, "Sua sessão já é de outra pessoa: saia dela antes de entrar como outra.")
+		erroComMensagem(w, http.StatusForbidden, "sem_permissao", "Sua sessão já é de outra pessoa: saia dela antes de entrar como outra.")
 		return
 	}
 	var in struct {
@@ -64,13 +65,22 @@ func (c *Conta) EntrarComo(w http.ResponseWriter, r *http.Request) {
 		recusaDeEntrarComo(w, "Faltou alvoId")
 		return
 	}
+	// o portão vem ANTES de olhar o alvo (quem não é super-admin não aprende nada sobre quem existe).
+	// Só a sessão de painel entra como outra pessoa: a de serviço, mesmo de conta super-admin, não
+	// (a chave de serviço da edge nem passava no getUser).
+	if !a.SuperAdmin || a.Tipo != "painel" {
+		recusaDeEntrarComo(w, motivoDeRecusa(false, false, a.ID, in.AlvoID, false, false))
+		return
+	}
 	ctx := r.Context()
 	var alvoEmail string
 	var alvoDesativado bool
+	alvoID := in.AlvoID
 	alvoExiste := reUUIDEntrarComo.MatchString(in.AlvoID)
 	if alvoExiste {
-		err := c.Pool.QueryRow(ctx, `select u.email, coalesce(p.disabled, false) or u.desativado_em is not null
-		     from profiles p join usuarios u on u.id = p.id where p.id = $1::uuid`, in.AlvoID).Scan(&alvoEmail, &alvoDesativado)
+		// p.id::text devolve o UUID normalizado (minúsculas): é ele que vai para a auditoria e a sessão
+		err := c.Pool.QueryRow(ctx, `select p.id::text, u.email, coalesce(p.disabled, false) or u.desativado_em is not null
+		     from profiles p join usuarios u on u.id = p.id where p.id = $1::uuid`, in.AlvoID).Scan(&alvoID, &alvoEmail, &alvoDesativado)
 		if errors.Is(err, pgx.ErrNoRows) {
 			alvoExiste = false
 		} else if err != nil {
@@ -79,7 +89,7 @@ func (c *Conta) EntrarComo(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	// o chamador tem sessão válida, então não está desativado (Store.Buscar recusaria)
-	if msg := motivoDeRecusa(a.SuperAdmin, false, a.ID, in.AlvoID, alvoExiste, alvoDesativado); msg != "" {
+	if msg := motivoDeRecusa(true, false, a.ID, alvoID, alvoExiste, alvoDesativado); msg != "" {
 		recusaDeEntrarComo(w, msg)
 		return
 	}
@@ -90,13 +100,13 @@ func (c *Conta) EntrarComo(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback(ctx)
 	if _, err := tx.Exec(ctx, `insert into entradas_como_outro_usuario (admin_id, admin_email, alvo_id, alvo_email)
-	    values ($1::uuid, (select email from usuarios where id = $1::uuid), $2::uuid, $3::text)`, a.ID, in.AlvoID, alvoEmail); err != nil {
+	    values ($1::uuid, (select email from usuarios where id = $1::uuid), $2::uuid, $3::text)`, a.ID, alvoID, alvoEmail); err != nil {
 		slog.Error("entrar-como: auditoria falhou", "erro", err.Error())
 		recusaDeEntrarComo(w, "Não consegui registrar a auditoria.")
 		return
 	}
 	impersonador := a.ID
-	token, expira, err := c.Sessoes.inserir(ctx, tx, in.AlvoID, "painel", &impersonador, PrazoEntrarComo)
+	token, expira, err := c.Sessoes.inserir(ctx, tx, alvoID, "painel", &impersonador, PrazoEntrarComo)
 	if err != nil {
 		slog.Error("entrar-como: sessão falhou", "erro", err.Error())
 		erroJSON(w, http.StatusInternalServerError, "erro_interno")
@@ -108,7 +118,7 @@ func (c *Conta) EntrarComo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// o IP não tem coluna na tabela de produção: fica no log (nunca o token)
-	slog.Info("entrar-como", "admin", a.ID, "alvo", in.AlvoID, "ip", ipDe(r))
+	slog.Info("entrar-como", "admin", a.ID, "alvo", alvoID, "ip", ipDe(r))
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"token": token, "expira_em": expira.UTC().Format(time.RFC3339)})
 }
@@ -123,7 +133,7 @@ const (
 
 // marcaDeConferencia é a contagem de UMA pessoa. A trava dela serializa as conferências da
 // mesma pessoa: sem ela, 50 pedidos simultâneos passariam todos pela checagem do bloqueio antes
-// de qualquer erro ser contado (furo de paralelismo que a edge não tinha por ser uma conta por vez).
+// de qualquer erro ser contado (a edge tinha esse furo: cada cópia dela atendia pedidos simultâneos sem trava).
 type marcaDeConferencia struct {
 	trava sync.Mutex
 	erros int
@@ -165,7 +175,7 @@ func respostaConferir(w http.ResponseWriter, status int, corpo map[string]any) {
 func (c *Conta) ConferirSenha(w http.ResponseWriter, r *http.Request) {
 	a := AtorDoContexto(r.Context())
 	if a.ImpersonadorID != nil {
-		respostaConferir(w, http.StatusForbidden, map[string]any{"ok": false, "erro": "sessao_de_outra_pessoa"})
+		erroComMensagem(w, http.StatusForbidden, "sem_permissao", "Quem entrou como outra pessoa não confere senha por ela.")
 		return
 	}
 	var in struct {

@@ -70,7 +70,7 @@ func (s *Store) inserir(ctx context.Context, q executor, usuarioID, tipo string,
 	return token, expira, err
 }
 
-// Buscar valida o token (conta e impersonador ativos: `profiles.disabled` é a
+// Buscar valida o token (conta ativa e, na sessão de "entrar como", impersonador ativo E ainda super-admin: `profiles.disabled` é a
 // desativação real em produção; `usuarios.desativado_em` vem do Auth) e, só para sessão normal, renova a expiração
 // (no máximo a cada 5 min, para não escrever no banco a cada requisição).
 func (s *Store) Buscar(ctx context.Context, token string) (*Sessao, error) {
@@ -87,7 +87,8 @@ func (s *Store) Buscar(ctx context.Context, token string) (*Sessao, error) {
 		   left join profiles pi on pi.id = s.impersonador_id
 		  where s.token_hash = $1
 		    and u.desativado_em is null and not coalesce(p.disabled, false)
-		    and (s.impersonador_id is null or (ui.desativado_em is null and not coalesce(pi.disabled, false)))`, h).
+		    and (s.impersonador_id is null or (ui.desativado_em is null and not coalesce(pi.disabled, false)
+		         and coalesce(pi.is_superadmin, false)))`, h).
 		Scan(&se.UsuarioID, &se.Tipo, &se.ImpersonadorID, &se.ExpiraEm, &ultimo)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrSessaoInvalida

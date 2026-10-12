@@ -54,11 +54,18 @@ func TestEntrarComoRecusasNaOrdemDaEdge(t *testing.T) {
 		{"admin", ids["alvo"], "Apenas super-admin pode entrar como outro usuário"},
 		{"admin", ids["admin"], "Apenas super-admin pode entrar como outro usuário"}, // quem pede vem antes do alvo
 		{"super", ids["super"], "Você já é você — não precisa entrar como si mesmo"},
+		{"super", strings.ToUpper(ids["super"]), "Você já é você — não precisa entrar como si mesmo"},          // o mesmo UUID em maiúsculas
+		{"admin", "66666666-6666-4666-a666-666666666666", "Apenas super-admin pode entrar como outro usuário"}, // o portão vem antes de olhar o alvo
 		{"super", "66666666-6666-4666-a666-666666666666", "Não encontrei essa pessoa"},
 		{"super", "nao-e-uuid", "Não encontrei essa pessoa"},
 		{"super", ids["desativado"], "Conta desativada — reative antes de entrar como ela"},
 		{"super", "", "Faltou alvoId"},
 	}
+	// desativada só pelo Auth (usuarios.desativado_em), com a ficha de profiles ainda ativa
+	const soAuth = "55555555-5555-4555-a555-555555555559"
+	usuarioComSenha(t, p, soAuth, "so-auth@x.com", "senha-so-auth", `{}`)
+	p.Exec(context.Background(), `update usuarios set desativado_em = now() where id = $1::uuid`, soAuth)
+	casos = append(casos, struct{ quem, alvo, quer string }{"super", soAuth, "Conta desativada — reative antes de entrar como ela"})
 	for _, c := range casos {
 		w := chamar(h, "POST", "/entrar-como-usuario", `{"alvoId":"`+c.alvo+`"}`, ids["tok-"+c.quem])
 		var o struct{ Error string }
@@ -76,7 +83,7 @@ func TestEntrarComoRecusasNaOrdemDaEdge(t *testing.T) {
 
 // Só super-admin pela ficha: nenhum outro papel (nem com todas as permissões) entra como ninguém.
 func TestEntrarComoNegaTodoPapelQueNaoESuperAdmin(t *testing.T) {
-	p, _, _, h, ids := montarEntrarComo(t)
+	p, s, _, h, ids := montarEntrarComo(t)
 	ctx := context.Background()
 	for _, papel := range []string{"admin", "editor", "viewer", "vendedor", "cliente"} {
 		p.Exec(ctx, `update profiles set role = $2::text, permissions = '{"usuarios":["ver","criar","editar","excluir"]}'::jsonb where id = $1::uuid`, ids["admin"], papel)
@@ -89,6 +96,17 @@ func TestEntrarComoNegaTodoPapelQueNaoESuperAdmin(t *testing.T) {
 	p.QueryRow(ctx, `select (select count(*) from entradas_como_outro_usuario) + (select count(*) from sessoes where impersonador_id is not null)`).Scan(&n)
 	if n != 0 {
 		t.Fatalf("recusa deixou %d auditoria/sessão", n)
+	}
+	// sessão de serviço de uma conta super-admin não entra como ninguém (a chave de serviço da edge não passava no getUser)
+	p.Exec(ctx, `update profiles set is_superadmin = true where id = $1::uuid`, ids["super"])
+	tokServico, _ := s.Criar(ctx, ids["super"], "servico", nil)
+	w := chamar(h, "POST", "/entrar-como-usuario", `{"alvoId":"`+ids["alvo"]+`"}`, tokServico)
+	if w.Code != 400 || !strings.Contains(w.Body.String(), "Apenas super-admin pode entrar como outro usuário") {
+		t.Fatalf("sessão de serviço = %d %s", w.Code, w.Body)
+	}
+	p.QueryRow(ctx, `select (select count(*) from entradas_como_outro_usuario) + (select count(*) from sessoes where impersonador_id is not null)`).Scan(&n)
+	if n != 0 {
+		t.Fatalf("sessão de serviço deixou %d auditoria/sessão", n)
 	}
 	// sem sessão: 401
 	if w := chamar(h, "POST", "/entrar-como-usuario", `{"alvoId":"`+ids["alvo"]+`"}`, ""); w.Code != 401 {
@@ -134,7 +152,7 @@ func TestEntrarComoAuditaAntesEDaUmaHoraSemRenovar(t *testing.T) {
 	var antesAud int
 	p.QueryRow(ctx, `select count(*) from entradas_como_outro_usuario`).Scan(&antesAud)
 	w = chamar(h, "POST", "/entrar-como-usuario", `{"alvoId":"`+ids["admin"]+`"}`, o.Token)
-	if w.Code != 400 || !strings.Contains(w.Body.String(), "Sua sessão já é de outra pessoa") {
+	if w.Code != 403 || !strings.Contains(w.Body.String(), `"error":"sem_permissao"`) || !strings.Contains(w.Body.String(), "Sua sessão já é de outra pessoa") {
 		t.Fatalf("encadeou: %d %s", w.Code, w.Body)
 	}
 	var depoisAud int
@@ -237,10 +255,19 @@ func TestSessaoDeEntrarComoGuardaOImpersonador(t *testing.T) {
 	var o struct{ Token string }
 	json.Unmarshal(w.Body.Bytes(), &o)
 	w = chamar(h, "GET", "/auth/eu", "", o.Token)
-	if w.Code != 200 || !strings.Contains(w.Body.String(), ids["alvo"]) || strings.Contains(w.Body.String(), `"is_superadmin":true`) {
+	var eu struct {
+		ID             string  `json:"id"`
+		SuperAdmin     bool    `json:"superadmin"`
+		ImpersonadorID *string `json:"impersonador_id"`
+	}
+	json.Unmarshal(w.Body.Bytes(), &eu)
+	if w.Code != 200 || eu.ID != ids["alvo"] || eu.SuperAdmin || eu.ImpersonadorID == nil || *eu.ImpersonadorID != ids["super"] {
 		t.Fatalf("/auth/eu na sessão impersonada = %d %s", w.Code, w.Body)
 	}
 }
+
+// recusa de sessão impersonada em ação de conta: 403 sem_permissao com a frase (o formato do TrocarSenha)
+const conferirImpersonada = `{"error":"sem_permissao","mensagem":"Quem entrou como outra pessoa não confere senha por ela."}`
 
 func TestConferirSenha(t *testing.T) {
 	_, s, c, h, ids := montarEntrarComo(t)
@@ -280,7 +307,7 @@ func TestConferirSenha(t *testing.T) {
 	}
 	imp := ids["super"]
 	tokImp, _ := s.Criar(context.Background(), ids["admin"], "painel", &imp)
-	if c, b := pedir(`{"senha":"senha-admin"}`, tokImp); c != 403 || b != `{"erro":"sessao_de_outra_pessoa","ok":false}` {
+	if c, b := pedir(`{"senha":"senha-admin"}`, tokImp); c != 403 || b != conferirImpersonada {
 		t.Fatalf("impersonada = %d %s", c, b)
 	}
 	if c, _ := pedir(`{"senha":"senha-admin"}`, ""); c != 401 {
@@ -297,7 +324,7 @@ func TestConferirSenhaRecusaSessaoImpersonadaSemContar(t *testing.T) {
 	json.Unmarshal(w.Body.Bytes(), &o)
 	for _, senha := range []string{"senha-alvo", "senha-super", "errada", "errada", "errada", "errada", "errada", "errada"} {
 		w := chamar(h, "POST", "/conferir-senha", `{"senha":"`+senha+`"}`, o.Token)
-		if w.Code != 403 || strings.TrimSpace(w.Body.String()) != `{"erro":"sessao_de_outra_pessoa","ok":false}` {
+		if w.Code != 403 || strings.TrimSpace(w.Body.String()) != conferirImpersonada {
 			t.Fatalf("%s = %d %s", senha, w.Code, w.Body)
 		}
 	}
@@ -359,5 +386,39 @@ func TestConferirSenhaParalelismoNaoFuraOLimite(t *testing.T) {
 	wg.Wait()
 	if incorretas != ErrosAteBloquear || bloqueadas != 20-ErrosAteBloquear {
 		t.Fatalf("conferidas = %d, bloqueadas = %d", incorretas, bloqueadas)
+	}
+}
+
+// alvoId em maiúsculas é a mesma pessoa: a sessão nasce do alvo com o UUID normalizado
+// (nunca "entrar como si mesmo" por maiúsculas, nem auditoria com admin = alvo).
+func TestEntrarComoNormalizaOUUIDDoAlvo(t *testing.T) {
+	p, _, _, h, ids := montarEntrarComo(t)
+	ctx := context.Background()
+	w := chamar(h, "POST", "/entrar-como-usuario", `{"alvoId":"`+strings.ToUpper(ids["alvo"])+`"}`, ids["tok-super"])
+	if w.Code != 200 {
+		t.Fatalf("= %d %s", w.Code, w.Body)
+	}
+	var alvo, ses string
+	p.QueryRow(ctx, `select alvo_id::text from entradas_como_outro_usuario`).Scan(&alvo)
+	p.QueryRow(ctx, `select usuario_id::text from sessoes where impersonador_id is not null`).Scan(&ses)
+	if alvo != ids["alvo"] || ses != ids["alvo"] {
+		t.Fatalf("auditoria %s, sessão %s", alvo, ses)
+	}
+}
+
+// Quem perde a ficha de super-admin perde junto a sessão de "entrar como" que abriu (não espera a 1 h).
+func TestSessaoDeEntrarComoMorreQuandoOImpersonadorPerdeASuperAdmin(t *testing.T) {
+	p, _, _, h, ids := montarEntrarComo(t)
+	w := chamar(h, "POST", "/entrar-como-usuario", `{"alvoId":"`+ids["alvo"]+`"}`, ids["tok-super"])
+	var o struct {
+		Token string `json:"token"`
+	}
+	json.Unmarshal(w.Body.Bytes(), &o)
+	if w := chamar(h, "GET", "/auth/eu", "", o.Token); w.Code != 200 {
+		t.Fatalf("antes = %d", w.Code)
+	}
+	p.Exec(context.Background(), `update profiles set is_superadmin = false where id = $1::uuid`, ids["super"])
+	if w := chamar(h, "GET", "/auth/eu", "", o.Token); w.Code != 401 {
+		t.Fatalf("impersonador rebaixado = %d %s", w.Code, w.Body)
 	}
 }
