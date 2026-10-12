@@ -212,6 +212,12 @@ var soSessao = map[string]bool{"POST /auth/sair": true, "GET /auth/eu": true, "G
 	// responde para nome registrado, cada um com o seu portão (sem registro: 404).
 	"POST /auth/trocar-senha": true, "GET /eu/perfil": true, "POST /invite-user": true,
 	"POST /entrar-como-usuario": true, "POST /conferir-senha": true, "POST /rpc/{nome}": true,
+	// Plano 5.12: leituras com a regra do catálogo (`true` para sessão); a matriz por papel é
+	// TestPaineisPelaMontagemReal.
+	"GET /noticias/rodadas": true, "GET /noticias/concorrentes": true, "GET /noticias/panorama": true,
+	"GET /status-ia/execucoes": true,
+	// quem não passa na regra das duas tabelas recebe 200 [] (TestSaudeDosRobosPelaMontagemReal).
+	"GET /status-ia/saude-dos-robos": true,
 }
 
 // Matriz completa 401/403/200 por rota pela montagem de produção: cada módulo abre SÓ as
@@ -266,7 +272,13 @@ func TestPrazosPorRotaPelaMontagemReal(t *testing.T) {
 	h := Rotas(p, auth.NovoStore(p), auth.NovoLimitador(), config.Config{})
 	quer := map[string]time.Duration{"POST /bling-proxy": 90 * time.Second, "POST /insights-ao-vivo": 90 * time.Second, "POST /serie-novos-dia": 90 * time.Second, "POST /contar-collabs": 120 * time.Second,
 		// Plano 5.0: o grupo de domínio inteiro (e o /rpc) tem prazo; rota de domínio nova herda
-		"POST /rpc/{nome}": PrazoDominio}
+		"POST /rpc/{nome}": PrazoDominio,
+		// Plano 5.12: leituras do grupo de domínio
+		"GET /noticias/rodadas": PrazoDominio, "GET /noticias/concorrentes": PrazoDominio,
+		"GET /noticias/panorama": PrazoDominio, "GET /status-ia/execucoes": PrazoDominio,
+		"GET /status-ia/saude-dos-robos": PrazoDominio,
+		// Plano 5.12: fatura real das contas de IA (grupo autenticado, FORA do de domínio)
+		"POST /custo-anthropic": 90 * time.Second, "POST /custo-openai": 90 * time.Second}
 	vistos := map[string]bool{}
 	chi.Walk(h.(chi.Routes), func(metodo, rota string, _ http.Handler, mws ...func(http.Handler) http.Handler) error {
 		chave := metodo + " " + rota
