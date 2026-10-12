@@ -68,7 +68,11 @@ func TestPortaoEhOPapelAdmin(t *testing.T) {
 	}
 	for _, c := range casos {
 		antes := chamadas
-		w := pedir(rt, c.a, `{"dias":7}`)
+		corpo := `{"dias":7}`
+		if c.status == 403 {
+			corpo = `{"dias":"x"}` // corpo inválido: o portão vem ANTES de ler o corpo, então é 403, não 400
+		}
+		w := pedir(rt, c.a, corpo)
 		if w.Code != c.status {
 			t.Errorf("%s = %d %s, esperava %d", c.nome, w.Code, w.Body, c.status)
 		}
@@ -156,7 +160,7 @@ func servidorEmSequencia(t *testing.T, status []int, retryAfter string) (*httpte
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		i := int(atomic.AddInt32(&n, 1)) - 1
 		st := status[min(i, len(status)-1)]
-		if st == 429 && retryAfter != "" {
+		if retryAfter != "" { // em qualquer status: só o 429 deve respeitá-lo
 			w.Header().Set("Retry-After", retryAfter)
 		}
 		if st == 302 {
@@ -189,6 +193,9 @@ func TestNovaTentativa(t *testing.T) {
 		{"401 é resposta", []int{401}, "", 1, nil, "(o OpenAI respondeu, e a resposta é essa)"},
 		{"500 até desistir", []int{500}, "", 3, []time.Duration{600 * ms, 1200 * ms}, "(já tentei 3 vezes). Tentei 3 vezes."},
 		{"429 pedindo 15 s não cabe no orçamento", []int{429}, "15", 1, nil, "(não caberia outra tentativa no tempo desta chamada)"},
+		// sem o teto de 1 h, 1e300 satura a Duration, a conta do orçamento estoura e a trava deixa passar
+		{"429 com Retry-After absurdo", []int{429}, "1e300", 1, nil, "(não caberia outra tentativa no tempo desta chamada)"},
+		{"Retry-After só vale no 429", []int{503, 200}, "15", 2, []time.Duration{600 * ms}, ""},
 		{"302 não é seguido nem repetido", []int{302}, "", 1, nil, "(o OpenAI respondeu, e a resposta é essa)"},
 	}
 	for _, c := range casos {
@@ -272,6 +279,46 @@ func TestChaveNuncaSaiNoErroNemNoLog(t *testing.T) {
 	}}
 	if w := pedir(rt, admin, `{}`); w.Code != 500 || strings.Contains(w.Body.String(), chaveFalsa) {
 		t.Errorf("rota = %d %s", w.Code, w.Body)
+	}
+}
+
+func TestRespostaAcimaDeDezMiBNaoEhLida(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		// 11 MiB de espaços e só depois o JSON: com o limite, o corpo lido é só espaço (formato inválido)
+		w.Write(bytes.Repeat([]byte(" "), 11<<20))
+		io.WriteString(w, `{"ok":true}`)
+	}))
+	defer srv.Close()
+	var pausas []time.Duration
+	var destino struct{ Ok bool }
+	err := clienteDeTeste(&pausas).getJSON(context.Background(), srv.URL, "teste", &destino)
+	if err == nil || destino.Ok || !strings.Contains(err.Error(), "Resposta inesperada do OpenAI") {
+		t.Errorf("corpo de 11 MiB: err=%v ok=%v, esperava Resposta inesperada", err, destino.Ok)
+	}
+}
+
+// Todo 500 da rota deixa rastro no log (a edge custo-openai registrava), com o detalhe sem a chave.
+func TestRotaRegistraOs500SemAChave(t *testing.T) {
+	var log bytes.Buffer
+	antes := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&log, nil)))
+	defer slog.SetDefault(antes)
+	rt := Rota{Chave: chaveFalsa, Buscar: func(context.Context, string, Janela) (Fatura, error) {
+		return Fatura{}, errors.New("Resposta inesperada do OpenAI. " + chaveFalsa)
+	}}
+	if w := pedir(rt, admin, `{}`); w.Code != 500 {
+		t.Fatalf("status %d", w.Code)
+	}
+	if l := log.String(); !strings.Contains(l, "custo: devolvendo 500") || !strings.Contains(l, "Resposta inesperada do OpenAI. ***") || strings.Contains(l, chaveFalsa[:10]) {
+		t.Errorf("log do 500 = %q (precisa do detalhe mascarado e nunca da chave)", l)
+	}
+	log.Reset()
+	if w := pedir(Rota{}, admin, `{}`); w.Code != 500 || !strings.Contains(log.String(), "chave_admin_nao_configurada") {
+		t.Errorf("sem chave: %d, log %q", w.Code, log.String())
+	}
+	log.Reset()
+	if pedir(rt, &auth.Ator{Tipo: "painel", Papel: "viewer"}, `{}`); log.Len() != 0 {
+		t.Errorf("o 403 não é 500 e não vai ao log: %q", log.String())
 	}
 }
 

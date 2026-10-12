@@ -137,8 +137,6 @@ func primeiros(s string, n int) string {
 	return s
 }
 
-func cortar(s string, n int) string { return primeiros(s, n) }
-
 // somas acumula por nome na ordem em que o nome apareceu (a ordem do Object.entries das edges;
 // ponytail: o JS põe antes as chaves que parecem inteiros, e nenhum nome destas APIs é assim).
 type somas struct {
@@ -211,7 +209,7 @@ func (c cliente) getJSON(ctx context.Context, endereco, rotulo string, destino a
 				"prazo", errors.Is(err, context.DeadlineExceeded))
 		} else {
 			slog.Warn("custo: tentativa recusada", "fornecedor", c.fornecedor, "rotulo", rotulo, "tentativa", tentativa, "status", status,
-				"corpo", cortar(strings.ReplaceAll(string(corpo), c.chave, "***"), 200))
+				"corpo", primeiros(strings.ReplaceAll(string(corpo), c.chave, "***"), 200))
 		}
 		repetir, espera, motivo := decidir(c.fornecedor, tentativa, status, time.Since(comecou), retryAfter, c.prazo, c.orcamento)
 		if !repetir {
@@ -341,6 +339,7 @@ func (rt Rota) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		dias = *p.Dias
 	}
 	if rt.Chave == "" {
+		slog.Warn("custo: devolvendo 500", "rota", r.URL.Path, "detalhe", "chave_admin_nao_configurada")
 		responder(w, http.StatusInternalServerError, erroDaEdge{"falha", "chave_admin_nao_configurada"})
 		return
 	}
@@ -350,8 +349,11 @@ func (rt Rota) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	f, err := rt.Buscar(r.Context(), rt.Chave, janelaDe(dias, agora()))
 	if err != nil {
-		// a frase já vem sem a chave (getJSON); o ReplaceAll é a última barreira
-		responder(w, http.StatusInternalServerError, erroDaEdge{"falha", strings.ReplaceAll(err.Error(), rt.Chave, "***")})
+		// a frase já vem sem a chave (getJSON); o ReplaceAll é a última barreira. A API não tem log de
+		// acesso: sem este aviso, o erro que nasce fora do getJSON (valor ilegível) não deixaria rastro.
+		detalhe := strings.ReplaceAll(err.Error(), rt.Chave, "***")
+		slog.Warn("custo: devolvendo 500", "rota", r.URL.Path, "detalhe", detalhe)
+		responder(w, http.StatusInternalServerError, erroDaEdge{"falha", detalhe})
 		return
 	}
 	responder(w, http.StatusOK, f)
