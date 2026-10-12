@@ -91,7 +91,7 @@ func novoLink(ctx context.Context, tx pgx.Tx, usuarioID, tipo, base string, praz
 
 func validarSenha(s string) string {
 	switch {
-	case len(s) < SenhaMinima:
+	case senhaCurta(s): // caracteres, não bytes (Ruling 33)
 		return "A senha deve ter ao menos 6 caracteres."
 	case len(s) > SenhaMaxima:
 		return "A senha pode ter no máximo 72 bytes."
