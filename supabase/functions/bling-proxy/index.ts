@@ -100,6 +100,7 @@ async function renovarSeVencido(sb: ReturnType<typeof createClient>): Promise<st
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
       'Authorization': `Basic ${creds}`,
+      'enable-jwt': '1', // sem isso o Bling devolve token opaco (descontinuado)
     },
     body: `grant_type=refresh_token&refresh_token=${data.refresh_token}`,
   });

@@ -130,12 +130,15 @@ func TestConferirSchemaVazioListaEmOrdem(t *testing.T) {
 	for _, quer := range []string{"coluna campaigns.objective", "único campaigns(campaign_id)", "função pegar_da_fila(text,integer,integer,boolean,text[])",
 		"coluna accounts.id", "coluna bling_pedido_nota.nota_situacao", "coluna bling_pedido_ajuste_valor.pedido_id", "coluna bling_pedido_vendedor.pedido_id",
 		"coluna bling_lojas.loja_id", "coluna frota_uso.saida_em", "coluna frota_uso.id", "função registrar_checkout_abandono",
+		"coluna equipes_permissoes.chave", "coluna entradas_como_outro_usuario.admin_id", "coluna entradas_como_outro_usuario.criado_em", "coluna equipes.deposito_id",
+		"coluna access_requests.status", "coluna acessos_perfis.permissions", "coluna canais_grupos_membros.concedido_por", "coluna push_preferencias.alterado_por",
+		"único push_subs(endpoint)", "único push_preferencias(user_id,tipo)", "função guard_profiles()", "função equipes_toca_atualizado()", // Plano 5.1
 		"único chatwoot_eventos(conversation_id,tipo)", "único (dedupe do on conflict do nothing) carrinho_eventos(evento_shopify_id)"} {
 		if !tem(quer) {
 			t.Errorf("faltou acusar %q", quer)
 		}
 	}
-	for _, nao := range []string{"coluna robos_execucoes.conferido_em", "coluna profiles.features"} {
+	for _, nao := range []string{"coluna robos_execucoes.conferido_em", "coluna profiles.features", "coluna profiles.precisa_trocar_senha", "coluna profiles.allowed_accounts"} {
 		if tem(nao) { // a tabela existe no banco de teste (legado)
 			t.Errorf("acusou o que existe: %q", nao)
 		}

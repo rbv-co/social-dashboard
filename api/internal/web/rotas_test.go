@@ -14,7 +14,9 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rbv-co/social-dashboard/api/internal/auth"
+	"github.com/rbv-co/social-dashboard/api/internal/autz"
 	"github.com/rbv-co/social-dashboard/api/internal/config"
+	"github.com/rbv-co/social-dashboard/api/internal/rpc"
 	"github.com/rbv-co/social-dashboard/api/internal/testebanco"
 )
 
@@ -64,6 +66,10 @@ var publicas = map[string]bool{
 	"POST /receber-webhook-pedido-shopify": true, "POST /receber-webhook-checkout": true,
 	"POST /receber-webhook-abandono": true, "POST /receber-webhook-chatwoot": true,
 	"POST /receber-opt-out-chatwoot": true,
+	// Plano 5.0: links de senha (sem enumeração, limite por IP e por e-mail no handler)
+	"POST /auth/esqueci-senha": true, "POST /auth/definir-senha": true,
+	// Plano 5.1: o pedido de acesso da tela de login (limite de 10 por IP por hora e validação no handler)
+	"POST /pedir-acesso": true,
 }
 
 func webhooksPublicos() []string {
@@ -78,6 +84,10 @@ func TestNenhumaRotaNovaFicaAberta(t *testing.T) {
 	st := auth.NovoStore(p)
 	h := Rotas(p, st, auth.NovoLimitador(), config.Config{ShopifySegredos: []string{"s"}, ChatwootSegredo: "c"})
 	semModulo := fixtureUsuarios(t, p, st)["nenhum"]
+	testebanco.TabelasDoEscopo(t, p) // o escopo carrega: uma rota de domínio aberta responde 200, não 500
+	const clienteID = "88888888-8888-4888-a888-888888888888"
+	p.Exec(context.Background(), `insert into usuarios (id, email) values ($1, 'cliente-walk@x.com')`, clienteID)
+	tokCliente, _ := st.Criar(context.Background(), clienteID, "cliente", nil)
 	var vistas []string
 	err := chi.Walk(h.(chi.Routes), func(metodo, rota string, _ http.Handler, _ ...func(http.Handler) http.Handler) error {
 		chave := metodo + " " + rota
@@ -90,12 +100,20 @@ func TestNenhumaRotaNovaFicaAberta(t *testing.T) {
 		if r.Code != http.StatusUnauthorized {
 			t.Errorf("%s sem sessão = %d, esperava 401 (rota nova fora do grupo autenticado?)", chave, r.Code)
 		}
+		// sessão de CLIENTE (não é de painel) é recusada em TODA rota protegida, inclusive as só-sessão
+		r = httptest.NewRecorder()
+		req := httptest.NewRequest(metodo, rota, strings.NewReader(`{"a":1}`))
+		req.Header.Set("Authorization", "Bearer "+tokCliente)
+		h.ServeHTTP(r, req)
+		if r.Code != http.StatusForbidden {
+			t.Errorf("%s com sessão de cliente = %d, esperava 403", chave, r.Code)
+		}
 		// com sessão e SEM módulo nenhum: 403 em toda rota, salvo a lista curta de só-sessão
 		if soSessao[chave] {
 			return nil
 		}
 		r = httptest.NewRecorder()
-		req := httptest.NewRequest(metodo, rota, strings.NewReader(`{"endpoint":"pedidos/vendas"}`))
+		req = httptest.NewRequest(metodo, rota, strings.NewReader(`{"endpoint":"pedidos/vendas"}`))
 		req.Header.Set("Authorization", "Bearer "+semModulo)
 		h.ServeHTTP(r, req)
 		if r.Code != http.StatusForbidden {
@@ -113,6 +131,11 @@ func TestNenhumaRotaNovaFicaAberta(t *testing.T) {
 		}
 		if !achou {
 			t.Errorf("rota pública %s não está montada", chave)
+		}
+	}
+	for chave := range soSessao { // nem a lista só-sessão pode apontar para rota que não existe
+		if !slices.Contains(vistas, chave) {
+			t.Errorf("rota só-sessão %s não está montada", chave)
 		}
 	}
 	for _, c := range webhooksPublicos() {
@@ -185,7 +208,34 @@ func coreFalso(t *testing.T) string {
 
 // Rotas que só exigem sessão (qualquer módulo, ou nenhum). TODA outra rota do grupo
 // autenticado tem de ter portão de módulo: uma rota nova sem portão falha no teste da varredura.
-var soSessao = map[string]bool{"POST /auth/sair": true, "GET /auth/eu": true, "GET /eu/canais": true}
+var soSessao = map[string]bool{"POST /auth/sair": true, "GET /auth/eu": true, "GET /eu/canais": true,
+	// Plano 5.0: a conta de quem está logado; invite-user e entrar-como têm o portão das edges
+	// DENTRO do handler (400 com a frase da edge: TestContaPelaMontagemReal) e /rpc/{nome} só
+	// responde para nome registrado, cada um com o seu portão (sem registro: 404).
+	"POST /auth/trocar-senha": true, "GET /eu/perfil": true, "POST /invite-user": true,
+	"POST /entrar-como-usuario": true, "POST /conferir-senha": true, "POST /rpc/{nome}": true,
+}
+
+// Plano 5.1: as rotas do admin, de equipes, de avisos e de saúde. Portão = catálogo, provado pela matriz de
+// cada rota em internal/acesso; escrita de impersonado recusada por TestEscritasRecusamImpersonado. Todas
+// ficam no grupo de DOMÍNIO (prazo e escopo do grupo: TestPrazosPorRotaPelaMontagemReal).
+var rotas51 = []string{
+	"GET /acesso/usuarios", "PATCH /acesso/usuarios/{id}", "GET /acesso/perfis", "POST /acesso/perfis", "PATCH /acesso/perfis/{id}",
+	"GET /acesso/pedidos", "PATCH /acesso/pedidos/{id}",
+	"GET /equipes/times", "POST /equipes/times", "PATCH /equipes/times/{id}",
+	"GET /equipes/membros", "POST /equipes/membros", "PATCH /equipes/membros/{id}", "DELETE /equipes/membros/{id}",
+	"GET /equipes/permissoes", "POST /equipes/permissoes", "DELETE /equipes/permissoes/{id}",
+	"GET /equipes/grupos", "POST /equipes/grupos", "PATCH /equipes/grupos/{id}", "DELETE /equipes/grupos/{id}",
+	"GET /equipes/grupos-membros", "POST /equipes/grupos-membros", "DELETE /equipes/grupos-membros/{id}",
+	"GET /avisos/preferencias", "POST /avisos/preferencias", "POST /eu/push/inscrever", "POST /eu/push/desinscrever",
+	"GET /saude/conferencias",
+}
+
+func init() {
+	for _, c := range rotas51 {
+		soSessao[c] = true
+	}
+}
 
 // Matriz completa 401/403/200 por rota pela montagem de produção: cada módulo abre SÓ as
 // suas rotas (pega portão trocado, portão extra ou ausente). O core é um servidor falso.
@@ -237,7 +287,12 @@ func TestRotasProtegidasPelaMontagemReal(t *testing.T) {
 func TestPrazosPorRotaPelaMontagemReal(t *testing.T) {
 	p := testebanco.Novo(t)
 	h := Rotas(p, auth.NovoStore(p), auth.NovoLimitador(), config.Config{})
-	quer := map[string]time.Duration{"POST /bling-proxy": 90 * time.Second, "POST /insights-ao-vivo": 90 * time.Second, "POST /serie-novos-dia": 90 * time.Second, "POST /contar-collabs": 120 * time.Second}
+	quer := map[string]time.Duration{"POST /bling-proxy": 90 * time.Second, "POST /insights-ao-vivo": 90 * time.Second, "POST /serie-novos-dia": 90 * time.Second, "POST /contar-collabs": 120 * time.Second,
+		// Plano 5.0: o grupo de domínio inteiro (e o /rpc) tem prazo; rota de domínio nova herda
+		"POST /rpc/{nome}": PrazoDominio}
+	for _, c := range rotas51 { // Plano 5.1: no grupo de domínio, com o prazo dele
+		quer[c] = PrazoDominio
+	}
 	vistos := map[string]bool{}
 	chi.Walk(h.(chi.Routes), func(metodo, rota string, _ http.Handler, mws ...func(http.Handler) http.Handler) error {
 		chave := metodo + " " + rota
@@ -261,6 +316,18 @@ func TestPrazosPorRotaPelaMontagemReal(t *testing.T) {
 	})
 	if len(vistos) != len(quer) {
 		t.Errorf("rotas com prazo não montadas: %v", vistos)
+	}
+	// o WriteTimeout do servidor (main.go usa EscritaDoServidor): cada prazo de rota termina com folga ANTES dele
+	if EscritaDoServidor != 150*time.Second {
+		t.Errorf("EscritaDoServidor = %v: as NOTAS dizem 150 s (PrazoCollabs + 30 s)", EscritaDoServidor)
+	}
+	for chave, d := range quer {
+		if d+30*time.Second > EscritaDoServidor {
+			t.Errorf("%s: prazo %v sem 30 s de folga antes do WriteTimeout do servidor (%v): a conexão cairia antes do 504", chave, d, EscritaDoServidor)
+		}
+	}
+	if PrazoDominio >= 60*time.Second {
+		t.Errorf("PrazoDominio %v: o proxy_read_timeout padrão do nginx (60 s) cortaria a resposta antes do 504 da API", PrazoDominio)
 	}
 }
 
@@ -402,5 +469,220 @@ func TestAvisarDecisaoDeReservaPeloPortaoReal(t *testing.T) {
 		if w.Code != 405 {
 			t.Errorf("%s = %d, esperava 405", m, w.Code)
 		}
+	}
+}
+
+// Plano 5.0 pela montagem real: os links de senha respondem sem sessão; as rotas da conta exigem
+// sessão de painel e, para quem não é admin/super-admin, devolvem a frase da edge.
+func TestContaPelaMontagemReal(t *testing.T) {
+	p := testebanco.Novo(t)
+	s := auth.NovoStore(p)
+	h := Rotas(p, s, auth.NovoLimitador(), config.Config{EnderecosDoApp: []string{"https://central.exemplo"}, EnderecoPadrao: "https://central.exemplo"})
+	viewer := fixtureUsuarios(t, p, s)["nenhum"]
+	testebanco.TabelasDoEscopo(t, p)
+	ctx := context.Background()
+	const cliente = "77777777-7777-4777-a777-777777777777"
+	p.Exec(ctx, `insert into usuarios (id, email) values ($1, 'cliente@x.com')`, cliente)
+	tokCliente, _ := s.Criar(ctx, cliente, "cliente", nil)
+	pedir := func(metodo, caminho, corpo, tok string) (int, string) {
+		r := httptest.NewRequest(metodo, caminho, strings.NewReader(corpo))
+		if tok != "" {
+			r.Header.Set("Authorization", "Bearer "+tok)
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w.Code, strings.TrimSpace(w.Body.String())
+	}
+	casos := []struct {
+		metodo, caminho, corpo, tok string
+		status                      int
+		trecho                      string
+	}{
+		{"POST", "/auth/esqueci-senha", `{"email":"ninguem@x.com"}`, "", 202, `{"ok":true}`},
+		{"POST", "/auth/definir-senha", `{"token":"inventado","senha":"senha-boa"}`, "", 400, "token_invalido"},
+		{"POST", "/invite-user", `{"email":"a@x.com"}`, viewer, 400, "Apenas administradores"},
+		{"POST", "/entrar-como-usuario", `{"alvoId":"` + conta + `"}`, viewer, 400, "Apenas super-admin"},
+		{"POST", "/conferir-senha", `{}`, viewer, 400, "sem_senha"},
+		{"POST", "/auth/trocar-senha", `{"senha":"1"}`, viewer, 400, "senha_invalida"},
+		{"GET", "/eu/perfil", ``, viewer, 200, `"role":"viewer"`},
+		// nome que nenhum sub-plano registra: o /rpc só responde para o que está na lista branca
+		{"POST", "/rpc/funcao_que_ninguem_registra", `{}`, viewer, 404, "nao_encontrado"},
+		{"POST", "/invite-user", `{}`, tokCliente, 403, "sem_permissao"},
+		{"POST", "/rpc/qualquer", `{}`, "", 401, "nao_autenticado"},
+	}
+	for _, c := range casos {
+		if st, corpo := pedir(c.metodo, c.caminho, c.corpo, c.tok); st != c.status || !strings.Contains(corpo, c.trecho) {
+			t.Errorf("%s %s = %d %s, esperava %d com %q", c.metodo, c.caminho, st, corpo, c.status, c.trecho)
+		}
+	}
+}
+
+// Os caminhos FELIZES da conta pela montagem real (200/204 de verdade, com efeito no banco): quem
+// tem o portão passa; o mesmo corpo sem ele já foi recusado acima.
+func TestContaCaminhosFelizesPelaMontagemReal(t *testing.T) {
+	p := testebanco.Novo(t)
+	s := auth.NovoStore(p)
+	h := Rotas(p, s, auth.NovoLimitador(), config.Config{EnderecosDoApp: []string{"https://central.exemplo"}, EnderecoPadrao: "https://central.exemplo"})
+	toks := fixtureUsuarios(t, p, s)
+	ctx := context.Background()
+	if _, err := p.Exec(ctx, `create table entradas_como_outro_usuario (
+		id uuid primary key default gen_random_uuid(),
+		admin_id uuid not null references profiles(id), admin_email text not null,
+		alvo_id uuid not null references profiles(id), alvo_email text not null,
+		criado_em timestamptz not null default now())`); err != nil {
+		t.Fatal(err)
+	}
+	const super, alvo = "99999999-9999-4999-a999-999999999991", "99999999-9999-4999-a999-999999999992"
+	hash, err := auth.HashDaSenha("senha-do-super")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.Exec(ctx, `insert into usuarios (id, email, senha_hash) values ($1::uuid, 'super@x.com', $2::text), ($3::uuid, 'alvo@x.com', null)`, super, hash, alvo)
+	p.Exec(ctx, `insert into profiles (id, email, role, is_superadmin, escopo_por_equipe) values ($1::uuid, 'super@x.com', 'admin', true, false), ($2::uuid, 'alvo@x.com', 'viewer', false, false)`, super, alvo)
+	toks["super"], _ = s.Criar(ctx, super, "painel", nil)
+	pedir := func(metodo, caminho, corpo, tok string) (int, string) {
+		r := httptest.NewRequest(metodo, caminho, strings.NewReader(corpo))
+		r.Header.Set("Authorization", "Bearer "+tok)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w.Code, strings.TrimSpace(w.Body.String())
+	}
+	for _, c := range []struct {
+		metodo, caminho, corpo, quem string
+		status                       int
+		trecho                       string
+	}{
+		{"GET", "/auth/eu", ``, "nenhum", 200, `"id"`},
+		{"GET", "/eu/perfil", ``, "nenhum", 200, `"role":"viewer"`},
+		{"POST", "/conferir-senha", `{"senha":"senha-do-super"}`, "super", 200, `{"ok":true}`},
+		{"POST", "/invite-user", `{"email":"nova@x.com","password":"senha-boa-123"}`, "admin", 200, `{"success":true}`},
+		{"POST", "/entrar-como-usuario", `{"alvoId":"` + alvo + `"}`, "super", 200, `"expira_em"`},
+		{"POST", "/auth/trocar-senha", `{"senha":"outra-senha-boa"}`, "nenhum", 204, ``},
+	} {
+		if st, corpo := pedir(c.metodo, c.caminho, c.corpo, toks[c.quem]); st != c.status || !strings.Contains(corpo, c.trecho) {
+			t.Errorf("%s %s como %s = %d %s, esperava %d com %q", c.metodo, c.caminho, c.quem, st, corpo, c.status, c.trecho)
+		}
+	}
+	var n int
+	p.QueryRow(ctx, `select (select count(*) from usuarios where email = 'nova@x.com') + (select count(*) from entradas_como_outro_usuario where alvo_id = $1::uuid)`, alvo).Scan(&n)
+	if n != 2 {
+		t.Errorf("efeitos no banco = %d, esperava 2 (conta nova + auditoria de entrar como)", n)
+	}
+}
+
+// POST /rpc/{nome} pela montagem real, com uma função registrada de verdade (movida de pendente para
+// registrada, como cada sub-plano fará): 401 sem sessão, 403 sem o portão (e a função NÃO roda), 200 com
+// ele, 404 para nome não registrado, e o portão vem antes da validação do corpo.
+func TestRPCRegistradaPelaMontagemReal(t *testing.T) {
+	const nome = "vessel_gerar_lote"
+	original, pendentes := FuncoesRPC, RPCPendentes
+	t.Cleanup(func() { FuncoesRPC, RPCPendentes = original, pendentes })
+	FuncoesRPC = []rpc.Funcao{{Nome: nome, Params: []rpc.Param{{Nome: "p_n", Tipo: "integer"}}, Retorno: rpc.Valor, Portao: autz.SuperFicha}}
+	RPCPendentes = slices.DeleteFunc(slices.Clone(pendentes), func(x string) bool { return x == nome })
+	p := testebanco.Novo(t)
+	s := auth.NovoStore(p)
+	h := Rotas(p, s, auth.NovoLimitador(), config.Config{})
+	toks := fixtureUsuarios(t, p, s)
+	testebanco.TabelasDoEscopo(t, p)
+	ctx := context.Background()
+	if _, err := p.Exec(ctx, `create table marca (n int);
+		create function `+nome+`(p_n integer) returns integer language plpgsql as $$ begin insert into marca values (p_n); return p_n + 1; end $$`); err != nil {
+		t.Fatal(err)
+	}
+	const super = "99999999-9999-4999-a999-999999999993"
+	p.Exec(ctx, `insert into usuarios (id, email) values ($1::uuid, 'super-rpc@x.com')`, super)
+	p.Exec(ctx, `insert into profiles (id, email, role, is_superadmin, escopo_por_equipe) values ($1::uuid, 'super-rpc@x.com', 'viewer', true, false)`, super)
+	toks["super"], _ = s.Criar(ctx, super, "painel", nil)
+	pedir := func(caminho, corpo, quem string) (int, string) {
+		r := httptest.NewRequest("POST", caminho, strings.NewReader(corpo))
+		if quem != "" {
+			r.Header.Set("Authorization", "Bearer "+toks[quem])
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w.Code, strings.TrimSpace(w.Body.String())
+	}
+	for _, c := range []struct {
+		caminho, corpo, quem string
+		status               int
+		trecho               string
+	}{
+		{"/rpc/" + nome, `{"p_n":1}`, "", 401, "nao_autenticado"},
+		{"/rpc/" + nome, `{"p_n":1}`, "nenhum", 403, "sem_permissao"},
+		{"/rpc/" + nome, `lixo`, "nenhum", 403, "sem_permissao"}, // o portão vem antes do corpo
+		{"/rpc/" + nome, `{"p_n":1}`, "admin", 403, "sem_permissao"},
+		{"/rpc/" + nome, `{"p_n":1}`, "super", 200, "2"},
+		{"/rpc/" + nome, `{}`, "super", 400, "pedido_invalido"},
+		{"/rpc/outra_funcao", `{"p_n":1}`, "super", 404, "nao_encontrado"},
+	} {
+		if st, corpo := pedir(c.caminho, c.corpo, c.quem); st != c.status || !strings.Contains(corpo, c.trecho) {
+			t.Errorf("%s %s como %q = %d %s, esperava %d com %q", c.caminho, c.corpo, c.quem, st, corpo, c.status, c.trecho)
+		}
+	}
+	var n int
+	p.QueryRow(ctx, `select count(*) from marca`).Scan(&n)
+	if n != 1 {
+		t.Errorf("a função rodou %d vez(es), esperava 1 (só a do super-admin)", n)
+	}
+}
+
+// Plano 5.1 pela montagem real: sem sessão é 401, o portão é o do catálogo (viewer não muda a conta do
+// admin; só o admin lê pedidos de acesso), o pedido de acesso é público e o health check não depende de
+// sessão. A matriz de cada rota está em internal/acesso; aqui vale a MONTAGEM (grupo, cadeia, posição).
+func TestAcessoPelaMontagemReal(t *testing.T) {
+	p := testebanco.ComEsquemaDeProducao(t)
+	s := auth.NovoStore(p)
+	h := Rotas(p, s, auth.NovoLimitador(), config.Config{})
+	ctx := context.Background()
+	const admin, viewer = "5e000000-0000-4000-a000-0000000000a1", "5e000000-0000-4000-a000-0000000000a2"
+	for _, u := range [][3]string{{admin, "admin-51@x.com", "admin"}, {viewer, "viewer-51@x.com", "viewer"}} {
+		if _, err := p.Exec(ctx, `insert into usuarios (id, email) values ($1::uuid, $2::text)`, u[0], u[1]); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := p.Exec(ctx, `insert into profiles (id, email, name, role, escopo_por_equipe) values ($1::uuid, $2::text, $2::text, $3::text, false)`, u[0], u[1], u[2]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tok := map[string]string{}
+	for nome, id := range map[string]string{"admin": admin, "viewer": viewer} {
+		var err error
+		if tok[nome], err = s.Criar(ctx, id, "painel", nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pedir := func(quem, metodo, caminho, corpo string) (int, string) {
+		r := httptest.NewRequest(metodo, caminho, strings.NewReader(corpo))
+		r.Header.Set("Content-Type", "application/json")
+		if quem != "" {
+			r.Header.Set("Authorization", "Bearer "+tok[quem])
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w.Code, strings.TrimSpace(w.Body.String())
+	}
+	for _, c := range []struct {
+		nome, quem, metodo, caminho, corpo string
+		status                             int
+		trecho                             string
+	}{
+		{"usuários sem sessão", "", "GET", "/acesso/usuarios", "", 401, "nao_autenticado"},
+		{"conferências exigem sessão", "", "GET", "/saude/conferencias", "", 401, "nao_autenticado"},
+		{"o health check segue público", "", "GET", "/saude", "", 200, "ok"},
+		{"viewer não muda a conta do admin", "viewer", "PATCH", "/acesso/usuarios/" + admin, `{"disabled":true}`, 403, "sem_permissao"},
+		{"viewer lê pedidos: a regra devolve lista vazia", "viewer", "GET", "/acesso/pedidos", "", 200, "[]"},
+		{"admin lê os times", "admin", "GET", "/equipes/times", "", 200, "["},
+		{"pedir acesso é público", "", "POST", "/pedir-acesso", `{"name":"Fulana","email":"fulana@x.com","message":"oi"}`, 201, `"id"`},
+	} {
+		if st, corpo := pedir(c.quem, c.metodo, c.caminho, c.corpo); st != c.status || !strings.Contains(corpo, c.trecho) {
+			t.Errorf("%s: %s %s = %d %s, esperava %d com %q", c.nome, c.metodo, c.caminho, st, corpo, c.status, c.trecho)
+		}
+	}
+	var off bool
+	if err := p.QueryRow(ctx, `select disabled from profiles where id = $1::uuid`, admin).Scan(&off); err != nil || off {
+		t.Errorf("o PATCH negado mexeu em profiles.disabled (%v, %v)", off, err)
+	}
+	var n int
+	if err := p.QueryRow(ctx, `select count(*) from access_requests where email = 'fulana@x.com' and status = 'pending'`).Scan(&n); err != nil || n != 1 {
+		t.Errorf("pedidos gravados = %d (%v), esperava 1", n, err)
 	}
 }
