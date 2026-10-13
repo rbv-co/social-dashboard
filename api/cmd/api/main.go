@@ -19,7 +19,7 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		slog.Error("uso: api <api|worker [listar|rodar <tarefa> [--forcar]|saude|conferir]|importar-usuarios|migrar>")
+		slog.Error("uso: api <api|worker [listar|rodar <tarefa> [--forcar]|saude|conferir]|servico <criar|revogar|listar>|importar-usuarios|migrar>")
 		os.Exit(2)
 	}
 	if os.Args[1] == "worker" && len(os.Args) > 2 && os.Args[2] == "saude" {
@@ -75,6 +75,10 @@ func main() {
 		<-fim // espera o escoamento das requisições antes do p.Close() adiado
 	case "worker":
 		codigo := rodarWorker(ctx, p, cfg, os.Args[2:])
+		p.Close()
+		os.Exit(codigo)
+	case "servico":
+		codigo := servicoComando(ctx, auth.NovoStore(p), os.Args[2:], os.Stdout, os.Stderr)
 		p.Close()
 		os.Exit(codigo)
 	case "importar-usuarios":
