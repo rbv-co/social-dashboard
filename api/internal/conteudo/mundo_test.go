@@ -133,10 +133,12 @@ const fotoDoConteudo = `select md5(string_agg(l, '|' order by l)) from (
   select 'jo:' || t::text from conteudo_jobs t) z`
 
 // novoMundo: a fatia de produção, as pessoas, as linhas e a sessão "impersonado" (a de conteudistaA1 aberta
-// por super: o "entrar como" vê o que o ALVO vê, só A1), com as rotas de `montar` atrás da MESMA cadeia do
+// por super: o "entrar como" vê o que o ALVO vê, só A1; e "impersonadoAprovador", a de aprovadorA1), com as rotas de `montar` atrás da MESMA cadeia do
 // grupo de domínio de web.Rotas.
 func novoMundo(t *testing.T, montar ...func(chi.Router, *pgxpool.Pool)) *mundoteste.Mundo {
 	t.Helper()
 	return mundoteste.Novo(t, mundoteste.Opcoes{Pessoas: pessoas, Linhas: linhasDoConteudo,
-		Impersonadas: map[string][2]string{"impersonado": {idConteudistaA1, idSuper}}}, montar...)
+		Impersonadas: map[string][2]string{"impersonado": {idConteudistaA1, idSuper},
+			// o alvo é quem PASSA no portão das 6 RPCs: o que as recusa é o SoSessaoPropria, não o portão
+			"impersonadoAprovador": {idAprovadorA1, idSuper}}}, montar...)
 }

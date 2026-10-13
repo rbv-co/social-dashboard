@@ -15,6 +15,7 @@ import (
 	"github.com/rbv-co/social-dashboard/api/internal/canais"
 	"github.com/rbv-co/social-dashboard/api/internal/comercial"
 	"github.com/rbv-co/social-dashboard/api/internal/config"
+	"github.com/rbv-co/social-dashboard/api/internal/conteudo"
 	"github.com/rbv-co/social-dashboard/api/internal/core"
 	"github.com/rbv-co/social-dashboard/api/internal/custo"
 	"github.com/rbv-co/social-dashboard/api/internal/email"
@@ -60,7 +61,8 @@ const (
 // funções do seu domínio, com parâmetros, retorno e o portão que espelha a checagem interna da
 // função, e TIRA os nomes dela de RPCPendentes (montarRPC recusa os dois lugares ao mesmo tempo).
 var FuncoesRPC = slices.Concat(
-	trafego.FuncoesRPC, // Plano 5.7
+	trafego.FuncoesRPC,  // Plano 5.7
+	conteudo.FuncoesRPC, // Plano 5.9
 )
 
 // comPrazo limita o contexto da requisição; o que estiver preso na rede/core desiste junto.
@@ -157,9 +159,10 @@ func Rotas(p *pgxpool.Pool, s *auth.Store, l *auth.Limitador, cfg config.Config)
 		r.Group(func(r chi.Router) {
 			r.Use(comPrazo(PrazoDominio), autz.ComEscopo(p))
 			r.Post("/rpc/{nome}", rpcs.ServeHTTP)
-			redes.Montar(r, p)   // Plano 5.6
-			acesso.Montar(r, p)  // Plano 5.1
-			trafego.Montar(r, p) // Plano 5.7
+			redes.Montar(r, p)    // Plano 5.6
+			acesso.Montar(r, p)   // Plano 5.1
+			trafego.Montar(r, p)  // Plano 5.7
+			conteudo.Montar(r, p) // Plano 5.9
 			// Plano 5.12: notícias e status da IA (leituras declaradas, regra do catálogo).
 			if err := paineis.Montar(r, p, autz.Producao); err != nil {
 				panic(err) // declaração errada: a API não sobe
