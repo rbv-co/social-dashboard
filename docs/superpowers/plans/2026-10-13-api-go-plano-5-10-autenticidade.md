@@ -146,6 +146,7 @@ docs/migracao-go/NOTAS-DA-IMPLANTACAO.md, docs/migracao-go/API-PRONTA.md # seç�
 - **Ordem do restore (`ops/migracao/restaurar.sh:20-26`): compat → `api migrar` → `schema.sql` → dados.** A `00007` cria a função ANTES do schema, e o `CREATE FUNCTION public.disparar_robo` do dump colidiria (`ON_ERROR_STOP=1`): `limpar-dump.mjs` ganha a regra `substituidas` que tira o `CREATE FUNCTION` e o `COMMENT ON FUNCTION` da `disparar_robo` (quem a CHAMA fica). No banco do ensaio já restaurado, `api migrar` aplica a `00007` e o `create or replace` troca a antiga (Ruling 5.10-1).
 - **`banco.AtenderDisparo`** (abaixo): o único jeito de atender um pedido. Reconcilia (`atendendo` há mais de 30 min → `incerto`), faz a faxina (`feito|falhou|incerto` com mais de 30 dias), pega o MAIS ANTIGO `pendente` do robô num `update … where id = (select … for update skip locked)` em autocommit (dois atendentes nunca pegam o mesmo), roda `fazer` UMA vez e grava o resultado com um contexto próprio (o prazo da tarefa não deixa a linha presa em `atendendo`). Resultado: `nil` → `feito`; `ErrIncerto`, `context.DeadlineExceeded` ou `context.Canceled` → `incerto`; outro erro → `falhou`. **Nada se repete sozinho** (Ruling 5.10-3).
 - **Sem tarefa do worker no 5.10** (Ruling 5.10-2): não há a quem despachar. O atendente de `vessel-espelhar-lista` é a tarefa do espelho do Plano 6 (Interfaces entregues).
+- **Ensaiado** (13/10, árvore descartável do `feat/api-go-plano-5-8` 41c24eba + estes arquivos, Postgres 17): os dois testes passam com `-race` (3 rodadas); `limpar-dump.test.mjs` com a regra e o caso novo: 15 `pass`. Mutações conferidas: sem `on conflict` → 23505 no 2º disparo; `ErrIncerto` como `falhou` → `falhou:1`; resultado gravado com o `ctx` da tarefa → `atendendo:1`; órfão de volta a `pendente` → "atendeu um órfão". Tirar só o `skip locked` (mantendo o `for update`) NÃO reprova, e está certo: o segundo espera e o `where situacao = 'pendente'` reavaliado não acha a linha.
 
 ```sql
 -- +goose Up
@@ -299,7 +300,7 @@ E em `ops/migracao/limpar-dump.mjs`, na lista `REGRAS` (depois de `publicacoes`)
 - `TestDispararRoboEnfileiraSemFalhar` (`testebanco.Novo`: schema por teste, a migração aplicada): a assinatura de produção com e sem os DEFAULTs e com tudo nulo devolve o MESMO id para o mesmo robô (`pendente|3|{"origem": "gatilho"}`); outro robô = outro pedido; robô nulo vira `?`; 20 disparos simultâneos do mesmo robô = 0 falhas, 1 pedido com `pedidos` = 20; disparo em transação desfeita não fica.
 - `TestAtenderDisparo`: sem pedido = `false` e `fazer` não roda; com pedido: roda UMA vez com `Robo`, `Corpo` (`{"n": 1}`) e `Pedidos` = 2, e o disparo feito DURANTE o atendimento abre um pendente novo (`feito:2,pendente:1`); erro comum → `falhou` com o texto e a chamada seguinte NÃO o refaz; `ErrIncerto` embrulhado e prazo estourado dentro de `fazer` → `incerto` e não refaz; `atendendo` de 31 min → `incerto` sem rodar, o de 29 min fica; faxina: `feito` e `incerto` de 31 dias saem, `falhou` de 29 dias fica; 8 atendentes simultâneos com 1 pedido → `fazer` roda 1 vez; pedido de outro robô não é atendido.
 - `limpar-dump.test.mjs`: o caso novo `limpar tira a disparar_robo do dump…` (2 removidas, `net.http_post` some, `disparar_coletor` e a CHAMADA em `vessel_espelhar_agora` ficam) e as duas asserções `deepEqual` de `removidos` existentes (linhas 43 e 58) ganham `substituidas: 0` — a intenção delas (contar exatamente o que sai) continua.
-- Mutações que têm de reprovar: tirar o `on conflict` (o 2º disparo dá 23505: o insert do cadastro quebraria); pegar com `select` e `update` em dois comandos sem `skip locked` (o teste dos 8 atendentes roda mais de uma vez); a reconciliação devolver o órfão a `pendente` (ele roda de novo); `ErrIncerto` tratado como `falhou`; gravar o resultado com o `ctx` da tarefa (o caso do prazo deixa a linha `atendendo`); tirar a regra `substituidas` (o teste node reprova).
+- Mutações que têm de reprovar: tirar o `on conflict` (o 2º disparo dá 23505: o insert do cadastro quebraria); pegar com `select` e depois `update … where id = $1` em dois comandos (o teste dos 8 atendentes roda mais de uma vez); a reconciliação devolver o órfão a `pendente` (ele roda de novo); `ErrIncerto` tratado como `falhou`; gravar o resultado com o `ctx` da tarefa (o caso do prazo deixa a linha `atendendo`); tirar a regra `substituidas` (o teste node reprova).
 
 ```go
 package banco_test
@@ -469,7 +470,7 @@ func TestAtenderDisparo(t *testing.T) {
 	if atendeu, _ := banco.AtenderDisparo(ctx, p, "espelho", nunca(t)); atendeu {
 		t.Error("atendeu um órfão")
 	}
-	if v := textoDe(t, p, `select string_agg(situacao, ',' order by atualizado_em) from disparos_pendentes where robo = 'espelho'`); v != "incerto,atendendo" {
+	if v := textoDe(t, p, `select string_agg(situacao, ',' order by id) from disparos_pendentes where robo = 'espelho'`); v != "incerto,atendendo" {
 		t.Errorf("órfãos = %s", v)
 	}
 
