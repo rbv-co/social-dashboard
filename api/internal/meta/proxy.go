@@ -96,6 +96,10 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		erro(w, http.StatusBadRequest, "accountId e path obrigatorios")
 		return
 	}
+	if temParam(in.Params, "access_token") { // o pedido nunca troca o token do core, seja qual for a grafia
+		erro(w, http.StatusBadRequest, "parametro nao permitido")
+		return
+	}
 	metodo := strings.ToUpper(in.Method)
 	escreve := metodo == "POST" || metodo == "DELETE" || in.ImageFromURL != "" || in.VideoFromURL != "" || temParam(in.Params, "method")
 	if a := auth.AtorDoContexto(r.Context()); escreve && (a == nil || a.ImpersonadorID != nil) {
@@ -124,7 +128,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		return *s
 	}
-	if !autz.VeTodasAsContas(autz.EscopoDo(r.Context())) && (!caminhoDaConta(in.Path, texto(adAcc), texto(ig)) || temParam(in.Params, "ids", "batch")) {
+	if !autz.VeTodasAsContas(autz.EscopoDo(r.Context())) && (!caminhoDaConta(in.Path, texto(adAcc), texto(ig)) || temParam(in.Params, "ids", "batch") || paramAlcancaOutraConta(in.Params)) {
 		erro(w, http.StatusForbidden, "caminho fora da conta")
 		return
 	}

@@ -106,6 +106,8 @@ func TestMetaProxyEscopoDeContas(t *testing.T) {
 			`{"accountId":"conta-1","path":"/9001","params":{"method[]":"delete"}}`,
 			`{"accountId":"conta-1","path":"/9001","params":{" method":"delete"}}`,
 			`{"accountId":"conta-1","path":"/9001","params":{"Method[0]":"delete"}}`,
+			`{"accountId":"conta-1","path":"/9001","params":{"method.x":"delete"}}`,
+			`{"accountId":"conta-1","path":"/9001","params":{"method\u0000x":"delete"}}`,
 		} {
 			st, resp := pedir(a.tokens["impersonado"], b)
 			if st != 403 || !strings.Contains(resp, `"sem_permissao"`) || !strings.Contains(resp, "Quem entrou como outra pessoa") {
@@ -118,6 +120,53 @@ func TestMetaProxyEscopoDeContas(t *testing.T) {
 		// paridade: sessão normal segue passando o param (o Plano 3 não o filtrava)
 		if st, resp := pedir(a.tokens[uMeta], `{"accountId":"conta-1","path":"/9001","params":{"method":"delete"}}`); st != 200 || a.core.n() != antes+1 {
 			t.Errorf("uMeta com method (paridade): %d %s, core %d", st, resp, a.core.n()-antes)
+		}
+	})
+
+	t.Run("expansão aninhada em params não alcança outras contas", func(t *testing.T) {
+		pedirComParams := func(token, params string) (int, string, int) {
+			antes := a.core.n()
+			st, resp := pedir(token, `{"accountId":"conta-1","path":"/act_999","params":`+params+`}`)
+			return st, resp, a.core.n() - antes
+		}
+		for _, params := range []string{
+			`{"fields":"business{owned_ad_accounts{name,amount_spent,insights{spend}}}"}`,
+			`{"fields":"owner_business{id}"}`,
+			`{"fields":"id","filtering":"[{\"field\":\"x\"}]","x":"client_ad_accounts"}`,
+			`{"fields":"Business {id}"}`,
+			`{"fields":"id,agencies{name}"}`,
+			`{"fields":"connected_instagram_accounts"}`,
+			`{"fields":["adaccounts"]}`,
+		} {
+			st, resp, n := pedirComParams(a.tokens[uRestrito], params)
+			if st != 403 || strings.TrimSpace(resp) != `{"error":"caminho fora da conta"}` || n != 0 {
+				t.Errorf("%s: %d %s, core %d", params, st, resp, n)
+			}
+		}
+		for _, params := range []string{
+			`{"fields":"funding_source_details{type,display_string}"}`,
+			`{"fields":"instagram_business_account{id,username}"}`,
+			`{"fields":"id,name,creative,campaign,insights.time_range({\"since\":\"2026-01-01\"}){spend}"}`,
+		} {
+			if st, resp, n := pedirComParams(a.tokens[uRestrito], params); st != 200 || n != 1 {
+				t.Errorf("%s: %d %s, core %d", params, st, resp, n)
+			}
+		}
+		// paridade: quem vê todas as contas segue passando a expansão (o Plano 3 não a filtrava)
+		if st, resp, n := pedirComParams(a.tokens[uMeta], `{"fields":"business{owned_ad_accounts{name}}"}`); st != 200 || n != 1 {
+			t.Errorf("uMeta com business{...} (paridade): %d %s, core %d", st, resp, n)
+		}
+	})
+
+	t.Run("access_token em params nunca vai ao core", func(t *testing.T) {
+		for _, tok := range []string{a.tokens[uRestrito], a.tokens[uMeta]} {
+			for _, params := range []string{`{"access_token[0]":"x"}`, `{"ACCESS_TOKEN":"x"}`, `{"access_token[]":"x"}`, `{" access_token":"x"}`, `{"access_token.x":"x"}`} {
+				antes := a.core.n()
+				st, resp := pedir(tok, `{"accountId":"conta-1","path":"/act_999/insights","params":`+params+`}`)
+				if st != 400 || strings.TrimSpace(resp) != `{"error":"parametro nao permitido"}` || a.core.n() != antes {
+					t.Errorf("%s: %d %s, core %d", params, st, resp, a.core.n()-antes)
+				}
+			}
 		}
 	})
 

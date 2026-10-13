@@ -1,10 +1,12 @@
 package meta
 
 import (
+	"encoding/json"
 	"log/slog"
 	"net/http"
 	"regexp"
 	"strings"
+	"unicode"
 
 	"github.com/rbv-co/social-dashboard/api/internal/autz"
 )
@@ -47,18 +49,52 @@ func caminhoDaConta(caminho, adAccount, instagram string) bool {
 // temParam: o corpo traz algum destes nomes em params (chave normalizada, sem diferenciar maiúscula, qualquer valor).
 // "method" é o override da Graph (GET com method=delete apaga): conta como escrita, então a sessão de
 // "entrar como" não passa. "ids" e "batch" escolhem OUTROS objetos fora do caminho ancorado.
-// ponytail: `fields=` com expansão aninhada (ex.: business_discovery) ainda alcança só dado público de
-// outro perfil; olhar o valor de fields se isso virar problema.
+// ponytail: o VALOR de fields/filtering (expansão aninhada) é olhado por paramAlcancaOutraConta, que é
+// lista de negação; trocar por lista de permissão de campos se aparecer aresta nova.
 func temParam(params map[string]any, nomes ...string) bool {
 	for k := range params {
 		// Normaliza a chave: o core tira o "[]" ao montar a query (bling.Query) e a Graph pode aparar
-		// espaços, então "method[]", "Method[0]" e " method" chegam à Graph como `method`.
-		k = strings.TrimSpace(k)
-		if i := strings.IndexByte(k, '['); i >= 0 {
+		// espaços e sufixos, então "method[]", "Method[0]", " method", "method.x" e "method\u0000x"
+		// chegam à Graph como `method`: corta no primeiro caractere fora de [A-Za-z0-9_].
+		k = strings.TrimLeftFunc(k, unicode.IsSpace)
+		if i := strings.IndexFunc(k, foraDeToken); i >= 0 {
 			k = k[:i]
 		}
 		for _, n := range nomes {
 			if strings.EqualFold(k, n) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func foraDeToken(r rune) bool {
+	return !(r == '_' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9')
+}
+
+// arestasDeOutraConta: arestas da Graph que, expandidas dentro de um valor de params, saem da conta do
+// pedido (o BM dono, as contas irmãs, as agências). Além destas, qualquer token terminado em "_accounts".
+var arestasDeOutraConta = map[string]bool{
+	"business": true, "businesses": true, "owner": true, "owner_business": true, "agencies": true, "adaccounts": true,
+}
+
+// paramAlcancaOutraConta: o valor de algum param (fields, filtering, ...) nomeia uma aresta que alcança
+// outras contas. A âncora prende só o `path`; a Graph expande arestas aninhadas (`fields=business{owned_ad_accounts{...}}`)
+// com o token único do core, que alcança TODAS as contas do BM. Vale só para quem não vê todas as contas.
+// Não-string entra pelo JSON. Tokens são sequências de [A-Za-z0-9_] em minúsculas, então
+// `instagram_business_account`, `funding_source_details` e `insights` seguem passando.
+// ponytail: lista de negação de arestas que alcançam outras contas; trocar por lista de permissão de
+// campos se aparecer aresta nova.
+func paramAlcancaOutraConta(params map[string]any) bool {
+	for _, v := range params {
+		texto, ok := v.(string)
+		if !ok {
+			b, _ := json.Marshal(v)
+			texto = string(b)
+		}
+		for _, t := range strings.FieldsFunc(strings.ToLower(texto), foraDeToken) {
+			if arestasDeOutraConta[t] || strings.HasSuffix(t, "_accounts") {
 				return true
 			}
 		}
