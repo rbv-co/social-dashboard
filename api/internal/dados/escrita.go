@@ -25,6 +25,14 @@ type Tabela struct {
 	Nome     string // tabela do catálogo (ex.: "equipes")
 	Resposta string // colunas devolvidas, sobre o alias t: a MESMA lista da leitura (ex.: "t.id, t.nome")
 	Autor    string // coluna que recebe quem grava, na criação (ex.: "criado_por"); vazia = nenhuma
+
+	// Conferir (opcional): a regra que o catálogo NÃO enxerga — a linha-mãe visível, a linha nova legível, um
+	// caminho preso à mãe. Roda na MESMA transação, DEPOIS do PodeCriar/PodeEditar/PodeApagar (a linha já
+	// está travada e sabidamente visível: id invisível responde 404 antes, sem oráculo) e ANTES do SQL que
+	// grava. id = "" na criação; campos = nil no apagar; na criação os campos já trazem a coluna Autor.
+	// autz.ErrNegado = 403, autz.ErrNaoEncontrado = 404; outro erro segue ErroDeEscrita. campos é SÓ LEITURA: o gancho não deve alterar o mapa (o que ele mudasse
+	// iria ao SQL sem o PodeX). Plano 5.9 (Ruling 5.9-4).
+	Conferir func(ctx context.Context, tx pgx.Tx, e *autz.Escopo, id string, campos map[string]any) error
 }
 
 var reColuna = regexp.MustCompile(`^[a-z_][a-z0-9_]{0,62}$`)
@@ -123,6 +131,9 @@ func (t Tabela) Criar(ctx context.Context, tx pgx.Tx, cat *autz.Catalogo, e *aut
 	if err := cat.PodeCriar(ctx, tx, e, t.Nome, campos); err != nil {
 		return nil, err
 	}
+	if err := t.conferir(ctx, tx, e, "", campos); err != nil {
+		return nil, err
+	}
 	j, err := json.Marshal(campos)
 	if err != nil {
 		return nil, err
@@ -149,6 +160,9 @@ func (t Tabela) Editar(ctx context.Context, tx pgx.Tx, cat *autz.Catalogo, e *au
 	if err := cat.PodeEditar(ctx, tx, e, t.Nome, id, campos); err != nil {
 		return nil, err
 	}
+	if err := t.conferir(ctx, tx, e, id, campos); err != nil {
+		return nil, err
+	}
 	j, err := json.Marshal(campos)
 	if err != nil {
 		return nil, err
@@ -172,9 +186,20 @@ func (t Tabela) Apagar(ctx context.Context, tx pgx.Tx, cat *autz.Catalogo, e *au
 	if err := cat.PodeApagar(ctx, tx, e, t.Nome, id); err != nil {
 		return err
 	}
+	if err := t.conferir(ctx, tx, e, id, nil); err != nil {
+		return err
+	}
 	_, err := tx.Exec(ctx, `delete from `+pgx.Identifier{t.Nome}.Sanitize()+` where id = @dados_id`,
 		pgx.NamedArgs{"dados_id": id})
 	return err
+}
+
+// conferir roda Tabela.Conferir, se houver.
+func (t Tabela) conferir(ctx context.Context, tx pgx.Tx, e *autz.Escopo, id string, campos map[string]any) error {
+	if t.Conferir == nil {
+		return nil
+	}
+	return t.Conferir(ctx, tx, e, id, campos)
 }
 
 // devolver roda a escrita como CTE e responde a linha pela lista Resposta se quem pede a lê DEPOIS
@@ -280,8 +305,6 @@ func escopoOuErro(w http.ResponseWriter, r *http.Request) *autz.Escopo {
 	return e
 }
 
-var reColunaDaRegra = regexp.MustCompile(`"autz_nova"\."([^"]+)"`) // como autz.colunasDaLinhaNova
-
 // regraTemSuasColunas: coluna que a regra de criar lê, que a struct do corpo declara e que o
 // pedido deixou de mandar é erro do PEDIDO (400 "Informe …"), não 500 com log a cada tentativa.
 // Coluna que a struct nem declara continua defeito da rota: autz.PodeCriar responde ErrDeclaracao.
@@ -291,9 +314,9 @@ func (t Tabela) regraTemSuasColunas(w http.ResponseWriter, cat *autz.Catalogo, e
 		ErroDeEscrita(w, err)
 		return false
 	}
-	for _, m := range reColunaDaRegra.FindAllStringSubmatch(f.SQL, -1) {
-		if _, tem := campos[m[1]]; !tem && m[1] != t.Autor && slices.Contains(declaradas, m[1]) {
-			Erro(w, http.StatusBadRequest, "pedido_invalido", "Informe "+m[1]+".")
+	for _, col := range autz.ColunasDaLinhaNova(f) {
+		if _, tem := campos[col]; !tem && col != t.Autor && slices.Contains(declaradas, col) {
+			Erro(w, http.StatusBadRequest, "pedido_invalido", "Informe "+col+".")
 			return false
 		}
 	}

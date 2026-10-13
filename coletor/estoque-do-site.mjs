@@ -184,7 +184,7 @@ async function main() {
   // CORE_LEITURA_ESTOQUE_DO_SITE=true lê o saldo do espelho do core (sem login nem Bling).
   // Desligada (padrão): caminho antigo, idêntico.
   const saldo = await escolherFonte('ESTOQUE_DO_SITE', process.env, {
-    bling: async () => saldoDoIguatemi(await loginServico(), skus),
+    bling: async () => saldoDoIguatemi(await loginServico({ naApi: true }), skus),
     core: () => saldoDoDepositoPorSku(clienteDoAmbiente(process.env), {
       skus, depositoId: DEPOSITO_IGUATEMI, maxIdadeMin: Number(process.env.CORE_ESPELHO_MAX_IDADE_MIN) || 0,
     }),

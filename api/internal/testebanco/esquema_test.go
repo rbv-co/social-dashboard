@@ -3,7 +3,9 @@ package testebanco
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"reflect"
+	"regexp"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -27,22 +29,25 @@ func TestEsquemaDeProducaoComOsGatilhosVerbatim(t *testing.T) {
 	if _, err := p.Exec(ctx, `
 		insert into usuarios (id, email) values ('`+super+`', 'breno@rbvcompany.com'), ('`+admin+`', 'admin@x.com'),
 		  ('`+outra+`', 'outra@x.com'), ('`+erick+`', 'erick@rbvcompany.com');
-		insert into profiles (id, email, role, is_superadmin) values ('`+super+`', 'breno@rbvcompany.com', 'admin', true),
-		  ('`+admin+`', 'admin@x.com', 'admin', false), ('`+outra+`', 'outra@x.com', 'viewer', false),
+		-- a FICHA is_superadmin vale o contrário do e-mail de propósito: is_superadmin() lê a lista de e-mails,
+		-- então o super por e-mail (ficha falsa) passa e o admin com a ficha marcada é barrado
+		insert into profiles (id, email, role, is_superadmin) values ('`+super+`', 'breno@rbvcompany.com', 'admin', false),
+		  ('`+admin+`', 'admin@x.com', 'admin', true), ('`+outra+`', 'outra@x.com', 'viewer', false),
 		  ('`+erick+`', 'erick@rbvcompany.com', 'admin', true);
 		insert into canais_grupos (id, nome) values ('`+grupo+`', 'Varejo');
 		insert into bling_lojas (loja_id, nome, grupo_id) values (3, 'Loja 3', '`+grupo+`');
 		insert into equipes (id, nome, canal_loja_id, atualizado_em) values ('`+time1+`', 'Time 1', 3, '2026-01-01T00:00:00Z');`); err != nil {
 		t.Fatal(err)
 	}
-	var gat []string
-	linhas, _ := p.Query(ctx, `select tgname::text from pg_trigger where not tgisinternal order by 1`)
-	for linhas.Next() {
-		var n string
-		linhas.Scan(&n)
-		gat = append(gat, n)
+	linhas, err := p.Query(ctx, `select tgname::text from pg_trigger where not tgisinternal order by 1`)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if quer := []string{"equipes_atualizado", "trg_espelhar_grupo_do_canal", "trg_espelhar_rename_do_grupo",
+	gat, err := pgx.CollectRows(linhas, pgx.RowTo[string])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if quer := []string{"conteudo_pecas_guarda", "equipes_atualizado", "gt_rascunho_updated_at", "trg_espelhar_grupo_do_canal", "trg_espelhar_rename_do_grupo",
 		"trg_guard_profiles", "trg_impedir_autopromocao"}; !reflect.DeepEqual(gat, quer) {
 		t.Fatalf("gatilhos = %v, esperava %v", gat, quer)
 	}
@@ -79,12 +84,21 @@ func TestEsquemaDeProducaoComOsGatilhosVerbatim(t *testing.T) {
 		from profiles where id in ('` + admin + `', '` + erick + `', '` + outra + `')`); v != "admin/{}/-,admin/{}/-,viewer/{}/-" {
 		t.Errorf("negado gravou: %s", v)
 	}
-	// permitidos, com o rastro de QUEM mudou
+	// permitidos, com o rastro de QUEM mudou e a linha conferida (um no-op silencioso não passa)
+	linhaDe := func(id string) string {
+		return um(`select role || '/' || permissions::text from profiles where id = '` + id + `'`)
+	}
 	if err := como(super, `update profiles set role = 'admin' where id = '`+outra+`'`); err != nil {
 		t.Errorf("super por e-mail não mudou o cargo: %v", err)
 	}
+	if v := linhaDe(outra); v != "admin/{}" {
+		t.Errorf("depois do super mudar o cargo: %s", v)
+	}
 	if err := como(admin, `update profiles set permissions = '{"frota":["ver"]}' where id = '`+outra+`'`); err != nil {
 		t.Errorf("admin não mudou permissões de outra pessoa: %v", err)
+	}
+	if v := linhaDe(outra); v != `admin/{"frota": ["ver"]}` {
+		t.Errorf("depois do admin mudar as permissões: %s", v)
 	}
 	if v := um(`select count(*) filter (where action = 'role_change' and actor_id = '` + super + `')::text || '/' ||
 		count(*) filter (where action = 'acesso_change' and actor_id = '` + admin + `')::text from audit_log`); v != "1/1" {
@@ -93,6 +107,9 @@ func TestEsquemaDeProducaoComOsGatilhosVerbatim(t *testing.T) {
 	// sem identidade o guard confia: por isso TODA escrita roda em banco.ComUsuario
 	if _, err := p.Exec(ctx, `update profiles set role = 'viewer' where id = '`+outra+`'`); err != nil {
 		t.Errorf("sem identidade: %v", err)
+	}
+	if v := linhaDe(outra); v != `viewer/{"frota": ["ver"]}` {
+		t.Errorf("sem identidade o cargo tinha de mudar: %s", v)
 	}
 	// espelho do nome do grupo, atualizado_em e default auth.uid()
 	if err := como(super, `update canais_grupos set nome = 'Varejo Físico' where id = '`+grupo+`'`); err != nil {
@@ -112,5 +129,21 @@ func TestEsquemaDeProducaoComOsGatilhosVerbatim(t *testing.T) {
 	}
 	if v := um(`select criado_por::text from equipes_membros`); v != super {
 		t.Errorf("criado_por = %s, esperava quem gravou", v)
+	}
+}
+
+// Os arquivos de tabelas das fatias têm de usar dois dígitos (01-tabelas-5-02.sql): fs.Glob ordena por
+// nome e 5-10 viria antes de 5-2, quebrando FK de uma fatia para a de número menor. O 02-gatilhos.sql
+// (gerado) vem depois de todas.
+func TestNomesDosArquivosDeEsquema(t *testing.T) {
+	arquivos, err := fs.Glob(esquemaSQL, "esquema/*.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	re := regexp.MustCompile(`^esquema/(01-tabelas-5-[0-9]{2}|02-gatilhos|03-funcoes-5-[0-9]{2})\.sql$`)
+	for _, a := range arquivos {
+		if !re.MatchString(a) {
+			t.Errorf("%s: o nome tem de ser 01-tabelas-5-NN.sql, 02-gatilhos.sql ou 03-funcoes-5-NN.sql (dois dígitos; as 03 são funções fora do gerador, carregadas depois do 02)", a)
+		}
 	}
 }

@@ -181,6 +181,20 @@ func dono(c string) pred {
 	})
 }
 
+// VeTodasAsContas: pode_ver_conta é verdadeiro para QUALQUER conta — conta ativa, com perfil, e papel
+// 'admin', super-admin pela FICHA ou allowed_accounts nulo. Lista vazia ('{}') NÃO é "todas": é nenhuma.
+// Super-admin só por e-mail (is_superadmin()) não entra: a função lê p.is_superadmin.
+func VeTodasAsContas(e *Escopo) bool {
+	return e != nil && e.Ativo && e.TemPerfil && (e.Papel == "admin" || e.SuperFicha || e.TodasContas)
+}
+
+// PodeVerConta é pode_ver_conta(conta) (02-funções.csv:1914) avaliado em Go para uma conta NÃO nula: a
+// regra das restritivas so_contas_permitidas para o que não é tabela — o meta-proxy e as rotas ao vivo
+// (Ruling 34 do mestre, 5.6-4). Comparação exata de texto, como `p_conta = any(allowed_accounts::text[])`.
+func PodeVerConta(e *Escopo, conta string) bool {
+	return VeTodasAsContas(e) || (e != nil && e.Ativo && e.TemPerfil && slices.Contains(e.Contas, conta))
+}
+
 // podeVerConta(c): conta_ativa() and exists(perfil com role admin, is_superadmin,
 // allowed_accounts nulo, conta nula ou conta em allowed_accounts::text[]).
 func podeVerConta(c string) pred {
@@ -188,7 +202,7 @@ func podeVerConta(c string) pred {
 		if !e.Ativo || !e.TemPerfil {
 			return "false"
 		}
-		if e.Papel == "admin" || e.SuperFicha || e.TodasContas {
+		if VeTodasAsContas(e) {
 			return "true"
 		}
 		x := col(alias, c)

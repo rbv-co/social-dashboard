@@ -250,3 +250,48 @@ func TestErroDeConfiguracaoNaoVazaOToken(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+func TestCarregarChavesDeCusto(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://x")
+	t.Setenv("ANTHROPIC_ADMIN_KEY", " sk-ant-admin-falsa-123 ")
+	t.Setenv("OPENAI_ADMIN_KEY", " sk-admin-falsa-456\n") // espaço e quebra de linha de .env/segredo copiado
+	c, err := Carregar()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.AnthropicAdmin != "sk-ant-admin-falsa-123" || c.OpenAIAdmin != "sk-admin-falsa-456" {
+		t.Fatalf("%q %q", c.AnthropicAdmin, c.OpenAIAdmin)
+	}
+	for _, s := range []string{"sk-ant-admin-falsa-123", "sk-admin-falsa-456"} {
+		if !slices.Contains(c.Segredos(), s) {
+			t.Errorf("%q fora de Segredos()", s)
+		}
+	}
+}
+
+func TestChaveDaIATrafego(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://x")
+	t.Setenv("ANTHROPIC_API_KEY_TRAFEGO", " SEGREDO-ia ")
+	c, err := Carregar()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.IATrafego != "SEGREDO-ia" || !slices.Contains(c.Segredos(), "SEGREDO-ia") {
+		t.Fatalf("%q %v", c.IATrafego, c.Segredos())
+	}
+}
+
+func TestCarregarGitHubPAT(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://x")
+	t.Setenv("GITHUB_PAT", "  SEGREDO-x  ")
+	c, err := Carregar()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.GitHubPAT != "SEGREDO-x" {
+		t.Fatalf("GitHubPAT = %q", c.GitHubPAT)
+	}
+	if !slices.Contains(c.Segredos(), "SEGREDO-x") {
+		t.Fatal("GITHUB_PAT fora de Segredos()")
+	}
+}

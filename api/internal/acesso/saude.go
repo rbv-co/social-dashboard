@@ -21,18 +21,8 @@ var consultaConferencias = dados.Consulta{Tabela: "data_integrity_checks", Alias
 	Ordens:      map[string]string{"checked_date": "t.checked_date", "created_at": "t.created_at"},
 	OrdemPadrao: "t.created_at desc", Desempate: "t.id"}
 
-const colunasExecucao = `t.id, t.run_at, t.robo, t.acao, t.modelo, t.input_tokens, t.output_tokens, t.chamadas, ` +
-	`t.usd, t.duracao_ms, t.itens, t.unidade, t.status, t.detalhe, t.github_run_id, t.created_at`
-
-// GET /saude/ia-execucoes. Regra ia_exec_select: true. Rota do admin do 5.1, com colunas declaradas;
-// a do 5.12 (/status-ia/execucoes, pacote paineis) é outra rota e não é tocada aqui.
-var consultaExecucoes = dados.Consulta{Tabela: "ia_execucoes", Alias: "t",
-	SQL:    `select ` + colunasExecucao + ` from ia_execucoes t`,
-	Ordens: map[string]string{"run_at": "t.run_at"}, OrdemPadrao: "t.run_at desc", Desempate: "t.id"}
-
+// /saude/ia-execucoes NÃO é montada aqui (Ruling 5.1-16): é a /status-ia/execucoes do 5.12.
 func montarSaude(r chi.Router, p *pgxpool.Pool) {
 	deve(consultaConferencias.Validar(autz.Producao))
-	deve(consultaExecucoes.Validar(autz.Producao))
 	r.Get("/saude/conferencias", consultaConferencias.Handler(p, autz.Producao))
-	r.Get("/saude/ia-execucoes", consultaExecucoes.Handler(p, autz.Producao))
 }

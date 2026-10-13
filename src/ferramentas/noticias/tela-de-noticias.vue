@@ -21,6 +21,9 @@ import { onMounted } from 'vue'
 import BarraDeTopo from '../../compartilhado/barra-de-topo.vue'
 import { useRouter } from 'vue-router'
 import { sbClient } from '../../compartilhado/conectar-no-banco-de-dados.js'
+// Chave `paineis` (Plano 7): as três leituras pelo 5.12.
+import { areaNaApi } from '../../compartilhado/api.js'
+import { lerDaApi } from '../../compartilhado/buscar-e-salvar-dados.js'
 
 const router = useRouter()
 
@@ -105,19 +108,25 @@ async function loadNoticias(){
   let recentes=[];
   // consolidado por data: carrega as ~6 edições mais recentes (≈ mês atual + anterior) p/ poder
   // puxar hero/resumo de edições passadas quando a nova vier magra
-  try{const rd=await sbClient.from('noticias_concorrentes').select('rodada').order('rodada',{ascending:false}).limit(1200);
-    recentes=[...new Set((rd.data||[]).map(r=>r.rodada).filter(Boolean))].slice(0,6);}catch(e){}
-  let q=sbClient.from('noticias_concorrentes').select('*').order('rodada',{ascending:false}).order('destaque',{ascending:false}).order('created_at',{ascending:false});
+  const naApi=areaNaApi('paineis');
+  // Pela API, /noticias/rodadas já vem distinto e do mais novo ao mais antigo.
+  try{if(naApi){const rd=await lerDaApi('/noticias/rodadas',{limite:6});recentes=rd.map(r=>r.rodada).filter(Boolean);}
+    else{const rd=await sbClient.from('noticias_concorrentes').select('rodada').order('rodada',{ascending:false}).limit(1200);
+    recentes=[...new Set((rd.data||[]).map(r=>r.rodada).filter(Boolean))].slice(0,6);}}catch(e){}
+  let data,error;
+  if(naApi){const linhas=await lerDaApi('/noticias/concorrentes',recentes.length?{rodada:recentes.join(',')}:undefined);data=linhas;error=linhas.erro||null;}
+  else{let q=sbClient.from('noticias_concorrentes').select('*').order('rodada',{ascending:false}).order('destaque',{ascending:false}).order('created_at',{ascending:false});
   if(recentes.length)q=q.in('rodada',recentes);
-  const{data,error}=await q;
+  ({data,error}=await q);}
   if(error){body.innerHTML='<div class="np-empty"><h3>Erro ao carregar</h3><p>'+_npEsc(error.message)+'</p></div>';return;}
   _npData=data||[];
   const rodadas=[...new Set(_npData.map(n=>n.rodada))].filter(Boolean).sort().reverse();
   _npRod=rodadas[0]||null;
   document.getElementById('np-meta').textContent=_npRod?('Edição '+_npFmtDate(_npRod)):'Sem dados';
   // resumão escrito do mercado (1 por edição) — pega o mais recente disponível
-  try{const pr=await sbClient.from('noticias_panorama').select('rodada,conteudo_md,modelo,created_at').order('rodada',{ascending:false}).limit(1);
-    _npPano=(pr.data&&pr.data[0])||null;}catch(e){_npPano=null;}
+  try{if(naApi){const pr=await lerDaApi('/noticias/panorama',{limite:1});_npPano=pr[0]||null;}
+    else{const pr=await sbClient.from('noticias_panorama').select('rodada,conteudo_md,modelo,created_at').order('rodada',{ascending:false}).limit(1);
+    _npPano=(pr.data&&pr.data[0])||null;}}catch(e){_npPano=null;}
   _npRenderTabs();
 }
 function _npRenderTabs(){

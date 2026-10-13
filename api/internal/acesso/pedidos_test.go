@@ -3,6 +3,7 @@ package acesso
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -18,6 +19,7 @@ const contaPedidos = `select count(*)::text from access_requests`
 func pedidoPublico(h http.Handler, ip, corpo string, cabecalhos ...string) *httptest.ResponseRecorder {
 	r := httptest.NewRequest("POST", "/pedir-acesso", strings.NewReader(corpo))
 	r.RemoteAddr = ip
+	r.Header.Set("Content-Type", "application/json") // as telas mandam; os cabeçalhos do teste podem trocar
 	for i := 0; i+1 < len(cabecalhos); i += 2 {
 		r.Header.Set(cabecalhos[i], cabecalhos[i+1])
 	}
@@ -116,6 +118,84 @@ func TestPedirAcessoPublico(t *testing.T) {
 	}
 }
 
+// Rota anônima: um <form> de outro site usa o navegador (e o IP) do visitante, e só consegue
+// mandar text/plain, multipart ou urlencoded sem preflight. Exigir application/json fecha isso
+// (o limite por IP não pode ser queimado por terceiros). 415 antes de ler o corpo e sem gravar.
+func TestPedirAcessoExigeJSON(t *testing.T) {
+	m := novoMundo(t)
+	h := roteadorPublico(m)
+	const ip = "203.0.113.60:1"
+	corpo := `{"name":"Form","email":"form@x.com"}`
+	antes := m.um(t, contaPedidos)
+	for _, ct := range []string{"text/plain", "text/plain;charset=UTF-8", "application/x-www-form-urlencoded", "multipart/form-data; boundary=x", "", "application/jsonx", "application/json, text/plain"} {
+		w := pedidoPublico(h, ip, corpo, "Content-Type", ct)
+		if w.Code != 415 || !strings.Contains(w.Body.String(), `"error":"tipo_de_conteudo"`) {
+			t.Errorf("Content-Type %q = %d %s; esperava 415 tipo_de_conteudo", ct, w.Code, w.Body)
+		}
+	}
+	if v := m.um(t, contaPedidos); v != antes {
+		t.Errorf("recusados por tipo gravaram: %s -> %s", antes, v)
+	}
+	for _, ct := range []string{"application/json", "application/json; charset=utf-8", "Application/JSON"} {
+		if w := pedidoPublico(h, ip, corpo, "Content-Type", ct); w.Code != 201 {
+			t.Errorf("Content-Type %q = %d %s; esperava 201", ct, w.Code, w.Body)
+		}
+	}
+}
+
+// O 415 vem ANTES dos limitadores: um <form> de outro site (text/plain) não gasta a cota por IP de quem é
+// legítimo nem o teto global.
+func TestPedirAcessoTipoErradoNaoGastaCota(t *testing.T) {
+	m := novoMundo(t)
+	h := roteadorPublico(m)
+	const bom = `{"name":"Cota","email":"cota@x.com"}`
+	const ip = "203.0.113.70:1"
+	for i := 0; i < LimitePedirAcesso; i++ {
+		if w := pedidoPublico(h, ip, bom, "Content-Type", "text/plain"); w.Code != 415 {
+			t.Fatalf("text/plain %d = %d, esperava 415", i, w.Code)
+		}
+	}
+	if w := pedidoPublico(h, ip, bom); w.Code != 201 {
+		t.Errorf("JSON depois de %d text/plain do mesmo IP = %d %s; esperava 201 (o 415 gastou a cota por IP)", LimitePedirAcesso, w.Code, w.Body)
+	}
+	for i := 0; i < TetoGlobalPedirAcesso; i++ {
+		if w := pedidoPublico(h, fmt.Sprintf("198.51.100.%d:1", i+1), bom, "Content-Type", "text/plain"); w.Code != 415 {
+			t.Fatalf("text/plain de IP novo %d = %d, esperava 415", i, w.Code)
+		}
+	}
+	if w := pedidoPublico(h, "192.0.2.70:1", bom); w.Code != 201 {
+		t.Errorf("JSON depois de %d text/plain de IPs distintos = %d %s; esperava 201 (o 415 gastou o teto global)", TetoGlobalPedirAcesso, w.Code, w.Body)
+	}
+}
+
+// Espaço invisível não é nome; espaços em volta do e-mail são aparados (e o que vai para o banco já
+// vem aparado); `ana@[1.2.3.4]` (domínio literal) passa: é endereço válido do net/mail, o que
+// importa é a rota não gravar lixo, e e-mail de pedido só é lido por um admin.
+func TestPedirAcessoApara(t *testing.T) {
+	m := novoMundo(t)
+	h := roteadorPublico(m)
+	const ip = "203.0.113.61:1"
+	antes := m.um(t, contaPedidos)
+	for _, nome := range []string{`\u200b`, `\u200b\u200b \u200b`, `\ufeff`, `\u00a0\u200d`} {
+		w := pedidoPublico(h, ip, `{"name":"`+nome+`","email":"inv@x.com"}`)
+		if w.Code != 400 || !strings.Contains(w.Body.String(), "Nome e email são obrigatórios.") {
+			t.Errorf("nome %q = %d %s; esperava 400", nome, w.Code, w.Body)
+		}
+	}
+	if v := m.um(t, contaPedidos); v != antes {
+		t.Errorf("nome invisível gravou: %s -> %s", antes, v)
+	}
+	if w := pedidoPublico(h, ip, `{"name":"  Cris\u200b ","email":"  cris@x.com\t","message":" oi \n"}`); w.Code != 201 {
+		t.Fatalf("e-mail com espaços em volta = %d %s", w.Code, w.Body)
+	}
+	if v := m.um(t, `select name||'|'||email||'|'||message from access_requests where email like 'cris%'`); v != "Cris\u200b|cris@x.com|oi" {
+		t.Errorf("linha gravada = %q (esperava aparada)", v)
+	}
+	if w := pedidoPublico(h, ip, `{"name":"Literal","email":"ana@[1.2.3.4]"}`); w.Code != 201 {
+		t.Errorf("domínio literal = %d (aceito, registrado como inofensivo)", w.Code)
+	}
+}
+
 // Limites no cantinho certo (conta caracteres, não bytes), resposta uniforme com e-mail repetido
 // (a rota pública não pode servir para descobrir quem já pediu), corpo grande e caractere que o
 // Postgres não guarda.
@@ -195,6 +275,40 @@ func TestPedirAcessoNaoPedeSessaoEOutrosMetodosNaoExistem(t *testing.T) {
 	}
 	if w := pedidoPublico(h, "203.0.113.77:1", `{"name":"Sem sessão","email":"s@x.com"}`); w.Code != 201 {
 		t.Errorf("sem sessão = %d %s", w.Code, w.Body)
+	}
+}
+
+// Ruling 5.1-17: teto global de 100 por hora somando todos os IPs (aceitos e recusados), com o mesmo 429
+// do limite por IP. Quem estoura o PRÓPRIO IP não gasta o teto dos outros (o por IP vem antes).
+func TestPedirAcessoTetoGlobal(t *testing.T) {
+	m := novoMundo(t)
+	h := roteadorPublico(m)
+	const bom, ruim = `{"name":"Teto","email":"teto@x.com"}`, `{"name":"","email":"teto@x.com"}`
+	for i := 0; i < LimitePedirAcesso+5; i++ { // um IP: 10 passam (gastam 10 do teto), 5 levam 429 do IP (não gastam)
+		w := pedidoPublico(h, "203.0.113.1:1", bom)
+		if (i < LimitePedirAcesso) != (w.Code == 201) || (i >= LimitePedirAcesso && w.Code != 429) {
+			t.Fatalf("pedido %d do IP fixo = %d", i, w.Code)
+		}
+	}
+	for i := 0; i < TetoGlobalPedirAcesso-LimitePedirAcesso; i++ { // 90 IPs novos: metade aceita, metade recusada por validação (também contam)
+		corpo, quer := bom, 201
+		if i%2 == 1 {
+			corpo, quer = ruim, 400
+		}
+		if w := pedidoPublico(h, fmt.Sprintf("198.51.100.%d:1", i+1), corpo); w.Code != quer {
+			t.Fatalf("IP novo %d = %d %s, esperava %d (o teto global fechou cedo demais?)", i, w.Code, w.Body, quer)
+		}
+	}
+	antes := m.um(t, contaPedidos)
+	w := pedidoPublico(h, "192.0.2.1:1", bom) // o 101º do total, de um IP que nunca pediu
+	if w.Code != 429 || w.Header().Get("Retry-After") != "3600" || !strings.Contains(w.Body.String(), `"muitas_requisicoes"`) {
+		t.Errorf("pedido além do teto global = %d (Retry-After %q) %s", w.Code, w.Header().Get("Retry-After"), w.Body)
+	}
+	if w := pedidoPublico(h, "192.0.2.2:1", ruim); w.Code != 429 { // recusado por validação também fica atrás do teto
+		t.Errorf("recusado além do teto = %d", w.Code)
+	}
+	if v := m.um(t, contaPedidos); v != antes {
+		t.Errorf("o pedido além do teto gravou: %s -> %s", antes, v)
 	}
 }
 

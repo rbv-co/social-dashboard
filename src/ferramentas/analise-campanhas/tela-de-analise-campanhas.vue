@@ -68,6 +68,10 @@ import { onMounted, onUnmounted } from 'vue'
 import BarraDeTopo from '../../compartilhado/barra-de-topo.vue'
 import { useRouter } from 'vue-router'
 import { sbClient, SUPABASE_URL, SUPABASE_ANON_KEY } from '../../compartilhado/conectar-no-banco-de-dados.js'
+// Chave `edges-core` (Plano 7): meta-proxy pela API em Go.
+import { areaNaApi, fetchDaApi, trocarCodigoPorFrase } from '../../compartilhado/api.js'
+// Chave `meta` (Plano 7): as tabelas do 5.6 pela API (adFetch e os .from).
+import { tabelaNaApi, fetchPostgrest } from '../../compartilhado/banco-pela-api.js'
 import { estado, hasPermission } from '../../compartilhado/controle-de-login-e-usuario.js'
 import { adminToast } from '../../compartilhado/avisos.js'
 // Traduz 401/42501 para uma frase que o dono entende. Ver seção 9 do
@@ -118,18 +122,21 @@ const logoEscuroUrl = '/midia/LOGOTIPOBRENOBRANCO.png'
 /* ── Helpers copiados do legado (self-contidos) ── */
 function escHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function adTok(){return estado.currentSession?.access_token||SUPABASE_ANON_KEY;}
-function adFetch(path,opts={}){return fetch(`${SUPABASE_URL}/rest/v1/${path}`,{...opts,headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${adTok()}`,'Content-Type':'application/json',...(opts.headers||{})}});}
+// Tabela cuja área já fala com a API em Go (Plano 7): a mesma URL traduzida para a rota.
+function adFetch(path,opts={}){if(tabelaNaApi(String(path).split('?')[0]))return fetchPostgrest(path,opts);return fetch(`${SUPABASE_URL}/rest/v1/${path}`,{...opts,headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${adTok()}`,'Content-Type':'application/json',...(opts.headers||{})}});}
 async function metaFetch(path,params,accountId){
-  const{data:{session}}=await sbClient.auth.getSession();
-  if(!session)throw new Error('Não autenticado');
+  const naApi=areaNaApi('edges-core');
+  const{data:{session}}=naApi?{data:{session:null}}:await sbClient.auth.getSession();
+  if(!naApi&&!session)throw new Error('Não autenticado');
   const ctrl=new AbortController();const timer=setTimeout(()=>ctrl.abort(),15000);
   try{
-    const r=await fetch(SUPABASE_URL+'/functions/v1/meta-proxy',{
+    const corpo=JSON.stringify({accountId,path,params});
+    const r=naApi?await fetchDaApi('/meta-proxy',{method:'POST',signal:ctrl.signal,headers:{'Content-Type':'application/json'},body:corpo}):await fetch(SUPABASE_URL+'/functions/v1/meta-proxy',{
       method:'POST',signal:ctrl.signal,
       headers:{'Authorization':'Bearer '+session.access_token,'apikey':SUPABASE_ANON_KEY,'Content-Type':'application/json'},
-      body:JSON.stringify({accountId,path,params})
+      body:corpo
     });
-    const d=await r.json();
+    const d=naApi?trocarCodigoPorFrase(r.status,await r.json()):await r.json();
     if(d&&d.error)throw new Error((d.error&&d.error.message)||d.error||'Meta API error');
     return d;
   }finally{clearTimeout(timer);}

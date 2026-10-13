@@ -88,28 +88,51 @@ function estaVencida(analise, agoraMs) {
   return ate != null && agoraMs >= ate;
 }
 
+// O PAR CONTA + CAMPANHA (Plano 7, contrato do 5.7). A decisão vale para a
+// análise da MESMA campanha na MESMA conta. Conta ausente de um dos lados
+// (decisão antiga, ou leitura que não trouxe a coluna) casa só pela campanha,
+// como sempre foi — é o que mantém o comportamento quando não há conta a comparar.
+function mesmaConta(a, b) {
+  return a == null || b == null || String(a) === String(b);
+}
+
+// As decisões que passam no `filtro`, agrupadas por campanha (a lista inteira:
+// quem consulta escolhe a mais recente DA CONTA certa, com `maisRecenteDaConta`).
+function decisoesPorCampanha(decisoes, filtro) {
+  const m = new Map();
+  for (const d of decisoes || []) {
+    if (!d || d.campaign_id == null || !filtro(d)) continue;
+    const k = String(d.campaign_id);
+    if (!m.has(k)) m.set(k, []);
+    m.get(k).push(d);
+  }
+  return m;
+}
+
+function maisRecenteDaConta(lista, conta) {
+  let melhor = null;
+  for (const d of lista || []) {
+    if (!mesmaConta(conta, d.account_id)) continue;
+    if (!melhor || (quando(d.decidido_em) ?? 0) > (quando(melhor.decidido_em) ?? 0)) melhor = d;
+  }
+  return melhor;
+}
+
 // Monta a fila a partir das análises do robô e das decisões já tomadas.
 // `decisoes` é uma lista; vale a mais recente de cada campanha.
 // → { pendentes, vencidas, silenciadas, respondidas } — as três últimas existem
 //   pra tela poder CONTAR o que escondeu, em vez de sumir com tudo em silêncio.
 export function montarFila(analises, decisoes, agora) {
   const agoraMs = quando(agora) ?? Date.now();
-  const porCampanha = new Map();
-  for (const d of decisoes || []) {
-    if (!d || d.campaign_id == null) continue;
-    // Só decisões de ORÇAMENTO calam a sugestão de orçamento. Pausar os
-    // criativos de uma campanha não responde se a verba dela deve subir — são
-    // perguntas independentes, e sem este filtro uma calaria a outra.
-    if (d.escopo && d.escopo !== 'orcamento') continue;
-    const chave = String(d.campaign_id);
-    const atual = porCampanha.get(chave);
-    if (!atual || (quando(d.decidido_em) ?? 0) > (quando(atual.decidido_em) ?? 0)) porCampanha.set(chave, d);
-  }
+  // Só decisões de ORÇAMENTO calam a sugestão de orçamento. Pausar os
+  // criativos de uma campanha não responde se a verba dela deve subir — são
+  // perguntas independentes, e sem este filtro uma calaria a outra.
+  const porCampanha = decisoesPorCampanha(decisoes, (d) => !d.escopo || d.escopo === 'orcamento');
 
   const saida = { pendentes: [], vencidas: [], silenciadas: [], respondidas: [] };
   for (const a of analises || []) {
     if (!a || a.campaign_id == null || !pedeAcao(a)) continue;
-    const d = porCampanha.get(String(a.campaign_id)) || null;
+    const d = maisRecenteDaConta(porCampanha.get(String(a.campaign_id)), a.account_id);
     const item = { ...a, decisao: d };
     // Ordem importa: o silêncio de uma recusa vale mesmo sobre análise nova, e
     // é por isso que ele é checado ANTES de "já respondida".
@@ -200,13 +223,7 @@ export function mesclarSaude(fila, saudes, decisoesSaude, agora) {
   // A decisão mais recente de saúde por campanha. Mesma semântica das outras: a
   // dispensa cala até `silenciar_ate`, e alerta MEDIDO depois da decisão volta a
   // perguntar (a situação mudou, e calar aí esconderia piora real).
-  const decididas = new Map();
-  for (const d of decisoesSaude || []) {
-    if (!d || d.campaign_id == null || d.escopo !== 'saude') continue;
-    const k = String(d.campaign_id);
-    const atual = decididas.get(k);
-    if (!atual || (quando(d.decidido_em) ?? 0) > (quando(atual.decidido_em) ?? 0)) decididas.set(k, d);
-  }
+  const decididas = decisoesPorCampanha(decisoesSaude, (d) => d.escopo === 'saude');
 
   const jaNaFila = new Set(pendentes.concat(f.vencidas || [], f.silenciadas || [], f.respondidas || [])
     .map((i) => String(i.campaign_id)));
@@ -221,7 +238,7 @@ export function mesclarSaude(fila, saudes, decisoesSaude, agora) {
   for (const [id, s] of porCampanha) {
     if (jaNaFila.has(id)) continue;
     if (!s.saude || s.saude.nivel !== 'alerta') continue;
-    const d = decididas.get(id);
+    const d = maisRecenteDaConta(decididas.get(id), s.account_id);
     if (d) {
       const ate = quando(d.silenciar_ate);
       const calada = ate != null && agoraMs < ate;
@@ -271,19 +288,13 @@ export function anexarCriativos(fila, criativos, decisoesCriativos) {
 
   // Campanha cujos criativos já foram respondidos não pergunta de novo até o
   // robô reanalisar. Mesma lógica de `jaRespondida`, no escopo 'criativos'.
-  const respondidos = new Map();
-  for (const d of decisoesCriativos || []) {
-    if (!d || d.campaign_id == null || d.escopo !== 'criativos') continue;
-    const k = String(d.campaign_id);
-    const atual = respondidos.get(k);
-    if (!atual || (quando(d.decidido_em) ?? 0) > (quando(atual.decidido_em) ?? 0)) respondidos.set(k, d);
-  }
+  const respondidos = decisoesPorCampanha(decisoesCriativos, (d) => d.escopo === 'criativos');
 
   const porCampanha = new Map();
   for (const c of criativos || []) {
     if (!c || c.campaign_id == null || !c.ad_id) continue;
     const k = String(c.campaign_id);
-    const decisao = respondidos.get(k);
+    const decisao = maisRecenteDaConta(respondidos.get(k), c.account_id);
     // A decisão vale para os criativos que existiam quando foi tomada; análise
     // nova (criativo novo, ou reavaliação) volta a perguntar.
     if (decisao && (quando(decisao.decidido_em) ?? 0) >= (quando(c.analisado_em) ?? 0)) continue;

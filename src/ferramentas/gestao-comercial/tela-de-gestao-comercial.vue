@@ -33,6 +33,10 @@ import { onMounted, ref, computed } from 'vue'
 import BarraDeTopo from '../../compartilhado/barra-de-topo.vue'
 import { useRouter } from 'vue-router'
 import { sbClient } from '../../compartilhado/conectar-no-banco-de-dados.js'
+// Chave `edges-core` (Plano 7): bling-proxy pela API em Go.
+import { invocarNaArea } from '../../compartilhado/api.js'
+// Chave `admin` (Plano 7): `equipes_membros` pela API (5.1).
+import { deOnde } from '../../compartilhado/banco-pela-api.js'
 import { listaDaResposta, detalheDaResposta } from './resposta-do-bling.js'
 import { hasPermission, estado } from '../../compartilhado/controle-de-login-e-usuario.js'
 import { adminToast } from '../../compartilhado/avisos.js'
@@ -59,7 +63,7 @@ const podeTime = ref(false)
 async function conferirSeGerencioAlgumTime() {
   if (estado.is_superadmin) { podeTime.value = true; return }
   try {
-    const { data } = await sbClient.from('equipes_membros')
+    const { data } = await deOnde(sbClient).from('equipes_membros')
       .select('papel').eq('profile_id', estado.user?.id).in('papel', ['gestor', 'supervisora']).limit(1)
     podeTime.value = !!(data && data.length)
   } catch (e) { podeTime.value = false }
@@ -183,10 +187,10 @@ function gcInfo(key){
 // "Item não encontrado no Bling" em vez de "não consegui consultar agora".
 // A regra de leitura mora em resposta-do-bling.js, com teste.
 async function _gcBlingList(params){
-  return listaDaResposta(await sbClient.functions.invoke('bling-proxy',{body:{endpoint:'produtos',params}}));
+  return listaDaResposta(await invocarNaArea('edges-core', sbClient, 'bling-proxy',{body:{endpoint:'produtos',params}}));
 }
 async function _gcBlingDetalhe(id){
-  return detalheDaResposta(await sbClient.functions.invoke('bling-proxy',{body:{endpoint:'produtos/'+id}}));
+  return detalheDaResposta(await invocarNaArea('edges-core', sbClient, 'bling-proxy',{body:{endpoint:'produtos/'+id}}));
 }
 async function gcAbrirItem(sku){
   sku=String(sku||'').trim();

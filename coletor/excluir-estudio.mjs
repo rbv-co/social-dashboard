@@ -13,7 +13,10 @@
 //   (--dry só valida o guard: não toca no Graph)
 import './lib/carregar-env.mjs';
 import tls from 'node:tls';
-import { loginServico } from './lib/bling-comercial.mjs';
+import { loginServico, urlDaEdge, cabecalhosDaEdge } from './lib/bling-comercial.mjs';
+// Plano 7 (5.8): as tabelas `fabrica_*` vão pela API quando CENTRAL_API_* estiver no
+// ambiente (lib/fabrica-banco.mjs); o resto (Storage, gc_*) segue na REST do Supabase.
+import { vaiParaApi, lerFabrica, escreverFabrica } from './lib/fabrica-banco.mjs';
 import { carregarMarcasELojas } from './lib/config-lojas.mjs';
 
 tls.DEFAULT_MAX_VERSION = 'TLSv1.2';
@@ -25,6 +28,7 @@ const REST = URL + '/rest/v1';
 const H = { apikey: SK, Authorization: 'Bearer ' + SK };
 
 async function sbGet(p) {
+  if (vaiParaApi(p)) return lerFabrica(p);
   const r = await fetch(REST + p, { headers: H });
   if (!r.ok) throw new Error('GET ' + p + ' ' + r.status + ' ' + (await r.text()).slice(0, 200));
   return r.json();
@@ -44,9 +48,10 @@ async function chamarProxy(body) {
   let ultimoErro;
   for (let tentativa = 1; tentativa <= MAX_TENTATIVAS; tentativa++) {
     try {
-      const r = await fetch(URL + '/functions/v1/meta-proxy', {
+      // o token escolhe o caminho: srv_ (robo-fabrica) → API; JWT → edge do Supabase
+      const r = await fetch(urlDaEdge('meta-proxy', TOKEN), {
         method: 'POST',
-        headers: { Authorization: 'Bearer ' + TOKEN, apikey: ANON, 'Content-Type': 'application/json' },
+        headers: cabecalhosDaEdge(TOKEN),
         body: JSON.stringify(body),
       });
       const d = await r.json();
@@ -93,7 +98,7 @@ export async function run({ adIds, adsetIds, metaCampaignId, metaCampaignIds, cr
 
   const chamarMeta = metaInjetado || meta;
   if (!metaInjetado) {
-    TOKEN = await loginServico();
+    TOKEN = await loginServico({ naApi: true });
     const { marcaAtiva } = await carregarMarcasELojas(sbGet);
     if (!marcaAtiva) throw new Error('nenhuma marca ativa configurada (fabrica_marcas.ativo)');
     ACCOUNT_ID = marcaAtiva.accountId;

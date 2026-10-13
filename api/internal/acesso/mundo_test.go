@@ -2,6 +2,7 @@ package acesso
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -123,7 +124,7 @@ type mundo struct {
 }
 
 // novoMundo: a fatia de produção, as pessoas e as linhas acima, uma sessão por pessoa (+ "impersonado":
-// a sessão do admin aberta pelo super; + "semPerfil": usuário com sessão de painel e sem linha em
+// a sessão do admin aberta pelo super, e as de "entrar como" num super-admin; + "semPerfil": usuário com sessão de painel e sem linha em
 // profiles) e as rotas de `montar` atrás da mesma cadeia de autorização do grupo de domínio de
 // web.Rotas: auth.Exigir → autz.ComEscopo. Sem o comPrazo, que só limita o tempo (montagem real: Task 11;
 // Ruling 5.1-12).
@@ -156,12 +157,12 @@ func novoMundo(t *testing.T, montar ...func(chi.Router, *pgxpool.Pool)) *mundo {
 		t.Fatal(err)
 	}
 	m.tok["semPerfil"] = tokSP
-	super := idSuper
-	tok, err := s.Criar(ctx, idAdmin, "painel", &super)
-	if err != nil {
-		t.Fatal(err)
-	}
-	m.tok["impersonado"] = tok
+	m.entrarComo(t, "impersonado", idAdmin, idSuper)
+	// o ALVO é super-admin: a regra do catálogo deixaria escrever, só o portão soSessaoPropria recusa.
+	// impersonadoSuper = alvo super pela ficha; superImpersonado = alvo super por e-mail (breno@), entrando
+	// um super como outro super.
+	m.entrarComo(t, "impersonadoSuper", idSuperFicha, idSuper)
+	m.entrarComo(t, "superImpersonado", idSuper, idSuperFicha)
 	if _, err := p.Exec(ctx, linhasDoMundo); err != nil {
 		t.Fatal(err)
 	}
@@ -177,8 +178,18 @@ func novoMundo(t *testing.T, montar ...func(chi.Router, *pgxpool.Pool)) *mundo {
 	return m
 }
 
+// entrarComo abre uma sessão "entrar como" (`impersonador` entra na conta de `alvo`) e a guarda em m.tok[chave].
+func (m *mundo) entrarComo(t *testing.T, chave, alvo, impersonador string) {
+	t.Helper()
+	tok, err := auth.NovoStore(m.p).Criar(context.Background(), alvo, "painel", &impersonador)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.tok[chave] = tok
+}
+
 // resposta faz a requisição como `quem` ("" = sem sessão).
-func (m *mundo) resposta(t *testing.T, quem, metodo, caminho, corpo string) *httptest.ResponseRecorder {
+func (m *mundo) resposta(t testing.TB, quem, metodo, caminho, corpo string) *httptest.ResponseRecorder {
 	t.Helper()
 	r := httptest.NewRequest(metodo, caminho, strings.NewReader(corpo))
 	if quem != "" {
@@ -193,14 +204,14 @@ func (m *mundo) resposta(t *testing.T, quem, metodo, caminho, corpo string) *htt
 	return w
 }
 
-func (m *mundo) pedir(t *testing.T, quem, metodo, caminho, corpo string) (int, string) {
+func (m *mundo) pedir(t testing.TB, quem, metodo, caminho, corpo string) (int, string) {
 	t.Helper()
 	w := m.resposta(t, quem, metodo, caminho, corpo)
 	return w.Code, w.Body.String()
 }
 
 // um roda uma consulta de UMA coluna ::text (nulo = "<nulo>").
-func (m *mundo) um(t *testing.T, sql string, args ...any) string {
+func (m *mundo) um(t testing.TB, sql string, args ...any) string {
 	t.Helper()
 	var v *string
 	if err := m.p.QueryRow(context.Background(), sql, args...).Scan(&v); err != nil {
@@ -221,7 +232,7 @@ type caso struct {
 	efeito, quer                       string
 }
 
-func (m *mundo) rodar(t *testing.T, casos []caso) {
+func (m *mundo) rodar(t testing.TB, casos []caso) {
 	t.Helper()
 	for _, c := range casos {
 		if c.metodo != "" {
@@ -234,6 +245,41 @@ func (m *mundo) rodar(t *testing.T, casos []caso) {
 			if v := m.um(t, c.efeito); v != c.quer {
 				t.Errorf("%s: efeito %q = %q, esperava %q", c.nome, c.efeito, v, c.quer)
 			}
+		}
+	}
+}
+
+// gravaErros troca o testing.T para o teste do `rodar` ver o que ele reprova.
+type gravaErros struct {
+	testing.TB
+	erros []string
+}
+
+func (g *gravaErros) Helper()                   {}
+func (g *gravaErros) Errorf(f string, a ...any) { g.erros = append(g.erros, fmt.Sprintf(f, a...)) }
+func (g *gravaErros) Fatalf(f string, a ...any) { panic(fmt.Sprintf(f, a...)) }
+
+// O `rodar` não pode falhar calado: cada campo do caso (status, tem, naoTem, efeito) tem de reprovar
+// quando diverge (um `naoTem` ou `efeito` quebrado deixaria passar qualquer regressão dos domínios).
+func TestRodarReprovaDivergencias(t *testing.T) {
+	m := novoMundo(t, montarGrupos)
+	g := &gravaErros{TB: t}
+	pede := caso{quem: "vendT1", metodo: "GET", caminho: "/equipes/grupos", status: 200, tem: `"nome":"Varejo"`}
+	m.rodar(g, []caso{pede})
+	if len(g.erros) != 0 {
+		t.Fatalf("o caso correto foi reprovado: %v", g.erros)
+	}
+	for nome, c := range map[string]caso{
+		"status": {quem: "vendT1", metodo: "GET", caminho: "/equipes/grupos", status: 201},
+		"tem":    {quem: "vendT1", metodo: "GET", caminho: "/equipes/grupos", status: 200, tem: "nunca-aparece"},
+		"naoTem": {quem: "vendT1", metodo: "GET", caminho: "/equipes/grupos", status: 200, naoTem: `"nome":"Varejo"`},
+		"efeito": {efeito: contaGrupos(), quer: "99"},
+		"sessão": {quem: "", metodo: "GET", caminho: "/equipes/grupos", status: 200},
+	} {
+		g.erros = nil
+		m.rodar(g, []caso{c})
+		if len(g.erros) == 0 {
+			t.Errorf("o campo %s divergiu e o rodar não reprovou", nome)
 		}
 	}
 }
