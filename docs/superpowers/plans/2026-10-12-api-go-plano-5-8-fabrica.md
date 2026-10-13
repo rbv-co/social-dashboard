@@ -558,7 +558,7 @@ E em `api/internal/config/config.go`: o campo `GitHubPAT string // GITHUB_PAT: t
 - `api/internal/fabrica/fabrica.go` (abaixo): a doc do pacote passa a ser esta (a linha `// Package fabrica: …` sai de `purga.go`, que fica igual no resto), `Fabricante`, `soFabricante`, `soSessaoPropria`, `deve`, `responder` (corpo das edges: `{"error":…,"detail":…}`, `{"ok":true}`) e os ajudantes de validação de `json.RawMessage` que as Tasks 4–9 usam (moram aqui para elas andarem em paralelo).
 - `Fabricante` = a policy de escrita (`fab_camp_write`/`fab_criativos_write`) como regra só de quem pede: perfil existente E ativo (a subconsulta em `profiles` passa pela RLS `auth_read_profiles`: Ruling 6 do mestre) E (papel `admin` OU `is_superadmin` da ficha OU chave `meta.fabrica` em `permissions`, o `?` do jsonb — `Escopo.Chaves`, que também casa o texto de um array no topo). As edges liam o mesmo trio com `hasOwnProperty` (que NÃO casa array no topo) e sem olhar `disabled`: Ruling 5.8-3.
 - `auth.SoServico` (SÓ se o pré-voo não a achou): o código EXATO abaixo, em `api/internal/auth/servico.go`, com `servico_test.go`. Quando o 5.13 for mesclado, a versão dele substitui esta (mesma assinatura; conflito = apagar este arquivo).
-- Teste (interno): `novoMundo(t, montar...) *mundoteste.Mundo` com a fatia, as pessoas, as linhas e a foto abaixo; sessão `impersonado` = a de `fabricante` aberta por `super`; as sessões de `robo` e `roboSemFabrica` passam a ser de SERVIÇO (`sessaoDeServico`).
+- Teste (interno): `novoMundo(t, montar...) *mundoteste.Mundo` com a fatia, as pessoas, as linhas e a foto abaixo; sessão `impersonado` = a de `fabricanteA1` aberta por `super` (o "entrar como" vê o que o ALVO vê: só A1); as sessões de `robo` e `roboSemFabrica` passam a ser de SERVIÇO (`sessaoDeServico`).
 
 ```go
 // Package fabrica: a Fábrica de Anúncios. A purga diária (worker, Plano 4) e as rotas do sub-plano 5.8:
@@ -806,13 +806,13 @@ func sessaoDeServico(t *testing.T, m *mundoteste.Mundo, chave, id string) {
 	m.Tok[chave] = tok
 }
 
-// novoMundo: a fatia de produção, as pessoas, as linhas, a sessão "impersonado" (a de fabricante aberta
-// por super) e as sessões de SERVIÇO dos dois robôs, com as rotas de `montar` atrás da MESMA cadeia do
+// novoMundo: a fatia de produção, as pessoas, as linhas, a sessão "impersonado" (a de fabricanteA1
+// aberta por super) e as sessões de SERVIÇO dos dois robôs, com as rotas de `montar` atrás da MESMA cadeia do
 // grupo de domínio de web.Rotas.
 func novoMundo(t *testing.T, montar ...func(chi.Router, *pgxpool.Pool)) *mundoteste.Mundo {
 	t.Helper()
 	m := mundoteste.Novo(t, mundoteste.Opcoes{Pessoas: pessoas, Linhas: linhasDaFabrica,
-		Impersonadas: map[string][2]string{"impersonado": {idFabricante, idSuper}}}, montar...)
+		Impersonadas: map[string][2]string{"impersonado": {idFabricanteA1, idSuper}}}, montar...)
 	sessaoDeServico(t, m, "robo", idRobo)
 	sessaoDeServico(t, m, "roboSemFabrica", idRoboSemFabrica)
 	return m
@@ -820,7 +820,7 @@ func novoMundo(t *testing.T, montar ...func(chi.Router, *pgxpool.Pool)) *mundote
 ```
 
 **(b) Testes de aceitação** (`fabrica_test.go`)
-- `TestMundoDaFabrica` (sonda `GET /eco` montada no teste, que escreve `fmt.Sprintf("%t|%s|%t", Fabricante(e), a.Tipo, autz.PodeVerConta(e, A2))`): sem sessão → 401; `fabricante` → `true|painel|true`; `fabricanteA1` → `true|painel|false`; `fabricanteNenhuma` → `true|painel|false`; `adminA1` → `true|painel|true` (papel admin vê toda conta); `super` → `true|painel|true`; `leitor` → `false|painel|true`; `chaveEmLista` → `true|painel|true`; `semModulo` → `false|painel|true`; `desativado` → 401; `robo` → `true|servico|true`; `roboSemFabrica` → `false|servico|true`; `impersonado` → `true|painel|true`. E as linhas: `select count(*)::text from fabrica_criativos` = `4`; a foto não é vazia.
+- `TestMundoDaFabrica` (sonda `GET /eco` montada no teste, que escreve `fmt.Sprintf("%t|%s|%t", Fabricante(e), a.Tipo, autz.PodeVerConta(e, A2))`): sem sessão → 401; `fabricante` → `true|painel|true`; `fabricanteA1` → `true|painel|false`; `fabricanteNenhuma` → `true|painel|false`; `adminA1` → `true|painel|true` (papel admin vê toda conta); `super` → `true|painel|true`; `leitor` → `false|painel|true`; `chaveEmLista` → `true|painel|true`; `semModulo` → `false|painel|true`; `desativado` → 401; `robo` → `true|servico|true`; `roboSemFabrica` → `false|servico|true`; `impersonado` → `true|painel|false`. E as linhas: `select count(*)::text from fabrica_criativos` = `4`; a foto não é vazia.
 - `TestFabricanteIgualAPolicy`: para cada pessoa (inclusive `desativado` e os robôs), `e := autz.CarregarEscopo(ctx, m.P, id)`; para `fabrica_campanhas` (linha `{"nome":"x"}`) e `fabrica_criativos` (linha `{"arquetipo":"produto","template":"t","formato":"f"}`), `f := autz.Producao.Filtro(e, <tabela>, autz.Criar, "autz_nova")` e `ok := autz.Conferir(ctx, m.P, f, <tabela>, linha)`: `ok == Fabricante(e)` sempre, com pelo menos 5 pessoas de cada lado (o teste falha se o mundo deixar de exercitar os dois lados).
 - `TestSoServico` (`auth/servico_test.go`, só se a Task criou o arquivo): ator `painel` → 403 `{"error":"sem_permissao"}`; `servico` → passa; `servico` com `ImpersonadorID` → 403; sem ator → 403.
 - `TestAjudantesDeValidacao` (puro): `texto` recusa `null`, `5`, `{}`; `textoAte("\"  \"", 10, false)` = falso e com `true` = verdadeiro; conta caracteres (`"ção"` cabe em 3); `objeto` aceita `{}` e recusa `[]`/`null`; `lista` aceita `[]` e recusa `{}`; `booleano` só `true`/`false`.
@@ -1015,7 +1015,7 @@ func montarLeituras(r chi.Router, p *pgxpool.Pool) {
 
 **(b) Testes de aceitação** (`TestLeituras`, `TestEscolher`, `m.Rodar`; "intacto" = `fotoDaFabrica` igual à de antes)
 - Abertas (8 tabelas): `fabricante`, `leitor`, `semModulo`, `impersonado`, `robo` → 200 com as linhas; `desativado` → 401; sem sessão → 401.
-- Marcas: `fabricante`, `adminA1`, `super`, `robo` → M1 e M2; `fabricanteA1`, `impersonado`? (não: impersonado é o `fabricante`, vê as duas) — `fabricanteA1` → só M1; `fabricanteNenhuma` → `[]`; `fabricanteA1 ?account_id=<A2>` → `[]`; `?contar=1` → `X-Total-Count: 1` para `fabricanteA1` e `2` para `fabricante`.
+- Marcas: `fabricante`, `adminA1` (papel admin vê toda conta), `super`, `robo` → M1 e M2; `fabricanteA1` e `impersonado` (o alvo é o `fabricanteA1`) → só M1; `fabricanteNenhuma` → `[]`; `fabricanteA1 ?account_id=<A2>` → `[]`; `?contar=1` → `X-Total-Count: 1` para `fabricanteA1` e `2` para `fabricante`.
 - Filtros e ordem: `lojas?ativo=true` → Tivoli e Iguatemi, nessa ordem, sem Dom Pedro; `objetivos?ativo=true` → `engajamento`, `branding`; `objetivos?chave=branding` → uma, com `"pede_desconto":false`; `looks` → as três em `ordem`; `campanhas?aberta=true&purgada=false&status=gerando,pronta,erro&ordem=created_at.desc` → C2 antes de C1, C1 com `"qtd_criativos":2`; `campanhas?aberta=false&ordem=fechada_em.desc&limite=8` → C3 antes de C4; `criativos?limite=1&contar=1` → `X-Total-Count: 4`; `criativos?campanha_id=<C1>&escolhido=true&purgado=false` → só K1; `jobs?campanha_id=<C1>` → J1 (com `"params"` e sem `criado_por`); `jobs?tipo=subir&campanha_id=<C3>&ordem=created_at.desc&limite=1` → J2; `meta-jobs?campanha_id=<C3>,<C2>&com_campanha_meta=true` → MJ1; `meta-jobs?tipo=estudio&campanha_id=<C3>` → MJ1.
 - 400: `campanhas?status=` (vazio), `campanhas?ordem=nome`, `criativos?campanha_id=xyz`, `jobs?criado_por=<id>`, `lojas?limite=1001`.
 - Escolher, permitido: `fabricante` `{"ids":["<K2>","<K1>"],"escolhido":false}` → 200 `{"atualizados":2}`; efeito `select string_agg(escolhido::text, ',' order by id) from fabrica_criativos where id in (K1, K2)` = `false,false`; ids repetidos contam uma vez; `chaveEmLista`, `super`, `adminA1` → 200.
