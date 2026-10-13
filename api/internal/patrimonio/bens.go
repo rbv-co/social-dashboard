@@ -62,6 +62,10 @@ func (c corpoBem) Validar() error { return texto("o nome", c.Nome, 200, false) }
 // POST (CriarSoLegivel: com trava de time só cria o que vai ver — Ruling 5.2-2), PATCH /{id}
 // (PodeEditar: Ler + rw + editar_so_do_meu_time na antiga e na nova) e DELETE /{id} (Ler + rw +
 // apagar_so_do_meu_time). Os gatilhos do bem rodam em banco.ComUsuario; a resposta é a linha DEPOIS deles.
+// pessoa_id é FK para acessos_pessoas (regra de Ler que quem tem só patrimônio não satisfaz): no POST pessoa
+// existente = 201 e inexistente = 403 (CriarSoLegivel); no PATCH inexistente = 409 — Ruling 5.2-17
+// (pessoas_para_escolher() já lista todas as pessoas a quem tem patrimônio; validar contra a regra de Ler
+// impediria pôr responsável num bem).
 var tabelaBens = dados.Tabela{Nome: "patrimonio_bens", Resposta: colunasBem, CriarSoLegivel: true}
 
 func montarBens(r chi.Router, p *pgxpool.Pool) {

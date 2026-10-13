@@ -1,7 +1,6 @@
 package patrimonio
 
 import (
-	"encoding/json"
 	"slices"
 	"testing"
 )
@@ -41,22 +40,13 @@ func TestBensLeitura(t *testing.T) {
 		{Nome: "filtro que não existe não vira filtro silencioso", Quem: "patGeral", Metodo: "GET", Caminho: "/patrimonio/bens?local_id=" + L1, Status: 400},
 		{Nome: "pessoa_id malformado", Quem: "patGeral", Metodo: "GET", Caminho: "/patrimonio/bens?pessoa_id=1%20or%201=1", Status: 400},
 	})
-	// a ordem (ids() ordena; aqui não): numero é o padrão, nome é a outra permitida
+	// a ordem (aqui idsNaOrdem; ids() ordena): numero é o padrão, nome é a outra permitida
 	for caminho, quer := range map[string][]string{
 		"/patrimonio/bens":            {B1, B2, B3, B4, BV, BV2},
 		"/patrimonio/bens?ordem=nome": {B1, B2, BV, BV2, B4, B3}, // Cadeira Tivoli, Cadeira DP, Kwid, Kwid novo, Mesa, Notebook
 	} {
 		_, corpo := m.Pedir(t, "patGeral", "GET", caminho, "")
-		var l []struct {
-			ID string `json:"id"`
-		}
-		if err := json.Unmarshal([]byte(corpo), &l); err != nil {
-			t.Fatalf("%v: %s", err, corpo)
-		}
-		got := make([]string, len(l))
-		for i, x := range l {
-			got[i] = x.ID
-		}
+		got := idsNaOrdem(t, corpo)
 		if !slices.Equal(got, quer) {
 			t.Errorf("%s: ordem %v, esperava %v", caminho, got, quer)
 		}
@@ -64,6 +54,56 @@ func TestBensLeitura(t *testing.T) {
 	if w := m.Resposta(t, "patT1", "GET", "/patrimonio/bens?pessoa_id="+P1+"&contar=1&limite=1", ""); w.Header().Get("X-Total-Count") != "1" {
 		t.Errorf("X-Total-Count = %q (o contador da ficha de Acessos)", w.Header().Get("X-Total-Count"))
 	}
+	// o total é do que CADA pessoa vê (o contador não denuncia o que a regra esconde)
+	for quem, quer := range map[string]string{"patGeral": "6", "patT1": "4", "patT2": "1", "adminT1": "3", "viewer": "0", "frota": "0"} {
+		if w := m.Resposta(t, quem, "GET", "/patrimonio/bens?contar=1&limite=1", ""); w.Header().Get("X-Total-Count") != quer {
+			t.Errorf("X-Total-Count de %s = %q, esperava %s", quem, w.Header().Get("X-Total-Count"), quer)
+		}
+	}
+	// conta com sessão e sem perfil: não vê nada, como o viewer
+	semPerfil(t, m)
+	if st, corpo := m.Pedir(t, "semPerfil", "GET", "/patrimonio/bens", ""); st != 200 || corpo != "[]" {
+		t.Errorf("sem perfil lê %d %s, esperava 200 []", st, corpo)
+	}
+}
+
+// Os recusados de cada rota de escrita: quem não vê o bem recebe o MESMO corpo de quem pede o que não existe
+// (nenhum oráculo), o `id` não se escolhe pelo corpo e quem tem sessão sem perfil não escreve.
+func TestBensRecusasSemOraculo(t *testing.T) {
+	m := novoMundo(t, montarBens)
+	semPerfil(t, m)
+	u := func(id string) string { return "/patrimonio/bens/" + id }
+	for _, c := range []struct{ metodo, corpo string }{{"PATCH", `{"observacao":"x"}`}, {"DELETE", ""}} {
+		stA, alheio := m.Pedir(t, "patT1", c.metodo, u(B2), c.corpo)
+		stN, nenhum := m.Pedir(t, "patT1", c.metodo, u(bemInexistente), c.corpo)
+		if stA != 404 || stN != 404 || alheio != nenhum {
+			t.Errorf("%s: bem alheio %d %s, inexistente %d %s", c.metodo, stA, alheio, stN, nenhum)
+		}
+	}
+	foto := m.Um(t, fotoDoMundo)
+	intacto := "select ((" + fotoDoMundo + ") = '" + foto + "')::text"
+	m.Rodar(t, []caso{
+		{Nome: "id no corpo do POST", Quem: "patGeral", Metodo: "POST", Caminho: "/patrimonio/bens",
+			Corpo: `{"id":"` + bemInexistente + `","nome":"X"}`, Status: 400, Tem: "corpo_invalido", Efeito: intacto, Quer: "true"},
+		{Nome: "id no corpo do PATCH", Quem: "patGeral", Metodo: "PATCH", Caminho: u(B4),
+			Corpo: `{"id":"` + bemInexistente + `"}`, Status: 400, Tem: "corpo_invalido", Efeito: intacto, Quer: "true"},
+		{Nome: "sem perfil não cria", Quem: "semPerfil", Metodo: "POST", Caminho: "/patrimonio/bens", Corpo: `{"nome":"X","local_id":"` + L1 + `"}`,
+			Status: 403, Efeito: intacto, Quer: "true"},
+		{Nome: "sem perfil não edita (404 como quem não vê)", Quem: "semPerfil", Metodo: "PATCH", Caminho: u(B4), Corpo: `{"observacao":"x"}`,
+			Status: 404, Efeito: intacto, Quer: "true"},
+		{Nome: "sem perfil não apaga", Quem: "semPerfil", Metodo: "DELETE", Caminho: u(B4), Status: 404, Efeito: intacto, Quer: "true"},
+	})
+}
+
+// Apagar o bem de um carro: o carro fica, sem a ligação (bem_id nulo: on delete set null).
+func TestBensApagarBemDeCarro(t *testing.T) {
+	m := novoMundo(t, montarBens)
+	m.Rodar(t, []caso{
+		{Nome: "apaga o bem do Kwid", Quem: "patGeral", Metodo: "DELETE", Caminho: "/patrimonio/bens/" + BV, Status: 204,
+			Efeito: "select count(*)::text from patrimonio_bens where id = '" + BV + "'", Quer: "0"},
+		{Nome: "o carro continua", Efeito: "select count(*)::text from frota_veiculos where id = '" + V1 + "'", Quer: "1"},
+		{Nome: "sem a ligação", Efeito: col("frota_veiculos", "bem_id", V1), Quer: "<nulo>"},
+	})
 }
 
 func TestBensEscrita(t *testing.T) {
@@ -145,7 +185,7 @@ func TestBensAdminComTrava(t *testing.T) {
 
 // Ruling 5.2-17 (veja o comentário em patrimonio_test.go): pessoa_id é FK para acessos_pessoas, que
 // quem só tem patrimônio não lê. Aceito e fixado: POST existente 201, inexistente 403 (CriarSoLegivel),
-// PATCH inexistente 409.
+// PATCH inexistente 409. A lista de pessoas que quem tem patrimônio já vê é a RPC pessoas_para_escolher().
 func TestBensPessoaDeAcessos(t *testing.T) {
 	m := novoMundo(t, montarBens)
 	const fantasma = "9e200000-0000-4000-a000-000000000099"
