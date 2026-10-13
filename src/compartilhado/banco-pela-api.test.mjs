@@ -59,7 +59,7 @@ test('eq com aspas (paraEq) e in com lista', async () => {
 
 test('O QUE A ROTA NÃO SABE, A TRADUÇÃO RECUSA: filtro não declarado, embutido, ordem fora com limite', async () => {
   const pedidos = api({ 'GET /acesso/usuarios': [200, []] })
-  for (const c of ['profiles?name=eq.x', 'profiles?select=id,equipes(nome)', 'profiles?order=disabled&limit=5', 'profiles?id=gte.x']) {
+  for (const c of ['profiles?name=eq.x&limit=5', 'profiles?name=gte.x', 'profiles?select=id,equipes(nome)', 'profiles?order=disabled&limit=5', 'profiles?id=gte.x']) {
     const r = await b.fetchPostgrest(c)
     assert.equal(r.ok, false, c)
   }
@@ -177,4 +177,90 @@ test('in com aspas é recusado', async () => {
   const pedidos = api({})
   assert.equal((await b.fetchPostgrest('equipes_membros?papel=in.(' + encodeURIComponent('"a,b",c') + ')')).ok, false)
   assert.equal(pedidos.length, 0)
+})
+/* ── 5.6 — Meta e redes ─────────────────────────────────────────────────── */
+
+test('5.6: faixa de datas vira _de/_ate; period_days lte vira period_days_ate', async () => {
+  const pedidos = api({ 'GET /redes/seguidores': [200, []], 'GET /redes/conteudo': [200, []] })
+  await b.fetchPostgrest('daily_snapshots?account_id=eq.c1&captured_at=gte.2026-09-01&captured_at=lte.2026-10-01&order=captured_at.asc&select=followers_count,captured_at')
+  assert.deepEqual(Object.fromEntries(new URLSearchParams(pedidos[0].busca)), { account_id: 'c1', captured_at_de: '2026-09-01', captured_at_ate: '2026-10-01', ordem: 'captured_at.asc', contar: '1' })
+  await b.fetchPostgrest('content_snapshots?captured_at=eq.2026-10-12&period_days=lte.1&select=account_id,stories_count&order=period_days.asc')
+  assert.deepEqual(Object.fromEntries(new URLSearchParams(pedidos[1].busca)), { captured_at: '2026-10-12', period_days_ate: '1', ordem: 'period_days.asc', contar: '1' })
+})
+
+test('5.6: lido_em gte com data pura vira instante RFC 3339 (meia-noite UTC, como o PostgREST)', async () => {
+  const pedidos = api({ 'GET /redes/leituras-de-seguidores': [200, []] })
+  await b.fetchPostgrest('followers_leituras?select=followers_count,lido_em&account_id=eq.c1&lido_em=gte.2026-10-01&order=lido_em.asc')
+  assert.equal(new URLSearchParams(pedidos[0].busca).get('lido_em_de'), '2026-10-01T00:00:00Z')
+  await b.fetchPostgrest('followers_leituras?account_id=eq.c1&lido_em=gte.' + encodeURIComponent('2026-10-01T03:00:00.000Z'))
+  assert.equal(new URLSearchParams(pedidos[1].busca).get('lido_em_de'), '2026-10-01T03:00:00.000Z')
+})
+
+test('5.6: limite acima do teto da API é recusado (cortar calado daria número menor)', async () => {
+  const pedidos = api({ 'GET /redes/campanhas': [200, []] })
+  const r = await b.fetchPostgrest('campaigns?account_id=eq.c1&limit=5000&select=campaign_id')
+  assert.equal(r.ok, false)
+  assert.equal(pedidos.length, 0)
+})
+
+test('5.6: contarPelaApi lê o X-Total-Count com limite=1', async () => {
+  const pedidos = api({ 'GET /redes/seguidores': [200, [{ account_id: 'c1' }], { 'X-Total-Count': '1213' }] })
+  assert.equal(await b.contarPelaApi('daily_snapshots'), 1213)
+  assert.deepEqual(Object.fromEntries(new URLSearchParams(pedidos[0].busca)), { limite: '1', contar: '1' })
+  api({ 'GET /redes/seguidores': [500, { error: 'erro_interno' }] })
+  assert.equal(await b.contarPelaApi('daily_snapshots'), null)
+})
+
+test('5.6: metas em lote (PUT {metas}) e filtro de campanha por conta (PUT, sem updated_at)', async () => {
+  const pedidos = api({ 'PUT /redes/metas': [200, [{ account_id: 'c1' }]], 'PUT /redes/filtros-de-campanha/c1': [200, { account_id: 'c1', selected_ids: [] }] })
+  await b.consultaPelaApi('social_metas').upsert([{ account_id: 'c1', periodo: 'mes', indicador: 'seguidores', valor: 10 }], { onConflict: 'account_id,periodo,indicador' })
+  assert.deepEqual(pedidos[0].corpo, { metas: [{ account_id: 'c1', periodo: 'mes', indicador: 'seguidores', valor: 10 }] })
+  const r = await b.fetchPostgrest('campaign_filters', { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates' }, body: JSON.stringify({ account_id: 'c1', selected_ids: [], updated_at: '2026-10-12T00:00:00Z' }) })
+  assert.equal(r.ok, true)
+  assert.deepEqual([pedidos[1].chave, pedidos[1].corpo], ['PUT /redes/filtros-de-campanha/c1', { selected_ids: [] }])
+})
+
+test('5.6: conta editada por id vai para PATCH /redes/contas/{id}', async () => {
+  const pedidos = api({ 'PATCH /redes/contas/c1': [200, { id: 'c1', persona: 'x' }] })
+  const r = await b.fetchPostgrest('accounts?id=eq.c1&select=id,persona', { method: 'PATCH', headers: { Prefer: 'return=representation' }, body: '{"persona":"x"}' })
+  assert.deepEqual(await r.json(), [{ id: 'c1', persona: 'x' }])
+  assert.equal(pedidos[0].chave, 'PATCH /redes/contas/c1')
+})
+
+test('o encadeado devolve status como o supabase-js (200, ou o do erro)', async () => {
+  api({ 'GET /redes/contas': [200, [{ id: 'c1', name: 'A' }]] })
+  assert.equal((await b.consultaPelaApi('accounts').select('id,name')).status, 200)
+  api({ 'GET /redes/contas': [401, { error: 'nao_autenticado' }] })
+  assert.equal((await b.consultaPelaApi('accounts').select('id,name')).status, 401)
+})
+
+test('sem limite, a leitura vem INTEIRA: pagina por deslocamento até o X-Total-Count', async () => {
+  const pedidos = []
+  globalThis.fetch = async (url) => {
+    const q = new URL(url, 'http://x').searchParams
+    pedidos.push(Object.fromEntries(q))
+    const d = Number(q.get('deslocamento') || 0)
+    const pag = d === 0 ? Array.from({ length: 1000 }, (_, i) => ({ dia: 'x', hora: i })) : Array.from({ length: 300 }, (_, i) => ({ dia: 'y', hora: i }))
+    return { status: 200, ok: true, text: async () => JSON.stringify(pag), headers: { get: (k) => (k === 'X-Total-Count' ? '1300' : null) } }
+  }
+  const r = await b.fetchPostgrest('campaign_insights_hora?select=dia,hora&dia=gte.2026-10-01&account_id=eq.c1')
+  assert.equal((await r.json()).length, 1300)
+  assert.deepEqual(pedidos.map((p) => p.deslocamento || '0'), ['0', '1000'])
+  assert.equal(pedidos[0].contar, '1')
+})
+
+test('com limite explícito, uma página só (o limite é o que a tela quis)', async () => {
+  const pedidos = api({ 'GET /redes/seguidores': [200, [{ account_id: 'c1', followers_count: 1 }], { 'X-Total-Count': '50' }] })
+  await b.fetchPostgrest('daily_snapshots?account_id=eq.c1&order=captured_at.desc&limit=1&select=followers_count')
+  assert.equal(pedidos.length, 1)
+})
+
+test('filtro que a rota não declara (eq/in, sem limite) vira filtro na tela; com limite, recusa', async () => {
+  api({ 'GET /redes/contas': [200, [{ id: 'a', instagram_id: '1', profile_picture_url: 'u1' }, { id: 'b', instagram_id: '2', profile_picture_url: 'u2' }, { id: 'c', instagram_id: '3', profile_picture_url: 'u3' }], { 'X-Total-Count': '3' }] })
+  const r = await b.consultaPelaApi('accounts').select('instagram_id,profile_picture_url').in('instagram_id', ['1', '3'])
+  assert.deepEqual(r.data, [{ instagram_id: '1', profile_picture_url: 'u1' }, { instagram_id: '3', profile_picture_url: 'u3' }])
+  const s = await b.consultaPelaApi('accounts').select('id').eq('instagram_id', '1').limit(1)
+  assert.equal(s.error.code, 'traducao')
+  const t = await b.consultaPelaApi('accounts').select('id').eq('nao_existe', '1')
+  assert.equal(t.error.code, 'traducao')
 })

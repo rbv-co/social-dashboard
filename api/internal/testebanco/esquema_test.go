@@ -47,7 +47,7 @@ func TestEsquemaDeProducaoComOsGatilhosVerbatim(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if quer := []string{"equipes_atualizado", "trg_espelhar_grupo_do_canal", "trg_espelhar_rename_do_grupo",
+	if quer := []string{"equipes_atualizado", "gt_rascunho_updated_at", "trg_espelhar_grupo_do_canal", "trg_espelhar_rename_do_grupo",
 		"trg_guard_profiles", "trg_impedir_autopromocao"}; !reflect.DeepEqual(gat, quer) {
 		t.Fatalf("gatilhos = %v, esperava %v", gat, quer)
 	}
@@ -140,10 +140,10 @@ func TestNomesDosArquivosDeEsquema(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	re := regexp.MustCompile(`^esquema/(01-tabelas-5-[0-9]{2}|02-gatilhos)\.sql$`)
+	re := regexp.MustCompile(`^esquema/(01-tabelas-5-[0-9]{2}|02-gatilhos|03-funcoes-5-[0-9]{2})\.sql$`)
 	for _, a := range arquivos {
 		if !re.MatchString(a) {
-			t.Errorf("%s: o nome tem de ser 01-tabelas-5-NN.sql (dois dígitos) ou 02-gatilhos.sql", a)
+			t.Errorf("%s: o nome tem de ser 01-tabelas-5-NN.sql, 02-gatilhos.sql ou 03-funcoes-5-NN.sql (dois dígitos; as 03 são funções fora do gerador, carregadas depois do 02)", a)
 		}
 	}
 }

@@ -26,9 +26,17 @@ import { areaNaApi, pedir, fraseDoCorpo } from './api.js'
 
 export class ErroDeTraducao extends Error {}
 
-// Filtro: coluna → { operador do PostgREST → parâmetro da rota }. `lista`
-// marca o parâmetro que aceita vários valores por vírgula (`texto[]` no Go).
+// Filtro: coluna → { operador do PostgREST → parâmetro da rota }. O parâmetro
+// pode vir com uma conversão do valor: `[param, (v) => valor]`.
 const eq = (p) => ({ eq: p })
+// Data/instante com faixa: `col=eq|gte|lte` → `col`, `col_de`, `col_ate` (5.6).
+const faixa = (c) => ({ eq: c, gte: c + '_de', lte: c + '_ate' })
+// `lido_em_de` é INSTANTE (RFC 3339). O PostgREST lia `lido_em=gte.2026-10-01`
+// como meia-noite UTC; a rota quer o mesmo instante escrito por extenso.
+const instante = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(v) ? v + 'T00:00:00Z' : v)
+// O teto de linhas da API (o `max_rows` do Supabase). Pedido acima disso é
+// recusado na tradução: cortar calado devolveria número menor sem aviso.
+export const TETO_DE_LINHAS = 1000
 const ROTAS = {
   // ── 5.1 — admin, equipes e acesso ──
   profiles: {
@@ -72,6 +80,54 @@ const ROTAS = {
     },
     // Só o próprio aparelho sai, pelo endpoint.
     apagarPor: { endpoint: (v) => ({ metodo: 'POST', caminho: '/eu/push/desinscrever', corpo: { endpoint: v } }) },
+  },
+  // ── 5.6 — Meta e redes (métricas) ──
+  accounts: { area: 'meta', rota: '/redes/contas', filtros: {}, ordens: ['name'] },
+  daily_snapshots: {
+    area: 'meta', rota: '/redes/seguidores',
+    filtros: { account_id: eq('account_id'), captured_at: faixa('captured_at') }, ordens: ['captured_at'],
+  },
+  followers_leituras: {
+    area: 'meta', rota: '/redes/leituras-de-seguidores',
+    filtros: { account_id: eq('account_id'), lido_em: { gte: ['lido_em_de', instante] } }, ordens: ['lido_em'],
+  },
+  engagement_snapshots: {
+    area: 'meta', rota: '/redes/engajamento',
+    filtros: { account_id: eq('account_id'), period_days: eq('period_days'), captured_at: faixa('captured_at') }, ordens: ['captured_at'],
+  },
+  content_snapshots: {
+    area: 'meta', rota: '/redes/conteudo',
+    filtros: { account_id: eq('account_id'), period_days: { eq: 'period_days', lte: 'period_days_ate' }, captured_at: faixa('captured_at') },
+    ordens: ['captured_at', 'period_days'],
+  },
+  campaigns: { area: 'meta', rota: '/redes/campanhas', filtros: { account_id: eq('account_id') }, ordens: [] },
+  campaign_adsets: { area: 'meta', rota: '/redes/conjuntos', filtros: { account_id: eq('account_id') }, ordens: [] },
+  ads: { area: 'meta', rota: '/redes/anuncios', filtros: { account_id: eq('account_id') }, ordens: [] },
+  campaign_insights: {
+    area: 'meta', rota: '/redes/insights-de-campanha',
+    filtros: { account_id: eq('account_id'), period_days: eq('period_days'), campaign_id: { eq: 'campaign_id', in: 'campaign_id' }, captured_at: faixa('captured_at') },
+    ordens: ['captured_at'],
+  },
+  account_insights: {
+    area: 'meta', rota: '/redes/insights-da-conta',
+    filtros: { account_id: eq('account_id'), period_days: eq('period_days'), captured_at: faixa('captured_at') }, ordens: ['captured_at'],
+  },
+  campaign_insights_hora: { area: 'meta', rota: '/redes/campanhas-por-hora', filtros: { account_id: eq('account_id'), dia: { gte: 'dia_de' } }, ordens: [] },
+  ad_insights_hora: { area: 'meta', rota: '/redes/anuncios-por-hora', filtros: { account_id: eq('account_id'), dia: { gte: 'dia_de' } }, ordens: [] },
+  perfil_visitas_hora: { area: 'meta', rota: '/redes/visitas-por-hora', filtros: { account_id: eq('account_id'), dia: { gte: 'dia_de' } }, ordens: [] },
+  social_metas: {
+    area: 'meta', rota: '/redes/metas', filtros: { account_id: eq('account_id') }, ordens: [],
+    // o lote é UMA transação (Ruling 7 do 5.6)
+    upsert: (linhas) => ({ metodo: 'PUT', caminho: '/redes/metas', corpo: { metas: linhas } }),
+  },
+  campaign_filters: {
+    area: 'meta', rota: '/redes/filtros-de-campanha', filtros: { account_id: eq('account_id') }, ordens: [],
+    autoria: ['updated_at'], // o servidor carimba
+    upsert: (linhas) => {
+      if (linhas.length !== 1) throw new ErroDeTraducao('campaign_filters: um filtro por conta por vez')
+      const [l] = linhas
+      return { metodo: 'PUT', caminho: `/redes/filtros-de-campanha/${encodeURIComponent(l.account_id)}`, corpo: { selected_ids: l.selected_ids } }
+    },
   },
   data_integrity_checks: {
     area: 'admin', rota: '/saude/conferencias',
@@ -126,8 +182,9 @@ function valorDoIlike(v) {
 function parametrosDosFiltros(def, tabela, filtros) {
   const params = {}
   for (const f of filtros) {
-    const p = def.filtros[f.col]?.[f.op]
-    if (!p) throw new ErroDeTraducao(`${tabela}: a rota ${def.rota} não filtra por ${f.col}=${f.op}`)
+    const alvo = def.filtros[f.col]?.[f.op]
+    if (!alvo) throw new ErroDeTraducao(`${tabela}: a rota ${def.rota} não filtra por ${f.col}=${f.op}`)
+    const [p, converter] = Array.isArray(alvo) ? alvo : [alvo, null]
     let v
     if (f.op === 'eq') v = valorDoEq(f.val)
     else if (f.op === 'ilike') v = valorDoIlike(f.val)
@@ -137,6 +194,7 @@ function parametrosDosFiltros(def, tabela, filtros) {
       v = f.val.replace(/^\(|\)$/g, '').split(',').join(',')
     }
     else v = f.val
+    if (converter) v = converter(v)
     if (p in params) throw new ErroDeTraducao(`${tabela}: filtro repetido ${p}`)
     params[p] = v
   }
@@ -167,7 +225,8 @@ function ordenarNaTela(linhas, ordem) {
       // nulos como o PostgREST: por último no asc, primeiro no desc
       if (x === null || x === undefined) return asc ? 1 : -1
       if (y === null || y === undefined) return asc ? -1 : 1
-      return (x < y ? -1 : 1) * (asc ? 1 : -1)
+      const c = typeof x === 'string' && typeof y === 'string' ? x.localeCompare(y, 'pt-BR') : (x < y ? -1 : 1)
+      return c * (asc ? 1 : -1)
     }
     return 0
   })
@@ -184,10 +243,21 @@ function erroDoSupabase(error, corpo) {
  * Lê uma tabela pela rota. `partes` vem de `lerCaminhoPostgrest` ou do encadeado.
  * Devolve `{ data: [...], error, count }`.
  */
+// Teto de páginas de uma leitura sem limite (20 × 1000 linhas). Acima disso a
+// tradução recusa: ler a tabela inteira para a tela não é o que a rota promete.
+const PAGINAS_NO_MAXIMO = 20
+
 export async function lerPelaApi(partes, { contar = false } = {}) {
   const def = ROTAS[partes.tabela]
   if (!def?.rota) throw new ErroDeTraducao(`${partes.tabela}: sem rota de leitura`)
-  const params = parametrosDosFiltros(def, partes.tabela, partes.filtros)
+  // Filtro que a rota não declara: só `eq`/`in`, só sem limite (a leitura vem
+  // INTEIRA, paginada abaixo) e numa coluna que a rota devolve — aí a tela filtra
+  // as mesmas linhas que o banco filtraria. Qualquer outro caso recusa alto.
+  const naTela = partes.filtros.filter((f) => !def.filtros[f.col]?.[f.op])
+  if (naTela.length && (partes.limite || naTela.some((f) => f.op !== 'eq' && f.op !== 'in'))) {
+    throw new ErroDeTraducao(`${partes.tabela}: a rota ${def.rota} não filtra por ${naTela.map((f) => f.col + '=' + f.op).join(', ')}`)
+  }
+  const params = parametrosDosFiltros(def, partes.tabela, partes.filtros.filter((f) => !naTela.includes(f)))
   const cols = colunasDoSelect(partes.select)
   // A ordem pedida vai para a rota quando ela a declara (UMA coluna: o `ordem` da
   // API aceita um campo só); senão, a tela ordena — e isso só é certo se NADA foi
@@ -197,14 +267,41 @@ export async function lerPelaApi(partes, { contar = false } = {}) {
   if (partes.ordem.length && !naRota && partes.limite) {
     throw new ErroDeTraducao(`${partes.tabela}: a rota não ordena por ${partes.ordem.map((o) => o.col)} e o pedido corta em ${partes.limite}`)
   }
+  if (partes.limite > TETO_DE_LINHAS) throw new ErroDeTraducao(`${partes.tabela}: limite ${partes.limite} acima do teto de ${TETO_DE_LINHAS} linhas da API`)
   if (partes.limite) params.limite = partes.limite
-  if (contar) params.contar = 1
-  const r = await pedir('GET', def.rota, { params })
-  if (r.error) return { data: null, error: erroDoSupabase(r.error, r.data), count: null }
-  if (!Array.isArray(r.data)) return { data: null, error: { message: 'Resposta inesperada do servidor.', code: '502' }, count: null }
-  let linhas = r.data
+  // SEM LIMITE, A LEITURA VEM INTEIRA. A API (como o PostgREST, `max_rows`) para
+  // em 1000 linhas por pedido; uma tela que não pediu limite queria TUDO, e cortar
+  // em 1000 calado é número menor sem aviso. Conta o total e busca as páginas
+  // seguintes por `deslocamento` (a ordem das rotas tem desempate: não repete
+  // nem pula linha).
+  if (contar || !partes.limite) params.contar = 1
+  let linhas = []
+  let total = null
+  for (let pagina = 0; ; pagina++) {
+    const r = await pedir('GET', def.rota, { params: pagina ? { ...params, deslocamento: linhas.length } : params })
+    if (r.error) return { data: null, error: erroDoSupabase(r.error, r.data), count: null }
+    if (!Array.isArray(r.data)) return { data: null, error: { message: 'Resposta inesperada do servidor.', code: '502' }, count: null }
+    linhas = linhas.concat(r.data)
+    total = r.total
+    if (partes.limite || total === null || linhas.length >= total || r.data.length === 0) break
+    if (pagina + 1 >= PAGINAS_NO_MAXIMO) throw new ErroDeTraducao(`${partes.tabela}: ${total} linhas — passa de ${PAGINAS_NO_MAXIMO} páginas`)
+  }
+  if (naTela.length) {
+    if (linhas.length && naTela.some((f) => !(f.col in linhas[0]))) throw new ErroDeTraducao(`${partes.tabela}: a rota não devolve ${naTela.map((f) => f.col)}`)
+    const aceita = (f, l) => (f.op === 'eq' ? [valorDoEq(f.val)] : f.val.replace(/^\(|\)$/g, '').split(',')).includes(String(l[f.col]))
+    linhas = linhas.filter((l) => naTela.every((f) => aceita(f, l)))
+  }
   if (partes.ordem.length && !naRota) linhas = ordenarNaTela(linhas, partes.ordem)
-  return { data: projetar(linhas, cols, partes.tabela), error: null, count: r.total }
+  return { data: projetar(linhas, cols, partes.tabela), error: null, count: naTela.length ? linhas.length : total }
+}
+
+/**
+ * Quantas linhas a tabela tem para quem pede (`X-Total-Count`), sem baixá-las:
+ * o `select=id` + `.length` de antes parava no teto de linhas.
+ */
+export async function contarPelaApi(tabela, filtros = []) {
+  const r = await lerPelaApi({ tabela, filtros, select: null, ordem: [], limite: 1 }, { contar: true })
+  return r.error ? null : r.count
 }
 
 function semAutoria(def, linha) {
@@ -343,7 +440,8 @@ class ConsultaPelaApi {
       return { data: null, error: { message: e.message, code: 'traducao' } }
     }
   }
-  then(ok, falha) { return this.executar().then(ok, falha) }
+  // `status` como o supabase-js (há tela que o passa a `classificarErro`).
+  then(ok, falha) { return this.executar().then((r) => ({ ...r, status: r.error ? (r.error.status || 500) : 200 })).then(ok, falha) }
 }
 
 /**
