@@ -135,3 +135,421 @@ docs/migracao-go/NOTAS-DA-IMPLANTACAO.md, docs/migracao-go/API-PRONTA.md # seç�
 | 8 | Montagem, varreduras (vazamento, impersonado), `conferir`, notas e API-PRONTA | **opus** (fronteira) | 3–7 |
 
 ---
+
+### Task 1: `disparar_robo` sem `pg_net` — a fila `disparos_pendentes` e o contrato de atendimento
+
+**Revisor:** opus. **Depende de:** nada (pacote `banco`, migrações e `ops/migracao`).
+
+**(a) Contrato**
+- **O que quebra hoje no corte:** `public.disparar_robo` (`02-funções.csv:617-637`) chama `net.http_post` e grava `robos_execucoes`. O Postgres novo não tem `pg_net` (`limpar-dump.mjs` tira a extensão; o `restaurar.sh` cria a função com `check_function_bodies=false`, então ela RESTAURA e só falha ao rodar). O gatilho `vessel_lista_espera_espelhar` (AFTER INSERT/UPDATE em `vessel_lista_espera`, `03-triggers.csv:38-39`) chama `vessel_espelhar_agora()` → `disparar_robo` SEM tratar erro: todo cadastro da lista de espera do site (`vessel_entrar_na_lista`) e toda atualização da lista pelo robô de pedidos QUEBRAM. Os outros dois chamadores do levantamento (`vessel_lote_novo_pede_foto`, `vessel_cartao_pedido_novo_acorda_o_robo`, com `exception when others`) perderam o gatilho em 10/10 (`2026-10-10-robos-na-vps-sem-gatilho-do-actions.sql`); os do `pg_cron` (`04-agendamentos.csv`: espelho de 3 em 3 min, lembretes, caroços, triagem) não existem no Postgres novo (o worker/Plano 6 os substitui).
+- **Migração `00007_disparos_pendentes.sql`** (abaixo): a tabela e a nova `disparar_robo` (MESMA assinatura e retorno, `security definer`, `set search_path from current`: no restore o caminho é `public`; nos testes por schema é o do teste). Um pedido `pendente` por robô (índice único parcial): `insert … on conflict (robo) where situacao = 'pendente' do update set pedidos = pedidos + 1`. Disparos simultâneos não falham (o segundo espera o primeiro e junta). Disparo dentro de transação desfeita some junto. Sem `revoke`: a função só enfileira, e um `revoke` de `public` quebraria o gatilho se o dono das funções restauradas for outro papel (o gatilho é `security definer` do dono dele).
+- **Ordem do restore (`ops/migracao/restaurar.sh:20-26`): compat → `api migrar` → `schema.sql` → dados.** A `00007` cria a função ANTES do schema, e o `CREATE FUNCTION public.disparar_robo` do dump colidiria (`ON_ERROR_STOP=1`): `limpar-dump.mjs` ganha a regra `substituidas` que tira o `CREATE FUNCTION` e o `COMMENT ON FUNCTION` da `disparar_robo` (quem a CHAMA fica). No banco do ensaio já restaurado, `api migrar` aplica a `00007` e o `create or replace` troca a antiga (Ruling 5.10-1).
+- **`banco.AtenderDisparo`** (abaixo): o único jeito de atender um pedido. Reconcilia (`atendendo` há mais de 30 min → `incerto`), faz a faxina (`feito|falhou|incerto` com mais de 30 dias), pega o MAIS ANTIGO `pendente` do robô num `update … where id = (select … for update skip locked)` em autocommit (dois atendentes nunca pegam o mesmo), roda `fazer` UMA vez e grava o resultado com um contexto próprio (o prazo da tarefa não deixa a linha presa em `atendendo`). Resultado: `nil` → `feito`; `ErrIncerto`, `context.DeadlineExceeded` ou `context.Canceled` → `incerto`; outro erro → `falhou`. **Nada se repete sozinho** (Ruling 5.10-3).
+- **Sem tarefa do worker no 5.10** (Ruling 5.10-2): não há a quem despachar. O atendente de `vessel-espelhar-lista` é a tarefa do espelho do Plano 6 (Interfaces entregues).
+
+```sql
+-- +goose Up
+-- Plano 5.10 (Ruling 28 do mestre; Rulings 5.10-1 a 5.10-3): public.disparar_robo sem pg_net. A função de
+-- produção (levantamento/02-funções.csv:617-637) chamava net.http_post para acordar uma edge; o Postgres novo
+-- não tem pg_net e o gatilho vessel_lista_espera_espelhar (vessel_espelhar_agora, sem tratamento de erro)
+-- quebraria todo cadastro da lista de espera. Agora ela só enfileira: quem atende é o worker, por
+-- banco.AtenderDisparo (internal/banco/disparos.go). O CREATE FUNCTION do dump sai em limpar-dump.mjs (regra
+-- `substituidas`): o restaurar.sh roda esta migração ANTES do schema.
+create table disparos_pendentes (
+  id            bigserial primary key,
+  robo          text not null,
+  corpo         jsonb not null default '{}'::jsonb,
+  situacao      text not null default 'pendente'
+                check (situacao in ('pendente', 'atendendo', 'feito', 'falhou', 'incerto')),
+  pedidos       integer not null default 1,   -- quantos disparos este pedido juntou
+  criado_em     timestamptz not null default now(),
+  atualizado_em timestamptz not null default now(),
+  erro          text                          -- por que falhou ou ficou incerto (sem segredo)
+);
+-- UM pedido esperando por robô: o gatilho dispara a cada linha da lista, e o robô relê a lista inteira.
+create unique index disparos_pendentes_um_por_robo on disparos_pendentes (robo) where situacao = 'pendente';
+-- a reconciliação procura o atendimento órfão
+create index disparos_pendentes_atendendo on disparos_pendentes (robo, atualizado_em) where situacao = 'atendendo';
+
+-- +goose StatementBegin
+create or replace function disparar_robo(p_robo text, p_funcao text, p_segredo text,
+  p_body jsonb default '{}'::jsonb, p_timeout integer default 120000)
+returns bigint
+language plpgsql
+security definer
+set search_path from current
+as $function$
+-- p_funcao, p_segredo e p_timeout eram da chamada HTTP; ficam na assinatura para os chamadores de produção.
+-- NUNCA falha por argumento: quem chama é gatilho de cadastro do site.
+declare v_id bigint;
+begin
+  insert into disparos_pendentes as d (robo, corpo)
+  values (coalesce(nullif(p_robo, ''), '?'), coalesce(p_body, '{}'::jsonb))
+  on conflict (robo) where situacao = 'pendente'
+  do update set pedidos = d.pedidos + 1, atualizado_em = now()
+  returning d.id into v_id;
+  return v_id;
+end
+$function$;
+-- +goose StatementEnd
+
+-- +goose Down
+-- Sem a fila, a função sai junto (a de produção dependia do pg_net, que não existe aqui; restaurar o dump de
+-- novo a traz). Sem função, o gatilho de vessel_lista_espera quebra o insert: Down só em ensaio.
+-- +goose StatementBegin
+drop function if exists disparar_robo(text, text, text, jsonb, integer);
+drop table if exists disparos_pendentes;
+-- +goose StatementEnd
+```
+
+```go
+package banco
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+// ErrIncerto: quem atende devolve (embrulhado) quando não sabe se o efeito aconteceu (pedido no ar quando o
+// prazo estourou, conexão caída depois de enviar, 502/504 do outro lado). O pedido fica 'incerto' e NUNCA é
+// refeito sozinho.
+var ErrIncerto = errors.New("disparo: resultado incerto")
+
+// Disparo é um pedido de disparos_pendentes, gravado por public.disparar_robo (migração 00007).
+type Disparo struct {
+	ID      int64
+	Robo    string
+	Corpo   json.RawMessage // o p_body do PRIMEIRO disparo que o pedido juntou
+	Pedidos int             // quantos disparos o pedido juntou enquanto esperava
+}
+
+// AtenderDisparo atende o pedido pendente de `robo`, se houver (no máximo um: os disparos se juntam enquanto
+// ninguém atende), rodando `fazer` UMA vez. atendeu = havia pedido e `fazer` rodou.
+//
+// Antes de pegar: o 'atendendo' há mais de 30 min (quem atendia morreu no meio) vira 'incerto' e NÃO roda de
+// novo; o resolvido há mais de 30 dias sai da tabela. Pegar é um comando só, com `for update skip locked`, em
+// autocommit: dois atendentes ao mesmo tempo nunca pegam o mesmo pedido. Um disparo que chega enquanto o
+// pedido está 'atendendo' abre outro 'pendente' (a mudança feita durante o atendimento pede outro).
+//
+// Resultado de `fazer`: nil → 'feito'; ErrIncerto, prazo ou cancelamento → 'incerto'; outro erro → 'falhou'
+// (o texto vai para disparos_pendentes.erro: quem atende não põe segredo no erro). Nada se repete sozinho:
+// quem precisa de nova tentativa espera o próximo disparo ou a própria agenda.
+func AtenderDisparo(ctx context.Context, p *pgxpool.Pool, robo string, fazer func(context.Context, Disparo) error) (bool, error) {
+	if _, err := p.Exec(ctx, `update disparos_pendentes set situacao = 'incerto', atualizado_em = now(),
+		       erro = 'atendimento interrompido: sem resultado em 30 min'
+		 where robo = $1::text and situacao = 'atendendo' and atualizado_em < now() - interval '30 minutes'`, robo); err != nil {
+		return false, err
+	}
+	if _, err := p.Exec(ctx, `delete from disparos_pendentes
+		 where robo = $1::text and situacao in ('feito', 'falhou', 'incerto') and atualizado_em < now() - interval '30 days'`, robo); err != nil {
+		return false, err
+	}
+	var d Disparo
+	var corpo string
+	err := p.QueryRow(ctx, `update disparos_pendentes d set situacao = 'atendendo', atualizado_em = now()
+		 where d.id = (select id from disparos_pendentes where robo = $1::text and situacao = 'pendente'
+		                order by id limit 1 for update skip locked)
+		returning d.id, d.robo, d.corpo::text, d.pedidos`, robo).Scan(&d.ID, &d.Robo, &corpo, &d.Pedidos)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	d.Corpo = json.RawMessage(corpo)
+	errFazer := fazer(ctx, d)
+	situacao := "feito"
+	var texto *string
+	if errFazer != nil {
+		situacao = "falhou"
+		if errors.Is(errFazer, ErrIncerto) || errors.Is(errFazer, context.DeadlineExceeded) || errors.Is(errFazer, context.Canceled) {
+			situacao = "incerto"
+		}
+		s := errFazer.Error()
+		texto = &s
+	}
+	// contexto próprio: o prazo da tarefa que estourou dentro de `fazer` não pode deixar a linha em 'atendendo'
+	c, cancela := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancela()
+	_, errGravar := p.Exec(c, `update disparos_pendentes set situacao = $2::text, erro = left($3::text, 500), atualizado_em = now()
+		 where id = $1::bigint and situacao = 'atendendo'`, d.ID, situacao, texto)
+	if errGravar != nil { // a linha fica 'atendendo' e a reconciliação a leva a 'incerto' em 30 min: nunca roda de novo
+		errGravar = fmt.Errorf("disparo %d: gravar %q: %w", d.ID, situacao, errGravar)
+	}
+	return true, errors.Join(errFazer, errGravar)
+}
+```
+
+E em `ops/migracao/limpar-dump.mjs`, na lista `REGRAS` (depois de `publicacoes`) e no objeto `removidos` de `limpar` (`substituidas: 0`):
+
+```js
+  // A disparar_robo de produção chama net.http_post (pg_net não vai para o Postgres novo). A substituta (fila
+  // disparos_pendentes) vem da migração 00007 da API, que o restaurar.sh roda ANTES do schema: sem tirar esta,
+  // o CREATE FUNCTION do dump colide (ON_ERROR_STOP). Quem a CHAMA fica. Plano 5.10, Ruling 5.10-1.
+  ['substituidas', /^(create(\s+or\s+replace)?|comment\s+on)\s+function\s+(public\.)?"?disparar_robo"?\s*\(/i],
+```
+
+**(b) Testes de aceitação** (`api/internal/banco/disparos_test.go`, pacote `banco_test`, código abaixo; e `ops/migracao/limpar-dump.test.mjs`)
+- `TestDispararRoboEnfileiraSemFalhar` (`testebanco.Novo`: schema por teste, a migração aplicada): a assinatura de produção com e sem os DEFAULTs e com tudo nulo devolve o MESMO id para o mesmo robô (`pendente|3|{"origem": "gatilho"}`); outro robô = outro pedido; robô nulo vira `?`; 20 disparos simultâneos do mesmo robô = 0 falhas, 1 pedido com `pedidos` = 20; disparo em transação desfeita não fica.
+- `TestAtenderDisparo`: sem pedido = `false` e `fazer` não roda; com pedido: roda UMA vez com `Robo`, `Corpo` (`{"n": 1}`) e `Pedidos` = 2, e o disparo feito DURANTE o atendimento abre um pendente novo (`feito:2,pendente:1`); erro comum → `falhou` com o texto e a chamada seguinte NÃO o refaz; `ErrIncerto` embrulhado e prazo estourado dentro de `fazer` → `incerto` e não refaz; `atendendo` de 31 min → `incerto` sem rodar, o de 29 min fica; faxina: `feito` e `incerto` de 31 dias saem, `falhou` de 29 dias fica; 8 atendentes simultâneos com 1 pedido → `fazer` roda 1 vez; pedido de outro robô não é atendido.
+- `limpar-dump.test.mjs`: o caso novo `limpar tira a disparar_robo do dump…` (2 removidas, `net.http_post` some, `disparar_coletor` e a CHAMADA em `vessel_espelhar_agora` ficam) e as duas asserções `deepEqual` de `removidos` existentes (linhas 43 e 58) ganham `substituidas: 0` — a intenção delas (contar exatamente o que sai) continua.
+- Mutações que têm de reprovar: tirar o `on conflict` (o 2º disparo dá 23505: o insert do cadastro quebraria); pegar com `select` e `update` em dois comandos sem `skip locked` (o teste dos 8 atendentes roda mais de uma vez); a reconciliação devolver o órfão a `pendente` (ele roda de novo); `ErrIncerto` tratado como `falhou`; gravar o resultado com o `ctx` da tarefa (o caso do prazo deixa a linha `atendendo`); tirar a regra `substituidas` (o teste node reprova).
+
+```go
+package banco_test
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rbv-co/social-dashboard/api/internal/banco"
+	"github.com/rbv-co/social-dashboard/api/internal/testebanco"
+)
+
+func textoDe(t *testing.T, p *pgxpool.Pool, sql string, args ...any) string {
+	t.Helper()
+	var v *string
+	if err := p.QueryRow(context.Background(), sql, args...).Scan(&v); err != nil {
+		t.Fatalf("%s: %v", sql, err)
+	}
+	if v == nil {
+		return "<nulo>"
+	}
+	return *v
+}
+
+func executar(t *testing.T, p *pgxpool.Pool, sql string, args ...any) {
+	t.Helper()
+	if _, err := p.Exec(context.Background(), sql, args...); err != nil {
+		t.Fatalf("%s: %v", sql, err)
+	}
+}
+
+// A disparar_robo nova só enfileira: nunca chama rede, nunca falha por argumento, e os disparos de um robô se
+// juntam num pedido pendente só — o cadastro do site (gatilho de vessel_lista_espera) não pode quebrar, nem com
+// dois ao mesmo tempo.
+func TestDispararRoboEnfileiraSemFalhar(t *testing.T) {
+	p := testebanco.Novo(t)
+	ctx := context.Background()
+	id1 := textoDe(t, p, `select disparar_robo('vessel-espelhar-lista', 'vessel-espelhar-lista', 'vessel-espelhar-lista', '{"origem":"gatilho"}'::jsonb, 120000)::text`)
+	id2 := textoDe(t, p, `select disparar_robo('vessel-espelhar-lista', 'x', 'y')::text`) // os dois DEFAULTs
+	id3 := textoDe(t, p, `select disparar_robo('vessel-espelhar-lista', null, null, null, null)::text`)
+	if id1 != id2 || id2 != id3 {
+		t.Errorf("os disparos do mesmo robô não se juntaram: %s %s %s", id1, id2, id3)
+	}
+	if v := textoDe(t, p, `select situacao || '|' || pedidos || '|' || corpo::text from disparos_pendentes where id = $1::bigint`, id1); v != `pendente|3|{"origem": "gatilho"}` {
+		t.Errorf("pedido = %s", v)
+	}
+	if textoDe(t, p, `select disparar_robo('vessel-fotos-trigger', 'a', 'b', jsonb_build_object('lote', 1))::text`) == id1 {
+		t.Error("robôs diferentes no mesmo pedido")
+	}
+	nulo := textoDe(t, p, `select disparar_robo(null, null, null, null, null)::text`)
+	if v := textoDe(t, p, `select robo || '|' || corpo::text from disparos_pendentes where id = $1::bigint`, nulo); v != "?|{}" {
+		t.Errorf("robô e corpo nulos = %s", v)
+	}
+	// muitos ao mesmo tempo (o site e o robô de pedidos mexendo na lista juntos): nenhum falha, um pedido só
+	var wg sync.WaitGroup
+	var falhas atomic.Int32
+	for range 20 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := p.Exec(ctx, `select disparar_robo('corrida', 'f', 's')`); err != nil {
+				falhas.Add(1)
+			}
+		}()
+	}
+	wg.Wait()
+	if falhas.Load() != 0 {
+		t.Fatalf("%d disparos simultâneos falharam", falhas.Load())
+	}
+	if v := textoDe(t, p, `select count(*)::text || '|' || sum(pedidos)::text from disparos_pendentes where robo = 'corrida'`); v != "1|20" {
+		t.Errorf("corrida = %s, esperava 1 pedido com 20 disparos", v)
+	}
+	// o disparo é da transação de quem chamou: desfeita, ele some junto
+	tx, err := p.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx, `select disparar_robo('desfeito', 'f', 's')`); err != nil {
+		t.Fatal(err)
+	}
+	tx.Rollback(ctx)
+	if v := textoDe(t, p, `select count(*)::text from disparos_pendentes where robo = 'desfeito'`); v != "0" {
+		t.Errorf("disparo de transação desfeita ficou: %s", v)
+	}
+}
+
+func nunca(t *testing.T) func(context.Context, banco.Disparo) error {
+	return func(context.Context, banco.Disparo) error {
+		t.Error("atendeu o que não devia")
+		return nil
+	}
+}
+
+func TestAtenderDisparo(t *testing.T) {
+	p := testebanco.Novo(t)
+	ctx := context.Background()
+	disparar := func(robo string) { executar(t, p, `select disparar_robo($1::text, 'f', 's', '{"n":1}'::jsonb)`, robo) }
+	situacoes := func() string {
+		return textoDe(t, p, `select coalesce(string_agg(situacao || ':' || pedidos, ',' order by id), '') from disparos_pendentes where robo = 'espelho'`)
+	}
+
+	if atendeu, err := banco.AtenderDisparo(ctx, p, "espelho", nunca(t)); atendeu || err != nil {
+		t.Fatalf("sem pedido = %v %v", atendeu, err)
+	}
+
+	// um pedido (dois disparos juntos): roda UMA vez; o disparo DURANTE o atendimento abre um pendente novo
+	disparar("espelho")
+	disparar("espelho")
+	var visto banco.Disparo
+	atendeu, err := banco.AtenderDisparo(ctx, p, "espelho", func(_ context.Context, d banco.Disparo) error {
+		visto = d
+		disparar("espelho")
+		return nil
+	})
+	if !atendeu || err != nil || visto.Robo != "espelho" || visto.Pedidos != 2 || string(visto.Corpo) != `{"n": 1}` {
+		t.Fatalf("atendimento = %v %v %+v", atendeu, err, visto)
+	}
+	if v := situacoes(); v != "feito:2,pendente:1" {
+		t.Errorf("depois do atendimento = %s", v)
+	}
+
+	// falha comum: 'falhou' com o texto, e não volta sozinha
+	executar(t, p, `delete from disparos_pendentes`)
+	disparar("espelho")
+	if _, err := banco.AtenderDisparo(ctx, p, "espelho", func(context.Context, banco.Disparo) error { return errors.New("zoho fora") }); err == nil || !strings.Contains(err.Error(), "zoho fora") {
+		t.Errorf("erro = %v", err)
+	}
+	if v := textoDe(t, p, `select situacao || '|' || erro from disparos_pendentes where robo = 'espelho'`); v != "falhou|zoho fora" {
+		t.Errorf("falha = %s", v)
+	}
+	if atendeu, _ := banco.AtenderDisparo(ctx, p, "espelho", nunca(t)); atendeu {
+		t.Error("a falha foi refeita sem disparo novo")
+	}
+
+	// incerto (pelo erro marcado e pelo prazo estourado dentro de fazer): também não volta
+	for _, c := range []struct {
+		nome  string
+		fazer func(context.Context, banco.Disparo) error
+	}{
+		{"ErrIncerto", func(context.Context, banco.Disparo) error { return fmt.Errorf("github: 504: %w", banco.ErrIncerto) }},
+		{"prazo", func(ctx context.Context, _ banco.Disparo) error { <-ctx.Done(); return ctx.Err() }},
+	} {
+		executar(t, p, `delete from disparos_pendentes`)
+		disparar("espelho")
+		c2, cancela := context.WithTimeout(ctx, 2*time.Second)
+		banco.AtenderDisparo(c2, p, "espelho", c.fazer)
+		cancela()
+		if v := situacoes(); v != "incerto:1" {
+			t.Errorf("%s: %s", c.nome, v)
+		}
+		if atendeu, _ := banco.AtenderDisparo(ctx, p, "espelho", nunca(t)); atendeu {
+			t.Errorf("%s: o incerto foi refeito", c.nome)
+		}
+	}
+
+	// órfão: 'atendendo' há 31 min vira 'incerto' sem rodar; o de 29 min fica
+	executar(t, p, `delete from disparos_pendentes`)
+	executar(t, p, `insert into disparos_pendentes (robo, situacao, atualizado_em) values
+		('espelho', 'atendendo', now() - interval '31 minutes'), ('espelho', 'atendendo', now() - interval '29 minutes')`)
+	if atendeu, _ := banco.AtenderDisparo(ctx, p, "espelho", nunca(t)); atendeu {
+		t.Error("atendeu um órfão")
+	}
+	if v := textoDe(t, p, `select string_agg(situacao, ',' order by atualizado_em) from disparos_pendentes where robo = 'espelho'`); v != "incerto,atendendo" {
+		t.Errorf("órfãos = %s", v)
+	}
+
+	// faxina: o resolvido há mais de 30 dias sai; o de 29 dias fica
+	executar(t, p, `delete from disparos_pendentes`)
+	executar(t, p, `insert into disparos_pendentes (robo, situacao, atualizado_em) values ('espelho', 'feito', now() - interval '31 days'),
+		('espelho', 'incerto', now() - interval '31 days'), ('espelho', 'falhou', now() - interval '29 days')`)
+	banco.AtenderDisparo(ctx, p, "espelho", nunca(t))
+	if v := situacoes(); v != "falhou:1" {
+		t.Errorf("faxina = %s", v)
+	}
+
+	// oito atendentes ao mesmo tempo, um pedido: roda uma vez
+	executar(t, p, `delete from disparos_pendentes`)
+	disparar("espelho")
+	var vezes atomic.Int32
+	var wg sync.WaitGroup
+	comeca := make(chan struct{})
+	for range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-comeca
+			banco.AtenderDisparo(ctx, p, "espelho", func(context.Context, banco.Disparo) error {
+				vezes.Add(1)
+				time.Sleep(50 * time.Millisecond)
+				return nil
+			})
+		}()
+	}
+	close(comeca)
+	wg.Wait()
+	if vezes.Load() != 1 {
+		t.Errorf("o pedido rodou %d vezes", vezes.Load())
+	}
+
+	// pedido de outro robô não é deste atendente
+	disparar("outro")
+	if atendeu, _ := banco.AtenderDisparo(ctx, p, "espelho", nunca(t)); atendeu {
+		t.Error("atendeu o pedido de outro robô")
+	}
+}
+```
+
+```js
+test('limpar tira a disparar_robo do dump (a substituta vem da migração 00007 da API) e deixa quem a chama', () => {
+  const sql = `
+CREATE FUNCTION public.disparar_robo(p_robo text, p_funcao text, p_segredo text, p_body jsonb DEFAULT '{}'::jsonb, p_timeout integer DEFAULT 120000) RETURNS bigint
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare v_req bigint;
+begin
+  select net.http_post(url := 'https://x/functions/v1/' || p_funcao, body := p_body) into v_req;
+  return v_req;
+end $$;
+COMMENT ON FUNCTION public.disparar_robo(p_robo text, p_funcao text, p_segredo text, p_body jsonb, p_timeout integer) IS 'acorda uma edge';
+CREATE FUNCTION public.disparar_coletor(p_janela text) RETURNS bigint LANGUAGE sql AS $$ select 1::bigint $$;
+CREATE FUNCTION public.vessel_espelhar_agora() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER AS $$
+begin
+  perform public.disparar_robo('vessel-espelhar-lista', 'vessel-espelhar-lista', 'vessel-espelhar-lista', '{"origem":"gatilho"}'::jsonb, 120000);
+  return null;
+end $$;
+`
+  const r = limpar(sql)
+  assert.equal(r.removidos.substituidas, 2)
+  assert.doesNotMatch(r.sql, /CREATE FUNCTION public\.disparar_robo/)
+  assert.doesNotMatch(r.sql, /net\.http_post/)
+  assert.match(r.sql, /CREATE FUNCTION public\.disparar_coletor/)
+  assert.match(r.sql, /perform public\.disparar_robo\('vessel-espelhar-lista'/)
+})
+```
+
+**(c) Arquivos:** Create `api/internal/banco/migracoes/00007_disparos_pendentes.sql`, `api/internal/banco/disparos.go`, `api/internal/banco/disparos_test.go`; Modify `ops/migracao/limpar-dump.mjs`, `ops/migracao/limpar-dump.test.mjs`.
+
+**(d) Dependências:** nenhuma.
+
+- [ ] **Step 1:** Os testes (Go e node); ver falhar (`disparos_pendentes` não existe; `substituidas` é `undefined`).
+- [ ] **Step 2:** A migração, `disparos.go` e a regra do `limpar-dump.mjs` (código de (a)).
+- [ ] **Step 3:** `cd api && gofmt -l ./internal && go vet ./internal/banco/ && go test -count=1 -race -run 'TestDispararRobo|TestAtenderDisparo|TestRobosEsperados|TestMigr' ./internal/banco/` PASS; `node --test ops/migracao/limpar-dump.test.mjs` PASS; `cd api && go test -count=1 ./...` (a migração nova roda em todo teste: nada pode quebrar); mutações de (b) reprovam, uma por vez.
+- [ ] **Step 4: Commit** `feat(api): disparar_robo sem pg_net — fila disparos_pendentes (um pendente por robô), banco.AtenderDisparo e o dump sem a função antiga` (+ `Co-Authored-By`).
+
+---
