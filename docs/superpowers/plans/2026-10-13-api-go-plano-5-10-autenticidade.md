@@ -554,3 +554,513 @@ end $$;
 - [ ] **Step 4: Commit** `feat(api): disparar_robo sem pg_net — fila disparos_pendentes (um pendente por robô), banco.AtenderDisparo e o dump sem a função antiga` (+ `Co-Authored-By`).
 
 ---
+
+### Task 2: D0 — fatia 5.10 do esquema de produção nos testes
+
+**Revisor:** opus. **Depende de:** Task 1 (a `disparar_robo` nova, que `vessel_espelhar_agora` chama); 5.1 Task 1 (carregador, `usuarios`, `profiles`, `conta_ativa()` em `02-gatilhos.sql`).
+
+**(a) Contrato**
+- `esquema/01-tabelas-5-10.sql` (abaixo): as 11 tabelas com a policy `is_vessel_admin()` do catálogo (`levantamento/01-policies.csv:383-402`: `vessel_baixas`, `vessel_cartao_pedidos`, `vessel_clientes`, `vessel_edicoes`, `vessel_garantias_baixadas`, `vessel_leituras`, `vessel_lembretes`, `vessel_lotes`, `vessel_pecas`, `vessel_pedidos_de_registro`, `vessel_registros`) e `vessel_cartao_arquivos` (fora do catálogo; lida por `POST /vessel-baixar-cartao`), cada bloco com a migration de origem e os `alter table` posteriores já aplicados. `vessel_edicoes` é do 5.10 (Ruling 5.10-5). Duas colunas PRESUMIDAS, sem DDL no repositório: `vessel_registros.nascimento date` e `vessel_registros.bling_atualizado_em timestamptz` (a função de decidir as grava; o espelho do Bling as lê; conferidas no banco restaurado pelo `conferir`, Task 8).
+- **Não declaradas** (de outras fatias): `vessel_lista_espera` e `vessel_pedidos` (5.11; `vessel_data_da_compra` só lê `vessel_pedidos` quando há número de pedido do Bling SEM data — os testes do 5.10 sempre dão a data na conferência), `acessos_conexoes` (5.4; a Task 6 a cria no teste se faltar). O 5.11 NÃO redeclara as 12 tabelas daqui.
+- `esquema/03-funcoes-5-10.sql`: **35 funções verbatim** do levantamento, geradas pelo script do Step 2 e conferidas por hash: o portão `is_vessel_admin` (`02-funções.csv:1450-1461`); 11 ajudantes que as RPCs chamam (`vessel_chave_do_produto` 3662-3674, `vessel_cpf_mascarado` 4489-4498, `vessel_cpf_valido` 4499-4521, `vessel_meses_de_garantia` 6921-6932, `vessel_garantia_ate` 5984-5992, `vessel_data_da_compra` 4731-4762, `vessel_garantia_ate_do_registro` 5993-6011, `vessel_peca_presa` 7160-7191, `vessel_maior_da_serie` 6800-6816, `vessel_criar_pecas` 4522-4573, `vessel_renumerar_lote` 8782-8853) — em ordem de dependência, porque função `LANGUAGE sql` é conferida na criação; as 7 funções de gatilho (`vessel_toca_atualizado_em` 10940-10949, `vessel_lotes_marcar_teste` 6778-6787, `vessel_lote_novo_herda_material` 6724-6747, `vessel_lote_material_recalcula_garantia` 6710-6723, `vessel_lembretes_morre_com_o_registro` 6621-6635, `vessel_registros_preencher_cliente_id` 8768-8781, `vessel_espelhar_agora` 5771-5784 SEM o gatilho dele, que é do 5.11); e as 16 RPCs do painel (linhas na Task 4). O fechamento foi conferido por script (toda função que estas chamam está na lista, menos `conta_ativa`, que vem do `02-gatilhos.sql`, e `disparar_robo`, da migração 00007).
+- **Os 6 gatilhos vivos**, no fim do `03`, com `create or replace trigger` e a orientação/OF/WHEN das migrations (o `03-triggers.csv` não traz OF nem WHEN): `trg_vessel_lotes_marcar_teste` (BEFORE INSERT OR UPDATE **OF sku**), `trg_vessel_lote_novo_herda_material` (BEFORE INSERT), `trg_vessel_lote_material_recalcula_garantia` (AFTER UPDATE **OF material** … **WHEN (old.material is distinct from new.material)**), `vessel_clientes_atualizado` (BEFORE UPDATE), `vessel_registros_preencher_cliente_id` (BEFORE INSERT), `vessel_registros_mata_o_lembrete` (AFTER INSERT). **Os 2 do levantamento que SAÍRAM de produção em 10/10** (`vessel_lote_novo_pede_foto`, `vessel_cartao_pedido_novo_acorda_o_robo`) ficam de fora, e as funções deles também (Ruling 5.10-4). A linha 5.10 da IV.2 do mestre conta 8: eram 8 no levantamento de 09/10.
+- `TestEsquemaDeProducaoComOsGatilhosVerbatim` (5.1) ganha os 6 na lista exata (ordem alfabética: depois de `trg_impedir_autopromocao`; se o 5.9 já entrou, `conteudo_pecas_guarda` continua primeiro).
+- `TestFatiaDaAutenticidade` porta, por COMPORTAMENTO, o que os `db/*.test.mjs` do selo provavam pelo TEXTO das migrations: `registro-com-conta.test.mjs` (o gatilho preenche `cliente_id` por `new.pedido_id`), `lembretes-de-registro.test.mjs` (o lembrete aberto morre com o registro), `trilha-de-edicoes.test.mjs` (a lista fechada de ações aceita toda ação que as funções do painel escrevem, e recusa outra), `vessel-registro-nao-toma-peca-com-dona.test.mjs` (o `bling` só para a chave de serviço — e, na compat, para ninguém: achado 2). `serie-continua-no-produto`, `cartao-trava-a-serie` e `transferencia-de-propriedade` ficam assim: a série contínua e a peça presa são provadas pelas rotas na Task 4 (`vessel_gerar_lote`, `vessel_editar_lote`, `vessel_excluir_lote`); a transferência pela dona (`vessel_transferencia_*`) é do Plano 6 (rotas públicas), e só o `vessel_trocar_dono` do painel entra aqui (Task 4). Os `db/*.test.mjs` continuam no repositório até o Plano 8 (eles leem `db/migrations`, que não muda).
+- **Ensaiado** (13/10, Postgres 17, a mesma árvore da Task 1 + estes arquivos): a fatia carrega depois das do 5.1, 5.6 e 5.7 e antes das funções; `TestFatiaDaAutenticidade` e `TestEsquemaDeProducaoComOsGatilhosVerbatim` (com a lista nova) passam; `go test ./...` com a fatia carregada: todos os pacotes `ok`. Mutações conferidas: sem o gatilho `vessel_registros_mata_o_lembrete` (a lista e o lembrete reprovam); a `disparar_robo` antiga com `net.http_post` (o insert na tabela de prova quebra: `schema "net" does not exist`). Também ensaiadas, à mão no mesmo banco, as 16 funções como o selo, o super, o admin sem o módulo, o desativado e sem perfil (ver a Task 4).
+
+**(b) Testes de aceitação** (`TestFatiaDaAutenticidade`, `esquema_selo_test.go`, código no Step 3)
+- As 12 tabelas e `disparos_pendentes` existem; os gatilhos das `vessel_*` são EXATAMENTE os 6, com o momento certo.
+- O gatilho de produção `vessel_espelhar_agora` numa tabela de prova: 3 inserts e 3 updates não quebram e viram UM pedido (`vessel-espelhar-lista|pendente|6|{"origem": "gatilho"}`).
+- Lote: o segundo lote do mesmo SKU herda `canvas|herdado`; SKU `teste-01` marca `teste`; trocar o SKU recalcula.
+- Registro: `cliente_id` vem do pedido; o lembrete aberto vira `registro|true`; mudar o material do lote para `couro` recalcula a garantia pela data da conferência (`2026-01-10` + 6 meses = `2026-07-10`); `vessel_clientes_atualizado` toca `atualizado_em`.
+- Trilha: as 10 ações do painel entram; `inventada` = 23514.
+- Portão: o selo passa em `vessel_alertas`; o admin sem o módulo recebe `sem_permissao`; `vessel_decidir_pedido_de_registro` com `bling` = `sem_permissao` como o selo, como o super e sem identidade.
+- Mutações que têm de reprovar: tirar um gatilho do `03` (a lista reprova); a `disparar_robo` antiga (o insert de prova quebra); declarar `vessel_lista_espera` aqui e o 5.11 também (`42P07` na carga — conferido no merge, não por teste); o gatilho fora da lista do teste do 5.1.
+
+**(c) Arquivos:** Create `api/internal/testebanco/esquema/01-tabelas-5-10.sql`, `api/internal/testebanco/esquema/03-funcoes-5-10.sql`, `api/internal/testebanco/esquema_selo_test.go`; Modify `api/internal/testebanco/esquema_test.go` (e `esquema/gerar-gatilhos.mjs` só no caso do Step 4).
+
+**(d) Dependências:** Task 1; 5.1 Task 1.
+
+- [ ] **Step 1: A DDL da fatia.** Crie `api/internal/testebanco/esquema/01-tabelas-5-10.sql`:
+
+```sql
+-- FATIA 5.10 do esquema de produção para os testes (D0 reconstruído: Rulings 5.1-1, 5.9-1 e 5.10-4). Carrega
+-- depois de 01-tabelas-5-01.sql (usuarios, profiles). As 11 tabelas com a policy is_vessel_admin() do catálogo
+-- e vessel_cartao_arquivos (lida por POST /vessel-baixar-cartao), das migrations; FKs de auth.users não há.
+-- PRESUMIDAS (sem DDL no repositório: existem em produção, a função vessel_decidir_pedido_de_registro as grava e
+-- a edge vessel-espelhar-lista as lê): vessel_registros.nascimento e vessel_registros.bling_atualizado_em.
+-- NÃO declaradas aqui: vessel_lista_espera e vessel_pedidos (5.11: vessel_data_da_compra lê vessel_pedidos só
+-- quando há número de pedido do Bling sem data — os testes do 5.10 dão a data), acessos_conexoes (5.4). Os 6
+-- gatilhos vivos e as 35 funções vão VERBATIM em 03-funcoes-5-10.sql.
+
+-- db/migrations/2026-08-04-vessel-verify.sql:19-28 + 2026-08-04-vessel-verify-fotos.sql:11
+-- + 2026-09-04-vessel-lote-ganha-numero-da-os.sql:8 + 2026-09-17-vessel-lote-de-teste.sql:44-45,53-54
+-- + 2026-09-18-zz-vessel-garantia-pelo-material.sql:54-76
+create table public.vessel_lotes (
+  id             uuid primary key default gen_random_uuid(),
+  modelo         text not null,
+  cor            text,
+  sku            text,
+  quantidade     int  not null,
+  fabricado_em   date not null default current_date,
+  criado_por     uuid,
+  criado_em      timestamptz not null default now(),
+  fotos          text[],
+  os             text,
+  teste          boolean not null default false,
+  material       text,
+  material_fonte text,
+  constraint vessel_lotes_material_check check (material is null or material in ('canvas', 'couro')),
+  constraint vessel_lotes_material_fonte_check
+    check (material_fonte is null or material_fonte in ('dono', 'bling_estrutura', 'painel', 'herdado')),
+  constraint vessel_lotes_material_com_fonte_check check (material is not null or material_fonte is null)
+);
+create index vessel_lotes_teste_idx on public.vessel_lotes (teste) where teste;
+
+-- 2026-08-04-vessel-verify.sql:30-36 + 2026-09-11-vessel-cartoes-fila-e-trava.sql:32-33
+create table public.vessel_pecas (
+  codigo           text primary key,
+  lote_id          uuid references public.vessel_lotes(id) on delete cascade,
+  numero_na_serie  int  not null,
+  gravada_em       timestamptz,
+  criado_em        timestamptz not null default now(),
+  cartao_gerado_em timestamptz
+);
+
+-- 2026-09-17-vessel-contas-base.sql:18-34
+create table public.vessel_clientes (
+  id                  uuid primary key default gen_random_uuid(),
+  nome                text not null,
+  cpf                 text not null unique,
+  email               text not null unique,
+  whatsapp            text,
+  nascimento          date,
+  cidade              text,
+  senha_hash          text not null,
+  senha_trocada_em    timestamptz,
+  email_confirmado_em timestamptz,
+  bling_contato_id    bigint,
+  pessoa_id           bigint,
+  teste               boolean not null default false,
+  criado_em           timestamptz not null default now(),
+  atualizado_em       timestamptz not null default now()
+);
+
+-- 2026-09-03-zz-vessel-garantia-com-dono.sql:93-123 + 2026-09-16-zz-vessel-abrir-pedido-com-nascimento.sql:53-54
+-- + 2026-09-17-vessel-registro-com-conta.sql:17-19
+create table public.vessel_pedidos_de_registro (
+  id               uuid primary key default gen_random_uuid(),
+  codigo           text not null references public.vessel_pecas(codigo) on delete cascade,
+  nome             text not null,
+  cpf              text not null,
+  whatsapp         text not null,
+  onde_comprou     text,
+  comprado_em      date,
+  estado           text not null default 'pendente' check (estado in ('pendente', 'aprovado', 'recusado')),
+  decidido_por_que text check (decidido_por_que in ('bling', 'na_mao')),
+  conferencia      jsonb,
+  criado_em        timestamptz not null default now(),
+  decidido_em      timestamptz,
+  decidido_quem    uuid,
+  motivo           text,
+  nascimento       date,
+  cliente_id       uuid references public.vessel_clientes(id),
+  presente_de_nome text
+);
+create index vessel_pedidos_registro_codigo_idx on public.vessel_pedidos_de_registro (codigo, criado_em desc);
+create index vessel_pedidos_registro_pendente_idx on public.vessel_pedidos_de_registro (criado_em) where estado = 'pendente';
+
+-- 2026-08-04-vessel-verify.sql:43-51 + 2026-09-03-zz-vessel-garantia-com-dono.sql:137-141
+-- + 2026-09-17-vessel-registro-com-conta.sql:15-16 + 2026-09-18-zz-vessel-garantia-pelo-material.sql:96
+-- + PRESUMIDAS: nascimento, bling_atualizado_em (ver o cabeçalho)
+create table public.vessel_registros (
+  codigo              text primary key references public.vessel_pecas(codigo) on delete cascade,
+  nome                text not null,
+  whatsapp            text not null,
+  onde_comprou        text,
+  comprado_em         date,
+  garantia_ate        date,
+  registrado_em       timestamptz not null default now(),
+  cpf                 text,
+  pedido_id           uuid references public.vessel_pedidos_de_registro(id),
+  bling_contato_id    text,
+  bling_pedido        text,
+  cliente_id          uuid references public.vessel_clientes(id),
+  nascimento          date,
+  bling_atualizado_em timestamptz
+);
+
+-- 2026-08-04-vessel-verify.sql:53-62
+create table public.vessel_leituras (
+  id       bigserial primary key,
+  codigo   text not null,
+  achou    boolean not null,
+  agente   text,
+  ip_hash  text,
+  lido_em  timestamptz not null default now()
+);
+create index vessel_leituras_codigo_idx on public.vessel_leituras (codigo, lido_em desc);
+
+-- 2026-08-30-vessel-baixas.sql:15-30 + 2026-09-01-vessel-editar-etiquetas.sql:324-338 (o motivo 'teste')
+create table public.vessel_baixas (
+  id           uuid primary key default gen_random_uuid(),
+  codigo       text not null references public.vessel_pecas(codigo) on delete cascade,
+  motivo       text not null constraint vessel_baixas_motivo_check
+               check (motivo in ('extraviada', 'defeito', 'devolvida', 'etiqueta_perdida', 'teste')),
+  baixada_em   timestamptz not null default now(),
+  baixada_por  uuid,
+  desfeita_em  timestamptz,
+  desfeita_por uuid
+);
+create index vessel_baixas_codigo_idx on public.vessel_baixas (codigo);
+create unique index vessel_baixas_ativa_idx on public.vessel_baixas (codigo) where desfeita_em is null;
+
+-- 2026-09-01-vessel-editar-etiquetas.sql:46-59 + a lista de ações de 2026-09-19-zz-vessel-trilha-a-lista-inteira.sql:28-37
+-- (a última a redefinir o check; a trilha não tem FK de propósito: sobrevive à peça excluída)
+create table public.vessel_edicoes (
+  id        uuid primary key default gen_random_uuid(),
+  codigo    text not null,
+  acao      text not null constraint vessel_edicoes_acao_check check (acao = any (array[
+              'desmarcar_gravada', 'sobrescrever_para_fila', 'sobrescrever_para_baixa',
+              'registro_aprovado', 'registro_recusado', 'dono_trocado', 'baixar_garantia',
+              'lote_excluido', 'peca_excluida', 'etiqueta_adotada', 'numero_trocado',
+              'transferida_pela_dona', 'material_do_lote', 'conta_ligada_pelo_cpf'])),
+  motivo    text,
+  detalhes  jsonb not null default '{}'::jsonb,
+  feito_por uuid,
+  feito_em  timestamptz not null default now()
+);
+create index vessel_edicoes_codigo_idx on public.vessel_edicoes (codigo, feito_em desc);
+
+-- 2026-09-05-vessel-garantias-baixadas.sql:38-53
+create table public.vessel_garantias_baixadas (
+  id               bigint generated always as identity primary key,
+  codigo           text not null,
+  nome             text,
+  whatsapp         text,
+  cpf              text,
+  onde_comprou     text,
+  comprado_em      date,
+  garantia_ate     date,
+  registrado_em    timestamptz,
+  bling_contato_id text,
+  bling_pedido     text,
+  motivo           text not null,
+  baixada_em       timestamptz not null default now(),
+  baixada_por      uuid
+);
+
+-- 2026-09-11-vessel-cartoes-fila-e-trava.sql:39-70
+create table public.vessel_cartao_pedidos (
+  id          uuid primary key default gen_random_uuid(),
+  pecas       text[] not null,
+  situacao    text not null default 'na_fila' check (situacao in ('na_fila', 'rodando', 'pronto', 'falhou')),
+  pasta       text,
+  erro        text,
+  criado_por  uuid,
+  criado_em   timestamptz not null default now(),
+  comecou_em  timestamptz,
+  terminou_em timestamptz
+);
+create index vessel_cartao_pedidos_recentes on public.vessel_cartao_pedidos (criado_em desc);
+create index vessel_cartao_pedidos_na_fila on public.vessel_cartao_pedidos (criado_em) where situacao in ('na_fila', 'rodando');
+
+-- 2026-10-09-vessel-cartao-arquivos.sql:17-24 (fora do catálogo: só o robô grava e a rota do cartão lê)
+create table public.vessel_cartao_arquivos (
+  codigo        text not null,
+  nome          text not null,
+  zoho_id       text not null,
+  pasta_id      text,
+  atualizado_em timestamptz not null default now(),
+  primary key (codigo, nome)
+);
+
+-- 2026-09-19-zzz-vessel-lembretes-register-later.sql:66-135
+create table public.vessel_lembretes (
+  id               uuid primary key default gen_random_uuid(),
+  peca_codigo      text not null,
+  email            text not null,
+  cliente_id       uuid references public.vessel_clientes(id),
+  consentimento_em timestamptz not null,
+  criado_em        timestamptz not null default now(),
+  enviado_7_em     timestamptz,
+  enviado_30_em    timestamptz,
+  cancelado_em     timestamptz,
+  cancelado_por    text,
+  token_hash       text,
+  constraint vessel_lembretes_codigo_normalizado_check
+    check (peca_codigo = upper(regexp_replace(peca_codigo, '[\s.\-_]', '', 'g'))),
+  constraint vessel_lembretes_email_normalizado_check check (email = lower(btrim(email)) and email <> ''),
+  constraint vessel_lembretes_cancelamento_check check ((cancelado_em is null) = (cancelado_por is null)),
+  constraint vessel_lembretes_cancelado_por_check check (cancelado_por is null or cancelado_por in ('cliente', 'registro'))
+);
+create unique index vessel_lembretes_um_aberto_idx on public.vessel_lembretes (peca_codigo)
+  where cancelado_em is null and enviado_30_em is null;
+create index vessel_lembretes_peca_idx on public.vessel_lembretes (peca_codigo, criado_em desc);
+create index vessel_lembretes_email_idx on public.vessel_lembretes (email, criado_em desc);
+create index vessel_lembretes_token_idx on public.vessel_lembretes (token_hash) where token_hash is not null;
+```
+
+- [ ] **Step 2: As funções e os gatilhos, verbatim.** Rode, da raiz da worktree, o gerador de uso único (fica fora do repositório; no scratchpad da sessão, não em `/tmp` compartilhado):
+
+```bash
+cat > "$SCRATCH/fatia510.mjs" <<'FIM'
+// Gera esquema/03-funcoes-5-10.sql VERBATIM do levantamento (uso único, Plano 5.10 Task 2).
+// node fatia510.mjs <levantamento>/02-funções.csv > api/internal/testebanco/esquema/03-funcoes-5-10.sql
+import { readFileSync } from 'node:fs';
+const t = readFileSync(process.argv[2], 'utf8');
+const linhas = []; let l = [], c = '', q = false;
+for (let i = 0; i < t.length; i++) {
+  const x = t[i];
+  if (q) { if (x === '"' && t[i + 1] === '"') { c += '"'; i++; } else if (x === '"') q = false; else c += x; }
+  else if (x === '"') q = true; else if (x === ',') { l.push(c); c = ''; }
+  else if (x === '\n') { l.push(c); linhas.push(l); l = []; c = ''; } else if (x !== '\r') c += x;
+}
+const corpo = new Map(linhas.map((r) => [r[0], r[3].trim() + ';\n']));
+// a ordem importa: função LANGUAGE sql é conferida na criação (as que ela chama têm de existir antes)
+const ajudantes = ['is_vessel_admin', 'vessel_chave_do_produto', 'vessel_cpf_mascarado', 'vessel_cpf_valido',
+  'vessel_meses_de_garantia', 'vessel_garantia_ate', 'vessel_data_da_compra', 'vessel_garantia_ate_do_registro',
+  'vessel_peca_presa', 'vessel_maior_da_serie', 'vessel_criar_pecas', 'vessel_renumerar_lote'];
+const dosGatilhos = ['vessel_toca_atualizado_em', 'vessel_lotes_marcar_teste', 'vessel_lote_novo_herda_material',
+  'vessel_lote_material_recalcula_garantia', 'vessel_lembretes_morre_com_o_registro',
+  'vessel_registros_preencher_cliente_id', 'vessel_espelhar_agora'];
+const rpcs = ['vessel_alertas', 'vessel_baixar_garantia', 'vessel_baixar_peca', 'vessel_decidir_pedido_de_registro',
+  'vessel_definir_material_do_lote', 'vessel_desfazer_baixa', 'vessel_desmarcar_gravada', 'vessel_editar_lote',
+  'vessel_excluir_lote', 'vessel_excluir_peca', 'vessel_fila_de_registros', 'vessel_gerar_lote', 'vessel_marcar_gravada',
+  'vessel_pedir_cartoes', 'vessel_sobrescrever_etiqueta', 'vessel_trocar_dono'];
+const todas = [...ajudantes, ...dosGatilhos, ...rpcs];
+for (const n of todas) if (!corpo.has(n)) { console.error(`falta ${n} no CSV`); process.exit(1); }
+// os 6 gatilhos vivos em produção, com a orientação, o OF e o WHEN das migrations (03-triggers.csv não os traz)
+const gatilhos = `
+-- 2026-09-17-vessel-lote-de-teste.sql:94-98
+create or replace trigger trg_vessel_lotes_marcar_teste before insert or update of sku on public.vessel_lotes
+  for each row execute function public.vessel_lotes_marcar_teste();
+-- 2026-09-18-zz-vessel-garantia-pelo-material.sql:377-381
+create or replace trigger trg_vessel_lote_novo_herda_material before insert on public.vessel_lotes
+  for each row execute function public.vessel_lote_novo_herda_material();
+-- 2026-09-18-zz-vessel-garantia-pelo-material.sql:331-336
+create or replace trigger trg_vessel_lote_material_recalcula_garantia after update of material on public.vessel_lotes
+  for each row when (old.material is distinct from new.material)
+  execute function public.vessel_lote_material_recalcula_garantia();
+-- 2026-09-17-vessel-contas-base.sql:77-80
+create or replace trigger vessel_clientes_atualizado before update on public.vessel_clientes
+  for each row execute function public.vessel_toca_atualizado_em();
+-- 2026-09-17-vessel-registro-com-conta.sql:230-233
+create or replace trigger vessel_registros_preencher_cliente_id before insert on public.vessel_registros
+  for each row execute function public.vessel_registros_preencher_cliente_id();
+-- 2026-09-19-zzz-vessel-lembretes-register-later.sql:472-475
+create or replace trigger vessel_registros_mata_o_lembrete after insert on public.vessel_registros
+  for each row execute function public.vessel_lembretes_morre_com_o_registro();
+`;
+process.stdout.write(
+  '-- VERBATIM de levantamento/02-funções.csv (gerado por fatia510.mjs, Plano 5.10 Task 2): o portão is_vessel_admin,\n' +
+  '-- 11 ajudantes, as 7 funções de gatilho (vessel_espelhar_agora SEM gatilho: o dele é da fatia do 5.11, em\n' +
+  '-- vessel_lista_espera) e as 16 RPCs do painel. Os 6 gatilhos vivos em produção vão no fim, com OF/WHEN das\n' +
+  '-- migrations; vessel_lote_novo_pede_foto e vessel_cartao_pedido_novo_acorda_o_robo NÃO (removidos em 10/10:\n' +
+  '-- db/migrations/2026-10-10-robos-na-vps-sem-gatilho-do-actions.sql). `create or replace trigger`: se o gerador do\n' +
+  '-- 02-gatilhos.sql também os emitir (com CONFERIDOS), a recriação aqui é a mesma (Rulings 5.7-1, 5.9-1, 5.10-4).\n\n' +
+  todas.map((n) => corpo.get(n)).join('\n') + gatilhos);
+FIM
+node "$SCRATCH/fatia510.mjs" /Users/gabrielgertrudes/Projetos/Trabalho/lavessel/social-dashboard/.claude/worktrees/levantamento-ro/docs/migracao-go/levantamento/02-funções.csv \
+  > api/internal/testebanco/esquema/03-funcoes-5-10.sql
+shasum -a 256 api/internal/testebanco/esquema/03-funcoes-5-10.sql
+# 84ed26b8f20e693b40e08d0368d5c6e558d919e3812b288dd169f84066c59c2f (o do ensaio). Hash diferente = o levantamento mudou: pare e reporte.
+grep -c 'CREATE OR REPLACE FUNCTION' api/internal/testebanco/esquema/03-funcoes-5-10.sql   # 35
+grep -c '^create or replace trigger' api/internal/testebanco/esquema/03-funcoes-5-10.sql   # 6
+```
+
+- [ ] **Step 3: O teste.** Crie `api/internal/testebanco/esquema_selo_test.go`:
+
+```go
+package testebanco
+
+import (
+	"context"
+	"errors"
+	"reflect"
+	"testing"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/rbv-co/social-dashboard/api/internal/banco"
+)
+
+// A fatia 5.10: as 12 tabelas do selo, os 6 gatilhos vivos em produção (com o OF e o WHEN das migrations), as 35
+// funções verbatim e a disparar_robo nova (migração 00007). Porta, por COMPORTAMENTO, o que os db/*.test.mjs do
+// selo provavam pelo texto das migrations: registro-com-conta (o gatilho preenche cliente_id pelo pedido),
+// lembretes-de-registro (o lembrete morre com o registro), trilha-de-edicoes (a lista fechada de ações),
+// vessel-registro-nao-toma-peca-com-dona (o 'bling' só para a chave de serviço). A série, a peça presa e as
+// recusas das funções são da Task 4 (pelas rotas).
+func TestFatiaDaAutenticidade(t *testing.T) {
+	p := ComEsquemaDeProducao(t)
+	ctx := context.Background()
+	const (
+		selo    = "a5a10000-0000-4000-a000-000000000001" // features {autenticidade}
+		super   = "a5a10000-0000-4000-a000-000000000002" // is_superadmin da ficha, sem o módulo
+		admin   = "a5a10000-0000-4000-a000-000000000003" // papel admin, sem o módulo: is_vessel_admin NÃO olha o papel
+		lote1   = "a5a20000-0000-4000-a000-0000000000b1"
+		lote2   = "a5a20000-0000-4000-a000-0000000000b2"
+		lote3   = "a5a20000-0000-4000-a000-0000000000b3"
+		pedido  = "a5a30000-0000-4000-a000-0000000000d1"
+		cliente = "a5a40000-0000-4000-a000-0000000000c1"
+	)
+	um := func(sql string, args ...any) string {
+		t.Helper()
+		var v *string
+		if err := p.QueryRow(ctx, sql, args...).Scan(&v); err != nil {
+			t.Fatalf("%s: %v", sql, err)
+		}
+		if v == nil {
+			return "<nulo>"
+		}
+		return *v
+	}
+	exec := func(sql string, args ...any) {
+		t.Helper()
+		if _, err := p.Exec(ctx, sql, args...); err != nil {
+			t.Fatalf("%s: %v", sql, err)
+		}
+	}
+	como := func(id, sql string, args ...any) string {
+		t.Helper()
+		var v *string
+		if err := banco.ComUsuario(ctx, p, id, func(tx pgx.Tx) error { return tx.QueryRow(ctx, sql, args...).Scan(&v) }); err != nil {
+			t.Fatalf("%s como %s: %v", sql, id, err)
+		}
+		if v == nil {
+			return "<nulo>"
+		}
+		return *v
+	}
+
+	for _, tab := range []string{"vessel_lotes", "vessel_pecas", "vessel_clientes", "vessel_pedidos_de_registro", "vessel_registros",
+		"vessel_leituras", "vessel_baixas", "vessel_edicoes", "vessel_garantias_baixadas", "vessel_cartao_pedidos",
+		"vessel_cartao_arquivos", "vessel_lembretes", "disparos_pendentes"} {
+		if um(`select coalesce(to_regclass($1::text)::text, 'falta')`, "public."+tab) == "falta" {
+			t.Errorf("tabela %s não existe", tab)
+		}
+	}
+	// os gatilhos do selo: os 6 vivos; vessel_lote_novo_pede_foto e vessel_cartao_pedido_novo_acorda_o_robo saíram em 10/10
+	linhas, err := p.Query(ctx, `select c.relname::text || '.' || g.tgname::text || ':' ||
+		  case when g.tgtype::int & 2 = 2 then 'before' else 'after' end
+		  from pg_trigger g join pg_class c on c.oid = g.tgrelid
+		 where not g.tgisinternal and c.relname like 'vessel\_%' order by 1`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gat, err := pgx.CollectRows(linhas, pgx.RowTo[string])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if quer := []string{"vessel_clientes.vessel_clientes_atualizado:before",
+		"vessel_lotes.trg_vessel_lote_material_recalcula_garantia:after", "vessel_lotes.trg_vessel_lote_novo_herda_material:before",
+		"vessel_lotes.trg_vessel_lotes_marcar_teste:before", "vessel_registros.vessel_registros_mata_o_lembrete:after",
+		"vessel_registros.vessel_registros_preencher_cliente_id:before"}; !reflect.DeepEqual(gat, quer) {
+		t.Errorf("gatilhos do selo = %v, esperava %v", gat, quer)
+	}
+
+	// o gatilho de produção da lista de espera (o dele é do 5.11) numa tabela de prova: insert e update não quebram, e
+	// os 6 disparos (3 inserts, 3 updates) viram UM pedido pendente
+	exec(`create table lista_de_prova (id int);
+		create trigger lista_de_prova_espelhar after insert or update on lista_de_prova
+		  for each row execute function vessel_espelhar_agora();
+		insert into lista_de_prova values (1);
+		insert into lista_de_prova values (2), (3);
+		update lista_de_prova set id = id + 10`)
+	if v := um(`select robo || '|' || situacao || '|' || pedidos || '|' || corpo::text from disparos_pendentes`); v != `vessel-espelhar-lista|pendente|6|{"origem": "gatilho"}` {
+		t.Errorf("disparos do espelho = %s", v)
+	}
+
+	// lote: marcar teste pelo prefixo do SKU (no insert e no update OF sku) e herdar o material do último lote do SKU
+	exec(`insert into vessel_lotes (id, modelo, sku, quantidade, material, material_fonte) values ($1::uuid, 'Linear', 'SS0001HB.S1', 3, 'canvas', 'dono')`, lote1)
+	exec(`insert into vessel_lotes (id, modelo, sku, quantidade) values ($1::uuid, 'Linear', 'SS0001HB.S1', 1)`, lote3)
+	exec(`insert into vessel_lotes (id, modelo, sku, quantidade) values ($1::uuid, 'Prova', 'teste-01', 2)`, lote2)
+	if v := um(`select material || '|' || material_fonte || '|' || teste::text from vessel_lotes where id = $1::uuid`, lote3); v != "canvas|herdado|false" {
+		t.Errorf("lote novo do mesmo SKU = %s", v)
+	}
+	if v := um(`select teste::text || '|' || coalesce(material, '-') from vessel_lotes where id = $1::uuid`, lote2); v != "true|-" {
+		t.Errorf("lote de teste = %s", v)
+	}
+	exec(`update vessel_lotes set sku = 'SS9' where id = $1::uuid`, lote2)
+	if v := um(`select teste::text from vessel_lotes where id = $1::uuid`, lote2); v != "false" {
+		t.Errorf("trocar o SKU não recalculou teste: %s", v)
+	}
+
+	// registro: o gatilho preenche cliente_id pelo PEDIDO (new.pedido_id) e mata o lembrete aberto da peça
+	exec(`insert into vessel_pecas (codigo, lote_id, numero_na_serie, gravada_em) values ('VBAAAA0003', $1::uuid, 3, now())`, lote1)
+	exec(`insert into vessel_clientes (id, nome, cpf, email, senha_hash) values ($1::uuid, 'Ana', '52998224725', 'ana@x.com', 'x')`, cliente)
+	exec(`insert into vessel_pedidos_de_registro (id, codigo, nome, cpf, whatsapp, estado, decidido_por_que, conferencia, criado_em, cliente_id)
+		values ($1::uuid, 'VBAAAA0003', 'Ana Cliente', '52998224725', '11999990000', 'aprovado', 'na_mao', '{"quando":"2026-01-10"}',
+		  '2026-01-12T12:00:00Z', $2::uuid)`, pedido, cliente)
+	exec(`insert into vessel_lembretes (peca_codigo, email, consentimento_em) values ('VBAAAA0003', 'ana@x.com', now())`)
+	exec(`insert into vessel_registros (codigo, nome, whatsapp, garantia_ate, registrado_em, cpf, pedido_id, bling_pedido)
+		values ('VBAAAA0003', 'Ana Cliente', '11999990000', '2028-01-10', '2026-01-15T15:00:00Z', '52998224725', $1::uuid, '777')`, pedido)
+	if v := um(`select cliente_id::text from vessel_registros where codigo = 'VBAAAA0003'`); v != cliente {
+		t.Errorf("cliente_id do registro = %s", v)
+	}
+	if v := um(`select cancelado_por || '|' || (cancelado_em is not null)::text from vessel_lembretes`); v != "registro|true" {
+		t.Errorf("lembrete depois do registro = %s", v)
+	}
+	// material do lote muda → a garantia recalcula pela data da compra da conferência (couro: 6 meses)
+	exec(`update vessel_lotes set material = 'couro', material_fonte = 'painel' where id = $1::uuid`, lote1)
+	if v := um(`select garantia_ate::text from vessel_registros where codigo = 'VBAAAA0003'`); v != "2026-07-10" {
+		t.Errorf("garantia em couro = %s", v)
+	}
+	exec(`update vessel_clientes set nome = 'Ana B' where id = $1::uuid`, cliente)
+	if v := um(`select (atualizado_em > criado_em)::text from vessel_clientes`); v != "true" {
+		t.Error("vessel_clientes_atualizado não tocou atualizado_em")
+	}
+
+	// a trilha aceita toda ação que as funções do painel escrevem, e só a lista fechada
+	for _, acao := range []string{"desmarcar_gravada", "sobrescrever_para_fila", "sobrescrever_para_baixa", "registro_aprovado",
+		"registro_recusado", "dono_trocado", "baixar_garantia", "lote_excluido", "peca_excluida", "material_do_lote"} {
+		if _, err := p.Exec(ctx, `insert into vessel_edicoes (codigo, acao) values ('X', $1::text)`, acao); err != nil {
+			t.Errorf("a trilha recusou %s: %v", acao, err)
+		}
+	}
+	_, err = p.Exec(ctx, `insert into vessel_edicoes (codigo, acao) values ('X', 'inventada')`)
+	if pe := (*pgconn.PgError)(nil); !errors.As(err, &pe) || pe.Code != "23514" {
+		t.Errorf("ação fora da lista = %v", err)
+	}
+
+	// o portão das funções: módulo ou super da ficha; o papel admin sozinho, não
+	exec(`insert into usuarios (id, email) values ($1::uuid, 'selo@x.com'), ($2::uuid, 'super@x.com'), ($3::uuid, 'admin@x.com')`, selo, super, admin)
+	exec(`insert into profiles (id, email, role, features, is_superadmin) values ($1::uuid, 'selo@x.com', 'viewer', '{autenticidade}', false),
+		  ($2::uuid, 'super@x.com', 'viewer', '{}', true), ($3::uuid, 'admin@x.com', 'admin', '{}', false)`, selo, super, admin)
+	if v := como(selo, `select vessel_alertas()->>'ok'`); v != "true" {
+		t.Errorf("selo nos alertas = %s", v)
+	}
+	if v := como(admin, `select vessel_alertas()->>'motivo'`); v != "sem_permissao" {
+		t.Errorf("admin sem o módulo nos alertas = %s", v)
+	}
+	// 'bling' (aprovação automática) na compat: ninguém passa — nem o selo, nem o super, nem uma conexão sem identidade
+	// (auth.role() da compat nunca é nulo e o papel nunca é service_role): é do Plano 6 (achado 2)
+	for _, id := range []string{selo, super} {
+		if v := como(id, `select vessel_decidir_pedido_de_registro($1::uuid, 'aprovado', 'bling', '{"pedido":"9"}'::jsonb, null)->>'motivo'`, pedido); v != "sem_permissao" {
+			t.Errorf("'bling' como %s = %s", id, v)
+		}
+	}
+	if v := um(`select vessel_decidir_pedido_de_registro($1::uuid, 'aprovado', 'bling', '{"pedido":"9"}'::jsonb, null)->>'motivo'`, pedido); v != "sem_permissao" {
+		t.Errorf("'bling' sem identidade = %s", v)
+	}
+}
+```
+
+- [ ] **Step 4: A lista de gatilhos.** Em `api/internal/testebanco/esquema_test.go`, `TestEsquemaDeProducaoComOsGatilhosVerbatim`: a lista `quer` ganha, depois de `"trg_impedir_autopromocao"`, `"trg_vessel_lote_material_recalcula_garantia", "trg_vessel_lote_novo_herda_material", "trg_vessel_lotes_marcar_teste", "vessel_clientes_atualizado", "vessel_registros_mata_o_lembrete", "vessel_registros_preencher_cliente_id"` (a ordem do `order by 1` em `en_US.utf8`, conferida no ensaio). **Se o pré-voo achou `CONFERIDOS` em `gerar-gatilhos.mjs` (o 5.2 entrou):** o gerador passa a emitir os gatilhos de TODA tabela declarada em `01-tabelas-*.sql` — inclusive os 2 que saíram de produção em 10/10 (o `03-triggers.csv` é de 09/10). Acrescente as 8 entradas e o filtro de uma linha, sem regerar o `02-gatilhos.sql` aqui:
+
+```js
+  'vessel_clientes.vessel_clientes_atualizado': {},                                     // db/migrations/2026-09-17-vessel-contas-base.sql:77-80
+  'vessel_lotes.trg_vessel_lotes_marcar_teste': { de: 'sku' },                          // db/migrations/2026-09-17-vessel-lote-de-teste.sql:94-98
+  'vessel_lotes.trg_vessel_lote_novo_herda_material': {},                               // db/migrations/2026-09-18-zz-vessel-garantia-pelo-material.sql:377-381
+  'vessel_lotes.trg_vessel_lote_material_recalcula_garantia': { de: 'material', quando: 'old.material is distinct from new.material' }, // 2026-09-18-zz-vessel-garantia-pelo-material.sql:331-336
+  'vessel_registros.vessel_registros_preencher_cliente_id': {},                         // db/migrations/2026-09-17-vessel-registro-com-conta.sql:230-233
+  'vessel_registros.vessel_registros_mata_o_lembrete': {},                              // db/migrations/2026-09-19-zzz-vessel-lembretes-register-later.sql:472-475
+  'vessel_lotes.vessel_lote_novo_pede_foto': { fora: true },                            // REMOVIDO em produção: db/migrations/2026-10-10-robos-na-vps-sem-gatilho-do-actions.sql:13
+  'vessel_cartao_pedidos.vessel_cartao_pedido_novo_acorda_o_robo': { fora: true },      // REMOVIDO em produção: idem :14
+```
+e, logo depois do laço que exige `CONFERIDOS` (antes de calcular `chamadas`), `for (const [k] of gatilhos) if (CONFERIDOS[k].fora) gatilhos.delete(k);` (o gatilho removido não sai, nem a função dele). O `create or replace trigger` do `03-funcoes-5-10.sql` torna a dupla emissão idempotente; quem regerar o `02` (5.3) confere que os 2 removidos não aparecem.
+
+- [ ] **Step 5:** `cd api && gofmt -l ./internal && go test -count=1 -run 'TestFatia|TestEsquema|TestNomesDosArquivos' ./internal/testebanco/` PASS (inclui `TestFatiaDaFabrica` etc. das outras fatias e o de nomes de dois dígitos); `go test -count=1 ./...` (a fatia carrega em todo `ComEsquemaDeProducao`); mutações de (b) reprovam, uma por vez.
+- [ ] **Step 6: Commit** `test(api): D0 — fatia 5.10 do esquema (as 12 tabelas do selo, 35 funções verbatim e os 6 gatilhos vivos)` (+ `Co-Authored-By`).
+
+---
