@@ -31,6 +31,12 @@ type Tabela struct {
 	// pessoa grava ela tem de conseguir ver; Ruling 5.2-2). Senão — e também quando uma referência
 	// (FK) não existe, para não denunciar o que existe fora do alcance dela — ErrNegado (403) e a
 	// transação é desfeita.
+	//
+	// LIMITE: "FK inexistente = invisível" só vale para a FK cujo alvo a regra de Ler restringe (ela
+	// decide a visibilidade da linha nova: existente-mas-invisível e inexistente dão o mesmo 403). Uma
+	// SEGUNDA FK fora da regra de Ler (ex.: patrimonio_bens.pessoa_id → acessos_pessoas, Ruling 5.2-17)
+	// responde 201 se o alvo existe e 403 se não existe: quem cria descobre se um uuid existe. Aceito
+	// onde o uuid já é visível por outro caminho (pessoas_para_escolher()); senão, valide a FK à parte.
 	CriarSoLegivel bool
 }
 
