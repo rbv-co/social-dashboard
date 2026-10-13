@@ -5,6 +5,7 @@ import (
 	"errors"
 	"maps"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -88,6 +89,12 @@ var tabelaDecisoes = dados.Tabela{Nome: "gt_fila_decisoes", Resposta: colunasDec
 // é decidir de novo). A linha nova passa na regra de criar do catálogo (Tabela.Criar → PodeCriar) E na
 // de LER de quem decide, na MESMA transação e sobre o MESMO mapa (Ruling 5.7-5: decisão de conta que a
 // pessoa não vê = 403, nada gravado).
+//
+// A conta vem da CAMPANHA: a tela junta decisões por campaign_id, então confiar no account_id do corpo
+// deixaria quem tem lista calar a campanha de outra conta (mandando conta nula ou a própria). Se a campanha
+// está em `campaigns` (tabela do 5.6, leitura direta só para esta checagem) com conta: corpo com conta
+// diferente = 403; corpo sem conta (nulo/ausente) = o servidor preenche a conta da campanha. Campanha
+// desconhecida (ou sem conta) segue como antes: vale o corpo. Depois vem a conferência de Ler.
 func criarDecisao(p *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		e := autz.EscopoDo(r.Context())
@@ -115,6 +122,19 @@ func criarDecisao(p *pgxpool.Pool) http.HandlerFunc {
 		ctx := r.Context()
 		var corpo []byte
 		err = banco.ComUsuario(ctx, p, e.ID, func(tx pgx.Tx) error {
+			var conta *string
+			err := tx.QueryRow(ctx, `select account_id::text from campaigns where campaign_id = @c::text`,
+				pgx.NamedArgs{"c": idDaCampanha(c.CampaignID)}).Scan(&conta)
+			if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+				return err
+			}
+			campos := maps.Clone(campos) // o mapa que vai à conferência E ao insert
+			if conta != nil {
+				if enviada, ok := texto(c.AccountID); ok && !strings.EqualFold(enviada, *conta) {
+					return autz.ErrNegado
+				}
+				campos["account_id"] = *conta
+			}
 			nova := maps.Clone(campos)
 			nova["decidido_por"] = e.ID
 			if _, tem := nova["account_id"]; !tem {
@@ -140,6 +160,12 @@ func criarDecisao(p *pgxpool.Pool) http.HandlerFunc {
 		}
 		dados.Responder(w, http.StatusCreated, corpo)
 	}
+}
+
+// idDaCampanha: o campaign_id já validado (Validar) como texto.
+func idDaCampanha(v json.RawMessage) string {
+	s, _ := texto(v)
+	return s
 }
 
 func montarFila(r chi.Router, p *pgxpool.Pool) {

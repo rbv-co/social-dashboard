@@ -49,6 +49,7 @@ var pessoas = []mundoteste.Pessoa{
 const linhasDoTrafego = `
 insert into accounts (id, name, username) values
   ('` + A1 + `', 'Vessel', 'vessel'), ('` + A2 + `', 'Mantova', 'mantova');
+insert into campaigns (campaign_id, account_id, name) values ('9001', '` + A1 + `', 'Vessel 1'), ('9002', '` + A2 + `', 'Mantova 1');
 insert into gt_config_metricas (balde, metricas, updated_at) values ('engajamento', '["cpm","custo_visita"]', '2026-10-01T00:00:00Z');
 insert into gt_objetivo_interacao (alvo_id, nivel, interacao, conta_id, updated_at) values
   ('9001', 'campanha', 'curtidas', '` + A1 + `', '2026-10-01T00:00:00Z'),
