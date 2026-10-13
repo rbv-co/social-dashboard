@@ -550,3 +550,482 @@ E em `api/internal/config/config.go`: o campo `GitHubPAT string // GITHUB_PAT: t
 - [ ] **Step 1:** Testes; ver falhar (o pacote não existe). - [ ] **Step 2:** Implementar (código de (a)). - [ ] **Step 3:** `gofmt -l ./internal && go vet ./internal/github/ ./internal/config/ && go test -count=1 -race ./internal/github/ ./internal/config/` PASS; mutações reprovam. - [ ] **Step 4:** Commit `feat(api): cliente internal/github — lista fechada de workflows, PAT só de GITHUB_PAT, erros por classe e sem seguir redirecionamento` (+ `Co-Authored-By`).
 
 ---
+### Task 3: `fabrica` — fundação (portão `Fabricante`, mundo com robôs, foto) e `auth.SoServico` se faltar
+
+**Revisor:** opus. **Depende de:** 1; `mundoteste` e `dados.SoSessaoPropria` (5.2, vindos com o 5.7).
+
+**(a) Contrato**
+- `api/internal/fabrica/fabrica.go` (abaixo): a doc do pacote passa a ser esta (a linha `// Package fabrica: …` sai de `purga.go`, que fica igual no resto), `Fabricante`, `soFabricante`, `soSessaoPropria`, `deve`, `responder` (corpo das edges: `{"error":…,"detail":…}`, `{"ok":true}`) e os ajudantes de validação de `json.RawMessage` que as Tasks 4–9 usam (moram aqui para elas andarem em paralelo).
+- `Fabricante` = a policy de escrita (`fab_camp_write`/`fab_criativos_write`) como regra só de quem pede: perfil existente E ativo (a subconsulta em `profiles` passa pela RLS `auth_read_profiles`: Ruling 6 do mestre) E (papel `admin` OU `is_superadmin` da ficha OU chave `meta.fabrica` em `permissions`, o `?` do jsonb — `Escopo.Chaves`, que também casa o texto de um array no topo). As edges liam o mesmo trio com `hasOwnProperty` (que NÃO casa array no topo) e sem olhar `disabled`: Ruling 5.8-3.
+- `auth.SoServico` (SÓ se o pré-voo não a achou): o código EXATO abaixo, em `api/internal/auth/servico.go`, com `servico_test.go`. Quando o 5.13 for mesclado, a versão dele substitui esta (mesma assinatura; conflito = apagar este arquivo).
+- Teste (interno): `novoMundo(t, montar...) *mundoteste.Mundo` com a fatia, as pessoas, as linhas e a foto abaixo; sessão `impersonado` = a de `fabricante` aberta por `super`; as sessões de `robo` e `roboSemFabrica` passam a ser de SERVIÇO (`sessaoDeServico`).
+
+```go
+// Package fabrica: a Fábrica de Anúncios. A purga diária (worker, Plano 4) e as rotas do sub-plano 5.8:
+// leituras do painel (dados.Consulta, regra do catálogo; fabrica_marcas com a restritiva pode_ver_conta),
+// a escolha de criativos (catálogo), as 5 edges portadas (fabrica-trigger, -apagar, -candidatos, -looks,
+// -publicos; portão Fabricante, que é a policy de escrita de produção) e as rotas de robô /fabrica/robo/…
+// (auth.SoServico + o perfil do robô). Escrita em banco.ComUsuario; "entrar como" só lê (Ruling 5.8-3).
+package fabrica
+
+import (
+	"encoding/json"
+	"net/http"
+	"regexp"
+	"strings"
+	"unicode/utf8"
+
+	"github.com/rbv-co/social-dashboard/api/internal/autz"
+	"github.com/rbv-co/social-dashboard/api/internal/dados"
+)
+
+// Fabricante: exists(profiles p where p.id = auth.uid() and (p.role = 'admin' or p.is_superadmin = true
+// or p.permissions ? 'meta.fabrica')) — fab_camp_write/fab_criativos_write de produção, que o catálogo
+// compila igual (TestFabricanteIgualAPolicy compara pessoa a pessoa). É o portão das edges portadas e das
+// rotas de robô, cujas tabelas só a chave de serviço gravava (Ruling 5.8-3).
+var Fabricante = autz.Regra(func(e *autz.Escopo) bool {
+	return e != nil && e.TemPerfil && e.Ativo && (e.Papel == "admin" || e.SuperFicha || e.Chaves["meta.fabrica"])
+})
+
+// soFabricante: depois de autz.ComEscopo. Sem escopo (rota montada fora do grupo) nega: falha fechada.
+func soFabricante(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !Fabricante(autz.EscopoDo(r.Context())) {
+			dados.Erro(w, http.StatusForbidden, "sem_permissao", "")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+var soSessaoPropria = dados.SoSessaoPropria(dados.FraseEntrarComo)
+
+// deve: declaração de rota errada (Consulta ou Tabela fora do catálogo) faz a API não subir.
+func deve(err error) {
+	if err != nil {
+		panic(err)
+	}
+}
+
+var reUUID = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+
+// responder: o corpo das edges portadas ({"error": código, "detail": frase}, {"ok": true}, {"job_id": …}),
+// que as telas já leem; montado em Go porque não vem de tabela.
+func responder(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(v)
+}
+
+// texto: o valor JSON é texto? (null, número, objeto: não)
+func texto(v json.RawMessage) (string, bool) {
+	var s string
+	if len(v) == 0 || v[0] != '"' || json.Unmarshal(v, &s) != nil {
+		return "", false
+	}
+	return s, true
+}
+
+// textoAte: texto de até max caracteres; vazio (ou só espaço) só se vazioPode.
+func textoAte(v json.RawMessage, max int, vazioPode bool) bool {
+	s, ok := texto(v)
+	return ok && utf8.RuneCountInString(s) <= max && (vazioPode || strings.TrimSpace(s) != "")
+}
+
+func casa(v json.RawMessage, re *regexp.Regexp) bool {
+	s, ok := texto(v)
+	return ok && re.MatchString(s)
+}
+
+func nulo(v json.RawMessage) bool { return strings.TrimSpace(string(v)) == "null" }
+
+func objeto(v json.RawMessage) bool {
+	var m map[string]json.RawMessage
+	return len(v) > 0 && v[0] == '{' && json.Unmarshal(v, &m) == nil
+}
+
+func lista(v json.RawMessage) bool {
+	var l []json.RawMessage
+	return len(v) > 0 && v[0] == '[' && json.Unmarshal(v, &l) == nil
+}
+
+func booleano(v json.RawMessage) bool { s := string(v); return s == "true" || s == "false" }
+```
+
+`api/internal/auth/servico.go` (só se faltar):
+
+```go
+package auth
+
+import "net/http"
+
+// SoServico: rota de robô (5.8: /fabrica/robo/…). Só sessão tipo 'servico' (emitida de tokens_de_servico
+// pelo 5.13) passa; sessão de painel — inclusive admin, super e "entrar como" — = 403. O que o robô pode
+// fazer depois é o PERFIL dele (catálogo, módulo, conta), como para gente. Contrato do 5.13 (trilha A).
+func SoServico(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if a := AtorDoContexto(r.Context()); a == nil || a.Tipo != "servico" || a.ImpersonadorID != nil {
+			erroJSON(w, http.StatusForbidden, "sem_permissao")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+```
+
+`api/internal/fabrica/mundo_test.go`:
+
+```go
+package fabrica
+
+import (
+	"context"
+	"testing"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rbv-co/social-dashboard/api/internal/auth"
+	"github.com/rbv-co/social-dashboard/api/internal/testebanco/mundoteste"
+)
+
+const (
+	A1 = "a5800000-0000-4000-a000-0000000000a1" // 'Vessel'
+	A2 = "a5800000-0000-4000-a000-0000000000a2" // 'Mantova'
+
+	M1 = "a5820000-0000-4000-a000-0000000000b1" // marca da A1
+	M2 = "a5820000-0000-4000-a000-0000000000b2" // marca da A2
+
+	C1 = "a5830000-0000-4000-a000-0000000000c1" // gerando (J1 rodando, run 111)
+	C2 = "a5830000-0000-4000-a000-0000000000c2" // pronta
+	C3 = "a5830000-0000-4000-a000-0000000000c3" // publicada (fechada)
+	C4 = "a5830000-0000-4000-a000-0000000000c4" // fechada e purgada
+
+	K1 = "a5840000-0000-4000-a000-0000000000d1" // C1, produto, escolhido
+	K2 = "a5840000-0000-4000-a000-0000000000d2" // C1, promo
+	K3 = "a5840000-0000-4000-a000-0000000000d3" // C2, produto
+	K4 = "a5840000-0000-4000-a000-0000000000d4" // C3, produto, escolhido
+
+	J1  = "a5850000-0000-4000-a000-0000000000e1" // gerar C1, rodando, run 111
+	J2  = "a5850000-0000-4000-a000-0000000000e2" // subir C3, concluido
+	MJ1 = "a5860000-0000-4000-a000-0000000000f1" // rastro da subida de C3
+	P1  = "a5870000-0000-4000-a000-000000000001" // público ativo da M1
+	P2  = "a5870000-0000-4000-a000-000000000002" // público inativo
+
+	idFabricante        = "a5810000-0000-4000-a000-000000000001"
+	idFabricanteA1      = "a5810000-0000-4000-a000-000000000002"
+	idFabricanteNenhuma = "a5810000-0000-4000-a000-000000000003"
+	idAdminA1           = "a5810000-0000-4000-a000-000000000004"
+	idSuper             = "a5810000-0000-4000-a000-000000000005"
+	idLeitor            = "a5810000-0000-4000-a000-000000000006"
+	idChaveEmLista      = "a5810000-0000-4000-a000-000000000007"
+	idSemModulo         = "a5810000-0000-4000-a000-000000000008"
+	idDesativado        = "a5810000-0000-4000-a000-000000000009"
+	idRobo              = "a5810000-0000-4000-a000-000000000010"
+	idRoboSemFabrica    = "a5810000-0000-4000-a000-000000000011"
+)
+
+// pessoas: a chave meta.fabrica de permissions nos três estados de allowed_accounts (nulo, lista, vazia),
+// quem passa por papel (admin) e pela ficha (super), quem tem 'meta.fabrica' só em FEATURES (não passa: a
+// policy lê permissions), a chave num array no topo (passa: o ? do jsonb), quem não tem nada e os dois
+// robôs (perfil próprio, sessão de serviço; um com a chave, outro sem). As chaves vão em linhasDaFabrica.
+var pessoas = []mundoteste.Pessoa{
+	{Chave: "fabricante", ID: idFabricante, Email: "fabricante@x.com", Papel: "viewer", Modulos: []string{"meta"}},
+	{Chave: "fabricanteA1", ID: idFabricanteA1, Email: "fabricantea1@x.com", Papel: "viewer", Modulos: []string{"meta"}, Contas: []string{A1}},
+	{Chave: "fabricanteNenhuma", ID: idFabricanteNenhuma, Email: "fabricantenenhuma@x.com", Papel: "viewer", Contas: []string{}},
+	{Chave: "adminA1", ID: idAdminA1, Email: "admina1@x.com", Papel: "admin", Contas: []string{A1}},
+	{Chave: "super", ID: idSuper, Email: "super@x.com", Papel: "viewer", Super: true},
+	{Chave: "leitor", ID: idLeitor, Email: "leitor@x.com", Papel: "viewer", Modulos: []string{"meta", "meta.fabrica"}},
+	{Chave: "chaveEmLista", ID: idChaveEmLista, Email: "chaveemlista@x.com", Papel: "viewer"},
+	{Chave: "semModulo", ID: idSemModulo, Email: "semmodulo@x.com", Papel: "viewer"},
+	{Chave: "desativado", ID: idDesativado, Email: "desativado@x.com", Papel: "admin", Desativado: true},
+	{Chave: "robo", ID: idRobo, Email: "robo-fabrica@x.com", Papel: "viewer", Modulos: []string{"meta", "sales"}},
+	{Chave: "roboSemFabrica", ID: idRoboSemFabrica, Email: "robo-outro@x.com", Papel: "viewer", Modulos: []string{"meta"}},
+}
+
+// Sem identidade. Toda linha de A2 é a marca M2; nada mais tem conta (as outras 8 tabelas não têm a
+// restritiva).
+const linhasDaFabrica = `
+update profiles set permissions = '{"meta.fabrica": ["ver", "editar"]}'
+ where id in ('` + idFabricante + `', '` + idFabricanteA1 + `', '` + idFabricanteNenhuma + `', '` + idRobo + `');
+update profiles set permissions = '["meta.fabrica"]' where id = '` + idChaveEmLista + `';
+insert into fabrica_marcas (id, nome, ad_account, page_id, ig_id, account_id, created_at) values
+  ('` + M1 + `', 'Vessel', 'act_111', 'p1', '1784', '` + A1 + `', '2026-10-01T00:00:00Z'),
+  ('` + M2 + `', 'Mantova', 'act_222', 'p2', '1785', '` + A2 + `', '2026-10-02T00:00:00Z');
+insert into fabrica_lojas (deposito_id, nome, ativo, ordem, marca_id, whatsapp, geo_cities, canal_loja_id) values
+  ('14888726315', 'Tivoli (Santa Bárbara)', true, 1, '` + M1 + `', '+5519971690502', '[267873]', '205834140'),
+  ('14888726277', 'Iguatemi (Campinas)', true, 2, '` + M1 + `', '+5519971092194', '[247071]', '205834116'),
+  ('14888617206', 'Shopping Dom Pedro', false, 3, '` + M1 + `', '+5519999545112', '[247071]', '205657609');
+insert into fabrica_objetivos (chave, rotulo, meta_objective, optimization_goal, pede_desconto, ativo, ordem) values
+  ('engajamento', 'Engajamento (WhatsApp)', 'OUTCOME_ENGAGEMENT', 'CONVERSATIONS', true, true, 1),
+  ('branding', 'Reconhecimento', 'OUTCOME_AWARENESS', 'REACH', false, true, 3),
+  ('antigo', 'Antigo', 'OUTCOME_TRAFFIC', 'LINK_CLICKS', true, false, 9);
+insert into fabrica_looks (chave, nome, arquetipo, objetivos, ativo, ordem, excluido) values
+  ('produto-heroi', 'Produto · Herói', 'produto', '{engajamento}', true, 1, false),
+  ('promo-sage', 'Promo · Sage', 'promo', '{engajamento,branding}', true, 2, false),
+  ('marca-velha', 'Marca · Velha', 'produto', '{}', false, 3, true);
+insert into fabrica_campanhas (id, nome, status, objetivo, job_id, created_at, fechada_em, purgado_em) values
+  ('` + C1 + `', 'Rodada 1', 'gerando', 'engajamento', '` + J1 + `', '2026-10-10T10:00:00Z', null, null),
+  ('` + C2 + `', 'Rodada 2', 'pronta', 'branding', null, '2026-10-11T10:00:00Z', null, null),
+  ('` + C3 + `', 'Rodada 3', 'pronta', 'engajamento', null, '2026-10-01T10:00:00Z', '2026-10-05T10:00:00Z', null),
+  ('` + C4 + `', 'Rodada 4', 'pronta', 'engajamento', null, '2026-08-01T10:00:00Z', '2026-08-05T10:00:00Z', '2026-09-05T10:00:00Z');
+insert into fabrica_criativos (id, campanha_id, sku, arquetipo, template, formato, variante, storage_path, url, escolhido, created_at) values
+  ('` + K1 + `', '` + C1 + `', 'S1', 'produto', 'produto-heroi', '1080x1080', 'avista', '` + C1 + `/produto/s1-avista-1080x1080.png', 'https://midia.x/f/` + C1 + `/produto/s1.png', true, '2026-10-10T10:01:00Z'),
+  ('` + K2 + `', '` + C1 + `', null, 'promo', 'promo-sage', '1080x1920', 'colecao', '` + C1 + `/promo/colecao-1080x1920.png', 'https://midia.x/f/` + C1 + `/promo/c.png', false, '2026-10-10T10:02:00Z'),
+  ('` + K3 + `', '` + C2 + `', 'S2', 'produto', 'produto-heroi', '1080x1080', 'avista', '` + C2 + `/produto/s2-avista-1080x1080.png', 'https://midia.x/f/` + C2 + `/produto/s2.png', false, '2026-10-11T10:01:00Z'),
+  ('` + K4 + `', '` + C3 + `', 'S3', 'produto', 'produto-heroi', '1080x1080', 'avista', '` + C3 + `/produto/s3-avista-1080x1080.png', 'https://midia.x/f/` + C3 + `/produto/s3.png', true, '2026-10-01T10:01:00Z');
+insert into fabrica_jobs (id, tipo, params, status, github_run_id, criado_por, created_at) values
+  ('` + J1 + `', 'gerar', '{"campanhaId": "` + C1 + `", "objetivo": "engajamento"}', 'rodando', '111', '` + idFabricante + `', '2026-10-10T10:00:00Z'),
+  ('` + J2 + `', 'subir', '{"campanhaId": "` + C3 + `"}', 'concluido', '222', '` + idFabricante + `', '2026-10-04T10:00:00Z');
+insert into fabrica_meta_jobs (id, ad_account_id, loja, tipo, meta_campaign_id, adset_ids, ad_ids, payload, status, created_at) values
+  ('` + MJ1 + `', 'act_111', 'Tivoli (Santa Bárbara)', 'estudio', '120001', '["1"]', '["2"]', '{"campanhaId": "` + C3 + `"}', 'criado', '2026-10-05T09:00:00Z');
+insert into fabrica_publicos (id, nome, marca_id, ativo, created_at) values
+  ('` + P1 + `', 'Campinas 25-45', '` + M1 + `', true, '2026-10-01T00:00:00Z'),
+  ('` + P2 + `', 'Velho', null, false, '2026-09-01T00:00:00Z');`
+
+// fotoDaFabrica: hash das 9 tabelas e de ia_execucoes. Igual antes e depois = nada mudou.
+const fotoDaFabrica = `select md5(string_agg(l, '|' order by l)) from (
+  select 'lo:' || t::text as l from fabrica_lojas t union all
+  select 'ob:' || t::text from fabrica_objetivos t union all
+  select 'lk:' || t::text from fabrica_looks t union all
+  select 'ma:' || t::text from fabrica_marcas t union all
+  select 'ca:' || t::text from fabrica_campanhas t union all
+  select 'cr:' || t::text from fabrica_criativos t union all
+  select 'jo:' || t::text from fabrica_jobs t union all
+  select 'mj:' || t::text from fabrica_meta_jobs t union all
+  select 'pu:' || t::text from fabrica_publicos t union all
+  select 'ia:' || t::text from ia_execucoes t) z`
+
+// sessaoDeServico: a sessão tipo 'servico' do usuário do robô (o que o emissor de tokens_de_servico do
+// 5.13 cria). Se o 5.13 trouxer ajudante de teste próprio, use-o aqui (pré-voo).
+func sessaoDeServico(t *testing.T, m *mundoteste.Mundo, chave, id string) {
+	t.Helper()
+	tok, err := auth.NovoStore(m.P).Criar(context.Background(), id, "servico", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.Tok[chave] = tok
+}
+
+// novoMundo: a fatia de produção, as pessoas, as linhas, a sessão "impersonado" (a de fabricante aberta
+// por super) e as sessões de SERVIÇO dos dois robôs, com as rotas de `montar` atrás da MESMA cadeia do
+// grupo de domínio de web.Rotas.
+func novoMundo(t *testing.T, montar ...func(chi.Router, *pgxpool.Pool)) *mundoteste.Mundo {
+	t.Helper()
+	m := mundoteste.Novo(t, mundoteste.Opcoes{Pessoas: pessoas, Linhas: linhasDaFabrica,
+		Impersonadas: map[string][2]string{"impersonado": {idFabricante, idSuper}}}, montar...)
+	sessaoDeServico(t, m, "robo", idRobo)
+	sessaoDeServico(t, m, "roboSemFabrica", idRoboSemFabrica)
+	return m
+}
+```
+
+**(b) Testes de aceitação** (`fabrica_test.go`)
+- `TestMundoDaFabrica` (sonda `GET /eco` montada no teste, que escreve `fmt.Sprintf("%t|%s|%t", Fabricante(e), a.Tipo, autz.PodeVerConta(e, A2))`): sem sessão → 401; `fabricante` → `true|painel|true`; `fabricanteA1` → `true|painel|false`; `fabricanteNenhuma` → `true|painel|false`; `adminA1` → `true|painel|true` (papel admin vê toda conta); `super` → `true|painel|true`; `leitor` → `false|painel|true`; `chaveEmLista` → `true|painel|true`; `semModulo` → `false|painel|true`; `desativado` → 401; `robo` → `true|servico|true`; `roboSemFabrica` → `false|servico|true`; `impersonado` → `true|painel|true`. E as linhas: `select count(*)::text from fabrica_criativos` = `4`; a foto não é vazia.
+- `TestFabricanteIgualAPolicy`: para cada pessoa (inclusive `desativado` e os robôs), `e := autz.CarregarEscopo(ctx, m.P, id)`; para `fabrica_campanhas` (linha `{"nome":"x"}`) e `fabrica_criativos` (linha `{"arquetipo":"produto","template":"t","formato":"f"}`), `f := autz.Producao.Filtro(e, <tabela>, autz.Criar, "autz_nova")` e `ok := autz.Conferir(ctx, m.P, f, <tabela>, linha)`: `ok == Fabricante(e)` sempre, com pelo menos 5 pessoas de cada lado (o teste falha se o mundo deixar de exercitar os dois lados).
+- `TestSoServico` (`auth/servico_test.go`, só se a Task criou o arquivo): ator `painel` → 403 `{"error":"sem_permissao"}`; `servico` → passa; `servico` com `ImpersonadorID` → 403; sem ator → 403.
+- `TestAjudantesDeValidacao` (puro): `texto` recusa `null`, `5`, `{}`; `textoAte("\"  \"", 10, false)` = falso e com `true` = verdadeiro; conta caracteres (`"ção"` cabe em 3); `objeto` aceita `{}` e recusa `[]`/`null`; `lista` aceita `[]` e recusa `{}`; `booleano` só `true`/`false`.
+- Mutações que têm de reprovar: tirar `e.Ativo` de `Fabricante` (`desativado` vira `true` e o teste da policy acusa); trocar `e.Chaves["meta.fabrica"]` por `e.Modulo("meta.fabrica")` (`leitor` passa e `fabricante` não); em `SoServico`, aceitar `painel`.
+
+**(c) Arquivos:** Create `api/internal/fabrica/fabrica.go`, `api/internal/fabrica/mundo_test.go`, `api/internal/fabrica/fabrica_test.go` (e, se faltar, `api/internal/auth/servico.go`, `api/internal/auth/servico_test.go`); Modify `api/internal/fabrica/purga.go` (só a linha do comentário do pacote).
+
+**(d) Dependências:** Task 1; `mundoteste`; `autz.CarregarEscopo/Conferir/PodeVerConta`.
+
+- [ ] **Step 1:** Testes; ver falhar. - [ ] **Step 2:** Implementar. - [ ] **Step 3:** `gofmt -l ./internal && go vet ./internal/fabrica/ ./internal/auth/ && go test -count=1 ./internal/fabrica/ ./internal/auth/` PASS (os testes da purga continuam verdes); mutações reprovam. - [ ] **Step 4:** Commit `feat(api): fábrica — portão Fabricante provado igual à policy de escrita, mundo com robôs de serviço` (+ `Co-Authored-By`).
+
+---
+
+### Task 4: Leituras do painel e escolha de criativos
+
+**Revisor:** sonnet. **Depende de:** 3.
+
+**(a) Contrato** (regra de Ler do catálogo em toda leitura: `true` em 8 tabelas, `pode_ver_conta(account_id)` em `fabrica_marcas`; uma rota por necessidade de tela, os filtros cobrindo também as leituras do robô — que usa ESTAS rotas com a sessão de serviço: Task 9)
+- `GET /fabrica/lojas` — gerar:35 (`?ativo=true`), curar:21, subir:350; robô `lib/config-lojas.mjs:8`, `exportar-zoho.mjs:21`. Filtro `ativo`. Ordem `ordem`.
+- `GET /fabrica/objetivos` — gerar:36 (`?ativo=true`), subir:225 (`?chave=`); robô `lib/objetivos.mjs:3`. Filtros `ativo`, `chave`. Ordem `ordem`.
+- `GET /fabrica/marcas` — subir:229 (`?account_id=`); robô `lib/config-lojas.mjs:7`. Filtros `account_id`, `ativo`. **Restritiva**: projeta `account_id` (a varredura da Task 10 procura o uuid de A2).
+- `GET /fabrica/looks` — looks:20; robô `gerar-criativos.mjs:198`. Filtro `ativo`. Ordem `ordem`.
+- `GET /fabrica/publicos` — subir:170 (`?ativo=true`). Ordem `created_at desc`.
+- `GET /fabrica/campanhas` — home:32 (`?aberta=true&purgada=false&status=gerando,pronta,erro&ordem=created_at.desc`), home:41 (`?aberta=false&ordem=fechada_em.desc&limite=8`), curar:23 e :56 e subir:222 (`?id=`); robô `subir-estudio.mjs:321`, `exportar-zoho.mjs:16`. Traz `qtd_criativos` (subconsulta com a regra de Ler de `fabrica_criativos`): substitui o laço de uma contagem por rodada a cada 4 s de home:35.
+- `GET /fabrica/criativos` — curar:20 (`?campanha_id=`), home:42 (`?limite=1&contar=1` → `X-Total-Count`); robô `fabrica-job-runner.mjs:163`, `gerar-criativos.mjs:304`, `subir-estudio.mjs:301` (`?campanha_id=&escolhido=true&purgado=false`), `exportar-zoho.mjs:25` (`?arquetipo=produto`). Filtros `campanha_id`, `escolhido`, `arquetipo`, `purgado`. O formato 1920x1080 que o `subir` pula continua sendo filtrado pelo robô (Plano 7).
+- `GET /fabrica/jobs` — curar:26 e :59, use-job-status:8 (`?id=`), estudio:31 (`?tipo=subir&campanha_id=&ordem=created_at.desc&limite=1`); robô `fabrica-job-runner.mjs:115` (`?id=`), `exportar-zoho.mjs:18` (`?campanha_id=&ordem=created_at&limite=1`). Sem `criado_por` (uuid de pessoa; nenhuma tela o lê).
+- `GET /fabrica/meta-jobs` — home:93 (`?campanha_id=<ids>&com_campanha_meta=true`); robô `subir-estudio.mjs:328` (`?tipo=estudio&campanha_id=&ordem=created_at.desc&limite=50`).
+- `POST /fabrica/criativos/escolher` (`soSessaoPropria`): substitui curar:33 (um) e curar:48 (vários). Corpo `{"ids": [uuid, …] (1–500), "escolhido": bool}`. Regra = catálogo (`fab_criativos_write`) por `Tabela.Editar` em CADA id, numa transação só, em ordem fixa (duas pessoas escolhendo ao mesmo tempo travam as linhas na mesma ordem); qualquer id invisível/inexistente = `404` e nada muda. Resposta `200 {"atualizados": n}`.
+
+```go
+package fabrica
+
+import (
+	"net/http"
+	"slices"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rbv-co/social-dashboard/api/internal/autz"
+	"github.com/rbv-co/social-dashboard/api/internal/banco"
+	"github.com/rbv-co/social-dashboard/api/internal/dados"
+)
+
+var filtroAtivo = dados.Filtro{Param: "ativo", SQL: "t.ativo = @ativo::boolean", Tipo: "booleano"}
+
+var consultaLojas = dados.Consulta{Tabela: "fabrica_lojas", Alias: "t",
+	SQL: `select t.deposito_id, t.nome, t.ativo, t.ordem, t.marca_id, t.whatsapp, t.geo_cities, t.canal_loja_id
+	  from fabrica_lojas t`,
+	Filtros: []dados.Filtro{filtroAtivo}, OrdemPadrao: "t.ordem", Desempate: "t.deposito_id"}
+
+var consultaObjetivos = dados.Consulta{Tabela: "fabrica_objetivos", Alias: "t",
+	SQL: `select t.chave, t.rotulo, t.descricao, t.meta_objective, t.optimization_goal, t.billing_event,
+	  t.destination_type, t.promoted_object_tipo, t.cta_type, t.looks, t.pede_desconto, t.ativo, t.ordem
+	  from fabrica_objetivos t`,
+	Filtros:     []dados.Filtro{filtroAtivo, {Param: "chave", SQL: "t.chave = @chave::text", Tipo: "texto"}},
+	OrdemPadrao: "t.ordem", Desempate: "t.chave"}
+
+// consultaMarcas: a única com a restritiva (so_contas_permitidas = pode_ver_conta(account_id), account_id
+// TEXTO). Projeta account_id: é por ele que a varredura da Task 10 acha vazamento.
+var consultaMarcas = dados.Consulta{Tabela: "fabrica_marcas", Alias: "t",
+	SQL: `select t.id, t.nome, t.caption_template, t.ad_account, t.page_id, t.ig_id, t.account_id, t.ativo,
+	  t.segmento, t.termos_produto, t.created_at from fabrica_marcas t`,
+	Filtros:     []dados.Filtro{{Param: "account_id", SQL: "t.account_id = @account_id::text", Tipo: "texto"}, filtroAtivo},
+	OrdemPadrao: "t.created_at", Desempate: "t.id"}
+
+var consultaLooks = dados.Consulta{Tabela: "fabrica_looks", Alias: "t",
+	SQL: `select t.chave, t.nome, t.arquetipo, t.objetivos, t.ativo, t.excluido, t.ordem, t.preview_url, t.tipo,
+	  t.canva_formato_map, t.campo_map, t.created_at from fabrica_looks t`,
+	Filtros: []dados.Filtro{filtroAtivo}, OrdemPadrao: "t.ordem", Desempate: "t.chave"}
+
+var consultaPublicos = dados.Consulta{Tabela: "fabrica_publicos", Alias: "t",
+	SQL: `select t.id, t.nome, t.marca_id, t.geo, t.idade_min, t.idade_max, t.generos, t.interesses,
+	  t.custom_audiences, t.ativo, t.created_at from fabrica_publicos t`,
+	Filtros: []dados.Filtro{filtroAtivo}, OrdemPadrao: "t.created_at desc", Desempate: "t.id"}
+
+// colunasCampanha: o que home, curar, subir e o robô leem. criado_por (uuid de pessoa) não sai.
+const colunasCampanha = `t.id, t.nome, t.status, t.objetivo, t.job_id, t.desconto_tipo, t.desconto_pct, t.parcelas,
+  t.created_at, t.fechada_em, t.purgado_em`
+
+var consultaCampanhas = dados.Consulta{Tabela: "fabrica_campanhas", Alias: "t",
+	SQL: `select ` + colunasCampanha + `, (select count(*) from fabrica_criativos c
+	  where c.campanha_id = t.id and {ler:fabrica_criativos:c}) as qtd_criativos from fabrica_campanhas t`,
+	Filtros: []dados.Filtro{
+		{Param: "id", SQL: "t.id = @id::uuid", Tipo: "uuid"},
+		{Param: "status", SQL: "t.status = any(@status::text[])", Tipo: "texto[]"},
+		{Param: "aberta", SQL: "(t.fechada_em is null) = @aberta::boolean", Tipo: "booleano"},
+		{Param: "purgada", SQL: "(t.purgado_em is not null) = @purgada::boolean", Tipo: "booleano"},
+	},
+	Ordens:      map[string]string{"created_at": "t.created_at", "fechada_em": "t.fechada_em"},
+	OrdemPadrao: "t.created_at desc", Desempate: "t.id"}
+
+const colunasCriativo = `t.id, t.campanha_id, t.sku, t.arquetipo, t.template, t.formato, t.variante, t.preco_de,
+  t.preco_por, t.storage_path, t.url, t.legenda, t.escolhido, t.purgado_em, t.created_at`
+
+var consultaCriativos = dados.Consulta{Tabela: "fabrica_criativos", Alias: "t",
+	SQL: `select ` + colunasCriativo + ` from fabrica_criativos t`,
+	Filtros: []dados.Filtro{
+		{Param: "campanha_id", SQL: "t.campanha_id = @campanha_id::uuid", Tipo: "uuid"},
+		{Param: "escolhido", SQL: "t.escolhido = @escolhido::boolean", Tipo: "booleano"},
+		{Param: "arquetipo", SQL: "t.arquetipo = @arquetipo::text", Tipo: "texto"},
+		{Param: "purgado", SQL: "(t.purgado_em is not null) = @purgado::boolean", Tipo: "booleano"},
+	},
+	OrdemPadrao: "t.created_at", Desempate: "t.id"}
+
+// consultaJobs: params->>'campanhaId' é expressão total (texto ou nulo, nunca erro): o filtro não vira
+// oráculo (regra do modelo de leitura do mestre, IV.1).
+var consultaJobs = dados.Consulta{Tabela: "fabrica_jobs", Alias: "t",
+	SQL: `select t.id, t.tipo, t.params, t.status, t.github_run_id, t.resultado, t.erro, t.created_at, t.updated_at
+	  from fabrica_jobs t`,
+	Filtros: []dados.Filtro{
+		{Param: "id", SQL: "t.id = @id::uuid", Tipo: "uuid"},
+		{Param: "tipo", SQL: "t.tipo = @tipo::text", Tipo: "texto"},
+		{Param: "status", SQL: "t.status = @status::text", Tipo: "texto"},
+		{Param: "campanha_id", SQL: "t.params->>'campanhaId' = @campanha_id::text", Tipo: "texto"},
+	},
+	Ordens: map[string]string{"created_at": "t.created_at"}, OrdemPadrao: "t.created_at desc", Desempate: "t.id"}
+
+var consultaMetaJobs = dados.Consulta{Tabela: "fabrica_meta_jobs", Alias: "t",
+	SQL: `select t.id, t.tipo, t.loja, t.ad_account_id, t.meta_campaign_id, t.adset_ids, t.ad_ids, t.payload,
+	  t.status, t.erro, t.created_at from fabrica_meta_jobs t`,
+	Filtros: []dados.Filtro{
+		{Param: "campanha_id", SQL: "t.payload->>'campanhaId' = any(@campanha_id::text[])", Tipo: "texto[]"},
+		{Param: "tipo", SQL: "t.tipo = @tipo::text", Tipo: "texto"},
+		{Param: "com_campanha_meta", SQL: "(t.meta_campaign_id is not null) = @com_campanha_meta::boolean", Tipo: "booleano"},
+	},
+	Ordens: map[string]string{"created_at": "t.created_at"}, OrdemPadrao: "t.created_at desc", Desempate: "t.id"}
+
+var tabelaCriativos = dados.Tabela{Nome: "fabrica_criativos", Resposta: colunasCriativo}
+
+type pedidoEscolher struct {
+	IDs       []string `json:"ids"`
+	Escolhido *bool    `json:"escolhido"`
+}
+
+// escolher: POST /fabrica/criativos/escolher. Catálogo (fab_criativos_write) em cada id pelo Tabela.Editar
+// (PodeEditar trava a linha), tudo numa transação: um id que falha desfaz os outros.
+func escolher(p *pgxpool.Pool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		e := autz.EscopoDo(r.Context())
+		if e == nil {
+			dados.Erro(w, http.StatusInternalServerError, "erro_interno", "")
+			return
+		}
+		var c pedidoEscolher
+		if !dados.LerCorpo(w, r, &c) {
+			return
+		}
+		if c.Escolhido == nil || len(c.IDs) == 0 || len(c.IDs) > 500 {
+			dados.Erro(w, http.StatusBadRequest, "pedido_invalido", "Mande ids (1 a 500) e escolhido.")
+			return
+		}
+		for _, id := range c.IDs {
+			if !reUUID.MatchString(id) {
+				dados.Erro(w, http.StatusBadRequest, "pedido_invalido", "ids são uuids.")
+				return
+			}
+		}
+		ids := slices.Compact(slices.Sorted(slices.Values(c.IDs)))
+		campos := map[string]any{"escolhido": *c.Escolhido}
+		ctx := r.Context()
+		err := banco.ComUsuario(ctx, p, e.ID, func(tx pgx.Tx) error {
+			for _, id := range ids {
+				if _, err := tabelaCriativos.Editar(ctx, tx, autz.Producao, e, id, campos); err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			dados.ErroDeEscrita(w, err)
+			return
+		}
+		responder(w, http.StatusOK, map[string]int{"atualizados": len(ids)})
+	}
+}
+
+func montarLeituras(r chi.Router, p *pgxpool.Pool) {
+	deve(tabelaCriativos.Validar(autz.Producao))
+	r.Get("/fabrica/lojas", consultaLojas.Handler(p, autz.Producao))
+	r.Get("/fabrica/objetivos", consultaObjetivos.Handler(p, autz.Producao))
+	r.Get("/fabrica/marcas", consultaMarcas.Handler(p, autz.Producao))
+	r.Get("/fabrica/looks", consultaLooks.Handler(p, autz.Producao))
+	r.Get("/fabrica/publicos", consultaPublicos.Handler(p, autz.Producao))
+	r.Get("/fabrica/campanhas", consultaCampanhas.Handler(p, autz.Producao))
+	r.Get("/fabrica/criativos", consultaCriativos.Handler(p, autz.Producao))
+	r.Get("/fabrica/jobs", consultaJobs.Handler(p, autz.Producao))
+	r.Get("/fabrica/meta-jobs", consultaMetaJobs.Handler(p, autz.Producao))
+	r.With(soSessaoPropria).Post("/fabrica/criativos/escolher", escolher(p))
+}
+```
+
+**(b) Testes de aceitação** (`TestLeituras`, `TestEscolher`, `m.Rodar`; "intacto" = `fotoDaFabrica` igual à de antes)
+- Abertas (8 tabelas): `fabricante`, `leitor`, `semModulo`, `impersonado`, `robo` → 200 com as linhas; `desativado` → 401; sem sessão → 401.
+- Marcas: `fabricante`, `adminA1`, `super`, `robo` → M1 e M2; `fabricanteA1`, `impersonado`? (não: impersonado é o `fabricante`, vê as duas) — `fabricanteA1` → só M1; `fabricanteNenhuma` → `[]`; `fabricanteA1 ?account_id=<A2>` → `[]`; `?contar=1` → `X-Total-Count: 1` para `fabricanteA1` e `2` para `fabricante`.
+- Filtros e ordem: `lojas?ativo=true` → Tivoli e Iguatemi, nessa ordem, sem Dom Pedro; `objetivos?ativo=true` → `engajamento`, `branding`; `objetivos?chave=branding` → uma, com `"pede_desconto":false`; `looks` → as três em `ordem`; `campanhas?aberta=true&purgada=false&status=gerando,pronta,erro&ordem=created_at.desc` → C2 antes de C1, C1 com `"qtd_criativos":2`; `campanhas?aberta=false&ordem=fechada_em.desc&limite=8` → C3 antes de C4; `criativos?limite=1&contar=1` → `X-Total-Count: 4`; `criativos?campanha_id=<C1>&escolhido=true&purgado=false` → só K1; `jobs?campanha_id=<C1>` → J1 (com `"params"` e sem `criado_por`); `jobs?tipo=subir&campanha_id=<C3>&ordem=created_at.desc&limite=1` → J2; `meta-jobs?campanha_id=<C3>,<C2>&com_campanha_meta=true` → MJ1; `meta-jobs?tipo=estudio&campanha_id=<C3>` → MJ1.
+- 400: `campanhas?status=` (vazio), `campanhas?ordem=nome`, `criativos?campanha_id=xyz`, `jobs?criado_por=<id>`, `lojas?limite=1001`.
+- Escolher, permitido: `fabricante` `{"ids":["<K2>","<K1>"],"escolhido":false}` → 200 `{"atualizados":2}`; efeito `select string_agg(escolhido::text, ',' order by id) from fabrica_criativos where id in (K1, K2)` = `false,false`; ids repetidos contam uma vez; `chaveEmLista`, `super`, `adminA1` → 200.
+- Escolher, negado e intacto: `leitor`, `semModulo`, `roboSemFabrica` → 403; `impersonado` → 403 com "Quem entrou como outra pessoa"; `{"ids":["<K1>","<uuid inexistente>"],"escolhido":false}` → 404 e K1 continua `true`; 501 ids, `[]`, sem `escolhido`, `"escolhido":"sim"`, id `"x"` → 400.
+- Mutações que têm de reprovar: tirar o `{ler:fabrica_criativos:c}` da subconsulta (`Validar` recusa: a API não sobe); trocar a transação única por uma por id (o caso do id inexistente deixa K1 mudado); tirar `soSessaoPropria` do POST.
+
+**(c) Arquivos:** Create `api/internal/fabrica/leituras.go`, `api/internal/fabrica/leituras_test.go`.
+
+**(d) Dependências:** Task 3; `dados.Consulta`, `dados.Tabela.Editar`.
+
+- [ ] **Step 1:** Testes; ver falhar. - [ ] **Step 2:** Implementar (código de (a)). Se `dados.Consulta.Validar` recusar o `->>` dos filtros de `jobs`/`meta-jobs` (a gramática do 5.0 aceita operador e literal; se recusar, é defeito dela): **pare e reporte** — não troque por filtro no Go. - [ ] **Step 3:** `gofmt -l ./internal && go vet ./internal/fabrica/ && go test -count=1 ./internal/fabrica/` PASS; mutações reprovam. - [ ] **Step 4:** Commit `feat(api): leituras da Fábrica pelo catálogo (marcas por conta) e escolha de criativos numa transação` (+ `Co-Authored-By`).
+
+---
