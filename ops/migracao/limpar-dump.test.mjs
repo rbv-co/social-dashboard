@@ -40,7 +40,7 @@ create extension if not exists pgcrypto with schema extensions;
 create publication supabase_realtime;
 `
   const r = limpar(sql)
-  assert.deepEqual(r.removidos, { policies: 1, rls: 2, grants: 3, extensoes: 1, publicacoes: 1, schemas: 0 })
+  assert.deepEqual(r.removidos, { policies: 1, rls: 2, grants: 3, extensoes: 1, publicacoes: 1, schemas: 0, substituidas: 0 })
   assert.deepEqual(r.reescritos, { fks_usuarios: 0 })
   assert.match(r.sql, /create table t/)
   assert.match(r.sql, /create extension if not exists pgcrypto/)
@@ -55,7 +55,7 @@ begin
 end $f$;`
   const r = limpar(sql)
   assert.equal(r.sql.trim(), sql.trim())
-  assert.deepEqual(r.removidos, { policies: 0, rls: 0, grants: 0, extensoes: 0, publicacoes: 0, schemas: 0 })
+  assert.deepEqual(r.removidos, { policies: 0, rls: 0, grants: 0, extensoes: 0, publicacoes: 0, schemas: 0, substituidas: 0 })
 })
 
 test('limpar reescreve FK para auth.users(id) em alter table e create table, mantendo o ON DELETE', () => {
@@ -130,4 +130,31 @@ test('limpar só conta FK reescrita se o texto mudou (comentário no meio do com
   const r = limpar(sql)
   assert.equal(r.sql, sql)
   assert.equal(r.reescritos.fks_usuarios, 0)
+})
+
+test('limpar tira a disparar_robo do dump (a substituta vem da migração 00007 da API) e deixa quem a chama', () => {
+  const sql = `
+CREATE FUNCTION public.disparar_robo(p_robo text, p_funcao text, p_segredo text, p_body jsonb DEFAULT '{}'::jsonb, p_timeout integer DEFAULT 120000) RETURNS bigint
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare v_req bigint;
+begin
+  select net.http_post(url := 'https://x/functions/v1/' || p_funcao, body := p_body) into v_req;
+  return v_req;
+end $$;
+COMMENT ON FUNCTION public.disparar_robo(p_robo text, p_funcao text, p_segredo text, p_body jsonb, p_timeout integer) IS 'acorda uma edge';
+CREATE FUNCTION public.disparar_coletor(p_janela text) RETURNS bigint LANGUAGE sql AS $$ select 1::bigint $$;
+CREATE FUNCTION public.vessel_espelhar_agora() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER AS $$
+begin
+  perform public.disparar_robo('vessel-espelhar-lista', 'vessel-espelhar-lista', 'vessel-espelhar-lista', '{"origem":"gatilho"}'::jsonb, 120000);
+  return null;
+end $$;
+`
+  const r = limpar(sql)
+  assert.equal(r.removidos.substituidas, 2)
+  assert.doesNotMatch(r.sql, /CREATE FUNCTION public\.disparar_robo/)
+  assert.doesNotMatch(r.sql, /net\.http_post/)
+  assert.match(r.sql, /CREATE FUNCTION public\.disparar_coletor/)
+  assert.match(r.sql, /perform public\.disparar_robo\('vessel-espelhar-lista'/)
 })
