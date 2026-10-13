@@ -591,8 +591,11 @@ package fabrica
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
+	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -628,7 +631,25 @@ func deve(err error) {
 	}
 }
 
-var reUUID = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+var (
+	reUUID      = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+	reChaveLook = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,79}$`) // chave de fabrica_looks (templates.mjs, IA_LOOKS)
+	reRunID     = regexp.MustCompile(`^[0-9]{1,20}$`)              // id de execução do GitHub Actions
+)
+
+// errPedido: entrada inválida descoberta dentro da transação; escritaOuPedido responde 400 com a frase.
+type errPedido struct{ frase string }
+
+func (e errPedido) Error() string { return e.frase }
+
+func escritaOuPedido(w http.ResponseWriter, err error) {
+	var ep errPedido
+	if errors.As(err, &ep) {
+		dados.Erro(w, http.StatusBadRequest, "pedido_invalido", ep.frase)
+		return
+	}
+	dados.ErroDeEscrita(w, err)
+}
 
 // responder: o corpo das edges portadas ({"error": código, "detail": frase}, {"ok": true}, {"job_id": …}),
 // que as telas já leem; montado em Go porque não vem de tabela.
@@ -671,6 +692,36 @@ func lista(v json.RawMessage) bool {
 }
 
 func booleano(v json.RawMessage) bool { s := string(v); return s == "true" || s == "false" }
+
+func textoEm(v json.RawMessage, opcoes ...string) bool {
+	s, ok := texto(v)
+	return ok && slices.Contains(opcoes, s)
+}
+
+// textoOuNulo: ausente, null ou texto de até max caracteres (vazio pode).
+func textoOuNulo(v json.RawMessage, max int) bool { return len(v) == 0 || nulo(v) || textoAte(v, max, true) }
+
+// numeroOuNulo: ausente, null ou número ≥ 0.
+func numeroOuNulo(v json.RawMessage) bool {
+	var f float64
+	return len(v) == 0 || nulo(v) || (json.Unmarshal(v, &f) == nil && f >= 0)
+}
+
+// inteiroOuNulo: ausente, null ou inteiro ≥ 0 (cabe em bigint).
+func inteiroOuNulo(v json.RawMessage) bool {
+	var n int64
+	return len(v) == 0 || nulo(v) || (json.Unmarshal(v, &n) == nil && n >= 0)
+}
+
+// urlValida: http(s) absoluto, com host, até 2000 caracteres (o endereço público do arquivo; quem lê é a Meta).
+func urlValida(v json.RawMessage) bool {
+	s, ok := texto(v)
+	if !ok || utf8.RuneCountInString(s) > 2000 {
+		return false
+	}
+	u, err := url.Parse(s)
+	return err == nil && (u.Scheme == "https" || u.Scheme == "http") && u.Host != "" && u.User == nil
+}
 ```
 
 `api/internal/auth/servico.go` (só se faltar):
@@ -844,7 +895,7 @@ func novoMundo(t *testing.T, montar ...func(chi.Router, *pgxpool.Pool)) *mundote
 - `TestMundoDaFabrica` (sonda `GET /eco` montada no teste, que escreve `fmt.Sprintf("%t|%s|%t", Fabricante(e), a.Tipo, autz.PodeVerConta(e, A2))`): sem sessão → 401; `fabricante` → `true|painel|true`; `fabricanteA1` → `true|painel|false`; `fabricanteNenhuma` → `true|painel|false`; `adminA1` → `true|painel|true` (papel admin vê toda conta); `super` → `true|painel|true`; `leitor` → `false|painel|true`; `chaveEmLista` → `true|painel|true`; `semModulo` → `false|painel|true`; `desativado` → 401; `robo` → `true|servico|true`; `roboSemFabrica` → `false|servico|true`; `impersonado` → `true|painel|false`. E as linhas: `select count(*)::text from fabrica_criativos` = `4`; a foto não é vazia.
 - `TestFabricanteIgualAPolicy`: para cada pessoa (inclusive `desativado` e os robôs), `e := autz.CarregarEscopo(ctx, m.P, id)`; para `fabrica_campanhas` (linha `{"nome":"x"}`) e `fabrica_criativos` (linha `{"arquetipo":"produto","template":"t","formato":"f"}`), `f := autz.Producao.Filtro(e, <tabela>, autz.Criar, "autz_nova")` e `ok := autz.Conferir(ctx, m.P, f, <tabela>, linha)`: `ok == Fabricante(e)` sempre, com pelo menos 5 pessoas de cada lado (o teste falha se o mundo deixar de exercitar os dois lados).
 - `TestSoServico` (`auth/servico_test.go`, só se a Task criou o arquivo): ator `painel` → 403 `{"error":"sem_permissao"}`; `servico` → passa; `servico` com `ImpersonadorID` → 403; sem ator → 403.
-- `TestAjudantesDeValidacao` (puro): `texto` recusa `null`, `5`, `{}`; `textoAte("\"  \"", 10, false)` = falso e com `true` = verdadeiro; conta caracteres (`"ção"` cabe em 3); `objeto` aceita `{}` e recusa `[]`/`null`; `lista` aceita `[]` e recusa `{}`; `booleano` só `true`/`false`.
+- `TestAjudantesDeValidacao` (puro): `texto` recusa `null`, `5`, `{}`; `textoAte("\"  \"", 10, false)` = falso e com `true` = verdadeiro; conta caracteres (`"ção"` cabe em 3); `objeto` aceita `{}` e recusa `[]`/`null`; `lista` aceita `[]` e recusa `{}`; `booleano` só `true`/`false`; `urlValida` aceita `https://midia.x/f/a.png` e recusa `javascript:alert(1)`, `/f/a.png`, `https://u:s@x/a`; `numeroOuNulo("-1")` falso; `inteiroOuNulo("1.5")` falso; `escritaOuPedido` com `errPedido{"x"}` → 400 `pedido_invalido` "x" e com `autz.ErrNegado` → 403.
 - Mutações que têm de reprovar: tirar `e.Ativo` de `Fabricante` (`desativado` vira `true` e o teste da policy acusa); trocar `e.Chaves["meta.fabrica"]` por `e.Modulo("meta.fabrica")` (`leitor` passa e `fabricante` não); em `SoServico`, aceitar `painel`.
 
 **(c) Arquivos:** Create `api/internal/fabrica/fabrica.go`, `api/internal/fabrica/mundo_test.go`, `api/internal/fabrica/fabrica_test.go` (e, se faltar, `api/internal/auth/servico.go`, `api/internal/auth/servico_test.go`); Modify `api/internal/fabrica/purga.go` (só a linha do comentário do pacote).
@@ -1058,6 +1109,7 @@ func montarLeituras(r chi.Router, p *pgxpool.Pool) {
 - Portão: `soFabricante` (a edge: papel admin, `is_superadmin` ou a chave `meta.fabrica`) + `soSessaoPropria` (o robô acordado gasta dinheiro e mexe na Meta em nome da pessoa: "entrar como" não dispara).
 - `tipo` ∈ `gerar|subir|ativar|preview` (a lista da edge, `index.ts:17`); fora = `400 {"error":"tipo_invalido"}`. `excluir`, que o `painel-conferir.vue:39` manda, continua recusado (Ruling 5.8-7, achado 2).
 - `params`: objeto (ausente/`null` = `{}`), até 64 KiB; `params.campanhaId`, quando vem não vazio, é uuid (o robô o põe na URL do REST: `fabrica-job-runner.mjs:168`); `nome` até 200 e `objetivo` até 40 caracteres. Fora disso = `400 pedido_invalido` com a frase. O resto de `params` (itens, destino, ids de anúncio) passa como está: é o protocolo do robô, que valida o seu (Ruling 5.8-6).
+- Limite por pessoa: 30 disparos por hora (`auth.Limitador` em memória, Ruling 5.8-16); acima = `429 muitas_tentativas` com `Retry-After`, sem gravar nem despachar. Cada disparo acorda um robô que pode gastar IA paga (gpt-image-2) e criar anúncio na Meta.
 - `GITHUB_PAT` vazio = `503 {"error":"github_nao_configurado"}` ANTES de gravar qualquer coisa (a edge criava a rodada e o job e só então falhava).
 - **Transação 1** (`banco.ComUsuario`): no `gerar` sem `campanhaId`, cria a rodada por `tabelaCampanhas.Criar` (catálogo `fab_camp_write`; `criado_por` da sessão; `nome` = o do pedido ou `Rodada · AAAA-MM-DD HH:MM` em UTC, como a edge; `status 'gerando'`; `objetivo` = o do pedido ou `engajamento`) e põe `campanhaId` e `objetivo` em `params`; insere o job (`fabrica_jobs`, que só a chave de serviço gravava: portão da edge, Ruling 5.8-3) com `status 'enfileirado'` e `criado_por` da sessão; liga a rodada nova ao job (`job_id`). Commit.
 - **Despacho FORA da transação** (`github.Disparar(ctx, "fabrica", {"job_id": …})`; nenhuma trava presa esperando o GitHub). Sucesso → `200 {"job_id": …, "campanha_id": <uuid|null>}`.
@@ -1079,6 +1131,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rbv-co/social-dashboard/api/internal/auth"
 	"github.com/rbv-co/social-dashboard/api/internal/autz"
 	"github.com/rbv-co/social-dashboard/api/internal/banco"
 	"github.com/rbv-co/social-dashboard/api/internal/dados"
@@ -1126,8 +1179,9 @@ func lerParams(bruto json.RawMessage) (map[string]json.RawMessage, string) {
 
 // Disparador: POST /fabrica-trigger. Portão (soFabricante, soSessaoPropria) na montagem.
 type Disparador struct {
-	Pool *pgxpool.Pool
-	GH   *github.Cliente
+	Pool   *pgxpool.Pool
+	GH     *github.Cliente
+	Limite *auth.Limitador // por pessoa (Ruling 5.8-16); Montar põe 30 por hora
 }
 
 func (d *Disparador) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -1147,6 +1201,11 @@ func (d *Disparador) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	params, motivo := lerParams(c.Params)
 	if motivo != "" {
 		dados.Erro(w, http.StatusBadRequest, "pedido_invalido", motivo)
+		return
+	}
+	if d.Limite != nil && !d.Limite.Tentar(e.ID) {
+		w.Header().Set("Retry-After", strconv.Itoa(int(d.Limite.Janela.Seconds())))
+		dados.Erro(w, http.StatusTooManyRequests, "muitas_tentativas", "Muitos disparos seguidos; espere um pouco.")
 		return
 	}
 	if !d.GH.Configurado() { // antes de gravar: sem token nada nasce (Ruling 5.8-6)
@@ -1271,10 +1330,10 @@ func respostaDoDespacho(err error) (status int, codigo, frase string, espera tim
 }
 ```
 
-**(b) Testes de aceitação** (`disparo_test.go`; o GitHub de mentira é um `httptest.Server` que conta os pedidos, guarda o último corpo e, em cada pedido, lê pela pool `select status from fabrica_jobs where id = <job_id do corpo>` — o job tem de estar VISÍVEL, isto é, comitado; `gh := github.ParaTeste(t, "SEGREDO-pat", srv.URL)`; montagem do teste = a da Task 10: `r.With(soFabricante, soSessaoPropria).Post("/fabrica-trigger", (&Disparador{Pool: p, GH: gh}).ServeHTTP)`)
+**(b) Testes de aceitação** (`disparo_test.go`; o GitHub de mentira é um `httptest.Server` que conta os pedidos, guarda o último corpo e, em cada pedido, lê pela pool `select status from fabrica_jobs where id = <job_id do corpo>` — o job tem de estar VISÍVEL, isto é, comitado; `gh := github.ParaTeste(t, "SEGREDO-pat", srv.URL)`; montagem do teste = a da Task 10: `r.With(soFabricante, soSessaoPropria).Post("/fabrica-trigger", (&Disparador{Pool: p, GH: gh, Limite: lim}).ServeHTTP)`, `lim` = `auth.NovoLimitador()` com `Max 30, Janela time.Hour` salvo no caso do limite)
 - Gerar sem rodada: `fabricante` `{"tipo":"gerar","params":{"itens":[{"sku":"S1","deposito":"14888726315","pct":30}],"nome":"Rodada X","objetivo":"branding"}}` → 200 com `job_id` e `campanha_id`; efeito: a rodada `nome 'Rodada X'`, `status 'gerando'`, `objetivo 'branding'`, `criado_por = idFabricante`, `job_id = <job>`; o job `tipo 'gerar'`, `status 'enfileirado'`, `criado_por = idFabricante`, `params->>'campanhaId' = <rodada>`, `params->'itens'` intacto; o GitHub com 1 pedido `{"inputs":{"job_id":"<job>"},"ref":"main"}` e o job visível (`enfileirado`) no momento do pedido.
 - Gerar sem `nome` → rodada `Rodada · 20…` (prefixo e formato `AAAA-MM-DD HH:MM`); sem `objetivo` → `engajamento`. Subir `{"tipo":"subir","params":{"campanhaId":"<C2>","destino":{"tipo":"nova"}}}` → 200 `"campanha_id":"<C2>"`, nenhuma rodada nova; preview `{"tipo":"preview","params":{}}` → `"campanha_id":null`. `chaveEmLista`, `super`, `adminA1` → 200.
-- Negados, com **0 pedidos ao GitHub** e foto igual: `leitor`, `semModulo`, `roboSemFabrica` → 403 `sem_permissao`; `impersonado` → 403 com "Quem entrou como outra pessoa"; `desativado` → 401; `{"tipo":"excluir","params":{}}` → 400 `tipo_invalido`; `{"tipo":"x"}` → 400; `params` `[]`, `1` → 400; `campanhaId` `"abc"` → 400; `params` de 65 KiB → 400; campo desconhecido no topo → 400 `corpo_invalido`; `GITHUB_PAT` vazio (`github.Novo("")`) → 503 `github_nao_configurado`.
+- Negados, com **0 pedidos ao GitHub** e foto igual: `leitor`, `semModulo`, `roboSemFabrica` → 403 `sem_permissao`; `impersonado` → 403 com "Quem entrou como outra pessoa"; `desativado` → 401; `{"tipo":"excluir","params":{}}` → 400 `tipo_invalido`; `{"tipo":"x"}` → 400; `params` `[]`, `1` → 400; `campanhaId` `"abc"` → 400; `params` de 65 KiB → 400; campo desconhecido no topo → 400 `corpo_invalido`; `GITHUB_PAT` vazio (`github.Novo("")`) → 503 `github_nao_configurado`; com `Limite` de `Max 2` por hora, o 3º disparo válido da mesma pessoa → 429 `muitas_tentativas` com `Retry-After: 3600` (e o de OUTRA pessoa passa).
 - Falhas do GitHub (cada uma num mundo novo): 403 → 502 `dispatch_falhou` com `"detail"` contendo `Actions`, o job `erro` com `erro` começando por `dispatch_falhou github: sem_permissao (403)`, a rodada criada `erro`; 401 → 502 com `GITHUB_PAT` no `detail`; 404 → 502 com `fabrica.yml`; 429 + `Retry-After: 60` → 429 `muitas_tentativas` e cabeçalho `Retry-After: 60`; servidor que fecha a conexão sem responder (`http.Hijacker` + `Close`: o `net/http` devolve erro de transporte DEPOIS de conectar) → 504 `dispatch_incerto`, job e rodada `erro`; nenhum corpo de resposta contém `SEGREDO`. Subir com 500 → 502 e C2 continua `pronta` (Ruling 5.8-8). Robô que já começou: o servidor de mentira faz `update fabrica_jobs set status = 'rodando'` antes de responder 500 → o job continua `rodando`.
 - Mutações que têm de reprovar: conferir o token DEPOIS da transação 1 (o caso 503 deixa job e rodada); despachar DENTRO da transação (o GitHub de mentira não acha o job); tirar `and status = 'enfileirado'` (o caso do robô que já começou vira `erro`); marcar a rodada sem olhar `criou` (C2 vira `erro` no subir); devolver o corpo do GitHub no `detail` (o `SEGREDO` do corpo de mentira aparece).
 
@@ -1864,7 +1923,7 @@ func manual(ctx context.Context, p *pgxpool.Pool, lojas []lojaDaFabrica, f filtr
   - `ordenar` `{ordem: [{chave, ordem}]}` (até 200; item sem `chave` é pulado; `ordem` ausente = 0, como a edge) → numa transação só (a edge fazia um update por item, sem transação: metade podia ficar gravada) → `{"ok":true}`.
   - `excluir` `{chave, excluido?}` → `excluido` = `true` salvo `false` explícito (a edge: `body.excluido !== false`) → `{"ok":true,"excluido":<bool>}`; sem `chave` → `400 chave_obrigatoria`.
   - `sync` → `400 {"error":"acao_invalida"}`: ninguém chama (nem a tela nem o `coletor/`); rota sem tela não entra (Ruling 5.8-12).
-  - `chave` de look: `^[a-z0-9][a-z0-9_-]{0,79}$`.
+  - `chave` de look: `reChaveLook` (`^[a-z0-9][a-z0-9_-]{0,79}$`, da Task 3).
 - `fabrica-publicos`, `acao`:
   - `apagar` `{id}` → `id` ausente = `400 {"error":"id_obrigatorio"}`; não-uuid = `400 pedido_invalido`; apaga → `{"ok":true}` (também sem linha: idempotente).
   - `salvar` `{preset: {id?, nome, marca_id?, geo?, idade_min?, idade_max?, generos?, interesses?, custom_audiences?}}` → `nome` ausente = `400 {"error":"nome_obrigatorio"}`; a linha da edge (`marca_id` nulo se ausente, `geo {}`, idades 18/65, listas vazias, `criado_por` da sessão — também no update, como a edge); com `id` → update (id inexistente = `404 nao_encontrado`; a edge dava 500 `salvar_falhou`), sem `id` → insert; resposta `{"id": …}`. Tipos: `geo` objeto, idades inteiras 13–65 com `idade_min ≤ idade_max`, `generos` lista de 1 e 2, `interesses`/`custom_audiences` listas, `marca_id` uuid ou nulo. A tela manda `geo` com `cities`, `excluded`, `countries`, `regions`, `pins` (subir:276-283): passa como está (é o protocolo do robô, `coletor/lib/publico.mjs`).
@@ -1886,10 +1945,7 @@ import (
 	"github.com/rbv-co/social-dashboard/api/internal/dados"
 )
 
-var (
-	reChaveLook = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,79}$`)
-	reObjetivo  = regexp.MustCompile(`^[a-z_]{1,40}$`)
-)
+var reObjetivo = regexp.MustCompile(`^[a-z_]{1,40}$`)
 
 // Curadoria: POST /fabrica-looks e POST /fabrica-publicos. Portão (soFabricante, soSessaoPropria) na montagem.
 type Curadoria struct{ Pool *pgxpool.Pool }
@@ -1913,11 +1969,6 @@ type lookSalvar struct {
 	Objetivos json.RawMessage `json:"objetivos"`
 	Ativo     json.RawMessage `json:"ativo"`
 }
-
-// errPedido: entrada inválida descoberta dentro da transação (400 com a frase).
-type errPedido struct{ frase string }
-
-func (e errPedido) Error() string { return e.frase }
 
 func objetivosValidos(v json.RawMessage) ([]string, bool) {
 	var l []string
