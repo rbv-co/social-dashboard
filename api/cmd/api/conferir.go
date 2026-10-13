@@ -113,7 +113,7 @@ var tiposDoWorker = map[string]string{
 	"frota_checklist.feita_em": "date", "frota_checklist.cadencias": "text[]", "chatwoot_eventos.dia_br": "date",
 	"bling_pedido_nota.data_pedido": "date", "bling_pedido_nota.data_da_venda": "date", "bling_pedido_nota.nota_situacao": "smallint|integer",
 	"bling_pedido_ajuste_valor.pedido_id": "bigint|integer", "bling_pedido_vendedor.pedido_id": "bigint|integer",
-	"campaigns.campaign_id": "text", "ads.ad_id": "text", "ads.campaign_id": "text", "campaign_adsets.adset_id": "text",
+	"interesses_sugeridos.marca_id": "uuid", "campaigns.campaign_id": "text", "ads.ad_id": "text", "ads.campaign_id": "text", "campaign_adsets.adset_id": "text",
 	"campaign_adsets.campaign_id": "text", "campaign_insights.campaign_id": "text", "campaign_insights_hora.campaign_id": "text",
 	"ad_insights_hora.ad_id": "text", "ad_insights_hora.campaign_id": "text",
 	"push_subs.endpoint": "text", "push_subs.p256dh": "text", "push_subs.auth": "text", "push_preferencias.tipo": "text", "push_preferencias.ativo": "boolean",

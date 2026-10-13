@@ -368,7 +368,7 @@ func TestLerDocumento(t *testing.T) {
 		erro   string
 		trecho string
 	}{
-		{"leitor sem o módulo", leitor, corpoDoc(gif, ""), 403, "sem_sermissao", ""},
+		{"leitor sem o módulo", leitor, corpoDoc(gif, ""), 403, "sem_permissao", ""},
 		{"vazio", gestor, `{"base64":""}`, 400, "sem_arquivo", ""},
 		{"só espaços", gestor, `{"base64":" \n "}`, 400, "sem_arquivo", ""},
 		{"corpo lixo", gestor, `lixo`, 400, "corpo_invalido", ""},
@@ -377,7 +377,6 @@ func TestLerDocumento(t *testing.T) {
 		{"base64 grande demais", gestor, corpoDoc(grande, ""), 413, "arquivo_grande_demais", "limite aqui é 3 MB"},
 		{"corpo de 5 MB", gestor, strings.Repeat("a", 5<<20), 413, "arquivo_grande_demais", "O PDF passa do limite de 3 MB."},
 	}
-	negados[0].erro = "sem_permissao"
 	for _, c := range negados {
 		t.Run("negado: "+c.nome, func(t *testing.T) {
 			f := novaFalsa(t, 200, respostaDoc)
