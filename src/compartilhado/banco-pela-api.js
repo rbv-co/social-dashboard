@@ -37,6 +37,10 @@ const instante = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(v) ? v + 'T00:00:00Z' : v)
 // O teto de linhas da API (o `max_rows` do Supabase). Pedido acima disso é
 // recusado na tradução: cortar calado devolveria número menor sem aviso.
 export const TETO_DE_LINHAS = 1000
+// `col=is.null` / `col=not.is.null` viram um parâmetro booleano da rota; outro
+// valor (`is.true`, `not.eq.x`) não tem tradução.
+const nulo = (sim) => (v) => { if (v !== 'null') throw new ErroDeTraducao(`is.${v} sem tradução`); return sim }
+const naoNulo = (sim) => (v) => { if (v !== 'is.null') throw new ErroDeTraducao(`not.${v} sem tradução`); return sim }
 const ROTAS = {
   // ── 5.1 — admin, equipes e acesso ──
   profiles: {
@@ -128,6 +132,45 @@ const ROTAS = {
       const [l] = linhas
       return { metodo: 'PUT', caminho: `/redes/filtros-de-campanha/${encodeURIComponent(l.account_id)}`, corpo: { selected_ids: l.selected_ids } }
     },
+  },
+  // ── 5.8 — Fábrica de anúncios (leituras; as escritas do painel são as 4 edges e o
+  // `escolher`, feitos na tela; as do robô são as rotas `/fabrica/robo/*`) ──
+  fabrica_lojas: { area: 'fabrica', rota: '/fabrica/lojas', filtros: { ativo: eq('ativo') }, ordens: [] },
+  fabrica_objetivos: { area: 'fabrica', rota: '/fabrica/objetivos', filtros: { ativo: eq('ativo'), chave: eq('chave') }, ordens: [] },
+  fabrica_marcas: { area: 'fabrica', rota: '/fabrica/marcas', filtros: { account_id: eq('account_id'), ativo: eq('ativo') }, ordens: [] },
+  fabrica_looks: { area: 'fabrica', rota: '/fabrica/looks', filtros: { ativo: eq('ativo') }, ordens: [] },
+  fabrica_publicos: { area: 'fabrica', rota: '/fabrica/publicos', filtros: { ativo: eq('ativo') }, ordens: [] },
+  fabrica_campanhas: {
+    area: 'fabrica', rota: '/fabrica/campanhas',
+    filtros: {
+      id: eq('id'), status: { eq: 'status', in: 'status' },
+      // `fechada_em=is.null` = aberta; `purgado_em=is.null` = não purgada
+      fechada_em: { is: ['aberta', nulo('true')], not: ['aberta', naoNulo('false')] },
+      purgado_em: { is: ['purgada', nulo('false')], not: ['purgada', naoNulo('true')] },
+    },
+    ordens: ['created_at', 'fechada_em'],
+  },
+  fabrica_criativos: {
+    area: 'fabrica', rota: '/fabrica/criativos',
+    filtros: {
+      campanha_id: eq('campanha_id'), escolhido: eq('escolhido'), arquetipo: eq('arquetipo'),
+      purgado_em: { is: ['purgado', nulo('false')], not: ['purgado', naoNulo('true')] },
+    },
+    ordens: [],
+  },
+  fabrica_jobs: {
+    area: 'fabrica', rota: '/fabrica/jobs',
+    // `params->>campanhaId` = `campanha_id` na rota
+    filtros: { id: eq('id'), tipo: eq('tipo'), status: eq('status'), 'params->>campanhaId': eq('campanha_id') },
+    ordens: ['created_at'],
+  },
+  fabrica_meta_jobs: {
+    area: 'fabrica', rota: '/fabrica/meta-jobs',
+    filtros: {
+      tipo: eq('tipo'), 'payload->>campanhaId': { eq: 'campanha_id', in: 'campanha_id' },
+      meta_campaign_id: { not: ['com_campanha_meta', naoNulo('true')] },
+    },
+    ordens: ['created_at'],
   },
   // ── 5.7 — Gestão de tráfego ──
   gt_budget_analises: {

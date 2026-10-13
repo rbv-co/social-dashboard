@@ -264,3 +264,32 @@ test('filtro que a rota não declara (eq/in, sem limite) vira filtro na tela; co
   const t = await b.consultaPelaApi('accounts').select('id').eq('nao_existe', '1')
   assert.equal(t.error.code, 'traducao')
 })
+
+/* ── 5.8 — Fábrica ─────────────────────────────────────────────────────────── */
+
+test('5.8: is.null/not.is.null viram os booleanos da rota; in de status vira lista', async () => {
+  const pedidos = api({ 'GET /fabrica/campanhas': [200, [], { 'X-Total-Count': '0' }] })
+  await b.fetchPostgrest('fabrica_campanhas?select=id,nome,status,created_at&fechada_em=is.null&purgado_em=is.null&status=in.(gerando,pronta,erro)&order=created_at.desc')
+  assert.deepEqual(Object.fromEntries(new URLSearchParams(pedidos[0].busca)), { aberta: 'true', purgada: 'false', status: 'gerando,pronta,erro', ordem: 'created_at.desc', contar: '1' })
+  await b.fetchPostgrest('fabrica_campanhas?select=id,nome,fechada_em&fechada_em=not.is.null&order=fechada_em.desc&limit=8')
+  assert.deepEqual(Object.fromEntries(new URLSearchParams(pedidos[1].busca)), { aberta: 'false', ordem: 'fechada_em.desc', limite: '8' })
+  assert.equal((await b.fetchPostgrest('fabrica_campanhas?fechada_em=is.true')).ok, false)
+})
+
+test('5.8: o caminho JSON params->>campanhaId vira campanha_id', async () => {
+  const pedidos = api({ 'GET /fabrica/jobs': [200, []], 'GET /fabrica/meta-jobs': [200, []] })
+  await b.fetchPostgrest('fabrica_jobs?select=id,status,resultado&tipo=eq.subir&params->>campanhaId=eq.c1&order=created_at.desc&limit=1')
+  assert.deepEqual(Object.fromEntries(new URLSearchParams(pedidos[0].busca)), { tipo: 'subir', campanha_id: 'c1', ordem: 'created_at.desc', limite: '1' })
+  await b.fetchPostgrest('fabrica_meta_jobs?select=meta_campaign_id,payload&meta_campaign_id=not.is.null&payload->>campanhaId=in.(c1,c2)')
+  assert.deepEqual(Object.fromEntries(new URLSearchParams(pedidos[1].busca)), { com_campanha_meta: 'true', campanha_id: 'c1,c2', contar: '1' })
+})
+
+test('configurarApi (robôs): endereço e token explícitos', async () => {
+  const api_ = await import('./api.js')
+  const pedidos = api({ 'GET /fabrica/looks': [200, []] })
+  api_.configurarApi({ base: 'http://api:8080/', token: 'srv_x' })
+  try {
+    await api_.pedir('GET', '/fabrica/looks')
+    assert.equal(pedidos[0].chave, 'GET /fabrica/looks')
+  } finally { api_.configurarApi({ base: '/api', token: null }) }
+})

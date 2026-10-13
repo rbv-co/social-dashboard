@@ -130,6 +130,8 @@ import {
 } from '../../compartilhado/canais-de-venda-permitidos.js'
 // Chave `comercial` (Plano 7): o recorte de lojas vem pronto de `GET /eu/canais`.
 import { areaNaApi, pedir } from '../../compartilhado/api.js'
+// Chave `fabrica` (Plano 7): o vínculo loja ↔ depósito vem da Fábrica (5.8).
+import { deOnde } from '../../compartilhado/banco-pela-api.js'
 import { adminToast } from '../../compartilhado/avisos.js'
 import { ocultosNoPeriodo } from '../../compartilhado/canal-fechado.js'
 import { filtrarPedidosPorCanal, depositosVisiveis, prepararEstoque, statusSaldo, categoriasDisponiveis, normalizarDepositos, DEPOSITOS_SEMENTE } from './estoque-gv.js'
@@ -709,7 +711,7 @@ async function loadGestaoVistaData(period){
       // O vínculo EXPLÍCITO. É ele que resolve o caso em que o nome não resolve:
       // o canal "Loja Santa Bárbara d'Oeste" corresponde ao depósito "Estoque
       // Loja Sbo. Tivoli", e não há uma palavra em comum entre os dois.
-      sbClient.from('fabrica_lojas').select('deposito_id,canal_loja_id').then(r=>r.data||[]).catch(()=>[])
+      deOnde(sbClient).from('fabrica_lojas').select('deposito_id,canal_loja_id').then(r=>r.data||[]).catch(()=>[])
     ]);
 
     // Guardados fora do ctx porque a seção de estoque desenha depois, por conta.

@@ -2,6 +2,8 @@
 import { ref, watch, computed, onMounted, onUnmounted } from 'vue'
 import { sb } from '../../compartilhado/buscar-e-salvar-dados.js'
 import { sbClient } from '../../compartilhado/conectar-no-banco-de-dados.js'
+// Chave `fabrica` (Plano 7): escolher criativos por `POST /fabrica/criativos/escolher` (5.8).
+import { areaNaApi, pedir } from '../../compartilhado/api.js'
 import AjudaTooltip from './ajuda-tooltip.vue'
 import TourCoachmark from './tour-coachmark.vue'
 import { TOUR_CURAR } from './tutorial-fabrica.js'
@@ -30,7 +32,9 @@ async function carregar() {
 }
 async function alternar(it) {
   const novo = !it.escolhido; it.escolhido = novo // otimista
-  const { error } = await sbClient.from('fabrica_criativos').update({ escolhido: novo }).eq('id', it.id)
+  const { error } = areaNaApi('fabrica')
+    ? await pedir('POST', '/fabrica/criativos/escolher', { corpo: { ids: [it.id], escolhido: novo } })
+    : await sbClient.from('fabrica_criativos').update({ escolhido: novo }).eq('id', it.id)
   if (error) { it.escolhido = !novo; alert('Falha ao salvar') }
 }
 const visiveis = computed(() => itens.value.filter((i) => !i.purgado_em))
@@ -45,7 +49,10 @@ async function alternarTodos() {
   const novo = !todosEscolhidos.value
   const antes = alvo.map((i) => [i, i.escolhido])
   alvo.forEach((i) => { i.escolhido = novo })                 // otimista
-  const { error } = await sbClient.from('fabrica_criativos').update({ escolhido: novo }).in('id', alvo.map((i) => i.id))
+  // pela API, um lote numa transação: um negado desfaz tudo (e a tela volta ao que era)
+  const { error } = areaNaApi('fabrica')
+    ? await pedir('POST', '/fabrica/criativos/escolher', { corpo: { ids: alvo.map((i) => i.id), escolhido: novo } })
+    : await sbClient.from('fabrica_criativos').update({ escolhido: novo }).in('id', alvo.map((i) => i.id))
   if (error) { antes.forEach(([i, v]) => { i.escolhido = v }); alert('Falha ao salvar') }
 }
 function abrirVisor(it) { if (!it.purgado_em) visor.value = it }

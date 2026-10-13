@@ -2168,7 +2168,7 @@ async function _gtListarPublicosSalvos(){
 // Públicos prontos montados no Estúdio (tabela fabrica_publicos, leitura
 // liberada para autenticados). Escolher um PREENCHE o editor; não salva.
 async function _gtListarPresets(){
-  const{data,error}=await sbClient.from('fabrica_publicos')
+  const{data,error}=await deOnde(sbClient).from('fabrica_publicos')
     .select('id,nome,geo,idade_min,idade_max,generos,interesses,custom_audiences')
     .eq('ativo',true).order('created_at',{ascending:false});
   return error?null:(data||[]);
