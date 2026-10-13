@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -68,6 +69,8 @@ var publicas = map[string]bool{
 	"POST /receber-opt-out-chatwoot": true,
 	// Plano 5.0: links de senha (sem enumeração, limite por IP e por e-mail no handler)
 	"POST /auth/esqueci-senha": true, "POST /auth/definir-senha": true,
+	// Plano 5.1: o pedido de acesso da tela de login (JSON obrigatório, 10 por IP e 100 no total por hora, validação no handler)
+	"POST /pedir-acesso": true,
 }
 
 func webhooksPublicos() []string {
@@ -135,6 +138,20 @@ func TestNenhumaRotaNovaFicaAberta(t *testing.T) {
 		if !slices.Contains(vistas, chave) {
 			t.Errorf("rota só-sessão %s não está montada", chave)
 		}
+	}
+	// Plano 5.1: estar na lista pública e montada não basta: sem sessão, o pedido de acesso responde 201 com JSON
+	// (montá-la no grupo autenticado faria 401; o 415 sem o cabeçalho é do handler, não de sessão).
+	if _, err := p.Exec(context.Background(), `create table access_requests (id uuid primary key default gen_random_uuid(), name text not null,
+		email text not null, message text, status text not null, created_at timestamptz not null default now())`); err != nil {
+		t.Fatal(err)
+	}
+	r := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/pedir-acesso", strings.NewReader(`{"name":"Sem Sessão","email":"sem-sessao@x.com","message":"oi"}`))
+	req.Header.Set("Content-Type", "application/json")
+	h.ServeHTTP(r, req)
+	var pedido struct{ ID string }
+	if r.Code != http.StatusCreated || json.Unmarshal(r.Body.Bytes(), &pedido) != nil || pedido.ID == "" {
+		t.Errorf("POST /pedir-acesso sem sessão = %d %s, esperava 201 com {\"id\"}", r.Code, r.Body)
 	}
 	for _, c := range webhooksPublicos() {
 		r := httptest.NewRecorder()
@@ -220,6 +237,27 @@ var soSessao = map[string]bool{"POST /auth/sair": true, "GET /auth/eu": true, "G
 	"GET /status-ia/saude-dos-robos": true,
 }
 
+// Plano 5.1: as rotas do admin, de equipes, de avisos e de saúde. Portão = catálogo, provado pela matriz de
+// cada rota em internal/acesso; escrita de impersonado recusada por TestEscritasRecusamImpersonado. Todas
+// ficam no grupo de DOMÍNIO (prazo e escopo do grupo: TestPrazosPorRotaPelaMontagemReal).
+var rotas51 = []string{
+	"GET /acesso/usuarios", "PATCH /acesso/usuarios/{id}", "GET /acesso/perfis", "POST /acesso/perfis", "PATCH /acesso/perfis/{id}",
+	"GET /acesso/pedidos", "PATCH /acesso/pedidos/{id}",
+	"GET /equipes/times", "POST /equipes/times", "PATCH /equipes/times/{id}",
+	"GET /equipes/membros", "POST /equipes/membros", "PATCH /equipes/membros/{id}", "DELETE /equipes/membros/{id}",
+	"GET /equipes/permissoes", "POST /equipes/permissoes", "DELETE /equipes/permissoes/{id}",
+	"GET /equipes/grupos", "POST /equipes/grupos", "PATCH /equipes/grupos/{id}", "DELETE /equipes/grupos/{id}",
+	"GET /equipes/grupos-membros", "POST /equipes/grupos-membros", "DELETE /equipes/grupos-membros/{id}",
+	"GET /avisos/preferencias", "POST /avisos/preferencias", "POST /eu/push/inscrever", "POST /eu/push/desinscrever",
+	"GET /saude/conferencias",
+}
+
+func init() {
+	for _, c := range rotas51 {
+		soSessao[c] = true
+	}
+}
+
 // Matriz completa 401/403/200 por rota pela montagem de produção: cada módulo abre SÓ as
 // suas rotas (pega portão trocado, portão extra ou ausente). O core é um servidor falso.
 func TestRotasProtegidasPelaMontagemReal(t *testing.T) {
@@ -279,6 +317,9 @@ func TestPrazosPorRotaPelaMontagemReal(t *testing.T) {
 		"GET /status-ia/saude-dos-robos": PrazoDominio,
 		// Plano 5.12: fatura real das contas de IA (grupo autenticado, FORA do de domínio)
 		"POST /custo-anthropic": 90 * time.Second, "POST /custo-openai": 90 * time.Second}
+	for _, c := range rotas51 { // Plano 5.1: no grupo de domínio, com o prazo dele
+		quer[c] = PrazoDominio
+	}
 	vistos := map[string]bool{}
 	chi.Walk(h.(chi.Routes), func(metodo, rota string, _ http.Handler, mws ...func(http.Handler) http.Handler) error {
 		chave := metodo + " " + rota
@@ -609,5 +650,66 @@ func TestRPCRegistradaPelaMontagemReal(t *testing.T) {
 	p.QueryRow(ctx, `select count(*) from marca`).Scan(&n)
 	if n != 1 {
 		t.Errorf("a função rodou %d vez(es), esperava 1 (só a do super-admin)", n)
+	}
+}
+
+// Plano 5.1 pela montagem real: sem sessão é 401, o portão é o do catálogo (viewer não muda a conta do
+// admin; só o admin lê pedidos de acesso), o pedido de acesso é público e o health check não depende de
+// sessão. A matriz de cada rota está em internal/acesso; aqui vale a MONTAGEM (grupo, cadeia, posição).
+func TestAcessoPelaMontagemReal(t *testing.T) {
+	p := testebanco.ComEsquemaDeProducao(t)
+	s := auth.NovoStore(p)
+	h := Rotas(p, s, auth.NovoLimitador(), config.Config{})
+	ctx := context.Background()
+	const admin, viewer = "5e000000-0000-4000-a000-0000000000a1", "5e000000-0000-4000-a000-0000000000a2"
+	for _, u := range [][3]string{{admin, "admin-51@x.com", "admin"}, {viewer, "viewer-51@x.com", "viewer"}} {
+		if _, err := p.Exec(ctx, `insert into usuarios (id, email) values ($1::uuid, $2::text)`, u[0], u[1]); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := p.Exec(ctx, `insert into profiles (id, email, name, role, escopo_por_equipe) values ($1::uuid, $2::text, $2::text, $3::text, false)`, u[0], u[1], u[2]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tok := map[string]string{}
+	for nome, id := range map[string]string{"admin": admin, "viewer": viewer} {
+		var err error
+		if tok[nome], err = s.Criar(ctx, id, "painel", nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pedir := func(quem, metodo, caminho, corpo string) (int, string) {
+		r := httptest.NewRequest(metodo, caminho, strings.NewReader(corpo))
+		r.Header.Set("Content-Type", "application/json")
+		if quem != "" {
+			r.Header.Set("Authorization", "Bearer "+tok[quem])
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w.Code, strings.TrimSpace(w.Body.String())
+	}
+	for _, c := range []struct {
+		nome, quem, metodo, caminho, corpo string
+		status                             int
+		trecho                             string
+	}{
+		{"usuários sem sessão", "", "GET", "/acesso/usuarios", "", 401, "nao_autenticado"},
+		{"conferências exigem sessão", "", "GET", "/saude/conferencias", "", 401, "nao_autenticado"},
+		{"o health check segue público", "", "GET", "/saude", "", 200, "ok"},
+		{"viewer não muda a conta do admin", "viewer", "PATCH", "/acesso/usuarios/" + admin, `{"disabled":true}`, 403, "sem_permissao"},
+		{"viewer lê pedidos: a regra devolve lista vazia", "viewer", "GET", "/acesso/pedidos", "", 200, "[]"},
+		{"admin lê os times", "admin", "GET", "/equipes/times", "", 200, "["},
+		{"pedir acesso é público", "", "POST", "/pedir-acesso", `{"name":"Fulana","email":"fulana@x.com","message":"oi"}`, 201, `"id"`},
+	} {
+		if st, corpo := pedir(c.quem, c.metodo, c.caminho, c.corpo); st != c.status || !strings.Contains(corpo, c.trecho) {
+			t.Errorf("%s: %s %s = %d %s, esperava %d com %q", c.nome, c.metodo, c.caminho, st, corpo, c.status, c.trecho)
+		}
+	}
+	var off bool
+	if err := p.QueryRow(ctx, `select disabled from profiles where id = $1::uuid`, admin).Scan(&off); err != nil || off {
+		t.Errorf("o PATCH negado mexeu em profiles.disabled (%v, %v)", off, err)
+	}
+	var n int
+	if err := p.QueryRow(ctx, `select count(*) from access_requests where email = 'fulana@x.com' and status = 'pending'`).Scan(&n); err != nil || n != 1 {
+		t.Errorf("pedidos gravados = %d (%v), esperava 1", n, err)
 	}
 }

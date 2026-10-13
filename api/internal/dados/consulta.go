@@ -369,6 +369,10 @@ func ErroDeEscrita(w http.ResponseWriter, err error) {
 		Erro(w, http.StatusNotFound, "nao_encontrado", "")
 	case errors.Is(err, autz.ErrNegado):
 		Erro(w, http.StatusForbidden, "sem_permissao", "")
+	case errors.Is(err, ErrSemCampos):
+		Erro(w, http.StatusBadRequest, "corpo_invalido", "Nada para gravar.")
+	case errors.Is(err, ErrColunaProibida):
+		Erro(w, http.StatusBadRequest, "corpo_invalido", "")
 	case errors.Is(err, autz.ErrDeclaracao), errors.Is(err, ErrDeclaracao):
 		slog.Error("escrita: declaração da rota inválida", "erro", err.Error())
 		Erro(w, http.StatusInternalServerError, "erro_interno", "")

@@ -77,6 +77,10 @@ func esquemaCompleto(t *testing.T, p *pgxpool.Pool, tudoTexto bool) {
 		}
 		ddl = append(ddl, fmt.Sprintf("create function %s(%s) %s language plpgsql as $f$ %s $f$", nome, strings.Join(args, ", "), retorno, corpo))
 	}
+	ddl = append(ddl, `create function trg_vazio() returns trigger language plpgsql as $f$ begin return new; end $f$`)
+	for _, g := range gatilhosDoWorker {
+		ddl = append(ddl, fmt.Sprintf("create trigger %s before update on %s for each row execute function trg_vazio()", g[0], g[1]))
+	}
 	for _, s := range ddl {
 		if _, err := p.Exec(context.Background(), s); err != nil {
 			t.Fatalf("%s: %v", s, err)
@@ -131,6 +135,11 @@ func TestConferirSchemaVazioListaEmOrdem(t *testing.T) {
 		"coluna accounts.id", "coluna bling_pedido_nota.nota_situacao", "coluna bling_pedido_ajuste_valor.pedido_id", "coluna bling_pedido_vendedor.pedido_id",
 		"coluna bling_lojas.loja_id", "coluna frota_uso.saida_em", "coluna frota_uso.id", "função registrar_checkout_abandono",
 		"coluna equipes_permissoes.chave", "coluna entradas_como_outro_usuario.admin_id", "coluna entradas_como_outro_usuario.criado_em", "coluna equipes.deposito_id",
+		"coluna access_requests.status", "coluna acessos_perfis.permissions", "coluna canais_grupos_membros.concedido_por", "coluna push_preferencias.alterado_por",
+		"único push_subs(endpoint)", "único push_preferencias(user_id,tipo)", "função guard_profiles()", "função equipes_toca_atualizado()", "função impedir_autopromocao()", "função espelhar_rename_do_grupo()", "função espelhar_grupo_do_canal()", "único acessos_perfis(nome)", // Plano 5.1
+		"gatilho equipes_atualizado em equipes (ausente ou desabilitado)", "gatilho trg_espelhar_grupo_do_canal em bling_lojas (ausente ou desabilitado)",
+		"gatilho trg_espelhar_rename_do_grupo em canais_grupos (ausente ou desabilitado)", "gatilho trg_guard_profiles em profiles (ausente ou desabilitado)",
+		"gatilho trg_impedir_autopromocao em profiles (ausente ou desabilitado)",
 		"único chatwoot_eventos(conversation_id,tipo)", "único (dedupe do on conflict do nothing) carrinho_eventos(evento_shopify_id)",
 		"coluna noticias_concorrentes.rodada", "coluna noticias_panorama.rodada", "coluna ia_execucoes.run_at", "coluna robos_saude.critico"} {
 		if !tem(quer) {
@@ -471,6 +480,62 @@ func TestNomesCasamComRobosEsperados(t *testing.T) {
 	for _, r := range robos {
 		if got := donoNaTela(esperados, r); got != "coletar-dados" {
 			t.Errorf("%q cai em %q, esperava coletar-dados", r, got)
+		}
+	}
+}
+
+// Plano 5.1: gatilho ausente, na tabela errada ou desabilitado é acusado (a função sozinha existir não basta).
+func TestConferirGatilhosDoPlano51(t *testing.T) {
+	p := testebanco.Novo(t)
+	esquemaCompleto(t, p, false)
+	exec(t, p, `alter table profiles disable trigger trg_guard_profiles`, `drop trigger equipes_atualizado on equipes`,
+		`drop trigger trg_espelhar_rename_do_grupo on canais_grupos`,
+		`create trigger trg_espelhar_rename_do_grupo before update on canais_grupos_membros for each row execute function trg_vazio()`)
+	var gatilhos []string
+	for _, f := range faltamDe(t, p) {
+		if strings.HasPrefix(f, "gatilho ") {
+			gatilhos = append(gatilhos, f)
+		} else {
+			t.Errorf("só gatilho devia faltar: %q", f)
+		}
+	}
+	quer := []string{"gatilho equipes_atualizado em equipes (ausente ou desabilitado)", "gatilho trg_espelhar_rename_do_grupo em canais_grupos (ausente ou desabilitado)",
+		"gatilho trg_guard_profiles em profiles (ausente ou desabilitado)"}
+	if !slices.Equal(gatilhos, quer) {
+		t.Fatalf("gatilhos acusados: %v", gatilhos)
+	}
+}
+
+// Plano 5.1: contra a fatia D0 do esquema de produção, NADA das tabelas, funções e gatilhos do 5.1 é acusado
+// (pega erro de digitação nas listas do conferir). O que é de outros planos fica de fora do filtro.
+func TestConferirNaFatiaD0NaoAcusaOPlano51(t *testing.T) {
+	p := testebanco.ComEsquemaDeProducao(t)
+	tabelas51 := []string{"profiles", "equipes", "equipes_membros", "equipes_permissoes", "canais_grupos", "canais_grupos_membros",
+		"bling_lojas", "acessos_perfis", "access_requests", "push_subs", "push_preferencias", "data_integrity_checks"}
+	funcoes51 := []string{"guard_profiles", "impedir_autopromocao", "espelhar_rename_do_grupo", "espelhar_grupo_do_canal", "equipes_toca_atualizado"}
+	do51 := func(f string) bool {
+		if strings.HasPrefix(f, "gatilho ") {
+			return true
+		}
+		for _, fn := range funcoes51 {
+			if strings.HasPrefix(f, "função "+fn+"(") {
+				return true
+			}
+		}
+		for _, tb := range tabelas51 {
+			if strings.Contains(f, " "+tb+".") || strings.Contains(f, " "+tb+"(") {
+				return true
+			}
+		}
+		return false
+	}
+	faltam := faltamDe(t, p)
+	if len(faltam) == 0 {
+		t.Fatal("a fatia D0 não tem o esquema todo: devia sobrar item de outros planos (o filtro não provaria nada)")
+	}
+	for _, f := range faltam {
+		if do51(f) {
+			t.Errorf("a fatia D0 devia satisfazer o 5.1, mas o conferir acusa %q", f)
 		}
 	}
 }

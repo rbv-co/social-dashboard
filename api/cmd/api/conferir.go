@@ -29,7 +29,7 @@ var colunasDoWorker = map[string]string{
 	"followers_leituras":     "account_id,followers_count,origem,lido_em",
 	"engagement_snapshots":   "account_id,captured_at,period_days,likes,comments,saves,shares,reach,views,total_interactions,accounts_engaged,profile_views",
 	"content_snapshots":      "account_id,captured_at,period_days,posts_count,reels_count,stories_count,story_shares,story_replies,story_reach,story_interactions,story_navigation,story_profile_visits,story_follows,story_nav_forward,story_nav_back,story_nav_exit,story_nav_next",
-	"data_integrity_checks":  "checked_date,account_id,check_name,status,detail",
+	"data_integrity_checks":  "id,checked_date,account_id,check_name,status,detail,created_at", // + Plano 5.1: /saude/conferencias
 	"campaigns":              "campaign_id,account_id,name,objective,status,synced_at",
 	"ads":                    "ad_id,campaign_id,account_id,name,status,destino_link,synced_at",
 	"campaign_adsets":        "adset_id,campaign_id,account_id,destination_type,optimization_goal,synced_at",
@@ -37,15 +37,19 @@ var colunasDoWorker = map[string]string{
 	"campaign_insights_hora": "campaign_id,account_id,dia,hora,gasto_acumulado,conversas_acumuladas,cliques_acumulados,gasto_hora,conversas_hora,cliques_hora",
 	"perfil_visitas_hora":    "account_id,dia,hora,visitas_acumuladas,visitas_hora",
 	"ad_insights_hora":       "ad_id,campaign_id,account_id,dia,hora,gasto_acumulado,cliques_acumulados,gasto_hora,cliques_hora",
-	"push_subs":              "endpoint,p256dh,auth,user_id",
-	"push_preferencias":      "user_id,tipo,ativo",
-	"profiles":               "id,email,name,role,is_superadmin,disabled,features,permissions,escopo_por_equipe,allowed_accounts,avatar_url,precisa_trocar_senha",
-	"equipes":                "id,canal_loja_id,local_id,deposito_id",
-	"equipes_permissoes":     "equipe_id,profile_id,chave",
+	"push_subs":              "id,endpoint,p256dh,auth,user_id,created_at",
+	"push_preferencias":      "user_id,tipo,ativo,alterado_em,alterado_por",
+	"profiles":               "id,email,name,role,is_superadmin,disabled,features,permissions,escopo_por_equipe,allowed_accounts,avatar_url,precisa_trocar_senha,perfil_id,permissions_excecao,created_at",
+	"equipes":                "id,nome,tipo,ativo,canal_loja_id,local_id,setor_id,empresa_id,deposito_id,ordem,criado_em,atualizado_em",
+	"equipes_permissoes":     "id,equipe_id,profile_id,chave,concedido_por,criado_em",
 	// a auditoria do "entrar como" (Plano 5.0): a API insere e o super-admin lê; conferirAuditoria olha o dono/RLS
 	"entradas_como_outro_usuario": "admin_id,admin_email,alvo_id,alvo_email,criado_em",
-	"equipes_membros":             "equipe_id,profile_id,papel",
-	"canais_grupos_membros":       "grupo_id,profile_id,papel",
+	"equipes_membros":             "id,equipe_id,profile_id,papel,criado_em,criado_por",
+	"canais_grupos":               "id,nome,ordem,ativo,criado_em",
+	"acessos_perfis":              "id,nome,permissions,criado_em,criado_por",
+	"access_requests":             "id,name,email,message,status,created_at", // esquema PRESUMIDO no 5.1: o conferir é quem pega divergência
+	"audit_log":                   "actor_id,actor_email,action,detail",
+	"canais_grupos_membros":       "id,grupo_id,profile_id,papel,concedido_por,concedido_em",
 	"bling_lojas":                 "loja_id,nome,grupo,grupo_id",
 	"bling_pedido_nota":           "pedido_id,data_pedido,data_da_venda,total,loja_id,nota_situacao",
 	"bling_pedido_ajuste_valor":   "pedido_id,total_corrigido",
@@ -105,7 +109,13 @@ var tiposDoWorker = map[string]string{
 	"shopify_pedidos.bruto": "jsonb", "robos_execucoes.disparado_em": "timestamp with time zone", "robos_execucoes.conferido_em": "timestamp with time zone",
 	"robos_execucoes.robo": "text", "robos_execucoes.resposta": "text", "robos_execucoes.ok": "boolean",
 	"vessel_rd_envios.atualizado_em": "timestamp with time zone",
-	"noticias_concorrentes.rodada":   "date", "noticias_panorama.rodada": "date", // o filtro faz @rodada::date[]
+	// Plano 5.1: os filtros e o upsert fazem ::uuid nestas colunas; permissions tem de ser objeto jsonb
+	"profiles.perfil_id": "uuid", "profiles.permissions_excecao": "jsonb", "acessos_perfis.permissions": "jsonb",
+	"equipes_membros.equipe_id": "uuid", "equipes_membros.profile_id": "uuid",
+	"equipes_permissoes.equipe_id": "uuid", "equipes_permissoes.profile_id": "uuid",
+	"canais_grupos_membros.grupo_id": "uuid", "canais_grupos_membros.profile_id": "uuid",
+	"push_subs.user_id": "uuid", "push_preferencias.user_id": "uuid",
+	"noticias_concorrentes.rodada": "date", "noticias_panorama.rodada": "date", // o filtro faz @rodada::date[]
 }
 
 // anulaveisDoWorker: colunas que precisam ACEITAR nulo (a migração de 2026-09-18 tirou o NOT NULL do cart_token).
@@ -128,6 +138,8 @@ var unicosDoWorker = []string{
 	"perfil_visitas_hora(account_id,dia,hora)", "ad_insights_hora(ad_id,account_id,dia,hora)",
 	"conteudo_casamentos(peca_id,ig_media_id)", "conteudo_metricas(peca_id,capturado_em)",
 	"chatwoot_eventos(conversation_id,tipo)", "contatos_sem_mensagem(telefone)", "shopify_pedidos(id)",
+	"push_subs(endpoint)", "push_preferencias(user_id,tipo)", // Plano 5.1: inscrição de push e lote de preferências
+	"acessos_perfis(nome)", // Plano 5.1: a tela regrava o perfil de mesmo nome pelo 409 deste único
 }
 
 // deduplicadoresDoWorker: `on conflict do nothing` sem alvo; é o índice único (parcial vale) que impede a
@@ -141,6 +153,15 @@ var funcoesDoWorker = []string{
 	"marcar_da_fila(text,text,text,text,bigint)", "devolver_mensagem(text,boolean)", "devolver_da_fila(text,text,boolean)",
 	"liberar_mensagens_travadas()", "liberar_travadas_da_fila()", "agendar_followups(integer,integer)",
 	"avaliar_trava_cruzada(text,integer,text,text)", "conteudo_reivindicar_hora_h()", "vessel_rd_payload(bigint)",
+	// Plano 5.1: os gatilhos que as escritas de perfis, grupos e times presumem
+	"guard_profiles()", "impedir_autopromocao()", "espelhar_rename_do_grupo()", "espelhar_grupo_do_canal()", "equipes_toca_atualizado()",
+}
+
+// gatilhosDoWorker (nome, tabela): os gatilhos do 5.1 têm de existir NA tabela certa e não estar desabilitados
+// (tgenabled = 'D'). Conferir só a função (acima) não pega um gatilho que o restore deixou de ligar.
+var gatilhosDoWorker = [][2]string{
+	{"equipes_atualizado", "equipes"}, {"trg_espelhar_grupo_do_canal", "bling_lojas"}, {"trg_espelhar_rename_do_grupo", "canais_grupos"},
+	{"trg_guard_profiles", "profiles"}, {"trg_impedir_autopromocao", "profiles"},
 }
 
 // funcoesPorNomeDoWorker: chamadas dos webhooks, que o levantamento não detalhou por assinatura (há
@@ -365,6 +386,19 @@ func conferirSchema(ctx context.Context, p *pgxpool.Pool) ([]string, error) {
 			continue
 		}
 		faltam = append(faltam, melhor...)
+	}
+
+	// Plano 5.1: gatilhos por nome e tabela (pg_trigger), ligados.
+	for _, g := range gatilhosDoWorker {
+		var tem bool
+		if err := tx.QueryRow(ctx, `select exists (select 1 from pg_trigger t join pg_class c on c.oid = t.tgrelid
+			 where not t.tgisinternal and t.tgname = $1::text and c.relname = $2::text
+			   and c.relnamespace = current_schema()::regnamespace and t.tgenabled <> 'D')`, g[0], g[1]).Scan(&tem); err != nil {
+			return nil, err
+		}
+		if !tem {
+			faltam = append(faltam, "gatilho "+g[0]+" em "+g[1]+" (ausente ou desabilitado)")
+		}
 	}
 
 	// Plano 5.0: ambiente da gramática de SQL, papel da API na auditoria do "entrar como" e as RPC declaradas.
