@@ -126,6 +126,10 @@ func (h *Handlers) Entrar(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) Sair(w http.ResponseWriter, r *http.Request) {
+	if a := AtorDoContexto(r.Context()); a != nil && a.Tipo == "servico" { // revogar é só pelo CLI; um 204 enganaria
+		erroComMensagem(w, http.StatusForbidden, "sem_permissao", "Token de serviço não sai: revogue pelo CLI (api servico revogar).")
+		return
+	}
 	if err := h.sessoes.Revogar(r.Context(), tokenDe(r)); err != nil {
 		erroJSON(w, http.StatusInternalServerError, "erro_interno")
 		return

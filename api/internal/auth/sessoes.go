@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -91,6 +92,10 @@ func (s *Store) Buscar(ctx context.Context, token string) (*Sessao, error) {
 		         and coalesce(pi.is_superadmin, false)))`, h).
 		Scan(&se.UsuarioID, &se.Tipo, &se.ImpersonadorID, &se.ExpiraEm, &ultimo)
 	if errors.Is(err, pgx.ErrNoRows) {
+		// token de robô (Plano 5.13): só `srv_...` vai a tokens_de_servico, sem passar pela expiração/renovação abaixo
+		if strings.HasPrefix(token, prefixoServico) {
+			return s.buscarServico(ctx, token)
+		}
 		return nil, ErrSessaoInvalida
 	}
 	if err != nil {
