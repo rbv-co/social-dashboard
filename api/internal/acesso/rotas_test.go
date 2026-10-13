@@ -36,7 +36,7 @@ func TestEscritasRecusamImpersonado(t *testing.T) {
 	}
 }
 
-// Ruling 5.1-14: /saude/ia-execucoes é do 5.12 (/status-ia/execucoes); o 5.1 não monta a rota.
+// Ruling 5.1-16: /saude/ia-execucoes é do 5.12 (/status-ia/execucoes); o 5.1 não monta a rota.
 func TestMontarNaoTemIAExecucoes(t *testing.T) {
 	m := novoMundo(t, Montar)
 	if st, corpo := m.pedir(t, "admin", "GET", "/saude/ia-execucoes", ""); st != http.StatusNotFound {

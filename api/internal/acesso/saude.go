@@ -21,7 +21,7 @@ var consultaConferencias = dados.Consulta{Tabela: "data_integrity_checks", Alias
 	Ordens:      map[string]string{"checked_date": "t.checked_date", "created_at": "t.created_at"},
 	OrdemPadrao: "t.created_at desc", Desempate: "t.id"}
 
-// /saude/ia-execucoes NÃO é montada aqui (Ruling 5.1-14): é a /status-ia/execucoes do 5.12.
+// /saude/ia-execucoes NÃO é montada aqui (Ruling 5.1-16): é a /status-ia/execucoes do 5.12.
 func montarSaude(r chi.Router, p *pgxpool.Pool) {
 	deve(consultaConferencias.Validar(autz.Producao))
 	r.Get("/saude/conferencias", consultaConferencias.Handler(p, autz.Producao))

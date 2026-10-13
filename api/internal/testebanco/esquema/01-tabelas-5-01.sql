@@ -128,7 +128,7 @@ create table public.acessos_pessoas (
   email_corporativo text
 );
 
--- presumido: as colunas que login (tela-de-login.vue:227) e admin (tela-de-admin.vue:4271) usam
+-- presumido: as colunas que login (tela-de-login.vue:267) e admin (tela-de-admin.vue:4300) usam
 create table public.access_requests (
   id         uuid primary key default gen_random_uuid(),
   name       text,

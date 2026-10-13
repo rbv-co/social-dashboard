@@ -136,7 +136,7 @@ func TestConferirSchemaVazioListaEmOrdem(t *testing.T) {
 		"coluna bling_lojas.loja_id", "coluna frota_uso.saida_em", "coluna frota_uso.id", "função registrar_checkout_abandono",
 		"coluna equipes_permissoes.chave", "coluna entradas_como_outro_usuario.admin_id", "coluna entradas_como_outro_usuario.criado_em", "coluna equipes.deposito_id",
 		"coluna access_requests.status", "coluna acessos_perfis.permissions", "coluna canais_grupos_membros.concedido_por", "coluna push_preferencias.alterado_por",
-		"único push_subs(endpoint)", "único push_preferencias(user_id,tipo)", "função guard_profiles()", "função equipes_toca_atualizado()", "função impedir_autopromocao()", "função espelhar_rename_do_grupo()", // Plano 5.1
+		"único push_subs(endpoint)", "único push_preferencias(user_id,tipo)", "função guard_profiles()", "função equipes_toca_atualizado()", "função impedir_autopromocao()", "função espelhar_rename_do_grupo()", "função espelhar_grupo_do_canal()", "único acessos_perfis(nome)", // Plano 5.1
 		"gatilho equipes_atualizado em equipes (ausente ou desabilitado)", "gatilho trg_espelhar_grupo_do_canal em bling_lojas (ausente ou desabilitado)",
 		"gatilho trg_espelhar_rename_do_grupo em canais_grupos (ausente ou desabilitado)", "gatilho trg_guard_profiles em profiles (ausente ou desabilitado)",
 		"gatilho trg_impedir_autopromocao em profiles (ausente ou desabilitado)",
@@ -512,7 +512,7 @@ func TestConferirNaFatiaD0NaoAcusaOPlano51(t *testing.T) {
 	p := testebanco.ComEsquemaDeProducao(t)
 	tabelas51 := []string{"profiles", "equipes", "equipes_membros", "equipes_permissoes", "canais_grupos", "canais_grupos_membros",
 		"bling_lojas", "acessos_perfis", "access_requests", "push_subs", "push_preferencias", "data_integrity_checks"}
-	funcoes51 := []string{"guard_profiles", "impedir_autopromocao", "espelhar_rename_do_grupo", "equipes_toca_atualizado"}
+	funcoes51 := []string{"guard_profiles", "impedir_autopromocao", "espelhar_rename_do_grupo", "espelhar_grupo_do_canal", "equipes_toca_atualizado"}
 	do51 := func(f string) bool {
 		if strings.HasPrefix(f, "gatilho ") {
 			return true

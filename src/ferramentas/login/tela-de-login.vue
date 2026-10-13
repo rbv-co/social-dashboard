@@ -264,11 +264,12 @@ async function solicitarAcesso() {
     return
   }
   reqCarregando.value = true
-  const { error } = await sbClient.from('access_requests').insert({
-    name: nome,
-    email: emailReq,
-    message: reqMensagem.value.trim(),
-  })
+  const pedidoDeAcesso = { name: nome, email: emailReq, message: reqMensagem.value.trim() }
+  // Chave `admin` (Plano 7): a rota PÚBLICA do 5.1 (limite por IP; o status
+  // nasce `pending` no servidor, nunca do corpo).
+  const { error } = areaNaApi('admin')
+    ? await pedir('POST', '/pedir-acesso', { corpo: pedidoDeAcesso, semSessao: true })
+    : await sbClient.from('access_requests').insert(pedidoDeAcesso)
   reqCarregando.value = false
   if (error) {
     reqFeedbackCor.value = 'var(--red)'
