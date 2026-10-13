@@ -425,24 +425,24 @@ Checklist do ensaio: `api migrar` aplicou `00005_tokens_de_senha.sql`; `conferir
 ### Mudanças de contrato que o Plano 7 absorve
 - Escrita negada responde 403/404 (o PostgREST respondia 2xx com zero linhas); a linha devolvida é a da leitura, ou `{"id"}` quando quem gravou não a lê.
 - `criado_por`, `alterado_por` e `concedido_por` saem do corpo (a sessão preenche; mandar = 400).
-- Liberação de estoque é apagada por id (`DELETE /equipes/permissoes/{id}`): `tela-de-admin.vue:1230` passa a ler o `id` e `:1488` a usá-lo.
+- Liberação de estoque é apagada por id (`DELETE /equipes/permissoes/{id}`): `tela-de-admin.vue:1239` passa a ler o `id` e `:1497` a usá-lo.
 - Preferências de aviso vão em lote (`POST /avisos/preferencias`, array); push por `inscrever`/`desinscrever`.
 - `permissions`/`permissions_excecao` têm de ser objeto JSON (400 senão).
 - Sessão "entrar como" só lê no 5.1: as 19 escritas respondem 403 (`TestEscritasRecusamImpersonado`).
-- Forma da resposta das escritas: `POST`/`PATCH` devolvem OBJETO (não array) e `DELETE` devolve 204 sem corpo; todo `Array.isArray(linhas)` de escrita muda. Estes sítios de `tela-de-admin.vue` dariam falso erro DEPOIS de gravar se só a URL fosse trocada (ex.: criar grupo grava e a tela diz "você não tem permissão"; o segundo clique dá 409): `:1040-1043` (`gravar`, usado nos grupos `:1100`/`:1143`/`:1171`), `:1658-1660` (POST de supervisora), `:1682-1684` (DELETE de supervisora com `return=representation`), `:2356-2357`, `:2548-2549` e `:2800-2801` (PATCH de `profiles`).
-- `tela-de-admin.vue`: `:2284` manda `criado_por` (agora 400); `:2301` e `:2500` esperam array e recebem objeto; `:2498-2502` não-super recebe 403 (antes 200 `[]`): mapear o 403 para o aviso "seu login não está na lista de super-admins"; `:2814-2817` manda `alterado_em`/`alterado_por` (agora 400) e `:2819` não confere o status do `adFetch` (um 400 viraria toast "Permissões atualizadas").
+- Forma da resposta das escritas: `POST`/`PATCH` devolvem OBJETO (não array) e `DELETE` devolve 204 sem corpo; todo `Array.isArray(linhas)` de escrita muda. Estes sítios de `tela-de-admin.vue` dariam falso erro DEPOIS de gravar se só a URL fosse trocada (ex.: criar grupo grava e a tela diz "você não tem permissão"; o segundo clique dá 409): `:1049-1052` (`gravar`, usado nos grupos `:1109`/`:1152`/`:1180`), `:1667-1669` (POST de supervisora), `:1691-1693` (DELETE de supervisora com `return=representation`), `:2365-2366`, `:2557-2558` e `:2809-2810` (PATCH de `profiles`).
+- `tela-de-admin.vue`: `:2293` manda `criado_por` (agora 400); `:2310` e `:2509` esperam array e recebem objeto; `:2507-2511` não-super recebe 403 (antes 200 `[]`): mapear o 403 para o aviso "seu login não está na lista de super-admins"; `:2823-2826` manda `alterado_em`/`alterado_por` (agora 400) e `:2828` não confere o status do `adFetch` (um 400 viraria toast "Permissões atualizadas").
 
 ### O que o dono precisa saber/decidir (paridade com produção mantida; nada disto foi corrigido)
 - **D1 (reproduzido):** admin comum marca `is_superadmin` numa segunda conta (200; pode ser conta dele criada por `invite-user`). Essa ficha é o portão do "entrar como", que aceita qualquer alvo: a conta entra como `breno@` (super por e-mail) e lê tudo como ele. Correção: exigir super por e-mail quando `is_superadmin` muda e/ou "entrar como" recusar alvo super por e-mail.
 - **D2 (reproduzido):** admin comum desativa `breno@` e `gabriel.gertrudes@` (`guard_profiles` só protege `erick@`); `disabled` não vai ao `audit_log`.
 - **D3 (presumido em produção; a API fecha com 400):** `impedir_autopromocao` não lista `email`; gravar um e-mail da lista de `is_superadmin()` torna a conta super. Conferir em produção quem já trocou e-mail.
 - **D4 (reproduzido):** a trava de loja e as contas do admin não limitam o que ele concede (`adminRestrito` dá contas que não vê e tira a trava de outra pessoa).
-- **T1:** gestor de um time liga o time a qualquer canal livre do Bling e o time passa a ver o faturamento dele (`tela-de-admin.vue:1354,1392`; policy `equipes_editar`). Decidir: fica com o gestor ou só super-admin.
+- **T1:** gestor de um time liga o time a qualquer canal livre do Bling e o time passa a ver o faturamento dele (`tela-de-admin.vue:1363,1401`; policy `equipes_editar`). Decidir: fica com o gestor ou só super-admin.
 - **T2:** gestor de qualquer time cria time novo ligado a canal livre e fica sem dono (só super-admin administra).
 - **T3:** supervisora/gestor libera estoque para quem não é do time (201); sem efeito hoje, passa a valer se a pessoa entrar no time depois.
 - **G2:** apagar grupo com lojas solta as lojas e apaga as supervisoras dele (só o front barra). Decidir 409 ou paridade.
 - **G3 e Ruling 5.1-9:** `concedido_por` (supervisoras de grupo, antes nulo; liberações de estoque) agora é preenchido pela sessão, e a FK é NO ACTION: o super que concedeu não pode ter o perfil excluído enquanto a concessão existir (23503, "ainda há registros ligados"); desativar é o caminho. Mesmo efeito de `equipes_permissoes.concedido_por` e `acessos_perfis.criado_por`.
-- **P1:** duas definições de super-admin: a tela mostra "Salvar como perfil" pela ficha (`:2258`), mas só grava quem está na lista de e-mails.
+- **P1:** duas definições de super-admin: a tela mostra "Salvar como perfil" pela ficha (`:2267`), mas só grava quem está na lista de e-mails.
 - **P2:** apagar perfil de acesso: produção permite ao super; a API não tem rota (nenhuma tela usa; `on delete set null` preserva o acesso).
 - **P3:** nome de perfil vazio, só espaços ou de até 1 MiB é aceito como em produção (3 pessoas escrevem). Sugestão: `check (btrim(nome) <> '' and length(nome) <= 120)`.
 - **A3:** o esquema de `access_requests` é PRESUMIDO (`01-tabelas-5-01.sql`), fora do levantamento: conferir colunas e CHECK antes do corte (`conferir` cobra as colunas).

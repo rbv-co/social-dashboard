@@ -264,7 +264,7 @@ create table public.acessos_pessoas (
   email_corporativo text
 );
 
--- presumido: as colunas que login (tela-de-login.vue:227) e admin (tela-de-admin.vue:4271) usam
+-- presumido: as colunas que login (tela-de-login.vue:267) e admin (tela-de-admin.vue:4300) usam
 create table public.access_requests (
   id         uuid primary key default gen_random_uuid(),
   name       text,
@@ -1577,7 +1577,7 @@ var consultaTimes = dados.Consulta{Tabela: "equipes", Alias: "t", SQL: `select `
 	Ordens: map[string]string{"nome": "t.nome", "ordem": "t.ordem"}, OrdemPadrao: "t.ordem, t.nome", Desempate: "t.id"}
 
 // POST /equipes/times (equipes_criar: super pela ficha OU gestor direto em alguma equipe) e
-// PATCH /equipes/times/{id} (equipes_editar: sou_gestor_da_equipe(id)). O que a tela grava (tela-de-admin.vue:1726).
+// PATCH /equipes/times/{id} (equipes_editar: sou_gestor_da_equipe(id)). O que a tela grava (tela-de-admin.vue:1735).
 type corpoTime struct {
 	Nome        json.RawMessage `json:"nome,omitempty"`
 	Tipo        json.RawMessage `json:"tipo,omitempty"`
@@ -1690,7 +1690,7 @@ var tabelaSupervisoras = dados.Tabela{Nome: "canais_grupos_membros", Resposta: c
 func montarGrupos(r chi.Router, p *pgxpool.Pool) // as 7 rotas; deve(…Validar); soSessaoPropria nas escritas
 ```
 
-Os `PATCH bling_lojas` da mesma seção da tela (`tela-de-admin.vue:1072`, `:1194`: `fechado_em`, `grupo_id`) são do 5.5 (dono de `bling_lojas`).
+Os `PATCH bling_lojas` da mesma seção da tela (`tela-de-admin.vue:1081`, `:1203`: `fechado_em`, `grupo_id`) são do 5.5 (dono de `bling_lojas`).
 
 **(b) Testes de aceitação** (`TestGruposESupervisoras`)
 - Grupos: `vendT1` GET → G1 e G2. `super` POST `{"nome":"Online"}` → 201; `superFicha` POST `{"nome":"Feira"}` → 201 (a ficha basta); `admin` POST → 403, contagem igual; `super` POST `{"nome":" varejo "}` → 409 (rode ANTES de renomear o G1). `super` PATCH G1 `{"nome":"Varejo Físico"}` → 200 e `bling_lojas.grupo` da loja 3 = `Varejo Físico`; `admin` PATCH G1 → 403, intacto; `super` DELETE G2 → 204; `admin` DELETE G1 → 403, fica.
@@ -2178,7 +2178,7 @@ Em `NOTAS-DA-IMPLANTACAO.md`, acrescente ao fim:
 ### Mudanças de contrato que o Plano 7 absorve
 - Escrita negada responde 403/404 (o PostgREST respondia 2xx com zero linhas); a linha devolvida é a da leitura, ou `{"id"}` quando quem gravou não a lê.
 - `criado_por`, `alterado_por` e `concedido_por` saem do corpo (a sessão preenche; mandar = 400).
-- Liberação de estoque é apagada por id (`DELETE /equipes/permissoes/{id}`): `tela-de-admin.vue:1230` passa a ler o `id`.
+- Liberação de estoque é apagada por id (`DELETE /equipes/permissoes/{id}`): `tela-de-admin.vue:1239` passa a ler o `id`.
 - Preferências de aviso vão em lote (`POST /avisos/preferencias`, array); push por `inscrever`/`desinscrever`.
 - `permissions`/`permissions_excecao` têm de ser objeto JSON.
 
@@ -2218,36 +2218,36 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
 
 ## Inventário: sítios do front a trocar (Plano 7)
 
-`grep` em `src/` (fora de `*.test.*` e `src/demonstracao/`) em 2026-10-12: **70 literais** nas tabelas do 5.1 (`profiles` 24, `equipes_membros` 12, `equipes` 7, `equipes_permissoes` 5, `canais_grupos_membros` 5, `data_integrity_checks` 4, `acessos_perfis` 4, `access_requests` 3, `push_subs` 2, `push_preferencias` 2, `ia_execucoes` 1, `canais_grupos` 1) **+ 4 por variável** (`gravar('canais_grupos…')` ×3, `adFetch(alvo)` ×1) **− 1 do 5.0** (`controle-de-login-e-usuario.js:92` → `GET /eu/perfil`) = **73 sítios**. `user_permissions`, `audit_log`, `entradas_como_outro_usuario`, `platform_settings`, `robos_esperados`, `robos_execucoes`, `coletor_log`, `projetos_status` e `gestor_log`: **zero** sítios (Ruling 5.1-5).
+`grep` em `src/` (fora de `*.test.*` e `src/demonstracao/`) em 2026-10-12. **Números de linha refeitos no HEAD do branch (`ec847fd9`), depois de `1deef27b` (front, área `conta`), que deslocou `tela-de-admin.vue`, `tela-de-frota.vue`, `tela-de-login.vue` e outras; a contagem abaixo é a original:** **70 literais** nas tabelas do 5.1 (`profiles` 24, `equipes_membros` 12, `equipes` 7, `equipes_permissoes` 5, `canais_grupos_membros` 5, `data_integrity_checks` 4, `acessos_perfis` 4, `access_requests` 3, `push_subs` 2, `push_preferencias` 2, `ia_execucoes` 1, `canais_grupos` 1) **+ 4 por variável** (`gravar('canais_grupos…')` ×3, `adFetch(alvo)` ×1) **− 1 do 5.0** (`controle-de-login-e-usuario.js:94` → `GET /eu/perfil`) = **73 sítios**. `user_permissions`, `audit_log`, `entradas_como_outro_usuario`, `platform_settings`, `robos_esperados`, `robos_execucoes`, `coletor_log`, `projetos_status` e `gestor_log`: **zero** sítios (Ruling 5.1-5).
 
 Abreviações: `admin` = `src/ferramentas/admin/tela-de-admin.vue`; `frota` = `src/ferramentas/frota/tela-de-frota.vue`; `tv` = `src/ferramentas/gestao-comercial/time-de-vendas.vue`; `gav` = `src/ferramentas/gestao-a-vista/tela-de-gestao-a-vista.vue`; `av` = `src/ferramentas/analise-vendas/tela-de-analise-vendas.vue`; `redes` = `src/ferramentas/redes-sociais/tela-de-redes-sociais.vue`.
 
 | Rota | Sítios | Qtde |
 |---|---|---|
-| `GET /acesso/usuarios` | admin:743, 1234, 2419, 3665, 3860, 3929; frota:788, 1079; tv:147; `src/ferramentas/conteudo/dados-conteudo.js:248`; redes:3735 | 11 |
-| `PATCH /acesso/usuarios/{id}` | admin:449, 748, 767, 2346, 2542, 2794, 3431, 3512, 3942; frota:802, 819; redes:3751 | 12 |
-| `GET /acesso/perfis` | admin:2401, 3698 | 2 |
-| `POST /acesso/perfis` | admin:2277 | 1 |
-| `PATCH /acesso/perfis/{id}` | admin:2492 | 1 |
-| `POST /pedir-acesso` | `src/ferramentas/login/tela-de-login.vue:227` | 1 |
-| `GET /acesso/pedidos` / `PATCH /acesso/pedidos/{id}` | admin:4271 / admin:4309 | 2 |
-| `GET /equipes/times` | admin:882, 1227; gav:690; av:403; tv:145 | 5 |
-| `POST` / `PATCH /equipes/times` | admin:1729 / admin:1728 | 2 |
-| `GET /equipes/membros` | admin:1228; gav:692; av:405; tv:146; `src/ferramentas/gestao-comercial/tela-de-gestao-comercial.vue:62` | 5 |
-| `POST /equipes/membros` | admin:753, 1539; tv:178 | 3 |
-| `PATCH` / `DELETE /equipes/membros/{id}` | admin:1452, tv:164 / admin:1506, tv:170 | 4 |
-| `GET /equipes/permissoes` | admin:1230; tv:148 | 2 |
-| `POST` / `DELETE /equipes/permissoes` | admin:1487, tv:187 / admin:1488 (alvo em :1485-1486), tv:191 | 4 |
-| `GET /equipes/grupos` | admin:883 | 1 |
-| `POST` / `PATCH` / `DELETE /equipes/grupos` | admin:1100 / admin:1143 / admin:1171 (via `gravar`, :1034) | 3 |
-| `GET /equipes/grupos-membros` | admin:1233; gav:697; av:409 | 3 |
-| `POST` / `DELETE /equipes/grupos-membros` | admin:1648 / admin:1679 | 2 |
-| `GET` / `POST /avisos/preferencias` | admin:1908 / admin:2819 | 2 |
+| `GET /acesso/usuarios` | admin:752, 1243, 2428, 3690, 3885, 3958; frota:792, 1083; tv:147; `src/ferramentas/conteudo/dados-conteudo.js:248`; redes:3738 | 11 |
+| `PATCH /acesso/usuarios/{id}` | admin:452, 757, 776, 2355, 2551, 2803, 3452, 3533, 3971; frota:806, 823; redes:3754 | 12 |
+| `GET /acesso/perfis` | admin:2410, 3723 | 2 |
+| `POST /acesso/perfis` | admin:2286 | 1 |
+| `PATCH /acesso/perfis/{id}` | admin:2501 | 1 |
+| `POST /pedir-acesso` | `src/ferramentas/login/tela-de-login.vue:267` | 1 |
+| `GET /acesso/pedidos` / `PATCH /acesso/pedidos/{id}` | admin:4300 / admin:4338 | 2 |
+| `GET /equipes/times` | admin:891, 1236; gav:690; av:403; tv:145 | 5 |
+| `POST` / `PATCH /equipes/times` | admin:1738 / admin:1737 | 2 |
+| `GET /equipes/membros` | admin:1237; gav:692; av:405; tv:146; `src/ferramentas/gestao-comercial/tela-de-gestao-comercial.vue:64` | 5 |
+| `POST /equipes/membros` | admin:762, 1548; tv:178 | 3 |
+| `PATCH` / `DELETE /equipes/membros/{id}` | admin:1461, tv:164 / admin:1515, tv:170 | 4 |
+| `GET /equipes/permissoes` | admin:1239; tv:148 | 2 |
+| `POST` / `DELETE /equipes/permissoes` | admin:1496, tv:187 / admin:1497 (alvo em :1494-1495), tv:191 | 4 |
+| `GET /equipes/grupos` | admin:892 | 1 |
+| `POST` / `PATCH` / `DELETE /equipes/grupos` | admin:1109 / admin:1152 / admin:1180 (via `gravar`, :1043) | 3 |
+| `GET /equipes/grupos-membros` | admin:1242; gav:697; av:409 | 3 |
+| `POST` / `DELETE /equipes/grupos-membros` | admin:1657 / admin:1688 | 2 |
+| `GET` / `POST /avisos/preferencias` | admin:1917 / admin:2828 | 2 |
 | `POST /eu/push/inscrever` / `desinscrever` | `src/compartilhado/notificacoes-push.js:129` / `:166` | 2 |
-| `GET /saude/conferencias` | admin:494, 498, 1772, 1775 | 4 |
-| `GET /saude/ia-execucoes` | `src/ferramentas/claude-status/tela-de-status-claude.vue:703` | 1 |
+| `GET /saude/conferencias` | admin:497, 501, 1781, 1784 | 4 |
+| `GET /saude/ia-execucoes` | `src/ferramentas/claude-status/tela-de-status-claude.vue:708` | 1 |
 
-Nas mesmas telas, de OUTROS planos (não trocar pelo 5.1): 5.0 — `invite-user` (admin:724, 3110, 3527, 3869), `entrar-como-usuario` (admin:3412), `controle-de-login-e-usuario.js:92`; 5.2 — admin:3720; 5.4 — admin:3166, 3190, 3212, 3672, 3721, 3722; 5.5 — admin:559, 560, 881, 1072, 1194, 1229, 4107–4111, 4229–4241; 5.6 — admin:1776–1778, 1915, 3968, 4004, 4019–4033; Plano 6 — admin:446, 448 (Storage `avatars`); Ruling 30 do mestre — admin:1761.
+Nas mesmas telas, de OUTROS planos (não trocar pelo 5.1): 5.0 — `invite-user` (admin:732, 3123, 3551, 3897), `entrar-como-usuario` (admin:3433), `controle-de-login-e-usuario.js:94`; 5.2 — admin:3745; 5.4 — admin:3180, 3204, 3226, 3697, 3746, 3747; 5.5 — admin:562, 563, 890, 1081, 1203, 1238, 4136–4140, 4258–4270; 5.6 — admin:1785–1787, 1924, 3997, 4033, 4048–4062; Plano 6 — admin:449, 451 (Storage `avatars`); Ruling 30 do mestre — admin:1770.
 
 ## Paralelização
 
@@ -2272,7 +2272,7 @@ Nas mesmas telas, de OUTROS planos (não trocar pelo 5.1): 5.0 — `invite-user`
 11. Ruling: inscrição de push no endpoint de OUTRA pessoa = 403 sem mexer na linha (paridade: hoje o `upsert` caía na RLS de update); desinscrever é idempotente (204 mesmo sem linha própria) com a regra do catálogo no `WHERE` — o front ignora o resultado do delete e a paridade que importa é "não apaga a dos outros" — custo se errada: aparelho compartilhado segue inscrito no nome de quem inscreveu primeiro, como hoje.
 12. Ruling: a matriz de cada rota roda no pacote `acesso` com a MESMA cadeia do grupo de domínio de produção (`auth.Exigir` → `autz.ComEscopo`), e a montagem real é provada em `web` (401 sem sessão, rota pública montada, um IDOR pela montagem) e pela varredura do impersonado sobre `Montar` — os sete arquivos de rota rodam em paralelo sem tocar `web/rotas.go`, e o teste interno do pacote não pode importar `web` (ciclo) — custo se errada: a cadeia do teste pode divergir da montagem; os testes da Task 11 são a rede.
 13. Ruling: `permissions` e `permissions_excecao` têm de ser objeto JSON nas escritas de usuário e de perfil de acesso (400 senão); o resto do tipo é o do banco — array ou escalar em `permissions` muda o que o `Escopo` lê (Review Focus 5 do mestre) e nenhuma tela grava outra forma — custo se errada: nenhum.
-14. Ruling: liberação de estoque (`equipes_permissoes`) é apagada por id, não pela chave natural `(equipe_id, profile_id, chave)` — mantém o contrato uniforme (`DELETE /…/{id}` → 204, com 404/403 do `PodeApagar`) e a leitura já devolve o `id` — custo se errada: `tela-de-admin.vue:1230` passa a ler o `id` e `:1488` a usá-lo (Plano 7).
+14. Ruling: liberação de estoque (`equipes_permissoes`) é apagada por id, não pela chave natural `(equipe_id, profile_id, chave)` — mantém o contrato uniforme (`DELETE /…/{id}` → 204, com 404/403 do `PodeApagar`) e a leitura já devolve o `id` — custo se errada: `tela-de-admin.vue:1239` passa a ler o `id` e `:1497` a usá-lo (Plano 7).
 
 ## Cobertura da spec e o que o 5.2+ assume
 

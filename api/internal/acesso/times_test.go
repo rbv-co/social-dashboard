@@ -68,7 +68,7 @@ func TestTimesMembrosELiberacoes(t *testing.T) {
 			{nome: "id do corpo", quem: "gestorT1", metodo: "PATCH", caminho: "/equipes/times/" + T1, corpo: `{"id":"` + T2 + `"}`, status: 400, efeito: `select id::text from equipes where nome = 'Time Um'`, quer: T1},
 			{nome: "time que não existe", quem: "gestorT1", metodo: "PATCH", caminho: "/equipes/times/" + semEquipe, corpo: `{"nome":"x"}`, status: 404},
 			{nome: "sem sessão", quem: "", metodo: "POST", caminho: "/equipes/times", corpo: `{"nome":"x"}`, status: 401, efeito: contar("equipes"), quer: "5"},
-			// o corpo que as telas mandam de verdade (tela-de-admin.vue:1726-1729, time-de-vendas.vue:178): tirar
+			// o corpo que as telas mandam de verdade (tela-de-admin.vue:1735-1738, time-de-vendas.vue:178): tirar
 			// `tipo` ou `canal_loja_id` das structs quebraria as telas com 400
 			{nome: "corpo real da tela: PATCH com nome, tipo e canal", quem: "gestorT1", metodo: "PATCH", caminho: "/equipes/times/" + T1, corpo: `{"nome":"Time Um","tipo":"canal","canal_loja_id":1}`, status: 200, tem: `"tipo":"canal"`,
 				efeito: `select tipo from equipes where id = '` + T1 + `'`, quer: "canal"},
@@ -130,7 +130,7 @@ func TestTimesMembrosELiberacoes(t *testing.T) {
 			{nome: "gestor apaga do próprio time", quem: "gestorT1", metodo: "DELETE", caminho: "/equipes/membros/" + mVendT1, status: 204, efeito: existe(mVendT1), quer: "0"},
 			{nome: "super apaga de qualquer time", quem: "super", metodo: "DELETE", caminho: "/equipes/membros/" + mVendT2, status: 204, efeito: existe(mVendT2), quer: "0"},
 			{nome: "o vínculo do T3 segue", efeito: existe(mVendT2emT3), quer: "1"},
-			// o corpo que as telas mandam (tela-de-admin.vue:753, :1539): com `papel`; tirá-lo da struct quebraria com 400
+			// o corpo que as telas mandam (tela-de-admin.vue:762, :1548): com `papel`; tirá-lo da struct quebraria com 400
 			{nome: "corpo real da tela: gestor adiciona com papel", quem: "gestorT1", metodo: "POST", caminho: "/equipes/membros", corpo: `{"equipe_id":"` + T1 + `","profile_id":"` + idSuperFicha + `","papel":"vendedora"}`, status: 201,
 				tem: `"papel":"vendedora"`, efeito: `select papel from equipes_membros where profile_id = '` + idSuperFicha + `' and equipe_id = '` + T1 + `'`, quer: "vendedora"},
 		})
