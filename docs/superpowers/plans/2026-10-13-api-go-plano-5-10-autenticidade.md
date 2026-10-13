@@ -62,11 +62,64 @@
 
 ## Pré-voo (antes da Task 1)
 
-<!-- preenchido no próximo commit -->
+- [ ] `cd /Users/gabrielgertrudes/Projetos/Trabalho/lavessel/social-dashboard/.claude/worktrees/p5-510 && git status --short && git branch --show-current` → vazio (ou só este plano); `feat/api-go-plano-5-10`.
+- [ ] Trazer as dependências executadas: `git fetch && git merge --no-edit origin/main`; se `git merge-base --is-ancestor 41c24eba HEAD` falhar (o 5.8 ainda não entrou na `main`), `git merge --no-edit feat/api-go-plano-5-8`. Conferir:
+  ```bash
+  grep -c 'VesselAdmin     = Regra(vesselAdmin)' api/internal/autz/predicados.go          # 1
+  grep -c '"is_vessel_admin()": vesselAdmin' api/internal/autz/catalogo.go                 # 1 (as 11 policies compilam)
+  grep -c '"vessel_alertas",' api/internal/web/rpc_lista.go                                # 1 (em RPCPendentes)
+  grep -c 'SoSessaoPropria bool\|ParamConta string\|Conferir func' api/internal/rpc/rpc.go # 3
+  grep -c '"disparar_robo"' api/internal/rpc/rpc.go                                        # 1 (proibida: nunca vira RPC)
+  grep -c 'func SoServico' api/internal/auth/*.go                                          # 1 (5.13)
+  grep -c 'func montarRobo' api/internal/fabrica/robo.go                                   # 1 (5.8)
+  grep -c 'func ComEsquemaDeProducao' api/internal/testebanco/esquema.go                   # 1
+  grep -c 'func Novo' api/internal/testebanco/mundoteste/mundoteste.go                     # 1
+  grep -rn 'create table public.vessel_' api/internal/testebanco/esquema/                   # vazio (nenhuma fatia declarou o selo)
+  grep -rn 'disparos_pendentes\|disparar_robo' api/internal/banco/ ops/migracao/limpar-dump.mjs # vazio
+  ls api/internal/banco/migracoes/ | tail -1                                               # 00006_tokens_de_servico.sql
+  grep -c 'golang.org/x/text' api/go.mod                                                   # 1
+  grep -c 'CONFERIDOS' api/internal/testebanco/esquema/gerar-gatilhos.mjs                  # 0 hoje; ≥ 1 se o 5.2 entrou (Task 2, Step 4)
+  grep -c 'conteudo_pecas_guarda' api/internal/testebanco/esquema_test.go                  # 0 ou 1 (se o 5.9 entrou)
+  grep -lc 'create table public.acessos_conexoes' api/internal/testebanco/esquema/*.sql    # nada ou 1 arquivo (se o 5.4 entrou; Task 6)
+  cd api && go list -deps ./internal/vessel | grep -c 'internal/web$'                      # 0 (sem ciclo)
+  ```
+  Qualquer `0` onde se espera ≥ 1: a dependência não terminou — **pare e reporte**. Se a última migração já for `00007_*` (outro plano entrou antes), a desta Task 1 vira o próximo número livre e o plano inteiro troca `00007` por ele.
+- [ ] Produção ainda sem os 2 gatilhos do Actions (Ruling 5.10-2; só leitura, no SQL Editor do Supabase ou pelo dono): `select tgname from pg_trigger where tgname in ('vessel_lote_novo_pede_foto', 'vessel_cartao_pedido_novo_acorda_o_robo')` → nenhuma linha. Se voltarem: **pare e reporte** (alguém religou o disparo ao GitHub, e o 5.10 não tem quem o atenda).
+- [ ] `go version` → `go1.26`+; `node --version` → `v22`+.
+- [ ] Docker no ar, porta livre (`lsof -iTCP:58550 -sTCP:LISTEN` → vazio) e o banco das etapas:
+  ```bash
+  docker run -d --rm --name pg-plano510 -e POSTGRES_PASSWORD=x -p 127.0.0.1:58550:5432 postgres:17
+  until docker exec pg-plano510 pg_isready -h 127.0.0.1 -U postgres >/dev/null 2>&1; do sleep 1; done
+  export TEST_DATABASE_URL='postgres://postgres:x@localhost:58550/postgres?sslmode=disable'
+  ```
+- [ ] Linha de base: `cd api && go test ./... && go test -v ./... 2>&1 | grep -c -- '--- SKIP'` → tudo `ok` e `0`; `node --test ops/migracao/limpar-dump.test.mjs` → `pass`.
 
 ## Estrutura de arquivos
 
-<!-- preenchido no próximo commit -->
+```
+api/internal/banco/migracoes/00007_disparos_pendentes.sql   # a fila e a nova public.disparar_robo (sem pg_net)
+api/internal/banco/disparos.go           (+ disparos_test.go) # AtenderDisparo, ErrIncerto, Disparo
+ops/migracao/limpar-dump.mjs             (+ limpar-dump.test.mjs) # (mod.) tira a disparar_robo antiga do dump
+api/internal/testebanco/esquema/01-tabelas-5-10.sql          # as 12 tabelas do selo, fonte por bloco
+api/internal/testebanco/esquema/03-funcoes-5-10.sql          # 35 funções VERBATIM + os 6 gatilhos com OF/WHEN
+api/internal/testebanco/esquema_selo_test.go                 # TestFatiaDaAutenticidade (os db/*.test.mjs portados)
+api/internal/testebanco/esquema_test.go                      # (mod.) a lista de gatilhos ganha os 6
+api/internal/testebanco/esquema/gerar-gatilhos.mjs           # (mod.) SÓ se tiver CONFERIDOS (5.2): as 8 entradas
+api/internal/vessel/rd.go                                    # (mod.) só a linha "// Package vessel" (a doc cresce)
+api/internal/vessel/mundo_test.go                            # pessoas, linhas, fotoDoSelo; TestMundoDoSelo
+api/internal/vessel/leituras.go          (+ leituras_test.go) # as 6 GETs /autenticidade/*
+api/internal/vessel/rpc.go               (+ rpc_test.go)      # FuncoesRPC (16) e o Conferir do registro
+api/internal/zoho/zoho.go                (+ zoho_test.go)     # cliente do WorkDrive (só leitura)
+api/internal/vessel/cartao.go            (+ cartao_test.go)   # POST /vessel-baixar-cartao e as regras de nome do robô
+api/internal/fabrica/robo.go             (+ robo_material_test.go) # (mod.) GET /fabrica/robo/material-do-sku
+api/internal/vessel/rotas.go             (+ rotas_test.go)    # Montar; varreduras de vazamento e de impersonado
+api/internal/web/rotas.go, rotas_test.go, rpc_lista.go       # montagem, prazo do cartão, FuncoesRPC, RPCPendentes
+api/internal/github/github.go                                # (mod.) só o comentário de Disparos (o 5.10 não acrescenta entrada)
+api/cmd/api/conferir.go                  (+ conferir_test.go) # colunas, tipos, funções e gatilhos do selo; a disparar_robo nova
+docs/migracao-go/NOTAS-DA-IMPLANTACAO.md, docs/migracao-go/API-PRONTA.md # seção do 5.10
+```
+
+**Não toca:** `autz` (as 11 policies já compilam: `is_vessel_admin()` → `vesselAdmin`); `rpc` e `dados` (o 5.7 já trouxe `Conferir` e `SoSessaoPropria`; o 5.10 não tem escrita de tabela); `worker` e `cmd/api/tarefas.go` (nenhuma tarefa nova: Ruling 5.10-2); `02-gatilhos.sql` (os gatilhos vão em `03-funcoes-5-10.sql` com `create or replace trigger`, como o 5.7 e o 5.9); `compat.sql` (Ruling 5.10-1); `coletor/`, `.github/`, `supabase/`, `src/` (Plano 7).
 
 ## Tarefas
 
