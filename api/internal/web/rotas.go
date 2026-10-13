@@ -23,6 +23,7 @@ import (
 	"github.com/rbv-co/social-dashboard/api/internal/mapa"
 	"github.com/rbv-co/social-dashboard/api/internal/meta"
 	"github.com/rbv-co/social-dashboard/api/internal/paineis"
+	"github.com/rbv-co/social-dashboard/api/internal/patrimonio"
 	"github.com/rbv-co/social-dashboard/api/internal/redes"
 	"github.com/rbv-co/social-dashboard/api/internal/trafego"
 	"github.com/rbv-co/social-dashboard/api/internal/webhooks"
@@ -60,7 +61,8 @@ const (
 // funções do seu domínio, com parâmetros, retorno e o portão que espelha a checagem interna da
 // função, e TIRA os nomes dela de RPCPendentes (montarRPC recusa os dois lugares ao mesmo tempo).
 var FuncoesRPC = slices.Concat(
-	trafego.FuncoesRPC, // Plano 5.7
+	trafego.FuncoesRPC,    // Plano 5.7
+	patrimonio.FuncoesRPC, // Plano 5.2
 )
 
 // comPrazo limita o contexto da requisição; o que estiver preso na rede/core desiste junto.
@@ -160,6 +162,8 @@ func Rotas(p *pgxpool.Pool, s *auth.Store, l *auth.Limitador, cfg config.Config)
 			redes.Montar(r, p)   // Plano 5.6
 			acesso.Montar(r, p)  // Plano 5.1
 			trafego.Montar(r, p) // Plano 5.7
+			// Plano 5.2: patrimônio e cadastros compartilhados (as 5 RPCs entram por FuncoesRPC).
+			patrimonio.Montar(r, p)
 			// Plano 5.12: notícias e status da IA (leituras declaradas, regra do catálogo).
 			if err := paineis.Montar(r, p, autz.Producao); err != nil {
 				panic(err) // declaração errada: a API não sobe
