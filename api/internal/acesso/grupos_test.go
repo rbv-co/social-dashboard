@@ -85,7 +85,7 @@ func TestGruposEscrita(t *testing.T) {
 	})
 }
 
-// Ruling 5.1-13: nome em branco (vazio, espaços, invisível) é 400 no POST e no PATCH. Renomear para ""
+// Ruling 5.1-15: nome em branco (vazio, espaços, invisível) é 400 no POST e no PATCH. Renomear para ""
 // dispararia os gatilhos de produção e soltaria TODAS as lojas do grupo (e a supervisora) em silêncio.
 func TestGruposNomeEmBranco(t *testing.T) {
 	m := novoMundo(t, montarGrupos)
