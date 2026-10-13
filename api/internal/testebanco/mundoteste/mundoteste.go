@@ -1,6 +1,7 @@
 // Package mundoteste monta o mundo de teste das rotas de domínio: o esquema de produção (D0), as
 // pessoas com perfil e sessão, as linhas do domínio e as rotas atrás da MESMA cadeia do grupo de
-// domínio de web.Rotas (auth.Exigir → autz.ComEscopo). Extraído do 5.1 (acesso/mundo_test.go) no 5.2,
+// domínio de web.Rotas (auth.Exigir → autz.ComEscopo), SEM o comPrazo(PrazoDominio) da produção
+// (Ruling 5.1-12: o prazo não é o que estes testes medem). Extraído do 5.1 (acesso/mundo_test.go) no 5.2,
 // como o 5.1 previa. Não fica em testebanco: os testes internos de autz importam testebanco, e
 // testebanco importando autz seria ciclo (Ruling 5.2-13).
 package mundoteste
@@ -30,7 +31,8 @@ type Pessoa struct {
 type Opcoes struct {
 	Pessoas []Pessoa
 	Linhas  string // SQL do domínio, rodado sem identidade depois das pessoas
-	// Impersonadas: chave da sessão → {id do alvo, id de quem entrou como ele}.
+	// Impersonadas: chave da sessão → {id do alvo, id de quem entrou como ele}. Quem entrou como ele
+	// tem de ser uma Pessoa com Super: true (o auth.Store exige super pela ficha).
 	Impersonadas map[string][2]string
 }
 

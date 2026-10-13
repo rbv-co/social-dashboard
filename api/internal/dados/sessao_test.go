@@ -33,7 +33,7 @@ func TestSoSessaoPropria(t *testing.T) {
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, r)
 		negado := c.status == http.StatusForbidden
-		if w.Code != c.status || chamou == negado || (negado && !strings.Contains(w.Body.String(), "Só a própria sessão grava.")) {
+		if w.Code != c.status || chamou == negado || (negado && (!strings.Contains(w.Body.String(), `"error":"sem_permissao"`) || !strings.Contains(w.Body.String(), "Só a própria sessão grava."))) {
 			t.Errorf("%s: %d %s (handler rodou: %v)", c.nome, w.Code, w.Body, chamou)
 		}
 	}
