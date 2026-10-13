@@ -16,19 +16,27 @@ const GESTOR_PASS = process.env.GESTOR_USER_PASSWORD;
 // (`/bling-proxy`, `/meta-proxy`) na API, com o token no `Authorization` e sem
 // login de gente. O que o robô pode é o PERFIL dele (módulos `sales`/`gestor` para
 // o Bling, `meta` para a Meta). Sem as duas, segue o caminho de hoje.
-const CENTRAL_API_URL = (process.env.CENTRAL_API_URL || '').replace(/\/+$/, '');
-const CENTRAL_API_TOKEN = process.env.CENTRAL_API_TOKEN || '';
+//
+// ⚠️ QUEM ESCOLHE O CAMINHO É O TOKEN, NÃO O AMBIENTE. As variáveis podem estar
+// num `/etc/robos.env` compartilhado, e há robôs que montam a URL da edge do
+// Supabase na mão: se `loginServico()` desse o `srv_` a todos, esses mandariam o
+// token da API ao Supabase e parariam (401). Por isso o `srv_` só sai para quem
+// pede (`loginServico({ naApi: true })`, robô já migrado), e `urlDaEdge` /
+// `cabecalhosDaEdge` olham o PREFIXO do token: `srv_` → API, JWT → Supabase.
+const CENTRAL_API_URL = (process.env.CENTRAL_API_URL || '').trim().replace(/\/+$/, '');
+const CENTRAL_API_TOKEN = (process.env.CENTRAL_API_TOKEN || '').trim();
 export const robosNaApi = () => !!(CENTRAL_API_URL && CENTRAL_API_TOKEN);
+const daApi = (token) => String(token || '').startsWith('srv_');
 
-/** O endereço de uma edge portada (`bling-proxy`, `meta-proxy`) para o robô. */
-export function urlDaEdge(nome) {
-  return robosNaApi() ? `${CENTRAL_API_URL}/${nome}` : `${SUPABASE_URL}/functions/v1/${nome}`;
+/** O endereço de uma edge portada (`bling-proxy`, `meta-proxy`) para o token dado. */
+export function urlDaEdge(nome, token) {
+  return daApi(token) ? `${CENTRAL_API_URL}/${nome}` : `${SUPABASE_URL}/functions/v1/${nome}`;
 }
 
 /** Os cabeçalhos da chamada: a `apikey` do Supabase só no caminho do Supabase. */
 export function cabecalhosDaEdge(token) {
   const h = { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' };
-  if (!robosNaApi()) h.apikey = ANON_KEY;
+  if (!daApi(token)) h.apikey = ANON_KEY;
   return h;
 }
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
@@ -91,9 +99,10 @@ export async function blingFormasDePagamento(token, maxPaginas = 20) {
 }
 
 // ── Conta de serviço: login → access_token ──
-export async function loginServico() {
+export async function loginServico({ naApi = false } = {}) {
   // Na API, o token de serviço JÁ É a credencial: não há login (nem senha) de robô.
-  if (robosNaApi()) return CENTRAL_API_TOKEN;
+  // Só para o robô que pede (ver o aviso acima de `robosNaApi`).
+  if (naApi && robosNaApi()) return CENTRAL_API_TOKEN;
   const r = await fetch(SUPABASE_URL + '/auth/v1/token?grant_type=password', {
     method: 'POST',
     headers: { apikey: ANON_KEY, 'Content-Type': 'application/json' },
@@ -111,7 +120,7 @@ export async function blingProxy(token, endpoint, params) {
     const espera = 450 - (Date.now() - _lastBling);
     if (espera > 0) await sleep(espera);
     _lastBling = Date.now();
-    const r = await fetch(urlDaEdge('bling-proxy'), {
+    const r = await fetch(urlDaEdge('bling-proxy', token), {
       method: 'POST',
       headers: cabecalhosDaEdge(token),
       body: JSON.stringify({ endpoint, params: params || {} }),
@@ -156,6 +165,8 @@ export async function blingPedidos(token, dataInicial, dataFinal) {
   // da conta de serviço — que hoje enxerga tudo, mas passaria a enxergar nada se
   // um dia alguém ligasse o escopo por equipe nessa conta, e o robô ficaria
   // errado em silêncio. Com a chave, isso não depende de configuração de conta.
+  // O `srv_` da API nunca vai ao REST do Supabase (seria recusado e vazaria o token).
+  if (!process.env.SUPABASE_SERVICE_KEY && daApi(token)) throw new Error('falta SUPABASE_SERVICE_KEY para ler as notas e os ajustes');
   const chave = process.env.SUPABASE_SERVICE_KEY || token;
   // As duas leituras são independentes uma da outra (tabelas diferentes, nenhuma
   // usa o resultado da outra) — em paralelo, não em série (code review, 12/09/2026).

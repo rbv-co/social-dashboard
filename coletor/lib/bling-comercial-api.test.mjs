@@ -1,8 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-// O caminho da API (Plano 7 + 5.13) depende do ambiente NA CARGA do módulo: cada
-// cenário carrega uma cópia nova (query string diferente).
+// O ambiente é lido NA CARGA do módulo: cada cenário carrega uma cópia nova.
 async function carregar(env) {
   const antes = { ...process.env }
   Object.assign(process.env, env)
@@ -10,27 +9,34 @@ async function carregar(env) {
     for (const k of Object.keys(env)) if (!(k in antes)) delete process.env[k]; else process.env[k] = antes[k]
   }
 }
-
-test('sem CENTRAL_API_*: o caminho do Supabase de sempre (edge + apikey)', async () => {
-  const m = await carregar({ CENTRAL_API_URL: '', CENTRAL_API_TOKEN: '' })
-  assert.equal(m.robosNaApi(), false)
-  assert.match(m.urlDaEdge('bling-proxy'), /\/functions\/v1\/bling-proxy$/)
-  assert.ok(m.cabecalhosDaEdge('t').apikey)
-})
-
-test('com CENTRAL_API_*: a rota na API, o token de serviço e nada de apikey nem login', async () => {
-  const m = await carregar({ CENTRAL_API_URL: 'http://api:8080/', CENTRAL_API_TOKEN: 'srv_abc' })
-  assert.equal(m.robosNaApi(), true)
-  assert.equal(m.urlDaEdge('meta-proxy'), 'http://api:8080/meta-proxy')
-  assert.deepEqual(m.cabecalhosDaEdge('srv_abc'), { Authorization: 'Bearer srv_abc', 'Content-Type': 'application/json' })
+const semRede = async (fn) => {
+  const antes = globalThis.fetch
   let chamou = false
-  const fetchAntes = globalThis.fetch
-  globalThis.fetch = async () => { chamou = true; throw new Error('não devia chamar') }
-  try { assert.equal(await m.loginServico(), 'srv_abc') } finally { globalThis.fetch = fetchAntes }
-  assert.equal(chamou, false)
+  globalThis.fetch = async () => { chamou = true; throw new Error('sem rede no teste') }
+  try { return { r: await fn().catch((e) => e), chamou } } finally { globalThis.fetch = antes }
+}
+
+test('QUEM ESCOLHE O CAMINHO É O TOKEN: srv_ → API sem apikey; JWT → edge do Supabase com apikey', async () => {
+  const m = await carregar({ CENTRAL_API_URL: ' http://api:8080/ ', CENTRAL_API_TOKEN: ' srv_abc\n' })
+  assert.equal(m.urlDaEdge('meta-proxy', 'srv_abc'), 'http://api:8080/meta-proxy')
+  assert.deepEqual(m.cabecalhosDaEdge('srv_abc'), { Authorization: 'Bearer srv_abc', 'Content-Type': 'application/json' })
+  assert.match(m.urlDaEdge('meta-proxy', 'eyJ.jwt'), /\/functions\/v1\/meta-proxy$/)
+  assert.ok(m.cabecalhosDaEdge('eyJ.jwt').apikey)
 })
 
-test('só uma das duas variáveis não liga o caminho da API (meio ligado é erro de configuração)', async () => {
-  const m = await carregar({ CENTRAL_API_URL: 'http://api:8080', CENTRAL_API_TOKEN: '' })
-  assert.equal(m.robosNaApi(), false)
+test('o srv_ só sai para quem PEDE: robô não migrado faz o login de sempre, mesmo com a variável global', async () => {
+  const m = await carregar({ CENTRAL_API_URL: 'http://api:8080', CENTRAL_API_TOKEN: 'srv_abc' })
+  const migrado = await semRede(() => m.loginServico({ naApi: true }))
+  assert.equal(migrado.r, 'srv_abc'); assert.equal(migrado.chamou, false)
+  const antigo = await semRede(() => m.loginServico())
+  assert.equal(antigo.chamou, true, 'robô não migrado tem de fazer o login no Supabase')
+})
+
+test('sem as duas variáveis (ou só uma), nem quem pede recebe o srv_', async () => {
+  for (const env of [{ CENTRAL_API_URL: '', CENTRAL_API_TOKEN: '' }, { CENTRAL_API_URL: 'http://api:8080', CENTRAL_API_TOKEN: '' }]) {
+    const m = await carregar(env)
+    assert.equal(m.robosNaApi(), false)
+    const r = await semRede(() => m.loginServico({ naApi: true }))
+    assert.equal(r.chamou, true)
+  }
 })

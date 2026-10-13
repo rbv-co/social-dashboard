@@ -105,7 +105,7 @@ try {
       + 'Gravando os pedidos SEM o casamento com o lead por enquanto.\n');
   }
 
-  const token = await loginServico();
+  const token = await loginServico({ naApi: true });
   const ate = new Date();
   const de = new Date(ate); de.setDate(de.getDate() - dias);
   console.log(`\njanela: ${iso(de)} a ${iso(ate)}${ensaio ? '  (ENSAIO — nada será gravado)' : ''}\n`);
