@@ -704,3 +704,22 @@ func TestConferirAcusaADivergenciaDoPlano52(t *testing.T) {
 		}
 	})
 }
+
+// Plano 5.8: o deposito_id da loja é TEXTO (a Fábrica compara texto com texto). O de gc_estoque_item (bigint)
+// entra com a Task 7, junto das tabelas gc_* do 5.5.
+func TestTiposDaFabrica(t *testing.T) {
+	if tiposDoWorker["fabrica_lojas.deposito_id"] != "text" {
+		t.Errorf("fabrica_lojas.deposito_id = %q, esperava text", tiposDoWorker["fabrica_lojas.deposito_id"])
+	}
+}
+
+// Plano 5.8: contra a fatia D0 (as 8 tabelas da Fábrica, fabrica_marcas e ia_execucoes), o conferir não acusa
+// nada de fabrica_* — pega erro de digitação nas listas. No banco restaurado quem confere é o `api worker conferir`.
+func TestConferirNaFatiaD0NaoAcusaOPlano58(t *testing.T) {
+	p := testebanco.ComEsquemaDeProducao(t)
+	for _, f := range faltamDe(t, p) {
+		if strings.Contains(f, " fabrica_") || strings.Contains(f, " ia_execucoes.") {
+			t.Errorf("a fatia D0 devia satisfazer o 5.8, mas o conferir acusa %q", f)
+		}
+	}
+}

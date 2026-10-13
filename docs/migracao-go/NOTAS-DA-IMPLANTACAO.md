@@ -501,6 +501,34 @@ location = /api/custo-openai {
 - 6 sítios (plano 5.12, seção I.1): 3 leituras de notícias, 2 do status da IA e a chamada das duas edges de custo. A saúde vem `[]` para quem não tem admin, super-admin pela ficha ou `claude.status` em `features`. Não-2xx de `custo-*` agora traz corpo: `403 {"error":"sem_permissao"}`, `500 {"error":"falha","detalhe":…}`. Corpo com `dias` que não é número (`{"dias":"30"}`) dá `400 {"error":"pedido_invalido"}` (a edge coagia o texto em número; Ruling 14 do 5.12 recusa). A rota é só `POST`: `GET` (a edge aceitava `?dias=`) e os demais verbos dão `405` com `Allow: POST`. Todo 500 da rota agora deixa um `slog.Warn` (`custo: devolvendo 500`, com o detalhe sem a chave), como a edge custo-openai registrava.
 - Os logos de concorrentes (`tela-de-noticias.vue:99`, Storage `ig-cache`) são do Plano 6.
 
+## Plano 5.13 — contas de serviço (tokens dos robôs)
+
+Os robôs do `coletor/` (Fábrica no Actions, os híbridos da VPS, os validadores da Meta) deixam de usar a chave `service_role` e passam a chamar a API com um token de longa duração. O robô é um usuário SEM senha com perfil `viewer` e `features` mínimas (Ruling 38): o token só o identifica e o que ele pode é o perfil dele, como para gente (catálogo, módulo, conta). Não há escopo por token e não há rota HTTP de criação ou revogação: é CLI na VPS. A migração `00006_tokens_de_servico.sql` roda sozinha no `api`/`api migrar`; só o hash sha256 do token é guardado.
+
+### Criar o robô e o token (na VPS, no contêiner da API, como o `api worker`)
+```
+api servico criar <nome> <nome>@robos.invalid --modulos meta,banco
+```
+O `api servico` NÃO migra o banco (como o `api worker`): a migração `00006` já veio com a API no ar; num banco sem ela o comando falha com "relation ... does not exist" e a saída é `api migrar`.
+- `<nome>`: `[a-z0-9][a-z0-9-]{1,62}`, único (inclusive entre os revogados), ex.: `fabrica`, `meta-validador`.
+- `--modulos` só aceita módulo conhecido pelo código (`auth.ModulosConhecidos`: `meta`, `social`, `sales`, `gestor`, `autenticidade`, `banco`, ...); módulo digitado errado é recusado, não vira robô com 403 calado.
+- E-mail recomendado: `<nome>@robos.invalid` (domínio reservado, RFC 2606: nunca recebe correio). O e-mail só identifica o usuário; o comando usa o que foi informado, então NÃO use caixa de gente.
+- E-mail novo: cria o usuário (sem senha) e o perfil `viewer` com `features` = `--modulos`, `escopo_por_equipe = false` (em produção o default da coluna é `true`, o que deixaria o robô "restrito por equipe sem vínculo") e `allowed_accounts` nulo (= todas as contas). E-mail que já existe: usa o usuário, mas recusa se ele tiver senha (conta de gente não vira robô), se for super-admin ou se não tiver perfil; nesse caso `--modulos` é recusado (o perfil existente não é mexido por aqui).
+- O token (`srv_...`) sai UMA vez, sozinho no stdout (o aviso vai ao stderr); não fica em log nem no banco. Guarde direto no segredo do robô (secret do Actions ou `.env` da VPS).
+- O robô não tem senha e não recupera senha: `/auth/esqueci-senha` para o e-mail dele não gera link (resposta igual à de e-mail inexistente), `/auth/definir-senha` recusa o usuário dele (link inválido) e `/auth/trocar-senha` com o token dá `403`. `/auth/sair` com o token também dá `403` e não revoga nada: revogar é só `api servico revogar`.
+- O robô manda `Authorization: Bearer <token>` em toda chamada. O que mais ele precisa (módulos, permissões) se ajusta no perfil do usuário, na tela de acesso, não no token.
+
+### Rotação e revogação
+- Rotação = criar um token NOVO para o mesmo robô (`api servico criar fabrica-2 <mesmo-email>`, sem `--modulos`), trocar o segredo do robô, conferir que `api servico listar` mostra o novo com último uso, e só então `api servico revogar fabrica`. Os dois valem durante a troca.
+- `api servico revogar <nome>` derruba o token na próxima chamada (401). Desativar o usuário (`desativado_em`) ou o perfil (`disabled`) também derruba todos os tokens dele.
+- `api servico listar`: nome, e-mail, criado, último uso (gravado no máximo a cada 5 min), revogado. Nunca mostra o token (ele não existe no banco).
+
+### O robô `status-projetos` é aposentado (Ruling 39)
+`projetos_status` não ganha rota de escrita: o quadro de projetos saiu da tela em 19/08/2026 e ninguém lê a tabela. Não crie token para ele; se o quadro voltar, uma rota de upsert só para serviço resolve.
+
+### Antes do corte
+- O 5.8 (rotas de robô da Fábrica) protege as rotas com `auth.SoServico` (sessão de painel ou de "entrar como" leva 403; o banco também recusa sessão de serviço com impersonador: CHECK `sessoes_servico_sem_impersonador`, migração 00006); os robôs do coletor só trocam a `service_role` pelo token depois que as rotas deles existirem.
+
 ## Plano 5.6 — Meta e redes (métricas)
 
 ### Rotas novas (com sessão; regra = catálogo de produção; escrita de sessão "entrar como" = 403)
@@ -617,3 +645,49 @@ location = /api/custo-openai {
 - `api worker conferir` no banco restaurado confere as colunas e os tipos das 9 tabelas do Patrimônio (e de `acessos_setores`, `acessos_pessoas` e `frota_veiculos` no que o 5.2 usa), o único de `patrimonio_config(chave)`, as 3 funções-gatilho do bem e os 3 gatilhos ligados em `patrimonio_bens`, e as 5 RPCs (existem em `public`, `authenticated` executa, declaração × `pg_proc`).
 - Conferir a orientação dos 14 gatilhos da fatia D0 contra o banco restaurado: `select tgname, pg_get_triggerdef(oid) from pg_trigger where not tgisinternal and tgrelid::regclass::text in ('patrimonio_bens','frota_veiculos','frota_uso','bling_lojas','canais_grupos','equipes','profiles') order by 1` deve trazer o mesmo `UPDATE OF`/`WHEN` de `api/internal/testebanco/esquema/02-gatilhos.sql` (em especial `trg_frota_fechar_posse_orfa … WHEN ((new.pessoa_id IS NULL))`). Os 5 gatilhos do carro (`frota_veiculos`, `frota_uso`), que a cadeia do bem alcança, entram no `conferir` pelo 5.3.
 - A tabela `patrimonio_log` só tem rota de escrita: a leitura (policy `patrimonio_log_select`) fica sem tela, como hoje.
+
+## Plano 5.8 — Fábrica de anúncios
+
+**Fica de fora, esperando o 5.5:** `POST /fabrica-candidatos` (Task 7) lê `gc_vendas_item`, `gc_estoque_item` e `gestao_comercial_briefings`, que são do 5.5. Quando o 5.5 entrar, a Task 7 acrescenta a rota (portão `soFabricante`, sem `soSessaoPropria`: só lê, "entrar como" passa; `soPainel` também vale), as 3 tabelas no `conferir` e `gc_estoque_item.deposito_id = bigint` em `tiposDoWorker`. Até lá a Fábrica não consegue gerar por candidatos: o front não troca `use-candidatos.js:7`.
+
+### Variáveis de ambiente (serviço `api`)
+| Variável | Observação |
+|---|---|
+| `GITHUB_PAT` | token do GitHub (fine-grained, SÓ o repositório `rbv-co/social-dashboard`, SÓ "Actions: Read and write", com validade anotada) para `POST /fabrica-trigger` (acordar o `fabrica.yml`) e para cancelar a execução no `fabrica-apagar`; o 5.10 e o Plano 6 usam o mesmo. **Criar um token NOVO.** Não copie o `GITHUB_PAT_FABRICA` dos segredos do Supabase: ele devolve 403 desde ~29/07 (achado 1); o `GITHUB_PAT_FOTOS` também não serve de origem. Vazio = `503 github_nao_configurado` sem gravar nada. É segredo (`Segredos()`). |
+
+### Rotas novas
+- Com sessão, regra = catálogo (leitura aberta; marcas por conta): `GET /fabrica/lojas`, `/objetivos`, `/marcas`, `/looks`, `/publicos`, `/campanhas`, `/criativos`, `/jobs`, `/meta-jobs`; `POST /fabrica/criativos/escolher`.
+- Edges portadas (portão: papel admin, super pela ficha ou a chave `meta.fabrica` de `permissions`; "entrar como" NÃO escreve; **conta de serviço também não**: `soPainel` dá 403 a quem tem token `srv_`, para que o token do robô, mesmo com `meta.fabrica`, não dispare nem apague): `POST /fabrica-trigger` (30 por hora por pessoa), `/fabrica-apagar`, `/fabrica-looks`, `/fabrica-publicos`. As leituras e as de robô seguem as regras próprias.
+- Robô (só sessão de serviço do 5.13 + perfil do robô; painel = 403): `PATCH /fabrica/robo/jobs/{id}`, `POST /fabrica/robo/jobs/{id}/proximo-lote`, `PATCH /fabrica/robo/campanhas/{id}`, `POST /fabrica/robo/criativos`, `PATCH /fabrica/robo/looks/{chave}`, `POST /fabrica/robo/meta-jobs`, `POST /fabrica/robo/execucoes`.
+- `POST /bling-proxy`: `produtos` e `produtos/{id}` também para quem tem `meta.fabrica` em `permissions` (Ruling 5.8-17), para o robô da Fábrica não precisar do módulo `sales`; pedidos e os demais caminhos seguem exigindo `sales` ou `gestor`.
+
+### Conta de serviço do robô da Fábrica (depois do 5.13)
+- `usuarios` + `profiles` `robo-fabrica@rbvcompany.com`: papel `viewer`, `features {meta}` (`meta` para o `meta-proxy`; SEM `sales`: o `bling-proxy` libera `produtos` e `produtos/{id}` a quem tem `meta.fabrica` em `permissions`, Ruling 5.8-17), `permissions {"meta.fabrica": ["ver","editar"]}`, `allowed_accounts` nulo, `escopo_por_equipe false`, sem senha. O `api servico criar` cria o perfil com as `features`; a `permissions` entra por `update profiles set permissions = '{"meta.fabrica": ["ver","editar"]}' where email = 'robo-fabrica@rbvcompany.com'` (ou pela tela de acesso, antes de o robô trocar).
+- Token: `api servico criar robo-fabrica robo-fabrica@rbvcompany.com --modulos meta` (imprime UMA vez) → segredo `API_TOKEN_FABRICA` no GitHub (Settings → Secrets) e no `fabrica.yml` no lugar de `SUPABASE_SERVICE_KEY`/`GESTOR_USER_*` (Plano 7). Revogar: `api servico revogar robo-fabrica`.
+
+### Despacho ao GitHub: o que esperar
+- O `fabrica-trigger` grava o job (e a rodada, no `gerar`) numa transação e SÓ DEPOIS acorda o robô. O despacho ignora o cancelamento da requisição (`context.WithoutCancel`; o cliente do GitHub tem prazo próprio de 15 s): fechar a aba no meio não transforma um despacho bom em `Incerto`.
+- Estado "Incerto, mas o GitHub aceitou" (a resposta se perdeu): job e rodada ficam `erro` ("confira em Actions") até o robô, que roda mesmo assim, regravar o status; disparar de novo é decisão da pessoa (um segundo despacho acorda o robô duas vezes).
+- Janela entre o commit do job e o despacho, sem outbox: se o processo cair aí, o job fica `enfileirado` sem robô. Upgrade, se acontecer: varrer jobs `enfileirado` com mais de N minutos e redisparar.
+- A Fábrica NÃO roda desde 29/07 (token de despacho vencido: achado 1, Ruling 5.8-18): o primeiro disparo real depois do corte é o teste de verdade.
+- `tipo: "excluir"` continua recusado (`400 tipo_invalido`, Ruling 5.8-7; decisão do dono, achado 2).
+
+### Antes do corte
+- `api worker conferir` no banco restaurado: colunas e tipos do 5.8 (em especial `fabrica_lojas.deposito_id` texto; `gc_estoque_item.deposito_id` bigint entra com a Task 7). Tipos e nulabilidade só se confirmam aí: a fatia da Fábrica é reconstruída das migrations.
+- `select chave from fabrica_looks where chave !~ '^[a-z0-9][a-z0-9_-]{0,79}$'` = vazio: o `fabrica-looks` e a rota de robô recusam chave fora desse formato, e uma chave antiga fora dele ficaria sem edição.
+- Nenhum gatilho nas `fabrica_*`: `select tgname from pg_trigger g join pg_class c on c.oid = g.tgrelid where not g.tgisinternal and c.relname like 'fabrica\_%'` = vazio.
+- Arquivos: os criativos do bucket `fabrica-criativos` copiados para `<ARQUIVOS_DIR>/fabrica-criativos/<storage_path>` (Plano 6) ANTES de ligar o `fabrica-apagar` da API (antes disso ele apaga o banco e não acha arquivo: sobra no Storage antigo, que some com o Supabase).
+- `HOSTS_DE_MIDIA` com o host público do Storage novo (Plano 6): o `meta-proxy` só aceita `imageFromUrl` desses hosts, e o `subir` da Fábrica manda a URL do criativo (INVENTARIO item 6). Sem isso a subida de anúncios falha.
+- `GITHUB_PAT` preenchido e testado no ensaio: um `POST /fabrica-trigger {"tipo":"preview","params":{}}` acorda o `fabrica.yml` (o job aparece em Actions) — com o robô ainda falando com o Supabase, o preview roda contra o banco antigo; faça isso só depois do Plano 7 trocar o robô, ou cancele a execução.
+- Confirmar a edge NO AR (`npx supabase functions download fabrica-trigger …`, CLAUDE.md): se ela já aceita `excluir`, o Ruling 5.8-7 muda para aceitar também (achado 2).
+
+### Mudanças de contrato que o Plano 7 absorve
+- Leituras por `GET /fabrica/<recurso>` com filtros nomeados (`ativo`, `chave`, `account_id`, `id`, `status` (lista por vírgula), `aberta`, `purgada`, `campanha_id`, `escolhido`, `arquetipo`, `purgado`, `tipo`, `com_campanha_meta`) e `ordem=created_at|fechada_em[.desc]`. A Home troca o laço de contagem (home:35) por `qtd_criativos` de `GET /fabrica/campanhas`, e a contagem total (home:42) por `GET /fabrica/criativos?limite=1&contar=1` (`X-Total-Count`). `jobs` não traz `criado_por`.
+- `POST /fabrica/criativos/escolher {"ids":[…],"escolhido":bool}` substitui os dois `update` de `fabrica_criativos` (curar:33, :48).
+- As 4 edges portadas: mesma URL sob `/api` e mesmos corpos; erros novos: `fabrica-trigger` → `503 github_nao_configurado`, `429 muitas_tentativas`, `504 dispatch_incerto`, `400 pedido_invalido` (params); `fabrica-apagar` → `400 campanhaId_invalido`; `fabrica-looks` → `sync` = `400 acao_invalida`; `fabrica-publicos` → `404` no `salvar` com `id` inexistente. `detail` do `dispatch_falhou` é uma frase da API, não o texto do GitHub. `fabrica-candidatos` fica para a Task 7 (5.5).
+- Robô (`coletor/fabrica-job-runner.mjs` e módulos, tabela da Task 9): `loginServico` → token de serviço; cada `sbGet/sbPost/sbPatch` → a rota da tabela; `registrar-execucao.mjs` → `POST /fabrica/robo/execucoes` (só para os robôs da Fábrica; os outros robôs desse módulo são da VPS e usam `pg`); a pílula de garantia espera o `GET /fabrica/robo/material-do-sku` do 5.10.
+
+- `POST /fabrica/robo/jobs/{id}/proximo-lote` é idempotente por (`campanhaId`, `continuacao`), não pelo job de origem: hoje basta, porque o painel sempre cria rodada nova no `gerar`; se um dia houver duas cadeias na mesma rodada, gravar `origem: <id>` nos `params` do job novo e buscar por ele.
+
+### Achados para o dono
+(ver a seção "Achados para o dono" do plano 5.8)

@@ -389,3 +389,23 @@ test('analisou e propos algo, mas nada chegou: a tela NAO chuta o motivo', () =>
 test('sem conta pedida, conta tudo (a fila sem filtro)', () => {
   assert.equal(resumoDoRobo(analisesMantova, null).analisadas, 3);
 });
+
+/* ── O par conta + campanha (Plano 7, contrato do 5.7) ─────────────────────── */
+
+test('a decisão de OUTRA conta não cala a análise desta conta (mesma campanha)', () => {
+  const agora = '2026-10-13T12:00:00Z'
+  const analise = { campaign_id: 'c1', account_id: 'A', veredito: 'escalar', gerado_em: '2026-10-13T08:00:00Z', valida_ate: '2026-10-20T00:00:00Z' }
+  const daOutra = { campaign_id: 'c1', account_id: 'B', decisao: 'recusada', decidido_em: '2026-10-13T09:00:00Z', silenciar_ate: '2026-10-20T00:00:00Z' }
+  const f = montarFila([analise], [daOutra], agora)
+  assert.equal(f.pendentes.length, 1)
+  const daMesma = { ...daOutra, account_id: 'A' }
+  assert.equal(montarFila([analise], [daOutra, daMesma], agora).silenciadas.length, 1)
+})
+
+test('decisão sem conta (antiga) ou leitura sem a coluna: casa só pela campanha, como antes', () => {
+  const agora = '2026-10-13T12:00:00Z'
+  const analise = { campaign_id: 'c1', account_id: 'A', veredito: 'escalar', gerado_em: '2026-10-13T08:00:00Z', valida_ate: '2026-10-20T00:00:00Z' }
+  const semConta = { campaign_id: 'c1', decisao: 'recusada', decidido_em: '2026-10-13T09:00:00Z', silenciar_ate: '2026-10-20T00:00:00Z' }
+  assert.equal(montarFila([analise], [semConta], agora).silenciadas.length, 1)
+  assert.equal(montarFila([{ ...analise, account_id: undefined }], [{ ...semConta, account_id: 'B' }], agora).silenciadas.length, 1)
+})

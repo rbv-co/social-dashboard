@@ -200,7 +200,7 @@ async function main() {
   const previa = process.argv.includes('--previa');
   if (previa) console.log('PRÉVIA: nada será gravado.\n');
 
-  const token = await loginServico();
+  const token = await loginServico({ naApi: true });
   const todasAsLinhas = [];
 
   if (backfill > 0) {
