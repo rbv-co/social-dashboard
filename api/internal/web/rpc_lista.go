@@ -26,8 +26,6 @@ var RPCPendentes = []string{
 	// 5.3 (frota): 2
 	"etiqueta_quem_e",
 	"frota_corrente_do_veiculo",
-	// 5.7 (gestão de tráfego): 1
-	"gt_registrar_problemas",
 	// 5.9 (conteúdo): 6
 	"conteudo_aprovar_e_agendar",
 	"conteudo_casar_na_mao",
