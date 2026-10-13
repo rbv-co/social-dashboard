@@ -63,7 +63,7 @@ export function podeAprovar() {
 // ── Leitura ─────────────────────────────────────────────────────────────────
 
 export async function listarContas() {
-  const { data, error } = await sbClient
+  const { data, error } = await deOnde(sbClient)
     .from('accounts')
     // `conteudo_usa_portal` alimenta a caixinha do painel "A marca". Sem ela o
     // campo chega undefined e a caixa nasce desmarcada mesmo para quem usa o
@@ -497,7 +497,7 @@ export async function apagarConcorrente(id) {
 // Liga/desliga o Portal de Notícias para esta marca. Só faz sentido para quem é
 // do nicho que o Portal cobre — hoje, moda e calçado.
 export async function mudarUsoDoPortal(accountId, usa) {
-  const { error } = await sbClient
+  const { error } = await deOnde(sbClient)
     .from('accounts')
     .update({ conteudo_usa_portal: !!usa })
     .eq('id', _idDeConta(accountId))
