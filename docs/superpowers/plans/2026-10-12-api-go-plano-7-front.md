@@ -173,6 +173,22 @@ A troca de cada robô é feita quando o caminho dele estiver pronto: os de `pg` 
 - **`isSelf` do Admin:** resolvido com o `email` do `/auth/eu` (PR #352).
 - **Frase do 403 do `meta-proxy` na aba de "entrar como":** já coberta por `trocarCodigoPorFrase` (Análise de Campanhas, Gestão de Tráfego) e por `invocar` (`painel-subir`); a Fábrica só usa a resposta para "excluída ou não". As respostas novas do 5.6 (`conta nao encontrada`, `caminho fora da conta`) já vêm como frase.
 
+### Área `admin` (5.1) — branch `feat/plano-7-admin`
+
+**A peça nova: `src/compartilhado/banco-pela-api.js`.** O front fala com o PostgREST de três jeitos (encadeado do supabase-js, URL montada à mão em `sb`/`adFetch`, e o `gravar` do Admin); a API não aceita nenhum (rota por recurso, filtros nomeados, sem `select` nem operadores). Em vez de reescrever ~300 sítios à mão, a tradução mora num lugar só:
+- `ROTAS`: tabela → rota, área (chave), filtros que a rota aceita e ordens declaradas — hoje as 11 tabelas do 5.1; cada sub-plano novo acrescenta as dele;
+- `traduzir`/`lerPelaApi`/`escreverPelaApi`: `eq`/`ilike` (o `paraIlike` escapado vira igualdade)/`in` viram parâmetro nomeado; `select` projeta na tela; `order` vai para a rota quando ela declara (senão a tela ordena — só sem limite); `PATCH`/`DELETE` por id viram `/rota/{id}`; a autoria (`criado_por`, `concedido_por`, `alterado_por`) sai do corpo (Ruling 9 do 5.1); upserts de preferências e push viram as rotas próprias; apagar por chave natural (`equipes_permissoes`) lê as linhas e apaga por id (Ruling 14);
+- **o que a rota não sabe fazer, a tradução recusa alto** (`ErroDeTraducao`: filtro não declarado, operador sem par, recurso embutido, coluna pedida que a rota não devolve, editar sem id) — ignorar em silêncio devolveria/gravaria/apagaria MAIS do que a tela pediu;
+- fachadas: `deOnde(sbClient).from(t)` (o MESMO `sbClient.from(t)` quando a área está desligada) e `fetchPostgrest(caminho, opcoes)` (um `Response` com o que as telas leem: `Prefer: return=representation` devolve o array; sem ele, 201/204 vazio; erro com `message` legível).
+
+**Trocado (atrás de `areaNaApi('admin')`):** `sb()` compartilhado, `adFetch` e `gravar` do Admin, e os `.from` de `profiles`, `equipes*`, `canais_grupos*`, `acessos_perfis`, `access_requests`, `push_*` e `data_integrity_checks` no Admin, Frota, Time de Vendas, Gestão Comercial, Conteúdo e `notificacoes-push.js`; "Solicitar acesso" do login → `POST /pedir-acesso` (público); os botões "coletar/auditar agora" da aba Saúde saem (Ruling 30).
+
+**Corrigido de passagem (anterior à migração, visível a 375 px):** no celular, a barra de abas do Admin esticava para 232–287 px nas seções curtas (Solicitações, Contas, Dados) — o grid de uma coluna com `min-height` de tela cheia dividia a sobra com ela. `grid-template-rows: auto 1fr` no celular; medida de novo: 35 px em todas.
+
+**Prova** (API do branch `feat/api-go-plano-5-1` em `99b081ad`, banco com a compat + migrações + a fatia de produção `01-tabelas-5-01.sql`/`02-gatilhos.sql`, Chrome a 375 e 1440 px, efeito conferido no banco): "Solicitar acesso" grava `pending`; Usuários pela API com o "VOCÊ" na própria linha; Solicitações › Aprovar grava `approved`; Saúde sem os botões órfãos; cargo trocado por quem não é super-admin por e-mail é recusado pelo gatilho de produção com a frase legível e nada gravado (paridade); e, como super por e-mail: busca por e-mail com `ilike` escapado, `PATCH` de papel, Time de Vendas (pôr, trocar papel, liberar/tirar estoque por chave natural, tirar), aba Time da Gestão Comercial (`in` + `limit`), grupos de canal pelo `gravar` (criar/renomear/apagar), preferências em lote e perfil de acesso com `criado_por` vindo da sessão.
+
+**Não medido com dado:** a seção Times do Admin e o Time de Vendas desenhados — eles leem `bling_lojas` (5.5) junto, e com só as áreas até `admin` ligadas essa leitura falha (cai no aviso "Não consegui carregar os times"). As escritas dessas telas foram provadas pelos mesmos ajudantes, contra a API real; a tela desenhada se mede com a área `comercial`.
+
 ### Pendências de API
 
 | Item | Dono | Situação |

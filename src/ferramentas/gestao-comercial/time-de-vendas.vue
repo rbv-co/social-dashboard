@@ -86,6 +86,8 @@
 // botão que o banco vai recusar.
 import { ref, computed, onMounted } from 'vue'
 import { sbClient } from '../../compartilhado/conectar-no-banco-de-dados.js'
+// Chave `admin` (Plano 7): times, membros, liberações e perfis pela API (5.1).
+import { deOnde } from '../../compartilhado/banco-pela-api.js'
 import { estado } from '../../compartilhado/controle-de-login-e-usuario.js'
 import { adminToast } from '../../compartilhado/avisos.js'
 import {
@@ -142,10 +144,10 @@ async function carregar() {
   carregando.value = true; erro.value = ''
   try {
     const [t, m, p, l] = await Promise.all([
-      sbClient.from('equipes').select('*'),
-      sbClient.from('equipes_membros').select('*'),
-      sbClient.from('profiles').select('id,name,email,disabled').order('name'),
-      sbClient.from('equipes_permissoes').select('*'),
+      deOnde(sbClient).from('equipes').select('*'),
+      deOnde(sbClient).from('equipes_membros').select('*'),
+      deOnde(sbClient).from('profiles').select('id,name,email,disabled').order('name'),
+      deOnde(sbClient).from('equipes_permissoes').select('*'),
     ])
     // O MOTIVO VAI PRA TELA. `catch` mudo já custou meia hora de caça noutra
     // tela deste mesmo sistema.
@@ -161,13 +163,13 @@ async function carregar() {
 }
 
 async function trocarPapel(m, papel) {
-  const { error } = await sbClient.from('equipes_membros').update({ papel }).eq('id', m.id)
+  const { error } = await deOnde(sbClient).from('equipes_membros').update({ papel }).eq('id', m.id)
   if (error) { adminToast('Não consegui mudar o papel: ' + error.message, false); return }
   await carregar()
 }
 
 async function tirar(m) {
-  const { error } = await sbClient.from('equipes_membros').delete().eq('id', m.id)
+  const { error } = await deOnde(sbClient).from('equipes_membros').delete().eq('id', m.id)
   if (error) { adminToast('Não consegui tirar do time: ' + error.message, false); return }
   await carregar()
 }
@@ -175,7 +177,7 @@ async function tirar(m) {
 async function por(timeId) {
   const quem = escolhida.value[timeId]
   if (!quem) { adminToast('Escolha quem entra no time.', false); return }
-  const { error } = await sbClient.from('equipes_membros')
+  const { error } = await deOnde(sbClient).from('equipes_membros')
     .insert({ equipe_id: timeId, profile_id: quem, papel: papelNovo.value[timeId] || 'vendedora' })
   if (error) { adminToast('Não consegui colocar no time: ' + error.message, false); return }
   escolhida.value[timeId] = ''
@@ -184,11 +186,11 @@ async function por(timeId) {
 
 async function trocarEstoque(m, ligado) {
   if (ligado) {
-    const { error } = await sbClient.from('equipes_permissoes')
+    const { error } = await deOnde(sbClient).from('equipes_permissoes')
       .insert({ equipe_id: m.equipe_id, profile_id: m.profile_id, chave: 'estoque' })
     if (error) { adminToast('Não consegui liberar o estoque: ' + error.message, false); await carregar(); return }
   } else {
-    const { error } = await sbClient.from('equipes_permissoes').delete()
+    const { error } = await deOnde(sbClient).from('equipes_permissoes').delete()
       .eq('equipe_id', m.equipe_id).eq('profile_id', m.profile_id).eq('chave', 'estoque')
     if (error) { adminToast('Não consegui tirar o acesso ao estoque: ' + error.message, false); await carregar(); return }
   }

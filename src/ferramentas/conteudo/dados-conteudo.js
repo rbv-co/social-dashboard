@@ -9,6 +9,8 @@
 // `window`). O que precisa de teste mora nos módulos puros ao lado.
 
 import { sbClient } from '../../compartilhado/conectar-no-banco-de-dados.js'
+// Chave `admin` (Plano 7): `profiles` pela API (5.1).
+import { deOnde } from '../../compartilhado/banco-pela-api.js'
 import { estado } from '../../compartilhado/controle-de-login-e-usuario.js'
 import { deCampoDeDataHora } from './grade-do-calendario.js'
 
@@ -244,7 +246,7 @@ export async function mudarStatus(peca, novoStatus, extras = {}) {
 // não ligou é legítimo — a notificação nasce desmarcada e a pessoa liga depois.
 // Esconder essa gente da lista faria parecer que ela não existe.
 export async function listarPessoas() {
-  const { data, error } = await sbClient
+  const { data, error } = await deOnde(sbClient)
     .from('profiles')
     .select('id,email,name,role,is_superadmin,features')
     .order('email')
