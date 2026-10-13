@@ -530,6 +530,181 @@ func TestFatiaDoConteudo(t *testing.T) {
 
 - [ ] **Step 5:** `cd api && gofmt -l ./internal && go test -count=1 -run 'TestFatia|TestEsquema|TestNomesDosArquivos' ./internal/testebanco/` PASS (inclui o teste de nomes de dois dígitos do 5.1); mutações de (b) reprovam, uma por vez.
 - [ ] **Step 6: Commit** `test(api): D0 — fatia 5.9 do esquema (as 9 tabelas do Conteúdo, o gatilho da aprovação e as 6 RPCs verbatim)` (+ `Co-Authored-By`).
+---
+
+### Task 2: `dados.Tabela.Conferir` — a regra que o catálogo não enxerga, na transação que grava
+
+**Revisor:** opus. **Depende de:** 5.1 (`dados.Tabela`, `RotaCriar/RotaEditar/RotaApagar`).
+
+**(a) Contrato**
+- `dados.Tabela` ganha o campo opcional `Conferir func(ctx, tx pgx.Tx, e *autz.Escopo, id string, campos map[string]any) error`. `Tabela.Criar/Editar/Apagar` o chamam na MESMA transação, **depois** do `PodeCriar/PodeEditar/PodeApagar` (a linha já está travada e sabidamente visível: um id invisível responde 404 antes, sem a conferência rodar — nenhum oráculo) e **antes** do `INSERT/UPDATE/DELETE`. `id = ""` na criação (os `campos` já trazem a coluna `Autor`, com o id da sessão); `campos = nil` no apagar. `autz.ErrNegado` → 403, `autz.ErrNaoEncontrado` → 404, outro erro → `ErroDeEscrita` (500 sem o texto). `RotaCriar/RotaEditar/RotaApagar` não mudam: herdam o gancho pela `Tabela`.
+- Por que no `dados` e não em handlers próprios do Conteúdo: o gancho é o mesmo que o 5.7 deu ao `rpc.Funcao.Conferir`, mantém a validação de montagem das structs (`colunasDoCorpo`) e o mapa ÚNICO de escrita (a conferência vê exatamente o que vai ao `INSERT`), e serve ao 5.10/5.11 (filhas de tabelas com restritiva). Nenhuma rota existente muda (campo nil = nada).
+- Convive com `CriarSoLegivel` do 5.2 (trilha A), se ele entrar antes: são campos distintos da mesma struct (conflito de merge mecânico; os dois `if` ficam um depois do outro). **Ensaiado** (worktree sobre o 5.7): `go test ./internal/dados/` inteiro passa com a mudança e o teste novo.
+
+```go
+// em dados/escrita.go, no fim da struct Tabela (depois de Autor):
+
+	// Conferir (opcional): a regra que o catálogo NÃO enxerga — a linha-mãe visível, a linha nova legível, um
+	// caminho preso à mãe. Roda na MESMA transação, DEPOIS do PodeCriar/PodeEditar/PodeApagar (a linha já
+	// está travada e sabidamente visível: id invisível responde 404 antes, sem oráculo) e ANTES do SQL que
+	// grava. id = "" na criação; campos = nil no apagar; na criação os campos já trazem a coluna Autor.
+	// autz.ErrNegado = 403, autz.ErrNaoEncontrado = 404; outro erro segue ErroDeEscrita. Plano 5.9 (Ruling 5.9-4).
+	Conferir func(ctx context.Context, tx pgx.Tx, e *autz.Escopo, id string, campos map[string]any) error
+
+// em Tabela.Criar, logo depois do `if err := cat.PodeCriar(...)`:
+	if err := t.conferir(ctx, tx, e, "", campos); err != nil {
+		return nil, err
+	}
+
+// em Tabela.Editar, logo depois do `if err := cat.PodeEditar(...)`:
+	if err := t.conferir(ctx, tx, e, id, campos); err != nil {
+		return nil, err
+	}
+
+// em Tabela.Apagar, logo depois do `if err := cat.PodeApagar(...)`:
+	if err := t.conferir(ctx, tx, e, id, nil); err != nil {
+		return err
+	}
+
+// antes de `devolver`:
+
+// conferir roda Tabela.Conferir, se houver.
+func (t Tabela) conferir(ctx context.Context, tx pgx.Tx, e *autz.Escopo, id string, campos map[string]any) error {
+	if t.Conferir == nil {
+		return nil
+	}
+	return t.Conferir(ctx, tx, e, id, campos)
+}
+```
+
+**(b) Testes de aceitação** (`TestTabelaConferir`, `dados/escrita_conferir_test.go`, código abaixo; reusa `catalogoDeEscrita`, `corpoCoisa`, `quemEscreve`, `coisaA1/A2` de `escrita_test.go`)
+- Criar passa e a conferência vê a autoria da sessão; recusada com `ErrNegado` → 403, com `ErrNaoEncontrado` → 404, com outro erro → 500 sem o texto — e em todas o banco fica igual, **inclusive a linha que a própria conferência gravou** (mesma transação).
+- Sem a regra de criar do catálogo: 403 do `PodeCriar`, conferência NÃO roda. Linha invisível no PATCH: 404 do `PodeEditar`, conferência NÃO roda. Editar passa com o id da linha; apagar recebe `campos` nil.
+- Mutações que têm de reprovar: chamar a conferência ANTES do `PodeEditar` (o caso da linha invisível a chama); rodá-la no pool em vez da `tx` (a linha do log fica); ignorar o erro dela (o caso 403 grava).
+
+```go
+package dados
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
+	"github.com/rbv-co/social-dashboard/api/internal/autz"
+	"github.com/rbv-co/social-dashboard/api/internal/testebanco"
+)
+
+// Tabela.Conferir (Plano 5.9): roda na MESMA transação que grava, depois do PodeX e antes do SQL; o erro dela
+// desfaz tudo (inclusive o que ela mesma gravou) e vira 403/404/500 por ErroDeEscrita.
+func TestTabelaConferir(t *testing.T) {
+	cat, err := autz.Compilar([]byte(catalogoDeEscrita))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := testebanco.Novo(t)
+	ctx := context.Background()
+	if _, err := p.Exec(ctx, `create table coisa (id uuid primary key default gen_random_uuid(), account_id text,
+		  nome text not null default 'sem nome', apelido text, nivel int, criado_por text);
+		create table coisa_log (id uuid, quem text);
+		insert into coisa (id, account_id, nome) values ('`+coisaA1+`', 'A1', 'um'), ('`+coisaA2+`', 'A2', 'dois')`); err != nil {
+		t.Fatal(err)
+	}
+	var chamadas []string
+	tab := Tabela{Nome: "coisa", Resposta: "t.id, t.account_id, t.nome, t.criado_por", Autor: "criado_por",
+		Conferir: func(ctx context.Context, tx pgx.Tx, e *autz.Escopo, id string, campos map[string]any) error {
+			nome := ""
+			if v, ok := campos["nome"].(json.RawMessage); ok {
+				json.Unmarshal(v, &nome)
+			}
+			autor, _ := campos["criado_por"].(string)
+			chamadas = append(chamadas, id+"|"+nome+"|"+autor+"|"+map[bool]string{true: "apagar", false: "gravar"}[campos == nil])
+			// grava ANTES de recusar: se a transação não fosse a mesma, a linha ficaria
+			if _, err := tx.Exec(ctx, `insert into coisa_log values (gen_random_uuid(), 'conferir')`); err != nil {
+				return err
+			}
+			switch {
+			case nome == "barrado" || (campos == nil && id == coisaA1):
+				return autz.ErrNegado
+			case nome == "sumido":
+				return autz.ErrNaoEncontrado
+			case nome == "explode":
+				return errors.New("defeito da conferência")
+			}
+			return nil
+		}}
+	escopos := map[string]*autz.Escopo{
+		"frota-a1": {ID: quemEscreve, TemPerfil: true, Ativo: true, SemTrava: true, Modulos: []string{"frota"}, Contas: []string{"A1"}},
+		"so-a1":    {ID: quemEscreve, TemPerfil: true, Ativo: true, SemTrava: true, Contas: []string{"A1"}},
+		"super":    {ID: quemEscreve, TemPerfil: true, Ativo: true, SuperFicha: true},
+	}
+	r := chi.NewRouter()
+	r.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			next.ServeHTTP(w, req.WithContext(autz.NoContexto(req.Context(), escopos[req.Header.Get("X-Quem")])))
+		})
+	})
+	r.Post("/coisas", RotaCriar[corpoCoisa](p, cat, tab))
+	r.Patch("/coisas/{id}", RotaEditar[corpoCoisa](p, cat, tab))
+	r.Delete("/coisas/{id}", RotaApagar(p, cat, tab))
+	um := func(sql string) string {
+		var v string
+		if err := p.QueryRow(ctx, sql).Scan(&v); err != nil {
+			t.Fatalf("%s: %v", sql, err)
+		}
+		return v
+	}
+	const foto = `select (select count(*) from coisa_log)::text || '|' || (select string_agg(id::text || ':' || nome, ',' order by id) from coisa)`
+	for _, c := range []struct {
+		nome, quem, metodo, caminho, corpo string
+		status                             int
+		chamada                            string // a última chamada de Conferir; "" = não foi chamada
+		muda                               bool
+	}{
+		{"criar passa e Conferir vê a autoria da sessão", "frota-a1", "POST", "/coisas", `{"account_id":"A1","nome":"tres"}`, 201, "|tres|" + quemEscreve + "|gravar", true},
+		{"criar recusado: 403 e nada gravado (nem o log da conferência)", "frota-a1", "POST", "/coisas", `{"account_id":"A1","nome":"barrado"}`, 403, "|barrado|" + quemEscreve + "|gravar", false},
+		{"criar com ErrNaoEncontrado: 404", "frota-a1", "POST", "/coisas", `{"account_id":"A1","nome":"sumido"}`, 404, "|sumido|" + quemEscreve + "|gravar", false},
+		{"erro qualquer: 500 sem detalhe", "frota-a1", "POST", "/coisas", `{"account_id":"A1","nome":"explode"}`, 500, "|explode|" + quemEscreve + "|gravar", false},
+		{"sem a regra de criar: o PodeCriar barra ANTES (Conferir não roda)", "so-a1", "POST", "/coisas", `{"account_id":"A1","nome":"x"}`, 403, "", false},
+		{"editar passa com o id da linha", "so-a1", "PATCH", "/coisas/" + coisaA1, `{"nome":"um!"}`, 200, coisaA1 + "|um!||gravar", true},
+		{"editar recusado: 403 e intacta", "so-a1", "PATCH", "/coisas/" + coisaA1, `{"nome":"barrado"}`, 403, coisaA1 + "|barrado||gravar", false},
+		{"linha invisível: 404 do PodeEditar, Conferir não roda", "so-a1", "PATCH", "/coisas/" + coisaA2, `{"nome":"barrado"}`, 404, "", false},
+		{"apagar recusado pela conferência: 403 e fica", "super", "DELETE", "/coisas/" + coisaA1, "", 403, coisaA1 + "|||apagar", false},
+		{"apagar passa (campos nil)", "super", "DELETE", "/coisas/" + coisaA2, "", 204, coisaA2 + "|||apagar", true},
+	} {
+		chamadas = nil
+		antes := um(foto)
+		req := httptest.NewRequest(c.metodo, c.caminho, strings.NewReader(c.corpo))
+		req.Header.Set("X-Quem", c.quem)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		ultima := ""
+		if len(chamadas) > 0 {
+			ultima = chamadas[len(chamadas)-1]
+		}
+		if w.Code != c.status || ultima != c.chamada || len(chamadas) > 1 {
+			t.Errorf("%s: %d %s; Conferir = %v, esperava %d e %q", c.nome, w.Code, w.Body, chamadas, c.status, c.chamada)
+		}
+		if mudou := um(foto) != antes; mudou != c.muda {
+			t.Errorf("%s: o banco mudou = %t, esperava %t (%s → %s)", c.nome, mudou, c.muda, antes, um(foto))
+		}
+		if c.status == 500 && strings.Contains(w.Body.String(), "conferência") {
+			t.Errorf("%s: o texto do erro interno vazou: %s", c.nome, w.Body)
+		}
+	}
+}
+```
+
+**(c) Arquivos:** Modify `api/internal/dados/escrita.go`; Create `api/internal/dados/escrita_conferir_test.go`.
+
+**(d) Dependências:** 5.1 (`dados.Tabela`). Independente da Task 1 (onda 1).
+
+- [ ] **Step 1:** O teste; ver falhar (`Conferir` não existe: não compila). - [ ] **Step 2:** Implementar (código de (a)). - [ ] **Step 3:** `cd api && gofmt -l ./internal && go vet ./internal/dados/ && go test -count=1 ./internal/dados/` PASS (todos os testes do pacote, não só o novo); mutações reprovam. - [ ] **Step 4:** Commit `feat(api): dados.Tabela.Conferir — a regra que o catálogo não enxerga, na mesma transação, depois do PodeX` (+ `Co-Authored-By`).
 
 ---
 
