@@ -93,7 +93,14 @@ export function lerCaminhoPostgrest(caminho) {
   const partes = { tabela, filtros: [], select: null, ordem: [], limite: null, onConflict: null }
   for (const [k, v] of new URLSearchParams(busca)) {
     if (k === 'select') partes.select = v
-    else if (k === 'order') partes.ordem = v.split(',').map((o) => { const [col, dir] = o.split('.'); return { col, asc: dir !== 'desc' } })
+    else if (k === 'order') {
+      partes.ordem = v.split(',').map((o) => {
+        const [col, dir, ...resto] = o.split('.')
+        // `nullsfirst`/`nullslast` mudam a ordem dos nulos: sem par na rota, recusa.
+        if (resto.length || (dir && dir !== 'asc' && dir !== 'desc')) throw new ErroDeTraducao(`ordem sem tradução: ${o}`)
+        return { col, asc: dir !== 'desc' }
+      })
+    }
     else if (k === 'limit') partes.limite = Number(v)
     else if (k === 'on_conflict') partes.onConflict = v
     else {
@@ -124,7 +131,11 @@ function parametrosDosFiltros(def, tabela, filtros) {
     let v
     if (f.op === 'eq') v = valorDoEq(f.val)
     else if (f.op === 'ilike') v = valorDoIlike(f.val)
-    else if (f.op === 'in') v = f.val.replace(/^\(|\)$/g, '').split(',').map(valorDoEq).join(',')
+    else if (f.op === 'in') {
+      // valor com aspas pode ter vírgula dentro: o split quebraria errado — recusa.
+      if (f.val.includes('"')) throw new ErroDeTraducao(`${tabela}: in com aspas não tem tradução: ${f.val}`)
+      v = f.val.replace(/^\(|\)$/g, '').split(',').join(',')
+    }
     else v = f.val
     if (p in params) throw new ErroDeTraducao(`${tabela}: filtro repetido ${p}`)
     params[p] = v
@@ -153,8 +164,9 @@ function ordenarNaTela(linhas, ordem) {
     for (const { col, asc } of ordem) {
       const x = a[col], y = b[col]
       if (x === y) continue
-      if (x === null || x === undefined) return 1
-      if (y === null || y === undefined) return -1
+      // nulos como o PostgREST: por último no asc, primeiro no desc
+      if (x === null || x === undefined) return asc ? 1 : -1
+      if (y === null || y === undefined) return asc ? -1 : 1
       return (x < y ? -1 : 1) * (asc ? 1 : -1)
     }
     return 0
@@ -177,9 +189,10 @@ export async function lerPelaApi(partes, { contar = false } = {}) {
   if (!def?.rota) throw new ErroDeTraducao(`${partes.tabela}: sem rota de leitura`)
   const params = parametrosDosFiltros(def, partes.tabela, partes.filtros)
   const cols = colunasDoSelect(partes.select)
-  // A ordem pedida vai para a rota quando ela a declara; senão, a tela ordena —
-  // e isso só é certo se NADA foi cortado antes (sem limite).
-  const naRota = partes.ordem.length > 0 && partes.ordem.every((o) => def.ordens.includes(o.col))
+  // A ordem pedida vai para a rota quando ela a declara (UMA coluna: o `ordem` da
+  // API aceita um campo só); senão, a tela ordena — e isso só é certo se NADA foi
+  // cortado antes (sem limite).
+  const naRota = partes.ordem.length === 1 && def.ordens.includes(partes.ordem[0].col)
   if (partes.ordem.length && naRota) params.ordem = partes.ordem.map((o) => `${o.col}.${o.asc ? 'asc' : 'desc'}`).join(',')
   if (partes.ordem.length && !naRota && partes.limite) {
     throw new ErroDeTraducao(`${partes.tabela}: a rota não ordena por ${partes.ordem.map((o) => o.col)} e o pedido corta em ${partes.limite}`)
@@ -266,7 +279,10 @@ export async function escreverPelaApi(operacao, partes, corpo) {
       const r = await um('DELETE', `${def.rota}/${encodeURIComponent(id)}`)
       if (r.erro) return { data: null, error: r.erro }
     }
-    return { data: null, error: null }
+    // As linhas apagadas, como o PostgREST devolve com `return=representation`:
+    // há tela que CONTA o que voltou para saber se apagou (grupo, supervisora).
+    // A rota de apagar responde 204 e não lê a linha antes; o id é o que se sabe.
+    return { data: ids.map((id) => ({ id })), error: null }
   } else throw new ErroDeTraducao(`operação desconhecida: ${operacao}`)
   return { data: res, error: null }
 }
@@ -288,7 +304,13 @@ class ConsultaPelaApi {
   eq(col, val) { this.p.filtros.push({ col, op: 'eq', val: String(val) }); return this }
   ilike(col, val) { this.p.filtros.push({ col, op: 'ilike', val: String(val) }); return this }
   in(col, vals) { this.p.filtros.push({ col, op: 'in', val: vals.join(',') }); return this }
-  order(col, { ascending = true } = {}) { this.p.ordem.push({ col, asc: ascending }); return this }
+  gte(col, val) { this.p.filtros.push({ col, op: 'gte', val: String(val) }); return this }
+  lte(col, val) { this.p.filtros.push({ col, op: 'lte', val: String(val) }); return this }
+  order(col, { ascending = true, nullsFirst } = {}) {
+    // a ordem dos nulos não tem par na rota: recusa na execução (o encadeado não lança)
+    if (nullsFirst !== undefined) this.recusa = `ordem com nullsFirst não tem tradução: ${col}`
+    this.p.ordem.push({ col, asc: ascending }); return this
+  }
   limit(n) { this.p.limite = n; return this }
   single() { this.unico = 'single'; return this }
   maybeSingle() { this.unico = 'maybe'; return this }
@@ -298,6 +320,7 @@ class ConsultaPelaApi {
   delete() { this.op = 'apagar'; return this }
   async executar() {
     try {
+      if (this.recusa) throw new ErroDeTraducao(this.recusa)
       if (this.op === 'ler') {
         const r = await lerPelaApi(this.p, { contar: this.contar })
         if (r.error) return { data: null, error: r.error, count: null }
@@ -336,13 +359,17 @@ export function deOnde(sbClient) {
 
 // ── Fachada 2: o `fetch` do PostgREST (adFetch, gravar) ──────────────────────
 
-function respostaDeMentira(status, corpo) {
+function respostaDeMentira(status, corpo, { total = null } = {}) {
   const texto = corpo === undefined || corpo === null ? '' : JSON.stringify(corpo)
+  const ok = status >= 200 && status < 300
+  // `Content-Range` como o PostgREST com `Prefer: count=exact` ("0-0/N").
+  const faixaDeLinhas = total === null ? null : `${Array.isArray(corpo) && corpo.length ? `0-${corpo.length - 1}` : '*'}/${total}`
   return {
-    ok: status >= 200 && status < 300, status,
+    ok, status,
     json: async () => (texto ? JSON.parse(texto) : null),
-    text: async () => texto,
-    headers: { get: () => null },
+    // Erro: a FRASE (há tela que faz `throw new Error(await r.text())`), não o JSON cru.
+    text: async () => (ok ? texto : (corpo?.message || texto)),
+    headers: { get: (k) => (String(k).toLowerCase() === 'content-range' ? faixaDeLinhas : null) },
   }
 }
 
@@ -352,14 +379,15 @@ function respostaDeMentira(status, corpo) {
  * `Prefer: return=representation` devolve o array; sem ele, 201/204 vazio.
  */
 export async function fetchPostgrest(caminho, opcoes = {}) {
-  const partes = lerCaminhoPostgrest(caminho)
   const metodo = (opcoes.method || 'GET').toUpperCase()
   const prefer = String(opcoes.headers?.Prefer || opcoes.headers?.prefer || '')
-  const corpo = opcoes.body ? JSON.parse(opcoes.body) : undefined
   try {
+    const partes = lerCaminhoPostgrest(caminho)
+    const corpo = opcoes.body ? JSON.parse(opcoes.body) : undefined
     if (metodo === 'GET') {
-      const r = await lerPelaApi(partes)
-      return r.error ? respostaDeMentira(r.error.status || 500, r.error) : respostaDeMentira(200, r.data)
+      const contar = /count=exact/.test(prefer)
+      const r = await lerPelaApi(partes, { contar })
+      return r.error ? respostaDeMentira(r.error.status || 500, r.error) : respostaDeMentira(200, r.data, { total: contar ? r.count : null })
     }
     const op = metodo === 'POST' ? (/resolution=merge-duplicates/.test(prefer) || partes.onConflict ? 'upsert' : 'inserir')
       : metodo === 'PATCH' ? 'editar' : metodo === 'DELETE' ? 'apagar' : null
@@ -367,6 +395,7 @@ export async function fetchPostgrest(caminho, opcoes = {}) {
     const r = await escreverPelaApi(op, partes, corpo)
     if (r.error) return respostaDeMentira(r.error.status || 500, r.error)
     if (/return=representation/.test(prefer)) return respostaDeMentira(metodo === 'POST' ? 201 : 200, r.data || [])
+    if (metodo === 'DELETE') return respostaDeMentira(204, null)
     return respostaDeMentira(metodo === 'POST' ? 201 : 204, null)
   } catch (e) {
     if (e instanceof ErroDeTraducao) console.error('[banco-pela-api]', e.message)

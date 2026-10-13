@@ -138,3 +138,43 @@ test('erro da API chega no formato do supabase-js (message legível, nunca o có
   assert.equal(s.ok, false); assert.equal(s.status, 404)
   assert.doesNotMatch((await s.json()).message, /^nao_encontrado$/)
 })
+
+test('apagar com return=representation devolve as linhas apagadas (a tela conta)', async () => {
+  api({ 'DELETE /equipes/grupos/g1': [204] })
+  const r = await b.fetchPostgrest('canais_grupos?id=eq.g1', { method: 'DELETE', headers: { Prefer: 'return=representation' } })
+  assert.deepEqual(await r.json(), [{ id: 'g1' }])
+  api({ 'DELETE /equipes/grupos/g1': [204] })
+  const s = await b.fetchPostgrest('canais_grupos?id=eq.g1', { method: 'DELETE' })
+  assert.equal(s.status, 204)
+})
+
+test('Prefer: count=exact pede contar=1 e devolve Content-Range "0-0/N"', async () => {
+  const pedidos = api({ 'GET /acesso/usuarios': [200, [{ id: 'u1' }], { 'X-Total-Count': '2' }] })
+  const r = await b.fetchPostgrest('profiles?select=id&email=ilike.a%40b.c&limit=1', { headers: { Prefer: 'count=exact' } })
+  assert.equal(new URLSearchParams(pedidos[0].busca).get('contar'), '1')
+  assert.equal(r.headers.get('content-range'), '0-0/2')
+  assert.equal(Number(r.headers.get('content-range').split('/')[1]), 2)
+})
+
+test('erro: text() devolve a frase, json() o objeto', async () => {
+  api({ 'POST /equipes/grupos': [403, { error: 'sem_permissao', mensagem: 'Sem permissão para isso.' }] })
+  const r = await b.fetchPostgrest('canais_grupos', { method: 'POST', body: '{"nome":"x"}' })
+  assert.equal(await r.text(), 'Sem permissão para isso.')
+})
+
+test('ordem: várias colunas sem limite ordena na tela; nulls explícito e várias com limite recusam; nulos como o PostgREST', async () => {
+  api({ 'GET /equipes/times': [200, [{ id: 1, nome: 'b', ordem: 1 }, { id: 2, nome: 'a', ordem: 1 }, { id: 3, nome: null, ordem: 0 }]] })
+  const r = await b.consultaPelaApi('equipes').select('id').order('ordem').order('nome')
+  assert.deepEqual(r.data.map((x) => x.id), [3, 2, 1])
+  api({ 'GET /equipes/times': [200, [{ id: 1, canal_loja_id: 9 }, { id: 3, canal_loja_id: null }, { id: 2, canal_loja_id: 5 }]] })
+  const d = await b.consultaPelaApi('equipes').select('id').order('canal_loja_id', { ascending: false })
+  assert.deepEqual(d.data.map((x) => x.id), [3, 1, 2], 'nulo primeiro no desc, como o PostgREST')
+  assert.equal((await b.fetchPostgrest('equipes?order=nome.asc.nullsfirst')).ok, false)
+  assert.equal((await b.fetchPostgrest('equipes?order=ordem,nome&limit=5')).ok, false)
+})
+
+test('in com aspas é recusado', async () => {
+  const pedidos = api({})
+  assert.equal((await b.fetchPostgrest('equipes_membros?papel=in.(' + encodeURIComponent('"a,b",c') + ')')).ok, false)
+  assert.equal(pedidos.length, 0)
+})
