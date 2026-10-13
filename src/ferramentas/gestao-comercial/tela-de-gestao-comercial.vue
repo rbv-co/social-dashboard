@@ -35,6 +35,8 @@ import { useRouter } from 'vue-router'
 import { sbClient } from '../../compartilhado/conectar-no-banco-de-dados.js'
 // Chave `edges-core` (Plano 7): bling-proxy pela API em Go.
 import { invocarNaArea } from '../../compartilhado/api.js'
+// Chave `admin` (Plano 7): `equipes_membros` pela API (5.1).
+import { deOnde } from '../../compartilhado/banco-pela-api.js'
 import { listaDaResposta, detalheDaResposta } from './resposta-do-bling.js'
 import { hasPermission, estado } from '../../compartilhado/controle-de-login-e-usuario.js'
 import { adminToast } from '../../compartilhado/avisos.js'
@@ -61,7 +63,7 @@ const podeTime = ref(false)
 async function conferirSeGerencioAlgumTime() {
   if (estado.is_superadmin) { podeTime.value = true; return }
   try {
-    const { data } = await sbClient.from('equipes_membros')
+    const { data } = await deOnde(sbClient).from('equipes_membros')
       .select('papel').eq('profile_id', estado.user?.id).in('papel', ['gestor', 'supervisora']).limit(1)
     podeTime.value = !!(data && data.length)
   } catch (e) { podeTime.value = false }

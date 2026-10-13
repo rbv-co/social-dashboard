@@ -504,6 +504,8 @@ import { estado, hasPermission, contasPermitidas } from '../../compartilhado/con
 // Chave `conta` (Plano 7): o convite (invite-user, 5.0) pela API em Go.
 // Chave `edges-core` (Plano 7): insights-ao-vivo, contar-collabs e serie-novos-dia (Plano 3).
 import { areaNaApi, corpoDaEdge, invocarNaArea } from '../../compartilhado/api.js'
+// Chave `admin` (Plano 7): a lista de usuários (`profiles`) pela API (5.1).
+import { tabelaNaApi, fetchPostgrest } from '../../compartilhado/banco-pela-api.js'
 import { adminToast } from '../../compartilhado/avisos.js'
 import { sb } from '../../compartilhado/buscar-e-salvar-dados.js'
 import { hojeLocal } from '../../compartilhado/datas.js'
@@ -3735,7 +3737,7 @@ async function loadUsers() {
   listEl.textContent = ''
   const { data: { session } } = await sbClient.auth.getSession()
   const token = session?.access_token || SUPABASE_ANON_KEY
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/profiles?order=created_at.asc&select=id,email,name,role`, {
+  const r = tabelaNaApi('profiles') ? await fetchPostgrest('profiles?order=created_at.asc&select=id,email,name,role') : await fetch(`${SUPABASE_URL}/rest/v1/profiles?order=created_at.asc&select=id,email,name,role`, {
     headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` }
   })
   const users = await r.json()
@@ -3751,7 +3753,7 @@ async function loadUsers() {
     sel.addEventListener('change', async () => {
       const { data: { session } } = await sbClient.auth.getSession()
       const tok = session?.access_token || SUPABASE_ANON_KEY
-      await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${u.id}`, {
+      await (tabelaNaApi('profiles') ? fetchPostgrest : (c, o) => fetch(`${SUPABASE_URL}/rest/v1/${c}`, o))(`profiles?id=eq.${u.id}`, {
         method: 'PATCH',
         headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
         body: JSON.stringify({ role: sel.value })
