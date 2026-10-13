@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rbv-co/social-dashboard/api/internal/autz"
 	"github.com/rbv-co/social-dashboard/api/internal/banco"
@@ -25,6 +26,12 @@ type Tabela struct {
 	Nome     string // tabela do catálogo (ex.: "equipes")
 	Resposta string // colunas devolvidas, sobre o alias t: a MESMA lista da leitura (ex.: "t.id, t.nome")
 	Autor    string // coluna que recebe quem grava, na criação (ex.: "criado_por"); vazia = nenhuma
+
+	// CriarSoLegivel: a linha criada tem de passar também na regra de LER de quem cria (o que a
+	// pessoa grava ela tem de conseguir ver; Ruling 5.2-2). Senão — e também quando uma referência
+	// (FK) não existe, para não denunciar o que existe fora do alcance dela — ErrNegado (403) e a
+	// transação é desfeita.
+	CriarSoLegivel bool
 }
 
 var reColuna = regexp.MustCompile(`^[a-z_][a-z0-9_]{0,62}$`)
@@ -128,9 +135,14 @@ func (t Tabela) Criar(ctx context.Context, tx pgx.Tx, cat *autz.Catalogo, e *aut
 		return nil, err
 	}
 	tab, lista := pgx.Identifier{t.Nome}.Sanitize(), strings.Join(cols, ", ")
-	return t.devolver(ctx, tx, cat, e, `insert into `+tab+` (`+lista+`) select `+lista+
+	linha, err := t.devolver(ctx, tx, cat, e, `insert into `+tab+` (`+lista+`) select `+lista+
 		` from jsonb_populate_record(null::`+tab+`, @dados_campos::jsonb) returning *`,
-		pgx.NamedArgs{"dados_campos": string(j)})
+		pgx.NamedArgs{"dados_campos": string(j)}, t.CriarSoLegivel)
+	var pe *pgconn.PgError
+	if t.CriarSoLegivel && errors.As(err, &pe) && pe.Code == "23503" {
+		return nil, autz.ErrNegado // referência inexistente responde igual à invisível (sem oráculo)
+	}
+	return linha, err
 }
 
 // Editar confere (autz.PodeEditar trava a linha; Ler + USING na antiga; WITH CHECK na nova), muda SÓ
@@ -161,7 +173,7 @@ func (t Tabela) Editar(ctx context.Context, tx pgx.Tx, cat *autz.Catalogo, e *au
 	return t.devolver(ctx, tx, cat, e, `update `+tab+` as dados_alvo set `+strings.Join(sets, ", ")+
 		` from jsonb_populate_record(null::`+tab+`, @dados_campos::jsonb) as dados_r`+
 		` where dados_alvo.id = @dados_id returning dados_alvo.*`,
-		pgx.NamedArgs{"dados_campos": string(j), "dados_id": id})
+		pgx.NamedArgs{"dados_campos": string(j), "dados_id": id}, false)
 }
 
 // Apagar confere (autz.PodeApagar trava a linha; Ler + USING de delete) e apaga.
@@ -178,21 +190,28 @@ func (t Tabela) Apagar(ctx context.Context, tx pgx.Tx, cat *autz.Catalogo, e *au
 }
 
 // devolver roda a escrita como CTE e responde a linha pela lista Resposta se quem pede a lê DEPOIS
-// de gravada (regra de Ler do catálogo sobre a linha nova); senão {"id": …} (contrato II.2).
-func (t Tabela) devolver(ctx context.Context, tx pgx.Tx, cat *autz.Catalogo, e *autz.Escopo, escrita string, args pgx.NamedArgs) ([]byte, error) {
+// de gravada (regra de Ler do catálogo sobre a linha nova); senão {"id": …} (contrato II.2) — ou,
+// com soLegivel, ErrNegado: a transação de banco.ComUsuario é desfeita e nada fica gravado.
+func (t Tabela) devolver(ctx context.Context, tx pgx.Tx, cat *autz.Catalogo, e *autz.Escopo, escrita string, args pgx.NamedArgs, soLegivel bool) ([]byte, error) {
 	f, err := cat.Filtro(e, t.Nome, autz.Ler, "t")
 	if err != nil {
 		return nil, err
 	}
+	seNaoLe := `(select row_to_json(y) from (select t.id from t) y)`
+	if soLegivel {
+		seNaoLe = `null::json`
+	}
 	var corpo []byte
 	// row_to_json e não json_build_object: este escreve {"id" : …} com espaços; o PostgREST, compacto
 	err = tx.QueryRow(ctx, `with t as (`+escrita+`) select coalesce(
-		(select row_to_json(x) from (select `+t.Resposta+` from t where `+f.SQL+`) x),
-		(select row_to_json(y) from (select t.id from t) y))`, f.Juntar(args)).Scan(&corpo)
+		(select row_to_json(x) from (select `+t.Resposta+` from t where `+f.SQL+`) x), `+seNaoLe+`)`, f.Juntar(args)).Scan(&corpo)
 	if err != nil {
 		return nil, err
 	}
 	if corpo == nil {
+		if soLegivel {
+			return nil, autz.ErrNegado
+		}
 		return nil, autz.ErrNaoEncontrado
 	}
 	return corpo, nil
