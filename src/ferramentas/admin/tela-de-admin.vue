@@ -2306,6 +2306,8 @@ function _abaDeFerramentas(body, u) {
       // regravar o perfil muda o acesso de todo mundo que está nele. Por isso
       // este caminho passa OBRIGATORIAMENTE pela confirmação de impacto (D11).
       if (r.status === 409) { await _regravarPerfilExistente(nomeLimpo, novasPermissions, u); return }
+      // Pela API, criar perfil sem estar na lista de super-admins = 403 (Plano 7, 5.1).
+      if (areaNaApi('admin') && r.status === 403) { adminToast('O banco recusou a gravação: seu login não está na lista de super-admins do banco. Nada foi alterado.', false); return }
       if (!r.ok) { adminToast('Não consegui salvar o perfil', false); return }
       // Perfil recém-criado não tem ninguém dentro (`perfil_id` de ninguém
       // aponta pra ele ainda), então nenhum acesso de terceiro muda aqui. O que
@@ -2511,6 +2513,9 @@ async function _regravarPerfilExistente(nome, novasPermissions, u) {
       body: JSON.stringify({ permissions: novasPermissions }),
     })
   } catch { rG = null }
+  // Pela API (chave `admin`), quem não é super-admin pela LISTA DE E-MAILS recebe 403
+  // (o PostgREST devolvia 200 []): é o mesmo aviso de baixo, não um "não consegui".
+  if (areaNaApi('admin') && rG && rG.status === 403) { adminToast('O banco recusou a gravação: seu login não está na lista de super-admins do banco. Nada foi alterado.', false); return }
   if (!rG || !rG.ok) { adminToast('Não consegui regravar o perfil — ninguém foi alterado.', false); return }
   const linhasPerfil = await rG.json().catch(() => null)
   if (!Array.isArray(linhasPerfil) || linhasPerfil.length === 0) {
