@@ -2,6 +2,7 @@ package acesso
 
 import (
 	"encoding/json"
+	"errors"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -12,14 +13,25 @@ import (
 const colunasGrupo = `t.id, t.nome, t.ordem, t.ativo, t.criado_em`
 
 // GET /equipes/grupos (canais_grupos_leitura: true). POST, PATCH e DELETE /equipes/grupos/{id}
-// (canais_grupos_escrever: superadmin_pela_ficha, a ficha e não o e-mail). Renomear leva o nome a
-// bling_lojas.grupo (gatilho espelhar_rename_do_grupo, que só roda dentro de banco.ComUsuario como
-// qualquer escrita); nome repetido (índice lower/btrim) = 409.
+// (canais_grupos_escrever: superadmin_pela_ficha, a ficha e não o e-mail). A escrita roda em
+// banco.ComUsuario; renomear leva o nome a bling_lojas.grupo (gatilho espelhar_rename_do_grupo, AFTER
+// UPDATE: roda em todo UPDATE e só age se o nome mudou); nome repetido (índice lower/btrim) = 409.
 var consultaGrupos = dados.Consulta{Tabela: "canais_grupos", Alias: "t", SQL: `select ` + colunasGrupo + ` from canais_grupos t`,
 	Ordens: map[string]string{"nome": "t.nome"}, OrdemPadrao: "t.nome", Desempate: "t.id"}
 
 type corpoGrupo struct {
 	Nome json.RawMessage `json:"nome,omitempty"`
+}
+
+// Validar (Ruling 5.1-15): nome em branco é 400. Renomear o grupo para "" dispara os gatilhos de
+// produção (espelhar_rename_do_grupo e espelhar_grupo_do_canal) e solta TODAS as lojas e a supervisora
+// em silêncio; hoje só o front barra. Ausente ou null seguem o caminho normal (400 de corpo vazio/NOT NULL).
+func (c corpoGrupo) Validar() error {
+	var nome string
+	if json.Unmarshal(c.Nome, &nome) == nil && emBranco(nome) {
+		return errors.New("nome não pode ficar em branco")
+	}
+	return nil
 }
 
 var tabelaGrupos = dados.Tabela{Nome: "canais_grupos", Resposta: colunasGrupo}

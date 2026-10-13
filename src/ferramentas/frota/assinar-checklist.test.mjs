@@ -5,7 +5,7 @@ import { recusaDaSenha, avisoDoQueGravou, selo } from './assinar-checklist.js'
 /* ── A senha ──────────────────────────────────────────────────────────────── */
 
 test('cada recusa da senha tem a sua frase, e nenhuma se repete', () => {
-  const frases = ['senha_incorreta', 'bloqueado', 'sem_senha', 'sem_sessao'].map(recusaDaSenha)
+  const frases = ['senha_incorreta', 'bloqueado', 'sem_senha', 'sem_sessao', 'entrou_como_outra_pessoa'].map(recusaDaSenha)
   assert.equal(new Set(frases).size, frases.length, 'duas recusas diferentes com a mesma frase')
   for (const f of frases) assert.ok(f.length > 20, 'frase curta demais pra dizer o que fazer')
 })
@@ -30,7 +30,7 @@ test('toda recusa da senha acontece ANTES de gravar, e nenhuma frase sugere o co
   // deixar ficha pela metade no banco. Nenhuma destas frases pode mandar a
   // pessoa procurar uma ficha que não existe, nem avisar do índice "um carro,
   // um dia, uma ficha" — que só morde quem JÁ gravou.
-  for (const c of ['senha_incorreta', 'bloqueado', 'sem_senha', 'sem_sessao', 'falha_interna']) {
+  for (const c of ['senha_incorreta', 'bloqueado', 'sem_senha', 'sem_sessao', 'entrou_como_outra_pessoa', 'falha_interna']) {
     assert.doesNotMatch(recusaDaSenha(c), /já existe|foi registrad[ao]/i)
   }
 })
@@ -97,4 +97,9 @@ test('o selo NUNCA diz assinado quando não assinou (D22)', () => {
     assert.match(selo(caso), /sem assinatura/i)
     assert.doesNotMatch(selo(caso), /assinado por você/i)
   }
+})
+
+test('aba de "entrar como" (API em Go): frase própria, e diz que nada foi gravado', () => {
+  assert.match(recusaDaSenha('entrou_como_outra_pessoa'), /outra pessoa/)
+  assert.match(recusaDaSenha('entrou_como_outra_pessoa'), /nada foi gravado/i)
 })

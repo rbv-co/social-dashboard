@@ -103,11 +103,22 @@ func ExigirModulo(modulos ...string) func(http.Handler) http.Handler {
 // por IP (ipDe: X-Real-IP só vindo do proxy) por `janela`; acima disso, 429 com Retry-After.
 // ponytail: em memória, vale para uma instância só (como o limitador de login).
 func LimitarPorIP(max int, janela time.Duration) func(http.Handler) http.Handler {
+	return limitarPor(max, janela, ipDe)
+}
+
+// LimitarGlobal é o teto da rota pública somando TODOS os IPs (chave constante): contém o spam de muitos
+// IPs (um /48 de IPv6 tem ~650 mil), que o limite por IP não vê. Mesmo 429 do LimitarPorIP.
+// ponytail: em memória, por instância; se a API rodar em várias réplicas o teto vale por réplica.
+func LimitarGlobal(max int, janela time.Duration) func(http.Handler) http.Handler {
+	return limitarPor(max, janela, func(*http.Request) string { return "global" })
+}
+
+func limitarPor(max int, janela time.Duration, chave func(*http.Request) string) func(http.Handler) http.Handler {
 	l := NovoLimitador()
 	l.Max, l.Janela = max, janela
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if !l.Tentar(ipDe(r)) {
+			if !l.Tentar(chave(r)) {
 				w.Header().Set("Retry-After", strconv.Itoa(int(janela.Seconds())))
 				erroJSON(w, http.StatusTooManyRequests, "muitas_requisicoes")
 				return

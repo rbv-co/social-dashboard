@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/rbv-co/social-dashboard/api/internal/autz"
 	"github.com/rbv-co/social-dashboard/api/internal/core"
 )
 
@@ -232,9 +233,11 @@ func TestMetaProxyLogaCausaSemSegredo(t *testing.T) {
 		t.Errorf("segredo no log: %s", l)
 	}
 	log.Reset()
-	a.p.Close() // banco fora: chama o handler direto (o middleware também usa o pool)
+	a.p.Close() // banco fora: chama o handler direto (o middleware também usa o pool); o escopo (quem vê todas) vai no contexto
 	rec := httptest.NewRecorder()
-	(&Proxy{Pool: a.p, Core: a.cli, HostsDeMidia: nil}).ServeHTTP(rec, httptest.NewRequest("POST", "/meta-proxy", strings.NewReader(`{"accountId":"conta-1","path":"/me"}`)))
+	req := httptest.NewRequest("POST", "/meta-proxy", strings.NewReader(`{"accountId":"conta-1","path":"/me"}`))
+	req = req.WithContext(autz.NoContexto(req.Context(), &autz.Escopo{Ativo: true, TemPerfil: true, TodasContas: true}))
+	(&Proxy{Pool: a.p, Core: a.cli, HostsDeMidia: nil}).ServeHTTP(rec, req)
 	if rec.Code != 500 || !strings.Contains(log.String(), "consulta de conta falhou") || !strings.Contains(log.String(), "closed pool") {
 		t.Errorf("banco fora: %d log=%s", rec.Code, log.String())
 	}

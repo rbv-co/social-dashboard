@@ -1,6 +1,8 @@
 <script setup>
 import { ref, reactive, computed, onMounted, watch, nextTick } from 'vue'
 import { sbClient } from '../../compartilhado/conectar-no-banco-de-dados.js'
+// Chave `edges-core` (Plano 7): meta-proxy pela API em Go.
+import { invocarNaArea } from '../../compartilhado/api.js'
 import { sb } from '../../compartilhado/buscar-e-salvar-dados.js'
 // O aviso do canto da tela, o mesmo do resto da central. Substituiu o
 // `alert()` nativo, que trava a página inteira até alguém clicar em OK.
@@ -48,7 +50,7 @@ function cidadesDaLoja(slug) {
 async function resolverNomesCidades(keys) {
   const faltam = [...new Set((keys || []).map(String))].filter((k) => k && !cidadeNomes[k])
   if (!faltam.length) return
-  const { data } = await sbClient.functions.invoke('meta-proxy', { body: { accountId: ACCOUNT_ID, path: '/search', params: { type: 'adgeolocationmeta', cities: JSON.stringify(faltam) }, method: 'GET' } })
+  const { data } = await invocarNaArea('edges-core', sbClient, 'meta-proxy', { body: { accountId: ACCOUNT_ID, path: '/search', params: { type: 'adgeolocationmeta', cities: JSON.stringify(faltam) }, method: 'GET' } })
   const cidades = data?.data?.cities || {}
   for (const k of Object.keys(cidades)) cidadeNomes[k] = cidades[k].region ? `${cidades[k].name} · ${cidades[k].region}` : cidades[k].name
 }
@@ -122,7 +124,7 @@ function geoParaListas() {
   })
 }
 async function buscarNoMapa(termo) {
-  const { data, error } = await sbClient.functions.invoke('buscar-lugar', { body: { acao: 'buscar', termo } })
+  const { data, error } = await invocarNaArea('trafego', sbClient, 'buscar-lugar', { body: { acao: 'buscar', termo } })
   // O motivo vai pra tela: busca que falha não pode virar "nada encontrado".
   if (error || data?.error) throw new Error(data?.error || error?.message || 'a recepção do mapa não respondeu')
   return data
@@ -137,7 +139,7 @@ async function montarLugares() {
   painelLugares = montarPainelDeLugares(caixaLugares.value, {
     lugares,
     buscarNaMeta: async (params) => {
-      const { data, error } = await sbClient.functions.invoke('meta-proxy', { body: { accountId: ACCOUNT_ID, path: '/search', params, method: 'GET' } })
+      const { data, error } = await invocarNaArea('edges-core', sbClient, 'meta-proxy', { body: { accountId: ACCOUNT_ID, path: '/search', params, method: 'GET' } })
       if (error || data?.error) throw new Error(data?.error?.message || error?.message || 'a Meta não respondeu')
       return data
     },
@@ -150,7 +152,7 @@ async function montarLugares() {
     // O ponto se apresenta: nasce na hora, e o endereço chega em seguida.
     aoPorPonto: async (ponto) => {
       try {
-        const { data, error } = await sbClient.functions.invoke('buscar-lugar', { body: { acao: 'ondeCaiu', lat: ponto.lat, lng: ponto.lng } })
+        const { data, error } = await invocarNaArea('trafego', sbClient, 'buscar-lugar', { body: { acao: 'ondeCaiu', lat: ponto.lat, lng: ponto.lng } })
         if (error || data?.error) throw new Error(data?.error || error?.message || 'sem resposta')
         const achado = enderecoDeOndeCaiu(data)
         ponto.nome = achado.nome; ponto.endereco = achado.endereco
@@ -181,7 +183,7 @@ async function buscarCidades() {
   if (!buscaCidade.value.trim()) return
   erroCidade.value = ''
   // surfaça o erro (antes engolia só lendo `data` — busca falhava em silêncio = "não inclui nada")
-  const { data, error } = await sbClient.functions.invoke('meta-proxy', { body: { accountId: ACCOUNT_ID, path: '/search', params: { type: 'adgeolocation', location_types: JSON.stringify(['city']), q: buscaCidade.value, limit: 15 }, method: 'GET' } })
+  const { data, error } = await invocarNaArea('edges-core', sbClient, 'meta-proxy', { body: { accountId: ACCOUNT_ID, path: '/search', params: { type: 'adgeolocation', location_types: JSON.stringify(['city']), q: buscaCidade.value, limit: 15 }, method: 'GET' } })
   if (error || data?.error) { erroCidade.value = (data?.error?.message || error?.message || 'Falha na busca de cidade'); cidadesAchadas.value = []; return }
   cidadesAchadas.value = data?.data || []
   if (!cidadesAchadas.value.length) erroCidade.value = 'Nenhuma cidade encontrada pra essa busca.'
@@ -190,7 +192,7 @@ function excluirCidade(c) { if (!publico.geo.excluded.some((x) => x.key === c.ke
 function rmExcluida(key) { publico.geo.excluded = publico.geo.excluded.filter((x) => x.key !== key) }
 async function buscarInteresses() {
   if (!buscaInteresse.value.trim()) return
-  const { data } = await sbClient.functions.invoke('meta-proxy', { body: { accountId: ACCOUNT_ID, path: '/search', params: { type: 'adinterest', q: buscaInteresse.value, limit: 10 }, method: 'GET' } })
+  const { data } = await invocarNaArea('edges-core', sbClient, 'meta-proxy', { body: { accountId: ACCOUNT_ID, path: '/search', params: { type: 'adinterest', q: buscaInteresse.value, limit: 10 }, method: 'GET' } })
   interessesAchados.value = data?.data || []
 }
 // String() na comparação pelo mesmo motivo da faixa de sugestões: o id da busca vem CRU da Meta e
@@ -314,7 +316,7 @@ async function listarAudiences() {
   carregandoAud.value = true; erroAud.value = ''
   // approximate_count foi removido na Graph v22 (dava #100 e a chamada falhava em silêncio) —
   // usa approximate_count_upper_bound. E surfaça erro (Meta ou meta-proxy) em vez de engolir.
-  const { data, error } = await sbClient.functions.invoke('meta-proxy', { body: { accountId: ACCOUNT_ID, path: `/${ACT}/customaudiences`, params: { fields: 'id,name,subtype,approximate_count_lower_bound,approximate_count_upper_bound', limit: 100 }, method: 'GET' } })
+  const { data, error } = await invocarNaArea('edges-core', sbClient, 'meta-proxy', { body: { accountId: ACCOUNT_ID, path: `/${ACT}/customaudiences`, params: { fields: 'id,name,subtype,approximate_count_lower_bound,approximate_count_upper_bound', limit: 100 }, method: 'GET' } })
   carregandoAud.value = false
   if (error || data?.error) { erroAud.value = (data?.error?.message || error?.message || 'Falha ao carregar públicos'); audiences.value = []; return }
   audiences.value = (data?.data || []).map((a) => ({ ...a, aprox: a.approximate_count_upper_bound }))
@@ -334,14 +336,14 @@ const ERRO_AUD = 'A criação de público via API está bloqueada nesta conta pe
 async function criarEngajamento() {
   const nome = prompt('Nome do público de engajamento:', 'Engajou IG 365d'); if (!nome) return
   const rule = { inclusions: { operator: 'or', rules: [{ event_sources: [{ type: 'ig_business', id: IG_ID }], retention_seconds: 31536000, filter: { operator: 'or', filters: [{ field: 'event', operator: 'eq', value: 'ig_business_profile_all' }] } }] } }
-  const { data, error } = await sbClient.functions.invoke('meta-proxy', { body: { accountId: ACCOUNT_ID, path: `/${ACT}/customaudiences`, method: 'POST', params: { name: nome, subtype: 'ENGAGEMENT', rule } } })
+  const { data, error } = await invocarNaArea('edges-core', sbClient, 'meta-proxy', { body: { accountId: ACCOUNT_ID, path: `/${ACT}/customaudiences`, method: 'POST', params: { name: nome, subtype: 'ENGAGEMENT', rule } } })
   if (error || !data?.id) return alert(ERRO_AUD + '\n\n(' + (error?.message || (data?.error?.message) || JSON.stringify(data)) + ')')
   publico.custom_audiences.push({ id: data.id, name: nome, subtype: 'ENGAGEMENT' }); await listarAudiences()
 }
 async function criarLookalike(origem) {
   const nome = prompt('Nome do lookalike:', 'Lookalike 1%'); if (!nome) return
   const lookalike_spec = { country: 'BR', ratio: 0.01, type: 'similarity' }
-  const { data, error } = await sbClient.functions.invoke('meta-proxy', { body: { accountId: ACCOUNT_ID, path: `/${ACT}/customaudiences`, method: 'POST', params: { name: nome, subtype: 'LOOKALIKE', origin_audience_id: origem, lookalike_spec } } })
+  const { data, error } = await invocarNaArea('edges-core', sbClient, 'meta-proxy', { body: { accountId: ACCOUNT_ID, path: `/${ACT}/customaudiences`, method: 'POST', params: { name: nome, subtype: 'LOOKALIKE', origin_audience_id: origem, lookalike_spec } } })
   if (error || !data?.id) return alert(ERRO_AUD + '\n\n(' + (error?.message || (data?.error?.message) || JSON.stringify(data)) + ')')
   publico.custom_audiences.push({ id: data.id, name: nome, subtype: 'LOOKALIKE' }); await listarAudiences()
 }
@@ -354,7 +356,7 @@ onMounted(async () => {
   for (const slug of destino.lojas) { publicoPorLoja[slug] = publicoBase(slug); orcamentoPorLoja[slug] = orcamentoBase() }
   lojaAtiva.value = destino.lojas[0] || 'tivoli'
   carregarLoja(lojaAtiva.value)
-  const { data } = await sbClient.functions.invoke('meta-proxy', { body: { accountId: ACCOUNT_ID, path: `/${ACT}/campaigns`, params: { fields: 'id,name', limit: 200 }, method: 'GET' } })
+  const { data } = await invocarNaArea('edges-core', sbClient, 'meta-proxy', { body: { accountId: ACCOUNT_ID, path: `/${ACT}/campaigns`, params: { fields: 'id,name', limit: 200 }, method: 'GET' } })
   campanhas.value = data?.data || []
   await carregarPresets()
   listarAudiences() // auto-carrega os públicos (audiences) já existentes no Meta — não bloqueia o mount

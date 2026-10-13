@@ -6,6 +6,8 @@ package acesso
 
 import (
 	"net/http"
+	"strings"
+	"unicode"
 
 	"github.com/rbv-co/social-dashboard/api/internal/auth"
 	"github.com/rbv-co/social-dashboard/api/internal/dados"
@@ -29,4 +31,10 @@ func deve(err error) {
 	if err != nil {
 		panic(err)
 	}
+}
+
+// emBranco: vazio, só espaços ou só caracteres invisíveis (categoria Cf: U+200B, U+FEFF...). Nome assim
+// não é nome: o índice lower/btrim do banco só tira espaço, então o invisível passaria por único.
+func emBranco(s string) bool {
+	return strings.TrimFunc(s, func(r rune) bool { return unicode.IsSpace(r) || unicode.Is(unicode.Cf, r) }) == ""
 }

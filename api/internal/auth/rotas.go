@@ -126,6 +126,10 @@ func (h *Handlers) Entrar(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) Sair(w http.ResponseWriter, r *http.Request) {
+	if a := AtorDoContexto(r.Context()); a != nil && a.Tipo == "servico" { // revogar é só pelo CLI; um 204 enganaria
+		erroComMensagem(w, http.StatusForbidden, "sem_permissao", "Token de serviço não sai: revogue pelo CLI (api servico revogar).")
+		return
+	}
 	if err := h.sessoes.Revogar(r.Context(), tokenDe(r)); err != nil {
 		erroJSON(w, http.StatusInternalServerError, "erro_interno")
 		return
@@ -135,9 +139,20 @@ func (h *Handlers) Sair(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handlers) Eu(w http.ResponseWriter, r *http.Request) {
 	a := AtorDoContexto(r.Context())
+	// e-mail e nome de QUEM a sessão é (o alvo, no "entrar como"): a tela os lia de session.user do
+	// Supabase (avatar, menu, faixa do "entrar como"). Sem perfil, nome = null.
+	var email string
+	var nome *string
+	if err := h.pool.QueryRow(r.Context(),
+		`select u.email, p.name from usuarios u left join profiles p on p.id = u.id where u.id = $1::uuid`,
+		a.ID).Scan(&email, &nome); err != nil {
+		erroJSON(w, http.StatusInternalServerError, "erro_interno")
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
 		"id": a.ID, "tipo": a.Tipo, "papel": a.Papel, "superadmin": a.SuperAdmin,
 		"permissoes": a.Permissoes, "impersonador_id": a.ImpersonadorID,
+		"email": email, "nome": nome,
 	})
 }
