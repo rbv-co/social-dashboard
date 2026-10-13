@@ -173,7 +173,7 @@ func (s *Store) ListarServico(ctx context.Context) ([]TokenDeServico, error) {
 // ou de "entrar como" leva 403).
 func SoServico(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if a := AtorDoContexto(r.Context()); a == nil || a.Tipo != "servico" {
+		if a := AtorDoContexto(r.Context()); a == nil || a.Tipo != "servico" || a.ImpersonadorID != nil {
 			erroJSON(w, http.StatusForbidden, "sem_permissao")
 			return
 		}

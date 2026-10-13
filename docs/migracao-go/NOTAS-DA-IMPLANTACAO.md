@@ -527,4 +527,4 @@ O `api servico` NÃO migra o banco (como o `api worker`): a migração `00006` j
 `projetos_status` não ganha rota de escrita: o quadro de projetos saiu da tela em 19/08/2026 e ninguém lê a tabela. Não crie token para ele; se o quadro voltar, uma rota de upsert só para serviço resolve.
 
 ### Antes do corte
-- O 5.8 (rotas de robô da Fábrica) protege as rotas com `auth.SoServico` (sessão de painel leva 403); os robôs do coletor só trocam a `service_role` pelo token depois que as rotas deles existirem.
+- O 5.8 (rotas de robô da Fábrica) protege as rotas com `auth.SoServico` (sessão de painel ou de "entrar como" leva 403; o banco também recusa sessão de serviço com impersonador: CHECK `sessoes_servico_sem_impersonador`, migração 00006); os robôs do coletor só trocam a `service_role` pelo token depois que as rotas deles existirem.

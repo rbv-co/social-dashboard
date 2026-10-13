@@ -125,6 +125,27 @@ func TestSoServico(t *testing.T) {
 	}
 }
 
+// Serviço "entrando como" alguém nunca passa pelo portão das rotas de robô (pedido da trilha B), e o
+// banco recusa gravar sessão de serviço com impersonador (CHECK em sessoes).
+func TestSoServicoRecusaImpersonadoEOBancoTambem(t *testing.T) {
+	impersonador := "22222222-2222-4222-a222-222222222222"
+	h := SoServico(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
+	r := httptest.NewRequest("GET", "/", nil)
+	r = r.WithContext(NoContexto(r.Context(), &Ator{ID: uid, Tipo: "servico", ImpersonadorID: &impersonador}))
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	if w.Code != 403 || !strings.Contains(w.Body.String(), "sem_permissao") {
+		t.Fatalf("serviço com impersonador = %d %s", w.Code, w.Body)
+	}
+	p, s, _ := umServico(t)
+	novoUsuario(t, s, impersonador, "imp@x.com")
+	_, err := p.Exec(context.Background(), `insert into sessoes (token_hash, usuario_id, tipo, impersonador_id, criada_em, expira_em, ultimo_uso_em)
+		select 'h-servico-imp', u.id, 'servico', $1::uuid, now(), now() + interval '1 hour', now() from usuarios u where u.id <> $1::uuid limit 1`, impersonador)
+	if err == nil || !strings.Contains(err.Error(), "23514") {
+		t.Fatalf("sessão de serviço com impersonador foi gravada (err = %v)", err)
+	}
+}
+
 func TestServicoBancoNaoGuardaOTokenEmClaro(t *testing.T) {
 	p, _, tok := umServico(t)
 	var n int
