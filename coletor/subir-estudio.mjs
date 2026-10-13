@@ -24,7 +24,10 @@
 //   (--dry só valida o guard: não toca no Graph)
 import './lib/carregar-env.mjs';
 import tls from 'node:tls';
-import { loginServico } from './lib/bling-comercial.mjs';
+import { loginServico, urlDaEdge, cabecalhosDaEdge } from './lib/bling-comercial.mjs';
+// Plano 7 (5.8): as tabelas `fabrica_*` vão pela API quando CENTRAL_API_* estiver no
+// ambiente (lib/fabrica-banco.mjs); o resto (Storage, gc_*) segue na REST do Supabase.
+import { vaiParaApi, lerFabrica, escreverFabrica } from './lib/fabrica-banco.mjs';
 import { subirCriativos } from './lib/meta-subir.mjs';
 import { carregarMarcasELojas, montarLegenda } from './lib/config-lojas.mjs';
 import { carregarObjetivos, mapaObjetivo, montaPromotedObject } from './lib/objetivos.mjs';
@@ -57,11 +60,13 @@ let MARCA; // marca (ad account/page/ig/caption) resolvida em run(), consumida p
 
 // --- Supabase REST (leitura service-role dos criativos escolhidos) ----------------------------
 async function sbGet(p) {
+  if (vaiParaApi(p)) return lerFabrica(p);
   const r = await fetch(REST + p, { headers: H });
   if (!r.ok) throw new Error('GET ' + p + ' ' + r.status + ' ' + (await r.text()).slice(0, 200));
   return r.json();
 }
 async function sbPost(p, body, prefer) {
+  if (vaiParaApi(p)) return escreverFabrica('POST', p, body);
   const r = await fetch(REST + p, { method: 'POST', headers: prefer ? { ...H, Prefer: prefer } : H, body: JSON.stringify(body) });
   if (!r.ok && ![200, 201, 204].includes(r.status)) throw new Error('POST ' + p + ' ' + r.status + ' ' + (await r.text()).slice(0, 200));
   return r;
@@ -79,9 +84,10 @@ async function chamarProxy(body) {
   let ultimoErro;
   for (let tentativa = 1; tentativa <= MAX_TENTATIVAS; tentativa++) {
     try {
-      const r = await fetch(URL + '/functions/v1/meta-proxy', {
+      // o token escolhe o caminho: srv_ (robo-fabrica) → API; JWT → edge do Supabase
+      const r = await fetch(urlDaEdge('meta-proxy', TOKEN), {
         method: 'POST',
-        headers: { Authorization: 'Bearer ' + TOKEN, apikey: ANON, 'Content-Type': 'application/json' },
+        headers: cabecalhosDaEdge(TOKEN),
         body: JSON.stringify(body),
       });
       const d = await r.json();
@@ -287,7 +293,7 @@ export async function run({ campanhaId, destino, dry = false }) {
   const criouCampanha = destino?.tipo === 'nova';
   if (dry) return { adIds: [], pendentes: 0, metaCampaignId: null, adsetIds: [], falhas: [], criouCampanha };
 
-  TOKEN = await loginServico();
+  TOKEN = await loginServico({ naApi: true });
 
   // 0) marca+lojas da tabela (fabrica_marcas/fabrica_lojas) — substitui CFG/LOJAS hardcoded.
   const { lojas, marcaAtiva } = await carregarMarcasELojas(sbGet);
@@ -298,7 +304,9 @@ export async function run({ campanhaId, destino, dry = false }) {
   //    REGRA (cliente): o formato WIDESCREEN 16:9 (1920x1080) NÃO sobe pro Meta — é reservado pro
   //    Google Ads (YouTube), a conectar depois. Ele segue sendo gerado e curável, só não é veiculado
   //    aqui. Quando entrar o Google Ads, criar o subir-google.mjs que sobe justamente o 1920x1080.
-  const escolhidos = await sbGet(`/fabrica_criativos?select=id,url,storage_path,legenda,sku,variante,formato&campanha_id=eq.${campanhaId}&escolhido=eq.true&purgado_em=is.null&formato=neq.1920x1080`);
+  //    O corte do 1920x1080 é feito aqui, não na URL: a rota da API (5.8) não filtra por formato.
+  const escolhidos = (await sbGet(`/fabrica_criativos?select=id,url,storage_path,legenda,sku,variante,formato&campanha_id=eq.${campanhaId}&escolhido=eq.true&purgado_em=is.null`))
+    .filter((c) => c.formato !== '1920x1080');
   // Zero criativos escolhidos NÃO é sucesso. Sem a marca `semCriativos`, este retorno virava
   // {status:'concluido', fecha:true} no runner: a tela dizia "Publicado (pausado)! 0 anúncios" e a
   // rodada era FECHADA sem nada ter subido. Foi exatamente isso que aconteceu no job
