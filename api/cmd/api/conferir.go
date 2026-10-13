@@ -72,8 +72,8 @@ var colunasDoWorker = map[string]string{
 	"carrinho_eventos":            "tipo,cart_token,evento_shopify_id",
 	"vessel_rd_envios":            "id,origem_id,pessoa_id,status,tentativas,http_status,resposta,atualizado_em",
 	"vessel_pessoas":              "id,email",
-	"fabrica_campanhas":           "id,created_at,fechada_em,purgado_em",
-	"fabrica_criativos":           "campanha_id,storage_path,purgado_em",
+	"fabrica_campanhas":           "id,nome,status,objetivo,job_id,desconto_tipo,desconto_pct,parcelas,criado_por,created_at,fechada_em,purgado_em",
+	"fabrica_criativos":           "id,campanha_id,sku,arquetipo,template,formato,variante,preco_de,preco_por,storage_path,url,legenda,escolhido,purgado_em,created_at",
 	"robos_execucoes":             "robo,disparado_em,status_code,ok,resposta,conferido_em",
 	// Plano 5.6 (rotas /redes): os presumidos (sem DDL no repositório) são conferidos aqui no banco restaurado
 	"account_insights":      "account_id,captured_at,period_days,spend,impressions,clicks,reach,frequency",
@@ -81,8 +81,8 @@ var colunasDoWorker = map[string]string{
 	"campaign_filters":      "account_id,selected_ids,updated_at",
 	"noticias_concorrentes": "id,rodada,destaque,created_at", // Plano 5.12: filtro e ordem das leituras
 	"noticias_panorama":     "rodada,conteudo_md,modelo,created_at",
-	"ia_execucoes":          "id,run_at",
-	"robos_saude":           "robo,critico", // visão (relkind 'v'): ordem da leitura
+	"ia_execucoes":          "id,robo,acao,modelo,input_tokens,output_tokens,chamadas,usd,duracao_ms,itens,unidade,status,detalhe,github_run_id,run_at", // + Plano 5.8: o robô da Fábrica grava
+	"robos_saude":           "robo,critico",                                                                                                             // visão (relkind 'v'): ordem da leitura
 	// Plano 5.7 (gestão de tráfego): o que as rotas e a RPC presumem. Presumidos sem DDL no repositório:
 	// gt_budget_analises.impactos e gt_ponderada_config.limiares_resultado.
 	"gt_config_metricas":      "balde,metricas,updated_at",
@@ -94,7 +94,7 @@ var colunasDoWorker = map[string]string{
 	"gt_fila_decisoes":        "id,campaign_id,account_id,escopo,veredito,budget_atual_centavos,budget_sugerido_centavos,analise_gerada_em,decisao,decidido_em,decidido_por,silenciar_ate,aplicado,erro",
 	"gt_campanhas_rascunho":   "id,account_id,criado_por,estado,passo,nome,tipo,status,resultado,created_at,updated_at",
 	"gt_problemas_meta":       "ad_id,codigo,account_id,titulo,grave,primeira_vez,ultima_vez,resolvido_em",
-	"fabrica_marcas":          "id,account_id",
+	"fabrica_marcas":          "id,nome,caption_template,ad_account,page_id,ig_id,account_id,ativo,segmento,termos_produto,created_at", // + Plano 5.8: GET /fabrica/marcas
 	"interesses_sugeridos":    "id,marca_id,objetivo,itens,propostos,validos,gerado_em",
 	// Plano 5.9 (conteúdo): o que as rotas, as RPCs e o /conteudo-trigger presumem; conteudo_jobs é a fila do vigia
 	// da VPS. Todas com DDL no repositório.
@@ -103,6 +103,16 @@ var colunasDoWorker = map[string]string{
 	"conteudo_blocos":       "id,account_id,tipo,nome,texto,usos,ativo,criado_por,created_at",
 	"conteudo_jobs":         "id,tipo,account_id,params,status,github_run_id,resultado,erro,criado_por,created_at,updated_at",
 	"conteudo_concorrentes": "id,account_id,handle,nome,observacao,ativo,created_at",
+	// Plano 5.8 (Fábrica): leituras, edges e rotas de robô. Todas com DDL em db/migrations (014-030): o conferir
+	// pega o que foi acrescentado em produção sem migration. fabrica_campanhas, fabrica_criativos, fabrica_marcas e
+	// ia_execucoes são AMPLIADAS acima. gc_vendas_item, gc_estoque_item e gestao_comercial_briefings entram com a
+	// Task 7 (fabrica-candidatos), que espera o 5.5.
+	"fabrica_jobs":      "id,tipo,params,status,github_run_id,resultado,erro,criado_por,created_at,updated_at",
+	"fabrica_lojas":     "deposito_id,nome,ativo,ordem,marca_id,whatsapp,geo_cities,canal_loja_id",
+	"fabrica_objetivos": "chave,rotulo,descricao,meta_objective,optimization_goal,billing_event,destination_type,promoted_object_tipo,cta_type,looks,pede_desconto,ativo,ordem",
+	"fabrica_looks":     "chave,nome,arquetipo,objetivos,ativo,excluido,ordem,preview_url,tipo,canva_formato_map,campo_map,created_at",
+	"fabrica_publicos":  "id,nome,marca_id,geo,idade_min,idade_max,generos,interesses,custom_audiences,ativo,criado_por,created_at",
+	"fabrica_meta_jobs": "id,tipo,loja,ad_account_id,meta_campaign_id,adset_ids,ad_ids,payload,status,erro,created_at",
 }
 
 // tiposDoWorker: tabela.coluna -> tipo (nome de regtype) de que o código depende (cast do parâmetro, junção,
@@ -157,6 +167,14 @@ var tiposDoWorker = map[string]string{
 	"conteudo_casamentos.id": "uuid", "conteudo_ideias.id": "uuid", "conteudo_ideias.peca_id": "uuid", "conteudo_ideias.roteiro": "jsonb",
 	"conteudo_ideias.criado_por": "uuid", "conteudo_blocos.criado_por": "uuid", "conteudo_jobs.id": "uuid", "conteudo_jobs.params": "jsonb",
 	"conteudo_jobs.resultado": "jsonb", "conteudo_jobs.criado_por": "uuid", "conteudo_jobs.created_at": "timestamp with time zone",
+	// Plano 5.8: os casts e as conversões de que as rotas da Fábrica dependem. deposito_id da loja é TEXTO (a
+	// Task 7 compara texto com texto e converte para bigint só no parâmetro de gc_estoque_item.deposito_id).
+	"fabrica_lojas.deposito_id": "text", "fabrica_lojas.canal_loja_id": "text", "fabrica_lojas.geo_cities": "jsonb",
+	"fabrica_campanhas.job_id": "uuid", "fabrica_campanhas.criado_por": "uuid", "fabrica_jobs.id": "uuid",
+	"fabrica_jobs.params": "jsonb", "fabrica_jobs.resultado": "jsonb", "fabrica_jobs.criado_por": "uuid",
+	"fabrica_meta_jobs.payload": "jsonb", "fabrica_meta_jobs.adset_ids": "jsonb", "fabrica_meta_jobs.ad_ids": "jsonb",
+	"fabrica_looks.objetivos": "text[]", "fabrica_publicos.id": "uuid", "fabrica_publicos.generos": "integer[]",
+	"fabrica_publicos.geo": "jsonb", "fabrica_publicos.idade_min": "integer", "fabrica_publicos.idade_max": "integer",
 }
 
 // anulaveisDoWorker: colunas que precisam ACEITAR nulo (a migração de 2026-09-18 tirou o NOT NULL do cart_token).

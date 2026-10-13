@@ -275,6 +275,15 @@ var rotas57 = []string{
 	"GET /gestao-trafego/regua", "PUT /gestao-trafego/regua", "GET /gestao-trafego/interesses-sugeridos",
 }
 
+// Plano 5.8: as 10 rotas de catálogo da Fábrica. Portão = catálogo, provado pela matriz de cada rota em
+// `internal/fabrica`; vazamento e impersonado pelas varreduras de lá. As 4 edges (soFabricante) e as 7 de robô
+// (auth.SoServico) NÃO entram: o TestNenhumaRotaNovaFicaAberta prova que sessão sem módulo = 403 nelas.
+var rotas58 = []string{
+	"GET /fabrica/lojas", "GET /fabrica/objetivos", "GET /fabrica/marcas", "GET /fabrica/looks", "GET /fabrica/publicos",
+	"GET /fabrica/campanhas", "GET /fabrica/criativos", "GET /fabrica/jobs", "GET /fabrica/meta-jobs",
+	"POST /fabrica/criativos/escolher",
+}
+
 // Plano 5.9: as 20 rotas de tabela de conteudo.Montar (7 leituras, 13 escritas), no grupo de DOMÍNIO. Portão =
 // catálogo, provado pela matriz de cada rota em `internal/conteudo`; vazamento e impersonado por
 // `TestNadaVazaEntreContas` e `TestEscritasRecusamImpersonado`. O `POST /conteudo-trigger` NÃO entra: tem o
@@ -290,7 +299,7 @@ var rotas59 = []string{
 }
 
 func init() {
-	for _, c := range slices.Concat(rotas51, rotas57, rotas59) {
+	for _, c := range slices.Concat(rotas51, rotas57, rotas58, rotas59) {
 		soSessao[c] = true
 	}
 }
@@ -463,7 +472,7 @@ func TestPrazosPorRotaPelaMontagemReal(t *testing.T) {
 				}
 			})).ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("POST", "/", nil))
 		}
-		if strings.HasPrefix(rota, "/redes/") { // Plano 5.6: o grupo de domínio inteiro herda o prazo
+		if strings.HasPrefix(rota, "/redes/") || strings.HasPrefix(rota, "/fabrica") { // Planos 5.6 e 5.8: o grupo de domínio inteiro herda o prazo
 			if achado != PrazoDominio {
 				t.Errorf("%s: prazo %v, esperava %v (PrazoDominio)", chave, achado, PrazoDominio)
 			}
@@ -914,6 +923,76 @@ func TestTrafegoPelaMontagemReal(t *testing.T) {
 		if st != c.status || !strings.Contains(corpo, c.tem) || (c.naoTem != "" && strings.Contains(corpo, c.naoTem)) {
 			t.Errorf("%s: %s %s como %q = %d %s, esperava %d com %q e sem %q", c.nome, c.metodo, c.caminho, c.quem, st, corpo, c.status, c.tem, c.naoTem)
 		}
+	}
+}
+
+// Plano 5.8: a Fábrica pela montagem real (sem GITHUB_PAT: não há para onde despachar). Portão de catálogo,
+// portão da edge (chave meta.fabrica), conta de serviço do robô e a recusa da conta de serviço no painel.
+func TestFabricaPelaMontagemReal(t *testing.T) {
+	p := testebanco.ComEsquemaDeProducao(t)
+	s := auth.NovoStore(p)
+	h := Rotas(p, s, auth.NovoLimitador(), config.Config{ArquivosDir: t.TempDir()})
+	ctx := context.Background()
+	quem := map[string]string{}
+	for i, u := range []struct{ nome, features, permissoes string }{
+		{"fabricante", "{meta}", `{"meta.fabrica": ["ver"]}`}, {"so-meta", "{meta}", `{}`},
+	} {
+		id := fmt.Sprintf("a5810000-0000-4000-a000-00000000020%d", i)
+		if _, err := p.Exec(ctx, `insert into usuarios (id, email) values ($1::uuid, $2::text)`, id, u.nome+"@x.com"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := p.Exec(ctx, `insert into profiles (id, email, name, role, features, permissions, escopo_por_equipe)
+			values ($1::uuid, $2::text, $2::text, 'viewer', $3::text[], $4::jsonb, false)`, id, u.nome+"@x.com", u.features, u.permissoes); err != nil {
+			t.Fatal(err)
+		}
+		var err error
+		if quem[u.nome], err = s.Criar(ctx, id, "painel", nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// o robô como o 5.13 o cria (api servico criar), com a chave de permissions dada à parte (como no NOTAS)
+	tok, err := s.CriarContaDeServico(ctx, "robo-fabrica", "robo-fabrica@x.com", []string{"meta"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	quem["robo-fabrica"] = tok
+	if _, err := p.Exec(ctx, `update profiles set permissions = '{"meta.fabrica": ["ver", "editar"]}' where email = 'robo-fabrica@x.com'`); err != nil {
+		t.Fatal(err)
+	}
+	pedir := func(nome, metodo, caminho, corpo string) (int, string) {
+		r := httptest.NewRequest(metodo, caminho, strings.NewReader(corpo))
+		r.Header.Set("Content-Type", "application/json")
+		if nome != "" {
+			r.Header.Set("Authorization", "Bearer "+quem[nome])
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w.Code, strings.TrimSpace(w.Body.String())
+	}
+	const campanhaInexistente = "a5830000-0000-4000-a000-0000000000ff"
+	for _, c := range []struct {
+		nome, quem, metodo, caminho, corpo string
+		status                             int
+		tem                                string
+	}{
+		{"leitura sem sessão", "", "GET", "/fabrica/lojas", "", 401, "nao_autenticado"},
+		{"leitura com qualquer módulo", "so-meta", "GET", "/fabrica/lojas", "", 200, "["},
+		{"disparo sem a chave", "so-meta", "POST", "/fabrica-trigger", `{"tipo":"preview","params":{}}`, 403, "sem_permissao"},
+		{"disparo passa o portão e para sem token", "fabricante", "POST", "/fabrica-trigger", `{"tipo":"preview","params":{}}`, 503, "github_nao_configurado"},
+		{"disparo recusa conta de serviço", "robo-fabrica", "POST", "/fabrica-trigger", `{"tipo":"preview","params":{}}`, 403, "sem_permissao"},
+		{"rota de robô recusa painel", "fabricante", "POST", "/fabrica/robo/execucoes", `{"robo":"fabrica","acao":"teste"}`, 403, "sem_permissao"},
+		{"rota de robô aceita o robô", "robo-fabrica", "POST", "/fabrica/robo/execucoes", `{"robo":"fabrica","acao":"teste"}`, 201, `"id"`},
+		{"apagar com rodada inexistente", "fabricante", "POST", "/fabrica-apagar", `{"campanhaId":"` + campanhaInexistente + `"}`, 200, `"ok":true`},
+		{"apagar recusa conta de serviço", "robo-fabrica", "POST", "/fabrica-apagar", `{"campanhaId":"` + campanhaInexistente + `"}`, 403, "sem_permissao"},
+	} {
+		st, corpo := pedir(c.quem, c.metodo, c.caminho, c.corpo)
+		if st != c.status || !strings.Contains(corpo, c.tem) {
+			t.Errorf("%s: %s %s como %q = %d %s, esperava %d com %q", c.nome, c.metodo, c.caminho, c.quem, st, corpo, c.status, c.tem)
+		}
+	}
+	var jobs int
+	if err := p.QueryRow(ctx, `select count(*) from fabrica_jobs`).Scan(&jobs); err != nil || jobs != 0 {
+		t.Errorf("jobs = %d (%v): sem token nada deveria nascer", jobs, err)
 	}
 }
 

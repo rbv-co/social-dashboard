@@ -53,13 +53,16 @@ type Config struct {
 
 	// Plano 5.7 (Gestão de Tráfego). Vazia = 503 chave_nao_configurada nos proxies de IA.
 	IATrafego string // ANTHROPIC_API_KEY_TRAFEGO: a chave da Anthropic dos proxies de IA da Gestão de Tráfego. É segredo.
+
+	// Plano 5.8 (fábrica de anúncios).
+	GitHubPAT string // GITHUB_PAT: token do GitHub para disparar workflows (fabrica-trigger; 5.10; Plano 6); é segredo
 }
 
 // Segredos: os valores que nunca podem sair em robos_execucoes nem no log do worker
 // (worker.Limpar troca cada um por ***).
 func (c Config) Segredos() []string {
 	return append([]string{c.CoreToken, c.ChatwootSegredo, c.VAPIDPrivada, c.RDStationToken, c.AlertaWebhook,
-		c.ZAPIInstancia, c.ZAPIToken, c.ZAPICliente, c.ZeptoToken, c.AnthropicAdmin, c.OpenAIAdmin, c.IATrafego}, c.ShopifySegredos...)
+		c.ZAPIInstancia, c.ZAPIToken, c.ZAPICliente, c.ZeptoToken, c.AnthropicAdmin, c.OpenAIAdmin, c.IATrafego, c.GitHubPAT}, c.ShopifySegredos...)
 }
 
 // lista lê uma variável separada por vírgulas, sem itens vazios.
@@ -127,6 +130,7 @@ func Carregar() (Config, error) {
 		ZeptoNome:         strings.TrimSpace(os.Getenv("ZEPTOMAIL_NOME")),
 		EnderecosDoApp:    lista("ENDERECOS_DO_APP"),
 		EnderecoPadrao:    strings.TrimSpace(os.Getenv("ENDERECO_PADRAO")),
+		GitHubPAT:         strings.TrimSpace(os.Getenv("GITHUB_PAT")),
 	}
 	if c.Addr == "" {
 		c.Addr = ":8080"

@@ -25,3 +25,9 @@ func (a *Ator) PodeModulo(modulo string) bool {
 	}
 	return a.SuperAdmin || a.Papel == "admin" || slices.Contains(a.Modulos, modulo)
 }
+
+// TemChave: a chave está em profiles.permissions (o operador ? do jsonb), como autz.Escopo.Chaves. Quem
+// consulta o portão por chave e não por ação (meta.fabrica). Tipo fora de painel/servico nunca passa.
+func (a *Ator) TemChave(chave string) bool {
+	return a != nil && (a.Tipo == "painel" || a.Tipo == "servico") && a.Chaves[chave]
+}

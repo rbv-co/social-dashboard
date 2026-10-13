@@ -36,7 +36,8 @@ var caminhosPermitidos = []*regexp.Regexp{
 	regexp.MustCompile(`^nfce/[A-Za-z0-9_-]+$`),
 }
 
-// 'autenticidade' abre SÓ os caminhos de produto (o seletor de produto do painel NFC).
+// 'autenticidade' e a chave meta.fabrica abrem SÓ os caminhos de produto (o seletor de produto do painel
+// NFC; o robô da Fábrica, que não tem o módulo sales — Ruling 5.8-17).
 var caminhoDeProduto = regexp.MustCompile(`^produtos(/[A-Za-z0-9_-]+)?$`)
 
 func permitido(endpoint string) bool {
@@ -216,10 +217,10 @@ func (b *Bling) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Daqui em diante `in.Endpoint` já é o normalizado que canais.Recortar espera: a regra
 	// ancorada só deixa passar caminho sem "/" inicial, sem query e sem espaço.
 	// Vendas ('sales') e Gestão Comercial ('gestor') consultam tudo da lista; 'autenticidade'
-	// só produto.
+	// só produto; a chave meta.fabrica de permissions (a regra do Fabricante), também.
 	pode := a.PodeModulo("sales") || a.PodeModulo("gestor")
 	if caminhoDeProduto.MatchString(in.Endpoint) {
-		pode = pode || a.PodeModulo("autenticidade")
+		pode = pode || a.PodeModulo("autenticidade") || a.TemChave("meta.fabrica")
 	}
 	if !pode {
 		erro(w, http.StatusForbidden, "sem permissao")
