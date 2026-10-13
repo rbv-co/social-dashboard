@@ -77,14 +77,19 @@ func TestSoSessaoPropria(t *testing.T) {
 	})
 }
 
-// M2 da revisão da Task 2: o pessoa_id dos bens aponta para acessos_pessoas, cuja regra de Ler é
-// is_acessos_admin() (papel admin ou módulo acessos; super pela ficha sozinha não basta); quem só tem patrimônio não lê NENHUMA pessoa. Logo, no
-// POST /patrimonio/bens (CriarSoLegivel), pessoa_id existente passa e pessoa_id inexistente cai no
-// 403 da FK: a rota deixa quem só tem patrimônio testar se um id de acessos_pessoas existe (uuid:
-// só se conhece quem já aparece num bem). Fica registrado aqui; a decisão é da Task 4.
+// Ruling 5.2-17 (M2 da revisão da Task 2): o pessoa_id dos bens aponta para acessos_pessoas, cuja regra
+// de Ler é is_acessos_admin() (papel admin ou módulo acessos; super pela ficha sozinha não basta);
+// quem só tem patrimônio não lê NENHUMA pessoa por essa regra. Logo, no POST /patrimonio/bens
+// (CriarSoLegivel) pessoa_id existente passa (201) e inexistente cai no 403 da FK, e no PATCH o
+// inexistente é 409: a rota deixa quem só tem patrimônio testar se um uuid de acessos_pessoas existe.
+// DECISÃO: aceitar. Quem tem patrimônio já lista TODAS as pessoas com id pela RPC
+// pessoas_para_escolher() (02-gatilhos.sql), então validar o pessoa_id contra a regra de Ler
+// impediria pôr responsável num bem (regressão) e o PostgREST de hoje já devolve esse erro. O custo,
+// se a decisão estivesse errada, é um oráculo de existência de uuid (não adivinhável) para quem já vê
+// a lista. A matriz do POST/PATCH está em TestBensEscrita.
 func TestPessoaDosBensForaDaRegraDeLerDeAcessosPessoas(t *testing.T) {
 	m := novoMundo(t, montarSondas)
-	for quem, quer := range map[string]string{"patGeral": "0", "patT1": "0", "patT2": "0", "frota": "0", "viewer": "0", "acessos": "2", "superFicha": "0"} {
+	for quem, quer := range map[string]string{"patGeral": "0", "patT1": "0", "patT2": "0", "frota": "0", "viewer": "0", "acessos": "2", "superFicha": "0", "adminT1": "2"} {
 		if st, corpo := m.Pedir(t, quem, "GET", "/pessoas-que-leio", ""); st != http.StatusOK || corpo != quer {
 			t.Errorf("%s lê %s pessoas (%d), esperava %s", quem, corpo, st, quer)
 		}
