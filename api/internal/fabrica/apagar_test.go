@@ -31,7 +31,7 @@ func (g *ghDeMentira) n() int {
 	return len(g.pedidos)
 }
 
-func novoGH(t *testing.T) (*ghDeMentira, *github.Cliente) {
+func novoGHApagar(t *testing.T) (*ghDeMentira, *github.Cliente) {
 	t.Helper()
 	g := &ghDeMentira{status: 202}
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -100,7 +100,7 @@ func existeNoBanco(m *mundoteste.Mundo, t *testing.T, tabela, id string) bool {
 
 func TestApagar(t *testing.T) {
 	t.Run("rodada gerando: banco, run cancelado e pasta; de novo é idempotente", func(t *testing.T) {
-		g, gh := novoGH(t)
+		g, gh := novoGHApagar(t)
 		dir := arquivosDoMundo(t, false)
 		m := mundoApagar(t, gh, dir)
 		st, corpo := m.Pedir(t, "fabricante", "POST", "/fabrica-apagar", corpoApagar(C1))
@@ -130,7 +130,7 @@ func TestApagar(t *testing.T) {
 	})
 
 	t.Run("rodada pronta: sem GitHub; criativo e arquivo somem", func(t *testing.T) {
-		g, gh := novoGH(t)
+		g, gh := novoGHApagar(t)
 		dir := arquivosDoMundo(t, false)
 		m := mundoApagar(t, gh, dir)
 		if st, corpo := m.Pedir(t, "fabricante", "POST", "/fabrica-apagar", corpoApagar(C2)); st != 200 {
@@ -148,7 +148,7 @@ func TestApagar(t *testing.T) {
 	})
 
 	t.Run("caminho vindo do banco fora da raiz nunca é tocado", func(t *testing.T) {
-		_, gh := novoGH(t)
+		_, gh := novoGHApagar(t)
 		dir := arquivosDoMundo(t, false)
 		m := mundoApagar(t, gh, dir)
 		for i, c := range []string{"../fora.txt", "/etc/hostname", C2 + "/../../fora.txt"} {
@@ -174,7 +174,7 @@ func TestApagar(t *testing.T) {
 	})
 
 	t.Run("pasta da rodada que é symlink para fora: o alvo fica", func(t *testing.T) {
-		_, gh := novoGH(t)
+		_, gh := novoGHApagar(t)
 		dir := arquivosDoMundo(t, true)
 		alvo := filepath.Join(dir, "externo", "produto", "s3-avista-1080x1080.png")
 		if err := os.MkdirAll(filepath.Dir(alvo), 0o755); err != nil {
@@ -199,7 +199,7 @@ func TestApagar(t *testing.T) {
 	})
 
 	t.Run("negados: GitHub 0, foto igual, arquivos no lugar", func(t *testing.T) {
-		g, gh := novoGH(t)
+		g, gh := novoGHApagar(t)
 		dir := arquivosDoMundo(t, false)
 		m := mundoApagar(t, gh, dir)
 		foto := m.Um(t, fotoDaFabrica)
@@ -226,7 +226,7 @@ func TestApagar(t *testing.T) {
 	})
 
 	t.Run("corpo", func(t *testing.T) {
-		g, gh := novoGH(t)
+		g, gh := novoGHApagar(t)
 		m := mundoApagar(t, gh, arquivosDoMundo(t, false))
 		foto := m.Um(t, fotoDaFabrica)
 		for corpo, quer := range map[string]string{
@@ -245,7 +245,7 @@ func TestApagar(t *testing.T) {
 	})
 
 	t.Run("banco que falha no meio: nada some, nem o arquivo", func(t *testing.T) {
-		g, gh := novoGH(t)
+		g, gh := novoGHApagar(t)
 		dir := arquivosDoMundo(t, false)
 		m := mundoApagar(t, gh, dir)
 		if _, err := m.P.Exec(context.Background(), `create function recusa_c2() returns trigger language plpgsql as
@@ -266,7 +266,7 @@ func TestApagar(t *testing.T) {
 	})
 
 	t.Run("disco e GitHub fora: o banco manda", func(t *testing.T) {
-		_, gh := novoGH(t)
+		_, gh := novoGHApagar(t)
 		lg := capturarLog(t)
 		m := mundoApagar(t, gh, filepath.Join(t.TempDir(), "não-existe"))
 		if st, corpo := m.Pedir(t, "fabricante", "POST", "/fabrica-apagar", corpoApagar(C2)); st != 200 {
@@ -276,7 +276,7 @@ func TestApagar(t *testing.T) {
 			t.Fatalf("C2 fora do banco e o log diz a causa: %s", lg)
 		}
 
-		g, gh := novoGH(t)
+		g, gh := novoGHApagar(t)
 		g.status = 500
 		m = mundoApagar(t, gh, arquivosDoMundo(t, false))
 		if st, corpo := m.Pedir(t, "fabricante", "POST", "/fabrica-apagar", corpoApagar(C1)); st != 200 {
