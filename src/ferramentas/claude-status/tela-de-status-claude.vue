@@ -333,7 +333,10 @@ const ROBOS = [
   { slug: 'fabrica-gerar',    label: 'Fábrica · Criar Criativos', faz: 'Cria as imagens (criativos) dos anúncios.', quando: 'quando você manda', verbo: 'Criou' },
   { slug: 'fabrica-subir',    label: 'Fábrica · Subir Campanha', faz: 'Monta a campanha e sobe os anúncios para o Meta.', quando: 'quando você manda', verbo: 'Subiu' },
   { slug: 'fabrica-ativar',   label: 'Fábrica · Ligar Anúncios', faz: 'Liga os anúncios no Gerenciador do Meta.', quando: 'quando você manda', verbo: 'Ligou' },
-  { slug: 'status-projetos',  label: 'Andamento dos Projetos', faz: 'Lê os planos e anota em que pé está cada projeto. O quadro saiu desta tela em 19/08/2026; ele segue guardando o andamento, que fica no banco.', quando: 'a cada mudança nos planos', verbo: 'Anotou' },
+  // Aposentado em 12/10/2026 (Plano 7, decisão da orquestradora da migração): o quadro
+  // que lia `projetos_status` saiu da tela em 19/08 e ninguém mais lia o que ele
+  // gravava. Fica na lista só para o histórico antigo continuar com nome; sem cartão.
+  { slug: 'status-projetos',  label: 'Andamento dos Projetos', aposentado: true, faz: 'Lia os planos e anotava em que pé estava cada projeto. Aposentado em 12/10/2026.', quando: '—', verbo: 'Anotou' },
   { slug: 'sugerir-interesses', label: 'Sugestões de Interesse', faz: 'Descobre os interesses de público de cada objetivo buscando no catálogo do Meta, e mostra na Fábrica.', quando: 'todo domingo de manhã', verbo: 'Sugeriu' },
 ]
 const META = Object.fromEntries(ROBOS.map(r => [r.slug, r]))
@@ -413,7 +416,7 @@ const kpis = computed(() => {
 const robosView = computed(() => {
   const ultimaPorRobo = {}
   for (const e of execucoes.value) if (!ultimaPorRobo[e.robo]) ultimaPorRobo[e.robo] = e // execucoes vem desc
-  const lista = ROBOS.map(r => ({ ...r, ult: ultimaPorRobo[r.slug] || null }))
+  const lista = ROBOS.filter(r => !r.aposentado).map(r => ({ ...r, ult: ultimaPorRobo[r.slug] || null }))
   return lista.sort((a, b) => {
     const ta = a.ult ? new Date(a.ult.run_at).getTime() : -1
     const tb = b.ult ? new Date(b.ult.run_at).getTime() : -1

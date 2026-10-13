@@ -170,6 +170,7 @@ var unicosDoWorker = []string{
 	"push_subs(endpoint)", "push_preferencias(user_id,tipo)", // Plano 5.1: inscrição de push e lote de preferências
 	// Plano 5.7: alvos de ON CONFLICT (tela, RPC e robô sugerir-interesses)
 	"gt_config_metricas(balde)", "gt_objetivo_interacao(alvo_id)", "gt_problemas_meta(ad_id,codigo)", "interesses_sugeridos(marca_id,objetivo)",
+	"acessos_perfis(nome)", // Plano 5.1: a tela regrava o perfil de mesmo nome pelo 409 deste único
 }
 
 // deduplicadoresDoWorker: `on conflict do nothing` sem alvo; é o índice único (parcial vale) que impede a
@@ -186,7 +187,7 @@ var funcoesDoWorker = []string{
 	"pode_ver_conta(text)",               // Plano 5.6
 	"gt_registrar_problemas(text,jsonb)", // Plano 5.7
 	// Plano 5.1: os gatilhos que as escritas de perfis, grupos e times presumem
-	"guard_profiles()", "impedir_autopromocao()", "espelhar_rename_do_grupo()", "equipes_toca_atualizado()",
+	"guard_profiles()", "impedir_autopromocao()", "espelhar_rename_do_grupo()", "espelhar_grupo_do_canal()", "equipes_toca_atualizado()",
 }
 
 // gatilhosDoWorker (nome, tabela): os gatilhos do 5.1 têm de existir NA tabela certa e não estar desabilitados

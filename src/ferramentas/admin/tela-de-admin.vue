@@ -220,6 +220,8 @@ import { estado, PERMISSION_TREE, RECURSOS } from '../../compartilhado/controle-
 // Chave `conta` (Plano 7): as edges do 5.0 (invite-user, entrar-como-usuario)
 // pela API em Go. O resto desta tela é a área `admin` (5.1).
 import { areaNaApi, corpoDaEdge } from '../../compartilhado/api.js'
+// Chave `admin` (Plano 7): as tabelas do 5.1 pela API (adFetch, gravar e os .from abaixo).
+import { tabelaNaApi, fetchPostgrest, deOnde } from '../../compartilhado/banco-pela-api.js'
 import { APROVACOES } from '../../compartilhado/catalogo-de-ferramentas.js'
 import { agruparRecursos, contarAcoes, estadoDaSelecao, marcarTudo } from './agrupar-permissoes.js'
 import { derivarFeatures } from '../../compartilhado/derivar-features.js'
@@ -422,7 +424,8 @@ const logoEscuroUrl = '/midia/LOGOTIPOBRENOBRANCO.png'
 /* ── Helpers copiados do legado (self-contidos) ── */
 function mkEl(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e }
 function adTok() { return estado.currentSession?.access_token || SUPABASE_ANON_KEY }
-function adFetch(path, opts = {}) { return fetch(`${SUPABASE_URL}/rest/v1/${path}`, { ...opts, headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${adTok()}`, 'Content-Type': 'application/json', ...(opts.headers || {}) } }) }
+// Tabela cuja área já fala com a API em Go (Plano 7): a mesma URL traduzida para a rota.
+function adFetch(path, opts = {}) { if (tabelaNaApi(String(path).split('?')[0])) return fetchPostgrest(path, opts); return fetch(`${SUPABASE_URL}/rest/v1/${path}`, { ...opts, headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${adTok()}`, 'Content-Type': 'application/json', ...(opts.headers || {}) } }) }
 function escHtml(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;') }
 function fmtN(n) { n = Number(n) || 0; const a = Math.abs(n); if (a >= 1e6) return (n / 1e6).toFixed(1).replace('.', ',') + ' mi'; if (a >= 1e3) return (n / 1e3).toFixed(1).replace('.', ',') + ' mil'; return String(n) }
 function fmtR(v) { const p = v.toFixed(2).split('.'); return 'R$ ' + p[0].replace(/\B(?=(\d{3})+(?!\d))/g, '.') + ',' + p[1] }
@@ -494,11 +497,11 @@ async function updateSaudeBadge() {
   // zeradas por semanas (comentário acima). Erro vai pro console: entre
   // desenhar informação errada e não desenhar nada, aqui vale mais não
   // desenhar — mas silenciar a falha por completo repetiria o bug original.
-  const { data: last, error: errLast } = await sbClient.from('data_integrity_checks')
+  const { data: last, error: errLast } = await deOnde(sbClient).from('data_integrity_checks')
     .select('checked_date').order('checked_date', { ascending: false }).limit(1)
   if (errLast) { console.error('updateSaudeBadge: falha ao ler data_integrity_checks', errLast); return }
   if (!last?.length) return
-  const { data: fails, error: errFails } = await sbClient.from('data_integrity_checks')
+  const { data: fails, error: errFails } = await deOnde(sbClient).from('data_integrity_checks')
     .select('id').eq('status', 'fail').eq('checked_date', last[0].checked_date)
   if (errFails) { console.error('updateSaudeBadge: falha ao ler falhas do dia', errFails); return }
   if (!fails?.length) return
@@ -888,8 +891,8 @@ async function loadAdminCanais() {
   try {
     const [rc, rt, rg] = await Promise.all([
       sbClient.from('bling_lojas').select('loja_id,nome,grupo,grupo_id,fechado_em').order('nome'),
-      sbClient.from('equipes').select('id,nome,canal_loja_id'),
-      sbClient.from('canais_grupos').select('id,nome').order('nome'),
+      deOnde(sbClient).from('equipes').select('id,nome,canal_loja_id'),
+      deOnde(sbClient).from('canais_grupos').select('id,nome').order('nome'),
     ])
     // Erro de leitura NÃO vira lista vazia: "nenhum canal" quando a leitura
     // falhou é a mentira mais cara que uma tela conta.
@@ -1240,7 +1243,7 @@ async function loadAdminEquipes(opcoes) {
       // As supervisoras do GRUPO. Elas não estão em `equipes_membros`: o alcance
       // delas é o grupo inteiro, e é por isso que moram noutra tabela.
       sb('canais_grupos_membros?select=id,grupo_id,profile_id,papel'),
-      sbClient.from('profiles').select(
+      deOnde(sbClient).from('profiles').select(
         'id,name,email,disabled,escopo_por_equipe,'
         + 'permissions,permissions_excecao,allowed_accounts,is_superadmin,perfil_id,role').order('name'),
     ])
@@ -1769,6 +1772,10 @@ async function loadAdminSaude() {
   const PERIODS = [0, 1, 7, 14, 30, 99]
   const post = async slug => { try { await fetch(SUPABASE_URL + '/functions/v1/' + slug, { method: 'POST', headers: { apikey: SUPABASE_ANON_KEY, Authorization: 'Bearer ' + (estado.currentSession?.access_token || SUPABASE_ANON_KEY), 'Content-Type': 'application/json' }, body: '{}' }) } catch (e) {} }
   const wire = () => {
+    // Chave `admin` (Plano 7): "coletar/auditar agora" não têm rota na API em Go
+    // (Ruling 30 do plano-mãe) — o worker coleta e audita no horário. Botão que
+    // não faz nada é a tela mentindo: sai.
+    if (areaNaApi('admin')) { body.querySelectorAll('.btn-fix, .btn-rev').forEach((b) => b.remove()); return }
     const fix = body.querySelector('.btn-fix')
     if (fix) fix.onclick = async () => { fix.disabled = true; const o = fix.textContent
       fix.textContent = '🔧 Coletando e corrigindo… (até ~1 min)'; await post('coletar-dados')
@@ -2299,6 +2306,8 @@ function _abaDeFerramentas(body, u) {
       // regravar o perfil muda o acesso de todo mundo que está nele. Por isso
       // este caminho passa OBRIGATORIAMENTE pela confirmação de impacto (D11).
       if (r.status === 409) { await _regravarPerfilExistente(nomeLimpo, novasPermissions, u); return }
+      // Pela API, criar perfil sem estar na lista de super-admins = 403 (Plano 7, 5.1).
+      if (areaNaApi('admin') && r.status === 403) { adminToast('O banco recusou a gravação: seu login não está na lista de super-admins do banco. Nada foi alterado.', false); return }
       if (!r.ok) { adminToast('Não consegui salvar o perfil', false); return }
       // Perfil recém-criado não tem ninguém dentro (`perfil_id` de ninguém
       // aponta pra ele ainda), então nenhum acesso de terceiro muda aqui. O que
@@ -2504,6 +2513,9 @@ async function _regravarPerfilExistente(nome, novasPermissions, u) {
       body: JSON.stringify({ permissions: novasPermissions }),
     })
   } catch { rG = null }
+  // Pela API (chave `admin`), quem não é super-admin pela LISTA DE E-MAILS recebe 403
+  // (o PostgREST devolvia 200 []): é o mesmo aviso de baixo, não um "não consegui".
+  if (areaNaApi('admin') && rG && rG.status === 403) { adminToast('O banco recusou a gravação: seu login não está na lista de super-admins do banco. Nada foi alterado.', false); return }
   if (!rG || !rG.ok) { adminToast('Não consegui regravar o perfil — ninguém foi alterado.', false); return }
   const linhasPerfil = await rG.json().catch(() => null)
   if (!Array.isArray(linhasPerfil) || linhasPerfil.length === 0) {
@@ -3687,7 +3699,7 @@ async function loadAdminUsers() {
     // `escopo_por_equipe` entrou em 12/08/2026: a chave "só os canais dos times
     // dela" virou linha do editor de permissões, e sem a coluna aqui ela
     // apareceria sempre marcada (o default restritivo) mesmo em quem vê tudo.
-    sbClient.from('profiles').select('id,email,name,role,is_superadmin,permissions,disabled,avatar_url,allowed_accounts,created_at,perfil_id,escopo_por_equipe'),
+    deOnde(sbClient).from('profiles').select('id,email,name,role,is_superadmin,permissions,disabled,avatar_url,allowed_accounts,created_at,perfil_id,escopo_por_equipe'),
     // `id`, `email_corporativo` e `conta_apple` entraram na etapa 2 e são
     // ESSENCIAIS: sem os dois e-mails, `estadoDoVinculo` não acha candidato
     // nenhum e a Raíssa — que TEM cadastro ativo com o e-mail idêntico ao
@@ -4297,7 +4309,7 @@ async function _mtSalvar(alvo, btn) {
 async function loadAdminRequests() {
   const body = document.getElementById('admin-requests-body')
   body.innerHTML = '<div style="color:var(--muted);font-size:max(9px, calc(12px * var(--escala-texto, 1)));padding:16px 0">Carregando...</div>'
-  const { data, error } = await sbClient.from('access_requests').select('*').order('created_at', { ascending: false })
+  const { data, error } = await deOnde(sbClient).from('access_requests').select('*').order('created_at', { ascending: false })
   if (error || !data) { body.innerHTML = '<div style="color:var(--red);font-size:max(9px, calc(12px * var(--escala-texto, 1)))">Erro ao carregar solicitações.</div>'; return }
   if (!data.length) { body.innerHTML = '<div style="color:var(--muted);font-size:max(9px, calc(12px * var(--escala-texto, 1)));padding:16px 0">Nenhuma solicitação de acesso.</div>'; return }
   const statusLabel = { pending: 'Pendente', approved: 'Aprovado', denied: 'Negado' }
@@ -4335,7 +4347,7 @@ async function loadAdminRequests() {
 // SENSITIVE MUTATION — aprova/nega solicitação de acesso real. Sem confirm()
 // no legado; nenhum foi adicionado aqui.
 async function handleRequest(id, status) {
-  await sbClient.from('access_requests').update({ status }).eq('id', id)
+  await deOnde(sbClient).from('access_requests').update({ status }).eq('id', id)
   loadAdminRequests()
 }
 
@@ -4519,7 +4531,10 @@ Object.assign(window, {
   /* `minmax(0,1fr)`, não `1fr` — o porquê está no bloco do zoom 2×, no fim
      deste mesmo `@media`. Em uma palavra: `1fr` sozinho não deixa a coluna
      encolher abaixo do conteúdo, e a tela vazava para fora da borda. */
-  .tela-admin :deep(.admin-layout){grid-template-columns:minmax(0,1fr);}
+  /* `auto 1fr`: com `min-height` de tela cheia e as duas linhas automáticas, a
+     sobra de uma seção curta (Solicitações, Contas) era dividida com a barra de
+     abas, que esticava a 232–287px no celular. Só o conteúdo cresce. */
+  .tela-admin :deep(.admin-layout){grid-template-columns:minmax(0,1fr);grid-template-rows:auto 1fr;}
   .tela-admin :deep(.admin-sidebar){display:flex;overflow-x:auto;border-right:none;border-bottom:1px solid var(--border);padding:8px;gap:4px;}
   .tela-admin :deep(.admin-nav-group-label){display:none;}
   /* O CELULAR ROLA A PÁGINA INTEIRA, e o conteúdo não tem teto de altura.

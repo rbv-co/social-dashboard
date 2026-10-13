@@ -23,7 +23,7 @@ type corpoGrupo struct {
 	Nome json.RawMessage `json:"nome,omitempty"`
 }
 
-// Validar (Ruling 5.1-13): nome em branco é 400. Renomear o grupo para "" dispara os gatilhos de
+// Validar (Ruling 5.1-15): nome em branco é 400. Renomear o grupo para "" dispara os gatilhos de
 // produção (espelhar_rename_do_grupo e espelhar_grupo_do_canal) e solta TODAS as lojas e a supervisora
 // em silêncio; hoje só o front barra. Ausente ou null seguem o caminho normal (400 de corpo vazio/NOT NULL).
 func (c corpoGrupo) Validar() error {
