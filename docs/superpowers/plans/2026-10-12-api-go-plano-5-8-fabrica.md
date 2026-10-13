@@ -1050,3 +1050,395 @@ func montarLeituras(r chi.Router, p *pgxpool.Pool) {
 - [ ] **Step 1:** Testes; ver falhar. - [ ] **Step 2:** Implementar (código de (a)). Se `dados.Consulta.Validar` recusar o `->>` dos filtros de `jobs`/`meta-jobs` (a gramática do 5.0 aceita operador e literal; se recusar, é defeito dela): **pare e reporte** — não troque por filtro no Go. - [ ] **Step 3:** `gofmt -l ./internal && go vet ./internal/fabrica/ && go test -count=1 ./internal/fabrica/` PASS; mutações reprovam. - [ ] **Step 4:** Commit `feat(api): leituras da Fábrica pelo catálogo (marcas por conta) e escolha de criativos numa transação` (+ `Co-Authored-By`).
 
 ---
+### Task 5: `POST /fabrica-trigger` — rodada e job numa transação, despacho fora dela
+
+**Revisor:** opus. **Depende de:** 2, 3.
+
+**(a) Contrato** (o da edge `supabase/functions/fabrica-trigger/index.ts`: mesmo corpo `{tipo, params}`, mesma resposta `{job_id, campanha_id}`, mesmos códigos — o front troca só a URL: gerar:95, conferir:25 e :39, subir:381, looks:58 —, com estas diferenças por Ruling)
+- Portão: `soFabricante` (a edge: papel admin, `is_superadmin` ou a chave `meta.fabrica`) + `soSessaoPropria` (o robô acordado gasta dinheiro e mexe na Meta em nome da pessoa: "entrar como" não dispara).
+- `tipo` ∈ `gerar|subir|ativar|preview` (a lista da edge, `index.ts:17`); fora = `400 {"error":"tipo_invalido"}`. `excluir`, que o `painel-conferir.vue:39` manda, continua recusado (Ruling 5.8-7, achado 2).
+- `params`: objeto (ausente/`null` = `{}`), até 64 KiB; `params.campanhaId`, quando vem não vazio, é uuid (o robô o põe na URL do REST: `fabrica-job-runner.mjs:168`); `nome` até 200 e `objetivo` até 40 caracteres. Fora disso = `400 pedido_invalido` com a frase. O resto de `params` (itens, destino, ids de anúncio) passa como está: é o protocolo do robô, que valida o seu (Ruling 5.8-6).
+- `GITHUB_PAT` vazio = `503 {"error":"github_nao_configurado"}` ANTES de gravar qualquer coisa (a edge criava a rodada e o job e só então falhava).
+- **Transação 1** (`banco.ComUsuario`): no `gerar` sem `campanhaId`, cria a rodada por `tabelaCampanhas.Criar` (catálogo `fab_camp_write`; `criado_por` da sessão; `nome` = o do pedido ou `Rodada · AAAA-MM-DD HH:MM` em UTC, como a edge; `status 'gerando'`; `objetivo` = o do pedido ou `engajamento`) e põe `campanhaId` e `objetivo` em `params`; insere o job (`fabrica_jobs`, que só a chave de serviço gravava: portão da edge, Ruling 5.8-3) com `status 'enfileirado'` e `criado_por` da sessão; liga a rodada nova ao job (`job_id`). Commit.
+- **Despacho FORA da transação** (`github.Disparar(ctx, "fabrica", {"job_id": …})`; nenhuma trava presa esperando o GitHub). Sucesso → `200 {"job_id": …, "campanha_id": <uuid|null>}`.
+- **Falha** (Ruling 5.8-5): **transação 2** marca o job `erro` (`erro = "<código> github: <classe> (<status>)"`) SÓ se ele ainda está `enfileirado` (se o robô já começou, ele é a verdade: `fabrica-job-runner.mjs:118`), e a rodada criada POR ESTE pedido como `erro` só se ainda `gerando` (a edge marcava também a rodada de um `subir`, que já estava pronta: Ruling 5.8-8). Contexto novo de 5 s (o do pedido pode ter vencido no despacho). Resposta por classe, `{"error": código, "detail": frase}` sem o corpo do GitHub: `Limite` → `429 muitas_tentativas` com `Retry-After`; `Incerto` → `504 dispatch_incerto`; `TokenInvalido`/`SemPermissao`/`NaoEncontrado`/`Recusado`/`Indisponivel`/`Inesperado` → `502 dispatch_falhou` com a frase de cada uma. Nenhuma repetição automática.
+
+```go
+package fabrica
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"slices"
+	"strconv"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rbv-co/social-dashboard/api/internal/autz"
+	"github.com/rbv-co/social-dashboard/api/internal/banco"
+	"github.com/rbv-co/social-dashboard/api/internal/dados"
+	"github.com/rbv-co/social-dashboard/api/internal/github"
+)
+
+// tiposDeJob: a lista da edge (fabrica-trigger/index.ts:17). "excluir" fica fora (Ruling 5.8-7).
+var tiposDeJob = []string{"gerar", "subir", "ativar", "preview"}
+
+var tabelaCampanhas = dados.Tabela{Nome: "fabrica_campanhas", Resposta: colunasCampanha, Autor: "criado_por"}
+
+type pedidoDisparo struct {
+	Tipo   string          `json:"tipo"`
+	Params json.RawMessage `json:"params"`
+}
+
+// lerParams: params é objeto (ausente ou null = {}), até 64 KiB; campanhaId, quando vem não vazio, é uuid
+// (o robô o põe na URL: fabrica-job-runner.mjs:168); nome até 200 e objetivo até 40 caracteres.
+func lerParams(bruto json.RawMessage) (map[string]json.RawMessage, string) {
+	params := map[string]json.RawMessage{}
+	if len(bruto) == 0 || nulo(bruto) {
+		return params, ""
+	}
+	if len(bruto) > 64<<10 {
+		return nil, "params passa de 64 KiB."
+	}
+	if !objeto(bruto) {
+		return nil, "params é um objeto."
+	}
+	if err := json.Unmarshal(bruto, &params); err != nil {
+		return nil, "params é um objeto."
+	}
+	vazio := func(v json.RawMessage) bool { return nulo(v) || string(v) == `""` }
+	if v, tem := params["campanhaId"]; tem && !vazio(v) && !casa(v, reUUID) {
+		return nil, "campanhaId é o id da rodada."
+	}
+	if v, tem := params["nome"]; tem && !nulo(v) && !textoAte(v, 200, true) {
+		return nil, "nome tem até 200 caracteres."
+	}
+	if v, tem := params["objetivo"]; tem && !nulo(v) && !textoAte(v, 40, true) {
+		return nil, "objetivo tem até 40 caracteres."
+	}
+	return params, ""
+}
+
+// Disparador: POST /fabrica-trigger. Portão (soFabricante, soSessaoPropria) na montagem.
+type Disparador struct {
+	Pool *pgxpool.Pool
+	GH   *github.Cliente
+}
+
+func (d *Disparador) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	e := autz.EscopoDo(r.Context())
+	if e == nil {
+		dados.Erro(w, http.StatusInternalServerError, "erro_interno", "")
+		return
+	}
+	var c pedidoDisparo
+	if !dados.LerCorpo(w, r, &c) {
+		return
+	}
+	if !slices.Contains(tiposDeJob, c.Tipo) {
+		responder(w, http.StatusBadRequest, map[string]string{"error": "tipo_invalido"})
+		return
+	}
+	params, motivo := lerParams(c.Params)
+	if motivo != "" {
+		dados.Erro(w, http.StatusBadRequest, "pedido_invalido", motivo)
+		return
+	}
+	if !d.GH.Configurado() { // antes de gravar: sem token nada nasce (Ruling 5.8-6)
+		responder(w, http.StatusServiceUnavailable, map[string]string{"error": "github_nao_configurado"})
+		return
+	}
+	ctx := r.Context()
+	campanha, _ := texto(params["campanhaId"])
+	criou := false
+	var job string
+	err := banco.ComUsuario(ctx, d.Pool, e.ID, func(tx pgx.Tx) error {
+		if c.Tipo == "gerar" && campanha == "" {
+			nome := "Rodada · " + time.Now().UTC().Format("2006-01-02 15:04")
+			if s, ok := texto(params["nome"]); ok && s != "" {
+				nome = s
+			}
+			objetivo := "engajamento"
+			if s, ok := texto(params["objetivo"]); ok && s != "" {
+				objetivo = s
+			}
+			linha, err := tabelaCampanhas.Criar(ctx, tx, autz.Producao, e,
+				map[string]any{"nome": nome, "status": "gerando", "objetivo": objetivo})
+			if err != nil {
+				return err
+			}
+			var nova struct {
+				ID string `json:"id"`
+			}
+			if err := json.Unmarshal(linha, &nova); err != nil || nova.ID == "" {
+				return fmt.Errorf("fabrica-trigger: rodada criada sem id: %v", err)
+			}
+			campanha, criou = nova.ID, true
+			params["campanhaId"], _ = json.Marshal(campanha)
+			params["objetivo"], _ = json.Marshal(objetivo)
+		}
+		j, err := json.Marshal(params)
+		if err != nil {
+			return err
+		}
+		// fabrica_jobs: só a chave de serviço gravava (fab_jobs_srv); o portão é o da edge (Ruling 5.8-3).
+		if err := tx.QueryRow(ctx, `insert into fabrica_jobs (tipo, params, status, criado_por)
+			values ($1::text, $2::jsonb, 'enfileirado', $3::uuid) returning id::text`,
+			c.Tipo, string(j), e.ID).Scan(&job); err != nil {
+			return err
+		}
+		if criou {
+			_, err = tx.Exec(ctx, `update fabrica_campanhas set job_id = $1::uuid where id = $2::uuid`, job, campanha)
+		}
+		return err
+	})
+	if err != nil {
+		dados.ErroDeEscrita(w, err)
+		return
+	}
+	var campanhaID any
+	if campanha != "" {
+		campanhaID = campanha
+	}
+	inicio := time.Now()
+	err = d.GH.Disparar(ctx, "fabrica", map[string]string{"job_id": job})
+	if err == nil {
+		slog.Info("fabrica-trigger: robô acordado", "tipo", c.Tipo, "job", job, "ms", time.Since(inicio).Milliseconds())
+		responder(w, http.StatusOK, map[string]any{"job_id": job, "campanha_id": campanhaID})
+		return
+	}
+	status, codigo, frase, espera := respostaDoDespacho(err)
+	slog.Warn("fabrica-trigger: despacho falhou", "tipo", c.Tipo, "job", job, "erro", err.Error(),
+		"ms", time.Since(inicio).Milliseconds())
+	ctx2, cancelar := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancelar()
+	if err := marcarFalha(ctx2, d.Pool, e.ID, job, campanha, criou, codigo+" "+err.Error()); err != nil {
+		slog.Error("fabrica-trigger: não marquei o job como erro", "job", job, "erro", err.Error())
+	}
+	if espera > 0 {
+		w.Header().Set("Retry-After", strconv.Itoa(int(espera.Round(time.Second).Seconds())))
+	}
+	responder(w, status, map[string]string{"error": codigo, "detail": frase})
+}
+
+// marcarFalha: o job SÓ se ainda enfileirado (o robô que já começou é a verdade) e a rodada que ESTE pedido
+// criou SÓ se ainda gerando. Sem isto ficariam "enfileirado"/"gerando" para sempre (a Home consulta a cada 4 s).
+func marcarFalha(ctx context.Context, p *pgxpool.Pool, quem, job, campanha string, criou bool, motivo string) error {
+	return banco.ComUsuario(ctx, p, quem, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `update fabrica_jobs set status = 'erro', erro = $2::text, updated_at = now()
+			where id = $1::uuid and status = 'enfileirado'`, job, motivo); err != nil {
+			return err
+		}
+		if !criou {
+			return nil
+		}
+		_, err := tx.Exec(ctx, `update fabrica_campanhas set status = 'erro' where id = $1::uuid and status = 'gerando'`, campanha)
+		return err
+	})
+}
+
+// respostaDoDespacho: o que a tela recebe por classe; nunca o corpo do GitHub (Ruling 5.8-5).
+func respostaDoDespacho(err error) (status int, codigo, frase string, espera time.Duration) {
+	var e *github.Erro
+	if !errors.As(err, &e) {
+		return http.StatusInternalServerError, "erro_interno", "", 0
+	}
+	switch e.Classe {
+	case github.Limite:
+		return http.StatusTooManyRequests, "muitas_tentativas", "O GitHub pediu para esperar antes de acordar o robô de novo.", e.EsperarAte
+	case github.Incerto:
+		return http.StatusGatewayTimeout, "dispatch_incerto",
+			"O GitHub não respondeu a tempo. Confira em Actions se o robô começou antes de disparar de novo.", 0
+	case github.TokenInvalido:
+		return http.StatusBadGateway, "dispatch_falhou", "O token do GitHub (GITHUB_PAT) venceu ou foi revogado.", 0
+	case github.SemPermissao:
+		return http.StatusBadGateway, "dispatch_falhou",
+			`O token do GitHub não pode disparar ação: falta "Actions: Read and write" no repositório.`, 0
+	case github.NaoEncontrado:
+		return http.StatusBadGateway, "dispatch_falhou",
+			"O GitHub não achou o fabrica.yml na branch main (ou o token não enxerga o repositório).", 0
+	case github.Recusado:
+		return http.StatusBadGateway, "dispatch_falhou", "O GitHub recusou o disparo: o fabrica.yml não aceita estas entradas.", 0
+	case github.Indisponivel:
+		return http.StatusBadGateway, "dispatch_falhou", "O GitHub está fora do ar. Tente de novo em alguns minutos.", 0
+	}
+	return http.StatusBadGateway, "dispatch_falhou", "Resposta inesperada do GitHub.", 0
+}
+```
+
+**(b) Testes de aceitação** (`disparo_test.go`; o GitHub de mentira é um `httptest.Server` que conta os pedidos, guarda o último corpo e, em cada pedido, lê pela pool `select status from fabrica_jobs where id = <job_id do corpo>` — o job tem de estar VISÍVEL, isto é, comitado; `gh := github.ParaTeste(t, "SEGREDO-pat", srv.URL)`; montagem do teste = a da Task 10: `r.With(soFabricante, soSessaoPropria).Post("/fabrica-trigger", (&Disparador{Pool: p, GH: gh}).ServeHTTP)`)
+- Gerar sem rodada: `fabricante` `{"tipo":"gerar","params":{"itens":[{"sku":"S1","deposito":"14888726315","pct":30}],"nome":"Rodada X","objetivo":"branding"}}` → 200 com `job_id` e `campanha_id`; efeito: a rodada `nome 'Rodada X'`, `status 'gerando'`, `objetivo 'branding'`, `criado_por = idFabricante`, `job_id = <job>`; o job `tipo 'gerar'`, `status 'enfileirado'`, `criado_por = idFabricante`, `params->>'campanhaId' = <rodada>`, `params->'itens'` intacto; o GitHub com 1 pedido `{"inputs":{"job_id":"<job>"},"ref":"main"}` e o job visível (`enfileirado`) no momento do pedido.
+- Gerar sem `nome` → rodada `Rodada · 20…` (prefixo e formato `AAAA-MM-DD HH:MM`); sem `objetivo` → `engajamento`. Subir `{"tipo":"subir","params":{"campanhaId":"<C2>","destino":{"tipo":"nova"}}}` → 200 `"campanha_id":"<C2>"`, nenhuma rodada nova; preview `{"tipo":"preview","params":{}}` → `"campanha_id":null`. `chaveEmLista`, `super`, `adminA1` → 200.
+- Negados, com **0 pedidos ao GitHub** e foto igual: `leitor`, `semModulo`, `roboSemFabrica` → 403 `sem_permissao`; `impersonado` → 403 com "Quem entrou como outra pessoa"; `desativado` → 401; `{"tipo":"excluir","params":{}}` → 400 `tipo_invalido`; `{"tipo":"x"}` → 400; `params` `[]`, `1` → 400; `campanhaId` `"abc"` → 400; `params` de 65 KiB → 400; campo desconhecido no topo → 400 `corpo_invalido`; `GITHUB_PAT` vazio (`github.Novo("")`) → 503 `github_nao_configurado`.
+- Falhas do GitHub (cada uma num mundo novo): 403 → 502 `dispatch_falhou` com `"detail"` contendo `Actions`, o job `erro` com `erro` começando por `dispatch_falhou github: sem_permissao (403)`, a rodada criada `erro`; 401 → 502 com `GITHUB_PAT` no `detail`; 404 → 502 com `fabrica.yml`; 429 + `Retry-After: 60` → 429 `muitas_tentativas` e cabeçalho `Retry-After: 60`; servidor que dorme além do prazo do cliente (`gh` com prazo de 50 ms: o teste troca por `ParaTeste` + o servidor dormindo 200 ms; ver Step 2) → 504 `dispatch_incerto`, job e rodada `erro`; nenhum corpo de resposta contém `SEGREDO`. Subir com 500 → 502 e C2 continua `pronta` (Ruling 5.8-8). Robô que já começou: o servidor de mentira faz `update fabrica_jobs set status = 'rodando'` antes de responder 500 → o job continua `rodando`.
+- Mutações que têm de reprovar: conferir o token DEPOIS da transação 1 (o caso 503 deixa job e rodada); despachar DENTRO da transação (o GitHub de mentira não acha o job); tirar `and status = 'enfileirado'` (o caso do robô que já começou vira `erro`); marcar a rodada sem olhar `criou` (C2 vira `erro` no subir); devolver o corpo do GitHub no `detail` (o `SEGREDO` do corpo de mentira aparece).
+
+**(c) Arquivos:** Create `api/internal/fabrica/disparo.go`, `api/internal/fabrica/disparo_test.go`.
+
+**(d) Dependências:** Tasks 2 e 3; `dados.Tabela.Criar`, `github.ParaTeste`.
+
+- [ ] **Step 1:** Testes; ver falhar. - [ ] **Step 2:** Implementar (código de (a)). O caso `Incerto` precisa de um cliente com prazo curto: acrescente em `github` o ajuste SÓ de teste `func (c *Cliente) ComPrazoDeTeste(t testing.TB, d time.Duration) *Cliente` (exige `loopback(c.base)`; derruba o teste se não for) — ou, mais simples, deixe o servidor de mentira fechar a conexão sem responder (`http.Hijacker` + `Close`), que o `net/http` devolve como erro de transporte depois de conectar: `Incerto`. Prefira a segunda (nada a mais no pacote). - [ ] **Step 3:** `gofmt -l ./internal && go vet ./internal/fabrica/ && go test -count=1 -race ./internal/fabrica/` PASS; mutações reprovam. - [ ] **Step 4:** Commit `feat(api): fabrica-trigger — rodada e job numa transação, robô acordado fora dela, falha que não deixa job pendurado` (+ `Co-Authored-By`).
+
+---
+
+### Task 6: `POST /fabrica-apagar` — banco, run cancelado e arquivos só dentro da raiz
+
+**Revisor:** opus. **Depende de:** 2, 3.
+
+**(a) Contrato** (o da edge `supabase/functions/fabrica-apagar/index.ts`: corpo `{campanhaId}`, resposta `{"ok":true}`, `400 {"error":"campanhaId_obrigatorio"}` — home:106 e :128 trocam só a URL —, com a ordem e o disco por Ruling 5.8-9)
+- Portão: `soFabricante` + `soSessaoPropria` (a edge: o mesmo trio). Regra do catálogo também: `autz.Producao.PodeApagar(…, "fabrica_campanhas", id)` na transação (`fab_camp_write`; o `cascade` leva os criativos, que têm a mesma regra).
+- `campanhaId` ausente, `null` ou `""` → `400 campanhaId_obrigatorio`; não-uuid → `400 campanhaId_invalido` (a edge devolvia `{"ok":true}` sem apagar nada, porque o PostgREST falhava e o `maybeSingle` dava nulo).
+- **O que apaga e em que ordem:**
+  1. **Transação** (`banco.ComUsuario`): trava a rodada (`for update`); não existe → `200 {"ok":true}` (idempotente, como a edge); `PodeApagar`; lê o `github_run_id` do job SE a rodada está `gerando` com `job_id`; lê os `storage_path` não vazios dos criativos; `delete from fabrica_campanhas` (os criativos vão pelo `on delete cascade`). Commit. O banco é a fonte da verdade: depois daqui a rodada não existe para ninguém.
+  2. **Cancelar o run** (melhor esforço, `github.Cancelar(ctx, "fabrica", runID)`; já terminado = sucesso): o robô que ainda estiver rodando grava em `fabrica_criativos` de uma rodada que não existe — a FK recusa e ele para.
+  3. **Arquivos** (melhor esforço): cada `storage_path` pela MESMA `apagar(raiz, c)` da purga (`filepath.IsLocal`, sem NUL, `os.Root` em `<ARQUIVOS_DIR>/fabrica-criativos`: caminho com `..`, absoluto ou symlink de diretório para fora é recusado; arquivo que já não existe conta como apagado) e, depois, `raiz.RemoveAll(<campanhaId>)` — a pasta da rodada, onde mora o que não tem linha (o `.mp4` do 16:9, `hero-ia.mjs:168`); o `campanhaId` é uuid conferido, e `os.Root` não segue symlink para fora. Falha de arquivo não volta o banco atrás: vai para o log (contagem e o erro de cada um) e sobra para a `faxina-fabrica` da VPS, que apaga o que não tem linha (INVENTARIO 2.1).
+- Segunda chamada com o mesmo id → `200 {"ok":true}`, sem GitHub e sem disco.
+
+```go
+package fabrica
+
+import (
+	"errors"
+	"log/slog"
+	"net/http"
+	"os"
+	"path/filepath"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rbv-co/social-dashboard/api/internal/autz"
+	"github.com/rbv-co/social-dashboard/api/internal/banco"
+	"github.com/rbv-co/social-dashboard/api/internal/dados"
+	"github.com/rbv-co/social-dashboard/api/internal/github"
+)
+
+// Apagador: POST /fabrica-apagar. Portão (soFabricante, soSessaoPropria) na montagem.
+type Apagador struct {
+	Pool     *pgxpool.Pool
+	GH       *github.Cliente
+	Arquivos string // ARQUIVOS_DIR: os criativos moram em <Arquivos>/fabrica-criativos/<storage_path>
+}
+
+type pedidoApagar struct {
+	CampanhaID *string `json:"campanhaId"`
+}
+
+func (a *Apagador) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	e := autz.EscopoDo(r.Context())
+	if e == nil {
+		dados.Erro(w, http.StatusInternalServerError, "erro_interno", "")
+		return
+	}
+	var c pedidoApagar
+	if !dados.LerCorpo(w, r, &c) {
+		return
+	}
+	if c.CampanhaID == nil || *c.CampanhaID == "" {
+		responder(w, http.StatusBadRequest, map[string]string{"error": "campanhaId_obrigatorio"})
+		return
+	}
+	id := *c.CampanhaID
+	if !reUUID.MatchString(id) {
+		responder(w, http.StatusBadRequest, map[string]string{"error": "campanhaId_invalido"})
+		return
+	}
+	ctx := r.Context()
+	achou := true
+	var runID string
+	var caminhos []string
+	err := banco.ComUsuario(ctx, a.Pool, e.ID, func(tx pgx.Tx) error {
+		var status string
+		var job *string
+		err := tx.QueryRow(ctx, `select status, job_id::text from fabrica_campanhas where id = $1::uuid for update`, id).
+			Scan(&status, &job)
+		if errors.Is(err, pgx.ErrNoRows) {
+			achou = false
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if err := autz.Producao.PodeApagar(ctx, tx, e, "fabrica_campanhas", id); err != nil {
+			return err
+		}
+		if status == "gerando" && job != nil {
+			err := tx.QueryRow(ctx, `select coalesce(github_run_id, '') from fabrica_jobs where id = $1::uuid`, *job).Scan(&runID)
+			if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+				return err
+			}
+		}
+		linhas, err := tx.Query(ctx, `select storage_path from fabrica_criativos
+			where campanha_id = $1::uuid and coalesce(storage_path, '') <> ''`, id)
+		if err != nil {
+			return err
+		}
+		if caminhos, err = pgx.CollectRows(linhas, pgx.RowTo[string]); err != nil {
+			return err
+		}
+		_, err = tx.Exec(ctx, `delete from fabrica_campanhas where id = $1::uuid`, id) // criativos: on delete cascade
+		return err
+	})
+	if err != nil {
+		dados.ErroDeEscrita(w, err)
+		return
+	}
+	if !achou {
+		responder(w, http.StatusOK, map[string]bool{"ok": true}) // idempotente (fabrica-apagar/index.ts:17)
+		return
+	}
+	// Depois do commit, melhor esforço (Ruling 5.8-9): o banco já é a verdade.
+	if runID != "" {
+		if err := a.GH.Cancelar(ctx, "fabrica", runID); err != nil {
+			slog.Warn("fabrica-apagar: não cancelei o run", "campanha", id, "erro", err.Error())
+		}
+	}
+	falhas := a.apagarArquivos(id, caminhos)
+	slog.Info("fabrica-apagar", "campanha", id, "arquivos", len(caminhos), "arquivos_com_erro", falhas, "cancelou_run", runID != "")
+	responder(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// apagarArquivos: cada caminho pela apagar da purga (mesma raiz, mesmo IsLocal) e a pasta da rodada.
+// Devolve quantos falharam; o que sobrar é da faxina-fabrica.
+func (a *Apagador) apagarArquivos(campanha string, caminhos []string) (falhas int) {
+	raiz, err := os.OpenRoot(filepath.Join(a.Arquivos, "fabrica-criativos"))
+	if err != nil {
+		slog.Error("fabrica-apagar: pasta-base inacessível; os arquivos ficam para a faxina", "erro", err.Error())
+		return len(caminhos) + 1
+	}
+	defer raiz.Close()
+	for _, c := range caminhos {
+		if err := apagar(raiz, c); err != nil {
+			falhas++
+			slog.Warn("fabrica-apagar: arquivo não apagado", "campanha", campanha, "erro", err.Error())
+		}
+	}
+	if err := raiz.RemoveAll(campanha); err != nil { // o que não tem linha (o .mp4 do 16:9) mora em <id>/
+		falhas++
+		slog.Warn("fabrica-apagar: pasta da rodada não apagada", "campanha", campanha, "erro", err.Error())
+	}
+	return falhas
+}
+```
+
+**(b) Testes de aceitação** (`apagar_test.go`; `dir := t.TempDir()` com `fabrica-criativos/` e os arquivos dos criativos do mundo, mais `fabrica-criativos/<C1>/produto/s1-avista-1920x1080.mp4` (sem linha) e `dir/fora.txt`; o GitHub de mentira conta os pedidos; montagem `r.With(soFabricante, soSessaoPropria).Post("/fabrica-apagar", (&Apagador{Pool: p, GH: gh, Arquivos: dir}).ServeHTTP)`)
+- Rodada gerando: `fabricante` `{"campanhaId":"<C1>"}` → 200 `{"ok":true}`; efeito: C1, K1 e K2 fora do banco (J1 fica: é histórico); `fabrica-criativos/<C1>` não existe mais (com o `.mp4`); o GitHub com 1 pedido `POST /repos/rbv-co/social-dashboard/actions/runs/111/cancel`. De novo → 200 `{"ok":true}`, 0 pedidos a mais, nada muda.
+- Rodada pronta (C2): sem pedido ao GitHub; K3 e o arquivo dela somem.
+- Caminho fora da raiz: antes, `insert` de criativos em C2 com `storage_path` `../fora.txt`, `/etc/hostname` e `<C2>/../../fora.txt` → 200 (o banco apagou), `dir/fora.txt` continua lá; o log tem "arquivo não apagado".
+- Symlink: `fabrica-criativos/<C3>` é um symlink para `dir/externo/` (com `produto/s3-avista-1080x1080.png` dentro) → apagar C3 → 200; `dir/externo/produto/s3-avista-1080x1080.png` continua existindo.
+- Negados, com GitHub 0, foto igual e todos os arquivos no lugar: `leitor`, `semModulo`, `roboSemFabrica` → 403; `impersonado` → 403 com a frase; `desativado` → 401.
+- Corpo: `{}` e `{"campanhaId":""}` → 400 `campanhaId_obrigatorio`; `{"campanhaId":"x"}` → 400 `campanhaId_invalido`; uuid inexistente → 200 `{"ok":true}` com 0 pedidos.
+- Disco e GitHub fora: `Arquivos` apontando para pasta que não existe → 200 e C2 fora do banco (o log diz "pasta-base inacessível"); GitHub respondendo 500 no cancelamento → 200 e C1 fora do banco.
+- Mutações que têm de reprovar: trocar `apagar(raiz, c)` por `os.Remove(filepath.Join(a.Arquivos, "fabrica-criativos", c))` (`dir/fora.txt` some); `os.RemoveAll(filepath.Join(...))` no lugar de `raiz.RemoveAll` (o arquivo de `dir/externo` some pelo symlink); responder 404 para rodada inexistente (a segunda chamada reprova); apagar os arquivos ANTES do commit e fazer o banco falhar (gatilho de teste que dá `raise` no delete) → os arquivos sumiram e a rodada ficou (o teste confere que, com o banco falhando, os arquivos continuam).
+
+**(c) Arquivos:** Create `api/internal/fabrica/apagar.go`, `api/internal/fabrica/apagar_test.go`.
+
+**(d) Dependências:** Tasks 2 e 3; `apagar` de `purga.go`; `autz.PodeApagar`.
+
+- [ ] **Step 1:** Testes; ver falhar. - [ ] **Step 2:** Implementar (código de (a)). - [ ] **Step 3:** `gofmt -l ./internal && go vet ./internal/fabrica/ && go test -count=1 -race ./internal/fabrica/` PASS (a purga continua verde); mutações reprovam. - [ ] **Step 4:** Commit `feat(api): fabrica-apagar — banco primeiro, run cancelado e arquivos só dentro da raiz, idempotente` (+ `Co-Authored-By`).
+
+---
