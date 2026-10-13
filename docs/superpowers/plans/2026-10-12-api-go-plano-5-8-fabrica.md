@@ -308,6 +308,7 @@ create table public.fabrica_looks (
 - Classes (`*Erro`; Ruling 5.8-5): 401 → `TokenInvalido`; 403 com `X-RateLimit-Remaining: 0` ou `Retry-After`, e 429 → `Limite` (`EsperarAte` de `Retry-After` ou `X-RateLimit-Reset`, padrão 1 min); outro 403 → `SemPermissao`; 404 → `NaoEncontrado`; 422 → `Recusado`; 5xx → `Indisponivel`; sem resposta: DNS ou conexão recusada → `Indisponivel` (o pedido não saiu), prazo/rede depois de conectar → `Incerto` (pode ter chegado); outro status → `Inesperado`. Nenhuma repetição automática: um despacho repetido acordaria o robô duas vezes (Ruling 5.8-5).
 - O corpo de resposta do GitHub é lido até 64 KiB e descartado; `Erro.Error()` = `github: <classe> (<status>)`: sem URL, sem token, sem corpo.
 - `config.Config.GitHubPAT` (`GITHUB_PAT`, aparado) entra em `Segredos()`.
+- `ParaTeste(t, token, base)`: o cliente apontando para um GitHub de mentira, para os testes de OUTROS pacotes (fabrica, 5.10). Recebe `testing.TB` (o tipo deixa explícito que é de teste) e recusa base que não seja loopback (`127.0.0.1`, `::1`, `localhost`): nem por engano aponta para um host de verdade (Ruling 5.8-4).
 
 ```go
 // Package github dispara workflows do GitHub Actions e cancela execuções com um token pessoal (PAT) que
@@ -327,11 +328,13 @@ import (
 	"maps"
 	"net"
 	"net/http"
+	"net/url"
 	"regexp"
 	"slices"
 	"strconv"
 	"strings"
 	"syscall"
+	"testing"
 	"time"
 )
 
@@ -400,6 +403,23 @@ func Novo(token string) *Cliente {
 		// nunca segue: o Authorization não pode ir a outro host (3xx vira Inesperado)
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}}
+}
+
+// ParaTeste: o cliente falando com um GitHub de mentira (httptest) — para os testes de outros pacotes
+// (fabrica, 5.10). Base que não é loopback derruba o teste: nunca aponta para um host de verdade.
+func ParaTeste(t testing.TB, token, base string) *Cliente {
+	t.Helper()
+	if !loopback(base) {
+		t.Fatalf("github.ParaTeste: base %q não é loopback", base)
+	}
+	c := Novo(token)
+	c.base = strings.TrimRight(base, "/")
+	return c
+}
+
+func loopback(base string) bool {
+	u, err := url.Parse(base)
+	return err == nil && u.Scheme == "http" && (u.Hostname() == "127.0.0.1" || u.Hostname() == "::1" || u.Hostname() == "localhost")
 }
 
 // Configurado: há token. Sem ele, quem chama responde 503 ANTES de gravar qualquer coisa.
@@ -540,6 +560,7 @@ E em `api/internal/config/config.go`: o campo `GitHubPAT string // GITHUB_PAT: t
 - `TestErrosPorClasse` (tabela): 204 → nil; 200 → nil; 401 → `TokenInvalido`; 403 → `SemPermissao`; 403 + `X-RateLimit-Remaining: 0` + `X-RateLimit-Reset: <agora+120>` → `Limite` com `EsperarAte` entre 100 s e 120 s; 429 + `Retry-After: 30` → `Limite` 30 s; 404 → `NaoEncontrado`; 422 → `Recusado`; 500 e 503 → `Indisponivel`; 302 com `Location: <outro httptest>` → `Inesperado` e o OUTRO servidor com **0 pedidos**; servidor que dorme 200 ms com `c.http.Timeout = 50ms` → `Incerto`; servidor fechado (`srv.Close()` antes) → `Indisponivel` (conexão recusada). Cada caso: `errors.As(err, &e)` e `e.Status`.
 - `TestCancelar`: `Cancelar(ctx, "fabrica", "123")` → `POST /repos/rbv-co/social-dashboard/actions/runs/123/cancel` sem corpo; 202 → nil; 409 → nil; 404 → `NaoEncontrado`; runID `"12/../../x"`, `""`, `"1a"` → `ErrEntrada` com 0 pedidos.
 - `TestTokenNuncaSai`: para cada classe da tabela acima, `err.Error()` não contém `SEGREDO-pat`, `srv.URL` nem o corpo que o servidor mandou (`{"message":"Bad credentials SEGREDO-corpo"}`); `slog` capturado (`slog.SetDefault` com um `TextHandler` num buffer durante o teste) não contém `SEGREDO`.
+- `TestParaTesteSoLoopback`: `loopback` recusa `https://api.github.com`, `http://10.0.0.1`, `https://127.0.0.1` e `http://127.0.0.1.exemplo.com`, e aceita `srv.URL`; `ParaTeste(t, …, srv.URL)` aponta para o servidor de mentira.
 - `config_test.go`: `GITHUB_PAT="  SEGREDO-x  "` → `GitHubPAT == "SEGREDO-x"` e `slices.Contains(c.Segredos(), "SEGREDO-x")`.
 - Mutações que têm de reprovar: tirar o `CheckRedirect` (o 302 entrega o token ao outro servidor: o caso conta 1 pedido lá); trocar `ErrEntrada` por aceitar entrada a mais (o `"ref":"evil"` chega ao GitHub); tirar o `&& limite` do 403 (o 403 comum vira `Limite`); tratar `Incerto` como `Indisponivel` (o caso do prazo reprova); tirar `c.GitHubPAT` de `Segredos()`.
 
