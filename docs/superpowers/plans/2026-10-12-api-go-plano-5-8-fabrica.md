@@ -1443,3 +1443,750 @@ func (a *Apagador) apagarArquivos(campanha string, caminhos []string) (falhas in
 - [ ] **Step 1:** Testes; ver falhar. - [ ] **Step 2:** Implementar (código de (a)). - [ ] **Step 3:** `gofmt -l ./internal && go vet ./internal/fabrica/ && go test -count=1 -race ./internal/fabrica/` PASS (a purga continua verde); mutações reprovam. - [ ] **Step 4:** Commit `feat(api): fabrica-apagar — banco primeiro, run cancelado e arquivos só dentro da raiz, idempotente` (+ `Co-Authored-By`).
 
 ---
+### Task 7: `POST /fabrica-candidatos` — o cálculo da edge, portado fiel, só com lojas da Fábrica
+
+**Revisor:** sonnet. **Depende de:** 3; 5.5 Task 1 (`gc_vendas_item`, `gc_estoque_item`, `gestao_comercial_briefings` no D0).
+
+**(a) Contrato** (o da edge `supabase/functions/fabrica-candidatos/index.ts`: corpo `{lojas, fonte, filtros}`, resposta `{"candidatos": [{sku, nome, categoria, porLoja: {<depósito>: {preco, pctPrevisto, precoComDesconto, estoque}}}]}`, `400 {"error":"fonte_invalida"}` — `use-candidatos.js:7` troca só a URL)
+- Portão: `soFabricante`. SÓ LEITURA: a sessão de "entrar como" passa (vê o que o alvo veria; Ruling 18 do mestre).
+- Lê como a edge lia (chave de serviço): `gc_*` SEM as restritivas `pode_ver_estoque`/`pode_ver_canal` do 5.5 — o resultado é agregado por SKU sobre as lojas da Fábrica, e recortar pela equipe de quem pede mudaria a lista de quem tem escopo por equipe (Ruling 5.8-10).
+- **Lojas só da Fábrica:** `lojas` (até 20, cada uma só dígitos) é filtrada por `fabrica_lojas` (na ordem do pedido, sem repetição); depósito fora da Fábrica é ignorado em TUDO — a edge o usava cru na leitura do estoque e no `porLoja`, o que deixava qualquer fabricante ler o estoque de qualquer depósito do Bling (Ruling 5.8-10).
+- `fonte` = `oportunidades|garimpo` (o bloco `dados_json[fonte]` do briefing mais recente: `order by rodada desc, created_at desc limit 1`; cada bloco casa a loja cujo NOME contém o texto `bloco.loja`, sem caixa, a primeira na ordem do pedido; item sem `sku` é pulado), `bcg|abc` (vendas dos canais das lojas + estoque dos depósitos; `abc`: faixa A/B/C pela soma acumulada ≤ 0,8 / ≤ 0,95, filtro `filtros.faixa`; `bcg`: quadrante de `bcgClass` em ALGUMA loja ∈ `filtros.quadrantes` — padrão Estrela, Vaca leiteira, Interrogação; `filtros.categoria` por substring sem caixa), `manual` (`filtros.termo` em produto ou SKU, sem caixa; primeira linha de cada SKU). `porLoja` de `bcg|abc|manual` só com as lojas de estoque > 0 (`preco`, `pctPrevisto`, `precoComDesconto` nulos).
+- **Sem o teto de 1000 do PostgREST:** a edge lia `gc_vendas_item` pelo REST, que corta em 1000 linhas sem avisar (a tabela tem 3591: `levantamento/07-linhas.csv:15`); a API lê tudo (achado 5).
+- Ordem determinística: a primeira aparição de cada SKU, com as vendas em `order by sku, canal_loja_id, mes`; `abc` reordena por faturamento (estável). A edge herdava a ordem das chaves de objeto do JavaScript (SKU numérico antes, crescente): o conteúdo é o mesmo, a ordem pode mudar (a tela mostra na ordem que chega).
+- `filtros` é objeto com `faixa`, `quadrantes`, `categoria` e `termo` em texto (lista de texto em `quadrantes`); outro formato = `400 pedido_invalido`.
+
+```go
+package fabrica
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"math"
+	"net/http"
+	"regexp"
+	"slices"
+	"sort"
+	"strconv"
+	"strings"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rbv-co/social-dashboard/api/internal/dados"
+)
+
+var reDeposito = regexp.MustCompile(`^[0-9]{1,18}$`)
+
+type pedidoCandidatos struct {
+	Lojas   []string        `json:"lojas"`
+	Fonte   string          `json:"fonte"`
+	Filtros json.RawMessage `json:"filtros"`
+}
+
+type filtrosCandidatos struct {
+	Faixa      string    `json:"faixa"`
+	Quadrantes *[]string `json:"quadrantes"`
+	Categoria  string    `json:"categoria"`
+	Termo      string    `json:"termo"`
+}
+
+// candidato: o formato da edge. sku/nome/categoria vêm crus do briefing (texto, número ou nulo); ausente
+// some do JSON, como o JSON.stringify da edge fazia com undefined.
+type candidato struct {
+	SKU       json.RawMessage            `json:"sku"`
+	Nome      json.RawMessage            `json:"nome,omitempty"`
+	Categoria json.RawMessage            `json:"categoria,omitempty"`
+	PorLoja   map[string]json.RawMessage `json:"porLoja"`
+}
+
+type lojaDaFabrica struct {
+	deposito, nome string
+	canal          *string
+}
+
+// Candidatos: POST /fabrica-candidatos. Portão (soFabricante) na montagem; só lê.
+type Candidatos struct{ Pool *pgxpool.Pool }
+
+func (cs *Candidatos) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	var c pedidoCandidatos
+	if !dados.LerCorpo(w, r, &c) {
+		return
+	}
+	var f filtrosCandidatos
+	if len(c.Filtros) > 0 && !nulo(c.Filtros) {
+		if !objeto(c.Filtros) || json.Unmarshal(c.Filtros, &f) != nil {
+			dados.Erro(w, http.StatusBadRequest, "pedido_invalido", "filtros é um objeto com faixa, quadrantes, categoria e termo.")
+			return
+		}
+	}
+	if len(c.Lojas) > 20 {
+		dados.Erro(w, http.StatusBadRequest, "pedido_invalido", "No máximo 20 lojas.")
+		return
+	}
+	for _, l := range c.Lojas {
+		if !reDeposito.MatchString(l) {
+			dados.Erro(w, http.StatusBadRequest, "pedido_invalido", "lojas são ids de depósito.")
+			return
+		}
+	}
+	if !slices.Contains([]string{"oportunidades", "garimpo", "bcg", "abc", "manual"}, c.Fonte) {
+		responder(w, http.StatusBadRequest, map[string]string{"error": "fonte_invalida"})
+		return
+	}
+	ctx := r.Context()
+	lojas, err := lojasDaFabrica(ctx, cs.Pool, c.Lojas)
+	var out []candidato
+	if err == nil {
+		switch c.Fonte {
+		case "oportunidades", "garimpo":
+			out, err = doBriefing(ctx, cs.Pool, c.Fonte, lojas)
+		case "bcg", "abc":
+			out, err = deVendas(ctx, cs.Pool, c.Fonte, lojas, f)
+		default:
+			out, err = manual(ctx, cs.Pool, lojas, f)
+		}
+	}
+	if err != nil {
+		dados.ErroDoBanco(w, err)
+		return
+	}
+	if out == nil {
+		out = []candidato{}
+	}
+	responder(w, http.StatusOK, map[string]any{"candidatos": out})
+}
+
+// lojasDaFabrica: as pedidas que existem em fabrica_lojas, na ordem do pedido e sem repetição (Ruling 5.8-10).
+func lojasDaFabrica(ctx context.Context, p *pgxpool.Pool, pedidas []string) ([]lojaDaFabrica, error) {
+	linhas, err := p.Query(ctx, `select deposito_id, nome, canal_loja_id from fabrica_lojas where deposito_id = any($1::text[])`, pedidas)
+	if err != nil {
+		return nil, err
+	}
+	cfg := map[string]lojaDaFabrica{}
+	var l lojaDaFabrica
+	if _, err := pgx.ForEachRow(linhas, []any{&l.deposito, &l.nome, &l.canal}, func() error {
+		cfg[l.deposito] = l
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	var out []lojaDaFabrica
+	for _, d := range pedidas {
+		if x, ok := cfg[d]; ok {
+			out = append(out, x)
+			delete(cfg, d)
+		}
+	}
+	return out, nil
+}
+
+func depositos(lojas []lojaDaFabrica) []int64 {
+	var out []int64
+	for _, l := range lojas {
+		if n, err := strconv.ParseInt(l.deposito, 10, 64); err == nil {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+func canais(lojas []lojaDaFabrica) []int64 {
+	var out []int64
+	for _, l := range lojas {
+		if l.canal != nil {
+			if n, err := strconv.ParseInt(*l.canal, 10, 64); err == nil {
+				out = append(out, n)
+			}
+		}
+	}
+	return out
+}
+
+// estoques: "<depósito>|<sku>" → saldo, só dos depósitos da Fábrica pedidos.
+func estoques(ctx context.Context, p *pgxpool.Pool, lojas []lojaDaFabrica) (map[string]int64, error) {
+	linhas, err := p.Query(ctx, `select deposito_id::text, sku, saldo::bigint from gc_estoque_item
+		where deposito_id = any($1::bigint[])`, depositos(lojas))
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]int64{}
+	var dep, sku string
+	var saldo int64
+	_, err = pgx.ForEachRow(linhas, []any{&dep, &sku, &saldo}, func() error {
+		out[dep+"|"+sku] = saldo
+		return nil
+	})
+	return out, err
+}
+
+func porLojaDoEstoque(lojas []lojaDaFabrica, est map[string]int64, sku string) map[string]json.RawMessage {
+	out := map[string]json.RawMessage{}
+	for _, l := range lojas {
+		if n := est[l.deposito+"|"+sku]; n > 0 {
+			out[l.deposito], _ = json.Marshal(map[string]any{"preco": nil, "pctPrevisto": nil, "precoComDesconto": nil, "estoque": n})
+		}
+	}
+	return out
+}
+
+// bcgClass: a de supabase/functions/fabrica-candidatos/index.ts:4-10 (espelho do lib do coletor). Com d = 0
+// (gc_* não tem a data da última venda), "recente" é sempre verdadeiro: Abacaxi nunca sai, como na edge.
+func bcgClass(e, g, d float64) string {
+	st := g / math.Max(1, g+e)
+	recente := !math.IsNaN(d) && !math.IsInf(d, 0) && d <= 21
+	switch {
+	case g > 0 && st >= 0.5:
+		return "Estrela"
+	case g > 0 && st >= 0.25:
+		return "Vaca leiteira"
+	case recente || g > 0:
+		return "Interrogação"
+	}
+	return "Abacaxi"
+}
+
+// textoJS: String(x) do JavaScript para o que a edge comparava (bloco.loja).
+func textoJS(v json.RawMessage) string {
+	if len(v) == 0 {
+		return "undefined"
+	}
+	if s, ok := texto(v); ok {
+		return s
+	}
+	return string(v)
+}
+
+func doBriefing(ctx context.Context, p *pgxpool.Pool, fonte string, lojas []lojaDaFabrica) ([]candidato, error) {
+	var bruto []byte
+	err := p.QueryRow(ctx, `select dados_json -> $1::text from gestao_comercial_briefings
+		order by rodada desc, created_at desc limit 1`, fonte).Scan(&bruto)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var blocos []struct {
+		Loja  json.RawMessage              `json:"loja"`
+		Itens []map[string]json.RawMessage `json:"itens"`
+	}
+	if len(bruto) == 0 || json.Unmarshal(bruto, &blocos) != nil {
+		return nil, nil // sem o bloco ou fora do formato [{loja, itens}]: nada (a edge quebraria com 500)
+	}
+	idx := map[string]int{}
+	var out []candidato
+	campos := [][2]string{{"precoOriginal", "preco"}, {"pct", "pctPrevisto"}, {"precoComDesconto", "precoComDesconto"}, {"estoqueLoja", "estoque"}}
+	for _, b := range blocos {
+		alvo := strings.ToLower(textoJS(b.Loja))
+		dep := ""
+		for _, l := range lojas {
+			if strings.Contains(strings.ToLower(l.nome), alvo) {
+				dep = l.deposito
+				break
+			}
+		}
+		if dep == "" {
+			continue
+		}
+		for _, it := range b.Itens {
+			sku, tem := it["sku"]
+			if !tem || nulo(sku) {
+				continue
+			}
+			chave := textoJS(sku)
+			i, visto := idx[chave]
+			if !visto {
+				i, idx[chave] = len(out), len(out)
+				out = append(out, candidato{SKU: sku, Nome: it["descricao"], Categoria: it["categoria"], PorLoja: map[string]json.RawMessage{}})
+			}
+			info := map[string]json.RawMessage{}
+			for _, c := range campos {
+				if v, tem := it[c[0]]; tem {
+					info[c[1]] = v
+				}
+			}
+			out[i].PorLoja[dep], _ = json.Marshal(info)
+		}
+	}
+	return out, nil
+}
+
+type agregado struct {
+	sku                    string
+	nome, categoria        *string
+	faturamento, unidades  float64
+}
+
+func deVendas(ctx context.Context, p *pgxpool.Pool, fonte string, lojas []lojaDaFabrica, f filtrosCandidatos) ([]candidato, error) {
+	est, err := estoques(ctx, p, lojas)
+	if err != nil {
+		return nil, err
+	}
+	linhas, err := p.Query(ctx, `select sku, produto, categoria, unidades::float8, faturamento::float8 from gc_vendas_item
+		where canal_loja_id = any($1::bigint[]) order by sku, canal_loja_id, mes`, canais(lojas))
+	if err != nil {
+		return nil, err
+	}
+	var arr []*agregado
+	idx := map[string]*agregado{}
+	var sku string
+	var nome, categoria *string
+	var un, fat float64
+	if _, err := pgx.ForEachRow(linhas, []any{&sku, &nome, &categoria, &un, &fat}, func() error {
+		a := idx[sku]
+		if a == nil {
+			a = &agregado{sku: sku, nome: nome, categoria: categoria}
+			idx[sku] = a
+			arr = append(arr, a)
+		}
+		a.faturamento += fat
+		a.unidades += un
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	if fonte == "abc" {
+		sort.SliceStable(arr, func(i, j int) bool { return arr[i].faturamento > arr[j].faturamento })
+		total := 0.0
+		for _, a := range arr {
+			total += a.faturamento
+		}
+		if total == 0 {
+			total = 1
+		}
+		acc, filtrados := 0.0, arr[:0]
+		for _, a := range arr {
+			acc += a.faturamento
+			faixa := "C"
+			if p := acc / total; p <= 0.8 {
+				faixa = "A"
+			} else if p <= 0.95 {
+				faixa = "B"
+			}
+			if f.Faixa == "" || f.Faixa == faixa {
+				filtrados = append(filtrados, a)
+			}
+		}
+		arr = filtrados
+	} else {
+		quads := []string{"Estrela", "Vaca leiteira", "Interrogação"}
+		if f.Quadrantes != nil {
+			quads = *f.Quadrantes
+		}
+		filtrados := arr[:0]
+		for _, a := range arr {
+			noQuadrante := slices.ContainsFunc(lojas, func(l lojaDaFabrica) bool {
+				return slices.Contains(quads, bcgClass(float64(est[l.deposito+"|"+a.sku]), a.unidades, 0))
+			})
+			cat := ""
+			if a.categoria != nil {
+				cat = *a.categoria
+			}
+			if noQuadrante && (f.Categoria == "" || strings.Contains(strings.ToLower(cat), strings.ToLower(f.Categoria))) {
+				filtrados = append(filtrados, a)
+			}
+		}
+		arr = filtrados
+	}
+	out := make([]candidato, 0, len(arr))
+	for _, a := range arr {
+		s, _ := json.Marshal(a.sku)
+		n, _ := json.Marshal(a.nome)
+		c, _ := json.Marshal(a.categoria)
+		out = append(out, candidato{SKU: s, Nome: n, Categoria: c, PorLoja: porLojaDoEstoque(lojas, est, a.sku)})
+	}
+	return out, nil
+}
+
+func manual(ctx context.Context, p *pgxpool.Pool, lojas []lojaDaFabrica, f filtrosCandidatos) ([]candidato, error) {
+	est, err := estoques(ctx, p, lojas)
+	if err != nil {
+		return nil, err
+	}
+	linhas, err := p.Query(ctx, `select sku, produto, categoria from gc_vendas_item
+		where canal_loja_id = any($1::bigint[]) order by sku, canal_loja_id, mes`, canais(lojas))
+	if err != nil {
+		return nil, err
+	}
+	termo := strings.ToLower(f.Termo)
+	visto := map[string]bool{}
+	var out []candidato
+	var sku string
+	var produto, categoria *string
+	_, err = pgx.ForEachRow(linhas, []any{&sku, &produto, &categoria}, func() error {
+		nome := ""
+		if produto != nil {
+			nome = *produto
+		}
+		if visto[sku] || !(termo == "" || strings.Contains(strings.ToLower(nome), termo) || strings.Contains(strings.ToLower(sku), termo)) {
+			return nil
+		}
+		visto[sku] = true
+		s, _ := json.Marshal(sku)
+		n, _ := json.Marshal(produto)
+		c, _ := json.Marshal(categoria)
+		out = append(out, candidato{SKU: s, Nome: n, Categoria: c, PorLoja: porLojaDoEstoque(lojas, est, sku)})
+		return nil
+	})
+	return out, err
+}
+```
+
+**(b) Testes de aceitação** (`candidatos_test.go`; dados do teste, além do mundo: `gc_estoque_item` (14888726315,S1,2), (14888726315,S2,0), (14888726277,S2,5), (14888726277,S3,1), (99999,S1,50); `gc_vendas_item` canal 205834140: (2026-09,S1,'Bolsa Um','Bolsas',3,300), (2026-08,S1,'Bolsa Um','Bolsas',1,100), (2026-09,S2,'Carteira','Acessórios',1,50); canal 205834116: (2026-09,S3,'Mochila','Bolsas',0,0), (2026-09,S2,'Carteira','Acessórios',1,50); dois briefings, o mais novo com `{"oportunidades":[{"loja":"tivoli","itens":[{"sku":"S1","descricao":"Bolsa 1","categoria":"Bolsas","precoOriginal":100,"pct":30,"precoComDesconto":70,"estoqueLoja":2}]},{"loja":"Shopping X","itens":[{"sku":"S9"}]}],"garimpo":[{"loja":"iguatemi","itens":[{"sku":"S2","descricao":"Carteira"}]}]}` e o mais velho com outra lista em `oportunidades`. `T` = Tivoli 14888726315, `I` = Iguatemi 14888726277)
+- `abc` (`lojas [T, I]`, `filtros {"faixa":"A"}`) → só S1 (400 de 500 = 0,8), `porLoja` só com T (`"estoque":2`); sem `faixa` → S1, S2, S3 nessa ordem.
+- `bcg` padrão → S1, S2, S3; `quadrantes ["Estrela"]` → S1, S2; `["Vaca leiteira"]` → S2 (em I: 2/7); `categoria "bolsa"` → S1, S3; `quadrantes []` → `[]` (lista vazia é lista, como na edge).
+- `manual` `termo "carteira"` → S2 com `porLoja {"I": {"estoque":5, …}}`; `termo "s3"` → S3; sem termo → S1, S2, S3.
+- `oportunidades` (`lojas [T, I]`) → S1 com `porLoja {"T": {"preco":100,"pctPrevisto":30,"precoComDesconto":70,"estoque":2}}` (o briefing MAIS NOVO); S9 não sai (nenhuma loja tem "Shopping X" no nome); `lojas [I]` → `[]`. `garimpo` → S2 com `porLoja {"I": {}}`.
+- Loja fora da Fábrica: `manual` com `lojas ["99999"]` → `[]`; com `[T, "99999"]` → S1 com `porLoja` sem `"99999"` (o saldo 50 nunca aparece).
+- Sem briefing nenhum → `{"candidatos":[]}`; `dados_json` com `oportunidades` = objeto em vez de lista → `[]`.
+- Portão: `leitor`, `semModulo`, `roboSemFabrica` → 403; `impersonado` → 200 (só lê); `desativado` → 401.
+- 400: `fonte "x"` → `{"error":"fonte_invalida"}`; `lojas ["abc"]`, 21 lojas, `filtros "x"`, `filtros {"faixa": 1}` → `pedido_invalido`.
+- Mais de 1000 linhas: 1200 vendas de SKUs distintos no canal de T, cada um com estoque → `manual` devolve 1200 candidatos (a edge devolvia no máximo 1000).
+- Mutações que têm de reprovar: usar `c.Lojas` cru em `estoques` (o `"99999"` aparece); `sort.Slice` não estável com faturamentos iguais (S2/S3 empatados em outro caso de teste com faturamento igual trocam de lugar: inclua dois SKUs com o mesmo faturamento e confira a ordem); tirar o `created_at desc` da ordem do briefing não muda nada aqui — não é mutação (a `rodada` decide).
+
+**(c) Arquivos:** Create `api/internal/fabrica/candidatos.go`, `api/internal/fabrica/candidatos_test.go`.
+
+**(d) Dependências:** Task 3; a fatia do 5.5.
+
+- [ ] **Step 1:** Testes; ver falhar. - [ ] **Step 2:** Implementar (código de (a)). - [ ] **Step 3:** `gofmt -l ./internal && go vet ./internal/fabrica/ && go test -count=1 -run 'TestCandidatos|TestBcg' ./internal/fabrica/` PASS; mutações reprovam. - [ ] **Step 4:** Commit `feat(api): fabrica-candidatos — o cálculo da edge em Go, só com lojas da Fábrica e sem o corte de 1000 linhas` (+ `Co-Authored-By`).
+
+---
+
+### Task 8: `POST /fabrica-looks` e `POST /fabrica-publicos`
+
+**Revisor:** sonnet. **Depende de:** 3.
+
+**(a) Contrato** (os das edges `fabrica-looks/index.ts` e `fabrica-publicos/index.ts`: mesmos corpos, respostas e códigos — looks:23, :38, :48, :53 e subir:294, :303 trocam só a URL —, com as diferenças por Ruling)
+- Portão das duas: `soFabricante` + `soSessaoPropria`. As duas tabelas só a chave de serviço gravava (sem policy de escrita para `authenticated`: `fabrica_looks` e `fabrica_publicos` só têm leitura): portão da edge + SQL explícito em `banco.ComUsuario` (Ruling 5.8-3).
+- `fabrica-looks`, `acao`:
+  - `salvar` `{look: {chave, nome?, objetivos?, ativo?}}` → muda só o que veio; `chave` ausente = `400 {"error":"chave_obrigatoria"}`; `nome` texto 1–120; `objetivos` lista de até 10 textos `^[a-z_]{1,40}$`; `ativo` booleano; nada além de `chave` = `400 corpo_invalido`. Chave inexistente → `{"ok":true}` (a edge: update de 0 linhas).
+  - `ordenar` `{ordem: [{chave, ordem}]}` (até 200; item sem `chave` é pulado; `ordem` ausente = 0, como a edge) → numa transação só (a edge fazia um update por item, sem transação: metade podia ficar gravada) → `{"ok":true}`.
+  - `excluir` `{chave, excluido?}` → `excluido` = `true` salvo `false` explícito (a edge: `body.excluido !== false`) → `{"ok":true,"excluido":<bool>}`; sem `chave` → `400 chave_obrigatoria`.
+  - `sync` → `400 {"error":"acao_invalida"}`: ninguém chama (nem a tela nem o `coletor/`); rota sem tela não entra (Ruling 5.8-12).
+  - `chave` de look: `^[a-z0-9][a-z0-9_-]{0,79}$`.
+- `fabrica-publicos`, `acao`:
+  - `apagar` `{id}` → `id` ausente = `400 {"error":"id_obrigatorio"}`; não-uuid = `400 pedido_invalido`; apaga → `{"ok":true}` (também sem linha: idempotente).
+  - `salvar` `{preset: {id?, nome, marca_id?, geo?, idade_min?, idade_max?, generos?, interesses?, custom_audiences?}}` → `nome` ausente = `400 {"error":"nome_obrigatorio"}`; a linha da edge (`marca_id` nulo se ausente, `geo {}`, idades 18/65, listas vazias, `criado_por` da sessão — também no update, como a edge); com `id` → update (id inexistente = `404 nao_encontrado`; a edge dava 500 `salvar_falhou`), sem `id` → insert; resposta `{"id": …}`. Tipos: `geo` objeto, idades inteiras 13–65 com `idade_min ≤ idade_max`, `generos` lista de 1 e 2, `interesses`/`custom_audiences` listas, `marca_id` uuid ou nulo. A tela manda `geo` com `cities`, `excluded`, `countries`, `regions`, `pins` (subir:276-283): passa como está (é o protocolo do robô, `coletor/lib/publico.mjs`).
+
+```go
+package fabrica
+
+import (
+	"encoding/json"
+	"errors"
+	"net/http"
+	"regexp"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rbv-co/social-dashboard/api/internal/autz"
+	"github.com/rbv-co/social-dashboard/api/internal/banco"
+	"github.com/rbv-co/social-dashboard/api/internal/dados"
+)
+
+var (
+	reChaveLook = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,79}$`)
+	reObjetivo  = regexp.MustCompile(`^[a-z_]{1,40}$`)
+)
+
+// Curadoria: POST /fabrica-looks e POST /fabrica-publicos. Portão (soFabricante, soSessaoPropria) na montagem.
+type Curadoria struct{ Pool *pgxpool.Pool }
+
+type pedidoLooks struct {
+	Acao     string          `json:"acao"`
+	Look     json.RawMessage `json:"look"`
+	Ordem    []itemDeOrdem   `json:"ordem"`
+	Chave    json.RawMessage `json:"chave"`
+	Excluido json.RawMessage `json:"excluido"`
+}
+
+type itemDeOrdem struct {
+	Chave json.RawMessage `json:"chave"`
+	Ordem *int            `json:"ordem"`
+}
+
+type lookSalvar struct {
+	Chave     json.RawMessage `json:"chave"`
+	Nome      json.RawMessage `json:"nome"`
+	Objetivos json.RawMessage `json:"objetivos"`
+	Ativo     json.RawMessage `json:"ativo"`
+}
+
+// errPedido: entrada inválida descoberta dentro da transação (400 com a frase).
+type errPedido struct{ frase string }
+
+func (e errPedido) Error() string { return e.frase }
+
+func objetivosValidos(v json.RawMessage) ([]string, bool) {
+	var l []string
+	if !lista(v) || json.Unmarshal(v, &l) != nil || len(l) > 10 {
+		return nil, false
+	}
+	for _, o := range l {
+		if !reObjetivo.MatchString(o) {
+			return nil, false
+		}
+	}
+	return l, true
+}
+
+func (cu *Curadoria) Looks(w http.ResponseWriter, r *http.Request) {
+	e := autz.EscopoDo(r.Context())
+	if e == nil {
+		dados.Erro(w, http.StatusInternalServerError, "erro_interno", "")
+		return
+	}
+	var c pedidoLooks
+	if !dados.LerCorpo(w, r, &c) {
+		return
+	}
+	ctx := r.Context()
+	var resposta any = map[string]bool{"ok": true}
+	var corpoRuim string
+	trabalho := func(tx pgx.Tx) error { return nil }
+	switch c.Acao {
+	case "salvar":
+		var l lookSalvar
+		if len(c.Look) == 0 || nulo(c.Look) || json.Unmarshal(c.Look, &l) != nil || !objeto(c.Look) {
+			corpoRuim = "look é um objeto."
+			break
+		}
+		if len(l.Chave) == 0 || nulo(l.Chave) {
+			responder(w, http.StatusBadRequest, map[string]string{"error": "chave_obrigatoria"})
+			return
+		}
+		chave, _ := texto(l.Chave)
+		objetivos, objOK := objetivosValidos(l.Objetivos)
+		switch {
+		case !reChaveLook.MatchString(chave):
+			corpoRuim = "chave de look inválida."
+		case l.Nome != nil && !textoAte(l.Nome, 120, false):
+			corpoRuim = "nome tem de 1 a 120 caracteres."
+		case l.Objetivos != nil && !objOK:
+			corpoRuim = "objetivos é uma lista de até 10 chaves de objetivo."
+		case l.Ativo != nil && !booleano(l.Ativo):
+			corpoRuim = "ativo é verdadeiro ou falso."
+		case l.Nome == nil && l.Objetivos == nil && l.Ativo == nil:
+			corpoRuim = "Nada para gravar."
+		}
+		nome, _ := texto(l.Nome)
+		ativo := string(l.Ativo) == "true"
+		trabalho = func(tx pgx.Tx) error {
+			_, err := tx.Exec(ctx, `update fabrica_looks set
+				nome = case when @tem_nome::boolean then @nome::text else nome end,
+				objetivos = case when @tem_objetivos::boolean then @objetivos::text[] else objetivos end,
+				ativo = case when @tem_ativo::boolean then @ativo::boolean else ativo end
+				where chave = @chave::text`,
+				pgx.NamedArgs{"tem_nome": l.Nome != nil, "nome": nome, "tem_objetivos": l.Objetivos != nil,
+					"objetivos": objetivos, "tem_ativo": l.Ativo != nil, "ativo": ativo, "chave": chave})
+			return err
+		}
+	case "ordenar":
+		if len(c.Ordem) > 200 {
+			corpoRuim = "No máximo 200 looks."
+			break
+		}
+		for _, o := range c.Ordem {
+			if len(o.Chave) > 0 && !nulo(o.Chave) && !casa(o.Chave, reChaveLook) {
+				corpoRuim = "chave de look inválida."
+			}
+		}
+		trabalho = func(tx pgx.Tx) error {
+			for _, o := range c.Ordem {
+				if len(o.Chave) == 0 || nulo(o.Chave) {
+					continue // a edge pulava o item sem chave
+				}
+				chave, _ := texto(o.Chave)
+				ordem := 0
+				if o.Ordem != nil {
+					ordem = *o.Ordem
+				}
+				if _, err := tx.Exec(ctx, `update fabrica_looks set ordem = $1::int where chave = $2::text`, ordem, chave); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	case "excluir":
+		if len(c.Chave) == 0 || nulo(c.Chave) || string(c.Chave) == `""` {
+			responder(w, http.StatusBadRequest, map[string]string{"error": "chave_obrigatoria"})
+			return
+		}
+		chave, _ := texto(c.Chave)
+		if !reChaveLook.MatchString(chave) {
+			corpoRuim = "chave de look inválida."
+		}
+		excluido := string(c.Excluido) != "false"
+		resposta = map[string]bool{"ok": true, "excluido": excluido}
+		trabalho = func(tx pgx.Tx) error {
+			_, err := tx.Exec(ctx, `update fabrica_looks set excluido = $1::boolean where chave = $2::text`, excluido, chave)
+			return err
+		}
+	default: // "sync" inclusive: ninguém chama (Ruling 5.8-12)
+		responder(w, http.StatusBadRequest, map[string]string{"error": "acao_invalida"})
+		return
+	}
+	if corpoRuim != "" {
+		dados.Erro(w, http.StatusBadRequest, "pedido_invalido", corpoRuim)
+		return
+	}
+	if err := banco.ComUsuario(ctx, cu.Pool, e.ID, trabalho); err != nil {
+		dados.ErroDeEscrita(w, err)
+		return
+	}
+	responder(w, http.StatusOK, resposta)
+}
+
+type pedidoPublicos struct {
+	Acao   string          `json:"acao"`
+	ID     json.RawMessage `json:"id"`
+	Preset json.RawMessage `json:"preset"`
+}
+
+type preset struct {
+	ID              json.RawMessage `json:"id"`
+	Nome            json.RawMessage `json:"nome"`
+	MarcaID         json.RawMessage `json:"marca_id"`
+	Geo             json.RawMessage `json:"geo"`
+	IdadeMin        json.RawMessage `json:"idade_min"`
+	IdadeMax        json.RawMessage `json:"idade_max"`
+	Generos         json.RawMessage `json:"generos"`
+	Interesses      json.RawMessage `json:"interesses"`
+	CustomAudiences json.RawMessage `json:"custom_audiences"`
+}
+
+// ou: o valor do pedido, ou o padrão da edge quando ausente/null (`p.x ?? padrão`).
+func ou(v json.RawMessage, padrao string) string {
+	if len(v) == 0 || nulo(v) {
+		return padrao
+	}
+	return string(v)
+}
+
+func (p preset) validar() string {
+	idade := func(v json.RawMessage, padrao int) (int, bool) {
+		if len(v) == 0 || nulo(v) {
+			return padrao, true
+		}
+		var n int
+		return n, json.Unmarshal(v, &n) == nil && n >= 13 && n <= 65
+	}
+	min, okMin := idade(p.IdadeMin, 18)
+	max, okMax := idade(p.IdadeMax, 65)
+	var generos []int
+	switch {
+	case !textoAte(p.Nome, 120, false):
+		return "nome tem de 1 a 120 caracteres."
+	case len(p.ID) > 0 && !nulo(p.ID) && !casa(p.ID, reUUID):
+		return "id é o id do público."
+	case len(p.MarcaID) > 0 && !nulo(p.MarcaID) && !casa(p.MarcaID, reUUID):
+		return "marca_id é o id da marca."
+	case len(p.Geo) > 0 && !nulo(p.Geo) && !objeto(p.Geo):
+		return "geo é um objeto."
+	case !okMin || !okMax || min > max:
+		return "idades são inteiros de 13 a 65, a mínima até a máxima."
+	case len(p.Generos) > 0 && !nulo(p.Generos) && (json.Unmarshal(p.Generos, &generos) != nil ||
+		slices.ContainsFunc(generos, func(g int) bool { return g != 1 && g != 2 })):
+		return "generos é uma lista de 1 e 2."
+	case len(p.Interesses) > 0 && !nulo(p.Interesses) && !lista(p.Interesses):
+		return "interesses é uma lista."
+	case len(p.CustomAudiences) > 0 && !nulo(p.CustomAudiences) && !lista(p.CustomAudiences):
+		return "custom_audiences é uma lista."
+	}
+	return ""
+}
+
+func (cu *Curadoria) Publicos(w http.ResponseWriter, r *http.Request) {
+	e := autz.EscopoDo(r.Context())
+	if e == nil {
+		dados.Erro(w, http.StatusInternalServerError, "erro_interno", "")
+		return
+	}
+	var c pedidoPublicos
+	if !dados.LerCorpo(w, r, &c) {
+		return
+	}
+	ctx := r.Context()
+	switch c.Acao {
+	case "apagar":
+		if len(c.ID) == 0 || nulo(c.ID) || string(c.ID) == `""` {
+			responder(w, http.StatusBadRequest, map[string]string{"error": "id_obrigatorio"})
+			return
+		}
+		if !casa(c.ID, reUUID) {
+			dados.Erro(w, http.StatusBadRequest, "pedido_invalido", "id é o id do público.")
+			return
+		}
+		id, _ := texto(c.ID)
+		err := banco.ComUsuario(ctx, cu.Pool, e.ID, func(tx pgx.Tx) error {
+			_, err := tx.Exec(ctx, `delete from fabrica_publicos where id = $1::uuid`, id)
+			return err
+		})
+		if err != nil {
+			dados.ErroDeEscrita(w, err)
+			return
+		}
+		responder(w, http.StatusOK, map[string]bool{"ok": true})
+	case "salvar":
+		var p preset
+		if len(c.Preset) == 0 || nulo(c.Preset) || !objeto(c.Preset) || json.Unmarshal(c.Preset, &p) != nil {
+			responder(w, http.StatusBadRequest, map[string]string{"error": "nome_obrigatorio"})
+			return
+		}
+		if len(p.Nome) == 0 || nulo(p.Nome) || string(p.Nome) == `""` {
+			responder(w, http.StatusBadRequest, map[string]string{"error": "nome_obrigatorio"})
+			return
+		}
+		if motivo := p.validar(); motivo != "" {
+			dados.Erro(w, http.StatusBadRequest, "pedido_invalido", motivo)
+			return
+		}
+		args := pgx.NamedArgs{"nome": ou(p.Nome, "null"), "marca": ou(p.MarcaID, "null"), "geo": ou(p.Geo, "{}"),
+			"idade_min": ou(p.IdadeMin, "18"), "idade_max": ou(p.IdadeMax, "65"), "generos": ou(p.Generos, "[]"),
+			"interesses": ou(p.Interesses, "[]"), "audiences": ou(p.CustomAudiences, "[]"), "quem": e.ID, "id": ou(p.ID, "null")}
+		var id string
+		err := banco.ComUsuario(ctx, cu.Pool, e.ID, func(tx pgx.Tx) error {
+			// os valores entram como JSON e o Postgres converte pelo tipo da coluna (#>> '{}' tira as aspas)
+			const valores = `(@nome::jsonb #>> '{}'), (@marca::jsonb #>> '{}')::uuid, @geo::jsonb,
+				(@idade_min::jsonb #>> '{}')::int, (@idade_max::jsonb #>> '{}')::int,
+				array(select jsonb_array_elements_text(@generos::jsonb)::int), @interesses::jsonb, @audiences::jsonb, @quem::uuid`
+			if nulo(json.RawMessage(ou(p.ID, "null"))) {
+				return tx.QueryRow(ctx, `insert into fabrica_publicos (nome, marca_id, geo, idade_min, idade_max, generos,
+					interesses, custom_audiences, criado_por) values (`+valores+`) returning id::text`, args).Scan(&id)
+			}
+			err := tx.QueryRow(ctx, `update fabrica_publicos set (nome, marca_id, geo, idade_min, idade_max, generos,
+				interesses, custom_audiences, criado_por) = (`+valores+`) where id = (@id::jsonb #>> '{}')::uuid
+				returning id::text`, args).Scan(&id)
+			if errors.Is(err, pgx.ErrNoRows) {
+				return autz.ErrNaoEncontrado
+			}
+			return err
+		})
+		if err != nil {
+			dados.ErroDeEscrita(w, err)
+			return
+		}
+		responder(w, http.StatusOK, map[string]string{"id": id})
+	default:
+		responder(w, http.StatusBadRequest, map[string]string{"error": "acao_invalida"})
+	}
+}
+```
+
+(`slices` entra nos imports do arquivo.)
+
+**(b) Testes de aceitação** (`curadoria_test.go`, `m.Rodar`; "intacto" = foto igual)
+- Looks, permitido (`fabricante`): `salvar {"look":{"chave":"promo-sage","nome":"Promo · Sálvia","objetivos":["engajamento"],"ativo":false}}` → 200 `{"ok":true}`; efeito: a linha com o nome, `{engajamento}` e `ativo false`; `salvar` só com `ativo:true` → só `ativo` muda (nome continua "Promo · Sálvia"); `salvar` de chave inexistente → 200 e nada muda; `ordenar {"ordem":[{"chave":"promo-sage","ordem":1},{"chave":"produto-heroi","ordem":2},{"ordem":9}]}` → 200, ordens 1 e 2 (o item sem chave pulado); `excluir {"chave":"marca-velha","excluido":false}` → `{"ok":true,"excluido":false}`; `excluir {"chave":"produto-heroi"}` → `excluido true`.
+- Looks, negado e intacto: `leitor`, `semModulo`, `roboSemFabrica` → 403; `impersonado` → 403 com a frase; `salvar` sem `chave` → 400 `chave_obrigatoria`; `excluir` sem `chave` → 400 `chave_obrigatoria`; `sync` → 400 `acao_invalida`; `x` → 400 `acao_invalida`; `objetivos ["Engajamento!"]`, `nome ""`, `ativo "sim"`, `chave "../x"`, só `chave` → 400 `pedido_invalido`; `ordenar` com 201 itens → 400; `ordenar` em que a segunda atualização falha (gatilho de teste que dá `raise` para `produto-heroi`) → resposta ≠ 200 e a ordem de `promo-sage` NÃO mudou (uma transação).
+- Públicos, permitido: `salvar {"preset":{"nome":"Campinas 30+","geo":{"cities":[{"key":"247071","radius":10,"distance_unit":"kilometer"}],"pins":[]},"idade_min":30,"idade_max":55,"generos":[2],"interesses":[{"id":"6003","name":"Moda"}],"custom_audiences":[]}}` → 200 `{"id": <uuid>}`; a linha com tudo, `marca_id` nulo e `criado_por = idFabricante`; `salvar` com `"id":"<P1>"` e `nome "Novo"` → 200 `{"id":"<P1>"}`, `marca_id` passa a nulo (paridade) e `criado_por` = quem salvou; `apagar {"id":"<P2>"}` → `{"ok":true}`; de novo → `{"ok":true}`.
+- Públicos, negado e intacto: `leitor`, `roboSemFabrica` → 403; `impersonado` → 403; `salvar` sem `nome` → 400 `nome_obrigatorio`; `apagar` sem `id` → 400 `id_obrigatorio`; `idade_min 70`, `idade_min 40` com `idade_max 30`, `generos [3]`, `geo []`, `marca_id "x"` → 400 `pedido_invalido`; `id` inexistente no `salvar` → 404; `acao "x"` → 400 `acao_invalida`.
+- Mutações que têm de reprovar: tirar a transação única do `ordenar` (o caso do gatilho deixa `promo-sage` mudado); trocar `string(c.Excluido) != "false"` por `== "true"` (o `excluir` sem `excluido` vira `false`); tirar `soSessaoPropria` de uma das duas.
+
+**(c) Arquivos:** Create `api/internal/fabrica/curadoria.go`, `api/internal/fabrica/curadoria_test.go`.
+
+**(d) Dependências:** Task 3.
+
+- [ ] **Step 1:** Testes; ver falhar. - [ ] **Step 2:** Implementar (código de (a)). - [ ] **Step 3:** `gofmt -l ./internal && go vet ./internal/fabrica/ && go test -count=1 ./internal/fabrica/` PASS; mutações reprovam. - [ ] **Step 4:** Commit `feat(api): fabrica-looks e fabrica-publicos — portão da edge, ordenar numa transação e sync aposentado` (+ `Co-Authored-By`).
+
+---
