@@ -309,12 +309,14 @@ func TestRotasDoPatrimonioSaoAsDeclaradas(t *testing.T) {
 	p := testebanco.Novo(t)
 	h := Rotas(p, auth.NovoStore(p), auth.NovoLimitador(), config.Config{})
 	var montadas []string
-	chi.Walk(h.(chi.Routes), func(metodo, rota string, _ http.Handler, _ ...func(http.Handler) http.Handler) error {
+	if err := chi.Walk(h.(chi.Routes), func(metodo, rota string, _ http.Handler, _ ...func(http.Handler) http.Handler) error {
 		if strings.HasPrefix(rota, "/patrimonio/") {
 			montadas = append(montadas, metodo+" "+rota)
 		}
 		return nil
-	})
+	}); err != nil {
+		t.Fatal(err)
+	}
 	slices.Sort(montadas)
 	quer := slices.Clone(rotas52)
 	slices.Sort(quer)

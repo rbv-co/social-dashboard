@@ -169,7 +169,7 @@ var tiposDoWorker = map[string]string{
 	// Plano 5.2: os filtros fazem ::uuid/::date nestas colunas e os embutidos de bens casam por uuid
 	"patrimonio_bens.pessoa_id": "uuid", "patrimonio_bens.local_id": "uuid", "patrimonio_bens.categoria_id": "uuid",
 	"patrimonio_bens.comodo_id": "uuid", "patrimonio_posse.bem_id": "uuid", "patrimonio_posse.de": "date",
-	"patrimonio_posse.ate": "date", "equipes.local_id": "uuid", "acessos_pessoas.profile_id": "uuid",
+	"patrimonio_posse.ate": "date", "patrimonio_config.valor": "text", "equipes.local_id": "uuid", "acessos_pessoas.profile_id": "uuid",
 	// Plano 5.8: os casts e as conversões de que as rotas da Fábrica dependem. deposito_id da loja é TEXTO (a
 	// Task 7 compara texto com texto e converte para bigint só no parâmetro de gc_estoque_item.deposito_id).
 	"fabrica_lojas.deposito_id": "text", "fabrica_lojas.canal_loja_id": "text", "fabrica_lojas.geo_cities": "jsonb",
