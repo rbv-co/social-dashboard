@@ -2157,6 +2157,324 @@ func TestBlocosEConcorrentes(t *testing.T) {
 **(d) Dependências:** Tasks 2, 3, 4 e 5 (ver acima o que copiar em worktree paralela).
 
 - [ ] **Step 1:** Testes; ver falhar. - [ ] **Step 2:** Implementar (código de (a)). - [ ] **Step 3:** `cd api && gofmt -l ./internal && go vet ./internal/conteudo/ && go test -count=1 ./internal/conteudo/` PASS; mutações reprovam. - [ ] **Step 4:** Commit `feat(api): escritas de ideias, blocos e concorrentes (criar só o legível; concorrentes como em produção)` (+ `Co-Authored-By`).
+---
+
+### Task 7: As 6 RPCs — portões provados contra as funções, a conta do parâmetro conferida
+
+**Revisor:** opus. **Depende de:** 1 (as funções verbatim), 3 (regras, `comoTexto`, `reUUID`, mundo), 5 (o ajudante de teste `intacto`; em worktree paralela, copie-o e apague no merge).
+
+**(a) Contrato**
+- `conteudo.FuncoesRPC` (abaixo): as 6 funções, nomes, parâmetros e DEFAULTs de `02-funções.csv:178-474` (`p_motivo` e `p_publicar_em` opcionais), `rpc.Valor` (devolvem a linha: `to_json` do composto, como o PostgREST; a tela já trata objeto ou lista), `SoSessaoPropria: true` em todas (todas gravam).
+- Portões: `Aprovador` em `conteudo_decidir` e `conteudo_aprovar_e_agendar`; `Conteudista` nas outras 4 — iguais à checagem de dentro de cada função, provado pessoa a pessoa (`TestPortoesIguaisAsFuncoes`), inclusive o gatilho da guarda (o mesmo portão do `PATCH` de status da Task 5).
+- `Conferir` (Ruling 5.9-10): a peça (`p_peca`), a peça da sugestão (`p_casamento`) e a ideia (`p_ideia`) têm de ser de conta que quem pede VÊ (`autz.PodeVerConta`), e `p_account` também. Só a CONTA: o módulo `conteudo` a função não pedia (quem só tem `conteudo.aprovar` continua decidindo: paridade). Nulo, id inválido, inexistente e de outra conta = 403 IGUAL, sem a função rodar. Ideia de conta nula (de todas as marcas) passa. Sem trava de linha: a decisão concorrente é o trinco da própria função (`and status = 'em_aprovacao'`), e uma trava na conferência faria impasse entre dois aprovadores (ensaiado com `for share`: os dois esperam um pelo outro).
+- Os erros de negócio das funções chegam como `400 regra_de_negocio` com a frase (P0001), como o PostgREST os entregava; o 403 do portão e da conferência é `{"error":"sem_permissao"}` (com a frase do "entrar como" quando é o caso).
+- `ParamConta` do 5.7 não serve aqui (exige parâmetro `text`; `p_account` é `uuid`): a conta vai no `Conferir`.
+- **Ensaiado** (worktree sobre o 5.7 + Tasks 1–6): os três testes passam com `-race`; `Conteudista` com `e.Ativo` faz o teste dos portões acusar o desativado; tirar o `Conferir` do `conteudo_aprovar_e_agendar` faz o aprovador de A1 agendar a peça de A2.
+
+```go
+package conteudo
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/rbv-co/social-dashboard/api/internal/autz"
+	"github.com/rbv-co/social-dashboard/api/internal/rpc"
+)
+
+// FuncoesRPC: as 6 RPCs do Conteúdo na lista branca de POST /rpc/{nome} (web.FuncoesRPC as junta). Todas
+// gravam (SoSessaoPropria: "entrar como" recebe 403 sem a função rodar). O portão é a checagem de dentro de
+// cada função (TestPortoesIguaisAsFuncoes); a conferência prende a peça/casamento/ideia/conta do parâmetro à
+// restritiva pode_ver_conta, que as funções SECURITY DEFINER ignoravam (Ruling 5.9-10). O ParamConta do 5.7
+// não serve: ele é para parâmetro text, e p_account é uuid. Os parâmetros e os DEFAULTs são os de
+// 02-funções.csv:178-474.
+var FuncoesRPC = []rpc.Funcao{
+	{Nome: "conteudo_aprovar_e_agendar", Retorno: rpc.Valor, Portao: Aprovador, SoSessaoPropria: true,
+		Params: []rpc.Param{{Nome: "p_peca", Tipo: "uuid"}}, Conferir: pecaDoParametro("p_peca")},
+	{Nome: "conteudo_casar_na_mao", Retorno: rpc.Valor, Portao: Conteudista, SoSessaoPropria: true,
+		Params:   []rpc.Param{{Nome: "p_peca", Tipo: "uuid"}, {Nome: "p_media", Tipo: "text"}},
+		Conferir: pecaDoParametro("p_peca")},
+	{Nome: "conteudo_decidir", Retorno: rpc.Valor, Portao: Aprovador, SoSessaoPropria: true,
+		Params: []rpc.Param{{Nome: "p_peca", Tipo: "uuid"}, {Nome: "p_decisao", Tipo: "text"},
+			{Nome: "p_motivo", Tipo: "text", Opcional: true}},
+		Conferir: pecaDoParametro("p_peca")},
+	{Nome: "conteudo_decidir_casamento", Retorno: rpc.Valor, Portao: Conteudista, SoSessaoPropria: true,
+		Params:   []rpc.Param{{Nome: "p_casamento", Tipo: "uuid"}, {Nome: "p_confirma", Tipo: "boolean"}},
+		Conferir: pecaDoCasamento},
+	{Nome: "conteudo_ideia_virar_peca", Retorno: rpc.Valor, Portao: Conteudista, SoSessaoPropria: true,
+		Params: []rpc.Param{{Nome: "p_ideia", Tipo: "uuid"}, {Nome: "p_account", Tipo: "uuid"},
+			{Nome: "p_publicar_em", Tipo: "timestamptz", Opcional: true}},
+		Conferir: ideiaEContaVisiveis},
+	{Nome: "conteudo_reavisar", Retorno: rpc.Valor, Portao: Conteudista, SoSessaoPropria: true,
+		Params: []rpc.Param{{Nome: "p_peca", Tipo: "uuid"}}, Conferir: pecaDoParametro("p_peca")},
+}
+
+// contaVisivel: a conta (texto; vazio = a linha não existe) é uma que quem pede vê? Inexistente e de outra
+// conta respondem igual (403): o parâmetro não confirma que a linha existe.
+func contaVisivel(e *autz.Escopo, conta string, err error) error {
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return autz.ErrNegado
+	case err != nil:
+		return err
+	case !autz.PodeVerConta(e, conta):
+		return autz.ErrNegado
+	}
+	return nil
+}
+
+// pecaDoParametro: a peça do parâmetro tem de ser de uma conta que quem pede vê. Só a CONTA: o módulo
+// 'conteudo' a função não pedia (quem só tem 'conteudo.aprovar' continua decidindo, como hoje); o portão já
+// decidiu a pessoa. Nulo, id inválido e inexistente = 403, como a de outra conta.
+func pecaDoParametro(nome string) func(context.Context, pgx.Tx, *autz.Escopo, map[string]json.RawMessage) error {
+	return func(ctx context.Context, tx pgx.Tx, e *autz.Escopo, args map[string]json.RawMessage) error {
+		peca, _ := comoTexto(args[nome])
+		if !reUUID.MatchString(peca) {
+			return autz.ErrNegado
+		}
+		var conta string
+		err := tx.QueryRow(ctx, `select account_id::text from conteudo_pecas where id = $1::uuid`, peca).Scan(&conta)
+		return contaVisivel(e, conta, err)
+	}
+}
+
+// pecaDoCasamento: a peça da sugestão de casamento tem de ser de uma conta que quem pede vê.
+func pecaDoCasamento(ctx context.Context, tx pgx.Tx, e *autz.Escopo, args map[string]json.RawMessage) error {
+	casamento, _ := comoTexto(args["p_casamento"])
+	if !reUUID.MatchString(casamento) {
+		return autz.ErrNegado
+	}
+	var conta string
+	err := tx.QueryRow(ctx, `select pc.account_id::text from conteudo_casamentos c
+		join conteudo_pecas pc on pc.id = c.peca_id where c.id = $1::uuid`, casamento).Scan(&conta)
+	return contaVisivel(e, conta, err)
+}
+
+// ideiaEContaVisiveis: a ideia (conta nula = de todas as marcas) e a conta da peça nova (p_account) têm de ser
+// de contas que quem pede vê — a função criaria a peça na conta do parâmetro sem olhar pode_ver_conta.
+func ideiaEContaVisiveis(ctx context.Context, tx pgx.Tx, e *autz.Escopo, args map[string]json.RawMessage) error {
+	ideia, _ := comoTexto(args["p_ideia"])
+	conta, _ := comoTexto(args["p_account"])
+	if !reUUID.MatchString(ideia) || !reUUID.MatchString(conta) || !autz.PodeVerConta(e, conta) {
+		return autz.ErrNegado
+	}
+	var daIdeia *string
+	err := tx.QueryRow(ctx, `select account_id::text from conteudo_ideias where id = $1::uuid`, ideia).Scan(&daIdeia)
+	if err == nil && daIdeia == nil {
+		return nil // de todas as marcas
+	}
+	var c string
+	if daIdeia != nil {
+		c = *daIdeia
+	}
+	return contaVisivel(e, c, err)
+}
+```
+
+**(b) Testes de aceitação** (`rpc_test.go`, código abaixo)
+- `TestPortoesIguaisAsFuncoes`: para cada pessoa do mundo e uma sem perfil, cada função (e o gatilho) chamada como ela numa transação desfeita: negada = P0001 com a frase do portão daquela função; `Aprovador`/`Conteudista` têm de dar o MESMO, com pelo menos 5 permitidas e 4 negadas por função.
+- `TestRPCsDoConteudo` (pela cadeia real; negados "intactos"): aprovar/decidir/casar/reavisar peça de A2 por quem só vê A1 → 403; peça e sugestão e ideia inexistentes ou id inválido → 403 igual; editor aprovando → 403; impersonado → 403 (com a frase do "entrar como" quando o alvo passaria no portão); `chaveConteudo` casando → 403 (a função lê `features`); ideia de A2 em A1 e ideia geral em A2 → 403; lista vazia reavisando → 403; e as frases das funções (`Esta peca nao tem data marcada…`, `Decisao invalida: talvez…`, `…alguem ja decidiu…`, `Informe o link ou o codigo do post.`, `Esse post ja esta ligado a outra peca.`, `Esta ideia ja virou peca.`, `So da para reavisar…`) com 400; parâmetro obrigatório faltando → 400. Permitidos com efeito: aprovar já agendando (status, `aprovado_por`, aviso limpo, trilha `aprovou,mudou_status`), `soAprovar` reprovando a de A2 com motivo (paridade), casar pelo link do reel (`ABC123`), confirmar a sugestão (a peça vira `publicada` com o `ig_media_id`), a sugestão já decidida → 400, a ideia geral virando peça em A1, admin decidindo em A2, reavisar (aviso limpo + evento).
+- `TestDecisaoSimultanea`: dois aprovadores, a mesma peça, ao mesmo tempo → um 200 e um 400, UMA decisão na trilha.
+- Mutações que têm de reprovar: `Conteudista` com `e.Ativo`; `Aprovador` com `e.Chaves` em vez de `e.Modulo` (`chaveConteudo`/`soAprovar` divergem da função); tirar um `Conferir`; `SoSessaoPropria: false` numa função (o impersonado grava); `pecaDoParametro` lendo a regra de Ler inteira em vez da conta (o caso de paridade do `soAprovar` reprova); `for share` na conferência (o teste simultâneo pega impasse `40P01` → 500).
+
+```go
+package conteudo
+
+import (
+	"context"
+	"errors"
+	"net/http"
+	"sync"
+	"testing"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rbv-co/social-dashboard/api/internal/autz"
+	"github.com/rbv-co/social-dashboard/api/internal/banco"
+	"github.com/rbv-co/social-dashboard/api/internal/rpc"
+	"github.com/rbv-co/social-dashboard/api/internal/testebanco/mundoteste"
+)
+
+// montarRPCs monta a lista como web.Rotas, no grupo de domínio.
+func montarRPCs(r chi.Router, p *pgxpool.Pool) {
+	reg, err := rpc.Novo(p, FuncoesRPC...)
+	deve(err)
+	r.Post("/rpc/{nome}", reg.ServeHTTP)
+}
+
+const idSemPerfil = "a5910000-0000-4000-a000-000000000099" // só em usuarios
+
+var errDesfazer = errors.New("desfazer")
+
+// O portão do Go = a checagem de dentro de cada função de produção (e do gatilho), pessoa por pessoa:
+// permitida = a função roda sem erro (a transação é desfeita); negada = P0001 com a frase do portão dela.
+// As funções são SECURITY DEFINER: o desativado PASSA nelas (a subconsulta em profiles não vê a RLS), e passa
+// em Conteudista/Aprovador também — a sessão dele nem existe (auth.Exigir).
+func TestPortoesIguaisAsFuncoes(t *testing.T) {
+	m := novoMundo(t)
+	ctx := context.Background()
+	if _, err := m.P.Exec(ctx, `insert into usuarios (id, email) values ($1::uuid, 'semperfil@x.com')`, idSemPerfil); err != nil {
+		t.Fatal(err)
+	}
+	ids := map[string]string{"semPerfil": idSemPerfil}
+	for _, p := range pessoas {
+		ids[p.Chave] = p.ID
+	}
+	for _, c := range []struct {
+		nome, sql, frase string
+		regra            autz.Regra
+	}{
+		{"conteudo_aprovar_e_agendar", `select conteudo_aprovar_e_agendar('` + P2 + `'::uuid)`, "Sem permissao para aprovar pecas de conteudo.", Aprovador},
+		{"conteudo_casar_na_mao", `select conteudo_casar_na_mao('` + P1 + `'::uuid, 'https://www.instagram.com/p/ABC123/')`, "Voce nao tem acesso a Central de Conteudo.", Conteudista},
+		{"conteudo_decidir", `select conteudo_decidir('` + P2 + `'::uuid, 'aprovada', null)`, "Sem permissao para aprovar ou reprovar pecas de conteudo.", Aprovador},
+		{"conteudo_decidir_casamento", `select conteudo_decidir_casamento('` + CS1 + `'::uuid, true)`, "Sem permissao na Central de Conteudo.", Conteudista},
+		{"conteudo_ideia_virar_peca", `select conteudo_ideia_virar_peca('` + I1 + `'::uuid, '` + A1 + `'::uuid, null)`, "Sem permissao na Central de Conteudo.", Conteudista},
+		{"conteudo_reavisar", `select conteudo_reavisar('` + P4 + `'::uuid)`, "Sem permissao na Central de Conteudo.", Conteudista},
+		// a guarda das rotas de peça (PATCH de status): mesmo portão de quem aprova
+		{"gatilho conteudo_guarda_aprovacao", `update conteudo_pecas set status = 'aprovada' where id = '` + P2 + `'`, "Sem permissao para aprovar pecas de conteudo.", Aprovador},
+	} {
+		var permitidas, negadas int
+		for quem, id := range ids {
+			e, err := autz.CarregarEscopo(ctx, m.P, id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = banco.ComUsuario(ctx, m.P, id, func(tx pgx.Tx) error {
+				if _, err := tx.Exec(ctx, c.sql); err != nil {
+					return err
+				}
+				return errDesfazer
+			})
+			naFuncao := true
+			if pg := (*pgconn.PgError)(nil); errors.As(err, &pg) {
+				if pg.Code != "P0001" || pg.Message != c.frase {
+					t.Fatalf("%s como %s: erro inesperado da função: %v", c.nome, quem, err)
+				}
+				naFuncao = false
+			} else if !errors.Is(err, errDesfazer) {
+				t.Fatalf("%s como %s: erro inesperado: %v", c.nome, quem, err)
+			}
+			if naFuncao {
+				permitidas++
+			} else {
+				negadas++
+			}
+			if no := c.regra(e); no != naFuncao {
+				t.Errorf("%s como %s: o portão do Go = %t, a função %t", c.nome, quem, no, naFuncao)
+			}
+		}
+		if permitidas < 5 || negadas < 4 {
+			t.Errorf("%s: o mundo tem de mostrar os dois lados: %d permitidas, %d negadas", c.nome, permitidas, negadas)
+		}
+	}
+}
+
+func TestRPCsDoConteudo(t *testing.T) {
+	m := novoMundo(t, montarRPCs)
+	inexistente := "a5930000-0000-4000-a000-0000000000ff"
+	rpcDe := func(nome string) string { return "/rpc/" + nome }
+	intacto(t, m, []mundoteste.Caso{
+		// aprovar já agendando
+		{Nome: "aprovar peça de A2 sem vê-la", Quem: "aprovadorA1", Metodo: "POST", Caminho: rpcDe("conteudo_aprovar_e_agendar"), Corpo: `{"p_peca":"` + P3 + `"}`, Status: 403},
+		{Nome: "aprovar peça inexistente (igual)", Quem: "aprovadorA1", Metodo: "POST", Caminho: rpcDe("conteudo_aprovar_e_agendar"), Corpo: `{"p_peca":"` + inexistente + `"}`, Status: 403},
+		{Nome: "aprovar com id inválido (igual)", Quem: "aprovadorA1", Metodo: "POST", Caminho: rpcDe("conteudo_aprovar_e_agendar"), Corpo: `{"p_peca":"x"}`, Status: 403},
+		{Nome: "editor aprova", Quem: "conteudista", Metodo: "POST", Caminho: rpcDe("conteudo_aprovar_e_agendar"), Corpo: `{"p_peca":"` + P2 + `"}`, Status: 403},
+		{Nome: "impersonado (o alvo não aprova: o portão vem antes)", Quem: "impersonado", Metodo: "POST", Caminho: rpcDe("conteudo_aprovar_e_agendar"), Corpo: `{"p_peca":"` + P2 + `"}`, Status: 403},
+		{Nome: "impersonado reavisa a peça que o alvo vê", Quem: "impersonado", Metodo: "POST", Caminho: rpcDe("conteudo_reavisar"), Corpo: `{"p_peca":"` + P4 + `"}`, Status: 403, Tem: "Quem entrou como outra pessoa"},
+		{Nome: "impersonado casa na mão", Quem: "impersonado", Metodo: "POST", Caminho: rpcDe("conteudo_casar_na_mao"), Corpo: `{"p_peca":"` + P1 + `","p_media":"ABC"}`, Status: 403, Tem: "Quem entrou como outra pessoa"},
+		{Nome: "aprovar sem data", Quem: "aprovador", Metodo: "POST", Caminho: rpcDe("conteudo_aprovar_e_agendar"), Corpo: `{"p_peca":"` + P7 + `"}`, Status: 400, Tem: "Esta peca nao tem data marcada"},
+		// decidir
+		{Nome: "decidir peça de A2 sem vê-la", Quem: "aprovadorA1", Metodo: "POST", Caminho: rpcDe("conteudo_decidir"), Corpo: `{"p_peca":"` + P3 + `","p_decisao":"aprovada"}`, Status: 403},
+		{Nome: "decisão fora da lista", Quem: "aprovador", Metodo: "POST", Caminho: rpcDe("conteudo_decidir"), Corpo: `{"p_peca":"` + P2 + `","p_decisao":"talvez"}`, Status: 400, Tem: "Decisao invalida: talvez"},
+		{Nome: "decidir peça que não espera aprovação", Quem: "aprovador", Metodo: "POST", Caminho: rpcDe("conteudo_decidir"), Corpo: `{"p_peca":"` + P1 + `","p_decisao":"aprovada"}`, Status: 400, Tem: "alguem ja decidiu"},
+		// casar na mão
+		{Nome: "casar peça de A2 sem vê-la", Quem: "conteudistaA1", Metodo: "POST", Caminho: rpcDe("conteudo_casar_na_mao"), Corpo: `{"p_peca":"` + P3 + `","p_media":"ABC"}`, Status: 403},
+		{Nome: "casar sem link", Quem: "conteudista", Metodo: "POST", Caminho: rpcDe("conteudo_casar_na_mao"), Corpo: `{"p_peca":"` + P1 + `","p_media":" "}`, Status: 400, Tem: "Informe o link ou o codigo do post."},
+		{Nome: "casar com post de outra peça", Quem: "conteudista", Metodo: "POST", Caminho: rpcDe("conteudo_casar_na_mao"), Corpo: `{"p_peca":"` + P1 + `","p_media":"IG5"}`, Status: 400, Tem: "Esse post ja esta ligado a outra peca."},
+		{Nome: "casar com a chave em permissions (a função lê features)", Quem: "chaveConteudo", Metodo: "POST", Caminho: rpcDe("conteudo_casar_na_mao"), Corpo: `{"p_peca":"` + P1 + `","p_media":"ABC"}`, Status: 403},
+		// decidir casamento
+		{Nome: "decidir sugestão de peça de A2", Quem: "conteudistaA1", Metodo: "POST", Caminho: rpcDe("conteudo_decidir_casamento"), Corpo: `{"p_casamento":"` + CS3 + `","p_confirma":true}`, Status: 403},
+		{Nome: "decidir sugestão inexistente (igual)", Quem: "conteudistaA1", Metodo: "POST", Caminho: rpcDe("conteudo_decidir_casamento"), Corpo: `{"p_casamento":"` + inexistente + `","p_confirma":true}`, Status: 403},
+		// ideia vira peça
+		{Nome: "ideia de A2 vira peça em A1", Quem: "conteudistaA1", Metodo: "POST", Caminho: rpcDe("conteudo_ideia_virar_peca"), Corpo: `{"p_ideia":"` + I3 + `","p_account":"` + A1 + `"}`, Status: 403},
+		{Nome: "ideia geral vira peça em A2", Quem: "conteudistaA1", Metodo: "POST", Caminho: rpcDe("conteudo_ideia_virar_peca"), Corpo: `{"p_ideia":"` + I2 + `","p_account":"` + A2 + `"}`, Status: 403},
+		{Nome: "ideia inexistente (igual)", Quem: "conteudistaA1", Metodo: "POST", Caminho: rpcDe("conteudo_ideia_virar_peca"), Corpo: `{"p_ideia":"` + inexistente + `","p_account":"` + A1 + `"}`, Status: 403},
+		{Nome: "ideia já usada", Quem: "conteudistaA1", Metodo: "POST", Caminho: rpcDe("conteudo_ideia_virar_peca"), Corpo: `{"p_ideia":"` + I5 + `","p_account":"` + A1 + `"}`, Status: 400, Tem: "Esta ideia ja virou peca."},
+		{Nome: "sem a conta", Quem: "conteudistaA1", Metodo: "POST", Caminho: rpcDe("conteudo_ideia_virar_peca"), Corpo: `{"p_ideia":"` + I1 + `"}`, Status: 400, Tem: "falta o parâmetro p_account"},
+		// reavisar
+		{Nome: "reavisar peça de A2", Quem: "conteudistaA1", Metodo: "POST", Caminho: rpcDe("conteudo_reavisar"), Corpo: `{"p_peca":"` + P5 + `"}`, Status: 403},
+		{Nome: "reavisar peça não agendada", Quem: "conteudistaA1", Metodo: "POST", Caminho: rpcDe("conteudo_reavisar"), Corpo: `{"p_peca":"` + P1 + `"}`, Status: 400, Tem: "So da para reavisar"},
+		{Nome: "lista vazia não reavisa", Quem: "conteudistaNenhuma", Metodo: "POST", Caminho: rpcDe("conteudo_reavisar"), Corpo: `{"p_peca":"` + P4 + `"}`, Status: 403},
+	})
+	const peca = `select status || '|' || coalesce(ig_media_id, '-') || '|' || coalesce(aprovado_por::text, '-') || '|' || coalesce(avisado_em::text, 'nulo') from conteudo_pecas where id = '`
+	const eventos = `select string_agg(acao, ',' order by id) from conteudo_eventos where peca_id = '`
+	m.Rodar(t, []mundoteste.Caso{
+		{Nome: "aprovar já agendando", Quem: "aprovadorA1", Metodo: "POST", Caminho: rpcDe("conteudo_aprovar_e_agendar"), Corpo: `{"p_peca":"` + P2 + `"}`,
+			Status: 200, Tem: `"status":"agendada"`, Efeito: peca + P2 + `'`, Quer: "agendada|-|" + idAprovadorA1 + "|nulo"},
+		{Nome: "a trilha da aprovação", Efeito: eventos + P2 + `'`, Quer: "aprovou,mudou_status"},
+		{Nome: "quem só aprova continua decidindo (paridade)", Quem: "soAprovar", Metodo: "POST", Caminho: rpcDe("conteudo_decidir"),
+			Corpo: `{"p_peca":"` + P3 + `","p_decisao":"reprovada","p_motivo":"Foto escura"}`, Status: 200,
+			Efeito: `select status || '|' || motivo_reprovacao from conteudo_pecas where id = '` + P3 + `'`, Quer: "reprovada|Foto escura"},
+		{Nome: "casar na mão pelo link", Quem: "conteudistaA1", Metodo: "POST", Caminho: rpcDe("conteudo_casar_na_mao"),
+			Corpo: `{"p_peca":"` + P1 + `","p_media":"https://www.instagram.com/reel/ABC123/?igsh=x"}`, Status: 200,
+			Efeito: `select status || '|' || ig_media_id from conteudo_pecas where id = '` + P1 + `'`, Quer: "publicada|ABC123"},
+		{Nome: "confirmar a sugestão", Quem: "conteudistaA1", Metodo: "POST", Caminho: rpcDe("conteudo_decidir_casamento"),
+			Corpo: `{"p_casamento":"` + CS1 + `","p_confirma":true}`, Status: 200, Tem: `"situacao":"confirmado"`,
+			Efeito: `select status || '|' || ig_media_id from conteudo_pecas where id = '` + P4 + `'`, Quer: "publicada|IG41"},
+		{Nome: "a sugestão já decidida", Quem: "conteudistaA1", Metodo: "POST", Caminho: rpcDe("conteudo_decidir_casamento"),
+			Corpo: `{"p_casamento":"` + CS1 + `","p_confirma":false}`, Status: 400, Tem: "Esta sugestao ja foi decidida."},
+		{Nome: "ideia geral vira peça na própria conta", Quem: "conteudistaA1", Metodo: "POST", Caminho: rpcDe("conteudo_ideia_virar_peca"),
+			Corpo: `{"p_ideia":"` + I2 + `","p_account":"` + A1 + `","p_publicar_em":"2026-11-02T15:00:00Z"}`, Status: 200, Tem: `"status":"rascunho"`,
+			Efeito: `select situacao || '|' || (select account_id::text from conteudo_pecas pc where pc.id = i.peca_id) from conteudo_ideias i where id = '` + I2 + `'`, Quer: "usada|" + A1},
+		{Nome: "admin decide em A2", Quem: "adminA1", Metodo: "POST", Caminho: rpcDe("conteudo_decidir_casamento"),
+			Corpo: `{"p_casamento":"` + CS3 + `","p_confirma":false}`, Status: 200, Tem: `"situacao":"recusado"`},
+	})
+	// reavisar (P4 já foi publicada acima: usa uma peça agendada nova)
+	if _, err := m.P.Exec(context.Background(), `insert into conteudo_pecas (id, account_id, titulo, formato, status, publicar_em, avisado_em)
+		values ('a5930000-0000-4000-a000-0000000000c8', '`+A1+`', 'Agendada', 'feed', 'agendada', now(), now())`); err != nil {
+		t.Fatal(err)
+	}
+	m.Rodar(t, []mundoteste.Caso{{Nome: "reavisar", Quem: "conteudistaA1", Metodo: "POST", Caminho: rpcDe("conteudo_reavisar"),
+		Corpo: `{"p_peca":"a5930000-0000-4000-a000-0000000000c8"}`, Status: 200,
+		Efeito: `select coalesce(avisado_em::text, 'nulo') || '|' || (select string_agg(acao, ',') from conteudo_eventos where peca_id = 'a5930000-0000-4000-a000-0000000000c8')
+			from conteudo_pecas where id = 'a5930000-0000-4000-a000-0000000000c8'`, Quer: "nulo|reavisar"}})
+}
+
+// Dois aprovadores decidindo a MESMA peça ao mesmo tempo: um passa, o outro recebe a frase do trinco da função
+// (sem impasse: a conferência não trava a linha) e a trilha tem UMA decisão.
+func TestDecisaoSimultanea(t *testing.T) {
+	m := novoMundo(t, montarRPCs)
+	var wg sync.WaitGroup
+	st := make([]int, 2)
+	comeca := make(chan struct{})
+	for i, quem := range []string{"aprovador", "aprovadorA1"} {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-comeca
+			st[i], _ = m.Pedir(t, quem, "POST", "/rpc/conteudo_decidir", `{"p_peca":"`+P2+`","p_decisao":"aprovada"}`)
+		}()
+	}
+	close(comeca)
+	wg.Wait()
+	if !(st[0] == http.StatusOK && st[1] == http.StatusBadRequest) && !(st[0] == http.StatusBadRequest && st[1] == http.StatusOK) {
+		t.Errorf("status = %v, esperava um 200 e um 400", st)
+	}
+	if v := m.Um(t, `select count(*)::text from conteudo_eventos where peca_id = '`+P2+`' and acao = 'aprovou'`); v != "1" {
+		t.Errorf("decisões na trilha = %s", v)
+	}
+}
+```
+
+**(c) Arquivos:** Create `api/internal/conteudo/rpc.go`, `api/internal/conteudo/rpc_test.go`.
+
+**(d) Dependências:** Tasks 1, 3 e 5 (ver acima); `rpc.Novo`, `rpc.Funcao.Conferir/SoSessaoPropria` (5.7).
+
+- [ ] **Step 1:** Testes; ver falhar. - [ ] **Step 2:** Implementar (código de (a)). - [ ] **Step 3:** `cd api && gofmt -l ./internal && go vet ./internal/conteudo/ && go test -count=1 -race ./internal/conteudo/` PASS; mutações reprovam. - [ ] **Step 4:** Commit `feat(api): as 6 RPCs do Conteúdo com o portão de cada função e a conta do parâmetro conferida` (+ `Co-Authored-By`).
 
 ---
 
