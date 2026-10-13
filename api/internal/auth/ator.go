@@ -16,12 +16,13 @@ type Ator struct {
 	Papel          string
 	SuperAdmin     bool
 	Permissoes     map[string][]string // recurso -> ações ("ver","criar","editar","excluir")
+	Chaves         map[string]bool     // chaves de profiles.permissions (o ? do jsonb), com ou sem ações
 	ImpersonadorID *string
 	Modulos        []string // profiles.features: o portão que as edges usavam (ver PodeModulo)
 }
 
 func CarregarAtor(ctx context.Context, p *pgxpool.Pool, s *Sessao) (*Ator, error) {
-	a := &Ator{ID: s.UsuarioID, Tipo: s.Tipo, ImpersonadorID: s.ImpersonadorID, Permissoes: map[string][]string{}}
+	a := &Ator{ID: s.UsuarioID, Tipo: s.Tipo, ImpersonadorID: s.ImpersonadorID, Permissoes: map[string][]string{}, Chaves: map[string]bool{}}
 	var perm []byte
 	err := p.QueryRow(ctx,
 		`select coalesce(role::text, ''), coalesce(is_superadmin, false), coalesce(permissions, '{}'::jsonb),
@@ -33,7 +34,7 @@ func CarregarAtor(ctx context.Context, p *pgxpool.Pool, s *Sessao) (*Ator, error
 	if err != nil {
 		return nil, err
 	}
-	_, a.Permissoes = LerPermissoes(perm)
+	a.Chaves, a.Permissoes = LerPermissoes(perm)
 	return a, nil
 }
 

@@ -1,4 +1,3 @@
-// Package fabrica: as tarefas da Fábrica de Anúncios que o worker roda.
 package fabrica
 
 import (
