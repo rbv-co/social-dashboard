@@ -1,5 +1,5 @@
 -- FATIA 5.2 do esquema de produção para os testes (D0 reconstruído: Rulings 5.1-1 e 5.2-1). Carregada
--- DEPOIS de 01-tabelas-5-1.sql (ordem de nome). Fonte ao lado de cada tabela. Tabelas de outros
+-- DEPOIS de 01-tabelas-5-01.sql (ordem de nome). Fonte ao lado de cada tabela. Tabelas de outros
 -- sub-planos entram MÍNIMAS (só o que os gatilhos, as RPCs e as rotas do 5.2 leem e gravam); o dono
 -- delas completa com `alter table ... add column` no 01-tabelas-5-N.sql dele. FKs de auth.users viram
 -- public.usuarios (ops/migracao/limpar-dump.mjs:64).
@@ -53,20 +53,22 @@ create table public.patrimonio_tipos (
   unique (categoria_id, nome)
 );
 
--- do 5.4, MÍNIMA: acessos/004_v2.sql:2-8 (o que criar_setor_rapido e setores_para_escolher leem e gravam)
+-- do 5.4, MÍNIMA: acessos/004_v2.sql:2-8 (o que criar_setor_rapido e setores_para_escolher leem e gravam).
+-- Sem UNIQUE em nome (PRESUMIDO): acessos/014_setor_unique_por_org.sql:3-6 trocou por unique(organizacao_id, nome),
+-- e com organizacao_id nulo produção não garante nome único; o RPC deduplica sozinho. O conferir do 5.4 confere.
 create table public.acessos_setores (
   id        uuid primary key default gen_random_uuid(),
-  nome      text not null unique,
+  nome      text not null,
   cor       text,
   ordem     int not null default 0,
   criado_em timestamptz not null default now()
 );
 
 -- acessos_pessoas é MÍNIMA no 5.1; aqui, as colunas que o cadastro rápido lê e grava:
--- acessos/001_base.sql:5-6 (cargo, status), acessos/004_v2.sql:20 (setor_id), 2026-08-06-pessoa-marca.sql:14-15 (marca_id)
+-- acessos/001_base.sql:5-6 (cargo, status; o check é o de acessos/004_v2.sql:27-29: ativo|desligado), acessos/004_v2.sql:20 (setor_id), 2026-08-06-pessoa-marca.sql:14-15 (marca_id)
 alter table public.acessos_pessoas
   add column cargo    text,
-  add column status   text not null default 'ativo' check (status in ('ativo', 'inativo')),
+  add column status   text not null default 'ativo' check (status in ('ativo', 'desligado')),
   add column setor_id uuid references public.acessos_setores(id) on delete set null,
   add column marca_id uuid references public.patrimonio_empresas(id);
 
