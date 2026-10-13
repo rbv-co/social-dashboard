@@ -9,6 +9,28 @@ const SUPABASE_URL = process.env.SUPABASE_URL || 'https://kounqtdoioootxqegkij.s
 const ANON_KEY = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtvdW5xdGRvaW9vb3R4cWVna2lqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyMDMwMDUsImV4cCI6MjA5NDc3OTAwNX0.MVXa6jngjKXkH3eZ7as_j_k8Eb7lJKcFmO4kCKAnuHM';
 const GESTOR_EMAIL = process.env.GESTOR_USER_EMAIL;
 const GESTOR_PASS = process.env.GESTOR_USER_PASSWORD;
+
+// DEPOIS DO SUPABASE (Plano 7 + 5.13): com `CENTRAL_API_URL` (a API em Go, ex.
+// `http://api:8080` na VPS) e `CENTRAL_API_TOKEN` (o token de serviço `srv_…` do
+// robô, criado por `api servico criar`), os robôs falam com as edges portadas
+// (`/bling-proxy`, `/meta-proxy`) na API, com o token no `Authorization` e sem
+// login de gente. O que o robô pode é o PERFIL dele (módulos `sales`/`gestor` para
+// o Bling, `meta` para a Meta). Sem as duas, segue o caminho de hoje.
+const CENTRAL_API_URL = (process.env.CENTRAL_API_URL || '').replace(/\/+$/, '');
+const CENTRAL_API_TOKEN = process.env.CENTRAL_API_TOKEN || '';
+export const robosNaApi = () => !!(CENTRAL_API_URL && CENTRAL_API_TOKEN);
+
+/** O endereço de uma edge portada (`bling-proxy`, `meta-proxy`) para o robô. */
+export function urlDaEdge(nome) {
+  return robosNaApi() ? `${CENTRAL_API_URL}/${nome}` : `${SUPABASE_URL}/functions/v1/${nome}`;
+}
+
+/** Os cabeçalhos da chamada: a `apikey` do Supabase só no caminho do Supabase. */
+export function cabecalhosDaEdge(token) {
+  const h = { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' };
+  if (!robosNaApi()) h.apikey = ANON_KEY;
+  return h;
+}
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 // A regra de qual dia a venda conta + o leitor das linhas. Ver notas-bling.mjs.
@@ -70,6 +92,8 @@ export async function blingFormasDePagamento(token, maxPaginas = 20) {
 
 // ── Conta de serviço: login → access_token ──
 export async function loginServico() {
+  // Na API, o token de serviço JÁ É a credencial: não há login (nem senha) de robô.
+  if (robosNaApi()) return CENTRAL_API_TOKEN;
   const r = await fetch(SUPABASE_URL + '/auth/v1/token?grant_type=password', {
     method: 'POST',
     headers: { apikey: ANON_KEY, 'Content-Type': 'application/json' },
@@ -87,9 +111,9 @@ export async function blingProxy(token, endpoint, params) {
     const espera = 450 - (Date.now() - _lastBling);
     if (espera > 0) await sleep(espera);
     _lastBling = Date.now();
-    const r = await fetch(SUPABASE_URL + '/functions/v1/bling-proxy', {
+    const r = await fetch(urlDaEdge('bling-proxy'), {
       method: 'POST',
-      headers: { Authorization: 'Bearer ' + token, apikey: ANON_KEY, 'Content-Type': 'application/json' },
+      headers: cabecalhosDaEdge(token),
       body: JSON.stringify({ endpoint, params: params || {} }),
     });
     if (r.status === 429) { await sleep(1200 * (attempt + 1)); continue; }

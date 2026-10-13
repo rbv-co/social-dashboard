@@ -23,7 +23,7 @@ import { montarPedido, montarEscolha, MAXIMO_POR_OBJETIVO, termosDaMarca, juntar
 // Login da conta de serviço (mesma usada por subir-estudio.mjs, ativar-estudio.mjs
 // etc.) — o meta-proxy chama auth.getUser() sobre o Authorization recebido, e uma
 // service key não é sessão de usuário: ela sempre daria 401 "nao autenticado" ali.
-import { loginServico } from './lib/bling-comercial.mjs';
+import { loginServico, urlDaEdge, cabecalhosDaEdge } from './lib/bling-comercial.mjs';
 
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://kounqtdoioootxqegkij.supabase.co';
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
@@ -84,9 +84,9 @@ async function sbPost(path, body, prefer) {
 // meta-proxy resolve o chamador via auth.getUser(), que só reconhece sessão de
 // usuário de verdade. `token` vem de run(), obtido uma única vez antes do laço.
 async function buscarNaMeta(accountId, termo, token) {
-  const r = await fetch(SUPABASE_URL + '/functions/v1/meta-proxy', {
+  const r = await fetch(urlDaEdge('meta-proxy'), {
     method: 'POST',
-    headers: { apikey: ANON, Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+    headers: cabecalhosDaEdge(token),
     body: JSON.stringify({
       accountId,
       path: '/search',
@@ -122,9 +122,9 @@ async function resolverNomesDeCidade(chaves, token, accountId) {
     .filter((k) => k.length > 0);
   if (!unicas.length || !accountId) return {};
   try {
-    const r = await fetch(SUPABASE_URL + '/functions/v1/meta-proxy', {
+    const r = await fetch(urlDaEdge('meta-proxy'), {
       method: 'POST',
-      headers: { apikey: ANON, Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+      headers: cabecalhosDaEdge(token),
       body: JSON.stringify({
         accountId,
         path: '/search',
