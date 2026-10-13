@@ -50,6 +50,14 @@ type Funcao struct {
 	Params  []Param
 	Retorno Retorno
 	Portao  autz.Regra
+	// SoSessaoPropria: a função GRAVA. Sessão de "entrar como" recebe 403 sem a função rodar
+	// (Ruling 5.2-3); função que só lê fica aberta a quem entrou como (ver o que a pessoa vê).
+	SoSessaoPropria bool
+	// ParamConta: o parâmetro (text) que diz de qual conta da Meta a função cuida. Valor texto tem de
+	// ser de uma conta que quem pede vê (autz.PodeVerConta, a regra das restritivas so_contas_permitidas):
+	// senão 403 sem a função rodar. null segue (a função decide). Ruling 5.7-10: função SECURITY DEFINER
+	// que grava por conta não passava pela restritiva de produção.
+	ParamConta string
 }
 
 var (
@@ -105,6 +113,9 @@ func Novo(p *pgxpool.Pool, fs ...Funcao) (*Registro, error) {
 				return nil, fmt.Errorf("rpc %s: parâmetro %q repetido", f.Nome, pr.Nome)
 			}
 			vistos[pr.Nome] = true
+		}
+		if f.ParamConta != "" && !slices.ContainsFunc(f.Params, func(p Param) bool { return p.Nome == f.ParamConta && p.Tipo == "text" }) {
+			return nil, fmt.Errorf("rpc %s: ParamConta %q não é um parâmetro text declarado", f.Nome, f.ParamConta)
 		}
 		r.funcoes[f.Nome] = f
 	}
@@ -174,6 +185,10 @@ func (rg *Registro) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		dados.Erro(w, http.StatusForbidden, "sem_permissao", "")
 		return
 	}
+	if f.SoSessaoPropria && a.ImpersonadorID != nil {
+		dados.Erro(w, http.StatusForbidden, "sem_permissao", dados.FraseEntrarComo)
+		return
+	}
 	// corpo vazio (inclusive sem tamanho declarado, chunked) vale {}
 	corpo := map[string]json.RawMessage{}
 	bruto, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
@@ -189,9 +204,14 @@ func (rg *Registro) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	args := pgx.NamedArgs{}
 	var chamadas []string
+	var conta json.RawMessage
+	var temConta bool
 	for _, pr := range f.Params {
 		v, tem := corpo[pr.Nome]
 		delete(corpo, pr.Nome)
+		if pr.Nome == f.ParamConta {
+			conta, temConta = v, tem
+		}
 		if !tem {
 			if !pr.Opcional {
 				dados.Erro(w, http.StatusBadRequest, "pedido_invalido", "falta o parâmetro "+pr.Nome)
@@ -213,6 +233,17 @@ func (rg *Registro) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		dados.Erro(w, http.StatusBadRequest, "pedido_invalido", "parâmetro desconhecido: "+k)
 		return
+	}
+	if f.ParamConta != "" && temConta && strings.TrimSpace(string(conta)) != "null" {
+		var c string
+		if json.Unmarshal(conta, &c) != nil {
+			dados.Erro(w, http.StatusBadRequest, "pedido_invalido", f.ParamConta+" deve ser texto")
+			return
+		}
+		if !autz.PodeVerConta(e, c) {
+			dados.Erro(w, http.StatusForbidden, "sem_permissao", "")
+			return
+		}
 	}
 	chamada := pgx.Identifier{f.Nome}.Sanitize() + "(" + strings.Join(chamadas, ", ") + ")"
 	var saida []byte
