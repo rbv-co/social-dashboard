@@ -1689,3 +1689,421 @@ func TestBaixaSimultanea(t *testing.T) {
 - [ ] **Step 1:** Testes; ver falhar. - [ ] **Step 2:** `rpc.go` (código de (a)). - [ ] **Step 3:** `cd api && gofmt -l ./internal && go vet ./internal/vessel/ && go test -count=1 -race ./internal/vessel/` PASS; mutações reprovam. - [ ] **Step 4: Commit** `feat(api): as 16 RPCs do selo Vessel com o portão de cada função e a decisão de registro só na mão` (+ `Co-Authored-By`).
 
 ---
+
+### Task 5: `internal/zoho` — o cliente do WorkDrive (só leitura)
+
+**Revisor:** opus. **Depende de:** nada (pacote novo; `testebanco.Novo` para a tabela).
+
+**(a) Contrato**
+- O que a edge `vessel-baixar-cartao` fazia com o Zoho (`supabase/functions/vessel-baixar-cartao/index.ts:36-95`), em Go e sem os caches de listagem (Ruling 5.10-12): **conexão** de `acessos_conexoes` (provedor `zoho`: `client_id`, `client_secret`, `refresh_token`, `data_center`; a tabela não está no catálogo, só o servidor lê — como a chave de serviço); **token de acesso** pelo `refresh_token` em `accounts.zoho<dc>/oauth/v2/token`, guardado em memória por 50 min (o `refresh_token` do Zoho NÃO roda: nada é regravado); **um retry** quando o Zoho recusa o token (401 ou `F7003`/`invalid oauth` no corpo); **listar** pasta paginando de 50 em 50 até 5000 (listagem que falhou é erro, nunca pasta vazia); **baixar** devolvendo a resposta para quem chama transmitir.
+- Defesas novas (a edge não tinha): `data_center` de lista FECHADA (`.com`, `.eu`, `.in`, `.com.au`, `.jp`, `.ca`, `.sa`, `.com.cn`, `.uk`; outro texto = `ErrDesconectado`, sem pedido nenhum: o valor vem do banco e levaria o `refresh_token` a outro host); redirecionamento só para `https` e no máximo 3 (o Go tira o `Authorization` quando o domínio muda, como o `fetch` da edge); erros sem URL, sem corpo do Zoho e sem segredo; `Conexao` com campos fechados e `String()` sem segredo.
+- `ParaTeste(t, pool, base)` (base loopback, nos dois papéis), no molde do `github.ParaTeste` do 5.8.
+- Interface para o Plano 6 em "Interfaces que este plano entrega". `ponytail:` o token em memória vale por processo (a API roda em uma instância; com várias, guardar o token no banco).
+- **Ensaiado** (13/10): `TestConexao` e `TestClienteZoho` passam com `-race`. Mutações conferidas: sem a lista de data centers (`evil.com/x` passa); sem o retry (`F7003` vira erro); seguindo redirecionamento para `http` (vira "sem resposta" em vez do 302).
+
+```go
+// Package zoho fala com o Zoho WorkDrive pela conexão OAuth da Central guardada em acessos_conexoes (provedor
+// 'zoho', gravada pela tela de Acessos), como as edges faziam com a chave de serviço. Só leitura: listar uma pasta
+// e baixar um arquivo. Consumidor: vessel (POST /vessel-baixar-cartao, Plano 5.10); o Plano 6 acrescenta o que
+// precisar (planilhas, upload) neste mesmo cliente. Os segredos (client_secret, refresh_token e o token de acesso)
+// não saem deste pacote: nem em erro, nem em log, nem no String() da conexão.
+package zoho
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"regexp"
+	"slices"
+	"strconv"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+// ErrDesconectado: não há conexão do Zoho utilizável (sem linha, sem refresh_token ou data center fora da lista).
+var ErrDesconectado = errors.New("zoho: sem conexão")
+
+// ErroHTTP: o Zoho respondeu fora do 2xx (ou um redirecionamento que não seguimos). Sem o corpo: pode citar o token.
+type ErroHTTP struct{ Status int }
+
+func (e *ErroHTTP) Error() string { return fmt.Sprintf("zoho: status %d", e.Status) }
+
+// dataCenters: os sufixos de domínio do Zoho (accounts.zoho<dc>, www.zohoapis<dc>). Lista FECHADA: o valor vem do
+// banco, e um texto qualquer levaria o refresh_token a outro host.
+var dataCenters = []string{".com", ".eu", ".in", ".com.au", ".jp", ".ca", ".sa", ".com.cn", ".uk"}
+
+// reTokenRecusado: o Zoho invalida o token antes de 1 hora (F7003, visto em 06/10/2026) e às vezes não responde 401.
+var reTokenRecusado = regexp.MustCompile(`(?i)F7003|invalid.{0,3}oauth`)
+
+const porPagina = 50 // o máximo do WorkDrive por chamada
+
+// Conexao: as credenciais lidas de acessos_conexoes. Campos fechados e String() sem segredo.
+type Conexao struct{ clientID, clientSecret, refreshToken, sufixo string }
+
+func (c Conexao) String() string { return "zoho.Conexao(" + c.sufixo + ")" }
+
+// Item: um arquivo ou pasta de uma listagem.
+type Item struct {
+	ID, Nome string
+	Pasta    bool
+}
+
+// Cliente: o token de acesso fica em memória por 50 min (o Zoho limita quantos tokens novos se pedem por janela;
+// pedir um por clique estouraria isso). ponytail: um por processo; vários processos = guardar o token no banco.
+type Cliente struct {
+	pool        *pgxpool.Pool
+	http        *http.Client
+	contas, api func(sufixo string) string // bases; só ParaTeste troca
+	mu          sync.Mutex
+	token       string
+	ate         time.Time
+}
+
+func Novo(p *pgxpool.Pool) *Cliente {
+	return &Cliente{pool: p, http: &http.Client{Timeout: 50 * time.Second,
+		// segue até 3 redirecionamentos, só para https (o download do WorkDrive pode mudar de host; o Go tira o
+		// Authorization quando o domínio muda, como o fetch da edge); http ou o 4º = 3xx devolvido (ErroHTTP)
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 3 || req.URL.Scheme != "https" {
+				return http.ErrUseLastResponse
+			}
+			return nil
+		}},
+		contas: func(s string) string { return "https://accounts.zoho" + s },
+		api:    func(s string) string { return "https://www.zohoapis" + s + "/workdrive/api/v1" }}
+}
+
+// ParaTeste: o cliente falando com um Zoho de mentira (httptest) nos dois papéis (contas e API). Base que não é
+// loopback derruba o teste: nunca aponta para um host de verdade.
+func ParaTeste(t testing.TB, p *pgxpool.Pool, base string) *Cliente {
+	t.Helper()
+	u, err := url.Parse(base)
+	if err != nil || u.Scheme != "http" || (u.Hostname() != "127.0.0.1" && u.Hostname() != "::1" && u.Hostname() != "localhost") {
+		t.Fatalf("zoho.ParaTeste: base %q não é loopback", base)
+	}
+	c := Novo(p)
+	b := strings.TrimRight(base, "/")
+	c.contas = func(string) string { return b }
+	c.api = func(string) string { return b + "/workdrive/api/v1" }
+	return c
+}
+
+// Conexao lê a conexão da Central (acessos_conexoes, provedor 'zoho'). Data center vazio = '.com', como a edge.
+func (c *Cliente) Conexao(ctx context.Context) (Conexao, error) {
+	var con Conexao
+	var dc *string
+	err := c.pool.QueryRow(ctx, `select coalesce(client_id, ''), coalesce(client_secret, ''), coalesce(refresh_token, ''), data_center
+		  from acessos_conexoes where provedor = 'zoho'`).Scan(&con.clientID, &con.clientSecret, &con.refreshToken, &dc)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Conexao{}, ErrDesconectado
+	}
+	if err != nil {
+		return Conexao{}, err
+	}
+	con.sufixo = ".com"
+	if dc != nil && strings.TrimSpace(*dc) != "" {
+		con.sufixo = "." + strings.TrimPrefix(strings.TrimSpace(*dc), ".")
+	}
+	if con.refreshToken == "" || !slices.Contains(dataCenters, con.sufixo) {
+		return Conexao{}, ErrDesconectado
+	}
+	return con, nil
+}
+
+func (c *Cliente) tokenDe(ctx context.Context, con Conexao) (string, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.token != "" && time.Now().Before(c.ate) {
+		return c.token, nil
+	}
+	form := url.Values{"grant_type": {"refresh_token"}, "client_id": {con.clientID}, "client_secret": {con.clientSecret},
+		"refresh_token": {con.refreshToken}}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.contas(con.sufixo)+"/oauth/v2/token", strings.NewReader(form.Encode()))
+	if err != nil {
+		return "", errors.New("zoho: sem token")
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return "", errors.New("zoho: sem token (sem resposta)")
+	}
+	defer resp.Body.Close()
+	var j struct {
+		AccessToken string `json:"access_token"`
+	}
+	if json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&j) != nil || j.AccessToken == "" {
+		return "", fmt.Errorf("zoho: sem token (status %d)", resp.StatusCode)
+	}
+	c.token, c.ate = j.AccessToken, time.Now().Add(50*time.Minute)
+	return c.token, nil
+}
+
+func (c *Cliente) esquecer(tok string) {
+	c.mu.Lock()
+	if c.token == tok {
+		c.token = ""
+	}
+	c.mu.Unlock()
+}
+
+// get: GET na API do WorkDrive com o token; token recusado (401 ou F7003) = renova e tenta UMA vez de novo.
+// Fora do 2xx = *ErroHTTP (o corpo, que pode citar o token, é descartado aqui).
+func (c *Cliente) get(ctx context.Context, con Conexao, caminho string) (*http.Response, error) {
+	for tentativa := 0; ; tentativa++ {
+		tok, err := c.tokenDe(ctx, con)
+		if err != nil {
+			return nil, err
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.api(con.sufixo)+caminho, nil)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Authorization", "Zoho-oauthtoken "+tok)
+		req.Header.Set("Accept", "application/vnd.api+json")
+		resp, err := c.http.Do(req)
+		if err != nil { // o *url.Error traz a URL: não sai daqui
+			return nil, errors.New("zoho: sem resposta")
+		}
+		if resp.StatusCode/100 == 2 {
+			return resp, nil
+		}
+		corpo, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
+		resp.Body.Close()
+		if tentativa == 0 && (resp.StatusCode == http.StatusUnauthorized || reTokenRecusado.Match(corpo)) {
+			c.esquecer(tok)
+			continue
+		}
+		return nil, &ErroHTTP{Status: resp.StatusCode}
+	}
+}
+
+// Listar: os itens de uma pasta, paginando (50 por chamada, até 5000). Leitura que falhou é erro, nunca lista vazia.
+func (c *Cliente) Listar(ctx context.Context, con Conexao, pasta string) ([]Item, error) {
+	var todos []Item
+	for offset := 0; offset < 5000; offset += porPagina {
+		resp, err := c.get(ctx, con, "/files/"+url.PathEscape(pasta)+"/files?page%5Blimit%5D="+strconv.Itoa(porPagina)+
+			"&page%5Boffset%5D="+strconv.Itoa(offset))
+		if err != nil {
+			return nil, err
+		}
+		var j struct {
+			Data []struct {
+				ID         string `json:"id"`
+				Attributes struct {
+					Name     string `json:"name"`
+					IsFolder bool   `json:"is_folder"`
+				} `json:"attributes"`
+			} `json:"data"`
+		}
+		err = json.NewDecoder(io.LimitReader(resp.Body, 8<<20)).Decode(&j)
+		resp.Body.Close()
+		if err != nil {
+			return nil, errors.New("zoho: listagem ilegível")
+		}
+		for _, d := range j.Data {
+			todos = append(todos, Item{ID: d.ID, Nome: strings.TrimSpace(d.Attributes.Name), Pasta: d.Attributes.IsFolder})
+		}
+		if len(j.Data) < porPagina {
+			break
+		}
+	}
+	return todos, nil
+}
+
+// Baixar: o conteúdo do arquivo `id`; quem chama fecha o corpo. Fora do 2xx = *ErroHTTP.
+func (c *Cliente) Baixar(ctx context.Context, con Conexao, id string) (*http.Response, error) {
+	return c.get(ctx, con, "/download/"+url.PathEscape(id))
+}
+```
+
+**(b) Testes de aceitação** (`zoho_test.go`, código abaixo)
+- `TestConexao`: data center nulo/vazio → `.com`; `.eu` e `com.au` normalizados; `evil.com/x`, `.com.evil.net`, `com@evil` → `ErrDesconectado`; sem `refresh_token` e sem linha → `ErrDesconectado`; a conexão impressa (`%v`, `%s`) não mostra `SEGREDO`.
+- `TestClienteZoho` (Zoho de mentira): listar 60 itens em 2 páginas (offset 50), nome aparado, pasta marcada; baixar com o MESMO token (1 pedido de token até ali, `Zoho-oauthtoken TOKEN-1`); `F7003` uma vez → renova (2 tokens) e lista; recusado duas vezes → `ErroHTTP{400}` sem `SEGREDO` no erro; 404; listagem 500; redirecionamento para `http` → `ErroHTTP{302}` (não seguido); Zoho fora do ar → erro sem URL e sem segredo.
+- Mutações que têm de reprovar: as três do ensaio; o token sem cache (o "1 pedido de token" reprova); o erro levando o corpo do Zoho (`SEGREDO-NO-CORPO` aparece).
+
+```go
+package zoho
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync"
+	"testing"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rbv-co/social-dashboard/api/internal/testebanco"
+)
+
+// a tabela de db/migrations/acessos/006_zoho.sql:2-13 (a fatia do 5.4 a declara; aqui o teste não depende dela)
+const tabelaDeConexoes = `create table if not exists acessos_conexoes (provedor text primary key, client_id text, client_secret text,
+  refresh_token text, org_id text, data_center text default '.com', escopos text, conectado_por uuid, conectado_em timestamptz,
+  atualizado_em timestamptz not null default now())`
+
+func comConexao(t *testing.T, dc string) *pgxpool.Pool {
+	t.Helper()
+	p := testebanco.Novo(t)
+	if _, err := p.Exec(context.Background(), tabelaDeConexoes); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.Exec(context.Background(), `insert into acessos_conexoes (provedor, client_id, client_secret, refresh_token, data_center)
+		values ('zoho', 'ID-1', 'SEGREDO-CLIENTE', 'SEGREDO-REFRESH', nullif($1::text, '-'))`, dc); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func TestConexao(t *testing.T) {
+	ctx := context.Background()
+	for _, c := range []struct{ dc, sufixo string }{{"-", ".com"}, {"", ".com"}, {".eu", ".eu"}, {"com.au", ".com.au"}} {
+		con, err := Novo(comConexao(t, c.dc)).Conexao(ctx)
+		if err != nil || con.sufixo != c.sufixo {
+			t.Errorf("data_center %q = %q %v", c.dc, con.sufixo, err)
+		}
+		if s := fmt.Sprint(con) + fmt.Sprintf("%v %s", con, con); strings.Contains(s, "SEGREDO") {
+			t.Errorf("a conexão impressa mostra o segredo: %s", s)
+		}
+	}
+	for _, dc := range []string{"evil.com/x", ".com.evil.net", "com@evil"} {
+		if _, err := Novo(comConexao(t, dc)).Conexao(ctx); !errors.Is(err, ErrDesconectado) {
+			t.Errorf("data_center %q = %v, esperava ErrDesconectado", dc, err)
+		}
+	}
+	p := comConexao(t, "-")
+	p.Exec(ctx, `update acessos_conexoes set refresh_token = ''`)
+	if _, err := Novo(p).Conexao(ctx); !errors.Is(err, ErrDesconectado) {
+		t.Errorf("sem refresh_token = %v", err)
+	}
+	p.Exec(ctx, `delete from acessos_conexoes`)
+	if _, err := Novo(p).Conexao(ctx); !errors.Is(err, ErrDesconectado) {
+		t.Errorf("sem linha = %v", err)
+	}
+}
+
+// zohoFalso: o accounts.zoho (token) e o WorkDrive (listar, baixar) de mentira.
+type zohoFalso struct {
+	mu                 sync.Mutex
+	tokens, recusas    int    // quantos tokens foram pedidos; quantas respostas F7003 ainda dar
+	itens              int    // itens da pasta "raiz"
+	ultimoAuth, ultimo string // o Authorization e o caminho do último pedido à API
+}
+
+func (z *zohoFalso) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	z.mu.Lock()
+	defer z.mu.Unlock()
+	if r.URL.Path == "/oauth/v2/token" {
+		r.ParseForm()
+		if r.PostForm.Get("refresh_token") != "SEGREDO-REFRESH" || r.PostForm.Get("client_secret") != "SEGREDO-CLIENTE" {
+			w.WriteHeader(400)
+			return
+		}
+		z.tokens++
+		fmt.Fprintf(w, `{"access_token":"TOKEN-%d"}`, z.tokens)
+		return
+	}
+	z.ultimoAuth, z.ultimo = r.Header.Get("Authorization"), r.URL.RequestURI()
+	if z.recusas > 0 {
+		z.recusas--
+		w.WriteHeader(400)
+		io.WriteString(w, `{"errors":[{"id":"F7003","title":"Invalid OAuth token SEGREDO-NO-CORPO"}]}`)
+		return
+	}
+	switch {
+	case strings.HasPrefix(r.URL.Path, "/workdrive/api/v1/files/raiz/files"):
+		offset := 0
+		fmt.Sscan(r.URL.Query().Get("page[offset]"), &offset)
+		var itens []string
+		for i := offset; i < z.itens && i < offset+50; i++ {
+			itens = append(itens, fmt.Sprintf(`{"id":"i%d","attributes":{"name":" item %d ","is_folder":%t}}`, i, i, i%2 == 0))
+		}
+		fmt.Fprintf(w, `{"data":[%s]}`, strings.Join(itens, ","))
+	case r.URL.Path == "/workdrive/api/v1/files/quebrada/files":
+		w.WriteHeader(500)
+	case r.URL.Path == "/workdrive/api/v1/download/arq1":
+		io.WriteString(w, "PNG-BYTES")
+	case r.URL.Path == "/workdrive/api/v1/download/pula":
+		http.Redirect(w, r, "http://127.0.0.1:1/arquivo", http.StatusFound) // para http: não segue
+	default:
+		w.WriteHeader(404)
+	}
+}
+
+func TestClienteZoho(t *testing.T) {
+	ctx := context.Background()
+	z := &zohoFalso{itens: 60}
+	srv := httptest.NewServer(z)
+	defer srv.Close()
+	c := ParaTeste(t, comConexao(t, "-"), srv.URL)
+	con, err := c.Conexao(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// listar pagina (60 itens = 2 chamadas), apara o nome e marca a pasta
+	itens, err := c.Listar(ctx, con, "raiz")
+	if err != nil || len(itens) != 60 || itens[0] != (Item{ID: "i0", Nome: "item 0", Pasta: true}) || itens[59].Pasta {
+		t.Fatalf("listar = %d %v %+v", len(itens), err, itens)
+	}
+	if !strings.Contains(z.ultimo, "page%5Boffset%5D=50") && !strings.Contains(z.ultimo, "page[offset]=50") {
+		t.Errorf("a 2ª página não pediu o offset 50: %s", z.ultimo)
+	}
+	// baixar com o MESMO token (um pedido de token para tudo até aqui)
+	resp, err := c.Baixar(ctx, con, "arq1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if string(b) != "PNG-BYTES" || z.tokens != 1 || z.ultimoAuth != "Zoho-oauthtoken TOKEN-1" {
+		t.Errorf("baixar = %q, tokens %d, auth %q", b, z.tokens, z.ultimoAuth)
+	}
+	// F7003 (o Zoho invalidou o token antes da hora): renova e tenta UMA vez
+	z.recusas = 1
+	if _, err := c.Listar(ctx, con, "raiz"); err != nil || z.tokens != 2 {
+		t.Errorf("F7003 = %v, tokens %d", err, z.tokens)
+	}
+	// recusado duas vezes: erro com o status, sem o corpo (que cita o token)
+	z.recusas = 2
+	_, err = c.Baixar(ctx, con, "arq1")
+	var e *ErroHTTP
+	if !errors.As(err, &e) || e.Status != 400 || strings.Contains(err.Error(), "SEGREDO") {
+		t.Errorf("recusado duas vezes = %v", err)
+	}
+	// 404, listagem quebrada, redirecionamento para http e Zoho fora do ar
+	if _, err := c.Baixar(ctx, con, "nao-existe"); !errors.As(err, &e) || e.Status != 404 {
+		t.Errorf("404 = %v", err)
+	}
+	if _, err := c.Listar(ctx, con, "quebrada"); !errors.As(err, &e) || e.Status != 500 {
+		t.Errorf("listagem quebrada = %v", err)
+	}
+	if _, err := c.Baixar(ctx, con, "pula"); !errors.As(err, &e) || e.Status != http.StatusFound {
+		t.Errorf("redirecionamento para http = %v", err)
+	}
+	srv.Close()
+	c2 := ParaTeste(t, comConexao(t, "-"), srv.URL)
+	_, err = c2.Listar(ctx, con, "raiz")
+	if err == nil || strings.Contains(err.Error(), "127.0.0.1") || strings.Contains(err.Error(), "SEGREDO") {
+		t.Errorf("fora do ar = %v (sem URL nem segredo)", err)
+	}
+}
+```
+
+**(c) Arquivos:** Create `api/internal/zoho/zoho.go`, `api/internal/zoho/zoho_test.go`.
+
+**(d) Dependências:** nenhuma.
+
+- [ ] **Step 1:** Testes; ver falhar. - [ ] **Step 2:** `zoho.go`. - [ ] **Step 3:** `cd api && gofmt -l ./internal && go vet ./internal/zoho/ && go test -count=1 -race ./internal/zoho/` PASS; mutações reprovam. - [ ] **Step 4: Commit** `feat(api): cliente internal/zoho (WorkDrive, só leitura) — token em memória, data center de lista fechada, sem segredo em erro` (+ `Co-Authored-By`).
+
+---
