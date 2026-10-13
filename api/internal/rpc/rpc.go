@@ -11,7 +11,9 @@ package rpc
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -58,6 +60,11 @@ type Funcao struct {
 	// senão 403 sem a função rodar. null segue (a função decide). Ruling 5.7-10: função SECURITY DEFINER
 	// que grava por conta não passava pela restritiva de produção.
 	ParamConta string
+	// Conferir (opcional): última barreira, na MESMA transação da função e logo antes dela (depois do
+	// portão, de SoSessaoPropria e de ParamConta). Recebe o JSON cru de cada parâmetro enviado. Devolver
+	// autz.ErrNegado = 403 sem a função rodar; outro erro segue o mapa de erros do banco. nil = nada.
+	// Serve a regra que o portão e a conta não enxergam (ex.: o item que pertence a outra conta).
+	Conferir func(ctx context.Context, tx pgx.Tx, e *autz.Escopo, args map[string]json.RawMessage) error
 }
 
 var (
@@ -203,6 +210,7 @@ func (rg *Registro) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	args := pgx.NamedArgs{}
+	enviados := map[string]json.RawMessage{}
 	var chamadas []string
 	var conta json.RawMessage
 	var temConta bool
@@ -224,6 +232,7 @@ func (rg *Registro) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		args[pr.Nome] = string(v)
+		enviados[pr.Nome] = v
 		chamadas = append(chamadas, pgx.Identifier{pr.Nome}.Sanitize()+" => "+expr(pr))
 	}
 	if len(corpo) > 0 {
@@ -248,6 +257,11 @@ func (rg *Registro) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	chamada := pgx.Identifier{f.Nome}.Sanitize() + "(" + strings.Join(chamadas, ", ") + ")"
 	var saida []byte
 	err = banco.ComUsuario(r.Context(), rg.pool, a.ID, func(tx pgx.Tx) error {
+		if f.Conferir != nil {
+			if err := f.Conferir(r.Context(), tx, e, enviados); err != nil {
+				return err
+			}
+		}
 		switch f.Retorno {
 		case Conjunto:
 			// linha inteira (r.*: uma coluna chamada r não a esconde) e o teto de linhas do PostgREST
@@ -259,6 +273,10 @@ func (rg *Registro) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		return tx.QueryRow(r.Context(), `select coalesce(to_json(`+chamada+`), 'null'::json)`, args).Scan(&saida)
 	})
+	if errors.Is(err, autz.ErrNegado) {
+		dados.Erro(w, http.StatusForbidden, "sem_permissao", "")
+		return
+	}
 	if err != nil {
 		dados.ErroDoBanco(w, err)
 		return
