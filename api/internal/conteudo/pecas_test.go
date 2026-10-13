@@ -171,11 +171,16 @@ func TestAgendarSemAprovarPeloRascunho(t *testing.T) {
 			Corpo: `{"status":"agendada","publicar_em":"2026-11-01T15:00:00.000Z"}`}
 	}
 	nega := func(quem, peca string) mundoteste.Caso { c := agendar(quem, peca); c.Status = 403; return c }
-	intacto(t, m, []mundoteste.Caso{nega("conteudista", P1)}) // rascunho
+	publicar := func(quem, peca string, status int) mundoteste.Caso {
+		return mundoteste.Caso{Nome: quem + " publica " + peca, Quem: quem, Metodo: "PATCH", Caminho: "/conteudo/pecas/" + peca,
+			Corpo: `{"status":"publicada","publicado_em":"2026-11-01T15:05:00.000Z"}`, Status: status}
+	}
+	// o gatilho não barra 'publicada' nem de em_aprovacao: P7 (em_aprovacao) também é 403
+	intacto(t, m, []mundoteste.Caso{nega("conteudista", P1), publicar("conteudista", P1, 403), publicar("conteudista", P7, 403)}) // rascunho
 	m.Um(t, `with u as (update conteudo_pecas set status = 'reprovada' where id = '`+P1+`' returning 1) select count(*) from u`)
 	aprovar := nega("conteudista", P1) // reprovada
 	aprovar.Corpo = `{"status":"aprovada"}`
-	intacto(t, m, []mundoteste.Caso{nega("conteudista", P1), aprovar, nega("conteudistaA1", P1)})
+	intacto(t, m, []mundoteste.Caso{nega("conteudista", P1), aprovar, nega("conteudistaA1", P1), publicar("conteudista", P1, 403)})
 	// em_aprovacao → rascunho o editor ainda faz; dali, agendar não
 	m.Rodar(t, []mundoteste.Caso{{Nome: "devolver ao rascunho", Quem: "conteudista", Metodo: "PATCH", Caminho: "/conteudo/pecas/" + P2,
 		Corpo: `{"status":"rascunho"}`, Status: 200, Efeito: status + P2 + `'`, Quer: "rascunho"}})
@@ -193,4 +198,10 @@ func TestAgendarSemAprovarPeloRascunho(t *testing.T) {
 			Corpo: `{"status":"agendada","publicar_em":"2026-11-05T15:00:00.000Z","avisado_em":null}`, Status: 200,
 			Efeito: `select status || '|' || publicar_em::text from conteudo_pecas where id = '` + P1 + `'`, Quer: "agendada|2026-11-05 15:00:00+00"},
 	})
+	// agendada → publicada: o editor pode (a peça já passou pela aprovação)
+	m.Rodar(t, []mundoteste.Caso{func() mundoteste.Caso {
+		c := publicar("conteudista", P1, 200)
+		c.Efeito, c.Quer = status+P1+`'`, "publicada"
+		return c
+	}()})
 }

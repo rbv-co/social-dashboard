@@ -90,25 +90,27 @@ var soLegivelPeca = soLegivelAoCriar("conteudo_pecas")
 // conteudo_guarda_aprovacao só barra 'aprovada'/'agendada' quando o status ANTIGO é 'em_aprovacao'. Quem não
 // aprova fazia em_aprovacao → rascunho e depois rascunho → agendada (ou reprovada → agendada), pulava a
 // aprovação, e o robô da hora H avisava a publicação. Aqui, sem conteudo.aprovar, só se vai para 'aprovada' ou
-// 'agendada' a partir de uma peça que JÁ está num dos dois (remarcar a agendada) ou em em_aprovacao (aí o
-// gatilho decide e recusa). A linha fica travada
+// 'agendada'/'publicada' a partir de uma peça que JÁ está em aprovada, agendada ou publicada (remarcar), ou
+// em em_aprovacao para aprovada/agendada (aí o gatilho decide e recusa). A linha fica travada
 // (for update) até o UPDATE: o status lido é o que o gatilho enxerga como OLD.
 func conferirPeca(ctx context.Context, tx pgx.Tx, e *autz.Escopo, id string, campos map[string]any) error {
 	if id == "" {
 		return soLegivelPeca(ctx, tx, e, id, campos)
 	}
-	if novo, _ := comoTexto(bruto(campos, "status")); (novo != "aprovada" && novo != "agendada") || Aprovador(e) {
+	novo, _ := comoTexto(bruto(campos, "status"))
+	if (novo != "aprovada" && novo != "agendada" && novo != "publicada") || Aprovador(e) {
 		return nil
 	}
 	var atual string
 	if err := tx.QueryRow(ctx, `select status from conteudo_pecas where id = $1::uuid for update`, id).Scan(&atual); err != nil {
 		return err
 	}
-	// em_aprovacao fica com o gatilho: ele responde o 400 "Sem permissao para aprovar..." da produção
-	if atual != "aprovada" && atual != "agendada" && atual != "em_aprovacao" {
-		return autz.ErrNegado
+	// em_aprovacao fica com o gatilho, que responde o 400 "Sem permissao para aprovar..." da produção — mas só
+	// para aprovada/agendada: para 'publicada' ele não barra nada, então ali em_aprovacao também é 403.
+	if atual == "aprovada" || atual == "agendada" || atual == "publicada" || (atual == "em_aprovacao" && novo != "publicada") {
+		return nil
 	}
-	return nil
+	return autz.ErrNegado
 }
 
 // reCaminho: <conta>/<peça>/<nome> como subirArquivo monta (dados-conteudo.js:543: `${account}/${peca}/${ordem}-${slug}.${ext}`).
