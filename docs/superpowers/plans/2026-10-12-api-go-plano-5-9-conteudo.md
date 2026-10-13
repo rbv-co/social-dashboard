@@ -1456,6 +1456,404 @@ func TestLeituras(t *testing.T) {
 **(d) Dependências:** Task 3; `dados.Consulta`.
 
 - [ ] **Step 1:** Testes; ver falhar. - [ ] **Step 2:** Implementar (código de (a)). Se `Validar` recusar alguma declaração que o ensaio aceitou (a gramática mudou depois do 5.7): **pare e reporte** — não troque por filtro no Go. - [ ] **Step 3:** `cd api && gofmt -l ./internal && go vet ./internal/conteudo/ && go test -count=1 ./internal/conteudo/` PASS; mutações reprovam. - [ ] **Step 4:** Commit `feat(api): leituras da Central de Conteúdo pelo catálogo (capa, métrica e sugestão embutidas; filhas presas à peça)` (+ `Co-Authored-By`).
+---
+
+### Task 5: Escritas de peça, arquivo e evento
+
+**Revisor:** opus. **Depende de:** 2 (`Tabela.Conferir`), 3 (`pecaVisivel`, `soLegivelAoCriar`, validadores), 4 (`colunasPeca`, `colunasArquivo`, `colunasEvento`: em worktrees paralelas, copie as três constantes e apague a cópia no merge).
+
+**(a) Contrato** (catálogo em toda escrita, pelo `dados.Tabela` do 5.1 + o gancho da Task 2; `soSessaoPropria` em todas)
+- `POST /conteudo/pecas` (`criarPeca`, `dados-conteudo.js:188`) com `corpoPecaNova`: `account_id`, `titulo`, `formato` obrigatórios; `legenda`, `hashtags`, `observacoes`, `responsavel`, `publicar_em`, `avisado_em` (só `null`). **Sem `status`** (nasce `rascunho`), sem `publicado_em`, sem os campos de aprovação nem os do Instagram (Ruling 5.9-6). `criado_por` da sessão. A peça nova tem de ser legível por quem cria (`soLegivelAoCriar`: a conta) → senão 403. Resposta `201` com a linha (`colunasPeca`).
+- `PATCH /conteudo/pecas/{id}` (`atualizarPeca :199`, `mudarStatus :234`) com `corpoPeca`: as de cima + `status` (a guarda `conteudo_guarda_aprovacao` decide, com a identidade de `banco.ComUsuario`: sem `conteudo.aprovar` → `400 regra_de_negocio` "Sem permissao para aprovar pecas de conteudo.", como o PostgREST respondia) e `publicado_em`. `PodeEditar` aplica a restritiva na linha velha (404) e na nova (mover para conta invisível = 403).
+- `DELETE /conteudo/pecas/{id}` (`excluirPeca :521`): `PodeApagar` (com a restritiva) e a cascata do banco (arquivos, eventos, métricas, casamentos; ideia ligada fica com `peca_id` nulo). Os objetos do bucket são do Plano 6 (hoje a tela os apaga antes, `:519`).
+- `POST /conteudo/arquivos` (`subirArquivo :551`, `duplicarPeca :607`) com `corpoArquivo`; `PATCH /conteudo/arquivos/{id}` (`trocarOrdem :639`) só com `ordem` (-1 a 1000: o -1 é o valor livre da troca em três passos); `DELETE /conteudo/arquivos/{id}` (`removerArquivo :634`). `conferirArquivo`: peça legível (criar: invisível ou inexistente = 403; editar/apagar: invisível = 404) e, na criação, `caminho` dentro de `<conta da peça>/<peça>/` (403 fora: Ruling 5.9-8). `bucket` só `conteudo`.
+- `POST /conteudo/eventos` (`registrarEvento :180`) com `corpoEvento`: `quem` da sessão (a policy exige `quem = auth.uid()`), `acao` só `criou|mudou_status|remarcou|duplicou` (Ruling 5.9-7), `de`/`para` estados ou nulo, peça legível (403).
+- **Ensaiado** (worktree sobre o 5.7 + Tasks 1–4): os três testes abaixo passam; tirar o `Conferir` de `tabelaArquivos` faz 12 casos reprovarem; tirar o `soLegivelAoCriar` de `tabelaPecas` faz "criar em conta que não vê" responder `201 {"id"}` e gravar.
+
+```go
+package conteudo
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"regexp"
+	"strings"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rbv-co/social-dashboard/api/internal/autz"
+	"github.com/rbv-co/social-dashboard/api/internal/dados"
+)
+
+// corpoPeca: o que atualizarPeca/mudarStatus gravam (dados-conteudo.js:197-237; camposDoBanco de
+// painel-peca.vue:535-562; tela-de-conteudo.vue:433; tela-de-peca.vue:249). Os campos de aprovação
+// (aprovado_por/_em, motivo_reprovacao) e do Instagram (ig_*) ficam FORA: só as funções os gravam. status
+// entra: a guarda conteudo_guarda_aprovacao decide quem aprova (com a identidade de banco.ComUsuario).
+// avisado_em só nulo: quem o marca é o robô da hora H (Ruling 5.9-6).
+type corpoPeca struct {
+	AccountID   json.RawMessage `json:"account_id,omitempty"`
+	Titulo      json.RawMessage `json:"titulo,omitempty"`
+	Formato     json.RawMessage `json:"formato,omitempty"`
+	Status      json.RawMessage `json:"status,omitempty"`
+	Legenda     json.RawMessage `json:"legenda,omitempty"`
+	Hashtags    json.RawMessage `json:"hashtags,omitempty"`
+	Observacoes json.RawMessage `json:"observacoes,omitempty"`
+	Responsavel json.RawMessage `json:"responsavel,omitempty"`
+	PublicarEm  json.RawMessage `json:"publicar_em,omitempty"`
+	PublicadoEm json.RawMessage `json:"publicado_em,omitempty"`
+	AvisadoEm   json.RawMessage `json:"avisado_em,omitempty"`
+}
+
+func (c corpoPeca) Validar() error {
+	var e []error
+	ok := func(v json.RawMessage, valido bool, frase string) {
+		if v != nil && !valido {
+			e = append(e, errors.New(frase))
+		}
+	}
+	ok(c.AccountID, casa(c.AccountID, reUUID), "account_id é o id da conta.")
+	ok(c.Titulo, textoAte(c.Titulo, 300, false), "titulo tem de 1 a 300 caracteres.")
+	ok(c.Formato, textoEm(c.Formato, formatosDaPeca...), "formato é feed, reels, stories ou carrossel.")
+	ok(c.Status, textoEm(c.Status, estadosDaPeca...), "status é um dos estados da peça.")
+	ok(c.Legenda, textoAte(c.Legenda, 20000, true), "legenda tem até 20000 caracteres.")
+	ok(c.Hashtags, textoAte(c.Hashtags, 5000, true), "hashtags têm até 5000 caracteres.")
+	ok(c.Observacoes, textoOuNulo(c.Observacoes, 20000), "observacoes têm até 20000 caracteres.")
+	ok(c.Responsavel, uuidOuNulo(c.Responsavel), "responsavel é o id de uma pessoa ou null.")
+	ok(c.PublicarEm, instanteOuNulo(c.PublicarEm), "publicar_em é um instante ISO 8601 ou null.")
+	ok(c.PublicadoEm, instanteOuNulo(c.PublicadoEm), "publicado_em é um instante ISO 8601 ou null.")
+	ok(c.AvisadoEm, nulo(c.AvisadoEm), "avisado_em só pode ser limpo (null): quem marca o aviso é o robô da hora H.")
+	return errors.Join(e...)
+}
+
+// corpoPecaNova: o que criarPeca recebe (camposDoBanco, planoViraPecas :393, duplicarPeca :581). SEM status
+// nem publicado_em: a peça nasce rascunho. O gatilho da aprovação é BEFORE UPDATE — um INSERT já 'agendada'
+// pulava a aprovação em produção (Ruling 5.9-6, achado 2). criado_por vem da sessão (Tabela.Autor).
+type corpoPecaNova struct {
+	AccountID   json.RawMessage `json:"account_id,omitempty"`
+	Titulo      json.RawMessage `json:"titulo,omitempty"`
+	Formato     json.RawMessage `json:"formato,omitempty"`
+	Legenda     json.RawMessage `json:"legenda,omitempty"`
+	Hashtags    json.RawMessage `json:"hashtags,omitempty"`
+	Observacoes json.RawMessage `json:"observacoes,omitempty"`
+	Responsavel json.RawMessage `json:"responsavel,omitempty"`
+	PublicarEm  json.RawMessage `json:"publicar_em,omitempty"`
+	AvisadoEm   json.RawMessage `json:"avisado_em,omitempty"`
+}
+
+func (c corpoPecaNova) Validar() error {
+	var falta error
+	if c.AccountID == nil || c.Titulo == nil || c.Formato == nil {
+		falta = errors.New("Informe account_id, titulo e formato.")
+	}
+	return errors.Join(falta, corpoPeca{AccountID: c.AccountID, Titulo: c.Titulo, Formato: c.Formato, Legenda: c.Legenda,
+		Hashtags: c.Hashtags, Observacoes: c.Observacoes, Responsavel: c.Responsavel, PublicarEm: c.PublicarEm,
+		AvisadoEm: c.AvisadoEm}.Validar())
+}
+
+// tabelaPecas: catálogo (conteudo_pecas_escrita + a restritiva pela regra de Ler no PodeEditar/PodeApagar) e,
+// na criação, a peça nova tem de ser legível (a conta dela, Ruling 5.9-4).
+var tabelaPecas = dados.Tabela{Nome: "conteudo_pecas", Resposta: colunasPeca, Autor: "criado_por",
+	Conferir: soLegivelAoCriar("conteudo_pecas")}
+
+// reCaminho: <conta>/<peça>/<nome> como subirArquivo monta (dados-conteudo.js:543: `${account}/${peca}/${ordem}-${slug}.${ext}`).
+var reCaminho = regexp.MustCompile(`^[0-9a-f-]{36}/[0-9a-f-]{36}/[A-Za-z0-9][A-Za-z0-9._-]{0,159}$`)
+
+// corpoArquivo: o insert de subirArquivo (:551) e de duplicarPeca (:607). bucket só 'conteudo' (o único da
+// Central; o Storage é do Plano 6); largura/altura/duracao_s ninguém grava.
+type corpoArquivo struct {
+	PecaID  json.RawMessage `json:"peca_id,omitempty"`
+	Ordem   json.RawMessage `json:"ordem,omitempty"`
+	Bucket  json.RawMessage `json:"bucket,omitempty"`
+	Caminho json.RawMessage `json:"caminho,omitempty"`
+	Tipo    json.RawMessage `json:"tipo,omitempty"`
+	Mime    json.RawMessage `json:"mime,omitempty"`
+	Bytes   json.RawMessage `json:"bytes,omitempty"`
+}
+
+func (c corpoArquivo) Validar() error {
+	var e []error
+	caminho, _ := comoTexto(c.Caminho)
+	if !casa(c.PecaID, reUUID) {
+		e = append(e, errors.New("peca_id é o id da peça."))
+	}
+	if !reCaminho.MatchString(caminho) || strings.Contains(caminho, "..") {
+		e = append(e, errors.New("caminho é <conta>/<peça>/<nome do arquivo>."))
+	}
+	if !textoEm(c.Tipo, "imagem", "video") {
+		e = append(e, errors.New("tipo é imagem ou video."))
+	}
+	if c.Ordem != nil && !inteiroEntre(c.Ordem, 1, 1000) {
+		e = append(e, errors.New("ordem é um número de 1 a 1000."))
+	}
+	if c.Bucket != nil && !textoEm(c.Bucket, "conteudo") {
+		e = append(e, errors.New("bucket é conteudo."))
+	}
+	if c.Mime != nil && !textoOuNulo(c.Mime, 100) {
+		e = append(e, errors.New("mime tem até 100 caracteres."))
+	}
+	if c.Bytes != nil && !nulo(c.Bytes) && !inteiroEntre(c.Bytes, 0, 1<<40) {
+		e = append(e, errors.New("bytes é um número inteiro."))
+	}
+	return errors.Join(e...)
+}
+
+// corpoOrdem: trocarOrdem (:639). -1 é o valor livre da troca em três passos (painel-peca.vue:737-739: o
+// unique (peca_id, ordem) impede a troca direta).
+type corpoOrdem struct {
+	Ordem json.RawMessage `json:"ordem,omitempty"`
+}
+
+func (c corpoOrdem) Validar() error {
+	if !inteiroEntre(c.Ordem, -1, 1000) {
+		return errors.New("ordem é um número de -1 a 1000.")
+	}
+	return nil
+}
+
+// conferirArquivo: a peça do arquivo tem de ser uma que quem pede LÊ (a restritiva de conteudo_pecas; a tabela
+// de arquivos não tem conta: Ruling 5.9-4). Na criação, a peça do corpo — invisível ou inexistente = 403 — e o
+// caminho preso a <conta da peça>/<peça>/ (403 fora dele: o apagar do Storage levaria o objeto de outra peça,
+// Ruling 5.9-8). Na edição e no apagar, a peça da linha — invisível = 404, como a própria linha.
+func conferirArquivo(ctx context.Context, tx pgx.Tx, e *autz.Escopo, id string, campos map[string]any) error {
+	if id == "" {
+		peca, _ := comoTexto(bruto(campos, "peca_id"))
+		conta, err := pecaVisivel(ctx, tx, e, peca)
+		if err != nil {
+			return negado(err)
+		}
+		if caminho, _ := comoTexto(bruto(campos, "caminho")); !strings.HasPrefix(caminho, conta+"/"+peca+"/") {
+			return autz.ErrNegado
+		}
+		return nil
+	}
+	var peca string
+	// a linha existe e quem pede a lê: o PodeEditar/PodeApagar acabou de conferi-la
+	if err := tx.QueryRow(ctx, `select peca_id::text from conteudo_arquivos where id = $1::uuid`, id).Scan(&peca); err != nil {
+		return err
+	}
+	_, err := pecaVisivel(ctx, tx, e, peca)
+	return err
+}
+
+var tabelaArquivos = dados.Tabela{Nome: "conteudo_arquivos", Resposta: colunasArquivo, Conferir: conferirArquivo}
+
+// acoesDaTela: as ações que registrarEvento grava (dados-conteudo.js:193, 235, 624; tela-de-conteudo.vue:435).
+// 'aprovou', 'reprovou', 'casou', 'casou_na_mao', 'recusou_casamento', 'reavisar' e o 'criou' da ideia só as
+// funções gravam: um evento forjado mentiria na trilha de quem aprovou (Ruling 5.9-7).
+var acoesDaTela = []string{"criou", "mudou_status", "remarcou", "duplicou"}
+
+// corpoEvento: registrarEvento (:180). quem vem da sessão (Tabela.Autor: a policy exige quem = auth.uid()).
+type corpoEvento struct {
+	PecaID  json.RawMessage `json:"peca_id,omitempty"`
+	De      json.RawMessage `json:"de,omitempty"`
+	Para    json.RawMessage `json:"para,omitempty"`
+	Acao    json.RawMessage `json:"acao,omitempty"`
+	Detalhe json.RawMessage `json:"detalhe,omitempty"`
+}
+
+func (c corpoEvento) Validar() error {
+	var e []error
+	estado := func(v json.RawMessage) bool { return v == nil || nulo(v) || textoEm(v, estadosDaPeca...) }
+	if !casa(c.PecaID, reUUID) {
+		e = append(e, errors.New("peca_id é o id da peça."))
+	}
+	if !textoEm(c.Acao, acoesDaTela...) {
+		e = append(e, errors.New("acao é criou, mudou_status, remarcou ou duplicou."))
+	}
+	if !estado(c.De) || !estado(c.Para) {
+		e = append(e, errors.New("de e para são estados da peça ou null."))
+	}
+	if c.Detalhe != nil && !textoOuNulo(c.Detalhe, 1000) {
+		e = append(e, errors.New("detalhe tem até 1000 caracteres."))
+	}
+	return errors.Join(e...)
+}
+
+// tabelaEventos: catálogo (conteudo_eventos_insercao: conteudista e quem = auth.uid()) e a peça do evento
+// legível por quem grava (a tabela de eventos não tem conta).
+var tabelaEventos = dados.Tabela{Nome: "conteudo_eventos", Resposta: colunasEvento, Autor: "quem",
+	Conferir: func(ctx context.Context, tx pgx.Tx, e *autz.Escopo, _ string, campos map[string]any) error {
+		peca, _ := comoTexto(bruto(campos, "peca_id"))
+		_, err := pecaVisivel(ctx, tx, e, peca)
+		return negado(err)
+	}}
+
+func montarPecas(r chi.Router, p *pgxpool.Pool) {
+	r.With(soSessaoPropria).Post("/conteudo/pecas", dados.RotaCriar[corpoPecaNova](p, autz.Producao, tabelaPecas))
+	r.With(soSessaoPropria).Patch("/conteudo/pecas/{id}", dados.RotaEditar[corpoPeca](p, autz.Producao, tabelaPecas))
+	r.With(soSessaoPropria).Delete("/conteudo/pecas/{id}", dados.RotaApagar(p, autz.Producao, tabelaPecas))
+	r.With(soSessaoPropria).Post("/conteudo/arquivos", dados.RotaCriar[corpoArquivo](p, autz.Producao, tabelaArquivos))
+	r.With(soSessaoPropria).Patch("/conteudo/arquivos/{id}", dados.RotaEditar[corpoOrdem](p, autz.Producao, tabelaArquivos))
+	r.With(soSessaoPropria).Delete("/conteudo/arquivos/{id}", dados.RotaApagar(p, autz.Producao, tabelaArquivos))
+	r.With(soSessaoPropria).Post("/conteudo/eventos", dados.RotaCriar[corpoEvento](p, autz.Producao, tabelaEventos))
+}
+```
+
+**(b) Testes de aceitação** (`pecas_test.go`, código abaixo; "intacto" = a foto das 9 tabelas igual depois de CADA caso negado)
+- `TestPecas`: negados e intactos — criar em conta invisível (403), criar já `agendada` (400 `corpo_invalido`), com `aprovado_por` ou `criado_por` (400), sem título (400 com a frase), marcando o aviso (400), formato fora da lista (400), `soAprovar` e `semModulo` (403); o editor aprovando ou agendando pelo PATCH (400 com a frase da guarda; P2 continua `em_aprovacao`), editar peça de A2 sem vê-la (404), mover para A2 (403), marcar o aviso (400), gravar `ig_media_id` (400), agendar sem data (400 do check), impersonado (403 com a frase), apagar peça de A2 (404). Permitidos com o efeito — criar (`rascunho`, `criado_por` da sessão, aviso nulo), editar e mandar para aprovação, remarcar limpando o aviso, o aprovador aprovando pelo PATCH (a guarda deixa), admin editando a de A2, apagar levando as filhas.
+- `TestFilhasSoComAPecaVisivel`: arquivo e evento em peça de A2 e em peça inexistente → 403 IGUAL; reordenar/apagar arquivo de peça de A2 → 404; evento forjando `aprovou` → 400; evento com `quem` no corpo → 400; estado fora da lista → 400; `soAprovar` → 403; o evento permitido sai assinado pela sessão; admin grava na peça de A2.
+- `TestArquivos`: caminho de outra peça (de A2 ou da mesma conta) → 403; com `..` ou absoluto → 400; outro bucket → 400; ordem repetida → 409; PATCH com `caminho` → 400; ordem -2 → 400; a troca em três passos de `painel-peca.vue:737-739` termina `2,1,3`; apagar.
+- Mutações que têm de reprovar: tirar o `Conferir` de `tabelaArquivos` ou de `tabelaEventos`; tirar o `soLegivelAoCriar` de `tabelaPecas`; pôr `Status` em `corpoPecaNova` (o caso "criar já agendada" grava); `conferirArquivo` sem o `HasPrefix` (o caminho de outra peça grava); `acoesDaTela` com `aprovou`; tirar `soSessaoPropria` de uma rota (o caso do impersonado; e a varredura da Task 9).
+
+```go
+package conteudo
+
+import (
+	"testing"
+
+	"github.com/rbv-co/social-dashboard/api/internal/testebanco/mundoteste"
+)
+
+// intacto: cada caso negado roda e o banco (as 9 tabelas) fica igual.
+func intacto(t *testing.T, m *mundoteste.Mundo, casos []mundoteste.Caso) {
+	t.Helper()
+	for _, c := range casos {
+		antes := m.Um(t, fotoDoConteudo)
+		m.Rodar(t, []mundoteste.Caso{c})
+		if m.Um(t, fotoDoConteudo) != antes {
+			t.Errorf("%s: o banco mudou", c.Nome)
+		}
+	}
+}
+
+func TestPecas(t *testing.T) {
+	m := novoMundo(t, montarPecas)
+	const status = `select status from conteudo_pecas where id = '`
+	intacto(t, m, []mundoteste.Caso{
+		{Nome: "criar em conta que não vê", Quem: "conteudistaA1", Metodo: "POST", Caminho: "/conteudo/pecas",
+			Corpo: `{"account_id":"` + A2 + `","titulo":"x","formato":"feed"}`, Status: 403, Tem: "sem_permissao"},
+		{Nome: "criar já agendada (o INSERT pulava a guarda)", Quem: "aprovador", Metodo: "POST", Caminho: "/conteudo/pecas",
+			Corpo: `{"account_id":"` + A1 + `","titulo":"x","formato":"feed","status":"agendada","publicar_em":"2026-11-01T15:00:00.000Z"}`, Status: 400, Tem: "corpo_invalido"},
+		{Nome: "criar com aprovado_por", Quem: "conteudista", Metodo: "POST", Caminho: "/conteudo/pecas",
+			Corpo: `{"account_id":"` + A1 + `","titulo":"x","formato":"feed","aprovado_por":"` + idConteudista + `"}`, Status: 400, Tem: "corpo_invalido"},
+		{Nome: "criar com criado_por (vem da sessão)", Quem: "conteudista", Metodo: "POST", Caminho: "/conteudo/pecas",
+			Corpo: `{"account_id":"` + A1 + `","titulo":"x","formato":"feed","criado_por":"` + idAprovador + `"}`, Status: 400, Tem: "corpo_invalido"},
+		{Nome: "criar sem título", Quem: "conteudista", Metodo: "POST", Caminho: "/conteudo/pecas",
+			Corpo: `{"account_id":"` + A1 + `","formato":"feed"}`, Status: 400, Tem: "Informe account_id, titulo e formato."},
+		{Nome: "criar marcando o aviso", Quem: "conteudista", Metodo: "POST", Caminho: "/conteudo/pecas",
+			Corpo: `{"account_id":"` + A1 + `","titulo":"x","formato":"feed","avisado_em":"2026-10-01T00:00:00Z"}`, Status: 400, Tem: "avisado_em"},
+		{Nome: "criar com formato fora da lista", Quem: "conteudista", Metodo: "POST", Caminho: "/conteudo/pecas",
+			Corpo: `{"account_id":"` + A1 + `","titulo":"x","formato":"tiktok"}`, Status: 400, Tem: "formato"},
+		{Nome: "só conteudo.aprovar não cria", Quem: "soAprovar", Metodo: "POST", Caminho: "/conteudo/pecas",
+			Corpo: `{"account_id":"` + A1 + `","titulo":"x","formato":"feed"}`, Status: 403},
+		{Nome: "sem módulo não cria", Quem: "semModulo", Metodo: "POST", Caminho: "/conteudo/pecas",
+			Corpo: `{"account_id":"` + A1 + `","titulo":"x","formato":"feed"}`, Status: 403},
+		// a guarda pela rota: sem conteudo.aprovar, nem aprovar nem agendar vindo de em_aprovacao (400, a frase da função)
+		{Nome: "editor aprova pelo PATCH", Quem: "conteudista", Metodo: "PATCH", Caminho: "/conteudo/pecas/" + P2,
+			Corpo: `{"status":"aprovada"}`, Status: 400, Tem: "Sem permissao para aprovar pecas de conteudo."},
+		{Nome: "editor agenda direto de em_aprovacao", Quem: "conteudista", Metodo: "PATCH", Caminho: "/conteudo/pecas/" + P2,
+			Corpo: `{"status":"agendada","avisado_em":null}`, Status: 400, Tem: "Sem permissao para aprovar pecas de conteudo."},
+		{Nome: "editar peça de A2 sem vê-la", Quem: "conteudistaA1", Metodo: "PATCH", Caminho: "/conteudo/pecas/" + P3,
+			Corpo: `{"titulo":"x"}`, Status: 404},
+		{Nome: "mover a peça para conta que não vê", Quem: "conteudistaA1", Metodo: "PATCH", Caminho: "/conteudo/pecas/" + P1,
+			Corpo: `{"account_id":"` + A2 + `"}`, Status: 403},
+		{Nome: "marcar o aviso", Quem: "conteudista", Metodo: "PATCH", Caminho: "/conteudo/pecas/" + P4,
+			Corpo: `{"avisado_em":"2026-10-01T00:00:00Z"}`, Status: 400, Tem: "avisado_em"},
+		{Nome: "gravar ig_media_id", Quem: "conteudista", Metodo: "PATCH", Caminho: "/conteudo/pecas/" + P1,
+			Corpo: `{"ig_media_id":"IG1"}`, Status: 400, Tem: "corpo_invalido"},
+		{Nome: "agendar sem data (check do banco)", Quem: "conteudista", Metodo: "PATCH", Caminho: "/conteudo/pecas/" + P1,
+			Corpo: `{"status":"agendada"}`, Status: 400},
+		{Nome: "impersonado não edita", Quem: "impersonado", Metodo: "PATCH", Caminho: "/conteudo/pecas/" + P1,
+			Corpo: `{"titulo":"x"}`, Status: 403, Tem: "Quem entrou como outra pessoa"},
+		{Nome: "apagar peça de A2 sem vê-la", Quem: "conteudistaA1", Metodo: "DELETE", Caminho: "/conteudo/pecas/" + P3, Status: 404},
+	})
+	if v := m.Um(t, status+P2+`'`); v != "em_aprovacao" {
+		t.Fatalf("P2 = %s", v)
+	}
+	m.Rodar(t, []mundoteste.Caso{
+		{Nome: "criar", Quem: "conteudistaA1", Metodo: "POST", Caminho: "/conteudo/pecas",
+			Corpo: `{"account_id":"` + A1 + `","titulo":"Nova","formato":"feed","legenda":"oi","responsavel":null,` +
+				`"publicar_em":"2026-11-01T15:00:00.000Z","avisado_em":null}`,
+			Status: 201, Tem: `"criado_por":"` + idConteudistaA1 + `"`,
+			Efeito: `select status || '|' || coalesce(avisado_em::text, 'nulo') from conteudo_pecas where titulo = 'Nova'`, Quer: "rascunho|nulo"},
+		{Nome: "editar", Quem: "conteudistaA1", Metodo: "PATCH", Caminho: "/conteudo/pecas/" + P1,
+			Corpo: `{"titulo":"Bastidor 2","legenda":"nova","status":"em_aprovacao"}`, Status: 200, Tem: `"titulo":"Bastidor 2"`,
+			Efeito: status + P1 + `'`, Quer: "em_aprovacao"},
+		{Nome: "remarcar limpa o aviso (tela-de-conteudo.vue:433)", Quem: "conteudista", Metodo: "PATCH", Caminho: "/conteudo/pecas/" + P4,
+			Corpo: `{"publicar_em":"2026-10-30T15:00:00.000Z","avisado_em":null}`, Status: 200,
+			Efeito: `select coalesce(avisado_em::text, 'nulo') from conteudo_pecas where id = '` + P4 + `'`, Quer: "nulo"},
+		{Nome: "aprovador aprova pelo PATCH (a guarda deixa)", Quem: "aprovador", Metodo: "PATCH", Caminho: "/conteudo/pecas/" + P2,
+			Corpo: `{"status":"aprovada"}`, Status: 200, Efeito: status + P2 + `'`, Quer: "aprovada"},
+		{Nome: "admin edita a de A2", Quem: "adminA1", Metodo: "PATCH", Caminho: "/conteudo/pecas/" + P3,
+			Corpo: `{"observacoes":null}`, Status: 200},
+		{Nome: "apagar leva as filhas", Quem: "conteudista", Metodo: "DELETE", Caminho: "/conteudo/pecas/" + P1, Status: 204,
+			Efeito: `select (select count(*) from conteudo_arquivos where peca_id = '` + P1 + `') + (select count(*) from conteudo_eventos where peca_id = '` + P1 + `')`, Quer: "0"},
+	})
+}
+
+// As filhas (arquivo, evento) só com a peça VISÍVEL; a peça invisível e a inexistente respondem igual.
+func TestFilhasSoComAPecaVisivel(t *testing.T) {
+	m := novoMundo(t, montarPecas)
+	inexistente := "a5930000-0000-4000-a000-0000000000ff"
+	arq := func(peca, conta string) string {
+		return `{"peca_id":"` + peca + `","ordem":5,"bucket":"conteudo","caminho":"` + conta + `/` + peca + `/5-x.png","tipo":"imagem","mime":"image/png","bytes":10}`
+	}
+	intacto(t, m, []mundoteste.Caso{
+		{Nome: "arquivo em peça de A2", Quem: "conteudistaA1", Metodo: "POST", Caminho: "/conteudo/arquivos", Corpo: arq(P3, A2), Status: 403},
+		{Nome: "arquivo em peça inexistente (igual)", Quem: "conteudistaA1", Metodo: "POST", Caminho: "/conteudo/arquivos", Corpo: arq(inexistente, A1), Status: 403},
+		{Nome: "reordenar arquivo de peça de A2", Quem: "conteudistaA1", Metodo: "PATCH", Caminho: "/conteudo/arquivos/" + AR3, Corpo: `{"ordem":2}`, Status: 404},
+		{Nome: "apagar arquivo de peça de A2", Quem: "conteudistaA1", Metodo: "DELETE", Caminho: "/conteudo/arquivos/" + AR3, Status: 404},
+		{Nome: "evento em peça de A2", Quem: "conteudistaA1", Metodo: "POST", Caminho: "/conteudo/eventos",
+			Corpo: `{"peca_id":"` + P3 + `","acao":"criou"}`, Status: 403},
+		{Nome: "evento em peça inexistente (igual)", Quem: "conteudistaA1", Metodo: "POST", Caminho: "/conteudo/eventos",
+			Corpo: `{"peca_id":"` + inexistente + `","acao":"criou"}`, Status: 403},
+		{Nome: "evento forjando aprovação", Quem: "conteudista", Metodo: "POST", Caminho: "/conteudo/eventos",
+			Corpo: `{"peca_id":"` + P2 + `","de":"em_aprovacao","para":"aprovada","acao":"aprovou"}`, Status: 400, Tem: "acao"},
+		{Nome: "evento assinado por outro", Quem: "conteudista", Metodo: "POST", Caminho: "/conteudo/eventos",
+			Corpo: `{"peca_id":"` + P1 + `","acao":"criou","quem":"` + idAprovador + `"}`, Status: 400, Tem: "corpo_invalido"},
+		{Nome: "evento com estado fora da lista", Quem: "conteudista", Metodo: "POST", Caminho: "/conteudo/eventos",
+			Corpo: `{"peca_id":"` + P1 + `","de":"x","acao":"mudou_status"}`, Status: 400},
+		{Nome: "só conteudo.aprovar não grava evento", Quem: "soAprovar", Metodo: "POST", Caminho: "/conteudo/eventos",
+			Corpo: `{"peca_id":"` + P1 + `","acao":"criou"}`, Status: 403},
+	})
+	m.Rodar(t, []mundoteste.Caso{
+		{Nome: "evento na própria peça, assinado pela sessão", Quem: "conteudistaA1", Metodo: "POST", Caminho: "/conteudo/eventos",
+			Corpo: `{"peca_id":"` + P1 + `","de":"rascunho","para":"em_aprovacao","acao":"mudou_status"}`, Status: 201,
+			Tem: `"quem":"` + idConteudistaA1 + `"`},
+		{Nome: "admin grava arquivo na peça de A2", Quem: "adminA1", Metodo: "POST", Caminho: "/conteudo/arquivos", Corpo: arq(P3, A2), Status: 201},
+	})
+}
+
+// O caminho do arquivo fica preso a <conta da peça>/<peça>/; reordenar e apagar seguem a tela.
+func TestArquivos(t *testing.T) {
+	m := novoMundo(t, montarPecas)
+	corpo := func(caminho string) string {
+		return `{"peca_id":"` + P1 + `","ordem":3,"bucket":"conteudo","caminho":"` + caminho + `","tipo":"imagem","mime":"image/png","bytes":10}`
+	}
+	intacto(t, m, []mundoteste.Caso{
+		{Nome: "caminho de outra peça", Quem: "conteudista", Metodo: "POST", Caminho: "/conteudo/arquivos", Corpo: corpo(A2 + "/" + P3 + "/1-capa.png"), Status: 403},
+		{Nome: "caminho de outra peça da mesma conta", Quem: "conteudista", Metodo: "POST", Caminho: "/conteudo/arquivos", Corpo: corpo(A1 + "/" + P2 + "/3-x.png"), Status: 403},
+		{Nome: "caminho com ..", Quem: "conteudista", Metodo: "POST", Caminho: "/conteudo/arquivos", Corpo: corpo(A1 + "/" + P1 + "/../x.png"), Status: 400},
+		{Nome: "caminho absoluto", Quem: "conteudista", Metodo: "POST", Caminho: "/conteudo/arquivos", Corpo: corpo("/etc/passwd"), Status: 400},
+		{Nome: "outro bucket", Quem: "conteudista", Metodo: "POST", Caminho: "/conteudo/arquivos",
+			Corpo: `{"peca_id":"` + P1 + `","bucket":"fabrica-criativos","caminho":"` + A1 + `/` + P1 + `/3-x.png","tipo":"imagem"}`, Status: 400},
+		{Nome: "a mesma ordem duas vezes", Quem: "conteudista", Metodo: "POST", Caminho: "/conteudo/arquivos",
+			Corpo: `{"peca_id":"` + P1 + `","ordem":1,"caminho":"` + A1 + `/` + P1 + `/1-outra.png","tipo":"imagem"}`, Status: 409},
+		{Nome: "reordenar trocando o caminho", Quem: "conteudista", Metodo: "PATCH", Caminho: "/conteudo/arquivos/" + AR1,
+			Corpo: `{"ordem":3,"caminho":"x"}`, Status: 400, Tem: "corpo_invalido"},
+		{Nome: "ordem fora da faixa", Quem: "conteudista", Metodo: "PATCH", Caminho: "/conteudo/arquivos/" + AR1, Corpo: `{"ordem":-2}`, Status: 400},
+	})
+	m.Rodar(t, []mundoteste.Caso{
+		{Nome: "subir", Quem: "conteudistaA1", Metodo: "POST", Caminho: "/conteudo/arquivos", Corpo: corpo(A1 + "/" + P1 + "/3-foto.png"), Status: 201,
+			Tem: `"caminho":"` + A1 + `/` + P1 + `/3-foto.png"`},
+		// a troca em três passos de painel-peca.vue:737-739
+		{Nome: "troca 1", Quem: "conteudistaA1", Metodo: "PATCH", Caminho: "/conteudo/arquivos/" + AR1, Corpo: `{"ordem":-1}`, Status: 200},
+		{Nome: "troca 2", Quem: "conteudistaA1", Metodo: "PATCH", Caminho: "/conteudo/arquivos/" + AR2, Corpo: `{"ordem":1}`, Status: 200},
+		{Nome: "troca 3", Quem: "conteudistaA1", Metodo: "PATCH", Caminho: "/conteudo/arquivos/" + AR1, Corpo: `{"ordem":2}`, Status: 200,
+			Efeito: `select string_agg(ordem::text, ',' order by caminho) from conteudo_arquivos where peca_id = '` + P1 + `'`, Quer: "2,1,3"},
+		{Nome: "apagar", Quem: "conteudistaA1", Metodo: "DELETE", Caminho: "/conteudo/arquivos/" + AR2, Status: 204,
+			Efeito: `select count(*)::text from conteudo_arquivos where id = '` + AR2 + `'`, Quer: "0"},
+	})
+}
+```
+
+**(c) Arquivos:** Create `api/internal/conteudo/pecas.go`, `api/internal/conteudo/pecas_test.go`.
+
+**(d) Dependências:** Tasks 2, 3 e 4 (as constantes de colunas).
+
+- [ ] **Step 1:** Testes; ver falhar. - [ ] **Step 2:** Implementar (código de (a)). - [ ] **Step 3:** `cd api && gofmt -l ./internal && go vet ./internal/conteudo/ && go test -count=1 ./internal/conteudo/` PASS; mutações reprovam. - [ ] **Step 4:** Commit `feat(api): escritas de peça, arquivo e evento (a guarda da aprovação pela rota, filhas presas à peça visível)` (+ `Co-Authored-By`).
 
 ---
 
