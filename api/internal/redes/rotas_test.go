@@ -84,7 +84,7 @@ func TestEscritasRecusamImpersonado(t *testing.T) {
 		if metodo == http.MethodGet {
 			return
 		}
-		if st, b := m.Pedir(t, "impersonado", metodo, caminho, corpo); st != http.StatusForbidden || !strings.Contains(b, "Quem entrou como outra pessoa") {
+		if st, b := m.Pedir(t, "impersonado", metodo, caminho, corpo); st != http.StatusForbidden || !strings.Contains(b, `"error":"sem_permissao"`) || !strings.Contains(b, "Quem entrou como outra pessoa") {
 			t.Errorf("%s %s como impersonado = %d %s", metodo, rota, st, b)
 		}
 	})

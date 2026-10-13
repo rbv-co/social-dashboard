@@ -31,12 +31,18 @@ func TestContas(t *testing.T) {
 			}
 		}
 	}
-	_, corpo := m.Pedir(t, "todas", "GET", "/redes/contas?ordem=name.desc", "")
-	if strings.Index(corpo, "Vessel") > strings.Index(corpo, "Mantova") {
+	ordem := func(caminho string) (string, int, int) {
+		st, corpo := m.Pedir(t, "todas", "GET", caminho, "")
+		v, mt := strings.Index(corpo, "Vessel"), strings.Index(corpo, "Mantova")
+		if st != 200 || v < 0 || mt < 0 {
+			t.Fatalf("GET %s = %d, Vessel@%d Mantova@%d: %s", caminho, st, v, mt, corpo)
+		}
+		return corpo, v, mt
+	}
+	if corpo, v, mt := ordem("/redes/contas?ordem=name.desc"); v > mt {
 		t.Errorf("?ordem=name.desc devia pôr Vessel antes de Mantova: %s", corpo)
 	}
-	_, corpo = m.Pedir(t, "todas", "GET", "/redes/contas", "")
-	if strings.Index(corpo, "Mantova") > strings.Index(corpo, "Vessel") {
+	if corpo, v, mt := ordem("/redes/contas"); mt > v {
 		t.Errorf("ordem padrão é por nome (Mantova antes de Vessel): %s", corpo)
 	}
 

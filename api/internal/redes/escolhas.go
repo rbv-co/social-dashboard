@@ -38,7 +38,7 @@ var consultaFiltros = dados.Consulta{Tabela: "campaign_filters", Alias: "t",
 var (
 	reUUID      = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 	rePeriodo   = regexp.MustCompile(`^[a-z0-9_]{1,20}$`)
-	reIndicador = regexp.MustCompile(`^[a-z0-9_.]{1,80}$`)
+	reIndicador = regexp.MustCompile(`^[a-z0-9_.-]{1,80}$`)
 	reIDDaMeta  = regexp.MustCompile(`^[0-9]{1,30}$`) // id de campanha da Meta
 )
 
