@@ -499,3 +499,27 @@ location = /api/custo-openai {
 ### Mudanças de contrato que o Plano 7 absorve
 - 6 sítios (plano 5.12, seção I.1): 3 leituras de notícias, 2 do status da IA e a chamada das duas edges de custo. A saúde vem `[]` para quem não tem admin, super-admin pela ficha ou `claude.status` em `features`. Não-2xx de `custo-*` agora traz corpo: `403 {"error":"sem_permissao"}`, `500 {"error":"falha","detalhe":…}`. Corpo com `dias` que não é número (`{"dias":"30"}`) dá `400 {"error":"pedido_invalido"}` (a edge coagia o texto em número; Ruling 14 do 5.12 recusa). A rota é só `POST`: `GET` (a edge aceitava `?dias=`) e os demais verbos dão `405` com `Allow: POST`. Todo 500 da rota agora deixa um `slog.Warn` (`custo: devolvendo 500`, com o detalhe sem a chave), como a edge custo-openai registrava.
 - Os logos de concorrentes (`tela-de-noticias.vue:99`, Storage `ig-cache`) são do Plano 6.
+
+## Plano 5.13 — contas de serviço (tokens dos robôs)
+
+Os robôs do `coletor/` (Fábrica no Actions, os híbridos da VPS, os validadores da Meta) deixam de usar a chave `service_role` e passam a chamar a API com um token de longa duração. O robô é um usuário SEM senha com perfil `viewer` e `features` mínimas (Ruling 38): o token só o identifica e o que ele pode é o perfil dele, como para gente (catálogo, módulo, conta). Não há escopo por token e não há rota HTTP de criação ou revogação: é CLI na VPS. A migração `00006_tokens_de_servico.sql` roda sozinha no `api`/`api migrar`; só o hash sha256 do token é guardado.
+
+### Criar o robô e o token (na VPS, no contêiner da API, como o `api worker`)
+```
+api servico criar <nome> <email-do-robo> --modulos meta,banco
+```
+- `<nome>`: `[a-z0-9][a-z0-9-]{1,62}`, único (inclusive entre os revogados), ex.: `fabrica`, `meta-validador`.
+- E-mail novo: cria o usuário (sem senha) e o perfil `viewer` com `features` = `--modulos`. E-mail que já existe: usa o usuário, mas recusa se ele tiver senha (conta de gente não vira robô), se for super-admin ou se não tiver perfil; nesse caso `--modulos` é recusado (o perfil existente não é mexido por aqui).
+- O token (`srv_...`) sai UMA vez, sozinho no stdout (o aviso vai ao stderr); não fica em log nem no banco. Guarde direto no segredo do robô (secret do Actions ou `.env` da VPS).
+- O robô manda `Authorization: Bearer <token>` em toda chamada. O que mais ele precisa (módulos, permissões) se ajusta no perfil do usuário, na tela de acesso, não no token.
+
+### Rotação e revogação
+- Rotação = criar um token NOVO para o mesmo robô (`api servico criar fabrica-2 <mesmo-email>`, sem `--modulos`), trocar o segredo do robô, conferir que `api servico listar` mostra o novo com último uso, e só então `api servico revogar fabrica`. Os dois valem durante a troca.
+- `api servico revogar <nome>` derruba o token na próxima chamada (401). Desativar o usuário (`desativado_em`) ou o perfil (`disabled`) também derruba todos os tokens dele.
+- `api servico listar`: nome, e-mail, criado, último uso (gravado no máximo a cada 5 min), revogado. Nunca mostra o token (ele não existe no banco).
+
+### O robô `status-projetos` é aposentado (Ruling 39)
+`projetos_status` não ganha rota de escrita: o quadro de projetos saiu da tela em 19/08/2026 e ninguém lê a tabela. Não crie token para ele; se o quadro voltar, uma rota de upsert só para serviço resolve.
+
+### Antes do corte
+- O 5.8 (rotas de robô da Fábrica) protege as rotas com `auth.SoServico` (sessão de painel leva 403); os robôs do coletor só trocam a `service_role` pelo token depois que as rotas deles existirem.
