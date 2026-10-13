@@ -212,6 +212,16 @@ var soSessao = map[string]bool{"POST /auth/sair": true, "GET /auth/eu": true, "G
 	// responde para nome registrado, cada um com o seu portão (sem registro: 404).
 	"POST /auth/trocar-senha": true, "GET /eu/perfil": true, "POST /invite-user": true,
 	"POST /entrar-como-usuario": true, "POST /conferir-senha": true, "POST /rpc/{nome}": true,
+	// Plano 5.6: portão = catálogo, provado pela matriz de cada rota em `internal/redes`; vazamento entre
+	// contas, impersonado e segredo por `TestNadaVazaEntreContas`, `TestEscritasRecusamImpersonado` e
+	// `TestSegredoDaContaNuncaSai`.
+	"GET /redes/contas": true, "PATCH /redes/contas/{id}": true, "GET /redes/seguidores": true,
+	"GET /redes/leituras-de-seguidores": true, "GET /redes/engajamento": true, "GET /redes/conteudo": true,
+	"GET /redes/campanhas": true, "GET /redes/conjuntos": true, "GET /redes/anuncios": true,
+	"GET /redes/insights-de-campanha": true, "GET /redes/insights-da-conta": true,
+	"GET /redes/campanhas-por-hora": true, "GET /redes/anuncios-por-hora": true, "GET /redes/visitas-por-hora": true,
+	"GET /redes/metas": true, "PUT /redes/metas": true, "GET /redes/filtros-de-campanha": true,
+	"PUT /redes/filtros-de-campanha/{account_id}": true,
 }
 
 // Matriz completa 401/403/200 por rota pela montagem de produção: cada módulo abre SÓ as
@@ -298,6 +308,59 @@ func TestEscopoDeContasPelaMontagemReal(t *testing.T) {
 	}
 }
 
+// As rotas de /redes pela montagem de produção (esquema de produção): sem sessão 401; a pessoa com lista
+// só vê A1; a admin vê as duas; a escrita da limitada em A2 é 403 (o redes.Montar está no grupo com ComEscopo).
+func TestRedesPelaMontagemReal(t *testing.T) {
+	p := testebanco.ComEsquemaDeProducao(t)
+	s := auth.NovoStore(p)
+	h := Rotas(p, s, auth.NovoLimitador(), config.Config{CoreURL: coreFalso(t), CoreToken: "t"})
+	ctx := context.Background()
+	const a1, a2 = "a5600000-0000-4000-a000-0000000000a1", "a5600000-0000-4000-a000-0000000000a2"
+	const limitada, admin = "a5620000-0000-4000-a000-000000000001", "a5620000-0000-4000-a000-000000000002"
+	exec := func(sql string, args ...any) {
+		t.Helper()
+		if _, err := p.Exec(ctx, sql, args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	exec(`insert into usuarios (id, email) values ($1::uuid, 'limitada@x.com'), ($2::uuid, 'admin@x.com')`, limitada, admin)
+	exec(`insert into profiles (id, email, role, features, escopo_por_equipe, allowed_accounts) values
+		($1::uuid, 'limitada@x.com', 'viewer', '{social}', false, array[$3::uuid]),
+		($2::uuid, 'admin@x.com', 'admin', '{social}', false, null)`, limitada, admin, a1)
+	exec(`insert into accounts (id, name) values ($1::uuid, 'Vessel'), ($2::uuid, 'Mantova')`, a1, a2)
+	exec(`insert into engagement_snapshots (account_id, captured_at, period_days, likes) values
+		($1::uuid, '2026-10-11', 7, 10), ($2::uuid, '2026-10-11', 7, 30)`, a1, a2)
+	tokL, _ := s.Criar(ctx, limitada, "painel", nil)
+	tokA, _ := s.Criar(ctx, admin, "painel", nil)
+	pedir := func(metodo, caminho, corpo, tok string) (int, string) {
+		r := httptest.NewRequest(metodo, caminho, strings.NewReader(corpo))
+		if tok != "" {
+			r.Header.Set("Authorization", "Bearer "+tok)
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w.Code, w.Body.String()
+	}
+	if st, b := pedir("GET", "/redes/engajamento", "", ""); st != 401 {
+		t.Errorf("sem sessão = %d %s", st, b)
+	}
+	if st, b := pedir("GET", "/redes/engajamento", "", tokL); st != 200 || !strings.Contains(b, a1) || strings.Contains(b, a2) {
+		t.Errorf("limitada = %d %s (esperava só A1)", st, b)
+	}
+	if st, b := pedir("GET", "/redes/engajamento", "", tokA); st != 200 || !strings.Contains(b, a1) || !strings.Contains(b, a2) {
+		t.Errorf("admin = %d %s (esperava as duas)", st, b)
+	}
+	meta := func(conta string) string {
+		return `{"metas":[{"account_id":"` + conta + `","periodo":"1","indicador":"seguidores","valor":1}]}`
+	}
+	if st, b := pedir("PUT", "/redes/metas", meta(a2), tokL); st != 403 {
+		t.Errorf("limitada gravando meta de A2 = %d %s, esperava 403", st, b)
+	}
+	if st, b := pedir("PUT", "/redes/metas", meta(a1), tokL); st/100 != 2 {
+		t.Errorf("limitada gravando meta de A1 = %d %s, esperava 2xx", st, b)
+	}
+}
+
 // Prazos pela montagem real: percorre as rotas e, nos middlewares embutidos de cada uma,
 // confere que o de prazo dá o deadline esperado (contar-collabs 120 s, as outras ao vivo 90 s)
 // e que nenhuma outra rota ganha prazo sem constar aqui.
@@ -317,6 +380,12 @@ func TestPrazosPorRotaPelaMontagemReal(t *testing.T) {
 					achado = time.Until(dl).Round(time.Second)
 				}
 			})).ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("POST", "/", nil))
+		}
+		if strings.HasPrefix(rota, "/redes/") { // Plano 5.6: o grupo de domínio inteiro herda o prazo
+			if achado != PrazoDominio {
+				t.Errorf("%s: prazo %v, esperava %v (PrazoDominio)", chave, achado, PrazoDominio)
+			}
+			return nil
 		}
 		if q, ok := quer[chave]; ok {
 			vistos[chave] = true
