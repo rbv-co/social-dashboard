@@ -3241,11 +3241,45 @@ Com um job: `case "$tipo" in ideias) s=conteudo-ideias.mjs ;; semana) s=conteudo
 
 ## Inventário: sítios do front a trocar (Plano 7)
 
-(a preencher)
+`grep` em `src/ferramentas/conteudo/` (fora de `*.test.*`) em 2026-10-12, contando `sbClient.from('<tabela>')`, `sbClient.rpc('<nome>')` e `functions.invoke('<edge>')`: **27 sítios nas 9 tabelas** (`conteudo_pecas` 5, `conteudo_arquivos` 6, `conteudo_metricas` 1, `conteudo_casamentos` 1, `conteudo_eventos` 2, `conteudo_ideias` 5, `conteudo_jobs` 1, `conteudo_blocos` 3, `conteudo_concorrentes` 3), **6 chamadas de RPC** e **1 chamada à edge**, todos em `dados-conteudo.js` (`dc`). As linhas são as do branch antes de receber o `origin/main` (as das Tasks 4–8); no `origin/main` de 13/10 some **+2** a partir da linha 12 (o `import { deOnde }` da área admin do Plano 7). `roteiro.js:5` e `LEIA-ME.txt` só citam o `supabase` em comentário.
+
+| Rota | Sítios (`dc:linha`) | Qtde |
+|---|---|---|
+| `GET /conteudo/pecas` | :80 `listarPecas` (`?account_id=`), :88 `carregarPeca` (`?id=`); e os embutidos que substituem :109 `miniaturasDasPecas` (`capa`), :127 `metricasDasPecas` (`metrica`), :145 `sugestoesDeCasamento` (`sugestao`) | 5 |
+| `POST /conteudo/pecas` | :188 `criarPeca` (sem `criado_por`; chamada por `duplicarPeca :581` e `planoViraPecas :393`) | 1 |
+| `PATCH /conteudo/pecas/{id}` | :199 `atualizarPeca` (`mudarStatus :211` passa por ela) | 1 |
+| `DELETE /conteudo/pecas/{id}` | :521 `excluirPeca` (o Storage de :519 é do Plano 6) | 1 |
+| `GET /conteudo/arquivos` | :95 `listarArquivos` (`?peca_id=`) | 1 |
+| `POST /conteudo/arquivos` | :551 `subirArquivo`, :607 `duplicarPeca` | 2 |
+| `PATCH /conteudo/arquivos/{id}` | :639 `trocarOrdem` | 1 |
+| `DELETE /conteudo/arquivos/{id}` | :634 `removerArquivo` | 1 |
+| `GET /conteudo/eventos` | :167 `listarEventos` (`?peca_id=`) | 1 |
+| `POST /conteudo/eventos` | :180 `registrarEvento` (sem `quem`) | 1 |
+| `GET /conteudo/ideias` | :282 `listarIdeias` (`?da_marca=&descartada=false`) | 1 |
+| `POST /conteudo/ideias` | :300 `criarIdeia` | 1 |
+| `PATCH /conteudo/ideias/{id}` | :330 `atualizarIdeia`, :339 `mudarSituacaoDaIdeia`, :409 `planoViraPecas` | 3 |
+| `GET /conteudo/blocos` | :436 `listarBlocos` (`?da_marca=&ativo=true`) | 1 |
+| `POST /conteudo/blocos` | :447 `salvarBloco` (sem `criado_por`; `nome` obrigatório) | 1 |
+| `PATCH /conteudo/blocos/{id}` | :455 `apagarBloco` (`{"ativo":false}`) | 1 |
+| `GET /conteudo/concorrentes` | :467 `listarConcorrentes` (`?account_id=&ativo=true`) | 1 |
+| `POST /conteudo/concorrentes` | :478 `salvarConcorrente` | 1 |
+| `PATCH /conteudo/concorrentes/{id}` | :491 `apagarConcorrente` (`{"ativo":false}`) | 1 |
+| `GET /conteudo/jobs` | :427 `verJob` (`?id=`) | 1 |
+| `POST /rpc/conteudo_decidir_casamento` | :158 `decidirCasamento` | 1 |
+| `POST /rpc/conteudo_aprovar_e_agendar` | :264 `aprovarEAgendar` | 1 |
+| `POST /rpc/conteudo_decidir` | :270 `decidir` | 1 |
+| `POST /rpc/conteudo_casar_na_mao` | :320 `casarNaMao` | 1 |
+| `POST /rpc/conteudo_ideia_virar_peca` | :346 `ideiaViraPeca` | 1 |
+| `POST /rpc/conteudo_reavisar` | :509 `reavisar` | 1 |
+| `POST /conteudo-trigger` | :364 `_pedirAIA` (de `pedirIdeiasParaIA :353` e `pedirSemanaParaIA :359`; telas `visao-ideias.vue:161`, `painel-semana.vue:182`) | 1 |
+
+Na mesma área, de OUTROS planos (não trocar pelo 5.9): **5.6** — `accounts` em :65 `listarContas` (`GET /redes/contas`) e :499 `mudarUsoDoPortal` (`PATCH /redes/contas/{id}`, só papel `admin`: Ruling 5.9-13, achado 8; no `origin/main` as duas já passam por `deOnde`); **5.1** — `profiles` em :248 `listarPessoas` (`GET /acesso/usuarios`, já por `deOnde` no `origin/main`); **Plano 6** — Storage do bucket `conteudo` em :519, :565, :604, :618, :633, :646, :670 (`urlAssinada`, `urlParaBaixar`, `urlsAssinadas`, upload, cópia e remoção). Robô: `coletor/conteudo-ideias.mjs`, `conteudo-semana.mjs`, `registrar-execucao.mjs` e `.github/workflows/conteudo-ideias.yml` — seção da trilha C acima.
 
 ## Paralelização
 
-(a preencher)
+- **Uma worktree por tarefa paralela** (merge na ordem dos números). As Tasks 3–9 são o MESMO pacote Go (`conteudo`): em worktrees separadas, cada uma só cria os SEUS arquivos. Os ajudantes comuns (regras, `soSessaoPropria`, `deve`, `pecaVisivel`, `negado`, `soLegivelAoCriar`, validadores, `responder`) e o mundo são da Task 3; as constantes de colunas moram na Task 4 (a 5 e a 6 copiam e apagam a cópia no merge); o `intacto` mora em `pecas_test.go` (Task 5; a 6, a 7 e a 8 copiam e apagam no merge); `montarLeituras` (Task 4) é usado num caso da Task 8. Um contêiner (`pg-plano59`, porta 58549) atende todas: cada teste cria o próprio banco.
+- **Onda 1:** Tasks 1 (`testebanco`) e 2 (`dados`) — paralelas, pacotes disjuntos. **Onda 2:** Task 3. **Onda 3:** Tasks 4, 5, 6, 7 e 8 — cinco em paralelo, com as cópias acima. **Onda 4:** Task 9 (a única que toca `conteudo/rotas*.go`, `web/*`, `cmd/api/conferir*.go` e as notas).
+- **Com outros sub-planos:** a fatia 5.9 não redeclara `accounts` (5.6) nem toca o gerador ou o `02-gatilhos.sql`; a lista exata de `TestEsquemaDeProducaoComOsGatilhosVerbatim` e o `CONFERIDOS` do gerador (se o 5.2 regerar o `02-gatilhos.sql`, o `conteudo_pecas_guarda` entra lá: Task 1, Step 3) dão conflito de uma linha com quem acrescentar gatilho (5.2, 5.10). `dados.Tabela.Conferir` convive com o `CriarSoLegivel` do 5.2 (campos distintos; conflito mecânico). O 5.8 NÃO é dependência (o Conteúdo não usa `internal/github`): o 5.9 mescla antes ou depois dele. Arquivos de fronteira em comum com 5.8, 5.10 e 5.11: `web/rotas.go`, `web/rotas_test.go`, `web/rpc_lista.go` (cada um tira as SUAS de `RPCPendentes`), `cmd/api/conferir*.go` (a fixture de `web.FuncoesRPC` da Task 9 serve a todos: quem registrar RPC com `Opcional` não precisa mexer nela), `NOTAS-DA-IMPLANTACAO.md`: quem mescla por último junta e roda o gate. Gates (`make teste`, contêiner fixo `pg-api-teste`) nunca ao mesmo tempo.
 
 ## Rulings do 5.9
 
