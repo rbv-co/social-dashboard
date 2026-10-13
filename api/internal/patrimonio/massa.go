@@ -44,8 +44,8 @@ type corpoApagarEmMassa struct {
 	IDs []string `json:"ids"`
 }
 
-// idsDoLote: de 1 a LoteMaximo uuids distintos, EM ORDEM (duas massas simultâneas travam as linhas
-// na mesma ordem: sem deadlock).
+// idsDoLote: de 1 a LoteMaximo uuids distintos, ORDENADOS (duas massas simultâneas travam as linhas
+// na mesma ordem: sem deadlock 40P01; TestBensEmMassaConcorrenteNaoTravaEmDeadlock protege).
 func idsDoLote(ids []string) ([]string, error) {
 	if len(ids) == 0 || len(ids) > LoteMaximo {
 		return nil, fmt.Errorf("Mande de 1 a %d itens.", LoteMaximo)
@@ -67,8 +67,8 @@ func idsDoLote(ids []string) ([]string, error) {
 // emMassa: POST /patrimonio/bens/em-massa. Cada bem pelo MESMO caminho do PATCH unitário (o mapa de
 // escrita sai da mesma struct; PodeEditar na mesma transação que grava). Um bem negado (404/403) ou
 // com erro desfaz o lote inteiro, e a resposta é a mesma para o alheio e o inexistente (sem oráculo).
-// ponytail: ~3 consultas por item (até 1000); um update único com where id = any() quando o volume
-// pedir — sem perder o PodeEditar por linha.
+// ponytail: ~5 consultas por item (até 1000; +8 por item com troca de dono); um update único com
+// where id = any() quando o volume pedir — sem perder o PodeEditar por linha.
 func emMassa(p *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		e := autz.EscopoDo(r.Context())
@@ -192,9 +192,11 @@ func apagarEmMassa(p *pgxpool.Pool) http.HandlerFunc {
 	}
 }
 
-// montarMassa: as duas rotas em lote. Monte DEPOIS de montarBens/montarPosses (as tabelas já validadas)
-// e de auth.Exigir e autz.ComEscopo; cada escrita passa por soSessaoPropria.
+// montarMassa: as duas rotas em lote (valida as tabelas que usa; a ordem de montagem não importa). Monte
+// DEPOIS de auth.Exigir e autz.ComEscopo; cada escrita passa por soSessaoPropria.
 func montarMassa(r chi.Router, p *pgxpool.Pool) {
+	deve(tabelaBens.Validar(autz.Producao))
+	deve(tabelaPosses.Validar(autz.Producao))
 	r.With(soSessaoPropria).Post("/patrimonio/bens/em-massa", emMassa(p))
 	r.With(soSessaoPropria).Post("/patrimonio/bens/apagar-em-massa", apagarEmMassa(p))
 }

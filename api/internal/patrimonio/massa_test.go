@@ -3,7 +3,9 @@ package patrimonio
 import (
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/rbv-co/social-dashboard/api/internal/dados"
@@ -84,16 +86,33 @@ func TestBensEmMassa(t *testing.T) {
 			Corpo:  `{` + lote(B1) + `,"alteracao":{"pessoa_id":"` + P1 + `"}}`,
 			Status: http.StatusOK, Efeito: abertas(B1), Quer: "1"},
 	})
+	// B3 tem a PO3 FECHADA (ate = 2025-12-31): o histórico não se reescreve. Só as posses ABERTAS fecham
+	// (sem `and ate is null` a PO3 ganharia ate = hoje). B4 tem a aberta do Motorista.
+	m.Rodar(t, []caso{
+		{Nome: "troca de dono com posse fechada no lote: B3 e B4", Quem: "patGeral", Metodo: "POST", Caminho: em,
+			Corpo: `{` + lote(B3, B4) + `,"alteracao":{"pessoa_id":"` + P2 + `"}}`, Status: http.StatusOK, Tem: `{"alterados":2}`,
+			Efeito: "select ate::text from patrimonio_posse where id = '" + PO3 + "'", Quer: "2025-12-31"},
+		{Nome: "a fechada continua uma só e o B3 ganhou a aberta do dono novo", Efeito: `select count(*)::text from patrimonio_posse
+			where bem_id = '` + B3 + `' and ((id = '` + PO3 + `' and ate = '2025-12-31') or (id <> '` + PO3 + `' and ate is null and pessoa_id = '` + P2 + `'))`, Quer: "2"},
+		{Nome: "a aberta do B4 fechou hoje", Efeito: "select count(*)::text from patrimonio_posse where bem_id = '" + B4 + "' and ate = " + hojeSP, Quer: "1"},
+	})
 	foto = m.Um(t, fotoDoMundo)
 	intacto = "select ((" + fotoDoMundo + ") = '" + foto + "')::text"
 	m.Rodar(t, []caso{
-		// o B2 ficou com a P1 (a patT1): ela o VÊ pela mão, mas não o edita (é do time T2): 403
-		{Nome: "bem que ela vê mas não edita no lote do dono: nenhuma posse muda", Quem: "patT1", Metodo: "POST", Caminho: em,
+		// o B2 ficou com a P1 (a patT1): ela o VÊ pela mão, mas não o edita (é do time T2). Tirar o dono
+		// o tira da vista dela DEPOIS da edição: a linha nova deixa de ser visível = 403 (PodeEditar
+		// confere a visão antes E depois), e nenhuma posse muda.
+		{Nome: "lote que tira da vista dela um bem do outro time: 403 e nenhuma posse muda", Quem: "patT1", Metodo: "POST", Caminho: em,
 			Corpo: `{` + lote(B1, B2) + `,"alteracao":{"pessoa_id":null}}`, Status: http.StatusForbidden, Efeito: intacto, Quer: "true"},
 		{Nome: "pessoa que não existe: nada muda (a FK do bem)", Quem: "patGeral", Metodo: "POST", Caminho: em,
 			Corpo: `{` + lote(B1, B2) + `,"alteracao":{"pessoa_id":"` + bemInexistente + `"}}`, Status: http.StatusConflict, Efeito: intacto, Quer: "true"},
 		{Nome: "pessoa_id que não é uuid: 400", Quem: "patGeral", Metodo: "POST", Caminho: em,
 			Corpo: `{` + lote(B1) + `,"alteracao":{"pessoa_id":"x"}}`, Status: http.StatusBadRequest, Efeito: intacto, Quer: "true"},
+		// paridade (Task 5, achado b): o B2 segue visível para ela depois da edição (pela mão, a P1 é dela):
+		// 200. É a mesma regra do PATCH unitário.
+		{Nome: "pela mão: bem do outro time que ela vê antes e depois: 200", Quem: "patT1", Metodo: "POST", Caminho: em,
+			Corpo: `{` + lote(B2) + `,"alteracao":{"situacao":"em_manutencao"}}`, Status: http.StatusOK, Tem: `{"alterados":1}`,
+			Efeito: situacao(B2), Quer: "em_manutencao"},
 	})
 
 	// os gatilhos do bem rodam em cada bem do lote
@@ -155,6 +174,46 @@ func TestBensEmMassa(t *testing.T) {
 		c.Metodo, c.Caminho, c.Corpo = "POST", em, `{`+lote(B4)+`,"alteracao":{"situacao":"baixado"}}`
 		c.Efeito, c.Quer = intacto, "true"
 		m.Rodar(t, []caso{c})
+	}
+}
+
+// TestBensEmMassaConcorrenteNaoTravaEmDeadlock protege a ordenação de idsDoLote: lotes grandes que se
+// cruzam, mandados em ordens OPOSTAS, travam as linhas na mesma ordem (a do servidor) e todos terminam
+// em 200. Sem o slices.Sort, dois lotes se encontram no meio e o Postgres derruba um com 40P01 (500).
+func TestBensEmMassaConcorrenteNaoTravaEmDeadlock(t *testing.T) {
+	m := novoMundo(t, montarMassa)
+	const n = 300
+	todos := make([]string, n)
+	for i := range todos {
+		todos[i] = fmt.Sprintf("b8000000-0000-4000-a000-%012d", i)
+		if _, err := m.P.Exec(t.Context(), `insert into patrimonio_bens (id, numero, nome, situacao) values ($1::uuid, $2, 'massa', 'em_uso')`, todos[i], 1000+i); err != nil {
+			t.Fatal(err)
+		}
+	}
+	invertidos := slices.Clone(todos)
+	slices.Reverse(invertidos)
+	var wg sync.WaitGroup
+	falhas := make(chan string, 8)
+	for i := range 6 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			ids := todos
+			if i%2 == 1 {
+				ids = invertidos
+			}
+			if st, corpo := m.Pedir(t, "patGeral", "POST", "/patrimonio/bens/em-massa", `{`+lote(ids...)+`,"alteracao":{"situacao":"em_manutencao"}}`); st != http.StatusOK {
+				falhas <- fmt.Sprintf("lote %d: %d %s", i, st, corpo)
+			}
+		}()
+	}
+	wg.Wait()
+	close(falhas)
+	for f := range falhas {
+		t.Error(f)
+	}
+	if got := m.Um(t, "select count(*)::text from patrimonio_bens where nome = 'massa' and situacao = 'em_manutencao'"); got != fmt.Sprint(n) {
+		t.Errorf("%s bens alterados, esperava %d", got, n)
 	}
 }
 
