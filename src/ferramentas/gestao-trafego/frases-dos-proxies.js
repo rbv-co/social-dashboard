@@ -34,9 +34,12 @@ const FRASES = {
 export function fraseDoProxy(corpo, status) {
   const c = corpo || {}
   if (typeof c.mensagem === 'string' && c.mensagem) return c.mensagem
-  if (typeof c.error === 'string' && FRASES[c.error]) return FRASES[c.error]
-  const frase = c.comoResolver || c.detalhe
+  // A frase que a edge já manda (o tamanho do PDF, o "30 por hora", a causa que a
+  // Anthropic deu) diz mais que o mapa. Exceção: em `anthropic_inacessivel` o
+  // `detalhe` é o erro técnico da rede, que não é para a pessoa.
+  const frase = c.comoResolver || (c.error === 'anthropic_inacessivel' ? null : c.detalhe)
   if (frase) return frase
+  if (typeof c.error === 'string' && FRASES[c.error]) return FRASES[c.error]
   if (typeof c.error === 'string' && c.error && !/^[a-z_]+$/.test(c.error)) return c.error
   return `O servidor não respondeu como esperado (HTTP ${status}). Tente de novo.`
 }

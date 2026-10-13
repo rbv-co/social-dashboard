@@ -281,7 +281,9 @@ function ordenarNaTela(linhas, ordem) {
 
 function erroDoSupabase(error, corpo) {
   // o formato que as telas leem do supabase-js/PostgREST: `message`, `code`
-  return { message: fraseDoCorpo(corpo) || error.message, code: error.codigo || String(error.status), status: error.status, details: null, hint: null }
+  // `details` = a frase do SERVIDOR (quando veio): a tela que traduz "sem permissão"
+  // para a frase dela sabe que, aqui, a do servidor diz mais (ex.: "entrar como").
+  return { message: fraseDoCorpo(corpo) || error.message, code: error.codigo || String(error.status), status: error.status, details: corpo?.mensagem || null, hint: null }
 }
 
 /**

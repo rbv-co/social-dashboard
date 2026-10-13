@@ -29,7 +29,6 @@
 //
 // Bandeira que o robô não conhece FAZ ELE PARAR, em vez de ser ignorada.
 import './lib/carregar-env.mjs';
-import pg from 'pg';
 import { linhasDaConta } from './lib/problemas-por-conta.mjs';
 import { metaDoColetor } from './lib/core-meta.mjs';
 
@@ -43,7 +42,9 @@ import { metaDoColetor } from './lib/core-meta.mjs';
 const PG_URL = process.env.VIGIA_DATABASE_URL;
 let _pg = null;
 async function banco() {
-  if (!_pg) { _pg = new pg.Client({ connectionString: PG_URL }); await _pg.connect(); }
+  // import sob demanda: sem a variável o robô roda sem `pg` instalado (o workflow
+  // manual não faz `npm ci`), exatamente como antes
+  if (!_pg) { const { default: pg } = await import('pg'); _pg = new pg.Client({ connectionString: PG_URL }); await _pg.connect(); }
   return _pg;
 }
 

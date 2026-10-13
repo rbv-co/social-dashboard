@@ -1030,7 +1030,9 @@ async function _gtCarregarFila() {
     const [analises, decisoes, gastos] = await Promise.all([
       sb('gt_budget_analises?select=campaign_id,account_id,veredito,justificativa,impacto_estimado,impactos,budget_atual_centavos,budget_sugerido_centavos,gerado_em,valida_ate'),
       // Pela API a decisão vem COM a conta: a fila casa pelo par conta + campanha (5.7).
-      sb(`gt_fila_decisoes?select=campaign_id,${areaNaApi('trafego') ? 'account_id,' : ''}decisao,decidido_em,silenciar_ate&order=decidido_em.desc`),
+      // `escopo` junto: sem ele o filtro de `montarFila` não separava as perguntas, e uma
+      // decisão de criativos ou de saúde calava a sugestão de VERBA da mesma campanha.
+      sb(`gt_fila_decisoes?select=campaign_id,${areaNaApi('trafego') ? 'account_id,' : ''}decisao,decidido_em,silenciar_ate,escopo&order=decidido_em.desc`),
       // O GASTO de verdade, do coletor — sem chamada nova à Meta. Só as capturas
       // dos últimos dias: `lerGastos` fica com a mais nova de cada campanha, e
       // trazer meses de histórico para descartar seria peso de rede à toa.
@@ -1040,7 +1042,12 @@ async function _gtCarregarFila() {
     // Guarda as análises CRUAS: a fila vazia precisa contar quantas o robô olhou
     // e quantas vieram 'manter', e 'manter' é justamente o que montarFila filtra.
     _gtAnalisesCruas = analises || [];
-    _gtFila = montarFila(analises || [], decisoes || [], new Date().toISOString());
+    // Pela API (5.7) a decisão casa pelo par conta + campanha, e a conta CERTA é a
+    // da Meta: a gravada na análise pode ser antiga (achado 4 das NOTAS do 5.7),
+    // enquanto a decisão vai com a corrigida. Os nomes vêm ANTES de montar a fila.
+    const mapaAntes = areaNaApi('trafego') ? await _gtFilaBuscarNomes() : null;
+    const comContaCerta = (a) => { const info = mapaAntes && mapaAntes.get(String(a.campaign_id)); return info ? { ...a, account_id: info.conta.id } : a; };
+    _gtFila = montarFila((analises || []).map(comContaCerta), decisoes || [], new Date().toISOString());
     // O gasto entra DEPOIS de montar a fila, por campanha. Agrupar aqui em vez
     // de dentro de montarFila mantém aquele módulo puro sem saber de insights.
     _gtGastosPorCampanha = new Map();
@@ -1055,7 +1062,7 @@ async function _gtCarregarFila() {
     // campanhas ativas, e uma delas pode ter alerta sem o robô ter proposto nada
     // (foi o caso da "[Leads] Para WhatsApp" da Motoeasy, frequência 4,2× com o
     // robô dizendo 'manter').
-    const mapa = await _gtFilaBuscarNomes();
+    const mapa = mapaAntes || await _gtFilaBuscarNomes();
     // SÓ CAMPANHA VIVA fica na fila. O robô guarda a análise mesmo depois de a
     // campanha parar, e o `effective_status` gravado é o do dia da análise —
     // envelhece. Sem cruzar com a Meta agora, a fila pedia decisão sobre
@@ -1605,7 +1612,10 @@ async function _gtCarregarRegua() {
 function _gtEhErroDePermissao(e) {
   const codigo = e && e.code;
   const msg = String((e && e.message) || '').toLowerCase();
-  // pela API (Plano 7), a recusa da regra é 403 `sem_permissao`
+  // Pela API (Plano 7), a recusa da regra é 403 `sem_permissao`. Se o SERVIDOR mandou
+  // a frase dele (`details`, ex.: "Quem entrou como outra pessoa só consulta."), ela
+  // diz mais que a nossa: aí não é tratado como o "sem permissão" genérico.
+  if (e && e.details) return false;
   return codigo === '42501' || codigo === 'sem_permissao' || (e && e.status === 403) || msg.includes('row-level security') || msg.includes('permission denied');
 }
 
@@ -1634,7 +1644,7 @@ async function _gtSalvarRegua(nova, botao) {
     // transação — o update e o insert no log abaixo viram uma chamada.
     if (areaNaApi('trafego')) {
       const r = await pedir('PUT', '/gestao-trafego/regua', { corpo: { pesos: nova.pesos, limiares: nova.limiares, limiares_resultado: nova.limiares_resultado, conta_id: String(contaId), metas: nova.metas } });
-      if (r.error) throw { message: r.error.message, status: r.error.status, code: r.error.codigo };
+      if (r.error) throw { message: r.error.message, status: r.error.status, code: r.error.codigo, details: r.data?.mensagem || null };
       _gtRegua = normalizarRegua(r.data);
       adminToast('Régua salva');
       await loadGtData();

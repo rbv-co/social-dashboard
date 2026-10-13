@@ -16,3 +16,9 @@ test('mensagem e frase da edge vencem; código desconhecido cai na genérica com
   assert.match(fraseDoProxy({ error: 'algo_novo' }, 502), /HTTP 502/)
   assert.match(fraseDoProxy(null, 504), /HTTP 504/)
 })
+
+test('a frase útil da edge vence o mapa; o detalhe técnico de rede não', () => {
+  assert.equal(fraseDoProxy({ error: 'arquivo_grande_demais', detalhe: 'O PDF tem cerca de 9 MB e o limite aqui é 4 MB.' }, 400), 'O PDF tem cerca de 9 MB e o limite aqui é 4 MB.')
+  assert.equal(fraseDoProxy({ error: 'anthropic_recusou', detalhe: 'Seu crédito acabou.' }, 502), 'Seu crédito acabou.')
+  assert.doesNotMatch(fraseDoProxy({ error: 'anthropic_inacessivel', detalhe: 'dial tcp: i/o timeout' }, 502), /dial tcp/)
+})
