@@ -225,7 +225,8 @@ function ordenarNaTela(linhas, ordem) {
       // nulos como o PostgREST: por último no asc, primeiro no desc
       if (x === null || x === undefined) return asc ? 1 : -1
       if (y === null || y === undefined) return asc ? -1 : 1
-      return (x < y ? -1 : 1) * (asc ? 1 : -1)
+      const c = typeof x === 'string' && typeof y === 'string' ? x.localeCompare(y, 'pt-BR') : (x < y ? -1 : 1)
+      return c * (asc ? 1 : -1)
     }
     return 0
   })
@@ -242,10 +243,21 @@ function erroDoSupabase(error, corpo) {
  * Lê uma tabela pela rota. `partes` vem de `lerCaminhoPostgrest` ou do encadeado.
  * Devolve `{ data: [...], error, count }`.
  */
+// Teto de páginas de uma leitura sem limite (20 × 1000 linhas). Acima disso a
+// tradução recusa: ler a tabela inteira para a tela não é o que a rota promete.
+const PAGINAS_NO_MAXIMO = 20
+
 export async function lerPelaApi(partes, { contar = false } = {}) {
   const def = ROTAS[partes.tabela]
   if (!def?.rota) throw new ErroDeTraducao(`${partes.tabela}: sem rota de leitura`)
-  const params = parametrosDosFiltros(def, partes.tabela, partes.filtros)
+  // Filtro que a rota não declara: só `eq`/`in`, só sem limite (a leitura vem
+  // INTEIRA, paginada abaixo) e numa coluna que a rota devolve — aí a tela filtra
+  // as mesmas linhas que o banco filtraria. Qualquer outro caso recusa alto.
+  const naTela = partes.filtros.filter((f) => !def.filtros[f.col]?.[f.op])
+  if (naTela.length && (partes.limite || naTela.some((f) => f.op !== 'eq' && f.op !== 'in'))) {
+    throw new ErroDeTraducao(`${partes.tabela}: a rota ${def.rota} não filtra por ${naTela.map((f) => f.col + '=' + f.op).join(', ')}`)
+  }
+  const params = parametrosDosFiltros(def, partes.tabela, partes.filtros.filter((f) => !naTela.includes(f)))
   const cols = colunasDoSelect(partes.select)
   // A ordem pedida vai para a rota quando ela a declara (UMA coluna: o `ordem` da
   // API aceita um campo só); senão, a tela ordena — e isso só é certo se NADA foi
@@ -257,13 +269,30 @@ export async function lerPelaApi(partes, { contar = false } = {}) {
   }
   if (partes.limite > TETO_DE_LINHAS) throw new ErroDeTraducao(`${partes.tabela}: limite ${partes.limite} acima do teto de ${TETO_DE_LINHAS} linhas da API`)
   if (partes.limite) params.limite = partes.limite
-  if (contar) params.contar = 1
-  const r = await pedir('GET', def.rota, { params })
-  if (r.error) return { data: null, error: erroDoSupabase(r.error, r.data), count: null }
-  if (!Array.isArray(r.data)) return { data: null, error: { message: 'Resposta inesperada do servidor.', code: '502' }, count: null }
-  let linhas = r.data
+  // SEM LIMITE, A LEITURA VEM INTEIRA. A API (como o PostgREST, `max_rows`) para
+  // em 1000 linhas por pedido; uma tela que não pediu limite queria TUDO, e cortar
+  // em 1000 calado é número menor sem aviso. Conta o total e busca as páginas
+  // seguintes por `deslocamento` (a ordem das rotas tem desempate: não repete
+  // nem pula linha).
+  if (contar || !partes.limite) params.contar = 1
+  let linhas = []
+  let total = null
+  for (let pagina = 0; ; pagina++) {
+    const r = await pedir('GET', def.rota, { params: pagina ? { ...params, deslocamento: linhas.length } : params })
+    if (r.error) return { data: null, error: erroDoSupabase(r.error, r.data), count: null }
+    if (!Array.isArray(r.data)) return { data: null, error: { message: 'Resposta inesperada do servidor.', code: '502' }, count: null }
+    linhas = linhas.concat(r.data)
+    total = r.total
+    if (partes.limite || total === null || linhas.length >= total || r.data.length === 0) break
+    if (pagina + 1 >= PAGINAS_NO_MAXIMO) throw new ErroDeTraducao(`${partes.tabela}: ${total} linhas — passa de ${PAGINAS_NO_MAXIMO} páginas`)
+  }
+  if (naTela.length) {
+    if (linhas.length && naTela.some((f) => !(f.col in linhas[0]))) throw new ErroDeTraducao(`${partes.tabela}: a rota não devolve ${naTela.map((f) => f.col)}`)
+    const aceita = (f, l) => (f.op === 'eq' ? [valorDoEq(f.val)] : f.val.replace(/^\(|\)$/g, '').split(',')).includes(String(l[f.col]))
+    linhas = linhas.filter((l) => naTela.every((f) => aceita(f, l)))
+  }
   if (partes.ordem.length && !naRota) linhas = ordenarNaTela(linhas, partes.ordem)
-  return { data: projetar(linhas, cols, partes.tabela), error: null, count: r.total }
+  return { data: projetar(linhas, cols, partes.tabela), error: null, count: naTela.length ? linhas.length : total }
 }
 
 /**

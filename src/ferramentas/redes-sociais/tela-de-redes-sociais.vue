@@ -1361,7 +1361,15 @@ function saveGoal(key, val) {
 function _metasUpsert(key, rows) {
   if (!currentAccountId || typeof sbClient === 'undefined' || !sbClient) return
   const payload = rows.map(r => ({ account_id: String(currentAccountId), periodo: String(r[0]), indicador: key, valor: r[1] }))
-  try { deOnde(sbClient).from('social_metas').upsert(payload, { onConflict: 'account_id,periodo,indicador' }).then(res => { if (res && res.error) console.warn('meta upsert:', res.error.message) }).catch(() => {}) } catch (e) {}
+  try { deOnde(sbClient).from('social_metas').upsert(payload, { onConflict: 'account_id,periodo,indicador' }).then(res => {
+    if (res && res.error) {
+      console.warn('meta upsert:', res.error.message)
+      // Pela API (chave `meta`), o lote recusado (403: conta que a pessoa não vê, ou a
+      // aba de "entrar como") APARECE — antes a meta parecia salva e voltava na
+      // próxima carga (contrato do 5.6). O caminho do Supabase segue só no console.
+      if (areaNaApi('meta')) adminToast('Não consegui salvar a meta: ' + res.error.message, false)
+    }
+  }).catch(() => {}) } catch (e) {}
 }
 async function metasFetchAll(accountId) {
   if (!accountId || typeof sbClient === 'undefined' || !sbClient) return

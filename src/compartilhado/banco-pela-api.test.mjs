@@ -59,7 +59,7 @@ test('eq com aspas (paraEq) e in com lista', async () => {
 
 test('O QUE A ROTA NÃO SABE, A TRADUÇÃO RECUSA: filtro não declarado, embutido, ordem fora com limite', async () => {
   const pedidos = api({ 'GET /acesso/usuarios': [200, []] })
-  for (const c of ['profiles?name=eq.x', 'profiles?select=id,equipes(nome)', 'profiles?order=disabled&limit=5', 'profiles?id=gte.x']) {
+  for (const c of ['profiles?name=eq.x&limit=5', 'profiles?name=gte.x', 'profiles?select=id,equipes(nome)', 'profiles?order=disabled&limit=5', 'profiles?id=gte.x']) {
     const r = await b.fetchPostgrest(c)
     assert.equal(r.ok, false, c)
   }
@@ -183,9 +183,9 @@ test('in com aspas é recusado', async () => {
 test('5.6: faixa de datas vira _de/_ate; period_days lte vira period_days_ate', async () => {
   const pedidos = api({ 'GET /redes/seguidores': [200, []], 'GET /redes/conteudo': [200, []] })
   await b.fetchPostgrest('daily_snapshots?account_id=eq.c1&captured_at=gte.2026-09-01&captured_at=lte.2026-10-01&order=captured_at.asc&select=followers_count,captured_at')
-  assert.deepEqual(Object.fromEntries(new URLSearchParams(pedidos[0].busca)), { account_id: 'c1', captured_at_de: '2026-09-01', captured_at_ate: '2026-10-01', ordem: 'captured_at.asc' })
+  assert.deepEqual(Object.fromEntries(new URLSearchParams(pedidos[0].busca)), { account_id: 'c1', captured_at_de: '2026-09-01', captured_at_ate: '2026-10-01', ordem: 'captured_at.asc', contar: '1' })
   await b.fetchPostgrest('content_snapshots?captured_at=eq.2026-10-12&period_days=lte.1&select=account_id,stories_count&order=period_days.asc')
-  assert.deepEqual(Object.fromEntries(new URLSearchParams(pedidos[1].busca)), { captured_at: '2026-10-12', period_days_ate: '1', ordem: 'period_days.asc' })
+  assert.deepEqual(Object.fromEntries(new URLSearchParams(pedidos[1].busca)), { captured_at: '2026-10-12', period_days_ate: '1', ordem: 'period_days.asc', contar: '1' })
 })
 
 test('5.6: lido_em gte com data pura vira instante RFC 3339 (meia-noite UTC, como o PostgREST)', async () => {
@@ -232,4 +232,35 @@ test('o encadeado devolve status como o supabase-js (200, ou o do erro)', async 
   assert.equal((await b.consultaPelaApi('accounts').select('id,name')).status, 200)
   api({ 'GET /redes/contas': [401, { error: 'nao_autenticado' }] })
   assert.equal((await b.consultaPelaApi('accounts').select('id,name')).status, 401)
+})
+
+test('sem limite, a leitura vem INTEIRA: pagina por deslocamento até o X-Total-Count', async () => {
+  const pedidos = []
+  globalThis.fetch = async (url) => {
+    const q = new URL(url, 'http://x').searchParams
+    pedidos.push(Object.fromEntries(q))
+    const d = Number(q.get('deslocamento') || 0)
+    const pag = d === 0 ? Array.from({ length: 1000 }, (_, i) => ({ dia: 'x', hora: i })) : Array.from({ length: 300 }, (_, i) => ({ dia: 'y', hora: i }))
+    return { status: 200, ok: true, text: async () => JSON.stringify(pag), headers: { get: (k) => (k === 'X-Total-Count' ? '1300' : null) } }
+  }
+  const r = await b.fetchPostgrest('campaign_insights_hora?select=dia,hora&dia=gte.2026-10-01&account_id=eq.c1')
+  assert.equal((await r.json()).length, 1300)
+  assert.deepEqual(pedidos.map((p) => p.deslocamento || '0'), ['0', '1000'])
+  assert.equal(pedidos[0].contar, '1')
+})
+
+test('com limite explícito, uma página só (o limite é o que a tela quis)', async () => {
+  const pedidos = api({ 'GET /redes/seguidores': [200, [{ account_id: 'c1', followers_count: 1 }], { 'X-Total-Count': '50' }] })
+  await b.fetchPostgrest('daily_snapshots?account_id=eq.c1&order=captured_at.desc&limit=1&select=followers_count')
+  assert.equal(pedidos.length, 1)
+})
+
+test('filtro que a rota não declara (eq/in, sem limite) vira filtro na tela; com limite, recusa', async () => {
+  api({ 'GET /redes/contas': [200, [{ id: 'a', instagram_id: '1', profile_picture_url: 'u1' }, { id: 'b', instagram_id: '2', profile_picture_url: 'u2' }, { id: 'c', instagram_id: '3', profile_picture_url: 'u3' }], { 'X-Total-Count': '3' }] })
+  const r = await b.consultaPelaApi('accounts').select('instagram_id,profile_picture_url').in('instagram_id', ['1', '3'])
+  assert.deepEqual(r.data, [{ instagram_id: '1', profile_picture_url: 'u1' }, { instagram_id: '3', profile_picture_url: 'u3' }])
+  const s = await b.consultaPelaApi('accounts').select('id').eq('instagram_id', '1').limit(1)
+  assert.equal(s.error.code, 'traducao')
+  const t = await b.consultaPelaApi('accounts').select('id').eq('nao_existe', '1')
+  assert.equal(t.error.code, 'traducao')
 })

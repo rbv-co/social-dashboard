@@ -71,7 +71,7 @@ import { sbClient, SUPABASE_URL, SUPABASE_ANON_KEY } from '../../compartilhado/c
 // Chave `edges-core` (Plano 7): meta-proxy pela API em Go.
 import { areaNaApi, fetchDaApi, trocarCodigoPorFrase } from '../../compartilhado/api.js'
 // Chave `meta` (Plano 7): as tabelas do 5.6 pela API (adFetch e os .from).
-import { tabelaNaApi, fetchPostgrest, deOnde } from '../../compartilhado/banco-pela-api.js'
+import { tabelaNaApi, fetchPostgrest } from '../../compartilhado/banco-pela-api.js'
 import { estado, hasPermission } from '../../compartilhado/controle-de-login-e-usuario.js'
 import { adminToast } from '../../compartilhado/avisos.js'
 // Traduz 401/42501 para uma frase que o dono entende. Ver seção 9 do

@@ -199,6 +199,8 @@ A troca de cada robô é feita quando o caminho dele estiver pronto: os de `pg` 
 
 **Prova** (API do branch `feat/api-go-plano-5-6` em `a4cfce71`, banco com a compat + migrações + as fatias `01-tabelas-5-01`, `01-tabelas-5-06`, `02-gatilhos`, `03-funcoes-5-06`, 41 dias de dados de duas contas, `VITE_API_AREAS=conta,edges-core,paineis,comercial,admin,meta`, Chrome a 375 e 1440 px): Redes Sociais com os seguidores do banco, Relatório de Redes, Admin › Dados contando 82 snapshots pelo `X-Total-Count` e sem o cartão "Ads", nenhum pedido das tabelas do 5.6 ao Supabase em nenhuma das 6 telas e nenhuma recusa da tradução; metas em lote gravadas e lidas, filtro de campanhas gravado, conta editada (nome/@/cor e persona); e o escopo de contas — quem só vê a Vessel recebe `[]` da outra marca e `403` ao gravar meta nela, nada gravado.
 
+**Revisão (opus, 1 rodada):** nada bloqueante; corrigidos — (1) **leitura sem limite vem inteira**: a ponte pede `contar=1` e busca as páginas seguintes por `deslocamento` até o `X-Total-Count` (teto de 20 páginas, acima recusa) — o Relatório de Redes (`campaign_insights` de 90 dias/"tudo") e o Relatório por Hora (14 dias × 24 h × campanhas) passavam de 1000 e cortavam calados, nos DOIS caminhos (o `max_rows` do Supabase também é 1000): pela API, deixam de cortar; (2) filtro `eq`/`in` que a rota não declara, sem limite e numa coluna que ela devolve, vira filtro na tela sobre a leitura inteira (as fotos da Marca de Vendas, `accounts` por `instagram_id`); com limite ou outro operador continua recusado; (3) a meta recusada (403 do lote) aparece num aviso, em vez de só no console; (4) ordenação na tela compara texto em português (`localeCompare`); (5) import sem uso removido.
+
 ### Pendências de API
 
 | Item | Dono | Situação |
