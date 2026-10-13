@@ -85,23 +85,24 @@ func TestSegredosDoMundo(t *testing.T) {
 
 	// a vigia pega o vazamento no corpo e no cabeçalho, deixa a resposta limpa passar INTEIRA
 	var achados []string
-	h := http.NewServeMux()
-	h.HandleFunc("/limpa", func(w http.ResponseWriter, _ *http.Request) {
+	h := chi.NewRouter()
+	h.Get("/limpa", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("X-Teste", "1")
 		w.WriteHeader(http.StatusCreated)
 		_, _ = w.Write([]byte(`{"ok":true}`))
 	})
-	h.HandleFunc("/vaza-corpo", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(segredos[1])) })
-	h.HandleFunc("/vaza-cookie", func(w http.ResponseWriter, _ *http.Request) {
+	h.Get("/vaza-corpo", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(segredos[1])) })
+	h.Get("/vaza-cookie", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Set-Cookie", "estado="+segredos[2])
 	})
+	h.Get("/vaza-cabecalho", func(w http.ResponseWriter, _ *http.Request) { w.Header().Set("X-Debug", segredos[0]) })
 	v := vigiarSegredos(h, func(f string, a ...any) { achados = append(achados, fmt.Sprintf(f, a...)) })
 	w := httptest.NewRecorder()
 	v.ServeHTTP(w, httptest.NewRequest("GET", "/limpa", nil))
 	if w.Code != http.StatusCreated || w.Body.String() != `{"ok":true}` || w.Header().Get("X-Teste") != "1" || len(achados) != 0 {
 		t.Errorf("resposta limpa alterada: %d %q %v %v", w.Code, w.Body.String(), w.Header(), achados)
 	}
-	for _, c := range []string{"/vaza-corpo", "/vaza-cookie"} {
+	for _, c := range []string{"/vaza-corpo", "/vaza-cookie", "/vaza-cabecalho"} {
 		antes := len(achados)
 		v.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", c, nil))
 		if len(achados) != antes+1 {
@@ -224,4 +225,16 @@ func TestDeve(t *testing.T) {
 		}
 	}()
 	deve(fmt.Errorf("declaração errada"))
+}
+
+// O mundo sai com a vigia na frente e ainda é um roteador (a varredura da Task 7 usa chi.Walk em m.H):
+// tirar a vigia do novoMundo, ou trocar por um handler que esconda as rotas, reprova aqui.
+func TestNovoMundoInstalaAVigia(t *testing.T) {
+	m := novoMundo(t)
+	if _, ok := m.H.(vigiado); !ok {
+		t.Fatalf("novoMundo sem a vigia de segredos: %T", m.H)
+	}
+	if err := chi.Walk(m.H.(chi.Routes), func(string, string, http.Handler, ...func(http.Handler) http.Handler) error { return nil }); err != nil {
+		t.Fatalf("o mundo vigiado não deixa andar pelas rotas: %v", err)
+	}
 }

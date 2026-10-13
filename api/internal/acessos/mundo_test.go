@@ -140,14 +140,30 @@ func segredoEm(s string) string {
 	return ""
 }
 
-// vigiarSegredos envolve h: toda resposta (status, cabeçalhos e corpo) de TODO teste do pacote passa
-// por segredoEm; achou, chama falha. É o "nunca sai" das acessos_conexoes provado em cada requisição,
-// não só nas que alguém lembrou de conferir.
-func vigiarSegredos(h http.Handler, falha func(string, ...any)) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+// vigiado: o roteador do mundo com a vigia na frente. Mantém chi.Routes (a varredura da Task 7 anda
+// pelas rotas com chi.Walk) e é o tipo que TestNovoMundoInstalaAVigia confere.
+type vigiado struct {
+	http.Handler
+	rotas
+}
+
+// rotas: apelido de chi.Routes para embutir sem o campo se chamar "Routes" (o que esconderia o método).
+type rotas = chi.Routes
+
+// vigiarSegredos envolve h: toda resposta (corpo e TODOS os cabeçalhos) das requisições que passam pelo
+// mundo vai por segredoEm; achou, chama falha. É o "nunca sai" das acessos_conexoes provado em cada
+// requisição, não só nas que alguém lembrou de conferir. O log não é olhado aqui: o teste das conexões
+// (Task 7) confere o log por conta própria.
+func vigiarSegredos(h http.Handler, falha func(string, ...any)) vigiado {
+	return vigiado{rotas: h.(chi.Routes), Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, r)
-		if x := segredoEm(rec.Body.String() + rec.Header().Get("Location") + rec.Header().Get("Set-Cookie")); x != "" {
+		var tudo strings.Builder
+		tudo.WriteString(rec.Body.String())
+		for k, vs := range rec.Header() {
+			tudo.WriteString("\n" + k + ": " + strings.Join(vs, ", "))
+		}
+		if x := segredoEm(tudo.String()); x != "" {
 			falha("segredo %q saiu na resposta de %s %s", x, r.Method, r.URL.Path)
 		}
 		for k, v := range rec.Header() {
@@ -155,7 +171,7 @@ func vigiarSegredos(h http.Handler, falha func(string, ...any)) http.Handler {
 		}
 		w.WriteHeader(rec.Code)
 		_, _ = w.Write(rec.Body.Bytes())
-	})
+	})}
 }
 
 // novoMundo: a fatia de produção, as pessoas e as linhas acima, uma sessão por pessoa (+ "impersonado":
