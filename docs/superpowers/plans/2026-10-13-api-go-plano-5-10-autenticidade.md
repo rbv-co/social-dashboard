@@ -2642,3 +2642,108 @@ func TestBaixarCartao(t *testing.T) {
 - [ ] **Step 1:** Testes; ver falhar. - [ ] **Step 2:** `cartao.go`. - [ ] **Step 3:** `cd api && gofmt -l ./internal && go vet ./internal/vessel/ && go test -count=1 -race ./internal/vessel/` PASS; mutações reprovam. - [ ] **Step 4: Commit** `feat(api): POST /vessel-baixar-cartao — o cartão EAN do Zoho pelo servidor, com o portão do selo e sem os caches de listagem` (+ `Co-Authored-By`).
 
 ---
+
+### Task 7: `GET /fabrica/robo/material-do-sku` — o contrato que o 5.8 deixou para o dono de `vessel_lotes`
+
+**Revisor:** sonnet. **Depende de:** Task 2 (`vessel_lotes` na fatia, com o gatilho que herda o material); 5.8 (`internal/fabrica`: `montarRobo`, `responder`, o mundo com `robo`/`roboSemFabrica`).
+
+**(a) Contrato** (plano 5.8, Ruling 5.8-13 e a seção do inventário do robô)
+- `GET /fabrica/robo/material-do-sku?sku=<texto de 1 a 80>` → `200 {"material": <"canvas"|"couro"|null>}` = `select material from vessel_lotes where sku = $1::text and material is not null order by criado_em desc, id desc limit 1` (a consulta de `coletor/hero-ia/texto-da-garantia.mjs:42-47`). Sem lote com material = `null` (a arte sai sem a pílula, como o robô já trata). `sku` ausente, vazio, com mais de 80 caracteres, repetido ou com outro parâmetro junto = 400.
+- Mora em `internal/fabrica` (no grupo `auth.SoServico` + `soFabricante` de `montarRobo`): só o robô da Fábrica, com a chave `meta.fabrica` no perfil de serviço; painel (inclusive super e fabricante), impersonado e robô sem a chave = 403; sem sessão = 401 (Ruling 5.10-14). Projeta UMA coluna: o robô não ganha o módulo `autenticidade`.
+- As varreduras do 5.8 (`fabrica/rotas_test.go`) passam a contar 10 leituras e 8 rotas de robô, e a leitura de robô é chamada com a query obrigatória (`consultas`).
+- **Ensaiado** (13/10): `go test -race ./internal/fabrica/` inteiro passa com a rota e o teste novos.
+
+Em `api/internal/fabrica/robo.go`, a linha no grupo de `montarRobo` e a função:
+
+```go
+		r.Post("/fabrica/robo/execucoes", criarExecucao(p))
+		r.Get("/fabrica/robo/material-do-sku", materialDoSku(p)) // Plano 5.10 (Ruling 5.8-13)
+	})
+}
+
+// materialDoSku: GET /fabrica/robo/material-do-sku?sku= — o material do lote MAIS RECENTE do SKU com material, para a
+// pílula de garantia da arte (coletor/hero-ia/texto-da-garantia.mjs:42-47, a mesma consulta). Contrato do 5.8
+// (Ruling 5.8-13), implementado pelo 5.10, dono de vessel_lotes: UMA coluna para o robô da Fábrica, sem dar a ele o
+// módulo autenticidade (que abriria as RPCs do selo). Sem lote com material: {"material": null} (sem pílula).
+func materialDoSku(p *pgxpool.Pool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		sku := q.Get("sku")
+		if len(q) != 1 || len(q["sku"]) != 1 || strings.TrimSpace(sku) == "" || utf8.RuneCountInString(sku) > 80 {
+			dados.Erro(w, http.StatusBadRequest, "pedido_invalido", "sku é obrigatório (até 80 caracteres) e é o único parâmetro.")
+			return
+		}
+		var material *string
+		err := p.QueryRow(r.Context(), `select material from vessel_lotes where sku = $1::text and material is not null
+			order by criado_em desc, id desc limit 1`, sku).Scan(&material)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			dados.ErroDoBanco(w, err)
+			return
+		}
+		responder(w, http.StatusOK, map[string]*string{"material": material})
+	}
+}
+```
+
+Em `api/internal/fabrica/rotas_test.go`: antes de `varrer`, `var consultas = map[string]string{"/fabrica/robo/material-do-sku": "?sku=SS0001HB.S1"}` (com o comentário "a query obrigatória das leituras que não respondem sem ela (Plano 5.10)"); em `varrer`, `f(metodo, rota, rota+consultas[rota], "")` nas GETs; em `TestNadaVazaEntreContas`, `l != 10` (e a mensagem "esperava 10 (1) e 12"); em `TestRotasDeRoboSoServico`, `robo != 8`.
+
+**(b) Testes de aceitação** (`robo_material_test.go`, código abaixo)
+- `TestMaterialDoSku`: o mais recente COM material (`couro`, mesmo havendo um lote mais novo sem material); SKU com `&` e espaço; SKU sem lote e SKU que parece SQL → `null`; sem sku, vazio, 81 caracteres, dois skus, parâmetro a mais → 400; fabricante, super, robô sem a chave, impersonado → 403; sem sessão → 401. E as varreduras do 5.8 continuam passando com a rota nova.
+- Mutações que têm de reprovar: tirar o `and material is not null` (vem `null` do lote de março); montar fora do grupo de robô (o fabricante lê: 403 reprova); aceitar parâmetro a mais.
+
+```go
+package fabrica
+
+import (
+	"context"
+	"strings"
+	"testing"
+
+	"github.com/rbv-co/social-dashboard/api/internal/testebanco/mundoteste"
+)
+
+// O material do lote mais recente do SKU, para a pílula de garantia da arte: só o robô da Fábrica (sessão de
+// serviço com a chave), uma coluna, o SKU exato (texto livre, nunca no SQL).
+func TestMaterialDoSku(t *testing.T) {
+	m := mundoRobo(t)
+	ctx := context.Background()
+	for _, sql := range []string{
+		`insert into vessel_lotes (modelo, sku, quantidade, material, material_fonte, criado_em) values
+		  ('Linear', 'SS0001HB.S1', 1, 'canvas', 'dono', '2026-01-01T10:00:00Z'),
+		  ('Linear', 'SS0001HB.S1', 1, 'couro', 'painel', '2026-02-01T10:00:00Z'),
+		  ('Linear', 'SS0001HB.S1', 1, null, null, '2026-03-01T10:00:00Z'),
+		  ('Bolsa', 'A&B 1', 1, 'canvas', 'dono', '2026-01-01T10:00:00Z')`,
+		// o gatilho deu ao lote de março o material herdado; tirá-lo deixa o lote mais novo SEM material
+		`update vessel_lotes set material = null, material_fonte = null where criado_em = '2026-03-01T10:00:00Z'`,
+	} {
+		if _, err := m.P.Exec(ctx, sql); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const rota = "/fabrica/robo/material-do-sku"
+	m.Rodar(t, []mundoteste.Caso{
+		{Nome: "o mais recente com material", Quem: "robo", Metodo: "GET", Caminho: rota + "?sku=SS0001HB.S1", Status: 200, Tem: `{"material":"couro"}`},
+		{Nome: "SKU com & e espaço", Quem: "robo", Metodo: "GET", Caminho: rota + "?sku=A%26B%201", Status: 200, Tem: `{"material":"canvas"}`},
+		{Nome: "SKU sem lote", Quem: "robo", Metodo: "GET", Caminho: rota + "?sku=SS9999", Status: 200, Tem: `{"material":null}`},
+		{Nome: "SKU que parece SQL", Quem: "robo", Metodo: "GET", Caminho: rota + "?sku=x%27%20or%20%271%27%3D%271", Status: 200, Tem: `{"material":null}`},
+		{Nome: "sem sku", Quem: "robo", Metodo: "GET", Caminho: rota, Status: 400},
+		{Nome: "sku vazio", Quem: "robo", Metodo: "GET", Caminho: rota + "?sku=%20", Status: 400},
+		{Nome: "sku longo demais", Quem: "robo", Metodo: "GET", Caminho: rota + "?sku=" + strings.Repeat("a", 81), Status: 400},
+		{Nome: "dois skus", Quem: "robo", Metodo: "GET", Caminho: rota + "?sku=a&sku=b", Status: 400},
+		{Nome: "parâmetro a mais", Quem: "robo", Metodo: "GET", Caminho: rota + "?sku=SS0001HB.S1&x=1", Status: 400},
+		{Nome: "painel, mesmo o fabricante", Quem: "fabricante", Metodo: "GET", Caminho: rota + "?sku=SS0001HB.S1", Status: 403},
+		{Nome: "super pelo painel", Quem: "super", Metodo: "GET", Caminho: rota + "?sku=SS0001HB.S1", Status: 403},
+		{Nome: "robô sem a chave da Fábrica", Quem: "roboSemFabrica", Metodo: "GET", Caminho: rota + "?sku=SS0001HB.S1", Status: 403},
+		{Nome: "impersonado", Quem: "impersonado", Metodo: "GET", Caminho: rota + "?sku=SS0001HB.S1", Status: 403},
+		{Nome: "sem sessão", Quem: "", Metodo: "GET", Caminho: rota + "?sku=SS0001HB.S1", Status: 401},
+	})
+}
+```
+
+**(c) Arquivos:** Create `api/internal/fabrica/robo_material_test.go`; Modify `api/internal/fabrica/robo.go`, `api/internal/fabrica/rotas_test.go`.
+
+**(d) Dependências:** Task 2; 5.8 mesclado (ou no branch, pelo pré-voo).
+
+- [ ] **Step 1:** Teste; ver falhar (404). - [ ] **Step 2:** A rota e os ajustes das varreduras. - [ ] **Step 3:** `cd api && gofmt -l ./internal && go vet ./internal/fabrica/ && go test -count=1 -race ./internal/fabrica/` PASS; mutações reprovam. - [ ] **Step 4: Commit** `feat(api): GET /fabrica/robo/material-do-sku — a pílula de garantia da Fábrica lê o material do lote (contrato do 5.8)` (+ `Co-Authored-By`).
+
+---
