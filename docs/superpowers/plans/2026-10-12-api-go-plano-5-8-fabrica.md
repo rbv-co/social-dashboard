@@ -2247,7 +2247,7 @@ func (cu *Curadoria) Publicos(w http.ResponseWriter, r *http.Request) {
 **Revisor:** opus. **Depende de:** 3, 4 e 5 (`tabelaCriativos` e `tabelaCampanhas` moram lá).
 
 **(a) Contrato**
-- O robô da Fábrica **continua no GitHub Actions** (rembg/BiRefNet em CPU + ffmpeg, até 45 min: COORDENACAO 12/10 23:10 (c)) e não alcança o banco da API. Ele fala com a API com o token de serviço do 5.13 (`Authorization: Bearer <token>`; usuário `robo-fabrica@…` com perfil próprio: papel `viewer`, `features {meta, sales}` — `meta` para o `meta-proxy`, `sales` para os `produtos` do `bling-proxy` —, `permissions {"meta.fabrica": ["ver","editar"]}`, `allowed_accounts` nulo; NOTAS).
+- O robô da Fábrica **continua no GitHub Actions** (rembg/BiRefNet em CPU + ffmpeg, até 45 min: COORDENACAO 12/10 23:10 (c)) e não alcança o banco da API. Ele fala com a API com o token de serviço do 5.13 (`Authorization: Bearer <token>`; usuário `robo-fabrica@…` com perfil próprio: papel `viewer`, `features {meta}` — `meta` para o `meta-proxy`; os `produtos` do `bling-proxy` passam a abrir para `meta.fabrica` (Ruling 5.8-17) —, `permissions {"meta.fabrica": ["ver","editar"]}`, `allowed_accounts` nulo; NOTAS).
 - **Leituras do robô = as rotas do painel** (Task 4), com a sessão de serviço e as regras do perfil dele. **Escritas do robô = 7 rotas `/fabrica/robo/…`**, atrás de `auth.SoServico` (painel = 403, inclusive admin, super e "entrar como") e de `soFabricante` (a regra do PERFIL do robô); onde o catálogo tem regra de escrita (`fabrica_campanhas`, `fabrica_criativos`), ela vale também (`Tabela.Editar/Criar`). As tabelas que só a chave de serviço gravava (`fabrica_jobs`, `fabrica_looks`, `fabrica_meta_jobs`, `ia_execucoes`) ficam com SQL explícito sobre colunas declaradas (Ruling 5.8-11).
 - O inventário (todo acesso do robô ao REST do Supabase, por arquivo:linha, em `coletor/`) e o destino de cada um:
 
@@ -3117,7 +3117,7 @@ Em `NOTAS-DA-IMPLANTACAO.md`, acrescente ao fim:
 - Robô (só sessão de serviço do 5.13 + perfil do robô): `PATCH /fabrica/robo/jobs/{id}`, `POST /fabrica/robo/jobs/{id}/proximo-lote`, `PATCH /fabrica/robo/campanhas/{id}`, `POST /fabrica/robo/criativos`, `PATCH /fabrica/robo/looks/{chave}`, `POST /fabrica/robo/meta-jobs`, `POST /fabrica/robo/execucoes`.
 
 ### Conta de serviço do robô da Fábrica (depois do 5.13)
-- `usuarios` + `profiles` `robo-fabrica@rbvcompany.com`: papel `viewer`, `features {meta, sales}` (`meta` para o `meta-proxy`; `sales` porque o `bling-proxy` só libera `produtos` a `sales`/`gestor`/`autenticidade`, e `autenticidade` abriria a escrita da Vessel: achado 7), `permissions {"meta.fabrica": ["ver","editar"]}`, `allowed_accounts` nulo, `escopo_por_equipe false`, sem senha.
+- `usuarios` + `profiles` `robo-fabrica@rbvcompany.com`: papel `viewer`, `features {meta}` (`meta` para o `meta-proxy`; SEM `sales`: o `bling-proxy` libera `produtos` e `produtos/{id}` a quem tem `meta.fabrica` em `permissions`, Ruling 5.8-17), `permissions {"meta.fabrica": ["ver","editar"]}`, `allowed_accounts` nulo, `escopo_por_equipe false`, sem senha.
 - Token: `api servico criar robo-fabrica robo-fabrica@rbvcompany.com` (imprime UMA vez) → segredo `API_TOKEN_FABRICA` no GitHub (Settings → Secrets) e no `fabrica.yml` no lugar de `SUPABASE_SERVICE_KEY`/`GESTOR_USER_*` (Plano 7). Revogar: `api servico revogar robo-fabrica`.
 
 ### Antes do corte
@@ -3134,7 +3134,10 @@ Em `NOTAS-DA-IMPLANTACAO.md`, acrescente ao fim:
 - As 5 edges: mesma URL sob `/api` e mesmos corpos; erros novos: `fabrica-trigger` → `503 github_nao_configurado`, `429 muitas_tentativas`, `504 dispatch_incerto`, `400 pedido_invalido` (params); `fabrica-apagar` → `400 campanhaId_invalido`; `fabrica-candidatos` → `400 pedido_invalido` (lojas/filtros); `fabrica-looks` → `sync` = `400 acao_invalida`; `fabrica-publicos` → `404` no `salvar` com `id` inexistente. `detail` do `dispatch_falhou` é uma frase da API, não o texto do GitHub.
 - Robô (`coletor/fabrica-job-runner.mjs` e módulos, tabela da Task 9): `loginServico` → token de serviço; cada `sbGet/sbPost/sbPatch` → a rota da tabela; `registrar-execucao.mjs` → `POST /fabrica/robo/execucoes` (só para os robôs da Fábrica; os outros robôs desse módulo são da VPS e usam `pg`); a pílula de garantia espera o `GET /fabrica/robo/material-do-sku` do 5.10.
 
-### Achados para o dono
+#17. Ruling: o `bling-proxy` (Plano 3) passa a liberar SÓ os caminhos `produtos` e `produtos/{id}` também a quem tem `permissions ? 'meta.fabrica'` (mesma regra de `Fabricante`), e o robô da Fábrica fica SEM o módulo `sales` — menor privilégio: `sales` abriria pedidos e dados de cliente do Bling a um token que roda no GitHub Actions; a mudança é uma linha no portão do `bling-proxy` mais casos de teste (pessoa só com `meta.fabrica`: `produtos` 200, `pedidos/vendas` 403), feita na Task 9 (arquivos `api/internal/web` ou onde o portão do `bling-proxy` mora; conferir com grep), decidida pela trilha B na execução — custo se errada: nenhum para as telas (quem tem `sales` continua igual).
+18. Ruling: confirmado pela trilha B em 13/10 com `gh run list --workflow fabrica.yml`: a última execução da Fábrica foi em 29/07/2026 (achado 1) — o plano não muda; o token novo (`GITHUB_PAT`) é criado no corte; o dono decide se a Fábrica volta a rodar antes da virada.
+
+## Achados para o dono
 (ver a seção "Achados para o dono" do plano 5.8)
 ```
 
@@ -3215,7 +3218,7 @@ Na mesma área, de OUTROS planos (não trocar pelo 5.8): **5.7** — `buscar-lug
 4. **`fabrica-candidatos` deixava ler o estoque de qualquer depósito do Bling** (o depósito vinha cru do pedido). A API só aceita os depósitos da Fábrica.
 5. **A Fábrica não tem escopo por loja nem por conta (exceto as marcas):** quem tem a chave `meta.fabrica` vê vendas e estoque agregados de todas as lojas da Fábrica, e qualquer sessão lê campanhas, criativos, jobs (com os itens e preços) e públicos. Mantido (paridade); fechar é policy em produção.
 6. **Super-admin e admin passam pela Fábrica sem a chave** (é a policy). E `meta.fabrica` em `features` (módulo) NÃO dá acesso: só a chave em `permissions` — quem tiver só o módulo vê o menu e toma 403 ao gerar.
-7. **O robô da Fábrica precisa do módulo `sales` para ler produtos no `bling-proxy`** (não há módulo só de produto além de `autenticidade`, que abriria a escrita da Vessel). Sugestão: o `bling-proxy` aceitar `meta.fabrica` para `produtos` (Plano 3), e o robô ficar sem `sales`.
+7. **O robô da Fábrica precisa do módulo `sales` para ler produtos no `bling-proxy`** (não há módulo só de produto além de `autenticidade`, que abriria a escrita da Vessel). DECIDIDO (trilha B, Ruling 5.8-17): o `bling-proxy` aceita `meta.fabrica` para `produtos` e o robô fica sem `sales`.
 8. **`fabrica-publicos` ao salvar um preset existente apaga a marca dele e troca o "criado por"** pelo de quem salvou. Mantido (paridade).
 9. **Quem tem lista de contas perde o selo de status das campanhas publicadas** na Home: o `meta-proxy` do 5.6 nega `/<id da campanha>` a quem tem lista (o selo cai em "?"). Liberar = olhar `campaigns` da conta no `meta-proxy` (anotado no 5.6).
 10. **A pílula de garantia nas artes depende do 5.10** (`GET /fabrica/robo/material-do-sku`); entre o 5.8 e o 5.10 as artes saem sem ela.
