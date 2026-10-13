@@ -89,10 +89,13 @@ var soLegivelPeca = soLegivelAoCriar("conteudo_pecas")
 // conferirPeca: na criação, a peça nova legível (soLegivelAoCriar). Na edição, o furo da guarda de produção:
 // conteudo_guarda_aprovacao só barra 'aprovada'/'agendada' quando o status ANTIGO é 'em_aprovacao'. Quem não
 // aprova fazia em_aprovacao → rascunho e depois rascunho → agendada (ou reprovada → agendada), pulava a
-// aprovação, e o robô da hora H avisava a publicação. Aqui, sem conteudo.aprovar, só se vai para 'aprovada' ou
-// 'agendada'/'publicada' a partir de uma peça que JÁ está em aprovada, agendada ou publicada (remarcar), ou
-// em em_aprovacao para aprovada/agendada (aí o gatilho decide e recusa). A linha fica travada
-// (for update) até o UPDATE: o status lido é o que o gatilho enxerga como OLD.
+// aprovação, e o robô da hora H avisava a publicação. 'publicada' também não é origem segura:
+// conteudo_casar_na_mao (módulo conteudo, sem aprovar) publica a peça de QUALQUER estado, e dali um PATCH a
+// 'agendada' com avisado_em nulo faria a hora H avisar uma peça nunca aprovada. Aqui, sem conteudo.aprovar,
+// só se vai para aprovada/agendada/publicada a partir de uma peça que JÁ está em aprovada ou agendada
+// (remarcar, publicar); a publicada só continua publicada; a em_aprovacao vai ao gatilho, que decide e recusa
+// (menos para 'publicada', que ele não barra). A linha fica travada (for update) até o UPDATE: o status lido
+// é o que o gatilho enxerga como OLD.
 func conferirPeca(ctx context.Context, tx pgx.Tx, e *autz.Escopo, id string, campos map[string]any) error {
 	if id == "" {
 		return soLegivelPeca(ctx, tx, e, id, campos)
@@ -107,7 +110,8 @@ func conferirPeca(ctx context.Context, tx pgx.Tx, e *autz.Escopo, id string, cam
 	}
 	// em_aprovacao fica com o gatilho, que responde o 400 "Sem permissao para aprovar..." da produção — mas só
 	// para aprovada/agendada: para 'publicada' ele não barra nada, então ali em_aprovacao também é 403.
-	if atual == "aprovada" || atual == "agendada" || atual == "publicada" || (atual == "em_aprovacao" && novo != "publicada") {
+	if atual == "aprovada" || atual == "agendada" || (atual == "publicada" && novo == "publicada") ||
+		(atual == "em_aprovacao" && novo != "publicada") {
 		return nil
 	}
 	return autz.ErrNegado

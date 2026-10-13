@@ -164,7 +164,7 @@ func TestArquivos(t *testing.T) {
 // O furo da guarda de produção: ela só barra 'aprovada'/'agendada' vindo de em_aprovacao. Quem não aprova
 // voltava a peça para rascunho e agendava dali (ou de reprovada), e o robô da hora H avisava a publicação.
 func TestAgendarSemAprovarPeloRascunho(t *testing.T) {
-	m := novoMundo(t, montarPecas)
+	m := novoMundo(t, montarPecas, montarRPCs)
 	const status = `select status from conteudo_pecas where id = '`
 	agendar := func(quem, peca string) mundoteste.Caso {
 		return mundoteste.Caso{Nome: quem + " agenda " + peca, Quem: quem, Metodo: "PATCH", Caminho: "/conteudo/pecas/" + peca,
@@ -198,6 +198,16 @@ func TestAgendarSemAprovarPeloRascunho(t *testing.T) {
 			Corpo: `{"status":"agendada","publicar_em":"2026-11-05T15:00:00.000Z","avisado_em":null}`, Status: 200,
 			Efeito: `select status || '|' || publicar_em::text from conteudo_pecas where id = '` + P1 + `'`, Quer: "agendada|2026-11-05 15:00:00+00"},
 	})
+	// publicada (casada na mão, de qualquer estado) NÃO é origem: o conteudista casa uma peça em rascunho e
+	// tenta agendá-la com avisado_em nulo; a foto é de depois do casar.
+	m.Um(t, `with u as (update conteudo_pecas set status = 'rascunho' where id = '`+P7+`' returning 1) select count(*) from u`)
+	m.Rodar(t, []mundoteste.Caso{{Nome: "casar na mão uma peça em rascunho", Quem: "conteudista", Metodo: "POST", Caminho: "/rpc/conteudo_casar_na_mao",
+		Corpo: `{"p_peca":"` + P7 + `","p_media":"CASADA7"}`, Status: 200, Efeito: status + P7 + `'`, Quer: "publicada"}})
+	remarcar := nega("conteudista", P7)
+	remarcar.Corpo = `{"status":"agendada","avisado_em":null}`
+	aprovada := nega("conteudista", P7)
+	aprovada.Corpo = `{"status":"aprovada"}`
+	intacto(t, m, []mundoteste.Caso{remarcar, aprovada, nega("conteudista", P7)})
 	// agendada → publicada: o editor pode (a peça já passou pela aprovação)
 	m.Rodar(t, []mundoteste.Caso{func() mundoteste.Caso {
 		c := publicar("conteudista", P1, 200)

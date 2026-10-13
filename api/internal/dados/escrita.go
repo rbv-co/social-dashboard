@@ -30,7 +30,8 @@ type Tabela struct {
 	// caminho preso à mãe. Roda na MESMA transação, DEPOIS do PodeCriar/PodeEditar/PodeApagar (a linha já
 	// está travada e sabidamente visível: id invisível responde 404 antes, sem oráculo) e ANTES do SQL que
 	// grava. id = "" na criação; campos = nil no apagar; na criação os campos já trazem a coluna Autor.
-	// autz.ErrNegado = 403, autz.ErrNaoEncontrado = 404; outro erro segue ErroDeEscrita. Plano 5.9 (Ruling 5.9-4).
+	// autz.ErrNegado = 403, autz.ErrNaoEncontrado = 404; outro erro segue ErroDeEscrita. campos é SÓ LEITURA: o gancho não deve alterar o mapa (o que ele mudasse
+	// iria ao SQL sem o PodeX). Plano 5.9 (Ruling 5.9-4).
 	Conferir func(ctx context.Context, tx pgx.Tx, e *autz.Escopo, id string, campos map[string]any) error
 }
 
