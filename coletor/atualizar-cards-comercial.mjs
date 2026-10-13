@@ -12,7 +12,7 @@
 //   CANAIS/realPorCanalDe/canaisFocoDe (lib/comercial-canais.mjs).
 // Sem deps externas — fetch nativo (Node 18+).
 
-import { loginServico, blingPedidos } from './lib/bling-comercial.mjs';
+import { loginServico, robosNaApi, blingPedidos } from './lib/bling-comercial.mjs';
 import { realPorCanalDe, canaisFocoDe } from './lib/comercial-canais.mjs';
 import { registrarExecucao } from './registrar-execucao.mjs';
 
@@ -24,7 +24,7 @@ const GESTOR_EMAIL = process.env.GESTOR_USER_EMAIL;
 const GESTOR_PASS = process.env.GESTOR_USER_PASSWORD;
 
 // Sem IA: não precisa da chave da Anthropic. Só Bling (conta de serviço) + Supabase.
-if (!SERVICE_KEY || !GESTOR_EMAIL || !GESTOR_PASS) {
+if (!SERVICE_KEY || (!robosNaApi() && (!GESTOR_EMAIL || !GESTOR_PASS))) {
   console.error('✗ Faltam segredos: SUPABASE_SERVICE_KEY, GESTOR_USER_EMAIL, GESTOR_USER_PASSWORD');
   process.exit(1);
 }
@@ -59,7 +59,7 @@ async function main() {
   console.log('== Cards Comercial (diário, sem IA) · ' + hoje + ' ==');
 
   // 1) faturamento real por canal (mês corrente) via bling-proxy — mesma lógica do semanal
-  const token = await loginServico();
+  const token = await loginServico({ naApi: true });
   const pedidos = await blingPedidos(token, di, df);
   const realPorCanal = realPorCanalDe(pedidos);
 
