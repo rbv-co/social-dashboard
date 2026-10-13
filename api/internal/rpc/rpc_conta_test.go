@@ -2,9 +2,11 @@ package rpc
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/rbv-co/social-dashboard/api/internal/auth"
 	"github.com/rbv-co/social-dashboard/api/internal/autz"
 	"github.com/rbv-co/social-dashboard/api/internal/dados"
@@ -79,5 +81,38 @@ func TestRPCSoSessaoPropriaOrdem(t *testing.T) {
 	p3, h3 := montarCom(t, &auth.Ator{ID: quemPede, Tipo: "painel"}, esc, grava)
 	if w := chamar(h3, "marcar", ``); w.Code != 204 || marcas(t, p3) != 1 {
 		t.Fatalf("sessão própria = %d %s", w.Code, w.Body)
+	}
+}
+
+// Conferir: ErrNegado = 403 sem a função rodar (nada gravado); nil deixa passar; outro erro segue o
+// mapa do banco (aqui, regra de negócio vira 400). O hook roda na transação de quem pede e vê o que
+// foi enviado.
+func TestRPCConferir(t *testing.T) {
+	casos := []struct {
+		nome   string
+		chk    func(context.Context, pgx.Tx, *autz.Escopo, map[string]json.RawMessage) error
+		status int
+		marcas int
+	}{
+		{"nega", func(context.Context, pgx.Tx, *autz.Escopo, map[string]json.RawMessage) error { return autz.ErrNegado }, 403, 0},
+		{"passa", func(context.Context, pgx.Tx, *autz.Escopo, map[string]json.RawMessage) error { return nil }, 204, 1},
+		{"vê identidade e parâmetros", func(ctx context.Context, tx pgx.Tx, e *autz.Escopo, a map[string]json.RawMessage) error {
+			var quem string
+			if err := tx.QueryRow(ctx, `select current_setting('app.usuario_id', true)`).Scan(&quem); err != nil {
+				return err
+			}
+			if quem != quemPede || e.ID != quemPede || len(a) != 0 {
+				return autz.ErrNegado
+			}
+			return nil
+		}, 204, 1},
+	}
+	for _, c := range casos {
+		p, h := montarCom(t, &auth.Ator{ID: quemPede, Tipo: "painel"}, &autz.Escopo{ID: quemPede, TemPerfil: true, Ativo: true},
+			Funcao{Nome: "marcar", Retorno: Nada, Portao: todos, Conferir: c.chk})
+		w := chamar(h, "marcar", `{}`)
+		if w.Code != c.status || marcas(t, p) != c.marcas {
+			t.Errorf("%s: %d %s, %d marcas; esperava %d e %d", c.nome, w.Code, w.Body, marcas(t, p), c.status, c.marcas)
+		}
 	}
 }

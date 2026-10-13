@@ -86,12 +86,17 @@ func TestRegistrarProblemas(t *testing.T) {
 	}
 	foto := func() string { return m.Um(t, fotoDoTrafego) }
 
-	intacto := func(nome, quem, corpo string, st int, tem string) {
+	intacto := func(nome, quem, corpo string, st int, tem ...string) {
 		t.Helper()
 		antes := foto()
 		got, resp := pedir(quem, corpo)
-		if got != st || (tem != "" && !strings.Contains(resp, tem)) {
-			t.Errorf("%s: %d %s; esperava %d com %q", nome, got, resp, st, tem)
+		if got != st {
+			t.Errorf("%s: %d %s; esperava %d", nome, got, resp, st)
+		}
+		for _, x := range tem {
+			if !strings.Contains(resp, x) {
+				t.Errorf("%s: %s sem %q", nome, resp, x)
+			}
 		}
 		if foto() != antes {
 			t.Errorf("%s: o banco mudou", nome)
@@ -114,19 +119,39 @@ func TestRegistrarProblemas(t *testing.T) {
 	}
 
 	vazio := func(c string) string { return `{"p_conta":"` + c + `","p_itens":[]}` }
-	intacto("A1 pede A2", "gestorA1", vazio(A2), 403, "")
-	intacto("A1 pede A3", "gestorA1", vazio(A3), 403, "")
-	intacto("gestorNenhuma", "gestorNenhuma", vazio(A1), 403, "")
-	intacto("leitor", "leitor", vazio(A1), 403, "")
-	intacto("superA1", "superA1", vazio(A1), 403, "")
-	intacto("semModulo", "semModulo", vazio(A1), 403, "")
+	intacto("A1 pede A2", "gestorA1", vazio(A2), 403)
+	intacto("A1 pede A3", "gestorA1", vazio(A3), 403)
+	intacto("gestorNenhuma", "gestorNenhuma", vazio(A1), 403)
+	intacto("leitor", "leitor", vazio(A1), 403)
+	intacto("superA1", "superA1", vazio(A1), 403)
+	intacto("semModulo", "semModulo", vazio(A1), 403)
 	intacto("impersonado", "impersonado", vazio(A1), 403, "Quem entrou como outra pessoa")
 	intacto("conta não texto", "gestorA1", `{"p_conta":5,"p_itens":[]}`, 400, "p_conta deve ser texto")
 	intacto("sem p_itens", "gestorA1", `{"p_conta":"`+A1+`"}`, 400, "falta o parâmetro p_itens")
-	intacto("conta vazia, gestorA1", "gestorA1", vazio(""), 403, "")
-	intacto("conta vazia, gestorTodas", "gestorTodas", vazio(""), 400, "Falta dizer de qual conta e a lista.")
+	intacto("conta vazia, gestorA1", "gestorA1", vazio(""), 403)
+	intacto("conta vazia, gestorTodas", "gestorTodas", vazio(""), 400, "regra_de_negocio", "Falta dizer de qual conta e a lista.")
+	// null não tem efeito: a função decide (400), nem com item de outra conta na lista
+	intacto("conta null, gestorTodas", "gestorTodas", `{"p_conta":null,"p_itens":[]}`, 400, "regra_de_negocio", "Falta dizer de qual conta e a lista.")
+	intacto("conta null, gestorA1", "gestorA1", `{"p_conta":null,"p_itens":[{"ad_id":"7002","codigo":2}]}`, 400, "regra_de_negocio")
+	// item de OUTRA conta: o upsert é por (ad_id, codigo) e trocaria o dono do problema; ninguém move
+	mover := `{"p_conta":"` + A1 + `","p_itens":[{"ad_id":"7002","codigo":2,"titulo":"Meu","grave":true}]}`
+	intacto("mover 7002/2 de A2 para A1, gestorA1", "gestorA1", mover, 403)
+	intacto("mover 7002/2 de A2 para A1, gestorTodas", "gestorTodas", mover, 403)
+	intacto("mover 7002/2 de A2 para A1, adminA1", "adminA1", mover, 403)
+	if v := m.Um(t, `select account_id from gt_problemas_meta where ad_id = '7002' and codigo = 2`); v != A2 {
+		t.Errorf("7002/2 mudou de conta: %s", v)
+	}
+	// itens malformados: a validação da função responde (400), nunca 500
+	intacto("itens não é lista", "gestorA1", `{"p_conta":"`+A1+`","p_itens":"x"}`, 400)
+	intacto("item não é objeto", "gestorA1", `{"p_conta":"`+A1+`","p_itens":[5]}`, 400)
+	intacto("codigo não é número", "gestorA1", `{"p_conta":"`+A1+`","p_itens":[{"ad_id":"7002","codigo":"x"}]}`, 400)
 	if v := m.Um(t, f7002); v != "false" {
 		t.Errorf("7002/2 fechado pelos negados: %s", v)
+	}
+
+	// chave nova (ou já da própria conta) passa
+	if st, resp := pedir("gestorTodas", `{"p_conta":"`+A1+`","p_itens":[{"ad_id":"7006","codigo":4},{"ad_id":"7005","codigo":3}]}`); st != 200 || resp != "2" {
+		t.Errorf("chave nova e da própria conta: %d %s", st, resp)
 	}
 
 	// admin vê todas as contas
