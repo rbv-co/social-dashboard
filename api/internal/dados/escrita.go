@@ -37,6 +37,11 @@ type Tabela struct {
 	// SEGUNDA FK fora da regra de Ler (ex.: patrimonio_bens.pessoa_id → acessos_pessoas, Ruling 5.2-17)
 	// responde 201 se o alvo existe e 403 se não existe: quem cria descobre se um uuid existe. Aceito
 	// onde o uuid já é visível por outro caminho (pessoas_para_escolher()); senão, valide a FK à parte.
+	//
+	// LIMITE 2: a conferência (e o `devolver`) roda sobre o RETURNING do INSERT, isto é, depois dos
+	// gatilhos BEFORE e ANTES dos AFTER. Um gatilho AFTER INSERT que tire a linha do alcance de quem criou
+	// passa (201 com a linha como gravada pelo INSERT). Nenhuma tabela do 5.2 tem AFTER INSERT; tabela
+	// que tiver tem de conferir de novo depois do comando (releia a linha na mesma transação).
 	CriarSoLegivel bool
 }
 

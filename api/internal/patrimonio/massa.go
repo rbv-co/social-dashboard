@@ -126,7 +126,7 @@ func trocarDonoEmMassa(ctx context.Context, tx pgx.Tx, e *autz.Escopo, lote []st
 	if err := tx.QueryRow(ctx, `select ((now() at time zone 'America/Sao_Paulo')::date)::text`).Scan(&hoje); err != nil {
 		return err
 	}
-	linhas, err := tx.Query(ctx, `select id::text from patrimonio_posse where bem_id = any(@ids::uuid[]) and ate is null order by id`,
+	linhas, err := tx.Query(ctx, `select id::text from patrimonio_posse where bem_id = any(@ids::uuid[]) and ate is null order by id for update`,
 		pgx.NamedArgs{"ids": lote})
 	if err != nil {
 		return err

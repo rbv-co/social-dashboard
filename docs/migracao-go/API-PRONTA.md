@@ -275,7 +275,7 @@ Montagem, `soPainel`, varreduras de vazamento por conta, "entrar como" e sessão
 - **Escrita das 19 rotas de tabela (`dados.Tabela`)**: `POST` = `201` com UM OBJETO (não array) e `PATCH` = `200` com objeto, ambos pela lista de colunas da leitura se quem gravou a lê depois (senão `{"id"}`); `DELETE` = `204`. As duas rotas em lote e `PUT /patrimonio/config/{chave}` têm resposta própria, dita na linha de cada uma. Todo `Array.isArray(linhas)` e todo `.select('id').single()` de escrita no front muda.
 - **Escrita negada = 403 (regra) ou 404 (linha inexistente ou invisível)**; o PostgREST respondia 2xx com zero linhas. `409 conflito` em nome repetido ou FK; `400` em campo desconhecido, tipo errado ou autoria no corpo (`quem` do log).
 - **Sessão "entrar como" só LÊ:** as 22 escritas e as 3 RPCs que gravam respondem `403 sem_permissao` com a frase "Quem entrou como outra pessoa só consulta." (Ruling 5.2-3); as duas listas de escolha seguem abertas.
-- **Criar bem ou posse que a pessoa não veria = 403** e nada é gravado (Ruling 5.2-2; antes o `insert` passava). FK para o que não existe também = 403 no POST (sem oráculo de existência).
+- **Criar bem ou posse que a pessoa não veria = 403** e nada é gravado (Ruling 5.2-2; antes o `insert` passava). FK para o que não existe também = 403 no POST de bem e de posse (sem oráculo de existência; nos cadastros, FK inexistente = 409).
 - Corpo de escrita: ausente = não muda; `null` explícito = grava nulo.
 
 | Método e caminho | Substitui (Supabase) | Quem pode | Desvios do II.2 / observações | Commit |
