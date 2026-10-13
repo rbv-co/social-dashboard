@@ -3080,3 +3080,119 @@ Em `docs/migracao-go/API-PRONTA.md`: o **Estado** ganha "5.10"; a soma de rotas,
 - [ ] **Step 4: Commit** `feat(api): monta o selo Vessel (leituras, 16 RPCs, cartão e material-do-sku), varreduras, conferir e notas` (+ `Co-Authored-By`).
 
 ---
+
+### Verificação final do 5.10
+
+- [ ] `docker stop pg-plano510` e `make -C api teste PG_PORTA=58550` → todos `ok` (nunca junto com o gate de outra worktree).
+- [ ] Subir o `pg-plano510` de novo e `cd api && go test -count=1 -v ./... 2>&1 | grep -c -- '--- SKIP'` → `0`.
+- [ ] `node --test ops/migracao/limpar-dump.test.mjs` → `pass` (15 casos).
+- [ ] `cd api && gofmt -l . && go vet ./...` → nada.
+- [ ] `git diff origin/main...HEAD --stat -- src/ supabase/ coletor/ db/ .github/` → vazio (front, edge e robô trocam no Plano 7; produção não muda). `ops/migracao/limpar-dump*` é a única mudança fora de `api/` e `docs/`.
+- [ ] `grep -rn 'internal/github\|api.github.com' api/internal/vessel api/internal/banco` → nada (o selo não despacha nada: Ruling 5.10-2); `grep -n '"vessel_' api/internal/web/rpc_lista.go | grep -v 'proibid\|ForaDoPainel'` → só os do 5.11 (os 16 saíram de `RPCPendentes`).
+- [ ] `grep -rn 'Conferir:' api/internal/vessel/*.go | grep -v _test` → `1` (só `soNaMao`: Ruling 5.10-9); `grep -c 'SoSessaoPropria: true' api/internal/vessel/rpc.go` → `2` (a de `vessel_decidir_pedido_de_registro` e a de `grava`, que vale para 13).
+- [ ] `grep -rn 'client_secret\|refresh_token' api/internal | grep -v '_test.go\|zoho/zoho.go\|conferir'` → nada (o segredo do Zoho só passa pelo `internal/zoho`).
+- [ ] `docker stop pg-plano510`.
+- [ ] Revisão final do branch por opus com foco em: o cadastro do site no corte (a `disparar_robo` nova em TODO caminho de restore e de migração? alguma forma de ela falhar?), a fila (algum caminho atende duas vezes ou refaz o incerto?), o selo (alguma rota ou RPC alcança registro, garantia ou dona sem `is_vessel_admin`? o "entrar como" grava? o `bling` passa pelo painel?), o CPF (alguma resposta traz o CPF inteiro ou o nascimento?) e o Zoho (algum segredo em resposta, erro ou log? algum host vindo do banco?).
+
+---
+
+## Inventário: sítios do front a trocar (Plano 7)
+
+`grep` em `src/ferramentas/autenticidade/` (fora de `*.test.*`) no `origin/main` de 13/10 (1694af1b; o branch deste plano tem as mesmas linhas −2 a partir da 2325, antes do `import` da área `conta`), contando `sbClient.from('<tabela>')`, `sbClient.rpc('<nome>')` e `functions.invoke('<edge>')`: **8 sítios nas 6 tabelas, 18 chamadas das 16 RPCs e 1 chamada à edge**, todos em `tela-de-autenticidade.vue` (`tela`). Nenhuma outra tela lê as 11 tabelas do selo (`tela-de-base-de-leads.vue` lê `vessel_lista_espera`, `vessel_atendimentos`, `vessel_pessoas` e `vessel_origens`: 5.11).
+
+| Rota | Sítios (`tela:linha`, função) | Qtde |
+|---|---|---|
+| `GET /autenticidade/lotes` | :4148 `carregar` | 1 |
+| `GET /autenticidade/pecas` | :4152 `carregar`; :4063 `atualizarAsPecas` (`?codigo=` em blocos de 100); :4073 `recarregarAsPecas` | 3 |
+| `GET /autenticidade/registros` | :4153 `carregar` | 1 |
+| `GET /autenticidade/baixas` | :4161 `carregar` (o `.is('desfeita_em', null)` some: a rota já filtra) | 1 |
+| `GET /autenticidade/cartao-pedidos?limite=20` | :3879 `carregarAFilaDeCartoes` (relê a cada 3 s com pedido ativo) | 1 |
+| `GET /autenticidade/lembretes` | :4247 `carregarLembretes` (colunas de `lembretes-do-selo.js:29-30`) | 1 |
+| `POST /rpc/vessel_alertas` | :4154 `carregar` | 1 |
+| `POST /rpc/vessel_fila_de_registros` | :4158 `carregar` | 1 |
+| `POST /rpc/vessel_baixar_garantia` | :2831 `confirmarBaixaDeGarantia` | 1 |
+| `POST /rpc/vessel_desmarcar_gravada` | :3210 `confirmarResetDaLeitura` (`desmarcarNoBanco`), :3469 `apagarGravacao` | 2 |
+| `POST /rpc/vessel_decidir_pedido_de_registro` | :3718 `confirmarDecisao` | 1 |
+| `POST /rpc/vessel_trocar_dono` | :3774 `confirmarTroca` | 1 |
+| `POST /rpc/vessel_pedir_cartoes` | :4013 `enviarPedido` | 1 |
+| `POST /rpc/vessel_gerar_lote` | :4266 `gerarLote` | 1 |
+| `POST /rpc/vessel_definir_material_do_lote` | :4431 `salvarMaterial` | 1 |
+| `POST /rpc/vessel_editar_lote` | :4518 `salvarEdicao` | 1 |
+| `POST /rpc/vessel_excluir_lote` | :4555 `excluirLote` | 1 |
+| `POST /rpc/vessel_baixar_peca` | :4582 `baixarPeca` | 1 |
+| `POST /rpc/vessel_excluir_peca` | :4604 `excluirPeca` | 1 |
+| `POST /rpc/vessel_desfazer_baixa` | :4621 `desfazerBaixa` | 1 |
+| `POST /rpc/vessel_marcar_gravada` | :4655 `marcarGravada`, :5116 `marcarPeloGravador` | 2 |
+| `POST /rpc/vessel_sobrescrever_etiqueta` | :4926 `sobrescreverEtiqueta` | 1 |
+| `POST /vessel-baixar-cartao` | :3922 `buscarOArquivoDoCartao` (de `carregarAsImagensDoCartao` :3959 e `baixarOCartao` :3977); a frase sai de `cartoes-ean.js:252` `fraseDoDownloadRecusado` | 1 |
+
+Na mesma tela, de OUTROS planos (não trocar pelo 5.10): **Plano 3** — `chamarBling`/`paginasDoBling` (`/bling-proxy`, já liberado ao módulo `autenticidade` para `produtos`) em :2873, :3622, :4378, :4384, :4398; **5.0** — `conferir-senha` em :4495 (já atrás da chave `conta` no `origin/main`); o `fetch` do `indice.json` do site público (:3865) não muda. **Robôs** (trilha C, Plano 7): `coletor/vps/cartoes-ean-vigia.sh` (o `GET rest/v1/vessel_cartao_pedidos` vira `psql -c`, com papel próprio e `EXECUTE` nas 3 `vessel_cartao_*`: INVENTÁRIO item 9), `coletor/robo-de-cartoes.mjs` e `coletor/fotos-do-selo-do-bling.mjs` (já `pg`: só a `DATABASE_URL`), `coletor/hero-ia/texto-da-garantia.mjs:42-47` (→ `GET /fabrica/robo/material-do-sku`), `.github/workflows/cartoes-ean.yml` e `fotos-do-selo.yml` (aposentar: não alcançam o banco novo, achado 1).
+
+## Mudanças de contrato que o Plano 7 absorve
+
+- **Leituras** → `GET /api/autenticidade/<recurso>` com as colunas da tela e a ordem de hoje. `registros` sem `cpf`, `nascimento`, `cliente_id`, `pedido_id`, `bling_contato_id`, `bling_atualizado_em`, `presente_de_nome` (a tela não os usa: lista, busca, planilha `lotes.js:391-398` e o aviso da fila `tela:1627` leem `codigo, nome, whatsapp, onde_comprou, comprado_em, garantia_ate, registrado_em, bling_pedido`). `baixas` só as ativas. `pecas?codigo=A,B` (lista por vírgula). `cartao-pedidos?limite=20`. `lembretes`: o caminho "a tabela ainda não existe" (`lembretes-do-selo.js:126`, 42P01/PGRST205) não acontece mais. Mais de 1000 peças: a lista corta no teto (achado 6).
+- **RPCs** → `POST /api/rpc/<nome>` com o mesmo corpo de `sbClient.rpc`; a resposta é o mesmo objeto da função (o `json` do Postgres, com espaços). As recusas da FUNÇÃO continuam `200 {ok:false, motivo}`. A recusa do PORTÃO (quem não é do selo) vira `403 {"error":"sem_permissao"}` em vez de `200 {ok:false, motivo:'sem_permissao'}`: em `carregar` (:4192-4197) e nas ações, o 403 tem de virar o mesmo `e.recusa = 'sem_permissao'` (`fraseDaRecusa`) — senão a tela diz "confira sua conexão" para quem não tem a chave, o erro que o comentário de :4176-4186 descreve. "Entrar como" nas 14 que gravam = `403` com `mensagem: "Quem entrou como outra pessoa só consulta."` (mostrar a frase). `vessel_decidir_pedido_de_registro`: só `p_quem_decidiu: 'na_mao'` e `p_conferencia: null` (a tela já manda assim; outro valor = 403). Duas baixas da mesma peça ao mesmo tempo podem dar `409` (já davam pelo PostgREST).
+- **Cartão** → `POST /api/vessel-baixar-cartao` com o mesmo corpo e as mesmas respostas `{erro}`; o 403 de quem não é do selo vem `{"error":"sem_permissao"}` (em `buscarOArquivoDoCartao`, ler `detalhe?.erro ?? detalhe?.error`); 401 de sessão no formato do núcleo; some o `Server-Timing`; o `Content-Disposition` é o do `mime` (a tela usa o próprio nome no `<a download>`). Os bytes chegam como hoje (`application/octet-stream`).
+- **Robôs**: ver o inventário. A edge `vessel-baixar-cartao` sai no Plano 7 (depois de a tela trocar); as edges `vessel-fotos-trigger` e `vessel-cartoes-trigger` já não têm quem as chame desde 10/10 (aposentar).
+
+## Paralelização
+
+- **Uma worktree por tarefa paralela** (merge na ordem dos números). As Tasks 3, 4, 6 e 8 são o MESMO pacote Go (`vessel`): em worktrees separadas, cada uma só cria os SEUS arquivos; o mundo (`mundo_test.go`: pessoas, linhas, `fotoDoSelo`, `novoMundo`) é da Task 3 (a 4 e a 6 o usam); `montarRPCs` e `intacto` moram em `rpc_test.go` (Task 4; a 8 usa `montarRPCs`). A 7 mexe em `internal/fabrica`. Um contêiner (`pg-plano510`, porta 58550) atende todas: cada teste cria o próprio banco ou schema.
+- **Onda 1:** Task 1 (`banco`, `ops/migracao`) e Task 5 (`zoho`) — paralelas, pacotes disjuntos. **Onda 2:** Task 2 (`testebanco`; o teste do espelho precisa da 00007). **Onda 3:** Task 3 (`vessel`) e Task 7 (`fabrica`) — paralelas. **Onda 4:** Tasks 4 e 6 (`vessel`, arquivos distintos; a 6 precisa da 5). **Onda 5:** Task 8 (a única que toca `web/*`, `cmd/api/conferir*.go`, `github.go` e as notas).
+- **Com outros sub-planos:** o **5.9** anda em paralelo (IV.3): conflito mecânico em `web/rotas.go` (uma linha de `FuncoesRPC` e uma de `Montar` cada), `web/rotas_test.go` (`rotas59`/`rotas510` e o `init`), `web/rpc_lista.go` (cada um tira o SEU bloco de `RPCPendentes`), `esquema_test.go` (a lista de gatilhos: `conteudo_pecas_guarda` + os 6), `cmd/api/conferir*.go` (a fixture de `web.FuncoesRPC` é UMA: quem mescla por último não duplica) e as notas; quem mescla por último junta e roda o gate. O **5.11** não redeclara as 12 tabelas nem as funções do 5.10 (Interfaces que este plano entrega) e cria na fatia dele `vessel_lista_espera`, `vessel_pedidos` e o gatilho `vessel_lista_espera_espelhar` (a função `vessel_espelhar_agora` já está no `03-funcoes-5-10.sql`). Quem regerar o `02-gatilhos.sql` com `CONFERIDOS` (5.2/5.3) confere as 8 entradas da Task 2 (Step 4). O **5.4** declara `acessos_conexoes`: os testes do 5.10 a criam com `if not exists`. A migração `00007` é a próxima livre hoje: quem entrar antes com outra 00007 empurra esta (pré-voo). O **Plano 6** consome `banco.AtenderDisparo` e `internal/zoho`. Gates (`make teste`, contêiner fixo `pg-api-teste`) nunca ao mesmo tempo.
+
+## Rulings do 5.10
+
+1. Ruling: `disparar_robo` vira `insert … on conflict do update` em `disparos_pendentes` (um pedido pendente por robô; os disparos se juntam), na migração goose `00007` com `create or replace` e `set search_path from current`, sem `revoke`, e a versão de produção sai do dump pela regra `substituidas` do `limpar-dump.mjs` — o `pg_net` não vai para o Postgres novo e `vessel_espelhar_agora` não trata erro (o cadastro da lista de espera quebraria); o "versão na camada de compatibilidade" do Ruling 28 colidiria do mesmo jeito com o `CREATE FUNCTION` do dump (a compat e o `migrar` rodam ANTES do schema no `restaurar.sh`), e a função é de domínio, com Down, não um "o que o Supabase oferecia" — custo se errada: o corpo de um disparo que se junta a um pendente se perde (servia só ao registro da edge), e um restore com dump limpo pela versão antiga do script falha alto (`function already exists`, `ON_ERROR_STOP`).
+2. Ruling: SEM tarefa de despacho no 5.10 e SEM `internal/github` (o mestre previa despachar `vessel-fotos-trigger`/`vessel-cartoes-trigger` ao GitHub) — em produção os 2 gatilhos que chamavam essas edges foram REMOVIDOS em 10/10 (`2026-10-10-robos-na-vps-sem-gatilho-do-actions.sql`: rodariam em dobro com a VPS), os robôs olham a fila sozinhos na VPS (fotos a cada 5 min; cartões a cada 10 s) e o runner do Actions não alcança o `api-db`; o único chamador vivo é `vessel_espelhar_agora`, cujo atendente é o espelho do Plano 6 — custo se errada: se alguém religar os dois gatilhos, os pedidos ficam pendentes (um por robô) sem atendente, e os robôs da VPS continuam pegando lote e cartão no tempo deles (o `conferir` acusa os gatilhos de volta).
+3. Ruling: `banco.AtenderDisparo` é o contrato da fila — pega no máximo UM pendente por chamada (`for update skip locked`, autocommit: dois atendentes nunca pegam o mesmo), grava o resultado com contexto próprio, `atendendo` de mais de 30 min vira `incerto` e NUNCA roda de novo sozinho, falha vira `falhou` sem repetição (o próximo disparo abre outro pendente), faxina de 30 dias na mesma chamada — uma fila que repete sozinha despacharia duas vezes o que não é idempotente; o espelho do Plano 6 se cura sozinho e tem agenda própria — custo se errada: a falha de um atendimento só se cura no próximo disparo ou na agenda do atendente.
+4. Ruling: D0 = fatia reconstruída das migrations (12 tabelas: as 11 do catálogo + `vessel_cartao_arquivos`), com 2 colunas presumidas de `vessel_registros` (sem DDL no repositório), os 6 gatilhos vivos com OF/WHEN das migrations e 35 funções VERBATIM do levantamento por script e hash; os 2 gatilhos removidos em 10/10 ficam fora; `vessel_lista_espera`, `vessel_pedidos` (5.11) e `acessos_conexoes` (5.4) não são declaradas — os portões, as frases e os efeitos têm de ser os de PRODUÇÃO; o levantamento é de 09/10 e a remoção de 10/10 está numa migration aplicada (`REVISAO-CORE/06-central.md:108`) — custo se errada: função ou coluna mudada em produção depois do levantamento só aparece no `conferir` e no `md5(prosrc)` do "Antes do corte".
+5. Ruling: `vessel_edicoes` (a trilha) é do 5.10, não do 5.11 como a IV.2 lista — a policy é `is_vessel_admin()` e só as funções do selo escrevem nela; as "edições" do 5.11 são as do Stylist Circle (`vessel_edicao_*`, outra tabela) — custo se errada: nenhum (sem rota: as funções leem e escrevem a trilha).
+6. Ruling: 6 rotas de leitura, uma por leitura da tela; `vessel_clientes`, `vessel_leituras`, `vessel_garantias_baixadas`, `vessel_pedidos_de_registro` e `vessel_edicoes` ficam SEM rota (a tela não as lê direto: as RPCs leem, e a regra continua compilada no catálogo) — leitura nova = uma `dados.Consulta` — custo se errada: uma tela nova que leia essas tabelas pede rota.
+7. Ruling: `GET /autenticidade/registros` não manda `cpf`, `nascimento` nem os vínculos (`cliente_id`, `pedido_id`, `bling_contato_id`, `bling_atualizado_em`, `presente_de_nome`); `/lembretes` não manda `token_hash`; `/lotes` manda TODAS as colunas — a tela não usa os primeiros (e mascara o CPF na fila de propósito: `vessel_fila_de_registros`); o `select('*')` de hoje entrega CPF e nascimento de toda dona a quem tem a chave (achado 3); a busca universal varre o lote inteiro — custo se errada: tela que precise do CPF inteiro pede rota com Ruling.
+8. Ruling: portão das 16 RPCs = `autz.VesselAdmin` (provado pessoa a pessoa: `TestPortoesIguaisAsFuncoes`), com o 403 do núcleo `{"error":"sem_permissao"}` em vez do `200 {ok:false, motivo:'sem_permissao'}` da função — o registro do 5.0 é um só para todos os domínios e nega antes da função; a função continua respondendo assim se o portão do Go um dia divergir; na decisão de registro a função valida o estado ANTES do portão, e a API devolve 403 onde ela devolveria `estado_invalido` (nada grava nos dois) — custo se errada: a tela muda um ramo de erro (Plano 7).
+9. Ruling: sem `Conferir` de alvo nas RPCs — o selo é global (nenhuma policy recorta por loja, conta ou dono: quem é do selo mexe em toda peça) e cada função confere a existência e o estado do que recebe na própria transação; só a decisão de registro ganha conferência (Ruling 10) — custo se errada: nenhum enquanto o catálogo não recortar o selo; se um dia recortar, cada RPC ganha o `Conferir` do recorte.
+10. Ruling: `vessel_decidir_pedido_de_registro` pelo painel só com `p_quem_decidiu = "na_mao"` e sem `p_conferencia` (`Conferir: soNaMao`, 403 sem a função rodar) — a trava de `bling` da função lê `current_setting('role')`/`auth.role()` do Supabase (na compat nega a todos), e a conferência vinda do painel gravaria `bling_pedido`/`bling_contato_id` de outra venda no registro da dona (a trava "pedido já usado" e o espelho do Bling os usam) — custo se errada: nenhum para a tela (ela manda `na_mao` e `null`); a aprovação automática fica com o Plano 6 (achado 2).
+11. Ruling: `SoSessaoPropria` nas 14 RPCs que gravam; `vessel_alertas`, `vessel_fila_de_registros`, as 6 leituras e o cartão ficam abertos ao "entrar como" — ver o que a pessoa vê; a fila e as leituras não trazem CPF inteiro — custo se errada: o super-admin que entrou como alguém do selo vê a fila de registros (com o CPF mascarado), como a pessoa.
+12. Ruling: `POST /vessel-baixar-cartao` mantém o contrato da edge (corpo, `{erro}`, status) com o portão do selo no handler, prazo próprio de 60 s fora do grupo de domínio e o Zoho pelo servidor, SEM os caches de listagem da edge (o caminho comum é o id gravado pelo robô; a busca é o resgate), seguindo até 3 redirecionamentos `https` — o `fetch` da edge seguia redirecionamento (o download do WorkDrive pode mudar de host) e o Go tira o `Authorization` quando o domínio muda, como o `fetch` — custo se errada: o resgate leva ~7 s como antes dos caches; se o Zoho redirecionar para um host que exige o token, o download falha com 502 (o "Antes do corte" testa um cartão real).
+13. Ruling: o cliente `internal/zoho` é mínimo (conexão, token, listar, baixar) e só ele lê os segredos de `acessos_conexoes`; `data_center` de lista fechada; token em memória por processo (`ponytail:`) — um cliente só para os segredos do Zoho, que o Plano 6 estende (espelho, acessos) em vez de escrever outro — custo se errada: com várias instâncias da API, cada uma pede o seu token (o Zoho limita renovações; guardar no banco se incomodar).
+14. Ruling: `GET /fabrica/robo/material-do-sku` (contrato do Ruling 5.8-13) mora em `internal/fabrica`, no grupo de robô, e só lê `vessel_lotes` (declarada pelo 5.10) — entra sozinho nas varreduras de robô do 5.8 — custo se errada: as varreduras do 5.8 contam 10 leituras e 8 rotas de robô (ajustadas na Task 7).
+15. Ruling: paridade nas regras do selo que o dono pode querer mudar — o papel `admin` sem o módulo não vê o selo; a senha de "excluir lote"/"baixar garantia"/"apagar gravação" é só da tela; qualquer pessoa do selo troca a dona, baixa a garantia e aprova registro — a migração não muda regra de negócio (spec §1) — custo se errada: nenhum além do de hoje (achados 4 e 5).
+
+## Achados para o dono
+
+1. **O plano-mestre (Ruling 28) previa acordar os robôs do selo pelo GitHub; não há o que acordar.** Os 2 gatilhos que chamavam `vessel-fotos-trigger` e `vessel-cartoes-trigger` foram removidos em 10/10 (rodariam em dobro com a VPS), e o GitHub Actions não alcança o banco novo. Os workflows `cartoes-ean.yml` e `fotos-do-selo.yml` (retaguardas manuais) param de funcionar no corte: aposentar no Plano 7. O único disparo vivo é o do cadastro da lista de espera, que o 5.10 deixa na fila para o espelho do Plano 6.
+2. **A aprovação automática de garantia (`bling`) vai parar no corte se o Plano 6 não tratar.** A trava da função exige o papel `service_role` do Supabase (`current_setting('role')`); no banco novo ninguém o tem, então a edge `vessel-registrar-garantia` portada vai receber "sem permissão" e todo registro vai para a fila manual. Decisão do Plano 6 (trilha A): dar à rota pública o papel na transação (`set local role` + `app.papel_db`) ou trocar a trava da função (mudança em produção, decisão sua).
+3. **A tela de Autenticidade recebe hoje o CPF inteiro e a data de nascimento de todas as donas** (`select('*')` em `vessel_registros`), embora mascare o CPF na fila de propósito. Ninguém usa esses campos na tela. A API não os manda.
+4. **A senha pedida em "excluir lote", "baixar garantia" e "apagar gravação" é só da tela:** o banco não a exige, e quem tem a chave chama a função direto. Mantido (paridade). Se quiser a senha valendo de verdade, ela entra na rota (decisão sua).
+5. **Papel `admin` sem a chave "Autenticidade" não vê nem mexe no selo** (a regra olha o módulo e o super-admin, não o papel). Mantido.
+6. **A lista de peças é lida inteira sem paginar:** passando de 1000 peças (o teto do Supabase e da API), as mais novas somem da tela em silêncio. Eram ~340 em 09/10 (174 lotes). No Plano 7 a tela lê por lote ou pagina.
+7. **Duas colunas de `vessel_registros` (`nascimento`, `bling_atualizado_em`) existem em produção sem migration no repositório.** O `conferir` as confere no banco restaurado.
+8. **Duas baixas da mesma peça ao mesmo tempo dão erro técnico (409) para a segunda** (a função confere e depois grava; o índice segura). Já é assim hoje; a peça fica baixada uma vez só.
+
+## Cobertura da spec e o que vem depois
+
+**As 11 tabelas do selo (11 policies `is_vessel_admin()`, todas só SELECT) e `vessel_cartao_arquivos`:**
+
+| Tabela | Policy | Destino |
+|---|---|---|
+| `vessel_lotes` | `vessel_lotes_read`; gatilhos marcar teste, herdar e recalcular material | Task 2 (D0, gatilhos), Task 3 (`/autenticidade/lotes`), Task 4 (gerar, editar, excluir, material), Task 7 (`material-do-sku`) |
+| `vessel_pecas` | `vessel_pecas_read` | Task 3 (`/autenticidade/pecas`), Task 4 (marcar, desmarcar, sobrescrever, excluir, baixar), Task 6 (cartão) |
+| `vessel_registros` | `vessel_registros_read`; gatilhos `cliente_id` e lembrete | Task 2, Task 3 (sem CPF), Task 4 (decidir, trocar dona, baixar garantia) |
+| `vessel_baixas` | `vessel_baixas_read` | Task 3 (só ativas), Task 4 (baixar, desfazer, sobrescrever; corrida) |
+| `vessel_cartao_pedidos` | `vessel_cartao_pedidos_read` | Task 3, Task 4 (`vessel_pedir_cartoes`), Task 6 (a dica do dia); o robô da VPS em `pg` (sem rota) |
+| `vessel_lembretes` | `vessel_lembretes_read` | Task 3 (sem `token_hash`), Task 2/4 (morre com o registro) |
+| `vessel_clientes` | `vessel_clientes_read`; gatilho `atualizado_em` | Task 2 (sem rota: Ruling 5.10-6) |
+| `vessel_garantias_baixadas` | `vessel_garantias_baixadas_read` | Task 4 (`vessel_baixar_garantia`; sem rota) |
+| `vessel_leituras` | `vessel_leituras_read` | Task 4 (`vessel_alertas`; sem rota) |
+| `vessel_pedidos_de_registro` | `vessel_pedidos_registro_read` | Task 4 (`vessel_fila_de_registros`, decidir; sem rota) |
+| `vessel_edicoes` | `vessel_edicoes_read` | Task 2 (lista fechada), Task 4 (a trilha de cada função; sem rota) |
+| `vessel_cartao_arquivos` | (fora do catálogo: só o robô grava) | Task 6 (o id gravado) |
+
+RPC: as 16 (Task 4), que saem de `RPCPendentes` (Task 8). Edge: `vessel-baixar-cartao` (Task 6). Gatilhos: os 6 vivos (Task 2; a linha da IV.2 contava 8: Ruling 5.10-4). `disparar_robo` sem `pg_net` (Task 1, Ruling 28). O contrato do 5.8 (`material-do-sku`, Task 7). Os `db/*.test.mjs` de registro portados por comportamento (Task 2 e Task 4); os de transferência pela dona são do Plano 6. Spec §5 (catálogo, ator × operação × recurso pela cadeia real), §6 (funções do banco com portão provado contra a função verbatim; a função de domínio que dependia de extensão do Supabase reescrita em SQL atrás de fila), §8 (fila do worker com garantias de entrega), §9 (workstreams 3, 4 e 7), §11 (segredo do Zoho só no servidor; CPF fora da resposta; impersonação sem escrita), §13 (negados sem efeito, varreduras de toda rota e função, concorrência da fila e da baixa).
+
+**O que vem depois:**
+- **Plano 6 (trilha A):** a tarefa do espelho da lista (`vessel-espelhar-lista`) atende a fila por `banco.AtenderDisparo`; a aprovação automática de garantia (achado 2); `internal/zoho` estendido; as rotas públicas da Vessel (`vessel_transferencia_*`, `vessel_registrar_como_cliente`…).
+- **Plano 7 (trilha C):** os 27 sítios da tabela do inventário; o vigia dos cartões em `psql`; a pílula da Fábrica pela rota nova; aposentar os 2 workflows e as 3 edges (`vessel-baixar-cartao` depois da troca; `vessel-fotos-trigger` e `vessel-cartoes-trigger` já sem chamador).
+- **5.11:** declara `vessel_lista_espera` (com o gatilho do espelho), `vessel_pedidos` e as funções dele; não redeclara as do 5.10.
+- **Antes do corte:** `api worker conferir`, o `md5` das 35 funções, o cadastro de prova na lista de espera, o download de um cartão real e o `material-do-sku` com o token do robô (NOTAS).
