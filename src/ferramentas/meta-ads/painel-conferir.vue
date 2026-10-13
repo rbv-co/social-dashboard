@@ -1,6 +1,8 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { sbClient } from '../../compartilhado/conectar-no-banco-de-dados.js'
+// Chave `fabrica` (Plano 7): as edges da Fábrica (5.8) pela API.
+import { invocarNaArea } from '../../compartilhado/api.js'
 import { useJobStatus } from './use-job-status.js'
 import AjudaTooltip from './ajuda-tooltip.vue'
 import TourCoachmark from './tour-coachmark.vue'
@@ -22,7 +24,7 @@ const ocupado = computed(() => [job.value, jobExc.value].some((j) => j && ['enfi
 async function ativarTudo() {
   if (!confirm(`Ativar ${n.value} anúncios? Isso COMEÇA A GASTAR verba imediatamente.`)) return
   const { adIds, adsetIds, metaCampaignId, metaCampaignIds, criouCampanha } = props.subirResultado
-  const { data, error } = await sbClient.functions.invoke('fabrica-trigger', { body: { tipo: 'ativar', params: { adIds, adsetIds, metaCampaignId, metaCampaignIds, criouCampanha } } })
+  const { data, error } = await invocarNaArea('fabrica', sbClient, 'fabrica-trigger', { body: { tipo: 'ativar', params: { adIds, adsetIds, metaCampaignId, metaCampaignIds, criouCampanha } } })
   if (error) return alert('Falha: ' + error.message)
   if (!data?.job_id) return alert('Sem job_id na resposta')
   start(data.job_id)
@@ -36,7 +38,7 @@ async function excluirRemessa() {
     : `os ${n.value} anúncios que esta remessa adicionou à campanha`
   if (!confirm(`Excluir ${alvo} na Meta?\n\nIsso APAGA DE VEZ — não dá pra desfazer. Campanhas e anúncios de FORA desta remessa não são tocados.`)) return
   const { adIds, adsetIds, metaCampaignId, metaCampaignIds, criouCampanha } = r
-  const { data, error } = await sbClient.functions.invoke('fabrica-trigger', { body: { tipo: 'excluir', params: { adIds, adsetIds, metaCampaignId, metaCampaignIds, criouCampanha } } })
+  const { data, error } = await invocarNaArea('fabrica', sbClient, 'fabrica-trigger', { body: { tipo: 'excluir', params: { adIds, adsetIds, metaCampaignId, metaCampaignIds, criouCampanha } } })
   if (error) return alert('Falha: ' + error.message)
   if (!data?.job_id) return alert('Sem job_id na resposta')
   startExc(data.job_id)

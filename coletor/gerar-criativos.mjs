@@ -11,6 +11,9 @@
 //        --estrela 205834140 --deposito 14888726315 [--limite 20] [--dry]
 import './lib/carregar-env.mjs';
 import { loginServico, blingProdutos } from './lib/bling-comercial.mjs';
+// Plano 7 (5.8): as tabelas `fabrica_*` vão pela API quando CENTRAL_API_* estiver no
+// ambiente (lib/fabrica-banco.mjs); o resto (Storage, gc_*) segue na REST do Supabase.
+import { vaiParaApi, lerFabrica, escreverFabrica } from './lib/fabrica-banco.mjs';
 import { fotoDataUrl, fotoEhStudio } from './lib/foto-produto.mjs';
 import { renderPNG, fecharRender } from './lib/render-criativo.mjs';
 import { TEMPLATES, DIM } from './templates-criativos/templates.mjs';
@@ -43,8 +46,8 @@ export function objetivoPermitePromo(objetivo) {
   return objs.length === 0 || objs.includes(objetivo);
 }
 
-async function sbGet(p) { const r = await fetch(REST + p, { headers: H }); if (!r.ok) throw new Error('GET ' + p + ' ' + r.status); return r.json(); }
-async function sbPost(p, body, prefer) { const r = await fetch(REST + p, { method: 'POST', headers: prefer ? { ...H, Prefer: prefer } : H, body: JSON.stringify(body) }); if (!r.ok && ![200,201,204].includes(r.status)) throw new Error('POST ' + p + ' ' + r.status + ' ' + (await r.text()).slice(0,200)); return r; }
+async function sbGet(p) { if (vaiParaApi(p)) return lerFabrica(p); const r = await fetch(REST + p, { headers: H }); if (!r.ok) throw new Error('GET ' + p + ' ' + r.status); return r.json(); }
+async function sbPost(p, body, prefer) { if (vaiParaApi(p)) return escreverFabrica('POST', p, body); const r = await fetch(REST + p, { method: 'POST', headers: prefer ? { ...H, Prefer: prefer } : H, body: JSON.stringify(body) }); if (!r.ok && ![200,201,204].includes(r.status)) throw new Error('POST ' + p + ' ' + r.status + ' ' + (await r.text()).slice(0,200)); return r; }
 
 async function garantirBucket() {
   await fetch(URL + '/storage/v1/bucket', { method: 'POST', headers: { apikey: SK, Authorization: 'Bearer ' + SK, 'Content-Type': 'application/json' }, body: JSON.stringify({ id: BUCKET, name: BUCKET, public: true }) }).catch(() => {});
@@ -227,7 +230,8 @@ export async function run({
   // loginServico/Bling/gerarCopysProduto (que faz chamada LLM por produto) — não queima IA à toa.
   if (semLooks && !heroIaLooks.length) { console.log('nenhum look ativo p/ o objetivo — nada gerado'); return { campanhaId, criativos: 0, novas: 0, incompleto: false }; }
 
-  const token = await loginServico();
+  // pela API, o token do robo-fabrica (o bling-proxy libera `produtos` a `meta.fabrica`)
+  const token = await loginServico({ naApi: true });
 
   let cands;
   if (itens?.length) {
