@@ -2478,6 +2478,309 @@ func TestDecisaoSimultanea(t *testing.T) {
 
 ---
 
+### Task 8: `POST /conteudo-trigger` — a fila sem GitHub, com as validações e o teto da edge, idempotente
+
+**Revisor:** opus. **Depende de:** 3 (`PedeIA`, `comoTexto`, `reUUID`, `responder`, `soSessaoPropria`, mundo), 4 (`montarLeituras`, num caso do teste), 5 (o ajudante de teste `intacto`; em worktree paralela, copie-o e apague no merge).
+
+**(a) Contrato** (`supabase/functions/conteudo-trigger/index.ts` portada SEM o despacho ao GitHub: COORDENACAO 12/10 23:10 (b), Ruling 5.9-12)
+- `POST /conteudo-trigger` (`_pedirAIA`, `dados-conteudo.js:363-375`; chamada por `pedirIdeiasParaIA :353` e `pedirSemanaParaIA :359`), no grupo de domínio. Corpo `{account_id, quantas?, modo?, segunda?}`; resposta `200 {"job_id": …, "quantas": n}` — a mesma da edge, que a tela já lê (`visao-ideias.vue:161`, `painel-semana.vue:182`).
+- Ordem: `auth.Exigir` (401) → `autz.ComEscopo` → `soPedeIA` (`403 {"error":"sem_permissao"}`, o corpo da edge) → `soSessaoPropria` (403 com a frase) → `dados.LerCorpo` (campo a mais = `400 corpo_invalido`; a edge ignorava) → `account_id` uuid (texto; maiúscula vira minúscula como a edge aceitava; senão `400 {"error":"conta_invalida"}`) → `autz.PodeVerConta` (`403 sem_permissao`: a edge não olhava a conta, achado 3) → transação `banco.ComUsuario`: trava consultiva da conta (`pg_advisory_xact_lock`), conta existe (senão `400 conta_invalida`: a edge deixava a FK estourar em `500 insert_falhou`), job `enfileirado|rodando` da conta nos últimos 3 min → `409 {"error":"ja_rodando","job_id":…}`, senão `insert` → 200.
+- `quantas` = a fórmula da edge (`Math.min(Math.max(Number(q) || 12, 1), 20)`, número ou texto numérico) e depois TRUNCADA para inteiro (`3.7` → `3`): a edge gravava `3.7`, e o workflow apagava o ponto (`${QUANTAS//[^0-9]/}` = `37`), furando o teto de 20 (achado 3). `modo` = lista fechada (`semana` ou `ideias`). `segunda` = `AAAA-MM-DD` de uma data que EXISTE, senão `null` (o robô usa a próxima segunda; `2026-02-30` derrubava o `new Date` dele). `params` = `{"quantas": n}` ou `{"segunda": …}`, como a edge.
+- O job nasce `enfileirado`, `criado_por` = a sessão, `github_run_id` nulo; quem o pega é o vigia da VPS (seção da trilha C). Nada de `dispatch_falhou`: a API não chama o GitHub. Erro do banco = `500 {"error":"insert_falhou"}` SEM `detail` (a edge devolvia a mensagem do PostgREST); o motivo vai ao log.
+- `conteudo_jobs` só a chave de serviço gravava (`conteudo_jobs_srv`): a escrita é SQL explícito atrás do portão da edge, como as edges da Fábrica (Ruling 5.8-3); o catálogo compila `service_role` como `false`, então "o catálogo" sozinho negaria o que a edge faz (Ruling 5.9-11).
+- Dois cliques no MESMO instante: a trava consultiva (`hashtextextended('conteudo-trigger:' || conta, 0)`, até o fim da transação) põe os pedidos em fila; em READ COMMITTED o segundo enxerga o job do primeiro, já comitado, e recebe `409 ja_rodando` com o id dele. Sem a trava, a janela da edge (ler e depois inserir) deixava passar dois jobs — dois robôs pagos.
+- **Ensaiado** (worktree sobre o `origin/main` 448c1356 + Tasks 1–7): os três testes passam com `-race`; sem a trava consultiva o `TestGatilhoCliqueDuplo` reprova na 1ª rodada com 2 jobs; sem o `PodeVerConta` a "conta que não vê" grava (`200` e a foto muda); sem a conferência de existência a conta inexistente vira `500 insert_falhou`.
+
+`api/internal/conteudo/gatilho.go`:
+
+```go
+package conteudo
+
+import (
+	"encoding/json"
+	"errors"
+	"log/slog"
+	"math"
+	"net/http"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rbv-co/social-dashboard/api/internal/autz"
+	"github.com/rbv-co/social-dashboard/api/internal/banco"
+	"github.com/rbv-co/social-dashboard/api/internal/dados"
+)
+
+const (
+	// maxPorRodada: o teto da edge (MAX_POR_RODADA): cada ideia é token de Opus.
+	maxPorRodada  = 20
+	quantasPadrao = 12
+	// minutosEntreRodadas: uma rodada por vez por marca (MINUTOS_ENTRE_RODADAS da edge).
+	minutosEntreRodadas = 3
+)
+
+// pedidoGatilho: o corpo de _pedirAIA (dados-conteudo.js:353-375): {account_id, quantas, modo} ou
+// {account_id, modo: 'semana', segunda}. Campo a mais = 400 (dados.LerCorpo); a edge o ignorava.
+type pedidoGatilho struct {
+	AccountID json.RawMessage `json:"account_id"`
+	Quantas   json.RawMessage `json:"quantas"`
+	Modo      json.RawMessage `json:"modo"`
+	Segunda   json.RawMessage `json:"segunda"`
+}
+
+// quantasDoPedido: `Math.min(Math.max(Number(body.quantas) || 12, 1), 20)` da edge e, DEPOIS, truncado para
+// inteiro: a edge deixava 3.7 passar, e o workflow apagava o ponto (`${QUANTAS//[^0-9]/}` = "37"), furando o
+// teto (achado 3). Número ou texto numérico (Number("15") = 15); o resto (ausente, null, "abc", 0) vale 12.
+func quantasDoPedido(v json.RawMessage) int {
+	var f float64
+	var s string
+	switch {
+	case json.Unmarshal(v, &f) == nil:
+	case json.Unmarshal(v, &s) == nil:
+		f, _ = strconv.ParseFloat(strings.TrimSpace(s), 64)
+	}
+	if f == 0 || math.IsNaN(f) {
+		f = quantasPadrao
+	}
+	return int(math.Min(math.Max(f, 1), maxPorRodada)) // int() trunca: 3.7 → 3
+}
+
+// segundaDoPedido: "AAAA-MM-DD" de uma data que existe; senão nula (o robô usa a próxima segunda). A edge só
+// conferia o formato; uma data impossível derrubava o robô (new Date inválido).
+func segundaDoPedido(v json.RawMessage) any {
+	s, ok := comoTexto(v)
+	if !ok {
+		return nil
+	}
+	if _, err := time.Parse("2006-01-02", s); err != nil {
+		return nil
+	}
+	return s
+}
+
+// Gatilho: POST /conteudo-trigger — o da edge supabase/functions/conteudo-trigger/index.ts SEM o despacho ao
+// GitHub (COORDENACAO 12/10 23:10 (b)): grava o pedido em conteudo_jobs ('enfileirado') e o vigia da VPS
+// (coletor/vps/conteudo-vigia.sh, trilha C) o pega da fila. Portão (PedeIA) e "entrar como" na montagem.
+// conteudo_jobs só a chave de serviço gravava (conteudo_jobs_srv): a escrita é SQL explícito atrás do portão
+// da edge, como as edges da Fábrica (Ruling 5.8-3, 5.9-11).
+type Gatilho struct{ Pool *pgxpool.Pool }
+
+func (g *Gatilho) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	e := autz.EscopoDo(r.Context())
+	if e == nil {
+		dados.Erro(w, http.StatusInternalServerError, "erro_interno", "")
+		return
+	}
+	var c pedidoGatilho
+	if !dados.LerCorpo(w, r, &c) {
+		return
+	}
+	conta, _ := comoTexto(c.AccountID)
+	conta = strings.ToLower(conta)
+	if !reUUID.MatchString(conta) {
+		responder(w, http.StatusBadRequest, map[string]string{"error": "conta_invalida"})
+		return
+	}
+	// a conta que a pessoa não vê: a edge não olhava (gastava IA na marca de outro e gravava o job dela).
+	// Ruling 5.9-11.
+	if !autz.PodeVerConta(e, conta) {
+		responder(w, http.StatusForbidden, map[string]string{"error": "sem_permissao"})
+		return
+	}
+	quantas := quantasDoPedido(c.Quantas)
+	modo, params := "ideias", map[string]any{"quantas": quantas}
+	if s, _ := comoTexto(c.Modo); s == "semana" { // lista fechada: o valor escolhe o robô do vigia
+		modo, params = "semana", map[string]any{"segunda": segundaDoPedido(c.Segunda)}
+	}
+	j, err := json.Marshal(params)
+	if err != nil {
+		dados.Erro(w, http.StatusInternalServerError, "erro_interno", "")
+		return
+	}
+	ctx := r.Context()
+	var job, emAndamento string
+	existe := false
+	err = banco.ComUsuario(ctx, g.Pool, e.ID, func(tx pgx.Tx) error {
+		// Uma rodada por vez por marca TAMBÉM com dois cliques no mesmo instante: a trava consultiva da conta
+		// (até o fim da transação) põe os pedidos em fila; o segundo vê o job do primeiro, já comitado.
+		if _, err := tx.Exec(ctx, `select pg_advisory_xact_lock(hashtextextended('conteudo-trigger:' || $1::text, 0))`, conta); err != nil {
+			return err
+		}
+		if err := tx.QueryRow(ctx, `select exists (select 1 from accounts where id = $1::uuid)`, conta).Scan(&existe); err != nil || !existe {
+			return err
+		}
+		err := tx.QueryRow(ctx, `select id::text from conteudo_jobs where account_id = $1::uuid
+			and status in ('enfileirado', 'rodando') and created_at >= now() - make_interval(mins => $2::int)
+			order by created_at desc limit 1`, conta, minutosEntreRodadas).Scan(&emAndamento)
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return err // nil: já tem rodada; responde ja_rodando
+		}
+		return tx.QueryRow(ctx, `insert into conteudo_jobs (tipo, account_id, params, criado_por)
+			values ($1::text, $2::uuid, $3::jsonb, $4::uuid) returning id::text`, modo, conta, string(j), e.ID).Scan(&job)
+	})
+	switch {
+	case err != nil:
+		slog.Error("conteudo-trigger: gravar o pedido", "conta", conta, "erro", err.Error())
+		responder(w, http.StatusInternalServerError, map[string]string{"error": "insert_falhou"})
+	case !existe:
+		responder(w, http.StatusBadRequest, map[string]string{"error": "conta_invalida"})
+	case emAndamento != "":
+		responder(w, http.StatusConflict, map[string]string{"error": "ja_rodando", "job_id": emAndamento})
+	default:
+		slog.Info("conteudo-trigger: pedido na fila", "job", job, "modo", modo, "conta", conta)
+		responder(w, http.StatusOK, map[string]any{"job_id": job, "quantas": quantas})
+	}
+}
+
+// montarGatilho: o portão da edge (PedeIA) ANTES do "entrar como" (quem não pede IA recebe o 403 da edge,
+// sem a frase), e "entrar como" só lê.
+func montarGatilho(r chi.Router, p *pgxpool.Pool) {
+	r.With(soPedeIA, soSessaoPropria).Post("/conteudo-trigger", (&Gatilho{Pool: p}).ServeHTTP)
+}
+
+// soPedeIA: depois de autz.ComEscopo. Sem escopo (rota montada fora do grupo) nega: falha fechada.
+func soPedeIA(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !PedeIA(autz.EscopoDo(r.Context())) {
+			responder(w, http.StatusForbidden, map[string]string{"error": "sem_permissao"})
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+```
+
+**(b) Testes de aceitação** (`gatilho_test.go`, código abaixo; "intacto" = foto das 9 tabelas igual)
+- `TestQuantasDoPedido` (puro): ausente, `null`, `0`, `"abc"`, `""`, `true`, `{}` → 12; `5` → 5; `"15"` → 15; `25` e `"1e3"` → 20; `-5` e `0.5` → 1; `3.7` → 3; `19.99` → 19. `segunda`: `"2026-10-19"` passa; `"2026-02-30"`, `"2026-10-19x"`, `null` e número → nula.
+- `TestGatilho`: negados e intactos — sem módulo nem chave (403 `sem_permissao`), só `conteudo.aprovar` (403), desativado e sem sessão (401), impersonado (403 com a frase), conta que não vê (403), lista vazia (403), conta que não é uuid, 36 hífens (a regex da edge aceitava), conta inexistente e conta como número (400 `conta_invalida`), campo desconhecido (400 `corpo_invalido`). Permitidos com efeito — `3.7` vira `{"quantas": 3}` com `criado_por` da sessão; a segunda rodada na mesma marca (outro modo, outra pessoa) → `409` com o id do primeiro e nenhum job novo; a semana em A2 (uuid em maiúscula) por quem vê todas, com data impossível → `{"segunda": null}`; depois de 4 min o pedido preso não segura a marca; `chaveConteudo` pede (a edge aceitava a chave em `permissions`) mas não LÊ o job (`GET /conteudo/jobs` → `[]`: as policies leem `features`).
+- `TestGatilhoCliqueDuplo`: 20 rodadas de dois pedidos simultâneos na mesma marca → sempre 1 job, um 200 e um 409, os dois corpos com o MESMO `job_id`.
+- Mutações que têm de reprovar: tirar a trava consultiva (2 jobs — ensaiado); tirar o `PodeVerConta` (a conta que não vê grava — ensaiado); tirar a conferência de `accounts` (500 em vez de 400 — ensaiado); `PedeIA` sem `e.Chaves["conteudo"]` (o pedido de `chaveConteudo` vira 403); tirar o `math.Min` do teto (`25` → 25); `soSessaoPropria` fora da montagem (o impersonado grava).
+
+`api/internal/conteudo/gatilho_test.go`:
+
+```go
+package conteudo
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"strings"
+	"sync"
+	"testing"
+
+	"github.com/rbv-co/social-dashboard/api/internal/testebanco/mundoteste"
+)
+
+func TestQuantasDoPedido(t *testing.T) {
+	for entrada, quer := range map[string]int{
+		``: 12, `null`: 12, `0`: 12, `"abc"`: 12, `""`: 12, `5`: 5, `"15"`: 15, `25`: 20, `-5`: 1, `0.5`: 1,
+		`3.7`: 3, `19.99`: 19, `"1e3"`: 20, `true`: 12, `{}`: 12,
+	} {
+		if n := quantasDoPedido(json.RawMessage(entrada)); n != quer {
+			t.Errorf("quantas %s = %d, esperava %d", entrada, n, quer)
+		}
+	}
+	for entrada, quer := range map[string]any{`"2026-10-19"`: "2026-10-19", `"2026-02-30"`: nil, `"2026-10-19x"`: nil, `null`: nil, `20261019`: nil} {
+		if v := segundaDoPedido(json.RawMessage(entrada)); v != quer {
+			t.Errorf("segunda %s = %v, esperava %v", entrada, v, quer)
+		}
+	}
+}
+
+func TestGatilho(t *testing.T) {
+	m := novoMundo(t, montarGatilho, montarLeituras)
+	pedido := func(conta, resto string) string { return `{"account_id":"` + conta + `"` + resto + `}` }
+	intacto(t, m, []mundoteste.Caso{
+		{Nome: "sem o módulo nem a chave", Quem: "semModulo", Metodo: "POST", Caminho: "/conteudo-trigger", Corpo: pedido(A1, ""), Status: 403, Tem: `"error":"sem_permissao"`},
+		{Nome: "só conteudo.aprovar", Quem: "soAprovar", Metodo: "POST", Caminho: "/conteudo-trigger", Corpo: pedido(A1, ""), Status: 403},
+		{Nome: "desativado", Quem: "desativado", Metodo: "POST", Caminho: "/conteudo-trigger", Corpo: pedido(A1, ""), Status: 401},
+		{Nome: "sem sessão", Quem: "", Metodo: "POST", Caminho: "/conteudo-trigger", Corpo: pedido(A1, ""), Status: 401},
+		{Nome: "impersonado", Quem: "impersonado", Metodo: "POST", Caminho: "/conteudo-trigger", Corpo: pedido(A1, ""), Status: 403, Tem: "Quem entrou como outra pessoa"},
+		{Nome: "conta que não vê", Quem: "conteudistaA1", Metodo: "POST", Caminho: "/conteudo-trigger", Corpo: pedido(A2, `,"quantas":5`), Status: 403, Tem: `"error":"sem_permissao"`},
+		{Nome: "lista vazia", Quem: "conteudistaNenhuma", Metodo: "POST", Caminho: "/conteudo-trigger", Corpo: pedido(A1, ""), Status: 403},
+		{Nome: "conta que não é uuid", Quem: "conteudista", Metodo: "POST", Caminho: "/conteudo-trigger", Corpo: pedido("abc", ""), Status: 400, Tem: `"error":"conta_invalida"`},
+		{Nome: "36 hífens (a regex da edge aceitava)", Quem: "conteudista", Metodo: "POST", Caminho: "/conteudo-trigger", Corpo: pedido(strings.Repeat("-", 36), ""), Status: 400, Tem: "conta_invalida"},
+		{Nome: "conta que não existe", Quem: "conteudista", Metodo: "POST", Caminho: "/conteudo-trigger", Corpo: pedido(A9, ""), Status: 400, Tem: "conta_invalida"},
+		{Nome: "conta como número", Quem: "conteudista", Metodo: "POST", Caminho: "/conteudo-trigger", Corpo: `{"account_id":5}`, Status: 400, Tem: "conta_invalida"},
+		{Nome: "campo desconhecido", Quem: "conteudista", Metodo: "POST", Caminho: "/conteudo-trigger", Corpo: pedido(A1, `,"robo":"x"`), Status: 400, Tem: "corpo_invalido"},
+	})
+	const job = `select tipo || '|' || status || '|' || params::text || '|' || criado_por::text from conteudo_jobs where id = $1::uuid`
+	var primeiro struct {
+		JobID   string `json:"job_id"`
+		Quantas int    `json:"quantas"`
+	}
+	st, b := m.Pedir(t, "conteudistaA1", "POST", "/conteudo-trigger", pedido(A1, `,"quantas":3.7,"modo":"ideias"`))
+	if st != 200 || json.Unmarshal([]byte(b), &primeiro) != nil || primeiro.Quantas != 3 {
+		t.Fatalf("pedir ideias: %d %s", st, b)
+	}
+	if v := m.Um(t, job, primeiro.JobID); v != `ideias|enfileirado|{"quantas": 3}|`+idConteudistaA1 {
+		t.Errorf("o job = %s", v)
+	}
+	m.Rodar(t, []mundoteste.Caso{
+		{Nome: "segunda rodada na mesma marca (outro modo, outra pessoa)", Quem: "conteudista", Metodo: "POST", Caminho: "/conteudo-trigger",
+			Corpo: pedido(A1, `,"modo":"semana","segunda":"2026-10-19"`), Status: 409, Tem: `{"error":"ja_rodando","job_id":"` + primeiro.JobID + `"}`,
+			Efeito: `select count(*)::text from conteudo_jobs where account_id = '` + A1 + `'`, Quer: "2"}, // J1 (concluído) + o novo
+		{Nome: "a semana em A2 por quem vê todas", Quem: "conteudista", Metodo: "POST", Caminho: "/conteudo-trigger",
+			Corpo: pedido(strings.ToUpper(A2), `,"modo":"semana","segunda":"2026-02-30"`), Status: 200, Tem: `"quantas":12`,
+			Efeito: `select tipo || '|' || params::text from conteudo_jobs where account_id = '` + A2 + `' and status = 'enfileirado'`, Quer: `semana|{"segunda": null}`},
+	})
+	// a janela da edge: rodada presa há mais de 3 min não segura a marca; concluída não conta
+	if _, err := m.P.Exec(context.Background(), `update conteudo_jobs set created_at = now() - interval '4 minutes' where id = $1::uuid`, primeiro.JobID); err != nil {
+		t.Fatal(err)
+	}
+	m.Rodar(t, []mundoteste.Caso{
+		{Nome: "a chave em permissions pede (a edge aceitava)", Quem: "chaveConteudo", Metodo: "POST", Caminho: "/conteudo-trigger",
+			Corpo: pedido(A1, `,"quantas":"15"`), Status: 200, Tem: `"quantas":15`},
+		{Nome: "quem pediu com a chave não LÊ o job (as policies leem features)", Quem: "chaveConteudo", Metodo: "GET", Caminho: "/conteudo/jobs", Status: 200, Tem: "[]"},
+	})
+}
+
+// Dois cliques no MESMO instante: um job só; o outro clique recebe ja_rodando com o id dele. 20 rodadas.
+func TestGatilhoCliqueDuplo(t *testing.T) {
+	m := novoMundo(t, montarGatilho)
+	ctx := context.Background()
+	for rodada := range 20 {
+		if _, err := m.P.Exec(ctx, `delete from conteudo_jobs where account_id = $1::uuid`, A1); err != nil {
+			t.Fatal(err)
+		}
+		var wg sync.WaitGroup
+		st, corpo := make([]int, 2), make([]string, 2)
+		comeca := make(chan struct{})
+		for i, quem := range []string{"conteudista", "conteudistaA1"} {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				<-comeca
+				st[i], corpo[i] = m.Pedir(t, quem, "POST", "/conteudo-trigger", `{"account_id":"`+A1+`","quantas":12}`)
+			}()
+		}
+		close(comeca)
+		wg.Wait()
+		n := m.Um(t, `select count(*)::text from conteudo_jobs where account_id = $1::uuid`, A1)
+		ok := (st[0] == http.StatusOK && st[1] == http.StatusConflict) || (st[0] == http.StatusConflict && st[1] == http.StatusOK)
+		if !ok || n != "1" {
+			t.Fatalf("rodada %d: %v %v, %s jobs", rodada, st, corpo, n)
+		}
+		id := m.Um(t, `select id::text from conteudo_jobs where account_id = $1::uuid`, A1)
+		if !strings.Contains(corpo[0]+corpo[1], `"job_id":"`+id+`"`) || strings.Count(corpo[0]+corpo[1], id) != 2 {
+			t.Fatalf("rodada %d: os dois cliques não falam do mesmo job %s: %v", rodada, id, corpo)
+		}
+	}
+}
+```
+
+**(c) Arquivos:** Create `api/internal/conteudo/gatilho.go`, `api/internal/conteudo/gatilho_test.go`.
+
+**(d) Dependências:** Tasks 3, 4 e 5 (ver acima). Não usa `internal/github` (o 5.8 não é dependência).
+
+- [ ] **Step 1:** Testes; ver falhar. - [ ] **Step 2:** Implementar (código de (a)). - [ ] **Step 3:** `cd api && gofmt -l ./internal && go vet ./internal/conteudo/ && go test -count=1 -race ./internal/conteudo/` PASS; mutações reprovam. - [ ] **Step 4:** Commit `feat(api): POST /conteudo-trigger grava o pedido na fila do robô (portão e teto da edge, conta visível, um job por clique duplo)` (+ `Co-Authored-By`).
+
+---
+
 ## Robô de Conteúdo na VPS — passo a passo para a trilha C (não é tarefa do 5.9)
 
 (a preencher)
