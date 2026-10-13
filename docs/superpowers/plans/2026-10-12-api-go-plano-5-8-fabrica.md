@@ -32,7 +32,7 @@
 1. **O PAT do GitHub vazando ou indo para onde não deve** — token em resposta, erro, log ou `robos_execucoes`; despacho para repositório/workflow/ref fora da lista; entrada não declarada ou com valor fora do formato; redirecionamento do GitHub seguido com o cabeçalho. Testes: `TestDispararListaFechada`, `TestErrosPorClasse`, `TestTokenNuncaSai` (Task 2).
 2. **Quem não é fabricante disparando robô (gasto de IA paga, anúncio na Meta) ou apagando campanha** — sem a chave, `leitor`, `impersonado`, sessão sem módulo → `403` com o GitHub de mentira com **0 pedidos**, nenhuma linha em `fabrica_jobs`/`fabrica_campanhas` e nenhum arquivo apagado. Testes: `TestTrigger` (Task 5), `TestApagar` (Task 6), `TestEscritasRecusamImpersonado` (Task 10).
 3. **`fabrica-apagar` saindo da pasta** — `storage_path` com `..`, absoluto, NUL, symlink de diretório para fora → nada fora de `<ARQUIVOS_DIR>/fabrica-criativos` some; a segunda chamada responde igual (idempotente). Teste: `TestApagar` (Task 6).
-4. **Rota de robô aberta a sessão de painel, ou robô passando por cima do próprio perfil** — painel (mesmo fabricante ou admin) → 403; robô sem a chave `meta.fabrica` → 403 nas escritas; nada gravado. Testes: `TestRotasDeRobo` (Task 9), `TestRoboPelaMontagemReal` (Task 10).
+4. **Rota de robô aberta a sessão de painel, ou robô passando por cima do próprio perfil** — painel (mesmo fabricante ou admin) → 403; robô sem a chave `meta.fabrica` → 403 nas escritas; nada gravado. Testes: `TestRotasDeRobo` (Task 9), `TestRotasDeRoboSoServico` e `TestFabricaPelaMontagemReal` (Task 10).
 5. **Conta escondida pela restritiva de `fabrica_marcas`** — fabricante limitado a A1 (ou lista vazia, ou o "entrar como") não vê a marca de A2 em nenhuma forma de pedido. Teste: `TestNadaVazaEntreContas` (Task 10).
 
 ---
@@ -98,6 +98,7 @@ api/internal/github/github.go          (+ github_test.go) # cliente, lista fecha
 api/internal/config/config.go          (+ config_test.go) # GitHubPAT (GITHUB_PAT) em Segredos()
 api/internal/auth/servico.go           (+ servico_test.go) # SoServico — SÓ se o 5.13 não a trouxe
 api/internal/fabrica/fabrica.go                          # doc, Fabricante, soFabricante, soSessaoPropria, ajudantes
+api/internal/fabrica/purga.go                            # (mod.) só a linha "// Package fabrica" sai (a doc passa a fabrica.go)
 api/internal/fabrica/mundo_test.go, fabrica_test.go      # pessoas, robôs, linhas, foto; TestMundoDaFabrica, TestFabricanteIgualAPolicy
 api/internal/fabrica/leituras.go       (+ _test)         # 9 GETs + POST /fabrica/criativos/escolher
 api/internal/fabrica/disparo.go        (+ _test)         # POST /fabrica-trigger
@@ -111,7 +112,7 @@ api/cmd/api/conferir.go                (+ conferir_test.go) # colunas, tipos, ú
 docs/migracao-go/NOTAS-DA-IMPLANTACAO.md                 # seção do 5.8
 ```
 
-**Não toca:** `esquema/gerar-gatilhos.mjs` nem `02-gatilhos.sql` (nenhuma das 9 tabelas tem gatilho em produção: `levantamento/03-triggers.csv` não as cita; nem função: `02-funções.csv` idem); `autz` (as 18 policies já compilam: `termoChave("meta.fabrica")`, `termoSuper()`, `podeVerConta`); `meta`/`meta-proxy` (o `painel-subir.vue` continua usando o do Plano 3 com o escopo do 5.6); `fabrica/purga.go` (só reusa `apagar`); `coletor/` e `src/` (Plano 7).
+**Não toca:** `esquema/gerar-gatilhos.mjs` nem `02-gatilhos.sql` (nenhuma das 9 tabelas tem gatilho em produção: `levantamento/03-triggers.csv` não as cita; nem função: `02-funções.csv` idem); `autz` (as 18 policies já compilam: `termoChave("meta.fabrica")`, `termoSuper()`, `podeVerConta`); `meta`/`meta-proxy` (o `painel-subir.vue` continua usando o do Plano 3 com o escopo do 5.6); `fabrica/purga.go` além da linha do comentário do pacote (Task 3; a `apagar` dele é reusada); `coletor/` e `src/` (Plano 7).
 
 ## Tarefas
 
@@ -125,7 +126,7 @@ docs/migracao-go/NOTAS-DA-IMPLANTACAO.md                 # seção do 5.8
 | 6 | `POST /fabrica-apagar` (banco, run cancelado, arquivos só dentro da raiz; idempotente) | **opus** (apagar arquivo) | 2, 3 |
 | 7 | `POST /fabrica-candidatos` (port fiel do cálculo, lojas só da Fábrica) | sonnet | 3, 5.5 T1 |
 | 8 | `POST /fabrica-looks` e `POST /fabrica-publicos` | sonnet | 3 |
-| 9 | Rotas de robô (`/fabrica/robo/…`): jobs, próximo lote, campanha, criativos, look, rastro da Meta, execução | **opus** (sessão de serviço, perfil do robô) | 3 |
+| 9 | Rotas de robô (`/fabrica/robo/…`): jobs, próximo lote, campanha, criativos, look, rastro da Meta, execução | **opus** (sessão de serviço, perfil do robô) | 3, 4, 5 (`tabelaCriativos`, `tabelaCampanhas`) |
 | 10 | Montagem, varreduras (conta, impersonado, robô), `conferir` e notas | **opus** (fronteira) | 4–9 |
 
 ---
@@ -1330,7 +1331,7 @@ func respostaDoDespacho(err error) (status int, codigo, frase string, espera tim
 }
 ```
 
-**(b) Testes de aceitação** (`disparo_test.go`; o GitHub de mentira é um `httptest.Server` que conta os pedidos, guarda o último corpo e, em cada pedido, lê pela pool `select status from fabrica_jobs where id = <job_id do corpo>` — o job tem de estar VISÍVEL, isto é, comitado; `gh := github.ParaTeste(t, "SEGREDO-pat", srv.URL)`; montagem do teste = a da Task 10: `r.With(soFabricante, soSessaoPropria).Post("/fabrica-trigger", (&Disparador{Pool: p, GH: gh, Limite: lim}).ServeHTTP)`, `lim` = `auth.NovoLimitador()` com `Max 30, Janela time.Hour` salvo no caso do limite)
+**(b) Testes de aceitação** (`TestTrigger`, `disparo_test.go`; o GitHub de mentira é um `httptest.Server` que conta os pedidos, guarda o último corpo e, em cada pedido, lê pela pool `select status from fabrica_jobs where id = <job_id do corpo>` — o job tem de estar VISÍVEL, isto é, comitado; `gh := github.ParaTeste(t, "SEGREDO-pat", srv.URL)`; montagem do teste = a da Task 10: `r.With(soFabricante, soSessaoPropria).Post("/fabrica-trigger", (&Disparador{Pool: p, GH: gh, Limite: lim}).ServeHTTP)`, `lim` = `auth.NovoLimitador()` com `Max 30, Janela time.Hour` salvo no caso do limite)
 - Gerar sem rodada: `fabricante` `{"tipo":"gerar","params":{"itens":[{"sku":"S1","deposito":"14888726315","pct":30}],"nome":"Rodada X","objetivo":"branding"}}` → 200 com `job_id` e `campanha_id`; efeito: a rodada `nome 'Rodada X'`, `status 'gerando'`, `objetivo 'branding'`, `criado_por = idFabricante`, `job_id = <job>`; o job `tipo 'gerar'`, `status 'enfileirado'`, `criado_por = idFabricante`, `params->>'campanhaId' = <rodada>`, `params->'itens'` intacto; o GitHub com 1 pedido `{"inputs":{"job_id":"<job>"},"ref":"main"}` e o job visível (`enfileirado`) no momento do pedido.
 - Gerar sem `nome` → rodada `Rodada · 20…` (prefixo e formato `AAAA-MM-DD HH:MM`); sem `objetivo` → `engajamento`. Subir `{"tipo":"subir","params":{"campanhaId":"<C2>","destino":{"tipo":"nova"}}}` → 200 `"campanha_id":"<C2>"`, nenhuma rodada nova; preview `{"tipo":"preview","params":{}}` → `"campanha_id":null`. `chaveEmLista`, `super`, `adminA1` → 200.
 - Negados, com **0 pedidos ao GitHub** e foto igual: `leitor`, `semModulo`, `roboSemFabrica` → 403 `sem_permissao`; `impersonado` → 403 com "Quem entrou como outra pessoa"; `desativado` → 401; `{"tipo":"excluir","params":{}}` → 400 `tipo_invalido`; `{"tipo":"x"}` → 400; `params` `[]`, `1` → 400; `campanhaId` `"abc"` → 400; `params` de 65 KiB → 400; campo desconhecido no topo → 400 `corpo_invalido`; `GITHUB_PAT` vazio (`github.Novo("")`) → 503 `github_nao_configurado`; com `Limite` de `Max 2` por hora, o 3º disparo válido da mesma pessoa → 429 `muitas_tentativas` com `Retry-After: 3600` (e o de OUTRA pessoa passa).
@@ -1484,7 +1485,7 @@ func (a *Apagador) apagarArquivos(campanha string, caminhos []string) (falhas in
 }
 ```
 
-**(b) Testes de aceitação** (`apagar_test.go`; `dir := t.TempDir()` com `fabrica-criativos/` e os arquivos dos criativos do mundo, mais `fabrica-criativos/<C1>/produto/s1-avista-1920x1080.mp4` (sem linha) e `dir/fora.txt`; o GitHub de mentira conta os pedidos; montagem `r.With(soFabricante, soSessaoPropria).Post("/fabrica-apagar", (&Apagador{Pool: p, GH: gh, Arquivos: dir}).ServeHTTP)`)
+**(b) Testes de aceitação** (`TestApagar`, `apagar_test.go`; `dir := t.TempDir()` com `fabrica-criativos/` e os arquivos dos criativos do mundo, mais `fabrica-criativos/<C1>/produto/s1-avista-1920x1080.mp4` (sem linha) e `dir/fora.txt`; o GitHub de mentira conta os pedidos; montagem `r.With(soFabricante, soSessaoPropria).Post("/fabrica-apagar", (&Apagador{Pool: p, GH: gh, Arquivos: dir}).ServeHTTP)`)
 - Rodada gerando: `fabricante` `{"campanhaId":"<C1>"}` → 200 `{"ok":true}`; efeito: C1, K1 e K2 fora do banco (J1 fica: é histórico); `fabrica-criativos/<C1>` não existe mais (com o `.mp4`); o GitHub com 1 pedido `POST /repos/rbv-co/social-dashboard/actions/runs/111/cancel`. De novo → 200 `{"ok":true}`, 0 pedidos a mais, nada muda.
 - Rodada pronta (C2): sem pedido ao GitHub; K3 e o arquivo dela somem.
 - Caminho fora da raiz: antes, `insert` de criativos em C2 com `storage_path` `../fora.txt`, `/etc/hostname` e `<C2>/../../fora.txt` → 200 (o banco apagou), `dir/fora.txt` continua lá; o log tem "arquivo não apagado".
@@ -1892,7 +1893,7 @@ func manual(ctx context.Context, p *pgxpool.Pool, lojas []lojaDaFabrica, f filtr
 }
 ```
 
-**(b) Testes de aceitação** (`candidatos_test.go`; dados do teste, além do mundo: `gc_estoque_item` (14888726315,S1,2), (14888726315,S2,0), (14888726277,S2,5), (14888726277,S3,1), (99999,S1,50); `gc_vendas_item` canal 205834140: (2026-09,S1,'Bolsa Um','Bolsas',3,300), (2026-08,S1,'Bolsa Um','Bolsas',1,100), (2026-09,S2,'Carteira','Acessórios',1,50); canal 205834116: (2026-09,S3,'Mochila','Bolsas',0,0), (2026-09,S2,'Carteira','Acessórios',1,50); dois briefings, o mais novo com `{"oportunidades":[{"loja":"tivoli","itens":[{"sku":"S1","descricao":"Bolsa 1","categoria":"Bolsas","precoOriginal":100,"pct":30,"precoComDesconto":70,"estoqueLoja":2}]},{"loja":"Shopping X","itens":[{"sku":"S9"}]}],"garimpo":[{"loja":"iguatemi","itens":[{"sku":"S2","descricao":"Carteira"}]}]}` e o mais velho com outra lista em `oportunidades`. `T` = Tivoli 14888726315, `I` = Iguatemi 14888726277)
+**(b) Testes de aceitação** (`TestCandidatos` e `TestBcgClass`, `candidatos_test.go`; `TestBcgClass` é a tabela pura de `bcgClass` — (2,4,0) Estrela, (5,2,0) Vaca leiteira, (0,0,0) Interrogação, (0,0,30) Abacaxi; dados do teste, além do mundo: `gc_estoque_item` (14888726315,S1,2), (14888726315,S2,0), (14888726277,S2,5), (14888726277,S3,1), (99999,S1,50); `gc_vendas_item` canal 205834140: (2026-09,S1,'Bolsa Um','Bolsas',3,300), (2026-08,S1,'Bolsa Um','Bolsas',1,100), (2026-09,S2,'Carteira','Acessórios',1,50); canal 205834116: (2026-09,S3,'Mochila','Bolsas',0,0), (2026-09,S2,'Carteira','Acessórios',1,50); dois briefings, o mais novo com `{"oportunidades":[{"loja":"tivoli","itens":[{"sku":"S1","descricao":"Bolsa 1","categoria":"Bolsas","precoOriginal":100,"pct":30,"precoComDesconto":70,"estoqueLoja":2}]},{"loja":"Shopping X","itens":[{"sku":"S9"}]}],"garimpo":[{"loja":"iguatemi","itens":[{"sku":"S2","descricao":"Carteira"}]}]}` e o mais velho com outra lista em `oportunidades`. `T` = Tivoli 14888726315, `I` = Iguatemi 14888726277)
 - `abc` (`lojas [T, I]`, `filtros {"faixa":"A"}`) → só S1 (400 de 500 = 0,8), `porLoja` só com T (`"estoque":2`); sem `faixa` → S1, S2, S3 nessa ordem.
 - `bcg` padrão → S1, S2, S3; `quadrantes ["Estrela"]` → S1, S2; `["Vaca leiteira"]` → S2 (em I: 2/7); `categoria "bolsa"` → S1, S3; `quadrantes []` → `[]` (lista vazia é lista, como na edge).
 - `manual` `termo "carteira"` → S2 com `porLoja {"I": {"estoque":5, …}}`; `termo "s3"` → S3; sem termo → S1, S2, S3.
@@ -2227,7 +2228,7 @@ func (cu *Curadoria) Publicos(w http.ResponseWriter, r *http.Request) {
 ```
 
 
-**(b) Testes de aceitação** (`curadoria_test.go`, `m.Rodar`; "intacto" = foto igual)
+**(b) Testes de aceitação** (`TestLooks`, `TestPublicos`, `curadoria_test.go`, `m.Rodar`; "intacto" = foto igual)
 - Looks, permitido (`fabricante`): `salvar {"look":{"chave":"promo-sage","nome":"Promo · Sálvia","objetivos":["engajamento"],"ativo":false}}` → 200 `{"ok":true}`; efeito: a linha com o nome, `{engajamento}` e `ativo false`; `salvar` só com `ativo:true` → só `ativo` muda (nome continua "Promo · Sálvia"); `salvar` de chave inexistente → 200 e nada muda; `ordenar {"ordem":[{"chave":"promo-sage","ordem":1},{"chave":"produto-heroi","ordem":2},{"ordem":9}]}` → 200, ordens 1 e 2 (o item sem chave pulado); `excluir {"chave":"marca-velha","excluido":false}` → `{"ok":true,"excluido":false}`; `excluir {"chave":"produto-heroi"}` → `excluido true`.
 - Looks, negado e intacto: `leitor`, `semModulo`, `roboSemFabrica` → 403; `impersonado` → 403 com a frase; `salvar` sem `chave` → 400 `chave_obrigatoria`; `excluir` sem `chave` → 400 `chave_obrigatoria`; `sync` → 400 `acao_invalida`; `x` → 400 `acao_invalida`; `objetivos ["Engajamento!"]`, `nome ""`, `ativo "sim"`, `chave "../x"`, só `chave` → 400 `pedido_invalido`; `ordenar` com 201 itens → 400; `ordenar` em que a segunda atualização falha (gatilho de teste que dá `raise` para `produto-heroi`) → resposta ≠ 200 e a ordem de `promo-sage` NÃO mudou (uma transação).
 - Públicos, permitido: `salvar {"preset":{"nome":"Campinas 30+","geo":{"cities":[{"key":"247071","radius":10,"distance_unit":"kilometer"}],"pins":[]},"idade_min":30,"idade_max":55,"generos":[2],"interesses":[{"id":"6003","name":"Moda"}],"custom_audiences":[]}}` → 200 `{"id": <uuid>}`; a linha com tudo, `marca_id` nulo e `criado_por = idFabricante`; `salvar` com `"id":"<P1>"` e `nome "Novo"` → 200 `{"id":"<P1>"}`, `marca_id` passa a nulo (paridade) e `criado_por` = quem salvou; `apagar {"id":"<P2>"}` → `{"ok":true}`; de novo → `{"ok":true}`.
@@ -2243,7 +2244,7 @@ func (cu *Curadoria) Publicos(w http.ResponseWriter, r *http.Request) {
 ---
 ### Task 9: Rotas de robô — o que o `fabrica-job-runner` grava, por sessão de serviço
 
-**Revisor:** opus. **Depende de:** 3.
+**Revisor:** opus. **Depende de:** 3, 4 e 5 (`tabelaCriativos` e `tabelaCampanhas` moram lá).
 
 **(a) Contrato**
 - O robô da Fábrica **continua no GitHub Actions** (rembg/BiRefNet em CPU + ffmpeg, até 45 min: COORDENACAO 12/10 23:10 (c)) e não alcança o banco da API. Ele fala com a API com o token de serviço do 5.13 (`Authorization: Bearer <token>`; usuário `robo-fabrica@…` com perfil próprio: papel `viewer`, `features {meta, sales}` — `meta` para o `meta-proxy`, `sales` para os `produtos` do `bling-proxy` —, `permissions {"meta.fabrica": ["ver","editar"]}`, `allowed_accounts` nulo; NOTAS).
@@ -2825,7 +2826,7 @@ func montarRobo(r chi.Router, p *pgxpool.Pool) {
 }
 ```
 
-**(b) Testes de aceitação** (`robo_test.go`, `m.Rodar`; "intacto" = foto igual)
+**(b) Testes de aceitação** (`TestRotasDeRobo`, `robo_test.go`, `m.Rodar`; "intacto" = foto igual)
 - Quem passa: SÓ `robo` (sessão de serviço, perfil com a chave). Para CADA uma das 7 rotas, com um corpo válido: `fabricante`, `adminA1`, `super` (sessões de PAINEL que passariam no `Fabricante`) → 403; `impersonado` → 403; `roboSemFabrica` (serviço, perfil sem a chave) → 403; sem sessão → 401; foto igual depois de todos.
 - Jobs: `PATCH /fabrica/robo/jobs/<J1> {"status":"concluido","resultado":{"criativos":3},"erro":null}` → 204; efeito `status concluido`, `resultado->>'criativos' = 3`, `erro` nulo, `updated_at` > `'2026-10-10T10:00:00Z'`; `{"status":"x"}`, `{"github_run_id":"12a"}`, `{}` → 400; `{"criado_por":"<id>"}` → 400 `corpo_invalido`; id inexistente → 404; id `"x"` → 404.
 - Próximo lote: `POST …/jobs/<J1>/proximo-lote` → 201 `{"job_id": N}`; N com `tipo gerar`, `status enfileirado`, `criado_por = idRobo`, `params->>'continuacao' = '1'`, `params->>'campanhaId' = C1`; C1 com `job_id = N`. De novo → 200 com o MESMO N e um só job novo no banco. `…/jobs/<J2>/proximo-lote` (subir) → 400; job com `continuacao 300` → 409 `limite_de_lotes`.
@@ -2839,7 +2840,7 @@ func montarRobo(r chi.Router, p *pgxpool.Pool) {
 
 **(c) Arquivos:** Create `api/internal/fabrica/robo.go`, `api/internal/fabrica/robo_test.go`.
 
-**(d) Dependências:** Task 3 (`auth.SoServico`, ajudantes); `dados.Tabela.Criar/Editar`.
+**(d) Dependências:** Task 3 (`auth.SoServico`, ajudantes), Tasks 4 e 5 (`tabelaCriativos`, `tabelaCampanhas`); `dados.Tabela.Criar/Editar`.
 
 - [ ] **Step 1:** Testes; ver falhar. - [ ] **Step 2:** Implementar (código de (a)). - [ ] **Step 3:** `gofmt -l ./internal && go vet ./internal/fabrica/ && go test -count=1 -race ./internal/fabrica/` PASS; mutações reprovam. - [ ] **Step 4:** Commit `feat(api): rotas de robô da Fábrica — só sessão de serviço, regras do perfil do robô, caminho de arquivo preso à rodada` (+ `Co-Authored-By`).
 
@@ -3138,7 +3139,7 @@ Em `NOTAS-DA-IMPLANTACAO.md`, acrescente ao fim:
 ```
 
 Rode `gofmt -w ./internal ./cmd`.
-- [ ] **Step 3: Rodar e ver passar.** `gofmt -l . && go vet ./... && go test -count=1 -race ./... 2>&1 | grep -v goose | grep -E '^(ok|FAIL|---)'` → todos `ok`. Mutações que têm de reprovar: tirar `soSessaoPropria` de UMA escrita (a varredura do impersonado acusa); tirar `auth.SoServico` do grupo de robô (`TestRotasDeRoboSoServico`); uma leitura de mentira em `Montar` sobre `fabrica_marcas` que não projete `account_id` (o lado positivo acusa); `fabrica.Montar` FORA do grupo com `ComEscopo` (as rotas de catálogo respondem 500 e o `soFabricante` nega tudo); `cfg.GitHubPAT` trocado por `""` em `web/rotas.go` não reprova aqui (o teste da montagem já roda sem token) — é o `conferir` do ensaio que pega (NOTAS).
+- [ ] **Step 3: Rodar e ver passar.** `gofmt -l . && go vet ./... && go test -count=1 -race ./... 2>&1 | grep -v goose | grep -E '^(ok|FAIL|---)'` → todos `ok`. Mutações que têm de reprovar: tirar `soSessaoPropria` de UMA escrita (a varredura do impersonado acusa); tirar `auth.SoServico` do grupo de robô (`TestRotasDeRoboSoServico`); uma leitura de mentira em `Montar` sobre `fabrica_marcas` que não projete `account_id` (o lado positivo acusa); `fabrica.Montar` FORA do grupo com `ComEscopo` (as rotas de catálogo respondem 500 e o `soFabricante` nega tudo).
 - [ ] **Step 4: Commit** `feat(api): monta a Fábrica (leituras, edges e rotas de robô), varreduras de conta, impersonado e sessão de serviço, conferir e notas` (+ `Co-Authored-By`).
 
 ---
