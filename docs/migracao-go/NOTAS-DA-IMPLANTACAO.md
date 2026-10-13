@@ -535,3 +535,47 @@ location = /api/custo-openai {
 - Nenhum gatilho nas 17 tabelas: `select count(*) from pg_trigger g join pg_class c on c.oid = g.tgrelid where not g.tgisinternal and c.relname in ('accounts','account_insights','daily_snapshots','engagement_snapshots','content_snapshots','campaigns','campaign_insights','campaign_insights_hora','campaign_adsets','campaign_filters','ads','ads_snapshots','ad_insights_hora','perfil_visitas_hora','followers_leituras','social_metas','visitas_perfil_dia')` = 0.
 - Quem tem lista de contas: `select count(*) filter (where allowed_accounts is not null) as com_lista, count(*) filter (where allowed_accounts is not null and features && '{meta}') as com_lista_e_meta from profiles` — se `com_lista_e_meta` > 0, avisar que o Gestor/Análise de campanhas perdem `/me/*` e objetos soltos para essas pessoas (Ruling 5.6-5).
 - Conta de serviço que chamar o `meta-proxy` (robôs do `coletor/`, Plano 7) precisa de perfil ativo com `allowed_accounts` nulo (ou papel admin): sem perfil, toda conta é recusada.
+
+## Plano 5.7 — Gestão de tráfego
+
+### Variáveis de ambiente (serviço `api`)
+| Variável | Observação |
+|---|---|
+| `ANTHROPIC_API_KEY_TRAFEGO` | a chave da Anthropic dos proxies `sugerir-publico-ia` e `ler-documento`. Hoje ela mora na tabela `segredos_de_cron` (nome `anthropic_api_key_trafego`), lida pela edge com a chave de serviço: quem tem acesso **copia o valor para a variável ANTES do corte**. Vazia = `503 chave_nao_configurada` (nada é chamado). É segredo (`Segredos()`). Depois do corte, a linha da tabela pode sair (decisão do dono) |
+
+### Rotas novas
+- Com sessão, regra = catálogo de produção, escrita de sessão "entrar como" = 403: `GET /gestao-trafego/analises-de-orcamento`, `/analises-de-anuncio`, `/decisoes`, `/rascunhos`, `/config-metricas`, `/objetivos`, `/regua`, `/interesses-sugeridos`; `POST /gestao-trafego/decisoes`, `POST /gestao-trafego/rascunhos`, `PATCH`/`DELETE /gestao-trafego/rascunhos/{id}`, `PUT /gestao-trafego/config-metricas/{balde}`, `PUT`/`DELETE /gestao-trafego/objetivos/{alvo_id}`, `PUT /gestao-trafego/regua`; `POST /rpc/gt_registrar_problemas`.
+- Proxies (grupo de sessão, cada um com o prazo próprio; o de 30 s do grupo de domínio cortaria a IA): `POST /sugerir-publico-ia` e `POST /ler-documento` (módulo `meta.gestor`, prazo 120 s, 30 e 10 por hora por pessoa), `POST /buscar-lugar` (módulo `meta`, prazo 20 s, 60 por minuto por pessoa, uma ligação por segundo ao Nominatim).
+- Leituras sem a restritiva por conta em produção, por decisão (Ruling 5.7-3, achado 3): `/config-metricas`, `/objetivos` e `/regua` mostram as metas e os objetivos de TODAS as contas a toda sessão, como hoje. As outras cinco (análises, decisões, rascunhos, interesses) são varridas contra vazamento em `TestNadaVazaEntreContas`.
+
+### Hook `Conferir` das RPCs e a regra "mover problema de conta = 403"
+- `rpc.Funcao` ganhou o campo `Conferir` (função chamada na MESMA transação, depois do portão e de `ParamConta`, antes de a função SQL rodar; erro `autz.ErrNegado` vira 403). Quem registrar RPC nova com regra que o portão e a conta do parâmetro não cobrem usa este gancho, não um middleware.
+- `gt_registrar_problemas` o usa: o upsert da função é por `(ad_id, codigo)` e REESCREVE o `account_id` da linha existente. Item que já pertence a OUTRA conta (ou a nenhuma) moveria o problema de dono: a API responde **403** sem rodar a função. O robô da VPS grava por `pg` (ver abaixo), não por esta rota, e não é afetado.
+
+### `silenciar_ate` da fila (Ruling 5.7-17)
+- `POST /gestao-trafego/decisoes`: o servidor calcula `silenciar_ate` (agora + 7 dias ao recusar; nulo ao aprovar) e RECUSA o campo no corpo (400). A tela sempre mandava `agora + 7 dias`, então o prazo vindo do navegador só servia para calar uma campanha por anos. Mudar o prazo vira deploy da API (`diasDeSilencio` em `internal/trafego/fila.go`); a tela deixa de mandar o campo no Plano 7.
+
+### Decisão adiada: robô `vigia-problemas-meta`
+- O robô da VPS `vigia-problemas-meta` (`coletor/vigia-problemas-meta.mjs`) continua falando com o banco por `pg` com a claim de `service_role`, como hoje, e chama `gt_registrar_problemas` direto (sem a API, sem o `ParamConta` e sem a regra de mover conta). Migrá-lo para sessão de serviço com perfil `meta.gestor` (ou admin) e `allowed_accounts` nulo é decisão do Plano 7; até lá, a regra "problema não muda de conta" só vale para a tela.
+
+### nginx
+- `location = /api/ler-documento { client_max_body_size 5m; proxy_read_timeout 130s; proxy_pass http://127.0.0.1:8080/ler-documento; }` e `location = /api/sugerir-publico-ia { proxy_read_timeout 130s; proxy_pass http://127.0.0.1:8080/sugerir-publico-ia; }` (o padrão de 60 s cortaria a IA; o `64k` do `server {}` recusaria o PDF). `/api/buscar-lugar` fica no padrão (prazo 20 s). Formato de log sem corpo (o PDF e a persona viajam no corpo).
+
+### Mudanças de contrato que o Plano 7 absorve
+- Leituras por `GET /gestao-trafego/<recurso>` com filtros nomeados (`account_id`, `veredito`, `escopo`, `campaign_id`, `status`, `alvo_id`, `conta_id`, `nivel`, `marca_id`, `objetivo`) e `ordem=decidido_em|updated_at[.desc]`; a régua é `GET /gestao-trafego/regua` (lista de uma linha). Interesses: `?account_id=` (substitui o `fabrica_marcas!inner(account_id)`); a conta vem em `account_id`, não em `fabrica_marcas.account_id`.
+- Decisão: `POST /gestao-trafego/decisoes` SEM `decidido_por` (vem da sessão; mandar = 400) e SEM `silenciar_ate` (o servidor calcula); conta que não se vê = 403.
+- Rascunhos: `POST` sem `criado_por`; `PATCH`/`DELETE` de rascunho de outra pessoa = 403 (antes: 0 linhas calado).
+- Config de métricas: `PUT /gestao-trafego/config-metricas/{balde} {"metricas":[…]}` (sem `updated_at`). Objetivos: `PUT /gestao-trafego/objetivos/{alvo_id} {"nivel","interacao","conta_id"}`; `DELETE` é 204 também sem linha (a releitura de gt:802 sai).
+- Régua: UM `PUT /gestao-trafego/regua {"pesos","limiares","limiares_resultado","conta_id","metas"}` (só as metas DA conta; o servidor funde em `metas_por_conta` e grava o histórico junto) substitui o `update` de gt:1615 + o `insert` no log de gt:1624; `conta_id` que a pessoa não vê = 403.
+- RPC: `POST /rpc/gt_registrar_problemas` com o mesmo corpo; conta que não se vê = 403 e item que mudaria de conta = 403 (a tela já engole a falha: o `console.warn` de gt:941).
+- `sugerir-publico-ia` passa a exigir `contaId` (a conta aberta, `_gtCurAcc.id`); conta fora da lista = 404 `conta_nao_encontrada`; erros novos `sem_conta` (400) e `muitas_leituras` (429). `ler-documento`: `nao_e_pdf` (400) e `muitos_documentos` (429). `buscar-lugar`: `termo longo demais` (400) e 429 `muitas buscas seguidas; espere um minuto`. As três trocam `functions.invoke`/`fetch(SUPABASE_URL+…)` pelo `POST /api/<nome>` do cliente `api`.
+
+### Antes do corte
+- `api worker conferir` no banco restaurado: colunas, tipos (`account_id` das `gt_*` e de `fabrica_marcas` como `text`), únicos e `gt_registrar_problemas(text,jsonb)` do 5.7 — em especial os presumidos: `gt_budget_analises.impactos` e `gt_ponderada_config.limiares_resultado` (ambos `jsonb`).
+- Gatilho: `select tgname from pg_trigger where tgrelid = 'public.gt_campanhas_rascunho'::regclass and not tgisinternal` = `gt_rascunho_updated_at` e nenhum outro nas 10 tabelas.
+- A chave: `ANTHROPIC_API_KEY_TRAFEGO` preenchida (um `POST /sugerir-publico-ia` de teste no ensaio, com uma conta da lista, volta 200).
+- Robôs do `coletor/` que usam estas tabelas com a chave de serviço (Plano 7): `budget-ia.mjs` (grava `gt_budget_analises`/`gt_ad_analises`, lê a régua e os objetivos), `vigia-problemas-meta.mjs` (chama `gt_registrar_problemas`; fica em `pg` com a claim de `service_role`, ver acima — se migrar para a API, a conta de serviço precisa de perfil com `meta.gestor` ou papel admin E `allowed_accounts` nulo, senão 403), `sugerir-interesses.mjs` (grava `interesses_sugeridos`), `conferir-a-madrugada.mjs` (lê `gt_problemas_meta`, que não tem rota).
+- `select account_id, count(*) from gt_budget_analises group by 1` (achado 4: linhas antigas com o id do token no lugar da conta).
+
+### Achados para o dono
+(ver a seção "Achados para o dono" do plano 5.7)
