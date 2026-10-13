@@ -208,11 +208,11 @@ const FRASES_DOS_CODIGOS = {
 export function fraseDoCorpo(corpo) {
   if (!corpo || typeof corpo !== 'object') return null
   if (typeof corpo.mensagem === 'string' && corpo.mensagem) return corpo.mensagem
+  if (typeof corpo.error === 'string' && FRASES_DOS_CODIGOS[corpo.error]) return FRASES_DOS_CODIGOS[corpo.error]
   if (typeof corpo.error === 'string' && corpo.error && !/^[a-z_]+$/.test(corpo.error)) return corpo.error
   if (corpo.error && typeof corpo.error.message === 'string') return corpo.error.message
   // `detail` do `dispatch_falhou` (5.8) é frase da API
   if (typeof corpo.detail === 'string' && corpo.detail) return corpo.detail
-  if (typeof corpo.error === 'string' && FRASES_DOS_CODIGOS[corpo.error]) return FRASES_DOS_CODIGOS[corpo.error]
   for (const k of ['meta_erro', 'erro']) if (typeof corpo[k] === 'string' && corpo[k] && !/^[a-z_]+$/.test(corpo[k])) return corpo[k]
   return null
 }

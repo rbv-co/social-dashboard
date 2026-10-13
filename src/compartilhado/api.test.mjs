@@ -208,3 +208,11 @@ test('trocarCodigoPorFrase: código do portão vira frase; frase e erro da Meta 
   const meta = { error: { message: 'x', code: 100 } }
   assert.equal(api.trocarCodigoPorFrase(400, meta), meta)
 })
+
+test('fraseDoCorpo: código das rotas novas vira frase (inclusive com maiúscula, campanhaId_invalido)', async () => {
+  const { fraseDoCorpo } = await import('./api.js')
+  assert.equal(fraseDoCorpo({ error: 'campanhaId_invalido' }), 'Não achei esta campanha.')
+  assert.match(fraseDoCorpo({ error: 'github_nao_configurado' }), /não está configurado/)
+  assert.equal(fraseDoCorpo({ error: 'dispatch_falhou', detail: 'O GitHub recusou o disparo.' }), 'O GitHub recusou o disparo.')
+  assert.equal(fraseDoCorpo({ error: 'algum_codigo' }), null)
+})

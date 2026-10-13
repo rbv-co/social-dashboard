@@ -293,3 +293,11 @@ test('configurarApi (robôs): endereço e token explícitos', async () => {
     assert.equal(pedidos[0].chave, 'GET /fabrica/looks')
   } finally { api_.configurarApi({ base: '/api', token: null }) }
 })
+
+test('head: true só conta: pede uma linha e devolve o X-Total-Count', async () => {
+  const pedidos = api({ 'GET /fabrica/criativos': [200, [{ id: 'c1' }], { 'X-Total-Count': '2500' }] })
+  const r = await b.consultaPelaApi('fabrica_criativos').select('id', { count: 'exact', head: true })
+  assert.equal(r.count, 2500)
+  assert.equal(pedidos.length, 1)
+  assert.deepEqual(Object.fromEntries(new URLSearchParams(pedidos[0].busca)), { limite: '1', contar: '1' })
+})

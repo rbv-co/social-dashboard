@@ -512,7 +512,10 @@ class ConsultaPelaApi {
     try {
       if (this.recusa) throw new ErroDeTraducao(this.recusa)
       if (this.op === 'ler') {
-        const r = await lerPelaApi(this.p, { contar: this.contar })
+        // `head: true` só conta: uma linha basta (o `X-Total-Count` traz o total);
+        // sem isto a leitura sem limite baixava a tabela inteira para contar
+        const p = this.soContar && this.p.limite == null ? { ...this.p, limite: 1 } : this.p
+        const r = await lerPelaApi(p, { contar: this.contar })
         if (r.error) return { data: null, error: r.error, count: null }
         if (this.soContar) return { data: null, error: null, count: r.count }
         if (this.unico) {

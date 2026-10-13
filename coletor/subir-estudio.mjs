@@ -304,7 +304,9 @@ export async function run({ campanhaId, destino, dry = false }) {
   //    REGRA (cliente): o formato WIDESCREEN 16:9 (1920x1080) NÃO sobe pro Meta — é reservado pro
   //    Google Ads (YouTube), a conectar depois. Ele segue sendo gerado e curável, só não é veiculado
   //    aqui. Quando entrar o Google Ads, criar o subir-google.mjs que sobe justamente o 1920x1080.
-  const escolhidos = await sbGet(`/fabrica_criativos?select=id,url,storage_path,legenda,sku,variante,formato&campanha_id=eq.${campanhaId}&escolhido=eq.true&purgado_em=is.null&formato=neq.1920x1080`);
+  //    O corte do 1920x1080 é feito aqui, não na URL: a rota da API (5.8) não filtra por formato.
+  const escolhidos = (await sbGet(`/fabrica_criativos?select=id,url,storage_path,legenda,sku,variante,formato&campanha_id=eq.${campanhaId}&escolhido=eq.true&purgado_em=is.null`))
+    .filter((c) => c.formato !== '1920x1080');
   // Zero criativos escolhidos NÃO é sucesso. Sem a marca `semCriativos`, este retorno virava
   // {status:'concluido', fecha:true} no runner: a tela dizia "Publicado (pausado)! 0 anúncios" e a
   // rodada era FECHADA sem nada ter subido. Foi exatamente isso que aconteceu no job

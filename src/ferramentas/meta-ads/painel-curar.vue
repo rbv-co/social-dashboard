@@ -49,11 +49,17 @@ async function alternarTodos() {
   const novo = !todosEscolhidos.value
   const antes = alvo.map((i) => [i, i.escolhido])
   alvo.forEach((i) => { i.escolhido = novo })                 // otimista
-  // pela API, um lote numa transação: um negado desfaz tudo (e a tela volta ao que era)
-  const { error } = areaNaApi('fabrica')
-    ? await pedir('POST', '/fabrica/criativos/escolher', { corpo: { ids: alvo.map((i) => i.id), escolhido: novo } })
-    : await sbClient.from('fabrica_criativos').update({ escolhido: novo }).in('id', alvo.map((i) => i.id))
-  if (error) { antes.forEach(([i, v]) => { i.escolhido = v }); alert('Falha ao salvar') }
+  // pela API, lotes de até 500 (o teto da rota), cada um numa transação: um negado
+  // desfaz o lote dele; a tela volta ao que era só do lote que falhou em diante
+  let error = null, salvos = 0
+  if (areaNaApi('fabrica')) {
+    for (; salvos < alvo.length && !error; salvos += error ? 0 : 500) {
+      ({ error } = await pedir('POST', '/fabrica/criativos/escolher', { corpo: { ids: alvo.slice(salvos, salvos + 500).map((i) => i.id), escolhido: novo } }))
+    }
+  } else {
+    ({ error } = await sbClient.from('fabrica_criativos').update({ escolhido: novo }).in('id', alvo.map((i) => i.id)))
+  }
+  if (error) { antes.slice(salvos).forEach(([i, v]) => { i.escolhido = v }); alert('Falha ao salvar') }
 }
 function abrirVisor(it) { if (!it.purgado_em) visor.value = it }
 function fecharVisor() { visor.value = null }

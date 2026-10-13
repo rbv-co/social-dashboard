@@ -64,3 +64,13 @@ test('próximo lote: a rota cria (ou devolve) o job e o id volta', async () => {
   api({ 'POST /fabrica/robo/jobs/j1/proximo-lote': [201, { job_id: 'j2' }] })
   assert.equal(await fb.proximoLote('j1'), 'j2')
 })
+
+test('tetos da rota: erro longo é cortado (o resultado não se perde); look sem linha segue como no PostgREST', async () => {
+  const pedidos = api({ 'PATCH /fabrica/robo/jobs/j1': [204], 'POST /fabrica/robo/execucoes': [201, { id: 'e1' }] })
+  await fb.patchJob('j1', { status: 'erro', resultado: { adIds: ['a1'] }, erro: 'x'.repeat(5000) })
+  assert.equal(pedidos[0].corpo.erro.length, 2000)
+  assert.deepEqual(pedidos[0].corpo.resultado, { adIds: ['a1'] })
+  await fb.registrarExecucaoNaApi({ robo: 'fabrica-subir', acao: 'subir', detalhe: 'y'.repeat(900) })
+  assert.equal(pedidos[1].corpo.detalhe.length, 500)
+  await fb.escreverFabrica('PATCH', '/fabrica_looks?chave=eq.sumiu', { preview_url: 'https://x/y.png' }) // 404 não lança
+})

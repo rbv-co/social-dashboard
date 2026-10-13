@@ -22,7 +22,7 @@ export const vaiParaApi = (caminho) => fabricaNaApi() && /^\/?fabrica_/.test(Str
 let _pronta = false;
 async function api() {
   if (!_pronta) {
-    configurarApi({ base: process.env.CENTRAL_API_URL, token: await loginServico({ naApi: true }) });
+    configurarApi({ base: process.env.CENTRAL_API_URL.trim(), token: await loginServico({ naApi: true }) });
     _pronta = true;
   }
 }
@@ -32,12 +32,16 @@ function falha(oQue, r) {
   return new Error(`${oQue} -> ${r.status} ${(r.error && (r.error.message || r.error.codigo)) || ''}`.trim());
 }
 
-async function chamar(metodo, caminho, corpo) {
+async function chamar(metodo, caminho, corpo, { aceitar404 = false } = {}) {
   await api();
   const r = await pedir(metodo, caminho, corpo === undefined ? {} : { corpo });
-  if (r.error) throw falha(`${metodo} ${caminho}`, r);
+  if (r.error && !(aceitar404 && r.status === 404)) throw falha(`${metodo} ${caminho}`, r);
   return r.data;
 }
+
+// Os tetos das rotas do robô; o Supabase não tinha. Cortar é melhor que perder a
+// escrita inteira (um `erro` longo derrubava junto o `resultado` com os ids da Meta).
+const cortar = (v, n) => (typeof v === 'string' && v.length > n ? v.slice(0, n - 1) + '…' : v);
 
 /** `GET` de uma tabela `fabrica_*` no formato PostgREST (`/fabrica_jobs?select=*&id=eq.x`). */
 export async function lerFabrica(caminho) {
@@ -60,7 +64,9 @@ const soCampos = (o, campos) => Object.fromEntries(Object.entries(o || {}).filte
 
 /** Atualiza um job (`PATCH /fabrica/robo/jobs/{id}`). */
 export async function patchJob(id, campos) {
-  return chamar('PATCH', `/fabrica/robo/jobs/${encodeURIComponent(id)}`, soCampos(campos, ['status', 'github_run_id', 'resultado', 'erro']));
+  const c = soCampos(campos, ['status', 'github_run_id', 'resultado', 'erro']);
+  if ('erro' in c) c.erro = cortar(c.erro, 2000);
+  return chamar('PATCH', `/fabrica/robo/jobs/${encodeURIComponent(id)}`, c);
 }
 
 /** Cria (ou devolve, idempotente) o job do próximo lote do `gerar`. → id do job. */
@@ -84,12 +90,13 @@ export async function escreverFabrica(metodo, caminho, corpo) {
   }
   if (metodo === 'POST' && tabela === 'fabrica_meta_jobs') {
     const ids = [];
-    for (const l of linhas) ids.push(await chamar('POST', '/fabrica/robo/meta-jobs', l));
+    for (const l of linhas) ids.push(await chamar('POST', '/fabrica/robo/meta-jobs', { ...l, erro: cortar(l.erro, 2000) }));
     return respostaMinima(201, ids);
   }
   if (metodo === 'PATCH' && tabela === 'fabrica_looks') {
     const { valor } = chaveDe(caminho, 'chave');
-    await chamar('PATCH', `/fabrica/robo/looks/${encodeURIComponent(valor)}`, soCampos(corpo, ['preview_url']));
+    // look sem linha: o PATCH do PostgREST mudava 0 linhas e seguia; a rota dá 404
+    await chamar('PATCH', `/fabrica/robo/looks/${encodeURIComponent(valor)}`, soCampos(corpo, ['preview_url']), { aceitar404: true });
     return respostaMinima(204);
   }
   if (metodo === 'PATCH' && tabela === 'fabrica_jobs') {
@@ -118,5 +125,5 @@ export const ROBOS_DA_FABRICA = ['fabrica', 'fabrica-gerar', 'fabrica-subir', 'f
 
 /** `POST /fabrica/robo/execucoes` com o corpo que `registrarExecucao` monta. */
 export async function registrarExecucaoNaApi(corpo) {
-  return chamar('POST', '/fabrica/robo/execucoes', corpo);
+  return chamar('POST', '/fabrica/robo/execucoes', { ...corpo, detalhe: cortar(corpo.detalhe, 500) });
 }
