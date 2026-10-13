@@ -203,6 +203,8 @@ const FRASES_DOS_CODIGOS = {
   tipo_invalido: 'Esta ação não está disponível.',
   campanhaId_invalido: 'Não achei esta campanha.',
   acao_invalida: 'Esta ação não está disponível.',
+  conta_invalida: 'Escolha uma marca para pedir à IA.',
+  insert_falhou: 'Não consegui registrar o pedido. Tente de novo em instantes.',
 }
 
 export function fraseDoCorpo(corpo) {
