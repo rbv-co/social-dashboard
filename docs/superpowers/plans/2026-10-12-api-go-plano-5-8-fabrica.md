@@ -130,4 +130,423 @@ docs/migracao-go/NOTAS-DA-IMPLANTACAO.md                 # seção do 5.8
 
 ---
 
-<!-- EM ESCRITA: Tasks 1–10, inventário, paralelização, Rulings, achados e cobertura vêm nos próximos commits. -->
+### Task 1: D0 — fatia 5.8 do esquema de produção nos testes
+
+**Revisor:** opus. **Depende de:** 5.1 Task 1 (carregador, `usuarios`, `profiles`), 5.7 Task 1 (`fabrica_marcas`).
+
+**(a) Contrato**
+- `esquema/01-tabelas-5-08.sql` (abaixo): as 8 tabelas da linha 5.8 que faltam (`fabrica_marcas` já está em `01-tabelas-5-07.sql`, Ruling 5.7-1), cada bloco com a migration de origem. Todas as 8 têm DDL no repositório (`db/migrations/014`–`030` e `2026-09-09-fabrica-loja-iguatemi.sql`): nenhum presumido. FKs de `auth.users` viram `public.usuarios` (como no dump limpo, `ops/migracao/limpar-dump.mjs:64`). `fabrica_lojas.marca_id` e `fabrica_publicos.marca_id` apontam para a `fabrica_marcas` do 5.7 (carrega antes: ordem do nome).
+- Nenhuma função, gatilho nem `03-funcoes-5-08.sql`: o levantamento não tem gatilho nem função sobre `fabrica_*` (`grep fabrica levantamento/03-triggers.csv` = vazio). O comentário "setado no trigger" de `021_fabrica_campanhas_status.sql:6` é antigo: o `status` nasce do default.
+- As colunas aposentadas não entram (`fabrica_criativos.candidato_id`, `fabrica_rodadas`, `fabrica_candidatos`: `019_fabrica_remove_f1.sql`).
+
+**(b) Testes de aceitação** (`TestFatiaDaFabrica`, `esquema_fabrica_test.go`, num `testebanco.ComEsquemaDeProducao`)
+- As 9 tabelas existem (`to_regclass`), com `fabrica_marcas` vinda do 5.7.
+- Nenhum gatilho nelas: `select count(*) from pg_trigger g join pg_class c on c.oid = g.tgrelid where not g.tgisinternal and c.relname like 'fabrica\_%'` = `0`.
+- Defaults: `insert into fabrica_campanhas (nome) values ('x') returning status, objetivo, desconto_tipo, parcelas` = `gerando|engajamento|fixo|10`; `insert into fabrica_jobs (tipo) values ('gerar') returning status, params::text` = `enfileirado|{}`; `fabrica_looks` nova com `excluido = false`, `tipo = 'codigo'`; `fabrica_publicos` nova com `idade_min 18`, `idade_max 65`, `generos '{}'`.
+- FKs: `delete from fabrica_campanhas where id = <C>` leva os criativos dela (`on delete cascade`); `delete from fabrica_marcas where id = <M>` deixa o público dela com `marca_id` nulo (`on delete set null`); `fabrica_jobs.criado_por` e `fabrica_campanhas.criado_por` inexistentes → `23503`; `fabrica_lojas.marca_id` inexistente → `23503`.
+- Tipos que as rotas presumem: `select format_type(atttypid, atttypmod) from pg_attribute where attrelid = 'fabrica_lojas'::regclass and attname = 'deposito_id'` = `text` (e `canal_loja_id` = `text`, `geo_cities` = `jsonb`, `fabrica_criativos.preco_de` = `numeric`, `fabrica_publicos.generos` = `integer[]`, `fabrica_looks.objetivos` = `text[]`, `fabrica_meta_jobs.payload` = `jsonb`).
+- Mutações que têm de reprovar: tirar o `on delete cascade` de `fabrica_criativos.campanha_id` (o apagar da Task 6 deixaria criativos órfãos; aqui o caso do cascade); declarar `fabrica_marcas` de novo nesta fatia (a carga quebra: `42P07`); `deposito_id bigint` em `fabrica_lojas` (o teste de tipo e a Task 7 reprovam).
+
+**(c) Arquivos:** Create `api/internal/testebanco/esquema/01-tabelas-5-08.sql`, `api/internal/testebanco/esquema_fabrica_test.go`.
+
+**(d) Dependências:** 5.1 Task 1; 5.7 Task 1.
+
+- [ ] **Step 1: A DDL da fatia.** Crie `api/internal/testebanco/esquema/01-tabelas-5-08.sql`:
+
+```sql
+-- FATIA 5.8 do esquema de produção para os testes (D0 reconstruído: Rulings 5.1-1, 5.7-1 e 5.8-1).
+-- Carrega depois de 01-tabelas-5-07.sql (que declara fabrica_marcas: NÃO redeclarar aqui; coluna que
+-- faltar entra com `alter table public.fabrica_marcas add column if not exists …`). Nenhum gatilho nem
+-- função de produção nestas tabelas (levantamento/03-triggers.csv e 02-funções.csv). FKs de auth.users
+-- viram public.usuarios (ops/migracao/limpar-dump.mjs:64). Todas com DDL no repositório: sem presumido.
+
+-- db/migrations/014_fabrica_anuncios.sql:6-11 + 018_fabrica_marcas_lojas.sql:19-22
+create table public.fabrica_lojas (
+  deposito_id   text primary key,
+  nome          text not null,
+  ativo         boolean not null default true,
+  ordem         int not null default 0,
+  marca_id      uuid references public.fabrica_marcas(id),
+  whatsapp      text,
+  geo_cities    jsonb,
+  canal_loja_id text
+);
+
+-- db/migrations/015_fabrica_criativos.sql:2-9 + 017_fabrica_jobs_lifecycle.sql:22-23
+-- + 021_fabrica_campanhas_status.sql:2-4 (criado_por: auth.users → usuarios) + 022_fabrica_objetivos.sql:2
+create table public.fabrica_campanhas (
+  id            uuid primary key default gen_random_uuid(),
+  nome          text not null,
+  desconto_tipo text not null default 'fixo',
+  desconto_pct  numeric,
+  parcelas      int not null default 10,
+  created_at    timestamptz not null default now(),
+  fechada_em    timestamptz,
+  purgado_em    timestamptz,
+  status        text not null default 'gerando',
+  job_id        uuid,
+  criado_por    uuid references public.usuarios(id),
+  objetivo      text not null default 'engajamento'
+);
+
+-- db/migrations/015_fabrica_criativos.sql:11-25 sem candidato_id (019_fabrica_remove_f1.sql:2)
+-- + 017:24 (purgado_em) + 020_fabrica_criativos_legenda.sql:2 + 029_fabrica_criativos_sku.sql:4
+create table public.fabrica_criativos (
+  id           uuid primary key default gen_random_uuid(),
+  campanha_id  uuid references public.fabrica_campanhas(id) on delete cascade,
+  arquetipo    text not null,
+  template     text not null,
+  formato      text not null,
+  variante     text,
+  preco_de     numeric,
+  preco_por    numeric,
+  storage_path text,
+  url          text,
+  escolhido    boolean not null default false,
+  created_at   timestamptz not null default now(),
+  purgado_em   timestamptz,
+  legenda      text,
+  sku          text
+);
+create index idx_fab_criativos_campanha on public.fabrica_criativos (campanha_id);
+
+-- db/migrations/016_fabrica_meta_jobs.sql:2-15
+create table public.fabrica_meta_jobs (
+  id               uuid primary key default gen_random_uuid(),
+  conta_id         uuid,
+  ad_account_id    text,
+  loja             text,
+  tipo             text,
+  meta_campaign_id text,
+  adset_ids        jsonb,
+  ad_ids           jsonb,
+  payload          jsonb,
+  status           text not null default 'criado',
+  erro             text,
+  created_at       timestamptz not null default now()
+);
+
+-- db/migrations/017_fabrica_jobs_lifecycle.sql:3-14 (criado_por: auth.users → usuarios)
+create table public.fabrica_jobs (
+  id            uuid primary key default gen_random_uuid(),
+  tipo          text not null,
+  params        jsonb not null default '{}'::jsonb,
+  status        text not null default 'enfileirado',
+  github_run_id text,
+  resultado     jsonb,
+  erro          text,
+  criado_por    uuid references public.usuarios(id),
+  created_at    timestamptz not null default now(),
+  updated_at    timestamptz not null default now()
+);
+
+-- db/migrations/022_fabrica_objetivos.sql:4-18
+create table public.fabrica_objetivos (
+  chave                text primary key,
+  rotulo               text not null,
+  descricao            text not null default '',
+  meta_objective       text not null,
+  optimization_goal    text not null,
+  billing_event        text not null default 'IMPRESSIONS',
+  destination_type     text,
+  promoted_object_tipo text not null default 'none',
+  cta_type             text not null default 'LEARN_MORE',
+  looks                text[] not null default '{}',
+  pede_desconto        boolean not null default true,
+  ativo                boolean not null default true,
+  ordem                int not null default 0
+);
+
+-- db/migrations/023_fabrica_publicos.sql:2-15
+create table public.fabrica_publicos (
+  id               uuid primary key default gen_random_uuid(),
+  nome             text not null,
+  marca_id         uuid references public.fabrica_marcas(id) on delete set null,
+  geo              jsonb not null default '{}'::jsonb,
+  idade_min        int not null default 18,
+  idade_max        int not null default 65,
+  generos          int[] not null default '{}',
+  interesses       jsonb not null default '[]'::jsonb,
+  custom_audiences jsonb not null default '[]'::jsonb,
+  ativo            boolean not null default true,
+  criado_por       uuid,
+  created_at       timestamptz not null default now()
+);
+
+-- db/migrations/024_fabrica_looks.sql:2-15 + 030_fabrica_looks_excluido.sql:4
+create table public.fabrica_looks (
+  chave             text primary key,
+  nome              text not null,
+  arquetipo         text not null,
+  objetivos         text[] not null default '{}',
+  ativo             boolean not null default true,
+  ordem             int not null default 0,
+  preview_url       text,
+  tipo              text not null default 'codigo',
+  canva_formato_map jsonb not null default '{}'::jsonb,
+  campo_map         jsonb not null default '{}'::jsonb,
+  criado_por        uuid,
+  created_at        timestamptz not null default now(),
+  excluido          boolean not null default false
+);
+```
+
+- [ ] **Step 2: O teste.** `api/internal/testebanco/esquema_fabrica_test.go` com `TestFatiaDaFabrica` (casos de (b); cada inserção numa transação desfeita, como `TestFatiaDoTrafego` do 5.7; usuário de FK criado em `usuarios` no começo).
+- [ ] **Step 3:** `cd api && gofmt -l ./internal && go test -count=1 -run 'TestFatia|TestEsquema' ./internal/testebanco/` PASS (inclui o teste de nomes de dois dígitos do 5.1); mutações reprovam.
+- [ ] **Step 4: Commit** `test(api): D0 — fatia 5.8 do esquema (as 8 tabelas da Fábrica; fabrica_marcas fica no 5.7)` (+ `Co-Authored-By`).
+
+---
+
+### Task 2: `internal/github` — despacho de workflow com o PAT em variável de ambiente
+
+**Revisor:** opus. **Depende de:** nada (pacote sem banco).
+
+**(a) Contrato**
+- `github.Disparos` é a lista FECHADA (Ruling 5.8-4): nome → repositório, arquivo do workflow, ref e entradas aceitas, cada entrada com o seu formato. O pedido escolhe só o NOME e os VALORES das entradas declaradas; entrada faltando, sobrando ou fora do formato = `ErrEntrada` sem chamada. Hoje uma entrada: `"fabrica"` (`fabrica.yml`, `main`, `job_id` uuid). O 5.10 acrescenta `"vessel-fotos"` (`fotos-do-selo.yml`) e `"vessel-cartoes"` (`cartoes-ean.yml`), sem entradas; o Plano 6, as dele. O Conteúdo (5.9) vai para a VPS e NÃO usa este pacote.
+- `Novo(token)`: token SÓ do chamador (que o lê de `config.GitHubPAT` = `GITHUB_PAT`). `http.Client` com `Timeout` de 15 s e `CheckRedirect` que NÃO segue (o `Authorization` nunca vai a outro host; 3xx = `Inesperado`). URL base `https://api.github.com` em campo não exportado (só os testes do pacote trocam).
+- `Disparar`: `POST /repos/<repo>/actions/workflows/<arquivo>/dispatches` com `{"ref":…,"inputs":{…}}` (sem `inputs` quando não há entradas), cabeçalhos `Authorization: Bearer`, `Accept: application/vnd.github+json`, `X-GitHub-Api-Version: 2022-11-28`, `User-Agent: api-central`. 2xx = sucesso (204 é o de hoje). `Cancelar`: `POST /repos/<repo>/actions/runs/<runID>/cancel`; `runID` só dígitos (1–20); 409 ("já terminou") conta como sucesso (idempotente).
+- Classes (`*Erro`; Ruling 5.8-5): 401 → `TokenInvalido`; 403 com `X-RateLimit-Remaining: 0` ou `Retry-After`, e 429 → `Limite` (`EsperarAte` de `Retry-After` ou `X-RateLimit-Reset`, padrão 1 min); outro 403 → `SemPermissao`; 404 → `NaoEncontrado`; 422 → `Recusado`; 5xx → `Indisponivel`; sem resposta: DNS ou conexão recusada → `Indisponivel` (o pedido não saiu), prazo/rede depois de conectar → `Incerto` (pode ter chegado); outro status → `Inesperado`. Nenhuma repetição automática: um despacho repetido acordaria o robô duas vezes (Ruling 5.8-5).
+- O corpo de resposta do GitHub é lido até 64 KiB e descartado; `Erro.Error()` = `github: <classe> (<status>)`: sem URL, sem token, sem corpo.
+- `config.Config.GitHubPAT` (`GITHUB_PAT`, aparado) entra em `Segredos()`.
+
+```go
+// Package github dispara workflows do GitHub Actions e cancela execuções com um token pessoal (PAT) que
+// SÓ vem do chamador (config.GitHubPAT = GITHUB_PAT). Lista FECHADA: o pedido escolhe o nome de um
+// Disparo e os valores das entradas declaradas; repositório, arquivo e ref são texto deste arquivo.
+// Consumidores: fabrica (5.8), retaguardas da Vessel (5.10), Plano 6. Novo consumidor = uma entrada em
+// Disparos e o caso dela em TestDispararListaFechada (Ruling 5.8-4).
+package github
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"maps"
+	"net"
+	"net/http"
+	"regexp"
+	"slices"
+	"strconv"
+	"strings"
+	"syscall"
+	"time"
+)
+
+// repoDoPainel: o repositório dos workflows (o GITHUB_REPO das edges). Constante: nunca do pedido.
+const repoDoPainel = "rbv-co/social-dashboard"
+
+var (
+	reUUID  = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+	reRunID = regexp.MustCompile(`^[0-9]{1,20}$`)
+
+	reRepo     = regexp.MustCompile(`^[a-z0-9-]{1,39}/[a-z0-9._-]{1,100}$`)
+	reWorkflow = regexp.MustCompile(`^[a-z0-9-]{1,80}\.ya?ml$`)
+	reRef      = regexp.MustCompile(`^[a-z0-9][a-z0-9._/-]{0,99}$`)
+)
+
+// Disparo é um workflow que a API pode acordar. Entradas: nome do input → formato aceito (todas
+// obrigatórias; nenhuma outra).
+type Disparo struct {
+	Repo, Workflow, Ref string
+	Entradas            map[string]*regexp.Regexp
+}
+
+// Disparos: a lista fechada. 5.10: "vessel-fotos" (fotos-do-selo.yml) e "vessel-cartoes" (cartoes-ean.yml).
+var Disparos = map[string]Disparo{
+	"fabrica": {Repo: repoDoPainel, Workflow: "fabrica.yml", Ref: "main", Entradas: map[string]*regexp.Regexp{"job_id": reUUID}},
+}
+
+var (
+	ErrSemToken     = errors.New("github: GITHUB_PAT ausente")
+	ErrDesconhecido = errors.New("github: disparo fora da lista")
+	ErrEntrada      = errors.New("github: entrada inválida")
+)
+
+type Classe string
+
+const (
+	TokenInvalido Classe = "token_invalido" // 401: token vencido ou revogado
+	SemPermissao  Classe = "sem_permissao"  // 403: token sem "Actions: Read and write" no repositório
+	NaoEncontrado Classe = "nao_encontrado" // 404: workflow fora da ref, repositório errado, token sem acesso
+	Recusado      Classe = "recusado"       // 422: input que o workflow não declara, workflow sem workflow_dispatch
+	Limite        Classe = "limite"         // 429 ou 403 de limite
+	Indisponivel  Classe = "indisponivel"   // 5xx, DNS, conexão recusada: o pedido NÃO foi aceito
+	Incerto       Classe = "incerto"        // sem resposta depois de conectar: pode ter sido aceito
+	Inesperado    Classe = "inesperado"     // 3xx (não seguimos) ou status fora da lista
+)
+
+// Erro: a falha classificada. Nunca carrega URL, token nem o corpo do GitHub.
+type Erro struct {
+	Classe     Classe
+	Status     int           // 0 = sem resposta
+	EsperarAte time.Duration // só em Limite
+}
+
+func (e *Erro) Error() string { return fmt.Sprintf("github: %s (%d)", e.Classe, e.Status) }
+
+// Cliente fala com a API REST do GitHub. Zero valor não serve: use Novo.
+type Cliente struct {
+	token string
+	base  string // https://api.github.com; só os testes deste pacote trocam
+	http  *http.Client
+}
+
+func Novo(token string) *Cliente {
+	return &Cliente{token: strings.TrimSpace(token), base: "https://api.github.com", http: &http.Client{
+		Timeout: 15 * time.Second,
+		// nunca segue: o Authorization não pode ir a outro host (3xx vira Inesperado)
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}}
+}
+
+// Configurado: há token. Sem ele, quem chama responde 503 ANTES de gravar qualquer coisa.
+func (c *Cliente) Configurado() bool { return c != nil && c.token != "" }
+
+func (d Disparo) conferir(entradas map[string]string) error {
+	if !slices.Equal(slices.Sorted(maps.Keys(entradas)), slices.Sorted(maps.Keys(d.Entradas))) {
+		return ErrEntrada
+	}
+	for k, v := range entradas {
+		if !d.Entradas[k].MatchString(v) {
+			return ErrEntrada
+		}
+	}
+	return nil
+}
+
+// Disparar acorda o workflow `nome` com as entradas. Sem repetição: quem chama decide o que fazer
+// com cada classe (Ruling 5.8-5).
+func (c *Cliente) Disparar(ctx context.Context, nome string, entradas map[string]string) error {
+	d, ok := Disparos[nome]
+	if !ok {
+		return ErrDesconhecido
+	}
+	if err := d.conferir(entradas); err != nil {
+		return err
+	}
+	if !c.Configurado() {
+		return ErrSemToken
+	}
+	corpo := map[string]any{"ref": d.Ref}
+	if len(entradas) > 0 {
+		corpo["inputs"] = entradas
+	}
+	j, err := json.Marshal(corpo)
+	if err != nil {
+		return err
+	}
+	return c.chamar(ctx, "/repos/"+d.Repo+"/actions/workflows/"+d.Workflow+"/dispatches", j)
+}
+
+// Cancelar pede o cancelamento da execução runID (lida do banco, gravada pelo robô) no repositório do
+// disparo `nome`. Execução já terminada (409) conta como cancelada.
+func (c *Cliente) Cancelar(ctx context.Context, nome, runID string) error {
+	d, ok := Disparos[nome]
+	if !ok {
+		return ErrDesconhecido
+	}
+	if !reRunID.MatchString(runID) {
+		return ErrEntrada
+	}
+	if !c.Configurado() {
+		return ErrSemToken
+	}
+	err := c.chamar(ctx, "/repos/"+d.Repo+"/actions/runs/"+runID+"/cancel", nil)
+	var e *Erro
+	if errors.As(err, &e) && e.Status == http.StatusConflict {
+		return nil
+	}
+	return err
+}
+
+func (c *Cliente) chamar(ctx context.Context, caminho string, corpo []byte) error {
+	var leitor io.Reader = http.NoBody
+	if corpo != nil {
+		leitor = bytes.NewReader(corpo)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+caminho, leitor)
+	if err != nil {
+		return &Erro{Classe: Inesperado}
+	}
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+	req.Header.Set("User-Agent", "api-central")
+	if corpo != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return semResposta(err)
+	}
+	defer resp.Body.Close()
+	io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10)) // o corpo do GitHub não sai daqui
+	return classificar(resp)
+}
+
+func classificar(resp *http.Response) error {
+	s := resp.StatusCode
+	limite := resp.Header.Get("X-RateLimit-Remaining") == "0" || resp.Header.Get("Retry-After") != ""
+	switch {
+	case s >= 200 && s < 300:
+		return nil
+	case s == http.StatusTooManyRequests || (s == http.StatusForbidden && limite):
+		return &Erro{Classe: Limite, Status: s, EsperarAte: esperar(resp.Header)}
+	case s == http.StatusUnauthorized:
+		return &Erro{Classe: TokenInvalido, Status: s}
+	case s == http.StatusForbidden:
+		return &Erro{Classe: SemPermissao, Status: s}
+	case s == http.StatusNotFound:
+		return &Erro{Classe: NaoEncontrado, Status: s}
+	case s == http.StatusUnprocessableEntity:
+		return &Erro{Classe: Recusado, Status: s}
+	case s >= 500:
+		return &Erro{Classe: Indisponivel, Status: s}
+	}
+	return &Erro{Classe: Inesperado, Status: s}
+}
+
+func esperar(h http.Header) time.Duration {
+	if n, err := strconv.Atoi(h.Get("Retry-After")); err == nil && n >= 0 {
+		return time.Duration(n) * time.Second
+	}
+	if n, err := strconv.ParseInt(h.Get("X-RateLimit-Reset"), 10, 64); err == nil {
+		if d := time.Until(time.Unix(n, 0)); d > 0 {
+			return d
+		}
+	}
+	return time.Minute
+}
+
+// semResposta: DNS e conexão recusada = o pedido não saiu; o resto (prazo, conexão caída) = incerto.
+// O *url.Error (que tem o host e o caminho) não sai daqui.
+func semResposta(err error) error {
+	var dns *net.DNSError
+	if errors.As(err, &dns) || errors.Is(err, syscall.ECONNREFUSED) {
+		return &Erro{Classe: Indisponivel}
+	}
+	return &Erro{Classe: Incerto}
+}
+```
+
+E em `api/internal/config/config.go`: o campo `GitHubPAT string // GITHUB_PAT: token do GitHub para disparar workflows (fabrica-trigger; 5.10; Plano 6); é segredo`, a leitura `GitHubPAT: strings.TrimSpace(os.Getenv("GITHUB_PAT")),` e `c.GitHubPAT` na lista de `Segredos()`.
+
+**(b) Testes de aceitação** (`github_test.go`, interno; o GitHub de mentira é um `httptest.Server` que guarda método, caminho, cabeçalhos e corpo de cada pedido e responde o status/cabeçalhos do caso; `c := Novo("SEGREDO-pat"); c.base = srv.URL`)
+- `TestListaFechadaBemFormada`: toda entrada de `Disparos` passa em `reRepo`, `reWorkflow`, `reRef`, sem `..`, e tem formato não-nulo para cada entrada (pega erro de digitação de quem acrescentar).
+- `TestDispararListaFechada`: `Disparar(ctx, "fabrica", {"job_id": <uuid>})` → 1 pedido `POST /repos/rbv-co/social-dashboard/actions/workflows/fabrica.yml/dispatches`, corpo `{"inputs":{"job_id":"<uuid>"},"ref":"main"}`, `Authorization: Bearer SEGREDO-pat`, `Accept`, `X-GitHub-Api-Version`; nil. Negados com **0 pedidos**: `"outro"` (`ErrDesconhecido`); sem `job_id`, com `job_id` `"../x"`, com entrada a mais `{"job_id":…, "ref":"evil"}` (`ErrEntrada`); `Novo("")` e `Novo("   ")` (`ErrSemToken`, e `Configurado()` falso).
+- `TestErrosPorClasse` (tabela): 204 → nil; 200 → nil; 401 → `TokenInvalido`; 403 → `SemPermissao`; 403 + `X-RateLimit-Remaining: 0` + `X-RateLimit-Reset: <agora+120>` → `Limite` com `EsperarAte` entre 100 s e 120 s; 429 + `Retry-After: 30` → `Limite` 30 s; 404 → `NaoEncontrado`; 422 → `Recusado`; 500 e 503 → `Indisponivel`; 302 com `Location: <outro httptest>` → `Inesperado` e o OUTRO servidor com **0 pedidos**; servidor que dorme 200 ms com `c.http.Timeout = 50ms` → `Incerto`; servidor fechado (`srv.Close()` antes) → `Indisponivel` (conexão recusada). Cada caso: `errors.As(err, &e)` e `e.Status`.
+- `TestCancelar`: `Cancelar(ctx, "fabrica", "123")` → `POST /repos/rbv-co/social-dashboard/actions/runs/123/cancel` sem corpo; 202 → nil; 409 → nil; 404 → `NaoEncontrado`; runID `"12/../../x"`, `""`, `"1a"` → `ErrEntrada` com 0 pedidos.
+- `TestTokenNuncaSai`: para cada classe da tabela acima, `err.Error()` não contém `SEGREDO-pat`, `srv.URL` nem o corpo que o servidor mandou (`{"message":"Bad credentials SEGREDO-corpo"}`); `slog` capturado (`slog.SetDefault` com um `TextHandler` num buffer durante o teste) não contém `SEGREDO`.
+- `config_test.go`: `GITHUB_PAT="  SEGREDO-x  "` → `GitHubPAT == "SEGREDO-x"` e `slices.Contains(c.Segredos(), "SEGREDO-x")`.
+- Mutações que têm de reprovar: tirar o `CheckRedirect` (o 302 entrega o token ao outro servidor: o caso conta 1 pedido lá); trocar `ErrEntrada` por aceitar entrada a mais (o `"ref":"evil"` chega ao GitHub); tirar o `&& limite` do 403 (o 403 comum vira `Limite`); tratar `Incerto` como `Indisponivel` (o caso do prazo reprova); tirar `c.GitHubPAT` de `Segredos()`.
+
+**(c) Arquivos:** Create `api/internal/github/github.go`, `api/internal/github/github_test.go`; Modify `api/internal/config/config.go`, `api/internal/config/config_test.go`.
+
+**(d) Dependências:** nenhuma.
+
+- [ ] **Step 1:** Testes; ver falhar (o pacote não existe). - [ ] **Step 2:** Implementar (código de (a)). - [ ] **Step 3:** `gofmt -l ./internal && go vet ./internal/github/ ./internal/config/ && go test -count=1 -race ./internal/github/ ./internal/config/` PASS; mutações reprovam. - [ ] **Step 4:** Commit `feat(api): cliente internal/github — lista fechada de workflows, PAT só de GITHUB_PAT, erros por classe e sem seguir redirecionamento` (+ `Co-Authored-By`).
+
+---
