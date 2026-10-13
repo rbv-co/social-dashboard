@@ -2747,3 +2747,336 @@ func TestMaterialDoSku(t *testing.T) {
 - [ ] **Step 1:** Teste; ver falhar (404). - [ ] **Step 2:** A rota e os ajustes das varreduras. - [ ] **Step 3:** `cd api && gofmt -l ./internal && go vet ./internal/fabrica/ && go test -count=1 -race ./internal/fabrica/` PASS; mutações reprovam. - [ ] **Step 4: Commit** `feat(api): GET /fabrica/robo/material-do-sku — a pílula de garantia da Fábrica lê o material do lote (contrato do 5.8)` (+ `Co-Authored-By`).
 
 ---
+
+### Task 8: Montagem, varreduras, `conferir`, notas e API-PRONTA
+
+**Revisor:** opus. **Depende de:** Tasks 3–7.
+
+**(a) Contrato**
+- `vessel.Montar(r, p)` registra as **6 leituras** no grupo de DOMÍNIO de `web.Rotas` (`auth.Exigir` → `comPrazo(PrazoDominio)` → `autz.ComEscopo`), depois do `fabrica.Montar`. As 16 RPCs entram por `web.FuncoesRPC` (`vessel.FuncoesRPC, // Plano 5.10`) e SAEM de `RPCPendentes` no mesmo commit (o bloco `// 5.10 (autenticidade): 16` inteiro; `TestListasDeRPCFecham` confere a soma das 92).
+- `POST /vessel-baixar-cartao` no grupo de SESSÃO com `autz.ComEscopo(p)` e `comPrazo(PrazoCartao)` (`PrazoCartao = 60 * time.Second`, ao lado de `PrazoIA`/`PrazoMapa`), com `zoho.Novo(p)`. O portão do selo está DENTRO do handler (como o `/bling-proxy` e o `/custo-*`): `TestNenhumaRotaNovaFicaAberta` prova o 403 sem módulo. `TestPrazosPorRotaPelaMontagemReal` ganha `"POST /vessel-baixar-cartao": PrazoCartao` e as 6 leituras com `PrazoDominio`.
+- **Os dois testes do 5.0 que usavam `vessel_gerar_lote` como "um nome pendente qualquer"** (`TestRPCRegistradaPelaMontagemReal` em `web/rotas_test.go` e `TestRotasPanicaComRPCRegistradaErrada` em `web/rpc_lista_test.go`) passam a usar `RPCPendentes[len(RPCPendentes)-1]` (o último pendente, de um sub-plano futuro): com o 5.10, `vessel_gerar_lote` registrada de verdade faria a montagem panicar por nome duplicado (ensaiado). A intenção deles (uma função movida de pendente para registrada monta e responde; as erradas panicam) continua. Quando `RPCPendentes` esvaziar (Plano 8), troque por uma função de teste fora das listas.
+- `vessel/rotas_test.go`: `TestNadaVazaDoSelo` varre TODA rota de `Montar` (chi.Walk) e TODA função de `FuncoesRPC` com um corpo válido (`corpos`): admin, leitor e chave recebem `[]`/conta 0 nas leituras e 403 nas RPCs; o impersonado lê tudo (leituras e as 2 RPCs de leitura) e recebe 403 com a frase nas 14 que gravam; a foto não muda. Rota ou função nova sem caso aqui faz o teste falhar.
+- `cmd/api/conferir.go`: `colunasDoWorker` com as 8 tabelas que as rotas, o cartão e o material-do-sku leem (inclusive as 2 colunas PRESUMIDAS de `vessel_registros`, que só o banco restaurado confirma) e `acessos_conexoes` (o `internal/zoho`); `tiposDoWorker` com os casts (`vessel_pecas.codigo` texto, `vessel_cartao_pedidos.pecas` `text[]`, `garantia_ate` e `nascimento` `date`); `gatilhosDoWorker` com os 6 gatilhos vivos; e `conferirDisparos` (a `disparar_robo` tem de ser a da 00007 — grava em `disparos_pendentes`, sem `net.http_post` — e os 2 gatilhos removidos em 10/10 não podem ter voltado). As 16 RPCs NÃO entram em `funcoesDoWorker`: `conferirRPC` (5.0) confere cada função de `web.FuncoesRPC`.
+- `cmd/api/conferir_test.go`: a fixture `esquemaCompleto` cria as funções de `web.FuncoesRPC` pela própria declaração (o bloco do plano 5.9, Task 9 — **se o 5.9 já entrou, ele já está lá: não duplique**); sem isso todo teste do `conferir` acusa as 16 (ensaiado). `TestConferirNaFatiaD0NaoAcusaOPlano510` e `TestConferirDisparos`.
+- `internal/github/github.go`: só os comentários — o do pacote ("Consumidores: fabrica (5.8), Plano 6") e o de `Disparos` ("O 5.10 não acrescenta entrada: os robôs do selo rodam na VPS e o Actions não alcança o banco (Ruling 5.10-2); o Plano 6, as dele."). Nenhuma entrada nova.
+- **Ensaiado** (13/10, a árvore com as Tasks 1–8): `go test ./internal/web/ ./cmd/api ./internal/vessel ./internal/fabrica` passa; `go test -race ./...` na seção "Verificação final".
+
+```go
+package vessel
+
+import (
+	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+// Montar registra as rotas de tabela do painel de Autenticidade no grupo de DOMÍNIO de web.Rotas (depois de
+// auth.Exigir, do prazo de 30 s e de autz.ComEscopo): as 6 leituras. As 16 RPCs entram por FuncoesRPC
+// (web.FuncoesRPC); POST /vessel-baixar-cartao (Cartao) tem prazo próprio e web.Rotas o monta fora do grupo de
+// domínio. Nenhuma escrita de tabela: em produção as 11 tabelas do selo só têm policy de SELECT.
+func Montar(r chi.Router, p *pgxpool.Pool) { montarLeituras(r, p) }
+```
+
+```go
+package vessel
+
+import (
+	"net/http"
+	"strings"
+	"testing"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+// corpos: um pedido VÁLIDO por RPC do selo. Função nova sem corpo aqui faz as varreduras falharem.
+var corpos = map[string]string{
+	"vessel_alertas":                    `{}`,
+	"vessel_fila_de_registros":          `{}`,
+	"vessel_baixar_garantia":            `{"p_codigo":"VBAAAA0003","p_motivo":"pedido da cliente"}`,
+	"vessel_baixar_peca":                `{"p_codigo":"VBAAAA0002","p_motivo":"extraviada"}`,
+	"vessel_decidir_pedido_de_registro": `{"p_pedido":"` + PR2 + `","p_estado":"aprovado","p_quem_decidiu":"na_mao"}`,
+	"vessel_definir_material_do_lote":   `{"p_lote":"` + L1 + `","p_material":"couro"}`,
+	"vessel_desfazer_baixa":             `{"p_codigo":"VBTTTT0002"}`,
+	"vessel_desmarcar_gravada":          `{"p_codigo":"VBAAAA0001","p_motivo":null}`,
+	"vessel_editar_lote":                `{"p_lote":"` + L1 + `","p_modelo":"Linear","p_cor":"Caramelo","p_sku":"SS0001HB.S1","p_fabricado_em":null,"p_quantidade":4}`,
+	"vessel_excluir_lote":               `{"p_lote":"` + L2 + `"}`,
+	"vessel_excluir_peca":               `{"p_codigo":"VBAAAA0002"}`,
+	"vessel_gerar_lote":                 `{"p_modelo":"Linear","p_cor":null,"p_sku":"SS0001HB.S1","p_quantidade":1,"p_fabricado_em":null,"p_fotos":null}`,
+	"vessel_marcar_gravada":             `{"p_codigo":"VBAAAA0002"}`,
+	"vessel_pedir_cartoes":              `{"p_pecas":["VBAAAA0002"]}`,
+	"vessel_sobrescrever_etiqueta":      `{"p_codigo_antigo":"VBAAAA0001","p_codigo_novo":"VBAAAA0002","p_destino":"fila","p_motivo":"rasgou"}`,
+	"vessel_trocar_dono":                `{"p_codigo":"VBAAAA0003","p_nome":"Bia","p_cpf":"11144477735","p_whatsapp":"11988887777","p_motivo":"venda","p_confirmacao":"VBAAAA0003"}`,
+}
+
+// tudo: as 6 leituras de Montar e as 16 RPCs, como web.Rotas as monta no grupo de domínio.
+func tudo(r chi.Router, p *pgxpool.Pool) {
+	Montar(r, p)
+	montarRPCs(r, p)
+}
+
+// Ninguém fora do selo lê nem grava nada dele, por NENHUMA rota (leitura: [] e conta 0; RPC: 403, sem efeito);
+// o "entrar como" lê tudo e não grava nada. Rota ou função nova entra sozinha (chi.Walk e FuncoesRPC).
+func TestNadaVazaDoSelo(t *testing.T) {
+	m := novoMundo(t, tudo)
+	antes := m.Um(t, fotoDoSelo)
+	lidas := 0
+	err := chi.Walk(m.H.(chi.Routes), func(metodo, rota string, _ http.Handler, _ ...func(http.Handler) http.Handler) error {
+		if metodo != http.MethodGet {
+			return nil
+		}
+		lidas++
+		for _, quem := range []string{"admin", "leitor", "chave"} {
+			w := m.Resposta(t, quem, "GET", rota+"?contar=1", "")
+			if w.Code != http.StatusOK || strings.TrimSpace(w.Body.String()) != "[]" || w.Header().Get("X-Total-Count") != "0" {
+				t.Errorf("%s GET %s = %d %s", quem, rota, w.Code, w.Body)
+			}
+		}
+		if st, b := m.Pedir(t, "impersonado", "GET", rota, ""); st != http.StatusOK || strings.TrimSpace(b) == "[]" {
+			t.Errorf("o impersonado (o alvo é do selo) não leu %s: %d %s", rota, st, b)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lidas != len(leituras) || lidas != 6 {
+		t.Errorf("leituras montadas = %d, declaradas = %d, esperava 6", lidas, len(leituras))
+	}
+	gravam := 0
+	for _, f := range FuncoesRPC {
+		corpo, ok := corpos[f.Nome]
+		if !ok {
+			t.Errorf("RPC sem corpo nas varreduras: %s", f.Nome)
+			continue
+		}
+		for _, quem := range []string{"admin", "leitor", "chave"} {
+			if st, b := m.Pedir(t, quem, "POST", "/rpc/"+f.Nome, corpo); st != http.StatusForbidden {
+				t.Errorf("%s POST /rpc/%s = %d %s", quem, f.Nome, st, b)
+			}
+		}
+		st, b := m.Pedir(t, "impersonado", "POST", "/rpc/"+f.Nome, corpo)
+		if f.SoSessaoPropria {
+			gravam++
+			if st != http.StatusForbidden || !strings.Contains(b, "Quem entrou como outra pessoa") {
+				t.Errorf("impersonado POST /rpc/%s = %d %s", f.Nome, st, b)
+			}
+		} else if st != http.StatusOK {
+			t.Errorf("impersonado lendo /rpc/%s = %d %s", f.Nome, st, b)
+		}
+	}
+	if len(FuncoesRPC) != 16 || gravam != 14 {
+		t.Errorf("RPCs = %d (%d gravam), esperava 16 (14)", len(FuncoesRPC), gravam)
+	}
+	if m.Um(t, fotoDoSelo) != antes {
+		t.Error("quem não é do selo, ou o impersonado, mudou o selo")
+	}
+}
+```
+
+Em `api/internal/web/rotas_test.go`, antes do `init`:
+
+```go
+// Plano 5.10: as 6 leituras do selo. Portão = catálogo (is_vessel_admin), provado pela matriz de `internal/vessel`
+// (TestLeiturasDoSelo, TestNadaVazaDoSelo). O cartão (POST /vessel-baixar-cartao, portão do selo DENTRO do handler)
+// e a rota de robô da Fábrica NÃO entram: TestNenhumaRotaNovaFicaAberta prova o 403 sem módulo.
+var rotas510 = []string{"GET /autenticidade/lotes", "GET /autenticidade/pecas", "GET /autenticidade/registros",
+	"GET /autenticidade/baixas", "GET /autenticidade/cartao-pedidos", "GET /autenticidade/lembretes"}
+```
+o `init` passa a `slices.Concat(rotas51, rotas57, rotas58, rotas510)` (mais as listas de quem entrou antes); em `TestPrazosPorRotaPelaMontagemReal`, `"POST /vessel-baixar-cartao": PrazoCartao` no mapa e `slices.Concat(rotas51, rotas57, rotas510)` no laço do prazo de domínio; e, no fim:
+
+```go
+// Plano 5.10: o selo pela montagem de PRODUÇÃO (web.Rotas): as leituras no grupo de domínio, as 16 RPCs registradas e
+// o cartão com o portão do selo antes do Zoho (sem conexão do Zoho no banco de teste: 503 depois do portão).
+func TestSeloPelaMontagemReal(t *testing.T) {
+	p := testebanco.ComEsquemaDeProducao(t)
+	s := auth.NovoStore(p)
+	h := Rotas(p, s, auth.NovoLimitador(), config.Config{})
+	ctx := context.Background()
+	if _, err := p.Exec(ctx, `create table if not exists acessos_conexoes (provedor text primary key, client_id text, client_secret text,
+		refresh_token text, org_id text, data_center text default '.com', escopos text, conectado_por uuid, conectado_em timestamptz,
+		atualizado_em timestamptz not null default now())`); err != nil {
+		t.Fatal(err)
+	}
+	quem := map[string]string{}
+	for i, c := range []struct{ nome, features string }{{"selo", "{autenticidade}"}, {"so-meta", "{meta}"}} {
+		id := fmt.Sprintf("5a10a000-0000-4000-a000-00000000000%d", i+1)
+		if _, err := p.Exec(ctx, `insert into usuarios (id, email) values ($1::uuid, $2::text)`, id, c.nome+"@x.com"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := p.Exec(ctx, `insert into profiles (id, email, role, features) values ($1::uuid, $2::text, 'viewer', $3::text[])`, id, c.nome+"@x.com", c.features); err != nil {
+			t.Fatal(err)
+		}
+		tok, err := s.Criar(ctx, id, "painel", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		quem[c.nome] = tok
+	}
+	if _, err := p.Exec(ctx, `insert into vessel_lotes (id, modelo, sku, quantidade) values ('5a10b000-0000-4000-a000-000000000001', 'Linear', 'SS1', 1);
+		insert into vessel_pecas (codigo, lote_id, numero_na_serie, cartao_gerado_em) values ('VBMONTA001', '5a10b000-0000-4000-a000-000000000001', 1, now())`); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		nome, quem, metodo, rota, corpo string
+		status                          int
+		tem                             string
+	}{
+		{"leitura sem sessão", "", "GET", "/autenticidade/pecas", "", 401, "nao_autenticado"},
+		{"leitura de quem não é do selo", "so-meta", "GET", "/autenticidade/pecas", "", 200, "[]"},
+		{"leitura do selo", "selo", "GET", "/autenticidade/pecas", "", 200, "VBMONTA001"},
+		{"RPC registrada, quem não é do selo", "so-meta", "POST", "/rpc/vessel_alertas", "{}", 403, "sem_permissao"},
+		{"RPC registrada, o selo", "selo", "POST", "/rpc/vessel_marcar_gravada", `{"p_codigo":"VBMONTA001"}`, 200, `"ja_estava" : false`},
+		{"cartão, quem não é do selo", "so-meta", "POST", "/vessel-baixar-cartao", `{"codigo":"VBMONTA001","face":"frente","formato":"png"}`, 403, "sem_permissao"},
+		{"cartão passa o portão e para sem o Zoho", "selo", "POST", "/vessel-baixar-cartao", `{"codigo":"VBMONTA001","face":"frente","formato":"png"}`, 503, "zoho_desconectado"},
+	} {
+		req := httptest.NewRequest(c.metodo, c.rota, strings.NewReader(c.corpo))
+		if c.quem != "" {
+			req.Header.Set("Authorization", "Bearer "+quem[c.quem])
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		if w.Code != c.status || !strings.Contains(w.Body.String(), c.tem) {
+			t.Errorf("%s: %s %s = %d %s; esperava %d com %q", c.nome, c.metodo, c.rota, w.Code, w.Body, c.status, c.tem)
+		}
+	}
+}
+```
+
+Em `api/cmd/api/conferir.go`, depois de `gatilhosDoWorker` (e `conferirDisparos, // Plano 5.10` na lista de conferências de `conferirSchema`, depois do `conferirRPC`):
+
+```go
+// conferirDisparos (Plano 5.10, Ruling 28 do mestre): a disparar_robo que vale é a da migração 00007 (grava em
+// disparos_pendentes); a de produção chamava net.http_post (pg_net não existe aqui) e, restaurada por um dump não
+// limpo ou fora de ordem, quebraria o cadastro da lista de espera do site (gatilho vessel_lista_espera_espelhar). E
+// os 2 gatilhos que acordavam o GitHub Actions (removidos de produção em 10/10) não podem voltar: o Actions não
+// alcança este banco e os robôs rodam na VPS.
+func conferirDisparos(ctx context.Context, tx pgx.Tx) ([]string, error) {
+	var faltam []string
+	var nova bool
+	if err := tx.QueryRow(ctx, `select coalesce(bool_and(prosrc like '%disparos_pendentes%' and prosrc not like '%net.http_post%'), false)
+		  from pg_proc where proname = 'disparar_robo' and pronamespace = current_schema()::regnamespace`).Scan(&nova); err != nil {
+		return nil, err
+	}
+	if !nova {
+		faltam = append(faltam, "função disparar_robo: ausente ou a de produção (pg_net): rode `api migrar` (00007) e restaure com o limpar-dump.mjs atual")
+	}
+	linhas, err := tx.Query(ctx, `select t.tgname::text from pg_trigger t join pg_class c on c.oid = t.tgrelid
+		 where not t.tgisinternal and c.relnamespace = current_schema()::regnamespace
+		   and t.tgname in ('vessel_lote_novo_pede_foto', 'vessel_cartao_pedido_novo_acorda_o_robo') order by 1`)
+	if err != nil {
+		return nil, err
+	}
+	voltaram, err := pgx.CollectRows(linhas, pgx.RowTo[string])
+	if err != nil {
+		return nil, err
+	}
+	for _, g := range voltaram {
+		faltam = append(faltam, "gatilho "+g+": removido de produção em 10/10 e de volta (acordaria o GitHub Actions, que não alcança o banco): derrube-o")
+	}
+	return faltam, nil
+}
+
+```
+
+Em `api/cmd/api/conferir_test.go`, no fim:
+
+```go
+// Plano 5.10: contra a fatia D0 (as 12 tabelas do selo, os 6 gatilhos e as 16 RPCs) e a migração 00007, o conferir
+// não acusa nada do selo nem da disparar_robo — pega erro de digitação nas listas. As 2 colunas presumidas de
+// vessel_registros estão na fatia; no banco restaurado quem as confere é o `api worker conferir`.
+func TestConferirNaFatiaD0NaoAcusaOPlano510(t *testing.T) {
+	p := testebanco.ComEsquemaDeProducao(t)
+	tabelas510 := []string{"vessel_lotes", "vessel_pecas", "vessel_registros", "vessel_baixas", "vessel_cartao_pedidos",
+		"vessel_cartao_arquivos", "vessel_lembretes", "vessel_clientes"}
+	for _, f := range faltamDe(t, p) {
+		if strings.Contains(f, "disparar_robo") || strings.Contains(f, "disparos_pendentes") || strings.Contains(f, "vessel_") && strings.Contains(f, "gatilho") {
+			t.Errorf("a fatia D0 devia satisfazer o 5.10, mas o conferir acusa %q", f)
+		}
+		for _, tb := range tabelas510 {
+			if strings.Contains(f, " "+tb+".") || strings.Contains(f, " "+tb+"(") || strings.Contains(f, "/rpc/vessel_") {
+				t.Errorf("a fatia D0 devia satisfazer o 5.10, mas o conferir acusa %q", f)
+			}
+		}
+	}
+}
+
+// Plano 5.10: a disparar_robo de produção (pg_net) e os 2 gatilhos do Actions de volta são acusados; a da 00007, não.
+func TestConferirDisparos(t *testing.T) {
+	p := testebanco.Novo(t) // as migrações já trazem a 00007
+	tem := func(trecho string) bool {
+		for _, f := range faltamDe(t, p) {
+			if strings.Contains(f, trecho) {
+				return true
+			}
+		}
+		return false
+	}
+	if tem("disparar_robo") || tem("vessel_lote_novo_pede_foto") {
+		t.Fatal("a 00007 sozinha não pode ser acusada")
+	}
+	exec(t, p, `create or replace function disparar_robo(p_robo text, p_funcao text, p_segredo text, p_body jsonb default '{}'::jsonb,
+		p_timeout integer default 120000) returns bigint language plpgsql as $f$
+		declare v bigint; begin select net.http_post(url := 'https://x') into v; return v; end $f$`)
+	exec(t, p, `create table if not exists vessel_lotes (id uuid); create function pede_foto() returns trigger language plpgsql as $f$ begin return new; end $f$;
+		create trigger vessel_lote_novo_pede_foto after insert on vessel_lotes for each row execute function pede_foto()`)
+	if !tem("função disparar_robo: ausente ou a de produção") || !tem("gatilho vessel_lote_novo_pede_foto: removido de produção") {
+		t.Errorf("o conferir não acusou a função antiga e o gatilho de volta: %v", faltamDe(t, p))
+	}
+}
+```
+
+Em `docs/migracao-go/NOTAS-DA-IMPLANTACAO.md`, ao fim:
+
+```markdown
+## Plano 5.10 — Autenticidade (selo Vessel)
+
+### Variáveis de ambiente (serviço `api`)
+Nenhuma nova. O Zoho do cartão usa a conexão de `acessos_conexoes` (provedor `zoho`, a mesma da tela de Acessos e do robô de cartões); a raiz das fotos é a padrão do robô (`ZOHO_PASTA_FOTOS` nunca foi definida nas edges).
+
+### Rotas novas
+- Com sessão, regra = catálogo (`is_vessel_admin()`: o módulo `autenticidade` em `features` ou `is_superadmin` da ficha; o papel `admin` sozinho NÃO passa): `GET /autenticidade/lotes`, `/pecas` (`?codigo=A,B`), `/registros` (SEM CPF e nascimento), `/baixas` (só as ativas), `/cartao-pedidos`, `/lembretes` (sem `token_hash`).
+- `POST /rpc/<nome>` para as 16 `vessel_*` do painel (portão = o da função; as 14 que gravam recusam "entrar como"; `vessel_decidir_pedido_de_registro` só com `p_quem_decidiu = "na_mao"` e sem `p_conferencia`).
+- `POST /vessel-baixar-cartao` (portão do selo; prazo 60 s; "entrar como" baixa).
+- `GET /fabrica/robo/material-do-sku?sku=` (só o robô da Fábrica, sessão de serviço).
+
+### A fila `disparos_pendentes` (Ruling 28 do mestre; Rulings 5.10-1 a 5.10-3)
+- A migração `00007` cria `disparos_pendentes` e troca `public.disparar_robo`: ela só grava (ou junta) um pedido pendente por robô, nunca chama rede. Quem chamava a função antiga e ainda existe no banco novo: o gatilho `vessel_lista_espera_espelhar` (cadastro da lista de espera do site). Sem a troca, todo cadastro quebrava no corte (o `pg_net` não vem).
+- O restore (`ops/migracao/restaurar.sh`) roda `api migrar` ANTES do `schema.sql`: o `limpar-dump.mjs` tira a `disparar_robo` antiga do dump (contagem `substituidas` = 2: a função e o comentário). Restaurar com um dump limpo por versão anterior do script = `function already exists`, e o restore para (é o certo).
+- Atendente: nenhum no 5.10. O Plano 6 atende `vessel-espelhar-lista` pela tarefa do espelho (`banco.AtenderDisparo`). Até lá os disparos se juntam num pedido pendente só (uma linha), e o espelho de 3 em 3 minutos do Plano 6 cobre.
+- `disparar_robo` NÃO grava mais `robos_execucoes` (a linha de cada `net.http_post`): a saúde de cada robô vem de quem o executa.
+
+### nginx
+- `location = /api/vessel-baixar-cartao { proxy_read_timeout 70s; proxy_buffering off; proxy_pass http://127.0.0.1:8080/vessel-baixar-cartao; }` (o prazo da rota é 60 s, o padrão do nginx também; o download vem em fluxo).
+
+### Antes do corte
+- `api worker conferir` no banco restaurado: colunas e tipos do 5.10 — em especial as PRESUMIDAS `vessel_registros.nascimento` (date) e `bling_atualizado_em`, sem DDL no repositório —, os 6 gatilhos do selo ligados, as 16 RPCs pelo `conferirRPC`, a `disparar_robo` da `00007` e os 2 gatilhos do Actions AUSENTES.
+- `select tgname from pg_trigger g join pg_class c on c.oid = g.tgrelid where not g.tgisinternal and c.relname like 'vessel\_%' order by 1` = os 6 do selo + `vessel_lista_espera_espelhar` + os do 5.11 (`vessel_atendimentos_atualizado`, `vessel_pessoas_atualizado`, `vessel_private_edits_funil`, `vessel_stylist*`, `vessel_rd_na_fila`). Nenhum `vessel_lote_novo_pede_foto` nem `vessel_cartao_pedido_novo_acorda_o_robo`.
+- As frases e os corpos verbatim: `select md5(string_agg(prosrc, '|' order by proname)) from pg_proc where proname in (<as 35 de 03-funcoes-5-10.sql>)` no banco restaurado = o mesmo `select` num Postgres de teste com as fatias carregadas; diferente = alguém mudou a função em produção depois do levantamento: refaça o `TestPortoesIguaisAsFuncoes` com a nova antes do corte.
+- No ensaio, numa transação desfeita: `insert into vessel_lista_espera (...) values (...)` (um cadastro de prova) não falha e deixa 1 pedido `vessel-espelhar-lista` em `disparos_pendentes`.
+- No ensaio, o botão "Baixar" de um cartão de verdade (frente e verso, PNG e PDF) pela API: o Zoho pode redirecionar o download; o cliente segue até 3 redirecionamentos `https` (Ruling 5.10-12). Se falhar com 502 `zoho_recusou` 3xx, pare e reporte.
+- A conta do robô da Fábrica (5.8) lê `GET /fabrica/robo/material-do-sku` com o token dela (um SKU com lote em canvas devolve `canvas`).
+
+### Mudanças de contrato que o Plano 7 absorve
+(ver a seção "Mudanças de contrato" do plano 5.10)
+
+### Achados para o dono
+(ver a seção "Achados para o dono" do plano 5.10)
+```
+
+Em `docs/migracao-go/API-PRONTA.md`: o **Estado** ganha "5.10"; a soma de rotas, +8 (6 leituras, o cartão, o material-do-sku) e "RPC: 17 funções registradas"; e uma seção `## Autenticidade — selo Vessel (5.10)` com uma linha por rota (o formato das outras: rota, o que substitui com arquivo:linha do inventário, portão, contrato), as 16 RPCs numa linha só (`POST /rpc/vessel_*`, com a lista, o portão e "recusas da função = 200 `{ok:false, motivo}`; portão = 403 `{"error":"sem_permissao"}`") e a linha do `material-do-sku` na seção da Fábrica.
+
+**(b) Testes de aceitação**
+- `TestNadaVazaDoSelo` (acima), `TestSeloPelaMontagemReal` (pela montagem de PRODUÇÃO: leitura sem sessão 401, de quem não é do selo `[]`, do selo com a peça; RPC registrada 403 para quem não é e `ja_estava: false` para o selo; cartão 403 para quem não é e `503 zoho_desconectado` para o selo — passou o portão e o escopo, e não há conexão no banco de teste), `TestNenhumaRotaNovaFicaAberta` e `TestPrazosPorRotaPelaMontagemReal` com as rotas novas, `TestListasDeRPCFecham` (as 16 saíram de `RPCPendentes`), `TestConferirNaFatiaD0NaoAcusaOPlano510`, `TestConferirDisparos` e os testes existentes do `conferir`.
+- Mutações que têm de reprovar: `vessel.Montar` FORA do grupo com `ComEscopo` (as leituras respondem 500: `TestSeloPelaMontagemReal`); o cartão sem `autz.ComEscopo` (o portão nega a todos: o selo recebe 403); um nome do 5.10 de volta em `RPCPendentes` (a montagem recusa); `SoSessaoPropria` fora de uma das 14 (`TestNadaVazaDoSelo`); um nome errado nas listas do `conferir` (`TestConferirNaFatiaD0NaoAcusaOPlano510`); a `disparar_robo` antiga no banco (`TestConferirDisparos`).
+
+**(c) Arquivos:** Create `api/internal/vessel/rotas.go`, `api/internal/vessel/rotas_test.go`; Modify `api/internal/web/rotas.go`, `api/internal/web/rotas_test.go`, `api/internal/web/rpc_lista.go`, `api/internal/web/rpc_lista_test.go`, `api/internal/github/github.go` (comentários), `api/cmd/api/conferir.go`, `api/cmd/api/conferir_test.go`, `docs/migracao-go/NOTAS-DA-IMPLANTACAO.md`, `docs/migracao-go/API-PRONTA.md`.
+
+**(d) Dependências:** Tasks 3–7; `web.Rotas`, `web.FuncoesRPC`, `RPCPendentes`, `conferirRPC` (5.0).
+
+- [ ] **Step 1:** Os testes; ver falhar (as leituras dão 404 pela montagem; o conferir não conhece o selo).
+- [ ] **Step 2: Implementar** (código e trechos de (a)); `gofmt -w ./internal ./cmd`.
+- [ ] **Step 3:** `cd api && gofmt -l . && go vet ./... && go test -count=1 -race ./... 2>&1 | grep -v goose | grep -E '^(ok|FAIL|---)'` → todos `ok`; mutações de (b) reprovam, uma por vez.
+- [ ] **Step 4: Commit** `feat(api): monta o selo Vessel (leituras, 16 RPCs, cartão e material-do-sku), varreduras, conferir e notas` (+ `Co-Authored-By`).
+
+---
