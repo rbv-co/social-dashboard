@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -25,9 +26,14 @@ var (
 	ErrServicoNomeEmUso       = errors.New("já existe um token de serviço com esse nome")
 	ErrServicoUsuarioComSenha = errors.New("esse e-mail é de uma conta de gente (tem senha): conta de gente não vira robô")
 
-	reNomeServico   = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,62}$`)
-	reModuloServico = regexp.MustCompile(`^[a-z0-9_-]+$`)
+	reNomeServico = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,62}$`)
 )
+
+// ModulosConhecidos são os valores válidos de profiles.features que o código confere (ExigirModulo,
+// PodeModulo, predicados do autz e policies do catálogo de produção), mais o default 'banco'.
+// TestModulosConhecidosCobremOsModulosDoCodigo falha se o código passar a conferir um módulo fora daqui.
+var ModulosConhecidos = []string{"abandono-carrinho", "acessos", "autenticidade", "banco", "carrinho", "claude.status",
+	"conteudo", "frota", "frota.aprovar", "gestor", "meta", "meta.gestor", "meta.leads", "patrimonio", "sales", "social"}
 
 // buscarServico valida um token `srv_`: não revogado, usuário sem desativado_em e perfil sem disabled.
 // Sem expiração e sem renovação (ExpiraEm fica zero); só ultimo_uso_em é gravado, no máximo a cada 5 min.
@@ -59,7 +65,8 @@ func (s *Store) buscarServico(ctx context.Context, token string) (*Sessao, error
 }
 
 // CriarContaDeServico cria o token `nome` para o robô de e-mail `email` e devolve o token (em claro, só
-// aqui). E-mail novo: cria o usuário (sem senha) e o perfil viewer com features = modulos. E-mail que já
+// aqui). E-mail novo: cria o usuário (sem senha) e o perfil viewer com features = modulos, sem trava de equipe
+// (escopo_por_equipe = false: o default de produção é true) e allowed_accounts nulo (todas as contas). E-mail que já
 // existe: usa o usuário, que tem de ter perfil, não ter senha e não ser super-admin; modulos então tem de
 // vir vazio (o perfil existente não é alterado por aqui). Tudo numa transação.
 func (s *Store) CriarContaDeServico(ctx context.Context, nome, email string, modulos []string) (string, error) {
@@ -71,8 +78,8 @@ func (s *Store) CriarContaDeServico(ctx context.Context, nome, email string, mod
 		return "", fmt.Errorf("e-mail inválido %q", email)
 	}
 	for _, m := range modulos {
-		if !reModuloServico.MatchString(m) {
-			return "", fmt.Errorf("módulo inválido %q", m)
+		if !slices.Contains(ModulosConhecidos, m) {
+			return "", fmt.Errorf("módulo desconhecido %q (conhecidos: %s)", m, strings.Join(ModulosConhecidos, ", "))
 		}
 	}
 	b := make([]byte, 32)
@@ -101,7 +108,7 @@ func (s *Store) CriarContaDeServico(ctx context.Context, nome, email string, mod
 			modulos = []string{}
 		}
 		if _, err := tx.Exec(ctx,
-			`insert into profiles (id, email, name, role, features, disabled) values ($1::uuid, $2::text, $3::text, 'viewer', $4::text[], false)`,
+			`insert into profiles (id, email, name, role, features, disabled, escopo_por_equipe) values ($1::uuid, $2::text, $3::text, 'viewer', $4::text[], false, false)`,
 			id, email, "robô "+nome, modulos); err != nil {
 			return "", err
 		}

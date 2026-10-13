@@ -158,6 +158,8 @@ Não há rota nova: o 5.13 muda COMO a API reconhece quem chama. O robô manda `
 | `GET /auth/eu` com token de serviço | `200` com `"tipo":"servico"`, `papel`, `permissoes`, `email` e `nome` do usuário do robô | PR do 5.13 (este) |
 | `auth.SoServico` | middleware das rotas de robô (5.8), depois de `Exigir`: sessão de painel ou de "entrar como" leva `403 {"error":"sem_permissao"}`; sem sessão, o `401` do `Exigir` | PR do 5.13 (este) |
 | Token inválido | revogado, inexistente, usuário com `desativado_em` ou perfil com `disabled`: `401 {"error":"nao_autenticado"}`, igual a sessão inválida | PR do 5.13 (este) |
+| `POST /auth/sair` e `POST /auth/trocar-senha` com token de serviço | `403 {"error":"sem_permissao","mensagem":…}`: o token só é revogado pelo CLI (`api servico revogar`) e o robô não tem senha (antes: 204 sem revogar, e 401 por acidente) | PR do 5.13 (este) |
+| Robô não vira gente | `/auth/esqueci-senha` não gera link para usuário com linha em `tokens_de_servico` (resposta `202` igual) e `/auth/definir-senha` o recusa (`400 token_invalido`) | PR do 5.13 (este) |
 | Canais | conta de serviço NÃO é limitada a loja (regra de `canais`); fora isso vale o perfil | PR do 5.13 (este) |
 
 ## Outras

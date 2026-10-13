@@ -40,7 +40,9 @@ func main() {
 	defer p.Close()
 	// O worker NÃO migra: api e worker subindo juntos disputariam a migração (o goose daqui não
 	// tem trava). Quem migra é o `api` (ou `api migrar`); o worker confere as tabelas e recusa subir.
-	if os.Args[1] != "worker" {
+	// O `servico` também não migra: um binário mais novo que a API no ar não mexe no esquema por um
+	// `listar` (sem a migração 00006 o comando falha com "relation ... does not exist": rode `api migrar`).
+	if os.Args[1] != "worker" && os.Args[1] != "servico" {
 		if err := banco.Migrar(p); err != nil {
 			slog.Error("migrations", "erro", err)
 			os.Exit(1)

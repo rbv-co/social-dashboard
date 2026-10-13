@@ -4,12 +4,19 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rbv-co/social-dashboard/api/internal/testebanco"
 )
@@ -219,16 +226,153 @@ func TestContaDeServicoRecusaSuperAdminEUsuarioSemPerfil(t *testing.T) {
 func TestContaDeServicoPerfilCriado(t *testing.T) {
 	p, _, _ := umServico(t, "meta", "banco")
 	var role, feats string
-	var dis bool
+	var dis, porEquipe bool
 	var perm string
 	var aa *string
-	err := p.QueryRow(context.Background(), `select role, array_to_string(features, ','), disabled, permissions::text, allowed_accounts::text from profiles where email = 'robo-fabrica@x.com'`).Scan(&role, &feats, &dis, &perm, &aa)
-	if err != nil || role != "viewer" || feats != "meta,banco" || dis || perm != "{}" || aa != nil {
-		t.Fatalf("perfil = %q %q %v %q %v (%v)", role, feats, dis, perm, aa, err)
+	err := p.QueryRow(context.Background(), `select role, array_to_string(features, ','), disabled, permissions::text, allowed_accounts::text, escopo_por_equipe from profiles where email = 'robo-fabrica@x.com'`).Scan(&role, &feats, &dis, &perm, &aa, &porEquipe)
+	if err != nil || role != "viewer" || feats != "meta,banco" || dis || perm != "{}" || aa != nil || porEquipe {
+		t.Fatalf("perfil = %q %q %v %q %v %v (%v)", role, feats, dis, perm, aa, porEquipe, err)
 	}
 	var senha *string
 	p.QueryRow(context.Background(), `select senha_hash from usuarios where email = 'robo-fabrica@x.com'`).Scan(&senha)
 	if senha != nil {
 		t.Fatal("usuário do robô tem senha")
+	}
+}
+
+// Token de serviço não sai nem troca senha: a revogação é só pelo CLI. Antes, /auth/sair dava 204 sem
+// revogar e /auth/trocar-senha dava 401 por acidente (o robô acharia que o token morreu).
+func TestServicoNaoSaiNemTrocaSenha(t *testing.T) {
+	p, s, c, _, h := montarConta(t)
+	hs := NovosHandlers(p, s, NovoLimitador())
+	h.(*chi.Mux).With(Exigir(p, s)).Post("/auth/sair", hs.Sair)
+	_ = c
+	tok, err := s.CriarContaDeServico(context.Background(), "fabrica", "fabrica@robos.invalid", []string{"meta"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := chamar(h, "POST", "/auth/sair", "", tok)
+	if w.Code != 403 || !strings.Contains(w.Body.String(), `"sem_permissao"`) || !strings.Contains(w.Body.String(), "api servico revogar") {
+		t.Fatalf("sair com token de serviço = %d %s", w.Code, w.Body)
+	}
+	w = chamar(h, "POST", "/auth/trocar-senha", `{"senha":"uma-senha-longa"}`, tok)
+	if w.Code != 403 || !strings.Contains(w.Body.String(), `"sem_permissao"`) {
+		t.Fatalf("trocar senha com token de serviço = %d %s", w.Code, w.Body)
+	}
+	if _, err := s.Buscar(context.Background(), tok); err != nil {
+		t.Fatalf("o token deixou de valer: %v", err)
+	}
+	var senha *string
+	p.QueryRow(context.Background(), `select senha_hash from usuarios where email = 'fabrica@robos.invalid'`).Scan(&senha)
+	if senha != nil {
+		t.Fatal("o robô ganhou senha")
+	}
+}
+
+// Robô não vira gente: sem link de recuperação (ativo ou revogado) e o link que já existia não define senha.
+func TestServicoNaoRecuperaSenhaNemDefineSenha(t *testing.T) {
+	p, s, c, cor, h := montarConta(t)
+	ctx := context.Background()
+	if _, err := s.CriarContaDeServico(ctx, "fabrica", "fabrica@robos.invalid", []string{"meta"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, rev := range []bool{false, true} {
+		if rev {
+			s.RevogarServico(ctx, "fabrica")
+		}
+		w := pedirComOrigem(h, "/auth/esqueci-senha", `{"email":"fabrica@robos.invalid"}`, central)
+		esperarEnvio(t, c)
+		if w.Code != 202 || w.Body.String() != `{"ok":true}` {
+			t.Fatalf("resposta (revogado=%v) = %d %s", rev, w.Code, w.Body)
+		}
+		if n := len(cor.lista()); n != 0 {
+			t.Fatalf("mandou e-mail de recuperação ao robô (revogado=%v)", rev)
+		}
+	}
+	var n int
+	p.QueryRow(ctx, `select count(*) from tokens_de_senha`).Scan(&n)
+	if n != 0 {
+		t.Fatalf("gerou %d link(s) de senha para o robô", n)
+	}
+	// link que já existia (convite/reset do admin): o definir-senha recusa como link inválido
+	var id, link string
+	p.QueryRow(ctx, `select id::text from usuarios where email = 'fabrica@robos.invalid'`).Scan(&id)
+	if err := pgx.BeginFunc(ctx, p, func(tx pgx.Tx) error {
+		var e error
+		link, e = novoLink(ctx, tx, id, "convite", padrao, time.Hour)
+		return e
+	}); err != nil {
+		t.Fatal(err)
+	}
+	tok := link[strings.LastIndex(link, "token=")+len("token="):]
+	w := pedirComOrigem(h, "/auth/definir-senha", `{"token":"`+tok+`","senha":"uma-senha-longa"}`, central)
+	if w.Code != 400 || !strings.Contains(w.Body.String(), "token_invalido") {
+		t.Fatalf("definir-senha do robô = %d %s", w.Code, w.Body)
+	}
+	var senha *string
+	p.QueryRow(ctx, `select senha_hash from usuarios where id = $1::uuid`, id).Scan(&senha)
+	if senha != nil {
+		t.Fatal("o robô ganhou senha")
+	}
+}
+
+func TestContaDeServicoRecusaModuloDesconhecido(t *testing.T) {
+	p := testebanco.Novo(t)
+	s := NovoStore(p)
+	if _, err := s.CriarContaDeServico(context.Background(), "r1", "r1@robos.invalid", []string{"meta", "metaa"}); err == nil || !strings.Contains(err.Error(), "metaa") {
+		t.Fatalf("módulo desconhecido aceito: %v", err)
+	}
+	var n int
+	p.QueryRow(context.Background(), `select count(*) from usuarios`).Scan(&n)
+	if n != 0 {
+		t.Fatal("deixou usuário para trás")
+	}
+	if _, err := s.CriarContaDeServico(context.Background(), "r1", "r1@robos.invalid", []string{"meta", "social", "sales"}); err != nil {
+		t.Fatalf("módulos conhecidos recusados: %v", err)
+	}
+}
+
+// Todo módulo que o código confere (rotas, PodeModulo, predicados do autz, policies do catálogo de produção)
+// tem de estar em ModulosConhecidos: senão `--modulos` recusaria um módulo que existe.
+func TestModulosConhecidosCobremOsModulosDoCodigo(t *testing.T) {
+	reChamada := regexp.MustCompile(`(?:ExigirModulo|PodeModulo|\.Modulo|termoModulo)\(\s*("[^"]*"(?:\s*,\s*"[^"]*")*)\s*\)`)
+	reLiteral := regexp.MustCompile(`"([a-z_.-]+)"`)
+	reJSON := regexp.MustCompile(`'([a-z_.-]+)'::text = ANY \(p\.features\)`)
+	achados := map[string]string{}
+	err := filepath.WalkDir("..", func(caminho string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		ext := filepath.Ext(caminho)
+		if (ext != ".go" || strings.HasSuffix(caminho, "_test.go")) && filepath.Base(caminho) != "catalogo-policies-producao.json" {
+			return nil
+		}
+		b, err := os.ReadFile(caminho)
+		if err != nil {
+			return err
+		}
+		if ext == ".json" {
+			for _, m := range reJSON.FindAllStringSubmatch(strings.ReplaceAll(string(b), `'`, "'"), -1) {
+				achados[m[1]] = caminho
+			}
+			return nil
+		}
+		for _, c := range reChamada.FindAllStringSubmatch(string(b), -1) {
+			for _, l := range reLiteral.FindAllStringSubmatch(c[1], -1) {
+				achados[l[1]] = caminho
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(achados) < 8 {
+		t.Fatalf("a varredura achou só %v: o regexp quebrou?", achados)
+	}
+	for m, onde := range achados {
+		if !slices.Contains(ModulosConhecidos, m) {
+			t.Errorf("módulo %q (usado em %s) não está em auth.ModulosConhecidos", m, onde)
+		}
 	}
 }

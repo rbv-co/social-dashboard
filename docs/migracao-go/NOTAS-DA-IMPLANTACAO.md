@@ -507,11 +507,15 @@ Os robôs do `coletor/` (Fábrica no Actions, os híbridos da VPS, os validadore
 
 ### Criar o robô e o token (na VPS, no contêiner da API, como o `api worker`)
 ```
-api servico criar <nome> <email-do-robo> --modulos meta,banco
+api servico criar <nome> <nome>@robos.invalid --modulos meta,banco
 ```
+O `api servico` NÃO migra o banco (como o `api worker`): a migração `00006` já veio com a API no ar; num banco sem ela o comando falha com "relation ... does not exist" e a saída é `api migrar`.
 - `<nome>`: `[a-z0-9][a-z0-9-]{1,62}`, único (inclusive entre os revogados), ex.: `fabrica`, `meta-validador`.
-- E-mail novo: cria o usuário (sem senha) e o perfil `viewer` com `features` = `--modulos`. E-mail que já existe: usa o usuário, mas recusa se ele tiver senha (conta de gente não vira robô), se for super-admin ou se não tiver perfil; nesse caso `--modulos` é recusado (o perfil existente não é mexido por aqui).
+- `--modulos` só aceita módulo conhecido pelo código (`auth.ModulosConhecidos`: `meta`, `social`, `sales`, `gestor`, `autenticidade`, `banco`, ...); módulo digitado errado é recusado, não vira robô com 403 calado.
+- E-mail recomendado: `<nome>@robos.invalid` (domínio reservado, RFC 2606: nunca recebe correio). O e-mail só identifica o usuário; o comando usa o que foi informado, então NÃO use caixa de gente.
+- E-mail novo: cria o usuário (sem senha) e o perfil `viewer` com `features` = `--modulos`, `escopo_por_equipe = false` (em produção o default da coluna é `true`, o que deixaria o robô "restrito por equipe sem vínculo") e `allowed_accounts` nulo (= todas as contas). E-mail que já existe: usa o usuário, mas recusa se ele tiver senha (conta de gente não vira robô), se for super-admin ou se não tiver perfil; nesse caso `--modulos` é recusado (o perfil existente não é mexido por aqui).
 - O token (`srv_...`) sai UMA vez, sozinho no stdout (o aviso vai ao stderr); não fica em log nem no banco. Guarde direto no segredo do robô (secret do Actions ou `.env` da VPS).
+- O robô não tem senha e não recupera senha: `/auth/esqueci-senha` para o e-mail dele não gera link (resposta igual à de e-mail inexistente), `/auth/definir-senha` recusa o usuário dele (link inválido) e `/auth/trocar-senha` com o token dá `403`. `/auth/sair` com o token também dá `403` e não revoga nada: revogar é só `api servico revogar`.
 - O robô manda `Authorization: Bearer <token>` em toda chamada. O que mais ele precisa (módulos, permissões) se ajusta no perfil do usuário, na tela de acesso, não no token.
 
 ### Rotação e revogação
