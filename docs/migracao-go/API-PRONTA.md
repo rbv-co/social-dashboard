@@ -6,7 +6,7 @@
 
 **Regra da trilha C.** Lê este arquivo do `origin/main` e só troca o que está listado. Se o texto divergir do código, vale `rotas.go`: abra a correção aqui, não improvise no front.
 
-**Estado:** Planos 1 a 4, 5.0, 5.12, 5.1, 5.6 e 5.7 (este PR). 99 rotas montadas: Conta 10, RPC 1 (`POST /rpc/{nome}`, agora com 1 função registrada), Edges do Core e webhooks 11, Worker 1, Painéis pequenos 7, Admin, equipes e acesso 30, Meta e redes 18, Gestão de tráfego 19 (16 de tabela e 3 proxies), Outras 2.
+**Estado:** Planos 1 a 4, 5.0, 5.12, 5.1, 5.6, 5.7 e 5.13 (este PR; o 5.13 não traz rota nova). 99 rotas montadas: Conta 10, RPC 1 (`POST /rpc/{nome}`, com 1 função registrada), Edges do Core e webhooks 11, Worker 1, Painéis pequenos 7, Admin, equipes e acesso 30, Meta e redes 18, Gestão de tráfego 19 (16 de tabela e 3 proxies), Outras 2.
 
 ## Convenções que valem para todas as rotas
 
@@ -147,6 +147,20 @@ Leituras de domínio com a regra de Ler do catálogo de produção (`api/interna
 | `GET /saude/conferencias` | `.from('data_integrity_checks').select(...)`: admin:497, 501, 1781, 1784 | qualquer sessão (policy `dic_sel` = `true`) E a restritiva `so_contas_permitidas`: conta fora de `allowed_accounts` nunca aparece (linha sem conta passa) | colunas `id, checked_date, account_id, check_name, status, detail, created_at`; filtros `checked_date` (AAAA-MM-DD) e `status`; `ordem` `checked_date`, `created_at` (padrão `created_at desc`). **`/saude/ia-execucoes` NÃO existe** (Ruling 5.1-16): `tela-de-status-claude.vue:708` usa `GET /status-ia/execucoes` do 5.12 (acima) | PR do 5.1 (este) |
 
 **Sem rota (Ruling 5.1-5):** `user_permissions`, `audit_log`, `entradas_como_outro_usuario`, `platform_settings`, `robos_esperados`, `robos_execucoes`, `coletor_log`, `projetos_status` e `gestor_log` (nenhum sítio no front; quem escreve é gatilho, worker ou robô). Os botões "coletar/auditar agora" da aba Saúde (admin:1774-1778) também não têm rota (Ruling 30 do Plano 5). Os `PATCH bling_lojas` do admin são do 5.5.
+
+## Contas de serviço (5.13)
+
+Não há rota nova: o 5.13 muda COMO a API reconhece quem chama. O robô manda `Authorization: Bearer srv_...` (token de longa duração, criado e revogado só pelo CLI `api servico` na VPS; ver NOTAS) e passa por `auth.Exigir` como qualquer sessão. O ator tem `Tipo "servico"` e o PERFIL do usuário do robô (viewer com `features` mínimas, sem senha): catálogo, `ExigirModulo` e conta valem como para gente (Ruling 38).
+
+| Peça | Comportamento | Commit |
+|---|---|---|
+| Cabeçalho | `Authorization: Bearer srv_<43 caracteres>`. O token é procurado em `sessoes` e, não achando e com prefixo `srv_`, em `tokens_de_servico`. Sem expiração e sem renovação | PR do 5.13 (este) |
+| `GET /auth/eu` com token de serviço | `200` com `"tipo":"servico"`, `papel`, `permissoes`, `email` e `nome` do usuário do robô | PR do 5.13 (este) |
+| `auth.SoServico` | middleware das rotas de robô (5.8), depois de `Exigir`: sessão de painel ou de "entrar como" leva `403 {"error":"sem_permissao"}`; sem sessão, o `401` do `Exigir` | PR do 5.13 (este) |
+| Token inválido | revogado, inexistente, usuário com `desativado_em` ou perfil com `disabled`: `401 {"error":"nao_autenticado"}`, igual a sessão inválida | PR do 5.13 (este) |
+| `POST /auth/sair` e `POST /auth/trocar-senha` com token de serviço | `403 {"error":"sem_permissao","mensagem":…}`: o token só é revogado pelo CLI (`api servico revogar`) e o robô não tem senha (antes: 204 sem revogar, e 401 por acidente) | PR do 5.13 (este) |
+| Robô não vira gente | `/auth/esqueci-senha` não gera link para usuário com linha em `tokens_de_servico` (resposta `202` igual) e `/auth/definir-senha` o recusa (`400 token_invalido`) | PR do 5.13 (este) |
+| Canais | conta de serviço NÃO é limitada a loja (regra de `canais`); fora isso vale o perfil | PR do 5.13 (este) |
 
 ## Gestão de tráfego (5.7)
 
