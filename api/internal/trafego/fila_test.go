@@ -138,6 +138,20 @@ func TestDecisoesCriar(t *testing.T) {
 		m.Rodar(t, []mundoteste.Caso{c, {Nome: c.Nome + ": intacto", Efeito: intacto.Efeito, Quer: intacto.Quer}})
 	}
 
+	// I-1: a conta é a da CAMPANHA (campaigns), não a do corpo
+	for _, c := range []mundoteste.Caso{
+		{Nome: "campanha de A2, conta nula", Quem: "gestorA1", Metodo: "POST", Caminho: rota, Status: 403,
+			Corpo: `{"campaign_id":"9002","account_id":null,"veredito":"reduzir","decisao":"recusada"}`},
+		{Nome: "campanha de A2, conta omitida", Quem: "gestorA1", Metodo: "POST", Caminho: rota, Status: 403,
+			Corpo: `{"campaign_id":"9002","veredito":"reduzir","decisao":"recusada"}`},
+		{Nome: "campanha de A2, conta A1", Quem: "gestorA1", Metodo: "POST", Caminho: rota, Status: 403,
+			Corpo: `{"campaign_id":"9002","account_id":"` + A1 + `","veredito":"reduzir","decisao":"recusada"}`},
+		{Nome: "adminA1: campanha de A1 com conta A2 (divergente, mesmo vendo as duas)", Quem: "adminA1", Metodo: "POST", Caminho: rota, Status: 403,
+			Corpo: `{"campaign_id":"9001","account_id":"` + A2 + `","veredito":"reduzir","decisao":"recusada"}`},
+	} {
+		m.Rodar(t, []mundoteste.Caso{c, {Nome: c.Nome + ": intacto", Efeito: intacto.Efeito, Quer: intacto.Quer}})
+	}
+
 	// permitido: gestorA1 recusa na A1
 	m.Rodar(t, []mundoteste.Caso{
 		{Nome: "gestorA1 recusa em A1", Quem: "gestorA1", Metodo: "POST", Caminho: rota, Status: 201, Tem: `"decisao":"recusada"`, NaoTem: "decidido_por", Corpo: corpo(`,"aplicado":[]`)},
@@ -155,6 +169,18 @@ func TestDecisoesCriar(t *testing.T) {
 		{Nome: "conta omitida também é sem conta", Quem: "gestorTodas", Metodo: "POST", Caminho: rota, Status: 201,
 			Corpo: `{"campaign_id":"9005","veredito":"pausar","decisao":"aprovada"}`},
 		{Nome: "total de linhas", Efeito: `select count(*)::text from gt_fila_decisoes`, Quer: "8"},
+	})
+	// I-1: campanha de A1 sem conta no corpo → o servidor grava A1; campanha desconhecida sem conta → nula
+	m.Rodar(t, []mundoteste.Caso{
+		{Nome: "campanha de A1, conta nula", Quem: "gestorA1", Metodo: "POST", Caminho: rota, Status: 201,
+			Corpo: `{"campaign_id":"9001","account_id":null,"veredito":"pausar","decisao":"aprovada","escopo":"saude"}`},
+		{Nome: "conta preenchida com a da campanha", Efeito: `select account_id::text from gt_fila_decisoes where campaign_id = '9001' and escopo = 'saude'`, Quer: A1},
+		{Nome: "campanha de A1, conta omitida", Quem: "gestorTodas", Metodo: "POST", Caminho: rota, Status: 201,
+			Corpo: `{"campaign_id":"9001","veredito":"pausar","decisao":"aprovada","escopo":"criativos"}`},
+		{Nome: "omitida também preenchida", Efeito: `select account_id::text from gt_fila_decisoes where campaign_id = '9001' and escopo = 'criativos' and decidido_por = '` + idGestorTodas + `' and decidido_em > now() - interval '1 minute'`, Quer: A1},
+		{Nome: "campanha desconhecida, conta nula", Quem: "gestorA1", Metodo: "POST", Caminho: rota, Status: 201,
+			Corpo: `{"campaign_id":"9099","account_id":null,"veredito":"pausar","decisao":"aprovada"}`},
+		{Nome: "desconhecida fica nula", Efeito: `select coalesce(account_id, 'nula') from gt_fila_decisoes where campaign_id = '9099'`, Quer: "nula"},
 	})
 	if st, c := m.Pedir(t, "gestorA1", "POST", rota, "lixo"); st != http.StatusBadRequest {
 		t.Errorf("corpo lixo: %d %s", st, c)

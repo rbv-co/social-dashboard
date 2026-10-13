@@ -25,7 +25,14 @@ var FuncoesRPC = []rpc.Funcao{
 
 // itensSoDaConta: a função faz upsert por (ad_id, codigo) — a chave da tabela não tem conta — e troca o
 // account_id da linha existente. Item que já pertence a OUTRA conta (ou a nenhuma) moveria o problema
-// de dono: 403 para todos, sem a função rodar (o robô da VPS grava por pg, não por esta rota).
+// de dono: 403 para todos, sem a função rodar. HOJE o robô vigia-problemas-meta (coletor/) chama
+// POST ${SUPABASE_URL}/rest/v1/rpc/gt_registrar_problemas com SUPABASE_SERVICE_KEY, e PARA no corte; no
+// Plano 7 (trilha C) ele passa a chamar a função por pg com
+// set_config('request.jwt.claims','{"role":"service_role"}', true) e o papel de banco do robô com EXECUTE
+// (COORDENACAO 12/10 23:10, a). Ou seja: nem hoje nem depois ele passa por esta rota.
+//
+// ponytail: janela de corrida com o robô, que grava por fora da API, entre esta conferência e a função (um
+// item pode mudar de dono no intervalo); aceitável: o robô só grava a conta dele e a janela é de milissegundos.
 // p_conta nulo ou vazio fica para a função (ela recusa com a própria frase); item malformado também:
 // a validação do jsonb responde 400 como responderia na função.
 func itensSoDaConta(ctx context.Context, tx pgx.Tx, _ *autz.Escopo, args map[string]json.RawMessage) error {

@@ -124,7 +124,7 @@ function geoParaListas() {
   })
 }
 async function buscarNoMapa(termo) {
-  const { data, error } = await sbClient.functions.invoke('buscar-lugar', { body: { acao: 'buscar', termo } })
+  const { data, error } = await invocarNaArea('trafego', sbClient, 'buscar-lugar', { body: { acao: 'buscar', termo } })
   // O motivo vai pra tela: busca que falha não pode virar "nada encontrado".
   if (error || data?.error) throw new Error(data?.error || error?.message || 'a recepção do mapa não respondeu')
   return data
@@ -152,7 +152,7 @@ async function montarLugares() {
     // O ponto se apresenta: nasce na hora, e o endereço chega em seguida.
     aoPorPonto: async (ponto) => {
       try {
-        const { data, error } = await sbClient.functions.invoke('buscar-lugar', { body: { acao: 'ondeCaiu', lat: ponto.lat, lng: ponto.lng } })
+        const { data, error } = await invocarNaArea('trafego', sbClient, 'buscar-lugar', { body: { acao: 'ondeCaiu', lat: ponto.lat, lng: ponto.lng } })
         if (error || data?.error) throw new Error(data?.error || error?.message || 'sem resposta')
         const achado = enderecoDeOndeCaiu(data)
         ponto.nome = achado.nome; ponto.endereco = achado.endereco

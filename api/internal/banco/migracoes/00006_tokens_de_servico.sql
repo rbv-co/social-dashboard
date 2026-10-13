@@ -13,5 +13,10 @@ create table if not exists tokens_de_servico (
 );
 create index if not exists tokens_de_servico_usuario_idx on tokens_de_servico (usuario_id);
 
+-- Sessão de serviço nunca é "entrar como" (defesa no banco, além do auth.SoServico; pedido da trilha B).
+alter table sessoes add constraint sessoes_servico_sem_impersonador
+  check (tipo <> 'servico' or impersonador_id is null);
+
 -- +goose Down
+alter table sessoes drop constraint if exists sessoes_servico_sem_impersonador;
 drop table if exists tokens_de_servico;
