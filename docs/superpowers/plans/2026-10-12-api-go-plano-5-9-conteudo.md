@@ -2781,6 +2781,425 @@ func TestGatilhoCliqueDuplo(t *testing.T) {
 
 ---
 
+### Task 9: Montagem, varreduras, `conferir` e notas
+
+**Revisor:** opus. **Depende de:** 4–8.
+
+**(a) Contrato**
+- `conteudo.Montar(r, p)` registra **7 leituras e 14 escritas** (13 de catálogo e o `POST /conteudo-trigger`) no grupo de DOMÍNIO de `web.Rotas` (`auth.Exigir` → `comPrazo(PrazoDominio)` → `autz.ComEscopo`): nada aqui chama fora do banco, os 30 s do grupo bastam. As 6 RPCs entram por `web.FuncoesRPC` (`conteudo.FuncoesRPC`, Plano 5.9) e SAEM de `RPCPendentes` no mesmo commit (a montagem recusa o nome nos dois lugares; `TestListasDeRPCFecham` confere a soma das 92).
+- `web/rotas.go`: import `conteudo` (já importado por `cmd/api`, sem ciclo: pré-voo), `conteudo.FuncoesRPC, // Plano 5.9` em `FuncoesRPC` e `conteudo.Montar(r, p) // Plano 5.9` no grupo de domínio, depois do `trafego.Montar`.
+- Varreduras pela cadeia real (as do 5.7 são o modelo): vazamento por conta nas 6 leituras com a restritiva (as filhas pela peça; `concorrentes` é a exceção do Ruling 5.9-5); "entrar como" sem escrita nas 14 rotas e nas 6 RPCs; e os corpos da varredura VALEM (quem pode recebe 2xx), senão a varredura passaria com pedidos que nem chegariam a gravar.
+- `cmd/api/conferir.go`: o que as rotas, as RPCs e a fila presumem no banco restaurado (colunas, tipos, a função e o gatilho da guarda). As 6 RPCs NÃO entram em `funcoesDoWorker`: o `conferirRPC` (5.0) já confere cada função de `web.FuncoesRPC` contra o `pg_proc` (nomes, tipos, DEFAULT × `Opcional`, retorno, EXECUTE de `authenticated`). Por isso a fixture `esquemaCompleto` passa a criar as funções de `web.FuncoesRPC` pela PRÓPRIA declaração (`Opcional` = `default null`): sem isso, `p_motivo`/`p_publicar_em` sem DEFAULT fazem todo teste do `conferir` acusar a declaração (ensaiado).
+- **Ensaiado** (worktree sobre o `origin/main` 448c1356 + Tasks 1–8): `go test -race ./...` inteiro verde, 0 SKIP; tirar o `soSessaoPropria` do `POST /conteudo/blocos` faz `TestEscritasRecusamImpersonado` acusar `201`; tirar `t.account_id` de `colunasIdeia` faz o lado positivo acusar "adminA1 não viu A2"; um erro de digitação numa coluna de `conteudo_jobs` ou no nome do gatilho faz `TestConferirNaFatiaD0NaoAcusaOPlano59` reprovar.
+
+`api/internal/conteudo/rotas.go`:
+
+```go
+package conteudo
+
+import (
+	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+// Montar registra as rotas do 5.9 no grupo de DOMÍNIO de web.Rotas (depois de auth.Exigir e de
+// autz.ComEscopo): 7 leituras, 13 escritas de catálogo e POST /conteudo-trigger. As 6 RPCs entram por
+// FuncoesRPC. Declaração errada derruba a subida. Rota nova entra sozinha nas varreduras de rotas_test.go.
+func Montar(r chi.Router, p *pgxpool.Pool) {
+	montarLeituras(r, p)
+	montarPecas(r, p)
+	montarPauta(r, p)
+	montarGatilho(r, p)
+}
+```
+
+**(b) Testes de aceitação**
+- `conteudo/rotas_test.go` (código abaixo): `TestNadaVazaEntreContas` (6 leituras varridas por `conteudistaA1`, `impersonado` e `conteudistaNenhuma`, sem filtro, com `?account_id=<A2>` e com `contar=1` → nenhum uuid de A2 e `X-Total-Count: 0`; a lista vazia não vê A1; `adminA1` vê A2 em cada uma; contagem exata `7 = 6 + 1` e 14 escritas), `TestEscritasRecusamImpersonado` (as 14 rotas → 403 com a frase; as 6 RPCs têm `SoSessaoPropria` e respondem 403 ao impersonado; a foto não muda), `TestEscritasValemParaQuemPode` (cada corpo de `escritas` → 2xx para `conteudistaA1`).
+- `web/rotas_test.go`: `rotas59` (as 20 de catálogo) em `soSessao` (comentário: "portão = catálogo, provado pela matriz de cada rota em `internal/conteudo`; vazamento e impersonado pelas varreduras de lá"); `POST /conteudo-trigger` fica FORA (o `soPedeIA` dá 403 à sessão sem módulo: `TestNenhumaRotaNovaFicaAberta` prova); `TestPrazosPorRotaPelaMontagemReal` ganha as 21 com `PrazoDominio`; `TestConteudoPelaMontagemReal` (código abaixo): leitura sem sessão 401, editor de A1 só vê A1, admin vê as duas, sem módulo lê `[]`; RPC com peça de A2 → 403 e na própria → 200 `aprovada`; `conteudo_aprovar_e_agendar` sem o portão → 403; `/conteudo-trigger` sem módulo e com conta que não se vê → 403, na própria → 200 e UM job `enfileirado` na tabela.
+- `cmd/api/conferir_test.go`: a fixture com as funções de `web.FuncoesRPC`; `TestConferirNaFatiaD0NaoAcusaOPlano59` (contra a fatia, nada com ` conteudo_` é acusado, salvo `conteudo_reivindicar_hora_h`, do Plano 4, que tem de aparecer — senão o filtro não provaria nada). Os testes existentes do `conferir` continuam verdes.
+
+```go
+package conteudo
+
+import (
+	"net/http"
+	"strings"
+	"testing"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/rbv-co/social-dashboard/api/internal/testebanco/mundoteste"
+)
+
+// escritas: um pedido VÁLIDO para conteudistaA1 por rota de escrita de Montar (TestEscritasValemParaQuemPode
+// prova). Rota de escrita nova sem entrada aqui faz as varreduras falharem.
+var escritas = map[string]struct{ caminho, corpo string }{
+	"POST /conteudo/pecas":              {"/conteudo/pecas", `{"account_id":"` + A1 + `","titulo":"x","formato":"feed"}`},
+	"PATCH /conteudo/pecas/{id}":        {"/conteudo/pecas/" + P1, `{"titulo":"y"}`},
+	"DELETE /conteudo/pecas/{id}":       {"/conteudo/pecas/" + P7, ``},
+	"POST /conteudo/arquivos":           {"/conteudo/arquivos", `{"peca_id":"` + P1 + `","ordem":3,"caminho":"` + A1 + `/` + P1 + `/3-x.png","tipo":"imagem"}`},
+	"PATCH /conteudo/arquivos/{id}":     {"/conteudo/arquivos/" + AR1, `{"ordem":4}`},
+	"DELETE /conteudo/arquivos/{id}":    {"/conteudo/arquivos/" + AR2, ``},
+	"POST /conteudo/eventos":            {"/conteudo/eventos", `{"peca_id":"` + P1 + `","acao":"criou"}`},
+	"POST /conteudo/ideias":             {"/conteudo/ideias", `{"account_id":"` + A1 + `","titulo":"x"}`},
+	"PATCH /conteudo/ideias/{id}":       {"/conteudo/ideias/" + I1, `{"situacao":"favorita"}`},
+	"POST /conteudo/blocos":             {"/conteudo/blocos", `{"account_id":"` + A1 + `","tipo":"legenda","nome":"x","texto":"y"}`},
+	"PATCH /conteudo/blocos/{id}":       {"/conteudo/blocos/" + B1, `{"ativo":false}`},
+	"POST /conteudo/concorrentes":       {"/conteudo/concorrentes", `{"account_id":"` + A1 + `","handle":"novo"}`},
+	"PATCH /conteudo/concorrentes/{id}": {"/conteudo/concorrentes/" + K1, `{"ativo":false}`},
+	"POST /conteudo-trigger":            {"/conteudo-trigger", `{"account_id":"` + A1 + `","quantas":3}`},
+}
+
+// semRestritiva: a ÚNICA leitura fora da varredura de vazamento — conteudo_concorrentes não tem pode_ver_conta
+// em produção (Ruling 5.9-5, achado 5): todo conteudista lê os de toda marca, como hoje.
+var semRestritiva = map[string]string{
+	"/conteudo/concorrentes": "conteudo_concorrentes não está em 2026-07-31-allowed-accounts-no-banco.sql (Ruling 5.9-5)",
+}
+
+func mundoMontado(t *testing.T) *mundoteste.Mundo {
+	t.Helper()
+	return novoMundo(t, Montar, montarRPCs)
+}
+
+// varrer chama f para cada rota de Montar (o /rpc/{nome} de montarRPCs fica de fora: as RPCs têm a varredura
+// própria), com o caminho preenchido e o corpo de `escritas`.
+func varrer(t *testing.T, m *mundoteste.Mundo, f func(metodo, rota, caminho, corpo string)) (leituras, gravacoes int) {
+	t.Helper()
+	err := chi.Walk(m.H.(chi.Routes), func(metodo, rota string, _ http.Handler, _ ...func(http.Handler) http.Handler) error {
+		switch {
+		case rota == "/rpc/{nome}":
+		case metodo == http.MethodGet:
+			leituras++
+			f(metodo, rota, rota, "")
+		default:
+			gravacoes++
+			e, ok := escritas[metodo+" "+rota]
+			if !ok {
+				t.Errorf("escrita sem caso nas varreduras: %s %s", metodo, rota)
+				return nil
+			}
+			f(metodo, rota, e.caminho, e.corpo)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return leituras, gravacoes
+}
+
+// A2 nunca aparece para quem não a vê — em NENHUMA leitura com a restritiva (as filhas pela peça), sem filtro,
+// filtrando por A2 ou contando; o impersonado vê o que o ALVO (conteudistaA1) vê. Toda leitura dessas projeta
+// account_id (a da peça, nas filhas), por isso o uuid de A2 na resposta é vazamento.
+func TestNadaVazaEntreContas(t *testing.T) {
+	m := mundoMontado(t)
+	varridas := map[string]bool{}
+	l, g := varrer(t, m, func(metodo, rota, _, _ string) {
+		if _, excecao := semRestritiva[rota]; metodo != http.MethodGet || excecao {
+			return
+		}
+		varridas[rota] = true
+		for _, quem := range []string{"conteudistaA1", "impersonado", "conteudistaNenhuma"} {
+			for _, q := range []string{"", "?account_id=" + A2, "?account_id=" + A2 + "&contar=1&limite=1"} {
+				w := m.Resposta(t, quem, "GET", rota+q, "")
+				if w.Code != http.StatusOK || strings.Contains(w.Body.String(), A2) {
+					t.Errorf("%s GET %s%s = %d %s", quem, rota, q, w.Code, w.Body)
+				}
+				if strings.Contains(q, "contar=1") && w.Header().Get("X-Total-Count") != "0" {
+					t.Errorf("%s contou linhas de A2 em %s: %q", quem, rota, w.Header().Get("X-Total-Count"))
+				}
+			}
+		}
+		if _, b := m.Pedir(t, "conteudistaNenhuma", "GET", rota, ""); strings.Contains(b, A1) {
+			t.Errorf("lista vazia viu A1 em %s: %s", rota, b)
+		}
+		if _, b := m.Pedir(t, "adminA1", "GET", rota, ""); !strings.Contains(b, A2) {
+			t.Errorf("adminA1 não viu A2 em %s (a rota projeta account_id?): %s", rota, b)
+		}
+	})
+	for _, rota := range []string{"/conteudo/pecas", "/conteudo/arquivos", "/conteudo/eventos", "/conteudo/ideias",
+		"/conteudo/blocos", "/conteudo/jobs"} {
+		if !varridas[rota] {
+			t.Errorf("a leitura %s ficou fora da varredura de vazamento", rota)
+		}
+	}
+	if l != 7 || g != 14 || len(varridas) != 6 || len(varridas)+len(semRestritiva) != l {
+		t.Errorf("rotas = %d leituras (%d varridas, %d exceções) e %d escritas, esperava 7 (6 + 1) e 14", l, len(varridas), len(semRestritiva), g)
+	}
+}
+
+// Toda escrita — as 13 de catálogo, o /conteudo-trigger e as 6 RPCs — recusa a sessão de "entrar como", sem
+// tocar no banco.
+func TestEscritasRecusamImpersonado(t *testing.T) {
+	m := mundoMontado(t)
+	antes := m.Um(t, fotoDoConteudo)
+	_, n := varrer(t, m, func(metodo, rota, caminho, corpo string) {
+		if metodo == http.MethodGet {
+			return
+		}
+		if st, b := m.Pedir(t, "impersonado", metodo, caminho, corpo); st != http.StatusForbidden || !strings.Contains(b, "Quem entrou como outra pessoa") {
+			t.Errorf("%s %s como impersonado = %d %s", metodo, rota, st, b)
+		}
+	})
+	if n != 14 {
+		t.Errorf("escritas = %d, esperava 14 (rota nova? ponha soSessaoPropria e um caso em `escritas`)", n)
+	}
+	for _, f := range FuncoesRPC {
+		if !f.SoSessaoPropria {
+			t.Errorf("RPC %s sem SoSessaoPropria", f.Nome)
+		}
+		// o alvo (conteudistaA1) nem passa no portão das decisões: 403 sem a frase; nas outras, a frase
+		if st, b := m.Pedir(t, "impersonado", "POST", "/rpc/"+f.Nome, `{}`); st != http.StatusForbidden {
+			t.Errorf("RPC %s como impersonado = %d %s", f.Nome, st, b)
+		}
+	}
+	if m.Um(t, fotoDoConteudo) != antes {
+		t.Error("o impersonado mudou o banco")
+	}
+}
+
+// Os corpos de `escritas` valem: quem pode (conteudistaA1, na conta dele) recebe 2xx em cada rota. Sem isto as
+// varreduras acima poderiam passar com pedidos que nem chegariam a gravar.
+func TestEscritasValemParaQuemPode(t *testing.T) {
+	m := novoMundo(t, Montar)
+	varrer(t, m, func(metodo, rota, caminho, corpo string) {
+		if metodo == http.MethodGet {
+			return
+		}
+		if st, b := m.Pedir(t, "conteudistaA1", metodo, caminho, corpo); st < 200 || st > 299 {
+			t.Errorf("%s %s como conteudistaA1 = %d %s", metodo, rota, st, b)
+		}
+	})
+}
+```
+
+Em `api/internal/web/rotas_test.go`, depois de `rotas57`:
+
+```go
+// Plano 5.9: as 20 rotas de tabela de conteudo.Montar (7 leituras, 13 escritas), no grupo de DOMÍNIO. Portão =
+// catálogo, provado pela matriz de cada rota em `internal/conteudo`; vazamento e impersonado por
+// `TestNadaVazaEntreContas` e `TestEscritasRecusamImpersonado`. O `POST /conteudo-trigger` NÃO entra: tem o
+// portão da edge (PedeIA: sessão sem módulo = 403, TestNenhumaRotaNovaFicaAberta).
+var rotas59 = []string{
+	"GET /conteudo/pecas", "POST /conteudo/pecas", "PATCH /conteudo/pecas/{id}", "DELETE /conteudo/pecas/{id}",
+	"GET /conteudo/arquivos", "POST /conteudo/arquivos", "PATCH /conteudo/arquivos/{id}", "DELETE /conteudo/arquivos/{id}",
+	"GET /conteudo/eventos", "POST /conteudo/eventos",
+	"GET /conteudo/ideias", "POST /conteudo/ideias", "PATCH /conteudo/ideias/{id}",
+	"GET /conteudo/blocos", "POST /conteudo/blocos", "PATCH /conteudo/blocos/{id}",
+	"GET /conteudo/concorrentes", "POST /conteudo/concorrentes", "PATCH /conteudo/concorrentes/{id}",
+	"GET /conteudo/jobs",
+}
+```
+
+e troque os dois laços que juntam as listas: no `init`, `for _, c := range slices.Concat(rotas51, rotas57, rotas59) {`; em `TestPrazosPorRotaPelaMontagemReal`, `for _, c := range slices.Concat(rotas51, rotas57, rotas59, []string{"POST /conteudo-trigger"}) { // Planos 5.1, 5.7 e 5.9: no grupo de domínio`. No fim do arquivo:
+
+```go
+// Plano 5.9 pela montagem real: as rotas do Conteúdo no grupo de domínio (sessão, escopo, conta), as 6 RPCs na
+// lista branca e o /conteudo-trigger com o portão da edge. A matriz de cada rota está em internal/conteudo;
+// aqui vale a MONTAGEM (grupo, cadeia, posição, FuncoesRPC).
+func TestConteudoPelaMontagemReal(t *testing.T) {
+	p := testebanco.ComEsquemaDeProducao(t)
+	s := auth.NovoStore(p)
+	h := Rotas(p, s, auth.NovoLimitador(), config.Config{})
+	ctx := context.Background()
+	const a1, a2 = "a5900000-0000-4000-a000-0000000000a1", "a5900000-0000-4000-a000-0000000000a2"
+	const p1, p2 = "a5930000-0000-4000-a000-0000000000c1", "a5930000-0000-4000-a000-0000000000c2"
+	quem := map[string]string{}
+	for i, u := range []struct{ nome, papel, features, contas string }{
+		{"editor-a1", "viewer", "{conteudo}", "{" + a1 + "}"}, {"aprovador-a1", "viewer", "{conteudo,conteudo.aprovar}", "{" + a1 + "}"},
+		{"admin", "admin", "{}", ""}, {"nenhum", "viewer", "{}", ""},
+	} {
+		id := fmt.Sprintf("a5910000-0000-4000-a000-00000000020%d", i)
+		if _, err := p.Exec(ctx, `insert into usuarios (id, email) values ($1::uuid, $2::text)`, id, u.nome+"@x.com"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := p.Exec(ctx, `insert into profiles (id, email, name, role, features, escopo_por_equipe, allowed_accounts)
+			values ($1::uuid, $2::text, $2::text, $3::text, $4::text[], false, nullif($5::text, '')::uuid[])`,
+			id, u.nome+"@x.com", u.papel, u.features, u.contas); err != nil {
+			t.Fatal(err)
+		}
+		var err error
+		if quem[u.nome], err = s.Criar(ctx, id, "painel", nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := p.Exec(ctx, `insert into accounts (id, name) values ($1::uuid, 'Vessel'), ($2::uuid, 'Mantova')`, a1, a2); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.Exec(ctx, `insert into conteudo_pecas (id, account_id, titulo, formato, status, publicar_em) values
+		($1::uuid, $2::uuid, 'Da A1', 'feed', 'em_aprovacao', now() + interval '1 day'),
+		($3::uuid, $4::uuid, 'Da A2', 'feed', 'em_aprovacao', now() + interval '1 day')`, p1, a1, p2, a2); err != nil {
+		t.Fatal(err)
+	}
+	pedir := func(nome, metodo, caminho, corpo string) (int, string) {
+		r := httptest.NewRequest(metodo, caminho, strings.NewReader(corpo))
+		r.Header.Set("Content-Type", "application/json")
+		if nome != "" {
+			r.Header.Set("Authorization", "Bearer "+quem[nome])
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w.Code, strings.TrimSpace(w.Body.String())
+	}
+	for _, c := range []struct {
+		nome, quem, metodo, caminho, corpo string
+		status                             int
+		tem, naoTem                        string
+	}{
+		{"leitura sem sessão", "", "GET", "/conteudo/pecas", "", 401, "nao_autenticado", ""},
+		{"editor com lista só vê a própria conta", "editor-a1", "GET", "/conteudo/pecas", "", 200, a1, a2},
+		{"admin vê as duas", "admin", "GET", "/conteudo/pecas", "", 200, a2, ""},
+		{"sem módulo lê lista vazia (catálogo)", "nenhum", "GET", "/conteudo/pecas", "", 200, "[]", ""},
+		{"RPC com peça de conta que não se vê", "aprovador-a1", "POST", "/rpc/conteudo_decidir", `{"p_peca":"` + p2 + `","p_decisao":"aprovada"}`, 403, "sem_permissao", ""},
+		{"RPC na própria conta", "aprovador-a1", "POST", "/rpc/conteudo_decidir", `{"p_peca":"` + p1 + `","p_decisao":"aprovada"}`, 200, `"status":"aprovada"`, ""},
+		{"RPC sem o portão da função", "editor-a1", "POST", "/rpc/conteudo_aprovar_e_agendar", `{"p_peca":"` + p1 + `"}`, 403, "sem_permissao", ""},
+		{"pedir IA sem o módulo", "nenhum", "POST", "/conteudo-trigger", `{"account_id":"` + a1 + `"}`, 403, "sem_permissao", ""},
+		{"pedir IA para conta que não se vê", "editor-a1", "POST", "/conteudo-trigger", `{"account_id":"` + a2 + `"}`, 403, "sem_permissao", ""},
+		{"pedir IA na própria conta: o job na fila", "editor-a1", "POST", "/conteudo-trigger", `{"account_id":"` + a1 + `","quantas":5}`, 200, `"quantas":5`, ""},
+	} {
+		st, corpo := pedir(c.quem, c.metodo, c.caminho, c.corpo)
+		if st != c.status || !strings.Contains(corpo, c.tem) || (c.naoTem != "" && strings.Contains(corpo, c.naoTem)) {
+			t.Errorf("%s: %s %s como %q = %d %s, esperava %d com %q e sem %q", c.nome, c.metodo, c.caminho, c.quem, st, corpo, c.status, c.tem, c.naoTem)
+		}
+	}
+	var fila string
+	if err := p.QueryRow(ctx, `select count(*)::text || '|' || min(status) from conteudo_jobs`).Scan(&fila); err != nil || fila != "1|enfileirado" {
+		t.Errorf("a fila = %q %v, esperava 1|enfileirado", fila, err)
+	}
+}
+```
+
+**(c) Arquivos:** Create `api/internal/conteudo/rotas.go`, `api/internal/conteudo/rotas_test.go`; Modify `api/internal/web/rotas.go`, `api/internal/web/rpc_lista.go`, `api/internal/web/rotas_test.go`, `api/cmd/api/conferir.go`, `api/cmd/api/conferir_test.go`, `docs/migracao-go/NOTAS-DA-IMPLANTACAO.md`.
+
+**(d) Dependências:** Tasks 4–8; `web.Rotas`, `web.FuncoesRPC`, `RPCPendentes`, `conferirRPC` (5.0).
+
+- [ ] **Step 1: Testes que falham.** `conteudo/rotas_test.go` (acima); em `web/rotas_test.go`, `rotas59`, os dois laços e `TestConteudoPelaMontagemReal`; em `cmd/api/conferir_test.go`, a fixture e `TestConferirNaFatiaD0NaoAcusaOPlano59`. Run: `go test -count=1 ./internal/conteudo/ ./internal/web/ ./cmd/api/` → FAIL (`Montar` não existe; as rotas não estão montadas).
+- [ ] **Step 2: Implementar.** `conteudo/rotas.go`; em `web/rotas.go` o import, `conteudo.FuncoesRPC, // Plano 5.9` em `FuncoesRPC` e `conteudo.Montar(r, p) // Plano 5.9` no grupo de domínio; em `web/rpc_lista.go`, apague o bloco `// 5.9 (conteúdo): 6` e os 6 nomes de `RPCPendentes`.
+
+`cmd/api/conferir.go` (as três entradas do Plano 4 são AMPLIADAS no lugar; o resto entra num bloco do 5.9 no FIM de `colunasDoWorker`, para o `gofmt` não realinhar o mapa inteiro):
+
+```go
+// colunasDoWorker: as três do Plano 4, ampliadas no lugar
+"conteudo_pecas":      "id,account_id,titulo,formato,status,legenda,hashtags,observacoes,publicar_em,publicado_em,avisado_em,ig_media_id,ig_permalink,responsavel,criado_por,aprovado_por,aprovado_em,motivo_reprovacao,created_at,updated_at", // + Plano 5.9
+"conteudo_eventos":    "id,peca_id,de,para,acao,detalhe,quem,quando", // + Plano 5.9
+"conteudo_casamentos": "id,peca_id,ig_media_id,ig_permalink,ig_timestamp,ig_caption,ig_thumb,pontuacao,situacao,motivo,decidido_por,decidido_em,created_at", // + Plano 5.9
+// (conteudo_metricas fica como está: as rotas a leem com as colunas que o Plano 4 já confere)
+
+// colunasDoWorker, no fim do mapa
+// Plano 5.9 (conteúdo): o que as rotas, as RPCs e o /conteudo-trigger presumem; conteudo_jobs é a fila do vigia
+// da VPS. Todas com DDL no repositório.
+"conteudo_arquivos":     "id,peca_id,ordem,bucket,caminho,tipo,mime,bytes,created_at",
+"conteudo_ideias":       "id,account_id,titulo,gancho,formato,pilar,roteiro,legenda_sugerida,hashtags_sugeridas,por_que_agora,referencia,origem,modelo,job_id,situacao,peca_id,criado_por,created_at,cta,producao,porque_formato",
+"conteudo_blocos":       "id,account_id,tipo,nome,texto,usos,ativo,criado_por,created_at",
+"conteudo_jobs":         "id,tipo,account_id,params,status,github_run_id,resultado,erro,criado_por,created_at,updated_at",
+"conteudo_concorrentes": "id,account_id,handle,nome,observacao,ativo,created_at",
+
+// tiposDoWorker, antes do bloco do 5.7
+// Plano 5.9: os casts das rotas, das RPCs e do /conteudo-trigger (account_id das conteudo_* é uuid: o init completa)
+"conteudo_pecas.criado_por": "uuid", "conteudo_pecas.responsavel": "uuid", "conteudo_arquivos.id": "uuid",
+"conteudo_arquivos.peca_id": "uuid", "conteudo_arquivos.ordem": "integer", "conteudo_eventos.quem": "uuid",
+"conteudo_casamentos.id": "uuid", "conteudo_ideias.id": "uuid", "conteudo_ideias.peca_id": "uuid", "conteudo_ideias.roteiro": "jsonb",
+"conteudo_ideias.criado_por": "uuid", "conteudo_blocos.criado_por": "uuid", "conteudo_jobs.id": "uuid", "conteudo_jobs.params": "jsonb",
+"conteudo_jobs.resultado": "jsonb", "conteudo_jobs.criado_por": "uuid", "conteudo_jobs.created_at": "timestamp with time zone",
+
+// funcoesDoWorker, depois de gt_registrar_problemas
+"conteudo_guarda_aprovacao()", // Plano 5.9: a função do gatilho (as 6 RPCs, conferirRPC confere por web.FuncoesRPC)
+
+// gatilhosDoWorker
+{"conteudo_pecas_guarda", "conteudo_pecas"}, // Plano 5.9: sem ele, quem não aprova aprova pelo PATCH
+```
+
+`cmd/api/conferir_test.go`: imports `internal/rpc` e `internal/web`; em `esquemaCompleto`, logo antes do `trg_vazio`:
+
+```go
+	// as funções de web.FuncoesRPC (que conferirRPC confere) pela PRÓPRIA declaração: Opcional = DEFAULT (Plano 5.9)
+	for _, f := range web.FuncoesRPC {
+		var args []string
+		for _, pr := range f.Params {
+			args = append(args, pr.Nome+" "+pr.Tipo+map[bool]string{true: " default null"}[pr.Opcional])
+		}
+		retorno := map[rpc.Retorno]string{rpc.Valor: "integer", rpc.Conjunto: "setof integer", rpc.Nada: "void"}[f.Retorno]
+		ddl = append(ddl, fmt.Sprintf("create or replace function %s(%s) returns %s language sql as $f$ select null::integer $f$",
+			f.Nome, strings.Join(args, ", "), retorno))
+	}
+```
+
+(`create or replace`: `gt_registrar_problemas` já foi criada pelo laço de `funcoesDoWorker` com o mesmo retorno.) E no fim:
+
+```go
+// Plano 5.9: contra a fatia D0 (as 9 conteudo_*, o gatilho da aprovação e as 6 RPCs verbatim), o conferir não
+// acusa nada do 5.9 — pega erro de digitação nas listas. conteudo_reivindicar_hora_h é do Plano 4 (o robô da
+// hora H tem banco próprio nos testes) e não está na fatia.
+func TestConferirNaFatiaD0NaoAcusaOPlano59(t *testing.T) {
+	p := testebanco.ComEsquemaDeProducao(t)
+	faltam := faltamDe(t, p)
+	for _, f := range faltam {
+		if strings.Contains(f, " conteudo_") && !strings.Contains(f, "conteudo_reivindicar_hora_h") {
+			t.Errorf("a fatia D0 devia satisfazer o 5.9, mas o conferir acusa %q", f)
+		}
+	}
+	if !slices.ContainsFunc(faltam, func(f string) bool { return strings.Contains(f, "conteudo_reivindicar_hora_h") }) {
+		t.Error("conteudo_reivindicar_hora_h não está na fatia: o conferir devia acusá-la (o filtro acima não provaria nada)")
+	}
+}
+```
+
+Em `NOTAS-DA-IMPLANTACAO.md`, acrescente ao fim:
+
+```markdown
+## Plano 5.9 — Central de Conteúdo
+
+### Rotas novas
+- Com sessão, regra = catálogo de produção (conteudista = papel `admin`, `is_superadmin` ou o módulo `conteudo` em `features`; a restritiva `pode_ver_conta` em peças, ideias, blocos e jobs), escrita de sessão "entrar como" = 403: `GET /conteudo/pecas` (com `capa`, `metrica` e `sugestao` embutidas), `/arquivos`, `/eventos`, `/ideias`, `/blocos`, `/concorrentes`, `/jobs`; `POST`/`PATCH`/`DELETE /conteudo/pecas[/{id}]`, `POST`/`PATCH`/`DELETE /conteudo/arquivos[/{id}]`, `POST /conteudo/eventos`, `POST`/`PATCH /conteudo/ideias[/{id}]`, `POST`/`PATCH /conteudo/blocos[/{id}]`, `POST`/`PATCH /conteudo/concorrentes[/{id}]`.
+- As filhas da peça (arquivos, eventos, a métrica e a sugestão embutidas) só aparecem com a peça VISÍVEL (em produção não tinham a restritiva). `concorrentes` continua sem a restritiva (paridade, Ruling 5.9-5).
+- RPC: `POST /rpc/conteudo_aprovar_e_agendar`, `conteudo_casar_na_mao`, `conteudo_decidir`, `conteudo_decidir_casamento`, `conteudo_ideia_virar_peca`, `conteudo_reavisar` — portão = a checagem de dentro de cada função; a peça/sugestão/ideia/conta do parâmetro tem de ser de conta que a pessoa vê (403 sem a função rodar).
+- `POST /conteudo-trigger` (portão da edge: papel `admin`, super pela ficha, a chave `conteudo` em `permissions` ou o módulo `conteudo`; conta visível; "entrar como" não pede): grava o pedido em `conteudo_jobs` (`enfileirado`) e NÃO chama o GitHub. Quem roda é o vigia da VPS (abaixo).
+
+### Robô de Conteúdo na VPS (trilha C, Plano 7)
+- O `conteudo-ideias.yml` (GitHub Actions) deixa de existir: `coletor/vps/conteudo-vigia.sh` + `conteudo-vigia.service` pegam o job da fila por `pg` (passo a passo na seção "Robô de Conteúdo na VPS" do plano 5.9). Até o vigia estar no ar, o botão "Gerar ideias com IA" grava o pedido e a tela gira a ampulheta; o vigia expira (`erro`) o pedido com mais de 30 min na fila em vez de gastar IA com clique velho.
+- Papel de banco `conteudo_robo` (senha em `/etc/robos.env` como `CONTEUDO_DB_SENHA`), com SELECT/INSERT/UPDATE só no que os dois scripts usam (seção da trilha C) — regras 2, 4, 11 e 15 de `ops/vps/api-db/LEIA-ME.md` para ele.
+
+### Antes do corte
+- `api worker conferir` no banco restaurado: as colunas e os tipos das 9 `conteudo_*`, a função `conteudo_guarda_aprovacao()` e o gatilho `conteudo_pecas_guarda` LIGADO em `conteudo_pecas`; as 6 RPCs pelo `conferirRPC` (DEFAULT de `p_motivo` e `p_publicar_em`, EXECUTE de `authenticated`).
+- Nenhum outro gatilho nas `conteudo_*`: `select c.relname, g.tgname from pg_trigger g join pg_class c on c.oid = g.tgrelid where not g.tgisinternal and c.relname like 'conteudo\_%'` = só `conteudo_pecas | conteudo_pecas_guarda`.
+- As frases das funções (sem acento) e os corpos verbatim: `select md5(prosrc) from pg_proc where proname like 'conteudo\_%' order by proname` no banco restaurado = o mesmo na fatia de teste (`03-funcoes-5-09.sql`); diferente = alguém mudou a função em produção depois do levantamento — refaça o `TestPortoesIguaisAsFuncoes` com a nova antes do corte.
+- Pedidos órfãos: `select status, count(*) from conteudo_jobs where status in ('enfileirado','rodando') group by 1` — os que ficaram do Actions viram `erro` antes de ligar o vigia (senão ele os roda na primeira volta): `update conteudo_jobs set status = 'erro', erro = 'pedido de antes da mudança para a VPS', updated_at = now() where status in ('enfileirado','rodando')`.
+- Objetos do bucket `conteudo` copiados para o disco (Plano 6) antes de a tela apagar arquivo pela API (hoje `excluirPeca`/`removerArquivo` apagam do Storage primeiro).
+
+### Mudanças de contrato que o Plano 7 absorve
+- Peças: `GET /conteudo/pecas?account_id=` (ou `?id=`; `status` lista por vírgula; `ordem=publicar_em|created_at[.desc]`) com `capa {caminho,tipo}`, `metrica {…}` e `sugestao {…}` em cada peça — somem `miniaturasDasPecas`, `metricasDasPecas` e `sugestoesDeCasamento` (a lista de ids na URL). `POST /conteudo/pecas` SEM `status`, `publicado_em`, `criado_por` (vem da sessão), campos de aprovação ou do Instagram — `criarPeca` deixa de mandar `criado_por` (400 se mandar); `avisado_em` só `null`. `PATCH` com `status`: sem `conteudo.aprovar`, levar de `em_aprovacao` a `aprovada|reprovada|agendada` = `400 regra_de_negocio` com a frase da função (o PostgREST respondia o mesmo P0001). `DELETE` é 204.
+- Arquivos: `POST /conteudo/arquivos` com `caminho` = `<conta>/<peça>/<nome>` da PRÓPRIA peça (403 fora), `bucket` só `conteudo`; `PATCH` só `ordem` (-1 a 1000, a troca em três passos continua); peça que não se vê = 403 na criação e 404 no resto.
+- Eventos: `POST /conteudo/eventos` sem `quem` (vem da sessão); `acao` só `criou|mudou_status|remarcou|duplicou`.
+- Ideias: `GET /conteudo/ideias?da_marca=<conta>&descartada=false` (substitui o `.or(account_id.eq.X,account_id.is.null)`); `POST` sem `origem`, `modelo`, `job_id`, `situacao`, `peca_id`, `criado_por`; `PATCH` com `situacao`/`peca_id` (peça que não se vê = 403).
+- Blocos: `GET /conteudo/blocos?da_marca=<conta>&ativo=true`; `POST` exige `nome` (o apelido: hoje a tela manda `null` e o banco recusa, achado 7) e não aceita `criado_por`; `PATCH` só `{"ativo": false}`.
+- Concorrentes: `GET /conteudo/concorrentes?account_id=&ativo=true`; `POST` (409 se o @ já existe na marca); `PATCH` só `ativo`.
+- Job: `GET /conteudo/jobs?id=` (sem `criado_por` nem `github_run_id`).
+- RPCs: `POST /api/rpc/<nome>` com o mesmo corpo de `sbClient.rpc`; o erro de negócio chega como `400 {"error":"regra_de_negocio","mensagem":<frase da função>}`; peça de conta que não se vê = 403.
+- `conteudo-trigger`: mesma URL sob `/api`, mesmo corpo e mesma resposta; erros: `400 conta_invalida` (também conta inexistente), `400 corpo_invalido` (campo a mais), `403 sem_permissao` (também conta que não se vê), `409 ja_rodando` com `job_id`, `500 insert_falhou` (sem `detail`). Some o `502 dispatch_falhou`.
+- Conta e pessoas: `listarContas`/`mudarUsoDoPortal` → `/redes/contas` (5.6; o Portal de Notícias só para papel `admin`, como a policy de hoje: Ruling 5.9-13); `listarPessoas` → `GET /acesso/usuarios` (5.1). Storage (`urlAssinada`, `subirArquivo`, `duplicarPeca`, `removerArquivo`, `excluirPeca`): Plano 6.
+
+### Achados para o dono
+(ver a seção "Achados para o dono" do plano 5.9)
+```
+
+Rode `gofmt -w ./internal ./cmd`.
+- [ ] **Step 3: Rodar e ver passar.** `gofmt -l . && go vet ./... && go test -count=1 -race ./... 2>&1 | grep -v goose | grep -E '^(ok|FAIL|---)'` → todos `ok`. Mutações que têm de reprovar: tirar `soSessaoPropria` de UMA escrita (a varredura do impersonado acusa — ensaiado); uma leitura com a restritiva que não projete `account_id` (o lado positivo acusa — ensaiado); `conteudo.Montar` FORA do grupo com `ComEscopo` (as leituras respondem 500 e o `soPedeIA` nega tudo: `TestConteudoPelaMontagemReal`); um nome de RPC do Conteúdo de volta em `RPCPendentes` (a montagem recusa: `TestListasDeRPCFecham`); um erro de digitação nas listas do `conferir` (ensaiado).
+- [ ] **Step 4: Commit** `feat(api): monta a Central de Conteúdo (leituras, escritas, RPCs e a fila do robô), varreduras de conta e impersonado, conferir e notas` (+ `Co-Authored-By`).
+
+---
+
+### Verificação final do 5.9
+
+- [ ] `docker stop pg-plano59` e `make -C api teste PG_PORTA=58549` → todos `ok` (nunca junto com o gate de outra worktree).
+- [ ] Subir o `pg-plano59` de novo e `cd api && go test -count=1 -v ./... 2>&1 | grep -c -- '--- SKIP'` → `0`.
+- [ ] `cd api && gofmt -l . && go vet ./...` → nada.
+- [ ] `git diff origin/main --stat -- src/ supabase/ coletor/ db/ .github/` → vazio (front, edge e robô trocam no Plano 7; produção não muda).
+- [ ] `grep -rn 'api.github.com\|internal/github' api/internal/conteudo` → nada (o Conteúdo não despacha nada); `grep -rn 'conteudo_aprovar_e_agendar\|conteudo_reavisar' api/internal/web/rpc_lista.go` → nada (saíram de `RPCPendentes`).
+- [ ] `grep -rn 'Conferir:' api/internal/conteudo/*.go | grep -v _test` → `tabelaPecas`, `tabelaArquivos`, `tabelaEventos`, `tabelaIdeias`, `tabelaBlocos` e as 6 RPCs; `tabelaConcorrentes` SEM (Ruling 5.9-5).
+- [ ] `docker stop pg-plano59`.
+- [ ] Revisão final do branch por opus com foco em: a aprovação (alguma escrita leva a peça a `aprovada`/`agendada` sem passar pela guarda ou por `Aprovador`? algum `INSERT` de peça aceita `status`?), a conta (alguma leitura, filha, embutido, RPC ou o `/conteudo-trigger` alcança A2 para quem só vê A1? alguma conferência roda FORA da transação que grava?), a IA paga (algum caminho cria dois jobs ou um `quantas` acima de 20?), o "entrar como" (alguma escrita ou RPC sem `soSessaoPropria`/`SoSessaoPropria`?) e o caminho do arquivo (algum `caminho` fora de `<conta>/<peça>/` grava?).
+
+---
+
 ## Robô de Conteúdo na VPS — passo a passo para a trilha C (não é tarefa do 5.9)
 
 (a preencher)
