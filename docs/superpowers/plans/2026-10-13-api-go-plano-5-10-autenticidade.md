@@ -804,6 +804,7 @@ create index vessel_lembretes_token_idx on public.vessel_lembretes (token_hash) 
 - [ ] **Step 2: As funções e os gatilhos, verbatim.** Rode, da raiz da worktree, o gerador de uso único (fica fora do repositório; no scratchpad da sessão, não em `/tmp` compartilhado):
 
 ```bash
+SCRATCH=$(mktemp -d)
 cat > "$SCRATCH/fatia510.mjs" <<'FIM'
 // Gera esquema/03-funcoes-5-10.sql VERBATIM do levantamento (uso único, Plano 5.10 Task 2).
 // node fatia510.mjs <levantamento>/02-funções.csv > api/internal/testebanco/esquema/03-funcoes-5-10.sql
@@ -1062,5 +1063,264 @@ e, logo depois do laço que exige `CONFERIDOS` (antes de calcular `chamadas`), `
 
 - [ ] **Step 5:** `cd api && gofmt -l ./internal && go test -count=1 -run 'TestFatia|TestEsquema|TestNomesDosArquivos' ./internal/testebanco/` PASS (inclui `TestFatiaDaFabrica` etc. das outras fatias e o de nomes de dois dígitos); `go test -count=1 ./...` (a fatia carrega em todo `ComEsquemaDeProducao`); mutações de (b) reprovam, uma por vez.
 - [ ] **Step 6: Commit** `test(api): D0 — fatia 5.10 do esquema (as 12 tabelas do selo, 35 funções verbatim e os 6 gatilhos vivos)` (+ `Co-Authored-By`).
+
+---
+
+### Task 3: `vessel` — o mundo do selo e as 6 leituras
+
+**Revisor:** sonnet. **Depende de:** Task 2 (a fatia).
+
+**(a) Contrato**
+- `vessel/mundo_test.go`: as pessoas (`selo` com o módulo `autenticidade`; `super` com `is_superadmin` e nenhum módulo; `admin` = papel `admin` com outros módulos; `leitor`; `desativado` com o módulo; `chave` = a chave `autenticidade` só em `permissions`), o "entrar como" (`impersonado` = o super entrou como o selo), as linhas (2 lotes, 5 peças, a dona de P3 com CPF, nascimento e o pedido do Bling, 2 pedidos de registro pendentes, uma baixa ativa e uma desfeita, 2 pedidos de cartão, um lembrete com `token_hash`, 2 leituras) e `fotoDoSelo` (as 9 tabelas que as RPCs gravam e `disparos_pendentes`). Toda conferência negada da Task 4 compara a foto antes e depois.
+- `vessel/leituras.go`: as 6 GETs, uma por leitura da tela (Ruling 5.10-6), com a regra de Ler do catálogo (`is_vessel_admin()`), sem filtro de recorte (o selo é um só). `/autenticidade/lotes` com TODAS as colunas (a busca universal varre o lote); `/autenticidade/pecas` com `?codigo=` (lista; a tela relê em blocos de 100 códigos de 10 caracteres: ~1,1 KB na URL); `/autenticidade/registros` SEM `cpf`, `nascimento`, `cliente_id`, `pedido_id`, `bling_contato_id`, `bling_atualizado_em`, `presente_de_nome` (Ruling 5.10-7); `/autenticidade/baixas` só as ativas; `/autenticidade/cartao-pedidos` (a tela manda `?limite=20`); `/autenticidade/lembretes` sem `token_hash`. Ordens padrão = as da tela.
+- A doc do pacote (`rd.go:1`) passa a `// Package vessel: as tarefas da Vessel que o worker roda (Plano 4) e o painel de Autenticidade do selo (Plano 5.10): leituras, RPCs e o cartão EAN.`
+- **Ensaiado** (13/10, a mesma árvore + Tasks 1–2): `TestMundoDoSelo` e `TestLeiturasDoSelo` passam com `-race` na primeira rodada.
+
+```go
+package vessel
+
+import (
+	"maps"
+	"slices"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rbv-co/social-dashboard/api/internal/autz"
+	"github.com/rbv-co/social-dashboard/api/internal/dados"
+)
+
+// leituras: as 6 leituras da tela de Autenticidade (tela-de-autenticidade.vue: carregar, carregarLembretes,
+// carregarAFilaDeCartoes, atualizarAsPecas, recarregarAsPecas). Regra = catálogo: is_vessel_admin() nas 6 tabelas
+// (o módulo 'autenticidade' em features ou is_superadmin da ficha, conta ativa); quem não passa recebe 200 [] e
+// X-Total-Count 0 (Ruling 9 do mestre). O selo é um só para a casa: nenhum recorte por conta, loja ou dono. As
+// tabelas que a tela não lê direto (clientes, leituras, garantias baixadas, pedidos de registro, trilha) não têm
+// rota: as funções as leem (Ruling 5.10-6).
+var leituras = map[string]dados.Consulta{
+	// TODAS as colunas: a tela lia select('*') e a busca universal varre o lote inteiro (busca-e-arquivamento.js:73-85)
+	"/autenticidade/lotes": {Tabela: "vessel_lotes", Alias: "l",
+		SQL: `select l.id, l.modelo, l.cor, l.sku, l.quantidade, l.fabricado_em, l.criado_por, l.criado_em, l.fotos, l.os,
+		  l.teste, l.material, l.material_fonte from vessel_lotes l`,
+		OrdemPadrao: "l.criado_em desc", Desempate: "l.id"},
+	// ?codigo=A,B relê só as peças de um pedido de cartão que terminou (atualizarAsPecas, em blocos de 100)
+	"/autenticidade/pecas": {Tabela: "vessel_pecas", Alias: "p",
+		SQL:         `select p.codigo, p.lote_id, p.numero_na_serie, p.gravada_em, p.cartao_gerado_em from vessel_pecas p`,
+		Filtros:     []dados.Filtro{{Param: "codigo", SQL: "p.codigo = any(@codigo::text[])", Tipo: "texto[]"}},
+		OrdemPadrao: "p.criado_em", Desempate: "p.codigo"},
+	// as colunas que a tela usa (lista, busca, planilha, aviso da fila): SEM cpf, nascimento e os vínculos (Ruling 5.10-7)
+	"/autenticidade/registros": {Tabela: "vessel_registros", Alias: "r",
+		SQL: `select r.codigo, r.nome, r.whatsapp, r.onde_comprou, r.comprado_em, r.garantia_ate, r.registrado_em, r.bling_pedido
+		  from vessel_registros r`,
+		OrdemPadrao: "r.registrado_em desc", Desempate: "r.codigo"},
+	// só a baixa ATIVA (a tela lia .is('desfeita_em', null))
+	"/autenticidade/baixas": {Tabela: "vessel_baixas", Alias: "b",
+		SQL: `select b.codigo, b.motivo, b.baixada_em from vessel_baixas b`, Onde: "b.desfeita_em is null",
+		OrdemPadrao: "b.baixada_em desc", Desempate: "b.id"},
+	// a fila de cartões: a tela pede as 20 mais recentes (?limite=20)
+	"/autenticidade/cartao-pedidos": {Tabela: "vessel_cartao_pedidos", Alias: "q",
+		SQL: `select q.id, q.pecas, q.situacao, q.pasta, q.erro, q.criado_por, q.criado_em, q.comecou_em, q.terminou_em
+		  from vessel_cartao_pedidos q`,
+		OrdemPadrao: "q.criado_em desc", Desempate: "q.id"},
+	// COLUNAS_DO_LEMBRETE (lembretes-do-selo.js:29-30): o token_hash do link de cancelar NÃO sai
+	"/autenticidade/lembretes": {Tabela: "vessel_lembretes", Alias: "m",
+		SQL: `select m.id, m.peca_codigo, m.email, m.criado_em, m.enviado_7_em, m.enviado_30_em, m.cancelado_em, m.cancelado_por
+		  from vessel_lembretes m`,
+		OrdemPadrao: "m.criado_em desc", Desempate: "m.id"},
+}
+
+// montarLeituras registra as 6 GETs (declaração inválida = panic na montagem: a API não sobe).
+func montarLeituras(r chi.Router, p *pgxpool.Pool) {
+	for _, caminho := range slices.Sorted(maps.Keys(leituras)) {
+		r.Get(caminho, leituras[caminho].Handler(p, autz.Producao))
+	}
+}
+```
+
+**(b) Testes de aceitação** (`mundo_test.go` e `leituras_test.go`, código abaixo)
+- `TestMundoDoSelo`: `autz.VesselAdmin` = verdadeiro para selo e super, falso para admin, leitor, chave e desativado (o mundo mostra os dois lados); as linhas carregaram.
+- `TestLeiturasDoSelo` (pela cadeia real): para cada uma das 6 rotas, selo, super e impersonado veem a linha marcada; admin, leitor e chave recebem `[]` com `X-Total-Count: 0`; desativado e sem sessão, 401; parâmetro fora da lista, 400. E: `?codigo=` filtra (e não abre nada a quem não é do selo); registros SEM o CPF, sem a chave `"cpf"` e sem o nascimento, COM o `bling_pedido`; só a baixa ativa; lembretes sem `HASH-SECRETO`; `?limite=1` traz a mais nova; lotes com `os`.
+- Mutações que têm de reprovar: `r.cpf` na lista de `/autenticidade/registros`; tirar o `Onde` das baixas; `m.token_hash` nos lembretes; trocar a tabela de uma Consulta por uma sem `is_vessel_admin` (o catálogo dá outra regra: o lado negado reprova).
+
+```go
+package vessel
+
+import (
+	"context"
+	"testing"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rbv-co/social-dashboard/api/internal/autz"
+	"github.com/rbv-co/social-dashboard/api/internal/testebanco/mundoteste"
+)
+
+// O mundo do selo: quem passa em is_vessel_admin() (o módulo autenticidade, ou is_superadmin da ficha) e quem não
+// passa (papel admin sem o módulo, a chave autenticidade em permissions sem o módulo, um leitor, a conta
+// desativada), mais o "entrar como" (o super entrou como o selo).
+const (
+	idSelo       = "a5a10000-0000-4000-a000-000000000001"
+	idSuper      = "a5a10000-0000-4000-a000-000000000002"
+	idAdmin      = "a5a10000-0000-4000-a000-000000000003"
+	idLeitor     = "a5a10000-0000-4000-a000-000000000004"
+	idDesativado = "a5a10000-0000-4000-a000-000000000005"
+	idChave      = "a5a10000-0000-4000-a000-000000000006"
+
+	L1 = "a5a20000-0000-4000-a000-0000000000b1" // Linear, SS0001HB.S1, canvas: P1 gravada com cartão, P2 livre, P3 gravada com dona
+	L2 = "a5a20000-0000-4000-a000-0000000000b2" // Prova, TESTE-01, sem material: T1 livre (lembrete, pedido pendente), T2 baixada
+
+	P1, P2, P3 = "VBAAAA0001", "VBAAAA0002", "VBAAAA0003"
+	T1, T2     = "VBTTTT0001", "VBTTTT0002"
+
+	PR1 = "a5a30000-0000-4000-a000-0000000000d1" // aprovado: deu a dona de P3 (conferência com data: 2026-01-10)
+	PR2 = "a5a30000-0000-4000-a000-0000000000d2" // pendente, em P2
+	PR3 = "a5a30000-0000-4000-a000-0000000000d3" // pendente, em T1
+	Q1  = "a5a50000-0000-4000-a000-0000000000e1" // pedido de cartão pronto (P1), pasta do dia 2026-10-09
+	Q2  = "a5a50000-0000-4000-a000-0000000000e2" // pedido de cartão que falhou (P2)
+
+	cpfDaDona = "52998224725"
+)
+
+var pessoas = []mundoteste.Pessoa{
+	{Chave: "selo", ID: idSelo, Email: "selo@x.com", Papel: "viewer", Modulos: []string{"autenticidade"}},
+	{Chave: "super", ID: idSuper, Email: "super@x.com", Papel: "viewer", Super: true},
+	{Chave: "admin", ID: idAdmin, Email: "admin@x.com", Papel: "admin", Modulos: []string{"meta", "sales"}},
+	{Chave: "leitor", ID: idLeitor, Email: "leitor@x.com", Papel: "viewer", Modulos: []string{"meta"}},
+	{Chave: "desativado", ID: idDesativado, Email: "fora@x.com", Papel: "viewer", Modulos: []string{"autenticidade"}, Desativado: true},
+	{Chave: "chave", ID: idChave, Email: "chave@x.com", Papel: "viewer", Modulos: []string{"meta"}},
+}
+
+const linhas = `
+update profiles set permissions = '{"autenticidade": ["ver", "editar"]}' where id = '` + idChave + `';
+insert into vessel_lotes (id, modelo, cor, sku, quantidade, material, material_fonte, os, criado_em) values
+  ('` + L1 + `', 'Linear', 'Caramelo', 'SS0001HB.S1', 3, 'canvas', 'dono', 'OS-7', '2026-01-01T10:00:00Z'),
+  ('` + L2 + `', 'Prova', null, 'TESTE-01', 2, null, null, null, '2026-02-01T10:00:00Z');
+insert into vessel_pecas (codigo, lote_id, numero_na_serie, gravada_em, cartao_gerado_em, criado_em) values
+  ('VBAAAA0001', '` + L1 + `', 1, '2026-01-02T10:00:00Z', '2026-10-09T12:00:00Z', '2026-01-01T10:00:00Z'),
+  ('VBAAAA0002', '` + L1 + `', 2, null, null, '2026-01-01T10:00:01Z'),
+  ('VBAAAA0003', '` + L1 + `', 3, '2026-01-02T10:05:00Z', null, '2026-01-01T10:00:02Z'),
+  ('VBTTTT0001', '` + L2 + `', 1, null, null, '2026-02-01T10:00:00Z'),
+  ('VBTTTT0002', '` + L2 + `', 2, null, null, '2026-02-01T10:00:01Z');
+insert into vessel_pedidos_de_registro (id, codigo, nome, cpf, whatsapp, estado, decidido_por_que, conferencia, criado_em) values
+  ('` + PR1 + `', 'VBAAAA0003', 'Ana Cliente', '` + cpfDaDona + `', '11999990000', 'aprovado', 'na_mao', '{"quando": "2026-01-10"}', '2026-01-12T12:00:00Z'),
+  ('` + PR2 + `', 'VBAAAA0002', 'Carla Compradora', '11144477735', '11977776666', 'pendente', null, null, '2026-02-01T12:00:00Z'),
+  ('` + PR3 + `', 'VBTTTT0001', 'Duda Teste', '11144477735', '11966665555', 'pendente', null, null, '2026-02-02T12:00:00Z');
+insert into vessel_registros (codigo, nome, whatsapp, onde_comprou, comprado_em, garantia_ate, registrado_em, cpf, pedido_id,
+    bling_pedido, bling_contato_id, nascimento)
+  values ('VBAAAA0003', 'Ana Cliente', '11999990000', 'Loja Iguatemi', '2026-01-10', '2028-01-10', '2026-01-15T15:00:00Z',
+    '` + cpfDaDona + `', '` + PR1 + `', '777', '555', '1990-05-01');
+insert into vessel_baixas (codigo, motivo, baixada_em) values ('VBTTTT0002', 'teste', '2026-02-03T10:00:00Z');
+insert into vessel_baixas (codigo, motivo, baixada_em, desfeita_em) values ('VBTTTT0001', 'defeito', '2026-02-02T10:00:00Z', '2026-02-02T11:00:00Z');
+insert into vessel_cartao_pedidos (id, pecas, situacao, pasta, erro, criado_em, terminou_em) values
+  ('` + Q1 + `', '{VBAAAA0001}', 'pronto', 'Cartões com EAN/2026-10-09', null, '2026-10-09T11:00:00Z', '2026-10-09T12:00:00Z'),
+  ('` + Q2 + `', '{VBAAAA0002}', 'falhou', null, 'zoho fora', '2026-10-10T11:00:00Z', '2026-10-10T11:05:00Z');
+insert into vessel_lembretes (peca_codigo, email, consentimento_em, token_hash) values
+  ('VBTTTT0001', 'duda@x.com', '2026-02-02T12:00:00Z', 'HASH-SECRETO');
+insert into vessel_leituras (codigo, achou, ip_hash, lido_em) values
+  ('VBAAAA0003', true, 'ip1', now() - interval '1 day'), ('NAOEXISTE', false, 'ip2', now() - interval '2 days');
+`
+
+// fotoDoSelo: tudo o que uma RPC do selo pode mudar. Igual antes e depois = o negado não gravou.
+const fotoDoSelo = `select md5(coalesce(string_agg(t, '|' order by t), '')) from (
+	select 'l' || row_to_json(x)::text t from vessel_lotes x union all
+	select 'p' || row_to_json(x)::text from vessel_pecas x union all
+	select 'r' || row_to_json(x)::text from vessel_registros x union all
+	select 'q' || row_to_json(x)::text from vessel_pedidos_de_registro x union all
+	select 'b' || row_to_json(x)::text from vessel_baixas x union all
+	select 'e' || row_to_json(x)::text from vessel_edicoes x union all
+	select 'g' || row_to_json(x)::text from vessel_garantias_baixadas x union all
+	select 'c' || row_to_json(x)::text from vessel_cartao_pedidos x union all
+	select 'm' || row_to_json(x)::text from vessel_lembretes x union all
+	select 'd' || row_to_json(x)::text from disparos_pendentes x) f`
+
+func novoMundo(t *testing.T, montar ...func(chi.Router, *pgxpool.Pool)) *mundoteste.Mundo {
+	t.Helper()
+	return mundoteste.Novo(t, mundoteste.Opcoes{Pessoas: pessoas, Linhas: linhas,
+		Impersonadas: map[string][2]string{"impersonado": {idSelo, idSuper}}}, montar...)
+}
+
+// O mundo mostra os dois lados da regra (is_vessel_admin = autz.VesselAdmin) e as linhas carregam.
+func TestMundoDoSelo(t *testing.T) {
+	m := novoMundo(t)
+	for id, quer := range map[string]bool{idSelo: true, idSuper: true, idAdmin: false, idLeitor: false, idChave: false, idDesativado: false} {
+		e, err := autz.CarregarEscopo(context.Background(), m.P, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if autz.VesselAdmin(e) != quer {
+			t.Errorf("VesselAdmin(%s) = %t, esperava %t", id, !quer, quer)
+		}
+	}
+	if v := m.Um(t, `select (select count(*) from vessel_pecas)::text || '|' || (select count(*) from vessel_registros)::text
+		|| '|' || (select count(*) from vessel_baixas where desfeita_em is null)::text`); v != "5|1|1" {
+		t.Errorf("linhas = %s", v)
+	}
+}
+```
+
+```go
+package vessel
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/rbv-co/social-dashboard/api/internal/testebanco/mundoteste"
+)
+
+// As 6 leituras pela cadeia real (auth.Exigir → autz.ComEscopo): quem é do selo vê; quem não é recebe [] e conta 0
+// (papel admin, a chave só em permissions e o leitor); conta desativada e sem sessão = 401; parâmetro fora da lista = 400.
+func TestLeiturasDoSelo(t *testing.T) {
+	m := novoMundo(t, montarLeituras)
+	marcas := map[string]string{ // rota → um pedaço que só aparece com as linhas legíveis
+		"/autenticidade/lotes":          `"material_fonte":"dono"`,
+		"/autenticidade/pecas":          `"VBTTTT0002"`,
+		"/autenticidade/registros":      `"Ana Cliente"`,
+		"/autenticidade/baixas":         `"VBTTTT0002"`,
+		"/autenticidade/cartao-pedidos": `"pronto"`,
+		"/autenticidade/lembretes":      `"duda@x.com"`,
+	}
+	if len(marcas) != len(leituras) {
+		t.Fatalf("leitura sem caso aqui: %d rotas, %d casos", len(leituras), len(marcas))
+	}
+	for rota, marca := range marcas {
+		for _, quem := range []string{"selo", "super", "impersonado"} {
+			if st, b := m.Pedir(t, quem, "GET", rota, ""); st != 200 || !strings.Contains(b, marca) {
+				t.Errorf("%s GET %s = %d %s", quem, rota, st, b)
+			}
+		}
+		for _, quem := range []string{"admin", "leitor", "chave"} {
+			w := m.Resposta(t, quem, "GET", rota+"?contar=1", "")
+			if w.Code != 200 || strings.TrimSpace(w.Body.String()) != "[]" || w.Header().Get("X-Total-Count") != "0" {
+				t.Errorf("%s GET %s = %d %s (X-Total-Count %q)", quem, rota, w.Code, w.Body, w.Header().Get("X-Total-Count"))
+			}
+		}
+		for _, quem := range []string{"desativado", ""} {
+			if st, _ := m.Pedir(t, quem, "GET", rota, ""); st != 401 {
+				t.Errorf("%q GET %s = %d, esperava 401", quem, rota, st)
+			}
+		}
+		if st, _ := m.Pedir(t, "selo", "GET", rota+"?inventado=1", ""); st != 400 {
+			t.Errorf("GET %s?inventado=1 = %d, esperava 400", rota, st)
+		}
+	}
+	m.Rodar(t, []mundoteste.Caso{
+		{Nome: "peças por código", Quem: "selo", Metodo: "GET", Caminho: "/autenticidade/pecas?codigo=VBAAAA0001,VBAAAA0003", Status: 200, Tem: P3, NaoTem: P2},
+		{Nome: "peças por código, quem não é do selo", Quem: "admin", Metodo: "GET", Caminho: "/autenticidade/pecas?codigo=VBAAAA0001", Status: 200, NaoTem: P1},
+		{Nome: "registros sem o CPF", Quem: "selo", Metodo: "GET", Caminho: "/autenticidade/registros", Status: 200, NaoTem: cpfDaDona},
+		{Nome: "registros sem a coluna cpf", Quem: "selo", Metodo: "GET", Caminho: "/autenticidade/registros", Status: 200, NaoTem: `"cpf"`},
+		{Nome: "registros sem o nascimento", Quem: "selo", Metodo: "GET", Caminho: "/autenticidade/registros", Status: 200, NaoTem: "1990-05-01"},
+		{Nome: "registros com o pedido do Bling (a tela mostra)", Quem: "selo", Metodo: "GET", Caminho: "/autenticidade/registros", Status: 200, Tem: `"bling_pedido":"777"`},
+		{Nome: "só a baixa ativa", Quem: "selo", Metodo: "GET", Caminho: "/autenticidade/baixas", Status: 200, Tem: T2, NaoTem: T1},
+		{Nome: "lembretes sem o hash do link", Quem: "selo", Metodo: "GET", Caminho: "/autenticidade/lembretes", Status: 200, NaoTem: "HASH-SECRETO"},
+		{Nome: "a fila com limite, a mais nova primeiro", Quem: "selo", Metodo: "GET", Caminho: "/autenticidade/cartao-pedidos?limite=1", Status: 200, Tem: `"falhou"`, NaoTem: `"pronto"`},
+		{Nome: "lotes com todas as colunas", Quem: "selo", Metodo: "GET", Caminho: "/autenticidade/lotes", Status: 200, Tem: `"os":"OS-7"`},
+	})
+}
+```
+
+**(c) Arquivos:** Create `api/internal/vessel/leituras.go`, `api/internal/vessel/mundo_test.go`, `api/internal/vessel/leituras_test.go`; Modify `api/internal/vessel/rd.go` (só a linha da doc do pacote).
+
+**(d) Dependências:** Task 2.
+
+- [ ] **Step 1:** Os testes; ver falhar (`montarLeituras` não existe). - [ ] **Step 2:** `leituras.go` e a linha da doc. - [ ] **Step 3:** `cd api && gofmt -l ./internal && go vet ./internal/vessel/ && go test -count=1 -race ./internal/vessel/` PASS (inclui os testes da RD do Plano 4); mutações reprovam. - [ ] **Step 4: Commit** `feat(api): selo Vessel — as 6 leituras do painel de Autenticidade (regra do catálogo; registros sem CPF)` (+ `Co-Authored-By`).
 
 ---
