@@ -1,6 +1,6 @@
 # Sair do Supabase — Plano 5.9: Central de Conteúdo
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. **Execute na worktree `p5-59`** (branch `feat/api-go-plano-5-9`, que já traz o 5.0 e o 5.1 executados e os planos 5.1, 5.2, 5.6, 5.7, 5.8). Antes da Task 1 ela recebe o **5.7 EXECUTADO** (`git merge --no-edit feat/api-go-plano-5-7`, que traz o 5.6 — `accounts`, `pode_ver_conta`, `PodeVerConta`, `/redes/contas` — e a fundação comum do 5.2: `dados.SoSessaoPropria`, `mundoteste`, `rpc.Funcao.SoSessaoPropria/ParamConta/Conferir`). O 5.8 NÃO é dependência de código: o Conteúdo não usa `internal/github` (o robô muda para a VPS). Faça `git add` só dos caminhos de cada task. Este plano contrata sobre as **interfaces** escritas nos planos 5.0–5.7, não sobre o código: o pré-voo confere que elas existem com esses nomes.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. **Execute na worktree `p5-59`** (branch `feat/api-go-plano-5-9`, que já traz o 5.0 e o 5.1 executados e os planos 5.1, 5.2, 5.6, 5.7, 5.8). Antes da Task 1 ela recebe o **`origin/main`** (`git merge --no-edit origin/main`, 448c1356 ou posterior: o 5.6 e o 5.7 já MESCLADOS, PRs #357 e #362 — `accounts`, `pode_ver_conta`, `PodeVerConta`, `/redes/contas` — e a fundação comum do 5.2: `dados.SoSessaoPropria`, `mundoteste`, `rpc.Funcao.SoSessaoPropria/ParamConta/Conferir`; o merge não tem conflito com este branch). O 5.8 NÃO é dependência de código: o Conteúdo não usa `internal/github` (o robô muda para a VPS). Faça `git add` só dos caminhos de cada task. Este plano contrata sobre as **interfaces** escritas nos planos 5.0–5.7, e o pré-voo confere que elas existem com esses nomes. **Ensaio integral:** as Tasks 1–9, com o código deste plano, foram aplicadas sobre o `origin/main` 448c1356 em 13/10 — `go test -race ./...` com todos os pacotes `ok` e 0 SKIP (os "Ensaiado" das Tasks 1–7 citam a primeira rodada, sobre o 5.7 antes do merge).
 
 **Goal:** Trocar os 27 acessos do front às 9 tabelas da Central de Conteúdo por rotas de domínio que decidem com as MESMAS regras das 25 policies de produção (4 restritivas `pode_ver_conta`), com dois fechamentos por Ruling (as filhas da peça só com a peça visível; criar só o que a pessoa lê); registrar as 6 RPCs em `POST /rpc/{nome}` com o portão igual à checagem de cada função (provado pessoa a pessoa contra a função verbatim) e a conta conferida; e portar `conteudo-trigger` SEM o GitHub: a rota grava o pedido em `conteudo_jobs` (mesmas validações, teto e janela da edge, idempotente sob clique duplo) e o vigia da VPS (trilha C, Plano 7) pega da fila.
 
@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - Nada em produção: sem `ssh`, sem credencial real, sem `push`. Postgres local descartável. A seção da trilha C é PASSO A PASSO para quem é dono do `coletor/` (Plano 7) e da VPS: este plano NÃO a executa.
-- Regra de cada tabela = a do catálogo (`autz.Producao`), nunca reescrita à mão. "Conteudista" do catálogo = perfil ativo com papel `admin`, `is_superadmin` da ficha ou o MÓDULO `conteudo` em `features` (as 25 policies leem `features`, não `permissions`). Restritiva `pode_ver_conta((account_id)::text)` em `conteudo_pecas`, `conteudo_ideias`, `conteudo_blocos`, `conteudo_jobs` (`account_id` é **uuid** nas quatro; nulo = de todas as marcas, legível a todo conteudista). `conteudo_casamentos`, `conteudo_jobs` e `conteudo_metricas` só a chave de serviço gravava; `conteudo_eventos` aceita só INSERT com `quem = auth.uid()`. Divergência só por Ruling deste plano (5.9-3, 5.9-4, 5.9-6, 5.9-7, 5.9-10, 5.9-11).
+- Regra de cada tabela = a do catálogo (`autz.Producao`), nunca reescrita à mão. "Conteudista" do catálogo = perfil ativo com papel `admin`, `is_superadmin` da ficha ou o MÓDULO `conteudo` em `features` (as 25 policies leem `features`, não `permissions`). Restritiva `pode_ver_conta((account_id)::text)` em `conteudo_pecas`, `conteudo_ideias`, `conteudo_blocos`, `conteudo_jobs` (`account_id` é **uuid** nas quatro; nulo = de todas as marcas, legível a todo conteudista). `conteudo_casamentos`, `conteudo_jobs` e `conteudo_metricas` só a chave de serviço gravava; `conteudo_eventos` aceita só INSERT com `quem = auth.uid()`. Divergência só por Ruling deste plano (5.9-3, 5.9-4, 5.9-6, 5.9-7, 5.9-8, 5.9-10, 5.9-11).
 - Portão de RPC = a checagem de dentro de cada função (`02-funções.csv`), provada igual pessoa a pessoa contra a função verbatim (`TestPortoesIguaisAsFuncoes`). As 6 são SECURITY DEFINER: ignoravam a restritiva; a API confere a peça/ideia/conta do parâmetro (`rpc.Funcao.Conferir`, Ruling 5.9-10).
 - Negar por padrão. Todo portão tem o lado negado assertado **com o efeito**: foto das 9 tabelas igual (`fotoDoConteudo`), nenhum job novo, nenhum evento.
 - Toda rota tem teste de vazamento pela cadeia real (`mundoteste`: `auth.Exigir` → `autz.ComEscopo`): TODA leitura (salvo `GET /conteudo/concorrentes`, sem a restritiva em produção: Ruling 5.9-5) sem filtro, com `?account_id=<A2>` e com `contar=1`; e o lado positivo (`adminA1` vê A2).
@@ -56,7 +56,7 @@
 ## Pré-voo (antes da Task 1)
 
 - [ ] `cd /Users/gabrielgertrudes/Projetos/Trabalho/lavessel/social-dashboard/.claude/worktrees/p5-59 && git status --short && git branch --show-current` → vazio (ou só este plano); `feat/api-go-plano-5-9`.
-- [ ] Trazer a dependência executada: `git merge --no-edit feat/api-go-plano-5-7`. Conferir:
+- [ ] Trazer a dependência executada: `git merge --no-edit origin/main` (depois de `git fetch`). Conferir:
   ```bash
   grep -c 'create table public.accounts' api/internal/testebanco/esquema/01-tabelas-5-06.sql            # 1 (do 5.6)
   grep -c 'conteudo_usa_portal' api/internal/testebanco/esquema/01-tabelas-5-06.sql                    # ≥ 1
@@ -115,10 +115,10 @@ docs/migracao-go/NOTAS-DA-IMPLANTACAO.md                  # seção do 5.9
 | 2 | `dados.Tabela.Conferir`: a regra que o catálogo não enxerga, na transação que grava | **opus** (toda escrita de domínio passa aqui) | 5.1 |
 | 3 | `conteudo`: fundação (regras `Conteudista`/`Aprovador`/`PedeIA`, conferências de peça e de conta, mundo, foto) | **opus** (portão de toda escrita) | 1, 2 |
 | 4 | Leituras (7), com capa, métrica e sugestão embutidas na peça e as filhas presas à peça | sonnet | 3 |
-| 5 | Escritas de peça, arquivo e evento (guarda de aprovação pela rota, caminho preso à peça) | **opus** (aprovação, filhas de outra conta) | 2, 3 |
-| 6 | Escritas de ideias, blocos e concorrentes | sonnet | 2, 3 |
-| 7 | As 6 RPCs: portões provados contra as funções, conferência da peça/ideia/conta | **opus** (aprovação, conta) | 1, 3 |
-| 8 | `POST /conteudo-trigger`: fila sem GitHub, validações e teto da edge, idempotente | **opus** (gasto de IA) | 3 |
+| 5 | Escritas de peça, arquivo e evento (guarda de aprovação pela rota, caminho preso à peça) | **opus** (aprovação, filhas de outra conta) | 2, 3, 4 (colunas) |
+| 6 | Escritas de ideias, blocos e concorrentes | sonnet | 2, 3, 4 (colunas), 5 (`intacto`) |
+| 7 | As 6 RPCs: portões provados contra as funções, conferência da peça/ideia/conta | **opus** (aprovação, conta) | 1, 3, 5 (`intacto`) |
+| 8 | `POST /conteudo-trigger`: fila sem GitHub, validações e teto da edge, idempotente | **opus** (gasto de IA) | 3, 4 (`montarLeituras`), 5 (`intacto`) |
 | 9 | Montagem, varreduras (conta, impersonado), `conferir` e notas | **opus** (fronteira) | 4–8 |
 ---
 
@@ -3161,7 +3161,7 @@ Em `NOTAS-DA-IMPLANTACAO.md`, acrescente ao fim:
 ### Antes do corte
 - `api worker conferir` no banco restaurado: as colunas e os tipos das 9 `conteudo_*`, a função `conteudo_guarda_aprovacao()` e o gatilho `conteudo_pecas_guarda` LIGADO em `conteudo_pecas`; as 6 RPCs pelo `conferirRPC` (DEFAULT de `p_motivo` e `p_publicar_em`, EXECUTE de `authenticated`).
 - Nenhum outro gatilho nas `conteudo_*`: `select c.relname, g.tgname from pg_trigger g join pg_class c on c.oid = g.tgrelid where not g.tgisinternal and c.relname like 'conteudo\_%'` = só `conteudo_pecas | conteudo_pecas_guarda`.
-- As frases das funções (sem acento) e os corpos verbatim: `select md5(prosrc) from pg_proc where proname like 'conteudo\_%' order by proname` no banco restaurado = o mesmo na fatia de teste (`03-funcoes-5-09.sql`); diferente = alguém mudou a função em produção depois do levantamento — refaça o `TestPortoesIguaisAsFuncoes` com a nova antes do corte.
+- As frases das funções (sem acento) e os corpos verbatim: `select md5(prosrc) from pg_proc where proname like 'conteudo\_%' order by proname` no banco restaurado = o mesmo `select` num Postgres de teste com as fatias carregadas (`testebanco.ComEsquemaDeProducao`, que inclui o `03-funcoes-5-09.sql`); diferente = alguém mudou a função em produção depois do levantamento — refaça o `TestPortoesIguaisAsFuncoes` com a nova antes do corte.
 - Pedidos órfãos: `select status, count(*) from conteudo_jobs where status in ('enfileirado','rodando') group by 1` — os que ficaram do Actions viram `erro` antes de ligar o vigia (senão ele os roda na primeira volta): `update conteudo_jobs set status = 'erro', erro = 'pedido de antes da mudança para a VPS', updated_at = now() where status in ('enfileirado','rodando')`.
 - Objetos do bucket `conteudo` copiados para o disco (Plano 6) antes de a tela apagar arquivo pela API (hoje `excluirPeca`/`removerArquivo` apagam do Storage primeiro).
 
@@ -3192,9 +3192,9 @@ Rode `gofmt -w ./internal ./cmd`.
 - [ ] `docker stop pg-plano59` e `make -C api teste PG_PORTA=58549` → todos `ok` (nunca junto com o gate de outra worktree).
 - [ ] Subir o `pg-plano59` de novo e `cd api && go test -count=1 -v ./... 2>&1 | grep -c -- '--- SKIP'` → `0`.
 - [ ] `cd api && gofmt -l . && go vet ./...` → nada.
-- [ ] `git diff origin/main --stat -- src/ supabase/ coletor/ db/ .github/` → vazio (front, edge e robô trocam no Plano 7; produção não muda).
+- [ ] `git diff origin/main...HEAD --stat -- src/ supabase/ coletor/ db/ .github/` → vazio (front, edge e robô trocam no Plano 7; produção não muda).
 - [ ] `grep -rn 'api.github.com\|internal/github' api/internal/conteudo` → nada (o Conteúdo não despacha nada); `grep -rn 'conteudo_aprovar_e_agendar\|conteudo_reavisar' api/internal/web/rpc_lista.go` → nada (saíram de `RPCPendentes`).
-- [ ] `grep -rn 'Conferir:' api/internal/conteudo/*.go | grep -v _test` → `tabelaPecas`, `tabelaArquivos`, `tabelaEventos`, `tabelaIdeias`, `tabelaBlocos` e as 6 RPCs; `tabelaConcorrentes` SEM (Ruling 5.9-5).
+- [ ] `grep -rn 'Conferir:' api/internal/conteudo/*.go | grep -v _test | wc -l` → `11`: as 5 tabelas com conferência (peças, arquivos, eventos, ideias, blocos) e as 6 RPCs; `tabelaConcorrentes` sem nenhuma (Ruling 5.9-5).
 - [ ] `docker stop pg-plano59`.
 - [ ] Revisão final do branch por opus com foco em: a aprovação (alguma escrita leva a peça a `aprovada`/`agendada` sem passar pela guarda ou por `Aprovador`? algum `INSERT` de peça aceita `status`?), a conta (alguma leitura, filha, embutido, RPC ou o `/conteudo-trigger` alcança A2 para quem só vê A1? alguma conferência roda FORA da transação que grava?), a IA paga (algum caminho cria dois jobs ou um `quantas` acima de 20?), o "entrar como" (alguma escrita ou RPC sem `soSessaoPropria`/`SoSessaoPropria`?) e o caminho do arquivo (algum `caminho` fora de `<conta>/<peça>/` grava?).
 
@@ -3307,7 +3307,7 @@ Na mesma área, de OUTROS planos (não trocar pelo 5.9): **5.6** — `accounts` 
 6. **A trilha de aprovação era forjável:** qualquer conteudista gravava um evento "aprovou" em qualquer peça (assinado por ele mesmo). A API só aceita as ações que a tela grava.
 7. **Bloco de texto sem apelido falha hoje:** o campo "Apelido (opcional)" vai como vazio e o banco exige nome; a tela mostra erro. A API devolve 400 com a frase "nome (o apelido)…"; no Plano 7, ou o campo vira obrigatório ou a tela preenche com o tipo do bloco (decisão de tela).
 8. **O botão "Portal de Notícias" (Voz da marca) só grava para admin:** para conteudista não-admin o clique não salva nada, sem aviso (a policy de `accounts` é só de admin). Com a API vira 403 visível. Decisão sua: liberar essa coluna a conteudista ou esconder o botão.
-9. **O robô de pauta não roda desde 01/08/2026** (`gh run list --workflow conteudo-ideias.yml`: última execução 01/08 04:37) e a edge dispara com o mesmo `GITHUB_PAT_FABRICA` que o 5.8 achou respondendo 403 desde ~setembro: o botão "Gerar ideias com IA" provavelmente devolve "A chamada ao GitHub falhou (403)" hoje. Com a API e o vigia na VPS ele deixa de depender do GitHub.
+9. **O robô de pauta não roda desde 01/08/2026** (`gh run list --workflow conteudo-ideias.yml`: última execução 01/08 04:37) e a edge dispara com o mesmo `GITHUB_PAT_FABRICA` que responde 403 pelo menos desde 07/09 (achado 1 do 5.8): o botão "Gerar ideias com IA" provavelmente devolve "A chamada ao GitHub falhou (403)" hoje. Com a API e o vigia na VPS ele deixa de depender do GitHub.
 10. **As 7 funções do Conteúdo no repositório estão atrás do banco:** as migrations têm frases com acento; produção tem sem acento (o levantamento). A fatia de teste usa as de produção.
 11. **Quem tem a chave `conteudo` só em `permissions` pede IA mas não usa a Central** (as policies leem `features`): é a mistura dos dois modelos de permissão que a edge aceitava. Mantido.
 
