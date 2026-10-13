@@ -2762,6 +2762,85 @@ func TestMaterialDoSku(t *testing.T) {
 - `internal/github/github.go`: só os comentários — o do pacote ("Consumidores: fabrica (5.8), Plano 6") e o de `Disparos` ("O 5.10 não acrescenta entrada: os robôs do selo rodam na VPS e o Actions não alcança o banco (Ruling 5.10-2); o Plano 6, as dele."). Nenhuma entrada nova.
 - **Ensaiado** (13/10, a árvore com as Tasks 1–8): `go test ./internal/web/ ./cmd/api ./internal/vessel ./internal/fabrica` passa; `go test -race ./...` na seção "Verificação final".
 
+Em `api/internal/web/rotas.go` (o diff ensaiado, sobre o `feat/api-go-plano-5-8`); em `web/rpc_lista.go`, apague o bloco `// 5.10 (autenticidade): 16` e os 16 nomes de `RPCPendentes`:
+
+```diff
+@@ -29,4 +29,6 @@
+ 	"github.com/rbv-co/social-dashboard/api/internal/trafego"
++	"github.com/rbv-co/social-dashboard/api/internal/vessel"
+ 	"github.com/rbv-co/social-dashboard/api/internal/webhooks"
+ 	"github.com/rbv-co/social-dashboard/api/internal/webpush"
++	"github.com/rbv-co/social-dashboard/api/internal/zoho"
+ )
+@@ -53,2 +55,5 @@
+ 	PrazoMapa = 20 * time.Second
++	// Plano 5.10: o cartão EAN do Zoho (POST /vessel-baixar-cartao): o resgate pela busca na árvore do robô levava
++	// ~7 s e o PDF a 600 dpi vem em fluxo; o de domínio (30 s) cortaria o download.
++	PrazoCartao = 60 * time.Second
+ 
+@@ -65,2 +70,3 @@
+ 	trafego.FuncoesRPC, // Plano 5.7
++	vessel.FuncoesRPC,  // Plano 5.10
+ )
+@@ -141,2 +147,6 @@
+ 
++		// Plano 5.10: o cartão EAN do Zoho. Portão do selo (is_vessel_admin) DENTRO do handler, antes de ler o corpo;
++		// no grupo de SESSÃO com o escopo e o prazo próprio (o de domínio cortaria o download).
++		r.With(autz.ComEscopo(p), comPrazo(PrazoCartao)).Post("/vessel-baixar-cartao", (&vessel.Cartao{Pool: p, Zoho: zoho.Novo(p)}).ServeHTTP)
++
+ 		// Plano 5.0: conta. Os portões de invite-user e entrar-como são os das edges (papel admin;
+@@ -166,2 +176,3 @@
+ 			fabrica.Montar(r, p, github.Novo(cfg.GitHubPAT), cfg.ArquivosDir)
++			vessel.Montar(r, p) // Plano 5.10: as 6 leituras do selo (as 16 RPCs vão por FuncoesRPC)
+ 			// Plano 5.12: notícias e status da IA (leituras declaradas, regra do catálogo).
+```
+
+Em `api/cmd/api/conferir.go`, nas listas (fim de `colunasDoWorker`, fim de `tiposDoWorker`, fim de `gatilhosDoWorker`):
+
+```go
+	// colunasDoWorker
+	// Plano 5.10: o que as 6 leituras projetam, o que o cartão e o material-do-sku leem, e as 2 colunas de
+	// vessel_registros SEM DDL no repositório (nascimento, bling_atualizado_em: a decisão de registro as grava).
+	// As 16 RPCs são conferidas por conferirRPC (assinatura e EXECUTE); as tabelas que só elas tocam, pelo D0.
+	"vessel_lotes":           "id,modelo,cor,sku,quantidade,fabricado_em,criado_por,criado_em,fotos,os,teste,material,material_fonte",
+	"vessel_pecas":           "codigo,lote_id,numero_na_serie,gravada_em,criado_em,cartao_gerado_em",
+	"vessel_registros":       "codigo,nome,whatsapp,onde_comprou,comprado_em,garantia_ate,registrado_em,bling_pedido,cpf,pedido_id,bling_contato_id,cliente_id,nascimento,bling_atualizado_em",
+	"vessel_baixas":          "id,codigo,motivo,baixada_em,desfeita_em",
+	"vessel_cartao_pedidos":  "id,pecas,situacao,pasta,erro,criado_por,criado_em,comecou_em,terminou_em",
+	"vessel_cartao_arquivos": "codigo,nome,zoho_id",
+	"vessel_lembretes":       "id,peca_codigo,email,criado_em,enviado_7_em,enviado_30_em,cancelado_em,cancelado_por",
+	"vessel_clientes":        "id,atualizado_em",                                           // o gatilho vessel_clientes_atualizado
+	"acessos_conexoes":       "provedor,client_id,client_secret,refresh_token,data_center", // internal/zoho
+
+	// tiposDoWorker
+	// Plano 5.10: o filtro ?codigo= (text[]), o cartão (pecas @> array[codigo]) e o recálculo da garantia (date)
+	"vessel_pecas.codigo": "text", "vessel_pecas.lote_id": "uuid", "vessel_lotes.id": "uuid", "vessel_cartao_pedidos.pecas": "text[]",
+	"vessel_registros.garantia_ate": "date", "vessel_registros.nascimento": "date",
+
+	// gatilhosDoWorker
+	// Plano 5.10: os 6 gatilhos vivos do selo (a garantia recalcula pelo material, o lembrete morre com o registro...)
+	{"trg_vessel_lotes_marcar_teste", "vessel_lotes"}, {"trg_vessel_lote_novo_herda_material", "vessel_lotes"},
+	{"trg_vessel_lote_material_recalcula_garantia", "vessel_lotes"}, {"vessel_clientes_atualizado", "vessel_clientes"},
+	{"vessel_registros_preencher_cliente_id", "vessel_registros"}, {"vessel_registros_mata_o_lembrete", "vessel_registros"},
+```
+
+Em `api/cmd/api/conferir_test.go`, SÓ se o 5.9 ainda não a trouxe (imports `internal/rpc` e `internal/web`), em `esquemaCompleto`, logo antes do `trg_vazio`:
+
+```go
+	// as funções de web.FuncoesRPC (que conferirRPC confere) pela PRÓPRIA declaração: Opcional = DEFAULT (Plano 5.9)
+	for _, f := range web.FuncoesRPC {
+		var args []string
+		for _, pr := range f.Params {
+			args = append(args, pr.Nome+" "+pr.Tipo+map[bool]string{true: " default null"}[pr.Opcional])
+		}
+		retorno := map[rpc.Retorno]string{rpc.Valor: "integer", rpc.Conjunto: "setof integer", rpc.Nada: "void"}[f.Retorno]
+		ddl = append(ddl, fmt.Sprintf("create or replace function %s(%s) returns %s language sql as $f$ select null::integer $f$",
+			f.Nome, strings.Join(args, ", "), retorno))
+	}
+```
+
+Em `api/internal/web/rpc_lista_test.go`, `TestRotasPanicaComRPCRegistradaErrada`: logo depois do `t.Cleanup`, `pendente := RPCPendentes[len(RPCPendentes)-1]` (com o comentário "um nome AINDA pendente: o 5.10 registrou o vessel_gerar_lote que estava aqui") e as 4 ocorrências de `"vessel_gerar_lote"` do teste trocadas por `pendente` (o mapa de casos e a montagem certa do fim). O `TestMontarRPCRecusaListaErrada` do mesmo arquivo usa listas próprias (não as globais) e continua com `vessel_gerar_lote`.
+
 ```go
 package vessel
 
