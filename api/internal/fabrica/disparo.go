@@ -147,7 +147,13 @@ func (d *Disparador) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		campanhaID = campanha
 	}
 	inicio := time.Now()
-	err = d.GH.Disparar(ctx, "fabrica", map[string]string{"job_id": job})
+	// O job já está confirmado no banco: aba fechada agora não pode virar "Incerto" num despacho que o GitHub
+	// aceitaria; por isso o despacho ignora o cancelamento da requisição (o cliente tem prazo próprio de 15 s).
+	// Estado "Incerto, mas o GitHub aceitou" (resposta perdida): job e rodada ficam `erro` até o robô, que roda
+	// mesmo assim, regravar o status (fabrica-job-runner.mjs:118); disparar de novo é decisão da pessoa.
+	// ponytail: janela entre o commit do job e o despacho sem outbox: queda do processo aí deixa o job
+	// `enfileirado` sem robô; upgrade = varrer jobs `enfileirado` com mais de N minutos e redisparar.
+	err = d.GH.Disparar(context.WithoutCancel(ctx), "fabrica", map[string]string{"job_id": job})
 	if err == nil {
 		slog.Info("fabrica-trigger: robô acordado", "tipo", c.Tipo, "job", job, "ms", time.Since(inicio).Milliseconds())
 		responder(w, http.StatusOK, map[string]any{"job_id": job, "campanha_id": campanhaID})

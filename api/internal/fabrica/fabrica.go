@@ -15,6 +15,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/rbv-co/social-dashboard/api/internal/auth"
 	"github.com/rbv-co/social-dashboard/api/internal/autz"
 	"github.com/rbv-co/social-dashboard/api/internal/dados"
 )
@@ -39,6 +40,18 @@ func soFabricante(next http.Handler) http.Handler {
 }
 
 var soSessaoPropria = dados.SoSessaoPropria(dados.FraseEntrarComo)
+
+// soPainel: as escritas do painel recusam conta de serviço (um token de robô com meta.fabrica não dispara,
+// não apaga nem cura; o robô tem as rotas /fabrica/robo/…). Depois de auth.Exigir.
+func soPainel(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if a := auth.AtorDoContexto(r.Context()); a == nil || a.Tipo == "servico" {
+			dados.Erro(w, http.StatusForbidden, "sem_permissao", "")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
 
 // deve: declaração de rota errada (Consulta ou Tabela fora do catálogo) faz a API não subir.
 func deve(err error) {

@@ -156,5 +156,5 @@ func montarLeituras(r chi.Router, p *pgxpool.Pool) {
 	r.Get("/fabrica/criativos", consultaCriativos.Handler(p, autz.Producao))
 	r.Get("/fabrica/jobs", consultaJobs.Handler(p, autz.Producao))
 	r.Get("/fabrica/meta-jobs", consultaMetaJobs.Handler(p, autz.Producao))
-	r.With(soSessaoPropria).Post("/fabrica/criativos/escolher", escolher(p))
+	r.With(soPainel, soSessaoPropria).Post("/fabrica/criativos/escolher", escolher(p))
 }
