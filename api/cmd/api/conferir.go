@@ -24,10 +24,10 @@ import (
 // de api/internal (comercial, conteudo, fabrica, frota, mensagens, meta, vessel, webhooks, webpush, worker,
 // canais, auth); quem mexer numa consulta com tabela, coluna ou função nova acrescenta aqui.
 var colunasDoWorker = map[string]string{
-	"accounts":               "id,name,instagram_id,ad_account_id,access_token",
+	"accounts":               "id,name,username,instagram_id,ad_account_id,access_token,profile_picture_url,picture_url,accent_color,persona,conteudo_usa_portal,publicacao_automatica",
 	"daily_snapshots":        "account_id,captured_at,followers_count,gained,lost",
-	"followers_leituras":     "account_id,followers_count,origem,lido_em",
-	"engagement_snapshots":   "account_id,captured_at,period_days,likes,comments,saves,shares,reach,views,total_interactions,accounts_engaged,profile_views",
+	"followers_leituras":     "id,account_id,followers_count,origem,lido_em",
+	"engagement_snapshots":   "account_id,captured_at,period_days,likes,comments,saves,shares,reach,views,total_interactions,accounts_engaged,profile_views,created_at",
 	"content_snapshots":      "account_id,captured_at,period_days,posts_count,reels_count,stories_count,story_shares,story_replies,story_reach,story_interactions,story_navigation,story_profile_visits,story_follows,story_nav_forward,story_nav_back,story_nav_exit,story_nav_next",
 	"data_integrity_checks":  "id,checked_date,account_id,check_name,status,detail,created_at", // + Plano 5.1: /saude/conferencias
 	"campaigns":              "campaign_id,account_id,name,objective,status,synced_at",
@@ -75,17 +75,21 @@ var colunasDoWorker = map[string]string{
 	"fabrica_campanhas":           "id,created_at,fechada_em,purgado_em",
 	"fabrica_criativos":           "campanha_id,storage_path,purgado_em",
 	"robos_execucoes":             "robo,disparado_em,status_code,ok,resposta,conferido_em",
-	"noticias_concorrentes":       "id,rodada,destaque,created_at", // Plano 5.12: filtro e ordem das leituras
-	"noticias_panorama":           "rodada,conteudo_md,modelo,created_at",
-	"ia_execucoes":                "id,run_at",
-	"robos_saude":                 "robo,critico", // visão (relkind 'v'): ordem da leitura
+	// Plano 5.6 (rotas /redes): os presumidos (sem DDL no repositório) são conferidos aqui no banco restaurado
+	"account_insights":      "account_id,captured_at,period_days,spend,impressions,clicks,reach,frequency",
+	"social_metas":          "account_id,periodo,indicador,valor",
+	"campaign_filters":      "account_id,selected_ids,updated_at",
+	"noticias_concorrentes": "id,rodada,destaque,created_at", // Plano 5.12: filtro e ordem das leituras
+	"noticias_panorama":     "rodada,conteudo_md,modelo,created_at",
+	"ia_execucoes":          "id,run_at",
+	"robos_saude":           "robo,critico", // visão (relkind 'v'): ordem da leitura
 }
 
 // tiposDoWorker: tabela.coluna -> tipo (nome de regtype) de que o código depende (cast do parâmetro, junção,
 // leitura direta no Scan ou texto de data). "a|b" = qualquer um dos dois; "text" aceita varchar. Só entram
 // as colunas em que o tipo errado quebra o SQL ou muda o resultado (o resto o código converte com cast).
 var tiposDoWorker = map[string]string{
-	"accounts.id": "uuid", "profiles.id": "uuid", "profiles.features": "text[]", "profiles.permissions": "jsonb",
+	"accounts.id": "uuid", "accounts.conteudo_usa_portal": "boolean", "accounts.persona": "text", "profiles.id": "uuid", "profiles.features": "text[]", "profiles.permissions": "jsonb",
 	"profiles.is_superadmin": "boolean", "profiles.disabled": "boolean", "profiles.escopo_por_equipe": "boolean",
 	"profiles.precisa_trocar_senha": "boolean", "equipes.deposito_id": "bigint|integer", "equipes.canal_loja_id": "bigint|integer",
 	"entradas_como_outro_usuario.admin_id": "uuid", "entradas_como_outro_usuario.alvo_id": "uuid",
@@ -109,6 +113,10 @@ var tiposDoWorker = map[string]string{
 	"shopify_pedidos.bruto": "jsonb", "robos_execucoes.disparado_em": "timestamp with time zone", "robos_execucoes.conferido_em": "timestamp with time zone",
 	"robos_execucoes.robo": "text", "robos_execucoes.resposta": "text", "robos_execucoes.ok": "boolean",
 	"vessel_rd_envios.atualizado_em": "timestamp with time zone",
+	// Plano 5.6: os filtros fazem ::uuid/::date/::timestamptz; as escritas presumem estes tipos
+	"account_insights.captured_at": "date", "social_metas.account_id": "text", "social_metas.periodo": "text",
+	"social_metas.indicador": "text", "social_metas.valor": "numeric", "campaign_filters.account_id": "uuid",
+	"campaign_filters.selected_ids": "text[]", "campaign_filters.updated_at": "timestamp with time zone",
 	// Plano 5.1: os filtros e o upsert fazem ::uuid nestas colunas; permissions tem de ser objeto jsonb
 	"profiles.perfil_id": "uuid", "profiles.permissions_excecao": "jsonb", "acessos_perfis.permissions": "jsonb",
 	"equipes_membros.equipe_id": "uuid", "equipes_membros.profile_id": "uuid",
@@ -123,8 +131,8 @@ var anulaveisDoWorker = []string{"carrinho_eventos.cart_token"}
 
 func init() { // toda coluna account_id é uuid: o código a preenche e a junta com accounts.id por uuid
 	for tabela, cols := range colunasDoWorker {
-		if slices.Contains(strings.Split(cols, ","), "account_id") {
-			tiposDoWorker[tabela+".account_id"] = "uuid"
+		if _, definido := tiposDoWorker[tabela+".account_id"]; !definido && slices.Contains(strings.Split(cols, ","), "account_id") {
+			tiposDoWorker[tabela+".account_id"] = "uuid" // social_metas.account_id é text e fica como declarado
 		}
 	}
 }
@@ -138,6 +146,7 @@ var unicosDoWorker = []string{
 	"perfil_visitas_hora(account_id,dia,hora)", "ad_insights_hora(ad_id,account_id,dia,hora)",
 	"conteudo_casamentos(peca_id,ig_media_id)", "conteudo_metricas(peca_id,capturado_em)",
 	"chatwoot_eventos(conversation_id,tipo)", "contatos_sem_mensagem(telefone)", "shopify_pedidos(id)",
+	"social_metas(account_id,periodo,indicador)", "campaign_filters(account_id)", // Plano 5.6
 	"push_subs(endpoint)", "push_preferencias(user_id,tipo)", // Plano 5.1: inscrição de push e lote de preferências
 	"acessos_perfis(nome)", // Plano 5.1: a tela regrava o perfil de mesmo nome pelo 409 deste único
 }
@@ -153,6 +162,7 @@ var funcoesDoWorker = []string{
 	"marcar_da_fila(text,text,text,text,bigint)", "devolver_mensagem(text,boolean)", "devolver_da_fila(text,text,boolean)",
 	"liberar_mensagens_travadas()", "liberar_travadas_da_fila()", "agendar_followups(integer,integer)",
 	"avaliar_trava_cruzada(text,integer,text,text)", "conteudo_reivindicar_hora_h()", "vessel_rd_payload(bigint)",
+	"pode_ver_conta(text)", // Plano 5.6
 	// Plano 5.1: os gatilhos que as escritas de perfis, grupos e times presumem
 	"guard_profiles()", "impedir_autopromocao()", "espelhar_rename_do_grupo()", "espelhar_grupo_do_canal()", "equipes_toca_atualizado()",
 }

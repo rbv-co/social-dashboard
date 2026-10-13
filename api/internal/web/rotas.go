@@ -20,6 +20,7 @@ import (
 	"github.com/rbv-co/social-dashboard/api/internal/frota"
 	"github.com/rbv-co/social-dashboard/api/internal/meta"
 	"github.com/rbv-co/social-dashboard/api/internal/paineis"
+	"github.com/rbv-co/social-dashboard/api/internal/redes"
 	"github.com/rbv-co/social-dashboard/api/internal/rpc"
 	"github.com/rbv-co/social-dashboard/api/internal/webhooks"
 	"github.com/rbv-co/social-dashboard/api/internal/webpush"
@@ -111,11 +112,11 @@ func Rotas(p *pgxpool.Pool, s *auth.Store, l *auth.Limitador, cfg config.Config)
 		r.Post("/auth/sair", h.Sair)
 		r.Get("/auth/eu", h.Eu)
 		r.Get("/eu/canais", canais.Handler(p))
-		r.With(comPrazo(PrazoBling)).Post("/bling-proxy", (&comercial.Bling{Pool: p, Core: cli}).ServeHTTP)                                // portão por caminho, lá dentro
-		r.With(auth.ExigirModulo("meta")).Post("/meta-proxy", (&meta.Proxy{Pool: p, Core: cli, HostsDeMidia: cfg.HostsDeMidia}).ServeHTTP) // prazo próprio (25/45/75 s)
-		r.With(auth.ExigirModulo("social"), comPrazo(PrazoMetaAoVivo)).Post("/insights-ao-vivo", av.Insights)
-		r.With(auth.ExigirModulo("social"), comPrazo(PrazoMetaAoVivo)).Post("/serie-novos-dia", av.SerieNovosDia)
-		r.With(auth.ExigirModulo("social"), comPrazo(PrazoCollabs)).Post("/contar-collabs", av.ContarCollabs)
+		r.With(comPrazo(PrazoBling)).Post("/bling-proxy", (&comercial.Bling{Pool: p, Core: cli}).ServeHTTP)                                                   // portão por caminho, lá dentro
+		r.With(auth.ExigirModulo("meta"), autz.ComEscopo(p)).Post("/meta-proxy", (&meta.Proxy{Pool: p, Core: cli, HostsDeMidia: cfg.HostsDeMidia}).ServeHTTP) // prazo próprio (25/45/75 s)
+		r.With(auth.ExigirModulo("social"), autz.ComEscopo(p), comPrazo(PrazoMetaAoVivo)).Post("/insights-ao-vivo", av.Insights)
+		r.With(auth.ExigirModulo("social"), autz.ComEscopo(p), comPrazo(PrazoMetaAoVivo)).Post("/serie-novos-dia", av.SerieNovosDia)
+		r.With(auth.ExigirModulo("social"), autz.ComEscopo(p), comPrazo(PrazoCollabs)).Post("/contar-collabs", av.ContarCollabs)
 		// Plano 4: o mesmo portão da edge (superadmin ou permissions['frota.aprovar'] com 'ver').
 		r.With(auth.ExigirPermissao("frota.aprovar", "ver")).Post("/avisar-decisao-de-reserva",
 			(&frota.Reserva{Pool: p, VAPID: webpush.VAPID{Publica: cfg.VAPIDPublica, Privada: cfg.VAPIDPrivada, Assunto: cfg.VAPIDAssunto}}).ServeHTTP)
@@ -140,6 +141,7 @@ func Rotas(p *pgxpool.Pool, s *auth.Store, l *auth.Limitador, cfg config.Config)
 		r.Group(func(r chi.Router) {
 			r.Use(comPrazo(PrazoDominio), autz.ComEscopo(p))
 			r.Post("/rpc/{nome}", rpcs.ServeHTTP)
+			redes.Montar(r, p)  // Plano 5.6
 			acesso.Montar(r, p) // Plano 5.1
 			// Plano 5.12: notícias e status da IA (leituras declaradas, regra do catálogo).
 			if err := paineis.Montar(r, p, autz.Producao); err != nil {
