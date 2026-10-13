@@ -10,7 +10,7 @@ import (
 )
 
 // Montar registra as rotas do 5.8 no grupo de DOMÍNIO de web.Rotas (depois de auth.Exigir, do prazo de 30 s e
-// de autz.ComEscopo): 9 leituras e 13 escritas (1 de catálogo, 5 edges, 7 de robô). gh: o cliente do GitHub
+// de autz.ComEscopo): 9 leituras e 12 escritas (1 de catálogo, 4 edges, 7 de robô). gh: o cliente do GitHub
 // (GITHUB_PAT); arquivos: ARQUIVOS_DIR. As escritas do painel recusam "entrar como" (soSessaoPropria) e conta
 // de serviço (soPainel); as de robô só aceitam conta de serviço (montarRobo). Declaração errada derruba a
 // subida. Rota nova entra sozinha nas varreduras de rotas_test.go. fabrica-candidatos (Task 7) entra quando o

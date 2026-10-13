@@ -1,6 +1,7 @@
 package fabrica
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -91,7 +92,7 @@ func (a *Apagador) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	// Depois do commit, melhor esforço (Ruling 5.8-9): o banco já é a verdade.
 	if runID != "" {
-		if err := a.GH.Cancelar(ctx, "fabrica", runID); err != nil {
+		if err := a.GH.Cancelar(context.WithoutCancel(ctx), "fabrica", runID); err != nil {
 			slog.Warn("fabrica-apagar: não cancelei o run", "campanha", id, "erro", err.Error())
 		}
 	}
