@@ -3202,7 +3202,42 @@ Rode `gofmt -w ./internal ./cmd`.
 
 ## Robô de Conteúdo na VPS — passo a passo para a trilha C (não é tarefa do 5.9)
 
-(a preencher)
+Decidido em COORDENACAO 12/10 23:10 (b): o robô de pauta (`coletor/conteudo-ideias.mjs`, `conteudo-semana.mjs`; leve: só HTTP para a Anthropic, até 15 min) sai do GitHub Actions e roda na VPS em `pg`, como os outros 24. A API do 5.9 só ENFILEIRA (`POST /conteudo-trigger`, Task 8); quem roda é um vigia da VPS no padrão do `coletor/vps/cartoes-ean-vigia.sh`. Dono: trilha C (`coletor/`, Plano 7), com o dono do projeto para o que é na VPS. Nada aqui é executado pelo 5.9.
+
+**1. O contrato da fila (o que a API garante; o vigia não pode presumir mais nada).**
+- Linha nova em `conteudo_jobs` com `status = 'enfileirado'`, `tipo ∈ {ideias, semana}` (lista fechada), `account_id` = uuid de uma conta que EXISTE, `criado_por` = quem pediu, `github_run_id` nulo e `params` = `{"quantas": n}` com `n` inteiro de 1 a 20 (tipo `ideias`) ou `{"segunda": "AAAA-MM-DD" | null}` (tipo `semana`, data válida).
+- No máximo UM job `enfileirado|rodando` por conta criado nos últimos 3 min (a trava consultiva da Task 8). Mais velho que isso, a marca aceita pedido novo — por isso o vigia expira o pedido velho (passo 3).
+- A tela acompanha por `GET /conteudo/jobs?id=` (`verJob`, `dados-conteudo.js:425`: lê `status`, `resultado`, `erro`) e para de girar em `concluido` ou `erro`. O `resultado` de `ideias` é `{sugeridas, gravadas, repetidas, usd}` e o de `semana` é o plano `{…, usd}` (o que os scripts já gravam).
+
+**2. Os scripts passam a `pg` (Plano 7, trilha C).** `conteudo-ideias.mjs` e `conteudo-semana.mjs` trocam o `sb()` (REST com `SUPABASE_SERVICE_KEY`) por `pg` com `CONTEUDO_DATABASE_URL`, nas MESMAS leituras e escritas de hoje:
+- leem `accounts (id, name, username, conteudo_usa_portal)` (NUNCA `access_token`), `conteudo_blocos`, `conteudo_pecas`, `conteudo_ideias`, `conteudo_concorrentes`, `conteudo_metricas`, `noticias_concorrentes` e o próprio job (`account_id`, `params`);
+- gravam `conteudo_ideias` (`origem = 'ia'`, `modelo`, `job_id`), o fim do job (`status = 'concluido' | 'erro'`, `resultado`, `erro`, `updated_at = now()`) e a linha de custo em `ia_execucoes` (`registrar-execucao.mjs` ganha o caminho `pg` para os robôs da VPS; a Fábrica, que fica no Actions, segue pela rota do 5.8).
+- `--job <id>`: `quantas` vem de `params.quantas` (hoje vinha de `--quantas`, que o yml tirava do input), com `Math.min(20, …)` de defesa; NÃO marca mais `rodando` nem grava `github_run_id` (o vigia já marcou). `--conta` e `--seco` continuam para rodar à mão.
+
+**3. O vigia (`coletor/vps/conteudo-vigia.sh` + `coletor/vps/conteudo-vigia.service`).** Uma volta a cada 10 s, UM job por vez na VPS inteira (o `concurrency: conteudo-ideias` do yml), com o código da `main` (`git pull --ff-only` só com nenhum robô rodando, como o dos cartões). A cada volta, por `pg` (num `coletor/conteudo-fila.mjs` pequeno, com teste, chamado pelo `.sh`):
+```sql
+-- expirar: clique velho não gasta IA; rodada presa não segura a marca
+update conteudo_jobs set status = 'erro', updated_at = now(),
+       erro = 'O pedido esperou mais de 30 minutos na fila e foi descartado. Peça de novo.'
+ where status = 'enfileirado' and created_at <= now() - interval '30 minutes';
+update conteudo_jobs set status = 'erro', updated_at = now(),
+       erro = 'A rodada passou de 20 minutos sem terminar e foi interrompida.'
+ where status = 'rodando' and updated_at <= now() - interval '20 minutes';
+-- pegar UM (atômico: dois vigias, por engano, não pegam o mesmo)
+update conteudo_jobs set status = 'rodando', updated_at = now()
+ where id = (select id from conteudo_jobs where status = 'enfileirado'
+              order by created_at for update skip locked limit 1)
+returning id, tipo;
+```
+Com um job: `case "$tipo" in ideias) s=conteudo-ideias.mjs ;; semana) s=conteudo-semana.mjs ;; *) marca erro ;; esac` (lista fechada: o valor vira nome de arquivo executado), `timeout 15m node coletor/$s --job "$id"`. Saída diferente de 0 com o job ainda `rodando` → `erro` com "A rodada falhou antes de terminar; detalhes no log da VPS" (a rede de segurança do passo `failure()` do yml). Log em `/var/log/robos/conteudo-vigia.log` (rotacionado), sem segredo.
+
+**4. Unidade systemd** (`/etc/systemd/system/conteudo-vigia.service`, molde do `cartoes-ean.service`): `EnvironmentFile=/etc/robos.env`, `ExecStart=/opt/robos/social-dashboard/coletor/vps/conteudo-vigia.sh`, `Restart=always`, `RestartSec=15`, `Nice=10`, `CPUWeight=20`, `MemoryHigh=384M`, `MemoryMax=512M` (o robô é só HTTP; a VPS divide CPU e memória com PDV, Chatwoot e o `api-db`). Node 22 de `/opt/cartoes-ean/node/bin`, como o `rodar-robo.sh`. `CONTEUDO_DATABASE_URL` montada no `.sh` pelo IP do `api-db` na rede `api_net` (como o `copia-do-banco.sh:25-28`), senha em `CONTEUDO_DB_SENHA` (`/etc/robos.env`, `600 root`), passada por ambiente, nunca por argumento. A chave da Anthropic: a MESMA que o `budget-ia` já usa no `/etc/robos.env` (o yml usava o segredo `ANTHROPIC_API_KEY_TRAFEGO`, "a mesma conta").
+
+**5. Papel de banco `conteudo_robo`** (arquivo `ops/vps/api-db/papel-conteudo.sql`, molde do `papel-copia.sql`; rodar como o dono do banco, só com ok do dono): `login nosuperuser nocreatedb nocreaterole noinherit connection limit 2`; `grant select (id, name, username, conteudo_usa_portal) on accounts` (por COLUNA: `accounts` guarda `access_token`); `grant select on conteudo_blocos, conteudo_pecas, conteudo_concorrentes, conteudo_metricas, noticias_concorrentes`; `grant select, insert on conteudo_ideias`; `grant select (id, tipo, account_id, params, status, created_at, updated_at), update (status, resultado, erro, updated_at) on conteudo_jobs`; `grant insert on ia_execucoes` (+ `usage` da sequência, se houver). Nenhum EXECUTE (regra 15 do `LEIA-ME.md` do `api-db`: o robô não chama função). Conferir com as regras 2, 4 e 11 trocando `copia` por `conteudo_robo`, e que a carga não deixou RLS ligado nessas tabelas (`select relname from pg_class where relname like 'conteudo\_%' and relrowsecurity` → vazio; ligado = o papel lê vazio: pare e fale com a trilha A).
+
+**6. Provas antes do corte** (no `api-db` de ensaio): (a) `POST /api/conteudo-trigger {"account_id":<conta>,"quantas":2}` → em até 10 s o job vai a `rodando` e depois a `concluido` com `resultado.gravadas`; as ideias aparecem em `GET /conteudo/ideias?da_marca=<conta>`; uma linha nova em `ia_execucoes`; (b) `modo: "semana"` → `concluido` com o plano; (c) job com `created_at` de 31 min atrás → `erro` "esperou mais de 30 minutos", sem chamar a IA; (d) `kill -9` no `node` no meio → em ≤ 20 min o job vira `erro`; (e) `systemctl stop conteudo-vigia` com pedido na fila → nada roda e a tela mostra o `erro` da expiração depois de 30 min; (f) `grep -c "$(cat /root/secrets/conteudo.senha)" /var/log/robos/conteudo-vigia.log` → `0`.
+
+**7. No corte:** os jobs `enfileirado|rodando` que vierem do Supabase viram `erro` ANTES de ligar o vigia (NOTAS, "Antes do corte"); `systemctl enable --now conteudo-vigia`; o `conteudo-ideias.yml` e a edge `conteudo-trigger` saem no Plano 7 (o yml escreve no Supabase e precisa do `GITHUB_PAT_FABRICA`, que a API não tem). Reverter = `systemctl disable --now conteudo-vigia` (o pedido fica `enfileirado` e expira; nada se perde além do clique).
 
 ## Inventário: sítios do front a trocar (Plano 7)
 
