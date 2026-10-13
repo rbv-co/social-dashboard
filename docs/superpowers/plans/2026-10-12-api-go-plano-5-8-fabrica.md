@@ -2269,7 +2269,7 @@ func (cu *Curadoria) Publicos(w http.ResponseWriter, r *http.Request) {
 | `exportar-zoho.mjs:18` | `GET fabrica_jobs?params->>campanhaId=` | `GET /fabrica/jobs?campanha_id=&ordem=created_at&limite=1` |
 | `exportar-zoho.mjs:21` | `GET fabrica_lojas` | `GET /fabrica/lojas` |
 | `registrar-execucao.mjs:35` | `POST ia_execucoes` | `POST /fabrica/robo/execucoes` (só os nomes `fabrica*`) |
-| `hero-ia/texto-da-garantia.mjs:43-45` (`gerar-criativos.mjs:358`) | `GET vessel_lotes` (material do lote mais recente do SKU) | `GET /fabrica/robo/material-do-sku?sku=` — **do 5.10** (dono de `vessel_lotes`), contrato abaixo (Ruling 5.8-13); até lá a arte sai sem a pílula (o código já trata: `texto-da-garantia.mjs:50-55`) |
+| `hero-ia/texto-da-garantia.mjs:43-45` (`gerar-criativos.mjs:358`) | `GET vessel_lotes` (material do lote mais recente do SKU) | `GET /fabrica/robo/material-do-sku?sku=` — **do 5.10** (dono de `vessel_lotes`), contrato abaixo (Ruling 5.8-13); até lá a arte sai sem a pílula (o código já trata: `texto-da-garantia.mjs:56-64`) |
 | `gerar-criativos.mjs:50` e o `subir` de cada PNG/MP4 (`lib/storage-upload.mjs`) | bucket `fabrica-criativos` | **Plano 6** (Storage) |
 | `gerar-criativos.mjs:66, 76` (modo `--estrela`) e `:275` (rodada criada sem `campanhaId`) | `GET gc_*`, `POST fabrica_campanhas` | **sem rota**: só a linha de comando chega aí (o job sempre traz `itens` e `campanhaId` do `fabrica-trigger`); Ruling 5.8-12 |
 | `lib/bling-comercial.mjs` (`loginServico`, `blingProxy`), `meta-proxy` | Supabase Auth + edges | token de serviço (5.13) + `POST /bling-proxy` e `POST /meta-proxy` (Plano 3, escopo do 5.6) |
@@ -2844,3 +2844,403 @@ func montarRobo(r chi.Router, p *pgxpool.Pool) {
 - [ ] **Step 1:** Testes; ver falhar. - [ ] **Step 2:** Implementar (código de (a)). - [ ] **Step 3:** `gofmt -l ./internal && go vet ./internal/fabrica/ && go test -count=1 -race ./internal/fabrica/` PASS; mutações reprovam. - [ ] **Step 4:** Commit `feat(api): rotas de robô da Fábrica — só sessão de serviço, regras do perfil do robô, caminho de arquivo preso à rodada` (+ `Co-Authored-By`).
 
 ---
+### Task 10: Montagem, varreduras, `conferir` e notas
+
+**Revisor:** opus. **Depende de:** 4–9.
+
+**(a) Contrato**
+- `fabrica.Montar(r, p, gh, arquivos)` registra **9 leituras e 13 escritas** (1 de catálogo, 5 edges, 7 de robô) no grupo de DOMÍNIO de `web.Rotas` (`auth.Exigir` → `comPrazo(PrazoDominio)` → `autz.ComEscopo`): o despacho ao GitHub (prazo de 15 s) e o resto cabem nos 30 s do grupo. `web/rotas.go`: `fabrica.Montar(r, p, github.Novo(cfg.GitHubPAT), cfg.ArquivosDir) // Plano 5.8`, depois das montagens anteriores. Nenhuma RPC (a linha 5.8 da IV.2: 0).
+- Varreduras pela cadeia real (`trafego` do 5.7 é o modelo): vazamento por conta na única leitura com restritiva; "entrar como" sem escrita; rota de robô só para sessão de serviço com o perfil certo.
+
+`api/internal/fabrica/rotas.go`:
+
+```go
+package fabrica
+
+import (
+	"time"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rbv-co/social-dashboard/api/internal/auth"
+	"github.com/rbv-co/social-dashboard/api/internal/github"
+)
+
+// Montar registra as rotas do 5.8 no grupo de DOMÍNIO de web.Rotas (depois de auth.Exigir e de
+// autz.ComEscopo). gh: o cliente do GitHub (GITHUB_PAT); arquivos: ARQUIVOS_DIR. Declaração errada derruba
+// a subida. Rota nova entra sozinha nas varreduras de rotas_test.go.
+func Montar(r chi.Router, p *pgxpool.Pool, gh *github.Cliente, arquivos string) {
+	montarLeituras(r, p)
+	disparos := auth.NovoLimitador()
+	disparos.Max, disparos.Janela = 30, time.Hour // Ruling 5.8-16
+	r.With(soFabricante, soSessaoPropria).Post("/fabrica-trigger", (&Disparador{Pool: p, GH: gh, Limite: disparos}).ServeHTTP)
+	r.With(soFabricante, soSessaoPropria).Post("/fabrica-apagar", (&Apagador{Pool: p, GH: gh, Arquivos: arquivos}).ServeHTTP)
+	r.With(soFabricante).Post("/fabrica-candidatos", (&Candidatos{Pool: p}).ServeHTTP) // só lê: "entrar como" passa
+	cur := &Curadoria{Pool: p}
+	r.With(soFabricante, soSessaoPropria).Post("/fabrica-looks", cur.Looks)
+	r.With(soFabricante, soSessaoPropria).Post("/fabrica-publicos", cur.Publicos)
+	montarRobo(r, p)
+}
+```
+
+**(b) Testes de aceitação**
+- `fabrica/rotas_test.go` (código abaixo): `TestNadaVazaEntreContas`, `TestEscritasRecusamImpersonado`, `TestRotasDeRoboSoServico`.
+- `web/rotas_test.go`: `soSessao` ganha as 10 rotas de catálogo (`GET /fabrica/lojas`, `/objetivos`, `/marcas`, `/looks`, `/publicos`, `/campanhas`, `/criativos`, `/jobs`, `/meta-jobs` e `POST /fabrica/criativos/escolher`; comentário: "portão = catálogo, provado pela matriz de cada rota em `internal/fabrica`; vazamento e impersonado pelas varreduras de lá"); as 5 edges e as 7 de robô NÃO entram (o `TestNenhumaRotaNovaFicaAberta` prova `soFabricante`/`SoServico`: sessão sem módulo = 403).
+- `TestFabricaPelaMontagemReal` (`web/rotas_test.go`, `testebanco.ComEsquemaDeProducao` + `usuarios`/`profiles` de `fabricante` (`permissions {"meta.fabrica":["ver"]}`), `so-meta` (`features {meta}`) e `robo-fabrica` (perfil com a chave, sessão `servico` por `st.Criar(ctx, id, "servico", nil)` — ou o ajudante do 5.13); `config.Config{}` SEM `GITHUB_PAT`): `GET /fabrica/lojas` sem sessão → 401 e `so-meta` → 200; `POST /fabrica-trigger` `so-meta` → 403; `fabricante` `{"tipo":"preview","params":{}}` → 503 `github_nao_configurado` e `select count(*) from fabrica_jobs` = 0 (passou portão e escopo; não há para onde despachar); `POST /fabrica/robo/execucoes` `fabricante` → 403 e `robo-fabrica` `{"robo":"fabrica","acao":"teste"}` → 201; `POST /fabrica-apagar` `fabricante` com uuid inexistente → 200 `{"ok":true}`.
+- `cmd/api/conferir_test.go`: os testes existentes continuam verdes com as listas novas; `TestTiposDaFabrica` — `tiposDoWorker["fabrica_lojas.deposito_id"] == "text"` e `["gc_estoque_item.deposito_id"] == "bigint"` depois do `init` (a Task 7 compara texto com texto e converte para `bigint` só no parâmetro).
+
+```go
+package fabrica
+
+import (
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync/atomic"
+	"testing"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rbv-co/social-dashboard/api/internal/github"
+	"github.com/rbv-co/social-dashboard/api/internal/testebanco/mundoteste"
+)
+
+// escritas: um pedido VÁLIDO (para quem pode) por rota de escrita de Montar. Rota nova sem entrada aqui
+// faz as varreduras falharem.
+var escritas = map[string]struct{ caminho, corpo string }{
+	"POST /fabrica/criativos/escolher":          {"/fabrica/criativos/escolher", `{"ids":["` + K1 + `"],"escolhido":false}`},
+	"POST /fabrica-trigger":                     {"/fabrica-trigger", `{"tipo":"preview","params":{}}`},
+	"POST /fabrica-apagar":                      {"/fabrica-apagar", `{"campanhaId":"` + C2 + `"}`},
+	"POST /fabrica-candidatos":                  {"/fabrica-candidatos", `{"lojas":["14888726315"],"fonte":"manual","filtros":{}}`},
+	"POST /fabrica-looks":                       {"/fabrica-looks", `{"acao":"excluir","chave":"promo-sage"}`},
+	"POST /fabrica-publicos":                    {"/fabrica-publicos", `{"acao":"apagar","id":"` + P2 + `"}`},
+	"PATCH /fabrica/robo/jobs/{id}":             {"/fabrica/robo/jobs/" + J1, `{"status":"concluido"}`},
+	"POST /fabrica/robo/jobs/{id}/proximo-lote": {"/fabrica/robo/jobs/" + J1 + "/proximo-lote", ``},
+	"PATCH /fabrica/robo/campanhas/{id}":        {"/fabrica/robo/campanhas/" + C1, `{"status":"pronta"}`},
+	"POST /fabrica/robo/criativos": {"/fabrica/robo/criativos", `[{"campanha_id":"` + C2 + `","arquetipo":"produto",` +
+		`"template":"t","formato":"1080x1080","storage_path":"` + C2 + `/produto/x.png","url":"https://midia.x/f/x.png"}]`},
+	"PATCH /fabrica/robo/looks/{chave}": {"/fabrica/robo/looks/promo-sage", `{"preview_url":"https://midia.x/f/_previews/p.png"}`},
+	"POST /fabrica/robo/meta-jobs":      {"/fabrica/robo/meta-jobs", `{"tipo":"estudio","payload":{"campanhaId":"` + C3 + `"},"status":"criado"}`},
+	"POST /fabrica/robo/execucoes":      {"/fabrica/robo/execucoes", `{"robo":"fabrica-gerar","acao":"gerar criativos","status":"ok"}`},
+}
+
+// soLeitura: POST que só lê (o "entrar como" passa).
+const soLeitura = "POST /fabrica-candidatos"
+
+// mundoMontado: o mundo com Montar inteiro, um GitHub de mentira que conta os pedidos e a pasta de arquivos.
+func mundoMontado(t *testing.T) (*mundoteste.Mundo, *atomic.Int64) {
+	t.Helper()
+	var pedidos atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		pedidos.Add(1)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(srv.Close)
+	gh, dir := github.ParaTeste(t, "SEGREDO-pat", srv.URL), t.TempDir()
+	return novoMundo(t, func(r chi.Router, p *pgxpool.Pool) { Montar(r, p, gh, dir) }), &pedidos
+}
+
+func varrer(t *testing.T, m *mundoteste.Mundo, f func(metodo, rota, caminho, corpo string)) (leituras, gravacoes int) {
+	t.Helper()
+	err := chi.Walk(m.H.(chi.Routes), func(metodo, rota string, _ http.Handler, _ ...func(http.Handler) http.Handler) error {
+		if metodo == http.MethodGet {
+			leituras++
+			f(metodo, rota, rota, "")
+			return nil
+		}
+		gravacoes++
+		e, ok := escritas[metodo+" "+rota]
+		if !ok {
+			t.Errorf("escrita sem caso nas varreduras: %s %s", metodo, rota)
+			return nil
+		}
+		f(metodo, rota, e.caminho, e.corpo)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return leituras, gravacoes
+}
+
+// A marca de A2 nunca aparece para quem não vê A2 — sem filtro, filtrando por A2 ou contando; o impersonado
+// vê o que o ALVO (fabricanteA1) vê. As outras 8 leituras não têm restritiva (Ruling 5.8-15).
+func TestNadaVazaEntreContas(t *testing.T) {
+	m, _ := mundoMontado(t)
+	comRestritiva := map[string]bool{"/fabrica/marcas": true}
+	varridas := 0
+	l, g := varrer(t, m, func(metodo, rota, _, _ string) {
+		if metodo != http.MethodGet || !comRestritiva[rota] {
+			return
+		}
+		varridas++
+		for _, quem := range []string{"fabricanteA1", "impersonado", "fabricanteNenhuma"} {
+			for _, q := range []string{"", "?account_id=" + A2, "?account_id=" + A2 + "&contar=1&limite=1"} {
+				w := m.Resposta(t, quem, "GET", rota+q, "")
+				if w.Code != http.StatusOK || strings.Contains(w.Body.String(), A2) {
+					t.Errorf("%s GET %s%s = %d %s", quem, rota, q, w.Code, w.Body)
+				}
+				if strings.Contains(q, "contar=1") && w.Header().Get("X-Total-Count") != "0" {
+					t.Errorf("%s contou linhas de A2 em %s: %q", quem, rota, w.Header().Get("X-Total-Count"))
+				}
+			}
+		}
+		if _, b := m.Pedir(t, "fabricanteNenhuma", "GET", rota, ""); strings.Contains(b, A1) {
+			t.Errorf("lista vazia viu A1 em %s: %s", rota, b)
+		}
+		if _, b := m.Pedir(t, "adminA1", "GET", rota, ""); !strings.Contains(b, A2) {
+			t.Errorf("adminA1 não viu A2 em %s (a rota projeta account_id?): %s", rota, b)
+		}
+	})
+	if l != 9 || g != 13 || varridas != 1 {
+		t.Errorf("rotas = %d leituras (%d varridas) e %d escritas, esperava 9 (1) e 13", l, varridas, g)
+	}
+}
+
+// Toda escrita recusa a sessão de "entrar como", sem tocar no banco nem no GitHub (o candidatos só lê).
+func TestEscritasRecusamImpersonado(t *testing.T) {
+	m, pedidos := mundoMontado(t)
+	antes := m.Um(t, fotoDaFabrica)
+	_, n := varrer(t, m, func(metodo, rota, caminho, corpo string) {
+		if metodo == http.MethodGet {
+			return
+		}
+		st, b := m.Pedir(t, "impersonado", metodo, caminho, corpo)
+		switch chave := metodo + " " + rota; {
+		case chave == soLeitura:
+			if st != http.StatusOK {
+				t.Errorf("%s como impersonado = %d %s (só lê: deveria passar)", chave, st, b)
+			}
+		case strings.HasPrefix(rota, "/fabrica/robo/"):
+			if st != http.StatusForbidden {
+				t.Errorf("%s como impersonado = %d %s", chave, st, b)
+			}
+		default:
+			if st != http.StatusForbidden || !strings.Contains(b, "Quem entrou como outra pessoa") {
+				t.Errorf("%s como impersonado = %d %s", chave, st, b)
+			}
+		}
+	})
+	if n != 13 {
+		t.Errorf("escritas = %d, esperava 13 (rota nova? ponha soSessaoPropria e um caso em `escritas`)", n)
+	}
+	if m.Um(t, fotoDaFabrica) != antes || pedidos.Load() != 0 {
+		t.Errorf("o impersonado mudou o banco ou chamou o GitHub (%d pedidos)", pedidos.Load())
+	}
+}
+
+// Rota de robô: sessão de PAINEL (mesmo quem passaria no Fabricante) e robô sem a chave = 403 sem efeito;
+// o robô com o perfil certo passa.
+func TestRotasDeRoboSoServico(t *testing.T) {
+	m, _ := mundoMontado(t)
+	antes := m.Um(t, fotoDaFabrica)
+	robo := 0
+	varrer(t, m, func(metodo, rota, caminho, corpo string) {
+		if !strings.HasPrefix(rota, "/fabrica/robo/") {
+			return
+		}
+		robo++
+		for _, quem := range []string{"fabricante", "adminA1", "super", "chaveEmLista", "roboSemFabrica"} {
+			if st, b := m.Pedir(t, quem, metodo, caminho, corpo); st != http.StatusForbidden {
+				t.Errorf("%s %s como %s = %d %s", metodo, rota, quem, st, b)
+			}
+		}
+	})
+	if robo != 7 {
+		t.Errorf("rotas de robô = %d, esperava 7", robo)
+	}
+	if m.Um(t, fotoDaFabrica) != antes {
+		t.Error("sessão de painel ou robô sem a chave gravou numa rota de robô")
+	}
+	varrer(t, m, func(metodo, rota, caminho, corpo string) {
+		if !strings.HasPrefix(rota, "/fabrica/robo/") {
+			return
+		}
+		if st, b := m.Pedir(t, "robo", metodo, caminho, corpo); st < 200 || st > 299 {
+			t.Errorf("%s %s como robo = %d %s", metodo, rota, st, b)
+		}
+	})
+}
+```
+
+**(c) Arquivos:** Create `api/internal/fabrica/rotas.go`, `api/internal/fabrica/rotas_test.go`; Modify `api/internal/web/rotas.go`, `api/internal/web/rotas_test.go`, `api/cmd/api/conferir.go`, `api/cmd/api/conferir_test.go`, `docs/migracao-go/NOTAS-DA-IMPLANTACAO.md`.
+
+**(d) Dependências:** Tasks 4–9; `web.Rotas`.
+
+- [ ] **Step 1: Testes que falham.** `fabrica/rotas_test.go` (acima); em `web/rotas_test.go`, as 10 entradas de `soSessao`, `TestFabricaPelaMontagemReal`; `TestTiposDaFabrica`. Run: `go test -count=1 ./internal/fabrica/ ./internal/web/ ./cmd/api/` → FAIL (`Montar` não existe).
+- [ ] **Step 2: Implementar.** `fabrica/rotas.go`; em `web/rotas.go` os imports (`fabrica` — já importado por `cmd/api`, sem ciclo —, `github`) e, no grupo de domínio, depois das montagens anteriores, `fabrica.Montar(r, p, github.Novo(cfg.GitHubPAT), cfg.ArquivosDir) // Plano 5.8`.
+
+`cmd/api/conferir.go` (o que as rotas e o robô presumem; as entradas de `fabrica_campanhas`, `fabrica_criativos` (Plano 4) e `fabrica_marcas` (5.7) são AMPLIADAS, não repetidas):
+
+```go
+// colunasDoWorker (Plano 5.8)
+"fabrica_campanhas": "id,nome,status,objetivo,job_id,desconto_tipo,desconto_pct,parcelas,criado_por,created_at,fechada_em,purgado_em",
+"fabrica_criativos": "id,campanha_id,sku,arquetipo,template,formato,variante,preco_de,preco_por,storage_path,url,legenda,escolhido,purgado_em,created_at",
+"fabrica_jobs":      "id,tipo,params,status,github_run_id,resultado,erro,criado_por,created_at,updated_at",
+"fabrica_lojas":     "deposito_id,nome,ativo,ordem,marca_id,whatsapp,geo_cities,canal_loja_id",
+"fabrica_objetivos": "chave,rotulo,descricao,meta_objective,optimization_goal,billing_event,destination_type,promoted_object_tipo,cta_type,looks,pede_desconto,ativo,ordem",
+"fabrica_marcas":    "id,nome,caption_template,ad_account,page_id,ig_id,account_id,ativo,segmento,termos_produto,created_at",
+"fabrica_looks":     "chave,nome,arquetipo,objetivos,ativo,excluido,ordem,preview_url,tipo,canva_formato_map,campo_map,created_at",
+"fabrica_publicos":  "id,nome,marca_id,geo,idade_min,idade_max,generos,interesses,custom_audiences,ativo,criado_por,created_at",
+"fabrica_meta_jobs": "id,tipo,loja,ad_account_id,meta_campaign_id,adset_ids,ad_ids,payload,status,erro,created_at",
+"ia_execucoes":      "id,robo,acao,modelo,input_tokens,output_tokens,chamadas,usd,duracao_ms,itens,unidade,status,detalhe,github_run_id",
+"gc_vendas_item":    "mes,canal_loja_id,sku,produto,categoria,unidades,faturamento",
+"gc_estoque_item":   "deposito_id,sku,saldo",
+"gestao_comercial_briefings": "rodada,created_at,dados_json",
+
+// tiposDoWorker (Plano 5.8): os casts e as conversões de que as rotas dependem
+"fabrica_lojas.deposito_id": "text", "fabrica_lojas.canal_loja_id": "text", "fabrica_lojas.geo_cities": "jsonb",
+"fabrica_campanhas.job_id": "uuid", "fabrica_campanhas.criado_por": "uuid", "fabrica_jobs.id": "uuid",
+"fabrica_jobs.params": "jsonb", "fabrica_jobs.resultado": "jsonb", "fabrica_jobs.criado_por": "uuid",
+"fabrica_meta_jobs.payload": "jsonb", "fabrica_meta_jobs.adset_ids": "jsonb", "fabrica_meta_jobs.ad_ids": "jsonb",
+"fabrica_looks.objetivos": "text[]", "fabrica_publicos.id": "uuid", "fabrica_publicos.generos": "integer[]",
+"fabrica_publicos.geo": "jsonb", "fabrica_publicos.idade_min": "integer", "fabrica_publicos.idade_max": "integer",
+"gc_vendas_item.canal_loja_id": "bigint", "gc_estoque_item.deposito_id": "bigint", "gestao_comercial_briefings.dados_json": "jsonb",
+```
+
+(`fabrica_marcas.account_id` = `text` já está no 5.7; se a lista do 5.5 já declarar `gc_*`/`gestao_comercial_briefings`, una as colunas.)
+
+Em `NOTAS-DA-IMPLANTACAO.md`, acrescente ao fim:
+
+```markdown
+## Plano 5.8 — Fábrica de anúncios
+
+### Variáveis de ambiente (serviço `api`)
+| Variável | Observação |
+|---|---|
+| `GITHUB_PAT` | token do GitHub (fine-grained, SÓ o repositório `rbv-co/social-dashboard`, SÓ "Actions: Read and write", com validade anotada) para `POST /fabrica-trigger` (acordar o `fabrica.yml`) e para cancelar a execução no `fabrica-apagar`; o 5.10 e o Plano 6 usam o mesmo. Hoje há `GITHUB_PAT_FABRICA` (403 desde ~29/07: achado 1) e `GITHUB_PAT_FOTOS` nos segredos do Supabase: crie um token NOVO para a API (não copie os de lá). Vazio = `503 github_nao_configurado` sem gravar nada. É segredo (`Segredos()`). |
+
+### Rotas novas
+- Com sessão, regra = catálogo (leitura aberta; marcas por conta): `GET /fabrica/lojas`, `/objetivos`, `/marcas`, `/looks`, `/publicos`, `/campanhas`, `/criativos`, `/jobs`, `/meta-jobs`; `POST /fabrica/criativos/escolher`.
+- Edges portadas (portão: papel admin, super pela ficha ou a chave `meta.fabrica` de `permissions`; "entrar como" não escreve): `POST /fabrica-trigger` (30 por hora por pessoa), `/fabrica-apagar`, `/fabrica-candidatos`, `/fabrica-looks`, `/fabrica-publicos`.
+- Robô (só sessão de serviço do 5.13 + perfil do robô): `PATCH /fabrica/robo/jobs/{id}`, `POST /fabrica/robo/jobs/{id}/proximo-lote`, `PATCH /fabrica/robo/campanhas/{id}`, `POST /fabrica/robo/criativos`, `PATCH /fabrica/robo/looks/{chave}`, `POST /fabrica/robo/meta-jobs`, `POST /fabrica/robo/execucoes`.
+
+### Conta de serviço do robô da Fábrica (depois do 5.13)
+- `usuarios` + `profiles` `robo-fabrica@rbvcompany.com`: papel `viewer`, `features {meta, sales}` (`meta` para o `meta-proxy`; `sales` porque o `bling-proxy` só libera `produtos` a `sales`/`gestor`/`autenticidade`, e `autenticidade` abriria a escrita da Vessel: achado 7), `permissions {"meta.fabrica": ["ver","editar"]}`, `allowed_accounts` nulo, `escopo_por_equipe false`, sem senha.
+- Token: `api servico criar robo-fabrica robo-fabrica@rbvcompany.com` (imprime UMA vez) → segredo `API_TOKEN_FABRICA` no GitHub (Settings → Secrets) e no `fabrica.yml` no lugar de `SUPABASE_SERVICE_KEY`/`GESTOR_USER_*` (Plano 7). Revogar: `api servico revogar robo-fabrica`.
+
+### Antes do corte
+- `api worker conferir` no banco restaurado: colunas e tipos do 5.8 (em especial `fabrica_lojas.deposito_id` texto e `gc_estoque_item.deposito_id` bigint).
+- Nenhum gatilho nas `fabrica_*`: `select tgname from pg_trigger g join pg_class c on c.oid = g.tgrelid where not g.tgisinternal and c.relname like 'fabrica\_%'` = vazio.
+- Arquivos: os criativos do bucket `fabrica-criativos` copiados para `<ARQUIVOS_DIR>/fabrica-criativos/<storage_path>` (Plano 6) ANTES de ligar o `fabrica-apagar` da API (antes disso ele apaga o banco e não acha arquivo: sobra no Storage antigo, que some com o Supabase).
+- `HOSTS_DE_MIDIA` com o host público do Storage novo (Plano 6): o `meta-proxy` só aceita `imageFromUrl` desses hosts, e o `subir` da Fábrica manda a URL do criativo (INVENTARIO item 6).
+- `GITHUB_PAT` preenchido e testado no ensaio: um `POST /fabrica-trigger {"tipo":"preview","params":{}}` acorda o `fabrica.yml` (o job aparece em Actions) — com o robô ainda falando com o Supabase, o preview roda contra o banco antigo; faça isso só depois do Plano 7 trocar o robô, ou cancele a execução.
+- Confirmar a edge NO AR (`npx supabase functions download fabrica-trigger …`, CLAUDE.md): se ela já aceita `excluir`, o Ruling 5.8-7 muda para aceitar também (achado 2).
+
+### Mudanças de contrato que o Plano 7 absorve
+- Leituras por `GET /fabrica/<recurso>` com filtros nomeados (`ativo`, `chave`, `account_id`, `id`, `status` (lista por vírgula), `aberta`, `purgada`, `campanha_id`, `escolhido`, `arquetipo`, `purgado`, `tipo`, `com_campanha_meta`) e `ordem=created_at|fechada_em[.desc]`. A Home troca o laço de contagem (home:35) por `qtd_criativos` de `GET /fabrica/campanhas`, e a contagem total (home:42) por `GET /fabrica/criativos?limite=1&contar=1` (`X-Total-Count`). `jobs` não traz `criado_por`.
+- `POST /fabrica/criativos/escolher {"ids":[…],"escolhido":bool}` substitui os dois `update` de `fabrica_criativos` (curar:33, :48).
+- As 5 edges: mesma URL sob `/api` e mesmos corpos; erros novos: `fabrica-trigger` → `503 github_nao_configurado`, `429 muitas_tentativas`, `504 dispatch_incerto`, `400 pedido_invalido` (params); `fabrica-apagar` → `400 campanhaId_invalido`; `fabrica-candidatos` → `400 pedido_invalido` (lojas/filtros); `fabrica-looks` → `sync` = `400 acao_invalida`; `fabrica-publicos` → `404` no `salvar` com `id` inexistente. `detail` do `dispatch_falhou` é uma frase da API, não o texto do GitHub.
+- Robô (`coletor/fabrica-job-runner.mjs` e módulos, tabela da Task 9): `loginServico` → token de serviço; cada `sbGet/sbPost/sbPatch` → a rota da tabela; `registrar-execucao.mjs` → `POST /fabrica/robo/execucoes` (só para os robôs da Fábrica; os outros robôs desse módulo são da VPS e usam `pg`); a pílula de garantia espera o `GET /fabrica/robo/material-do-sku` do 5.10.
+
+### Achados para o dono
+(ver a seção "Achados para o dono" do plano 5.8)
+```
+
+Rode `gofmt -w ./internal ./cmd`.
+- [ ] **Step 3: Rodar e ver passar.** `gofmt -l . && go vet ./... && go test -count=1 -race ./... 2>&1 | grep -v goose | grep -E '^(ok|FAIL|---)'` → todos `ok`. Mutações que têm de reprovar: tirar `soSessaoPropria` de UMA escrita (a varredura do impersonado acusa); tirar `auth.SoServico` do grupo de robô (`TestRotasDeRoboSoServico`); uma leitura de mentira em `Montar` sobre `fabrica_marcas` que não projete `account_id` (o lado positivo acusa); `fabrica.Montar` FORA do grupo com `ComEscopo` (as rotas de catálogo respondem 500 e o `soFabricante` nega tudo); `cfg.GitHubPAT` trocado por `""` em `web/rotas.go` não reprova aqui (o teste da montagem já roda sem token) — é o `conferir` do ensaio que pega (NOTAS).
+- [ ] **Step 4: Commit** `feat(api): monta a Fábrica (leituras, edges e rotas de robô), varreduras de conta, impersonado e sessão de serviço, conferir e notas` (+ `Co-Authored-By`).
+
+---
+
+### Verificação final do 5.8
+
+- [ ] `docker stop pg-plano58` e `make -C api teste PG_PORTA=58548` → todos `ok` (nunca junto com o gate de outra worktree).
+- [ ] Subir o `pg-plano58` de novo e `cd api && go test -count=1 -v ./... 2>&1 | grep -c -- '--- SKIP'` → `0`.
+- [ ] `cd api && gofmt -l . && go vet ./...` → nada.
+- [ ] `git diff feat/api-go-plano-5-7 --stat -- src/ supabase/ coletor/ db/ .github/` → vazio (front e robô trocam no Plano 7; produção não muda).
+- [ ] `grep -rn 'GITHUB_PAT\b' api/internal | grep -v 'config\|_test.go'` → nada (o token só entra por `config`); `grep -rn 'http.Get\|http.Post\|http.DefaultClient' api/internal/github api/internal/fabrica` → nada; `grep -rn 'os.Remove\b\|os.RemoveAll' api/internal/fabrica | grep -v _test` → nada (só `os.Root`).
+- [ ] `grep -rn 'api.github.com' api/internal | grep -v '_test.go'` → só `github/github.go` (a base fixa).
+- [ ] `docker stop pg-plano58`.
+- [ ] Revisão final do branch por opus com foco em: o PAT (alguma saída — erro, log, resposta, `robos_execucoes` — com o token? algum caminho segue redirecionamento?), o portão (alguma escrita sem `Fabricante`/catálogo, ou com `PodeX` fora da transação que grava?), o `fabrica-apagar` (algum caminho do banco apaga fora da raiz? o banco apaga antes do disco?), as rotas de robô (alguma aceita painel? o `storage_path` gravado pelo robô fica preso à rodada?) e o despacho (job pendurado em algum ramo de falha?).
+
+---
+
+## Inventário: sítios do front a trocar (Plano 7)
+
+`grep` em `src/ferramentas/meta-ads/` (fora de `*.test.*`) em 2026-10-12, contando `sb('<tabela>…')`, `sbClient.from('<tabela>')`, `functions.invoke('<edge>')` e `fetch(SUPABASE_URL + '/functions/v1/<edge>')`: **23 sítios nas 9 tabelas** (`fabrica_campanhas` 5, `fabrica_criativos` 5, `fabrica_jobs` 4, `fabrica_lojas` 3, `fabrica_objetivos` 2, `fabrica_meta_jobs` 1, `fabrica_marcas` 1, `fabrica_publicos` 1, `fabrica_looks` 1) e **14 chamadas às 5 edges** da Fábrica. Os demais `grep` (comentários em `painel-gerar.vue:3-6`, `painel-subir.vue:34, 45, 58, 203-206`, `tela-de-fabrica-estudio.vue:20`) não chamam nada.
+
+Abreviações: `home` = `tela-de-fabrica-home.vue`; `gerar` = `painel-gerar.vue`; `curar` = `painel-curar.vue`; `subir` = `painel-subir.vue`; `conferir` = `painel-conferir.vue`; `looks` = `tela-de-fabrica-looks.vue`; `estudio` = `tela-de-fabrica-estudio.vue`; `ujs` = `use-job-status.js`; `uc` = `use-candidatos.js`.
+
+| Rota | Sítios | Qtde |
+|---|---|---|
+| `GET /fabrica/lojas` | gerar:35 (`?ativo=true`), curar:21, subir:350 | 3 |
+| `GET /fabrica/objetivos` | gerar:36 (`?ativo=true`), subir:225 (`?chave=`) | 2 |
+| `GET /fabrica/campanhas` | home:32, home:41, curar:23, curar:56, subir:222 | 5 |
+| `GET /fabrica/criativos` / `POST /fabrica/criativos/escolher` | home:35 (vira `qtd_criativos`), home:42 (`contar=1`), curar:20 / curar:33, curar:48 | 5 |
+| `GET /fabrica/jobs` | curar:26, curar:59, estudio:31, ujs:8 | 4 |
+| `GET /fabrica/meta-jobs` | home:93 | 1 |
+| `GET /fabrica/marcas` | subir:229 (`?account_id=`) | 1 |
+| `GET /fabrica/publicos` | subir:170 (`?ativo=true`) | 1 |
+| `GET /fabrica/looks` | looks:20 | 1 |
+| `POST /fabrica-trigger` | gerar:95, conferir:25, conferir:39 (`excluir`: achado 2), subir:381, looks:58 | 5 |
+| `POST /fabrica-apagar` | home:106, home:128 | 2 |
+| `POST /fabrica-candidatos` | uc:7 | 1 |
+| `POST /fabrica-looks` | looks:23, looks:38, looks:48, looks:53 | 4 |
+| `POST /fabrica-publicos` | subir:294, subir:303 | 2 |
+
+Na mesma área, de OUTROS planos (não trocar pelo 5.8): **5.7** — `buscar-lugar` (subir:125, 153) e `interesses_sugeridos` (subir:232 → `GET /gestao-trafego/interesses-sugeridos?marca_id=&objetivo=`); **Plano 3 / 5.6** — `meta-proxy` (subir:51, 140, 184, 193, 317, 337, 344, 357; home:77: o `GET /<id da campanha>` é negado a quem tem lista de contas, achado 9); **5.6** — `campaign_insights_hora`, `campaigns`, `followers_leituras`, `perfil_visitas_hora`, `ads`, `ad_insights_hora` (`tela-de-relatorio-por-hora.vue:314-319`), `campaign_insights` (`tela-de-relatorio-opr.vue:305-307`); **5.11/5.10** — `tela-de-base-de-leads.vue:110-133` (`carrinho_eventos`, `vessel_*`). Robô: a tabela da Task 9 (Plano 7, com a conta de serviço do 5.13).
+
+## Paralelização
+
+- **Uma worktree por tarefa paralela** (merge na ordem dos números). As Tasks 3–10 são o MESMO pacote Go (`fabrica`): em worktrees separadas, cada uma só cria os SEUS arquivos; os ajudantes comuns (`Fabricante`, `soFabricante`, `soSessaoPropria`, `responder`, `errPedido`, `escritaOuPedido`, `reChaveLook`, `reRunID`, validadores) e o mundo são da Task 3; `tabelaCampanhas` mora na Task 5 e `tabelaCriativos` na Task 4 — a Task 9 usa as duas, então espera o merge de 4 e 5 OU declara as duas em `robo.go` e quem mesclar por último apaga a cópia (prefira esperar: é uma onda). Um contêiner (`pg-plano58`, porta 58548) atende todas: cada teste cria o próprio banco.
+- **Onda 1:** Tasks 1 (`testebanco`) e 2 (`github`, `config`) — paralelas, pacotes disjuntos. **Onda 2:** Task 3. **Onda 3:** Tasks 4, 5, 6, 7 e 8 (5 e 6 esperam também a 2; 7 espera o 5.5) — cinco em paralelo. **Onda 4:** Task 9 (precisa de `tabelaCampanhas`/`tabelaCriativos` das 4 e 5). **Onda 5:** Task 10 (a única que toca `fabrica/rotas*.go`, `web/*`, `conferir*.go` e as notas).
+- **Com outros sub-planos:** a fatia 5.8 não toca o gerador nem `02-gatilhos.sql` e não redeclara `fabrica_marcas` (5.7). `internal/github` é consumido pelo 5.10 (acrescenta `"vessel-fotos"` e `"vessel-cartoes"` em `Disparos`) e pelo Plano 6 — conflito mecânico de uma linha no mapa. `auth/servico.go` só existe aqui se o 5.13 ainda não tiver entrado (conflito = apagar o daqui). Arquivos de fronteira em comum: `web/rotas.go`, `web/rotas_test.go`, `cmd/api/conferir*.go`, `config/config*.go`, `NOTAS-DA-IMPLANTACAO.md`: quem mescla por último junta e roda o gate. Gates (`make teste`, contêiner fixo `pg-api-teste`) nunca ao mesmo tempo.
+
+## Rulings do 5.8
+
+1. Ruling: D0 = fatia RECONSTRUÍDA `01-tabelas-5-08.sql` com as 8 tabelas das migrations (sem presumido: todas têm DDL no repositório), `fabrica_marcas` fica onde o 5.7 a declarou, nenhuma função nem gatilho (o levantamento não tem nenhum nas `fabrica_*`), e `gc_*`/`gestao_comercial_briefings` vêm da fatia do 5.5 — declarar de novo quebraria a carga; o gerador não emite nada para estas tabelas — custo se errada: coluna acrescentada em produção sem migration só aparece no `api worker conferir` do banco restaurado.
+2. Ruling: dois pacotes — `internal/github` (genérico, sem banco, consumido por 5.8, 5.10 e Plano 6; o Conteúdo do 5.9 vai para a VPS e não o usa) e `internal/fabrica` (que já tinha a purga), com TODAS as rotas da Fábrica no grupo de domínio, inclusive as edges e as de robô — o despacho cabe nos 30 s do grupo, e as rotas precisam do escopo (`Fabricante` lê o perfil); um pacote por edge seria cerimônia — custo se errada: `fabrica` cresce para ~10 arquivos.
+3. Ruling: `Fabricante` (perfil ativo com papel `admin`, `is_superadmin` da ficha ou a chave `meta.fabrica` de `permissions`) é o portão das 5 edges e das rotas de robô, e é a MESMA regra das policies de escrita `fab_camp_write`/`fab_criativos_write` (provado pessoa a pessoa contra o catálogo compilado); nas 7 tabelas que só a chave de serviço gravava, a escrita das edges e do robô é SQL explícito atrás desse portão, em `banco.ComUsuario` — as edges usavam a chave de serviço com esse mesmo trio; o catálogo compila `service_role` como `false` (Ruling 5 do mestre), então "o catálogo" sozinho negaria o que as edges fazem; difere da edge em dois cantos: a chave dentro de um ARRAY no topo de `permissions` passa (o `?` do jsonb; o `hasOwnProperty` da edge não passava) e a conta desativada não passa (já não há sessão dela) — custo se errada: quem tem `permissions` em array passa a disparar a Fábrica (hoje ninguém: o formato normal é objeto).
+4. Ruling: o despacho de GitHub Actions usa UM token (`GITHUB_PAT`, fine-grained, só o repositório e só Actions), uma lista FECHADA em código (`Disparos`: repositório constante `rbv-co/social-dashboard`, arquivo, ref e cada entrada com formato), base fixa `https://api.github.com` (só `ParaTeste`, que exige loopback e recebe `testing.TB`, troca), sem seguir redirecionamento — o pedido nunca escolhe repositório, workflow ou ref; um token só vence de uma vez para os três consumidores (é notado no dia seguinte pelo selo da Vessel, em vez de sumir em silêncio como o da Fábrica, achado 1); seguir 3xx entregaria o `Authorization` a outro host — custo se errada: trocar o repositório de dono vira deploy (uma constante), e um token comprometido acorda os três robôs (mitigado: só Actions, só este repositório).
+5. Ruling: erro do GitHub por CLASSE (401, 403, limite por 429 ou 403 com cabeçalho de limite, 404, 422, 5xx, sem resposta antes de conectar = indisponível, sem resposta depois de conectar = incerto) e SEM repetição automática; a tela recebe uma frase da API por classe, nunca o corpo do GitHub; no `incerto` o job e a rodada são marcados `erro` com a frase "confira em Actions" — um despacho repetido acordaria o robô duas vezes (ele é idempotente por arquivo, `fabrica-job-runner.mjs:46`, mas gasta tempo de Actions e de gpt-image); se o GitHub aceitou sem responder e o robô rodar, ele mesmo regrava o status (`:118`); o corpo do GitHub pode citar o repositório e não ajuda quem está na tela — custo se errada: no `incerto` raro, a tela diz "erro" por alguns segundos antes de o robô corrigir.
+6. Ruling: `fabrica-trigger` confere o token ANTES de gravar e valida só o que a API usa (`campanhaId` uuid, `nome` e `objetivo` com tamanho, `params` objeto até 64 KiB); o resto de `params` passa como está — sem token a edge criava rodada e job que ficavam "gerando" para sempre; `campanhaId` vai para a URL que o robô monta; validar `itens`/`destino` seria reescrever o protocolo do robô, que já os valida — custo se errada: um `params` estranho chega ao robô como hoje.
+7. Ruling: `tipo: "excluir"` continua recusado (`400 tipo_invalido`), como na edge do repositório — o botão "Excluir esta remessa" (`painel-conferir.vue:39`, 13/07) manda `excluir` e a edge (última mudança 12/07) recusa: o botão nunca funcionou pelo que está no GitHub; liberar apaga campanhas na Meta e é decisão do dono, não da migração (achado 2) — custo se errada: o botão continua sem efeito até o dono decidir (liberar = uma palavra em `tiposDeJob` e um caso de teste).
+8. Ruling: na falha do despacho, o job vira `erro` só se ainda `enfileirado` e a rodada só se foi criada POR ESTE pedido e ainda está `gerando` — a edge marcava `erro` também a rodada de um `subir` (que já estava pronta e passava a aparecer "Deu erro ao gerar"), e sobrescreveria um job que o robô já tivesse começado — custo se errada: nenhum.
+9. Ruling: `fabrica-apagar` apaga o BANCO primeiro (rodada e criativos por `cascade`, com `PodeApagar` na transação), depois cancela o run (melhor esforço; já terminado = sucesso) e por fim os arquivos, pela MESMA `apagar` da purga (`filepath.IsLocal`, sem NUL, `os.Root`) e pela pasta `<campanhaId>/` (`os.Root.RemoveAll`); falha de arquivo vai ao log e sobra para a `faxina-fabrica`; rodada inexistente = `{"ok":true}` (idempotente) e id inválido = 400 — arquivo apagado com o banco ainda apontando para ele é imagem quebrada na tela; arquivo sobrando sem linha é só disco, e a faxina já existe para isso; a pasta da rodada leva o `.mp4` do 16:9, que nunca teve linha e sobrava para sempre — custo se errada: com o disco fora, a resposta é `ok` e o espaço só volta na faxina.
+10. Ruling: `fabrica-candidatos` lê `gc_*` como a edge (sem as restritivas `pode_ver_estoque`/`pode_ver_canal`), mas SÓ dos depósitos e canais de `fabrica_lojas`, sem o teto de 1000 linhas do PostgREST e em ordem determinística — a edge usava a chave de serviço, e recortar pela equipe de quem pede mudaria a lista dele; o depósito cru do pedido deixava ler o estoque de qualquer depósito do Bling; o teto cortava a lista em silêncio (3591 linhas em `gc_vendas_item`) — custo se errada: as listas BCG/ABC/manual podem crescer (agora estão completas) e a ordem pode mudar (achado 3).
+11. Ruling: o robô da Fábrica (no GitHub Actions) escreve por 7 rotas `/fabrica/robo/…` atrás de `auth.SoServico` (contrato do 5.13: sessão de serviço de um usuário com perfil próprio, SEM escopos por token) e da regra do PERFIL dele (`Fabricante`; o catálogo onde há regra de escrita), lê pelas rotas do painel, recebe o relógio do servidor (`updated_at`, `fechada_em`), tem o `proximo-lote` idempotente numa transação e só grava `storage_path` dentro de `<campanha_id>/` — o runner não alcança o banco (COORDENACAO 12/10 23:10); dar ao robô a chave de serviço de volta recriaria o acesso total; o caminho gravado pelo robô é o que o `fabrica-apagar` e a purga apagam do disco — custo se errada: cada nova escrita do robô vira uma rota (o Plano 7 conta 7 hoje).
+12. Ruling: só entram as rotas que alguém usa — `fabrica-looks` `sync` (nenhum chamador em `src/` nem `coletor/`), o modo `--estrela` e a rodada criada sem `campanhaId` do `gerar-criativos` (só linha de comando) e o bucket (Plano 6) ficam sem rota — rota sem dono é superfície sem teste de uso; o fluxo vivo (o job do `fabrica-trigger`) não passa por nenhum deles — custo se errada: rodar o `gerar-criativos` à mão pede o banco (VPS) ou uma rota nova.
+13. Ruling: a leitura do material do lote para a pílula de garantia (`GET /fabrica/robo/material-do-sku`) tem o contrato definido aqui e é IMPLEMENTADA pelo 5.10, dono de `vessel_lotes` — declarar `vessel_lotes` na fatia 5.8 puxaria os 5 gatilhos dela para o gerador e para `CONFERIDOS`; a rota projeta UMA coluna em vez de dar ao robô o módulo `autenticidade` (que abriria a escrita das tabelas da Vessel) — custo se errada: entre o 5.8 e o 5.10 a arte sai sem a pílula (o robô já trata, `texto-da-garantia.mjs:56-64`).
+14. Ruling: a escolha de criativos é UMA ação (`POST /fabrica/criativos/escolher`), com `Tabela.Editar` em cada id numa transação e em ordem fixa — a tela fazia um `update` por id e um `in (…)`; uma ação só cobre os dois, e a ordem fixa evita impasse entre duas pessoas curando a mesma rodada — custo se errada: nenhum.
+15. Ruling: as leituras seguem o catálogo — `true` em 8 tabelas (qualquer sessão, inclusive a do robô), `pode_ver_conta` em `fabrica_marcas`; `GET /fabrica/campanhas` traz `qtd_criativos` por subconsulta com a regra de Ler; os filtros por `params->>'campanhaId'`/`payload->>'campanhaId'` usam expressão total (texto ou nulo) — "mesmas permissões de hoje" (achado 6); a Home fazia uma contagem por rodada a cada 4 s enquanto alguma gerava — custo se errada: qualquer sessão continua lendo campanhas, jobs (com `params`) e públicos, como hoje.
+16. Ruling: `fabrica-trigger` limita 30 disparos por hora por pessoa (`auth.Limitador` em memória) — cada disparo pode gastar IA paga e criar anúncio; a edge não tinha limite; o grupo de concorrência do `fabrica.yml` só enfileira — custo se errada: quem dispara muito toma 429 por até uma hora; reiniciar a API zera a contagem (uma instância).
+
+## Achados para o dono
+
+1. **O token da Fábrica parece vencido em produção.** O `vessel-fotos-trigger` registra (07/09) que o `GITHUB_PAT_FABRICA` responde 403 ("Resource not accessible by personal access token") e que o último disparo da Fábrica que funcionou foi em 29/07: o botão "Gerar" pode estar falhando hoje. A API usa um token novo (`GITHUB_PAT`); vale conferir a Fábrica em produção agora.
+2. **O botão "Excluir esta remessa" (Conferir) nunca funcionou pelo código do repositório:** ele manda `tipo: "excluir"` e a `fabrica-trigger` só aceita `gerar/subir/ativar/preview` (o robô sabe excluir: `excluir-estudio.mjs`). A migração mantém recusado. Decisão sua: liberar (a API aceita com uma palavra) ou tirar o botão. Antes, conferir se a edge NO AR difere da do repositório.
+3. **A lista de produtos da Fábrica (BCG, ABC, manual) era cortada em 1000 linhas de vendas sem aviso** (a tabela tem 3591). Com a API a lista fica completa: pode aparecer mais produto do que hoje.
+4. **`fabrica-candidatos` deixava ler o estoque de qualquer depósito do Bling** (o depósito vinha cru do pedido). A API só aceita os depósitos da Fábrica.
+5. **A Fábrica não tem escopo por loja nem por conta (exceto as marcas):** quem tem a chave `meta.fabrica` vê vendas e estoque agregados de todas as lojas da Fábrica, e qualquer sessão lê campanhas, criativos, jobs (com os itens e preços) e públicos. Mantido (paridade); fechar é policy em produção.
+6. **Super-admin e admin passam pela Fábrica sem a chave** (é a policy). E `meta.fabrica` em `features` (módulo) NÃO dá acesso: só a chave em `permissions` — quem tiver só o módulo vê o menu e toma 403 ao gerar.
+7. **O robô da Fábrica precisa do módulo `sales` para ler produtos no `bling-proxy`** (não há módulo só de produto além de `autenticidade`, que abriria a escrita da Vessel). Sugestão: o `bling-proxy` aceitar `meta.fabrica` para `produtos` (Plano 3), e o robô ficar sem `sales`.
+8. **`fabrica-publicos` ao salvar um preset existente apaga a marca dele e troca o "criado por"** pelo de quem salvou. Mantido (paridade).
+9. **Quem tem lista de contas perde o selo de status das campanhas publicadas** na Home: o `meta-proxy` do 5.6 nega `/<id da campanha>` a quem tem lista (o selo cai em "?"). Liberar = olhar `campaigns` da conta no `meta-proxy` (anotado no 5.6).
+10. **A pílula de garantia nas artes depende do 5.10** (`GET /fabrica/robo/material-do-sku`); entre o 5.8 e o 5.10 as artes saem sem ela.
+11. **Os modos de linha de comando do `gerar-criativos`** (`--estrela`, rodada sem `campanhaId`) e os validadores manuais da Meta deixam de ter banco quando o Supabase sair: rodar na VPS com `pg` ou aposentar (o INVENTARIO já propõe aposentar parte deles).
+
+## Cobertura da spec e o que vem depois
+
+**As 9 tabelas da linha 5.8 (18 policies, 1 restritiva):**
+
+| Tabela | Policies (restritiva?) | Destino |
+|---|---|---|
+| `fabrica_campanhas` | `fab_camp_read` (`true`), `fab_camp_write` ALL (Fabricante), `fab_camp_srv` (serviço) | Task 4 (leitura), Task 5 (cria no `gerar`), Task 6 (apaga), Task 9 (status/fechar do robô) |
+| `fabrica_criativos` | `fab_criativos_read` (`true`), `fab_criativos_write` ALL (Fabricante), `fab_criativos_srv` | Task 4 (leitura e escolha), Task 6 (cascade), Task 9 (o robô cria) |
+| `fabrica_jobs` | `fab_jobs_read` (`true`), `fab_jobs_srv` | Task 4 (leitura), Task 5 (cria), Task 9 (robô: status e próximo lote) |
+| `fabrica_lojas` | `fab_lojas_read` (`true`), `fab_lojas_srv` | Task 4 (leitura); Task 7 (filtra as lojas) |
+| `fabrica_looks` | `fab_looks_read` (`true`) | Task 4 (leitura), Task 8 (curadoria), Task 9 (prévia do robô) |
+| `fabrica_marcas` | `fab_marcas_read` (`true`), `so_contas_permitidas` **select, restritiva**, `fab_marcas_srv` | Task 4 (leitura por conta; DDL no 5.7) |
+| `fabrica_meta_jobs` | `fab_meta_read` (`true`), `fab_meta_srv` | Task 4 (leitura), Task 9 (o robô grava o rastro) |
+| `fabrica_objetivos` | `fab_obj_read` (`true`) | Task 4 (leitura; escrita só por migration) |
+| `fabrica_publicos` | `fab_pub_read` (`true`) | Task 4 (leitura), Task 8 (presets) |
+
+Edges: `fabrica-trigger` (Task 5), `fabrica-apagar` (Task 6), `fabrica-candidatos` (Task 7), `fabrica-looks` e `fabrica-publicos` (Task 8); `fabrica-purga` já era do Plano 4; `buscar-lugar` é do 5.7. Cliente `internal/github` (Task 2). RPC: 0. Gatilhos: 0. Spec §4 (conta de serviço para o robô, pelo contrato do 5.13), §5 (catálogo, escopo por conta, IDOR, ator × operação × recurso pela cadeia real), §7 (arquivos no disco só dentro da raiz), §11 (segredo em variável de ambiente, fora de resposta e log; destino externo fixo; impersonação sem escrita), §13 (escritas negadas sem efeito, externo de mentira com contagem, varreduras de toda rota).
+
+**O que vem depois:**
+- **5.10 (Autenticidade):** acrescenta `"vessel-fotos"` (`fotos-do-selo.yml`) e `"vessel-cartoes"` (`cartoes-ean.yml`) em `github.Disparos` e usa `github.ParaTeste` nos testes; implementa `GET /fabrica/robo/material-do-sku` (contrato na Task 9) e a põe na varredura de robô do 5.8 (`escritas` não muda: é GET; `TestRotasDeRoboSoServico` passa a contar 8).
+- **5.13 (trilha A):** `auth.SoServico` e o emissor de `tokens_de_servico`; se entrar depois do 5.8, apaga `auth/servico.go` daqui e troca `sessaoDeServico` pelo ajudante dele.
+- **Plano 6:** Storage (`fabrica-criativos` no disco, upload do robô, `HOSTS_DE_MIDIA` com o host novo); acrescenta a entrada dele em `github.Disparos` se precisar.
+- **Plano 7:** os 23 sítios de tabela e as 14 chamadas de edge da tabela acima; o `coletor/fabrica-job-runner.mjs` e módulos pela tabela da Task 9, com o token de serviço no `fabrica.yml`.
+- **Antes do corte:** `GITHUB_PAT` novo, conta de serviço do robô, arquivos no disco e `HOSTS_DE_MIDIA` (NOTAS); a decisão do achado 2.
