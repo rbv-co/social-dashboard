@@ -56,23 +56,21 @@ func TestRPCParamContaDeclaracao(t *testing.T) {
 	}
 }
 
-// Função que grava: quem entrou como outra pessoa leva 403 com a frase e a função não roda; o portão
-// vem antes (portão fechado = 403 sem frase); função que só lê segue aberta a quem entrou como.
-func TestRPCSoSessaoPropria(t *testing.T) {
+// Ordem da recusa de "entrar como" (o caso básico está em sessao_test.go): vem DEPOIS do portão (portão
+// fechado = 403 sem a frase) e ANTES da leitura do corpo (corpo lixo também dá 403 com a frase); a sessão
+// própria grava normalmente.
+func TestRPCSoSessaoPropriaOrdem(t *testing.T) {
 	outro := "22222222-0000-4000-a000-000000000002"
 	imp := &auth.Ator{ID: quemPede, Tipo: "painel", ImpersonadorID: &outro}
 	esc := &autz.Escopo{ID: quemPede}
 	grava := Funcao{Nome: "marcar", Retorno: Nada, Portao: todos, SoSessaoPropria: true}
-	p, h := montarCom(t, imp, esc, grava, Funcao{Nome: "quem", Portao: todos})
+	p, h := montarCom(t, imp, esc, grava)
 	w := chamar(h, "marcar", `lixo`)
 	if w.Code != 403 || !strings.Contains(w.Body.String(), dados.FraseEntrarComo) || !strings.Contains(w.Body.String(), "sem_permissao") {
 		t.Fatalf("impersonado = %d %s", w.Code, w.Body)
 	}
 	if n := marcas(t, p); n != 0 {
 		t.Fatalf("a função rodou na sessão de entrar como (%d marcas)", n)
-	}
-	if w := chamar(h, "quem", ``); w.Code != 200 {
-		t.Fatalf("função sem a marca, impersonado = %d %s", w.Code, w.Body)
 	}
 	_, h2 := montarCom(t, imp, esc, Funcao{Nome: "marcar", Retorno: Nada, Portao: ninguem, SoSessaoPropria: true})
 	if w := chamar(h2, "marcar", ``); w.Code != 403 || strings.Contains(w.Body.String(), dados.FraseEntrarComo) {
